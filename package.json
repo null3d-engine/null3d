@@ -35,6 +35,7 @@
 		"parity": "bun bench/parity.ts",
 		"bench:run": "bun bench/run.ts",
 		"bench:allocation": "bun bench/allocation.ts",
+		"readme-media": "bun bench/readme-media.ts",
 		"dev": "vite",
 		"dev-cert": "bun tools/dev-cert.ts",
 		"android": "adb reverse tcp:5173 tcp:5173"
