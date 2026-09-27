@@ -11,16 +11,28 @@ export interface RenderLoop {
 	stop(): void;
 }
 
-/** The background color of the empty scene, which cycles slowly so a running loop is visible. */
-export function emptySceneInput(frame: number): FrameInput {
+/** A frame input that `emptySceneInput` can fill again each frame. */
+type ReusableInput = { frame: number; background: [number, number, number] };
+
+/**
+ * The input of an empty scene's frame, whose background cycles slowly so a running loop is
+ * visible. It fills `out` when given, so a loop allocates nothing per frame.
+ */
+export function emptySceneInput(frame: number, out?: ReusableInput): FrameInput {
+	const input = out ?? { frame, background: [0, 0, 0] };
 	const phase = (frame % 600) / 600;
-	return { frame, background: [0.05 + 0.05 * Math.sin(phase * Math.PI * 2), 0.06, 0.08] };
+	input.frame = frame;
+	input.background[0] = 0.05 + 0.05 * Math.sin(phase * Math.PI * 2);
+	input.background[1] = 0.06;
+	input.background[2] = 0.08;
+	return input;
 }
 
 /** Resize and presentation bookkeeping for the thread that owns the canvas. */
 export class Presenter {
 	private resizeSerial = 0;
 	private lastPresented = -1;
+	private readonly input: ReusableInput = { frame: 0, background: [0, 0, 0] };
 	readonly record: FrameRecorder;
 
 	constructor(
@@ -46,7 +58,7 @@ export class Presenter {
 	draw(frame: number, timestamp: number): void {
 		const start = performance.now();
 		this.record.begin(frame);
-		this.renderer.drawFrame(emptySceneInput(frame), this.record);
+		this.renderer.drawFrame(emptySceneInput(frame, this.input), this.record);
 		Atomics.add(this.slots, Slot.FramesPresented, 1);
 		if (this.lastPresented < 0) this.record.markFirstFrame();
 		else this.record.interval(timestamp - this.lastPresented);

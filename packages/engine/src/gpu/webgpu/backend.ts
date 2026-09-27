@@ -5,6 +5,7 @@
 import * as G from '../../generated/gpu';
 import type { GpuTimer } from './gpu-timer';
 import { Pipelines } from './pipelines';
+import { RenderPassSetup, submitOne } from './reusable';
 
 const TEXTURE_FORMATS: (GPUTextureFormat | undefined)[] = [];
 TEXTURE_FORMATS[G.FORMAT_RGBA8_UNORM] = 'rgba8unorm';
@@ -22,7 +23,6 @@ export class WebGPUBackend {
 	private readonly bindGroups: (GPUBindGroup | undefined)[] = [];
 	private readonly bundles: (GPURenderBundle | undefined)[] = [];
 	private readonly bundleList: GPURenderBundle[] = [];
-	private readonly dynamicOffsets: number[] = [];
 	private readonly bundleDraws: number[] = [];
 	private readonly pipelines: Pipelines;
 	private readonly canvasFormat: GPUTextureFormat;
@@ -30,6 +30,9 @@ export class WebGPUBackend {
 	timer: GpuTimer | undefined;
 	/** What the replays since the last reset uploaded and drew. */
 	readonly counts = { uploadBytes: 0, drawCalls: 0, dispatches: 0 };
+	// Pass descriptors that every frame fills again, so replay allocates none of its own.
+	private readonly renderPass = new RenderPassSetup();
+	private readonly computePass: GPUComputePassDescriptor = {};
 
 	constructor(
 		readonly device: GPUDevice,
@@ -77,7 +80,7 @@ export class WebGPUBackend {
 	private submit(): void {
 		if (!this.encoder) return;
 		this.timer?.resolve(this.encoder);
-		this.device.queue.submit([this.encoder.finish()]);
+		submitOne(this.device.queue, this.encoder.finish());
 		this.encoder = undefined;
 		this.timer?.afterSubmit();
 	}
@@ -209,48 +212,37 @@ export class WebGPUBackend {
 					break;
 				case G.OP_BEGIN_RENDER_PASS: {
 					const flags = words[a + 8] as number;
-					const color = this.targetView(words[a] as number);
-					const resolve = this.targetView(words[a + 1] as number);
-					const depth = this.targetView(words[a + 2] as number);
-					pass = this.commandEncoder().beginRenderPass({
-						colorAttachments: color
-							? [
-									{
-										view: color,
-										resolveTarget: resolve,
-										loadOp: flags & G.PASS_CLEAR_COLOR ? 'clear' : 'load',
-										storeOp: flags & G.PASS_STORE_COLOR ? 'store' : 'discard',
-										clearValue: {
-											r: floats[a + 3] as number,
-											g: floats[a + 4] as number,
-											b: floats[a + 5] as number,
-											a: floats[a + 6] as number,
-										},
-									},
-								]
-							: [],
-						depthStencilAttachment: depth
-							? {
-									view: depth,
-									depthLoadOp: flags & G.PASS_CLEAR_DEPTH ? 'clear' : 'load',
-									depthStoreOp: flags & G.PASS_STORE_DEPTH ? 'store' : 'discard',
-									depthClearValue: floats[a + 7] as number,
-								}
-							: undefined,
-						timestampWrites: this.timer?.passWrites(),
-					});
+					const setup = this.renderPass;
+					setup.setColor(
+						this.targetView(words[a] as number),
+						this.targetView(words[a + 1] as number),
+						(flags & G.PASS_CLEAR_COLOR) !== 0,
+						(flags & G.PASS_STORE_COLOR) !== 0,
+						floats[a + 3] as number,
+						floats[a + 4] as number,
+						floats[a + 5] as number,
+						floats[a + 6] as number,
+					);
+					setup.setDepth(
+						this.targetView(words[a + 2] as number),
+						(flags & G.PASS_CLEAR_DEPTH) !== 0,
+						(flags & G.PASS_STORE_DEPTH) !== 0,
+						floats[a + 7] as number,
+					);
+					setup.setTimestampWrites(this.timer?.passWrites());
+					pass = this.commandEncoder().beginRenderPass(setup.descriptor);
 					break;
 				}
 				case G.OP_SET_PIPELINE:
 					draw?.setPipeline(this.need(this.renderPipelines, words[a] as number, 'render pipeline'));
 					break;
 				case G.OP_SET_BIND_GROUP: {
-					const count = words[a + 2] as number;
-					this.dynamicOffsets.length = count;
-					for (let k = 0; k < count; k++) this.dynamicOffsets[k] = words[a + 3 + k] as number;
+					// The dynamic offsets are read straight from the draw list.
+					const index = words[a] as number;
 					const group = this.need(this.bindGroups, words[a + 1] as number, 'bind group');
-					if (computePass) computePass.setBindGroup(words[a] as number, group, this.dynamicOffsets);
-					else draw?.setBindGroup(words[a] as number, group, this.dynamicOffsets);
+					const count = words[a + 2] as number;
+					if (computePass) computePass.setBindGroup(index, group, words, a + 3, count);
+					else draw?.setBindGroup(index, group, words, a + 3, count);
 					break;
 				}
 				case G.OP_SET_VERTEX_BUFFER: {
@@ -330,9 +322,8 @@ export class WebGPUBackend {
 					bundleEncoder = undefined;
 					break;
 				case G.OP_BEGIN_COMPUTE_PASS:
-					computePass = this.commandEncoder().beginComputePass({
-						timestampWrites: this.timer?.passWrites(),
-					});
+					this.computePass.timestampWrites = this.timer?.passWrites();
+					computePass = this.commandEncoder().beginComputePass(this.computePass);
 					break;
 				case G.OP_SET_COMPUTE_PIPELINE:
 					computePass?.setPipeline(

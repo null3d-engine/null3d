@@ -272,31 +272,52 @@ export class Camera extends Object3D {
 	}
 }
 
-/** Light arriving from one direction, like sunlight. */
+/**
+ * Light arriving from one direction, like sunlight. Its direction and intensity setters allocate
+ * nothing.
+ */
 export class DirectionalLight {
+	private readonly direction = new Float64Array(3);
+	/** The color in linear RGB, before the intensity scales it. */
+	private readonly linear = new Float64Array(3);
+
 	constructor(
 		private readonly scene: Scene,
-		private direction: [number, number, number],
-		private color: ColorInput,
+		direction: readonly [number, number, number],
+		color: ColorInput,
 		private intensity: number,
 	) {
+		this.direction.set(direction);
+		this.linear.set(linearColor(color, 'createDirectionalLight'));
 		this.apply();
 	}
 
 	private apply(): void {
-		const [r, g, b] = linearColor(this.color, 'createDirectionalLight', this.intensity);
-		const [x, y, z] = this.direction;
-		this.scene.core.glue.setSun(x, y, z, r, g, b);
+		const d = this.direction;
+		const c = this.linear;
+		const k = this.intensity;
+		this.scene.core.glue.setSun(
+			d[0] as number,
+			d[1] as number,
+			d[2] as number,
+			(c[0] as number) * k,
+			(c[1] as number) * k,
+			(c[2] as number) * k,
+		);
 	}
 
 	/** Sets the direction the light travels. */
 	setDirection(x: number, y: number, z: number): void {
-		this.direction = [x, y, z];
+		const d = this.direction;
+		d[0] = x;
+		d[1] = y;
+		d[2] = z;
 		this.apply();
 	}
 
+	/** Sets the color. Converting a color allocates, so per-frame code sets the intensity instead. */
 	setColor(color: ColorInput): void {
-		this.color = color;
+		this.linear.set(linearColor(color, 'setColor'));
 		this.apply();
 	}
 
@@ -306,23 +327,33 @@ export class DirectionalLight {
 	}
 }
 
-/** Light that reaches every surface equally. */
+/** Light that reaches every surface equally. Its intensity setter allocates nothing. */
 export class AmbientLight {
+	/** The color in linear RGB, before the intensity scales it. */
+	private readonly linear = new Float64Array(3);
+
 	constructor(
 		private readonly scene: Scene,
-		private color: ColorInput,
+		color: ColorInput,
 		private intensity: number,
 	) {
+		this.linear.set(linearColor(color, 'createAmbientLight'));
 		this.apply();
 	}
 
 	private apply(): void {
-		const [r, g, b] = linearColor(this.color, 'createAmbientLight', this.intensity);
-		this.scene.core.glue.setAmbient(r, g, b);
+		const c = this.linear;
+		const k = this.intensity;
+		this.scene.core.glue.setAmbient(
+			(c[0] as number) * k,
+			(c[1] as number) * k,
+			(c[2] as number) * k,
+		);
 	}
 
+	/** Sets the color. Converting a color allocates, so per-frame code sets the intensity instead. */
 	setColor(color: ColorInput): void {
-		this.color = color;
+		this.linear.set(linearColor(color, 'setColor'));
 		this.apply();
 	}
 

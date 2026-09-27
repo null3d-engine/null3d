@@ -3,6 +3,7 @@
 
 import { readbackWebGL2, readbackWebGPU } from '../gpu/readback';
 import { GpuTimer } from '../gpu/webgpu/gpu-timer';
+import { RenderPassSetup, submitOne } from '../gpu/webgpu/reusable';
 import { type FrameRecorder, Phase } from '../shared/metrics';
 import { WebGPUSceneRenderer } from './scene-renderer';
 
@@ -51,6 +52,7 @@ class WebGPURenderer implements Renderer {
 	private readonly context: GPUCanvasContext;
 	private readonly format: GPUTextureFormat;
 	private readonly timer: GpuTimer | undefined;
+	private readonly pass = new RenderPassSetup();
 
 	constructor(
 		readonly tier: Tier,
@@ -73,17 +75,21 @@ class WebGPURenderer implements Renderer {
 
 	private clear(view: GPUTextureView, background: FrameInput['background']): void {
 		const encoder = this.device.createCommandEncoder();
-		const [r, g, b] = background.map(linearToSrgb) as [number, number, number];
-		encoder
-			.beginRenderPass({
-				colorAttachments: [
-					{ view, loadOp: 'clear', storeOp: 'store', clearValue: { r, g, b, a: 1 } },
-				],
-				timestampWrites: this.timer?.passWrites(),
-			})
-			.end();
+		const pass = this.pass;
+		pass.setColor(
+			view,
+			undefined,
+			true,
+			true,
+			linearToSrgb(background[0]),
+			linearToSrgb(background[1]),
+			linearToSrgb(background[2]),
+			1,
+		);
+		pass.setTimestampWrites(this.timer?.passWrites());
+		encoder.beginRenderPass(pass.descriptor).end();
 		this.timer?.resolve(encoder);
-		this.device.queue.submit([encoder.finish()]);
+		submitOne(this.device.queue, encoder.finish());
 		this.timer?.afterSubmit();
 	}
 
@@ -134,9 +140,14 @@ class WebGL2Renderer implements Renderer {
 	}
 
 	private clear(background: FrameInput['background']): void {
-		const [r, g, b] = background.map(linearToSrgb) as [number, number, number];
-		this.gl.clearColor(r, g, b, 1);
-		this.gl.clear(this.gl.COLOR_BUFFER_BIT);
+		const gl = this.gl;
+		gl.clearColor(
+			linearToSrgb(background[0]),
+			linearToSrgb(background[1]),
+			linearToSrgb(background[2]),
+			1,
+		);
+		gl.clear(gl.COLOR_BUFFER_BIT);
 	}
 
 	drawFrame(input: FrameInput, record: FrameRecorder): void {

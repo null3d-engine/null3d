@@ -36,6 +36,8 @@ export class GameRunner {
 	private readonly record: FrameRecorder;
 	private readonly core: CoreMemory;
 	private readonly reported = new Set<string>();
+	/** When the current phase of the frame started. */
+	private phaseStart = 0;
 	readonly context: GameContext;
 
 	constructor(
@@ -79,6 +81,13 @@ export class GameRunner {
 		for (const handler of this.messageHandlers) handler(type, data);
 	}
 
+	/** Records the time since the previous phase ended as a phase of the frame. */
+	private endPhase(phase: Phase): void {
+		const now = performance.now();
+		this.record.addPhase(phase, now - this.phaseStart);
+		this.phaseStart = now;
+	}
+
 	/** Reports a failure once per distinct message, so a repeating one does not flood the console. */
 	private report(error: unknown): void {
 		const message = error instanceof Error ? error.message : String(error);
@@ -101,33 +110,27 @@ export class GameRunner {
 		time.now = (now - this.startTime) / 1000;
 		time.frame++;
 		const frame = time.frame;
-		const record = this.record;
-		record.begin(frame);
+		this.record.begin(frame);
 		this.core.refresh();
-		let at = start;
+		this.phaseStart = start;
 		try {
 			this.callbacks.onUpdate?.(dt);
 		} catch (error) {
 			this.report(error);
 		}
-		const phase = (phase: Phase) => {
-			const now = performance.now();
-			record.addPhase(phase, now - at);
-			at = now;
-		};
-		phase(Phase.Update);
+		this.endPhase(Phase.Update);
 		if (glue.beginFrame(frame) !== 0) this.report(coreFailure(glue, 'the frame'));
-		phase(Phase.Commands);
+		this.endPhase(Phase.Commands);
 		glue.updateTransforms();
-		phase(Phase.Transforms);
+		this.endPhase(Phase.Transforms);
 		glue.updateBatches(frame);
-		phase(Phase.Batches);
+		this.endPhase(Phase.Batches);
 		const width = Math.max(1, Atomics.load(slots, Slot.CanvasWidth));
 		const height = Math.max(1, Atomics.load(slots, Slot.CanvasHeight));
 		if (glue.recordFrame(frame, width, height) !== 0) this.report(coreFailure(glue, 'the frame'));
 		Atomics.store(slots, Slot.DrawListWords0 + (frame & 1), glue.drawListWords(frame));
-		phase(Phase.Record);
-		record.commit(performance.now() - start);
+		this.endPhase(Phase.Record);
+		this.record.commit(performance.now() - start);
 		return frame;
 	}
 }
