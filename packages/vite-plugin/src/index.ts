@@ -41,12 +41,14 @@ function readCertificate(root: string, certDir: string): { cert: Buffer; key: Bu
 export default function sokko3d(options: Sokko3dPluginOptions = {}): Plugin {
 	return {
 		name: 'sokko3d',
-		config(config) {
+		config(config, { mode }) {
 			const root = config.root ?? process.cwd();
 			const https = options.https
 				? readCertificate(root, options.certDir ?? DEV_CERT_DIR)
 				: undefined;
 			return {
+				// Development checks stay in dev builds; release builds drop them as dead code.
+				define: { __SOKKO3D_DEV__: JSON.stringify(mode !== 'production') },
 				server: { headers: { ...ISOLATION_HEADERS }, ...(https ? { https, host: true } : {}) },
 				preview: { headers: { ...ISOLATION_HEADERS }, ...(https ? { https, host: true } : {}) },
 				worker: { format: 'es' },

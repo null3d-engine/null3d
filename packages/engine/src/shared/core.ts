@@ -3,6 +3,8 @@
 // The generated wasm-bindgen module is loaded by URL, and `CoreGlue` describes the functions the
 // TypeScript side calls, so type checking does not depend on a Rust build.
 
+import { EngineError } from '../errors/engine-error';
+
 export type Build = 'threaded' | 'single';
 
 export interface InitOptions {
@@ -50,9 +52,7 @@ export async function loadGlue(build: Build): Promise<CoreGlue> {
 	const glue = (await import(/* @vite-ignore */ coreUrls(build).glue.href)) as Partial<CoreGlue>;
 	const missing = REQUIRED_FUNCTIONS.filter((name) => typeof glue[name] !== 'function');
 	if (missing.length > 0) {
-		throw new Error(
-			`the ${build} engine core lacks ${missing.join(', ')}; rebuild it with \`bun run build\``,
-		);
+		throw new EngineError('E1402', `the ${build} engine core lacks ${missing.join(', ')}.`);
 	}
 	return glue as CoreGlue;
 }

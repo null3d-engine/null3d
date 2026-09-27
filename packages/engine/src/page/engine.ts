@@ -1,6 +1,7 @@
 // createEngine: the page side of the engine. It probes the device, picks the build and the GPU tier,
 // starts the workers, and hands the canvas to the thread that draws.
 
+import { EngineError } from '../errors/engine-error';
 import { GameRunner } from '../game/runner';
 import { runDirectLoop } from '../render/direct-loop';
 import { emptySceneInput, type RenderLoop, runRenderLoop } from '../render/loop';
@@ -154,7 +155,8 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 		renderThread = 'main';
 		choice = chooseTier(report, wanted, false);
 	}
-	if (!choice) throw new Error(`no usable GPU path for ?gpu=${wanted} in this browser`);
+	if (!choice)
+		throw new EngineError('E1301', `no usable GPU path for ?gpu=${wanted} in this browser.`);
 	const { tier, forceCompat } = choice;
 
 	const control = createControlBuffer(threaded);

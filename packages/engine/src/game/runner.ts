@@ -1,6 +1,7 @@
 // Runs a game module's callbacks: loads the module, calls its setup function once, and steps it
 // once per frame.
 
+import { EngineError } from '../errors/engine-error';
 import type { GameCallbacks, GameContext } from './define-game';
 import { isGameDefinition } from './define-game';
 
@@ -29,7 +30,7 @@ export class GameRunner {
 	async load(gameUrl: string): Promise<void> {
 		const module = (await import(/* @vite-ignore */ gameUrl)) as { default?: unknown };
 		if (!isGameDefinition(module.default)) {
-			throw new Error(`${gameUrl} must export default defineGame(...)`);
+			throw new EngineError('E1401', `${gameUrl} must export default defineGame(...).`);
 		}
 		this.callbacks = (await module.default.setup(this.context)) ?? {};
 	}

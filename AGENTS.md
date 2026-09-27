@@ -23,7 +23,7 @@ This repository holds the sokko3d engine, its tools, its documentation and its a
 | `bun install` | Install the tools and set up the git hooks |
 | `bun run build` | Build both WebAssembly files, the threaded one and the single-threaded one, and print their sizes |
 | `bun run build:check-size` | Build, and fail when a WebAssembly file grew more than 2% after Brotli compression |
-| `bun run test` | Unit tests for the repository tools |
+| `bun run test` | Unit tests for the engine and the repository tools |
 | `bun run test:browser` | Image tests on WebGPU and WebGL2 in Chrome, through Playwright |
 | `bun run test:real-browsers Safari Firefox` | The same test pages in browser apps that Playwright cannot drive (macOS) |
 | `bun run dev` | Serve the test pages with the isolation headers on port 5173 |

@@ -16,6 +16,7 @@
 	},
 	"include": [
 		"tools/**/*.ts",
+		"packages/*/src/**/*.test.ts",
 		"packages/vite-plugin/src/**/*.ts",
 		"tests/*.ts",
 		"tests/lib/**/*.ts",

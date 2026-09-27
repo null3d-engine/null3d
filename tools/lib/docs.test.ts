@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { join } from 'node:path';
+import { ERRORS } from '../../packages/engine/src/errors/codes.ts';
 import {
 	checkDocs,
 	frontMatterProblems,
@@ -137,6 +138,18 @@ describe('generateDocs', () => {
 			'docs/data/threejs-mapping.json': MAPPING,
 		});
 		expect(() => generateDocs(root)).toThrow('page-list');
+	});
+});
+
+describe('error pages', () => {
+	it('generate one page per code and an index that lists every code', () => {
+		const out = generateDocs(repoRoot);
+		const index = out.get('docs/errors/index.md') ?? '';
+		for (const code of Object.keys(ERRORS)) {
+			expect(out.get(`docs/errors/${code}.md`)).toContain(`# ${code}: `);
+			expect(index).toContain(`[${code}](${code}.md)`);
+		}
+		expect(parseFrontMatter(index)?.data.status).toBe('generated');
 	});
 });
 

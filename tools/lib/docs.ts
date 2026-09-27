@@ -4,6 +4,7 @@
 // the files and checks that the committed files are current.
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
+import { ERRORS, type ErrorEntry } from '../../packages/engine/src/errors/codes.ts';
 import { docsFiles, readIfExists } from './files';
 import { parseFrontMatter, renderFrontMatter } from './frontmatter';
 import { checkLinkTree, linkedFiles } from './links';
@@ -118,7 +119,6 @@ export const PAGES: readonly PageEntry[] = [
 	{ id: 'porting/verification', title: 'Verifying a port', since: '0.3', summary: 'Parity images per camera view; performance comparison; the WebGL2 path; phones.' },
 
 	{ id: 'cli/sokko3d', title: 'The sokko3d command', since: '0.3', summary: 'create, dev, build, test, bench, shot, assets, docs, port, skills, doctor.' },
-	{ id: 'errors/index', title: 'Error codes', since: '0.1', summary: 'Every EngineError code with its cause and fix.' },
 	{ id: 'cookbook/index', title: 'Cookbook', since: '0.2', summary: 'Short recipes; each is also a tested example.' },
 ];
 
@@ -223,6 +223,59 @@ export function mappingMarkdown(mapping: Mapping, forSkill: boolean): string {
 	return lines.join('\n');
 }
 
+const ERROR_TABLE = 'packages/engine/src/errors/codes.ts';
+
+/** The docs page of one error code, generated from the engine's error table. */
+export function errorPage(code: string, entry: ErrorEntry): string {
+	return `${renderFrontMatter([
+		['id', `errors/${code}`],
+		['title', `${code}: ${entry.title}`],
+		['status', 'generated'],
+		['since', entry.since],
+		['summary', entry.cause],
+	])}
+# ${code}: ${entry.title}
+
+This page is generated from the engine's error table, \`${ERROR_TABLE}\`. To change it, edit the table.
+
+## What happened
+
+${entry.cause}
+
+## How to fix it
+
+${entry.fix}
+
+## Example
+
+\`\`\`text
+${entry.example}
+\`\`\`
+`;
+}
+
+/** The list of every error code, generated from the engine's error table. */
+export function errorIndexPage(errors: Record<string, ErrorEntry>): string {
+	const rows = Object.entries(errors).map(
+		([code, entry]) => `| [${code}](${code}.md) | ${cell(entry.title)} | ${cell(entry.cause)} |`,
+	);
+	return `${renderFrontMatter([
+		['id', 'errors/index'],
+		['title', 'Error codes'],
+		['status', 'generated'],
+		['since', '0.1'],
+		['summary', 'Every EngineError code with its cause and fix.'],
+	])}
+# Error codes
+
+Every error the engine throws is an \`EngineError\` with a code. Its message names the call and the object, says what failed and how to fix it, and links to the code's page here. This page is generated from the engine's error table, \`${ERROR_TABLE}\`.
+
+| Code | Error | What happened |
+| --- | --- | --- |
+${rows.join('\n')}
+`;
+}
+
 export interface PageInfo {
 	id: string;
 	title: string;
@@ -314,6 +367,10 @@ export function generateDocs(root: string): Map<string, string> {
 	out.set(`${SKILL_MAPPING_DIR}/api-mapping.md`, mappingMarkdown(mapping, true));
 	out.set(`${SKILL_MAPPING_DIR}/threejs-mapping.json`, `${JSON.stringify(mapping, null, 2)}\n`);
 
+	for (const [code, entry] of Object.entries(ERRORS))
+		out.set(pagePath(`errors/${code}`), errorPage(code, entry));
+	out.set(pagePath('errors/index'), errorIndexPage(ERRORS));
+
 	const indexPath = pagePath('index');
 	const index = readIfExists(root, indexPath);
 	if (index === null) throw new Error(`${indexPath} is missing; it is written by hand`);
@@ -395,8 +452,18 @@ export function checkDocs(root: string): string[] {
 		if (!existsSync(join(root, pagePath(page.id))))
 			problems.push(`${pagePath(page.id)} is missing: run bun run docs`);
 	}
+	let generated = new Map<string, string>();
+	try {
+		generated = generateDocs(root);
+	} catch {
+		// reported above
+	}
 	for (const path of docsFiles(root)) {
-		problems.push(...frontMatterProblems(path, readIfExists(root, path) ?? '', inventory));
+		const text = readIfExists(root, path) ?? '';
+		problems.push(...frontMatterProblems(path, text, inventory));
+		if (/^status: generated$/m.test(text) && !generated.has(path)) {
+			problems.push(`${path} is marked generated, but nothing generates it any more: delete it`);
+		}
 	}
 	problems.push(...checkLinkTree(linkedFiles(root), (p) => existsSync(join(root, p))));
 	return problems;

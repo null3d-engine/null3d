@@ -23,7 +23,7 @@
 		"check": "biome check .",
 		"check:fix": "biome check --write .",
 		"typecheck": "tsc -p tsconfig.json && tsc -p packages/engine && tsc -p tests/pages",
-		"test": "bun test tools",
+		"test": "bun test tools packages",
 		"prepare": "husky",
 		"test:browser": "bun run --cwd tests test",
 		"test:real-browsers": "bun tests/real-browsers.ts",

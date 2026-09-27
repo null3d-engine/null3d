@@ -272,7 +272,7 @@ git clone https://github.com/sokko3d/sokko3d.git
 cd sokko3d
 bun install              # installs the tools and the git hooks
 bun run build            # builds both WebAssembly files and prints their sizes
-bun run test             # tests for the docs and repository tools
+bun run test             # unit tests for the engine, the docs and the repository tools
 bun run test:browser     # image tests on WebGPU and WebGL2 in Chrome
 bun run dev              # serves the test pages with the isolation headers
 ```
