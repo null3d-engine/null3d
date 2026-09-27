@@ -39,6 +39,12 @@
   <sub>⭐ If you want to see this engine built, a star helps other people find it.</sub>
 </p>
 
+<p align="center">
+  <img src=".github/assets/s1.gif" alt="A cloud of 100,000 blue boxes that bob and turn, seen from a camera circling it" width="480" />
+  <br />
+  <sub>Benchmark scene S1: 100,000 boxes that game code moves every frame, drawn by sokko3d with WebGPU.</sub>
+</p>
+
 ## What is sokko3d?
 
 sokko3d is a browser 3D engine that aims to replace three.js where CPU time limits a scene. That happens with many moving objects, deep scene graphs, animation and culling. The engine's core is Rust compiled to WebAssembly, and it runs on worker threads, so the page's main thread stays free.
@@ -47,7 +53,27 @@ It draws with WebGPU, and with WebGL2 where WebGPU is missing, from the same gam
 
 ## Quickstart
 
-Nothing is on npm yet. This is what a complete sokko3d project will look like. The page starts the engine:
+Nothing is on npm yet, but the benchmark scenes run from a clone of this repository. First install the tools that [Development](#development) lists.
+
+```sh
+git clone https://github.com/sokko3d/sokko3d.git
+cd sokko3d
+bun install
+bun run build
+bun run dev
+```
+
+Then open one of these pages in Chrome:
+
+| Page | What it shows |
+| --- | --- |
+| `http://localhost:5173/bench/pages/sokko3d/s1.html?demo` | S1: 100,000 boxes, each moved every frame by game code |
+| `http://localhost:5173/bench/pages/sokko3d/s2.html?demo` | S2: a scene graph of 5,096 objects |
+| `http://localhost:5173/bench/pages/threejs/s1.html?renderer=webgl&demo` | S1 in three.js, to compare |
+
+`bun run bench:run` measures S1 in both engines and prints a table of CPU time per frame.
+
+This is what a complete sokko3d project will look like. The page starts the engine:
 
 ```ts
 // page.ts (main thread)
@@ -275,6 +301,7 @@ bun run build            # builds both WebAssembly files and prints their sizes
 bun run test             # unit tests for the engine, the docs and the repository tools
 bun run test:browser     # image tests on WebGPU and WebGL2 in Chrome
 bun run dev              # serves the test and benchmark pages with the isolation headers
+bun run bench:run        # measures S1 in sokko3d and three.js in Chrome and prints a table
 ```
 
 [AGENTS.md](AGENTS.md) has the rules, the commands and the commit checks that keep the docs in line with the code.
