@@ -6,6 +6,7 @@ export const OP_WRITE_BUFFER = 2;
 export const OP_DESTROY_BUFFER = 3;
 export const OP_CREATE_TEXTURE = 4;
 export const OP_DESTROY_TEXTURE = 5;
+export const OP_RESIZE_CANVAS = 6;
 export const OP_CREATE_RENDER_PIPELINE = 7;
 export const OP_CREATE_COMPUTE_PIPELINE = 8;
 export const OP_CREATE_BIND_GROUP = 9;

@@ -128,6 +128,16 @@ export class WebGPUBackend {
 					this.views[id] = texture.createView();
 					break;
 				}
+				case G.OP_RESIZE_CANVAS: {
+					const canvas = this.context?.canvas;
+					const width = words[a] as number;
+					const height = words[a + 1] as number;
+					if (canvas && (canvas.width !== width || canvas.height !== height)) {
+						canvas.width = width;
+						canvas.height = height;
+					}
+					break;
+				}
 				case G.OP_DESTROY_TEXTURE:
 					this.textures[words[a] as number]?.destroy();
 					this.textures[words[a] as number] = undefined;

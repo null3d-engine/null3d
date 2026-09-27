@@ -84,6 +84,17 @@ impl MockBackend {
             Op::DestroyTexture => {
                 self.textures.remove(&o[0]);
             }
+            Op::ResizeCanvas => {
+                if self.in_draw_scope() || self.in_compute_pass {
+                    return Err(MockError::Outside {
+                        op,
+                        needs: "no open pass or bundle",
+                    });
+                }
+                if o[0] == 0 || o[1] == 0 {
+                    return Err(MockError::OutOfRange { op, id: 0 });
+                }
+            }
             Op::CreateRenderPipeline => {
                 self.render_pipelines.insert(o[0]);
             }

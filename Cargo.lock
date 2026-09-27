@@ -362,6 +362,7 @@ version = "0.0.0"
 name = "sokko3d-render"
 version = "0.0.0"
 dependencies = [
+ "sokko3d-core",
  "sokko3d-gpu",
 ]
 

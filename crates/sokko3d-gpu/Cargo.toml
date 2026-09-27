@@ -9,3 +9,7 @@ publish.workspace = true
 
 [lints]
 workspace = true
+
+[features]
+# The mock backend, for other crates' tests.
+mock = []

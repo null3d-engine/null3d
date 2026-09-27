@@ -84,7 +84,8 @@ pub struct FrameSnapshot {
 }
 
 impl FrameSnapshot {
-    fn with_capacity(capacity: u32) -> Self {
+    /// An empty snapshot with room for `capacity` upload ranges.
+    pub fn with_capacity(capacity: u32) -> Self {
         Self {
             frame: 0,
             uploads: Vec::with_capacity(capacity as usize),

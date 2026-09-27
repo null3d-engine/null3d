@@ -9,5 +9,5 @@
 pub mod caps;
 pub mod drawlist;
 pub mod ids;
-#[cfg(test)]
-mod mock;
+#[cfg(any(test, feature = "mock"))]
+pub mod mock;

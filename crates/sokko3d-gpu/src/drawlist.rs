@@ -21,6 +21,9 @@ pub enum Op {
     CreateTexture = 4,
     /// [texture id]
     DestroyTexture = 5,
+    /// [width, height]: the canvas's drawing buffer size in device pixels. Recorded in the frame
+    /// built for that size, so the canvas and the frame's render targets always match.
+    ResizeCanvas = 6,
     /// [render pipeline id, template, permutation bits, color format, depth format, sample count, state flags]
     CreateRenderPipeline = 7,
     /// [compute pipeline id, template, permutation bits]
@@ -72,12 +75,13 @@ pub enum Op {
 }
 
 impl Op {
-    pub const ALL: [Op; 27] = [
+    pub const ALL: [Op; 28] = [
         Op::CreateBuffer,
         Op::WriteBuffer,
         Op::DestroyBuffer,
         Op::CreateTexture,
         Op::DestroyTexture,
+        Op::ResizeCanvas,
         Op::CreateRenderPipeline,
         Op::CreateComputePipeline,
         Op::CreateBindGroup,
@@ -113,6 +117,7 @@ impl Op {
             Op::DestroyBuffer => "DESTROY_BUFFER",
             Op::CreateTexture => "CREATE_TEXTURE",
             Op::DestroyTexture => "DESTROY_TEXTURE",
+            Op::ResizeCanvas => "RESIZE_CANVAS",
             Op::CreateRenderPipeline => "CREATE_RENDER_PIPELINE",
             Op::CreateComputePipeline => "CREATE_COMPUTE_PIPELINE",
             Op::CreateBindGroup => "CREATE_BIND_GROUP",
