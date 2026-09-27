@@ -5,7 +5,8 @@
 // both workers through Chrome's debugging protocol, samples allocations for a few seconds, and
 // prints the bytes per frame of every place that allocated. From the repository root:
 //   bun run bench:allocation
-//   bun run bench:allocation -- --n 100000 --seconds 5 --warmup 30
+//   bun run bench:allocation -- --n 30000 --seconds 5 --warmup 30
+// At 30,000 instances a frame's upload goes through the staging ring; at 100,000 it does not.
 import { chromium } from '@playwright/test';
 import { startServer } from '../tests/lib/server.ts';
 import { pagePath } from './lib/parity';
@@ -23,15 +24,19 @@ const WARMUP_SECONDS = 30;
 const WORKERS = ['game-worker', 'render-worker'] as const;
 
 /**
- * Places that allocate each frame because the browser does, by function and file, with the most
- * bytes per frame each may allocate:
+ * Places that allocate for reasons outside the engine's frame code, by function and file, with the
+ * most bytes per frame each may allocate:
  * - frame timers, which get a new number object from the browser's clock at each reading;
  * - the game worker's frame wait: the result and promise of `Atomics.waitAsync`, and settling it
  *   between tasks;
  * - the render worker's WebGPU objects: the command encoder, the passes, the command buffer, and
  *   the canvas texture and its view;
+ * - the staging ring's mapping, for uploads that go through it: the mapped range and the views that
+ *   copy into it, and the promise of the request to map the buffer again;
  * - the time the browser passes to each animation frame callback, between tasks;
- * - the benchmark game's camera path, whose numbers go to the engine's development checks.
+ * - the benchmark game's camera path, whose numbers go to the engine's development checks;
+ * - an instance batch's array views, rebuilt once each time the engine's memory grows, which it
+ *   does a few times while its buffers reach their final sizes.
  */
 const BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = {
 	'game-worker': {
@@ -40,6 +45,7 @@ const BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = {
 		'changeOf workers/game-worker.ts': 16,
 		'(IDLE)': 96,
 		'(anonymous) sokko3d/game-common.ts': 48,
+		'views scene/scene.ts': 16,
 	},
 	'render-worker': {
 		'replay webgpu/backend.ts': 320,
@@ -47,6 +53,12 @@ const BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = {
 		'drawFrame render/scene-renderer.ts': 48,
 		'(IDLE)': 48,
 		'(JS)': 24,
+		'take webgpu/staging.ts': 160,
+		'write webgpu/staging.ts': 96,
+		'afterSubmit webgpu/staging.ts': 160,
+		'then (built-in)': 80,
+		'Uint8Array (built-in)': 64,
+		'submit webgpu/backend.ts': 32,
 	},
 };
 /** The most bytes per frame any other place may allocate: sampling noise, less than one object. */
@@ -133,10 +145,14 @@ function totalSize(node: ProfileNode): number {
 /** Callers shown for each place that allocates. */
 const CALLERS_SHOWN = 2;
 
-/** A place in the code, by function and file: the key of the budgets. */
+/**
+ * A place in the code, by function and file: the key of the budgets. A named function with no file
+ * is one of the browser's built-in functions, such as a promise's then.
+ */
 function placeName({ functionName, url }: ProfileNode['callFrame']): string {
-	const file = url.split('/').slice(-2).join('/').replace(/\?.*$/, '');
-	return `${functionName || '(anonymous)'} ${file}`.trim();
+	const name = functionName || '(anonymous)';
+	if (!url) return name.startsWith('(') ? name : `${name} (built-in)`;
+	return `${name} ${url.split('/').slice(-2).join('/').replace(/\?.*$/, '')}`;
 }
 
 interface Place {

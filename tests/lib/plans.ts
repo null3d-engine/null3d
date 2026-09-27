@@ -38,6 +38,7 @@ export type Check =
 	| { kind: 'clear'; tier: Tier }
 	| { kind: 'shaders' }
 	| { kind: 'engine'; tier: Tier; mode: EngineMode }
+	| { kind: 'uploads'; tier: Tier }
 	| { kind: 'hold'; tier: Tier }
 	| { kind: 'parity'; tier: Tier; scene: ParityScene; pair: PagePair }
 	| { kind: 'bench'; tier: Tier; scene: ParityScene; page: BenchPageKind };
@@ -77,6 +78,12 @@ export function checksPlan(): PlanItem<Check>[] {
 			path: `${TEST_PAGES}shaders.html`,
 			timeoutSeconds: 30,
 			check: { kind: 'shaders' },
+		},
+		{
+			id: 'uploads',
+			path: `${TEST_PAGES}uploads.html`,
+			timeoutSeconds: 90,
+			check: { kind: 'uploads', tier: 'webgpu' },
 		},
 		...TIERS.map((tier) => ({
 			id: `clear-${tier}`,
@@ -289,6 +296,18 @@ export function judge(
 		}
 		case 'engine':
 			return engineProblems(result as unknown as EngineResult, check.mode, check.tier);
+		case 'uploads': {
+			const sizes = (result.sizes ?? []) as number[];
+			const frames = (result.frames ?? []) as { wrong: number[] }[];
+			if (frames.length === 0) return ['the page uploaded nothing'];
+			return frames.flatMap(({ wrong }, frame) =>
+				wrong.flatMap((count, upload) =>
+					count > 0
+						? [`frame ${frame}: ${count} wrong bytes in the upload of ${sizes[upload]} bytes`]
+						: [],
+				),
+			);
+		}
 		case 'bench': {
 			const frames = Number(result.frames ?? 0);
 			const cpu = (result.cpuMs as { median?: number } | undefined)?.median ?? 0;

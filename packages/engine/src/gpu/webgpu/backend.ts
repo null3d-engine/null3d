@@ -6,6 +6,7 @@ import * as G from '../../generated/gpu';
 import type { GpuTimer } from './gpu-timer';
 import { Pipelines } from './pipelines';
 import { RenderPassSetup, submitOne } from './reusable';
+import { StagingRing } from './staging';
 
 const TEXTURE_FORMATS: (GPUTextureFormat | undefined)[] = [];
 TEXTURE_FORMATS[G.FORMAT_RGBA8_UNORM] = 'rgba8unorm';
@@ -25,11 +26,13 @@ export class WebGPUBackend {
 	private readonly bundleList: GPURenderBundle[] = [];
 	private readonly bundleDraws: number[] = [];
 	private readonly pipelines: Pipelines;
+	/** Staging buffers for the uploads that writeBuffer copies slowly. */
+	private readonly staging: StagingRing;
 	private readonly canvasFormat: GPUTextureFormat;
 	/** Times the passes of each frame, while the page measures. */
 	timer: GpuTimer | undefined;
-	/** What the replays since the last reset uploaded and drew. */
-	readonly counts = { uploadBytes: 0, drawCalls: 0, dispatches: 0 };
+	/** What the replays since the last reset uploaded, the part that went through staging, and drew. */
+	readonly counts = { uploadBytes: 0, stagedBytes: 0, drawCalls: 0, dispatches: 0 };
 	// Pass descriptors that every frame fills again, so replay allocates none of its own.
 	private readonly renderPass = new RenderPassSetup();
 	private readonly computePass: GPUComputePassDescriptor = {};
@@ -41,6 +44,7 @@ export class WebGPUBackend {
 	) {
 		this.canvasFormat = canvasFormat;
 		this.pipelines = new Pipelines(device);
+		this.staging = new StagingRing(device);
 	}
 
 	private format(code: number): GPUTextureFormat | undefined {
@@ -80,13 +84,16 @@ export class WebGPUBackend {
 	private submit(): void {
 		if (!this.encoder) return;
 		this.timer?.resolve(this.encoder);
+		this.staging.beforeSubmit();
 		submitOne(this.device.queue, this.encoder.finish());
+		this.staging.afterSubmit();
 		this.encoder = undefined;
 		this.timer?.afterSubmit();
 	}
 
 	resetCounts(): void {
 		this.counts.uploadBytes = 0;
+		this.counts.stagedBytes = 0;
 		this.counts.drawCalls = 0;
 		this.counts.dispatches = 0;
 	}
@@ -124,16 +131,24 @@ export class WebGPUBackend {
 						usage: words[a + 2] as number,
 					});
 					break;
-				case G.OP_WRITE_BUFFER:
-					device.queue.writeBuffer(
-						this.need(this.buffers, words[a] as number, 'buffer'),
-						words[a + 1] as number,
-						memory,
-						words[a + 2] as number,
-						words[a + 3] as number,
-					);
-					this.counts.uploadBytes += words[a + 3] as number;
+				case G.OP_WRITE_BUFFER: {
+					const target = this.need(this.buffers, words[a] as number, 'buffer');
+					const offset = words[a + 1] as number;
+					const source = words[a + 2] as number;
+					const size = words[a + 3] as number;
+					// A staged upload is a copy in the frame's commands, while writeBuffer lands before
+					// them. A frame's writes never overlap and come before its passes, so either route
+					// leaves the same data.
+					const staged =
+						!pass &&
+						!computePass &&
+						StagingRing.suits(size) &&
+						this.staging.write(this.commandEncoder(), target, offset, memory, source, size);
+					if (staged) this.counts.stagedBytes += size;
+					else device.queue.writeBuffer(target, offset, memory, source, size);
+					this.counts.uploadBytes += size;
 					break;
+				}
 				case G.OP_DESTROY_BUFFER:
 					this.buffers[words[a] as number]?.destroy();
 					this.buffers[words[a] as number] = undefined;
@@ -376,5 +391,6 @@ export class WebGPUBackend {
 	destroy(): void {
 		for (const buffer of this.buffers) buffer?.destroy();
 		for (const texture of this.textures) texture?.destroy();
+		this.staging.destroy();
 	}
 }
