@@ -2,10 +2,17 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
 import { encode } from 'fast-png';
+import { PARITY_SCENES, type PageKind, pagePath } from '../lib/parity';
 import { BACKGROUND, PARITY_CANVAS, S2_NODE_COUNT } from '../scenes/spec';
 
-const SCENES = ['s1', 's1-static', 's2'] as const;
-const RENDERERS = ['webgl', 'webgpu'] as const;
+const SCENES = PARITY_SCENES;
+/** The pages each scene is tested on, with the renderer each one reports. The sokko3d WebGL2 path
+ * draws only its background until its renderer arrives, so its pages are not tested yet. */
+const PAGES: { kind: PageKind; renderer: string }[] = [
+	{ kind: 'threejs-webgl', renderer: 'webgl' },
+	{ kind: 'threejs-webgpu', renderer: 'webgpu' },
+	{ kind: 'sokko3d-webgpu', renderer: 'sokko3d' },
+];
 
 /** Where the hold frames are saved, for people to review. */
 const IMAGE_DIR = join(import.meta.dirname, '../../test-results/bench');
@@ -94,12 +101,9 @@ function meanBrightness(pixels: Uint8Array, width: number, fromRow: number, toRo
 }
 
 for (const scene of SCENES) {
-	for (const renderer of RENDERERS) {
-		test(`${scene} on ${renderer} renders a hold frame that is not blank`, async ({ page }) => {
-			const result = await runPage<HoldReport>(
-				page,
-				`threejs/${scene}.html?renderer=${renderer}&hold`,
-			);
+	for (const { kind, renderer } of PAGES) {
+		test(`${scene} on ${kind} renders a hold frame that is not blank`, async ({ page }) => {
+			const result = await runPage<HoldReport>(page, pagePath(scene, kind, 'hold'));
 			expect([result.scene, result.renderer]).toEqual([scene, renderer]);
 			const { width, height } = PARITY_CANVAS;
 			expect([result.width, result.height]).toEqual([width, height]);
@@ -108,7 +112,7 @@ for (const scene of SCENES) {
 
 			mkdirSync(IMAGE_DIR, { recursive: true });
 			writeFileSync(
-				join(IMAGE_DIR, `${scene}-${renderer}.png`),
+				join(IMAGE_DIR, `${scene}-${kind}.png`),
 				encode({ width, height, data: pixels, channels: 4, depth: 8 }),
 			);
 
@@ -130,10 +134,10 @@ for (const scene of SCENES) {
 			}
 		});
 
-		test(`${scene} on ${renderer} runs a short benchmark`, async ({ page }) => {
+		test(`${scene} on ${kind} runs a short benchmark`, async ({ page }) => {
 			const result = await runPage<BenchReport>(
 				page,
-				`threejs/${scene}.html?renderer=${renderer}&seconds=2&n=${SHORT_RUN_COUNT}`,
+				pagePath(scene, kind, `seconds=2&n=${SHORT_RUN_COUNT}`),
 			);
 			expect([result.scene, result.renderer]).toEqual([scene, renderer]);
 			expect(result.n).toBe(scene === 's2' ? S2_NODE_COUNT : SHORT_RUN_COUNT);

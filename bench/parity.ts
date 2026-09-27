@@ -1,5 +1,6 @@
 // Compares the hold frames of the benchmark scenes between engines. On each GPU tier, the sokko3d
-// page must match the three.js page, by three.js's own image rule. It opens both hold pages in
+// page must match the three.js page by three.js's own image rule, or at least as closely as
+// three.js's two renderers match each other on the same frame. It opens the hold pages in
 // Chrome through Playwright, with the browser tests' launch options, compares the two frames, and
 // saves them side by side with a diff image under test-results/parity/. It prints one line per
 // scene and comparison, and exits with 1 when any comparison fails. From the repository root:
@@ -17,6 +18,7 @@ import { type Browser, chromium, errors } from '@playwright/test';
 import { REPO_ROOT, startServer } from '../tests/lib/server.ts';
 import browserTests from '../tests/playwright.config.ts';
 import {
+	BASELINE_PAIR,
 	type Comparison,
 	compareFrames,
 	comparisonName,
@@ -29,6 +31,7 @@ import {
 	type ParityScene,
 	parityFiles,
 	parseParityArgs,
+	passesWithBaseline,
 } from './lib/parity';
 
 const OUTPUT_DIR = join(REPO_ROOT, 'test-results/parity');
@@ -76,16 +79,15 @@ async function loadFrame(
 	}
 }
 
-/** Loads both pages of one comparison for one scene, compares their frames, and reports in one line. */
-async function runComparison(
-	browser: Browser,
-	baseUrl: string,
+/** Compares the frames of one comparison for one scene, and reports in one line. */
+function runComparison(
 	scene: ParityScene,
 	comparison: Comparison,
-): Promise<{ pass: boolean; line: string }> {
+	candidate: HoldFrame | string,
+	reference: HoldFrame | string,
+	baselineShare: number | null,
+): { pass: boolean; line: string } {
 	const label = `${scene} ${comparison.label}`;
-	const candidate = await loadFrame(browser, baseUrl, scene, comparison.candidate);
-	const reference = await loadFrame(browser, baseUrl, scene, comparison.reference);
 	if (typeof candidate === 'string' || typeof reference === 'string') {
 		const problems = [candidate, reference].filter((frame) => typeof frame === 'string');
 		return { pass: false, line: `FAIL  ${label}: ${problems.join('; ')}` };
@@ -99,10 +101,10 @@ async function runComparison(
 	const files = parityFiles(comparisonName(scene, comparison), candidate, reference, result.diff);
 	for (const { file, png } of files) writeFileSync(join(OUTPUT_DIR, file), png);
 	const images = files.map(({ file }) => relative(REPO_ROOT, join(OUTPUT_DIR, file))).join(', ');
-	const verdict = result.pass ? 'pass' : 'FAIL';
+	const pass = passesWithBaseline(result.share, baselineShare);
 	return {
-		pass: result.pass,
-		line: `${verdict}  ${label}: ${differenceText(result)}. Images: ${images}`,
+		pass,
+		line: `${pass ? 'pass' : 'FAIL'}  ${label}: ${differenceText(result, baselineShare)}. Images: ${images}`,
 	};
 }
 
@@ -119,8 +121,34 @@ async function main(): Promise<void> {
 		const browser = await chromium.launch({ ...launchOptions, headless, channel });
 		try {
 			for (const scene of options.scenes) {
+				// Each page loads once per scene, however many comparisons use its frame.
+				const frames = new Map<PageKind, HoldFrame | string>();
+				const frameOf = async (kind: PageKind) => {
+					if (!frames.has(kind))
+						frames.set(kind, await loadFrame(browser, server.url, scene, kind));
+					return frames.get(kind) as HoldFrame | string;
+				};
+				let baseline: number | null | undefined;
+				const baselineShare = async () => {
+					if (baseline === undefined) {
+						const webgl = await frameOf(BASELINE_PAIR.candidate);
+						const webgpu = await frameOf(BASELINE_PAIR.reference);
+						baseline =
+							typeof webgl === 'string' || typeof webgpu === 'string'
+								? null
+								: compareFrames(webgl, webgpu).share;
+					}
+					return baseline;
+				};
 				for (const comparison of options.comparisons) {
-					const { pass, line } = await runComparison(browser, server.url, scene, comparison);
+					const engines = comparison.candidate.startsWith('sokko3d');
+					const { pass, line } = runComparison(
+						scene,
+						comparison,
+						await frameOf(comparison.candidate),
+						await frameOf(comparison.reference),
+						engines ? await baselineShare() : null,
+					);
 					console.log(line);
 					total++;
 					if (pass) passed++;

@@ -3,6 +3,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
+	BASELINE_PAIR,
 	compareFrames,
 	comparisonName,
 	decodeHoldResult,
@@ -13,6 +14,7 @@ import {
 	type PagePair,
 	type ParityScene,
 	parityFiles,
+	passesWithBaseline,
 	TIER_PAIRS,
 } from '../../bench/lib/parity.ts';
 import {
@@ -139,6 +141,18 @@ function missingWebGPU(error: string | undefined): boolean {
 	return error !== undefined && NO_WEBGPU_ERRORS.some((start) => error.startsWith(start));
 }
 
+/** How much three.js's two renderers differ on a scene's hold frame in the same run, if both drew it. */
+function baselineShare(scene: ParityScene, context: JudgeContext): number | null {
+	try {
+		const webgl = context.resultOf(parityItemId(scene, BASELINE_PAIR.candidate));
+		const webgpu = context.resultOf(parityItemId(scene, BASELINE_PAIR.reference));
+		if (!webgl || !webgpu) return null;
+		return compareFrames(decodeHoldResult(webgl), decodeHoldResult(webgpu)).share;
+	} catch {
+		return null;
+	}
+}
+
 /**
  * Compares a sokko3d page's hold frame with the frame of its three.js page from the same run, and
  * saves both frames and the diff image in the context's image folder.
@@ -164,9 +178,10 @@ function parityProblems(
 		const files = parityFiles(name, candidate, reference, comparison.diff);
 		mkdirSync(context.imageDir, { recursive: true });
 		for (const { file, png } of files) writeFileSync(join(context.imageDir, file), png);
-		if (comparison.pass) return [];
+		const baseline = baselineShare(check.scene, context);
+		if (passesWithBaseline(comparison.share, baseline)) return [];
 		const images = files.map(({ file }) => join(context.imageDir, file)).join(', ');
-		return [`against ${referenceId}, ${differenceText(comparison)}. Images: ${images}`];
+		return [`against ${referenceId}, ${differenceText(comparison, baseline)}. Images: ${images}`];
 	} catch (e) {
 		return [(e as Error).message];
 	}

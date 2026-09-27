@@ -13,6 +13,7 @@ import {
 	PIXEL_THRESHOLD,
 	parityFiles,
 	parseParityArgs,
+	passesWithBaseline,
 	type RgbaImage,
 	TIER_PAIRS,
 } from './parity';
@@ -311,5 +312,18 @@ describe('parseParityArgs', () => {
 		).toThrow('use --tier or --pair, not both');
 		expect(() => parseParityArgs(['--scene'])).toThrow('name at least one scene');
 		expect(() => parseParityArgs(['--fast'])).toThrow('unknown option --fast');
+	});
+});
+
+describe('passesWithBaseline', () => {
+	test('passes under three.js limit, or no worse than three.js renderers differ', () => {
+		expect(passesWithBaseline(0.0009, null)).toBe(true);
+		expect(passesWithBaseline(0.001, null)).toBe(false);
+		expect(passesWithBaseline(0.02, 0.04)).toBe(true);
+		expect(passesWithBaseline(0.04, 0.04)).toBe(true);
+		expect(passesWithBaseline(0.05, 0.04)).toBe(false);
+		expect(differenceText({ share: 0.02 }, 0.04)).toBe(
+			"2.000% of pixels differ; three.js's rule allows under 0.1%, and three.js's two renderers differ by 4.000%",
+		);
 	});
 });

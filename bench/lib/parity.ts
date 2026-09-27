@@ -78,10 +78,15 @@ export const TIER_PAIRS: Readonly<Record<Tier, PagePair>> = {
 	webgl2: { candidate: 'sokko3d-webgl2', reference: 'threejs-webgl' },
 };
 
+/** The dev-server path of one scene's page of one kind, with more switches after its own. */
+export function pagePath(scene: ParityScene, kind: PageKind, switches = ''): string {
+	const page = PAGES[kind];
+	return `/bench/pages/${page.folder}/${scene}.html?${[page.gpu, switches].filter(Boolean).join('&')}`;
+}
+
 /** The dev-server path of the page that draws one scene's hold frame. */
 export function holdPagePath(scene: ParityScene, kind: PageKind): string {
-	const page = PAGES[kind];
-	return `/bench/pages/${page.folder}/${scene}.html?${page.gpu}&hold`;
+	return pagePath(scene, kind, 'hold');
 }
 
 /** The name that a comparison's image files start with. */
@@ -89,9 +94,30 @@ export function comparisonName(scene: ParityScene, { candidate, reference }: Pag
 	return `${scene}-${candidate}-vs-${reference}`;
 }
 
-/** How much two images differ, and three.js's limit, in words for a report. */
-export function differenceText({ share }: Pick<ImageComparison, 'share'>): string {
-	return `${(share * 100).toFixed(3)}% of pixels differ; three.js's rule allows under ${MAX_DIFFERENT_PERCENT}%`;
+/** three.js's two renderers: how much their frames differ is the baseline for engine comparisons. */
+export const BASELINE_PAIR: PagePair = { candidate: 'threejs-webgl', reference: 'threejs-webgpu' };
+
+/**
+ * True when a comparison of two engines passes: under three.js's limit, or no worse than three.js's
+ * own two renderers differ on the same frame. Rasterizers disagree on edges and on objects one or
+ * two pixels wide, and three.js's rule counts every such pixel. An engine that matches three.js as
+ * closely as three.js's renderers match each other draws the same scene.
+ */
+export function passesWithBaseline(share: number, baselineShare: number | null): boolean {
+	return share * 100 < MAX_DIFFERENT_PERCENT || (baselineShare !== null && share <= baselineShare);
+}
+
+const percent = (share: number) => `${(share * 100).toFixed(3)}%`;
+
+/** How much two images differ, and what may differ, in words for a report. */
+export function differenceText(
+	{ share }: Pick<ImageComparison, 'share'>,
+	baselineShare: number | null = null,
+): string {
+	const limit = `${percent(share)} of pixels differ; three.js's rule allows under ${MAX_DIFFERENT_PERCENT}%`;
+	return baselineShare === null
+		? limit
+		: `${limit}, and three.js's two renderers differ by ${percent(baselineShare)}`;
 }
 
 // The parity command's switches.
