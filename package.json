@@ -26,7 +26,7 @@
 		"check": "biome check .",
 		"check:fix": "biome check --write .",
 		"typecheck": "tsc -p tsconfig.json && tsc -p packages/engine && tsc -p tests/pages && tsc -p bench && tsc -p bench/tsconfig.node.json",
-		"test": "bun test tools packages bench/scenes bench/pages tests/lib",
+		"test": "bun test tools packages bench/scenes bench/pages bench/lib tests/lib",
 		"prepare": "husky",
 		"test:browser": "bun run --cwd tests test",
 		"test:real-browsers": "bun tests/real-browsers.ts",
