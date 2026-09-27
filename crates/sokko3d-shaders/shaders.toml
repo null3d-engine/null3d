@@ -1,0 +1,35 @@
+# The shader manifest. `bun run shaders` (cargo run -p sokko3d-shaders --bin shader-build) builds
+# every variant listed here into packages/engine/src/generated/shaders.ts, and
+# `bun run shaders:check` fails when that file is out of date.
+#
+# Each [shaders.<name>] table is one entry shader:
+#
+#   file       The WGSL file, relative to wgsl/. Every .wgsl file there needs a table.
+#   pipelines  Render pipelines by name, each a vertex and a fragment entry point. WebGL2 gets one
+#              GLSL program for each pipeline, and WebGPU gets the entry point names. Needed when a
+#              variant targets "glsl".
+#   variants   Builds of the shader by name. Each has:
+#                defs     naga_oil shader defs that are true in this build, for `#ifdef NAME`.
+#                targets  "wgsl" for WebGPU, "glsl" for WebGL2 (GLSL ES 3.00), or both.
+#
+# Names of shaders, variants and pipelines use letters, digits and underscores and do not start
+# with a digit, because they become TypeScript property names.
+#
+# Library modules live in wgsl/lib/. The module in lib/<name>.wgsl starts with
+# `#define_import_path sokko3d::<name>`, and shaders import it with `#import sokko3d::<name>`.
+# WGSL directives such as `enable` and `requires` go on the first lines of a file, above every
+# `#import` and `#define_import_path` line: the composer passes them on only from there.
+#
+# The build rejects WGSL language features other than packed_4x8_integer_dot_product,
+# pointer_composite_access and readonly_and_readwrite_storage_textures, and flat interpolation
+# other than `@interpolate(flat, either)` (AGENTS.md hard rule 10). A variant whose only target is
+# "glsl" may read `@builtin(draw_index)`: its vertex shader reads `gl_DrawID` from
+# WEBGL_multi_draw, which WebGPU does not have.
+
+# A test shader for the build itself. The engine's real shaders replace it.
+[shaders.test_mesh]
+file = "test_mesh.wgsl"
+pipelines.main = { vertex = "vs_main", fragment = "fs_main" }
+variants.plain = { targets = ["wgsl", "glsl"] }
+variants.instanced = { defs = ["INSTANCED"], targets = ["wgsl", "glsl"] }
+variants.multi_draw = { defs = ["INSTANCED", "DRAW_INDEX"], targets = ["glsl"] }

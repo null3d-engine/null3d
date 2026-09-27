@@ -21,6 +21,8 @@
 		"skills:check": "bun tools/skills.ts check",
 		"build": "bun tools/build-wasm.ts",
 		"build:check-size": "bun tools/build-wasm.ts --check-size",
+		"shaders": "cargo run -p sokko3d-shaders --bin shader-build",
+		"shaders:check": "cargo run -p sokko3d-shaders --bin shader-build -- --check",
 		"check": "biome check .",
 		"check:fix": "biome check --write .",
 		"typecheck": "tsc -p tsconfig.json && tsc -p packages/engine && tsc -p tests/pages && tsc -p bench && tsc -p bench/tsconfig.node.json",
