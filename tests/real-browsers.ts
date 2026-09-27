@@ -7,6 +7,12 @@ import { type ChildProcess, execFileSync, spawn } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
+import {
+	ENGINE_MODES,
+	type EngineMode,
+	type EngineResult,
+	engineProblems,
+} from './lib/engine-checks.ts';
 import { compareToReference } from './lib/images.ts';
 import { REPORT_DIR } from './lib/report-collector.ts';
 
@@ -18,15 +24,9 @@ interface PageCheck {
 	page: 'clear' | 'isolation' | 'engine';
 	query: string;
 	tier?: 'webgpu' | 'webgl2';
-	/** For engine checks: the thread that should draw. */
-	renderThread?: string;
+	/** For engine checks: the mode the switches select. */
+	mode?: EngineMode;
 }
-
-const ENGINE_MODES = [
-	{ query: '', renderThread: 'render-worker' },
-	{ query: '&latency=low', renderThread: 'game-worker' },
-	{ query: '&threads=off', renderThread: 'main' },
-] as const;
 
 const CHECKS: PageCheck[] = [
 	{ page: 'clear', query: 'gpu=webgpu', tier: 'webgpu' },
@@ -35,18 +35,14 @@ const CHECKS: PageCheck[] = [
 	...(['webgpu', 'webgl2'] as const).flatMap((tier) =>
 		ENGINE_MODES.map((mode) => ({
 			page: 'engine' as const,
-			query: `gpu=${tier}&seconds=2${mode.query}`,
+			query: [`gpu=${tier}`, 'seconds=2', mode.query].filter(Boolean).join('&'),
 			tier,
-			renderThread: mode.renderThread,
+			mode,
 		})),
 	),
 ];
 
-/** Slower than this median frame interval means the engine's loop is not keeping up with the display. */
-const MAX_MEDIAN_INTERVAL_MS = 34;
-const MIN_FRAMES = 30;
-
-interface Report {
+type Report = Partial<EngineResult> & {
 	url: string;
 	ok: boolean;
 	error?: string;
@@ -55,11 +51,7 @@ interface Report {
 	pixels?: string;
 	crossOriginIsolated?: boolean;
 	threaded?: boolean;
-	mode?: { renderThread: string };
-	capabilities?: { tier: string };
-	intervals?: { count: number; median: number };
-	count?: { updates: number };
-}
+};
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -98,20 +90,8 @@ export function judge(check: PageCheck, report: Report, allowNoWebGPU: boolean):
 			return 'skip';
 		return [report.error ?? 'the page failed without a message'];
 	}
-	if (check.page === 'engine') {
-		const problems: string[] = [];
-		if (report.mode?.renderThread !== check.renderThread)
-			problems.push(`drew on ${report.mode?.renderThread}, expected ${check.renderThread}`);
-		if (!report.capabilities?.tier.startsWith(check.tier ?? ''))
-			problems.push(`used ${report.capabilities?.tier}`);
-		if ((report.intervals?.count ?? 0) <= MIN_FRAMES)
-			problems.push(`only ${report.intervals?.count} frames`);
-		if ((report.intervals?.median ?? Infinity) >= MAX_MEDIAN_INTERVAL_MS)
-			problems.push(`median frame interval ${report.intervals?.median} ms`);
-		if ((report.count?.updates ?? 0) <= MIN_FRAMES)
-			problems.push(`the game updated only ${report.count?.updates} times`);
-		return problems;
-	}
+	if (check.page === 'engine' && check.mode)
+		return engineProblems(report as EngineResult, check.mode, check.tier ?? '');
 	if (check.page === 'isolation') {
 		const problems: string[] = [];
 		if (!report.crossOriginIsolated) problems.push('the page is not cross-origin isolated');
@@ -153,7 +133,7 @@ async function main(): Promise<void> {
 				const runId = randomUUID();
 				const query = [check.query, `run=${runId}`].filter(Boolean).join('&');
 				execFileSync('open', ['-a', browser, `${BASE_URL}/${check.page}.html?${query}`]);
-				const label = `${browser}: ${check.page}${check.renderThread ? ` drawing on ${check.renderThread}` : ''}${check.tier ? ` on ${check.tier}` : ''}`;
+				const label = `${browser}: ${check.page}${check.mode ? ` ${check.mode.name}` : ''}${check.tier ? ` on ${check.tier}` : ''}`;
 				let verdict: string[] | 'skip';
 				try {
 					verdict = judge(check, await waitForReport(check.page, runId), allowNoWebGPU);

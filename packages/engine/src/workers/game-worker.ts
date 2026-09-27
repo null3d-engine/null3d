@@ -5,7 +5,6 @@
 
 import { GameRunner } from '../game/runner';
 import { runDirectLoop } from '../render/direct-loop';
-import type { RenderLoop } from '../render/loop';
 import { emptySceneInput } from '../render/loop';
 import { createRenderer, type Renderer } from '../render/renderer';
 import { controlViews, Slot } from '../shared/control';
@@ -14,7 +13,6 @@ import type { GameWorkerMessage, WorkerReply } from './protocol';
 
 let runner: GameRunner | undefined;
 let renderer: Renderer | undefined;
-let loop: RenderLoop | undefined;
 let controlSlots: Int32Array | undefined;
 
 const reply = (message: WorkerReply, transfer: Transferable[] = []) =>
@@ -39,8 +37,7 @@ async function runPipelined(game: GameRunner, control: ArrayBufferLike): Promise
 			await waitForChange(slots, Slot.FramesTaken, taken);
 			continue;
 		}
-		game.step(performance.now());
-		published++;
+		published = game.step(performance.now());
 		Atomics.store(slots, Slot.FramesPublished, published);
 		Atomics.notify(slots, Slot.FramesPublished);
 	}
@@ -51,14 +48,18 @@ self.onmessage = async (event: MessageEvent<GameWorkerMessage>) => {
 	if (message.type === 'init') {
 		try {
 			controlSlots = controlViews(message.control).slots;
-			const core = await startCore(message.build, message.module, message.memory);
-			runner = new GameRunner((name, data, transfer) =>
-				reply({ type: 'game-message', name, data }, transfer),
+			const { glue: core } = await startCore(message.build, message.module, message.memory);
+			runner = new GameRunner(
+				(name, data, transfer) => reply({ type: 'game-message', name, data }, transfer),
+				message.metrics,
 			);
 			await runner.load(message.gameUrl);
 			if (message.renderer) {
-				renderer = await createRenderer(message.renderer.canvas, message.renderer);
-				loop = runDirectLoop(runner, renderer, message.control);
+				renderer = await createRenderer(message.renderer.canvas, {
+					...message.renderer,
+					metrics: message.metrics,
+				});
+				runDirectLoop(runner, renderer, message.control, message.metrics);
 			} else {
 				void runPipelined(runner, message.control);
 			}
@@ -74,8 +75,6 @@ self.onmessage = async (event: MessageEvent<GameWorkerMessage>) => {
 		}
 	} else if (message.type === 'post') {
 		runner?.receive(message.name, message.data);
-	} else if (message.type === 'stats' && loop) {
-		reply({ type: 'stats', intervals: loop.intervals.intervals.summary() });
 	} else if (message.type === 'capture' && renderer && controlSlots) {
 		const captured = await renderer.capture(
 			emptySceneInput(Atomics.load(controlSlots, Slot.FramesPublished)),

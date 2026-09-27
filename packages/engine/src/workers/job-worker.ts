@@ -7,7 +7,7 @@ import type { JobWorkerInit, WorkerReply } from './protocol';
 self.onmessage = async (event: MessageEvent<JobWorkerInit>) => {
 	const message = event.data;
 	try {
-		const core = await startCore(message.build, message.module, message.memory);
+		const { glue: core } = await startCore(message.build, message.module, message.memory);
 		const reply: WorkerReply = {
 			type: 'ready',
 			role: 'job',

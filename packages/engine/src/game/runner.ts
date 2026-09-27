@@ -1,7 +1,8 @@
 // Runs a game module's callbacks: loads the module, calls its setup function once, and steps it
-// once per frame.
+// once per frame, recording each frame's CPU time.
 
 import { EngineError } from '../errors/engine-error';
+import { FrameRecorder, Phase, Role } from '../shared/metrics';
 import type { GameCallbacks, GameContext } from './define-game';
 import { isGameDefinition } from './define-game';
 
@@ -12,9 +13,11 @@ export class GameRunner {
 	private callbacks: GameCallbacks = {};
 	private startTime = -1;
 	private lastTime = -1;
+	private readonly record: FrameRecorder;
 	readonly context: GameContext;
 
-	constructor(post: PagePoster) {
+	constructor(post: PagePoster, metrics: ArrayBufferLike) {
+		this.record = new FrameRecorder(metrics, Role.Game);
 		this.context = {
 			time: { now: 0, frame: 0 },
 			page: {
@@ -41,15 +44,22 @@ export class GameRunner {
 	}
 
 	/**
-	 * Advances the game by one frame. `now` is a timestamp in milliseconds; in hold mode the caller
-	 * passes a fixed time instead.
+	 * Advances the game by one frame and returns the new frame number, counting from 1. `now` is a
+	 * timestamp in milliseconds; in hold mode the caller passes a fixed time instead.
 	 */
-	step(now: number): void {
+	step(now: number): number {
+		const start = performance.now();
+		const { time } = this.context;
 		if (this.startTime < 0) this.startTime = now;
 		const dt = this.lastTime < 0 ? 0 : (now - this.lastTime) / 1000;
 		this.lastTime = now;
-		this.context.time.now = (now - this.startTime) / 1000;
-		this.context.time.frame++;
+		time.now = (now - this.startTime) / 1000;
+		time.frame++;
+		this.record.begin(time.frame);
 		this.callbacks.onUpdate?.(dt);
+		const busy = performance.now() - start;
+		this.record.addPhase(Phase.Update, busy);
+		this.record.commit(busy);
+		return time.frame;
 	}
 }

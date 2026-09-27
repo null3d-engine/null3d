@@ -2,6 +2,8 @@
 // worker (low-latency mode) or on the page's main thread (single-threaded mode and ?render=main).
 
 import { readbackWebGL2, readbackWebGPU } from '../gpu/readback';
+import { GpuTimer } from '../gpu/webgpu/gpu-timer';
+import { type FrameRecorder, Phase } from '../shared/metrics';
 
 export type Tier = 'webgpu' | 'webgpu-compat' | 'webgl2';
 
@@ -19,7 +21,8 @@ export interface Renderer {
 	readonly tier: Tier;
 	/** Resizes the drawing buffer, in device pixels. Only the thread that owns the canvas calls this. */
 	resize(width: number, height: number): void;
-	drawFrame(input: FrameInput): void;
+	/** Draws a frame to the canvas, adding its phase times and counters to the frame's record. */
+	drawFrame(input: FrameInput, record: FrameRecorder): void;
 	/** Draws one frame into an offscreen target and returns its pixels as RGBA8 rows, top row first. */
 	capture(input: FrameInput): Promise<{ width: number; height: number; pixels: Uint8Array }>;
 	destroy(): void;
@@ -29,6 +32,8 @@ export interface RendererOptions {
 	tier: Tier;
 	/** Requests a compatibility-mode device without `core-features-and-limits` (the ?gpu=compat switch). */
 	forceCompat?: boolean;
+	/** The metrics buffer, which receives GPU times where the device has timestamp queries. */
+	metrics?: ArrayBufferLike;
 }
 
 /** Encodes a linear color channel as sRGB, the way the final output does. */
@@ -39,17 +44,20 @@ export function linearToSrgb(c: number): number {
 class WebGPURenderer implements Renderer {
 	private readonly context: GPUCanvasContext;
 	private readonly format: GPUTextureFormat;
+	private readonly timer: GpuTimer | undefined;
 
 	constructor(
 		readonly tier: Tier,
 		private readonly device: GPUDevice,
 		private readonly canvas: RenderCanvas,
+		metrics: ArrayBufferLike | undefined,
 	) {
 		const context = canvas.getContext('webgpu') as GPUCanvasContext | null;
 		if (!context) throw new Error('the canvas has no WebGPU context');
 		this.context = context;
 		this.format = navigator.gpu.getPreferredCanvasFormat();
 		this.context.configure({ device, format: this.format, alphaMode: 'opaque' });
+		this.timer = metrics && GpuTimer.create(device, metrics);
 	}
 
 	resize(width: number, height: number): void {
@@ -65,13 +73,19 @@ class WebGPURenderer implements Renderer {
 				colorAttachments: [
 					{ view, loadOp: 'clear', storeOp: 'store', clearValue: { r, g, b, a: 1 } },
 				],
+				timestampWrites: this.timer?.passWrites(),
 			})
 			.end();
+		this.timer?.resolve(encoder);
 		this.device.queue.submit([encoder.finish()]);
+		this.timer?.afterSubmit();
 	}
 
-	drawFrame(input: FrameInput): void {
+	drawFrame(input: FrameInput, record: FrameRecorder): void {
+		const start = performance.now();
+		this.timer?.beginFrame(input.frame);
 		this.clear(this.context.getCurrentTexture().createView(), input.background);
+		record.addPhase(Phase.Replay, performance.now() - start);
 	}
 
 	async capture(input: FrameInput): Promise<{ width: number; height: number; pixels: Uint8Array }> {
@@ -88,6 +102,7 @@ class WebGPURenderer implements Renderer {
 	}
 
 	destroy(): void {
+		this.timer?.destroy();
 		this.context.unconfigure();
 		this.device.destroy();
 	}
@@ -112,14 +127,20 @@ class WebGL2Renderer implements Renderer {
 		this.gl.viewport(0, 0, this.canvas.width, this.canvas.height);
 	}
 
-	drawFrame(input: FrameInput): void {
-		const [r, g, b] = input.background.map(linearToSrgb) as [number, number, number];
+	private clear(background: FrameInput['background']): void {
+		const [r, g, b] = background.map(linearToSrgb) as [number, number, number];
 		this.gl.clearColor(r, g, b, 1);
 		this.gl.clear(this.gl.COLOR_BUFFER_BIT);
 	}
 
+	drawFrame(input: FrameInput, record: FrameRecorder): void {
+		const start = performance.now();
+		this.clear(input.background);
+		record.addPhase(Phase.Replay, performance.now() - start);
+	}
+
 	async capture(input: FrameInput): Promise<{ width: number; height: number; pixels: Uint8Array }> {
-		this.drawFrame(input);
+		this.clear(input.background);
 		const { width, height } = this.canvas;
 		return { width, height, pixels: readbackWebGL2(this.gl, width, height) };
 	}
@@ -138,8 +159,10 @@ export async function createRenderer(
 	const adapter = await navigator.gpu?.requestAdapter({ featureLevel: 'compatibility' });
 	if (!adapter) throw new Error('no WebGPU adapter');
 	const core = !options.forceCompat && adapter.features.has('core-features-and-limits');
-	const device = await adapter.requestDevice({
-		requiredFeatures: core ? ['core-features-and-limits' as GPUFeatureName] : [],
-	});
-	return new WebGPURenderer(core ? 'webgpu' : 'webgpu-compat', device, canvas);
+	const requiredFeatures: GPUFeatureName[] = [];
+	if (core) requiredFeatures.push('core-features-and-limits' as GPUFeatureName);
+	if (options.metrics && adapter.features.has('timestamp-query'))
+		requiredFeatures.push('timestamp-query');
+	const device = await adapter.requestDevice({ requiredFeatures });
+	return new WebGPURenderer(core ? 'webgpu' : 'webgpu-compat', device, canvas, options.metrics);
 }

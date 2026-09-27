@@ -8,9 +8,16 @@ import { emptySceneInput, type RenderLoop, runRenderLoop } from '../render/loop'
 import { createRenderer, type Renderer, type Tier } from '../render/renderer';
 import { controlViews, createControlBuffer, Slot } from '../shared/control';
 import { type Build, startCore } from '../shared/core';
-import type { Percentiles } from '../shared/stats';
+import { createMetricsBuffer, MetricsReader } from '../shared/metrics';
 import type { CoreHandoff, WorkerReply } from '../workers/protocol';
 import { type CapabilityReport, probeCapabilities } from './capabilities';
+import {
+	type FrameMetrics,
+	HeapSampler,
+	summarizeFrames,
+	threadRoles,
+	wasmDownloadBytes,
+} from './frame-stats';
 import { captureInput } from './input';
 import { loadCore } from './loader';
 import { type GpuSwitch, type LatencyMode, parseSwitches } from './switches';
@@ -51,8 +58,11 @@ export interface Engine {
 	postToGame(name: string, data?: unknown, transfer?: Transferable[]): void;
 	onGameMessage(handler: (name: string, data: unknown) => void): void;
 	setPaused(paused: boolean): void;
-	/** Intervals between presented frames, in milliseconds. */
-	frameStats(): Promise<Percentiles>;
+	/**
+	 * Measures the running engine for a number of seconds, then returns CPU time per frame by thread
+	 * and phase, GPU time, frame intervals, uploads, draw calls, memory and load time.
+	 */
+	measure(seconds: number): Promise<FrameMetrics>;
 	/** Draws one frame offscreen and returns its pixels as RGBA8 rows, top row first. */
 	captureFrame(): Promise<{ width: number; height: number; pixels: Uint8Array }>;
 	destroy(): void;
@@ -61,6 +71,8 @@ export interface Engine {
 const DEFAULT_MAX_PIXEL_RATIO = 2;
 /** Logical cores kept free of job workers: one for the game worker, one for the render worker. */
 const RESERVED_CORES = 2;
+/** How often the page reads the frame records while it measures. */
+const DRAIN_INTERVAL_MS = 250;
 
 interface TierChoice {
 	tier: Tier;
@@ -127,7 +139,7 @@ class EngineWorker {
 		return this.readyPromise;
 	}
 
-	request(message: { type: 'stats' } | { type: 'capture' }): Promise<WorkerReply> {
+	request(message: { type: 'capture' }): Promise<WorkerReply> {
 		return new Promise((resolve, reject) => {
 			this.waiting.push({ resolve, reject });
 			this.worker.postMessage(message);
@@ -136,6 +148,7 @@ class EngineWorker {
 }
 
 export async function createEngine(options: EngineOptions): Promise<Engine> {
+	const startedAt = performance.now();
 	const switches = parseSwitches(globalThis.location?.search ?? '');
 	const report = await probeCapabilities();
 	const threaded = report.crossOriginIsolated && report.sharedArrayBuffer && switches.threads;
@@ -159,12 +172,21 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 		throw new EngineError('E1301', `no usable GPU path for ?gpu=${wanted} in this browser.`);
 	const { tier, forceCompat } = choice;
 
+	const jobWorkers = threaded ? Math.max(1, report.hardwareConcurrency - RESERVED_CORES) : 0;
 	const control = createControlBuffer(threaded);
+	const metrics = createMetricsBuffer(threaded, jobWorkers);
 	const { slots } = controlViews(control);
 	Atomics.store(slots, Slot.Running, 1);
 	const core = await loadCore(build);
+	let wasmMemory = core.memory;
 	const gameUrl = new URL(options.game, globalThis.location?.href).href;
-	const handoff: CoreHandoff = { build, module: core.module, memory: core.memory, control };
+	const handoff: CoreHandoff = {
+		build,
+		module: core.module,
+		memory: core.memory,
+		control,
+		metrics,
+	};
 	const input = captureInput(
 		options.canvas,
 		control,
@@ -182,15 +204,14 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 	let localRenderer: Renderer | undefined;
 	let localLoop: RenderLoop | undefined;
 	let localRunner: GameRunner | undefined;
-	const jobWorkers = threaded ? Math.max(1, report.hardwareConcurrency - RESERVED_CORES) : 0;
 
 	try {
 		if (latency === 'single') {
-			await startCore('single', core.module);
-			localRunner = new GameRunner((name, data) => onGameMessage(name, data));
+			wasmMemory = (await startCore('single', core.module)).memory;
+			localRunner = new GameRunner((name, data) => onGameMessage(name, data), metrics);
 			await localRunner.load(gameUrl);
-			localRenderer = await createRenderer(options.canvas, { tier, forceCompat });
-			localLoop = runDirectLoop(localRunner, localRenderer, control);
+			localRenderer = await createRenderer(options.canvas, { tier, forceCompat, metrics });
+			localLoop = runDirectLoop(localRunner, localRenderer, control, metrics);
 		} else {
 			game = new EngineWorker(
 				new Worker(new URL('../workers/game-worker.ts', import.meta.url), {
@@ -224,8 +245,8 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 					]);
 				} else {
 					await startCore('threaded', core.module, core.memory);
-					localRenderer = await createRenderer(options.canvas, { tier, forceCompat });
-					localLoop = runRenderLoop(localRenderer, control);
+					localRenderer = await createRenderer(options.canvas, { tier, forceCompat, metrics });
+					localLoop = runRenderLoop(localRenderer, control, metrics);
 				}
 			}
 			for (let index = 0; index < jobWorkers; index++) {
@@ -248,6 +269,8 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 		throw e;
 	}
 
+	const engineStartMs = performance.now() - startedAt;
+	const mode: EngineMode = { build, latency, renderThread, jobWorkers };
 	const features =
 		tier === 'webgl2'
 			? Object.keys(report.webgl2.extensions).filter((n) => report.webgl2.extensions[n])
@@ -261,7 +284,7 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 			limits: tier === 'webgl2' ? {} : report.webgpu.limits,
 		},
 		report,
-		mode: { build, latency, renderThread, jobWorkers },
+		mode,
 		postToGame(name, data, transfer = []) {
 			if (localRunner) localRunner.receive(name, data);
 			else game?.worker.postMessage({ type: 'post', name, data }, transfer);
@@ -273,11 +296,28 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 			Atomics.store(slots, Slot.Paused, paused ? 1 : 0);
 			Atomics.notify(slots, Slot.Paused);
 		},
-		async frameStats() {
-			if (localLoop) return localLoop.intervals.intervals.summary();
-			const reply = await rendererHost?.request({ type: 'stats' });
-			if (reply?.type !== 'stats') throw new Error('no frame statistics');
-			return reply.intervals;
+		async measure(seconds) {
+			const reader = new MetricsReader(metrics);
+			const heap = new HeapSampler();
+			reader.begin();
+			heap.start();
+			const started = performance.now();
+			const drain = setInterval(() => reader.drain(), DRAIN_INTERVAL_MS);
+			await new Promise((resolve) => setTimeout(resolve, seconds * 1000));
+			clearInterval(drain);
+			reader.end();
+			const firstFrame = reader.firstFrameTime;
+			return {
+				seconds: (performance.now() - started) / 1000,
+				...summarizeFrames(reader.records, threadRoles(mode)),
+				memory: { wasmBytes: wasmMemory?.buffer.byteLength ?? null, ...heap.stop() },
+				load: {
+					engineStartMs,
+					firstFrameMs: firstFrame > 0 ? firstFrame - performance.timeOrigin : null,
+				},
+				downloadBytes: { wasm: wasmDownloadBytes() },
+				lostRecords: reader.lost,
+			};
 		},
 		async captureFrame() {
 			if (localRenderer)

@@ -4,11 +4,10 @@
 // compute the next frame.
 
 import { controlViews, Slot } from '../shared/control';
-import { FrameIntervals } from '../shared/stats';
+import { FrameRecorder, Role } from '../shared/metrics';
 import type { FrameInput, Renderer } from './renderer';
 
 export interface RenderLoop {
-	readonly intervals: FrameIntervals;
 	stop(): void;
 }
 
@@ -18,38 +17,69 @@ export function emptySceneInput(frame: number): FrameInput {
 	return { frame, background: [0.05 + 0.05 * Math.sin(phase * Math.PI * 2), 0.06, 0.08] };
 }
 
-export function runRenderLoop(renderer: Renderer, control: ArrayBufferLike): RenderLoop {
+/** Resize and presentation bookkeeping for the thread that owns the canvas. */
+export class Presenter {
+	private resizeSerial = 0;
+	private lastPresented = -1;
+	readonly record: FrameRecorder;
+
+	constructor(
+		private readonly slots: Int32Array,
+		private readonly renderer: Renderer,
+		metrics: ArrayBufferLike,
+	) {
+		this.record = new FrameRecorder(metrics, Role.Render);
+	}
+
+	/** Applies the canvas size the page wrote last, if it changed. */
+	applyResize(): void {
+		const serial = Atomics.load(this.slots, Slot.ResizeSerial);
+		if (serial === this.resizeSerial) return;
+		this.resizeSerial = serial;
+		this.renderer.resize(
+			Atomics.load(this.slots, Slot.CanvasWidth),
+			Atomics.load(this.slots, Slot.CanvasHeight),
+		);
+	}
+
+	/** Draws a frame and records its CPU time and the interval since the previous one. */
+	draw(frame: number, timestamp: number): void {
+		const start = performance.now();
+		this.record.begin(frame);
+		this.renderer.drawFrame(emptySceneInput(frame), this.record);
+		Atomics.add(this.slots, Slot.FramesPresented, 1);
+		if (this.lastPresented < 0) this.record.markFirstFrame();
+		else this.record.interval(timestamp - this.lastPresented);
+		this.lastPresented = timestamp;
+		this.record.commit(performance.now() - start);
+	}
+}
+
+export function runRenderLoop(
+	renderer: Renderer,
+	control: ArrayBufferLike,
+	metrics: ArrayBufferLike,
+): RenderLoop {
 	const { slots } = controlViews(control);
-	const intervals = new FrameIntervals();
+	const presenter = new Presenter(slots, renderer, metrics);
 	let taken = 0;
-	let resizeSerial = 0;
 	let stopped = false;
 
 	const frame = (timestamp: number) => {
 		if (stopped || Atomics.load(slots, Slot.Running) === 0) return;
-		const serial = Atomics.load(slots, Slot.ResizeSerial);
-		if (serial !== resizeSerial) {
-			resizeSerial = serial;
-			renderer.resize(
-				Atomics.load(slots, Slot.CanvasWidth),
-				Atomics.load(slots, Slot.CanvasHeight),
-			);
-		}
+		presenter.applyResize();
 		const published = Atomics.load(slots, Slot.FramesPublished);
 		if (published > taken) {
 			taken = published;
 			Atomics.store(slots, Slot.FramesTaken, taken);
 			Atomics.notify(slots, Slot.FramesTaken);
-			renderer.drawFrame(emptySceneInput(taken));
-			Atomics.add(slots, Slot.FramesPresented, 1);
-			intervals.frame(timestamp);
+			presenter.draw(taken, timestamp);
 		}
 		requestAnimationFrame(frame);
 	};
 	requestAnimationFrame(frame);
 
 	return {
-		intervals,
 		stop: () => {
 			stopped = true;
 		},

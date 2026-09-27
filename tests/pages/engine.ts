@@ -1,5 +1,6 @@
-// Starts the engine with an empty game in the mode the URL's switches ask for, lets it run, then
-// reports the mode, the capabilities, the frame intervals and how many times the game updated.
+// Starts the engine with an empty game in the mode the URL's switches ask for, measures it for a few
+// seconds, then reports the mode, the capabilities, the frame metrics and how many times the game
+// updated.
 import { createEngine } from '@sokko3d/engine';
 import { run, toBase64 } from './lib/result';
 
@@ -13,8 +14,7 @@ run('engine', async () => {
 		canvas,
 		game: new URL('./games/empty-game.ts', import.meta.url),
 	});
-	await new Promise((resolve) => setTimeout(resolve, seconds * 1000));
-	const intervals = await engine.frameStats();
+	const stats = await engine.measure(seconds);
 	const count = await new Promise<unknown>((resolve) => {
 		engine.onGameMessage((name, data) => {
 			if (name === 'count') resolve(data);
@@ -27,7 +27,7 @@ run('engine', async () => {
 		mode: engine.mode,
 		capabilities: engine.capabilities,
 		report: engine.report,
-		intervals,
+		stats,
 		count,
 		capture: capture && {
 			width: capture.width,

@@ -4,47 +4,33 @@
 
 import type { GameRunner } from '../game/runner';
 import { controlViews, Slot } from '../shared/control';
-import { FrameIntervals } from '../shared/stats';
-import type { RenderLoop } from './loop';
-import { emptySceneInput } from './loop';
+import { Presenter, type RenderLoop } from './loop';
 import type { Renderer } from './renderer';
 
 export function runDirectLoop(
 	runner: GameRunner,
 	renderer: Renderer,
 	control: ArrayBufferLike,
+	metrics: ArrayBufferLike,
 ): RenderLoop {
 	const { slots } = controlViews(control);
-	const intervals = new FrameIntervals();
-	let frameNumber = 0;
-	let resizeSerial = 0;
+	const presenter = new Presenter(slots, renderer, metrics);
 	let stopped = false;
 
 	const frame = (timestamp: number) => {
 		if (stopped || Atomics.load(slots, Slot.Running) === 0) return;
-		const serial = Atomics.load(slots, Slot.ResizeSerial);
-		if (serial !== resizeSerial) {
-			resizeSerial = serial;
-			renderer.resize(
-				Atomics.load(slots, Slot.CanvasWidth),
-				Atomics.load(slots, Slot.CanvasHeight),
-			);
-		}
+		presenter.applyResize();
 		if (Atomics.load(slots, Slot.Paused) === 0) {
-			runner.step(timestamp);
-			frameNumber++;
+			const frameNumber = runner.step(timestamp);
 			Atomics.store(slots, Slot.FramesPublished, frameNumber);
 			Atomics.store(slots, Slot.FramesTaken, frameNumber);
-			renderer.drawFrame(emptySceneInput(frameNumber));
-			Atomics.add(slots, Slot.FramesPresented, 1);
-			intervals.frame(timestamp);
+			presenter.draw(frameNumber, timestamp);
 		}
 		requestAnimationFrame(frame);
 	};
 	requestAnimationFrame(frame);
 
 	return {
-		intervals,
 		stop: () => {
 			stopped = true;
 		},

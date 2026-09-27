@@ -16,7 +16,8 @@ export interface InitOptions {
 
 /** The functions of the generated module that the engine calls. */
 export interface CoreGlue {
-	initSync(options: InitOptions): unknown;
+	/** Instantiates the core; returns the instance's exports, which include its memory. */
+	initSync(options: InitOptions): { memory?: WebAssembly.Memory };
 	engineVersion(): string;
 	isThreadedBuild(): boolean;
 }
@@ -57,15 +58,21 @@ export async function loadGlue(build: Build): Promise<CoreGlue> {
 	return glue as CoreGlue;
 }
 
+export interface StartedCore {
+	glue: CoreGlue;
+	/** The memory the core runs in: the shared memory, or the single-threaded build's own. */
+	memory: WebAssembly.Memory | undefined;
+}
+
 /** Instantiates the core in this thread with an already compiled module. */
 export async function startCore(
 	build: Build,
 	module: WebAssembly.Module,
 	memory?: WebAssembly.Memory,
-): Promise<CoreGlue> {
+): Promise<StartedCore> {
 	const glue = await loadGlue(build);
-	glue.initSync(
+	const exports = glue.initSync(
 		build === 'threaded' ? { module, memory, thread_stack_size: THREAD_STACK_BYTES } : { module },
 	);
-	return glue;
+	return { glue, memory: memory ?? exports.memory };
 }
