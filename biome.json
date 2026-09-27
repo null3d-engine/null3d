@@ -19,7 +19,7 @@
 	},
 	"overrides": [
 		{
-			"includes": ["**/*.test.ts", "tools/**"],
+			"includes": ["**/*.test.ts", "tools/**", "tests/**"],
 			"linter": {
 				"rules": {
 					"style": {
