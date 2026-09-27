@@ -17,13 +17,14 @@
 //! [`BatchTable::note_memory_grew`] when WebAssembly memory grew so TypeScript rebuilds its views.
 
 use std::ops::Range;
+use std::simd::f32x4;
 use std::sync::atomic::{AtomicU32, Ordering};
 
 use crate::bitset::Bitset;
 use crate::error::{CoreError, Resource};
 use crate::handle::{Handle, SlotAllocator};
 use crate::jobs::JobSystem;
-use crate::math::{self, IDENTITY_ROTATION};
+use crate::math::{self, IDENTITY_ROTATION, compose4, deinterleave3, max_axis_scale4, transpose4};
 use crate::world::{WorldArrays, WorldPtrs};
 
 /// Rows per chunk of the parallel update: a whole number of 64-row bitset words.
@@ -394,9 +395,16 @@ impl RowKernel {
             let rows = (self.active - first).min(64);
             let active_mask = if rows == 64 { !0 } else { (1u64 << rows) - 1 };
             if self.dynamic {
-                for row in first..first + rows {
-                    // SAFETY: the row is in this chunk's words.
-                    unsafe { self.compute(row as usize) };
+                let (first, end) = (first as usize, (first + rows) as usize);
+                let blocks_end = first + (end - first) / 4 * 4;
+                // SAFETY: every row below is active and in this chunk's words.
+                unsafe {
+                    for row in (first..blocks_end).step_by(4) {
+                        self.compute4(row);
+                    }
+                    for row in blocks_end..end {
+                        self.compute(row);
+                    }
                 }
                 continue;
             }
@@ -409,10 +417,22 @@ impl RowKernel {
                 } else {
                     0
                 };
+                // Four dirty rows in a block of four take the four-lane path.
                 let mut bits = dirty;
                 while bits != 0 {
-                    self.compute((first + bits.trailing_zeros()) as usize);
-                    bits &= bits - 1;
+                    let block = bits.trailing_zeros() & !3;
+                    let nibble = (bits >> block) & 0xF;
+                    let row = (first + block) as usize;
+                    if nibble == 0xF {
+                        self.compute4(row);
+                    } else {
+                        let mut lanes = nibble;
+                        while lanes != 0 {
+                            self.compute(row + lanes.trailing_zeros() as usize);
+                            lanes &= lanes - 1;
+                        }
+                    }
+                    bits &= !(0xF << block);
                 }
                 let mut bits = copy;
                 while bits != 0 {
@@ -421,6 +441,35 @@ impl RowKernel {
                     bits &= bits - 1;
                 }
                 *self.changed.add(w as usize) |= dirty;
+            }
+        }
+    }
+
+    /// Recomputes rows `row..row + 4`, one SIMD lane per row. The results match
+    /// [`RowKernel::compute`] bit for bit.
+    ///
+    /// # Safety
+    /// The four rows are active and belong to the calling chunk.
+    #[inline(always)]
+    unsafe fn compute4(&self, row: usize) {
+        let load = |p: *const f32| {
+            // SAFETY: the reads below stay inside the four active rows.
+            f32x4::from_array(unsafe { p.cast::<[f32; 4]>().read_unaligned() })
+        };
+        // SAFETY: the four rows are below the active count, so every offset is in bounds, and
+        // only this chunk writes the rows.
+        unsafe {
+            let p = self.positions.add(row * 3);
+            let position = deinterleave3(load(p), load(p.add(4)), load(p.add(8)));
+            let s = self.scales.add(row * 3);
+            let scale = deinterleave3(load(s), load(s.add(4)), load(s.add(8)));
+            let q = self.rotations.add(row * 4);
+            let rotation = transpose4([load(q), load(q.add(4)), load(q.add(8)), load(q.add(12))]);
+            let matrices = compose4(position, rotation, scale);
+            let radii = f32x4::splat(self.local_radius) * max_axis_scale4(&matrices);
+            self.out.write4(row, &matrices, radii);
+            if !self.colors.is_null() {
+                self.out.write_colors4(row, self.colors.add(row * 4));
             }
         }
     }

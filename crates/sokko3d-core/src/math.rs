@@ -5,6 +5,7 @@
 //! right-handed, Y up, and a local matrix of translation × rotation × scale.
 
 use std::simd::prelude::*;
+use std::simd::{StdFloat, simd_swizzle};
 
 /// A 3 × 4 row-major affine matrix. Rows are `[m00 m01 m02 tx]`, `[m10 m11 m12 ty]` and
 /// `[m20 m21 m22 tz]`; the implied fourth row is `[0 0 0 1]`.
@@ -85,6 +86,77 @@ pub fn world_sphere(m: &Affine, local_radius: f32) -> [f32; 4] {
     [m[3], m[7], m[11], local_radius * max_axis_scale(m)]
 }
 
+/// Four affine matrices, one per SIMD lane: element `[r][c]` holds row `r`, column `c` of each.
+pub(crate) type Affine4 = [[f32x4; 4]; 3];
+
+/// Four [`compose`] results at once, one per lane. Every lane performs the same operations in
+/// the same order as [`compose`], so the results match it bit for bit.
+#[inline(always)]
+pub(crate) fn compose4(position: [f32x4; 3], rotation: [f32x4; 4], scale: [f32x4; 3]) -> Affine4 {
+    let [x, y, z, w] = rotation;
+    let [sx, sy, sz] = scale;
+    let (x2, y2, z2) = (x + x, y + y, z + z);
+    let (xx, xy, xz) = (x * x2, x * y2, x * z2);
+    let (yy, yz, zz) = (y * y2, y * z2, z * z2);
+    let (wx, wy, wz) = (w * x2, w * y2, w * z2);
+    let one = f32x4::splat(1.0);
+    [
+        [
+            (one - (yy + zz)) * sx,
+            (xy - wz) * sy,
+            (xz + wy) * sz,
+            position[0],
+        ],
+        [
+            (xy + wz) * sx,
+            (one - (xx + zz)) * sy,
+            (yz - wx) * sz,
+            position[1],
+        ],
+        [
+            (xz - wy) * sx,
+            (yz + wx) * sy,
+            (one - (xx + yy)) * sz,
+            position[2],
+        ],
+    ]
+}
+
+/// Four [`max_axis_scale`] results at once, one per lane, computed the same way.
+#[inline(always)]
+pub(crate) fn max_axis_scale4(m: &Affine4) -> f32x4 {
+    let column = |c: usize| m[0][c] * m[0][c] + m[1][c] * m[1][c] + m[2][c] * m[2][c];
+    column(0).simd_max(column(1)).simd_max(column(2)).sqrt()
+}
+
+/// Transposes a 4 × 4 block given as four rows.
+#[inline(always)]
+pub(crate) fn transpose4(rows: [f32x4; 4]) -> [f32x4; 4] {
+    let [r0, r1, r2, r3] = rows;
+    let low01 = simd_swizzle!(r0, r1, [0, 4, 1, 5]);
+    let high01 = simd_swizzle!(r0, r1, [2, 6, 3, 7]);
+    let low23 = simd_swizzle!(r2, r3, [0, 4, 1, 5]);
+    let high23 = simd_swizzle!(r2, r3, [2, 6, 3, 7]);
+    [
+        simd_swizzle!(low01, low23, [0, 1, 4, 5]),
+        simd_swizzle!(low01, low23, [2, 3, 6, 7]),
+        simd_swizzle!(high01, high23, [0, 1, 4, 5]),
+        simd_swizzle!(high01, high23, [2, 3, 6, 7]),
+    ]
+}
+
+/// Splits four (x, y, z) triples, stored as 12 consecutive floats in `a`, `b` and `c`, into an
+/// x vector, a y vector and a z vector.
+#[inline(always)]
+pub(crate) fn deinterleave3(a: f32x4, b: f32x4, c: f32x4) -> [f32x4; 3] {
+    // a = x0 y0 z0 x1, b = y1 z1 x2 y2, c = z2 x3 y3 z3.
+    [
+        simd_swizzle!(simd_swizzle!(a, b, [0, 3, 6, 6]), c, [0, 1, 2, 5]),
+        simd_swizzle!(simd_swizzle!(a, b, [1, 4, 7, 7]), c, [0, 1, 2, 6]),
+        simd_swizzle!(simd_swizzle!(a, b, [2, 5, 5, 5]), c, [0, 1, 4, 7]),
+    ]
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -106,6 +178,64 @@ mod tests {
         assert!(close(&m, &expected), "{m:?}");
         assert!((max_axis_scale(&m) - 2.0).abs() < 1e-6);
         assert!(close(&world_sphere(&m, 0.5), &[1.0, 2.0, 3.0, 1.0]));
+    }
+
+    #[test]
+    fn four_lanes_match_the_scalar_functions_bit_for_bit() {
+        let positions = [
+            [1.0, -2.0, 3.5],
+            [0.25, 7.0, -9.0],
+            [100.0, 0.0, 1e-3],
+            [-4.0, 5.5, 6.0],
+        ];
+        let rotations = [
+            [0.1, 0.2, 0.3, 0.927_361_85],
+            IDENTITY_ROTATION,
+            [0.0, 0.707_106_77, 0.0, 0.707_106_77],
+            [-0.5, 0.5, -0.5, 0.5],
+        ];
+        let scales = [
+            [1.0, 2.0, 3.0],
+            [0.5, 0.5, 0.5],
+            [1.0, 1.0, 1.0],
+            [3.0, 0.1, 2.0],
+        ];
+        let lanes = |values: &[[f32; 3]; 4], k: usize| f32x4::from_array(values.map(|v| v[k]));
+        let m4 = compose4(
+            [0, 1, 2].map(|k| lanes(&positions, k)),
+            [0, 1, 2, 3].map(|k| f32x4::from_array(rotations.map(|q| q[k]))),
+            [0, 1, 2].map(|k| lanes(&scales, k)),
+        );
+        let scale4 = max_axis_scale4(&m4).to_array();
+        for i in 0..4 {
+            let m = compose(positions[i], rotations[i], scales[i]);
+            for (k, value) in m.iter().enumerate() {
+                let lane = m4[k / 4][k % 4].to_array()[i];
+                assert_eq!(lane.to_bits(), value.to_bits(), "lane {i}, element {k}");
+            }
+            assert_eq!(scale4[i].to_bits(), max_axis_scale(&m).to_bits());
+        }
+    }
+
+    #[test]
+    fn transposes_and_deinterleaves() {
+        let v = |a: [f32; 4]| f32x4::from_array(a);
+        let t = transpose4([
+            v([0.0, 1.0, 2.0, 3.0]),
+            v([4.0, 5.0, 6.0, 7.0]),
+            v([8.0, 9.0, 10.0, 11.0]),
+            v([12.0, 13.0, 14.0, 15.0]),
+        ]);
+        assert_eq!(t[1].to_array(), [1.0, 5.0, 9.0, 13.0]);
+        assert_eq!(t[3].to_array(), [3.0, 7.0, 11.0, 15.0]);
+        let [x, y, z] = deinterleave3(
+            v([0.0, 1.0, 2.0, 10.0]),
+            v([11.0, 12.0, 20.0, 21.0]),
+            v([22.0, 30.0, 31.0, 32.0]),
+        );
+        assert_eq!(x.to_array(), [0.0, 10.0, 20.0, 30.0]);
+        assert_eq!(y.to_array(), [1.0, 11.0, 21.0, 31.0]);
+        assert_eq!(z.to_array(), [2.0, 12.0, 22.0, 32.0]);
     }
 
     #[test]

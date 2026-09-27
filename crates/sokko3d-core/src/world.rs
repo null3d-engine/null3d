@@ -6,7 +6,9 @@
 //! [`crate::snapshot`] for the protocol). Bounding spheres live in four separate arrays (x, y, z,
 //! radius), so culling loads four spheres with one SIMD load per array.
 
-use crate::math::Affine;
+use std::simd::f32x4;
+
+use crate::math::{Affine, Affine4, transpose4};
 
 /// Floats per world matrix.
 pub const MATRIX_FLOATS: usize = 12;
@@ -275,6 +277,50 @@ impl WorldPtrs {
             self.ys.add(row).write(sphere[1]);
             self.zs.add(row).write(sphere[2]);
             self.radii.add(row).write(sphere[3]);
+        }
+    }
+
+    /// Writes the matrices and spheres of rows `row..row + 4`, one row per lane. `radii` holds
+    /// the four sphere radii; the sphere centres are the matrices' translations.
+    ///
+    /// # Safety
+    /// Rows `row..row + 4` are in bounds, and no other thread accesses them during the call.
+    #[inline(always)]
+    pub(crate) unsafe fn write4(&self, row: usize, matrices: &Affine4, radii: f32x4) {
+        debug_assert!(row + 4 <= self.rows);
+        let rows = matrices.map(transpose4);
+        let store = |p: *mut f32, v: f32x4| {
+            // SAFETY: in bounds and exclusive, as the caller guarantees.
+            unsafe { p.cast::<[f32; 4]>().write_unaligned(v.to_array()) };
+        };
+        // SAFETY: the offsets stay inside rows `row..row + 4`, as the caller guarantees.
+        unsafe {
+            for lane in 0..4 {
+                let m = self.matrices.add((row + lane) * MATRIX_FLOATS);
+                for (r, row_vectors) in rows.iter().enumerate() {
+                    store(m.add(r * 4), row_vectors[lane]);
+                }
+            }
+            store(self.xs.add(row), matrices[0][3]);
+            store(self.ys.add(row), matrices[1][3]);
+            store(self.zs.add(row), matrices[2][3]);
+            store(self.radii.add(row), radii);
+        }
+    }
+
+    /// Copies the colours of rows `row..row + 4` (16 floats) from `colors`. Does nothing when
+    /// the arrays have no colours.
+    ///
+    /// # Safety
+    /// As for [`WorldPtrs::write4`], and `colors` points at 16 readable floats.
+    #[inline(always)]
+    pub(crate) unsafe fn write_colors4(&self, row: usize, colors: *const f32) {
+        debug_assert!(row + 4 <= self.rows);
+        if self.has_colors {
+            // SAFETY: in bounds and exclusive, as the caller guarantees.
+            unsafe {
+                std::ptr::copy_nonoverlapping(colors, self.colors.add(row * COLOR_FLOATS), 16);
+            }
         }
     }
 
