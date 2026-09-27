@@ -18,6 +18,7 @@
       "name": "@sokko3d/bench",
       "devDependencies": {
         "@playwright/test": "1.63.0",
+        "@sokko3d/engine": "workspace:*",
         "@sokko3d/vite-plugin": "workspace:*",
         "@types/three": "0.186.0",
         "@webgpu/types": "0.1.74",

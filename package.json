@@ -28,7 +28,9 @@
 		"prepare": "husky",
 		"test:browser": "bun run --cwd tests test",
 		"test:real-browsers": "bun tests/real-browsers.ts",
+		"test:bench": "bun run --cwd bench test",
 		"dev": "bun run --cwd tests dev",
+		"bench": "bun run --cwd bench dev",
 		"dev-cert": "bun tools/dev-cert.ts",
 		"android": "adb reverse tcp:5173 tcp:5173"
 	},

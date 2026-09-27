@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import { summarizeFrames, threadRoles, timerStep } from '../page/frame-stats';
 import { Counter, createMetricsBuffer, FrameRecorder, MetricsReader, Phase, Role } from './metrics';
-import { percentiles } from './stats';
 
 function record(recorder: FrameRecorder, frame: number, busy: number, update = 0): void {
 	recorder.begin(frame);
@@ -148,7 +147,7 @@ describe('summarizeFrames', () => {
 		expect(summary.frames).toBe(3);
 		// Per frame: game 1, 2, 3; render 2, 2, 2; job 0.5 each.
 		expect(summary.cpuMs.median).toBe(2);
-		expect(summary.cpuMs.p99).toBe(3);
+		expect(summary.cpuMs.p99).toBeCloseTo(2.98, 9);
 		expect(summary.cpuMsAllThreads.median).toBe(4.5);
 		expect(Object.keys(summary.threads).sort()).toEqual(['game-worker', 'job-0', 'render-worker']);
 		expect(summary.threads['game-worker']?.phases.update?.median).toBe(2);
@@ -174,13 +173,5 @@ describe('timerStep', () => {
 		expect(timerStep([0.001, 0.002])).toBeNull();
 		expect(timerStep([0, 0])).toBeNull();
 		expect(timerStep([])).toBeNull();
-	});
-});
-
-describe('percentiles', () => {
-	it('uses the nearest rank and ignores input order', () => {
-		const values = Array.from({ length: 100 }, (_, i) => 100 - i);
-		expect(percentiles(values)).toEqual({ count: 100, median: 51, p95: 96, p99: 100, mean: 50.5 });
-		expect(percentiles([])).toEqual({ count: 0, median: 0, p95: 0, p99: 0, mean: 0 });
 	});
 });

@@ -1,6 +1,6 @@
 // The timed part of a benchmark run: one frame per animation frame, a warm-up that is not measured,
 // then the measured frames. Every engine's page uses this loop, so all reports measure alike.
-import { type Summary, summarize } from './stats';
+import { type Percentiles, percentiles } from '@sokko3d/engine/stats';
 
 /** No display refreshes faster than this, so the sample buffers never fill during a run. */
 const MAX_FRAMES_PER_SECOND = 1000;
@@ -9,9 +9,9 @@ export interface FrameTimings {
 	/** Frames measured after the warm-up. */
 	frames: number;
 	/** Main-thread time per frame, from the start of the animation frame callback to the end of the frame function. */
-	cpuMs: Summary;
+	cpuMs: Percentiles;
 	/** Time between the timestamps of consecutive animation frames. */
-	intervalMs: Omit<Summary, 'mean'>;
+	intervalMs: Percentiles;
 }
 
 /**
@@ -66,6 +66,9 @@ export function measureFrames(
 }
 
 function finish(cpu: Float64Array, interval: Float64Array, count: number): FrameTimings {
-	const { median, p95, p99 } = summarize(interval, count);
-	return { frames: count, cpuMs: summarize(cpu, count), intervalMs: { median, p95, p99 } };
+	return {
+		frames: count,
+		cpuMs: percentiles(cpu.subarray(0, count)),
+		intervalMs: percentiles(interval.subarray(0, count)),
+	};
 }

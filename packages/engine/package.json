@@ -13,6 +13,7 @@
 	"exports": {
 		".": "./src/index.ts",
 		"./internal": "./src/internal.ts",
+		"./stats": "./src/shared/stats.ts",
 		"./wasm/*": "./dist/wasm/*"
 	},
 	"devDependencies": {
