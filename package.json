@@ -10,7 +10,8 @@
 	"packageManager": "bun@1.3.14",
 	"workspaces": [
 		"packages/*",
-		"tests"
+		"tests",
+		"bench"
 	],
 	"scripts": {
 		"docs": "bun tools/gen-docs.ts",
@@ -22,8 +23,8 @@
 		"build:check-size": "bun tools/build-wasm.ts --check-size",
 		"check": "biome check .",
 		"check:fix": "biome check --write .",
-		"typecheck": "tsc -p tsconfig.json && tsc -p packages/engine && tsc -p tests/pages",
-		"test": "bun test tools packages",
+		"typecheck": "tsc -p tsconfig.json && tsc -p packages/engine && tsc -p tests/pages && tsc -p bench && tsc -p bench/tsconfig.node.json",
+		"test": "bun test tools packages bench/scenes bench/pages",
 		"prepare": "husky",
 		"test:browser": "bun run --cwd tests test",
 		"test:real-browsers": "bun tests/real-browsers.ts",
