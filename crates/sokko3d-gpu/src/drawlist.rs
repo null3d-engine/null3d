@@ -287,6 +287,16 @@ impl DrawList {
     }
 
     /// Appends one command with its operands.
+    /// Appends whole commands that another list recorded.
+    pub fn append(&mut self, words: &[u32]) -> Result<(), DrawListError> {
+        if self.len + words.len() > self.words.len() {
+            return Err(DrawListError::Full);
+        }
+        self.words[self.len..self.len + words.len()].copy_from_slice(words);
+        self.len += words.len();
+        Ok(())
+    }
+
     pub fn push(&mut self, op: Op, operands: &[u32]) -> Result<(), DrawListError> {
         let length = operands.len() + 1;
         if self.len + length > self.words.len() {
