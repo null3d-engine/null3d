@@ -116,6 +116,24 @@ function benchSummary(
 	return [summaryTable(rows), '', ...comparisonLines(rows)].join('\n');
 }
 
+/** Time a macOS app may take to open the runner page before its turn counts as failed. */
+const OPEN_TIMEOUT_MS = 60_000;
+
+/**
+ * Opens the runner page in a macOS app and says whether it did. A launch that hangs, as behind a
+ * first-launch prompt on a machine that nobody watches, fails after a minute instead of stopping
+ * the whole run.
+ */
+function openApp(app: string, url: string): boolean {
+	try {
+		execFileSync('open', ['-a', app, url], { timeout: OPEN_TIMEOUT_MS });
+		return true;
+	} catch (e) {
+		console.log(`${app} did not open the runner page: ${(e as Error).message.split('\n')[0]}`);
+		return false;
+	}
+}
+
 async function main(): Promise<void> {
 	const options = parseArgs(process.argv.slice(2));
 	const runners = runnersOf(options);
@@ -138,14 +156,19 @@ async function main(): Promise<void> {
 	try {
 		for (const batch of turnBatches(runners)) {
 			setTurns(run, batch);
+			const opened: string[] = [];
 			for (const name of batch) {
 				const launch = launches.get(name) as Launch;
 				const url = `${local.url}/tests/pages/runner.html?run=${run}&runner=${name}`;
-				if (launch.kind === 'mac') execFileSync('open', ['-a', launch.app, url]);
-				else if (launch.kind === 'android') openOnPhone(launch.browser, url);
-				else console.log(`${name}: its turn now; bring its runner page to the front.`);
+				if (launch.kind === 'mac') {
+					if (openApp(launch.app, url)) opened.push(name);
+				} else {
+					if (launch.kind === 'android') openOnPhone(launch.browser, url);
+					else console.log(`${name}: its turn now; bring its runner page to the front.`);
+					opened.push(name);
+				}
 			}
-			await waitForRunners(run, batch, batchTimeoutMs(plan), (name) =>
+			await waitForRunners(run, opened, batchTimeoutMs(plan), (name) =>
 				console.log(`${name}: finished`),
 			);
 		}

@@ -129,5 +129,14 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
       - run: bun run build
+      # An app with the downloaded-file flag asks before its first launch, and nobody can answer.
+      - name: Let Firefox open without the first-launch prompt
+        run: xattr -dr com.apple.quarantine /Applications/Firefox.app || true
       - name: Safari and Firefox
         run: bun tests/real-browsers.ts --allow-no-webgpu Safari Firefox
+      - uses: actions/upload-artifact@v4
+        if: failure() || cancelled()
+        with:
+          name: real-browser-runs
+          path: target/runs/
+          if-no-files-found: ignore
