@@ -53,7 +53,13 @@
 			"!**/target",
 			"!skills/*/evals",
 			"!docs/data",
-			"!skills/sokko3d-port-threejs/references/threejs-mapping.json"
+			"!skills/sokko3d-port-threejs/references/threejs-mapping.json",
+			"!packages/engine/src/generated"
 		]
+	},
+	"vcs": {
+		"enabled": true,
+		"clientKind": "git",
+		"useIgnoreFile": true
 	}
 }
