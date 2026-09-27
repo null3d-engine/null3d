@@ -737,10 +737,14 @@ impl SceneStorage {
         Ok(())
     }
 
-    /// Rebuilds the hierarchy order: roots, then each depth level, dynamic objects first.
+    /// Rebuilds the hierarchy order: roots, then each depth level, dynamic objects first, and
+    /// slots in increasing order within each group. Increasing slots keep each chunk of a level on
+    /// its own cache lines of the per-slot arrays.
     fn rebuild_order(&mut self) {
         let high = self.slots.high_water() as usize;
-        // Count children per parent, then turn counts into start offsets.
+        // Child lists: count children per parent, turn the counts into start offsets, then place
+        // each child. Afterwards `child_offsets[p]` is the end of p's children and the start of
+        // the next parent's.
         let offsets = &mut self.child_offsets[..high];
         offsets.fill(0);
         for slot in self.created.iter_ones() {
@@ -755,8 +759,6 @@ impl SceneStorage {
             *o = running;
             running += count;
         }
-        // Place each child; afterwards `offsets[p]` is the end of p's children and the start of
-        // the next parent's.
         for slot in self.created.iter_ones() {
             let parent = self.parents[slot as usize];
             if parent != NO_PARENT {
@@ -766,7 +768,8 @@ impl SceneStorage {
             }
         }
 
-        let mut len = 0usize;
+        // Depths, breadth-first from the roots, with the order array as the queue.
+        let mut len = 0;
         for slot in self.created.iter_ones() {
             if self.parents[slot as usize] == NO_PARENT {
                 self.order[len] = slot;
@@ -774,55 +777,67 @@ impl SceneStorage {
                 len += 1;
             }
         }
-        let dynamic_end = self.partition_dynamic_first(0, len);
-        self.levels[0] = Level {
-            start: 0,
-            dynamic_end: dynamic_end as u32,
-            end: len as u32,
-        };
-        let mut level = 0;
-        while self.levels[level].end > self.levels[level].start {
-            let Level { start, end, .. } = self.levels[level];
-            let next_start = len;
-            for i in start as usize..end as usize {
-                let parent = self.order[i] as usize;
-                let first = if parent == 0 {
-                    0
-                } else {
-                    self.child_offsets[parent - 1]
-                };
-                for c in first..self.child_offsets[parent] {
-                    let child = self.child_list[c as usize];
-                    self.order[len] = child;
-                    self.depths[child as usize] = level as u32 + 1;
-                    len += 1;
-                }
-            }
-            let dynamic_end = self.partition_dynamic_first(next_start, len);
-            level += 1;
-            self.levels[level] = Level {
-                start: next_start as u32,
-                dynamic_end: dynamic_end as u32,
-                end: len as u32,
+        let mut level_count = usize::from(len > 0);
+        let mut head = 0;
+        while head < len {
+            let parent = self.order[head] as usize;
+            head += 1;
+            let first = if parent == 0 {
+                0
+            } else {
+                self.child_offsets[parent - 1]
             };
+            let depth = self.depths[parent] + 1;
+            for c in first..self.child_offsets[parent] {
+                let child = self.child_list[c as usize];
+                self.depths[child as usize] = depth;
+                self.order[len] = child;
+                len += 1;
+            }
+            if first < self.child_offsets[parent] {
+                level_count = level_count.max(depth as usize + 1);
+            }
         }
         debug_assert_eq!(len as u32, self.created.count_ones());
-        self.level_count = level;
-        self.order_dirty = false;
-    }
 
-    /// Moves dynamic objects to the front of `order[start..end]` and returns where they end.
-    fn partition_dynamic_first(&mut self, start: usize, end: usize) -> usize {
-        let (mut i, mut j) = (start, end);
-        while i < j {
-            if self.flags[self.order[i] as usize] & flags::DYNAMIC != 0 {
-                i += 1;
+        // Counting sort by (depth, static) over slots in increasing order. The level records
+        // hold the group sizes first, then the group bounds; the child arrays, free now, hold
+        // each group's write cursor.
+        for level in &mut self.levels[..level_count] {
+            *level = Level::default();
+        }
+        for slot in self.created.iter_ones() {
+            let level = &mut self.levels[self.depths[slot as usize] as usize];
+            if self.flags[slot as usize] & flags::DYNAMIC != 0 {
+                level.dynamic_end += 1;
             } else {
-                j -= 1;
-                self.order.swap(i, j);
+                level.end += 1;
             }
         }
-        i
+        let mut running = 0;
+        for (depth, level) in self.levels[..level_count].iter_mut().enumerate() {
+            let (dynamic, fixed) = (level.dynamic_end, level.end);
+            *level = Level {
+                start: running,
+                dynamic_end: running + dynamic,
+                end: running + dynamic + fixed,
+            };
+            self.child_offsets[depth] = level.start;
+            self.child_list[depth] = level.dynamic_end;
+            running = level.end;
+        }
+        for slot in self.created.iter_ones() {
+            let depth = self.depths[slot as usize] as usize;
+            let cursor = if self.flags[slot as usize] & flags::DYNAMIC != 0 {
+                &mut self.child_offsets[depth]
+            } else {
+                &mut self.child_list[depth]
+            };
+            self.order[*cursor as usize] = slot;
+            *cursor += 1;
+        }
+        self.level_count = level_count;
+        self.order_dirty = false;
     }
 
     /// Computes world matrices and world bounding spheres for the current frame, level by level,
@@ -1326,6 +1341,7 @@ mod tests {
             let dynamic = |s: &u32| scene.flags[*s as usize] & flags::DYNAMIC != 0;
             assert!(objects[..split].iter().all(dynamic));
             assert!(!objects[split..].iter().any(dynamic));
+            assert!(objects[..split].is_sorted() && objects[split..].is_sorted());
             for &s in objects {
                 let p = scene.parents[s as usize];
                 if p != NO_PARENT {

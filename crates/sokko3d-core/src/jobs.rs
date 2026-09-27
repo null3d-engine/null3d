@@ -18,32 +18,30 @@
 //! One frame job runs at a time. Its descriptor (the closure pointer, item count and chunk size)
 //! lives in a slot allocated with the system, so a call allocates nothing.
 //!
-//! Claims go through a 64-bit ticket: a job sequence number in the high half and the next chunk
-//! to hand out in the low half. Between jobs the ticket is closed: its low half holds the largest
-//! value, so no claim can succeed.
+//! Claims go through one 64-bit ticket: the job's chunk count in the high half and the next
+//! chunk to hand out in the low half.
 //!
-//! 1. The caller writes the descriptor, resets the done counter, and stores the chunk count with
-//!    release ordering. Then it publishes the job by storing the ticket with a new sequence
-//!    number and chunk 0. That store is sequentially consistent, so it also releases the
-//!    descriptor.
+//! 1. The caller writes the descriptor and resets the done counter, then publishes the job by
+//!    storing the ticket (chunk count, chunk 0). That store is sequentially consistent, so it
+//!    also releases the descriptor.
 //! 2. It bumps the wake word and wakes sleeping workers.
-//! 3. Everyone, the caller included, claims chunks with a compare-and-swap that adds one to the
-//!    ticket, after checking the chunk index against the chunk count. A fast core simply claims
-//!    more chunks, which is how the system meets the plan's work-stealing goal without per-worker
-//!    queues.
-//! 4. Only a successful claim reads the descriptor. The claim's acquire half pairs with the
-//!    publishing store, and the job cannot finish while the claimed chunk is unfinished, so the
-//!    descriptor and the closure stay valid while the chunk runs.
+//! 3. Everyone, the caller included, claims a chunk with one atomic add of 1 to the ticket. The
+//!    add returns the chunk index and the chunk count of the same job, so a claim is valid exactly
+//!    when the index is below the count, whatever job the ticket held when the claimer last
+//!    looked. A fast core simply claims more chunks, which is how the system meets the plan's
+//!    work-stealing goal without per-worker queues. A plain load first skips the add when no
+//!    chunk is left, so idle workers do not write the shared line.
+//! 4. Only a successful claim reads the descriptor. The add's acquire half pairs with the
+//!    publishing store (later adds continue its release sequence), and the job cannot finish while
+//!    the claimed chunk is unfinished, so the descriptor and the closure stay valid while the
+//!    chunk runs.
 //! 5. Each finished chunk adds one to the done counter with release ordering. When no chunk is
 //!    left to claim, the caller spins with [`core::hint::spin_loop`] until the done counter
 //!    (loaded with acquire ordering) reaches the chunk count, so it only waits for chunks already
 //!    in flight. It never blocks: the game worker must stay responsive.
-//! 6. The caller closes the ticket, then returns.
 //!
-//! Closing matters for a worker that read the old ticket and then the next job's chunk count: the
-//! count's release store comes after the close, so the worker's compare-and-swap sees the closed
-//! ticket and fails. Without the close, the swap could still match the old ticket and claim a
-//! chunk of the next job that its caller has not published yet.
+//! An add after the last chunk only moves the index past the count; each thread makes at most
+//! one such add per job, so the index never reaches the count's half.
 //!
 //! A call made while a frame job is running (a nested call from inside a chunk), or made on a job
 //! worker thread, runs its loop inline on that thread with that thread's worker id.
@@ -147,16 +145,15 @@ thread_local! {
 #[repr(align(128))]
 struct Padded<T>(T);
 
-/// The words every claim reads: the ticket and the chunk count share one line.
-struct Claims {
-    /// High 32 bits: the job sequence number. Low 32 bits: the next chunk to hand out, or
-    /// [`CLOSED`] between jobs.
-    ticket: AtomicU64,
-    chunk_count: AtomicU32,
-}
+/// The most chunks one loop is split into. Leaves room for every thread's one extra claim
+/// above the count.
+const MAX_CHUNKS: u32 = u32::MAX - 2 * MAX_WORKERS;
 
-/// The low half of a closed ticket: no chunk index reaches it, so claims fail.
-const CLOSED: u64 = u32::MAX as u64;
+/// Splits a claim ticket into (next chunk, chunk count).
+#[inline(always)]
+fn split_ticket(ticket: u64) -> (u32, u32) {
+    (ticket as u32, (ticket >> 32) as u32)
+}
 
 /// The current frame job. Written only by the publishing caller while no claim can succeed.
 struct JobDesc {
@@ -167,7 +164,8 @@ struct JobDesc {
 
 /// The shared state of the job system. See the module documentation for the protocol.
 pub struct JobSystem {
-    claims: Padded<Claims>,
+    /// High 32 bits: the current job's chunk count. Low 32 bits: the next chunk to hand out.
+    ticket: Padded<AtomicU64>,
     done: Padded<AtomicU32>,
     wake: Padded<AtomicU32>,
     job: UnsafeCell<JobDesc>,
@@ -206,10 +204,7 @@ impl JobSystem {
             config.workers.min(MAX_WORKERS)
         };
         Self {
-            claims: Padded(Claims {
-                ticket: AtomicU64::new(CLOSED),
-                chunk_count: AtomicU32::new(0),
-            }),
+            ticket: Padded(AtomicU64::new(0)),
             done: Padded(AtomicU32::new(0)),
             wake: Padded(AtomicU32::new(0)),
             job: UnsafeCell::new(JobDesc {
@@ -254,7 +249,7 @@ impl JobSystem {
         if count == 0 {
             return;
         }
-        let chunk_size = chunk_size.max(1);
+        let chunk_size = chunk_size.max(count.div_ceil(MAX_CHUNKS)).max(1);
         let chunks = count.div_ceil(chunk_size);
         let me = Self::current_worker();
         if chunks == 1
@@ -273,8 +268,8 @@ impl JobSystem {
         // chunk has finished, so the closure outlives every use.
         let func: *const ChunkFn<'static> = unsafe { std::mem::transmute(func) };
         // SAFETY: this thread won the `busy` flag, the previous job's chunks have all finished,
-        // and the previous ticket has no chunk left to claim, so no other thread reads the
-        // descriptor until the ticket store below publishes it.
+        // and its ticket has no chunk left to claim, so no other thread reads the descriptor
+        // until the ticket store below publishes it.
         unsafe {
             *self.job.get() = JobDesc {
                 func,
@@ -283,9 +278,9 @@ impl JobSystem {
             };
         }
         self.done.0.store(0, Ordering::Relaxed);
-        self.claims.0.chunk_count.store(chunks, Ordering::Release);
-        let sequence = ((self.claims.0.ticket.load(Ordering::Relaxed) >> 32) + 1) & 0xFFFF_FFFF;
-        self.claims.0.ticket.store(sequence << 32, Ordering::SeqCst);
+        self.ticket
+            .0
+            .store(u64::from(chunks) << 32, Ordering::SeqCst);
         self.wake_workers(true);
 
         while let Some(chunk) = self.try_claim() {
@@ -294,10 +289,6 @@ impl JobSystem {
         while self.done.0.load(Ordering::Acquire) < chunks {
             spin_loop();
         }
-        self.claims
-            .0
-            .ticket
-            .store((sequence << 32) | CLOSED, Ordering::SeqCst);
         let panicked = self.panicked.swap(false, Ordering::Relaxed);
         self.busy.store(false, Ordering::Release);
         assert!(!panicked, "a parallel_for chunk panicked");
@@ -387,33 +378,19 @@ impl JobSystem {
     /// Claims the next chunk of the current frame job, if one is left.
     #[inline]
     fn try_claim(&self) -> Option<u32> {
-        let claims = &self.claims.0;
-        let mut ticket = claims.ticket.load(Ordering::Acquire);
-        loop {
-            let next = ticket as u32;
-            if next >= claims.chunk_count.load(Ordering::Acquire) {
-                return None;
-            }
-            // The low half never carries into the sequence number, because `next` is below the
-            // chunk count.
-            match claims.ticket.compare_exchange_weak(
-                ticket,
-                ticket + 1,
-                Ordering::AcqRel,
-                Ordering::Acquire,
-            ) {
-                Ok(_) => return Some(next),
-                Err(now) => ticket = now,
-            }
+        let (next, count) = split_ticket(self.ticket.0.load(Ordering::Relaxed));
+        if next >= count {
+            return None;
         }
+        let (next, count) = split_ticket(self.ticket.0.fetch_add(1, Ordering::Acquire));
+        (next < count).then_some(next)
     }
 
     /// True while the current frame job has chunks nobody has claimed.
     #[inline]
     fn frame_work_pending(&self) -> bool {
-        let claims = &self.claims.0;
-        let next = claims.ticket.load(Ordering::SeqCst) as u32;
-        next < claims.chunk_count.load(Ordering::SeqCst)
+        let (next, count) = split_ticket(self.ticket.0.load(Ordering::SeqCst));
+        next < count
     }
 
     /// Runs one claimed chunk and counts it as done, even when it panics.
