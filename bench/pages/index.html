@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<link rel="icon" href="data:," />
+		<title>sokko3d benchmark pages</title>
+	</head>
+	<body>
+		<h1>Benchmark pages</h1>
+		<p>
+			Each page runs one benchmark scene. A run warms up, then measures every frame, and shows its
+			report on the page when it ends. The scenes and the run times come from
+			<code>bench/scenes/spec.ts</code>.
+		</p>
+
+		<h2>Switches</h2>
+		<ul>
+			<li>
+				<code>?renderer=webgl</code> or <code>?renderer=webgpu</code>: the three.js renderer. One is
+				required. The WebGPU renderer never falls back to WebGL.
+			</li>
+			<li>
+				<code>?hold</code>: render one frame at the hold time into an offscreen target, and publish
+				its pixels for parity images.
+			</li>
+			<li>
+				<code>?n=1000</code>: the instance count of S1 and S1-static, instead of the full count. S2
+				has a fixed count and ignores it.
+			</li>
+			<li>
+				<code>?seconds=2</code>: warm up and measure for this many seconds each, for quick checks.
+			</li>
+		</ul>
+
+		<h2>three.js twins</h2>
+		<ul>
+			<li>
+				S1, the swarm (moving instances, orbiting camera):
+				<a href="threejs/s1.html?renderer=webgl">WebGL</a>,
+				<a href="threejs/s1.html?renderer=webgpu">WebGPU</a>; hold frame on
+				<a href="threejs/s1.html?renderer=webgl&amp;hold">WebGL</a>,
+				<a href="threejs/s1.html?renderer=webgpu&amp;hold">WebGPU</a>; quick run on
+				<a href="threejs/s1.html?renderer=webgl&amp;seconds=2&amp;n=1000">WebGL</a>,
+				<a href="threejs/s1.html?renderer=webgpu&amp;seconds=2&amp;n=1000">WebGPU</a>
+			</li>
+			<li>
+				S1-static (still instances, fly-through camera):
+				<a href="threejs/s1-static.html?renderer=webgl">WebGL</a>,
+				<a href="threejs/s1-static.html?renderer=webgpu">WebGPU</a>; hold frame on
+				<a href="threejs/s1-static.html?renderer=webgl&amp;hold">WebGL</a>,
+				<a href="threejs/s1-static.html?renderer=webgpu&amp;hold">WebGPU</a>; quick run on
+				<a href="threejs/s1-static.html?renderer=webgl&amp;seconds=2&amp;n=1000">WebGL</a>,
+				<a href="threejs/s1-static.html?renderer=webgpu&amp;seconds=2&amp;n=1000">WebGPU</a>
+			</li>
+			<li>
+				S2, the hierarchy (trees of separate objects whose roots turn, orbiting camera):
+				<a href="threejs/s2.html?renderer=webgl">WebGL</a>,
+				<a href="threejs/s2.html?renderer=webgpu">WebGPU</a>; hold frame on
+				<a href="threejs/s2.html?renderer=webgl&amp;hold">WebGL</a>,
+				<a href="threejs/s2.html?renderer=webgpu&amp;hold">WebGPU</a>; quick run on
+				<a href="threejs/s2.html?renderer=webgl&amp;seconds=2">WebGL</a>,
+				<a href="threejs/s2.html?renderer=webgpu&amp;seconds=2">WebGPU</a>
+			</li>
+		</ul>
+	</body>
+</html>

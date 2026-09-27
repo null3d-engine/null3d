@@ -1,0 +1,19 @@
+import { join } from 'node:path';
+import sokko3d from '@sokko3d/vite-plugin';
+import { defineConfig } from 'vite';
+import { reportCollector } from '../tests/lib/report-collector.ts';
+
+// Serves the benchmark pages with the isolation headers, on its own port so it can run beside the
+// test pages' server. SOKKO3D_HTTPS=1 serves HTTPS on the local network, for tablets and phones
+// that reach the Mac by its .local name.
+export default defineConfig({
+	root: join(import.meta.dirname, 'pages'),
+	plugins: [
+		sokko3d({
+			https: process.env.SOKKO3D_HTTPS === '1',
+			certDir: join(import.meta.dirname, '../target/dev-cert'),
+		}),
+		reportCollector(),
+	],
+	server: { port: 5174, strictPort: true, fs: { allow: [join(import.meta.dirname, '..')] } },
+});
