@@ -1,0 +1,22 @@
+# Maintainers' private build plan, research and decision records
+.dev/
+
+# Dependencies and build output
+node_modules/
+target/
+dist/
+*.tsbuildinfo
+
+# Test output
+coverage/
+test-results/
+playwright-report/
+
+# Local settings
+.claude/settings.local.json
+.DS_Store
+*.log
+
+# License copies made when a package is packed
+packages/*/LICENSE-MIT
+packages/*/LICENSE-APACHE

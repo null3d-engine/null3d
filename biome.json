@@ -1,0 +1,59 @@
+{
+	"$schema": "https://biomejs.dev/schemas/2.5.14/schema.json",
+	"assist": {
+		"actions": {
+			"source": {
+				"organizeImports": "on"
+			}
+		}
+	},
+	"linter": {
+		"enabled": true,
+		"rules": {
+			"preset": "recommended",
+			"correctness": {
+				"noUnusedImports": "warn",
+				"noUnusedVariables": "warn"
+			}
+		}
+	},
+	"overrides": [
+		{
+			"includes": ["**/*.test.ts", "tools/**"],
+			"linter": {
+				"rules": {
+					"style": {
+						"noNonNullAssertion": "off"
+					}
+				}
+			}
+		}
+	],
+	"formatter": {
+		"enabled": true,
+		"indentStyle": "tab",
+		"lineWidth": 100
+	},
+	"javascript": {
+		"formatter": {
+			"quoteStyle": "single",
+			"semicolons": "always"
+		}
+	},
+	"files": {
+		"includes": [
+			"**/*.ts",
+			"**/*.js",
+			"**/*.mjs",
+			"**/*.json",
+			"!.claude",
+			"!.dev",
+			"!**/node_modules",
+			"!**/dist",
+			"!**/target",
+			"!skills/*/evals",
+			"!docs/data",
+			"!skills/sokko3d-port-threejs/references/threejs-mapping.json"
+		]
+	}
+}

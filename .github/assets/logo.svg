@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120" role="img" aria-labelledby="title">
+  <title id="title">sokko3d</title>
+  <polygon points="60,10 105,36 60,62 15,36" fill="#9a8cff"/>
+  <polygon points="15,36 60,62 60,112 15,86" fill="#5b45e0"/>
+  <polygon points="105,36 105,86 60,112 60,62" fill="#3a2ba8"/>
+  <g stroke="#ffffff" stroke-opacity="0.45" stroke-width="2.5" stroke-linecap="round">
+    <line x1="37.5" y1="23" x2="82.5" y2="49"/>
+    <line x1="82.5" y1="23" x2="37.5" y2="49"/>
+    <line x1="37.5" y1="49" x2="37.5" y2="99"/>
+    <line x1="15" y1="61" x2="60" y2="87"/>
+    <line x1="82.5" y1="49" x2="82.5" y2="99"/>
+    <line x1="105" y1="61" x2="60" y2="87"/>
+  </g>
+</svg>

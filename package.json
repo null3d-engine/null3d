@@ -1,0 +1,34 @@
+{
+	"name": "sokko3d-workspace",
+	"private": true,
+	"description": "A browser 3D engine for games and heavy 3D apps: Rust and WebAssembly on worker threads, WebGPU and WebGL2, and a TypeScript API with three.js-style names.",
+	"license": "MIT OR Apache-2.0",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/sokko3d/sokko3d.git"
+	},
+	"packageManager": "bun@1.3.14",
+	"workspaces": [
+		"packages/*"
+	],
+	"scripts": {
+		"docs": "bun tools/gen-docs.ts",
+		"docs:check": "bun tools/gen-docs.ts --check",
+		"docs:style": "bun tools/hooks/check-docs-style.ts --all",
+		"skills": "bun tools/skills.ts sync && bun tools/skills.ts check",
+		"skills:check": "bun tools/skills.ts check",
+		"check": "biome check .",
+		"check:fix": "biome check --write .",
+		"typecheck": "tsc -p tsconfig.json",
+		"test": "bun test tools",
+		"prepare": "husky"
+	},
+	"devDependencies": {
+		"@biomejs/biome": "2.5.14",
+		"@commitlint/cli": "^21.2.3",
+		"@commitlint/config-conventional": "^21.2.3",
+		"@types/bun": "^1.3.0",
+		"husky": "^9.1.7",
+		"typescript": "~6.0.3"
+	}
+}

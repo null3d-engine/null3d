@@ -1,0 +1,22 @@
+[
+  {"query": "add a spinning cube to my Sokko3D scene, just something to check the setup works", "should_trigger": true},
+  {"query": "my sokko game stutters every few seconds on iphone, can you look at src/game.ts?", "should_trigger": true},
+  {"query": "load models/robot.glb in the sokko3d project and play its 'Walk' animation while W is held", "should_trigger": true},
+  {"query": "write a WGSL surface function for a glowing lava material in sokko3d", "should_trigger": true},
+  {"query": "set up a new sokko3d project for a top-down tower defense prototype, mobile first", "should_trigger": true},
+  {"query": "why are my shadows so blocky on the medium preset? using @sokko3d/engine 0.2", "should_trigger": true},
+  {"query": "in sokko3d how do I know which instance of an instance batch the user clicked", "should_trigger": true},
+  {"query": "add bloom and a vignette to the sokko3d scene but keep it cheap on phones", "should_trigger": true},
+  {"query": "our sokko3d viewer only shows a blank canvas after deploying to netlify", "should_trigger": true},
+  {"query": "make the water in my sokko3d game move up and down, it's a flat plane right now", "should_trigger": true},
+  {"query": "port this three.js scene with OrbitControls and GLTFLoader over to sokko3d", "should_trigger": false},
+  {"query": "convert my react-three-fiber product configurator to sokko3d, keep the react UI", "should_trigger": false},
+  {"query": "add a spinning cube to my three.js scene", "should_trigger": false},
+  {"query": "write an HLSL lava shader for my Unity project", "should_trigger": false},
+  {"query": "set up a babylon.js project with a sandbox scene", "should_trigger": false},
+  {"query": "what's the difference between WebGL2 and WebGPU in general?", "should_trigger": false},
+  {"query": "implement the WebGL2 state cache in crates/sokko3d-gpu of the sokko3d engine repo", "should_trigger": false},
+  {"query": "draw a 3D bar chart with d3 and svg", "should_trigger": false},
+  {"query": "help me choose a 3D engine for a browser game, pros and cons of the big ones", "should_trigger": false},
+  {"query": "my Bevy game's wasm build is 30 MB, how do I shrink it", "should_trigger": false}
+]

@@ -1,0 +1,5 @@
+bunx commitlint --edit "$1"
+bun tools/hooks/check-docs-ack.ts "$1"
+bun tools/hooks/check-skills-ack.ts "$1"
+bun tools/hooks/check-docs-links.ts
+bun tools/hooks/check-docs-style.ts

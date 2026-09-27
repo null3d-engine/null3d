@@ -1,0 +1,32 @@
+import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { join, posix } from 'node:path';
+
+/** Repository-relative paths, with forward slashes, of every file under `dir` that `keep` accepts, sorted. */
+export function walkFiles(
+	root: string,
+	dir: string,
+	keep: (path: string) => boolean = () => true,
+): string[] {
+	const out: string[] = [];
+	const walk = (rel: string) => {
+		if (!existsSync(join(root, rel))) return;
+		for (const entry of readdirSync(join(root, rel), { withFileTypes: true })) {
+			const path = posix.join(rel, entry.name);
+			if (entry.isDirectory()) walk(path);
+			else if (keep(path)) out.push(path);
+		}
+	};
+	walk(dir);
+	return out.sort();
+}
+
+/** The file's text, or null when it does not exist. */
+export function readIfExists(root: string, path: string): string | null {
+	const full = join(root, path);
+	return existsSync(full) ? readFileSync(full, 'utf8') : null;
+}
+
+/** Paths of every Markdown file under `docs/`. */
+export function docsFiles(root: string): string[] {
+	return walkFiles(root, 'docs', (p) => p.endsWith('.md'));
+}
