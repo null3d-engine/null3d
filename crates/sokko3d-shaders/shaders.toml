@@ -17,6 +17,8 @@
 #
 # Library modules live in wgsl/lib/. The module in lib/<name>.wgsl starts with
 # `#define_import_path sokko3d::<name>`, and shaders import it with `#import sokko3d::<name>`.
+# The composer reads any name that equals an imported module's <name> as that module, so a
+# shader that imports sokko3d::color cannot also have a variable called `color`.
 # WGSL directives such as `enable` and `requires` go on the first lines of a file, above every
 # `#import` and `#define_import_path` line: the composer passes them on only from there.
 #
@@ -26,7 +28,19 @@
 # "glsl" may read `@builtin(draw_index)`: its vertex shader reads `gl_DrawID` from
 # WEBGL_multi_draw, which WebGPU does not have.
 
-# A test shader for the build itself. The engine's real shaders replace it.
+# Meshes drawn by instance, lit (Lambert) or unlit. WebGL2 gets its variant with the WebGL2 path.
+[shaders.mesh]
+file = "mesh.wgsl"
+pipelines.lit = { vertex = "vs", fragment = "fs_lit" }
+pipelines.unlit = { vertex = "vs", fragment = "fs_unlit" }
+variants.webgpu = { targets = ["wgsl"] }
+
+# GPU culling into buckets for indirect draws; its compute entry point is `main`. WebGPU only.
+[shaders.cull]
+file = "cull.wgsl"
+variants.webgpu = { targets = ["wgsl"] }
+
+# A test shader for the build itself, and the only GLSL until the WebGL2 path adds its variants.
 [shaders.test_mesh]
 file = "test_mesh.wgsl"
 pipelines.main = { vertex = "vs_main", fragment = "fs_main" }

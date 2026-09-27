@@ -2,7 +2,15 @@
 // compile and link in WebGL2, and every uniform block and texture that the reflection names must
 // exist in the linked program. Each WGSL module must compile in WebGPU when the browser has it.
 // Failures carry the browser's info logs.
-import { type GlslProgram, SHADERS } from '@sokko3d/engine/internal';
+import { type GlslProgram, SHADERS, type ShaderVariant } from '@sokko3d/engine/internal';
+
+/** Every variant of every shader, with its name. */
+const VARIANTS = Object.entries(SHADERS).flatMap(([shaderName, variants]) =>
+	Object.entries(variants as Record<string, ShaderVariant>).map(
+		([variantName, variant]) => [`${shaderName}.${variantName}`, variant] as const,
+	),
+);
+
 import { run } from './lib/result';
 
 interface Failure {
@@ -85,17 +93,15 @@ function checkGlsl(failures: Failure[]) {
 	const multiDraw = gl.getExtension('WEBGL_multi_draw') !== null;
 	const skipped: string[] = [];
 	let programs = 0;
-	for (const [shaderName, variants] of Object.entries(SHADERS)) {
-		for (const [variantName, variant] of Object.entries(variants)) {
-			for (const [pipeline, program] of Object.entries(variant.glsl ?? {})) {
-				const name = `${shaderName}.${variantName}.${pipeline}`;
-				if (!multiDraw && program.vertex.source.includes('GL_ANGLE_multi_draw')) {
-					skipped.push(`${name}: no WEBGL_multi_draw`);
-					continue;
-				}
-				checkProgram(gl, name, program, failures);
-				programs++;
+	for (const [variantName, variant] of VARIANTS) {
+		for (const [pipeline, program] of Object.entries(variant.glsl ?? {})) {
+			const name = `${variantName}.${pipeline}`;
+			if (!multiDraw && program.vertex.source.includes('GL_ANGLE_multi_draw')) {
+				skipped.push(`${name}: no WEBGL_multi_draw`);
+				continue;
 			}
+			checkProgram(gl, name, program, failures);
+			programs++;
 		}
 	}
 	// Read only by the test harness, to refuse a software GPU in real-GPU runs.
@@ -109,26 +115,19 @@ async function checkWgsl(failures: Failure[]): Promise<{ webgpu: boolean; module
 	if (!adapter) return { webgpu: false, modules: 0 };
 	const device = await adapter.requestDevice();
 	let modules = 0;
-	for (const [shaderName, variants] of Object.entries(SHADERS)) {
-		for (const [variantName, variant] of Object.entries(variants)) {
-			if (!variant.wgsl) continue;
-			device.pushErrorScope('validation');
-			const module = device.createShaderModule({ code: variant.wgsl.source });
-			const info = await module.getCompilationInfo();
-			const error = await device.popErrorScope();
-			const messages = info.messages
-				.filter((m) => m.type === 'error')
-				.map((m) => `${m.lineNum}:${m.linePos} ${m.message}`);
-			if (error) messages.push(error.message);
-			if (messages.length > 0) {
-				failures.push({
-					shader: `${shaderName}.${variantName}`,
-					stage: 'wgsl',
-					log: messages.join('\n'),
-				});
-			}
-			modules++;
-		}
+	for (const [variantName, variant] of VARIANTS) {
+		if (!variant.wgsl) continue;
+		device.pushErrorScope('validation');
+		const module = device.createShaderModule({ code: variant.wgsl.source });
+		const info = await module.getCompilationInfo();
+		const error = await device.popErrorScope();
+		const messages = info.messages
+			.filter((m) => m.type === 'error')
+			.map((m) => `${m.lineNum}:${m.linePos} ${m.message}`);
+		if (error) messages.push(error.message);
+		if (messages.length > 0)
+			failures.push({ shader: variantName, stage: 'wgsl', log: messages.join('\n') });
+		modules++;
 	}
 	device.destroy();
 	return { webgpu: true, modules };

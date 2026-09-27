@@ -69,12 +69,197 @@ export interface ShaderVariant<Pipeline extends string = string> {
 
 /** Every shader variant, by shader name and variant name. */
 export const SHADERS: {
+	readonly cull: {
+		readonly webgpu: ShaderVariant<never>;
+	};
+	readonly mesh: {
+		readonly webgpu: ShaderVariant<'lit' | 'unlit'>;
+	};
 	readonly test_mesh: {
 		readonly instanced: ShaderVariant<'main'>;
 		readonly multi_draw: ShaderVariant<'main'>;
 		readonly plain: ShaderVariant<'main'>;
 	};
 } = {
+	cull: {
+		webgpu: {
+			wgsl: {
+				source: `struct CullParams {
+    planes: array<vec4<f32>, 6>,
+    instance_count: u32,
+    pad0_: u32,
+    pad1_: u32,
+    pad2_: u32,
+}
+
+struct Bucket {
+    base: u32,
+    material: u32,
+    radius: f32,
+    pad: u32,
+}
+
+const HIDDEN: u32 = 4294967295u;
+const INDIRECT_WORDS: u32 = 5u;
+
+@group(0) @binding(0)
+var<uniform> params: CullParams;
+@group(0) @binding(1)
+var<storage> matrices: array<vec4<f32>>;
+@group(0) @binding(2)
+var<storage> instance_buckets: array<u32>;
+@group(0) @binding(3)
+var<storage> buckets: array<Bucket>;
+@group(0) @binding(4)
+var<storage, read_write> visible: array<vec4<f32>>;
+@group(0) @binding(5)
+var<storage, read_write> indirect: array<atomic<u32>>;
+
+@compute @workgroup_size(128, 1, 1)
+fn main(@builtin(global_invocation_id) id: vec3<u32>) {
+    var p: u32 = 0u;
+
+    let i = id.x;
+    let _e5 = params.instance_count;
+    if (i >= _e5) {
+        return;
+    }
+    let b = instance_buckets[i];
+    if (b == HIDDEN) {
+        return;
+    }
+    let r0_ = matrices[(i * 3u)];
+    let r1_ = matrices[((i * 3u) + 1u)];
+    let r2_ = matrices[((i * 3u) + 2u)];
+    let center = vec3<f32>(r0_.w, r1_.w, r2_.w);
+    let scale = max(length(vec3<f32>(r0_.x, r1_.x, r2_.x)), max(length(vec3<f32>(r0_.y, r1_.y, r2_.y)), length(vec3<f32>(r0_.z, r1_.z, r2_.z))));
+    let bucket = buckets[b];
+    let radius = (bucket.radius * scale);
+    loop {
+        let _e58 = p;
+        if (_e58 < 6u) {
+        } else {
+            break;
+        }
+        {
+            let _e63 = p;
+            let plane = params.planes[_e63];
+            if ((dot(plane.xyz, center) + plane.w) < -(radius)) {
+                return;
+            }
+        }
+        continuing {
+            let _e73 = p;
+            p = (_e73 + 1u);
+        }
+    }
+    let _e82 = atomicAdd((&indirect[((b * INDIRECT_WORDS) + 1u)]), 1u);
+    let dst = ((bucket.base + _e82) * 4u);
+    visible[dst] = r0_;
+    visible[(dst + 1u)] = r1_;
+    visible[(dst + 2u)] = r2_;
+    visible[(dst + 3u)] = bitcast<vec4<f32>>(vec4<u32>(bucket.material, 0u, 0u, 0u));
+    return;
+}
+`,
+				pipelines: {},
+			},
+			glsl: null,
+		},
+	},
+	mesh: {
+		webgpu: {
+			wgsl: {
+				source: `struct Frame {
+    view_proj: mat4x4<f32>,
+    camera_position: vec4<f32>,
+    sun_direction: vec4<f32>,
+    sun_color: vec4<f32>,
+    ambient: vec4<f32>,
+}
+
+struct Material {
+    color: vec4<f32>,
+}
+
+struct VertexIn {
+    @location(0) position: vec3<f32>,
+    @location(1) normal: vec3<f32>,
+    @location(2) row0_: vec4<f32>,
+    @location(3) row1_: vec4<f32>,
+    @location(4) row2_: vec4<f32>,
+    @location(5) ids: vec4<u32>,
+}
+
+struct VertexOut {
+    @builtin(position) clip: vec4<f32>,
+    @location(0) normal: vec3<f32>,
+    @location(1) @interpolate(flat, either) material: u32,
+}
+
+@group(0) @binding(0)
+var<uniform> frame: Frame;
+@group(0) @binding(1)
+var<storage> materials: array<Material>;
+
+fn lambert(albedo: vec3<f32>, normal: vec3<f32>, to_light: vec3<f32>, light: vec3<f32>, ambient: vec3<f32>) -> vec3<f32> {
+    let n_dot_l = max(dot(normal, to_light), 0f);
+    return ((albedo / vec3(3.1415927f)) * ((n_dot_l * light) + ambient));
+}
+
+fn linear_to_srgb(c: vec3<f32>) -> vec3<f32> {
+    let low = (c * 12.92f);
+    let high = ((1.055f * pow(c, vec3(0.41666666f))) - vec3(0.055f));
+    return select(high, low, (c <= vec3(0.0031308f)));
+}
+
+@vertex
+fn vs(v: VertexIn) -> VertexOut {
+    var out: VertexOut;
+
+    let p = vec4<f32>(v.position, 1f);
+    let n = vec4<f32>(v.normal, 0f);
+    let _e11 = frame.view_proj;
+    out.clip = (_e11 * vec4<f32>(dot(v.row0_, p), dot(v.row1_, p), dot(v.row2_, p), 1f));
+    out.normal = vec3<f32>(dot(v.row0_, n), dot(v.row1_, n), dot(v.row2_, n));
+    out.material = v.ids.x;
+    let _e32 = out;
+    return _e32;
+}
+
+@fragment
+fn fs_lit(in: VertexOut) -> @location(0) vec4<f32> {
+    let _e5 = materials[in.material].color;
+    let albedo_1 = _e5.xyz;
+    let _e11 = frame.sun_direction;
+    let _e16 = frame.sun_color;
+    let _e20 = frame.ambient;
+    let _e22 = lambert(albedo_1, normalize(in.normal), -(_e11.xyz), _e16.xyz, _e20.xyz);
+    let _e23 = linear_to_srgb(_e22);
+    return vec4<f32>(_e23, 1f);
+}
+
+@fragment
+fn fs_unlit(in_1: VertexOut) -> @location(0) vec4<f32> {
+    let _e5 = materials[in_1.material].color;
+    let _e7 = linear_to_srgb(_e5.xyz);
+    return vec4<f32>(_e7, 1f);
+}
+`,
+				pipelines: {
+					lit: {
+						vertex: 'vs',
+						fragment: 'fs_lit',
+					},
+					unlit: {
+						vertex: 'vs',
+						fragment: 'fs_unlit',
+					},
+				},
+			},
+			glsl: null,
+		},
+	},
 	test_mesh: {
 		instanced: {
 			wgsl: {

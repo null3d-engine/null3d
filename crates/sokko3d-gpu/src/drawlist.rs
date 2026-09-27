@@ -211,6 +211,21 @@ pub mod layout {
     pub const CULL: u32 = 1;
 }
 
+/// Sizes of the data that the render pipelines read. The shaders in `crates/sokko3d-shaders/wgsl/`
+/// declare the same sizes, and a test checks that they agree.
+pub mod sizes {
+    /// Bytes per mesh vertex: a position and a normal, three floats each.
+    pub const VERTEX_STRIDE: u32 = 24;
+    /// Bytes per compacted instance: three rows of the world matrix, then a vector of ids.
+    pub const INSTANCE_STRIDE: u32 = 64;
+    /// Bytes of the per-frame uniform block: the view-projection matrix and four vectors.
+    pub const FRAME_UNIFORM_BYTES: u32 = 128;
+    /// Threads per workgroup of the culling shader.
+    pub const CULL_WORKGROUP_SIZE: u32 = 128;
+    /// 32-bit words per indexed indirect draw.
+    pub const INDIRECT_WORDS: u32 = 5;
+}
+
 /// Shader templates for `CreateRenderPipeline` and `CreateComputePipeline`.
 pub mod template {
     /// Instanced meshes with Lambert lighting.
@@ -332,7 +347,7 @@ pub fn typescript_constants() -> String {
         out.push_str(&format!("export const OP_{} = {};\n", op.name(), op as u8));
     }
     out.push_str(&format!("\nexport const NO_TARGET = {NO_TARGET};\n\n"));
-    let groups: [(&str, &[(&str, u32)]); 7] = [
+    let groups: [(&str, &[(&str, u32)]); 8] = [
         (
             "FORMAT",
             &[
@@ -385,6 +400,16 @@ pub fn typescript_constants() -> String {
             "TEXTURE_USAGE",
             &[("TRANSIENT_ATTACHMENT", texture_usage::TRANSIENT_ATTACHMENT)],
         ),
+        (
+            "SIZE",
+            &[
+                ("VERTEX_STRIDE", sizes::VERTEX_STRIDE),
+                ("INSTANCE_STRIDE", sizes::INSTANCE_STRIDE),
+                ("FRAME_UNIFORM_BYTES", sizes::FRAME_UNIFORM_BYTES),
+                ("CULL_WORKGROUP_SIZE", sizes::CULL_WORKGROUP_SIZE),
+                ("INDIRECT_WORDS", sizes::INDIRECT_WORDS),
+            ],
+        ),
     ];
     for (prefix, entries) in groups {
         for (name, value) in entries {
@@ -399,6 +424,15 @@ pub fn typescript_constants() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_culling_shader_declares_the_same_sizes() {
+        let cull = include_str!("../../sokko3d-shaders/wgsl/cull.wgsl");
+        let workgroup = format!("@workgroup_size({})", sizes::CULL_WORKGROUP_SIZE);
+        let words = format!("const INDIRECT_WORDS: u32 = {}u;", sizes::INDIRECT_WORDS);
+        assert!(cull.contains(&workgroup), "cull.wgsl lacks {workgroup}");
+        assert!(cull.contains(&words), "cull.wgsl lacks {words}");
+    }
 
     #[test]
     fn commands_round_trip_through_the_decoder() {

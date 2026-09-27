@@ -59,3 +59,9 @@ export const TEMPLATE_INSTANCED_UNLIT = 2;
 export const TEMPLATE_CULL = 16;
 
 export const TEXTURE_USAGE_TRANSIENT_ATTACHMENT = 32;
+
+export const SIZE_VERTEX_STRIDE = 24;
+export const SIZE_INSTANCE_STRIDE = 64;
+export const SIZE_FRAME_UNIFORM_BYTES = 128;
+export const SIZE_CULL_WORKGROUP_SIZE = 128;
+export const SIZE_INDIRECT_WORDS = 5;

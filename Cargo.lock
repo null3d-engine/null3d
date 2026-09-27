@@ -342,6 +342,9 @@ version = "0.0.0"
 [[package]]
 name = "sokko3d-render"
 version = "0.0.0"
+dependencies = [
+ "sokko3d-gpu",
+]
 
 [[package]]
 name = "sokko3d-shaders"

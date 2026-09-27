@@ -1,8 +1,8 @@
 //! Geometry generators with three.js's parameters and vertex order, so a scene built in both
 //! engines draws the same triangles. Vertices are interleaved position and normal (6 floats).
 
-/// Floats per vertex: position (3) and normal (3).
-pub const VERTEX_FLOATS: usize = 6;
+/// Floats per vertex: position (3) and normal (3), as the mesh shader reads them.
+pub const VERTEX_FLOATS: usize = (sokko3d_gpu::drawlist::sizes::VERTEX_STRIDE / 4) as usize;
 
 /// Generated mesh data: interleaved vertices and triangle indices.
 #[derive(Clone, Debug, Default, PartialEq)]

@@ -9,3 +9,6 @@ publish.workspace = true
 
 [lints]
 workspace = true
+
+[dependencies]
+sokko3d-gpu = { path = "../sokko3d-gpu" }
