@@ -15,6 +15,7 @@ export type Check =
 	| { kind: 'capabilities' }
 	| { kind: 'isolation' }
 	| { kind: 'clear'; tier: Tier }
+	| { kind: 'shaders' }
 	| { kind: 'engine'; tier: Tier; mode: EngineMode };
 
 const TEST_PAGES = '/tests/pages/';
@@ -36,6 +37,12 @@ export function checksPlan(): PlanItem<Check>[] {
 			path: `${TEST_PAGES}isolation.html`,
 			timeoutSeconds: 30,
 			check: { kind: 'isolation' },
+		},
+		{
+			id: 'shaders',
+			path: `${TEST_PAGES}shaders.html`,
+			timeoutSeconds: 30,
+			check: { kind: 'shaders' },
 		},
 		...TIERS.map((tier) => ({
 			id: `clear-${tier}`,
@@ -93,6 +100,13 @@ export function judge(check: Check, result: ItemResult, allowNoWebGPU: boolean):
 			} catch (e) {
 				return [(e as Error).message];
 			}
+		case 'shaders': {
+			const failures = (result.failures ?? []) as { shader: string; stage: string; log: string }[];
+			const problems = failures.map((f) => `${f.shader} ${f.stage}: ${f.log.split('\n')[0]}`);
+			if (!(Number(result.glslPrograms) > 0)) problems.push('no GLSL program was compiled');
+			if (!result.webgpu && !allowNoWebGPU) problems.push('no WebGPU to compile the WGSL');
+			return problems;
+		}
 		case 'engine':
 			return engineProblems(result as unknown as EngineResult, check.mode, check.tier);
 	}

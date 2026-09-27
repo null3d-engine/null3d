@@ -21,7 +21,7 @@ const realGpu = !process.env.CI;
 test('the generated GLSL compiles and links in WebGL2 and the WGSL compiles in WebGPU', async ({
 	page,
 }) => {
-	await page.goto('/shaders.html');
+	await page.goto('shaders.html');
 	const handle = await page.waitForFunction(readResult, undefined, { timeout: 30_000 });
 	const result = (await handle.jsonValue()) as ShaderResult;
 	expect(result.error).toBeUndefined();

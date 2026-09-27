@@ -1,6 +1,6 @@
 // Checks that the page is cross-origin isolated and that the threaded WebAssembly build loads with
 // shared memory. Open it in any browser; the result also goes to the dev server's collector.
-import initThreaded, { isThreadedBuild } from '@sokko3d/engine/wasm/threaded/sokko3d.js';
+import { coreUrls, startCore } from '@sokko3d/engine/internal';
 import { run } from './lib/result';
 
 /** Initial and maximum sizes, in 64 KB pages, of the shared memory this check creates. */
@@ -16,8 +16,9 @@ run('isolation', async () => {
 			maximum: MAXIMUM_PAGES,
 			shared: true,
 		});
-		await initThreaded({ memory });
-		threaded = isThreadedBuild();
+		const module = await WebAssembly.compileStreaming(fetch(coreUrls('threaded').wasm));
+		const { glue } = await startCore('threaded', module, memory);
+		threaded = glue.isThreadedBuild();
 	}
 	return {
 		crossOriginIsolated: isolated,

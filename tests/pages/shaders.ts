@@ -2,7 +2,7 @@
 // compile and link in WebGL2, and every uniform block and texture that the reflection names must
 // exist in the linked program. Each WGSL module must compile in WebGPU when the browser has it.
 // Failures carry the browser's info logs.
-import { type GlslProgram, SHADERS } from '../../packages/engine/src/generated/shaders';
+import { type GlslProgram, SHADERS } from '@sokko3d/engine/internal';
 import { run } from './lib/result';
 
 interface Failure {
