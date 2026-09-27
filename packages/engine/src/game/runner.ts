@@ -104,12 +104,12 @@ export class GameRunner {
 		const record = this.record;
 		record.begin(frame);
 		this.core.refresh();
+		let at = start;
 		try {
 			this.callbacks.onUpdate?.(dt);
 		} catch (error) {
 			this.report(error);
 		}
-		let at = performance.now();
 		const phase = (phase: Phase) => {
 			const now = performance.now();
 			record.addPhase(phase, now - at);
