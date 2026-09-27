@@ -7,7 +7,7 @@ const readResult = () => (globalThis as { __sokko3dResult?: unknown }).__sokko3d
 for (const gpu of ['webgpu', 'webgl2'] as const) {
 	for (const mode of ENGINE_MODES) {
 		test(`the engine runs ${mode.name} on ${gpu}`, async ({ page }) => {
-			await page.goto(`/engine.html?gpu=${gpu}&seconds=2&${mode.query}`);
+			await page.goto(`engine.html?gpu=${gpu}&seconds=2&${mode.query}`);
 			const handle = await page.waitForFunction(readResult, undefined, { timeout: 30_000 });
 			const result = (await handle.jsonValue()) as EngineResult & { error?: string };
 			expect(result.error).toBeUndefined();

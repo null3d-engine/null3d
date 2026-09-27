@@ -1,4 +1,5 @@
 import { defineConfig } from '@playwright/test';
+import { HTTP_PORT, REPO_ROOT } from './lib/server.ts';
 
 const ci = Boolean(process.env.CI);
 
@@ -23,14 +24,14 @@ export default defineConfig({
 	forbidOnly: ci,
 	reporter: ci ? [['list'], ['github']] : 'list',
 	use: {
-		baseURL: 'http://localhost:5173',
+		baseURL: `http://localhost:${HTTP_PORT}/tests/pages/`,
 		headless: true,
 		...(ci ? { launchOptions: { args: SWIFTSHADER_ARGS } } : { channel: 'chrome' }),
 	},
 	webServer: {
-		command: 'bunx vite --config vite.config.ts',
-		cwd: import.meta.dirname,
-		url: 'http://localhost:5173/index.html',
+		command: 'bunx vite',
+		cwd: REPO_ROOT,
+		url: `http://localhost:${HTTP_PORT}/tests/pages/index.html`,
 		reuseExistingServer: !ci,
 	},
 	projects: [{ name: ci ? 'chromium-swiftshader' : 'chrome-real-gpu' }],

@@ -3,7 +3,7 @@
 // checks it against the same references the Playwright tests use. Run from the repository root:
 //   bun tests/real-browsers.ts Safari Firefox
 //   bun tests/real-browsers.ts --allow-no-webgpu Safari   (a missing WebGPU adapter is a skip)
-import { type ChildProcess, execFileSync, spawn } from 'node:child_process';
+import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -15,10 +15,9 @@ import {
 } from './lib/engine-checks.ts';
 import { compareToReference } from './lib/images.ts';
 import { REPORT_DIR } from './lib/report-collector.ts';
+import { startServer } from './lib/server.ts';
 
-const BASE_URL = 'http://localhost:5173';
 const PAGE_TIMEOUT_MS = 60_000;
-const SERVER_TIMEOUT_MS = 30_000;
 
 interface PageCheck {
 	page: 'clear' | 'isolation' | 'engine';
@@ -54,19 +53,6 @@ type Report = Partial<EngineResult> & {
 };
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
-async function waitForServer(): Promise<void> {
-	const deadline = Date.now() + SERVER_TIMEOUT_MS;
-	while (Date.now() < deadline) {
-		try {
-			if ((await fetch(`${BASE_URL}/index.html`)).ok) return;
-		} catch {
-			// not listening yet
-		}
-		await sleep(250);
-	}
-	throw new Error('the dev server did not start');
-}
 
 /** The report whose page URL carries this run ID, once it arrives. */
 async function waitForReport(page: string, runId: string): Promise<Report> {
@@ -121,18 +107,18 @@ async function main(): Promise<void> {
 		process.exit(2);
 	}
 
-	const server: ChildProcess = spawn('bunx', ['vite', '--config', 'vite.config.ts'], {
-		cwd: import.meta.dirname,
-		stdio: 'ignore',
-	});
+	const server = await startServer();
 	let failures = 0;
 	try {
-		await waitForServer();
 		for (const browser of browsers) {
 			for (const check of CHECKS) {
 				const runId = randomUUID();
 				const query = [check.query, `run=${runId}`].filter(Boolean).join('&');
-				execFileSync('open', ['-a', browser, `${BASE_URL}/${check.page}.html?${query}`]);
+				execFileSync('open', [
+					'-a',
+					browser,
+					`${server.url}/tests/pages/${check.page}.html?${query}`,
+				]);
 				const label = `${browser}: ${check.page}${check.mode ? ` ${check.mode.name}` : ''}${check.tier ? ` on ${check.tier}` : ''}`;
 				let verdict: string[] | 'skip';
 				try {
@@ -151,7 +137,7 @@ async function main(): Promise<void> {
 			}
 		}
 	} finally {
-		server.kill();
+		server.stop();
 	}
 	process.exit(failures > 0 ? 1 : 0);
 }

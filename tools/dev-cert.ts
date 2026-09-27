@@ -3,20 +3,12 @@
 // iPad or iPhone, install the printed rootCA.pem on the device and trust it.
 import { execFileSync } from 'node:child_process';
 import { mkdirSync } from 'node:fs';
-import { hostname } from 'node:os';
 import { join } from 'node:path';
+import { localHostName } from './lib/host.ts';
 
 const root = process.cwd();
 const caDir = join(root, 'target/dev-ca');
 const certDir = join(root, 'target/dev-cert');
-
-function localHostName(): string {
-	try {
-		return execFileSync('scutil', ['--get', 'LocalHostName'], { encoding: 'utf8' }).trim();
-	} catch {
-		return hostname().replace(/\.local$/, '');
-	}
-}
 
 try {
 	execFileSync('mkcert', ['-help'], { stdio: 'ignore' });

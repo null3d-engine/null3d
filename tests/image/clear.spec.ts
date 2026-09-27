@@ -18,7 +18,7 @@ const realGpu = !process.env.CI;
 
 for (const tier of ['webgpu', 'webgl2'] as const) {
 	test(`a clear color reads back unchanged on ${tier}`, async ({ page }) => {
-		await page.goto(`/clear.html?gpu=${tier}`);
+		await page.goto(`clear.html?gpu=${tier}`);
 		const handle = await page.waitForFunction(readResult, undefined, { timeout: 30_000 });
 		const result = (await handle.jsonValue()) as ClearResult;
 		expect(result.error).toBeUndefined();
@@ -34,7 +34,7 @@ for (const tier of ['webgpu', 'webgl2'] as const) {
 }
 
 test('the page is cross-origin isolated and loads the threaded build', async ({ page }) => {
-	await page.goto('/isolation.html');
+	await page.goto('isolation.html');
 	const handle = await page.waitForFunction(readResult, undefined, { timeout: 30_000 });
 	const result = (await handle.jsonValue()) as {
 		error?: string;

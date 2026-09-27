@@ -13,7 +13,7 @@ interface ReplayResult {
 const readResult = () => (globalThis as { __sokko3dResult?: unknown }).__sokko3dResult;
 
 test('a replayed draw list culls on the GPU and draws the visible instances', async ({ page }) => {
-	await page.goto('/replay.html');
+	await page.goto('replay.html');
 	const handle = await page.waitForFunction(readResult, undefined, { timeout: 30_000 });
 	const result = (await handle.jsonValue()) as ReplayResult;
 	expect(result.error).toBeUndefined();

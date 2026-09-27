@@ -20,6 +20,7 @@
 		"packages/vite-plugin/src/**/*.ts",
 		"tests/*.ts",
 		"tests/lib/**/*.ts",
-		"tests/image/**/*.ts"
+		"tests/image/**/*.ts",
+		"vite.config.ts"
 	]
 }

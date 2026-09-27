@@ -98,7 +98,7 @@ for (const scene of SCENES) {
 		test(`${scene} on ${renderer} renders a hold frame that is not blank`, async ({ page }) => {
 			const result = await runPage<HoldReport>(
 				page,
-				`/threejs/${scene}.html?renderer=${renderer}&hold`,
+				`threejs/${scene}.html?renderer=${renderer}&hold`,
 			);
 			expect([result.scene, result.renderer]).toEqual([scene, renderer]);
 			const { width, height } = PARITY_CANVAS;
@@ -133,7 +133,7 @@ for (const scene of SCENES) {
 		test(`${scene} on ${renderer} runs a short benchmark`, async ({ page }) => {
 			const result = await runPage<BenchReport>(
 				page,
-				`/threejs/${scene}.html?renderer=${renderer}&seconds=2&n=${SHORT_RUN_COUNT}`,
+				`threejs/${scene}.html?renderer=${renderer}&seconds=2&n=${SHORT_RUN_COUNT}`,
 			);
 			expect([result.scene, result.renderer]).toEqual([scene, renderer]);
 			expect(result.n).toBe(scene === 's2' ? S2_NODE_COUNT : SHORT_RUN_COUNT);
@@ -161,7 +161,7 @@ const NO_WEBGPU = {
 for (const [situation, { script, error }] of Object.entries(NO_WEBGPU)) {
 	test(`a WebGPU page reports an error when ${situation}`, async ({ page }) => {
 		await page.addInitScript({ content: script });
-		const { result } = await openPage<Report>(page, '/threejs/s1.html?renderer=webgpu&hold&n=10');
+		const { result } = await openPage<Report>(page, 'threejs/s1.html?renderer=webgpu&hold&n=10');
 		expect(result.ok).toBe(false);
 		expect(result.error).toContain(error);
 	});
