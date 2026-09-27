@@ -171,9 +171,28 @@ const NO_WEBGPU_ERRORS = [
 	'three.js could not start WebGPU',
 ];
 
-/** True when a page failed because the browser offers no WebGPU at all. */
-function missingWebGPU(error: string | undefined): boolean {
-	return error !== undefined && NO_WEBGPU_ERRORS.some((start) => error.startsWith(start));
+/** The starts of the errors that mean the browser offers no WebGL2: the test pages' and the engine's. */
+const NO_WEBGL2_ERRORS = ['no WebGL2 context', 'E1301'];
+
+/** The GPU paths a device may lack: a page that needs one it lacks is a skip, not a failure. */
+export type MissingAllowed = Readonly<Record<Tier, boolean>>;
+
+/** Nothing may be missing: every page must run. */
+export const NONE_MISSING: MissingAllowed = { webgpu: false, webgl2: false };
+
+/**
+ * The GPU path a check needs, which a device may lack: its tier, or WebGL2 for the shaders page,
+ * which compiles the GLSL programs there.
+ */
+function neededPath(check: Check): Tier | undefined {
+	if ('tier' in check) return check.tier;
+	return check.kind === 'shaders' ? 'webgl2' : undefined;
+}
+
+/** True when a page failed because the browser lacks the GPU path `path` altogether. */
+function missingPath(path: Tier, error: string | undefined): boolean {
+	const starts = path === 'webgpu' ? NO_WEBGPU_ERRORS : NO_WEBGL2_ERRORS;
+	return error !== undefined && starts.some((start) => error.startsWith(start));
 }
 
 /** How much three.js's two renderers differ on a scene's hold frame in the same run, if both drew it. */
@@ -223,19 +242,20 @@ function parityProblems(
 }
 
 /**
- * What is wrong with a page's result; empty when nothing is. A missing WebGPU on a WebGPU check is a
- * skip when allowed, because some devices have no WebGPU in any browser. A parity check needs the
- * context, to reach the result that it compares with.
+ * What is wrong with a page's result; empty when nothing is. A check whose GPU path the browser
+ * lacks is a skip when `missing` allows it: some devices have no WebGPU in any browser, and some
+ * virtual machines give a browser no WebGL2. A parity check needs the context, to reach the result
+ * that it compares with.
  */
 export function judge(
 	check: Check,
 	result: ItemResult,
-	allowNoWebGPU: boolean,
+	missing: MissingAllowed,
 	context?: JudgeContext,
 ): string[] | 'skip' {
 	if (!result.ok) {
-		if (allowNoWebGPU && 'tier' in check && check.tier === 'webgpu' && missingWebGPU(result.error))
-			return 'skip';
+		const path = neededPath(check);
+		if (path && missing[path] && missingPath(path, result.error)) return 'skip';
 		return [result.error ?? 'the page failed without a message'];
 	}
 	switch (check.kind) {
@@ -264,7 +284,7 @@ export function judge(
 			const failures = (result.failures ?? []) as { shader: string; stage: string; log: string }[];
 			const problems = failures.map((f) => `${f.shader} ${f.stage}: ${f.log.split('\n')[0]}`);
 			if (!(Number(result.glslPrograms) > 0)) problems.push('no GLSL program was compiled');
-			if (!result.webgpu && !allowNoWebGPU) problems.push('no WebGPU to compile the WGSL');
+			if (!result.webgpu && !missing.webgpu) problems.push('no WebGPU to compile the WGSL');
 			return problems;
 		}
 		case 'engine':

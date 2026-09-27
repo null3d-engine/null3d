@@ -114,7 +114,8 @@ jobs:
 
   real-browsers:
     # Safari and Firefox on GitHub's macOS machines, through the same test pages. A missing WebGPU
-    # adapter is reported as a skip, because these virtual machines may not expose one.
+    # adapter or WebGL2 context is reported as a skip, because these virtual machines may not give a
+    # browser one: Safari gets no WebGPU there, and Firefox no WebGL2.
     runs-on: macos-15
     timeout-minutes: 30
     env:
@@ -133,7 +134,7 @@ jobs:
       - name: Let Firefox open without the first-launch prompt
         run: xattr -dr com.apple.quarantine /Applications/Firefox.app || true
       - name: Safari and Firefox
-        run: bun tests/real-browsers.ts --allow-no-webgpu Safari Firefox
+        run: bun tests/real-browsers.ts --allow-no-webgpu --allow-no-webgl2 Safari Firefox
       - uses: actions/upload-artifact@v4
         if: failure() || cancelled()
         with:

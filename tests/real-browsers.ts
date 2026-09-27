@@ -7,6 +7,7 @@
 // Options:
 //   --plan <name>       the plan to run: checks, the default, or parity
 //   --allow-no-webgpu   a browser without WebGPU skips the WebGPU pages instead of failing them
+//   --allow-no-webgl2   a browser without WebGL2 skips the WebGL2 pages instead of failing them
 //   --android <list>    browsers on the Android phone: chrome, chrome-beta, brave, firefox, samsung
 //   --lan <list>        names of runner pages that wait on the local network, as device-browser,
 //                       such as ipad-safari; pages on one device take turns
@@ -21,7 +22,7 @@ import {
 	summaryTable,
 } from '../bench/lib/report.ts';
 import { forwardPort, openOnPhone, phoneModel } from './lib/adb.ts';
-import { type Check, judge, PLANS } from './lib/plans.ts';
+import { type Check, judge, type MissingAllowed, NONE_MISSING, PLANS } from './lib/plans.ts';
 import { RUNS_DIR } from './lib/report-collector.ts';
 import {
 	batchTimeoutMs,
@@ -40,7 +41,8 @@ import { HTTP_PORT, startServer } from './lib/server.ts';
 
 export interface Options {
 	plan: string;
-	allowNoWebGPU: boolean;
+	/** GPU paths a browser may lack, whose pages it then skips. */
+	missing: MissingAllowed;
 	/** macOS app names, such as Safari. */
 	mac: string[];
 	android: string[];
@@ -48,14 +50,16 @@ export interface Options {
 }
 
 const USAGE =
-	'usage: bun tests/real-browsers.ts [--plan <name>] [--allow-no-webgpu] [--android <browsers>] [--lan <runners>] [<macOS app>...]';
+	'usage: bun tests/real-browsers.ts [--plan <name>] [--allow-no-webgpu] [--allow-no-webgl2] [--android <browsers>] [--lan <runners>] [<macOS app>...]';
 
 export function parseArgs(args: readonly string[]): Options {
-	const options: Options = { plan: 'checks', allowNoWebGPU: false, mac: [], android: [], lan: [] };
+	const missing = { ...NONE_MISSING };
+	const options: Options = { plan: 'checks', missing, mac: [], android: [], lan: [] };
 	const list = (value: string | undefined) => (value ?? '').split(',').filter(Boolean);
 	for (let i = 0; i < args.length; i++) {
 		const arg = args[i] as string;
-		if (arg === '--allow-no-webgpu') options.allowNoWebGPU = true;
+		if (arg === '--allow-no-webgpu') missing.webgpu = true;
+		else if (arg === '--allow-no-webgl2') missing.webgl2 = true;
 		else if (arg === '--plan') options.plan = args[++i] ?? '';
 		else if (arg === '--android') options.android = list(args[++i]);
 		else if (arg === '--lan') options.lan = list(args[++i]);
@@ -196,7 +200,7 @@ async function main(): Promise<void> {
 		for (const item of plan.items) {
 			const result = readResult(run, name, item.id);
 			const verdict = result
-				? judge(item.check, result, options.allowNoWebGPU, context)
+				? judge(item.check, result, options.missing, context)
 				: ['no result; the runner stopped before this page'];
 			if (verdict === 'skip') {
 				counts.skip++;
