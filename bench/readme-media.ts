@@ -7,6 +7,7 @@ import { writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { chromium, type Page } from '@playwright/test';
 import { applyPalette, GIFEncoder, quantize } from 'gifenc';
+import { pageResult } from '../tests/lib/page-result.ts';
 import { REPO_ROOT, startServer } from '../tests/lib/server.ts';
 import { pagePath } from './lib/parity';
 
@@ -34,18 +35,13 @@ interface Frame {
 async function renderAt(page: Page, baseUrl: string, t: number): Promise<Frame> {
 	const url = `${baseUrl}${pagePath('s1', 'sokko3d-webgpu', `hold=${t}&n=${COUNT}`)}`;
 	await page.goto(url);
-	const handle = await page.waitForFunction(
-		() => (globalThis as { __sokko3dResult?: unknown }).__sokko3dResult,
-		undefined,
-		{ timeout: 60_000 },
-	);
-	const result = (await handle.jsonValue()) as {
+	const result = await pageResult<{
 		ok: boolean;
 		error?: string;
 		width: number;
 		height: number;
 		pixels: string;
-	};
+	}>(page, 60_000);
 	if (!result.ok) throw new Error(`the hold page at ${t} s failed: ${result.error}`);
 	return {
 		width: result.width,

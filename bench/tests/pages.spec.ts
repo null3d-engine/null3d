@@ -2,6 +2,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
 import { encode } from 'fast-png';
+import { pageResult } from '../../tests/lib/page-result.ts';
 import { PARITY_SCENES, type PageKind, pagePath } from '../lib/parity';
 import { BACKGROUND, PARITY_CANVAS, S2_NODE_COUNT } from '../scenes/spec';
 
@@ -52,8 +53,6 @@ interface BenchReport extends Report {
 }
 
 /** Runs in the page: the result the page published, once it exists. */
-const readResult = () => (globalThis as { __sokko3dResult?: unknown }).__sokko3dResult;
-
 /** Opens a page and returns the result that it publishes, with every error that it logs. */
 async function openPage<T extends Report>(
 	page: Page,
@@ -65,8 +64,7 @@ async function openPage<T extends Report>(
 		if (message.type() === 'error') errors.push(message.text());
 	});
 	await page.goto(path);
-	const handle = await page.waitForFunction(readResult, undefined, { timeout: 90_000 });
-	return { result: (await handle.jsonValue()) as T, errors };
+	return { result: await pageResult<T>(page, 90_000), errors };
 }
 
 /** Opens a page and returns its result. It fails on a page error and on any error in the console. */

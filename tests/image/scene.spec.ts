@@ -1,6 +1,7 @@
 import { expect, test } from '@playwright/test';
 import { ENGINE_MODES } from '../lib/engine-checks.ts';
 import { compareToReference } from '../lib/images.ts';
+import { pageResult } from '../lib/page-result.ts';
 
 interface SceneResult {
 	error?: string;
@@ -12,13 +13,10 @@ interface SceneResult {
 }
 
 /** Runs in the page: the result the test page published, once it exists. */
-const readResult = () => (globalThis as { __sokko3dResult?: unknown }).__sokko3dResult;
-
 for (const mode of ENGINE_MODES) {
 	test(`a scene draws through the engine on webgpu, ${mode.name}`, async ({ page }) => {
 		await page.goto(`scene.html?gpu=webgpu&${mode.query}`);
-		const handle = await page.waitForFunction(readResult, undefined, { timeout: 30_000 });
-		const result = (await handle.jsonValue()) as SceneResult;
+		const result = await pageResult<SceneResult>(page, 30_000);
 		expect(result.error).toBeUndefined();
 		expect(result.capabilities.tier.startsWith('webgpu')).toBe(true);
 		// One bundle draws four buckets: the red box, the red sphere, the unlit blue box, and the

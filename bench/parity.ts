@@ -15,6 +15,7 @@
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { type Browser, chromium, errors } from '@playwright/test';
+import { pageResult } from '../tests/lib/page-result.ts';
 import { REPO_ROOT, startServer } from '../tests/lib/server.ts';
 import browserTests from '../tests/playwright.config.ts';
 import {
@@ -39,8 +40,6 @@ const OUTPUT_DIR = join(REPO_ROOT, 'test-results/parity');
 const RESULT_TIMEOUT_MS = 90_000;
 
 /** Runs in the page: the result the page published, once it exists. */
-const readResult = () => (globalThis as { __sokko3dResult?: unknown }).__sokko3dResult;
-
 /**
  * Opens a hold page and reads its frame. A failure comes back as a message that names the page
  * kind, never as a throw: a missing page, a page error, a timeout, or a result without a frame.
@@ -63,10 +62,7 @@ async function loadFrame(
 		if (response?.status() === 404) return `${kind}: page not found at ${path}`;
 		if (response && !response.ok())
 			return `${kind}: the dev server answered HTTP ${response.status()} for ${path}`;
-		const handle = await page.waitForFunction(readResult, undefined, {
-			timeout: RESULT_TIMEOUT_MS,
-		});
-		return decodeHoldResult(await handle.jsonValue());
+		return decodeHoldResult(await pageResult(page, RESULT_TIMEOUT_MS));
 	} catch (e) {
 		const reason =
 			e instanceof errors.TimeoutError

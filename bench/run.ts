@@ -17,6 +17,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { type Browser, chromium } from '@playwright/test';
+import { pageResult } from '../tests/lib/page-result.ts';
 import { runName } from '../tests/lib/runs.ts';
 import { REPO_ROOT, startServer } from '../tests/lib/server.ts';
 import { PAGE_KINDS, PARITY_SCENES, type PageKind, type ParityScene, pagePath } from './lib/parity';
@@ -92,12 +93,7 @@ async function runPage(browser: Browser, url: string, timeoutMs: number): Promis
 	const page = await browser.newPage({ viewport: { width: 1400, height: 800 } });
 	try {
 		await page.goto(url);
-		const handle = await page.waitForFunction(
-			() => (globalThis as { __sokko3dResult?: unknown }).__sokko3dResult,
-			undefined,
-			{ timeout: timeoutMs },
-		);
-		return (await handle.jsonValue()) as BenchResult;
+		return await pageResult<BenchResult>(page, timeoutMs);
 	} catch (e) {
 		return { ok: false, error: (e as Error).message } as BenchResult;
 	} finally {
