@@ -2,7 +2,7 @@
 // straight into engine memory; structural changes (create, destroy, reparent, visibility) go into
 // the command ring as 16-byte records, which the engine applies when the next frame starts.
 
-import { checkNumber, checkVector, DEV, type Described } from '../errors/checks';
+import { checkLive, checkNumber, checkVector, DEV, type Described } from '../errors/checks';
 import { EngineError } from '../errors/engine-error';
 import * as C from '../generated/core';
 import { type ColorInput, linearColor } from './color';
@@ -114,17 +114,9 @@ export class Object3D implements Described {
 		return `${this.name ? `"${this.name}"` : 'an object'} (slot ${this.slot})`;
 	}
 
-	private live(call: string): void {
-		if (this.destroyedFrame >= 0)
-			throw new EngineError(
-				'E1101',
-				`${call}() was called on ${this.describe()}, which was destroyed in frame ${this.destroyedFrame}.`,
-			);
-	}
-
 	setPosition(x: number, y: number, z: number): void {
 		if (DEV) {
-			this.live('setPosition');
+			checkLive('setPosition', this);
 			checkVector('setPosition', this, x, y, z);
 		}
 		const p = this.scene.views.positions;
@@ -138,7 +130,7 @@ export class Object3D implements Described {
 	/** Sets the rotation as a quaternion (x, y, z, w). */
 	setRotation(x: number, y: number, z: number, w: number): void {
 		if (DEV) {
-			this.live('setRotation');
+			checkLive('setRotation', this);
 			checkVector('setRotation', this, x, y, z, w);
 		}
 		const r = this.scene.views.rotations;
@@ -153,7 +145,7 @@ export class Object3D implements Described {
 	/** Sets the rotation from Euler angles in radians, with three.js's axis order names. */
 	setRotationEuler(x: number, y: number, z: number, order: EulerOrder = 'XYZ'): void {
 		if (DEV) {
-			this.live('setRotationEuler');
+			checkLive('setRotationEuler', this);
 			checkVector('setRotationEuler', this, x, y, z);
 		}
 		const r = this.scene.views.rotations;
@@ -165,7 +157,7 @@ export class Object3D implements Described {
 
 	setScale(x: number, y: number, z: number): void {
 		if (DEV) {
-			this.live('setScale');
+			checkLive('setScale', this);
 			checkVector('setScale', this, x, y, z);
 		}
 		const s = this.scene.views.scales;
@@ -179,7 +171,7 @@ export class Object3D implements Described {
 	/** Turns the object toward a point. It assumes the object's parents are not rotated. */
 	lookAt(x: number, y: number, z: number): void {
 		if (DEV) {
-			this.live('lookAt');
+			checkLive('lookAt', this);
 			checkVector('lookAt', this, x, y, z);
 		}
 		const { positions, rotations } = this.scene.views;
@@ -216,24 +208,24 @@ export class Object3D implements Described {
 
 	/** Moves the object under another, or to the root with null. It keeps its local transform. */
 	setParent(parent: Object3D | null): void {
-		if (DEV) this.live('setParent');
+		if (DEV) checkLive('setParent', this);
 		this.scene.command(C.COMMAND_SET_PARENT, this.handle, parent?.handle ?? 0, 0, 'setParent');
 	}
 
 	/** Hides or shows the object and everything under it. */
 	setVisible(visible: boolean): void {
-		if (DEV) this.live('setVisible');
+		if (DEV) checkLive('setVisible', this);
 		this.scene.command(C.COMMAND_SET_VISIBLE, this.handle, visible ? 1 : 0, 0, 'setVisible');
 	}
 
 	setDynamic(dynamic: boolean): void {
-		if (DEV) this.live('setDynamic');
+		if (DEV) checkLive('setDynamic', this);
 		this.scene.command(C.COMMAND_SET_DYNAMIC, this.handle, dynamic ? 1 : 0, 0, 'setDynamic');
 	}
 
 	/** Removes the object at the next frame. Its children become roots. */
 	destroy(): void {
-		if (DEV) this.live('destroy');
+		if (DEV) checkLive('destroy', this);
 		this.scene.command(C.COMMAND_DESTROY, this.handle, 0, 0, 'destroy');
 		this.destroyedFrame = this.scene.frame;
 	}

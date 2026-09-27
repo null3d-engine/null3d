@@ -34,6 +34,20 @@ export function checkVector(
 	);
 }
 
+/** Something that can be destroyed: the frame it was destroyed in, or -1 while it lives. */
+export interface Destroyable extends Described {
+	readonly destroyedFrame: number;
+}
+
+/** Throws E1101 when a call reaches an object after it was destroyed. Call it inside `if (DEV)`. */
+export function checkLive(call: string, target: Destroyable): void {
+	if (target.destroyedFrame >= 0)
+		throw new EngineError(
+			'E1101',
+			`${call}() was called on ${target.describe()}, which was destroyed in frame ${target.destroyedFrame}.`,
+		);
+}
+
 /** Throws E1203 when a number is not finite. Call it inside `if (DEV)`. */
 export function checkNumber(call: string, name: string, value: number, target: Described): void {
 	if (!Number.isFinite(value))
