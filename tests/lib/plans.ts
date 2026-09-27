@@ -1,5 +1,20 @@
 // Plans for the runner page, and how each page's result is judged. A plan item says which page to
 // open with which switches, and what to check in the page's result.
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
+import {
+	compareFrames,
+	comparisonName,
+	decodeHoldResult,
+	differenceText,
+	type HoldFrame,
+	holdPagePath,
+	PARITY_SCENES,
+	type PagePair,
+	type ParityScene,
+	parityFiles,
+	TIER_PAIRS,
+} from '../../bench/lib/parity.ts';
 import {
 	ENGINE_MODES,
 	type EngineMode,
@@ -16,10 +31,22 @@ export type Check =
 	| { kind: 'isolation' }
 	| { kind: 'clear'; tier: Tier }
 	| { kind: 'shaders' }
-	| { kind: 'engine'; tier: Tier; mode: EngineMode };
+	| { kind: 'engine'; tier: Tier; mode: EngineMode }
+	| { kind: 'hold'; tier: Tier }
+	| { kind: 'parity'; tier: Tier; scene: ParityScene; pair: PagePair };
+
+/** What judging can reach besides the result itself. */
+export interface JudgeContext {
+	/** Another item's result from the same runner in the same run. */
+	resultOf(id: string): ItemResult | undefined;
+	/** The folder for images that judging saves, such as parity diffs. */
+	imageDir: string;
+}
 
 const TEST_PAGES = '/tests/pages/';
 const TIERS: readonly Tier[] = ['webgpu', 'webgl2'];
+/** How long a benchmark page may take to publish its hold frame on a slow device. */
+const HOLD_TIMEOUT_SECONDS = 60;
 
 const slug = (text: string) => text.toLowerCase().replace(/[^a-z0-9]+/g, '-');
 
@@ -61,18 +88,101 @@ export function checksPlan(): PlanItem<Check>[] {
 	];
 }
 
-export const PLANS: Readonly<Record<string, () => PlanItem<Check>[]>> = { checks: checksPlan };
+/** The name of the parity plan's item for one scene's hold page of one kind. */
+const parityItemId = (scene: ParityScene, kind: string) => `parity-${scene}-${kind}`;
+
+/**
+ * The benchmark scenes' hold frames from sokko3d and three.js on both GPU tiers. Each three.js
+ * page must publish a frame. Each sokko3d page must match the three.js page of its tier from the
+ * same run, which judging compares.
+ */
+export function parityPlan(): PlanItem<Check>[] {
+	return PARITY_SCENES.flatMap((scene) =>
+		TIERS.flatMap((tier) => {
+			const pair = TIER_PAIRS[tier];
+			return [
+				{
+					id: parityItemId(scene, pair.reference),
+					path: holdPagePath(scene, pair.reference),
+					timeoutSeconds: HOLD_TIMEOUT_SECONDS,
+					check: { kind: 'hold' as const, tier },
+				},
+				{
+					id: parityItemId(scene, pair.candidate),
+					path: holdPagePath(scene, pair.candidate),
+					timeoutSeconds: HOLD_TIMEOUT_SECONDS,
+					check: { kind: 'parity' as const, tier, scene, pair },
+				},
+			];
+		}),
+	);
+}
+
+export const PLANS: Readonly<Record<string, () => PlanItem<Check>[]>> = {
+	checks: checksPlan,
+	parity: parityPlan,
+};
+
+/**
+ * The starts of the errors that mean the browser offers no WebGPU at all: the engine's, and those
+ * of the three.js pages.
+ */
+const NO_WEBGPU_ERRORS = [
+	'no WebGPU adapter',
+	'E1301',
+	'This browser has no WebGPU',
+	'three.js could not start WebGPU',
+];
 
 /** True when a page failed because the browser offers no WebGPU at all. */
 function missingWebGPU(error: string | undefined): boolean {
-	return error === 'no WebGPU adapter' || error?.startsWith('E1301') === true;
+	return error !== undefined && NO_WEBGPU_ERRORS.some((start) => error.startsWith(start));
+}
+
+/**
+ * Compares a sokko3d page's hold frame with the frame of its three.js page from the same run, and
+ * saves both frames and the diff image in the context's image folder.
+ */
+function parityProblems(
+	check: Extract<Check, { kind: 'parity' }>,
+	result: ItemResult,
+	context: JudgeContext | undefined,
+): string[] {
+	const referenceId = parityItemId(check.scene, check.pair.reference);
+	const referenceResult = context?.resultOf(referenceId);
+	if (!context || !referenceResult) return [`no result from ${referenceId} to compare with`];
+	let reference: HoldFrame;
+	try {
+		reference = decodeHoldResult(referenceResult);
+	} catch (e) {
+		return [`${referenceId} has no frame to compare with: ${(e as Error).message}`];
+	}
+	try {
+		const candidate = decodeHoldResult(result);
+		const comparison = compareFrames(candidate, reference);
+		const name = comparisonName(check.scene, check.pair);
+		const files = parityFiles(name, candidate, reference, comparison.diff);
+		mkdirSync(context.imageDir, { recursive: true });
+		for (const { file, png } of files) writeFileSync(join(context.imageDir, file), png);
+		if (comparison.pass) return [];
+		const images = files.map(({ file }) => join(context.imageDir, file)).join(', ');
+		return [`against ${referenceId}, ${differenceText(comparison)}. Images: ${images}`];
+	} catch (e) {
+		return [(e as Error).message];
+	}
 }
 
 /**
  * What is wrong with a page's result; empty when nothing is. A missing WebGPU on a WebGPU check is a
- * skip when allowed, because some devices have no WebGPU in any browser.
+ * skip when allowed, because some devices have no WebGPU in any browser. A parity check needs the
+ * context, to reach the result that it compares with.
  */
-export function judge(check: Check, result: ItemResult, allowNoWebGPU: boolean): string[] | 'skip' {
+export function judge(
+	check: Check,
+	result: ItemResult,
+	allowNoWebGPU: boolean,
+	context?: JudgeContext,
+): string[] | 'skip' {
 	if (!result.ok) {
 		if (allowNoWebGPU && 'tier' in check && check.tier === 'webgpu' && missingWebGPU(result.error))
 			return 'skip';
@@ -109,5 +219,14 @@ export function judge(check: Check, result: ItemResult, allowNoWebGPU: boolean):
 		}
 		case 'engine':
 			return engineProblems(result as unknown as EngineResult, check.mode, check.tier);
+		case 'hold':
+			try {
+				decodeHoldResult(result);
+				return [];
+			} catch (e) {
+				return [(e as Error).message];
+			}
+		case 'parity':
+			return parityProblems(check, result, context);
 	}
 }

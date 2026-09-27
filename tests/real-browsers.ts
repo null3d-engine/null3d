@@ -5,7 +5,7 @@
 //   bun tests/real-browsers.ts Safari Firefox
 //   bun tests/real-browsers.ts --allow-no-webgpu --android chrome,brave --lan ipad-safari,ipad-brave
 // Options:
-//   --plan <name>       the plan to run; the default is checks
+//   --plan <name>       the plan to run: checks, the default, or parity
 //   --allow-no-webgpu   a browser without WebGPU skips the WebGPU pages instead of failing them
 //   --android <list>    browsers on the Android phone: chrome, chrome-beta, brave, firefox, samsung
 //   --lan <list>        names of runner pages that wait on the local network, as device-browser,
@@ -136,10 +136,14 @@ async function main(): Promise<void> {
 			console.log(`FAIL  ${name}: the runner page never started`);
 			continue;
 		}
+		const context = {
+			resultOf: (id: string) => readResult(run, name, id),
+			imageDir: join(RUNS_DIR, run, name),
+		};
 		for (const item of plan.items) {
 			const result = readResult(run, name, item.id);
 			const verdict = result
-				? judge(item.check, result, options.allowNoWebGPU)
+				? judge(item.check, result, options.allowNoWebGPU, context)
 				: ['no result; the runner stopped before this page'];
 			if (verdict === 'skip') {
 				counts.skip++;
