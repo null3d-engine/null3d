@@ -100,6 +100,47 @@ export function shareOfThree(
 	return { share: sokko3d.cpuMs.median / best, threeMs: best };
 }
 
+/** One page's summary in a benchmark run. */
+export interface SummaryRow {
+	scene: string;
+	/** The page kind, such as sokko3d-webgpu. */
+	kind: string;
+	summary: RunSummary;
+}
+
+/** Milliseconds for a report: two decimals, or n/a. */
+export const ms = (value: number | null | undefined) => (value == null ? 'n/a' : value.toFixed(2));
+
+/** The run's summaries as a Markdown table. */
+export function summaryTable(rows: readonly SummaryRow[]): string {
+	const lines = [
+		'| Scene | Page | Runs | CPU ms per frame, median (lowest to highest run) | p95 | All threads | GPU ms | Frame interval | Upload per frame | Draw calls |',
+		'| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+	];
+	for (const { scene, kind, summary: s } of rows) {
+		const upload = s.uploadBytes === undefined ? 'n/a' : `${(s.uploadBytes / 1e6).toFixed(2)} MB`;
+		lines.push(
+			`| ${scene} | ${kind} | ${s.runs} | ${ms(s.cpuMs.median)} (${ms(s.cpuMs.min)} to ${ms(s.cpuMs.max)}) | ${ms(s.cpuP95Ms)} | ${ms(s.allThreadsMs)} | ${ms(s.gpuMs)} | ${ms(s.intervalMs)} | ${upload} | ${s.drawCalls ?? 'n/a'} |`,
+		);
+	}
+	return lines.join('\n');
+}
+
+/** One sentence per scene: sokko3d's CPU time as a share of three.js's faster renderer. */
+export function comparisonLines(rows: readonly SummaryRow[]): string[] {
+	const scenes = [...new Set(rows.map((r) => r.scene))];
+	return scenes.flatMap((scene) => {
+		const of = (kind: string) => rows.find((r) => r.scene === scene && r.kind === kind)?.summary;
+		const sokko3d = of('sokko3d-webgpu');
+		const share = shareOfThree(sokko3d, [of('threejs-webgpu'), of('threejs-webgl')]);
+		return share
+			? [
+					`${scene}: sokko3d on WebGPU takes ${(share.share * 100).toFixed(0)}% of the CPU time of three.js's faster renderer (${ms(sokko3d?.cpuMs.median)} ms against ${ms(share.threeMs)} ms).`,
+				]
+			: [];
+	});
+}
+
 export interface ChartSeries {
 	name: string;
 	color: string;

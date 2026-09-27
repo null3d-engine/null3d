@@ -13,11 +13,20 @@
 import { execFileSync } from 'node:child_process';
 import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import {
+	type BenchResult,
+	comparisonLines,
+	type SummaryRow,
+	summarizeRuns,
+	summaryTable,
+} from '../bench/lib/report.ts';
 import { forwardPort, openOnPhone, phoneModel } from './lib/adb.ts';
-import { judge, PLANS } from './lib/plans.ts';
+import { type Check, judge, PLANS } from './lib/plans.ts';
 import { RUNS_DIR } from './lib/report-collector.ts';
 import {
 	batchTimeoutMs,
+	type ItemResult,
+	type PlanItem,
 	type Runner,
 	readDevice,
 	readResult,
@@ -84,6 +93,27 @@ function runnersOf(options: Options): LaunchedRunner[] {
 	for (const name of options.lan.map(slug))
 		runners.push({ name, device: name.split('-')[0] as string, launch: { kind: 'lan' } });
 	return runners;
+}
+
+/** The benchmark summary of one runner's results, or undefined when the plan has no benchmarks. */
+function benchSummary(
+	items: readonly PlanItem<Check>[],
+	resultOf: (id: string) => ItemResult | undefined,
+): string | undefined {
+	const groups = new Map<string, { scene: string; kind: string; results: BenchResult[] }>();
+	for (const item of items) {
+		if (item.check.kind !== 'bench') continue;
+		const { scene, page } = item.check;
+		const result = resultOf(item.id);
+		const group = groups.get(`${scene} ${page}`) ?? { scene, kind: page, results: [] };
+		if (result?.ok) group.results.push(result as unknown as BenchResult);
+		groups.set(`${scene} ${page}`, group);
+	}
+	if (groups.size === 0) return undefined;
+	const rows: SummaryRow[] = [...groups.values()]
+		.filter((g) => g.results.length > 0)
+		.map(({ scene, kind, results }) => ({ scene, kind, summary: summarizeRuns(results) }));
+	return [summaryTable(rows), '', ...comparisonLines(rows)].join('\n');
 }
 
 async function main(): Promise<void> {
@@ -159,6 +189,10 @@ async function main(): Promise<void> {
 		failures += counts.fail;
 	}
 	writeFileSync(join(RUNS_DIR, run, 'summary.json'), JSON.stringify(summary, null, '\t'));
+	for (const { name } of runners) {
+		const table = benchSummary(plan.items, (id) => readResult(run, name, id));
+		if (table) console.log(`\n${name}\n${table}\n`);
+	}
 	for (const [name, counts] of Object.entries(summary))
 		console.log(`${name}: ${counts.pass} passed, ${counts.skip} skipped, ${counts.fail} failed`);
 	console.log(`results: ${join(RUNS_DIR, run)}`);

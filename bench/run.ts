@@ -23,10 +23,12 @@ import { PAGE_KINDS, PARITY_SCENES, type PageKind, type ParityScene, pagePath } 
 import {
 	type BenchResult,
 	type ChartSeries,
+	comparisonLines,
 	lineChartSvg,
-	type RunSummary,
-	shareOfThree,
+	ms,
+	type SummaryRow,
 	summarizeRuns,
+	summaryTable,
 } from './lib/report';
 import { MEASURE_SECONDS, WARMUP_SECONDS } from './scenes/spec';
 
@@ -103,21 +105,6 @@ async function runPage(browser: Browser, url: string, timeoutMs: number): Promis
 	}
 }
 
-const ms = (value: number | null | undefined) => (value == null ? 'n/a' : value.toFixed(2));
-
-function summaryTable(rows: { scene: string; kind: string; summary: RunSummary }[]): string {
-	const lines = [
-		'| Scene | Page | Runs | CPU ms per frame, median (lowest to highest run) | p95 | All threads | GPU ms | Frame interval | Upload per frame | Draw calls |',
-		'| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
-	];
-	for (const { scene, kind, summary: s } of rows) {
-		lines.push(
-			`| ${scene} | ${kind} | ${s.runs} | ${ms(s.cpuMs.median)} (${ms(s.cpuMs.min)} to ${ms(s.cpuMs.max)}) | ${ms(s.cpuP95Ms)} | ${ms(s.allThreadsMs)} | ${ms(s.gpuMs)} | ${ms(s.intervalMs)} | ${s.uploadBytes === undefined ? 'n/a' : `${(s.uploadBytes / 1e6).toFixed(2)} MB`} | ${s.drawCalls ?? 'n/a'} |`,
-		);
-	}
-	return lines.join('\n');
-}
-
 async function runProtocol(
 	browser: Browser,
 	baseUrl: string,
@@ -128,7 +115,7 @@ async function runProtocol(
 	const switches = seconds === null ? '' : `seconds=${seconds}`;
 	const timeoutMs =
 		((seconds ?? MEASURE_SECONDS) + (seconds ?? WARMUP_SECONDS)) * 1000 + START_MARGIN_MS;
-	const rows: { scene: string; kind: string; summary: RunSummary }[] = [];
+	const rows: SummaryRow[] = [];
 	const failures: string[] = [];
 	for (const scene of options.scenes) {
 		for (const kind of options.pages) {
@@ -152,15 +139,7 @@ async function runProtocol(
 			if (results.length > 0) rows.push({ scene, kind, summary: summarizeRuns(results) });
 		}
 	}
-	const lines = [summaryTable(rows), ''];
-	for (const scene of options.scenes) {
-		const of = (kind: PageKind) => rows.find((r) => r.scene === scene && r.kind === kind)?.summary;
-		const share = shareOfThree(of('sokko3d-webgpu'), [of('threejs-webgpu'), of('threejs-webgl')]);
-		if (share)
-			lines.push(
-				`${scene}: sokko3d on WebGPU takes ${(share.share * 100).toFixed(0)}% of the CPU time of three.js's faster renderer (${ms(of('sokko3d-webgpu')?.cpuMs.median)} ms against ${ms(share.threeMs)} ms).`,
-			);
-	}
+	const lines = [summaryTable(rows), '', ...comparisonLines(rows)];
 	for (const failure of failures) lines.push(`Failed: ${failure}`);
 	writeFileSync(join(dir, 'summary.json'), JSON.stringify(rows, null, '\t'));
 	return lines.join('\n');

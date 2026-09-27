@@ -11,12 +11,15 @@ import {
 	type HoldFrame,
 	holdPagePath,
 	PARITY_SCENES,
+	type PageKind,
 	type PagePair,
 	type ParityScene,
+	pagePath,
 	parityFiles,
 	passesWithBaseline,
 	TIER_PAIRS,
 } from '../../bench/lib/parity.ts';
+import { MEASURE_SECONDS, WARMUP_SECONDS } from '../../bench/scenes/spec.ts';
 import {
 	ENGINE_MODES,
 	type EngineMode,
@@ -35,7 +38,8 @@ export type Check =
 	| { kind: 'shaders' }
 	| { kind: 'engine'; tier: Tier; mode: EngineMode }
 	| { kind: 'hold'; tier: Tier }
-	| { kind: 'parity'; tier: Tier; scene: ParityScene; pair: PagePair };
+	| { kind: 'parity'; tier: Tier; scene: ParityScene; pair: PagePair }
+	| { kind: 'bench'; tier: Tier; scene: ParityScene; page: PageKind };
 
 /** What judging can reach besides the result itself. */
 export interface JudgeContext {
@@ -120,9 +124,35 @@ export function parityPlan(): PlanItem<Check>[] {
 	);
 }
 
+/** Fresh runs of each benchmark page in the bench plan. */
+const BENCH_RUNS = 3;
+/** The pages the bench plan compares, and the GPU tier each one draws with. */
+const BENCH_PAGES: readonly [PageKind, Tier][] = [
+	['sokko3d-webgpu', 'webgpu'],
+	['threejs-webgpu', 'webgpu'],
+	['threejs-webgl', 'webgl2'],
+];
+
+/**
+ * The benchmark protocol for S1 in browsers that Playwright cannot drive: fresh runs of each page,
+ * each a 5-second warm-up and 30 measured seconds. The pages take turns run by run, so a device
+ * that slows as it warms up slows every engine alike.
+ */
+export function benchPlan(): PlanItem<Check>[] {
+	return Array.from({ length: BENCH_RUNS }, (_, run) =>
+		BENCH_PAGES.map(([page, tier]) => ({
+			id: `bench-s1-${page}-${run + 1}`,
+			path: pagePath('s1', page),
+			timeoutSeconds: WARMUP_SECONDS + MEASURE_SECONDS + 60,
+			check: { kind: 'bench' as const, tier, scene: 's1' as const, page },
+		})),
+	).flat();
+}
+
 export const PLANS: Readonly<Record<string, () => PlanItem<Check>[]>> = {
 	checks: checksPlan,
 	parity: parityPlan,
+	bench: benchPlan,
 };
 
 /**
@@ -234,6 +264,11 @@ export function judge(
 		}
 		case 'engine':
 			return engineProblems(result as unknown as EngineResult, check.mode, check.tier);
+		case 'bench': {
+			const frames = Number(result.frames ?? 0);
+			const cpu = (result.cpuMs as { median?: number } | undefined)?.median ?? 0;
+			return frames > 0 && cpu > 0 ? [] : [`the run measured ${frames} frames`];
+		}
 		case 'hold':
 			try {
 				decodeHoldResult(result);
