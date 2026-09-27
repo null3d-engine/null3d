@@ -1,0 +1,57 @@
+//! A raw pointer that a parallel loop's chunks share to write disjoint parts of one buffer.
+
+/// Points at a buffer that several threads write, each in its own part. The pointer itself is
+/// safe to share; every access is `unsafe` and states which part the caller owns.
+pub(crate) struct SharedMut<T> {
+    ptr: *mut T,
+    len: usize,
+}
+
+impl<T> Clone for SharedMut<T> {
+    fn clone(&self) -> Self {
+        *self
+    }
+}
+
+impl<T> Copy for SharedMut<T> {}
+
+// SAFETY: the pointer is only dereferenced through the `unsafe` methods below, whose callers
+// guarantee that no two threads touch the same element at once.
+unsafe impl<T: Send> Send for SharedMut<T> {}
+// SAFETY: as above.
+unsafe impl<T: Send> Sync for SharedMut<T> {}
+
+impl<T> SharedMut<T> {
+    /// Shares `slice`. The caller keeps the mutable borrow alive while the pointer is in use.
+    pub(crate) fn new(slice: &mut [T]) -> Self {
+        Self {
+            ptr: slice.as_mut_ptr(),
+            len: slice.len(),
+        }
+    }
+
+    /// Writes element `i`.
+    ///
+    /// # Safety
+    /// `i` is inside the buffer, and no other thread accesses element `i` at the same time.
+    #[inline(always)]
+    pub(crate) unsafe fn write(&self, i: usize, value: T) {
+        debug_assert!(i < self.len);
+        // SAFETY: guaranteed by the caller.
+        unsafe { self.ptr.add(i).write(value) }
+    }
+
+    /// Reads element `i`.
+    ///
+    /// # Safety
+    /// `i` is inside the buffer, and no other thread writes element `i` at the same time.
+    #[inline(always)]
+    pub(crate) unsafe fn read(&self, i: usize) -> T
+    where
+        T: Copy,
+    {
+        debug_assert!(i < self.len);
+        // SAFETY: guaranteed by the caller.
+        unsafe { self.ptr.add(i).read() }
+    }
+}
