@@ -1,4 +1,4 @@
-//! The engine core: scene storage, transforms, culling and the job system. It compiles natively
+//! The engine core: scene storage, transforms, instance batches, culling and the job system. It compiles natively
 //! for tests, and to WebAssembly twice: with threads (atomics and shared memory) and without.
 //!
 //! # Module map
@@ -11,6 +11,7 @@
 //! | [`math`] | 3 × 4 affine matrices: compose, multiply, bounding spheres |
 //! | [`world`] | Per-frame world output: matrices and bounding spheres, double-buffered |
 //! | [`scene`] | Scene objects by slot, 16-byte commands, the hierarchy and the transform update |
+//! | [`instances`] | Instance batches: per-row arrays, dirty ranges, the batch table, memory epoch |
 //! | [`culling`] | Frustum planes and SIMD sphere culling, serial and parallel |
 //! | [`jobs`] | The job system: parallel loops, background tasks, worker loops |
 //!
@@ -27,6 +28,7 @@ pub mod bitset;
 pub mod culling;
 pub mod error;
 pub mod handle;
+pub mod instances;
 pub mod jobs;
 pub mod math;
 pub mod scene;
