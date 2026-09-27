@@ -43,10 +43,20 @@ export interface FrameSummary {
 export interface MemoryStats {
 	/** Size of the engine's WebAssembly memory at the end of the measurement. */
 	wasmBytes: number | null;
-	/** JavaScript heap of the page and its workers, by global scope, where the browser measures it. */
+	/**
+	 * JavaScript heap by global scope: the page and its workers when a measurement of them finished
+	 * during the run, otherwise the page alone where the browser reports that. Chrome adds shared
+	 * memory, such as the engine's own, to the figure of each worker that holds it, so worker
+	 * figures overlap and can far exceed the worker's own heap.
+	 */
 	jsHeap: { bytes: number; byScope: Record<string, number> } | null;
-	/** Heap samples taken during the measurement, for long runs. */
+	/** Measurements of the page and its workers that finished during the run, for long runs. */
 	jsHeapSamples: { atSeconds: number; bytes: number }[];
+	/**
+	 * Why the heap figures cover only the page, or null when they also cover the workers that run
+	 * JavaScript each frame.
+	 */
+	jsHeapNote: string | null;
 }
 
 export interface FrameMetrics extends FrameSummary {
@@ -162,23 +172,30 @@ interface MemoryMeasurement {
 
 type MeasureMemory = () => Promise<MemoryMeasurement>;
 
-/** Time between heap samples; each sample can take several seconds to arrive. */
+/** Time from one heap sample's arrival to the request for the next. */
 const HEAP_SAMPLE_GAP_MS = 5000;
 
 /**
  * Samples the JavaScript heap of the page and its workers, where the browser offers a measurement
- * that covers workers (Chrome, on a cross-origin isolated page).
+ * that covers workers (Chrome, on a cross-origin isolated page). Chrome answers when every worker
+ * has run the measurement as a task, or after a minute. Job workers never return to their event
+ * loop while the engine runs, so each sample takes about a minute and leaves them out. They run no
+ * JavaScript after they start, so their heap stays the same size. A shorter run reports the page's
+ * own heap, where the browser offers that.
  */
 export class HeapSampler {
 	private readonly samples: MemoryStats['jsHeapSamples'] = [];
 	private last: MemoryMeasurement | undefined;
 	private running = false;
+	private supported = false;
+	private failure: string | null = null;
 
 	start(): void {
 		const measure = (performance as { measureUserAgentSpecificMemory?: MeasureMemory })
 			.measureUserAgentSpecificMemory;
-		// The browser refuses the measurement on a page that is not cross-origin isolated.
+		// The browser offers the measurement only on a cross-origin isolated page.
 		if (!measure) return;
+		this.supported = true;
 		this.running = true;
 		const started = performance.now();
 		const sample = async () => {
@@ -190,25 +207,40 @@ export class HeapSampler {
 				await new Promise((resolve) => setTimeout(resolve, HEAP_SAMPLE_GAP_MS));
 			}
 		};
-		sample().catch(() => {
+		sample().catch((error: unknown) => {
 			this.running = false;
+			const reason = error instanceof Error ? error.message : String(error);
+			this.failure = `the browser refused the measurement: ${reason}`;
 		});
 	}
 
-	stop(): Pick<MemoryStats, 'jsHeap' | 'jsHeapSamples'> {
+	stop(): Pick<MemoryStats, 'jsHeap' | 'jsHeapSamples' | 'jsHeapNote'> {
 		this.running = false;
-		if (!this.last) return { jsHeap: pageHeap(), jsHeapSamples: this.samples };
+		if (!this.last)
+			return {
+				jsHeap: pageHeap(),
+				jsHeapSamples: this.samples,
+				jsHeapNote:
+					this.failure ??
+					(this.supported
+						? 'no measurement of the workers finished during the run; each takes about a minute'
+						: 'this browser does not measure the heap of workers'),
+			};
 		const byScope: Record<string, number> = {};
 		for (const entry of this.last.breakdown) {
 			const where = entry.attribution[0];
 			const name = where ? `${where.scope ?? 'unknown'} ${where.url ?? ''}`.trim() : 'shared';
 			byScope[name] = (byScope[name] ?? 0) + entry.bytes;
 		}
-		return { jsHeap: { bytes: this.last.bytes, byScope }, jsHeapSamples: this.samples };
+		return {
+			jsHeap: { bytes: this.last.bytes, byScope },
+			jsHeapSamples: this.samples,
+			jsHeapNote: null,
+		};
 	}
 }
 
-/** The page's own heap in browsers that expose only that (Chrome without cross-origin isolation). */
+/** The page's own heap, in browsers that report it (Chrome). */
 function pageHeap(): MemoryStats['jsHeap'] {
 	const memory = (performance as { memory?: { usedJSHeapSize: number } }).memory;
 	return memory
