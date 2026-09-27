@@ -23,3 +23,6 @@ packages/*/LICENSE-APACHE
 
 # Lock files of test fixtures
 tools/fixtures/*/Cargo.lock
+
+# Working copies of parallel helpers
+.claude/worktrees/

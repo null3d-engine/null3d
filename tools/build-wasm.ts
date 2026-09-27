@@ -170,6 +170,73 @@ function buildVariant(variant: Variant, bindgen: string): void {
 		'-o',
 		wasm,
 	]);
+	// The loader creates the shared memory itself, so it needs the module's declared sizes.
+	const limits = memoryImportLimits(readFileSync(join(root, wasm)));
+	if (limits)
+		writeFileSync(join(root, outDir, 'sokko3d_memory.json'), `${JSON.stringify(limits)}\n`);
+}
+
+export interface MemoryLimits {
+	/** Initial size in 64 KB pages. */
+	initial: number;
+	/** Declared maximum in 64 KB pages, or null when the module declares none. */
+	maximum: number | null;
+	shared: boolean;
+}
+
+/** Reads an unsigned LEB128 number at `offset`; returns the value and the offset after it. */
+function readLeb(bytes: Uint8Array, offset: number): [number, number] {
+	let value = 0;
+	let shift = 0;
+	let at = offset;
+	for (;;) {
+		const byte = bytes[at++] ?? 0;
+		value += (byte & 0x7f) * 2 ** shift;
+		if ((byte & 0x80) === 0) return [value, at];
+		shift += 7;
+	}
+}
+
+/** The limits of the memory a module imports, from its import section, or null when it imports none. */
+export function memoryImportLimits(bytes: Uint8Array): MemoryLimits | null {
+	let at = 8;
+	while (at < bytes.length) {
+		const id = bytes[at++];
+		const [size, contentStart] = readLeb(bytes, at);
+		at = contentStart;
+		if (id !== 2) {
+			at += size;
+			continue;
+		}
+		let [count, cursor] = readLeb(bytes, at);
+		for (; count > 0; count--) {
+			for (let name = 0; name < 2; name++) {
+				const [length, afterLength] = readLeb(bytes, cursor);
+				cursor = afterLength + length;
+			}
+			const kind = bytes[cursor++];
+			if (kind === 0) {
+				cursor = readLeb(bytes, cursor)[1];
+			} else if (kind === 1) {
+				cursor++;
+				const flags = bytes[cursor++] ?? 0;
+				cursor = readLeb(bytes, cursor)[1];
+				if (flags & 1) cursor = readLeb(bytes, cursor)[1];
+			} else if (kind === 2) {
+				const flags = bytes[cursor++] ?? 0;
+				const [initial, afterInitial] = readLeb(bytes, cursor);
+				const maximum = flags & 1 ? readLeb(bytes, afterInitial)[0] : null;
+				return { initial, maximum, shared: (flags & 2) !== 0 };
+			} else if (kind === 3) {
+				cursor += 2;
+			} else {
+				cursor++;
+				cursor = readLeb(bytes, cursor)[1];
+			}
+		}
+		return null;
+	}
+	return null;
 }
 
 export interface SizeEntry {

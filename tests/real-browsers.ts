@@ -15,16 +15,36 @@ const PAGE_TIMEOUT_MS = 60_000;
 const SERVER_TIMEOUT_MS = 30_000;
 
 interface PageCheck {
-	page: 'clear' | 'isolation';
+	page: 'clear' | 'isolation' | 'engine';
 	query: string;
 	tier?: 'webgpu' | 'webgl2';
+	/** For engine checks: the thread that should draw. */
+	renderThread?: string;
 }
+
+const ENGINE_MODES = [
+	{ query: '', renderThread: 'render-worker' },
+	{ query: '&latency=low', renderThread: 'game-worker' },
+	{ query: '&threads=off', renderThread: 'main' },
+] as const;
 
 const CHECKS: PageCheck[] = [
 	{ page: 'clear', query: 'gpu=webgpu', tier: 'webgpu' },
 	{ page: 'clear', query: 'gpu=webgl2', tier: 'webgl2' },
 	{ page: 'isolation', query: '' },
+	...(['webgpu', 'webgl2'] as const).flatMap((tier) =>
+		ENGINE_MODES.map((mode) => ({
+			page: 'engine' as const,
+			query: `gpu=${tier}&seconds=2${mode.query}`,
+			tier,
+			renderThread: mode.renderThread,
+		})),
+	),
 ];
+
+/** Slower than this median frame interval means the engine's loop is not keeping up with the display. */
+const MAX_MEDIAN_INTERVAL_MS = 34;
+const MIN_FRAMES = 30;
 
 interface Report {
 	url: string;
@@ -35,6 +55,10 @@ interface Report {
 	pixels?: string;
 	crossOriginIsolated?: boolean;
 	threaded?: boolean;
+	mode?: { renderThread: string };
+	capabilities?: { tier: string };
+	intervals?: { count: number; median: number };
+	count?: { updates: number };
 }
 
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
@@ -73,6 +97,20 @@ export function judge(check: PageCheck, report: Report, allowNoWebGPU: boolean):
 		if (allowNoWebGPU && check.tier === 'webgpu' && report.error === 'no WebGPU adapter')
 			return 'skip';
 		return [report.error ?? 'the page failed without a message'];
+	}
+	if (check.page === 'engine') {
+		const problems: string[] = [];
+		if (report.mode?.renderThread !== check.renderThread)
+			problems.push(`drew on ${report.mode?.renderThread}, expected ${check.renderThread}`);
+		if (!report.capabilities?.tier.startsWith(check.tier ?? ''))
+			problems.push(`used ${report.capabilities?.tier}`);
+		if ((report.intervals?.count ?? 0) <= MIN_FRAMES)
+			problems.push(`only ${report.intervals?.count} frames`);
+		if ((report.intervals?.median ?? Infinity) >= MAX_MEDIAN_INTERVAL_MS)
+			problems.push(`median frame interval ${report.intervals?.median} ms`);
+		if ((report.count?.updates ?? 0) <= MIN_FRAMES)
+			problems.push(`the game updated only ${report.count?.updates} times`);
+		return problems;
 	}
 	if (check.page === 'isolation') {
 		const problems: string[] = [];
@@ -115,7 +153,7 @@ async function main(): Promise<void> {
 				const runId = randomUUID();
 				const query = [check.query, `run=${runId}`].filter(Boolean).join('&');
 				execFileSync('open', ['-a', browser, `${BASE_URL}/${check.page}.html?${query}`]);
-				const label = `${browser}: ${check.page}${check.tier ? ` on ${check.tier}` : ''}`;
+				const label = `${browser}: ${check.page}${check.renderThread ? ` drawing on ${check.renderThread}` : ''}${check.tier ? ` on ${check.tier}` : ''}`;
 				let verdict: string[] | 'skip';
 				try {
 					verdict = judge(check, await waitForReport(check.page, runId), allowNoWebGPU);

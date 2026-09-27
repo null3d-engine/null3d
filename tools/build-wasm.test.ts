@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'bun:test';
-import { growthProblems, lockedVersion, measure, releaseTarget } from './build-wasm';
+import {
+	growthProblems,
+	lockedVersion,
+	measure,
+	memoryImportLimits,
+	releaseTarget,
+} from './build-wasm';
 
 describe('lockedVersion', () => {
 	it('reads a package version from Cargo.lock', () => {
@@ -33,5 +39,23 @@ describe('size checks', () => {
 			'grew 2.1%',
 		);
 		expect(growthProblems({ 'b.wasm': { raw: 1, brotli: 5000 } }, baseline)).toEqual([]);
+	});
+});
+
+describe('memoryImportLimits', () => {
+	const header = [0x00, 0x61, 0x73, 0x6d, 0x01, 0x00, 0x00, 0x00];
+	// An import section with one function import, then a shared memory: env.f, env.memory (18, 65536).
+	const importSection = [
+		0x02, 0x1a, 0x02, 0x03, 0x65, 0x6e, 0x76, 0x01, 0x66, 0x00, 0x00, 0x03, 0x65, 0x6e, 0x76, 0x06,
+		0x6d, 0x65, 0x6d, 0x6f, 0x72, 0x79, 0x02, 0x03, 0x12, 0x80, 0x80, 0x04,
+	];
+
+	it('reads the initial size, the maximum and the shared flag of an imported memory', () => {
+		const bytes = new Uint8Array([...header, ...importSection]);
+		expect(memoryImportLimits(bytes)).toEqual({ initial: 18, maximum: 65536, shared: true });
+	});
+
+	it('returns null for a module without imports', () => {
+		expect(memoryImportLimits(new Uint8Array(header))).toBeNull();
 	});
 });

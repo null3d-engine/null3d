@@ -1,0 +1,85 @@
+// The game worker: runs the game's code and the engine core. In pipelined mode it computes frame
+// N+1 while the render worker draws frame N, and waits for the render worker's signal with
+// Atomics.waitAsync, so its event loop stays alive for promises and messages. In low-latency mode it
+// also owns the canvas and draws each frame itself.
+
+import { GameRunner } from '../game/runner';
+import { runDirectLoop } from '../render/direct-loop';
+import type { RenderLoop } from '../render/loop';
+import { emptySceneInput } from '../render/loop';
+import { createRenderer, type Renderer } from '../render/renderer';
+import { controlViews, Slot } from '../shared/control';
+import { startCore } from '../shared/core';
+import type { GameWorkerMessage, WorkerReply } from './protocol';
+
+let runner: GameRunner | undefined;
+let renderer: Renderer | undefined;
+let loop: RenderLoop | undefined;
+let controlSlots: Int32Array | undefined;
+
+const reply = (message: WorkerReply, transfer: Transferable[] = []) =>
+	postMessage(message, { transfer });
+
+async function waitForChange(slots: Int32Array, slot: Slot, value: number): Promise<void> {
+	const wait = Atomics.waitAsync(slots, slot, value);
+	if (wait.async) await wait.value;
+}
+
+async function runPipelined(game: GameRunner, control: ArrayBufferLike): Promise<void> {
+	const { slots } = controlViews(control);
+	let published = 0;
+	while (Atomics.load(slots, Slot.Running) !== 0) {
+		const paused = Atomics.load(slots, Slot.Paused);
+		if (paused !== 0) {
+			await waitForChange(slots, Slot.Paused, paused);
+			continue;
+		}
+		const taken = Atomics.load(slots, Slot.FramesTaken);
+		if (taken < published) {
+			await waitForChange(slots, Slot.FramesTaken, taken);
+			continue;
+		}
+		game.step(performance.now());
+		published++;
+		Atomics.store(slots, Slot.FramesPublished, published);
+		Atomics.notify(slots, Slot.FramesPublished);
+	}
+}
+
+self.onmessage = async (event: MessageEvent<GameWorkerMessage>) => {
+	const message = event.data;
+	if (message.type === 'init') {
+		try {
+			controlSlots = controlViews(message.control).slots;
+			const core = await startCore(message.build, message.module, message.memory);
+			runner = new GameRunner((name, data, transfer) =>
+				reply({ type: 'game-message', name, data }, transfer),
+			);
+			await runner.load(message.gameUrl);
+			if (message.renderer) {
+				renderer = await createRenderer(message.renderer.canvas, message.renderer);
+				loop = runDirectLoop(runner, renderer, message.control);
+			} else {
+				void runPipelined(runner, message.control);
+			}
+			reply({
+				type: 'ready',
+				role: 'game',
+				threaded: core.isThreadedBuild(),
+				version: core.engineVersion(),
+				tier: renderer?.tier,
+			});
+		} catch (e) {
+			reply({ type: 'error', role: 'game', message: e instanceof Error ? e.message : String(e) });
+		}
+	} else if (message.type === 'post') {
+		runner?.receive(message.name, message.data);
+	} else if (message.type === 'stats' && loop) {
+		reply({ type: 'stats', intervals: loop.intervals.intervals.summary() });
+	} else if (message.type === 'capture' && renderer && controlSlots) {
+		const captured = await renderer.capture(
+			emptySceneInput(Atomics.load(controlSlots, Slot.FramesPublished)),
+		);
+		reply({ type: 'captured', ...captured }, [captured.pixels.buffer]);
+	}
+};
