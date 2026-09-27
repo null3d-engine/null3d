@@ -1,5 +1,12 @@
 import { describe, expect, test } from 'bun:test';
-import { type BenchResult, lineChartSvg, median, shareOfThree, summarizeRuns } from './report';
+import {
+	type BenchResult,
+	lineChartSvg,
+	median,
+	niceStep,
+	shareOfThree,
+	summarizeRuns,
+} from './report';
 
 function result(cpu: number, stats = false): BenchResult {
 	return {
@@ -57,5 +64,18 @@ describe('benchmark reports', () => {
 		expect(svg).toContain('A &amp; B');
 		expect(svg.match(/<polyline/g)?.length).toBe(1);
 		expect(svg).toContain('10,000');
+	});
+
+	test('chart gridlines fall on round values above the highest point', () => {
+		expect(niceStep(3.62)).toBe(1);
+		expect(niceStep(1.16)).toBe(0.25);
+		expect(niceStep(0.3)).toBe(0.1);
+		expect(niceStep(48)).toBe(10);
+		expect(niceStep(0)).toBe(1);
+		const svg = lineChartSvg('t', 'x', 'y', [
+			{ name: 'a long series name', color: '#000', points: [{ x: 1, y: 3.62 }] },
+		]);
+		for (const label of ['>0<', '>1<', '>2<', '>3<', '>4<']) expect(svg).toContain(label);
+		expect(svg).not.toContain('>5<');
 	});
 });

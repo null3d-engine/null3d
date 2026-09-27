@@ -157,6 +157,20 @@ export interface ChartSeries {
 
 const escapeXml = (text: string) => text.replace(/&/g, '&amp;').replace(/</g, '&lt;');
 
+/** Gridlines a chart aims for on its value axis. */
+const VALUE_TICKS = 5;
+
+/**
+ * The step between gridlines on a value axis that reaches `max`: 1, 2, 2.5 or 5 times a power of
+ * ten, so every gridline has a round label.
+ */
+export function niceStep(max: number, ticks = VALUE_TICKS): number {
+	const raw = max > 0 ? max / ticks : 1;
+	const power = 10 ** Math.floor(Math.log10(raw));
+	const multiple = [1, 2, 2.5, 5, 10].find((m) => m * power >= raw) ?? 10;
+	return multiple * power;
+}
+
 /**
  * A line chart as SVG, with a logarithmic x axis: for example CPU time per frame against the
  * instance count. Axis ticks sit at the data's x values.
@@ -167,19 +181,25 @@ export function lineChartSvg(
 	yLabel: string,
 	series: readonly ChartSeries[],
 ): string {
-	const width = 760;
+	const plotWidth = 500;
 	const height = 440;
 	const left = 70;
-	const right = 190;
+	// The legend is as wide as its longest name, at about 7 pixels a character.
+	const right = 52 + 7 * Math.max(0, ...series.map((s) => s.name.length));
+	const width = left + plotWidth + right;
 	const top = 50;
 	const bottom = 60;
 	const xs = [...new Set(series.flatMap((s) => s.points.map((p) => p.x)))].sort((a, b) => a - b);
-	const yMax = Math.max(...series.flatMap((s) => s.points.map((p) => p.y)), 0) * 1.1 || 1;
+	const highest = Math.max(0, ...series.flatMap((s) => s.points.map((p) => p.y)));
+	const step = niceStep(highest);
+	const yTicks = Array.from(
+		{ length: Math.max(1, Math.ceil(highest / step)) + 1 },
+		(_, i) => i * step,
+	);
+	const yMax = yTicks[yTicks.length - 1] as number;
 	const [xMin, xMax] = [Math.log10(xs[0] ?? 1), Math.log10(xs[xs.length - 1] ?? 10)];
-	const px = (x: number) =>
-		left + ((Math.log10(x) - xMin) / (xMax - xMin || 1)) * (width - left - right);
+	const px = (x: number) => left + ((Math.log10(x) - xMin) / (xMax - xMin || 1)) * plotWidth;
 	const py = (y: number) => top + (1 - y / yMax) * (height - top - bottom);
-	const yTicks = Array.from({ length: 6 }, (_, i) => (yMax / 1.1) * (i / 5));
 	const lines = [
 		`<svg xmlns="http://www.w3.org/2000/svg" width="${width}" height="${height}" font-family="system-ui, sans-serif" font-size="12">`,
 		`<rect width="${width}" height="${height}" fill="#ffffff"/>`,
@@ -188,7 +208,7 @@ export function lineChartSvg(
 		`<text transform="translate(18 ${(top + height - bottom) / 2}) rotate(-90)" text-anchor="middle">${escapeXml(yLabel)}</text>`,
 		...yTicks.map(
 			(y) =>
-				`<line x1="${left}" x2="${width - right}" y1="${py(y)}" y2="${py(y)}" stroke="#e4e4e4"/><text x="${left - 8}" y="${py(y) + 4}" text-anchor="end">${y.toFixed(y < 1 ? 2 : 1)}</text>`,
+				`<line x1="${left}" x2="${width - right}" y1="${py(y)}" y2="${py(y)}" stroke="#e4e4e4"/><text x="${left - 8}" y="${py(y) + 4}" text-anchor="end">${Number(y.toFixed(3))}</text>`,
 		),
 		...xs.map(
 			(x) =>

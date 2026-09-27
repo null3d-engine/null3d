@@ -171,21 +171,21 @@ async function runSweep(
 			if (kind === 'sokko3d-webgpu' && summary.allThreadsMs !== undefined) {
 				// The engine's share is every thread's work, job workers included, less the game's update.
 				const update = summary.updateMs ?? 0;
-				add('sokko3d game code (update)', n, update);
-				add('sokko3d engine, all threads', n, summary.allThreadsMs - update);
+				add('game code', n, update);
+				add('engine', n, summary.allThreadsMs - update);
 			}
 		}
 	}
-	const colors: Record<string, string> = {
-		'sokko3d-webgpu': '#2a6fdb',
-		'sokko3d engine, all threads': '#18a058',
-		'sokko3d game code (update)': '#9a9a9a',
-		'threejs-webgpu': '#e8554e',
-		'threejs-webgl': '#f2a13e',
+	const lines: Record<string, { label: string; color: string }> = {
+		'sokko3d-webgpu': { label: 'sokko3d, busiest thread', color: '#2a6fdb' },
+		'game code': { label: 'sokko3d game code', color: '#9a9a9a' },
+		engine: { label: 'sokko3d engine, all threads', color: '#18a058' },
+		'threejs-webgpu': { label: 'three.js WebGPU', color: '#e8554e' },
+		'threejs-webgl': { label: 'three.js WebGL', color: '#f2a13e' },
 	};
 	const series: ChartSeries[] = Object.entries(points).map(([name, pts]) => ({
-		name: name === 'sokko3d-webgpu' ? 'sokko3d, busiest thread' : name,
-		color: colors[name] ?? '#000000',
+		name: lines[name]?.label ?? name,
+		color: lines[name]?.color ?? '#000000',
 		points: pts,
 	}));
 	const svg = lineChartSvg(
@@ -196,9 +196,10 @@ async function runSweep(
 	);
 	const svgFile = join(dir, 'sweep.svg');
 	writeFileSync(svgFile, svg);
-	const page = await browser.newPage({ viewport: { width: 760, height: 440 } });
+	// A window larger than the chart; the picture is of the chart alone.
+	const page = await browser.newPage({ viewport: { width: 1200, height: 800 } });
 	await page.setContent(svg);
-	await page.screenshot({ path: join(dir, 'sweep.png') });
+	await page.locator('svg').screenshot({ path: join(dir, 'sweep.png') });
 	await page.close();
 	return `Sweep chart: ${relative(REPO_ROOT, svgFile)} and sweep.png`;
 }
