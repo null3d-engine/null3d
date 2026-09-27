@@ -46,6 +46,14 @@ export const ERRORS = {
 			'E1203: setPosition() got NaN for x on "Player" (slot 12). Check the value computed before this call.',
 		since: '0.1',
 	},
+	E1204: {
+		title: 'Invalid color',
+		cause:
+			'A call received a color that is not a hex string, a number from 0 to 0xffffff, or three numbers from 0 to 1.',
+		fix: "Pass a hex string such as '#4a8cff', a number such as 0x4a8cff, or three sRGB components from 0 to 1, such as [0.29, 0.55, 1].",
+		example: "E1204: createLambertMaterial() got the color 'blue-ish'.",
+		since: '0.1',
+	},
 	E1301: {
 		title: 'No usable GPU path',
 		cause: 'The browser offers neither WebGPU nor WebGL2 for the way the engine was asked to draw.',

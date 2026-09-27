@@ -16,6 +16,7 @@ Every error the engine throws is an `EngineError` with a code. Its message names
 | [E1102](E1102.md) | Too many objects | The scene reached the most objects one engine holds. |
 | [E1103](E1103.md) | Object from another engine | A call received an object that this engine did not create. |
 | [E1203](E1203.md) | Invalid number | A call received a number that is not finite, such as NaN or Infinity. |
+| [E1204](E1204.md) | Invalid color | A call received a color that is not a hex string, a number from 0 to 0xffffff, or three numbers from 0 to 1. |
 | [E1301](E1301.md) | No usable GPU path | The browser offers neither WebGPU nor WebGL2 for the way the engine was asked to draw. |
 | [E1401](E1401.md) | Not a game module | The module passed to createEngine as the game does not export a game as its default export. |
 | [E1402](E1402.md) | Engine core out of date | The engine core WebAssembly file lacks functions that the TypeScript side calls, so the two come from different builds. |
