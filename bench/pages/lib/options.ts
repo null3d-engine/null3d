@@ -1,9 +1,17 @@
 // The address switches that benchmark pages share. Each check fails with a message that says how to
 // fix the address, and the page publishes that message as its error.
 
+import { HOLD_TIME } from '../../scenes/spec';
+
 export interface RunOptions {
-	/** `?hold`: render one frame at the hold time and publish its pixels, instead of a timed run. */
-	hold: boolean;
+	/**
+	 * `?hold`: render one frame and publish its pixels, instead of a timed run. The value is the
+	 * scene time to draw: `?hold=3.5`, or the scene module's hold time for a bare `?hold`. Null
+	 * without the switch.
+	 */
+	hold: number | null;
+	/** `?demo`: run the scene until the page closes, with no measurement. */
+	demo: boolean;
 	/** `?n=`: the instance count, or null to use the scene's default. */
 	count: number | null;
 	/** `?seconds=`: the warm-up and the measured time of a run, or null to use the protocol's. */
@@ -44,10 +52,24 @@ function readNumber(
 	return value;
 }
 
-/** Reads `?hold`, `?n=` and `?seconds=`. */
+/** The name a page publishes its result under: `hold`, `demo` or `bench`. */
+export function pageReport(params: URLSearchParams): 'hold' | 'demo' | 'bench' {
+	return params.has('hold') ? 'hold' : params.has('demo') ? 'demo' : 'bench';
+}
+
+/** Reads `?hold`, `?demo`, `?n=` and `?seconds=`. */
 export function readRunOptions(params: URLSearchParams): RunOptions {
 	return {
-		hold: params.has('hold'),
+		hold:
+			params.get('hold') === ''
+				? HOLD_TIME
+				: readNumber(
+						params,
+						'hold',
+						(v) => Number.isFinite(v) && v >= 0,
+						'a scene time in seconds, 0 or more',
+					),
+		demo: params.has('demo'),
 		count: readNumber(
 			params,
 			'n',

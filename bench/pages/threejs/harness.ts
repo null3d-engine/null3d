@@ -11,7 +11,6 @@ import {
 	BACKGROUND,
 	CAMERA,
 	CANVAS,
-	HOLD_TIME,
 	MEASURE_SECONDS,
 	type OutArray,
 	PARITY_CANVAS,
@@ -19,7 +18,7 @@ import {
 	WARMUP_SECONDS,
 } from '../../scenes/spec';
 import { measureFrames } from '../lib/measure';
-import { type RunOptions, readChoice, readRunOptions } from '../lib/options';
+import { pageReport, type RunOptions, readChoice, readRunOptions } from '../lib/options';
 import { packRows, rowStrideOf } from '../lib/pixels';
 
 /** The three.js classes that the scenes use. The `three` and `three/webgpu` builds both export them. */
@@ -70,6 +69,8 @@ interface Renderer {
 	setSize(width: number, height: number): void;
 	render(scene: ThreeModule.Object3D, camera: ThreeModule.Camera): void;
 	compileAsync(scene: ThreeModule.Object3D, camera: ThreeModule.Camera): Promise<unknown>;
+	/** Calls `frame` with the time in milliseconds once per display frame, until the page closes. */
+	setAnimationLoop(frame: ((ms: number) => void) | null): unknown;
 }
 
 interface Engine {
@@ -145,7 +146,7 @@ async function startWebGPU(): Promise<Engine> {
  */
 export function runThreePage(sceneName: string, build: BuildScene): void {
 	const params = new URLSearchParams(location.search);
-	run(params.has('hold') ? 'hold' : 'bench', async () => {
+	run(pageReport(params), async () => {
 		const options = readRunOptions(params);
 		const rendererName = readChoice(params, 'renderer', RENDERERS);
 		const { three, renderer, readFrame } =
@@ -184,11 +185,12 @@ export function runThreePage(sceneName: string, build: BuildScene): void {
 		};
 		const report = { scene: sceneName, renderer: rendererName, n: setup.n };
 
-		if (options.hold) {
+		const hold = options.hold;
+		if (hold !== null) {
 			const { width, height } = PARITY_CANVAS;
 			camera.aspect = width / height;
 			camera.updateProjectionMatrix();
-			const pixels = await readFrame(width, height, () => frame(HOLD_TIME));
+			const pixels = await readFrame(width, height, () => frame(hold));
 			return { ...report, width, height, pixels: toBase64(pixels) };
 		}
 
@@ -196,6 +198,10 @@ export function runThreePage(sceneName: string, build: BuildScene): void {
 		pose(0);
 		await renderer.compileAsync(scene, camera);
 		renderer.render(scene, camera);
+		if (options.demo) {
+			renderer.setAnimationLoop((ms) => frame(ms / 1000));
+			return report;
+		}
 		const timings = await measureFrames(
 			frame,
 			options.seconds ?? WARMUP_SECONDS,

@@ -1,24 +1,28 @@
 // What every sokko3d benchmark game shares: its options from its own module address, the view
 // (background, lights and camera) from the shared scene module, and a camera that follows a path.
 import type { Camera, GameContext } from '@sokko3d/engine';
-import { AMBIENT, BACKGROUND, CAMERA, HOLD_TIME, type OutArray, SUN } from '../../scenes/spec';
+import { AMBIENT, BACKGROUND, CAMERA, type OutArray, SUN } from '../../scenes/spec';
 
 export interface GameOptions {
 	/** The object count. */
 	count: number;
-	/** Draw the scene at the hold time on every frame. */
-	hold: boolean;
+	/** The scene time to draw on every frame, or null to follow the game's clock. */
+	hold: number | null;
 }
 
-/** Reads `n` and `hold` from the game module's address, where the page harness puts them. */
+/** Reads `n` and `holdMs` from the game module's address, where the page harness puts them. */
 export function readGameOptions(moduleUrl: string): GameOptions {
 	const params = new URL(moduleUrl).searchParams;
-	return { count: Number(params.get('n') ?? '0'), hold: params.has('hold') };
+	const holdMs = params.get('holdMs');
+	return {
+		count: Number(params.get('n') ?? '0'),
+		hold: holdMs === null ? null : Number(holdMs) / 1000,
+	};
 }
 
-/** The scene time of a frame: the hold time in hold mode, else the time since the game started. */
+/** The scene time of a frame: the held time in hold mode, else the time since the game started. */
 export function sceneTime(options: GameOptions, context: GameContext): number {
-	return options.hold ? HOLD_TIME : context.time.now;
+	return options.hold ?? context.time.now;
 }
 
 /** Sets the background and the lights, and makes the active camera. */
