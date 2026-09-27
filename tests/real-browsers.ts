@@ -1,144 +1,163 @@
-// Runs the test pages in real browser apps that Playwright cannot drive, such as Safari. It starts
-// the dev server, opens each page with macOS's `open` command, waits for the page's report, and
-// checks it against the same references the Playwright tests use. Run from the repository root:
+// Runs a plan of test pages in real browsers that Playwright cannot drive, through the runner page:
+// browser apps on this Mac, browsers on an Android phone connected by USB, and runner pages that
+// wait on tablets and phones on the local network. It starts the dev server, lets one browser per
+// device run at a time, then judges every result and prints a summary. From the repository root:
 //   bun tests/real-browsers.ts Safari Firefox
-//   bun tests/real-browsers.ts --allow-no-webgpu Safari   (a missing WebGPU adapter is a skip)
+//   bun tests/real-browsers.ts --allow-no-webgpu --android chrome,brave --lan ipad-safari,ipad-brave
+// Options:
+//   --plan <name>       the plan to run; the default is checks
+//   --allow-no-webgpu   a browser without WebGPU skips the WebGPU pages instead of failing them
+//   --android <list>    browsers on the Android phone: chrome, chrome-beta, brave, firefox, samsung
+//   --lan <list>        names of runner pages that wait on the local network, as device-browser,
+//                       such as ipad-safari; pages on one device take turns
 import { execFileSync } from 'node:child_process';
-import { randomUUID } from 'node:crypto';
-import { existsSync, readFileSync } from 'node:fs';
+import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { forwardPort, openOnPhone, phoneModel } from './lib/adb.ts';
+import { judge, PLANS } from './lib/plans.ts';
+import { RUNS_DIR } from './lib/report-collector.ts';
 import {
-	ENGINE_MODES,
-	type EngineMode,
-	type EngineResult,
-	engineProblems,
-} from './lib/engine-checks.ts';
-import { compareToReference } from './lib/images.ts';
-import { REPORT_DIR } from './lib/report-collector.ts';
-import { startServer } from './lib/server.ts';
+	batchTimeoutMs,
+	type Runner,
+	readDevice,
+	readResult,
+	runName,
+	setTurns,
+	turnBatches,
+	waitForRunners,
+	writePlan,
+} from './lib/runs.ts';
+import { HTTP_PORT, startServer } from './lib/server.ts';
 
-const PAGE_TIMEOUT_MS = 60_000;
-
-interface PageCheck {
-	page: 'clear' | 'isolation' | 'engine';
-	query: string;
-	tier?: 'webgpu' | 'webgl2';
-	/** For engine checks: the mode the switches select. */
-	mode?: EngineMode;
+export interface Options {
+	plan: string;
+	allowNoWebGPU: boolean;
+	/** macOS app names, such as Safari. */
+	mac: string[];
+	android: string[];
+	lan: string[];
 }
 
-const CHECKS: PageCheck[] = [
-	{ page: 'clear', query: 'gpu=webgpu', tier: 'webgpu' },
-	{ page: 'clear', query: 'gpu=webgl2', tier: 'webgl2' },
-	{ page: 'isolation', query: '' },
-	...(['webgpu', 'webgl2'] as const).flatMap((tier) =>
-		ENGINE_MODES.map((mode) => ({
-			page: 'engine' as const,
-			query: [`gpu=${tier}`, 'seconds=2', mode.query].filter(Boolean).join('&'),
-			tier,
-			mode,
-		})),
-	),
-];
+const USAGE =
+	'usage: bun tests/real-browsers.ts [--plan <name>] [--allow-no-webgpu] [--android <browsers>] [--lan <runners>] [<macOS app>...]';
 
-type Report = Partial<EngineResult> & {
-	url: string;
-	ok: boolean;
-	error?: string;
-	width?: number;
-	height?: number;
-	pixels?: string;
-	crossOriginIsolated?: boolean;
-	threaded?: boolean;
-};
-
-const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
-
-/** The report whose page URL carries this run ID, once it arrives. */
-async function waitForReport(page: string, runId: string): Promise<Report> {
-	const file = join(REPORT_DIR, `${page}.jsonl`);
-	const deadline = Date.now() + PAGE_TIMEOUT_MS;
-	while (Date.now() < deadline) {
-		if (existsSync(file)) {
-			for (const line of readFileSync(file, 'utf8').split('\n')) {
-				if (line.includes(runId)) return JSON.parse(line) as Report;
-			}
-		}
-		await sleep(250);
+export function parseArgs(args: readonly string[]): Options {
+	const options: Options = { plan: 'checks', allowNoWebGPU: false, mac: [], android: [], lan: [] };
+	const list = (value: string | undefined) => (value ?? '').split(',').filter(Boolean);
+	for (let i = 0; i < args.length; i++) {
+		const arg = args[i] as string;
+		if (arg === '--allow-no-webgpu') options.allowNoWebGPU = true;
+		else if (arg === '--plan') options.plan = args[++i] ?? '';
+		else if (arg === '--android') options.android = list(args[++i]);
+		else if (arg === '--lan') options.lan = list(args[++i]);
+		else if (arg.startsWith('--')) throw new Error(`unknown option ${arg}\n${USAGE}`);
+		else options.mac.push(arg);
 	}
-	throw new Error(`no report from ${page} within ${PAGE_TIMEOUT_MS / 1000} s`);
+	if (!PLANS[options.plan])
+		throw new Error(`no plan named ${options.plan}; plans: ${Object.keys(PLANS).join(', ')}`);
+	return options;
 }
 
-/** Problems with one report, or 'skip' when a missing WebGPU adapter is allowed. */
-export function judge(check: PageCheck, report: Report, allowNoWebGPU: boolean): string[] | 'skip' {
-	if (!report.ok) {
-		if (allowNoWebGPU && check.tier === 'webgpu' && report.error === 'no WebGPU adapter')
-			return 'skip';
-		return [report.error ?? 'the page failed without a message'];
+/** How a runner starts: an app on this Mac, a browser on the phone, or a page that waits on the network. */
+type Launch = { kind: 'mac'; app: string } | { kind: 'android'; browser: string } | { kind: 'lan' };
+
+type LaunchedRunner = Runner & { launch: Launch };
+
+const slug = (text: string) => text.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+
+function runnersOf(options: Options): LaunchedRunner[] {
+	const runners: LaunchedRunner[] = options.mac.map((app) => ({
+		name: `mac-${slug(app)}`,
+		device: 'mac',
+		launch: { kind: 'mac', app },
+	}));
+	if (options.android.length > 0) {
+		const phone = slug(phoneModel());
+		forwardPort(HTTP_PORT);
+		for (const browser of options.android)
+			runners.push({
+				name: `${phone}-${browser}`,
+				device: phone,
+				launch: { kind: 'android', browser },
+			});
 	}
-	if (check.page === 'engine' && check.mode)
-		return engineProblems(report as EngineResult, check.mode, check.tier ?? '');
-	if (check.page === 'isolation') {
-		const problems: string[] = [];
-		if (!report.crossOriginIsolated) problems.push('the page is not cross-origin isolated');
-		if (!report.threaded) problems.push('the threaded build did not load');
-		return problems;
-	}
-	try {
-		compareToReference(
-			'clear',
-			check.tier ?? 'webgpu',
-			Buffer.from(report.pixels ?? '', 'base64'),
-			report.width ?? 0,
-			report.height ?? 0,
-		);
-		return [];
-	} catch (e) {
-		return [(e as Error).message];
-	}
+	for (const name of options.lan.map(slug))
+		runners.push({ name, device: name.split('-')[0] as string, launch: { kind: 'lan' } });
+	return runners;
 }
 
 async function main(): Promise<void> {
-	const args = process.argv.slice(2);
-	const allowNoWebGPU = args.includes('--allow-no-webgpu');
-	const browsers = args.filter((a) => !a.startsWith('--'));
-	if (browsers.length === 0) {
-		console.error('usage: bun tests/real-browsers.ts [--allow-no-webgpu] <macOS app name>...');
-		process.exit(2);
-	}
+	const options = parseArgs(process.argv.slice(2));
+	const runners = runnersOf(options);
+	if (runners.length === 0) throw new Error(USAGE);
+	const launches = new Map(runners.map((runner) => [runner.name, runner.launch]));
+	const makeItems = PLANS[options.plan] as NonNullable<(typeof PLANS)[string]>;
 
-	const server = await startServer();
-	let failures = 0;
+	const local = await startServer();
+	const lan = options.lan.length > 0 ? await startServer(true) : undefined;
+	const run = runName(options.plan);
+	const plan = writePlan(run, makeItems());
+	if (lan) {
+		console.log(
+			`On each tablet or phone, open ${lan.url}/tests/pages/runner.html?listen&runner=<name>`,
+		);
+		console.log(
+			`with <name> one of ${options.lan.map(slug).join(', ')}. A waiting page runs each new run when its turn comes.`,
+		);
+	}
 	try {
-		for (const browser of browsers) {
-			for (const check of CHECKS) {
-				const runId = randomUUID();
-				const query = [check.query, `run=${runId}`].filter(Boolean).join('&');
-				execFileSync('open', [
-					'-a',
-					browser,
-					`${server.url}/tests/pages/${check.page}.html?${query}`,
-				]);
-				const label = `${browser}: ${check.page}${check.mode ? ` ${check.mode.name}` : ''}${check.tier ? ` on ${check.tier}` : ''}`;
-				let verdict: string[] | 'skip';
-				try {
-					verdict = judge(check, await waitForReport(check.page, runId), allowNoWebGPU);
-				} catch (e) {
-					verdict = [(e as Error).message];
-				}
-				if (verdict === 'skip') {
-					console.log(`skip  ${label}: no WebGPU adapter`);
-				} else if (verdict.length === 0) {
-					console.log(`pass  ${label}`);
-				} else {
-					failures++;
-					console.log(`FAIL  ${label}: ${verdict.join('; ')}`);
-				}
+		for (const batch of turnBatches(runners)) {
+			setTurns(run, batch);
+			for (const name of batch) {
+				const launch = launches.get(name) as Launch;
+				const url = `${local.url}/tests/pages/runner.html?run=${run}&runner=${name}`;
+				if (launch.kind === 'mac') execFileSync('open', ['-a', launch.app, url]);
+				else if (launch.kind === 'android') openOnPhone(launch.browser, url);
+				else console.log(`${name}: its turn now; bring its runner page to the front.`);
 			}
+			await waitForRunners(run, batch, batchTimeoutMs(plan), (name) =>
+				console.log(`${name}: finished`),
+			);
 		}
 	} finally {
-		server.stop();
+		setTurns(run, []);
+		local.stop();
+		lan?.stop();
 	}
+
+	let failures = 0;
+	const summary: Record<string, { pass: number; skip: number; fail: number }> = {};
+	for (const { name } of runners) {
+		const counts = { pass: 0, skip: 0, fail: 0 };
+		summary[name] = counts;
+		if (!readDevice(run, name)) {
+			counts.fail++;
+			failures++;
+			console.log(`FAIL  ${name}: the runner page never started`);
+			continue;
+		}
+		for (const item of plan.items) {
+			const result = readResult(run, name, item.id);
+			const verdict = result
+				? judge(item.check, result, options.allowNoWebGPU)
+				: ['no result; the runner stopped before this page'];
+			if (verdict === 'skip') {
+				counts.skip++;
+				console.log(`skip  ${name}: ${item.id}, no WebGPU`);
+			} else if (verdict.length === 0) {
+				counts.pass++;
+				console.log(`pass  ${name}: ${item.id}`);
+			} else {
+				counts.fail++;
+				console.log(`FAIL  ${name}: ${item.id}: ${verdict.join('; ')}`);
+			}
+		}
+		failures += counts.fail;
+	}
+	writeFileSync(join(RUNS_DIR, run, 'summary.json'), JSON.stringify(summary, null, '\t'));
+	for (const [name, counts] of Object.entries(summary))
+		console.log(`${name}: ${counts.pass} passed, ${counts.skip} skipped, ${counts.fail} failed`);
+	console.log(`results: ${join(RUNS_DIR, run)}`);
 	process.exit(failures > 0 ? 1 : 0);
 }
 

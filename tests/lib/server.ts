@@ -35,8 +35,12 @@ export async function startServer(https = false): Promise<DevServer> {
 	if (await answers(probe)) return { url, stop: () => {} };
 	const child: ChildProcess = spawn('bunx', ['vite'], {
 		cwd: REPO_ROOT,
-		stdio: 'ignore',
+		stdio: ['ignore', 'ignore', 'pipe'],
 		env: { ...process.env, SOKKO3D_HTTPS: https ? '1' : '0' },
+	});
+	let errors = '';
+	child.stderr?.on('data', (chunk: Buffer) => {
+		errors += chunk.toString();
 	});
 	const deadline = Date.now() + START_TIMEOUT_MS;
 	while (Date.now() < deadline) {
@@ -44,5 +48,5 @@ export async function startServer(https = false): Promise<DevServer> {
 		await new Promise((resolve) => setTimeout(resolve, 250));
 	}
 	child.kill();
-	throw new Error(`the dev server did not answer at ${probe}`);
+	throw new Error(`the dev server did not answer at ${probe}\n${errors.trim()}`);
 }

@@ -1,5 +1,5 @@
-// Publishes a test page's result twice: on window, where Playwright reads it, and to the dev
-// server's report collector, for browsers that Playwright cannot drive.
+// Publishes a test page's result: on window, where Playwright and the runner page read it, and,
+// when the page is opened on its own, to the dev server's report collector.
 
 declare global {
 	interface Window {
@@ -21,6 +21,8 @@ export async function publish(name: string, result: Record<string, unknown>): Pr
 	window.__sokko3dResult = report;
 	const status = document.getElementById('status');
 	if (status) status.textContent = JSON.stringify({ ...report, pixels: undefined }, null, 2);
+	// Inside the runner page's frame, the runner posts the result with its run.
+	if (window.parent !== window) return;
 	try {
 		await fetch(`/__sokko3d/report?name=${name}`, { method: 'POST', body: JSON.stringify(report) });
 	} catch {

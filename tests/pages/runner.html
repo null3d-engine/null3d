@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta charset="utf-8" />
+		<meta name="viewport" content="width=device-width, initial-scale=1" />
+		<title>sokko3d runner</title>
+		<style>
+			body { margin: 0; font: 14px system-ui, sans-serif; background: #101418; color: #e8e8e8; }
+			#status { position: fixed; top: 0; left: 0; right: 0; z-index: 1; padding: 4px 8px; background: #000a; }
+			#items { margin: 32px 8px 8px; padding: 0; list-style: none; }
+			iframe.page { position: fixed; inset: 0; width: 100vw; height: 100vh; border: 0; background: #fff; }
+		</style>
+	</head>
+	<body>
+		<div id="status">starting</div>
+		<ul id="items"></ul>
+		<script type="module" src="./runner.ts"></script>
+	</body>
+</html>

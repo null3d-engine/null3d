@@ -36,6 +36,8 @@ const indexRedirect: Plugin = {
 
 export default defineConfig({
 	root: import.meta.dirname,
+	// The HTTP and HTTPS servers can run at once, so each keeps its own prebundled dependencies.
+	cacheDir: https ? 'node_modules/.vite-https' : 'node_modules/.vite',
 	plugins: [sokko3d({ https, certDir: 'target/dev-cert' }), reportCollector(), indexRedirect],
 	server: {
 		port: https ? HTTPS_PORT : HTTP_PORT,
