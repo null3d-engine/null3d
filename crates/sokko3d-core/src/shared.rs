@@ -30,6 +30,18 @@ impl<T> SharedMut<T> {
         }
     }
 
+    /// The elements `start..start + len`.
+    ///
+    /// # Safety
+    /// The range is inside the buffer, the buffer outlives `'a`, and no other thread accesses the
+    /// range while the returned slice is alive.
+    #[inline(always)]
+    pub(crate) unsafe fn slice<'a>(&self, start: usize, len: usize) -> &'a mut [T] {
+        debug_assert!(start + len <= self.len);
+        // SAFETY: guaranteed by the caller.
+        unsafe { std::slice::from_raw_parts_mut(self.ptr.add(start), len) }
+    }
+
     /// Writes element `i`.
     ///
     /// # Safety

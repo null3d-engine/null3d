@@ -1,5 +1,5 @@
-//! The engine core: scene storage, transforms and the job system. It compiles natively for
-//! tests, and to WebAssembly twice: with threads (atomics and shared memory) and without.
+//! The engine core: scene storage, transforms, culling and the job system. It compiles natively
+//! for tests, and to WebAssembly twice: with threads (atomics and shared memory) and without.
 //!
 //! # Module map
 //!
@@ -11,6 +11,7 @@
 //! | [`math`] | 3 × 4 affine matrices: compose, multiply, bounding spheres |
 //! | [`world`] | Per-frame world output: matrices and bounding spheres, double-buffered |
 //! | [`scene`] | Scene objects by slot, 16-byte commands, the hierarchy and the transform update |
+//! | [`culling`] | Frustum planes and SIMD sphere culling, serial and parallel |
 //! | [`jobs`] | The job system: parallel loops, background tasks, worker loops |
 //!
 //! Frame code allocates nothing: every buffer a frame uses is allocated at creation with a fixed
@@ -23,6 +24,7 @@
 #![warn(missing_docs)]
 
 pub mod bitset;
+pub mod culling;
 pub mod error;
 pub mod handle;
 pub mod jobs;
