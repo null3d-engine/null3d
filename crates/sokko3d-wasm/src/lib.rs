@@ -18,7 +18,7 @@ use std::sync::OnceLock;
 use sokko3d_core::error::CoreError;
 use sokko3d_core::handle::Handle;
 use sokko3d_core::instances::BatchTable;
-use sokko3d_core::jobs::JobSystem;
+use sokko3d_core::jobs::{JobConfig, JobSystem};
 use sokko3d_core::scene::{CommandRing, SceneStorage};
 use sokko3d_core::snapshot::FrameSnapshot;
 use sokko3d_render::camera::Perspective;
@@ -41,6 +41,13 @@ pub fn engine_version() -> String {
 #[wasm_bindgen(js_name = isThreadedBuild)]
 pub fn is_threaded_build() -> bool {
     cfg!(target_feature = "atomics")
+}
+
+#[wasm_bindgen]
+extern "C" {
+    /// The browser's clock, in milliseconds, on the thread that calls it.
+    #[wasm_bindgen(js_namespace = performance, js_name = now)]
+    fn performance_now() -> f64;
 }
 
 /// Upload ranges one frame can list before it uploads everything instead.
@@ -160,12 +167,17 @@ pub fn last_error_detail(index: u32) -> u32 {
 }
 
 /// Creates the engine on the game thread, and the job system that `job_workers` job workers
-/// serve. Every capacity is fixed from here on.
+/// serve, timing their work with the browser's clock. Every capacity is fixed from here on.
 #[wasm_bindgen(js_name = initEngine)]
 pub fn init_engine(job_workers: u32, scene_capacity: u32, max_batches: u32, commands: u32) -> u32 {
     // SAFETY: as in `with_engine`; this is the first call on the game thread.
     let cell = unsafe { &mut *ENGINE.0.get() };
-    if cell.is_some() || JOBS.set(JobSystem::new(job_workers)).is_err() {
+    let jobs = JobSystem::with_config(JobConfig {
+        workers: job_workers,
+        clock: Some(performance_now),
+        ..JobConfig::default()
+    });
+    if cell.is_some() || JOBS.set(jobs).is_err() {
         return fail(codes::NOT_READY, [1, 0]);
     }
     *cell = Some(Engine {
@@ -184,6 +196,13 @@ pub fn init_engine(job_workers: u32, scene_capacity: u32, max_batches: u32, comm
 #[wasm_bindgen(js_name = jobWorkerLoop)]
 pub fn job_worker_loop(index: u32) {
     JOBS.wait().worker_loop(index);
+}
+
+/// The milliseconds job worker `index` spent on work since the last call for it, which starts
+/// its total again from zero. The game thread reads it once per frame.
+#[wasm_bindgen(js_name = takeJobBusyMs)]
+pub fn take_job_busy_ms(index: u32) -> f64 {
+    JOBS.get().map_or(0.0, |jobs| jobs.take_busy_ms(index))
 }
 
 /// Stops every job worker's loop.

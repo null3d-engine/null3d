@@ -1,6 +1,7 @@
 // Runs a game module: starts the engine core on this thread, loads the module, calls its setup
 // function once with the scene API, and steps it once per frame. A frame runs the game's update,
-// then the core's steps, and publishes the frame's draw list; each step's CPU time is recorded.
+// then the core's steps, and publishes the frame's draw list; each step's CPU time is recorded, and
+// so is the time each job worker spent on the frame's work.
 
 import { coreFailure } from '../errors/core-failure';
 import { EngineError } from '../errors/engine-error';
@@ -34,6 +35,8 @@ export class GameRunner {
 	private startTime = -1;
 	private lastTime = -1;
 	private readonly record: FrameRecorder;
+	/** One recorder per job worker, for the busy time the core reports for it each frame. */
+	private readonly jobRecords: FrameRecorder[];
 	private readonly core: CoreMemory;
 	private readonly reported = new Set<string>();
 	/** When the current phase of the frame started. */
@@ -46,6 +49,10 @@ export class GameRunner {
 		private readonly game: GameCore,
 	) {
 		this.record = new FrameRecorder(metrics, Role.Game);
+		this.jobRecords = Array.from(
+			{ length: game.jobWorkers },
+			(_, k) => new FrameRecorder(metrics, Role.Job + k),
+		);
 		const { glue, slots } = game;
 		const status = glue.initEngine(game.jobWorkers, SCENE_CAPACITY, MAX_BATCHES, COMMAND_CAPACITY);
 		if (status !== 0) throw coreFailure(glue, 'createEngine');
@@ -131,6 +138,11 @@ export class GameRunner {
 		Atomics.store(slots, Slot.DrawListWords0 + (frame & 1), glue.drawListWords(frame));
 		this.endPhase(Phase.Record);
 		this.record.commit(performance.now() - start);
+		for (let k = 0; k < this.jobRecords.length; k++) {
+			const jobRecord = this.jobRecords[k] as FrameRecorder;
+			jobRecord.begin(frame);
+			jobRecord.commit(glue.takeJobBusyMs(k));
+		}
 		return frame;
 	}
 }

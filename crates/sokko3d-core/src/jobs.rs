@@ -55,6 +55,13 @@
 //! delays a frame job's helpers by at most one task each, and never blocks the caller, which
 //! runs any chunk no worker has taken.
 //!
+//! # Busy time
+//!
+//! With a clock in its settings, the system adds up the time each job worker spends in frame
+//! chunks and background tasks. A worker adds a chunk's time before it counts the chunk as done,
+//! so when [`JobSystem::parallel_for`] returns, the time of every chunk is included.
+//! [`JobSystem::take_busy_ms`] reads a worker's total and starts it again from zero.
+//!
 //! # Sleeping
 //!
 //! An idle worker spins for a configurable number of rounds, then blocks on the wake word with
@@ -85,6 +92,10 @@ pub const DEFAULT_SPIN_ROUNDS: u32 = 1 << 12;
 /// The loop body [`JobSystem::parallel_for`] runs: it gets a range of item indices and the id of
 /// the thread running it.
 pub type ChunkFn<'a> = dyn Fn(Range<u32>, WorkerId) + Sync + 'a;
+
+/// A clock that the host provides, in milliseconds: the browser's `performance.now`, or a timer
+/// in native tests. Any thread may call it.
+pub type Clock = fn() -> f64;
 
 /// Identifies the thread running a chunk: [`WorkerId::CALLER`] for the thread that called
 /// [`JobSystem::parallel_for`], and `i + 1` for job worker `i`. Use it to index per-thread data.
@@ -117,7 +128,7 @@ pub struct BackgroundTask {
 }
 
 /// Settings for [`JobSystem::with_config`].
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug)]
 pub struct JobConfig {
     /// The number of job workers the host will start. The calling thread is not counted.
     pub workers: u32,
@@ -125,6 +136,8 @@ pub struct JobConfig {
     pub background_capacity: u32,
     /// Rounds an idle worker spins before it blocks.
     pub spin_rounds: u32,
+    /// The clock that times each job worker's work, or `None` to time nothing.
+    pub clock: Option<Clock>,
 }
 
 impl Default for JobConfig {
@@ -133,6 +146,7 @@ impl Default for JobConfig {
             workers: 0,
             background_capacity: DEFAULT_BACKGROUND_CAPACITY,
             spin_rounds: DEFAULT_SPIN_ROUNDS,
+            clock: None,
         }
     }
 }
@@ -173,6 +187,9 @@ pub struct JobSystem {
     workers: u32,
     spin_rounds: u32,
     background: TaskQueue,
+    clock: Option<Clock>,
+    /// Nanoseconds of work per job worker since its total was last taken.
+    busy_ns: Box<[CachePadded<AtomicU64>]>,
 }
 
 // SAFETY: the job descriptor is written only by the thread that won the `busy` flag, while no
@@ -216,6 +233,10 @@ impl JobSystem {
             workers,
             spin_rounds: config.spin_rounds,
             background: TaskQueue::new(config.background_capacity),
+            clock: config.clock,
+            busy_ns: (0..workers)
+                .map(|_| CachePadded(AtomicU64::new(0)))
+                .collect(),
         }
     }
 
@@ -324,6 +345,15 @@ impl JobSystem {
         self.background.len()
     }
 
+    /// The milliseconds job worker `worker_index` spent on frame chunks and background tasks
+    /// since the last call for it, which starts its total again from zero. It is 0 without a
+    /// clock, and for an index past the worker count.
+    pub fn take_busy_ms(&self, worker_index: u32) -> f64 {
+        self.busy_ns
+            .get(worker_index as usize)
+            .map_or(0.0, |busy| busy.0.swap(0, Ordering::Relaxed) as f64 / 1e6)
+    }
+
     /// The body of job worker `worker_index` (from 0 to the worker count minus 1). It runs frame
     /// chunks first and background tasks when no chunk is left, blocks when idle, and returns
     /// after [`JobSystem::shutdown`]. An index past the worker count returns at once.
@@ -343,7 +373,9 @@ impl JobSystem {
             if !self.frame_work_pending()
                 && let Some(task) = self.background.pop()
             {
+                let started = self.work_started(me);
                 (task.run)(task.arg, me);
+                self.work_finished(me, started);
                 idle_rounds = 0;
                 continue;
             }
@@ -390,8 +422,10 @@ impl JobSystem {
         next < count
     }
 
-    /// Runs one claimed chunk and counts it as done, even when it panics.
+    /// Runs one claimed chunk and counts it as done, even when it panics. A job worker adds the
+    /// chunk's time to its busy time first.
     fn run_chunk(&self, chunk: u32, worker: WorkerId) {
+        let started = self.work_started(worker);
         // SAFETY: the chunk was claimed from the current job, so the publishing caller is still
         // waiting inside `parallel_for` and has written the descriptor before publishing the
         // ticket our claim read. The closure is alive until our chunk is counted as done.
@@ -404,8 +438,32 @@ impl JobSystem {
         if catch_unwind(AssertUnwindSafe(|| f(range, worker))).is_err() {
             self.panicked.store(true, Ordering::Relaxed);
         }
+        self.work_finished(worker, started);
         // Nothing may touch the job after this increment: the caller may return at once.
         self.done.0.fetch_add(1, Ordering::Release);
+    }
+
+    /// The clock's time when a job worker starts a piece of work, or `None` when the work is not
+    /// timed: on the calling thread, whose own timers cover it, or without a clock.
+    #[inline]
+    fn work_started(&self, worker: WorkerId) -> Option<f64> {
+        if worker == WorkerId::CALLER {
+            return None;
+        }
+        self.clock.map(|now| now())
+    }
+
+    /// Adds the time since `started` to the job worker's busy time.
+    #[inline]
+    fn work_finished(&self, worker: WorkerId, started: Option<f64>) {
+        if let (Some(started), Some(now), Some(busy)) = (
+            started,
+            self.clock,
+            self.busy_ns.get(worker.index().wrapping_sub(1)),
+        ) {
+            let nanos = ((now() - started).max(0.0) * 1e6) as u64;
+            busy.0.fetch_add(nanos, Ordering::Relaxed);
+        }
     }
 
     /// Makes new work visible to sleeping workers: bumps the wake word, then wakes one or all

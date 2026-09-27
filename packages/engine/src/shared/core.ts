@@ -32,6 +32,8 @@ export interface CoreGlue extends CoreErrors {
 		commands: number,
 	): number;
 	jobWorkerLoop(index: number): void;
+	/** Milliseconds a job worker spent on work since the last call for it; resets its total. */
+	takeJobBusyMs(index: number): number;
 	shutdownJobs(): void;
 	sceneCapacity(): number;
 	sceneArrays(field: number): number;
@@ -82,6 +84,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'lastErrorDetail',
 	'initEngine',
 	'jobWorkerLoop',
+	'takeJobBusyMs',
 	'shutdownJobs',
 	'sceneCapacity',
 	'sceneArrays',

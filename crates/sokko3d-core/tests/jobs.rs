@@ -51,6 +51,54 @@ fn every_index_is_processed_exactly_once() {
     }
 }
 
+/// Milliseconds since the first call, from the native monotonic clock.
+fn clock_ms() -> f64 {
+    static START: OnceLock<Instant> = OnceLock::new();
+    START.get_or_init(Instant::now).elapsed().as_secs_f64() * 1000.0
+}
+
+#[test]
+fn job_workers_time_their_chunks_before_the_loop_returns() {
+    const CHUNK_MS: f64 = 0.5;
+    let pool = Workers::with_config(JobConfig {
+        workers: 2,
+        clock: Some(clock_ms),
+        ..JobConfig::default()
+    });
+    let jobs = pool.jobs();
+    let chunks = [AtomicU32::new(0), AtomicU32::new(0), AtomicU32::new(0)];
+    jobs.parallel_for(60, 1, &|_, worker| {
+        chunks[worker.index()].fetch_add(1, Ordering::Relaxed);
+        spin_for(Duration::from_secs_f64(CHUNK_MS / 1000.0));
+    });
+    for k in 0..2u32 {
+        let ran = chunks[k as usize + 1].load(Ordering::Relaxed);
+        let busy = jobs.take_busy_ms(k);
+        assert!(
+            busy >= CHUNK_MS * f64::from(ran),
+            "worker {k}: {busy} ms for {ran} chunks"
+        );
+        assert_eq!(
+            jobs.take_busy_ms(k),
+            0.0,
+            "worker {k}: the total starts again"
+        );
+    }
+    assert_eq!(jobs.take_busy_ms(2), 0.0, "an index past the worker count");
+    pool.stop();
+
+    let untimed = Workers::start(2);
+    untimed
+        .jobs()
+        .parallel_for(60, 1, &|_, _| spin_for(Duration::from_micros(100)));
+    assert_eq!(
+        untimed.jobs().take_busy_ms(0),
+        0.0,
+        "no clock, no busy time"
+    );
+    untimed.stop();
+}
+
 #[test]
 fn job_workers_share_the_work() {
     let pool = Workers::start(4);

@@ -172,14 +172,11 @@ async function runSweep(
 			console.log(`sweep ${kind} n=${n}: ${ms(result.cpuMs.median)} ms`);
 			add(kind, n, result.cpuMs.median);
 			const summary = summarizeRuns([result]);
-			if (kind === 'sokko3d-webgpu' && summary.phases) {
-				const phases = summary.phases;
-				const update = phases['game-worker.update'] ?? 0;
-				const engine = Object.entries(phases)
-					.filter(([key]) => key !== 'game-worker.update')
-					.reduce((sum, [, value]) => sum + value, 0);
+			if (kind === 'sokko3d-webgpu' && summary.allThreadsMs !== undefined) {
+				// The engine's share is every thread's work, job workers included, less the game's update.
+				const update = summary.updateMs ?? 0;
 				add('sokko3d game code (update)', n, update);
-				add('sokko3d engine, all threads', n, engine);
+				add('sokko3d engine, all threads', n, summary.allThreadsMs - update);
 			}
 		}
 	}
