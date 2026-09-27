@@ -174,9 +174,13 @@ export function runThreePage(sceneName: string, build: BuildScene): void {
 			camera.position.fromArray(cameraPosition);
 			camera.lookAt(cameraTarget[0] ?? 0, cameraTarget[1] ?? 0, cameraTarget[2] ?? 0);
 		};
-		const frame = (t: number): void => {
+		/** Draws the scene at time t, and returns the milliseconds its update took. */
+		const frame = (t: number): number => {
+			const start = performance.now();
 			pose(t);
+			const updated = performance.now();
 			renderer.render(scene, camera);
+			return updated - start;
 		};
 		const report = { scene: sceneName, renderer: rendererName, n: setup.n };
 

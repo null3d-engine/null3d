@@ -10,6 +10,8 @@ export interface FrameTimings {
 	frames: number;
 	/** Main-thread time per frame, from the start of the animation frame callback to the end of the frame function. */
 	cpuMs: Percentiles;
+	/** The part of each frame's CPU time that the frame function reports as its scene update. */
+	updateMs?: Percentiles;
 	/** Time between the timestamps of consecutive animation frames. */
 	intervalMs: Percentiles;
 }
@@ -17,11 +19,12 @@ export interface FrameTimings {
 /**
  * Calls `frame` once per animation frame with the scene time in seconds, which is 0 on the first
  * warm-up frame. Frames in the first `warmupSeconds` are not measured; the frames in the next
- * `measureSeconds` are. Recording a frame writes into buffers made up front, so the loop allocates
- * nothing per frame.
+ * `measureSeconds` are. A frame function may return the milliseconds its scene update took, which
+ * the timings then report apart. Recording a frame writes into buffers made up front, so the loop
+ * allocates nothing per frame.
  */
 export function measureFrames(
-	frame: (t: number) => void,
+	frame: (t: number) => number | undefined,
 	warmupSeconds: number,
 	measureSeconds: number,
 ): Promise<FrameTimings> {
@@ -31,6 +34,8 @@ export function measureFrames(
 	const capacity = Math.ceil(measureSeconds * MAX_FRAMES_PER_SECOND);
 	const cpu = new Float64Array(capacity);
 	const interval = new Float64Array(capacity);
+	const update = new Float64Array(capacity);
+	let reportsUpdate = false;
 	const measureFrom = warmupSeconds * 1000;
 	const measureTo = measureFrom + measureSeconds * 1000;
 	return new Promise((resolve, reject) => {
@@ -43,11 +48,12 @@ export function measureFrames(
 			const elapsed = now - first;
 			if (elapsed >= measureTo || count === capacity) {
 				if (count === 0) reject(new Error('no frame was measured'));
-				else resolve(finish(cpu, interval, count));
+				else resolve(finish(cpu, interval, reportsUpdate ? update : undefined, count));
 				return;
 			}
+			let updateTime: number | undefined;
 			try {
-				frame(elapsed / 1000);
+				updateTime = frame(elapsed / 1000);
 			} catch (error) {
 				reject(error);
 				return;
@@ -56,6 +62,10 @@ export function measureFrames(
 			if (elapsed >= measureFrom) {
 				cpu[count] = cpuTime;
 				interval[count] = now - previous;
+				if (updateTime !== undefined) {
+					update[count] = updateTime;
+					reportsUpdate = true;
+				}
 				count++;
 			}
 			previous = now;
@@ -65,10 +75,16 @@ export function measureFrames(
 	});
 }
 
-function finish(cpu: Float64Array, interval: Float64Array, count: number): FrameTimings {
+function finish(
+	cpu: Float64Array,
+	interval: Float64Array,
+	update: Float64Array | undefined,
+	count: number,
+): FrameTimings {
 	return {
 		frames: count,
 		cpuMs: percentiles(cpu.subarray(0, count)),
+		...(update && { updateMs: percentiles(update.subarray(0, count)) }),
 		intervalMs: percentiles(interval.subarray(0, count)),
 	};
 }

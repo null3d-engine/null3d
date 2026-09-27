@@ -12,6 +12,8 @@ export interface BenchResult {
 	frames: number;
 	/** CPU time per frame: the main thread for three.js, the busiest thread for sokko3d. */
 	cpuMs: { median: number; p95: number; p99: number; mean: number };
+	/** three.js pages: the part of each frame that the scene update took. */
+	updateMs?: { median: number };
 	intervalMs: { median: number };
 	stats?: {
 		cpuMsAllThreads: { median: number };
@@ -31,6 +33,8 @@ export interface RunSummary {
 	/** The median of the runs' median CPU times, and their lowest and highest. */
 	cpuMs: { median: number; min: number; max: number };
 	cpuP95Ms: number;
+	/** The scene update's share of a frame: the game's update phase for sokko3d. */
+	updateMs?: number;
 	intervalMs: number;
 	/** sokko3d only: CPU time summed over threads, GPU time, and the median time of each phase. */
 	allThreadsMs?: number;
@@ -59,6 +63,8 @@ export function summarizeRuns(results: readonly BenchResult[]): RunSummary {
 		cpuP95Ms: median(results.map((r) => r.cpuMs.p95)),
 		intervalMs: median(results.map((r) => r.intervalMs.median)),
 	};
+	const updates = results.map((r) => r.updateMs?.median).filter((v) => v !== undefined);
+	if (updates.length === results.length) summary.updateMs = median(updates);
 	const stats = results.map((r) => r.stats).filter((s) => s !== undefined);
 	if (stats.length === results.length && stats.length > 0) {
 		summary.allThreadsMs = median(stats.map((s) => s.cpuMsAllThreads.median));
@@ -78,6 +84,8 @@ export function summarizeRuns(results: readonly BenchResult[]): RunSummary {
 		summary.phases = Object.fromEntries(
 			Object.entries(phases).map(([key, values]) => [key, median(values)]),
 		);
+		const update = summary.phases['game-worker.update'] ?? summary.phases['main.update'];
+		if (update !== undefined) summary.updateMs = update;
 	}
 	return summary;
 }
@@ -114,13 +122,13 @@ export const ms = (value: number | null | undefined) => (value == null ? 'n/a' :
 /** The run's summaries as a Markdown table. */
 export function summaryTable(rows: readonly SummaryRow[]): string {
 	const lines = [
-		'| Scene | Page | Runs | CPU ms per frame, median (lowest to highest run) | p95 | All threads | GPU ms | Frame interval | Upload per frame | Draw calls |',
-		'| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+		'| Scene | Page | Runs | CPU ms per frame, median (lowest to highest run) | p95 | Scene update | All threads | GPU ms | Frame interval | Upload per frame | Draw calls |',
+		'| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
 	];
 	for (const { scene, kind, summary: s } of rows) {
 		const upload = s.uploadBytes === undefined ? 'n/a' : `${(s.uploadBytes / 1e6).toFixed(2)} MB`;
 		lines.push(
-			`| ${scene} | ${kind} | ${s.runs} | ${ms(s.cpuMs.median)} (${ms(s.cpuMs.min)} to ${ms(s.cpuMs.max)}) | ${ms(s.cpuP95Ms)} | ${ms(s.allThreadsMs)} | ${ms(s.gpuMs)} | ${ms(s.intervalMs)} | ${upload} | ${s.drawCalls ?? 'n/a'} |`,
+			`| ${scene} | ${kind} | ${s.runs} | ${ms(s.cpuMs.median)} (${ms(s.cpuMs.min)} to ${ms(s.cpuMs.max)}) | ${ms(s.cpuP95Ms)} | ${ms(s.updateMs)} | ${ms(s.allThreadsMs)} | ${ms(s.gpuMs)} | ${ms(s.intervalMs)} | ${upload} | ${s.drawCalls ?? 'n/a'} |`,
 		);
 	}
 	return lines.join('\n');
