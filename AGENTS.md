@@ -10,15 +10,25 @@ This repository holds the sokko3d engine, its tools, its documentation and its a
 | `docs/data/threejs-mapping.json` | The single source of the three.js to sokko3d mapping |
 | `skills/` | Agent skills for building with sokko3d and for porting three.js apps (the source) |
 | `.claude/skills/` | A generated copy of `skills/` for Claude Code. Never edit it. |
-| `packages/` | npm packages. `packages/cli` is the `sokko3d` command. |
-| `tools/` | The docs generator, the skills check and the commit hooks |
-| `crates/`, `examples/`, `bench/`, `tests/`, `templates/`, `porting-corpus/` | Rust crates, demos, benchmarks, integration tests, starter projects and the three.js porting corpus, as the milestones add them |
+| `crates/` | The Rust crates: core, GPU layer, renderer, shaders, and the WebAssembly entry point |
+| `packages/` | npm packages: `engine`, `vite-plugin`, and `cli`, which is the `sokko3d` command |
+| `tests/` | Browser tests: test pages, Playwright image tests, reference images and the real-browser runner |
+| `tools/` | The WebAssembly build, the docs generator, the skills check and the commit hooks |
+| `examples/`, `bench/`, `templates/`, `porting-corpus/` | Demos, benchmarks, starter projects and the three.js porting corpus, as the milestones add them |
 
 ## Commands
 
 | Command | Use |
 | --- | --- |
 | `bun install` | Install the tools and set up the git hooks |
+| `bun run build` | Build both WebAssembly files, the threaded one and the single-threaded one, and print their sizes |
+| `bun run build:check-size` | Build, and fail when a WebAssembly file grew more than 2% after Brotli compression |
+| `bun run test` | Unit tests for the repository tools |
+| `bun run test:browser` | Image tests on WebGPU and WebGL2 in Chrome, through Playwright |
+| `bun run test:real-browsers Safari Firefox` | The same test pages in browser apps that Playwright cannot drive (macOS) |
+| `bun run dev` | Serve the test pages with the isolation headers on port 5173 |
+| `bun run dev-cert` | Make a local HTTPS certificate for testing on phones and tablets |
+| `bun run android` | Forward port 5173 to an Android phone connected by USB |
 | `bun run docs` | Regenerate placeholder pages, the page list in `docs/index.md`, and the mapping page and copies |
 | `bun run docs:check` | Check front matter, generated files and links |
 | `bun run docs:style` | Check the writing rules in all published Markdown |
@@ -26,7 +36,8 @@ This repository holds the sokko3d engine, its tools, its documentation and its a
 | `bun run skills:check` | Check the skills without syncing |
 | `bun run check` | Lint and format check (Biome) |
 | `bun run typecheck` | TypeScript check |
-| `bun run test` | Unit tests for the tools |
+
+A size growth over 2% needs a reason: explain it in the commit message and run `bun tools/build-wasm.ts --update-size`, which rewrites the committed baseline.
 
 ## Design principles
 
@@ -95,6 +106,7 @@ The docs style check catches the mechanical part of these rules. The humanizer p
 Before each commit:
 
 - Biome (errors only) and the TypeScript check.
+- When Rust files or Cargo settings are staged: `cargo fmt --check` and Clippy, with warnings treated as errors.
 - Generated files are current and staged. The hook regenerates the docs and the skills copy in memory, and fails if a committed file differs or has unstaged changes.
 
 On each commit message:

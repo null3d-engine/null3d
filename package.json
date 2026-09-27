@@ -9,7 +9,8 @@
 	},
 	"packageManager": "bun@1.3.14",
 	"workspaces": [
-		"packages/*"
+		"packages/*",
+		"tests"
 	],
 	"scripts": {
 		"docs": "bun tools/gen-docs.ts",
@@ -17,17 +18,25 @@
 		"docs:style": "bun tools/hooks/check-docs-style.ts --all",
 		"skills": "bun tools/skills.ts sync && bun tools/skills.ts check",
 		"skills:check": "bun tools/skills.ts check",
+		"build": "bun tools/build-wasm.ts",
+		"build:check-size": "bun tools/build-wasm.ts --check-size",
 		"check": "biome check .",
 		"check:fix": "biome check --write .",
-		"typecheck": "tsc -p tsconfig.json",
+		"typecheck": "tsc -p tsconfig.json && tsc -p packages/engine && tsc -p tests/pages",
 		"test": "bun test tools",
-		"prepare": "husky"
+		"prepare": "husky",
+		"test:browser": "bun run --cwd tests test",
+		"test:real-browsers": "bun tests/real-browsers.ts",
+		"dev": "bun run --cwd tests dev",
+		"dev-cert": "bun tools/dev-cert.ts",
+		"android": "adb reverse tcp:5173 tcp:5173"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "2.5.14",
 		"@commitlint/cli": "^21.2.3",
 		"@commitlint/config-conventional": "^21.2.3",
 		"@types/bun": "^1.3.0",
+		"binaryen": "132.0.0",
 		"husky": "^9.1.7",
 		"typescript": "~6.0.3"
 	}

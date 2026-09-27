@@ -6,6 +6,7 @@ import {
 	isExemptCommit,
 } from './check-docs-ack';
 import { unstagedPaths } from './check-generated';
+import { touchesRust } from './check-rust';
 import { checkCommitMessage as checkSkills, skillBearingFiles } from './check-skills-ack';
 import { findAckValue } from './commit-ack';
 
@@ -116,5 +117,15 @@ describe('unstagedPaths', () => {
 			'',
 		].join('\n');
 		expect(unstagedPaths(porcelain)).toEqual(['docs/unstaged.md', 'docs/both.md', 'docs/new.md']);
+	});
+});
+
+describe('touchesRust', () => {
+	it('flags Rust source, Cargo files and Rust settings', () => {
+		expect(touchesRust(['crates/sokko3d-core/src/lib.rs'])).toBe(true);
+		expect(touchesRust(['Cargo.lock'])).toBe(true);
+		expect(touchesRust(['crates/sokko3d-wasm/Cargo.toml'])).toBe(true);
+		expect(touchesRust(['clippy.toml'])).toBe(true);
+		expect(touchesRust(['docs/index.md', 'tools/gen-docs.ts'])).toBe(false);
 	});
 });

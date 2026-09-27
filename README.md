@@ -262,14 +262,19 @@ Each milestone ends in a gate that must pass before the next one starts.
 Requirements:
 
 - [Bun](https://bun.sh/) 1.3.14 or newer
-- The Rust toolchain through [rustup](https://rustup.rs/), Node.js 24 or newer and Google Chrome, once the engine code lands in milestone M0
+- The Rust toolchain through [rustup](https://rustup.rs/). The repository pins a nightly compiler, and rustup installs it on the first build.
+- Node.js 24 or newer, which runs the browser tests
+- Google Chrome, which the browser tests drive on your real GPU
+- [mkcert](https://github.com/FiloSottile/mkcert), only to test on phones and tablets over HTTPS
 
 ```sh
 git clone https://github.com/sokko3d/sokko3d.git
 cd sokko3d
-bun install          # installs the tools and the git hooks
-bun run docs         # regenerates the generated docs pages
-bun run test         # tests for the docs and skills tools
+bun install              # installs the tools and the git hooks
+bun run build            # builds both WebAssembly files and prints their sizes
+bun run test             # tests for the docs and repository tools
+bun run test:browser     # image tests on WebGPU and WebGL2 in Chrome
+bun run dev              # serves the test pages with the isolation headers
 ```
 
 [AGENTS.md](AGENTS.md) has the rules, the commands and the commit checks that keep the docs in line with the code.

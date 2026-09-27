@@ -1,0 +1,8 @@
+# A crate that breaks the engine's lint on purpose: CI checks that Clippy rejects it.
+[package]
+name = "disallowed-clock"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]

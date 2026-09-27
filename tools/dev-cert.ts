@@ -1,0 +1,49 @@
+// Makes a local HTTPS certificate for the dev server, signed by a certificate authority that lives
+// in this repository's build folder. The computer's own trust store is left alone. To test on an
+// iPad or iPhone, install the printed rootCA.pem on the device and trust it.
+import { execFileSync } from 'node:child_process';
+import { mkdirSync } from 'node:fs';
+import { hostname } from 'node:os';
+import { join } from 'node:path';
+
+const root = process.cwd();
+const caDir = join(root, 'target/dev-ca');
+const certDir = join(root, 'target/dev-cert');
+
+function localHostName(): string {
+	try {
+		return execFileSync('scutil', ['--get', 'LocalHostName'], { encoding: 'utf8' }).trim();
+	} catch {
+		return hostname().replace(/\.local$/, '');
+	}
+}
+
+try {
+	execFileSync('mkcert', ['-help'], { stdio: 'ignore' });
+} catch {
+	console.error('mkcert is not installed. On macOS: brew install mkcert');
+	process.exit(1);
+}
+
+mkdirSync(caDir, { recursive: true });
+mkdirSync(certDir, { recursive: true });
+const host = `${localHostName()}.local`;
+execFileSync(
+	'mkcert',
+	[
+		'-cert-file',
+		join(certDir, 'cert.pem'),
+		'-key-file',
+		join(certDir, 'key.pem'),
+		'localhost',
+		'127.0.0.1',
+		'::1',
+		host,
+	],
+	{ stdio: 'inherit', env: { ...process.env, CAROOT: caDir } },
+);
+console.log(`\nThe certificate covers localhost and ${host}.`);
+console.log(
+	`To test on an iPad or iPhone, AirDrop ${join(caDir, 'rootCA.pem')} to the device, install it,`,
+);
+console.log('then turn on full trust in Settings > General > About > Certificate Trust Settings.');

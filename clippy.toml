@@ -1,0 +1,8 @@
+# Calls that fail or panic on wasm32-unknown-unknown. Time comes from the engine clock, and threads
+# come from the job system's workers.
+disallowed-methods = [
+	{ path = "std::time::SystemTime::now", reason = "fails on wasm32-unknown-unknown; read the engine clock instead" },
+	{ path = "std::time::Instant::now", reason = "panics on wasm32-unknown-unknown; read the engine clock instead" },
+	{ path = "std::thread::spawn", reason = "the browser has no native threads; use the job system" },
+	{ path = "std::thread::sleep", reason = "blocks a browser thread; wait on the engine's atomics instead" },
+]

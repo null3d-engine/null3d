@@ -60,3 +60,70 @@ jobs:
         run: |
           bunx commitlint --from ${{ github.event.pull_request.base.sha }} --to ${{ github.event.pull_request.head.sha }}
           bun tools/hooks/check-trailers.ts ${{ github.event.pull_request.base.sha }}..${{ github.event.pull_request.head.sha }}
+
+  rust:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install the pinned Rust toolchain
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo test --workspace
+      - name: Clippy rejects a call to the system clock
+        run: |
+          if cargo clippy --manifest-path tools/fixtures/disallowed-clock/Cargo.toml --target-dir target/lint-fixture 2> clippy.log; then
+            echo "Clippy accepted a call to SystemTime::now"
+            exit 1
+          fi
+          grep -q 'disallowed method `std::time::SystemTime::now`' clippy.log
+
+  wasm-and-browser:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      HUSKY: "0"
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install the pinned Rust toolchain
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun install --frozen-lockfile
+      - name: Build both WebAssembly files and check their sizes
+        run: bun run build:check-size
+      - name: Install Chromium for Playwright
+        working-directory: tests
+        run: bunx playwright install --with-deps chromium
+      - name: Browser tests on SwiftShader, WebGPU and WebGL2
+        run: bun run test:browser
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: browser-test-results
+          path: test-results/
+          if-no-files-found: ignore
+
+  real-browsers:
+    # Safari and Firefox on GitHub's macOS machines, through the same test pages. A missing WebGPU
+    # adapter is reported as a skip, because these virtual machines may not expose one.
+    runs-on: macos-15
+    timeout-minutes: 30
+    env:
+      HUSKY: "0"
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install the pinned Rust toolchain
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+      - name: Safari and Firefox
+        run: bun tests/real-browsers.ts --allow-no-webgpu Safari Firefox

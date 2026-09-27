@@ -1,0 +1,18 @@
+{
+	"threaded/sokko3d_bg.wasm": {
+		"raw": 14365,
+		"brotli": 5438
+	},
+	"threaded/sokko3d.js": {
+		"raw": 5965,
+		"brotli": 1571
+	},
+	"single/sokko3d_bg.wasm": {
+		"raw": 13754,
+		"brotli": 5347
+	},
+	"single/sokko3d.js": {
+		"raw": 5367,
+		"brotli": 1435
+	}
+}

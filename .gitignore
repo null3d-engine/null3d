@@ -20,3 +20,6 @@ playwright-report/
 # License copies made when a package is packed
 packages/*/LICENSE-MIT
 packages/*/LICENSE-APACHE
+
+# Lock files of test fixtures
+tools/fixtures/*/Cargo.lock

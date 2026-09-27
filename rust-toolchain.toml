@@ -1,0 +1,7 @@
+[toolchain]
+# WebAssembly threads for the web still need a nightly compiler and a rebuilt standard library.
+# A weekly CI job builds with the newest nightly; move this pin only after that job passes.
+channel = "nightly-2026-09-26"
+components = ["rust-src", "clippy", "rustfmt"]
+targets = ["wasm32-unknown-unknown"]
+profile = "minimal"

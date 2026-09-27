@@ -1,0 +1,36 @@
+name: Newest Rust nightly
+
+# Builds and tests with the newest nightly compiler once a week. The repository pins a nightly in
+# rust-toolchain.toml; move the pin only after this job passes on the newer one.
+
+on:
+  schedule:
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  BUN_VERSION: "1.3.14"
+
+jobs:
+  newest-nightly:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      HUSKY: "0"
+      RUSTUP_TOOLCHAIN: nightly
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install the newest nightly
+        run: rustup toolchain install nightly --profile minimal --component rust-src,clippy,rustfmt --target wasm32-unknown-unknown
+      - run: rustc --version
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun install --frozen-lockfile
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo test --workspace
+      - name: Both WebAssembly builds
+        run: bun run build
