@@ -308,6 +308,7 @@ pub struct SceneStorage {
     changed_frames: Vec<u32>,
     changed: Bitset,
     dead_pending: Bitset,
+    dead_pending_any: bool,
     order: Vec<u32>,
     levels: Vec<Level>,
     level_count: usize,
@@ -347,6 +348,7 @@ impl SceneStorage {
             changed_frames: vec![0; rows],
             changed: Bitset::new(rows as u32),
             dead_pending: Bitset::new(rows as u32),
+            dead_pending_any: false,
             order: vec![0; rows],
             levels: vec![Level::default(); rows + 1],
             level_count: 0,
@@ -548,19 +550,26 @@ impl SceneStorage {
         if frame == self.frame {
             return;
         }
-        if frame != self.frame.wrapping_add(1) {
+        let gap = frame != self.frame.wrapping_add(1);
+        if gap {
             // The other buffer may have missed changes, so rebuild both from scratch.
             for (d, c) in self.dirty.words_mut().iter_mut().zip(self.created.words()) {
                 *d |= c;
             }
         }
         self.frame = frame;
-        // Rows destroyed last frame are hidden in this frame's buffer too.
-        let parity = self.parity();
-        for slot in self.dead_pending.iter_ones() {
-            self.world[parity].hide_row(slot as usize);
+        // Rows destroyed last frame are hidden in this frame's buffer too. After a gap this
+        // frame may reuse the buffer they were hidden in, so they stay pending for the next one.
+        if self.dead_pending_any {
+            let parity = self.parity();
+            for slot in self.dead_pending.iter_ones() {
+                self.world[parity].hide_row(slot as usize);
+            }
+            if !gap {
+                self.dead_pending.clear_all();
+                self.dead_pending_any = false;
+            }
         }
-        self.dead_pending.clear_all();
     }
 
     /// Starts frame `frame` (see [`SceneStorage::begin_frame`]) and applies a batch of commands
@@ -668,6 +677,7 @@ impl SceneStorage {
                     let parity = self.parity();
                     self.world[parity].hide_row(s);
                     self.dead_pending.set(slot);
+                    self.dead_pending_any = true;
                     self.changed_frames[s] = self.frame;
                 }
                 self.dirty.clear(slot);
@@ -882,7 +892,9 @@ impl SceneStorage {
                 ctx.update_range(level, root, 0..count);
             }
         }
-        self.dirty.clear_all();
+        // Dirty bits only exist below the high-water slot.
+        let used_words = self.slots.high_water().div_ceil(64) as usize;
+        self.dirty.words_mut()[..used_words].fill(0);
         self.build_changed_bits(jobs);
     }
 
@@ -953,13 +965,19 @@ impl UpdateContext<'_> {
             let slot = self.order[(level.start + i) as usize];
             let s = slot as usize;
             let dirty = self.dirty[s / 64] & (1 << (s % 64)) != 0;
-            // SAFETY: stamps of parents (earlier levels) and of this slot are not written by any
-            // other chunk of this loop.
-            let parent_changed = !root
-                && unsafe { self.changed_frames.read(self.parents[s] as usize) } == self.frame;
-            if dirty || parent_changed {
+            // SAFETY: a parent sits in an earlier level, which finished before this loop, and only
+            // this chunk writes this slot's stamp, so no thread writes either stamp now.
+            let (parent_stamp, own_stamp) = unsafe {
+                let parent = if root {
+                    0
+                } else {
+                    self.changed_frames.read(self.parents[s] as usize)
+                };
+                (parent, self.changed_frames.read(s))
+            };
+            if dirty || parent_stamp == self.frame {
                 self.compute(slot, root);
-            } else if unsafe { self.changed_frames.read(s) } == previous_frame {
+            } else if own_stamp == previous_frame {
                 // SAFETY: only this chunk touches row `s`, and the previous frame's buffer is
                 // not written during this update.
                 unsafe { self.out.copy_row(&self.previous, s) };
@@ -1371,6 +1389,28 @@ mod tests {
         assert!(!scene.changed().get(slot));
         let s = slot as usize;
         assert_eq!(scene.world(0).matrix(s), scene.world(1).matrix(s));
+    }
+
+    #[test]
+    fn a_frame_gap_hides_destroyed_rows_in_both_buffers() {
+        let jobs = JobSystem::new(0);
+        let mut scene = SceneStorage::with_capacity(8);
+        let (h, c) = object(&mut scene, [1.0, 0.0, 0.0], Handle::NONE, SHOWN);
+        scene.apply_commands(&[c], 1).unwrap();
+        for frame in 1..=4 {
+            scene.begin_frame(frame);
+            scene.update_transforms(&jobs);
+        }
+        let slot = scene.resolve(h).unwrap() as usize;
+        scene.apply_commands(&[Command::destroy(h)], 5).unwrap();
+        scene.update_transforms(&jobs);
+        // Frame 7 skips frame 6 and writes the same buffer as frame 5.
+        scene.begin_frame(7);
+        scene.update_transforms(&jobs);
+        scene.begin_frame(8);
+        scene.update_transforms(&jobs);
+        assert_eq!(scene.world(0).radii()[slot], HIDDEN_RADIUS);
+        assert_eq!(scene.world(1).radii()[slot], HIDDEN_RADIUS);
     }
 
     #[test]
