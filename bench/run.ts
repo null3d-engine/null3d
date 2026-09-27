@@ -1,14 +1,16 @@
 // Runs the benchmark protocol in a visible Chrome or Brave window on this Mac: each scene's sokko3d
-// page and three.js pages, several fresh runs each, then prints and saves a summary. With --sweep
-// it runs S1 at growing instance counts and draws CPU time per frame against the count. From the
-// repository root:
+// page, three.js pages and scene-code page, several fresh runs each, then prints and saves a
+// summary. The scene-code page times the scene code both engines run, so the summary also compares
+// each engine's own work. With --sweep it runs S1 at growing instance counts and draws CPU time per
+// frame against the count. From the repository root:
 //   bun run bench:run                                (S1: 5 runs of 5 s warm-up and 30 s measured)
 //   bun run bench:run -- --scenes s1,s1-static,s2 --runs 3 --seconds 10
 //   bun run bench:run -- --sweep --seconds 5
 //   bun run bench:run -- --browser brave
 // Options:
 //   --scenes <list>   s1, s1-static, s2; the default is s1
-//   --pages <list>    page kinds; the default is sokko3d-webgpu, threejs-webgpu, threejs-webgl
+//   --pages <list>    page kinds; the default is sokko3d-webgpu, threejs-webgpu, threejs-webgl,
+//                     scene-code
 //   --runs <n>        fresh runs of each page; the default is 5
 //   --seconds <n>     warm-up and measured time of each run; the default is the protocol's 5 and 30
 //   --sweep           S1 at 1,000 to 100,000 instances, with a chart, instead of the runs above
@@ -20,13 +22,22 @@ import { type Browser, chromium } from '@playwright/test';
 import { pageResult } from '../tests/lib/page-result.ts';
 import { runName } from '../tests/lib/runs.ts';
 import { REPO_ROOT, startServer } from '../tests/lib/server.ts';
-import { PAGE_KINDS, PARITY_SCENES, type PageKind, type ParityScene, pagePath } from './lib/parity';
+import {
+	BENCH_PAGE_KINDS,
+	type BenchPageKind,
+	PARITY_SCENES,
+	type ParityScene,
+	pagePath,
+	SCENE_CODE,
+} from './lib/parity';
 import {
 	type BenchResult,
 	type ChartSeries,
 	comparisonLines,
 	lineChartSvg,
 	ms,
+	ownShareOfThree,
+	type RunSummary,
 	type SummaryRow,
 	summarizeRuns,
 	summaryTable,
@@ -35,13 +46,18 @@ import { MEASURE_SECONDS, WARMUP_SECONDS } from './scenes/spec';
 
 const BRAVE = '/Applications/Brave Browser.app/Contents/MacOS/Brave Browser';
 const SWEEP_COUNTS = [1_000, 3_000, 10_000, 30_000, 100_000];
-const DEFAULT_PAGES: PageKind[] = ['sokko3d-webgpu', 'threejs-webgpu', 'threejs-webgl'];
+const DEFAULT_PAGES: BenchPageKind[] = [
+	'sokko3d-webgpu',
+	'threejs-webgpu',
+	'threejs-webgl',
+	SCENE_CODE,
+];
 /** Time for a page to start, beyond its warm-up and measured seconds. */
 const START_MARGIN_MS = 60_000;
 
 export interface BenchOptions {
 	scenes: ParityScene[];
-	pages: PageKind[];
+	pages: BenchPageKind[];
 	runs: number;
 	seconds: number | null;
 	sweep: boolean;
@@ -73,7 +89,7 @@ export function parseBenchArgs(args: readonly string[]): BenchOptions {
 		const arg = args[i];
 		const value = () => args[++i];
 		if (arg === '--scenes') options.scenes = list(value(), PARITY_SCENES, '--scenes');
-		else if (arg === '--pages') options.pages = list(value(), PAGE_KINDS, '--pages');
+		else if (arg === '--pages') options.pages = list(value(), BENCH_PAGE_KINDS, '--pages');
 		else if (arg === '--runs') options.runs = Number(value());
 		else if (arg === '--seconds') options.seconds = Number(value());
 		else if (arg === '--sweep') options.sweep = true;
@@ -154,6 +170,7 @@ async function runSweep(
 		if (y !== undefined) points[name] = [...(points[name] ?? []), { x, y }];
 	};
 	for (const n of SWEEP_COUNTS) {
+		const summaries: Partial<Record<BenchPageKind, RunSummary>> = {};
 		for (const kind of DEFAULT_PAGES) {
 			const result = await runPage(
 				browser,
@@ -167,26 +184,30 @@ async function runSweep(
 			}
 			console.log(`sweep ${kind} n=${n}: ${ms(result.cpuMs.median)} ms`);
 			add(kind, n, result.cpuMs.median);
-			const summary = summarizeRuns([result]);
-			if (kind === 'sokko3d-webgpu' && summary.allThreadsMs !== undefined) {
-				// The engine's share is every thread's work, job workers included, less the game's update.
-				const update = summary.updateMs ?? 0;
-				add('game code', n, update);
-				add('engine', n, summary.allThreadsMs - update);
-			}
+			summaries[kind] = summarizeRuns([result]);
 		}
+		const sokko3d = summaries['sokko3d-webgpu'];
+		const sceneCode = summaries[SCENE_CODE];
+		const threejs = [summaries['threejs-webgpu'], summaries['threejs-webgl']];
+		const own = ownShareOfThree(sokko3d, threejs, sceneCode);
+		add('sokko3d own work', n, own?.sokko3dMs);
+		add('three.js own work', n, own?.threeMs);
+		// Every thread's work, job workers included, less the scene code on the game's thread.
+		if (sokko3d?.allThreadsMs !== undefined && sceneCode)
+			add('sokko3d engine', n, sokko3d.allThreadsMs - sceneCode.cpuMs.median);
 	}
-	const lines: Record<string, { label: string; color: string }> = {
-		'sokko3d-webgpu': { label: 'sokko3d, busiest thread', color: '#2a6fdb' },
-		'game code': { label: 'sokko3d game code', color: '#9a9a9a' },
-		engine: { label: 'sokko3d engine, all threads', color: '#18a058' },
-		'threejs-webgpu': { label: 'three.js WebGPU', color: '#e8554e' },
-		'threejs-webgl': { label: 'three.js WebGL', color: '#f2a13e' },
+	const lines: Record<string, Omit<ChartSeries, 'points'>> = {
+		'sokko3d-webgpu': { name: 'sokko3d, whole frame', color: '#2a6fdb' },
+		'sokko3d own work': { name: 'sokko3d, own work', color: '#2a6fdb', dashed: true },
+		'sokko3d engine': { name: 'sokko3d engine, all threads', color: '#18a058' },
+		'threejs-webgl': { name: 'three.js WebGL, whole frame', color: '#f2a13e' },
+		'threejs-webgpu': { name: 'three.js WebGPU, whole frame', color: '#e8554e' },
+		'three.js own work': { name: 'three.js, own work', color: '#f2a13e', dashed: true },
+		[SCENE_CODE]: { name: 'scene code both engines run', color: '#9a9a9a' },
 	};
-	const series: ChartSeries[] = Object.entries(points).map(([name, pts]) => ({
-		name: lines[name]?.label ?? name,
-		color: lines[name]?.color ?? '#000000',
-		points: pts,
+	const series: ChartSeries[] = Object.entries(points).map(([key, points]) => ({
+		...(lines[key] ?? { name: key, color: '#000000' }),
+		points,
 	}));
 	const svg = lineChartSvg(
 		'S1: CPU time per frame',

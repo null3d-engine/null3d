@@ -29,7 +29,9 @@ This repository holds the sokko3d engine, its tools, its documentation and its a
 | `bun run devices` | The same checks on an Android phone over USB (Chrome, then Brave) and on runner pages that wait on the local network (an iPad's Safari and Brave) |
 | `bun run test:bench` | The benchmark pages of both engines in Chrome, through Playwright |
 | `bun run parity` | Compare each benchmark scene's hold frame in sokko3d with three.js's, per GPU tier |
-| `bun run bench:run` | The benchmark protocol in a visible Chrome window: fresh runs of each scene in both engines, with a summary; `--sweep` charts S1 from 1,000 to 100,000 instances |
+| `bun run bench:run` | The benchmark protocol in a visible Chrome window: fresh runs of each scene in both engines and of the scene code both run, with a summary of each engine's whole frame and own work; `--sweep` charts S1 from 1,000 to 100,000 instances |
+| `bun run bench:allocation` | Sample what the game worker and the render worker allocate per frame in S1, with Chrome's heap profiler |
+| `bun run readme-media` | Render the README's animation of S1 with the engine |
 | `bun run dev` | Serve the test and benchmark pages with the isolation headers on port 5173 |
 | `bun run dev-cert` | Make a local HTTPS certificate for testing on phones and tablets |
 | `bun run android` | Forward port 5173 to an Android phone connected by USB |

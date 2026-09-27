@@ -3,7 +3,7 @@ import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
 import { encode } from 'fast-png';
 import { pageResult } from '../../tests/lib/page-result.ts';
-import { PARITY_SCENES, type PageKind, pagePath } from '../lib/parity';
+import { PARITY_SCENES, type PageKind, pagePath, SCENE_CODE } from '../lib/parity';
 import { BACKGROUND, PARITY_CANVAS, S2_NODE_COUNT } from '../scenes/spec';
 
 const SCENES = PARITY_SCENES;
@@ -146,6 +146,28 @@ for (const scene of SCENES) {
 		});
 	}
 }
+
+for (const scene of SCENES) {
+	test(`${scene}'s scene code runs alone and reports its time`, async ({ page }) => {
+		const result = await runPage<BenchReport>(
+			page,
+			pagePath(scene, SCENE_CODE, `seconds=1&n=${SHORT_RUN_COUNT}`),
+		);
+		expect([result.scene, result.renderer]).toEqual([scene, SCENE_CODE]);
+		expect(result.n).toBe(scene === 's2' ? S2_NODE_COUNT : SHORT_RUN_COUNT);
+		expect(result.frames).toBeGreaterThan(0);
+		// S1 moves every instance; the other scenes' code is a camera path and a few turns, which can
+		// take less time than the browser's clock resolves.
+		if (scene === 's1') expect(result.cpuMs.median).toBeGreaterThan(0);
+		else expect(result.cpuMs.median).toBeGreaterThanOrEqual(0);
+	});
+}
+
+test('a scene-code page refuses a hold frame, because it draws nothing', async ({ page }) => {
+	const { result } = await openPage<Report>(page, pagePath('s1', SCENE_CODE, 'hold'));
+	expect(result.ok).toBe(false);
+	expect(result.error).toContain('draws nothing');
+});
 
 // A WebGPU run must never measure WebGL by mistake. Each script below runs before the page's own
 // code and takes WebGPU away in one of two ways.

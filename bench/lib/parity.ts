@@ -66,6 +66,16 @@ const PAGES = {
 export type PageKind = keyof typeof PAGES;
 export const PAGE_KINDS = Object.keys(PAGES) as PageKind[];
 
+/**
+ * The page that runs a scene's shared per-frame code alone, with no engine: the motion and the
+ * camera path that every engine's page runs. Its time per frame tells each engine's own work apart
+ * from the scene code. It draws nothing, so it has no hold frame.
+ */
+export const SCENE_CODE = 'scene-code';
+/** Every kind of page a benchmark run can time: the engines' pages and the scene code alone. */
+export type BenchPageKind = PageKind | typeof SCENE_CODE;
+export const BENCH_PAGE_KINDS: readonly BenchPageKind[] = [...PAGE_KINDS, SCENE_CODE];
+
 /** Two pages whose frames must match. The diff image dims the reference's frame. */
 export interface PagePair {
 	candidate: PageKind;
@@ -79,8 +89,8 @@ export const TIER_PAIRS: Readonly<Record<Tier, PagePair>> = {
 };
 
 /** The dev-server path of one scene's page of one kind, with more switches after its own. */
-export function pagePath(scene: ParityScene, kind: PageKind, switches = ''): string {
-	const page = PAGES[kind];
+export function pagePath(scene: ParityScene, kind: BenchPageKind, switches = ''): string {
+	const page = kind === SCENE_CODE ? { folder: SCENE_CODE, gpu: '' } : PAGES[kind];
 	return `/bench/pages/${page.folder}/${scene}.html?${[page.gpu, switches].filter(Boolean).join('&')}`;
 }
 

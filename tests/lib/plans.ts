@@ -4,6 +4,7 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
 	BASELINE_PAIR,
+	type BenchPageKind,
 	compareFrames,
 	comparisonName,
 	decodeHoldResult,
@@ -11,12 +12,12 @@ import {
 	type HoldFrame,
 	holdPagePath,
 	PARITY_SCENES,
-	type PageKind,
 	type PagePair,
 	type ParityScene,
 	pagePath,
 	parityFiles,
 	passesWithBaseline,
+	SCENE_CODE,
 	TIER_PAIRS,
 } from '../../bench/lib/parity.ts';
 import { MEASURE_SECONDS, WARMUP_SECONDS } from '../../bench/scenes/spec.ts';
@@ -39,7 +40,7 @@ export type Check =
 	| { kind: 'engine'; tier: Tier; mode: EngineMode }
 	| { kind: 'hold'; tier: Tier }
 	| { kind: 'parity'; tier: Tier; scene: ParityScene; pair: PagePair }
-	| { kind: 'bench'; tier: Tier; scene: ParityScene; page: PageKind };
+	| { kind: 'bench'; tier: Tier; scene: ParityScene; page: BenchPageKind };
 
 /** What judging can reach besides the result itself. */
 export interface JudgeContext {
@@ -126,11 +127,15 @@ export function parityPlan(): PlanItem<Check>[] {
 
 /** Fresh runs of each benchmark page in the bench plan. */
 const BENCH_RUNS = 3;
-/** The pages the bench plan compares, and the GPU tier each one draws with. */
-const BENCH_PAGES: readonly [PageKind, Tier][] = [
+/**
+ * The pages the bench plan compares, and the GPU tier each one draws with. The scene-code page
+ * draws nothing, so it runs wherever the WebGL2 pages run.
+ */
+const BENCH_PAGES: readonly [BenchPageKind, Tier][] = [
 	['sokko3d-webgpu', 'webgpu'],
 	['threejs-webgpu', 'webgpu'],
 	['threejs-webgl', 'webgl2'],
+	[SCENE_CODE, 'webgl2'],
 ];
 
 /**

@@ -11,6 +11,7 @@ import {
 	MAX_DIFFERENT_PERCENT,
 	PAGE_KINDS,
 	PIXEL_THRESHOLD,
+	pagePath,
 	parityFiles,
 	parseParityArgs,
 	passesWithBaseline,
@@ -240,6 +241,7 @@ describe('the pages', () => {
 		expect(holdPagePath('s2', 'sokko3d-webgpu')).toBe(
 			'/bench/pages/sokko3d/s2.html?gpu=webgpu&hold',
 		);
+		expect(pagePath('s1', 'scene-code', 'n=1000')).toBe('/bench/pages/scene-code/s1.html?n=1000');
 	});
 
 	test('pairs the sokko3d page with the three.js page of the same GPU tier', () => {

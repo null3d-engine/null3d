@@ -1,11 +1,17 @@
 import { describe, expect, test } from 'bun:test';
 import {
 	type BenchResult,
+	comparisonLines,
 	lineChartSvg,
 	median,
 	niceStep,
+	ownShareOfThree,
+	ownWorkMs,
+	type RunSummary,
+	type SummaryRow,
 	shareOfThree,
 	summarizeRuns,
+	summaryTable,
 } from './report';
 
 function result(cpu: number, stats = false): BenchResult {
@@ -39,14 +45,62 @@ describe('benchmark reports', () => {
 		expect(summary.cpuMs).toEqual({ median: 3, min: 2, max: 4 });
 		expect(summary.allThreadsMs).toBe(6);
 		expect(summary.phases).toEqual({ 'game-worker.update': 1.5 });
+		expect(summary.threadsMs).toEqual({ 'game-worker': 3 });
 		expect(summarizeRuns([result(5)]).allThreadsMs).toBeUndefined();
 	});
 
 	test("compare sokko3d with three.js's faster renderer", () => {
 		const sokko3d = summarizeRuns([result(1)]);
 		const share = shareOfThree(sokko3d, [summarizeRuns([result(4)]), summarizeRuns([result(2)])]);
-		expect(share).toEqual({ share: 0.5, threeMs: 2 });
+		expect(share).toEqual({ share: 0.5, sokko3dMs: 1, threeMs: 2 });
 		expect(shareOfThree(undefined, [sokko3d])).toBeNull();
+	});
+
+	/** A sokko3d run summary with these median times per thread; the busiest sets the frame time. */
+	const sokko3dRun = (threadsMs: Record<string, number>): RunSummary => {
+		const busiest = Math.max(...Object.values(threadsMs));
+		return { ...summarizeRuns([result(busiest)]), threadsMs };
+	};
+
+	test("take the shared scene code away from the thread that runs the game's code", () => {
+		const threeRun = summarizeRuns([result(3.2)]);
+		expect(ownWorkMs(threeRun, 2.4)).toBeCloseTo(0.8);
+		// The game worker runs the scene code; the render worker's whole time is the engine's own.
+		const sokko3d = sokko3dRun({ 'game-worker': 2.5, 'render-worker': 0.15, 'job-0': 0.05 });
+		expect(ownWorkMs(sokko3d, 2.4)).toBeCloseTo(0.15);
+		expect(ownWorkMs(sokko3dRun({ 'game-worker': 2.5, 'render-worker': 0.05 }), 2.4)).toBeCloseTo(
+			0.1,
+		);
+		// In single-threaded mode the main thread runs the game, the engine and the drawing.
+		expect(ownWorkMs(sokko3dRun({ main: 3 }), 2.4)).toBeCloseTo(0.6);
+		expect(ownWorkMs(summarizeRuns([result(1)]), 2)).toBe(0);
+	});
+
+	test("compare sokko3d's own work with three.js's, apart from the shared scene code", () => {
+		const sokko3d = sokko3dRun({ 'game-worker': 2.54, 'render-worker': 0.16 });
+		const threejs = [summarizeRuns([result(3.6)]), summarizeRuns([result(3.2)])];
+		const sceneCode = summarizeRuns([result(2.4)]);
+		const own = ownShareOfThree(sokko3d, threejs, sceneCode);
+		expect(own?.sokko3dMs).toBeCloseTo(0.16);
+		expect(own?.threeMs).toBeCloseTo(0.8);
+		expect(own?.share).toBeCloseTo(0.2);
+		expect(own?.sceneCodeMs).toBe(2.4);
+		expect(ownShareOfThree(sokko3d, threejs, undefined)).toBeNull();
+
+		const rows: SummaryRow[] = [
+			{ scene: 's1', kind: 'sokko3d-webgpu', summary: sokko3d },
+			{ scene: 's1', kind: 'threejs-webgpu', summary: threejs[0] as RunSummary },
+			{ scene: 's1', kind: 'threejs-webgl', summary: threejs[1] as RunSummary },
+			{ scene: 's1', kind: 'scene-code', summary: sceneCode },
+		];
+		expect(comparisonLines(rows)).toEqual([
+			"s1: sokko3d on WebGPU takes 79% of the CPU time per frame of three.js's faster renderer (2.54 ms against 3.20 ms).",
+			"s1: apart from the scene code both engines run (2.40 ms), sokko3d's own work on its busiest thread is 20% of three.js's (0.16 ms against 0.80 ms).",
+		]);
+		const table = summaryTable(rows).split('\n');
+		expect(table[0]).toContain('| Own work, busiest thread |');
+		expect(table[2]).toContain('| 0.16 |');
+		expect(table[5]).toContain('| scene-code | 1 | 2.40 (2.40 to 2.40) | 2.88 | n/a |');
 	});
 
 	test('draw a chart with one line per series and escaped labels', () => {
@@ -63,6 +117,12 @@ describe('benchmark reports', () => {
 		expect(svg.startsWith('<svg')).toBe(true);
 		expect(svg).toContain('A &amp; B');
 		expect(svg.match(/<polyline/g)?.length).toBe(1);
+		expect(svg).not.toContain('stroke-dasharray');
+		const dashed = lineChartSvg('t', 'x', 'y', [
+			{ name: 'own', color: '#000', dashed: true, points: [{ x: 1, y: 1 }] },
+		]);
+		// The line and its legend sample are both dashed.
+		expect(dashed.match(/stroke-dasharray/g)?.length).toBe(2);
 		expect(svg).toContain('10,000');
 	});
 

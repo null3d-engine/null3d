@@ -1,6 +1,11 @@
 // Benchmark results: the summary of repeated runs of one page, the comparison of sokko3d with
 // three.js's faster renderer, and a line chart as SVG. Everything here is pure, so the benchmark
 // command and the runner's results share it.
+//
+// A frame's CPU time includes the scene's shared code, which every engine's version of a scene runs
+// alike. The scene-code page times that code alone, so a report can also compare each engine's own
+// work: its busiest thread's time with the shared code taken away.
+import { SCENE_CODE } from './parity';
 
 /** What a timed benchmark page publishes. sokko3d pages add the engine's full frame metrics. */
 export interface BenchResult {
@@ -38,6 +43,8 @@ export interface RunSummary {
 	intervalMs: number;
 	/** sokko3d only: CPU time summed over threads, GPU time, and the median time of each phase. */
 	allThreadsMs?: number;
+	/** sokko3d only: the median CPU time per frame of each thread, by name. */
+	threadsMs?: Record<string, number>;
 	gpuMs?: number | null;
 	phases?: Record<string, number>;
 	uploadBytes?: number;
@@ -73,39 +80,89 @@ export function summarizeRuns(results: readonly BenchResult[]): RunSummary {
 		summary.uploadBytes = median(stats.map((s) => s.uploadBytes.median));
 		summary.drawCalls = median(stats.map((s) => s.drawCalls.median));
 		const phases: Record<string, number[]> = {};
+		const threads: Record<string, number[]> = {};
 		for (const s of stats) {
-			for (const [thread, { phases: byPhase }] of Object.entries(s.threads)) {
+			for (const [thread, { busyMs, phases: byPhase }] of Object.entries(s.threads)) {
+				threads[thread] = [...(threads[thread] ?? []), busyMs.median];
 				for (const [phase, { median: value }] of Object.entries(byPhase)) {
 					const key = `${thread}.${phase}`;
 					phases[key] = [...(phases[key] ?? []), value];
 				}
 			}
 		}
-		summary.phases = Object.fromEntries(
-			Object.entries(phases).map(([key, values]) => [key, median(values)]),
-		);
+		const medians = (lists: Record<string, number[]>) =>
+			Object.fromEntries(Object.entries(lists).map(([key, values]) => [key, median(values)]));
+		summary.phases = medians(phases);
+		summary.threadsMs = medians(threads);
 		const update = summary.phases['game-worker.update'] ?? summary.phases['main.update'];
 		if (update !== undefined) summary.updateMs = update;
 	}
 	return summary;
 }
 
+/** sokko3d's value of a measure against three.js's lowest value of it over its renderers. */
+export interface Share {
+	share: number;
+	sokko3dMs: number;
+	threeMs: number;
+}
+
+/** Threads that run the game's code, and with it the scene's shared code. */
+const GAME_THREADS = new Set(['game-worker', 'main']);
+
 /**
- * sokko3d's CPU time as a share of three.js's faster renderer, which the benchmark rules compare
- * against. Null when either side has no summary.
+ * An engine's own CPU work per frame on its busiest thread: the busiest thread's time with the
+ * scene's shared code taken away from the thread that runs it. three.js runs everything on its main
+ * thread. sokko3d's other threads run no scene code, so their whole time counts. The figure comes
+ * from medians, so it estimates the per-frame value closely rather than exactly.
+ */
+export function ownWorkMs(summary: RunSummary, sceneCodeMs: number): number {
+	const threads = summary.threadsMs;
+	if (!threads) return Math.max(0, summary.cpuMs.median - sceneCodeMs);
+	let busiest = 0;
+	for (const [thread, time] of Object.entries(threads))
+		busiest = Math.max(busiest, GAME_THREADS.has(thread) ? time - sceneCodeMs : time);
+	return busiest;
+}
+
+/** sokko3d's value of `measure` as a share of three.js's lowest; null when a side is missing or zero. */
+function shareBy(
+	sokko3d: RunSummary | undefined,
+	threejs: readonly (RunSummary | undefined)[],
+	measure: (summary: RunSummary) => number,
+): Share | null {
+	const three = threejs.filter((s) => s !== undefined).map(measure);
+	if (!sokko3d || three.length === 0) return null;
+	const threeMs = Math.min(...three);
+	if (!(threeMs > 0)) return null;
+	const sokko3dMs = measure(sokko3d);
+	return { share: sokko3dMs / threeMs, sokko3dMs, threeMs };
+}
+
+/**
+ * sokko3d's CPU time per frame as a share of three.js's faster renderer, each engine's whole
+ * frame. Null when either side has no summary.
  */
 export function shareOfThree(
 	sokko3d: RunSummary | undefined,
 	threejs: readonly (RunSummary | undefined)[],
-): { share: number; threeMs: number } | null {
-	const best = threejs
-		.filter((s) => s !== undefined)
-		.reduce<number | null>(
-			(min, s) => (min === null ? s.cpuMs.median : Math.min(min, s.cpuMs.median)),
-			null,
-		);
-	if (!sokko3d || best === null || best === 0) return null;
-	return { share: sokko3d.cpuMs.median / best, threeMs: best };
+): Share | null {
+	return shareBy(sokko3d, threejs, (s) => s.cpuMs.median);
+}
+
+/**
+ * sokko3d's own work on its busiest thread as a share of three.js's, both apart from the scene's
+ * shared code: the measure of the desktop speed target. Null without the scene code's time.
+ */
+export function ownShareOfThree(
+	sokko3d: RunSummary | undefined,
+	threejs: readonly (RunSummary | undefined)[],
+	sceneCode: RunSummary | undefined,
+): (Share & { sceneCodeMs: number }) | null {
+	if (!sceneCode) return null;
+	const sceneCodeMs = sceneCode.cpuMs.median;
+	const share = shareBy(sokko3d, threejs, (s) => ownWorkMs(s, sceneCodeMs));
+	return share && { ...share, sceneCodeMs };
 }
 
 /** One page's summary in a benchmark run. */
@@ -119,39 +176,60 @@ export interface SummaryRow {
 /** Milliseconds for a report: two decimals, or n/a. */
 export const ms = (value: number | null | undefined) => (value == null ? 'n/a' : value.toFixed(2));
 
+/** The summary of one scene's page of one kind in a run's rows. */
+const summaryOf = (rows: readonly SummaryRow[], scene: string, kind: string) =>
+	rows.find((r) => r.scene === scene && r.kind === kind)?.summary;
+
 /** The run's summaries as a Markdown table. */
 export function summaryTable(rows: readonly SummaryRow[]): string {
 	const lines = [
-		'| Scene | Page | Runs | CPU ms per frame, median (lowest to highest run) | p95 | Scene update | All threads | GPU ms | Frame interval | Upload per frame | Draw calls |',
-		'| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+		'| Scene | Page | Runs | CPU ms per frame, median (lowest to highest run) | p95 | Own work, busiest thread | Scene update | All threads | GPU ms | Frame interval | Upload per frame | Draw calls |',
+		'| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
 	];
 	for (const { scene, kind, summary: s } of rows) {
 		const upload = s.uploadBytes === undefined ? 'n/a' : `${(s.uploadBytes / 1e6).toFixed(2)} MB`;
+		const sceneCode = summaryOf(rows, scene, SCENE_CODE);
+		const own = kind === SCENE_CODE || !sceneCode ? null : ownWorkMs(s, sceneCode.cpuMs.median);
 		lines.push(
-			`| ${scene} | ${kind} | ${s.runs} | ${ms(s.cpuMs.median)} (${ms(s.cpuMs.min)} to ${ms(s.cpuMs.max)}) | ${ms(s.cpuP95Ms)} | ${ms(s.updateMs)} | ${ms(s.allThreadsMs)} | ${ms(s.gpuMs)} | ${ms(s.intervalMs)} | ${upload} | ${s.drawCalls ?? 'n/a'} |`,
+			`| ${scene} | ${kind} | ${s.runs} | ${ms(s.cpuMs.median)} (${ms(s.cpuMs.min)} to ${ms(s.cpuMs.max)}) | ${ms(s.cpuP95Ms)} | ${ms(own)} | ${ms(s.updateMs)} | ${ms(s.allThreadsMs)} | ${ms(s.gpuMs)} | ${ms(s.intervalMs)} | ${upload} | ${s.drawCalls ?? 'n/a'} |`,
 		);
 	}
 	return lines.join('\n');
 }
 
-/** One sentence per scene: sokko3d's CPU time as a share of three.js's faster renderer. */
+/**
+ * Sentences for each scene: sokko3d's CPU time per frame as a share of three.js's faster renderer,
+ * and, with the scene-code page's run, its own work as a share of three.js's.
+ */
 export function comparisonLines(rows: readonly SummaryRow[]): string[] {
+	const percent = (share: number) => `${(share * 100).toFixed(0)}%`;
 	const scenes = [...new Set(rows.map((r) => r.scene))];
 	return scenes.flatMap((scene) => {
-		const of = (kind: string) => rows.find((r) => r.scene === scene && r.kind === kind)?.summary;
+		const of = (kind: string) => summaryOf(rows, scene, kind);
 		const sokko3d = of('sokko3d-webgpu');
-		const share = shareOfThree(sokko3d, [of('threejs-webgpu'), of('threejs-webgl')]);
-		return share
-			? [
-					`${scene}: sokko3d on WebGPU takes ${(share.share * 100).toFixed(0)}% of the CPU time of three.js's faster renderer (${ms(sokko3d?.cpuMs.median)} ms against ${ms(share.threeMs)} ms).`,
-				]
-			: [];
+		const threejs = [of('threejs-webgpu'), of('threejs-webgl')];
+		const whole = shareOfThree(sokko3d, threejs);
+		const own = ownShareOfThree(sokko3d, threejs, of(SCENE_CODE));
+		return [
+			...(whole
+				? [
+						`${scene}: sokko3d on WebGPU takes ${percent(whole.share)} of the CPU time per frame of three.js's faster renderer (${ms(whole.sokko3dMs)} ms against ${ms(whole.threeMs)} ms).`,
+					]
+				: []),
+			...(own
+				? [
+						`${scene}: apart from the scene code both engines run (${ms(own.sceneCodeMs)} ms), sokko3d's own work on its busiest thread is ${percent(own.share)} of three.js's (${ms(own.sokko3dMs)} ms against ${ms(own.threeMs)} ms).`,
+					]
+				: []),
+		];
 	});
 }
 
 export interface ChartSeries {
 	name: string;
 	color: string;
+	/** Draw the line dashed, as for a part of another series in the same color. */
+	dashed?: boolean;
 	points: readonly { x: number; y: number }[];
 }
 
@@ -219,13 +297,15 @@ export function lineChartSvg(
 	];
 	series.forEach((s, i) => {
 		const path = s.points.map((p) => `${px(p.x).toFixed(1)},${py(p.y).toFixed(1)}`).join(' ');
+		const stroke = `stroke="${s.color}" stroke-width="2.5"${s.dashed ? ' stroke-dasharray="6 4"' : ''}`;
+		const legendY = top + i * 24 - 7;
 		lines.push(
-			`<polyline points="${path}" fill="none" stroke="${s.color}" stroke-width="2.5"/>`,
+			`<polyline points="${path}" fill="none" ${stroke}/>`,
 			...s.points.map(
 				(p) =>
 					`<circle cx="${px(p.x).toFixed(1)}" cy="${py(p.y).toFixed(1)}" r="3.5" fill="${s.color}"/>`,
 			),
-			`<rect x="${width - right + 16}" y="${top + i * 24 - 9}" width="14" height="4" fill="${s.color}"/>`,
+			`<line x1="${width - right + 12}" x2="${width - right + 30}" y1="${legendY}" y2="${legendY}" ${stroke}/>`,
 			`<text x="${width - right + 36}" y="${top + i * 24 - 3}">${escapeXml(s.name)}</text>`,
 		);
 	});
