@@ -28,8 +28,9 @@ use sokko3d_core::jobs::JobSystem;
 use sokko3d_core::scene::{Command, SceneStorage, flags};
 use sokko3d_core::world::SphereArrays;
 
-/// Job worker counts to measure: 1, 2, 3, 4, 5, 8 and 9 threads.
-const JOB_WORKERS: [u32; 7] = [0, 1, 2, 3, 4, 7, 8];
+/// Job worker counts to measure: 1, 2, 3, 4, 5, 8, 9, 12 and 17 threads. On an 18-core Mac, 17
+/// threads is "logical cores minus 2" job workers plus the calling thread.
+const JOB_WORKERS: [u32; 9] = [0, 1, 2, 3, 4, 7, 8, 11, 16];
 
 fn warm_up(mut f: impl FnMut()) {
     let start = Instant::now();
