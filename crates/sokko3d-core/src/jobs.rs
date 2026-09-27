@@ -1,0 +1,656 @@
+//! The job system: fork-join parallel loops for frame work, and a queue of small background
+//! tasks that run in the gaps.
+//!
+//! # Threads
+//!
+//! [`JobSystem::new`] only builds the shared state. Each job worker is a thread (a Web Worker in
+//! the browser) that calls [`JobSystem::worker_loop`] with its index; the call returns after
+//! [`JobSystem::shutdown`]. Job worker `i` runs chunks as [`WorkerId`] `i + 1`. The thread that
+//! calls [`JobSystem::parallel_for`] (the game worker) runs chunks as [`WorkerId::CALLER`], so a
+//! system with `n` job workers has `n + 1` worker ids, and per-thread storage such as frame
+//! arenas needs `n + 1` entries.
+//!
+//! The single-threaded WebAssembly build has no job workers: [`JobSystem::new`] ignores the count
+//! and every loop runs on the calling thread.
+//!
+//! # Frame jobs
+//!
+//! One frame job runs at a time. Its descriptor (the closure pointer, item count and chunk size)
+//! lives in a slot allocated with the system, so a call allocates nothing.
+//!
+//! Claims go through a 64-bit ticket: a job sequence number in the high half and the next chunk
+//! to hand out in the low half. Between jobs the ticket is closed: its low half holds the largest
+//! value, so no claim can succeed.
+//!
+//! 1. The caller writes the descriptor, resets the done counter, and stores the chunk count with
+//!    release ordering. Then it publishes the job by storing the ticket with a new sequence
+//!    number and chunk 0. That store is sequentially consistent, so it also releases the
+//!    descriptor.
+//! 2. It bumps the wake word and wakes sleeping workers.
+//! 3. Everyone, the caller included, claims chunks with a compare-and-swap that adds one to the
+//!    ticket, after checking the chunk index against the chunk count. A fast core simply claims
+//!    more chunks, which is how the system meets the plan's work-stealing goal without per-worker
+//!    queues.
+//! 4. Only a successful claim reads the descriptor. The claim's acquire half pairs with the
+//!    publishing store, and the job cannot finish while the claimed chunk is unfinished, so the
+//!    descriptor and the closure stay valid while the chunk runs.
+//! 5. Each finished chunk adds one to the done counter with release ordering. When no chunk is
+//!    left to claim, the caller spins with [`core::hint::spin_loop`] until the done counter
+//!    (loaded with acquire ordering) reaches the chunk count, so it only waits for chunks already
+//!    in flight. It never blocks: the game worker must stay responsive.
+//! 6. The caller closes the ticket, then returns.
+//!
+//! Closing matters for a worker that read the old ticket and then the next job's chunk count: the
+//! count's release store comes after the close, so the worker's compare-and-swap sees the closed
+//! ticket and fails. Without the close, the swap could still match the old ticket and claim a
+//! chunk of the next job that its caller has not published yet.
+//!
+//! A call made while a frame job is running (a nested call from inside a chunk), or made on a job
+//! worker thread, runs its loop inline on that thread with that thread's worker id.
+//!
+//! # Background tasks
+//!
+//! [`JobSystem::spawn_background`] pushes a small task (a function pointer and one argument) into
+//! a fixed-capacity queue. An idle worker takes a background task only when no frame chunk is
+//! left to claim, and it checks for frame work again before each further task. A worker already
+//! inside a task when a frame job starts joins the job when that task ends, so background work
+//! delays a frame job's helpers by at most one task each, and never blocks the caller, which
+//! runs any chunk no worker has taken.
+//!
+//! # Sleeping
+//!
+//! An idle worker spins for a configurable number of rounds, then blocks on the wake word with
+//! `memory.atomic.wait32` (a futex in native builds). To avoid a lost wakeup it reads the wake
+//! word, registers as a sleeper, and re-checks for work and for a changed wake word before it
+//! blocks. Publishers make the work visible, bump the wake word, and notify only when a sleeper
+//! is registered. All of these steps are sequentially consistent.
+
+use std::cell::{Cell, UnsafeCell};
+use std::hint::spin_loop;
+use std::mem::MaybeUninit;
+use std::ops::Range;
+use std::panic::{AssertUnwindSafe, catch_unwind};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
+
+use crate::error::{CoreError, Resource};
+use crate::wait;
+
+/// The largest number of job workers a system accepts.
+pub const MAX_WORKERS: u32 = 255;
+/// The background queue's capacity when [`JobSystem::new`] builds the system.
+pub const DEFAULT_BACKGROUND_CAPACITY: u32 = 1024;
+/// Rounds an idle worker spins, polling for work, before it blocks. Frame jobs arrive back to
+/// back, so a short spin keeps workers awake between them.
+pub const DEFAULT_SPIN_ROUNDS: u32 = 1 << 12;
+
+/// The loop body [`JobSystem::parallel_for`] runs: it gets a range of item indices and the id of
+/// the thread running it.
+pub type ChunkFn<'a> = dyn Fn(Range<u32>, WorkerId) + Sync + 'a;
+
+/// Identifies the thread running a chunk: [`WorkerId::CALLER`] for the thread that called
+/// [`JobSystem::parallel_for`], and `i + 1` for job worker `i`. Use it to index per-thread data.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct WorkerId(u32);
+
+impl WorkerId {
+    /// The thread that publishes frame jobs: the game worker, or the only thread.
+    pub const CALLER: WorkerId = WorkerId(0);
+
+    /// The id of job worker `worker_index` (the index passed to [`JobSystem::worker_loop`]).
+    pub const fn job_worker(worker_index: u32) -> WorkerId {
+        WorkerId(worker_index + 1)
+    }
+
+    /// The id as an array index, from 0 to the job worker count.
+    pub const fn index(self) -> usize {
+        self.0 as usize
+    }
+}
+
+/// A background task: a plain function and one argument, so queueing it allocates nothing. The
+/// argument can carry an index or an address.
+#[derive(Clone, Copy, Debug)]
+pub struct BackgroundTask {
+    /// The function to run.
+    pub run: fn(u64, WorkerId),
+    /// The value passed to it.
+    pub arg: u64,
+}
+
+/// Settings for [`JobSystem::with_config`].
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct JobConfig {
+    /// The number of job workers the host will start. The calling thread is not counted.
+    pub workers: u32,
+    /// The background queue's capacity, rounded up to a power of two.
+    pub background_capacity: u32,
+    /// Rounds an idle worker spins before it blocks.
+    pub spin_rounds: u32,
+}
+
+impl Default for JobConfig {
+    fn default() -> Self {
+        Self {
+            workers: 0,
+            background_capacity: DEFAULT_BACKGROUND_CAPACITY,
+            spin_rounds: DEFAULT_SPIN_ROUNDS,
+        }
+    }
+}
+
+thread_local! {
+    /// The worker id of the thread: set inside [`JobSystem::worker_loop`], and 0 elsewhere.
+    static CURRENT_WORKER: Cell<u32> = const { Cell::new(0) };
+}
+
+/// Keeps a hot atomic on its own cache line (128 bytes covers Apple and most Arm cores).
+#[repr(align(128))]
+struct Padded<T>(T);
+
+/// The words every claim reads: the ticket and the chunk count share one line.
+struct Claims {
+    /// High 32 bits: the job sequence number. Low 32 bits: the next chunk to hand out, or
+    /// [`CLOSED`] between jobs.
+    ticket: AtomicU64,
+    chunk_count: AtomicU32,
+}
+
+/// The low half of a closed ticket: no chunk index reaches it, so claims fail.
+const CLOSED: u64 = u32::MAX as u64;
+
+/// The current frame job. Written only by the publishing caller while no claim can succeed.
+struct JobDesc {
+    func: *const ChunkFn<'static>,
+    count: u32,
+    chunk_size: u32,
+}
+
+/// The shared state of the job system. See the module documentation for the protocol.
+pub struct JobSystem {
+    claims: Padded<Claims>,
+    done: Padded<AtomicU32>,
+    wake: Padded<AtomicU32>,
+    job: UnsafeCell<JobDesc>,
+    busy: AtomicBool,
+    panicked: AtomicBool,
+    sleepers: AtomicU32,
+    shutdown: AtomicBool,
+    workers: u32,
+    spin_rounds: u32,
+    background: TaskQueue,
+}
+
+// SAFETY: the job descriptor is written only by the thread that won the `busy` flag, while no
+// claim can succeed, and read only after a successful claim (see the module documentation). Every
+// other field is atomic, and the closure it points to is `Sync`.
+unsafe impl Sync for JobSystem {}
+// SAFETY: the raw closure pointer is only dereferenced under the protocol above, from any thread.
+unsafe impl Send for JobSystem {}
+
+impl JobSystem {
+    /// A job system for `worker_count` job workers, with the default background capacity and
+    /// spin. The host starts the workers, each calling [`JobSystem::worker_loop`].
+    pub fn new(worker_count: u32) -> Self {
+        Self::with_config(JobConfig {
+            workers: worker_count,
+            ..JobConfig::default()
+        })
+    }
+
+    /// A job system with explicit settings. The single-threaded WebAssembly build always gets
+    /// zero workers.
+    pub fn with_config(config: JobConfig) -> Self {
+        let workers = if cfg!(all(target_arch = "wasm32", not(target_feature = "atomics"))) {
+            0
+        } else {
+            config.workers.min(MAX_WORKERS)
+        };
+        Self {
+            claims: Padded(Claims {
+                ticket: AtomicU64::new(CLOSED),
+                chunk_count: AtomicU32::new(0),
+            }),
+            done: Padded(AtomicU32::new(0)),
+            wake: Padded(AtomicU32::new(0)),
+            job: UnsafeCell::new(JobDesc {
+                func: &noop_chunk,
+                count: 0,
+                chunk_size: 1,
+            }),
+            busy: AtomicBool::new(false),
+            panicked: AtomicBool::new(false),
+            sleepers: AtomicU32::new(0),
+            shutdown: AtomicBool::new(false),
+            workers,
+            spin_rounds: config.spin_rounds,
+            background: TaskQueue::new(config.background_capacity),
+        }
+    }
+
+    /// The number of job workers, not counting the calling thread.
+    pub fn worker_count(&self) -> u32 {
+        self.workers
+    }
+
+    /// The number of worker ids: the job workers plus the calling thread.
+    pub fn thread_count(&self) -> u32 {
+        self.workers + 1
+    }
+
+    /// The worker id of the current thread: [`WorkerId::CALLER`] outside job workers.
+    pub fn current_worker() -> WorkerId {
+        WorkerId(CURRENT_WORKER.with(Cell::get))
+    }
+
+    /// Runs `f` over `0..count` in chunks of `chunk_size` items, on the calling thread and the
+    /// job workers, and returns when every chunk has finished. A chunk size of 0 counts as 1.
+    ///
+    /// The call allocates nothing. It runs inline when there is only one chunk, no job worker, a
+    /// frame job already running (a nested call), or when the calling thread is a job worker.
+    ///
+    /// # Panics
+    /// When a chunk panics, after every chunk has finished.
+    pub fn parallel_for(&self, count: u32, chunk_size: u32, f: &ChunkFn<'_>) {
+        if count == 0 {
+            return;
+        }
+        let chunk_size = chunk_size.max(1);
+        let chunks = count.div_ceil(chunk_size);
+        let me = Self::current_worker();
+        if chunks == 1
+            || self.workers == 0
+            || me != WorkerId::CALLER
+            || self.shutdown.load(Ordering::Relaxed)
+            || self.busy.swap(true, Ordering::Acquire)
+        {
+            run_inline(count, chunk_size, f, me);
+            return;
+        }
+
+        let func: *const ChunkFn<'_> = f;
+        // SAFETY: only the trait object's lifetime changes. The pointer is dereferenced only by a
+        // thread holding a claimed, unfinished chunk, and this call does not return before every
+        // chunk has finished, so the closure outlives every use.
+        let func: *const ChunkFn<'static> = unsafe { std::mem::transmute(func) };
+        // SAFETY: this thread won the `busy` flag, the previous job's chunks have all finished,
+        // and the previous ticket has no chunk left to claim, so no other thread reads the
+        // descriptor until the ticket store below publishes it.
+        unsafe {
+            *self.job.get() = JobDesc {
+                func,
+                count,
+                chunk_size,
+            };
+        }
+        self.done.0.store(0, Ordering::Relaxed);
+        self.claims.0.chunk_count.store(chunks, Ordering::Release);
+        let sequence = ((self.claims.0.ticket.load(Ordering::Relaxed) >> 32) + 1) & 0xFFFF_FFFF;
+        self.claims.0.ticket.store(sequence << 32, Ordering::SeqCst);
+        self.wake_workers(true);
+
+        while let Some(chunk) = self.try_claim() {
+            self.run_chunk(chunk, me);
+        }
+        while self.done.0.load(Ordering::Acquire) < chunks {
+            spin_loop();
+        }
+        self.claims
+            .0
+            .ticket
+            .store((sequence << 32) | CLOSED, Ordering::SeqCst);
+        let panicked = self.panicked.swap(false, Ordering::Relaxed);
+        self.busy.store(false, Ordering::Release);
+        assert!(!panicked, "a parallel_for chunk panicked");
+    }
+
+    /// Queues a background task. Fails with [`CoreError::CapacityExceeded`] when the queue is
+    /// full. With no job workers, tasks wait for [`JobSystem::run_background_tasks`].
+    pub fn spawn_background(&self, task: BackgroundTask) -> Result<(), CoreError> {
+        if !self.background.push(task) {
+            return Err(CoreError::CapacityExceeded {
+                resource: Resource::BackgroundTasks,
+                capacity: self.background.capacity(),
+            });
+        }
+        self.wake_workers(false);
+        Ok(())
+    }
+
+    /// Runs up to `max` queued background tasks on the calling thread and returns how many ran.
+    /// The single-threaded build calls this in idle time.
+    pub fn run_background_tasks(&self, max: u32) -> u32 {
+        let me = Self::current_worker();
+        let mut ran = 0;
+        while ran < max {
+            let Some(task) = self.background.pop() else {
+                break;
+            };
+            (task.run)(task.arg, me);
+            ran += 1;
+        }
+        ran
+    }
+
+    /// The number of queued background tasks, as a snapshot that may be stale at once.
+    pub fn pending_background(&self) -> u32 {
+        self.background.len()
+    }
+
+    /// The body of job worker `worker_index` (from 0 to the worker count minus 1). It runs frame
+    /// chunks first and background tasks when no chunk is left, blocks when idle, and returns
+    /// after [`JobSystem::shutdown`]. An index past the worker count returns at once.
+    pub fn worker_loop(&self, worker_index: u32) {
+        if worker_index >= self.workers {
+            return;
+        }
+        let me = WorkerId::job_worker(worker_index);
+        let previous = CURRENT_WORKER.with(|c| c.replace(me.0));
+        let mut idle_rounds = 0;
+        while !self.shutdown.load(Ordering::Acquire) {
+            if let Some(chunk) = self.try_claim() {
+                self.run_chunk(chunk, me);
+                idle_rounds = 0;
+                continue;
+            }
+            if !self.frame_work_pending()
+                && let Some(task) = self.background.pop()
+            {
+                (task.run)(task.arg, me);
+                idle_rounds = 0;
+                continue;
+            }
+            if idle_rounds < self.spin_rounds {
+                idle_rounds += 1;
+                spin_loop();
+                continue;
+            }
+            self.sleep();
+            idle_rounds = 0;
+        }
+        CURRENT_WORKER.with(|c| c.set(previous));
+    }
+
+    /// Asks every job worker to return from [`JobSystem::worker_loop`] and wakes them. Queued
+    /// background tasks are not run. Later loops run inline on the calling thread. Call it when no
+    /// [`JobSystem::parallel_for`] is running.
+    pub fn shutdown(&self) {
+        self.shutdown.store(true, Ordering::SeqCst);
+        self.wake.0.fetch_add(1, Ordering::SeqCst);
+        wait::wake_all(&self.wake.0);
+    }
+
+    /// True after [`JobSystem::shutdown`].
+    pub fn is_shut_down(&self) -> bool {
+        self.shutdown.load(Ordering::Acquire)
+    }
+
+    /// Claims the next chunk of the current frame job, if one is left.
+    #[inline]
+    fn try_claim(&self) -> Option<u32> {
+        let claims = &self.claims.0;
+        let mut ticket = claims.ticket.load(Ordering::Acquire);
+        loop {
+            let next = ticket as u32;
+            if next >= claims.chunk_count.load(Ordering::Acquire) {
+                return None;
+            }
+            // The low half never carries into the sequence number, because `next` is below the
+            // chunk count.
+            match claims.ticket.compare_exchange_weak(
+                ticket,
+                ticket + 1,
+                Ordering::AcqRel,
+                Ordering::Acquire,
+            ) {
+                Ok(_) => return Some(next),
+                Err(now) => ticket = now,
+            }
+        }
+    }
+
+    /// True while the current frame job has chunks nobody has claimed.
+    #[inline]
+    fn frame_work_pending(&self) -> bool {
+        let claims = &self.claims.0;
+        let next = claims.ticket.load(Ordering::SeqCst) as u32;
+        next < claims.chunk_count.load(Ordering::SeqCst)
+    }
+
+    /// Runs one claimed chunk and counts it as done, even when it panics.
+    fn run_chunk(&self, chunk: u32, worker: WorkerId) {
+        // SAFETY: the chunk was claimed from the current job, so the publishing caller is still
+        // waiting inside `parallel_for` and has written the descriptor before publishing the
+        // ticket our claim read. The closure is alive until our chunk is counted as done.
+        let (range, f) = unsafe {
+            let job = &*self.job.get();
+            let start = chunk * job.chunk_size;
+            let end = start.saturating_add(job.chunk_size).min(job.count);
+            (start..end, &*job.func)
+        };
+        if catch_unwind(AssertUnwindSafe(|| f(range, worker))).is_err() {
+            self.panicked.store(true, Ordering::Relaxed);
+        }
+        // Nothing may touch the job after this increment: the caller may return at once.
+        self.done.0.fetch_add(1, Ordering::Release);
+    }
+
+    /// Makes new work visible to sleeping workers: bumps the wake word, then wakes one or all
+    /// sleepers when any are registered.
+    fn wake_workers(&self, all: bool) {
+        self.wake.0.fetch_add(1, Ordering::SeqCst);
+        if self.sleepers.load(Ordering::SeqCst) > 0 {
+            if all {
+                wait::wake_all(&self.wake.0);
+            } else {
+                wait::wake_one(&self.wake.0);
+            }
+        }
+    }
+
+    /// Blocks an idle worker until a publisher bumps the wake word.
+    fn sleep(&self) {
+        let seen = self.wake.0.load(Ordering::SeqCst);
+        self.sleepers.fetch_add(1, Ordering::SeqCst);
+        let work_arrived = self.shutdown.load(Ordering::SeqCst)
+            || self.frame_work_pending()
+            || !self.background.is_empty()
+            || self.wake.0.load(Ordering::SeqCst) != seen;
+        if !work_arrived {
+            wait::wait(&self.wake.0, seen);
+        }
+        self.sleepers.fetch_sub(1, Ordering::SeqCst);
+    }
+}
+
+/// The closure an idle job descriptor points at.
+fn noop_chunk(_: Range<u32>, _: WorkerId) {}
+
+/// Runs every chunk of a loop on the calling thread.
+fn run_inline(count: u32, chunk_size: u32, f: &ChunkFn<'_>, worker: WorkerId) {
+    let mut start = 0;
+    while start < count {
+        let end = start.saturating_add(chunk_size).min(count);
+        f(start..end, worker);
+        start = end;
+    }
+}
+
+/// One slot of the background queue.
+struct TaskCell {
+    sequence: AtomicU32,
+    task: UnsafeCell<MaybeUninit<BackgroundTask>>,
+}
+
+/// A bounded multi-producer, multi-consumer queue (Dmitry Vyukov's design). Each cell's sequence
+/// number says whether it is free for the producer at that position or full for the consumer.
+struct TaskQueue {
+    cells: Box<[TaskCell]>,
+    mask: u32,
+    enqueue: Padded<AtomicU32>,
+    dequeue: Padded<AtomicU32>,
+}
+
+// SAFETY: a cell's task is written only by the producer that claimed its position and read only
+// by the consumer that claimed the same position, and the cell's sequence number (release store,
+// acquire load) orders the two.
+unsafe impl Sync for TaskQueue {}
+
+impl TaskQueue {
+    fn new(capacity: u32) -> Self {
+        let size = capacity.clamp(2, 1 << 30).next_power_of_two();
+        let cells = (0..size)
+            .map(|i| TaskCell {
+                sequence: AtomicU32::new(i),
+                task: UnsafeCell::new(MaybeUninit::uninit()),
+            })
+            .collect();
+        Self {
+            cells,
+            mask: size - 1,
+            enqueue: Padded(AtomicU32::new(0)),
+            dequeue: Padded(AtomicU32::new(0)),
+        }
+    }
+
+    fn capacity(&self) -> u32 {
+        self.mask + 1
+    }
+
+    fn len(&self) -> u32 {
+        let head = self.dequeue.0.load(Ordering::SeqCst);
+        let tail = self.enqueue.0.load(Ordering::SeqCst);
+        tail.wrapping_sub(head).min(self.capacity())
+    }
+
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
+
+    fn push(&self, task: BackgroundTask) -> bool {
+        let mut pos = self.enqueue.0.load(Ordering::Relaxed);
+        loop {
+            let cell = &self.cells[(pos & self.mask) as usize];
+            let lag = cell.sequence.load(Ordering::Acquire).wrapping_sub(pos) as i32;
+            if lag == 0 {
+                match self.enqueue.0.compare_exchange_weak(
+                    pos,
+                    pos.wrapping_add(1),
+                    Ordering::SeqCst,
+                    Ordering::Relaxed,
+                ) {
+                    Ok(_) => {
+                        // SAFETY: winning the position gives this thread the cell until the
+                        // sequence store below hands it to a consumer.
+                        unsafe { (*cell.task.get()).write(task) };
+                        cell.sequence.store(pos.wrapping_add(1), Ordering::Release);
+                        return true;
+                    }
+                    Err(now) => pos = now,
+                }
+            } else if lag < 0 {
+                return false;
+            } else {
+                pos = self.enqueue.0.load(Ordering::Relaxed);
+            }
+        }
+    }
+
+    fn pop(&self) -> Option<BackgroundTask> {
+        let mut pos = self.dequeue.0.load(Ordering::Relaxed);
+        loop {
+            let cell = &self.cells[(pos & self.mask) as usize];
+            let lag = cell
+                .sequence
+                .load(Ordering::Acquire)
+                .wrapping_sub(pos.wrapping_add(1)) as i32;
+            if lag == 0 {
+                match self.dequeue.0.compare_exchange_weak(
+                    pos,
+                    pos.wrapping_add(1),
+                    Ordering::SeqCst,
+                    Ordering::Relaxed,
+                ) {
+                    Ok(_) => {
+                        // SAFETY: the acquire load saw the producer's release store, so the task
+                        // is written, and winning the position gives this thread the cell.
+                        let task = unsafe { (*cell.task.get()).assume_init_read() };
+                        cell.sequence
+                            .store(pos.wrapping_add(self.mask + 1), Ordering::Release);
+                        return Some(task);
+                    }
+                    Err(now) => pos = now,
+                }
+            } else if lag < 0 {
+                return None;
+            } else {
+                pos = self.dequeue.0.load(Ordering::Relaxed);
+            }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn inline_loops_cover_every_index_once() {
+        let jobs = JobSystem::new(0);
+        for (count, chunk) in [(0, 1), (1, 1), (10, 3), (10, 0), (1000, 64), (7, 100)] {
+            let hits: Vec<AtomicU32> = (0..count).map(|_| AtomicU32::new(0)).collect();
+            jobs.parallel_for(count, chunk, &|range, worker| {
+                assert_eq!(worker, WorkerId::CALLER);
+                for i in range {
+                    hits[i as usize].fetch_add(1, Ordering::Relaxed);
+                }
+            });
+            assert!(hits.iter().all(|h| h.load(Ordering::Relaxed) == 1));
+        }
+    }
+
+    #[test]
+    fn worker_ids() {
+        assert_eq!(WorkerId::CALLER.index(), 0);
+        assert_eq!(WorkerId::job_worker(3).index(), 4);
+        assert_eq!(JobSystem::current_worker(), WorkerId::CALLER);
+        assert_eq!(JobSystem::new(4).thread_count(), 5);
+    }
+
+    static RAN: AtomicU64 = AtomicU64::new(0);
+
+    fn add(arg: u64, _: WorkerId) {
+        RAN.fetch_add(arg, Ordering::Relaxed);
+    }
+
+    #[test]
+    fn background_queue_capacity_and_order() {
+        let jobs = JobSystem::with_config(JobConfig {
+            background_capacity: 4,
+            ..JobConfig::default()
+        });
+        for i in 0..4 {
+            jobs.spawn_background(BackgroundTask { run: add, arg: i })
+                .unwrap();
+        }
+        assert_eq!(
+            jobs.spawn_background(BackgroundTask { run: add, arg: 9 }),
+            Err(CoreError::CapacityExceeded {
+                resource: Resource::BackgroundTasks,
+                capacity: 4
+            })
+        );
+        assert_eq!(jobs.pending_background(), 4);
+        assert_eq!(jobs.run_background_tasks(10), 4);
+        assert_eq!(RAN.load(Ordering::Relaxed), 1 + 2 + 3);
+        assert_eq!(jobs.pending_background(), 0);
+    }
+
+    #[test]
+    fn a_worker_loop_past_the_worker_count_returns() {
+        let jobs = JobSystem::new(1);
+        jobs.worker_loop(1);
+        jobs.shutdown();
+        jobs.worker_loop(0);
+        assert!(jobs.is_shut_down());
+    }
+}
