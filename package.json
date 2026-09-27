@@ -33,6 +33,7 @@
 		"devices": "bun tests/real-browsers.ts --allow-no-webgpu --android chrome,brave --lan ipad-safari,ipad-brave",
 		"test:bench": "bun run --cwd bench test",
 		"parity": "bun bench/parity.ts",
+		"bench:run": "bun bench/run.ts",
 		"dev": "vite",
 		"dev-cert": "bun tools/dev-cert.ts",
 		"android": "adb reverse tcp:5173 tcp:5173"
