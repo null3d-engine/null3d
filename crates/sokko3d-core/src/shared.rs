@@ -1,4 +1,10 @@
-//! A raw pointer that a parallel loop's chunks share to write disjoint parts of one buffer.
+//! Small helpers for data that several threads share: a raw pointer that a parallel loop's
+//! chunks use to write disjoint parts of one buffer, and cache-line padding for hot atomics.
+
+/// Keeps a value on its own cache line, so threads writing it do not slow down neighbouring
+/// data. 128 bytes covers Apple cores and most Arm and x86 cores.
+#[repr(align(128))]
+pub(crate) struct CachePadded<T>(pub(crate) T);
 
 /// Points at a buffer that several threads write, each in its own part. The pointer itself is
 /// safe to share; every access is `unsafe` and states which part the caller owns.

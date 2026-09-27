@@ -8,7 +8,7 @@ mod common;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
-use common::{CountingAllocator, Rng, Workers};
+use common::{CountingAllocator, Rng, Workers, mul4, perspective, translation};
 use sokko3d_core::arena::ArenaPool;
 use sokko3d_core::culling::{CullOutput, Frustum, cull_parallel};
 use sokko3d_core::handle::Handle;
@@ -26,17 +26,12 @@ fn background(arg: u64, _: WorkerId) {
     BACKGROUND_SUM.fetch_add(arg, Ordering::Relaxed);
 }
 
-/// A column-major perspective view-projection looking down -Z from z = 60.
+/// A camera at z = 60 looking down -Z.
 fn camera() -> Frustum {
-    let (near, far, f) = (0.5f32, 500.0f32, 1.5f32);
-    let mut m = [0.0; 16];
-    m[0] = f;
-    m[5] = f;
-    m[10] = far / (near - far);
-    m[11] = -1.0;
-    m[14] = near * far / (near - far) - 60.0 * m[10];
-    m[15] = 60.0;
-    Frustum::from_view_projection(&m)
+    Frustum::from_view_projection(&mul4(
+        &perspective(1.2, 1.0, 0.5, 500.0),
+        &translation(0.0, 0.0, -60.0),
+    ))
 }
 
 struct World {

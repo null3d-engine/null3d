@@ -187,3 +187,81 @@ unsafe impl GlobalAlloc for CountingAllocator {
         unsafe { System.dealloc(ptr, layout) }
     }
 }
+
+/// A 3 × 4 row-major affine matrix in double precision, for reference results.
+pub type Mat64 = [f64; 12];
+
+/// The matrix of a translation, a rotation quaternion and a scale, in double precision: the
+/// reference for the engine's single-precision compose.
+pub fn compose64(p: [f32; 3], q: [f32; 4], s: [f32; 3]) -> Mat64 {
+    let [x, y, z, w] = q.map(f64::from);
+    let [sx, sy, sz] = s.map(f64::from);
+    let (xx, yy, zz) = (2.0 * x * x, 2.0 * y * y, 2.0 * z * z);
+    let (xy, xz, yz) = (2.0 * x * y, 2.0 * x * z, 2.0 * y * z);
+    let (wx, wy, wz) = (2.0 * w * x, 2.0 * w * y, 2.0 * w * z);
+    [
+        (1.0 - yy - zz) * sx,
+        (xy - wz) * sy,
+        (xz + wy) * sz,
+        f64::from(p[0]),
+        (xy + wz) * sx,
+        (1.0 - xx - zz) * sy,
+        (yz - wx) * sz,
+        f64::from(p[1]),
+        (xz - wy) * sx,
+        (yz + wx) * sy,
+        (1.0 - xx - yy) * sz,
+        f64::from(p[2]),
+    ]
+}
+
+/// The product `a × b` of two affine matrices in double precision.
+pub fn mul64(a: &Mat64, b: &Mat64) -> Mat64 {
+    std::array::from_fn(|i| {
+        let (r, c) = (i / 4, i % 4);
+        let v: f64 = (0..3).map(|k| a[r * 4 + k] * b[k * 4 + c]).sum();
+        if c == 3 { v + a[r * 4 + 3] } else { v }
+    })
+}
+
+/// The length of the longest column of the 3 × 3 part, in double precision.
+pub fn max_axis_scale64(m: &Mat64) -> f64 {
+    (0..3)
+        .map(|c| (0..3).map(|r| m[r * 4 + c] * m[r * 4 + c]).sum::<f64>())
+        .fold(0.0, f64::max)
+        .sqrt()
+}
+
+/// The column-major product `a × b` of two 4 × 4 matrices.
+pub fn mul4(a: &[f32; 16], b: &[f32; 16]) -> [f32; 16] {
+    std::array::from_fn(|i| {
+        let (col, row) = (i / 4, i % 4);
+        (0..4).map(|k| a[k * 4 + row] * b[col * 4 + k]).sum()
+    })
+}
+
+/// A column-major translation matrix.
+pub fn translation(x: f32, y: f32, z: f32) -> [f32; 16] {
+    let mut m = [0.0; 16];
+    m[0] = 1.0;
+    m[5] = 1.0;
+    m[10] = 1.0;
+    m[12] = x;
+    m[13] = y;
+    m[14] = z;
+    m[15] = 1.0;
+    m
+}
+
+/// A column-major perspective projection in WebGPU's clip space, looking down -Z: depth runs
+/// from 0 at `near` to 1 at `far`.
+pub fn perspective(fov_y: f32, aspect: f32, near: f32, far: f32) -> [f32; 16] {
+    let f = 1.0 / (fov_y / 2.0).tan();
+    let mut m = [0.0; 16];
+    m[0] = f / aspect;
+    m[5] = f;
+    m[10] = far / (near - far);
+    m[11] = -1.0;
+    m[14] = near * far / (near - far);
+    m
+}

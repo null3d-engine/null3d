@@ -3,34 +3,11 @@
 
 mod common;
 
-use common::{Rng, Workers};
+use common::{Rng, Workers, compose64, max_axis_scale64};
 use sokko3d_core::bitset::Bitset;
 use sokko3d_core::handle::Handle;
 use sokko3d_core::instances::{BatchTable, RowRange};
 use sokko3d_core::jobs::JobSystem;
-
-/// The world matrix of a row, in double precision.
-fn reference(p: &[f32], q: &[f32], s: &[f32]) -> [f64; 12] {
-    let [x, y, z, w] = [q[0], q[1], q[2], q[3]].map(f64::from);
-    let [sx, sy, sz] = [s[0], s[1], s[2]].map(f64::from);
-    let (xx, yy, zz) = (2.0 * x * x, 2.0 * y * y, 2.0 * z * z);
-    let (xy, xz, yz) = (2.0 * x * y, 2.0 * x * z, 2.0 * y * z);
-    let (wx, wy, wz) = (2.0 * w * x, 2.0 * w * y, 2.0 * w * z);
-    [
-        (1.0 - yy - zz) * sx,
-        (xy - wz) * sy,
-        (xz + wy) * sz,
-        f64::from(p[0]),
-        (xy + wz) * sx,
-        (1.0 - xx - zz) * sy,
-        (yz - wx) * sz,
-        f64::from(p[1]),
-        (xz - wy) * sx,
-        (yz + wx) * sy,
-        (1.0 - xx - yy) * sz,
-        f64::from(p[2]),
-    ]
-}
 
 /// Writes random values to `rows` of a batch.
 fn randomize(table: &mut BatchTable, id: Handle, rows: impl Iterator<Item = u32>, rng: &mut Rng) {
@@ -64,10 +41,12 @@ fn check_rows(table: &BatchTable, id: Handle, frame: u32) {
     let batch = table.get(id).unwrap();
     let world = batch.current_world();
     for row in 0..batch.active_count() as usize {
-        let expected = reference(
-            &batch.positions()[row * 3..],
-            &batch.rotations()[row * 4..],
-            &batch.scales()[row * 3..],
+        let triple = |a: &[f32]| [a[row * 3], a[row * 3 + 1], a[row * 3 + 2]];
+        let q = &batch.rotations()[row * 4..row * 4 + 4];
+        let expected = compose64(
+            triple(batch.positions()),
+            [q[0], q[1], q[2], q[3]],
+            triple(batch.scales()),
         );
         let got = world.matrix(row);
         for k in 0..12 {
@@ -77,11 +56,7 @@ fn check_rows(table: &BatchTable, id: Handle, frame: u32) {
                 "frame {frame}, row {row}"
             );
         }
-        let scale = (0..3)
-            .map(|c| (0..3).map(|r| expected[r * 4 + c].powi(2)).sum::<f64>())
-            .fold(0.0, f64::max)
-            .sqrt();
-        let radius = f64::from(batch.local_radius()) * scale;
+        let radius = f64::from(batch.local_radius()) * max_axis_scale64(&expected);
         assert!((f64::from(world.radii()[row]) - radius).abs() <= 1e-5 * (1.0 + radius));
         if batch.has_colors() {
             assert_eq!(

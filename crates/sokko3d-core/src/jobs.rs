@@ -71,6 +71,7 @@ use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 
 use crate::error::{CoreError, Resource};
+use crate::shared::CachePadded;
 use crate::wait;
 
 /// The largest number of job workers a system accepts.
@@ -141,10 +142,6 @@ thread_local! {
     static CURRENT_WORKER: Cell<u32> = const { Cell::new(0) };
 }
 
-/// Keeps a hot atomic on its own cache line (128 bytes covers Apple and most Arm cores).
-#[repr(align(128))]
-struct Padded<T>(T);
-
 /// The most chunks one loop is split into. Leaves room for every thread's one extra claim
 /// above the count.
 const MAX_CHUNKS: u32 = u32::MAX - 2 * MAX_WORKERS;
@@ -165,9 +162,9 @@ struct JobDesc {
 /// The shared state of the job system. See the module documentation for the protocol.
 pub struct JobSystem {
     /// High 32 bits: the current job's chunk count. Low 32 bits: the next chunk to hand out.
-    ticket: Padded<AtomicU64>,
-    done: Padded<AtomicU32>,
-    wake: Padded<AtomicU32>,
+    ticket: CachePadded<AtomicU64>,
+    done: CachePadded<AtomicU32>,
+    wake: CachePadded<AtomicU32>,
     job: UnsafeCell<JobDesc>,
     busy: AtomicBool,
     panicked: AtomicBool,
@@ -204,9 +201,9 @@ impl JobSystem {
             config.workers.min(MAX_WORKERS)
         };
         Self {
-            ticket: Padded(AtomicU64::new(0)),
-            done: Padded(AtomicU32::new(0)),
-            wake: Padded(AtomicU32::new(0)),
+            ticket: CachePadded(AtomicU64::new(0)),
+            done: CachePadded(AtomicU32::new(0)),
+            wake: CachePadded(AtomicU32::new(0)),
             job: UnsafeCell::new(JobDesc {
                 func: &noop_chunk,
                 count: 0,
@@ -463,8 +460,8 @@ struct TaskCell {
 struct TaskQueue {
     cells: Box<[TaskCell]>,
     mask: u32,
-    enqueue: Padded<AtomicU32>,
-    dequeue: Padded<AtomicU32>,
+    enqueue: CachePadded<AtomicU32>,
+    dequeue: CachePadded<AtomicU32>,
 }
 
 // SAFETY: a cell's task is written only by the producer that claimed its position and read only
@@ -484,8 +481,8 @@ impl TaskQueue {
         Self {
             cells,
             mask: size - 1,
-            enqueue: Padded(AtomicU32::new(0)),
-            dequeue: Padded(AtomicU32::new(0)),
+            enqueue: CachePadded(AtomicU32::new(0)),
+            dequeue: CachePadded(AtomicU32::new(0)),
         }
     }
 

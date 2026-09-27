@@ -18,7 +18,7 @@ use std::simd::prelude::*;
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, Instant};
 
-use common::{Rng, Workers};
+use common::{Rng, Workers, mul4, perspective, translation};
 use sokko3d_core::culling::{
     CullOutput, Frustum, cull_parallel, cull_spheres, cull_spheres_reference,
 };
@@ -80,17 +80,11 @@ fn bench_scene(count: usize) -> ([Vec<f32>; 4], Frustum) {
         arrays[2].push(rng.range(-100.0, 100.0));
         arrays[3].push(rng.range(0.1, 2.0));
     }
-    let (near, far, f) = (0.5f32, 400.0f32, 1.0 / 0.5f32.tan());
-    let mut m = [0.0; 16];
-    m[0] = f;
-    m[5] = f;
-    m[10] = far / (near - far);
-    m[11] = -1.0;
-    m[14] = near * far / (near - far);
-    // Move the camera to z = 150: translate the view by -150 along Z.
-    m[14] += m[10] * -150.0;
-    m[15] = 150.0;
-    (arrays, Frustum::from_view_projection(&m))
+    let view_projection = mul4(
+        &perspective(1.0, 1.0, 0.5, 400.0),
+        &translation(0.0, 0.0, -150.0),
+    );
+    (arrays, Frustum::from_view_projection(&view_projection))
 }
 
 #[test]

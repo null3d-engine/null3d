@@ -5,7 +5,7 @@ mod common;
 
 use std::collections::BTreeMap;
 
-use common::{Rng, Workers};
+use common::{Mat64, Rng, Workers, compose64, max_axis_scale64, mul64};
 use sokko3d_core::handle::Handle;
 use sokko3d_core::jobs::JobSystem;
 use sokko3d_core::scene::{Command, PARALLEL_LEVEL_THRESHOLD, SceneStorage, flags};
@@ -23,63 +23,17 @@ struct Obj {
     visible: bool,
 }
 
-type Mat = [f64; 12];
-
-fn compose(o: &Obj) -> Mat {
-    let [x, y, z, w] = o.rotation.map(f64::from);
-    let [sx, sy, sz] = o.scale.map(f64::from);
-    let [px, py, pz] = o.position.map(f64::from);
-    let (xx, yy, zz) = (2.0 * x * x, 2.0 * y * y, 2.0 * z * z);
-    let (xy, xz, yz) = (2.0 * x * y, 2.0 * x * z, 2.0 * y * z);
-    let (wx, wy, wz) = (2.0 * w * x, 2.0 * w * y, 2.0 * w * z);
-    [
-        (1.0 - yy - zz) * sx,
-        (xy - wz) * sy,
-        (xz + wy) * sz,
-        px,
-        (xy + wz) * sx,
-        (1.0 - xx - zz) * sy,
-        (yz - wx) * sz,
-        py,
-        (xz - wy) * sx,
-        (yz + wx) * sy,
-        (1.0 - xx - yy) * sz,
-        pz,
-    ]
-}
-
-fn mul(a: &Mat, b: &Mat) -> Mat {
-    let mut out = [0.0; 12];
-    for r in 0..3 {
-        for c in 0..4 {
-            let mut v = (0..3).map(|k| a[r * 4 + k] * b[k * 4 + c]).sum::<f64>();
-            if c == 3 {
-                v += a[r * 4 + 3];
-            }
-            out[r * 4 + c] = v;
-        }
-    }
-    out
-}
-
 /// The world matrix and visibility of `h`, by walking up its parents.
-fn reference(model: &BTreeMap<u32, Obj>, h: Handle) -> (Mat, bool) {
+fn reference(model: &BTreeMap<u32, Obj>, h: Handle) -> (Mat64, bool) {
     let o = &model[&h.raw()];
-    let local = compose(o);
+    let local = compose64(o.position, o.rotation, o.scale);
     match o.parent {
         None => (local, o.visible),
         Some(p) => {
             let (parent, parent_visible) = reference(model, p);
-            (mul(&parent, &local), parent_visible && o.visible)
+            (mul64(&parent, &local), parent_visible && o.visible)
         }
     }
-}
-
-fn max_axis_scale(m: &Mat) -> f64 {
-    (0..3)
-        .map(|c| (0..3).map(|r| m[r * 4 + c] * m[r * 4 + c]).sum::<f64>())
-        .fold(0.0, f64::max)
-        .sqrt()
 }
 
 fn is_descendant(model: &BTreeMap<u32, Obj>, h: Handle, ancestor: Handle) -> bool {
@@ -169,7 +123,7 @@ fn check_against_reference(scene: &SceneStorage, model: &BTreeMap<u32, Obj>, fra
         let radius = world.radii()[slot];
         if visible {
             let o = &model[&raw];
-            let want = f64::from(o.radius) * max_axis_scale(&expected);
+            let want = f64::from(o.radius) * max_axis_scale64(&expected);
             assert!(
                 (f64::from(radius) - want).abs() <= 1e-5 * (1.0 + want),
                 "frame {frame}, slot {slot}: radius {radius} vs {want}"
@@ -196,7 +150,7 @@ fn random_frames(seed: u64, initial: usize, frames: u32, worker_counts: &[u32]) 
         .collect();
     let mut rng = Rng::new(seed);
     let mut model: BTreeMap<u32, Obj> = BTreeMap::new();
-    let mut previous: BTreeMap<u32, Mat> = BTreeMap::new();
+    let mut previous: BTreeMap<u32, Mat64> = BTreeMap::new();
     let mut cycles = 0;
     let mut widest_level = 0;
 

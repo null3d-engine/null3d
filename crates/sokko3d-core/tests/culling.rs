@@ -3,33 +3,13 @@
 
 mod common;
 
-use common::{Rng, Workers};
+use common::{Rng, Workers, mul4, perspective};
 use sokko3d_core::culling::{
     CullOutput, Frustum, cull_parallel, cull_spheres, cull_spheres_reference,
 };
 use sokko3d_core::world::SphereArrays;
 
 type Mat4 = [f32; 16];
-
-/// Column-major product `a × b`.
-fn mul4(a: &Mat4, b: &Mat4) -> Mat4 {
-    std::array::from_fn(|i| {
-        let (col, row) = (i / 4, i % 4);
-        (0..4).map(|k| a[k * 4 + row] * b[col * 4 + k]).sum()
-    })
-}
-
-/// A perspective projection in WebGPU's clip space (depth from 0 at near to 1 at far).
-fn perspective(fov_y: f32, aspect: f32, near: f32, far: f32) -> Mat4 {
-    let f = 1.0 / (fov_y / 2.0).tan();
-    let mut m = [0.0; 16];
-    m[0] = f / aspect;
-    m[5] = f;
-    m[10] = far / (near - far);
-    m[11] = -1.0;
-    m[14] = near * far / (near - far);
-    m
-}
 
 /// A perspective projection with reversed depth (1 at near, 0 at far), or an infinite far plane
 /// when `far` is `None`.

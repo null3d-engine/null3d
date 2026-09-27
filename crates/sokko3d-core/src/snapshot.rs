@@ -54,6 +54,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use crate::arena::Pod;
 use crate::instances::BatchTable;
 use crate::scene::SceneStorage;
+use crate::shared::CachePadded;
 use crate::wait;
 
 /// The upload target of scene objects. Instance batches use their raw batch id.
@@ -153,15 +154,11 @@ impl FrameSnapshot {
     }
 }
 
-/// Keeps an atomic word on its own cache line.
-#[repr(align(128))]
-struct Padded<T>(T);
-
 /// The shared state of the handoff: the two atomic words and the two snapshot slots. See the
 /// module documentation for the protocol.
 pub struct FrameHandoff {
-    published: Padded<AtomicU32>,
-    acknowledged: Padded<AtomicU32>,
+    published: CachePadded<AtomicU32>,
+    acknowledged: CachePadded<AtomicU32>,
     slots: [UnsafeCell<FrameSnapshot>; 2],
 }
 
@@ -174,8 +171,8 @@ impl FrameHandoff {
     /// A handoff whose snapshots hold up to `upload_capacity` upload ranges each.
     pub fn new(upload_capacity: u32) -> Self {
         Self {
-            published: Padded(AtomicU32::new(0)),
-            acknowledged: Padded(AtomicU32::new(0)),
+            published: CachePadded(AtomicU32::new(0)),
+            acknowledged: CachePadded(AtomicU32::new(0)),
             slots: [
                 UnsafeCell::new(FrameSnapshot::with_capacity(upload_capacity)),
                 UnsafeCell::new(FrameSnapshot::with_capacity(upload_capacity)),
