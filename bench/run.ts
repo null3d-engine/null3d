@@ -192,9 +192,9 @@ async function runSweep(
 		const own = ownShareOfThree(sokko3d, threejs, sceneCode);
 		add('sokko3d own work', n, own?.sokko3dMs);
 		add('three.js own work', n, own?.threeMs);
-		// Every thread's work, job workers included, less the scene code on the game's thread.
-		if (sokko3d?.allThreadsMs !== undefined && sceneCode)
-			add('sokko3d engine', n, sokko3d.allThreadsMs - sceneCode.cpuMs.median);
+		// Every thread's work, job workers included, less the game's update.
+		if (sokko3d?.allThreadsMs !== undefined)
+			add('sokko3d engine', n, sokko3d.allThreadsMs - (sokko3d.updateMs ?? 0));
 	}
 	const lines: Record<string, Omit<ChartSeries, 'points'>> = {
 		'sokko3d-webgpu': { name: 'sokko3d, whole frame', color: '#2a6fdb' },

@@ -2,9 +2,11 @@
 // three.js's faster renderer, and a line chart as SVG. Everything here is pure, so the benchmark
 // command and the runner's results share it.
 //
-// A frame's CPU time includes the scene's shared code, which every engine's version of a scene runs
-// alike. The scene-code page times that code alone, so a report can also compare each engine's own
-// work: its busiest thread's time with the shared code taken away.
+// A frame's CPU time includes the game's code, which moves the scene alike in every engine's version
+// of a scene. A report also compares each engine's own work: the CPU time its own code takes on its
+// busiest thread. sokko3d times the game's update itself. three.js calls its own code from inside
+// the game's loop, so its own work is its frame time less the scene code, which the scene-code page
+// times alone.
 import { SCENE_CODE } from './parity';
 
 /** What a timed benchmark page publishes. sokko3d pages add the engine's full frame metrics. */
@@ -107,21 +109,26 @@ export interface Share {
 	threeMs: number;
 }
 
-/** Threads that run the game's code, and with it the scene's shared code. */
-const GAME_THREADS = new Set(['game-worker', 'main']);
-
 /**
- * An engine's own CPU work per frame on its busiest thread: the busiest thread's time with the
- * scene's shared code taken away from the thread that runs it. three.js runs everything on its main
- * thread. sokko3d's other threads run no scene code, so their whole time counts. The figure comes
- * from medians, so it estimates the per-frame value closely rather than exactly.
+ * An engine's own CPU work per frame on its busiest thread, apart from the game's code.
+ *
+ * sokko3d times the game's update itself, so each thread's own work is its time less the update
+ * phase on it: exact, from the same frames. The update holds the scene code and the game's writes
+ * into the engine's arrays, which run no engine code.
+ *
+ * three.js runs on its main thread, and its own code (matrix composition, the instance buffer and
+ * drawing) runs from inside the game's loop, so its own work is its frame time less `sceneCodeMs`,
+ * the scene code's time from the scene-code page. A loop there can compile to slower code than the
+ * same code inside an engine's loop, which makes this estimate of three.js's own work low.
+ *
+ * Both come from medians, so they estimate the per-frame values closely rather than exactly.
  */
 export function ownWorkMs(summary: RunSummary, sceneCodeMs: number): number {
 	const threads = summary.threadsMs;
 	if (!threads) return Math.max(0, summary.cpuMs.median - sceneCodeMs);
 	let busiest = 0;
 	for (const [thread, time] of Object.entries(threads))
-		busiest = Math.max(busiest, GAME_THREADS.has(thread) ? time - sceneCodeMs : time);
+		busiest = Math.max(busiest, time - (summary.phases?.[`${thread}.update`] ?? 0));
 	return busiest;
 }
 
@@ -151,8 +158,9 @@ export function shareOfThree(
 }
 
 /**
- * sokko3d's own work on its busiest thread as a share of three.js's, both apart from the scene's
- * shared code: the measure of the desktop speed target. Null without the scene code's time.
+ * sokko3d's own work on its busiest thread as a share of three.js's, both apart from the game's
+ * code: the measure of the desktop speed target. Null without the scene code's time, which
+ * three.js's side needs.
  */
 export function ownShareOfThree(
 	sokko3d: RunSummary | undefined,
@@ -218,7 +226,7 @@ export function comparisonLines(rows: readonly SummaryRow[]): string[] {
 				: []),
 			...(own
 				? [
-						`${scene}: apart from the scene code both engines run (${ms(own.sceneCodeMs)} ms), sokko3d's own work on its busiest thread is ${percent(own.share)} of three.js's (${ms(own.sokko3dMs)} ms against ${ms(own.threeMs)} ms).`,
+						`${scene}: sokko3d's own work on its busiest thread, apart from the game's code, is ${percent(own.share)} of three.js's (${ms(own.sokko3dMs)} ms against ${ms(own.threeMs)} ms); three.js's is its frame less the scene code timed alone (${ms(own.sceneCodeMs)} ms).`,
 					]
 				: []),
 		];
