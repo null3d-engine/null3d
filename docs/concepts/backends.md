@@ -8,7 +8,7 @@ summary: "WebGPU core, compatibility mode and WebGL2; capability flags; the port
 
 # GPU tiers and backends
 
-> Planned for sokko3d 0.1. This page describes the design. The engine does not implement it yet, so the APIs it names do not exist, and coding agents must not use them.
+> Planned for sokko3d 0.1. This page describes the design. The first milestone implements parts of it in this repository, but no release has these APIs yet, so coding agents must not use them.
 
 ```mermaid
 flowchart TD

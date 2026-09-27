@@ -8,7 +8,7 @@ summary: "Main thread, game worker, render worker, job workers; the pipelined fr
 
 # Architecture: threads and the frame
 
-> Planned for sokko3d 0.1. This page describes the design. The engine does not implement it yet, so the APIs it names do not exist, and coding agents must not use them.
+> Planned for sokko3d 0.1. This page describes the design. The first milestone implements parts of it in this repository, but no release has these APIs yet, so coding agents must not use them.
 
 ```mermaid
 flowchart LR
@@ -61,13 +61,13 @@ The game worker, computing frame N+1:
 2. Runs your `onUpdate`. Your code writes transforms straight into the shared arrays and queues structural changes, such as creating, destroying and reparenting objects.
 3. Applies the structural changes in one batch.
 4. Runs parallel jobs: animation, transforms by hierarchy depth, bounds, level of detail, and culling on the WebGL2 path.
-5. Records draw lists in parallel, one chunk per job worker.
+5. Records the frame's draw lists. Long lists, such as those of the WebGL2 path, are recorded in chunks on the job workers.
 6. Publishes the finished frame by flipping one shared index, then signals the render worker.
 
 The render worker, drawing frame N inside its own `requestAnimationFrame` callback:
 
-1. Takes the newest complete frame. If none is ready, it draws nothing, and the browser keeps showing the last frame.
-2. Applies a pending canvas resize. Only the thread that owns a canvas may resize it.
+1. Takes the next complete frame. The game worker runs at most one frame ahead, so no frame is skipped. If none is ready, it draws nothing, and the browser keeps showing the last frame.
+2. Applies a canvas resize that arrives with the frame. The frame was built for that size, so the canvas and the frame's render targets always agree.
 3. Uploads the changed byte ranges to GPU buffers.
 4. Replays the draw lists into WebGPU or WebGL2 calls and submits them. The browser shows the frame when the callback returns.
 
