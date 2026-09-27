@@ -10,15 +10,17 @@ import { HTTP_PORT, HTTPS_PORT } from './tests/lib/server.ts';
 
 const https = process.env.SOKKO3D_HTTPS === '1';
 
-/** Files the server refuses, besides Vite's defaults: private notes, build output, agent state. */
+/**
+ * Files the server refuses, besides Vite's defaults: private notes, build output and agent state
+ * inside this repository. The patterns are anchored at the repository, so a checkout that itself
+ * lives inside such a folder still serves its pages.
+ */
 const DENIED = [
 	'.env',
 	'.env.*',
 	'*.{crt,pem}',
 	'**/.git/**',
-	'**/.dev/**',
-	'**/target/**',
-	'**/.claude/**',
+	...['.dev', 'target', '.claude'].map((folder) => `${import.meta.dirname}/${folder}/**`),
 ];
 
 /** Sends the server's bare address to the list of test pages. */

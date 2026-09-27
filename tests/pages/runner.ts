@@ -94,6 +94,8 @@ async function deviceInfo(): Promise<Record<string, unknown>> {
 
 /** Opens a page in a frame and waits for the result it publishes, or records a timeout. */
 async function runItem(item: PlanItem): Promise<Result> {
+	const page = await fetch(item.path, { cache: 'no-store' });
+	if (!page.ok) return { ok: false, error: `page not found (HTTP ${page.status})` };
 	const frame = document.createElement('iframe');
 	frame.className = 'page';
 	frame.src = item.path;
