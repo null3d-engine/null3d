@@ -352,6 +352,7 @@ name = "sokko3d-core"
 version = "0.0.0"
 dependencies = [
  "atomic-wait",
+ "sokko3d-core",
 ]
 
 [[package]]

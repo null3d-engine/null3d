@@ -4,9 +4,10 @@
 
 mod common;
 
-use common::{CountingAllocator, Workers};
+use common::Workers;
 use sokko3d_core::arena::ArenaPool;
 use sokko3d_core::jobs::{JobConfig, WorkerId};
+use sokko3d_core::testing::CountingAllocator;
 
 #[global_allocator]
 static ALLOCATOR: CountingAllocator = CountingAllocator;

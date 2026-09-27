@@ -17,6 +17,7 @@
 //! | [`arena`] | Per-thread bump allocators reset each frame |
 //! | [`snapshot`] | The frame handoff between the game worker and the render worker |
 //! | [`jobs`] | The job system: parallel loops, background tasks, worker loops |
+//! | `testing` | With the `testing` feature: a global allocator that counts allocations, for tests |
 //!
 //! Frame code allocates nothing: every buffer a frame uses is allocated at creation with a fixed
 //! capacity. Arrays that TypeScript views are allocated once and never move.
@@ -38,6 +39,8 @@ pub mod math;
 pub mod scene;
 mod shared;
 pub mod snapshot;
+#[cfg(feature = "testing")]
+pub mod testing;
 mod wait;
 pub mod world;
 

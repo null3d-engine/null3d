@@ -8,7 +8,7 @@ mod common;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
-use common::{CountingAllocator, Rng, Workers, mul4, perspective, translation};
+use common::{Rng, Workers, mul4, perspective, translation};
 use sokko3d_core::arena::ArenaPool;
 use sokko3d_core::culling::{CullOutput, Frustum, cull_parallel};
 use sokko3d_core::handle::Handle;
@@ -16,6 +16,7 @@ use sokko3d_core::instances::BatchTable;
 use sokko3d_core::jobs::{BackgroundTask, JobConfig, WorkerId};
 use sokko3d_core::scene::{Command, CommandRing, SceneStorage, flags};
 use sokko3d_core::snapshot::FrameHandoff;
+use sokko3d_core::testing::CountingAllocator;
 
 #[global_allocator]
 static ALLOCATOR: CountingAllocator = CountingAllocator;

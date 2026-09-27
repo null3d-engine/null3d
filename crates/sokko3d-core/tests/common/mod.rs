@@ -1,11 +1,9 @@
 //! Helpers shared by the integration tests: native threads that act as job workers, a small
-//! deterministic random number generator, and an allocation counter.
+//! deterministic random number generator, and reference math. The allocation counter is
+//! `sokko3d_core::testing::CountingAllocator`.
 #![allow(dead_code)]
 
-use std::alloc::{GlobalAlloc, Layout, System};
-use std::cell::Cell;
-use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::Arc;
 use std::thread::JoinHandle;
 
 use sokko3d_core::jobs::{JobConfig, JobSystem};
@@ -113,78 +111,6 @@ impl Rng {
                 return q.map(|v| v / len);
             }
         }
-    }
-}
-
-/// A global allocator that counts allocations made by marked threads while counting is armed.
-/// A test binary installs it with `#[global_allocator]`.
-pub struct CountingAllocator;
-
-static ARMED: AtomicBool = AtomicBool::new(false);
-static ALLOCATIONS: AtomicU64 = AtomicU64::new(0);
-static EXCLUSIVE: Mutex<()> = Mutex::new(());
-
-thread_local! {
-    static TRACKED: Cell<bool> = const { Cell::new(false) };
-}
-
-impl CountingAllocator {
-    /// Runs counting tests one at a time: they share one counter. Take it before tracking.
-    pub fn exclusive() -> MutexGuard<'static, ()> {
-        EXCLUSIVE
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
-    }
-
-    /// Counts allocations made from now on by the current thread.
-    pub fn track_this_thread() {
-        TRACKED.with(|t| t.set(true));
-    }
-
-    /// Starts counting from zero.
-    pub fn arm() {
-        ALLOCATIONS.store(0, Ordering::SeqCst);
-        ARMED.store(true, Ordering::SeqCst);
-    }
-
-    /// Stops counting and returns the number of allocations counted.
-    pub fn disarm() -> u64 {
-        ARMED.store(false, Ordering::SeqCst);
-        ALLOCATIONS.load(Ordering::SeqCst)
-    }
-
-    fn count() {
-        if ARMED.load(Ordering::Relaxed) && TRACKED.with(Cell::get) {
-            ALLOCATIONS.fetch_add(1, Ordering::Relaxed);
-        }
-    }
-}
-
-// SAFETY: every call forwards to the system allocator unchanged; counting touches only atomics
-// and a thread-local flag, neither of which allocates.
-unsafe impl GlobalAlloc for CountingAllocator {
-    unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        Self::count();
-        // SAFETY: the caller's contract is forwarded as is.
-        unsafe { System.alloc(layout) }
-    }
-
-    unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
-        Self::count();
-        // SAFETY: the caller's contract is forwarded as is.
-        unsafe { System.alloc_zeroed(layout) }
-    }
-
-    unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
-        Self::count();
-        // SAFETY: the caller's contract is forwarded as is.
-        unsafe { System.realloc(ptr, layout, new_size) }
-    }
-
-    unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        Self::count();
-        // SAFETY: the caller's contract is forwarded as is.
-        unsafe { System.dealloc(ptr, layout) }
     }
 }
 

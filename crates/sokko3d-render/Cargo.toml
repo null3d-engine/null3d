@@ -15,4 +15,5 @@ sokko3d-core = { path = "../sokko3d-core" }
 sokko3d-gpu = { path = "../sokko3d-gpu" }
 
 [dev-dependencies]
+sokko3d-core = { path = "../sokko3d-core", features = ["testing"] }
 sokko3d-gpu = { path = "../sokko3d-gpu", features = ["mock"] }
