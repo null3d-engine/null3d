@@ -21,6 +21,12 @@ export enum Slot {
 	InputWrite = 7,
 	/** Frames the renderer has presented, for frame statistics. */
 	FramesPresented = 8,
+	/** Addresses of the two draw lists in engine memory, by frame parity. They never move. */
+	DrawListAddress0 = 9,
+	DrawListAddress1 = 10,
+	/** Words recorded into each draw list, by frame parity. */
+	DrawListWords0 = 11,
+	DrawListWords1 = 12,
 }
 
 const SLOT_COUNT = 16;

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { checkFinite, DEV } from './checks';
+import { checkNumber, checkVector, DEV } from './checks';
 import { ERRORS } from './codes';
 import { EngineError } from './engine-error';
 
@@ -23,21 +23,25 @@ describe('EngineError', () => {
 	});
 });
 
-describe('checkFinite', () => {
-	it('throws E1203 for NaN and Infinity, naming the argument and the object', () => {
-		expect(() =>
-			checkFinite('setPosition', ['x', 'y', 'z'], [0, Number.NaN, 0], '"Player" (slot 12)'),
-		).toThrow('E1203: setPosition() got NaN for y on "Player" (slot 12).');
-		expect(() => checkFinite('setScale', ['x'], [Number.POSITIVE_INFINITY], 'a mesh')).toThrow(
-			'got Infinity for x',
+describe('development checks', () => {
+	const player = { describe: () => '"Player" (slot 12)' };
+
+	it('throw E1203 for NaN and Infinity, naming the component and the object', () => {
+		expect(() => checkVector('setPosition', player, 0, Number.NaN, 0)).toThrow(
+			'E1203: setPosition() got NaN for y on "Player" (slot 12).',
 		);
+		expect(() => checkVector('setRotation', player, 0, 0, 0, Number.POSITIVE_INFINITY)).toThrow(
+			'got Infinity for w',
+		);
+		expect(() => checkNumber('setFov', 'fov', Number.NaN, player)).toThrow('got NaN for fov');
 	});
 
-	it('accepts finite numbers', () => {
-		expect(() => checkFinite('setPosition', ['x', 'y', 'z'], [1, -2, 3.5], 'a mesh')).not.toThrow();
+	it('accept finite numbers', () => {
+		expect(() => checkVector('setPosition', player, 1, -2, 3.5)).not.toThrow();
+		expect(() => checkNumber('setFov', 'fov', 60, player)).not.toThrow();
 	});
 
-	it('is on when no bundler has defined the development constant', () => {
+	it('are on when no bundler has defined the development constant', () => {
 		expect(DEV).toBe(true);
 	});
 });

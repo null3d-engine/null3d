@@ -207,10 +207,22 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 
 	try {
 		if (latency === 'single') {
-			wasmMemory = (await startCore('single', core.module)).memory;
-			localRunner = new GameRunner((name, data) => onGameMessage(name, data), metrics);
+			const started = await startCore('single', core.module);
+			const memory = started.memory as WebAssembly.Memory;
+			wasmMemory = memory;
+			localRunner = new GameRunner((name, data) => onGameMessage(name, data), metrics, {
+				glue: started.glue,
+				memory,
+				slots,
+				jobWorkers: 0,
+			});
 			await localRunner.load(gameUrl);
-			localRenderer = await createRenderer(options.canvas, { tier, forceCompat, metrics });
+			localRenderer = await createRenderer(options.canvas, {
+				tier,
+				forceCompat,
+				metrics,
+				scene: { memory, control },
+			});
 			localLoop = runDirectLoop(localRunner, localRenderer, control, metrics);
 		} else {
 			game = new EngineWorker(
@@ -224,12 +236,18 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 			if (renderThread === 'game-worker') {
 				const canvas = options.canvas.transferControlToOffscreen();
 				game.worker.postMessage(
-					{ type: 'init', ...handoff, gameUrl, renderer: { canvas, tier, forceCompat } },
+					{
+						type: 'init',
+						...handoff,
+						gameUrl,
+						jobWorkers,
+						renderer: { canvas, tier, forceCompat },
+					},
 					[canvas],
 				);
 				rendererHost = game;
 			} else {
-				game.worker.postMessage({ type: 'init', ...handoff, gameUrl });
+				game.worker.postMessage({ type: 'init', ...handoff, gameUrl, jobWorkers });
 				if (renderThread === 'render-worker') {
 					const canvas = options.canvas.transferControlToOffscreen();
 					rendererHost = new EngineWorker(
@@ -244,8 +262,12 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 						canvas,
 					]);
 				} else {
-					await startCore('threaded', core.module, core.memory);
-					localRenderer = await createRenderer(options.canvas, { tier, forceCompat, metrics });
+					localRenderer = await createRenderer(options.canvas, {
+						tier,
+						forceCompat,
+						metrics,
+						scene: core.memory && { memory: core.memory, control },
+					});
 					localLoop = runRenderLoop(localRenderer, control, metrics);
 				}
 			}
@@ -321,7 +343,7 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 		},
 		async captureFrame() {
 			if (localRenderer)
-				return localRenderer.capture(emptySceneInput(Atomics.load(slots, Slot.FramesPublished)));
+				return localRenderer.capture(emptySceneInput(Atomics.load(slots, Slot.FramesTaken)));
 			const reply = await rendererHost?.request({ type: 'capture' });
 			if (reply?.type !== 'captured') throw new Error('the frame could not be captured');
 			return { width: reply.width, height: reply.height, pixels: reply.pixels };

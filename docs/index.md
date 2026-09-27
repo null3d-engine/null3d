@@ -157,11 +157,18 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 | [E1101: Stale handle](errors/E1101.md) | A call used an object after it was destroyed. Its slot may already hold a new object. | generated | 0.1 |
 | [E1102: Too many objects](errors/E1102.md) | The scene reached the most objects one engine holds. | generated | 0.1 |
 | [E1103: Object from another engine](errors/E1103.md) | A call received an object that this engine did not create. | generated | 0.1 |
+| [E1104: Parent loop](errors/E1104.md) | A call would make an object its own ancestor: the new parent is the object itself or one of its descendants. | generated | 0.1 |
+| [E1105: Unknown command](errors/E1105.md) | The engine core received a structural change it does not know, so the TypeScript side and the core come from different builds. | generated | 0.1 |
+| [E1106: Object not created yet](errors/E1106.md) | A call read world data of an object in the frame that created it. New objects join the scene when the next frame starts. | generated | 0.1 |
+| [E1107: Object created twice](errors/E1107.md) | The engine core received a second create command for one object, so the TypeScript side and the core disagree about the scene. | generated | 0.1 |
+| [E1108: Value out of range](errors/E1108.md) | A call received a count or an index past its limit, such as a row past the capacity of an instance batch. | generated | 0.1 |
 | [E1203: Invalid number](errors/E1203.md) | A call received a number that is not finite, such as NaN or Infinity. | generated | 0.1 |
 | [E1204: Invalid color](errors/E1204.md) | A call received a color that is not a hex string, a number from 0 to 0xffffff, or three numbers from 0 to 1. | generated | 0.1 |
 | [E1301: No usable GPU path](errors/E1301.md) | The browser offers neither WebGPU nor WebGL2 for the way the engine was asked to draw. | generated | 0.1 |
 | [E1401: Not a game module](errors/E1401.md) | The module passed to createEngine as the game does not export a game as its default export. | generated | 0.1 |
 | [E1402: Engine core out of date](errors/E1402.md) | The engine core WebAssembly file lacks functions that the TypeScript side calls, so the two come from different builds. | generated | 0.1 |
+| [E1403: Engine core not ready](errors/E1403.md) | An engine call ran before the engine core started in this worker, or the core started twice. | generated | 0.1 |
+| [E1501: Render space full](errors/E1501.md) | The scene needs more room than the renderer set aside. The full part is the draw list, the mesh buffers, the material table or the culling pass. | generated | 0.1 |
 | [Error codes](errors/index.md) | Every EngineError code with its cause and fix. | generated | 0.1 |
 
 ### Cookbook

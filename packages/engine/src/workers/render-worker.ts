@@ -19,7 +19,10 @@ self.onmessage = async (event: MessageEvent<RenderWorkerInit | RendererRequest>)
 		try {
 			controlSlots = controlViews(message.control).slots;
 			const { glue: core } = await startCore(message.build, message.module, message.memory);
-			renderer = await createRenderer(message.canvas, message);
+			renderer = await createRenderer(message.canvas, {
+				...message,
+				scene: message.memory && { memory: message.memory, control: message.control },
+			});
 			runRenderLoop(renderer, message.control, message.metrics);
 			reply({
 				type: 'ready',
@@ -33,7 +36,7 @@ self.onmessage = async (event: MessageEvent<RenderWorkerInit | RendererRequest>)
 		}
 	} else if (message.type === 'capture' && renderer && controlSlots) {
 		const captured = await renderer.capture(
-			emptySceneInput(Atomics.load(controlSlots, Slot.FramesPublished)),
+			emptySceneInput(Atomics.load(controlSlots, Slot.FramesTaken)),
 		);
 		reply({ type: 'captured', ...captured }, [captured.pixels.buffer]);
 	}

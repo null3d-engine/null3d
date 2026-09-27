@@ -3,6 +3,7 @@
 // engine memory and allocates nothing per command, except when a command creates a GPU object.
 
 import * as G from '../../generated/gpu';
+import type { GpuTimer } from './gpu-timer';
 import { Pipelines } from './pipelines';
 
 const TEXTURE_FORMATS: (GPUTextureFormat | undefined)[] = [];
@@ -22,8 +23,13 @@ export class WebGPUBackend {
 	private readonly bundles: (GPURenderBundle | undefined)[] = [];
 	private readonly bundleList: GPURenderBundle[] = [];
 	private readonly dynamicOffsets: number[] = [];
+	private readonly bundleDraws: number[] = [];
 	private readonly pipelines: Pipelines;
 	private readonly canvasFormat: GPUTextureFormat;
+	/** Times the passes of each frame, while the page measures. */
+	timer: GpuTimer | undefined;
+	/** What the replays since the last reset uploaded and drew. */
+	readonly counts = { uploadBytes: 0, drawCalls: 0, dispatches: 0 };
 
 	constructor(
 		readonly device: GPUDevice,
@@ -68,6 +74,20 @@ export class WebGPUBackend {
 		return this.encoder;
 	}
 
+	private submit(): void {
+		if (!this.encoder) return;
+		this.timer?.resolve(this.encoder);
+		this.device.queue.submit([this.encoder.finish()]);
+		this.encoder = undefined;
+		this.timer?.afterSubmit();
+	}
+
+	resetCounts(): void {
+		this.counts.uploadBytes = 0;
+		this.counts.drawCalls = 0;
+		this.counts.dispatches = 0;
+	}
+
 	/**
 	 * Replays the draw list in `words[start, end)`. `floats` views the same memory as `words`, for
 	 * float operands; the caller keeps both views and rebuilds them only when engine memory grows.
@@ -109,6 +129,7 @@ export class WebGPUBackend {
 						words[a + 2] as number,
 						words[a + 3] as number,
 					);
+					this.counts.uploadBytes += words[a + 3] as number;
 					break;
 				case G.OP_DESTROY_BUFFER:
 					this.buffers[words[a] as number]?.destroy();
@@ -216,6 +237,7 @@ export class WebGPUBackend {
 									depthClearValue: floats[a + 7] as number,
 								}
 							: undefined,
+						timestampWrites: this.timer?.passWrites(),
 					});
 					break;
 				}
@@ -252,6 +274,7 @@ export class WebGPUBackend {
 					break;
 				}
 				case G.OP_DRAW:
+					this.countDraw(bundleEncoder, bundleId);
 					draw?.draw(
 						words[a] as number,
 						words[a + 1] as number,
@@ -260,6 +283,7 @@ export class WebGPUBackend {
 					);
 					break;
 				case G.OP_DRAW_INDEXED:
+					this.countDraw(bundleEncoder, bundleId);
 					draw?.drawIndexed(
 						words[a] as number,
 						words[a + 1] as number,
@@ -269,6 +293,7 @@ export class WebGPUBackend {
 					);
 					break;
 				case G.OP_DRAW_INDEXED_INDIRECT:
+					this.countDraw(bundleEncoder, bundleId);
 					draw?.drawIndexedIndirect(
 						this.need(this.buffers, words[a] as number, 'buffer'),
 						words[a + 1] as number,
@@ -277,8 +302,11 @@ export class WebGPUBackend {
 				case G.OP_EXECUTE_BUNDLES: {
 					const count = words[a] as number;
 					this.bundleList.length = count;
-					for (let k = 0; k < count; k++)
-						this.bundleList[k] = this.need(this.bundles, words[a + 1 + k] as number, 'bundle');
+					for (let k = 0; k < count; k++) {
+						const id = words[a + 1 + k] as number;
+						this.bundleList[k] = this.need(this.bundles, id, 'bundle');
+						this.counts.drawCalls += this.bundleDraws[id] ?? 0;
+					}
 					pass?.executeBundles(this.bundleList);
 					break;
 				}
@@ -288,6 +316,7 @@ export class WebGPUBackend {
 					break;
 				case G.OP_BEGIN_BUNDLE: {
 					bundleId = words[a] as number;
+					this.bundleDraws[bundleId] = 0;
 					const depthFormat = this.format(words[a + 2] as number);
 					bundleEncoder = device.createRenderBundleEncoder({
 						colorFormats: [this.format(words[a + 1] as number) as GPUTextureFormat],
@@ -301,7 +330,9 @@ export class WebGPUBackend {
 					bundleEncoder = undefined;
 					break;
 				case G.OP_BEGIN_COMPUTE_PASS:
-					computePass = this.commandEncoder().beginComputePass();
+					computePass = this.commandEncoder().beginComputePass({
+						timestampWrites: this.timer?.passWrites(),
+					});
 					break;
 				case G.OP_SET_COMPUTE_PIPELINE:
 					computePass?.setPipeline(
@@ -309,6 +340,7 @@ export class WebGPUBackend {
 					);
 					break;
 				case G.OP_DISPATCH:
+					this.counts.dispatches++;
 					computePass?.dispatchWorkgroups(
 						words[a] as number,
 						words[a + 1] as number,
@@ -329,16 +361,20 @@ export class WebGPUBackend {
 					);
 					break;
 				case G.OP_SUBMIT:
-					if (this.encoder) device.queue.submit([this.encoder.finish()]);
-					this.encoder = undefined;
+					this.submit();
 					break;
 				default:
 					throw new Error(`unknown draw list command ${op} at word ${i}`);
 			}
 			i += length;
 		}
-		if (this.encoder) device.queue.submit([this.encoder.finish()]);
-		this.encoder = undefined;
+		this.submit();
+	}
+
+	/** Counts a draw now when it runs in a pass, or each time its bundle runs. */
+	private countDraw(bundleEncoder: GPURenderBundleEncoder | undefined, bundleId: number): void {
+		if (bundleEncoder) this.bundleDraws[bundleId] = (this.bundleDraws[bundleId] ?? 0) + 1;
+		else this.counts.drawCalls++;
 	}
 
 	/** A buffer by id, for readback in tests. */

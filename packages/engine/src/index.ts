@@ -9,6 +9,35 @@ export type { Engine, EngineCapabilities, EngineMode, EngineOptions } from './pa
 export { createEngine } from './page/engine';
 export type { FrameMetrics, FrameSummary, MemoryStats, ThreadStats } from './page/frame-stats';
 export type { Tier } from './render/renderer';
+export type { ColorInput } from './scene/color';
+export type {
+	BoxOptions,
+	Geometry,
+	Material,
+	MaterialOptions,
+	Materials,
+	MeshGeometry,
+	SphereOptions,
+} from './scene/resources';
+export type { EulerOrder } from './scene/rotation';
+export type {
+	AmbientLight,
+	Camera,
+	CameraOptions,
+	DirectionalLight,
+	DirectionalLightOptions,
+	Group,
+	InstanceBatch,
+	InstanceOptions,
+	LightOptions,
+	Mesh,
+	MeshOptions,
+	NodeOptions,
+	Object3D,
+	Quat,
+	Scene,
+	Vec3,
+} from './scene/scene';
 export type { PhaseName } from './shared/metrics';
 export type { Percentiles } from './shared/stats';
 

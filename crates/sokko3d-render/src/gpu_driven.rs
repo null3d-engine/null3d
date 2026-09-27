@@ -43,6 +43,8 @@ use crate::meshes::{MeshStorage, Packing};
 
 /// Engine mesh ids count from 1; 0 marks an object with no mesh, such as a group or a camera.
 pub const NO_MESH: u32 = 0;
+/// Engine material ids count from 1 too: material table index plus one.
+pub const NO_MATERIAL: u32 = 0;
 
 /// The bucket of a source that draws nowhere, as the culling shader reads it.
 const HIDDEN: u32 = u32::MAX;
@@ -307,6 +309,7 @@ impl GpuDrivenRenderer {
         &mut self.meshes
     }
 
+    /// The material table; a material's engine id is its table id plus one.
     pub fn materials_mut(&mut self) -> &mut MaterialTable {
         &mut self.materials
     }
@@ -592,11 +595,11 @@ impl GpuDrivenRenderer {
 
         // Count the sources of every bucket key, then give buckets ids in key order.
         let key_of = |mesh: u32, material: u32| -> Option<BucketKey> {
-            if mesh == NO_MESH {
+            if mesh == NO_MESH || material == NO_MATERIAL {
                 return None;
             }
             self.meshes.mesh(mesh - 1)?;
-            let shading = self.materials.shading(material).ok()?;
+            let shading = self.materials.shading(material - 1).ok()?;
             Some((shading, mesh, material))
         };
         let world = scene.world(parity);
@@ -670,7 +673,7 @@ impl GpuDrivenRenderer {
             ]);
             layout.bucket_records.extend_from_slice(&[
                 bucket.base,
-                bucket.material,
+                bucket.material - 1,
                 bucket.radius.to_bits(),
                 0,
             ]);

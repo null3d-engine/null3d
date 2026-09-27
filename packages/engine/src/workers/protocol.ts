@@ -22,6 +22,8 @@ export interface RendererSetup {
 export type GameWorkerInit = CoreHandoff & {
 	type: 'init';
 	gameUrl: string;
+	/** Job workers that serve the game's job system. */
+	jobWorkers: number;
 	/** Present in low-latency mode, where the game worker also draws. */
 	renderer?: RendererSetup;
 };

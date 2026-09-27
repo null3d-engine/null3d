@@ -3,6 +3,7 @@
 // The generated wasm-bindgen module is loaded by URL, and `CoreGlue` describes the functions the
 // TypeScript side calls, so type checking does not depend on a Rust build.
 
+import type { CoreErrors } from '../errors/core-failure';
 import { EngineError } from '../errors/engine-error';
 
 export type Build = 'threaded' | 'single';
@@ -14,18 +15,100 @@ export interface InitOptions {
 	thread_stack_size?: number;
 }
 
-/** The functions of the generated module that the engine calls. */
-export interface CoreGlue {
+/**
+ * The functions of the generated module that the engine calls. Functions that can fail return an
+ * error code (0 for success), or 0 in place of a handle, id or address; `lastErrorCode` and
+ * `lastErrorDetail` then describe the failure.
+ */
+export interface CoreGlue extends CoreErrors {
 	/** Instantiates the core; returns the instance's exports, which include its memory. */
 	initSync(options: InitOptions): { memory?: WebAssembly.Memory };
 	engineVersion(): string;
 	isThreadedBuild(): boolean;
+	initEngine(
+		jobWorkers: number,
+		sceneCapacity: number,
+		maxBatches: number,
+		commands: number,
+	): number;
+	jobWorkerLoop(index: number): void;
+	shutdownJobs(): void;
+	sceneCapacity(): number;
+	sceneArrays(field: number): number;
+	reserveObject(): number;
+	worldMatrix(handle: number, out: Float32Array): number;
+	commandRing(field: number): number;
+	beginFrame(frame: number): number;
+	updateTransforms(): number;
+	updateBatches(frame: number): number;
+	recordFrame(frame: number, width: number, height: number): number;
+	drawListAddress(parity: number): number;
+	drawListWords(frame: number): number;
+	createBatch(
+		capacity: number,
+		dynamic: boolean,
+		colors: boolean,
+		mesh: number,
+		material: number,
+	): number;
+	destroyBatch(batch: number, frame: number): number;
+	batchArrays(batch: number, field: number): number;
+	setBatchActiveCount(batch: number, count: number): number;
+	markBatchDirty(batch: number, start: number, count: number): number;
+	memoryEpoch(): number;
+	createBoxMesh(
+		width: number,
+		height: number,
+		depth: number,
+		widthSegments: number,
+		heightSegments: number,
+		depthSegments: number,
+	): number;
+	createSphereMesh(radius: number, widthSegments: number, heightSegments: number): number;
+	meshRadius(mesh: number): number;
+	createMaterial(unlit: boolean, r: number, g: number, b: number, a: number): number;
+	setMaterialColor(material: number, r: number, g: number, b: number, a: number): number;
+	setCamera(camera: number, fovDegrees: number, near: number, far: number): number;
+	setSun(dx: number, dy: number, dz: number, r: number, g: number, b: number): number;
+	setAmbient(r: number, g: number, b: number): number;
+	setBackground(r: number, g: number, b: number): number;
 }
 
 const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'initSync',
 	'engineVersion',
 	'isThreadedBuild',
+	'lastErrorCode',
+	'lastErrorDetail',
+	'initEngine',
+	'jobWorkerLoop',
+	'shutdownJobs',
+	'sceneCapacity',
+	'sceneArrays',
+	'reserveObject',
+	'worldMatrix',
+	'commandRing',
+	'beginFrame',
+	'updateTransforms',
+	'updateBatches',
+	'recordFrame',
+	'drawListAddress',
+	'drawListWords',
+	'createBatch',
+	'destroyBatch',
+	'batchArrays',
+	'setBatchActiveCount',
+	'markBatchDirty',
+	'memoryEpoch',
+	'createBoxMesh',
+	'createSphereMesh',
+	'meshRadius',
+	'createMaterial',
+	'setMaterialColor',
+	'setCamera',
+	'setSun',
+	'setAmbient',
+	'setBackground',
 ];
 
 /** Stack size for each engine thread. */

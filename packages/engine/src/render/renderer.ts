@@ -4,6 +4,7 @@
 import { readbackWebGL2, readbackWebGPU } from '../gpu/readback';
 import { GpuTimer } from '../gpu/webgpu/gpu-timer';
 import { type FrameRecorder, Phase } from '../shared/metrics';
+import { WebGPUSceneRenderer } from './scene-renderer';
 
 export type Tier = 'webgpu' | 'webgpu-compat' | 'webgl2';
 
@@ -34,6 +35,11 @@ export interface RendererOptions {
 	forceCompat?: boolean;
 	/** The metrics buffer, which receives GPU times where the device has timestamp queries. */
 	metrics?: ArrayBufferLike;
+	/**
+	 * Engine memory and the control block: with both, a WebGPU renderer draws the scene from the
+	 * draw lists the game thread records; without them it clears to the frame's background.
+	 */
+	scene?: { memory: WebAssembly.Memory; control: ArrayBufferLike };
 }
 
 /** Encodes a linear color channel as sRGB, the way the final output does. */
@@ -164,5 +170,15 @@ export async function createRenderer(
 	if (options.metrics && adapter.features.has('timestamp-query'))
 		requiredFeatures.push('timestamp-query');
 	const device = await adapter.requestDevice({ requiredFeatures });
-	return new WebGPURenderer(core ? 'webgpu' : 'webgpu-compat', device, canvas, options.metrics);
+	const tier = core ? 'webgpu' : 'webgpu-compat';
+	if (options.scene)
+		return new WebGPUSceneRenderer(
+			tier,
+			device,
+			canvas,
+			options.scene.memory,
+			options.scene.control,
+			options.metrics,
+		);
+	return new WebGPURenderer(tier, device, canvas, options.metrics);
 }

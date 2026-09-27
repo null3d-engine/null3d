@@ -48,11 +48,13 @@ impl World {
         let lit = renderer
             .materials_mut()
             .create(Shading::Lit, [1.0, 0.0, 0.0, 1.0])
-            .unwrap();
+            .unwrap()
+            + 1;
         let unlit = renderer
             .materials_mut()
             .create(Shading::Unlit, [0.0, 0.0, 1.0, 1.0])
-            .unwrap();
+            .unwrap()
+            + 1;
 
         let camera = scene.reserve().unwrap();
         scene.set_position(camera, [0.0, 0.0, 20.0]).unwrap();

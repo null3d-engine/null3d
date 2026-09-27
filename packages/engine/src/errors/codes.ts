@@ -38,6 +38,47 @@ export const ERRORS = {
 		example: 'E1103: setParent() got an object that is not from this engine.',
 		since: '0.1',
 	},
+	E1104: {
+		title: 'Parent loop',
+		cause:
+			'A call would make an object its own ancestor: the new parent is the object itself or one of its descendants.',
+		fix: 'Choose a parent outside the subtree of the object. To swap two objects in a hierarchy, move one of them to the root first.',
+		example:
+			'E1104: setParent() on "Arm" (slot 9) would put it under its own descendant (slot 12).',
+		since: '0.1',
+	},
+	E1105: {
+		title: 'Unknown command',
+		cause:
+			'The engine core received a structural change it does not know, so the TypeScript side and the core come from different builds.',
+		fix: 'Rebuild the engine core with bun run build, or reinstall the engine package so its parts match.',
+		example: 'E1105: the engine core received command 42.',
+		since: '0.1',
+	},
+	E1106: {
+		title: 'Object not created yet',
+		cause:
+			'A call read world data of an object in the frame that created it. New objects join the scene when the next frame starts.',
+		fix: 'Read world positions and matrices from the next frame on, for example in the next onUpdate call.',
+		example: 'E1106: getWorldPosition() on "Crate" (slot 7) ran before the frame that creates it.',
+		since: '0.1',
+	},
+	E1107: {
+		title: 'Object created twice',
+		cause:
+			'The engine core received a second create command for one object, so the TypeScript side and the core disagree about the scene.',
+		fix: 'This is an engine bug. Report it with the code that created the object.',
+		example: 'E1107: the object in slot 7 was created twice.',
+		since: '0.1',
+	},
+	E1108: {
+		title: 'Value out of range',
+		cause:
+			'A call received a count or an index past its limit, such as a row past the capacity of an instance batch.',
+		fix: 'Keep counts and indices within the capacity you created the batch with, or create a larger batch.',
+		example: 'E1108: setActiveCount() got 1200, above the limit of 1000.',
+		since: '0.1',
+	},
 	E1203: {
 		title: 'Invalid number',
 		cause: 'A call received a number that is not finite, such as NaN or Infinity.',
@@ -75,6 +116,22 @@ export const ERRORS = {
 			'The engine core WebAssembly file lacks functions that the TypeScript side calls, so the two come from different builds.',
 		fix: 'Rebuild the engine core with bun run build, or reinstall the engine package so its parts match.',
 		example: 'E1402: the threaded engine core lacks isThreadedBuild; rebuild it.',
+		since: '0.1',
+	},
+	E1403: {
+		title: 'Engine core not ready',
+		cause:
+			'An engine call ran before the engine core started in this worker, or the core started twice.',
+		fix: 'Create objects in the setup function you pass to defineGame, or later, never when the game module loads.',
+		example: 'E1403: createMesh() ran before the engine core started.',
+		since: '0.1',
+	},
+	E1501: {
+		title: 'Render space full',
+		cause:
+			'The scene needs more room than the renderer set aside. The full part is the draw list, the mesh buffers, the material table or the culling pass.',
+		fix: 'Share meshes and materials between objects instead of creating them per object. Draw many copies of one mesh with an instance batch.',
+		example: 'E1501: materials.standard() failed: the material table is full.',
 		since: '0.1',
 	},
 } satisfies Record<string, ErrorEntry>;

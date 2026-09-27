@@ -11,6 +11,8 @@ publish.workspace = true
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
+sokko3d-core = { path = "../sokko3d-core" }
+sokko3d-render = { path = "../sokko3d-render" }
 wasm-bindgen.workspace = true
 
 [lints]

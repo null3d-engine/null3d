@@ -48,16 +48,20 @@ self.onmessage = async (event: MessageEvent<GameWorkerMessage>) => {
 	if (message.type === 'init') {
 		try {
 			controlSlots = controlViews(message.control).slots;
-			const { glue: core } = await startCore(message.build, message.module, message.memory);
+			const started = await startCore(message.build, message.module, message.memory);
+			const core = started.glue;
+			const memory = started.memory as WebAssembly.Memory;
 			runner = new GameRunner(
 				(name, data, transfer) => reply({ type: 'game-message', name, data }, transfer),
 				message.metrics,
+				{ glue: core, memory, slots: controlSlots, jobWorkers: message.jobWorkers },
 			);
 			await runner.load(message.gameUrl);
 			if (message.renderer) {
 				renderer = await createRenderer(message.renderer.canvas, {
 					...message.renderer,
 					metrics: message.metrics,
+					scene: { memory, control: message.control },
 				});
 				runDirectLoop(runner, renderer, message.control, message.metrics);
 			} else {
@@ -77,7 +81,7 @@ self.onmessage = async (event: MessageEvent<GameWorkerMessage>) => {
 		runner?.receive(message.name, message.data);
 	} else if (message.type === 'capture' && renderer && controlSlots) {
 		const captured = await renderer.capture(
-			emptySceneInput(Atomics.load(controlSlots, Slot.FramesPublished)),
+			emptySceneInput(Atomics.load(controlSlots, Slot.FramesTaken)),
 		);
 		reply({ type: 'captured', ...captured }, [captured.pixels.buffer]);
 	}

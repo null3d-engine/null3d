@@ -1,13 +1,22 @@
 // defineGame: the entry point of a game module, which the engine runs in the game worker.
 
+import type { Geometry, Materials } from '../scene/resources';
+import type { Scene } from '../scene/scene';
+
 /** Callbacks a game returns from its setup function. */
 export interface GameCallbacks {
 	/** Runs once per frame, before transforms, with the frame time in seconds. */
 	onUpdate?(dt: number): void;
 }
 
-/** What the engine passes to a game's setup function. The scene API arrives with the core data. */
+/** What the engine passes to a game's setup function. */
 export interface GameContext {
+	/** Objects, cameras, lights and instance batches. */
+	scene: Scene;
+	/** Material factories. */
+	materials: Materials;
+	/** Mesh generators. */
+	geometry: Geometry;
 	/** Time since the game started, in seconds, and the current frame number. */
 	time: { now: number; frame: number };
 	/** Messages between the game and the page. */
