@@ -1,6 +1,6 @@
 //! Frame code allocates nothing: a counting global allocator watches the test thread and every
 //! job worker while whole frames run (structural commands, transforms, batch updates, culling,
-//! parallel loops and background tasks).
+//! parallel loops with arena scratch memory, background tasks, and the frame handoff).
 #![allow(clippy::disallowed_methods)] // The self-check reads the clock.
 
 mod common;
@@ -9,11 +9,13 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use common::{CountingAllocator, Rng, Workers};
+use sokko3d_core::arena::ArenaPool;
 use sokko3d_core::culling::{CullOutput, Frustum, cull_parallel};
 use sokko3d_core::handle::Handle;
 use sokko3d_core::instances::BatchTable;
 use sokko3d_core::jobs::{BackgroundTask, JobConfig, WorkerId};
 use sokko3d_core::scene::{Command, CommandRing, SceneStorage, flags};
+use sokko3d_core::snapshot::FrameHandoff;
 
 #[global_allocator]
 static ALLOCATOR: CountingAllocator = CountingAllocator;
@@ -48,6 +50,8 @@ struct World {
     still: Handle,
     scene_culled: CullOutput,
     batch_culled: CullOutput,
+    arenas: ArenaPool,
+    handoff: FrameHandoff,
 }
 
 /// The S2 hierarchy: 14 roots with 3 children each, 6 levels deep.
@@ -93,6 +97,8 @@ fn build() -> World {
         still,
         scene_culled: CullOutput::with_capacity(8193),
         batch_culled: CullOutput::with_capacity(20_000),
+        arenas: ArenaPool::new(5, 256 * 1024),
+        handoff: FrameHandoff::new(4096),
     }
 }
 
@@ -162,10 +168,19 @@ fn frame(world: &mut World, jobs: &sokko3d_core::jobs::JobSystem, frame: u32, rn
         &mut world.batch_culled,
     );
 
-    // A plain parallel loop and a background task.
+    // A parallel loop that takes scratch memory from each thread's arena, and a background task.
+    world.arenas.reset_all();
     let total = AtomicU64::new(0);
-    jobs.parallel_for(100_000, 1000, &|range, _| {
-        total.fetch_add(range.map(u64::from).sum(), Ordering::Relaxed);
+    let arenas = &world.arenas;
+    jobs.parallel_for(100_000, 1000, &|range, worker| {
+        let scratch = arenas.arena(worker).alloc::<u32>(range.len()).unwrap();
+        for (s, i) in scratch.iter_mut().zip(range) {
+            *s = i;
+        }
+        total.fetch_add(
+            scratch.iter().map(|&v| u64::from(v)).sum(),
+            Ordering::Relaxed,
+        );
     });
     assert_eq!(total.load(Ordering::Relaxed), 99_999 * 100_000 / 2);
     jobs.spawn_background(BackgroundTask {
@@ -173,10 +188,23 @@ fn frame(world: &mut World, jobs: &sokko3d_core::jobs::JobSystem, frame: u32, rn
         arg: 1,
     })
     .unwrap();
+
+    // The frame handoff, with one thread playing both sides as in the low-latency mode.
+    let (mut producer, mut consumer) = world.handoff.split();
+    let mut write = producer.try_begin().expect("the previous frame was read");
+    assert_eq!(write.frame(), frame);
+    write
+        .snapshot_mut()
+        .record(frame, &world.scene, &world.table);
+    write.publish();
+    let read = consumer.try_read().expect("the frame was published");
+    assert!(!read.snapshot().uploads().is_empty() && !read.snapshot().overflowed());
+    drop(read);
 }
 
 #[test]
 fn frames_allocate_nothing() {
+    let _exclusive = CountingAllocator::exclusive();
     CountingAllocator::track_this_thread();
     let pool = Workers::with_setup(
         JobConfig {

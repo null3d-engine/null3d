@@ -1,5 +1,6 @@
-//! The engine core: scene storage, transforms, instance batches, culling and the job system. It compiles natively
-//! for tests, and to WebAssembly twice: with threads (atomics and shared memory) and without.
+//! The engine core: scene storage, transforms, instance batches, culling, frame arenas, the frame
+//! handoff to the render worker, and the job system. It compiles natively for tests, and to
+//! WebAssembly twice: with threads (atomics and shared memory) and without.
 //!
 //! # Module map
 //!
@@ -13,6 +14,8 @@
 //! | [`scene`] | Scene objects by slot, 16-byte commands, the hierarchy and the transform update |
 //! | [`instances`] | Instance batches: per-row arrays, dirty ranges, the batch table, memory epoch |
 //! | [`culling`] | Frustum planes and SIMD sphere culling, serial and parallel |
+//! | [`arena`] | Per-thread bump allocators reset each frame |
+//! | [`snapshot`] | The frame handoff between the game worker and the render worker |
 //! | [`jobs`] | The job system: parallel loops, background tasks, worker loops |
 //!
 //! Frame code allocates nothing: every buffer a frame uses is allocated at creation with a fixed
@@ -24,6 +27,7 @@
 )]
 #![warn(missing_docs)]
 
+pub mod arena;
 pub mod bitset;
 pub mod culling;
 pub mod error;
@@ -33,6 +37,7 @@ pub mod jobs;
 pub mod math;
 pub mod scene;
 mod shared;
+pub mod snapshot;
 mod wait;
 pub mod world;
 

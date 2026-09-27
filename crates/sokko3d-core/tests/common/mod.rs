@@ -4,8 +4,8 @@
 
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::cell::Cell;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::sync::{Arc, Mutex, MutexGuard};
 use std::thread::JoinHandle;
 
 use sokko3d_core::jobs::{JobConfig, JobSystem};
@@ -122,12 +122,20 @@ pub struct CountingAllocator;
 
 static ARMED: AtomicBool = AtomicBool::new(false);
 static ALLOCATIONS: AtomicU64 = AtomicU64::new(0);
+static EXCLUSIVE: Mutex<()> = Mutex::new(());
 
 thread_local! {
     static TRACKED: Cell<bool> = const { Cell::new(false) };
 }
 
 impl CountingAllocator {
+    /// Runs counting tests one at a time: they share one counter. Take it before tracking.
+    pub fn exclusive() -> MutexGuard<'static, ()> {
+        EXCLUSIVE
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    }
+
     /// Counts allocations made from now on by the current thread.
     pub fn track_this_thread() {
         TRACKED.with(|t| t.set(true));

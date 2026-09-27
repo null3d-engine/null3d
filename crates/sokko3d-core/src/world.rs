@@ -2,9 +2,9 @@
 //! plus an optional colour per row for instance batches.
 //!
 //! Scene storage and instance batches keep two [`WorldArrays`], one per frame parity: frame `f`
-//! writes buffer `f & 1` while the render worker reads the other one.
-//! Bounding spheres live in four separate arrays (x, y, z, radius), so culling loads four
-//! spheres with one SIMD load per array.
+//! writes buffer `f & 1` while the render worker reads the other one through a [`WorldView`] (see
+//! [`crate::snapshot`] for the protocol). Bounding spheres live in four separate arrays (x, y, z,
+//! radius), so culling loads four spheres with one SIMD load per array.
 
 use crate::math::Affine;
 
@@ -134,6 +134,21 @@ impl WorldArrays {
         SphereArrays::new(&self.xs, &self.ys, &self.zs, &self.radii)
     }
 
+    /// Read-only pointers to these arrays for a reader on another thread. The addresses stay
+    /// valid for the life of the owner, because the arrays are never reallocated.
+    pub fn view(&self) -> WorldView {
+        WorldView {
+            matrices: self.matrices.as_ptr(),
+            xs: self.xs.as_ptr(),
+            ys: self.ys.as_ptr(),
+            zs: self.zs.as_ptr(),
+            radii: self.radii.as_ptr(),
+            colors: self.colors.as_ptr(),
+            rows: self.rows(),
+            color_rows: self.colors.len() / COLOR_FLOATS,
+        }
+    }
+
     /// Marks `row` hidden: a zero matrix and a sphere that culling rejects.
     pub(crate) fn hide_row(&mut self, row: usize) {
         self.matrices[row * MATRIX_FLOATS..(row + 1) * MATRIX_FLOATS].fill(0.0);
@@ -155,6 +170,70 @@ impl WorldArrays {
             rows: self.xs.len(),
             has_colors: !self.colors.is_empty(),
         }
+    }
+}
+
+/// Read-only access to one frame parity's world arrays from another thread, such as the render
+/// worker. Reading is `unsafe`: the frame handoff in [`crate::snapshot`] decides when this
+/// parity is safe to read.
+#[derive(Clone, Copy, Debug)]
+pub struct WorldView {
+    matrices: *const f32,
+    xs: *const f32,
+    ys: *const f32,
+    zs: *const f32,
+    radii: *const f32,
+    colors: *const f32,
+    rows: usize,
+    color_rows: usize,
+}
+
+// SAFETY: the view only reads, and its `unsafe` accessors make the caller prove no thread writes
+// the arrays meanwhile.
+unsafe impl Send for WorldView {}
+// SAFETY: as above.
+unsafe impl Sync for WorldView {}
+
+impl WorldView {
+    /// The number of rows.
+    pub fn rows(&self) -> usize {
+        self.rows
+    }
+
+    /// Every matrix, 12 floats per row.
+    ///
+    /// # Safety
+    /// The owner is alive, and no thread writes this parity while the slice is in use: the
+    /// caller holds a frame of this parity between [`crate::snapshot::FrameHandoff::next_readable`]
+    /// and its acknowledgement.
+    pub unsafe fn matrices<'a>(&self) -> &'a [f32] {
+        // SAFETY: the pointer and length come from a live array, as the caller guarantees.
+        unsafe { std::slice::from_raw_parts(self.matrices, self.rows * MATRIX_FLOATS) }
+    }
+
+    /// The four sphere arrays.
+    ///
+    /// # Safety
+    /// As for [`WorldView::matrices`].
+    pub unsafe fn spheres<'a>(&self) -> SphereArrays<'a> {
+        // SAFETY: as the caller guarantees.
+        unsafe {
+            SphereArrays::new(
+                std::slice::from_raw_parts(self.xs, self.rows),
+                std::slice::from_raw_parts(self.ys, self.rows),
+                std::slice::from_raw_parts(self.zs, self.rows),
+                std::slice::from_raw_parts(self.radii, self.rows),
+            )
+        }
+    }
+
+    /// The colours, 4 floats per row, or an empty slice without colours.
+    ///
+    /// # Safety
+    /// As for [`WorldView::matrices`].
+    pub unsafe fn colors<'a>(&self) -> &'a [f32] {
+        // SAFETY: as the caller guarantees.
+        unsafe { std::slice::from_raw_parts(self.colors, self.color_rows * COLOR_FLOATS) }
     }
 }
 

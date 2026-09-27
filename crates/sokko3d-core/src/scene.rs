@@ -29,7 +29,8 @@
 //!
 //! Frame `f` writes world buffer `f & 1`. A static object that changed in frame `f - 1` but not in
 //! frame `f` has its row copied from the other buffer, so both buffers hold every change, and
-//! each changed matrix is written once into each buffer.
+//! each changed matrix is written once into each buffer. See [`crate::snapshot`] for the handoff
+//! to the render worker.
 //!
 //! # Commands
 //!
@@ -55,6 +56,7 @@ use std::ops::Range;
 use std::simd::prelude::*;
 use std::sync::atomic::{AtomicU32, Ordering};
 
+use crate::arena::Pod;
 use crate::bitset::Bitset;
 use crate::error::{CoreError, Resource};
 use crate::handle::{Handle, SlotAllocator};
@@ -118,6 +120,9 @@ pub struct Command {
     /// The second argument.
     pub b: u32,
 }
+
+// SAFETY: four `u32` fields in a `repr(C)` struct have no padding, and any bits are valid.
+unsafe impl Pod for Command {}
 
 impl Command {
     /// Creates `handle` under `parent` ([`Handle::NONE`] for a root) with a mesh and flags.
