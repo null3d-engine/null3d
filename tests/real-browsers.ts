@@ -8,6 +8,7 @@
 //   --plan <name>       the plan to run: checks, the default, or parity
 //   --allow-no-webgpu   a browser without WebGPU skips the WebGPU pages instead of failing them
 //   --allow-no-webgl2   a browser without WebGL2 skips the WebGL2 pages instead of failing them
+//   --n <count>         the instance count of the bench plan's pages
 //   --android <list>    browsers on the Android phone: chrome, chrome-beta, brave, firefox, samsung
 //   --lan <list>        names of runner pages that wait on the local network, as device-browser,
 //                       such as ipad-safari; pages on one device take turns
@@ -43,6 +44,8 @@ export interface Options {
 	plan: string;
 	/** GPU paths a browser may lack, whose pages it then skips. */
 	missing: MissingAllowed;
+	/** The instance count of the bench plan's pages, when given. */
+	count?: number;
 	/** macOS app names, such as Safari. */
 	mac: string[];
 	android: string[];
@@ -50,7 +53,7 @@ export interface Options {
 }
 
 const USAGE =
-	'usage: bun tests/real-browsers.ts [--plan <name>] [--allow-no-webgpu] [--allow-no-webgl2] [--android <browsers>] [--lan <runners>] [<macOS app>...]';
+	'usage: bun tests/real-browsers.ts [--plan <name>] [--allow-no-webgpu] [--allow-no-webgl2] [--n <count>] [--android <browsers>] [--lan <runners>] [<macOS app>...]';
 
 export function parseArgs(args: readonly string[]): Options {
 	const missing = { ...NONE_MISSING };
@@ -60,7 +63,12 @@ export function parseArgs(args: readonly string[]): Options {
 		const arg = args[i] as string;
 		if (arg === '--allow-no-webgpu') missing.webgpu = true;
 		else if (arg === '--allow-no-webgl2') missing.webgl2 = true;
-		else if (arg === '--plan') options.plan = args[++i] ?? '';
+		else if (arg === '--n') {
+			const count = Number(args[++i]);
+			if (!(Number.isSafeInteger(count) && count > 0))
+				throw new Error(`--n: use a whole number above 0\n${USAGE}`);
+			options.count = count;
+		} else if (arg === '--plan') options.plan = args[++i] ?? '';
 		else if (arg === '--android') options.android = list(args[++i]);
 		else if (arg === '--lan') options.lan = list(args[++i]);
 		else if (arg.startsWith('--')) throw new Error(`unknown option ${arg}\n${USAGE}`);
@@ -148,7 +156,7 @@ async function main(): Promise<void> {
 	const local = await startServer();
 	const lan = options.lan.length > 0 ? await startServer(true) : undefined;
 	const run = runName(options.plan);
-	const plan = writePlan(run, makeItems());
+	const plan = writePlan(run, makeItems({ count: options.count }));
 	if (lan) {
 		console.log(
 			`On each tablet or phone, open ${lan.url}/tests/pages/runner.html?listen&runner=<name>`,

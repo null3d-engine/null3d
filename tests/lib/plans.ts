@@ -145,23 +145,29 @@ const BENCH_PAGES: readonly [BenchPageKind, Tier][] = [
 	[SCENE_CODE, 'webgl2'],
 ];
 
+/** Settings a plan may take from the command line. */
+export interface PlanSettings {
+	/** The instance count of the benchmark pages, or undefined for the scene's default. */
+	count?: number;
+}
+
 /**
  * The benchmark protocol for S1 in browsers that Playwright cannot drive: fresh runs of each page,
- * each a 5-second warm-up and 30 measured seconds. The pages take turns run by run, so a device
- * that slows as it warms up slows every engine alike.
+ * each a 5-second warm-up and 30 measured seconds, with `count` instances when given. The pages
+ * take turns run by run, so a device that slows as it warms up slows every engine alike.
  */
-export function benchPlan(): PlanItem<Check>[] {
+export function benchPlan({ count }: PlanSettings = {}): PlanItem<Check>[] {
 	return Array.from({ length: BENCH_RUNS }, (_, run) =>
 		BENCH_PAGES.map(([page, tier]) => ({
 			id: `bench-s1-${page}-${run + 1}`,
-			path: pagePath('s1', page),
+			path: pagePath('s1', page, count === undefined ? '' : `n=${count}`),
 			timeoutSeconds: WARMUP_SECONDS + MEASURE_SECONDS + 60,
 			check: { kind: 'bench' as const, tier, scene: 's1' as const, page },
 		})),
 	).flat();
 }
 
-export const PLANS: Readonly<Record<string, () => PlanItem<Check>[]>> = {
+export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanItem<Check>[]>> = {
 	checks: checksPlan,
 	parity: parityPlan,
 	bench: benchPlan,

@@ -220,6 +220,8 @@ describe('parseArgs', () => {
 			webgpu: false,
 			webgl2: true,
 		});
+		expect(parseArgs(['--plan', 'bench', '--n', '30000', 'Safari']).count).toBe(30000);
+		expect(() => parseArgs(['--n', 'many'])).toThrow('--n: use a whole number above 0');
 		expect(() => parseArgs(['--plan', 'nothing'])).toThrow('no plan named nothing');
 		expect(() => parseArgs(['--fast'])).toThrow('unknown option --fast');
 	});
