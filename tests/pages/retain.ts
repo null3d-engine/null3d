@@ -59,6 +59,7 @@ run('retain', async () => {
 		inSecond,
 		afterAttach,
 		rebuilds: stats.rebuilds,
+		pipelines: stats.pipelines,
 		removedHeard,
 		failures,
 		width: capture.width,

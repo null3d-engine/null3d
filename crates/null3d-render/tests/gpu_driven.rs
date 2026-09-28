@@ -275,3 +275,60 @@ fn a_scene_past_the_device_limit_is_refused_with_that_limit() {
         Err(RecordError::TooManySources { limit: sources - 1 })
     );
 }
+
+#[test]
+fn pipelines_follow_the_shading_model_and_objects_sharing_a_mesh_and_material_share_one_draw() {
+    use null3d_core::handle::Handle;
+    use null3d_core::scene::{Command, flags};
+    use null3d_render::materials::Shading;
+
+    // The world's meshes, in the order it adds them.
+    const BOX: u32 = 1;
+    const BALL: u32 = 2;
+    let mut world = World::new();
+    let add = |world: &mut World, mesh: u32, material: u32, commands: &mut Vec<Command>| {
+        let object = world.scene.reserve().unwrap();
+        world.scene.set_local_radius(object, 0.9).unwrap();
+        commands.push(Command::create(object, Handle::NONE, mesh, flags::VISIBLE));
+        commands.push(Command::set_material(object, material));
+    };
+    let lit = |world: &mut World, shade: f32| {
+        world
+            .renderer
+            .materials_mut()
+            .create(Shading::Lit, [shade, 0.5, 0.5, 1.0])
+            .unwrap()
+            + 1
+    };
+    let mut commands = Vec::new();
+    // Ten separate objects with the box mesh and one shared material, and ten balls with a lit
+    // material each.
+    let shared = lit(&mut world, 0.0);
+    for _ in 0..10 {
+        add(&mut world, BOX, shared, &mut commands);
+    }
+    for k in 0..10 {
+        let own = lit(&mut world, k as f32 / 10.0);
+        add(&mut world, BALL, own, &mut commands);
+    }
+    world.scene.apply_commands(&commands, 1).unwrap();
+    world.record(true);
+    let first = world.commands();
+    // Pipelines depend on the shading model, not on materials: lit, unlit and the culling pass.
+    assert_eq!(count(&first, Op::CreateRenderPipeline), 2);
+    assert_eq!(count(&first, Op::CreateComputePipeline), 1);
+    // One draw per mesh and material: the world's three, one for the ten boxes, one per ball.
+    assert_eq!(count(&first, Op::DrawIndexedIndirect), 3 + 1 + 10);
+
+    // A material and an object added later rebuild the draw tables, but build no pipeline.
+    world.frame = 2;
+    let mut later = Vec::new();
+    let new = lit(&mut world, 1.0);
+    add(&mut world, BOX, new, &mut later);
+    world.scene.begin_frame(2);
+    world.scene.apply_commands(&later, 2).unwrap();
+    world.record(true);
+    let second = world.commands();
+    assert_eq!(count(&second, Op::CreateRenderPipeline), 0);
+    assert_eq!(count(&second, Op::DrawIndexedIndirect), 3 + 1 + 10 + 1);
+}

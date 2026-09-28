@@ -13,6 +13,7 @@ Measure first, then change one thing, then measure again. Read `guides/performan
 7. The quality governor and your own systems
 8. Per-frame code that allocates nothing
 9. Objects during play
+10. Advice written for other engines
 
 ## 1. Where frame time goes
 
@@ -64,7 +65,7 @@ These numbers are starting points. The engine docs page `guides/performance` hol
 | `rebuilds` above zero during play, with upload and replay spikes in the same frames | Objects, meshes, materials or batches created, destroyed or changed during play: each such frame rebuilds the draw tables and uploads every matrix | Create during setup; hide and show with `setVisible` and pool with `setActiveCount`, which do not rebuild (`guides/performance`) |
 | High "replay" or draw buckets | Too many mesh and material combinations | Share materials; pack textures into arrays with `null3d assets`; merge small static meshes offline |
 | GPU time high, CPU low | Pixels or shader cost | Lower `maxPixelRatio`; cheaper materials; fewer shadowed lights; avoid large transparent areas |
-| Hitch when something new appears | Pipeline compiled during play | Create materials and objects during loading; `await scene.warmUp()` |
+| Hitch when something new appears | A rebuild (`rebuilds` above zero), or a pipeline build (`pipelines` above zero) | Create materials and objects during loading; `await scene.warmUp()` |
 | Hitch while loading during play | Uploads and decoding | Load before play, or stream smaller files; the per-frame upload budget spreads uploads |
 | Frame rate drops after a few minutes on a phone | Heat | Aim for 70% of the budget; the governor steps quality down; test 10-minute runs |
 
@@ -128,3 +129,16 @@ Some calls rebuild the scene's draw tables in the frame they take effect: the bu
 - Pool bullets, particles and pickups in a batch sized for its most rows. Show the live ones with `setActiveCount`, and keep them at the front of the arrays.
 - For a look that changes often, such as a highlight, keep two objects and swap their visibility.
 - Check `engine.measure()`: `rebuilds` above zero during play means one of the rebuilding calls ran.
+
+## 10. Advice written for other engines
+
+Performance advice for three.js and other engines assumes things that do not hold in null3d. The engine docs page `guides/performance` answers the questions behind it.
+
+| Advice | In null3d |
+| --- | --- |
+| Merge meshes to cut draw calls | Objects that share a mesh and material already share one draw. Merge only different small static meshes, to cut buckets |
+| Share materials so objects share a shader | Every material already shares its pipeline. Share materials anyway: each mesh and material pair is its own draw |
+| Compile or warm up after each loading stage | The engine builds its pipelines in the first frame. Wait for `engine.firstFrame` |
+| Turn off matrix updates for still objects | Objects are static by default and cost nothing until a setter changes them |
+| Set a needs-update flag after a change | Setters mark changes themselves |
+| Track GPU completion yourself | `engine.measure` reports `completedFps` and `gpuLatencyMs` |

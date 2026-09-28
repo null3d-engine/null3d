@@ -92,6 +92,28 @@ These habits keep play free of rebuilds:
 - Every row of a batch counts toward the scene's limit of objects and instance rows, active or not. Every device draws 2,097,152, and `engine.capabilities.maxInstances` gives the limit of the device the page runs on (E1501). Engine memory holds about 5 million rows (E1109). So size each batch for the rows it uses.
 - Check with `measure`. A `rebuilds` count above zero during play points to one of the calls in the lower rows of the table.
 
+## How the engine batches, builds pipelines and times frames
+
+Performance advice written for other engines often assumes things that do not hold here. These are null3d's answers to the questions that such advice depends on.
+
+| Question | null3d's answer |
+| --- | --- |
+| What makes the GPU build a pipeline? | A shading model, lit or unlit, with the canvas's color format, the depth format and the sample count. A material never does: materials are rows in one shared table, so a thousand lit materials share one lit pipeline. |
+| When are pipelines built? | In the first frame, and again after the browser replaces the GPU. Sketch code never compiles one. `measure` counts builds in `pipelines`. |
+| What does the engine batch by itself? | Every object and instance row with the same shading model, mesh and material goes into one bucket, which one indirect draw call draws. Separate objects from `createMesh` batch the same way as the rows of an instance batch. |
+| Which passes walk the scene? | Two: a culling pass on the GPU, which tests every object and row against the view, and the main pass, which replays a draw bundle. The engine records the bundle again only when the scene's structure changes. |
+| Does the engine know when the GPU finished a frame? | Yes. It listens to the WebGPU queue, or checks a WebGL2 fence, and blocks no thread. `measure` reports `completedFps` and `gpuLatencyMs`. Sketch code never waits for the GPU. |
+| What must stay the same for the engine to reuse its work? | The scene's structure. A static object costs nothing until a setter changes it. The calls that rebuild the draw tables are listed in [Objects during play](#objects-during-play). |
+
+So some common advice does not apply:
+
+- **Merge meshes to cut draw calls.** Objects that share a mesh and a material already share one draw. Merging different small static meshes still cuts the number of buckets.
+- **Share materials so objects share a shader.** Every material already shares its pipeline. Share materials anyway, because each mesh and material pair is its own bucket and draw.
+- **Compile or warm up after each loading stage.** The engine builds its pipelines in the first frame. Wait for `engine.firstFrame` before you remove the loading screen.
+- **Turn off matrix updates for objects that do not move.** Objects are static by default, and a static object costs nothing per frame.
+- **Mark a changed object for update.** Setters mark the change themselves.
+- **Track GPU completion in your own code.** `measure` reports it.
+
 ## Moving objects cost uploads
 
 Each dynamic instance uploads its 48-byte world matrix in every frame, so 100,000 moving boxes upload 4.8 MB per frame. A static batch uploads its matrices once and then nothing. The S1-static benchmark draws the same 100,000 boxes standing still. It uploads nothing per frame and takes 0.08 ms of CPU time.
@@ -118,6 +140,7 @@ The render worker picks how each upload travels, so you do not need to. Uploads 
 | `mainThread` | Long tasks and input delay on the page's own thread, where the browser reports them (Chrome) |
 | `uploadBytes` and `drawCalls` | Bytes uploaded and draw calls made per frame |
 | `rebuilds` | Frames whose structure change rebuilt the draw tables |
+| `pipelines` | GPU pipelines built, which can stall the frame they happen in |
 | `memory` | The engine's WebAssembly memory and the JavaScript heap |
 
 The sketch worker's steps are `update`, `commands`, `transforms`, `batches` and `record`, and the render worker's is `replay`. A thread's time less its `update` step is the engine's own work on that thread.

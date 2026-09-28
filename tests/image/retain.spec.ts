@@ -12,6 +12,7 @@ interface RetainResult {
 	inSecond: boolean;
 	afterAttach: number;
 	rebuilds: number;
+	pipelines: number;
 	removedHeard: number;
 	failures: string[];
 	width: number;
@@ -35,6 +36,7 @@ for (const mode of ENGINE_MODES)
 		expect(result.afterAttach).toBeGreaterThan(result.afterWait);
 		expect(result.atDetach).toBeGreaterThanOrEqual(result.beforeDetach);
 		expect(result.rebuilds).toBe(0);
+		expect(result.pipelines).toBe(0);
 		expect(result.removedHeard).toBe(0);
 		compareToReference(
 			'scene',

@@ -64,9 +64,17 @@ export enum Counter {
 	Dispatches = 2,
 	/** Draw bundles recorded: nonzero in a frame whose structure change rebuilt the draw tables. */
 	Rebuilds = 3,
+	/** Render and compute pipelines the GPU built for the frame. */
+	Pipelines = 4,
 }
 
-export const COUNTER_NAMES = ['uploadBytes', 'drawCalls', 'dispatches', 'rebuilds'] as const;
+export const COUNTER_NAMES = [
+	'uploadBytes',
+	'drawCalls',
+	'dispatches',
+	'rebuilds',
+	'pipelines',
+] as const;
 
 export type CounterName = (typeof COUNTER_NAMES)[number];
 
@@ -80,7 +88,7 @@ const BUSY = 2;
 const INTERVAL = 3;
 const PHASES = 4;
 const COUNTERS = PHASES + PHASE_NAMES.length;
-const RECORD_WORDS = 16;
+const RECORD_WORDS = 20;
 
 // Int32 words of the header, then one written count per ring.
 const CAPACITY = 0;

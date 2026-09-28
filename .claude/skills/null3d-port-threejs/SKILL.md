@@ -99,6 +99,9 @@ Write `PORTING-REPORT.md` with the template in `references/verification.md`: wha
 | `material.needsUpdate = true` to switch features at run time | Create both material variants while loading. Swap with `setMaterial` for a rare change; for a frequent one, keep two objects and swap their visibility | A shader change compiles a pipeline, which stalls a frame, and `setMaterial` rebuilds the draw tables |
 | `InstancedMesh.setMatrixAt` with a dummy `Object3D` | Write `positions`, `rotations` and `scales` arrays | No matrix composition in JavaScript: in the S1 benchmark it cost three.js about 0.5 ms per frame for 100,000 instances. The loop's own motion math costs the same in both engines, so keep it tight |
 | `object.traverse` every frame | Collect the handles you need at setup | Traversal costs work every frame |
+| `mergeGeometries` to cut draw calls | Separate objects that share a mesh and material | They already share one draw (`guides/performance`) |
+| `matrixAutoUpdate = false` on still objects | Nothing | Objects are static by default and cost nothing until a setter changes them |
+| `renderer.compile` or `compileAsync` after loading | Wait for `engine.firstFrame` | The engine builds its pipelines in the first frame |
 | Resize handlers and `setSize` | Nothing | The engine follows the canvas size |
 | `EffectComposer` pass chains | `post.set` and `post.addEffect` | The chain is built in and merged into few passes |
 | `localStorage` in scene code | Keep it on the page, or use IndexedDB, which workers have | Workers have no `localStorage` |

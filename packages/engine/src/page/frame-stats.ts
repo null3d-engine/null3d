@@ -69,6 +69,12 @@ export interface FrameSummary {
 	 * objects and changing a batch's active count do not rebuild.
 	 */
 	rebuilds: number;
+	/**
+	 * GPU pipelines built during the measurement. A build can stall the frame it happens in. The
+	 * engine builds its pipelines in the first frame and after the browser replaces the GPU, so
+	 * steady play builds none.
+	 */
+	pipelines: number;
 }
 
 /**
@@ -227,6 +233,7 @@ export function summarizeFrames(
 		uploadBytes: percentiles(render.counters[Counter.UploadBytes] ?? []),
 		drawCalls: percentiles(render.counters[Counter.DrawCalls] ?? []),
 		rebuilds: (render.counters[Counter.Rebuilds] ?? []).filter((n) => n > 0).length,
+		pipelines: (render.counters[Counter.Pipelines] ?? []).reduce((sum, n) => sum + n, 0),
 	};
 }
 

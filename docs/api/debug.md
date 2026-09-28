@@ -54,6 +54,7 @@ Per-frame figures of a measurement: CPU time by thread, GPU time, frame interval
 | `uploadBytes: Percentiles` | Bytes uploaded to the GPU per frame. |
 | `drawCalls: Percentiles` | Draw calls per frame. |
 | `rebuilds: number` | Frames whose structure change rebuilt the draw tables: objects created or destroyed, meshes or materials changed, or batches created or destroyed. Steady play has none; showing or hiding objects and changing a batch's active count do not rebuild. |
+| `pipelines: number` | GPU pipelines built during the measurement. A build can stall the frame it happens in. The engine builds its pipelines in the first frame and after the browser replaces the GPU, so steady play builds none. |
 
 ### `MainThreadStats`
 

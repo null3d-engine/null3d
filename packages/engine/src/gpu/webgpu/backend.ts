@@ -33,7 +33,14 @@ export class WebGPUBackend {
 	/** Times the passes of each frame, while the page measures. */
 	timer: GpuTimer | undefined;
 	/** What the replays since the last reset uploaded, the part that went through staging, and drew. */
-	readonly counts = { uploadBytes: 0, stagedBytes: 0, drawCalls: 0, dispatches: 0, bundles: 0 };
+	readonly counts = {
+		uploadBytes: 0,
+		stagedBytes: 0,
+		drawCalls: 0,
+		dispatches: 0,
+		bundles: 0,
+		pipelines: 0,
+	};
 	// Pass descriptors that every frame fills again, so replay allocates none of its own.
 	private readonly renderPass = new RenderPassSetup();
 	private readonly computePass: GPUComputePassDescriptor = {};
@@ -112,6 +119,7 @@ export class WebGPUBackend {
 		this.counts.drawCalls = 0;
 		this.counts.dispatches = 0;
 		this.counts.bundles = 0;
+		this.counts.pipelines = 0;
 	}
 
 	/**
@@ -207,6 +215,7 @@ export class WebGPUBackend {
 					this.views[words[a] as number] = undefined;
 					break;
 				case G.OP_CREATE_RENDER_PIPELINE:
+					this.counts.pipelines++;
 					this.renderPipelines[words[a] as number] = this.pipelines.render(
 						words[a + 1] as number,
 						this.format(words[a + 3] as number) as GPUTextureFormat,
@@ -216,6 +225,7 @@ export class WebGPUBackend {
 					);
 					break;
 				case G.OP_CREATE_COMPUTE_PIPELINE:
+					this.counts.pipelines++;
 					this.computePipelines[words[a] as number] = this.pipelines.compute(
 						words[a + 1] as number,
 					);
