@@ -1,9 +1,9 @@
 // The runner page: works through a run's pages one after another, each in a frame that fills the
 // window, and posts every page's result to the dev server. It needs no WebDriver, so it runs in any
-// browser on any device. Open it with ?run=<run>&runner=<name> to run once, or with
-// ?listen&runner=<name> to wait: a waiting page starts each run whose turn list names it. Pixels
-// travel as the page read them back, never re-encoded through a canvas, which privacy protections
-// can alter.
+// browser on any device. Open it with ?run=<run>&runner=<name> to run once and then close the tab,
+// or with ?listen&runner=<name> to wait: a waiting page starts each run whose turn list names it.
+// Pixels travel as the page read them back, never re-encoded through a canvas, which privacy
+// protections can alter.
 
 export {};
 
@@ -150,5 +150,10 @@ async function listen(): Promise<void> {
 
 const run = params.get('run');
 if (params.has('listen')) void listen();
-else if (run) runPlan(run).catch((e) => show(`stopped: ${(e as Error).message}`));
+else if (run)
+	runPlan(run)
+		// A page opened for one run closes its tab, so finished runs leave no tabs behind. Browsers
+		// allow it because each test page loads in a new frame, which adds nothing to the tab's history.
+		.then(() => window.close())
+		.catch((e) => show(`stopped: ${(e as Error).message}`));
 else show('open this page with ?run=<run>&runner=<name>, or with ?listen&runner=<name>');
