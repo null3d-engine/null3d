@@ -116,7 +116,7 @@ The benchmarks compare sokko3d with three.js in the same browser. These points c
 
 ## Writing docs
 
-Published Markdown (every page under `docs/`, the README and this file) follows these rules.
+Published Markdown (every page under `docs/`, the skills, the README, the package READMEs, `CHANGELOG.md` and this file) follows these rules.
 
 - Write plain English in short sentences, at most 25 words each, in the active voice. Simplified Technical English is the model.
 - Use sentence case in headings, with no emojis.
@@ -124,9 +124,11 @@ Published Markdown (every page under `docs/`, the README and this file) follows 
 - Use straight quotes and apostrophes.
 - A concept page opens with a Mermaid diagram and a plain explanation, followed by examples.
 - A page describes what exists now. Its status label says whether the feature is built.
+- Write for developers who use the engine. Never mention the maintainers' milestones, checkpoints, task IDs, proposals or internal plans, and never explain where a fact came from in those terms. Give the reason when it helps the reader, such as a browser or GPU limit. Name the engine's benchmarks when you cite a figure. Notes for maintainers belong in code comments or in this file. This file is for contributors, so this rule does not apply to it.
+- Commit subjects and pull request titles become lines in the public changelog, so they follow these rules too.
 - Run the humanizer skill over any prose you write or change. This covers user-facing text that lives in data or code too: the mapping notes, error messages and TSDoc comments.
 
-The docs style check catches the mechanical part of these rules. The humanizer pass and your own re-reading cover the rest.
+The docs style check catches the mechanical part of these rules. It blocks build-process words such as milestone and checkpoint, and it checks each commit subject too. The humanizer pass and your own re-reading cover the rest.
 
 ## Commit gates
 
@@ -142,10 +144,10 @@ Before each commit:
 On each commit message:
 
 - The message follows [Conventional Commits](https://www.conventionalcommits.org/). The scope names the area, such as `core`, `gpu`, `engine`, `docs`, `tools` or `ci`.
-- A commit that changes `crates/*/src/`, `packages/*/src/`, `packages/*/bin/` or `skills/` needs a `Docs-Checked:` trailer. This file and the README describe the repository's tools, so a commit that changes them needs one too. They are `tools/`, `bench/` apart from its tests, the test runner (`tests/real-browsers.ts` and `tests/lib/`) and `package.json`. The trailer names the docs pages you updated or re-read, or says why none apply.
+- A commit that changes `crates/*/src/`, `packages/*/src/`, `packages/*/bin/` or `skills/` needs a `Docs-Checked:` trailer. This file and the README describe the repository's tools, so a commit that changes them needs one too. They are `tools/`, `bench/` apart from its tests, the test runner (`tests/real-browsers.ts` and `tests/lib/`) and `package.json`. The trailer names the docs pages you updated or re-read, or says why none apply. The pass also confirms that those pages speak only to developers who use the engine.
 - A commit that changes a package's source, the WGSL shader library, `skills/` or `docs/data/threejs-mapping.json` needs a `Skills-Checked:` trailer. It names the skill files you updated or re-read.
 - Every internal link in the published Markdown resolves, and new external links in changed files answer.
-- Changed published Markdown passes the docs style check. Errors block the commit; warnings only print.
+- Changed published Markdown and the commit's subject pass the docs style check. Errors block the commit; warnings only print.
 
 A trailer value must say what you checked. Bare values such as "yes" or "done" are rejected. For example:
 

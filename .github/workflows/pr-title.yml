@@ -1,0 +1,45 @@
+name: PR title
+
+# A squash merge writes one line on main: the pull request's title, or the commit's own subject
+# when the pull request has one commit. That line becomes a public changelog entry, so it must
+# follow Conventional Commits and the writing rules. This workflow is separate from CI, so editing
+# a title does not run CI again.
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
+
+env:
+  BUN_VERSION: "1.3.14"
+
+jobs:
+  squash-title:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    env:
+      HUSKY: "0"
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun install --frozen-lockfile
+
+      - name: Check the line the squash merge will write
+        env:
+          TITLE: ${{ github.event.pull_request.title }}
+          COMMITS: ${{ github.event.pull_request.commits }}
+        run: |
+          if [ "$COMMITS" = "1" ]; then
+            line="$(git log -1 --format=%s HEAD)"
+          else
+            line="$TITLE"
+          fi
+          echo "Squash title: $line"
+          printf '%s\n' "$line" | bunx commitlint
+          bun tools/hooks/check-docs-style.ts --subject "$line"

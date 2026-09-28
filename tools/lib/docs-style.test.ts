@@ -18,6 +18,20 @@ describe('checkDocsStyle errors', () => {
 		expect(rules('See https://sokko3d.dev/docs.')).toEqual([]);
 	});
 
+	it('blocks the build process in docs for engine users', () => {
+		expect(rules('The first milestone adds shadows.')).toEqual(['error:build_process:1']);
+		expect(rules('These figures come from the checkpoint.')).toEqual(['error:build_process:1']);
+		expect(rules('Task M0-J1 wrote this page.')).toEqual(['error:build_process:1']);
+	});
+
+	it('lets contributor files name the build process, but not the private plan', () => {
+		const contributors = (md: string) =>
+			checkDocsStyle(md, 'contributors').map((f) => `${f.severity}:${f.rule}:${f.line}`);
+		expect(contributors('Add the milestone task ID, such as M0-J1.')).toEqual([]);
+		expect(contributors('M1 adds shadows.')).toEqual([]);
+		expect(contributors('Read `.dev/plan/x.md`.')).toEqual(['error:private_plan:1']);
+	});
+
 	it('ignores front matter, fenced code, inline code and comments', () => {
 		const md = [
 			'---',
@@ -40,6 +54,11 @@ describe('checkDocsStyle warnings', () => {
 		expect(rules('The engine offers a seamless workflow.')).toEqual(['warning:stock_word:1']);
 		expect(rules('It generally works.')).toEqual(['warning:hedge:1']);
 		expect(rules('It is not just fast but also small.')).toEqual(['warning:not_x_but_y:1']);
+	});
+
+	it('warns on a bare milestone name, but not on an Apple chip', () => {
+		expect(rules('M1 adds shadows.')).toEqual(['warning:milestone_name:1']);
+		expect(rules('It runs on an Apple M1 laptop.')).toEqual([]);
 	});
 
 	it('joins wrapped lines into one paragraph and reports its first line', () => {

@@ -6,6 +6,7 @@ import {
 	effectiveMessage,
 	isExemptCommit,
 } from './check-docs-ack';
+import { audienceOf, isStyleChecked, subjectOf } from './check-docs-style';
 import { unstagedPaths } from './check-generated';
 import { touchesRust } from './check-rust';
 import { checkCommitMessage as checkSkills, skillBearingFiles } from './check-skills-ack';
@@ -154,5 +155,40 @@ describe('touchesRust', () => {
 		expect(touchesRust(['crates/sokko3d-wasm/Cargo.toml'])).toBe(true);
 		expect(touchesRust(['clippy.toml'])).toBe(true);
 		expect(touchesRust(['docs/index.md', 'tools/gen-docs.ts'])).toBe(false);
+	});
+});
+
+describe('the docs style hook', () => {
+	it('checks every published Markdown file, and nothing generated for Claude Code', () => {
+		for (const path of [
+			'README.md',
+			'AGENTS.md',
+			'CHANGELOG.md',
+			'docs/guides/performance.md',
+			'skills/demo/SKILL.md',
+			'skills/demo/references/notes.md',
+			'packages/cli/README.md',
+		])
+			expect(isStyleChecked(path)).toBe(true);
+		for (const path of [
+			'.claude/skills/demo/SKILL.md',
+			'skills/demo/evals/evals.json',
+			'packages/engine/src/README.md',
+			'tools/gen-docs.ts',
+		])
+			expect(isStyleChecked(path)).toBe(false);
+	});
+
+	it('treats AGENTS.md as a contributor file', () => {
+		expect(audienceOf('AGENTS.md')).toBe('contributors');
+		expect(audienceOf('README.md')).toBe('users');
+	});
+
+	it('reads the subject line, which becomes a changelog entry', () => {
+		expect(subjectOf('feat(tools): add a check\n\nBody.\n# comment')).toBe(
+			'feat(tools): add a check',
+		);
+		expect(subjectOf('Merge branch main')).toBeNull();
+		expect(subjectOf('# only a comment\n')).toBeNull();
 	});
 });

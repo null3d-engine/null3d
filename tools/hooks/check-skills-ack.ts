@@ -23,7 +23,8 @@ export const SKILLS_ACK_RULE: AckRule = {
 	guidance: [
 		'Every commit that can make a skill wrong records the skills pass (AGENTS.md, "Commit gates").',
 		'Re-read the skill files that show the API you changed, keep each fact in one place (skills',
-		'link to docs pages by ID), then add a trailer, for example:\n',
+		'link to docs pages by ID), and check that they speak only to developers who use the engine,',
+		'with no milestones, internal plans or build history. Then add a trailer, for example:\n',
 		'  Skills-Checked: updated references/api-quickref.md for the new markDirty signature',
 		'  Skills-Checked: re-read both skills; no skill shows the changed function',
 	],

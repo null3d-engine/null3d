@@ -71,6 +71,25 @@ export function mentionsPrivatePlan(text: string): boolean {
 	return PRIVATE_PLAN.test(text);
 }
 
+/**
+ * Words for the maintainers' build process: milestones, checkpoints and task IDs. Published docs
+ * speak to developers who use the engine, and these words mean nothing to them.
+ */
+const BUILD_PROCESS = /\b(milestones?|checkpoints?|M\d+-[A-Z]+\d+)\b/i;
+
+export function mentionsBuildProcess(text: string): boolean {
+	return BUILD_PROCESS.test(text);
+}
+
+/** A bare milestone name such as M1. Apple's chips share the form, so this only warns. */
+const MILESTONE_NAME = /(?<!Apple )\bM\d\b(?!-)/;
+
+/**
+ * Who a file speaks to. Contributor files, such as AGENTS.md, describe the maintainers' own
+ * process, so the build-process rules skip them.
+ */
+export type DocsAudience = 'users' | 'contributors';
+
 const EMOJI = /\p{Extended_Pictographic}/u;
 
 /** A sentence ends at . ! or ? before a capital, a digit, a quote, a bracket, or a name spelled in lowercase. */
@@ -188,7 +207,7 @@ function findPhrase(text: string, phrases: string[]): string | undefined {
 }
 
 /** Every style finding in one Markdown file. */
-export function checkDocsStyle(md: string): StyleFinding[] {
+export function checkDocsStyle(md: string, audience: DocsAudience = 'users'): StyleFinding[] {
 	const findings: StyleFinding[] = [];
 	const add = (
 		rule: string,
@@ -231,6 +250,25 @@ export function checkDocsStyle(md: string): StyleFinding[] {
 				raw,
 				"Public files never point at the maintainers' private build plan.",
 			);
+		}
+		if (audience === 'users') {
+			if (mentionsBuildProcess(raw)) {
+				add(
+					'build_process',
+					'error',
+					block.line,
+					raw,
+					'Published docs speak to developers who use the engine. Drop the build process, or give the reason that matters to them.',
+				);
+			} else if (MILESTONE_NAME.test(text)) {
+				add(
+					'milestone_name',
+					'warning',
+					block.line,
+					text,
+					'Drop the milestone name, or name the release (0.1, 0.2) instead.',
+				);
+			}
 		}
 
 		if (block.kind === 'heading') {

@@ -11,7 +11,7 @@ import {
 } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { DOC_AREAS, MAPPING_SOURCE, pagePath } from './docs';
-import { mentionsPrivatePlan } from './docs-style';
+import { mentionsBuildProcess, mentionsPrivatePlan } from './docs-style';
 import { readIfExists, walkFiles } from './files';
 import { parseFrontMatter } from './frontmatter';
 
@@ -164,6 +164,10 @@ function checkSkill(root: string, name: string, docRefs: Map<string, Set<string>
 		const content = readFileSync(join(root, path), 'utf8');
 		if (mentionsPrivatePlan(content))
 			problems.push(`${path} points at the maintainers' private build plan`);
+		if (mentionsBuildProcess(content))
+			problems.push(
+				`${path} names the maintainers' build process (milestones, checkpoints or task IDs)`,
+			);
 		const ids = docIdsIn(content);
 		if (path.endsWith('threejs-mapping.json')) {
 			for (const entry of (JSON.parse(content) as { entries?: { docs: string }[] }).entries ?? [])

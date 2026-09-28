@@ -46,7 +46,9 @@ export const DOCS_ACK_RULE: AckRule = {
 	guidance: [
 		'Every code commit records the docs pass (AGENTS.md, "Commit gates"). Re-read the pages that',
 		'describe what you changed: check that they are accurate, that each page status is right,',
-		'and run the humanizer on any prose you changed. Then add a trailer, for example:\n',
+		'and that they speak only to developers who use the engine, with no milestones, internal',
+		'plans or build history. Run the humanizer on any prose you changed. Then add a trailer, for',
+		'example:\n',
 		'  Docs-Checked: updated docs/concepts/handles.md for the new generation bits',
 		'  Docs-Checked: re-read docs/concepts/architecture.md; it still matches',
 		'  Docs-Checked: internal refactor; no documented behavior changed',

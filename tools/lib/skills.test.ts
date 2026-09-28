@@ -83,6 +83,17 @@ describe('checkSkills', () => {
 		]);
 	});
 
+	it('fails when a skill names the build process', () => {
+		const root = fixture({
+			'skills/demo-skill/SKILL.md': skill('The first milestone adds this call.'),
+			'skills/demo-skill/evals/evals.json': EVALS,
+		});
+		syncSkills(root);
+		expect(checkSkills(root).problems).toEqual([
+			"skills/demo-skill/SKILL.md names the maintainers' build process (milestones, checkpoints or task IDs)",
+		]);
+	});
+
 	it('passes on the repository', () => {
 		expect(checkSkills(repoRoot).problems).toEqual([]);
 	});
