@@ -13,8 +13,12 @@
 //! every bucket with its slice bound at vertex slot 1, so the draws' first instance stays 0.
 //!
 //! Buckets change only with the scene's structure: objects created or destroyed, meshes or
-//! materials changed, visibility, batch sizes. The caller says when that happened; the builder
-//! then rebuilds the bucket tables and re-records the bundle, and uploads every matrix once.
+//! materials changed, batches created or destroyed. The caller says when that happened; the
+//! builder then rebuilds the bucket tables and re-records the bundle, and uploads every matrix
+//! once. A bucket holds every object with its mesh and material, shown or hidden, and every row of
+//! a batch, active or not. So showing or hiding an object, or changing a batch's active count,
+//! only rewrites those sources' entries in the bucket table, where `HIDDEN` makes the culling
+//! shader skip them.
 //!
 //! # Frames in flight
 //!
@@ -74,6 +78,32 @@ pub const MAX_SOURCES: u32 = {
         by_binding
     }
 };
+
+/// A scene object's entry in the bucket table: its bucket, or `HIDDEN` while it is hidden, which
+/// its world radius says.
+fn scene_membership(home: u32, world_radius: f32) -> u32 {
+    if world_radius == f32::NEG_INFINITY {
+        HIDDEN
+    } else {
+        home
+    }
+}
+
+/// Uploads the bucket table entries of sources `start..end`.
+fn write_entries(
+    list: &mut DrawList,
+    arena: &mut UploadArena,
+    table: &[u32],
+    start: u32,
+    end: u32,
+) -> Result<(), RecordError> {
+    let (at, bytes) = arena.push(words_as_bytes(&table[start as usize..end as usize]))?;
+    list.push(
+        Op::WriteBuffer,
+        &[ids::INSTANCE_BUCKETS, start * 4, at, bytes],
+    )?;
+    Ok(())
+}
 
 /// The size to create a buffer at when it must hold `needed` bytes: room to grow, so a slowly
 /// growing scene rarely recreates it, but never past the largest storage binding.
@@ -244,6 +274,11 @@ struct Layout {
     buckets: Vec<Bucket>,
     /// The bucket of every source, or `HIDDEN`.
     instance_buckets: Vec<u32>,
+    /// The bucket of every scene slot whether it is shown or not, or `HIDDEN` for a slot with no
+    /// mesh or material.
+    home_buckets: Vec<u32>,
+    /// Each batch's bucket and the active row count its table entries hold, in `batch_bases` order.
+    batch_rows: Vec<(u32, u32)>,
     /// The per-frame reset of every bucket's indirect draw: instance counts at zero.
     indirect_template: Vec<u32>,
     /// Bucket records in the culling shader's layout.
@@ -415,6 +450,8 @@ impl GpuDrivenRenderer {
         }
         if upload_everything {
             self.apply_layout(list, arena)?;
+        } else {
+            self.update_membership(list, arena, input, parity)?;
         }
         self.upload_matrices(list, input, parity, upload_everything)?;
 
@@ -642,15 +679,10 @@ impl GpuDrivenRenderer {
             Some((shading, mesh, material))
         };
         let world = scene.world(parity);
-        let scene_key = |slot: usize| {
-            if world.radii()[slot] == f32::NEG_INFINITY {
-                return None;
-            }
-            key_of(scene.meshes()[slot], scene.materials()[slot])
-        };
+        let scene_key = |slot: usize| key_of(scene.meshes()[slot], scene.materials()[slot]);
 
-        // Every drawable object's key once, and every batch's key with its active rows. Sorted,
-        // equal keys merge into one entry per bucket, in key order.
+        // Every object's key once, shown or hidden, and every batch's key with all its rows.
+        // Sorted, equal keys merge into one entry per bucket, in key order.
         layout.key_counts.clear();
         layout
             .key_counts
@@ -662,9 +694,7 @@ impl GpuDrivenRenderer {
         }
         for (_, batch) in batches.iter() {
             if let Some(key) = key_of(batch.mesh(), batch.material()) {
-                layout
-                    .key_counts
-                    .push((key, batch.frame_active_count(parity)));
+                layout.key_counts.push((key, batch.capacity()));
             }
         }
         layout.key_counts.sort_unstable_by_key(|&(key, _)| key);
@@ -699,12 +729,19 @@ impl GpuDrivenRenderer {
                 .map_or(HIDDEN, |bucket| bucket as u32)
         };
         layout.instance_buckets.clear();
+        layout.home_buckets.clear();
         for slot in 0..scene_rows as usize {
-            layout.instance_buckets.push(bucket_of(scene_key(slot)));
+            let home = bucket_of(scene_key(slot));
+            layout.home_buckets.push(home);
+            layout
+                .instance_buckets
+                .push(scene_membership(home, world.radii()[slot]));
         }
+        layout.batch_rows.clear();
         for (_, batch) in batches.iter() {
             let bucket = bucket_of(key_of(batch.mesh(), batch.material()));
             let active = batch.frame_active_count(parity);
+            layout.batch_rows.push((bucket, active));
             layout.instance_buckets.extend(
                 (0..batch.capacity()).map(|row| if row < active { bucket } else { HIDDEN }),
             );
@@ -743,6 +780,70 @@ impl GpuDrivenRenderer {
         let buckets = self.layout.buckets.len() * (BUCKET_BYTES + INDIRECT_BYTES) as usize;
         let frame = (sizes::FRAME_UNIFORM_BYTES + CULL_PARAMS_BYTES) as usize;
         meshes + materials + self.layout.sources as usize * 4 + buckets + frame
+    }
+
+    /// Rewrites the bucket table entries of the sources whose membership changed since the layout
+    /// was built, without a rebuild: scene objects shown or hidden this frame, which the frame's
+    /// uploads name, and the batch rows that a new active count added or removed.
+    fn update_membership(
+        &mut self,
+        list: &mut DrawList,
+        arena: &mut UploadArena,
+        input: &FrameInput<'_>,
+        parity: usize,
+    ) -> Result<(), RecordError> {
+        let layout = &mut self.layout;
+        let radii = input.scene.world(parity).radii();
+        let scene_rows = layout.home_buckets.len() as u32;
+        let mut check = |start: u32, count: u32| -> Result<(), RecordError> {
+            let mut changed: Option<(u32, u32)> = None;
+            for slot in start..(start + count).min(scene_rows) {
+                let s = slot as usize;
+                let wanted = scene_membership(layout.home_buckets[s], radii[s]);
+                if layout.instance_buckets[s] != wanted {
+                    layout.instance_buckets[s] = wanted;
+                    changed =
+                        Some(changed.map_or((slot, slot + 1), |(first, _)| (first, slot + 1)));
+                }
+            }
+            match changed {
+                Some((first, end)) => {
+                    write_entries(list, arena, &layout.instance_buckets, first, end)
+                }
+                None => Ok(()),
+            }
+        };
+        if input.snapshot.overflowed() {
+            check(0, scene_rows)?;
+        } else {
+            for range in input.snapshot.uploads() {
+                if range.target == SCENE_TARGET {
+                    check(range.start, range.count)?;
+                }
+            }
+        }
+        for (index, (_, batch)) in input.batches.iter().enumerate() {
+            let (bucket, was) = layout.batch_rows[index];
+            let now = batch.frame_active_count(parity);
+            if now == was {
+                continue;
+            }
+            let base = layout.batch_bases[index].1;
+            let (low, high) = (was.min(now), was.max(now));
+            for row in low..high {
+                layout.instance_buckets[(base + row) as usize] =
+                    if row < now { bucket } else { HIDDEN };
+            }
+            layout.batch_rows[index].1 = now;
+            write_entries(
+                list,
+                arena,
+                &layout.instance_buckets,
+                base + low,
+                base + high,
+            )?;
+        }
+        Ok(())
     }
 
     /// Sizes the layout's buffers, uploads its tables and re-records the bundle.

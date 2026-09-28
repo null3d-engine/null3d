@@ -75,6 +75,8 @@ Decimal numbers are a special case. Until the browser optimizes a function, the 
 
 The engine sizes its memory for the scene it holds. So a mesh or an instance batch made during play makes engine memory grow in the next frame. A mesh drawn with a new material does too. Create them during setup instead. Size an instance batch for the most rows it will ever need, and show fewer with `setActiveCount`.
 
+A frame that creates or destroys objects or batches, or changes an object's mesh or material, rebuilds the draw tables. It re-records the draw bundle and uploads every matrix, which shows as a spike in `uploadBytes` and replay time. `measure` counts these frames in `rebuilds`. Showing or hiding an object with `setVisible`, and changing a batch's active count, rewrite only a few bytes and never rebuild.
+
 ## Moving objects cost uploads
 
 Each dynamic instance uploads its 48-byte world matrix in every frame, so 100,000 moving boxes upload 4.8 MB per frame. A static batch uploads its matrices once and then nothing. The S1-static benchmark draws the same 100,000 boxes standing still. It uploads nothing per frame and takes 0.08 ms of CPU time.
@@ -100,6 +102,7 @@ The render worker picks how each upload travels, so you do not need to. Uploads 
 | `refreshHz` | The display's refresh rate, as the engine measured it |
 | `mainThread` | Long tasks and input delay on the page's own thread, where the browser reports them (Chrome) |
 | `uploadBytes` and `drawCalls` | Bytes uploaded and draw calls made per frame |
+| `rebuilds` | Frames whose structure change rebuilt the draw tables |
 | `memory` | The engine's WebAssembly memory and the JavaScript heap |
 
 The game worker's steps are `update`, `commands`, `transforms`, `batches` and `record`, and the render worker's is `replay`. A thread's time less its `update` step is the engine's own work on that thread.

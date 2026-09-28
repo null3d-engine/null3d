@@ -282,12 +282,10 @@ pub fn command_ring(field: u32) -> u32 {
 #[wasm_bindgen(js_name = beginFrame)]
 pub fn begin_frame(frame: u32) -> u32 {
     with_engine(|e| {
-        let pending = e.ring.pending();
-        match e.scene.apply_ring(&e.ring, frame) {
-            Ok(()) => {
-                e.structure_changed |= pending > 0;
-                0
-            }
+        let applied = e.scene.apply_ring(&e.ring, frame);
+        e.structure_changed |= e.scene.take_structure_changed();
+        match applied {
+            Ok(()) => 0,
             Err(failure) => {
                 e.structure_changed = true;
                 core_failure(failure.error)
@@ -434,11 +432,10 @@ pub fn batch_arrays(batch: u32, field: u32) -> u32 {
 #[wasm_bindgen(js_name = setBatchActiveCount)]
 pub fn set_batch_active_count(batch: u32, count: u32) -> u32 {
     with_engine(|e| match e.batches.get_mut(Handle::from_raw(batch)) {
+        // A new active count changes which rows draw, not the scene's structure: the renderer
+        // updates those rows' draw membership without rebuilding its tables.
         Ok(batch) => match batch.set_active_count(count) {
-            Ok(()) => {
-                e.structure_changed = true;
-                0
-            }
+            Ok(()) => 0,
             Err(error) => core_failure(error),
         },
         Err(error) => core_failure(error),

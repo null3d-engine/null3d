@@ -136,39 +136,95 @@ fn a_structure_change_rebuilds_the_buckets() {
     let mut mock = MockBackend::default();
     world.record(true);
     mock.replay(world.renderer.list(1).words()).unwrap();
-    // Showing the hidden ball adds it to the ball bucket; the bucket count stays three.
+    // The shown ball takes the box mesh: it moves from the ball bucket to the lit box bucket, and
+    // the bucket count stays three.
     world.frame = 2;
     world.scene.begin_frame(2);
-    let hidden = world.objects[3];
+    let ball = world.objects[2];
     world
         .scene
-        .apply_commands(&[null3d_core::scene::Command::set_visible(hidden, true)], 2)
+        .apply_commands(&[null3d_core::scene::Command::set_mesh(ball, 1)], 2)
         .unwrap();
-    world.scene.update_transforms(&world.jobs);
-    world.batches.update(&world.jobs, 2);
-    world.snapshot.record(2, &world.scene, &world.batches);
-    world
-        .renderer
-        .record(&null3d_render::gpu_driven::FrameInput {
-            frame: 2,
-            scene: &world.scene,
-            batches: &world.batches,
-            snapshot: &world.snapshot,
-            canvas: world.canvas,
-            structure_changed: true,
-        })
-        .unwrap();
+    assert!(world.scene.take_structure_changed());
+    world.record(true);
     mock.replay(world.renderer.list(2).words()).unwrap();
     let commands = world.commands();
     assert_eq!(count(&commands, Op::BeginBundle), 1);
     assert_eq!(count(&commands, Op::DrawIndexedIndirect), 3);
-    // The ball bucket's slice grows from one instance to two.
+    // Slices, in key order: lit boxes (two objects and the batch), lit balls (the hidden one),
+    // unlit boxes.
     let slices: Vec<u32> = commands
         .iter()
         .filter(|(op, o)| *op == Op::SetVertexBuffer && o[0] == 1)
         .map(|(_, o)| o[3] / 64)
         .collect();
-    assert_eq!(slices, vec![1 + BATCH_ROWS, 2, 1]);
+    assert_eq!(slices, vec![2 + BATCH_ROWS, 1, 1]);
+}
+
+/// Writes to the bucket table in a frame's commands: offset and byte count.
+fn bucket_table_writes(commands: &[(Op, Vec<u32>)]) -> Vec<(u32, u32)> {
+    commands
+        .iter()
+        .filter(|(op, o)| *op == Op::WriteBuffer && o[0] == 5)
+        .map(|(_, o)| (o[1], o[3]))
+        .collect()
+}
+
+#[test]
+fn showing_or_hiding_an_object_rewrites_its_entry_without_a_rebuild() {
+    let mut world = World::new();
+    let mut mock = MockBackend::default();
+    world.record(true);
+    mock.replay(world.renderer.list(1).words()).unwrap();
+    // The first frame's creation was a structure change, which the engine consumes each frame.
+    assert!(world.scene.take_structure_changed());
+    for (frame, object, visible) in [(2, 3, true), (3, 0, false)] {
+        world.frame = frame;
+        world.scene.begin_frame(frame);
+        let handle = world.objects[object];
+        world
+            .scene
+            .apply_commands(
+                &[null3d_core::scene::Command::set_visible(handle, visible)],
+                frame,
+            )
+            .unwrap();
+        assert!(!world.scene.take_structure_changed());
+        world.record(false);
+        mock.replay(world.renderer.list(frame).words()).unwrap();
+        let commands = world.commands();
+        assert_eq!(count(&commands, Op::BeginBundle), 0);
+        assert_eq!(count(&commands, Op::CreateBuffer), 0);
+        let slot = world.scene.resolve(handle).unwrap();
+        assert_eq!(bucket_table_writes(&commands), vec![(slot * 4, 4)]);
+    }
+}
+
+#[test]
+fn a_new_active_count_rewrites_the_rows_without_a_rebuild() {
+    let mut world = World::new();
+    let mut mock = MockBackend::default();
+    world.record(true);
+    mock.replay(world.renderer.list(1).words()).unwrap();
+    world.frame = 2;
+    let half = BATCH_ROWS / 2;
+    world
+        .batches
+        .get_mut(world.batch)
+        .unwrap()
+        .set_active_count(half)
+        .unwrap();
+    world.record(false);
+    mock.replay(world.renderer.list(2).words()).unwrap();
+    let commands = world.commands();
+    assert_eq!(count(&commands, Op::BeginBundle), 0);
+    assert_eq!(count(&commands, Op::CreateBuffer), 0);
+    // The batch's rows follow the scene's slots; the rows past the new count are hidden.
+    let base = SCENE_CAPACITY + 1;
+    assert_eq!(
+        bucket_table_writes(&commands),
+        vec![((base + half) * 4, half * 4)]
+    );
 }
 
 #[test]

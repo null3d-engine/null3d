@@ -53,6 +53,7 @@ Per-frame figures of a measurement: CPU time by thread, GPU time, frame interval
 | `gpuLatencyMs: Percentiles \| null` | Time from a frame's submit to the GPU finishing it. With a WebGL2 fence, the engine sees completion at its next frame callback, so the figure rounds up to frame intervals. |
 | `uploadBytes: Percentiles` | Bytes uploaded to the GPU per frame. |
 | `drawCalls: Percentiles` | Draw calls per frame. |
+| `rebuilds: number` | Frames whose structure change rebuilt the draw tables: objects created or destroyed, meshes or materials changed, or batches created or destroyed. Steady play has none; showing or hiding objects and changing a batch's active count do not rebuild. |
 
 ### `MainThreadStats`
 

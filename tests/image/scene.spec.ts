@@ -6,7 +6,12 @@ import { pageResult } from '../lib/page-result.ts';
 interface SceneResult {
 	error?: string;
 	capabilities: { tier: string };
-	stats: { drawCalls: { median: number }; uploadBytes: { count: number }; frames: number };
+	stats: {
+		drawCalls: { median: number };
+		uploadBytes: { count: number };
+		frames: number;
+		rebuilds: number;
+	};
 	failures: string[];
 	width: number;
 	height: number;
@@ -28,6 +33,9 @@ for (const [label, query] of [
 			// One bundle draws four buckets: the red box, the red sphere, the unlit blue box, and the
 			// green floor batch.
 			expect(result.stats.drawCalls.median).toBe(4);
+			// The measurement can start before the first frame, which builds the draw tables. The
+			// scene is still, so no later frame rebuilds them.
+			expect(result.stats.rebuilds).toBeLessThanOrEqual(1);
 			compareToReference(
 				'scene',
 				'webgpu',

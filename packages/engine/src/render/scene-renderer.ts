@@ -71,6 +71,7 @@ export class WebGPUSceneRenderer implements Renderer {
 		record.count(Counter.UploadBytes, backend.counts.uploadBytes);
 		record.count(Counter.DrawCalls, backend.counts.drawCalls);
 		record.count(Counter.Dispatches, backend.counts.dispatches);
+		record.count(Counter.Rebuilds, backend.counts.bundles);
 	}
 
 	/** Replays a frame into an offscreen copy of the canvas and reads its pixels back. */

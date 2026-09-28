@@ -60,6 +60,7 @@ These numbers are starting points. The engine docs page `guides/performance` hol
 | High "culling" on WebGL2 | Many objects checked on the CPU | Instances; larger static groups; layer masks; LODs |
 | Objects behind walls or buildings still cost GPU time on WebGL2 | No blocker meshes | Run the asset tool on level geometry so it makes blocker meshes (0.2); call `setOccluder(true)` on large custom walls (`concepts/culling`) |
 | High "upload" bytes | Dynamic batches or objects that rarely change | Static batches with `markDirty(start, count)` for the rows that changed |
+| `rebuilds` above zero during play, with upload and replay spikes in the same frames | Objects, meshes, materials or batches created, destroyed or changed during play: each such frame rebuilds the draw tables and uploads every matrix | Create during setup; hide and show with `setVisible` and pool with `setActiveCount`, which do not rebuild (`guides/performance`) |
 | High "replay" or draw buckets | Too many mesh and material combinations | Share materials; pack textures into arrays with `null3d assets`; merge small static meshes offline |
 | GPU time high, CPU low | Pixels or shader cost | Lower `maxPixelRatio`; cheaper materials; fewer shadowed lights; avoid large transparent areas |
 | Hitch when something new appears | Pipeline compiled during play | Create materials and objects during loading; `await scene.warmUp()` |

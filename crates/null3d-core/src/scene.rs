@@ -313,6 +313,8 @@ pub struct SceneStorage {
     levels: Vec<Level>,
     level_count: usize,
     order_dirty: bool,
+    /// True once a command other than a visibility change applied, until [`Self::take_structure_changed`].
+    structure_changed: bool,
     child_offsets: Vec<u32>,
     child_list: Vec<u32>,
     frame: u32,
@@ -353,6 +355,7 @@ impl SceneStorage {
             levels: vec![Level::default(); rows + 1],
             level_count: 0,
             order_dirty: false,
+            structure_changed: false,
             child_offsets: vec![0; rows],
             child_list: vec![0; rows],
             frame: 0,
@@ -605,6 +608,11 @@ impl SceneStorage {
         let mut first_error = None;
         let mut orphans_possible = false;
         for (i, command) in commands.iter().enumerate() {
+            // Showing or hiding an object keeps the scene's structure: the renderer updates the
+            // object's draw membership without rebuilding its tables.
+            if command.opcode() != op::SET_VISIBLE {
+                self.structure_changed = true;
+            }
             match self.apply_one(command, &mut orphans_possible) {
                 Ok(()) => {}
                 Err(error) => {
@@ -626,6 +634,12 @@ impl SceneStorage {
             }
         }
         first_error.map_or(Ok(()), Err)
+    }
+
+    /// True when a command other than a visibility change applied since the last call. The
+    /// renderer then rebuilds its tables.
+    pub fn take_structure_changed(&mut self) -> bool {
+        std::mem::take(&mut self.structure_changed)
     }
 
     /// The slot of a handle whose create command has been applied.

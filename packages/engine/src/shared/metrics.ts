@@ -62,9 +62,11 @@ export enum Counter {
 	UploadBytes = 0,
 	DrawCalls = 1,
 	Dispatches = 2,
+	/** Draw bundles recorded: nonzero in a frame whose structure change rebuilt the draw tables. */
+	Rebuilds = 3,
 }
 
-export const COUNTER_NAMES = ['uploadBytes', 'drawCalls', 'dispatches'] as const;
+export const COUNTER_NAMES = ['uploadBytes', 'drawCalls', 'dispatches', 'rebuilds'] as const;
 
 export type CounterName = (typeof COUNTER_NAMES)[number];
 

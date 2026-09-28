@@ -63,6 +63,12 @@ export interface FrameSummary {
 	uploadBytes: Percentiles;
 	/** Draw calls per frame. */
 	drawCalls: Percentiles;
+	/**
+	 * Frames whose structure change rebuilt the draw tables: objects created or destroyed, meshes or
+	 * materials changed, or batches created or destroyed. Steady play has none; showing or hiding
+	 * objects and changing a batch's active count do not rebuild.
+	 */
+	rebuilds: number;
 }
 
 /**
@@ -214,6 +220,7 @@ export function summarizeFrames(
 		gpuLatencyMs: completion.busy.length > 0 ? percentiles(completion.busy) : null,
 		uploadBytes: percentiles(render.counters[Counter.UploadBytes] ?? []),
 		drawCalls: percentiles(render.counters[Counter.DrawCalls] ?? []),
+		rebuilds: (render.counters[Counter.Rebuilds] ?? []).filter((n) => n > 0).length,
 	};
 }
 
