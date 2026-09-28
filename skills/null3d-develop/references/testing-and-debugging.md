@@ -11,6 +11,7 @@ Engine docs: `guides/testing`, `guides/debugging`, `errors/index`, `cli/null3d`.
 5. The MCP server for agents
 6. Error codes
 7. Troubleshooting table
+8. Before you ship
 
 ## 1. Commands
 
@@ -138,3 +139,39 @@ Look up the full explanation with `npx null3d docs show errors/E1203`. Release b
 | Tab reloads or crashes on a phone | Memory limit | Compressed textures, fewer and smaller assets, destroy unused prefabs | `guides/phones` |
 | `document is not defined` or `window is not defined` | DOM code in `sketch.ts` | Move it to `page.ts`; send data with messages | `api/page` |
 | Pointer position off by a factor | Mixing CSS pixels and render pixels | `input.pointer.x` and `y` are CSS pixels, like `screenToRay` expects | `api/input` |
+
+## 8. Before you ship
+
+Work through this list before a release, on the production build (`npx vite build`, then `npx vite preview`), not the dev server.
+
+Rendering:
+
+- The page renders with `?gpu=webgpu` and with `?gpu=webgl2`, and the console shows no errors and no warnings.
+- The image stays right after a window resize, at phone width, and at a pixel ratio of 3.
+- On a real phone, a ten-minute run holds its frame rate as the phone warms up (`guides/phones`).
+- A scene with more than 2,097,152 objects and instance rows ran on a device with WebGPU's default limits, or stays below that number. The limit of each device is in `engine.capabilities.maxInstances`.
+
+Startup:
+
+- The host sends the isolation headers, and lets browsers keep the hashed files under `assets/` (`getting-started/hosting`).
+- A cold load on Chrome's Slow 4G profile, with the cache off, reaches `engine.firstFrame` in a time you accept. The loading screen stays up until then.
+- `engine.measure(5)` reports no long tasks on the page's thread (`mainThread`) while the engine starts.
+
+Lifetime:
+
+- In a single-page app, leaving the view and coming back uses `engine.detach()` and `engine.attach()`. After `attach`, `measure` reports `rebuilds` and `pipelines` at zero.
+- Leaving the page during the start cancels it through the `signal` option, with no error in the console.
+- After `destroy`, a new engine starts cleanly, and the page's memory falls back.
+
+Failures:
+
+- The page says something useful with JavaScript off, and when the start fails. Point `sketch` at a missing file to force a failure.
+- The page handles `engine.onFailure`. Try it with `engine.simulateGpuLoss()`: the scene comes back on a new device.
+- A batch too large for engine memory fails with E1109 in development, not on the user's phone. Size batches for the rows they use.
+
+Accessibility:
+
+- The canvas's markup matches its purpose, keyboard users can do what pointer users can, and decorative motion stops under reduced motion (`guides/accessibility`).
+- A scene that moves on its own for longer than five seconds has a pause control.
+
+For a product or marketing page, also work through the checks in `references/content-pages.md`.

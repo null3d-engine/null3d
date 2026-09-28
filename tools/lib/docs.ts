@@ -96,6 +96,7 @@ export const PAGES: readonly PageEntry[] = [
 	{ id: 'guides/custom-passes', title: 'Custom passes and render targets', since: '0.2', summary: 'Declaring passes; reading and writing named textures; layer masks.' },
 	{ id: 'guides/loading-screens', title: 'Loading screens and warm-up', since: '0.1', summary: 'preload; onProgress; scene.warmUp; upload budgets.' },
 	{ id: 'guides/accessibility', title: 'Accessibility', since: '0.1', summary: 'What the canvas tells assistive technology; keyboard use; reduced motion; pausing; loading and errors.' },
+	{ id: 'guides/content-pages', title: '3D scenes on content pages', since: '0.1', summary: 'Product and marketing pages: the fallback page, a load deadline, pausing off screen, scroll-driven cameras, second visits and crashes.' },
 	{ id: 'guides/ui-overlays', title: 'UI, HTML overlays and labels', since: '0.2', summary: 'HTML UI on the page; labels that follow objects; GUI panels.' },
 	{ id: 'guides/video-textures', title: 'Video textures', since: 'after 1.0', summary: 'Planned after 1.0. Until then, the page sends ImageBitmap frames to the sketch; browser limits.' },
 	{ id: 'guides/audio', title: 'Audio with Web Audio', since: '0.1', summary: 'Why audio stays on the page; sending positions from the sketch.' },

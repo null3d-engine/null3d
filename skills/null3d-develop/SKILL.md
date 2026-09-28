@@ -1,6 +1,6 @@
 ---
 name: null3d-develop
-description: Build, extend, debug and speed up 3D web experiences made with the null3d engine (also written Null3D or null 3d), such as games, product viewers, configurators, data visualizations and interactive scenes. Use this skill whenever a task touches a null3d project or the @null3d packages, even for short requests like add a spinning cube, load this model, soften the shadows, click to select units, add a water shader, or why is it slow on my phone. Also use it to start a new null3d project, to write WGSL materials, post effects or render passes for null3d, and to test or profile null3d scenes. To convert existing three.js or React Three Fiber code, use the null3d-port-threejs skill instead.
+description: Build, extend, debug and speed up 3D web experiences made with the null3d engine (also written Null3D or null 3d), such as games, product viewers, configurators, product and marketing pages, data visualizations and interactive scenes. Use this skill whenever a task touches a null3d project or the @null3d packages, even for short requests like add a spinning cube, load this model, soften the shadows, click to select units, add a water shader, or why is it slow on my phone. Also use it to start a new null3d project, to write WGSL materials, post effects or render passes for null3d, and to test or profile null3d scenes. To convert existing three.js or React Three Fiber code, use the null3d-port-threejs skill instead.
 compatibility: Needs Node.js 20 or newer and a null3d project. The engine docs ship inside the engine package, so their version always matches the installed engine.
 metadata:
   skill-version: 0.1.0
@@ -146,6 +146,7 @@ Interaction:
 | Keys, pointer, gamepad | `input.isDown`, `input.pointer`, `input.actions.define` | `api/input` |
 | HTML UI and settings panels | On the page, sending messages to the sketch | `guides/ui-overlays` |
 | Labels above objects | `ui.trackLabel` in the sketch, `engine.labels.bind` on the page (0.2) | `api/ui` |
+| A product or marketing page with a 3D scene | Fallback page first, a load deadline, reveal on `engine.firstFrame`, pause off screen | `guides/content-pages`, `references/content-pages.md` |
 | Accessibility and reduced motion | Meaning in HTML around the canvas; `preferences.reducedMotion` brings decorative motion to rest | `guides/accessibility` |
 
 Effects:
@@ -202,6 +203,7 @@ Read these when the task needs them:
 - `references/performance.md`: budgets, how to measure, symptom-to-fix tables and phone rules.
 - `references/shaders.md`: the surface-function contract, built-in values, uniforms and textures, portable WGSL rules, custom post effects and custom passes.
 - `references/testing-and-debugging.md`: `null3d test`, image tests, testing on devices, the MCP server tools, error codes and a full troubleshooting table.
+- `references/content-pages.md`: product and marketing pages with a 3D scene: the fallback page, a load deadline, pausing, scroll-driven cameras, caching and crashes.
 
 ## 9. Before you finish
 
@@ -213,3 +215,4 @@ Read these when the task needs them:
 - For rendering changes, the WebGL2 path renders too.
 - Performance was checked against the preset budget for the target devices.
 - Your summary says what you verified, and what you could not verify.
+- Before a release, also work through "Before you ship" in `references/testing-and-debugging.md`.
