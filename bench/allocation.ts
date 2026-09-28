@@ -33,6 +33,7 @@ const WORKERS = ['game-worker', 'render-worker'] as const;
  *   the canvas texture and its view;
  * - the staging ring's mapping, for uploads that go through it: the mapped range and the views that
  *   copy into it, and the promise of the request to map the buffer again;
+ * - the upload route timing, which reads the clock around the uploads of one submit in a few;
  * - the time the browser passes to each animation frame callback, between tasks;
  * - the benchmark game's camera path, whose numbers go to the engine's development checks;
  * - an instance batch's array views, rebuilt once each time the engine's memory grows, which it
@@ -49,6 +50,7 @@ const BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = {
 	},
 	'render-worker': {
 		'replay webgpu/backend.ts': 320,
+		'commandEncoder webgpu/backend.ts': 32,
 		'draw render/loop.ts': 64,
 		'drawFrame render/scene-renderer.ts': 48,
 		'(IDLE)': 48,

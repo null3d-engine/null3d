@@ -3,7 +3,12 @@
 // small, falls back to writeBuffer while it grows, then reuses its buffers. After each frame it reads
 // every target buffer back and checks each byte against what that frame uploaded. It also reports
 // the WebGPU errors each frame raised, which explain lost uploads.
-import { STAGING_MAX_BYTES, STAGING_MIN_BYTES, WebGPUBackend } from '@sokko3d/engine/internal';
+import {
+	STAGING_MAX_BYTES,
+	STAGING_MIN_BYTES,
+	UploadRoutes,
+	WebGPUBackend,
+} from '@sokko3d/engine/internal';
 import * as G from '../../packages/engine/src/generated/gpu';
 import { TestMemory } from './lib/drawlist';
 import { run } from './lib/result';
@@ -27,7 +32,8 @@ run('uploads', async () => {
 	device.addEventListener('uncapturederror', (event) => {
 		uncaptured.push((event as GPUUncapturedErrorEvent).error.message);
 	});
-	const backend = new WebGPUBackend(device, undefined, 'rgba8unorm');
+	// Every upload in the ring's range takes the ring, whichever route this device favors.
+	const backend = new WebGPUBackend(device, undefined, 'rgba8unorm', new UploadRoutes(true));
 	const total = SIZES.reduce((sum, size) => sum + size, 0);
 	const memory = new TestMemory(total + SIZES.length * 256 + 64 * KIB, 256);
 	const sources = SIZES.map((size) => memory.put(new Uint8Array(size)));

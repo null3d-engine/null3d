@@ -76,7 +76,7 @@ Each dynamic instance uploads its 48-byte world matrix in every frame, so 100,00
 
 Mark objects and batches static when they rarely move, and call `markDirty` for the rows that you change. See [Static and dynamic objects](../concepts/static-dynamic.md).
 
-The render worker picks how each upload travels, so you do not need to. Uploads from 64 KiB up to 4 MiB go through staging buffers that the browser keeps mapped. In Chrome that is 3 to 6 times faster than the direct write call.
+The render worker picks how each upload travels, so you do not need to. For uploads from 64 KiB up to 4 MiB, it times two routes on the device and uses the faster one: the direct write call, or staging buffers that the browser keeps mapped. In Chrome the staging buffers are 3 to 6 times faster. In Safari the direct call is faster at every size.
 
 ## Measure
 

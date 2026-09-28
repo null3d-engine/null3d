@@ -1,18 +1,12 @@
 // Uploads through a ring of staging buffers that the browser keeps mapped for writing: a frame
 // copies its data into one of them, and the GPU copies it into place. This skips the transfer
-// memory that queue.writeBuffer goes through. In Chrome it is 3 to 6 times faster than writeBuffer
-// for uploads from 64 KiB to 4 MiB, where writeBuffer waits for that memory to drain. Smaller
-// uploads, and uploads of 4 MiB or more, are as fast or faster through writeBuffer, so they stay on
-// it.
+// memory that queue.writeBuffer goes through, which makes mid-size uploads 3 to 6 times faster in
+// Chrome. The upload route chooser decides which uploads take the ring.
 //
 // The copies of a frame wait in a list until the frame records its next command, and are recorded
 // then, after the staging buffer is unmapped. Safari rejects a submit whose commands hold more than
 // one copy from a buffer that was still mapped when the copies were recorded.
 
-/** Uploads smaller than this go through queue.writeBuffer. */
-export const STAGING_MIN_BYTES = 64 * 1024;
-/** Uploads this large or larger go through queue.writeBuffer, which copies them fastest. */
-export const STAGING_MAX_BYTES = 4 * 1024 * 1024;
 /** Staging buffers at most. The GPU runs a frame or two behind, so a frame rarely finds none free. */
 const MAX_SLOTS = 3;
 /** The smallest staging buffer; the ring makes bigger ones when frames need more. */
@@ -49,13 +43,10 @@ export class StagingRing {
 	/** The slots the current frame copied from, which are mapped again once the frame is submitted. */
 	private readonly flushed: (Slot | undefined)[] = new Array(MAX_SLOTS).fill(undefined);
 	private flushedCount = 0;
+	/** True after the ring made a staging buffer, until `takeMadeBuffer` reads it. */
+	private madeBuffer = false;
 
 	constructor(private readonly device: GPUDevice) {}
-
-	/** True when an upload of this many bytes goes through the ring. */
-	static suits(size: number): boolean {
-		return size >= STAGING_MIN_BYTES && size < STAGING_MAX_BYTES;
-	}
 
 	/** True while copies wait for `flush`. */
 	get pending(): boolean {
@@ -131,6 +122,13 @@ export class StagingRing {
 		this.flushedCount = 0;
 	}
 
+	/** True once after the ring made a staging buffer, a one-time cost that route timing skips. */
+	takeMadeBuffer(): boolean {
+		const made = this.madeBuffer;
+		this.madeBuffer = false;
+		return made;
+	}
+
 	destroy(): void {
 		for (const slot of this.slots) slot.buffer.destroy();
 		this.slots.length = 0;
@@ -186,6 +184,7 @@ export class StagingRing {
 			usage: GPUBufferUsage.MAP_WRITE | GPUBufferUsage.COPY_SRC,
 			mappedAtCreation: true,
 		});
+		this.madeBuffer = true;
 		const slot: Slot = {
 			buffer,
 			capacity,

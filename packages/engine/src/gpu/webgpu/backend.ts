@@ -7,6 +7,7 @@ import type { GpuTimer } from './gpu-timer';
 import { Pipelines } from './pipelines';
 import { RenderPassSetup, submitOne } from './reusable';
 import { StagingRing } from './staging';
+import { UploadRoutes } from './upload-routes';
 
 const TEXTURE_FORMATS: (GPUTextureFormat | undefined)[] = [];
 TEXTURE_FORMATS[G.FORMAT_RGBA8_UNORM] = 'rgba8unorm';
@@ -37,10 +38,15 @@ export class WebGPUBackend {
 	private readonly renderPass = new RenderPassSetup();
 	private readonly computePass: GPUComputePassDescriptor = {};
 
+	/**
+	 * `routes` chooses between writeBuffer and the staging ring for mid-size uploads; by default it
+	 * times both routes and takes the faster one.
+	 */
 	constructor(
 		readonly device: GPUDevice,
 		private readonly context: GPUCanvasContext | undefined,
 		canvasFormat: GPUTextureFormat,
+		private readonly routes = new UploadRoutes(),
 	) {
 		this.canvasFormat = canvasFormat;
 		this.pipelines = new Pipelines(device);
@@ -79,7 +85,11 @@ export class WebGPUBackend {
 	/** The frame's encoder, with the staged uploads recorded ahead of the command about to go in. */
 	private commandEncoder(): GPUCommandEncoder {
 		if (!this.encoder) this.encoder = this.device.createCommandEncoder();
-		this.staging.flush(this.encoder);
+		if (this.staging.pending) {
+			const start = this.routes.timing ? performance.now() : 0;
+			this.staging.flush(this.encoder);
+			if (this.routes.timing) this.routes.ringWork(performance.now() - start);
+		}
 		return this.encoder;
 	}
 
@@ -88,7 +98,10 @@ export class WebGPUBackend {
 		const encoder = this.commandEncoder();
 		this.timer?.resolve(encoder);
 		submitOne(this.device.queue, encoder.finish());
+		const start = this.routes.timing ? performance.now() : 0;
 		this.staging.afterSubmit();
+		if (this.routes.timing) this.routes.ringWork(performance.now() - start);
+		this.routes.submitted(this.staging.takeMadeBuffer());
 		this.encoder = undefined;
 		this.timer?.afterSubmit();
 	}
@@ -140,14 +153,22 @@ export class WebGPUBackend {
 					const size = words[a + 3] as number;
 					// A staged upload is a copy in the frame's commands, recorded before the next
 					// command, while writeBuffer lands before them all. A frame's writes never overlap
-					// and come before its passes, so either route leaves the same data.
-					const staged =
-						!pass &&
-						!computePass &&
-						StagingRing.suits(size) &&
-						this.staging.write(target, offset, memory, source, size);
+					// and come before its passes, so either route leaves the same data. Mid-size
+					// uploads take the route that the timings of this device favor.
+					const covered = UploadRoutes.covers(size);
+					const timed = covered && this.routes.timing;
+					let staged = false;
+					let start = timed ? performance.now() : 0;
+					if (covered && !pass && !computePass && this.routes.takesRing(size)) {
+						staged = this.staging.write(target, offset, memory, source, size);
+						if (staged && timed) this.routes.wroteToRing(size, performance.now() - start);
+						else if (timed) start = performance.now();
+					}
 					if (staged) this.counts.stagedBytes += size;
-					else device.queue.writeBuffer(target, offset, memory, source, size);
+					else {
+						device.queue.writeBuffer(target, offset, memory, source, size);
+						if (timed) this.routes.wroteDirect(size, performance.now() - start);
+					}
 					this.counts.uploadBytes += size;
 					break;
 				}

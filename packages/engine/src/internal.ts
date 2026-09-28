@@ -4,6 +4,10 @@ export type { GlslProgram, ShaderVariant } from './generated/shaders';
 export { SHADERS } from './generated/shaders';
 export { readbackWebGL2, readbackWebGPU } from './gpu/readback';
 export { WebGPUBackend } from './gpu/webgpu/backend';
-export { STAGING_MAX_BYTES, STAGING_MIN_BYTES } from './gpu/webgpu/staging';
+export {
+	STAGING_MAX_BYTES,
+	STAGING_MIN_BYTES,
+	UploadRoutes,
+} from './gpu/webgpu/upload-routes';
 export { probeCapabilities } from './page/capabilities';
 export { coreUrls, startCore } from './shared/core';
