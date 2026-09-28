@@ -1,10 +1,11 @@
 // Measures the display's refresh rate from the times of frame callbacks. The browser calls them once
-// per refresh, so the short intervals are the refresh period; longer ones come from a busy thread.
+// per refresh, so most intervals are the refresh period, jittering around it; the rare longer ones
+// come from a busy thread. The meter averages the intervals near the median.
 
 /** Callback intervals the meter keeps. */
 const SAMPLES = 32;
-/** The share of intervals, counted from the shortest, whose longest is the refresh period. */
-const SHORT_SHARE = 0.25;
+/** Intervals within this share of the median count toward the period; the rest are outliers. */
+const NEAR_MEDIAN = 0.2;
 /** Refresh rates that displays run at; a measurement this close to one reports that rate. */
 const DISPLAY_RATES = [24, 30, 48, 50, 60, 72, 75, 90, 100, 120, 144, 165, 180, 240, 360];
 const SNAP_SHARE = 0.03;
@@ -29,7 +30,14 @@ export class RefreshMeter {
 		if (this.count === 0 || this.count % SAMPLES !== 0) return undefined;
 		this.sorted.set(this.intervals);
 		this.sorted.sort();
-		const period = this.sorted[Math.floor(SAMPLES * SHORT_SHARE)] as number;
-		return period > 0 ? snapToDisplayRate(1000 / period) : undefined;
+		const median = this.sorted[SAMPLES >> 1] as number;
+		let sum = 0;
+		let near = 0;
+		for (const interval of this.sorted) {
+			if (Math.abs(interval - median) > median * NEAR_MEDIAN) continue;
+			sum += interval;
+			near++;
+		}
+		return near > 0 && sum > 0 ? snapToDisplayRate((1000 * near) / sum) : undefined;
 	}
 }

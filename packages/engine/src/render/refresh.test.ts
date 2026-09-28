@@ -18,6 +18,12 @@ describe('RefreshMeter', () => {
 		expect(feed(new RefreshMeter(), Array(32).fill(1000 / 60))).toBe(60);
 	});
 
+	it('averages out the jitter of real frame callbacks', () => {
+		const period = 1000 / 144;
+		const intervals = Array.from({ length: 32 }, (_, i) => period + (i % 2 === 0 ? -0.6 : 0.6));
+		expect(feed(new RefreshMeter(), intervals)).toBe(144);
+	});
+
 	it('ignores the long intervals of a busy thread', () => {
 		const intervals = Array.from({ length: 32 }, (_, i) => (i % 3 === 0 ? 2000 / 144 : 1000 / 144));
 		expect(feed(new RefreshMeter(), intervals)).toBe(144);
