@@ -10,7 +10,7 @@ summary: "The npm packages; the Vite plugin; package versions always match; the 
 
 > Planned for null3d 0.1. No release has these packages yet, so coding agents must not use them.
 
-null3d installs from npm like any other library, and you import it in your code as you would import `three`. You need no command-line tool to build or run a null3d game.
+null3d installs from npm like any other library, and you import it in your code as you would import `three`. You need no command-line tool to build or run a null3d sketch.
 
 ## Install the packages
 
@@ -23,7 +23,7 @@ npm install --save-dev vite @null3d/vite-plugin
 | --- | --- |
 | `@null3d/engine` | The TypeScript API, the worker entry points, both WebAssembly builds and these docs |
 | `@null3d/vite-plugin` | The build and dev server setup that null3d needs |
-| `@null3d/controls` | Orbit and map camera controls, for games that use them |
+| `@null3d/controls` | Orbit and map camera controls, for sketches that use them |
 
 ## Add the Vite plugin
 
@@ -38,15 +38,15 @@ export default defineConfig({ plugins: [null3d()] });
 The plugin does four jobs that a three.js project does not need:
 
 - Sends the two headers that let worker threads share memory, on the dev server and on `vite preview`. [Hosting and cross-origin isolation](hosting.md) explains them.
-- Compiles your game file for the game worker, and ships the engine's WebAssembly core with the production build. The build stops with an error if the installed engine lacks its core.
+- Compiles your sketch file for the sketch worker, and ships the engine's WebAssembly core with the production build. The build stops with an error if the installed engine lacks its core.
 - Translates your WGSL shaders for WebGL2.
 - Keeps the engine's development checks in the dev server and removes them from production builds.
 
 null3d has a plugin for Vite only.
 
-## Run the game
+## Run the sketch
 
-Write `page.ts` and `game.ts` as [Your first scene](first-scene.md) shows, then start Vite:
+Write `page.ts` and `sketch.ts` as [Your first scene](first-scene.md) shows, then start Vite:
 
 ```sh
 npx vite
@@ -71,6 +71,6 @@ npx null3d test
 
 ## Related pages
 
-- [Your first scene](first-scene.md): the page and the game worker.
+- [Your first scene](first-scene.md): the page and the sketch worker.
 - [Hosting and cross-origin isolation](hosting.md): the headers on your production host.
 - [Project structure](project-structure.md): starter templates and what runs where.

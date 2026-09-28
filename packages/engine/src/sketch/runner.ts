@@ -1,5 +1,5 @@
-// Runs a game module: starts the engine core on this thread, loads the module, calls its setup
-// function once with the scene API, and steps it once per frame. A frame runs the game's update,
+// Runs a sketch module: starts the engine core on this thread, loads the module, calls its setup
+// function once with the scene API, and steps it once per frame. A frame runs the sketch's update,
 // then the core's steps, and publishes the frame's draw list; each step's CPU time is recorded, and
 // so is the time each job worker spent on the frame's work.
 
@@ -12,8 +12,8 @@ import { Slot } from '../shared/control';
 import type { CoreGlue } from '../shared/core';
 import { FrameRecorder, Phase, Role } from '../shared/metrics';
 import { FrameClock } from './clock';
-import type { GameCallbacks, GameContext } from './define-game';
-import { isGameDefinition } from './define-game';
+import type { SketchCallbacks, SketchContext } from './define-sketch';
+import { isSketchDefinition } from './define-sketch';
 
 export type PagePoster = (type: string, data: unknown, transfer?: Transferable[]) => void;
 
@@ -22,7 +22,7 @@ const SCENE_CAPACITY = 16_383;
 const MAX_BATCHES = 256;
 const COMMAND_CAPACITY = 1 << 16;
 
-export interface GameCore {
+export interface SketchCore {
 	glue: CoreGlue;
 	memory: WebAssembly.Memory;
 	/** The control block's slots: the canvas size in, the published draw lists out. */
@@ -30,9 +30,9 @@ export interface GameCore {
 	jobWorkers: number;
 }
 
-export class GameRunner {
+export class SketchRunner {
 	private readonly messageHandlers: ((type: string, data: unknown) => void)[] = [];
-	private callbacks: GameCallbacks = {};
+	private callbacks: SketchCallbacks = {};
 	private readonly clock = new FrameClock();
 	private gpuEpoch = 0;
 	private readonly record: FrameRecorder;
@@ -42,22 +42,27 @@ export class GameRunner {
 	private readonly reported = new Set<string>();
 	/** When the current phase of the frame started. */
 	private phaseStart = 0;
-	readonly context: GameContext;
+	readonly context: SketchContext;
 
 	constructor(
 		post: PagePoster,
 		metrics: ArrayBufferLike,
-		private readonly game: GameCore,
+		private readonly sketch: SketchCore,
 	) {
-		this.record = new FrameRecorder(metrics, Role.Game);
+		this.record = new FrameRecorder(metrics, Role.Sketch);
 		this.jobRecords = Array.from(
-			{ length: game.jobWorkers },
+			{ length: sketch.jobWorkers },
 			(_, k) => new FrameRecorder(metrics, Role.Job + k),
 		);
-		const { glue, slots } = game;
-		const status = glue.initEngine(game.jobWorkers, SCENE_CAPACITY, MAX_BATCHES, COMMAND_CAPACITY);
+		const { glue, slots } = sketch;
+		const status = glue.initEngine(
+			sketch.jobWorkers,
+			SCENE_CAPACITY,
+			MAX_BATCHES,
+			COMMAND_CAPACITY,
+		);
 		if (status !== 0) throw coreFailure(glue, 'createEngine');
-		this.core = new CoreMemory(glue, game.memory);
+		this.core = new CoreMemory(glue, sketch.memory);
 		Atomics.store(slots, Slot.DrawListAddress0, glue.drawListAddress(0));
 		Atomics.store(slots, Slot.DrawListAddress1, glue.drawListAddress(1));
 		const time = { now: 0, frame: 0 };
@@ -75,16 +80,16 @@ export class GameRunner {
 		};
 	}
 
-	/** Imports the game module and runs its setup function. */
-	async load(gameUrl: string): Promise<void> {
-		const module = (await import(/* @vite-ignore */ gameUrl)) as { default?: unknown };
-		if (!isGameDefinition(module.default)) {
-			throw new EngineError('E1401', `${gameUrl} must export default defineGame(...).`);
+	/** Imports the sketch module and runs its setup function. */
+	async load(sketchUrl: string): Promise<void> {
+		const module = (await import(/* @vite-ignore */ sketchUrl)) as { default?: unknown };
+		if (!isSketchDefinition(module.default)) {
+			throw new EngineError('E1401', `${sketchUrl} must export default defineSketch(...).`);
 		}
 		this.callbacks = (await module.default.setup(this.context)) ?? {};
 	}
 
-	/** Delivers a message the page sent with engine.postToGame. */
+	/** Delivers a message the page sent with engine.postToSketch. */
 	receive(type: string, data: unknown): void {
 		for (const handler of this.messageHandlers) handler(type, data);
 	}
@@ -105,13 +110,13 @@ export class GameRunner {
 	}
 
 	/**
-	 * Advances the game by one frame and returns the new frame number, counting from 1. `now` is a
+	 * Advances the sketch by one frame and returns the new frame number, counting from 1. `now` is a
 	 * timestamp in milliseconds; in hold mode the caller passes a fixed time instead.
 	 */
 	step(now: number): number {
 		const start = performance.now();
 		const { time } = this.context;
-		const { glue, slots } = this.game;
+		const { glue, slots } = this.sketch;
 		const dt = this.clock.step(now, Atomics.load(slots, Slot.Resumes));
 		time.now = this.clock.now;
 		time.frame++;

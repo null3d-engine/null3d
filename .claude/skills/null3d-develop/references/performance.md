@@ -20,19 +20,19 @@ A frame has three kinds of cost, and each has its own fixes.
 
 | Cost | Where it runs | Grows with | Typical fixes |
 | --- | --- | --- | --- |
-| Game code | Game worker | Your `onUpdate` loops, allocations, messages | Typed-array loops, no allocation, fewer messages |
-| Engine CPU work | Job workers and the game worker | Moving objects, hierarchy depth, animation, culling on WebGL2 | Static objects, instances, fewer levels, LODs |
+| Sketch code | Sketch worker | Your `onUpdate` loops, allocations, messages | Typed-array loops, no allocation, fewer messages |
+| Engine CPU work | Job workers and the sketch worker | Moving objects, hierarchy depth, animation, culling on WebGL2 | Static objects, instances, fewer levels, LODs |
 | GPU work | GPU | Pixels, shader cost, overdraw, shadow maps, draw buckets | Pixel-ratio cap, presets, cheaper materials, fewer shadowed lights |
 
-In pipelined mode the render worker draws frame N while the game worker computes frame N+1, so the slower of the two sets the frame rate. The stats overlay shows both.
+In pipelined mode the render worker draws frame N while the sketch worker computes frame N+1, so the slower of the two sets the frame rate. The stats overlay shows both.
 
-Game code is usually the largest CPU cost, so tune it first. In the S1 benchmark (100,000 boxes that `onUpdate` moves every frame, Chrome, MacBook Pro), the game's update took 2.18 ms per frame. The engine's own steps took 0.14 ms on the game worker, the render worker 0.15 ms, and 16 job workers 0.45 ms together. The engine docs page `guides/performance` has the full split.
+Sketch code is usually the largest CPU cost, so tune it first. In the S1 benchmark (100,000 boxes that `onUpdate` moves every frame, Chrome, MacBook Pro), the sketch's update took 2.18 ms per frame. The engine's own steps took 0.14 ms on the sketch worker, the render worker 0.15 ms, and 16 job workers 0.45 ms together. The engine docs page `guides/performance` has the full split.
 
 ## 2. Budgets
 
 At 60 frames per second a frame has 16.7 ms. Plan to use at most about 70% of it, because phones slow down when they heat up.
 
-| Target | Frame | Game code | Engine CPU (per thread) | GPU |
+| Target | Frame | Sketch code | Engine CPU (per thread) | GPU |
 | --- | --- | --- | --- | --- |
 | 60 fps desktop | 16.7 ms | 4 ms | 6 ms | 12 ms |
 | 60 fps phone | 16.7 ms | 3 ms | 5 ms | 11 ms |
@@ -45,7 +45,7 @@ These numbers are starting points. The engine docs page `guides/performance` hol
 1. Turn on the overlay: `debug.stats(true)`. It shows CPU time per thread and phase (update, transforms, animation, culling, recording, upload, replay), GPU time where the device has timers, frame intervals, draw buckets, uploaded bytes, the GPU tier and the preset.
 2. Run the repeatable benchmark: `npx null3d bench --scene <name>`. It runs 5 times 30 seconds after warm-up and prints the median and spread per phase. Use it before and after a change.
 3. Read numbers in code or tests: `debug.frameStats()` returns the same values.
-4. Profile JavaScript in the browser's performance panel. Game code runs in the worker named `null3d-game`; look there, not on the main thread.
+4. Profile JavaScript in the browser's performance panel. Sketch code runs in the worker named `null3d-sketch`; look there, not on the main thread.
 5. Check the WebGL2 path: add `?gpu=webgl2` to the URL. Phones without WebGPU use this path, and it does more CPU work (culling on job workers).
 6. On phones, GPU timers are rare (under 1% of Android and iOS reports have them on WebGL2), so judge the GPU by frame intervals with the CPU phases subtracted.
 7. `engine.measure(seconds)` on the page returns these figures. The `guides/performance` page explains each one and how to measure fairly. Warm up, keep the page visible and the screen unlocked, and compare runs at the same `refreshHz`. When `completedFps` is below `presentedFps`, the GPU is the bottleneck: frames queue on it.
@@ -54,7 +54,7 @@ These numbers are starting points. The engine docs page `guides/performance` hol
 
 | Symptom in the overlay | Likely cause | Fix |
 | --- | --- | --- |
-| High "update" time | Heavy game code | Loop over typed arrays; move work to `onFixedUpdate` at a lower rate; spread AI over frames |
+| High "update" time | Heavy sketch code | Loop over typed arrays; move work to `onFixedUpdate` at a lower rate; spread AI over frames |
 | Periodic spikes in "update" | Garbage collection | Remove allocations from per-frame code: no `new`, literals or closures; use scratch arrays |
 | High "transforms" | Many dynamic objects or deep hierarchies | Make objects static when they rarely move; flatten hierarchies; use instance batches |
 | High "animation" | Many skinned characters | Lower far update rates (preset); share poses between identical characters; use LODs |

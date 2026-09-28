@@ -1,6 +1,6 @@
 // A job worker: runs the engine core's parallel loops over scene data. It loads the core with the
 // shared memory, reports that it is ready, and then serves the core's job system until the engine
-// stops. Serving blocks this worker's thread, which a job worker may do; the game worker never
+// stops. Serving blocks this worker's thread, which a job worker may do; the sketch worker never
 // blocks.
 
 import { startCore } from '../shared/core';

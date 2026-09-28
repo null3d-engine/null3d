@@ -1,4 +1,4 @@
-// Which keys and pointers are down, so the page can release them when the game can no longer see
+// Which keys and pointers are down, so the page can release them when the sketch can no longer see
 // them go up, and which page elements take typing, whose key presses belong to the page.
 
 /** A pointer that is down: where it was last seen and which button pressed it. */
@@ -51,7 +51,7 @@ export class HeldInput {
 	}
 }
 
-/** True for a page element that takes typing, whose key presses belong to the page, not the game. */
+/** True for a page element that takes typing, whose key presses belong to the page, not the sketch. */
 export function isEditableTarget(target: unknown): boolean {
 	const element = target as { tagName?: string; isContentEditable?: boolean } | null;
 	if (!element) return false;

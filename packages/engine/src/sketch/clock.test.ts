@@ -18,7 +18,7 @@ describe('FrameClock', () => {
 		expect(clock.now).toBeCloseTo(0.032);
 	});
 
-	it('caps one slow frame, so it slows the game instead of jumping it', () => {
+	it('caps one slow frame, so it slows the sketch instead of jumping it', () => {
 		const clock = new FrameClock();
 		clock.step(0, 0);
 		expect(clock.step(2000, 0)).toBe(MAX_STEP_SECONDS);

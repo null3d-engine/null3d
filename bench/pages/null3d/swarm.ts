@@ -1,6 +1,6 @@
-// S1's instances as one null3d instance batch. The game writes each row's position and rotation
+// S1's instances as one null3d instance batch. The sketch writes each row's position and rotation
 // straight into the batch's arrays; the engine computes the matrices on its job workers.
-import type { GameContext, InstanceBatch } from '@null3d/engine';
+import type { InstanceBatch, SketchContext } from '@null3d/engine';
 import { createS1, S1_BOX_SIZE, S1_COLOR, s1InstanceAt } from '../../scenes/spec';
 
 export interface Swarm {
@@ -10,7 +10,7 @@ export interface Swarm {
 }
 
 export function createSwarm(
-	{ scene, materials, geometry }: GameContext,
+	{ scene, materials, geometry }: SketchContext,
 	count: number,
 	dynamic: boolean,
 ): Swarm {

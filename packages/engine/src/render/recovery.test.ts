@@ -57,7 +57,7 @@ function setup(create?: () => Promise<FakeRenderer>) {
 }
 
 describe('Drawing', () => {
-	it('replaces a lost renderer, starts a new loop and tells the game thread', async () => {
+	it('replaces a lost renderer, starts a new loop and tells the sketch thread', async () => {
 		const { slots, renderers, loops, failures, drawing, last } = setup();
 		last().lose('driver reset');
 		await settle();

@@ -1,6 +1,6 @@
-// The render loop for a thread that owns the canvas and runs no game code: the render worker in
+// The render loop for a thread that owns the canvas and runs no sketch code: the render worker in
 // pipelined mode, or the page's main thread with ?render=main. Inside its own frame callback it takes
-// the newest published frame, applies a pending resize, draws, and tells the game worker it may
+// the newest published frame, applies a pending resize, draws, and tells the sketch worker it may
 // compute the next frame.
 
 import { controlViews, Slot } from '../shared/control';

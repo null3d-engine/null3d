@@ -66,7 +66,7 @@ With `WebGLRenderer`, reading the canvas in the same task as the render works wi
 npx null3d port compare --baseline baseline/ --views views.json --gpu webgpu,webgl2   # (0.3)
 ```
 
-The command runs the game in hold mode, overrides the active camera with each view's camera, captures through the engine's readback, and compares each image with the baseline using three.js's own image comparison script. It writes `compare/<view>.<tier>.actual.png`, `.diff.png` and a summary in the terminal.
+The command runs the sketch in hold mode, overrides the active camera with each view's camera, captures through the engine's readback, and compares each image with the baseline using three.js's own image comparison script. It writes `compare/<view>.<tier>.actual.png`, `.diff.png` and a summary in the terminal.
 
 Before 0.3, write one visual test per view with `defineVisualTest` (null3d-develop `references/testing-and-debugging.md`), with the camera set from the view in `setup`, and compare the output images with the baseline by hand.
 

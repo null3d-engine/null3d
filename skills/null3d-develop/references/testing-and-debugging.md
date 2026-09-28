@@ -37,7 +37,7 @@ import { defineVisualTest } from '@null3d/engine/testing';
 
 export default defineVisualTest({
   name: 'boat at sunset',
-  game: () => import('../src/game'),       // the real game module
+  sketch: () => import('../src/sketch'),       // the real sketch module
   setup: (ctx) => ctx.page.post('test-view', 'harbor'),  // optional: pick a camera or state
   time: 2.0,                                // seconds of simulated time before capture
   size: [640, 360],
@@ -54,11 +54,11 @@ export default defineVisualTest({
 
 ```ts
 // tests/pickup.test.ts
-import { defineGameTest } from '@null3d/engine/testing';
+import { defineSketchTest } from '@null3d/engine/testing';
 
-export default defineGameTest({
+export default defineSketchTest({
   name: 'player picks up a coin',
-  game: () => import('../src/game'),
+  sketch: () => import('../src/sketch'),
   steps: 120,                                  // fixed steps at 60 Hz
   input: [{ at: 0, down: 'KeyW' }, { at: 60, up: 'KeyW' }],
   assert: ({ scene, messages }) => {
@@ -67,7 +67,7 @@ export default defineGameTest({
 });
 ```
 
-Behavior tests run the game worker code with scripted input. They check game logic and messages to the page, not pixels.
+Behavior tests run the sketch worker code with scripted input. They check sketch logic and messages to the page, not pixels.
 
 ## 4. Testing on real devices
 
@@ -136,5 +136,5 @@ Look up the full explanation with `npx null3d docs show errors/E1203`. Release b
 | Stutter every few seconds | Garbage collection | Remove per-frame allocations | `guides/performance` |
 | Hitch when something appears | Pipeline compile | Create earlier; `scene.warmUp()` | `guides/loading-screens` |
 | Tab reloads or crashes on a phone | Memory limit | Compressed textures, fewer and smaller assets, destroy unused prefabs | `guides/phones` |
-| `document is not defined` or `window is not defined` | DOM code in `game.ts` | Move it to `page.ts`; send data with messages | `api/page` |
+| `document is not defined` or `window is not defined` | DOM code in `sketch.ts` | Move it to `page.ts`; send data with messages | `api/page` |
 | Pointer position off by a factor | Mixing CSS pixels and render pixels | `input.pointer.x` and `y` are CSS pixels, like `screenToRay` expects | `api/input` |

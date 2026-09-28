@@ -1,17 +1,17 @@
-// What every null3d benchmark game shares: its options from its own module address, the view
+// What every null3d benchmark sketch shares: its options from its own module address, the view
 // (background, lights and camera) from the shared scene module, and a camera that follows a path.
-import type { Camera, GameContext } from '@null3d/engine';
+import type { Camera, SketchContext } from '@null3d/engine';
 import { AMBIENT, BACKGROUND, CAMERA, type OutArray, SUN } from '../../scenes/spec';
 
-export interface GameOptions {
+export interface SketchOptions {
 	/** The object count. */
 	count: number;
-	/** The scene time to draw on every frame, or null to follow the game's clock. */
+	/** The scene time to draw on every frame, or null to follow the sketch's clock. */
 	hold: number | null;
 }
 
-/** Reads `n` and `holdMs` from the game module's address, where the page harness puts them. */
-export function readGameOptions(moduleUrl: string): GameOptions {
+/** Reads `n` and `holdMs` from the sketch module's address, where the page harness puts them. */
+export function readSketchOptions(moduleUrl: string): SketchOptions {
 	const params = new URL(moduleUrl).searchParams;
 	const holdMs = params.get('holdMs');
 	return {
@@ -20,13 +20,13 @@ export function readGameOptions(moduleUrl: string): GameOptions {
 	};
 }
 
-/** The scene time of a frame: the held time in hold mode, else the time since the game started. */
-export function sceneTime(options: GameOptions, context: GameContext): number {
+/** The scene time of a frame: the held time in hold mode, else the time since the sketch started. */
+export function sceneTime(options: SketchOptions, context: SketchContext): number {
 	return options.hold ?? context.time.now;
 }
 
 /** Sets the background and the lights, and makes the active camera. */
-export function setUpView({ scene }: GameContext): Camera {
+export function setUpView({ scene }: SketchContext): Camera {
 	scene.setBackground(BACKGROUND);
 	scene.createDirectionalLight({
 		direction: SUN.direction,

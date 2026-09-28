@@ -9,7 +9,7 @@ metadata:
 
 # Building with null3d
 
-null3d is a browser 3D engine with a Rust core compiled to WebAssembly. Game code runs in a worker, the engine draws from another worker, and scene data lives in shared typed arrays. It renders with WebGPU where the browser has it and with WebGL2 elsewhere, from the same game code. Most mistakes come from writing null3d as if it were three.js, and the sections below exist to prevent that.
+null3d is a browser 3D engine with a Rust core compiled to WebAssembly. Sketch code runs in a worker, the engine draws from another worker, and scene data lives in shared typed arrays. It renders with WebGPU where the browser has it and with WebGL2 elsewhere, from the same sketch code. Most mistakes come from writing null3d as if it were three.js, and the sections below exist to prevent that.
 
 ## 1. Find the docs that match the installed engine
 
@@ -27,18 +27,20 @@ Doc IDs appear in backticks throughout, for example `concepts/architecture`. Ver
 
 ## 2. The model
 
+In null3d, a 3D scene is called a sketch: the module in `sketch.ts` that builds the scene with `defineSketch` and updates it every frame.
+
 ```
-page.ts (main thread)        game.ts (game worker)              render worker
----------------------        ---------------------              -------------
+page.ts (main thread)        sketch.ts (sketch worker)          render worker
+---------------------        -------------------------          -------------
 HTML, CSS, UI, audio   -->   input, onUpdate, scene changes -->  GPU uploads and drawing
 creates the engine           shared typed arrays                 never runs your code
 ```
 
-- `page.ts` runs on the main thread. It creates the engine and owns the DOM, HTML UI and Web Audio. `game.ts` runs in the game worker: scene setup and per-frame logic. The game worker has no `document` and no `window`. The two sides talk with `engine.postToGame` and `page.onMessage`, and with `page.post` and `engine.onGameMessage`. (`concepts/architecture`, `api/page`)
+- `page.ts` runs on the main thread. It creates the engine and owns the DOM, HTML UI and Web Audio. `sketch.ts` runs in the sketch worker: scene setup and per-frame logic. The sketch worker has no `document` and no `window`. The two sides talk with `engine.postToSketch` and `page.onMessage`, and with `page.post` and `engine.onSketchMessage`. (`concepts/architecture`, `api/page`)
 - Scene objects are small wrappers around 30-bit integer handles. Change them with setters such as `setPosition`; never assign properties like `mesh.position.x = 1`. (`concepts/handles`, `api/objects`)
 - For many objects, write typed arrays directly: instance batches and dynamic objects. This is where null3d gets its speed. (`concepts/instances`)
 - Objects are static by default: they cost nothing per frame until a setter changes them. Objects created with `dynamic: true` are recomputed every frame and may be written through arrays. (`concepts/static-dynamic`)
-- The engine renders every frame by itself. Game code has no render call and no `requestAnimationFrame`; per-frame logic goes in `onUpdate(dt)`.
+- The engine renders every frame by itself. Sketch code has no render call and no `requestAnimationFrame`; per-frame logic goes in `onUpdate(dt)`.
 - The same code runs on WebGPU and WebGL2. When a feature is optional, check `ctx.engine.capabilities`; never check browser or GPU names. (`concepts/backends`)
 
 A complete minimal project:
@@ -49,15 +51,15 @@ import { createEngine } from '@null3d/engine';
 
 await createEngine({
   canvas: document.querySelector('canvas')!,
-  game: new URL('./game.ts', import.meta.url),
+  sketch: new URL('./sketch.ts', import.meta.url),
 });
 ```
 
 ```ts
-// game.ts (game worker)
-import { defineGame } from '@null3d/engine';
+// sketch.ts (sketch worker)
+import { defineSketch } from '@null3d/engine';
 
-export default defineGame(async ({ scene, geometry, materials }) => {
+export default defineSketch(async ({ scene, geometry, materials }) => {
   const camera = scene.createPerspectiveCamera({ fov: 60, position: [0, 1.5, 4], target: [0, 0, 0] });
   scene.setActiveCamera(camera);
   scene.createDirectionalLight({ direction: [-1, -2, -1], intensity: 3, castShadows: true });
@@ -82,7 +84,7 @@ export default defineGame(async ({ scene, geometry, materials }) => {
 
 1. Pin down the target when the request leaves it open: which devices (phones or desktop), which frame rate, and whether the WebGL2 path matters. Phones usually matter, so assume they do unless told otherwise.
 2. Read the doc pages for the features involved (section 1).
-3. Make the change in small steps. Game logic goes in `game.ts`; DOM, HTML UI and audio go in `page.ts`.
+3. Make the change in small steps. Scene logic goes in `sketch.ts`; DOM, HTML UI and audio go in `page.ts`.
 4. Look at the result. `npx vite` serves the project, and the null3d Vite plugin adds the right headers. `npx null3d shot --out shot.png` renders one frame headless and saves it. Open the image and check it: code that compiles can still draw nothing.
 5. Check the cost with `npx null3d bench`, or with `debug.stats(true)` while running. Compare the frame phases with the preset's budget (`references/performance.md`).
 6. Add or update a test. Anything visual gets a hold-mode image test (`references/testing-and-debugging.md`). Run `npx null3d test`.
@@ -93,7 +95,7 @@ export default defineGame(async ({ scene, geometry, materials }) => {
 
 Each rule comes with its reason, because the reason covers cases the rule does not name.
 
-1. Allocate nothing in `onUpdate`, `onFixedUpdate` or `onLateUpdate`: no `new`, no array or object literals, no closures, no `map` or `filter`. Create scratch values once at setup, such as `const tmp = vec3.create()`. Garbage collection pauses the game worker, and players see the pause as a stutter.
+1. Allocate nothing in `onUpdate`, `onFixedUpdate` or `onLateUpdate`: no `new`, no array or object literals, no closures, no `map` or `filter`. Create scratch values once at setup, such as `const tmp = vec3.create()`. Garbage collection pauses the sketch worker, and users see the pause as a stutter.
 2. Use an instance batch for many copies of one mesh. A batch is one engine object and one typed array for you, where the same number of `createMesh` calls means as many objects to manage. (`concepts/instances`)
 3. Move many objects by writing arrays, not by calling setters in a loop. Each setter call crosses from JavaScript into WebAssembly; a typed-array write does not cross at all.
 4. Create an object with `dynamic: true` only if it changes most frames. Static objects cost nothing until changed, and dynamic ones are recomputed every frame. Only dynamic objects and batches may be written through arrays, because static objects rely on setters to mark them changed.
@@ -142,8 +144,8 @@ Interaction:
 | Fly or first-person camera | `createFlyControls` or `createFirstPersonControls` (0.2) | `api/controls` |
 | Click or hover on objects | `obj.on('click', fn)` and `'pointerenter'` or `'pointerleave'` (0.2), or `camera.screenToRay` with `scene.raycast` | `api/raycast` |
 | Keys, pointer, gamepad | `input.isDown`, `input.pointer`, `input.actions.define` | `api/input` |
-| HTML UI and settings panels | On the page, sending messages to the game | `guides/ui-overlays` |
-| Labels above objects | `ui.trackLabel` in the game, `engine.labels.bind` on the page (0.2) | `api/ui` |
+| HTML UI and settings panels | On the page, sending messages to the sketch | `guides/ui-overlays` |
+| Labels above objects | `ui.trackLabel` in the sketch, `engine.labels.bind` on the page (0.2) | `api/ui` |
 
 Effects:
 

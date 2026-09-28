@@ -1,7 +1,7 @@
 // The null3d version of S2, the hierarchy: 14 trees of separate meshes whose roots turn every
 // frame. Every node is a scene object under its parent; the engine propagates the roots' turns to
 // the static children, level by level on its job workers.
-import { defineGame, type Mesh } from '@null3d/engine';
+import { defineSketch, type Mesh } from '@null3d/engine';
 import {
 	createS2,
 	S2_COLORS,
@@ -11,11 +11,11 @@ import {
 	s2MeshSize,
 	s2RootRotation,
 } from '../../scenes/spec';
-import { followPath, readGameOptions, sceneTime, setUpView } from './game-common';
+import { followPath, readSketchOptions, sceneTime, setUpView } from './sketch-common';
 
-export default defineGame((context) => {
+export default defineSketch((context) => {
 	const { scene, materials, geometry } = context;
-	const options = readGameOptions(import.meta.url);
+	const options = readSketchOptions(import.meta.url);
 	const moveCamera = followPath(setUpView(context), s2Camera);
 	const data = createS2();
 	const meshes = Array.from({ length: S2_MESH_COUNT }, (_, k) => {

@@ -118,11 +118,11 @@ export const ERRORS = {
 		since: '0.1',
 	},
 	E1401: {
-		title: 'Not a game module',
+		title: 'Not a sketch module',
 		cause:
-			'The module passed to createEngine as the game does not export a game as its default export.',
-		fix: 'End the game module with export default defineGame(...), and pass that module to createEngine.',
-		example: 'E1401: /game.ts must export default defineGame(...).',
+			'The module passed to createEngine as the sketch does not export a sketch as its default export.',
+		fix: 'End the sketch module with export default defineSketch(...), and pass that module to createEngine.',
+		example: 'E1401: /sketch.ts must export default defineSketch(...).',
 		since: '0.1',
 	},
 	E1402: {
@@ -137,7 +137,7 @@ export const ERRORS = {
 		title: 'Engine core not ready',
 		cause:
 			'An engine call ran before the engine core started in this worker, or the core started twice.',
-		fix: 'Create objects in the setup function you pass to defineGame, or later, never when the game module loads.',
+		fix: 'Create objects in the setup function you pass to defineSketch, or later, never when the sketch module loads.',
 		example: 'E1403: createMesh() ran before the engine core started.',
 		since: '0.1',
 	},
@@ -151,7 +151,7 @@ export const ERRORS = {
 	},
 	E1405: {
 		title: 'Engine thread did not start',
-		cause: 'An engine thread failed while the engine started, before the game ran.',
+		cause: 'An engine thread failed while the engine started, before the sketch ran.',
 		fix: 'Read the message for the thread and its cause. Check that the page is served with the isolation headers and that the engine files load, then report it if it repeats.',
 		example: 'E1405: the render worker did not start: no WebGPU adapter.',
 		since: '0.1',

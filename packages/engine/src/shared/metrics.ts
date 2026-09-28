@@ -10,7 +10,7 @@
 
 /** The rings of the metrics buffer, one per thread role. Job worker k writes ring `Role.Job + k`. */
 export enum Role {
-	Game = 0,
+	Sketch = 0,
 	Render = 1,
 	/** GPU time per frame from timestamp queries, written by the thread that draws. */
 	Gpu = 2,
@@ -24,7 +24,7 @@ export enum Role {
 
 /** CPU phases of a frame, in the order they run. */
 export enum Phase {
-	/** The game's update callback. */
+	/** The sketch's update callback. */
 	Update = 0,
 	/** Structural changes applied from the command ring. */
 	Commands = 1,
@@ -51,7 +51,7 @@ export const PHASE_NAMES = [
 ] as const;
 
 /**
- * A step of a frame that `engine.measure` times. The `update` step is the game's own code, and the
+ * A step of a frame that `engine.measure` times. The `update` step is the sketch's own code, and the
  * other steps are the engine's.
  *
  * @category api/debug
@@ -99,7 +99,7 @@ function recordsStart(rings: number): number {
 	return Math.ceil((HEADER_WORDS + rings) / RECORD_WORDS) * RECORD_WORDS;
 }
 
-/** A metrics buffer with rings for the game, render and GPU roles and each job worker. */
+/** A metrics buffer with rings for the sketch, render and GPU roles and each job worker. */
 export function createMetricsBuffer(
 	shared: boolean,
 	jobWorkers: number,

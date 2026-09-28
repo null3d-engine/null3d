@@ -1,8 +1,8 @@
 // The page side of input and resizing. Pointer, keyboard and wheel events go into the input ring in
-// the control block, where the game reads them at the start of its next frame. Canvas size changes
+// the control block, where the sketch reads them at the start of its next frame. Canvas size changes
 // go into the control block too; the thread that owns the canvas applies them at frame start. When
 // the window loses focus, the page hides or a touch turns into a scroll, every held key and button
-// is released, so none stays down in the game.
+// is released, so none stays down in the sketch.
 
 import {
 	controlViews,
@@ -76,7 +76,7 @@ export function captureInput(
 		write(InputEventType.KeyDown, 0, 0, 0, event.keyCode, modifiers(event), 0);
 	};
 	const onKeyUp = (event: KeyboardEvent) => {
-		// A key pressed in the game still releases there when focus moved to a text field meanwhile.
+		// A key pressed in the sketch still releases there when focus moved to a text field meanwhile.
 		if (!held.keyUp(event.keyCode) && isEditableTarget(event.target)) return;
 		write(InputEventType.KeyUp, 0, 0, 0, event.keyCode, modifiers(event), 0);
 	};

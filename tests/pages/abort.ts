@@ -3,7 +3,7 @@
 import { createEngine } from '@null3d/engine';
 import { run } from './lib/result';
 
-const game = new URL('./games/empty-game.ts', import.meta.url);
+const sketch = new URL('./sketches/empty-sketch.ts', import.meta.url);
 
 function freshCanvas(): HTMLCanvasElement {
 	const canvas = document.createElement('canvas');
@@ -25,21 +25,21 @@ async function cancelled(
 
 run('abort', async () => {
 	const early = await cancelled((controller) => {
-		const starting = createEngine({ canvas: freshCanvas(), game, signal: controller.signal });
+		const starting = createEngine({ canvas: freshCanvas(), sketch, signal: controller.signal });
 		controller.abort(new Error('cancelled early'));
 		return starting;
 	});
 	const late = await cancelled((controller) =>
 		createEngine({
 			canvas: freshCanvas(),
-			game,
+			sketch,
 			signal: controller.signal,
 			onProgress: (stage) => {
 				if (stage === 'core') controller.abort(new Error('cancelled after the core'));
 			},
 		}),
 	);
-	const engine = await createEngine({ canvas: freshCanvas(), game });
+	const engine = await createEngine({ canvas: freshCanvas(), sketch });
 	await engine.firstFrame;
 	const stats = await engine.measure(0.5);
 	engine.destroy();

@@ -15,7 +15,7 @@
 //! | [`instances`] | Instance batches: per-row arrays, dirty ranges, the batch table, memory epoch |
 //! | [`culling`] | Frustum planes and SIMD sphere culling, serial and parallel |
 //! | [`arena`] | Per-thread bump allocators reset each frame |
-//! | [`snapshot`] | The frame handoff between the game worker and the render worker |
+//! | [`snapshot`] | The frame handoff between the sketch worker and the render worker |
 //! | [`jobs`] | The job system: parallel loops, background tasks, worker loops |
 //! | `testing` | With the `testing` feature: a global allocator that counts allocations, for tests |
 //!

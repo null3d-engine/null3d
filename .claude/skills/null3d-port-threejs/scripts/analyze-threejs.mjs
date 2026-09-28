@@ -183,7 +183,7 @@ for (const [file, n] of mathAllocFiles) {
 }
 if (domFiles.size)
 	warnings.push(
-		`DOM access in ${[...domFiles].join(', ')}. The game worker has no DOM: keep this code in page.ts and pass data with messages.`,
+		`DOM access in ${[...domFiles].join(', ')}. The sketch worker has no DOM: keep this code in page.ts and pass data with messages.`,
 	);
 if (glslLines)
 	warnings.push(
@@ -250,7 +250,7 @@ for (const s of order) {
 md.push('## Next steps\n');
 md.push('1. Record baseline images and timings of the three.js app (references/verification.md).');
 md.push(
-	'2. Decide what stays on the page and what moves to game.ts (references/architecture-and-loop.md).',
+	'2. Decide what stays on the page and what moves to sketch.ts (references/architecture-and-loop.md).',
 );
 md.push(
 	'3. Port in this order: scene setup, assets, materials, lights, interaction, animation, post-processing, shaders.',

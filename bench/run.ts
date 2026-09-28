@@ -192,7 +192,7 @@ async function runSweep(
 		const own = ownShareOfThree(null3d, threejs, sceneCode);
 		add('null3d own work', n, own?.null3dMs);
 		add('three.js own work', n, own?.threeMs);
-		// Every thread's work, job workers included, less the game's update.
+		// Every thread's work, job workers included, less the sketch's update.
 		if (null3d?.allThreadsMs !== undefined)
 			add('null3d engine', n, null3d.allThreadsMs - (null3d.updateMs ?? 0));
 	}

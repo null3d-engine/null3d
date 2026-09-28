@@ -15,7 +15,7 @@ run('scene', async () => {
 	if (!canvas) throw new Error('the page has no canvas');
 	const engine = await createEngine({
 		canvas,
-		game: new URL('./games/boxes-game.ts', import.meta.url),
+		sketch: new URL('./sketches/boxes-sketch.ts', import.meta.url),
 		maxPixelRatio: 1,
 	});
 	const failures: string[] = [];

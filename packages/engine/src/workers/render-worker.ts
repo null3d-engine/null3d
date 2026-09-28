@@ -1,4 +1,4 @@
-// The render worker: owns the canvas and every GPU object, runs no game code, and draws only inside
+// The render worker: owns the canvas and every GPU object, runs no sketch code, and draws only inside
 // its own requestAnimationFrame callback.
 
 import { emptySceneInput, runRenderLoop } from '../render/loop';

@@ -1,10 +1,10 @@
-// The control block: a small shared array through which the page, the game worker and the render
+// The control block: a small shared array through which the page, the sketch worker and the render
 // worker exchange frame signals, canvas size and input events. It lives in its own shared buffer,
 // separate from WebAssembly memory, so it exists before any worker has loaded the engine core.
 
 /** Int32 slots of the control block. */
 export enum Slot {
-	/** Frames the game worker has published, counting from 1. */
+	/** Frames the sketch worker has published, counting from 1. */
 	FramesPublished = 0,
 	/** The newest frame the renderer has taken for drawing. */
 	FramesTaken = 1,
@@ -28,13 +28,13 @@ export enum Slot {
 	DrawListWords0 = 11,
 	DrawListWords1 = 12,
 	/**
-	 * Incremented each time the page resumes the game or shows a hidden page again, so the game's
+	 * Incremented each time the page resumes the sketch or shows a hidden page again, so the sketch's
 	 * next step counts no time.
 	 */
 	Resumes = 13,
 	/**
 	 * Incremented by the thread that draws each time it replaces a GPU device that the browser took
-	 * away. The game thread then records a frame that creates every GPU object again.
+	 * away. The sketch thread then records a frame that creates every GPU object again.
 	 */
 	GpuEpoch = 14,
 	/**

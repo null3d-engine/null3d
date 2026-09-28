@@ -6,7 +6,7 @@ export interface EngineMode {
 	query: string;
 	build: 'threaded' | 'single';
 	latency: 'pipelined' | 'low' | 'single';
-	renderThread: 'render-worker' | 'game-worker' | 'main';
+	renderThread: 'render-worker' | 'sketch-worker' | 'main';
 }
 
 export const ENGINE_MODES: readonly EngineMode[] = [
@@ -22,7 +22,7 @@ export const ENGINE_MODES: readonly EngineMode[] = [
 		query: 'latency=low',
 		build: 'threaded',
 		latency: 'low',
-		renderThread: 'game-worker',
+		renderThread: 'sketch-worker',
 	},
 	{
 		name: 'single-threaded',
@@ -81,8 +81,8 @@ const REFRESH_HZ_RANGE = [20, 500] as const;
 /** The threads that record frames in a mode. */
 function expectedThreads(mode: EngineMode): string[] {
 	if (mode.latency === 'single') return ['main'];
-	if (mode.renderThread === 'game-worker') return ['game-worker'];
-	return ['game-worker', mode.renderThread];
+	if (mode.renderThread === 'sketch-worker') return ['sketch-worker'];
+	return ['sketch-worker', mode.renderThread];
 }
 
 /** What is wrong with a result of the engine page, run in a mode on a GPU tier; empty when nothing is. */
@@ -125,12 +125,12 @@ export function engineProblems(result: EngineResult, mode: EngineMode, tier: str
 		problems.push('the time the GPU finished the first frame is missing');
 	if (!(stats.load.probeMs > 0 && stats.load.coreMs > 0))
 		problems.push('the probe or core load time is missing');
-	if (result.stages.join(',') !== 'core,game,first-frame')
+	if (result.stages.join(',') !== 'core,sketch,first-frame')
 		problems.push(`the start reported the stages ${result.stages.join(', ')}`);
 	if (result.messages.join(',') !== 'setup,count')
-		problems.push(`the page received the game's messages ${result.messages.join(', ')}`);
+		problems.push(`the page received the sketch's messages ${result.messages.join(', ')}`);
 	if (!((stats.memory.wasmBytes ?? 0) > 0)) problems.push('the WebAssembly memory size is missing');
 	if (result.count.updates <= MIN_FRAMES)
-		problems.push(`the game updated only ${result.count.updates} times`);
+		problems.push(`the sketch updated only ${result.count.updates} times`);
 	return problems;
 }

@@ -1,12 +1,12 @@
-// Starts the engine with an empty game in the mode the URL's switches ask for, measures it for a few
-// seconds, then reports the mode, the capabilities, the frame metrics, how many times the game
-// updated, its largest step and the names of the messages it sent. With ?pause, it pauses and resumes the game before it asks.
+// Starts the engine with an empty sketch in the mode the URL's switches ask for, measures it for a few
+// seconds, then reports the mode, the capabilities, the frame metrics, how many times the sketch
+// updated, its largest step and the names of the messages it sent. With ?pause, it pauses and resumes the sketch before it asks.
 import { createEngine } from '@null3d/engine';
 import { run, toBase64 } from './lib/result';
 
 const params = new URLSearchParams(location.search);
 const seconds = Number(params.get('seconds') ?? '2');
-/** How long `?pause` pauses the game. */
+/** How long `?pause` pauses the sketch. */
 const PAUSE_MS = 600;
 
 run('engine', async () => {
@@ -15,13 +15,13 @@ run('engine', async () => {
 	const stages: string[] = [];
 	const engine = await createEngine({
 		canvas,
-		game: new URL('./games/empty-game.ts', import.meta.url),
+		sketch: new URL('./sketches/empty-sketch.ts', import.meta.url),
 		onProgress: (stage) => stages.push(stage),
 	});
 	await engine.firstFrame;
 	const stats = await engine.measure(seconds);
 	if (params.has('pause')) {
-		// A pause the game must not see as one long step.
+		// A pause the sketch must not see as one long step.
 		engine.setPaused(true);
 		await new Promise((resolve) => setTimeout(resolve, PAUSE_MS));
 		engine.setPaused(false);
@@ -29,11 +29,11 @@ run('engine', async () => {
 	}
 	const messages: string[] = [];
 	const count = await new Promise<unknown>((resolve) => {
-		engine.onGameMessage((name, data) => {
+		engine.onSketchMessage((name, data) => {
 			messages.push(name);
 			if (name === 'count') resolve(data);
 		});
-		engine.postToGame('count');
+		engine.postToSketch('count');
 	});
 	const capture = params.has('capture') ? await engine.captureFrame() : undefined;
 	engine.destroy();

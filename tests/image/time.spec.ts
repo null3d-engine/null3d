@@ -1,4 +1,4 @@
-// The game's step after a pause: the first frame after the page resumes the game counts no time, so
+// The sketch's step after a pause: the first frame after the page resumes the sketch counts no time, so
 // no step comes near the length of the pause.
 import { expect, test } from '@playwright/test';
 import { ENGINE_MODES, type EngineResult } from '../lib/engine-checks.ts';

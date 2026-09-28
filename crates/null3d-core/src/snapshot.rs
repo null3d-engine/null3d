@@ -1,4 +1,4 @@
-//! The frame handoff: the game worker computes frame `f + 1` while the render worker reads frame
+//! The frame handoff: the sketch worker computes frame `f + 1` while the render worker reads frame
 //! `f`, and neither ever touches memory the other is writing.
 //!
 //! # What is double-buffered
@@ -18,11 +18,11 @@
 //! `published` holds the newest finished frame, and `acknowledged` the newest frame the render
 //! worker finished reading. Both start at 0.
 //!
-//! Game worker (producer), frame `f`:
+//! Sketch worker (producer), frame `f`:
 //!
 //! 1. Wait until [`FrameHandoff::can_write`]: `published` is `f - 1`, and `acknowledged` (loaded
 //!    with acquire ordering) is at least `f - 2`. Frame `f - 2` was the last reader of buffer
-//!    and slot `f & 1`, so the render worker no longer touches them. The game worker waits with
+//!    and slot `f & 1`, so the render worker no longer touches them. The sketch worker waits with
 //!    `Atomics.waitAsync` on `acknowledged`, never with a blocking wait.
 //! 2. Run the frame: apply commands, update transforms and batches, cull, and record the upload
 //!    list into slot `f & 1`.
@@ -196,7 +196,7 @@ impl FrameHandoff {
         &self.published.0
     }
 
-    /// The word the game worker waits on for acknowledgements.
+    /// The word the sketch worker waits on for acknowledgements.
     pub fn acknowledged_word(&self) -> &AtomicU32 {
         &self.acknowledged.0
     }
@@ -246,7 +246,7 @@ impl FrameHandoff {
         unsafe { &*self.slots[(frame & 1) as usize].get() }
     }
 
-    /// Consumer: acknowledges `frame` (release store) and wakes the game worker.
+    /// Consumer: acknowledges `frame` (release store) and wakes the sketch worker.
     pub fn acknowledge(&self, frame: u32) {
         self.acknowledged.0.store(frame, Ordering::Release);
         wait::wake_all(&self.acknowledged.0);
@@ -260,7 +260,7 @@ impl FrameHandoff {
     }
 }
 
-/// The game worker's side of a [`FrameHandoff`].
+/// The sketch worker's side of a [`FrameHandoff`].
 pub struct FrameProducer<'a> {
     handoff: &'a FrameHandoff,
 }

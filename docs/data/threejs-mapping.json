@@ -21,7 +21,7 @@
       "three": "WebGLRenderer / WebGPURenderer",
       "status": "changed",
       "since": "0.1",
-      "target": "createEngine({ canvas, game }) on the page; scene code moves to game.ts inside defineGame()",
+      "target": "createEngine({ canvas, sketch }) on the page; scene code moves to sketch.ts inside defineSketch()",
       "notes": "The engine picks WebGPU or WebGL2 itself. antialias maps to the quality preset (MSAA 4x from Medium); alpha: true maps to createEngine({ transparent: true }); powerPreference has no equivalent.",
       "docs": "getting-started/first-scene",
       "detect": "\\b(WebGL|WebGPU)Renderer\\b"
@@ -54,7 +54,7 @@
       "three": "requestAnimationFrame(animate) / renderer.setAnimationLoop / renderer.render(scene, camera)",
       "status": "changed",
       "since": "0.1",
-      "target": "onUpdate(dt) returned from defineGame()",
+      "target": "onUpdate(dt) returned from defineSketch()",
       "notes": "The engine renders every frame by itself; never call a render function. Per-frame logic goes in onUpdate, camera-follow logic in onLateUpdate.",
       "docs": "porting/threejs-loop-and-threads",
       "detect": "\\brequestAnimationFrame\\s*\\(|\\.setAnimationLoop\\s*\\(|\\.render\\s*\\(\\s*\\w+\\s*,\\s*\\w+\\s*\\)"
@@ -175,7 +175,7 @@
       "three": "renderer.capabilities / renderer.extensions",
       "status": "changed",
       "since": "0.1",
-      "target": "engine.capabilities (page) or ctx.engine.capabilities (game)",
+      "target": "engine.capabilities (page) or ctx.engine.capabilities (sketch)",
       "notes": "Reports GPU tier, limits and features. Never branch on GPU names: some browsers hide them.",
       "docs": "concepts/backends",
       "detect": "\\.capabilities\\b|\\.extensions\\.(get|has)\\s*\\("
@@ -197,7 +197,7 @@
       "three": "new THREE.Scene()",
       "status": "changed",
       "since": "0.1",
-      "target": "The scene from the game context: defineGame(({ scene }) => ...)",
+      "target": "The scene from the sketch context: defineSketch(({ scene }) => ...)",
       "notes": "Objects are created in the scene directly.",
       "docs": "api/scene",
       "detect": "new\\s+(THREE\\.)?Scene\\s*\\("
@@ -396,7 +396,7 @@
       "status": "manual",
       "since": "0.1",
       "target": "onUpdate / onLateUpdate, or a declared pass",
-      "notes": "Game code never runs in the render worker, so per-draw callbacks cannot exist.",
+      "notes": "Sketch code never runs in the render worker, so per-draw callbacks cannot exist.",
       "docs": "porting/threejs-loop-and-threads",
       "detect": "\\.on(Before|After)Render\\s*="
     },
@@ -1000,8 +1000,8 @@
       "three": "CanvasTexture (a 2D canvas redrawn at run time)",
       "status": "changed",
       "since": "0.1",
-      "target": "Draw on an OffscreenCanvas in the game worker, then textures.fromImageBitmap(bitmap) and texture.update(bitmap)",
-      "notes": "The game worker has no DOM canvas; OffscreenCanvas with a 2D context works in workers.",
+      "target": "Draw on an OffscreenCanvas in the sketch worker, then textures.fromImageBitmap(bitmap) and texture.update(bitmap)",
+      "notes": "The sketch worker has no DOM canvas; OffscreenCanvas with a 2D context works in workers.",
       "docs": "api/textures",
       "detect": "\\bCanvasTexture\\b"
     },
@@ -1011,7 +1011,7 @@
       "three": "VideoTexture",
       "status": "post-1.0",
       "since": null,
-      "target": "After 1.0: engine.registerVideo on the page and textures.fromVideo in the game. Until then, send ImageBitmap frames from the page and call texture.update(bitmap)",
+      "target": "After 1.0: engine.registerVideo on the page and textures.fromVideo in the sketch. Until then, send ImageBitmap frames from the page and call texture.update(bitmap)",
       "notes": "The ImageBitmap route decodes and uploads every frame, so keep frames small (null3d-develop recipe 14).",
       "docs": "guides/video-textures",
       "detect": "\\bVideoTexture\\b"
@@ -1254,7 +1254,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "input.pointer, input.isDown('KeyW'), input.actions; obj.on('pointerenter' | 'pointerleave' | 'click', fn) (0.2)",
-      "notes": "Input reaches the game worker through shared memory; the game never adds DOM listeners.",
+      "notes": "Input reaches the sketch worker through shared memory; the sketch never adds DOM listeners.",
       "docs": "api/input",
       "detect": "addEventListener\\s*\\(\\s*['\"](pointer\\w*|mouse\\w*|click|dblclick|touch\\w*|keydown|keyup|wheel|contextmenu)['\"]"
     },
@@ -1539,7 +1539,7 @@
       "three": "CSS2DRenderer / CSS3DRenderer (HTML labels)",
       "status": "changed",
       "since": "0.2",
-      "target": "Game: ui.trackLabel(obj, 'hp-12', { offset: [0, 2, 0] }). Page: engine.labels.bind('hp-12', element)",
+      "target": "Sketch: ui.trackLabel(obj, 'hp-12', { offset: [0, 2, 0] }). Page: engine.labels.bind('hp-12', element)",
       "notes": "The engine writes screen positions into shared memory each frame, and the page moves the elements; no messages per frame. CSS3D transforms come after 1.0.",
       "docs": "guides/ui-overlays",
       "detect": "\\bCSS[23]D(Renderer|Object|Sprite)\\b"
@@ -1562,7 +1562,7 @@
       "status": "unsupported",
       "since": null,
       "target": "Web Audio on the page",
-      "notes": "The game sends positions with page.post: every frame for moving sounds, or on events only.",
+      "notes": "The sketch sends positions with page.post: every frame for moving sounds, or on events only.",
       "docs": "guides/audio",
       "detect": "\\b(PositionalAudio|AudioListener|AudioLoader|AudioAnalyser)\\b"
     },
@@ -1572,7 +1572,7 @@
       "three": "lil-gui / dat.gui panels",
       "status": "changed",
       "since": "0.1",
-      "target": "Keep the panel on the page; send changes with engine.postToGame and receive them with page.onMessage",
+      "target": "Keep the panel on the page; send changes with engine.postToSketch and receive them with page.onMessage",
       "notes": "",
       "docs": "guides/ui-overlays",
       "detect": "\\blil-gui\\b|\\bdat\\.gui\\b|new\\s+GUI\\s*\\("
@@ -1583,7 +1583,7 @@
       "three": "cannon-es / Rapier / Ammo / Oimo",
       "status": "changed",
       "since": "0.1",
-      "target": "Run the physics library in the game worker; copy body transforms into dynamic arrays after each step",
+      "target": "Run the physics library in the sketch worker; copy body transforms into dynamic arrays after each step",
       "notes": "WebAssembly physics builds run in workers. An official Rapier adapter comes after 1.0.",
       "docs": "guides/physics",
       "detect": "from\\s+['\"](cannon-es|cannon|@dimforge/rapier3d(-compat)?|ammo\\.js|oimo|@react-three/rapier|@react-three/cannon)['\"]"
@@ -1605,7 +1605,7 @@
       "three": "React Three Fiber / drei (Canvas, useFrame, useGLTF, OrbitControls, Environment, Html)",
       "status": "manual",
       "since": "0.1",
-      "target": "React stays for the page UI; the scene moves into game.ts",
+      "target": "React stays for the page UI; the scene moves into sketch.ts",
       "notes": "See the React Three Fiber guide for the component mapping.",
       "docs": "porting/react-three-fiber",
       "detect": "from\\s+['\"]@react-three/(fiber|drei)['\"]|\\buseFrame\\s*\\("
@@ -1628,7 +1628,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "DOM code stays in page.ts; data travels in messages; sizes come from ctx.engine.viewport",
-      "notes": "The game worker has no DOM.",
+      "notes": "The sketch worker has no DOM.",
       "docs": "porting/threejs-loop-and-threads",
       "detect": "\\bdocument\\.(getElementById|querySelector|querySelectorAll|body|createElement)\\b|\\bwindow\\.(innerWidth|innerHeight|devicePixelRatio|addEventListener)\\b"
     }

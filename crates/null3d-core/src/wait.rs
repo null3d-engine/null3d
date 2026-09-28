@@ -1,7 +1,7 @@
 //! Blocking and waking threads on a 32-bit atomic word, with one interface for every build.
 //!
 //! - WebAssembly with atomics: `memory.atomic.wait32` and `memory.atomic.notify`. Only job
-//!   workers call [`wait`]; browsers forbid it on the main thread, and the game and render
+//!   workers call [`wait`]; browsers forbid it on the main thread, and the sketch and render
 //!   workers must stay responsive.
 //! - Native builds (tests and tools): the operating system's futex, through `atomic-wait`.
 //! - Single-threaded WebAssembly: no other thread exists to change the word, so [`wait`] returns

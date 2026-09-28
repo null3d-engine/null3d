@@ -2,7 +2,7 @@
 //! memory and atomics, and the single-threaded build runs where the page is not cross-origin
 //! isolated.
 //!
-//! The game thread (the game worker, or the page in single-threaded mode) owns the engine: the
+//! The sketch thread (the sketch worker, or the page in single-threaded mode) owns the engine: the
 //! scene, the instance batches, meshes, materials and the frame builder. TypeScript reads and
 //! writes the engine's arrays through typed-array views at the addresses these functions return,
 //! and appends structural changes to the command ring. Job workers only run the job system's
@@ -84,14 +84,14 @@ struct Engine {
     structure_changed: bool,
 }
 
-/// The engine, which only the game thread touches.
-struct GameCell(UnsafeCell<Option<Engine>>);
+/// The engine, which only the sketch thread touches.
+struct SketchCell(UnsafeCell<Option<Engine>>);
 
-// SAFETY: every function that reaches the cell is documented for the game thread only, and
+// SAFETY: every function that reaches the cell is documented for the sketch thread only, and
 // TypeScript calls them only there; job workers reach only `JOBS`.
-unsafe impl Sync for GameCell {}
+unsafe impl Sync for SketchCell {}
 
-static ENGINE: GameCell = GameCell(UnsafeCell::new(None));
+static ENGINE: SketchCell = SketchCell(UnsafeCell::new(None));
 static JOBS: OnceLock<JobSystem> = OnceLock::new();
 
 thread_local! {
@@ -132,7 +132,7 @@ fn material_failure(error: MaterialError) -> u32 {
 
 /// Runs `f` on the engine, or fails with `NOT_READY` before `initEngine`.
 fn with_engine(f: impl FnOnce(&mut Engine) -> u32) -> u32 {
-    // SAFETY: only the game thread calls this (see `GameCell`), and no call nests another, so
+    // SAFETY: only the sketch thread calls this (see `SketchCell`), and no call nests another, so
     // this is the only reference to the engine while `f` runs.
     let engine = unsafe { (*ENGINE.0.get()).as_mut() };
     match engine {
@@ -170,11 +170,11 @@ pub fn last_error_detail(index: u32) -> u32 {
     LAST_ERROR.with(|e| e.get().1[(index & 1) as usize])
 }
 
-/// Creates the engine on the game thread, and the job system that `job_workers` job workers
+/// Creates the engine on the sketch thread, and the job system that `job_workers` job workers
 /// serve, timing their work with the browser's clock. Every capacity is fixed from here on.
 #[wasm_bindgen(js_name = initEngine)]
 pub fn init_engine(job_workers: u32, scene_capacity: u32, max_batches: u32, commands: u32) -> u32 {
-    // SAFETY: as in `with_engine`; this is the first call on the game thread.
+    // SAFETY: as in `with_engine`; this is the first call on the sketch thread.
     let cell = unsafe { &mut *ENGINE.0.get() };
     let jobs = JobSystem::with_config(JobConfig {
         workers: job_workers,
@@ -195,7 +195,7 @@ pub fn init_engine(job_workers: u32, scene_capacity: u32, max_batches: u32, comm
     0
 }
 
-/// Serves the job system on a job worker until `shutdownJobs`. It first waits for the game
+/// Serves the job system on a job worker until `shutdownJobs`. It first waits for the sketch
 /// thread to create the job system.
 #[wasm_bindgen(js_name = jobWorkerLoop)]
 pub fn job_worker_loop(index: u32) {
@@ -203,7 +203,7 @@ pub fn job_worker_loop(index: u32) {
 }
 
 /// The milliseconds job worker `index` spent on work since the last call for it, which starts
-/// its total again from zero. The game thread reads it once per frame.
+/// its total again from zero. The sketch thread reads it once per frame.
 #[wasm_bindgen(js_name = takeJobBusyMs)]
 pub fn take_job_busy_ms(index: u32) -> f64 {
     JOBS.get().map_or(0.0, |jobs| jobs.take_busy_ms(index))

@@ -6,7 +6,7 @@
 //! [`JobSystem::new`] only builds the shared state. Each job worker is a thread (a Web Worker in
 //! the browser) that calls [`JobSystem::worker_loop`] with its index; the call returns after
 //! [`JobSystem::shutdown`]. Job worker `i` runs chunks as [`WorkerId`] `i + 1`. The thread that
-//! calls [`JobSystem::parallel_for`] (the game worker) runs chunks as [`WorkerId::CALLER`], so a
+//! calls [`JobSystem::parallel_for`] (the sketch worker) runs chunks as [`WorkerId::CALLER`], so a
 //! system with `n` job workers has `n + 1` worker ids, and per-thread storage such as frame
 //! arenas needs `n + 1` entries.
 //!
@@ -38,7 +38,7 @@
 //! 5. Each finished chunk adds one to the done counter with release ordering. When no chunk is
 //!    left to claim, the caller spins with [`core::hint::spin_loop`] until the done counter
 //!    (loaded with acquire ordering) reaches the chunk count, so it only waits for chunks already
-//!    in flight. It never blocks: the game worker must stay responsive.
+//!    in flight. It never blocks: the sketch worker must stay responsive.
 //!
 //! An add after the last chunk only moves the index past the count; each thread makes at most
 //! one such add per job, so the index never reaches the count's half.
@@ -103,7 +103,7 @@ pub type Clock = fn() -> f64;
 pub struct WorkerId(u32);
 
 impl WorkerId {
-    /// The thread that publishes frame jobs: the game worker, or the only thread.
+    /// The thread that publishes frame jobs: the sketch worker, or the only thread.
     pub const CALLER: WorkerId = WorkerId(0);
 
     /// The id of job worker `worker_index` (the index passed to [`JobSystem::worker_loop`]).

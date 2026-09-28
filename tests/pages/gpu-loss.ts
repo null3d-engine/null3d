@@ -18,7 +18,7 @@ run('gpu-loss', async () => {
 	if (!canvas) throw new Error('the page has no canvas');
 	const engine = await createEngine({
 		canvas,
-		game: new URL('./games/empty-game.ts', import.meta.url),
+		sketch: new URL('./sketches/empty-sketch.ts', import.meta.url),
 	});
 	let failure: EngineError | null = null;
 	engine.onFailure((error) => {

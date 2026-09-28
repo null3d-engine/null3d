@@ -22,7 +22,7 @@
 //!
 //! # Frames in flight
 //!
-//! The game worker records frame `f + 1` while the render worker replays frame `f`. Everything a
+//! The sketch worker records frame `f + 1` while the render worker replays frame `f`. Everything a
 //! frame's list reads from engine memory is therefore kept per frame parity: the list itself, and
 //! an upload arena that holds copies of the small tables and new mesh data. World matrices come
 //! straight from the core's world buffer of the frame's parity, which the core keeps the same way.
@@ -301,7 +301,7 @@ impl Layout {
     }
 }
 
-/// Settings the game changes rarely: the camera and the lights.
+/// Settings the sketch changes rarely: the camera and the lights.
 #[derive(Clone, Copy, Debug)]
 struct Lighting {
     sun_direction: [f32; 4],

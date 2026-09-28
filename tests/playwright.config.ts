@@ -45,7 +45,7 @@ export default defineConfig({
 	],
 	projects: [
 		{ name: ci ? 'chromium-swiftshader' : 'chrome-real-gpu' },
-		// The engine test again, on the production build: the game module and the engine core must
+		// The engine test again, on the production build: the sketch module and the engine core must
 		// survive bundling on both GPU paths and in every thread mode.
 		{
 			name: 'production build',

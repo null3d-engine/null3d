@@ -55,7 +55,7 @@ function readCertificate(root: string, certDir: string): { cert: Buffer; key: Bu
 	return { cert: readFileSync(cert), key: readFileSync(key) };
 }
 
-/** A script that a page passes by address, such as `new URL('./game.ts', import.meta.url)`. */
+/** A script that a page passes by address, such as `new URL('./sketch.ts', import.meta.url)`. */
 const SCRIPT_URL =
 	/new\s+URL\(\s*(['"])(\.{1,2}\/[^'"]+?\.[cm]?[jt]sx?)\1\s*,\s*import\.meta\.url\s*\)/g;
 
@@ -71,9 +71,9 @@ export const CORE_FILES = [
 	'single/null3d_bg.wasm',
 ];
 
-/** True for a game module: a script that calls `defineGame`. */
-function isGameModule(path: string): boolean {
-	return existsSync(path) && readFileSync(path, 'utf8').includes('defineGame(');
+/** True for a sketch module: a script that calls `defineSketch`. */
+function isSketchModule(path: string): boolean {
+	return existsSync(path) && readFileSync(path, 'utf8').includes('defineSketch(');
 }
 
 /**
@@ -99,14 +99,14 @@ export function missingCoreFiles(root: string): string[] | null {
 
 /**
  * The null3d Vite plugin: isolation headers on the dev and preview servers, optional HTTPS, and a
- * production build that compiles each game module and ships the engine core.
+ * production build that compiles each sketch module and ships the engine core.
  */
 export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 	let building = false;
 	let root = process.cwd();
 	return {
 		name: 'null3d',
-		// Runs before Vite's own asset handling, which would copy a game file as raw text.
+		// Runs before Vite's own asset handling, which would copy a sketch file as raw text.
 		enforce: 'pre',
 		config(config, { mode }) {
 			const root = config.root ?? process.cwd();
@@ -143,8 +143,8 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 				const start = match.index;
 				if (WORKER_BEFORE.test(code.slice(Math.max(0, start - 40), start))) continue;
 				const script = await this.resolve(match[2] ?? '', id);
-				if (!script || !isGameModule(script.id)) continue;
-				// The game worker imports the compiled module by this address.
+				if (!script || !isSketchModule(script.id)) continue;
+				// The sketch worker imports the compiled module by this address.
 				const ref = this.emitFile({ type: 'chunk', id: script.id, preserveSignature: 'strict' });
 				out ??= new MagicString(code);
 				out.overwrite(

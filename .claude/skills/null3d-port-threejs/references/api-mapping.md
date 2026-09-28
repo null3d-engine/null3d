@@ -38,10 +38,10 @@ The "Since" column gives the first engine version with the feature:
 
 | three.js | null3d | Status | Since | Notes | Docs |
 | --- | --- | --- | --- | --- | --- |
-| WebGLRenderer / WebGPURenderer | createEngine({ canvas, game }) on the page; scene code moves to game.ts inside defineGame() | changed | 0.1 | The engine picks WebGPU or WebGL2 itself. antialias maps to the quality preset (MSAA 4x from Medium); alpha: true maps to createEngine({ transparent: true }); powerPreference has no equivalent. | `getting-started/first-scene` |
+| WebGLRenderer / WebGPURenderer | createEngine({ canvas, sketch }) on the page; scene code moves to sketch.ts inside defineSketch() | changed | 0.1 | The engine picks WebGPU or WebGL2 itself. antialias maps to the quality preset (MSAA 4x from Medium); alpha: true maps to createEngine({ transparent: true }); powerPreference has no equivalent. | `getting-started/first-scene` |
 | renderer.setPixelRatio(devicePixelRatio) | createEngine({ maxPixelRatio }) and the quality presets | changed | 0.1 | Presets cap the pixel ratio (1.5 on Low, 2 on Medium and High). Dynamic resolution then adjusts the render scale. | `concepts/quality-presets` |
 | renderer.setSize / window resize handler / camera.aspect + updateProjectionMatrix | Automatic | changed | 0.1 | The engine follows the canvas's CSS size and updates every camera's aspect ratio. Delete resize handlers and updateProjectionMatrix calls. | `api/engine` |
-| requestAnimationFrame(animate) / renderer.setAnimationLoop / renderer.render(scene, camera) | onUpdate(dt) returned from defineGame() | changed | 0.1 | The engine renders every frame by itself; never call a render function. Per-frame logic goes in onUpdate, camera-follow logic in onLateUpdate. | `porting/threejs-loop-and-threads` |
+| requestAnimationFrame(animate) / renderer.setAnimationLoop / renderer.render(scene, camera) | onUpdate(dt) returned from defineSketch() | changed | 0.1 | The engine renders every frame by itself; never call a render function. Per-frame logic goes in onUpdate, camera-follow logic in onLateUpdate. | `porting/threejs-loop-and-threads` |
 | renderer.shadowMap.enabled / .type (PCFSoftShadowMap, VSMShadowMap) | castShadows: true on the light; filtering follows the preset | changed | 0.1 | Presets use 3 x 3 or 5 x 5 PCF filtering. VSM has no equivalent. | `concepts/shadows` |
 | renderer.toneMapping (ACESFilmic, AgX, Neutral, Reinhard, Cineon, Linear) / toneMappingExposure | post.set({ toneMapping: 'aces' \| 'agx' \| 'neutral' \| 'none', exposure }) | changed | 0.1 | The engine default is ACES; three.js defaults to no tone mapping, so ports of scenes without it set toneMapping: "none". Reinhard and Cineon have no built-in equivalent: use "neutral", or a custom final effect (0.2). | `api/post` |
 | renderer.outputColorSpace / outputEncoding / ColorManagement | Nothing to do | direct | 0.1 | Output is sRGB with a linear working space, as in three.js r152+ defaults. Hex colors are read as sRGB, as three.js does. Delete these lines. | `concepts/color-management` |
@@ -52,14 +52,14 @@ The "Since" column gives the first engine version with the feature:
 | preserveDrawingBuffer + canvas.toDataURL / readRenderTargetPixels | await engine.capture() on the page | changed | 0.1 | Returns an image of the next complete frame. Tests use the engine's readback instead. | `api/engine` |
 | WebGLRenderTarget / RenderTarget / renderer.setRenderTarget (render to texture) | render.addPass({ kind: 'scene', camera, writes: 'myTexture', size }) and sample 'myTexture' in a material | changed | 0.2 | Passes are declared, not called: the render graph orders them and manages their memory. | `guides/custom-passes` |
 | renderer.setViewport / setScissor (split screens, picture in picture) | A render-to-texture pass plus a final effect, for minimaps and picture in picture (0.2) | post-1.0 | - | Several full views (scene.createView), such as split screens, come after 1.0. | `guides/multiple-views` |
-| renderer.capabilities / renderer.extensions | engine.capabilities (page) or ctx.engine.capabilities (game) | changed | 0.1 | Reports GPU tier, limits and features. Never branch on GPU names: some browsers hide them. | `concepts/backends` |
+| renderer.capabilities / renderer.extensions | engine.capabilities (page) or ctx.engine.capabilities (sketch) | changed | 0.1 | Reports GPU tier, limits and features. Never branch on GPU names: some browsers hide them. | `concepts/backends` |
 | logarithmicDepthBuffer / reverseDepthBuffer | Nothing to do; createEngine({ largeWorld: true }) for planet-scale scenes | direct | 0.1 | WebGPU uses reversed depth by default, and the engine renders relative to the camera through per-cell offsets. | `concepts/large-worlds` |
 
 ## Scene graph
 
 | three.js | null3d | Status | Since | Notes | Docs |
 | --- | --- | --- | --- | --- | --- |
-| new THREE.Scene() | The scene from the game context: defineGame(({ scene }) => ...) | changed | 0.1 | Objects are created in the scene directly. | `api/scene` |
+| new THREE.Scene() | The scene from the sketch context: defineSketch(({ scene }) => ...) | changed | 0.1 | Objects are created in the scene directly. | `api/scene` |
 | scene.environment (PMREMGenerator, RoomEnvironment, HDR files) | scene.setEnvironment(await assets.loadEnvironment('/env/studio.ktx2')) | changed | 0.2 | Prefilter HDR files offline with `null3d assets env`. A built-in neutral studio environment replaces RoomEnvironment: assets.builtinEnvironment('studio'). | `concepts/lighting` |
 | scene.fog = new Fog(color, near, far) / new FogExp2(color, density) | scene.setFog({ type: 'linear', color, near, far }) or { type: 'exp2', color, density } | direct | 0.1 | Materials opt out with fog: false. | `api/scene` |
 | new Group() / new Object3D() | scene.createGroup({ name, position }) | direct | 0.1 |  | `api/objects` |
@@ -77,7 +77,7 @@ The "Since" column gives the first engine version with the feature:
 | object.renderOrder | obj.setRenderOrder(n) | direct | 0.1 | Affects the order of transparent objects. The engine orders opaque objects itself for speed. | `api/objects` |
 | object.frustumCulled = false | obj.setFrustumCulled(false) | direct | 0.1 | Usually needed only for shader-displaced geometry; prefer obj.setBounds(center, radius) with larger bounds. | `api/objects` |
 | object.userData | Your own arrays, or a Map keyed by handle | manual | 0.1 | Engine objects are not extensible. | `concepts/handles` |
-| object.onBeforeRender / onAfterRender | onUpdate / onLateUpdate, or a declared pass | manual | 0.1 | Game code never runs in the render worker, so per-draw callbacks cannot exist. | `porting/threejs-loop-and-threads` |
+| object.onBeforeRender / onAfterRender | onUpdate / onLateUpdate, or a declared pass | manual | 0.1 | Sketch code never runs in the render worker, so per-draw callbacks cannot exist. | `porting/threejs-loop-and-threads` |
 | object.clone() / SkeletonUtils.clone(gltf.scene) | scene.instantiate(prefab) for loaded models; scene.clone(obj) for built objects | changed | 0.2 | Skinned models clone correctly with instantiate. | `api/scene` |
 | geometry.dispose() / material.dispose() / texture.dispose() | destroy() on the engine object | changed | 0.1 | A prefab frees its GPU data when the prefab and its last instance are destroyed. | `api/assets` |
 | scene.overrideMaterial | render.addPass({ kind: 'scene', materialOverride }) or debug.view('normals') | changed | 0.2 |  | `guides/custom-passes` |
@@ -157,8 +157,8 @@ The "Since" column gives the first engine version with the feature:
 | wrapS / wrapT / repeat / offset / rotation / center | wrap: 'repeat' \| 'clamp' \| 'mirror' in the texture options; repeat, offset and rotation go in the material's uvTransform | changed | 0.1 | uvTransform follows glTF's KHR_texture_transform. | `api/textures` |
 | minFilter / magFilter / generateMipmaps / anisotropy | filter: 'linear' \| 'nearest', mipmaps, anisotropy (capped by the preset) | changed | 0.1 |  | `api/textures` |
 | DataTexture / DataArrayTexture / Data3DTexture | textures.fromData({ width, height, depth, format, data }) | changed | 0.1 |  | `api/textures` |
-| CanvasTexture (a 2D canvas redrawn at run time) | Draw on an OffscreenCanvas in the game worker, then textures.fromImageBitmap(bitmap) and texture.update(bitmap) | changed | 0.1 | The game worker has no DOM canvas; OffscreenCanvas with a 2D context works in workers. | `api/textures` |
-| VideoTexture | After 1.0: engine.registerVideo on the page and textures.fromVideo in the game. Until then, send ImageBitmap frames from the page and call texture.update(bitmap) | post-1.0 | - | The ImageBitmap route decodes and uploads every frame, so keep frames small (null3d-develop recipe 14). | `guides/video-textures` |
+| CanvasTexture (a 2D canvas redrawn at run time) | Draw on an OffscreenCanvas in the sketch worker, then textures.fromImageBitmap(bitmap) and texture.update(bitmap) | changed | 0.1 | The sketch worker has no DOM canvas; OffscreenCanvas with a 2D context works in workers. | `api/textures` |
+| VideoTexture | After 1.0: engine.registerVideo on the page and textures.fromVideo in the sketch. Until then, send ImageBitmap frames from the page and call texture.update(bitmap) | post-1.0 | - | The ImageBitmap route decodes and uploads every frame, so keep frames small (null3d-develop recipe 14). | `guides/video-textures` |
 | CubeTextureLoader / CubeTexture | assets.loadCubemap(urls) for sky boxes; assets.loadEnvironment for lighting | changed | 0.2 |  | `api/textures` |
 | RGBELoader / EXRLoader / HDRLoader / UltraHDRLoader + PMREMGenerator | `null3d assets env studio.hdr` offline, then assets.loadEnvironment | changed | 0.2 | Prefiltering happens once at build time instead of on every visit. | `guides/assets-pipeline` |
 | KTX2Loader + setTranscoderPath + detectSupport | assets.loadTexture('x.ktx2') | direct | 0.2 | Built in; delete the setup. | `api/textures` |
@@ -200,7 +200,7 @@ The "Since" column gives the first engine version with the feature:
 | three.js | null3d | Status | Since | Notes | Docs |
 | --- | --- | --- | --- | --- | --- |
 | Raycaster.setFromCamera + intersectObject(s) | camera.screenToRay(x, y, ray); scene.raycast(ray.origin, ray.direction, { layers }, hit) | changed | 0.2 | Returns the closest hit; scene.raycastAll returns every hit. Acceleration structures are built in. | `api/raycast` |
-| DOM pointer, mouse, touch and keyboard listeners | input.pointer, input.isDown('KeyW'), input.actions; obj.on('pointerenter' \| 'pointerleave' \| 'click', fn) (0.2) | changed | 0.1 | Input reaches the game worker through shared memory; the game never adds DOM listeners. | `api/input` |
+| DOM pointer, mouse, touch and keyboard listeners | input.pointer, input.isDown('KeyW'), input.actions; obj.on('pointerenter' \| 'pointerleave' \| 'click', fn) (0.2) | changed | 0.1 | Input reaches the sketch worker through shared memory; the sketch never adds DOM listeners. | `api/input` |
 | OrbitControls / MapControls / TrackballControls / ArcballControls | createOrbitControls(ctx, camera, { target, enableDamping, dampingFactor, minDistance, maxDistance, maxPolarAngle }) from @null3d/controls; controls.update(dt) in onUpdate | changed | 0.1 | Option names match OrbitControls. Trackball and Arcball come after 1.0. | `api/controls` |
 | FlyControls / FirstPersonControls / PointerLockControls | createFlyControls / createFirstPersonControls from @null3d/controls | changed | 0.2 | Pointer lock is requested on the page: engine.requestPointerLock(). | `api/controls` |
 | TransformControls / DragControls | Dragging with scene.raycast against a plane | post-1.0 | - | Gizmos come after 1.0. | `porting/threejs-unsupported` |
@@ -246,17 +246,17 @@ The "Since" column gives the first engine version with the feature:
 | Sprite / SpriteMaterial | scene.createSprites(count, { texture \| atlas, sizeMode: 'world' \| 'screen' }) | changed | 0.2 | Camera-facing quads drawn in one batch. | `api/sprites` |
 | Points / PointsMaterial | scene.createPoints({ positions, colors, size, sizeAttenuation, texture }) | changed | 0.2 | Point sizes above one pixel work on every backend. | `api/points` |
 | Line / LineSegments / LineLoop / LineBasicMaterial / LineDashedMaterial / Line2 / LineMaterial | scene.createLines({ positions, colors, width, widthUnits: 'pixels' \| 'world', dashed }) | changed | 0.2 | Widths above one pixel work on every backend, so Line2 and LineMaterial need no special handling. | `api/lines` |
-| CSS2DRenderer / CSS3DRenderer (HTML labels) | Game: ui.trackLabel(obj, 'hp-12', { offset: [0, 2, 0] }). Page: engine.labels.bind('hp-12', element) | changed | 0.2 | The engine writes screen positions into shared memory each frame, and the page moves the elements; no messages per frame. CSS3D transforms come after 1.0. | `guides/ui-overlays` |
+| CSS2DRenderer / CSS3DRenderer (HTML labels) | Sketch: ui.trackLabel(obj, 'hp-12', { offset: [0, 2, 0] }). Page: engine.labels.bind('hp-12', element) | changed | 0.2 | The engine writes screen positions into shared memory each frame, and the page moves the elements; no messages per frame. CSS3D transforms come after 1.0. | `guides/ui-overlays` |
 
 ## Other
 
 | three.js | null3d | Status | Since | Notes | Docs |
 | --- | --- | --- | --- | --- | --- |
 | WebXR (renderer.xr, VRButton, ARButton) | None | unsupported | - | XR is out of scope for version 1. | `porting/threejs-unsupported` |
-| Audio / PositionalAudio / AudioListener / AudioLoader | Web Audio on the page | unsupported | - | The game sends positions with page.post: every frame for moving sounds, or on events only. | `guides/audio` |
-| lil-gui / dat.gui panels | Keep the panel on the page; send changes with engine.postToGame and receive them with page.onMessage | changed | 0.1 |  | `guides/ui-overlays` |
-| cannon-es / Rapier / Ammo / Oimo | Run the physics library in the game worker; copy body transforms into dynamic arrays after each step | changed | 0.1 | WebAssembly physics builds run in workers. An official Rapier adapter comes after 1.0. | `guides/physics` |
+| Audio / PositionalAudio / AudioListener / AudioLoader | Web Audio on the page | unsupported | - | The sketch sends positions with page.post: every frame for moving sounds, or on events only. | `guides/audio` |
+| lil-gui / dat.gui panels | Keep the panel on the page; send changes with engine.postToSketch and receive them with page.onMessage | changed | 0.1 |  | `guides/ui-overlays` |
+| cannon-es / Rapier / Ammo / Oimo | Run the physics library in the sketch worker; copy body transforms into dynamic arrays after each step | changed | 0.1 | WebAssembly physics builds run in workers. An official Rapier adapter comes after 1.0. | `guides/physics` |
 | three-mesh-bvh (computeBoundsTree, acceleratedRaycast) | Built in | direct | 0.2 | Delete the setup. | `api/raycast` |
-| React Three Fiber / drei (Canvas, useFrame, useGLTF, OrbitControls, Environment, Html) | React stays for the page UI; the scene moves into game.ts | manual | 0.1 | See the React Three Fiber guide for the component mapping. | `porting/react-three-fiber` |
+| React Three Fiber / drei (Canvas, useFrame, useGLTF, OrbitControls, Environment, Html) | React stays for the page UI; the scene moves into sketch.ts | manual | 0.1 | See the React Three Fiber guide for the component mapping. | `porting/react-three-fiber` |
 | GLSL source strings (gl_FragColor, gl_Position, #include <chunk>) | WGSL | manual | 0.1 | See the shader porting reference. | `porting/threejs-shaders` |
-| document or window access inside scene code | DOM code stays in page.ts; data travels in messages; sizes come from ctx.engine.viewport | changed | 0.1 | The game worker has no DOM. | `porting/threejs-loop-and-threads` |
+| document or window access inside scene code | DOM code stays in page.ts; data travels in messages; sizes come from ctx.engine.viewport | changed | 0.1 | The sketch worker has no DOM. | `porting/threejs-loop-and-threads` |

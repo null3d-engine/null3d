@@ -1,5 +1,5 @@
-// Measures what the engine's game worker and render worker allocate per frame while S1 runs, with
-// Chrome's heap profiler. Engine code and the game's row writes must allocate nothing per frame;
+// Measures what the engine's sketch worker and render worker allocate per frame while S1 runs, with
+// Chrome's heap profiler. Engine code and the sketch's row writes must allocate nothing per frame;
 // the few places that allocate because the browser does each have a budget below. It opens the
 // null3d S1 page in Chrome, lets the browser optimize the frame code, attaches the heap profiler to
 // both workers through Chrome's debugging protocol, samples allocations for a few seconds, and
@@ -16,18 +16,18 @@ const DEBUG_PORT = 9333;
 /** Bytes between allocation samples: small, so a few bytes per frame still show. */
 const SAMPLING_INTERVAL = 128;
 /**
- * Seconds the game runs before sampling starts. The browser optimizes code that runs once per frame
+ * Seconds the sketch runs before sampling starts. The browser optimizes code that runs once per frame
  * only after many frames, and until then the numbers such code computes are allocated.
  */
 const WARMUP_SECONDS = 30;
 /** The workers the check samples, by a part of their script's URL. */
-const WORKERS = ['game-worker', 'render-worker'] as const;
+const WORKERS = ['sketch-worker', 'render-worker'] as const;
 
 /**
  * Places that allocate for reasons outside the engine's frame code, by function and file, with the
  * most bytes per frame each may allocate:
  * - frame timers, which get a new number object from the browser's clock at each reading;
- * - the game worker's frame wait: the result and promise of `Atomics.waitAsync`, and settling it
+ * - the sketch worker's frame wait: the result and promise of `Atomics.waitAsync`, and settling it
  *   between tasks;
  * - the render worker's WebGPU objects: the command encoder, the passes, the command buffer, and
  *   the canvas texture and its view;
@@ -35,17 +35,17 @@ const WORKERS = ['game-worker', 'render-worker'] as const;
  *   copy into it, and the promise of the request to map the buffer again;
  * - the upload route timing, which reads the clock around the uploads of one submit in a few;
  * - the time the browser passes to each animation frame callback, between tasks;
- * - the benchmark game's camera path, whose numbers go to the engine's development checks;
+ * - the benchmark sketch's camera path, whose numbers go to the engine's development checks;
  * - an instance batch's array views, rebuilt once each time the engine's memory grows, which it
  *   does a few times while its buffers reach their final sizes.
  */
 const BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = {
-	'game-worker': {
-		'step game/runner.ts': 240,
-		'runPipelined workers/game-worker.ts': 128,
-		'changeOf workers/game-worker.ts': 16,
+	'sketch-worker': {
+		'step sketch/runner.ts': 240,
+		'runPipelined workers/sketch-worker.ts': 128,
+		'changeOf workers/sketch-worker.ts': 16,
 		'(IDLE)': 96,
-		'(anonymous) null3d/game-common.ts': 48,
+		'(anonymous) null3d/sketch-common.ts': 48,
 		'views scene/scene.ts': 16,
 	},
 	'render-worker': {
@@ -257,7 +257,7 @@ async function main(): Promise<void> {
 			);
 		const devtools = await DevTools.connect();
 		const sessions = await attachWorkers(devtools, url);
-		// Let the game run its setup and warm up before sampling.
+		// Let the sketch run its setup and warm up before sampling.
 		await sleep(warmup * 1000);
 		for (const sessionId of sessions.values()) {
 			await devtools.send('HeapProfiler.enable', {}, sessionId);

@@ -1,5 +1,5 @@
 // Keeps a thread drawing through GPU losses. When the browser takes the GPU away, the thread makes a
-// new renderer on the same canvas, tells the game thread to record a frame that creates every GPU
+// new renderer on the same canvas, tells the sketch thread to record a frame that creates every GPU
 // object again, and starts a new loop. After too many losses in a short time, or when no new device
 // starts, it stops and reports the loss.
 

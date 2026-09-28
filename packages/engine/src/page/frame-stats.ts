@@ -30,13 +30,13 @@ export interface ThreadStats {
  * @category api/debug
  */
 export interface FrameSummary {
-	/** Frames that the game computed and the renderer drew within the measurement. */
+	/** Frames that the sketch computed and the renderer drew within the measurement. */
 	frames: number;
 	/** CPU time per frame of the busiest thread, the time that limits the frame rate. */
 	cpuMs: Percentiles;
 	/** CPU time per frame summed over every thread. */
 	cpuMsAllThreads: Percentiles;
-	/** Per thread, by name: `main`, `game-worker`, `render-worker`, `job-0` and so on. */
+	/** Per thread, by name: `main`, `sketch-worker`, `render-worker`, `job-0` and so on. */
 	threads: Record<string, ThreadStats>;
 	/** GPU time per frame, where the device has timestamp queries. */
 	gpuMs: Percentiles | null;
@@ -152,11 +152,11 @@ export function threadRoles(mode: {
 	jobWorkers: number;
 }): Map<string, number[]> {
 	const threads = new Map<string, number[]>();
-	if (mode.latency === 'single') threads.set('main', [Role.Game, Role.Render]);
-	else if (mode.renderThread === 'game-worker')
-		threads.set('game-worker', [Role.Game, Role.Render]);
+	if (mode.latency === 'single') threads.set('main', [Role.Sketch, Role.Render]);
+	else if (mode.renderThread === 'sketch-worker')
+		threads.set('sketch-worker', [Role.Sketch, Role.Render]);
 	else {
-		threads.set('game-worker', [Role.Game]);
+		threads.set('sketch-worker', [Role.Sketch]);
 		threads.set(mode.renderThread, [Role.Render]);
 	}
 	for (let k = 0; k < mode.jobWorkers; k++) threads.set(`job-${k}`, [Role.Job + k]);
@@ -179,7 +179,7 @@ export function summarizeFrames(
 	const ring = (role: number) => records[role] ?? NO_RECORDS;
 	const indexes = records.map((r) => new Map(r.frames.map((frame, i) => [frame, i])));
 	const drawn = indexes[Role.Render] ?? new Map<number, number>();
-	const frames = ring(Role.Game).frames.filter((frame) => drawn.has(frame));
+	const frames = ring(Role.Sketch).frames.filter((frame) => drawn.has(frame));
 
 	const slowest = new Float64Array(frames.length);
 	const total = new Float64Array(frames.length);

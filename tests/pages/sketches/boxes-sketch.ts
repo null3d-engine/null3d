@@ -1,8 +1,8 @@
 // A small static scene: lit and unlit meshes, a hierarchy, and an instance batch, lit by a sun
 // and ambient light. The scene test captures it and compares it with a reference image.
-import { defineGame } from '@null3d/engine';
+import { defineSketch } from '@null3d/engine';
 
-export default defineGame(({ scene, materials, geometry, page, time }) => {
+export default defineSketch(({ scene, materials, geometry, page, time }) => {
 	scene.setBackground('#101418');
 	const camera = scene.createPerspectiveCamera({
 		fov: 60,

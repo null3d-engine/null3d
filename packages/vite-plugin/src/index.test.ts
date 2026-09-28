@@ -6,7 +6,7 @@ import { CORE_FILES, missingCoreFiles } from './index';
 function project(files: readonly string[]): string {
 	const engine = 'node_modules/@null3d/engine';
 	return fixture({
-		'package.json': '{"name":"game","private":true}',
+		'package.json': '{"name":"demo","private":true}',
 		[`${engine}/package.json`]: JSON.stringify({
 			name: '@null3d/engine',
 			exports: { '.': './index.js', './wasm/*': './dist/wasm/*' },

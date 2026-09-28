@@ -3,7 +3,6 @@
 
 import { ERRORS, type ErrorCode } from '../errors/codes';
 import { EngineError } from '../errors/engine-error';
-import { GameRunner } from '../game/runner';
 import { runDirectLoop } from '../render/direct-loop';
 import { emptySceneInput, runRenderLoop } from '../render/loop';
 import { Drawing } from '../render/recovery';
@@ -11,6 +10,7 @@ import { createRenderer, type Renderer, type Tier } from '../render/renderer';
 import { controlViews, createControlBuffer, Slot } from '../shared/control';
 import { type Build, startCore } from '../shared/core';
 import { createMetricsBuffer, MetricsReader } from '../shared/metrics';
+import { SketchRunner } from '../sketch/runner';
 import type { CoreHandoff, WorkerReply } from '../workers/protocol';
 import { abortable } from './abortable';
 import { type CapabilityReport, probeCapabilities } from './capabilities';
@@ -34,8 +34,8 @@ import { type GpuSwitch, type LatencyMode, parseSwitches } from './switches';
 export interface EngineOptions {
 	/** The canvas to draw into, sized by CSS. */
 	canvas: HTMLCanvasElement;
-	/** The game module, which runs in the game worker; `new URL('./game.ts', import.meta.url)`. */
-	game: URL | string;
+	/** The sketch module, which runs in the sketch worker; `new URL('./sketch.ts', import.meta.url)`. */
+	sketch: URL | string;
 	/** Cap for the device pixel ratio. */
 	maxPixelRatio?: number;
 	/** Forces a GPU tier, for testing only. */
@@ -44,18 +44,18 @@ export interface EngineOptions {
 	latency?: LatencyMode;
 	/**
 	 * Called as the start reaches each stage, in this order: `core` once the engine core is compiled
-	 * and the GPU paths are tested, `game` once the game's setup has run, and `first-frame` once the
+	 * and the GPU paths are tested, `sketch` once the sketch's setup has run, and `first-frame` once the
 	 * GPU has finished the first frame.
 	 */
 	onProgress?: (stage: StartupStage) => void;
 	/**
-	 * Receives the messages the game sends with `ctx.page.post`, from the start of the game's setup.
-	 * Use it for progress that the game reports while it loads. `engine.onGameMessage` adds more
+	 * Receives the messages the sketch sends with `ctx.page.post`, from the start of the sketch's setup.
+	 * Use it for progress that the sketch reports while it loads. `engine.onSketchMessage` adds more
 	 * handlers once the engine has started.
 	 */
-	onGameMessage?: (name: string, data: unknown) => void;
+	onSketchMessage?: (name: string, data: unknown) => void;
 	/**
-	 * Cancels a start in progress, for example when the player leaves the page. `createEngine` then
+	 * Cancels a start in progress, for example when the user leaves the page. `createEngine` then
 	 * stops the engine's threads and rejects with the signal's reason.
 	 */
 	signal?: AbortSignal;
@@ -66,7 +66,7 @@ export interface EngineOptions {
  *
  * @category api/engine
  */
-export type StartupStage = 'core' | 'game' | 'first-frame';
+export type StartupStage = 'core' | 'sketch' | 'first-frame';
 
 /**
  * The GPU path the engine chose, and what it offers.
@@ -91,14 +91,14 @@ export interface EngineCapabilities {
  */
 export interface EngineMode {
 	/**
-	 * With `threaded`, the game and the render step run in workers, helped by job workers. With
+	 * With `threaded`, the sketch and the render step run in workers, helped by job workers. With
 	 * `single`, everything runs on the page's thread, for pages without shared memory.
 	 */
 	build: 'threaded' | 'single';
 	/** The latency mode in use, or `single` for the single-thread build. */
 	latency: LatencyMode | 'single';
 	/** The thread that owns the canvas and draws. */
-	renderThread: 'render-worker' | 'game-worker' | 'main';
+	renderThread: 'render-worker' | 'sketch-worker' | 'main';
 	/** The job workers that share the engine's parallel work. */
 	jobWorkers: number;
 }
@@ -120,20 +120,20 @@ export interface Engine {
 	 * a loading screen. It never resolves when the engine is destroyed first.
 	 */
 	readonly firstFrame: Promise<void>;
-	/** Sends a message to the game, which receives it through `ctx.page.onMessage`. */
-	postToGame(name: string, data?: unknown, transfer?: Transferable[]): void;
+	/** Sends a message to the sketch, which receives it through `ctx.page.onMessage`. */
+	postToSketch(name: string, data?: unknown, transfer?: Transferable[]): void;
 	/**
-	 * Receives the messages the game sends with `ctx.page.post`. When no handler listened from the
+	 * Receives the messages the sketch sends with `ctx.page.post`. When no handler listened from the
 	 * start, the first handler also receives the messages sent before it was registered.
 	 */
-	onGameMessage(handler: (name: string, data: unknown) => void): void;
+	onSketchMessage(handler: (name: string, data: unknown) => void): void;
 	/**
 	 * Receives a failure after the engine started: the browser took the GPU away and the engine could
 	 * not carry on with a new device (E1302), or an engine thread failed (E1404). The engine reports
 	 * each failure once. Without a handler, it logs the failure to the console.
 	 */
 	onFailure(handler: (error: EngineError) => void): void;
-	/** Pauses or resumes the game's frames. */
+	/** Pauses or resumes the sketch's frames. */
 	setPaused(paused: boolean): void;
 	/**
 	 * Measures the running engine for a number of seconds, then returns CPU time per frame by thread
@@ -153,11 +153,11 @@ export interface Engine {
 }
 
 const DEFAULT_MAX_PIXEL_RATIO = 2;
-/** Logical cores kept free of job workers: one for the game worker, one for the render worker. */
+/** Logical cores kept free of job workers: one for the sketch worker, one for the render worker. */
 const RESERVED_CORES = 2;
 /** How often the page reads the frame records while it measures. */
 const DRAIN_INTERVAL_MS = 250;
-/** How many game messages the page keeps while no handler listens. */
+/** How many sketch messages the page keeps while no handler listens. */
 const MAX_EARLY_MESSAGES = 256;
 
 interface TierChoice {
@@ -211,7 +211,7 @@ const SIMD_PROBE = new Uint8Array([
 	253, 98, 11,
 ]);
 
-/** A worker whose replies are routed: game messages to handlers, answers to the oldest request. */
+/** A worker whose replies are routed: sketch messages to handlers, answers to the oldest request. */
 class EngineWorker {
 	private readonly waiting: Pending[] = [];
 	private readyPromise: Promise<WorkerReply>;
@@ -220,7 +220,7 @@ class EngineWorker {
 	constructor(
 		readonly worker: Worker,
 		role: string,
-		onGameMessage: (name: string, data: unknown) => void,
+		onSketchMessage: (name: string, data: unknown) => void,
 		onFailure: (error: EngineError) => void,
 	) {
 		this.readyPromise = new Promise((resolve, reject) => {
@@ -234,8 +234,8 @@ class EngineWorker {
 		);
 		worker.onmessage = (event: MessageEvent<WorkerReply>) => {
 			const reply = event.data;
-			if (reply.type === 'game-message') {
-				onGameMessage(reply.name, reply.data);
+			if (reply.type === 'sketch-message') {
+				onSketchMessage(reply.name, reply.data);
 				return;
 			}
 			if (reply.type === 'lost') {
@@ -271,7 +271,7 @@ class EngineWorker {
 
 /**
  * Starts the engine on the page. It tests the device, picks the build and the GPU path, starts the
- * workers, and runs the game module.
+ * workers, and runs the sketch module.
  *
  * @category api/engine
  */
@@ -306,11 +306,11 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 		latency === 'single' || switches.renderOnMain
 			? 'main'
 			: latency === 'low'
-				? 'game-worker'
+				? 'sketch-worker'
 				: 'render-worker';
 	let choice = chooseTier(report, wanted, renderThread !== 'main');
 	if (!choice && renderThread === 'render-worker') {
-		// Worker rendering is unavailable here, so the page draws while the game worker computes.
+		// Worker rendering is unavailable here, so the page draws while the sketch worker computes.
 		renderThread = 'main';
 		choice = chooseTier(report, wanted, false);
 	}
@@ -326,7 +326,7 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 	const core = await abortable(coreLoad, signal);
 	onProgress?.('core');
 	let wasmMemory = core.memory;
-	const gameUrl = new URL(options.game, globalThis.location?.href).href;
+	const sketchUrl = new URL(options.sketch, globalThis.location?.href).href;
 	const handoff: CoreHandoff = {
 		build,
 		module: core.module,
@@ -341,11 +341,11 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 	);
 
 	const messageHandlers: ((name: string, data: unknown) => void)[] = [];
-	if (options.onGameMessage) messageHandlers.push(options.onGameMessage);
+	if (options.onSketchMessage) messageHandlers.push(options.onSketchMessage);
 	// Messages sent before the page listens wait for the first handler. The newest are kept when a
-	// game sends many.
-	let earlyMessages: [string, unknown][] | undefined = options.onGameMessage ? undefined : [];
-	const onGameMessage = (name: string, data: unknown) => {
+	// sketch sends many.
+	let earlyMessages: [string, unknown][] | undefined = options.onSketchMessage ? undefined : [];
+	const onSketchMessage = (name: string, data: unknown) => {
 		if (earlyMessages) {
 			if (earlyMessages.push([name, data]) > MAX_EARLY_MESSAGES) earlyMessages.shift();
 			return;
@@ -364,23 +364,23 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 		onFailure(new EngineError('E1302', `the page lost its GPU: ${reason}.`));
 
 	const workers: EngineWorker[] = [];
-	let game: EngineWorker | undefined;
+	let sketch: EngineWorker | undefined;
 	let rendererHost: EngineWorker | undefined;
 	let localDrawing: Drawing<Renderer> | undefined;
-	let localRunner: GameRunner | undefined;
+	let localRunner: SketchRunner | undefined;
 
 	try {
 		if (latency === 'single') {
 			const started = await startCore('single', core.module);
 			const memory = started.memory as WebAssembly.Memory;
 			wasmMemory = memory;
-			localRunner = new GameRunner((name, data) => onGameMessage(name, data), metrics, {
+			localRunner = new SketchRunner((name, data) => onSketchMessage(name, data), metrics, {
 				glue: started.glue,
 				memory,
 				slots,
 				jobWorkers: 0,
 			});
-			await localRunner.load(gameUrl);
+			await localRunner.load(sketchUrl);
 			const runner = localRunner;
 			const create = () =>
 				createRenderer(options.canvas, { tier, forceCompat, metrics, scene: { memory, control } });
@@ -392,31 +392,31 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 				pageLoss,
 			);
 		} else {
-			game = new EngineWorker(
-				new Worker(new URL('../workers/game-worker.ts', import.meta.url), {
+			sketch = new EngineWorker(
+				new Worker(new URL('../workers/sketch-worker.ts', import.meta.url), {
 					type: 'module',
-					name: 'null3d-game',
+					name: 'null3d-sketch',
 				}),
-				'game',
-				onGameMessage,
+				'sketch',
+				onSketchMessage,
 				onFailure,
 			);
-			workers.push(game);
-			if (renderThread === 'game-worker') {
+			workers.push(sketch);
+			if (renderThread === 'sketch-worker') {
 				const canvas = options.canvas.transferControlToOffscreen();
-				game.worker.postMessage(
+				sketch.worker.postMessage(
 					{
 						type: 'init',
 						...handoff,
-						gameUrl,
+						sketchUrl,
 						jobWorkers,
 						renderer: { canvas, tier, forceCompat },
 					},
 					[canvas],
 				);
-				rendererHost = game;
+				rendererHost = sketch;
 			} else {
-				game.worker.postMessage({ type: 'init', ...handoff, gameUrl, jobWorkers });
+				sketch.worker.postMessage({ type: 'init', ...handoff, sketchUrl, jobWorkers });
 				if (renderThread === 'render-worker') {
 					const canvas = options.canvas.transferControlToOffscreen();
 					rendererHost = new EngineWorker(
@@ -425,7 +425,7 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 							name: 'null3d-render',
 						}),
 						'render',
-						onGameMessage,
+						onSketchMessage,
 						onFailure,
 					);
 					workers.push(rendererHost);
@@ -449,7 +449,7 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 					);
 				}
 			}
-			// The game and render threads start first; the engine is ready once they are.
+			// The sketch and render threads start first; the engine is ready once they are.
 			const essential = [...workers];
 			for (let index = 0; index < jobWorkers; index++) {
 				const job = new EngineWorker(
@@ -458,12 +458,12 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 						name: `null3d-job-${index}`,
 					}),
 					`job ${index}`,
-					onGameMessage,
+					onSketchMessage,
 					onFailure,
 				);
 				workers.push(job);
 				job.worker.postMessage({ type: 'init', ...handoff, index });
-				// Job workers join the job system as each becomes ready: until then the game thread
+				// Job workers join the job system as each becomes ready: until then the sketch thread
 				// and the job workers already running take every chunk, so no frame waits for them.
 				job.ready().catch((error: unknown) => {
 					if (Atomics.load(slots, Slot.Running) !== 0)
@@ -485,7 +485,7 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 
 	const engineStartMs = performance.now() - startedAt;
 	const mode: EngineMode = { build, latency, renderThread, jobWorkers };
-	onProgress?.('game');
+	onProgress?.('sketch');
 	// The thread that draws writes the time the GPU finished the first frame; the page checks for
 	// it once per animation frame until it appears.
 	const header = new MetricsReader(metrics);
@@ -516,11 +516,11 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 		report,
 		mode,
 		firstFrame,
-		postToGame(name, data, transfer = []) {
+		postToSketch(name, data, transfer = []) {
 			if (localRunner) localRunner.receive(name, data);
-			else game?.worker.postMessage({ type: 'post', name, data }, transfer);
+			else sketch?.worker.postMessage({ type: 'post', name, data }, transfer);
 		},
-		onGameMessage(handler) {
+		onSketchMessage(handler) {
 			messageHandlers.push(handler);
 			const early = earlyMessages;
 			earlyMessages = undefined;
@@ -530,7 +530,7 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 			failureHandlers.push(handler);
 		},
 		setPaused(paused) {
-			// Counted before the flag clears, so the game's first step after the pause sees it.
+			// Counted before the flag clears, so the sketch's first step after the pause sees it.
 			if (!paused && Atomics.load(slots, Slot.Paused) !== 0) Atomics.add(slots, Slot.Resumes, 1);
 			Atomics.store(slots, Slot.Paused, paused ? 1 : 0);
 			Atomics.notify(slots, Slot.Paused);

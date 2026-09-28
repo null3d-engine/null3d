@@ -473,7 +473,7 @@ export class InstanceBatch {
 	) {}
 
 	/**
-	 * The row arrays, made again after the engine's memory grew. Games read rows every frame, so this
+	 * The row arrays, made again after the engine's memory grew. Sketches read rows every frame, so this
 	 * check creates no closure: one would allocate on each call until the browser optimizes the code.
 	 */
 	private views(): InstanceBatch['rows'] {

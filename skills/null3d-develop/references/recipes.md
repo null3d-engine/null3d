@@ -1,6 +1,6 @@
 # null3d recipes
 
-Each recipe states the goal, gives the code, explains why it is written that way, and names the docs pages to read. Code runs in `game.ts` unless it says `page.ts`. Versions in parentheses mark APIs that arrive after 0.1; check the docs status before using them.
+Each recipe states the goal, gives the code, explains why it is written that way, and names the docs pages to read. Code runs in `sketch.ts` unless it says `page.ts`. Versions in parentheses mark APIs that arrive after 0.1; check the docs status before using them.
 
 ## Contents
 
@@ -14,7 +14,7 @@ Each recipe states the goal, gives the code, explains why it is written that way
 8. Loading screen with progress and warm-up
 9. HTML settings panel that controls the scene
 10. Day and night: sun, sky and environment (0.2)
-11. Physics with a library in the game worker
+11. Physics with a library in the sketch worker
 12. Minimap with a second camera (0.2)
 13. Screenshots
 14. Video on a surface (after 1.0; a workaround now)
@@ -24,19 +24,19 @@ Each recipe states the goal, gives the code, explains why it is written that way
 ## 1. Start a new project
 
 ```sh
-npx @null3d/cli create my-game --template empty   # also: third-person, top-down-units, product-viewer
-cd my-game && npm install && npm run dev
+npx @null3d/cli create my-project --template empty   # also: third-person, top-down-units, product-viewer
+cd my-project && npm install && npm run dev
 ```
 
-The template contains `page.ts`, `game.ts`, `index.html` with a canvas, `AGENTS.md`, and the null3d skills in `.claude/skills/`. Its `vite.config.ts` loads the null3d Vite plugin, which sends the cross-origin isolation headers, so the threaded build runs. Docs: `getting-started/install`, `getting-started/project-structure`, `getting-started/hosting`.
+The template contains `page.ts`, `sketch.ts`, `index.html` with a canvas, `AGENTS.md`, and the null3d skills in `.claude/skills/`. Its `vite.config.ts` loads the null3d Vite plugin, which sends the cross-origin isolation headers, so the threaded build runs. Docs: `getting-started/install`, `getting-started/project-structure`, `getting-started/hosting`.
 
 ## 2. Orbit camera around a model
 
 ```ts
-import { defineGame } from '@null3d/engine';
+import { defineSketch } from '@null3d/engine';
 import { createOrbitControls } from '@null3d/controls';
 
-export default defineGame(async (ctx) => {
+export default defineSketch(async (ctx) => {
   const { scene } = ctx;
   const camera = scene.createPerspectiveCamera({ fov: 45, position: [3, 2, 5], target: [0, 1, 0] });
   scene.setActiveCamera(camera);
@@ -48,7 +48,7 @@ export default defineGame(async (ctx) => {
 });
 ```
 
-Controls read forwarded input inside the game worker, so they need no DOM listeners. Damping only works when `update(dt)` runs every frame. Docs: `api/controls`.
+Controls read forwarded input inside the sketch worker, so they need no DOM listeners. Damping only works when `update(dt)` runs every frame. Docs: `api/controls`.
 
 ## 3. Load a glTF model and play its animations (0.2)
 
@@ -77,9 +77,9 @@ Optimize models first with `npx null3d assets optimize models/hero.glb` (meshopt
 ## 4. Thousands of moving objects
 
 ```ts
-import { defineGame, math } from '@null3d/engine';
+import { defineSketch, math } from '@null3d/engine';
 
-export default defineGame(async ({ scene, geometry, materials }) => {
+export default defineSketch(async ({ scene, geometry, materials }) => {
   const N = 20_000;
   const boids = scene.createInstances(geometry.cone({ radius: 0.1, height: 0.3 }), N, {
     material: materials.standard({ color: '#e0e0e0', roughness: 0.6 }),
@@ -181,7 +181,7 @@ The ray tests units and the walls and terrain on `WORLD`, and returns the neares
 ## 7. HTML labels above objects (0.2)
 
 ```ts
-// game.ts
+// sketch.ts
 ui.trackLabel(unit, `hp-${id}`, { offset: [0, 2.2, 0] });
 page.post('hp', { id, value: 80 });           // only when the value changes
 ```
@@ -192,7 +192,7 @@ const el = document.createElement('div');
 el.className = 'hp';
 labelsLayer.appendChild(el);
 engine.labels.bind(`hp-${id}`, el);
-engine.onGameMessage((type, d) => { if (type === 'hp') document.getElementById(`hp-${d.id}`)!.textContent = String(d.value); });
+engine.onSketchMessage((type, d) => { if (type === 'hp') document.getElementById(`hp-${d.id}`)!.textContent = String(d.value); });
 ```
 
 The engine writes each label's screen position into shared memory every frame, and the page moves the element. Only value changes travel as messages. Hidden and off-screen labels are marked, so the page can hide them. Docs: `guides/ui-overlays`, `api/ui`.
@@ -200,7 +200,7 @@ The engine writes each label's screen position into shared memory every frame, a
 ## 8. Loading screen with progress and warm-up
 
 ```ts
-// game.ts
+// sketch.ts
 assets.onProgress((loaded, total) => page.post('loading', loaded / total));
 await assets.preload(['/models/level.glb', '/env/sunset.ktx2', '/tex/terrain.ktx2']);
 const level = scene.instantiate(await assets.loadGltf('/models/level.glb'));
@@ -217,9 +217,9 @@ const show = (progress: number) => {
 try {
   const engine = await createEngine({
     canvas,
-    game: new URL('./game.ts', import.meta.url),
+    sketch: new URL('./sketch.ts', import.meta.url),
     onProgress: (stage) => { if (stage === 'core') show(0.1); },
-    onGameMessage: (type, loaded) => { if (type === 'loading') show(0.1 + 0.8 * (loaded as number)); },
+    onSketchMessage: (type, loaded) => { if (type === 'loading') show(0.1 + 0.8 * (loaded as number)); },
   });
   engine.onFailure((error) => showMessage(`The scene stopped: ${error.message}`));
   await engine.firstFrame;                     // the GPU has finished the first frame
@@ -229,7 +229,7 @@ try {
 }
 ```
 
-- Pass `onGameMessage` to `createEngine`. A handler added after `createEngine` resolves hears the setup's messages only once setup is over, which is too late for a progress bar.
+- Pass `onSketchMessage` to `createEngine`. A handler added after `createEngine` resolves hears the setup's messages only once setup is over, which is too late for a progress bar.
 - Remove the loading screen when `engine.firstFrame` resolves, not when setup ends. Until the GPU finishes the first frame, the canvas is blank.
 - `createEngine` rejects when the browser cannot run the engine, for example without WebAssembly SIMD (E1303). Show a message or a still image in place of the canvas.
 - `warmUp` prevents the hitches that appear when a new pipeline compiles during play; the Godot browser port measured seconds of such stalls.
@@ -242,12 +242,12 @@ Docs: `guides/loading-screens`, `api/engine`.
 // page.ts (any UI library works here, including lil-gui)
 const gui = new GUI();
 const settings = { bloom: 0.8, shadows: true };
-gui.add(settings, 'bloom', 0, 2).onChange((v: number) => engine.postToGame('bloom', v));
-gui.add(settings, 'shadows').onChange((v: boolean) => engine.postToGame('shadows', v));
+gui.add(settings, 'bloom', 0, 2).onChange((v: number) => engine.postToSketch('bloom', v));
+gui.add(settings, 'shadows').onChange((v: boolean) => engine.postToSketch('shadows', v));
 ```
 
 ```ts
-// game.ts
+// sketch.ts
 page.onMessage((type, v) => {
   if (type === 'bloom') post.set({ bloom: { strength: v } });
   if (type === 'shadows') sun.setCastShadows(v);
@@ -277,7 +277,7 @@ return {
 
 Calling `setBackground` every frame is fine: sky parameters are uniform values and do not recompile anything. Docs: `api/scene`, `concepts/lighting`.
 
-## 11. Physics with a library in the game worker
+## 11. Physics with a library in the sketch worker
 
 ```ts
 import RAPIER from '@dimforge/rapier3d-compat';
@@ -348,7 +348,7 @@ For tests, use `npx null3d shot` or hold-mode tests instead (`references/testing
 
 ## 14. Video on a surface (after 1.0; a workaround now)
 
-Video textures (`engine.registerVideo` with `textures.fromVideo`) come after 1.0. Until then, the page can send frames as `ImageBitmap` objects, which transfer to the game without a copy:
+Video textures (`engine.registerVideo` with `textures.fromVideo`) come after 1.0. Until then, the page can send frames as `ImageBitmap` objects, which transfer to the sketch without a copy:
 
 ```ts
 // page.ts
@@ -356,14 +356,14 @@ const video = Object.assign(document.createElement('video'), { src: '/intro.mp4'
 await video.play();
 const sendFrame = async () => {
   const bitmap = await createImageBitmap(video, { resizeWidth: 640, resizeHeight: 360 });
-  engine.postToGame('video-frame', bitmap, [bitmap]);   // transfer, do not copy
+  engine.postToSketch('video-frame', bitmap, [bitmap]);   // transfer, do not copy
   video.requestVideoFrameCallback(sendFrame);           // or requestAnimationFrame where this is missing
 };
 video.requestVideoFrameCallback(sendFrame);
 ```
 
 ```ts
-// game.ts, at setup: create the material now, so no pipeline compiles during play
+// sketch.ts, at setup: create the material now, so no pipeline compiles during play
 const screenTex = textures.fromData({ width: 1, height: 1, format: 'rgba8unorm', colorSpace: 'srgb', data: new Uint8Array([0, 0, 0, 255]) });
 scene.createMesh({ mesh: geometry.plane({ width: 16 / 9, height: 1 }), material: materials.unlit({ map: screenTex }) });
 page.onMessage((type, bitmap) => { if (type === 'video-frame') screenTex.update(bitmap); });  // update accepts a new size
@@ -394,11 +394,11 @@ Per-pixel effects merge into the single final pass, so they add no extra full-sc
 
 ```ts
 // page.ts
-await createEngine({ canvas, game, largeWorld: true });
+await createEngine({ canvas, sketch, largeWorld: true });
 ```
 
 ```ts
-// game.ts: keep vertex data small; put large coordinates in object positions and batch origins
+// sketch.ts: keep vertex data small; put large coordinates in object positions and batch origins
 const tileCenter = computeTileCenterEcef(x, y, zoom);          // JavaScript numbers are 64-bit
 const tile = scene.createMesh({ mesh: buildTileRelativeTo(tileCenter), material });
 tile.setPosition(tileCenter[0], tileCenter[1], tileCenter[2]); // stored as a cell plus a small offset

@@ -8,7 +8,9 @@ summary: "What null3d is; how the docs are organized; status labels."
 
 # null3d documentation
 
-null3d is a browser 3D engine for games and heavy 3D apps. Its core is Rust compiled to WebAssembly, and it runs on worker threads, so the page's main thread stays free. It draws with WebGPU, and with WebGL2 where WebGPU is missing, from the same game code. You write game code in TypeScript, with names that follow three.js where the ideas match.
+null3d is a browser 3D engine for games and heavy 3D apps. Its core is Rust compiled to WebAssembly, and it runs on worker threads, so the page's main thread stays free. It draws with WebGPU, and with WebGL2 where WebGPU is missing, from the same code.
+
+In null3d, a 3D scene is called a **sketch**. A sketch is a TypeScript module that builds its scene with `defineSketch` and updates it every frame. It runs in a worker of its own, while the page keeps the HTML. Its names follow three.js where the ideas match.
 
 null3d is in early development. Most pages here describe planned features, and each page's status label says which is which.
 
@@ -31,7 +33,7 @@ The version column in the page list gives the first engine version with the page
 
 ## Where to start
 
-- [Architecture: threads and the frame](concepts/architecture.md) explains where game code runs, and why.
+- [Architecture: threads and the frame](concepts/architecture.md) explains where sketch code runs, and why.
 - [GPU tiers and backends](concepts/backends.md) shows which browsers get WebGPU and which get WebGL2.
 - [Hosting and cross-origin isolation](getting-started/hosting.md) covers the two HTTP headers that turn on worker threads.
 - If you are porting a three.js app, the [three.js to null3d mapping](porting/threejs-mapping.md) lists 147 three.js APIs with their null3d equivalents.
@@ -47,20 +49,20 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 | Page | What it covers | Status | Version |
 | --- | --- | --- | --- |
 | [Install null3d](getting-started/install.md) | The npm packages; the Vite plugin; package versions always match; the optional `null3d` command. | planned | 0.1 |
-| [Your first scene](getting-started/first-scene.md) | page.ts with createEngine; game.ts with defineGame; camera, light, mesh; running it with Vite. | planned | 0.1 |
+| [Your first scene](getting-started/first-scene.md) | page.ts with createEngine; sketch.ts with defineSketch; camera, light, mesh; running it with Vite. | planned | 0.1 |
 | [Hosting and cross-origin isolation](getting-started/hosting.md) | COOP and COEP headers; require-corp on Safari; CORS and CORP for assets; the single-threaded fallback. | planned | 0.1 |
-| [Project structure](getting-started/project-structure.md) | Starting from a template with `null3d create`; page.ts, game.ts, assets/, AGENTS.md, .claude/skills/; what runs where. | planned | 0.3 |
+| [Project structure](getting-started/project-structure.md) | Starting from a template with `null3d create`; page.ts, sketch.ts, assets/, AGENTS.md, .claude/skills/; what runs where. | planned | 0.3 |
 
 ### Concepts
 
 | Page | What it covers | Status | Version |
 | --- | --- | --- | --- |
-| [Architecture: threads and the frame](concepts/architecture.md) | Main thread, game worker, render worker, job workers; the pipelined frame; latency modes. | planned | 0.1 |
-| [Handles and objects](concepts/handles.md) | 30-bit handles; wrapper objects; stale-handle errors; keeping game data in your own arrays. | planned | 0.1 |
+| [Architecture: threads and the frame](concepts/architecture.md) | Main thread, sketch worker, render worker, job workers; the pipelined frame; latency modes. | planned | 0.1 |
+| [Handles and objects](concepts/handles.md) | 30-bit handles; wrapper objects; stale-handle errors; keeping per-object data in your own arrays. | planned | 0.1 |
 | [Static and dynamic objects](concepts/static-dynamic.md) | When to mark objects static; setters versus direct array writes; dirty ranges. | planned | 0.1 |
 | [Instances and batching](concepts/instances.md) | createInstances; typed-array views; markDirty; automatic batching; per-instance attributes. | planned | 0.1 |
 | [GPU tiers and backends](concepts/backends.md) | WebGPU core, compatibility mode and WebGL2; capability flags; the portable budget; never branching on GPU names. | planned | 0.1 |
-| [Quality presets, dynamic resolution and frame budgets](concepts/quality-presets.md) | Low to Ultra; pixel-ratio caps; the frame-budget governor; quality events for game code. | planned | 0.1 |
+| [Quality presets, dynamic resolution and frame budgets](concepts/quality-presets.md) | Low to Ultra; pixel-ratio caps; the frame-budget governor; quality events for sketch code. | planned | 0.1 |
 | [Color management](concepts/color-management.md) | Linear working space; sRGB hex colors; texture color spaces; parity with three.js. | planned | 0.1 |
 | [Materials and pipelines](concepts/materials.md) | Built-in materials; permutations; pipeline warm-up; why changing shader features can stall a frame. | planned | 0.1 |
 | [Lighting and environment](concepts/lighting.md) | Light types and units; clustered lighting; environment maps and spherical harmonics. | planned | 0.1 |
@@ -77,8 +79,8 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 
 | Page | What it covers | Status | Version |
 | --- | --- | --- | --- |
-| [Page API: createEngine](api/engine.md) | createEngine options; engine.postToGame, capture, labels, requestPointerLock, capabilities, destroy. | planned | 0.1 |
-| [Game API: defineGame and the context](api/game.md) | The context object: scene, assets, materials, geometry, textures, input, time, quality, post, render, page, ui, debug; the callbacks. | planned | 0.1 |
+| [Page API: createEngine](api/engine.md) | createEngine options; engine.postToSketch, capture, labels, requestPointerLock, capabilities, destroy. | planned | 0.1 |
+| [Sketch API: defineSketch and the context](api/sketch.md) | The context object: scene, assets, materials, geometry, textures, input, time, quality, post, render, page, ui, debug; the callbacks. | planned | 0.1 |
 | [Scene](api/scene.md) | Creating objects; find; background, environment, fog, sky; warmUp. | planned | 0.1 |
 | [Objects and transforms](api/objects.md) | Setters and getters; parents; flags; destroy. | planned | 0.1 |
 | [Cameras](api/cameras.md) | Perspective and orthographic cameras; screenToRay; worldToScreen; layers. | planned | 0.1 |
@@ -100,8 +102,8 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 | [Sprites](api/sprites.md) | createSprites; world and screen size modes; atlases. | planned | 0.2 |
 | [Points](api/points.md) | createPoints; size attenuation; textures. | planned | 0.2 |
 | [Lines](api/lines.md) | createLines; pixel and world widths; dashes; edges from meshes. | planned | 0.2 |
-| [UI overlays and labels](api/ui.md) | ui.trackLabel in the game; engine.labels.bind on the page. | planned | 0.2 |
-| [Messages between game and page](api/page.md) | page.post and page.onMessage in the game; engine.postToGame and engine.onGameMessage on the page. | planned | 0.1 |
+| [UI overlays and labels](api/ui.md) | ui.trackLabel in the sketch; engine.labels.bind on the page. | planned | 0.2 |
+| [Messages between sketch and page](api/page.md) | page.post and page.onMessage in the sketch; engine.postToSketch and engine.onSketchMessage on the page. | planned | 0.1 |
 
 ### Guides
 
@@ -113,12 +115,12 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 | [Custom passes and render targets](guides/custom-passes.md) | Declaring passes; reading and writing named textures; layer masks. | planned | 0.2 |
 | [Loading screens and warm-up](guides/loading-screens.md) | preload; onProgress; scene.warmUp; upload budgets. | planned | 0.1 |
 | [UI, HTML overlays and labels](guides/ui-overlays.md) | HTML UI on the page; labels that follow objects; GUI panels. | planned | 0.2 |
-| [Video textures](guides/video-textures.md) | Planned after 1.0. Until then, the page sends ImageBitmap frames to the game; browser limits. | planned | after 1.0 |
-| [Audio with Web Audio](guides/audio.md) | Why audio stays on the page; sending positions from the game. | planned | 0.1 |
-| [Using a physics library](guides/physics.md) | Running Rapier or cannon-es in the game worker; copying transforms. | planned | 0.1 |
+| [Video textures](guides/video-textures.md) | Planned after 1.0. Until then, the page sends ImageBitmap frames to the sketch; browser limits. | planned | after 1.0 |
+| [Audio with Web Audio](guides/audio.md) | Why audio stays on the page; sending positions from the sketch. | planned | 0.1 |
+| [Using a physics library](guides/physics.md) | Running Rapier or cannon-es in the sketch worker; copying transforms. | planned | 0.1 |
 | [Multiple views](guides/multiple-views.md) | Split screens with scene.createView, after 1.0; minimaps work from 0.2 through render-to-texture passes. | planned | after 1.0 |
 | [The asset pipeline (null3d assets)](guides/assets-pipeline.md) | optimize, env, convert; LODs; texture compression; budget reports. | planned | 0.2 |
-| [Testing your game](guides/testing.md) | null3d test; hold mode; image tests; reading results. | planned | 0.1 |
+| [Testing your sketch](guides/testing.md) | null3d test; hold mode; image tests; reading results. | planned | 0.1 |
 | [Debugging](guides/debugging.md) | Error codes; the inspector; the MCP server; the render-graph dump; common failures. | planned | 0.1 |
 | [Deploying](guides/deploying.md) | Headers on common hosts; asset caching; size budgets. | planned | 0.3 |
 | [Working with AI agents](guides/agents.md) | The skills; null3d docs; the MCP server; AGENTS.md in templates. | planned | 0.3 |
@@ -140,7 +142,7 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 | [Porting materials and textures](porting/threejs-materials.md) | Parameter-by-parameter conversion; color spaces; approximations. | planned | 0.3 |
 | [Porting shaders: GLSL, onBeforeCompile and TSL](porting/threejs-shaders.md) | GLSL to WGSL; three.js built-ins to engine built-ins; worked examples. | planned | 0.3 |
 | [Porting post-processing](porting/threejs-postprocessing.md) | EffectComposer passes to post.set and post.addEffect. | planned | 0.3 |
-| [The render loop, threads and the DOM](porting/threejs-loop-and-threads.md) | What moves to the game worker; what stays on the page; messages. | planned | 0.3 |
+| [The render loop, threads and the DOM](porting/threejs-loop-and-threads.md) | What moves to the sketch worker; what stays on the page; messages. | planned | 0.3 |
 | [Porting React Three Fiber](porting/react-three-fiber.md) | Canvas, useFrame, drei helpers; keeping React for the page UI. | planned | 0.3 |
 | [Unsupported three.js features](porting/threejs-unsupported.md) | Features after 1.0 or out of scope, with workarounds. | planned | 0.3 |
 | [Verifying a port](porting/verification.md) | Parity images per camera view; performance comparison; the WebGL2 path; phones. | planned | 0.3 |
@@ -169,11 +171,11 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 | [E1301: No usable GPU path](errors/E1301.md) | The browser offers neither WebGPU nor WebGL2 for the way the engine was asked to draw. | generated | 0.1 |
 | [E1302: GPU lost](errors/E1302.md) | The browser took the GPU away while the engine drew, for example after a driver reset or a GPU crash, and the engine could not carry on. No new GPU device started, or the GPU was lost more than twice within a minute. The engine stopped drawing. | generated | 0.1 |
 | [E1303: WebAssembly SIMD missing](errors/E1303.md) | The browser runs WebAssembly without SIMD, which the engine's core needs. | generated | 0.1 |
-| [E1401: Not a game module](errors/E1401.md) | The module passed to createEngine as the game does not export a game as its default export. | generated | 0.1 |
+| [E1401: Not a sketch module](errors/E1401.md) | The module passed to createEngine as the sketch does not export a sketch as its default export. | generated | 0.1 |
 | [E1402: Engine core out of date](errors/E1402.md) | The engine core WebAssembly file lacks functions that the TypeScript side calls, so the two come from different builds. | generated | 0.1 |
 | [E1403: Engine core not ready](errors/E1403.md) | An engine call ran before the engine core started in this worker, or the core started twice. | generated | 0.1 |
 | [E1404: Engine thread failed](errors/E1404.md) | An engine thread hit an error it could not handle after the engine started, so the engine may have stopped. | generated | 0.1 |
-| [E1405: Engine thread did not start](errors/E1405.md) | An engine thread failed while the engine started, before the game ran. | generated | 0.1 |
+| [E1405: Engine thread did not start](errors/E1405.md) | An engine thread failed while the engine started, before the sketch ran. | generated | 0.1 |
 | [E1501: Render space full](errors/E1501.md) | The scene needs more room than the renderer set aside. The full part is the draw list, the mesh buffers, the material table, the upload space or the culling pass. The culling pass covers at most 2,097,152 objects and instance rows. | generated | 0.1 |
 | [Error codes](errors/index.md) | Every EngineError code with its cause and fix. | generated | 0.1 |
 

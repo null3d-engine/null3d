@@ -2,10 +2,10 @@
 // three.js's faster renderer, and a line chart as SVG. Everything here is pure, so the benchmark
 // command and the runner's results share it.
 //
-// A frame's CPU time includes the game's code, which moves the scene alike in every engine's version
+// A frame's CPU time includes the sketch's code, which moves the scene alike in every engine's version
 // of a scene. A report also compares each engine's own work: the CPU time its own code takes on its
-// busiest thread. null3d times the game's update itself. three.js calls its own code from inside
-// the game's loop, so its own work is its frame time less the scene code, which the scene-code page
+// busiest thread. null3d times the sketch's update itself. three.js calls its own code from inside
+// the sketch's loop, so its own work is its frame time less the scene code, which the scene-code page
 // times alone.
 import { SCENE_CODE } from './parity';
 
@@ -44,7 +44,7 @@ export interface RunSummary {
 	/** The median of the runs' median CPU times, and their lowest and highest. */
 	cpuMs: { median: number; min: number; max: number };
 	cpuP95Ms: number;
-	/** The scene update's share of a frame: the game's update phase for null3d. */
+	/** The scene update's share of a frame: the sketch's update phase for null3d. */
 	updateMs?: number;
 	intervalMs: number;
 	/** null3d only: CPU time summed over threads, GPU time, and the median time of each phase. */
@@ -114,7 +114,7 @@ export function summarizeRuns(results: readonly BenchResult[]): RunSummary {
 			Object.fromEntries(Object.entries(lists).map(([key, values]) => [key, median(values)]));
 		summary.phases = medians(phases);
 		summary.threadsMs = medians(threads);
-		const update = summary.phases['game-worker.update'] ?? summary.phases['main.update'];
+		const update = summary.phases['sketch-worker.update'] ?? summary.phases['main.update'];
 		if (update !== undefined) summary.updateMs = update;
 	}
 	return summary;
@@ -128,14 +128,14 @@ export interface Share {
 }
 
 /**
- * An engine's own CPU work per frame on its busiest thread, apart from the game's code.
+ * An engine's own CPU work per frame on its busiest thread, apart from the sketch's code.
  *
- * null3d times the game's update itself, so each thread's own work is its time less the update
- * phase on it: exact, from the same frames. The update holds the scene code and the game's writes
+ * null3d times the sketch's update itself, so each thread's own work is its time less the update
+ * phase on it: exact, from the same frames. The update holds the scene code and the sketch's writes
  * into the engine's arrays, which run no engine code.
  *
  * three.js runs on its main thread, and its own code (matrix composition, the instance buffer and
- * drawing) runs from inside the game's loop, so its own work is its frame time less `sceneCodeMs`,
+ * drawing) runs from inside the sketch's loop, so its own work is its frame time less `sceneCodeMs`,
  * the scene code's time from the scene-code page. A loop there can compile to slower code than the
  * same code inside an engine's loop, which makes this estimate of three.js's own work low.
  *
@@ -176,7 +176,7 @@ export function shareOfThree(
 }
 
 /**
- * null3d's own work on its busiest thread as a share of three.js's, both apart from the game's
+ * null3d's own work on its busiest thread as a share of three.js's, both apart from the sketch's
  * code: the measure of the desktop speed target. Null without the scene code's time, which
  * three.js's side needs.
  */
@@ -247,7 +247,7 @@ export function comparisonLines(rows: readonly SummaryRow[]): string[] {
 				: []),
 			...(own
 				? [
-						`${scene}: null3d's own work on its busiest thread, apart from the game's code, is ${percent(own.share)} of three.js's (${ms(own.null3dMs)} ms against ${ms(own.threeMs)} ms); three.js's is its frame less the scene code timed alone (${ms(own.sceneCodeMs)} ms).`,
+						`${scene}: null3d's own work on its busiest thread, apart from the sketch's code, is ${percent(own.share)} of three.js's (${ms(own.null3dMs)} ms against ${ms(own.threeMs)} ms); three.js's is its frame less the scene code timed alone (${ms(own.sceneCodeMs)} ms).`,
 					]
 				: []),
 		];

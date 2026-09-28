@@ -41,10 +41,10 @@ Per-frame figures of a measurement: CPU time by thread, GPU time, frame interval
 
 | Member | Description |
 | --- | --- |
-| `frames: number` | Frames that the game computed and the renderer drew within the measurement. |
+| `frames: number` | Frames that the sketch computed and the renderer drew within the measurement. |
 | `cpuMs: Percentiles` | CPU time per frame of the busiest thread, the time that limits the frame rate. |
 | `cpuMsAllThreads: Percentiles` | CPU time per frame summed over every thread. |
-| `threads: Record<string, ThreadStats>` | Per thread, by name: `main`, `game-worker`, `render-worker`, `job-0` and so on. |
+| `threads: Record<string, ThreadStats>` | Per thread, by name: `main`, `sketch-worker`, `render-worker`, `job-0` and so on. |
 | `gpuMs: Percentiles \| null` | GPU time per frame, where the device has timestamp queries. |
 | `gpuStepMs: number \| null` | The step between GPU times when the browser rounds its timestamps, or null when they look exact. Chrome rounds them unless its WebGPU developer features are turned on. |
 | `intervalMs: Percentiles` | Time between presented frames. |
@@ -108,7 +108,7 @@ type PhaseName =
 	| 'replay';
 ```
 
-A step of a frame that `engine.measure` times. The `update` step is the game's own code, and the other steps are the engine's.
+A step of a frame that `engine.measure` times. The `update` step is the sketch's own code, and the other steps are the engine's.
 
 ### `ThreadStats`
 

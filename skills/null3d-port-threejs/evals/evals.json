@@ -4,12 +4,12 @@
     {
       "id": 1,
       "prompt": "Port this three.js app to null3d: evals/files/threejs-app (the main code is src/main.js).",
-      "expected_output": "Scanner run and confirmed; manual and approximated items raised first; a page.ts and game.ts split; every feature mapped the null3d way; a verification plan and a porting report outline.",
+      "expected_output": "Scanner run and confirmed; manual and approximated items raised first; a page.ts and sketch.ts split; every feature mapped the null3d way; a verification plan and a porting report outline.",
       "files": ["evals/files/threejs-app/package.json", "evals/files/threejs-app/src/main.js"],
       "expectations": [
         "Runs scripts/analyze-threejs.mjs (or equivalent scanning) and summarizes the inventory before porting",
         "Raises the GLSL ShaderMaterial, CSS2D labels and version needs (0.2 for glTF, animation, bloom) before writing code",
-        "Splits the code: page.ts creates the engine and keeps lil-gui; game.ts holds the scene and the loop",
+        "Splits the code: page.ts creates the engine and keeps lil-gui; sketch.ts holds the scene and the loop",
         "The requestAnimationFrame loop becomes onUpdate, and the resize handler and setPixelRatio call are removed",
         "InstancedMesh with setMatrixAt and a dummy Object3D becomes scene.createInstances with direct writes to positions",
         "The per-frame new THREE.Vector3 allocation is removed",
@@ -24,12 +24,12 @@
     {
       "id": 2,
       "prompt": "We have a React Three Fiber viewer (evals/files/Viewer.jsx). Move the 3D part to null3d but keep React for the rest of the UI.",
-      "expected_output": "A FourView-style React wrapper that creates a fresh canvas per mount and destroys the engine on unmount, plus a game.ts that loads the model, sets up the studio environment and orbit controls, and rotates the model in onUpdate.",
+      "expected_output": "A FourView-style React wrapper that creates a fresh canvas per mount and destroys the engine on unmount, plus a sketch.ts that loads the model, sets up the studio environment and orbit controls, and rotates the model in onUpdate.",
       "files": ["evals/files/Viewer.jsx"],
       "expectations": [
         "Provides a React component wrapping createEngine that creates its canvas inside the effect and calls destroy in cleanup",
         "Explains why a canvas cannot be reused (handed to a worker once; StrictMode mounts twice)",
-        "game.ts loads the model with assets.loadGltf and scene.instantiate",
+        "sketch.ts loads the model with assets.loadGltf and scene.instantiate",
         "The drei Environment preset studio becomes assets.builtinEnvironment('studio') with scene.setEnvironment",
         "useFrame rotation becomes onUpdate on a dynamic object",
         "drei OrbitControls becomes createOrbitControls from @null3d/controls",

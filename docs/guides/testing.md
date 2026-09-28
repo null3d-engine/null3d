@@ -1,6 +1,6 @@
 ---
 id: guides/testing
-title: Testing your game
+title: Testing your sketch
 status: planned
 since: "0.1"
 summary: "null3d test; hold mode; image tests; reading results."
@@ -8,7 +8,7 @@ summary: "null3d test; hold mode; image tests; reading results."
 
 <!-- null3d:placeholder -->
 
-# Testing your game
+# Testing your sketch
 
 > Planned for null3d 0.1. This page is a placeholder. No release has this feature yet, so the APIs it names do not exist. Coding agents must not use them.
 

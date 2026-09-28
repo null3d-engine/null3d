@@ -3,7 +3,7 @@ id: api/engine
 title: "Page API: createEngine"
 status: planned
 since: "0.1"
-summary: "createEngine options; engine.postToGame, capture, labels, requestPointerLock, capabilities, destroy."
+summary: "createEngine options; engine.postToSketch, capture, labels, requestPointerLock, capabilities, destroy."
 ---
 
 <!-- null3d:placeholder -->
@@ -12,7 +12,7 @@ summary: "createEngine options; engine.postToGame, capture, labels, requestPoint
 
 > Planned for null3d 0.1. No release has these APIs yet, so coding agents must not use them. The reference below lists the APIs the engine has now. The rest of the page is not written yet.
 
-This page will cover: createEngine options; engine.postToGame, capture, labels, requestPointerLock, capabilities, destroy.
+This page will cover: createEngine options; engine.postToSketch, capture, labels, requestPointerLock, capabilities, destroy.
 
 ## API reference
 
@@ -41,7 +41,7 @@ What the browser and device can do, as plain JSON. The engine picks its build an
 function createEngine(options: EngineOptions): Promise<Engine>
 ```
 
-Starts the engine on the page. It tests the device, picks the build and the GPU path, starts the workers, and runs the game module.
+Starts the engine on the page. It tests the device, picks the build and the GPU path, starts the workers, and runs the sketch module.
 
 ### `Engine`
 
@@ -55,10 +55,10 @@ A running engine, as `createEngine` returns it.
 | `readonly report: CapabilityReport` | The full capability report, as plain JSON. |
 | `readonly mode: EngineMode` | How the engine runs on this device. |
 | `readonly firstFrame: Promise<void>` | Resolves once the GPU has finished the first frame, so it is on screen: the moment to remove a loading screen. It never resolves when the engine is destroyed first. |
-| `postToGame(name: string, data?: unknown, transfer?: Transferable[]): void` | Sends a message to the game, which receives it through `ctx.page.onMessage`. |
-| `onGameMessage(handler: (name: string, data: unknown) => void): void` | Receives the messages the game sends with `ctx.page.post`. When no handler listened from the start, the first handler also receives the messages sent before it was registered. |
+| `postToSketch(name: string, data?: unknown, transfer?: Transferable[]): void` | Sends a message to the sketch, which receives it through `ctx.page.onMessage`. |
+| `onSketchMessage(handler: (name: string, data: unknown) => void): void` | Receives the messages the sketch sends with `ctx.page.post`. When no handler listened from the start, the first handler also receives the messages sent before it was registered. |
 | `onFailure(handler: (error: EngineError) => void): void` | Receives a failure after the engine started: the browser took the GPU away and the engine could not carry on with a new device (E1302), or an engine thread failed (E1404). The engine reports each failure once. Without a handler, it logs the failure to the console. |
-| `setPaused(paused: boolean): void` | Pauses or resumes the game's frames. |
+| `setPaused(paused: boolean): void` | Pauses or resumes the sketch's frames. |
 | `measure(seconds: number): Promise<FrameMetrics>` | Measures the running engine for a number of seconds, then returns CPU time per frame by thread and phase, GPU time, frame intervals, uploads, draw calls, memory and load time. |
 | `captureFrame(): Promise<{ width: number; height: number; pixels: Uint8Array; }>` | Draws one frame offscreen and returns its pixels as RGBA8 rows, top row first. |
 | `simulateGpuLoss(): void` | Acts out a loss of the GPU, as a driver reset causes. The engine starts a new GPU device and draws the whole scene again, as it does after a real loss. Use it to test how your page handles one. |
@@ -96,9 +96,9 @@ How the engine runs on this device: its build, its latency mode and its threads.
 
 | Member | Description |
 | --- | --- |
-| `build: 'threaded' \| 'single'` | With `threaded`, the game and the render step run in workers, helped by job workers. With `single`, everything runs on the page's thread, for pages without shared memory. |
+| `build: 'threaded' \| 'single'` | With `threaded`, the sketch and the render step run in workers, helped by job workers. With `single`, everything runs on the page's thread, for pages without shared memory. |
 | `latency: LatencyMode \| 'single'` | The latency mode in use, or `single` for the single-thread build. |
-| `renderThread: 'render-worker' \| 'game-worker' \| 'main'` | The thread that owns the canvas and draws. |
+| `renderThread: 'render-worker' \| 'sketch-worker' \| 'main'` | The thread that owns the canvas and draws. |
 | `jobWorkers: number` | The job workers that share the engine's parallel work. |
 
 ### `EngineOptions`
@@ -110,13 +110,13 @@ Options for `createEngine`.
 | Member | Description |
 | --- | --- |
 | `canvas: HTMLCanvasElement` | The canvas to draw into, sized by CSS. |
-| `game: URL \| string` | The game module, which runs in the game worker; `new URL('./game.ts', import.meta.url)`. |
+| `sketch: URL \| string` | The sketch module, which runs in the sketch worker; `new URL('./sketch.ts', import.meta.url)`. |
 | `maxPixelRatio?: number` | Cap for the device pixel ratio. |
 | `gpu?: 'auto' \| 'webgpu' \| 'webgl2'` | Forces a GPU tier, for testing only. |
 | `latency?: LatencyMode` | The latency mode. The default is `pipelined`. |
-| `onProgress?: (stage: StartupStage) => void` | Called as the start reaches each stage, in this order: `core` once the engine core is compiled and the GPU paths are tested, `game` once the game's setup has run, and `first-frame` once the GPU has finished the first frame. |
-| `onGameMessage?: (name: string, data: unknown) => void` | Receives the messages the game sends with `ctx.page.post`, from the start of the game's setup. Use it for progress that the game reports while it loads. `engine.onGameMessage` adds more handlers once the engine has started. |
-| `signal?: AbortSignal` | Cancels a start in progress, for example when the player leaves the page. `createEngine` then stops the engine's threads and rejects with the signal's reason. |
+| `onProgress?: (stage: StartupStage) => void` | Called as the start reaches each stage, in this order: `core` once the engine core is compiled and the GPU paths are tested, `sketch` once the sketch's setup has run, and `first-frame` once the GPU has finished the first frame. |
+| `onSketchMessage?: (name: string, data: unknown) => void` | Receives the messages the sketch sends with `ctx.page.post`, from the start of the sketch's setup. Use it for progress that the sketch reports while it loads. `engine.onSketchMessage` adds more handlers once the engine has started. |
+| `signal?: AbortSignal` | Cancels a start in progress, for example when the user leaves the page. `createEngine` then stops the engine's threads and rejects with the signal's reason. |
 
 ### `ErrorCode`
 
@@ -151,12 +151,12 @@ The code of an engine error. Each code has a docs page that gives its cause and 
 type LatencyMode = 'pipelined' | 'low';
 ```
 
-How the engine trades latency for speed. In `pipelined` mode, the render worker draws each frame while the game computes the next one. In `low` mode, the game worker draws each frame right after its update.
+How the engine trades latency for speed. In `pipelined` mode, the render worker draws each frame while the sketch computes the next one. In `low` mode, the sketch worker draws each frame right after its update.
 
 ### `StartupStage`
 
 ```ts
-type StartupStage = 'core' | 'game' | 'first-frame';
+type StartupStage = 'core' | 'sketch' | 'first-frame';
 ```
 
 A stage of the engine's start, as `onProgress` reports it.

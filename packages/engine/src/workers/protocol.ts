@@ -19,12 +19,12 @@ export interface RendererSetup {
 	forceCompat: boolean;
 }
 
-export type GameWorkerInit = CoreHandoff & {
+export type SketchWorkerInit = CoreHandoff & {
 	type: 'init';
-	gameUrl: string;
-	/** Job workers that serve the game's job system. */
+	sketchUrl: string;
+	/** Job workers that serve the sketch's job system. */
 	jobWorkers: number;
-	/** Present in low-latency mode, where the game worker also draws. */
+	/** Present in low-latency mode, where the sketch worker also draws. */
 	renderer?: RendererSetup;
 };
 
@@ -38,19 +38,19 @@ export type RendererRequest = { type: 'capture' } | { type: 'lose-gpu' };
 export type WorkerReply =
 	| {
 			type: 'ready';
-			role: 'game' | 'render' | 'job';
+			role: 'sketch' | 'render' | 'job';
 			index?: number;
 			threaded: boolean;
 			version: string;
 			tier?: Tier;
 	  }
-	| { type: 'error'; role: 'game' | 'render' | 'job'; message: string }
+	| { type: 'error'; role: 'sketch' | 'render' | 'job'; message: string }
 	/** The browser took the GPU away from the worker that draws, which stopped drawing. */
-	| { type: 'lost'; role: 'game' | 'render'; reason: string }
-	| { type: 'game-message'; name: string; data: unknown }
+	| { type: 'lost'; role: 'sketch' | 'render'; reason: string }
+	| { type: 'sketch-message'; name: string; data: unknown }
 	| { type: 'captured'; width: number; height: number; pixels: Uint8Array };
 
-export type GameWorkerMessage =
-	| GameWorkerInit
+export type SketchWorkerMessage =
+	| SketchWorkerInit
 	| RendererRequest
 	| { type: 'post'; name: string; data: unknown };

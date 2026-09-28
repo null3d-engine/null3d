@@ -1,6 +1,6 @@
 [
   {"query": "add a spinning cube to my Null3D scene, just something to check the setup works", "should_trigger": true},
-  {"query": "my null3d game stutters every few seconds on iphone, can you look at src/game.ts?", "should_trigger": true},
+  {"query": "my null3d game stutters every few seconds on iphone, can you look at src/sketch.ts?", "should_trigger": true},
   {"query": "load models/robot.glb in the null3d project and play its 'Walk' animation while W is held", "should_trigger": true},
   {"query": "write a WGSL surface function for a glowing lava material in null3d", "should_trigger": true},
   {"query": "set up a new null3d project for a top-down tower defense prototype, mobile first", "should_trigger": true},

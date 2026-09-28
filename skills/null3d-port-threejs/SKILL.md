@@ -9,7 +9,7 @@ metadata:
 
 # Porting three.js to null3d
 
-A good port looks like the original, runs faster, and reads like null3d code. Translating line by line reaches the first goal at best. three.js habits such as mutating objects every frame, per-object update methods, allocations in the render loop, and DOM access next to scene code keep the original's speed problems. Many of them do not work at all, because null3d game code runs in a worker. So port by intent: work out what each part of the original does, then write that the null3d way.
+A good port looks like the original, runs faster, and reads like null3d code. Translating line by line reaches the first goal at best. three.js habits such as mutating objects every frame, per-object update methods, allocations in the render loop, and DOM access next to scene code keep the original's speed problems. Many of them do not work at all, because null3d sketch code runs in a worker. So port by intent: work out what each part of the original does, then write that the null3d way.
 
 ## 1. Before you start
 
@@ -45,15 +45,15 @@ Capture reference images and timings from the running three.js app at fixed came
 
 ### Phase 3: Split the architecture
 
-Decide what stays on the page (DOM, HTML UI, GUI panels, audio, video elements, storage) and what moves to `game.ts` (scene, loop, input handling, controls, game state). Design the few messages between them. Read `references/architecture-and-loop.md`; for React Three Fiber apps, `references/react-three-fiber.md`.
+In null3d, a 3D scene is called a sketch, and it lives in `sketch.ts`. Decide what stays on the page: DOM, HTML UI, GUI panels, audio, video elements and storage. The rest moves to `sketch.ts`: the scene, the loop, input handling, controls, and state such as scores or selections. Design the few messages between them. Read `references/architecture-and-loop.md`; for React Three Fiber apps, `references/react-three-fiber.md`.
 
-For a large app, a two-step route lowers risk: first port with `createEngine({ gameThread: 'main' })`, so game code still runs on the main thread and can reach the DOM, then move it to the worker once parity holds.
+For a large app, a two-step route lowers risk: first port with `createEngine({ sketchThread: 'main' })`, so sketch code still runs on the main thread and can reach the DOM, then move it to the worker once parity holds.
 
 ### Phase 4: Port in this order
 
 Check parity images after each step. Each step needs the earlier ones to be visible, and a difference is easier to trace when little has changed.
 
-1. Renderer and loop: `createEngine` on the page, `defineGame` in `game.ts`, the loop body in `onUpdate`.
+1. Renderer and loop: `createEngine` on the page, `defineSketch` in `sketch.ts`, the loop body in `onUpdate`.
 2. Camera, camera controls and input.
 3. Models and textures. Optimize them with `npx null3d assets optimize` (meshopt, KTX2).
 4. Materials and texture settings (`references/materials.md`).
@@ -93,9 +93,9 @@ Write `PORTING-REPORT.md` with the template in `references/verification.md`: wha
 | `scene.add(mesh)` | Objects exist as soon as they are created; `setParent` builds hierarchy | Creation is a batched command |
 | `scene.add` and `scene.remove` during play, or `object.visible` toggles | Create during setup; hide with `setVisible`; pool short-lived objects in a batch with `setActiveCount` | Creating, destroying and re-parenting rebuild the draw tables; visibility and active counts upload only what changed (`guides/performance`) |
 | `new THREE.Vector3()` in the loop | Scratch arrays created once, with array math | Allocations cause garbage-collection stutter |
-| `document`, `window` and DOM events next to scene code | The page owns the DOM; input arrives in `ctx.input`; messages carry data | Game code runs in a worker without a DOM |
+| `document`, `window` and DOM events next to scene code | The page owns the DOM; input arrives in `ctx.input`; messages carry data | Sketch code runs in a worker without a DOM |
 | `obj.userData`, subclasses of `Mesh` | Your own maps or typed arrays keyed by handle or row | Engine objects are not extensible |
-| `onBeforeRender`, per-draw callbacks | `onUpdate` or `onLateUpdate`, or a declared pass | No game code runs in the render worker |
+| `onBeforeRender`, per-draw callbacks | `onUpdate` or `onLateUpdate`, or a declared pass | No sketch code runs in the render worker |
 | `material.needsUpdate = true` to switch features at run time | Create both material variants while loading. Swap with `setMaterial` for a rare change; for a frequent one, keep two objects and swap their visibility | A shader change compiles a pipeline, which stalls a frame, and `setMaterial` rebuilds the draw tables |
 | `InstancedMesh.setMatrixAt` with a dummy `Object3D` | Write `positions`, `rotations` and `scales` arrays | No matrix composition in JavaScript: in the S1 benchmark it cost three.js about 0.5 ms per frame for 100,000 instances. The loop's own motion math costs the same in both engines, so keep it tight |
 | `object.traverse` every frame | Collect the handles you need at setup | Traversal costs work every frame |
@@ -154,15 +154,15 @@ After, in null3d:
 ```ts
 // page.ts
 import { createEngine } from '@null3d/engine';
-await createEngine({ canvas: document.querySelector('canvas')!, game: new URL('./game.ts', import.meta.url) });
+await createEngine({ canvas: document.querySelector('canvas')!, sketch: new URL('./sketch.ts', import.meta.url) });
 ```
 
 ```ts
-// game.ts
-import { defineGame } from '@null3d/engine';
+// sketch.ts
+import { defineSketch } from '@null3d/engine';
 import { createOrbitControls } from '@null3d/controls';
 
-export default defineGame(async (ctx) => {
+export default defineSketch(async (ctx) => {
   const { scene, geometry, materials, post, time } = ctx;
   post.set({ toneMapping: 'none' });                 // three.js default, for parity
   const camera = scene.createPerspectiveCamera({ fov: 60, near: 0.1, far: 100, position: [0, 1.5, 4] });
@@ -190,7 +190,7 @@ The resize handler, the pixel-ratio call, `scene.add` and the render call disapp
 - `references/api-mapping.md`: the full mapping table, grouped by area. Search it for a class or property name.
 - `references/threejs-mapping.json`: the same data, used by the scanner.
 - `scripts/analyze-threejs.mjs`: the scanner (phase 1).
-- `references/architecture-and-loop.md`: what goes on the page and what goes in the game; loops, input, messages, per-object classes.
+- `references/architecture-and-loop.md`: what goes on the page and what goes in the sketch; loops, input, messages, per-object classes.
 - `references/materials.md`: every material and texture parameter, approximations, and toon, matcap and clipping recipes.
 - `references/shaders.md`: GLSL to WGSL, three.js built-ins, `onBeforeCompile` patterns, TSL, worked examples and pitfalls.
 - `references/post-processing.md`: composer passes, pmndrs effects and three.js TSL post nodes, mapped to `post.set` and `post.addEffect`.

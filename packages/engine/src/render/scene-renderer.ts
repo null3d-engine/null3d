@@ -1,4 +1,4 @@
-// The WebGPU renderer of the scene. The game thread records each frame into a draw list in engine
+// The WebGPU renderer of the scene. The sketch thread records each frame into a draw list in engine
 // memory; this renderer replays the frame's list straight from that memory, and records the
 // frame's GPU time, upload bytes and draw calls.
 

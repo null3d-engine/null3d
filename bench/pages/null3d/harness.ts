@@ -1,4 +1,4 @@
-// Runs a null3d benchmark scene page. The scene itself runs in the game worker, built from the
+// Runs a null3d benchmark scene page. The scene itself runs in the sketch worker, built from the
 // same shared scene module as the three.js twins. With `?hold`, the page draws the scene at the
 // held time on a canvas of the parity size and publishes the captured pixels. With `?demo`, it runs
 // the scene until the page closes. Otherwise it warms up, measures the engine, and publishes the
@@ -15,13 +15,13 @@ const HOLD_SETTLE_SECONDS = 0.5;
 const sleep = (seconds: number) => new Promise((resolve) => setTimeout(resolve, seconds * 1000));
 
 /**
- * Runs `game`, a game module next to the page, as the scene `sceneName` with `defaultCount`
- * objects, or with the count `?n=` asks for when the scene's count is not fixed. The game module
+ * Runs `sketch`, a sketch module next to the page, as the scene `sceneName` with `defaultCount`
+ * objects, or with the count `?n=` asks for when the scene's count is not fixed. The sketch module
  * reads `n` and `holdMs` from its own address.
  */
 export function runNull3dPage(
 	sceneName: string,
-	game: URL,
+	sketch: URL,
 	defaultCount: number,
 	fixedCount = false,
 ): void {
@@ -34,15 +34,19 @@ export function runNull3dPage(
 		canvas.style.height = `${size.height}px`;
 		canvas.style.display = 'block';
 		document.body.prepend(canvas);
-		const gameUrl = new URL(game);
+		const sketchUrl = new URL(sketch);
 		const n = fixedCount ? defaultCount : (options.count ?? defaultCount);
-		gameUrl.searchParams.set('n', String(n));
+		sketchUrl.searchParams.set('n', String(n));
 		// Whole milliseconds: the dev server would read a decimal number at the end of the module's
 		// address as its file extension.
 		if (options.hold !== null)
-			gameUrl.searchParams.set('holdMs', String(Math.round(options.hold * 1000)));
+			sketchUrl.searchParams.set('holdMs', String(Math.round(options.hold * 1000)));
 
-		const engine = await createEngine({ canvas, game: gameUrl, maxPixelRatio: CANVAS.pixelRatio });
+		const engine = await createEngine({
+			canvas,
+			sketch: sketchUrl,
+			maxPixelRatio: CANVAS.pixelRatio,
+		});
 		const report = {
 			scene: sceneName,
 			renderer: 'null3d',

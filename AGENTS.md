@@ -30,7 +30,7 @@ This repository holds the null3d engine, its tools, its documentation and its ag
 | `bun run test:bench` | The benchmark pages of both engines in Chrome, through Playwright |
 | `bun run parity` | Compare each benchmark scene's hold frame in null3d with three.js's, per GPU tier |
 | `bun run bench:run` | The benchmark protocol in a visible Chrome window: fresh runs of each scene in both engines and of the scene code both run, with a summary of each engine's whole frame and own work; `--sweep` charts S1 from 1,000 to 100,000 instances |
-| `bun run bench:allocation` | Sample what the game worker and the render worker allocate per frame in S1, with Chrome's heap profiler |
+| `bun run bench:allocation` | Sample what the sketch worker and the render worker allocate per frame in S1, with Chrome's heap profiler |
 | `bun run bench:startup` | A cold start of the engine test page's production build in Chrome, on Slow 4G with an empty cache: the startup milestones, requests and bytes of each run |
 | `bun run readme-media` | Render the README's animation of S1 with the engine |
 | `bun run dev` | Serve the test and benchmark pages with the isolation headers on port 5173 |
@@ -61,7 +61,7 @@ These ten principles decide design conflicts, and a higher one wins over a lower
 5. Move bulk work off the critical path. On WebGPU it goes to the GPU; on WebGL2 it goes to job workers.
 6. The main thread belongs to the page. When a worker is available, the engine does no frame work on the main thread.
 7. No garbage in the frame loop. TypeScript hot paths allocate nothing, and Rust uses memory arenas that reset each frame.
-8. Pay only for what you use. Optional modules and decoders load only when a game needs them.
+8. Pay only for what you use. Optional modules and decoders load only when a sketch needs them.
 9. Both backends are first-class. A feature ships only when it works on WebGPU and WebGL2, or when its WebGL2 fallback is documented.
 10. Simple for people and agents. There is one clear way to do each task, and every error message says how to fix the problem.
 
@@ -73,7 +73,7 @@ Code review enforces these rules.
 2. The render worker owns every GPU object. No other thread touches browser GPU objects.
 3. The render worker draws only inside its own `requestAnimationFrame` callback.
 4. No thread waits synchronously for another on the critical path, and no worker makes a synchronous call to the main thread.
-5. The game worker and the render worker wait with `Atomics.waitAsync` (a `MessageChannel` message on Firefox before 145). Only job workers block with `Atomics.wait`.
+5. The sketch worker and the render worker wait with `Atomics.waitAsync` (a `MessageChannel` message on Firefox before 145). Only job workers block with `Atomics.wait`.
 6. The WebGPU path stays within WebGPU's default limits. Where the engine supports compatibility mode, it also stays within that mode's lower limits (the portable budget in [GPU tiers and backends](docs/concepts/backends.md#the-portable-budget)). Anything beyond these needs a capability flag and a fallback. For example, compute workgroups use at most 128 invocations.
 7. Per-instance data reaches vertex shaders through vertex buffers, never through storage buffers.
 8. Indirect draws keep first-instance at 0. Buckets select their data with vertex-buffer offsets.

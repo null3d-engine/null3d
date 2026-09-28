@@ -98,9 +98,9 @@ fn build() -> World {
     }
 }
 
-/// One frame of game work, as the game worker runs it.
+/// One frame of sketch work, as the sketch worker runs it.
 fn frame(world: &mut World, jobs: &null3d_core::jobs::JobSystem, frame: u32, rng: &mut Rng) {
-    // Game code: roots rotate, a few static objects move, rows of both batches change.
+    // Sketch code: roots rotate, a few static objects move, rows of both batches change.
     for &root in &world.roots {
         let slot = world.scene.resolve(root).unwrap() as usize;
         let angle = frame as f32 * 0.01;

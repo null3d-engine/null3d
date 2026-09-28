@@ -1,8 +1,8 @@
-// A game with no scene: it counts its updates and its largest step, and reports them when the page
+// A sketch with no scene: it counts its updates and its largest step, and reports them when the page
 // asks. It also sends a message during setup, before the page listens.
-import { defineGame } from '@null3d/engine';
+import { defineSketch } from '@null3d/engine';
 
-export default defineGame(({ page, time }) => {
+export default defineSketch(({ page, time }) => {
 	let updates = 0;
 	let largestStep = 0;
 	page.post('setup');

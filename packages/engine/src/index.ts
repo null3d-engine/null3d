@@ -1,9 +1,7 @@
-// The null3d engine: createEngine runs on the page, defineGame in the game module.
+// The null3d engine: createEngine runs on the page, defineSketch in the sketch module.
 
 export type { ErrorCode } from './errors/codes';
 export { EngineError } from './errors/engine-error';
-export type { GameCallbacks, GameContext, GameDefinition, GameSetup } from './game/define-game';
-export { defineGame } from './game/define-game';
 export type { CapabilityReport, WebGL2Report, WebGPUReport } from './page/capabilities';
 export type {
 	Engine,
@@ -53,6 +51,13 @@ export type {
 } from './scene/scene';
 export type { PhaseName } from './shared/metrics';
 export type { Percentiles } from './shared/stats';
+export type {
+	SketchCallbacks,
+	SketchContext,
+	SketchDefinition,
+	SketchSetup,
+} from './sketch/define-sketch';
+export { defineSketch } from './sketch/define-sketch';
 export type { WorkerProbe } from './workers/probe-worker';
 
 /**

@@ -1,7 +1,7 @@
-// A deliberately slow null3d game file used by eval 2. Do not copy these patterns.
-import { defineGame, vec3 } from '@null3d/engine';
+// A deliberately slow null3d sketch file used by eval 2. Do not copy these patterns.
+import { defineSketch, vec3 } from '@null3d/engine';
 
-export default defineGame(async ({ scene, geometry, materials, page, input }) => {
+export default defineSketch(async ({ scene, geometry, materials, page, input }) => {
   const enemyMesh = geometry.capsule({ radius: 0.3, length: 1 });
   const enemyMat = materials.standard({ color: '#c83232' });
   const enemies = [];

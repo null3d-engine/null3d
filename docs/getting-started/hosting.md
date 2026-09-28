@@ -13,7 +13,7 @@ summary: "COOP and COEP headers; require-corp on Safari; CORS and CORP for asset
 ```mermaid
 flowchart TD
     load["The page loads the engine"] --> check{"crossOriginIsolated<br/>is true?"}
-    check -- "yes" --> threaded["Threaded build<br/>game, render and job workers share memory"]
+    check -- "yes" --> threaded["Threaded build<br/>sketch, render and job workers share memory"]
     check -- "no" --> single["Single-threaded build<br/>the same code on one thread"]
 ```
 
@@ -47,7 +47,7 @@ A WebAssembly module built for shared memory cannot load on a page without it, s
 
 | Build | Loaded when | What you get |
 | --- | --- | --- |
-| Threaded | The page is isolated | Game code and rendering in workers, with parallel job workers |
+| Threaded | The page is isolated | Sketch code and rendering in workers, with parallel job workers |
 | Single-threaded | Any other case | The same API and features, on one thread |
 
 The single-threaded build is fully supported. Use it where you cannot set headers, such as some game portals and embeds.

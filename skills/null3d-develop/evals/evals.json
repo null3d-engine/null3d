@@ -4,25 +4,25 @@
     {
       "id": 1,
       "prompt": "Set up a null3d scene for a turntable product viewer: the sneaker model is at /models/sneaker.glb. I want soft studio lighting, an orbit camera that can't go below the floor, and a soft shadow on the floor. It has to run well on phones.",
-      "expected_output": "A page.ts and game.ts pair: the page creates the engine; the game loads and instantiates the glTF, sets up studio lighting, orbit controls limited above the floor, a shadow-receiving floor, warm-up behind a loading step, and notes on asset optimization and version availability.",
+      "expected_output": "A page.ts and sketch.ts pair: the page creates the engine; the sketch loads and instantiates the glTF, sets up studio lighting, orbit controls limited above the floor, a shadow-receiving floor, warm-up behind a loading step, and notes on asset optimization and version availability.",
       "files": [],
       "expectations": [
-        "page.ts calls createEngine with the canvas and the game module, and game.ts uses defineGame",
+        "page.ts calls createEngine with the canvas and the sketch module, and sketch.ts uses defineSketch",
         "The model is loaded with assets.loadGltf and placed with scene.instantiate",
         "Orbit controls come from @null3d/controls and limit maxPolarAngle to below half of pi",
         "The floor receives shadows, through materials.shadowCatcher or a receiving mesh, and the light casts them",
         "Lighting uses an environment (builtinEnvironment or loadEnvironment) and/or hemisphere and directional lights",
         "The code awaits scene.warmUp() or preloads assets before showing the model",
         "The answer notes that glTF loading and some used APIs need engine 0.2 and asks to check docs status",
-        "No DOM access appears in game.ts and onUpdate allocates nothing",
+        "No DOM access appears in sketch.ts and onUpdate allocates nothing",
         "The answer recommends optimizing the model with null3d assets optimize"
       ]
     },
     {
       "id": 2,
-      "prompt": "My null3d game drops to 20 fps on my Android phone when about 5,000 enemies are on screen. Here's the game file (evals/files/slow-game.ts). Make it fast.",
+      "prompt": "My null3d game drops to 20 fps on my Android phone when about 5,000 enemies are on screen. Here's the file (evals/files/slow-sketch.ts). Make it fast.",
       "expected_output": "A rewrite that moves enemies into one dynamic instance batch driven by typed arrays, removes per-frame allocations, pools bullets with a fixed-capacity batch and setActiveCount, stops sending all positions to the page every frame, and explains how to measure the gain.",
-      "files": ["evals/files/slow-game.ts"],
+      "files": ["evals/files/slow-sketch.ts"],
       "expectations": [
         "Enemies become one scene.createInstances batch instead of 5,000 createMesh objects",
         "Enemy movement writes batch.positions directly instead of calling getPosition and setPosition per enemy",
@@ -51,13 +51,13 @@
     {
       "id": 4,
       "prompt": "In my null3d RTS prototype, clicking a unit should select it with an outline and show its name and health in an HTML label above it.",
-      "expected_output": "Units on a pickable layer; selection with obj.on('click') or a reused ray and hit object; outline through post.set and setOutlined; labels with ui.trackLabel in the game and engine.labels.bind on the page; health messages only on change.",
+      "expected_output": "Units on a pickable layer; selection with obj.on('click') or a reused ray and hit object; outline through post.set and setOutlined; labels with ui.trackLabel in the sketch and engine.labels.bind on the page; health messages only on change.",
       "files": [],
       "expectations": [
         "Selection uses obj.on('click') or camera.screenToRay with scene.raycast using ray and hit objects created once",
         "A layer mask limits picking to units",
         "The outline uses post.set({ outline }) and setOutlined(true) on the selected unit only",
-        "Labels use ui.trackLabel in game.ts and engine.labels.bind in page.ts",
+        "Labels use ui.trackLabel in sketch.ts and engine.labels.bind in page.ts",
         "Health updates are sent with page.post only when the value changes",
         "The answer notes these APIs arrive in engine 0.2 and to check docs status"
       ]

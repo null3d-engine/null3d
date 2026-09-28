@@ -3,7 +3,7 @@ id: concepts/handles
 title: Handles and objects
 status: planned
 since: "0.1"
-summary: "30-bit handles; wrapper objects; stale-handle errors; keeping game data in your own arrays."
+summary: "30-bit handles; wrapper objects; stale-handle errors; keeping per-object data in your own arrays."
 ---
 
 # Handles and objects
@@ -71,9 +71,9 @@ crate.setPosition(0, 0, 0); // development build: throws an EngineError
 
 In development builds the engine checks every handle and throws an `EngineError` that names the object and the frame it was destroyed in. Release builds leave the check out, so a setter costs only its memory write.
 
-## Keep game data in your own arrays
+## Keep per-object data in your own arrays
 
-A handle names engine data. Keep per-object game state, such as velocity or health, in your own typed arrays, indexed the way your game counts objects. For an instance batch, index them by row:
+A handle names engine data. Keep per-object state, such as velocity or health, in your own typed arrays, indexed the way your sketch counts objects. For an instance batch, index them by row:
 
 ```ts
 const drones = scene.createInstances(droneMesh, 5_000, { dynamic: true });

@@ -18,7 +18,7 @@ flowchart TD
     adapter -- "no" --> gl["WebGL2"]
 ```
 
-null3d draws with WebGPU where the browser offers it, and with WebGL2 everywhere else. The same game code runs on both, with no backend checks in it. The engine picks the tier once, at startup, from feature tests.
+null3d draws with WebGPU where the browser offers it, and with WebGL2 everywhere else. The same sketch code runs on both, with no backend checks in it. The engine picks the tier once, at startup, from feature tests.
 
 ## The three tiers
 
@@ -57,7 +57,7 @@ The features it tests include:
 - GPU timer queries
 - MSAA on 16-bit float targets
 
-Game code that uses an optional feature checks this object first.
+Sketch code that uses an optional feature checks this object first.
 
 ## The portable budget
 
@@ -81,7 +81,7 @@ A 2018 iPad Pro on iPadOS 26 reports almost exactly WebGPU's default limits, whi
 
 ## Never branch on GPU names
 
-Some browsers hide the GPU's name. Firefox on macOS reports every adapter detail as empty, and Brave can hide them by design. A name also does not tell you which features the engine turned on. Read `engine.capabilities` instead, in both the engine and your game.
+Some browsers hide the GPU's name. Firefox on macOS reports every adapter detail as empty, and Brave can hide them by design. A name also does not tell you which features the engine turned on. Read `engine.capabilities` instead, on the page or in your sketch.
 
 ## Choosing a tier for testing
 
@@ -89,7 +89,7 @@ Some browsers hide the GPU's name. Firefox on macOS reports every adapter detail
 
 ## When the GPU goes away
 
-A WebGPU device can be lost, for example after a driver reset. The render worker then creates a new device and rebuilds the GPU resources from data the engine kept. If the device is lost twice within one minute, the engine restarts the render worker on WebGL2. The game worker keeps running, so game state survives.
+A WebGPU device can be lost, for example after a driver reset. The render worker then creates a new device and rebuilds the GPU resources from data the engine kept. If the device is lost twice within one minute, the engine restarts the render worker on WebGL2. The sketch worker keeps running, so your sketch's state survives.
 
 ## Minimum browsers
 

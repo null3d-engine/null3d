@@ -34,7 +34,7 @@ function result(cpu: number, stats = false): BenchResult {
 					gpuLatencyMs: { median: cpu },
 					refreshHz: 120,
 					threads: {
-						'game-worker': { busyMs: { median: cpu }, phases: { update: { median: cpu / 2 } } },
+						'sketch-worker': { busyMs: { median: cpu }, phases: { update: { median: cpu / 2 } } },
 					},
 				}
 			: undefined,
@@ -48,8 +48,8 @@ describe('benchmark reports', () => {
 		const summary = summarizeRuns([result(2, true), result(4, true), result(3, true)]);
 		expect(summary.cpuMs).toEqual({ median: 3, min: 2, max: 4 });
 		expect(summary.allThreadsMs).toBe(6);
-		expect(summary.phases).toEqual({ 'game-worker.update': 1.5 });
-		expect(summary.threadsMs).toEqual({ 'game-worker': 3 });
+		expect(summary.phases).toEqual({ 'sketch-worker.update': 1.5 });
+		expect(summary.threadsMs).toEqual({ 'sketch-worker': 3 });
 		expect(summary).toMatchObject({
 			presentedFps: 60,
 			completedFps: 58,
@@ -67,35 +67,35 @@ describe('benchmark reports', () => {
 	});
 
 	/**
-	 * A null3d run summary with these median times per thread, and the game's update phase on the
+	 * A null3d run summary with these median times per thread, and the sketch's update phase on the
 	 * thread named first; the busiest thread sets the frame time.
 	 */
 	const null3dRun = (threadsMs: Record<string, number>, updateMs: number): RunSummary => {
 		const busiest = Math.max(...Object.values(threadsMs));
-		const gameThread = Object.keys(threadsMs)[0] as string;
+		const sketchThread = Object.keys(threadsMs)[0] as string;
 		return {
 			...summarizeRuns([result(busiest)]),
 			threadsMs,
-			phases: { [`${gameThread}.update`]: updateMs },
+			phases: { [`${sketchThread}.update`]: updateMs },
 		};
 	};
 
-	test("take the game's code away from each engine's busiest thread", () => {
+	test("take the sketch's code away from each engine's busiest thread", () => {
 		// three.js: its frame time less the scene code, timed alone.
 		expect(ownWorkMs(summarizeRuns([result(3.2)]), 2.4)).toBeCloseTo(0.8);
 		expect(ownWorkMs(summarizeRuns([result(1)]), 2)).toBe(0);
 		// null3d: each thread less the update phase on it, whatever the scene-code page measured.
-		const null3d = null3dRun({ 'game-worker': 2.5, 'render-worker': 0.15, 'job-0': 0.05 }, 2.3);
+		const null3d = null3dRun({ 'sketch-worker': 2.5, 'render-worker': 0.15, 'job-0': 0.05 }, 2.3);
 		expect(ownWorkMs(null3d, 2.6)).toBeCloseTo(0.2);
-		expect(ownWorkMs(null3dRun({ 'game-worker': 2.5, 'render-worker': 0.3 }, 2.4), 0)).toBeCloseTo(
-			0.3,
-		);
-		// In single-threaded mode the main thread runs the game, the engine and the drawing.
+		expect(
+			ownWorkMs(null3dRun({ 'sketch-worker': 2.5, 'render-worker': 0.3 }, 2.4), 0),
+		).toBeCloseTo(0.3);
+		// In single-threaded mode the main thread runs the sketch, the engine and the drawing.
 		expect(ownWorkMs(null3dRun({ main: 3 }, 2.4), 2.6)).toBeCloseTo(0.6);
 	});
 
 	test("compare null3d's own work with three.js's", () => {
-		const null3d = null3dRun({ 'game-worker': 2.54, 'render-worker': 0.12 }, 2.38);
+		const null3d = null3dRun({ 'sketch-worker': 2.54, 'render-worker': 0.12 }, 2.38);
 		const threejs = [summarizeRuns([result(3.6)]), summarizeRuns([result(3.2)])];
 		const sceneCode = summarizeRuns([result(2.4)]);
 		const own = ownShareOfThree(null3d, threejs, sceneCode);
@@ -113,7 +113,7 @@ describe('benchmark reports', () => {
 		];
 		expect(comparisonLines(rows)).toEqual([
 			"s1: null3d on WebGPU takes 79% of the CPU time per frame of three.js's faster renderer (2.54 ms against 3.20 ms).",
-			"s1: null3d's own work on its busiest thread, apart from the game's code, is 20% of three.js's (0.16 ms against 0.80 ms); three.js's is its frame less the scene code timed alone (2.40 ms).",
+			"s1: null3d's own work on its busiest thread, apart from the sketch's code, is 20% of three.js's (0.16 ms against 0.80 ms); three.js's is its frame less the scene code timed alone (2.40 ms).",
 		]);
 		const table = summaryTable(rows).split('\n');
 		expect(table[0]).toContain('| Own work, busiest thread |');

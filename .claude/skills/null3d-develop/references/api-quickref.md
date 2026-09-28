@@ -5,7 +5,7 @@ This is the API planned for null3d 1.0. A version in parentheses, such as (0.2),
 ## Contents
 
 1. Page: createEngine
-2. Game: defineGame and the context
+2. Sketch: defineSketch and the context
 3. Scene
 4. Objects and transforms
 5. Instance batches
@@ -32,23 +32,23 @@ import { createEngine } from '@null3d/engine';
 
 const engine = await createEngine({
   canvas,                                        // HTMLCanvasElement, sized by CSS
-  game: new URL('./game.ts', import.meta.url),   // the game module
+  sketch: new URL('./sketch.ts', import.meta.url),   // the sketch module
   preset: 'auto',        // 'auto' | 'low' | 'medium' | 'high' | 'ultra'
   maxPixelRatio: 2,      // cap for devicePixelRatio; presets cap it too
   gpu: 'auto',           // 'auto' | 'webgpu' | 'webgl2' (testing only)
   latency: 'pipelined',  // or 'low'; 'pipelined' is the default
   transparent: false,    // true for a see-through canvas
   largeWorld: false,     // (0.2) planet-scale scenes: cell-relative positions, batch origins
-  gameThread: 'worker',  // or 'main' for DOM-heavy apps and debugging
-  onProgress: (stage) => {},             // 'core', then 'game' after the game's setup, then 'first-frame'
-  onGameMessage: (type, data) => {},     // game messages from the start of setup, such as load progress
+  sketchThread: 'worker',  // or 'main' for DOM-heavy apps and debugging
+  onProgress: (stage) => {},             // 'core', then 'sketch' after the sketch's setup, then 'first-frame'
+  onSketchMessage: (type, data) => {},     // sketch messages from the start of setup, such as load progress
   signal: controller.signal,             // abort to cancel the start; createEngine then rejects
 });
 // createEngine rejects with an EngineError when the browser cannot run the engine (error.code)
 
 await engine.firstFrame;                 // the GPU finished the first frame: remove the loading screen
-engine.postToGame('difficulty', { level: 2 });            // an optional third argument lists transferables
-engine.onGameMessage((type, data) => { /* ... */ });      // the first handler also gets earlier messages
+engine.postToSketch('difficulty', { level: 2 });            // an optional third argument lists transferables
+engine.onSketchMessage((type, data) => { /* ... */ });      // the first handler also gets earlier messages
 const image = await engine.capture();             // Blob of the next complete frame
 // engine.registerVideo and textures.fromVideo come after 1.0; recipe 14 shows the workaround
 engine.labels.bind('hp-12', element);             // (0.2) HTML label that follows an object
@@ -60,12 +60,12 @@ engine.simulateGpuLoss();                         // acts out a driver reset; th
 engine.destroy();
 ```
 
-## 2. Game: defineGame and the context (`api/game`)
+## 2. Sketch: defineSketch and the context (`api/sketch`)
 
 ```ts
-import { defineGame } from '@null3d/engine';
+import { defineSketch } from '@null3d/engine';
 
-export default defineGame(async (ctx) => {
+export default defineSketch(async (ctx) => {
   const {
     scene, assets, materials, geometry, textures,
     input, time, quality, post, render, page, ui, debug, engine,
@@ -350,7 +350,7 @@ render.removePass('Minimap');
 render.dumpGraph();   // Graphviz DOT text of the compiled graph, for debugging
 ```
 
-Passes are declarations: the engine checks them, orders them, and shares memory between their temporary textures. No game code runs during rendering.
+Passes are declarations: the engine checks them, orders them, and shares memory between their temporary textures. No sketch code runs during rendering.
 
 ## 17. Quality (`api/quality`)
 
@@ -366,15 +366,15 @@ The frame-budget governor lowers settings in a fixed order when frames run long,
 ## 18. Messages and UI (`api/page`, `api/ui`)
 
 ```ts
-// game.ts
+// sketch.ts
 page.post('score', { value: 10 });
 page.onMessage((type, data) => { if (type === 'difficulty') level = data.level; });
 ui.trackLabel(unit, 'hp-12', { offset: [0, 2, 0] });   // (0.2)
 ui.untrackLabel('hp-12');
 
 // page.ts
-engine.onGameMessage((type, data) => { if (type === 'score') scoreEl.textContent = String(data.value); });
-engine.postToGame('difficulty', { level: 2 });
+engine.onSketchMessage((type, data) => { if (type === 'score') scoreEl.textContent = String(data.value); });
+engine.postToSketch('difficulty', { level: 2 });
 engine.labels.bind('hp-12', document.getElementById('hp-12')!);
 ```
 

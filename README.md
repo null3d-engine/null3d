@@ -17,7 +17,7 @@
 
 <p align="center">
   <strong>A browser 3D engine for games and heavy 3D apps. Its Rust core runs on worker threads,
-  it draws with WebGPU or WebGL2, and you write your game in TypeScript with three.js-style names.</strong>
+  it draws with WebGPU or WebGL2, and you write your 3D scenes in TypeScript with three.js-style names.</strong>
 </p>
 
 <p align="center">
@@ -42,14 +42,14 @@
 <p align="center">
   <img src=".github/assets/s1.gif" alt="A cloud of 100,000 blue boxes that bob and turn, seen from a camera circling it" width="480" />
   <br />
-  <sub>Benchmark scene S1: 100,000 boxes that game code moves every frame, drawn by null3d with WebGPU.</sub>
+  <sub>Benchmark scene S1: 100,000 boxes that sketch code moves every frame, drawn by null3d with WebGPU.</sub>
 </p>
 
 ## What is null3d?
 
 null3d is a browser 3D engine that aims to replace three.js where CPU time limits a scene. That happens with many moving objects, deep scene graphs, animation and culling. The engine's core is Rust compiled to WebAssembly, and it runs on worker threads, so the page's main thread stays free.
 
-It draws with WebGPU, and with WebGL2 where WebGPU is missing, from the same game code. That matters most on phones, where many devices still have no WebGPU. Where the GPU is the limit, null3d aims to match three.js, because both engines use the same browser graphics APIs.
+It draws with WebGPU, and with WebGL2 where WebGPU is missing, from the same sketch code. That matters most on phones, where many devices still have no WebGPU. Where the GPU is the limit, null3d aims to match three.js, because both engines use the same browser graphics APIs.
 
 ## Quickstart
 
@@ -67,7 +67,7 @@ Then open one of these pages in Chrome:
 
 | Page | What it shows |
 | --- | --- |
-| `http://localhost:5173/bench/pages/null3d/s1.html?demo` | S1: 100,000 boxes, each moved every frame by game code |
+| `http://localhost:5173/bench/pages/null3d/s1.html?demo` | S1: 100,000 boxes, each moved every frame by sketch code |
 | `http://localhost:5173/bench/pages/null3d/s2.html?demo` | S2: a scene graph of 5,096 objects |
 | `http://localhost:5173/bench/pages/threejs/s1.html?renderer=webgl&demo` | S1 in three.js, to compare |
 
@@ -80,7 +80,7 @@ npm install @null3d/engine
 npm install --save-dev vite @null3d/vite-plugin
 ```
 
-The Vite plugin sends the headers that worker threads need and builds the game worker:
+The Vite plugin sends the headers that worker threads need and builds the sketch worker:
 
 ```ts
 // vite.config.ts
@@ -98,17 +98,17 @@ import { createEngine } from '@null3d/engine';
 
 await createEngine({
   canvas: document.querySelector('canvas')!,
-  game: new URL('./game.ts', import.meta.url),
+  sketch: new URL('./sketch.ts', import.meta.url),
 });
 ```
 
-Your game runs in a worker:
+In null3d, a 3D scene is called a **sketch**. A sketch is a module that builds its scene and updates it every frame, and it runs in a worker of its own:
 
 ```ts
-// game.ts (game worker)
-import { defineGame } from '@null3d/engine';
+// sketch.ts (sketch worker)
+import { defineSketch } from '@null3d/engine';
 
-export default defineGame(async ({ scene, geometry, materials }) => {
+export default defineSketch(async ({ scene, geometry, materials }) => {
   const camera = scene.createPerspectiveCamera({ fov: 60, position: [0, 1.5, 4], target: [0, 0, 0] });
   scene.setActiveCamera(camera);
   scene.createDirectionalLight({ direction: [-1, -2, -1], intensity: 3, castShadows: true });
@@ -134,14 +134,14 @@ Run `npx vite` and open the page. The first release, 0.1, will put both packages
 
 ```mermaid
 flowchart LR
-    page["Main thread<br/>the page"] -- "input, through<br/>shared memory" --> game["Game worker<br/>your code + Rust core"]
-    game <-- "parallel loops" --> jobs["Job workers<br/>transforms, culling,<br/>animation"]
-    game -- "frame snapshot" --> render["Render worker<br/>WebGPU or WebGL2"]
+    page["Main thread<br/>the page"] -- "input, through<br/>shared memory" --> sketch["Sketch worker<br/>your code + Rust core"]
+    sketch <-- "parallel loops" --> jobs["Job workers<br/>transforms, culling,<br/>animation"]
+    sketch -- "frame snapshot" --> render["Render worker<br/>WebGPU or WebGL2"]
 ```
 
-1. **Your game code runs in a worker.** It reads and writes scene data in shared arrays, with no copies and no messages, so the page's main thread stays free for the page. See [Architecture: threads and the frame](docs/concepts/architecture.md).
+1. **Your sketch code runs in a worker.** It reads and writes scene data in shared arrays, with no copies and no messages, so the page's main thread stays free for the page. See [Architecture: threads and the frame](docs/concepts/architecture.md).
 2. **The Rust core works in parallel.** Job workers update transforms, sample animation and cull objects over flat arrays with SIMD, then record binary draw lists. See [Handles and objects](docs/concepts/handles.md).
-3. **One worker owns the GPU.** The render worker replays the draw lists and runs no game code, so a garbage-collection pause in your code cannot delay a frame. See [GPU tiers and backends](docs/concepts/backends.md).
+3. **One worker owns the GPU.** The render worker replays the draw lists and runs no sketch code, so a garbage-collection pause in your code cannot delay a frame. See [GPU tiers and backends](docs/concepts/backends.md).
 4. **Presets hold the frame rate on phones.** Four quality presets and dynamic resolution adjust the work to the device, and a frame-budget governor steps settings down before frames drop.
 
 ## Features
@@ -188,7 +188,7 @@ On WebGPU, the GPU then culls and counts the draws itself, and the CPU replays t
 | CPU time per frame at phone scale, on WebGPU and WebGL2 phones and tablets | At most 100% of three.js |
 | Core download size | At most 600 KB after Brotli compression |
 
-An engine's own time leaves out the game code that moves the instances, which runs alike in both engines. "Phone scale" is the largest instance count at which three.js still holds 30 frames per second on that device. The [performance guide](docs/guides/performance.md) gives the measured figures, and `bun run bench:run` measures them on your own computer.
+An engine's own time leaves out the sketch code that moves the instances, which runs alike in both engines. "Phone scale" is the largest instance count at which three.js still holds 30 frames per second on that device. The [performance guide](docs/guides/performance.md) gives the measured figures, and `bun run bench:run` measures them on your own computer.
 
 ## Where it runs
 
@@ -213,7 +213,7 @@ The API uses three.js names where the ideas match. A few of the 147 entries in t
 
 | three.js | null3d | Since |
 | --- | --- | --- |
-| `WebGLRenderer` / `WebGPURenderer` | `createEngine({ canvas, game })` on the page; scene code moves into `defineGame()` in a worker | 0.1 |
+| `WebGLRenderer` / `WebGPURenderer` | `createEngine({ canvas, sketch })` on the page; scene code moves into `defineSketch()` in a worker | 0.1 |
 | `MeshStandardMaterial` | `materials.standard({ color, map, metalness, roughness, ... })` | 0.1 |
 | `InstancedMesh` with `setMatrixAt` | `scene.createInstances(mesh, count, { dynamic })`, then write the batch's typed arrays | 0.1 |
 | `OrbitControls` | `createOrbitControls(ctx, camera, { ... })` from `@null3d/controls` | 0.1 |
@@ -224,7 +224,7 @@ The full [three.js to null3d mapping](docs/porting/threejs-mapping.md) covers re
 
 ## For AI agents
 
-null3d is built so that a coding agent can create, run, test and debug a game with nobody watching.
+null3d is built so that a coding agent can create, run, test and debug a sketch with nobody watching.
 
 - Two agent skills come with the engine. [null3d-develop](skills/null3d-develop/SKILL.md) builds and speeds up null3d projects, and [null3d-port-threejs](skills/null3d-port-threejs/SKILL.md) ports three.js and React Three Fiber apps. Claude Code loads them from `.claude/skills/` in this repository.
 - Every docs page has an ID, such as `concepts/architecture`, and a status. Agents never use an API whose page is `planned`.

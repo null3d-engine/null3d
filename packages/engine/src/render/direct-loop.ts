@@ -1,14 +1,14 @@
-// The loop for a thread that runs the game and draws in the same frame: the game worker in
+// The loop for a thread that runs the sketch and draws in the same frame: the sketch worker in
 // low-latency mode, or the page's main thread in single-threaded mode. Each frame callback steps the
-// game, then draws, so input reaches the screen one frame sooner than in pipelined mode.
+// sketch, then draws, so input reaches the screen one frame sooner than in pipelined mode.
 
-import type { GameRunner } from '../game/runner';
 import { controlViews, Slot } from '../shared/control';
+import type { SketchRunner } from '../sketch/runner';
 import { Presenter, type RenderLoop } from './loop';
 import type { Renderer } from './renderer';
 
 export function runDirectLoop(
-	runner: GameRunner,
+	runner: SketchRunner,
 	renderer: Renderer,
 	control: ArrayBufferLike,
 	metrics: ArrayBufferLike,

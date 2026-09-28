@@ -1,4 +1,4 @@
-// The renderer interface. The same renderer runs in the render worker (pipelined mode), in the game
+// The renderer interface. The same renderer runs in the render worker (pipelined mode), in the sketch
 // worker (low-latency mode) or on the page's main thread (single-threaded mode and ?render=main).
 
 import { type CompletionSignal, FenceCompletion, QueueCompletion } from '../gpu/completion';
@@ -54,7 +54,7 @@ export interface RendererOptions {
 	metrics?: ArrayBufferLike;
 	/**
 	 * Engine memory and the control block: with both, a WebGPU renderer draws the scene from the
-	 * draw lists the game thread records; without them it clears to the frame's background.
+	 * draw lists the sketch thread records; without them it clears to the frame's background.
 	 */
 	scene?: { memory: WebAssembly.Memory; control: ArrayBufferLike };
 }

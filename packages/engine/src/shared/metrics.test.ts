@@ -36,23 +36,23 @@ describe('frame records', () => {
 
 	it('skip records written before the measurement began', () => {
 		const buffer = createMetricsBuffer(false, 0);
-		const game = new FrameRecorder(buffer, Role.Game);
-		record(game, 1, 1);
+		const sketch = new FrameRecorder(buffer, Role.Sketch);
+		record(sketch, 1, 1);
 		const reader = new MetricsReader(buffer);
 		reader.begin();
-		record(game, 2, 2);
+		record(sketch, 2, 2);
 		reader.end();
-		expect(reader.records[Role.Game]?.frames).toEqual([2]);
+		expect(reader.records[Role.Sketch]?.frames).toEqual([2]);
 	});
 
 	it('count records the writer overwrote before the reader drained them', () => {
 		const buffer = createMetricsBuffer(true, 0, 4);
 		const reader = new MetricsReader(buffer);
 		reader.begin();
-		const game = new FrameRecorder(buffer, Role.Game);
-		for (let frame = 1; frame <= 10; frame++) record(game, frame, frame);
+		const sketch = new FrameRecorder(buffer, Role.Sketch);
+		for (let frame = 1; frame <= 10; frame++) record(sketch, frame, frame);
 		reader.drain();
-		expect(reader.records[Role.Game]?.frames).toEqual([7, 8, 9, 10]);
+		expect(reader.records[Role.Sketch]?.frames).toEqual([7, 8, 9, 10]);
 		expect(reader.lost).toBe(6);
 	});
 
@@ -60,12 +60,12 @@ describe('frame records', () => {
 		const buffer = createMetricsBuffer(true, 0, 4);
 		const reader = new MetricsReader(buffer);
 		reader.begin();
-		const game = new FrameRecorder(buffer, Role.Game);
-		for (let frame = 1; frame <= 4; frame++) record(game, frame, frame);
+		const sketch = new FrameRecorder(buffer, Role.Sketch);
+		for (let frame = 1; frame <= 4; frame++) record(sketch, frame, frame);
 		// The writer starts the fifth record in the slot of the first and has not finished it.
-		game.begin(5);
+		sketch.begin(5);
 		reader.drain();
-		expect(reader.records[Role.Game]?.frames).toEqual([2, 3, 4]);
+		expect(reader.records[Role.Sketch]?.frames).toEqual([2, 3, 4]);
 		expect(reader.lost).toBe(1);
 	});
 
@@ -98,18 +98,21 @@ describe('frame records', () => {
 });
 
 describe('threadRoles', () => {
-	it('places the game and render roles on the threads of each mode', () => {
+	it('places the sketch and render roles on the threads of each mode', () => {
 		const roles = (latency: string, renderThread: string, jobWorkers = 0) =>
 			Object.fromEntries(threadRoles({ latency, renderThread, jobWorkers }));
 		expect(roles('pipelined', 'render-worker', 2)).toEqual({
-			'game-worker': [Role.Game],
+			'sketch-worker': [Role.Sketch],
 			'render-worker': [Role.Render],
 			'job-0': [Role.Job],
 			'job-1': [Role.Job + 1],
 		});
-		expect(roles('pipelined', 'main')).toEqual({ 'game-worker': [Role.Game], main: [Role.Render] });
-		expect(roles('low', 'game-worker')).toEqual({ 'game-worker': [Role.Game, Role.Render] });
-		expect(roles('single', 'main')).toEqual({ main: [Role.Game, Role.Render] });
+		expect(roles('pipelined', 'main')).toEqual({
+			'sketch-worker': [Role.Sketch],
+			main: [Role.Render],
+		});
+		expect(roles('low', 'sketch-worker')).toEqual({ 'sketch-worker': [Role.Sketch, Role.Render] });
+		expect(roles('single', 'main')).toEqual({ main: [Role.Sketch, Role.Render] });
 	});
 });
 
@@ -118,7 +121,7 @@ describe('summarizeFrames', () => {
 		const buffer = createMetricsBuffer(true, 1);
 		const reader = new MetricsReader(buffer);
 		reader.begin();
-		const game = new FrameRecorder(buffer, Role.Game);
+		const sketch = new FrameRecorder(buffer, Role.Sketch);
 		const render = new FrameRecorder(buffer, Role.Render);
 		const job = new FrameRecorder(buffer, Role.Job);
 		const gpu = new FrameRecorder(buffer, Role.Gpu);
@@ -129,7 +132,7 @@ describe('summarizeFrames', () => {
 			[3, 3],
 			[4, 1],
 		] as const) {
-			record(game, frame, busy, busy);
+			record(sketch, frame, busy, busy);
 			record(job, frame, 0.5);
 		}
 		for (const frame of [1, 2, 3]) {
@@ -152,12 +155,16 @@ describe('summarizeFrames', () => {
 	it('takes the busiest thread per frame, and joins frames the renderer drew', () => {
 		const summary = run('pipelined', 'render-worker');
 		expect(summary.frames).toBe(3);
-		// Per frame: game 1, 2, 3; render 2, 2, 2; job 0.5 each.
+		// Per frame: sketch 1, 2, 3; render 2, 2, 2; job 0.5 each.
 		expect(summary.cpuMs.median).toBe(2);
 		expect(summary.cpuMs.p99).toBeCloseTo(2.98, 9);
 		expect(summary.cpuMsAllThreads.median).toBe(4.5);
-		expect(Object.keys(summary.threads).sort()).toEqual(['game-worker', 'job-0', 'render-worker']);
-		expect(summary.threads['game-worker']?.phases.update?.median).toBe(2);
+		expect(Object.keys(summary.threads).sort()).toEqual([
+			'job-0',
+			'render-worker',
+			'sketch-worker',
+		]);
+		expect(summary.threads['sketch-worker']?.phases.update?.median).toBe(2);
 		expect(summary.intervalMs).toMatchObject({ count: 2, median: 16 });
 		expect(summary.drawCalls.median).toBe(10);
 		expect(summary.gpuMs?.count).toBe(3);
@@ -169,10 +176,10 @@ describe('summarizeFrames', () => {
 	});
 
 	it('adds up roles that share a thread', () => {
-		const summary = run('low', 'game-worker');
-		// The game worker also draws: 1 + 2, 2 + 2, 3 + 2.
+		const summary = run('low', 'sketch-worker');
+		// The sketch worker also draws: 1 + 2, 2 + 2, 3 + 2.
 		expect(summary.cpuMs.median).toBe(4);
-		expect(summary.threads['game-worker']?.busyMs.median).toBe(4);
+		expect(summary.threads['sketch-worker']?.busyMs.median).toBe(4);
 	});
 });
 
