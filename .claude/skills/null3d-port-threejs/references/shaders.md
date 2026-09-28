@@ -123,7 +123,8 @@ Keep the original's standard options (color, maps, roughness) on the new materia
 | `uniform(0.5)`, and `u.value = x` | `uniforms: { name: 0.5 }`, and `material.set({ name: x })` |
 | `texture(map, uv())` | `textureSample(map, mapSampler, input.uv)` |
 | `uv()`, `uv(1)` | `input.uv`, `input.uv1` |
-| `positionLocal` | `VertexInput.position` in `vertexOffset` |
+| `positionGeometry` | `VertexInput.position` in `vertexOffset` |
+| `positionLocal` | `VertexInput.position` in `vertexOffset`, except inside `positionNode` on an `InstancedMesh` (see below) |
 | `positionWorld`, `normalWorld` | `input.worldPosition`, `input.worldNormal` |
 | `normalView` | `(camera.view * vec4f(input.worldNormal, 0.0)).xyz` |
 | `cameraPosition`, `time` | `camera.position`, `frame.time` |
@@ -136,6 +137,8 @@ Keep the original's standard options (color, maps, roughness) on the new materia
 | `material.colorNode`, `opacityNode`, `roughnessNode`, `metalnessNode`, `normalNode`, `emissiveNode`, `aoNode` | `s.baseColor`, `s.alpha`, `s.roughness`, `s.metalness`, `s.normal`, `s.emissive`, `s.occlusion` |
 | `material.positionNode` | `vertexOffset` returning `newPosition - input.position` |
 | `material.fragmentNode`, `outputNode`, `mrtNode` | Full shader or post effect; `mrtNode` has no equivalent |
+
+On an `InstancedMesh`, three.js r186 applies the instance matrix before `positionNode` runs, so `positionLocal` there already holds the instanced vertex. In null3d, `input.position` is always the mesh's own vertex, and the engine applies the instance transform after `vertexOffset`. A displacement that three.js scaled by that `positionLocal` changes size after the port. Write it from `input.position` and the instance's own data, and check the project's three.js version before you port a `positionNode`.
 
 ## 8. Vertex displacement and displacement maps
 

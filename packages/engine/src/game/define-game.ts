@@ -9,7 +9,11 @@ import type { Scene } from '../scene/scene';
  * @category api/game
  */
 export interface GameCallbacks {
-	/** Runs once per frame, before transforms, with the frame time in seconds. */
+	/**
+	 * Runs once per frame, before transforms, with the frame's step in seconds. The first frame, and
+	 * the first after a pause or a hidden page, gets 0. No step is longer than a quarter second, so a
+	 * very slow frame slows the game instead of jumping it.
+	 */
 	onUpdate?(dt: number): void;
 }
 
@@ -25,7 +29,10 @@ export interface GameContext {
 	materials: Materials;
 	/** Mesh generators. */
 	geometry: Geometry;
-	/** Time since the game started, in seconds, and the current frame number. */
+	/**
+	 * Game time in seconds, which is the sum of every step that `onUpdate` received, so paused and
+	 * hidden time do not count. Also the current frame number.
+	 */
 	time: { now: number; frame: number };
 	/** Messages between the game and the page. */
 	page: {

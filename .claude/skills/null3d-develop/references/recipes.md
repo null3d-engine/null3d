@@ -162,16 +162,21 @@ for (const u of units) {
 Without object events (before 0.2), use a ray:
 
 ```ts
+const WORLD = 1 << 2;   // walls and terrain: they block the ray
+for (const wall of walls) wall.setLayers(1 | WORLD);
+const unitSet = new Set(units);
 const ray = { origin: [0, 0, 0], direction: [0, 0, -1] };
 const hit = { object: null as any, point: [0, 0, 0], normal: [0, 0, 0], distance: 0, instance: -1 };
 // in onUpdate:
 if (input.wasPressed('Mouse0')) {
   camera.screenToRay(input.pointer.x, input.pointer.y, ray);
-  if (scene.raycast(ray.origin, ray.direction, { layers: PICKABLE }, hit)) { /* select hit.object */ }
+  if (scene.raycast(ray.origin, ray.direction, { layers: PICKABLE | WORLD }, hit) && unitSet.has(hit.object)) {
+    /* select hit.object */
+  }
 }
 ```
 
-The layer mask keeps the ray away from terrain and effects. Create `ray` and `hit` once. Docs: `api/raycast`, `concepts/render-layers`, `api/post`.
+The ray tests units and the walls and terrain on `WORLD`, and returns the nearest hit. A wall in front of a unit is that nearest hit, so a unit behind a wall is not selected. Effects stay off both layers, so they never block the ray. Create `ray`, `hit` and `unitSet` once. Docs: `api/raycast`, `concepts/render-layers`, `api/post`.
 
 ## 7. HTML labels above objects (0.2)
 

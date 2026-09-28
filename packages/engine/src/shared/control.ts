@@ -27,6 +27,11 @@ export enum Slot {
 	/** Words recorded into each draw list, by frame parity. */
 	DrawListWords0 = 11,
 	DrawListWords1 = 12,
+	/**
+	 * Incremented each time the page resumes the game or shows a hidden page again, so the game's
+	 * next step counts no time.
+	 */
+	Resumes = 13,
 }
 
 const SLOT_COUNT = 16;

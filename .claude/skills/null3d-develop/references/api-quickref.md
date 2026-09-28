@@ -49,7 +49,8 @@ const image = await engine.capture();             // Blob of the next complete f
 engine.labels.bind('hp-12', element);             // (0.2) HTML label that follows an object
 await engine.requestPointerLock();                // (0.2) for first-person controls
 engine.capabilities;  // { tier: 'webgpu' | 'webgpu-compat' | 'webgl2', threaded, features, limits }
-engine.setPaused(true);
+engine.setPaused(true);                           // the first step after resuming counts no time
+engine.onFailure((error) => { /* error.code: E1302 GPU lost, E1404 engine thread failed */ });
 engine.destroy();
 ```
 
@@ -66,7 +67,7 @@ export default defineGame(async (ctx) => {
   // setup: create objects, load assets, await scene.warmUp()
   return {
     onFixedUpdate(step) {},  // 0 to n times per frame at a fixed rate (default 60 Hz)
-    onUpdate(dt) {},         // once per frame, before transforms
+    onUpdate(dt) {},         // once per frame, before transforms; dt is 0 after a pause, at most 0.25 s
     onLateUpdate(dt) {},     // after transforms, before culling: camera follow
   };
 });

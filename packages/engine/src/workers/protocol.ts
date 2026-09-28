@@ -45,6 +45,8 @@ export type WorkerReply =
 			tier?: Tier;
 	  }
 	| { type: 'error'; role: 'game' | 'render' | 'job'; message: string }
+	/** The browser took the GPU away from the worker that draws, which stopped drawing. */
+	| { type: 'lost'; role: 'game' | 'render'; reason: string }
 	| { type: 'game-message'; name: string; data: unknown }
 	| { type: 'captured'; width: number; height: number; pixels: Uint8Array };
 

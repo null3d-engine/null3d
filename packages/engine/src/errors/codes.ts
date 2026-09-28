@@ -102,6 +102,14 @@ export const ERRORS = {
 		example: 'E1301: no usable GPU path for ?gpu=webgpu in this browser.',
 		since: '0.1',
 	},
+	E1302: {
+		title: 'GPU lost',
+		cause:
+			'The browser took the GPU away while the engine drew, for example after a driver reset or a GPU crash. The engine stopped drawing.',
+		fix: 'Listen with engine.onFailure. Destroy the engine, put a new canvas element in place of the old one, and start the engine again on it.',
+		example: 'E1302: the render worker lost its GPU: the GPU device was lost.',
+		since: '0.1',
+	},
 	E1401: {
 		title: 'Not a game module',
 		cause:
@@ -124,6 +132,14 @@ export const ERRORS = {
 			'An engine call ran before the engine core started in this worker, or the core started twice.',
 		fix: 'Create objects in the setup function you pass to defineGame, or later, never when the game module loads.',
 		example: 'E1403: createMesh() ran before the engine core started.',
+		since: '0.1',
+	},
+	E1404: {
+		title: 'Engine thread failed',
+		cause:
+			'An engine thread hit an error it could not handle after the engine started, so the engine may have stopped.',
+		fix: 'This is an engine bug. Report it with the message and the browser, then destroy the engine and start it again.',
+		example: 'E1404: the render worker failed: out of memory.',
 		since: '0.1',
 	},
 	E1501: {

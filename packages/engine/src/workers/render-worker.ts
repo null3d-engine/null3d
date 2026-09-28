@@ -1,7 +1,7 @@
 // The render worker: owns the canvas and every GPU object, runs no game code, and draws only inside
 // its own requestAnimationFrame callback.
 
-import { emptySceneInput, runRenderLoop } from '../render/loop';
+import { emptySceneInput, runRenderLoop, stopOnLoss } from '../render/loop';
 import { createRenderer, type Renderer } from '../render/renderer';
 import { controlViews, Slot } from '../shared/control';
 import { startCore } from '../shared/core';
@@ -23,7 +23,8 @@ self.onmessage = async (event: MessageEvent<RenderWorkerInit | RendererRequest>)
 				...message,
 				scene: message.memory && { memory: message.memory, control: message.control },
 			});
-			runRenderLoop(renderer, message.control, message.metrics);
+			const loop = runRenderLoop(renderer, message.control, message.metrics);
+			stopOnLoss(renderer, loop, (reason) => reply({ type: 'lost', role: 'render', reason }));
 			reply({
 				type: 'ready',
 				role: 'render',

@@ -267,14 +267,16 @@ const dissolve = materials.shader({
 Picking an object under the pointer (0.2):
 
 ```ts
-// Create both once, outside the frame loop.
+// Create these once, outside the frame loop. Walls and terrain are on the WORLD layer, so they
+// block the ray: a unit behind a wall is not picked.
 const ray = { origin: [0, 0, 0], direction: [0, 0, -1] };
 const hit = { object: null, point: [0, 0, 0], normal: [0, 0, 0], distance: 0, instance: -1 };
 
 // In onUpdate:
 if (input.wasPressed('Mouse0')) {
   camera.screenToRay(input.pointer.x, input.pointer.y, ray);
-  if (scene.raycast(ray.origin, ray.direction, { layers: PICKABLE }, hit)) select(hit.object);
+  const layers = PICKABLE | WORLD;
+  if (scene.raycast(ray.origin, ray.direction, { layers }, hit) && units.has(hit.object)) select(hit.object);
 }
 ```
 

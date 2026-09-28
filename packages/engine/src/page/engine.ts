@@ -4,7 +4,7 @@
 import { EngineError } from '../errors/engine-error';
 import { GameRunner } from '../game/runner';
 import { runDirectLoop } from '../render/direct-loop';
-import { emptySceneInput, type RenderLoop, runRenderLoop } from '../render/loop';
+import { emptySceneInput, type RenderLoop, runRenderLoop, stopOnLoss } from '../render/loop';
 import { createRenderer, type Renderer, type Tier } from '../render/renderer';
 import { controlViews, createControlBuffer, Slot } from '../shared/control';
 import { type Build, startCore } from '../shared/core';
@@ -91,6 +91,12 @@ export interface Engine {
 	postToGame(name: string, data?: unknown, transfer?: Transferable[]): void;
 	/** Receives the messages the game sends with `ctx.page.post`. */
 	onGameMessage(handler: (name: string, data: unknown) => void): void;
+	/**
+	 * Receives a failure after the engine started: the browser took the GPU away (E1302), or an
+	 * engine thread failed (E1404). The engine reports each failure once. Without a handler, it logs
+	 * the failure to the console.
+	 */
+	onFailure(handler: (error: EngineError) => void): void;
 	/** Pauses or resumes the game's frames. */
 	setPaused(paused: boolean): void;
 	/**
@@ -145,18 +151,33 @@ type Pending = { resolve: (reply: WorkerReply) => void; reject: (error: Error) =
 class EngineWorker {
 	private readonly waiting: Pending[] = [];
 	private readyPromise: Promise<WorkerReply>;
+	private started = false;
 
 	constructor(
 		readonly worker: Worker,
+		role: string,
 		onGameMessage: (name: string, data: unknown) => void,
+		onFailure: (error: EngineError) => void,
 	) {
 		this.readyPromise = new Promise((resolve, reject) => {
 			this.waiting.push({ resolve, reject });
 		});
+		void this.readyPromise.then(
+			() => {
+				this.started = true;
+			},
+			() => {},
+		);
 		worker.onmessage = (event: MessageEvent<WorkerReply>) => {
 			const reply = event.data;
 			if (reply.type === 'game-message') {
 				onGameMessage(reply.name, reply.data);
+				return;
+			}
+			if (reply.type === 'lost') {
+				onFailure(
+					new EngineError('E1302', `the ${reply.role} worker lost its GPU: ${reply.reason}.`),
+				);
 				return;
 			}
 			const pending = this.waiting.shift();
@@ -166,8 +187,10 @@ class EngineWorker {
 			else pending.resolve(reply);
 		};
 		worker.onerror = (event) => {
-			const pending = this.waiting.shift();
-			pending?.reject(new Error(event.message || 'a worker failed to start'));
+			const message = event.message || 'a worker failed';
+			this.waiting.shift()?.reject(new Error(message));
+			if (this.started)
+				onFailure(new EngineError('E1404', `the ${role} worker failed: ${message}.`));
 		};
 	}
 
@@ -239,6 +262,16 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 	const onGameMessage = (name: string, data: unknown) => {
 		for (const handler of messageHandlers) handler(name, data);
 	};
+	const failureHandlers: ((error: EngineError) => void)[] = [];
+	const reported = new Set<string>();
+	const onFailure = (error: EngineError) => {
+		if (reported.has(error.message)) return;
+		reported.add(error.message);
+		if (failureHandlers.length === 0) console.error(error);
+		for (const handler of failureHandlers) handler(error);
+	};
+	const pageLoss = (reason: string) =>
+		onFailure(new EngineError('E1302', `the page lost its GPU: ${reason}.`));
 
 	const workers: EngineWorker[] = [];
 	let game: EngineWorker | undefined;
@@ -266,13 +299,16 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 				scene: { memory, control },
 			});
 			localLoop = runDirectLoop(localRunner, localRenderer, control, metrics);
+			stopOnLoss(localRenderer, localLoop, pageLoss);
 		} else {
 			game = new EngineWorker(
 				new Worker(new URL('../workers/game-worker.ts', import.meta.url), {
 					type: 'module',
 					name: 'null3d-game',
 				}),
+				'game',
 				onGameMessage,
+				onFailure,
 			);
 			workers.push(game);
 			if (renderThread === 'game-worker') {
@@ -297,7 +333,9 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 							type: 'module',
 							name: 'null3d-render',
 						}),
+						'render',
 						onGameMessage,
+						onFailure,
 					);
 					workers.push(rendererHost);
 					rendererHost.worker.postMessage({ type: 'init', ...handoff, canvas, tier, forceCompat }, [
@@ -311,6 +349,7 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 						scene: core.memory && { memory: core.memory, control },
 					});
 					localLoop = runRenderLoop(localRenderer, control, metrics);
+					stopOnLoss(localRenderer, localLoop, pageLoss);
 				}
 			}
 			for (let index = 0; index < jobWorkers; index++) {
@@ -319,7 +358,9 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 						type: 'module',
 						name: `null3d-job-${index}`,
 					}),
+					`job ${index}`,
 					onGameMessage,
+					onFailure,
 				);
 				workers.push(job);
 				job.worker.postMessage({ type: 'init', ...handoff, index });
@@ -356,7 +397,12 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 		onGameMessage(handler) {
 			messageHandlers.push(handler);
 		},
+		onFailure(handler) {
+			failureHandlers.push(handler);
+		},
 		setPaused(paused) {
+			// Counted before the flag clears, so the game's first step after the pause sees it.
+			if (!paused && Atomics.load(slots, Slot.Paused) !== 0) Atomics.add(slots, Slot.Resumes, 1);
 			Atomics.store(slots, Slot.Paused, paused ? 1 : 0);
 			Atomics.notify(slots, Slot.Paused);
 		},

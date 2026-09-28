@@ -5,6 +5,7 @@ import { readbackWebGL2, readbackWebGPU } from '../gpu/readback';
 import { GpuTimer } from '../gpu/webgpu/gpu-timer';
 import { RenderPassSetup, submitOne } from '../gpu/webgpu/reusable';
 import { type FrameRecorder, Phase } from '../shared/metrics';
+import { contextLoss, deviceLoss } from './loss';
 import { WebGPUSceneRenderer } from './scene-renderer';
 
 /**
@@ -33,6 +34,8 @@ export interface Renderer {
 	drawFrame(input: FrameInput, record: FrameRecorder): void;
 	/** Draws one frame into an offscreen target and returns its pixels as RGBA8 rows, top row first. */
 	capture(input: FrameInput): Promise<{ width: number; height: number; pixels: Uint8Array }>;
+	/** Resolves with the browser's reason if it takes the GPU away; destroying the renderer does not. */
+	readonly lost: Promise<string>;
 	destroy(): void;
 }
 
@@ -59,6 +62,7 @@ class WebGPURenderer implements Renderer {
 	private readonly format: GPUTextureFormat;
 	private readonly timer: GpuTimer | undefined;
 	private readonly pass = new RenderPassSetup();
+	readonly lost: Promise<string>;
 
 	constructor(
 		readonly tier: Tier,
@@ -66,6 +70,7 @@ class WebGPURenderer implements Renderer {
 		private readonly canvas: RenderCanvas,
 		metrics: ArrayBufferLike | undefined,
 	) {
+		this.lost = deviceLoss(device);
 		const context = canvas.getContext('webgpu') as GPUCanvasContext | null;
 		if (!context) throw new Error('the canvas has no WebGPU context');
 		this.context = context;
@@ -129,8 +134,11 @@ class WebGPURenderer implements Renderer {
 class WebGL2Renderer implements Renderer {
 	readonly tier: Tier = 'webgl2';
 	private readonly gl: WebGL2RenderingContext;
+	private released = false;
+	readonly lost: Promise<string>;
 
 	constructor(private readonly canvas: RenderCanvas) {
+		this.lost = contextLoss(canvas, () => this.released);
 		const gl = canvas.getContext('webgl2', {
 			antialias: false,
 			alpha: false,
@@ -169,6 +177,7 @@ class WebGL2Renderer implements Renderer {
 	}
 
 	destroy(): void {
+		this.released = true;
 		this.gl.getExtension('WEBGL_lose_context')?.loseContext();
 	}
 }

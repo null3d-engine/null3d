@@ -11,6 +11,18 @@ export interface RenderLoop {
 	stop(): void;
 }
 
+/** Stops the loop when the browser takes the renderer's GPU away, then reports the reason. */
+export function stopOnLoss(
+	renderer: Renderer,
+	loop: RenderLoop,
+	report: (reason: string) => void,
+): void {
+	void renderer.lost.then((reason) => {
+		loop.stop();
+		report(reason);
+	});
+}
+
 /** A frame input that `emptySceneInput` can fill again each frame. */
 type ReusableInput = { frame: number; background: [number, number, number] };
 

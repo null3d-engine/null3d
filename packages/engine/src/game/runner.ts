@@ -11,6 +11,7 @@ import { Scene } from '../scene/scene';
 import { Slot } from '../shared/control';
 import type { CoreGlue } from '../shared/core';
 import { FrameRecorder, Phase, Role } from '../shared/metrics';
+import { FrameClock } from './clock';
 import type { GameCallbacks, GameContext } from './define-game';
 import { isGameDefinition } from './define-game';
 
@@ -32,8 +33,7 @@ export interface GameCore {
 export class GameRunner {
 	private readonly messageHandlers: ((type: string, data: unknown) => void)[] = [];
 	private callbacks: GameCallbacks = {};
-	private startTime = -1;
-	private lastTime = -1;
+	private readonly clock = new FrameClock();
 	private readonly record: FrameRecorder;
 	/** One recorder per job worker, for the busy time the core reports for it each frame. */
 	private readonly jobRecords: FrameRecorder[];
@@ -111,10 +111,8 @@ export class GameRunner {
 		const start = performance.now();
 		const { time } = this.context;
 		const { glue, slots } = this.game;
-		if (this.startTime < 0) this.startTime = now;
-		const dt = this.lastTime < 0 ? 0 : (now - this.lastTime) / 1000;
-		this.lastTime = now;
-		time.now = (now - this.startTime) / 1000;
+		const dt = this.clock.step(now, Atomics.load(slots, Slot.Resumes));
+		time.now = this.clock.now;
 		time.frame++;
 		const frame = time.frame;
 		this.record.begin(frame);

@@ -7,6 +7,7 @@ import { WebGPUBackend } from '../gpu/webgpu/backend';
 import { GpuTimer } from '../gpu/webgpu/gpu-timer';
 import { controlViews, Slot } from '../shared/control';
 import { Counter, type FrameRecorder, Phase } from '../shared/metrics';
+import { deviceLoss } from './loss';
 import type { FrameInput, RenderCanvas, Renderer, Tier } from './renderer';
 
 export class WebGPUSceneRenderer implements Renderer {
@@ -17,6 +18,7 @@ export class WebGPUSceneRenderer implements Renderer {
 	private viewsOf: ArrayBufferLike | undefined;
 	private words = new Uint32Array(0);
 	private floats = new Float32Array(0);
+	readonly lost: Promise<string>;
 
 	constructor(
 		readonly tier: Tier,
@@ -26,6 +28,7 @@ export class WebGPUSceneRenderer implements Renderer {
 		control: ArrayBufferLike,
 		metrics: ArrayBufferLike | undefined,
 	) {
+		this.lost = deviceLoss(device);
 		const context = canvas.getContext('webgpu') as GPUCanvasContext | null;
 		if (!context) throw new Error('the canvas has no WebGPU context');
 		this.context = context;

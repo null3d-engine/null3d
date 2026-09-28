@@ -56,6 +56,7 @@ A running engine, as `createEngine` returns it.
 | `readonly mode: EngineMode` | How the engine runs on this device. |
 | `postToGame(name: string, data?: unknown, transfer?: Transferable[]): void` | Sends a message to the game, which receives it through `ctx.page.onMessage`. |
 | `onGameMessage(handler: (name: string, data: unknown) => void): void` | Receives the messages the game sends with `ctx.page.post`. |
+| `onFailure(handler: (error: EngineError) => void): void` | Receives a failure after the engine started: the browser took the GPU away (E1302), or an engine thread failed (E1404). The engine reports each failure once. Without a handler, it logs the failure to the console. |
 | `setPaused(paused: boolean): void` | Pauses or resumes the game's frames. |
 | `measure(seconds: number): Promise<FrameMetrics>` | Measures the running engine for a number of seconds, then returns CPU time per frame by thread and phase, GPU time, frame intervals, uploads, draw calls, memory and load time. |
 | `captureFrame(): Promise<{ width: number; height: number; pixels: Uint8Array; }>` | Draws one frame offscreen and returns its pixels as RGBA8 rows, top row first. |
@@ -127,9 +128,11 @@ type ErrorCode =
 	| 'E1203'
 	| 'E1204'
 	| 'E1301'
+	| 'E1302'
 	| 'E1401'
 	| 'E1402'
 	| 'E1403'
+	| 'E1404'
 	| 'E1501';
 ```
 

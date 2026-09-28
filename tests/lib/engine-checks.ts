@@ -57,7 +57,7 @@ export interface EngineResult {
 		load: { firstFrameMs: number | null };
 		memory: { wasmBytes: number | null };
 	};
-	count: { updates: number };
+	count: { updates: number; largestStep: number };
 }
 
 /** Slower than this median frame interval means the loop is not keeping up with the display. */

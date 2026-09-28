@@ -5,7 +5,7 @@
 
 import { GameRunner } from '../game/runner';
 import { runDirectLoop } from '../render/direct-loop';
-import { emptySceneInput } from '../render/loop';
+import { emptySceneInput, stopOnLoss } from '../render/loop';
 import { createRenderer, type Renderer } from '../render/renderer';
 import { controlViews, Slot } from '../shared/control';
 import { startCore } from '../shared/core';
@@ -69,7 +69,8 @@ self.onmessage = async (event: MessageEvent<GameWorkerMessage>) => {
 					metrics: message.metrics,
 					scene: { memory, control: message.control },
 				});
-				runDirectLoop(runner, renderer, message.control, message.metrics);
+				const loop = runDirectLoop(runner, renderer, message.control, message.metrics);
+				stopOnLoss(renderer, loop, (reason) => reply({ type: 'lost', role: 'game', reason }));
 			} else {
 				void runPipelined(runner, message.control);
 			}
