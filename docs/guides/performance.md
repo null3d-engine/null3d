@@ -66,9 +66,14 @@ Garbage collection pauses the thread that allocated the memory. The render worke
 - Compute a vector's length with `Math.sqrt(x * x + y * y + z * z)`. `Math.hypot` is slower in hot code.
 - Keep reused arrays at their size. Setting `length = 0` frees an array's storage, so the next write allocates it again.
 - Do not wrap a browser promise in an `async` function every frame. Each call makes a promise of its own.
+- Keep closures out of functions that run every frame, even in a branch that rarely runs. Until the browser optimizes the function, the variables a closure captures are allocated on every call. Move such a branch into a function of its own.
 - Change a light's intensity every frame, not its color. `setDirection` and `setIntensity` allocate nothing, but `setColor` converts the color and allocates.
 
 Decimal numbers are a special case. Until the browser optimizes a function, the numbers it computes are stored as small objects. Code that runs once per frame gets optimized only after thousands of frames, so judge allocation after about 30 seconds of play.
+
+## Create meshes, materials and batches during setup
+
+The engine sizes its memory for the scene it holds. A mesh, an instance batch or a new pairing of a mesh and a material made during play therefore makes engine memory grow in the next frame. Create them during setup instead. Size an instance batch for the most rows it will ever need, and show fewer with `setActiveCount`.
 
 ## Moving objects cost uploads
 
@@ -76,7 +81,7 @@ Each dynamic instance uploads its 48-byte world matrix in every frame, so 100,00
 
 Mark objects and batches static when they rarely move, and call `markDirty` for the rows that you change. See [Static and dynamic objects](../concepts/static-dynamic.md).
 
-The render worker picks how each upload travels, so you do not need to. For uploads from 64 KiB up to 4 MiB, it times two routes on the device and uses the faster one: the direct write call, or staging buffers that the browser keeps mapped. In Chrome the staging buffers are 3 to 6 times faster. In Safari the direct call is faster at every size.
+The render worker picks how each upload travels, so you do not need to. Uploads from 64 KiB up to 4 MiB have two routes: the direct write call, and staging buffers that the browser keeps mapped. The render worker times both on the device and uses the faster one. In Chrome the staging buffers are 3 to 6 times faster. In Safari the direct call is faster at every size.
 
 ## Measure
 

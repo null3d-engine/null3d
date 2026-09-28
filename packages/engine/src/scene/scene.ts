@@ -472,22 +472,26 @@ export class InstanceBatch {
 		private readonly hasColors: boolean,
 	) {}
 
+	/**
+	 * The row arrays, made again after the engine's memory grew. Games read rows every frame, so this
+	 * check creates no closure: one would allocate on each call until the browser optimizes the code.
+	 */
 	private views(): InstanceBatch['rows'] {
-		const { core } = this.scene;
-		if (this.generation !== core.generation) {
-			const address = (field: number) =>
-				core.check(core.glue.batchArrays(this.id, field), 'instance arrays');
-			this.rows = {
-				positions: core.f32(address(C.BATCH_FIELD_POSITIONS), this.count * 3),
-				rotations: core.f32(address(C.BATCH_FIELD_ROTATIONS), this.count * 4),
-				scales: core.f32(address(C.BATCH_FIELD_SCALES), this.count * 3),
-				colors: this.hasColors
-					? core.f32(address(C.BATCH_FIELD_COLORS), this.count * 4)
-					: undefined,
-			};
-			this.generation = core.generation;
-		}
+		if (this.generation !== this.scene.core.generation) this.makeViews();
 		return this.rows;
+	}
+
+	private makeViews(): void {
+		const { core } = this.scene;
+		const address = (field: number) =>
+			core.check(core.glue.batchArrays(this.id, field), 'instance arrays');
+		this.rows = {
+			positions: core.f32(address(C.BATCH_FIELD_POSITIONS), this.count * 3),
+			rotations: core.f32(address(C.BATCH_FIELD_ROTATIONS), this.count * 4),
+			scales: core.f32(address(C.BATCH_FIELD_SCALES), this.count * 3),
+			colors: this.hasColors ? core.f32(address(C.BATCH_FIELD_COLORS), this.count * 4) : undefined,
+		};
+		this.generation = core.generation;
 	}
 
 	/** Positions, 3 floats per row. */

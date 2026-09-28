@@ -22,8 +22,13 @@
 //! frame's list reads from engine memory is therefore kept per frame parity: the list itself, and
 //! an upload arena that holds copies of the small tables and new mesh data. World matrices come
 //! straight from the core's world buffer of the frame's parity, which the core keeps the same way.
-
-use std::collections::BTreeMap;
+//!
+//! # Memory
+//!
+//! Frames record without the general-purpose allocator. At the start of each frame the arena gets
+//! room for the most that any frame can copy for the scene as it stands, and the layout keeps its
+//! tables and scratch space between rebuilds. Only the first frames after the scene grows, with a
+//! new batch, mesh or mesh and material pair, allocate.
 
 use sokko3d_core::culling::Frustum;
 use sokko3d_core::handle::Handle;
@@ -38,7 +43,7 @@ use sokko3d_gpu::drawlist::{
 
 use crate::camera::{Affine, Perspective};
 use crate::frame_data::{FrameUniform, normalized_direction};
-use crate::materials::{MaterialTable, Shading};
+use crate::materials::{MATERIAL_FLOATS, MaterialTable, Shading};
 use crate::meshes::{MeshStorage, Packing};
 
 /// Engine mesh ids count from 1; 0 marks an object with no mesh, such as a group or a camera.
@@ -56,8 +61,8 @@ const BUCKET_BYTES: u32 = 16;
 const MATRIX_BYTES: u32 = (MATRIX_FLOATS * 4) as u32;
 /// Bytes of one indexed indirect draw.
 const INDIRECT_BYTES: u32 = sizes::INDIRECT_WORDS * 4;
-/// Bytes per chunk of an upload arena.
-const ARENA_CHUNK_BYTES: usize = 64 * 1024;
+/// Words of the culling pass's bind group entries: three for the group, five per buffer.
+const CULL_GROUP_WORDS: usize = 3 + 6 * 5;
 
 /// The builder's GPU objects. It owns every id it uses.
 mod ids {
@@ -119,6 +124,8 @@ pub enum RecordError {
     MeshBuffersFull,
     /// More sources than one culling dispatch covers.
     TooManySources,
+    /// The frame's copies do not fit its upload arena, which the builder sizes for every frame.
+    UploadsFull,
 }
 
 impl From<DrawListError> for RecordError {
@@ -163,38 +170,29 @@ fn words_as_bytes(words: &[u32]) -> &[u8] {
 /// valid until the arena is reset for the next frame of the same parity.
 #[derive(Default)]
 struct UploadArena {
-    chunks: Vec<Vec<u8>>,
-    current: usize,
+    bytes: Vec<u8>,
 }
 
 impl UploadArena {
-    fn reset(&mut self) {
-        for chunk in &mut self.chunks {
-            chunk.clear();
-        }
-        self.current = 0;
+    /// Empties the arena and makes room for `total` bytes. The list of the frame that last used
+    /// the arena has been replayed, so its copies may move.
+    fn reset(&mut self, total: usize) {
+        self.bytes.clear();
+        self.bytes.reserve_exact(total);
     }
 
     /// Copies bytes into the arena, padded to four bytes, and returns their address and padded
-    /// length.
-    fn push(&mut self, bytes: &[u8]) -> (u32, u32) {
+    /// length. The arena never grows during a frame, as that would move the copies whose addresses
+    /// the list already holds.
+    fn push(&mut self, bytes: &[u8]) -> Result<(u32, u32), RecordError> {
         let padded = bytes.len().next_multiple_of(4);
-        while self.current < self.chunks.len() {
-            let chunk = &self.chunks[self.current];
-            if chunk.capacity() - chunk.len() >= padded {
-                break;
-            }
-            self.current += 1;
+        let start = self.bytes.len();
+        if self.bytes.capacity() - start < padded {
+            return Err(RecordError::UploadsFull);
         }
-        if self.current == self.chunks.len() {
-            self.chunks
-                .push(Vec::with_capacity(padded.max(ARENA_CHUNK_BYTES)));
-        }
-        let chunk = &mut self.chunks[self.current];
-        let start = chunk.len();
-        chunk.extend_from_slice(bytes);
-        chunk.resize(start + padded, 0);
-        (address(&chunk[start..]), padded as u32)
+        self.bytes.extend_from_slice(bytes);
+        self.bytes.resize(start + padded, 0);
+        Ok((address(&self.bytes[start..]), padded as u32))
     }
 }
 
@@ -227,6 +225,9 @@ struct Layout {
     indirect_template: Vec<u32>,
     /// Bucket records in the culling shader's layout.
     bucket_records: Vec<u32>,
+    /// Scratch for rebuilds: every bucket key with its source count, sorted and merged into one
+    /// entry per bucket.
+    key_counts: Vec<(BucketKey, u32)>,
     built: bool,
 }
 
@@ -347,7 +348,6 @@ impl GpuDrivenRenderer {
         let mut list = std::mem::replace(&mut self.lists[parity], DrawList::with_capacity(0));
         let mut arena = std::mem::take(&mut self.arenas[parity]);
         list.clear();
-        arena.reset();
         let result = self.record_into(input, parity, &mut list, &mut arena);
         self.lists[parity] = list;
         self.arenas[parity] = arena;
@@ -367,14 +367,17 @@ impl GpuDrivenRenderer {
         if input.canvas != self.canvas {
             self.resize(list, input.canvas)?;
         }
-        self.upload_meshes(list, arena)?;
-        if self.materials.take_changed() {
-            let (at, bytes) = arena.push(floats_as_bytes(self.materials.parameters()));
-            list.push(Op::WriteBuffer, &[ids::MATERIALS, 0, at, bytes])?;
-        }
         let upload_everything = input.structure_changed || !self.layout.built;
         if upload_everything {
             self.rebuild_layout(input.scene, input.batches, parity)?;
+        }
+        arena.reset(self.upload_bound());
+        self.upload_meshes(list, arena)?;
+        if self.materials.take_changed() {
+            let (at, bytes) = arena.push(floats_as_bytes(self.materials.parameters()))?;
+            list.push(Op::WriteBuffer, &[ids::MATERIALS, 0, at, bytes])?;
+        }
+        if upload_everything {
             self.apply_layout(list, arena)?;
         }
         self.upload_matrices(list, input, parity, upload_everything)?;
@@ -395,7 +398,7 @@ impl GpuDrivenRenderer {
             sun_color: self.lighting.sun_color,
             ambient: self.lighting.ambient,
         };
-        let (at, bytes) = arena.push(uniform.as_bytes());
+        let (at, bytes) = arena.push(uniform.as_bytes())?;
         list.push(Op::WriteBuffer, &[ids::FRAME, 0, at, bytes])?;
 
         let mut params = [0u32; (CULL_PARAMS_BYTES / 4) as usize];
@@ -409,12 +412,12 @@ impl GpuDrivenRenderer {
             }
         }
         params[24] = self.layout.sources;
-        let (at, bytes) = arena.push(words_as_bytes(&params));
+        let (at, bytes) = arena.push(words_as_bytes(&params))?;
         list.push(Op::WriteBuffer, &[ids::CULL_PARAMS, 0, at, bytes])?;
 
         let buckets = self.layout.buckets.len() as u32;
         if buckets > 0 {
-            let (at, bytes) = arena.push(words_as_bytes(&self.layout.indirect_template));
+            let (at, bytes) = arena.push(words_as_bytes(&self.layout.indirect_template))?;
             list.push(Op::WriteBuffer, &[ids::INDIRECT, 0, at, bytes])?;
             list.push(Op::BeginComputePass, &[])?;
             list.push(Op::SetComputePipeline, &[ids::CULL])?;
@@ -546,7 +549,7 @@ impl GpuDrivenRenderer {
         let new_vertices = &page.vertices[self.uploaded_vertex_floats..];
         if !new_vertices.is_empty() {
             let offset = (self.uploaded_vertex_floats * 4) as u32;
-            let (at, bytes) = arena.push(floats_as_bytes(new_vertices));
+            let (at, bytes) = arena.push(floats_as_bytes(new_vertices))?;
             if offset + bytes > self.config.vertex_bytes {
                 return Err(RecordError::MeshBuffersFull);
             }
@@ -563,7 +566,7 @@ impl GpuDrivenRenderer {
                 std::slice::from_raw_parts(new_indices.as_ptr().cast::<u8>(), new_indices.len() * 2)
             };
             let offset = (first * 2) as u32;
-            let (at, bytes) = arena.push(raw);
+            let (at, bytes) = arena.push(raw)?;
             if offset + bytes > self.config.index_bytes {
                 return Err(RecordError::MeshBuffersFull);
             }
@@ -573,7 +576,8 @@ impl GpuDrivenRenderer {
         Ok(())
     }
 
-    /// Assigns every source to a bucket and lays the buckets out, from the frame's world state.
+    /// Assigns every source to a bucket and lays the buckets out, from the frame's world state. It
+    /// reuses the layout's tables and scratch space, which grow only with the scene.
     fn rebuild_layout(
         &mut self,
         scene: &SceneStorage,
@@ -593,7 +597,6 @@ impl GpuDrivenRenderer {
         }
         layout.sources = sources;
 
-        // Count the sources of every bucket key, then give buckets ids in key order.
         let key_of = |mesh: u32, material: u32| -> Option<BucketKey> {
             if mesh == NO_MESH || material == NO_MATERIAL {
                 return None;
@@ -603,37 +606,44 @@ impl GpuDrivenRenderer {
             Some((shading, mesh, material))
         };
         let world = scene.world(parity);
-        let mut counts: BTreeMap<BucketKey, u32> = BTreeMap::new();
-        let scene_keys: Vec<Option<BucketKey>> = (0..scene_rows as usize)
-            .map(|slot| {
-                let drawable = world.radii()[slot] != f32::NEG_INFINITY;
-                let key = drawable
-                    .then(|| key_of(scene.meshes()[slot], scene.materials()[slot]))
-                    .flatten();
-                if let Some(key) = key {
-                    *counts.entry(key).or_default() += 1;
-                }
-                key
-            })
-            .collect();
-        let batch_keys: Vec<(Option<BucketKey>, u32)> = batches
-            .iter()
-            .map(|(_, batch)| {
-                let key = key_of(batch.mesh(), batch.material());
-                let active = batch.frame_active_count(parity);
-                if let Some(key) = key {
-                    *counts.entry(key).or_default() += active;
-                }
-                (key, active)
-            })
-            .collect();
+        let scene_key = |slot: usize| {
+            if world.radii()[slot] == f32::NEG_INFINITY {
+                return None;
+            }
+            key_of(scene.meshes()[slot], scene.materials()[slot])
+        };
+
+        // Every drawable object's key once, and every batch's key with its active rows. Sorted,
+        // equal keys merge into one entry per bucket, in key order.
+        layout.key_counts.clear();
+        layout
+            .key_counts
+            .reserve(scene_rows as usize + layout.batch_bases.len());
+        for slot in 0..scene_rows as usize {
+            if let Some(key) = scene_key(slot) {
+                layout.key_counts.push((key, 1));
+            }
+        }
+        for (_, batch) in batches.iter() {
+            if let Some(key) = key_of(batch.mesh(), batch.material()) {
+                layout
+                    .key_counts
+                    .push((key, batch.frame_active_count(parity)));
+            }
+        }
+        layout.key_counts.sort_unstable_by_key(|&(key, _)| key);
+        layout.key_counts.dedup_by(|next, kept| {
+            let same = next.0 == kept.0;
+            if same {
+                kept.1 += next.1;
+            }
+            same
+        });
 
         layout.buckets.clear();
-        let mut ids_by_key = BTreeMap::new();
         let mut base = 0;
-        for (&(shading, mesh, material), &count) in &counts {
+        for &((shading, mesh, material), count) in &layout.key_counts {
             let slot = self.meshes.mesh(mesh - 1).expect("keys name known meshes");
-            ids_by_key.insert((shading, mesh, material), layout.buckets.len() as u32);
             layout.buckets.push(Bucket {
                 shading,
                 material,
@@ -647,18 +657,21 @@ impl GpuDrivenRenderer {
             base += count;
         }
 
+        let counts = &layout.key_counts;
+        let bucket_of = |key: Option<BucketKey>| {
+            key.and_then(|key| counts.binary_search_by_key(&key, |&(k, _)| k).ok())
+                .map_or(HIDDEN, |bucket| bucket as u32)
+        };
         layout.instance_buckets.clear();
-        layout.instance_buckets.extend(
-            scene_keys
-                .iter()
-                .map(|key| key.map_or(HIDDEN, |key| ids_by_key[&key])),
-        );
-        for ((_, batch), (key, active)) in batches.iter().zip(&batch_keys) {
-            let bucket = key.map_or(HIDDEN, |key| ids_by_key[&key]);
-            let rows = batch.capacity();
-            layout
-                .instance_buckets
-                .extend((0..rows).map(|row| if row < *active { bucket } else { HIDDEN }));
+        for slot in 0..scene_rows as usize {
+            layout.instance_buckets.push(bucket_of(scene_key(slot)));
+        }
+        for (_, batch) in batches.iter() {
+            let bucket = bucket_of(key_of(batch.mesh(), batch.material()));
+            let active = batch.frame_active_count(parity);
+            layout.instance_buckets.extend(
+                (0..batch.capacity()).map(|row| if row < active { bucket } else { HIDDEN }),
+            );
         }
 
         layout.indirect_template.clear();
@@ -680,6 +693,20 @@ impl GpuDrivenRenderer {
         }
         layout.built = true;
         Ok(())
+    }
+
+    /// The most that one frame can copy into its arena for the scene as it stands: mesh data not
+    /// uploaded yet, the whole material table, the layout's tables, the frame's constants and the
+    /// indirect draws.
+    fn upload_bound(&self) -> usize {
+        let meshes = self.meshes.pages().first().map_or(0, |page| {
+            (page.vertices.len() - self.uploaded_vertex_floats) * 4
+                + ((page.indices.len() - (self.uploaded_indices & !1)) * 2).next_multiple_of(4)
+        });
+        let materials = self.materials.capacity() as usize * MATERIAL_FLOATS * 4;
+        let buckets = self.layout.buckets.len() * (BUCKET_BYTES + INDIRECT_BYTES) as usize;
+        let frame = (sizes::FRAME_UNIFORM_BYTES + CULL_PARAMS_BYTES) as usize;
+        meshes + materials + self.layout.sources as usize * 4 + buckets + frame
     }
 
     /// Sizes the layout's buffers, uploads its tables and re-records the bundle.
@@ -729,7 +756,8 @@ impl GpuDrivenRenderer {
             }
         }
         if recreated {
-            let mut entries = vec![ids::CULL_GROUP, layout::CULL, 6];
+            let mut entries = [0u32; CULL_GROUP_WORDS];
+            entries[..3].copy_from_slice(&[ids::CULL_GROUP, layout::CULL, 6]);
             for (binding, buffer) in [
                 ids::CULL_PARAMS,
                 ids::MATRICES,
@@ -741,15 +769,22 @@ impl GpuDrivenRenderer {
             .into_iter()
             .enumerate()
             {
-                entries.extend_from_slice(&[binding as u32, resource_kind::BUFFER, buffer, 0, 0]);
+                let at = 3 + binding * 5;
+                entries[at..at + 5].copy_from_slice(&[
+                    binding as u32,
+                    resource_kind::BUFFER,
+                    buffer,
+                    0,
+                    0,
+                ]);
             }
             list.push(Op::CreateBindGroup, &entries)?;
         }
 
-        let (at, bytes) = arena.push(words_as_bytes(&layout.instance_buckets));
+        let (at, bytes) = arena.push(words_as_bytes(&layout.instance_buckets))?;
         list.push(Op::WriteBuffer, &[ids::INSTANCE_BUCKETS, 0, at, bytes])?;
         if buckets > 0 {
-            let (at, bytes) = arena.push(words_as_bytes(&layout.bucket_records));
+            let (at, bytes) = arena.push(words_as_bytes(&layout.bucket_records))?;
             list.push(Op::WriteBuffer, &[ids::BUCKETS, 0, at, bytes])?;
         }
 

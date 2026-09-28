@@ -85,6 +85,7 @@ These numbers are starting points (proposal). The engine docs page `guides/perfo
 | Same texture as ASTC or ETC2 | about 4 to 6 MB | Use `sokko3d assets optimize` |
 | One static object | a few hundred bytes of engine data | Instances for many copies |
 | One instance row | 48 bytes of matrix plus your own arrays | Only the columns you need |
+| A new mesh, instance batch, or mesh drawn with a new material, during play | A one-time growth of engine memory in the next frame | Create them during setup; size a batch for its most rows and show fewer with `setActiveCount` |
 | Shadow map 2048 x 2048, depth 32-bit | about 16 MB | Smaller maps on Low and Medium presets |
 
 Check `debug.frameStats().memory` for WebAssembly memory and GPU memory estimates.
@@ -109,6 +110,6 @@ These habits come from finding and removing allocations in the engine's own per-
 - Build lookup tables and scratch arrays once, in setup or at module level, never inside a function that runs every frame.
 - Use `Math.sqrt(x * x + y * y + z * z)` for a length, not `Math.hypot`.
 - Keep scratch lists at a fixed length. `list.length = 0` frees the storage, and the next write allocates it again.
-- Make no closures, `async` wrappers or promise chains per frame.
+- Make no closures, `async` wrappers or promise chains per frame. Keep closures out of per-frame functions even in a branch that rarely runs: until the browser optimizes the function, the variables a closure captures are allocated on every call. Move such a branch into its own function.
 - Animate a light with `setIntensity` and `setDirection`, which allocate nothing. `setColor` converts the color and allocates.
 - Judge allocation after about 30 seconds of play. Until the browser optimizes a function that runs once per frame, the decimal numbers it computes are allocated.

@@ -129,7 +129,7 @@ export const ERRORS = {
 	E1501: {
 		title: 'Render space full',
 		cause:
-			'The scene needs more room than the renderer set aside. The full part is the draw list, the mesh buffers, the material table or the culling pass.',
+			'The scene needs more room than the renderer set aside. The full part is the draw list, the mesh buffers, the material table, the upload space or the culling pass.',
 		fix: 'Share meshes and materials between objects instead of creating them per object. Draw many copies of one mesh with an instance batch.',
 		example: 'E1501: materials.standard() failed: the material table is full.',
 		since: '0.1',

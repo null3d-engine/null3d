@@ -70,6 +70,7 @@ mod render_detail {
     pub const UNKNOWN_MATERIAL: u32 = 5;
     pub const UNKNOWN_MESH: u32 = 6;
     pub const BAD_MESH: u32 = 7;
+    pub const UPLOADS_FULL: u32 = 8;
 }
 
 struct Engine {
@@ -114,6 +115,7 @@ fn record_failure(error: RecordError) -> u32 {
             RecordError::DrawListFull => render_detail::DRAW_LIST_FULL,
             RecordError::MeshBuffersFull => render_detail::MESH_BUFFERS_FULL,
             RecordError::TooManySources => render_detail::TOO_MANY_SOURCES,
+            RecordError::UploadsFull => render_detail::UPLOADS_FULL,
         },
         0,
     )

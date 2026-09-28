@@ -26,6 +26,7 @@ const RENDER_LIMITS: Record<number, string> = {
 	3: 'the scene has more objects than one culling pass covers',
 	4: 'the material table is full',
 	7: 'the mesh has more than 65536 vertices, or indices past its vertices',
+	8: "the frame's uploads do not fit the room the renderer set aside for them",
 };
 const UNKNOWN_MATERIAL = 5;
 const UNKNOWN_MESH = 6;
