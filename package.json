@@ -38,7 +38,8 @@
 		"readme-media": "bun bench/readme-media.ts",
 		"dev": "vite",
 		"dev-cert": "bun tools/dev-cert.ts",
-		"android": "adb reverse tcp:5173 tcp:5173"
+		"android": "adb reverse tcp:5173 tcp:5173",
+		"release": "bun tools/release.ts"
 	},
 	"devDependencies": {
 		"@biomejs/biome": "2.5.14",

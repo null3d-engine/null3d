@@ -1,6 +1,6 @@
 {
 	"name": "sokko3d",
-	"version": "0.0.1",
+	"version": "0.0.0",
 	"description": "The command-line tool for sokko3d, a browser 3D engine for games and heavy 3D apps. This first version only prints the project's status.",
 	"license": "MIT OR Apache-2.0",
 	"author": "Ramesh Nair (https://hiddentao.com)",
@@ -31,6 +31,10 @@
 		"LICENSE-MIT",
 		"LICENSE-APACHE"
 	],
+	"publishConfig": {
+		"access": "public",
+		"provenance": true
+	},
 	"engines": {
 		"node": ">=18"
 	},

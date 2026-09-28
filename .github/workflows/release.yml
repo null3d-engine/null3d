@@ -1,0 +1,123 @@
+name: Release
+
+# Started by hand: opens a pull request that sets the next version everywhere and adds its section
+# to CHANGELOG.md. Merging that pull request runs release-publish.yml, which tags the version,
+# publishes the GitHub Release and publishes the npm packages. Releases never go straight to main,
+# and the pull request's own CI gates the merge (AGENTS.md, "Releases").
+
+on:
+  workflow_dispatch:
+    inputs:
+      release-type:
+        description: Version bump. Auto releases a patch; pick minor or major when a roadmap release is done.
+        type: choice
+        options: [auto, patch, minor, major]
+        default: auto
+
+permissions:
+  contents: write # push the release branch
+  pull-requests: write # open the release pull request
+  actions: read # read the CI result for main's HEAD
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+env:
+  BUN_VERSION: "1.3.14"
+
+jobs:
+  prepare:
+    runs-on: ubuntu-latest
+    # Stays above the hour that the CI check below may wait.
+    timeout-minutes: 75
+    if: github.ref == 'refs/heads/main'
+    env:
+      # Git hooks are for local commits; the release commit carries its own trailers.
+      HUSKY: "0"
+    steps:
+      # A pull request opened with the default GITHUB_TOKEN starts no workflows, so its CI would
+      # never run. A GitHub App token opens it instead. The app needs Contents and Pull requests
+      # write access, and the repository needs the RELEASE_APP_ID and RELEASE_APP_PRIVATE_KEY secrets.
+      - name: Mint app token
+        id: app-token
+        uses: actions/create-github-app-token@v2
+        with:
+          app-id: ${{ secrets.RELEASE_APP_ID }}
+          private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+          fetch-tags: true
+          token: ${{ steps.app-token.outputs.token }}
+
+      # The last CI run on main's HEAD must have passed. A release started right after a merge is
+      # normal, so this waits for a run in progress, then requires success.
+      - name: Verify CI passed for HEAD
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          sha="$(git rev-parse HEAD)"
+          deadline=$(( $(date +%s) + 3600 ))
+          while :; do
+            info="$(gh run list --workflow=ci.yml --branch=main --commit="$sha" \
+              --json status,conclusion,headSha \
+              --jq 'map(select(.headSha=="'"$sha"'")) | first | "\(.status)|\(.conclusion)"' || true)"
+            status="${info%%|*}"
+            conclusion="${info##*|}"
+            echo "CI for $sha: status='${status}' conclusion='${conclusion}'"
+            if [ "$status" = "completed" ]; then break; fi
+            if [ "$(date +%s)" -ge "$deadline" ]; then
+              echo "::error::Timed out waiting for CI on $sha (last status: '${status:-none}')."
+              exit 1
+            fi
+            sleep 30
+          done
+          if [ "$conclusion" != "success" ]; then
+            echo "::error::CI for $sha concluded '${conclusion}', not success."
+            exit 1
+          fi
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun install --frozen-lockfile
+
+      - name: Set the version, write the changelog and regenerate the docs
+        id: release
+        env:
+          RELEASE_TYPE: ${{ inputs.release-type }}
+        run: bun run release --release-type "$RELEASE_TYPE" --apply
+
+      - name: Push the release branch and open the pull request
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+          VERSION: ${{ steps.release.outputs.version }}
+          NOTES: ${{ steps.release.outputs.changelog }}
+        run: |
+          branch="release/${VERSION}"
+
+          # A release branch is generated and disposable. To add work to a release, merge it to
+          # main and run this workflow again, which replaces any open release pull request.
+          stale="$(gh pr list --state open --json number,headRefName \
+            --jq '.[] | select(.headRefName | startswith("release/")) | .number')"
+          for pr in $stale; do
+            echo "Closing the older release pull request #${pr}"
+            gh pr close "$pr" --delete-branch || true
+          done
+          git push origin --delete "$branch" 2>/dev/null || true
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git checkout -b "$branch"
+          git add -A
+          git commit -m "chore(release): ${VERSION}" -m "$(printf '%s\n%s' \
+            'Docs-Checked: release commit; it changes only version numbers, CHANGELOG.md and the regenerated API reference' \
+            'Skills-Checked: release commit; no skill shows the version number')"
+          git push -u origin "$branch"
+
+          gh label create release --color 0e8a16 --description "Release pull request" --force || true
+          body="$(printf 'Release **%s**.\n\nReview the changelog below and edit `CHANGELOG.md` on this branch if a line needs it. Merging tags the release, publishes the GitHub Release and publishes the npm packages.\n\n---\n\n%s' "$VERSION" "$NOTES")"
+          gh pr create --base main --head "$branch" --title "chore(release): ${VERSION}" \
+            --label release --body "$body"
