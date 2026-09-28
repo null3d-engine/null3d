@@ -4,6 +4,10 @@
 // for uploads from 64 KiB to 4 MiB, where writeBuffer waits for that memory to drain. Smaller
 // uploads, and uploads of 4 MiB or more, are as fast or faster through writeBuffer, so they stay on
 // it.
+//
+// The copies of a frame wait in a list until the frame records its next command, and are recorded
+// then, after the staging buffer is unmapped. Safari rejects a submit whose commands hold more than
+// one copy from a buffer that was still mapped when the copies were recorded.
 
 /** Uploads smaller than this go through queue.writeBuffer. */
 export const STAGING_MIN_BYTES = 64 * 1024;
@@ -13,6 +17,10 @@ export const STAGING_MAX_BYTES = 4 * 1024 * 1024;
 const MAX_SLOTS = 3;
 /** The smallest staging buffer; the ring makes bigger ones when frames need more. */
 const MIN_CAPACITY = 1024 * 1024;
+/** Waiting copies the list holds before it first grows. */
+const INITIAL_COPIES = 64;
+/** Numbers per waiting copy: the target offset, the staging offset and the size. */
+const COPY_FIELDS = 3;
 
 interface Slot {
 	buffer: GPUBuffer;
@@ -33,8 +41,14 @@ export class StagingRing {
 	private used = 0;
 	/** The capacity that recent frames needed, which the slots grow to. */
 	private wanted = MIN_CAPACITY;
-	/** The slot of the frame just submitted, which is mapped again once the GPU is done with it. */
-	private submitted: Slot | undefined;
+	/** The targets of the copies that wait for the current slot to be unmapped. */
+	private targets: (GPUBuffer | undefined)[] = new Array(INITIAL_COPIES).fill(undefined);
+	/** The offsets and size of each waiting copy. */
+	private fields = new Float64Array(INITIAL_COPIES * COPY_FIELDS);
+	private waiting = 0;
+	/** The slots the current frame copied from, which are mapped again once the frame is submitted. */
+	private readonly flushed: (Slot | undefined)[] = new Array(MAX_SLOTS).fill(undefined);
+	private flushedCount = 0;
 
 	constructor(private readonly device: GPUDevice) {}
 
@@ -43,13 +57,17 @@ export class StagingRing {
 		return size >= STAGING_MIN_BYTES && size < STAGING_MAX_BYTES;
 	}
 
+	/** True while copies wait for `flush`. */
+	get pending(): boolean {
+		return this.waiting > 0;
+	}
+
 	/**
-	 * Copies `size` bytes of `source` from `sourceOffset` into this frame's staging buffer, and
-	 * records the copy into `target` at `targetOffset` on `encoder`, which no pass may hold. Returns
-	 * false when the ring has no room for it this frame; the caller then writes through the queue.
+	 * Copies `size` bytes of `source` from `sourceOffset` into this frame's staging buffer, and adds
+	 * the copy into `target` at `targetOffset` to the waiting copies. Returns false when the ring has
+	 * no room for it this frame; the caller then writes through the queue.
 	 */
 	write(
-		encoder: GPUCommandEncoder,
 		target: GPUBuffer,
 		targetOffset: number,
 		source: ArrayBufferLike,
@@ -64,28 +82,53 @@ export class StagingRing {
 			return false;
 		}
 		(this.bytes as Uint8Array).set(new Uint8Array(source, sourceOffset, size), at);
-		encoder.copyBufferToBuffer(slot.buffer, at, target, targetOffset, size);
+		if (this.waiting === this.targets.length) this.grow();
+		const field = this.waiting * COPY_FIELDS;
+		this.targets[this.waiting] = target;
+		this.fields[field] = targetOffset;
+		this.fields[field + 1] = at;
+		this.fields[field + 2] = size;
+		this.waiting++;
 		// Copies between buffers start at multiples of 4 bytes.
 		this.used = at + ((size + 3) & ~3);
 		return true;
 	}
 
-	/** Ends the frame's writes. The GPU copies from the staging buffer only once it is unmapped. */
-	beforeSubmit(): void {
+	/**
+	 * Unmaps the current staging buffer and records its waiting copies on `encoder`. Call it before
+	 * any other command goes into the encoder, so the copies keep their place in the frame, and
+	 * before the encoder is finished. Later uploads in the frame take another staging buffer.
+	 */
+	flush(encoder: GPUCommandEncoder): void {
 		const slot = this.slot;
 		if (!slot) return;
 		slot.buffer.unmap();
+		const { targets, fields } = this;
+		for (let i = 0; i < this.waiting; i++) {
+			const field = i * COPY_FIELDS;
+			encoder.copyBufferToBuffer(
+				slot.buffer,
+				fields[field + 1] as number,
+				targets[i] as GPUBuffer,
+				fields[field] as number,
+				fields[field + 2] as number,
+			);
+			targets[i] = undefined;
+		}
+		this.waiting = 0;
 		this.slot = undefined;
 		this.bytes = undefined;
-		this.submitted = slot;
+		this.flushed[this.flushedCount++] = slot;
 	}
 
-	/** Asks for the submitted frame's staging buffer back, mapped, once the GPU has copied from it. */
+	/** Asks for the staging buffers of the frame just submitted back, mapped, once the GPU is done. */
 	afterSubmit(): void {
-		const slot = this.submitted;
-		if (!slot) return;
-		this.submitted = undefined;
-		slot.buffer.mapAsync(GPUMapMode.WRITE).then(slot.onMapped, slot.onFailed);
+		for (let i = 0; i < this.flushedCount; i++) {
+			const slot = this.flushed[i] as Slot;
+			this.flushed[i] = undefined;
+			slot.buffer.mapAsync(GPUMapMode.WRITE).then(slot.onMapped, slot.onFailed);
+		}
+		this.flushedCount = 0;
 	}
 
 	destroy(): void {
@@ -93,7 +136,19 @@ export class StagingRing {
 		this.slots.length = 0;
 		this.slot = undefined;
 		this.bytes = undefined;
-		this.submitted = undefined;
+		this.targets.fill(undefined);
+		this.waiting = 0;
+		this.flushed.fill(undefined);
+		this.flushedCount = 0;
+	}
+
+	/** Doubles the room for waiting copies, for frames with more staged uploads than any before. */
+	private grow(): void {
+		const count = this.targets.length * 2;
+		const fields = new Float64Array(count * COPY_FIELDS);
+		fields.set(this.fields);
+		this.fields = fields;
+		this.targets = this.targets.concat(new Array(count - this.targets.length).fill(undefined));
 	}
 
 	/**

@@ -1,7 +1,8 @@
 // Sends uploads of several sizes through the engine's WebGPU replay over several frames: the
 // smallest and the largest through writeBuffer, the rest through the staging ring, which starts
 // small, falls back to writeBuffer while it grows, then reuses its buffers. After each frame it reads
-// every target buffer back and checks each byte against what that frame uploaded.
+// every target buffer back and checks each byte against what that frame uploaded. It also reports
+// the WebGPU errors each frame raised, which explain lost uploads.
 import { STAGING_MAX_BYTES, STAGING_MIN_BYTES, WebGPUBackend } from '@sokko3d/engine/internal';
 import * as G from '../../packages/engine/src/generated/gpu';
 import { TestMemory } from './lib/drawlist';
@@ -22,12 +23,16 @@ run('uploads', async () => {
 	const adapter = await navigator.gpu?.requestAdapter();
 	if (!adapter) throw new Error('no WebGPU adapter');
 	const device = await adapter.requestDevice();
+	const uncaptured: string[] = [];
+	device.addEventListener('uncapturederror', (event) => {
+		uncaptured.push((event as GPUUncapturedErrorEvent).error.message);
+	});
 	const backend = new WebGPUBackend(device, undefined, 'rgba8unorm');
 	const total = SIZES.reduce((sum, size) => sum + size, 0);
 	const memory = new TestMemory(total + SIZES.length * 256 + 64 * KIB, 256);
 	const sources = SIZES.map((size) => memory.put(new Uint8Array(size)));
 
-	const frames: { staged: number; uploaded: number; wrong: number[] }[] = [];
+	const frames: { staged: number; uploaded: number; wrong: number[]; errors: string[] }[] = [];
 	for (let frame = 0; frame < FRAMES; frame++) {
 		for (const [upload, size] of SIZES.entries()) {
 			const at = sources[upload] as number;
@@ -41,7 +46,12 @@ run('uploads', async () => {
 			memory.push(G.OP_WRITE_BUFFER, upload + 1, 0, sources[upload] as number, size);
 		memory.push(G.OP_SUBMIT);
 		backend.resetCounts();
+		device.pushErrorScope('validation');
+		device.pushErrorScope('internal');
 		backend.replay(memory.words, memory.floats, 0, memory.listLength, memory.buffer);
+		const errors = (await Promise.all([device.popErrorScope(), device.popErrorScope()]))
+			.filter((error) => error !== null)
+			.map((error) => error.message);
 
 		const wrong: number[] = [];
 		for (const [upload, size] of SIZES.entries()) {
@@ -65,9 +75,10 @@ run('uploads', async () => {
 			staged: backend.counts.stagedBytes,
 			uploaded: backend.counts.uploadBytes,
 			wrong,
+			errors,
 		});
 	}
 	backend.destroy();
 	device.destroy();
-	return { sizes: SIZES, ring: [STAGING_MIN_BYTES, STAGING_MAX_BYTES], frames };
+	return { sizes: SIZES, ring: [STAGING_MIN_BYTES, STAGING_MAX_BYTES], frames, uncaptured };
 });

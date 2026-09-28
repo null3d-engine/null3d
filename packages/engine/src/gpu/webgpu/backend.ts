@@ -76,16 +76,18 @@ export class WebGPUBackend {
 
 	private encoder: GPUCommandEncoder | undefined;
 
+	/** The frame's encoder, with the staged uploads recorded ahead of the command about to go in. */
 	private commandEncoder(): GPUCommandEncoder {
 		if (!this.encoder) this.encoder = this.device.createCommandEncoder();
+		this.staging.flush(this.encoder);
 		return this.encoder;
 	}
 
 	private submit(): void {
-		if (!this.encoder) return;
-		this.timer?.resolve(this.encoder);
-		this.staging.beforeSubmit();
-		submitOne(this.device.queue, this.encoder.finish());
+		if (!this.encoder && !this.staging.pending) return;
+		const encoder = this.commandEncoder();
+		this.timer?.resolve(encoder);
+		submitOne(this.device.queue, encoder.finish());
 		this.staging.afterSubmit();
 		this.encoder = undefined;
 		this.timer?.afterSubmit();
@@ -136,14 +138,14 @@ export class WebGPUBackend {
 					const offset = words[a + 1] as number;
 					const source = words[a + 2] as number;
 					const size = words[a + 3] as number;
-					// A staged upload is a copy in the frame's commands, while writeBuffer lands before
-					// them. A frame's writes never overlap and come before its passes, so either route
-					// leaves the same data.
+					// A staged upload is a copy in the frame's commands, recorded before the next
+					// command, while writeBuffer lands before them all. A frame's writes never overlap
+					// and come before its passes, so either route leaves the same data.
 					const staged =
 						!pass &&
 						!computePass &&
 						StagingRing.suits(size) &&
-						this.staging.write(this.commandEncoder(), target, offset, memory, source, size);
+						this.staging.write(target, offset, memory, source, size);
 					if (staged) this.counts.stagedBytes += size;
 					else device.queue.writeBuffer(target, offset, memory, source, size);
 					this.counts.uploadBytes += size;

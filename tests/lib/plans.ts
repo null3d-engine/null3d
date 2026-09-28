@@ -304,15 +304,19 @@ export function judge(
 			return engineProblems(result as unknown as EngineResult, check.mode, check.tier);
 		case 'uploads': {
 			const sizes = (result.sizes ?? []) as number[];
-			const frames = (result.frames ?? []) as { wrong: number[] }[];
+			const frames = (result.frames ?? []) as { wrong: number[]; errors?: string[] }[];
 			if (frames.length === 0) return ['the page uploaded nothing'];
-			return frames.flatMap(({ wrong }, frame) =>
-				wrong.flatMap((count, upload) =>
-					count > 0
-						? [`frame ${frame}: ${count} wrong bytes in the upload of ${sizes[upload]} bytes`]
-						: [],
-				),
-			);
+			return [
+				...frames.flatMap(({ wrong, errors = [] }, frame) => [
+					...errors.map((error) => `frame ${frame}: WebGPU error: ${error}`),
+					...wrong.flatMap((count, upload) =>
+						count > 0
+							? [`frame ${frame}: ${count} wrong bytes in the upload of ${sizes[upload]} bytes`]
+							: [],
+					),
+				]),
+				...((result.uncaptured ?? []) as string[]).map((error) => `WebGPU error: ${error}`),
+			];
 		}
 		case 'bench': {
 			const frames = Number(result.frames ?? 0);
