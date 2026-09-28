@@ -73,7 +73,7 @@ Decimal numbers are a special case. Until the browser optimizes a function, the 
 
 ## Create meshes, materials and batches during setup
 
-The engine sizes its memory for the scene it holds. A mesh, an instance batch or a new pairing of a mesh and a material made during play therefore makes engine memory grow in the next frame. Create them during setup instead. Size an instance batch for the most rows it will ever need, and show fewer with `setActiveCount`.
+The engine sizes its memory for the scene it holds. So a mesh or an instance batch made during play makes engine memory grow in the next frame. A mesh drawn with a new material does too. Create them during setup instead. Size an instance batch for the most rows it will ever need, and show fewer with `setActiveCount`.
 
 ## Moving objects cost uploads
 
