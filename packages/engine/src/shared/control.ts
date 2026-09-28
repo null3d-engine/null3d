@@ -43,6 +43,8 @@ export enum Slot {
 	 */
 	FrameEpoch0 = 15,
 	FrameEpoch1 = 16,
+	/** Nonzero while the user's system asks pages for less motion. */
+	ReducedMotion = 17,
 }
 
 const SLOT_COUNT = 20;

@@ -18,6 +18,26 @@ export interface SketchCallbacks {
 }
 
 /**
+ * The user's display preferences, which the page reads from the system and passes on.
+ *
+ * @category api/sketch
+ */
+export interface SketchPreferences {
+	/**
+	 * True when the user asks for less motion: the `prefers-reduced-motion` setting. Bring motion
+	 * that only decorates to rest, such as an idle spin, camera sway or drifting particles. Keep
+	 * motion the user controls, and motion that carries meaning, and prefer cuts to long camera
+	 * flights.
+	 */
+	readonly reducedMotion: boolean;
+	/**
+	 * Calls `handler` at the start of the first frame after a preference changes. Returns a
+	 * function that removes the handler.
+	 */
+	onChange(handler: () => void): () => void;
+}
+
+/**
  * What the engine passes to a sketch's setup function.
  *
  * @category api/sketch
@@ -34,6 +54,8 @@ export interface SketchContext {
 	 * hidden time do not count. Also the current frame number.
 	 */
 	time: { now: number; frame: number };
+	/** What the user's system asks of every page, and a notice when that changes. */
+	preferences: SketchPreferences;
 	/**
 	 * Messages between the sketch and the page. `onMessage` returns a function that removes the
 	 * handler.

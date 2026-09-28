@@ -146,6 +146,7 @@ Interaction:
 | Keys, pointer, gamepad | `input.isDown`, `input.pointer`, `input.actions.define` | `api/input` |
 | HTML UI and settings panels | On the page, sending messages to the sketch | `guides/ui-overlays` |
 | Labels above objects | `ui.trackLabel` in the sketch, `engine.labels.bind` on the page (0.2) | `api/ui` |
+| Accessibility and reduced motion | Meaning in HTML around the canvas; `preferences.reducedMotion` brings decorative motion to rest | `guides/accessibility` |
 
 Effects:
 

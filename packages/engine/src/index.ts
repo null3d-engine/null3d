@@ -55,6 +55,7 @@ export type {
 	SketchCallbacks,
 	SketchContext,
 	SketchDefinition,
+	SketchPreferences,
 	SketchSetup,
 } from './sketch/define-sketch';
 export { defineSketch } from './sketch/define-sketch';

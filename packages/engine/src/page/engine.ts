@@ -26,6 +26,7 @@ import { captureInput } from './input';
 import { maxInstances, storageBindingBytes } from './limits';
 import { loadCore } from './loader';
 import { MainThreadWatch } from './main-thread';
+import { watchPreferences } from './preferences';
 import { type GpuSwitch, type LatencyMode, parseSwitches } from './switches';
 
 /**
@@ -372,6 +373,7 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 		control,
 		options.maxPixelRatio ?? DEFAULT_MAX_PIXEL_RATIO,
 	);
+	const stopPreferences = watchPreferences(slots);
 
 	const messageHandlers = new Set<(name: string, data: unknown) => void>();
 	if (options.onSketchMessage) messageHandlers.add(options.onSketchMessage);
@@ -533,6 +535,7 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 		localDrawing?.stop();
 		for (const w of workers) w.worker.terminate();
 		input.stop();
+		stopPreferences();
 		throw e;
 	}
 
@@ -656,6 +659,7 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 			localDrawing?.stop();
 			for (const w of workers) w.worker.terminate();
 			input.stop();
+			stopPreferences();
 		},
 	};
 }

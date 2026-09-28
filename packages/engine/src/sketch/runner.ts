@@ -34,6 +34,9 @@ export interface SketchCore {
 
 export class SketchRunner {
 	private readonly messageHandlers = new Set<(type: string, data: unknown) => void>();
+	private readonly preferenceHandlers = new Set<() => void>();
+	/** The motion preference as the sketch last saw it. */
+	private reducedMotion: number;
 	private callbacks: SketchCallbacks = {};
 	private readonly clock = new FrameClock();
 	private gpuEpoch = 0;
@@ -68,12 +71,22 @@ export class SketchRunner {
 		this.core = new CoreMemory(glue, sketch.memory);
 		Atomics.store(slots, Slot.DrawListAddress0, glue.drawListAddress(0));
 		Atomics.store(slots, Slot.DrawListAddress1, glue.drawListAddress(1));
+		this.reducedMotion = Atomics.load(slots, Slot.ReducedMotion);
 		const time = { now: 0, frame: 0 };
 		this.context = {
 			time,
 			scene: new Scene(this.core, time),
 			materials: new Materials(this.core),
 			geometry: new Geometry(this.core),
+			preferences: {
+				get reducedMotion() {
+					return Atomics.load(slots, Slot.ReducedMotion) !== 0;
+				},
+				onChange: (handler) => {
+					this.preferenceHandlers.add(handler);
+					return () => this.preferenceHandlers.delete(handler);
+				},
+			},
 			page: {
 				post: (type, data, transfer) => post(type, data, transfer),
 				onMessage: (handler) => {
@@ -128,6 +141,17 @@ export class SketchRunner {
 		this.record.begin(frame);
 		this.core.refresh();
 		this.phaseStart = start;
+		const reducedMotion = Atomics.load(slots, Slot.ReducedMotion);
+		if (reducedMotion !== this.reducedMotion) {
+			this.reducedMotion = reducedMotion;
+			for (const handler of this.preferenceHandlers) {
+				try {
+					handler();
+				} catch (error) {
+					this.report(error);
+				}
+			}
+		}
 		try {
 			this.callbacks.onUpdate?.(dt);
 		} catch (error) {

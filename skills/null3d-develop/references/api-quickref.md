@@ -72,9 +72,11 @@ import { defineSketch } from '@null3d/engine';
 export default defineSketch(async (ctx) => {
   const {
     scene, assets, materials, geometry, textures,
-    input, time, quality, post, render, page, ui, debug, engine,
+    input, time, quality, post, render, page, ui, debug, engine, preferences,
   } = ctx;
   // setup: create objects, load assets, await scene.warmUp()
+  // preferences.reducedMotion: true when the user's system asks for less motion
+  // preferences.onChange(() => { ... }) runs at the first frame after it changes; it returns a remover
   return {
     onFixedUpdate(step) {},  // 0 to n times per frame at a fixed rate (default 60 Hz)
     onUpdate(dt) {},         // once per frame, before transforms; dt is 0 after a pause, at most 0.25 s
