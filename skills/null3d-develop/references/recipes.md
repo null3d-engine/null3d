@@ -24,7 +24,7 @@ Each recipe states the goal, gives the code, explains why it is written that way
 ## 1. Start a new project
 
 ```sh
-npx @null3d/cli create my-game --template empty   # also: third-person, top-down-units, product-viewer
+npx null3d create my-game --template empty   # also: third-person, top-down-units, product-viewer
 cd my-game && npm install && npm run dev
 ```
 

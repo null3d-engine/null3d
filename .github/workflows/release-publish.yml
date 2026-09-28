@@ -83,6 +83,8 @@ jobs:
       # Trusted publishing needs npm 11.5.1 or newer.
       - run: npm install -g npm@latest
 
+      # A version npm already has is skipped, so running the job again after a partial failure
+      # publishes only what is missing.
       - name: Publish every package that is not private
         run: |
           for manifest in packages/*/package.json; do
@@ -91,6 +93,11 @@ jobs:
               echo "Skipping ${dir}: private"
               continue
             fi
-            echo "Publishing ${dir}"
+            spec="$(node -p "const p = require('./${manifest}'); p.name + '@' + p.version")"
+            if npm view "$spec" version >/dev/null 2>&1; then
+              echo "Skipping ${spec}: already on npm"
+              continue
+            fi
+            echo "Publishing ${spec}"
             (cd "$dir" && npm publish --access public)
           done

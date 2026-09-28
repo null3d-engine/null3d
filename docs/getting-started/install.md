@@ -67,6 +67,8 @@ npm install --save-dev @null3d/cli
 npx null3d test
 ```
 
+To run it once without installing it, use `npx null3d`. The `null3d` package runs the latest `@null3d/cli`, so this works outside a project too.
+
 [The null3d command](../cli/null3d.md) lists every command.
 
 ## Related pages
