@@ -54,7 +54,12 @@ export interface EngineResult {
 		intervalMs: Spread;
 		threads: Record<string, { busyMs: Spread }>;
 		gpuMs: Spread | null;
-		load: { firstFrameMs: number | null };
+		load: {
+			firstFrameMs: number | null;
+			firstFrameDoneMs: number | null;
+			probeMs: number;
+			coreMs: number;
+		};
 		memory: { wasmBytes: number | null };
 		completedFps: number | null;
 		gpuLatencyMs: Spread | null;
@@ -63,6 +68,7 @@ export interface EngineResult {
 		mainThread: { longTasks: number; longestTaskMs: number } | null;
 	};
 	count: { updates: number; largestStep: number };
+	stages: string[];
 }
 
 /** Slower than this median frame interval means the loop is not keeping up with the display. */
@@ -114,6 +120,12 @@ export function engineProblems(result: EngineResult, mode: EngineMode, tier: str
 			`the page's thread ran ${stats.mainThread?.longTasks} long tasks, up to ${stats.mainThread?.longestTaskMs} ms`,
 		);
 	if (!((stats.load.firstFrameMs ?? 0) > 0)) problems.push('the first frame time is missing');
+	if (!((stats.load.firstFrameDoneMs ?? 0) > 0))
+		problems.push('the time the GPU finished the first frame is missing');
+	if (!(stats.load.probeMs > 0 && stats.load.coreMs > 0))
+		problems.push('the probe or core load time is missing');
+	if (result.stages.join(',') !== 'core,game,first-frame')
+		problems.push(`the start reported the stages ${result.stages.join(', ')}`);
 	if (!((stats.memory.wasmBytes ?? 0) > 0)) problems.push('the WebAssembly memory size is missing');
 	if (result.count.updates <= MIN_FRAMES)
 		problems.push(`the game updated only ${result.count.updates} times`);

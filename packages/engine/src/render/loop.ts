@@ -74,8 +74,11 @@ export class Presenter {
 		this.record.begin(frame);
 		this.renderer.drawFrame(emptySceneInput(frame, this.input), this.record);
 		Atomics.add(this.slots, Slot.FramesPresented, 1);
-		if (this.lastPresented < 0) this.record.markFirstFrame();
-		else this.record.interval(timestamp - this.lastPresented);
+		if (this.lastPresented < 0) {
+			this.record.markFirstFrame();
+			// Once, so the page learns when the first frame is on screen.
+			void this.renderer.finished().then(() => this.record.markFirstFrameDone());
+		} else this.record.interval(timestamp - this.lastPresented);
 		this.lastPresented = timestamp;
 		this.record.commit(performance.now() - start);
 	}

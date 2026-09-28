@@ -12,10 +12,13 @@ const PAUSE_MS = 600;
 run('engine', async () => {
 	const canvas = document.querySelector('canvas');
 	if (!canvas) throw new Error('the page has no canvas');
+	const stages: string[] = [];
 	const engine = await createEngine({
 		canvas,
 		game: new URL('./games/empty-game.ts', import.meta.url),
+		onProgress: (stage) => stages.push(stage),
 	});
+	await engine.firstFrame;
 	const stats = await engine.measure(seconds);
 	if (params.has('pause')) {
 		// A pause the game must not see as one long step.
@@ -37,6 +40,7 @@ run('engine', async () => {
 		capabilities: engine.capabilities,
 		report: engine.report,
 		stats,
+		stages,
 		count,
 		capture: capture && {
 			width: capture.width,

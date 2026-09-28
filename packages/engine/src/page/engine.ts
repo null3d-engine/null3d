@@ -1,6 +1,7 @@
 // createEngine: the page side of the engine. It probes the device, picks the build and the GPU tier,
 // starts the workers, and hands the canvas to the thread that draws.
 
+import { ERRORS, type ErrorCode } from '../errors/codes';
 import { EngineError } from '../errors/engine-error';
 import { GameRunner } from '../game/runner';
 import { runDirectLoop } from '../render/direct-loop';
@@ -11,6 +12,7 @@ import { controlViews, createControlBuffer, Slot } from '../shared/control';
 import { type Build, startCore } from '../shared/core';
 import { createMetricsBuffer, MetricsReader } from '../shared/metrics';
 import type { CoreHandoff, WorkerReply } from '../workers/protocol';
+import { abortable } from './abortable';
 import { type CapabilityReport, probeCapabilities } from './capabilities';
 import {
 	type FrameMetrics,
@@ -40,7 +42,25 @@ export interface EngineOptions {
 	gpu?: 'auto' | 'webgpu' | 'webgl2';
 	/** The latency mode. The default is `pipelined`. */
 	latency?: LatencyMode;
+	/**
+	 * Called as the start reaches each stage, in this order: `core` once the engine core is compiled
+	 * and the GPU paths are tested, `game` once the game's setup has run, and `first-frame` once the
+	 * GPU has finished the first frame.
+	 */
+	onProgress?: (stage: StartupStage) => void;
+	/**
+	 * Cancels a start in progress, for example when the player leaves the page. `createEngine` then
+	 * stops the engine's threads and rejects with the signal's reason.
+	 */
+	signal?: AbortSignal;
 }
+
+/**
+ * A stage of the engine's start, as `onProgress` reports it.
+ *
+ * @category api/engine
+ */
+export type StartupStage = 'core' | 'game' | 'first-frame';
 
 /**
  * The GPU path the engine chose, and what it offers.
@@ -89,6 +109,11 @@ export interface Engine {
 	readonly report: CapabilityReport;
 	/** How the engine runs on this device. */
 	readonly mode: EngineMode;
+	/**
+	 * Resolves once the GPU has finished the first frame, so it is on screen: the moment to remove
+	 * a loading screen. It never resolves when the engine is destroyed first.
+	 */
+	readonly firstFrame: Promise<void>;
 	/** Sends a message to the game, which receives it through `ctx.page.onMessage`. */
 	postToGame(name: string, data?: unknown, transfer?: Transferable[]): void;
 	/** Receives the messages the game sends with `ctx.page.post`. */
@@ -155,6 +180,26 @@ export function chooseTier(
 
 type Pending = { resolve: (reply: WorkerReply) => void; reject: (error: Error) => void };
 
+/**
+ * The error of a worker that failed to start. An engine error keeps its code and message; any
+ * other failure becomes E1405.
+ */
+export function startError(role: string, message: string): EngineError {
+	const code = /^(E\d{4}): /.exec(message)?.[1];
+	if (code && code in ERRORS) {
+		const error = new EngineError(code as ErrorCode, '');
+		error.message = message;
+		return error;
+	}
+	return new EngineError('E1405', `the ${role} worker did not start: ${message}.`);
+}
+
+/** WebAssembly that uses a SIMD instruction; a browser without SIMD rejects it. */
+const SIMD_PROBE = new Uint8Array([
+	0, 97, 115, 109, 1, 0, 0, 0, 1, 5, 1, 96, 0, 1, 123, 3, 2, 1, 0, 10, 10, 1, 8, 0, 65, 0, 253, 15,
+	253, 98, 11,
+]);
+
 /** A worker whose replies are routed: game messages to handlers, answers to the oldest request. */
 class EngineWorker {
 	private readonly waiting: Pending[] = [];
@@ -190,13 +235,12 @@ class EngineWorker {
 			}
 			const pending = this.waiting.shift();
 			if (!pending) return;
-			if (reply.type === 'error')
-				pending.reject(new Error(`${reply.role} worker: ${reply.message}`));
+			if (reply.type === 'error') pending.reject(startError(reply.role, reply.message));
 			else pending.resolve(reply);
 		};
 		worker.onerror = (event) => {
 			const message = event.message || 'a worker failed';
-			this.waiting.shift()?.reject(new Error(message));
+			this.waiting.shift()?.reject(startError(role, message));
 			if (this.started)
 				onFailure(new EngineError('E1404', `the ${role} worker failed: ${message}.`));
 		};
@@ -222,10 +266,28 @@ class EngineWorker {
  */
 export async function createEngine(options: EngineOptions): Promise<Engine> {
 	const startedAt = performance.now();
+	const { signal, onProgress } = options;
+	signal?.throwIfAborted();
+	// Checked before any download, so an old browser learns at once why the engine cannot run.
+	if (!WebAssembly.validate(SIMD_PROBE))
+		throw new EngineError('E1303', 'this browser runs WebAssembly without SIMD.');
 	const switches = parseSwitches(globalThis.location?.search ?? '');
-	const report = await probeCapabilities();
-	const threaded = report.crossOriginIsolated && report.sharedArrayBuffer && switches.threads;
+	// The build follows from facts the page has at once, so the core downloads and compiles while
+	// the probe tests the GPU paths.
+	const threaded =
+		globalThis.crossOriginIsolated === true &&
+		typeof SharedArrayBuffer === 'function' &&
+		switches.threads;
 	const build: Build = threaded ? 'threaded' : 'single';
+	let coreMs = 0;
+	const coreLoad = loadCore(build).then((loaded) => {
+		coreMs = performance.now() - startedAt;
+		return loaded;
+	});
+	// A failed load is reported where the engine awaits the core, not as an unhandled rejection.
+	coreLoad.catch(() => {});
+	const report = await abortable(probeCapabilities(), signal);
+	const probeMs = performance.now() - startedAt;
 	const latency = threaded ? (switches.latency ?? options.latency ?? 'pipelined') : 'single';
 	const wanted = switches.gpu !== 'auto' ? switches.gpu : (options.gpu ?? 'auto');
 
@@ -250,7 +312,8 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 	const metrics = createMetricsBuffer(threaded, jobWorkers);
 	const { slots } = controlViews(control);
 	Atomics.store(slots, Slot.Running, 1);
-	const core = await loadCore(build);
+	const core = await abortable(coreLoad, signal);
+	onProgress?.('core');
 	let wasmMemory = core.memory;
 	const gameUrl = new URL(options.game, globalThis.location?.href).href;
 	const handoff: CoreHandoff = {
@@ -380,10 +443,12 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 				workers.push(job);
 				job.worker.postMessage({ type: 'init', ...handoff, index });
 			}
-			await Promise.all(workers.map((w) => w.ready()));
+			await abortable(Promise.all(workers.map((w) => w.ready())), signal);
 		}
+		signal?.throwIfAborted();
 	} catch (e) {
 		Atomics.store(slots, Slot.Running, 0);
+		localDrawing?.stop();
 		for (const w of workers) w.worker.terminate();
 		input.stop();
 		throw e;
@@ -391,6 +456,22 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 
 	const engineStartMs = performance.now() - startedAt;
 	const mode: EngineMode = { build, latency, renderThread, jobWorkers };
+	onProgress?.('game');
+	// The thread that draws writes the time the GPU finished the first frame; the page checks for
+	// it once per animation frame until it appears.
+	const header = new MetricsReader(metrics);
+	const firstFrame = new Promise<void>((resolve) => {
+		const check = () => {
+			if (Atomics.load(slots, Slot.Running) === 0) return;
+			if (header.firstFrameDoneTime > 0) {
+				onProgress?.('first-frame');
+				resolve();
+				return;
+			}
+			requestAnimationFrame(check);
+		};
+		requestAnimationFrame(check);
+	});
 	const features =
 		tier === 'webgl2'
 			? Object.keys(report.webgl2.extensions).filter((n) => report.webgl2.extensions[n])
@@ -405,6 +486,7 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 		},
 		report,
 		mode,
+		firstFrame,
 		postToGame(name, data, transfer = []) {
 			if (localRunner) localRunner.receive(name, data);
 			else game?.worker.postMessage({ type: 'post', name, data }, transfer);
@@ -439,7 +521,13 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 				memory: { wasmBytes: wasmMemory?.buffer.byteLength ?? null, ...heap.stop() },
 				load: {
 					engineStartMs,
+					probeMs,
+					coreMs,
 					firstFrameMs: firstFrame > 0 ? firstFrame - performance.timeOrigin : null,
+					firstFrameDoneMs:
+						reader.firstFrameDoneTime > 0
+							? reader.firstFrameDoneTime - performance.timeOrigin
+							: null,
 				},
 				downloadBytes: { wasm: wasmDownloadBytes() },
 				lostRecords: reader.lost,

@@ -90,7 +90,9 @@ const MEASURING = 2;
 const FIRST_FRAME = 2;
 /** Float64 index of the display's refresh rate in hertz, as the thread that draws measured it. */
 const REFRESH_HZ = 3;
-const HEADER_WORDS = 8;
+/** Float64 index of the epoch time, in ms, at which the GPU finished the first frame. */
+const FIRST_FRAME_DONE = 4;
+const HEADER_WORDS = 12;
 const WRITTEN = HEADER_WORDS;
 
 function recordsStart(rings: number): number {
@@ -191,6 +193,13 @@ export class FrameRecorder {
 		Atomics.store(header, WRITTEN + this.ring, this.sequence);
 	}
 
+	/** Records when the GPU finished the first frame, as epoch milliseconds, once per engine. */
+	markFirstFrameDone(): void {
+		const { times } = this.views;
+		if (times[FIRST_FRAME_DONE] === 0)
+			times[FIRST_FRAME_DONE] = performance.timeOrigin + performance.now();
+	}
+
 	/** Records the display's refresh rate, which the thread that draws measures. */
 	setRefreshHz(hz: number): void {
 		this.views.times[REFRESH_HZ] = hz;
@@ -242,6 +251,11 @@ export class MetricsReader {
 	/** Epoch milliseconds at which the first frame was presented, or 0 before that. */
 	get firstFrameTime(): number {
 		return this.views.times[FIRST_FRAME] as number;
+	}
+
+	/** Epoch milliseconds at which the GPU finished the first frame, or 0 before that. */
+	get firstFrameDoneTime(): number {
+		return this.views.times[FIRST_FRAME_DONE] as number;
 	}
 
 	/** The display's refresh rate in hertz, or 0 before the thread that draws has measured it. */

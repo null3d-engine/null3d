@@ -5,7 +5,13 @@ export { EngineError } from './errors/engine-error';
 export type { GameCallbacks, GameContext, GameDefinition, GameSetup } from './game/define-game';
 export { defineGame } from './game/define-game';
 export type { CapabilityReport, WebGL2Report, WebGPUReport } from './page/capabilities';
-export type { Engine, EngineCapabilities, EngineMode, EngineOptions } from './page/engine';
+export type {
+	Engine,
+	EngineCapabilities,
+	EngineMode,
+	EngineOptions,
+	StartupStage,
+} from './page/engine';
 export { createEngine } from './page/engine';
 export type {
 	FrameMetrics,

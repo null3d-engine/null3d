@@ -54,6 +54,7 @@ A running engine, as `createEngine` returns it.
 | `readonly capabilities: EngineCapabilities` | The GPU path the engine chose, and what it offers. |
 | `readonly report: CapabilityReport` | The full capability report, as plain JSON. |
 | `readonly mode: EngineMode` | How the engine runs on this device. |
+| `readonly firstFrame: Promise<void>` | Resolves once the GPU has finished the first frame, so it is on screen: the moment to remove a loading screen. It never resolves when the engine is destroyed first. |
 | `postToGame(name: string, data?: unknown, transfer?: Transferable[]): void` | Sends a message to the game, which receives it through `ctx.page.onMessage`. |
 | `onGameMessage(handler: (name: string, data: unknown) => void): void` | Receives the messages the game sends with `ctx.page.post`. |
 | `onFailure(handler: (error: EngineError) => void): void` | Receives a failure after the engine started: the browser took the GPU away and the engine could not carry on with a new device (E1302), or an engine thread failed (E1404). The engine reports each failure once. Without a handler, it logs the failure to the console. |
@@ -113,6 +114,8 @@ Options for `createEngine`.
 | `maxPixelRatio?: number` | Cap for the device pixel ratio. |
 | `gpu?: 'auto' \| 'webgpu' \| 'webgl2'` | Forces a GPU tier, for testing only. |
 | `latency?: LatencyMode` | The latency mode. The default is `pipelined`. |
+| `onProgress?: (stage: StartupStage) => void` | Called as the start reaches each stage, in this order: `core` once the engine core is compiled and the GPU paths are tested, `game` once the game's setup has run, and `first-frame` once the GPU has finished the first frame. |
+| `signal?: AbortSignal` | Cancels a start in progress, for example when the player leaves the page. `createEngine` then stops the engine's threads and rejects with the signal's reason. |
 
 ### `ErrorCode`
 
@@ -130,10 +133,12 @@ type ErrorCode =
 	| 'E1204'
 	| 'E1301'
 	| 'E1302'
+	| 'E1303'
 	| 'E1401'
 	| 'E1402'
 	| 'E1403'
 	| 'E1404'
+	| 'E1405'
 	| 'E1501';
 ```
 
@@ -146,6 +151,14 @@ type LatencyMode = 'pipelined' | 'low';
 ```
 
 How the engine trades latency for speed. In `pipelined` mode, the render worker draws each frame while the game computes the next one. In `low` mode, the game worker draws each frame right after its update.
+
+### `StartupStage`
+
+```ts
+type StartupStage = 'core' | 'game' | 'first-frame';
+```
+
+A stage of the engine's start, as `onProgress` reports it.
 
 ### `Tier`
 

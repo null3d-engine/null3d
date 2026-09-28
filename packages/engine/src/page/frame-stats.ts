@@ -109,8 +109,14 @@ export interface FrameMetrics extends FrameSummary {
 	load: {
 		/** Time createEngine took. */
 		engineStartMs: number;
-		/** Time from the start of page navigation to the first drawn frame. */
+		/** Time from the start of createEngine until the probe of the GPU paths finished. */
+		probeMs: number;
+		/** Time from the start of createEngine until the core was downloaded and compiled. */
+		coreMs: number;
+		/** Time from the start of page navigation to the submit of the first drawn frame. */
 		firstFrameMs: number | null;
+		/** Time from the start of page navigation until the GPU finished the first frame. */
+		firstFrameDoneMs: number | null;
 	};
 	/** Bytes of the engine's WebAssembly file as the page downloaded it. */
 	downloadBytes: { wasm: number | null };

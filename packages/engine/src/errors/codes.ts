@@ -110,6 +110,13 @@ export const ERRORS = {
 		example: 'E1302: the render worker lost its GPU: the GPU device was lost.',
 		since: '0.1',
 	},
+	E1303: {
+		title: 'WebAssembly SIMD missing',
+		cause: "The browser runs WebAssembly without SIMD, which the engine's core needs.",
+		fix: 'Update the browser. Chrome 91, Firefox 89, Safari 16.4 and later versions run the engine.',
+		example: 'E1303: this browser runs WebAssembly without SIMD.',
+		since: '0.1',
+	},
 	E1401: {
 		title: 'Not a game module',
 		cause:
@@ -140,6 +147,13 @@ export const ERRORS = {
 			'An engine thread hit an error it could not handle after the engine started, so the engine may have stopped.',
 		fix: 'This is an engine bug. Report it with the message and the browser, then destroy the engine and start it again.',
 		example: 'E1404: the render worker failed: out of memory.',
+		since: '0.1',
+	},
+	E1405: {
+		title: 'Engine thread did not start',
+		cause: 'An engine thread failed while the engine started, before the game ran.',
+		fix: 'Read the message for the thread and its cause. Check that the page is served with the isolation headers and that the engine files load, then report it if it repeats.',
+		example: 'E1405: the render worker did not start: no WebGPU adapter.',
 		since: '0.1',
 	},
 	E1501: {

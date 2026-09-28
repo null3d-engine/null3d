@@ -41,6 +41,8 @@ export interface Renderer {
 	readonly lost: Promise<string>;
 	/** Acts out a loss of the GPU, as a driver reset would cause, so the page can test recovery. */
 	simulateLoss(): void;
+	/** Resolves when the GPU has finished every frame submitted so far. */
+	finished(): Promise<void>;
 	destroy(): void;
 }
 
@@ -70,7 +72,7 @@ class WebGPURenderer implements Renderer {
 	private readonly format: GPUTextureFormat;
 	private readonly timer: GpuTimer | undefined;
 	private readonly pass = new RenderPassSetup();
-	private readonly finished: QueueCompletion | undefined;
+	private readonly completions: QueueCompletion | undefined;
 	private simulated = false;
 	readonly completion: CompletionSignal = 'queue';
 	readonly lost: Promise<string>;
@@ -88,7 +90,7 @@ class WebGPURenderer implements Renderer {
 		this.format = navigator.gpu.getPreferredCanvasFormat();
 		this.context.configure({ device, format: this.format, alphaMode: 'opaque' });
 		this.timer = metrics && GpuTimer.create(device, metrics);
-		this.finished = metrics && new QueueCompletion(device.queue, metrics);
+		this.completions = metrics && new QueueCompletion(device.queue, metrics);
 	}
 
 	resize(width: number, height: number): void {
@@ -120,7 +122,7 @@ class WebGPURenderer implements Renderer {
 		const start = performance.now();
 		this.timer?.beginFrame(input.frame);
 		this.clear(this.context.getCurrentTexture().createView(), input.background);
-		this.finished?.afterSubmit(input.frame);
+		this.completions?.afterSubmit(input.frame);
 		record.addPhase(Phase.Replay, performance.now() - start);
 	}
 
@@ -142,6 +144,10 @@ class WebGPURenderer implements Renderer {
 		this.device.destroy();
 	}
 
+	finished(): Promise<void> {
+		return this.device.queue.onSubmittedWorkDone();
+	}
+
 	destroy(): void {
 		this.timer?.destroy();
 		this.context.unconfigure();
@@ -153,7 +159,7 @@ class WebGL2Renderer implements Renderer {
 	readonly tier: Tier = 'webgl2';
 	readonly completion: CompletionSignal = 'fence';
 	private readonly gl: WebGL2RenderingContext;
-	private readonly finished: FenceCompletion | undefined;
+	private readonly completions: FenceCompletion | undefined;
 	private released = false;
 	readonly lost: Promise<string>;
 
@@ -168,7 +174,7 @@ class WebGL2Renderer implements Renderer {
 		}) as WebGL2RenderingContext | null;
 		if (!gl) throw new Error('the canvas has no WebGL2 context');
 		this.gl = gl;
-		this.finished = metrics && new FenceCompletion(gl, metrics);
+		this.completions = metrics && new FenceCompletion(gl, metrics);
 	}
 
 	resize(width: number, height: number): void {
@@ -190,9 +196,9 @@ class WebGL2Renderer implements Renderer {
 
 	drawFrame(input: FrameInput, record: FrameRecorder): void {
 		const start = performance.now();
-		this.finished?.poll();
+		this.completions?.poll();
 		this.clear(input.background);
-		this.finished?.afterSubmit(input.frame);
+		this.completions?.afterSubmit(input.frame);
 		record.addPhase(Phase.Replay, performance.now() - start);
 	}
 
@@ -207,6 +213,28 @@ class WebGL2Renderer implements Renderer {
 		lose?.loseContext();
 		// A driver reset gives the context back after a moment; so does this.
 		setTimeout(() => lose?.restoreContext(), SIMULATED_RESTORE_MS);
+	}
+
+	finished(): Promise<void> {
+		const { gl } = this;
+		const fence = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
+		gl.flush();
+		return new Promise((resolve) => {
+			// Checked on a timer, never waited on, so the thread stays free (hard rule 4).
+			const check = () => {
+				if (
+					fence &&
+					!gl.isContextLost() &&
+					gl.getSyncParameter(fence, gl.SYNC_STATUS) !== gl.SIGNALED
+				) {
+					setTimeout(check, 1);
+					return;
+				}
+				if (fence && !gl.isContextLost()) gl.deleteSync(fence);
+				resolve();
+			};
+			check();
+		});
 	}
 
 	destroy(): void {
