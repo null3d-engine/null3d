@@ -45,15 +45,23 @@ export function FourView({ game, onMessage, onReady }: Props) {
     const canvas = document.createElement('canvas');
     canvas.style.cssText = 'width:100%;height:100%;display:block';
     hostRef.current!.appendChild(canvas);
+    // Unmounting cancels a start that is still in progress.
+    const controller = new AbortController();
     let engine: Engine | undefined;
-    let disposed = false;
-    createEngine({ canvas, game }).then((e) => {
-      if (disposed) { e.destroy(); return; }
-      engine = e;
-      e.onGameMessage((type, data) => onMessageRef.current?.(type, data));
-      onReady?.(e);
-    });
-    return () => { disposed = true; engine?.destroy(); canvas.remove(); };
+    createEngine({
+      canvas,
+      game,
+      signal: controller.signal,
+      onGameMessage: (type, data) => onMessageRef.current?.(type, data),
+    }).then(
+      (e) => {
+        if (controller.signal.aborted) { e.destroy(); return; }
+        engine = e;
+        onReady?.(e);
+      },
+      (error) => { if (!controller.signal.aborted) console.error(error); },
+    );
+    return () => { controller.abort(); engine?.destroy(); canvas.remove(); };
   }, [game]);
 
   return <div ref={hostRef} style={{ width: '100%', height: '100%' }} />;

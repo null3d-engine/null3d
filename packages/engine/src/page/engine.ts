@@ -49,6 +49,12 @@ export interface EngineOptions {
 	 */
 	onProgress?: (stage: StartupStage) => void;
 	/**
+	 * Receives the messages the game sends with `ctx.page.post`, from the start of the game's setup.
+	 * Use it for progress that the game reports while it loads. `engine.onGameMessage` adds more
+	 * handlers once the engine has started.
+	 */
+	onGameMessage?: (name: string, data: unknown) => void;
+	/**
 	 * Cancels a start in progress, for example when the player leaves the page. `createEngine` then
 	 * stops the engine's threads and rejects with the signal's reason.
 	 */
@@ -116,7 +122,10 @@ export interface Engine {
 	readonly firstFrame: Promise<void>;
 	/** Sends a message to the game, which receives it through `ctx.page.onMessage`. */
 	postToGame(name: string, data?: unknown, transfer?: Transferable[]): void;
-	/** Receives the messages the game sends with `ctx.page.post`. */
+	/**
+	 * Receives the messages the game sends with `ctx.page.post`. When no handler listened from the
+	 * start, the first handler also receives the messages sent before it was registered.
+	 */
 	onGameMessage(handler: (name: string, data: unknown) => void): void;
 	/**
 	 * Receives a failure after the engine started: the browser took the GPU away and the engine could
@@ -148,6 +157,8 @@ const DEFAULT_MAX_PIXEL_RATIO = 2;
 const RESERVED_CORES = 2;
 /** How often the page reads the frame records while it measures. */
 const DRAIN_INTERVAL_MS = 250;
+/** How many game messages the page keeps while no handler listens. */
+const MAX_EARLY_MESSAGES = 256;
 
 interface TierChoice {
 	tier: Tier;
@@ -330,7 +341,15 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 	);
 
 	const messageHandlers: ((name: string, data: unknown) => void)[] = [];
+	if (options.onGameMessage) messageHandlers.push(options.onGameMessage);
+	// Messages sent before the page listens wait for the first handler. The newest are kept when a
+	// game sends many.
+	let earlyMessages: [string, unknown][] | undefined = options.onGameMessage ? undefined : [];
 	const onGameMessage = (name: string, data: unknown) => {
+		if (earlyMessages) {
+			if (earlyMessages.push([name, data]) > MAX_EARLY_MESSAGES) earlyMessages.shift();
+			return;
+		}
 		for (const handler of messageHandlers) handler(name, data);
 	};
 	const failureHandlers: ((error: EngineError) => void)[] = [];
@@ -503,6 +522,9 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 		},
 		onGameMessage(handler) {
 			messageHandlers.push(handler);
+			const early = earlyMessages;
+			earlyMessages = undefined;
+			if (early) for (const [name, data] of early) handler(name, data);
 		},
 		onFailure(handler) {
 			failureHandlers.push(handler);

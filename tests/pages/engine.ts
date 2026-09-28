@@ -1,6 +1,6 @@
 // Starts the engine with an empty game in the mode the URL's switches ask for, measures it for a few
 // seconds, then reports the mode, the capabilities, the frame metrics, how many times the game
-// updated and its largest step. With ?pause, it pauses and resumes the game before it asks.
+// updated, its largest step and the names of the messages it sent. With ?pause, it pauses and resumes the game before it asks.
 import { createEngine } from '@null3d/engine';
 import { run, toBase64 } from './lib/result';
 
@@ -27,8 +27,10 @@ run('engine', async () => {
 		engine.setPaused(false);
 		await new Promise((resolve) => setTimeout(resolve, 300));
 	}
+	const messages: string[] = [];
 	const count = await new Promise<unknown>((resolve) => {
 		engine.onGameMessage((name, data) => {
+			messages.push(name);
 			if (name === 'count') resolve(data);
 		});
 		engine.postToGame('count');
@@ -41,6 +43,7 @@ run('engine', async () => {
 		report: engine.report,
 		stats,
 		stages,
+		messages,
 		count,
 		capture: capture && {
 			width: capture.width,

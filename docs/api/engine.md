@@ -56,7 +56,7 @@ A running engine, as `createEngine` returns it.
 | `readonly mode: EngineMode` | How the engine runs on this device. |
 | `readonly firstFrame: Promise<void>` | Resolves once the GPU has finished the first frame, so it is on screen: the moment to remove a loading screen. It never resolves when the engine is destroyed first. |
 | `postToGame(name: string, data?: unknown, transfer?: Transferable[]): void` | Sends a message to the game, which receives it through `ctx.page.onMessage`. |
-| `onGameMessage(handler: (name: string, data: unknown) => void): void` | Receives the messages the game sends with `ctx.page.post`. |
+| `onGameMessage(handler: (name: string, data: unknown) => void): void` | Receives the messages the game sends with `ctx.page.post`. When no handler listened from the start, the first handler also receives the messages sent before it was registered. |
 | `onFailure(handler: (error: EngineError) => void): void` | Receives a failure after the engine started: the browser took the GPU away and the engine could not carry on with a new device (E1302), or an engine thread failed (E1404). The engine reports each failure once. Without a handler, it logs the failure to the console. |
 | `setPaused(paused: boolean): void` | Pauses or resumes the game's frames. |
 | `measure(seconds: number): Promise<FrameMetrics>` | Measures the running engine for a number of seconds, then returns CPU time per frame by thread and phase, GPU time, frame intervals, uploads, draw calls, memory and load time. |
@@ -115,6 +115,7 @@ Options for `createEngine`.
 | `gpu?: 'auto' \| 'webgpu' \| 'webgl2'` | Forces a GPU tier, for testing only. |
 | `latency?: LatencyMode` | The latency mode. The default is `pipelined`. |
 | `onProgress?: (stage: StartupStage) => void` | Called as the start reaches each stage, in this order: `core` once the engine core is compiled and the GPU paths are tested, `game` once the game's setup has run, and `first-frame` once the GPU has finished the first frame. |
+| `onGameMessage?: (name: string, data: unknown) => void` | Receives the messages the game sends with `ctx.page.post`, from the start of the game's setup. Use it for progress that the game reports while it loads. `engine.onGameMessage` adds more handlers once the engine has started. |
 | `signal?: AbortSignal` | Cancels a start in progress, for example when the player leaves the page. `createEngine` then stops the engine's threads and rejects with the signal's reason. |
 
 ### `ErrorCode`

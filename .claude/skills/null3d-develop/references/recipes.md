@@ -201,23 +201,40 @@ The engine writes each label's screen position into shared memory every frame, a
 
 ```ts
 // game.ts
-assets.onProgress((loaded, total) => page.post('loading', { progress: loaded / total }));
+assets.onProgress((loaded, total) => page.post('loading', loaded / total));
 await assets.preload(['/models/level.glb', '/env/sunset.ktx2', '/tex/terrain.ktx2']);
 const level = scene.instantiate(await assets.loadGltf('/models/level.glb'));
 await scene.warmUp();                          // compile every pipeline before the first frame
-page.post('loading', { progress: 1, done: true });
 ```
 
 ```ts
 // page.ts
-engine.onGameMessage((type, d) => {
-  if (type !== 'loading') return;
-  bar.style.width = `${Math.round(d.progress * 100)}%`;
-  if (d.done) loadingScreen.remove();
-});
+let shown = 0;
+const show = (progress: number) => {
+  shown = Math.max(shown, progress);           // the bar never moves back
+  bar.style.width = `${Math.round(shown * 100)}%`;
+};
+try {
+  const engine = await createEngine({
+    canvas,
+    game: new URL('./game.ts', import.meta.url),
+    onProgress: (stage) => { if (stage === 'core') show(0.1); },
+    onGameMessage: (type, loaded) => { if (type === 'loading') show(0.1 + 0.8 * (loaded as number)); },
+  });
+  engine.onFailure((error) => showMessage(`The scene stopped: ${error.message}`));
+  await engine.firstFrame;                     // the GPU has finished the first frame
+  loadingScreen.remove();
+} catch (error) {
+  showMessage(`This browser cannot show the scene: ${(error as Error).message}`);
+}
 ```
 
-`warmUp` prevents the hitches that appear when a new pipeline compiles during play; the Godot browser port measured seconds of such stalls. Docs: `guides/loading-screens`.
+- Pass `onGameMessage` to `createEngine`. A handler added after `createEngine` resolves hears the setup's messages only once setup is over, which is too late for a progress bar.
+- Remove the loading screen when `engine.firstFrame` resolves, not when setup ends. Until the GPU finishes the first frame, the canvas is blank.
+- `createEngine` rejects when the browser cannot run the engine, for example without WebAssembly SIMD (E1303). Show a message or a still image in place of the canvas.
+- `warmUp` prevents the hitches that appear when a new pipeline compiles during play; the Godot browser port measured seconds of such stalls.
+
+Docs: `guides/loading-screens`, `api/engine`.
 
 ## 9. HTML settings panel that controls the scene
 

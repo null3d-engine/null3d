@@ -69,6 +69,7 @@ export interface EngineResult {
 	};
 	count: { updates: number; largestStep: number };
 	stages: string[];
+	messages: string[];
 }
 
 /** Slower than this median frame interval means the loop is not keeping up with the display. */
@@ -126,6 +127,8 @@ export function engineProblems(result: EngineResult, mode: EngineMode, tier: str
 		problems.push('the probe or core load time is missing');
 	if (result.stages.join(',') !== 'core,game,first-frame')
 		problems.push(`the start reported the stages ${result.stages.join(', ')}`);
+	if (result.messages.join(',') !== 'setup,count')
+		problems.push(`the page received the game's messages ${result.messages.join(', ')}`);
 	if (!((stats.memory.wasmBytes ?? 0) > 0)) problems.push('the WebAssembly memory size is missing');
 	if (result.count.updates <= MIN_FRAMES)
 		problems.push(`the game updated only ${result.count.updates} times`);

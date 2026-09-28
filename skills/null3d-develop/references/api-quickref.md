@@ -40,10 +40,15 @@ const engine = await createEngine({
   transparent: false,    // true for a see-through canvas
   largeWorld: false,     // (0.2) planet-scale scenes: cell-relative positions, batch origins
   gameThread: 'worker',  // or 'main' for DOM-heavy apps and debugging
+  onProgress: (stage) => {},             // 'core', then 'game' after the game's setup, then 'first-frame'
+  onGameMessage: (type, data) => {},     // game messages from the start of setup, such as load progress
+  signal: controller.signal,             // abort to cancel the start; createEngine then rejects
 });
+// createEngine rejects with an EngineError when the browser cannot run the engine (error.code)
 
+await engine.firstFrame;                 // the GPU finished the first frame: remove the loading screen
 engine.postToGame('difficulty', { level: 2 });            // an optional third argument lists transferables
-engine.onGameMessage((type, data) => { /* ... */ });
+engine.onGameMessage((type, data) => { /* ... */ });      // the first handler also gets earlier messages
 const image = await engine.capture();             // Blob of the next complete frame
 // engine.registerVideo and textures.fromVideo come after 1.0; recipe 14 shows the workaround
 engine.labels.bind('hp-12', element);             // (0.2) HTML label that follows an object
