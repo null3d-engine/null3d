@@ -430,6 +430,8 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 					);
 				}
 			}
+			// The game and render threads start first; the engine is ready once they are.
+			const essential = [...workers];
 			for (let index = 0; index < jobWorkers; index++) {
 				const job = new EngineWorker(
 					new Worker(new URL('../workers/job-worker.ts', import.meta.url), {
@@ -442,8 +444,16 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 				);
 				workers.push(job);
 				job.worker.postMessage({ type: 'init', ...handoff, index });
+				// Job workers join the job system as each becomes ready: until then the game thread
+				// and the job workers already running take every chunk, so no frame waits for them.
+				job.ready().catch((error: unknown) => {
+					if (Atomics.load(slots, Slot.Running) !== 0)
+						onFailure(
+							error instanceof EngineError ? error : startError(`job ${index}`, String(error)),
+						);
+				});
 			}
-			await abortable(Promise.all(workers.map((w) => w.ready())), signal);
+			await abortable(Promise.all(essential.map((w) => w.ready())), signal);
 		}
 		signal?.throwIfAborted();
 	} catch (e) {

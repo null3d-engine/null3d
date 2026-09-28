@@ -1,6 +1,6 @@
 // Measures a cold start of the engine on a slow network: it builds the engine test page for
-// production, serves the build, and loads it in Chrome with an empty cache and Chrome's Slow 4G
-// profile. It prints each run's startup milestones, requests and bytes, and their medians. From the
+// production, serves the build, and loads it in a fresh Chrome profile, whose cache starts empty,
+// with Chrome's Slow 4G profile. It prints each run's startup milestones, requests and bytes, and their medians. From the
 // repository root:
 //   bun run bench:startup                 (3 runs on WebGPU)
 //   bun run bench:startup -- --runs 5 --gpu webgl2
@@ -55,13 +55,21 @@ async function measure(gpu: string): Promise<StartupRun> {
 		const page = await context.newPage();
 		const cdp = await context.newCDPSession(page);
 		await cdp.send('Network.enable');
-		await cdp.send('Network.setCacheDisabled', { cacheDisabled: true });
 		await cdp.send('Network.emulateNetworkConditions', SLOW_4G);
+		// The page's requests and its workers' requests, as the network delivered them.
 		let requests = 0;
 		let bytes = 0;
-		cdp.on('Network.loadingFinished', (event: { encodedDataLength: number }) => {
+		const sizes: Promise<void>[] = [];
+		context.on('requestfinished', (request) => {
 			requests++;
-			bytes += event.encodedDataLength;
+			sizes.push(
+				request.sizes().then(
+					(size) => {
+						bytes += size.responseBodySize + size.responseHeadersSize;
+					},
+					() => {},
+				),
+			);
 		});
 		await page.goto(`${URL_BASE}?gpu=${gpu}&seconds=0.2`, { timeout: 120_000 });
 		const result = await pageResult<{
@@ -71,6 +79,7 @@ async function measure(gpu: string): Promise<StartupRun> {
 			};
 		}>(page, 180_000);
 		if (result.error) throw new Error(result.error);
+		await Promise.all(sizes);
 		const { load } = result.stats;
 		return {
 			probeMs: load.probeMs,

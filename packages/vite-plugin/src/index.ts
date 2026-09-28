@@ -29,6 +29,20 @@ export const isolationMiddleware: Connect.NextHandleFunction = (_req, res, next)
 	next();
 };
 
+/** Build files whose names carry a content hash, which never change under that name. */
+const HASHED_ASSET = /^\/assets\/[^/?]+-[\w-]{8}\.\w+(\?|$)/;
+
+/**
+ * Lets the browser keep hashed build files, as a host should. Each engine thread loads its own copy
+ * of its script and the core's loader; without this, the browser checks each copy with the server
+ * in turn, one round trip per thread.
+ */
+export const immutableAssetsMiddleware: Connect.NextHandleFunction = (req, res, next) => {
+	if (HASHED_ASSET.test(req.url ?? ''))
+		res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+	next();
+};
+
 function readCertificate(root: string, certDir: string): { cert: Buffer; key: Buffer } {
 	const dir = resolve(root, certDir);
 	const cert = resolve(dir, 'cert.pem');
@@ -148,6 +162,7 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 		},
 		configurePreviewServer(server) {
 			server.middlewares.use(isolationMiddleware);
+			server.middlewares.use(immutableAssetsMiddleware);
 		},
 	};
 }
