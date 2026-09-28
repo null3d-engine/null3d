@@ -1,6 +1,6 @@
 {
-  "about": "The single source for porting three.js code to sokko3d. `bun run docs` (tools/gen-docs.ts) generates docs/porting/threejs-mapping.md and the copies in skills/sokko3d-port-threejs/references/ from this file. Edit this file, never the generated copies.",
-  "version": "draft for engine 0.1 to 1.0",
+  "about": "Maps three.js APIs to their sokko3d equivalents. Each entry gives a status, the first engine version and a docs page ID.",
+  "version": "sokko3d 0.1 to 1.0",
   "statusLegend": {
     "direct": "Same concept; the call or option changes name only.",
     "changed": "Supported, with a different API or pattern. Follow the note.",
@@ -9,10 +9,10 @@
     "unsupported": "Out of scope for sokko3d. Use the workaround in the note."
   },
   "sinceLegend": {
-    "0.1": "milestone M1, the core renderer",
-    "0.2": "milestone M2, content",
-    "0.3": "milestone M3, developer experience",
-    "1.0": "milestone M4, the 1.0 release"
+    "0.1": "the core renderer, with cameras, materials, lights and shadows",
+    "0.2": "content, such as glTF models, animation, raycasting and post-processing",
+    "0.3": "developer tools, such as the sokko3d command, templates and the porting tools",
+    "1.0": "the stable API"
   },
   "entries": [
     {
@@ -715,7 +715,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "materials.standard for the base layer",
-      "notes": "Clearcoat, transmission, sheen and specular arrive after 1.0, in the order users ask for them. Until then approximate, or write a surface function.",
+      "notes": "Clearcoat, transmission, sheen and specular are planned for after 1.0. Until then, approximate them or write a surface function.",
       "docs": "porting/threejs-materials",
       "detect": "\\bMeshPhysicalMaterial\\b"
     },

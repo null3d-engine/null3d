@@ -8,8 +8,6 @@ summary: "Every three.js API a port is likely to meet, with its sokko3d equivale
 
 # three.js to sokko3d mapping
 
-This page is generated from `docs/data/threejs-mapping.json` by `tools/gen-docs.ts`. To change it, edit the JSON file.
-
 Status values:
 
 - `direct`: Same concept; the call or option changes name only.
@@ -20,10 +18,10 @@ Status values:
 
 The "Since" column gives the first engine version with the feature:
 
-- 0.1: milestone M1, the core renderer
-- 0.2: milestone M2, content
-- 0.3: milestone M3, developer experience
-- 1.0: milestone M4, the 1.0 release
+- 0.1: the core renderer, with cameras, materials, lights and shadows
+- 0.2: content, such as glTF models, animation, raycasting and post-processing
+- 0.3: developer tools, such as the sokko3d command, templates and the porting tools
+- 1.0: the stable API
 
 ## Renderer and loop
 
@@ -117,7 +115,7 @@ The "Since" column gives the first engine version with the feature:
 | three.js | sokko3d | Status | Since | Notes | Docs |
 | --- | --- | --- | --- | --- | --- |
 | MeshStandardMaterial | materials.standard({ color, map, metalness, roughness, normalMap, aoMap, emissive, ... }) | direct | 0.1 | See the materials reference for every parameter and its new name. | `porting/threejs-materials` |
-| MeshPhysicalMaterial (clearcoat, transmission, sheen, iridescence, anisotropy, specular) | materials.standard for the base layer | changed | 0.1 | Clearcoat, transmission, sheen and specular arrive after 1.0, in the order users ask for them. Until then approximate, or write a surface function. | `porting/threejs-materials` |
+| MeshPhysicalMaterial (clearcoat, transmission, sheen, iridescence, anisotropy, specular) | materials.standard for the base layer | changed | 0.1 | Clearcoat, transmission, sheen and specular are planned for after 1.0. Until then, approximate them or write a surface function. | `porting/threejs-materials` |
 | MeshBasicMaterial | materials.unlit({ color, map, opacity, alphaMode, vertexColors }) | direct | 0.1 |  | `api/materials` |
 | MeshLambertMaterial / MeshPhongMaterial | materials.standard with metalness 0 and roughness near 1 (Lambert), or roughness tuned to the Phong shininess | changed | 0.1 | Expect small visual differences; check with parity images and accept or tune. | `porting/threejs-materials` |
 | MeshToonMaterial | A toon surface function (recipe in the materials reference) | manual | 0.1 |  | `porting/threejs-materials` |

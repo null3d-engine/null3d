@@ -8,7 +8,7 @@ summary: "Main thread, game worker, render worker, job workers; the pipelined fr
 
 # Architecture: threads and the frame
 
-> Planned for sokko3d 0.1. This page describes the design. The first milestone implements parts of it in this repository, but no release has these APIs yet, so coding agents must not use them.
+> Planned for sokko3d 0.1. No release has these APIs yet, so coding agents must not use them.
 
 ```mermaid
 flowchart LR
@@ -39,7 +39,7 @@ sokko3d runs your game in a worker thread and draws from a second worker. The pa
 | Main thread | The page and a thin engine shim. The shim picks the engine build, hands the canvas to the render worker, and writes input and resize events into shared memory. | 1 |
 | Game worker | Your game code and the engine core. Reading or writing scene data is a plain memory access here. | 1 |
 | Render worker | The GPU device and the canvas. It uploads changed data and replays draw lists into WebGPU or WebGL2 calls. It runs no game code. | 1 |
-| Job workers | Parallel loops over scene data in Rust: transforms, culling, animation and draw-list recording, plus asset decoding. | Logical cores minus 2, at least 1 (a starting value that measurements will tune) |
+| Job workers | Parallel loops over scene data in Rust: transforms, culling, animation and draw-list recording, plus asset decoding. | Logical cores minus 2, at least 1 |
 
 ## Why the work is split this way
 
@@ -81,7 +81,7 @@ The engine times each step on every thread, job workers included. The [performan
 | Low latency | The game worker, in the same frame | None | Games where input delay matters most, when the frame budget allows |
 | Single-threaded | One thread, in sequence | None | Pages without cross-origin isolation, and older iPhones |
 
-Which mode is the default will be decided from measurements before 0.1. You pick a mode with `createEngine({ latency })`.
+Pipelined is the default when the page can use threads, and single-threaded otherwise. You pick a mode with `createEngine({ latency })`.
 
 ## Rules the engine keeps
 

@@ -8,7 +8,7 @@ summary: "When to mark objects static; setters versus direct array writes; dirty
 
 # Static and dynamic objects
 
-> Planned for sokko3d 0.1. This page describes the design. The first milestone implements parts of it in this repository, but no release has these APIs yet, so coding agents must not use them.
+> Planned for sokko3d 0.1. No release has these APIs yet, so coding agents must not use them.
 
 ```mermaid
 flowchart TB

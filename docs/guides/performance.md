@@ -8,9 +8,9 @@ summary: "Measuring; the frame budget; common causes of slow frames and their fi
 
 # Performance guide
 
-> Planned for sokko3d 0.1. This page describes the design. The first milestone implements parts of it in this repository, but no release has these APIs yet, so coding agents must not use them.
+> Planned for sokko3d 0.1. No release has these APIs yet, so coding agents must not use them.
 
-sokko3d keeps its own work per frame small, so your game code usually decides how long a frame takes. This guide shows where frame time goes, how to write per-frame code that stays fast, and how to measure. The figures come from the first milestone's benchmarks in this repository.
+sokko3d keeps its own work per frame small, so your game code usually decides how long a frame takes. This guide shows where frame time goes, how to write per-frame code that stays fast, and how to measure. The figures come from the engine's benchmark scenes, and `bun run bench:run` measures them on your own computer.
 
 ## Where frame time goes
 
@@ -85,7 +85,7 @@ The render worker picks how each upload travels, so you do not need to. Uploads 
 
 ## Measure
 
-In this repository, `engine.measure(seconds)` on the page records every frame for that many seconds and returns these figures:
+`engine.measure(seconds)` on the page records every frame for that many seconds and returns these figures:
 
 | Figure | What it is |
 | --- | --- |

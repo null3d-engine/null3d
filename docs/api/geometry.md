@@ -10,13 +10,11 @@ summary: "Generators with three.js parameters; fromArrays; updateVertices."
 
 # Geometry
 
-> Planned for sokko3d 0.1. No release has these APIs yet, so coding agents must not use them. The reference below lists what the engine in this repository has so far, and the rest of the page is not written yet.
+> Planned for sokko3d 0.1. No release has these APIs yet, so coding agents must not use them. The reference below lists the APIs the engine has now. The rest of the page is not written yet.
 
 This page will cover: Generators with three.js parameters; fromArrays; updateVertices.
 
 ## API reference
-
-This reference is generated from the TSDoc comments in `packages/engine/src`. To change it, edit the comments.
 
 ### `BoxOptions`
 

@@ -190,7 +190,7 @@ These rules come from the capabilities browsers report; `shaders/wgsl-rules` lis
 2. Write flat interpolation as `@interpolate(flat, either)`; compatibility mode accepts no other flat form.
 3. Stay within these limits unless you check capabilities first: 16 vertex attributes (including built-ins in compatibility mode), 15 values passed between stages, 16 sampled textures and 16 samplers per stage, 4 storage buffers in fragment shaders and none in vertex shaders, 16 KB of uniform data per binding, compute workgroups of at most 128 invocations, 16 KB of workgroup memory, textures up to 4096 pixels.
 4. `f16` needs the `shader-f16` feature: guard it and provide an `f32` fallback.
-5. Do not read 32-bit float textures with filtering; the iPad reported no filtering for them. Use `textureLoad`, or 16-bit float textures.
+5. Do not read 32-bit float textures with filtering. Filtering them is an optional GPU feature, and some devices, such as iPads, lack it. Use `textureLoad`, or 16-bit float textures.
 6. Keep `textureSample` in uniform control flow, or use `textureSampleLevel` inside branches that differ between pixels.
 7. WGSL's `%` on floats keeps the sign of the left operand, like C, so `-1.5 % 1.0` is `-0.5`. For GLSL-style `mod`, write `x - y * floor(x / y)`.
 8. No storage buffers or storage textures in vertex shaders: per-instance data arrives as vertex attributes.

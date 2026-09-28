@@ -8,7 +8,7 @@ summary: "COOP and COEP headers; require-corp on Safari; CORS and CORP for asset
 
 # Hosting and cross-origin isolation
 
-> Planned for sokko3d 0.1. This page describes the design. The first milestone implements parts of it in this repository, but no release has these APIs yet, so coding agents must not use them.
+> Planned for sokko3d 0.1. No release has these APIs yet, so coding agents must not use them.
 
 ```mermaid
 flowchart TD

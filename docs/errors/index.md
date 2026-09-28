@@ -8,7 +8,7 @@ summary: Every EngineError code with its cause and fix.
 
 # Error codes
 
-Every error the engine throws is an `EngineError` with a code. Its message names the call and the object, says what failed and how to fix it, and links to the code's page here. This page is generated from the engine's error table, `packages/engine/src/errors/codes.ts`.
+Every error the engine throws is an `EngineError` with a code. Its message names the call and the object, says what failed and how to fix it, and links to the code's page here.
 
 | Code | Error | What happened |
 | --- | --- | --- |

@@ -10,6 +10,6 @@ summary: "`sokko3d create`; packages; engine, docs and skills versions always ma
 
 # Install and create a project
 
-> Planned for sokko3d 0.3. This page is a placeholder: the feature is designed but not built yet, so the APIs it names do not exist. Coding agents must not use them.
+> Planned for sokko3d 0.3. This page is a placeholder. No release has this feature yet, so the APIs it names do not exist. Coding agents must not use them.
 
 This page will cover: `sokko3d create`; packages; engine, docs and skills versions always match.

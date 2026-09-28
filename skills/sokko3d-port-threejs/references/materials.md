@@ -52,7 +52,7 @@ Engine docs: `porting/threejs-materials`, `api/materials`, `api/textures`, `conc
 
 ## 2. MeshPhysicalMaterial
 
-`materials.standard` covers the base layer. The extensions come after 1.0, in the order users ask for them. Until then:
+`materials.standard` covers the base layer. The extensions are planned for after 1.0. Until then:
 
 | three.js property | Workaround | Visual cost |
 | --- | --- | --- |

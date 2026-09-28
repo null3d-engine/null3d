@@ -51,7 +51,7 @@ export const ERRORS = {
 		title: 'Unknown command',
 		cause:
 			'The engine core received a structural change it does not know, so the TypeScript side and the core come from different builds.',
-		fix: 'Rebuild the engine core with bun run build, or reinstall the engine package so its parts match.',
+		fix: 'Reinstall the engine package so all of its parts come from one version. If you build the engine from source, run bun run build again.',
 		example: 'E1105: the engine core received command 42.',
 		since: '0.1',
 	},
@@ -92,7 +92,7 @@ export const ERRORS = {
 		cause:
 			'A call received a color that is not a hex string, a number from 0 to 0xffffff, or three numbers from 0 to 1.',
 		fix: "Pass a hex string such as '#4a8cff', a number such as 0x4a8cff, or three sRGB components from 0 to 1, such as [0.29, 0.55, 1].",
-		example: "E1204: createLambertMaterial() got the color 'blue-ish'.",
+		example: 'E1204: setBackground() got the color "blue-ish".',
 		since: '0.1',
 	},
 	E1301: {
@@ -114,8 +114,8 @@ export const ERRORS = {
 		title: 'Engine core out of date',
 		cause:
 			'The engine core WebAssembly file lacks functions that the TypeScript side calls, so the two come from different builds.',
-		fix: 'Rebuild the engine core with bun run build, or reinstall the engine package so its parts match.',
-		example: 'E1402: the threaded engine core lacks isThreadedBuild; rebuild it.',
+		fix: 'Reinstall the engine package so all of its parts come from one version. If you build the engine from source, run bun run build again.',
+		example: 'E1402: the threaded engine core lacks isThreadedBuild.',
 		since: '0.1',
 	},
 	E1403: {

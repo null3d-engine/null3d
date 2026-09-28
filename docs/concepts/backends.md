@@ -8,7 +8,7 @@ summary: "WebGPU core, compatibility mode and WebGL2; capability flags; the port
 
 # GPU tiers and backends
 
-> Planned for sokko3d 0.1. This page describes the design. The first milestone implements parts of it in this repository, but no release has these APIs yet, so coding agents must not use them.
+> Planned for sokko3d 0.1. No release has these APIs yet, so coding agents must not use them.
 
 ```mermaid
 flowchart TD
@@ -36,7 +36,7 @@ On WebGPU, the GPU culls the scene itself. The engine records each group of obje
 
 On WebGL2 there are no compute shaders, so the job workers cull in parallel on the CPU. Static objects keep their data on the GPU, and each frame uploads only a list of which instances are visible. Where the browser has the `WEBGL_multi_draw` extension, one call draws many groups.
 
-A feature ships only when it works on both paths, or when its WebGL2 fallback is documented on its page.
+Every feature works on both paths, or its page describes its WebGL2 fallback.
 
 ## Capability flags
 

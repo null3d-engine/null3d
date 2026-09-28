@@ -21,7 +21,7 @@
 </p>
 
 <p align="center">
-  Pre-alpha: the design is done, and the first milestone, a proof of speed, is in progress.
+  Pre-alpha: sokko3d has no release yet.
   Nothing is on npm yet.
 </p>
 
@@ -139,7 +139,7 @@ flowchart LR
 - **Measured against three.js.** Every performance claim comes with a benchmark against a three.js version of the same scene, and image tests compare frames on each GPU tier.
 
 <details>
-<summary><strong>Everything else in the design, by version</strong></summary>
+<summary><strong>Everything else planned, by version</strong></summary>
 
 <br />
 
@@ -163,7 +163,7 @@ const p = rocks.positions; // Float32Array, 3 floats per row
 for (let i = 0; i < rocks.count; i++) p[i * 3 + 1] += 0.5 * dt;
 ```
 
-On WebGPU, the GPU then culls and counts the draws itself, and the CPU replays the same prerecorded render bundles each frame. The targets below are what the first milestone measures against three.js best practice (instanced meshes, frustum culling, and the faster of its two renderers):
+On WebGPU, the GPU then culls and counts the draws itself, and the CPU replays the same prerecorded render bundles each frame. The engine's benchmarks measure these targets against three.js best practice (instanced meshes, frustum culling, and the faster of its two renderers):
 
 | Measure | Target |
 | --- | --- |
@@ -171,7 +171,7 @@ On WebGPU, the GPU then culls and counts the draws itself, and the CPU replays t
 | CPU time per frame at phone scale, on WebGPU and WebGL2 phones and tablets | At most 100% of three.js |
 | Core download size | At most 600 KB after Brotli compression |
 
-An engine's own time leaves out the game code that moves the instances, which runs alike in both engines. "Phone scale" is the largest instance count at which three.js still holds 30 frames per second on that device. The milestone is not finished, so the table lists targets. This section will show the measured numbers when it ends.
+An engine's own time leaves out the game code that moves the instances, which runs alike in both engines. "Phone scale" is the largest instance count at which three.js still holds 30 frames per second on that device. The [performance guide](docs/guides/performance.md) gives the measured figures, and `bun run bench:run` measures them on your own computer.
 
 ## Where it runs
 
@@ -273,15 +273,15 @@ if (input.wasPressed('Mouse0')) {
 
 ## Roadmap
 
-Each milestone ends in a gate that must pass before the next one starts.
+Each release lists its changes in `CHANGELOG.md`. Until 1.0, the API can change between releases.
 
-| Milestone | What it builds | Its gate |
-| --- | --- | --- |
-| M0, proof of speed (in progress) | The threaded core, both GPU backends with instanced meshes and one light, and benchmarks against three.js on a laptop, an Android phone and an iPad | The speed targets above are met |
-| M1, core renderer (release 0.1) | Cameras, materials, clustered lights, shadows, fog, quality presets, dynamic resolution, camera controls and the first TypeScript API | Image tests pass on all three GPU tiers |
-| M2, content (release 0.2) | glTF loading, the asset optimizer, animation, raycasting, environment lighting, post-processing, sprites, lines and large worlds | The showcase scenes hold their frame rates |
-| M3, developer experience (release 0.3) | The docs site, the `sokko3d` command, templates, agent tooling and the porting tools | A coding agent builds each template game from the docs alone |
-| M4, release 1.0 | The API freeze, a pass on many devices, size budgets and public benchmarks | All budgets met |
+| Release | What it adds |
+| --- | --- |
+| Now, before 0.1 | The threaded core, both GPU backends with instanced meshes and one light, and benchmarks against three.js on a laptop, an Android phone and an iPad |
+| 0.1 | Cameras, materials, clustered lights, shadows, fog, quality presets, dynamic resolution, camera controls and the first TypeScript API |
+| 0.2 | glTF loading, the asset optimizer, animation, raycasting, environment lighting, post-processing, sprites, lines and large worlds |
+| 0.3 | The docs site, the `sokko3d` command, templates, agent tooling and the porting tools |
+| 1.0 | A stable API, testing on many devices, size budgets and public benchmarks |
 
 ## Development
 

@@ -6,14 +6,7 @@
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { ERRORS, type ErrorEntry } from '../../packages/engine/src/errors/codes.ts';
-import {
-	API_SOURCE,
-	type ApiReference,
-	type ApiSymbol,
-	readApi,
-	renderReference,
-	tableCell,
-} from './api-docs';
+import { type ApiReference, readApi, renderReference, tableCell } from './api-docs';
 import { docsFiles, readIfExists } from './files';
 import { parseFrontMatter, renderFrontMatter } from './frontmatter';
 import { checkLinkTree, linkedFiles } from './links';
@@ -139,6 +132,10 @@ const PAGE_LIST_END = '<!-- sokko3d:page-list:end -->';
 export const API_START = '<!-- sokko3d:api:start -->';
 export const API_END = '<!-- sokko3d:api:end -->';
 
+/**
+ * The single source of the three.js mapping. The mapping page and the porting skill's copies come
+ * from it, so edit it and never the copies.
+ */
 export const MAPPING_SOURCE = 'docs/data/threejs-mapping.json';
 const MAPPING_PAGE = 'docs/porting/threejs-mapping.md';
 const SKILL_MAPPING_DIR = 'skills/sokko3d-port-threejs/references';
@@ -159,8 +156,8 @@ export function placeholderPage(page: PageEntry, reference = ''): string {
 		? `after sokko3d ${page.since.slice('after '.length)}`
 		: `sokko3d ${page.since}`;
 	const note = reference
-		? `Planned for ${when}. No release has these APIs yet, so coding agents must not use them. The reference below lists what the engine in this repository has so far, and the rest of the page is not written yet.`
-		: `Planned for ${when}. This page is a placeholder: the feature is designed but not built yet, so the APIs it names do not exist. Coding agents must not use them.`;
+		? `Planned for ${when}. No release has these APIs yet, so coding agents must not use them. The reference below lists the APIs the engine has now. The rest of the page is not written yet.`
+		: `Planned for ${when}. This page is a placeholder. No release has this feature yet, so the APIs it names do not exist. Coding agents must not use them.`;
 	return `${renderFrontMatter([
 		['id', page.id],
 		['title', page.title],
@@ -176,11 +173,6 @@ ${PLACEHOLDER_MARKER}
 
 This page will cover: ${page.summary}
 ${reference ? `\n## API reference\n\n${reference}\n` : ''}`;
-}
-
-/** A page's generated API reference: where it comes from, then its exports. */
-export function apiSection(symbols: readonly ApiSymbol[]): string {
-	return `This reference is generated from the TSDoc comments in \`${API_SOURCE}\`. To change it, edit the comments.\n\n${renderReference(symbols)}`;
 }
 
 /** Problems that keep an export out of the reference, including a page tag that names no page. */
@@ -226,15 +218,12 @@ export function mappingMarkdown(mapping: Mapping, forSkill: boolean): string {
 		);
 		lines.push('# three.js to sokko3d mapping\n');
 	}
-	lines.push(
-		`This page is generated from \`${MAPPING_SOURCE}\` by \`tools/gen-docs.ts\`. To change it, edit the JSON file.\n`,
-	);
 	lines.push('Status values:\n');
 	for (const [key, text] of Object.entries(mapping.statusLegend))
 		lines.push(`- \`${key}\`: ${text}`);
 	lines.push('\nThe "Since" column gives the first engine version with the feature:\n');
-	for (const [version, milestone] of Object.entries(mapping.sinceLegend))
-		lines.push(`- ${version}: ${milestone}`);
+	for (const [version, label] of Object.entries(mapping.sinceLegend))
+		lines.push(`- ${version}: ${label}`);
 	lines.push('');
 	const categories = [...new Set(mapping.entries.map((e) => e.category))];
 	if (forSkill) {
@@ -256,8 +245,6 @@ export function mappingMarkdown(mapping: Mapping, forSkill: boolean): string {
 	return lines.join('\n');
 }
 
-const ERROR_TABLE = 'packages/engine/src/errors/codes.ts';
-
 /** The docs page of one error code, generated from the engine's error table. */
 export function errorPage(code: string, entry: ErrorEntry): string {
 	return `${renderFrontMatter([
@@ -268,8 +255,6 @@ export function errorPage(code: string, entry: ErrorEntry): string {
 		['summary', entry.cause],
 	])}
 # ${code}: ${entry.title}
-
-This page is generated from the engine's error table, \`${ERROR_TABLE}\`. To change it, edit the table.
 
 ## What happened
 
@@ -302,7 +287,7 @@ export function errorIndexPage(errors: Record<string, ErrorEntry>): string {
 	])}
 # Error codes
 
-Every error the engine throws is an \`EngineError\` with a code. Its message names the call and the object, says what failed and how to fix it, and links to the code's page here. This page is generated from the engine's error table, \`${ERROR_TABLE}\`.
+Every error the engine throws is an \`EngineError\` with a code. Its message names the call and the object, says what failed and how to fix it, and links to the code's page here.
 
 | Code | Error | What happened |
 | --- | --- | --- |
@@ -397,7 +382,7 @@ export function generateDocs(root: string, api: ApiReference = readApi(root)): M
 		const path = pagePath(page.id);
 		const current = readIfExists(root, path);
 		const symbols = byPage.get(page.id);
-		const reference = symbols ? apiSection(symbols) : '';
+		const reference = symbols ? renderReference(symbols) : '';
 		if (current === null || current.includes(PLACEHOLDER_MARKER))
 			out.set(path, placeholderPage(page, reference));
 		else if (reference || current.includes(API_START))

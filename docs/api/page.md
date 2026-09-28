@@ -10,6 +10,6 @@ summary: "page.post and page.onMessage in the game; engine.postToGame and engine
 
 # Messages between game and page
 
-> Planned for sokko3d 0.1. This page is a placeholder: the feature is designed but not built yet, so the APIs it names do not exist. Coding agents must not use them.
+> Planned for sokko3d 0.1. This page is a placeholder. No release has this feature yet, so the APIs it names do not exist. Coding agents must not use them.
 
 This page will cover: page.post and page.onMessage in the game; engine.postToGame and engine.onGameMessage on the page.

@@ -20,7 +20,7 @@ const repoRoot = join(import.meta.dir, '../..');
 
 const MAPPING = JSON.stringify({
 	statusLegend: { direct: 'Same.' },
-	sinceLegend: { '0.1': 'milestone M1' },
+	sinceLegend: { '0.1': 'the core renderer' },
 	entries: [],
 });
 const INDEX = `${renderFrontMatter([
@@ -173,14 +173,14 @@ describe('generateDocs', () => {
 		const out = generateDocs(root, { symbols: [SET_THING, THING], problems: [] });
 		const scene = out.get('docs/api/scene.md') ?? '';
 		expect(scene).toContain('No release has these APIs yet');
-		expect(scene).toContain('## API reference\n\nThis reference is generated');
+		expect(scene).toContain('## API reference\n\n### `setThing`');
 		expect(scene).toContain('### `setThing`');
 		const objects = out.get('docs/api/objects.md') ?? '';
-		expect(objects).toContain(`${API_START}\n\nThis reference is generated`);
+		expect(objects).toContain(`${API_START}\n\n### `);
 		expect(objects).toContain('### `Thing`');
 		expect(objects).not.toContain('STALE REFERENCE');
 		expect(objects).toContain('More text.');
-		expect(out.get('docs/api/lights.md')).toContain('the feature is designed but not built yet');
+		expect(out.get('docs/api/lights.md')).toContain('No release has this feature yet');
 	});
 
 	it('fails when a written page with exports has no reference markers', () => {

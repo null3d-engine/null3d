@@ -37,7 +37,7 @@ At 60 frames per second a frame has 16.7 ms. Plan to use at most about 70% of it
 | 60 fps phone | 16.7 ms | 3 ms | 5 ms | 11 ms |
 | 30 fps phone (battery saver) | 33.3 ms | 6 ms | 10 ms | 22 ms |
 
-These numbers are starting points (proposal). The engine docs page `guides/performance` holds the measured values for each release.
+These numbers are starting points. The engine docs page `guides/performance` holds the measured values for each release.
 
 ## 3. How to measure
 
@@ -47,7 +47,7 @@ These numbers are starting points (proposal). The engine docs page `guides/perfo
 4. Profile JavaScript in the browser's performance panel. Game code runs in the worker named `sokko3d-game`; look there, not on the main thread.
 5. Check the WebGL2 path: add `?gpu=webgl2` to the URL. Phones without WebGPU use this path, and it does more CPU work (culling on job workers).
 6. On phones, GPU timers are rare (under 1% of Android and iOS reports have them on WebGL2), so judge the GPU by frame intervals with the CPU phases subtracted.
-7. In the engine repository before 0.1, `engine.measure(seconds)` on the page returns these figures; `guides/performance` explains each one and how to measure fairly (warm up, keep the page visible and the screen unlocked, note the display rate).
+7. `engine.measure(seconds)` on the page returns these figures. The `guides/performance` page explains each one and how to measure fairly: warm up, keep the page visible and the screen unlocked, and note the display rate.
 
 ## 4. Symptoms, causes and fixes
 
@@ -103,7 +103,7 @@ quality.onChange((q) => { rain.setActiveCount(q.preset === 'low' ? 2000 : 10000)
 
 ## 8. Per-frame code that allocates nothing
 
-These habits come from finding and removing allocations in the engine's own per-frame code. Apply them to `onUpdate` and everything it calls.
+Apply these habits to `onUpdate` and everything it calls.
 
 - Read vectors by index: `const x = v[0]`. Never destructure an array or typed array in per-frame code; `const [x, y, z] = v` makes an iterator on every read.
 - Write elements into arrays you already have. `axis.set([0, 1, 0])` builds a new array on every call.

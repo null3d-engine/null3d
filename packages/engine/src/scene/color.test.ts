@@ -22,6 +22,6 @@ describe('colors', () => {
 
 	it('refuse other forms with E1204', () => {
 		for (const bad of ['blue', '#12345', 0x1000000, -1, 1.5, [0, 0, 2], [0, 0]] as const)
-			expect(() => srgbComponents(bad as never, 'createLambertMaterial')).toThrow('E1204');
+			expect(() => srgbComponents(bad as never, 'setBackground')).toThrow('E1204');
 	});
 });

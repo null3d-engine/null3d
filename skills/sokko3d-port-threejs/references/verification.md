@@ -74,7 +74,7 @@ For the comparison, match the original's settings: `post.set({ toneMapping: 'non
 
 ## 4. Tolerances
 
-| Scene content | Proposed tolerance | Why |
+| Scene content | Suggested tolerance | Why |
 | --- | --- | --- |
 | Geometry, unlit and standard materials, no post effects | At most 0.5% of pixels differ by more than the 0.1 threshold | Rasterization and shadow filtering differ slightly between engines |
 | Lambert, Phong or Toon materials ported by approximation | Review the diff image with the user | Differences are expected by design |

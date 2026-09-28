@@ -10,7 +10,7 @@ summary: "What sokko3d is; how the docs are organized; status labels."
 
 sokko3d is a browser 3D engine for games and heavy 3D apps. Its core is Rust compiled to WebAssembly, and it runs on worker threads, so the page's main thread stays free. It draws with WebGPU, and with WebGL2 where WebGPU is missing, from the same game code. You write game code in TypeScript, with names that follow three.js where the ideas match.
 
-sokko3d is in early development. Most pages here describe features that are designed but not built yet, and each page's status label says which is which.
+sokko3d is in early development. Most pages here describe planned features, and each page's status label says which is which.
 
 ## Status labels
 
@@ -18,12 +18,12 @@ Every page has a status in its front matter:
 
 | Status | Meaning |
 | --- | --- |
-| `planned` | No release has the feature yet. The page describes its design, and an API page also lists the parts this repository already has. |
+| `planned` | No release has the feature yet. The page describes how it will work, and an API page also lists the APIs the engine has now. |
 | `experimental` | The feature works, but its API can still change between versions. |
 | `stable` | The API follows semantic versioning. |
-| `generated` | A tool writes the page from a single source, such as the three.js mapping data. Edit the source, and the tool rewrites the page. |
+| `generated` | A tool writes the page from a single source, such as the three.js mapping data. |
 
-Coding agents must never use an API whose page is `planned`. The agent skills in this repository follow the same rule.
+Coding agents must never use an API whose page is `planned`. The sokko3d agent skills follow the same rule.
 
 The API reference on each `api/` page is generated from the doc comments in the engine's source code, so it always matches the code.
 

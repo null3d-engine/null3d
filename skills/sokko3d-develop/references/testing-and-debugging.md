@@ -90,7 +90,7 @@ Reaching the dev server:
 
 ## 5. The MCP server for agents
 
-`npx sokko3d mcp` starts a Model Context Protocol server connected to the running dev session (tool names are proposals until `guides/agents` is stable):
+`npx sokko3d mcp` starts a Model Context Protocol server connected to the running dev session. Its tool names can change until `guides/agents` is stable:
 
 | Tool | Use |
 | --- | --- |

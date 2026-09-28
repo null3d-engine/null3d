@@ -135,9 +135,8 @@ export class Material {
 }
 
 /**
- * Material factories. In this version the standard material shades diffuse light only, as
- * three.js's `MeshLambertMaterial` does; metalness and roughness arrive with physically based
- * shading.
+ * Material factories. The standard material shades diffuse light only, as three.js's
+ * `MeshLambertMaterial` does. Metalness and roughness are planned for sokko3d 0.1.
  *
  * @category api/materials
  */
