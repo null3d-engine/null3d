@@ -11,6 +11,7 @@ Measure first, then change one thing, then measure again. Read `guides/performan
 5. Phones and tablets
 6. Memory
 7. The quality governor and your own systems
+8. Per-frame code that allocates nothing
 
 ## 1. Where frame time goes
 
@@ -23,6 +24,8 @@ A frame has three kinds of cost, and each has its own fixes.
 | GPU work | GPU | Pixels, shader cost, overdraw, shadow maps, draw buckets | Pixel-ratio cap, presets, cheaper materials, fewer shadowed lights |
 
 In pipelined mode the render worker draws frame N while the game worker computes frame N+1, so the slower of the two sets the frame rate. The stats overlay shows both.
+
+Game code is usually the largest CPU cost, so tune it first. In the S1 benchmark (100,000 boxes that `onUpdate` moves every frame, Chrome, MacBook Pro), the game's update took 2.18 ms per frame. The engine's own steps took 0.14 ms on the game worker, the render worker 0.15 ms, and 16 job workers 0.45 ms together. The engine docs page `guides/performance` has the full split.
 
 ## 2. Budgets
 
@@ -44,6 +47,7 @@ These numbers are starting points (proposal). The engine docs page `guides/perfo
 4. Profile JavaScript in the browser's performance panel. Game code runs in the worker named `sokko3d-game`; look there, not on the main thread.
 5. Check the WebGL2 path: add `?gpu=webgl2` to the URL. Phones without WebGPU use this path, and it does more CPU work (culling on job workers).
 6. On phones, GPU timers are rare (under 1% of Android and iOS reports have them on WebGL2), so judge the GPU by frame intervals with the CPU phases subtracted.
+7. In the engine repository before 0.1, `engine.measure(seconds)` on the page returns these figures; `guides/performance` explains each one and how to measure fairly (warm up, keep the page visible and the screen unlocked, note the display rate).
 
 ## 4. Symptoms, causes and fixes
 
@@ -95,3 +99,16 @@ quality.onChange((q) => { rain.setActiveCount(q.preset === 'low' ? 2000 : 10000)
 ```
 
 `onScale` receives a value from 0 to 1: 1 means full quality. Keep the callbacks cheap; they run when quality changes, not every frame.
+
+## 8. Per-frame code that allocates nothing
+
+These habits come from finding and removing allocations in the engine's own per-frame code. Apply them to `onUpdate` and everything it calls.
+
+- Read vectors by index: `const x = v[0]`. Never destructure an array or typed array in per-frame code; `const [x, y, z] = v` makes an iterator on every read.
+- Write elements into arrays you already have. `axis.set([0, 1, 0])` builds a new array on every call.
+- Build lookup tables and scratch arrays once, in setup or at module level, never inside a function that runs every frame.
+- Use `Math.sqrt(x * x + y * y + z * z)` for a length, not `Math.hypot`.
+- Keep scratch lists at a fixed length. `list.length = 0` frees the storage, and the next write allocates it again.
+- Make no closures, `async` wrappers or promise chains per frame.
+- Animate a light with `setIntensity` and `setDirection`, which allocate nothing. `setColor` converts the color and allocates.
+- Judge allocation after about 30 seconds of play. Until the browser optimizes a function that runs once per frame, the decimal numbers it computes are allocated.

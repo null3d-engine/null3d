@@ -68,8 +68,10 @@ The render worker, drawing frame N inside its own `requestAnimationFrame` callba
 
 1. Takes the next complete frame. The game worker runs at most one frame ahead, so no frame is skipped. If none is ready, it draws nothing, and the browser keeps showing the last frame.
 2. Applies a canvas resize that arrives with the frame. The frame was built for that size, so the canvas and the frame's render targets always agree.
-3. Uploads the changed byte ranges to GPU buffers.
+3. Uploads the changed byte ranges to GPU buffers. On WebGPU, uploads from 64 KiB up to 4 MiB go through staging buffers that the browser keeps mapped. Chrome's direct write call is slow at those sizes, so only smaller and larger uploads use it.
 4. Replays the draw lists into WebGPU or WebGL2 calls and submits them. The browser shows the frame when the callback returns.
+
+The engine times each step on every thread, job workers included. The [performance guide](../guides/performance.md) shows how to read those figures.
 
 ## Latency modes
 

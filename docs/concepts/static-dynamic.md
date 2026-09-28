@@ -74,6 +74,8 @@ trees.markDirty(42, 1); // upload one row, starting at row 42
 
 Each row has its own bounds, so culling works per instance.
 
+Each moving row uploads its 48-byte world matrix in every frame. In the S1 benchmark on WebGPU, 100,000 moving boxes uploaded 4.8 MB per frame. The same boxes standing still in a static batch uploaded nothing per frame after the first.
+
 ## Why it matters on phones
 
 On the WebGL2 path, which many phones use, static objects keep their data on the GPU. Each frame then uploads only a 4-byte index for each visible static instance. For 100,000 visible static instances that is about 0.4 MB per frame, where full matrices would be about 4.8 MB. Marking objects static when they do not move keeps that saving.

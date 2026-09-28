@@ -67,7 +67,7 @@ These ten principles decide design conflicts, and a higher one wins over a lower
 
 Code review enforces these rules.
 
-1. No per-frame allocation in TypeScript hot paths or in the render worker. Rust frame code uses arenas and pools only, never a general-purpose allocator.
+1. No per-frame allocation in TypeScript hot paths or in the render worker. Rust frame code uses arenas and pools only, never a general-purpose allocator. The objects that the browser itself returns each frame are the only exception, and `bun run bench:allocation` budgets each of them.
 2. The render worker owns every GPU object. No other thread touches browser GPU objects.
 3. The render worker draws only inside its own `requestAnimationFrame` callback.
 4. No thread waits synchronously for another on the critical path, and no worker makes a synchronous call to the main thread.
@@ -86,6 +86,22 @@ Code review enforces these rules.
 17. A change that makes a benchmark median more than 3% slower does not merge without a written reason.
 18. A pull request that changes a public API also updates the API's docs page and any skill that shows the API. It updates the API's three.js mapping entry too, where one exists.
 19. The pull request that ships a feature changes its docs status from `planned` to `experimental` or `stable`. Agents never use planned APIs.
+
+## Performance work
+
+The benchmarks compare sokko3d with three.js in the same browser. These points come from the first checkpoint's measurements.
+
+- A report gives each engine's whole frame and its own work on the busiest thread. The desktop target uses own work, because both engines run the same scene code.
+- sokko3d's own work comes from its phase timers: each thread's time less its `update` step. three.js's own work is its frame time less the scene code, timed alone on the scene-code page. That page's loop compiles to slower code than an engine's loop, so this estimate of three.js's own work is low.
+- Keep the Mac's screen unlocked and its display awake during browser runs. Safari stops running pages while the Mac is locked, and the runner then waits until its deadline. Chrome started by Playwright keeps running.
+- Do not edit engine or benchmark page files during a run. The dev server reloads the pages being measured.
+- Note the display's refresh rate with each result. Runs at 120 and at 144 frames per second differed by about 10% for both engines.
+- `bun run bench:allocation` samples allocations after a 30-second warm-up. The browser optimizes code that runs once per frame only after thousands of frames. Places that allocate because the browser does have budgets with their reasons in `bench/allocation.ts`, and every other place must stay under 4 bytes per frame. Add `--n 30000` to include the staging ring.
+- The engine's hot paths stay allocation-free with these habits. Read typed arrays by index rather than by destructuring. Reuse WebGPU descriptors (`RenderPassSetup` and `submitOne` in `packages/engine/src/gpu/webgpu/reusable.ts`). Pass typed arrays straight to WebGPU, as `setBindGroup` reads dynamic offsets from the draw list. Keep reused lists at a fixed length. Do not wrap browser promises in `async` functions, and use `Math.sqrt` rather than `Math.hypot`.
+- Rust tests that count allocations use `sokko3d_core::testing::CountingAllocator`, from the core crate's `testing` feature. It counts only the threads a test marks, so the test runner's own threads cannot reach the count.
+- The staging ring's size limits, 64 KiB and 4 MiB, come from Chrome on a Mac. Between them `queue.writeBuffer` takes up to 0.8 ms per MB, and from 4 MiB up only 0.05 ms per MB. Measure again before changing the limits.
+- Chrome's page-wide memory measurement waits up to a minute for the job workers, and it counts shared memory once per worker. Chrome's debugger gives exact heaps per worker through `Runtime.getHeapUsage`.
+- On GitHub's macOS machines, Safari has no WebGPU and Firefox has no WebGL2. The CI job passes `--allow-no-webgpu` and `--allow-no-webgl2`, so those pages count as skipped there.
 
 ## Docs and skills stay in sync
 
