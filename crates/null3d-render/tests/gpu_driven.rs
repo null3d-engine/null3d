@@ -42,6 +42,45 @@ fn the_first_frame_creates_everything_and_a_valid_frame_replays() {
 }
 
 #[test]
+fn after_a_gpu_reset_the_next_frame_replays_on_a_new_device() {
+    let mut world = World::new();
+    let mut lost = MockBackend::default();
+    world.record(true);
+    lost.replay(world.renderer.list(1).words()).unwrap();
+    let first = world.commands();
+    world.frame = 2;
+    world.record(false);
+    lost.replay(world.renderer.list(2).words()).unwrap();
+
+    world.renderer.reset_gpu();
+    world.frame = 3;
+    world.record(false);
+    MockBackend::default()
+        .replay(world.renderer.list(3).words())
+        .unwrap();
+    let again = world.commands();
+
+    for op in [
+        Op::CreateRenderPipeline,
+        Op::CreateComputePipeline,
+        Op::CreateBuffer,
+        Op::CreateTexture,
+        Op::ResizeCanvas,
+        Op::ExecuteBundles,
+    ] {
+        assert_eq!(count(&again, op), count(&first, op), "{op:?}");
+    }
+    let writes = |commands: &[(Op, Vec<u32>)]| {
+        commands
+            .iter()
+            .filter(|(op, _)| *op == Op::WriteBuffer)
+            .map(|(_, o)| o[0])
+            .collect::<std::collections::BTreeSet<u32>>()
+    };
+    assert_eq!(writes(&again), writes(&first));
+}
+
+#[test]
 fn a_steady_frame_uploads_only_changed_rows_and_replays_the_same_bundle() {
     let mut world = World::new();
     let mut mock = MockBackend::default();

@@ -50,7 +50,8 @@ engine.labels.bind('hp-12', element);             // (0.2) HTML label that follo
 await engine.requestPointerLock();                // (0.2) for first-person controls
 engine.capabilities;  // { tier: 'webgpu' | 'webgpu-compat' | 'webgl2', threaded, features, limits }
 engine.setPaused(true);                           // the first step after resuming counts no time
-engine.onFailure((error) => { /* error.code: E1302 GPU lost, E1404 engine thread failed */ });
+engine.onFailure((error) => { /* error.code: E1302 GPU lost for good, E1404 engine thread failed */ });
+engine.simulateGpuLoss();                         // acts out a driver reset; the engine recovers
 engine.destroy();
 ```
 

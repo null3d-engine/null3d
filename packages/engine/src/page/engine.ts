@@ -4,7 +4,8 @@
 import { EngineError } from '../errors/engine-error';
 import { GameRunner } from '../game/runner';
 import { runDirectLoop } from '../render/direct-loop';
-import { emptySceneInput, type RenderLoop, runRenderLoop, stopOnLoss } from '../render/loop';
+import { emptySceneInput, runRenderLoop } from '../render/loop';
+import { Drawing } from '../render/recovery';
 import { createRenderer, type Renderer, type Tier } from '../render/renderer';
 import { controlViews, createControlBuffer, Slot } from '../shared/control';
 import { type Build, startCore } from '../shared/core';
@@ -92,9 +93,9 @@ export interface Engine {
 	/** Receives the messages the game sends with `ctx.page.post`. */
 	onGameMessage(handler: (name: string, data: unknown) => void): void;
 	/**
-	 * Receives a failure after the engine started: the browser took the GPU away (E1302), or an
-	 * engine thread failed (E1404). The engine reports each failure once. Without a handler, it logs
-	 * the failure to the console.
+	 * Receives a failure after the engine started: the browser took the GPU away and the engine could
+	 * not carry on with a new device (E1302), or an engine thread failed (E1404). The engine reports
+	 * each failure once. Without a handler, it logs the failure to the console.
 	 */
 	onFailure(handler: (error: EngineError) => void): void;
 	/** Pauses or resumes the game's frames. */
@@ -106,6 +107,12 @@ export interface Engine {
 	measure(seconds: number): Promise<FrameMetrics>;
 	/** Draws one frame offscreen and returns its pixels as RGBA8 rows, top row first. */
 	captureFrame(): Promise<{ width: number; height: number; pixels: Uint8Array }>;
+	/**
+	 * Acts out a loss of the GPU, as a driver reset causes. The engine starts a new GPU device and
+	 * draws the whole scene again, as it does after a real loss. Use it to test how your page
+	 * handles one.
+	 */
+	simulateGpuLoss(): void;
 	/** Stops the engine and its workers. The engine cannot start again. */
 	destroy(): void;
 }
@@ -276,8 +283,7 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 	const workers: EngineWorker[] = [];
 	let game: EngineWorker | undefined;
 	let rendererHost: EngineWorker | undefined;
-	let localRenderer: Renderer | undefined;
-	let localLoop: RenderLoop | undefined;
+	let localDrawing: Drawing<Renderer> | undefined;
 	let localRunner: GameRunner | undefined;
 
 	try {
@@ -292,14 +298,16 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 				jobWorkers: 0,
 			});
 			await localRunner.load(gameUrl);
-			localRenderer = await createRenderer(options.canvas, {
-				tier,
-				forceCompat,
-				metrics,
-				scene: { memory, control },
-			});
-			localLoop = runDirectLoop(localRunner, localRenderer, control, metrics);
-			stopOnLoss(localRenderer, localLoop, pageLoss);
+			const runner = localRunner;
+			const create = () =>
+				createRenderer(options.canvas, { tier, forceCompat, metrics, scene: { memory, control } });
+			localDrawing = new Drawing(
+				await create(),
+				create,
+				(renderer) => runDirectLoop(runner, renderer, control, metrics),
+				slots,
+				pageLoss,
+			);
 		} else {
 			game = new EngineWorker(
 				new Worker(new URL('../workers/game-worker.ts', import.meta.url), {
@@ -342,14 +350,20 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 						canvas,
 					]);
 				} else {
-					localRenderer = await createRenderer(options.canvas, {
-						tier,
-						forceCompat,
-						metrics,
-						scene: core.memory && { memory: core.memory, control },
-					});
-					localLoop = runRenderLoop(localRenderer, control, metrics);
-					stopOnLoss(localRenderer, localLoop, pageLoss);
+					const create = () =>
+						createRenderer(options.canvas, {
+							tier,
+							forceCompat,
+							metrics,
+							scene: core.memory && { memory: core.memory, control },
+						});
+					localDrawing = new Drawing(
+						await create(),
+						create,
+						(renderer) => runRenderLoop(renderer, control, metrics),
+						slots,
+						pageLoss,
+					);
 				}
 			}
 			for (let index = 0; index < jobWorkers; index++) {
@@ -430,18 +444,23 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 			};
 		},
 		async captureFrame() {
-			if (localRenderer)
-				return localRenderer.capture(emptySceneInput(Atomics.load(slots, Slot.FramesTaken)));
+			if (localDrawing)
+				return localDrawing.renderer.capture(
+					emptySceneInput(Atomics.load(slots, Slot.FramesTaken)),
+				);
 			const reply = await rendererHost?.request({ type: 'capture' });
 			if (reply?.type !== 'captured') throw new Error('the frame could not be captured');
 			return { width: reply.width, height: reply.height, pixels: reply.pixels };
+		},
+		simulateGpuLoss() {
+			if (localDrawing) localDrawing.simulateLoss();
+			else rendererHost?.worker.postMessage({ type: 'lose-gpu' });
 		},
 		destroy() {
 			Atomics.store(slots, Slot.Running, 0);
 			Atomics.notify(slots, Slot.FramesTaken);
 			Atomics.notify(slots, Slot.Paused);
-			localLoop?.stop();
-			localRenderer?.destroy();
+			localDrawing?.stop();
 			for (const w of workers) w.worker.terminate();
 			input.stop();
 		},

@@ -11,18 +11,6 @@ export interface RenderLoop {
 	stop(): void;
 }
 
-/** Stops the loop when the browser takes the renderer's GPU away, then reports the reason. */
-export function stopOnLoss(
-	renderer: Renderer,
-	loop: RenderLoop,
-	report: (reason: string) => void,
-): void {
-	void renderer.lost.then((reason) => {
-		loop.stop();
-		report(reason);
-	});
-}
-
 /** A frame input that `emptySceneInput` can fill again each frame. */
 type ReusableInput = { frame: number; background: [number, number, number] };
 
@@ -66,8 +54,14 @@ export class Presenter {
 		);
 	}
 
-	/** Draws a frame and records its CPU time and the interval since the previous one. */
+	/**
+	 * Draws a frame and records its CPU time and the interval since the previous one. A frame whose
+	 * draw list was recorded for a GPU device the browser took away is skipped: its list names
+	 * objects the new device lacks.
+	 */
 	draw(frame: number, timestamp: number): void {
+		const recordedFor = Atomics.load(this.slots, Slot.FrameEpoch0 + (frame & 1));
+		if (recordedFor !== Atomics.load(this.slots, Slot.GpuEpoch)) return;
 		const start = performance.now();
 		this.record.begin(frame);
 		this.renderer.drawFrame(emptySceneInput(frame, this.input), this.record);

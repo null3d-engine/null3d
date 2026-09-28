@@ -32,9 +32,20 @@ export enum Slot {
 	 * next step counts no time.
 	 */
 	Resumes = 13,
+	/**
+	 * Incremented by the thread that draws each time it replaces a GPU device that the browser took
+	 * away. The game thread then records a frame that creates every GPU object again.
+	 */
+	GpuEpoch = 14,
+	/**
+	 * The GPU epoch each frame parity's draw list was recorded for. A list from an older epoch names
+	 * GPU objects that the new device lacks, so the renderer takes that frame without drawing it.
+	 */
+	FrameEpoch0 = 15,
+	FrameEpoch1 = 16,
 }
 
-const SLOT_COUNT = 16;
+const SLOT_COUNT = 20;
 
 /** Int32 values per input event record. */
 export const INPUT_EVENT_INTS = 8;

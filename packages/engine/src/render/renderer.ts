@@ -5,7 +5,7 @@ import { readbackWebGL2, readbackWebGPU } from '../gpu/readback';
 import { GpuTimer } from '../gpu/webgpu/gpu-timer';
 import { RenderPassSetup, submitOne } from '../gpu/webgpu/reusable';
 import { type FrameRecorder, Phase } from '../shared/metrics';
-import { contextLoss, deviceLoss } from './loss';
+import { contextLoss, contextRestored, deviceLoss } from './loss';
 import { WebGPUSceneRenderer } from './scene-renderer';
 
 /**
@@ -36,6 +36,8 @@ export interface Renderer {
 	capture(input: FrameInput): Promise<{ width: number; height: number; pixels: Uint8Array }>;
 	/** Resolves with the browser's reason if it takes the GPU away; destroying the renderer does not. */
 	readonly lost: Promise<string>;
+	/** Acts out a loss of the GPU, as a driver reset would cause, so the page can test recovery. */
+	simulateLoss(): void;
 	destroy(): void;
 }
 
@@ -52,6 +54,9 @@ export interface RendererOptions {
 	scene?: { memory: WebAssembly.Memory; control: ArrayBufferLike };
 }
 
+/** How long a simulated WebGL2 loss keeps the context away. */
+const SIMULATED_RESTORE_MS = 50;
+
 /** Encodes a linear color channel as sRGB, the way the final output does. */
 export function linearToSrgb(c: number): number {
 	return c <= 0.0031308 ? 12.92 * c : 1.055 * c ** (1 / 2.4) - 0.055;
@@ -62,6 +67,7 @@ class WebGPURenderer implements Renderer {
 	private readonly format: GPUTextureFormat;
 	private readonly timer: GpuTimer | undefined;
 	private readonly pass = new RenderPassSetup();
+	private simulated = false;
 	readonly lost: Promise<string>;
 
 	constructor(
@@ -70,7 +76,7 @@ class WebGPURenderer implements Renderer {
 		private readonly canvas: RenderCanvas,
 		metrics: ArrayBufferLike | undefined,
 	) {
-		this.lost = deviceLoss(device);
+		this.lost = deviceLoss(device, () => this.simulated);
 		const context = canvas.getContext('webgpu') as GPUCanvasContext | null;
 		if (!context) throw new Error('the canvas has no WebGPU context');
 		this.context = context;
@@ -122,6 +128,11 @@ class WebGPURenderer implements Renderer {
 		const pixels = await readbackWebGPU(this.device, texture);
 		texture.destroy();
 		return { width, height, pixels };
+	}
+
+	simulateLoss(): void {
+		this.simulated = true;
+		this.device.destroy();
 	}
 
 	destroy(): void {
@@ -176,9 +187,16 @@ class WebGL2Renderer implements Renderer {
 		return { width, height, pixels: readbackWebGL2(this.gl, width, height) };
 	}
 
+	simulateLoss(): void {
+		const lose = this.gl.getExtension('WEBGL_lose_context');
+		lose?.loseContext();
+		// A driver reset gives the context back after a moment; so does this.
+		setTimeout(() => lose?.restoreContext(), SIMULATED_RESTORE_MS);
+	}
+
 	destroy(): void {
 		this.released = true;
-		this.gl.getExtension('WEBGL_lose_context')?.loseContext();
+		if (!this.gl.isContextLost()) this.gl.getExtension('WEBGL_lose_context')?.loseContext();
 	}
 }
 
@@ -187,7 +205,11 @@ export async function createRenderer(
 	canvas: RenderCanvas,
 	options: RendererOptions,
 ): Promise<Renderer> {
-	if (options.tier === 'webgl2') return new WebGL2Renderer(canvas);
+	if (options.tier === 'webgl2') {
+		// After a loss, the context must come back before the engine can draw with it again.
+		await contextRestored(canvas);
+		return new WebGL2Renderer(canvas);
+	}
 	const adapter = await navigator.gpu?.requestAdapter({ featureLevel: 'compatibility' });
 	if (!adapter) throw new Error('no WebGPU adapter');
 	const core = !options.forceCompat && adapter.features.has('core-features-and-limits');

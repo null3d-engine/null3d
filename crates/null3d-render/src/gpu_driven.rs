@@ -337,6 +337,19 @@ impl GpuDrivenRenderer {
         self.lighting.background = color;
     }
 
+    /// Forgets every GPU object the draw lists created and every upload they made, so the next
+    /// frame creates them all again and uploads the whole scene. The thread that draws asks for
+    /// this after the browser took the GPU away and it made a new device.
+    pub fn reset_gpu(&mut self) {
+        self.created = false;
+        self.canvas = (0, 0);
+        self.buffer_sizes = [0; 11];
+        self.layout.built = false;
+        self.uploaded_vertex_floats = 0;
+        self.uploaded_indices = 0;
+        self.materials.mark_changed();
+    }
+
     /// The list recorded for a frame's parity, as the render worker replays it.
     pub fn list(&self, frame: u32) -> &DrawList {
         &self.lists[(frame & 1) as usize]

@@ -7,27 +7,33 @@ interface SceneResult {
 	error?: string;
 	capabilities: { tier: string };
 	stats: { drawCalls: { median: number }; uploadBytes: { count: number }; frames: number };
+	failures: string[];
 	width: number;
 	height: number;
 	pixels: string;
 }
 
 /** Runs in the page: the result the test page published, once it exists. */
-for (const mode of ENGINE_MODES) {
-	test(`a scene draws through the engine on webgpu, ${mode.name}`, async ({ page }) => {
-		await page.goto(`scene.html?gpu=webgpu&${mode.query}`);
-		const result = await pageResult<SceneResult>(page, 30_000);
-		expect(result.error).toBeUndefined();
-		expect(result.capabilities.tier.startsWith('webgpu')).toBe(true);
-		// One bundle draws four buckets: the red box, the red sphere, the unlit blue box, and the
-		// green floor batch.
-		expect(result.stats.drawCalls.median).toBe(4);
-		compareToReference(
-			'scene',
-			'webgpu',
-			Buffer.from(result.pixels, 'base64'),
-			result.width,
-			result.height,
-		);
-	});
-}
+for (const [label, query] of [
+	['a scene draws through the engine on webgpu', ''],
+	['a scene draws again on a new device after the GPU is lost', '&lose-gpu'],
+] as const)
+	for (const mode of ENGINE_MODES) {
+		test(`${label}, ${mode.name}`, async ({ page }) => {
+			await page.goto(`scene.html?gpu=webgpu&${mode.query}${query}`);
+			const result = await pageResult<SceneResult>(page, 30_000);
+			expect(result.error).toBeUndefined();
+			expect(result.failures).toEqual([]);
+			expect(result.capabilities.tier.startsWith('webgpu')).toBe(true);
+			// One bundle draws four buckets: the red box, the red sphere, the unlit blue box, and the
+			// green floor batch.
+			expect(result.stats.drawCalls.median).toBe(4);
+			compareToReference(
+				'scene',
+				'webgpu',
+				Buffer.from(result.pixels, 'base64'),
+				result.width,
+				result.height,
+			);
+		});
+	}

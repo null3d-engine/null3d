@@ -32,8 +32,8 @@ export type RenderWorkerInit = CoreHandoff & RendererSetup & { type: 'init' };
 
 export type JobWorkerInit = CoreHandoff & { type: 'init'; index: number };
 
-/** A request any worker that owns a renderer answers. */
-export type RendererRequest = { type: 'capture' };
+/** A request any worker that owns a renderer takes: a capture, which it answers, or a simulated loss. */
+export type RendererRequest = { type: 'capture' } | { type: 'lose-gpu' };
 
 export type WorkerReply =
 	| {

@@ -105,8 +105,8 @@ export const ERRORS = {
 	E1302: {
 		title: 'GPU lost',
 		cause:
-			'The browser took the GPU away while the engine drew, for example after a driver reset or a GPU crash. The engine stopped drawing.',
-		fix: 'Listen with engine.onFailure. Destroy the engine, put a new canvas element in place of the old one, and start the engine again on it.',
+			'The browser took the GPU away while the engine drew, for example after a driver reset or a GPU crash, and the engine could not carry on. No new GPU device started, or the GPU was lost more than twice within a minute. The engine stopped drawing.',
+		fix: 'Listen with engine.onFailure. Destroy the engine, put a new canvas element in place of the old one, and start the engine again on it. If losses keep coming, lower the quality preset.',
 		example: 'E1302: the render worker lost its GPU: the GPU device was lost.',
 		since: '0.1',
 	},

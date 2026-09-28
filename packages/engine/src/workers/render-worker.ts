@@ -1,13 +1,14 @@
 // The render worker: owns the canvas and every GPU object, runs no game code, and draws only inside
 // its own requestAnimationFrame callback.
 
-import { emptySceneInput, runRenderLoop, stopOnLoss } from '../render/loop';
+import { emptySceneInput, runRenderLoop } from '../render/loop';
+import { Drawing } from '../render/recovery';
 import { createRenderer, type Renderer } from '../render/renderer';
 import { controlViews, Slot } from '../shared/control';
 import { startCore } from '../shared/core';
 import type { RendererRequest, RenderWorkerInit, WorkerReply } from './protocol';
 
-let renderer: Renderer | undefined;
+let drawing: Drawing<Renderer> | undefined;
 let controlSlots: Int32Array | undefined;
 
 const reply = (message: WorkerReply, transfer: Transferable[] = []) =>
@@ -17,28 +18,37 @@ self.onmessage = async (event: MessageEvent<RenderWorkerInit | RendererRequest>)
 	const message = event.data;
 	if (message.type === 'init') {
 		try {
-			controlSlots = controlViews(message.control).slots;
+			const slots = controlViews(message.control).slots;
+			controlSlots = slots;
 			const { glue: core } = await startCore(message.build, message.module, message.memory);
-			renderer = await createRenderer(message.canvas, {
-				...message,
-				scene: message.memory && { memory: message.memory, control: message.control },
-			});
-			const loop = runRenderLoop(renderer, message.control, message.metrics);
-			stopOnLoss(renderer, loop, (reason) => reply({ type: 'lost', role: 'render', reason }));
+			const create = () =>
+				createRenderer(message.canvas, {
+					...message,
+					scene: message.memory && { memory: message.memory, control: message.control },
+				});
+			drawing = new Drawing(
+				await create(),
+				create,
+				(renderer) => runRenderLoop(renderer, message.control, message.metrics),
+				slots,
+				(reason) => reply({ type: 'lost', role: 'render', reason }),
+			);
 			reply({
 				type: 'ready',
 				role: 'render',
 				threaded: core.isThreadedBuild(),
 				version: core.engineVersion(),
-				tier: renderer.tier,
+				tier: drawing.renderer.tier,
 			});
 		} catch (e) {
 			reply({ type: 'error', role: 'render', message: e instanceof Error ? e.message : String(e) });
 		}
-	} else if (message.type === 'capture' && renderer && controlSlots) {
-		const captured = await renderer.capture(
+	} else if (message.type === 'capture' && drawing && controlSlots) {
+		const captured = await drawing.renderer.capture(
 			emptySceneInput(Atomics.load(controlSlots, Slot.FramesTaken)),
 		);
 		reply({ type: 'captured', ...captured }, [captured.pixels.buffer]);
+	} else if (message.type === 'lose-gpu') {
+		drawing?.simulateLoss();
 	}
 };

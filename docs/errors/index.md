@@ -23,7 +23,7 @@ Every error the engine throws is an `EngineError` with a code. Its message names
 | [E1203](E1203.md) | Invalid number | A call received a number that is not finite, such as NaN or Infinity. |
 | [E1204](E1204.md) | Invalid color | A call received a color that is not a hex string, a number from 0 to 0xffffff, or three numbers from 0 to 1. |
 | [E1301](E1301.md) | No usable GPU path | The browser offers neither WebGPU nor WebGL2 for the way the engine was asked to draw. |
-| [E1302](E1302.md) | GPU lost | The browser took the GPU away while the engine drew, for example after a driver reset or a GPU crash. The engine stopped drawing. |
+| [E1302](E1302.md) | GPU lost | The browser took the GPU away while the engine drew, for example after a driver reset or a GPU crash, and the engine could not carry on. No new GPU device started, or the GPU was lost more than twice within a minute. The engine stopped drawing. |
 | [E1401](E1401.md) | Not a game module | The module passed to createEngine as the game does not export a game as its default export. |
 | [E1402](E1402.md) | Engine core out of date | The engine core WebAssembly file lacks functions that the TypeScript side calls, so the two come from different builds. |
 | [E1403](E1403.md) | Engine core not ready | An engine call ran before the engine core started in this worker, or the core started twice. |

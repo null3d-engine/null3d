@@ -44,6 +44,7 @@ export interface CoreGlue extends CoreErrors {
 	updateTransforms(): number;
 	updateBatches(frame: number): number;
 	recordFrame(frame: number, width: number, height: number): number;
+	resetGpu(): number;
 	drawListAddress(parity: number): number;
 	drawListWords(frame: number): number;
 	createBatch(
@@ -95,6 +96,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'updateTransforms',
 	'updateBatches',
 	'recordFrame',
+	'resetGpu',
 	'drawListAddress',
 	'drawListWords',
 	'createBatch',

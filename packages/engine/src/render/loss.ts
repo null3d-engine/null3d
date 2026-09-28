@@ -4,12 +4,22 @@
 /** A promise that never settles. */
 const NEVER = new Promise<string>(() => {});
 
-/** Resolves with the browser's reason when the device is lost, unless the renderer destroyed it. */
-export function deviceLoss(device: GPUDevice): Promise<string> {
+/** How long a lost WebGL2 context may take to come back before the engine gives up on it. */
+const RESTORE_TIMEOUT_MS = 5000;
+
+/**
+ * Resolves with the browser's reason when the device is lost. A device the renderer destroyed
+ * itself never signals, unless `simulated` says it did so to act out a loss.
+ */
+export function deviceLoss(device: GPUDevice, simulated: () => boolean): Promise<string> {
 	return device.lost.then((info) =>
-		info.reason === 'destroyed' ? NEVER : info.message || 'the GPU device was lost',
+		info.reason === 'destroyed' && !simulated() ? NEVER : info.message || 'the GPU device was lost',
 	);
 }
+
+/** Both names of each context event: an offscreen canvas and a canvas element name them apart. */
+const LOST_EVENTS = ['contextlost', 'webglcontextlost'];
+const RESTORED_EVENTS = ['contextrestored', 'webglcontextrestored'];
 
 /**
  * Resolves when the browser takes the WebGL2 context away, unless `released` says the renderer
@@ -25,9 +35,25 @@ export function contextLoss(
 			event.preventDefault();
 			if (!released()) resolve('the WebGL2 context was lost');
 		};
-		// An offscreen canvas names the event contextlost; a canvas element names it webglcontextlost.
+		for (const name of LOST_EVENTS) (canvas as EventTarget).addEventListener(name, onLost);
+	});
+}
+
+/** Waits until the canvas's lost WebGL2 context comes back, and fails if it does not in time. */
+export function contextRestored(canvas: OffscreenCanvas | HTMLCanvasElement): Promise<void> {
+	const gl = canvas.getContext('webgl2') as WebGL2RenderingContext | null;
+	if (!gl?.isContextLost()) return Promise.resolve();
+	return new Promise((resolve, reject) => {
 		const target = canvas as EventTarget;
-		target.addEventListener('contextlost', onLost);
-		target.addEventListener('webglcontextlost', onLost);
+		const done = () => {
+			clearTimeout(timer);
+			for (const name of RESTORED_EVENTS) target.removeEventListener(name, done);
+			resolve();
+		};
+		const timer = setTimeout(() => {
+			for (const name of RESTORED_EVENTS) target.removeEventListener(name, done);
+			reject(new Error('the WebGL2 context did not come back'));
+		}, RESTORE_TIMEOUT_MS);
+		for (const name of RESTORED_EVENTS) target.addEventListener(name, done);
 	});
 }

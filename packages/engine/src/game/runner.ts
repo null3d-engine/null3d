@@ -34,6 +34,7 @@ export class GameRunner {
 	private readonly messageHandlers: ((type: string, data: unknown) => void)[] = [];
 	private callbacks: GameCallbacks = {};
 	private readonly clock = new FrameClock();
+	private gpuEpoch = 0;
 	private readonly record: FrameRecorder;
 	/** One recorder per job worker, for the busy time the core reports for it each frame. */
 	private readonly jobRecords: FrameRecorder[];
@@ -132,8 +133,15 @@ export class GameRunner {
 		this.endPhase(Phase.Batches);
 		const width = Math.max(1, Atomics.load(slots, Slot.CanvasWidth));
 		const height = Math.max(1, Atomics.load(slots, Slot.CanvasHeight));
+		const epoch = Atomics.load(slots, Slot.GpuEpoch);
+		if (epoch !== this.gpuEpoch) {
+			// A new GPU device has none of the old one's objects: this frame creates them all again.
+			if (glue.resetGpu() !== 0) this.report(coreFailure(glue, 'the GPU reset'));
+			this.gpuEpoch = epoch;
+		}
 		if (glue.recordFrame(frame, width, height) !== 0) this.report(coreFailure(glue, 'the frame'));
 		Atomics.store(slots, Slot.DrawListWords0 + (frame & 1), glue.drawListWords(frame));
+		Atomics.store(slots, Slot.FrameEpoch0 + (frame & 1), epoch);
 		this.endPhase(Phase.Record);
 		this.record.commit(performance.now() - start);
 		for (let k = 0; k < this.jobRecords.length; k++) {

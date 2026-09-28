@@ -341,6 +341,16 @@ pub fn record_frame(frame: u32, width: u32, height: u32) -> u32 {
     })
 }
 
+/// Makes the next recorded frame create every GPU object again and upload the whole scene, after
+/// the thread that draws replaced a GPU device the browser took away.
+#[wasm_bindgen(js_name = resetGpu)]
+pub fn reset_gpu() -> u32 {
+    with_engine(|e| {
+        e.renderer.reset_gpu();
+        0
+    })
+}
+
 /// The address of the draw list of a frame parity. It never moves.
 #[wasm_bindgen(js_name = drawListAddress)]
 pub fn draw_list_address(parity: u32) -> u32 {

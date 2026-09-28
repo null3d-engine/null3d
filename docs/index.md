@@ -167,7 +167,7 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 | [E1203: Invalid number](errors/E1203.md) | A call received a number that is not finite, such as NaN or Infinity. | generated | 0.1 |
 | [E1204: Invalid color](errors/E1204.md) | A call received a color that is not a hex string, a number from 0 to 0xffffff, or three numbers from 0 to 1. | generated | 0.1 |
 | [E1301: No usable GPU path](errors/E1301.md) | The browser offers neither WebGPU nor WebGL2 for the way the engine was asked to draw. | generated | 0.1 |
-| [E1302: GPU lost](errors/E1302.md) | The browser took the GPU away while the engine drew, for example after a driver reset or a GPU crash. The engine stopped drawing. | generated | 0.1 |
+| [E1302: GPU lost](errors/E1302.md) | The browser took the GPU away while the engine drew, for example after a driver reset or a GPU crash, and the engine could not carry on. No new GPU device started, or the GPU was lost more than twice within a minute. The engine stopped drawing. | generated | 0.1 |
 | [E1401: Not a game module](errors/E1401.md) | The module passed to createEngine as the game does not export a game as its default export. | generated | 0.1 |
 | [E1402: Engine core out of date](errors/E1402.md) | The engine core WebAssembly file lacks functions that the TypeScript side calls, so the two come from different builds. | generated | 0.1 |
 | [E1403: Engine core not ready](errors/E1403.md) | An engine call ran before the engine core started in this worker, or the core started twice. | generated | 0.1 |

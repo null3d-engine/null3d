@@ -131,7 +131,8 @@ Look up the full explanation with `npx null3d docs show errors/E1203`. Release b
 | Transparent objects in the wrong order | Sorting by object center | `setRenderOrder`; split large transparent meshes | `api/objects` |
 | Works on WebGPU, broken on WebGL2 | A feature without a fallback | Check capabilities; test with `?gpu=webgl2` | `concepts/backends` |
 | Shader works in Chrome, fails in Safari or Firefox | A WGSL feature or limit they lack | Follow the portable WGSL rules | `shaders/wgsl-rules` |
-| `engine.onFailure` reports E1302 and the canvas stops changing | The browser took the GPU away: a driver reset, a GPU crash or memory pressure | Destroy the engine, put a new canvas in place of the old one and start again; reduce memory; report reproducible cases | `errors/E1302` |
+| A console warning that the browser took the GPU away, then the scene draws again | A driver reset or a GPU crash; the engine started a new device and drew the whole scene again | Nothing, unless it repeats. Test your page's handling with `engine.simulateGpuLoss()` | `api/engine` |
+| `engine.onFailure` reports E1302 and the canvas stops changing | The GPU did not come back, or it was lost more than twice within a minute | Destroy the engine, put a new canvas in place of the old one and start again; lower the preset; report reproducible cases | `errors/E1302` |
 | Stutter every few seconds | Garbage collection | Remove per-frame allocations | `guides/performance` |
 | Hitch when something appears | Pipeline compile | Create earlier; `scene.warmUp()` | `guides/loading-screens` |
 | Tab reloads or crashes on a phone | Memory limit | Compressed textures, fewer and smaller assets, destroy unused prefabs | `guides/phones` |

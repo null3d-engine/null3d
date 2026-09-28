@@ -18,6 +18,7 @@ export class WebGPUSceneRenderer implements Renderer {
 	private viewsOf: ArrayBufferLike | undefined;
 	private words = new Uint32Array(0);
 	private floats = new Float32Array(0);
+	private simulated = false;
 	readonly lost: Promise<string>;
 
 	constructor(
@@ -28,7 +29,7 @@ export class WebGPUSceneRenderer implements Renderer {
 		control: ArrayBufferLike,
 		metrics: ArrayBufferLike | undefined,
 	) {
-		this.lost = deviceLoss(device);
+		this.lost = deviceLoss(device, () => this.simulated);
 		const context = canvas.getContext('webgpu') as GPUCanvasContext | null;
 		if (!context) throw new Error('the canvas has no WebGPU context');
 		this.context = context;
@@ -84,6 +85,11 @@ export class WebGPUSceneRenderer implements Renderer {
 		const pixels = await readbackWebGPU(this.device, texture);
 		texture.destroy();
 		return { width, height, pixels };
+	}
+
+	simulateLoss(): void {
+		this.simulated = true;
+		this.device.destroy();
 	}
 
 	destroy(): void {

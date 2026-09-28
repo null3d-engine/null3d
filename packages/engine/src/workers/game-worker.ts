@@ -5,14 +5,15 @@
 
 import { GameRunner } from '../game/runner';
 import { runDirectLoop } from '../render/direct-loop';
-import { emptySceneInput, stopOnLoss } from '../render/loop';
+import { emptySceneInput } from '../render/loop';
+import { Drawing } from '../render/recovery';
 import { createRenderer, type Renderer } from '../render/renderer';
 import { controlViews, Slot } from '../shared/control';
 import { startCore } from '../shared/core';
 import type { GameWorkerMessage, WorkerReply } from './protocol';
 
 let runner: GameRunner | undefined;
-let renderer: Renderer | undefined;
+let drawing: Drawing<Renderer> | undefined;
 let controlSlots: Int32Array | undefined;
 
 const reply = (message: WorkerReply, transfer: Transferable[] = []) =>
@@ -64,13 +65,21 @@ self.onmessage = async (event: MessageEvent<GameWorkerMessage>) => {
 			);
 			await runner.load(message.gameUrl);
 			if (message.renderer) {
-				renderer = await createRenderer(message.renderer.canvas, {
-					...message.renderer,
-					metrics: message.metrics,
-					scene: { memory, control: message.control },
-				});
-				const loop = runDirectLoop(runner, renderer, message.control, message.metrics);
-				stopOnLoss(renderer, loop, (reason) => reply({ type: 'lost', role: 'game', reason }));
+				const setup = message.renderer;
+				const create = () =>
+					createRenderer(setup.canvas, {
+						...setup,
+						metrics: message.metrics,
+						scene: { memory, control: message.control },
+					});
+				const game = runner;
+				drawing = new Drawing(
+					await create(),
+					create,
+					(renderer) => runDirectLoop(game, renderer, message.control, message.metrics),
+					controlSlots,
+					(reason) => reply({ type: 'lost', role: 'game', reason }),
+				);
 			} else {
 				void runPipelined(runner, message.control);
 			}
@@ -79,17 +88,19 @@ self.onmessage = async (event: MessageEvent<GameWorkerMessage>) => {
 				role: 'game',
 				threaded: core.isThreadedBuild(),
 				version: core.engineVersion(),
-				tier: renderer?.tier,
+				tier: drawing?.renderer.tier,
 			});
 		} catch (e) {
 			reply({ type: 'error', role: 'game', message: e instanceof Error ? e.message : String(e) });
 		}
 	} else if (message.type === 'post') {
 		runner?.receive(message.name, message.data);
-	} else if (message.type === 'capture' && renderer && controlSlots) {
-		const captured = await renderer.capture(
+	} else if (message.type === 'capture' && drawing && controlSlots) {
+		const captured = await drawing.renderer.capture(
 			emptySceneInput(Atomics.load(controlSlots, Slot.FramesTaken)),
 		);
 		reply({ type: 'captured', ...captured }, [captured.pixels.buffer]);
+	} else if (message.type === 'lose-gpu') {
+		drawing?.simulateLoss();
 	}
 };

@@ -87,6 +87,11 @@ impl MaterialTable {
         &self.parameters
     }
 
+    /// Marks the whole table changed, so the next frame uploads it again.
+    pub fn mark_changed(&mut self) {
+        self.changed = true;
+    }
+
     /// True once after any change, so the table is uploaded only when it changed.
     pub fn take_changed(&mut self) -> bool {
         std::mem::take(&mut self.changed)
