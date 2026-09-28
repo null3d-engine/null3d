@@ -1,6 +1,7 @@
-// Starts the engine with an empty sketch in the mode the URL's switches ask for, measures it for a few
-// seconds, then reports the mode, the capabilities, the frame metrics, how many times the sketch
-// updated, its largest step and the names of the messages it sent. With ?pause, it pauses and resumes the sketch before it asks.
+// Starts the engine with an empty sketch in the mode the URL's switches ask for, on the GPU that
+// ?power prefers, and measures it for a few seconds. Then it reports the mode, the capabilities,
+// the frame metrics, how many times the sketch updated, its largest step and the names of the
+// messages it sent. With ?pause, it pauses and resumes the sketch before it asks.
 import { createEngine } from '@null3d/engine';
 import { run, toBase64 } from './lib/result';
 
@@ -17,6 +18,10 @@ run('engine', async () => {
 		canvas,
 		sketch: new URL('./sketches/empty-sketch.ts', import.meta.url),
 		onProgress: (stage) => stages.push(stage),
+		powerPreference: (params.get('power') ?? undefined) as
+			| 'high-performance'
+			| 'low-power'
+			| undefined,
 	});
 	await engine.firstFrame;
 	const stats = await engine.measure(seconds);

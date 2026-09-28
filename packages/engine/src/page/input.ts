@@ -124,13 +124,29 @@ export function captureInput(
 			);
 		}
 	});
-	const listen = () => {
+	const writeCurrentSize = () => {
 		const current = canvas.getBoundingClientRect();
 		writeSize(current.width, current.height);
+	};
+	// Without the device-pixel box, a new pixel ratio with the same CSS size, as when the window
+	// moves to another screen, reaches no resize observer. A query for the current ratio notices it.
+	let ratioQuery: MediaQueryList | undefined;
+	const onRatioChange = () => {
+		watchRatio();
+		writeCurrentSize();
+	};
+	const watchRatio = () => {
+		ratioQuery?.removeEventListener('change', onRatioChange);
+		ratioQuery = matchMedia(`(resolution: ${globalThis.devicePixelRatio ?? 1}dppx)`);
+		ratioQuery.addEventListener('change', onRatioChange);
+	};
+	const listen = () => {
+		writeCurrentSize();
 		try {
 			observer.observe(canvas, { box: 'device-pixel-content-box' });
 		} catch {
 			observer.observe(canvas);
+			watchRatio();
 		}
 		canvas.addEventListener('pointermove', onMove);
 		canvas.addEventListener('pointerdown', onDown);
@@ -145,6 +161,8 @@ export function captureInput(
 	};
 	const unlisten = () => {
 		observer.disconnect();
+		ratioQuery?.removeEventListener('change', onRatioChange);
+		ratioQuery = undefined;
 		canvas.removeEventListener('pointermove', onMove);
 		canvas.removeEventListener('pointerdown', onDown);
 		window.removeEventListener('pointerup', onUp);

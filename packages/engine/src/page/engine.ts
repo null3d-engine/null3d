@@ -42,6 +42,12 @@ export interface EngineOptions {
 	maxPixelRatio?: number;
 	/** Forces a GPU tier, for testing only. */
 	gpu?: 'auto' | 'webgpu' | 'webgl2';
+	/**
+	 * Which GPU to draw with on a device that has two, such as a laptop with a separate graphics
+	 * chip: `high-performance` for the faster one, `low-power` to save battery. Without it, the
+	 * browser chooses, often the low-power GPU. A device with one GPU ignores it.
+	 */
+	powerPreference?: 'high-performance' | 'low-power';
 	/** The latency mode. The default is `pipelined`. */
 	latency?: LatencyMode;
 	/**
@@ -318,7 +324,8 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 	});
 	// A failed load is reported where the engine awaits the core, not as an unhandled rejection.
 	coreLoad.catch(() => {});
-	const report = await abortable(probeCapabilities(), signal);
+	const { powerPreference } = options;
+	const report = await abortable(probeCapabilities(powerPreference), signal);
 	const probeMs = performance.now() - startedAt;
 	const latency = threaded ? (switches.latency ?? options.latency ?? 'pipelined') : 'single';
 	const wanted = switches.gpu !== 'auto' ? switches.gpu : (options.gpu ?? 'auto');
@@ -422,6 +429,7 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 				createRenderer(options.canvas, {
 					tier,
 					forceCompat,
+					powerPreference,
 					metrics,
 					storageBindingBytes: bindingBytes,
 					scene: { memory, control },
@@ -452,7 +460,7 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 						...handoff,
 						sketchUrl,
 						jobWorkers,
-						renderer: { canvas, tier, forceCompat },
+						renderer: { canvas, tier, forceCompat, powerPreference },
 					},
 					[canvas],
 				);
@@ -471,14 +479,16 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 						onFailure,
 					);
 					workers.push(rendererHost);
-					rendererHost.worker.postMessage({ type: 'init', ...handoff, canvas, tier, forceCompat }, [
-						canvas,
-					]);
+					rendererHost.worker.postMessage(
+						{ type: 'init', ...handoff, canvas, tier, forceCompat, powerPreference },
+						[canvas],
+					);
 				} else {
 					const create = () =>
 						createRenderer(options.canvas, {
 							tier,
 							forceCompat,
+							powerPreference,
 							metrics,
 							storageBindingBytes: bindingBytes,
 							scene: core.memory && { memory: core.memory, control },

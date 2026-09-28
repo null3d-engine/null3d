@@ -87,6 +87,10 @@ A 2018 iPad Pro on iPadOS 26 reports almost exactly WebGPU's default limits, whi
 
 Some browsers hide the GPU's name. Firefox on macOS reports every adapter detail as empty, and Brave can hide them by design. A name also does not tell you which features the engine turned on. Read `engine.capabilities` instead, on the page or in your sketch.
 
+## Devices with two GPUs
+
+Some laptops have a separate graphics chip next to the one built into the processor. The browser picks one of them, often the one that saves battery. `createEngine({ powerPreference: 'high-performance' })` asks for the faster one, and `'low-power'` for the one that saves battery. The engine's capability check and its renderer ask for the same GPU, so the reported features and limits match the GPU that draws. A device with one GPU ignores the option.
+
 ## Choosing a tier for testing
 
 `createEngine({ gpu: 'webgl2' })` forces a tier, and so do the URL switches `?gpu=webgpu`, `?gpu=compat` and `?gpu=webgl2`. A device can then test every path it supports. Use them for testing only; in production, let the engine choose.

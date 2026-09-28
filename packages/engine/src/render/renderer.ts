@@ -5,6 +5,7 @@ import { type CompletionSignal, FenceCompletion, QueueCompletion } from '../gpu/
 import { readbackWebGL2, readbackWebGPU } from '../gpu/readback';
 import { GpuTimer } from '../gpu/webgpu/gpu-timer';
 import { RenderPassSetup, submitOne } from '../gpu/webgpu/reusable';
+import type { PowerPreference } from '../page/capabilities';
 import { type FrameRecorder, Phase } from '../shared/metrics';
 import { contextLoss, contextRestored, deviceLoss } from './loss';
 import { WebGPUSceneRenderer } from './scene-renderer';
@@ -54,6 +55,8 @@ export interface RendererOptions {
 	metrics?: ArrayBufferLike;
 	/** The largest storage binding to request from a WebGPU device. */
 	storageBindingBytes: number;
+	/** Which GPU to draw with on a device with two; the browser chooses without it. */
+	powerPreference?: PowerPreference;
 	/**
 	 * Engine memory and the control block: with both, a WebGPU renderer draws the scene from the
 	 * draw lists the sketch thread records; without them it clears to the frame's background.
@@ -171,11 +174,13 @@ class WebGL2Renderer implements Renderer {
 	constructor(
 		private readonly canvas: RenderCanvas,
 		metrics: ArrayBufferLike | undefined,
+		powerPreference: PowerPreference | undefined,
 	) {
 		this.lost = contextLoss(canvas, () => this.released);
 		const gl = canvas.getContext('webgl2', {
 			antialias: false,
 			alpha: false,
+			powerPreference,
 		}) as WebGL2RenderingContext | null;
 		if (!gl) throw new Error('the canvas has no WebGL2 context');
 		this.gl = gl;
@@ -256,9 +261,12 @@ export async function createRenderer(
 	if (options.tier === 'webgl2') {
 		// After a loss, the context must come back before the engine can draw with it again.
 		await contextRestored(canvas);
-		return new WebGL2Renderer(canvas, options.metrics);
+		return new WebGL2Renderer(canvas, options.metrics, options.powerPreference);
 	}
-	const adapter = await navigator.gpu?.requestAdapter({ featureLevel: 'compatibility' });
+	const adapter = await navigator.gpu?.requestAdapter({
+		featureLevel: 'compatibility',
+		powerPreference: options.powerPreference,
+	});
 	if (!adapter) throw new Error('no WebGPU adapter');
 	const core = !options.forceCompat && adapter.features.has('core-features-and-limits');
 	const requiredFeatures: GPUFeatureName[] = [];

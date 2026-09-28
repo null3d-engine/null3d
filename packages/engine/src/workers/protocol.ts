@@ -1,5 +1,6 @@
 // Messages between the page and the engine's workers.
 
+import type { PowerPreference } from '../page/capabilities';
 import type { Tier } from '../render/renderer';
 import type { Build } from '../shared/core';
 
@@ -22,6 +23,7 @@ export interface RendererSetup {
 	canvas: OffscreenCanvas;
 	tier: Tier;
 	forceCompat: boolean;
+	powerPreference?: PowerPreference;
 }
 
 export type SketchWorkerInit = CoreHandoff & {

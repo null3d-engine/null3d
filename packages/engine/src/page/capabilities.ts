@@ -151,7 +151,7 @@ function messageOf(e: unknown): string {
 	return e instanceof Error ? e.message : String(e);
 }
 
-async function probeWebGPU(): Promise<WebGPUReport> {
+async function probeWebGPU(powerPreference?: PowerPreference): Promise<WebGPUReport> {
 	const empty: WebGPUReport = {
 		available: false,
 		compatibilityAdapter: false,
@@ -165,7 +165,7 @@ async function probeWebGPU(): Promise<WebGPUReport> {
 	const gpu = globalThis.navigator?.gpu;
 	if (!gpu) return empty;
 	try {
-		const adapter = await gpu.requestAdapter({ featureLevel: 'compatibility' });
+		const adapter = await gpu.requestAdapter({ featureLevel: 'compatibility', powerPreference });
 		const limits: Record<string, number | null> = {};
 		for (const name of WEBGPU_LIMITS) {
 			const value = adapter
@@ -226,7 +226,7 @@ function probeSharedUploads(
 	return { bufferSubData, texSubImage2D };
 }
 
-function probeWebGL2(): WebGL2Report {
+function probeWebGL2(powerPreference?: PowerPreference): WebGL2Report {
 	const empty: WebGL2Report = {
 		available: false,
 		extensions: {},
@@ -242,7 +242,7 @@ function probeWebGL2(): WebGL2Report {
 			typeof OffscreenCanvas === 'function'
 				? new OffscreenCanvas(4, 4)
 				: document.createElement('canvas');
-		const gl = canvas.getContext('webgl2') as WebGL2RenderingContext | null;
+		const gl = canvas.getContext('webgl2', { powerPreference }) as WebGL2RenderingContext | null;
 		if (!gl) return empty;
 		const extensions: Record<string, boolean> = {};
 		for (const name of WEBGL2_EXTENSIONS) extensions[name] = gl.getExtension(name) !== null;
@@ -294,9 +294,20 @@ function probeWorker(): Promise<WorkerProbe | { error: string }> {
 	});
 }
 
-/** Probes the browser and device. Runs on the page's main thread. */
-export async function probeCapabilities(): Promise<CapabilityReport> {
-	const [webgpu, worker] = await Promise.all([probeWebGPU(), probeWorker()]);
+/**
+ * Which GPU to use on a device with two: the faster one, or the one that saves battery. Without
+ * it, the browser chooses.
+ */
+export type PowerPreference = 'high-performance' | 'low-power';
+
+/**
+ * Probes the browser and device, on the GPU that `powerPreference` picks. Runs on the page's main
+ * thread.
+ */
+export async function probeCapabilities(
+	powerPreference?: PowerPreference,
+): Promise<CapabilityReport> {
+	const [webgpu, worker] = await Promise.all([probeWebGPU(powerPreference), probeWorker()]);
 	return {
 		crossOriginIsolated: globalThis.crossOriginIsolated === true,
 		sharedArrayBuffer: typeof SharedArrayBuffer === 'function',
@@ -308,7 +319,7 @@ export async function probeCapabilities(): Promise<CapabilityReport> {
 			typeof HTMLCanvasElement === 'function' &&
 			'transferControlToOffscreen' in HTMLCanvasElement.prototype,
 		webgpu,
-		webgl2: probeWebGL2(),
+		webgl2: probeWebGL2(powerPreference),
 		worker,
 	};
 }
