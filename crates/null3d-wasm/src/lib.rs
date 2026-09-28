@@ -23,7 +23,9 @@ use null3d_core::scene::{CommandRing, SceneStorage};
 use null3d_core::snapshot::FrameSnapshot;
 use null3d_render::camera::Perspective;
 use null3d_render::geometry::{box_geometry, sphere_geometry};
-use null3d_render::gpu_driven::{FrameInput, GpuDrivenRenderer, RecordError, RendererConfig};
+use null3d_render::gpu_driven::{
+    FrameInput, GpuDrivenRenderer, MAX_SOURCES, RecordError, RendererConfig,
+};
 use null3d_render::materials::{MaterialError, Shading};
 use wasm_bindgen::prelude::*;
 
@@ -376,6 +378,17 @@ pub fn create_batch(capacity: u32, dynamic: bool, colors: bool, mesh: u32, mater
             return Err(render_failure(render_detail::UNKNOWN_MESH, mesh));
         };
         let radius = slot.radius;
+        // Refused here, at the call that makes the scene too large to draw, before the core
+        // allocates the batch's rows.
+        let sources = e
+            .batches
+            .iter()
+            .fold(e.scene.capacity() + 1, |sum, (_, batch)| {
+                sum.saturating_add(batch.capacity())
+            });
+        if sources.saturating_add(capacity) > MAX_SOURCES {
+            return Err(record_failure(RecordError::TooManySources));
+        }
         let id = e
             .batches
             .create(capacity, dynamic, colors, mesh, material, radius)

@@ -170,3 +170,21 @@ fn a_structure_change_rebuilds_the_buckets() {
         .collect();
     assert_eq!(slices, vec![1 + BATCH_ROWS, 2, 1]);
 }
+
+#[test]
+fn the_source_limit_keeps_every_storage_buffer_within_the_default_binding() {
+    use null3d_gpu::drawlist::sizes;
+    use null3d_render::gpu_driven::{MAX_SOURCES, grown_size};
+
+    assert_eq!(MAX_SOURCES, 2_097_152);
+    assert!(
+        u64::from(MAX_SOURCES) * u64::from(sizes::INSTANCE_STRIDE)
+            <= u64::from(sizes::MAX_STORAGE_BINDING_BYTES)
+    );
+    assert!(MAX_SOURCES.div_ceil(sizes::CULL_WORKGROUP_SIZE) <= u32::from(u16::MAX));
+    // Room to grow, but never past the largest binding, and never below what is needed.
+    assert_eq!(grown_size(1000), 1536);
+    let full = MAX_SOURCES * sizes::INSTANCE_STRIDE;
+    assert_eq!(grown_size(full), sizes::MAX_STORAGE_BINDING_BYTES);
+    assert_eq!(grown_size(full - 1000), sizes::MAX_STORAGE_BINDING_BYTES);
+}

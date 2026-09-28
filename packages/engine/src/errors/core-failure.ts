@@ -23,7 +23,7 @@ const RESOURCES: Record<number, string> = {
 const RENDER_LIMITS: Record<number, string> = {
 	1: 'the draw list is full',
 	2: 'the mesh buffers are full',
-	3: 'the scene has more objects than one culling pass covers',
+	3: 'the scene has more objects and instance rows than the GPU can cull and draw (2,097,152 at most)',
 	4: 'the material table is full',
 	7: 'the mesh has more than 65536 vertices, or indices past its vertices',
 	8: "the frame's uploads do not fit the room the renderer set aside for them",

@@ -28,4 +28,4 @@ Every error the engine throws is an `EngineError` with a code. Its message names
 | [E1402](E1402.md) | Engine core out of date | The engine core WebAssembly file lacks functions that the TypeScript side calls, so the two come from different builds. |
 | [E1403](E1403.md) | Engine core not ready | An engine call ran before the engine core started in this worker, or the core started twice. |
 | [E1404](E1404.md) | Engine thread failed | An engine thread hit an error it could not handle after the engine started, so the engine may have stopped. |
-| [E1501](E1501.md) | Render space full | The scene needs more room than the renderer set aside. The full part is the draw list, the mesh buffers, the material table, the upload space or the culling pass. |
+| [E1501](E1501.md) | Render space full | The scene needs more room than the renderer set aside. The full part is the draw list, the mesh buffers, the material table, the upload space or the culling pass. The culling pass covers at most 2,097,152 objects and instance rows. |

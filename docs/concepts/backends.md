@@ -72,6 +72,10 @@ The WebGPU path stays inside WebGPU's default limits, and inside compatibility m
 | Texture size | 4096 pixels (8192 only after a check) |
 | Texture array layers | 256 |
 | Buffer size | 256 MB |
+| Storage binding size | 128 MB |
+| Objects and instance rows in one scene | 2,097,152, since each takes 64 bytes of a storage binding |
+
+A call that would take a scene past its objects and instance rows fails with E1501, at the call that asked for them.
 
 A 2018 iPad Pro on iPadOS 26 reports almost exactly WebGPU's default limits, which makes it a good test that the budget holds.
 
