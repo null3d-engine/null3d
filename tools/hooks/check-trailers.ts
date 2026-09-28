@@ -19,11 +19,12 @@ function main(): void {
 	const failures: string[] = [];
 	for (const sha of git('rev-list', '--no-merges', range).split('\n').filter(Boolean)) {
 		const message = git('log', '-1', '--format=%B', sha);
+		const authoredAt = git('log', '-1', '--format=%aI', sha).trim();
 		const files = git('diff-tree', '--no-commit-id', '--name-only', '-r', sha)
 			.split('\n')
 			.filter(Boolean);
 		for (const rule of RULES) {
-			const result = checkAck(message, files, rule);
+			const result = checkAck(message, files, rule, authoredAt);
 			if (!result.ok)
 				failures.push(`${sha.slice(0, 8)} ${message.split('\n')[0]}: ${result.error}`);
 		}

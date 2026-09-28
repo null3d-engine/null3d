@@ -29,6 +29,11 @@ export interface AckRule {
 	trailer: string;
 	/** Paths whose changes carry this rule's obligation. */
 	patterns: RegExp[];
+	/**
+	 * Paths the rule gained later, with the moment it gained them. A commit authored before that
+	 * moment is judged without them, so a stricter rule does not fail commits made under the old one.
+	 */
+	added?: readonly { since: string; patterns: RegExp[] }[];
 	/** Rejection text for a commit that changed bearing files and has no trailer. */
 	missingMessage: (bearing: string[]) => string;
 	/** Rejection text for a trailer that is present but acknowledges nothing. */
@@ -39,6 +44,13 @@ export interface AckRule {
 
 export function bearingFiles(changedFiles: string[], patterns: RegExp[]): string[] {
 	return changedFiles.filter((f) => patterns.some((p) => p.test(f)));
+}
+
+/** The rule's patterns for a commit authored at `authoredAt`, or all of them without a time. */
+export function rulePatterns(rule: AckRule, authoredAt?: string): RegExp[] {
+	const time = authoredAt === undefined ? Number.POSITIVE_INFINITY : Date.parse(authoredAt);
+	const later = (rule.added ?? []).filter((a) => time >= Date.parse(a.since));
+	return [...rule.patterns, ...later.flatMap((a) => a.patterns)];
 }
 
 /** Strips git comment lines and everything below a scissors marker. */
@@ -67,15 +79,20 @@ export function isBareAck(value: string): boolean {
 	return value.length < MIN_ACK_LENGTH || BARE_VALUES.has(value.toLowerCase());
 }
 
+/**
+ * Whether a commit message discharges the rule for the changed files. `authoredAt` is the commit's
+ * author time, which decides the paths the rule covered then; a commit being made now omits it.
+ */
 export function checkAck(
 	rawMessage: string,
 	changedFiles: string[],
 	rule: AckRule,
+	authoredAt?: string,
 ): { ok: boolean; error?: string } {
 	const message = effectiveMessage(rawMessage);
 	if (message.length === 0 || isExemptCommit(message)) return { ok: true };
 
-	const bearing = bearingFiles(changedFiles, rule.patterns);
+	const bearing = bearingFiles(changedFiles, rulePatterns(rule, authoredAt));
 	if (bearing.length === 0) return { ok: true };
 
 	const value = findAckValue(message, rule.trailer);

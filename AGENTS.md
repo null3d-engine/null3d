@@ -36,11 +36,14 @@ This repository holds the sokko3d engine, its tools, its documentation and its a
 | `bun run dev-cert` | Make a local HTTPS certificate for testing on phones and tablets |
 | `bun run android` | Forward port 5173 to an Android phone connected by USB |
 | `bun run docs` | Regenerate placeholder pages, the page list in `docs/index.md`, and the mapping page and copies |
-| `bun run docs:check` | Check front matter, generated files and links |
+| `bun run docs:check` | Check front matter, generated files and links, and that this table lists every command |
 | `bun run docs:style` | Check the writing rules in all published Markdown |
 | `bun run skills` | Sync `.claude/skills/` from `skills/`, then check the skills |
 | `bun run skills:check` | Check the skills without syncing |
+| `bun run shaders` | Build every shader variant in the shader manifest and write the generated TypeScript module |
+| `bun run shaders:check` | Fail when the committed shader module is out of date |
 | `bun run check` | Lint and format check (Biome) |
+| `bun run check:fix` | Lint and format, fixing what Biome can |
 | `bun run typecheck` | TypeScript check |
 
 A size growth over 2% needs a reason: explain it in the commit message and run `bun tools/build-wasm.ts --update-size`, which rewrites the committed baseline.
@@ -114,11 +117,12 @@ Before each commit:
 - Biome (errors only) and the TypeScript check.
 - When Rust files or Cargo settings are staged: `cargo fmt --check` and Clippy, with warnings treated as errors.
 - Generated files are current and staged. The hook regenerates the docs and the skills copy in memory, and fails if a committed file differs or has unstaged changes.
+- Every command in `package.json` is in the table under "Commands", and every command that this file and the README run with `bun run` exists.
 
 On each commit message:
 
 - The message follows [Conventional Commits](https://www.conventionalcommits.org/). The scope names the area, such as `core`, `gpu`, `engine`, `docs`, `tools` or `ci`.
-- A commit that changes `crates/*/src/`, `packages/*/src/`, `packages/*/bin/` or `skills/` needs a `Docs-Checked:` trailer. It names the docs pages you updated or re-read, or says why none apply.
+- A commit that changes `crates/*/src/`, `packages/*/src/`, `packages/*/bin/` or `skills/` needs a `Docs-Checked:` trailer. This file and the README describe the repository's tools, so a commit that changes them needs one too. They are `tools/`, `bench/` apart from its tests, the test runner (`tests/real-browsers.ts` and `tests/lib/`) and `package.json`. The trailer names the docs pages you updated or re-read, or says why none apply.
 - A commit that changes a package's source, the WGSL shader library, `skills/` or `docs/data/threejs-mapping.json` needs a `Skills-Checked:` trailer. It names the skill files you updated or re-read.
 - Every internal link in the published Markdown resolves, and new external links in changed files answer.
 - Changed published Markdown passes the docs style check. Errors block the commit; warnings only print.

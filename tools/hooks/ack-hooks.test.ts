@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import {
 	checkCommitMessage as checkDocs,
+	DOCS_ACK_RULE,
 	docBearingFiles,
 	effectiveMessage,
 	isExemptCommit,
@@ -8,31 +9,57 @@ import {
 import { unstagedPaths } from './check-generated';
 import { touchesRust } from './check-rust';
 import { checkCommitMessage as checkSkills, skillBearingFiles } from './check-skills-ack';
-import { findAckValue } from './commit-ack';
+import { checkAck, findAckValue } from './commit-ack';
 
 describe('docBearingFiles', () => {
-	it('flags engine code, package source and binaries, and skills', () => {
+	it('flags engine code, package source and binaries, skills, tools, benchmarks and commands', () => {
 		const files = [
 			'crates/sokko3d-core/src/handles.rs',
 			'packages/engine/src/scene.ts',
 			'packages/cli/bin/sokko3d.js',
 			'skills/sokko3d-develop/SKILL.md',
+			'tools/gen-docs.ts',
+			'tools/hooks/check-docs-ack.ts',
+			'bench/allocation.ts',
+			'bench/pages/scene-code/harness.ts',
+			'tests/real-browsers.ts',
+			'tests/lib/plans.ts',
+			'package.json',
 		];
 		expect(docBearingFiles(files)).toEqual(files);
 	});
 
-	it('exempts docs, tests, tools, CI settings and root prose', () => {
+	it('exempts docs, tests, test pages, CI settings and root prose', () => {
 		expect(
 			docBearingFiles([
 				'docs/concepts/handles.md',
 				'crates/sokko3d-core/tests/handles.rs',
 				'packages/engine/test/scene.test.ts',
-				'tools/gen-docs.ts',
+				'tools/hooks/ack-hooks.test.ts',
+				'bench/lib/report.test.ts',
+				'bench/tests/pages.spec.ts',
+				'tests/lib/runs.test.ts',
+				'tests/image/uploads.spec.ts',
+				'tests/pages/uploads.ts',
+				'packages/engine/package.json',
 				'.github/workflows/ci.yml',
 				'README.md',
 				'AGENTS.md',
 			]),
 		).toEqual([]);
+	});
+});
+
+describe('rules that gained paths later', () => {
+	it('judge a commit by the paths the rule covered when it was authored', () => {
+		const message = 'feat(bench): add a check\n\nTask: M0-C3';
+		const files = ['bench/allocation.ts'];
+		expect(checkAck(message, files, DOCS_ACK_RULE, '2026-09-27T23:00:00+08:00').ok).toBe(true);
+		expect(checkAck(message, files, DOCS_ACK_RULE, '2026-09-28T09:30:00+08:00').ok).toBe(false);
+		expect(checkAck(message, files, DOCS_ACK_RULE).ok).toBe(false);
+		expect(
+			checkAck(message, ['packages/engine/src/index.ts'], DOCS_ACK_RULE, '2026-01-01').ok,
+		).toBe(false);
 	});
 });
 
