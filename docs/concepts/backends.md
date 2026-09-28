@@ -75,7 +75,11 @@ The WebGPU path stays inside WebGPU's default limits, and inside compatibility m
 | Storage binding size | 128 MB |
 | Objects and instance rows in one scene | 2,097,152, since each takes 64 bytes of a storage binding |
 
-A call that would take a scene past its objects and instance rows fails with E1501, at the call that asked for them.
+The storage binding is the one limit the engine raises past this budget. When a device offers larger storage bindings and buffers, the engine asks for them. A scene there can hold more objects and instance rows, up to the 8,388,480 that one culling pass covers. `engine.capabilities.maxInstances` gives the number for the device. A call that would take a scene past it fails with E1501.
+
+Development builds warn once when a scene passes 2,097,152, because a device with the default limits refuses that scene.
+
+Engine memory holds the rows too. A page with worker threads gives the engine at most 1 GiB, which holds about 5 million instance rows. A call that needs more memory than the engine can get fails with E1109.
 
 A 2018 iPad Pro on iPadOS 26 reports almost exactly WebGPU's default limits, which makes it a good test that the budget holds.
 

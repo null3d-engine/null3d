@@ -228,19 +228,50 @@ fn a_new_active_count_rewrites_the_rows_without_a_rebuild() {
 }
 
 #[test]
-fn the_source_limit_keeps_every_storage_buffer_within_the_default_binding() {
+fn the_source_limit_follows_the_device_storage_binding() {
     use null3d_gpu::drawlist::sizes;
-    use null3d_render::gpu_driven::{MAX_SOURCES, grown_size};
+    use null3d_render::gpu_driven::{
+        MAX_USEFUL_BINDING_BYTES, PORTABLE_MAX_SOURCES, grown_size, max_sources,
+    };
 
-    assert_eq!(MAX_SOURCES, 2_097_152);
-    assert!(
-        u64::from(MAX_SOURCES) * u64::from(sizes::INSTANCE_STRIDE)
-            <= u64::from(sizes::MAX_STORAGE_BINDING_BYTES)
+    // Every device: WebGPU's default binding holds the instances of 2,097,152 sources.
+    let portable = sizes::PORTABLE_STORAGE_BINDING_BYTES;
+    assert_eq!(PORTABLE_MAX_SOURCES, 2_097_152);
+    assert_eq!(PORTABLE_MAX_SOURCES * sizes::INSTANCE_STRIDE, portable);
+    // A larger binding raises the limit until one culling dispatch is full.
+    let one_dispatch = u32::from(u16::MAX) * sizes::CULL_WORKGROUP_SIZE;
+    assert_eq!(max_sources(2 * portable), 2 * PORTABLE_MAX_SOURCES);
+    assert_eq!(max_sources(MAX_USEFUL_BINDING_BYTES), one_dispatch);
+    assert_eq!(max_sources(u32::MAX - 3), one_dispatch);
+    assert_eq!(
+        one_dispatch * sizes::INSTANCE_STRIDE,
+        MAX_USEFUL_BINDING_BYTES
     );
-    assert!(MAX_SOURCES.div_ceil(sizes::CULL_WORKGROUP_SIZE) <= u32::from(u16::MAX));
-    // Room to grow, but never past the largest binding, and never below what is needed.
-    assert_eq!(grown_size(1000), 1536);
-    let full = MAX_SOURCES * sizes::INSTANCE_STRIDE;
-    assert_eq!(grown_size(full), sizes::MAX_STORAGE_BINDING_BYTES);
-    assert_eq!(grown_size(full - 1000), sizes::MAX_STORAGE_BINDING_BYTES);
+    // Buffers grow with room to spare, but never past the binding, and never below the need.
+    assert_eq!(grown_size(1000, portable), 1536);
+    for binding in [portable, MAX_USEFUL_BINDING_BYTES] {
+        let full = max_sources(binding) * sizes::INSTANCE_STRIDE;
+        assert_eq!(grown_size(full, binding), binding);
+        assert_eq!(grown_size(full - 1000, binding), binding);
+    }
+}
+
+#[test]
+fn a_scene_past_the_device_limit_is_refused_with_that_limit() {
+    use null3d_gpu::drawlist::sizes;
+    use null3d_render::gpu_driven::{RecordError, RendererConfig};
+
+    let device = |sources: u32| RendererConfig {
+        storage_binding_bytes: sources * sizes::INSTANCE_STRIDE,
+        ..RendererConfig::default()
+    };
+    let sources = SCENE_CAPACITY + 1 + BATCH_ROWS;
+    let mut roomy = World::with_config(device(sources));
+    assert_eq!(roomy.renderer.max_sources(), sources);
+    roomy.try_record(true).unwrap();
+    let mut tight = World::with_config(device(sources - 1));
+    assert_eq!(
+        tight.try_record(true),
+        Err(RecordError::TooManySources { limit: sources - 1 })
+    );
 }

@@ -10,6 +10,8 @@ export interface CoreErrors {
 	lastErrorDetail(index: number): number;
 }
 
+const MB = 1024 * 1024;
+
 /** Stores of fixed capacity, by the core's resource number. */
 const RESOURCES: Record<number, string> = {
 	1: 'scene',
@@ -23,11 +25,11 @@ const RESOURCES: Record<number, string> = {
 const RENDER_LIMITS: Record<number, string> = {
 	1: 'the draw list is full',
 	2: 'the mesh buffers are full',
-	3: 'the scene has more objects and instance rows than the GPU can cull and draw (2,097,152 at most)',
 	4: 'the material table is full',
 	7: 'the mesh has more than 65536 vertices, or indices past its vertices',
 	8: "the frame's uploads do not fit the room the renderer set aside for them",
 };
+const TOO_MANY_SOURCES = 3;
 const UNKNOWN_MATERIAL = 5;
 const UNKNOWN_MESH = 6;
 
@@ -65,9 +67,19 @@ export function coreFailure(core: CoreErrors, call: string, what = 'an object'):
 			return error('E1107', `the object in slot ${a} was created twice.`);
 		case 1108:
 			return error('E1108', `${call}() got ${a}, above the limit of ${b}.`);
+		case 1109:
+			return error(
+				'E1109',
+				`${call}() failed: the engine could not get ${Math.ceil(a / MB)} MB more memory.`,
+			);
 		case 1403:
 			return error('E1403', `${call}() ran before the engine core started.`);
 		case 1501:
+			if (a === TOO_MANY_SOURCES)
+				return error(
+					'E1501',
+					`${call}() failed: the scene has more objects and instance rows than this device can cull and draw (${b.toLocaleString('en-US')} at most).`,
+				);
 			if (a === UNKNOWN_MATERIAL || a === UNKNOWN_MESH)
 				return error(
 					'E1103',

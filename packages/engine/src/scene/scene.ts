@@ -473,8 +473,9 @@ export class InstanceBatch {
 	) {}
 
 	/**
-	 * The row arrays, made again after the engine's memory grew. Sketches read rows every frame, so this
-	 * check creates no closure: one would allocate on each call until the browser optimizes the code.
+	 * The row arrays, made again after the engine's memory grew. Sketches read rows every frame, so
+	 * this check creates no closure: one would allocate on each call until the browser optimizes
+	 * the code.
 	 */
 	private views(): InstanceBatch['rows'] {
 		if (this.generation !== this.scene.core.generation) this.makeViews();
@@ -530,6 +531,7 @@ export class InstanceBatch {
 	destroy(): void {
 		const { core } = this.scene;
 		core.check(core.glue.destroyBatch(this.id, this.scene.frame), 'destroy', undefined, true);
+		if (DEV) this.scene.countBatchRows(-this.count);
 		this.destroyedFrame = this.scene.frame;
 		this.scene.core.refresh();
 	}
@@ -551,6 +553,9 @@ export class Scene {
 	/** @internal */
 	readonly target = new Float64Array(3);
 	private readonly matrix = new Float32Array(C.CORE_MATRIX_FLOATS);
+	/** Rows of the live instance batches, which development builds count. */
+	private batchRows = 0;
+	private warnedPastPortable = false;
 
 	constructor(
 		/** @internal */ readonly core: CoreMemory,
@@ -606,6 +611,23 @@ export class Scene {
 		return this.matrix;
 	}
 
+	/**
+	 * @internal Counts the rows of batches as they are created and destroyed, and warns once when
+	 * the scene passes the limit that every device draws.
+	 */
+	countBatchRows(change: number): void {
+		this.batchRows += change;
+		if (this.warnedPastPortable) return;
+		// The core counts every scene slot, used or not, toward the limit.
+		const sources = this.core.glue.sceneCapacity() + 1 + this.batchRows;
+		if (sources <= C.LIMIT_PORTABLE_MAX_SOURCES) return;
+		this.warnedPastPortable = true;
+		const count = (n: number) => n.toLocaleString('en-US');
+		console.warn(
+			`null3d: this scene counts ${count(sources)} objects and instance rows toward the GPU's limit. This device draws them, but devices with WebGPU's default limits draw at most ${count(C.LIMIT_PORTABLE_MAX_SOURCES)} and fail with E1501. engine.capabilities.maxInstances gives the limit of each device.`,
+		);
+	}
+
 	/** @internal */
 	lensChanged(camera: Camera): void {
 		if (camera === this.activeCamera)
@@ -652,6 +674,7 @@ export class Scene {
 			'createInstances',
 		);
 		core.refresh();
+		if (DEV) this.countBatchRows(count);
 		const batch = new InstanceBatch(this, id, count, options.colors ?? false);
 		batch.setActiveCount(count);
 		return batch;

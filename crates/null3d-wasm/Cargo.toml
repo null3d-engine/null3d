@@ -12,6 +12,7 @@ crate-type = ["cdylib", "rlib"]
 
 [dependencies]
 null3d-core = { path = "../null3d-core" }
+null3d-gpu = { path = "../null3d-gpu" }
 null3d-render = { path = "../null3d-render" }
 wasm-bindgen.workspace = true
 

@@ -61,7 +61,13 @@ self.onmessage = async (event: MessageEvent<SketchWorkerMessage>) => {
 			runner = new SketchRunner(
 				(name, data, transfer) => reply({ type: 'sketch-message', name, data }, transfer),
 				message.metrics,
-				{ glue: core, memory, slots: controlSlots, jobWorkers: message.jobWorkers },
+				{
+					glue: core,
+					memory,
+					slots: controlSlots,
+					jobWorkers: message.jobWorkers,
+					storageBindingBytes: message.storageBindingBytes,
+				},
 			);
 			await runner.load(message.sketchUrl);
 			if (message.renderer) {
@@ -70,6 +76,7 @@ self.onmessage = async (event: MessageEvent<SketchWorkerMessage>) => {
 					createRenderer(setup.canvas, {
 						...setup,
 						metrics: message.metrics,
+						storageBindingBytes: message.storageBindingBytes,
 						scene: { memory, control: message.control },
 					});
 				const sketch = runner;

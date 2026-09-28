@@ -3,6 +3,10 @@
 //! WebAssembly is little-endian, so TypeScript can view the words as a `Uint32Array`: bit `i` is
 //! bit `i % 32` of 32-bit word `i / 32`.
 
+use std::collections::TryReserveError;
+
+use crate::alloc::filled;
+
 /// A bitset with a fixed number of bits, allocated once. Bits past [`Bitset::len`] in the last
 /// word are always clear.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -14,10 +18,18 @@ pub struct Bitset {
 impl Bitset {
     /// A bitset of `len` clear bits.
     pub fn new(len: u32) -> Self {
-        Self {
-            words: vec![0; len.div_ceil(64) as usize],
+        let Ok(bits) = Self::try_new(len) else {
+            panic!("no memory for a bitset")
+        };
+        bits
+    }
+
+    /// A bitset of `len` clear bits, or an error when memory cannot grow for it.
+    pub fn try_new(len: u32) -> Result<Self, TryReserveError> {
+        Ok(Self {
+            words: filled(len.div_ceil(64) as usize, 0)?,
             len,
-        }
+        })
     }
 
     /// The number of bits.

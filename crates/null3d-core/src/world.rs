@@ -6,8 +6,10 @@
 //! [`crate::snapshot`] for the protocol). Bounding spheres live in four separate arrays (x, y, z,
 //! radius), so culling loads four spheres with one SIMD load per array.
 
+use std::collections::TryReserveError;
 use std::simd::f32x4;
 
+use crate::alloc::filled;
 use crate::math::{Affine, Affine4, transpose4};
 
 /// Floats per world matrix.
@@ -70,18 +72,22 @@ pub struct WorldArrays {
 impl WorldArrays {
     /// Arrays for `rows` rows, every row hidden, with colours when `with_colors` is set.
     pub(crate) fn new(rows: usize, with_colors: bool) -> Self {
-        Self {
-            matrices: vec![0.0; rows * MATRIX_FLOATS],
-            xs: vec![0.0; rows],
-            ys: vec![0.0; rows],
-            zs: vec![0.0; rows],
-            radii: vec![HIDDEN_RADIUS; rows],
-            colors: if with_colors {
-                vec![1.0; rows * COLOR_FLOATS]
-            } else {
-                Vec::new()
-            },
-        }
+        let Ok(arrays) = Self::try_new(rows, with_colors) else {
+            panic!("no memory for world arrays")
+        };
+        arrays
+    }
+
+    /// As [`WorldArrays::new`], or an error when memory cannot grow for the arrays.
+    pub(crate) fn try_new(rows: usize, with_colors: bool) -> Result<Self, TryReserveError> {
+        Ok(Self {
+            matrices: filled(rows * MATRIX_FLOATS, 0.0)?,
+            xs: filled(rows, 0.0)?,
+            ys: filled(rows, 0.0)?,
+            zs: filled(rows, 0.0)?,
+            radii: filled(rows, HIDDEN_RADIUS)?,
+            colors: filled(if with_colors { rows * COLOR_FLOATS } else { 0 }, 1.0)?,
+        })
     }
 
     /// The number of rows.

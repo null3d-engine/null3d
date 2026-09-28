@@ -21,10 +21,12 @@ use null3d_core::instances::BatchTable;
 use null3d_core::jobs::{JobConfig, JobSystem};
 use null3d_core::scene::{CommandRing, SceneStorage};
 use null3d_core::snapshot::FrameSnapshot;
+use null3d_gpu::drawlist::sizes;
 use null3d_render::camera::Perspective;
 use null3d_render::geometry::{box_geometry, sphere_geometry};
 use null3d_render::gpu_driven::{
-    FrameInput, GpuDrivenRenderer, MAX_SOURCES, RecordError, RendererConfig,
+    BYTES_PER_SOURCE, FrameInput, GpuDrivenRenderer, MAX_USEFUL_BINDING_BYTES, RecordError,
+    RendererConfig,
 };
 use null3d_render::materials::{MaterialError, Shading};
 use wasm_bindgen::prelude::*;
@@ -116,10 +118,13 @@ fn record_failure(error: RecordError) -> u32 {
         match error {
             RecordError::DrawListFull => render_detail::DRAW_LIST_FULL,
             RecordError::MeshBuffersFull => render_detail::MESH_BUFFERS_FULL,
-            RecordError::TooManySources => render_detail::TOO_MANY_SOURCES,
+            RecordError::TooManySources { .. } => render_detail::TOO_MANY_SOURCES,
             RecordError::UploadsFull => render_detail::UPLOADS_FULL,
         },
-        0,
+        match error {
+            RecordError::TooManySources { limit } => limit,
+            _ => 0,
+        },
     )
 }
 
@@ -171,9 +176,16 @@ pub fn last_error_detail(index: u32) -> u32 {
 }
 
 /// Creates the engine on the sketch thread, and the job system that `job_workers` job workers
-/// serve, timing their work with the browser's clock. Every capacity is fixed from here on.
+/// serve, timing their work with the browser's clock. `storage_binding_bytes` is the largest
+/// storage binding of the device the engine draws with. Every capacity is fixed from here on.
 #[wasm_bindgen(js_name = initEngine)]
-pub fn init_engine(job_workers: u32, scene_capacity: u32, max_batches: u32, commands: u32) -> u32 {
+pub fn init_engine(
+    job_workers: u32,
+    scene_capacity: u32,
+    max_batches: u32,
+    commands: u32,
+    storage_binding_bytes: u32,
+) -> u32 {
     // SAFETY: as in `with_engine`; this is the first call on the sketch thread.
     let cell = unsafe { &mut *ENGINE.0.get() };
     let jobs = JobSystem::with_config(JobConfig {
@@ -189,7 +201,13 @@ pub fn init_engine(job_workers: u32, scene_capacity: u32, max_batches: u32, comm
         ring: CommandRing::with_capacity(commands),
         batches: BatchTable::with_capacity(max_batches),
         snapshot: FrameSnapshot::with_capacity(UPLOAD_RANGES),
-        renderer: GpuDrivenRenderer::new(RendererConfig::default()),
+        renderer: GpuDrivenRenderer::new(RendererConfig {
+            storage_binding_bytes: storage_binding_bytes.clamp(
+                sizes::PORTABLE_STORAGE_BINDING_BYTES,
+                MAX_USEFUL_BINDING_BYTES,
+            ),
+            ..RendererConfig::default()
+        }),
         structure_changed: true,
     });
     0
@@ -383,10 +401,19 @@ pub fn create_batch(capacity: u32, dynamic: bool, colors: bool, mesh: u32, mater
             .iter()
             .fold(e.scene.capacity() + 1, |sum, (_, batch)| {
                 sum.saturating_add(batch.capacity())
-            });
-        if sources.saturating_add(capacity) > MAX_SOURCES {
-            return Err(record_failure(RecordError::TooManySources));
+            })
+            .saturating_add(capacity);
+        let limit = e.renderer.max_sources();
+        if sources > limit {
+            return Err(record_failure(RecordError::TooManySources { limit }));
         }
+        // The renderer's own room for the new rows comes first, so no later frame runs out of
+        // memory while it records.
+        e.renderer.reserve_sources(sources).map_err(|_| {
+            core_failure(CoreError::OutOfMemory {
+                bytes: capacity.saturating_mul(BYTES_PER_SOURCE),
+            })
+        })?;
         let id = e
             .batches
             .create(capacity, dynamic, colors, mesh, material, radius)

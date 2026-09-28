@@ -86,11 +86,13 @@ These numbers are starting points. The engine docs page `guides/performance` hol
 | 2048 x 2048 RGBA8 texture with mipmaps | about 22 MB on the GPU | KTX2 compression (4 to 8 times smaller) |
 | Same texture as ASTC or ETC2 | about 4 to 6 MB | Use `null3d assets optimize` |
 | One static object | a few hundred bytes of engine data | Instances for many copies |
-| One instance row | 48 bytes of matrix plus your own arrays | Only the columns you need |
+| One instance row | About 180 bytes of engine memory, 230 with per-row colors, plus your own arrays | Only the columns you need; colors only where the batch needs them |
 | A new mesh, instance batch, or mesh drawn with a new material, during play | A one-time growth of engine memory in the next frame | Create them during setup; size a batch for its most rows and show fewer with `setActiveCount` |
 | Shadow map 2048 x 2048, depth 32-bit | about 16 MB | Smaller maps on Low and Medium presets |
 
 Check `debug.frameStats().memory` for WebAssembly memory and GPU memory estimates.
+
+Every device draws 2,097,152 objects and instance rows in one scene. A device with larger GPU buffers draws more, up to 8,388,480: `engine.capabilities.maxInstances` gives the number. Past it, the call fails with E1501. With worker threads, engine memory stops at 1 GiB, about 5 million rows; past that, the call fails with E1109. In development builds the engine warns once when a scene passes 2,097,152, so test such scenes on the devices your users have.
 
 ## 7. The quality governor and your own systems
 

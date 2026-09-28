@@ -52,12 +52,17 @@ export interface RendererOptions {
 	forceCompat?: boolean;
 	/** The metrics buffer, which receives GPU times where the device has timestamp queries. */
 	metrics?: ArrayBufferLike;
+	/** The largest storage binding to request from a WebGPU device. */
+	storageBindingBytes: number;
 	/**
 	 * Engine memory and the control block: with both, a WebGPU renderer draws the scene from the
 	 * draw lists the sketch thread records; without them it clears to the frame's background.
 	 */
 	scene?: { memory: WebAssembly.Memory; control: ArrayBufferLike };
 }
+
+/** WebGPU's default `maxBufferSize`, which every device offers. */
+const DEFAULT_MAX_BUFFER_BYTES = 256 * 1024 * 1024;
 
 /** How long a simulated WebGL2 loss keeps the context away. */
 const SIMULATED_RESTORE_MS = 50;
@@ -260,7 +265,15 @@ export async function createRenderer(
 	if (core) requiredFeatures.push('core-features-and-limits' as GPUFeatureName);
 	if (options.metrics && adapter.features.has('timestamp-query'))
 		requiredFeatures.push('timestamp-query');
-	const device = await adapter.requestDevice({ requiredFeatures });
+	const binding = options.storageBindingBytes;
+	const device = await adapter.requestDevice({
+		requiredFeatures,
+		// A buffer as large as a binding must fit the device's largest buffer too.
+		requiredLimits: {
+			maxStorageBufferBindingSize: binding,
+			maxBufferSize: Math.max(binding, DEFAULT_MAX_BUFFER_BYTES),
+		},
+	});
 	const tier = core ? 'webgpu' : 'webgpu-compat';
 	if (options.scene)
 		return new WebGPUSceneRenderer(

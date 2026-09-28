@@ -262,6 +262,7 @@ name = "null3d-wasm"
 version = "0.0.0"
 dependencies = [
  "null3d-core",
+ "null3d-gpu",
  "null3d-render",
  "wasm-bindgen",
 ]

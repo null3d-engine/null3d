@@ -166,6 +166,7 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 | [E1106: Object not created yet](errors/E1106.md) | A call read world data of an object in the frame that created it. New objects join the scene when the next frame starts. | generated | 0.1 |
 | [E1107: Object created twice](errors/E1107.md) | The engine core received a second create command for one object, so the TypeScript side and the core disagree about the scene. | generated | 0.1 |
 | [E1108: Value out of range](errors/E1108.md) | A call received a count or an index past its limit, such as a row past the capacity of an instance batch. | generated | 0.1 |
+| [E1109: Engine memory full](errors/E1109.md) | The engine could not grow its WebAssembly memory for the call. A page with worker threads gives the engine 1 GiB at most. Each instance row takes about 180 bytes, or about 230 with per-row colors. So about 5 million rows fill it, along with the rest of the scene. A browser can refuse memory sooner, as phones often do. | generated | 0.1 |
 | [E1203: Invalid number](errors/E1203.md) | A call received a number that is not finite, such as NaN or Infinity. | generated | 0.1 |
 | [E1204: Invalid color](errors/E1204.md) | A call received a color that is not a hex string, a number from 0 to 0xffffff, or three numbers from 0 to 1. | generated | 0.1 |
 | [E1301: No usable GPU path](errors/E1301.md) | The browser offers neither WebGPU nor WebGL2 for the way the engine was asked to draw. | generated | 0.1 |
@@ -176,7 +177,7 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 | [E1403: Engine core not ready](errors/E1403.md) | An engine call ran before the engine core started in this worker, or the core started twice. | generated | 0.1 |
 | [E1404: Engine thread failed](errors/E1404.md) | An engine thread hit an error it could not handle after the engine started, so the engine may have stopped. | generated | 0.1 |
 | [E1405: Engine thread did not start](errors/E1405.md) | An engine thread failed while the engine started, before the sketch ran. | generated | 0.1 |
-| [E1501: Render space full](errors/E1501.md) | The scene needs more room than the renderer set aside. The full part is the draw list, the mesh buffers, the material table, the upload space or the culling pass. The culling pass covers at most 2,097,152 objects and instance rows. | generated | 0.1 |
+| [E1501: Render space full](errors/E1501.md) | The scene needs more room than the renderer set aside. The full part is the draw list, the mesh buffers, the material table, the upload space or the culling pass. The culling pass covers 2,097,152 objects and instance rows on every device, and more on devices with larger GPU buffers. The number for the device is in engine.capabilities.maxInstances. | generated | 0.1 |
 | [Error codes](errors/index.md) | Every EngineError code with its cause and fix. | generated | 0.1 |
 
 ### Cookbook

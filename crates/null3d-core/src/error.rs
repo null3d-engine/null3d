@@ -79,6 +79,12 @@ pub enum CoreError {
         /// The limit.
         limit: u32,
     },
+    /// Code 1109: the engine's memory could not grow for the call. Details: the bytes the call
+    /// asked for, and zero.
+    OutOfMemory {
+        /// The bytes the call needed, or `u32::MAX` for more than that.
+        bytes: u32,
+    },
 }
 
 impl CoreError {
@@ -98,6 +104,8 @@ impl CoreError {
     pub const ALREADY_CREATED: u32 = 1107;
     /// Code of [`CoreError::OutOfRange`].
     pub const OUT_OF_RANGE: u32 = 1108;
+    /// Code of [`CoreError::OutOfMemory`].
+    pub const OUT_OF_MEMORY: u32 = 1109;
 
     /// The number of this error in the TypeScript error table.
     pub const fn code(&self) -> u32 {
@@ -110,6 +118,7 @@ impl CoreError {
             Self::NotCreated { .. } => Self::NOT_CREATED,
             Self::AlreadyCreated { .. } => Self::ALREADY_CREATED,
             Self::OutOfRange { .. } => Self::OUT_OF_RANGE,
+            Self::OutOfMemory { .. } => Self::OUT_OF_MEMORY,
         }
     }
 
@@ -126,6 +135,7 @@ impl CoreError {
             Self::UnknownCommand { op } => [op, 0],
             Self::NotCreated { slot } | Self::AlreadyCreated { slot } => [slot, 0],
             Self::OutOfRange { value, limit } => [value, limit],
+            Self::OutOfMemory { bytes } => [bytes, 0],
         }
     }
 }
@@ -168,6 +178,10 @@ impl fmt::Display for CoreError {
             Self::OutOfRange { value, limit } => {
                 write!(f, "E{code}: {value} is past the limit of {limit}")
             }
+            Self::OutOfMemory { bytes } => write!(
+                f,
+                "E{code}: the engine's memory could not grow by {bytes} bytes; use fewer instance rows"
+            ),
         }
     }
 }

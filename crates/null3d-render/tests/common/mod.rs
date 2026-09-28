@@ -10,7 +10,9 @@ use null3d_core::snapshot::FrameSnapshot;
 use null3d_gpu::drawlist::{Op, decode};
 use null3d_render::camera::Perspective;
 use null3d_render::geometry::{box_geometry, sphere_geometry};
-use null3d_render::gpu_driven::{FrameInput, GpuDrivenRenderer, NO_MESH, RendererConfig};
+use null3d_render::gpu_driven::{
+    FrameInput, GpuDrivenRenderer, NO_MESH, RecordError, RendererConfig,
+};
 use null3d_render::materials::Shading;
 
 pub const SCENE_CAPACITY: u32 = 31;
@@ -31,10 +33,15 @@ pub struct World {
 impl World {
     /// Four objects (two meshes by two materials, one of them hidden), and a dynamic batch.
     pub fn new() -> World {
+        World::with_config(RendererConfig::default())
+    }
+
+    /// The same world, drawn by a renderer with `config`.
+    pub fn with_config(config: RendererConfig) -> World {
         let jobs = JobSystem::new(0);
         let mut scene = SceneStorage::with_capacity(SCENE_CAPACITY);
         let mut batches = BatchTable::with_capacity(4);
-        let mut renderer = GpuDrivenRenderer::new(RendererConfig::default());
+        let mut renderer = GpuDrivenRenderer::new(config);
         let box_mesh = renderer
             .meshes_mut()
             .add(&box_geometry(1.0, 1.0, 1.0, [1, 1, 1]))
@@ -118,6 +125,11 @@ impl World {
 
     /// Runs the core's part of the current frame, then records its draw list.
     pub fn record(&mut self, structure_changed: bool) {
+        self.try_record(structure_changed).unwrap();
+    }
+
+    /// As [`World::record`], returning the renderer's error.
+    pub fn try_record(&mut self, structure_changed: bool) -> Result<(), RecordError> {
         let frame = self.frame;
         if frame > 1 {
             self.scene.begin_frame(frame);
@@ -125,16 +137,14 @@ impl World {
         self.scene.update_transforms(&self.jobs);
         self.batches.update(&self.jobs, frame);
         self.snapshot.record(frame, &self.scene, &self.batches);
-        self.renderer
-            .record(&FrameInput {
-                frame,
-                scene: &self.scene,
-                batches: &self.batches,
-                snapshot: &self.snapshot,
-                canvas: self.canvas,
-                structure_changed,
-            })
-            .unwrap();
+        self.renderer.record(&FrameInput {
+            frame,
+            scene: &self.scene,
+            batches: &self.batches,
+            snapshot: &self.snapshot,
+            canvas: self.canvas,
+            structure_changed,
+        })
     }
 
     /// The operations of the frame's list with their operands.

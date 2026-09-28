@@ -16,16 +16,18 @@
 //! frees its arrays, so do it outside the frame loop's steady state, and call
 //! [`BatchTable::note_memory_grew`] when WebAssembly memory grew so TypeScript rebuilds its views.
 
+use std::collections::TryReserveError;
 use std::ops::Range;
 use std::simd::f32x4;
 use std::sync::atomic::{AtomicU32, Ordering};
 
+use crate::alloc::filled;
 use crate::bitset::Bitset;
 use crate::error::{CoreError, Resource};
 use crate::handle::{Handle, SlotAllocator};
 use crate::jobs::JobSystem;
 use crate::math::{self, IDENTITY_ROTATION, compose4, deinterleave3, max_axis_scale4, transpose4};
-use crate::world::{WorldArrays, WorldPtrs};
+use crate::world::{COLOR_FLOATS, MATRIX_FLOATS, WorldArrays, WorldPtrs};
 
 /// Rows per chunk of the parallel update: a whole number of 64-row bitset words.
 pub const ROW_CHUNK: u32 = 1024;
@@ -79,45 +81,65 @@ impl InstanceBatch {
         material: u32,
         local_radius: f32,
     ) -> Self {
+        let Ok(batch) = Self::try_new(capacity, dynamic, with_colors, mesh, material, local_radius)
+        else {
+            panic!("no memory for an instance batch")
+        };
+        batch
+    }
+
+    /// As [`InstanceBatch::new`], or an error when memory cannot grow for the batch's arrays.
+    pub fn try_new(
+        capacity: u32,
+        dynamic: bool,
+        with_colors: bool,
+        mesh: u32,
+        material: u32,
+        local_radius: f32,
+    ) -> Result<Self, TryReserveError> {
         let rows = capacity as usize;
-        let mut rotations = vec![0.0; rows * 4];
+        let mut rotations = filled(rows * 4, 0.0)?;
         for q in rotations.as_chunks_mut::<4>().0 {
             *q = IDENTITY_ROTATION;
         }
-        let mut dirty = Bitset::new(capacity);
+        let mut dirty = Bitset::try_new(capacity)?;
         dirty.set_range(0, capacity);
-        Self {
+        Ok(Self {
             capacity,
             dynamic,
             mesh,
             material,
             local_radius,
             active: capacity,
-            positions: vec![0.0; rows * 3],
+            positions: filled(rows * 3, 0.0)?,
             rotations,
-            scales: vec![1.0; rows * 3],
-            colors: if with_colors {
-                vec![1.0; rows * 4]
-            } else {
-                Vec::new()
-            },
+            scales: filled(rows * 3, 1.0)?,
+            colors: filled(if with_colors { rows * 4 } else { 0 }, 1.0)?,
             world: [
-                WorldArrays::new(rows, with_colors),
-                WorldArrays::new(rows, with_colors),
+                WorldArrays::try_new(rows, with_colors)?,
+                WorldArrays::try_new(rows, with_colors)?,
             ],
             dirty,
             dirty_any: true,
-            changed: [Bitset::new(capacity), Bitset::new(capacity)],
+            changed: [Bitset::try_new(capacity)?, Bitset::try_new(capacity)?],
             changed_any: [false; 2],
             ranges: Vec::with_capacity(MAX_ROW_RANGES),
             frame: 0,
             frame_active: [0; 2],
-        }
+        })
     }
 
     /// The number of rows the batch holds.
     pub fn capacity(&self) -> u32 {
         self.capacity
+    }
+
+    /// Engine memory that one row takes: its input arrays, and the world arrays of both frames.
+    pub const fn row_bytes(with_colors: bool) -> u64 {
+        let colors = if with_colors { COLOR_FLOATS } else { 0 };
+        let inputs = 3 + 4 + 3 + colors;
+        let world = MATRIX_FLOATS + 4 + colors;
+        ((inputs + 2 * world) * 4) as u64
     }
 
     /// True for a batch that recomputes every active row every frame.
@@ -552,7 +574,8 @@ impl BatchTable {
     }
 
     /// Creates a batch (see [`InstanceBatch::new`]) and returns its id. This allocates the
-    /// batch's arrays. Fails with [`CoreError::CapacityExceeded`] when the table is full.
+    /// batch's arrays. Fails with [`CoreError::CapacityExceeded`] when the table is full, and with
+    /// [`CoreError::OutOfMemory`] when memory cannot grow for the arrays.
     pub fn create(
         &mut self,
         capacity: u32,
@@ -562,6 +585,18 @@ impl BatchTable {
         material: u32,
         local_radius: f32,
     ) -> Result<Handle, CoreError> {
+        let out_of_memory = |_| CoreError::OutOfMemory {
+            bytes: u32::try_from(u64::from(capacity) * InstanceBatch::row_bytes(with_colors))
+                .unwrap_or(u32::MAX),
+        };
+        // Room for every batch's work items at once, so updates never grow the list.
+        let work_needed = self.work_needed + capacity.div_ceil(ROW_CHUNK) as usize;
+        self.work
+            .try_reserve(work_needed.saturating_sub(self.work.len()))
+            .map_err(out_of_memory)?;
+        let batch =
+            InstanceBatch::try_new(capacity, dynamic, with_colors, mesh, material, local_radius)
+                .map_err(out_of_memory)?;
         let id = self.ids.reserve().map_err(|e| match e {
             CoreError::CapacityExceeded { capacity, .. } => CoreError::CapacityExceeded {
                 resource: Resource::Batches,
@@ -569,18 +604,8 @@ impl BatchTable {
             },
             other => other,
         })?;
-        self.batches[id.slot() as usize] = Some(InstanceBatch::new(
-            capacity,
-            dynamic,
-            with_colors,
-            mesh,
-            material,
-            local_radius,
-        ));
-        // Room for every batch's work items at once, so updates never grow the list.
-        self.work_needed += capacity.div_ceil(ROW_CHUNK) as usize;
-        self.work
-            .reserve(self.work_needed.saturating_sub(self.work.len()));
+        self.batches[id.slot() as usize] = Some(batch);
+        self.work_needed = work_needed;
         Ok(id)
     }
 

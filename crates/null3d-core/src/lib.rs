@@ -15,6 +15,7 @@
 //! | [`instances`] | Instance batches: per-row arrays, dirty ranges, the batch table, memory epoch |
 //! | [`culling`] | Frustum planes and SIMD sphere culling, serial and parallel |
 //! | [`arena`] | Per-thread bump allocators reset each frame |
+//! | [`alloc`] | Allocation that reports running out of memory instead of aborting |
 //! | [`snapshot`] | The frame handoff between the sketch worker and the render worker |
 //! | [`jobs`] | The job system: parallel loops, background tasks, worker loops |
 //! | `testing` | With the `testing` feature: a global allocator that counts allocations, for tests |
@@ -28,6 +29,7 @@
 )]
 #![warn(missing_docs)]
 
+pub mod alloc;
 pub mod arena;
 pub mod bitset;
 pub mod culling;

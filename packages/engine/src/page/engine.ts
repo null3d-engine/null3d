@@ -3,6 +3,7 @@
 
 import { ERRORS, type ErrorCode } from '../errors/codes';
 import { EngineError } from '../errors/engine-error';
+import { LIMIT_PORTABLE_STORAGE_BINDING_BYTES } from '../generated/core';
 import { runDirectLoop } from '../render/direct-loop';
 import { emptySceneInput, runRenderLoop } from '../render/loop';
 import { Drawing } from '../render/recovery';
@@ -22,6 +23,7 @@ import {
 	wasmDownloadBytes,
 } from './frame-stats';
 import { captureInput } from './input';
+import { maxInstances, storageBindingBytes } from './limits';
 import { loadCore } from './loader';
 import { MainThreadWatch } from './main-thread';
 import { type GpuSwitch, type LatencyMode, parseSwitches } from './switches';
@@ -82,6 +84,12 @@ export interface EngineCapabilities {
 	features: string[];
 	/** The WebGPU limits, or an empty object on WebGL2. */
 	limits: Record<string, number | null>;
+	/**
+	 * The most objects and instance rows, counted together, that a scene can draw on this device.
+	 * Every device draws at least 2,097,152. A device with larger GPU buffers draws more, up to
+	 * 8,388,480. Engine memory can run out first: see E1109.
+	 */
+	maxInstances: number;
 }
 
 /**
@@ -327,12 +335,17 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 	onProgress?.('core');
 	let wasmMemory = core.memory;
 	const sketchUrl = new URL(options.sketch, globalThis.location?.href).href;
+	const bindingBytes =
+		tier === 'webgl2'
+			? LIMIT_PORTABLE_STORAGE_BINDING_BYTES
+			: storageBindingBytes(report.webgpu.limits);
 	const handoff: CoreHandoff = {
 		build,
 		module: core.module,
 		memory: core.memory,
 		control,
 		metrics,
+		storageBindingBytes: bindingBytes,
 	};
 	const input = captureInput(
 		options.canvas,
@@ -379,11 +392,18 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 				memory,
 				slots,
 				jobWorkers: 0,
+				storageBindingBytes: bindingBytes,
 			});
 			await localRunner.load(sketchUrl);
 			const runner = localRunner;
 			const create = () =>
-				createRenderer(options.canvas, { tier, forceCompat, metrics, scene: { memory, control } });
+				createRenderer(options.canvas, {
+					tier,
+					forceCompat,
+					metrics,
+					storageBindingBytes: bindingBytes,
+					scene: { memory, control },
+				});
 			localDrawing = new Drawing(
 				await create(),
 				create,
@@ -438,6 +458,7 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 							tier,
 							forceCompat,
 							metrics,
+							storageBindingBytes: bindingBytes,
 							scene: core.memory && { memory: core.memory, control },
 						});
 					localDrawing = new Drawing(
@@ -512,6 +533,7 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 			threaded,
 			features,
 			limits: tier === 'webgl2' ? {} : report.webgpu.limits,
+			maxInstances: maxInstances(bindingBytes),
 		},
 		report,
 		mode,

@@ -34,6 +34,8 @@
 //! tables and scratch space between rebuilds. Only the first frames after the scene grows, with a
 //! new batch, mesh or mesh and material pair, allocate.
 
+use std::collections::TryReserveError;
+
 use null3d_core::culling::Frustum;
 use null3d_core::handle::Handle;
 use null3d_core::instances::BatchTable;
@@ -66,18 +68,31 @@ const MATRIX_BYTES: u32 = (MATRIX_FLOATS * 4) as u32;
 /// Bytes of one indexed indirect draw.
 const INDIRECT_BYTES: u32 = sizes::INDIRECT_WORDS * 4;
 
-/// The most sources the builder can draw: scene slots and instance rows together. One culling
-/// dispatch covers at most 65,535 workgroups, and the compacted instance buffer, which the culling
-/// shader binds as storage, must fit the largest storage binding that every device offers.
-pub const MAX_SOURCES: u32 = {
+/// The most sources the builder can draw, scene slots and instance rows together, on a device whose
+/// largest storage binding is `binding_bytes`. One culling dispatch covers at most 65,535
+/// workgroups, and the compacted instance buffer, which the culling shader binds as storage, must
+/// fit the largest storage binding.
+pub const fn max_sources(binding_bytes: u32) -> u32 {
     let by_dispatch = u16::MAX as u32 * sizes::CULL_WORKGROUP_SIZE;
-    let by_binding = sizes::MAX_STORAGE_BINDING_BYTES / sizes::INSTANCE_STRIDE;
+    let by_binding = binding_bytes / sizes::INSTANCE_STRIDE;
     if by_dispatch < by_binding {
         by_dispatch
     } else {
         by_binding
     }
-};
+}
+
+/// Engine memory the builder keeps for each source: its bucket table entry, and room for that
+/// entry in both frames' upload arenas.
+pub const BYTES_PER_SOURCE: u32 = 12;
+
+/// The most sources on every device: [`max_sources`] at WebGPU's default storage binding limit.
+pub const PORTABLE_MAX_SOURCES: u32 = max_sources(sizes::PORTABLE_STORAGE_BINDING_BYTES);
+
+/// The largest storage binding the builder can use: the instance buffer of the most sources one
+/// dispatch covers. A device that offers more gains nothing from a larger binding.
+pub const MAX_USEFUL_BINDING_BYTES: u32 =
+    u16::MAX as u32 * sizes::CULL_WORKGROUP_SIZE * sizes::INSTANCE_STRIDE;
 
 /// A scene object's entry in the bucket table: its bucket, or `HIDDEN` while it is hidden, which
 /// its world radius says.
@@ -106,12 +121,12 @@ fn write_entries(
 }
 
 /// The size to create a buffer at when it must hold `needed` bytes: room to grow, so a slowly
-/// growing scene rarely recreates it, but never past the largest storage binding.
-pub fn grown_size(needed: u32) -> u32 {
+/// growing scene rarely recreates it, but never past `binding_bytes`, the largest storage binding.
+pub fn grown_size(needed: u32, binding_bytes: u32) -> u32 {
     needed
         .saturating_add(needed / 2)
         .next_multiple_of(256)
-        .min(sizes::MAX_STORAGE_BINDING_BYTES)
+        .min(binding_bytes)
         .max(needed)
 }
 /// Words of the culling pass's bind group entries: three for the group, five per buffer.
@@ -154,6 +169,9 @@ pub struct RendererConfig {
     pub index_bytes: u32,
     /// Words of each frame's draw list.
     pub draw_list_words: usize,
+    /// The device's largest storage binding, at most [`MAX_USEFUL_BINDING_BYTES`]. It caps the
+    /// builder's buffers and the sources it can draw.
+    pub storage_binding_bytes: u32,
 }
 
 impl Default for RendererConfig {
@@ -164,6 +182,7 @@ impl Default for RendererConfig {
             vertex_bytes: 16 * 1024 * 1024,
             index_bytes: 4 * 1024 * 1024,
             draw_list_words: 16 * 1024,
+            storage_binding_bytes: sizes::PORTABLE_STORAGE_BINDING_BYTES,
         }
     }
 }
@@ -175,8 +194,11 @@ pub enum RecordError {
     DrawListFull,
     /// The meshes need more room than the shared vertex or index buffer has.
     MeshBuffersFull,
-    /// More sources than the builder can draw; see [`MAX_SOURCES`].
-    TooManySources,
+    /// More sources than the builder can draw on this device; see [`max_sources`].
+    TooManySources {
+        /// The most sources the builder can draw on this device.
+        limit: u32,
+    },
     /// The frame's copies do not fit its upload arena, which the builder sizes for every frame.
     UploadsFull,
 }
@@ -357,6 +379,27 @@ impl GpuDrivenRenderer {
             created: false,
             canvas: (0, 0),
         }
+    }
+
+    /// The most sources, scene slots and instance rows together, that the builder can draw on
+    /// this device.
+    pub fn max_sources(&self) -> u32 {
+        max_sources(self.config.storage_binding_bytes)
+    }
+
+    /// Makes room for a layout of `sources` sources in the tables and upload space that grow with
+    /// the scene, or fails when memory cannot grow for them. Called before the scene grows, so a
+    /// later frame never runs out of memory while it records.
+    pub fn reserve_sources(&mut self, sources: u32) -> Result<(), TryReserveError> {
+        let buckets = &mut self.layout.instance_buckets;
+        buckets.try_reserve((sources as usize).saturating_sub(buckets.len()))?;
+        let bound = self.upload_bound() + sources.saturating_sub(self.layout.sources) as usize * 4;
+        for arena in &mut self.arenas {
+            arena
+                .bytes
+                .try_reserve(bound.saturating_sub(arena.bytes.len()))?;
+        }
+        Ok(())
     }
 
     pub fn meshes(&self) -> &MeshStorage {
@@ -665,8 +708,9 @@ impl GpuDrivenRenderer {
             layout.batch_bases.push((id.raw(), sources));
             sources += batch.capacity();
         }
-        if sources > MAX_SOURCES {
-            return Err(RecordError::TooManySources);
+        let limit = max_sources(self.config.storage_binding_bytes);
+        if sources > limit {
+            return Err(RecordError::TooManySources { limit });
         }
         layout.sources = sources;
 
@@ -885,7 +929,7 @@ impl GpuDrivenRenderer {
         let mut recreated = false;
         for (id, size, flags) in needed {
             if self.buffer_sizes[id as usize] < size {
-                let size = grown_size(size);
+                let size = grown_size(size, self.config.storage_binding_bytes);
                 list.push(Op::CreateBuffer, &[id, size, flags])?;
                 self.buffer_sizes[id as usize] = size;
                 recreated = true;

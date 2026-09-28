@@ -230,8 +230,8 @@ pub mod sizes {
     /// 32-bit words per indexed indirect draw.
     pub const INDIRECT_WORDS: u32 = 5;
     /// WebGPU's default `maxStorageBufferBindingSize`: the largest storage buffer that every device
-    /// lets a shader bind.
-    pub const MAX_STORAGE_BINDING_BYTES: u32 = 128 * 1024 * 1024;
+    /// lets a shader bind. Many devices offer more.
+    pub const PORTABLE_STORAGE_BINDING_BYTES: u32 = 128 * 1024 * 1024;
 }
 
 /// Shader templates for `CreateRenderPipeline` and `CreateComputePipeline`.

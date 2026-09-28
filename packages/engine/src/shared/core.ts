@@ -30,6 +30,7 @@ export interface CoreGlue extends CoreErrors {
 		sceneCapacity: number,
 		maxBatches: number,
 		commands: number,
+		storageBindingBytes: number,
 	): number;
 	jobWorkerLoop(index: number): void;
 	/** Milliseconds a job worker spent on work since the last call for it; resets its total. */

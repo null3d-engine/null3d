@@ -11,6 +11,11 @@ export interface CoreHandoff {
 	control: ArrayBufferLike;
 	/** Per-frame timing records, which every thread writes and the page reads. */
 	metrics: ArrayBufferLike;
+	/**
+	 * The largest storage binding of the device the engine draws with. The renderer requests it,
+	 * and the core sizes the scene it can draw by it.
+	 */
+	storageBindingBytes: number;
 }
 
 export interface RendererSetup {

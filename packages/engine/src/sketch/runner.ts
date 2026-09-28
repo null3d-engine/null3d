@@ -28,6 +28,8 @@ export interface SketchCore {
 	/** The control block's slots: the canvas size in, the published draw lists out. */
 	slots: Int32Array;
 	jobWorkers: number;
+	/** The largest storage binding of the device the engine draws with. */
+	storageBindingBytes: number;
 }
 
 export class SketchRunner {
@@ -60,6 +62,7 @@ export class SketchRunner {
 			SCENE_CAPACITY,
 			MAX_BATCHES,
 			COMMAND_CAPACITY,
+			sketch.storageBindingBytes,
 		);
 		if (status !== 0) throw coreFailure(glue, 'createEngine');
 		this.core = new CoreMemory(glue, sketch.memory);

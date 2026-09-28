@@ -79,6 +79,14 @@ export const ERRORS = {
 		example: 'E1108: setActiveCount() got 1200, above the limit of 1000.',
 		since: '0.1',
 	},
+	E1109: {
+		title: 'Engine memory full',
+		cause:
+			'The engine could not grow its WebAssembly memory for the call. A page with worker threads gives the engine 1 GiB at most. Each instance row takes about 180 bytes, or about 230 with per-row colors. So about 5 million rows fill it, along with the rest of the scene. A browser can refuse memory sooner, as phones often do.',
+		fix: 'Use fewer instance rows. Size each batch for the rows it uses, and give a batch colors only when it needs them. Destroy the batches you no longer draw.',
+		example: 'E1109: createInstances() failed: the engine could not get 1282 MB more memory.',
+		since: '0.1',
+	},
 	E1203: {
 		title: 'Invalid number',
 		cause: 'A call received a number that is not finite, such as NaN or Infinity.',
@@ -159,7 +167,7 @@ export const ERRORS = {
 	E1501: {
 		title: 'Render space full',
 		cause:
-			'The scene needs more room than the renderer set aside. The full part is the draw list, the mesh buffers, the material table, the upload space or the culling pass. The culling pass covers at most 2,097,152 objects and instance rows.',
+			'The scene needs more room than the renderer set aside. The full part is the draw list, the mesh buffers, the material table, the upload space or the culling pass. The culling pass covers 2,097,152 objects and instance rows on every device, and more on devices with larger GPU buffers. The number for the device is in engine.capabilities.maxInstances.',
 		fix: 'Share meshes and materials between objects instead of creating them per object. Draw many copies of one mesh with an instance batch. Every row of a batch counts toward the culling limit, active or not, so size each batch for the rows it uses.',
 		example: 'E1501: materials.standard() failed: the material table is full.',
 		since: '0.1',

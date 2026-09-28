@@ -76,6 +76,7 @@ The GPU path the engine chose, and what it offers.
 | `threaded: boolean` | True when the engine runs the threaded build. |
 | `features: string[]` | The optional features of the GPU path: WebGPU features, or the WebGL2 extensions present. |
 | `limits: Record<string, number \| null>` | The WebGPU limits, or an empty object on WebGL2. |
+| `maxInstances: number` | The most objects and instance rows, counted together, that a scene can draw on this device. Every device draws at least 2,097,152. A device with larger GPU buffers draws more, up to 8,388,480. Engine memory can run out first: see E1109. |
 
 ### `EngineError`
 
@@ -130,6 +131,7 @@ type ErrorCode =
 	| 'E1106'
 	| 'E1107'
 	| 'E1108'
+	| 'E1109'
 	| 'E1203'
 	| 'E1204'
 	| 'E1301'
