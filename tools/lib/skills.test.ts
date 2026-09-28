@@ -94,6 +94,22 @@ describe('checkSkills', () => {
 		]);
 	});
 
+	it('fails on a reserved name, metadata that is not text, and a second SKILL.md', () => {
+		const root = fixture({
+			'skills/claude-demo/SKILL.md': skill('Body.')
+				.replace('demo-skill', 'claude-demo')
+				.replace('---\n\n', 'metadata:\n  skill-version: 1\n---\n\n'),
+			'skills/claude-demo/references/SKILL.md': skill('A second one.'),
+			'skills/claude-demo/evals/evals.json': EVALS.replace('demo-skill', 'claude-demo'),
+		});
+		syncSkills(root);
+		expect(checkSkills(root).problems).toEqual([
+			'claude-demo: name must not contain the reserved words "anthropic" or "claude"',
+			'claude-demo: metadata must map names to strings',
+			'claude-demo: the folder holds 2 SKILL.md files (exactly one)',
+		]);
+	});
+
 	it('passes on the repository', () => {
 		expect(checkSkills(repoRoot).problems).toEqual([]);
 	});

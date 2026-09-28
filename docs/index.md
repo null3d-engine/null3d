@@ -125,7 +125,7 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 | [Testing your sketch](guides/testing.md) | null3d test; hold mode; image tests; reading results. | planned | 0.1 |
 | [Debugging](guides/debugging.md) | Error codes; the inspector; the MCP server; the render-graph dump; common failures. | planned | 0.1 |
 | [Deploying](guides/deploying.md) | Headers on common hosts; asset caching; size budgets. | planned | 0.3 |
-| [Working with AI agents](guides/agents.md) | The skills; null3d docs; the MCP server; AGENTS.md in templates. | planned | 0.3 |
+| [Working with AI agents](guides/agents.md) | Installing the null3d skills in Claude Code, claude.ai and other agent tools; docs by ID; the MCP server and AGENTS.md in templates (0.3). | planned | 0.1 |
 
 ### Shaders
 

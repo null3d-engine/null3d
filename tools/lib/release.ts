@@ -268,6 +268,9 @@ export function versionCopies(root: string): VersionCopy[] {
 		...manifests.map((path) => ({ path, pattern: /("version":\s*")([^"]*)(")/ })),
 		{ path: 'packages/engine/src/index.ts', pattern: /(export const VERSION = ')([^']*)(')/ },
 		{ path: 'Cargo.toml', pattern: /(\[workspace\.package\][^[]*?\nversion = ")([^"]*)(")/ },
+		// The agent skills' plugin: its version, and the release tag it fetches the skills from.
+		{ path: '.claude-plugin/marketplace.json', pattern: /("version":\s*")([^"]*)(")/ },
+		{ path: '.claude-plugin/marketplace.json', pattern: /("ref":\s*")([^"]*)(")/ },
 		...crates.map((name) => ({
 			path: 'Cargo.lock',
 			pattern: new RegExp(`(name = "${escapeRegExp(name)}"\\nversion = ")([^"]*)(")`),

@@ -197,6 +197,8 @@ describe('version copies', () => {
 			'crates/core/Cargo.toml': '[package]\nname = "demo-core"\nversion.workspace = true\n',
 			'Cargo.lock':
 				'[[package]]\nname = "demo-core"\nversion = "0.0.0"\n\n[[package]]\nname = "other"\nversion = "0.0.0"\n',
+			'.claude-plugin/marketplace.json':
+				'{ "plugins": [{ "version": "0.0.0", "source": { "path": ".claude", "ref": "0.0.0" } }] }\n',
 		});
 		for (const copy of versionCopies(root)) {
 			const path = join(root, copy.path);
@@ -208,6 +210,9 @@ describe('version copies', () => {
 		expect(read('Cargo.toml')).toContain('[workspace.package]\nversion = "0.1.0"');
 		expect(read('Cargo.lock')).toContain('name = "demo-core"\nversion = "0.1.0"');
 		expect(read('Cargo.lock')).toContain('name = "other"\nversion = "0.0.0"');
+		expect(read('.claude-plugin/marketplace.json')).toBe(
+			'{ "plugins": [{ "version": "0.1.0", "source": { "path": ".claude", "ref": "0.1.0" } }] }\n',
+		);
 		const [copy] = versionCopies(root);
 		expect(() => writeVersion('no version here', copy as VersionCopy, '0.0.1')).toThrow(
 			'has no version',
@@ -222,6 +227,7 @@ describe('version copies', () => {
 			'packages/engine/src/index.ts',
 			'Cargo.toml',
 			'Cargo.lock',
+			'.claude-plugin/marketplace.json',
 		])
 			expect(paths.has(path)).toBe(true);
 		const found = copies.map((c) => ({

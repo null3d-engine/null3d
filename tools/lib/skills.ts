@@ -129,6 +129,20 @@ function checkSkill(root: string, name: string, docRefs: Map<string, Set<string>
 	if (!/^[a-z0-9]+(-[a-z0-9]+)*$/.test(skillName) || skillName.length > MAX_NAME) {
 		problems.push(`${name}: name must be kebab-case, at most ${MAX_NAME} characters`);
 	}
+	if (/anthropic|claude/.test(skillName))
+		problems.push(`${name}: name must not contain the reserved words "anthropic" or "claude"`);
+	const metadata = data.metadata;
+	if (
+		metadata !== undefined &&
+		(typeof metadata !== 'object' ||
+			metadata === null ||
+			Object.values(metadata).some((value) => typeof value !== 'string'))
+	)
+		problems.push(`${name}: metadata must map names to strings`);
+	// An upload to claude.ai or the Skills API refuses a folder with more than one SKILL.md.
+	const skillFiles = walkFiles(root, dir, (p) => p.endsWith('/SKILL.md'));
+	if (skillFiles.length !== 1)
+		problems.push(`${name}: the folder holds ${skillFiles.length} SKILL.md files (exactly one)`);
 	const description = String(data.description ?? '');
 	if (!description) problems.push(`${name}: description is missing`);
 	if (description.length > MAX_DESCRIPTION) {

@@ -61,6 +61,25 @@ jobs:
           gh release create "$version" --title "$version" --notes-file "$RUNNER_TEMP/notes.md"
           echo "version=${version}" >> "$GITHUB_OUTPUT"
 
+      # claude.ai and the Claude desktop app take a skill as a zip file with the skill's folder at
+      # its root and exactly one SKILL.md. The generated copies hold no evals.
+      - name: Attach each skill to the release as a zip file
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ steps.tag.outputs.version }}
+        run: |
+          cd .claude/skills
+          for dir in */; do
+            name="${dir%/}"
+            zip -qr "$RUNNER_TEMP/${name}.zip" "$name"
+            count="$(unzip -Z1 "$RUNNER_TEMP/${name}.zip" | grep -c 'SKILL.md$' || true)"
+            if [ "$count" != 1 ]; then
+              echo "::error::${name}.zip holds ${count} SKILL.md files, not one."
+              exit 1
+            fi
+          done
+          gh release upload "$VERSION" "$RUNNER_TEMP"/*.zip
+
   # npm trusted publishing: npm checks the workflow's OIDC identity against the trusted publisher
   # set on each package at npmjs.com, so no token is stored. A package's first version cannot be
   # published this way, so a maintainer publishes it once by hand. NPM_TOKEN and NODE_AUTH_TOKEN
