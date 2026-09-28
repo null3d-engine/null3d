@@ -14,6 +14,10 @@ import {
 import { HeldInput, isEditableTarget } from './held-input';
 
 export interface InputCapture {
+	/** Stops listening and releases every held key and button, as when the canvas leaves the page. */
+	suspend(): void;
+	/** Listens again, and writes the canvas's current size. */
+	resume(): void;
 	stop(): void;
 }
 
@@ -92,17 +96,6 @@ export function captureInput(
 		else Atomics.add(slots, Slot.Resumes, 1);
 	};
 
-	canvas.addEventListener('pointermove', onMove);
-	canvas.addEventListener('pointerdown', onDown);
-	window.addEventListener('pointerup', onUp);
-	// The browser cancels a touch that becomes a page scroll or a system gesture: a release too.
-	window.addEventListener('pointercancel', onUp);
-	window.addEventListener('keydown', onKeyDown);
-	window.addEventListener('keyup', onKeyUp);
-	window.addEventListener('blur', releaseAll);
-	document.addEventListener('visibilitychange', onVisibility);
-	canvas.addEventListener('wheel', onWheel, { passive: true });
-
 	const writeSize = (
 		cssWidth: number,
 		cssHeight: number,
@@ -121,8 +114,6 @@ export function captureInput(
 		Atomics.store(slots, Slot.CanvasHeight, Math.max(1, height));
 		Atomics.add(slots, Slot.ResizeSerial, 1);
 	};
-	const initial = canvas.getBoundingClientRect();
-	writeSize(initial.width, initial.height);
 	const observer = new ResizeObserver((entries) => {
 		for (const entry of entries) {
 			const device = entry.devicePixelContentBoxSize?.[0];
@@ -133,24 +124,45 @@ export function captureInput(
 			);
 		}
 	});
-	try {
-		observer.observe(canvas, { box: 'device-pixel-content-box' });
-	} catch {
-		observer.observe(canvas);
-	}
+	const listen = () => {
+		const current = canvas.getBoundingClientRect();
+		writeSize(current.width, current.height);
+		try {
+			observer.observe(canvas, { box: 'device-pixel-content-box' });
+		} catch {
+			observer.observe(canvas);
+		}
+		canvas.addEventListener('pointermove', onMove);
+		canvas.addEventListener('pointerdown', onDown);
+		window.addEventListener('pointerup', onUp);
+		// The browser cancels a touch that becomes a page scroll or a system gesture: a release too.
+		window.addEventListener('pointercancel', onUp);
+		window.addEventListener('keydown', onKeyDown);
+		window.addEventListener('keyup', onKeyUp);
+		window.addEventListener('blur', releaseAll);
+		document.addEventListener('visibilitychange', onVisibility);
+		canvas.addEventListener('wheel', onWheel, { passive: true });
+	};
+	const unlisten = () => {
+		observer.disconnect();
+		canvas.removeEventListener('pointermove', onMove);
+		canvas.removeEventListener('pointerdown', onDown);
+		window.removeEventListener('pointerup', onUp);
+		window.removeEventListener('pointercancel', onUp);
+		window.removeEventListener('keydown', onKeyDown);
+		window.removeEventListener('keyup', onKeyUp);
+		window.removeEventListener('blur', releaseAll);
+		document.removeEventListener('visibilitychange', onVisibility);
+		canvas.removeEventListener('wheel', onWheel);
+	};
+	listen();
 
 	return {
-		stop: () => {
-			observer.disconnect();
-			canvas.removeEventListener('pointermove', onMove);
-			canvas.removeEventListener('pointerdown', onDown);
-			window.removeEventListener('pointerup', onUp);
-			window.removeEventListener('pointercancel', onUp);
-			window.removeEventListener('keydown', onKeyDown);
-			window.removeEventListener('keyup', onKeyUp);
-			window.removeEventListener('blur', releaseAll);
-			document.removeEventListener('visibilitychange', onVisibility);
-			canvas.removeEventListener('wheel', onWheel);
+		suspend: () => {
+			releaseAll();
+			unlisten();
 		},
+		resume: listen,
+		stop: unlisten,
 	};
 }

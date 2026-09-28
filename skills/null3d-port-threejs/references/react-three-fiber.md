@@ -24,6 +24,8 @@ The React tree above the former `<Canvas>` barely changes. The subtree inside `<
 
 ## 2. A React wrapper for null3d
 
+The wrapper keeps one engine per sketch while the app shows other views. Leaving the view detaches the canvas and pauses the engine; coming back attaches it again, with no new start.
+
 ```tsx
 import { useEffect, useRef } from 'react';
 import { createEngine, type Engine } from '@null3d/engine';
@@ -34,41 +36,65 @@ type Props = {
   onReady?: (engine: Engine) => void;
 };
 
+/** How long an engine waits off the page before the wrapper destroys it. */
+const KEEP_MS = 60_000;
+
+type Kept = { canvas: HTMLCanvasElement; engine: Promise<Engine>; timer?: number };
+const kept = new Map<string, Kept>();
+
+function keptEngine(sketch: URL): Kept {
+  let entry = kept.get(sketch.href);
+  if (!entry) {
+    // A canvas can be handed to a worker only once, so the kept engine owns its canvas.
+    const canvas = document.createElement('canvas');
+    canvas.style.cssText = 'width:100%;height:100%;display:block';
+    entry = { canvas, engine: createEngine({ canvas, sketch }) };
+    entry.engine.catch(() => kept.delete(sketch.href));
+    kept.set(sketch.href, entry);
+  }
+  clearTimeout(entry.timer);
+  return entry;
+}
+
 export function FourView({ sketch, onMessage, onReady }: Props) {
   const hostRef = useRef<HTMLDivElement>(null);
   const onMessageRef = useRef(onMessage);
   onMessageRef.current = onMessage;
 
   useEffect(() => {
-    // A canvas can be handed to a worker only once, and React's StrictMode mounts effects twice
-    // in development, so each mount creates its own canvas.
-    const canvas = document.createElement('canvas');
-    canvas.style.cssText = 'width:100%;height:100%;display:block';
-    hostRef.current!.appendChild(canvas);
-    // Unmounting cancels a start that is still in progress.
-    const controller = new AbortController();
-    let engine: Engine | undefined;
-    createEngine({
-      canvas,
-      sketch,
-      signal: controller.signal,
-      onSketchMessage: (type, data) => onMessageRef.current?.(type, data),
-    }).then(
-      (e) => {
-        if (controller.signal.aborted) { e.destroy(); return; }
-        engine = e;
-        onReady?.(e);
+    const host = hostRef.current!;
+    const entry = keptEngine(sketch);
+    let mounted = true;
+    let off: (() => void) | undefined;
+    host.append(entry.canvas);
+    entry.engine.then(
+      (engine) => {
+        if (!mounted) return;
+        engine.attach(host);
+        off = engine.onSketchMessage((type, data) => onMessageRef.current?.(type, data));
+        onReady?.(engine);
       },
-      (error) => { if (!controller.signal.aborted) console.error(error); },
+      (error) => console.error(error),
     );
-    return () => { controller.abort(); engine?.destroy(); canvas.remove(); };
+    return () => {
+      mounted = false;
+      off?.();
+      entry.engine.then((engine) => engine.detach(), () => {});
+      entry.timer = window.setTimeout(() => {
+        kept.delete(sketch.href);
+        entry.engine.then((engine) => engine.destroy(), () => {});
+      }, KEEP_MS);
+    };
   }, [sketch]);
 
   return <div ref={hostRef} style={{ width: '100%', height: '100%' }} />;
 }
 ```
 
-Create `sketch` once at module level (`const sketchUrl = new URL('./sketch.ts', import.meta.url)`), so re-renders do not restart the engine.
+- Create `sketch` once at module level (`const sketchUrl = new URL('./sketch.ts', import.meta.url)`), so re-renders do not restart the engine.
+- React's StrictMode mounts effects twice in development. The second mount finds the kept engine and attaches it, so development starts one engine, as production does.
+- Each mount adds its own message handler and removes it on unmount, so an old component never hears the sketch.
+- A kept engine holds its memory and GPU buffers. For a view the app shows once, destroy the engine on unmount instead of keeping it.
 
 ## 3. State between React and the sketch
 

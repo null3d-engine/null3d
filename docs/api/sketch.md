@@ -46,7 +46,7 @@ What the engine passes to a sketch's setup function.
 | `materials: Materials` | Material factories. |
 | `geometry: Geometry` | Mesh generators. |
 | `time: { now: number; frame: number; }` | Sketch time in seconds, which is the sum of every step that `onUpdate` received, so paused and hidden time do not count. Also the current frame number. |
-| `page: { post(type: string, data?: unknown, transfer?: Transferable[]): void; onMessage(handler: (type: string, data: unknown) => void): void; }` | Messages between the sketch and the page. |
+| `page: { post(type: string, data?: unknown, transfer?: Transferable[]): void; onMessage(handler: (type: string, data: unknown) => void): () => void; }` | Messages between the sketch and the page. `onMessage` returns a function that removes the handler. |
 
 ### `SketchDefinition`
 

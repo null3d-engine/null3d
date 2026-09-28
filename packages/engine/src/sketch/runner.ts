@@ -33,7 +33,7 @@ export interface SketchCore {
 }
 
 export class SketchRunner {
-	private readonly messageHandlers: ((type: string, data: unknown) => void)[] = [];
+	private readonly messageHandlers = new Set<(type: string, data: unknown) => void>();
 	private callbacks: SketchCallbacks = {};
 	private readonly clock = new FrameClock();
 	private gpuEpoch = 0;
@@ -77,7 +77,8 @@ export class SketchRunner {
 			page: {
 				post: (type, data, transfer) => post(type, data, transfer),
 				onMessage: (handler) => {
-					this.messageHandlers.push(handler);
+					this.messageHandlers.add(handler);
+					return () => this.messageHandlers.delete(handler);
 				},
 			},
 		};

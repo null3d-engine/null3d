@@ -132,17 +132,30 @@ export interface Engine {
 	postToSketch(name: string, data?: unknown, transfer?: Transferable[]): void;
 	/**
 	 * Receives the messages the sketch sends with `ctx.page.post`. When no handler listened from the
-	 * start, the first handler also receives the messages sent before it was registered.
+	 * start, the first handler also receives the messages sent before it was registered. Returns a
+	 * function that removes the handler.
 	 */
-	onSketchMessage(handler: (name: string, data: unknown) => void): void;
+	onSketchMessage(handler: (name: string, data: unknown) => void): () => void;
 	/**
 	 * Receives a failure after the engine started: the browser took the GPU away and the engine could
 	 * not carry on with a new device (E1302), or an engine thread failed (E1404). The engine reports
-	 * each failure once. Without a handler, it logs the failure to the console.
+	 * each failure once. Without a handler, it logs the failure to the console. Returns a function
+	 * that removes the handler.
 	 */
-	onFailure(handler: (error: EngineError) => void): void;
+	onFailure(handler: (error: EngineError) => void): () => void;
 	/** Pauses or resumes the sketch's frames. */
 	setPaused(paused: boolean): void;
+	/**
+	 * Takes the canvas off the page and pauses the engine. The engine keeps its threads, its GPU
+	 * resources and the scene, and stops reading input. Use it when a single-page app leaves the
+	 * view that shows the canvas, and `attach` when the view comes back.
+	 */
+	detach(): void;
+	/**
+	 * Puts the canvas at the end of `container` and resumes the engine where it stopped, unless
+	 * `setPaused(true)` paused it.
+	 */
+	attach(container: Element): void;
 	/**
 	 * Measures the running engine for a number of seconds, then returns CPU time per frame by thread
 	 * and phase, GPU time, frame intervals, uploads, draw calls, memory and load time.
@@ -353,8 +366,8 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 		options.maxPixelRatio ?? DEFAULT_MAX_PIXEL_RATIO,
 	);
 
-	const messageHandlers: ((name: string, data: unknown) => void)[] = [];
-	if (options.onSketchMessage) messageHandlers.push(options.onSketchMessage);
+	const messageHandlers = new Set<(name: string, data: unknown) => void>();
+	if (options.onSketchMessage) messageHandlers.add(options.onSketchMessage);
 	// Messages sent before the page listens wait for the first handler. The newest are kept when a
 	// sketch sends many.
 	let earlyMessages: [string, unknown][] | undefined = options.onSketchMessage ? undefined : [];
@@ -365,13 +378,22 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 		}
 		for (const handler of messageHandlers) handler(name, data);
 	};
-	const failureHandlers: ((error: EngineError) => void)[] = [];
+	const failureHandlers = new Set<(error: EngineError) => void>();
 	const reported = new Set<string>();
 	const onFailure = (error: EngineError) => {
 		if (reported.has(error.message)) return;
 		reported.add(error.message);
-		if (failureHandlers.length === 0) console.error(error);
+		if (failureHandlers.size === 0) console.error(error);
 		for (const handler of failureHandlers) handler(error);
+	};
+	let userPaused = false;
+	let detached = false;
+	const applyPause = () => {
+		const paused = userPaused || detached;
+		// Counted before the flag clears, so the sketch's first step after the pause sees it.
+		if (!paused && Atomics.load(slots, Slot.Paused) !== 0) Atomics.add(slots, Slot.Resumes, 1);
+		Atomics.store(slots, Slot.Paused, paused ? 1 : 0);
+		Atomics.notify(slots, Slot.Paused);
 	};
 	const pageLoss = (reason: string) =>
 		onFailure(new EngineError('E1302', `the page lost its GPU: ${reason}.`));
@@ -543,19 +565,33 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 			else sketch?.worker.postMessage({ type: 'post', name, data }, transfer);
 		},
 		onSketchMessage(handler) {
-			messageHandlers.push(handler);
+			messageHandlers.add(handler);
 			const early = earlyMessages;
 			earlyMessages = undefined;
 			if (early) for (const [name, data] of early) handler(name, data);
+			return () => messageHandlers.delete(handler);
 		},
 		onFailure(handler) {
-			failureHandlers.push(handler);
+			failureHandlers.add(handler);
+			return () => failureHandlers.delete(handler);
 		},
 		setPaused(paused) {
-			// Counted before the flag clears, so the sketch's first step after the pause sees it.
-			if (!paused && Atomics.load(slots, Slot.Paused) !== 0) Atomics.add(slots, Slot.Resumes, 1);
-			Atomics.store(slots, Slot.Paused, paused ? 1 : 0);
-			Atomics.notify(slots, Slot.Paused);
+			userPaused = paused;
+			applyPause();
+		},
+		detach() {
+			if (detached) return;
+			detached = true;
+			input.suspend();
+			applyPause();
+			options.canvas.remove();
+		},
+		attach(container) {
+			container.append(options.canvas);
+			if (!detached) return;
+			detached = false;
+			input.resume();
+			applyPause();
 		},
 		async measure(seconds) {
 			const reader = new MetricsReader(metrics);

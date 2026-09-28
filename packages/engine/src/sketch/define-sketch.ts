@@ -34,10 +34,13 @@ export interface SketchContext {
 	 * hidden time do not count. Also the current frame number.
 	 */
 	time: { now: number; frame: number };
-	/** Messages between the sketch and the page. */
+	/**
+	 * Messages between the sketch and the page. `onMessage` returns a function that removes the
+	 * handler.
+	 */
 	page: {
 		post(type: string, data?: unknown, transfer?: Transferable[]): void;
-		onMessage(handler: (type: string, data: unknown) => void): void;
+		onMessage(handler: (type: string, data: unknown) => void): () => void;
 	};
 }
 

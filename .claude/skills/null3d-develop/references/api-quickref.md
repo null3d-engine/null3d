@@ -48,7 +48,10 @@ const engine = await createEngine({
 
 await engine.firstFrame;                 // the GPU finished the first frame: remove the loading screen
 engine.postToSketch('difficulty', { level: 2 });            // an optional third argument lists transferables
-engine.onSketchMessage((type, data) => { /* ... */ });      // the first handler also gets earlier messages
+const off = engine.onSketchMessage((type, data) => { /* ... */ }); // the first handler also gets earlier messages
+off();                                   // every on... call returns a function that removes its handler
+engine.detach();                         // single-page apps: canvas off the page, engine paused, scene kept
+engine.attach(container);                // canvas back on the page; the engine resumes with no new start
 const image = await engine.capture();             // Blob of the next complete frame
 // engine.registerVideo and textures.fromVideo come after 1.0; recipe 14 shows the workaround
 engine.labels.bind('hp-12', element);             // (0.2) HTML label that follows an object

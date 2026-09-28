@@ -99,6 +99,16 @@ Pipelined is the default when the page can use threads, and single-threaded othe
 
 Worker threads need shared memory, and browsers allow shared memory only on cross-origin isolated pages. On any other page the engine loads its single-threaded build, which runs the same code on one thread. [Hosting and cross-origin isolation](../getting-started/hosting.md) shows how to send the two headers that turn isolation on.
 
+## The engine's lifetime
+
+`createEngine` starts the threads, loads the core and runs the sketch's setup. `destroy` stops them all. A single-page app that leaves the view with the canvas, and comes back later, needs neither.
+
+`engine.detach()` takes the canvas off the page and pauses the engine. The engine keeps its threads, its GPU resources and the scene, and stops reading input. Later, `engine.attach(element)` puts the canvas at the end of an element and resumes, with no new start.
+
+Every handler call, such as `engine.onSketchMessage`, returns a function that removes the handler. A component that mounts again removes its old handler and adds a new one.
+
+A kept engine holds its memory and GPU buffers. Destroy it once the app is unlikely to show the view again.
+
 ## Related pages
 
 - [Handles and objects](handles.md): how your code names scene objects.
