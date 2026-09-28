@@ -11,7 +11,7 @@ This repository holds the null3d engine, its tools, its documentation and its ag
 | `skills/` | Agent skills for building with null3d and for porting three.js apps (the source) |
 | `.claude/skills/` | A generated copy of `skills/` for Claude Code. Never edit it. |
 | `crates/` | The Rust crates: core, GPU layer, renderer, shaders, and the WebAssembly entry point |
-| `packages/` | npm packages: `engine`, `vite-plugin`, `cli`, which is the `null3d` command, and `null3d`, which runs the latest `cli` under the plain name so `npx null3d` works anywhere |
+| `packages/` | npm packages: `engine`, `vite-plugin`, and `cli`, which is the `null3d` command |
 | `tests/` | Browser tests: test pages, Playwright image tests, reference images and the real-browser runner |
 | `tools/` | The WebAssembly build, the docs generator, the skills check and the commit hooks |
 | `examples/`, `bench/`, `templates/`, `porting-corpus/` | Demos, benchmarks, starter projects and the three.js porting corpus, as the milestones add them |
@@ -181,4 +181,4 @@ One-time setup:
 
 - A GitHub App with write access to contents and pull requests, installed on the repository. Its ID and private key go in the `RELEASE_APP_ID` and `RELEASE_APP_PRIVATE_KEY` secrets. A pull request opened with the default token starts no workflows, so its CI would never run.
 - npm trusted publishing. Publish each public package's first version by hand with a token. Then, in the package's settings on npmjs.com, name this repository and `release-publish.yml` as its trusted publisher. A public package also needs `"publishConfig": { "access": "public", "provenance": true }`.
-- The publish job builds nothing, because the public packages are the command-line tool and its plain-name package. Add the engine's WebAssembly build to the job before the engine becomes public.
+- The publish job builds nothing, because the only public package is the command-line tool. Add the engine's WebAssembly build to the job before the engine becomes public.
