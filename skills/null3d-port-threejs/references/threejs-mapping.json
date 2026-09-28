@@ -242,7 +242,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "child.setParent(parent); setParent(parent, { keepWorld: true }) for attach(); destroy() to remove",
-      "notes": "Objects are in the scene as soon as they are created. setParent keeps the local transform, like add().",
+      "notes": "Objects are in the scene as soon as they are created. setParent keeps the local transform, like add(). Creating, destroying and re-parenting rebuild the draw tables in that frame, so during play hide with setVisible and pool with setActiveCount instead (guides/performance).",
       "docs": "api/objects",
       "detect": "\\bscene\\.(add|remove)\\s*\\(|\\.attach\\s*\\("
     },
@@ -330,7 +330,7 @@
       "status": "direct",
       "since": "0.1",
       "target": "obj.setVisible(false)",
-      "notes": "",
+      "notes": "Cheap: it uploads the object's matrix and draw entry and never rebuilds the draw tables, so use it instead of removing and adding objects during play.",
       "docs": "api/objects",
       "detect": "\\.visible\\s*="
     },

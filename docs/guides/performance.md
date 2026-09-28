@@ -71,11 +71,26 @@ Garbage collection pauses the thread that allocated the memory. The render worke
 
 Decimal numbers are a special case. Until the browser optimizes a function, the numbers it computes are stored as small objects. Code that runs once per frame gets optimized only after thousands of frames, so judge allocation after about 30 seconds of play.
 
-## Create meshes, materials and batches during setup
+## Objects during play
 
-The engine sizes its memory for the scene it holds. So a mesh or an instance batch made during play makes engine memory grow in the next frame. A mesh drawn with a new material does too. Create them during setup instead. Size an instance batch for the most rows it will ever need, and show fewer with `setActiveCount`.
+The engine keeps each scene's draw tables, its draw bundle and every object's matrix on the GPU. Some calls change the tables, and a frame with such a change rebuilds them: it records the bundle again and uploads every matrix. At 100,000 instances that is 4.8 MB in one frame. Other calls upload only what they changed. `measure` counts the rebuilding frames in `rebuilds`, which stays at zero in steady play.
 
-A frame that creates or destroys objects or batches, or changes an object's mesh or material, rebuilds the draw tables. It re-records the draw bundle and uploads every matrix, which shows as a spike in `uploadBytes` and replay time. `measure` counts these frames in `rebuilds`. Showing or hiding an object with `setVisible`, and changing a batch's active count, rewrite only a few bytes and never rebuild.
+| Call | Cost in the frame it takes effect |
+| --- | --- |
+| `setPosition`, `setRotation`, `setScale`, and writes to a batch's arrays | The changed matrices |
+| `setVisible` | The matrix and 4-byte draw entry of the object and of each object under it |
+| `setActiveCount` | The 4-byte draw entry of each row that starts or stops drawing |
+| Creating or destroying an object or an instance batch | A rebuild, and engine memory can grow in the next frame |
+| `setMesh`, `setMaterial`, `setParent` and `setDynamic` | A rebuild |
+
+These habits keep play free of rebuilds:
+
+- Create every object, batch, mesh and material a level needs during setup or behind a loading screen. The engine sizes its memory for the scene it holds, so one created during play makes engine memory grow in the next frame.
+- Hide and show objects with `setVisible` instead of destroying and creating them.
+- Pool short-lived things, such as bullets and particles, in an instance batch sized for the most rows it will ever need. Show fewer with `setActiveCount`, and keep the live rows at the front of the arrays.
+- For a look that changes often, such as a highlight, keep two objects and swap their visibility. Keep `setMaterial` and `setMesh` for rare changes.
+- Every row of a batch counts toward the scene's limit of 2,097,152 objects and instance rows, active or not (E1501). So size each batch for the rows it uses.
+- Check with `measure`. A `rebuilds` count above zero during play points to one of the calls in the lower rows of the table.
 
 ## Moving objects cost uploads
 
@@ -107,7 +122,7 @@ The render worker picks how each upload travels, so you do not need to. Uploads 
 
 The game worker's steps are `update`, `commands`, `transforms`, `batches` and `record`, and the render worker's is `replay`. A thread's time less its `update` step is the engine's own work on that thread.
 
-A frame callback keeps firing at the display rate while the GPU falls behind. So a count of callbacks can report a healthy rate while the screen shows fewer frames. Compare `completedFps` with `presentedFps`. When the GPU finishes fewer frames than the renderer presents, frames queue on the GPU. Then `gpuLatencyMs` grows, and players feel it as input lag. The engine checks a WebGL2 fence at its next frame callback, so there `gpuLatencyMs` rounds up to a frame interval. `gpuMs` is the GPU's working time within a frame, not the time from submit to screen.
+A frame callback keeps firing at the display rate while the GPU falls behind. So a count of callbacks can report a healthy rate while the screen shows fewer frames. Compare `completedFps` with `presentedFps`. When the GPU finishes fewer frames than the renderer presents, frames queue on the GPU. Then `gpuLatencyMs` grows, and players feel it as input lag. The engine checks a WebGL2 fence at its next frame callback, so there `gpuLatencyMs` rounds up to a frame interval. The `gpuMs` figure is the GPU's working time within a frame, not the time from submit to screen.
 
 Chrome measures the heap of the page and its workers only when every worker answers, or after a minute. Job workers never answer while the engine runs, so each sample takes about a minute and leaves them out. Chrome also adds shared memory, such as the engine's own, to each worker's figure. A render worker whose own heap is 1.4 MB can show as 52 MB. The `jsHeapNote` field says when the figures cover only the page.
 

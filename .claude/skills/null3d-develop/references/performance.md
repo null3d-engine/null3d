@@ -12,6 +12,7 @@ Measure first, then change one thing, then measure again. Read `guides/performan
 6. Memory
 7. The quality governor and your own systems
 8. Per-frame code that allocates nothing
+9. Objects during play
 
 ## 1. Where frame time goes
 
@@ -114,3 +115,14 @@ Apply these habits to `onUpdate` and everything it calls.
 - Make no closures, `async` wrappers or promise chains per frame. Keep closures out of per-frame functions even in a branch that rarely runs: until the browser optimizes the function, the variables a closure captures are allocated on every call. Move such a branch into its own function.
 - Animate a light with `setIntensity` and `setDirection`, which allocate nothing. `setColor` converts the color and allocates.
 - Judge allocation after about 30 seconds of play. Until the browser optimizes a function that runs once per frame, the decimal numbers it computes are allocated.
+
+## 9. Objects during play
+
+Some calls rebuild the scene's draw tables in the frame they take effect: the bundle is recorded again and every matrix uploads. Others upload only what they changed. The engine docs page `guides/performance` has the full table.
+
+- Cheap: moving objects, writing batch arrays, `setVisible`, and `setActiveCount`.
+- Rebuilds: creating or destroying objects and batches, `setMesh`, `setMaterial`, `setParent` and `setDynamic`.
+- Create everything a level needs during setup. Hide with `setVisible` instead of destroying.
+- Pool bullets, particles and pickups in a batch sized for its most rows. Show the live ones with `setActiveCount`, and keep them at the front of the arrays.
+- For a look that changes often, such as a highlight, keep two objects and swap their visibility.
+- Check `engine.measure()`: `rebuilds` above zero during play means one of the rebuilding calls ran.

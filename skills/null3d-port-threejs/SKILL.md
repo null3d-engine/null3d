@@ -91,11 +91,12 @@ Write `PORTING-REPORT.md` with the template in `references/verification.md`: wha
 | `renderer.render(scene, camera)` inside `requestAnimationFrame` | Logic in `onUpdate(dt)`; the engine renders by itself | Frames run on the render worker's own clock |
 | `mesh.position.x += 1` | `mesh.setPosition(x, y, z)`, or typed arrays for many objects | Engine objects are handles; they have no position properties |
 | `scene.add(mesh)` | Objects exist as soon as they are created; `setParent` builds hierarchy | Creation is a batched command |
+| `scene.add` and `scene.remove` during play, or `object.visible` toggles | Create during setup; hide with `setVisible`; pool short-lived objects in a batch with `setActiveCount` | Creating, destroying and re-parenting rebuild the draw tables; visibility and active counts upload only what changed (`guides/performance`) |
 | `new THREE.Vector3()` in the loop | Scratch arrays created once, with array math | Allocations cause garbage-collection stutter |
 | `document`, `window` and DOM events next to scene code | The page owns the DOM; input arrives in `ctx.input`; messages carry data | Game code runs in a worker without a DOM |
 | `obj.userData`, subclasses of `Mesh` | Your own maps or typed arrays keyed by handle or row | Engine objects are not extensible |
 | `onBeforeRender`, per-draw callbacks | `onUpdate` or `onLateUpdate`, or a declared pass | No game code runs in the render worker |
-| `material.needsUpdate = true` to switch features at run time | Create both material variants while loading, then swap with `setMaterial` | A shader change compiles a pipeline, which stalls a frame |
+| `material.needsUpdate = true` to switch features at run time | Create both material variants while loading. Swap with `setMaterial` for a rare change; for a frequent one, keep two objects and swap their visibility | A shader change compiles a pipeline, which stalls a frame, and `setMaterial` rebuilds the draw tables |
 | `InstancedMesh.setMatrixAt` with a dummy `Object3D` | Write `positions`, `rotations` and `scales` arrays | No matrix composition in JavaScript: in the S1 benchmark it cost three.js about 0.5 ms per frame for 100,000 instances. The loop's own motion math costs the same in both engines, so keep it tight |
 | `object.traverse` every frame | Collect the handles you need at setup | Traversal costs work every frame |
 | Resize handlers and `setSize` | Nothing | The engine follows the canvas size |
