@@ -24,8 +24,8 @@ Each recipe states the goal, gives the code, explains why it is written that way
 ## 1. Start a new project
 
 ```sh
-npx @null3d/cli create my-project --template empty   # also: third-person, top-down-units, product-viewer
-cd my-project && npm install && npm run dev
+bunx @null3d/cli create my-project --template empty   # also: third-person, top-down-units, product-viewer
+cd my-project && bun install && bun run dev
 ```
 
 The template contains `page.ts`, `sketch.ts`, `index.html` with a canvas, `AGENTS.md`, and the null3d skills in `.claude/skills/`. Its `vite.config.ts` loads the null3d Vite plugin, which sends the cross-origin isolation headers, so the threaded build runs. Docs: `getting-started/install`, `getting-started/project-structure`, `getting-started/hosting`.
@@ -72,7 +72,7 @@ return {
 };
 ```
 
-Optimize models first with `npx null3d assets optimize models/hero.glb` (meshopt, KTX2). Cross-fade on state changes only; calling `play` every frame restarts blending work. Docs: `api/assets`, `api/animation`, `guides/assets-pipeline`.
+Optimize models first with `bunx @null3d/cli assets optimize models/hero.glb` (meshopt, KTX2). Cross-fade on state changes only; calling `play` every frame restarts blending work. Docs: `api/assets`, `api/animation`, `guides/assets-pipeline`.
 
 ## 4. Thousands of moving objects
 
@@ -344,7 +344,7 @@ shotButton.onclick = async () => {
 };
 ```
 
-For tests, use `npx null3d shot` or hold-mode tests instead (`references/testing-and-debugging.md`). Docs: `api/engine`.
+For tests, use `bunx @null3d/cli shot` or hold-mode tests instead (`references/testing-and-debugging.md`). Docs: `api/engine`.
 
 ## 14. Video on a surface (after 1.0; a workaround now)
 

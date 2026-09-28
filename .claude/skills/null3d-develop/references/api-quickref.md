@@ -257,7 +257,7 @@ const ship = await assets.loadGltf('/models/ship.glb');        // (0.2) Prefab
 ship.animations;           // clip names
 ship.find('Turret');       // a node inside the prefab
 ship.bounds;               // { center, radius, min, max } of the whole model
-const env = await assets.loadEnvironment('/env/studio.ktx2');  // (0.2) from `null3d assets env`
+const env = await assets.loadEnvironment('/env/studio.ktx2');  // (0.2) from `bunx @null3d/cli assets env`
 const studio = assets.builtinEnvironment('studio');            // (0.2) neutral lighting, no download
 const sky = await assets.loadCubemap([px, nx, py, ny, pz, nz]);  // (0.2)
 const lut = await assets.loadLut('/grade.cube');                // (0.2)

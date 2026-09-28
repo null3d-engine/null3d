@@ -15,11 +15,11 @@ null3d is a browser 3D engine with a Rust core compiled to WebAssembly. Sketch c
 
 The engine docs are the source of truth. This skill describes the API planned for version 1.0, and a project may use an earlier version, so check before you rely on anything here.
 
-1. Find the engine version: `npx null3d --version`, or the `@null3d/engine` entry in `package.json`.
+1. Find the engine version: `bunx @null3d/cli --version`, or the `@null3d/engine` entry in `package.json`.
 2. Read docs pages by ID, in this order:
    - inside the null3d repository itself: `docs/<id>.md`;
    - in a null3d project: `node_modules/@null3d/engine/docs/<id>.md`;
-   - from any terminal: `npx null3d docs show <id>`, or `npx null3d docs search "<words>"`.
+   - from any terminal: `bunx @null3d/cli docs show <id>`, or `bunx @null3d/cli docs search "<words>"`.
 3. Each page starts with front matter. `status: stable` or `status: experimental` means the API exists (experimental APIs may still change). `status: planned` means it does not exist in this version. Do not call a planned API; tell the user, and use the workaround the page gives.
 4. If the docs and this skill disagree, follow the docs and mention the difference in your summary, so the skill can be fixed.
 
@@ -85,10 +85,10 @@ export default defineSketch(async ({ scene, geometry, materials }) => {
 1. Pin down the target when the request leaves it open: which devices (phones or desktop), which frame rate, and whether the WebGL2 path matters. Phones usually matter, so assume they do unless told otherwise.
 2. Read the doc pages for the features involved (section 1).
 3. Make the change in small steps. Scene logic goes in `sketch.ts`; DOM, HTML UI and audio go in `page.ts`.
-4. Look at the result. `npx vite` serves the project, and the null3d Vite plugin adds the right headers. `npx null3d shot --out shot.png` renders one frame headless and saves it. Open the image and check it: code that compiles can still draw nothing.
-5. Check the cost with `npx null3d bench`, or with `debug.stats(true)` while running. Compare the frame phases with the preset's budget (`references/performance.md`).
-6. Add or update a test. Anything visual gets a hold-mode image test (`references/testing-and-debugging.md`). Run `npx null3d test`.
-7. If the change touches rendering, check the WebGL2 path: add `?gpu=webgl2` to the dev URL, or run `npx null3d test --gpu webgl2`.
+4. Look at the result. `bunx vite` serves the project, and the null3d Vite plugin adds the right headers. `bunx @null3d/cli shot --out shot.png` renders one frame headless and saves it. Open the image and check it: code that compiles can still draw nothing.
+5. Check the cost with `bunx @null3d/cli bench`, or with `debug.stats(true)` while running. Compare the frame phases with the preset's budget (`references/performance.md`).
+6. Add or update a test. Anything visual gets a hold-mode image test (`references/testing-and-debugging.md`). Run `bunx @null3d/cli test`.
+7. If the change touches rendering, check the WebGL2 path: add `?gpu=webgl2` to the dev URL, or run `bunx @null3d/cli test --gpu webgl2`.
 8. Summarize what changed, how you verified it (images, numbers), and any limits: planned APIs you avoided, device classes you could not test.
 
 ## 4. Rules that keep null3d fast
@@ -104,7 +104,7 @@ Each rule comes with its reason, because the reason covers cases the rule does n
 7. Keep the DOM on the page, and keep messages rare: send events, not per-frame state. Labels that follow objects use `ui.trackLabel` (0.2), which needs no messages. (`guides/ui-overlays`)
 8. Use layer masks to limit work. A raycast with a mask tests fewer objects, and a camera with a mask draws fewer. (`concepts/render-layers`)
 9. Respect the quality preset. Do not force High settings on phones. Listen to `quality.onChange` to scale your own systems, such as particle counts or AI update rates. (`concepts/quality-presets`)
-10. Ship optimized assets: glTF with meshopt compression and KTX2 textures, made with `npx null3d assets optimize`. Large PNG files and uncompressed meshes cost download time and GPU memory. (`guides/assets-pipeline`)
+10. Ship optimized assets: glTF with meshopt compression and KTX2 textures, made with `bunx @null3d/cli assets optimize`. Large PNG files and uncompressed meshes cost download time and GPU memory. (`guides/assets-pipeline`)
 11. Keep custom WGSL portable: use only the three language features every browser shares, stay within the portable limits, and write flat interpolation as `@interpolate(flat, either)`. The build rejects anything else. (`shaders/wgsl-rules`)
 12. Never branch on GPU names or user agents; read `ctx.engine.capabilities`. Several browsers hide GPU names, and a name does not tell you what the engine enabled.
 
@@ -118,7 +118,7 @@ Drawing:
 | A loaded model, once or many times | `assets.loadGltf`, then `scene.instantiate` (0.2) | `api/assets` |
 | Hundreds to millions of copies of one mesh | `scene.createInstances` with typed arrays | `concepts/instances` |
 | Objects that move every frame | `dynamic: true`, or a dynamic batch | `concepts/static-dynamic` |
-| Less detail far away | `scene.createLod`, or LODs from `null3d assets optimize --lod` (0.2) | `concepts/lod` |
+| Less detail far away | `scene.createLod`, or LODs from `bunx @null3d/cli assets optimize --lod` (0.2) | `concepts/lod` |
 | Camera-facing quads and simple particles | `scene.createSprites` (0.2) | `api/sprites` |
 | Point clouds | `scene.createPoints` (0.2) | `api/points` |
 | Lines with pixel or world widths | `scene.createLines` (0.2) | `api/lines` |
@@ -190,7 +190,7 @@ water.set({ waveSpeed: 2.0 }); // typed from the uniforms above
 | A stutter every few seconds | Allocations in per-frame code | Scratch values created once; confirm with the browser's memory profiler |
 | A hitch when something first appears | A pipeline compiled during play | Load and warm up earlier (`guides/loading-screens`) |
 | Fine on desktop, slow or crashing on a phone | Preset, pixel ratio or memory | `guides/phones`, `references/performance.md` |
-| An `EngineError` with a code | An invalid call | Read the fix in the message, then `npx null3d docs show errors/<code>` |
+| An `EngineError` with a code | An invalid call | Read the fix in the message, then `bunx @null3d/cli docs show errors/<code>` |
 
 The full table and the debugging tools are in `references/testing-and-debugging.md`.
 
@@ -202,7 +202,7 @@ Read these when the task needs them:
 - `references/recipes.md`: patterns for common tasks, including camera controls, animated models, thousands of moving objects, pooling, picking, labels, loading screens, HTML UI, physics, video, custom effects and large worlds.
 - `references/performance.md`: budgets, how to measure, symptom-to-fix tables and phone rules.
 - `references/shaders.md`: the surface-function contract, built-in values, uniforms and textures, portable WGSL rules, custom post effects and custom passes.
-- `references/testing-and-debugging.md`: `null3d test`, image tests, testing on devices, the MCP server tools, error codes and a full troubleshooting table.
+- `references/testing-and-debugging.md`: `bunx @null3d/cli test`, image tests, testing on devices, the MCP server tools, error codes and a full troubleshooting table.
 - `references/content-pages.md`: product and marketing pages with a 3D scene: the fallback page, a load deadline, pausing, scroll-driven cameras, caching and crashes.
 
 ## 9. Before you finish
@@ -210,8 +210,8 @@ Read these when the task needs them:
 - The code uses only APIs whose docs status is `stable` or `experimental` in the installed engine.
 - Per-frame callbacks allocate nothing.
 - DOM, audio and HTML UI code is in `page.ts`.
-- You looked at a rendered image, from `null3d shot` or the dev server, and not only at build output.
-- `npx null3d test` passes, including a new or updated image test for visual changes.
+- You looked at a rendered image, from `bunx @null3d/cli shot` or the dev server, and not only at build output.
+- `bunx @null3d/cli test` passes, including a new or updated image test for visual changes.
 - For rendering changes, the WebGL2 path renders too.
 - Performance was checked against the preset budget for the target devices.
 - Your summary says what you verified, and what you could not verify.

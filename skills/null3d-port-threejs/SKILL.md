@@ -14,7 +14,7 @@ A good port looks like the original, runs faster, and reads like null3d code. Tr
 ## 1. Before you start
 
 1. If the null3d-develop skill is available, read its sections 1, 2 and 4: the docs system, the thread model and the performance rules. They apply to every port. Without it, read the engine docs pages `concepts/architecture` and `guides/performance`.
-2. Find the engine version in the target project, and read docs pages by ID: `node_modules/@null3d/engine/docs/<id>.md`, `docs/<id>.md` inside the null3d repository, or `npx null3d docs show <id>`. A page with `status: planned` describes an API that does not exist in that version yet.
+2. Find the engine version in the target project, and read docs pages by ID: `node_modules/@null3d/engine/docs/<id>.md`, `docs/<id>.md` inside the null3d repository, or `bunx @null3d/cli docs show <id>`. A page with `status: planned` describes an API that does not exist in that version yet.
 3. Look up three.js APIs in `references/api-mapping.md`. For 147 three.js APIs it gives the null3d equivalent, a status, the first engine version with it, and a doc ID. The statuses:
    - `direct`: same concept, new name.
    - `changed`: supported with a different API or pattern; follow the note.
@@ -55,7 +55,7 @@ Check parity images after each step. Each step needs the earlier ones to be visi
 
 1. Renderer and loop: `createEngine` on the page, `defineSketch` in `sketch.ts`, the loop body in `onUpdate`.
 2. Camera, camera controls and input.
-3. Models and textures. Optimize them with `npx null3d assets optimize` (meshopt, KTX2).
+3. Models and textures. Optimize them with `bunx @null3d/cli assets optimize` (meshopt, KTX2).
 4. Materials and texture settings (`references/materials.md`).
 5. Lights, shadows, environment, fog, background.
 6. Geometry, instancing and batching.

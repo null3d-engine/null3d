@@ -24,6 +24,24 @@ describe('checkDocsStyle errors', () => {
 		expect(rules('Task M0-J1 wrote this page.')).toEqual(['error:build_process:1']);
 	});
 
+	it('blocks the command line tool run as null3d, in prose and in code', () => {
+		expect(rules('Run `npx null3d test`.')).toEqual([
+			'error:cli_command:1',
+			'error:package_manager:1',
+		]);
+		expect(rules('Made with `null3d assets optimize`.')).toEqual(['error:cli_command:1']);
+		expect(rules('```sh\nbunx null3d shot\n```')).toEqual(['error:cli_command:2']);
+		expect(rules('Run `bunx null3d test`.')).toEqual(['error:cli_command:1']);
+		expect(rules('Run `bunx @null3d/cli test`. The `null3d` command is optional.')).toEqual([]);
+	});
+
+	it('blocks commands for other package managers, in prose and in code', () => {
+		expect(rules('Run `npx vite`.')).toEqual(['error:package_manager:1']);
+		expect(rules('```sh\nnpm install @null3d/engine\n```')).toEqual(['error:package_manager:2']);
+		expect(rules('Or `pnpm add three`.')).toEqual(['error:package_manager:1']);
+		expect(rules('Run `bunx vite`. It installs from npm, and pnpm works too.')).toEqual([]);
+	});
+
 	it('lets contributor files name the build process, but not the private plan', () => {
 		const contributors = (md: string) =>
 			checkDocsStyle(md, 'contributors').map((f) => `${f.severity}:${f.rule}:${f.line}`);

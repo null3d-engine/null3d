@@ -12,11 +12,13 @@ summary: "The npm packages; the Vite plugin; package versions always match; the 
 
 null3d installs from npm like any other library, and you import it in your code as you would import `three`. You need no command-line tool to build or run a null3d sketch.
 
+The commands on these pages use [Bun](https://bun.sh). npm, pnpm and Yarn work too, with their own install and run commands.
+
 ## Install the packages
 
 ```sh
-npm install @null3d/engine
-npm install --save-dev vite @null3d/vite-plugin
+bun add @null3d/engine
+bun add -d vite @null3d/vite-plugin
 ```
 
 | Package | What it holds |
@@ -49,10 +51,10 @@ null3d has a plugin for Vite only.
 Write `page.ts` and `sketch.ts` as [Your first scene](first-scene.md) shows, then start Vite:
 
 ```sh
-npx vite
+bunx vite
 ```
 
-Open the address that Vite prints. `npx vite build` writes the production files. Serve them from a host that sends the two headers.
+Open the address that Vite prints. `bunx vite build` writes the production files. Serve them from a host that sends the two headers.
 
 ## Keep versions in step
 
@@ -60,11 +62,11 @@ All `@null3d/*` packages share one version number, because the WebAssembly core 
 
 ## The null3d command
 
-The `null3d` command, in the `@null3d/cli` package, is optional. It does jobs that a bundler does not do, such as headless tests, screenshots, benchmarks and model optimization. Install it when you need one of them:
+The `null3d` command, in the `@null3d/cli` package, is optional. It does jobs that a bundler does not do, such as headless tests, screenshots, benchmarks and model optimization. Install it when you need one of them, and run it as `bunx @null3d/cli` followed by the command:
 
 ```sh
-npm install --save-dev @null3d/cli
-npx null3d test
+bun add -d @null3d/cli
+bunx @null3d/cli test
 ```
 
 [The null3d command](../cli/null3d.md) lists every command.

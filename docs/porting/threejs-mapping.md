@@ -49,7 +49,7 @@ The "Since" column gives the first engine version with the feature:
 | three.js | null3d | Status | Since | Notes | Docs |
 | --- | --- | --- | --- | --- | --- |
 | new THREE.Scene() | The scene from the sketch context: defineSketch(({ scene }) => ...) | changed | 0.1 | Objects are created in the scene directly. | `api/scene` |
-| scene.environment (PMREMGenerator, RoomEnvironment, HDR files) | scene.setEnvironment(await assets.loadEnvironment('/env/studio.ktx2')) | changed | 0.2 | Prefilter HDR files offline with `null3d assets env`. A built-in neutral studio environment replaces RoomEnvironment: assets.builtinEnvironment('studio'). | `concepts/lighting` |
+| scene.environment (PMREMGenerator, RoomEnvironment, HDR files) | scene.setEnvironment(await assets.loadEnvironment('/env/studio.ktx2')) | changed | 0.2 | Prefilter HDR files offline with `bunx @null3d/cli assets env`. A built-in neutral studio environment replaces RoomEnvironment: assets.builtinEnvironment('studio'). | `concepts/lighting` |
 | scene.fog = new Fog(color, near, far) / new FogExp2(color, density) | scene.setFog({ type: 'linear', color, near, far }) or { type: 'exp2', color, density } | direct | 0.1 | Materials opt out with fog: false. | `api/scene` |
 | new Group() / new Object3D() | scene.createGroup({ name, position }) | direct | 0.1 |  | `api/objects` |
 | parent.add(child) / remove / attach / scene.add | child.setParent(parent); setParent(parent, { keepWorld: true }) for attach(); destroy() to remove | changed | 0.1 | Objects are in the scene as soon as they are created. setParent keeps the local transform, like add(). Creating, destroying and re-parenting rebuild the draw tables in that frame, so during play hide with setVisible and pool with setActiveCount instead (guides/performance). | `api/objects` |
@@ -92,7 +92,7 @@ The "Since" column gives the first engine version with the feature:
 | HemisphereLight | scene.createHemisphereLight({ skyColor, groundColor, intensity }) | direct | 0.1 |  | `api/lights` |
 | AmbientLight | scene.createAmbientLight({ color, intensity }) | direct | 0.1 |  | `api/lights` |
 | RectAreaLight | A spot light plus emissive geometry | post-1.0 | - |  | `porting/threejs-unsupported` |
-| LightProbe / LightProbeGenerator | scene.setEnvironment: diffuse spherical harmonics come with the environment | changed | 0.2 | `null3d assets env` computes them offline. | `concepts/lighting` |
+| LightProbe / LightProbeGenerator | scene.setEnvironment: diffuse spherical harmonics come with the environment | changed | 0.2 | `bunx @null3d/cli assets env` computes them offline. | `concepts/lighting` |
 | CSM addon (three/addons/csm) | Built in: shadow: { cascades } on the directional light | direct | 0.1 | Delete the addon. | `concepts/shadows` |
 | light.shadow.mapSize / bias / normalBias / radius / camera | shadow: { mapSize, bias, normalBias } in the light options | changed | 0.1 | radius and blurSamples map to the preset's filter size; shadow.camera has no equivalent. | `concepts/shadows` |
 | physicallyCorrectLights / useLegacyLights | Physical light units, as in three.js r155 and later | changed | 0.1 | Scenes tuned in three.js's legacy light mode need new intensities: retune them with parity images. | `concepts/lighting` |
@@ -105,7 +105,7 @@ The "Since" column gives the first engine version with the feature:
 | TorusKnot / Icosahedron / Octahedron / Tetrahedron / Dodecahedron / Polyhedron / Lathe / Extrude / Shape / Tube Geometry | The same generators from @null3d/geometry | direct | 0.2 | Same parameters as three.js; Shape and Path objects are ported too. | `api/geometry` |
 | BufferGeometry + setAttribute / setIndex / BufferAttribute | geometry.fromArrays({ positions, normals, uvs, indices, colors, tangents }) | changed | 0.1 | Returns a mesh asset that createMesh and createInstances accept. | `api/geometry` |
 | attribute.needsUpdate / setUsage(DynamicDrawUsage) (vertices changing every frame) | meshAsset.updateVertices(name, data, start, count) | changed | 0.2 | For many moving objects, use instances instead of rewriting vertices. | `api/geometry` |
-| computeVertexNormals / computeTangents / computeBoundingSphere | geometry.fromArrays({ ..., computeNormals: true, computeTangents: true }) | changed | 0.1 | Bounds are always automatic. Prefer computing normals and tangents offline with `null3d assets`. | `api/geometry` |
+| computeVertexNormals / computeTangents / computeBoundingSphere | geometry.fromArrays({ ..., computeNormals: true, computeTangents: true }) | changed | 0.1 | Bounds are always automatic. Prefer computing normals and tangents offline with `bunx @null3d/cli assets`. | `api/geometry` |
 | EdgesGeometry / WireframeGeometry | scene.createLines({ fromEdges: meshAsset, thresholdAngle }); debug.view('wireframe') for debugging | changed | 0.2 |  | `api/lines` |
 | TextGeometry / FontLoader / troika-three-text | DOM labels (ui.trackLabel), a texture with pre-rendered text, or a text mesh baked into glTF | post-1.0 | - | SDF text rendering comes after 1.0. | `porting/threejs-unsupported` |
 | morphAttributes / morphTargetInfluences / morphTargetDictionary | glTF morph targets load automatically; obj.setMorphWeight(indexOrName, weight) | changed | 0.2 |  | `api/animation` |
@@ -129,7 +129,7 @@ The "Since" column gives the first engine version with the feature:
 | material.needsUpdate = true | Nothing to do | changed | 0.1 | Adding a shader feature to a material (for example a normal map) compiles a new pipeline, which can stall a frame. Set materials up during loading. | `concepts/materials` |
 | ShadowMaterial (shadow-catcher planes) | materials.shadowCatcher({ opacity }) | direct | 0.2 |  | `api/materials` |
 | material fog: false | fog: false in the material options | direct | 0.1 |  | `api/materials` |
-| material.bumpMap / bumpScale | A normal map converted offline: `null3d assets normal-from-bump` | changed | 0.2 | Normal maps are cheaper at run time and look the same or better. | `guides/assets-pipeline` |
+| material.bumpMap / bumpScale | A normal map converted offline: `bunx @null3d/cli assets normal-from-bump` | changed | 0.2 | Normal maps are cheaper at run time and look the same or better. | `guides/assets-pipeline` |
 | material.displacementMap / displacementScale / displacementBias | A vertexOffset function that reads the texture with textureSampleLevel | manual | 0.1 | Enlarge the object bounds with setBounds so culling does not hide displaced vertices. | `porting/threejs-materials` |
 | material.alphaMap | A surface function that sets s.alpha from the texture, or alpha packed into the base color map offline | manual | 0.1 | three.js reads the alpha map from its green channel; keep that channel in the surface function. | `porting/threejs-materials` |
 | renderer.clippingPlanes / material.clippingPlanes / localClippingEnabled | A surface function with alphaMode "mask" that sets alpha to 0 beyond the plane (cookbook recipe) | manual | 0.1 | Shadows still use the unclipped mesh unless the shadow pass uses the same material. | `porting/threejs-materials` |
@@ -140,7 +140,7 @@ The "Since" column gives the first engine version with the feature:
 
 | three.js | null3d | Status | Since | Notes | Docs |
 | --- | --- | --- | --- | --- | --- |
-| new TextureLoader().load / loadAsync | await assets.loadTexture(url, { colorSpace, flipY, wrap, filter, anisotropy }) | changed | 0.1 | Prefer KTX2 files made with `null3d assets`. | `api/textures` |
+| new TextureLoader().load / loadAsync | await assets.loadTexture(url, { colorSpace, flipY, wrap, filter, anisotropy }) | changed | 0.1 | Prefer KTX2 files made with `bunx @null3d/cli assets`. | `api/textures` |
 | texture.colorSpace = SRGBColorSpace (older: encoding = sRGBEncoding) | colorSpace: 'srgb' for color maps, 'linear' for data maps | direct | 0.1 | Same rule as three.js: base color and emissive maps are sRGB; normal, roughness, metalness and AO maps are linear. glTF sets them automatically. | `concepts/color-management` |
 | texture.flipY | flipY in the loadTexture options | direct | 0.1 | glTF textures never flip. | `api/textures` |
 | wrapS / wrapT / repeat / offset / rotation / center | wrap: 'repeat' \| 'clamp' \| 'mirror' in the texture options; repeat, offset and rotation go in the material's uvTransform | changed | 0.1 | uvTransform follows glTF's KHR_texture_transform. | `api/textures` |
@@ -149,7 +149,7 @@ The "Since" column gives the first engine version with the feature:
 | CanvasTexture (a 2D canvas redrawn at run time) | Draw on an OffscreenCanvas in the sketch worker, then textures.fromImageBitmap(bitmap) and texture.update(bitmap) | changed | 0.1 | The sketch worker has no DOM canvas; OffscreenCanvas with a 2D context works in workers. | `api/textures` |
 | VideoTexture | After 1.0: engine.registerVideo on the page and textures.fromVideo in the sketch. Until then, send ImageBitmap frames from the page and call texture.update(bitmap) | post-1.0 | - | The ImageBitmap route decodes and uploads every frame, so keep frames small (null3d-develop recipe 14). | `guides/video-textures` |
 | CubeTextureLoader / CubeTexture | assets.loadCubemap(urls) for sky boxes; assets.loadEnvironment for lighting | changed | 0.2 |  | `api/textures` |
-| RGBELoader / EXRLoader / HDRLoader / UltraHDRLoader + PMREMGenerator | `null3d assets env studio.hdr` offline, then assets.loadEnvironment | changed | 0.2 | Prefiltering happens once at build time instead of on every visit. | `guides/assets-pipeline` |
+| RGBELoader / EXRLoader / HDRLoader / UltraHDRLoader + PMREMGenerator | `bunx @null3d/cli assets env studio.hdr` offline, then assets.loadEnvironment | changed | 0.2 | Prefiltering happens once at build time instead of on every visit. | `guides/assets-pipeline` |
 | KTX2Loader + setTranscoderPath + detectSupport | assets.loadTexture('x.ktx2') | direct | 0.2 | Built in; delete the setup. | `api/textures` |
 | texture.channel (which UV set a map uses) | uvSet: 0 or 1 in loadTexture options, or per map in the material | direct | 0.1 | glTF files carry this per texture, so loaded models need nothing. | `api/textures` |
 | material.premultipliedAlpha / texture.premultiplyAlpha | loadTexture(url, { premultipliedAlpha: true }) for textures stored premultiplied | changed | 0.1 | Standard blending needs no flag. | `api/textures` |
@@ -159,9 +159,9 @@ The "Since" column gives the first engine version with the feature:
 | three.js | null3d | Status | Since | Notes | Docs |
 | --- | --- | --- | --- | --- | --- |
 | GLTFLoader().load / loadAsync | const prefab = await assets.loadGltf(url); scene.instantiate(prefab) | changed | 0.2 | Animations are in prefab.animations; named nodes via prefab.find(name). | `api/assets` |
-| DRACOLoader + setDecoderPath | Draco files load, but convert them to meshopt with `null3d assets optimize` | changed | 0.2 | meshopt decodes faster and needs no separate decoder download. | `guides/assets-pipeline` |
+| DRACOLoader + setDecoderPath | Draco files load, but convert them to meshopt with `bunx @null3d/cli assets optimize` | changed | 0.2 | meshopt decodes faster and needs no separate decoder download. | `guides/assets-pipeline` |
 | MeshoptDecoder / setMeshoptDecoder | Built in | direct | 0.2 | Delete the setup. | `guides/assets-pipeline` |
-| FBXLoader / OBJLoader / MTLLoader / ColladaLoader / STLLoader / PLYLoader / 3DMLoader / USDZLoader | Convert to glTF before release (`null3d assets convert`, or Blender) | changed | 0.2 | The engine loads glTF only. | `guides/assets-pipeline` |
+| FBXLoader / OBJLoader / MTLLoader / ColladaLoader / STLLoader / PLYLoader / 3DMLoader / USDZLoader | Convert to glTF before release (`bunx @null3d/cli assets convert`, or Blender) | changed | 0.2 | The engine loads glTF only. | `guides/assets-pipeline` |
 | LoadingManager / onProgress callbacks | assets.onProgress((loaded, total) => ...) and assets.preload([...urls]) | changed | 0.1 |  | `guides/loading-screens` |
 | FileLoader / ImageLoader / ImageBitmapLoader | assets.loadBinary(url), assets.loadJson(url), assets.loadImageBitmap(url) | changed | 0.1 |  | `api/assets` |
 | THREE.Cache.enabled | Nothing to do | changed | 0.1 | Assets are cached per URL within a session, and the HTTP cache applies. | `api/assets` |
@@ -173,7 +173,7 @@ The "Since" column gives the first engine version with the feature:
 | InstancedMesh + setMatrixAt / setColorAt / instanceMatrix.needsUpdate | scene.createInstances(meshOrPrefab, count, { dynamic }); write batch.positions / rotations / scales / colors | changed | 0.1 | Static batches call markDirty(start, count) after writes; dynamic batches upload every frame without it. | `concepts/instances` |
 | BatchedMesh | Nothing special: the engine batches objects that share a mesh and material | changed | 0.1 | Use createInstances for many copies of one mesh, and separate meshes for varied geometry. | `concepts/instances` |
 | InstancedBufferGeometry / InstancedBufferAttribute (custom per-instance data) | createInstances(..., { attributes: { tint: 4 } }) adds per-instance arrays that surface functions can read | changed | 0.2 |  | `concepts/instances` |
-| LOD (addLevel) | scene.createLod({ levels: [{ mesh, distance }] }), or LODs generated by `null3d assets optimize --lod` | changed | 0.2 | The engine picks levels on job workers or on the GPU, per instance. | `concepts/lod` |
+| LOD (addLevel) | scene.createLod({ levels: [{ mesh, distance }] }), or LODs generated by `bunx @null3d/cli assets optimize --lod` | changed | 0.2 | The engine picks levels on job workers or on the GPU, per instance. | `concepts/lod` |
 
 ## Animation
 
@@ -182,7 +182,7 @@ The "Since" column gives the first engine version with the feature:
 | AnimationMixer / clipAction / play / crossFadeTo / fadeIn / fadeOut / setEffectiveWeight / timeScale / mixer.update(dt) | const anim = obj.animator(); anim.play('run', { fade: 0.2, loop: true, speed }); anim.crossFade('walk', 0.3); anim.setLayerWeight(layer, w) | changed | 0.2 | No update call: the engine samples animation on job workers. | `api/animation` |
 | AnimationClip / KeyframeTrack built in code | Animate values in onUpdate; transform clips authored in glTF play through the animator (0.2) | post-1.0 | - | Property animation (scene.animateProperty and glTF KHR_animation_pointer) comes after 1.0. | `api/animation` |
 | SkinnedMesh / Skeleton / Bone built by hand | Skins load from glTF; anim.setJointOverride(jointName, rotation) for procedural aiming | changed | 0.2 | Building skeletons in code is not supported; author them in a modeling tool. | `api/animation` |
-| AnimationUtils.subclip / makeClipAdditive | `null3d assets` splits clips and makes them additive offline; anim.play(name, { additive: true }) | changed | 0.2 |  | `api/animation` |
+| AnimationUtils.subclip / makeClipAdditive | `bunx @null3d/cli assets` splits clips and makes them additive offline; anim.play(name, { additive: true }) | changed | 0.2 |  | `api/animation` |
 
 ## Interaction and controls
 

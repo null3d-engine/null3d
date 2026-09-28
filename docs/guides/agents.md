@@ -37,8 +37,8 @@ Each release's page on GitHub has `null3d-develop.zip` and `null3d-port-threejs.
 The [`skills` command](https://github.com/vercel-labs/skills) installs a skill into many agent tools, including Claude Code, Cursor and OpenCode. Give it the folder of each skill in the release that your project uses:
 
 ```sh
-npx skills add https://github.com/null3d-engine/null3d/tree/0.1.0/.claude/skills/null3d-develop
-npx skills add https://github.com/null3d-engine/null3d/tree/0.1.0/.claude/skills/null3d-port-threejs
+bunx skills add https://github.com/null3d-engine/null3d/tree/0.1.0/.claude/skills/null3d-develop
+bunx skills add https://github.com/null3d-engine/null3d/tree/0.1.0/.claude/skills/null3d-port-threejs
 ```
 
 Replace `0.1.0` with your engine version. The command asks which agents to install into, and `-a` names them.
@@ -51,5 +51,5 @@ Every docs page has an ID, such as `concepts/architecture`: its path under `docs
 
 ## Coming later
 
-- 0.3: `npx @null3d/cli mcp`, a Model Context Protocol server connected to the running dev session. Agents list and adjust objects, capture frames, and read frame statistics and errors through it.
-- 0.3: project templates from `npx @null3d/cli create`, each with an `AGENTS.md` for agents without skills.
+- 0.3: `bunx @null3d/cli mcp`, a Model Context Protocol server connected to the running dev session. Agents list and adjust objects, capture frames, and read frame statistics and errors through it.
+- 0.3: project templates from `bunx @null3d/cli create`, each with an `AGENTS.md` for agents without skills.

@@ -140,8 +140,8 @@ Never mirror per-frame scene state into React state: it re-renders React every f
 | `<Suspense fallback>`, drei `<Loader>`, `useProgress` | `assets.onProgress` plus a `'loading'` message; the page shows the loader |
 | drei `useAnimations(animations, ref)` | `obj.animator()` (0.2) |
 | drei `<OrbitControls makeDefault />` | `createOrbitControls(ctx, camera, options)` |
-| drei `<Environment preset="studio" />` | `scene.setEnvironment(assets.builtinEnvironment('studio'))`; other presets: `null3d assets env` from an HDR file |
-| drei `<Environment files="x.hdr" background />` | `null3d assets env x.hdr`, then `setEnvironment` and `setBackground` |
+| drei `<Environment preset="studio" />` | `scene.setEnvironment(assets.builtinEnvironment('studio'))`; other presets: `bunx @null3d/cli assets env` from an HDR file |
+| drei `<Environment files="x.hdr" background />` | `bunx @null3d/cli assets env x.hdr`, then `setEnvironment` and `setBackground` |
 | drei `<ContactShadows />` | `materials.shadowCatcher` on a ground plane (0.2); softer, blurred contact shadows are not built in |
 | drei `<Html>` | `ui.trackLabel` in the sketch, `engine.labels.bind` on the page, with the HTML rendered by React (0.2) |
 | drei `<Text>`, `<Text3D>` | Not in 1.0: HTML labels, a text texture, or a text mesh baked into glTF |

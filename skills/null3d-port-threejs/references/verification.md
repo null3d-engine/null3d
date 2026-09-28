@@ -63,7 +63,7 @@ With `WebGLRenderer`, reading the canvas in the same task as the render works wi
 ## 3. Compare the null3d port
 
 ```sh
-npx null3d port compare --baseline baseline/ --views views.json --gpu webgpu,webgl2   # (0.3)
+bunx @null3d/cli port compare --baseline baseline/ --views views.json --gpu webgpu,webgl2   # (0.3)
 ```
 
 The command runs the sketch in hold mode, overrides the active camera with each view's camera, captures through the engine's readback, and compares each image with the baseline using three.js's own image comparison script. It writes `compare/<view>.<tier>.actual.png`, `.diff.png` and a summary in the terminal.
@@ -93,7 +93,7 @@ Measure both apps on the same device, browser, window size and pixel ratio, with
 
 | Measure | three.js | null3d |
 | --- | --- | --- |
-| Frame time at the 50th, 95th and 99th percentile | Intervals between `requestAnimationFrame` timestamps | `debug.frameStats()` or `npx null3d bench` |
+| Frame time at the 50th, 95th and 99th percentile | Intervals between `requestAnimationFrame` timestamps | `debug.frameStats()` or `bunx @null3d/cli bench` |
 | CPU time per frame on the busiest thread | `performance.now()` around update and render in the loop | Frame phases per thread |
 | Main-thread time per frame | Same as above: everything runs there | Close to zero; this is why pages stay responsive |
 | Memory | Browser task manager or memory panel | `debug.frameStats().memory` |

@@ -51,7 +51,7 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 | [Install null3d](getting-started/install.md) | The npm packages; the Vite plugin; package versions always match; the optional `null3d` command. | planned | 0.1 |
 | [Your first scene](getting-started/first-scene.md) | page.ts with createEngine; sketch.ts with defineSketch; camera, light, mesh; running it with Vite. | planned | 0.1 |
 | [Hosting and cross-origin isolation](getting-started/hosting.md) | COOP and COEP headers; require-corp on Safari; CORS and CORP for assets; the single-threaded fallback. | planned | 0.1 |
-| [Project structure](getting-started/project-structure.md) | Starting from a template with `null3d create`; page.ts, sketch.ts, assets/, AGENTS.md, .claude/skills/; what runs where. | planned | 0.3 |
+| [Project structure](getting-started/project-structure.md) | Starting from a template with `bunx @null3d/cli create`; page.ts, sketch.ts, assets/, AGENTS.md, .claude/skills/; what runs where. | planned | 0.3 |
 
 ### Concepts
 

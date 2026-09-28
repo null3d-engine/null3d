@@ -23,7 +23,7 @@ Engine docs: `porting/threejs-materials`, `api/materials`, `api/textures`, `conc
 | `color` | `color` | Hex values are sRGB in both |
 | `map` | `map` | Must be sRGB (`colorSpace: 'srgb'`) |
 | `roughness`, `metalness` | `roughness`, `metalness` | Same meaning (perceptual roughness) |
-| `roughnessMap`, `metalnessMap` | `metalnessRoughnessMap` | One texture: roughness in G, metalness in B, as glTF packs them. If the original uses two textures, pack them offline with `null3d assets pack-orm` (the same texture can hold AO in R) |
+| `roughnessMap`, `metalnessMap` | `metalnessRoughnessMap` | One texture: roughness in G, metalness in B, as glTF packs them. If the original uses two textures, pack them offline with `bunx @null3d/cli assets pack-orm` (the same texture can hold AO in R) |
 | `normalMap`, `normalScale` | `normalMap`, `normalScale: [x, y]` | Tangent-space only; object-space normal maps are not supported |
 | `normalMapType: ObjectSpaceNormalMap` | Not supported | Convert to tangent space offline |
 | `aoMap`, `aoMapIntensity` | `aoMap`, `aoMapIntensity` | three.js reads AO from the R channel; so does null3d |
@@ -31,7 +31,7 @@ Engine docs: `porting/threejs-materials`, `api/materials`, `api/textures`, `conc
 | `emissive`, `emissiveMap`, `emissiveIntensity` | Same names | |
 | `envMap`, `envMapIntensity` | Scene environment, `envIntensity` | Per-material environment maps are not supported; one scene environment lights everything |
 | `envMapRotation` | `scene.setEnvironment(env, { rotation })` (0.2) | |
-| `bumpMap`, `bumpScale` | A normal map made offline: `null3d assets normal-from-bump` (0.2) | |
+| `bumpMap`, `bumpScale` | A normal map made offline: `bunx @null3d/cli assets normal-from-bump` (0.2) | |
 | `displacementMap`, `displacementScale`, `displacementBias` | A `vertexOffset` function (section 8 of `references/shaders.md`) | Enlarge bounds with `setBounds` |
 | `alphaMap` | A surface function, or alpha packed into `map` offline | three.js reads the alpha map's G channel (recipe in section 8) |
 | `transparent: true`, `opacity` | `alphaMode: 'blend'`, `opacity` | |
@@ -113,7 +113,7 @@ Both become surface-function recipes (section 8). Toon shading needs light-band 
 | `premultiplyAlpha` | `premultipliedAlpha` |
 | `needsUpdate = true` after changing pixels | `texture.update(bitmap)` |
 
-Texture formats: convert PNG and JPEG textures to KTX2 with `npx null3d assets optimize`. Use UASTC for normal maps and important color maps, and ETC1S where download size matters most. HDR environment files become prefiltered KTX2 with `null3d assets env`.
+Texture formats: convert PNG and JPEG textures to KTX2 with `bunx @null3d/cli assets optimize`. Use UASTC for normal maps and important color maps, and ETC1S where download size matters most. HDR environment files become prefiltered KTX2 with `bunx @null3d/cli assets env`.
 
 ## 8. Recipes
 

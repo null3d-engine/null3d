@@ -71,7 +71,7 @@
         "Names the Cross-Origin-Opener-Policy same-origin and Cross-Origin-Embedder-Policy require-corp headers",
         "Mentions CORS or Cross-Origin-Resource-Policy headers for assets from other origins",
         "Mentions that Safari does not support COEP credentialless",
-        "Suggests npx null3d doctor or checking the browser console for crossOriginIsolated",
+        "Suggests bunx @null3d/cli doctor or checking the browser console for crossOriginIsolated",
         "Points to getting-started/hosting",
         "Mentions the single-threaded fallback when headers cannot be set"
       ]

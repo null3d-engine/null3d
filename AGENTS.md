@@ -128,9 +128,10 @@ Published Markdown (every page under `docs/`, the skills, the README, the packag
 - A page describes what exists now. Its status label says whether the feature is built.
 - Write for developers who use the engine. Never mention the maintainers' milestones, checkpoints, task IDs, proposals or internal plans, and never explain where a fact came from in those terms. Give the reason when it helps the reader, such as a browser or GPU limit. Name the engine's benchmarks when you cite a figure. Notes for maintainers belong in code comments or in this file. This file is for contributors, so this rule does not apply to it.
 - Commit subjects and pull request titles become lines in the public changelog, so they follow these rules too.
+- Show commands with Bun: `bun add`, `bun install`, `bun run` and `bunx`, never the npm or npx forms. Run the command line tool as `bunx @null3d/cli <command>`, with the scope. Both rules cover code blocks too.
 - Run the humanizer skill over any prose you write or change. This covers user-facing text that lives in data or code too: the mapping notes, error messages and TSDoc comments.
 
-The docs style check catches the mechanical part of these rules. It blocks build-process words such as milestone and checkpoint, and it checks each commit subject too. The humanizer pass and your own re-reading cover the rest.
+The docs style check catches the mechanical part of these rules. It blocks build-process words such as milestone and checkpoint, and the command line tool run by the wrong name. It checks each commit subject too. The humanizer pass and your own re-reading cover the rest.
 
 ## Commit gates
 

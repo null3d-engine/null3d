@@ -11,7 +11,12 @@ import {
 } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { DOC_AREAS, MAPPING_SOURCE, pagePath } from './docs';
-import { mentionsBuildProcess, mentionsPrivatePlan } from './docs-style';
+import {
+	mentionsBuildProcess,
+	mentionsOtherPackageManager,
+	mentionsPrivatePlan,
+	mentionsWrongCli,
+} from './docs-style';
 import { readIfExists, walkFiles } from './files';
 import { parseFrontMatter } from './frontmatter';
 
@@ -178,6 +183,10 @@ function checkSkill(root: string, name: string, docRefs: Map<string, Set<string>
 		const content = readFileSync(join(root, path), 'utf8');
 		if (mentionsPrivatePlan(content))
 			problems.push(`${path} points at the maintainers' private build plan`);
+		if (mentionsWrongCli(content))
+			problems.push(`${path} runs the command line tool as null3d; use bunx @null3d/cli`);
+		if (mentionsOtherPackageManager(content))
+			problems.push(`${path} shows a command for npm, pnpm or Yarn; show it with Bun`);
 		if (mentionsBuildProcess(content))
 			problems.push(
 				`${path} names the maintainers' build process (milestones, checkpoints or task IDs)`,

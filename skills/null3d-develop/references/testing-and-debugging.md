@@ -17,14 +17,14 @@ Engine docs: `guides/testing`, `guides/debugging`, `errors/index`, `cli/null3d`.
 
 | Command | What it does |
 | --- | --- |
-| `npx vite` | Dev server; the null3d Vite plugin adds the cross-origin isolation headers and shader hot reload |
-| `npx null3d shot --out shot.png [--time 2.0] [--size 1280x720] [--gpu webgl2]` | Renders one frame headless and saves it, plus `shot.json` with frame stats and console errors |
-| `npx null3d test` | Type checks, lint, and all visual and behavior tests, headless |
-| `npx null3d test --gpu webgpu,webgl2,compat` | Runs visual tests on each GPU tier |
-| `npx null3d test --update-references` | Rewrites reference images; review the diff before committing |
-| `npx null3d bench --scene <name>` | Benchmark: 5 runs of 30 seconds after warm-up; median and spread per phase |
-| `npx null3d doctor` | Checks versions, headers, asset CORS, and the capabilities of the local browser |
-| `npx null3d docs show <id>` / `npx null3d docs search "<words>"` | Prints docs for the installed engine version |
+| `bunx vite` | Dev server; the null3d Vite plugin adds the cross-origin isolation headers and shader hot reload |
+| `bunx @null3d/cli shot --out shot.png [--time 2.0] [--size 1280x720] [--gpu webgl2]` | Renders one frame headless and saves it, plus `shot.json` with frame stats and console errors |
+| `bunx @null3d/cli test` | Type checks, lint, and all visual and behavior tests, headless |
+| `bunx @null3d/cli test --gpu webgpu,webgl2,compat` | Runs visual tests on each GPU tier |
+| `bunx @null3d/cli test --update-references` | Rewrites reference images; review the diff before committing |
+| `bunx @null3d/cli bench --scene <name>` | Benchmark: 5 runs of 30 seconds after warm-up; median and spread per phase |
+| `bunx @null3d/cli doctor` | Checks versions, headers, asset CORS, and the capabilities of the local browser |
+| `bunx @null3d/cli docs show <id>` / `bunx @null3d/cli docs search "<words>"` | Prints docs for the installed engine version |
 
 Every command prints short text results (pass or fail, reasons, file paths), so you can read them directly. Open the image files it names when a visual check fails.
 
@@ -87,11 +87,11 @@ Reaching the dev server:
 
 - Android phone: connect by USB and run `adb reverse tcp:5173 tcp:5173`; the phone opens `http://localhost:5173`, which counts as a secure context. Plain `http` on a network address does not, and Chrome 154 asks before loading it.
 - iPhone or iPad: serve HTTPS with a local certificate through the Vite plugin's `https` option (`getting-started/hosting`). Install the root certificate on the device, and trust it in Settings > General > About > Certificate Trust Settings. Debug from Safari on a Mac through the Develop menu.
-- Record the device, browser version, GPU tier and preset with every result; `npx null3d doctor --device` prints them.
+- Record the device, browser version, GPU tier and preset with every result; `bunx @null3d/cli doctor --device` prints them.
 
 ## 5. The MCP server for agents
 
-`npx null3d mcp` starts a Model Context Protocol server connected to the running dev session. Its tool names can change until `guides/agents` is stable:
+`bunx @null3d/cli mcp` starts a Model Context Protocol server connected to the running dev session. Its tool names can change until `guides/agents` is stable:
 
 | Tool | Use |
 | --- | --- |
@@ -113,7 +113,7 @@ Every engine error is an `EngineError` with a code, the object's name, what fail
 E1203: setPosition() got NaN for x on "Player" (slot 12). Check the value computed before this call.
 ```
 
-Look up the full explanation with `npx null3d docs show errors/E1203`. Release builds remove most checks, so reproduce problems in a development build.
+Look up the full explanation with `bunx @null3d/cli docs show errors/E1203`. Release builds remove most checks, so reproduce problems in a development build.
 
 ## 7. Troubleshooting table
 
@@ -142,7 +142,7 @@ Look up the full explanation with `npx null3d docs show errors/E1203`. Release b
 
 ## 8. Before you ship
 
-Work through this list before a release, on the production build (`npx vite build`, then `npx vite preview`), not the dev server.
+Work through this list before a release, on the production build (`bunx vite build`, then `bunx vite preview`), not the dev server.
 
 Rendering:
 

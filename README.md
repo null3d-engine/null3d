@@ -76,8 +76,8 @@ Then open one of these pages in Chrome:
 This is what a complete null3d project will look like. You install the engine from npm and import it, as you would `three`:
 
 ```sh
-npm install @null3d/engine
-npm install --save-dev vite @null3d/vite-plugin
+bun add @null3d/engine
+bun add -d vite @null3d/vite-plugin
 ```
 
 The Vite plugin sends the headers that worker threads need and builds the sketch worker:
@@ -128,7 +128,7 @@ export default defineSketch(async ({ scene, geometry, materials }) => {
 });
 ```
 
-Run `npx vite` and open the page. The first release, 0.1, will put both packages on npm. Until then, [Development](#development) shows how to work on the engine itself.
+Run `bunx vite` and open the page. The first release, 0.1, will put both packages on npm. Until then, [Development](#development) shows how to work on the engine itself.
 
 ## How it works
 
@@ -163,8 +163,8 @@ flowchart LR
 | Version | Adds |
 | --- | --- |
 | 0.1 | Clustered forward lighting with MSAA, cascaded shadows, fog, quality presets, dynamic resolution, render layers, orbit and map camera controls, debug drawing, WGSL imports from an engine shader library, and a headless test runner |
-| 0.2 | glTF with KTX2 textures and meshopt compression, the `null3d assets` optimizer, skeletal and morph animation, raycasting, pointer events on objects, environment lighting, skies, post-processing with custom effects, custom render passes, sprites, points, wide lines, HTML labels, large-world mode, and occlusion culling on both GPU paths |
-| 0.3 | The docs site and `null3d docs`, starter templates, an MCP server, an in-page inspector, an ESLint plugin, and the three.js porting tools |
+| 0.2 | glTF with KTX2 textures and meshopt compression, the `bunx @null3d/cli assets` optimizer, skeletal and morph animation, raycasting, pointer events on objects, environment lighting, skies, post-processing with custom effects, custom render passes, sprites, points, wide lines, HTML labels, large-world mode, and occlusion culling on both GPU paths |
+| 0.3 | The docs site and `bunx @null3d/cli docs`, starter templates, an MCP server, an in-page inspector, an ESLint plugin, and the three.js porting tools |
 
 </details>
 

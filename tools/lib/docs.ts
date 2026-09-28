@@ -44,7 +44,7 @@ export const PAGES: readonly PageEntry[] = [
 	{ id: 'getting-started/install', title: 'Install null3d', since: '0.1', summary: 'The npm packages; the Vite plugin; package versions always match; the optional `null3d` command.' },
 	{ id: 'getting-started/first-scene', title: 'Your first scene', since: '0.1', summary: 'page.ts with createEngine; sketch.ts with defineSketch; camera, light, mesh; running it with Vite.' },
 	{ id: 'getting-started/hosting', title: 'Hosting and cross-origin isolation', since: '0.1', summary: 'COOP and COEP headers; require-corp on Safari; CORS and CORP for assets; the single-threaded fallback.' },
-	{ id: 'getting-started/project-structure', title: 'Project structure', since: '0.3', summary: 'Starting from a template with `null3d create`; page.ts, sketch.ts, assets/, AGENTS.md, .claude/skills/; what runs where.' },
+	{ id: 'getting-started/project-structure', title: 'Project structure', since: '0.3', summary: 'Starting from a template with `bunx @null3d/cli create`; page.ts, sketch.ts, assets/, AGENTS.md, .claude/skills/; what runs where.' },
 
 	{ id: 'concepts/architecture', title: 'Architecture: threads and the frame', since: '0.1', summary: 'Main thread, sketch worker, render worker, job workers; the pipelined frame; latency modes.' },
 	{ id: 'concepts/handles', title: 'Handles and objects', since: '0.1', summary: '30-bit handles; wrapper objects; stale-handle errors; keeping per-object data in your own arrays.' },

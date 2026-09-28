@@ -81,6 +81,21 @@ export function mentionsBuildProcess(text: string): boolean {
 	return BUILD_PROCESS.test(text);
 }
 
+/** The command line tool run by the wrong name. Readers run it as `bunx @null3d/cli <command>`. */
+const WRONG_CLI = /\b(?:npx|bunx) null3d(?![\w/-])|`null3d [a-z]/;
+
+/** A command for another package manager. Published docs show every command with Bun. */
+const OTHER_PACKAGE_MANAGER =
+	/\bnpx\s|\bnpm\s+(?:install|i|add|run|exec|ci|create|init|start|test)\b|\b(?:yarn|pnpm)\s+(?:add|install|i|run|dlx|exec|create)\b/;
+
+export function mentionsOtherPackageManager(text: string): boolean {
+	return OTHER_PACKAGE_MANAGER.test(text);
+}
+
+export function mentionsWrongCli(text: string): boolean {
+	return WRONG_CLI.test(text);
+}
+
 /** A bare milestone name such as M1. Apple's chips share the form, so this only warns. */
 const MILESTONE_NAME = /(?<!Apple )\bM\d\b(?!-)/;
 
@@ -216,6 +231,28 @@ export function checkDocsStyle(md: string, audience: DocsAudience = 'users'): St
 		text: string,
 		message: string,
 	) => findings.push({ rule, severity, line, excerpt: excerptOf(text), message });
+
+	// Code blocks too: a command in a code block is the one readers copy.
+	const lines = md.split('\n');
+	for (let index = 0; index < lines.length; index++) {
+		const line = lines[index] ?? '';
+		if (mentionsWrongCli(line))
+			add(
+				'cli_command',
+				'error',
+				index + 1,
+				line,
+				'Run the command line tool as `bunx @null3d/cli <command>`.',
+			);
+		if (audience === 'users' && mentionsOtherPackageManager(line))
+			add(
+				'package_manager',
+				'error',
+				index + 1,
+				line,
+				'Show the command with Bun: `bun add`, `bun install`, `bun run` or `bunx`.',
+			);
+	}
 
 	for (const block of blocks(md)) {
 		const text = visibleText(block.text);

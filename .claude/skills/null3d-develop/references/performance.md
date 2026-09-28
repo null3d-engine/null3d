@@ -44,7 +44,7 @@ These numbers are starting points. The engine docs page `guides/performance` hol
 ## 3. How to measure
 
 1. Turn on the overlay: `debug.stats(true)`. It shows CPU time per thread and phase (update, transforms, animation, culling, recording, upload, replay), GPU time where the device has timers, frame intervals, draw buckets, uploaded bytes, the GPU tier and the preset.
-2. Run the repeatable benchmark: `npx null3d bench --scene <name>`. It runs 5 times 30 seconds after warm-up and prints the median and spread per phase. Use it before and after a change.
+2. Run the repeatable benchmark: `bunx @null3d/cli bench --scene <name>`. It runs 5 times 30 seconds after warm-up and prints the median and spread per phase. Use it before and after a change.
 3. Read numbers in code or tests: `debug.frameStats()` returns the same values.
 4. Profile JavaScript in the browser's performance panel. Sketch code runs in the worker named `null3d-sketch`; look there, not on the main thread.
 5. Check the WebGL2 path: add `?gpu=webgl2` to the URL. Phones without WebGPU use this path, and it does more CPU work (culling on job workers).
@@ -63,7 +63,7 @@ These numbers are starting points. The engine docs page `guides/performance` hol
 | Objects behind walls or buildings still cost GPU time on WebGL2 | No blocker meshes | Run the asset tool on level geometry so it makes blocker meshes (0.2); call `setOccluder(true)` on large custom walls (`concepts/culling`) |
 | High "upload" bytes | Dynamic batches or objects that rarely change | Static batches with `markDirty(start, count)` for the rows that changed |
 | `rebuilds` above zero during play, with upload and replay spikes in the same frames | Objects, meshes, materials or batches created, destroyed or changed during play: each such frame rebuilds the draw tables and uploads every matrix | Create during setup; hide and show with `setVisible` and pool with `setActiveCount`, which do not rebuild (`guides/performance`) |
-| High "replay" or draw buckets | Too many mesh and material combinations | Share materials; pack textures into arrays with `null3d assets`; merge small static meshes offline |
+| High "replay" or draw buckets | Too many mesh and material combinations | Share materials; pack textures into arrays with `bunx @null3d/cli assets`; merge small static meshes offline |
 | GPU time high, CPU low | Pixels or shader cost | Lower `maxPixelRatio`; cheaper materials; fewer shadowed lights; avoid large transparent areas |
 | Hitch when something new appears | A rebuild (`rebuilds` above zero), or a pipeline build (`pipelines` above zero) | Create materials and objects during loading; `await scene.warmUp()` |
 | Hitch while loading during play | Uploads and decoding | Load before play, or stream smaller files; the per-frame upload budget spreads uploads |
@@ -85,7 +85,7 @@ These numbers are starting points. The engine docs page `guides/performance` hol
 | Item | Rough cost | How to reduce |
 | --- | --- | --- |
 | 2048 x 2048 RGBA8 texture with mipmaps | about 22 MB on the GPU | KTX2 compression (4 to 8 times smaller) |
-| Same texture as ASTC or ETC2 | about 4 to 6 MB | Use `null3d assets optimize` |
+| Same texture as ASTC or ETC2 | about 4 to 6 MB | Use `bunx @null3d/cli assets optimize` |
 | One static object | a few hundred bytes of engine data | Instances for many copies |
 | One instance row | About 180 bytes of engine memory, 230 with per-row colors, plus your own arrays | Only the columns you need; colors only where the batch needs them |
 | A new mesh, instance batch, or mesh drawn with a new material, during play | A one-time growth of engine memory in the next frame | Create them during setup; size a batch for its most rows and show fewer with `setActiveCount` |
