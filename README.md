@@ -73,7 +73,24 @@ Then open one of these pages in Chrome:
 
 `bun run bench:run` measures S1 in both engines and prints a table of CPU time per frame.
 
-This is what a complete null3d project will look like. The page starts the engine:
+This is what a complete null3d project will look like. You install the engine from npm and import it, as you would `three`:
+
+```sh
+npm install @null3d/engine
+npm install --save-dev vite @null3d/vite-plugin
+```
+
+The Vite plugin sends the headers that worker threads need and builds the game worker:
+
+```ts
+// vite.config.ts
+import { defineConfig } from 'vite';
+import null3d from '@null3d/vite-plugin';
+
+export default defineConfig({ plugins: [null3d()] });
+```
+
+The page starts the engine:
 
 ```ts
 // page.ts (main thread)
@@ -111,7 +128,7 @@ export default defineGame(async ({ scene, geometry, materials }) => {
 });
 ```
 
-The first release, 0.1, will add the `@null3d/engine` package and the `null3d dev` command, a dev server that sends the right headers. Until then, [Development](#development) shows how to work on the engine itself.
+Run `npx vite` and open the page. The first release, 0.1, will put both packages on npm. Until then, [Development](#development) shows how to work on the engine itself.
 
 ## How it works
 
@@ -278,9 +295,9 @@ Each release lists its changes in `CHANGELOG.md`. Until 1.0, the API can change 
 | Release | What it adds |
 | --- | --- |
 | Now, before 0.1 | The threaded core, both GPU backends with instanced meshes and one light, and benchmarks against three.js on a laptop, an Android phone and an iPad |
-| 0.1 | Cameras, materials, clustered lights, shadows, fog, quality presets, dynamic resolution, camera controls and the first TypeScript API |
+| 0.1 | Cameras, materials, clustered lights, shadows, fog, quality presets, dynamic resolution, camera controls, the first TypeScript API, the Vite plugin, and the first `null3d` commands for tests, screenshots and benchmarks |
 | 0.2 | glTF loading, the asset optimizer, animation, raycasting, environment lighting, post-processing, sprites, lines and large worlds |
-| 0.3 | The docs site, the `null3d` command, templates, agent tooling and the porting tools |
+| 0.3 | The docs site, the rest of the `null3d` command, templates, agent tooling and the porting tools |
 | 1.0 | A stable API, testing on many devices, size budgets and public benchmarks |
 
 ## Development

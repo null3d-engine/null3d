@@ -13,8 +13,8 @@ export const DEV_CERT_DIR = 'target/dev-cert';
 
 export interface Null3dPluginOptions {
 	/**
-	 * Serve HTTPS on the local network with the certificate that `bun run dev-cert` makes. Phones
-	 * and tablets reached over the network need HTTPS for shared memory and WebGPU.
+	 * Serve HTTPS on the local network with the certificate in `certDir`, such as one made with
+	 * mkcert. Phones and tablets reached over the network need HTTPS for shared memory and WebGPU.
 	 */
 	https?: boolean;
 	/** Directory that holds `cert.pem` and `key.pem`; the default is `target/dev-cert` under the project root. */
@@ -32,7 +32,9 @@ function readCertificate(root: string, certDir: string): { cert: Buffer; key: Bu
 	const cert = resolve(dir, 'cert.pem');
 	const key = resolve(dir, 'key.pem');
 	if (!existsSync(cert) || !existsSync(key)) {
-		throw new Error(`null3d: no HTTPS certificate in ${dir}. Run \`bun run dev-cert\` first.`);
+		throw new Error(
+			`null3d: no HTTPS certificate in ${dir}. Put cert.pem and key.pem there, or set certDir to their folder. Docs: getting-started/hosting.`,
+		);
 	}
 	return { cert: readFileSync(cert), key: readFileSync(key) };
 }

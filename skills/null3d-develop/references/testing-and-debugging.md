@@ -16,7 +16,7 @@ Engine docs: `guides/testing`, `guides/debugging`, `errors/index`, `cli/null3d`.
 
 | Command | What it does |
 | --- | --- |
-| `npx null3d dev` | Dev server with cross-origin isolation headers and shader hot reload |
+| `npx vite` | Dev server; the null3d Vite plugin adds the cross-origin isolation headers and shader hot reload |
 | `npx null3d shot --out shot.png [--time 2.0] [--size 1280x720] [--gpu webgl2]` | Renders one frame headless and saves it, plus `shot.json` with frame stats and console errors |
 | `npx null3d test` | Type checks, lint, and all visual and behavior tests, headless |
 | `npx null3d test --gpu webgpu,webgl2,compat` | Runs visual tests on each GPU tier |
@@ -85,7 +85,7 @@ URL switches for the dev server (engine docs `guides/testing`):
 Reaching the dev server:
 
 - Android phone: connect by USB and run `adb reverse tcp:5173 tcp:5173`; the phone opens `http://localhost:5173`, which counts as a secure context. Plain `http` on a network address does not, and Chrome 154 asks before loading it.
-- iPhone or iPad: serve HTTPS with a local certificate (`npx null3d dev --https`), install the root certificate on the device, and trust it in Settings > General > About > Certificate Trust Settings. Debug from Safari on a Mac through the Develop menu.
+- iPhone or iPad: serve HTTPS with a local certificate through the Vite plugin's `https` option (`getting-started/hosting`). Install the root certificate on the device, and trust it in Settings > General > About > Certificate Trust Settings. Debug from Safari on a Mac through the Develop menu.
 - Record the device, browser version, GPU tier and preset with every result; `npx null3d doctor --device` prints them.
 
 ## 5. The MCP server for agents
@@ -118,7 +118,7 @@ Look up the full explanation with `npx null3d docs show errors/E1203`. Release b
 
 | Symptom | Likely cause | Fix | Docs |
 | --- | --- | --- | --- |
-| Blank canvas; console mentions `SharedArrayBuffer` or `crossOriginIsolated` | No isolation headers | `null3d dev`, or set COOP `same-origin` and COEP `require-corp` on the host | `getting-started/hosting` |
+| Blank canvas; console mentions `SharedArrayBuffer` or `crossOriginIsolated` | No isolation headers | The null3d Vite plugin, or set COOP `same-origin` and COEP `require-corp` on the host | `getting-started/hosting` |
 | Blank canvas; console shows CORS errors for models or textures | Assets from another origin without CORS or CORP headers | Serve them with `Access-Control-Allow-Origin` or `Cross-Origin-Resource-Policy` | `getting-started/hosting` |
 | Canvas works, nothing visible | No active camera, camera inside an object, or objects outside near and far | `scene.setActiveCamera`; check positions with `debug.axes`; widen near and far | `api/cameras` |
 | An object does not move | Static object written through an array | Setter, or `dynamic: true` | `concepts/static-dynamic` |

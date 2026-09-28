@@ -46,10 +46,10 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 
 | Page | What it covers | Status | Version |
 | --- | --- | --- | --- |
-| [Install and create a project](getting-started/install.md) | `null3d create`; packages; engine, docs and skills versions always match. | planned | 0.3 |
-| [Your first scene](getting-started/first-scene.md) | page.ts with createEngine; game.ts with defineGame; camera, light, mesh; running the dev server. | planned | 0.1 |
+| [Install null3d](getting-started/install.md) | The npm packages; the Vite plugin; package versions always match; the optional `null3d` command. | planned | 0.1 |
+| [Your first scene](getting-started/first-scene.md) | page.ts with createEngine; game.ts with defineGame; camera, light, mesh; running it with Vite. | planned | 0.1 |
 | [Hosting and cross-origin isolation](getting-started/hosting.md) | COOP and COEP headers; require-corp on Safari; CORS and CORP for assets; the single-threaded fallback. | planned | 0.1 |
-| [Project structure](getting-started/project-structure.md) | page.ts, game.ts, assets/, AGENTS.md, .claude/skills/; what runs where. | planned | 0.3 |
+| [Project structure](getting-started/project-structure.md) | Starting from a template with `null3d create`; page.ts, game.ts, assets/, AGENTS.md, .claude/skills/; what runs where. | planned | 0.3 |
 
 ### Concepts
 
@@ -150,7 +150,7 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 
 | Page | What it covers | Status | Version |
 | --- | --- | --- | --- |
-| [The null3d command](cli/null3d.md) | create, dev, build, test, bench, shot, assets, docs, port, skills, doctor. | planned | 0.3 |
+| [The null3d command](cli/null3d.md) | create, test, bench, shot, assets, docs, port, skills, mcp, doctor. | planned | 0.3 |
 
 ### Errors
 

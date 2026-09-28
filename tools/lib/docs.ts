@@ -41,10 +41,10 @@ const SINCE_FORMAT = /^(\d+\.\d+|after \d+\.\d+)$/;
 // biome-ignore format: one page per line keeps the inventory readable as a table
 export const PAGES: readonly PageEntry[] = [
 	{ id: 'index', title: 'null3d documentation', since: '0.1', summary: 'What null3d is; how the docs are organized; status labels.' },
-	{ id: 'getting-started/install', title: 'Install and create a project', since: '0.3', summary: '`null3d create`; packages; engine, docs and skills versions always match.' },
-	{ id: 'getting-started/first-scene', title: 'Your first scene', since: '0.1', summary: 'page.ts with createEngine; game.ts with defineGame; camera, light, mesh; running the dev server.' },
+	{ id: 'getting-started/install', title: 'Install null3d', since: '0.1', summary: 'The npm packages; the Vite plugin; package versions always match; the optional `null3d` command.' },
+	{ id: 'getting-started/first-scene', title: 'Your first scene', since: '0.1', summary: 'page.ts with createEngine; game.ts with defineGame; camera, light, mesh; running it with Vite.' },
 	{ id: 'getting-started/hosting', title: 'Hosting and cross-origin isolation', since: '0.1', summary: 'COOP and COEP headers; require-corp on Safari; CORS and CORP for assets; the single-threaded fallback.' },
-	{ id: 'getting-started/project-structure', title: 'Project structure', since: '0.3', summary: 'page.ts, game.ts, assets/, AGENTS.md, .claude/skills/; what runs where.' },
+	{ id: 'getting-started/project-structure', title: 'Project structure', since: '0.3', summary: 'Starting from a template with `null3d create`; page.ts, game.ts, assets/, AGENTS.md, .claude/skills/; what runs where.' },
 
 	{ id: 'concepts/architecture', title: 'Architecture: threads and the frame', since: '0.1', summary: 'Main thread, game worker, render worker, job workers; the pipelined frame; latency modes.' },
 	{ id: 'concepts/handles', title: 'Handles and objects', since: '0.1', summary: '30-bit handles; wrapper objects; stale-handle errors; keeping game data in your own arrays.' },
@@ -120,7 +120,7 @@ export const PAGES: readonly PageEntry[] = [
 	{ id: 'porting/threejs-unsupported', title: 'Unsupported three.js features', since: '0.3', summary: 'Features after 1.0 or out of scope, with workarounds.' },
 	{ id: 'porting/verification', title: 'Verifying a port', since: '0.3', summary: 'Parity images per camera view; performance comparison; the WebGL2 path; phones.' },
 
-	{ id: 'cli/null3d', title: 'The null3d command', since: '0.3', summary: 'create, dev, build, test, bench, shot, assets, docs, port, skills, doctor.' },
+	{ id: 'cli/null3d', title: 'The null3d command', since: '0.3', summary: 'create, test, bench, shot, assets, docs, port, skills, mcp, doctor.' },
 	{ id: 'cookbook/index', title: 'Cookbook', since: '0.2', summary: 'Short recipes; each is also a tested example.' },
 ];
 

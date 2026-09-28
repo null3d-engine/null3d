@@ -89,9 +89,25 @@ GitHub Pages cannot send custom headers, so a null3d page there runs single-thre
 
 ## During development
 
-The null3d dev server and the Vite plugin send both headers on every response, including `.wasm` files and worker scripts.
+The null3d Vite plugin sends both headers on every response from `vite` and `vite preview`, including `.wasm` files and worker scripts.
 
-Shared memory and WebGPU also need a secure context: HTTPS, or `localhost`. To test on a phone over your local network, use `null3d dev --https`, which serves HTTPS with a local certificate. An Android phone connected by USB can instead reach your computer's `localhost` through `adb reverse`.
+Shared memory and WebGPU also need a secure context: HTTPS, or `localhost`. An Android phone connected by USB can reach your computer's `localhost` through `adb reverse tcp:5173 tcp:5173`.
+
+To test on a phone or tablet over your local network, serve HTTPS with a local certificate. Make one with [mkcert](https://github.com/FiloSottile/mkcert), for `localhost` and your computer's network name:
+
+```sh
+mkdir certs
+mkcert -cert-file certs/cert.pem -key-file certs/key.pem localhost my-computer.local
+```
+
+Keep the `certs` folder out of version control, because it holds a private key. Turn on the plugin's `https` option, and the dev server serves HTTPS on your local network:
+
+```ts
+// vite.config.ts
+export default defineConfig({ plugins: [null3d({ https: true, certDir: 'certs' })] });
+```
+
+The device must trust mkcert's root certificate. `mkcert -CAROOT` prints its folder. Copy `rootCA.pem` to the device and install it. On an iPhone or iPad, also turn on full trust in Settings > General > About > Certificate Trust Settings.
 
 ## What isolation changes
 

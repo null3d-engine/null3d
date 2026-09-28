@@ -64,7 +64,7 @@
     },
     {
       "id": 5,
-      "prompt": "I deployed my null3d game to my static host and now I only see a blank canvas. Locally with null3d dev it works fine.",
+      "prompt": "I deployed my null3d game to my static host and now I only see a blank canvas. Locally with the Vite dev server it works fine.",
       "expected_output": "Diagnosis centered on cross-origin isolation headers and asset CORS/CORP, with concrete header values, the single-threaded fallback, null3d doctor, and the hosting docs page.",
       "files": [],
       "expectations": [

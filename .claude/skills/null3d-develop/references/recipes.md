@@ -25,10 +25,10 @@ Each recipe states the goal, gives the code, explains why it is written that way
 
 ```sh
 npx @null3d/cli create my-game --template empty   # also: third-person, top-down-units, product-viewer
-cd my-game && npm install && npx null3d dev
+cd my-game && npm install && npm run dev
 ```
 
-The template contains `page.ts`, `game.ts`, `index.html` with a canvas, `AGENTS.md`, and the null3d skills in `.claude/skills/`. `null3d dev` sends the cross-origin isolation headers, so the threaded build runs. Docs: `getting-started/install`, `getting-started/project-structure`, `getting-started/hosting`.
+The template contains `page.ts`, `game.ts`, `index.html` with a canvas, `AGENTS.md`, and the null3d skills in `.claude/skills/`. Its `vite.config.ts` loads the null3d Vite plugin, which sends the cross-origin isolation headers, so the threaded build runs. Docs: `getting-started/install`, `getting-started/project-structure`, `getting-started/hosting`.
 
 ## 2. Orbit camera around a model
 

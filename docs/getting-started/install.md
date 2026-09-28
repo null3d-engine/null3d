@@ -1,15 +1,76 @@
 ---
 id: getting-started/install
-title: Install and create a project
+title: Install null3d
 status: planned
-since: "0.3"
-summary: "`null3d create`; packages; engine, docs and skills versions always match."
+since: "0.1"
+summary: "The npm packages; the Vite plugin; package versions always match; the optional `null3d` command."
 ---
 
-<!-- null3d:placeholder -->
+# Install null3d
 
-# Install and create a project
+> Planned for null3d 0.1. No release has these packages yet, so coding agents must not use them.
 
-> Planned for null3d 0.3. This page is a placeholder. No release has this feature yet, so the APIs it names do not exist. Coding agents must not use them.
+null3d installs from npm like any other library, and you import it in your code as you would import `three`. You need no command-line tool to build or run a null3d game.
 
-This page will cover: `null3d create`; packages; engine, docs and skills versions always match.
+## Install the packages
+
+```sh
+npm install @null3d/engine
+npm install --save-dev vite @null3d/vite-plugin
+```
+
+| Package | What it holds |
+| --- | --- |
+| `@null3d/engine` | The TypeScript API, the worker entry points, both WebAssembly builds and these docs |
+| `@null3d/vite-plugin` | The build and dev server setup that null3d needs |
+| `@null3d/controls` | Orbit and map camera controls, for games that use them |
+
+## Add the Vite plugin
+
+```ts
+// vite.config.ts
+import { defineConfig } from 'vite';
+import null3d from '@null3d/vite-plugin';
+
+export default defineConfig({ plugins: [null3d()] });
+```
+
+The plugin does four jobs that a three.js project does not need:
+
+- Sends the two headers that let worker threads share memory, on the dev server and on `vite preview`. [Hosting and cross-origin isolation](hosting.md) explains them.
+- Builds your game file as a module worker.
+- Translates your WGSL shaders for WebGL2.
+- Keeps the engine's development checks in the dev server and removes them from production builds.
+
+null3d has a plugin for Vite only.
+
+## Run the game
+
+Write `page.ts` and `game.ts` as [Your first scene](first-scene.md) shows, then start Vite:
+
+```sh
+npx vite
+```
+
+Open the address that Vite prints. `npx vite build` writes the production files. Serve them from a host that sends the two headers.
+
+## Keep versions in step
+
+All `@null3d/*` packages share one version number, because the WebAssembly core and the TypeScript API must match. Install the same version of each. The docs in `node_modules/@null3d/engine/docs/` always match the installed engine.
+
+## The null3d command
+
+The `null3d` command, in the `@null3d/cli` package, is optional. It does jobs that a bundler does not do, such as headless tests, screenshots, benchmarks and model optimization. Install it when you need one of them:
+
+```sh
+npm install --save-dev @null3d/cli
+npx null3d test
+```
+
+[The null3d command](../cli/null3d.md) lists every command.
+
+## Related pages
+
+- [Your first scene](first-scene.md): the page and the game worker.
+- [Hosting and cross-origin isolation](hosting.md): the headers on your production host.
+- [Project structure](project-structure.md): starter templates and what runs where.

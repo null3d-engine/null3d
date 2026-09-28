@@ -209,5 +209,5 @@ The build resolves imports before translating, and includes only the functions y
 - Build errors show the WGSL line, and the translated GLSL line for WebGL2 errors. Fix the WGSL; never edit generated GLSL.
 - Output an intermediate value as color: `s.emissive = vec3f(n); s.baseColor = vec3f(0.0);` shows `n` directly.
 - `debug.view('normals')` and `debug.view('overdraw')` show normals and overdraw for the whole scene.
-- Shader hot reload: `null3d dev` reloads WGSL files and inline WGSL strings without reloading the page (0.2).
+- Shader hot reload: the null3d Vite plugin reloads WGSL files and inline WGSL strings without reloading the page (0.2).
 - Check both backends: `?gpu=webgl2` runs the translated shaders.

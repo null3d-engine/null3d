@@ -83,7 +83,7 @@ export default defineGame(async ({ scene, geometry, materials }) => {
 1. Pin down the target when the request leaves it open: which devices (phones or desktop), which frame rate, and whether the WebGL2 path matters. Phones usually matter, so assume they do unless told otherwise.
 2. Read the doc pages for the features involved (section 1).
 3. Make the change in small steps. Game logic goes in `game.ts`; DOM, HTML UI and audio go in `page.ts`.
-4. Look at the result. `npx null3d dev` serves the project with the right headers. `npx null3d shot --out shot.png` renders one frame headless and saves it. Open the image and check it: code that compiles can still draw nothing.
+4. Look at the result. `npx vite` serves the project, and the null3d Vite plugin adds the right headers. `npx null3d shot --out shot.png` renders one frame headless and saves it. Open the image and check it: code that compiles can still draw nothing.
 5. Check the cost with `npx null3d bench`, or with `debug.stats(true)` while running. Compare the frame phases with the preset's budget (`references/performance.md`).
 6. Add or update a test. Anything visual gets a hold-mode image test (`references/testing-and-debugging.md`). Run `npx null3d test`.
 7. If the change touches rendering, check the WebGL2 path: add `?gpu=webgl2` to the dev URL, or run `npx null3d test --gpu webgl2`.
@@ -180,7 +180,7 @@ water.set({ waveSpeed: 2.0 }); // typed from the uniforms above
 
 | Symptom | Likely cause | Fix |
 | --- | --- | --- |
-| Blank canvas; the console mentions `SharedArrayBuffer` or `crossOriginIsolated` | The page is not cross-origin isolated | Use `npx null3d dev`, or set the COOP and COEP headers (`getting-started/hosting`) |
+| Blank canvas; the console mentions `SharedArrayBuffer` or `crossOriginIsolated` | The page is not cross-origin isolated | Add the null3d Vite plugin to `vite.config.ts`, or set the COOP and COEP headers on the host (`getting-started/hosting`) |
 | An object does not move | A static object was written through an array | Use a setter, or create it with `dynamic: true` |
 | Colors too dark or washed out | Wrong texture color space | `colorSpace: 'srgb'` for color maps, `'linear'` for data maps (`concepts/color-management`) |
 | A stutter every few seconds | Allocations in per-frame code | Scratch values created once; confirm with the browser's memory profiler |
