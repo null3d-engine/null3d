@@ -38,7 +38,7 @@ export default defineConfig({ plugins: [null3d()] });
 The plugin does four jobs that a three.js project does not need:
 
 - Sends the two headers that let worker threads share memory, on the dev server and on `vite preview`. [Hosting and cross-origin isolation](hosting.md) explains them.
-- Builds your game file as a module worker.
+- Compiles your game file for the game worker, and ships the engine's WebAssembly core with the production build. The build stops with an error if the installed engine lacks its core.
 - Translates your WGSL shaders for WebGL2.
 - Keeps the engine's development checks in the dev server and removes them from production builds.
 

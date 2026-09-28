@@ -123,15 +123,30 @@ export interface MemoryLimits {
 	shared: boolean;
 }
 
-export function coreUrls(build: Build): { glue: URL; wasm: URL; memory: URL } {
-	// A computed path, so bundlers leave the URL alone instead of treating it as an asset import.
-	const folder = `../../dist/wasm/${build}/`;
-	const base = new URL(/* @vite-ignore */ folder, import.meta.url);
-	return {
-		glue: new URL('null3d.js', base),
-		wasm: new URL('null3d_bg.wasm', base),
-		memory: new URL('null3d_memory.json', base),
-	};
+export interface CoreFiles {
+	/** The generated JavaScript that binds the core. */
+	glue: URL;
+	/** The compiled core. */
+	wasm: URL;
+	/** The shared memory's page limits; only the threaded build has them. */
+	memory?: URL;
+}
+
+/**
+ * Each build's files. Every path is written out in full, so a bundler finds the files, ships them
+ * with the app and rewrites the addresses to the shipped copies.
+ */
+export function coreUrls(build: Build): CoreFiles {
+	return build === 'threaded'
+		? {
+				glue: new URL('../../dist/wasm/threaded/null3d.js', import.meta.url),
+				wasm: new URL('../../dist/wasm/threaded/null3d_bg.wasm', import.meta.url),
+				memory: new URL('../../dist/wasm/threaded/null3d_memory.json', import.meta.url),
+			}
+		: {
+				glue: new URL('../../dist/wasm/single/null3d.js', import.meta.url),
+				wasm: new URL('../../dist/wasm/single/null3d_bg.wasm', import.meta.url),
+			};
 }
 
 /** Imports the generated module for a build and checks that it has every function the engine calls. */

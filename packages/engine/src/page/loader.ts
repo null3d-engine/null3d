@@ -27,7 +27,7 @@ export async function loadCore(
 	maximumPages = DEFAULT_MAXIMUM_PAGES,
 ): Promise<LoadedCore> {
 	const urls = coreUrls(build);
-	if (build === 'single') return { build, module: await compile(urls.wasm) };
+	if (!urls.memory) return { build, module: await compile(urls.wasm) };
 	const [module, limits] = await Promise.all([
 		compile(urls.wasm),
 		fetch(urls.memory).then((r) => r.json() as Promise<MemoryLimits>),

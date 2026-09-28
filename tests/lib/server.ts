@@ -6,6 +6,8 @@ import { join } from 'node:path';
 import { localHostName } from '../../tools/lib/host.ts';
 
 export const HTTP_PORT = 5173;
+/** Where `vite preview` serves the production build of the test pages. */
+export const PREVIEW_PORT = 4173;
 export const HTTPS_PORT = 5174;
 export const REPO_ROOT = join(import.meta.dirname, '../..');
 

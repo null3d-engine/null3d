@@ -48,4 +48,10 @@ export default defineConfig({
 		watch: { ignored: ['**/target/**', '**/.claude/**', '**/.dev/**', '**/test-results/**'] },
 	},
 	optimizeDeps: { entries: ['tests/pages/**/*.html', 'bench/pages/**/*.html'] },
+	// The production build of the engine test page, which the production browser test serves.
+	build: {
+		outDir: 'target/production-pages',
+		emptyOutDir: true,
+		rollupOptions: { input: { engine: `${import.meta.dirname}/tests/pages/engine.html` } },
+	},
 });

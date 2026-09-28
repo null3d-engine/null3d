@@ -24,7 +24,7 @@ This repository holds the null3d engine, its tools, its documentation and its ag
 | `bun run build` | Build both WebAssembly files, the threaded one and the single-threaded one, and print their sizes |
 | `bun run build:check-size` | Build, and fail when a WebAssembly file grew more than 2% after Brotli compression |
 | `bun run test` | Unit tests for the engine, the benchmark scenes and the repository tools |
-| `bun run test:browser` | Image tests on WebGPU and WebGL2 in Chrome, through Playwright |
+| `bun run test:browser` | Image tests on WebGPU and WebGL2 in Chrome, through Playwright, and the engine test again on a production build served by `vite preview` |
 | `bun run test:real-browsers Safari Firefox` | The same test pages in browser apps that Playwright cannot drive, through the runner page (macOS) |
 | `bun run devices` | The same checks on an Android phone over USB (Chrome, then Brave) and on runner pages that wait on the local network (an iPad's Safari and Brave) |
 | `bun run test:bench` | The benchmark pages of both engines in Chrome, through Playwright |
