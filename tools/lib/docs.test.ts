@@ -1,13 +1,17 @@
 import { describe, expect, it } from 'bun:test';
 import { join } from 'node:path';
 import { ERRORS } from '../../packages/engine/src/errors/codes.ts';
+import type { ApiReference, ApiSymbol } from './api-docs';
 import {
+	API_END,
+	API_START,
 	checkDocs,
 	frontMatterProblems,
 	generateDocs,
 	PAGES,
 	pageList,
 	placeholderPage,
+	referenceProblems,
 } from './docs';
 import { fixture } from './fixture';
 import { parseFrontMatter, renderFrontMatter, yamlString } from './frontmatter';
@@ -26,6 +30,25 @@ const INDEX = `${renderFrontMatter([
 	['since', '0.1'],
 	['summary', 'The docs.'],
 ])}\n# Docs\n\n<!-- sokko3d:page-list:start -->\n<!-- sokko3d:page-list:end -->\n`;
+const NO_API: ApiReference = { symbols: [], problems: [] };
+const SET_THING: ApiSymbol = {
+	name: 'setThing',
+	kind: 'function',
+	page: 'api/scene',
+	signature: 'function setThing(): void',
+	summary: 'Sets the thing.',
+	extends: [],
+	members: [],
+};
+const THING: ApiSymbol = { ...SET_THING, name: 'Thing', page: 'api/objects' };
+const writtenObjects = (body: string) =>
+	`${renderFrontMatter([
+		['id', 'api/objects'],
+		['title', 'Objects'],
+		['status', 'experimental'],
+		['since', '0.1'],
+		['summary', 'Written.'],
+	])}\n# Objects\n\n${body}\n\nMore text.\n`;
 
 describe('front matter', () => {
 	it('quotes values YAML would misread, and leaves plain words bare', () => {
@@ -125,7 +148,7 @@ describe('generateDocs', () => {
 			'docs/concepts/handles.md': written,
 			'docs/concepts/architecture.md': '<!-- sokko3d:placeholder -->\nold text',
 		});
-		const out = generateDocs(root);
+		const out = generateDocs(root, NO_API);
 		expect(out.has('docs/concepts/handles.md')).toBe(false);
 		expect(out.get('docs/concepts/architecture.md')).toContain('This page will cover:');
 		expect(out.get('docs/index.md')).toContain('[Handles](concepts/handles.md)');
@@ -137,7 +160,46 @@ describe('generateDocs', () => {
 			'docs/index.md': '# Docs\n',
 			'docs/data/threejs-mapping.json': MAPPING,
 		});
-		expect(() => generateDocs(root)).toThrow('page-list');
+		expect(() => generateDocs(root, NO_API)).toThrow('page-list');
+	});
+
+	it("puts each export on its page's reference: a placeholder gains a section, a written page fills its markers", () => {
+		const root = fixture({
+			'docs/index.md': INDEX,
+			'docs/data/threejs-mapping.json': MAPPING,
+			'docs/api/scene.md': '<!-- sokko3d:placeholder -->\nold text',
+			'docs/api/objects.md': writtenObjects(`${API_START}\nSTALE REFERENCE\n${API_END}`),
+		});
+		const out = generateDocs(root, { symbols: [SET_THING, THING], problems: [] });
+		const scene = out.get('docs/api/scene.md') ?? '';
+		expect(scene).toContain('No release has these APIs yet');
+		expect(scene).toContain('## API reference\n\nThis reference is generated');
+		expect(scene).toContain('### `setThing`');
+		const objects = out.get('docs/api/objects.md') ?? '';
+		expect(objects).toContain(`${API_START}\n\nThis reference is generated`);
+		expect(objects).toContain('### `Thing`');
+		expect(objects).not.toContain('STALE REFERENCE');
+		expect(objects).toContain('More text.');
+		expect(out.get('docs/api/lights.md')).toContain('the feature is designed but not built yet');
+	});
+
+	it('fails when a written page with exports has no reference markers', () => {
+		const root = fixture({
+			'docs/index.md': INDEX,
+			'docs/data/threejs-mapping.json': MAPPING,
+			'docs/api/objects.md': writtenObjects('No markers.'),
+		});
+		expect(() => generateDocs(root, { symbols: [THING], problems: [] })).toThrow('API reference');
+	});
+});
+
+describe('referenceProblems', () => {
+	it('adds a page tag that names no inventory page to the reader problems', () => {
+		const api = { symbols: [{ ...SET_THING, page: 'api/nope' }], problems: ['x has no summary'] };
+		expect(referenceProblems(api)).toEqual([
+			'API reference: x has no summary',
+			'API reference: setThing names the page api/nope, which is not in the inventory',
+		]);
 	});
 });
 

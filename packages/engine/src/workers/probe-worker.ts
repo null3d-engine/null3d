@@ -1,10 +1,20 @@
 // A short-lived worker that tests what a dedicated worker can do: the worker frame timer, WebGL2 in
 // an OffscreenCanvas, and WebGPU with a canvas context. The render worker depends on all three.
 
+/**
+ * What a dedicated worker can do, in `CapabilityReport.worker`. A render worker needs the frame
+ * timer and an offscreen canvas for its GPU path.
+ *
+ * @category api/engine
+ */
 export interface WorkerProbe {
+	/** True when workers have `requestAnimationFrame`. */
 	requestAnimationFrame: boolean;
+	/** True when a worker can draw with WebGL2 into an `OffscreenCanvas`. */
 	offscreenWebGL2: boolean;
+	/** True when a worker can draw with WebGPU into an `OffscreenCanvas`. */
 	offscreenWebGPU: boolean;
+	/** Why the probe failed, when it did. */
 	error?: string;
 }
 

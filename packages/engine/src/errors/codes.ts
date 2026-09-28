@@ -136,4 +136,9 @@ export const ERRORS = {
 	},
 } satisfies Record<string, ErrorEntry>;
 
+/**
+ * The code of an engine error. Each code has a docs page that gives its cause and its fix.
+ *
+ * @category api/engine
+ */
 export type ErrorCode = keyof typeof ERRORS;

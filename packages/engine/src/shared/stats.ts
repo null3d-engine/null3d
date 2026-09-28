@@ -1,11 +1,21 @@
 // Percentiles of per-frame samples. Every engine's benchmark report uses these functions, so the
 // figures of sokko3d and of the engines it is compared with are computed the same way.
 
+/**
+ * A summary of per-frame samples.
+ *
+ * @category api/debug
+ */
 export interface Percentiles {
+	/** The number of samples. */
 	count: number;
+	/** The middle value. */
 	median: number;
+	/** The 95th percentile: 95% of samples are at or below it. */
 	p95: number;
+	/** The 99th percentile: 99% of samples are at or below it. */
 	p99: number;
+	/** The average. */
 	mean: number;
 }
 

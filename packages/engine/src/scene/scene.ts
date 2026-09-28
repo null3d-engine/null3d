@@ -10,38 +10,79 @@ import type { CoreMemory } from './memory';
 import type { Material, MeshGeometry } from './resources';
 import { type EulerOrder, quaternionFromEuler, quaternionLookAt } from './rotation';
 
+/**
+ * A vector (x, y, z).
+ *
+ * @category api/objects
+ */
 export type Vec3 = readonly [number, number, number];
+/**
+ * A rotation as a quaternion (x, y, z, w).
+ *
+ * @category api/objects
+ */
 export type Quat = readonly [number, number, number, number];
 
 const SLOT_MASK = (1 << C.HANDLE_SLOT_BITS) - 1;
 
-/** Options every node takes when it is created. */
+/**
+ * Options every node takes when it is created.
+ *
+ * @category api/scene
+ */
 export interface NodeOptions {
+	/** A name for error messages. */
 	name?: string;
+	/** The position relative to the parent. The default is (0, 0, 0). */
 	position?: Vec3;
-	/** A quaternion (x, y, z, w). */
+	/** The rotation relative to the parent, as a quaternion (x, y, z, w). The default is none. */
 	rotation?: Quat;
+	/** The scale on each axis. The default is (1, 1, 1). */
 	scale?: Vec3;
+	/** The node to attach this one to. The default, null, makes a root node. */
 	parent?: Object3D | null;
-	/** Recomputed every frame without checks; static objects update only when they change. */
+	/**
+	 * True recomputes the node every frame without checks. A static node, the default for all but
+	 * cameras, updates only when it changes.
+	 */
 	dynamic?: boolean;
 }
 
+/**
+ * Options for `scene.createMesh`.
+ *
+ * @category api/scene
+ */
 export interface MeshOptions extends NodeOptions {
+	/** The shape to draw, from `ctx.geometry`. */
 	mesh: MeshGeometry;
+	/** How the surface looks, from `ctx.materials`. */
 	material: Material;
 }
 
+/**
+ * Options for `scene.createPerspectiveCamera`.
+ *
+ * @category api/cameras
+ */
 export interface CameraOptions extends NodeOptions {
-	/** Vertical field of view in degrees. */
+	/** The vertical field of view in degrees. The default is 50. */
 	fov?: number;
+	/** The distance to the near clipping plane. The default is 0.1. */
 	near?: number;
+	/** The distance to the far clipping plane. The default is 2000. */
 	far?: number;
 	/** A point the camera turns toward. */
 	target?: Vec3;
 }
 
+/**
+ * Options for `scene.createInstances`.
+ *
+ * @category api/scene
+ */
 export interface InstanceOptions {
+	/** The material of every row. */
 	material: Material;
 	/** Every row updates and uploads every frame; a static batch updates rows marked dirty only. */
 	dynamic?: boolean;
@@ -49,13 +90,25 @@ export interface InstanceOptions {
 	colors?: boolean;
 }
 
+/**
+ * Options every light takes.
+ *
+ * @category api/lights
+ */
 export interface LightOptions {
+	/** The light's color. The default is white. */
 	color?: ColorInput;
+	/** A factor that scales the color. The default is 1. */
 	intensity?: number;
 }
 
+/**
+ * Options for `scene.createDirectionalLight`.
+ *
+ * @category api/lights
+ */
 export interface DirectionalLightOptions extends LightOptions {
-	/** The direction the light travels. */
+	/** The direction the light travels. The default, (0, -1, 0), points straight down. */
 	direction?: Vec3;
 }
 
@@ -89,7 +142,11 @@ class SceneViews {
 	}
 }
 
-/** A node in the scene: position, rotation and scale, a parent, visibility. */
+/**
+ * A node in the scene: position, rotation and scale, a parent, visibility.
+ *
+ * @category api/objects
+ */
 export class Object3D implements Described {
 	/** @internal */
 	destroyedFrame = -1;
@@ -97,6 +154,7 @@ export class Object3D implements Described {
 	constructor(
 		/** @internal */ protected readonly scene: Scene,
 		/** @internal */ readonly handle: number,
+		/** The name from the create options, or an empty string. */
 		readonly name: string,
 	) {}
 
@@ -110,10 +168,12 @@ export class Object3D implements Described {
 		return false;
 	}
 
+	/** The object's name and slot, as error messages show them. */
 	describe(): string {
 		return `${this.name ? `"${this.name}"` : 'an object'} (slot ${this.slot})`;
 	}
 
+	/** Sets the position relative to the parent. */
 	setPosition(x: number, y: number, z: number): void {
 		if (DEV) {
 			checkLive('setPosition', this);
@@ -155,6 +215,7 @@ export class Object3D implements Described {
 		this.scene.markDirty(this.slot);
 	}
 
+	/** Sets the scale on each axis. */
 	setScale(x: number, y: number, z: number): void {
 		if (DEV) {
 			checkLive('setScale', this);
@@ -218,6 +279,7 @@ export class Object3D implements Described {
 		this.scene.command(C.COMMAND_SET_VISIBLE, this.handle, visible ? 1 : 0, 0, 'setVisible');
 	}
 
+	/** Makes the object dynamic or static from the next frame. See `NodeOptions.dynamic`. */
 	setDynamic(dynamic: boolean): void {
 		if (DEV) checkLive('setDynamic', this);
 		this.scene.command(C.COMMAND_SET_DYNAMIC, this.handle, dynamic ? 1 : 0, 0, 'setDynamic');
@@ -231,17 +293,30 @@ export class Object3D implements Described {
 	}
 }
 
-/** An empty node, for hierarchy. */
+/**
+ * An empty node, for hierarchy.
+ *
+ * @category api/objects
+ */
 export class Group extends Object3D {}
 
-/** A drawn object: a mesh and a material. */
+/**
+ * A drawn object: a mesh and a material.
+ *
+ * @category api/objects
+ */
 export class Mesh extends Object3D {
+	/** Changes the material from the next frame. */
 	setMaterial(material: Material): void {
 		this.scene.command(C.COMMAND_SET_MATERIAL, this.handle, material.id, 0, 'setMaterial');
 	}
 }
 
-/** A perspective camera. Make it the scene's view with `scene.setActiveCamera`. */
+/**
+ * A perspective camera. Make it the scene's view with `scene.setActiveCamera`.
+ *
+ * @category api/cameras
+ */
 export class Camera extends Object3D {
 	/** @internal */
 	fov = 50;
@@ -261,6 +336,7 @@ export class Camera extends Object3D {
 		this.scene.lensChanged(this);
 	}
 
+	/** Sets the distances to the near and far clipping planes. */
 	setNearFar(near: number, far: number): void {
 		if (DEV) {
 			checkNumber('setNearFar', 'near', near, this);
@@ -275,6 +351,8 @@ export class Camera extends Object3D {
 /**
  * Light arriving from one direction, like sunlight. Its direction and intensity setters allocate
  * nothing.
+ *
+ * @category api/lights
  */
 export class DirectionalLight {
 	private readonly direction = new Float64Array(3);
@@ -321,13 +399,18 @@ export class DirectionalLight {
 		this.apply();
 	}
 
+	/** Sets the factor that scales the color. */
 	setIntensity(intensity: number): void {
 		this.intensity = intensity;
 		this.apply();
 	}
 }
 
-/** Light that reaches every surface equally. Its intensity setter allocates nothing. */
+/**
+ * Light that reaches every surface equally. Its intensity setter allocates nothing.
+ *
+ * @category api/lights
+ */
 export class AmbientLight {
 	/** The color in linear RGB, before the intensity scales it. */
 	private readonly linear = new Float64Array(3);
@@ -357,6 +440,7 @@ export class AmbientLight {
 		this.apply();
 	}
 
+	/** Sets the factor that scales the color. */
 	setIntensity(intensity: number): void {
 		this.intensity = intensity;
 		this.apply();
@@ -366,6 +450,8 @@ export class AmbientLight {
 /**
  * Many copies of one mesh and material. Write rows straight into the typed arrays; a dynamic batch
  * updates every row every frame, and a static batch updates the rows you mark dirty.
+ *
+ * @category api/scene
  */
 export class InstanceBatch {
 	private generation = -1;
@@ -436,6 +522,7 @@ export class InstanceBatch {
 		core.check(core.glue.markBatchDirty(this.id, start, count), 'markDirty', undefined, true);
 	}
 
+	/** Removes the batch and frees its rows. Its typed arrays are not valid after this. */
 	destroy(): void {
 		const { core } = this.scene;
 		core.check(core.glue.destroyBatch(this.id, this.scene.frame), 'destroy', undefined, true);
@@ -444,7 +531,11 @@ export class InstanceBatch {
 	}
 }
 
-/** The scene: every object, the active camera, the lights and the background. */
+/**
+ * The scene: every object, the active camera, the lights and the background.
+ *
+ * @category api/scene
+ */
 export class Scene {
 	private viewsGeneration = -1;
 	private currentViews!: SceneViews;

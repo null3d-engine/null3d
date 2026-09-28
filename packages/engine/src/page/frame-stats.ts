@@ -11,6 +11,11 @@ import {
 } from '../shared/metrics';
 import { type Percentiles, percentiles } from '../shared/stats';
 
+/**
+ * One thread's CPU time per frame, in `FrameSummary.threads`.
+ *
+ * @category api/debug
+ */
 export interface ThreadStats {
 	/** CPU time per frame on this thread. */
 	busyMs: Percentiles;
@@ -18,6 +23,12 @@ export interface ThreadStats {
 	phases: Partial<Record<PhaseName, Percentiles>>;
 }
 
+/**
+ * Per-frame figures of a measurement: CPU time by thread, GPU time, frame intervals, uploads and
+ * draw calls.
+ *
+ * @category api/debug
+ */
 export interface FrameSummary {
 	/** Frames that the game computed and the renderer drew within the measurement. */
 	frames: number;
@@ -36,10 +47,17 @@ export interface FrameSummary {
 	gpuStepMs: number | null;
 	/** Time between presented frames. */
 	intervalMs: Percentiles;
+	/** Bytes uploaded to the GPU per frame. */
 	uploadBytes: Percentiles;
+	/** Draw calls per frame. */
 	drawCalls: Percentiles;
 }
 
+/**
+ * Memory figures of a measurement.
+ *
+ * @category api/debug
+ */
 export interface MemoryStats {
 	/** Size of the engine's WebAssembly memory at the end of the measurement. */
 	wasmBytes: number | null;
@@ -59,10 +77,17 @@ export interface MemoryStats {
 	jsHeapNote: string | null;
 }
 
+/**
+ * What `engine.measure` returns: the per-frame figures, memory, load time and download size.
+ *
+ * @category api/debug
+ */
 export interface FrameMetrics extends FrameSummary {
 	/** Length of the measurement. */
 	seconds: number;
+	/** The engine's WebAssembly memory and the JavaScript heap. */
 	memory: MemoryStats;
+	/** How long the engine took to start and to draw its first frame, in milliseconds. */
 	load: {
 		/** Time createEngine took. */
 		engineStartMs: number;

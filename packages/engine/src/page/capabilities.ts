@@ -66,47 +66,84 @@ const WEBGL2_EXTENSIONS = [
 	'OVR_multiview2',
 ] as const;
 
+/**
+ * What the browser's WebGPU offers, in `CapabilityReport.webgpu`.
+ *
+ * @category api/engine
+ */
 export interface WebGPUReport {
+	/** True when the browser has WebGPU. */
 	available: boolean;
 	/** An adapter from a compatibility-mode request (the engine's normal request). */
 	compatibilityAdapter: boolean;
 	/** The adapter offers `core-features-and-limits`, so the device can run as core WebGPU. */
 	coreFeaturesAndLimits: boolean;
+	/** The adapter's optional features, sorted. */
 	features: string[];
 	/** Each limit, or null when the adapter does not report it (absent, never zero). */
 	limits: Record<string, number | null>;
+	/** The WGSL language features the browser supports, sorted. */
 	wgslLanguageFeatures: string[];
+	/** The canvas texture format the browser prefers, or null without WebGPU. */
 	preferredCanvasFormat: string | null;
 	/** Reported for the record only; the engine never branches on it. */
 	adapterInfo: { vendor: string; architecture: string; device: string; description: string } | null;
+	/** Why the probe failed, when it did. */
 	error?: string;
 }
 
+/**
+ * What the browser's WebGL2 offers, in `CapabilityReport.webgl2`.
+ *
+ * @category api/engine
+ */
 export interface WebGL2Report {
+	/** True when the browser can make a WebGL2 context. */
 	available: boolean;
+	/** Each extension the engine uses or tests for, and whether the browser has it. */
 	extensions: Record<string, boolean>;
 	/** The list as the browser reports it, in its order; some browsers shuffle it, so it is only recorded. */
 	supportedExtensions: string[];
+	/** The most samples per pixel for antialiasing, or null without WebGL2. */
 	maxSamples: number | null;
+	/** The largest texture width and height in pixels, or null without WebGL2. */
 	maxTextureSize: number | null;
+	/** The largest uniform block in bytes, or null without WebGL2. */
 	maxUniformBlockSize: number | null;
 	/** Whether WebGL accepts views on shared memory for uploads; null without shared memory. */
 	sharedMemoryUploads: { bufferSubData: boolean; texSubImage2D: boolean } | null;
 	/** Reported for the record only; the engine never branches on it. */
 	renderer: string | null;
+	/** Why the probe failed, when it did. */
 	error?: string;
 }
 
+/**
+ * What the browser and device can do, as plain JSON. The engine picks its build and GPU path from
+ * these feature tests, never from browser or GPU names.
+ *
+ * @category api/engine
+ */
 export interface CapabilityReport {
+	/** True when the page is cross-origin isolated, which shared memory needs. */
 	crossOriginIsolated: boolean;
+	/** True when the page can make shared memory. */
 	sharedArrayBuffer: boolean;
+	/** True when the browser has `Atomics.waitAsync`. */
 	atomicsWaitAsync: boolean;
+	/** The logical cores that the browser reports. */
 	hardwareConcurrency: number;
+	/** Device pixels per CSS pixel when the probe ran. */
 	devicePixelRatio: number;
+	/** True when the browser has `OffscreenCanvas`. */
 	offscreenCanvas: boolean;
+	/** True when a page canvas can hand its drawing to a worker. */
 	transferControlToOffscreen: boolean;
+	/** What WebGPU offers. */
 	webgpu: WebGPUReport;
+	/** What WebGL2 offers. */
 	webgl2: WebGL2Report;
+	/** What a dedicated worker can do, or why the probe worker failed. */
 	worker: WorkerProbe | { error: string };
 }
 

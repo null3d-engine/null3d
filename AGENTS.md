@@ -35,8 +35,8 @@ This repository holds the sokko3d engine, its tools, its documentation and its a
 | `bun run dev` | Serve the test and benchmark pages with the isolation headers on port 5173 |
 | `bun run dev-cert` | Make a local HTTPS certificate for testing on phones and tablets |
 | `bun run android` | Forward port 5173 to an Android phone connected by USB |
-| `bun run docs` | Regenerate placeholder pages, the page list in `docs/index.md`, and the mapping page and copies |
-| `bun run docs:check` | Check front matter, generated files and links, and that this table lists every command |
+| `bun run docs` | Regenerate placeholder pages, the API reference, the error pages, the page list in `docs/index.md`, and the mapping page and copies |
+| `bun run docs:check` | Check the API reference's doc comments, front matter, generated files and links, and that this table lists every command |
 | `bun run docs:style` | Check the writing rules in all published Markdown |
 | `bun run skills` | Sync `.claude/skills/` from `skills/`, then check the skills |
 | `bun run skills:check` | Check the skills without syncing |
@@ -107,8 +107,9 @@ The benchmarks compare sokko3d with three.js in the same browser. These points c
 
 1. One source per fact. The API reference comes from TypeScript doc comments, the three.js mapping from `docs/data/threejs-mapping.json`, and the page inventory from `tools/lib/docs.ts`. Skills link to docs pages by ID and do not copy facts.
 2. Generated files are committed. Run `bun run docs` and `bun run skills` after changing a source, and stage what they write.
-3. A placeholder page carries a marker comment, and `bun run docs` rewrites it. When you write the real page, remove the marker, and the generator leaves the page alone.
+3. A placeholder page carries a marker comment, and `bun run docs` rewrites it. When you write the real page, remove the marker. The generator then leaves the page alone, apart from its API reference (rule 5).
 4. Every docs page has front matter: `id`, `title`, `status` (`planned`, `experimental`, `stable` or `generated`), `since` and `summary`.
+5. The API reference on the `api/` pages comes from the TSDoc comments on the engine's public exports. Each export needs a summary and a `@category api/<page>` tag that names its page. Each public member needs a summary too. A public declaration may name only types that the engine exports. On a written API page, the reference goes between the `<!-- sokko3d:api:start -->` and `<!-- sokko3d:api:end -->` markers.
 
 ## Writing docs
 
@@ -132,7 +133,7 @@ Before each commit:
 
 - Biome (errors only) and the TypeScript check.
 - When Rust files or Cargo settings are staged: `cargo fmt --check` and Clippy, with warnings treated as errors.
-- Generated files are current and staged. The hook regenerates the docs and the skills copy in memory, and fails if a committed file differs or has unstaged changes.
+- Generated files are current and staged. The hook regenerates the docs and the skills copy in memory, and fails if a committed file differs or has unstaged changes. It also fails when a public export lacks the doc comments that the API reference needs.
 - Every command in `package.json` is in the table under "Commands", and every command that this file and the README run with `bun run` exists.
 
 On each commit message:

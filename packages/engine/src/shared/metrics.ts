@@ -45,6 +45,12 @@ export const PHASE_NAMES = [
 	'replay',
 ] as const;
 
+/**
+ * A step of a frame that `engine.measure` times. The `update` step is the game's own code, and the
+ * other steps are the engine's.
+ *
+ * @category api/debug
+ */
 export type PhaseName = (typeof PHASE_NAMES)[number];
 
 export enum Counter {

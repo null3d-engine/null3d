@@ -3,13 +3,21 @@
 import type { Geometry, Materials } from '../scene/resources';
 import type { Scene } from '../scene/scene';
 
-/** Callbacks a game returns from its setup function. */
+/**
+ * Callbacks a game returns from its setup function.
+ *
+ * @category api/game
+ */
 export interface GameCallbacks {
 	/** Runs once per frame, before transforms, with the frame time in seconds. */
 	onUpdate?(dt: number): void;
 }
 
-/** What the engine passes to a game's setup function. */
+/**
+ * What the engine passes to a game's setup function.
+ *
+ * @category api/game
+ */
 export interface GameContext {
 	/** Objects, cameras, lights and instance batches. */
 	scene: Scene;
@@ -26,18 +34,34 @@ export interface GameContext {
 	};
 }
 
+/**
+ * A game's setup function. The engine calls it once, in the game worker, and it returns the game's
+ * callbacks, directly or through a promise.
+ *
+ * @category api/game
+ */
 export type GameSetup = (
 	context: GameContext,
 ) => GameCallbacks | undefined | Promise<GameCallbacks | undefined>;
 
 const GAME_MARKER = Symbol.for('sokko3d.game');
 
+/**
+ * A game, as `defineGame` returns it.
+ *
+ * @category api/game
+ */
 export interface GameDefinition {
 	readonly [GAME_MARKER]: true;
+	/** The setup function passed to `defineGame`. */
 	readonly setup: GameSetup;
 }
 
-/** Declares a game. The module that calls it must export the result as its default export. */
+/**
+ * Declares a game. The module that calls it must export the result as its default export.
+ *
+ * @category api/game
+ */
 export function defineGame(setup: GameSetup): GameDefinition {
 	return { [GAME_MARKER]: true, setup };
 }

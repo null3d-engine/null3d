@@ -2,6 +2,13 @@
 // ?latency=, ?preset=, ?fps= and ?hold.
 
 export type GpuSwitch = 'auto' | 'webgpu' | 'compat' | 'webgl2';
+/**
+ * How the engine trades latency for speed. In `pipelined` mode, the render worker draws each frame
+ * while the game computes the next one. In `low` mode, the game worker draws each frame right after
+ * its update.
+ *
+ * @category api/engine
+ */
 export type LatencyMode = 'pipelined' | 'low';
 export type PresetSwitch = 'auto' | 'low' | 'medium' | 'high' | 'ultra';
 

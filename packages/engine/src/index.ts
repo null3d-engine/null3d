@@ -4,10 +4,11 @@ export type { ErrorCode } from './errors/codes';
 export { EngineError } from './errors/engine-error';
 export type { GameCallbacks, GameContext, GameDefinition, GameSetup } from './game/define-game';
 export { defineGame } from './game/define-game';
-export type { CapabilityReport } from './page/capabilities';
+export type { CapabilityReport, WebGL2Report, WebGPUReport } from './page/capabilities';
 export type { Engine, EngineCapabilities, EngineMode, EngineOptions } from './page/engine';
 export { createEngine } from './page/engine';
 export type { FrameMetrics, FrameSummary, MemoryStats, ThreadStats } from './page/frame-stats';
+export type { LatencyMode } from './page/switches';
 export type { Tier } from './render/renderer';
 export type { ColorInput } from './scene/color';
 export type {
@@ -40,6 +41,11 @@ export type {
 } from './scene/scene';
 export type { PhaseName } from './shared/metrics';
 export type { Percentiles } from './shared/stats';
+export type { WorkerProbe } from './workers/probe-worker';
 
-/** The engine version, which the WebAssembly core and this package always share. */
+/**
+ * The engine version, which the WebAssembly core and this package always share.
+ *
+ * @category api/engine
+ */
 export const VERSION = '0.0.0';

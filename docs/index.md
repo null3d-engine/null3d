@@ -18,12 +18,14 @@ Every page has a status in its front matter:
 
 | Status | Meaning |
 | --- | --- |
-| `planned` | The feature is designed but not built. The APIs the page names do not exist yet. |
+| `planned` | No release has the feature yet. The page describes its design, and an API page also lists the parts this repository already has. |
 | `experimental` | The feature works, but its API can still change between versions. |
 | `stable` | The API follows semantic versioning. |
 | `generated` | A tool writes the page from a single source, such as the three.js mapping data. Edit the source, and the tool rewrites the page. |
 
 Coding agents must never use an API whose page is `planned`. The agent skills in this repository follow the same rule.
+
+The API reference on each `api/` page is generated from the doc comments in the engine's source code, so it always matches the code.
 
 The version column in the page list gives the first engine version with the page's feature. Version 0.1 is the first release.
 

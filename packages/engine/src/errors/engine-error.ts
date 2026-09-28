@@ -5,7 +5,14 @@ import { ERRORS, type ErrorCode } from './codes';
 
 const DOCS_BASE = 'https://github.com/sokko3d/sokko3d/blob/main/docs/errors/';
 
+/**
+ * An error the engine throws. Its message says what failed and how to fix it, and links to the
+ * code's docs page.
+ *
+ * @category api/engine
+ */
 export class EngineError extends Error {
+	/** The error's code, such as `E1108`. */
 	readonly code: ErrorCode;
 	/** The docs page for this code. */
 	readonly docs: string;

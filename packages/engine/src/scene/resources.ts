@@ -6,7 +6,11 @@ import { EngineError } from '../errors/engine-error';
 import { type ColorInput, linearColor } from './color';
 import type { CoreMemory } from './memory';
 
-/** A mesh the engine can draw: its id in the engine core, and its bounding radius. */
+/**
+ * A mesh the engine can draw: its id in the engine core, and its bounding radius.
+ *
+ * @category api/geometry
+ */
 export class MeshGeometry {
 	constructor(
 		/** @internal */ readonly id: number,
@@ -16,22 +20,45 @@ export class MeshGeometry {
 	) {}
 }
 
+/**
+ * Options for `geometry.box`. The box is centered on its origin.
+ *
+ * @category api/geometry
+ */
 export interface BoxOptions {
+	/** The size along the X axis. The default is 1. */
 	width?: number;
+	/** The size along the Y axis. The default is 1. */
 	height?: number;
+	/** The size along the Z axis. The default is 1. */
 	depth?: number;
+	/** How many faces divide each side along the width. The default is 1. */
 	widthSegments?: number;
+	/** How many faces divide each side along the height. The default is 1. */
 	heightSegments?: number;
+	/** How many faces divide each side along the depth. The default is 1. */
 	depthSegments?: number;
 }
 
+/**
+ * Options for `geometry.sphere`. The sphere is centered on its origin.
+ *
+ * @category api/geometry
+ */
 export interface SphereOptions {
+	/** The radius. The default is 1. */
 	radius?: number;
+	/** How many faces go around the equator. The default is 32. */
 	widthSegments?: number;
+	/** How many faces go from pole to pole. The default is 16. */
 	heightSegments?: number;
 }
 
-/** Mesh generators with the parameters and defaults of three.js's geometry classes. */
+/**
+ * Mesh generators with the parameters and defaults of three.js's geometry classes.
+ *
+ * @category api/geometry
+ */
 export class Geometry {
 	constructor(private readonly core: CoreMemory) {}
 
@@ -68,13 +95,26 @@ export class Geometry {
 	}
 }
 
+/**
+ * Options every material takes.
+ *
+ * @category api/materials
+ */
 export interface MaterialOptions {
 	/** The base color: a hex string, a number, or three sRGB components from 0 to 1. */
 	color?: ColorInput;
+	/**
+	 * How opaque the surface is, from 0 to 1. The default is 1. This version stores the value but
+	 * draws every material opaque.
+	 */
 	opacity?: number;
 }
 
-/** A material: how the surfaces of the objects that use it look. */
+/**
+ * A material: how the surfaces of the objects that use it look.
+ *
+ * @category api/materials
+ */
 export class Material {
 	constructor(
 		/** @internal */ readonly id: number,
@@ -94,9 +134,13 @@ export class Material {
 	}
 }
 
-/** Material factories. In this version the standard material shades diffuse light only, as
+/**
+ * Material factories. In this version the standard material shades diffuse light only, as
  * three.js's `MeshLambertMaterial` does; metalness and roughness arrive with physically based
- * shading. */
+ * shading.
+ *
+ * @category api/materials
+ */
 export class Materials {
 	constructor(private readonly core: CoreMemory) {}
 
@@ -114,8 +158,10 @@ export class Materials {
 		return this.create(false, options, 'materials.standard');
 	}
 
-	/** A material that ignores lights and shows its color as it is, like three.js's
-	 * `MeshBasicMaterial`. */
+	/**
+	 * A material that ignores lights and shows its color as it is, like three.js's
+	 * `MeshBasicMaterial`.
+	 */
 	unlit(options: MaterialOptions = {}): Material {
 		return this.create(true, options, 'materials.unlit');
 	}

@@ -1,8 +1,11 @@
-// Pre-commit guard: every generated file (docs placeholders, the page list, the three.js mapping
-// page and copies, the .claude/skills copy, and the shader module) must match what its generator
-// makes now, and must be staged. Generated files then never lag the code and data they come from.
+// Pre-commit guard: every generated file (docs placeholders, the API reference, the page list, the
+// error pages, the three.js mapping page and copies, the .claude/skills copy, and the shader module)
+// must match what its generator makes now, and must be staged. Every public export of the engine
+// must also have the doc comments the API reference needs. Generated files then never lag the code
+// and data they come from.
 import { execFileSync, execSync } from 'node:child_process';
-import { generateDocs, staleFiles } from '../lib/docs';
+import { readApi } from '../lib/api-docs';
+import { generateDocs, referenceProblems, staleFiles } from '../lib/docs';
 import { expectedSkillCopies, skillCopyProblems } from '../lib/skills';
 import { stagedFiles } from './commit-ack';
 
@@ -40,8 +43,10 @@ export function unstagedPaths(porcelain: string): string[] {
 
 function main(): void {
 	const root = process.cwd();
-	const docs = generateDocs(root);
+	const api = readApi(root);
+	const docs = generateDocs(root, api);
 	const problems = [
+		...referenceProblems(api),
 		...staleFiles(root, docs).map((p) => `${p} is out of date`),
 		...skillCopyProblems(root),
 		...shaderProblems(),
@@ -55,7 +60,7 @@ function main(): void {
 	console.error('\ncommit rejected: generated files are out of date or not staged:\n');
 	for (const p of problems) console.error(`  ${p}`);
 	console.error(
-		'\nRun `bun run docs`, `bun run skills` or `bun run shaders`, then stage the results.\n',
+		'\nAdd any missing doc comments, run `bun run docs`, `bun run skills` or `bun run shaders`,\nthen stage the results.\n',
 	);
 	process.exit(1);
 }

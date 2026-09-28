@@ -22,6 +22,11 @@ import { captureInput } from './input';
 import { loadCore } from './loader';
 import { type GpuSwitch, type LatencyMode, parseSwitches } from './switches';
 
+/**
+ * Options for `createEngine`.
+ *
+ * @category api/engine
+ */
 export interface EngineOptions {
 	/** The canvas to draw into, sized by CSS. */
 	canvas: HTMLCanvasElement;
@@ -31,32 +36,62 @@ export interface EngineOptions {
 	maxPixelRatio?: number;
 	/** Forces a GPU tier, for testing only. */
 	gpu?: 'auto' | 'webgpu' | 'webgl2';
-	/** Pipelined (the render step runs one frame behind, in its own worker) or low latency. */
+	/** The latency mode. The default is `pipelined`. */
 	latency?: LatencyMode;
 }
 
+/**
+ * The GPU path the engine chose, and what it offers.
+ *
+ * @category api/engine
+ */
 export interface EngineCapabilities {
+	/** The GPU path the engine draws with. */
 	tier: Tier;
+	/** True when the engine runs the threaded build. */
 	threaded: boolean;
+	/** The optional features of the GPU path: WebGPU features, or the WebGL2 extensions present. */
 	features: string[];
+	/** The WebGPU limits, or an empty object on WebGL2. */
 	limits: Record<string, number | null>;
 }
 
+/**
+ * How the engine runs on this device: its build, its latency mode and its threads.
+ *
+ * @category api/engine
+ */
 export interface EngineMode {
-	build: Build;
+	/**
+	 * With `threaded`, the game and the render step run in workers, helped by job workers. With
+	 * `single`, everything runs on the page's thread, for pages without shared memory.
+	 */
+	build: 'threaded' | 'single';
+	/** The latency mode in use, or `single` for the single-thread build. */
 	latency: LatencyMode | 'single';
 	/** The thread that owns the canvas and draws. */
 	renderThread: 'render-worker' | 'game-worker' | 'main';
+	/** The job workers that share the engine's parallel work. */
 	jobWorkers: number;
 }
 
+/**
+ * A running engine, as `createEngine` returns it.
+ *
+ * @category api/engine
+ */
 export interface Engine {
+	/** The GPU path the engine chose, and what it offers. */
 	readonly capabilities: EngineCapabilities;
 	/** The full capability report, as plain JSON. */
 	readonly report: CapabilityReport;
+	/** How the engine runs on this device. */
 	readonly mode: EngineMode;
+	/** Sends a message to the game, which receives it through `ctx.page.onMessage`. */
 	postToGame(name: string, data?: unknown, transfer?: Transferable[]): void;
+	/** Receives the messages the game sends with `ctx.page.post`. */
 	onGameMessage(handler: (name: string, data: unknown) => void): void;
+	/** Pauses or resumes the game's frames. */
 	setPaused(paused: boolean): void;
 	/**
 	 * Measures the running engine for a number of seconds, then returns CPU time per frame by thread
@@ -65,6 +100,7 @@ export interface Engine {
 	measure(seconds: number): Promise<FrameMetrics>;
 	/** Draws one frame offscreen and returns its pixels as RGBA8 rows, top row first. */
 	captureFrame(): Promise<{ width: number; height: number; pixels: Uint8Array }>;
+	/** Stops the engine and its workers. The engine cannot start again. */
 	destroy(): void;
 }
 
@@ -147,6 +183,12 @@ class EngineWorker {
 	}
 }
 
+/**
+ * Starts the engine on the page. It tests the device, picks the build and the GPU path, starts the
+ * workers, and runs the game module.
+ *
+ * @category api/engine
+ */
 export async function createEngine(options: EngineOptions): Promise<Engine> {
 	const startedAt = performance.now();
 	const switches = parseSwitches(globalThis.location?.search ?? '');

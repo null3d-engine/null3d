@@ -1,10 +1,19 @@
 // The documentation inventory and every file generated from a single source: placeholder pages for
-// planned pages, the page list in docs/index.md, and the three.js mapping page with the porting
-// skill's copies of the mapping. Generation is computed in memory first, so the same code writes
-// the files and checks that the committed files are current.
+// planned pages, the API reference on the api/ pages, the page list in docs/index.md, the error
+// pages, and the three.js mapping page with the porting skill's copies of the mapping. Generation
+// is computed in memory first, so the same code writes the files and checks that the committed
+// files are current.
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { ERRORS, type ErrorEntry } from '../../packages/engine/src/errors/codes.ts';
+import {
+	API_SOURCE,
+	type ApiReference,
+	type ApiSymbol,
+	readApi,
+	renderReference,
+	tableCell,
+} from './api-docs';
 import { docsFiles, readIfExists } from './files';
 import { parseFrontMatter, renderFrontMatter } from './frontmatter';
 import { checkLinkTree, linkedFiles } from './links';
@@ -126,6 +135,9 @@ export const PAGES: readonly PageEntry[] = [
 export const PLACEHOLDER_MARKER = '<!-- sokko3d:placeholder -->';
 const PAGE_LIST_START = '<!-- sokko3d:page-list:start -->';
 const PAGE_LIST_END = '<!-- sokko3d:page-list:end -->';
+/** Written API pages hold their generated reference between these markers. */
+export const API_START = '<!-- sokko3d:api:start -->';
+export const API_END = '<!-- sokko3d:api:end -->';
 
 export const MAPPING_SOURCE = 'docs/data/threejs-mapping.json';
 const MAPPING_PAGE = 'docs/porting/threejs-mapping.md';
@@ -138,10 +150,17 @@ export function pagePath(id: string): string {
 	return `docs/${id}.md`;
 }
 
-export function placeholderPage(page: PageEntry): string {
+/**
+ * A planned page. With a reference, the page lists the exports the engine has so far under an
+ * "API reference" heading.
+ */
+export function placeholderPage(page: PageEntry, reference = ''): string {
 	const when = page.since.startsWith('after ')
 		? `after sokko3d ${page.since.slice('after '.length)}`
 		: `sokko3d ${page.since}`;
+	const note = reference
+		? `Planned for ${when}. No release has these APIs yet, so coding agents must not use them. The reference below lists what the engine in this repository has so far, and the rest of the page is not written yet.`
+		: `Planned for ${when}. This page is a placeholder: the feature is designed but not built yet, so the APIs it names do not exist. Coding agents must not use them.`;
 	return `${renderFrontMatter([
 		['id', page.id],
 		['title', page.title],
@@ -153,10 +172,26 @@ ${PLACEHOLDER_MARKER}
 
 # ${page.title}
 
-> Planned for ${when}. This page is a placeholder: the feature is designed but not built yet, so the APIs it names do not exist. Coding agents must not use them.
+> ${note}
 
 This page will cover: ${page.summary}
-`;
+${reference ? `\n## API reference\n\n${reference}\n` : ''}`;
+}
+
+/** A page's generated API reference: where it comes from, then its exports. */
+export function apiSection(symbols: readonly ApiSymbol[]): string {
+	return `This reference is generated from the TSDoc comments in \`${API_SOURCE}\`. To change it, edit the comments.\n\n${renderReference(symbols)}`;
+}
+
+/** Problems that keep an export out of the reference, including a page tag that names no page. */
+export function referenceProblems(api: ApiReference): string[] {
+	const pages = new Set(PAGES.map((p) => p.id));
+	return [
+		...api.problems,
+		...api.symbols
+			.filter((s) => s.page.startsWith('api/') && !pages.has(s.page))
+			.map((s) => `${s.name} names the page ${s.page}, which is not in the inventory`),
+	].map((problem) => `API reference: ${problem}`);
 }
 
 interface MappingEntry {
@@ -174,8 +209,6 @@ interface Mapping {
 	sinceLegend: Record<string, string>;
 	entries: MappingEntry[];
 }
-
-const cell = (s: string | undefined) => String(s ?? '').replace(/\|/g, '\\|');
 
 export function mappingMarkdown(mapping: Mapping, forSkill: boolean): string {
 	const lines: string[] = [];
@@ -215,7 +248,7 @@ export function mappingMarkdown(mapping: Mapping, forSkill: boolean): string {
 		lines.push('| --- | --- | --- | --- | --- | --- |');
 		for (const e of mapping.entries.filter((x) => x.category === c)) {
 			lines.push(
-				`| ${cell(e.three)} | ${cell(e.target)} | ${e.status} | ${e.since ?? '-'} | ${cell(e.notes)} | \`${e.docs}\` |`,
+				`| ${tableCell(e.three)} | ${tableCell(e.target)} | ${e.status} | ${e.since ?? '-'} | ${tableCell(e.notes)} | \`${e.docs}\` |`,
 			);
 		}
 		lines.push('');
@@ -257,7 +290,8 @@ ${entry.example}
 /** The list of every error code, generated from the engine's error table. */
 export function errorIndexPage(errors: Record<string, ErrorEntry>): string {
 	const rows = Object.entries(errors).map(
-		([code, entry]) => `| [${code}](${code}.md) | ${cell(entry.title)} | ${cell(entry.cause)} |`,
+		([code, entry]) =>
+			`| [${code}](${code}.md) | ${tableCell(entry.title)} | ${tableCell(entry.cause)} |`,
 	);
 	return `${renderFrontMatter([
 		['id', 'errors/index'],
@@ -318,7 +352,8 @@ export function pageList(pages: PageInfo[]): string {
 			.sort((a, b) => rank(a) - rank(b) || a.id.localeCompare(b.id));
 		if (inArea.length === 0) continue;
 		const rows = inArea.map(
-			(p) => `| [${cell(p.title)}](${p.id}.md) | ${cell(p.summary)} | ${p.status} | ${p.since} |`,
+			(p) =>
+				`| [${tableCell(p.title)}](${p.id}.md) | ${tableCell(p.summary)} | ${p.status} | ${p.since} |`,
 		);
 		sections.push(
 			[
@@ -333,31 +368,43 @@ export function pageList(pages: PageInfo[]): string {
 	return sections.join('\n\n');
 }
 
+/** Replaces what lies between two markers; `what` names the generated part for the error. */
 function replaceBetween(
 	text: string,
-	start: string,
-	end: string,
+	[start, end]: readonly [string, string],
 	inner: string,
 	path: string,
+	what: string,
 ): string {
 	const from = text.indexOf(start);
 	const to = text.indexOf(end);
 	if (from === -1 || to === -1 || to < from) {
-		throw new Error(`${path} must contain ${start} and ${end} around the generated page list`);
+		throw new Error(`${path} must contain ${start} and ${end} around the generated ${what}`);
 	}
 	return `${text.slice(0, from + start.length)}\n\n${inner}\n\n${text.slice(to)}`;
 }
 
-/** Every generated file with its expected content, keyed by repository-relative path. */
-export function generateDocs(root: string): Map<string, string> {
+/**
+ * Every generated file with its expected content, keyed by repository-relative path. `api` is the
+ * engine's reference, which tests replace.
+ */
+export function generateDocs(root: string, api: ApiReference = readApi(root)): Map<string, string> {
 	const out = new Map<string, string>();
 
+	const byPage = Map.groupBy(api.symbols, (s) => s.page);
 	for (const page of PAGES) {
 		if (page.id === 'index') continue;
 		const path = pagePath(page.id);
 		const current = readIfExists(root, path);
+		const symbols = byPage.get(page.id);
+		const reference = symbols ? apiSection(symbols) : '';
 		if (current === null || current.includes(PLACEHOLDER_MARKER))
-			out.set(path, placeholderPage(page));
+			out.set(path, placeholderPage(page, reference));
+		else if (reference || current.includes(API_START))
+			out.set(
+				path,
+				replaceBetween(current, [API_START, API_END], reference, path, 'API reference'),
+			);
 	}
 
 	const mappingText = readIfExists(root, MAPPING_SOURCE);
@@ -377,16 +424,22 @@ export function generateDocs(root: string): Map<string, string> {
 	const listed = collectPages(root, out).filter((p) => p.id !== 'index');
 	out.set(
 		indexPath,
-		replaceBetween(index, PAGE_LIST_START, PAGE_LIST_END, pageList(listed), indexPath),
+		replaceBetween(
+			index,
+			[PAGE_LIST_START, PAGE_LIST_END],
+			pageList(listed),
+			indexPath,
+			'page list',
+		),
 	);
 
 	return out;
 }
 
 /** Writes every generated file whose content changed. Returns the paths written. */
-export function writeGeneratedDocs(root: string): string[] {
+export function writeGeneratedDocs(root: string, files: Map<string, string>): string[] {
 	const written: string[] = [];
-	for (const [path, content] of generateDocs(root)) {
+	for (const [path, content] of files) {
 		if (readIfExists(root, path) === content) continue;
 		mkdirSync(dirname(join(root, path)), { recursive: true });
 		writeFileSync(join(root, path), content);
@@ -400,11 +453,6 @@ export function staleFiles(root: string, expected: Map<string, string>): string[
 	return [...expected]
 		.filter(([path, content]) => readIfExists(root, path) !== content)
 		.map(([path]) => path);
-}
-
-/** Generated files whose committed content differs from what the generator makes now. */
-export function staleGeneratedDocs(root: string): string[] {
-	return staleFiles(root, generateDocs(root));
 }
 
 /** Problems with one page's front matter, for the page at `path`. */
@@ -438,11 +486,18 @@ export function frontMatterProblems(path: string, text: string, inventory: Set<s
 	return problems;
 }
 
-/** Every problem with the docs: stale generated files, missing pages, bad front matter, broken links. */
+/**
+ * Every problem with the docs: exports the API reference cannot show, stale generated files,
+ * missing pages, bad front matter and broken links.
+ */
 export function checkDocs(root: string): string[] {
 	const problems: string[] = [];
+	let generated = new Map<string, string>();
 	try {
-		for (const path of staleGeneratedDocs(root))
+		const api = readApi(root);
+		problems.push(...referenceProblems(api));
+		generated = generateDocs(root, api);
+		for (const path of staleFiles(root, generated))
 			problems.push(`${path} is out of date: run bun run docs`);
 	} catch (e) {
 		problems.push((e as Error).message);
@@ -451,12 +506,6 @@ export function checkDocs(root: string): string[] {
 	for (const page of PAGES) {
 		if (!existsSync(join(root, pagePath(page.id))))
 			problems.push(`${pagePath(page.id)} is missing: run bun run docs`);
-	}
-	let generated = new Map<string, string>();
-	try {
-		generated = generateDocs(root);
-	} catch {
-		// reported above
 	}
 	for (const path of docsFiles(root)) {
 		const text = readIfExists(root, path) ?? '';

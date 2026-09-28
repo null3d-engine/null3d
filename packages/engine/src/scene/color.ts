@@ -4,6 +4,12 @@
 
 import { EngineError } from '../errors/engine-error';
 
+/**
+ * A color: a hex string such as `'#4a8cff'` or `'#48f'`, a number such as `0x4a8cff`, or three
+ * sRGB components from 0 to 1.
+ *
+ * @category api/materials
+ */
 export type ColorInput = string | number | readonly [number, number, number];
 
 /** An sRGB component as a linear one, with three.js's constants. */

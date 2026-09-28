@@ -7,6 +7,12 @@ import { RenderPassSetup, submitOne } from '../gpu/webgpu/reusable';
 import { type FrameRecorder, Phase } from '../shared/metrics';
 import { WebGPUSceneRenderer } from './scene-renderer';
 
+/**
+ * The GPU path the engine draws with: core WebGPU, WebGPU in compatibility mode on devices that
+ * cannot run core WebGPU, or WebGL2.
+ *
+ * @category api/engine
+ */
 export type Tier = 'webgpu' | 'webgpu-compat' | 'webgl2';
 
 export type RenderCanvas = OffscreenCanvas | HTMLCanvasElement;

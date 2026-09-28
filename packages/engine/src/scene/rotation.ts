@@ -1,6 +1,12 @@
 // Rotations as quaternions (x, y, z, w), computed into output arrays so hot paths allocate
 // nothing. The formulas and axis-order names are three.js's.
 
+/**
+ * The axis order of Euler angles, with three.js's names. `'XYZ'` turns an object about its own X
+ * axis, then its Y axis, then its Z axis.
+ *
+ * @category api/objects
+ */
 export type EulerOrder = 'XYZ' | 'YXZ' | 'ZXY' | 'ZYX' | 'YZX' | 'XZY';
 
 type Out = { [index: number]: number };
