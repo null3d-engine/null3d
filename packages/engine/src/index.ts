@@ -7,7 +7,13 @@ export { defineGame } from './game/define-game';
 export type { CapabilityReport, WebGL2Report, WebGPUReport } from './page/capabilities';
 export type { Engine, EngineCapabilities, EngineMode, EngineOptions } from './page/engine';
 export { createEngine } from './page/engine';
-export type { FrameMetrics, FrameSummary, MemoryStats, ThreadStats } from './page/frame-stats';
+export type {
+	FrameMetrics,
+	FrameSummary,
+	MainThreadStats,
+	MemoryStats,
+	ThreadStats,
+} from './page/frame-stats';
 export type { LatencyMode } from './page/switches';
 export type { Tier } from './render/renderer';
 export type { ColorInput } from './scene/color';

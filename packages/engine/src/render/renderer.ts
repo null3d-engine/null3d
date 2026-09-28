@@ -1,6 +1,7 @@
 // The renderer interface. The same renderer runs in the render worker (pipelined mode), in the game
 // worker (low-latency mode) or on the page's main thread (single-threaded mode and ?render=main).
 
+import { type CompletionSignal, FenceCompletion, QueueCompletion } from '../gpu/completion';
 import { readbackWebGL2, readbackWebGPU } from '../gpu/readback';
 import { GpuTimer } from '../gpu/webgpu/gpu-timer';
 import { RenderPassSetup, submitOne } from '../gpu/webgpu/reusable';
@@ -28,6 +29,8 @@ export interface FrameInput {
 
 export interface Renderer {
 	readonly tier: Tier;
+	/** How the renderer learns that the GPU finished a frame, which it counts while the page measures. */
+	readonly completion: CompletionSignal;
 	/** Resizes the drawing buffer, in device pixels. Only the thread that owns the canvas calls this. */
 	resize(width: number, height: number): void;
 	/** Draws a frame to the canvas, adding its phase times and counters to the frame's record. */
@@ -67,7 +70,9 @@ class WebGPURenderer implements Renderer {
 	private readonly format: GPUTextureFormat;
 	private readonly timer: GpuTimer | undefined;
 	private readonly pass = new RenderPassSetup();
+	private readonly finished: QueueCompletion | undefined;
 	private simulated = false;
+	readonly completion: CompletionSignal = 'queue';
 	readonly lost: Promise<string>;
 
 	constructor(
@@ -83,6 +88,7 @@ class WebGPURenderer implements Renderer {
 		this.format = navigator.gpu.getPreferredCanvasFormat();
 		this.context.configure({ device, format: this.format, alphaMode: 'opaque' });
 		this.timer = metrics && GpuTimer.create(device, metrics);
+		this.finished = metrics && new QueueCompletion(device.queue, metrics);
 	}
 
 	resize(width: number, height: number): void {
@@ -114,6 +120,7 @@ class WebGPURenderer implements Renderer {
 		const start = performance.now();
 		this.timer?.beginFrame(input.frame);
 		this.clear(this.context.getCurrentTexture().createView(), input.background);
+		this.finished?.afterSubmit(input.frame);
 		record.addPhase(Phase.Replay, performance.now() - start);
 	}
 
@@ -144,11 +151,16 @@ class WebGPURenderer implements Renderer {
 
 class WebGL2Renderer implements Renderer {
 	readonly tier: Tier = 'webgl2';
+	readonly completion: CompletionSignal = 'fence';
 	private readonly gl: WebGL2RenderingContext;
+	private readonly finished: FenceCompletion | undefined;
 	private released = false;
 	readonly lost: Promise<string>;
 
-	constructor(private readonly canvas: RenderCanvas) {
+	constructor(
+		private readonly canvas: RenderCanvas,
+		metrics: ArrayBufferLike | undefined,
+	) {
 		this.lost = contextLoss(canvas, () => this.released);
 		const gl = canvas.getContext('webgl2', {
 			antialias: false,
@@ -156,6 +168,7 @@ class WebGL2Renderer implements Renderer {
 		}) as WebGL2RenderingContext | null;
 		if (!gl) throw new Error('the canvas has no WebGL2 context');
 		this.gl = gl;
+		this.finished = metrics && new FenceCompletion(gl, metrics);
 	}
 
 	resize(width: number, height: number): void {
@@ -177,7 +190,9 @@ class WebGL2Renderer implements Renderer {
 
 	drawFrame(input: FrameInput, record: FrameRecorder): void {
 		const start = performance.now();
+		this.finished?.poll();
 		this.clear(input.background);
+		this.finished?.afterSubmit(input.frame);
 		record.addPhase(Phase.Replay, performance.now() - start);
 	}
 
@@ -208,7 +223,7 @@ export async function createRenderer(
 	if (options.tier === 'webgl2') {
 		// After a loss, the context must come back before the engine can draw with it again.
 		await contextRestored(canvas);
-		return new WebGL2Renderer(canvas);
+		return new WebGL2Renderer(canvas, options.metrics);
 	}
 	const adapter = await navigator.gpu?.requestAdapter({ featureLevel: 'compatibility' });
 	if (!adapter) throw new Error('no WebGPU adapter');

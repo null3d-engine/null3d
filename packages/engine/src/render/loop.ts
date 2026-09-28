@@ -5,6 +5,7 @@
 
 import { controlViews, Slot } from '../shared/control';
 import { FrameRecorder, Role } from '../shared/metrics';
+import { RefreshMeter } from './refresh';
 import type { FrameInput, Renderer } from './renderer';
 
 export interface RenderLoop {
@@ -33,6 +34,7 @@ export class Presenter {
 	private resizeSerial = 0;
 	private lastPresented = -1;
 	private readonly input: ReusableInput = { frame: 0, background: [0, 0, 0] };
+	private readonly refresh = new RefreshMeter();
 	readonly record: FrameRecorder;
 
 	constructor(
@@ -41,6 +43,12 @@ export class Presenter {
 		metrics: ArrayBufferLike,
 	) {
 		this.record = new FrameRecorder(metrics, Role.Render);
+	}
+
+	/** Counts a frame callback, from whose times the display's refresh rate follows. */
+	tick(timestamp: number): void {
+		const hz = this.refresh.tick(timestamp);
+		if (hz !== undefined) this.record.setRefreshHz(hz);
 	}
 
 	/** Applies the canvas size the page wrote last, if it changed. */
@@ -85,6 +93,7 @@ export function runRenderLoop(
 
 	const frame = (timestamp: number) => {
 		if (stopped || Atomics.load(slots, Slot.Running) === 0) return;
+		presenter.tick(timestamp);
 		presenter.applyResize();
 		const published = Atomics.load(slots, Slot.FramesPublished);
 		if (published > taken) {

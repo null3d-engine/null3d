@@ -2,6 +2,7 @@
 // memory; this renderer replays the frame's list straight from that memory, and records the
 // frame's GPU time, upload bytes and draw calls.
 
+import { type CompletionSignal, QueueCompletion } from '../gpu/completion';
 import { readbackWebGPU } from '../gpu/readback';
 import { WebGPUBackend } from '../gpu/webgpu/backend';
 import { GpuTimer } from '../gpu/webgpu/gpu-timer';
@@ -18,7 +19,9 @@ export class WebGPUSceneRenderer implements Renderer {
 	private viewsOf: ArrayBufferLike | undefined;
 	private words = new Uint32Array(0);
 	private floats = new Float32Array(0);
+	private readonly finished: QueueCompletion | undefined;
 	private simulated = false;
+	readonly completion: CompletionSignal = 'queue';
 	readonly lost: Promise<string>;
 
 	constructor(
@@ -37,6 +40,7 @@ export class WebGPUSceneRenderer implements Renderer {
 		context.configure({ device, format: this.format, alphaMode: 'opaque' });
 		this.backend = new WebGPUBackend(device, context, this.format);
 		this.backend.timer = metrics && GpuTimer.create(device, metrics);
+		this.finished = metrics && new QueueCompletion(device.queue, metrics);
 		this.slots = controlViews(control).slots;
 	}
 
@@ -62,6 +66,7 @@ export class WebGPUSceneRenderer implements Renderer {
 		backend.timer?.beginFrame(input.frame);
 		backend.resetCounts();
 		this.replay(input.frame);
+		this.finished?.afterSubmit(input.frame);
 		record.addPhase(Phase.Replay, performance.now() - start);
 		record.count(Counter.UploadBytes, backend.counts.uploadBytes);
 		record.count(Counter.DrawCalls, backend.counts.drawCalls);

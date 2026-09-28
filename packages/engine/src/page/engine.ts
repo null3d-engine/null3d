@@ -21,6 +21,7 @@ import {
 } from './frame-stats';
 import { captureInput } from './input';
 import { loadCore } from './loader';
+import { MainThreadWatch } from './main-thread';
 import { type GpuSwitch, type LatencyMode, parseSwitches } from './switches';
 
 /**
@@ -423,6 +424,7 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 		async measure(seconds) {
 			const reader = new MetricsReader(metrics);
 			const heap = new HeapSampler();
+			const mainThread = new MainThreadWatch();
 			reader.begin();
 			heap.start();
 			const started = performance.now();
@@ -441,6 +443,9 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 				},
 				downloadBytes: { wasm: wasmDownloadBytes() },
 				lostRecords: reader.lost,
+				completionSignal: tier === 'webgl2' ? 'fence' : 'queue',
+				refreshHz: reader.refreshHz > 0 ? reader.refreshHz : null,
+				mainThread: mainThread.stop(),
 			};
 		},
 		async captureFrame() {

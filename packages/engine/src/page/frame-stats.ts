@@ -47,6 +47,18 @@ export interface FrameSummary {
 	gpuStepMs: number | null;
 	/** Time between presented frames. */
 	intervalMs: Percentiles;
+	/** Frames per second that the renderer presented. */
+	presentedFps: number;
+	/**
+	 * Frames per second that the GPU finished. Below `presentedFps`, frames queue on the GPU, and the
+	 * display shows fewer than the presented rate suggests. Null when no completion arrived.
+	 */
+	completedFps: number | null;
+	/**
+	 * Time from a frame's submit to the GPU finishing it. With a WebGL2 fence, the engine sees
+	 * completion at its next frame callback, so the figure rounds up to frame intervals.
+	 */
+	gpuLatencyMs: Percentiles | null;
 	/** Bytes uploaded to the GPU per frame. */
 	uploadBytes: Percentiles;
 	/** Draw calls per frame. */
@@ -98,6 +110,27 @@ export interface FrameMetrics extends FrameSummary {
 	downloadBytes: { wasm: number | null };
 	/** Frame records the page read too late; nonzero means some frames are missing from the figures. */
 	lostRecords: number;
+	/** How the renderer learned that the GPU finished a frame: its queue (WebGPU) or a fence (WebGL2). */
+	completionSignal: 'queue' | 'fence';
+	/** The display's refresh rate in hertz, as the thread that draws measured it, or null before then. */
+	refreshHz: number | null;
+	/** The page's own thread during the measurement, where the browser reports it, or null. */
+	mainThread: MainThreadStats | null;
+}
+
+/**
+ * The page's own thread during a measurement: tasks that kept it busy for 50 ms or more, and the
+ * delay before the page handled input.
+ *
+ * @category api/debug
+ */
+export interface MainThreadStats {
+	/** Tasks of 50 ms or more on the page's thread. */
+	longTasks: number;
+	/** The longest of them, or 0 when there were none. */
+	longestTaskMs: number;
+	/** Time from each input event to the page starting to handle it, or null without input. */
+	inputDelayMs: Percentiles | null;
 }
 
 /** The thread each role runs on in an engine mode, keyed by thread name. */
@@ -165,6 +198,9 @@ export function summarizeFrames(
 
 	const render = ring(Role.Render);
 	const gpu = ring(Role.Gpu).busy;
+	const completion = ring(Role.Completion);
+	const intervals = render.intervals.filter((ms) => ms > 0);
+	const completed = completion.intervals.filter((ms) => ms > 0);
 	return {
 		frames: frames.length,
 		cpuMs: percentiles(slowest),
@@ -172,10 +208,21 @@ export function summarizeFrames(
 		threads: threadStats,
 		gpuMs: gpu.length > 0 ? percentiles(gpu) : null,
 		gpuStepMs: timerStep(gpu),
-		intervalMs: percentiles(render.intervals.filter((ms) => ms > 0)),
+		intervalMs: percentiles(intervals),
+		presentedFps: ratePerSecond(intervals) ?? 0,
+		completedFps: ratePerSecond(completed),
+		gpuLatencyMs: completion.busy.length > 0 ? percentiles(completion.busy) : null,
 		uploadBytes: percentiles(render.counters[Counter.UploadBytes] ?? []),
 		drawCalls: percentiles(render.counters[Counter.DrawCalls] ?? []),
 	};
+}
+
+/** Events per second from the intervals between them, or null without intervals. */
+export function ratePerSecond(intervalsMs: readonly number[]): number | null {
+	if (intervalsMs.length === 0) return null;
+	let sum = 0;
+	for (const ms of intervalsMs) sum += ms;
+	return sum > 0 ? (1000 * intervalsMs.length) / sum : null;
 }
 
 /** Below this, a step between GPU times is timer precision, not rounding. */

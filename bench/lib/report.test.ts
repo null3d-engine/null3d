@@ -29,6 +29,10 @@ function result(cpu: number, stats = false): BenchResult {
 					gpuMs: { median: 1 },
 					uploadBytes: { median: 4800 },
 					drawCalls: { median: 1 },
+					presentedFps: 60,
+					completedFps: 58,
+					gpuLatencyMs: { median: cpu },
+					refreshHz: 120,
 					threads: {
 						'game-worker': { busyMs: { median: cpu }, phases: { update: { median: cpu / 2 } } },
 					},
@@ -46,6 +50,12 @@ describe('benchmark reports', () => {
 		expect(summary.allThreadsMs).toBe(6);
 		expect(summary.phases).toEqual({ 'game-worker.update': 1.5 });
 		expect(summary.threadsMs).toEqual({ 'game-worker': 3 });
+		expect(summary).toMatchObject({
+			presentedFps: 60,
+			completedFps: 58,
+			gpuLatencyMs: 3,
+			refreshHz: 120,
+		});
 		expect(summarizeRuns([result(5)]).allThreadsMs).toBeUndefined();
 	});
 

@@ -47,7 +47,7 @@ These numbers are starting points. The engine docs page `guides/performance` hol
 4. Profile JavaScript in the browser's performance panel. Game code runs in the worker named `null3d-game`; look there, not on the main thread.
 5. Check the WebGL2 path: add `?gpu=webgl2` to the URL. Phones without WebGPU use this path, and it does more CPU work (culling on job workers).
 6. On phones, GPU timers are rare (under 1% of Android and iOS reports have them on WebGL2), so judge the GPU by frame intervals with the CPU phases subtracted.
-7. `engine.measure(seconds)` on the page returns these figures. The `guides/performance` page explains each one and how to measure fairly: warm up, keep the page visible and the screen unlocked, and note the display rate.
+7. `engine.measure(seconds)` on the page returns these figures. The `guides/performance` page explains each one and how to measure fairly. Warm up, keep the page visible and the screen unlocked, and compare runs at the same `refreshHz`. When `completedFps` is below `presentedFps`, the GPU is the bottleneck: frames queue on it.
 
 ## 4. Symptoms, causes and fixes
 

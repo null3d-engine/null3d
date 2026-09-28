@@ -29,6 +29,9 @@ What `engine.measure` returns: the per-frame figures, memory, load time and down
 | `load: { engineStartMs: number; firstFrameMs: number \| null; }` | How long the engine took to start and to draw its first frame, in milliseconds. |
 | `downloadBytes: { wasm: number \| null; }` | Bytes of the engine's WebAssembly file as the page downloaded it. |
 | `lostRecords: number` | Frame records the page read too late; nonzero means some frames are missing from the figures. |
+| `completionSignal: 'queue' \| 'fence'` | How the renderer learned that the GPU finished a frame: its queue (WebGPU) or a fence (WebGL2). |
+| `refreshHz: number \| null` | The display's refresh rate in hertz, as the thread that draws measured it, or null before then. |
+| `mainThread: MainThreadStats \| null` | The page's own thread during the measurement, where the browser reports it, or null. |
 
 ### `FrameSummary`
 
@@ -45,8 +48,23 @@ Per-frame figures of a measurement: CPU time by thread, GPU time, frame interval
 | `gpuMs: Percentiles \| null` | GPU time per frame, where the device has timestamp queries. |
 | `gpuStepMs: number \| null` | The step between GPU times when the browser rounds its timestamps, or null when they look exact. Chrome rounds them unless its WebGPU developer features are turned on. |
 | `intervalMs: Percentiles` | Time between presented frames. |
+| `presentedFps: number` | Frames per second that the renderer presented. |
+| `completedFps: number \| null` | Frames per second that the GPU finished. Below `presentedFps`, frames queue on the GPU, and the display shows fewer than the presented rate suggests. Null when no completion arrived. |
+| `gpuLatencyMs: Percentiles \| null` | Time from a frame's submit to the GPU finishing it. With a WebGL2 fence, the engine sees completion at its next frame callback, so the figure rounds up to frame intervals. |
 | `uploadBytes: Percentiles` | Bytes uploaded to the GPU per frame. |
 | `drawCalls: Percentiles` | Draw calls per frame. |
+
+### `MainThreadStats`
+
+Interface `MainThreadStats`.
+
+The page's own thread during a measurement: tasks that kept it busy for 50 ms or more, and the delay before the page handled input.
+
+| Member | Description |
+| --- | --- |
+| `longTasks: number` | Tasks of 50 ms or more on the page's thread. |
+| `longestTaskMs: number` | The longest of them, or 0 when there were none. |
+| `inputDelayMs: Percentiles \| null` | Time from each input event to the page starting to handle it, or null without input. |
 
 ### `MemoryStats`
 

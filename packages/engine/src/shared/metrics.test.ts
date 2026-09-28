@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { summarizeFrames, threadRoles, timerStep } from '../page/frame-stats';
+import { ratePerSecond, summarizeFrames, threadRoles, timerStep } from '../page/frame-stats';
 import { Counter, createMetricsBuffer, FrameRecorder, MetricsReader, Phase, Role } from './metrics';
 
 function record(recorder: FrameRecorder, frame: number, busy: number, update = 0): void {
@@ -122,6 +122,7 @@ describe('summarizeFrames', () => {
 		const render = new FrameRecorder(buffer, Role.Render);
 		const job = new FrameRecorder(buffer, Role.Job);
 		const gpu = new FrameRecorder(buffer, Role.Gpu);
+		const completion = new FrameRecorder(buffer, Role.Completion);
 		for (const [frame, busy] of [
 			[1, 1],
 			[2, 2],
@@ -137,6 +138,10 @@ describe('summarizeFrames', () => {
 			render.count(Counter.DrawCalls, 10);
 			render.commit(2);
 			record(gpu, frame, 0.1 * frame);
+			// The GPU finishes each frame 4 ms after its submit, 32 ms apart: half the presented rate.
+			completion.begin(frame);
+			completion.interval(frame === 1 ? 0 : 32);
+			completion.commit(4);
 		}
 		reader.end();
 		return summarizeFrames(reader.records, threadRoles({ latency, renderThread, jobWorkers: 1 }));
@@ -155,6 +160,9 @@ describe('summarizeFrames', () => {
 		expect(summary.drawCalls.median).toBe(10);
 		expect(summary.gpuMs?.count).toBe(3);
 		expect(summary.gpuStepMs).toBeCloseTo(0.1, 6);
+		expect(summary.presentedFps).toBeCloseTo(62.5, 6);
+		expect(summary.completedFps).toBeCloseTo(31.25, 6);
+		expect(summary.gpuLatencyMs).toMatchObject({ count: 3, median: 4 });
 	});
 
 	it('adds up roles that share a thread', () => {
@@ -162,6 +170,13 @@ describe('summarizeFrames', () => {
 		// The game worker also draws: 1 + 2, 2 + 2, 3 + 2.
 		expect(summary.cpuMs.median).toBe(4);
 		expect(summary.threads['game-worker']?.busyMs.median).toBe(4);
+	});
+});
+
+describe('ratePerSecond', () => {
+	it('turns intervals into a rate, and gives null without them', () => {
+		expect(ratePerSecond([16, 17, 17])).toBeCloseTo(60, 6);
+		expect(ratePerSecond([])).toBeNull();
 	});
 });
 

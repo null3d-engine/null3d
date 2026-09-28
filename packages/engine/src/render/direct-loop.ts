@@ -19,6 +19,7 @@ export function runDirectLoop(
 
 	const frame = (timestamp: number) => {
 		if (stopped || Atomics.load(slots, Slot.Running) === 0) return;
+		presenter.tick(timestamp);
 		presenter.applyResize();
 		if (Atomics.load(slots, Slot.Paused) === 0) {
 			const frameNumber = runner.step(timestamp);

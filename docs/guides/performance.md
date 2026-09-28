@@ -94,10 +94,17 @@ The render worker picks how each upload travels, so you do not need to. Uploads 
 | `threads` | Each thread's time per frame by name, such as `game-worker`, `render-worker` and `job-0`, with its steps |
 | `gpuMs` | GPU time per frame, where the device has timestamp queries |
 | `intervalMs` | Time between frames on the screen |
+| `presentedFps` and `completedFps` | Frames per second that the renderer presented, and that the GPU finished |
+| `gpuLatencyMs` | Time from a frame's submit to the GPU finishing it |
+| `completionSignal` | How the engine learned that the GPU finished a frame: `queue` on WebGPU, `fence` on WebGL2 |
+| `refreshHz` | The display's refresh rate, as the engine measured it |
+| `mainThread` | Long tasks and input delay on the page's own thread, where the browser reports them (Chrome) |
 | `uploadBytes` and `drawCalls` | Bytes uploaded and draw calls made per frame |
 | `memory` | The engine's WebAssembly memory and the JavaScript heap |
 
 The game worker's steps are `update`, `commands`, `transforms`, `batches` and `record`, and the render worker's is `replay`. A thread's time less its `update` step is the engine's own work on that thread.
+
+A frame callback keeps firing at the display rate while the GPU falls behind. So a count of callbacks can report a healthy rate while the screen shows fewer frames. Compare `completedFps` with `presentedFps`. When the GPU finishes fewer frames than the renderer presents, frames queue on the GPU. Then `gpuLatencyMs` grows, and players feel it as input lag. The engine checks a WebGL2 fence at its next frame callback, so there `gpuLatencyMs` rounds up to a frame interval. `gpuMs` is the GPU's working time within a frame, not the time from submit to screen.
 
 Chrome measures the heap of the page and its workers only when every worker answers, or after a minute. Job workers never answer while the engine runs, so each sample takes about a minute and leaves them out. Chrome also adds shared memory, such as the engine's own, to each worker's figure. A render worker whose own heap is 1.4 MB can show as 52 MB. The `jsHeapNote` field says when the figures cover only the page.
 
@@ -105,7 +112,7 @@ Chrome measures the heap of the page and its workers only when every worker answ
 
 - Let the game run for several seconds before you measure, so that the browser has optimized your per-frame code.
 - Keep the page visible, the screen unlocked and the display awake. Safari stops running a page while the Mac is locked.
-- Note the display's refresh rate. Runs at 120 and at 144 frames per second differed by about 10% for both engines.
+- Compare runs at the same display refresh rate. `refreshHz` records it with each measurement. Runs at 120 and at 144 frames per second differed by about 10% for both engines.
 - Chrome rounds GPU times to 65.5 microseconds unless you start it with `--enable-webgpu-developer-features`.
 - Compare engines in the same browser, one run after another.
 

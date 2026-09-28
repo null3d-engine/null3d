@@ -14,7 +14,12 @@ export enum Role {
 	Render = 1,
 	/** GPU time per frame from timestamp queries, written by the thread that draws. */
 	Gpu = 2,
-	Job = 3,
+	/**
+	 * Frames the GPU finished: each record's busy time is the time from the frame's submit to its
+	 * completion, and its interval the time since the previous completion.
+	 */
+	Completion = 3,
+	Job = 4,
 }
 
 /** CPU phases of a frame, in the order they run. */
@@ -81,6 +86,8 @@ const RINGS = 1;
 const MEASURING = 2;
 /** Float64 index of the epoch time, in ms, at which the first frame was presented. */
 const FIRST_FRAME = 2;
+/** Float64 index of the display's refresh rate in hertz, as the thread that draws measured it. */
+const REFRESH_HZ = 3;
 const HEADER_WORDS = 8;
 const WRITTEN = HEADER_WORDS;
 
@@ -182,6 +189,11 @@ export class FrameRecorder {
 		Atomics.store(header, WRITTEN + this.ring, this.sequence);
 	}
 
+	/** Records the display's refresh rate, which the thread that draws measures. */
+	setRefreshHz(hz: number): void {
+		this.views.times[REFRESH_HZ] = hz;
+	}
+
 	/** Records when the first frame reached the screen, as epoch milliseconds, once per engine. */
 	markFirstFrame(): void {
 		const { times } = this.views;
@@ -228,6 +240,11 @@ export class MetricsReader {
 	/** Epoch milliseconds at which the first frame was presented, or 0 before that. */
 	get firstFrameTime(): number {
 		return this.views.times[FIRST_FRAME] as number;
+	}
+
+	/** The display's refresh rate in hertz, or 0 before the thread that draws has measured it. */
+	get refreshHz(): number {
+		return this.views.times[REFRESH_HZ] as number;
 	}
 
 	/** Forgets older records, then keeps every record written from now on. */

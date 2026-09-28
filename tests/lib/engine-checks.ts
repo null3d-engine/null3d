@@ -56,6 +56,11 @@ export interface EngineResult {
 		gpuMs: Spread | null;
 		load: { firstFrameMs: number | null };
 		memory: { wasmBytes: number | null };
+		completedFps: number | null;
+		gpuLatencyMs: Spread | null;
+		completionSignal: string;
+		refreshHz: number | null;
+		mainThread: { longTasks: number; longestTaskMs: number } | null;
 	};
 	count: { updates: number; largestStep: number };
 }
@@ -63,6 +68,8 @@ export interface EngineResult {
 /** Slower than this median frame interval means the loop is not keeping up with the display. */
 const MAX_MEDIAN_INTERVAL_MS = 34;
 const MIN_FRAMES = 30;
+/** A measured refresh rate outside this range is a measuring fault, not a display. */
+const REFRESH_HZ_RANGE = [20, 500] as const;
 
 /** The threads that record frames in a mode. */
 function expectedThreads(mode: EngineMode): string[] {
@@ -93,6 +100,19 @@ export function engineProblems(result: EngineResult, mode: EngineMode, tier: str
 	const timestamps = tier === 'webgpu' && result.capabilities.features.includes('timestamp-query');
 	if (timestamps && !((stats.gpuMs?.count ?? 0) > 0))
 		problems.push('no GPU times, although the device has timestamp queries');
+	if (!((stats.completedFps ?? 0) > 0) || !((stats.gpuLatencyMs?.count ?? 0) > 0))
+		problems.push('no frame completions were counted');
+	const signal = tier === 'webgl2' ? 'fence' : 'queue';
+	if (stats.completionSignal !== signal)
+		problems.push(`completions came from a ${stats.completionSignal}, expected a ${signal}`);
+	const hz = stats.refreshHz ?? 0;
+	if (hz < REFRESH_HZ_RANGE[0] || hz > REFRESH_HZ_RANGE[1])
+		problems.push(`measured a refresh rate of ${stats.refreshHz} Hz`);
+	// With the drawing in workers, the page's thread must stay free (design principle 6).
+	if (mode.renderThread !== 'main' && (stats.mainThread?.longTasks ?? 0) > 0)
+		problems.push(
+			`the page's thread ran ${stats.mainThread?.longTasks} long tasks, up to ${stats.mainThread?.longestTaskMs} ms`,
+		);
 	if (!((stats.load.firstFrameMs ?? 0) > 0)) problems.push('the first frame time is missing');
 	if (!((stats.memory.wasmBytes ?? 0) > 0)) problems.push('the WebAssembly memory size is missing');
 	if (result.count.updates <= MIN_FRAMES)
