@@ -1,16 +1,16 @@
 ---
 id: index
-title: sokko3d documentation
+title: null3d documentation
 status: experimental
 since: "0.1"
-summary: "What sokko3d is; how the docs are organized; status labels."
+summary: "What null3d is; how the docs are organized; status labels."
 ---
 
-# sokko3d documentation
+# null3d documentation
 
-sokko3d is a browser 3D engine for games and heavy 3D apps. Its core is Rust compiled to WebAssembly, and it runs on worker threads, so the page's main thread stays free. It draws with WebGPU, and with WebGL2 where WebGPU is missing, from the same game code. You write game code in TypeScript, with names that follow three.js where the ideas match.
+null3d is a browser 3D engine for games and heavy 3D apps. Its core is Rust compiled to WebAssembly, and it runs on worker threads, so the page's main thread stays free. It draws with WebGPU, and with WebGL2 where WebGPU is missing, from the same game code. You write game code in TypeScript, with names that follow three.js where the ideas match.
 
-sokko3d is in early development. Most pages here describe planned features, and each page's status label says which is which.
+null3d is in early development. Most pages here describe planned features, and each page's status label says which is which.
 
 ## Status labels
 
@@ -23,7 +23,7 @@ Every page has a status in its front matter:
 | `stable` | The API follows semantic versioning. |
 | `generated` | A tool writes the page from a single source, such as the three.js mapping data. |
 
-Coding agents must never use an API whose page is `planned`. The sokko3d agent skills follow the same rule.
+Coding agents must never use an API whose page is `planned`. The null3d agent skills follow the same rule.
 
 The API reference on each `api/` page is generated from the doc comments in the engine's source code, so it always matches the code.
 
@@ -34,19 +34,19 @@ The version column in the page list gives the first engine version with the page
 - [Architecture: threads and the frame](concepts/architecture.md) explains where game code runs, and why.
 - [GPU tiers and backends](concepts/backends.md) shows which browsers get WebGPU and which get WebGL2.
 - [Hosting and cross-origin isolation](getting-started/hosting.md) covers the two HTTP headers that turn on worker threads.
-- If you are porting a three.js app, the [three.js to sokko3d mapping](porting/threejs-mapping.md) lists 147 three.js APIs with their sokko3d equivalents.
+- If you are porting a three.js app, the [three.js to null3d mapping](porting/threejs-mapping.md) lists 147 three.js APIs with their null3d equivalents.
 
-Coding agents can look pages up by ID. A page's ID is its path under `docs/` without `.md`, such as `concepts/architecture`. From version 0.1, the same pages ship inside the `@sokko3d/engine` package, so they always match the installed engine.
+Coding agents can look pages up by ID. A page's ID is its path under `docs/` without `.md`, such as `concepts/architecture`. From version 0.1, the same pages ship inside the `@null3d/engine` package, so they always match the installed engine.
 
 ## All pages
 
-<!-- sokko3d:page-list:start -->
+<!-- null3d:page-list:start -->
 
 ### Getting started
 
 | Page | What it covers | Status | Version |
 | --- | --- | --- | --- |
-| [Install and create a project](getting-started/install.md) | `sokko3d create`; packages; engine, docs and skills versions always match. | planned | 0.3 |
+| [Install and create a project](getting-started/install.md) | `null3d create`; packages; engine, docs and skills versions always match. | planned | 0.3 |
 | [Your first scene](getting-started/first-scene.md) | page.ts with createEngine; game.ts with defineGame; camera, light, mesh; running the dev server. | planned | 0.1 |
 | [Hosting and cross-origin isolation](getting-started/hosting.md) | COOP and COEP headers; require-corp on Safari; CORS and CORP for assets; the single-threaded fallback. | planned | 0.1 |
 | [Project structure](getting-started/project-structure.md) | page.ts, game.ts, assets/, AGENTS.md, .claude/skills/; what runs where. | planned | 0.3 |
@@ -90,7 +90,7 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 | [Animation](api/animation.md) | The animator; play, crossFade, layers, events; morph weights. | planned | 0.2 |
 | [Raycasting and spatial queries](api/raycast.md) | raycast, raycastAny, raycastAll, raycastBatch, overlap queries, pointer events on objects. | planned | 0.2 |
 | [Input](api/input.md) | Pointer, keyboard, touch and gamepad; action maps. | planned | 0.1 |
-| [Camera controls (@sokko3d/controls)](api/controls.md) | Orbit and map controls (0.1); fly and first-person controls (0.2). | planned | 0.1 |
+| [Camera controls (@null3d/controls)](api/controls.md) | Orbit and map controls (0.1); fly and first-person controls (0.2). | planned | 0.1 |
 | [Post-processing API](api/post.md) | post.set options; post.addEffect for custom WGSL effects. | planned | 0.2 |
 | [Render graph API](api/render.md) | render.addPass declarations; enabling and disabling passes; dumpGraph. | planned | 0.2 |
 | [Quality API](api/quality.md) | quality.preset, quality.set, frame budgets, quality events. | planned | 0.1 |
@@ -117,11 +117,11 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 | [Audio with Web Audio](guides/audio.md) | Why audio stays on the page; sending positions from the game. | planned | 0.1 |
 | [Using a physics library](guides/physics.md) | Running Rapier or cannon-es in the game worker; copying transforms. | planned | 0.1 |
 | [Multiple views](guides/multiple-views.md) | Split screens with scene.createView, after 1.0; minimaps work from 0.2 through render-to-texture passes. | planned | after 1.0 |
-| [The asset pipeline (sokko3d assets)](guides/assets-pipeline.md) | optimize, env, convert; LODs; texture compression; budget reports. | planned | 0.2 |
-| [Testing your game](guides/testing.md) | sokko3d test; hold mode; image tests; reading results. | planned | 0.1 |
+| [The asset pipeline (null3d assets)](guides/assets-pipeline.md) | optimize, env, convert; LODs; texture compression; budget reports. | planned | 0.2 |
+| [Testing your game](guides/testing.md) | null3d test; hold mode; image tests; reading results. | planned | 0.1 |
 | [Debugging](guides/debugging.md) | Error codes; the inspector; the MCP server; the render-graph dump; common failures. | planned | 0.1 |
 | [Deploying](guides/deploying.md) | Headers on common hosts; asset caching; size budgets. | planned | 0.3 |
-| [Working with AI agents](guides/agents.md) | The skills; sokko3d docs; the MCP server; AGENTS.md in templates. | planned | 0.3 |
+| [Working with AI agents](guides/agents.md) | The skills; null3d docs; the MCP server; AGENTS.md in templates. | planned | 0.3 |
 
 ### Shaders
 
@@ -144,13 +144,13 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 | [Porting React Three Fiber](porting/react-three-fiber.md) | Canvas, useFrame, drei helpers; keeping React for the page UI. | planned | 0.3 |
 | [Unsupported three.js features](porting/threejs-unsupported.md) | Features after 1.0 or out of scope, with workarounds. | planned | 0.3 |
 | [Verifying a port](porting/verification.md) | Parity images per camera view; performance comparison; the WebGL2 path; phones. | planned | 0.3 |
-| [three.js to sokko3d mapping](porting/threejs-mapping.md) | Every three.js API a port is likely to meet, with its sokko3d equivalent. | generated | 0.3 |
+| [three.js to null3d mapping](porting/threejs-mapping.md) | Every three.js API a port is likely to meet, with its null3d equivalent. | generated | 0.3 |
 
 ### Command-line tool
 
 | Page | What it covers | Status | Version |
 | --- | --- | --- | --- |
-| [The sokko3d command](cli/sokko3d.md) | create, dev, build, test, bench, shot, assets, docs, port, skills, doctor. | planned | 0.3 |
+| [The null3d command](cli/null3d.md) | create, dev, build, test, bench, shot, assets, docs, port, skills, doctor. | planned | 0.3 |
 
 ### Errors
 
@@ -179,4 +179,4 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 | --- | --- | --- | --- |
 | [Cookbook](cookbook/index.md) | Short recipes; each is also a tested example. | planned | 0.2 |
 
-<!-- sokko3d:page-list:end -->
+<!-- null3d:page-list:end -->

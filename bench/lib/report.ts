@@ -1,15 +1,15 @@
-// Benchmark results: the summary of repeated runs of one page, the comparison of sokko3d with
+// Benchmark results: the summary of repeated runs of one page, the comparison of null3d with
 // three.js's faster renderer, and a line chart as SVG. Everything here is pure, so the benchmark
 // command and the runner's results share it.
 //
 // A frame's CPU time includes the game's code, which moves the scene alike in every engine's version
 // of a scene. A report also compares each engine's own work: the CPU time its own code takes on its
-// busiest thread. sokko3d times the game's update itself. three.js calls its own code from inside
+// busiest thread. null3d times the game's update itself. three.js calls its own code from inside
 // the game's loop, so its own work is its frame time less the scene code, which the scene-code page
 // times alone.
 import { SCENE_CODE } from './parity';
 
-/** What a timed benchmark page publishes. sokko3d pages add the engine's full frame metrics. */
+/** What a timed benchmark page publishes. null3d pages add the engine's full frame metrics. */
 export interface BenchResult {
 	ok: boolean;
 	error?: string;
@@ -17,7 +17,7 @@ export interface BenchResult {
 	renderer: string;
 	n: number;
 	frames: number;
-	/** CPU time per frame: the main thread for three.js, the busiest thread for sokko3d. */
+	/** CPU time per frame: the main thread for three.js, the busiest thread for null3d. */
 	cpuMs: { median: number; p95: number; p99: number; mean: number };
 	/** three.js pages: the part of each frame that the scene update took. */
 	updateMs?: { median: number };
@@ -40,12 +40,12 @@ export interface RunSummary {
 	/** The median of the runs' median CPU times, and their lowest and highest. */
 	cpuMs: { median: number; min: number; max: number };
 	cpuP95Ms: number;
-	/** The scene update's share of a frame: the game's update phase for sokko3d. */
+	/** The scene update's share of a frame: the game's update phase for null3d. */
 	updateMs?: number;
 	intervalMs: number;
-	/** sokko3d only: CPU time summed over threads, GPU time, and the median time of each phase. */
+	/** null3d only: CPU time summed over threads, GPU time, and the median time of each phase. */
 	allThreadsMs?: number;
-	/** sokko3d only: the median CPU time per frame of each thread, by name. */
+	/** null3d only: the median CPU time per frame of each thread, by name. */
 	threadsMs?: Record<string, number>;
 	gpuMs?: number | null;
 	phases?: Record<string, number>;
@@ -102,17 +102,17 @@ export function summarizeRuns(results: readonly BenchResult[]): RunSummary {
 	return summary;
 }
 
-/** sokko3d's value of a measure against three.js's lowest value of it over its renderers. */
+/** null3d's value of a measure against three.js's lowest value of it over its renderers. */
 export interface Share {
 	share: number;
-	sokko3dMs: number;
+	null3dMs: number;
 	threeMs: number;
 }
 
 /**
  * An engine's own CPU work per frame on its busiest thread, apart from the game's code.
  *
- * sokko3d times the game's update itself, so each thread's own work is its time less the update
+ * null3d times the game's update itself, so each thread's own work is its time less the update
  * phase on it: exact, from the same frames. The update holds the scene code and the game's writes
  * into the engine's arrays, which run no engine code.
  *
@@ -132,51 +132,51 @@ export function ownWorkMs(summary: RunSummary, sceneCodeMs: number): number {
 	return busiest;
 }
 
-/** sokko3d's value of `measure` as a share of three.js's lowest; null when a side is missing or zero. */
+/** null3d's value of `measure` as a share of three.js's lowest; null when a side is missing or zero. */
 function shareBy(
-	sokko3d: RunSummary | undefined,
+	null3d: RunSummary | undefined,
 	threejs: readonly (RunSummary | undefined)[],
 	measure: (summary: RunSummary) => number,
 ): Share | null {
 	const three = threejs.filter((s) => s !== undefined).map(measure);
-	if (!sokko3d || three.length === 0) return null;
+	if (!null3d || three.length === 0) return null;
 	const threeMs = Math.min(...three);
 	if (!(threeMs > 0)) return null;
-	const sokko3dMs = measure(sokko3d);
-	return { share: sokko3dMs / threeMs, sokko3dMs, threeMs };
+	const null3dMs = measure(null3d);
+	return { share: null3dMs / threeMs, null3dMs, threeMs };
 }
 
 /**
- * sokko3d's CPU time per frame as a share of three.js's faster renderer, each engine's whole
+ * null3d's CPU time per frame as a share of three.js's faster renderer, each engine's whole
  * frame. Null when either side has no summary.
  */
 export function shareOfThree(
-	sokko3d: RunSummary | undefined,
+	null3d: RunSummary | undefined,
 	threejs: readonly (RunSummary | undefined)[],
 ): Share | null {
-	return shareBy(sokko3d, threejs, (s) => s.cpuMs.median);
+	return shareBy(null3d, threejs, (s) => s.cpuMs.median);
 }
 
 /**
- * sokko3d's own work on its busiest thread as a share of three.js's, both apart from the game's
+ * null3d's own work on its busiest thread as a share of three.js's, both apart from the game's
  * code: the measure of the desktop speed target. Null without the scene code's time, which
  * three.js's side needs.
  */
 export function ownShareOfThree(
-	sokko3d: RunSummary | undefined,
+	null3d: RunSummary | undefined,
 	threejs: readonly (RunSummary | undefined)[],
 	sceneCode: RunSummary | undefined,
 ): (Share & { sceneCodeMs: number }) | null {
 	if (!sceneCode) return null;
 	const sceneCodeMs = sceneCode.cpuMs.median;
-	const share = shareBy(sokko3d, threejs, (s) => ownWorkMs(s, sceneCodeMs));
+	const share = shareBy(null3d, threejs, (s) => ownWorkMs(s, sceneCodeMs));
 	return share && { ...share, sceneCodeMs };
 }
 
 /** One page's summary in a benchmark run. */
 export interface SummaryRow {
 	scene: string;
-	/** The page kind, such as sokko3d-webgpu. */
+	/** The page kind, such as null3d-webgpu. */
 	kind: string;
 	summary: RunSummary;
 }
@@ -206,7 +206,7 @@ export function summaryTable(rows: readonly SummaryRow[]): string {
 }
 
 /**
- * Sentences for each scene: sokko3d's CPU time per frame as a share of three.js's faster renderer,
+ * Sentences for each scene: null3d's CPU time per frame as a share of three.js's faster renderer,
  * and, with the scene-code page's run, its own work as a share of three.js's.
  */
 export function comparisonLines(rows: readonly SummaryRow[]): string[] {
@@ -214,19 +214,19 @@ export function comparisonLines(rows: readonly SummaryRow[]): string[] {
 	const scenes = [...new Set(rows.map((r) => r.scene))];
 	return scenes.flatMap((scene) => {
 		const of = (kind: string) => summaryOf(rows, scene, kind);
-		const sokko3d = of('sokko3d-webgpu');
+		const null3d = of('null3d-webgpu');
 		const threejs = [of('threejs-webgpu'), of('threejs-webgl')];
-		const whole = shareOfThree(sokko3d, threejs);
-		const own = ownShareOfThree(sokko3d, threejs, of(SCENE_CODE));
+		const whole = shareOfThree(null3d, threejs);
+		const own = ownShareOfThree(null3d, threejs, of(SCENE_CODE));
 		return [
 			...(whole
 				? [
-						`${scene}: sokko3d on WebGPU takes ${percent(whole.share)} of the CPU time per frame of three.js's faster renderer (${ms(whole.sokko3dMs)} ms against ${ms(whole.threeMs)} ms).`,
+						`${scene}: null3d on WebGPU takes ${percent(whole.share)} of the CPU time per frame of three.js's faster renderer (${ms(whole.null3dMs)} ms against ${ms(whole.threeMs)} ms).`,
 					]
 				: []),
 			...(own
 				? [
-						`${scene}: sokko3d's own work on its busiest thread, apart from the game's code, is ${percent(own.share)} of three.js's (${ms(own.sokko3dMs)} ms against ${ms(own.threeMs)} ms); three.js's is its frame less the scene code timed alone (${ms(own.sceneCodeMs)} ms).`,
+						`${scene}: null3d's own work on its busiest thread, apart from the game's code, is ${percent(own.share)} of three.js's (${ms(own.null3dMs)} ms against ${ms(own.threeMs)} ms); three.js's is its frame less the scene code timed alone (${ms(own.sceneCodeMs)} ms).`,
 					]
 				: []),
 		];

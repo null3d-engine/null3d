@@ -106,8 +106,8 @@ export function checksPlan(): PlanItem<Check>[] {
 const parityItemId = (scene: ParityScene, kind: string) => `parity-${scene}-${kind}`;
 
 /**
- * The benchmark scenes' hold frames from sokko3d and three.js on both GPU tiers. Each three.js
- * page must publish a frame. Each sokko3d page must match the three.js page of its tier from the
+ * The benchmark scenes' hold frames from null3d and three.js on both GPU tiers. Each three.js
+ * page must publish a frame. Each null3d page must match the three.js page of its tier from the
  * same run, which judging compares.
  */
 export function parityPlan(): PlanItem<Check>[] {
@@ -139,7 +139,7 @@ const BENCH_RUNS = 3;
  * draws nothing, so it runs wherever the WebGL2 pages run.
  */
 const BENCH_PAGES: readonly [BenchPageKind, Tier][] = [
-	['sokko3d-webgpu', 'webgpu'],
+	['null3d-webgpu', 'webgpu'],
 	['threejs-webgpu', 'webgpu'],
 	['threejs-webgl', 'webgl2'],
 	[SCENE_CODE, 'webgl2'],
@@ -221,7 +221,7 @@ function baselineShare(scene: ParityScene, context: JudgeContext): number | null
 }
 
 /**
- * Compares a sokko3d page's hold frame with the frame of its three.js page from the same run, and
+ * Compares a null3d page's hold frame with the frame of its three.js page from the same run, and
  * saves both frames and the diff image in the context's image folder.
  */
 function parityProblems(

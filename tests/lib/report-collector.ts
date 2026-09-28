@@ -57,17 +57,17 @@ async function receive(
 /**
  * Dev-server endpoints for results from browsers that Playwright cannot drive, such as Safari on a
  * tablet:
- * - `POST /__sokko3d/report?name=` appends a test page's report to one JSON-lines file per page.
- * - `GET /__sokko3d/runs/current` tells waiting runner pages which run to start.
- * - `GET /__sokko3d/runs/<run>/plan` returns a run's list of pages.
- * - `POST /__sokko3d/runs/<run>/<device>/<name>` stores one result of a device as its own file,
+ * - `POST /__null3d/report?name=` appends a test page's report to one JSON-lines file per page.
+ * - `GET /__null3d/runs/current` tells waiting runner pages which run to start.
+ * - `GET /__null3d/runs/<run>/plan` returns a run's list of pages.
+ * - `POST /__null3d/runs/<run>/<device>/<name>` stores one result of a device as its own file,
  *   and `GET` on the same path reads it back.
  */
 export function reportCollector(): Plugin {
 	return {
-		name: 'sokko3d-report-collector',
+		name: 'null3d-report-collector',
 		configureServer(server) {
-			server.middlewares.use('/__sokko3d/report', (req, res) => {
+			server.middlewares.use('/__null3d/report', (req, res) => {
 				const name =
 					new URL(req.url ?? '/', 'http://localhost').searchParams.get('name') ?? 'report';
 				if (!NAME.test(name)) return send(res, 400);
@@ -76,7 +76,7 @@ export function reportCollector(): Plugin {
 					appendFileSync(join(REPORT_DIR, `${name}.jsonl`), `${json}\n`);
 				});
 			});
-			server.middlewares.use('/__sokko3d/runs', (req, res) => {
+			server.middlewares.use('/__null3d/runs', (req, res) => {
 				const parts = new URL(req.url ?? '/', 'http://localhost').pathname
 					.split('/')
 					.filter(Boolean);

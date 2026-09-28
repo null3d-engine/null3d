@@ -36,7 +36,7 @@ export async function startServer(https = false): Promise<DevServer> {
 	const child: ChildProcess = spawn('bunx', ['vite'], {
 		cwd: REPO_ROOT,
 		stdio: ['ignore', 'ignore', 'pipe'],
-		env: { ...process.env, SOKKO3D_HTTPS: https ? '1' : '0' },
+		env: { ...process.env, NULL3D_HTTPS: https ? '1' : '0' },
 	});
 	let errors = '';
 	child.stderr?.on('data', (chunk: Buffer) => {

@@ -6,10 +6,10 @@ since: "0.2"
 summary: "Short recipes; each is also a tested example."
 ---
 
-<!-- sokko3d:placeholder -->
+<!-- null3d:placeholder -->
 
 # Cookbook
 
-> Planned for sokko3d 0.2. This page is a placeholder. No release has this feature yet, so the APIs it names do not exist. Coding agents must not use them.
+> Planned for null3d 0.2. This page is a placeholder. No release has this feature yet, so the APIs it names do not exist. Coding agents must not use them.
 
 This page will cover: Short recipes; each is also a tested example.

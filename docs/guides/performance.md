@@ -8,9 +8,9 @@ summary: "Measuring; the frame budget; common causes of slow frames and their fi
 
 # Performance guide
 
-> Planned for sokko3d 0.1. No release has these APIs yet, so coding agents must not use them.
+> Planned for null3d 0.1. No release has these APIs yet, so coding agents must not use them.
 
-sokko3d keeps its own work per frame small, so your game code usually decides how long a frame takes. This guide shows where frame time goes, how to write per-frame code that stays fast, and how to measure. The figures come from the engine's benchmark scenes, and `bun run bench:run` measures them on your own computer.
+null3d keeps its own work per frame small, so your game code usually decides how long a frame takes. This guide shows where frame time goes, how to write per-frame code that stays fast, and how to measure. The figures come from the engine's benchmark scenes, and `bun run bench:run` measures them on your own computer.
 
 ## Where frame time goes
 

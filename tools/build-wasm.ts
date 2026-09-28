@@ -22,7 +22,7 @@ import { join } from 'node:path';
 import { brotliCompressSync, constants } from 'node:zlib';
 
 const root = process.cwd();
-const CRATE = 'sokko3d-wasm';
+const CRATE = 'null3d-wasm';
 const OUT_DIR = 'packages/engine/dist/wasm';
 const TOOLS_DIR = 'target/tools';
 const SIZE_BASELINE = 'tools/size-baseline.json';
@@ -159,10 +159,10 @@ function buildVariant(variant: Variant, bindgen: string): void {
 		'--out-dir',
 		outDir,
 		'--out-name',
-		'sokko3d',
+		'null3d',
 		`${targetDir}/wasm32-unknown-unknown/release/${CRATE.replace(/-/g, '_')}.wasm`,
 	]);
-	const wasm = `${outDir}/sokko3d_bg.wasm`;
+	const wasm = `${outDir}/null3d_bg.wasm`;
 	run(join(root, 'node_modules/.bin/wasm-opt'), [
 		'-O3',
 		...variant.wasmOptFeatures,
@@ -173,7 +173,7 @@ function buildVariant(variant: Variant, bindgen: string): void {
 	// The loader creates the shared memory itself, so it needs the module's declared sizes.
 	const limits = memoryImportLimits(readFileSync(join(root, wasm)));
 	if (limits)
-		writeFileSync(join(root, outDir, 'sokko3d_memory.json'), `${JSON.stringify(limits)}\n`);
+		writeFileSync(join(root, outDir, 'null3d_memory.json'), `${JSON.stringify(limits)}\n`);
 }
 
 export interface MemoryLimits {
@@ -280,7 +280,7 @@ async function main(): Promise<void> {
 
 	const sizes: Record<string, SizeEntry> = {};
 	for (const variant of VARIANTS) {
-		for (const file of ['sokko3d_bg.wasm', 'sokko3d.js']) {
+		for (const file of ['null3d_bg.wasm', 'null3d.js']) {
 			const path = `${OUT_DIR}/${variant.name}/${file}`;
 			sizes[`${variant.name}/${file}`] = measure(readFileSync(join(root, path)));
 		}

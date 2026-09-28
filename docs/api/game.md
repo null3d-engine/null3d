@@ -6,11 +6,11 @@ since: "0.1"
 summary: "The context object: scene, assets, materials, geometry, textures, input, time, quality, post, render, page, ui, debug; the callbacks."
 ---
 
-<!-- sokko3d:placeholder -->
+<!-- null3d:placeholder -->
 
 # Game API: defineGame and the context
 
-> Planned for sokko3d 0.1. No release has these APIs yet, so coding agents must not use them. The reference below lists the APIs the engine has now. The rest of the page is not written yet.
+> Planned for null3d 0.1. No release has these APIs yet, so coding agents must not use them. The reference below lists the APIs the engine has now. The rest of the page is not written yet.
 
 This page will cover: The context object: scene, assets, materials, geometry, textures, input, time, quality, post, render, page, ui, debug; the callbacks.
 

@@ -59,8 +59,8 @@ export type Tier = (typeof TIERS)[number];
 const PAGES = {
 	'threejs-webgl': { folder: 'threejs', gpu: 'renderer=webgl' },
 	'threejs-webgpu': { folder: 'threejs', gpu: 'renderer=webgpu' },
-	'sokko3d-webgl2': { folder: 'sokko3d', gpu: 'gpu=webgl2' },
-	'sokko3d-webgpu': { folder: 'sokko3d', gpu: 'gpu=webgpu' },
+	'null3d-webgl2': { folder: 'null3d', gpu: 'gpu=webgl2' },
+	'null3d-webgpu': { folder: 'null3d', gpu: 'gpu=webgpu' },
 } as const satisfies Record<string, { folder: string; gpu: string }>;
 
 export type PageKind = keyof typeof PAGES;
@@ -82,10 +82,10 @@ export interface PagePair {
 	reference: PageKind;
 }
 
-/** On each GPU tier, the sokko3d page and the three.js page that it must match. */
+/** On each GPU tier, the null3d page and the three.js page that it must match. */
 export const TIER_PAIRS: Readonly<Record<Tier, PagePair>> = {
-	webgpu: { candidate: 'sokko3d-webgpu', reference: 'threejs-webgpu' },
-	webgl2: { candidate: 'sokko3d-webgl2', reference: 'threejs-webgl' },
+	webgpu: { candidate: 'null3d-webgpu', reference: 'threejs-webgpu' },
+	webgl2: { candidate: 'null3d-webgl2', reference: 'threejs-webgl' },
 };
 
 /** The dev-server path of one scene's page of one kind, with more switches after its own. */

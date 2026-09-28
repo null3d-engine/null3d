@@ -3,7 +3,7 @@
 
 declare global {
 	interface Window {
-		__sokko3dResult?: unknown;
+		__null3dResult?: unknown;
 	}
 }
 
@@ -18,13 +18,13 @@ export function toBase64(bytes: Uint8Array): string {
 
 export async function publish(name: string, result: Record<string, unknown>): Promise<void> {
 	const report = { page: name, userAgent: navigator.userAgent, url: location.href, ...result };
-	window.__sokko3dResult = report;
+	window.__null3dResult = report;
 	const status = document.getElementById('status');
 	if (status) status.textContent = JSON.stringify({ ...report, pixels: undefined }, null, 2);
 	// Inside the runner page's frame, the runner posts the result with its run.
 	if (window.parent !== window) return;
 	try {
-		await fetch(`/__sokko3d/report?name=${name}`, { method: 'POST', body: JSON.stringify(report) });
+		await fetch(`/__null3d/report?name=${name}`, { method: 'POST', body: JSON.stringify(report) });
 	} catch {
 		// The collector is optional; Playwright reads the result from window.
 	}

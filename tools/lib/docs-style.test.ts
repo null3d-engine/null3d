@@ -15,7 +15,7 @@ describe('checkDocsStyle errors', () => {
 	it('blocks any mention of the private build plan, even in code', () => {
 		expect(rules('Read `.dev/plan/x.md`.')).toEqual(['error:private_plan:1']);
 		expect(rules('| Plan | `PLAN.md` |')).toEqual(['error:private_plan:1']);
-		expect(rules('See https://sokko3d.dev/docs.')).toEqual([]);
+		expect(rules('See https://null3d.dev/docs.')).toEqual([]);
 	});
 
 	it('blocks the build process in docs for engine users', () => {
@@ -74,7 +74,7 @@ describe('checkDocsStyle warnings', () => {
 
 	it('ends a sentence before a name spelled in lowercase', () => {
 		const words = Array.from({ length: 15 }, () => 'word').join(' ');
-		expect(rules(`${words}. sokko3d ${words}. three.js ${words}.`)).toEqual([]);
+		expect(rules(`${words}. null3d ${words}. three.js ${words}.`)).toEqual([]);
 	});
 
 	it('does not split sentences at version numbers or skip table rows for errors', () => {
@@ -85,8 +85,8 @@ describe('checkDocsStyle warnings', () => {
 
 describe('isTitleCase', () => {
 	it('flags title case and leaves sentence case and product names alone', () => {
-		expect(isTitleCase('Getting Started With Sokko')).toBe(true);
-		expect(isTitleCase('Getting started with sokko3d')).toBe(false);
+		expect(isTitleCase('Getting Started With Null')).toBe(true);
+		expect(isTitleCase('Getting started with null3d')).toBe(false);
 		expect(isTitleCase('Porting React Three Fiber')).toBe(false);
 		expect(isTitleCase('GPU tiers and backends')).toBe(false);
 	});

@@ -1,12 +1,12 @@
 <p align="center">
-  <img src=".github/assets/logo.svg" alt="sokko3d" width="96" height="96" />
+  <img src=".github/assets/logo.svg" alt="null3d" width="96" height="96" />
 </p>
 
-<h1 align="center">sokko3d</h1>
+<h1 align="center">null3d</h1>
 
 <div align="center">
 
-[![CI](https://github.com/sokko3d/sokko3d/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/sokko3d/sokko3d/actions/workflows/ci.yml)
+[![CI](https://github.com/null3d-engine/null3d/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/null3d-engine/null3d/actions/workflows/ci.yml)
 [![License: MIT OR Apache-2.0](https://img.shields.io/badge/license-MIT%20OR%20Apache--2.0-blue.svg)](#community-and-license)
 [![Status: pre-alpha](https://img.shields.io/badge/status-pre--alpha-orange.svg)](#roadmap)
 [![GPU: WebGPU and WebGL2](https://img.shields.io/badge/GPU-WebGPU%20%2B%20WebGL2-5b45e0.svg)](docs/concepts/backends.md)
@@ -21,7 +21,7 @@
 </p>
 
 <p align="center">
-  Pre-alpha: sokko3d has no release yet.
+  Pre-alpha: null3d has no release yet.
   Nothing is on npm yet.
 </p>
 
@@ -42,22 +42,22 @@
 <p align="center">
   <img src=".github/assets/s1.gif" alt="A cloud of 100,000 blue boxes that bob and turn, seen from a camera circling it" width="480" />
   <br />
-  <sub>Benchmark scene S1: 100,000 boxes that game code moves every frame, drawn by sokko3d with WebGPU.</sub>
+  <sub>Benchmark scene S1: 100,000 boxes that game code moves every frame, drawn by null3d with WebGPU.</sub>
 </p>
 
-## What is sokko3d?
+## What is null3d?
 
-sokko3d is a browser 3D engine that aims to replace three.js where CPU time limits a scene. That happens with many moving objects, deep scene graphs, animation and culling. The engine's core is Rust compiled to WebAssembly, and it runs on worker threads, so the page's main thread stays free.
+null3d is a browser 3D engine that aims to replace three.js where CPU time limits a scene. That happens with many moving objects, deep scene graphs, animation and culling. The engine's core is Rust compiled to WebAssembly, and it runs on worker threads, so the page's main thread stays free.
 
-It draws with WebGPU, and with WebGL2 where WebGPU is missing, from the same game code. That matters most on phones, where many devices still have no WebGPU. Where the GPU is the limit, sokko3d aims to match three.js, because both engines use the same browser graphics APIs.
+It draws with WebGPU, and with WebGL2 where WebGPU is missing, from the same game code. That matters most on phones, where many devices still have no WebGPU. Where the GPU is the limit, null3d aims to match three.js, because both engines use the same browser graphics APIs.
 
 ## Quickstart
 
 Nothing is on npm yet, but the benchmark scenes run from a clone of this repository. First install the tools that [Development](#development) lists.
 
 ```sh
-git clone https://github.com/sokko3d/sokko3d.git
-cd sokko3d
+git clone https://github.com/null3d-engine/null3d.git
+cd null3d
 bun install
 bun run build
 bun run dev
@@ -67,17 +67,17 @@ Then open one of these pages in Chrome:
 
 | Page | What it shows |
 | --- | --- |
-| `http://localhost:5173/bench/pages/sokko3d/s1.html?demo` | S1: 100,000 boxes, each moved every frame by game code |
-| `http://localhost:5173/bench/pages/sokko3d/s2.html?demo` | S2: a scene graph of 5,096 objects |
+| `http://localhost:5173/bench/pages/null3d/s1.html?demo` | S1: 100,000 boxes, each moved every frame by game code |
+| `http://localhost:5173/bench/pages/null3d/s2.html?demo` | S2: a scene graph of 5,096 objects |
 | `http://localhost:5173/bench/pages/threejs/s1.html?renderer=webgl&demo` | S1 in three.js, to compare |
 
 `bun run bench:run` measures S1 in both engines and prints a table of CPU time per frame.
 
-This is what a complete sokko3d project will look like. The page starts the engine:
+This is what a complete null3d project will look like. The page starts the engine:
 
 ```ts
 // page.ts (main thread)
-import { createEngine } from '@sokko3d/engine';
+import { createEngine } from '@null3d/engine';
 
 await createEngine({
   canvas: document.querySelector('canvas')!,
@@ -89,7 +89,7 @@ Your game runs in a worker:
 
 ```ts
 // game.ts (game worker)
-import { defineGame } from '@sokko3d/engine';
+import { defineGame } from '@null3d/engine';
 
 export default defineGame(async ({ scene, geometry, materials }) => {
   const camera = scene.createPerspectiveCamera({ fov: 60, position: [0, 1.5, 4], target: [0, 0, 0] });
@@ -111,7 +111,7 @@ export default defineGame(async ({ scene, geometry, materials }) => {
 });
 ```
 
-The first release, 0.1, will add the `@sokko3d/engine` package and the `sokko3d dev` command, a dev server that sends the right headers. Until then, [Development](#development) shows how to work on the engine itself.
+The first release, 0.1, will add the `@null3d/engine` package and the `null3d dev` command, a dev server that sends the right headers. Until then, [Development](#development) shows how to work on the engine itself.
 
 ## How it works
 
@@ -146,14 +146,14 @@ flowchart LR
 | Version | Adds |
 | --- | --- |
 | 0.1 | Clustered forward lighting with MSAA, cascaded shadows, fog, quality presets, dynamic resolution, render layers, orbit and map camera controls, debug drawing, WGSL imports from an engine shader library, and a headless test runner |
-| 0.2 | glTF with KTX2 textures and meshopt compression, the `sokko3d assets` optimizer, skeletal and morph animation, raycasting, pointer events on objects, environment lighting, skies, post-processing with custom effects, custom render passes, sprites, points, wide lines, HTML labels, large-world mode, and occlusion culling on both GPU paths |
-| 0.3 | The docs site and `sokko3d docs`, starter templates, an MCP server, an in-page inspector, an ESLint plugin, and the three.js porting tools |
+| 0.2 | glTF with KTX2 textures and meshopt compression, the `null3d assets` optimizer, skeletal and morph animation, raycasting, pointer events on objects, environment lighting, skies, post-processing with custom effects, custom render passes, sprites, points, wide lines, HTML labels, large-world mode, and occlusion culling on both GPU paths |
+| 0.3 | The docs site and `null3d docs`, starter templates, an MCP server, an in-page inspector, an ESLint plugin, and the three.js porting tools |
 
 </details>
 
 ## Why it is faster
 
-three.js keeps each object as a JavaScript object and walks the scene graph object by object in every frame. That work grows with the object count and runs on the page's main thread. sokko3d keeps scene data in flat arrays inside WebAssembly memory, processes them in bulk on job workers, and lets your code write straight into them:
+three.js keeps each object as a JavaScript object and walks the scene graph object by object in every frame. That work grows with the object count and runs on the page's main thread. null3d keeps scene data in flat arrays inside WebAssembly memory, processes them in bulk on job workers, and lets your code write straight into them:
 
 ```ts
 const rocks = scene.createInstances(rockMesh, 10_000, { dynamic: true });
@@ -175,7 +175,7 @@ An engine's own time leaves out the game code that moves the instances, which ru
 
 ## Where it runs
 
-sokko3d picks its GPU path at startup from feature tests. It never checks browser or GPU names, because some browsers hide them.
+null3d picks its GPU path at startup from feature tests. It never checks browser or GPU names, because some browsers hide them.
 
 | Device and browser | GPU path |
 | --- | --- |
@@ -188,28 +188,28 @@ sokko3d picks its GPU path at startup from feature tests. It never checks browse
 | Android phones without WebGPU, such as those with Samsung Xclipse GPUs | WebGL2 |
 | Firefox on Android and Linux | WebGL2 |
 
-The minimum versions are Safari 16.4, Chrome and Edge 91, and Firefox 89. Worker threads need two HTTP headers on your page, and [Hosting and cross-origin isolation](docs/getting-started/hosting.md) shows them for common hosts. Without the headers, sokko3d runs single-threaded. Desktop apps can use Electron, which ships the same Chromium on every system.
+The minimum versions are Safari 16.4, Chrome and Edge 91, and Firefox 89. Worker threads need two HTTP headers on your page, and [Hosting and cross-origin isolation](docs/getting-started/hosting.md) shows them for common hosts. Without the headers, null3d runs single-threaded. Desktop apps can use Electron, which ships the same Chromium on every system.
 
 ## Porting from three.js
 
 The API uses three.js names where the ideas match. A few of the 147 entries in the mapping:
 
-| three.js | sokko3d | Since |
+| three.js | null3d | Since |
 | --- | --- | --- |
 | `WebGLRenderer` / `WebGPURenderer` | `createEngine({ canvas, game })` on the page; scene code moves into `defineGame()` in a worker | 0.1 |
 | `MeshStandardMaterial` | `materials.standard({ color, map, metalness, roughness, ... })` | 0.1 |
 | `InstancedMesh` with `setMatrixAt` | `scene.createInstances(mesh, count, { dynamic })`, then write the batch's typed arrays | 0.1 |
-| `OrbitControls` | `createOrbitControls(ctx, camera, { ... })` from `@sokko3d/controls` | 0.1 |
+| `OrbitControls` | `createOrbitControls(ctx, camera, { ... })` from `@null3d/controls` | 0.1 |
 | `GLTFLoader` | `await assets.loadGltf(url)`, then `scene.instantiate(prefab)` | 0.2 |
 | `Raycaster` | `camera.screenToRay(x, y, ray)`, then `scene.raycast(...)` | 0.2 |
 
-The full [three.js to sokko3d mapping](docs/porting/threejs-mapping.md) covers renderers, materials, loaders, animation, post-processing and more. The [porting skill](skills/sokko3d-port-threejs/SKILL.md) walks a coding agent through a port, and its scanner lists every three.js feature an app uses.
+The full [three.js to null3d mapping](docs/porting/threejs-mapping.md) covers renderers, materials, loaders, animation, post-processing and more. The [porting skill](skills/null3d-port-threejs/SKILL.md) walks a coding agent through a port, and its scanner lists every three.js feature an app uses.
 
 ## For AI agents
 
-sokko3d is built so that a coding agent can create, run, test and debug a game with nobody watching.
+null3d is built so that a coding agent can create, run, test and debug a game with nobody watching.
 
-- Two agent skills come with the engine. [sokko3d-develop](skills/sokko3d-develop/SKILL.md) builds and speeds up sokko3d projects, and [sokko3d-port-threejs](skills/sokko3d-port-threejs/SKILL.md) ports three.js and React Three Fiber apps. Claude Code loads them from `.claude/skills/` in this repository.
+- Two agent skills come with the engine. [null3d-develop](skills/null3d-develop/SKILL.md) builds and speeds up null3d projects, and [null3d-port-threejs](skills/null3d-port-threejs/SKILL.md) ports three.js and React Three Fiber apps. Claude Code loads them from `.claude/skills/` in this repository.
 - Every docs page has an ID, such as `concepts/architecture`, and a status. Agents never use an API whose page is `planned`.
 - [AGENTS.md](AGENTS.md) holds the rules for people and agents working on the engine.
 
@@ -269,7 +269,7 @@ if (input.wasPressed('Mouse0')) {
 - [Static and dynamic objects](docs/concepts/static-dynamic.md)
 - [GPU tiers and backends](docs/concepts/backends.md)
 - [Hosting and cross-origin isolation](docs/getting-started/hosting.md)
-- [three.js to sokko3d mapping](docs/porting/threejs-mapping.md)
+- [three.js to null3d mapping](docs/porting/threejs-mapping.md)
 
 ## Roadmap
 
@@ -280,7 +280,7 @@ Each release lists its changes in `CHANGELOG.md`. Until 1.0, the API can change 
 | Now, before 0.1 | The threaded core, both GPU backends with instanced meshes and one light, and benchmarks against three.js on a laptop, an Android phone and an iPad |
 | 0.1 | Cameras, materials, clustered lights, shadows, fog, quality presets, dynamic resolution, camera controls and the first TypeScript API |
 | 0.2 | glTF loading, the asset optimizer, animation, raycasting, environment lighting, post-processing, sprites, lines and large worlds |
-| 0.3 | The docs site, the `sokko3d` command, templates, agent tooling and the porting tools |
+| 0.3 | The docs site, the `null3d` command, templates, agent tooling and the porting tools |
 | 1.0 | A stable API, testing on many devices, size budgets and public benchmarks |
 
 ## Development
@@ -294,24 +294,24 @@ Requirements:
 - [mkcert](https://github.com/FiloSottile/mkcert), only to test on phones and tablets over HTTPS
 
 ```sh
-git clone https://github.com/sokko3d/sokko3d.git
-cd sokko3d
+git clone https://github.com/null3d-engine/null3d.git
+cd null3d
 bun install              # installs the tools and the git hooks
 bun run build            # builds both WebAssembly files and prints their sizes
 bun run test             # unit tests for the engine, the docs and the repository tools
 bun run test:browser     # image tests on WebGPU and WebGL2 in Chrome
 bun run dev              # serves the test and benchmark pages with the isolation headers
-bun run bench:run        # measures S1 in sokko3d and three.js in Chrome and prints a table
+bun run bench:run        # measures S1 in null3d and three.js in Chrome and prints a table
 ```
 
 [AGENTS.md](AGENTS.md) has the rules, the commands and the commit checks that keep the docs in line with the code.
 
 ## Community and license
 
-⭐ **If you want to see sokko3d built, a star helps other people find it.** It is the main way an open source project gets found.
+⭐ **If you want to see null3d built, a star helps other people find it.** It is the main way an open source project gets found.
 
-Questions and bug reports are welcome in [GitHub Issues](https://github.com/sokko3d/sokko3d/issues).
+Questions and bug reports are welcome in [GitHub Issues](https://github.com/null3d-engine/null3d/issues).
 
 Copyright (C) 2026 [Ramesh Nair](https://hiddentao.com).
 
-sokko3d is licensed under either of the [Apache License 2.0](LICENSE-APACHE) or the [MIT license](LICENSE-MIT), at your option. Unless you explicitly state otherwise, any contribution you intentionally submit for inclusion in the work, as defined in the Apache-2.0 license, shall be dual licensed as above, without any additional terms or conditions.
+null3d is licensed under either of the [Apache License 2.0](LICENSE-APACHE) or the [MIT license](LICENSE-MIT), at your option. Unless you explicitly state otherwise, any contribution you intentionally submit for inclusion in the work, as defined in the Apache-2.0 license, shall be dual licensed as above, without any additional terms or conditions.

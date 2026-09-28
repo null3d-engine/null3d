@@ -1,0 +1,92 @@
+{
+  "skill_name": "null3d-develop",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Set up a null3d scene for a turntable product viewer: the sneaker model is at /models/sneaker.glb. I want soft studio lighting, an orbit camera that can't go below the floor, and a soft shadow on the floor. It has to run well on phones.",
+      "expected_output": "A page.ts and game.ts pair: the page creates the engine; the game loads and instantiates the glTF, sets up studio lighting, orbit controls limited above the floor, a shadow-receiving floor, warm-up behind a loading step, and notes on asset optimization and version availability.",
+      "files": [],
+      "expectations": [
+        "page.ts calls createEngine with the canvas and the game module, and game.ts uses defineGame",
+        "The model is loaded with assets.loadGltf and placed with scene.instantiate",
+        "Orbit controls come from @null3d/controls and limit maxPolarAngle to below half of pi",
+        "The floor receives shadows, through materials.shadowCatcher or a receiving mesh, and the light casts them",
+        "Lighting uses an environment (builtinEnvironment or loadEnvironment) and/or hemisphere and directional lights",
+        "The code awaits scene.warmUp() or preloads assets before showing the model",
+        "The answer notes that glTF loading and some used APIs need engine 0.2 and asks to check docs status",
+        "No DOM access appears in game.ts and onUpdate allocates nothing",
+        "The answer recommends optimizing the model with null3d assets optimize"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "My null3d game drops to 20 fps on my Android phone when about 5,000 enemies are on screen. Here's the game file (evals/files/slow-game.ts). Make it fast.",
+      "expected_output": "A rewrite that moves enemies into one dynamic instance batch driven by typed arrays, removes per-frame allocations, pools bullets with a fixed-capacity batch and setActiveCount, stops sending all positions to the page every frame, and explains how to measure the gain.",
+      "files": ["evals/files/slow-game.ts"],
+      "expectations": [
+        "Enemies become one scene.createInstances batch instead of 5,000 createMesh objects",
+        "Enemy movement writes batch.positions directly instead of calling getPosition and setPosition per enemy",
+        "Per-frame allocations are removed, including vec3.create in the loop and bullets.filter",
+        "Bullets use a pooled batch with a fixed capacity and setActiveCount instead of createMesh and destroy during play",
+        "The per-frame page.post of all enemy positions is removed or replaced by event messages",
+        "The answer explains how to measure before and after with debug.stats or null3d bench",
+        "The answer mentions that many Android phones use the WebGL2 path and suggests testing with ?gpu=webgl2"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Add an animated water surface to my null3d scene: gentle waves that move the vertices, a lighter color on the crests, and it should still receive shadows and fog.",
+      "expected_output": "A materials.shader material with a WGSL vertexOffset for the waves and a surface function that starts from defaultSurface and changes color by wave height, keeping engine lighting, shadows and fog; bounds enlarged; WebGL2 check suggested.",
+      "files": [],
+      "expectations": [
+        "Uses materials.shader with a vertexOffset function and a surface function written in WGSL",
+        "The surface function starts from defaultSurface(input) and returns a Surface",
+        "Animation uses frame.time and uniforms declared in the uniforms option",
+        "No GLSL appears and no language feature outside the three shared ones is used",
+        "The mesh receives shadows and the material keeps fog enabled",
+        "The answer enlarges bounds with setBounds or explains why culling could hide displaced vertices",
+        "The answer suggests checking the WebGL2 path"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "In my null3d RTS prototype, clicking a unit should select it with an outline and show its name and health in an HTML label above it.",
+      "expected_output": "Units on a pickable layer; selection with obj.on('click') or a reused ray and hit object; outline through post.set and setOutlined; labels with ui.trackLabel in the game and engine.labels.bind on the page; health messages only on change.",
+      "files": [],
+      "expectations": [
+        "Selection uses obj.on('click') or camera.screenToRay with scene.raycast using ray and hit objects created once",
+        "A layer mask limits picking to units",
+        "The outline uses post.set({ outline }) and setOutlined(true) on the selected unit only",
+        "Labels use ui.trackLabel in game.ts and engine.labels.bind in page.ts",
+        "Health updates are sent with page.post only when the value changes",
+        "The answer notes these APIs arrive in engine 0.2 and to check docs status"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "I deployed my null3d game to my static host and now I only see a blank canvas. Locally with null3d dev it works fine.",
+      "expected_output": "Diagnosis centered on cross-origin isolation headers and asset CORS/CORP, with concrete header values, the single-threaded fallback, null3d doctor, and the hosting docs page.",
+      "files": [],
+      "expectations": [
+        "Names the Cross-Origin-Opener-Policy same-origin and Cross-Origin-Embedder-Policy require-corp headers",
+        "Mentions CORS or Cross-Origin-Resource-Policy headers for assets from other origins",
+        "Mentions that Safari does not support COEP credentialless",
+        "Suggests npx null3d doctor or checking the browser console for crossOriginIsolated",
+        "Points to getting-started/hosting",
+        "Mentions the single-threaded fallback when headers cannot be set"
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "Use null3d to add depth of field to my cinematic camera.",
+      "expected_output": "The answer says depth of field is not in null3d 1.0, offers a workaround (a custom hdr-stage effect that reads scene depth, or skipping it), and does not invent a post.set option for it.",
+      "files": [],
+      "expectations": [
+        "States that depth of field is not part of null3d 1.0 or that its docs status must be checked",
+        "Does not use a nonexistent option such as post.set({ dof })",
+        "Offers a workaround using post.addEffect with stage 'hdr' and sampleDepth, or explains the trade-off of skipping it",
+        "Mentions the cost of wide blurs on phones"
+      ]
+    }
+  ]
+}

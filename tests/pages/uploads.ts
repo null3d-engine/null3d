@@ -8,7 +8,7 @@ import {
 	STAGING_MIN_BYTES,
 	UploadRoutes,
 	WebGPUBackend,
-} from '@sokko3d/engine/internal';
+} from '@null3d/engine/internal';
 import * as G from '../../packages/engine/src/generated/gpu';
 import { TestMemory } from './lib/drawlist';
 import { run } from './lib/result';

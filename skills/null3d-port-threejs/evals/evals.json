@@ -1,0 +1,95 @@
+{
+  "skill_name": "null3d-port-threejs",
+  "evals": [
+    {
+      "id": 1,
+      "prompt": "Port this three.js app to null3d: evals/files/threejs-app (the main code is src/main.js).",
+      "expected_output": "Scanner run and confirmed; manual and approximated items raised first; a page.ts and game.ts split; every feature mapped the null3d way; a verification plan and a porting report outline.",
+      "files": ["evals/files/threejs-app/package.json", "evals/files/threejs-app/src/main.js"],
+      "expectations": [
+        "Runs scripts/analyze-threejs.mjs (or equivalent scanning) and summarizes the inventory before porting",
+        "Raises the GLSL ShaderMaterial, CSS2D labels and version needs (0.2 for glTF, animation, bloom) before writing code",
+        "Splits the code: page.ts creates the engine and keeps lil-gui; game.ts holds the scene and the loop",
+        "The requestAnimationFrame loop becomes onUpdate, and the resize handler and setPixelRatio call are removed",
+        "InstancedMesh with setMatrixAt and a dummy Object3D becomes scene.createInstances with direct writes to positions",
+        "The per-frame new THREE.Vector3 allocation is removed",
+        "EffectComposer with UnrealBloomPass becomes post.set with bloom, and ACESFilmicToneMapping becomes toneMapping 'aces'",
+        "The water ShaderMaterial becomes a WGSL surface function, not GLSL",
+        "Raycasting uses camera.screenToRay with scene.raycast, or object click events",
+        "CSS2DRenderer becomes ui.trackLabel with engine.labels.bind",
+        "DRACOLoader is replaced by converting the model with null3d assets optimize",
+        "Includes a parity and performance verification plan"
+      ]
+    },
+    {
+      "id": 2,
+      "prompt": "We have a React Three Fiber viewer (evals/files/Viewer.jsx). Move the 3D part to null3d but keep React for the rest of the UI.",
+      "expected_output": "A FourView-style React wrapper that creates a fresh canvas per mount and destroys the engine on unmount, plus a game.ts that loads the model, sets up the studio environment and orbit controls, and rotates the model in onUpdate.",
+      "files": ["evals/files/Viewer.jsx"],
+      "expectations": [
+        "Provides a React component wrapping createEngine that creates its canvas inside the effect and calls destroy in cleanup",
+        "Explains why a canvas cannot be reused (handed to a worker once; StrictMode mounts twice)",
+        "game.ts loads the model with assets.loadGltf and scene.instantiate",
+        "The drei Environment preset studio becomes assets.builtinEnvironment('studio') with scene.setEnvironment",
+        "useFrame rotation becomes onUpdate on a dynamic object",
+        "drei OrbitControls becomes createOrbitControls from @null3d/controls",
+        "No React state is updated every frame",
+        "Notes that glTF loading needs engine 0.2"
+      ]
+    },
+    {
+      "id": 3,
+      "prompt": "Convert this three.js ShaderMaterial to null3d: evals/files/wave-shader.js",
+      "expected_output": "A materials.shader with a WGSL vertexOffset for the wave and a surface function for the color and fresnel, uniforms mapped to the uniforms option, time from frame.time, and notes on color output and bounds.",
+      "files": ["evals/files/wave-shader.js"],
+      "expectations": [
+        "The vertex displacement becomes a vertexOffset function returning only the offset",
+        "The fragment logic becomes a surface function using input.worldNormal and input.viewDirection",
+        "uTime is replaced by frame.time, and uColor and uAmplitude become entries in uniforms",
+        "The height used for coloring is recomputed or derived in the surface stage, since custom varyings do not exist",
+        "Notes that the original wrote colors without color-space conversion, and handles the difference",
+        "Mentions enlarging bounds with setBounds for the displaced vertices",
+        "Contains no GLSL in the result"
+      ]
+    },
+    {
+      "id": 4,
+      "prompt": "What's the null3d equivalent of InstancedMesh.setMatrixAt with a dummy Object3D?",
+      "expected_output": "A short answer: scene.createInstances and direct writes to positions, rotations and scales typed arrays, with dynamic versus markDirty explained, a small code example, and the docs ID.",
+      "files": [],
+      "expectations": [
+        "Names scene.createInstances",
+        "Shows writing batch.positions (and rotations or scales) typed arrays directly",
+        "Explains dynamic: true versus markDirty(start, count) for static batches",
+        "States that no matrix composition or dummy object is needed",
+        "Points to concepts/instances"
+      ]
+    },
+    {
+      "id": 5,
+      "prompt": "Port our three.js car configurator to null3d. It uses MeshPhysicalMaterial clearcoat for the paint, transmission for the glass, and the Reflector addon for a mirror floor.",
+      "expected_output": "Before porting, the answer flags clearcoat, transmission and Reflector as not in null3d 1.0, gives the workaround and visual cost of each, asks the user to decide, and suggests waiting if these define the product.",
+      "files": [],
+      "expectations": [
+        "Flags clearcoat and transmission as MeshPhysicalMaterial features after 1.0",
+        "Flags Reflector as after 1.0",
+        "Gives a workaround for each with its visual cost",
+        "Asks the user to decide before porting, or recommends waiting because the look depends on these",
+        "Does not silently drop any of the three features"
+      ]
+    },
+    {
+      "id": 6,
+      "prompt": "How hard would it be to port the three.js app in evals/files/threejs-app to null3d? Just give me an estimate first, don't port anything yet.",
+      "expected_output": "A summary from the scanner: feature counts by status, the manual items, the lowest engine version, the rough effort size and its limits, without starting the port.",
+      "files": ["evals/files/threejs-app/package.json", "evals/files/threejs-app/src/main.js"],
+      "expectations": [
+        "Runs the scanner or performs an equivalent inventory",
+        "Reports counts by status and names the manual items",
+        "States the lowest engine version needed",
+        "Gives the rough effort size and says it is a planning aid, not hours",
+        "Does not write ported code"
+      ]
+    }
+  ]
+}

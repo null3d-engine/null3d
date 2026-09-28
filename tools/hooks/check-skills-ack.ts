@@ -7,7 +7,7 @@ import { type AckRule, bearingFiles, checkAck, runAckHook, summarizeBearing } fr
 /** Paths whose changes can make a skill wrong: the API it teaches, and the skills' own files. */
 export const SKILL_BEARING_PATTERNS: RegExp[] = [
 	/^packages\/[^/]+\/src\//,
-	/^crates\/sokko3d-shaders\/(src|wgsl)\//,
+	/^crates\/null3d-shaders\/(src|wgsl)\//,
 	/^skills\//,
 	/^docs\/data\/threejs-mapping\.json$/,
 ];

@@ -13,7 +13,7 @@ const SHADER_MODULE = 'packages/engine/src/generated/shaders.ts';
 
 /** True when a commit stages shader sources, the shader tool, or the module it generates. */
 export function touchesShaders(files: string[]): boolean {
-	return files.some((f) => f.startsWith('crates/sokko3d-shaders/') || f === SHADER_MODULE);
+	return files.some((f) => f.startsWith('crates/null3d-shaders/') || f === SHADER_MODULE);
 }
 
 /** Problems with the shader module: the tool rebuilds it in memory and compares. */
@@ -22,7 +22,7 @@ function shaderProblems(): string[] {
 	try {
 		execFileSync(
 			'cargo',
-			['run', '-q', '-p', 'sokko3d-shaders', '--bin', 'shader-build', '--', '--check'],
+			['run', '-q', '-p', 'null3d-shaders', '--bin', 'shader-build', '--', '--check'],
 			{
 				stdio: 'inherit',
 			},

@@ -1,4 +1,4 @@
-// Compares the hold frames of the benchmark scenes between engines. On each GPU tier, the sokko3d
+// Compares the hold frames of the benchmark scenes between engines. On each GPU tier, the null3d
 // page must match the three.js page by three.js's own image rule, or at least as closely as
 // three.js's two renderers match each other on the same frame. It opens the hold pages in
 // Chrome through Playwright, with the browser tests' launch options, compares the two frames, and
@@ -11,7 +11,7 @@
 //   --scene <list>   scenes: s1, s1-static, s2; the default is all three
 //   --tier <list>    GPU tiers: webgpu, webgl2; the default is both
 //   --pair <a>,<b>   compare page kind a with page kind b, the reference, instead of the tiers.
-//                    Page kinds: threejs-webgl, threejs-webgpu, sokko3d-webgl2, sokko3d-webgpu
+//                    Page kinds: threejs-webgl, threejs-webgpu, null3d-webgl2, null3d-webgpu
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { type Browser, chromium, errors } from '@playwright/test';
@@ -137,7 +137,7 @@ async function main(): Promise<void> {
 					return baseline;
 				};
 				for (const comparison of options.comparisons) {
-					const engines = comparison.candidate.startsWith('sokko3d');
+					const engines = comparison.candidate.startsWith('null3d');
 					const { pass, line } = runComparison(
 						scene,
 						comparison,

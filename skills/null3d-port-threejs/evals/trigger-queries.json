@@ -1,0 +1,22 @@
+[
+  {"query": "port this three.js example to null3d, it's the webgl_animation_keyframes one", "should_trigger": true},
+  {"query": "what's the null3d equivalent of InstancedMesh.setMatrixAt?", "should_trigger": true},
+  {"query": "migrate our R3F configurator to null3d but keep the react ui around it", "should_trigger": true},
+  {"query": "convert this ShaderMaterial (glsl, has a fresnel + vertex wobble) into null3d wgsl", "should_trigger": true},
+  {"query": "our site uses three r160 with EffectComposer and UnrealBloomPass; move the scene to null3d", "should_trigger": true},
+  {"query": "we patch MeshStandardMaterial with onBeforeCompile for wind, how does that work after moving to null3d", "should_trigger": true},
+  {"query": "the null3d port of our three.js scene looks darker than the original, why", "should_trigger": true},
+  {"query": "is TransformControls available in null3d? we're porting a three.js editor", "should_trigger": true},
+  {"query": "scan this repo for three.js usage and tell me how big a null3d port would be", "should_trigger": true},
+  {"query": "replace the THREE.Raycaster hover picking with the null3d way in the app we ported", "should_trigger": true},
+  {"query": "add a spinning cube to my null3d scene", "should_trigger": false},
+  {"query": "upgrade our three.js dependency from r150 to r170 and fix the breaking changes", "should_trigger": false},
+  {"query": "port my Unity WebGL build to run on mobile browsers", "should_trigger": false},
+  {"query": "convert this GLSL shader to HLSL for unreal", "should_trigger": false},
+  {"query": "migrate the three.js project from webpack to vite", "should_trigger": false},
+  {"query": "my three.js OrbitControls damping feels floaty, how do I tune it", "should_trigger": false},
+  {"query": "port this babylon.js scene to three.js", "should_trigger": false},
+  {"query": "write a new water shader for my null3d game", "should_trigger": false},
+  {"query": "explain how three.js InstancedMesh works under the hood", "should_trigger": false},
+  {"query": "our null3d game is slow on android phones", "should_trigger": false}
+]

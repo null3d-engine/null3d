@@ -4,7 +4,7 @@ import type { Page } from '@playwright/test';
 /** Waits until the page publishes its result, and returns it. Throws when the time runs out. */
 export async function pageResult<T>(page: Page, timeoutMs: number): Promise<T> {
 	const handle = await page.waitForFunction(
-		() => (globalThis as { __sokko3dResult?: unknown }).__sokko3dResult,
+		() => (globalThis as { __null3dResult?: unknown }).__null3dResult,
 		undefined,
 		{ timeout: timeoutMs },
 	);

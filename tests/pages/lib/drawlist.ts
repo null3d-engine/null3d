@@ -1,5 +1,5 @@
 // A draw-list encoder and data arena for tests. It writes the same format as the Rust encoder
-// (crates/sokko3d-gpu/src/drawlist.rs): a header word with the opcode in the low 8 bits and the
+// (crates/null3d-gpu/src/drawlist.rs): a header word with the opcode in the low 8 bits and the
 // command length in words above them, then 32-bit operands.
 
 export class TestMemory {

@@ -228,6 +228,45 @@ dependencies = [
 ]
 
 [[package]]
+name = "null3d-core"
+version = "0.0.0"
+dependencies = [
+ "atomic-wait",
+ "null3d-core",
+]
+
+[[package]]
+name = "null3d-gpu"
+version = "0.0.0"
+
+[[package]]
+name = "null3d-render"
+version = "0.0.0"
+dependencies = [
+ "null3d-core",
+ "null3d-gpu",
+]
+
+[[package]]
+name = "null3d-shaders"
+version = "0.0.0"
+dependencies = [
+ "naga",
+ "naga_oil",
+ "serde",
+ "toml",
+]
+
+[[package]]
+name = "null3d-wasm"
+version = "0.0.0"
+dependencies = [
+ "null3d-core",
+ "null3d-render",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "num-traits"
 version = "0.2.19"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -345,45 +384,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "6662b5879511e06e8999a8a235d848113e942c9124f211511b16466ee2995f26"
 dependencies = [
  "serde_core",
-]
-
-[[package]]
-name = "sokko3d-core"
-version = "0.0.0"
-dependencies = [
- "atomic-wait",
- "sokko3d-core",
-]
-
-[[package]]
-name = "sokko3d-gpu"
-version = "0.0.0"
-
-[[package]]
-name = "sokko3d-render"
-version = "0.0.0"
-dependencies = [
- "sokko3d-core",
- "sokko3d-gpu",
-]
-
-[[package]]
-name = "sokko3d-shaders"
-version = "0.0.0"
-dependencies = [
- "naga",
- "naga_oil",
- "serde",
- "toml",
-]
-
-[[package]]
-name = "sokko3d-wasm"
-version = "0.0.0"
-dependencies = [
- "sokko3d-core",
- "sokko3d-render",
- "wasm-bindgen",
 ]
 
 [[package]]

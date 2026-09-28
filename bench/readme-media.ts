@@ -1,4 +1,4 @@
-// Renders the README's animation: benchmark scene S1, drawn by sokko3d on WebGPU in Chrome. Each
+// Renders the README's animation: benchmark scene S1, drawn by null3d on WebGPU in Chrome. Each
 // frame is a hold page at a later scene time, read back through the engine, shrunk with an area
 // filter, and written into a GIF that shares one palette, so colors do not flicker between frames.
 // From the repository root:
@@ -33,7 +33,7 @@ interface Frame {
 
 /** Draws S1 at scene time `t` in hold mode and reads the frame back as RGBA rows, top row first. */
 async function renderAt(page: Page, baseUrl: string, t: number): Promise<Frame> {
-	const url = `${baseUrl}${pagePath('s1', 'sokko3d-webgpu', `hold=${t}&n=${COUNT}`)}`;
+	const url = `${baseUrl}${pagePath('s1', 'null3d-webgpu', `hold=${t}&n=${COUNT}`)}`;
 	await page.goto(url);
 	const result = await pageResult<{
 		ok: boolean;

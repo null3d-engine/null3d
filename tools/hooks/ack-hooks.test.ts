@@ -15,10 +15,10 @@ import { checkAck, findAckValue } from './commit-ack';
 describe('docBearingFiles', () => {
 	it('flags engine code, package source and binaries, skills, tools, benchmarks and commands', () => {
 		const files = [
-			'crates/sokko3d-core/src/handles.rs',
+			'crates/null3d-core/src/handles.rs',
 			'packages/engine/src/scene.ts',
-			'packages/cli/bin/sokko3d.js',
-			'skills/sokko3d-develop/SKILL.md',
+			'packages/cli/bin/null3d.js',
+			'skills/null3d-develop/SKILL.md',
 			'tools/gen-docs.ts',
 			'tools/hooks/check-docs-ack.ts',
 			'bench/allocation.ts',
@@ -34,7 +34,7 @@ describe('docBearingFiles', () => {
 		expect(
 			docBearingFiles([
 				'docs/concepts/handles.md',
-				'crates/sokko3d-core/tests/handles.rs',
+				'crates/null3d-core/tests/handles.rs',
 				'packages/engine/test/scene.test.ts',
 				'tools/hooks/ack-hooks.test.ts',
 				'bench/lib/report.test.ts',
@@ -68,12 +68,12 @@ describe('skillBearingFiles', () => {
 	it('flags the public API, the shader library, the mapping and the skills', () => {
 		const files = [
 			'packages/engine/src/scene.ts',
-			'crates/sokko3d-shaders/wgsl/noise.wgsl',
+			'crates/null3d-shaders/wgsl/noise.wgsl',
 			'docs/data/threejs-mapping.json',
-			'skills/sokko3d-port-threejs/references/materials.md',
+			'skills/null3d-port-threejs/references/materials.md',
 		];
 		expect(skillBearingFiles(files)).toEqual(files);
-		expect(skillBearingFiles(['crates/sokko3d-core/src/handles.rs', 'docs/api/scene.md'])).toEqual(
+		expect(skillBearingFiles(['crates/null3d-core/src/handles.rs', 'docs/api/scene.md'])).toEqual(
 			[],
 		);
 	});
@@ -150,9 +150,9 @@ describe('unstagedPaths', () => {
 
 describe('touchesRust', () => {
 	it('flags Rust source, Cargo files and Rust settings', () => {
-		expect(touchesRust(['crates/sokko3d-core/src/lib.rs'])).toBe(true);
+		expect(touchesRust(['crates/null3d-core/src/lib.rs'])).toBe(true);
 		expect(touchesRust(['Cargo.lock'])).toBe(true);
-		expect(touchesRust(['crates/sokko3d-wasm/Cargo.toml'])).toBe(true);
+		expect(touchesRust(['crates/null3d-wasm/Cargo.toml'])).toBe(true);
 		expect(touchesRust(['clippy.toml'])).toBe(true);
 		expect(touchesRust(['docs/index.md', 'tools/gen-docs.ts'])).toBe(false);
 	});

@@ -37,7 +37,7 @@ function log(text: string): void {
 }
 
 async function post(run: string, name: string, body: unknown): Promise<void> {
-	const response = await fetch(`/__sokko3d/runs/${run}/${runner}/${name}`, {
+	const response = await fetch(`/__null3d/runs/${run}/${runner}/${name}`, {
 		method: 'POST',
 		body: JSON.stringify(body),
 	});
@@ -103,8 +103,7 @@ async function runItem(item: PlanItem): Promise<Result> {
 	const deadline = performance.now() + item.timeoutSeconds * 1000;
 	try {
 		while (performance.now() < deadline) {
-			const published = (frame.contentWindow as { __sokko3dResult?: Result } | null)
-				?.__sokko3dResult;
+			const published = (frame.contentWindow as { __null3dResult?: Result } | null)?.__null3dResult;
 			if (published) return published;
 			await sleep(RESULT_POLL_MS);
 		}
@@ -115,7 +114,7 @@ async function runItem(item: PlanItem): Promise<Result> {
 }
 
 async function runPlan(run: string): Promise<void> {
-	const plan = (await (await fetch(`/__sokko3d/runs/${run}/plan`)).json()) as { items: PlanItem[] };
+	const plan = (await (await fetch(`/__null3d/runs/${run}/plan`)).json()) as { items: PlanItem[] };
 	list.replaceChildren();
 	show(`run ${run}: reading the device`);
 	await post(run, 'device', await deviceInfo());
@@ -135,10 +134,10 @@ async function listen(): Promise<void> {
 	for (;;) {
 		try {
 			const current = (await (
-				await fetch('/__sokko3d/runs/current', { cache: 'no-store' })
+				await fetch('/__null3d/runs/current', { cache: 'no-store' })
 			).json()) as { run?: string; turns?: string[] };
 			const due = current.run !== undefined && current.turns?.includes(runner) === true;
-			if (due && !(await fetch(`/__sokko3d/runs/${current.run}/${runner}/done`)).ok)
+			if (due && !(await fetch(`/__null3d/runs/${current.run}/${runner}/done`)).ok)
 				await runPlan(current.run as string);
 			else show('waiting for a run');
 		} catch (e) {

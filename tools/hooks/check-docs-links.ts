@@ -17,7 +17,7 @@ import {
 } from '../lib/links';
 import { stagedFiles } from './commit-ack';
 
-const CACHE_PATH = join('.git', 'sokko3d-docs-link-cache.json');
+const CACHE_PATH = join('.git', 'null3d-docs-link-cache.json');
 const CACHE_TTL_MS = 7 * 24 * 60 * 60 * 1000;
 const FETCH_TIMEOUT_MS = 10_000;
 const FETCH_CONCURRENCY = 6;

@@ -270,7 +270,7 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 			game = new EngineWorker(
 				new Worker(new URL('../workers/game-worker.ts', import.meta.url), {
 					type: 'module',
-					name: 'sokko3d-game',
+					name: 'null3d-game',
 				}),
 				onGameMessage,
 			);
@@ -295,7 +295,7 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 					rendererHost = new EngineWorker(
 						new Worker(new URL('../workers/render-worker.ts', import.meta.url), {
 							type: 'module',
-							name: 'sokko3d-render',
+							name: 'null3d-render',
 						}),
 						onGameMessage,
 					);
@@ -317,7 +317,7 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 				const job = new EngineWorker(
 					new Worker(new URL('../workers/job-worker.ts', import.meta.url), {
 						type: 'module',
-						name: `sokko3d-job-${index}`,
+						name: `null3d-job-${index}`,
 					}),
 					onGameMessage,
 				);

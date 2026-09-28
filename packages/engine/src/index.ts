@@ -1,4 +1,4 @@
-// The sokko3d engine: createEngine runs on the page, defineGame in the game module.
+// The null3d engine: createEngine runs on the page, defineGame in the game module.
 
 export type { ErrorCode } from './errors/codes';
 export { EngineError } from './errors/engine-error';

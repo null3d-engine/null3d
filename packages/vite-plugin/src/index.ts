@@ -11,7 +11,7 @@ export const ISOLATION_HEADERS: Readonly<Record<string, string>> = {
 /** Where `bun run dev-cert` writes the local HTTPS certificate. */
 export const DEV_CERT_DIR = 'target/dev-cert';
 
-export interface Sokko3dPluginOptions {
+export interface Null3dPluginOptions {
 	/**
 	 * Serve HTTPS on the local network with the certificate that `bun run dev-cert` makes. Phones
 	 * and tablets reached over the network need HTTPS for shared memory and WebGPU.
@@ -32,15 +32,15 @@ function readCertificate(root: string, certDir: string): { cert: Buffer; key: Bu
 	const cert = resolve(dir, 'cert.pem');
 	const key = resolve(dir, 'key.pem');
 	if (!existsSync(cert) || !existsSync(key)) {
-		throw new Error(`sokko3d: no HTTPS certificate in ${dir}. Run \`bun run dev-cert\` first.`);
+		throw new Error(`null3d: no HTTPS certificate in ${dir}. Run \`bun run dev-cert\` first.`);
 	}
 	return { cert: readFileSync(cert), key: readFileSync(key) };
 }
 
-/** The sokko3d Vite plugin: isolation headers on the dev and preview servers, and optional HTTPS. */
-export default function sokko3d(options: Sokko3dPluginOptions = {}): Plugin {
+/** The null3d Vite plugin: isolation headers on the dev and preview servers, and optional HTTPS. */
+export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 	return {
-		name: 'sokko3d',
+		name: 'null3d',
 		config(config, { mode }) {
 			const root = config.root ?? process.cwd();
 			const https = options.https
@@ -48,7 +48,7 @@ export default function sokko3d(options: Sokko3dPluginOptions = {}): Plugin {
 				: undefined;
 			return {
 				// Development checks stay in dev builds; release builds drop them as dead code.
-				define: { __SOKKO3D_DEV__: JSON.stringify(mode !== 'production') },
+				define: { __NULL3D_DEV__: JSON.stringify(mode !== 'production') },
 				server: { headers: { ...ISOLATION_HEADERS }, ...(https ? { https, host: true } : {}) },
 				preview: { headers: { ...ISOLATION_HEADERS }, ...(https ? { https, host: true } : {}) },
 				worker: { format: 'es' },

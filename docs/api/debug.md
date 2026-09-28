@@ -6,11 +6,11 @@ since: "0.1"
 summary: "debug.line, box, axes, grid, frustum; debug.view; debug.stats."
 ---
 
-<!-- sokko3d:placeholder -->
+<!-- null3d:placeholder -->
 
 # Debug drawing and stats
 
-> Planned for sokko3d 0.1. No release has these APIs yet, so coding agents must not use them. The reference below lists the APIs the engine has now. The rest of the page is not written yet.
+> Planned for null3d 0.1. No release has these APIs yet, so coding agents must not use them. The reference below lists the APIs the engine has now. The rest of the page is not written yet.
 
 This page will cover: debug.line, box, axes, grid, frustum; debug.view; debug.stats.
 

@@ -1,6 +1,6 @@
 // Checks that the page is cross-origin isolated and that the threaded WebAssembly build loads with
 // shared memory. Open it in any browser; the result also goes to the dev server's collector.
-import { coreUrls, startCore } from '@sokko3d/engine/internal';
+import { coreUrls, startCore } from '@null3d/engine/internal';
 import { run } from './lib/result';
 
 /** Initial and maximum sizes, in 64 KB pages, of the shared memory this check creates. */

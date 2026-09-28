@@ -70,21 +70,23 @@ describe('stripCode and extractLinks', () => {
 
 describe('target classification', () => {
 	it('recognizes links into this repository', () => {
-		expect(selfRepoPath('https://github.com/sokko3d/sokko3d/blob/main/docs/index.md')).toBe(
+		expect(selfRepoPath('https://github.com/null3d-engine/null3d/blob/main/docs/index.md')).toBe(
 			'docs/index.md',
 		);
-		expect(selfRepoPath('https://github.com/sokko3d/sokko3d/tree/main/skills/')).toBe('skills');
-		expect(selfRepoPath('https://github.com/sokko3d/sokko3d/issues')).toBeNull();
+		expect(selfRepoPath('https://github.com/null3d-engine/null3d/tree/main/skills/')).toBe(
+			'skills',
+		);
+		expect(selfRepoPath('https://github.com/null3d-engine/null3d/issues')).toBeNull();
 		expect(selfRepoPath('https://github.com/other/repo/blob/main/x.md')).toBeNull();
 	});
 
 	it('recognizes the GitHub pages of this repository, which are never probed', () => {
 		expect(
-			isOwnRepoUrl('https://github.com/sokko3d/sokko3d/actions/workflows/ci.yml/badge.svg'),
+			isOwnRepoUrl('https://github.com/null3d-engine/null3d/actions/workflows/ci.yml/badge.svg'),
 		).toBe(true);
-		expect(isOwnRepoUrl('https://github.com/sokko3d/sokko3d/issues')).toBe(true);
-		expect(isOwnRepoUrl('https://github.com/sokko3d/sokko3d.git')).toBe(true);
-		expect(isOwnRepoUrl('https://github.com/sokko3d/sokko3d-assets')).toBe(false);
+		expect(isOwnRepoUrl('https://github.com/null3d-engine/null3d/issues')).toBe(true);
+		expect(isOwnRepoUrl('https://github.com/null3d-engine/null3d.git')).toBe(true);
+		expect(isOwnRepoUrl('https://github.com/null3d-engine/null3d-assets')).toBe(false);
 	});
 
 	it('skips example hosts and blocks only on definitive statuses', () => {
@@ -119,7 +121,7 @@ describe('checkLinkTree', () => {
 		const files = new Map<string, string>([
 			[
 				'docs/a.md',
-				'# A\n\n[b](b.md#real-heading) [self](#a) [repo](https://github.com/sokko3d/sokko3d/blob/main/x.md)',
+				'# A\n\n[b](b.md#real-heading) [self](#a) [repo](https://github.com/null3d-engine/null3d/blob/main/x.md)',
 			],
 			['docs/b.md', '# B\n\n## Real heading\n\ntext'],
 		]);

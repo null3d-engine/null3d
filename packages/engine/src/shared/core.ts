@@ -128,9 +128,9 @@ export function coreUrls(build: Build): { glue: URL; wasm: URL; memory: URL } {
 	const folder = `../../dist/wasm/${build}/`;
 	const base = new URL(/* @vite-ignore */ folder, import.meta.url);
 	return {
-		glue: new URL('sokko3d.js', base),
-		wasm: new URL('sokko3d_bg.wasm', base),
-		memory: new URL('sokko3d_memory.json', base),
+		glue: new URL('null3d.js', base),
+		wasm: new URL('null3d_bg.wasm', base),
+		memory: new URL('null3d_memory.json', base),
 	};
 }
 

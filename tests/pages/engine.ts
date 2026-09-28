@@ -1,7 +1,7 @@
 // Starts the engine with an empty game in the mode the URL's switches ask for, measures it for a few
 // seconds, then reports the mode, the capabilities, the frame metrics and how many times the game
 // updated.
-import { createEngine } from '@sokko3d/engine';
+import { createEngine } from '@null3d/engine';
 import { run, toBase64 } from './lib/result';
 
 const params = new URLSearchParams(location.search);

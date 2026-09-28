@@ -1,5 +1,5 @@
 // Percentiles of per-frame samples. Every engine's benchmark report uses these functions, so the
-// figures of sokko3d and of the engines it is compared with are computed the same way.
+// figures of null3d and of the engines it is compared with are computed the same way.
 
 /**
  * A summary of per-frame samples.

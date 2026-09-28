@@ -1,7 +1,7 @@
 // Replays a hand-built draw list through the engine's WebGPU backend: GPU culling in a compute pass,
 // then indirect draws from a render bundle with 4x MSAA and reversed depth. It checks the GPU side of
 // the WebGPU render path before the core records these lists itself.
-import { readbackWebGPU, WebGPUBackend } from '@sokko3d/engine/internal';
+import { readbackWebGPU, WebGPUBackend } from '@null3d/engine/internal';
 import * as G from '../../packages/engine/src/generated/gpu';
 import {
 	boxMesh,

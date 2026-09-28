@@ -9,7 +9,8 @@ import { docsFiles, readIfExists } from './files';
 /** Root-level Markdown files that link into the docs and are checked with them. */
 export const ROOT_LINKED_FILES = ['README.md', 'AGENTS.md'];
 
-const SELF_REPO_RE = /^https:\/\/github\.com\/sokko3d\/sokko3d\/(?:blob|raw|tree)\/main\/([^#?]+)/;
+const SELF_REPO_RE =
+	/^https:\/\/github\.com\/null3d-engine\/null3d\/(?:blob|raw|tree)\/main\/([^#?]+)/;
 /** Hosts that appear in docs as examples, never as real destinations. */
 const SKIP_HOSTS = new Set(['localhost', '127.0.0.1', 'example.com']);
 /** The only statuses that prove a link wrong; anything else could be the network. */
@@ -98,7 +99,7 @@ export function selfRepoPath(url: string): string | null {
 	return m?.[1] ? m[1].replace(/\/$/, '') : null;
 }
 
-const OWN_REPO_URL = 'https://github.com/sokko3d/sokko3d';
+const OWN_REPO_URL = 'https://github.com/null3d-engine/null3d';
 
 /**
  * True for this repository's own pages on GitHub, such as its issues and CI badges. They depend

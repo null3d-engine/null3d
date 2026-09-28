@@ -1,0 +1,15 @@
+[package]
+name = "null3d-gpu"
+description = "The GPU layer, with its WebGPU and WebGL2 backends."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+# The mock backend, for other crates' tests.
+mock = []

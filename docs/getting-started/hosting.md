@@ -8,7 +8,7 @@ summary: "COOP and COEP headers; require-corp on Safari; CORS and CORP for asset
 
 # Hosting and cross-origin isolation
 
-> Planned for sokko3d 0.1. No release has these APIs yet, so coding agents must not use them.
+> Planned for null3d 0.1. No release has these APIs yet, so coding agents must not use them.
 
 ```mermaid
 flowchart TD
@@ -17,7 +17,7 @@ flowchart TD
     check -- "no" --> single["Single-threaded build<br/>the same code on one thread"]
 ```
 
-sokko3d runs on worker threads that share memory, and browsers allow shared memory only on pages that are cross-origin isolated. A page becomes isolated when its server sends two HTTP headers. Without them the engine still runs, on one thread.
+null3d runs on worker threads that share memory, and browsers allow shared memory only on pages that are cross-origin isolated. A page becomes isolated when its server sends two HTTP headers. Without them the engine still runs, on one thread.
 
 ## The two headers
 
@@ -43,7 +43,7 @@ Files from the page's own origin need nothing. Serve the engine's own files, the
 
 ## Two builds
 
-A WebAssembly module built for shared memory cannot load on a page without it, so sokko3d ships two builds. The engine's loader reads `crossOriginIsolated` and fetches the matching one, so you never pick a build yourself.
+A WebAssembly module built for shared memory cannot load on a page without it, so null3d ships two builds. The engine's loader reads `crossOriginIsolated` and fetches the matching one, so you never pick a build yourself.
 
 | Build | Loaded when | What you get |
 | --- | --- | --- |
@@ -85,13 +85,13 @@ add_header Cross-Origin-Opener-Policy same-origin always;
 add_header Cross-Origin-Embedder-Policy require-corp always;
 ```
 
-GitHub Pages cannot send custom headers, so a sokko3d page there runs single-threaded.
+GitHub Pages cannot send custom headers, so a null3d page there runs single-threaded.
 
 ## During development
 
-The sokko3d dev server and the Vite plugin send both headers on every response, including `.wasm` files and worker scripts.
+The null3d dev server and the Vite plugin send both headers on every response, including `.wasm` files and worker scripts.
 
-Shared memory and WebGPU also need a secure context: HTTPS, or `localhost`. To test on a phone over your local network, use `sokko3d dev --https`, which serves HTTPS with a local certificate. An Android phone connected by USB can instead reach your computer's `localhost` through `adb reverse`.
+Shared memory and WebGPU also need a secure context: HTTPS, or `localhost`. To test on a phone over your local network, use `null3d dev --https`, which serves HTTPS with a local certificate. An Android phone connected by USB can instead reach your computer's `localhost` through `adb reverse`.
 
 ## What isolation changes
 

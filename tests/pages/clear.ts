@@ -1,6 +1,6 @@
 // Clears a small target to a known color on the requested GPU path and reads it back through the
 // engine. It is the first image test, and it proves that the readback works on both paths.
-import { readbackWebGL2, readbackWebGPU } from '@sokko3d/engine/internal';
+import { readbackWebGL2, readbackWebGPU } from '@null3d/engine/internal';
 import { run, toBase64 } from './lib/result';
 
 const SIZE = 64;

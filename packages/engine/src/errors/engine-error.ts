@@ -3,7 +3,7 @@
 
 import { ERRORS, type ErrorCode } from './codes';
 
-const DOCS_BASE = 'https://github.com/sokko3d/sokko3d/blob/main/docs/errors/';
+const DOCS_BASE = 'https://github.com/null3d-engine/null3d/blob/main/docs/errors/';
 
 /**
  * An error the engine throws. Its message says what failed and how to fix it, and links to the

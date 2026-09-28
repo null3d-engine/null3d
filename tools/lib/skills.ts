@@ -32,7 +32,7 @@ const MAX_COMPATIBILITY = 500;
 const MAX_BODY_LINES = 500;
 /** About 5,000 tokens: the budget for a skill body. */
 const BODY_WORD_BUDGET = 3800;
-const MAPPING_COPY = 'skills/sokko3d-port-threejs/references/threejs-mapping.json';
+const MAPPING_COPY = 'skills/null3d-port-threejs/references/threejs-mapping.json';
 
 export function skillNames(root: string): string[] {
 	const dir = join(root, SKILLS_DIR);

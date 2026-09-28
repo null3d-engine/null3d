@@ -94,7 +94,7 @@ const EMOJI = /\p{Extended_Pictographic}/u;
 
 /** A sentence ends at . ! or ? before a capital, a digit, a quote, a bracket, or a name spelled in lowercase. */
 const SENTENCE_BREAK =
-	/(?<=[.!?])\s+(?=[A-Z0-9"(]|sokko3d\b|three\.js\b|npm\b|iOS\b|iPadOS\b|macOS\b)/;
+	/(?<=[.!?])\s+(?=[A-Z0-9"(]|null3d\b|three\.js\b|npm\b|iOS\b|iPadOS\b|macOS\b)/;
 
 interface Block {
 	line: number;

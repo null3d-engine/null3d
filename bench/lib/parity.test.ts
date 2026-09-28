@@ -235,31 +235,27 @@ describe('the pages', () => {
 		expect(holdPagePath('s1-static', 'threejs-webgpu')).toBe(
 			'/bench/pages/threejs/s1-static.html?renderer=webgpu&hold',
 		);
-		expect(holdPagePath('s2', 'sokko3d-webgl2')).toBe(
-			'/bench/pages/sokko3d/s2.html?gpu=webgl2&hold',
-		);
-		expect(holdPagePath('s2', 'sokko3d-webgpu')).toBe(
-			'/bench/pages/sokko3d/s2.html?gpu=webgpu&hold',
-		);
+		expect(holdPagePath('s2', 'null3d-webgl2')).toBe('/bench/pages/null3d/s2.html?gpu=webgl2&hold');
+		expect(holdPagePath('s2', 'null3d-webgpu')).toBe('/bench/pages/null3d/s2.html?gpu=webgpu&hold');
 		expect(pagePath('s1', 'scene-code', 'n=1000')).toBe('/bench/pages/scene-code/s1.html?n=1000');
 	});
 
-	test('pairs the sokko3d page with the three.js page of the same GPU tier', () => {
+	test('pairs the null3d page with the three.js page of the same GPU tier', () => {
 		expect(TIER_PAIRS).toEqual({
-			webgpu: { candidate: 'sokko3d-webgpu', reference: 'threejs-webgpu' },
-			webgl2: { candidate: 'sokko3d-webgl2', reference: 'threejs-webgl' },
+			webgpu: { candidate: 'null3d-webgpu', reference: 'threejs-webgpu' },
+			webgl2: { candidate: 'null3d-webgl2', reference: 'threejs-webgl' },
 		});
 		expect(PAGE_KINDS).toEqual([
 			'threejs-webgl',
 			'threejs-webgpu',
-			'sokko3d-webgl2',
-			'sokko3d-webgpu',
+			'null3d-webgl2',
+			'null3d-webgpu',
 		]);
 	});
 
 	test('names the image files after the scene and the two pages', () => {
 		expect(comparisonName('s1-static', TIER_PAIRS.webgl2)).toBe(
-			's1-static-sokko3d-webgl2-vs-threejs-webgl',
+			's1-static-null3d-webgl2-vs-threejs-webgl',
 		);
 		expect(differenceText({ share: 0.020416 })).toBe(
 			"2.042% of pixels differ; three.js's rule allows under 0.1%",
@@ -272,8 +268,8 @@ describe('parseParityArgs', () => {
 		expect(parseParityArgs([])).toEqual({
 			scenes: ['s1', 's1-static', 's2'],
 			comparisons: [
-				{ label: 'webgpu', candidate: 'sokko3d-webgpu', reference: 'threejs-webgpu' },
-				{ label: 'webgl2', candidate: 'sokko3d-webgl2', reference: 'threejs-webgl' },
+				{ label: 'webgpu', candidate: 'null3d-webgpu', reference: 'threejs-webgpu' },
+				{ label: 'webgl2', candidate: 'null3d-webgl2', reference: 'threejs-webgl' },
 			],
 		});
 	});
@@ -281,7 +277,7 @@ describe('parseParityArgs', () => {
 	test('reads scenes and tiers as lists, and skips the separator that bun run passes', () => {
 		expect(parseParityArgs(['--', '--scene', 's2,s1', '--tier', 'webgl2'])).toEqual({
 			scenes: ['s2', 's1'],
-			comparisons: [{ label: 'webgl2', candidate: 'sokko3d-webgl2', reference: 'threejs-webgl' }],
+			comparisons: [{ label: 'webgl2', candidate: 'null3d-webgl2', reference: 'threejs-webgl' }],
 		});
 	});
 

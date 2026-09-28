@@ -116,9 +116,9 @@ describe('the parity plan', () => {
 		};
 	};
 	const THREE_WEBGPU = 'parity-s1-threejs-webgpu';
-	const SOKKO3D_WEBGPU = 'parity-s1-sokko3d-webgpu';
+	const NULL3D_WEBGPU = 'parity-s1-null3d-webgpu';
 
-	it('opens every hold page once and pairs each sokko3d page with three.js on its tier', () => {
+	it('opens every hold page once and pairs each null3d page with three.js on its tier', () => {
 		expect(PLANS.parity).toBe(parityPlan);
 		expect(items).toHaveLength(12);
 		expect(new Set(items.map(({ id }) => id)).size).toBe(items.length);
@@ -128,12 +128,12 @@ describe('the parity plan', () => {
 		);
 		expect(pairs).toEqual(
 			['s1', 's1-static', 's2'].flatMap((scene) => [
-				`parity-${scene}-sokko3d-webgpu threejs-webgpu`,
-				`parity-${scene}-sokko3d-webgl2 threejs-webgl`,
+				`parity-${scene}-null3d-webgpu threejs-webgpu`,
+				`parity-${scene}-null3d-webgl2 threejs-webgl`,
 			]),
 		);
-		expect(item('parity-s2-sokko3d-webgl2').path).toBe(
-			'/bench/pages/sokko3d/s2.html?gpu=webgl2&hold',
+		expect(item('parity-s2-null3d-webgl2').path).toBe(
+			'/bench/pages/null3d/s2.html?gpu=webgl2&hold',
 		);
 	});
 
@@ -153,14 +153,14 @@ describe('the parity plan', () => {
 		expect(judge(item('parity-s1-threejs-webgl').check, noGpu, NO_WEBGPU)).toEqual([noGpu.error]);
 	});
 
-	it('compares a sokko3d frame with the three.js frame of its tier from the same run', () => {
-		const imageDir = mkdtempSync(join(tmpdir(), 'sokko3d-parity-'));
+	it('compares a null3d frame with the three.js frame of its tier from the same run', () => {
+		const imageDir = mkdtempSync(join(tmpdir(), 'null3d-parity-'));
 		try {
 			const results: Record<string, ItemResult> = { [THREE_WEBGPU]: holdResult([10, 20, 30]) };
 			const context = { resultOf: (id: string) => results[id], imageDir };
-			const { check } = item(SOKKO3D_WEBGPU);
+			const { check } = item(NULL3D_WEBGPU);
 			expect(judge(check, holdResult([10, 20, 30]), NONE_MISSING, context)).toEqual([]);
-			const name = 's1-sokko3d-webgpu-vs-threejs-webgpu';
+			const name = 's1-null3d-webgpu-vs-threejs-webgpu';
 			const images = [`${name}-inputs.png`, `${name}-diff.png`];
 			expect(readdirSync(imageDir).sort()).toEqual([...images].sort());
 			expect(judge(check, holdResult([200, 20, 30]), NONE_MISSING, context)).toEqual([
@@ -172,11 +172,11 @@ describe('the parity plan', () => {
 	});
 
 	it('says what is missing when a frame cannot be compared', () => {
-		const { check } = item(SOKKO3D_WEBGPU);
+		const { check } = item(NULL3D_WEBGPU);
 		const frame = holdResult([10, 20, 30]);
 		const withReference = (reference: ItemResult | undefined) => ({
 			resultOf: (id: string) => (id === THREE_WEBGPU ? reference : undefined),
-			imageDir: join(tmpdir(), 'sokko3d-parity-unused'),
+			imageDir: join(tmpdir(), 'null3d-parity-unused'),
 		});
 		const noReference = [`no result from ${THREE_WEBGPU} to compare with`];
 		expect(judge(check, frame, NONE_MISSING)).toEqual(noReference);

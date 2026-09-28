@@ -1,20 +1,20 @@
 {
-	"name": "sokko3d",
+	"name": "@null3d/cli",
 	"version": "0.0.0",
-	"description": "The command-line tool for sokko3d, a browser 3D engine for games and heavy 3D apps. This first version only prints the project's status.",
+	"description": "The command-line tool for null3d, a browser 3D engine for games and heavy 3D apps. This first version only prints the project's status.",
 	"license": "MIT OR Apache-2.0",
 	"author": "Ramesh Nair (https://hiddentao.com)",
-	"homepage": "https://github.com/sokko3d/sokko3d#readme",
+	"homepage": "https://github.com/null3d-engine/null3d#readme",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/sokko3d/sokko3d.git",
+		"url": "git+https://github.com/null3d-engine/null3d.git",
 		"directory": "packages/cli"
 	},
 	"bugs": {
-		"url": "https://github.com/sokko3d/sokko3d/issues"
+		"url": "https://github.com/null3d-engine/null3d/issues"
 	},
 	"keywords": [
-		"sokko3d",
+		"null3d",
 		"3d",
 		"webgpu",
 		"webgl2",
@@ -24,7 +24,7 @@
 	],
 	"type": "module",
 	"bin": {
-		"sokko3d": "bin/sokko3d.js"
+		"null3d": "bin/null3d.js"
 	},
 	"files": [
 		"bin",

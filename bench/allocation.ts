@@ -1,7 +1,7 @@
 // Measures what the engine's game worker and render worker allocate per frame while S1 runs, with
 // Chrome's heap profiler. Engine code and the game's row writes must allocate nothing per frame;
 // the few places that allocate because the browser does each have a budget below. It opens the
-// sokko3d S1 page in Chrome, lets the browser optimize the frame code, attaches the heap profiler to
+// null3d S1 page in Chrome, lets the browser optimize the frame code, attaches the heap profiler to
 // both workers through Chrome's debugging protocol, samples allocations for a few seconds, and
 // prints the bytes per frame of every place that allocated. From the repository root:
 //   bun run bench:allocation
@@ -45,7 +45,7 @@ const BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = {
 		'runPipelined workers/game-worker.ts': 128,
 		'changeOf workers/game-worker.ts': 16,
 		'(IDLE)': 96,
-		'(anonymous) sokko3d/game-common.ts': 48,
+		'(anonymous) null3d/game-common.ts': 48,
 		'views scene/scene.ts': 16,
 	},
 	'render-worker': {
@@ -235,7 +235,7 @@ async function main(): Promise<void> {
 		const page = await browser.newPage({ viewport: { width: 1400, height: 800 } });
 		// The page's own measurement starts after the sampling ends, so its timers stay off.
 		const pageSeconds = warmup + seconds + 60;
-		const url = `${server.url}${pagePath('s1', 'sokko3d-webgpu', `seconds=${pageSeconds}&n=${n}`)}`;
+		const url = `${server.url}${pagePath('s1', 'null3d-webgpu', `seconds=${pageSeconds}&n=${n}`)}`;
 		await page.goto(url);
 		// Counts the display's frames on the page, which the render worker draws at the same rate.
 		await page.evaluate(() => {

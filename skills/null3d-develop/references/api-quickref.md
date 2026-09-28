@@ -1,0 +1,402 @@
+# null3d API quick reference
+
+This is the API planned for null3d 1.0. A version in parentheses, such as (0.2), is the first engine version with that part; no number means 0.1. Before using a part, check the status of its docs page (`stable`, `experimental` or `planned`), as SKILL.md section 1 explains. Each heading names the doc ID with the full reference.
+
+## Contents
+
+1. Page: createEngine
+2. Game: defineGame and the context
+3. Scene
+4. Objects and transforms
+5. Instance batches
+6. Cameras
+7. Lights
+8. Geometry
+9. Materials
+10. Textures
+11. Assets
+12. Animation (0.2)
+13. Raycasting and queries (0.2)
+14. Input and controls
+15. Post-processing (tone mapping 0.1; effects 0.2)
+16. Render graph (0.2)
+17. Quality
+18. Messages and UI
+19. Debug
+20. Math, color and time
+
+## 1. Page: createEngine (`api/engine`)
+
+```ts
+import { createEngine } from '@null3d/engine';
+
+const engine = await createEngine({
+  canvas,                                        // HTMLCanvasElement, sized by CSS
+  game: new URL('./game.ts', import.meta.url),   // the game module
+  preset: 'auto',        // 'auto' | 'low' | 'medium' | 'high' | 'ultra'
+  maxPixelRatio: 2,      // cap for devicePixelRatio; presets cap it too
+  gpu: 'auto',           // 'auto' | 'webgpu' | 'webgl2' (testing only)
+  latency: 'pipelined',  // or 'low'; 'pipelined' is the default
+  transparent: false,    // true for a see-through canvas
+  largeWorld: false,     // (0.2) planet-scale scenes: cell-relative positions, batch origins
+  gameThread: 'worker',  // or 'main' for DOM-heavy apps and debugging
+});
+
+engine.postToGame('difficulty', { level: 2 });            // an optional third argument lists transferables
+engine.onGameMessage((type, data) => { /* ... */ });
+const image = await engine.capture();             // Blob of the next complete frame
+// engine.registerVideo and textures.fromVideo come after 1.0; recipe 14 shows the workaround
+engine.labels.bind('hp-12', element);             // (0.2) HTML label that follows an object
+await engine.requestPointerLock();                // (0.2) for first-person controls
+engine.capabilities;  // { tier: 'webgpu' | 'webgpu-compat' | 'webgl2', threaded, features, limits }
+engine.setPaused(true);
+engine.destroy();
+```
+
+## 2. Game: defineGame and the context (`api/game`)
+
+```ts
+import { defineGame } from '@null3d/engine';
+
+export default defineGame(async (ctx) => {
+  const {
+    scene, assets, materials, geometry, textures,
+    input, time, quality, post, render, page, ui, debug, engine,
+  } = ctx;
+  // setup: create objects, load assets, await scene.warmUp()
+  return {
+    onFixedUpdate(step) {},  // 0 to n times per frame at a fixed rate (default 60 Hz)
+    onUpdate(dt) {},         // once per frame, before transforms
+    onLateUpdate(dt) {},     // after transforms, before culling: camera follow
+  };
+});
+```
+
+`ctx.engine.viewport` gives the canvas size in CSS pixels and the pixel ratio. `ctx.engine.capabilities` is the same object as on the page.
+
+## 3. Scene (`api/scene`)
+
+| Call | Returns | Notes |
+| --- | --- | --- |
+| `scene.createGroup({ name, position, rotation, scale, parent })` | Group | Empty node for hierarchy |
+| `scene.createMesh({ mesh, material, position, rotation, scale, dynamic, castShadows, receiveShadows, layers, name, parent })` | Mesh | Static unless `dynamic: true` |
+| `scene.createInstances(meshOrPrefab, count, { dynamic, colors, attributes, material, origin })` | InstanceBatch | Section 5 |
+| `scene.instantiate(prefab, { position, rotation, scale, parent })` (0.2) | Node | Creates a loaded glTF model |
+| `scene.clone(obj)` (0.2) | same type | Deep copy of a built object |
+| `scene.find(name)` | Node or null | Use at setup, not per frame |
+| `scene.createPerspectiveCamera({ fov, near, far, position, target })` | Camera | fov is vertical, in degrees |
+| `scene.createOrthographicCamera({ height, near, far, position, target })` | Camera | Or left, right, top, bottom |
+| `scene.setActiveCamera(camera)` | | |
+| `scene.createDirectionalLight(opts)` and the other lights | Light | Section 7 |
+| `scene.setBackground('#rrggbb' or texture or environment or { sky })` | | `{ sky: { turbidity, rayleigh, sunDirection } }` (0.2) |
+| `scene.setEnvironment(env, { intensity, rotation })` (0.2) | | env from `assets.loadEnvironment` |
+| `scene.setBackground(env, { blur, intensity, rotation })` (0.2) | | Blurred environment backgrounds |
+| `scene.setFog({ type: 'linear', color, near, far })` or `{ type: 'exp2', color, density }`, or `null` | | |
+| `scene.createSprites`, `createPoints`, `createLines`, `createLod` (0.2) | | Docs `api/sprites`, `api/points`, `api/lines`, `concepts/lod` |
+| `scene.createView({ camera, rect })` (after 1.0) | View | Split screens; until then, minimaps use a render-to-texture pass (`guides/multiple-views`) |
+| `scene.animateProperty(target, path, keyframes)` (after 1.0) | Animation | Until then, animate values in `onUpdate` |
+| `scene.raycast(...)` and other queries (0.2) | | Section 13 |
+| `await scene.warmUp()` | | Resolves when every pipeline the scene needs is compiled |
+
+## 4. Objects and transforms (`api/objects`)
+
+Every node (group, mesh, light, camera, instantiated model) has:
+
+```ts
+obj.setPosition(x, y, z);            obj.getPosition(out);         // out: number[3] or Float32Array
+obj.setRotation(qx, qy, qz, qw);     obj.getRotation(out);         // quaternion
+obj.setRotationEuler(x, y, z, 'XYZ');                               // radians, three.js order names
+obj.rotateX(a); obj.rotateY(a); obj.rotateZ(a);                     // local axes
+obj.setScale(x, y, z);               obj.translate(x, y, z);       // local translate
+obj.lookAt(x, y, z);                                                // cameras and lights look down -Z
+obj.getWorldPosition(out); obj.getWorldQuaternion(out); obj.getWorldMatrix(out);
+obj.setParent(parent);               obj.setParent(parent, { keepWorld: true }); obj.setParent(null);
+obj.setVisible(false);               obj.setDynamic(true);
+obj.setCastShadows(true);            obj.setReceiveShadows(true);
+obj.setLayers(mask);                 obj.setRenderOrder(n);        // render order sorts transparent objects
+obj.setFrustumCulled(false);         obj.setBounds(center, radius);
+obj.setMaterial(material);           obj.setMorphWeight(nameOrIndex, w);   // morph (0.2)
+obj.setOutlined(true);               // (0.2) with post.set({ outline })
+obj.setOccluder(false);              // (0.2) WebGL2 path: stop this object hiding others; true makes it a blocker
+obj.on('click', fn); obj.off('click', fn);  // (0.2) 'pointerenter', 'pointerleave', 'pointerdown', 'pointerup'
+obj.animator();                      // (0.2) section 12
+obj.destroy();
+obj.name;                            // string, read-only after creation
+```
+
+Getters write into the `out` array you pass, so they allocate nothing. Use a setter for static objects; direct array writes are for dynamic objects and batches.
+
+## 5. Instance batches (`concepts/instances`)
+
+```ts
+const rocks = scene.createInstances(geometry.sphere({ radius: 0.2 }), 10_000, {
+  material: materials.standard({ color: '#888888', roughness: 0.9 }),
+  dynamic: true,              // uploads every row every frame; false = upload marked rows only
+  colors: true,               // adds batch.colors (RGBA, linear, 4 floats per row)
+  attributes: { tint: 4 },    // (0.2) custom per-instance floats, readable in surface functions
+  origin: [0, 0, 0],          // (0.2) rows are relative to this point; set it in large worlds
+});
+
+rocks.positions;   // Float32Array, 3 floats per row
+rocks.rotations;   // Float32Array, 4 floats per row (quaternion x, y, z, w)
+rocks.scales;      // Float32Array, 3 floats per row
+rocks.colors;      // Float32Array, 4 floats per row, when colors: true
+rocks.attributes.tint;  // (0.2)
+rocks.count;              // capacity
+rocks.setActiveCount(n);  // draw only the first n rows (pooling)
+rocks.markDirty(start, count);  // static batches: upload these rows
+rocks.destroy();
+```
+
+A prefab with several meshes (0.2) gives one batch per mesh inside a group batch; the arrays are shared, so one write moves every part.
+
+## 6. Cameras (`api/cameras`)
+
+```ts
+camera.setFov(deg); camera.setNearFar(near, far); camera.setOrthoHeight(h);
+camera.setLayers(mask);
+camera.screenToRay(x, y, ray);    // x, y in CSS pixels; ray = { origin: number[3], direction: number[3] }
+camera.worldToScreen(p, out);     // out = [x, y, depth]; depth < 0 means behind the camera
+```
+
+## 7. Lights (`api/lights`)
+
+```ts
+scene.createDirectionalLight({ direction, color, intensity, castShadows,
+  shadow: { cascades, mapSize, bias, normalBias } });
+scene.createPointLight({ position, color, intensity, range, decay, castShadows });  // range is required
+scene.createSpotLight({ position, direction, target, angle, penumbra, range, decay, intensity, castShadows });
+scene.createHemisphereLight({ skyColor, groundColor, intensity });
+scene.createAmbientLight({ color, intensity });
+
+light.setIntensity(v); light.setColor(c); light.setRange(r); light.setDirection(x, y, z);
+light.setCastShadows(true);
+```
+
+Units match three.js r155 and later: directional intensity in lux-like units, point and spot intensity in candela. Shadow cascades fit the view by themselves.
+
+## 8. Geometry (`api/geometry`)
+
+`ctx.geometry` has `box`, `sphere`, `plane`, `cylinder`, `cone`, `torus`, `capsule`, `circle` and `ring`, with the same parameters and defaults as the three.js geometry classes (for example `geometry.sphere({ radius, widthSegments, heightSegments })`). The package `@null3d/geometry` (0.2) adds `torusKnot`, `icosahedron`, `octahedron`, `tetrahedron`, `dodecahedron`, `polyhedron`, `lathe`, `extrude`, `shape` and `tube`.
+
+```ts
+const mesh = geometry.fromArrays({
+  positions, normals, uvs, uvs1, colors, tangents,   // Float32Arrays
+  indices,                                            // Uint16Array or Uint32Array
+  computeNormals: false, computeTangents: false,
+});
+mesh.updateVertices('positions', data, start, count);  // (0.2) vertices that change at run time
+mesh.destroy();
+```
+
+## 9. Materials (`api/materials`)
+
+```ts
+const m = materials.standard({
+  color: '#ffffff', map,                       // base color and its texture (sRGB)
+  metalness: 0, roughness: 1, metalnessRoughnessMap,  // glTF packing: roughness in G, metalness in B
+  normalMap, normalScale: [1, 1],
+  aoMap, aoMapIntensity: 1,
+  lightMap, lightMapIntensity: 1,              // baked light, usually on the second UV set
+  emissive: '#000000', emissiveMap, emissiveIntensity: 1,
+  alphaMode: 'opaque',                         // 'opaque' | 'mask' | 'blend'
+  alphaCutoff: 0.5, opacity: 1,
+  doubleSided: false, vertexColors: false, flatShading: false,
+  depthWrite: true, depthTest: true,
+  depthBias: { constant: 0, slopeScale: 0 },  // like three.js polygonOffset
+  blending: 'normal',                          // 'normal' | 'additive' | 'multiply'
+  envIntensity: 1, fog: true,
+  uvTransform: { offset: [0, 0], repeat: [1, 1], rotation: 0 },
+});
+m.set({ roughness: 0.4 });                     // cheap: uniform values only
+
+materials.unlit({ color, map, opacity, alphaMode, alphaCutoff, vertexColors, doubleSided, fog });
+materials.shadowCatcher({ opacity: 0.5 });     // (0.2)
+materials.shader({ ...anyStandardOption, uniforms, textures, surface, vertexOffset, vertex, fragment });
+// every materials.standard option feeds defaultSurface(), so a surface function can adjust a standard look
+```
+
+Changing `alphaMode`, adding or removing a texture, or switching `vertexColors` changes the shader, so set them up before play. `set()` with plain values is cheap at any time. Custom shaders: `references/shaders.md`.
+
+## 10. Textures (`api/textures`)
+
+```ts
+const tex = await assets.loadTexture('/tex/bricks.ktx2', {
+  colorSpace: 'srgb',        // 'srgb' for color maps; 'linear' for normal, roughness, metalness, AO
+  flipY: false,
+  wrap: 'repeat',            // 'repeat' | 'clamp' | 'mirror', or [u, v]
+  filter: 'linear',          // or 'nearest'
+  mipmaps: true,
+  anisotropy: 8,             // capped by the preset
+  uvSet: 0,                  // which UV set the map uses (three.js texture.channel)
+  premultipliedAlpha: false, // true for textures stored premultiplied
+});
+textures.fromData({ width, height, depth, format: 'rgba8unorm', data });
+textures.fromImageBitmap(bitmap, { colorSpace });  // draw on an OffscreenCanvas in the worker
+tex.update(bitmap);
+tex.destroy();
+```
+
+## 11. Assets (`api/assets`)
+
+```ts
+const ship = await assets.loadGltf('/models/ship.glb');        // (0.2) Prefab
+ship.animations;           // clip names
+ship.find('Turret');       // a node inside the prefab
+ship.bounds;               // { center, radius, min, max } of the whole model
+const env = await assets.loadEnvironment('/env/studio.ktx2');  // (0.2) from `null3d assets env`
+const studio = assets.builtinEnvironment('studio');            // (0.2) neutral lighting, no download
+const sky = await assets.loadCubemap([px, nx, py, ny, pz, nz]);  // (0.2)
+const lut = await assets.loadLut('/grade.cube');                // (0.2)
+await assets.preload(['/models/ship.glb', '/tex/bricks.ktx2']);
+assets.onProgress((loaded, total) => page.post('loading', loaded / total));
+const data = await assets.loadJson('/level.json');   // also loadBinary, loadImageBitmap
+ship.destroy();   // frees GPU data once no instance uses it
+```
+
+## 12. Animation (0.2) (`api/animation`)
+
+```ts
+const hero = scene.instantiate(await assets.loadGltf('/hero.glb'));
+const anim = hero.animator();
+anim.play('run', { fade: 0.2, loop: true, speed: 1 });
+anim.crossFade('walk', 0.3);
+anim.play('wave', { layer: 1, additive: true });
+anim.setLayerWeight(1, 0.5);
+anim.setLayerMask(1, 'Spine');          // upper body only
+anim.onEvent('footstep', (e) => page.post('sfx', { name: 'step' }));
+anim.setJointOverride('Head', rotation); // procedural aiming
+anim.stop();
+
+// after 1.0: scene.animateProperty(lamp, 'light.intensity', { times: [0, 1, 2], values: [0, 5, 0], loop: true });
+```
+
+Sampling and blending run on job workers; there is no update call.
+
+## 13. Raycasting and queries (0.2) (`api/raycast`)
+
+```ts
+const ray = { origin: [0, 0, 0], direction: [0, 0, -1] };
+const hit = { object: null, point: [0, 0, 0], normal: [0, 0, 0], distance: 0, instance: -1 };
+camera.screenToRay(input.pointer.x, input.pointer.y, ray);
+if (scene.raycast(ray.origin, ray.direction, { maxDistance: 100, layers: PICKABLE }, hit)) { /* hit.object */ }
+scene.raycastAny(origin, direction, opts);             // true or false; fastest
+scene.raycastAll(origin, direction, opts, hits);       // every hit, sorted
+scene.raycastBatch(rays, results);                     // many rays across job workers
+scene.overlapSphere(center, radius, opts, out);        // objects inside a volume
+scene.overlapBox(min, max, opts, out);
+```
+
+Hit objects are the same wrappers you created; `hit.instance` is the row index for batches. Create `ray` and `hit` once and reuse them.
+
+## 14. Input (`api/input`) and controls (`api/controls`)
+
+```ts
+input.pointer;          // { x, y (CSS pixels), ndcX, ndcY, buttons, dx, dy, wheel, isTouch }
+input.isDown('KeyW');   // KeyboardEvent.code names, mouse 'Mouse0', gamepad 'GamepadA'
+input.wasPressed('Space'); input.wasReleased('Space');
+input.actions.define({ jump: ['Space', 'GamepadA'], fire: ['Mouse0', 'GamepadRT'] });
+input.isDown('jump');
+input.touches;          // active touches, for custom gestures
+
+import { createOrbitControls } from '@null3d/controls';
+const controls = createOrbitControls(ctx, camera, {
+  target: [0, 1, 0], enableDamping: true, dampingFactor: 0.08,
+  minDistance: 2, maxDistance: 30, maxPolarAngle: Math.PI * 0.49, enablePan: true,
+});
+// in onUpdate: controls.update(dt)
+// also createMapControls; createFlyControls and createFirstPersonControls (0.2)
+```
+
+## 15. Post-processing (`api/post`)
+
+`toneMapping` and `exposure` exist from 0.1; everything else from 0.2. The default tone mapping is ACES, while three.js defaults to none.
+
+```ts
+post.set({
+  toneMapping: 'aces',      // 'aces' | 'agx' | 'neutral' | 'none' (0.1)
+  exposure: 1,              // (0.1)
+  bloom: { strength: 0.8, radius: 0.4, threshold: 0.9 },
+  ao: { radius: 0.5, intensity: 1 },     // High and Ultra presets only
+  fxaa: false,                           // forces FXAA; otherwise the preset decides
+  lut, vignette: { amount: 0.3 },
+  outline: { color: '#ffcc00', thickness: 2 },  // objects opt in with setOutlined(true)
+});
+post.addEffect({ name: 'pixelate', wgsl, uniforms: { size: 4 }, textures: {}, stage: 'final' });  // textures: named textures the effect samples
+post.setEffectUniform('pixelate', 'size', 8);
+post.removeEffect('pixelate');
+```
+
+## 16. Render graph (0.2) (`api/render`)
+
+```ts
+render.addPass({
+  name: 'Minimap',
+  kind: 'scene',                     // 'scene' | 'fullscreen' | 'compute' (compute: WebGPU only)
+  camera: topCamera, layers: MAP_LAYER,
+  writes: 'minimapColor', size: [256, 256],   // or 'screen', 'screen/2', 'screen/4'
+  before: 'Post',
+});
+// sample 'minimapColor' as a texture: textures.fromPass('minimapColor')
+render.setPassEnabled('Minimap', false);
+render.removePass('Minimap');
+render.dumpGraph();   // Graphviz DOT text of the compiled graph, for debugging
+```
+
+Passes are declarations: the engine checks them, orders them, and shares memory between their temporary textures. No game code runs during rendering.
+
+## 17. Quality (`api/quality`)
+
+```ts
+quality.preset;                         // 'low' | 'medium' | 'high' | 'ultra'
+quality.set({ shadows: { cascades: 2 }, ao: false, maxPixelRatio: 1.5, antialias: 'msaa' });  // antialias: 'msaa' | 'fxaa' | 'none'
+quality.onChange((q) => { particles.setActiveCount(q.preset === 'low' ? 500 : 2000); });
+quality.setBudget({ name: 'ai', ms: 2, onScale: (scale) => { aiRate = scale; } });
+```
+
+The frame-budget governor lowers settings in a fixed order when frames run long, and raises them again after a stable period.
+
+## 18. Messages and UI (`api/page`, `api/ui`)
+
+```ts
+// game.ts
+page.post('score', { value: 10 });
+page.onMessage((type, data) => { if (type === 'difficulty') level = data.level; });
+ui.trackLabel(unit, 'hp-12', { offset: [0, 2, 0] });   // (0.2)
+ui.untrackLabel('hp-12');
+
+// page.ts
+engine.onGameMessage((type, data) => { if (type === 'score') scoreEl.textContent = String(data.value); });
+engine.postToGame('difficulty', { level: 2 });
+engine.labels.bind('hp-12', document.getElementById('hp-12')!);
+```
+
+Messages are fire-and-forget. Send events, not per-frame state.
+
+## 19. Debug (`api/debug`)
+
+```ts
+debug.stats(true);                       // overlay: frame phases per thread, tier, preset
+const s = debug.frameStats();            // numbers for tests and logs
+debug.view('normals');                   // 'lit' | 'normals' | 'depth' | 'wireframe' | 'overdraw'
+debug.line(a, b, '#ff0000'); debug.box(min, max, color); debug.sphere(center, r, color);
+debug.arrow(origin, dir, length, color); debug.axes(objOrPosition, size); debug.grid(size, divisions);
+debug.frustum(camera); debug.light(light); debug.skeleton(obj);
+```
+
+Debug drawing exists in development builds only and costs nothing in release builds.
+
+## 20. Math, color and time (`api/math`, `api/time`)
+
+```ts
+import { vec3, quat, mat4, math, color } from '@null3d/engine';
+const tmp = vec3.create();                // create once, reuse
+vec3.set(tmp, 1, 2, 3); vec3.add(tmp, tmp, other); vec3.normalize(tmp, tmp);
+quat.setAxisAngle(q, [0, 1, 0], angle); quat.slerp(q, a, b, t);
+math.clamp(v, lo, hi); math.lerp(a, b, t); math.damp(a, b, lambda, dt); math.degToRad(d);
+color.fromHex(out, '#ff8800');            // linear RGB from an sRGB hex value
+
+time.now; time.dt; time.frame;            // seconds, seconds, frame counter
+```
+
+Colors given as `'#rrggbb'` strings or `0xrrggbb` numbers are sRGB and are converted to linear, as in three.js. Arrays `[r, g, b]` are linear.

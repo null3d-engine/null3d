@@ -1,5 +1,5 @@
 // A game with no scene: it counts its updates and reports them when the page asks.
-import { defineGame } from '@sokko3d/engine';
+import { defineGame } from '@null3d/engine';
 
 export default defineGame(({ page, time }) => {
 	let updates = 0;

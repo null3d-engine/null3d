@@ -1,6 +1,6 @@
 // Starts the engine with a small static scene, lets it draw a few frames, measures it, and
 // captures the drawn frame through the engine, in the mode and on the GPU path the switches ask for.
-import { createEngine } from '@sokko3d/engine';
+import { createEngine } from '@null3d/engine';
 import { run, toBase64 } from './lib/result';
 
 const params = new URLSearchParams(location.search);

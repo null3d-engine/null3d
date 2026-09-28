@@ -1,0 +1,19 @@
+[package]
+name = "null3d-wasm"
+description = "The WebAssembly entry point, built twice: with threads and shared memory, and without."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+null3d-core = { path = "../null3d-core" }
+null3d-render = { path = "../null3d-render" }
+wasm-bindgen.workspace = true
+
+[lints]
+workspace = true

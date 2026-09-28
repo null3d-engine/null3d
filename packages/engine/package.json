@@ -1,12 +1,12 @@
 {
-	"name": "@sokko3d/engine",
+	"name": "@null3d/engine",
 	"version": "0.0.0",
 	"private": true,
-	"description": "The sokko3d engine: the TypeScript API, the page shim, the worker entry points and both WebAssembly builds.",
+	"description": "The null3d engine: the TypeScript API, the page shim, the worker entry points and both WebAssembly builds.",
 	"license": "MIT OR Apache-2.0",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/sokko3d/sokko3d.git",
+		"url": "git+https://github.com/null3d-engine/null3d.git",
 		"directory": "packages/engine"
 	},
 	"type": "module",

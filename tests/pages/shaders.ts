@@ -2,7 +2,7 @@
 // compile and link in WebGL2, and every uniform block and texture that the reflection names must
 // exist in the linked program. Each WGSL module must compile in WebGPU when the browser has it.
 // Failures carry the browser's info logs.
-import { type GlslProgram, SHADERS, type ShaderVariant } from '@sokko3d/engine/internal';
+import { type GlslProgram, SHADERS, type ShaderVariant } from '@null3d/engine/internal';
 
 /** Every variant of every shader, with its name. */
 const VARIANTS = Object.entries(SHADERS).flatMap(([shaderName, variants]) =>

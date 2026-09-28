@@ -8,7 +8,7 @@ summary: "Main thread, game worker, render worker, job workers; the pipelined fr
 
 # Architecture: threads and the frame
 
-> Planned for sokko3d 0.1. No release has these APIs yet, so coding agents must not use them.
+> Planned for null3d 0.1. No release has these APIs yet, so coding agents must not use them.
 
 ```mermaid
 flowchart LR
@@ -30,7 +30,7 @@ flowchart LR
     game -- "frame snapshot" --> render
 ```
 
-sokko3d runs your game in a worker thread and draws from a second worker. The page's main thread keeps nothing but the page, so scrolling, input and page UI stay smooth while the game runs. All threads share one block of WebAssembly memory, so they pass scene data by reading the same arrays.
+null3d runs your game in a worker thread and draws from a second worker. The page's main thread keeps nothing but the page, so scrolling, input and page UI stay smooth while the game runs. All threads share one block of WebAssembly memory, so they pass scene data by reading the same arrays.
 
 ## The four kinds of thread
 

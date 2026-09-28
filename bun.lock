@@ -3,12 +3,12 @@
   "configVersion": 1,
   "workspaces": {
     "": {
-      "name": "sokko3d-workspace",
+      "name": "null3d-workspace",
       "devDependencies": {
         "@biomejs/biome": "2.5.14",
         "@commitlint/cli": "^21.2.3",
         "@commitlint/config-conventional": "^21.2.3",
-        "@sokko3d/vite-plugin": "workspace:*",
+        "@null3d/vite-plugin": "workspace:*",
         "@types/bun": "^1.3.0",
         "binaryen": "132.0.0",
         "husky": "^9.1.7",
@@ -17,11 +17,11 @@
       },
     },
     "bench": {
-      "name": "@sokko3d/bench",
+      "name": "@null3d/bench",
       "devDependencies": {
+        "@null3d/engine": "workspace:*",
+        "@null3d/vite-plugin": "workspace:*",
         "@playwright/test": "1.63.0",
-        "@sokko3d/engine": "workspace:*",
-        "@sokko3d/vite-plugin": "workspace:*",
         "@types/three": "0.186.0",
         "@webgpu/types": "0.1.74",
         "fast-png": "8.0.0",
@@ -31,21 +31,21 @@
       },
     },
     "packages/cli": {
-      "name": "sokko3d",
-      "version": "0.0.1",
+      "name": "@null3d/cli",
+      "version": "0.0.0",
       "bin": {
-        "sokko3d": "bin/sokko3d.js",
+        "null3d": "bin/null3d.js",
       },
     },
     "packages/engine": {
-      "name": "@sokko3d/engine",
+      "name": "@null3d/engine",
       "version": "0.0.0",
       "devDependencies": {
         "@webgpu/types": "0.1.74",
       },
     },
     "packages/vite-plugin": {
-      "name": "@sokko3d/vite-plugin",
+      "name": "@null3d/vite-plugin",
       "version": "0.0.0",
       "devDependencies": {
         "vite": "8.3.1",
@@ -55,11 +55,11 @@
       },
     },
     "tests": {
-      "name": "@sokko3d/tests",
+      "name": "@null3d/tests",
       "devDependencies": {
+        "@null3d/engine": "workspace:*",
+        "@null3d/vite-plugin": "workspace:*",
         "@playwright/test": "1.63.0",
-        "@sokko3d/engine": "workspace:*",
-        "@sokko3d/vite-plugin": "workspace:*",
         "@webgpu/types": "0.1.74",
         "fast-png": "8.0.0",
         "pixelmatch": "7.2.0",
@@ -130,6 +130,16 @@
 
     "@dimforge/rapier3d-compat": ["@dimforge/rapier3d-compat@0.12.0", "", {}, "sha512-uekIGetywIgopfD97oDL5PfeezkFpNhwlzlaEYNOA0N6ghdsOvh/HYjSMek5Q2O1PYvRSDFcqFVJl4r4ZBwOow=="],
 
+    "@null3d/bench": ["@null3d/bench@workspace:bench"],
+
+    "@null3d/engine": ["@null3d/engine@workspace:packages/engine"],
+
+    "@null3d/cli": ["@null3d/cli@workspace:packages/cli"],
+
+    "@null3d/tests": ["@null3d/tests@workspace:tests"],
+
+    "@null3d/vite-plugin": ["@null3d/vite-plugin@workspace:packages/vite-plugin"],
+
     "@oxc-project/types": ["@oxc-project/types@0.151.0", "", {}, "sha512-J1yXrIlNDZVzE3ada310xeAw7nH8yCAyLPuUIsjKatFPmfn5bS1oW+cM+QsGOtVWd5nhSpbwZWx/rue+r5Z+PA=="],
 
     "@playwright/test": ["@playwright/test@1.63.0", "", { "dependencies": { "playwright": "1.63.0" }, "bin": { "playwright": "cli.js" } }, "sha512-oxMK4vllB9RK5NQ2l1pq1IfOf2AvnEuj/vYGDj0H2nMtmtZpKtCwt/l00GEO6xjGfpBNAvjovvYdCm50dRQkpQ=="],
@@ -169,14 +179,6 @@
     "@simple-libs/child-process-utils": ["@simple-libs/child-process-utils@2.0.0", "", { "dependencies": { "@simple-libs/stream-utils": "^2.0.0" } }, "sha512-dvNoRKLijXnD0XoJAz94pbNuB5GQgDr55UhpSPhffDkTT0Cmcqh9jSCOtwfT2d4H6MI9E7c4SgtMuJXZ6F3c6A=="],
 
     "@simple-libs/stream-utils": ["@simple-libs/stream-utils@2.0.0", "", {}, "sha512-fCTuZK4QBa+39Oz9l4OGfJfz+GpwCp3AqO7Zch3to99xHPgstVsRFpeQ8LNd2o1Gv8raL2mCFwiaHh7bFSp5DQ=="],
-
-    "@sokko3d/bench": ["@sokko3d/bench@workspace:bench"],
-
-    "@sokko3d/engine": ["@sokko3d/engine@workspace:packages/engine"],
-
-    "@sokko3d/tests": ["@sokko3d/tests@workspace:tests"],
-
-    "@sokko3d/vite-plugin": ["@sokko3d/vite-plugin@workspace:packages/vite-plugin"],
 
     "@tweenjs/tween.js": ["@tweenjs/tween.js@23.1.3", "", {}, "sha512-vJmvvwFxYuGnF2axRtPYocag6Clbb5YS7kLL+SO/TeVFzHqDIWrNKYtcsPMibjDx9O+bu+psAy9NKfWklassUA=="],
 
@@ -329,8 +331,6 @@
     "rolldown": ["rolldown@1.2.11", "", { "dependencies": { "@oxc-project/types": "=0.151.0", "@rolldown/pluginutils": "^1.0.0" }, "optionalDependencies": { "@rolldown/binding-android-arm-eabi": "1.2.11", "@rolldown/binding-android-arm64": "1.2.11", "@rolldown/binding-darwin-arm64": "1.2.11", "@rolldown/binding-darwin-x64": "1.2.11", "@rolldown/binding-freebsd-x64": "1.2.11", "@rolldown/binding-linux-arm-gnueabihf": "1.2.11", "@rolldown/binding-linux-arm64-gnu": "1.2.11", "@rolldown/binding-linux-arm64-musl": "1.2.11", "@rolldown/binding-linux-ppc64-gnu": "1.2.11", "@rolldown/binding-linux-s390x-gnu": "1.2.11", "@rolldown/binding-linux-x64-gnu": "1.2.11", "@rolldown/binding-linux-x64-musl": "1.2.11", "@rolldown/binding-openharmony-arm64": "1.2.11", "@rolldown/binding-win32-arm64-msvc": "1.2.11", "@rolldown/binding-win32-x64-msvc": "1.2.11" }, "bin": { "rolldown": "./bin/cli.mjs" } }, "sha512-qpSwIyz0jHQq5qXBTNxFmE6664rJ7O+4TvPFOiOaBSrz8IOHc1koKKSqTM2H6u1UG1+TveuC6vaDHKXFOvb1Kw=="],
 
     "semver": ["semver@7.8.5", "", { "bin": { "semver": "bin/semver.js" } }, "sha512-Y7/KDsb8LjooZpwaqGyulO6DQlksgCncchHGk+sZIY4SBvUocMBEFH5Ur1fI4dV+Jvl0w6cjvucaIi40puRioA=="],
-
-    "sokko3d": ["sokko3d@workspace:packages/cli"],
 
     "source-map-js": ["source-map-js@1.2.1", "", {}, "sha512-UXWMKhLOwVKb728IUtQPXxfYU+usdybtUrK/8uGE8CQMvrhOpwvzDBwj0QhSL7MQc7vIsISBG8VQ8+IDQxpfQA=="],
 

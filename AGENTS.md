@@ -1,17 +1,17 @@
 # Rules for people and agents working in this repository
 
-This repository holds the sokko3d engine, its tools, its documentation and its agent skills. This file holds the working rules. The pages in [`docs/`](docs/index.md) describe the design.
+This repository holds the null3d engine, its tools, its documentation and its agent skills. This file holds the working rules. The pages in [`docs/`](docs/index.md) describe the design.
 
 ## Where things are
 
 | Path | Contents |
 | --- | --- |
-| `docs/` | The user documentation as Markdown, one page per ID, with status front matter. It ships inside `@sokko3d/engine`. |
-| `docs/data/threejs-mapping.json` | The single source of the three.js to sokko3d mapping |
-| `skills/` | Agent skills for building with sokko3d and for porting three.js apps (the source) |
+| `docs/` | The user documentation as Markdown, one page per ID, with status front matter. It ships inside `@null3d/engine`. |
+| `docs/data/threejs-mapping.json` | The single source of the three.js to null3d mapping |
+| `skills/` | Agent skills for building with null3d and for porting three.js apps (the source) |
 | `.claude/skills/` | A generated copy of `skills/` for Claude Code. Never edit it. |
 | `crates/` | The Rust crates: core, GPU layer, renderer, shaders, and the WebAssembly entry point |
-| `packages/` | npm packages: `engine`, `vite-plugin`, and `cli`, which is the `sokko3d` command |
+| `packages/` | npm packages: `engine`, `vite-plugin`, and `cli`, which is the `null3d` command |
 | `tests/` | Browser tests: test pages, Playwright image tests, reference images and the real-browser runner |
 | `tools/` | The WebAssembly build, the docs generator, the skills check and the commit hooks |
 | `examples/`, `bench/`, `templates/`, `porting-corpus/` | Demos, benchmarks, starter projects and the three.js porting corpus, as the milestones add them |
@@ -28,7 +28,7 @@ This repository holds the sokko3d engine, its tools, its documentation and its a
 | `bun run test:real-browsers Safari Firefox` | The same test pages in browser apps that Playwright cannot drive, through the runner page (macOS) |
 | `bun run devices` | The same checks on an Android phone over USB (Chrome, then Brave) and on runner pages that wait on the local network (an iPad's Safari and Brave) |
 | `bun run test:bench` | The benchmark pages of both engines in Chrome, through Playwright |
-| `bun run parity` | Compare each benchmark scene's hold frame in sokko3d with three.js's, per GPU tier |
+| `bun run parity` | Compare each benchmark scene's hold frame in null3d with three.js's, per GPU tier |
 | `bun run bench:run` | The benchmark protocol in a visible Chrome window: fresh runs of each scene in both engines and of the scene code both run, with a summary of each engine's whole frame and own work; `--sweep` charts S1 from 1,000 to 100,000 instances |
 | `bun run bench:allocation` | Sample what the game worker and the render worker allocate per frame in S1, with Chrome's heap profiler |
 | `bun run readme-media` | Render the README's animation of S1 with the engine |
@@ -90,16 +90,16 @@ Code review enforces these rules.
 
 ## Performance work
 
-The benchmarks compare sokko3d with three.js in the same browser. These points come from the first checkpoint's measurements.
+The benchmarks compare null3d with three.js in the same browser. These points come from the first checkpoint's measurements.
 
 - A report gives each engine's whole frame and its own work on the busiest thread. The desktop target uses own work, because both engines run the same scene code.
-- sokko3d's own work comes from its phase timers: each thread's time less its `update` step. three.js's own work is its frame time less the scene code, timed alone on the scene-code page. That page's loop compiles to slower code than an engine's loop, so this estimate of three.js's own work is low.
+- null3d's own work comes from its phase timers: each thread's time less its `update` step. three.js's own work is its frame time less the scene code, timed alone on the scene-code page. That page's loop compiles to slower code than an engine's loop, so this estimate of three.js's own work is low.
 - Keep the Mac's screen unlocked and its display awake during browser runs. Safari stops running pages while the Mac is locked, and the runner then waits until its deadline. Chrome started by Playwright keeps running.
 - Do not edit engine or benchmark page files during a run. The dev server reloads the pages being measured.
 - Note the display's refresh rate with each result. Runs at 120 and at 144 frames per second differed by about 10% for both engines.
 - `bun run bench:allocation` samples allocations after a 30-second warm-up. The browser optimizes code that runs once per frame only after thousands of frames. Places that allocate because the browser does have budgets with their reasons in `bench/allocation.ts`, and every other place must stay under 4 bytes per frame. Add `--n 30000` to include the staging ring.
 - The engine's hot paths stay allocation-free with these habits. Read typed arrays by index rather than by destructuring. Reuse WebGPU descriptors (`RenderPassSetup` and `submitOne` in `packages/engine/src/gpu/webgpu/reusable.ts`). Pass typed arrays straight to WebGPU, as `setBindGroup` reads dynamic offsets from the draw list. Keep reused lists at a fixed length. Do not wrap browser promises in `async` functions, and use `Math.sqrt` rather than `Math.hypot`. Keep closures out of functions that run every frame, even in a branch that rarely runs. Until the browser optimizes such a function, it allocates the variables a closure captures on every call.
-- Rust tests that count allocations use `sokko3d_core::testing::CountingAllocator`, from the core crate's `testing` feature. It counts only the threads a test marks, so the test runner's own threads cannot reach the count.
+- Rust tests that count allocations use `null3d_core::testing::CountingAllocator`, from the core crate's `testing` feature. It counts only the threads a test marks, so the test runner's own threads cannot reach the count.
 - The frame recorder sizes a frame's upload arena for the most that any frame can copy for the scene as it stands. It keeps its layout tables and scratch space between rebuilds. Only the frames right after the scene grows allocate. Pipelined frames keep one arena per frame parity, so the allocation tests change the structure on both parities after warm-up.
 - Uploads from 64 KiB to 4 MiB take the route that the render worker measures as faster on the device: `queue.writeBuffer` or the staging ring. In Chrome on a Mac the ring is 3 to 6 times faster there, as `writeBuffer` takes up to 0.8 ms per MB. In Safari `writeBuffer` wins at every size, because unmapping a staging buffer costs time in proportion to the buffer's size. Outside that range `writeBuffer` wins in every browser measured.
 - Safari 26 drops a whole submit if its commands hold two or more copies from one buffer that was mapped when they were recorded. WebGPU allows that, and Chrome and Firefox accept it. The staging ring therefore records a frame's copies after it unmaps the buffer, just before the frame's next command. The uploads test page reports each frame's WebGPU errors, which show such a failure.
@@ -113,7 +113,7 @@ The benchmarks compare sokko3d with three.js in the same browser. These points c
 2. Generated files are committed. Run `bun run docs` and `bun run skills` after changing a source, and stage what they write.
 3. A placeholder page carries a marker comment, and `bun run docs` rewrites it. When you write the real page, remove the marker. The generator then leaves the page alone, apart from its API reference (rule 5).
 4. Every docs page has front matter: `id`, `title`, `status` (`planned`, `experimental`, `stable` or `generated`), `since` and `summary`.
-5. The API reference on the `api/` pages comes from the TSDoc comments on the engine's public exports. Each export needs a summary and a `@category api/<page>` tag that names its page. Each public member needs a summary too. A public declaration may name only types that the engine exports. On a written API page, the reference goes between the `<!-- sokko3d:api:start -->` and `<!-- sokko3d:api:end -->` markers.
+5. The API reference on the `api/` pages comes from the TSDoc comments on the engine's public exports. Each export needs a summary and a `@category api/<page>` tag that names its page. Each public member needs a summary too. A public declaration may name only types that the engine exports. On a written API page, the reference goes between the `<!-- null3d:api:start -->` and `<!-- null3d:api:end -->` markers.
 
 ## Writing docs
 
@@ -156,7 +156,7 @@ A trailer value must say what you checked. Bare values such as "yes" or "done" a
 feat(engine): add setScale to objects
 
 Docs-Checked: updated docs/api/objects.md; re-read docs/concepts/static-dynamic.md
-Skills-Checked: updated skills/sokko3d-develop/references/api-quickref.md
+Skills-Checked: updated skills/null3d-develop/references/api-quickref.md
 ```
 
 Maintainers also add a `Task:` footer with the milestone task ID.

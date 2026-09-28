@@ -1,11 +1,11 @@
 {
-	"name": "sokko3d-workspace",
+	"name": "null3d-workspace",
 	"private": true,
 	"description": "A browser 3D engine for games and heavy 3D apps: Rust and WebAssembly on worker threads, WebGPU and WebGL2, and a TypeScript API with three.js-style names.",
 	"license": "MIT OR Apache-2.0",
 	"repository": {
 		"type": "git",
-		"url": "git+https://github.com/sokko3d/sokko3d.git"
+		"url": "git+https://github.com/null3d-engine/null3d.git"
 	},
 	"packageManager": "bun@1.3.14",
 	"workspaces": [
@@ -21,8 +21,8 @@
 		"skills:check": "bun tools/skills.ts check",
 		"build": "bun tools/build-wasm.ts",
 		"build:check-size": "bun tools/build-wasm.ts --check-size",
-		"shaders": "cargo run -p sokko3d-shaders --bin shader-build",
-		"shaders:check": "cargo run -p sokko3d-shaders --bin shader-build -- --check",
+		"shaders": "cargo run -p null3d-shaders --bin shader-build",
+		"shaders:check": "cargo run -p null3d-shaders --bin shader-build -- --check",
 		"check": "biome check .",
 		"check:fix": "biome check --write .",
 		"typecheck": "tsc -p tsconfig.json && tsc -p packages/engine && tsc -p tests/pages && tsc -p bench && tsc -p bench/tsconfig.node.json",
@@ -45,7 +45,7 @@
 		"@biomejs/biome": "2.5.14",
 		"@commitlint/cli": "^21.2.3",
 		"@commitlint/config-conventional": "^21.2.3",
-		"@sokko3d/vite-plugin": "workspace:*",
+		"@null3d/vite-plugin": "workspace:*",
 		"@types/bun": "^1.3.0",
 		"binaryen": "132.0.0",
 		"husky": "^9.1.7",

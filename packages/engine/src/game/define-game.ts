@@ -44,7 +44,7 @@ export type GameSetup = (
 	context: GameContext,
 ) => GameCallbacks | undefined | Promise<GameCallbacks | undefined>;
 
-const GAME_MARKER = Symbol.for('sokko3d.game');
+const GAME_MARKER = Symbol.for('null3d.game');
 
 /**
  * A game, as `defineGame` returns it.

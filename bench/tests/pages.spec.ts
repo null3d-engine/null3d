@@ -7,12 +7,12 @@ import { PARITY_SCENES, type PageKind, pagePath, SCENE_CODE } from '../lib/parit
 import { BACKGROUND, PARITY_CANVAS, S2_NODE_COUNT } from '../scenes/spec';
 
 const SCENES = PARITY_SCENES;
-/** The pages each scene is tested on, with the renderer each one reports. The sokko3d WebGL2 path
+/** The pages each scene is tested on, with the renderer each one reports. The null3d WebGL2 path
  * draws only its background until its renderer arrives, so its pages are not tested yet. */
 const PAGES: { kind: PageKind; renderer: string }[] = [
 	{ kind: 'threejs-webgl', renderer: 'webgl' },
 	{ kind: 'threejs-webgpu', renderer: 'webgpu' },
-	{ kind: 'sokko3d-webgpu', renderer: 'sokko3d' },
+	{ kind: 'null3d-webgpu', renderer: 'null3d' },
 ];
 
 /** Where the hold frames are saved, for people to review. */

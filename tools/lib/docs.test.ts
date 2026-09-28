@@ -29,7 +29,7 @@ const INDEX = `${renderFrontMatter([
 	['status', 'experimental'],
 	['since', '0.1'],
 	['summary', 'The docs.'],
-])}\n# Docs\n\n<!-- sokko3d:page-list:start -->\n<!-- sokko3d:page-list:end -->\n`;
+])}\n# Docs\n\n<!-- null3d:page-list:start -->\n<!-- null3d:page-list:end -->\n`;
 const NO_API: ApiReference = { symbols: [], problems: [] };
 const SET_THING: ApiSymbol = {
 	name: 'setThing',
@@ -146,7 +146,7 @@ describe('generateDocs', () => {
 			'docs/index.md': INDEX,
 			'docs/data/threejs-mapping.json': MAPPING,
 			'docs/concepts/handles.md': written,
-			'docs/concepts/architecture.md': '<!-- sokko3d:placeholder -->\nold text',
+			'docs/concepts/architecture.md': '<!-- null3d:placeholder -->\nold text',
 		});
 		const out = generateDocs(root, NO_API);
 		expect(out.has('docs/concepts/handles.md')).toBe(false);
@@ -167,7 +167,7 @@ describe('generateDocs', () => {
 		const root = fixture({
 			'docs/index.md': INDEX,
 			'docs/data/threejs-mapping.json': MAPPING,
-			'docs/api/scene.md': '<!-- sokko3d:placeholder -->\nold text',
+			'docs/api/scene.md': '<!-- null3d:placeholder -->\nold text',
 			'docs/api/objects.md': writtenObjects(`${API_START}\nSTALE REFERENCE\n${API_END}`),
 		});
 		const out = generateDocs(root, { symbols: [SET_THING, THING], problems: [] });

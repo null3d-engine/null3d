@@ -3,7 +3,7 @@
 // scene API both ways and compares.
 import { describe, expect, it } from 'bun:test';
 import { join } from 'node:path';
-import sokko3d from '@sokko3d/vite-plugin';
+import null3d from '@null3d/vite-plugin';
 import { build, type Rollup } from 'vite';
 
 /** The component names of the vector checks, which only the development checks contain. */
@@ -16,7 +16,7 @@ async function bundle(mode: 'production' | 'development'): Promise<string> {
 		configFile: false,
 		logLevel: 'silent',
 		mode,
-		plugins: [sokko3d()],
+		plugins: [null3d()],
 		build: {
 			write: false,
 			minify: true,

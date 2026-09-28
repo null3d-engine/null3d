@@ -1,4 +1,4 @@
-// Runs the benchmark protocol in a visible Chrome or Brave window on this Mac: each scene's sokko3d
+// Runs the benchmark protocol in a visible Chrome or Brave window on this Mac: each scene's null3d
 // page, three.js pages and scene-code page, several fresh runs each, then prints and saves a
 // summary. The scene-code page times the scene code both engines run, so the summary also compares
 // each engine's own work. With --sweep it runs S1 at growing instance counts and draws CPU time per
@@ -9,7 +9,7 @@
 //   bun run bench:run -- --browser brave
 // Options:
 //   --scenes <list>   s1, s1-static, s2; the default is s1
-//   --pages <list>    page kinds; the default is sokko3d-webgpu, threejs-webgpu, threejs-webgl,
+//   --pages <list>    page kinds; the default is null3d-webgpu, threejs-webgpu, threejs-webgl,
 //                     scene-code
 //   --runs <n>        fresh runs of each page; the default is 5
 //   --seconds <n>     warm-up and measured time of each run; the default is the protocol's 5 and 30
@@ -47,7 +47,7 @@ import { MEASURE_SECONDS, WARMUP_SECONDS } from './scenes/spec';
 const BRAVE = '/Applications/Brave Browser.app/Contents/MacOS/Brave Browser';
 const SWEEP_COUNTS = [1_000, 3_000, 10_000, 30_000, 100_000];
 const DEFAULT_PAGES: BenchPageKind[] = [
-	'sokko3d-webgpu',
+	'null3d-webgpu',
 	'threejs-webgpu',
 	'threejs-webgl',
 	SCENE_CODE,
@@ -186,20 +186,20 @@ async function runSweep(
 			add(kind, n, result.cpuMs.median);
 			summaries[kind] = summarizeRuns([result]);
 		}
-		const sokko3d = summaries['sokko3d-webgpu'];
+		const null3d = summaries['null3d-webgpu'];
 		const sceneCode = summaries[SCENE_CODE];
 		const threejs = [summaries['threejs-webgpu'], summaries['threejs-webgl']];
-		const own = ownShareOfThree(sokko3d, threejs, sceneCode);
-		add('sokko3d own work', n, own?.sokko3dMs);
+		const own = ownShareOfThree(null3d, threejs, sceneCode);
+		add('null3d own work', n, own?.null3dMs);
 		add('three.js own work', n, own?.threeMs);
 		// Every thread's work, job workers included, less the game's update.
-		if (sokko3d?.allThreadsMs !== undefined)
-			add('sokko3d engine', n, sokko3d.allThreadsMs - (sokko3d.updateMs ?? 0));
+		if (null3d?.allThreadsMs !== undefined)
+			add('null3d engine', n, null3d.allThreadsMs - (null3d.updateMs ?? 0));
 	}
 	const lines: Record<string, Omit<ChartSeries, 'points'>> = {
-		'sokko3d-webgpu': { name: 'sokko3d, whole frame', color: '#2a6fdb' },
-		'sokko3d own work': { name: 'sokko3d, own work', color: '#2a6fdb', dashed: true },
-		'sokko3d engine': { name: 'sokko3d engine, all threads', color: '#18a058' },
+		'null3d-webgpu': { name: 'null3d, whole frame', color: '#2a6fdb' },
+		'null3d own work': { name: 'null3d, own work', color: '#2a6fdb', dashed: true },
+		'null3d engine': { name: 'null3d engine, all threads', color: '#18a058' },
 		'threejs-webgl': { name: 'three.js WebGL, whole frame', color: '#f2a13e' },
 		'threejs-webgpu': { name: 'three.js WebGPU, whole frame', color: '#e8554e' },
 		'three.js own work': { name: 'three.js, own work', color: '#f2a13e', dashed: true },

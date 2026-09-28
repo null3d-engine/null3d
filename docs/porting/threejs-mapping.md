@@ -1,12 +1,12 @@
 ---
 id: porting/threejs-mapping
-title: three.js to sokko3d mapping
+title: three.js to null3d mapping
 status: generated
 since: "0.3"
-summary: "Every three.js API a port is likely to meet, with its sokko3d equivalent."
+summary: "Every three.js API a port is likely to meet, with its null3d equivalent."
 ---
 
-# three.js to sokko3d mapping
+# three.js to null3d mapping
 
 Status values:
 
@@ -14,18 +14,18 @@ Status values:
 - `changed`: Supported, with a different API or pattern. Follow the note.
 - `manual`: Must be rewritten by hand, for example GLSL shaders or render hooks.
 - `post-1.0`: Not in version 1.0. Use the workaround in the note.
-- `unsupported`: Out of scope for sokko3d. Use the workaround in the note.
+- `unsupported`: Out of scope for null3d. Use the workaround in the note.
 
 The "Since" column gives the first engine version with the feature:
 
 - 0.1: the core renderer, with cameras, materials, lights and shadows
 - 0.2: content, such as glTF models, animation, raycasting and post-processing
-- 0.3: developer tools, such as the sokko3d command, templates and the porting tools
+- 0.3: developer tools, such as the null3d command, templates and the porting tools
 - 1.0: the stable API
 
 ## Renderer and loop
 
-| three.js | sokko3d | Status | Since | Notes | Docs |
+| three.js | null3d | Status | Since | Notes | Docs |
 | --- | --- | --- | --- | --- | --- |
 | WebGLRenderer / WebGPURenderer | createEngine({ canvas, game }) on the page; scene code moves to game.ts inside defineGame() | changed | 0.1 | The engine picks WebGPU or WebGL2 itself. antialias maps to the quality preset (MSAA 4x from Medium); alpha: true maps to createEngine({ transparent: true }); powerPreference has no equivalent. | `getting-started/first-scene` |
 | renderer.setPixelRatio(devicePixelRatio) | createEngine({ maxPixelRatio }) and the quality presets | changed | 0.1 | Presets cap the pixel ratio (1.5 on Low, 2 on Medium and High). Dynamic resolution then adjusts the render scale. | `concepts/quality-presets` |
@@ -46,10 +46,10 @@ The "Since" column gives the first engine version with the feature:
 
 ## Scene graph
 
-| three.js | sokko3d | Status | Since | Notes | Docs |
+| three.js | null3d | Status | Since | Notes | Docs |
 | --- | --- | --- | --- | --- | --- |
 | new THREE.Scene() | The scene from the game context: defineGame(({ scene }) => ...) | changed | 0.1 | Objects are created in the scene directly. | `api/scene` |
-| scene.environment (PMREMGenerator, RoomEnvironment, HDR files) | scene.setEnvironment(await assets.loadEnvironment('/env/studio.ktx2')) | changed | 0.2 | Prefilter HDR files offline with `sokko3d assets env`. A built-in neutral studio environment replaces RoomEnvironment: assets.builtinEnvironment('studio'). | `concepts/lighting` |
+| scene.environment (PMREMGenerator, RoomEnvironment, HDR files) | scene.setEnvironment(await assets.loadEnvironment('/env/studio.ktx2')) | changed | 0.2 | Prefilter HDR files offline with `null3d assets env`. A built-in neutral studio environment replaces RoomEnvironment: assets.builtinEnvironment('studio'). | `concepts/lighting` |
 | scene.fog = new Fog(color, near, far) / new FogExp2(color, density) | scene.setFog({ type: 'linear', color, near, far }) or { type: 'exp2', color, density } | direct | 0.1 | Materials opt out with fog: false. | `api/scene` |
 | new Group() / new Object3D() | scene.createGroup({ name, position }) | direct | 0.1 |  | `api/objects` |
 | parent.add(child) / remove / attach / scene.add | child.setParent(parent); setParent(parent, { keepWorld: true }) for attach(); destroy() to remove | changed | 0.1 | Objects are in the scene as soon as they are created. setParent keeps the local transform, like add(). | `api/objects` |
@@ -75,7 +75,7 @@ The "Since" column gives the first engine version with the feature:
 
 ## Cameras
 
-| three.js | sokko3d | Status | Since | Notes | Docs |
+| three.js | null3d | Status | Since | Notes | Docs |
 | --- | --- | --- | --- | --- | --- |
 | PerspectiveCamera(fov, aspect, near, far) | scene.createPerspectiveCamera({ fov, near, far, position, target }) | direct | 0.1 | fov is vertical and in degrees, as in three.js. The aspect ratio is automatic. | `api/cameras` |
 | OrthographicCamera(left, right, top, bottom, near, far) | scene.createOrthographicCamera({ height, near, far }), or left/right/top/bottom | direct | 0.1 | With height only, the width follows the canvas aspect ratio. | `api/cameras` |
@@ -84,7 +84,7 @@ The "Since" column gives the first engine version with the feature:
 
 ## Lights and shadows
 
-| three.js | sokko3d | Status | Since | Notes | Docs |
+| three.js | null3d | Status | Since | Notes | Docs |
 | --- | --- | --- | --- | --- | --- |
 | DirectionalLight (+ target, shadow.camera bounds) | scene.createDirectionalLight({ direction, color, intensity, castShadows }) | changed | 0.1 | Shadow cascades fit the view automatically, so delete shadow.camera bounds and target updates. | `api/lights` |
 | PointLight(color, intensity, distance, decay) | scene.createPointLight({ position, color, intensity, range, decay }) | direct | 0.1 | distance becomes range; 0 (infinite) is not allowed, because clustered lighting needs a range. | `api/lights` |
@@ -92,27 +92,27 @@ The "Since" column gives the first engine version with the feature:
 | HemisphereLight | scene.createHemisphereLight({ skyColor, groundColor, intensity }) | direct | 0.1 |  | `api/lights` |
 | AmbientLight | scene.createAmbientLight({ color, intensity }) | direct | 0.1 |  | `api/lights` |
 | RectAreaLight | A spot light plus emissive geometry | post-1.0 | - |  | `porting/threejs-unsupported` |
-| LightProbe / LightProbeGenerator | scene.setEnvironment: diffuse spherical harmonics come with the environment | changed | 0.2 | `sokko3d assets env` computes them offline. | `concepts/lighting` |
+| LightProbe / LightProbeGenerator | scene.setEnvironment: diffuse spherical harmonics come with the environment | changed | 0.2 | `null3d assets env` computes them offline. | `concepts/lighting` |
 | CSM addon (three/addons/csm) | Built in: shadow: { cascades } on the directional light | direct | 0.1 | Delete the addon. | `concepts/shadows` |
 | light.shadow.mapSize / bias / normalBias / radius / camera | shadow: { mapSize, bias, normalBias } in the light options | changed | 0.1 | radius and blurSamples map to the preset's filter size; shadow.camera has no equivalent. | `concepts/shadows` |
 | physicallyCorrectLights / useLegacyLights | Physical light units, as in three.js r155 and later | changed | 0.1 | Scenes tuned in three.js's legacy light mode need new intensities: retune them with parity images. | `concepts/lighting` |
 
 ## Geometry
 
-| three.js | sokko3d | Status | Since | Notes | Docs |
+| three.js | null3d | Status | Since | Notes | Docs |
 | --- | --- | --- | --- | --- | --- |
 | Box / Sphere / Plane / Cylinder / Cone / Torus / Capsule / Circle / Ring Geometry | geometry.box({ width, height, depth }), geometry.sphere(...), and so on | direct | 0.1 | Same parameters and defaults as three.js, so the meshes match vertex for vertex. | `api/geometry` |
-| TorusKnot / Icosahedron / Octahedron / Tetrahedron / Dodecahedron / Polyhedron / Lathe / Extrude / Shape / Tube Geometry | The same generators from @sokko3d/geometry | direct | 0.2 | Same parameters as three.js; Shape and Path objects are ported too. | `api/geometry` |
+| TorusKnot / Icosahedron / Octahedron / Tetrahedron / Dodecahedron / Polyhedron / Lathe / Extrude / Shape / Tube Geometry | The same generators from @null3d/geometry | direct | 0.2 | Same parameters as three.js; Shape and Path objects are ported too. | `api/geometry` |
 | BufferGeometry + setAttribute / setIndex / BufferAttribute | geometry.fromArrays({ positions, normals, uvs, indices, colors, tangents }) | changed | 0.1 | Returns a mesh asset that createMesh and createInstances accept. | `api/geometry` |
 | attribute.needsUpdate / setUsage(DynamicDrawUsage) (vertices changing every frame) | meshAsset.updateVertices(name, data, start, count) | changed | 0.2 | For many moving objects, use instances instead of rewriting vertices. | `api/geometry` |
-| computeVertexNormals / computeTangents / computeBoundingSphere | geometry.fromArrays({ ..., computeNormals: true, computeTangents: true }) | changed | 0.1 | Bounds are always automatic. Prefer computing normals and tangents offline with `sokko3d assets`. | `api/geometry` |
+| computeVertexNormals / computeTangents / computeBoundingSphere | geometry.fromArrays({ ..., computeNormals: true, computeTangents: true }) | changed | 0.1 | Bounds are always automatic. Prefer computing normals and tangents offline with `null3d assets`. | `api/geometry` |
 | EdgesGeometry / WireframeGeometry | scene.createLines({ fromEdges: meshAsset, thresholdAngle }); debug.view('wireframe') for debugging | changed | 0.2 |  | `api/lines` |
 | TextGeometry / FontLoader / troika-three-text | DOM labels (ui.trackLabel), a texture with pre-rendered text, or a text mesh baked into glTF | post-1.0 | - | SDF text rendering comes after 1.0. | `porting/threejs-unsupported` |
 | morphAttributes / morphTargetInfluences / morphTargetDictionary | glTF morph targets load automatically; obj.setMorphWeight(indexOrName, weight) | changed | 0.2 |  | `api/animation` |
 
 ## Materials
 
-| three.js | sokko3d | Status | Since | Notes | Docs |
+| three.js | null3d | Status | Since | Notes | Docs |
 | --- | --- | --- | --- | --- | --- |
 | MeshStandardMaterial | materials.standard({ color, map, metalness, roughness, normalMap, aoMap, emissive, ... }) | direct | 0.1 | See the materials reference for every parameter and its new name. | `porting/threejs-materials` |
 | MeshPhysicalMaterial (clearcoat, transmission, sheen, iridescence, anisotropy, specular) | materials.standard for the base layer | changed | 0.1 | Clearcoat, transmission, sheen and specular are planned for after 1.0. Until then, approximate them or write a surface function. | `porting/threejs-materials` |
@@ -129,7 +129,7 @@ The "Since" column gives the first engine version with the feature:
 | material.needsUpdate = true | Nothing to do | changed | 0.1 | Adding a shader feature to a material (for example a normal map) compiles a new pipeline, which can stall a frame. Set materials up during loading. | `concepts/materials` |
 | ShadowMaterial (shadow-catcher planes) | materials.shadowCatcher({ opacity }) | direct | 0.2 |  | `api/materials` |
 | material fog: false | fog: false in the material options | direct | 0.1 |  | `api/materials` |
-| material.bumpMap / bumpScale | A normal map converted offline: `sokko3d assets normal-from-bump` | changed | 0.2 | Normal maps are cheaper at run time and look the same or better. | `guides/assets-pipeline` |
+| material.bumpMap / bumpScale | A normal map converted offline: `null3d assets normal-from-bump` | changed | 0.2 | Normal maps are cheaper at run time and look the same or better. | `guides/assets-pipeline` |
 | material.displacementMap / displacementScale / displacementBias | A vertexOffset function that reads the texture with textureSampleLevel | manual | 0.1 | Enlarge the object bounds with setBounds so culling does not hide displaced vertices. | `porting/threejs-materials` |
 | material.alphaMap | A surface function that sets s.alpha from the texture, or alpha packed into the base color map offline | manual | 0.1 | three.js reads the alpha map from its green channel; keep that channel in the surface function. | `porting/threejs-materials` |
 | renderer.clippingPlanes / material.clippingPlanes / localClippingEnabled | A surface function with alphaMode "mask" that sets alpha to 0 beyond the plane (cookbook recipe) | manual | 0.1 | Shadows still use the unclipped mesh unless the shadow pass uses the same material. | `porting/threejs-materials` |
@@ -138,80 +138,80 @@ The "Since" column gives the first engine version with the feature:
 
 ## Textures
 
-| three.js | sokko3d | Status | Since | Notes | Docs |
+| three.js | null3d | Status | Since | Notes | Docs |
 | --- | --- | --- | --- | --- | --- |
-| new TextureLoader().load / loadAsync | await assets.loadTexture(url, { colorSpace, flipY, wrap, filter, anisotropy }) | changed | 0.1 | Prefer KTX2 files made with `sokko3d assets`. | `api/textures` |
+| new TextureLoader().load / loadAsync | await assets.loadTexture(url, { colorSpace, flipY, wrap, filter, anisotropy }) | changed | 0.1 | Prefer KTX2 files made with `null3d assets`. | `api/textures` |
 | texture.colorSpace = SRGBColorSpace (older: encoding = sRGBEncoding) | colorSpace: 'srgb' for color maps, 'linear' for data maps | direct | 0.1 | Same rule as three.js: base color and emissive maps are sRGB; normal, roughness, metalness and AO maps are linear. glTF sets them automatically. | `concepts/color-management` |
 | texture.flipY | flipY in the loadTexture options | direct | 0.1 | glTF textures never flip. | `api/textures` |
 | wrapS / wrapT / repeat / offset / rotation / center | wrap: 'repeat' \| 'clamp' \| 'mirror' in the texture options; repeat, offset and rotation go in the material's uvTransform | changed | 0.1 | uvTransform follows glTF's KHR_texture_transform. | `api/textures` |
 | minFilter / magFilter / generateMipmaps / anisotropy | filter: 'linear' \| 'nearest', mipmaps, anisotropy (capped by the preset) | changed | 0.1 |  | `api/textures` |
 | DataTexture / DataArrayTexture / Data3DTexture | textures.fromData({ width, height, depth, format, data }) | changed | 0.1 |  | `api/textures` |
 | CanvasTexture (a 2D canvas redrawn at run time) | Draw on an OffscreenCanvas in the game worker, then textures.fromImageBitmap(bitmap) and texture.update(bitmap) | changed | 0.1 | The game worker has no DOM canvas; OffscreenCanvas with a 2D context works in workers. | `api/textures` |
-| VideoTexture | After 1.0: engine.registerVideo on the page and textures.fromVideo in the game. Until then, send ImageBitmap frames from the page and call texture.update(bitmap) | post-1.0 | - | The ImageBitmap route decodes and uploads every frame, so keep frames small (sokko3d-develop recipe 14). | `guides/video-textures` |
+| VideoTexture | After 1.0: engine.registerVideo on the page and textures.fromVideo in the game. Until then, send ImageBitmap frames from the page and call texture.update(bitmap) | post-1.0 | - | The ImageBitmap route decodes and uploads every frame, so keep frames small (null3d-develop recipe 14). | `guides/video-textures` |
 | CubeTextureLoader / CubeTexture | assets.loadCubemap(urls) for sky boxes; assets.loadEnvironment for lighting | changed | 0.2 |  | `api/textures` |
-| RGBELoader / EXRLoader / HDRLoader / UltraHDRLoader + PMREMGenerator | `sokko3d assets env studio.hdr` offline, then assets.loadEnvironment | changed | 0.2 | Prefiltering happens once at build time instead of on every visit. | `guides/assets-pipeline` |
+| RGBELoader / EXRLoader / HDRLoader / UltraHDRLoader + PMREMGenerator | `null3d assets env studio.hdr` offline, then assets.loadEnvironment | changed | 0.2 | Prefiltering happens once at build time instead of on every visit. | `guides/assets-pipeline` |
 | KTX2Loader + setTranscoderPath + detectSupport | assets.loadTexture('x.ktx2') | direct | 0.2 | Built in; delete the setup. | `api/textures` |
 | texture.channel (which UV set a map uses) | uvSet: 0 or 1 in loadTexture options, or per map in the material | direct | 0.1 | glTF files carry this per texture, so loaded models need nothing. | `api/textures` |
 | material.premultipliedAlpha / texture.premultiplyAlpha | loadTexture(url, { premultipliedAlpha: true }) for textures stored premultiplied | changed | 0.1 | Standard blending needs no flag. | `api/textures` |
 
 ## Loaders
 
-| three.js | sokko3d | Status | Since | Notes | Docs |
+| three.js | null3d | Status | Since | Notes | Docs |
 | --- | --- | --- | --- | --- | --- |
 | GLTFLoader().load / loadAsync | const prefab = await assets.loadGltf(url); scene.instantiate(prefab) | changed | 0.2 | Animations are in prefab.animations; named nodes via prefab.find(name). | `api/assets` |
-| DRACOLoader + setDecoderPath | Draco files load, but convert them to meshopt with `sokko3d assets optimize` | changed | 0.2 | meshopt decodes faster and needs no separate decoder download. | `guides/assets-pipeline` |
+| DRACOLoader + setDecoderPath | Draco files load, but convert them to meshopt with `null3d assets optimize` | changed | 0.2 | meshopt decodes faster and needs no separate decoder download. | `guides/assets-pipeline` |
 | MeshoptDecoder / setMeshoptDecoder | Built in | direct | 0.2 | Delete the setup. | `guides/assets-pipeline` |
-| FBXLoader / OBJLoader / MTLLoader / ColladaLoader / STLLoader / PLYLoader / 3DMLoader / USDZLoader | Convert to glTF before release (`sokko3d assets convert`, or Blender) | changed | 0.2 | The engine loads glTF only. | `guides/assets-pipeline` |
+| FBXLoader / OBJLoader / MTLLoader / ColladaLoader / STLLoader / PLYLoader / 3DMLoader / USDZLoader | Convert to glTF before release (`null3d assets convert`, or Blender) | changed | 0.2 | The engine loads glTF only. | `guides/assets-pipeline` |
 | LoadingManager / onProgress callbacks | assets.onProgress((loaded, total) => ...) and assets.preload([...urls]) | changed | 0.1 |  | `guides/loading-screens` |
 | FileLoader / ImageLoader / ImageBitmapLoader | assets.loadBinary(url), assets.loadJson(url), assets.loadImageBitmap(url) | changed | 0.1 |  | `api/assets` |
 | THREE.Cache.enabled | Nothing to do | changed | 0.1 | Assets are cached per URL within a session, and the HTTP cache applies. | `api/assets` |
 
 ## Instancing and batching
 
-| three.js | sokko3d | Status | Since | Notes | Docs |
+| three.js | null3d | Status | Since | Notes | Docs |
 | --- | --- | --- | --- | --- | --- |
 | InstancedMesh + setMatrixAt / setColorAt / instanceMatrix.needsUpdate | scene.createInstances(meshOrPrefab, count, { dynamic }); write batch.positions / rotations / scales / colors | changed | 0.1 | Static batches call markDirty(start, count) after writes; dynamic batches upload every frame without it. | `concepts/instances` |
 | BatchedMesh | Nothing special: the engine batches objects that share a mesh and material | changed | 0.1 | Use createInstances for many copies of one mesh, and separate meshes for varied geometry. | `concepts/instances` |
 | InstancedBufferGeometry / InstancedBufferAttribute (custom per-instance data) | createInstances(..., { attributes: { tint: 4 } }) adds per-instance arrays that surface functions can read | changed | 0.2 |  | `concepts/instances` |
-| LOD (addLevel) | scene.createLod({ levels: [{ mesh, distance }] }), or LODs generated by `sokko3d assets optimize --lod` | changed | 0.2 | The engine picks levels on job workers or on the GPU, per instance. | `concepts/lod` |
+| LOD (addLevel) | scene.createLod({ levels: [{ mesh, distance }] }), or LODs generated by `null3d assets optimize --lod` | changed | 0.2 | The engine picks levels on job workers or on the GPU, per instance. | `concepts/lod` |
 
 ## Animation
 
-| three.js | sokko3d | Status | Since | Notes | Docs |
+| three.js | null3d | Status | Since | Notes | Docs |
 | --- | --- | --- | --- | --- | --- |
 | AnimationMixer / clipAction / play / crossFadeTo / fadeIn / fadeOut / setEffectiveWeight / timeScale / mixer.update(dt) | const anim = obj.animator(); anim.play('run', { fade: 0.2, loop: true, speed }); anim.crossFade('walk', 0.3); anim.setLayerWeight(layer, w) | changed | 0.2 | No update call: the engine samples animation on job workers. | `api/animation` |
 | AnimationClip / KeyframeTrack built in code | Animate values in onUpdate; transform clips authored in glTF play through the animator (0.2) | post-1.0 | - | Property animation (scene.animateProperty and glTF KHR_animation_pointer) comes after 1.0. | `api/animation` |
 | SkinnedMesh / Skeleton / Bone built by hand | Skins load from glTF; anim.setJointOverride(jointName, rotation) for procedural aiming | changed | 0.2 | Building skeletons in code is not supported; author them in a modeling tool. | `api/animation` |
-| AnimationUtils.subclip / makeClipAdditive | `sokko3d assets` splits clips and makes them additive offline; anim.play(name, { additive: true }) | changed | 0.2 |  | `api/animation` |
+| AnimationUtils.subclip / makeClipAdditive | `null3d assets` splits clips and makes them additive offline; anim.play(name, { additive: true }) | changed | 0.2 |  | `api/animation` |
 
 ## Interaction and controls
 
-| three.js | sokko3d | Status | Since | Notes | Docs |
+| three.js | null3d | Status | Since | Notes | Docs |
 | --- | --- | --- | --- | --- | --- |
 | Raycaster.setFromCamera + intersectObject(s) | camera.screenToRay(x, y, ray); scene.raycast(ray.origin, ray.direction, { layers }, hit) | changed | 0.2 | Returns the closest hit; scene.raycastAll returns every hit. Acceleration structures are built in. | `api/raycast` |
 | DOM pointer, mouse, touch and keyboard listeners | input.pointer, input.isDown('KeyW'), input.actions; obj.on('pointerenter' \| 'pointerleave' \| 'click', fn) (0.2) | changed | 0.1 | Input reaches the game worker through shared memory; the game never adds DOM listeners. | `api/input` |
-| OrbitControls / MapControls / TrackballControls / ArcballControls | createOrbitControls(ctx, camera, { target, enableDamping, dampingFactor, minDistance, maxDistance, maxPolarAngle }) from @sokko3d/controls; controls.update(dt) in onUpdate | changed | 0.1 | Option names match OrbitControls. Trackball and Arcball come after 1.0. | `api/controls` |
-| FlyControls / FirstPersonControls / PointerLockControls | createFlyControls / createFirstPersonControls from @sokko3d/controls | changed | 0.2 | Pointer lock is requested on the page: engine.requestPointerLock(). | `api/controls` |
+| OrbitControls / MapControls / TrackballControls / ArcballControls | createOrbitControls(ctx, camera, { target, enableDamping, dampingFactor, minDistance, maxDistance, maxPolarAngle }) from @null3d/controls; controls.update(dt) in onUpdate | changed | 0.1 | Option names match OrbitControls. Trackball and Arcball come after 1.0. | `api/controls` |
+| FlyControls / FirstPersonControls / PointerLockControls | createFlyControls / createFirstPersonControls from @null3d/controls | changed | 0.2 | Pointer lock is requested on the page: engine.requestPointerLock(). | `api/controls` |
 | TransformControls / DragControls | Dragging with scene.raycast against a plane | post-1.0 | - | Gizmos come after 1.0. | `porting/threejs-unsupported` |
 
 ## Helpers and debugging
 
-| three.js | sokko3d | Status | Since | Notes | Docs |
+| three.js | null3d | Status | Since | Notes | Docs |
 | --- | --- | --- | --- | --- | --- |
 | AxesHelper / GridHelper / BoxHelper / Box3Helper / ArrowHelper / CameraHelper / light helpers / SkeletonHelper / PlaneHelper | debug.axes, debug.grid, debug.box, debug.arrow, debug.frustum, debug.light, debug.skeleton | changed | 0.1 | Debug drawing exists in development builds only. | `api/debug` |
 
 ## Math
 
-| three.js | sokko3d | Status | Since | Notes | Docs |
+| three.js | null3d | Status | Since | Notes | Docs |
 | --- | --- | --- | --- | --- | --- |
-| new Vector3 / Quaternion / Matrix4 / Euler / Color / Box3 / Sphere / Ray / Plane | Array math from @sokko3d/engine: vec3.add(out, a, b), quat.slerp(out, a, b, t) | changed | 0.1 | Create scratch arrays once, outside onUpdate. three.js math classes may stay in setup code during a port, but not in per-frame code. | `api/math` |
+| new Vector3 / Quaternion / Matrix4 / Euler / Color / Box3 / Sphere / Ray / Plane | Array math from @null3d/engine: vec3.add(out, a, b), quat.slerp(out, a, b, t) | changed | 0.1 | Create scratch arrays once, outside onUpdate. three.js math classes may stay in setup code during a port, but not in per-frame code. | `api/math` |
 | Clock / getDelta / getElapsedTime | onUpdate(dt) and ctx.time.now | changed | 0.1 |  | `api/time` |
 | MathUtils (degToRad, clamp, lerp, damp, randFloat) | math.degToRad, math.clamp, math.lerp, math.damp, math.randFloat | direct | 0.1 | Same names. | `api/math` |
 | Color.set / setHex / setHSL / setRGB / lerp | '#rrggbb' strings, 0xrrggbb numbers, or [r, g, b] linear arrays; color.* helpers convert | changed | 0.1 | Hex values are sRGB, as in three.js. | `concepts/color-management` |
 
 ## Post-processing
 
-| three.js | sokko3d | Status | Since | Notes | Docs |
+| three.js | null3d | Status | Since | Notes | Docs |
 | --- | --- | --- | --- | --- | --- |
 | EffectComposer / RenderPass / OutputPass / PostProcessing (three/webgpu) / pmndrs postprocessing | post.set({ ... }) | changed | 0.2 | The chain is built in and merged into few passes. Delete the composer; keep only each pass's settings. | `porting/threejs-postprocessing` |
 | UnrealBloomPass / BloomEffect / bloom() node | post.set({ bloom: { strength, radius, threshold } }) | direct | 0.2 | Similar response to UnrealBloomPass; tune with parity images. | `porting/threejs-postprocessing` |
@@ -230,7 +230,7 @@ The "Since" column gives the first engine version with the feature:
 
 ## Sprites, points, lines and labels
 
-| three.js | sokko3d | Status | Since | Notes | Docs |
+| three.js | null3d | Status | Since | Notes | Docs |
 | --- | --- | --- | --- | --- | --- |
 | Sprite / SpriteMaterial | scene.createSprites(count, { texture \| atlas, sizeMode: 'world' \| 'screen' }) | changed | 0.2 | Camera-facing quads drawn in one batch. | `api/sprites` |
 | Points / PointsMaterial | scene.createPoints({ positions, colors, size, sizeAttenuation, texture }) | changed | 0.2 | Point sizes above one pixel work on every backend. | `api/points` |
@@ -239,7 +239,7 @@ The "Since" column gives the first engine version with the feature:
 
 ## Other
 
-| three.js | sokko3d | Status | Since | Notes | Docs |
+| three.js | null3d | Status | Since | Notes | Docs |
 | --- | --- | --- | --- | --- | --- |
 | WebXR (renderer.xr, VRButton, ARButton) | None | unsupported | - | XR is out of scope for version 1. | `porting/threejs-unsupported` |
 | Audio / PositionalAudio / AudioListener / AudioLoader | Web Audio on the page | unsupported | - | The game sends positions with page.post: every frame for moving sounds, or on events only. | `guides/audio` |

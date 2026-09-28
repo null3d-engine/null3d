@@ -53,7 +53,7 @@
 			"!**/target",
 			"!skills/*/evals",
 			"!docs/data",
-			"!skills/sokko3d-port-threejs/references/threejs-mapping.json",
+			"!skills/null3d-port-threejs/references/threejs-mapping.json",
 			"!packages/engine/src/generated"
 		]
 	},

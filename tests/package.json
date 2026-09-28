@@ -1,5 +1,5 @@
 {
-	"name": "@sokko3d/tests",
+	"name": "@null3d/tests",
 	"private": true,
 	"type": "module",
 	"scripts": {
@@ -7,8 +7,8 @@
 	},
 	"devDependencies": {
 		"@playwright/test": "1.63.0",
-		"@sokko3d/engine": "workspace:*",
-		"@sokko3d/vite-plugin": "workspace:*",
+		"@null3d/engine": "workspace:*",
+		"@null3d/vite-plugin": "workspace:*",
 		"@webgpu/types": "0.1.74",
 		"fast-png": "8.0.0",
 		"pixelmatch": "7.2.0",

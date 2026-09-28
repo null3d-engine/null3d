@@ -40,8 +40,8 @@ const SINCE_FORMAT = /^(\d+\.\d+|after \d+\.\d+)$/;
 /** Every page the docs will have. A page that does not exist yet is generated as a placeholder. */
 // biome-ignore format: one page per line keeps the inventory readable as a table
 export const PAGES: readonly PageEntry[] = [
-	{ id: 'index', title: 'sokko3d documentation', since: '0.1', summary: 'What sokko3d is; how the docs are organized; status labels.' },
-	{ id: 'getting-started/install', title: 'Install and create a project', since: '0.3', summary: '`sokko3d create`; packages; engine, docs and skills versions always match.' },
+	{ id: 'index', title: 'null3d documentation', since: '0.1', summary: 'What null3d is; how the docs are organized; status labels.' },
+	{ id: 'getting-started/install', title: 'Install and create a project', since: '0.3', summary: '`null3d create`; packages; engine, docs and skills versions always match.' },
 	{ id: 'getting-started/first-scene', title: 'Your first scene', since: '0.1', summary: 'page.ts with createEngine; game.ts with defineGame; camera, light, mesh; running the dev server.' },
 	{ id: 'getting-started/hosting', title: 'Hosting and cross-origin isolation', since: '0.1', summary: 'COOP and COEP headers; require-corp on Safari; CORS and CORP for assets; the single-threaded fallback.' },
 	{ id: 'getting-started/project-structure', title: 'Project structure', since: '0.3', summary: 'page.ts, game.ts, assets/, AGENTS.md, .claude/skills/; what runs where.' },
@@ -77,7 +77,7 @@ export const PAGES: readonly PageEntry[] = [
 	{ id: 'api/animation', title: 'Animation', since: '0.2', summary: 'The animator; play, crossFade, layers, events; morph weights.' },
 	{ id: 'api/raycast', title: 'Raycasting and spatial queries', since: '0.2', summary: 'raycast, raycastAny, raycastAll, raycastBatch, overlap queries, pointer events on objects.' },
 	{ id: 'api/input', title: 'Input', since: '0.1', summary: 'Pointer, keyboard, touch and gamepad; action maps.' },
-	{ id: 'api/controls', title: 'Camera controls (@sokko3d/controls)', since: '0.1', summary: 'Orbit and map controls (0.1); fly and first-person controls (0.2).' },
+	{ id: 'api/controls', title: 'Camera controls (@null3d/controls)', since: '0.1', summary: 'Orbit and map controls (0.1); fly and first-person controls (0.2).' },
 	{ id: 'api/post', title: 'Post-processing API', since: '0.2', summary: 'post.set options; post.addEffect for custom WGSL effects.' },
 	{ id: 'api/render', title: 'Render graph API', since: '0.2', summary: 'render.addPass declarations; enabling and disabling passes; dumpGraph.' },
 	{ id: 'api/quality', title: 'Quality API', since: '0.1', summary: 'quality.preset, quality.set, frame budgets, quality events.' },
@@ -100,11 +100,11 @@ export const PAGES: readonly PageEntry[] = [
 	{ id: 'guides/audio', title: 'Audio with Web Audio', since: '0.1', summary: 'Why audio stays on the page; sending positions from the game.' },
 	{ id: 'guides/physics', title: 'Using a physics library', since: '0.1', summary: 'Running Rapier or cannon-es in the game worker; copying transforms.' },
 	{ id: 'guides/multiple-views', title: 'Multiple views', since: 'after 1.0', summary: 'Split screens with scene.createView, after 1.0; minimaps work from 0.2 through render-to-texture passes.' },
-	{ id: 'guides/assets-pipeline', title: 'The asset pipeline (sokko3d assets)', since: '0.2', summary: 'optimize, env, convert; LODs; texture compression; budget reports.' },
-	{ id: 'guides/testing', title: 'Testing your game', since: '0.1', summary: 'sokko3d test; hold mode; image tests; reading results.' },
+	{ id: 'guides/assets-pipeline', title: 'The asset pipeline (null3d assets)', since: '0.2', summary: 'optimize, env, convert; LODs; texture compression; budget reports.' },
+	{ id: 'guides/testing', title: 'Testing your game', since: '0.1', summary: 'null3d test; hold mode; image tests; reading results.' },
 	{ id: 'guides/debugging', title: 'Debugging', since: '0.1', summary: 'Error codes; the inspector; the MCP server; the render-graph dump; common failures.' },
 	{ id: 'guides/deploying', title: 'Deploying', since: '0.3', summary: 'Headers on common hosts; asset caching; size budgets.' },
-	{ id: 'guides/agents', title: 'Working with AI agents', since: '0.3', summary: 'The skills; sokko3d docs; the MCP server; AGENTS.md in templates.' },
+	{ id: 'guides/agents', title: 'Working with AI agents', since: '0.3', summary: 'The skills; null3d docs; the MCP server; AGENTS.md in templates.' },
 
 	{ id: 'shaders/wgsl-rules', title: 'WGSL rules for portable shaders', since: '0.1', summary: 'The three shared language features; limits budget; flat interpolation; what the build rejects.' },
 	{ id: 'shaders/surface-functions', title: 'Surface functions', since: '0.1', summary: 'The surface record; vertex-offset functions; per-instance attributes.' },
@@ -120,17 +120,17 @@ export const PAGES: readonly PageEntry[] = [
 	{ id: 'porting/threejs-unsupported', title: 'Unsupported three.js features', since: '0.3', summary: 'Features after 1.0 or out of scope, with workarounds.' },
 	{ id: 'porting/verification', title: 'Verifying a port', since: '0.3', summary: 'Parity images per camera view; performance comparison; the WebGL2 path; phones.' },
 
-	{ id: 'cli/sokko3d', title: 'The sokko3d command', since: '0.3', summary: 'create, dev, build, test, bench, shot, assets, docs, port, skills, doctor.' },
+	{ id: 'cli/null3d', title: 'The null3d command', since: '0.3', summary: 'create, dev, build, test, bench, shot, assets, docs, port, skills, doctor.' },
 	{ id: 'cookbook/index', title: 'Cookbook', since: '0.2', summary: 'Short recipes; each is also a tested example.' },
 ];
 
 /** Marks a page as generated from the inventory, so the generator may rewrite it. */
-export const PLACEHOLDER_MARKER = '<!-- sokko3d:placeholder -->';
-const PAGE_LIST_START = '<!-- sokko3d:page-list:start -->';
-const PAGE_LIST_END = '<!-- sokko3d:page-list:end -->';
+export const PLACEHOLDER_MARKER = '<!-- null3d:placeholder -->';
+const PAGE_LIST_START = '<!-- null3d:page-list:start -->';
+const PAGE_LIST_END = '<!-- null3d:page-list:end -->';
 /** Written API pages hold their generated reference between these markers. */
-export const API_START = '<!-- sokko3d:api:start -->';
-export const API_END = '<!-- sokko3d:api:end -->';
+export const API_START = '<!-- null3d:api:start -->';
+export const API_END = '<!-- null3d:api:end -->';
 
 /**
  * The single source of the three.js mapping. The mapping page and the porting skill's copies come
@@ -138,7 +138,7 @@ export const API_END = '<!-- sokko3d:api:end -->';
  */
 export const MAPPING_SOURCE = 'docs/data/threejs-mapping.json';
 const MAPPING_PAGE = 'docs/porting/threejs-mapping.md';
-const SKILL_MAPPING_DIR = 'skills/sokko3d-port-threejs/references';
+const SKILL_MAPPING_DIR = 'skills/null3d-port-threejs/references';
 
 /** Docs areas: the first path segment of every page ID. */
 export const DOC_AREAS = new Set(AREAS.map(([id]) => id));
@@ -153,8 +153,8 @@ export function pagePath(id: string): string {
  */
 export function placeholderPage(page: PageEntry, reference = ''): string {
 	const when = page.since.startsWith('after ')
-		? `after sokko3d ${page.since.slice('after '.length)}`
-		: `sokko3d ${page.since}`;
+		? `after null3d ${page.since.slice('after '.length)}`
+		: `null3d ${page.since}`;
 	const note = reference
 		? `Planned for ${when}. No release has these APIs yet, so coding agents must not use them. The reference below lists the APIs the engine has now. The rest of the page is not written yet.`
 		: `Planned for ${when}. This page is a placeholder. No release has this feature yet, so the APIs it names do not exist. Coding agents must not use them.`;
@@ -205,18 +205,18 @@ interface Mapping {
 export function mappingMarkdown(mapping: Mapping, forSkill: boolean): string {
 	const lines: string[] = [];
 	if (forSkill) {
-		lines.push('# three.js to sokko3d mapping\n');
+		lines.push('# three.js to null3d mapping\n');
 	} else {
 		lines.push(
 			renderFrontMatter([
 				['id', 'porting/threejs-mapping'],
-				['title', 'three.js to sokko3d mapping'],
+				['title', 'three.js to null3d mapping'],
 				['status', 'generated'],
 				['since', '0.3'],
-				['summary', 'Every three.js API a port is likely to meet, with its sokko3d equivalent.'],
+				['summary', 'Every three.js API a port is likely to meet, with its null3d equivalent.'],
 			]),
 		);
-		lines.push('# three.js to sokko3d mapping\n');
+		lines.push('# three.js to null3d mapping\n');
 	}
 	lines.push('Status values:\n');
 	for (const [key, text] of Object.entries(mapping.statusLegend))
@@ -233,7 +233,7 @@ export function mappingMarkdown(mapping: Mapping, forSkill: boolean): string {
 	}
 	for (const c of categories) {
 		lines.push(`## ${c}\n`);
-		lines.push('| three.js | sokko3d | Status | Since | Notes | Docs |');
+		lines.push('| three.js | null3d | Status | Since | Notes | Docs |');
 		lines.push('| --- | --- | --- | --- | --- | --- |');
 		for (const e of mapping.entries.filter((x) => x.category === c)) {
 			lines.push(
