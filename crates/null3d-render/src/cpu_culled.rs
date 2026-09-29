@@ -1122,10 +1122,8 @@ impl CpuCulledRenderer {
     /// same: the same entries in the same buckets. The frame then draws from that slot as it is.
     fn keeps_previous_list(&self, input: &FrameInput<'_>) -> bool {
         let parity = input.parity();
-        let (now, before) = (&self.culls[parity], &self.culls[parity ^ 1]);
         self.listed_slot.holds_previous(input.frame)
-            && now.bucket_starts() == before.bucket_starts()
-            && now.indices() == before.indices()
+            && self.culls[parity].same_entries(&self.culls[parity ^ 1])
     }
 }
 

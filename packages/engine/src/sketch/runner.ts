@@ -138,7 +138,6 @@ export class SketchRunner {
 		const start = performance.now();
 		const { time } = this.context;
 		const { glue, slots } = this.sketch;
-		glue.prepareJobs();
 		this.clock.advance(now, Atomics.load(slots, Slot.Resumes));
 		const dt = this.clock.dt;
 		time.now = this.clock.now;
@@ -164,6 +163,9 @@ export class SketchRunner {
 			this.report(error);
 		}
 		this.endPhase(Phase.Update);
+		// Job workers woken now start while the engine applies the frame's commands; woken before
+		// the sketch's update, they would spin through it and sleep again.
+		glue.prepareJobs();
 		if (glue.beginFrame(frame) !== 0) this.report(coreFailure(glue, 'the frame'));
 		this.endPhase(Phase.Commands);
 		glue.updateTransforms();

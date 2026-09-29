@@ -213,6 +213,19 @@ const PARALLEL_PACK_THRESHOLD: usize = 1 << 15;
 /// Spheres at or above this count are culled on the job workers too; fewer are culled on the
 /// calling thread, which takes less time than waking the workers and waiting for them.
 const PARALLEL_CULL_THRESHOLD: usize = 1 << 14;
+/// The same threshold when the job workers already had work this frame and are still awake, so
+/// handing them chunks costs little: two chunks' worth.
+const AWAKE_PARALLEL_CULL_THRESHOLD: usize = 2 * CULL_CHUNK as usize;
+
+/// True when culling `spheres` spheres goes faster spread over the job workers.
+fn cull_in_parallel(jobs: &JobSystem, spheres: usize) -> bool {
+    let threshold = if jobs.workers_busy_this_frame() {
+        AWAKE_PARALLEL_CULL_THRESHOLD
+    } else {
+        PARALLEL_CULL_THRESHOLD
+    };
+    jobs.worker_count() > 0 && spheres >= threshold
+}
 
 /// The output of [`cull_parallel`]: the index list, a scratch list each chunk culls into, and one
 /// offset per chunk, all allocated once with room for every sphere.
@@ -258,8 +271,8 @@ impl CullOutput {
 
 /// Culls every sphere on the calling thread and the job workers, in chunks of [`CULL_CHUNK`],
 /// and compacts the visible indices into one list in increasing order. A few thousand spheres or
-/// fewer are culled on the calling thread alone. It allocates nothing and returns the number of
-/// visible spheres.
+/// fewer are culled on the calling thread alone, and more when the workers had no other work this
+/// frame. It allocates nothing and returns the number of visible spheres.
 ///
 /// Each chunk culls into its own part of a scratch list and records its count. A prefix sum over
 /// the counts gives each chunk's place in the output, and a second loop copies every chunk
@@ -280,7 +293,7 @@ pub fn cull_parallel(
         out.capacity()
     );
     let chunks = count.div_ceil(CULL_CHUNK) as usize;
-    if (count as usize) < PARALLEL_CULL_THRESHOLD || jobs.worker_count() == 0 {
+    if !cull_in_parallel(jobs, count as usize) {
         // One thread culls straight into the output.
         out.len = cull_spheres(
             frustum,
@@ -436,6 +449,27 @@ impl BucketedCull {
     pub fn is_empty(&self) -> bool {
         self.len == 0
     }
+
+    /// True when both outputs list the same entries in the same buckets.
+    pub fn same_entries(&self, other: &BucketedCull) -> bool {
+        same_words(self.bucket_starts(), other.bucket_starts())
+            && same_words(self.indices(), other.indices())
+    }
+}
+
+/// True when two word slices hold the same words, compared sixteen at a time: on WebAssembly the
+/// standard slice comparison compiles to a loop over bytes.
+fn same_words(a: &[u32], b: &[u32]) -> bool {
+    if a.len() != b.len() {
+        return false;
+    }
+    let (a_blocks, a_rest) = a.as_chunks::<16>();
+    let (b_blocks, b_rest) = b.as_chunks::<16>();
+    a_blocks
+        .iter()
+        .zip(b_blocks)
+        .all(|(x, y)| !u32x16::from_array(*x).simd_ne(u32x16::from_array(*y)).any())
+        && a_rest.iter().zip(b_rest).all(|(x, y)| x == y)
 }
 
 /// Culls runs of rows from several sets of sphere arrays, on the calling thread and the job
@@ -527,7 +561,7 @@ pub fn cull_into_buckets<'a>(
             }
         }
     };
-    if rows >= PARALLEL_CULL_THRESHOLD {
+    if cull_in_parallel(jobs, rows) {
         jobs.parallel_for(runs.len() as u32, 1, &|range, _| {
             for index in range {
                 cull(index as usize);
@@ -661,6 +695,20 @@ mod tests {
         // With a 90 degree field of view, the right plane passes through x = -z.
         assert!(frustum.contains_sphere(10.5, 0.0, -10.0, 1.0));
         assert!(!frustum.contains_sphere(12.0, 0.0, -10.0, 1.0));
+    }
+
+    #[test]
+    fn same_words_compares_every_word_and_the_length() {
+        let a: Vec<u32> = (0..70).collect();
+        let mut b = a.clone();
+        assert!(same_words(&a, &b));
+        for at in [0, 15, 16, 63, 64, 69] {
+            b[at] += 1;
+            assert!(!same_words(&a, &b), "a difference at word {at}");
+            b[at] -= 1;
+        }
+        assert!(!same_words(&a, &b[..69]));
+        assert!(same_words(&[], &[]));
     }
 
     #[test]

@@ -316,16 +316,24 @@ impl JobSystem {
         assert!(!panicked, "a parallel_for chunk panicked");
     }
 
-    /// Wakes sleeping job workers at the start of a frame when the previous frame handed them
-    /// work, so they are spinning when this frame's work arrives: a sleeping worker takes longer
-    /// to start than a short loop runs. A scene without parallel work lets them sleep. Returns
-    /// true when it woke them.
+    /// Wakes sleeping job workers ahead of a frame's parallel work when the previous frame handed
+    /// them work, so they are spinning when this frame's work arrives: a sleeping worker takes
+    /// longer to start than a short loop runs. A scene without parallel work lets them sleep.
+    /// Returns true when it woke them. It also starts the frame's count of loops that handed out
+    /// work, which [`JobSystem::workers_busy_this_frame`] reads.
     pub fn prepare_frame(&self) -> bool {
         let woke = self.dispatched.swap(false, Ordering::Relaxed);
         if woke {
             self.wake_workers(true);
         }
         woke
+    }
+
+    /// True when a parallel loop has handed the job workers work since the frame started. They
+    /// spin for a while after a loop before they sleep, so another loop soon after starts on them
+    /// in microseconds, where waking sleeping workers takes tens of microseconds.
+    pub fn workers_busy_this_frame(&self) -> bool {
+        self.dispatched.load(Ordering::Relaxed)
     }
 
     /// Queues a background task. Fails with [`CoreError::CapacityExceeded`] when the queue is

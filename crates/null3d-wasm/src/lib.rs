@@ -355,8 +355,8 @@ pub fn begin_frame(frame: u32) -> u32 {
     })
 }
 
-/// Wakes the job workers at the start of a frame when the previous frame gave them work, so they
-/// are ready when this frame's parallel work comes.
+/// Wakes the job workers ahead of the frame's engine work when the previous frame gave them work,
+/// so they are ready when this frame's parallel work comes.
 #[wasm_bindgen(js_name = prepareJobs)]
 pub fn prepare_jobs() {
     if let Some(jobs) = JOBS.get() {

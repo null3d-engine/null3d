@@ -659,6 +659,19 @@ export class WebGL2Backend {
 		let counts = (words[a + 1] as number) / 4;
 		let offsets = (words[a + 2] as number) / 4;
 		let instances = (words[a + 3] as number) / 4;
+		if (count === 1) {
+			// One draw needs no arrays. Its gl_DrawID is 0 either way, so it reads the same record.
+			this.prepareDraw(0);
+			this.gl.drawElementsInstanced(
+				this.gl.TRIANGLES,
+				arrays[counts] as number,
+				this.indexType,
+				arrays[offsets] as number,
+				arrays[instances] as number,
+			);
+			this.counts.drawCalls += 1;
+			return;
+		}
 		if (this.copying) {
 			// Few words, so a loop copies them without making a view.
 			this.ensureStaging(count * 12);

@@ -346,3 +346,23 @@ fn a_frame_wakes_the_workers_only_after_a_frame_that_gave_them_work() {
         "each frame's work wakes the next frame's start once"
     );
 }
+
+#[test]
+fn a_frame_knows_when_its_loops_have_given_the_workers_work() {
+    let pool = Workers::start(2);
+    let jobs = pool.jobs();
+    jobs.prepare_frame();
+    assert!(!jobs.workers_busy_this_frame());
+    jobs.parallel_for(10, 100, &|_, _| {});
+    assert!(
+        !jobs.workers_busy_this_frame(),
+        "one chunk runs on the calling thread"
+    );
+    jobs.parallel_for(1000, 10, &|_, _| {});
+    assert!(jobs.workers_busy_this_frame());
+    jobs.prepare_frame();
+    assert!(
+        !jobs.workers_busy_this_frame(),
+        "a new frame starts with no work handed out"
+    );
+}
