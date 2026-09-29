@@ -184,6 +184,7 @@ export class SketchRunner {
 		this.endPhase(Phase.Cull);
 		if (glue.recordFrame(frame, width, height) !== 0) this.report(coreFailure(glue, 'the frame'));
 		this.record.count(Counter.Rebuilds, glue.drawTablesRebuilt() ? 1 : 0);
+		this.record.count(Counter.VisibleEntries, glue.visibleEntries(frame));
 		Atomics.store(slots, Slot.DrawListWords0 + (frame & 1), glue.drawListWords(frame));
 		Atomics.store(slots, Slot.FrameEpoch0 + (frame & 1), epoch);
 		this.endPhase(Phase.Record);

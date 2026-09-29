@@ -118,6 +118,8 @@ So some common advice does not apply:
 
 Each dynamic instance uploads its 48-byte world matrix in every frame, so 100,000 moving boxes upload 4.8 MB per frame. A static batch uploads its matrices once and then nothing. The S1-static benchmark draws the same 100,000 boxes standing still. It uploads nothing per frame and takes 0.08 ms of CPU time.
 
+On WebGL2 the job workers cull, so a frame whose view changed also uploads its list of visible objects, at 4 bytes per entry. Each visible object or instance row is one entry, and so is each visible group of 64 rows in a static batch. The `visibleEntries` figure of `measure` counts them. Divide `uploadBytes` by it: when only the camera moves, the result is about 4 bytes.
+
 Mark objects and batches static when they rarely move, and call `markDirty` for the rows that you change. See [Static and dynamic objects](../concepts/static-dynamic.md).
 
 The render worker picks how each upload travels, so you do not need to. Uploads from 64 KiB up to 4 MiB have two routes: the direct write call, and staging buffers that the browser keeps mapped. The render worker times both on the device and uses the faster one. In Chrome the staging buffers are 3 to 6 times faster. In Safari the direct call is faster at every size.
@@ -139,6 +141,7 @@ The render worker picks how each upload travels, so you do not need to. Uploads 
 | `refreshHz` | The display's refresh rate, as the engine measured it |
 | `mainThread` | Long tasks and input delay on the page's own thread, where the browser reports them (Chrome) |
 | `uploadBytes` and `drawCalls` | Bytes uploaded and draw calls made per frame |
+| `visibleEntries` | On WebGL2, the entries per frame in the list of visible objects. It is null on WebGPU, where the GPU culls |
 | `rebuilds` | Frames whose structure change rebuilt the draw tables |
 | `pipelines` | GPU pipelines built, which can stall the frame they happen in |
 | `memory` | The engine's WebAssembly memory and the JavaScript heap |

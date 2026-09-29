@@ -38,6 +38,10 @@ pub mod ring_field {
 /// 32-bit words in one command record.
 pub const COMMAND_WORDS: u32 = 4;
 
+/// What a per-frame count returns where the core does not count, such as visible entries where the
+/// GPU culls.
+pub const NOT_COUNTED: u32 = u32::MAX;
+
 /// The generated module's text.
 pub fn typescript() -> String {
     let mut out = String::from(
@@ -104,6 +108,7 @@ pub fn typescript() -> String {
                 ("NO_MESH", NO_MESH),
                 ("NO_MATERIAL", NO_MATERIAL),
                 ("MATRIX_FLOATS", MATRIX_FLOATS as u32),
+                ("NOT_COUNTED", NOT_COUNTED),
             ],
         ),
         (

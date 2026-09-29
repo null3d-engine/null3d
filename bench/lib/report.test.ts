@@ -17,6 +17,7 @@ import {
 	summaryTable,
 	sweepReport,
 	threadOwnWorkMs,
+	uploadPerVisibleEntry,
 } from './report';
 
 function result(cpu: number, stats = false): BenchResult {
@@ -105,6 +106,39 @@ describe('benchmark reports', () => {
 		expect(table[2]).toContain('| render-worker 2.10 |');
 		expect(table[3]).toContain('| null3d-webgpu-low |');
 		expect(table[3]).toContain('| sketch-worker 3.10 |');
+	});
+
+	test('give the upload per visible entry where the job workers cull, and n/a where the GPU culls', () => {
+		/** A null3d run that uploads `uploadBytes` per frame and lists `visibleEntries`. */
+		const run = (uploadBytes: number, visibleEntries: number | null): BenchResult => {
+			const drawn = result(2, true);
+			const stats = drawn.stats as NonNullable<BenchResult['stats']>;
+			return {
+				...drawn,
+				stats: {
+					...stats,
+					uploadBytes: { median: uploadBytes },
+					visibleEntries: visibleEntries === null ? null : { median: visibleEntries },
+				},
+			};
+		};
+		// A static scene on WebGL2 uploads each entry's 4-byte index, and a little more.
+		const webgl2 = summarizeRuns([run(6112, 1500), run(6512, 1600), run(5712, 1400)]);
+		expect(webgl2.visibleEntries).toBe(1500);
+		expect(uploadPerVisibleEntry(webgl2)).toBeCloseTo(6112 / 1500);
+		const webgpu = summarizeRuns([run(0, null)]);
+		expect(webgpu.visibleEntries).toBeNull();
+		expect(uploadPerVisibleEntry(webgpu)).toBeNull();
+		expect(uploadPerVisibleEntry(summarizeRuns([result(2)]))).toBeNull();
+		const table = summaryTable([
+			{ scene: 's1-static', kind: 'null3d-webgl2', summary: webgl2 },
+			{ scene: 's1-static', kind: 'null3d-webgpu', summary: webgpu },
+		]).split('\n');
+		expect(table[0]).toContain(
+			'| Upload per frame | Visible entries | Upload per visible entry | Draw calls |',
+		);
+		expect(table[2]).toContain('| 0.01 MB | 1,500 | 4.1 bytes | 1 |');
+		expect(table[3]).toContain('| 0.00 MB | n/a | n/a | 1 |');
 	});
 
 	test("compare null3d with three.js's faster renderer", () => {

@@ -56,6 +56,7 @@ export interface EngineResult {
 		intervalMs: Spread;
 		threads: Record<string, { busyMs: Spread }>;
 		gpuMs: Spread | null;
+		visibleEntries: Spread | null;
 		load: {
 			firstFrameMs: number | null;
 			firstFrameDoneMs: number | null;
@@ -125,6 +126,11 @@ export function engineProblems(result: EngineResult, mode: EngineMode, tier: str
 		problems.push('no GPU times, although the device has timestamp queries');
 	if (!((stats.completedFps ?? 0) > 0) || !((stats.gpuLatencyMs?.count ?? 0) > 0))
 		problems.push('no frame completions were counted');
+	// The job workers cull on WebGL2 and count the visible entries; on WebGPU the GPU culls.
+	if (tier === 'webgl2' && !((stats.visibleEntries?.count ?? 0) > 0))
+		problems.push('no visible entries were counted');
+	if (tier === 'webgpu' && stats.visibleEntries !== null)
+		problems.push('visible entries were counted, although the GPU culls');
 	const signal = tier === 'webgl2' ? 'fence' : 'queue';
 	if (stats.completionSignal !== signal)
 		problems.push(`completions came from a ${stats.completionSignal}, expected a ${signal}`);

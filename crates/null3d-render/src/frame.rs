@@ -112,6 +112,12 @@ pub trait FrameBuilder {
     /// Records the frame's draw list into the list of its parity. Returns true when the frame
     /// rebuilt the draw tables.
     fn record(&mut self, input: &FrameInput<'_>) -> Result<bool, RecordError>;
+    /// The entries of the index list that the frame draws, where the builder culls on the CPU: one
+    /// per visible object or instance row, or per visible cluster of static rows. `None` where the
+    /// GPU culls, as the CPU never learns the count there.
+    fn visible_entries(&self, _frame: u32) -> Option<u32> {
+        None
+    }
     /// Forgets every GPU object the draw lists created and every upload they made, so the next
     /// frame creates them all again and uploads the whole scene. The thread that draws asks for
     /// this after the browser took the GPU away and it made a new device.

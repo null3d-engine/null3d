@@ -70,6 +70,17 @@ export function writeRunnerFile(run: string, runner: string, name: string, value
 	writeFileSync(join(RUNS_DIR, run, runner, `${name}.json`), JSON.stringify(value, null, '\t'));
 }
 
+/** Adds facts that the runner page could not record to one of a runner's results, if it has one. */
+export function addToResult(
+	run: string,
+	runner: string,
+	id: string,
+	facts: Record<string, unknown>,
+): void {
+	const result = readResult(run, runner, id);
+	if (result) writeRunnerFile(run, runner, id, { ...result, ...facts });
+}
+
 /** When the dev server received a result, in milliseconds since 1970, or undefined without one. */
 export function receivedAt(
 	result: ItemResult | Record<string, unknown> | undefined,

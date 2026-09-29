@@ -55,6 +55,11 @@ export interface CoreGlue extends CoreErrors {
 	/** Finds the frame's visible objects on the job workers, where the path culls on the CPU. */
 	cullFrame(frame: number, width: number, height: number): number;
 	recordFrame(frame: number, width: number, height: number): number;
+	/**
+	 * The index list entries that a recorded frame draws, where the path culls on the CPU, or
+	 * `CORE_NOT_COUNTED` where the GPU culls.
+	 */
+	visibleEntries(frame: number): number;
 	/** True when the last recorded frame rebuilt its draw tables after a structure change. */
 	drawTablesRebuilt(): boolean;
 	resetGpu(): number;
@@ -111,6 +116,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'updateBatches',
 	'cullFrame',
 	'recordFrame',
+	'visibleEntries',
 	'drawTablesRebuilt',
 	'resetGpu',
 	'drawListAddress',

@@ -36,6 +36,8 @@ export interface BenchResult {
 		refreshHz?: number | null;
 		uploadBytes: { median: number };
 		drawCalls: { median: number };
+		/** Entries per frame in the list of visible objects; null where the GPU culls. */
+		visibleEntries?: { median: number } | null;
 		threads: Record<
 			string,
 			{ busyMs: { median: number }; phases: Record<string, { median: number }> }
@@ -65,6 +67,11 @@ export interface RunSummary {
 	phases?: Record<string, number>;
 	uploadBytes?: number;
 	drawCalls?: number;
+	/**
+	 * null3d on WebGL2 only, where the job workers cull: entries per frame in the list of visible
+	 * objects. Null where the GPU culls.
+	 */
+	visibleEntries?: number | null;
 	/** null3d only: frames per second finished by the GPU, and the GPU's delay. */
 	completedFps?: number | null;
 	gpuLatencyMs?: number | null;
@@ -106,6 +113,7 @@ export function summarizeRuns(results: readonly BenchResult[]): RunSummary {
 		summary.uploadBytes = median(stats.map((s) => s.uploadBytes.median));
 		summary.drawCalls = median(stats.map((s) => s.drawCalls.median));
 		const orNull = (values: number[]) => (values.length > 0 ? median(values) : null);
+		summary.visibleEntries = orNull(known(stats.map((s) => s.visibleEntries?.median)));
 		summary.completedFps = orNull(known(stats.map((s) => s.completedFps)));
 		summary.gpuLatencyMs = orNull(known(stats.map((s) => s.gpuLatencyMs?.median)));
 		summary.refreshHz = orNull(known(stats.map((s) => s.refreshHz)));
@@ -236,6 +244,15 @@ export interface SummaryRow {
 /** Milliseconds for a report: two decimals, or n/a. */
 export const ms = (value: number | null | undefined) => (value == null ? 'n/a' : value.toFixed(2));
 
+/**
+ * Bytes uploaded per visible entry: the median upload per frame over the median count of visible
+ * entries. On WebGL2 it is about 4, each entry's index, when only the camera moves. Null without a
+ * count.
+ */
+export function uploadPerVisibleEntry({ uploadBytes, visibleEntries }: RunSummary): number | null {
+	return uploadBytes !== undefined && visibleEntries ? uploadBytes / visibleEntries : null;
+}
+
 /** The summary of one scene's page of one kind in a run's rows. */
 const summaryOf = (rows: readonly SummaryRow[], scene: string, kind: string) =>
 	rows.find((r) => r.scene === scene && r.kind === kind)?.summary;
@@ -253,11 +270,15 @@ const busiestText = (summary: RunSummary) => {
 /** The run's summaries as a Markdown table. */
 export function summaryTable(rows: readonly SummaryRow[]): string {
 	const lines = [
-		'| Scene | Page | Runs | CPU ms per frame, median (lowest to highest run) | p95 | Busiest thread, ms | Own work, busiest thread | Scene update | All threads | GPU ms | Presented / finished fps | Frame interval p95 / p99 ms | GPU delay ms | Refresh Hz | Upload per frame | Draw calls |',
-		'| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+		'| Scene | Page | Runs | CPU ms per frame, median (lowest to highest run) | p95 | Busiest thread, ms | Own work, busiest thread | Scene update | All threads | GPU ms | Presented / finished fps | Frame interval p95 / p99 ms | GPU delay ms | Refresh Hz | Upload per frame | Visible entries | Upload per visible entry | Draw calls |',
+		'| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
 	];
 	for (const { scene, kind, summary: s } of rows) {
 		const upload = s.uploadBytes === undefined ? 'n/a' : `${(s.uploadBytes / 1e6).toFixed(2)} MB`;
+		const visible =
+			s.visibleEntries == null ? 'n/a' : Math.round(s.visibleEntries).toLocaleString('en-US');
+		const perEntry = uploadPerVisibleEntry(s);
+		const uploadPerEntry = perEntry === null ? 'n/a' : `${perEntry.toFixed(1)} bytes`;
 		const sceneCode = summaryOf(rows, scene, SCENE_CODE);
 		const own = kind === SCENE_CODE || !sceneCode ? null : ownWorkMs(s, sceneCode.cpuMs.median);
 		const fps = (value: number | null | undefined) => (value == null ? 'n/a' : value.toFixed(1));
@@ -265,7 +286,7 @@ export function summaryTable(rows: readonly SummaryRow[]): string {
 			s.presentedFps === undefined ? 'n/a' : `${fps(s.presentedFps)} / ${fps(s.completedFps)}`;
 		const pacing = `${ms(s.intervalP95Ms)} / ${ms(s.intervalP99Ms)}`;
 		lines.push(
-			`| ${scene} | ${kind} | ${s.runs} | ${cpuSpread(s)} | ${ms(s.cpuP95Ms)} | ${busiestText(s)} | ${ms(own)} | ${ms(s.updateMs)} | ${ms(s.allThreadsMs)} | ${ms(s.gpuMs)} | ${rates} | ${pacing} | ${ms(s.gpuLatencyMs)} | ${s.refreshHz ?? 'n/a'} | ${upload} | ${s.drawCalls ?? 'n/a'} |`,
+			`| ${scene} | ${kind} | ${s.runs} | ${cpuSpread(s)} | ${ms(s.cpuP95Ms)} | ${busiestText(s)} | ${ms(own)} | ${ms(s.updateMs)} | ${ms(s.allThreadsMs)} | ${ms(s.gpuMs)} | ${rates} | ${pacing} | ${ms(s.gpuLatencyMs)} | ${s.refreshHz ?? 'n/a'} | ${upload} | ${visible} | ${uploadPerEntry} | ${s.drawCalls ?? 'n/a'} |`,
 		);
 	}
 	return lines.join('\n');

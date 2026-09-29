@@ -8,6 +8,7 @@ interface SceneResult {
 	capabilities: { tier: string };
 	stats: {
 		drawCalls: { median: number };
+		visibleEntries: { median: number } | null;
 		uploadBytes: { count: number };
 		frames: number;
 		rebuilds: number;
@@ -26,6 +27,10 @@ function expectScene(result: SceneResult, tier: 'webgpu' | 'webgl2'): void {
 	// Four buckets draw: the red box, the red sphere, the unlit blue box, and the green floor batch.
 	// WebGPU draws them from one bundle; WebGL2 in multi-draw calls, or one draw each.
 	expect(result.stats.drawCalls.median).toBe(4);
+	// On WebGL2 the list of visible objects has the three meshes and one entry for the floor batch,
+	// whose 25 rows form one group once they stop changing. The GPU culls on WebGPU.
+	if (tier === 'webgl2') expect(result.stats.visibleEntries?.median).toBe(4);
+	else expect(result.stats.visibleEntries).toBeNull();
 	// The measurement can start before the first frame, which builds the draw tables. The scene is
 	// still, so no later frame rebuilds them.
 	expect(result.stats.rebuilds).toBeLessThanOrEqual(1);

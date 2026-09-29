@@ -24,9 +24,13 @@
 //                       GPU paths at each count instead of its usual pages
 //   --pages <list>      the bench plan's page kinds, such as null3d-webgl2,null3d-webgl2-low
 //   --scenes <list>     the bench plan's scenes: s1, s1-static, s2; the default is s1
+//   --shields on|off    the state of Brave's Shields for the dev server's site, which the runner
+//                       cannot read: it goes into each Brave result and the run's summary
 //   --android <list>    browsers on the Android phone: chrome, chrome-beta, brave, firefox, samsung
 //   --lan <list>        names of runner pages that wait on the local network, as device-browser,
 //                       such as ipad-safari; pages on one device take turns
+// Before a run on a phone or tablet, the runner prints a checklist of the device settings that
+// results depend on.
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
@@ -54,6 +58,7 @@ import {
 } from './lib/plans.ts';
 import { RUNS_DIR } from './lib/report-collector.ts';
 import {
+	addToResult,
 	type ItemResult,
 	type Runner,
 	readDevice,
@@ -94,6 +99,8 @@ export interface Options {
 	pages?: BenchPageKind[];
 	/** The bench plan's scenes, when given. */
 	scenes?: ParityScene[];
+	/** The state of Brave's Shields for the dev server's site, when given. */
+	shields?: ShieldsState;
 	/** macOS app names, such as Safari. */
 	mac: string[];
 	android: string[];
@@ -101,7 +108,11 @@ export interface Options {
 }
 
 const USAGE =
-	'usage: bun tests/real-browsers.ts [--plan <name>] [--allow-no-webgpu] [--allow-no-webgl2] [--n <count>] [--runs <count>] [--jobs <counts>] [--pages <kinds>] [--scenes <scenes>] [--android <browsers>] [--lan <runners>] [<macOS app>...]';
+	'usage: bun tests/real-browsers.ts [--plan <name>] [--allow-no-webgpu] [--allow-no-webgl2] [--n <count>] [--runs <count>] [--jobs <counts>] [--pages <kinds>] [--scenes <scenes>] [--shields on|off] [--android <browsers>] [--lan <runners>] [<macOS app>...]';
+
+/** The states of Brave's Shields that --shields takes. */
+const SHIELDS_STATES = ['on', 'off'] as const;
+export type ShieldsState = (typeof SHIELDS_STATES)[number];
 
 /** The plans the runner knows: the fixed plans, and the phone-scale search. */
 const PLAN_NAMES = [...Object.keys(PLANS), SCALE_PLAN];
@@ -115,6 +126,15 @@ export function parseArgs(args: readonly string[]): Options {
 		if (values.length === 0 || unknown.length > 0)
 			throw new Error(`${flag}: use some of ${allowed.join(', ')}\n${USAGE}`);
 		return values as T[];
+	};
+	const oneOf = <T extends string>(
+		flag: string,
+		value: string | undefined,
+		allowed: readonly T[],
+	) => {
+		if (!(allowed as readonly string[]).includes(value ?? ''))
+			throw new Error(`${flag}: use ${allowed.join(' or ')}\n${USAGE}`);
+		return value as T;
 	};
 	const wholeNumber = (flag: string, value: string | undefined) => {
 		const n = Number(value);
@@ -131,6 +151,7 @@ export function parseArgs(args: readonly string[]): Options {
 		else if (arg === '--jobs') options.jobs = readJobCounts(args[++i]);
 		else if (arg === '--pages') options.pages = known(arg, list(args[++i]), BENCH_PAGE_KINDS);
 		else if (arg === '--scenes') options.scenes = known(arg, list(args[++i]), PARITY_SCENES);
+		else if (arg === '--shields') options.shields = oneOf(arg, args[++i], SHIELDS_STATES);
 		else if (arg === '--plan') options.plan = args[++i] ?? '';
 		else if (arg === '--android') options.android = list(args[++i]);
 		else if (arg === '--lan') options.lan = list(args[++i]);
@@ -152,6 +173,69 @@ export function parseArgs(args: readonly string[]): Options {
 			`--jobs: job workers belong to null3D pages only; leave out ${other.join(', ')}`,
 		);
 	return options;
+}
+
+/** True when a runner's name says it runs Brave, such as sm-s926b-brave or ipad-brave. */
+const namesBrave = (runner: string) => runner.includes('brave');
+
+/**
+ * What to check on each phone and tablet before a run, as lines to print: the settings that change
+ * results, which the runner cannot read. Brave's Shields are one of them, and --shields records
+ * their state.
+ */
+export function deviceChecklist(
+	runners: readonly string[],
+	shields: ShieldsState | undefined,
+): string[] {
+	const lines = [
+		'Before the run, check each phone and tablet:',
+		'- The display runs at a fixed refresh rate, such as 60 Hz. On a Galaxy phone, set Motion smoothness to Standard. On an iPad, turn on Limit Frame Rate.',
+		'- Low Power Mode and battery saver are off.',
+		'- The screen brightness is fixed, with automatic brightness off.',
+		'- The device has rested and is cool. Nobody touches it during the run.',
+	];
+	if (shields)
+		lines.push(`- Brave's Shields are ${shields} for this site, as --shields ${shields} records.`);
+	else if (runners.some(namesBrave))
+		lines.push(
+			"- Brave's Shields are in the state you want to test. Add --shields on or --shields off to record it.",
+		);
+	return lines;
+}
+
+/**
+ * The Shields state to record with a runner's results: the --shields state on Brave, or null when
+ * the run gave none, and undefined in other browsers. A runner is Brave by its name, or when its
+ * runner page found Brave's own object on `navigator`.
+ */
+export function braveShieldsOf(
+	runner: string,
+	device: Record<string, unknown> | undefined,
+	shields: ShieldsState | undefined,
+): ShieldsState | null | undefined {
+	if (!namesBrave(runner) && device?.brave !== true) return undefined;
+	return shields ?? null;
+}
+
+/** Brave's Shields state, as the run's summary gives it. */
+export const shieldsText = (state: ShieldsState | null) =>
+	`Brave Shields ${state ?? 'not recorded'}`;
+
+/** One runner's outcome in the run's summary. */
+export interface RunnerSummary {
+	pass: number;
+	skip: number;
+	fail: number;
+	/** Brave only: the state of its Shields, or null when the run did not record it. */
+	braveShields?: ShieldsState | null;
+}
+
+/** A runner's line in the run's summary: its counts, and on Brave the state of its Shields. */
+export function summaryLine(runner: string, summary: RunnerSummary): string {
+	const counts = `${runner}: ${summary.pass} passed, ${summary.skip} skipped, ${summary.fail} failed`;
+	return summary.braveShields === undefined
+		? counts
+		: `${counts}; ${shieldsText(summary.braveShields)}`;
 }
 
 /** How a runner starts: an app on this Mac, a browser on the phone, or a page that waits on the network. */
@@ -322,16 +406,23 @@ async function runPlan(
 	}
 
 	let failures = 0;
-	const summary: Record<string, { pass: number; skip: number; fail: number }> = {};
+	const summary: Record<string, RunnerSummary> = {};
 	// For a device without both of three.js's renderers, the parity check falls back to these.
 	const storedPath = join(REPO_ROOT, STORED_BASELINES_FILE);
 	const storedBaselines: StoredBaselines = existsSync(storedPath)
 		? parseStoredBaselines(readFileSync(storedPath, 'utf8'))
 		: {};
 	for (const { name } of runners) {
-		const counts = { pass: 0, skip: 0, fail: 0 };
+		const device = readDevice(run, name);
+		const braveShields = braveShieldsOf(name, device, options.shields);
+		const counts: RunnerSummary = {
+			pass: 0,
+			skip: 0,
+			fail: 0,
+			...(braveShields !== undefined && { braveShields }),
+		};
 		summary[name] = counts;
-		if (!readDevice(run, name)) {
+		if (!device) {
 			counts.fail++;
 			failures++;
 			console.log(`FAIL  ${name}: the runner page never started`);
@@ -344,7 +435,17 @@ async function runPlan(
 		};
 		for (const item of plan.items) {
 			const result = readResult(run, name, item.id);
-			const verdict = result ? judge(item.check, result, options.missing, context) : [NO_RESULT];
+			const notes: string[] = [];
+			const note = (text: string) => notes.push(text);
+			const verdict = result
+				? judge(item.check, result, options.missing, { ...context, note })
+				: [NO_RESULT];
+			// Facts the runner page could not record go into the result itself.
+			const facts = {
+				...(braveShields !== undefined && { braveShields }),
+				...(notes.length > 0 && { notes }),
+			};
+			if (Object.keys(facts).length > 0) addToResult(run, name, item.id, facts);
 			if (verdict === 'skip') {
 				counts.skip++;
 				console.log(`skip  ${name}: ${item.id}, no WebGPU`);
@@ -357,6 +458,7 @@ async function runPlan(
 				counts.fail++;
 				console.log(`FAIL  ${name}: ${item.id}: ${verdict.join('; ')}`);
 			}
+			for (const text of notes) console.log(`      note: ${text}`);
 			const heat = heatByRunner.get(name)?.get(item.id);
 			if (heat && item.check.kind === 'bench') console.log(`      heat: ${heatText(heat)}`);
 		}
@@ -370,8 +472,7 @@ async function runPlan(
 		const heat = wholeHeatText(heatReadings.get(name) ?? []);
 		if (heat) console.log(`${name}, heat through the run: ${heat}`);
 	}
-	for (const [name, counts] of Object.entries(summary))
-		console.log(`${name}: ${counts.pass} passed, ${counts.skip} skipped, ${counts.fail} failed`);
+	for (const [name, counts] of Object.entries(summary)) console.log(summaryLine(name, counts));
 	console.log(`results: ${join(RUNS_DIR, run)}`);
 	return failures;
 }
@@ -422,6 +523,7 @@ async function runScale(
 		const log = launches.get(name)?.kind === 'android' ? new HeatLog() : undefined;
 		const steps: ScaleStep[] = [];
 		const answers: { renderer: string; search: ScaleSearch }[] = [];
+		let braveShields: ShieldsState | null | undefined;
 		log?.start();
 		try {
 			for (const [page, renderer] of SCALE_RENDERERS) {
@@ -465,10 +567,18 @@ async function runScale(
 		} finally {
 			setTurns(base, []);
 			const samples = log ? await log.stop() : [];
-			if (log)
-				for (const step of steps)
-					step.heat = addHeat(step.run, name, [step.id], samples).get(step.id);
-			writeRunnerFile(base, name, 'scale', { answers, steps, heat: samples });
+			const first = steps[0];
+			braveShields = braveShieldsOf(name, first && readDevice(first.run, name), options.shields);
+			for (const step of steps) {
+				if (log) step.heat = addHeat(step.run, name, [step.id], samples).get(step.id);
+				if (braveShields !== undefined) addToResult(step.run, name, step.id, { braveShields });
+			}
+			writeRunnerFile(base, name, 'scale', {
+				answers,
+				steps,
+				heat: samples,
+				...(braveShields !== undefined && { braveShields }),
+			});
 		}
 		const best = answers
 			.filter(({ search }) => search.held > 0)
@@ -477,6 +587,7 @@ async function runScale(
 			console.log(`${name}: ${answerText(renderer, search)}.`);
 		const heat = wholeHeatText(log?.samples ?? []);
 		if (heat) console.log(`${name}, heat through the search: ${heat}`);
+		if (braveShields !== undefined) console.log(`${name}: ${shieldsText(braveShields)}`);
 		if (best) {
 			console.log(
 				`${name}: phone scale ${objects(best.search.held)}, with three.js's ${best.renderer} renderer. Run the benchmark at it with --plan bench --n ${best.search.held}.`,
@@ -497,6 +608,10 @@ async function main(): Promise<void> {
 	const runners = runnersOf(options);
 	if (runners.length === 0) throw new Error(USAGE);
 	const launches = new Map(runners.map((runner) => [runner.name, runner.launch]));
+	if (options.android.length > 0 || options.lan.length > 0) {
+		const names = runners.map((runner) => runner.name);
+		console.log(`${deviceChecklist(names, options.shields).join('\n')}\n`);
+	}
 
 	const local = await startServer();
 	const lan = options.lan.length > 0 ? await startServer(true) : undefined;

@@ -1,6 +1,7 @@
 // Turns the frame records of one measurement into its metrics: CPU time per frame by thread and
 // phase, GPU time, frame intervals, uploads and draw calls, memory, load time and download size.
 
+import { CORE_NOT_COUNTED } from '../generated/core';
 import {
 	COUNTER_NAMES,
 	Counter,
@@ -69,6 +70,13 @@ export interface FrameSummary {
 	uploadBytes: Percentiles;
 	/** Draw calls per frame. */
 	drawCalls: Percentiles;
+	/**
+	 * Entries per frame in the list of visible objects on WebGL2, where the job workers cull. Each
+	 * visible object or instance row is one entry. So is each visible group of 64 rows in a static
+	 * batch that has stopped changing. The list uploads 4 bytes per entry in each frame that changes
+	 * it. Null on WebGPU, where the GPU culls and the CPU never learns the count.
+	 */
+	visibleEntries: Percentiles | null;
 	/**
 	 * Frames whose structure change rebuilt the draw tables: objects created or destroyed, meshes or
 	 * materials changed, or batches created or destroyed. Steady play has none; showing or hiding
@@ -191,7 +199,8 @@ export function summarizeFrames(
 	const ring = (role: number) => records[role] ?? NO_RECORDS;
 	const indexes = records.map((r) => new Map(r.frames.map((frame, i) => [frame, i])));
 	const drawn = indexes[Role.Render] ?? new Map<number, number>();
-	const frames = ring(Role.Sketch).frames.filter((frame) => drawn.has(frame));
+	const sketch = ring(Role.Sketch);
+	const frames = sketch.frames.filter((frame) => drawn.has(frame));
 
 	const slowest = new Float64Array(frames.length);
 	const total = new Float64Array(frames.length);
@@ -221,6 +230,9 @@ export function summarizeFrames(
 	}
 
 	const render = ring(Role.Render);
+	const visible = (sketch.counters[Counter.VisibleEntries] ?? []).filter(
+		(entries) => entries !== CORE_NOT_COUNTED,
+	);
 	const gpu = ring(Role.Gpu).busy;
 	const completion = ring(Role.Completion);
 	const intervals = render.intervals.filter((ms) => ms > 0);
@@ -238,7 +250,8 @@ export function summarizeFrames(
 		gpuLatencyMs: completion.busy.length > 0 ? percentiles(completion.busy) : null,
 		uploadBytes: percentiles(render.counters[Counter.UploadBytes] ?? []),
 		drawCalls: percentiles(render.counters[Counter.DrawCalls] ?? []),
-		rebuilds: (ring(Role.Sketch).counters[Counter.Rebuilds] ?? []).filter((n) => n > 0).length,
+		visibleEntries: visible.length > 0 ? percentiles(visible) : null,
+		rebuilds: (sketch.counters[Counter.Rebuilds] ?? []).filter((n) => n > 0).length,
 		pipelines: (render.counters[Counter.Pipelines] ?? []).reduce((sum, n) => sum + n, 0),
 	};
 }

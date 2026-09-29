@@ -42,6 +42,8 @@ fn the_first_frame_creates_everything_and_a_valid_frame_replays() {
     assert_eq!(matrix_writes[0][3], 6 * MATRIX_BYTES);
     assert_eq!(matrix_writes[1][1], (SCENE_CAPACITY + 1) * MATRIX_BYTES);
     assert_eq!(matrix_writes[1][3], BATCH_ROWS * MATRIX_BYTES);
+    // The GPU culls, so the CPU never learns how many entries are visible.
+    assert_eq!(world.renderer.visible_entries(world.frame), None);
 }
 
 #[test]

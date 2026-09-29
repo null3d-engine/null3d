@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'bun:test';
+import { CORE_NOT_COUNTED } from '../generated/core';
 import { summarizeFrames, threadRoles, timerStep } from '../page/frame-stats';
 import { Counter, createMetricsBuffer, FrameRecorder, MetricsReader, Phase, Role } from './metrics';
 import { ratePerSecond } from './stats';
@@ -118,7 +119,12 @@ describe('threadRoles', () => {
 });
 
 describe('summarizeFrames', () => {
-	function run(latency: string, renderThread: string) {
+	/** Frames with these latency mode and drawing thread; the sketch counts `visible(frame)` entries. */
+	function run(
+		latency: string,
+		renderThread: string,
+		visible: (frame: number) => number = (frame) => 100 * frame,
+	) {
 		const buffer = createMetricsBuffer(true, 1);
 		const reader = new MetricsReader(buffer);
 		reader.begin();
@@ -137,6 +143,7 @@ describe('summarizeFrames', () => {
 			sketch.addPhase(Phase.Update, busy);
 			// Only the first frame rebuilt its draw tables.
 			sketch.count(Counter.Rebuilds, frame === 1 ? 1 : 0);
+			sketch.count(Counter.VisibleEntries, visible(frame));
 			sketch.commit(busy);
 			record(job, frame, 0.5);
 		}
@@ -176,6 +183,12 @@ describe('summarizeFrames', () => {
 		expect(summary.completedFps).toBeCloseTo(31.25, 6);
 		expect(summary.gpuLatencyMs).toMatchObject({ count: 3, median: 4 });
 		expect(summary.rebuilds).toBe(1);
+		// Every frame the sketch computed counts its entries: 100, 200, 300 and 400.
+		expect(summary.visibleEntries).toMatchObject({ count: 4, median: 250 });
+	});
+
+	it('reports no visible entries where the GPU culls', () => {
+		expect(run('pipelined', 'render-worker', () => CORE_NOT_COUNTED).visibleEntries).toBeNull();
 	});
 
 	it('adds up roles that share a thread', () => {

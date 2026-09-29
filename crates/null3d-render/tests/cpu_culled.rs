@@ -9,6 +9,7 @@ use null3d_core::handle::Handle;
 use null3d_core::scene::Command;
 use null3d_gpu::drawlist::Op;
 use null3d_gpu::mock::MockBackend;
+use null3d_render::camera::Perspective;
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::frame::{FrameBuilder, RecordError};
 
@@ -514,4 +515,40 @@ fn a_changed_static_batch_is_culled_by_row_until_it_is_at_rest_again() {
     let (rows, in_clusters) = bucket_counts(&world)[0];
     assert_eq!(rows, 1);
     assert!((1..=2).contains(&in_clusters), "{in_clusters} clusters");
+}
+
+#[test]
+fn a_frame_counts_the_index_list_entries_it_draws() {
+    let mut world = world(true);
+    let mut mock = MockBackend::default();
+    world.record(true);
+    mock.replay(world.renderer.list(1).words()).unwrap();
+    // Three shown objects and every row of the dynamic batch; the hidden ball is not listed.
+    assert_eq!(
+        world.renderer.visible_entries(world.frame),
+        Some(BATCH_ROWS + 3)
+    );
+
+    // A static batch at rest adds one entry per cluster in view, not one per row.
+    add_static_batch(&mut world, 2000);
+    step(&mut world, &mut mock, true);
+    step(&mut world, &mut mock, false);
+    let (_, clusters) = bucket_counts(&world)[0];
+    assert!(clusters > 0);
+    assert_eq!(
+        world.renderer.visible_entries(world.frame),
+        Some(BATCH_ROWS + 3 + clusters)
+    );
+
+    // Without a camera the frame draws nothing, whatever an older frame culled.
+    world.renderer.settings_mut().set_camera(
+        Handle::NONE,
+        Perspective {
+            fov_degrees: 60.0,
+            near: 0.1,
+            far: 100.0,
+        },
+    );
+    step(&mut world, &mut mock, false);
+    assert_eq!(world.renderer.visible_entries(world.frame), Some(0));
 }

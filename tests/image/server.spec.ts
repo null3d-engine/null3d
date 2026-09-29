@@ -1,4 +1,4 @@
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import { REPO_ROOT } from '../lib/server.ts';
@@ -8,7 +8,12 @@ test('the dev server refuses build output and git files, and serves the pages', 
 }) => {
 	mkdirSync(join(REPO_ROOT, 'target'), { recursive: true });
 	writeFileSync(join(REPO_ROOT, 'target/deny-check.txt'), 'not for the network');
-	for (const path of ['/target/deny-check.txt', '/.git/config', '/.git/HEAD?raw']) {
+	// A checkout keeps git's files in a .git folder. A git worktree has a .git file instead, which
+	// names the folder of the main checkout.
+	const gitFiles = statSync(join(REPO_ROOT, '.git')).isDirectory()
+		? ['/.git/config', '/.git/HEAD?raw']
+		: ['/.git', '/.git?raw'];
+	for (const path of ['/target/deny-check.txt', ...gitFiles]) {
 		expect((await request.get(path)).status(), path).toBe(403);
 	}
 	expect((await request.get('/tests/pages/index.html')).status()).toBe(200);

@@ -66,6 +66,11 @@ export enum Counter {
 	Rebuilds = 3,
 	/** Render and compute pipelines the GPU built for the frame. */
 	Pipelines = 4,
+	/**
+	 * The frame's index list entries, on the sketch thread's record, or `CORE_NOT_COUNTED` where the
+	 * GPU culls.
+	 */
+	VisibleEntries = 5,
 }
 
 export const COUNTER_NAMES = [
@@ -74,6 +79,7 @@ export const COUNTER_NAMES = [
 	'dispatches',
 	'rebuilds',
 	'pipelines',
+	'visibleEntries',
 ] as const;
 
 export type CounterName = (typeof COUNTER_NAMES)[number];

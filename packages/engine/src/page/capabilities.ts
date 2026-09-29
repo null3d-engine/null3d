@@ -67,6 +67,12 @@ const WEBGL2_EXTENSIONS = [
 ] as const;
 
 /**
+ * The color that the float render target test clears to. One channel is above 1, which high
+ * dynamic range color needs, and every value is exact as a 16-bit float.
+ */
+const FLOAT_TARGET_COLOR = [2, 0.5, 0.25, 1] as const;
+
+/**
  * What the browser's WebGPU offers, in `CapabilityReport.webgpu`.
  *
  * @category api/engine
@@ -114,6 +120,17 @@ export interface WebGL2Report {
 	sharedMemoryUploads: {
 		bufferSubData: boolean;
 		texSubImage2D: boolean;
+	} | null;
+	/**
+	 * Whether the device renders into float textures, which high dynamic range color needs. The
+	 * engine tests a 16-bit and a 32-bit float RGBA texture. `complete` says whether a framebuffer
+	 * with the texture is complete. `readsBack` says whether a clear to a known color, with a value
+	 * above 1, reads back as floats. WebGL2 renders into both formats with `EXT_color_buffer_float`,
+	 * and into the 16-bit one with `EXT_color_buffer_half_float`. Null without WebGL2.
+	 */
+	floatRenderTargets: {
+		rgba16f: { complete: boolean; readsBack: boolean };
+		rgba32f: { complete: boolean; readsBack: boolean };
 	} | null;
 	/** Reported for the record only; the engine never branches on it. */
 	renderer: string | null;
@@ -227,6 +244,53 @@ function probeSharedUploads(gl: WebGL2RenderingContext): WebGL2Report['sharedMem
 	return { bufferSubData, texSubImage2D };
 }
 
+/** Reads the errors that earlier calls left, so they do not reach later checks. Each read clears one. */
+function clearErrors(gl: WebGL2RenderingContext): void {
+	for (let k = 0; k < 8 && gl.getError() !== gl.NO_ERROR; k++) {
+		// Read until clear.
+	}
+}
+
+type FloatTargetTest = NonNullable<WebGL2Report['floatRenderTargets']>['rgba16f'];
+
+/**
+ * Tests a 1 x 1 texture of a float format as a render target: whether the framebuffer is complete,
+ * and whether a clear to a known color reads back as floats. The test runs at every engine start.
+ * Each readback and each error check waits for the GPU, so it reads one pixel and checks for errors
+ * only after a failure. WebGL turns on the float color-buffer extensions only when they are asked
+ * for by name, so this runs after those requests.
+ */
+export function probeFloatTarget(gl: WebGL2RenderingContext, format: number): FloatTargetTest {
+	const texture = gl.createTexture();
+	const framebuffer = gl.createFramebuffer();
+	let complete = false;
+	let readsBack = false;
+	try {
+		gl.bindTexture(gl.TEXTURE_2D, texture);
+		gl.texStorage2D(gl.TEXTURE_2D, 1, format, 1, 1);
+		gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
+		gl.framebufferTexture2D(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.TEXTURE_2D, texture, 0);
+		complete = gl.checkFramebufferStatus(gl.FRAMEBUFFER) === gl.FRAMEBUFFER_COMPLETE;
+		if (complete) {
+			gl.clearColor(...FLOAT_TARGET_COLOR);
+			gl.clear(gl.COLOR_BUFFER_BIT);
+			// A refused read leaves the pixel at zero, so the values alone show whether it worked.
+			const pixel = new Float32Array(4);
+			gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.FLOAT, pixel);
+			readsBack = FLOAT_TARGET_COLOR.every((value, channel) => pixel[channel] === value);
+		}
+	} catch {
+		// A browser that throws here cannot render into the format.
+	} finally {
+		gl.bindFramebuffer(gl.FRAMEBUFFER, null);
+		gl.deleteFramebuffer(framebuffer);
+		gl.deleteTexture(texture);
+		// Only a test that failed can leave errors.
+		if (!readsBack) clearErrors(gl);
+	}
+	return { complete, readsBack };
+}
+
 function probeWebGL2(powerPreference?: PowerPreference): WebGL2Report {
 	const empty: WebGL2Report = {
 		available: false,
@@ -236,6 +300,7 @@ function probeWebGL2(powerPreference?: PowerPreference): WebGL2Report {
 		maxTextureSize: null,
 		maxUniformBlockSize: null,
 		sharedMemoryUploads: null,
+		floatRenderTargets: null,
 		renderer: null,
 	};
 	try {
@@ -256,6 +321,10 @@ function probeWebGL2(powerPreference?: PowerPreference): WebGL2Report {
 			maxTextureSize: gl.getParameter(gl.MAX_TEXTURE_SIZE) as number,
 			maxUniformBlockSize: gl.getParameter(gl.MAX_UNIFORM_BLOCK_SIZE) as number,
 			sharedMemoryUploads: probeSharedUploads(gl),
+			floatRenderTargets: {
+				rgba16f: probeFloatTarget(gl, gl.RGBA16F),
+				rgba32f: probeFloatTarget(gl, gl.RGBA32F),
+			},
 			renderer: debug ? String(gl.getParameter(debug.UNMASKED_RENDERER_WEBGL)) : null,
 		};
 		gl.getExtension('WEBGL_lose_context')?.loseContext();

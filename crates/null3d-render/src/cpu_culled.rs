@@ -1242,6 +1242,17 @@ impl FrameBuilder for CpuCulledRenderer {
         result
     }
 
+    fn visible_entries(&self, frame: u32) -> Option<u32> {
+        // A frame that did not cull, or has no camera, draws nothing: its parity's culling output
+        // is still an older frame's.
+        let drew = self.culled == frame && self.uniform.is_some();
+        Some(if drew {
+            self.culled(frame).len() as u32
+        } else {
+            0
+        })
+    }
+
     fn reset_gpu(&mut self) {
         self.created = false;
         self.canvas = (0, 0);

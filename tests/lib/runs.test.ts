@@ -2,7 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { parseArgs } from '../real-browsers.ts';
+import { braveShieldsOf, deviceChecklist, parseArgs, summaryLine } from '../real-browsers.ts';
 import {
 	benchPlan,
 	benchSummary,
@@ -125,6 +125,72 @@ describe('the checks plan', () => {
 		expect(judge(shaders.check, pageMissing, noWebGL2)).toBe('skip');
 		expect(judge(shaders.check, pageMissing, NO_WEBGPU)).toEqual([pageMissing.error]);
 		expect(judge(webgpu.check, pageMissing, noWebGL2)).toEqual([pageMissing.error]);
+	});
+
+	it('loads the capabilities page again last, to compare it with the first load', () => {
+		expect(items[0]?.id).toBe('capabilities');
+		expect(items.at(-1)).toEqual({
+			id: 'capabilities-reload',
+			path: '/tests/pages/capabilities.html',
+			timeoutSeconds: 30,
+			check: { kind: 'capabilities-reload', first: 'capabilities' },
+		});
+	});
+
+	describe('the second load of the capabilities page', () => {
+		const reload = items.at(-1);
+		if (!reload) throw new Error('the plan has no items');
+		/** A capabilities page's result with these answers by name and this supported list. */
+		const loaded = (extensions: Record<string, boolean>, listed: string[]): ItemResult => ({
+			ok: true,
+			report: { webgl2: { extensions, supportedExtensions: listed } },
+		});
+		const answers = { WEBGL_multi_draw: true, EXT_color_buffer_float: true, OVR_multiview2: false };
+		const listed = ['EXT_color_buffer_float', 'EXT_float_blend', 'WEBGL_multi_draw'];
+		const first = loaded(answers, listed);
+		/** Judges a second load against a first load, and collects what judging noted. */
+		const compare = (second: ItemResult, firstLoad: ItemResult | null = first) => {
+			const notes: string[] = [];
+			const verdict = judge(reload.check, second, NONE_MISSING, {
+				resultOf: (id) => (id === 'capabilities' ? (firstLoad ?? undefined) : undefined),
+				imageDir: tmpdir(),
+				note: (text) => notes.push(text),
+			});
+			return { verdict, notes };
+		};
+
+		it('passes the same answers by name, and only notes a supported list in another order', () => {
+			expect(compare(first)).toEqual({
+				verdict: [],
+				notes: ['the supported extension list came in the same order in both loads'],
+			});
+			// Brave shuffles the list.
+			expect(compare(loaded(answers, [...listed].reverse()))).toEqual({
+				verdict: [],
+				notes: ['the supported extension list came in another order in the second load'],
+			});
+			expect(compare(loaded(answers, listed.slice(1))).notes).toEqual([
+				'the supported extension list named other extensions in the second load',
+			]);
+		});
+
+		it('fails an extension whose answer changed between the loads', () => {
+			const { WEBGL_multi_draw: _, ...fewer } = answers;
+			expect(compare(loaded({ ...fewer, OVR_multiview2: true }, listed)).verdict).toEqual([
+				'WEBGL_multi_draw was present in the first load and not asked for in the second',
+				'OVR_multiview2 was absent in the first load and present in the second',
+			]);
+		});
+
+		it('fails when the first load has no report to compare with', () => {
+			expect(compare(first, null).verdict).toEqual(['no result from capabilities to compare with']);
+			expect(compare(first, { ok: false, error: 'no result within 30 s' }).verdict).toEqual([
+				'capabilities has no report to compare with: no result within 30 s',
+			]);
+			expect(judge(reload.check, first, NONE_MISSING)).toEqual([
+				'no result from capabilities to compare with',
+			]);
+		});
 	});
 
 	it('judges isolation from the page result', () => {
@@ -545,5 +611,50 @@ describe('parseArgs', () => {
 			parseArgs(['--plan', 'bench', '--jobs', '2', '--pages', 'null3d-webgl2,threejs-webgl']),
 		).toThrow('leave out threejs-webgl');
 		expect(() => parseArgs(['--fast'])).toThrow('unknown option --fast');
+	});
+});
+
+describe('the device protocol', () => {
+	it("takes the state of Brave's Shields", () => {
+		expect(parseArgs(['--shields', 'off', '--android', 'brave']).shields).toBe('off');
+		expect(parseArgs(['Safari']).shields).toBeUndefined();
+		expect(() => parseArgs(['--shields', 'default'])).toThrow('--shields: use on or off');
+		expect(() => parseArgs(['--shields'])).toThrow('--shields: use on or off');
+	});
+
+	it("lists the device settings to check before a run, and Brave's Shields where Brave runs", () => {
+		const phone = ['sm-s926b-chrome', 'sm-s926b-brave'];
+		const lines = deviceChecklist(phone, 'on');
+		expect(lines[1]).toStartWith('- The display runs at a fixed refresh rate');
+		expect(lines.slice(2, -1)).toEqual([
+			'- Low Power Mode and battery saver are off.',
+			'- The screen brightness is fixed, with automatic brightness off.',
+			'- The device has rested and is cool. Nobody touches it during the run.',
+		]);
+		expect(lines.at(-1)).toBe("- Brave's Shields are on for this site, as --shields on records.");
+		expect(deviceChecklist(phone, undefined).at(-1)).toBe(
+			"- Brave's Shields are in the state you want to test. Add --shields on or --shields off to record it.",
+		);
+		expect(deviceChecklist(['ipad-safari'], undefined)).toEqual(lines.slice(0, -1));
+	});
+
+	it('records the Shields state for Brave only, known by its name or by its runner page', () => {
+		expect(braveShieldsOf('sm-s926b-brave', undefined, 'on')).toBe('on');
+		expect(braveShieldsOf('ipad-browser', { brave: true }, 'off')).toBe('off');
+		expect(braveShieldsOf('mac-brave-browser', { brave: true }, undefined)).toBeNull();
+		expect(braveShieldsOf('sm-s926b-chrome', { brave: false }, 'on')).toBeUndefined();
+	});
+
+	it("shows Brave's Shields in the summary line of a Brave runner", () => {
+		const counts = { pass: 16, skip: 0, fail: 1 };
+		expect(summaryLine('sm-s926b-chrome', counts)).toBe(
+			'sm-s926b-chrome: 16 passed, 0 skipped, 1 failed',
+		);
+		expect(summaryLine('sm-s926b-brave', { ...counts, braveShields: 'off' })).toBe(
+			'sm-s926b-brave: 16 passed, 0 skipped, 1 failed; Brave Shields off',
+		);
+		expect(summaryLine('ipad-brave', { ...counts, braveShields: null })).toBe(
+			'ipad-brave: 16 passed, 0 skipped, 1 failed; Brave Shields not recorded',
+		);
 	});
 });

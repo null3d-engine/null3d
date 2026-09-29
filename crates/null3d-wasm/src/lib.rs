@@ -423,6 +423,17 @@ pub fn record_frame(frame: u32, width: u32, height: u32) -> u32 {
     })
 }
 
+/// The index list entries that a recorded frame draws, where the frame builder culls on the CPU,
+/// or `NOT_COUNTED` where the GPU culls.
+#[wasm_bindgen(js_name = visibleEntries)]
+pub fn visible_entries(frame: u32) -> u32 {
+    value_with_engine(|e| {
+        Ok(e.renderer
+            .visible_entries(frame)
+            .unwrap_or(constants::NOT_COUNTED))
+    })
+}
+
 /// True when the last recorded frame rebuilt its draw tables after a structure change.
 #[wasm_bindgen(js_name = drawTablesRebuilt)]
 pub fn draw_tables_rebuilt() -> bool {

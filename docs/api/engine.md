@@ -197,6 +197,7 @@ What the browser's WebGL2 offers, in `CapabilityReport.webgl2`.
 | `maxTextureSize: number \| null` | The largest texture width and height in pixels, or null without WebGL2. |
 | `maxUniformBlockSize: number \| null` | The largest uniform block in bytes, or null without WebGL2. |
 | `sharedMemoryUploads: { bufferSubData: boolean; texSubImage2D: boolean; } \| null` | Whether WebGL accepts views on shared memory for buffer and texture uploads. Null without shared memory. |
+| `floatRenderTargets: { rgba16f: { complete: boolean; readsBack: boolean; }; rgba32f: { complete: boolean; readsBack: boolean; }; } \| null` | Whether the device renders into float textures, which high dynamic range color needs. The engine tests a 16-bit and a 32-bit float RGBA texture. `complete` says whether a framebuffer with the texture is complete. `readsBack` says whether a clear to a known color, with a value above 1, reads back as floats. WebGL2 renders into both formats with `EXT_color_buffer_float`, and into the 16-bit one with `EXT_color_buffer_half_float`. Null without WebGL2. |
 | `renderer: string \| null` | Reported for the record only; the engine never branches on it. |
 | `error?: string` | Why the probe failed, when it did. |
 

@@ -47,6 +47,7 @@ export type Tier = 'webgpu' | 'webgl2';
 
 export type Check =
 	| { kind: 'capabilities' }
+	| { kind: 'capabilities-reload'; first: string }
 	| { kind: 'isolation' }
 	| { kind: 'clear'; tier: Tier }
 	| { kind: 'shaders' }
@@ -65,6 +66,8 @@ export interface JudgeContext {
 	imageDir: string;
 	/** Baselines measured on a device that draws with both of three.js's renderers. */
 	storedBaselines?: StoredBaselines;
+	/** Records a finding that neither passes nor fails the result, such as a changed list order. */
+	note?(text: string): void;
 }
 
 const TEST_PAGES = '/tests/pages/';
@@ -77,14 +80,31 @@ const slug = (text: string) => text.toLowerCase().replace(/[^a-z0-9]+/g, '-');
 /** The result text of an item that the runner page never reached. */
 export const NO_RESULT = 'no result; the runner stopped before this page';
 
-/** The runner page's item for the engine test page with these switches, measured for 2 seconds. */
-function engineItem(id: string, switches: readonly string[], check: Check): PlanItem<Check> {
+/** The runner page's item for a test page with these switches, of which empty ones are left out. */
+function pageItem(
+	id: string,
+	page: string,
+	check: Check,
+	{
+		switches = [],
+		timeoutSeconds = 30,
+	}: { switches?: readonly string[]; timeoutSeconds?: number } = {},
+): PlanItem<Check> {
+	const query = switches.filter(Boolean).join('&');
 	return {
 		id,
-		path: `${TEST_PAGES}engine.html?${[...switches, 'seconds=2'].filter(Boolean).join('&')}`,
-		timeoutSeconds: 45,
+		path: `${TEST_PAGES}${page}.html${query ? `?${query}` : ''}`,
+		timeoutSeconds,
 		check,
 	};
+}
+
+/** The runner page's item for the engine test page with these switches, measured for 2 seconds. */
+function engineItem(id: string, switches: readonly string[], check: Check): PlanItem<Check> {
+	return pageItem(id, 'engine', check, {
+		switches: [...switches, 'seconds=2'],
+		timeoutSeconds: 45,
+	});
 }
 
 /** Switches of a timed run of a benchmark page, each left out when undefined. */
@@ -119,39 +139,23 @@ export function benchItem(
 	};
 }
 
-/** The browser checks: the capability report, isolation, clear colors, and the engine in every mode on both GPU paths. */
+/** The checks plan's first load of the capabilities page, which its last load is compared with. */
+const CAPABILITIES = 'capabilities';
+
+/**
+ * The browser checks: the capability report, isolation, clear colors, and the engine in every mode
+ * on both GPU paths. The capabilities page loads again last, so its extension answers can be
+ * compared across loads.
+ */
 export function checksPlan(): PlanItem<Check>[] {
 	return [
-		{
-			id: 'capabilities',
-			path: `${TEST_PAGES}capabilities.html`,
-			timeoutSeconds: 30,
-			check: { kind: 'capabilities' },
-		},
-		{
-			id: 'isolation',
-			path: `${TEST_PAGES}isolation.html`,
-			timeoutSeconds: 30,
-			check: { kind: 'isolation' },
-		},
-		{
-			id: 'shaders',
-			path: `${TEST_PAGES}shaders.html`,
-			timeoutSeconds: 30,
-			check: { kind: 'shaders' },
-		},
-		{
-			id: 'uploads',
-			path: `${TEST_PAGES}uploads.html`,
-			timeoutSeconds: 90,
-			check: { kind: 'uploads', tier: 'webgpu' },
-		},
-		...TIERS.map((tier) => ({
-			id: `clear-${tier}`,
-			path: `${TEST_PAGES}clear.html?gpu=${tier}`,
-			timeoutSeconds: 30,
-			check: { kind: 'clear' as const, tier },
-		})),
+		pageItem(CAPABILITIES, 'capabilities', { kind: 'capabilities' }),
+		pageItem('isolation', 'isolation', { kind: 'isolation' }),
+		pageItem('shaders', 'shaders', { kind: 'shaders' }),
+		pageItem('uploads', 'uploads', { kind: 'uploads', tier: 'webgpu' }, { timeoutSeconds: 90 }),
+		...TIERS.map((tier) =>
+			pageItem(`clear-${tier}`, 'clear', { kind: 'clear', tier }, { switches: [`gpu=${tier}`] }),
+		),
 		...TIERS.flatMap((tier) =>
 			ENGINE_MODES.map((mode) =>
 				engineItem(`engine-${tier}-${slug(mode.name)}`, [`gpu=${tier}`, mode.query], {
@@ -161,6 +165,10 @@ export function checksPlan(): PlanItem<Check>[] {
 				}),
 			),
 		),
+		pageItem(`${CAPABILITIES}-reload`, 'capabilities', {
+			kind: 'capabilities-reload',
+			first: CAPABILITIES,
+		}),
 	];
 }
 
@@ -377,11 +385,60 @@ function parityProblems(
 	}
 }
 
+/** The WebGL2 extensions a capabilities page's result asked for by name, and the browser's list. */
+function extensionsOf(result: ItemResult): { byName: Record<string, boolean>; listed: string[] } {
+	const report = result.report as
+		| { webgl2?: { extensions?: Record<string, boolean>; supportedExtensions?: string[] } }
+		| undefined;
+	return {
+		byName: report?.webgl2?.extensions ?? {},
+		listed: report?.webgl2?.supportedExtensions ?? [],
+	};
+}
+
+/** Whether the browser listed its supported extensions in the same order in two loads, as a note. */
+function listOrderNote(first: readonly string[], second: readonly string[]): string {
+	const sorted = (list: readonly string[]) => [...list].sort().join();
+	if (first.join() === second.join())
+		return 'the supported extension list came in the same order in both loads';
+	return sorted(first) === sorted(second)
+		? 'the supported extension list came in another order in the second load'
+		: 'the supported extension list named other extensions in the second load';
+}
+
+/**
+ * Compares a second load of the capabilities page with the first: every extension the engine asks
+ * for by name must get the same answer in both. Brave shuffles the supported list, which the engine
+ * never trusts, so a change in its order is noted and does not fail.
+ */
+function reloadProblems(
+	check: Extract<Check, { kind: 'capabilities-reload' }>,
+	result: ItemResult,
+	context: JudgeContext | undefined,
+): string[] {
+	const firstResult = context?.resultOf(check.first);
+	if (!context || !firstResult) return [`no result from ${check.first} to compare with`];
+	if (!firstResult.ok)
+		return [`${check.first} has no report to compare with: ${firstResult.error ?? 'it failed'}`];
+	const first = extensionsOf(firstResult);
+	const second = extensionsOf(result);
+	context.note?.(listOrderNote(first.listed, second.listed));
+	const answer = (has: boolean | undefined) =>
+		has === undefined ? 'not asked for' : has ? 'present' : 'absent';
+	const names = [...new Set([...Object.keys(first.byName), ...Object.keys(second.byName)])];
+	return names
+		.filter((name) => first.byName[name] !== second.byName[name])
+		.map(
+			(name) =>
+				`${name} was ${answer(first.byName[name])} in the first load and ${answer(second.byName[name])} in the second`,
+		);
+}
+
 /**
  * What is wrong with a page's result; empty when nothing is. A check whose GPU path the browser
  * lacks is a skip when `missing` allows it: some devices have no WebGPU in any browser, and some
- * virtual machines give a browser no WebGL2. A parity check needs the context, to reach the result
- * that it compares with.
+ * virtual machines give a browser no WebGL2. A parity check and a second load of the capabilities
+ * page need the context, to reach the result that they compare with.
  */
 export function judge(
 	check: Check,
@@ -397,6 +454,8 @@ export function judge(
 	switch (check.kind) {
 		case 'capabilities':
 			return [];
+		case 'capabilities-reload':
+			return reloadProblems(check, result, context);
 		case 'isolation': {
 			const problems: string[] = [];
 			if (!result.crossOriginIsolated) problems.push('the page is not cross-origin isolated');
