@@ -17,6 +17,7 @@ import {
 	SUN,
 	WARMUP_SECONDS,
 } from '../../scenes/spec';
+import { fitToWindow } from '../lib/fit';
 import { measureFrames } from '../lib/measure';
 import { pageReport, type RunOptions, readChoice, readRunOptions } from '../lib/options';
 import { packRows, rowStrideOf } from '../lib/pixels';
@@ -195,6 +196,7 @@ export function runThreePage(sceneName: string, build: BuildScene): void {
 		}
 
 		document.body.prepend(renderer.domElement);
+		fitToWindow(renderer.domElement, CANVAS.width, CANVAS.height);
 		pose(0);
 		await renderer.compileAsync(scene, camera);
 		renderer.render(scene, camera);

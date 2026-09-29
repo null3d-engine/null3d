@@ -7,6 +7,7 @@
 import { createEngine } from '@null3d/engine';
 import { run, toBase64 } from '../../../tests/pages/lib/result';
 import { CANVAS, MEASURE_SECONDS, PARITY_CANVAS, WARMUP_SECONDS } from '../../scenes/spec';
+import { fitToWindow } from '../lib/fit';
 import { pageReport, readRunOptions } from '../lib/options';
 
 /** Time a hold page lets the engine draw before it captures, so the frame is complete. */
@@ -48,6 +49,7 @@ export function runNull3dPage(
 			sketch: sketchUrl,
 			maxPixelRatio: CANVAS.pixelRatio,
 		});
+		fitToWindow(canvas, size.width, size.height);
 		const report = {
 			scene: sceneName,
 			renderer: 'null3d',

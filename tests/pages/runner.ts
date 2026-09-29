@@ -24,6 +24,7 @@ const REFRESH_SAMPLES = 61;
 
 const statusLine = document.getElementById('status') as HTMLElement;
 const list = document.getElementById('items') as HTMLElement;
+const stage = document.getElementById('stage') as HTMLElement;
 const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 function show(text: string): void {
@@ -99,7 +100,7 @@ async function runItem(item: PlanItem): Promise<Result> {
 	const frame = document.createElement('iframe');
 	frame.className = 'page';
 	frame.src = item.path;
-	document.body.append(frame);
+	stage.append(frame);
 	const deadline = performance.now() + item.timeoutSeconds * 1000;
 	try {
 		while (performance.now() < deadline) {
