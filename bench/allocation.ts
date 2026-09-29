@@ -10,12 +10,10 @@
 //   bun run bench:allocation --gpu webgl2
 // At 30,000 instances a frame's upload goes through the staging ring; at 100,000 it does not.
 import { chromium } from '@playwright/test';
-import { startServer } from '../tests/lib/server.ts';
+import { DEBUG_PORT, startServer } from '../tests/lib/server.ts';
 import { attachWorkers, DevTools, pagesAt, placeName, sleep } from './lib/devtools';
 import { pagePath } from './lib/parity';
 
-/** Chrome's debugging port for this check. */
-const DEBUG_PORT = 9333;
 /** Bytes between allocation samples: small, so a few bytes per frame still show. */
 const SAMPLING_INTERVAL = 128;
 /**

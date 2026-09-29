@@ -66,7 +66,7 @@ The team's phone is a Galaxy S24+ (SM-S926B, Exynos 2400, Android 16).
 - Start each browser's run cool: throttle level 0 and a skin temperature of at most about 37 °C (`adb shell dumpsys thermalservice`). The core speed caps are in `/sys/devices/system/cpu/cpu*/cpufreq/scaling_max_freq`. USB charging adds heat.
 - During a run, the runner reads the phone's heat every 10 seconds: the temperatures, each core group's speed cap and Samsung's throttle level. Each result records the heat it ran in.
 - Do not touch the phone during a run, because a tap can close the runner's tab. A runner page that goes quiet counts as stopped after its slowest page's timeout and 30 more seconds.
-- Close stale pages through Chrome's debugging protocol: `adb forward tcp:9334 localabstract:chrome_devtools_remote`, then `Target.closeTarget` for each page on `localhost`.
+- Close stale pages through Chrome's debugging protocol: `adb forward tcp:5176 localabstract:chrome_devtools_remote` (the main checkout's debugging port: the dev server's port plus 3), then `Target.closeTarget` for each page on `localhost`.
 - The `scale` plan finds phone scale: the largest S1 count at which three.js holds 30 frames per second. Run `bun tests/real-browsers.ts --plan scale --allow-no-webgpu --android chrome`. In Chrome 154 on 29 September 2026, it was 300,000 from a cool start and 250,000 on a warm phone.
 
 ## iPad
