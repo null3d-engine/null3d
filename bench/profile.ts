@@ -1,12 +1,15 @@
-// Samples Chrome's CPU profiler on the render worker while a benchmark scene runs, and splits the
-// time of the draw-list replay into the engine's own JavaScript and the browser functions it calls.
-// A replay loop in WebAssembly would still make every browser call, each through a JavaScript
-// import, so the engine's own share bounds how much faster such a loop could be. It runs in Chrome
-// on this computer, or with `--android` in Chrome on a phone connected by USB. From the repository
-// root:
+// Samples Chrome's CPU profiler on one of the engine's threads while a benchmark scene runs, and
+// splits the time of that thread's frame work between the engine's own JavaScript, the engine core
+// in WebAssembly, and the browser functions they call. By default it samples the render worker's
+// draw-list replay: a replay loop in WebAssembly would still make every browser call, each through
+// a JavaScript import, so the engine's own share bounds how much faster such a loop could be. With
+// `--thread sketch` it samples the sketch worker's frame step, whose time splits further by phase.
+// Build the core with `bun tools/build-wasm.ts --names` first, so the core's functions have names.
+// It runs in Chrome on this computer, or with `--android` in Chrome on a phone connected by USB.
+// From the repository root:
 //   bun run bench:profile
 //   bun run bench:profile --scene s2 --gpu webgpu --seconds 10
-//   bun run bench:profile --android --n 300000
+//   bun run bench:profile --android --n 300000 --thread sketch
 import { chromium } from '@playwright/test';
 import { forwardDevTools, forwardPort, phoneModel, startBrowser } from '../tests/lib/adb.ts';
 import { HTTP_PORT, startServer } from '../tests/lib/server.ts';
@@ -20,6 +23,7 @@ const DEBUG_PORT = 9334;
 const ENGINE_URL = '/packages/engine/src/';
 /** The worker whose time the tool splits, by a part of its script's address. */
 const RENDER_WORKER = 'render-worker';
+const SKETCH_WORKER = 'sketch-worker';
 /** Microseconds between samples: dense, as a frame's replay can take less than a tenth of a millisecond. */
 const SAMPLING_INTERVAL = 50;
 /**
@@ -38,9 +42,22 @@ const RESULT_TIMEOUT_MS = 60_000;
 const isReplay = ({ functionName, url }: CallFrame) =>
 	functionName === 'replay' && url.includes('/gpu/');
 
+/** The threads the profiler samples: each one's worker and the function that holds its frame's work. */
+const THREADS = {
+	render: { worker: RENDER_WORKER, entry: 'replay', isEntry: isReplay },
+	sketch: {
+		worker: SKETCH_WORKER,
+		entry: 'frame step',
+		isEntry: ({ functionName, url }: CallFrame) =>
+			functionName === 'step' && url.includes('/sketch/runner'),
+	},
+} as const;
+type ThreadName = keyof typeof THREADS;
+
 interface Options {
 	scenes: ParityScene[];
 	gpu: 'webgl2' | 'webgpu';
+	thread: ThreadName;
 	n: number | null;
 	seconds: number;
 	warmup: number;
@@ -65,9 +82,13 @@ function parseArgs(args: string[]): Options {
 	const gpu = value('--gpu') ?? 'webgl2';
 	if (gpu !== 'webgl2' && gpu !== 'webgpu')
 		throw new Error(`--gpu takes webgl2 or webgpu, not ${gpu}`);
+	const thread = value('--thread') ?? 'render';
+	if (!(thread in THREADS))
+		throw new Error(`--thread takes ${Object.keys(THREADS).join(' or ')}, not ${thread}`);
 	return {
 		scenes,
 		gpu,
+		thread: thread as ThreadName,
 		n: value('--n') === undefined ? null : number('--n', 1),
 		seconds: number('--seconds', PROFILE_SECONDS),
 		warmup: number('--warmup', WARMUP_SECONDS),
@@ -85,7 +106,7 @@ interface PageResult {
 		presentedFps: number;
 		threads: Record<
 			string,
-			{ busyMs: { median: number }; phases: { replay?: { median: number } } }
+			{ busyMs: { median: number }; phases: Record<string, { median: number }> }
 		>;
 	};
 }
@@ -128,16 +149,17 @@ async function profileScene(
 	const url = `${serverUrl}${pagePath(scene, `null3d-${options.gpu}`, switches)}`;
 	const { targetId } = await devtools.send<{ targetId: string }>('Target.createTarget', { url });
 	try {
-		const { page, workers } = await attachWorkers(devtools, targetId, [RENDER_WORKER]);
-		const render = workers.get(RENDER_WORKER) as string;
+		const thread = THREADS[options.thread];
+		const { page, workers } = await attachWorkers(devtools, targetId, [thread.worker]);
+		const worker = workers.get(thread.worker) as string;
 		await sleep((pageSeconds + MARGIN_SECONDS) * 1000);
-		await devtools.send('Profiler.enable', {}, render);
-		await devtools.send('Profiler.setSamplingInterval', { interval: SAMPLING_INTERVAL }, render);
-		await devtools.send('Profiler.start', {}, render);
+		await devtools.send('Profiler.enable', {}, worker);
+		await devtools.send('Profiler.setSamplingInterval', { interval: SAMPLING_INTERVAL }, worker);
+		await devtools.send('Profiler.start', {}, worker);
 		await sleep(options.seconds * 1000);
-		const { profile } = await devtools.send<{ profile: CpuProfile }>('Profiler.stop', {}, render);
+		const { profile } = await devtools.send<{ profile: CpuProfile }>('Profiler.stop', {}, worker);
 		const result = await waitForResult(devtools, page, pageSeconds * 1000 + RESULT_TIMEOUT_MS);
-		return { scene, result, split: splitEntry(profile, isReplay, ENGINE_URL) };
+		return { scene, result, split: splitEntry(profile, thread.isEntry, ENGINE_URL) };
 	} finally {
 		// A page left open would draw on beside the next scene's page.
 		await devtools.send('Target.closeTarget', { targetId });
@@ -148,20 +170,29 @@ const fixed = (value: number, digits = 3) => value.toFixed(digits);
 const percent = (part: number, whole: number) =>
 	whole > 0 ? `${fixed((100 * part) / whole, 1)}%` : '-';
 
-/** One scene's lines: the engine's per-frame times, and the profile's split of the replay. */
-function report({ scene, result, split }: SceneProfile): string[] {
-	const thread = result.stats.threads[RENDER_WORKER];
+/**
+ * One scene's lines: the engine's per-frame times on the profiled thread, by phase, and the
+ * profile's split of the time under that thread's entry function.
+ */
+function report({ scene, result, split }: SceneProfile, name: ThreadName): string[] {
+	const { worker, entry } = THREADS[name];
+	const thread = result.stats.threads[worker];
+	const phases = Object.entries(thread?.phases ?? {})
+		.map(([phase, spread]) => `${phase} ${fixed(spread.median)}`)
+		.join(', ');
 	const lines = [
 		`${scene}, ${result.n} objects: ${result.stats.frames} frames at ${fixed(result.stats.presentedFps, 1)} per second`,
-		`  render worker per frame (engine's median): busy ${thread ? fixed(thread.busyMs.median) : '-'} ms, replay ${thread?.phases.replay ? fixed(thread.phases.replay.median) : '-'} ms`,
-		`  replay, ${fixed(split.entryMs, 1)} ms sampled in ${fixed(split.profileMs / 1000, 1)} s: engine code ${percent(split.engineMs, split.entryMs)}, browser calls ${percent(split.browserMs, split.entryMs)}, other ${percent(split.otherMs, split.entryMs)}`,
+		`  ${worker.replace('-', ' ')} per frame (engine's median): busy ${thread ? fixed(thread.busyMs.median) : '-'} ms; ${phases || 'no phases'}`,
+		`  ${entry}, ${fixed(split.entryMs, 1)} ms sampled in ${fixed(split.profileMs / 1000, 1)} s: engine code ${percent(split.engineMs, split.entryMs)}, engine core ${percent(split.coreMs, split.entryMs)}, browser calls ${percent(split.browserMs, split.entryMs)}, other ${percent(split.otherMs, split.entryMs)}`,
 	];
 	const top = (calls: EntrySplit['browserCalls'], title: string) => {
+		if (calls.length === 0) return;
 		lines.push(`  ${title}:`);
 		for (const call of calls.slice(0, TOP_CALLS))
 			lines.push(`    ${percent(call.ms, split.entryMs).padStart(6)}  ${call.name}`);
 	};
 	top(split.engineCalls, 'engine functions, by their own time');
+	top(split.coreCalls, 'engine core functions, by their own time');
 	top(split.browserCalls, 'browser calls');
 	return lines;
 }
@@ -192,11 +223,11 @@ async function main(): Promise<void> {
 		for (const { targetId } of await pagesAt(devtools, `${server.url}/bench/pages/`))
 			await devtools.send('Target.closeTarget', { targetId });
 		console.log(
-			`Profiling the render worker on ${device}, ${options.gpu}: ${options.seconds} s per scene after at least ${options.warmup} s`,
+			`Profiling the ${THREADS[options.thread].worker.replace('-', ' ')} on ${device}, ${options.gpu}: ${options.seconds} s per scene after at least ${options.warmup} s`,
 		);
 		for (const scene of options.scenes) {
 			const profiled = await profileScene(devtools, server.url, scene, options);
-			console.log(report(profiled).join('\n'));
+			console.log(report(profiled, options.thread).join('\n'));
 		}
 	} finally {
 		for (const stop of stops.reverse()) await stop();

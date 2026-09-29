@@ -3,6 +3,8 @@
 //   bun tools/build-wasm.ts                 build both variants, then print the size report
 //   bun tools/build-wasm.ts --check-size    also fail when a file grew past the allowed margin
 //   bun tools/build-wasm.ts --update-size   also rewrite the committed size baseline
+//   bun tools/build-wasm.ts --names         keep the core's function names, for a CPU profile;
+//                                           the names add size, so this skips the size checks
 //
 // The threaded build uses atomics and shared memory, so it rebuilds the standard library with
 // them. The single-threaded build runs on pages that are not cross-origin isolated. The
@@ -148,6 +150,9 @@ function run(cmd: string, args: string[], env: Record<string, string> = {}): voi
 	execFileSync(cmd, args, { cwd: root, stdio: 'inherit', env: { ...process.env, ...env } });
 }
 
+/** True when the build keeps the core's function names, which a CPU profile shows. */
+const KEEP_NAMES = process.argv.includes('--names');
+
 function buildVariant(variant: Variant, bindgen: string): void {
 	const targetDir = `target/wasm-${variant.name}`;
 	console.log(`\nbuilding the ${variant.name} WebAssembly file`);
@@ -180,6 +185,8 @@ function buildVariant(variant: Variant, bindgen: string): void {
 	const wasm = `${outDir}/null3d_bg.wasm`;
 	run(join(root, 'node_modules/.bin/wasm-opt'), [
 		'-O3',
+		// wasm-opt drops the name section unless it keeps debug information.
+		...(KEEP_NAMES ? ['--debuginfo'] : []),
 		...variant.wasmOptFeatures,
 		wasm,
 		'-o',
@@ -294,6 +301,13 @@ function printSize(name: string, size: SizeEntry, budgetBytes?: number): void {
 }
 
 async function main(): Promise<void> {
+	if (
+		KEEP_NAMES &&
+		(process.argv.includes('--update-size') || process.argv.includes('--check-size'))
+	)
+		throw new Error(
+			'--names adds the function names to the core, so it cannot check or record sizes',
+		);
 	const version = lockedVersion(readFileSync(join(root, 'Cargo.lock'), 'utf8'), 'wasm-bindgen');
 	const bindgen = await wasmBindgen(version);
 	for (const variant of VARIANTS) buildVariant(variant, bindgen);

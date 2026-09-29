@@ -46,6 +46,15 @@ describe('ownerOf', () => {
 		expect(ownerOf(frame('(program)'), ENGINE)).toBe('other');
 		expect(ownerOf(frame('tick', 'http://localhost:5173/bench/pages/x.ts'), ENGINE)).toBe('other');
 	});
+
+	it("tells the engine core, in WebAssembly, apart from the engine's own scripts", () => {
+		const core = 'http://localhost:5173/packages/engine/dist/wasm/threaded/null3d_bg.wasm';
+		expect(ownerOf(frame('update_batches', core), ENGINE)).toBe('core');
+		expect(ownerOf(frame('wasm-function[12]', 'wasm://wasm/1a2b3c4d'), ENGINE)).toBe('core');
+		expect(ownerOf(frame('step', `http://localhost:5173${ENGINE}sketch/runner.ts`), ENGINE)).toBe(
+			'engine',
+		);
+	});
 });
 
 describe('splitEntry', () => {
@@ -68,6 +77,27 @@ describe('splitEntry', () => {
 			{ name: 'replay webgl2/backend.ts', ms: 0.1 },
 			{ name: 'prepareDraw webgl2/backend.ts', ms: 0.1 },
 		]);
+	});
+
+	it("counts the engine core's time and names its functions", () => {
+		const wasm = 'http://x/null3d_bg.wasm';
+		const sketch: CpuProfile = {
+			nodes: [
+				{ id: 1, callFrame: frame('step', `${ENGINE}sketch/runner.ts`), children: [2, 3] },
+				{ id: 2, callFrame: frame('onUpdate', 'http://x/bench/pages/s1-sketch.ts') },
+				{ id: 3, callFrame: frame('updateBatches', `${ENGINE}core/glue.ts`), children: [4] },
+				{ id: 4, callFrame: frame('pack_rows', wasm) },
+			],
+			startTime: 0,
+			endTime: 400,
+			samples: [1, 2, 3, 4],
+			timeDeltas: [0, 100, 100, 100],
+		};
+		const split = splitEntry(sketch, (f) => f.functionName === 'step', ENGINE);
+		expect([split.entryMs, split.engineMs, split.coreMs, split.otherMs]).toEqual([
+			0.4, 0.2, 0.1, 0.1,
+		]);
+		expect(split.coreCalls).toEqual([{ name: 'pack_rows x/null3d_bg.wasm', ms: 0.1 }]);
 	});
 
 	it('counts a call of the entry inside another one once', () => {

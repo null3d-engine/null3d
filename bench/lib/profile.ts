@@ -1,6 +1,7 @@
 // Sums over the CPU profile of one thread, as Chrome's profiler returns it through the debugging
 // protocol: how long the thread spent in each function, and how the time under one entry function
-// divides between the engine's own code and the browser's built-in functions that it calls.
+// divides between the engine's own code, the engine core in WebAssembly, and the browser's built-in
+// functions that they call.
 import { type CallFrame, placeName } from './devtools';
 
 export interface CpuProfileNode {
@@ -44,14 +45,21 @@ export function selfTimes(profile: CpuProfile): Map<number, number> {
 }
 
 /** Whose time a function's own time is. */
-export type Owner = 'engine' | 'browser' | 'other';
+export type Owner = 'engine' | 'core' | 'browser' | 'other';
+
+/** True for a function of a WebAssembly module: the core, which the engine loads from a `.wasm` file. */
+function isWebAssembly(url: string): boolean {
+	return url.startsWith('wasm://') || /\.wasm($|\?)/.test(url);
+}
 
 /**
- * The engine's own code comes from scripts whose address holds `engineUrl`. A named function with
- * no script is one of the browser's built-in functions, such as a WebGL call. The rest, such as
- * garbage collection, is neither.
+ * The engine's own code comes from scripts whose address holds `engineUrl`, and the engine core
+ * from its WebAssembly file. A named function with no script is one of the browser's built-in
+ * functions, such as a WebGL call. The rest, such as garbage collection or a sketch's own code, is
+ * none of these.
  */
 export function ownerOf({ functionName, url }: CallFrame, engineUrl: string): Owner {
+	if (isWebAssembly(url)) return 'core';
 	if (url.includes(engineUrl)) return 'engine';
 	if (!url && functionName !== '' && !NOT_FUNCTIONS.has(functionName)) return 'browser';
 	return 'other';
@@ -66,12 +74,16 @@ export interface EntrySplit {
 	/** The time under the entry function, its own time included. */
 	entryMs: number;
 	engineMs: number;
+	/** The time in the engine core's WebAssembly functions. */
+	coreMs: number;
 	browserMs: number;
 	otherMs: number;
 	/** The browser functions under the entry function, most time first. */
 	browserCalls: { name: string; ms: number }[];
 	/** The engine's functions under the entry function, by their own time, most time first. */
 	engineCalls: { name: string; ms: number }[];
+	/** The engine core's functions under the entry function, by their own time, most time first. */
+	coreCalls: { name: string; ms: number }[];
 }
 
 /**
@@ -88,8 +100,12 @@ export function splitEntry(
 	const own = selfTimes(profile);
 	const children = new Set(profile.nodes.flatMap((node) => node.children ?? []));
 	const roots = profile.nodes.filter((node) => !children.has(node.id));
-	const split = { entry: 0, engine: 0, browser: 0, other: 0, idle: 0 };
-	const calls = { browser: new Map<string, number>(), engine: new Map<string, number>() };
+	const split = { entry: 0, engine: 0, core: 0, browser: 0, other: 0, idle: 0 };
+	const calls = {
+		browser: new Map<string, number>(),
+		engine: new Map<string, number>(),
+		core: new Map<string, number>(),
+	};
 
 	const visit = (node: CpuProfileNode, inEntry: boolean) => {
 		const time = own.get(node.id) ?? 0;
@@ -120,9 +136,11 @@ export function splitEntry(
 		busyMs: profileMs - ms(split.idle),
 		entryMs: ms(split.entry),
 		engineMs: ms(split.engine),
+		coreMs: ms(split.core),
 		browserMs: ms(split.browser),
 		otherMs: ms(split.other),
 		browserCalls: ranked(calls.browser),
 		engineCalls: ranked(calls.engine),
+		coreCalls: ranked(calls.core),
 	};
 }
