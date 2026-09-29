@@ -8,7 +8,7 @@ summary: "Product and marketing pages: the fallback page, a load deadline, pausi
 
 # 3D scenes on content pages
 
-> Planned for null3d 0.1. No release has these APIs yet, so coding agents must not use them.
+> Planned for null3D 0.1. No release has these APIs yet, so coding agents must not use them.
 
 On a product page or a marketing page, the visitor came for the page. The 3D scene supports it. So the page must work without the scene, show its content on time, and spend nothing on a scene that nobody can see.
 

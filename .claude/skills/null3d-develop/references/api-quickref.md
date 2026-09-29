@@ -1,6 +1,6 @@
-# null3d API quick reference
+# null3D API quick reference
 
-This is the API planned for null3d 1.0. A version in parentheses, such as (0.2), is the first engine version with that part; no number means 0.1. Before using a part, check the status of its docs page (`stable`, `experimental` or `planned`), as SKILL.md section 1 explains. Each heading names the doc ID with the full reference.
+This is the API planned for null3D 1.0. A version in parentheses, such as (0.2), is the first engine version with that part; no number means 0.1. Before using a part, check the status of its docs page (`stable`, `experimental` or `planned`), as SKILL.md section 1 explains. Each heading names the doc ID with the full reference.
 
 ## Contents
 

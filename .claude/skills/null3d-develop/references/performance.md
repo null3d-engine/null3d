@@ -1,4 +1,4 @@
-# Performance in null3d
+# Performance in null3D
 
 Measure first, then change one thing, then measure again. Read `guides/performance` and `guides/phones` in the engine docs for the version you use; this file gives the working method.
 
@@ -132,9 +132,9 @@ Some calls rebuild the scene's draw tables in the frame they take effect: the bu
 
 ## 10. Advice written for other engines
 
-Performance advice for three.js and other engines assumes things that do not hold in null3d. The engine docs page `guides/performance` answers the questions behind it.
+Performance advice for three.js and other engines assumes things that do not hold in null3D. The engine docs page `guides/performance` answers the questions behind it.
 
-| Advice | In null3d |
+| Advice | In null3D |
 | --- | --- |
 | Merge meshes to cut draw calls | Objects that share a mesh and material already share one draw. Merge only different small static meshes, to cut buckets |
 | Share materials so objects share a shader | Every material already shares its pipeline. Share materials anyway: each mesh and material pair is its own draw |

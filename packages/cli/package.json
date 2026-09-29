@@ -1,7 +1,7 @@
 {
 	"name": "@null3d/cli",
 	"version": "0.0.0",
-	"description": "The command-line tool for null3d, a browser 3D engine for games and heavy 3D apps. This first version only prints the project's status.",
+	"description": "The command-line tool for null3D, a browser 3D engine for games and heavy 3D apps. This first version only prints the project's status.",
 	"license": "MIT OR Apache-2.0",
 	"author": "Ramesh Nair (https://hiddentao.com)",
 	"homepage": "https://github.com/null3d-engine/null3d#readme",

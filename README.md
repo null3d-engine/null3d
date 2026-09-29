@@ -1,8 +1,8 @@
 <p align="center">
-  <img src=".github/assets/logo.svg" alt="null3d" width="96" height="96" />
+  <img src=".github/assets/logo.svg" alt="null3D" width="96" height="96" />
 </p>
 
-<h1 align="center">null3d</h1>
+<h1 align="center">null3D</h1>
 
 <div align="center">
 
@@ -21,7 +21,7 @@
 </p>
 
 <p align="center">
-  Pre-alpha: null3d has no release yet.
+  Pre-alpha: null3D has no release yet.
   Nothing is on npm yet.
 </p>
 
@@ -42,14 +42,14 @@
 <p align="center">
   <img src=".github/assets/s1.gif" alt="A cloud of 100,000 blue boxes that bob and turn, seen from a camera circling it" width="480" />
   <br />
-  <sub>Benchmark scene S1: 100,000 boxes that sketch code moves every frame, drawn by null3d with WebGPU.</sub>
+  <sub>Benchmark scene S1: 100,000 boxes that sketch code moves every frame, drawn by null3D with WebGPU.</sub>
 </p>
 
-## What is null3d?
+## What is null3D?
 
-null3d is a browser 3D engine that aims to replace three.js where CPU time limits a scene. That happens with many moving objects, deep scene graphs, animation and culling. The engine's core is Rust compiled to WebAssembly, and it runs on worker threads, so the page's main thread stays free.
+null3D is a browser 3D engine that aims to replace three.js where CPU time limits a scene. That happens with many moving objects, deep scene graphs, animation and culling. The engine's core is Rust compiled to WebAssembly, and it runs on worker threads, so the page's main thread stays free.
 
-It draws with WebGPU, and with WebGL2 where WebGPU is missing, from the same sketch code. That matters most on phones, where many devices still have no WebGPU. Where the GPU is the limit, null3d aims to match three.js, because both engines use the same browser graphics APIs.
+It draws with WebGPU, and with WebGL2 where WebGPU is missing, from the same sketch code. That matters most on phones, where many devices still have no WebGPU. Where the GPU is the limit, null3D aims to match three.js, because both engines use the same browser graphics APIs.
 
 ## Quickstart
 
@@ -73,7 +73,7 @@ Then open one of these pages in Chrome:
 
 `bun run bench:run` measures S1 in both engines and prints a table of CPU time per frame.
 
-This is what a complete null3d project will look like. You install the engine from npm and import it, as you would `three`:
+This is what a complete null3D project will look like. You install the engine from npm and import it, as you would `three`:
 
 ```sh
 bun add @null3d/engine
@@ -102,7 +102,7 @@ await createEngine({
 });
 ```
 
-In null3d, a 3D scene is called a **sketch**. A sketch is a module that builds its scene and updates it every frame, and it runs in a worker of its own:
+In null3D, a 3D scene is called a **sketch**. A sketch is a module that builds its scene and updates it every frame, and it runs in a worker of its own:
 
 ```ts
 // sketch.ts (sketch worker)
@@ -170,7 +170,7 @@ flowchart LR
 
 ## Why it is faster
 
-three.js keeps each object as a JavaScript object and walks the scene graph object by object in every frame. That work grows with the object count and runs on the page's main thread. null3d keeps scene data in flat arrays inside WebAssembly memory, processes them in bulk on job workers, and lets your code write straight into them:
+three.js keeps each object as a JavaScript object and walks the scene graph object by object in every frame. That work grows with the object count and runs on the page's main thread. null3D keeps scene data in flat arrays inside WebAssembly memory, processes them in bulk on job workers, and lets your code write straight into them:
 
 ```ts
 const rocks = scene.createInstances(rockMesh, 10_000, { dynamic: true });
@@ -192,7 +192,7 @@ An engine's own time leaves out the sketch code that moves the instances, which 
 
 ## Where it runs
 
-null3d picks its GPU path at startup from feature tests. It never checks browser or GPU names, because some browsers hide them.
+null3D picks its GPU path at startup from feature tests. It never checks browser or GPU names, because some browsers hide them.
 
 | Device and browser | GPU path |
 | --- | --- |
@@ -205,13 +205,13 @@ null3d picks its GPU path at startup from feature tests. It never checks browser
 | Android phones without WebGPU, such as those with Samsung Xclipse GPUs | WebGL2 |
 | Firefox on Android and Linux | WebGL2 |
 
-The minimum versions are Safari 16.4, Chrome and Edge 91, and Firefox 89. Worker threads need two HTTP headers on your page, and [Hosting and cross-origin isolation](docs/getting-started/hosting.md) shows them for common hosts. Without the headers, null3d runs single-threaded. Desktop apps can use Electron, which ships the same Chromium on every system.
+The minimum versions are Safari 16.4, Chrome and Edge 91, and Firefox 89. Worker threads need two HTTP headers on your page, and [Hosting and cross-origin isolation](docs/getting-started/hosting.md) shows them for common hosts. Without the headers, null3D runs single-threaded. Desktop apps can use Electron, which ships the same Chromium on every system.
 
 ## Porting from three.js
 
 The API uses three.js names where the ideas match. A few of the 147 entries in the mapping:
 
-| three.js | null3d | Since |
+| three.js | null3D | Since |
 | --- | --- | --- |
 | `WebGLRenderer` / `WebGPURenderer` | `createEngine({ canvas, sketch })` on the page; scene code moves into `defineSketch()` in a worker | 0.1 |
 | `MeshStandardMaterial` | `materials.standard({ color, map, metalness, roughness, ... })` | 0.1 |
@@ -220,13 +220,13 @@ The API uses three.js names where the ideas match. A few of the 147 entries in t
 | `GLTFLoader` | `await assets.loadGltf(url)`, then `scene.instantiate(prefab)` | 0.2 |
 | `Raycaster` | `camera.screenToRay(x, y, ray)`, then `scene.raycast(...)` | 0.2 |
 
-The full [three.js to null3d mapping](docs/porting/threejs-mapping.md) covers renderers, materials, loaders, animation, post-processing and more. The [porting skill](skills/null3d-port-threejs/SKILL.md) walks a coding agent through a port, and its scanner lists every three.js feature an app uses.
+The full [three.js to null3D mapping](docs/porting/threejs-mapping.md) covers renderers, materials, loaders, animation, post-processing and more. The [porting skill](skills/null3d-port-threejs/SKILL.md) walks a coding agent through a port, and its scanner lists every three.js feature an app uses.
 
 ## For AI agents
 
-null3d is built so that a coding agent can create, run, test and debug a sketch with nobody watching.
+null3D is built so that a coding agent can create, run, test and debug a sketch with nobody watching.
 
-- Two agent skills come with the engine. [null3d-develop](skills/null3d-develop/SKILL.md) builds and speeds up null3d projects, and [null3d-port-threejs](skills/null3d-port-threejs/SKILL.md) ports three.js and React Three Fiber apps. Claude Code loads them from `.claude/skills/` in this repository.
+- Two agent skills come with the engine. [null3d-develop](skills/null3d-develop/SKILL.md) builds and speeds up null3D projects, and [null3d-port-threejs](skills/null3d-port-threejs/SKILL.md) ports three.js and React Three Fiber apps. Claude Code loads them from `.claude/skills/` in this repository.
 - Every docs page has an ID, such as `concepts/architecture`, and a status. Agents never use an API whose page is `planned`.
 - [AGENTS.md](AGENTS.md) holds the rules for people and agents working on the engine.
 
@@ -288,7 +288,7 @@ if (input.wasPressed('Mouse0')) {
 - [Static and dynamic objects](docs/concepts/static-dynamic.md)
 - [GPU tiers and backends](docs/concepts/backends.md)
 - [Hosting and cross-origin isolation](docs/getting-started/hosting.md)
-- [three.js to null3d mapping](docs/porting/threejs-mapping.md)
+- [three.js to null3D mapping](docs/porting/threejs-mapping.md)
 
 ## Roadmap
 
@@ -327,10 +327,10 @@ bun run bench:run        # measures S1 in null3d and three.js in Chrome and prin
 
 ## Community and license
 
-⭐ **If you want to see null3d built, a star helps other people find it.** It is the main way an open source project gets found.
+⭐ **If you want to see null3D built, a star helps other people find it.** It is the main way an open source project gets found.
 
 Questions and bug reports are welcome in [GitHub Issues](https://github.com/null3d-engine/null3d/issues).
 
 Copyright (C) 2026 [Ramesh Nair](https://hiddentao.com).
 
-null3d is licensed under either of the [Apache License 2.0](LICENSE-APACHE) or the [MIT license](LICENSE-MIT), at your option. Unless you explicitly state otherwise, any contribution you intentionally submit for inclusion in the work, as defined in the Apache-2.0 license, shall be dual licensed as above, without any additional terms or conditions.
+null3D is licensed under either of the [Apache License 2.0](LICENSE-APACHE) or the [MIT license](LICENSE-MIT), at your option. Unless you explicitly state otherwise, any contribution you intentionally submit for inclusion in the work, as defined in the Apache-2.0 license, shall be dual licensed as above, without any additional terms or conditions.

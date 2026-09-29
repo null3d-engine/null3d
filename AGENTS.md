@@ -1,14 +1,14 @@
 # Rules for people and agents working in this repository
 
-This repository holds the null3d engine, its tools, its documentation and its agent skills. This file holds the working rules. The pages in [`docs/`](docs/index.md) describe the design.
+This repository holds the null3D engine, its tools, its documentation and its agent skills. This file holds the working rules. The pages in [`docs/`](docs/index.md) describe the design.
 
 ## Where things are
 
 | Path | Contents |
 | --- | --- |
 | `docs/` | The user documentation as Markdown, one page per ID, with status front matter. It ships inside `@null3d/engine`. |
-| `docs/data/threejs-mapping.json` | The single source of the three.js to null3d mapping |
-| `skills/` | Agent skills for building with null3d and for porting three.js apps (the source) |
+| `docs/data/threejs-mapping.json` | The single source of the three.js to null3D mapping |
+| `skills/` | Agent skills for building with null3D and for porting three.js apps (the source) |
 | `.claude/skills/` | A generated copy of `skills/` for Claude Code. Never edit it. |
 | `crates/` | The Rust crates: core, GPU layer, renderer, shaders, and the WebAssembly entry point |
 | `packages/` | npm packages: `engine`, `vite-plugin`, and `cli`, which is the `null3d` command |
@@ -28,8 +28,8 @@ This repository holds the null3d engine, its tools, its documentation and its ag
 | `bun run test:real-browsers Safari Firefox` | The same test pages in browser apps that Playwright cannot drive, through the runner page (macOS) |
 | `bun run devices` | The same checks on an Android phone over USB (Chrome, then Brave) and on runner pages that wait on the local network (an iPad's Safari and Brave) |
 | `bun run test:bench` | The benchmark pages of both engines in Chrome, through Playwright |
-| `bun run parity` | Compare each benchmark scene's hold frame in null3d with three.js's, per GPU tier; `--save-baselines` stores how much three.js's two renderers differ, for devices that lack one of them |
-| `bun run bench:run` | The benchmark protocol in a visible Chrome window: fresh runs of each scene in both engines and of the scene code both run, with a summary of each engine's whole frame and own work; `--sweep` runs each scene from one object up, on both null3d paths and both three.js renderers, and compares each path with three.js's faster renderer and with three.js on the same API |
+| `bun run parity` | Compare each benchmark scene's hold frame in null3D with three.js's, per GPU tier; `--save-baselines` stores how much three.js's two renderers differ, for devices that lack one of them |
+| `bun run bench:run` | The benchmark protocol in a visible Chrome window: fresh runs of each scene in both engines and of the scene code both run, with a summary of each engine's whole frame and own work; `--sweep` runs each scene from one object up, on both null3D paths and both three.js renderers, and compares each path with three.js's faster renderer and with three.js on the same API |
 | `bun run bench:allocation` | Sample what the sketch worker and the render worker allocate per frame in S1, with Chrome's heap profiler; `--gpu webgl2` samples the WebGL2 path |
 | `bun run bench:startup` | A cold start of the engine test page's production build in Chrome, on Slow 4G with an empty cache: the startup milestones, requests and bytes of each run |
 | `bun run readme-media` | Render the README's animation of S1 with the engine |
@@ -91,10 +91,10 @@ Code review enforces these rules.
 
 ## Performance work
 
-The benchmarks compare null3d with three.js in the same browser. These points come from the first checkpoint's measurements.
+The benchmarks compare null3D with three.js in the same browser. These points come from the first checkpoint's measurements.
 
 - A report gives each engine's whole frame and its own work on the busiest thread. The desktop target uses own work, because both engines run the same scene code.
-- null3d's own work comes from its phase timers: each thread's time less its `update` step. three.js's own work is its frame time less the scene code, timed alone on the scene-code page. That page's loop compiles to slower code than an engine's loop, so this estimate of three.js's own work is low.
+- null3D's own work comes from its phase timers: each thread's time less its `update` step. three.js's own work is its frame time less the scene code, timed alone on the scene-code page. That page's loop compiles to slower code than an engine's loop, so this estimate of three.js's own work is low.
 - Keep the Mac's screen unlocked and its display awake during browser runs. Safari stops running pages while the Mac is locked, and the runner then waits until its deadline. Chrome started by Playwright keeps running.
 - Do not edit engine or benchmark page files during a run. The dev server reloads the pages being measured.
 - Compare results at the same display refresh rate. The engine measures it, and each benchmark result records it with the presented and finished frame rates and the GPU delay. Runs at 120 and at 144 frames per second differed by about 10% for both engines.

@@ -1,6 +1,6 @@
 # Architecture and the loop: from one thread to two
 
-three.js apps usually run everything on the main thread: DOM, input, scene updates and rendering. null3d splits this in two: the page (main thread) and the sketch (a worker). In null3d, a 3D scene is called a sketch: the module that builds the scene and updates it every frame. It takes the place of the three.js scene setup and animation loop. This file shows where each piece goes, how the two talk, and how to convert the loop. Engine docs: `concepts/architecture`, `api/page`, `porting/threejs-loop-and-threads`.
+three.js apps usually run everything on the main thread: DOM, input, scene updates and rendering. null3D splits this in two: the page (main thread) and the sketch (a worker). In null3D, a 3D scene is called a sketch: the module that builds the scene and updates it every frame. It takes the place of the three.js scene setup and animation loop. This file shows where each piece goes, how the two talk, and how to convert the loop. Engine docs: `concepts/architecture`, `api/page`, `porting/threejs-loop-and-threads`.
 
 ## Contents
 
@@ -14,7 +14,7 @@ three.js apps usually run everything on the main thread: DOM, input, scene updat
 
 ## 1. What goes where
 
-| Piece of the three.js app | null3d location | How |
+| Piece of the three.js app | null3D location | How |
 | --- | --- | --- |
 | `<canvas>` or `renderer.domElement` | `index.html` and `page.ts` | Put the canvas in HTML; pass it to `createEngine` |
 | Renderer options (antialias, alpha, pixel ratio, tone mapping) | `createEngine` options, `post.set` | Mapping table, "Renderer and loop" |
@@ -135,7 +135,7 @@ Enemies that need different meshes become one batch per mesh. Per-enemy state (h
 
 ## 5. Input and camera controls
 
-| three.js | null3d |
+| three.js | null3D |
 | --- | --- |
 | `addEventListener('pointermove', ...)` with NDC math | `input.pointer.ndcX`, `ndcY`; `input.pointer.x`, `y` in CSS pixels |
 | `addEventListener('keydown', ...)` and a key-state object | `input.isDown('KeyW')`, `input.wasPressed('Space')` |

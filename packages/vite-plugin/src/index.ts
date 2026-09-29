@@ -49,7 +49,7 @@ function readCertificate(root: string, certDir: string): { cert: Buffer; key: Bu
 	const key = resolve(dir, 'key.pem');
 	if (!existsSync(cert) || !existsSync(key)) {
 		throw new Error(
-			`null3d: no HTTPS certificate in ${dir}. Put cert.pem and key.pem there, or set certDir to their folder. Docs: getting-started/hosting.`,
+			`null3D: no HTTPS certificate in ${dir}. Put cert.pem and key.pem there, or set certDir to their folder. Docs: getting-started/hosting.`,
 		);
 	}
 	return { cert: readFileSync(cert), key: readFileSync(key) };
@@ -98,7 +98,7 @@ export function missingCoreFiles(root: string): string[] | null {
 }
 
 /**
- * The null3d Vite plugin: isolation headers on the dev and preview servers, optional HTTPS, and a
+ * The null3D Vite plugin: isolation headers on the dev and preview servers, optional HTTPS, and a
  * production build that compiles each sketch module and ships the engine core.
  */
 export default function null3d(options: Null3dPluginOptions = {}): Plugin {
@@ -132,7 +132,7 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 			const missing = missingCoreFiles(root);
 			if (missing && missing.length > 0) {
 				this.error(
-					`null3d: the installed @null3d/engine lacks its WebAssembly core (${missing.join(', ')}). Reinstall the package; in a copy of the engine's source, run bun run build first.`,
+					`null3D: the installed @null3d/engine lacks its WebAssembly core (${missing.join(', ')}). Reinstall the package; in a copy of the engine's source, run bun run build first.`,
 				);
 			}
 		},

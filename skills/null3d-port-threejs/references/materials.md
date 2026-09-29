@@ -18,7 +18,7 @@ Engine docs: `porting/threejs-materials`, `api/materials`, `api/textures`, `conc
 
 `MeshStandardMaterial` maps to `materials.standard`. Both follow the glTF metallic-roughness model, so values carry over.
 
-| three.js | null3d | Notes |
+| three.js | null3D | Notes |
 | --- | --- | --- |
 | `color` | `color` | Hex values are sRGB in both |
 | `map` | `map` | Must be sRGB (`colorSpace: 'srgb'`) |
@@ -26,7 +26,7 @@ Engine docs: `porting/threejs-materials`, `api/materials`, `api/textures`, `conc
 | `roughnessMap`, `metalnessMap` | `metalnessRoughnessMap` | One texture: roughness in G, metalness in B, as glTF packs them. If the original uses two textures, pack them offline with `bunx @null3d/cli assets pack-orm` (the same texture can hold AO in R) |
 | `normalMap`, `normalScale` | `normalMap`, `normalScale: [x, y]` | Tangent-space only; object-space normal maps are not supported |
 | `normalMapType: ObjectSpaceNormalMap` | Not supported | Convert to tangent space offline |
-| `aoMap`, `aoMapIntensity` | `aoMap`, `aoMapIntensity` | three.js reads AO from the R channel; so does null3d |
+| `aoMap`, `aoMapIntensity` | `aoMap`, `aoMapIntensity` | three.js reads AO from the R channel; so does null3D |
 | `lightMap`, `lightMapIntensity` | `lightMap`, `lightMapIntensity` | Usually on the second UV set: `uvSet: 1` |
 | `emissive`, `emissiveMap`, `emissiveIntensity` | Same names | |
 | `envMap`, `envMapIntensity` | Scene environment, `envIntensity` | Per-material environment maps are not supported; one scene environment lights everything |
@@ -85,7 +85,7 @@ Both become surface-function recipes (section 8). Toon shading needs light-band 
 
 ## 6. Other three.js materials
 
-| three.js | null3d |
+| three.js | null3D |
 | --- | --- |
 | `MeshNormalMaterial` | `debug.view('normals')` for debugging; a surface function that outputs the normal as color for a styled look |
 | `MeshDepthMaterial`, `MeshDistanceMaterial` | `debug.view('depth')`; custom shadow materials are not needed |
@@ -98,7 +98,7 @@ Both become surface-function recipes (section 8). Toon shading needs light-band 
 
 ## 7. Texture settings
 
-| three.js | null3d `loadTexture` option |
+| three.js | null3D `loadTexture` option |
 | --- | --- |
 | `colorSpace = SRGBColorSpace` (older: `encoding = sRGBEncoding`) | `colorSpace: 'srgb'` |
 | No color space (data textures) | `colorSpace: 'linear'` |

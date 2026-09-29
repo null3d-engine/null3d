@@ -8,7 +8,7 @@ summary: "30-bit handles; wrapper objects; stale-handle errors; keeping per-obje
 
 # Handles and objects
 
-> Planned for null3d 0.1. No release has these APIs yet, so coding agents must not use them.
+> Planned for null3D 0.1. No release has these APIs yet, so coding agents must not use them.
 
 ```mermaid
 flowchart LR
@@ -18,7 +18,7 @@ flowchart LR
     gen --> check["Development builds:<br/>catch use after destroy"]
 ```
 
-Every scene object in null3d is a small integer called a handle. The object's data lives in shared arrays, one array per field, and the handle's slot number is the object's index into each array.
+Every scene object in null3D is a small integer called a handle. The object's data lives in shared arrays, one array per field, and the handle's slot number is the object's index into each array.
 
 ## What a handle holds
 

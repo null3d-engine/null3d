@@ -8,7 +8,7 @@ summary: "WebGPU core, compatibility mode and WebGL2; capability flags; the port
 
 # GPU tiers and backends
 
-> Planned for null3d 0.1. No release has these APIs yet, so coding agents must not use them.
+> Planned for null3D 0.1. No release has these APIs yet, so coding agents must not use them.
 
 ```mermaid
 flowchart TD
@@ -18,7 +18,7 @@ flowchart TD
     adapter -- "no" --> gl["WebGL2"]
 ```
 
-null3d draws with WebGPU where the browser offers it, and with WebGL2 everywhere else. The same sketch code runs on both, with no backend checks in it. The engine picks the tier once, at startup, from feature tests.
+null3D draws with WebGPU where the browser offers it, and with WebGL2 everywhere else. The same sketch code runs on both, with no backend checks in it. The engine picks the tier once, at startup, from feature tests.
 
 ## The three tiers
 

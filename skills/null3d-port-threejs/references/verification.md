@@ -6,7 +6,7 @@ A port is done when each chosen camera view looks the same within an agreed tole
 
 1. Choose the views
 2. Capture the three.js baseline
-3. Compare the null3d port
+3. Compare the null3D port
 4. Tolerances
 5. Compare performance
 6. The porting report
@@ -60,7 +60,7 @@ export function captureBaseline(renderer, scene, camera, config, renderFn = () =
 
 With `WebGLRenderer`, reading the canvas in the same task as the render works without `preserveDrawingBuffer`. With `WebGPURenderer`, call `await renderer.renderAsync(scene, camera)` first; if the canvas reads back empty in that browser, render into a render target and read it with `readRenderTargetPixelsAsync` instead. Record the three.js version, browser and GPU next to the images.
 
-## 3. Compare the null3d port
+## 3. Compare the null3D port
 
 ```sh
 bunx @null3d/cli port compare --baseline baseline/ --views views.json --gpu webgpu,webgl2   # (0.3)
@@ -91,7 +91,7 @@ Measure both apps on the same device, browser, window size and pixel ratio, with
 2. Run 5 times for 30 seconds each. Report the median and the spread.
 3. On phones, add one 10-minute run, because phones slow down as they heat up.
 
-| Measure | three.js | null3d |
+| Measure | three.js | null3D |
 | --- | --- | --- |
 | Frame time at the 50th, 95th and 99th percentile | Intervals between `requestAnimationFrame` timestamps | `debug.frameStats()` or `bunx @null3d/cli bench` |
 | CPU time per frame on the busiest thread | `performance.now()` around update and render in the loop | Frame phases per thread |

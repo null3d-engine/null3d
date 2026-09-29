@@ -3,19 +3,19 @@ id: guides/agents
 title: Working with AI agents
 status: planned
 since: "0.1"
-summary: "Installing the null3d skills in Claude Code, claude.ai and other agent tools; docs by ID; the MCP server and AGENTS.md in templates (0.3)."
+summary: "Installing the null3D skills in Claude Code, claude.ai and other agent tools; docs by ID; the MCP server and AGENTS.md in templates (0.3)."
 ---
 
 # Working with AI agents
 
-> Planned for null3d 0.1. No release has these APIs yet, so coding agents must not use them.
+> Planned for null3D 0.1. No release has these APIs yet, so coding agents must not use them.
 
-null3d comes with two agent skills. A skill is a folder of instructions that a coding agent loads when a task needs it.
+null3D comes with two agent skills. A skill is a folder of instructions that a coding agent loads when a task needs it.
 
 | Skill | What it does |
 | --- | --- |
-| `null3d-develop` | Builds, debugs and speeds up null3d projects, including product and marketing pages |
-| `null3d-port-threejs` | Ports three.js and React Three Fiber projects to null3d |
+| `null3d-develop` | Builds, debugs and speeds up null3D projects, including product and marketing pages |
+| `null3d-port-threejs` | Ports three.js and React Three Fiber projects to null3D |
 
 Install the skills that match the engine version your project uses. Each release of the engine has its own skills.
 

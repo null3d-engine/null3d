@@ -1,25 +1,25 @@
 ---
 name: null3d-port-threejs
-description: Port three.js projects, scenes, examples, components and shaders to the null3d engine (also written Null3D or null 3d), keeping the same look and gaining speed. Use this skill whenever the user wants to convert, migrate, move or rewrite three.js code to null3d, including code with imports from three or three/addons, THREE calls, GLTFLoader, OrbitControls, InstancedMesh, EffectComposer, ShaderMaterial, onBeforeCompile or TSL, and React Three Fiber or drei scenes. Also use it to answer what the null3d equivalent of a three.js API is, to estimate how hard a port will be, and to compare a three.js app with its null3d port. Use it even for a single class, snippet or shader. For new null3d work that is not a port, use null3d-develop.
-compatibility: The scanner script needs Node.js 18 or newer. Porting needs a null3d project as the target; the null3d-develop skill covers null3d itself.
+description: Port three.js projects, scenes, examples, components and shaders to the null3D engine (also written null3d, Null3D or null 3d), keeping the same look and gaining speed. Use this skill whenever the user wants to convert, migrate, move or rewrite three.js code to null3D, including code with imports from three or three/addons, THREE calls, GLTFLoader, OrbitControls, InstancedMesh, EffectComposer, ShaderMaterial, onBeforeCompile or TSL, and React Three Fiber or drei scenes. Also use it to answer what the null3D equivalent of a three.js API is, to estimate how hard a port will be, and to compare a three.js app with its null3D port. Use it even for a single class, snippet or shader. For new null3D work that is not a port, use null3d-develop.
+compatibility: The scanner script needs Node.js 18 or newer. Porting needs a null3D project as the target; the null3d-develop skill covers null3D itself.
 metadata:
   skill-version: 0.1.0
   engine-versions: 0.1 to 1.0
 ---
 
-# Porting three.js to null3d
+# Porting three.js to null3D
 
-A good port looks like the original, runs faster, and reads like null3d code. Translating line by line reaches the first goal at best. three.js habits such as mutating objects every frame, per-object update methods, allocations in the render loop, and DOM access next to scene code keep the original's speed problems. Many of them do not work at all, because null3d sketch code runs in a worker. So port by intent: work out what each part of the original does, then write that the null3d way.
+A good port looks like the original, runs faster, and reads like null3D code. Translating line by line reaches the first goal at best. three.js habits such as mutating objects every frame, per-object update methods, allocations in the render loop, and DOM access next to scene code keep the original's speed problems. Many of them do not work at all, because null3D sketch code runs in a worker. So port by intent: work out what each part of the original does, then write that the null3D way.
 
 ## 1. Before you start
 
 1. If the null3d-develop skill is available, read its sections 1, 2 and 4: the docs system, the thread model and the performance rules. They apply to every port. Without it, read the engine docs pages `concepts/architecture` and `guides/performance`.
-2. Find the engine version in the target project, and read docs pages by ID: `node_modules/@null3d/engine/docs/<id>.md`, `docs/<id>.md` inside the null3d repository, or `bunx @null3d/cli docs show <id>`. A page with `status: planned` describes an API that does not exist in that version yet.
-3. Look up three.js APIs in `references/api-mapping.md`. For 147 three.js APIs it gives the null3d equivalent, a status, the first engine version with it, and a doc ID. The statuses:
+2. Find the engine version in the target project, and read docs pages by ID: `node_modules/@null3d/engine/docs/<id>.md`, `docs/<id>.md` inside the null3D repository, or `bunx @null3d/cli docs show <id>`. A page with `status: planned` describes an API that does not exist in that version yet.
+3. Look up three.js APIs in `references/api-mapping.md`. For 147 three.js APIs it gives the null3D equivalent, a status, the first engine version with it, and a doc ID. The statuses:
    - `direct`: same concept, new name.
    - `changed`: supported with a different API or pattern; follow the note.
    - `manual`: rewrite by hand (shaders, render hooks, some material maps).
-   - `post-1.0`: not in null3d 1.0; use the workaround.
+   - `post-1.0`: not in null3D 1.0; use the workaround.
    - `unsupported`: out of scope; use the workaround.
 
 ## 2. Workflow
@@ -30,7 +30,7 @@ A good port looks like the original, runs faster, and reads like null3d code. Tr
 node <this-skill-dir>/scripts/analyze-threejs.mjs <three-project-dir> --md PORTING-INVENTORY.md --json porting-inventory.json
 ```
 
-The scanner lists every three.js feature it finds, grouped by status, with file and line references, the null3d equivalent, the lowest engine version the port needs, warnings (per-frame allocations, DOM access, GLSL, React Three Fiber) and a rough effort size. It matches text patterns, so read the code to confirm each row.
+The scanner lists every three.js feature it finds, grouped by status, with file and line references, the null3D equivalent, the lowest engine version the port needs, warnings (per-frame allocations, DOM access, GLSL, React Three Fiber) and a rough effort size. It matches text patterns, so read the code to confirm each row.
 
 Then tell the user, before writing any code:
 - which features need a hand rewrite, which are `post-1.0` or `unsupported`, and the workaround you propose for each;
@@ -45,7 +45,7 @@ Capture reference images and timings from the running three.js app at fixed came
 
 ### Phase 3: Split the architecture
 
-In null3d, a 3D scene is called a sketch, and it lives in `sketch.ts`. Decide what stays on the page: DOM, HTML UI, GUI panels, audio, video elements and storage. The rest moves to `sketch.ts`: the scene, the loop, input handling, controls, and state such as scores or selections. Design the few messages between them. Read `references/architecture-and-loop.md`; for React Three Fiber apps, `references/react-three-fiber.md`.
+In null3D, a 3D scene is called a sketch, and it lives in `sketch.ts`. Decide what stays on the page: DOM, HTML UI, GUI panels, audio, video elements and storage. The rest moves to `sketch.ts`: the scene, the loop, input handling, controls, and state such as scores or selections. Design the few messages between them. Read `references/architecture-and-loop.md`; for React Three Fiber apps, `references/react-three-fiber.md`.
 
 For a large app, a two-step route lowers risk: first port with `createEngine({ sketchThread: 'main' })`, so sketch code still runs on the main thread and can reach the DOM, then move it to the worker once parity holds.
 
@@ -86,7 +86,7 @@ Write `PORTING-REPORT.md` with the template in `references/verification.md`: wha
 
 ## 3. Differences that break ports
 
-| three.js habit | null3d way | Why |
+| three.js habit | null3D way | Why |
 | --- | --- | --- |
 | `renderer.render(scene, camera)` inside `requestAnimationFrame` | Logic in `onUpdate(dt)`; the engine renders by itself | Frames run on the render worker's own clock |
 | `mesh.position.x += 1` | `mesh.setPosition(x, y, z)`, or typed arrays for many objects | Engine objects are handles; they have no position properties |
@@ -110,13 +110,13 @@ Write `PORTING-REPORT.md` with the template in `references/verification.md`: wha
 
 When parity images differ, check these first.
 
-- Color management. three.js r152 and later, like null3d, read hex colors as sRGB and light in linear space. Older projects (with `outputEncoding`, or `ColorManagement.enabled = false`) look different by design; decide with the user which look to keep.
+- Color management. three.js r152 and later, like null3D, read hex colors as sRGB and light in linear space. Older projects (with `outputEncoding`, or `ColorManagement.enabled = false`) look different by design; decide with the user which look to keep.
 - Texture color spaces. Color and emissive maps are sRGB; normal, roughness, metalness and AO maps are linear. If the original forgot the sRGB flag, its look is wrong in a way users may like; ask before "fixing" it.
-- Tone mapping. three.js defaults to none; null3d defaults to ACES. Set `post.set({ toneMapping: 'none' })` to match an original without tone mapping, and copy `toneMappingExposure` to `exposure`.
-- Light units. null3d uses physical units, as three.js r155 and later do. Scenes tuned with legacy lights need new intensities.
-- Point and spot light range. three.js `distance: 0` means infinite range; null3d needs a finite `range`. Pick the distance where the light no longer matters; the edge of the light may differ slightly.
-- Shadows. three.js shadow cameras are hand-fitted; null3d cascades fit the view. Tune `mapSize`, `cascades` and bias rather than copying `shadow.camera`.
-- Pixel ratio. Many three.js apps render at the full device pixel ratio (3 on many phones); null3d presets cap it at 2. For parity tests, fix the pixel ratio to 1 in both.
+- Tone mapping. three.js defaults to none; null3D defaults to ACES. Set `post.set({ toneMapping: 'none' })` to match an original without tone mapping, and copy `toneMappingExposure` to `exposure`.
+- Light units. null3D uses physical units, as three.js r155 and later do. Scenes tuned with legacy lights need new intensities.
+- Point and spot light range. three.js `distance: 0` means infinite range; null3D needs a finite `range`. Pick the distance where the light no longer matters; the edge of the light may differ slightly.
+- Shadows. three.js shadow cameras are hand-fitted; null3D cascades fit the view. Tune `mapSize`, `cascades` and bias rather than copying `shadow.camera`.
+- Pixel ratio. Many three.js apps render at the full device pixel ratio (3 on many phones); null3D presets cap it at 2. For parity tests, fix the pixel ratio to 1 in both.
 - Material approximations. Lambert, Phong and Toon materials become standard materials or surface functions; small differences are expected (`references/materials.md`).
 - Post effects. Bloom and ambient occlusion are implemented differently; match the look by tuning, one effect at a time.
 
@@ -127,7 +127,7 @@ For `post-1.0` and `unsupported` rows:
 1. Tell the user before porting the rest, with the workaround from the mapping table and what it costs visually or in behavior.
 2. If the feature is central, for example an XR experience, recommend waiting rather than porting.
 3. Never drop a feature silently. List every omission and workaround in the report.
-4. Do not layer a three.js canvas over the null3d canvas to keep one effect. Two GPU contexts double memory and break the frame pacing; use it only as a stopgap the user explicitly accepts.
+4. Do not layer a three.js canvas over the null3D canvas to keep one effect. Two GPU contexts double memory and break the frame pacing; use it only as a stopgap the user explicitly accepts.
 
 ## 6. A small example
 
@@ -152,7 +152,7 @@ addEventListener('resize', () => { camera.aspect = innerWidth / innerHeight; cam
 renderer.setAnimationLoop((t) => { cube.rotation.y = t / 1000; controls.update(); renderer.render(scene, camera); });
 ```
 
-After, in null3d:
+After, in null3D:
 
 ```ts
 // page.ts
@@ -197,7 +197,7 @@ The resize handler, the pixel-ratio call, `scene.add` and the render call disapp
 - `references/materials.md`: every material and texture parameter, approximations, and toon, matcap and clipping recipes.
 - `references/shaders.md`: GLSL to WGSL, three.js built-ins, `onBeforeCompile` patterns, TSL, worked examples and pitfalls.
 - `references/post-processing.md`: composer passes, pmndrs effects and three.js TSL post nodes, mapped to `post.set` and `post.addEffect`.
-- `references/react-three-fiber.md`: R3F and drei to null3d, with a React wrapper component.
+- `references/react-three-fiber.md`: R3F and drei to null3D, with a React wrapper component.
 - `references/verification.md`: baseline capture, parity tests, performance comparison and the report template.
 
 ## 8. Before you finish

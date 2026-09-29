@@ -4,11 +4,11 @@
 		"name": "null3d",
 		"url": "https://github.com/null3d-engine/null3d"
 	},
-	"description": "Agent skills for null3d, a browser 3D engine.",
+	"description": "Agent skills for null3D, a browser 3D engine.",
 	"plugins": [
 		{
 			"name": "null3d",
-			"description": "Build, debug and speed up null3d projects, and port three.js projects to null3d.",
+			"description": "Build, debug and speed up null3D projects, and port three.js projects to null3D.",
 			"version": "0.0.0",
 			"source": {
 				"source": "git-subdir",

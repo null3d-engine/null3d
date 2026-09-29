@@ -8,9 +8,9 @@ summary: "Measuring; the frame budget; common causes of slow frames and their fi
 
 # Performance guide
 
-> Planned for null3d 0.1. No release has these APIs yet, so coding agents must not use them.
+> Planned for null3D 0.1. No release has these APIs yet, so coding agents must not use them.
 
-null3d keeps its own work per frame small, so your sketch code usually decides how long a frame takes. This guide shows where frame time goes, how to write per-frame code that stays fast, and how to measure. The figures come from the engine's benchmark scenes, and `bun run bench:run` measures them on your own computer.
+null3D keeps its own work per frame small, so your sketch code usually decides how long a frame takes. This guide shows where frame time goes, how to write per-frame code that stays fast, and how to measure. The figures come from the engine's benchmark scenes, and `bun run bench:run` measures them on your own computer.
 
 ## Where frame time goes
 
@@ -94,9 +94,9 @@ These habits keep play free of rebuilds:
 
 ## How the engine batches, builds pipelines and times frames
 
-Performance advice written for other engines often assumes things that do not hold here. These are null3d's answers to the questions that such advice depends on.
+Performance advice written for other engines often assumes things that do not hold here. These are null3D's answers to the questions that such advice depends on.
 
-| Question | null3d's answer |
+| Question | null3D's answer |
 | --- | --- |
 | What makes the GPU build a pipeline? | A shading model, lit or unlit, with the canvas's color format, the depth format and the sample count. A material never does: materials are rows in one shared table, so a thousand lit materials share one lit pipeline. |
 | When are pipelines built? | In the first frame, and again after the browser replaces the GPU. Sketch code never compiles one. `measure` counts builds in `pipelines`. |

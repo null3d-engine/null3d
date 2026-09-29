@@ -2,7 +2,7 @@
 	"name": "@null3d/vite-plugin",
 	"version": "0.0.0",
 	"private": true,
-	"description": "Vite plugin for null3d projects: cross-origin isolation headers, HTTPS for testing on phones and tablets, and production builds that compile the sketch module and ship the engine core.",
+	"description": "Vite plugin for null3D projects: cross-origin isolation headers, HTTPS for testing on phones and tablets, and production builds that compile the sketch module and ship the engine core.",
 	"license": "MIT OR Apache-2.0",
 	"repository": {
 		"type": "git",

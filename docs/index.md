@@ -1,18 +1,18 @@
 ---
 id: index
-title: null3d documentation
+title: null3D documentation
 status: experimental
 since: "0.1"
-summary: "What null3d is; how the docs are organized; status labels."
+summary: "What null3D is; how the docs are organized; status labels."
 ---
 
-# null3d documentation
+# null3D documentation
 
-null3d is a browser 3D engine for games and heavy 3D apps. Its core is Rust compiled to WebAssembly, and it runs on worker threads, so the page's main thread stays free. It draws with WebGPU, and with WebGL2 where WebGPU is missing, from the same code.
+null3D is a browser 3D engine for games and heavy 3D apps. Its core is Rust compiled to WebAssembly, and it runs on worker threads, so the page's main thread stays free. It draws with WebGPU, and with WebGL2 where WebGPU is missing, from the same code.
 
-In null3d, a 3D scene is called a **sketch**. A sketch is a TypeScript module that builds its scene with `defineSketch` and updates it every frame. It runs in a worker of its own, while the page keeps the HTML. Its names follow three.js where the ideas match.
+In null3D, a 3D scene is called a **sketch**. A sketch is a TypeScript module that builds its scene with `defineSketch` and updates it every frame. It runs in a worker of its own, while the page keeps the HTML. Its names follow three.js where the ideas match.
 
-null3d is in early development. Most pages here describe planned features, and each page's status label says which is which.
+null3D is in early development. Most pages here describe planned features, and each page's status label says which is which.
 
 ## Status labels
 
@@ -25,7 +25,7 @@ Every page has a status in its front matter:
 | `stable` | The API follows semantic versioning. |
 | `generated` | A tool writes the page from a single source, such as the three.js mapping data. |
 
-Coding agents must never use an API whose page is `planned`. The null3d agent skills follow the same rule.
+Coding agents must never use an API whose page is `planned`. The null3D agent skills follow the same rule.
 
 The API reference on each `api/` page is generated from the doc comments in the engine's source code, so it always matches the code.
 
@@ -36,7 +36,7 @@ The version column in the page list gives the first engine version with the page
 - [Architecture: threads and the frame](concepts/architecture.md) explains where sketch code runs, and why.
 - [GPU tiers and backends](concepts/backends.md) shows which browsers get WebGPU and which get WebGL2.
 - [Hosting and cross-origin isolation](getting-started/hosting.md) covers the two HTTP headers that turn on worker threads.
-- If you are porting a three.js app, the [three.js to null3d mapping](porting/threejs-mapping.md) lists 147 three.js APIs with their null3d equivalents.
+- If you are porting a three.js app, the [three.js to null3D mapping](porting/threejs-mapping.md) lists 147 three.js APIs with their null3D equivalents.
 
 Coding agents can look pages up by ID. A page's ID is its path under `docs/` without `.md`, such as `concepts/architecture`. From version 0.1, the same pages ship inside the `@null3d/engine` package, so they always match the installed engine.
 
@@ -48,7 +48,7 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 
 | Page | What it covers | Status | Version |
 | --- | --- | --- | --- |
-| [Install null3d](getting-started/install.md) | The npm packages; the Vite plugin; package versions always match; the optional `null3d` command. | planned | 0.1 |
+| [Install null3D](getting-started/install.md) | The npm packages; the Vite plugin; package versions always match; the optional `null3d` command. | planned | 0.1 |
 | [Your first scene](getting-started/first-scene.md) | page.ts with createEngine; sketch.ts with defineSketch; camera, light, mesh; running it with Vite. | planned | 0.1 |
 | [Hosting and cross-origin isolation](getting-started/hosting.md) | COOP and COEP headers; require-corp on Safari; CORS and CORP for assets; the single-threaded fallback. | planned | 0.1 |
 | [Project structure](getting-started/project-structure.md) | Starting from a template with `bunx @null3d/cli create`; page.ts, sketch.ts, assets/, AGENTS.md, .claude/skills/; what runs where. | planned | 0.3 |
@@ -121,11 +121,11 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 | [Audio with Web Audio](guides/audio.md) | Why audio stays on the page; sending positions from the sketch. | planned | 0.1 |
 | [Using a physics library](guides/physics.md) | Running Rapier or cannon-es in the sketch worker; copying transforms. | planned | 0.1 |
 | [Multiple views](guides/multiple-views.md) | Split screens with scene.createView, after 1.0; minimaps work from 0.2 through render-to-texture passes. | planned | after 1.0 |
-| [The asset pipeline (null3d assets)](guides/assets-pipeline.md) | optimize, env, convert; LODs; texture compression; budget reports. | planned | 0.2 |
-| [Testing your sketch](guides/testing.md) | null3d test; hold mode; image tests; reading results. | planned | 0.1 |
+| [The asset pipeline (the `assets` command)](guides/assets-pipeline.md) | optimize, env, convert; LODs; texture compression; budget reports. | planned | 0.2 |
+| [Testing your sketch](guides/testing.md) | The `test` command; hold mode; image tests; reading results. | planned | 0.1 |
 | [Debugging](guides/debugging.md) | Error codes; the inspector; the MCP server; the render-graph dump; common failures. | planned | 0.1 |
 | [Deploying](guides/deploying.md) | Headers on common hosts; asset caching; size budgets. | planned | 0.3 |
-| [Working with AI agents](guides/agents.md) | Installing the null3d skills in Claude Code, claude.ai and other agent tools; docs by ID; the MCP server and AGENTS.md in templates (0.3). | planned | 0.1 |
+| [Working with AI agents](guides/agents.md) | Installing the null3D skills in Claude Code, claude.ai and other agent tools; docs by ID; the MCP server and AGENTS.md in templates (0.3). | planned | 0.1 |
 
 ### Shaders
 
@@ -148,13 +148,13 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 | [Porting React Three Fiber](porting/react-three-fiber.md) | Canvas, useFrame, drei helpers; keeping React for the page UI. | planned | 0.3 |
 | [Unsupported three.js features](porting/threejs-unsupported.md) | Features after 1.0 or out of scope, with workarounds. | planned | 0.3 |
 | [Verifying a port](porting/verification.md) | Parity images per camera view; performance comparison; the WebGL2 path; phones. | planned | 0.3 |
-| [three.js to null3d mapping](porting/threejs-mapping.md) | Every three.js API a port is likely to meet, with its null3d equivalent. | generated | 0.3 |
+| [three.js to null3D mapping](porting/threejs-mapping.md) | Every three.js API a port is likely to meet, with its null3D equivalent. | generated | 0.3 |
 
 ### Command-line tool
 
 | Page | What it covers | Status | Version |
 | --- | --- | --- | --- |
-| [The null3d command](cli/null3d.md) | create, test, bench, shot, assets, docs, port, skills, mcp, doctor. | planned | 0.3 |
+| [The `null3d` command](cli/null3d.md) | create, test, bench, shot, assets, docs, port, skills, mcp, doctor. | planned | 0.3 |
 
 ### Errors
 

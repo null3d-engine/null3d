@@ -1,12 +1,12 @@
 # Porting shaders: GLSL, onBeforeCompile and TSL
 
-null3d shaders are WGSL. The build translates them to GLSL for the WebGL2 path, so you write each shader once. The null3d-develop skill's `references/shaders.md` defines the surface-function contract used below. Engine docs: `porting/threejs-shaders`, `shaders/surface-functions`, `shaders/builtins`, `shaders/wgsl-rules`.
+null3D shaders are WGSL. The build translates them to GLSL for the WebGL2 path, so you write each shader once. The null3d-develop skill's `references/shaders.md` defines the surface-function contract used below. Engine docs: `porting/threejs-shaders`, `shaders/surface-functions`, `shaders/builtins`, `shaders/wgsl-rules`.
 
 ## Contents
 
 1. Choose the target form
 2. GLSL to WGSL
-3. three.js built-ins and their null3d equivalents
+3. three.js built-ins and their null3D equivalents
 4. Coordinate, depth and color conventions
 5. ShaderMaterial and RawShaderMaterial
 6. onBeforeCompile patterns
@@ -17,7 +17,7 @@ null3d shaders are WGSL. The build translates them to GLSL for the WebGL2 path, 
 
 ## 1. Choose the target form
 
-Read what the original shader does, then pick the smallest null3d form that can do it:
+Read what the original shader does, then pick the smallest null3D form that can do it:
 
 | The original shader... | Port it as |
 | --- | --- |
@@ -64,9 +64,9 @@ Surface functions keep instancing, skinning, shadows, fog and both backends work
 | `#ifdef`, `#if` | `if` on a `const` (the compiler removes the dead branch), or two materials |
 | `#include <chunk>` | `#import null3d::...` from the engine library, or delete (section 3) |
 
-## 3. three.js built-ins and their null3d equivalents
+## 3. three.js built-ins and their null3D equivalents
 
-| three.js (ShaderMaterial adds these) | null3d |
+| three.js (ShaderMaterial adds these) | null3D |
 | --- | --- |
 | `position`, `normal`, `uv`, `uv1` (older: `uv2`), `color` attributes | `VertexInput.position`, `normal`, `uv`, `color` in `vertexOffset`; `SurfaceInput.uv`, `uv1`, `color` in surface functions |
 | `modelMatrix` | `object.worldMatrix` |
@@ -103,7 +103,7 @@ A `RawShaderMaterial` adds nothing automatically, so all its matrices and attrib
 
 ## 6. onBeforeCompile patterns
 
-| What the patch does | null3d form |
+| What the patch does | null3D form |
 | --- | --- |
 | Changes `transformed` after `#include <begin_vertex>` | `vertexOffset` returning the change (new position minus old) |
 | Changes `diffuseColor` after `<map_fragment>` or `<color_fragment>` | Surface function: `s.baseColor`, `s.alpha` |
@@ -138,7 +138,7 @@ Keep the original's standard options (color, maps, roughness) on the new materia
 | `material.positionNode` | `vertexOffset` returning `newPosition - input.position` |
 | `material.fragmentNode`, `outputNode`, `mrtNode` | Full shader or post effect; `mrtNode` has no equivalent |
 
-On an `InstancedMesh`, three.js r186 applies the instance matrix before `positionNode` runs, so `positionLocal` there already holds the instanced vertex. In null3d, `input.position` is always the mesh's own vertex, and the engine applies the instance transform after `vertexOffset`. A displacement that three.js scaled by that `positionLocal` changes size after the port. Write it from `input.position` and the instance's own data, and check the project's three.js version before you port a `positionNode`.
+On an `InstancedMesh`, three.js r186 applies the instance matrix before `positionNode` runs, so `positionLocal` there already holds the instanced vertex. In null3D, `input.position` is always the mesh's own vertex, and the engine applies the instance transform after `vertexOffset`. A displacement that three.js scaled by that `positionLocal` changes size after the port. Write it from `input.position` and the instance's own data, and check the project's three.js version before you port a `positionNode`.
 
 ## 8. Vertex displacement and displacement maps
 
@@ -235,7 +235,7 @@ material.emissiveNode = color(0xff6a00).mul(smoothstep(0.05, 0.0, n.sub(progress
 material.alphaTest = 0.5;
 ```
 
-The null3d version is the dissolve example in the null3d-develop skill's `references/shaders.md` (section 2). The mapping is one to one: `opacityNode` becomes `s.alpha`, `emissiveNode` becomes `s.emissive`, and `alphaTest` becomes `alphaMode: 'mask'` with `alphaCutoff`.
+The null3D version is the dissolve example in the null3d-develop skill's `references/shaders.md` (section 2). The mapping is one to one: `opacityNode` becomes `s.alpha`, `emissiveNode` becomes `s.emissive`, and `alphaTest` becomes `alphaMode: 'mask'` with `alphaCutoff`.
 
 ## 10. Pitfalls checklist
 
@@ -245,7 +245,7 @@ The null3d version is the dissolve example in the null3d-develop skill's `refere
 - Flip y for `gl_FragCoord` and full-screen UV math (section 4).
 - Replace depth formulas with `null3d::depth` helpers.
 - Convert raw sRGB color constants from ShaderMaterials (section 4).
-- three.js `normalMatrix` is view space; null3d normals are world space.
+- three.js `normalMatrix` is view space; null3D normals are world space.
 - WGSL does not mix `f32` and `i32` in arithmetic: cast explicitly.
 - Avoid `mat3x3f` uniforms: their layout pads each column. Pass three `vec3f` values or a `mat4x4f`.
 - Use only the three WGSL language features every browser shares, and `@interpolate(flat, either)` for flat values (null3d-develop `references/shaders.md`, section 8).

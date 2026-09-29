@@ -75,7 +75,7 @@ export class Drawing<R extends Recoverable> {
 		this.loop = this.run(this.renderer);
 		this.watch();
 		console.warn(
-			`null3d: the browser took the GPU away (${reason}); the engine started a new device.`,
+			`null3D: the browser took the GPU away (${reason}); the engine started a new device.`,
 		);
 	}
 

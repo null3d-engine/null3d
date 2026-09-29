@@ -136,7 +136,7 @@ export class Material {
 
 /**
  * Material factories. The standard material shades diffuse light only, as three.js's
- * `MeshLambertMaterial` does. Metalness and roughness are planned for null3d 0.1.
+ * `MeshLambertMaterial` does. Metalness and roughness are planned for null3D 0.1.
  *
  * @category api/materials
  */

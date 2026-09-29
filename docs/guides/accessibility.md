@@ -8,7 +8,7 @@ summary: "What the canvas tells assistive technology; keyboard use; reduced moti
 
 # Accessibility
 
-> Planned for null3d 0.1. No release has these APIs yet, so coding agents must not use them.
+> Planned for null3D 0.1. No release has these APIs yet, so coding agents must not use them.
 
 A screen reader sees a canvas as one element. It cannot see the objects drawn inside it. So the HTML around the canvas carries the meaning, and the sketch sends that HTML what it needs through messages.
 

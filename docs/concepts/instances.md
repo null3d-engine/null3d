@@ -10,6 +10,6 @@ summary: "createInstances; typed-array views; markDirty; automatic batching; per
 
 # Instances and batching
 
-> Planned for null3d 0.1. This page is a placeholder. No release has this feature yet, so the APIs it names do not exist. Coding agents must not use them.
+> Planned for null3D 0.1. This page is a placeholder. No release has this feature yet, so the APIs it names do not exist. Coding agents must not use them.
 
 This page will cover: createInstances; typed-array views; markDirty; automatic batching; per-instance attributes.

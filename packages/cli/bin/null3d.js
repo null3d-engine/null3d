@@ -10,15 +10,15 @@ const home = 'https://github.com/null3d-engine/null3d';
 if (command === '--version' || command === '-v') {
 	console.log(version);
 } else if (command === undefined || command === '--help' || command === '-h') {
-	console.log(`null3d ${version}
+	console.log(`null3D ${version}
 
-null3d is a browser 3D engine in early development. This package will hold its
+null3D is a browser 3D engine in early development. This package will hold its
 command-line tool, which has no commands yet. The first commands arrive with
-null3d 0.1.
+null3D 0.1.
 
 Follow the project at ${home}`);
 } else {
-	console.error(`null3d ${version} has no "${command}" command yet. The first commands arrive with
-null3d 0.1. Follow the project at ${home}`);
+	console.error(`null3D ${version} has no "${command}" command yet. The first commands arrive with
+null3D 0.1. Follow the project at ${home}`);
 	process.exit(1);
 }

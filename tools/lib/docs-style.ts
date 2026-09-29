@@ -96,6 +96,18 @@ export function mentionsWrongCli(text: string): boolean {
 	return WRONG_CLI.test(text);
 }
 
+/**
+ * The engine's name in any spelling, including one with a space. A match inside a code form is not
+ * the name: a package (`@null3d/engine`), a folder (`null3d-develop`), a path, a file name, a URL,
+ * a WGSL module path (`null3d::math`) or a marker (`null3d:placeholder`).
+ */
+const ENGINE_NAME = /(?<![\w@/.:-])null ?3d(?![\w/-]|::|[.:]\w)/gi;
+
+/** The spelling of the first mention of the engine's name that is not null3D. */
+export function misspelledEngineName(text: string): string | undefined {
+	return text.match(ENGINE_NAME)?.find((name) => name !== 'null3D');
+}
+
 /** A bare milestone name such as M1. Apple's chips share the form, so this only warns. */
 const MILESTONE_NAME = /(?<!Apple )\bM\d\b(?!-)/;
 
@@ -109,7 +121,7 @@ const EMOJI = /\p{Extended_Pictographic}/u;
 
 /** A sentence ends at . ! or ? before a capital, a digit, a quote, a bracket, or a name spelled in lowercase. */
 const SENTENCE_BREAK =
-	/(?<=[.!?])\s+(?=[A-Z0-9"(]|null3d\b|three\.js\b|npm\b|iOS\b|iPadOS\b|macOS\b)/;
+	/(?<=[.!?])\s+(?=[A-Z0-9"(]|null3D\b|three\.js\b|npm\b|iOS\b|iPadOS\b|macOS\b)/;
 
 interface Block {
 	line: number;
@@ -270,6 +282,15 @@ export function checkDocsStyle(md: string, audience: DocsAudience = 'users'): St
 		if (/[“”‘’]/.test(text)) {
 			add('curly_quote', 'error', block.line, text, 'Use straight quotes and apostrophes.');
 		}
+		const misspelled = misspelledEngineName(text);
+		if (misspelled)
+			add(
+				'engine_name',
+				'error',
+				block.line,
+				text,
+				`Write the engine's name as null3D, not "${misspelled}". Names that are code, such as \`@null3d/engine\`, stay lowercase in code format.`,
+			);
 		const chatbot = findPhrase(text, CHATBOT_PHRASES);
 		if (chatbot)
 			add(

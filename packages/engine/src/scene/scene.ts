@@ -624,7 +624,7 @@ export class Scene {
 		this.warnedPastPortable = true;
 		const count = (n: number) => n.toLocaleString('en-US');
 		console.warn(
-			`null3d: this scene counts ${count(sources)} objects and instance rows toward the GPU's limit. This device draws them, but devices with WebGPU's default limits draw at most ${count(C.LIMIT_PORTABLE_MAX_SOURCES)} and fail with E1501. engine.capabilities.maxInstances gives the limit of each device.`,
+			`null3D: this scene counts ${count(sources)} objects and instance rows toward the GPU's limit. This device draws them, but devices with WebGPU's default limits draw at most ${count(C.LIMIT_PORTABLE_MAX_SOURCES)} and fail with E1501. engine.capabilities.maxInstances gives the limit of each device.`,
 		);
 	}
 

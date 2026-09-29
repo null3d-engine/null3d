@@ -8,7 +8,7 @@ summary: "Main thread, sketch worker, render worker, job workers; the pipelined 
 
 # Architecture: threads and the frame
 
-> Planned for null3d 0.1. No release has these APIs yet, so coding agents must not use them.
+> Planned for null3D 0.1. No release has these APIs yet, so coding agents must not use them.
 
 ```mermaid
 flowchart LR
@@ -30,7 +30,7 @@ flowchart LR
     sketch -- "frame snapshot" --> render
 ```
 
-In null3d, a 3D scene is called a sketch: a module that builds the scene and updates it every frame. null3d runs your sketch in a worker thread and draws from a second worker. The page's main thread keeps nothing but the page, so scrolling, input and page UI stay smooth while the sketch runs. All threads share one block of WebAssembly memory, so they pass scene data by reading the same arrays.
+In null3D, a 3D scene is called a sketch: a module that builds the scene and updates it every frame. null3D runs your sketch in a worker thread and draws from a second worker. The page's main thread keeps nothing but the page, so scrolling, input and page UI stay smooth while the sketch runs. All threads share one block of WebAssembly memory, so they pass scene data by reading the same arrays.
 
 ## The four kinds of thread
 

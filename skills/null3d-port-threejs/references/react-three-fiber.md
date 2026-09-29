@@ -1,11 +1,11 @@
 # Porting React Three Fiber and drei
 
-React Three Fiber (R3F) describes a three.js scene as React components that run on the main thread. In null3d the scene lives in `sketch.ts` in a worker, and React keeps doing what it does best: the page UI. The port moves the component tree into imperative sketch code and connects React to the sketch with messages. Engine docs: `porting/react-three-fiber`, `api/page`, `guides/ui-overlays`.
+React Three Fiber (R3F) describes a three.js scene as React components that run on the main thread. In null3D the scene lives in `sketch.ts` in a worker, and React keeps doing what it does best: the page UI. The port moves the component tree into imperative sketch code and connects React to the sketch with messages. Engine docs: `porting/react-three-fiber`, `api/page`, `guides/ui-overlays`.
 
 ## Contents
 
 1. The target shape
-2. A React wrapper for null3d
+2. A React wrapper for null3D
 3. State between React and the sketch
 4. R3F and drei mapping
 5. Step by step
@@ -22,7 +22,7 @@ labels bound with engine.labels                  ui.trackLabel for former <Html>
 
 The React tree above the former `<Canvas>` barely changes. The subtree inside `<Canvas>` becomes `sketch.ts`.
 
-## 2. A React wrapper for null3d
+## 2. A React wrapper for null3D
 
 The wrapper keeps one engine per sketch while the app shows other views. Leaving the view detaches the canvas and pauses the engine; coming back attaches it again, with no new start.
 
@@ -123,7 +123,7 @@ Never mirror per-frame scene state into React state: it re-renders React every f
 
 ## 4. R3F and drei mapping
 
-| R3F or drei | null3d |
+| R3F or drei | null3D |
 | --- | --- |
 | `<Canvas camera={{ position, fov }}>` | `scene.createPerspectiveCamera({ position, fov })` in `sketch.ts` |
 | `<Canvas dpr={[1, 2]}>` | `createEngine({ maxPixelRatio: 2 })`; presets and dynamic resolution handle the rest |

@@ -10,7 +10,7 @@ summary: "The context object: scene, assets, materials, geometry, textures, inpu
 
 # Sketch API: defineSketch and the context
 
-> Planned for null3d 0.1. No release has these APIs yet, so coding agents must not use them. The reference below lists the APIs the engine has now. The rest of the page is not written yet.
+> Planned for null3D 0.1. No release has these APIs yet, so coding agents must not use them. The reference below lists the APIs the engine has now. The rest of the page is not written yet.
 
 This page will cover: The context object: scene, assets, materials, geometry, textures, input, time, quality, post, render, page, ui, debug; the callbacks.
 
@@ -22,7 +22,7 @@ This page will cover: The context object: scene, assets, materials, geometry, te
 function defineSketch(setup: SketchSetup): SketchDefinition
 ```
 
-Declares a sketch. In null3d, a 3D scene is called a sketch: a module that builds the scene and updates it every frame, in the sketch worker. The module must export the result as its default export.
+Declares a sketch. In null3D, a 3D scene is called a sketch: a module that builds the scene and updates it every frame, in the sketch worker. The module must export the result as its default export.
 
 ### `SketchCallbacks`
 

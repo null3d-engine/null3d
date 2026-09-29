@@ -1,4 +1,4 @@
-# Testing and debugging null3d projects
+# Testing and debugging null3D projects
 
 Engine docs: `guides/testing`, `guides/debugging`, `errors/index`, `cli/null3d`.
 
@@ -17,7 +17,7 @@ Engine docs: `guides/testing`, `guides/debugging`, `errors/index`, `cli/null3d`.
 
 | Command | What it does |
 | --- | --- |
-| `bunx vite` | Dev server; the null3d Vite plugin adds the cross-origin isolation headers and shader hot reload |
+| `bunx vite` | Dev server; the null3D Vite plugin adds the cross-origin isolation headers and shader hot reload |
 | `bunx @null3d/cli shot --out shot.png [--time 2.0] [--size 1280x720] [--gpu webgl2]` | Renders one frame headless and saves it, plus `shot.json` with frame stats and console errors |
 | `bunx @null3d/cli test` | Type checks, lint, and all visual and behavior tests, headless |
 | `bunx @null3d/cli test --gpu webgpu,webgl2,compat` | Runs visual tests on each GPU tier |
@@ -120,7 +120,7 @@ Look up the full explanation with `bunx @null3d/cli docs show errors/E1203`. Rel
 
 | Symptom | Likely cause | Fix | Docs |
 | --- | --- | --- | --- |
-| Blank canvas; console mentions `SharedArrayBuffer` or `crossOriginIsolated` | No isolation headers | The null3d Vite plugin, or set COOP `same-origin` and COEP `require-corp` on the host | `getting-started/hosting` |
+| Blank canvas; console mentions `SharedArrayBuffer` or `crossOriginIsolated` | No isolation headers | The null3D Vite plugin, or set COOP `same-origin` and COEP `require-corp` on the host | `getting-started/hosting` |
 | Blank canvas; console shows CORS errors for models or textures | Assets from another origin without CORS or CORP headers | Serve them with `Access-Control-Allow-Origin` or `Cross-Origin-Resource-Policy` | `getting-started/hosting` |
 | Canvas works, nothing visible | No active camera, camera inside an object, or objects outside near and far | `scene.setActiveCamera`; check positions with `debug.axes`; widen near and far | `api/cameras` |
 | An object does not move | Static object written through an array | Setter, or `dynamic: true` | `concepts/static-dynamic` |

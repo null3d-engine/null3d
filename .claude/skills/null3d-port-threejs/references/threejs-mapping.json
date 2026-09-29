@@ -1,17 +1,17 @@
 {
-  "about": "Maps three.js APIs to their null3d equivalents. Each entry gives a status, the first engine version and a docs page ID.",
-  "version": "null3d 0.1 to 1.0",
+  "about": "Maps three.js APIs to their null3D equivalents. Each entry gives a status, the first engine version and a docs page ID.",
+  "version": "null3D 0.1 to 1.0",
   "statusLegend": {
     "direct": "Same concept; the call or option changes name only.",
     "changed": "Supported, with a different API or pattern. Follow the note.",
     "manual": "Must be rewritten by hand, for example GLSL shaders or render hooks.",
     "post-1.0": "Not in version 1.0. Use the workaround in the note.",
-    "unsupported": "Out of scope for null3d. Use the workaround in the note."
+    "unsupported": "Out of scope for null3D. Use the workaround in the note."
   },
   "sinceLegend": {
     "0.1": "the core renderer, with cameras, materials, lights and shadows",
     "0.2": "content, such as glTF models, animation, raycasting and post-processing",
-    "0.3": "developer tools, such as the null3d command, templates and the porting tools",
+    "0.3": "developer tools, such as the `null3d` command, templates and the porting tools",
     "1.0": "the stable API"
   },
   "entries": [

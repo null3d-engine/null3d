@@ -1,6 +1,6 @@
 # Porting post-processing
 
-three.js chains full-screen passes, each reading and writing the whole screen. null3d has a built-in chain: an HDR scene buffer, optional half-resolution bloom and ambient occlusion, then one final pass that merges tone mapping, grading, per-pixel custom effects, FXAA and dithering. You port settings, not passes. Engine docs: `porting/threejs-postprocessing`, `api/post`, `concepts/post-processing`.
+three.js chains full-screen passes, each reading and writing the whole screen. null3D has a built-in chain: an HDR scene buffer, optional half-resolution bloom and ambient occlusion, then one final pass that merges tone mapping, grading, per-pixel custom effects, FXAA and dithering. You port settings, not passes. Engine docs: `porting/threejs-postprocessing`, `api/post`, `concepts/post-processing`.
 
 ## Contents
 
@@ -21,7 +21,7 @@ three.js chains full-screen passes, each reading and writing the whole screen. n
 
 ## 2. three.js EffectComposer passes
 
-| Pass and parameters | null3d | Notes |
+| Pass and parameters | null3D | Notes |
 | --- | --- | --- |
 | `RenderPass(scene, camera)` | Nothing | The scene pass is built in |
 | `OutputPass` | Nothing | Tone mapping and sRGB output happen once, in the final pass |
@@ -42,7 +42,7 @@ three.js chains full-screen passes, each reading and writing the whole screen. n
 
 ## 3. pmndrs postprocessing effects
 
-| Effect | null3d |
+| Effect | null3D |
 | --- | --- |
 | `EffectComposer`, `RenderPass`, `EffectPass` | Nothing: settings go in `post.set` |
 | `BloomEffect` (`intensity`, `luminanceThreshold`, `luminanceSmoothing`, `mipmapBlur`) | `bloom: { strength: intensity, threshold: luminanceThreshold }`; smoothing and mip blur are built in |
@@ -57,7 +57,7 @@ three.js chains full-screen passes, each reading and writing the whole screen. n
 
 ## 4. three.js WebGPU post nodes (TSL)
 
-| three.js | null3d |
+| three.js | null3D |
 | --- | --- |
 | `new PostProcessing(renderer)`, `pass(scene, camera)`, `postProcessing.outputNode = ...` | `post.set` |
 | `bloom(node, strength, radius, threshold)` | `bloom: { strength, radius, threshold }` |
@@ -72,7 +72,7 @@ Port a custom `ShaderPass` in three steps:
 
 1. Translate the fragment shader to an `effect` function (`references/shaders.md`). `tDiffuse` becomes `sampleScene(uv)`; depth reads become `sampleDepth(uv)` with `null3d::depth` helpers.
 2. Choose the stage. Per-pixel effects that read the scene at their own pixel, or a few neighbors, use `stage: 'final'` and cost almost nothing. Effects that blur or read many neighbors use `stage: 'hdr'` and get their own pass.
-3. Flip vertical UV math: null3d effect UVs start at the top left (`references/shaders.md`, section 4).
+3. Flip vertical UV math: null3D effect UVs start at the top left (`references/shaders.md`, section 4).
 
 ```ts
 // three.js ShaderPass: uniform float amount; tDiffuse; vUv
@@ -94,7 +94,7 @@ This example is symmetric, so the UV flip does not matter here.
 ## 6. Traps
 
 - Double gamma: a leftover gamma or sRGB pass washes the image out. Delete them all.
-- Tone mapping twice: `renderer.toneMapping` and a tone-mapping pass in the same three.js app means the original was tone-mapped twice. Decide with the user which look to keep; null3d tone-maps once.
-- Order: three.js lets you tone-map before bloom. null3d always blooms in HDR before tone mapping, which is physically correct but can look stronger; lower `strength` to match.
-- Resolution: three.js bloom set to full resolution looks sharper than null3d's half-resolution bloom; compare at the target resolution, not zoomed in.
+- Tone mapping twice: `renderer.toneMapping` and a tone-mapping pass in the same three.js app means the original was tone-mapped twice. Decide with the user which look to keep; null3D tone-maps once.
+- Order: three.js lets you tone-map before bloom. null3D always blooms in HDR before tone mapping, which is physically correct but can look stronger; lower `strength` to match.
+- Resolution: three.js bloom set to full resolution looks sharper than null3D's half-resolution bloom; compare at the target resolution, not zoomed in.
 - Pixel ratio: many three.js composers render at the full device pixel ratio. Compare at a fixed pixel ratio.

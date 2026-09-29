@@ -8,7 +8,7 @@ summary: "COOP and COEP headers; require-corp on Safari; CORS and CORP for asset
 
 # Hosting and cross-origin isolation
 
-> Planned for null3d 0.1. No release has these APIs yet, so coding agents must not use them.
+> Planned for null3D 0.1. No release has these APIs yet, so coding agents must not use them.
 
 ```mermaid
 flowchart TD
@@ -17,7 +17,7 @@ flowchart TD
     check -- "no" --> single["Single-threaded build<br/>the same code on one thread"]
 ```
 
-null3d runs on worker threads that share memory, and browsers allow shared memory only on pages that are cross-origin isolated. A page becomes isolated when its server sends two HTTP headers. Without them the engine still runs, on one thread.
+null3D runs on worker threads that share memory, and browsers allow shared memory only on pages that are cross-origin isolated. A page becomes isolated when its server sends two HTTP headers. Without them the engine still runs, on one thread.
 
 ## The two headers
 
@@ -43,7 +43,7 @@ Files from the page's own origin need nothing. Serve the engine's own files, the
 
 ## Two builds
 
-A WebAssembly module built for shared memory cannot load on a page without it, so null3d ships two builds. The engine's loader reads `crossOriginIsolated` and fetches the matching one, so you never pick a build yourself.
+A WebAssembly module built for shared memory cannot load on a page without it, so null3D ships two builds. The engine's loader reads `crossOriginIsolated` and fetches the matching one, so you never pick a build yourself.
 
 | Build | Loaded when | What you get |
 | --- | --- | --- |
@@ -85,7 +85,7 @@ add_header Cross-Origin-Opener-Policy same-origin always;
 add_header Cross-Origin-Embedder-Policy require-corp always;
 ```
 
-GitHub Pages cannot send custom headers, so a null3d page there runs single-threaded.
+GitHub Pages cannot send custom headers, so a null3D page there runs single-threaded.
 
 ## Let browsers keep the build files
 
@@ -104,7 +104,7 @@ That is the `_headers` form for Netlify and Cloudflare Pages. In nginx, add `add
 
 ## During development
 
-The null3d Vite plugin sends both isolation headers on every response from `vite` and `vite preview`. That includes the `.wasm` files and the worker scripts. `vite preview` also lets the browser keep the hashed files in `assets/`, as a well-set host does.
+The null3D Vite plugin sends both isolation headers on every response from `vite` and `vite preview`. That includes the `.wasm` files and the worker scripts. `vite preview` also lets the browser keep the hashed files in `assets/`, as a well-set host does.
 
 Shared memory and WebGPU also need a secure context: HTTPS, or `localhost`. An Android phone connected by USB can reach your computer's `localhost` through `adb reverse tcp:5173 tcp:5173`.
 

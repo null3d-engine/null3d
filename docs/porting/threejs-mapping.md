@@ -1,12 +1,12 @@
 ---
 id: porting/threejs-mapping
-title: three.js to null3d mapping
+title: three.js to null3D mapping
 status: generated
 since: "0.3"
-summary: "Every three.js API a port is likely to meet, with its null3d equivalent."
+summary: "Every three.js API a port is likely to meet, with its null3D equivalent."
 ---
 
-# three.js to null3d mapping
+# three.js to null3D mapping
 
 Status values:
 
@@ -14,18 +14,18 @@ Status values:
 - `changed`: Supported, with a different API or pattern. Follow the note.
 - `manual`: Must be rewritten by hand, for example GLSL shaders or render hooks.
 - `post-1.0`: Not in version 1.0. Use the workaround in the note.
-- `unsupported`: Out of scope for null3d. Use the workaround in the note.
+- `unsupported`: Out of scope for null3D. Use the workaround in the note.
 
 The "Since" column gives the first engine version with the feature:
 
 - 0.1: the core renderer, with cameras, materials, lights and shadows
 - 0.2: content, such as glTF models, animation, raycasting and post-processing
-- 0.3: developer tools, such as the null3d command, templates and the porting tools
+- 0.3: developer tools, such as the `null3d` command, templates and the porting tools
 - 1.0: the stable API
 
 ## Renderer and loop
 
-| three.js | null3d | Status | Since | Notes | Docs |
+| three.js | null3D | Status | Since | Notes | Docs |
 | --- | --- | --- | --- | --- | --- |
 | WebGLRenderer / WebGPURenderer | createEngine({ canvas, sketch }) on the page; scene code moves to sketch.ts inside defineSketch() | changed | 0.1 | The engine picks WebGPU or WebGL2 itself. antialias maps to the quality preset (MSAA 4x from Medium); alpha: true maps to createEngine({ transparent: true }); powerPreference maps to createEngine({ powerPreference }), whose default is 'high-performance'. | `getting-started/first-scene` |
 | renderer.setPixelRatio(devicePixelRatio) | createEngine({ maxPixelRatio }) and the quality presets | changed | 0.1 | Presets cap the pixel ratio (1.5 on Low, 2 on Medium and High). Dynamic resolution then adjusts the render scale. | `concepts/quality-presets` |
@@ -46,7 +46,7 @@ The "Since" column gives the first engine version with the feature:
 
 ## Scene graph
 
-| three.js | null3d | Status | Since | Notes | Docs |
+| three.js | null3D | Status | Since | Notes | Docs |
 | --- | --- | --- | --- | --- | --- |
 | new THREE.Scene() | The scene from the sketch context: defineSketch(({ scene }) => ...) | changed | 0.1 | Objects are created in the scene directly. | `api/scene` |
 | scene.environment (PMREMGenerator, RoomEnvironment, HDR files) | scene.setEnvironment(await assets.loadEnvironment('/env/studio.ktx2')) | changed | 0.2 | Prefilter HDR files offline with `bunx @null3d/cli assets env`. A built-in neutral studio environment replaces RoomEnvironment: assets.builtinEnvironment('studio'). | `concepts/lighting` |
@@ -75,7 +75,7 @@ The "Since" column gives the first engine version with the feature:
 
 ## Cameras
 
-| three.js | null3d | Status | Since | Notes | Docs |
+| three.js | null3D | Status | Since | Notes | Docs |
 | --- | --- | --- | --- | --- | --- |
 | PerspectiveCamera(fov, aspect, near, far) | scene.createPerspectiveCamera({ fov, near, far, position, target }) | direct | 0.1 | fov is vertical and in degrees, as in three.js. The aspect ratio is automatic. | `api/cameras` |
 | OrthographicCamera(left, right, top, bottom, near, far) | scene.createOrthographicCamera({ height, near, far }), or left/right/top/bottom | direct | 0.1 | With height only, the width follows the canvas aspect ratio. | `api/cameras` |
@@ -84,7 +84,7 @@ The "Since" column gives the first engine version with the feature:
 
 ## Lights and shadows
 
-| three.js | null3d | Status | Since | Notes | Docs |
+| three.js | null3D | Status | Since | Notes | Docs |
 | --- | --- | --- | --- | --- | --- |
 | DirectionalLight (+ target, shadow.camera bounds) | scene.createDirectionalLight({ direction, color, intensity, castShadows }) | changed | 0.1 | Shadow cascades fit the view automatically, so delete shadow.camera bounds and target updates. | `api/lights` |
 | PointLight(color, intensity, distance, decay) | scene.createPointLight({ position, color, intensity, range, decay }) | direct | 0.1 | distance becomes range; 0 (infinite) is not allowed, because clustered lighting needs a range. | `api/lights` |
@@ -99,7 +99,7 @@ The "Since" column gives the first engine version with the feature:
 
 ## Geometry
 
-| three.js | null3d | Status | Since | Notes | Docs |
+| three.js | null3D | Status | Since | Notes | Docs |
 | --- | --- | --- | --- | --- | --- |
 | Box / Sphere / Plane / Cylinder / Cone / Torus / Capsule / Circle / Ring Geometry | geometry.box({ width, height, depth }), geometry.sphere(...), and so on | direct | 0.1 | Same parameters and defaults as three.js, so the meshes match vertex for vertex. | `api/geometry` |
 | TorusKnot / Icosahedron / Octahedron / Tetrahedron / Dodecahedron / Polyhedron / Lathe / Extrude / Shape / Tube Geometry | The same generators from @null3d/geometry | direct | 0.2 | Same parameters as three.js; Shape and Path objects are ported too. | `api/geometry` |
@@ -112,7 +112,7 @@ The "Since" column gives the first engine version with the feature:
 
 ## Materials
 
-| three.js | null3d | Status | Since | Notes | Docs |
+| three.js | null3D | Status | Since | Notes | Docs |
 | --- | --- | --- | --- | --- | --- |
 | MeshStandardMaterial | materials.standard({ color, map, metalness, roughness, normalMap, aoMap, emissive, ... }) | direct | 0.1 | See the materials reference for every parameter and its new name. | `porting/threejs-materials` |
 | MeshPhysicalMaterial (clearcoat, transmission, sheen, iridescence, anisotropy, specular) | materials.standard for the base layer | changed | 0.1 | Clearcoat, transmission, sheen and specular are planned for after 1.0. Until then, approximate them or write a surface function. | `porting/threejs-materials` |
@@ -138,7 +138,7 @@ The "Since" column gives the first engine version with the feature:
 
 ## Textures
 
-| three.js | null3d | Status | Since | Notes | Docs |
+| three.js | null3D | Status | Since | Notes | Docs |
 | --- | --- | --- | --- | --- | --- |
 | new TextureLoader().load / loadAsync | await assets.loadTexture(url, { colorSpace, flipY, wrap, filter, anisotropy }) | changed | 0.1 | Prefer KTX2 files made with `bunx @null3d/cli assets`. | `api/textures` |
 | texture.colorSpace = SRGBColorSpace (older: encoding = sRGBEncoding) | colorSpace: 'srgb' for color maps, 'linear' for data maps | direct | 0.1 | Same rule as three.js: base color and emissive maps are sRGB; normal, roughness, metalness and AO maps are linear. glTF sets them automatically. | `concepts/color-management` |
@@ -156,7 +156,7 @@ The "Since" column gives the first engine version with the feature:
 
 ## Loaders
 
-| three.js | null3d | Status | Since | Notes | Docs |
+| three.js | null3D | Status | Since | Notes | Docs |
 | --- | --- | --- | --- | --- | --- |
 | GLTFLoader().load / loadAsync | const prefab = await assets.loadGltf(url); scene.instantiate(prefab) | changed | 0.2 | Animations are in prefab.animations; named nodes via prefab.find(name). | `api/assets` |
 | DRACOLoader + setDecoderPath | Draco files load, but convert them to meshopt with `bunx @null3d/cli assets optimize` | changed | 0.2 | meshopt decodes faster and needs no separate decoder download. | `guides/assets-pipeline` |
@@ -168,7 +168,7 @@ The "Since" column gives the first engine version with the feature:
 
 ## Instancing and batching
 
-| three.js | null3d | Status | Since | Notes | Docs |
+| three.js | null3D | Status | Since | Notes | Docs |
 | --- | --- | --- | --- | --- | --- |
 | InstancedMesh + setMatrixAt / setColorAt / instanceMatrix.needsUpdate | scene.createInstances(meshOrPrefab, count, { dynamic }); write batch.positions / rotations / scales / colors | changed | 0.1 | Static batches call markDirty(start, count) after writes; dynamic batches upload every frame without it. | `concepts/instances` |
 | BatchedMesh | Nothing special: the engine batches objects that share a mesh and material | changed | 0.1 | Use createInstances for many copies of one mesh, and separate meshes for varied geometry. | `concepts/instances` |
@@ -177,7 +177,7 @@ The "Since" column gives the first engine version with the feature:
 
 ## Animation
 
-| three.js | null3d | Status | Since | Notes | Docs |
+| three.js | null3D | Status | Since | Notes | Docs |
 | --- | --- | --- | --- | --- | --- |
 | AnimationMixer / clipAction / play / crossFadeTo / fadeIn / fadeOut / setEffectiveWeight / timeScale / mixer.update(dt) | const anim = obj.animator(); anim.play('run', { fade: 0.2, loop: true, speed }); anim.crossFade('walk', 0.3); anim.setLayerWeight(layer, w) | changed | 0.2 | No update call: the engine samples animation on job workers. | `api/animation` |
 | AnimationClip / KeyframeTrack built in code | Animate values in onUpdate; transform clips authored in glTF play through the animator (0.2) | post-1.0 | - | Property animation (scene.animateProperty and glTF KHR_animation_pointer) comes after 1.0. | `api/animation` |
@@ -186,7 +186,7 @@ The "Since" column gives the first engine version with the feature:
 
 ## Interaction and controls
 
-| three.js | null3d | Status | Since | Notes | Docs |
+| three.js | null3D | Status | Since | Notes | Docs |
 | --- | --- | --- | --- | --- | --- |
 | Raycaster.setFromCamera + intersectObject(s) | camera.screenToRay(x, y, ray); scene.raycast(ray.origin, ray.direction, { layers }, hit) | changed | 0.2 | Returns the closest hit; scene.raycastAll returns every hit. Acceleration structures are built in. | `api/raycast` |
 | DOM pointer, mouse, touch and keyboard listeners | input.pointer, input.isDown('KeyW'), input.actions; obj.on('pointerenter' \| 'pointerleave' \| 'click', fn) (0.2) | changed | 0.1 | Input reaches the sketch worker through shared memory; the sketch never adds DOM listeners. | `api/input` |
@@ -196,13 +196,13 @@ The "Since" column gives the first engine version with the feature:
 
 ## Helpers and debugging
 
-| three.js | null3d | Status | Since | Notes | Docs |
+| three.js | null3D | Status | Since | Notes | Docs |
 | --- | --- | --- | --- | --- | --- |
 | AxesHelper / GridHelper / BoxHelper / Box3Helper / ArrowHelper / CameraHelper / light helpers / SkeletonHelper / PlaneHelper | debug.axes, debug.grid, debug.box, debug.arrow, debug.frustum, debug.light, debug.skeleton | changed | 0.1 | Debug drawing exists in development builds only. | `api/debug` |
 
 ## Math
 
-| three.js | null3d | Status | Since | Notes | Docs |
+| three.js | null3D | Status | Since | Notes | Docs |
 | --- | --- | --- | --- | --- | --- |
 | new Vector3 / Quaternion / Matrix4 / Euler / Color / Box3 / Sphere / Ray / Plane | Array math from @null3d/engine: vec3.add(out, a, b), quat.slerp(out, a, b, t) | changed | 0.1 | Create scratch arrays once, outside onUpdate. three.js math classes may stay in setup code during a port, but not in per-frame code. | `api/math` |
 | Clock / getDelta / getElapsedTime | onUpdate(dt) and ctx.time.now | changed | 0.1 |  | `api/time` |
@@ -211,7 +211,7 @@ The "Since" column gives the first engine version with the feature:
 
 ## Post-processing
 
-| three.js | null3d | Status | Since | Notes | Docs |
+| three.js | null3D | Status | Since | Notes | Docs |
 | --- | --- | --- | --- | --- | --- |
 | EffectComposer / RenderPass / OutputPass / PostProcessing (three/webgpu) / pmndrs postprocessing | post.set({ ... }) | changed | 0.2 | The chain is built in and merged into few passes. Delete the composer; keep only each pass's settings. | `porting/threejs-postprocessing` |
 | UnrealBloomPass / BloomEffect / bloom() node | post.set({ bloom: { strength, radius, threshold } }) | direct | 0.2 | Similar response to UnrealBloomPass; tune with parity images. | `porting/threejs-postprocessing` |
@@ -230,7 +230,7 @@ The "Since" column gives the first engine version with the feature:
 
 ## Sprites, points, lines and labels
 
-| three.js | null3d | Status | Since | Notes | Docs |
+| three.js | null3D | Status | Since | Notes | Docs |
 | --- | --- | --- | --- | --- | --- |
 | Sprite / SpriteMaterial | scene.createSprites(count, { texture \| atlas, sizeMode: 'world' \| 'screen' }) | changed | 0.2 | Camera-facing quads drawn in one batch. | `api/sprites` |
 | Points / PointsMaterial | scene.createPoints({ positions, colors, size, sizeAttenuation, texture }) | changed | 0.2 | Point sizes above one pixel work on every backend. | `api/points` |
@@ -239,7 +239,7 @@ The "Since" column gives the first engine version with the feature:
 
 ## Other
 
-| three.js | null3d | Status | Since | Notes | Docs |
+| three.js | null3D | Status | Since | Notes | Docs |
 | --- | --- | --- | --- | --- | --- |
 | WebXR (renderer.xr, VRButton, ARButton) | None | unsupported | - | XR is out of scope for version 1. | `porting/threejs-unsupported` |
 | Audio / PositionalAudio / AudioListener / AudioLoader | Web Audio on the page | unsupported | - | The sketch sends positions with page.post: every frame for moving sounds, or on events only. | `guides/audio` |

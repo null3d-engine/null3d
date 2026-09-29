@@ -1,15 +1,15 @@
 ---
 name: null3d-develop
-description: Build, extend, debug and speed up 3D web experiences made with the null3d engine (also written Null3D or null 3d), such as games, product viewers, configurators, product and marketing pages, data visualizations and interactive scenes. Use this skill whenever a task touches a null3d project or the @null3d packages, even for short requests like add a spinning cube, load this model, soften the shadows, click to select units, add a water shader, or why is it slow on my phone. Also use it to start a new null3d project, to write WGSL materials, post effects or render passes for null3d, and to test or profile null3d scenes. To convert existing three.js or React Three Fiber code, use the null3d-port-threejs skill instead.
-compatibility: Needs Node.js 20 or newer and a null3d project. The engine docs ship inside the engine package, so their version always matches the installed engine.
+description: Build, extend, debug and speed up 3D web experiences made with the null3D engine (also written null3d, Null3D or null 3d), such as games, product viewers, configurators, product and marketing pages, data visualizations and interactive scenes. Use this skill whenever a task touches a null3D project or the @null3d packages, even for short requests like add a spinning cube, load this model, soften the shadows, click to select units, add a water shader, or why is it slow on my phone. Also use it to start a new null3D project, to write WGSL materials, post effects or render passes for null3D, and to test or profile null3D scenes. To convert existing three.js or React Three Fiber code, use the null3d-port-threejs skill instead.
+compatibility: Needs Node.js 20 or newer and a null3D project. The engine docs ship inside the engine package, so their version always matches the installed engine.
 metadata:
   skill-version: 0.1.0
   engine-versions: 0.1 to 1.0
 ---
 
-# Building with null3d
+# Building with null3D
 
-null3d is a browser 3D engine with a Rust core compiled to WebAssembly. Sketch code runs in a worker, the engine draws from another worker, and scene data lives in shared typed arrays. It renders with WebGPU where the browser has it and with WebGL2 elsewhere, from the same sketch code. Most mistakes come from writing null3d as if it were three.js, and the sections below exist to prevent that.
+null3D is a browser 3D engine with a Rust core compiled to WebAssembly. Sketch code runs in a worker, the engine draws from another worker, and scene data lives in shared typed arrays. It renders with WebGPU where the browser has it and with WebGL2 elsewhere, from the same sketch code. Most mistakes come from writing null3D as if it were three.js, and the sections below exist to prevent that.
 
 ## 1. Find the docs that match the installed engine
 
@@ -17,8 +17,8 @@ The engine docs are the source of truth. This skill describes the API planned fo
 
 1. Find the engine version: `bunx @null3d/cli --version`, or the `@null3d/engine` entry in `package.json`.
 2. Read docs pages by ID, in this order:
-   - inside the null3d repository itself: `docs/<id>.md`;
-   - in a null3d project: `node_modules/@null3d/engine/docs/<id>.md`;
+   - inside the null3D repository itself: `docs/<id>.md`;
+   - in a null3D project: `node_modules/@null3d/engine/docs/<id>.md`;
    - from any terminal: `bunx @null3d/cli docs show <id>`, or `bunx @null3d/cli docs search "<words>"`.
 3. Each page starts with front matter. `status: stable` or `status: experimental` means the API exists (experimental APIs may still change). `status: planned` means it does not exist in this version. Do not call a planned API; tell the user, and use the workaround the page gives.
 4. If the docs and this skill disagree, follow the docs and mention the difference in your summary, so the skill can be fixed.
@@ -27,7 +27,7 @@ Doc IDs appear in backticks throughout, for example `concepts/architecture`. Ver
 
 ## 2. The model
 
-In null3d, a 3D scene is called a sketch: the module in `sketch.ts` that builds the scene with `defineSketch` and updates it every frame.
+In null3D, a 3D scene is called a sketch: the module in `sketch.ts` that builds the scene with `defineSketch` and updates it every frame.
 
 ```
 page.ts (main thread)        sketch.ts (sketch worker)          render worker
@@ -38,7 +38,7 @@ creates the engine           shared typed arrays                 never runs your
 
 - `page.ts` runs on the main thread. It creates the engine and owns the DOM, HTML UI and Web Audio. `sketch.ts` runs in the sketch worker: scene setup and per-frame logic. The sketch worker has no `document` and no `window`. The two sides talk with `engine.postToSketch` and `page.onMessage`, and with `page.post` and `engine.onSketchMessage`. (`concepts/architecture`, `api/page`)
 - Scene objects are small wrappers around 30-bit integer handles. Change them with setters such as `setPosition`; never assign properties like `mesh.position.x = 1`. (`concepts/handles`, `api/objects`)
-- For many objects, write typed arrays directly: instance batches and dynamic objects. This is where null3d gets its speed. (`concepts/instances`)
+- For many objects, write typed arrays directly: instance batches and dynamic objects. This is where null3D gets its speed. (`concepts/instances`)
 - Objects are static by default: they cost nothing per frame until a setter changes them. Objects created with `dynamic: true` are recomputed every frame and may be written through arrays. (`concepts/static-dynamic`)
 - The engine renders every frame by itself. Sketch code has no render call and no `requestAnimationFrame`; per-frame logic goes in `onUpdate(dt)`.
 - The same code runs on WebGPU and WebGL2. When a feature is optional, check `ctx.engine.capabilities`; never check browser or GPU names. (`concepts/backends`)
@@ -85,13 +85,13 @@ export default defineSketch(async ({ scene, geometry, materials }) => {
 1. Pin down the target when the request leaves it open: which devices (phones or desktop), which frame rate, and whether the WebGL2 path matters. Phones usually matter, so assume they do unless told otherwise.
 2. Read the doc pages for the features involved (section 1).
 3. Make the change in small steps. Scene logic goes in `sketch.ts`; DOM, HTML UI and audio go in `page.ts`.
-4. Look at the result. `bunx vite` serves the project, and the null3d Vite plugin adds the right headers. `bunx @null3d/cli shot --out shot.png` renders one frame headless and saves it. Open the image and check it: code that compiles can still draw nothing.
+4. Look at the result. `bunx vite` serves the project, and the null3D Vite plugin adds the right headers. `bunx @null3d/cli shot --out shot.png` renders one frame headless and saves it. Open the image and check it: code that compiles can still draw nothing.
 5. Check the cost with `bunx @null3d/cli bench`, or with `debug.stats(true)` while running. Compare the frame phases with the preset's budget (`references/performance.md`).
 6. Add or update a test. Anything visual gets a hold-mode image test (`references/testing-and-debugging.md`). Run `bunx @null3d/cli test`.
 7. If the change touches rendering, check the WebGL2 path: add `?gpu=webgl2` to the dev URL, or run `bunx @null3d/cli test --gpu webgl2`.
 8. Summarize what changed, how you verified it (images, numbers), and any limits: planned APIs you avoided, device classes you could not test.
 
-## 4. Rules that keep null3d fast
+## 4. Rules that keep null3D fast
 
 Each rule comes with its reason, because the reason covers cases the rule does not name.
 
@@ -184,7 +184,7 @@ water.set({ waveSpeed: 2.0 }); // typed from the uniforms above
 
 | Symptom | Likely cause | Fix |
 | --- | --- | --- |
-| Blank canvas; the console mentions `SharedArrayBuffer` or `crossOriginIsolated` | The page is not cross-origin isolated | Add the null3d Vite plugin to `vite.config.ts`, or set the COOP and COEP headers on the host (`getting-started/hosting`) |
+| Blank canvas; the console mentions `SharedArrayBuffer` or `crossOriginIsolated` | The page is not cross-origin isolated | Add the null3D Vite plugin to `vite.config.ts`, or set the COOP and COEP headers on the host (`getting-started/hosting`) |
 | An object does not move | A static object was written through an array | Use a setter, or create it with `dynamic: true` |
 | Colors too dark or washed out | Wrong texture color space | `colorSpace: 'srgb'` for color maps, `'linear'` for data maps (`concepts/color-management`) |
 | A stutter every few seconds | Allocations in per-frame code | Scratch values created once; confirm with the browser's memory profiler |

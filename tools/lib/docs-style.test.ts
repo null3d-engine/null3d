@@ -42,6 +42,28 @@ describe('checkDocsStyle errors', () => {
 		expect(rules('Run `bunx vite`. It installs from npm, and pnpm works too.')).toEqual([]);
 	});
 
+	it("blocks the engine's name in any spelling but null3D, in prose, headings and tables", () => {
+		expect(rules('null3d draws on workers.')).toEqual(['error:engine_name:1']);
+		expect(rules('# Null3D documentation')).toEqual(['error:engine_name:1']);
+		expect(rules('| [Install null3d](install.md) | x |')).toEqual(['error:engine_name:1']);
+		expect(rules('Built with null 3d.')).toEqual(['error:engine_name:1']);
+		expect(rules("null3d's core is Rust.")).toEqual(['error:engine_name:1']);
+		expect(rules('The message starts with null3d: and then the cause.')).toEqual([
+			'error:engine_name:1',
+		]);
+		expect(rules("null3D draws on workers. null3D's core is Rust.")).toEqual([]);
+	});
+
+	it("leaves the engine's code names alone", () => {
+		expect(rules('Install `@null3d/engine` and `bunx @null3d/cli`.')).toEqual([]);
+		expect(rules('Install @null3d/engine, then load null3d_bg.wasm and null3d.js.')).toEqual([]);
+		expect(rules('The null3d-develop skill imports null3d::math.')).toEqual([]);
+		expect(rules('See https://github.com/null3d-engine/null3d for the source.')).toEqual([]);
+		expect(rules('[the source](https://github.com/null3d-engine/null3d)')).toEqual([]);
+		expect(rules('<!-- null3d:placeholder -->')).toEqual([]);
+		expect(rules('Run the `null3d` command.')).toEqual([]);
+	});
+
 	it('lets contributor files name the build process, but not the private plan', () => {
 		const contributors = (md: string) =>
 			checkDocsStyle(md, 'contributors').map((f) => `${f.severity}:${f.rule}:${f.line}`);
@@ -92,7 +114,7 @@ describe('checkDocsStyle warnings', () => {
 
 	it('ends a sentence before a name spelled in lowercase', () => {
 		const words = Array.from({ length: 15 }, () => 'word').join(' ');
-		expect(rules(`${words}. null3d ${words}. three.js ${words}.`)).toEqual([]);
+		expect(rules(`${words}. null3D ${words}. three.js ${words}.`)).toEqual([]);
 	});
 
 	it('does not split sentences at version numbers or skip table rows for errors', () => {
@@ -104,7 +126,7 @@ describe('checkDocsStyle warnings', () => {
 describe('isTitleCase', () => {
 	it('flags title case and leaves sentence case and product names alone', () => {
 		expect(isTitleCase('Getting Started With Null')).toBe(true);
-		expect(isTitleCase('Getting started with null3d')).toBe(false);
+		expect(isTitleCase('Getting started with null3D')).toBe(false);
 		expect(isTitleCase('Porting React Three Fiber')).toBe(false);
 		expect(isTitleCase('GPU tiers and backends')).toBe(false);
 	});

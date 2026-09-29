@@ -90,7 +90,7 @@ export interface SketchDefinition {
 }
 
 /**
- * Declares a sketch. In null3d, a 3D scene is called a sketch: a module that builds the scene and
+ * Declares a sketch. In null3D, a 3D scene is called a sketch: a module that builds the scene and
  * updates it every frame, in the sketch worker. The module must export the result as its default
  * export.
  *

@@ -2,7 +2,7 @@
 	"name": "@null3d/engine",
 	"version": "0.0.0",
 	"private": true,
-	"description": "The null3d engine: the TypeScript API, the page shim, the worker entry points and both WebAssembly builds.",
+	"description": "The null3D engine: the TypeScript API, the page shim, the worker entry points and both WebAssembly builds.",
 	"license": "MIT OR Apache-2.0",
 	"repository": {
 		"type": "git",

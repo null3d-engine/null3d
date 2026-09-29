@@ -1,4 +1,4 @@
-# null3d recipes
+# null3D recipes
 
 Each recipe states the goal, gives the code, explains why it is written that way, and names the docs pages to read. Code runs in `sketch.ts` unless it says `page.ts`. Versions in parentheses mark APIs that arrive after 0.1; check the docs status before using them.
 
@@ -28,7 +28,7 @@ bunx @null3d/cli create my-project --template empty   # also: third-person, top-
 cd my-project && bun install && bun run dev
 ```
 
-The template contains `page.ts`, `sketch.ts`, `index.html` with a canvas, `AGENTS.md`, and the null3d skills in `.claude/skills/`. Its `vite.config.ts` loads the null3d Vite plugin, which sends the cross-origin isolation headers, so the threaded build runs. Docs: `getting-started/install`, `getting-started/project-structure`, `getting-started/hosting`.
+The template contains `page.ts`, `sketch.ts`, `index.html` with a canvas, `AGENTS.md`, and the null3D skills in `.claude/skills/`. Its `vite.config.ts` loads the null3D Vite plugin, which sends the cross-origin isolation headers, so the threaded build runs. Docs: `getting-started/install`, `getting-started/project-structure`, `getting-started/hosting`.
 
 ## 2. Orbit camera around a model
 
