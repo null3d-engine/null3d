@@ -87,7 +87,11 @@ interface Engine {
 
 async function startWebGL(): Promise<Engine> {
 	const three = await import('three');
-	const renderer = new three.WebGLRenderer({ antialias: true });
+	// Both engines ask for the faster GPU, so a device with two draws both on the same one.
+	const renderer = new three.WebGLRenderer({
+		antialias: true,
+		powerPreference: 'high-performance',
+	});
 	return {
 		three,
 		renderer,
@@ -112,7 +116,10 @@ async function startWebGPU(): Promise<Engine> {
 		throw new Error('This browser has no WebGPU. Use a browser with WebGPU, or ?renderer=webgl.');
 	}
 	const three = await import('three/webgpu');
-	const renderer = new three.WebGPURenderer({ antialias: true });
+	const renderer = new three.WebGPURenderer({
+		antialias: true,
+		powerPreference: 'high-performance',
+	});
 	await renderer.init();
 	// WebGPURenderer switches to its WebGL 2 backend when WebGPU fails to start. A WebGPU run must
 	// never measure WebGL by mistake, so that counts as an error.

@@ -91,7 +91,7 @@ Some browsers hide the GPU's name. Firefox on macOS reports every adapter detail
 
 ## Devices with two GPUs
 
-Some laptops have a separate graphics chip next to the one built into the processor. The browser picks one of them, often the one that saves battery. `createEngine({ powerPreference: 'high-performance' })` asks for the faster one, and `'low-power'` for the one that saves battery. The engine's capability check and its renderer ask for the same GPU, so the reported features and limits match the GPU that draws. A device with one GPU ignores the option.
+Some laptops have a separate graphics chip next to the one built into the processor. The engine asks the browser for the faster one. `createEngine({ powerPreference: 'low-power' })` asks for the one that saves battery instead. The browser treats either as a request. The engine's capability check and its renderer ask for the same GPU, so the reported features and limits match the GPU that draws. A device with one GPU ignores the option.
 
 ## Choosing a tier for testing
 

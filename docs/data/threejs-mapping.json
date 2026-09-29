@@ -22,7 +22,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "createEngine({ canvas, sketch }) on the page; scene code moves to sketch.ts inside defineSketch()",
-      "notes": "The engine picks WebGPU or WebGL2 itself. antialias maps to the quality preset (MSAA 4x from Medium); alpha: true maps to createEngine({ transparent: true }); powerPreference maps to createEngine({ powerPreference }).",
+      "notes": "The engine picks WebGPU or WebGL2 itself. antialias maps to the quality preset (MSAA 4x from Medium); alpha: true maps to createEngine({ transparent: true }); powerPreference maps to createEngine({ powerPreference }), whose default is 'high-performance'.",
       "docs": "getting-started/first-scene",
       "detect": "\\b(WebGL|WebGPU)Renderer\\b"
     },

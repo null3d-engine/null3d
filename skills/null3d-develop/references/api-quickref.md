@@ -36,7 +36,7 @@ const engine = await createEngine({
   preset: 'auto',        // 'auto' | 'low' | 'medium' | 'high' | 'ultra'
   maxPixelRatio: 2,      // cap for devicePixelRatio; presets cap it too
   gpu: 'auto',           // 'auto' | 'webgpu' | 'webgl2' (testing only)
-  powerPreference: 'high-performance',   // or 'low-power', on devices with two GPUs; the browser chooses without it
+  powerPreference: 'high-performance',   // the default; 'low-power' saves battery on devices with two GPUs
   latency: 'pipelined',  // or 'low'; 'pipelined' is the default
   transparent: false,    // true for a see-through canvas
   largeWorld: false,     // (0.2) planet-scale scenes: cell-relative positions, batch origins

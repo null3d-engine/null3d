@@ -13,7 +13,7 @@ import { createMetricsBuffer, MetricsReader } from '../shared/metrics';
 import { SketchRunner } from '../sketch/runner';
 import type { CoreHandoff, WorkerReply } from '../workers/protocol';
 import { abortable } from './abortable';
-import { type CapabilityReport, probeCapabilities } from './capabilities';
+import { type CapabilityReport, type PowerPreference, probeCapabilities } from './capabilities';
 import {
 	type FrameMetrics,
 	HeapSampler,
@@ -44,8 +44,8 @@ export interface EngineOptions {
 	gpu?: 'auto' | 'webgpu' | 'webgl2';
 	/**
 	 * Which GPU to draw with on a device that has two, such as a laptop with a separate graphics
-	 * chip: `high-performance` for the faster one, `low-power` to save battery. Without it, the
-	 * browser chooses, often the low-power GPU. A device with one GPU ignores it.
+	 * chip: `high-performance`, the default, for the faster one, or `low-power` to save battery.
+	 * The browser treats it as a request. A device with one GPU ignores it.
 	 */
 	powerPreference?: 'high-performance' | 'low-power';
 	/** The latency mode. The default is `pipelined`. */
@@ -182,6 +182,8 @@ export interface Engine {
 }
 
 const DEFAULT_MAX_PIXEL_RATIO = 2;
+/** The GPU the engine asks for on a device with two: the faster one. */
+const DEFAULT_POWER_PREFERENCE: PowerPreference = 'high-performance';
 /** Logical cores kept free of job workers: one for the sketch worker, one for the render worker. */
 const RESERVED_CORES = 2;
 /** How often the page reads the frame records while it measures. */
@@ -326,7 +328,7 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 	});
 	// A failed load is reported where the engine awaits the core, not as an unhandled rejection.
 	coreLoad.catch(() => {});
-	const { powerPreference } = options;
+	const powerPreference = options.powerPreference ?? DEFAULT_POWER_PREFERENCE;
 	const report = await abortable(probeCapabilities(powerPreference), signal);
 	const probeMs = performance.now() - startedAt;
 	const latency = threaded ? (switches.latency ?? options.latency ?? 'pipelined') : 'single';
