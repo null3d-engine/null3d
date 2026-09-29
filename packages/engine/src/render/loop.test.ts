@@ -1,9 +1,9 @@
-import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
+import { afterEach, beforeEach, describe, expect, it, mock, spyOn } from 'bun:test';
 import { controlViews, createControlBuffer, Slot } from '../shared/control';
 import { createMetricsBuffer, MetricsReader } from '../shared/metrics';
 import type { SketchRunner } from '../sketch/runner';
 import { runDirectLoop } from './direct-loop';
-import { type RenderLoop, runRenderLoop } from './loop';
+import { type RenderLoop, runRenderLoop, wakeDelayMs } from './loop';
 import type { FrameInput, Renderer } from './renderer';
 
 /** Frame callbacks that the loops asked for, which the test runs in place of a display. */
@@ -104,5 +104,62 @@ describe('the direct loop', () => {
 		refresh(DISPLAY_HZ, CALLBACKS);
 		expect(drawn).toHaveLength(CALLBACKS / 2);
 		expect(reader.refreshHz).toBe(DISPLAY_HZ);
+	});
+});
+
+describe('the wake-up before the next frame', () => {
+	let loop: RenderLoop | undefined;
+	afterEach(() => {
+		loop?.stop();
+		mock.restore();
+	});
+
+	/** Runs `start` on a display at `hz`, and returns the delays of the timers it set. */
+	function wakeDelays(hz: number, start: () => RenderLoop): number[] {
+		const delays: number[] = [];
+		spyOn(globalThis, 'setTimeout').mockImplementation(((_handler: () => void, ms: number) =>
+			delays.push(ms)) as unknown as typeof setTimeout);
+		loop = start();
+		refresh(hz, CALLBACKS);
+		return delays;
+	}
+
+	it('gives the wake-up a delay in whole milliseconds, a few before the next callback', () => {
+		expect(wakeDelayMs(60)).toBe(13);
+		expect(wakeDelayMs(120)).toBe(4);
+		// A display too fast for a wake-up gets one at once.
+		expect(wakeDelayMs(360)).toBe(0);
+	});
+
+	it('wakes a worker before each callback, at the rate the refresh meter measured', () => {
+		const { control, metrics, renderer } = setup();
+		const hz = 120;
+		const delays = wakeDelays(hz, () => runRenderLoop(renderer, control, metrics, undefined));
+		expect(delays).toHaveLength(CALLBACKS);
+		// Until the refresh meter has its first samples, the wake-up assumes a 60 Hz display.
+		expect(delays[0]).toBe(wakeDelayMs(60));
+		expect(delays.at(-1)).toBe(wakeDelayMs(hz));
+	});
+
+	it('wakes the thread of the direct loop too', () => {
+		const { control, metrics, renderer } = setup();
+		const delays = wakeDelays(DISPLAY_HZ, () =>
+			runDirectLoop(countingSketch(), renderer, control, metrics, undefined),
+		);
+		expect(delays).toHaveLength(CALLBACKS);
+	});
+
+	it('sets no timer on a page, whose frame callbacks follow the display', () => {
+		const { control, metrics, renderer } = setup();
+		const scope = globalThis as { document?: unknown };
+		scope.document = {};
+		try {
+			const delays = wakeDelays(DISPLAY_HZ, () =>
+				runRenderLoop(renderer, control, metrics, undefined),
+			);
+			expect(delays).toEqual([]);
+		} finally {
+			delete scope.document;
+		}
 	});
 });
