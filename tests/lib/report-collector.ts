@@ -29,7 +29,8 @@ function readBody(req: IncomingMessage): Promise<string | undefined> {
 	});
 }
 
-function send(res: ServerResponse, status: number, body?: string): void {
+/** Ends a response with its status, and with a body of JSON text when there is one. */
+export function send(res: ServerResponse, status: number, body?: string): void {
 	res.statusCode = status;
 	if (body !== undefined) res.setHeader('Content-Type', 'application/json');
 	res.end(body);

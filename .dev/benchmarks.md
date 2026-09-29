@@ -40,6 +40,18 @@ Three sweeps measure the defaults that are still open: the latency mode, the job
 
 - The size report builds the engine test page for production with hidden source maps, which leave the built files unchanged. Vite names each file after a module and adds a hash. The report therefore names each file of the engine's JavaScript by the engine module that it holds. The list of parts is `ENGINE_PARTS` in `tools/lib/size-report.ts`. A new file of engine code fails the report until the list names it.
 
+## Startup
+
+- `bun run bench:startup` times the start of the engine test page in Chrome, from navigation to the first frame. It builds the page for production, serves it with `vite preview`, and drives Chrome through its debugging protocol.
+- Without options it times what it always has: three cold loads in the pipelined mode, on WebGPU and Slow 4G. Each cold load gets a fresh Chrome profile, so even the GPU shaders compile from scratch.
+- `--loads cold,warm` adds warm loads, `--network slow-4g,full` adds loads at full speed, and `--modes all` runs every thread mode. `--runs`, `--gpu` and `--switches` work as before.
+- `--android` drives Chrome on the phone instead. It makes five loads of each kind, in every thread mode, cold and warm, on both networks. [Device sessions](devices.md#startup-times) says how cold loads avoid the phone's caches without clearing them.
+- Chrome refuses network limits on a worker. It applies the page's limit to a worker's own requests only once the debugging protocol's Network domain is on in that worker. So on Slow 4G the tool attaches to each worker, which waits at its start until the domain is on.
+- Without that step, the workers would load the core's loader and the sketch at full speed. The first frame would then come about a second early.
+- On Slow 4G the start is a chain of round trips of at least 562 ms each. After the page and its script come the core and the probe worker, then the other workers. Then the workers load the core's loader, and then the sketch.
+- The engine starts its workers only once the core has compiled. On Slow 4G their scripts and imports therefore add two round trips after the core.
+- The MacBook Pro was measured in Chrome 154 on 30 September 2026. A cold load in the pipelined mode finished its first frame after 4.0 s on Slow 4G. A warm load took 0.7 s, and both took about 0.1 s at full speed.
+
 ## Soak
 
 - `bun run bench:soak` samples every 30 seconds. Before each sample, the page, the sketch worker and the render worker collect their garbage, so a sample counts only what they keep.

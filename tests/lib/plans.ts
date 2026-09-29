@@ -32,6 +32,14 @@ import {
 	type SummaryRow,
 	summarizeRuns,
 } from '../../bench/lib/report.ts';
+import {
+	groupSamples,
+	judgeLoad,
+	STARTUP_LEGEND,
+	type StartupResult,
+	startupProblems,
+	startupTable,
+} from '../../bench/lib/startup.ts';
 import { MEASURE_SECONDS, WARMUP_SECONDS } from '../../bench/scenes/spec.ts';
 import { IMAGE_RUNS } from '../image/manifest.ts';
 import {
@@ -42,6 +50,7 @@ import {
 	jobWorkersProblem,
 } from './engine-checks.ts';
 import { type HarnessDirs, type ImageRun, imageProblems } from './images.ts';
+import { type LoadKind, loadPath, runnerKey } from './load-routes.ts';
 import { failureText, type ItemResult, lastSteps, type PlanItem, slug } from './runs.ts';
 
 /** The GPU interface that a page draws with. */
@@ -60,7 +69,9 @@ export type Check =
 	| { kind: 'uploads'; tier: Tier }
 	| { kind: 'hold'; tier: Tier }
 	| { kind: 'parity'; tier: Tier; scene: ParityScene; pair: PagePair }
-	| { kind: 'bench'; tier: Tier; scene: ParityScene; page: BenchPageKind; jobs?: number };
+	| { kind: 'bench'; tier: Tier; scene: ParityScene; page: BenchPageKind; jobs?: number }
+	/** A load of the startup build; `first` marks the first warm load, which fills the cache. */
+	| { kind: 'startup'; mode: EngineMode; load: LoadKind; first?: true };
 
 /** What judging can reach besides the result itself. */
 export interface JudgeContext {
@@ -332,11 +343,54 @@ export function memoryPlan({ runs = MEMORY_LOADS }: PlanSettings = {}): PlanItem
 	]);
 }
 
+/** Cold and warm loads of each thread mode in the startup plan, unless the plan names another number. */
+export const STARTUP_RUNS = 5;
+/** How long a startup load may take on a slow device. */
+const STARTUP_TIMEOUT_SECONDS = 60;
+/** The engine page's measured time after its first frame: short, as a load needs only its start. */
+const STARTUP_SECONDS = 0.2;
+
+/**
+ * The runner page's item for one startup load of the engine test page in `mode`, on the GPU path
+ * that the engine picks. The load's key names the run and the runner, which the runner page fills
+ * in, so no runner loads under another's addresses or an earlier run's. Cold loads each have their
+ * own key; warm loads share their mode's key, so they repeat the first warm load's addresses.
+ */
+function startupItem(mode: EngineMode, load: LoadKind, run: number | 'first'): PlanItem<Check> {
+	const name = `${slug(mode.name)}-${load}`;
+	const key = runnerKey(load === 'cold' ? `${name}-${run}` : name);
+	const query = [`seconds=${STARTUP_SECONDS}`, mode.query].filter(Boolean).join('&');
+	return {
+		id: `startup-${name}-${run}`,
+		path: loadPath({ kind: load, key }, `tests/pages/engine.html?${query}`),
+		timeoutSeconds: STARTUP_TIMEOUT_SECONDS,
+		check: { kind: 'startup', mode, load, ...(run === 'first' && { first: true as const }) },
+	};
+}
+
+/**
+ * The engine test page's start from navigation to its first frame, on the production build, in
+ * each thread mode. The first warm load of each mode fills the browser's cache. Then each run loads
+ * every mode cold and warm, so the modes take turns as the device warms up.
+ */
+export function startupPlan({ runs = STARTUP_RUNS }: PlanSettings = {}): PlanItem<Check>[] {
+	return [
+		...ENGINE_MODES.map((mode) => startupItem(mode, 'warm', 'first')),
+		...Array.from({ length: runs }, (_, run) =>
+			ENGINE_MODES.flatMap((mode) => [
+				startupItem(mode, 'cold', run + 1),
+				startupItem(mode, 'warm', run + 1),
+			]),
+		).flat(),
+	];
+}
+
 export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanItem<Check>[]>> = {
 	checks: checksPlan,
 	parity: parityPlan,
 	bench: benchPlan,
 	memory: memoryPlan,
+	startup: startupPlan,
 };
 
 /**
@@ -627,6 +681,8 @@ export function judge(
 			}
 		case 'parity':
 			return parityProblems(check, result, context);
+		case 'startup':
+			return startupProblems(result as StartupResult, check.mode);
 	}
 }
 
@@ -653,6 +709,29 @@ export function benchSummary(
 		.filter((group) => group.results.length > 0)
 		.map(({ results, ...row }) => ({ ...row, summary: summarizeRuns(results) }));
 	return benchReport(rows).join('\n');
+}
+
+/**
+ * The startup report of one runner's results: the medians of each thread mode's cold and warm loads,
+ * as a Markdown table with what its columns mean. A load that failed its check stays out, and so
+ * does the first warm load of each mode, which fills the cache. Undefined when the plan has no loads.
+ */
+export function startupSummary(
+	items: readonly PlanItem<Check>[],
+	resultOf: (id: string) => ItemResult | undefined,
+): string | undefined {
+	const loads = items.flatMap(({ id, check }) => {
+		if (check.kind !== 'startup' || check.first) return [];
+		const result = resultOf(id) as StartupResult | undefined;
+		const sample = result && judgeLoad(result, check.mode).sample;
+		return [{ labels: [check.mode.name, check.load], sample }];
+	});
+	if (loads.length === 0) return undefined;
+	return [
+		...startupTable(['Thread mode', 'Load'], groupSamples(loads)),
+		'',
+		...STARTUP_LEGEND,
+	].join('\n');
 }
 
 /** What the loads at one shared memory maximum came to. */

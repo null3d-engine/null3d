@@ -3,9 +3,9 @@
 // browser on any device. Open it with ?run=<run>&runner=<name> to run once and then close the tab,
 // or with ?listen&runner=<name> to wait: a waiting page starts each run whose turn list names it.
 // Pixels travel as the page read them back, never re-encoded through a canvas, which privacy
-// protections can alter.
+// protections can alter. For a startup load, the result also tells what the server sent for it.
 
-export {};
+import { fillRunner, loadOf, takeDownloads } from '../lib/load-routes';
 
 interface PlanItem {
 	id: string;
@@ -94,14 +94,12 @@ async function deviceInfo(): Promise<Record<string, unknown>> {
 }
 
 /** Opens a page in a frame and waits for the result it publishes, or records a timeout. */
-async function runItem(item: PlanItem): Promise<Result> {
-	const page = await fetch(item.path, { cache: 'no-store' });
-	if (!page.ok) return { ok: false, error: `page not found (HTTP ${page.status})` };
+async function openInFrame(path: string, timeoutSeconds: number): Promise<Result> {
 	const frame = document.createElement('iframe');
 	frame.className = 'page';
-	frame.src = item.path;
+	frame.src = path;
 	stage.append(frame);
-	const deadline = performance.now() + item.timeoutSeconds * 1000;
+	const deadline = performance.now() + timeoutSeconds * 1000;
 	try {
 		while (performance.now() < deadline) {
 			const published = (frame.contentWindow as { __null3dResult?: Result } | null)?.__null3dResult;
@@ -111,12 +109,27 @@ async function runItem(item: PlanItem): Promise<Result> {
 		const trail = (frame.contentWindow as { __null3dProgress?: string[] } | null)?.__null3dProgress;
 		return {
 			ok: false,
-			error: `no result within ${item.timeoutSeconds} s`,
+			error: `no result within ${timeoutSeconds} s`,
 			trail: trail ? [...trail] : [],
 		};
 	} finally {
 		frame.remove();
 	}
+}
+
+/**
+ * Runs one item of a run: its page, at the address where this runner's run and name fill the
+ * item's placeholders. A startup load's result gets what the server sent for the load.
+ */
+async function runItem(item: PlanItem, run: string): Promise<Result> {
+	const path = fillRunner(item.path, run, runner);
+	const page = await fetch(path, { cache: 'no-store' });
+	if (!page.ok) return { ok: false, error: `page not found (HTTP ${page.status})` };
+	const load = loadOf(path);
+	// The check above was a download of the load, which starts afresh after it.
+	if (load) await takeDownloads(load);
+	const result = await openInFrame(path, item.timeoutSeconds);
+	return load ? { ...result, downloads: await takeDownloads(load) } : result;
 }
 
 async function runPlan(run: string): Promise<void> {
@@ -126,7 +139,7 @@ async function runPlan(run: string): Promise<void> {
 	await post(run, 'device', await deviceInfo());
 	for (const [index, item] of plan.items.entries()) {
 		show(`run ${run}: ${index + 1} of ${plan.items.length}, ${item.id}`);
-		const result = await runItem(item);
+		const result = await runItem(item, run);
 		await post(run, item.id, result);
 		log(`${result.ok ? 'done' : 'failed'}  ${item.id}${result.error ? `: ${result.error}` : ''}`);
 		await sleep(PAUSE_BETWEEN_PAGES_MS);

@@ -5,7 +5,8 @@ This guide covers the checks and benchmarks on phones, tablets and the Mac's bro
 ## The runner
 
 - The device runner, `tests/real-browsers.ts`, runs a plan of test or benchmark pages in browsers that Playwright cannot drive. Each browser loads the runner page, which opens each page of the plan in a frame and posts its result.
-- The plans are `checks` (the default), `parity`, `bench`, `memory` and `scale`. `bun run devices` runs the checks on the phone and on the iPad.
+- The plans are `checks` (the default), `parity`, `bench`, `memory`, `scale` and `startup`. `bun run devices` runs the checks on the phone and on the iPad.
+- The runner page fills in its run and its own name where a plan item's address has `{run}` and `{runner}`. The startup plan uses them, so each browser loads under addresses of its own.
 - Run one runner at a time. All runs share one file, `target/runs/current.json`, which tells waiting runner pages which run to start. A second runner can replace it before a waiting page reads it, and that page then waits forever.
 - A runner page that waits on the local network reloads itself before each run after its first. No run then inherits memory that an earlier run kept.
 - The runner reports a page that gives no result in time with its last steps. The steps are each worker it started, each step of each worker's start, and the errors it logged. A page that fails reports its steps too.
@@ -24,6 +25,30 @@ This guide covers the checks and benchmarks on phones, tablets and the Mac's bro
 - The texture page, one of those tests, replays every texture command of the GPU layer on each tier. Every tier must draw one image.
 - The image tests read frames through the engine's capture, which does not use the canvas. A frame that never reaches the screen still passes them. After a change to how frames reach the canvas, look at a demo page, and on a phone check `adb logcat` for GL errors.
 - The parity plan's null3D pages use the engine's hold mode, which steps each scene to its hold time before it draws. On a slow device, that adds the update time of 121 frames to each hold page. A page whose sketch fails reports the error at once, with the sketch time where it happened.
+
+## Startup times
+
+Two tools time the start of the engine test page, from navigation to the first frame. Both load its production build, built with relative addresses into `target/startup-pages`.
+
+- `bun run bench:startup --android` times Chrome on the phone through Chrome's debugging socket. It loads every thread mode five times cold and five times warm, on Slow 4G and at full speed. [Benchmarks](benchmarks.md#startup) describes the tool.
+- `bun tests/real-browsers.ts --plan startup` times the other browsers through the runner: Brave on the phone, and Safari and Brave on the iPad. The runner cannot limit a device's network, so these loads run at the speed of the USB cable or the local network.
+- The startup plan first loads each thread mode once to fill the cache. Then each of five runs loads every mode cold and then warm. `--runs` changes the number of runs.
+- A cold load uses addresses that the browser has never seen. The dev server and `vite preview` serve each load's files under a path prefix of its own, which they strip. No cache holds any file of the load, so every file downloads and the browser compiles the core and the scripts from scratch.
+- The server also puts a custom section of its own at the start of each cold load's core. Without it, Chrome can reuse a core with the same bytes that it compiled earlier in the same process, as in the runner's tab.
+- A warm load repeats the addresses of its mode's first load, as a repeat visit does. The browser checks the page again and takes the other files from its cache.
+- The tools never clear a browser's cache, cookies or storage. Each cold load leaves its files in the cache, under addresses that no later load uses.
+- The browser and the GPU driver keep compiled shaders across loads, and the tools cannot clear them. So on a phone or a tablet, even a cold load can draw with shaders that an earlier load compiled.
+- In the runner, a warm load repeats the load in the same tab, so it can also hit the browser's memory cache.
+- The server sends the files as a host that compresses ahead of time does: Brotli when the browser accepts it, and gzip otherwise. Safari accepts Brotli only over HTTPS. Hashed files are immutable, and the page is checked again on each visit.
+- The requests and kilobytes in a report are what the server sent for the load. A warm load usually makes one request, the check of the page, and downloads nothing.
+- The report gives the medians of each thread mode and kind of load, with times from navigation start. They mark when the page script ran, the GPU probe finished and the core was ready. They also mark when the engine had started, and when its first frame was submitted and finished.
+- A dev server that started before the startup routes existed cannot serve the loads. The runner then stops and asks you to restart that server.
+
+To collect the numbers, rest each device first and close its other tabs:
+
+- Chrome on the phone: `bun run bench:startup --android`.
+- Brave on the phone: `bun tests/real-browsers.ts --plan startup --android brave --shields on`. Then turn Shields off for the site and run it again with `--shields off`.
+- Safari and Brave on the iPad: open both runner pages, then run `bun tests/real-browsers.ts --plan startup --lan ipad-safari,ipad-brave --shields on`. Then turn Brave's Shields off and run `bun tests/real-browsers.ts --plan startup --lan ipad-brave --shields off`.
 
 ## Browser apps on the Mac
 
