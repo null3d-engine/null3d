@@ -5,11 +5,26 @@ import { type ChildProcess, spawn } from 'node:child_process';
 import { join } from 'node:path';
 import { localHostName } from '../../tools/lib/host.ts';
 
-export const HTTP_PORT = 5173;
+/**
+ * The dev server's port: 5173, or the one that NULL3D_PORT names. Each copy of the repository, such
+ * as a second worktree, can then run its own server, and its tools reach that one. The HTTPS server
+ * takes the next port, and `vite preview`, which serves the production build of the test pages,
+ * the one after.
+ */
+export const HTTP_PORT = devServerPort(process.env.NULL3D_PORT);
+export const HTTPS_PORT = HTTP_PORT + 1;
 /** Where `vite preview` serves the production build of the test pages. */
-export const PREVIEW_PORT = 4173;
-export const HTTPS_PORT = 5174;
+export const PREVIEW_PORT = HTTP_PORT + 2;
 export const REPO_ROOT = join(import.meta.dirname, '../..');
+
+/** The port NULL3D_PORT names, or 5173 without it. */
+export function devServerPort(value: string | undefined): number {
+	if (value === undefined || value === '') return 5173;
+	const port = Number(value);
+	if (!Number.isInteger(port) || port < 1024 || port > 65533)
+		throw new Error(`NULL3D_PORT must be a port from 1024 to 65533, not ${value}`);
+	return port;
+}
 
 const START_TIMEOUT_MS = 30_000;
 

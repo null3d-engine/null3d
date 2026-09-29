@@ -34,7 +34,7 @@ This repository holds the null3D engine, its tools, its documentation and its ag
 | `bun run bench:profile` | Sample Chrome's CPU profiler on the render worker while each benchmark scene runs, and split the time of the draw-list replay into the engine's own code and the browser calls it makes; `--gpu webgpu` profiles the WebGPU path, and `--android` profiles Chrome on a phone connected by USB |
 | `bun run bench:startup` | A cold start of the engine test page's production build in Chrome, on Slow 4G with an empty cache: the startup milestones, requests and bytes of each run |
 | `bun run readme-media` | Render the README's animation of S1 with the engine |
-| `bun run dev` | Serve the test and benchmark pages with the isolation headers on port 5173 |
+| `bun run dev` | Serve the test and benchmark pages with the isolation headers on port 5173, or on the port that `NULL3D_PORT` names |
 | `bun run dev-cert` | Make a local HTTPS certificate for testing on phones and tablets |
 | `bun run android` | Forward port 5173 to an Android phone connected by USB |
 | `bun run docs` | Regenerate placeholder pages, the API reference, the error pages, the page list in `docs/index.md`, and the mapping page and copies |
@@ -98,6 +98,7 @@ The benchmarks compare null3D with three.js in the same browser. These points co
 - null3D's own work comes from its phase timers: each thread's time less its `update` step. three.js's own work is its frame time less the scene code, timed alone on the scene-code page. That page's loop compiles to slower code than an engine's loop, so this estimate of three.js's own work is low.
 - Keep the Mac's screen unlocked and its display awake during browser runs. Safari stops running pages while the Mac is locked, and the runner then waits until its deadline. Chrome started by Playwright keeps running.
 - Do not edit engine or benchmark page files during a run. The dev server reloads the pages being measured.
+- Every tool finds the dev server on port 5173, and uses the one that already answers there. A second copy of the repository, such as a git worktree, would test the first copy's code. Give each copy its own ports with `NULL3D_PORT`, for example `NULL3D_PORT=6173 bun run test:browser`. Its dev server takes that port, the HTTPS server the next one, and the production preview the one after.
 - Compare results at the same display refresh rate. The engine measures it, and each benchmark result records it with the presented and finished frame rates and the GPU delay. Runs at 120 and at 144 frames per second differed by about 10% for both engines.
 - Phones run the benchmarks through the runner page. Its `scale` plan finds phone scale: the largest S1 count at which three.js holds 30 frames per second. Run it with `bun tests/real-browsers.ts --plan scale --allow-no-webgpu --android chrome`. Then `--plan bench --n <count>` runs the protocol at that count, with five runs of each page.
 - On an Android phone, the runner reads the phone's heat every 10 seconds. It reads the temperatures, the speed cap of each group of cores, and Samsung's throttle level. Each result records the heat it ran in.
