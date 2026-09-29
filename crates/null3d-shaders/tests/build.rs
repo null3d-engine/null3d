@@ -1,10 +1,13 @@
-//! The shader build, tested on small shaders held in memory.
+//! The shader build, tested on small shaders held in memory. With `NULL3D_SHADER_COMPILER` set,
+//! each build also runs through the shader compiler's WebAssembly module (see `common`).
 
 mod common;
 
-use common::{SHADER, assert_feature, build_wgsl, only_problem, project, wgsl};
+use common::{
+    SEE_RULES, SHADER, assert_feature, build, build_wgsl, column_of, only_problem, project, wgsl,
+};
 use null3d_shaders::{
-    ALLOWED_LANGUAGE_FEATURES, Binding, GlslTexture, GlslUniformBlock, Inputs, build, typescript,
+    ALLOWED_LANGUAGE_FEATURES, Binding, GlslTexture, GlslUniformBlock, Inputs, typescript,
 };
 
 /// A vertex and fragment pair with a flat varying, a uniform block per stage, a data texture read
@@ -107,9 +110,9 @@ fn fs_main() -> @location(0) vec4f {
 #[test]
 fn a_requires_directive_for_any_other_feature_fails_naming_it() {
     let source = "requires pointer_composite_access, swizzle_assignment;\n\n@fragment\nfn fs_main() -> @location(0) vec4f {\n    return vec4f(1.0);\n}\n";
-    assert_feature(build_wgsl(source), "swizzle_assignment", 1);
+    assert_feature(source, "swizzle_assignment", 1, "swizzle_assignment");
     let unknown = source.replace("swizzle_assignment", "buffer_view");
-    assert_feature(build_wgsl(&unknown), "buffer_view", 1);
+    assert_feature(&unknown, "buffer_view", 1, "buffer_view");
 }
 
 #[test]
@@ -155,7 +158,7 @@ fn cs_main(@builtin(global_invocation_id) id: vec3u) {
 #[test]
 fn swizzle_assignment_is_rejected() {
     let source = "@fragment\nfn fs_main() -> @location(0) vec4f {\n    var color = vec4f(0.0);\n    color.rgb *= 2.0;\n    return color;\n}\n";
-    assert_feature(build_wgsl(source), "swizzle_assignment", 4);
+    assert_feature(source, "swizzle_assignment", 4, ".rgb");
 }
 
 #[test]
@@ -175,14 +178,14 @@ fn fs_main() -> @location(0) vec4f {
     return textureSample(tex, base_sampler, vec2f(0.5));
 }
 ";
-    assert_feature(build_wgsl(source), "texture_and_sampler_let", 6);
+    assert_feature(source, "texture_and_sampler_let", 6, "tex");
     let sampler = source
         .replace("let tex = base_color;", "let copy = base_sampler;")
         .replace(
             "textureSample(tex, base_sampler",
             "textureSample(base_color, copy",
         );
-    assert_feature(build_wgsl(&sampler), "texture_and_sampler_let", 6);
+    assert_feature(&sampler, "texture_and_sampler_let", 6, "copy");
 }
 
 #[test]
@@ -199,7 +202,7 @@ fn fs_main() -> @location(0) vec4f {
     return first(data);
 }
 ";
-    assert_feature(build_wgsl(source), "texture_and_sampler_let", 4);
+    assert_feature(source, "texture_and_sampler_let", 4, "copy");
 }
 
 #[test]
@@ -217,7 +220,7 @@ fn cs_main() {
     clear(&values);
 }
 ";
-    assert_feature(build_wgsl(source), "unrestricted_pointer_parameters", 4);
+    assert_feature(source, "unrestricted_pointer_parameters", 4, "dest");
 }
 
 #[test]
@@ -233,7 +236,7 @@ fn cs_main() {
     clear(&shared_values);
 }
 ";
-    assert_feature(build_wgsl(source), "unrestricted_pointer_parameters", 3);
+    assert_feature(source, "unrestricted_pointer_parameters", 3, "dest");
 }
 
 #[test]
@@ -253,7 +256,7 @@ fn fs_main() -> @location(0) vec4f {
     return vec4f(pair.b + whole);
 }
 ";
-    assert_feature(build_wgsl(source), "unrestricted_pointer_parameters", 12);
+    assert_feature(source, "unrestricted_pointer_parameters", 12, "set_one");
 }
 
 #[test]
@@ -268,50 +271,50 @@ fn fs_main() -> @location(0) vec4f {
     return vec4f(weights.values[0]);
 }
 ";
-    assert_feature(build_wgsl(source), "uniform_buffer_standard_layout", 4);
+    assert_feature(source, "uniform_buffer_standard_layout", 4, "weights");
 }
 
 #[test]
 fn the_immediate_address_space_is_rejected() {
     let source = "var<immediate> tint: vec4f;\n\n@fragment\nfn fs_main() -> @location(0) vec4f {\n    return tint;\n}\n";
-    assert_feature(build_wgsl(source), "immediate_address_space", 1);
+    assert_feature(source, "immediate_address_space", 1, "var");
 }
 
 #[test]
 fn linear_indexing_built_ins_are_rejected() {
     let source = "@compute @workgroup_size(64)\nfn cs_main(\n    @builtin(global_invocation_index) index: u32,\n) {\n}\n";
-    assert_feature(build_wgsl(source), "linear_indexing", 3);
+    assert_feature(source, "linear_indexing", 3, "@builtin");
 }
 
 #[test]
 fn subgroup_id_built_ins_are_rejected() {
     let source = "@compute @workgroup_size(64)\nfn cs_main(@builtin(subgroup_id) id: u32) {\n}\n";
-    assert_feature(build_wgsl(source), "subgroup_id", 2);
+    assert_feature(source, "subgroup_id", 2, "@builtin");
 }
 
 #[test]
 fn a_depth_mode_on_frag_depth_is_rejected() {
     let source =
         "@fragment\nfn fs_main() -> @builtin(frag_depth, less) f32 {\n    return 0.5;\n}\n";
-    assert_feature(build_wgsl(source), "fragment_depth", 2);
+    assert_feature(source, "fragment_depth", 2, "@builtin");
 }
 
 #[test]
 fn buffer_views_are_rejected() {
     let source = "@group(0) @binding(0) var<storage, read_write> bytes: buffer<64>;\n\n@compute @workgroup_size(1)\nfn cs_main() {\n}\n";
-    assert_feature(build_wgsl(source), "buffer_view", 1);
+    assert_feature(source, "buffer_view", 1, "buffer<");
 }
 
 #[test]
 fn tier1_storage_texel_formats_are_rejected() {
     let source = "@group(0) @binding(0) var mask: texture_storage_2d<r8unorm, write>;\n\n@compute @workgroup_size(1)\nfn cs_main() {\n    textureStore(mask, vec2i(0), vec4f(1.0));\n}\n";
-    assert_feature(build_wgsl(source), "texture_formats_tier1", 1);
+    assert_feature(source, "texture_formats_tier1", 1, "r8unorm");
 }
 
 #[test]
 fn vec2u_atomic_store_min_and_max_are_rejected() {
     let source = "@group(0) @binding(0) var<storage, read_write> depth: atomic<vec2<u32>>;\n\n@compute @workgroup_size(1)\nfn cs_main() {\n    atomicStoreMin(&depth, vec2u(1u, 2u));\n}\n";
-    assert_feature(build_wgsl(source), "atomic_vec2u_min_max", 5);
+    assert_feature(source, "atomic_vec2u_min_max", 5, "atomicStoreMin");
 }
 
 #[test]
@@ -332,8 +335,68 @@ fn features_in_a_library_module_name_the_module_file() {
         problem.file.as_deref(),
         Some("crates/null3d-shaders/wgsl/lib/swizzle.wgsl")
     );
-    assert_eq!(problem.line, Some(5));
+    assert_eq!(
+        (problem.line, problem.column),
+        (Some(5), Some(column_of(library[0].1, 5, ".xy")))
+    );
     assert_eq!(problem.variants, ["shader.v"]);
+}
+
+#[test]
+fn composer_errors_point_at_their_place_after_a_library_call_on_the_line() {
+    // The composer reads `null3d::math::square` under a longer name, so its own report of this
+    // line counts columns in the wrong place.
+    let source = "#import null3d::math\n\n@fragment\nfn fs_main() -> @location(0) vec4f {\n    let y = null3d::math::square(2.0) 3.0;\n    return vec4f(y);\n}\n";
+    let problem = only_problem(build_wgsl(source));
+    assert_eq!(problem.file.as_deref(), Some(SHADER));
+    assert_eq!(
+        (problem.line, problem.column),
+        (Some(5), Some(column_of(source, 5, "3.0")))
+    );
+    assert!(
+        problem.message.starts_with("expected `;`, found"),
+        "{problem}"
+    );
+
+    let wrong_type = source.replace("square(2.0) 3.0", "square(2u)");
+    let problem = only_problem(build_wgsl(&wrong_type));
+    assert_eq!(
+        (problem.line, problem.column),
+        (Some(5), Some(column_of(&wrong_type, 5, "2u")))
+    );
+    assert!(
+        problem
+            .message
+            .contains("Argument 0 value [0] doesn't match the type"),
+        "{problem}"
+    );
+}
+
+#[test]
+fn a_composer_error_in_a_library_module_points_into_it_with_plain_names() {
+    let library = [(
+        "broken.wgsl",
+        "#define_import_path null3d::broken\n\nfn add(a: f32) -> f32 {\n    return a + 1u;\n}\n",
+    )];
+    let source = "#import null3d::broken\n\n@fragment\nfn fs_main() -> @location(0) vec4f {\n    return vec4f(null3d::broken::add(1.0));\n}\n";
+    let problem = only_problem(build(&project(
+        source,
+        &[("v", "{ targets = [\"wgsl\"] }")],
+        &library,
+    )));
+    assert_eq!(
+        problem.file.as_deref(),
+        Some("crates/null3d-shaders/wgsl/lib/broken.wgsl")
+    );
+    assert_eq!(
+        (problem.line, problem.column),
+        (Some(4), Some(column_of(library[0].1, 4, "a + 1u")))
+    );
+    assert!(
+        problem.message.contains("'null3d::broken::add' is invalid"),
+        "{problem}"
+    );
+    assert!(!problem.message.contains("naga_oil"), "{problem}");
 }
 
 #[test]
@@ -345,7 +408,10 @@ fn code_behind_an_unset_shader_def_is_not_checked() {
     ];
     let problem = only_problem(build(&project(source, &variants, &[])));
     assert_eq!(problem.feature.as_deref(), Some("swizzle_assignment"));
-    assert_eq!(problem.line, Some(5));
+    assert_eq!(
+        (problem.line, problem.column),
+        (Some(5), Some(column_of(source, 5, ".xy")))
+    );
     assert_eq!(problem.variants, ["shader.swizzle"]);
 }
 
@@ -379,11 +445,15 @@ fn flat_interpolation_without_either_is_rejected() {
         let source = MESH.replace("@interpolate(flat, either)", attribute);
         let problem = only_problem(build(&project(&source, &[("v", BOTH_TARGETS)], &[])));
         assert_eq!(problem.file.as_deref(), Some(SHADER));
-        assert_eq!(problem.line, Some(15));
+        assert_eq!(
+            (problem.line, problem.column),
+            (Some(15), Some(column_of(&source, 15, "@interpolate")))
+        );
         assert!(
             problem.message.contains("`@interpolate(flat, either)`"),
             "{problem}"
         );
+        assert!(problem.message.ends_with(SEE_RULES), "{problem}");
     }
 }
 
@@ -473,7 +543,7 @@ fn an_enable_line_below_an_import_is_rejected_with_a_fix() {
     )];
     let problem = only_problem(build(&project(&moved, &variants, &[])));
     assert_eq!(problem.file.as_deref(), Some(SHADER));
-    assert_eq!(problem.line, Some(2));
+    assert_eq!((problem.line, problem.column), (Some(2), Some(1)));
     assert!(
         problem
             .message

@@ -1,0 +1,19 @@
+[package]
+name = "null3d-shaders-wasm"
+description = "The shader build as a WebAssembly module for build tools, with a JSON interface."
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+publish.workspace = true
+
+[lib]
+crate-type = ["cdylib"]
+
+[dependencies]
+null3d-shaders = { path = "../null3d-shaders" }
+serde = "1"
+serde_json = "1"
+
+[lints]
+workspace = true

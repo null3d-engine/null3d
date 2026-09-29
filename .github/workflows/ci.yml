@@ -94,8 +94,10 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
-      - name: Build both WebAssembly files and check their sizes
+      - name: Build both WebAssembly files and the shader compiler, and check their sizes
         run: bun run build:check-size
+      - name: The shader compiler gives the native shader build's results
+        run: bun run test:shader-compiler
       - name: Install Chromium for Playwright
         working-directory: tests
         run: bunx playwright install --with-deps chromium

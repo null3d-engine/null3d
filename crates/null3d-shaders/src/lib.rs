@@ -3,19 +3,22 @@
 //! The shader build reads the manifest, composes each variant of each entry shader with the
 //! library modules it imports, checks and validates the result, and writes one TypeScript module
 //! that holds WGSL for WebGPU and GLSL ES 3.00 with reflection for WebGL2. Browsers then need no
-//! shader translator. Paths below are relative to the repository root:
+//! shader translator. Build tools compile other shaders the same way with a [`Compiler`]. Paths
+//! below are relative to the repository root:
 //!
 //! - [`MANIFEST_PATH`] lists the entry shaders, their render pipelines and their variants.
 //! - [`SHADER_DIR`] holds the entry shaders, and its `lib` folder holds the library modules, which
 //!   shaders import as `null3d::<file name>`.
 //! - [`OUTPUT_PATH`] is the generated module.
 
+mod composition;
 mod features;
 mod glsl;
 mod library;
 mod manifest;
 mod names;
 mod output;
+mod position;
 mod problem;
 mod scan;
 mod typescript;
@@ -27,17 +30,19 @@ use std::path::Path;
 use naga::valid::{Capabilities, ModuleInfo, ValidationFlags, Validator};
 use naga_oil::compose::preprocess::Preprocessor;
 use naga_oil::compose::{NagaModuleDescriptor, ShaderDefValue};
+use serde::{Deserialize, Serialize};
 
 pub use features::ALLOWED_LANGUAGE_FEATURES;
-pub use manifest::{Pipeline, Target};
+pub use manifest::{Pipeline, Target, Variant};
 pub use output::{
-    Binding, GlslProgram, GlslStage, GlslTexture, GlslUniformBlock, Output, VariantOutput,
-    WgslOutput,
+    Binding, GlslProgram, GlslStage, GlslTexture, GlslUniformBlock, Output, Response,
+    VariantOutput, WgslOutput,
 };
+pub use position::Position;
 pub use problem::{BuildError, Problem};
 
 use library::{Composers, Library, View};
-use manifest::{Manifest, Shader, Variant};
+use manifest::Manifest;
 
 /// The manifest.
 pub const MANIFEST_PATH: &str = "crates/null3d-shaders/shaders.toml";
@@ -57,7 +62,8 @@ const WEBGPU_BASELINE: Capabilities = Capabilities::MULTISAMPLED_SHADING
     .union(Capabilities::TEXTURE_EXTERNAL);
 
 /// The build's inputs: the manifest text and every WGSL file in the shader folder.
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize)]
+#[serde(deny_unknown_fields)]
 pub struct Inputs {
     /// The manifest text.
     pub manifest: String,
@@ -119,27 +125,21 @@ pub fn build(inputs: &Inputs) -> Result<Output, BuildError> {
             .map(|message| Problem::in_file(MANIFEST_PATH, message))
             .collect::<BuildError>()
     })?;
-    let library = Library::load(&inputs.files).map_err(BuildError::from_iter)?;
+    let mut compiler = Compiler::new(&inputs.files)?;
     check_files(inputs, &manifest).or(())?;
 
-    let mut builder = Builder::new(&library);
     let mut errors = BuildError::default();
     let mut output = Output::default();
     for (shader_name, shader) in &manifest.shaders {
-        let path = shader_path(&shader.file);
-        let source = &inputs.files[&shader.file];
-        let mut variants = BTreeMap::new();
-        for (variant_name, variant) in &shader.variants {
-            match builder.variant(shader, &path, source, variant) {
-                Ok(built) => {
-                    variants.insert(variant_name.clone(), built);
-                }
-                Err(problems) => {
-                    let name = format!("{shader_name}.{variant_name}");
-                    errors.add(problems, Some(&name));
-                }
-            }
-        }
+        let label = |variant: &str| format!("{shader_name}.{variant}");
+        let variants = compiler.variants(
+            &shader_path(&shader.file),
+            &inputs.files[&shader.file],
+            &shader.pipelines,
+            &shader.variants,
+            &label,
+            &mut errors,
+        );
         output.shaders.insert(shader_name.clone(), variants);
         let pipelines = shader.pipelines.keys().cloned().collect();
         output.pipelines.insert(shader_name.clone(), pipelines);
@@ -162,10 +162,9 @@ fn check_files(inputs: &Inputs, manifest: &Manifest) -> BuildError {
     }
     for (file, source) in &inputs.files {
         let path = shader_path(file);
-        let listed = manifest.shaders.values().any(|shader| shader.file == *file);
-        if listed || library::is_library_file(file) {
+        if manifest.shaders.values().any(|shader| shader.file == *file) {
             errors.add(features::check_directive_placement(&path, source), None);
-        } else {
+        } else if !library::is_library_file(file) {
             let message = format!(
                 "this entry shader is not in {MANIFEST_PATH}, so nothing builds it. Add a [shaders.<name>] table for it, or move a library module into lib/."
             );
@@ -175,30 +174,100 @@ fn check_files(inputs: &Inputs, manifest: &Manifest) -> BuildError {
     errors
 }
 
-/// The state that the variants of one build share: the library, the composer's preprocessor, and
-/// the composers, which keep the library modules they built for earlier variants.
-struct Builder<'a> {
-    library: &'a Library,
-    preprocessor: Preprocessor,
-    composers: Composers<'a>,
+/// One shader for a [`Compiler`]: its WGSL, the path that messages name, its render pipelines and
+/// its variants.
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct ShaderSource {
+    /// The file the shader comes from, as messages name it.
+    pub path: String,
+    /// The WGSL source.
+    pub source: String,
+    /// Render pipelines by name. WebGL2 gets one GLSL program for each, so a variant that targets
+    /// GLSL needs at least one.
+    #[serde(default)]
+    pub pipelines: BTreeMap<String, Pipeline>,
+    /// Builds of the shader by name.
+    pub variants: BTreeMap<String, Variant>,
 }
 
-impl<'a> Builder<'a> {
-    fn new(library: &'a Library) -> Self {
-        Self {
-            library,
+/// Compiles shaders that import the library modules. Each variant is composed with the modules
+/// it imports, checked against the portable language features, validated, and written as WGSL,
+/// GLSL ES 3.00 or both. The compiler keeps the library modules it composed for later variants.
+pub struct Compiler {
+    library: Library,
+    preprocessor: Preprocessor,
+    composers: Composers,
+}
+
+impl Compiler {
+    /// A compiler for shaders that import the library modules among `files`: the files in `lib/`,
+    /// by path relative to the shader folder. It ignores the other files.
+    pub fn new(files: &BTreeMap<String, String>) -> Result<Self, BuildError> {
+        Ok(Self {
+            library: Library::load(files).map_err(BuildError::from_iter)?,
             preprocessor: Preprocessor::default(),
-            composers: Composers::new(library),
+            composers: Composers::default(),
+        })
+    }
+
+    /// Compiles every variant of a shader. The same problem in several variants is listed once,
+    /// with the name of each variant.
+    pub fn compile(
+        &mut self,
+        shader: &ShaderSource,
+    ) -> Result<BTreeMap<String, VariantOutput>, BuildError> {
+        manifest::check_builds("", &shader.pipelines, &shader.variants)
+            .into_iter()
+            .map(Problem::general)
+            .collect::<BuildError>()
+            .or(())?;
+        features::check_directive_placement(&shader.path, &shader.source)
+            .into_iter()
+            .collect::<BuildError>()
+            .or(())?;
+        let mut errors = BuildError::default();
+        let built = self.variants(
+            &shader.path,
+            &shader.source,
+            &shader.pipelines,
+            &shader.variants,
+            &str::to_owned,
+            &mut errors,
+        );
+        errors.or(built)
+    }
+
+    /// Builds the variants of one entry shader. Problems go to `errors`, each named with the
+    /// `label` of its variant.
+    fn variants(
+        &mut self,
+        path: &str,
+        source: &str,
+        pipelines: &BTreeMap<String, Pipeline>,
+        variants: &BTreeMap<String, Variant>,
+        label: &dyn Fn(&str) -> String,
+        errors: &mut BuildError,
+    ) -> BTreeMap<String, VariantOutput> {
+        let mut built = BTreeMap::new();
+        for (name, variant) in variants {
+            match self.variant(path, source, pipelines, variant) {
+                Ok(output) => {
+                    built.insert(name.clone(), output);
+                }
+                Err(problems) => errors.add(problems, Some(&label(name))),
+            }
         }
+        built
     }
 
     /// Builds one variant of an entry shader: checks its source, composes and validates it, and
     /// writes each target.
     fn variant(
         &mut self,
-        shader: &Shader,
         path: &str,
         source: &str,
+        pipelines: &BTreeMap<String, Pipeline>,
         variant: &Variant,
     ) -> Result<VariantOutput, Vec<Problem>> {
         let defs: HashMap<String, ShaderDefValue> = variant
@@ -219,7 +288,10 @@ impl<'a> Builder<'a> {
         let views: Vec<View> = prepared.iter().map(View::new).collect();
         fail_on(features::scan(&views))?;
 
-        let composer = self.composers.get(capabilities).map_err(|p| vec![p])?;
+        let composer = self
+            .composers
+            .get(&self.library, capabilities)
+            .map_err(|p| vec![p])?;
         let mut module = composer
             .make_naga_module(NagaModuleDescriptor {
                 source,
@@ -227,14 +299,21 @@ impl<'a> Builder<'a> {
                 shader_defs: defs,
                 ..Default::default()
             })
-            .map_err(|e| vec![features::composition_problem(&e, composer, &views)])?;
+            .map_err(|e| {
+                vec![features::composition_problem(
+                    &e,
+                    composer,
+                    &views,
+                    &self.library,
+                )]
+            })?;
         let info = validate(&module, capabilities)?;
         let mut problems = features::check_module(&module, &info, &views);
-        problems.extend(missing_entry_points(shader, path, &module));
+        problems.extend(missing_entry_points(pipelines, path, &module));
         fail_on(problems)?;
 
         naga::compact::compact(&mut module, naga::compact::KeepUnused::No);
-        names::undecorate(&mut module, self.library);
+        names::undecorate(&mut module, &self.library);
         let info = validate(&module, capabilities)?;
         let wgsl = if variant.has(Target::Wgsl) {
             let flags = naga::back::wgsl::WriterFlags::empty();
@@ -246,13 +325,13 @@ impl<'a> Builder<'a> {
             })?;
             Some(WgslOutput {
                 source: finish_source(&written),
-                pipelines: shader.pipelines.clone(),
+                pipelines: pipelines.clone(),
             })
         } else {
             None
         };
         let glsl = if variant.has(Target::Glsl) {
-            let programs = shader.pipelines.iter().map(|(name, pipeline)| {
+            let programs = pipelines.iter().map(|(name, pipeline)| {
                 glsl::write_program(&module, &info, name, pipeline)
                     .map(|program| (name.clone(), program))
                     .map_err(|message| vec![Problem::in_file(path, message)])
@@ -275,9 +354,13 @@ fn fail_on(problems: Vec<Problem>) -> Result<(), Vec<Problem>> {
 }
 
 /// Problems with pipelines whose entry points the composed module does not define.
-fn missing_entry_points(shader: &Shader, path: &str, module: &naga::Module) -> Vec<Problem> {
+fn missing_entry_points(
+    pipelines: &BTreeMap<String, Pipeline>,
+    path: &str,
+    module: &naga::Module,
+) -> Vec<Problem> {
     let mut problems = Vec::new();
-    for (name, pipeline) in &shader.pipelines {
+    for (name, pipeline) in pipelines {
         for (stage, stage_name, entry) in pipeline.stages() {
             if !module
                 .entry_points
@@ -287,7 +370,7 @@ fn missing_entry_points(shader: &Shader, path: &str, module: &naga::Module) -> V
                 problems.push(Problem::in_file(
                     path,
                     format!(
-                        "pipeline `{name}` names the {stage_name} entry point `{entry}`, which this variant of the shader does not define. Check the name in {MANIFEST_PATH}, and the shader defs that hide code."
+                        "pipeline `{name}` names the {stage_name} entry point `{entry}`, which this variant of the shader does not define. Check the pipeline's entry point names, and the shader defs that hide code."
                     ),
                 ));
             }

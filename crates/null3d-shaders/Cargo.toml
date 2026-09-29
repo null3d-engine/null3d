@@ -13,5 +13,9 @@ naga_oil = { version = "0.23", default-features = false }
 serde = { version = "1", features = ["derive"] }
 toml = "1"
 
+# The build tests compare results with the shader compiler's JSON.
+[dev-dependencies]
+serde_json = "1"
+
 [lints]
 workspace = true

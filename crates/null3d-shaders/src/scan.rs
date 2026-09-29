@@ -1,5 +1,5 @@
-//! A small WGSL tokenizer and the lookups the shader checks use. Each token keeps its line, so a
-//! problem found in the composed module can point back at a line of its source file.
+//! A small WGSL tokenizer and the lookups the shader checks use. Each token keeps its byte offset,
+//! so a problem found in the composed module can point back at a place in its source file.
 
 use std::ops::Range;
 
@@ -11,12 +11,12 @@ pub(crate) enum Kind {
     Punct,
 }
 
-/// One token and its 1-based line.
+/// One token and the byte offset where it starts in the text.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct Token<'a> {
     pub kind: Kind,
     pub text: &'a str,
-    pub line: u32,
+    pub start: usize,
 }
 
 /// Punctuation longer than one character, longest first, so `<<=` wins over `<<` and `<`.
@@ -30,14 +30,10 @@ const LONG_PUNCTUATION: [&str; 22] = [
 pub(crate) fn tokenize(text: &str) -> Vec<Token<'_>> {
     let bytes = text.as_bytes();
     let mut tokens = Vec::with_capacity(bytes.len() / 4);
-    let mut line = 1;
     let mut i = 0;
     while i < bytes.len() {
         let byte = bytes[i];
-        if byte == b'\n' {
-            line += 1;
-            i += 1;
-        } else if byte.is_ascii_whitespace() {
+        if byte.is_ascii_whitespace() {
             i += 1;
         } else if byte == b'/' && bytes.get(i + 1) == Some(&b'/') {
             while i < bytes.len() && bytes[i] != b'\n' {
@@ -56,9 +52,6 @@ pub(crate) fn tokenize(text: &str) -> Vec<Token<'_>> {
                         break;
                     }
                 } else {
-                    if bytes[i] == b'\n' {
-                        line += 1;
-                    }
                     i += 1;
                 }
             }
@@ -85,7 +78,7 @@ pub(crate) fn tokenize(text: &str) -> Vec<Token<'_>> {
             tokens.push(Token {
                 kind,
                 text: &text[start..i],
-                line,
+                start,
             });
         }
     }
@@ -140,10 +133,10 @@ pub(crate) fn matching(tokens: &[Token], open: usize) -> Option<usize> {
     None
 }
 
-/// The token ranges of a function declaration.
+/// The tokens of a function declaration.
 pub(crate) struct Function {
-    /// The line of the function's name.
-    pub line: u32,
+    /// The function's name.
+    pub name: usize,
     /// The tokens between the parameter list's parentheses.
     pub params: Range<usize>,
     /// The tokens between the body's braces.
@@ -169,7 +162,7 @@ pub(crate) fn find_function(tokens: &[Token], name: &str) -> Option<Function> {
                 let body_open = (close + 1..tokens.len()).find(|&i| tokens[i].text == "{")?;
                 let body_close = matching(tokens, body_open)?;
                 return Some(Function {
-                    line: found.line,
+                    name: index + 1,
                     params: index + 3..close,
                     body: body_open + 1..body_close,
                 });
@@ -180,26 +173,29 @@ pub(crate) fn find_function(tokens: &[Token], name: &str) -> Option<Function> {
     None
 }
 
-/// The line of parameter `name` of a function.
-pub(crate) fn param_line(tokens: &[Token], function: &Function, name: &str) -> Option<u32> {
-    tokens[function.params.clone()]
-        .windows(2)
-        .find(|pair| pair[0].text == name && pair[1].text == ":")
-        .map(|pair| pair[0].line)
+/// The index of the first token in `range` that starts the token texts in `pattern`.
+fn find_in(tokens: &[Token], range: Range<usize>, pattern: [&str; 2]) -> Option<usize> {
+    range
+        .clone()
+        .zip(tokens[range].windows(2))
+        .find(|(_, pair)| pair[0].text == pattern[0] && pair[1].text == pattern[1])
+        .map(|(index, _)| index)
 }
 
-/// The line of the first `let name` in a function's body.
-pub(crate) fn let_line(tokens: &[Token], function: &Function, name: &str) -> Option<u32> {
-    tokens[function.body.clone()]
-        .windows(2)
-        .find(|pair| pair[0].text == "let" && pair[1].text == name)
-        .map(|pair| pair[1].line)
+/// The name of parameter `name` of a function.
+pub(crate) fn param(tokens: &[Token], function: &Function, name: &str) -> Option<usize> {
+    find_in(tokens, function.params.clone(), [name, ":"])
+}
+
+/// The name of the first `let name` in a function's body.
+pub(crate) fn let_binding(tokens: &[Token], function: &Function, name: &str) -> Option<usize> {
+    find_in(tokens, function.body.clone(), ["let", name]).map(|index| index + 1)
 }
 
 /// A call in a function's body.
 pub(crate) struct Call {
-    /// The line of the called name.
-    pub line: u32,
+    /// The called name.
+    pub name: usize,
     /// True when an argument takes the address of part of a variable, as in `&v.x` or `&a[i]`.
     pub passes_part: bool,
 }
@@ -219,15 +215,15 @@ pub(crate) fn calls(tokens: &[Token], function: &Function, names: &[&str]) -> Ve
             w[0].text == "&" && w[1].kind == Kind::Ident && matches!(w[2].text, "." | "[")
         });
         calls.push(Call {
-            line: name.line,
+            name: index,
             passes_part,
         });
     }
     calls
 }
 
-/// The line of the module-scope `var` declaration named `name`, with or without an address space.
-pub(crate) fn global_line(tokens: &[Token], name: &str) -> Option<u32> {
+/// The name of the module-scope `var` declaration named `name`, with or without an address space.
+pub(crate) fn global(tokens: &[Token], name: &str) -> Option<usize> {
     let mut depth = 0usize;
     let mut index = 0;
     while index < tokens.len() {
@@ -242,8 +238,8 @@ pub(crate) fn global_line(tokens: &[Token], name: &str) -> Option<u32> {
                     }
                     next += 1;
                 }
-                if let Some(found) = tokens.get(next).filter(|t| t.text == name) {
-                    return Some(found.line);
+                if tokens.get(next).is_some_and(|t| t.text == name) {
+                    return Some(next);
                 }
             }
             _ => {}
@@ -256,17 +252,26 @@ pub(crate) fn global_line(tokens: &[Token], name: &str) -> Option<u32> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::position::locate;
 
     fn texts(source: &str) -> Vec<&str> {
         tokenize(source).iter().map(|t| t.text).collect()
     }
 
+    /// The line and column of a token.
+    fn place(source: &str, tokens: &[Token], index: usize) -> (u32, u32) {
+        let position = locate(source, source, tokens[index].start);
+        (position.line, position.column)
+    }
+
     #[test]
-    fn comments_and_white_space_are_skipped_and_lines_counted() {
+    fn comments_and_white_space_are_skipped_and_places_kept() {
         let source = "a /* one\n /* nested */ two\n */ b // three\nc";
         let tokens = tokenize(source);
-        let found: Vec<_> = tokens.iter().map(|t| (t.text, t.line)).collect();
-        assert_eq!(found, [("a", 1), ("b", 3), ("c", 4)]);
+        let found: Vec<_> = (0..tokens.len())
+            .map(|i| (tokens[i].text, place(source, &tokens, i)))
+            .collect();
+        assert_eq!(found, [("a", (1, 1)), ("b", (3, 5)), ("c", (4, 1))]);
     }
 
     #[test]
@@ -294,16 +299,17 @@ mod tests {
     fn functions_parameters_lets_calls_and_globals_are_found() {
         let source = "var<uniform> u: U;\nvar plain: f32;\nfn helper(p: f32) -> f32 {\n  return p;\n}\nfn main(\n  a: f32,\n) {\n  let x = helper(a);\n}\n";
         let tokens = tokenize(source);
+        let at = |index: Option<usize>| index.map(|i| place(source, &tokens, i));
         let main = find_function(&tokens, "main").unwrap();
-        assert_eq!(main.line, 6);
-        assert_eq!(param_line(&tokens, &main, "a"), Some(7));
-        assert_eq!(let_line(&tokens, &main, "x"), Some(9));
+        assert_eq!(at(Some(main.name)), Some((6, 4)));
+        assert_eq!(at(param(&tokens, &main, "a")), Some((7, 3)));
+        assert_eq!(at(let_binding(&tokens, &main, "x")), Some((9, 7)));
         let found = calls(&tokens, &main, &["helper"]);
         assert_eq!(found.len(), 1);
-        assert_eq!(found[0].line, 9);
+        assert_eq!(at(Some(found[0].name)), Some((9, 11)));
         assert!(!found[0].passes_part);
-        assert_eq!(global_line(&tokens, "u"), Some(1));
-        assert_eq!(global_line(&tokens, "plain"), Some(2));
+        assert_eq!(at(global(&tokens, "u")), Some((1, 14)));
+        assert_eq!(at(global(&tokens, "plain")), Some((2, 5)));
         assert!(find_function(&tokens, "missing").is_none());
     }
 
@@ -315,7 +321,7 @@ mod tests {
         let main = find_function(&tokens, "main").unwrap();
         let found: Vec<_> = calls(&tokens, &main, &["f", "g"])
             .iter()
-            .map(|c| (c.line, c.passes_part))
+            .map(|c| (place(source, &tokens, c.name).0, c.passes_part))
             .collect();
         assert_eq!(found, [(2, false), (3, true), (4, true), (5, false)]);
     }

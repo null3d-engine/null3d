@@ -10,7 +10,7 @@ This repository holds the null3D engine, its tools, its documentation and its ag
 | `docs/data/threejs-mapping.json` | The single source of the three.js to null3D mapping |
 | `skills/` | Agent skills for building with null3D and for porting three.js apps (the source) |
 | `.claude/skills/` | A generated copy of `skills/` for Claude Code. Never edit it. |
-| `crates/` | The Rust crates: core, GPU layer, renderer, shaders, and the WebAssembly entry point |
+| `crates/` | The Rust crates: core, GPU layer, renderer, shaders, the WebAssembly entry point, and the shader compiler that build tools load |
 | `packages/` | npm packages: `engine`, `vite-plugin`, and `cli`, which is the `null3d` command |
 | `tests/` | Browser tests: test pages, Playwright image tests, reference images and the real-browser runner |
 | `tools/` | The WebAssembly build, the docs generator, the skills check and the commit hooks |
@@ -22,10 +22,11 @@ This repository holds the null3D engine, its tools, its documentation and its ag
 | Command | Use |
 | --- | --- |
 | `bun install` | Install the tools and set up the git hooks |
-| `bun run build` | Build both WebAssembly files, the threaded one and the single-threaded one, and print their sizes and the sizes of the engine's JavaScript in a production build |
+| `bun run build` | Build both WebAssembly files, the threaded one and the single-threaded one, and the shader compiler for the Vite plugin. Print their sizes and the sizes of the engine's JavaScript in a production build |
 | `bun run build:check-size` | Build, and fail when a WebAssembly file or a file of the engine's JavaScript grew more than 2% after Brotli compression |
 | `bun run test` | Unit tests for the engine, the benchmark scenes and the repository tools |
 | `bun run test:browser` | Image tests on WebGPU and WebGL2 in Chrome, through Playwright, and the engine and errors tests again on a production build served by `vite preview` |
+| `bun run test:shader-compiler` | Run the shader crate's build tests again through the shader compiler, which must give the native build's results, then the compiler's own tests. Run `bun run build` first |
 | `bun run test:real-browsers Safari Firefox` | The same test pages in browser apps that Playwright cannot drive, through the runner page (macOS) |
 | `bun run devices` | The same checks on an Android phone over USB (Chrome, then Brave) and on runner pages that wait on the local network (an iPad's Safari and Brave). Add `--shields on` or `--shields off` to record the state of Brave's Shields |
 | `bun run test:bench` | The benchmark pages of both engines in Chrome, through Playwright |

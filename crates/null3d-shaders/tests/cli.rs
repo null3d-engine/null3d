@@ -114,7 +114,7 @@ fn a_shader_error_fails_the_command_with_the_file_and_line() {
         .unwrap()
         + 2;
     assert!(
-        message.contains(&format!("{SHADER_DIR}/test_mesh.wgsl:{line}: ")),
+        message.contains(&format!("{SHADER_DIR}/test_mesh.wgsl:{line}:10: ")),
         "{message}"
     );
     assert!(message.contains("`swizzle_assignment`"), "{message}");
