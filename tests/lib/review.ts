@@ -4,6 +4,7 @@
 // ones a person accepts into references.
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
+import { percent } from '../../bench/lib/parity.ts';
 import { CANDIDATE_FILES, type CandidateFacts, TIERS, type Tier } from './images.ts';
 import { REPO_ROOT } from './server.ts';
 
@@ -41,8 +42,6 @@ export function readCandidates(folder: string): Candidate[] {
 	const key = ({ test, tier, drawnIn }: Candidate) => `${test} ${TIERS.indexOf(tier)} ${drawnIn}`;
 	return candidates.sort((a, b) => key(a).localeCompare(key(b)));
 }
-
-const percent = (share: number) => `${(share * 100).toFixed(3)}%`;
 
 /** A candidate's name in a report: the test, the tier, and where and in which mode it was drawn. */
 const titleOf = ({ test, tier, drawnIn, mode }: Candidate) =>

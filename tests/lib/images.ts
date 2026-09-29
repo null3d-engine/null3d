@@ -13,7 +13,7 @@ import { dirname, join, relative } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
 import { decode } from 'fast-png';
 import pixelmatch from 'pixelmatch';
-import { encodePng, type RgbaImage, TIERS, type Tier } from '../../bench/lib/parity.ts';
+import { encodePng, percent, type RgbaImage, TIERS, type Tier } from '../../bench/lib/parity.ts';
 import {
 	ENGINE_MODES,
 	type EngineMode,
@@ -392,8 +392,6 @@ export function readPng(path: string): RgbaImage {
 		throw new Error(`${path} is not an 8-bit RGBA image`);
 	return { width, height, data };
 }
-
-const percent = (share: number) => `${(share * 100).toFixed(3)}%`;
 
 /**
  * Compares a run's image with its reference in the place that drew it. An image without a

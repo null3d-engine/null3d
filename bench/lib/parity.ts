@@ -190,7 +190,8 @@ export function passesWithBaseline(share: number, baselineShare: number | null):
 	return share * 100 < MAX_DIFFERENT_PERCENT || (baselineShare !== null && share <= baselineShare);
 }
 
-const percent = (share: number) => `${(share * 100).toFixed(3)}%`;
+/** A share from 0 to 1 as a percentage with three decimals, as reports give it. */
+export const percent = (share: number) => `${(share * 100).toFixed(3)}%`;
 
 /**
  * How much two images differ, and what may differ, in words for a report. A `stored` baseline was
