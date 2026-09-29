@@ -16,7 +16,7 @@ use null3d_core::instances::{BatchTable, InstanceBatch};
 use null3d_core::jobs::JobSystem;
 use null3d_core::scene::SceneStorage;
 use null3d_core::snapshot::FrameSnapshot;
-use null3d_gpu::drawlist::{DrawList, DrawListError, Op, format, pass_flags, texture_usage};
+use null3d_gpu::drawlist::{DrawList, DrawListError, Op, format, pass_flags, texture_usage, view};
 
 use crate::camera::{Affine, Perspective};
 use crate::frame_data::{FrameUniform, normalized_direction};
@@ -426,6 +426,7 @@ impl SceneTargets {
                     texture_usage::RENDER_ATTACHMENT,
                     self.samples,
                     1,
+                    view::D2,
                 ],
             )?;
         }

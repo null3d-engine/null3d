@@ -4,22 +4,64 @@
 
 import * as G from '../../generated/gpu';
 import type { GpuTimer } from './gpu-timer';
-import { Pipelines } from './pipelines';
-import { RenderPassSetup, submitOne } from './reusable';
+import { Pipelines, type RenderTemplate } from './pipelines';
+import { RenderPassSetup, submitOne, TexelCopySetup } from './reusable';
 import { StagingRing } from './staging';
 import { UploadRoutes } from './upload-routes';
 
 const TEXTURE_FORMATS: (GPUTextureFormat | undefined)[] = [];
 TEXTURE_FORMATS[G.FORMAT_RGBA8_UNORM] = 'rgba8unorm';
+TEXTURE_FORMATS[G.FORMAT_RGBA8_UNORM_SRGB] = 'rgba8unorm-srgb';
 TEXTURE_FORMATS[G.FORMAT_BGRA8_UNORM] = 'bgra8unorm';
 TEXTURE_FORMATS[G.FORMAT_RGBA16_FLOAT] = 'rgba16float';
 TEXTURE_FORMATS[G.FORMAT_DEPTH24_PLUS] = 'depth24plus';
 TEXTURE_FORMATS[G.FORMAT_DEPTH32_FLOAT] = 'depth32float';
+TEXTURE_FORMATS[G.FORMAT_RGBA32_FLOAT] = 'rgba32float';
+TEXTURE_FORMATS[G.FORMAT_R32_UINT] = 'r32uint';
+
+const VIEW_DIMENSIONS: (GPUTextureViewDimension | undefined)[] = [];
+VIEW_DIMENSIONS[G.VIEW_2D] = '2d';
+VIEW_DIMENSIONS[G.VIEW_2D_ARRAY] = '2d-array';
+
+const ADDRESS_MODES: (GPUAddressMode | undefined)[] = [];
+ADDRESS_MODES[G.ADDRESS_CLAMP_TO_EDGE] = 'clamp-to-edge';
+ADDRESS_MODES[G.ADDRESS_REPEAT] = 'repeat';
+ADDRESS_MODES[G.ADDRESS_MIRROR_REPEAT] = 'mirror-repeat';
+
+const FILTERS: (GPUFilterMode | undefined)[] = [];
+FILTERS[G.FILTER_NEAREST] = 'nearest';
+FILTERS[G.FILTER_LINEAR] = 'linear';
+
+/** Compare functions by code; `COMPARE_NONE` has none, which makes a sampler that reads texels. */
+const COMPARE_FUNCTIONS: (GPUCompareFunction | undefined)[] = [];
+COMPARE_FUNCTIONS[G.COMPARE_NEVER] = 'never';
+COMPARE_FUNCTIONS[G.COMPARE_LESS] = 'less';
+COMPARE_FUNCTIONS[G.COMPARE_EQUAL] = 'equal';
+COMPARE_FUNCTIONS[G.COMPARE_LESS_EQUAL] = 'less-equal';
+COMPARE_FUNCTIONS[G.COMPARE_GREATER] = 'greater';
+COMPARE_FUNCTIONS[G.COMPARE_NOT_EQUAL] = 'not-equal';
+COMPARE_FUNCTIONS[G.COMPARE_GREATER_EQUAL] = 'greater-equal';
+COMPARE_FUNCTIONS[G.COMPARE_ALWAYS] = 'always';
+
+/** Reads a code from a table, and fails with its kind when the table has no entry for it. */
+function lookUp<T>(table: (T | undefined)[], code: number, what: string): T {
+	const value = table[code];
+	if (value === undefined) throw new Error(`unknown ${what} ${code}`);
+	return value;
+}
 
 export class WebGPUBackend {
 	private readonly buffers: (GPUBuffer | undefined)[] = [];
 	private readonly textures: (GPUTexture | undefined)[] = [];
-	private readonly views: (GPUTextureView | undefined)[] = [];
+	/** Each texture's format code, for the bytes per texel of its writes. */
+	private readonly formats: number[] = [];
+	/** Each texture's view for bind groups: the whole texture, in the dimension it was made with. */
+	private readonly bindingViews: (GPUTextureView | undefined)[] = [];
+	/** Each render target's view: a texture of one layer and one mip level, or a view of one. */
+	private readonly targetViews: (GPUTextureView | undefined)[] = [];
+	private readonly samplers: (GPUSampler | undefined)[] = [];
+	/** Images the page handed over for uploads, by id. */
+	private readonly images: (ImageBitmap | undefined)[] = [];
 	private readonly renderPipelines: (GPURenderPipeline | undefined)[] = [];
 	private readonly computePipelines: (GPUComputePipeline | undefined)[] = [];
 	private readonly bindGroups: (GPUBindGroup | undefined)[] = [];
@@ -40,9 +82,11 @@ export class WebGPUBackend {
 		dispatches: 0,
 		pipelines: 0,
 	};
-	// Pass descriptors that every frame fills again, so replay allocates none of its own.
+	// Descriptors that every frame fills again, so replay allocates none of its own.
 	private readonly renderPass = new RenderPassSetup();
 	private readonly computePass: GPUComputePassDescriptor = {};
+	private readonly copy = new TexelCopySetup();
+	private readonly samplerSetup: GPUSamplerDescriptor = {};
 
 	/**
 	 * `routes` chooses between writeBuffer and the staging ring for mid-size uploads; by default it
@@ -73,6 +117,28 @@ export class WebGPUBackend {
 		return value;
 	}
 
+	/**
+	 * Adds a bind group layout, which `CreateBindGroup` and templates then name by `id`. The id
+	 * must be one that no engine layout has.
+	 */
+	defineLayout(id: number, label: string, entries: GPUBindGroupLayoutEntry[]): void {
+		this.pipelines.defineLayout(id, label, entries);
+	}
+
+	/**
+	 * Adds a render pipeline template, which `CreateRenderPipeline` then builds pipelines from. The
+	 * id must be one that no engine template has.
+	 */
+	defineTemplate(id: number, template: RenderTemplate): void {
+		this.pipelines.defineTemplate(id, template);
+	}
+
+	/** Hands the backend an image for `UploadImage` commands to copy from, under the draw list's id. */
+	setImage(id: number, image: ImageBitmap): void {
+		this.images[id]?.close();
+		this.images[id] = image;
+	}
+
 	/** The texture the canvas shows this frame, or an offscreen target standing in for it. */
 	canvasTarget: GPUTexture | undefined;
 
@@ -83,7 +149,87 @@ export class WebGPUBackend {
 			if (!texture) throw new Error('no canvas target to draw into');
 			return texture.createView();
 		}
-		return this.need(this.views, id, 'texture');
+		return this.need(this.targetViews, id, 'render target');
+	}
+
+	/**
+	 * Creates a texture with a view for bind groups, in the view dimension that compatibility mode
+	 * fixes at creation, and a view to draw into when it has one layer and one mip level.
+	 */
+	private createTexture(words: Uint32Array, a: number): void {
+		const id = words[a] as number;
+		this.releaseTexture(id);
+		const layers = words[a + 3] as number;
+		const usage = words[a + 5] as number;
+		const mips = words[a + 7] as number;
+		const dimension = lookUp(VIEW_DIMENSIONS, words[a + 8] as number, 'view dimension');
+		const bound = (usage & G.TEXTURE_USAGE_TEXTURE_BINDING) !== 0;
+		const texture = this.device.createTexture({
+			size: [words[a + 1] as number, words[a + 2] as number, layers],
+			format: this.format(words[a + 4] as number) as GPUTextureFormat,
+			usage,
+			sampleCount: words[a + 6] as number,
+			mipLevelCount: mips,
+			textureBindingViewDimension: bound ? dimension : undefined,
+		});
+		this.textures[id] = texture;
+		this.formats[id] = words[a + 4] as number;
+		if (bound)
+			this.bindingViews[id] = texture.createView({
+				dimension,
+				usage: G.TEXTURE_USAGE_TEXTURE_BINDING,
+			});
+		if (usage & G.TEXTURE_USAGE_RENDER_ATTACHMENT && layers === 1 && mips === 1)
+			this.targetViews[id] = texture.createView({
+				dimension: '2d',
+				usage: G.TEXTURE_USAGE_RENDER_ATTACHMENT,
+			});
+	}
+
+	/** A view of one mip level and one layer of a texture, to draw into. */
+	private createView(words: Uint32Array, a: number): void {
+		const id = words[a] as number;
+		this.releaseTexture(id);
+		this.targetViews[id] = this.need(this.textures, words[a + 1] as number, 'texture').createView({
+			dimension: '2d',
+			usage: G.TEXTURE_USAGE_RENDER_ATTACHMENT,
+			baseMipLevel: words[a + 2] as number,
+			mipLevelCount: 1,
+			baseArrayLayer: words[a + 3] as number,
+			arrayLayerCount: 1,
+		});
+	}
+
+	/** Destroys a texture, or releases a view. */
+	private releaseTexture(id: number): void {
+		this.textures[id]?.destroy();
+		this.textures[id] = undefined;
+		this.bindingViews[id] = undefined;
+		this.targetViews[id] = undefined;
+	}
+
+	/** Bytes per texel of a texture. */
+	private texelBytes(id: number): number {
+		return G.FORMAT_TEXEL_BYTES[this.formats[id] as number] ?? 0;
+	}
+
+	private createSampler(words: Uint32Array, floats: Float32Array, a: number): void {
+		const setup = this.samplerSetup;
+		setup.addressModeU = lookUp(ADDRESS_MODES, words[a + 1] as number, 'address mode');
+		setup.addressModeV = lookUp(ADDRESS_MODES, words[a + 2] as number, 'address mode');
+		setup.addressModeW = lookUp(ADDRESS_MODES, words[a + 3] as number, 'address mode');
+		setup.magFilter = lookUp(FILTERS, words[a + 4] as number, 'filter');
+		setup.minFilter = lookUp(FILTERS, words[a + 5] as number, 'filter');
+		setup.mipmapFilter = lookUp(FILTERS, words[a + 6] as number, 'filter');
+		setup.lodMinClamp = floats[a + 7] as number;
+		setup.lodMaxClamp = floats[a + 8] as number;
+		const compare = words[a + 9] as number;
+		setup.compare =
+			compare === G.COMPARE_NONE
+				? undefined
+				: lookUp(COMPARE_FUNCTIONS, compare, 'compare function');
+		setup.maxAnisotropy = words[a + 10] as number;
+		this.samplers[words[a] as number] = this.device.createSampler(setup);
 	}
 
 	private encoder: GPUCommandEncoder | undefined;
@@ -183,20 +329,61 @@ export class WebGPUBackend {
 					this.buffers[words[a] as number]?.destroy();
 					this.buffers[words[a] as number] = undefined;
 					break;
-				case G.OP_CREATE_TEXTURE: {
+				case G.OP_CREATE_TEXTURE:
+					this.createTexture(words, a);
+					break;
+				case G.OP_CREATE_TEXTURE_VIEW:
+					this.createView(words, a);
+					break;
+				case G.OP_WRITE_TEXTURE: {
+					// A texel write lands when the queue receives it, as writeBuffer does, before the
+					// commands recorded since the last submit.
+					const copy = this.copy;
 					const id = words[a] as number;
-					this.textures[id]?.destroy();
-					const texture = device.createTexture({
-						size: [words[a + 1] as number, words[a + 2] as number, words[a + 3] as number],
-						format: this.format(words[a + 4] as number) as GPUTextureFormat,
-						usage: words[a + 5] as number,
-						sampleCount: words[a + 6] as number,
-						mipLevelCount: words[a + 7] as number,
-					});
-					this.textures[id] = texture;
-					this.views[id] = texture.createView();
+					const width = words[a + 5] as number;
+					const height = words[a + 6] as number;
+					copy.setDestination(this.need(this.textures, id, 'texture'), words, a);
+					copy.setSize(width, height, words[a + 7] as number);
+					copy.setLayout(words[a + 8] as number, width * this.texelBytes(id), height);
+					device.queue.writeTexture(copy.destination, memory, copy.layout, copy.size);
+					this.counts.uploadBytes += words[a + 9] as number;
 					break;
 				}
+				case G.OP_UPLOAD_IMAGE: {
+					const copy = this.copy;
+					const id = words[a] as number;
+					const imageId = words[a + 7] as number;
+					const flags = words[a + 8] as number;
+					const image = this.need(this.images, imageId, 'image');
+					const width = words[a + 5] as number;
+					const height = words[a + 6] as number;
+					copy.setDestination(this.need(this.textures, id, 'texture'), words, a);
+					copy.destination.premultipliedAlpha = (flags & G.UPLOAD_PREMULTIPLIED_ALPHA) !== 0;
+					copy.image.source = image;
+					copy.setSize(width, height, 1);
+					device.queue.copyExternalImageToTexture(copy.image, copy.destination, copy.size);
+					this.counts.uploadBytes += width * height * this.texelBytes(id);
+					if (flags & G.UPLOAD_RELEASE) {
+						image.close();
+						this.images[imageId] = undefined;
+					}
+					break;
+				}
+				case G.OP_COPY_TEXTURE_TO_TEXTURE: {
+					const copy = this.copy;
+					copy.setSource(this.need(this.textures, words[a] as number, 'texture'), words, a);
+					copy.setDestination(
+						this.need(this.textures, words[a + 5] as number, 'texture'),
+						words,
+						a + 5,
+					);
+					copy.setSize(words[a + 10] as number, words[a + 11] as number, words[a + 12] as number);
+					this.commandEncoder().copyTextureToTexture(copy.source, copy.destination, copy.size);
+					break;
+				}
+				case G.OP_CREATE_SAMPLER:
+					this.createSampler(words, floats, a);
+					break;
 				case G.OP_RESIZE_CANVAS: {
 					const canvas = this.context?.canvas;
 					const width = words[a] as number;
@@ -208,15 +395,13 @@ export class WebGPUBackend {
 					break;
 				}
 				case G.OP_DESTROY_TEXTURE:
-					this.textures[words[a] as number]?.destroy();
-					this.textures[words[a] as number] = undefined;
-					this.views[words[a] as number] = undefined;
+					this.releaseTexture(words[a] as number);
 					break;
 				case G.OP_CREATE_RENDER_PIPELINE:
 					this.counts.pipelines++;
 					this.renderPipelines[words[a] as number] = this.pipelines.render(
 						words[a + 1] as number,
-						this.format(words[a + 3] as number) as GPUTextureFormat,
+						this.format(words[a + 3] as number),
 						this.format(words[a + 4] as number),
 						words[a + 5] as number,
 						words[a + 6] as number,
@@ -229,23 +414,25 @@ export class WebGPUBackend {
 					);
 					break;
 				case G.OP_CREATE_BIND_GROUP: {
-					const layout = this.pipelines.layouts[words[a + 1] as number];
-					if (!layout) throw new Error(`unknown bind group layout ${words[a + 1]}`);
+					const layout = this.pipelines.layout(words[a + 1] as number);
 					const entries: GPUBindGroupEntry[] = [];
 					for (let e = 0, at = a + 3; e < (words[a + 2] as number); e++, at += 5) {
 						const kind = words[at + 1] as number;
 						const id = words[at + 2] as number;
-						if (kind !== G.RESOURCE_BUFFER)
-							throw new Error(`unsupported bind group resource kind ${kind}`);
 						const size = words[at + 4] as number;
-						entries.push({
-							binding: words[at] as number,
-							resource: {
+						let resource: GPUBindingResource;
+						if (kind === G.RESOURCE_BUFFER)
+							resource = {
 								buffer: this.need(this.buffers, id, 'buffer'),
 								offset: words[at + 3] as number,
 								size: size === 0 ? undefined : size,
-							},
-						});
+							};
+						else if (kind === G.RESOURCE_TEXTURE)
+							resource = this.need(this.bindingViews, id, 'bound texture');
+						else if (kind === G.RESOURCE_SAMPLER)
+							resource = this.need(this.samplers, id, 'sampler');
+						else throw new Error(`unknown bind group resource kind ${kind}`);
+						entries.push({ binding: words[at] as number, resource });
 					}
 					this.bindGroups[words[a] as number] = device.createBindGroup({ layout, entries });
 					break;
@@ -282,6 +469,24 @@ export class WebGPUBackend {
 				}
 				case G.OP_SET_PIPELINE:
 					draw?.setPipeline(this.need(this.renderPipelines, words[a] as number, 'render pipeline'));
+					break;
+				case G.OP_SET_VIEWPORT:
+					pass?.setViewport(
+						words[a] as number,
+						words[a + 1] as number,
+						words[a + 2] as number,
+						words[a + 3] as number,
+						floats[a + 4] as number,
+						floats[a + 5] as number,
+					);
+					break;
+				case G.OP_SET_SCISSOR:
+					pass?.setScissorRect(
+						words[a] as number,
+						words[a + 1] as number,
+						words[a + 2] as number,
+						words[a + 3] as number,
+					);
 					break;
 				case G.OP_SET_BIND_GROUP: {
 					// The dynamic offsets are read straight from the draw list.
@@ -423,6 +628,7 @@ export class WebGPUBackend {
 	destroy(): void {
 		for (const buffer of this.buffers) buffer?.destroy();
 		for (const texture of this.textures) texture?.destroy();
+		for (const image of this.images) image?.close();
 		this.staging.destroy();
 	}
 }

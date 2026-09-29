@@ -49,7 +49,7 @@ const WORKERS = ['sketch-worker', 'render-worker'] as const;
  */
 const BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = {
 	'sketch-worker': {
-		'step sketch/runner.ts': 240,
+		'frame sketch/runner.ts': 240,
 		'runPipelined workers/sketch-worker.ts': 128,
 		'changeOf workers/sketch-worker.ts': 16,
 		'(IDLE)': 96,

@@ -1,5 +1,7 @@
-// Standard bind group layouts and the pipelines built from shader templates. Every render pipeline
-// shares the same layouts, so switching pipelines never forces a rebind of the per-frame group.
+// Standard bind group layouts and the render pipeline templates. Every render pipeline shares the
+// layouts of its template's groups, so switching pipelines never forces a rebind of the per-frame
+// group. The engine defines its own layouts and templates, and a page can add more, as the texture
+// test page does.
 
 import {
 	LAYOUT_CULL,
@@ -11,111 +13,153 @@ import {
 	TEMPLATE_INSTANCED_LIT,
 	TEMPLATE_INSTANCED_UNLIT,
 } from '../../generated/gpu';
-import { SHADERS, type WgslShader } from '../../generated/shaders';
+import { CULL_SHADER, MESH_SHADER, type WgslShader } from '../../generated/shaders';
 
-/** The WebGPU build of a shader, which every shader the WebGPU backend uses has. */
-function wgsl<Pipeline extends string>(shader: {
-	webgpu: { wgsl: WgslShader<Pipeline> | null };
+/** The WebGPU build of a shader variant. */
+export function wgslOf<Pipeline extends string>(variant: {
+	wgsl: WgslShader<Pipeline> | null;
 }): WgslShader<Pipeline> {
-	if (!shader.webgpu.wgsl) throw new Error('a shader has no WebGPU build');
-	return shader.webgpu.wgsl;
+	if (!variant.wgsl) throw new Error('a shader variant has no WebGPU build');
+	return variant.wgsl;
 }
 
-const MESH = wgsl(SHADERS.mesh);
-const CULL = wgsl(SHADERS.cull);
+/** How the backend builds the render pipelines of one template. */
+export interface RenderTemplate {
+	/** A name for the browser's messages. */
+	readonly label: string;
+	/** The WGSL module, which the backend compiles once for every template that shares it. */
+	readonly shader: WgslShader;
+	/** The render pipeline of the shader that the template draws with. */
+	readonly pipeline: string;
+	/** The bind group layout of each group, by layout id, from group 0 on. */
+	readonly layouts: readonly number[];
+	/** The vertex buffers that the vertex stage reads, by slot. */
+	readonly vertexBuffers: GPUVertexBufferLayout[];
+}
+
+const MESH = wgslOf(MESH_SHADER.webgpu);
+const CULL = wgslOf(CULL_SHADER.webgpu);
 /** The culling shader's compute entry point. */
 const CULL_ENTRY_POINT = 'main';
 
+/** A mesh vertex, then the compacted instance that the draw's instances read. */
+const MESH_BUFFERS: GPUVertexBufferLayout[] = [
+	{
+		arrayStride: SIZE_VERTEX_STRIDE,
+		stepMode: 'vertex',
+		attributes: [
+			{ shaderLocation: 0, offset: 0, format: 'float32x3' },
+			{ shaderLocation: 1, offset: 12, format: 'float32x3' },
+		],
+	},
+	{
+		arrayStride: SIZE_INSTANCE_STRIDE,
+		stepMode: 'instance',
+		attributes: [
+			{ shaderLocation: 2, offset: 0, format: 'float32x4' },
+			{ shaderLocation: 3, offset: 16, format: 'float32x4' },
+			{ shaderLocation: 4, offset: 32, format: 'float32x4' },
+			{ shaderLocation: 5, offset: 48, format: 'uint32x4' },
+		],
+	},
+];
+
 export class Pipelines {
-	readonly layouts: GPUBindGroupLayout[] = [];
-	private readonly renderLayout: GPUPipelineLayout;
+	private readonly layouts: (GPUBindGroupLayout | undefined)[] = [];
+	private readonly templates: (RenderTemplate | undefined)[] = [];
+	/** Each template's pipeline layout, made for its first pipeline. */
+	private readonly pipelineLayouts: (GPUPipelineLayout | undefined)[] = [];
 	private readonly cullLayout: GPUPipelineLayout;
-	private readonly modules = new Map<string, GPUShaderModule>();
+	private readonly modules = new Map<WgslShader, GPUShaderModule>();
 
 	constructor(private readonly device: GPUDevice) {
-		this.layouts[LAYOUT_FRAME] = device.createBindGroupLayout({
-			label: 'frame',
-			entries: [
-				{
-					binding: 0,
-					visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
-					buffer: { type: 'uniform' },
-				},
-				{ binding: 1, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } },
-			],
-		});
-		this.layouts[LAYOUT_CULL] = device.createBindGroupLayout({
-			label: 'cull',
-			entries: [
-				{ binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
-				{ binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
-				{ binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
-				{ binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
-				{ binding: 4, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
-				{ binding: 5, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
-			],
-		});
-		this.renderLayout = device.createPipelineLayout({
-			bindGroupLayouts: [this.layouts[LAYOUT_FRAME] as GPUBindGroupLayout],
-		});
-		this.cullLayout = device.createPipelineLayout({
-			bindGroupLayouts: [this.layouts[LAYOUT_CULL] as GPUBindGroupLayout],
-		});
+		this.defineLayout(LAYOUT_FRAME, 'frame', [
+			{
+				binding: 0,
+				visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
+				buffer: { type: 'uniform' },
+			},
+			{ binding: 1, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } },
+		]);
+		this.defineLayout(LAYOUT_CULL, 'cull', [
+			{ binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
+			{ binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
+			{ binding: 2, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
+			{ binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
+			{ binding: 4, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+			{ binding: 5, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+		]);
+		for (const [id, pipeline] of [
+			[TEMPLATE_INSTANCED_LIT, 'lit'],
+			[TEMPLATE_INSTANCED_UNLIT, 'unlit'],
+		] as const) {
+			this.defineTemplate(id, {
+				label: `mesh ${pipeline}`,
+				shader: MESH,
+				pipeline,
+				layouts: [LAYOUT_FRAME],
+				vertexBuffers: MESH_BUFFERS,
+			});
+		}
+		this.cullLayout = device.createPipelineLayout({ bindGroupLayouts: [this.layout(LAYOUT_CULL)] });
+	}
+
+	/** Adds a bind group layout under an id that no other layout has. */
+	defineLayout(id: number, label: string, entries: GPUBindGroupLayoutEntry[]): void {
+		if (this.layouts[id]) throw new Error(`bind group layout ${id} already exists`);
+		this.layouts[id] = this.device.createBindGroupLayout({ label, entries });
+	}
+
+	/** Adds a render pipeline template under an id that no other template has. */
+	defineTemplate(id: number, template: RenderTemplate): void {
+		if (this.templates[id]) throw new Error(`render pipeline template ${id} already exists`);
+		if (!template.shader.pipelines[template.pipeline])
+			throw new Error(`the shader of template ${id} has no pipeline ${template.pipeline}`);
+		this.templates[id] = template;
+	}
+
+	layout(id: number): GPUBindGroupLayout {
+		const layout = this.layouts[id];
+		if (!layout) throw new Error(`unknown bind group layout ${id}`);
+		return layout;
 	}
 
 	private module(label: string, shader: WgslShader): GPUShaderModule {
-		let module = this.modules.get(label);
+		let module = this.modules.get(shader);
 		if (!module) {
 			module = this.device.createShaderModule({ label, code: shader.source });
-			this.modules.set(label, module);
+			this.modules.set(shader, module);
 		}
 		return module;
 	}
 
+	/** A render pipeline of a template. Without a color format it draws depth only. */
 	render(
 		template: number,
-		colorFormat: GPUTextureFormat,
+		colorFormat: GPUTextureFormat | undefined,
 		depthFormat: GPUTextureFormat | undefined,
 		sampleCount: number,
 		stateFlags: number,
 	): GPURenderPipeline {
-		if (template !== TEMPLATE_INSTANCED_LIT && template !== TEMPLATE_INSTANCED_UNLIT) {
-			throw new Error(`unknown render template ${template}`);
+		const t = this.templates[template];
+		if (!t) throw new Error(`unknown render template ${template}`);
+		const module = this.module(t.label, t.shader);
+		const entryPoints = t.shader.pipelines[t.pipeline];
+		let layout = this.pipelineLayouts[template];
+		if (!layout) {
+			layout = this.device.createPipelineLayout({
+				label: t.label,
+				bindGroupLayouts: t.layouts.map((id) => this.layout(id)),
+			});
+			this.pipelineLayouts[template] = layout;
 		}
-		const module = this.module('mesh', MESH);
-		const pipeline = MESH.pipelines[template === TEMPLATE_INSTANCED_LIT ? 'lit' : 'unlit'];
 		return this.device.createRenderPipeline({
-			label: template === TEMPLATE_INSTANCED_LIT ? 'mesh lit' : 'mesh unlit',
-			layout: this.renderLayout,
-			vertex: {
-				module,
-				entryPoint: pipeline.vertex,
-				buffers: [
-					{
-						arrayStride: SIZE_VERTEX_STRIDE,
-						stepMode: 'vertex',
-						attributes: [
-							{ shaderLocation: 0, offset: 0, format: 'float32x3' },
-							{ shaderLocation: 1, offset: 12, format: 'float32x3' },
-						],
-					},
-					{
-						arrayStride: SIZE_INSTANCE_STRIDE,
-						stepMode: 'instance',
-						attributes: [
-							{ shaderLocation: 2, offset: 0, format: 'float32x4' },
-							{ shaderLocation: 3, offset: 16, format: 'float32x4' },
-							{ shaderLocation: 4, offset: 32, format: 'float32x4' },
-							{ shaderLocation: 5, offset: 48, format: 'uint32x4' },
-						],
-					},
-				],
-			},
-			fragment: {
-				module,
-				entryPoint: pipeline.fragment,
-				targets: [{ format: colorFormat }],
-			},
+			label: t.label,
+			layout,
+			vertex: { module, entryPoint: entryPoints?.vertex, buffers: t.vertexBuffers },
+			fragment: colorFormat
+				? { module, entryPoint: entryPoints?.fragment, targets: [{ format: colorFormat }] }
+				: undefined,
 			primitive: {
 				topology: 'triangle-list',
 				cullMode: stateFlags & STATE_CULL_NONE ? 'none' : 'back',

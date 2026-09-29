@@ -12,6 +12,9 @@ export const OP_CREATE_COMPUTE_PIPELINE = 8;
 export const OP_CREATE_BIND_GROUP = 9;
 export const OP_CLEAR_BUFFER = 10;
 export const OP_WRITE_TEXTURE = 11;
+export const OP_CREATE_SAMPLER = 12;
+export const OP_CREATE_TEXTURE_VIEW = 13;
+export const OP_UPLOAD_IMAGE = 14;
 export const OP_BEGIN_RENDER_PASS = 16;
 export const OP_SET_PIPELINE = 17;
 export const OP_SET_BIND_GROUP = 18;
@@ -23,6 +26,8 @@ export const OP_DRAW_INDEXED_INDIRECT = 23;
 export const OP_EXECUTE_BUNDLES = 24;
 export const OP_END_RENDER_PASS = 25;
 export const OP_MULTI_DRAW_INDEXED = 26;
+export const OP_SET_VIEWPORT = 27;
+export const OP_SET_SCISSOR = 28;
 export const OP_BEGIN_BUNDLE = 32;
 export const OP_END_BUNDLE = 33;
 export const OP_BEGIN_COMPUTE_PASS = 40;
@@ -30,6 +35,7 @@ export const OP_SET_COMPUTE_PIPELINE = 41;
 export const OP_DISPATCH = 42;
 export const OP_END_COMPUTE_PASS = 44;
 export const OP_COPY_BUFFER_TO_BUFFER = 48;
+export const OP_COPY_TEXTURE_TO_TEXTURE = 49;
 export const OP_SUBMIT = 63;
 
 export const NO_TARGET = 4294967295;
@@ -43,6 +49,30 @@ export const FORMAT_DEPTH24_PLUS = 5;
 export const FORMAT_DEPTH32_FLOAT = 6;
 export const FORMAT_RGBA32_FLOAT = 7;
 export const FORMAT_R32_UINT = 8;
+export const FORMAT_RGBA8_UNORM_SRGB = 9;
+
+export const VIEW_2D = 0;
+export const VIEW_2D_ARRAY = 1;
+
+export const ADDRESS_CLAMP_TO_EDGE = 0;
+export const ADDRESS_REPEAT = 1;
+export const ADDRESS_MIRROR_REPEAT = 2;
+
+export const FILTER_NEAREST = 0;
+export const FILTER_LINEAR = 1;
+
+export const COMPARE_NONE = 0;
+export const COMPARE_NEVER = 1;
+export const COMPARE_LESS = 2;
+export const COMPARE_EQUAL = 3;
+export const COMPARE_LESS_EQUAL = 4;
+export const COMPARE_GREATER = 5;
+export const COMPARE_NOT_EQUAL = 6;
+export const COMPARE_GREATER_EQUAL = 7;
+export const COMPARE_ALWAYS = 8;
+
+export const UPLOAD_PREMULTIPLIED_ALPHA = 1;
+export const UPLOAD_RELEASE = 2;
 
 export const INDEX_FORMAT_UINT16 = 0;
 export const INDEX_FORMAT_UINT32 = 1;
@@ -95,3 +125,6 @@ export const SIZE_INDICES_PER_TEXTURE_ROW = 2048;
 export const SIZE_DRAW_RECORD_BYTES = 16;
 export const SIZE_MULTI_DRAW_RECORDS = 256;
 export const SIZE_MAX_MATERIALS = 1024;
+
+/** Bytes per texel of each format, by format code. */
+export const FORMAT_TEXEL_BYTES: readonly number[] = [0, 4, 4, 4, 8, 0, 4, 16, 4, 4];

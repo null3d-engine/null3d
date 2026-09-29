@@ -71,6 +71,64 @@ export class RenderPassSetup {
 	}
 }
 
+/**
+ * The arguments of texel copies, texel writes and image uploads. Draw lists name a texture
+ * location as five words: the texture id, then the mip level, x, y and the array layer.
+ */
+export class TexelCopySetup {
+	private readonly sourceOrigin: GPUOrigin3DDict = { x: 0, y: 0, z: 0 };
+	private readonly destinationOrigin: GPUOrigin3DDict = { x: 0, y: 0, z: 0 };
+	/** Where a copy reads. */
+	readonly source: GPUTexelCopyTextureInfo = {
+		texture: undefined as unknown as GPUTexture,
+		mipLevel: 0,
+		origin: this.sourceOrigin,
+	};
+	/** Where a copy, a write or an image upload writes. */
+	readonly destination: GPUCopyExternalImageDestInfo = {
+		texture: undefined as unknown as GPUTexture,
+		mipLevel: 0,
+		origin: this.destinationOrigin,
+		premultipliedAlpha: false,
+	};
+	/** The image that an upload reads. */
+	readonly image: GPUCopyExternalImageSourceInfo = { source: undefined as unknown as ImageBitmap };
+	/** How a write's texels lie in engine memory. */
+	readonly layout: GPUTexelCopyBufferLayout = { offset: 0, bytesPerRow: 0, rowsPerImage: 0 };
+	readonly size: GPUExtent3DDict = { width: 0, height: 0, depthOrArrayLayers: 1 };
+
+	/** Sets where a copy reads: `texture` at the location in `words[at, at + 5)`. */
+	setSource(texture: GPUTexture, words: Uint32Array, at: number): void {
+		this.source.texture = texture;
+		this.source.mipLevel = words[at + 1] as number;
+		this.sourceOrigin.x = words[at + 2] as number;
+		this.sourceOrigin.y = words[at + 3] as number;
+		this.sourceOrigin.z = words[at + 4] as number;
+	}
+
+	/** Sets where a copy, a write or an upload writes: `texture` at the location in `words[at, at + 5)`. */
+	setDestination(texture: GPUTexture, words: Uint32Array, at: number): void {
+		this.destination.texture = texture;
+		this.destination.mipLevel = words[at + 1] as number;
+		this.destinationOrigin.x = words[at + 2] as number;
+		this.destinationOrigin.y = words[at + 3] as number;
+		this.destinationOrigin.z = words[at + 4] as number;
+	}
+
+	setSize(width: number, height: number, layers: number): void {
+		this.size.width = width;
+		this.size.height = height;
+		this.size.depthOrArrayLayers = layers;
+	}
+
+	/** Sets a write's source: tightly packed rows of `bytesPerRow`, `rows` to a layer, from `offset`. */
+	setLayout(offset: number, bytesPerRow: number, rows: number): void {
+		this.layout.offset = offset;
+		this.layout.bytesPerRow = bytesPerRow;
+		this.layout.rowsPerImage = rows;
+	}
+}
+
 // A list of one that stays one long: emptying it would free its storage, and the next frame's
 // write would allocate new storage. It keeps the last submitted buffer, which WebGPU has used up.
 const submitList: GPUCommandBuffer[] = [];

@@ -114,6 +114,7 @@ run('replay', async () => {
 		GPUTextureUsage.RENDER_ATTACHMENT,
 		SAMPLES,
 		1,
+		G.VIEW_2D,
 	);
 	memory.push(
 		G.OP_CREATE_TEXTURE,
@@ -125,6 +126,7 @@ run('replay', async () => {
 		GPUTextureUsage.RENDER_ATTACHMENT,
 		SAMPLES,
 		1,
+		G.VIEW_2D,
 	);
 	memory.push(
 		G.OP_CREATE_RENDER_PIPELINE,

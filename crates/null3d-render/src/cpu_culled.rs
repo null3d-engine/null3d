@@ -54,7 +54,7 @@ use null3d_core::world::{MATRIX_FLOATS, SphereArrays};
 use null3d_gpu::caps::OFFSET_ALIGNMENT;
 use null3d_gpu::drawlist::{
     DrawList, Op, buffer_usage as usage, format, index_format, layout, permutation, resource_kind,
-    sizes, template, texture_usage,
+    sizes, template, texture_usage, view,
 };
 
 use crate::frame::{
@@ -763,6 +763,7 @@ impl CpuCulledRenderer {
                         texture_usage::TEXTURE_BINDING | texture_usage::COPY_DST,
                         1,
                         1,
+                        view::D2,
                     ],
                 )?;
             }
@@ -1415,19 +1416,29 @@ mod tests {
 
     #[test]
     fn rows_go_out_in_at_most_three_rectangles() {
+        // Each write is to mip level 0 and layer 0, one layer deep.
         // Inside one texture row.
-        assert_eq!(rectangles(10, 5), vec![vec![9, 30, 0, 15, 1, 1000, 240]]);
+        assert_eq!(
+            rectangles(10, 5),
+            vec![vec![9, 0, 30, 0, 0, 15, 1, 1, 1000, 240]]
+        );
         // Whole rows only.
         assert_eq!(
             rectangles(512, 1024),
-            vec![vec![9, 0, 1, 1536, 2, 1000, 1024 * 48]]
+            vec![vec![9, 0, 0, 1, 0, 1536, 2, 1, 1000, 1024 * 48]]
         );
         // The end of a row, whole rows, then the start of a row.
         let parts = rectangles(500, 12 + 1024 + 7);
         assert_eq!(parts.len(), 3);
-        assert_eq!(parts[0], vec![9, 1500, 0, 36, 1, 1000, 12 * 48]);
-        assert_eq!(parts[1], vec![9, 0, 1, 1536, 2, 1000 + 12 * 48, 1024 * 48]);
-        assert_eq!(parts[2], vec![9, 0, 3, 21, 1, 1000 + 1036 * 48, 7 * 48]);
+        assert_eq!(parts[0], vec![9, 0, 1500, 0, 0, 36, 1, 1, 1000, 12 * 48]);
+        assert_eq!(
+            parts[1],
+            vec![9, 0, 0, 1, 0, 1536, 2, 1, 1000 + 12 * 48, 1024 * 48]
+        );
+        assert_eq!(
+            parts[2],
+            vec![9, 0, 0, 3, 0, 21, 1, 1, 1000 + 1036 * 48, 7 * 48]
+        );
         assert!(rectangles(7, 0).is_empty());
     }
 }
@@ -1520,10 +1531,13 @@ fn write_rows(
             Op::WriteTexture,
             &[
                 texture,
+                0,
                 column * rows.texels,
                 item / rows.per_row,
+                0,
                 width * rows.texels,
                 height,
+                1,
                 at,
                 items * rows.bytes,
             ],

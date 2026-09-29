@@ -545,6 +545,57 @@ fn the_glsl_reflection_lists_uniform_blocks_and_textures_per_stage() {
     }
 }
 
+/// A fragment shader that compares layers of a depth array with reference depths, as shadow
+/// cascades do: once at mip level 0, which works in any stage, and once with implicit
+/// derivatives.
+const DEPTH_ARRAY: &str = r"
+@group(0) @binding(0) var shadow_maps: texture_depth_2d_array;
+@group(0) @binding(1) var shadow_sampler: sampler_comparison;
+
+@vertex
+fn vs_main(@builtin(vertex_index) index: u32) -> @builtin(position) vec4f {
+    return vec4f(f32(index), 0.0, 0.5, 1.0);
+}
+
+@fragment
+fn fs_main(@builtin(position) position: vec4f) -> @location(0) vec4f {
+    let uv = position.xy / 64.0;
+    let lit = textureSampleCompareLevel(shadow_maps, shadow_sampler, uv, 1, 0.5)
+        + textureSampleCompare(shadow_maps, shadow_sampler, uv, 2, 0.25);
+    return vec4f(lit);
+}
+";
+
+#[test]
+fn a_depth_array_with_a_comparison_sampler_becomes_a_glsl_array_shadow_sampler() {
+    let output = build(&project(DEPTH_ARRAY, &[("v", BOTH_TARGETS)], &[])).unwrap();
+    let fragment = &output.shaders["shader"]["v"].glsl.as_ref().unwrap()["main"].fragment;
+    let at = |group, binding| Binding { group, binding };
+    assert_eq!(
+        fragment.textures,
+        [GlslTexture {
+            name: "_group_0_binding_0_fs".to_owned(),
+            binding: at(0, 0),
+            sampler: Some(at(0, 1)),
+        }]
+    );
+    let source = &fragment.source;
+    assert!(
+        source.contains("uniform highp sampler2DArrayShadow _group_0_binding_0_fs;"),
+        "{source}"
+    );
+    // GLSL ES 3.00 has no textureLod for array shadow samplers, so the comparison at level 0
+    // reads with zero gradients.
+    assert!(
+        source.contains("textureGrad(_group_0_binding_0_fs, vec4("),
+        "{source}"
+    );
+    assert!(
+        source.contains("texture(_group_0_binding_0_fs, vec4("),
+        "{source}"
+    );
+}
+
 #[test]
 fn glsl_that_webgl2_cannot_express_fails_with_the_pipeline_and_stage() {
     let source = MESH.replace(

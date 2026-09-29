@@ -1,6 +1,9 @@
 //! The generated TypeScript module. Keys are sorted and the layout is fixed, so a check can compare
 //! the module byte for byte. The layout is the one the repository's formatter (Biome) produces:
 //! tabs, single quotes, every object literal expanded, and shader sources as template literals.
+//!
+//! Each shader is an export of its own, so a bundle keeps only the shaders that its code imports:
+//! the engine's download holds none of the test shaders.
 
 use crate::{GlslStage, Output, VariantOutput};
 
@@ -78,40 +81,48 @@ export interface ShaderVariant<Pipeline extends string = string> {
 	/** GLSL programs for WebGL2 by pipeline, or null when the variant does not target WebGL2. */
 	readonly glsl: Readonly<Record<Pipeline, GlslProgram>> | null;
 }
-
-/** Every shader variant, by shader name and variant name. */
 ";
 
-/// Renders the module.
+/// Renders the module: one export per shader, then `SHADERS`, which gathers them by name.
 pub(crate) fn module(output: &Output) -> String {
     let mut ts = Writer::default();
     ts.out.push_str(PREAMBLE);
-    if output.shaders.is_empty() {
-        ts.line("export const SHADERS: {} = {};");
-        return ts.out;
-    }
-    ts.open("export const SHADERS: {");
     for (shader, variants) in &output.shaders {
         let pipelines = output.pipelines.get(shader).map_or(&[][..], Vec::as_slice);
-        ts.open(&format!("readonly {shader}: {{"));
+        ts.line("");
+        ts.line(&format!(
+            "/** The variants of the `{shader}` shader, by variant name. */"
+        ));
+        ts.open(&format!("export const {}: {{", export_name(shader)));
         for variant in variants.keys() {
             ts.variant_type(variant, pipelines);
         }
-        ts.close("};");
-    }
-    ts.depth -= 1;
-    ts.open("} = {");
-    for (shader, variants) in &output.shaders {
-        ts.open(&format!("{shader}: {{"));
+        ts.depth -= 1;
+        ts.open("} = {");
         for (name, variant) in variants {
             ts.open(&format!("{name}: {{"));
             ts.variant(variant);
             ts.close("},");
         }
-        ts.close("},");
+        ts.close("};");
     }
-    ts.close("};");
+    ts.line("");
+    ts.line("/** Every shader variant, by shader name and variant name. */");
+    if output.shaders.is_empty() {
+        ts.line("export const SHADERS = {} as const;");
+        return ts.out;
+    }
+    ts.open("export const SHADERS = {");
+    for shader in output.shaders.keys() {
+        ts.line(&format!("{shader}: {},", export_name(shader)));
+    }
+    ts.close("} as const;");
     ts.out
+}
+
+/// The name of a shader's own export: its name in capitals, then `_SHADER`.
+fn export_name(shader: &str) -> String {
+    format!("{}_SHADER", shader.to_ascii_uppercase())
 }
 
 #[derive(Default)]

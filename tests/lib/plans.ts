@@ -45,11 +45,15 @@ import type { ItemResult, PlanItem } from './runs.ts';
 
 export type Tier = 'webgpu' | 'webgl2';
 
+/** The GPU paths that the texture page draws on, which name its reference images. */
+export type TexturePath = 'webgpu' | 'compat' | 'webgl2';
+
 export type Check =
 	| { kind: 'capabilities' }
 	| { kind: 'capabilities-reload'; first: string }
 	| { kind: 'isolation' }
 	| { kind: 'clear'; tier: Tier }
+	| { kind: 'textures'; tier: Tier; path: TexturePath }
 	| { kind: 'shaders' }
 	| { kind: 'engine'; tier: Tier; mode: EngineMode }
 	| { kind: 'restarts'; mode: EngineMode }
@@ -74,6 +78,7 @@ export interface JudgeContext {
 
 const TEST_PAGES = '/tests/pages/';
 const TIERS: readonly Tier[] = ['webgpu', 'webgl2'];
+const TEXTURE_PATHS: readonly TexturePath[] = ['webgpu', 'compat', 'webgl2'];
 /** How long a benchmark page may take to publish its hold frame on a slow device. */
 const HOLD_TIMEOUT_SECONDS = 60;
 /** How long the restart page may take: up to ten starts and stops, and two counts of the room. */
@@ -159,6 +164,14 @@ export function checksPlan(): PlanItem<Check>[] {
 		pageItem('uploads', 'uploads', { kind: 'uploads', tier: 'webgpu' }, { timeoutSeconds: 90 }),
 		...TIERS.map((tier) =>
 			pageItem(`clear-${tier}`, 'clear', { kind: 'clear', tier }, { switches: [`gpu=${tier}`] }),
+		),
+		...TEXTURE_PATHS.map((path) =>
+			pageItem(
+				`textures-${path}`,
+				'replay-textures',
+				{ kind: 'textures', tier: path === 'webgl2' ? 'webgl2' : 'webgpu', path },
+				{ switches: [`gpu=${path}`] },
+			),
 		),
 		...TIERS.flatMap((tier) =>
 			ENGINE_MODES.map((mode) =>
@@ -465,6 +478,22 @@ function reloadProblems(
 		);
 }
 
+/** What is wrong with a page's image, against the reference of its GPU path. */
+function referenceProblems(name: string, path: string, result: ItemResult): string[] {
+	try {
+		compareToReference(
+			name,
+			path,
+			Buffer.from(String(result.pixels ?? ''), 'base64'),
+			Number(result.width ?? 0),
+			Number(result.height ?? 0),
+		);
+		return [];
+	} catch (e) {
+		return [(e as Error).message];
+	}
+}
+
 /** How many of a page's last steps a failure's message quotes. */
 const LAST_STEPS = 6;
 
@@ -542,18 +571,12 @@ export function judge(
 			return problems;
 		}
 		case 'clear':
-			try {
-				compareToReference(
-					'clear',
-					check.tier,
-					Buffer.from(String(result.pixels ?? ''), 'base64'),
-					Number(result.width ?? 0),
-					Number(result.height ?? 0),
-				);
-				return [];
-			} catch (e) {
-				return [(e as Error).message];
-			}
+			return referenceProblems('clear', check.tier, result);
+		case 'textures':
+			return [
+				...((result.errors ?? []) as string[]).map((error) => `GPU error: ${error}`),
+				...referenceProblems('replay-textures', check.path, result),
+			];
 		case 'shaders': {
 			const failures = (result.failures ?? []) as { shader: string; stage: string; log: string }[];
 			const problems = failures.map((f) => `${f.shader} ${f.stage}: ${f.log.split('\n')[0]}`);

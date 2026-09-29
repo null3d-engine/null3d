@@ -38,7 +38,7 @@ fn texture_writes(commands: &[(Op, Vec<u32>)], texture: u32) -> Vec<[u32; 5]> {
     commands
         .iter()
         .filter(|(op, o)| *op == Op::WriteTexture && o[0] == texture)
-        .map(|(_, o)| [o[1], o[2], o[3], o[4], o[6]])
+        .map(|(_, o)| [o[2], o[3], o[5], o[6], o[9]])
         .collect()
 }
 

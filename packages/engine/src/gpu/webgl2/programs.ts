@@ -9,10 +9,21 @@ import {
 	TEMPLATE_INSTANCED_LIT,
 	TEMPLATE_INSTANCED_UNLIT,
 } from '../../generated/gpu';
-import { type GlslProgram, type GlslStage, SHADERS } from '../../generated/shaders';
+import { type GlslProgram, type GlslStage, MESH_SHADER } from '../../generated/shaders';
 
 /** Texture units and uniform block binding points of each bind group: one per binding. */
 export const SLOTS_PER_GROUP = 4;
+/** The sampler slot of a texture that a shader reads with `texelFetch`, which needs no sampler. */
+export const NO_SAMPLER = -1;
+
+/**
+ * The GLSL programs of a render pipeline template: the plain one, and the one that reads the draw
+ * index of `WEBGL_multi_draw` where the template has it.
+ */
+export interface GlslTemplate {
+	readonly plain: GlslProgram;
+	readonly multiDraw?: GlslProgram;
+}
 
 /** A linked, or linking, program and the fixed-function state its pipeline asks for. */
 export interface Program {
@@ -24,18 +35,30 @@ export interface Program {
 	/** The location of naga's first-instance uniform, when the vertex shader has one. */
 	firstInstance: WebGLUniformLocation | null;
 	firstInstanceValue: number;
+	/**
+	 * Pairs of a texture unit that the program reads and the slot of the sampler it reads that
+	 * unit with, or `NO_SAMPLER`. GLSL joins each texture with its sampler, so the backend binds
+	 * the sampler of each pair to the pair's unit.
+	 */
+	samplerUnits: readonly number[];
 	/** True once the link result was checked and the blocks and textures were bound. */
 	ready: boolean;
 }
 
-/** The GLSL of a pipeline template, in the variant its permutation bits pick. */
-function glslOf(template: number, permutation: number): GlslProgram {
-	const variant =
-		permutation & PERMUTATION_DRAW_INDEX ? SHADERS.mesh.webgl2_multi_draw : SHADERS.mesh.webgl2;
-	if (!variant.glsl) throw new Error('the mesh shader has no WebGL2 build');
-	if (template === TEMPLATE_INSTANCED_LIT) return variant.glsl.lit;
-	if (template === TEMPLATE_INSTANCED_UNLIT) return variant.glsl.unlit;
-	throw new Error(`the WebGL2 backend has no render pipeline template ${template}`);
+/** The mesh template of one pipeline of the mesh shader, plain and for multi-draw. */
+function meshTemplate(pipeline: 'lit' | 'unlit'): GlslTemplate {
+	const plain = MESH_SHADER.webgl2.glsl;
+	const multiDraw = MESH_SHADER.webgl2_multi_draw.glsl;
+	if (!plain || !multiDraw) throw new Error('the mesh shader has no WebGL2 build');
+	return { plain: plain[pipeline], multiDraw: multiDraw[pipeline] };
+}
+
+/** The engine's render pipeline templates, by template id. */
+export function engineTemplates(): (GlslTemplate | undefined)[] {
+	const templates: (GlslTemplate | undefined)[] = [];
+	templates[TEMPLATE_INSTANCED_LIT] = meshTemplate('lit');
+	templates[TEMPLATE_INSTANCED_UNLIT] = meshTemplate('unlit');
+	return templates;
 }
 
 function compile(gl: WebGL2RenderingContext, type: number, stage: GlslStage): WebGLShader {
@@ -49,12 +72,13 @@ function compile(gl: WebGL2RenderingContext, type: number, stage: GlslStage): We
 /** Starts compiling and linking the program of a pipeline, without waiting for the result. */
 export function createProgram(
 	gl: WebGL2RenderingContext,
-	template: number,
+	template: GlslTemplate,
 	permutation: number,
 	depthFormat: number,
 	stateFlags: number,
 ): Program {
-	const source = glslOf(template, permutation);
+	const source = permutation & PERMUTATION_DRAW_INDEX ? template.multiDraw : template.plain;
+	if (!source) throw new Error('this render pipeline template has no multi-draw variant');
 	const program = gl.createProgram();
 	if (!program) throw new Error('WebGL2 could not create a program');
 	const shaders = [
@@ -71,6 +95,7 @@ export function createProgram(
 		depth: depthFormat !== FORMAT_NONE,
 		firstInstance: null,
 		firstInstanceValue: 0,
+		samplerUnits: [],
 		ready: false,
 	};
 }
@@ -92,6 +117,7 @@ export function prepareProgram(gl: WebGL2RenderingContext, p: Program): void {
 		gl.deleteShader(shader);
 	}
 	gl.useProgram(p.program);
+	const samplerUnits: number[] = [];
 	for (const stage of [p.source.vertex, p.source.fragment]) {
 		for (const block of stage.uniformBlocks) {
 			const index = gl.getUniformBlockIndex(p.program, block.name);
@@ -99,10 +125,21 @@ export function prepareProgram(gl: WebGL2RenderingContext, p: Program): void {
 				gl.uniformBlockBinding(p.program, index, block.group * SLOTS_PER_GROUP + block.binding);
 		}
 		for (const texture of stage.textures) {
+			const unit = texture.group * SLOTS_PER_GROUP + texture.binding;
 			const location = gl.getUniformLocation(p.program, texture.name);
-			if (location) gl.uniform1i(location, texture.group * SLOTS_PER_GROUP + texture.binding);
+			if (location) gl.uniform1i(location, unit);
+			const sampler = texture.sampler;
+			const slot = sampler ? sampler.group * SLOTS_PER_GROUP + sampler.binding : NO_SAMPLER;
+			let known = -1;
+			for (let k = 0; k < samplerUnits.length; k += 2) if (samplerUnits[k] === unit) known = k;
+			if (known < 0) {
+				samplerUnits.push(unit, slot);
+			} else if (samplerUnits[known + 1] !== slot) {
+				throw new Error('a WebGL2 program samples one texture with two samplers');
+			}
 		}
 	}
+	p.samplerUnits = samplerUnits;
 	p.firstInstance = gl.getUniformLocation(p.program, 'naga_vs_first_instance');
 	p.ready = true;
 }

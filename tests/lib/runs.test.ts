@@ -109,6 +109,15 @@ describe('the checks plan', () => {
 		]);
 	});
 
+	it('draws the texture page on each GPU path, and fails it on GPU errors', () => {
+		const compat = items.find((item) => item.id === 'textures-compat');
+		if (!compat) throw new Error('the plan lacks the texture pages');
+		expect(compat.path).toBe('/tests/pages/replay-textures.html?gpu=compat');
+		expect(judge(compat.check, { ok: false, error: 'no WebGPU adapter' }, NO_WEBGPU)).toBe('skip');
+		const failed = { ok: true, errors: ['a view is invalid'], pixels: '', width: 0, height: 0 };
+		expect(judge(compat.check, failed, NONE_MISSING)).toContain('GPU error: a view is invalid');
+	});
+
 	it('skips a WebGL2 page, and the shaders page, on a browser without WebGL2 only when allowed', () => {
 		const webgl2 = items.find((item) => item.id === 'engine-webgl2-pipelined');
 		const shaders = items.find((item) => item.id === 'shaders');

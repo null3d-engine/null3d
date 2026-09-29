@@ -5,9 +5,25 @@
 //! opcode in its low 8 bits and the command's length in words (header included) above them, so a
 //! decoder can check every command and step over it. Operands are `u32`, or `f32` and `i32` stored
 //! as their bits.
+//!
+//! Commands that write or copy texels name a texture location in five words: the texture id, the
+//! mip level, then x, y and the array layer of the first texel. Their rows count from the first row
+//! that an upload writes, on both GPU paths.
+//!
+//! Writes and uploads take effect when the GPU queue receives them. On WebGPU that is before the
+//! commands recorded since the previous `Submit`, so a list writes a buffer or a texture before the
+//! commands that read it, never after a command that used it in the same submit.
+//!
+//! Rectangles of `SetViewport` and `SetScissor` are in pixels of the render target, from its
+//! top-left corner with y down, as WebGPU counts them. WebGL2 counts from the bottom-left corner,
+//! so its backend flips them, and each rectangle covers the same part of the image on both paths.
+//! WebGL2 keeps the rows of whatever a render pass draws in GL's order, bottom row first, so a
+//! shader that samples a rendered target by texture coordinates flips them on that path.
 
 /// Command opcodes. The TypeScript replay loop uses the generated constants in
-/// `packages/engine/src/generated/gpu.ts`, which a test keeps equal to these values.
+/// `packages/engine/src/generated/gpu.ts`, which a test keeps equal to these values. Numbers group
+/// by kind: resources from 1, render pass commands from 16, bundles from 32, compute from 40,
+/// copies from 48, and `Submit` last. [`reserved`] holds the numbers of commands still to come.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
 pub enum Op {
@@ -17,9 +33,11 @@ pub enum Op {
     WriteBuffer = 2,
     /// [buffer id]
     DestroyBuffer = 3,
-    /// [texture id, width, height, layers, format, usage flags, sample count, mip levels]
+    /// [texture id, width, height, layers, format, usage flags, sample count, mip levels, binding
+    /// view]: `binding view` is the view dimension (`view::*`) that bind groups see the texture
+    /// as. Compatibility mode allows one per texture, and WebGL2 fixes it at creation too.
     CreateTexture = 4,
-    /// [texture id]
+    /// [texture id]: destroys a texture, or releases a view.
     DestroyTexture = 5,
     /// [width, height]: the canvas's drawing buffer size in device pixels. Recorded in the frame
     /// built for that size, so the canvas and the frame's render targets always match.
@@ -29,16 +47,32 @@ pub enum Op {
     /// [compute pipeline id, template, permutation bits]
     CreateComputePipeline = 8,
     /// [bind group id, standard layout, entry count, then per entry: binding, resource kind,
-    /// resource id, offset, size]
+    /// resource id, offset, size]. A texture entry binds the whole texture, in the view dimension
+    /// it was created with; a view cannot be bound.
     CreateBindGroup = 9,
     /// [buffer id, offset, size]
     ClearBuffer = 10,
-    /// [texture id, x, y, width, height, source address in engine memory, byte length]: writes a
-    /// rectangle of a data texture from tightly packed rows.
+    /// [texture location (5 words), width, height, layer count, source address in engine memory,
+    /// byte length]: writes a box of texels from tightly packed rows, layer after layer.
     WriteTexture = 11,
-    /// [color target texture id or 0 for the canvas, resolve target texture id or 0 for the
-    /// canvas or `NO_TARGET`, depth texture id or `NO_TARGET`, clear red, green, blue, alpha (f32),
-    /// clear depth (f32), pass flags]
+    /// [sampler id, address mode u, v and w, mag filter, min filter, mipmap filter, lod min clamp
+    /// (f32), lod max clamp (f32), compare function, max anisotropy]. A sampler with a compare
+    /// function other than `compare::NONE` samples depth textures by comparison. Anisotropy above
+    /// 1 needs every filter linear.
+    CreateSampler = 12,
+    /// [view id, texture id, mip level, layer]: a view of one mip level and one layer of a texture,
+    /// to draw into as a render target. Views take their ids from the texture ids, and
+    /// `DestroyTexture` releases them. A view lasts as long as its texture.
+    CreateTextureView = 13,
+    /// [texture location (5 words), width, height, image id, flags]: copies the top-left
+    /// `width` x `height` pixels of an image that the backend holds into a texture with
+    /// `COPY_DST` and `RENDER_ATTACHMENT` usage. The image keeps its own orientation and alpha,
+    /// so the thread that decodes it chooses both.
+    UploadImage = 14,
+    /// [color target texture id or 0 for the canvas or `NO_TARGET`, resolve target texture id or
+    /// 0 for the canvas or `NO_TARGET`, depth texture id or `NO_TARGET`, clear red, green, blue,
+    /// alpha (f32), clear depth (f32), pass flags]. A target is a texture of one layer and one mip
+    /// level, or a view of one. A pass without a color target draws depth only.
     BeginRenderPass = 16,
     /// [render pipeline id]
     SetPipeline = 17,
@@ -62,6 +96,12 @@ pub enum Op {
     /// many indexed draws in one call, each with one entry in each of the three `i32` arrays in
     /// engine memory. Only on devices with `Capabilities::MULTI_DRAW`.
     MultiDrawIndexed = 26,
+    /// [x, y, width, height, min depth (f32), max depth (f32)]: the rectangle that clip space maps
+    /// to, inside the pass's targets. Each render pass starts with its whole target. Not in bundles.
+    SetViewport = 27,
+    /// [x, y, width, height]: the rectangle outside which draws write nothing, inside the pass's
+    /// targets. Each render pass starts with its whole target. Not in bundles.
+    SetScissor = 28,
     /// [bundle id, color format, depth format, sample count]; the commands up to `EndBundle` record
     /// the bundle, which then replays with `ExecuteBundles` until it is recorded again.
     BeginBundle = 32,
@@ -77,12 +117,16 @@ pub enum Op {
     EndComputePass = 44,
     /// [source buffer id, source offset, destination buffer id, destination offset, size]
     CopyBufferToBuffer = 48,
+    /// [source texture location (5 words), destination texture location (5 words), width, height,
+    /// layer count]: copies texels between two textures of the same format, one sample each. Depth
+    /// textures do not copy, because WebGL2 cannot copy them.
+    CopyTextureToTexture = 49,
     /// []: submits everything recorded since the previous submit.
     Submit = 63,
 }
 
 impl Op {
-    pub const ALL: [Op; 30] = [
+    pub const ALL: [Op; 36] = [
         Op::CreateBuffer,
         Op::WriteBuffer,
         Op::DestroyBuffer,
@@ -94,6 +138,9 @@ impl Op {
         Op::CreateBindGroup,
         Op::ClearBuffer,
         Op::WriteTexture,
+        Op::CreateSampler,
+        Op::CreateTextureView,
+        Op::UploadImage,
         Op::BeginRenderPass,
         Op::SetPipeline,
         Op::SetBindGroup,
@@ -105,6 +152,8 @@ impl Op {
         Op::ExecuteBundles,
         Op::EndRenderPass,
         Op::MultiDrawIndexed,
+        Op::SetViewport,
+        Op::SetScissor,
         Op::BeginBundle,
         Op::EndBundle,
         Op::BeginComputePass,
@@ -112,6 +161,7 @@ impl Op {
         Op::Dispatch,
         Op::EndComputePass,
         Op::CopyBufferToBuffer,
+        Op::CopyTextureToTexture,
         Op::Submit,
     ];
 
@@ -132,6 +182,9 @@ impl Op {
             Op::CreateBindGroup => "CREATE_BIND_GROUP",
             Op::ClearBuffer => "CLEAR_BUFFER",
             Op::WriteTexture => "WRITE_TEXTURE",
+            Op::CreateSampler => "CREATE_SAMPLER",
+            Op::CreateTextureView => "CREATE_TEXTURE_VIEW",
+            Op::UploadImage => "UPLOAD_IMAGE",
             Op::BeginRenderPass => "BEGIN_RENDER_PASS",
             Op::SetPipeline => "SET_PIPELINE",
             Op::SetBindGroup => "SET_BIND_GROUP",
@@ -143,6 +196,8 @@ impl Op {
             Op::ExecuteBundles => "EXECUTE_BUNDLES",
             Op::EndRenderPass => "END_RENDER_PASS",
             Op::MultiDrawIndexed => "MULTI_DRAW_INDEXED",
+            Op::SetViewport => "SET_VIEWPORT",
+            Op::SetScissor => "SET_SCISSOR",
             Op::BeginBundle => "BEGIN_BUNDLE",
             Op::EndBundle => "END_BUNDLE",
             Op::BeginComputePass => "BEGIN_COMPUTE_PASS",
@@ -150,9 +205,22 @@ impl Op {
             Op::Dispatch => "DISPATCH",
             Op::EndComputePass => "END_COMPUTE_PASS",
             Op::CopyBufferToBuffer => "COPY_BUFFER_TO_BUFFER",
+            Op::CopyTextureToTexture => "COPY_TEXTURE_TO_TEXTURE",
             Op::Submit => "SUBMIT",
         }
     }
+}
+
+/// Opcode numbers kept for commands that the renderer will need, so that work on several of them
+/// at once does not collide. The change that adds such a command moves its number into [`Op`].
+pub mod reserved {
+    /// Makes the mip levels of a texture from its first level: a render pass per level on
+    /// WebGPU, and `generateMipmap` on WebGL2.
+    pub const GENERATE_MIPMAPS: u8 = 15;
+    /// Copies texels into a buffer, to read a frame or computed values back.
+    pub const COPY_TEXTURE_TO_BUFFER: u8 = 50;
+
+    pub const ALL: [u8; 2] = [GENERATE_MIPMAPS, COPY_TEXTURE_TO_BUFFER];
 }
 
 /// A target slot left empty in `BeginRenderPass`.
@@ -181,7 +249,7 @@ pub mod texture_usage {
 }
 
 /// Texture formats, by engine code. The replay loop maps each code to the browser's format name;
-/// `CANVAS` means the canvas's preferred format.
+/// `CANVAS` means the canvas's preferred format. A change that adds a format takes the next code.
 pub mod format {
     pub const NONE: u32 = 0;
     pub const CANVAS: u32 = 1;
@@ -194,6 +262,86 @@ pub mod format {
     pub const RGBA32_FLOAT: u32 = 7;
     /// One 32-bit unsigned integer per texel: indices in a data texture.
     pub const R32_UINT: u32 = 8;
+    /// 8-bit color stored with the sRGB curve: sampling decodes it to linear values, and drawing
+    /// encodes linear values. WebGL2 calls it `SRGB8_ALPHA8`.
+    pub const RGBA8_UNORM_SRGB: u32 = 9;
+
+    /// Every format, by code.
+    pub const ALL: [u32; 10] = [
+        NONE,
+        CANVAS,
+        RGBA8_UNORM,
+        BGRA8_UNORM,
+        RGBA16_FLOAT,
+        DEPTH24_PLUS,
+        DEPTH32_FLOAT,
+        RGBA32_FLOAT,
+        R32_UINT,
+        RGBA8_UNORM_SRGB,
+    ];
+
+    /// Bytes per texel of each format, by code: 0 for `NONE`, and for `DEPTH24_PLUS`, whose
+    /// texels have no layout that writes and copies can use.
+    pub const TEXEL_BYTES: [u32; ALL.len()] = [0, 4, 4, 4, 8, 0, 4, 16, 4, 4];
+
+    /// True for the depth formats.
+    pub const fn is_depth(format: u32) -> bool {
+        matches!(format, DEPTH24_PLUS | DEPTH32_FLOAT)
+    }
+
+    /// Bytes per texel, or 0 for an unknown code.
+    pub const fn texel_bytes(format: u32) -> u32 {
+        if (format as usize) < TEXEL_BYTES.len() {
+            TEXEL_BYTES[format as usize]
+        } else {
+            0
+        }
+    }
+}
+
+/// View dimensions that bind groups see a texture as, fixed when the texture is created.
+pub mod view {
+    /// One 2D image: the texture has one layer.
+    pub const D2: u32 = 0;
+    /// An array of 2D layers, which shaders index. It may have one layer.
+    pub const D2_ARRAY: u32 = 1;
+}
+
+/// Address modes of samplers: what a coordinate outside 0 to 1 reads.
+pub mod address {
+    pub const CLAMP_TO_EDGE: u32 = 0;
+    pub const REPEAT: u32 = 1;
+    pub const MIRROR_REPEAT: u32 = 2;
+}
+
+/// Filters of samplers.
+pub mod filter {
+    pub const NEAREST: u32 = 0;
+    pub const LINEAR: u32 = 1;
+}
+
+/// Compare functions of samplers, in WebGL's order. A comparison sampler passes where the
+/// reference value compares as the function says with the texel.
+pub mod compare {
+    /// The sampler reads texels and compares nothing.
+    pub const NONE: u32 = 0;
+    pub const NEVER: u32 = 1;
+    pub const LESS: u32 = 2;
+    pub const EQUAL: u32 = 3;
+    pub const LESS_EQUAL: u32 = 4;
+    pub const GREATER: u32 = 5;
+    pub const NOT_EQUAL: u32 = 6;
+    pub const GREATER_EQUAL: u32 = 7;
+    pub const ALWAYS: u32 = 8;
+}
+
+/// Flags of `UploadImage`.
+pub mod upload_flags {
+    /// Stores color multiplied by alpha. The image must hold premultiplied values too, because
+    /// WebGL2 copies an image as it is.
+    pub const PREMULTIPLIED_ALPHA: u32 = 1;
+    /// Closes the image after the copy, and frees its id.
+    pub const RELEASE: u32 = 2;
 }
 
 /// Index formats for `SetIndexBuffer`.
@@ -411,7 +559,7 @@ pub fn typescript_constants() -> String {
         out.push_str(&format!("export const OP_{} = {};\n", op.name(), op as u8));
     }
     out.push_str(&format!("\nexport const NO_TARGET = {NO_TARGET};\n\n"));
-    let groups: [(&str, &[(&str, u32)]); 11] = [
+    let groups: [(&str, &[(&str, u32)]); 16] = [
         (
             "FORMAT",
             &[
@@ -424,6 +572,41 @@ pub fn typescript_constants() -> String {
                 ("DEPTH32_FLOAT", format::DEPTH32_FLOAT),
                 ("RGBA32_FLOAT", format::RGBA32_FLOAT),
                 ("R32_UINT", format::R32_UINT),
+                ("RGBA8_UNORM_SRGB", format::RGBA8_UNORM_SRGB),
+            ],
+        ),
+        ("VIEW", &[("2D", view::D2), ("2D_ARRAY", view::D2_ARRAY)]),
+        (
+            "ADDRESS",
+            &[
+                ("CLAMP_TO_EDGE", address::CLAMP_TO_EDGE),
+                ("REPEAT", address::REPEAT),
+                ("MIRROR_REPEAT", address::MIRROR_REPEAT),
+            ],
+        ),
+        (
+            "FILTER",
+            &[("NEAREST", filter::NEAREST), ("LINEAR", filter::LINEAR)],
+        ),
+        (
+            "COMPARE",
+            &[
+                ("NONE", compare::NONE),
+                ("NEVER", compare::NEVER),
+                ("LESS", compare::LESS),
+                ("EQUAL", compare::EQUAL),
+                ("LESS_EQUAL", compare::LESS_EQUAL),
+                ("GREATER", compare::GREATER),
+                ("NOT_EQUAL", compare::NOT_EQUAL),
+                ("GREATER_EQUAL", compare::GREATER_EQUAL),
+                ("ALWAYS", compare::ALWAYS),
+            ],
+        ),
+        (
+            "UPLOAD",
+            &[
+                ("PREMULTIPLIED_ALPHA", upload_flags::PREMULTIPLIED_ALPHA),
+                ("RELEASE", upload_flags::RELEASE),
             ],
         ),
         (
@@ -515,7 +698,11 @@ pub fn typescript_constants() -> String {
         }
         out.push('\n');
     }
-    out.pop();
+    let texel_bytes: Vec<String> = format::TEXEL_BYTES.iter().map(u32::to_string).collect();
+    out.push_str(&format!(
+        "/** Bytes per texel of each format, by format code. */\nexport const FORMAT_TEXEL_BYTES: readonly number[] = [{}];\n",
+        texel_bytes.join(", ")
+    ));
     out
 }
 
@@ -624,6 +811,97 @@ mod tests {
                 assert_ne!(*a as u8, *b as u8);
             }
         }
+    }
+
+    #[test]
+    fn reserved_numbers_are_unique_and_no_op_takes_one() {
+        for (i, &number) in reserved::ALL.iter().enumerate() {
+            assert_eq!(
+                Op::from_u8(number),
+                None,
+                "an op took reserved number {number}"
+            );
+            assert!(!reserved::ALL[i + 1..].contains(&number));
+        }
+    }
+
+    #[test]
+    fn every_format_code_is_its_place_and_has_a_texel_size() {
+        for (code, &value) in format::ALL.iter().enumerate() {
+            assert_eq!(value as usize, code, "format codes run from 0 without gaps");
+        }
+        assert_eq!(format::texel_bytes(format::RGBA8_UNORM_SRGB), 4);
+        assert_eq!(format::texel_bytes(format::RGBA32_FLOAT), 16);
+        assert_eq!(format::texel_bytes(format::DEPTH24_PLUS), 0);
+        assert_eq!(format::texel_bytes(99), 0);
+        assert!(format::is_depth(format::DEPTH32_FLOAT));
+        assert!(!format::is_depth(format::RGBA8_UNORM_SRGB));
+    }
+
+    #[test]
+    fn texture_and_sampler_commands_round_trip_with_their_float_operands() {
+        let mut list = DrawList::with_capacity(128);
+        list.push(
+            Op::CreateSampler,
+            &[
+                3,
+                address::REPEAT,
+                address::MIRROR_REPEAT,
+                address::CLAMP_TO_EDGE,
+                filter::LINEAR,
+                filter::LINEAR,
+                filter::NEAREST,
+                0.5f32.to_bits(),
+                8f32.to_bits(),
+                compare::GREATER,
+                4,
+            ],
+        )
+        .unwrap();
+        list.push(Op::CreateTextureView, &[12, 4, 2, 1]).unwrap();
+        list.push(
+            Op::WriteTexture,
+            &[4, 1, 8, 16, 0, 32, 16, 2, 0x400, 32 * 16 * 2 * 4],
+        )
+        .unwrap();
+        list.push(
+            Op::UploadImage,
+            &[4, 0, 16, 8, 1, 32, 32, 7, upload_flags::RELEASE],
+        )
+        .unwrap();
+        list.push(
+            Op::CopyTextureToTexture,
+            &[4, 0, 16, 8, 0, 5, 0, 0, 40, 1, 32, 16, 1],
+        )
+        .unwrap();
+        list.push(
+            Op::SetViewport,
+            &[8, 16, 32, 64, 0f32.to_bits(), 1f32.to_bits()],
+        )
+        .unwrap();
+        list.push(Op::SetScissor, &[0, 0, 16, 8]).unwrap();
+
+        let commands: Vec<_> = decode(list.words()).map(Result::unwrap).collect();
+        let ops: Vec<Op> = commands.iter().map(|c| c.op).collect();
+        assert_eq!(
+            ops,
+            [
+                Op::CreateSampler,
+                Op::CreateTextureView,
+                Op::WriteTexture,
+                Op::UploadImage,
+                Op::CopyTextureToTexture,
+                Op::SetViewport,
+                Op::SetScissor,
+            ]
+        );
+        let lengths: Vec<usize> = commands.iter().map(|c| c.operands.len()).collect();
+        assert_eq!(lengths, [11, 4, 10, 9, 13, 6, 4]);
+        assert_eq!(f32::from_bits(commands[0].operands[7]), 0.5);
+        assert_eq!(f32::from_bits(commands[0].operands[8]), 8.0);
+        assert_eq!(commands[0].operands[9], compare::GREATER);
+        assert_eq!(f32::from_bits(commands[5].operands[5]), 1.0);
+        assert_eq!(commands[4].operands[5..10], [5, 0, 0, 40, 1]);
     }
 
     /// Keeps the generated TypeScript constants equal to the Rust definitions.

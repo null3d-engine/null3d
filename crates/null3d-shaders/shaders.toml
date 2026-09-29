@@ -43,6 +43,15 @@ variants.webgl2_multi_draw = { defs = ["WEBGL2", "DRAW_INDEX"], targets = ["glsl
 file = "cull.wgsl"
 variants.webgpu = { targets = ["wgsl"] }
 
+# A test shader for the GPU layer's texture commands, which the texture replay test page draws
+# with. The engine does not import it, so its download does not hold it.
+[shaders.test_textures]
+file = "test_textures.wgsl"
+pipelines.sample = { vertex = "vs_main", fragment = "fs_sample" }
+pipelines.solid = { vertex = "vs_main", fragment = "fs_solid" }
+variants.webgpu = { targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2"], targets = ["glsl"] }
+
 # A test shader for the build itself.
 [shaders.test_mesh]
 file = "test_mesh.wgsl"
