@@ -1,6 +1,6 @@
 // Android phones over USB, through adb: which phone is connected, forwarding the dev server's port
-// to it, and opening a page in one of its browsers.
-import { execFileSync } from 'node:child_process';
+// to it, opening a page in one of its browsers, and running shell commands on it.
+import { execFile, execFileSync } from 'node:child_process';
 
 /** Android package names of the browsers the runner can open. */
 export const ANDROID_BROWSERS: Readonly<Record<string, string>> = {
@@ -42,4 +42,16 @@ export function openOnPhone(browser: string, url: string): void {
 		);
 	// adb runs the command through the phone's shell, so the address is quoted for its & signs.
 	adb(['shell', 'am', 'start', '-a', 'android.intent.action.VIEW', '-d', `'${url}'`, pkg]);
+}
+
+/**
+ * Runs a shell script on the phone and resolves with what it prints. It does not block this thread,
+ * so a caller can read the phone while it waits for a run.
+ */
+export function phoneShell(script: string): Promise<string> {
+	return new Promise((resolve, reject) => {
+		execFile('adb', ['shell', script], { encoding: 'utf8' }, (error, stdout) =>
+			error ? reject(error) : resolve(stdout),
+		);
+	});
 }

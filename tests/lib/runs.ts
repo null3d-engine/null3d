@@ -64,6 +64,20 @@ export function readResult(run: string, runner: string, id: string): ItemResult 
 	return readJson(join(RUNS_DIR, run, runner, `${id}.json`));
 }
 
+/** Writes a file of a runner's results, such as a result with facts added after the run. */
+export function writeRunnerFile(run: string, runner: string, name: string, value: unknown): void {
+	mkdirSync(join(RUNS_DIR, run, runner), { recursive: true });
+	writeFileSync(join(RUNS_DIR, run, runner, `${name}.json`), JSON.stringify(value, null, '\t'));
+}
+
+/** When the dev server received a result, in milliseconds since 1970, or undefined without one. */
+export function receivedAt(
+	result: ItemResult | Record<string, unknown> | undefined,
+): number | undefined {
+	const time = Date.parse(String(result?.receivedAt));
+	return Number.isFinite(time) ? time : undefined;
+}
+
 /** What the runner page learned about its browser and device. */
 export function readDevice(run: string, runner: string): Record<string, unknown> | undefined {
 	return readJson(join(RUNS_DIR, run, runner, 'device.json'));

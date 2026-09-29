@@ -135,8 +135,8 @@ export function parityPlan(): PlanItem<Check>[] {
 	);
 }
 
-/** Fresh runs of each benchmark page in the bench plan. */
-const BENCH_RUNS = 3;
+/** Fresh runs of each benchmark page in the bench plan, as the benchmark protocol asks. */
+export const BENCH_RUNS = 5;
 /**
  * The pages the bench plan compares, and the GPU tier each one draws with. The scene-code page
  * draws nothing, so it runs wherever the WebGL2 pages run.
@@ -153,15 +153,17 @@ const BENCH_PAGES: readonly [BenchPageKind, Tier][] = [
 export interface PlanSettings {
 	/** The instance count of the benchmark pages, or undefined for the scene's default. */
 	count?: number;
+	/** Fresh runs of each benchmark page, or undefined for the protocol's number. */
+	runs?: number;
 }
 
 /**
- * The benchmark protocol for S1 in browsers that Playwright cannot drive: fresh runs of each page,
- * each a 5-second warm-up and 30 measured seconds, with `count` instances when given. The pages
- * take turns run by run, so a device that slows as it warms up slows every engine alike.
+ * The benchmark protocol for S1 in browsers that Playwright cannot drive: `runs` fresh runs of each
+ * page, each a 5-second warm-up and 30 measured seconds, with `count` instances when given. The
+ * pages take turns run by run, so a device that slows as it warms up slows every engine alike.
  */
-export function benchPlan({ count }: PlanSettings = {}): PlanItem<Check>[] {
-	return Array.from({ length: BENCH_RUNS }, (_, run) =>
+export function benchPlan({ count, runs = BENCH_RUNS }: PlanSettings = {}): PlanItem<Check>[] {
+	return Array.from({ length: runs }, (_, run) =>
 		BENCH_PAGES.map(([page, tier]) => ({
 			id: `bench-s1-${page}-${run + 1}`,
 			path: pagePath('s1', page, count === undefined ? '' : `n=${count}`),
