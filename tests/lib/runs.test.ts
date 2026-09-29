@@ -8,7 +8,17 @@ import { benchPlan, checksPlan, judge, NONE_MISSING, PLANS, parityPlan } from '.
 /** A browser may lack WebGPU, and must have WebGL2. */
 const NO_WEBGPU = { webgpu: true, webgl2: false };
 
-import { batchTimeoutMs, type ItemResult, runName, turnBatches } from './runs.ts';
+import { RUNS_DIR } from './report-collector.ts';
+import {
+	batchTimeoutMs,
+	type ItemResult,
+	quietLimitMs,
+	runName,
+	turnBatches,
+	waitForRunners,
+	writePlan,
+	writeRunnerFile,
+} from './runs.ts';
 
 describe('turnBatches', () => {
 	it('lets one browser per device run at a time, in the order given', () => {
@@ -23,6 +33,32 @@ describe('turnBatches', () => {
 			['mac-safari', 'sm-s926b-chrome', 'ipad-safari'],
 			['mac-brave-browser', 'sm-s926b-chrome-beta'],
 		]);
+	});
+});
+
+describe('waitForRunners', () => {
+	it('gives up on a runner page that started and then went quiet, as when its tab closed', async () => {
+		const run = `${runName('test')}-wait-${process.pid}`;
+		const plan = writePlan(run, [{ id: 'a', path: '/a', timeoutSeconds: 1, check: {} }]);
+		try {
+			writeRunnerFile(run, 'quiet-phone', 'device', {});
+			writeRunnerFile(run, 'done-phone', 'device', {});
+			writeRunnerFile(run, 'done-phone', 'done', {});
+			const quiet: string[] = [];
+			const finished = await waitForRunners(plan, ['quiet-phone', 'done-phone'], {
+				quietMs: 50,
+				onQuiet: (runner) => quiet.push(runner),
+			});
+			expect(finished).toEqual(['done-phone']);
+			expect(quiet).toEqual(['quiet-phone']);
+		} finally {
+			rmSync(join(RUNS_DIR, run), { recursive: true, force: true });
+		}
+	});
+
+	it('allows the slowest page its timeout, and time to load the next page', () => {
+		const item = (timeoutSeconds: number) => ({ id: 'a', path: '/a', timeoutSeconds, check: {} });
+		expect(quietLimitMs({ run: 'r', createdAt: '', items: [item(95), item(30)] })).toBe(125_000);
 	});
 });
 

@@ -2,7 +2,7 @@
 // after another, with one result file per browser and page. The command-line tools write the plan,
 // choose which browsers may run it now, and read the results; the runner page and the dev server
 // move everything in between.
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { CURRENT_RUN_FILE, RUNS_DIR } from './report-collector.ts';
 
@@ -123,23 +123,61 @@ export function batchTimeoutMs(plan: Plan): number {
 	);
 }
 
-/** Waits until every runner has finished the run, or the deadline passes; returns the finished ones. */
+/**
+ * How long a runner page may send nothing once it has started before it counts as stopped, as when
+ * its tab closes: its slowest page's timeout, after which the page reports a timeout itself, and
+ * time to load the next page.
+ */
+export function quietLimitMs(plan: Plan): number {
+	const LOAD_SECONDS = 30;
+	return (Math.max(0, ...plan.items.map((item) => item.timeoutSeconds)) + LOAD_SECONDS) * 1000;
+}
+
+/** When a runner last wrote a file of the run, or undefined before its runner page starts. */
+function lastWrite(run: string, runner: string): number | undefined {
+	const dir = join(RUNS_DIR, run, runner);
+	if (!existsSync(dir)) return undefined;
+	let last: number | undefined;
+	for (const name of readdirSync(dir)) {
+		const time = statSync(join(dir, name)).mtimeMs;
+		if (last === undefined || time > last) last = time;
+	}
+	return last;
+}
+
+/** What a wait reports, and the quiet time after which a started runner counts as stopped. */
+export interface WaitOptions {
+	onFinish?: (runner: string) => void;
+	onQuiet?: (runner: string, quietSeconds: number) => void;
+	quietMs?: number;
+}
+
+/**
+ * Waits until each runner has finished the run, or has gone quiet after it started, or the plan's
+ * time runs out. A runner that never starts waits for the plan's time, as a page on a tablet may
+ * need someone to open it. Returns the runners that finished.
+ */
 export async function waitForRunners(
-	run: string,
+	plan: Plan,
 	runners: readonly string[],
-	timeoutMs: number,
-	onFinish: (runner: string) => void = () => {},
+	{ onFinish = () => {}, onQuiet = () => {}, quietMs = quietLimitMs(plan) }: WaitOptions = {},
 ): Promise<string[]> {
-	const deadline = Date.now() + timeoutMs;
-	const done = new Set<string>();
-	while (done.size < runners.length && Date.now() < deadline) {
-		for (const runner of runners) {
-			if (!done.has(runner) && finished(run, runner)) {
-				done.add(runner);
+	const deadline = Date.now() + batchTimeoutMs(plan);
+	const done: string[] = [];
+	const waiting = new Set(runners);
+	while (waiting.size > 0 && Date.now() < deadline) {
+		for (const runner of waiting) {
+			const last = lastWrite(plan.run, runner);
+			if (finished(plan.run, runner)) {
+				waiting.delete(runner);
+				done.push(runner);
 				onFinish(runner);
+			} else if (last !== undefined && Date.now() - last > quietMs) {
+				waiting.delete(runner);
+				onQuiet(runner, Math.round((Date.now() - last) / 1000));
 			}
 		}
-		if (done.size < runners.length) await new Promise((resolve) => setTimeout(resolve, 500));
+		if (waiting.size > 0) await new Promise((resolve) => setTimeout(resolve, 500));
 	}
-	return [...done];
+	return done;
 }

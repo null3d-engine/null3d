@@ -38,7 +38,6 @@ import { HeatLog, type HeatSample, type HeatSummary, heatText, summarizeHeat } f
 import { type Check, judge, type MissingAllowed, NONE_MISSING, PLANS } from './lib/plans.ts';
 import { RUNS_DIR } from './lib/report-collector.ts';
 import {
-	batchTimeoutMs,
 	type ItemResult,
 	type PlanItem,
 	type Runner,
@@ -204,6 +203,10 @@ function openRunners(
 	return opened;
 }
 
+/** Reports a runner page that stopped sending results, as when its tab closes. */
+const reportQuiet = (name: string, seconds: number) =>
+	console.log(`${name}: sent nothing for ${seconds} s, so its runner page has stopped`);
+
 /** The runner among these that runs on the Android phone, whose heat the run reads. */
 const phoneRunner = (names: readonly string[], launches: Launches) =>
 	names.find((name) => launches.get(name)?.kind === 'android');
@@ -263,12 +266,10 @@ async function runPlan(
 			const log = phone === undefined ? undefined : new HeatLog();
 			log?.start();
 			try {
-				await waitForRunners(
-					run,
-					openRunners(batch, launches, run, local.url),
-					batchTimeoutMs(plan),
-					(name) => console.log(`${name}: finished`),
-				);
+				await waitForRunners(plan, openRunners(batch, launches, run, local.url), {
+					onFinish: (name) => console.log(`${name}: finished`),
+					onQuiet: reportQuiet,
+				});
 			} finally {
 				if (phone !== undefined && log) heatReadings.set(phone, await log.stop());
 			}
@@ -401,11 +402,9 @@ async function runScale(
 					const item = scaleItem(page, tier, count);
 					const plan = writePlan(run, [item]);
 					setTurns(run, [name]);
-					await waitForRunners(
-						run,
-						openRunners([name], launches, run, local.url),
-						batchTimeoutMs(plan),
-					);
+					await waitForRunners(plan, openRunners([name], launches, run, local.url), {
+						onQuiet: reportQuiet,
+					});
 					const result = readResult(run, name, item.id);
 					const verdict = result
 						? judge(item.check, result, options.missing)
