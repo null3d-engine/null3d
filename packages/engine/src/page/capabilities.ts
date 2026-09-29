@@ -110,14 +110,10 @@ export interface WebGL2Report {
 	maxTextureSize: number | null;
 	/** The largest uniform block in bytes, or null without WebGL2. */
 	maxUniformBlockSize: number | null;
-	/**
-	 * Whether WebGL accepts views on shared memory: for buffer and texture uploads, and for the arrays
-	 * of multi-draw calls (null without `WEBGL_multi_draw`). Null without shared memory.
-	 */
+	/** Whether WebGL accepts views on shared memory for buffer and texture uploads. Null without shared memory. */
 	sharedMemoryUploads: {
 		bufferSubData: boolean;
 		texSubImage2D: boolean;
-		multiDraw: boolean | null;
 	} | null;
 	/** Reported for the record only; the engine never branches on it. */
 	renderer: string | null;
@@ -228,40 +224,7 @@ function probeSharedUploads(gl: WebGL2RenderingContext): WebGL2Report['sharedMem
 		texSubImage2D = false;
 	}
 	gl.deleteTexture(texture);
-	return { bufferSubData, texSubImage2D, multiDraw: probeSharedMultiDraw(gl) };
-}
-
-/**
- * Whether a multi-draw call takes its arrays from views on shared memory, or null without the
- * extension. A browser that refuses them throws before it draws, so a call that draws nothing
- * answers the question.
- */
-function probeSharedMultiDraw(gl: WebGL2RenderingContext): boolean | null {
-	const ext = gl.getExtension('WEBGL_multi_draw');
-	if (!ext) return null;
-	const arrays = new Int32Array(new SharedArrayBuffer(16));
-	try {
-		ext.multiDrawElementsInstancedWEBGL(
-			gl.TRIANGLES,
-			arrays,
-			0,
-			gl.UNSIGNED_SHORT,
-			arrays,
-			0,
-			arrays,
-			0,
-			0,
-		);
-		return true;
-	} catch {
-		return false;
-	} finally {
-		// A draw with no program may leave errors, which must not reach later checks. Each read
-		// clears one.
-		for (let k = 0; k < 8 && gl.getError() !== gl.NO_ERROR; k++) {
-			// Read until clear.
-		}
-	}
+	return { bufferSubData, texSubImage2D };
 }
 
 function probeWebGL2(powerPreference?: PowerPreference): WebGL2Report {

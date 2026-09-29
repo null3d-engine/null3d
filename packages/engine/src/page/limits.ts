@@ -14,7 +14,6 @@ export interface DeviceReport {
 		sharedMemoryUploads: {
 			bufferSubData: boolean;
 			texSubImage2D: boolean;
-			multiDraw: boolean | null;
 		} | null;
 	};
 }
@@ -74,12 +73,7 @@ export function coreDevice(
 		storageBindingBytes: C.LIMIT_PORTABLE_STORAGE_BINDING_BYTES,
 		capabilities: multiDraw ? C.CAPABILITY_MULTI_DRAW : 0,
 		maxTextureSize: Math.max(C.LIMIT_WEBGL2_MIN_TEXTURE_SIZE, gl.maxTextureSize ?? 0),
-		sharedUploads:
-			!copyUploads &&
-			shared !== null &&
-			shared.bufferSubData &&
-			shared.texSubImage2D &&
-			(!multiDraw || shared.multiDraw === true),
+		sharedUploads: !copyUploads && shared !== null && shared.bufferSubData && shared.texSubImage2D,
 	};
 }
 

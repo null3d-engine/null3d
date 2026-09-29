@@ -86,6 +86,8 @@ export class WebGL2Backend {
 	private stagingFloats = new Float32Array(0);
 	private stagingUints = new Uint32Array(0);
 	private stagingInts = new Int32Array(0);
+	/** A multi-draw call's counts, offsets and instance counts, one after another. */
+	private drawLists = new Int32Array(3 * G.SIZE_MULTI_DRAW_RECORDS);
 
 	// The state cache.
 	private program: WebGLProgram | null = null;
@@ -651,51 +653,50 @@ export class WebGL2Backend {
 		}
 	}
 
+	/**
+	 * Draws a run of buckets in one multi-draw call. Safari reads all of an array that a multi-draw
+	 * call gets, not just the entries its draws use, so a view on engine memory would cost time in
+	 * proportion to the memory: over 200 ms a call at 16 MB. The draws' three lists therefore go
+	 * into a small array of their own, which a loop fills without making a view.
+	 */
 	private multiDrawIndexed(words: Uint32Array, a: number): void {
 		const ext = this.multiDraw;
 		if (!ext) throw new Error('this WebGL2 context has no WEBGL_multi_draw');
 		const count = words[a] as number;
-		let arrays = this.ints;
-		let counts = (words[a + 1] as number) / 4;
-		let offsets = (words[a + 2] as number) / 4;
-		let instances = (words[a + 3] as number) / 4;
+		const ints = this.ints;
+		const counts = (words[a + 1] as number) / 4;
+		const offsets = (words[a + 2] as number) / 4;
+		const instances = (words[a + 3] as number) / 4;
 		if (count === 1) {
 			// One draw needs no arrays. Its gl_DrawID is 0 either way, so it reads the same record.
 			this.prepareDraw(0);
 			this.gl.drawElementsInstanced(
 				this.gl.TRIANGLES,
-				arrays[counts] as number,
+				ints[counts] as number,
 				this.indexType,
-				arrays[offsets] as number,
-				arrays[instances] as number,
+				ints[offsets] as number,
+				ints[instances] as number,
 			);
 			this.counts.drawCalls += 1;
 			return;
 		}
-		if (this.copying) {
-			// Few words, so a loop copies them without making a view.
-			this.ensureStaging(count * 12);
-			const staged = this.stagingInts;
-			for (let k = 0; k < count; k++) {
-				staged[k] = this.ints[counts + k] as number;
-				staged[count + k] = this.ints[offsets + k] as number;
-				staged[2 * count + k] = this.ints[instances + k] as number;
-			}
-			arrays = staged;
-			counts = 0;
-			offsets = count;
-			instances = 2 * count;
+		if (this.drawLists.length < 3 * count) this.drawLists = new Int32Array(3 * count);
+		const lists = this.drawLists;
+		for (let k = 0; k < count; k++) {
+			lists[k] = ints[counts + k] as number;
+			lists[count + k] = ints[offsets + k] as number;
+			lists[2 * count + k] = ints[instances + k] as number;
 		}
 		this.prepareDraw(0);
 		ext.multiDrawElementsInstancedWEBGL(
 			this.gl.TRIANGLES,
-			arrays,
-			counts,
+			lists,
+			0,
 			this.indexType,
-			arrays,
-			offsets,
-			arrays,
-			instances,
+			lists,
+			count,
+			lists,
+			2 * count,
 			count,
 		);
 		this.counts.drawCalls += count;

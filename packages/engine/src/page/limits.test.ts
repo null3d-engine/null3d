@@ -20,7 +20,7 @@ function report(webgl2: Partial<DeviceReport['webgl2']>): DeviceReport {
 		webgl2: {
 			extensions: {},
 			maxTextureSize: 4096,
-			sharedMemoryUploads: { bufferSubData: true, texSubImage2D: true, multiDraw: null },
+			sharedMemoryUploads: { bufferSubData: true, texSubImage2D: true },
 			...webgl2,
 		},
 	};
@@ -65,26 +65,18 @@ describe('coreDevice on WebGL2', () => {
 	});
 
 	it('passes multi-draw to the core only where the extension exists', () => {
-		const withIt = report({
-			extensions: { WEBGL_multi_draw: true },
-			sharedMemoryUploads: { bufferSubData: true, texSubImage2D: true, multiDraw: true },
-		});
+		const withIt = report({ extensions: { WEBGL_multi_draw: true } });
 		expect(coreDevice(true, withIt, false).capabilities).toBe(C.CAPABILITY_MULTI_DRAW);
 		expect(coreDevice(true, report({}), false).capabilities).toBe(0);
 	});
 
-	it('reads shared memory only where WebGL accepts it for every call the path makes', () => {
+	it('reads shared memory only where WebGL accepts it for both kinds of upload', () => {
 		expect(coreDevice(true, report({}), false).sharedUploads).toBe(true);
 		expect(coreDevice(true, report({}), true).sharedUploads).toBe(false);
 		const noTextures = report({
-			sharedMemoryUploads: { bufferSubData: true, texSubImage2D: false, multiDraw: null },
+			sharedMemoryUploads: { bufferSubData: true, texSubImage2D: false },
 		});
 		expect(coreDevice(true, noTextures, false).sharedUploads).toBe(false);
-		const noArrays = report({
-			extensions: { WEBGL_multi_draw: true },
-			sharedMemoryUploads: { bufferSubData: true, texSubImage2D: true, multiDraw: false },
-		});
-		expect(coreDevice(true, noArrays, false).sharedUploads).toBe(false);
 		expect(coreDevice(true, report({ sharedMemoryUploads: null }), false).sharedUploads).toBe(
 			false,
 		);

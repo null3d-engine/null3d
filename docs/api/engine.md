@@ -196,7 +196,7 @@ What the browser's WebGL2 offers, in `CapabilityReport.webgl2`.
 | `maxSamples: number \| null` | The most samples per pixel for antialiasing, or null without WebGL2. |
 | `maxTextureSize: number \| null` | The largest texture width and height in pixels, or null without WebGL2. |
 | `maxUniformBlockSize: number \| null` | The largest uniform block in bytes, or null without WebGL2. |
-| `sharedMemoryUploads: { bufferSubData: boolean; texSubImage2D: boolean; multiDraw: boolean \| null; } \| null` | Whether WebGL accepts views on shared memory: for buffer and texture uploads, and for the arrays of multi-draw calls (null without `WEBGL_multi_draw`). Null without shared memory. |
+| `sharedMemoryUploads: { bufferSubData: boolean; texSubImage2D: boolean; } \| null` | Whether WebGL accepts views on shared memory for buffer and texture uploads. Null without shared memory. |
 | `renderer: string \| null` | Reported for the record only; the engine never branches on it. |
 | `error?: string` | Why the probe failed, when it did. |
 
