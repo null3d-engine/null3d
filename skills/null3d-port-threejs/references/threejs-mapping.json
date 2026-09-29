@@ -637,8 +637,8 @@
       "three": "BufferGeometry + setAttribute / setIndex / BufferAttribute",
       "status": "changed",
       "since": "0.1",
-      "target": "geometry.fromArrays({ positions, normals, uvs, indices, colors, tangents })",
-      "notes": "Returns a mesh asset that createMesh and createInstances accept.",
+      "target": "geometry.fromArrays({ positions, normals, uvs, uvs1, colors, tangents, indices })",
+      "notes": "Returns a mesh that createMesh and createInstances accept. The attributes position, normal, uv, uv1, color and tangent each become one array, and setIndex becomes indices, 16-bit or 32-bit. The engine copies the arrays.",
       "docs": "api/geometry",
       "detect": "\\bBufferGeometry\\b|\\.setAttribute\\s*\\(|\\.setIndex\\s*\\(|\\b(Float32|Uint16|Uint32)?BufferAttribute\\b"
     },
@@ -660,7 +660,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "geometry.fromArrays({ ..., computeNormals: true, computeTangents: true })",
-      "notes": "Bounds are always automatic. Prefer computing normals and tangents offline with `bunx @null3d/cli assets`.",
+      "notes": "The results match three.js's bit for bit. computeTangents needs uvs, and works without indices too. Bounds are always automatic, so computeBoundingSphere and computeBoundingBox need no call.",
       "docs": "api/geometry",
       "detect": "\\.compute(VertexNormals|Tangents|BoundingSphere|BoundingBox)\\s*\\("
     },

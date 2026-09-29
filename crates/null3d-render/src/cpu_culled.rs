@@ -15,11 +15,14 @@
 //!
 //! # Buckets and draws
 //!
-//! A bucket is one pipeline, vertex page, mesh, material and data texture. Buckets are sorted, so
-//! the buckets of one pipeline and one vertex page sit next to each other, and one multi-draw call
-//! draws a whole run of them. Each draw has a record in a uniform block: the start of its slice of
-//! the index list, its material and its data texture. The multi-draw shader reads the record of
-//! `gl_DrawID`; without the extension, each draw binds its own record.
+//! A bucket is one pipeline, mesh, material and data texture, and culling lists its visible
+//! sources in its slice of the index list. A pipeline is one shading and one vertex format. A
+//! bucket has one draw per part of its mesh, and every draw of a bucket draws the bucket's slice.
+//! Buckets are sorted, so the draws of one pipeline and one vertex page sit next to each other, and
+//! one multi-draw call draws a whole run of them. Each draw has a record in a uniform block: the
+//! start of its bucket's slice of the index list, its material and its data texture. The
+//! multi-draw shader reads the record of `gl_DrawID`; without the extension, each draw binds its
+//! own record.
 //!
 //! Buckets change only with the scene's structure, as on WebGPU. Showing or hiding an object, or
 //! changing a batch's active count, needs no rebuild: culling skips hidden objects and stops at
@@ -54,17 +57,17 @@ use null3d_core::world::{MATRIX_FLOATS, SphereArrays};
 use null3d_gpu::caps::OFFSET_ALIGNMENT;
 use null3d_gpu::drawlist::{
     DrawList, Op, buffer_usage as usage, format, index_format, layout, permutation, resource_kind,
-    sizes, template, texture_usage, view,
+    sizes, texture_usage, view,
 };
 
 use crate::frame::{
-    FrameBuilder, FrameInput, HIDDEN, PageUploads, ParityLists, RecordError, SceneSettings,
-    SceneTargets, UploadArena, address, bucket_of, collect_bucket_keys, drawn_rows,
-    floats_as_bytes, grown_size, put_u32, words_as_bytes,
+    FrameBuilder, FrameInput, HIDDEN, MeshBuffers, ParityLists, PipelineKey, PipelineTable,
+    RecordError, SceneSettings, SceneTargets, UploadArena, address, bucket_of, collect_bucket_keys,
+    drawn_rows, floats_as_bytes, grown_size, put_u32, words_as_bytes,
 };
 use crate::frame_data::FrameUniform;
-use crate::materials::{MATERIAL_FLOATS, Shading};
-use crate::meshes::{MAX_BUFFER_BYTES, MeshStorage, Packing, Page};
+use crate::materials::MATERIAL_FLOATS;
+use crate::meshes::{MeshStorage, Packing};
 
 /// Frames that the rings of streamed and index list textures cover: the frame being recorded and
 /// the two the GPU may still be drawing.
@@ -147,9 +150,6 @@ mod ids {
     /// The rows of static batches in cluster order.
     pub const CLUSTERS: u32 = 10;
 
-    pub const LIT: u32 = 1;
-    pub const UNLIT: u32 = 2;
-
     pub const FRAME_GROUP: u32 = 1;
     pub const DRAWS_GROUP: u32 = 2;
     /// The textures of each pair of ring slots: the streamed texture's and the index list's, at
@@ -190,23 +190,30 @@ pub const fn max_sources(max_texture_size: u32) -> u32 {
     sizes::MATRICES_PER_TEXTURE_ROW.saturating_mul(max_texture_size)
 }
 
-/// What makes a bucket, in draw order: the pipeline, the vertex page, the engine mesh and material
-/// ids, and the data texture.
-type BucketKey = (Shading, u32, u32, u32, u32);
+/// What makes a bucket, in draw order: the pipeline, the vertex page of the mesh's first part,
+/// the engine mesh and material ids, and the data texture.
+type BucketKey = (PipelineKey, u32, u32, u32, u32);
 
-/// One draw of a bucket key. Each key has two, next to each other: the draw whose index list
-/// entries are rows, then the draw whose entries are clusters of rows.
+/// One bucket of a bucket key. Each key has two, next to each other: the bucket whose index list
+/// entries are rows, then the bucket whose entries are clusters of rows.
 #[derive(Clone, Copy, Debug)]
 struct Bucket {
-    shading: Shading,
-    page: u32,
     /// The engine material id.
     material: u32,
     group: u32,
-    index_count: u32,
-    first_index: u32,
     /// Instances per index list entry, as a shift: 0 for rows, [`CLUSTER_SHIFT`] for clusters.
     shift: u32,
+}
+
+/// One draw: a part of a bucket's mesh, which draws every instance that the bucket lists.
+#[derive(Clone, Copy, Debug)]
+struct Draw {
+    /// The id of its render pipeline.
+    pipeline: u32,
+    page: u32,
+    bucket: u32,
+    index_count: u32,
+    first_index: u32,
 }
 
 /// A batch's place in the layout: its data texture, its first row there, its bucket of rows
@@ -249,6 +256,10 @@ struct Layout {
     cluster_rows: u32,
     batches: Vec<BatchSlot>,
     buckets: Vec<Bucket>,
+    /// Every bucket's draws, in bucket order. Buckets are sorted by pipeline and by the vertex page
+    /// of their mesh's first part, so the draws of one pipeline and page sit together, apart from
+    /// the later parts of meshes split over several pages.
+    draws: Vec<Draw>,
     /// Each scene slot's bucket, shown or hidden, or `NO_BUCKET` for a slot that draws nowhere.
     scene_buckets: Vec<u32>,
     /// Scratch for rebuilds: every bucket key with its source count, sorted and merged.
@@ -266,30 +277,6 @@ impl Layout {
     }
 }
 
-/// A vertex page's GPU buffers: their sizes, and how much of the page they hold.
-#[derive(Clone, Copy, Debug, Default)]
-struct PageBuffers {
-    vertex_bytes: u32,
-    index_bytes: u32,
-    uploaded: PageUploads,
-}
-
-impl PageBuffers {
-    /// Bytes of the page's vertices and indices, as its buffers must hold them.
-    fn needed(page: &Page) -> (u32, u32) {
-        (
-            (page.vertices.len() * 4) as u32,
-            (page.indices.len() * 2).next_multiple_of(4) as u32,
-        )
-    }
-
-    /// True when the page outgrew its buffers, so they must be made again and filled whole.
-    fn outgrown(&self, page: &Page) -> bool {
-        let (vertex_bytes, index_bytes) = Self::needed(page);
-        vertex_bytes > self.vertex_bytes || index_bytes > self.index_bytes
-    }
-}
-
 /// Records one draw list per frame for the WebGL2 path.
 pub struct CpuCulledRenderer {
     config: CpuCulledConfig,
@@ -304,7 +291,9 @@ pub struct CpuCulledRenderer {
     /// `None` when it has no camera.
     culled: u32,
     uniform: Option<FrameUniform>,
-    pages: Vec<PageBuffers>,
+    /// The vertex pages' vertex and index buffers.
+    meshes: MeshBuffers,
+    pipelines: PipelineTable,
     /// Each batch's clusters, in the layout's batch order; only static batches use theirs.
     cluster_sets: Vec<ClusterSet>,
     cluster_scratch: ClusterScratch,
@@ -337,7 +326,8 @@ impl CpuCulledRenderer {
             runs: Vec::new(),
             culled: 0,
             uniform: None,
-            pages: Vec::new(),
+            meshes: MeshBuffers::new(ids::PAGES),
+            pipelines: PipelineTable::default(),
             cluster_sets: Vec::new(),
             cluster_scratch: ClusterScratch::default(),
             texture_rows: [0; 4],
@@ -402,10 +392,11 @@ impl CpuCulledRenderer {
         layout.streamed_rows = streamed;
         layout.cluster_rows = clusters.saturating_mul(CLUSTER_ROWS);
 
+        let meshes = settings.meshes();
         let key_of = |mesh: u32, material: u32, group: u32| -> Option<BucketKey> {
-            let shading = settings.shading_of(mesh, material)?;
-            let page = settings.meshes().mesh(mesh - 1)?.page;
-            Some((shading, page, mesh, material, group))
+            let pipeline = settings.pipeline_of(mesh, material)?;
+            let page = meshes.parts(meshes.mesh(mesh - 1)?).first()?.page;
+            Some((pipeline, page, mesh, material, group))
         };
         let group_of = |batch: &InstanceBatch| {
             if batch.is_dynamic() {
@@ -425,23 +416,29 @@ impl CpuCulledRenderer {
         );
 
         layout.buckets.clear();
-        for &((shading, page, mesh, material, group), _) in &layout.key_counts {
-            let slot = settings
-                .meshes()
-                .mesh(mesh - 1)
-                .expect("keys name known meshes");
+        layout.draws.clear();
+        for &((pipeline, _, mesh, material, group), _) in &layout.key_counts {
+            let slot = meshes.mesh(mesh - 1).expect("keys name known meshes");
+            let pipeline = self.pipelines.id(pipeline);
             for shift in [0, CLUSTER_SHIFT] {
+                let bucket = layout.buckets.len() as u32;
                 layout.buckets.push(Bucket {
-                    shading,
-                    page,
                     material,
                     group,
-                    index_count: slot.index_count,
-                    first_index: slot.first_index,
                     shift,
                 });
+                layout
+                    .draws
+                    .extend(meshes.parts(slot).iter().map(|part| Draw {
+                        pipeline,
+                        page: part.page,
+                        bucket,
+                        index_count: part.index_count,
+                        first_index: part.first_index,
+                    }));
             }
         }
+
         // A key's bucket of rows; its bucket of clusters is the next one.
         let counts = &layout.key_counts;
         let bucket_of =
@@ -459,19 +456,19 @@ impl CpuCulledRenderer {
         }
 
         // The ring slot of draw records: one block per multi-draw call, or one aligned record per
-        // bucket.
+        // draw.
         let buckets = layout.buckets.len() as u32;
         layout.draws_slot_bytes = if self.config.multi_draw {
             let mut calls = 0;
             let mut start = 0;
-            while start < layout.buckets.len() {
-                let run = run_end(&layout.buckets, start) - start;
+            while start < layout.draws.len() {
+                let run = run_end(&layout.draws, start) - start;
                 calls += (run as u32).div_ceil(sizes::MULTI_DRAW_RECORDS);
                 start += run;
             }
             calls.max(1) * MULTI_DRAW_BLOCK_BYTES
         } else {
-            buckets.max(1) * OFFSET_ALIGNMENT
+            (layout.draws.len() as u32).max(1) * OFFSET_ALIGNMENT
         };
 
         let rows = resident.saturating_add(streamed);
@@ -542,24 +539,9 @@ impl CpuCulledRenderer {
 
     /// [`Self::upload_bound`] without the cluster orders.
     fn upload_bound_without_clusters(&self) -> usize {
-        let meshes: usize = self
-            .settings
-            .meshes()
-            .pages()
-            .iter()
-            .enumerate()
-            .map(|(p, page)| {
-                let buffers = self.pages.get(p).copied().unwrap_or_default();
-                let uploaded = if buffers.outgrown(page) {
-                    PageUploads::default()
-                } else {
-                    buffers.uploaded
-                };
-                uploaded.pending_bytes(page)
-            })
-            .sum();
+        let meshes = self.meshes.pending_bytes(self.settings.meshes().pages());
         let materials = self.settings.materials().capacity() as usize * MATERIAL_FLOATS * 4;
-        let draws = self.layout.draws_slot_bytes as usize + self.layout.buckets.len() * 12;
+        let draws = self.layout.draws_slot_bytes as usize + self.layout.draws.len() * 12;
         meshes + materials + sizes::FRAME_UNIFORM_BYTES as usize + draws
     }
 
@@ -604,28 +586,6 @@ impl CpuCulledRenderer {
     }
 
     fn create_fixed(&mut self, list: &mut DrawList) -> Result<(), RecordError> {
-        let bits = if self.config.multi_draw {
-            permutation::DRAW_INDEX
-        } else {
-            0
-        };
-        for (id, tmpl) in [
-            (ids::LIT, template::INSTANCED_LIT),
-            (ids::UNLIT, template::INSTANCED_UNLIT),
-        ] {
-            list.push(
-                Op::CreateRenderPipeline,
-                &[
-                    id,
-                    tmpl,
-                    bits,
-                    format::CANVAS,
-                    format::DEPTH32_FLOAT,
-                    self.config.samples,
-                    0,
-                ],
-            )?;
-        }
         let material_bytes = sizes::MAX_MATERIALS * MATERIAL_FLOATS as u32 * 4;
         for (id, size) in [
             (ids::FRAME, RING * FRAME_SLOT_BYTES),
@@ -655,50 +615,6 @@ impl CpuCulledRenderer {
             ],
         )?;
         self.created = true;
-        Ok(())
-    }
-
-    /// Uploads mesh data added since the last upload, from copies in the frame's arena. A page
-    /// whose buffers are too small gets new ones, with room to grow, and uploads again whole.
-    fn upload_meshes(
-        &mut self,
-        list: &mut DrawList,
-        arena: &mut UploadArena,
-    ) -> Result<(), RecordError> {
-        for (p, page) in self.settings.meshes().pages().iter().enumerate() {
-            if self.pages.len() <= p {
-                self.pages.push(PageBuffers::default());
-            }
-            let buffers = &mut self.pages[p];
-            let buffer_ids = [ids::PAGES + 2 * p as u32, ids::PAGES + 2 * p as u32 + 1];
-            if buffers.outgrown(page) {
-                let (vertex_bytes, index_bytes) = PageBuffers::needed(page);
-                let limit = MAX_BUFFER_BYTES as u32;
-                buffers.vertex_bytes = grown_size(vertex_bytes, limit);
-                buffers.index_bytes = grown_size(index_bytes, limit);
-                list.push(
-                    Op::CreateBuffer,
-                    &[
-                        buffer_ids[0],
-                        buffers.vertex_bytes,
-                        usage::VERTEX | usage::COPY_DST,
-                    ],
-                )?;
-                list.push(
-                    Op::CreateBuffer,
-                    &[
-                        buffer_ids[1],
-                        buffers.index_bytes,
-                        usage::INDEX | usage::COPY_DST,
-                    ],
-                )?;
-                buffers.uploaded = PageUploads::default();
-            }
-            let capacity = [buffers.vertex_bytes, buffers.index_bytes];
-            buffers
-                .uploaded
-                .upload(list, arena, page, buffer_ids, capacity)?;
-        }
         Ok(())
     }
 
@@ -959,9 +875,13 @@ impl CpuCulledRenderer {
         slots: FrameSlots,
         new_list: bool,
     ) -> Result<(), RecordError> {
-        let buckets = &self.layout.buckets;
+        let (buckets, draws) = (&self.layout.buckets, &self.layout.draws);
         let starts = self.culls[input.parity()].bucket_starts();
-        let visible = |b: usize| starts[b + 1] - starts[b];
+        // The instances of a draw: the entries of its bucket's slice of the index list.
+        let visible = |d: usize| {
+            let b = draws[d].bucket as usize;
+            starts[b + 1] - starts[b]
+        };
         let multi = self.config.multi_draw;
         let slot = slots.listed * self.layout.draws_slot_bytes;
         // A multi-draw call binds a block of records; a single draw binds one aligned record.
@@ -972,15 +892,16 @@ impl CpuCulledRenderer {
         };
 
         let mut calls = 0;
-        for_each_call(buckets, &visible, multi, |_, _| {
+        for_each_call(draws, &visible, multi, |_, _| {
             calls += 1;
             Ok(())
         })?;
         if new_list && calls > 0 {
             let (at, records) = arena.push_zeroed((calls * stride) as usize)?;
-            for_each_call(buckets, &visible, multi, |index, call| {
-                let drawn = (call.from..call.to).filter(|&b| visible(b) > 0);
-                for (r, b) in drawn.enumerate() {
+            for_each_call(draws, &visible, multi, |index, call| {
+                let drawn = (call.from..call.to).filter(|&d| visible(d) > 0);
+                for (r, d) in drawn.enumerate() {
+                    let b = draws[d].bucket as usize;
                     let word = (index * stride / 4) as usize + r * 4;
                     put_u32(records, word, starts[b]);
                     put_u32(records, word + 1, buckets[b].material - 1);
@@ -1001,20 +922,16 @@ impl CpuCulledRenderer {
         list.push(Op::SetBindGroup, &[2, instances, 0])?;
         let mut pipeline = None;
         let mut run = usize::MAX;
-        for_each_call(buckets, &visible, multi, |index, call| {
+        let shift = |d: usize| buckets[draws[d].bucket as usize].shift;
+        for_each_call(draws, &visible, multi, |index, call| {
             if call.run != run {
                 run = call.run;
-                let first = buckets[run];
-                let wanted = match first.shading {
-                    Shading::Lit => ids::LIT,
-                    Shading::Unlit => ids::UNLIT,
-                };
-                if pipeline != Some(wanted) {
-                    list.push(Op::SetPipeline, &[wanted])?;
-                    pipeline = Some(wanted);
+                let first = draws[run];
+                if pipeline != Some(first.pipeline) {
+                    list.push(Op::SetPipeline, &[first.pipeline])?;
+                    pipeline = Some(first.pipeline);
                 }
-                let (vertices, indices) =
-                    (ids::PAGES + 2 * first.page, ids::PAGES + 2 * first.page + 1);
+                let (vertices, indices) = self.meshes.ids(first.page);
                 list.push(Op::SetVertexBuffer, &[0, vertices, 0, 0])?;
                 list.push(Op::SetIndexBuffer, &[indices, index_format::UINT16, 0, 0])?;
             }
@@ -1022,32 +939,32 @@ impl CpuCulledRenderer {
                 Op::SetBindGroup,
                 &[1, ids::DRAWS_GROUP, 1, slot + index * stride],
             )?;
-            let drawn = (call.from..call.to).filter(|&b| visible(b) > 0);
+            let drawn = (call.from..call.to).filter(|&d| visible(d) > 0);
             if multi {
                 let n = call.drawn as usize;
                 let (counts_at, counts) = arena.push_zeroed(n * 4)?;
-                for (k, b) in drawn.clone().enumerate() {
-                    put_u32(counts, k, buckets[b].index_count);
+                for (k, d) in drawn.clone().enumerate() {
+                    put_u32(counts, k, draws[d].index_count);
                 }
                 let (offsets_at, offsets) = arena.push_zeroed(n * 4)?;
-                for (k, b) in drawn.clone().enumerate() {
-                    put_u32(offsets, k, buckets[b].first_index * 2);
+                for (k, d) in drawn.clone().enumerate() {
+                    put_u32(offsets, k, draws[d].first_index * 2);
                 }
                 let (instances_at, instances) = arena.push_zeroed(n * 4)?;
-                for (k, b) in drawn.enumerate() {
-                    put_u32(instances, k, visible(b) << buckets[b].shift);
+                for (k, d) in drawn.enumerate() {
+                    put_u32(instances, k, visible(d) << shift(d));
                 }
                 list.push(
                     Op::MultiDrawIndexed,
                     &[call.drawn, counts_at, offsets_at, instances_at],
                 )?;
             } else {
-                for b in drawn {
-                    let bucket = buckets[b];
-                    let instances = visible(b) << bucket.shift;
+                for d in drawn {
+                    let draw = draws[d];
+                    let instances = visible(d) << shift(d);
                     list.push(
                         Op::DrawIndexed,
-                        &[bucket.index_count, instances, bucket.first_index, 0, 0],
+                        &[draw.index_count, instances, draw.first_index, 0, 0],
                     )?;
                 }
             }
@@ -1075,7 +992,14 @@ impl CpuCulledRenderer {
         }
         let rebuilt = self.layout.built_in == input.frame;
         arena.reset(self.upload_bound());
-        self.upload_meshes(list, arena)?;
+        self.meshes
+            .upload(list, arena, self.settings.meshes().pages())?;
+        let bits = if self.config.multi_draw {
+            permutation::DRAW_INDEX
+        } else {
+            0
+        };
+        self.pipelines.create_new(list, bits, self.config.samples)?;
         if self.settings.materials_mut().take_changed() {
             let parameters = self.settings.materials().parameters();
             let (at, bytes) = arena.push(floats_as_bytes(parameters))?;
@@ -1258,7 +1182,8 @@ impl FrameBuilder for CpuCulledRenderer {
         self.created = false;
         self.canvas = (0, 0);
         self.layout.built = false;
-        self.pages.clear();
+        self.meshes.forget();
+        self.pipelines.forget();
         self.texture_rows = [0; 4];
         self.uniform_slot.forget();
         self.streamed_slot.forget();
@@ -1273,17 +1198,17 @@ impl FrameBuilder for CpuCulledRenderer {
     }
 }
 
-/// The end of the run of buckets that starts at `start`: the buckets that share its pipeline and
+/// The end of the run of draws that starts at `start`: the draws that share its pipeline and
 /// vertex page.
-fn run_end(buckets: &[Bucket], start: usize) -> usize {
-    let first = buckets[start];
-    buckets[start..]
+fn run_end(draws: &[Draw], start: usize) -> usize {
+    let first = draws[start];
+    draws[start..]
         .iter()
-        .position(|b| b.shading != first.shading || b.page != first.page)
-        .map_or(buckets.len(), |n| start + n)
+        .position(|d| d.pipeline != first.pipeline || d.page != first.page)
+        .map_or(draws.len(), |n| start + n)
 }
 
-/// One draw call of a frame: buckets `from..to` of the run that starts at bucket `run`, `drawn` of
+/// One draw call of a frame: draws `from..to` of the run that starts at draw `run`, `drawn` of
 /// them with visible instances.
 #[derive(Clone, Copy, Debug)]
 struct Call {
@@ -1293,11 +1218,11 @@ struct Call {
     drawn: u32,
 }
 
-/// Calls `f` with each draw call of a frame and its number, in draw order: per run of buckets that
-/// share a pipeline and a vertex page, one multi-draw call per block of drawn buckets, or one
-/// draw per drawn bucket. Buckets with no visible instances draw nothing.
+/// Calls `f` with each draw call of a frame and its number, in draw order: per run of draws that
+/// share a pipeline and a vertex page, one multi-draw call per block of drawn draws, or one call
+/// per drawn draw. Draws with no visible instances draw nothing.
 fn for_each_call(
-    buckets: &[Bucket],
+    draws: &[Draw],
     visible: &dyn Fn(usize) -> u32,
     multi: bool,
     mut f: impl FnMut(u32, Call) -> Result<(), RecordError>,
@@ -1305,8 +1230,8 @@ fn for_each_call(
     let per_call = if multi { sizes::MULTI_DRAW_RECORDS } else { 1 };
     let mut index = 0;
     let mut start = 0;
-    while start < buckets.len() {
-        let end = run_end(buckets, start);
+    while start < draws.len() {
+        let end = run_end(draws, start);
         let mut b = start;
         while b < end {
             if visible(b) == 0 {
@@ -1339,25 +1264,20 @@ fn for_each_call(
 mod tests {
     use super::*;
 
-    fn bucket(shading: Shading, page: u32) -> Bucket {
-        Bucket {
-            shading,
+    /// A draw of pipeline `pipeline` from vertex page `page`, of the bucket at its own place.
+    fn draw(pipeline: u32, page: u32) -> Draw {
+        Draw {
+            pipeline,
             page,
-            material: 1,
-            group: RESIDENT,
+            bucket: 0,
             index_count: 36,
             first_index: 0,
-            shift: 0,
         }
     }
 
-    fn calls(
-        buckets: &[Bucket],
-        visible: &[u32],
-        multi: bool,
-    ) -> Vec<(u32, usize, usize, usize, u32)> {
+    fn calls(draws: &[Draw], visible: &[u32], multi: bool) -> Vec<(u32, usize, usize, usize, u32)> {
         let mut out = Vec::new();
-        for_each_call(buckets, &|b| visible[b], multi, |index, call| {
+        for_each_call(draws, &|d| visible[d], multi, |index, call| {
             out.push((index, call.run, call.from, call.to, call.drawn));
             Ok(())
         })
@@ -1366,34 +1286,28 @@ mod tests {
     }
 
     #[test]
-    fn calls_follow_runs_of_pipeline_and_page_and_skip_empty_buckets() {
-        let buckets = [
-            bucket(Shading::Lit, 0),
-            bucket(Shading::Lit, 0),
-            bucket(Shading::Lit, 1),
-            bucket(Shading::Unlit, 1),
-            bucket(Shading::Unlit, 1),
-        ];
+    fn calls_follow_runs_of_pipeline_and_page_and_skip_empty_draws() {
+        let draws = [draw(1, 0), draw(1, 0), draw(1, 1), draw(2, 1), draw(2, 1)];
         let visible = [4, 0, 2, 0, 7];
-        // One multi-draw call per run with drawn buckets; the empty run draws nothing.
+        // One multi-draw call per run with drawn draws; the empty run draws nothing.
         assert_eq!(
-            calls(&buckets, &visible, true),
+            calls(&draws, &visible, true),
             vec![(0, 0, 0, 2, 1), (1, 2, 2, 3, 1), (2, 3, 4, 5, 1)]
         );
-        // One draw per drawn bucket.
+        // One call per drawn draw.
         assert_eq!(
-            calls(&buckets, &visible, false),
+            calls(&draws, &visible, false),
             vec![(0, 0, 0, 1, 1), (1, 2, 2, 3, 1), (2, 3, 4, 5, 1)]
         );
-        assert!(calls(&buckets, &[0; 5], true).is_empty());
+        assert!(calls(&draws, &[0; 5], true).is_empty());
     }
 
     #[test]
     fn a_run_longer_than_one_block_splits_into_calls() {
         let per_call = sizes::MULTI_DRAW_RECORDS as usize;
-        let buckets = vec![bucket(Shading::Lit, 0); per_call + 3];
+        let draws = vec![draw(1, 0); per_call + 3];
         let visible = vec![1; per_call + 3];
-        let found = calls(&buckets, &visible, true);
+        let found = calls(&draws, &visible, true);
         assert_eq!(found.len(), 2);
         assert_eq!(found[0], (0, 0, 0, per_call, per_call as u32));
         assert_eq!(found[1], (1, 0, per_call, per_call + 3, 3));

@@ -8,9 +8,13 @@
 //! matrix buffer, at `base + row`, where scene slots come first and each batch follows at its
 //! base. A bucket is one pipeline, mesh and material. Each drawable source belongs to one bucket;
 //! the rest are hidden. A bucket owns a slice of the compacted instance buffer, as large as the
-//! number of sources it has, and one indexed indirect draw. The culling shader appends each
-//! visible source to its bucket's slice and counts it in the bucket's draw, and the bundle draws
-//! every bucket with its slice bound at vertex slot 1, so the draws' first instance stays 0.
+//! number of sources it has, and one indexed indirect draw per part of its mesh. The culling
+//! shader appends each visible source to its bucket's slice and counts it in each of the bucket's
+//! draws, and the bundle draws every bucket with its slice bound at vertex slot 1, so the draws'
+//! first instance stays 0.
+//!
+//! A pipeline is one shading and one vertex format, and the meshes of one vertex format share
+//! mesh pages, so buckets sorted by pipeline and page draw with few changes of state.
 //!
 //! Buckets change only with the scene's structure: objects created or destroyed, meshes or
 //! materials changed, batches created or destroyed. The caller says when that happened; the
@@ -41,16 +45,17 @@ use null3d_gpu::drawlist::{
 };
 
 use crate::frame::{
-    FrameBuilder, FrameInput, HIDDEN, PageUploads, ParityLists, RecordError, SceneSettings,
-    SceneTargets, UploadArena, address, bucket_of, collect_bucket_keys, drawn_rows,
-    floats_as_bytes, grown_size, words_as_bytes,
+    FrameBuilder, FrameInput, HIDDEN, MeshBuffers, ParityLists, PipelineKey, PipelineTable,
+    RecordError, SceneSettings, SceneTargets, UploadArena, address, bucket_of, collect_bucket_keys,
+    drawn_rows, floats_as_bytes, grown_size, words_as_bytes,
 };
-use crate::materials::{MATERIAL_FLOATS, Shading};
+use crate::materials::MATERIAL_FLOATS;
 use crate::meshes::{MeshStorage, Packing};
 /// Bytes of the culling parameters: six planes, the source count and padding.
 const CULL_PARAMS_BYTES: u32 = 112;
-/// Bytes of one bucket record in the culling shader: base, material, radius, padding.
-const BUCKET_BYTES: u32 = 16;
+/// Bytes of one bucket record in the culling shader: base, material, radius, first draw, draw
+/// count, padding.
+const BUCKET_BYTES: u32 = 32;
 /// Bytes of one world matrix: three rows of four floats.
 const MATRIX_BYTES: u32 = (MATRIX_FLOATS * 4) as u32;
 /// Bytes of one indexed indirect draw.
@@ -121,14 +126,12 @@ mod ids {
     pub const BUCKETS: u32 = 6;
     pub const VISIBLE: u32 = 7;
     pub const INDIRECT: u32 = 8;
-    pub const VERTICES: u32 = 9;
-    pub const INDICES: u32 = 10;
+    /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
+    pub const PAGES: u32 = 16;
 
     pub const COLOR: u32 = 1;
     pub const DEPTH: u32 = 2;
 
-    pub const LIT: u32 = 1;
-    pub const UNLIT: u32 = 2;
     pub const CULL: u32 = 1;
 
     pub const FRAME_GROUP: u32 = 1;
@@ -143,9 +146,6 @@ pub struct RendererConfig {
     /// MSAA samples of the color and depth targets.
     pub samples: u32,
     pub max_materials: u32,
-    /// Bytes of the shared vertex buffer and of the shared index buffer.
-    pub vertex_bytes: u32,
-    pub index_bytes: u32,
     /// Words of each frame's draw list.
     pub draw_list_words: usize,
     /// The device's largest storage binding, at most [`MAX_USEFUL_BINDING_BYTES`]. It caps the
@@ -158,28 +158,37 @@ impl Default for RendererConfig {
         Self {
             samples: 4,
             max_materials: sizes::MAX_MATERIALS,
-            vertex_bytes: 16 * 1024 * 1024,
-            index_bytes: 4 * 1024 * 1024,
             draw_list_words: 16 * 1024,
             storage_binding_bytes: sizes::PORTABLE_STORAGE_BINDING_BYTES,
         }
     }
 }
 
-/// What makes a bucket: its shading (the pipeline), its engine mesh id and its material id.
-type BucketKey = (Shading, u32, u32);
+/// What makes a bucket, in draw order: its pipeline, the mesh page of its mesh's first part, and
+/// its engine mesh and material ids.
+type BucketKey = (PipelineKey, u32, u32, u32);
 
-/// One bucket: its draw, and its slice of the compacted instance buffer.
+/// One bucket: its pipeline, its slice of the compacted instance buffer, and its draws.
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct Bucket {
-    shading: Shading,
+    /// The id of its render pipeline.
+    pipeline: u32,
     material: u32,
     base: u32,
     capacity: u32,
+    /// Its draws, one per part of its mesh: `draws` of the layout's draws from `first_draw` on.
+    first_draw: u32,
+    draws: u32,
+    radius: f32,
+}
+
+/// One indexed indirect draw: a part of a bucket's mesh.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Draw {
+    page: u32,
     index_count: u32,
     first_index: u32,
     base_vertex: u32,
-    radius: f32,
 }
 
 /// The source layout and bucket tables, rebuilt when the structure changes.
@@ -189,6 +198,8 @@ struct Layout {
     /// Each batch's raw id and the first source of its rows.
     batch_bases: Vec<(u32, u32)>,
     buckets: Vec<Bucket>,
+    /// Every bucket's draws, bucket by bucket; a draw's place is its indirect draw's.
+    draws: Vec<Draw>,
     /// The bucket of every source, or `HIDDEN`.
     instance_buckets: Vec<u32>,
     /// The bucket of every scene slot whether it is shown or not, or `HIDDEN` for a slot with no
@@ -196,7 +207,7 @@ struct Layout {
     home_buckets: Vec<u32>,
     /// Each batch's bucket and the active row count its table entries hold, in `batch_bases` order.
     batch_rows: Vec<(u32, u32)>,
-    /// The per-frame reset of every bucket's indirect draw: instance counts at zero.
+    /// The per-frame reset of every indirect draw: instance counts at zero.
     indirect_template: Vec<u32>,
     /// Bucket records in the culling shader's layout.
     bucket_records: Vec<u32>,
@@ -222,8 +233,9 @@ impl Layout {
 pub struct GpuDrivenRenderer {
     config: RendererConfig,
     settings: SceneSettings,
-    /// How much of the one mesh page the shared buffers hold.
-    uploaded: PageUploads,
+    /// The mesh pages' vertex and index buffers.
+    meshes: MeshBuffers,
+    pipelines: PipelineTable,
     lists: ParityLists,
     layout: Layout,
     /// Sizes of the GPU buffers the layout decides, 0 before they exist, by buffer id.
@@ -237,13 +249,11 @@ impl GpuDrivenRenderer {
         Self {
             config,
             settings: SceneSettings::new(
-                MeshStorage::with_page_limit(
-                    Packing::SharedBuffers,
-                    u64::from(config.vertex_bytes.min(config.index_bytes)),
-                ),
+                MeshStorage::new(Packing::SharedBuffers),
                 config.max_materials,
             ),
-            uploaded: PageUploads::default(),
+            meshes: MeshBuffers::new(ids::PAGES),
+            pipelines: PipelineTable::default(),
             lists: ParityLists::new(config.draw_list_words),
             layout: Layout::default(),
             buffer_sizes: [0; 11],
@@ -278,7 +288,10 @@ impl GpuDrivenRenderer {
             self.rebuild_layout(input.scene, input.batches, parity)?;
         }
         arena.reset(self.upload_bound());
-        self.upload_meshes(list, arena)?;
+        let pages_remade = self
+            .meshes
+            .upload(list, arena, self.settings.meshes().pages())?;
+        self.pipelines.create_new(list, 0, self.config.samples)?;
         if self.settings.materials_mut().take_changed() {
             let parameters = self.settings.materials().parameters();
             let (at, bytes) = arena.push(floats_as_bytes(parameters))?;
@@ -288,6 +301,10 @@ impl GpuDrivenRenderer {
             self.apply_layout(list, arena)?;
         } else {
             self.update_membership(list, arena, input, parity)?;
+        }
+        // A bundle names the buffers it draws from, so new mesh buffers need it recorded again.
+        if upload_everything || pages_remade {
+            self.record_bundle(list)?;
         }
         self.upload_matrices(list, input, parity, upload_everything)?;
 
@@ -334,24 +351,6 @@ impl GpuDrivenRenderer {
     }
 
     fn create_fixed(&mut self, list: &mut DrawList) -> Result<(), RecordError> {
-        let samples = self.config.samples;
-        for (id, tmpl) in [
-            (ids::LIT, template::INSTANCED_LIT),
-            (ids::UNLIT, template::INSTANCED_UNLIT),
-        ] {
-            list.push(
-                Op::CreateRenderPipeline,
-                &[
-                    id,
-                    tmpl,
-                    0,
-                    format::CANVAS,
-                    format::DEPTH32_FLOAT,
-                    samples,
-                    0,
-                ],
-            )?;
-        }
         list.push(Op::CreateComputePipeline, &[ids::CULL, template::CULL, 0])?;
         let fixed = [
             (
@@ -368,16 +367,6 @@ impl GpuDrivenRenderer {
                 ids::MATERIALS,
                 self.config.max_materials.max(1) * 16,
                 usage::STORAGE | usage::COPY_DST,
-            ),
-            (
-                ids::VERTICES,
-                self.config.vertex_bytes,
-                usage::VERTEX | usage::COPY_DST,
-            ),
-            (
-                ids::INDICES,
-                self.config.index_bytes,
-                usage::INDEX | usage::COPY_DST,
             ),
         ];
         for (id, size, flags) in fixed {
@@ -405,28 +394,6 @@ impl GpuDrivenRenderer {
         Ok(())
     }
 
-    /// Uploads mesh data added since the last upload, from copies in the frame's arena.
-    fn upload_meshes(
-        &mut self,
-        list: &mut DrawList,
-        arena: &mut UploadArena,
-    ) -> Result<(), RecordError> {
-        let pages = self.settings.meshes().pages();
-        let Some(page) = pages.first() else {
-            return Ok(());
-        };
-        if pages.len() > 1 {
-            return Err(RecordError::MeshBuffersFull);
-        }
-        self.uploaded.upload(
-            list,
-            arena,
-            page,
-            [ids::VERTICES, ids::INDICES],
-            [self.config.vertex_bytes, self.config.index_bytes],
-        )
-    }
-
     /// Assigns every source to a bucket and lays the buckets out, from the frame's world state. It
     /// reuses the layout's tables and scratch space, which grow only with the scene.
     fn rebuild_layout(
@@ -450,8 +417,11 @@ impl GpuDrivenRenderer {
         layout.sources = sources;
 
         let settings = &self.settings;
+        let meshes = settings.meshes();
         let key_of = |mesh: u32, material: u32| -> Option<BucketKey> {
-            Some((settings.shading_of(mesh, material)?, mesh, material))
+            let pipeline = settings.pipeline_of(mesh, material)?;
+            let page = meshes.parts(meshes.mesh(mesh - 1)?).first()?.page;
+            Some((pipeline, page, mesh, material))
         };
         let world = scene.world(parity);
         let scene_key = |slot: usize| key_of(scene.meshes()[slot], scene.materials()[slot]);
@@ -465,22 +435,26 @@ impl GpuDrivenRenderer {
         );
 
         layout.buckets.clear();
+        layout.draws.clear();
         let mut base = 0;
-        for &((shading, mesh, material), count) in &layout.key_counts {
-            let slot = settings
-                .meshes()
-                .mesh(mesh - 1)
-                .expect("keys name known meshes");
+        for &((pipeline, _, mesh, material), count) in &layout.key_counts {
+            let slot = meshes.mesh(mesh - 1).expect("keys name known meshes");
+            let parts = meshes.parts(slot);
             layout.buckets.push(Bucket {
-                shading,
+                pipeline: self.pipelines.id(pipeline),
                 material,
                 base,
                 capacity: count,
-                index_count: slot.index_count,
-                first_index: slot.first_index,
-                base_vertex: slot.base_vertex,
+                first_draw: layout.draws.len() as u32,
+                draws: parts.len() as u32,
                 radius: slot.radius,
             });
+            layout.draws.extend(parts.iter().map(|part| Draw {
+                page: part.page,
+                index_count: part.index_count,
+                first_index: part.first_index,
+                base_vertex: part.base_vertex,
+            }));
             base += count;
         }
 
@@ -506,19 +480,25 @@ impl GpuDrivenRenderer {
         }
 
         layout.indirect_template.clear();
-        layout.bucket_records.clear();
-        for bucket in &layout.buckets {
+        for draw in &layout.draws {
             layout.indirect_template.extend_from_slice(&[
-                bucket.index_count,
+                draw.index_count,
                 0,
-                bucket.first_index,
-                bucket.base_vertex,
+                draw.first_index,
+                draw.base_vertex,
                 0,
             ]);
+        }
+        layout.bucket_records.clear();
+        for bucket in &layout.buckets {
             layout.bucket_records.extend_from_slice(&[
                 bucket.base,
                 bucket.material - 1,
                 bucket.radius.to_bits(),
+                bucket.first_draw,
+                bucket.draws,
+                0,
+                0,
                 0,
             ]);
         }
@@ -530,16 +510,12 @@ impl GpuDrivenRenderer {
     /// uploaded yet, the whole material table, the layout's tables, the frame's constants and the
     /// indirect draws.
     fn upload_bound(&self) -> usize {
-        let meshes = self
-            .settings
-            .meshes()
-            .pages()
-            .first()
-            .map_or(0, |page| self.uploaded.pending_bytes(page));
+        let meshes = self.meshes.pending_bytes(self.settings.meshes().pages());
         let materials = self.settings.materials().capacity() as usize * MATERIAL_FLOATS * 4;
-        let buckets = self.layout.buckets.len() * (BUCKET_BYTES + INDIRECT_BYTES) as usize;
+        let buckets = self.layout.buckets.len() * BUCKET_BYTES as usize;
+        let draws = self.layout.draws.len() * INDIRECT_BYTES as usize;
         let frame = (sizes::FRAME_UNIFORM_BYTES + CULL_PARAMS_BYTES) as usize;
-        meshes + materials + self.layout.sources as usize * 4 + buckets + frame
+        meshes + materials + self.layout.sources as usize * 4 + buckets + draws + frame
     }
 
     /// Rewrites the bucket table entries of the sources whose membership changed since the layout
@@ -606,7 +582,7 @@ impl GpuDrivenRenderer {
         Ok(())
     }
 
-    /// Sizes the layout's buffers, uploads its tables and re-records the bundle.
+    /// Sizes the layout's buffers and uploads its tables.
     fn apply_layout(
         &mut self,
         list: &mut DrawList,
@@ -614,6 +590,7 @@ impl GpuDrivenRenderer {
     ) -> Result<(), RecordError> {
         let layout = &self.layout;
         let buckets = layout.buckets.len() as u32;
+        let draws = layout.draws.len() as u32;
         let drawable = layout.buckets.iter().map(|b| b.capacity).sum::<u32>();
         let needed = [
             (
@@ -638,7 +615,7 @@ impl GpuDrivenRenderer {
             ),
             (
                 ids::INDIRECT,
-                buckets.max(1) * INDIRECT_BYTES,
+                draws.max(1) * INDIRECT_BYTES,
                 usage::INDIRECT | usage::STORAGE | usage::COPY_DST,
             ),
         ];
@@ -683,7 +660,13 @@ impl GpuDrivenRenderer {
             let (at, bytes) = arena.push(words_as_bytes(&layout.bucket_records))?;
             list.push(Op::WriteBuffer, &[ids::BUCKETS, 0, at, bytes])?;
         }
+        Ok(())
+    }
 
+    /// Records the bundle that draws every bucket: each of its draws, with its slice of the
+    /// compacted instance buffer, from its mesh page's buffers.
+    fn record_bundle(&self, list: &mut DrawList) -> Result<(), RecordError> {
+        let layout = &self.layout;
         list.push(
             Op::BeginBundle,
             &[
@@ -694,20 +677,11 @@ impl GpuDrivenRenderer {
             ],
         )?;
         list.push(Op::SetBindGroup, &[0, ids::FRAME_GROUP, 0])?;
-        list.push(Op::SetVertexBuffer, &[0, ids::VERTICES, 0, 0])?;
-        list.push(
-            Op::SetIndexBuffer,
-            &[ids::INDICES, index_format::UINT16, 0, 0],
-        )?;
-        let mut pipeline = None;
-        for (index, bucket) in layout.buckets.iter().enumerate() {
-            let wanted = match bucket.shading {
-                Shading::Lit => ids::LIT,
-                Shading::Unlit => ids::UNLIT,
-            };
-            if pipeline != Some(wanted) {
-                list.push(Op::SetPipeline, &[wanted])?;
-                pipeline = Some(wanted);
+        let (mut pipeline, mut page) = (None, None);
+        for bucket in &layout.buckets {
+            if pipeline != Some(bucket.pipeline) {
+                list.push(Op::SetPipeline, &[bucket.pipeline])?;
+                pipeline = Some(bucket.pipeline);
             }
             list.push(
                 Op::SetVertexBuffer,
@@ -718,10 +692,19 @@ impl GpuDrivenRenderer {
                     bucket.capacity.max(1) * sizes::INSTANCE_STRIDE,
                 ],
             )?;
-            list.push(
-                Op::DrawIndexedIndirect,
-                &[ids::INDIRECT, index as u32 * INDIRECT_BYTES],
-            )?;
+            for index in bucket.first_draw..bucket.first_draw + bucket.draws {
+                let draw = layout.draws[index as usize];
+                if page != Some(draw.page) {
+                    let (vertices, indices) = self.meshes.ids(draw.page);
+                    list.push(Op::SetVertexBuffer, &[0, vertices, 0, 0])?;
+                    list.push(Op::SetIndexBuffer, &[indices, index_format::UINT16, 0, 0])?;
+                    page = Some(draw.page);
+                }
+                list.push(
+                    Op::DrawIndexedIndirect,
+                    &[ids::INDIRECT, index * INDIRECT_BYTES],
+                )?;
+            }
         }
         list.push(Op::EndBundle, &[])?;
         Ok(())
@@ -822,7 +805,8 @@ impl FrameBuilder for GpuDrivenRenderer {
         self.canvas = (0, 0);
         self.buffer_sizes = [0; 11];
         self.layout.built = false;
-        self.uploaded = PageUploads::default();
+        self.meshes.forget();
+        self.pipelines.forget();
         self.settings.materials_mut().mark_changed();
     }
 

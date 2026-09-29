@@ -52,6 +52,11 @@ for (const mode of ENGINE_MODES) {
 		expect(result.inSketch).toEqual([
 			BAD_COLOR,
 			engineError('E1108', 'setActiveCount() got 11, above the limit of 10.'),
+			engineError(
+				'E1205',
+				'geometry.fromArrays() got the index 3 at indices[2], past the last of 3 vertices.',
+			),
+			engineError('E1205', 'geometry.fromArrays() got NaN at uvs[4].'),
 			engineError('E1108', 'the sketch asked for row 11 of 10.'),
 		]);
 		expect(result.framesAfterRestart).toBeGreaterThan(0);

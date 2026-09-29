@@ -53,6 +53,18 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 		switches: ['uploads=copy'],
 		reference: 'scene',
 	},
+	// Meshes from arrays in every vertex format, a mesh too big for 16-bit indices that splits into
+	// parts, and normals and tangents that the engine computes: on job workers in the threaded build,
+	// and on the page in the single-threaded build, which must compute the same values. WebGL2 lays
+	// out each vertex format in its own code, and must draw the WebGPU image.
+	{
+		name: 'vertex-formats',
+		sketch: 'tests/pages/sketches/vertex-formats-sketch.ts',
+		hold: 0,
+		size: [400, 300],
+		modes: ['pipelined', 'single-threaded'],
+		sameOnEveryTier: true,
+	},
 	// The benchmark scenes' hold frames, which the parity command also compares with three.js.
 	// S2's trees cover under 1% of its frame, so other devices may differ in fewer of its pixels.
 	...PARITY_SCENES.map(

@@ -340,6 +340,7 @@ function drawList(): TestMemory {
 			depth,
 			samples,
 			G.STATE_CULL_NONE,
+			0,
 		);
 	pipeline(PIPELINE.depth, TEMPLATE_SOLID, G.FORMAT_NONE, G.FORMAT_DEPTH32_FLOAT);
 	pipeline(PIPELINE.rgba, TEMPLATE_SOLID, G.FORMAT_RGBA8_UNORM, G.FORMAT_NONE);

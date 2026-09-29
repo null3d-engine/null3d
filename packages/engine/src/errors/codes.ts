@@ -98,6 +98,13 @@ const DOCS = {
 		example: 'E1204: setBackground() got the color "blue-ish".',
 		since: '0.1',
 	},
+	E1205: {
+		title: 'Invalid mesh arrays',
+		cause:
+			'geometry.fromArrays() received arrays that make no mesh. An array can have the wrong length for the vertex count, an index can name no vertex, or a value can be NaN or Infinity. Normals can also be missing, or both given and computed.',
+		example: 'E1205: geometry.fromArrays() got 9 numbers in normals for 4 vertices, not 12.',
+		since: '0.1',
+	},
 	E1301: {
 		title: 'No usable GPU path',
 		cause: 'The browser offers neither WebGPU nor WebGL2 for the way the engine was asked to draw.',
@@ -176,7 +183,7 @@ const DOCS = {
 	E1501: {
 		title: 'Render space full',
 		cause:
-			'The scene needs more room than the renderer set aside. The full part is the draw list, the mesh buffers, the material table, the upload space or the culling pass. On WebGPU the culling pass covers 2,097,152 objects and instance rows on every device, and more on devices with larger GPU buffers. On WebGL2 the number follows the largest texture the device allows. The number for the device is in engine.capabilities.maxInstances.',
+			'The scene needs more room than the renderer set aside. The full part is the draw list, the material table, the upload space or the culling pass. On WebGPU the culling pass covers 2,097,152 objects and instance rows on every device, and more on devices with larger GPU buffers. On WebGL2 the number follows the largest texture the device allows. The number for the device is in engine.capabilities.maxInstances.',
 		example: 'E1501: materials.standard() failed: the material table is full.',
 		since: '0.1',
 	},
