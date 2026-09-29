@@ -53,6 +53,15 @@ The shader compiler is the shader crate built as a WebAssembly module. Build too
 - The shader composer rewrites each file before naga reads it, and imported names get longer. Its own error reports count columns in that copy, so the build maps each place back to the original file.
 - `bun run test:shader-compiler` runs the shader crate's build tests with `NULL3D_SHADER_COMPILER` set. Each build then runs again through the module in Bun, and both results must match. Plain `cargo test` skips that step, so a module built from older code cannot fail it.
 
+## Depth on WebGL2
+
+- Draw lists and shaders keep WebGPU's reversed depth. Each GLSL vertex shader maps its clip depth through one uniform, and the WebGL2 backend sets it once per program for its depth mode (`gpu/webgl2/depth.ts`). One set of GLSL programs then serves every mode.
+- The `reversed` mode sets a clip range from 0 to w with `EXT_clip_control`. The `reversed-gl` mode moves depth into GL's range as 2z - w, where the vertex shader rounds far depths away. The `standard` mode writes w - 2z, and the backend turns clear values and viewport depth ranges around to match.
+- Depth textures hold WebGPU's depth values in `reversed` and `reversed-gl`, so shaders that read depth work the same on both paths. In `standard`, they hold 1 minus WebGPU's value.
+- A context that answers no `EXT_clip_control` draws `reversed` as `reversed-gl`, and never fails to start. A context lost while the backend starts answers no extension, and a failed start would end the engine's recovery from that loss.
+- The depth precision page counts the fighting pixels of surfaces 1 cm apart from 1 m to 10 km. On the Mac, Chrome, Safari and Brave give the same counts, because all three draw WebGL2 through ANGLE on Metal.
+- Firefox 156 on the Mac has no `EXT_clip_control`, so it draws `reversed-gl`. That fights in fewer pixels than `standard` there, as it does in every Mac browser.
+
 ## Threads and shared memory
 
 - A job worker without work blocks its thread in a wait (hard rule 5). When Safari stops a thread inside such a wait, it keeps the thread's shared memory until the tab closes, even across reloads. The engine therefore ends the job workers' loops before it stops them, and `destroy()` resolves once they have stopped.
@@ -63,4 +72,5 @@ The shader compiler is the shader crate built as a WebAssembly module. Build too
 
 - Safari 26 drops a whole submit if its commands hold two or more copies from one buffer that was mapped when they were recorded. WebGPU allows that, and Chrome and Firefox accept it. The staging ring therefore records a frame's copies after it unmaps the buffer, just before the frame's next command.
 - The uploads test page reports each frame's WebGPU errors, which show such a failure.
+- SwiftShader, the software GPU of the CI machines, loses depth precision past 100 m even in reversed depth from 0 to 1. The depth precision scene fights there at 250 m, 4 km and 10 km, on WebGPU too. The image tests therefore expect no fighting in reversed depth only on a real GPU.
 - Work around a browser's fault with an order or a call that is valid everywhere, as the staging ring does. Where browsers differ in speed, time the choices on the device, as the upload routes do. When neither works, detect the fault with a feature test, never from the user agent (hard rule 14).

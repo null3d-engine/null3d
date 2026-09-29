@@ -42,6 +42,7 @@ import {
 } from '../../bench/lib/startup.ts';
 import { MEASURE_SECONDS, WARMUP_SECONDS } from '../../bench/scenes/spec.ts';
 import { IMAGE_RUNS } from '../image/manifest.ts';
+import { distanceLabel, PRECISION, type PrecisionFacts } from '../pages/lib/depth-precision.ts';
 import {
 	ENGINE_MODES,
 	type EngineMode,
@@ -306,6 +307,19 @@ export function benchPlan({
 	).flat();
 }
 
+/** The image test manifest's depth precision tests, by name. */
+const isDepthTest = (test: string) =>
+	test === 'depth-precision' || test.startsWith('depth-precision-');
+
+/**
+ * The runs of the image test manifest's depth precision tests: the scene on each GPU path in its own
+ * depth mode, then on WebGL2 in each mode that ?depth= forces. The run's summary gives each run's
+ * fighting pixels by distance.
+ */
+export function depthPlan(): PlanItem<Check>[] {
+	return IMAGE_RUNS.filter((run) => isDepthTest(run.test)).map(imageItem);
+}
+
 /** The shared memory maximums that the memory plan tries, in MiB, from low to high. */
 export const MEMORY_MAXIMUMS_MIB = [256, 512, 1024, 2048, 4096] as const;
 /** Loads of the engine page at each maximum in the memory plan. */
@@ -390,6 +404,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	parity: parityPlan,
 	bench: benchPlan,
 	memory: memoryPlan,
+	depth: depthPlan,
 	startup: startupPlan,
 };
 
@@ -797,5 +812,46 @@ export function memorySummary(
 			? `The largest maximum that loaded ${largest[1].loads} of ${largest[1].loads} times: ${largest[0]} MiB.`
 			: 'No maximum loaded every time.',
 	);
+	return lines.join('\n');
+}
+
+/** A share of a tile's pixels as a percentage, or 0 when none fight. */
+const shareText = ({ fighting, pixels }: { fighting: number; pixels: number }) =>
+	fighting === 0 ? '0' : `${(100 * Math.min(1, fighting / pixels)).toFixed(1)}%`;
+
+/**
+ * The fighting pixels of each depth precision run as a Markdown table: the depth that each run drew,
+ * its fighting pixels in all, and the share of each distance's pixels that fight. Undefined when the
+ * plan has no depth precision runs.
+ */
+export function depthSummary(
+	items: readonly PlanItem<Check>[],
+	resultOf: (id: string) => ItemResult | undefined,
+): string | undefined {
+	const runs = items.flatMap(({ id, check }) =>
+		check.kind === 'image' && isDepthTest(check.run.test) ? [{ id, run: check.run }] : [],
+	);
+	if (runs.length === 0) return undefined;
+	const distances = PRECISION.distances.map(distanceLabel);
+	const lines = [
+		`| Test | Tier | Depth drawn | Fighting pixels | ${distances.join(' | ')} |`,
+		`| --- | --- | --- | --- | ${distances.map(() => '---').join(' | ')} |`,
+	];
+	const empty = distances.map(() => '').join(' | ');
+	for (const { id, run } of runs) {
+		const result = resultOf(id);
+		const where = `${run.test} | ${run.tier}`;
+		if (!result?.ok) {
+			lines.push(`| ${where} | ${result ? failureText(result) : NO_RESULT} | | ${empty} |`);
+			continue;
+		}
+		const facts = result as ItemResult & Partial<PrecisionFacts>;
+		// A browser without EXT_clip_control draws reversed depth in WebGL2's range instead.
+		const asked = /[?&]depth=([^&]+)/.exec(run.path)?.[1] ?? 'reversed';
+		const fellBack = asked === 'reversed' && result.depth !== asked;
+		const drawn = `${String(result.depth)}${fellBack ? ' (no EXT_clip_control)' : ''}`;
+		const shares = (facts.tiles ?? []).map(shareText).join(' | ');
+		lines.push(`| ${where} | ${drawn} | ${facts.fighting ?? 'unknown'} | ${shares || empty} |`);
+	}
 	return lines.join('\n');
 }

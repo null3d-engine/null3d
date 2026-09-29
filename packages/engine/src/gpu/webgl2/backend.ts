@@ -9,8 +9,13 @@
 // The backend flips viewport and scissor rectangles, which the draw list gives from the top, so each
 // covers the same part of the image as on WebGPU. Writes, uploads and copies address texels as
 // stored, the same on both paths.
+//
+// Draw lists give depth as WebGPU's reversed depth. The backend draws it in its depth mode, and
+// turns clear values and viewport depth ranges around for standard depth.
 
 import * as G from '../../generated/gpu';
+import type { DepthMode } from '../../page/switches';
+import { type DepthSetup, setDepthMode } from './depth';
 import {
 	createProgram,
 	engineTemplates,
@@ -166,6 +171,7 @@ export class WebGL2Backend {
 	private readonly anisotropic: EXT_texture_filter_anisotropic | null;
 	private readonly maxAnisotropy: number;
 	private readonly maxSamples: number;
+	private readonly depth: DepthSetup;
 	/** A vertex array with no attributes, for draws whose vertex shaders make their vertices. */
 	private shaderVertices: WebGLVertexArrayObject | null = null;
 	/** The framebuffer through which copies read their source. */
@@ -210,9 +216,9 @@ export class WebGL2Backend {
 	private depthTest = false;
 	private depthMask = true;
 	// Fractions passed to WebGL become new number objects, so the clear values and the depth range
-	// are set only when they change.
+	// are set only when they change. The depth values are the draw list's, before any turn.
 	private readonly clearColor = [0, 0, 0, 0];
-	private clearDepth = 1;
+	private clearDepth: number;
 	private readonly viewport = [0, 0, 0, 0];
 	private depthNear = 0;
 	private depthFar = 1;
@@ -234,12 +240,13 @@ export class WebGL2Backend {
 
 	/**
 	 * `sharedUploads` is false where WebGL refuses views on shared memory, so uploads and multi-draw
-	 * arrays go through copies.
+	 * arrays go through copies. `depthMode` is how the backend stores depth.
 	 */
 	constructor(
 		private readonly gl: WebGL2RenderingContext,
 		private readonly canvas: OffscreenCanvas | HTMLCanvasElement,
 		private readonly sharedUploads: boolean,
+		depthMode: DepthMode,
 	) {
 		this.multiDraw = gl.getExtension('WEBGL_multi_draw');
 		gl.getExtension('KHR_parallel_shader_compile');
@@ -259,8 +266,9 @@ export class WebGL2Backend {
 		(this.minFilters[G.FILTER_LINEAR] as number[])[G.FILTER_NEAREST] = gl.LINEAR_MIPMAP_NEAREST;
 		(this.minFilters[G.FILTER_LINEAR] as number[])[G.FILTER_LINEAR] = gl.LINEAR_MIPMAP_LINEAR;
 		this.indexType = gl.UNSIGNED_SHORT;
-		// Depth is reversed on both GPU paths: 1 at the near plane, 0 at the far plane.
-		gl.depthFunc(gl.GREATER);
+		this.depth = setDepthMode(gl, depthMode);
+		// GL clears depth to 1 until told otherwise, which is the draw list's 0 in standard depth.
+		this.clearDepth = this.depth.standard ? 0 : 1;
 		// Texel rows in engine memory are tightly packed, whatever their width.
 		gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
 	}
@@ -978,7 +986,7 @@ export class WebGL2Backend {
 			}
 			if (this.clearDepth !== floats[a + 7]) {
 				this.clearDepth = floats[a + 7] as number;
-				gl.clearDepth(this.clearDepth);
+				gl.clearDepth(this.depth.standard ? 1 - this.clearDepth : this.clearDepth);
 			}
 			clear |= gl.DEPTH_BUFFER_BIT;
 		}
@@ -1038,7 +1046,8 @@ export class WebGL2Backend {
 
 	private setDepthRange(near: number, far: number): void {
 		if (this.depthNear === near && this.depthFar === far) return;
-		this.gl.depthRange(near, far);
+		if (this.depth.standard) this.gl.depthRange(1 - far, 1 - near);
+		else this.gl.depthRange(near, far);
 		this.depthNear = near;
 		this.depthFar = far;
 	}
@@ -1067,7 +1076,7 @@ export class WebGL2Backend {
 	private setPipeline(p: Program): void {
 		const gl = this.gl;
 		if (!p.ready) {
-			prepareProgram(gl, p);
+			prepareProgram(gl, p, this.depth);
 			this.program = p.program;
 		}
 		if (this.program !== p.program) {

@@ -36,12 +36,12 @@ export interface GlslStage {
 }
 
 /**
- * The shaders of one render pipeline, to link into one WebGL2 program. The vertex shader moves
- * depth into GL's clip range and keeps GL's row order: the canvas shows the image the right way
- * up, a pixel read returns the bottom row first, and front faces wind counter-clockwise, as on
- * WebGPU. A vertex shader that reads the instance or draw index also declares the
- * uniform `naga_vs_first_instance`, which the backend leaves unset because WebGL2 draws have no
- * first instance.
+ * The shaders of one render pipeline, to link into one WebGL2 program. The vertex shader maps
+ * depth through the uniform that `DEPTH_MAPPING_UNIFORM` names, and keeps GL's row order: the
+ * canvas shows the image the right way up, a pixel read returns the bottom row first, and front
+ * faces wind counter-clockwise, as on WebGPU. A vertex shader that reads the instance or draw
+ * index also declares the uniform `naga_vs_first_instance`, which the backend leaves unset
+ * because WebGL2 draws have no first instance.
  */
 export interface GlslProgram {
 	readonly vertex: GlslStage;
@@ -67,6 +67,13 @@ export interface ShaderVariant<Pipeline extends string = string> {
 	/** GLSL programs for WebGL2 by pipeline, or null when the variant does not target WebGL2. */
 	readonly glsl: Readonly<Record<Pipeline, GlslProgram>> | null;
 }
+
+/**
+ * The uniform through which each GLSL vertex shader maps WebGPU's clip depth: the shader
+ * writes `z * mapping.x + w * mapping.y` as its clip depth, where `mapping` is this vec2.
+ * The WebGL2 backend sets it once per program, for the depth mode it draws with.
+ */
+export const DEPTH_MAPPING_UNIFORM = 'null3d_depth_mapping';
 
 /** The variants of the `cull` shader, by variant name. */
 export const CULL_SHADER: {
@@ -170,6 +177,7 @@ export const MESH_SHADER: {
 			lit: {
 				vertex: {
 					source: `#version 300 es
+uniform vec2 null3d_depth_mapping;
 
 precision highp float;
 precision highp int;
@@ -300,7 +308,7 @@ void main() {
     gl_Position = _e45.clip;
     _vs2fs_location0 = _e45.normal;
     _vs2fs_location1 = _e45.material;
-    gl_Position.z = gl_Position.z * 2.0 - gl_Position.w;
+    gl_Position.z = gl_Position.z * null3d_depth_mapping.x + gl_Position.w * null3d_depth_mapping.y;
     return;
 }
 `,
@@ -442,6 +450,7 @@ void main() {
 			unlit: {
 				vertex: {
 					source: `#version 300 es
+uniform vec2 null3d_depth_mapping;
 
 precision highp float;
 precision highp int;
@@ -572,7 +581,7 @@ void main() {
     gl_Position = _e45.clip;
     _vs2fs_location0 = _e45.normal;
     _vs2fs_location1 = _e45.material;
-    gl_Position.z = gl_Position.z * 2.0 - gl_Position.w;
+    gl_Position.z = gl_Position.z * null3d_depth_mapping.x + gl_Position.w * null3d_depth_mapping.y;
     return;
 }
 `,
@@ -708,6 +717,7 @@ void main() {
 				vertex: {
 					source: `#version 300 es
 #extension GL_ANGLE_multi_draw : require
+uniform vec2 null3d_depth_mapping;
 
 precision highp float;
 precision highp int;
@@ -839,7 +849,7 @@ void main() {
     gl_Position = _e46.clip;
     _vs2fs_location0 = _e46.normal;
     _vs2fs_location1 = _e46.material;
-    gl_Position.z = gl_Position.z * 2.0 - gl_Position.w;
+    gl_Position.z = gl_Position.z * null3d_depth_mapping.x + gl_Position.w * null3d_depth_mapping.y;
     return;
 }
 `,
@@ -982,6 +992,7 @@ void main() {
 				vertex: {
 					source: `#version 300 es
 #extension GL_ANGLE_multi_draw : require
+uniform vec2 null3d_depth_mapping;
 
 precision highp float;
 precision highp int;
@@ -1113,7 +1124,7 @@ void main() {
     gl_Position = _e46.clip;
     _vs2fs_location0 = _e46.normal;
     _vs2fs_location1 = _e46.material;
-    gl_Position.z = gl_Position.z * 2.0 - gl_Position.w;
+    gl_Position.z = gl_Position.z * null3d_depth_mapping.x + gl_Position.w * null3d_depth_mapping.y;
     return;
 }
 `,
@@ -1418,6 +1429,7 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
 			main: {
 				vertex: {
 					source: `#version 300 es
+uniform vec2 null3d_depth_mapping;
 
 precision highp float;
 precision highp int;
@@ -1466,7 +1478,7 @@ void main() {
     gl_Position = _e26.position;
     _vs2fs_location0 = _e26.uv;
     _vs2fs_location1 = _e26.material;
-    gl_Position.z = gl_Position.z * 2.0 - gl_Position.w;
+    gl_Position.z = gl_Position.z * null3d_depth_mapping.x + gl_Position.w * null3d_depth_mapping.y;
     return;
 }
 `,
@@ -1542,6 +1554,7 @@ void main() {
 				vertex: {
 					source: `#version 300 es
 #extension GL_ANGLE_multi_draw : require
+uniform vec2 null3d_depth_mapping;
 
 precision highp float;
 precision highp int;
@@ -1594,7 +1607,7 @@ void main() {
     gl_Position = _e34.position;
     _vs2fs_location0 = _e34.uv;
     _vs2fs_location1 = _e34.material;
-    gl_Position.z = gl_Position.z * 2.0 - gl_Position.w;
+    gl_Position.z = gl_Position.z * null3d_depth_mapping.x + gl_Position.w * null3d_depth_mapping.y;
     return;
 }
 `,
@@ -1720,6 +1733,7 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
 			main: {
 				vertex: {
 					source: `#version 300 es
+uniform vec2 null3d_depth_mapping;
 
 precision highp float;
 precision highp int;
@@ -1762,7 +1776,7 @@ void main() {
     gl_Position = _e15.position;
     _vs2fs_location0 = _e15.uv;
     _vs2fs_location1 = _e15.material;
-    gl_Position.z = gl_Position.z * 2.0 - gl_Position.w;
+    gl_Position.z = gl_Position.z * null3d_depth_mapping.x + gl_Position.w * null3d_depth_mapping.y;
     return;
 }
 `,
@@ -1837,6 +1851,7 @@ export const TEST_TEXTURES_SHADER: {
 			sample: {
 				vertex: {
 					source: `#version 300 es
+uniform vec2 null3d_depth_mapping;
 
 precision highp float;
 precision highp int;
@@ -1889,7 +1904,7 @@ void main() {
     gl_Position = _e37.clip;
     _vs2fs_location0 = _e37.uv;
     _vs2fs_location1 = _e37.corner;
-    gl_Position.z = gl_Position.z * 2.0 - gl_Position.w;
+    gl_Position.z = gl_Position.z * null3d_depth_mapping.x + gl_Position.w * null3d_depth_mapping.y;
     return;
 }
 `,
@@ -2028,6 +2043,7 @@ void main() {
 			solid: {
 				vertex: {
 					source: `#version 300 es
+uniform vec2 null3d_depth_mapping;
 
 precision highp float;
 precision highp int;
@@ -2080,7 +2096,7 @@ void main() {
     gl_Position = _e37.clip;
     _vs2fs_location0 = _e37.uv;
     _vs2fs_location1 = _e37.corner;
-    gl_Position.z = gl_Position.z * 2.0 - gl_Position.w;
+    gl_Position.z = gl_Position.z * null3d_depth_mapping.x + gl_Position.w * null3d_depth_mapping.y;
     return;
 }
 `,

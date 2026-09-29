@@ -5,7 +5,7 @@ This guide covers the checks and benchmarks on phones, tablets and the Mac's bro
 ## The runner
 
 - The device runner, `tests/real-browsers.ts`, runs a plan of test or benchmark pages in browsers that Playwright cannot drive. Each browser loads the runner page, which opens each page of the plan in a frame and posts its result.
-- The plans are `checks` (the default), `parity`, `bench`, `memory`, `scale` and `startup`. `bun run devices` runs the checks on the phone and on the iPad.
+- The plans are `checks` (the default), `parity`, `bench`, `memory`, `depth`, `scale` and `startup`. `bun run devices` runs the checks on the phone and on the iPad.
 - The runner page fills in its run and its own name where a plan item's address has `{run}` and `{runner}`. The startup plan uses them, so each browser loads under addresses of its own.
 - Run one runner at a time. All runs share one file, `target/runs/current.json`, which tells waiting runner pages which run to start. A second runner can replace it before a waiting page reads it, and that page then waits forever.
 - A runner page that waits on the local network reloads itself before each run after its first. No run then inherits memory that an earlier run kept.
@@ -49,6 +49,14 @@ To collect the numbers, rest each device first and close its other tabs:
 - Chrome on the phone: `bun run bench:startup --android`.
 - Brave on the phone: `bun tests/real-browsers.ts --plan startup --android brave --shields on`. Then turn Shields off for the site and run it again with `--shields off`.
 - Safari and Brave on the iPad: open both runner pages, then run `bun tests/real-browsers.ts --plan startup --lan ipad-safari,ipad-brave --shields on`. Then turn Brave's Shields off and run `bun tests/real-browsers.ts --plan startup --lan ipad-brave --shields off`.
+
+## The depth plan
+
+- The `depth` plan runs the depth precision tests of the image test manifest. Their scene holds two surfaces 1 cm apart at each of 11 distances from 1 m to 10 km. The plan draws it on each GPU path in the device's own depth mode, then on WebGL2 with `?depth=standard`, `?depth=reversed-gl` and `?depth=reversed`.
+- The run's summary gives each page's fighting pixels, where the farther surface shows through: the count over all distances, and the share at each distance.
+- The fighting pixels past 40 m never fail a page. The page paints them as the nearer surface, so its image compares with the references as every manifest test's does. The manifest's expectations fail a page that drew another depth mode than it asked for, lost ties, or fought within 40 m. A browser without `EXT_clip_control` draws `?depth=reversed` as `reversed-gl`, which the summary notes.
+- The phone and the iPad run it from the main checkout: `bun tests/real-browsers.ts --plan depth --allow-no-webgpu --android chrome,brave --lan ipad-safari,ipad-brave --shields on`. The Mac's four browsers run it with `bun tests/real-browsers.ts --plan depth Safari Firefox "Google Chrome" "Brave Browser"`.
+- Each tile's count depends on how its surfaces' corner depths round, so a farther tile can fight less than a nearer one. Compare the modes by their counts over all distances.
 
 ## Browser apps on the Mac
 
