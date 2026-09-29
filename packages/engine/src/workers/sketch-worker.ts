@@ -83,7 +83,8 @@ self.onmessage = async (event: MessageEvent<SketchWorkerMessage>) => {
 				drawing = new Drawing(
 					await create(),
 					create,
-					(renderer) => runDirectLoop(sketch, renderer, message.control, message.metrics),
+					(renderer) =>
+						runDirectLoop(sketch, renderer, message.control, message.metrics, setup.fps),
 					controlSlots,
 					(reason) => reply({ type: 'lost', role: 'sketch', reason }),
 				);

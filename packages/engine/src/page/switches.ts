@@ -1,6 +1,6 @@
 // URL switches that let one device exercise every engine path: ?gpu=, ?threads=off, ?render=main,
-// ?latency=, ?uploads=copy, ?preset=, ?fps= and ?hold. Two more set what the benchmarks vary:
-// ?jobs= for the job worker count and ?memory= for the shared memory's maximum.
+// ?latency= and ?uploads=copy. Three more set what the benchmarks vary: ?fps= for a fixed frame
+// rate, ?jobs= for the job worker count and ?memory= for the shared memory's maximum.
 
 export type GpuSwitch = 'auto' | 'webgpu' | 'compat' | 'webgl2';
 /**
@@ -11,7 +11,6 @@ export type GpuSwitch = 'auto' | 'webgpu' | 'compat' | 'webgl2';
  * @category api/engine
  */
 export type LatencyMode = 'pipelined' | 'low';
-export type PresetSwitch = 'auto' | 'low' | 'medium' | 'high' | 'ultra';
 
 export interface Switches {
 	gpu: GpuSwitch;
@@ -22,11 +21,11 @@ export interface Switches {
 	latency: LatencyMode | undefined;
 	/** True when ?uploads=copy makes the WebGL2 path copy uploads out of shared memory first. */
 	copyUploads: boolean;
-	preset: PresetSwitch | undefined;
-	/** A fixed frame rate from ?fps=, or undefined for the display rate. */
+	/**
+	 * The frame rate from ?fps= that the thread that draws holds, up to the display's rate, or
+	 * undefined to draw at the display's rate.
+	 */
 	fps: number | undefined;
-	/** Hold mode: one frame at a fixed time, for image tests. */
-	hold: boolean;
 	/** The job workers that ?jobs= asks for, or undefined for the count from the device's cores. */
 	jobs: number | undefined;
 	/** The shared memory's declared maximum in MiB from ?memory=, or undefined for the default. */
@@ -62,9 +61,7 @@ export function parseSwitches(search: string): Switches {
 		renderOnMain: params.get('render') === 'main',
 		latency: oneOf(params.get('latency'), ['pipelined', 'low'] as const),
 		copyUploads: params.get('uploads') === 'copy',
-		preset: oneOf(params.get('preset'), ['low', 'medium', 'high', 'ultra'] as const),
 		fps: positive(params.get('fps')),
-		hold: params.has('hold'),
 		jobs: whole(params.get('jobs'), MAX_JOB_WORKERS),
 		memoryMiB: whole(params.get('memory')),
 	};

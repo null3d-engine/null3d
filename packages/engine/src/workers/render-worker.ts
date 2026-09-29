@@ -29,7 +29,7 @@ self.onmessage = async (event: MessageEvent<RenderWorkerInit | RendererRequest>)
 			drawing = new Drawing(
 				await create(),
 				create,
-				(renderer) => runRenderLoop(renderer, message.control, message.metrics),
+				(renderer) => runRenderLoop(renderer, message.control, message.metrics, message.fps),
 				slots,
 				(reason) => reply({ type: 'lost', role: 'render', reason }),
 			);

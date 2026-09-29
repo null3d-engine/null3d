@@ -47,13 +47,21 @@ interface Spread {
 	median: number;
 }
 
+/** Frames that the sketch computed and the renderer drew, and frames presented, in a measurement. */
+export interface FrameCounts {
+	frames: number;
+	presented: number;
+}
+
 export interface EngineResult {
 	mode: { build: string; latency: string; renderThread: string; jobWorkers: number };
 	capabilities: { tier: string; threaded: boolean; features: string[] };
+	report: { crossOriginIsolated: boolean };
 	stats: {
 		frames: number;
 		cpuMs: Spread;
 		intervalMs: Spread;
+		presentedFps: number;
 		threads: Record<string, { busyMs: Spread }>;
 		gpuMs: Spread | null;
 		load: {
@@ -72,6 +80,8 @@ export interface EngineResult {
 	count: { updates: number; largestStep: number };
 	stages: string[];
 	messages: string[];
+	/** With `?pause`: the frames drawn while the sketch was paused, and after it resumed. */
+	pause?: { paused: FrameCounts; resumed: FrameCounts };
 }
 
 /** Slower than this median frame interval means the loop is not keeping up with the display. */
@@ -115,7 +125,10 @@ export function engineProblems(result: EngineResult, mode: EngineMode, tier: str
 	if (stats.frames <= MIN_FRAMES) problems.push(`measured only ${stats.frames} frames`);
 	if (stats.intervalMs.median >= MAX_MEDIAN_INTERVAL_MS)
 		problems.push(`median frame interval ${stats.intervalMs.median} ms`);
-	if (!(stats.cpuMs.median > 0)) problems.push('no CPU time was recorded');
+	// A page without cross-origin isolation gets a coarse timer (0.1 ms steps in Chrome), and an
+	// empty frame can take less than one step.
+	if (result.report.crossOriginIsolated && !(stats.cpuMs.median > 0))
+		problems.push('no CPU time was recorded');
 	for (const thread of expectedThreads(mode)) {
 		if (!((stats.threads[thread]?.busyMs.count ?? 0) > 0))
 			problems.push(`no frame records from the ${thread} thread`);

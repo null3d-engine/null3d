@@ -1,10 +1,12 @@
 // The render loop for a thread that owns the canvas and runs no sketch code: the render worker in
 // pipelined mode, or the page's main thread with ?render=main. Inside its own frame callback it takes
 // the newest published frame, applies a pending resize, draws, and tells the sketch worker it may
-// compute the next frame.
+// compute the next frame. A callback that finds no new frame, or that comes before the frame's turn
+// under ?fps=, draws nothing.
 
 import { controlViews, Slot } from '../shared/control';
 import { FrameRecorder, Role } from '../shared/metrics';
+import { FramePacer } from './pacer';
 import { RefreshMeter } from './refresh';
 import type { FrameInput, Renderer } from './renderer';
 
@@ -29,26 +31,41 @@ export function emptySceneInput(frame: number, out?: ReusableInput): FrameInput 
 	return input;
 }
 
-/** Resize and presentation bookkeeping for the thread that owns the canvas. */
+/** Resize, pacing and presentation bookkeeping for the thread that owns the canvas. */
 export class Presenter {
 	private resizeSerial = 0;
 	private lastPresented = -1;
 	private readonly input: ReusableInput = { frame: 0, background: [0, 0, 0] };
 	private readonly refresh = new RefreshMeter();
+	private readonly pacer: FramePacer;
 	readonly record: FrameRecorder;
 
+	/** `fps` is the frame rate that ?fps= holds, or undefined to draw at the display's rate. */
 	constructor(
 		private readonly slots: Int32Array,
 		private readonly renderer: Renderer,
 		metrics: ArrayBufferLike,
+		fps: number | undefined,
 	) {
 		this.record = new FrameRecorder(metrics, Role.Render);
+		this.pacer = new FramePacer(fps);
 	}
 
-	/** Counts a frame callback, from whose times the display's refresh rate follows. */
+	/**
+	 * Counts a frame callback, from whose times the display's refresh rate follows. Every callback
+	 * counts, including those that draw nothing.
+	 */
 	tick(timestamp: number): void {
 		const hz = this.refresh.tick(timestamp);
 		if (hz !== undefined) this.record.setRefreshHz(hz);
+	}
+
+	/**
+	 * True when the callback at `timestamp` may draw a frame, under the frame rate that ?fps= holds.
+	 * A true answer uses up the frame's turn, so ask only when a frame is ready to draw.
+	 */
+	due(timestamp: number): boolean {
+		return this.pacer.take(timestamp);
 	}
 
 	/** Applies the canvas size the page wrote last, if it changed. */
@@ -88,9 +105,10 @@ export function runRenderLoop(
 	renderer: Renderer,
 	control: ArrayBufferLike,
 	metrics: ArrayBufferLike,
+	fps: number | undefined,
 ): RenderLoop {
 	const { slots } = controlViews(control);
-	const presenter = new Presenter(slots, renderer, metrics);
+	const presenter = new Presenter(slots, renderer, metrics, fps);
 	let taken = 0;
 	let stopped = false;
 
@@ -99,7 +117,7 @@ export function runRenderLoop(
 		presenter.tick(timestamp);
 		presenter.applyResize();
 		const published = Atomics.load(slots, Slot.FramesPublished);
-		if (published > taken) {
+		if (published > taken && presenter.due(timestamp)) {
 			taken = published;
 			Atomics.store(slots, Slot.FramesTaken, taken);
 			Atomics.notify(slots, Slot.FramesTaken);

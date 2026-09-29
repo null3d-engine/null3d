@@ -1,0 +1,45 @@
+// The frame loop of the thread that draws, in every thread mode. A frame callback that finds no new
+// frame draws nothing, as while the page pauses the engine, and the sketch's first step after a pause
+// counts no time. ?fps= holds the drawing to a fixed rate below the display's.
+import { expect, test } from '@playwright/test';
+import { ENGINE_MODES, type EngineResult } from '../lib/engine-checks.ts';
+import { pageResult } from '../lib/page-result.ts';
+
+type Result = EngineResult & { error?: string };
+
+/** Fewer frames in the half second after the sketch resumes means that drawing did not resume. */
+const MIN_FRAMES_RESUMED = 10;
+/** Well under the page's 600 ms pause, and above the longest step the engine allows. */
+const LONGEST_STEP_S = 0.5;
+/** The rate that ?fps= holds in the test, and how far the presented rate may stray from it. */
+const HELD_FPS = 30;
+const HELD_FPS_SHARE = 0.1;
+/** The slowest display on which the test holds the rate, with callbacks left over to skip. */
+const MIN_REFRESH_HZ = 60;
+
+for (const mode of ENGINE_MODES) {
+	test(`a pause draws nothing and is not one long step, ${mode.name}`, async ({ page }) => {
+		await page.goto(`engine.html?gpu=webgpu&seconds=1&pause&${mode.query}`);
+		const result = await pageResult<Result>(page, 30_000);
+		expect(result.error).toBeUndefined();
+		expect(result.pause?.paused, 'frames drawn during the pause').toEqual({
+			frames: 0,
+			presented: 0,
+		});
+		expect(result.pause?.resumed.frames ?? 0).toBeGreaterThan(MIN_FRAMES_RESUMED);
+		expect(result.pause?.resumed.presented ?? 0).toBeGreaterThan(MIN_FRAMES_RESUMED);
+		expect(result.count.largestStep, 'the longest step').toBeLessThan(LONGEST_STEP_S);
+	});
+
+	test(`?fps=${HELD_FPS} holds the drawing at ${HELD_FPS} frames per second, ${mode.name}`, async ({
+		page,
+	}) => {
+		await page.goto(`engine.html?gpu=webgpu&seconds=2&fps=${HELD_FPS}&${mode.query}`);
+		const result = await pageResult<Result>(page, 30_000);
+		expect(result.error).toBeUndefined();
+		const hz = result.stats.refreshHz ?? 0;
+		test.skip(hz < MIN_REFRESH_HZ, `the display refreshes at ${hz} Hz, below ${MIN_REFRESH_HZ} Hz`);
+		expect(result.stats.presentedFps).toBeGreaterThan(HELD_FPS * (1 - HELD_FPS_SHARE));
+		expect(result.stats.presentedFps).toBeLessThan(HELD_FPS * (1 + HELD_FPS_SHARE));
+	});
+}

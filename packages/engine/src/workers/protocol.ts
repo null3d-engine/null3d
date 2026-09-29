@@ -17,11 +17,14 @@ export interface CoreHandoff {
 	device: CoreDevice;
 }
 
+/** What the thread that draws needs: its canvas, the GPU path and how it paces its frames. */
 export interface RendererSetup {
 	canvas: OffscreenCanvas;
 	tier: Tier;
 	forceCompat: boolean;
 	powerPreference?: PowerPreference;
+	/** The frame rate that ?fps= holds, or undefined to draw at the display's rate. */
+	fps?: number;
 }
 
 export type SketchWorkerInit = CoreHandoff & {

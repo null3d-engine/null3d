@@ -14,6 +14,8 @@ const SWIFTSHADER_ARGS = [
 	'--no-sandbox',
 	'--hide-scrollbars',
 ];
+/** Device pixels per CSS pixel on the screen of the resize tests, as on most phones and laptops. */
+const HIGH_DENSITY_RATIO = 2;
 
 // On a Mac, the installed Google Chrome runs on the real GPU. Playwright's default headless shell
 // would fall back to SwiftShader there, so real-GPU runs use the Chrome channel.
@@ -44,13 +46,29 @@ export default defineConfig({
 		},
 	],
 	projects: [
-		{ name: ci ? 'chromium-swiftshader' : 'chrome-real-gpu' },
+		{ name: ci ? 'chromium-swiftshader' : 'chrome-real-gpu', testIgnore: 'resize.spec.ts' },
 		// The engine test again, on the production build: the sketch module and the engine core must
 		// survive bundling on both GPU paths and in every thread mode.
 		{
 			name: 'production build',
 			testMatch: 'engine.spec.ts',
 			use: { baseURL: `http://localhost:${PREVIEW_PORT}/tests/pages/` },
+		},
+		// The resize tests, on a high-density screen. Playwright's emulated pixel ratio does not reach
+		// the size in device pixels that the browser reports for an element (Playwright issue 18591),
+		// so the browser itself also starts at that ratio.
+		{
+			name: 'high-density screen',
+			testMatch: 'resize.spec.ts',
+			use: {
+				deviceScaleFactor: HIGH_DENSITY_RATIO,
+				launchOptions: {
+					args: [
+						...(ci ? SWIFTSHADER_ARGS : []),
+						`--force-device-scale-factor=${HIGH_DENSITY_RATIO}`,
+					],
+				},
+			},
 		},
 	],
 });

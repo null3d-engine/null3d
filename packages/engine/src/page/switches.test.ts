@@ -9,9 +9,7 @@ describe('parseSwitches', () => {
 			renderOnMain: false,
 			latency: undefined,
 			copyUploads: false,
-			preset: undefined,
 			fps: undefined,
-			hold: false,
 			jobs: undefined,
 			memoryMiB: undefined,
 		});

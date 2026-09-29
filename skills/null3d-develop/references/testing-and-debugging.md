@@ -83,8 +83,7 @@ URL switches for the dev server (engine docs `guides/testing`):
 | `?latency=pipelined`, `?latency=low` | Latency mode |
 | `?jobs=4` | Start this many job workers, from 1 to 255, instead of the logical cores minus 2 |
 | `?memory=2048` | Set the maximum of the memory that worker threads share, in MiB, up to 4096; the default is 1024 |
-| `?preset=low` (to `ultra`), `?fps=60` | Fix preset and frame rate |
-| `?hold` | Render one frame in hold mode |
+| `?fps=30` | Hold drawing at this many frames per second, at most the display's rate, to compare runs on displays of different refresh rates |
 
 Reaching the dev server:
 

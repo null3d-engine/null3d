@@ -4,14 +4,14 @@
 import { ERRORS, type ErrorCode } from '../errors/codes';
 import { EngineError } from '../errors/engine-error';
 import { runDirectLoop } from '../render/direct-loop';
-import { emptySceneInput, runRenderLoop } from '../render/loop';
+import { emptySceneInput, type RenderLoop, runRenderLoop } from '../render/loop';
 import { Drawing } from '../render/recovery';
 import { createRenderer, type Renderer, type Tier } from '../render/renderer';
 import { controlViews, createControlBuffer, Slot } from '../shared/control';
 import { type Build, startCore } from '../shared/core';
 import { createMetricsBuffer, MetricsReader } from '../shared/metrics';
 import { SketchRunner } from '../sketch/runner';
-import type { CoreHandoff, WorkerReply } from '../workers/protocol';
+import type { CoreHandoff, RendererSetup, WorkerReply } from '../workers/protocol';
 import { abortable } from './abortable';
 import { type CapabilityReport, type PowerPreference, probeCapabilities } from './capabilities';
 import {
@@ -349,6 +349,13 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 	if (!choice)
 		throw new EngineError('E1301', `no usable GPU path for ?gpu=${wanted} in this browser.`);
 	const { tier, forceCompat } = choice;
+	// What the thread that draws needs besides its canvas, whichever thread that is.
+	const rendererSetup: Omit<RendererSetup, 'canvas'> = {
+		tier,
+		forceCompat,
+		powerPreference,
+		fps: switches.fps,
+	};
 
 	const jobWorkers = threaded
 		? (switches.jobs ?? Math.max(1, report.hardwareConcurrency - RESERVED_CORES))
@@ -408,6 +415,23 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 	};
 	const pageLoss = (reason: string) =>
 		onFailure(new EngineError('E1302', `the page lost its GPU: ${reason}.`));
+	/**
+	 * Draws on the page's thread from the draw lists in `memory`. `run` starts the frame loop with
+	 * each renderer: the first, and each one that replaces a lost GPU device.
+	 */
+	const drawOnPage = async (
+		memory: WebAssembly.Memory | undefined,
+		run: (renderer: Renderer) => RenderLoop,
+	) => {
+		const create = () =>
+			createRenderer(options.canvas, {
+				...rendererSetup,
+				metrics,
+				device,
+				scene: memory && { memory, control },
+			});
+		return new Drawing(await create(), create, run, slots, pageLoss);
+	};
 
 	const workers: EngineWorker[] = [];
 	let sketch: EngineWorker | undefined;
@@ -429,21 +453,8 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 			});
 			await localRunner.load(sketchUrl);
 			const runner = localRunner;
-			const create = () =>
-				createRenderer(options.canvas, {
-					tier,
-					forceCompat,
-					powerPreference,
-					metrics,
-					device,
-					scene: { memory, control },
-				});
-			localDrawing = new Drawing(
-				await create(),
-				create,
-				(renderer) => runDirectLoop(runner, renderer, control, metrics),
-				slots,
-				pageLoss,
+			localDrawing = await drawOnPage(memory, (renderer) =>
+				runDirectLoop(runner, renderer, control, metrics, rendererSetup.fps),
 			);
 		} else {
 			sketch = new EngineWorker(
@@ -464,7 +475,7 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 						...handoff,
 						sketchUrl,
 						jobWorkers,
-						renderer: { canvas, tier, forceCompat, powerPreference },
+						renderer: { canvas, ...rendererSetup },
 					},
 					[canvas],
 				);
@@ -483,26 +494,12 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 						onFailure,
 					);
 					workers.push(rendererHost);
-					rendererHost.worker.postMessage(
-						{ type: 'init', ...handoff, canvas, tier, forceCompat, powerPreference },
-						[canvas],
-					);
+					rendererHost.worker.postMessage({ type: 'init', ...handoff, canvas, ...rendererSetup }, [
+						canvas,
+					]);
 				} else {
-					const create = () =>
-						createRenderer(options.canvas, {
-							tier,
-							forceCompat,
-							powerPreference,
-							metrics,
-							device,
-							scene: core.memory && { memory: core.memory, control },
-						});
-					localDrawing = new Drawing(
-						await create(),
-						create,
-						(renderer) => runRenderLoop(renderer, control, metrics),
-						slots,
-						pageLoss,
+					localDrawing = await drawOnPage(core.memory, (renderer) =>
+						runRenderLoop(renderer, control, metrics, rendererSetup.fps),
 					);
 				}
 			}

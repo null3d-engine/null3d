@@ -154,6 +154,7 @@ Chrome measures the heap of the page and its workers only when every worker answ
 - Let the sketch run for several seconds before you measure, so that the browser has optimized your per-frame code.
 - Keep the page visible, the screen unlocked and the display awake. Safari stops running a page while the Mac is locked.
 - Compare runs at the same display refresh rate. `refreshHz` records it with each measurement. Runs at 120 and at 144 frames per second differed by about 10% for both engines.
+- To compare displays with different refresh rates, add `?fps=60` to the page's address. The engine then draws 60 frames per second on any display of 60 Hz or more.
 - Chrome rounds GPU times to 65.5 microseconds unless you start it with `--enable-webgpu-developer-features`.
 - Compare engines in the same browser, one run after another.
 
