@@ -33,6 +33,14 @@ export function forwardPort(port: number): void {
 	adb(['reverse', `tcp:${port}`, `tcp:${port}`]);
 }
 
+/**
+ * Makes Chrome's debugging socket on the phone reach a port on this computer. Chrome has the socket
+ * while it runs on a phone with USB debugging on.
+ */
+export function forwardDevTools(port: number): void {
+	adb(['forward', `tcp:${port}`, 'localabstract:chrome_devtools_remote']);
+}
+
 /** Opens a page in a browser on the phone, which brings that browser to the front. */
 export function openOnPhone(browser: string, url: string): void {
 	const pkg = ANDROID_BROWSERS[browser];

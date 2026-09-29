@@ -35,6 +35,7 @@
 		"parity": "bun bench/parity.ts",
 		"bench:run": "bun bench/run.ts",
 		"bench:allocation": "bun bench/allocation.ts",
+		"bench:profile": "bun bench/profile.ts",
 		"bench:startup": "bun bench/startup.ts",
 		"readme-media": "bun bench/readme-media.ts",
 		"dev": "vite",
