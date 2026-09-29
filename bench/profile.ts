@@ -8,9 +8,9 @@
 //   bun run bench:profile --scene s2 --gpu webgpu --seconds 10
 //   bun run bench:profile --android --n 300000
 import { chromium } from '@playwright/test';
-import { forwardDevTools, forwardPort, openOnPhone, phoneModel } from '../tests/lib/adb.ts';
+import { forwardDevTools, forwardPort, phoneModel, startBrowser } from '../tests/lib/adb.ts';
 import { HTTP_PORT, startServer } from '../tests/lib/server.ts';
-import { attachWorkers, type CallFrame, DevTools, evaluate, sleep } from './lib/devtools';
+import { attachWorkers, type CallFrame, DevTools, evaluate, pagesAt, sleep } from './lib/devtools';
 import { PARITY_SCENES, type ParityScene, pagePath } from './lib/parity';
 import { type CpuProfile, type EntrySplit, splitEntry } from './lib/profile';
 
@@ -30,6 +30,8 @@ const WARMUP_SECONDS = 20;
 const PROFILE_SECONDS = 10;
 /** Seconds between the start of the page's measured run and the profile, at each end. */
 const MARGIN_SECONDS = 2;
+/** The functions listed of each kind, the costliest first. */
+const TOP_CALLS = 6;
 /** How long a page may take to publish its result after its measured run. */
 const RESULT_TIMEOUT_MS = 60_000;
 
@@ -117,7 +119,6 @@ interface SceneProfile {
  */
 async function profileScene(
 	devtools: DevTools,
-	open: (url: string) => Promise<void>,
 	serverUrl: string,
 	scene: ParityScene,
 	options: Options,
@@ -125,9 +126,9 @@ async function profileScene(
 	const pageSeconds = Math.max(options.warmup, options.seconds + 2 * MARGIN_SECONDS);
 	const switches = `seconds=${pageSeconds}${options.n === null ? '' : `&n=${options.n}`}`;
 	const url = `${serverUrl}${pagePath(scene, `null3d-${options.gpu}`, switches)}`;
-	await open(url);
-	const { targetId, page, workers } = await attachWorkers(devtools, url, [RENDER_WORKER]);
+	const { targetId } = await devtools.send<{ targetId: string }>('Target.createTarget', { url });
 	try {
+		const { page, workers } = await attachWorkers(devtools, targetId, [RENDER_WORKER]);
 		const render = workers.get(RENDER_WORKER) as string;
 		await sleep((pageSeconds + MARGIN_SECONDS) * 1000);
 		await devtools.send('Profiler.enable', {}, render);
@@ -155,8 +156,13 @@ function report({ scene, result, split }: SceneProfile): string[] {
 		`  render worker per frame (engine's median): busy ${thread ? fixed(thread.busyMs.median) : '-'} ms, replay ${thread?.phases.replay ? fixed(thread.phases.replay.median) : '-'} ms`,
 		`  replay, ${fixed(split.entryMs, 1)} ms sampled in ${fixed(split.profileMs / 1000, 1)} s: engine code ${percent(split.engineMs, split.entryMs)}, browser calls ${percent(split.browserMs, split.entryMs)}, other ${percent(split.otherMs, split.entryMs)}`,
 	];
-	for (const call of split.browserCalls.slice(0, 6))
-		lines.push(`    ${percent(call.ms, split.entryMs).padStart(6)}  ${call.name}`);
+	const top = (calls: EntrySplit['browserCalls'], title: string) => {
+		lines.push(`  ${title}:`);
+		for (const call of calls.slice(0, TOP_CALLS))
+			lines.push(`    ${percent(call.ms, split.entryMs).padStart(6)}  ${call.name}`);
+	};
+	top(split.engineCalls, 'engine functions, by their own time');
+	top(split.browserCalls, 'browser calls');
 	return lines;
 }
 
@@ -170,6 +176,8 @@ async function main(): Promise<void> {
 			device = `${phoneModel()}, Chrome`;
 			forwardPort(HTTP_PORT);
 			forwardDevTools(DEBUG_PORT);
+			// Chrome has its debugging socket only while it runs.
+			startBrowser('chrome');
 		} else {
 			const browser = await chromium.launch({
 				channel: 'chrome',
@@ -180,16 +188,14 @@ async function main(): Promise<void> {
 		}
 		const devtools = await DevTools.connect(DEBUG_PORT);
 		stops.push(() => devtools.close());
-		// A phone's Chrome opens the page from an intent, as the device runner does.
-		const open = async (url: string) => {
-			if (options.android) openOnPhone('chrome', url);
-			else await devtools.send('Target.createTarget', { url });
-		};
+		// A benchmark page left open by an earlier run would draw beside the profiled one.
+		for (const { targetId } of await pagesAt(devtools, `${server.url}/bench/pages/`))
+			await devtools.send('Target.closeTarget', { targetId });
 		console.log(
 			`Profiling the render worker on ${device}, ${options.gpu}: ${options.seconds} s per scene after at least ${options.warmup} s`,
 		);
 		for (const scene of options.scenes) {
-			const profiled = await profileScene(devtools, open, server.url, scene, options);
+			const profiled = await profileScene(devtools, server.url, scene, options);
 			console.log(report(profiled).join('\n'));
 		}
 	} finally {

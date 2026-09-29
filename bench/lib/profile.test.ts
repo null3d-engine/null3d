@@ -64,6 +64,10 @@ describe('splitEntry', () => {
 			{ name: 'texSubImage2D (built-in)', ms: 0.2 },
 			{ name: 'drawElementsInstanced (built-in)', ms: 0.1 },
 		]);
+		expect(split.engineCalls).toEqual([
+			{ name: 'replay webgl2/backend.ts', ms: 0.1 },
+			{ name: 'prepareDraw webgl2/backend.ts', ms: 0.1 },
+		]);
 	});
 
 	it('counts a call of the entry inside another one once', () => {

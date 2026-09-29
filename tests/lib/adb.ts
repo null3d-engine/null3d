@@ -41,15 +41,33 @@ export function forwardDevTools(port: number): void {
 	adb(['forward', `tcp:${port}`, 'localabstract:chrome_devtools_remote']);
 }
 
+/** Starts a browser on the phone, or brings it to the front, without opening a page. */
+export function startBrowser(browser: string): void {
+	adb(['shell', 'monkey', '-p', packageOf(browser), '-c', 'android.intent.category.LAUNCHER', '1']);
+}
+
 /** Opens a page in a browser on the phone, which brings that browser to the front. */
 export function openOnPhone(browser: string, url: string): void {
+	// adb runs the command through the phone's shell, so the address is quoted for its & signs.
+	adb([
+		'shell',
+		'am',
+		'start',
+		'-a',
+		'android.intent.action.VIEW',
+		'-d',
+		`'${url}'`,
+		packageOf(browser),
+	]);
+}
+
+function packageOf(browser: string): string {
 	const pkg = ANDROID_BROWSERS[browser];
 	if (!pkg)
 		throw new Error(
 			`unknown Android browser ${browser}; use ${Object.keys(ANDROID_BROWSERS).join(', ')}`,
 		);
-	// adb runs the command through the phone's shell, so the address is quoted for its & signs.
-	adb(['shell', 'am', 'start', '-a', 'android.intent.action.VIEW', '-d', `'${url}'`, pkg]);
+	return pkg;
 }
 
 /**

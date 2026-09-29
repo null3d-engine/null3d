@@ -70,6 +70,8 @@ export interface EntrySplit {
 	otherMs: number;
 	/** The browser functions under the entry function, most time first. */
 	browserCalls: { name: string; ms: number }[];
+	/** The engine's functions under the entry function, by their own time, most time first. */
+	engineCalls: { name: string; ms: number }[];
 }
 
 /**
@@ -87,7 +89,7 @@ export function splitEntry(
 	const children = new Set(profile.nodes.flatMap((node) => node.children ?? []));
 	const roots = profile.nodes.filter((node) => !children.has(node.id));
 	const split = { entry: 0, engine: 0, browser: 0, other: 0, idle: 0 };
-	const browserCalls = new Map<string, number>();
+	const calls = { browser: new Map<string, number>(), engine: new Map<string, number>() };
 
 	const visit = (node: CpuProfileNode, inEntry: boolean) => {
 		const time = own.get(node.id) ?? 0;
@@ -97,9 +99,9 @@ export function splitEntry(
 			split.entry += time;
 			const owner = ownerOf(node.callFrame, engineUrl);
 			split[owner] += time;
-			if (owner === 'browser') {
+			if (owner !== 'other') {
 				const name = placeName(node.callFrame);
-				browserCalls.set(name, (browserCalls.get(name) ?? 0) + time);
+				calls[owner].set(name, (calls[owner].get(name) ?? 0) + time);
 			}
 		}
 		for (const id of node.children ?? []) {
@@ -110,6 +112,8 @@ export function splitEntry(
 	for (const root of roots) visit(root, false);
 
 	const ms = (microseconds: number) => microseconds / 1000;
+	const ranked = (times: Map<string, number>) =>
+		[...times].map(([name, time]) => ({ name, ms: ms(time) })).sort((a, b) => b.ms - a.ms);
 	const profileMs = ms(profile.endTime - profile.startTime);
 	return {
 		profileMs,
@@ -118,8 +122,7 @@ export function splitEntry(
 		engineMs: ms(split.engine),
 		browserMs: ms(split.browser),
 		otherMs: ms(split.other),
-		browserCalls: [...browserCalls]
-			.map(([name, time]) => ({ name, ms: ms(time) }))
-			.sort((a, b) => b.ms - a.ms),
+		browserCalls: ranked(calls.browser),
+		engineCalls: ranked(calls.engine),
 	};
 }

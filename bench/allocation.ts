@@ -11,7 +11,7 @@
 // At 30,000 instances a frame's upload goes through the staging ring; at 100,000 it does not.
 import { chromium } from '@playwright/test';
 import { startServer } from '../tests/lib/server.ts';
-import { attachWorkers, DevTools, placeName, sleep } from './lib/devtools';
+import { attachWorkers, DevTools, pagesAt, placeName, sleep } from './lib/devtools';
 import { pagePath } from './lib/parity';
 
 /** Chrome's debugging port for this check. */
@@ -23,6 +23,11 @@ const SAMPLING_INTERVAL = 128;
  * only after many frames, and until then the numbers such code computes are allocated.
  */
 const WARMUP_SECONDS = 30;
+/**
+ * Frames the page must draw before sampling starts as well. The browser optimizes by frames, so a
+ * display at a lower refresh rate needs more seconds for the same warm-up.
+ */
+const WARMUP_FRAMES = 3600;
 /** The workers the check samples, by a part of their script's URL. */
 const WORKERS = ['sketch-worker', 'render-worker'] as const;
 
@@ -155,9 +160,12 @@ async function main(): Promise<void> {
 				() => (globalThis as { __frameCounter?: { frames: number } }).__frameCounter?.frames ?? 0,
 			);
 		const devtools = await DevTools.connect(DEBUG_PORT);
-		const { workers: sessions } = await attachWorkers(devtools, url, WORKERS);
+		const [target] = await pagesAt(devtools, url);
+		if (!target) throw new Error(`no page target for ${url}`);
+		const { workers: sessions } = await attachWorkers(devtools, target.targetId, WORKERS);
 		// Let the sketch run its setup and warm up before sampling.
 		await sleep(warmup * 1000);
+		while ((await framesSoFar()) < WARMUP_FRAMES) await sleep(1000);
 		for (const sessionId of sessions.values()) {
 			await devtools.send('HeapProfiler.enable', {}, sessionId);
 			// The profiler keeps the samples of objects that garbage collection frees, which per-frame

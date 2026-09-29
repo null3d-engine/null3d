@@ -17,11 +17,14 @@ export interface CallFrame {
 
 export const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
+/** How long a browser that is starting may take to open its debugging port. */
+const CONNECT_TIMEOUT_MS = 20_000;
+
 export class DevTools {
 	private next = 1;
 	private readonly pending = new Map<
 		number,
-		{ resolve: (result: unknown) => void; reject: (error: Error) => void }
+		{ method: string; resolve: (result: unknown) => void; reject: (error: Error) => void }
 	>();
 	private readonly listeners = new Map<string, ((params: unknown, sessionId?: string) => void)[]>();
 
@@ -42,19 +45,30 @@ export class DevTools {
 			}
 			const call = this.pending.get(message.id);
 			this.pending.delete(message.id);
-			if (message.error) call?.reject(new Error(message.error.message));
+			if (message.error) call?.reject(new Error(`${call?.method}: ${message.error.message}`));
 			else call?.resolve(message.result);
 		};
 	}
 
 	/**
-	 * Connects to the browser that listens on a local debugging port. A phone's Chrome reports an
-	 * address without the forwarded port, so only the path of the address it reports is used.
+	 * Connects to the browser that listens on a local debugging port, waiting while a browser that
+	 * is still starting opens it. A phone's Chrome reports an address without the forwarded port, so
+	 * only the path of the address it reports is used.
 	 */
-	static async connect(port: number): Promise<DevTools> {
-		const version = (await (await fetch(`http://127.0.0.1:${port}/json/version`)).json()) as {
-			webSocketDebuggerUrl: string;
-		};
+	static async connect(port: number, timeoutMs = CONNECT_TIMEOUT_MS): Promise<DevTools> {
+		const deadline = Date.now() + timeoutMs;
+		let version: { webSocketDebuggerUrl: string } | undefined;
+		while (!version) {
+			try {
+				version = (await (await fetch(`http://127.0.0.1:${port}/json/version`)).json()) as {
+					webSocketDebuggerUrl: string;
+				};
+			} catch (e) {
+				if (Date.now() > deadline)
+					throw new Error(`no browser answered on debugging port ${port}: ${(e as Error).message}`);
+				await sleep(250);
+			}
+		}
 		const path = new URL(version.webSocketDebuggerUrl).pathname;
 		const socket = new WebSocket(`ws://127.0.0.1:${port}${path}`);
 		await new Promise((resolve, reject) => {
@@ -68,7 +82,7 @@ export class DevTools {
 		const id = this.next++;
 		this.socket.send(JSON.stringify({ id, method, params, ...(sessionId && { sessionId }) }));
 		return new Promise((resolve, reject) =>
-			this.pending.set(id, { resolve: resolve as (result: unknown) => void, reject }),
+			this.pending.set(id, { method, resolve: resolve as (result: unknown) => void, reject }),
 		);
 	}
 
@@ -91,42 +105,42 @@ export function placeName({ functionName, url }: CallFrame): string {
 	return `${name} ${url.split('/').slice(-2).join('/').replace(/\?.*$/, '')}`;
 }
 
+/** The debugging sessions of a page and of its named workers. */
 export interface Attached {
-	/** The page's target, which closes the page. */
-	targetId: string;
 	/** The debugging session of the page. */
 	page: string;
 	/** The debugging session of each named worker. */
 	workers: Map<string, string>;
 }
 
+/** The pages whose address holds the path of `url`. */
+export async function pagesAt(devtools: DevTools, url: string): Promise<TargetInfo[]> {
+	const path = new URL(url).pathname;
+	const { targetInfos } = await devtools.send<{ targetInfos: TargetInfo[] }>('Target.getTargets');
+	return targetInfos.filter((t) => t.type === 'page' && t.url.includes(path));
+}
+
 /**
- * Attaches to the page and then to its workers, which Chrome reports only to a session that asks
- * to attach to a page's related targets. A worker is named by a part of its script's address.
+ * Attaches to a page and then to its workers, which Chrome reports only to a session that asks to
+ * attach to a page's related targets. A worker is named by a part of its script's address.
  */
 export async function attachWorkers(
 	devtools: DevTools,
-	pageUrl: string,
+	targetId: string,
 	names: readonly string[],
 ): Promise<Attached> {
-	const workers = new Map<string, string>();
-	devtools.on('Target.attachedToTarget', (params) => {
-		const { sessionId, targetInfo } = params as { sessionId: string; targetInfo: TargetInfo };
-		const name = names.find((w) => targetInfo.type === 'worker' && targetInfo.url.includes(w));
-		if (name) workers.set(name, sessionId);
-	});
-	const path = new URL(pageUrl).pathname;
-	let page: TargetInfo | undefined;
-	// A page that a phone's browser opens appears among the targets a moment later.
-	for (let tries = 0; tries < 100 && !page; tries++) {
-		const { targetInfos } = await devtools.send<{ targetInfos: TargetInfo[] }>('Target.getTargets');
-		page = targetInfos.find((t) => t.type === 'page' && t.url.includes(path));
-		if (!page) await sleep(100);
-	}
-	if (!page) throw new Error(`no page target for ${pageUrl}`);
 	const { sessionId } = await devtools.send<{ sessionId: string }>('Target.attachToTarget', {
-		targetId: page.targetId,
+		targetId,
 		flatten: true,
+	});
+	const workers = new Map<string, string>();
+	devtools.on('Target.attachedToTarget', (params, parent) => {
+		const { sessionId: worker, targetInfo } = params as {
+			sessionId: string;
+			targetInfo: TargetInfo;
+		};
+		const name = names.find((w) => targetInfo.type === 'worker' && targetInfo.url.includes(w));
+		if (parent === sessionId && name) workers.set(name, worker);
 	});
 	await devtools.send(
 		'Target.setAutoAttach',
@@ -136,7 +150,7 @@ export async function attachWorkers(
 	for (let tries = 0; tries < 300 && workers.size < names.length; tries++) await sleep(100);
 	const missing = names.filter((w) => !workers.has(w));
 	if (missing.length > 0) throw new Error(`no worker target appeared for ${missing.join(', ')}`);
-	return { targetId: page.targetId, page: sessionId, workers };
+	return { page: sessionId, workers };
 }
 
 /** Evaluates an expression in a page or worker and returns its value, copied out as JSON. */
