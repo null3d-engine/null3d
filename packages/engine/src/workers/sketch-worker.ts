@@ -1,18 +1,18 @@
 // The sketch worker: runs the sketch's code and the engine core. In pipelined mode it computes frame
 // N+1 while the render worker draws frame N, and waits for the render worker's signal with
 // Atomics.waitAsync, so its event loop stays alive for promises and messages. In low-latency mode it
-// also owns the canvas and draws each frame itself.
+// also owns the canvas and draws each frame itself; only then does it load the renderer.
 
-import { runDirectLoop } from '../render/direct-loop';
-import { emptySceneInput } from '../render/loop';
-import { Drawing } from '../render/recovery';
-import { createRenderer, type Renderer } from '../render/renderer';
+import { type DrawModule, loadDrawModule } from '../render/load-draw';
+import type { Drawing } from '../render/recovery';
+import type { Renderer } from '../render/renderer';
 import { controlViews, Slot } from '../shared/control';
 import { startCore } from '../shared/core';
 import { SketchRunner } from '../sketch/runner';
 import { replyToPage, type SketchWorkerMessage, startSteps } from './protocol';
 
 let runner: SketchRunner | undefined;
+let draw: DrawModule | undefined;
 let drawing: Drawing<Renderer> | undefined;
 let controlSlots: Int32Array | undefined;
 
@@ -54,6 +54,8 @@ self.onmessage = async (event: MessageEvent<SketchWorkerMessage>) => {
 	const message = event.data;
 	if (message.type === 'init') {
 		try {
+			// The renderer loads while the core and the sketch start.
+			const drawModule = message.renderer && loadDrawModule();
 			controlSlots = controlViews(message.control).slots;
 			const started = await startCore(message.build, message.module, message.memory, step);
 			const core = started.glue;
@@ -72,24 +74,18 @@ self.onmessage = async (event: MessageEvent<SketchWorkerMessage>) => {
 			step('engine created');
 			await runner.load(message.sketchUrl);
 			step('sketch loaded');
-			if (message.renderer) {
-				const setup = message.renderer;
-				const create = () =>
-					createRenderer(setup.canvas, {
-						...setup,
-						metrics: message.metrics,
-						device: message.device,
-						scene: { memory, control: message.control },
-					});
-				const sketch = runner;
-				drawing = new Drawing(
-					await create(),
-					create,
-					(renderer) =>
-						runDirectLoop(sketch, renderer, message.control, message.metrics, setup.fps),
-					controlSlots,
-					(reason) => replyToPage({ type: 'lost', role: 'sketch', reason }),
-				);
+			if (message.renderer && drawModule) {
+				draw = await drawModule;
+				step('renderer loaded');
+				drawing = await draw.startDrawing({
+					...message.renderer,
+					metrics: message.metrics,
+					device: message.device,
+					scene: { memory, control: message.control },
+					control: message.control,
+					sketch: runner,
+					fail: (reason) => replyToPage({ type: 'lost', role: 'sketch', reason }),
+				});
 			} else {
 				void runPipelined(runner, message.control);
 			}
@@ -109,10 +105,8 @@ self.onmessage = async (event: MessageEvent<SketchWorkerMessage>) => {
 		}
 	} else if (message.type === 'post') {
 		runner?.receive(message.name, message.data);
-	} else if (message.type === 'capture' && drawing && controlSlots) {
-		const captured = await drawing.renderer.capture(
-			emptySceneInput(Atomics.load(controlSlots, Slot.FramesTaken)),
-		);
+	} else if (message.type === 'capture' && draw && drawing && controlSlots) {
+		const captured = await draw.captureFrame(drawing, controlSlots);
 		replyToPage({ type: 'captured', ...captured }, [captured.pixels.buffer]);
 	} else if (message.type === 'lose-gpu') {
 		drawing?.simulateLoss();

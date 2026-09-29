@@ -1,9 +1,11 @@
 // Measures a cold start of the engine on a slow network: it builds the engine test page for
 // production, serves the build, and loads it in a fresh Chrome profile, whose cache starts empty,
-// with Chrome's Slow 4G profile. It prints each run's startup milestones, requests and bytes, and their medians. From the
-// repository root:
-//   bun run bench:startup                 (3 runs on WebGPU)
+// with Chrome's Slow 4G profile. It prints each run's startup milestones, requests and bytes, and
+// their medians. `--switches` adds the engine's page switches, which pick another thread mode.
+// From the repository root:
+//   bun run bench:startup                 (3 runs on WebGPU, pipelined)
 //   bun run bench:startup -- --runs 5 --gpu webgl2
+//   bun run bench:startup -- --switches latency=low
 import { type ChildProcess, spawn, spawnSync } from 'node:child_process';
 import { parseArgs } from 'node:util';
 import { chromium } from '@playwright/test';
@@ -48,7 +50,7 @@ function startPreview(): Promise<ChildProcess> {
 	});
 }
 
-async function measure(gpu: string): Promise<StartupRun> {
+async function measure(gpu: string, switches: string): Promise<StartupRun> {
 	const browser = await chromium.launch({ channel: 'chrome', args: ['--enable-unsafe-webgpu'] });
 	try {
 		const context = await browser.newContext();
@@ -71,7 +73,8 @@ async function measure(gpu: string): Promise<StartupRun> {
 				),
 			);
 		});
-		await page.goto(`${URL_BASE}?gpu=${gpu}&seconds=0.2`, { timeout: 120_000 });
+		const query = [`gpu=${gpu}`, 'seconds=0.2', switches].filter(Boolean).join('&');
+		await page.goto(`${URL_BASE}?${query}`, { timeout: 120_000 });
 		const result = await pageResult<{
 			error?: string;
 			stats: {
@@ -95,17 +98,23 @@ async function measure(gpu: string): Promise<StartupRun> {
 }
 
 const { values } = parseArgs({
-	options: { runs: { type: 'string', default: '3' }, gpu: { type: 'string', default: 'webgpu' } },
+	options: {
+		runs: { type: 'string', default: '3' },
+		gpu: { type: 'string', default: 'webgpu' },
+		switches: { type: 'string', default: '' },
+	},
 });
 const build = spawnSync('bunx', ['vite', 'build'], { cwd: REPO_ROOT, encoding: 'utf8' });
 if (build.status !== 0) throw new Error(`the production build failed:\n${build.stderr}`);
 const preview = await startPreview();
 try {
 	const runs: StartupRun[] = [];
-	for (let run = 0; run < Number(values.runs); run++) runs.push(await measure(values.gpu));
+	for (let run = 0; run < Number(values.runs); run++)
+		runs.push(await measure(values.gpu, values.switches));
 	const row = (label: string, r: StartupRun) =>
 		`| ${label} | ${r.probeMs.toFixed(0)} | ${r.coreMs.toFixed(0)} | ${r.engineReadyMs.toFixed(0)} | ${r.firstFrameMs.toFixed(0)} | ${r.requests} | ${r.kilobytes.toFixed(0)} |`;
-	console.log(`Cold start on ${values.gpu}, Slow 4G, empty cache, production build`);
+	const switches = values.switches ? ` with ?${values.switches}` : '';
+	console.log(`Cold start on ${values.gpu}${switches}, Slow 4G, empty cache, production build`);
 	console.log(
 		'| Run | Probe done, ms | Core ready, ms | Engine ready, ms | First frame on screen, ms from navigation | Requests | KB |',
 	);

@@ -1,10 +1,10 @@
 // The render worker: owns the canvas and every GPU object, runs no sketch code, and draws only inside
 // its own requestAnimationFrame callback.
 
-import { emptySceneInput, runRenderLoop } from '../render/loop';
-import { Drawing } from '../render/recovery';
-import { createRenderer, type Renderer } from '../render/renderer';
-import { controlViews, Slot } from '../shared/control';
+import { captureFrame, startDrawing } from '../render/draw';
+import type { Drawing } from '../render/recovery';
+import type { Renderer } from '../render/renderer';
+import { controlViews } from '../shared/control';
 import { startCore } from '../shared/core';
 import { type RendererRequest, type RenderWorkerInit, replyToPage, startSteps } from './protocol';
 
@@ -18,21 +18,13 @@ self.onmessage = async (event: MessageEvent<RenderWorkerInit | RendererRequest>)
 	const message = event.data;
 	if (message.type === 'init') {
 		try {
-			const slots = controlViews(message.control).slots;
-			controlSlots = slots;
+			controlSlots = controlViews(message.control).slots;
 			const { glue: core } = await startCore(message.build, message.module, message.memory, step);
-			const create = () =>
-				createRenderer(message.canvas, {
-					...message,
-					scene: message.memory && { memory: message.memory, control: message.control },
-				});
-			drawing = new Drawing(
-				await create(),
-				create,
-				(renderer) => runRenderLoop(renderer, message.control, message.metrics, message.fps),
-				slots,
-				(reason) => replyToPage({ type: 'lost', role: 'render', reason }),
-			);
+			drawing = await startDrawing({
+				...message,
+				scene: message.memory && { memory: message.memory, control: message.control },
+				fail: (reason) => replyToPage({ type: 'lost', role: 'render', reason }),
+			});
 			replyToPage({
 				type: 'ready',
 				role: 'render',
@@ -48,9 +40,7 @@ self.onmessage = async (event: MessageEvent<RenderWorkerInit | RendererRequest>)
 			});
 		}
 	} else if (message.type === 'capture' && drawing && controlSlots) {
-		const captured = await drawing.renderer.capture(
-			emptySceneInput(Atomics.load(controlSlots, Slot.FramesTaken)),
-		);
+		const captured = await captureFrame(drawing, controlSlots);
 		replyToPage({ type: 'captured', ...captured }, [captured.pixels.buffer]);
 	} else if (message.type === 'lose-gpu') {
 		drawing?.simulateLoss();

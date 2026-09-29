@@ -24,6 +24,12 @@ The engine's hot paths stay allocation-free with these habits (hard rule 1):
 - Uploads from 64 KiB to 4 MiB take the route that the render worker measures as faster on the device: `queue.writeBuffer` or the staging ring.
 - In Chrome on a Mac the ring is 3 to 6 times faster in that range, as `writeBuffer` takes up to 0.8 ms per MB. In Safari `writeBuffer` wins at every size, because unmapping a staging buffer costs time in proportion to its size. Outside that range `writeBuffer` wins in every browser measured.
 
+## Download size
+
+- The page and the sketch worker load the renderer and the GPU layer (`render/draw.ts`) with a dynamic import, only in the modes where they draw. A pipelined page then downloads the GPU layer once, in the render worker.
+- In their other modules, import only types from the renderer and the GPU layer: a value import bundles the GPU layer into their files again.
+- The sketch worker starts the import with its other startup work. The page starts it once the core has downloaded. An earlier start slowed the core's download on Slow 4G and delayed the first frame by 22 to 37 ms.
+
 ## Threads and shared memory
 
 - A job worker without work blocks its thread in a wait (hard rule 5). When Safari stops a thread inside such a wait, it keeps the thread's shared memory until the tab closes, even across reloads. The engine therefore ends the job workers' loops before it stops them, and `destroy()` resolves once they have stopped.

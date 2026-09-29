@@ -22,8 +22,8 @@ This repository holds the null3D engine, its tools, its documentation and its ag
 | Command | Use |
 | --- | --- |
 | `bun install` | Install the tools and set up the git hooks |
-| `bun run build` | Build both WebAssembly files, the threaded one and the single-threaded one, and print their sizes |
-| `bun run build:check-size` | Build, and fail when a WebAssembly file grew more than 2% after Brotli compression |
+| `bun run build` | Build both WebAssembly files, the threaded one and the single-threaded one, and print their sizes and the sizes of the engine's JavaScript in a production build |
+| `bun run build:check-size` | Build, and fail when a WebAssembly file or a file of the engine's JavaScript grew more than 2% after Brotli compression |
 | `bun run test` | Unit tests for the engine, the benchmark scenes and the repository tools |
 | `bun run test:browser` | Image tests on WebGPU and WebGL2 in Chrome, through Playwright, and the engine test again on a production build served by `vite preview` |
 | `bun run test:real-browsers Safari Firefox` | The same test pages in browser apps that Playwright cannot drive, through the runner page (macOS) |
@@ -33,7 +33,7 @@ This repository holds the null3D engine, its tools, its documentation and its ag
 | `bun run bench:run` | The benchmark protocol in a visible Chrome window: fresh runs of each scene in both engines and of the scene code both run, with a summary of each engine's whole frame, own work, busiest thread and frame pacing; `--sweep` runs each scene from one object up, on both null3D paths in both latency modes and both three.js renderers, and compares each path with three.js's faster renderer and with three.js on the same API; `--jobs 1,2,4` runs the null3D pages at each job worker count |
 | `bun run bench:allocation` | Sample what the sketch worker and the render worker allocate per frame in S1, with Chrome's heap profiler; `--gpu webgl2` samples the WebGL2 path |
 | `bun run bench:profile` | Sample Chrome's CPU profiler on the render worker while each benchmark scene runs, and split the time of the draw-list replay into the engine's own code and the browser calls it makes; `--gpu webgpu` profiles the WebGPU path, and `--android` profiles Chrome on a phone connected by USB |
-| `bun run bench:startup` | A cold start of the engine test page's production build in Chrome, on Slow 4G with an empty cache: the startup milestones, requests and bytes of each run |
+| `bun run bench:startup` | A cold start of the engine test page's production build in Chrome, on Slow 4G with an empty cache: the startup milestones, requests and bytes of each run; `--switches latency=low` starts the engine in another thread mode |
 | `bun run readme-media` | Render the README's animation of S1 with the engine |
 | `bun run dev` | Serve the test and benchmark pages with the isolation headers on port 5173, or on the port that `NULL3D_PORT` names |
 | `bun run dev-cert` | Make a local HTTPS certificate for testing on phones and tablets |
@@ -50,7 +50,7 @@ This repository holds the null3D engine, its tools, its documentation and its ag
 | `bun run typecheck` | TypeScript check |
 | `bun run release` | Print the next version and its changelog. `--apply` writes them, as the Release workflow does, and `--notes <version>` prints one release's notes |
 
-A size growth over 2% needs a reason: explain it in the commit message and run `bun tools/build-wasm.ts --update-size`, which rewrites the committed baseline.
+A size growth over 2% needs a reason: explain it in the commit message and run `bun tools/build-wasm.ts --update-size`, which rewrites the committed baseline. A file over its budget fails every build. The budgets are 600 KB after Brotli for each WebAssembly file, and 60 KB for the engine's JavaScript that a page downloads.
 
 ## Design principles
 

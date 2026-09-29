@@ -14,5 +14,33 @@
 	"single/null3d.js": {
 		"raw": 18167,
 		"brotli": 4020
+	},
+	"js/page.js": {
+		"raw": 55210,
+		"brotli": 17363
+	},
+	"js/page-renderer.js": {
+		"raw": 83600,
+		"brotli": 15508
+	},
+	"js/sketch-worker.js": {
+		"raw": 30983,
+		"brotli": 9600
+	},
+	"js/sketch-worker-renderer.js": {
+		"raw": 83790,
+		"brotli": 15453
+	},
+	"js/render-worker.js": {
+		"raw": 97443,
+		"brotli": 19669
+	},
+	"js/job-worker.js": {
+		"raw": 11604,
+		"brotli": 3832
+	},
+	"js/probe-worker.js": {
+		"raw": 607,
+		"brotli": 296
 	}
 }

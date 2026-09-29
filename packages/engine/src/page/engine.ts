@@ -1,12 +1,12 @@
 // createEngine: the page side of the engine. It probes the device, picks the build and the GPU tier,
-// starts the workers, and hands the canvas to the thread that draws.
+// starts the workers, and hands the canvas to the thread that draws. The page loads the renderer
+// only when it draws itself.
 
 import { ERRORS, type ErrorCode } from '../errors/codes';
 import { EngineError } from '../errors/engine-error';
-import { runDirectLoop } from '../render/direct-loop';
-import { emptySceneInput, type RenderLoop, runRenderLoop } from '../render/loop';
-import { Drawing } from '../render/recovery';
-import { createRenderer, type Renderer, type Tier } from '../render/renderer';
+import { type DrawModule, loadDrawModule } from '../render/load-draw';
+import type { Drawing } from '../render/recovery';
+import type { Renderer, Tier } from '../render/renderer';
 import { controlViews, createControlBuffer, Slot } from '../shared/control';
 import { type Build, type CoreGlue, startCore } from '../shared/core';
 import { createMetricsBuffer, MetricsReader } from '../shared/metrics';
@@ -402,6 +402,9 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 	Atomics.store(slots, Slot.Running, 1);
 	const core = await abortable(coreLoad, signal);
 	onProgress?.('core');
+	// A page that draws loads the renderer after the core, whose download it would slow on a slow
+	// network, and while the page starts the core and the sketch.
+	const drawModule = renderThread === 'main' ? loadDrawModule() : undefined;
 	let wasmMemory = core.memory;
 	const sketchUrl = new URL(options.sketch, globalThis.location?.href).href;
 	const device = coreDevice(tier === 'webgl2', report, switches.copyUploads);
@@ -451,22 +454,23 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 	};
 	const pageLoss = (reason: string) =>
 		onFailure(new EngineError('E1302', `the page lost its GPU: ${reason}.`));
+	let draw: DrawModule | undefined;
 	/**
-	 * Draws on the page's thread from the draw lists in `memory`. `run` starts the frame loop with
-	 * each renderer: the first, and each one that replaces a lost GPU device.
+	 * Draws on the page's thread from the draw lists in `memory`, with the renderer that the page
+	 * loads for it. With a sketch, the page steps it before each draw.
 	 */
-	const drawOnPage = async (
-		memory: WebAssembly.Memory | undefined,
-		run: (renderer: Renderer) => RenderLoop,
-	) => {
-		const create = () =>
-			createRenderer(options.canvas, {
-				...rendererSetup,
-				metrics,
-				device,
-				scene: memory && { memory, control },
-			});
-		return new Drawing(await create(), create, run, slots, pageLoss);
+	const drawOnPage = async (memory: WebAssembly.Memory | undefined, sketch?: SketchRunner) => {
+		draw = await (drawModule ?? loadDrawModule());
+		return draw.startDrawing({
+			canvas: options.canvas,
+			...rendererSetup,
+			metrics,
+			device,
+			scene: memory && { memory, control },
+			control,
+			sketch,
+			fail: pageLoss,
+		});
 	};
 
 	const workers: EngineWorker[] = [];
@@ -503,10 +507,7 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 				device,
 			});
 			await localRunner.load(sketchUrl);
-			const runner = localRunner;
-			localDrawing = await drawOnPage(memory, (renderer) =>
-				runDirectLoop(runner, renderer, control, metrics, rendererSetup.fps),
-			);
+			localDrawing = await drawOnPage(memory, localRunner);
 		} else {
 			sketch = new EngineWorker(
 				new Worker(new URL('../workers/sketch-worker.ts', import.meta.url), {
@@ -549,9 +550,7 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 						canvas,
 					]);
 				} else {
-					localDrawing = await drawOnPage(core.memory, (renderer) =>
-						runRenderLoop(renderer, control, metrics, rendererSetup.fps),
-					);
+					localDrawing = await drawOnPage(core.memory);
 				}
 			}
 			// The sketch and render threads start first; the engine is ready once they are.
@@ -687,10 +686,7 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 			};
 		},
 		async captureFrame() {
-			if (localDrawing)
-				return localDrawing.renderer.capture(
-					emptySceneInput(Atomics.load(slots, Slot.FramesTaken)),
-				);
+			if (localDrawing && draw) return draw.captureFrame(localDrawing, slots);
 			const reply = await rendererHost?.request({ type: 'capture' });
 			if (reply?.type !== 'captured') throw new Error('the frame could not be captured');
 			return { width: reply.width, height: reply.height, pixels: reply.pixels };

@@ -1,4 +1,5 @@
-// Builds the engine's two WebAssembly files and reports their sizes. Run from the repository root:
+// Builds the engine's two WebAssembly files, then reports their sizes and the sizes of the engine's
+// JavaScript in a production build of the engine test page. Run from the repository root:
 //   bun tools/build-wasm.ts                 build both variants, then print the size report
 //   bun tools/build-wasm.ts --check-size    also fail when a file grew past the allowed margin
 //   bun tools/build-wasm.ts --update-size   also rewrite the committed size baseline
@@ -7,29 +8,43 @@
 // them. The single-threaded build runs on pages that are not cross-origin isolated. The
 // wasm-bindgen command-line tool must match the crate version exactly, so the script downloads
 // that release into the build folder and verifies its checksum.
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
 	chmodSync,
 	existsSync,
 	mkdirSync,
+	readdirSync,
 	readFileSync,
 	renameSync,
 	rmSync,
 	writeFileSync,
 } from 'node:fs';
 import { join } from 'node:path';
-import { brotliCompressSync, constants } from 'node:zlib';
+import {
+	type BuiltFile,
+	downloadSizes,
+	findEngineParts,
+	growthProblems,
+	measure,
+	type SizeEntry,
+	totalSize,
+} from './lib/size-report';
 
 const root = process.cwd();
 const CRATE = 'null3d-wasm';
 const OUT_DIR = 'packages/engine/dist/wasm';
 const TOOLS_DIR = 'target/tools';
 const SIZE_BASELINE = 'tools/size-baseline.json';
-/** Growth over the committed baseline that fails the size check. */
-const MAX_GROWTH = 0.02;
 /** Brotli budget for each core WebAssembly file. */
 const WASM_BUDGET_BYTES = 600 * 1024;
+/**
+ * Brotli budget for the engine's JavaScript that a page downloads, in whichever thread mode
+ * downloads the most. The core's generated glue counts with the WebAssembly files instead.
+ */
+const JS_BUDGET_BYTES = 60 * 1024;
+/** Where the size report builds the engine test page, apart from the build the browser tests serve. */
+const JS_BUILD_DIR = 'target/js-size';
 
 interface Variant {
 	name: 'threaded' | 'single';
@@ -239,39 +254,44 @@ export function memoryImportLimits(bytes: Uint8Array): MemoryLimits | null {
 	return null;
 }
 
-export interface SizeEntry {
-	raw: number;
-	brotli: number;
-}
-
-export function measure(bytes: Buffer): SizeEntry {
-	const brotli = brotliCompressSync(bytes, {
-		params: { [constants.BROTLI_PARAM_QUALITY]: 11 },
-	}).length;
-	return { raw: bytes.length, brotli };
-}
-
-/** Files whose Brotli size grew more than the allowed margin over the baseline. */
-export function growthProblems(
-	current: Record<string, SizeEntry>,
-	baseline: Record<string, SizeEntry>,
-): string[] {
-	const problems: string[] = [];
-	for (const [file, size] of Object.entries(current)) {
-		const before = baseline[file];
-		if (!before) continue;
-		const growth = (size.brotli - before.brotli) / before.brotli;
-		if (growth > MAX_GROWTH) {
-			problems.push(
-				`${file} grew ${(growth * 100).toFixed(1)}% after Brotli (${before.brotli} to ${size.brotli} bytes). ` +
-					'Explain the growth in the commit message and run bun tools/build-wasm.ts --update-size.',
-			);
-		}
-	}
-	return problems;
+/**
+ * Builds the engine test page for production with hidden source maps, which leave the JavaScript
+ * as it ships, and reads each JavaScript file with the source files it holds. The core's glue is
+ * copied as it is and has no map. Vite writes a worker's source paths from the build folder and
+ * the page's from its assets folder, both inside the repository, so a path without its leading
+ * steps up is the path from the repository's root.
+ */
+function buildEngineTestPage(): BuiltFile[] {
+	console.log('\nbuilding the engine test page for production');
+	const args = ['vite', 'build', '--sourcemap', 'hidden', '--outDir', JS_BUILD_DIR];
+	const build = spawnSync('bunx', args, { cwd: root, encoding: 'utf8' });
+	if (build.status !== 0)
+		throw new Error(`the production build failed:\n${build.stdout}\n${build.stderr}`);
+	const assets = join(root, JS_BUILD_DIR, 'assets');
+	return readdirSync(assets)
+		.filter((file) => file.endsWith('.js') && existsSync(join(assets, `${file}.map`)))
+		.map((file) => {
+			const map = JSON.parse(readFileSync(join(assets, `${file}.map`), 'utf8')) as {
+				sources: string[];
+			};
+			return {
+				file,
+				text: readFileSync(join(assets, file), 'utf8'),
+				sources: map.sources.map((source) => source.replace(/^(\.\.?\/)+/, '')),
+			};
+		});
 }
 
 const kb = (n: number) => `${(n / 1024).toFixed(1)} KB`;
+
+function printSize(name: string, size: SizeEntry, budgetBytes?: number): void {
+	const budget = budgetBytes
+		? `  ${((size.brotli / budgetBytes) * 100).toFixed(1)}% of budget`
+		: '';
+	console.log(
+		`  ${name.padEnd(28)} raw ${kb(size.raw).padStart(10)}   brotli ${kb(size.brotli).padStart(10)}${budget}`,
+	);
+}
 
 async function main(): Promise<void> {
 	const version = lockedVersion(readFileSync(join(root, 'Cargo.lock'), 'utf8'), 'wasm-bindgen');
@@ -285,20 +305,32 @@ async function main(): Promise<void> {
 			sizes[`${variant.name}/${file}`] = measure(readFileSync(join(root, path)));
 		}
 	}
+	const parts = new Map(
+		[...findEngineParts(buildEngineTestPage())].map(([part, file]) => [
+			part,
+			measure(Buffer.from(file.text)),
+		]),
+	);
+	for (const [part, size] of parts) sizes[`js/${part}`] = size;
+	const downloads = downloadSizes(parts);
 
 	console.log('\nsize report (budget for each .wasm file: 600 KB after Brotli)');
-	for (const [file, size] of Object.entries(sizes)) {
-		const budget = file.endsWith('.wasm')
-			? `  ${((size.brotli / WASM_BUDGET_BYTES) * 100).toFixed(1)}% of budget`
-			: '';
-		console.log(
-			`  ${file.padEnd(28)} raw ${kb(size.raw).padStart(10)}   brotli ${kb(size.brotli).padStart(10)}${budget}`,
-		);
-	}
+	for (const [file, size] of Object.entries(sizes))
+		printSize(file, size, file.endsWith('.wasm') ? WASM_BUDGET_BYTES : undefined);
+	printSize('js total', totalSize(parts.values()));
+	console.log(
+		"\nthe engine's JavaScript that a page downloads in each thread mode, besides the core's glue (budget: 60 KB after Brotli)",
+	);
+	for (const { mode, size } of downloads) printSize(mode, size, JS_BUDGET_BYTES);
 
 	const problems = Object.entries(sizes)
 		.filter(([file, size]) => file.endsWith('.wasm') && size.brotli > WASM_BUDGET_BYTES)
 		.map(([file]) => `${file} is over its 600 KB Brotli budget`);
+	for (const { mode, size } of downloads)
+		if (size.brotli > JS_BUDGET_BYTES)
+			problems.push(
+				`the engine JavaScript that a page downloads in ${mode} mode is over its 60 KB Brotli budget`,
+			);
 	const baselinePath = join(root, SIZE_BASELINE);
 	if (process.argv.includes('--update-size')) {
 		writeFileSync(baselinePath, `${JSON.stringify(sizes, null, '\t')}\n`);

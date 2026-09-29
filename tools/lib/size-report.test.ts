@@ -1,0 +1,95 @@
+import { describe, expect, it } from 'bun:test';
+import {
+	type BuiltFile,
+	downloadSizes,
+	ENGINE_SOURCE,
+	findEngineParts,
+	growthProblems,
+	measure,
+} from './size-report';
+
+describe('size checks', () => {
+	it('measures raw and Brotli sizes', () => {
+		const size = measure(Buffer.alloc(10_000, 7));
+		expect(size.raw).toBe(10_000);
+		expect(size.brotli).toBeLessThan(100);
+	});
+
+	it('fails growth above 2% after Brotli, and ignores files with no baseline', () => {
+		const baseline = { 'a.wasm': { raw: 1000, brotli: 1000 } };
+		expect(growthProblems({ 'a.wasm': { raw: 1000, brotli: 1020 } }, baseline)).toEqual([]);
+		expect(growthProblems({ 'a.wasm': { raw: 1000, brotli: 1021 } }, baseline)[0]).toContain(
+			'grew 2.1%',
+		);
+		expect(growthProblems({ 'b.wasm': { raw: 1, brotli: 5000 } }, baseline)).toEqual([]);
+	});
+});
+
+/** A built file that holds the given engine modules and, after them, other sources. */
+function built(file: string, modules: string[], text = '', others: string[] = []): BuiltFile {
+	return { file, text, sources: [...modules.map((m) => ENGINE_SOURCE + m), ...others] };
+}
+
+describe('findEngineParts', () => {
+	const parts = [
+		{ name: 'page.js', module: 'page/engine.ts' },
+		{ name: 'page-renderer.js', module: 'render/draw.ts', loadedBy: 'page.js' },
+		{ name: 'worker.js', module: 'workers/worker.ts' },
+		{ name: 'worker-renderer.js', module: 'render/draw.ts', loadedBy: 'worker.js' },
+	];
+	const page = built('src-A1.js', ['page/engine.ts'], 'import("./draw-P1.js")');
+	const worker = built('worker-W1.js', ['workers/worker.ts'], 'import("./draw-W2.js")');
+	const pageRenderer = built('draw-P1.js', ['render/draw.ts', 'gpu/backend.ts']);
+	const workerRenderer = built('draw-W2.js', ['render/draw.ts', 'gpu/backend.ts']);
+	const testPage = built('engine-T1.js', [], 'from"./src-A1.js"', ['tests/pages/engine.ts']);
+
+	it('names each file by the engine module it holds, and a file loaded on demand by its loader', () => {
+		const found = findEngineParts([testPage, workerRenderer, page, pageRenderer, worker], parts);
+		expect([...found].map(([name, file]) => [name, file.file])).toEqual([
+			['page.js', 'src-A1.js'],
+			['page-renderer.js', 'draw-P1.js'],
+			['worker.js', 'worker-W1.js'],
+			['worker-renderer.js', 'draw-W2.js'],
+		]);
+	});
+
+	it('leaves out a part loaded on demand that the build bundles into its loader', () => {
+		const eager = built('worker-W1.js', ['workers/worker.ts', 'render/draw.ts']);
+		const found = findEngineParts([page, pageRenderer, eager], parts);
+		expect([...found.keys()]).toEqual(['page.js', 'page-renderer.js', 'worker.js']);
+	});
+
+	it('fails when a part has no file, or when a file holds engine code that no part names', () => {
+		expect(() => findEngineParts([page, pageRenderer], parts)).toThrow(
+			'worker.js: expected one built file that holds workers/worker.ts, found 0',
+		);
+		const stray = built('stray-S1.js', ['scene/scene.ts']);
+		expect(() => findEngineParts([page, worker, stray], parts)).toThrow(
+			'stray-S1.js holds engine code that the size report does not name',
+		);
+	});
+
+	it("fails when a part's file also holds a page's own code", () => {
+		const mixed = built('engine-T1.js', ['page/engine.ts'], '', ['tests/pages/engine.ts']);
+		expect(() => findEngineParts([mixed, worker], parts)).toThrow(
+			"page.js (engine-T1.js) also holds a page's own code (tests/pages/engine.ts)",
+		);
+	});
+});
+
+describe('downloadSizes', () => {
+	it("adds up each mode's parts, and counts a part the build lacks as nothing", () => {
+		const sizes = new Map([
+			['page.js', { raw: 100, brotli: 40 }],
+			['worker.js', { raw: 50, brotli: 20 }],
+		]);
+		const downloads = [
+			{ mode: 'both', parts: ['page.js', 'worker.js'] },
+			{ mode: 'page only', parts: ['page.js', 'page-renderer.js'] },
+		];
+		expect(downloadSizes(sizes, downloads)).toEqual([
+			{ mode: 'both', size: { raw: 150, brotli: 60 } },
+			{ mode: 'page only', size: { raw: 100, brotli: 40 } },
+		]);
+	});
+});
