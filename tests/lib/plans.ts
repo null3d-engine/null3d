@@ -242,12 +242,14 @@ export interface PlanSettings {
 	pages?: readonly BenchPageKind[];
 	/** The bench plan's scenes, or undefined for S1. */
 	scenes?: readonly ParityScene[];
+	/** The bench plan's warm-up and measured seconds, each, or undefined for the protocol's. */
+	seconds?: number;
 }
 
 /**
  * The benchmark protocol in browsers that Playwright cannot drive: `runs` fresh runs of each page
- * of each scene, each a 5-second warm-up and 30 measured seconds, with `count` instances when
- * given. With job worker counts, each run times the pages once at each count, and the pages are
+ * of each scene, each a 5-second warm-up and 30 measured seconds, or `seconds` of each, with
+ * `count` instances when given. With job worker counts, each run times the pages once at each count, and the pages are
  * null3D's two GPU paths unless the settings name others. The pages take turns run by run, so a
  * device that slows as it warms up slows every page alike.
  */
@@ -257,6 +259,7 @@ export function benchPlan({
 	jobs,
 	pages,
 	scenes = ['s1'],
+	seconds,
 }: PlanSettings = {}): PlanItem<Check>[] {
 	const kinds = pages ?? (jobs ? JOBS_PAGES : BENCH_PAGES);
 	const runsOfPages = jobs
@@ -268,7 +271,7 @@ export function benchPlan({
 				benchItem(
 					`bench-${scene}-${page}${workers === undefined ? '' : `-jobs${workers}`}-${run + 1}`,
 					page,
-					{ n: count, jobs: workers },
+					{ n: count, jobs: workers, seconds },
 					scene,
 				),
 			),

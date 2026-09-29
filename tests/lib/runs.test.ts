@@ -432,6 +432,17 @@ describe('the bench plan', () => {
 		});
 	});
 
+	it('times each page for the seconds given, both to warm up and to measure', () => {
+		const [item] = benchPlan({ count: 250_000, runs: 1, seconds: 300 });
+		expect(item?.path).toContain('seconds=300');
+		expect(item?.path).toContain('n=250000');
+		expect(item?.timeoutSeconds).toBe(2 * 300 + 60);
+		expect(parseArgs(['--plan', 'bench', '--seconds', '300', 'Safari']).seconds).toBe(300);
+		expect(() => parseArgs(['--plan', 'memory', '--seconds', '300'])).toThrow(
+			'--seconds works with --plan bench only',
+		);
+	});
+
 	it('takes the number of runs and the instance count', () => {
 		const items = benchPlan({ runs: 2, count: 1000 });
 		expect(items).toHaveLength(14);

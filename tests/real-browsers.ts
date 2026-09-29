@@ -25,6 +25,8 @@
 //                       GPU paths at each count instead of its usual pages
 //   --pages <list>      the bench plan's page kinds, such as null3d-webgl2,null3d-webgl2-low
 //   --scenes <list>     the bench plan's scenes: s1, s1-static, s2; the default is s1
+//   --seconds <n>       the bench plan's warm-up and measured seconds, each, instead of the
+//                       protocol's 5 and 30; 300 gives the protocol's 10-minute sustained run
 //   --shields on|off    the state of Brave's Shields for the dev server's site, which the runner
 //                       cannot read: it goes into each Brave result and the run's summary
 //   --android <list>    browsers on the Android phone: chrome, chrome-beta, brave, firefox, samsung
@@ -100,6 +102,8 @@ export interface Options {
 	pages?: BenchPageKind[];
 	/** The bench plan's scenes, when given. */
 	scenes?: ParityScene[];
+	/** The bench plan's warm-up and measured seconds, each, when given. */
+	seconds?: number;
 	/** The state of Brave's Shields for the dev server's site, when given. */
 	shields?: ShieldsState;
 	/** macOS app names, such as Safari. */
@@ -109,7 +113,7 @@ export interface Options {
 }
 
 const USAGE =
-	'usage: bun tests/real-browsers.ts [--plan <name>] [--allow-no-webgpu] [--allow-no-webgl2] [--n <count>] [--runs <count>] [--jobs <counts>] [--pages <kinds>] [--scenes <scenes>] [--shields on|off] [--android <browsers>] [--lan <runners>] [<macOS app>...]';
+	'usage: bun tests/real-browsers.ts [--plan <name>] [--allow-no-webgpu] [--allow-no-webgl2] [--n <count>] [--runs <count>] [--jobs <counts>] [--pages <kinds>] [--scenes <scenes>] [--seconds <n>] [--shields on|off] [--android <browsers>] [--lan <runners>] [<macOS app>...]';
 
 /** The states of Brave's Shields that --shields takes. */
 const SHIELDS_STATES = ['on', 'off'] as const;
@@ -152,6 +156,7 @@ export function parseArgs(args: readonly string[]): Options {
 		else if (arg === '--jobs') options.jobs = readJobCounts(args[++i]);
 		else if (arg === '--pages') options.pages = known(arg, list(args[++i]), BENCH_PAGE_KINDS);
 		else if (arg === '--scenes') options.scenes = known(arg, list(args[++i]), PARITY_SCENES);
+		else if (arg === '--seconds') options.seconds = wholeNumber(arg, args[++i]);
 		else if (arg === '--shields') options.shields = oneOf(arg, args[++i], SHIELDS_STATES);
 		else if (arg === '--plan') options.plan = args[++i] ?? '';
 		else if (arg === '--android') options.android = list(args[++i]);
@@ -168,6 +173,7 @@ export function parseArgs(args: readonly string[]): Options {
 		['--jobs', options.jobs],
 		['--pages', options.pages],
 		['--scenes', options.scenes],
+		['--seconds', options.seconds],
 	] as const)
 		if (given && options.plan !== 'bench')
 			throw new Error(`${flag} works with --plan bench only\n${USAGE}`);
@@ -374,6 +380,7 @@ async function runPlan(
 			jobs: options.jobs,
 			pages: options.pages,
 			scenes: options.scenes,
+			seconds: options.seconds,
 		}),
 	);
 	const heatReadings = new Map<string, HeatSample[]>();
