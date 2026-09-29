@@ -80,7 +80,7 @@ jobs:
           fi
           grep -q 'disallowed method `std::time::SystemTime::now`' clippy.log
 
-  wasm-and-browser:
+  wasm-and-bench:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     env:
@@ -101,17 +101,51 @@ jobs:
       - name: Install Chromium for Playwright
         working-directory: tests
         run: bunx playwright install --with-deps chromium
-      - name: Browser tests on SwiftShader, WebGPU and WebGL2
-        run: bun run test:browser
       - name: The benchmark pages on SwiftShader
         run: bun run test:bench
       - uses: actions/upload-artifact@v4
         if: failure()
         with:
-          name: browser-test-results
+          name: bench-test-results
           path: |
             test-results/
             target/playwright-bench/
+          if-no-files-found: ignore
+
+  browser:
+    # The browser tests, the image test manifest among them, split into shards that run at once.
+    # Add a shard when one takes more than about 10 minutes.
+    name: browser (shard ${{ matrix.shard }} of 2)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
+    env:
+      HUSKY: "0"
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install the pinned Rust toolchain
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun install --frozen-lockfile
+      - run: bun run build
+      - name: Install Chromium for Playwright
+        working-directory: tests
+        run: bunx playwright install --with-deps chromium
+      - name: Browser tests on SwiftShader, WebGPU and WebGL2
+        run: bun run test:browser --shard=${{ matrix.shard }}/2
+      # The images that differ from their references, or have none yet, with their diffs:
+      # bun run images:review --ci <run> fetches them.
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: browser-test-results-${{ matrix.shard }}
+          path: test-results/
           if-no-files-found: ignore
 
   real-browsers:
@@ -141,5 +175,7 @@ jobs:
         if: failure() || cancelled()
         with:
           name: real-browser-runs
-          path: target/runs/
+          path: |
+            target/runs/
+            test-results/images/
           if-no-files-found: ignore

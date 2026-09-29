@@ -33,6 +33,7 @@ import {
 	summarizeRuns,
 } from '../../bench/lib/report.ts';
 import { MEASURE_SECONDS, WARMUP_SECONDS } from '../../bench/scenes/spec.ts';
+import { IMAGE_RUNS } from '../image/manifest.ts';
 import {
 	ENGINE_MODES,
 	type EngineMode,
@@ -40,20 +41,17 @@ import {
 	engineProblems,
 	jobWorkersProblem,
 } from './engine-checks.ts';
-import { compareToReference } from './images.ts';
-import type { ItemResult, PlanItem } from './runs.ts';
+import { type HarnessDirs, type ImageRun, imageProblems } from './images.ts';
+import { failureText, type ItemResult, lastSteps, type PlanItem, slug } from './runs.ts';
 
+/** The GPU interface that a page draws with. */
 export type Tier = 'webgpu' | 'webgl2';
-
-/** The GPU paths that the texture page draws on, which name its reference images. */
-export type TexturePath = 'webgpu' | 'compat' | 'webgl2';
 
 export type Check =
 	| { kind: 'capabilities' }
 	| { kind: 'capabilities-reload'; first: string }
 	| { kind: 'isolation' }
-	| { kind: 'clear'; tier: Tier }
-	| { kind: 'textures'; tier: Tier; path: TexturePath }
+	| { kind: 'image'; run: ImageRun }
 	| { kind: 'shaders' }
 	| { kind: 'engine'; tier: Tier; mode: EngineMode }
 	| { kind: 'restarts'; mode: EngineMode }
@@ -74,17 +72,18 @@ export interface JudgeContext {
 	storedBaselines?: StoredBaselines;
 	/** Records a finding that neither passes nor fails the result, such as a changed list order. */
 	note?(text: string): void;
+	/** The runner whose results these are, and its device, where image tests find their references. */
+	runner?: { name: string; device: string };
+	/** Where image tests find references and save candidates, when not in the repository's folders. */
+	harnessDirs?: HarnessDirs;
 }
 
 const TEST_PAGES = '/tests/pages/';
 const TIERS: readonly Tier[] = ['webgpu', 'webgl2'];
-const TEXTURE_PATHS: readonly TexturePath[] = ['webgpu', 'compat', 'webgl2'];
 /** How long a benchmark page may take to publish its hold frame on a slow device. */
 const HOLD_TIMEOUT_SECONDS = 60;
 /** How long the restart page may take: up to ten starts and stops, and two counts of the room. */
 const RESTARTS_TIMEOUT_SECONDS = 120;
-
-const slug = (text: string) => text.toLowerCase().replace(/[^a-z0-9]+/g, '-');
 
 /** The result text of an item that the runner page never reached. */
 export const NO_RESULT = 'no result; the runner stopped before this page';
@@ -151,10 +150,24 @@ export function benchItem(
 /** The checks plan's first load of the capabilities page, which its last load is compared with. */
 const CAPABILITIES = 'capabilities';
 
+/** The name of the checks plan's item for one run of the image test manifest. */
+const imageItemId = (runId: string) => `image-${runId}`;
+
+/** The runner page's item for one run of the image test manifest. */
+function imageItem(run: ImageRun): PlanItem<Check> {
+	return {
+		id: imageItemId(run.id),
+		path: run.path,
+		timeoutSeconds: run.timeoutSeconds,
+		check: { kind: 'image', run },
+	};
+}
+
 /**
- * The browser checks: the capability report, isolation, clear colors, the engine in every mode on
- * both GPU paths, and the engine started and stopped again and again in every mode. The
- * capabilities page loads again last, so its extension answers can be compared across loads.
+ * The browser checks: the capability report, isolation, every run of the image test manifest, the
+ * engine in every mode on both GPU paths, and the engine started and stopped again and again in
+ * every mode. The capabilities page loads again last, so its extension answers can be compared
+ * across loads.
  */
 export function checksPlan(): PlanItem<Check>[] {
 	return [
@@ -162,17 +175,7 @@ export function checksPlan(): PlanItem<Check>[] {
 		pageItem('isolation', 'isolation', { kind: 'isolation' }),
 		pageItem('shaders', 'shaders', { kind: 'shaders' }),
 		pageItem('uploads', 'uploads', { kind: 'uploads', tier: 'webgpu' }, { timeoutSeconds: 90 }),
-		...TIERS.map((tier) =>
-			pageItem(`clear-${tier}`, 'clear', { kind: 'clear', tier }, { switches: [`gpu=${tier}`] }),
-		),
-		...TEXTURE_PATHS.map((path) =>
-			pageItem(
-				`textures-${path}`,
-				'replay-textures',
-				{ kind: 'textures', tier: path === 'webgl2' ? 'webgl2' : 'webgpu', path },
-				{ switches: [`gpu=${path}`] },
-			),
-		),
+		...IMAGE_RUNS.map(imageItem),
 		...TIERS.flatMap((tier) =>
 			ENGINE_MODES.map((mode) =>
 				engineItem(`engine-${tier}-${slug(mode.name)}`, [`gpu=${tier}`, mode.query], {
@@ -360,7 +363,8 @@ export const NONE_MISSING: MissingAllowed = { webgpu: false, webgl2: false };
  * The GPU path a check needs, which a device may lack: its tier, or WebGL2 for the shaders page,
  * which compiles the GLSL programs there.
  */
-function neededPath(check: Check): Tier | undefined {
+export function neededPath(check: Check): Tier | undefined {
+	if (check.kind === 'image') return gpuApiOf(check.run.tier);
 	if ('tier' in check) return check.tier;
 	return check.kind === 'shaders' ? 'webgl2' : undefined;
 }
@@ -478,29 +482,25 @@ function reloadProblems(
 		);
 }
 
-/** What is wrong with a page's image, against the reference of its GPU path. */
-function referenceProblems(name: string, path: string, result: ItemResult): string[] {
-	try {
-		compareToReference(
-			name,
-			path,
-			Buffer.from(String(result.pixels ?? ''), 'base64'),
-			Number(result.width ?? 0),
-			Number(result.height ?? 0),
-		);
-		return [];
-	} catch (e) {
-		return [(e as Error).message];
-	}
-}
-
-/** How many of a page's last steps a failure's message quotes. */
-const LAST_STEPS = 6;
-
-/** The last steps of a page's trail, as a failure's message quotes them, or nothing without one. */
-export function lastSteps(trail: unknown): string {
-	const steps = Array.isArray(trail) ? trail.map(String) : [];
-	return steps.length > 0 ? `; the page's last steps: ${steps.slice(-LAST_STEPS).join('; ')}` : '';
+/**
+ * What is wrong with a runner's image from the image test manifest. Every thread mode after a
+ * test's first on a tier must draw the first mode's pixels, which the same run holds.
+ */
+function imageRunProblems(
+	{ run }: Extract<Check, { kind: 'image' }>,
+	result: ItemResult,
+	context: JudgeContext | undefined,
+): string[] {
+	if (!context?.runner) return ['no runner to find the references of'];
+	const { name, device } = context.runner;
+	const first = run.sameAs === undefined ? undefined : context.resultOf(imageItemId(run.sameAs));
+	return imageProblems(
+		run,
+		result,
+		{ runner: name, device },
+		first?.ok ? first : undefined,
+		context.harnessDirs,
+	);
 }
 
 /** What the restart page reports about the engine's starts and stops. */
@@ -557,7 +557,7 @@ export function judge(
 	if (!result.ok) {
 		const path = neededPath(check);
 		if (path && missing[path] && missingPath(path, result.error)) return 'skip';
-		return [`${result.error ?? 'the page failed without a message'}${lastSteps(result.trail)}`];
+		return [failureText(result)];
 	}
 	switch (check.kind) {
 		case 'capabilities':
@@ -570,13 +570,8 @@ export function judge(
 			if (!result.threaded) problems.push('the threaded build did not load');
 			return problems;
 		}
-		case 'clear':
-			return referenceProblems('clear', check.tier, result);
-		case 'textures':
-			return [
-				...((result.errors ?? []) as string[]).map((error) => `GPU error: ${error}`),
-				...referenceProblems('replay-textures', check.path, result),
-			];
+		case 'image':
+			return imageRunProblems(check, result, context);
 		case 'shaders': {
 			const failures = (result.failures ?? []) as { shader: string; stage: string; log: string }[];
 			const problems = failures.map((f) => `${f.shader} ${f.stage}: ${f.log.split('\n')[0]}`);

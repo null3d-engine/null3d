@@ -15,7 +15,8 @@ The benchmarks compare null3D with three.js in the same browser. These points co
 
 ## Hold frames
 
-- A benchmark page with `?hold` draws one frame at the scene's hold time, 2 seconds, and publishes its pixels. `?hold=<seconds>` holds at another time. The benchmark page tests, `bun run parity` and the device runner's parity plan compare these frames.
+- A benchmark page with `?hold` draws one frame at the scene's hold time, 2 seconds, and publishes its pixels. `?hold=<seconds>` holds at another time.
+- The image test manifest compares null3D's hold frames with their references. `bun run parity` and the device runner's parity plan compare them with three.js's frames. The benchmark page tests check that three.js's frames show the scene.
 - The null3D pages start the engine in hold mode with that time. The engine steps the sketch from 0 to the time at 60 steps per second, then draws that one frame and reads it back. The sketches pose their scene at `time.now`, and hold no time of their own.
 - The three.js pages pose their scene at the hold time and draw one frame into a render target, which they read back. The scenes are functions of time, so both engines draw the same moment.
 - Before it draws, a hold at 2 seconds runs 121 frames of the scene's update and the engine's steps. S1's hold page on the Mac takes about 0.6 seconds with 100,000 instances.

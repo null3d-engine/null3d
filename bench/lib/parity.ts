@@ -395,7 +395,8 @@ function sideBySide(left: RgbaImage, right: RgbaImage): RgbaImage {
 	return { width, height, data };
 }
 
-function encodePng({ width, height, data }: RgbaImage): Uint8Array {
+/** An image as a PNG file's bytes. */
+export function encodePng({ width, height, data }: RgbaImage): Uint8Array {
 	return encode({ width, height, data, channels: 4, depth: 8 });
 }
 

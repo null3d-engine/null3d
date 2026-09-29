@@ -2,7 +2,10 @@ import { describe, expect, it } from 'bun:test';
 import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { IMAGE_RUNS } from '../image/manifest.ts';
 import { braveShieldsOf, deviceChecklist, parseArgs, summaryLine } from '../real-browsers.ts';
+import { ENGINE_MODES } from './engine-checks.ts';
+import { writePng } from './images.ts';
 import {
 	benchPlan,
 	benchSummary,
@@ -83,9 +86,9 @@ describe('runName', () => {
 describe('the checks plan', () => {
 	const items = checksPlan();
 
-	it('has unique item names and pages on the test pages path', () => {
+	it('has unique item names, and pages on the test and benchmark pages paths', () => {
 		expect(new Set(items.map((item) => item.id)).size).toBe(items.length);
-		for (const item of items) expect(item.path.startsWith('/tests/pages/')).toBe(true);
+		for (const item of items) expect(item.path).toMatch(/^\/(tests|bench)\/pages\//);
 		expect(items.find((item) => item.id === 'engine-webgl2-single-threaded')?.path).toBe(
 			'/tests/pages/engine.html?gpu=webgl2&threads=off&seconds=2',
 		);
@@ -95,8 +98,8 @@ describe('the checks plan', () => {
 	});
 
 	it('skips a WebGPU page on a browser without WebGPU only when allowed', () => {
-		const webgpu = items.find((item) => item.id === 'clear-webgpu');
-		const webgl2 = items.find((item) => item.id === 'clear-webgl2');
+		const webgpu = items.find((item) => item.id === 'image-clear-webgpu');
+		const webgl2 = items.find((item) => item.id === 'image-clear-webgl2');
 		if (!webgpu || !webgl2) throw new Error('the plan lacks the clear pages');
 		const missing = {
 			ok: false,
@@ -109,19 +112,103 @@ describe('the checks plan', () => {
 		]);
 	});
 
-	it('draws the texture page on each GPU path, and fails it on GPU errors', () => {
-		const compat = items.find((item) => item.id === 'textures-compat');
+	it('runs every run of the image test manifest, each judged by the harness', () => {
+		const images = items.filter((item) => item.check.kind === 'image');
+		expect(images.map((item) => item.id)).toEqual(IMAGE_RUNS.map((run) => `image-${run.id}`));
+		const compat = items.find((item) => item.id === 'image-replay-textures-compat');
 		if (!compat) throw new Error('the plan lacks the texture pages');
 		expect(compat.path).toBe('/tests/pages/replay-textures.html?gpu=compat');
 		expect(judge(compat.check, { ok: false, error: 'no WebGPU adapter' }, NO_WEBGPU)).toBe('skip');
 		const failed = { ok: true, errors: ['a view is invalid'], pixels: '', width: 0, height: 0 };
-		expect(judge(compat.check, failed, NONE_MISSING)).toContain('GPU error: a view is invalid');
+		expect(judge(compat.check, failed, NONE_MISSING)).toEqual([
+			'no runner to find the references of',
+		]);
+		const root = mkdtempSync(join(tmpdir(), 'null3d-images-'));
+		try {
+			const harnessDirs = { references: join(root, 'references'), candidates: join(root, 'saved') };
+			const context = {
+				resultOf: () => undefined,
+				imageDir: root,
+				runner: { name: 'mac-safari', device: 'mac' },
+				harnessDirs,
+			};
+			expect(judge(compat.check, failed, NONE_MISSING, context)).toEqual([
+				'GPU error: a view is invalid',
+				'the image is 0 x 0 pixels, not 256 x 256',
+			]);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
+	});
+
+	it("compares a browser's image with the real-GPU reference, and every mode with the first", () => {
+		const first = items.find((item) => item.id === 'image-held-webgl2-pipelined');
+		const later = items.find((item) => item.id === 'image-held-webgl2-low-latency');
+		if (first?.check.kind !== 'image' || later?.check.kind !== 'image')
+			throw new Error('the plan lacks the held test');
+		const { size } = first.check.run;
+		const [width, height] = size;
+		const frame = (red: number) => {
+			const data = new Uint8Array(width * height * 4);
+			for (let i = 0; i < data.length; i += 4) data.set([red, 20, 30, 255], i);
+			return { width, height, data };
+		};
+		const resultOf = (red: number, mode: (typeof ENGINE_MODES)[number]): ItemResult => ({
+			ok: true,
+			tier: 'webgl2',
+			mode: {
+				build: mode.build,
+				latency: mode.latency,
+				renderThread: mode.renderThread,
+				hold: 1.5,
+			},
+			width,
+			height,
+			pixels: Buffer.from(frame(red).data).toString('base64'),
+		});
+		const root = mkdtempSync(join(tmpdir(), 'null3d-images-'));
+		try {
+			const harnessDirs = { references: join(root, 'references'), candidates: join(root, 'saved') };
+			writePng(join(harnessDirs.references, 'chrome-real-gpu/webgl2/held.png'), frame(10));
+			const results: Record<string, ItemResult> = {
+				[first.id]: resultOf(10, ENGINE_MODES[0]),
+			};
+			const context = {
+				resultOf: (id: string) => results[id],
+				imageDir: root,
+				runner: { name: 'mac-firefox', device: 'mac' },
+				harnessDirs,
+			};
+			expect(judge(first.check, results[first.id] as ItemResult, NONE_MISSING, context)).toEqual(
+				[],
+			);
+			const [identity, reference] = judge(
+				later.check,
+				resultOf(200, ENGINE_MODES[1]),
+				NONE_MISSING,
+				context,
+			) as string[];
+			expect(identity).toBe(
+				`${width * height} pixels differ from the image of the first thread mode, which every mode must draw`,
+			);
+			expect(reference).toContain(
+				'100.000% of pixels differ from the reference chrome-real-gpu/webgl2/held.png, and at most 0.500% may',
+			);
+			expect(readdirSync(join(harnessDirs.candidates, 'mac-firefox/webgl2')).sort()).toEqual([
+				'held-diff.png',
+				'held-reference.png',
+				'held.json',
+				'held.png',
+			]);
+		} finally {
+			rmSync(root, { recursive: true, force: true });
+		}
 	});
 
 	it('skips a WebGL2 page, and the shaders page, on a browser without WebGL2 only when allowed', () => {
 		const webgl2 = items.find((item) => item.id === 'engine-webgl2-pipelined');
 		const shaders = items.find((item) => item.id === 'shaders');
-		const webgpu = items.find((item) => item.id === 'clear-webgpu');
+		const webgpu = items.find((item) => item.id === 'image-clear-webgpu');
 		if (!webgl2 || !shaders || !webgpu) throw new Error('the plan lacks the pages');
 		const noWebGL2 = { webgpu: false, webgl2: true };
 		const engineMissing = {

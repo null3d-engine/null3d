@@ -1,18 +1,12 @@
 // Hold mode: the engine steps a sketch to a set time in fixed steps with seeded random numbers,
 // draws that one frame, reads it back, and publishes the frame or the error that stopped it. These
-// tests read what the engine publishes on a page that handles no error itself.
+// tests read what the engine publishes on a page that handles no error itself. The image test
+// manifest's held test checks the held frame's pixels in every thread mode and on every tier.
 import { expect, type Page, test } from '@playwright/test';
 import { HOLD_SEED, seededRandom } from '../../packages/engine/src/sketch/random.ts';
 import { ENGINE_MODES, type EngineMode } from '../lib/engine-checks.ts';
-import { compareToReference } from '../lib/images.ts';
 import { type HoldReport, holdResult, windowValue } from '../lib/page-result.ts';
 
-/** The GPU tiers, each forced with ?gpu=, and the tier the engine reports for it. */
-const TIERS = [
-	{ tier: 'webgpu', reported: 'webgpu' },
-	{ tier: 'compat', reported: 'webgpu-compat' },
-	{ tier: 'webgl2', reported: 'webgl2' },
-] as const;
 /** The sketch time the tests hold at, and the frame it gives: one frame, then 90 steps of 1/60 s. */
 const HOLD_SECONDS = 1.5;
 const HELD_FRAME = 91;
@@ -53,44 +47,12 @@ function frameOf(result: HoldReport, where: string): Extract<HoldReport, { ok: t
 
 const modeSwitches = (mode: EngineMode) => (mode.query ? `&${mode.query}` : '');
 
-for (const { tier, reported } of TIERS)
-	test(`two holds of an animated scene draw the same pixels in every thread mode on ${tier}, and match its reference`, async ({
-		page,
-	}) => {
-		const holds = [...ENGINE_MODES, ENGINE_MODES[0] as EngineMode];
-		let first: Extract<HoldReport, { ok: true }> | undefined;
-		for (const [index, mode] of holds.entries()) {
-			const where = `${mode.name}${index === ENGINE_MODES.length ? ', again' : ''}`;
-			const held = frameOf(
-				await hold(page, `gpu=${tier}&hold=${HOLD_SECONDS}${modeSwitches(mode)}`),
-				where,
-			);
-			expect([where, held.time, held.frame, held.tier]).toEqual([
-				where,
-				HOLD_SECONDS,
-				HELD_FRAME,
-				reported,
-			]);
-			first ??= held;
-			expect([where, held.width, held.height]).toEqual([where, first.width, first.height]);
-			// Byte for byte: the same steps and the same random numbers draw the same frame.
-			expect([where, held.pixels === first.pixels]).toEqual([where, true]);
-		}
-		if (!first) throw new Error('no frame was held');
-		compareToReference(
-			'held',
-			tier,
-			Buffer.from(first.pixels, 'base64'),
-			first.width,
-			first.height,
-		);
-	});
-
 test('hold mode steps the sketch in fixed steps to the held time, with seeded random numbers', async ({
 	page,
 }) => {
 	for (const mode of ENGINE_MODES) {
-		frameOf(await hold(page, `hold=${HOLD_SECONDS}${modeSwitches(mode)}`), mode.name);
+		const held = frameOf(await hold(page, `hold=${HOLD_SECONDS}${modeSwitches(mode)}`), mode.name);
+		expect([mode.name, held.time, held.frame]).toEqual([mode.name, HOLD_SECONDS, HELD_FRAME]);
 		const { state, mode: engineMode, seededOnPage, ownAfterStop } = await sketchState(page);
 		expect([mode.name, engineMode.hold, engineMode.renderThread]).toEqual([
 			mode.name,

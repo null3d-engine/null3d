@@ -12,10 +12,10 @@ This repository holds the null3D engine, its tools, its documentation and its ag
 | `.claude/skills/` | A generated copy of `skills/` for Claude Code. Never edit it. |
 | `crates/` | The Rust crates: core, GPU layer, renderer, shaders, the WebAssembly entry point, and the shader compiler that build tools load |
 | `packages/` | npm packages: `engine`, `vite-plugin`, and `cli`, which is the `null3d` command |
-| `tests/` | Browser tests: test pages, Playwright image tests, reference images and the real-browser runner |
+| `tests/` | Browser tests: test pages, the image test manifest and its reference images, the Playwright tests and the real-browser runner |
 | `tools/` | The WebAssembly build, the docs generator, the skills check and the commit hooks |
 | `examples/`, `bench/`, `templates/`, `porting-corpus/` | Demos, benchmarks, starter projects and the three.js porting corpus, as the milestones add them |
-| `.dev/` | Maintainer guides: [benchmarks](.dev/benchmarks.md), [device sessions](.dev/devices.md), [implementation notes](.dev/implementation-notes.md) and [releases](.dev/releases.md) |
+| `.dev/` | Maintainer guides: [benchmarks](.dev/benchmarks.md), [device sessions](.dev/devices.md), [image tests](.dev/image-tests.md), [implementation notes](.dev/implementation-notes.md) and [releases](.dev/releases.md) |
 
 ## Commands
 
@@ -25,9 +25,11 @@ This repository holds the null3D engine, its tools, its documentation and its ag
 | `bun run build` | Build both WebAssembly files, the threaded one and the single-threaded one, and the shader compiler for the Vite plugin. Print their sizes and the sizes of the engine's JavaScript in a production build |
 | `bun run build:check-size` | Build, and fail when a WebAssembly file or a file of the engine's JavaScript grew more than 2% after Brotli compression |
 | `bun run test` | Unit tests for the engine, the benchmark scenes and the repository tools |
-| `bun run test:browser` | Image tests on WebGPU and WebGL2 in Chrome, through Playwright, and the engine and errors tests again on a production build served by `vite preview` |
+| `bun run test:browser` | The browser tests in Chrome, through Playwright: the image test manifest on every GPU tier, and the engine's behavior. The engine and errors tests run again on a production build served by `vite preview`. CI splits the tests into shards with `--shard=1/2` |
+| `bun run test:images` | The image test manifest alone. Add Playwright's options, such as `-g scene` for the tests whose names hold scene |
+| `bun run images:review` | Show the images that runs saved because they have no reference or differ from it, each beside its reference and diff. `--accept` makes them references, and `--ci <run>` fetches a CI run's images first |
 | `bun run test:shader-compiler` | Run the shader crate's build tests again through the shader compiler, which must give the native build's results, then the compiler's own tests. Run `bun run build` first |
-| `bun run test:real-browsers Safari Firefox` | The same test pages in browser apps that Playwright cannot drive, through the runner page (macOS) |
+| `bun run test:real-browsers Safari Firefox` | The same test pages and the image test manifest in browser apps that Playwright cannot drive, through the runner page (macOS) |
 | `bun run devices` | The same checks on an Android phone over USB (Chrome, then Brave) and on runner pages that wait on the local network (an iPad's Safari and Brave). Add `--shields on` or `--shields off` to record the state of Brave's Shields |
 | `bun run test:bench` | The benchmark pages of both engines in Chrome, through Playwright |
 | `bun run parity` | Compare each benchmark scene's hold frame in null3D with three.js's, per GPU tier; `--save-baselines` stores how much three.js's two renderers differ, for devices that lack one of them |

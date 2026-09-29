@@ -1,7 +1,11 @@
+// A live engine drawing the small static scene of the image test manifest's scene test: its frames,
+// and the scene drawn again after a loss of the GPU, which must match that test's references.
 import { expect, type Page, test } from '@playwright/test';
 import { ENGINE_MODES } from '../lib/engine-checks.ts';
-import { compareToReference } from '../lib/images.ts';
+import { borrowedRun, environmentNamed, imageProblems } from '../lib/images.ts';
 import { pageResult } from '../lib/page-result.ts';
+import type { ItemResult } from '../lib/runs.ts';
+import { manifestRun } from './manifest.ts';
 
 interface SceneResult {
 	error?: string;
@@ -30,18 +34,6 @@ async function openScene(page: Page, switches: string): Promise<SceneResult> {
 	return result;
 }
 
-/** Checks that the page drew the scene on the tier, and matches the scene's reference image. */
-function expectImage(result: SceneResult, tier: 'webgpu' | 'webgl2'): void {
-	expect(result.capabilities.tier.startsWith(tier)).toBe(true);
-	compareToReference(
-		'scene',
-		tier,
-		Buffer.from(result.pixels, 'base64'),
-		result.width,
-		result.height,
-	);
-}
-
 /** Checks what a live engine's frames drew. */
 function expectFrames(result: SceneResult, tier: 'webgpu' | 'webgl2'): void {
 	const { stats } = result;
@@ -61,26 +53,18 @@ function expectFrames(result: SceneResult, tier: 'webgpu' | 'webgl2'): void {
 for (const tier of ['webgpu', 'webgl2'] as const)
 	for (const mode of ENGINE_MODES) {
 		const switches = `gpu=${tier}&${mode.query}`;
-		test(`a held scene matches its reference on ${tier}, ${mode.name}`, async ({ page }) => {
-			const result = await openScene(page, `${switches}&hold`);
-			expect(result.mode.hold).toBe(0);
-			expectImage(result, tier);
-		});
 		test(`a scene draws through the engine on ${tier}, ${mode.name}`, async ({ page }) => {
 			expectFrames(await openScene(page, switches), tier);
 		});
 		// The image shows that the engine drew the whole scene again on the new device.
 		test(`a scene draws again on a new device after the GPU is lost on ${tier}, ${mode.name}`, async ({
 			page,
-		}) => {
+		}, testInfo) => {
 			const result = await openScene(page, `${switches}&lose-gpu`);
 			expectFrames(result, tier);
-			expectImage(result, tier);
+			expect(result.capabilities.tier).toBe(tier);
+			const run = borrowedRun(manifestRun('scene', tier, mode.name), 'scene-after-gpu-loss');
+			const place = { environment: environmentNamed(testInfo.project.name) };
+			expect(imageProblems(run, result as unknown as ItemResult, place)).toEqual([]);
 		});
 	}
-
-test('the WebGL2 path draws the same scene when its uploads copy out of shared memory', async ({
-	page,
-}) => {
-	expectImage(await openScene(page, 'gpu=webgl2&uploads=copy&hold'), 'webgl2');
-});
