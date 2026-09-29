@@ -340,6 +340,29 @@ describe('the bench plan', () => {
 		});
 	});
 
+	it('takes the pages and scenes to compare, each page on the GPU interface it draws with', () => {
+		const items = benchPlan({
+			runs: 1,
+			pages: ['null3d-webgl2', 'null3d-webgl2-low'],
+			scenes: ['s1-static', 's2'],
+		});
+		expect(items.map((item) => item.id)).toEqual([
+			'bench-s1-static-null3d-webgl2-1',
+			'bench-s1-static-null3d-webgl2-low-1',
+			'bench-s2-null3d-webgl2-1',
+			'bench-s2-null3d-webgl2-low-1',
+		]);
+		expect(items[1]?.path).toBe('/bench/pages/null3d/s1-static.html?gpu=webgl2&latency=low');
+		expect(items[1]?.check).toEqual({
+			kind: 'bench',
+			tier: 'webgl2',
+			scene: 's1-static',
+			page: 'null3d-webgl2-low',
+		});
+		const sweep = benchPlan({ runs: 1, jobs: [2], pages: ['null3d-webgpu-low'], scenes: ['s2'] });
+		expect(sweep.map((item) => item.id)).toEqual(['bench-s2-null3d-webgpu-low-jobs2-1']);
+	});
+
 	it('fails a run whose engine started another number of job workers than it asked for', () => {
 		const [item] = benchPlan({ runs: 1, jobs: [4] });
 		if (!item) throw new Error('the plan has no items');
@@ -508,6 +531,19 @@ describe('parseArgs', () => {
 			'--jobs works with --plan bench only',
 		);
 		expect(() => parseArgs(['--plan', 'nothing'])).toThrow('no plan named nothing');
+		expect(
+			parseArgs(['--plan', 'bench', '--pages', 'null3d-webgl2,threejs-webgl', '--scenes', 's2']),
+		).toMatchObject({ pages: ['null3d-webgl2', 'threejs-webgl'], scenes: ['s2'] });
+		expect(() => parseArgs(['--plan', 'bench', '--pages', 'null3d-webgl3'])).toThrow(
+			'--pages: use some of',
+		);
+		expect(() => parseArgs(['--plan', 'bench', '--scenes', ''])).toThrow('--scenes: use some of');
+		expect(() => parseArgs(['--plan', 'parity', '--scenes', 's2'])).toThrow(
+			'--scenes works with --plan bench only',
+		);
+		expect(() =>
+			parseArgs(['--plan', 'bench', '--jobs', '2', '--pages', 'null3d-webgl2,threejs-webgl']),
+		).toThrow('leave out threejs-webgl');
 		expect(() => parseArgs(['--fast'])).toThrow('unknown option --fast');
 	});
 });

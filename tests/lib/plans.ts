@@ -11,6 +11,7 @@ import {
 	decodeHoldResult,
 	differenceText,
 	gpuApiOf,
+	gpuApiOfPage,
 	type HoldFrame,
 	holdPagePath,
 	JOBS_PAGES,
@@ -96,21 +97,25 @@ export interface BenchSwitches {
 	jobs?: number;
 }
 
-/** The runner page's item for a timed run of one S1 benchmark page. */
+/**
+ * The runner page's item for a timed run of one benchmark page, S1 unless `scene` names another.
+ * The item needs the GPU interface the page draws with, so a device that lacks it skips the page.
+ */
 export function benchItem(
 	id: string,
 	page: BenchPageKind,
-	tier: Tier,
 	{ seconds, n, jobs }: BenchSwitches = {},
+	scene: ParityScene = 's1',
 ): PlanItem<Check> {
 	const switches = Object.entries({ seconds, n, jobs }).flatMap(([name, value]) =>
 		value === undefined ? [] : [`${name}=${value}`],
 	);
+	const tier = gpuApiOfPage(page);
 	return {
 		id,
-		path: pagePath('s1', page, switches.join('&')),
+		path: pagePath(scene, page, switches.join('&')),
 		timeoutSeconds: (seconds === undefined ? WARMUP_SECONDS + MEASURE_SECONDS : 2 * seconds) + 60,
-		check: { kind: 'bench', tier, scene: 's1', page, ...(jobs !== undefined && { jobs }) },
+		check: { kind: 'bench', tier, scene, page, ...(jobs !== undefined && { jobs }) },
 	};
 }
 
@@ -194,18 +199,15 @@ export function parityPlan(): PlanItem<Check>[] {
 
 /** Fresh runs of each benchmark page in the bench plan, as the benchmark protocol asks. */
 export const BENCH_RUNS = 5;
-/**
- * The pages the bench plan compares, and the GPU tier each one draws with. The scene-code page
- * draws nothing, so it runs wherever the WebGL2 pages run.
- */
-const BENCH_PAGES: readonly [BenchPageKind, Tier][] = [
-	['null3d-webgpu', 'webgpu'],
-	['null3d-webgl2', 'webgl2'],
-	['null3d-webgpu-low', 'webgpu'],
-	['null3d-webgl2-low', 'webgl2'],
-	['threejs-webgpu', 'webgpu'],
-	['threejs-webgl', 'webgl2'],
-	[SCENE_CODE, 'webgl2'],
+/** The pages the bench plan compares, unless the plan names others. */
+const BENCH_PAGES: readonly BenchPageKind[] = [
+	'null3d-webgpu',
+	'null3d-webgl2',
+	'null3d-webgpu-low',
+	'null3d-webgl2-low',
+	'threejs-webgpu',
+	'threejs-webgl',
+	SCENE_CODE,
 ];
 
 /** Settings a plan may take from the command line. */
@@ -216,33 +218,39 @@ export interface PlanSettings {
 	runs?: number;
 	/** Job worker counts, at each of which the bench plan runs the null3D pages instead. */
 	jobs?: readonly number[];
+	/** The bench plan's pages, or undefined for its usual pages, or null3D's two GPU paths with jobs. */
+	pages?: readonly BenchPageKind[];
+	/** The bench plan's scenes, or undefined for S1. */
+	scenes?: readonly ParityScene[];
 }
 
 /**
- * The benchmark protocol for S1 in browsers that Playwright cannot drive: `runs` fresh runs of each
- * page, each a 5-second warm-up and 30 measured seconds, with `count` instances when given. With
- * job worker counts, each run times null3D's two GPU paths once at each count instead. The pages
- * take turns run by run, so a device that slows as it warms up slows every page alike.
+ * The benchmark protocol in browsers that Playwright cannot drive: `runs` fresh runs of each page
+ * of each scene, each a 5-second warm-up and 30 measured seconds, with `count` instances when
+ * given. With job worker counts, each run times the pages once at each count, and the pages are
+ * null3D's two GPU paths unless the settings name others. The pages take turns run by run, so a
+ * device that slows as it warms up slows every page alike.
  */
 export function benchPlan({
 	count,
 	runs = BENCH_RUNS,
 	jobs,
+	pages,
+	scenes = ['s1'],
 }: PlanSettings = {}): PlanItem<Check>[] {
-	const pages = jobs
-		? jobs.flatMap((workers) =>
-				BENCH_PAGES.filter(([page]) => JOBS_PAGES.some((kind) => kind === page)).map(
-					([page, tier]) => ({ page, tier, jobs: workers }),
-				),
-			)
-		: BENCH_PAGES.map(([page, tier]) => ({ page, tier, jobs: undefined }));
+	const kinds = pages ?? (jobs ? JOBS_PAGES : BENCH_PAGES);
+	const runsOfPages = jobs
+		? jobs.flatMap((workers) => kinds.map((page) => ({ page, jobs: workers })))
+		: kinds.map((page) => ({ page, jobs: undefined }));
 	return Array.from({ length: runs }, (_, run) =>
-		pages.map(({ page, tier, jobs: workers }) =>
-			benchItem(
-				`bench-s1-${page}${workers === undefined ? '' : `-jobs${workers}`}-${run + 1}`,
-				page,
-				tier,
-				{ n: count, jobs: workers },
+		scenes.flatMap((scene) =>
+			runsOfPages.map(({ page, jobs: workers }) =>
+				benchItem(
+					`bench-${scene}-${page}${workers === undefined ? '' : `-jobs${workers}`}-${run + 1}`,
+					page,
+					{ n: count, jobs: workers },
+					scene,
+				),
 			),
 		),
 	).flat();

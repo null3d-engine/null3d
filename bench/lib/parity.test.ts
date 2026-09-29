@@ -8,6 +8,7 @@ import {
 	differenceText,
 	formatStoredBaselines,
 	gpuApiOf,
+	gpuApiOfPage,
 	type HoldFrame,
 	holdPagePath,
 	isNull3dPage,
@@ -289,6 +290,16 @@ describe('the pages', () => {
 			'null3d-webgl2-low',
 		]);
 		expect(isNull3dPage('scene-code')).toBe(false);
+		expect(PAGE_KINDS.map(gpuApiOfPage)).toEqual([
+			'webgl2',
+			'webgpu',
+			'webgl2',
+			'webgpu',
+			'webgpu',
+			'webgpu',
+			'webgl2',
+		]);
+		expect(gpuApiOfPage('scene-code')).toBe('webgl2');
 		expect(readJobCounts('1,2,4,8,16')).toEqual([1, 2, 4, 8, 16]);
 		expect(readJobCounts('4,2,4')).toEqual([4, 2]);
 		for (const text of [undefined, '', '0', '2,x', '1.5', '-1'])

@@ -22,6 +22,8 @@
 //                       at each maximum of the memory plan, 20 by default
 //   --jobs <list>       job worker counts, such as 2,4,6,8: the bench plan then runs null3D's two
 //                       GPU paths at each count instead of its usual pages
+//   --pages <list>      the bench plan's page kinds, such as null3d-webgl2,null3d-webgl2-low
+//   --scenes <list>     the bench plan's scenes: s1, s1-static, s2; the default is s1
 //   --android <list>    browsers on the Android phone: chrome, chrome-beta, brave, firefox, samsung
 //   --lan <list>        names of runner pages that wait on the local network, as device-browser,
 //                       such as ipad-safari; pages on one device take turns
@@ -29,6 +31,11 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
+	BENCH_PAGE_KINDS,
+	type BenchPageKind,
+	isNull3dPage,
+	PARITY_SCENES,
+	type ParityScene,
 	parseStoredBaselines,
 	readJobCounts,
 	STORED_BASELINES_FILE,
@@ -83,6 +90,10 @@ export interface Options {
 	runs?: number;
 	/** Job worker counts for the bench plan, when given. */
 	jobs?: number[];
+	/** The bench plan's page kinds, when given. */
+	pages?: BenchPageKind[];
+	/** The bench plan's scenes, when given. */
+	scenes?: ParityScene[];
 	/** macOS app names, such as Safari. */
 	mac: string[];
 	android: string[];
@@ -90,7 +101,7 @@ export interface Options {
 }
 
 const USAGE =
-	'usage: bun tests/real-browsers.ts [--plan <name>] [--allow-no-webgpu] [--allow-no-webgl2] [--n <count>] [--runs <count>] [--jobs <counts>] [--android <browsers>] [--lan <runners>] [<macOS app>...]';
+	'usage: bun tests/real-browsers.ts [--plan <name>] [--allow-no-webgpu] [--allow-no-webgl2] [--n <count>] [--runs <count>] [--jobs <counts>] [--pages <kinds>] [--scenes <scenes>] [--android <browsers>] [--lan <runners>] [<macOS app>...]';
 
 /** The plans the runner knows: the fixed plans, and the phone-scale search. */
 const PLAN_NAMES = [...Object.keys(PLANS), SCALE_PLAN];
@@ -99,6 +110,12 @@ export function parseArgs(args: readonly string[]): Options {
 	const missing = { ...NONE_MISSING };
 	const options: Options = { plan: 'checks', missing, mac: [], android: [], lan: [] };
 	const list = (value: string | undefined) => (value ?? '').split(',').filter(Boolean);
+	const known = <T extends string>(flag: string, values: string[], allowed: readonly T[]): T[] => {
+		const unknown = values.filter((v) => !(allowed as readonly string[]).includes(v));
+		if (values.length === 0 || unknown.length > 0)
+			throw new Error(`${flag}: use some of ${allowed.join(', ')}\n${USAGE}`);
+		return values as T[];
+	};
 	const wholeNumber = (flag: string, value: string | undefined) => {
 		const n = Number(value);
 		if (!(Number.isSafeInteger(n) && n > 0))
@@ -112,6 +129,8 @@ export function parseArgs(args: readonly string[]): Options {
 		else if (arg === '--n') options.count = wholeNumber(arg, args[++i]);
 		else if (arg === '--runs') options.runs = wholeNumber(arg, args[++i]);
 		else if (arg === '--jobs') options.jobs = readJobCounts(args[++i]);
+		else if (arg === '--pages') options.pages = known(arg, list(args[++i]), BENCH_PAGE_KINDS);
+		else if (arg === '--scenes') options.scenes = known(arg, list(args[++i]), PARITY_SCENES);
 		else if (arg === '--plan') options.plan = args[++i] ?? '';
 		else if (arg === '--android') options.android = list(args[++i]);
 		else if (arg === '--lan') options.lan = list(args[++i]);
@@ -120,8 +139,18 @@ export function parseArgs(args: readonly string[]): Options {
 	}
 	if (!PLAN_NAMES.includes(options.plan))
 		throw new Error(`no plan named ${options.plan}; plans: ${PLAN_NAMES.join(', ')}`);
-	if (options.jobs && options.plan !== 'bench')
-		throw new Error(`--jobs works with --plan bench only\n${USAGE}`);
+	for (const [flag, given] of [
+		['--jobs', options.jobs],
+		['--pages', options.pages],
+		['--scenes', options.scenes],
+	] as const)
+		if (given && options.plan !== 'bench')
+			throw new Error(`${flag} works with --plan bench only\n${USAGE}`);
+	const other = options.jobs && options.pages?.filter((kind) => !isNull3dPage(kind));
+	if (other && other.length > 0)
+		throw new Error(
+			`--jobs: job workers belong to null3D pages only; leave out ${other.join(', ')}`,
+		);
 	return options;
 }
 
@@ -251,7 +280,13 @@ async function runPlan(
 	const run = runName(options.plan);
 	const plan = writePlan(
 		run,
-		makeItems({ count: options.count, runs: options.runs, jobs: options.jobs }),
+		makeItems({
+			count: options.count,
+			runs: options.runs,
+			jobs: options.jobs,
+			pages: options.pages,
+			scenes: options.scenes,
+		}),
 	);
 	const heatReadings = new Map<string, HeatSample[]>();
 	try {
@@ -389,11 +424,11 @@ async function runScale(
 		const answers: { renderer: string; search: ScaleSearch }[] = [];
 		log?.start();
 		try {
-			for (const [page, tier, renderer] of SCALE_RENDERERS) {
+			for (const [page, renderer] of SCALE_RENDERERS) {
 				let search = NEW_SEARCH;
 				for (let count = nextCount(search); count !== null; count = nextCount(search)) {
 					const run = `${base}-${name}-${steps.length + 1}`;
-					const item = scaleItem(page, tier, count);
+					const item = scaleItem(page, count);
 					const plan = writePlan(run, [item]);
 					setTurns(run, [name]);
 					await waitForRunners(plan, openRunners([name], launches, run, local.url), {

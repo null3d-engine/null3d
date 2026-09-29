@@ -62,18 +62,18 @@ export function gpuApiOf(tier: Tier): 'webgpu' | 'webgl2' {
 }
 
 /**
- * Each kind of benchmark page: its folder, and the switches that pick its GPU path and, for the
- * null3D pages that end in -low, the low-latency mode.
+ * Each kind of benchmark page: its folder, the switches that pick its GPU path and, for the null3D
+ * pages that end in -low, the low-latency mode, and the GPU interface it draws with.
  */
 const PAGES = {
-	'threejs-webgl': { folder: 'threejs', switches: 'renderer=webgl' },
-	'threejs-webgpu': { folder: 'threejs', switches: 'renderer=webgpu' },
-	'null3d-webgl2': { folder: 'null3d', switches: 'gpu=webgl2' },
-	'null3d-webgpu': { folder: 'null3d', switches: 'gpu=webgpu' },
-	'null3d-compat': { folder: 'null3d', switches: 'gpu=compat' },
-	'null3d-webgpu-low': { folder: 'null3d', switches: 'gpu=webgpu&latency=low' },
-	'null3d-webgl2-low': { folder: 'null3d', switches: 'gpu=webgl2&latency=low' },
-} as const satisfies Record<string, { folder: string; switches: string }>;
+	'threejs-webgl': { folder: 'threejs', switches: 'renderer=webgl', api: 'webgl2' },
+	'threejs-webgpu': { folder: 'threejs', switches: 'renderer=webgpu', api: 'webgpu' },
+	'null3d-webgl2': { folder: 'null3d', switches: 'gpu=webgl2', api: 'webgl2' },
+	'null3d-webgpu': { folder: 'null3d', switches: 'gpu=webgpu', api: 'webgpu' },
+	'null3d-compat': { folder: 'null3d', switches: 'gpu=compat', api: 'webgpu' },
+	'null3d-webgpu-low': { folder: 'null3d', switches: 'gpu=webgpu&latency=low', api: 'webgpu' },
+	'null3d-webgl2-low': { folder: 'null3d', switches: 'gpu=webgl2&latency=low', api: 'webgl2' },
+} as const satisfies Record<string, { folder: string; switches: string; api: 'webgpu' | 'webgl2' }>;
 
 export type PageKind = keyof typeof PAGES;
 export const PAGE_KINDS = Object.keys(PAGES) as PageKind[];
@@ -87,6 +87,14 @@ export const SCENE_CODE = 'scene-code';
 /** Every kind of page a benchmark run can time: the engines' pages and the scene code alone. */
 export type BenchPageKind = PageKind | typeof SCENE_CODE;
 export const BENCH_PAGE_KINDS: readonly BenchPageKind[] = [...PAGE_KINDS, SCENE_CODE];
+
+/**
+ * The GPU interface a benchmark page draws with. The scene-code page draws nothing, so it runs
+ * wherever the WebGL2 pages run.
+ */
+export function gpuApiOfPage(kind: BenchPageKind): 'webgpu' | 'webgl2' {
+	return kind === SCENE_CODE ? 'webgl2' : PAGES[kind].api;
+}
 
 /** True for a null3D page, whose engine takes switches such as `?jobs=`. */
 export function isNull3dPage(kind: BenchPageKind): boolean {

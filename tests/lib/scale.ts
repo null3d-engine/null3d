@@ -3,7 +3,7 @@
 // carry. The search tries one count at a time: it doubles the count until three.js drops below the
 // rate, then narrows the gap between the count that held and the one that dropped.
 import type { BenchPageKind } from '../../bench/lib/parity.ts';
-import { benchItem, type Check, type Tier } from './plans.ts';
+import { benchItem, type Check } from './plans.ts';
 import type { ItemResult, PlanItem } from './runs.ts';
 
 /** The plan name that runs the search instead of a fixed plan. */
@@ -20,10 +20,10 @@ const MIN_COUNT = 10;
 /** The search ends when the count that dropped is at most 5% above the count that held. */
 const PRECISION = 1.05;
 
-/** three.js's renderers: the page, the GPU path it draws with, and the renderer's name. */
-export const SCALE_RENDERERS: readonly (readonly [BenchPageKind, Tier, string])[] = [
-	['threejs-webgl', 'webgl2', 'WebGL'],
-	['threejs-webgpu', 'webgpu', 'WebGPU'],
+/** three.js's renderers: the page, and the renderer's name. */
+export const SCALE_RENDERERS: readonly (readonly [BenchPageKind, string])[] = [
+	['threejs-webgl', 'WebGL'],
+	['threejs-webgpu', 'WebGPU'],
 ];
 
 /** What a search knows: the largest count that held the rate, and the smallest that dropped. */
@@ -65,8 +65,8 @@ export function afterCount(search: ScaleSearch, count: number, held: boolean): S
 }
 
 /** The runner page's item for one renderer at one count. */
-export function scaleItem(page: BenchPageKind, tier: Tier, count: number): PlanItem<Check> {
-	return benchItem(`scale-${page}-${count}`, page, tier, { seconds: SCALE_SECONDS, n: count });
+export function scaleItem(page: BenchPageKind, count: number): PlanItem<Check> {
+	return benchItem(`scale-${page}-${count}`, page, { seconds: SCALE_SECONDS, n: count });
 }
 
 /** Frames per second a benchmark page drew, from its result. */
