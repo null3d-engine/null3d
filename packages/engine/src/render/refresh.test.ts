@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'bun:test';
-import { RefreshMeter, snapToDisplayRate } from './refresh';
+import { RefreshMeter, snapMeanInterval } from './refresh';
 
 function feed(meter: RefreshMeter, intervals: number[]): number | undefined {
 	let time = 0;
@@ -34,8 +34,16 @@ describe('RefreshMeter', () => {
 	});
 
 	it('reports a common display rate when the measurement is within a few percent of one', () => {
-		expect(snapToDisplayRate(146.3)).toBe(144);
-		expect(snapToDisplayRate(59.94)).toBe(60);
-		expect(snapToDisplayRate(110)).toBe(110);
+		const snapped = (hz: number) => snapMeanInterval(Math.round(1_000_000 / hz), 1);
+		expect(snapped(146.3)).toBe(144);
+		expect(snapped(59.94)).toBe(60);
+		expect(snapped(110)).toBe(110);
+		// The mean of several intervals counts the same as one interval of that length.
+		expect(snapMeanInterval(4 * 16_683, 4)).toBe(60);
+	});
+
+	it('keeps a long pause from swamping the samples', () => {
+		const intervals = Array.from({ length: 32 }, (_, i) => (i === 5 ? 3_600_000 : 1000 / 120));
+		expect(feed(new RefreshMeter(), intervals)).toBe(120);
 	});
 });

@@ -1,35 +1,54 @@
 // Measures the display's refresh rate from the times of frame callbacks. The browser calls them once
 // per refresh, so most intervals are the refresh period, jittering around it; the rare longer ones
-// come from a busy thread. The meter averages the intervals near the median.
+// come from a busy thread. The meter averages the intervals near the median. It keeps intervals in
+// whole microseconds, so the work it does once per sample set, too rarely for the browser to
+// optimize, makes no number objects.
 
 /** Callback intervals the meter keeps. */
 const SAMPLES = 32;
-/** Intervals within this share of the median count toward the period; the rest are outliers. */
-const NEAR_MEDIAN = 0.2;
+/** Intervals within a fifth of the median count toward the period; the rest are outliers. */
+const NEAR_MEDIAN_DIVISOR = 5;
+/** The longest interval the meter keeps, in microseconds: longer ones are pauses, not refreshes. */
+const LONGEST_INTERVAL = 1_000_000;
 /** Refresh rates that displays run at; a measurement this close to one reports that rate. */
 const DISPLAY_RATES = [24, 30, 48, 50, 60, 72, 75, 90, 100, 120, 144, 165, 180, 240, 360];
 const SNAP_SHARE = 0.03;
+const MICROSECONDS_PER_SECOND = 1_000_000;
+/** For each display rate, the shortest and the longest mean interval, in microseconds, that snap to it. */
+const SNAP_SHORTEST = Int32Array.from(DISPLAY_RATES, (rate) =>
+	Math.ceil(MICROSECONDS_PER_SECOND / (rate * (1 + SNAP_SHARE))),
+);
+const SNAP_LONGEST = Int32Array.from(DISPLAY_RATES, (rate) =>
+	Math.floor(MICROSECONDS_PER_SECOND / (rate * (1 - SNAP_SHARE))),
+);
 
-/** The display rate within a few percent of a measured rate, or the measured rate rounded. */
-export function snapToDisplayRate(hz: number): number {
+/**
+ * The display rate within a few percent of the rate that `count` intervals of `sum` microseconds in
+ * all measure, or that rate rounded. The comparisons use whole numbers only.
+ */
+export function snapMeanInterval(sum: number, count: number): number {
 	// Index loops, as in `tick`: an iterator would allocate on every call.
 	for (let k = 0; k < DISPLAY_RATES.length; k++) {
-		const rate = DISPLAY_RATES[k] as number;
-		if (Math.abs(hz - rate) <= rate * SNAP_SHARE) return rate;
+		const shortest = (SNAP_SHORTEST[k] as number) * count;
+		const longest = (SNAP_LONGEST[k] as number) * count;
+		if (sum >= shortest && sum <= longest) return DISPLAY_RATES[k] as number;
 	}
-	return Math.round(hz);
+	return Math.round((MICROSECONDS_PER_SECOND * count) / sum);
 }
 
 export class RefreshMeter {
-	private readonly intervals = new Float64Array(SAMPLES);
-	private readonly sorted = new Float64Array(SAMPLES);
+	/** Intervals between callbacks, in whole microseconds. */
+	private readonly intervals = new Int32Array(SAMPLES);
+	private readonly sorted = new Int32Array(SAMPLES);
 	private count = 0;
 	private last = -1;
 
 	/** Adds a frame callback's timestamp; returns the refresh rate each time the samples fill up. */
 	tick(timestamp: number): number | undefined {
-		if (this.last >= 0 && timestamp > this.last)
-			this.intervals[this.count++ % SAMPLES] = timestamp - this.last;
+		if (this.last >= 0 && timestamp > this.last) {
+			const interval = Math.round((timestamp - this.last) * 1000);
+			this.intervals[this.count++ % SAMPLES] = Math.min(interval, LONGEST_INTERVAL);
+		}
 		this.last = timestamp;
 		if (this.count === 0 || this.count % SAMPLES !== 0) return undefined;
 		this.sorted.set(this.intervals);
@@ -39,10 +58,10 @@ export class RefreshMeter {
 		let near = 0;
 		for (let k = 0; k < SAMPLES; k++) {
 			const interval = this.sorted[k] as number;
-			if (Math.abs(interval - median) > median * NEAR_MEDIAN) continue;
+			if (Math.abs(interval - median) * NEAR_MEDIAN_DIVISOR > median) continue;
 			sum += interval;
 			near++;
 		}
-		return near > 0 && sum > 0 ? snapToDisplayRate((1000 * near) / sum) : undefined;
+		return near > 0 && sum > 0 ? snapMeanInterval(sum, near) : undefined;
 	}
 }
