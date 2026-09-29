@@ -76,4 +76,5 @@ Safari 26 does work for each WebGPU frame that no GPU timestamp covers. It shows
 - So the worker stays blocked until Safari's GPU process has run all the frame's commands and the GPU has drawn the frame. Safari's own work, the GPU time and the copy add up to the worker's frame.
 - `gpuLatencyMs` counts from the submit until the drawing thread sees the frame finish, so in Safari it includes that blocked time. With native bundles on the Mac, most of its 11 ms was Safari's command buffer build.
 - Safari runs a worker's `requestAnimationFrame` from a 15 ms timer, not from the display. After the worker sleeps through most of a frame, the timer fires about 3 ms late.
+- So the frame loops set a timer at the start of each callback in a worker, due 4 ms before the next callback. The worker then sleeps too briefly for Safari's timer to fire late. In S1-static at 240,000 boxes on the Mac, Safari presented 62.5 frames per second with it and 54.4 without.
 - Safari writes no timestamps, or stale ones, for a pass without work. The GPU timer's start mark therefore dispatches one invocation that does nothing.

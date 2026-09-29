@@ -2,7 +2,8 @@
 // pipelined mode, or the page's main thread with ?render=main. Inside its own frame callback it takes
 // the newest published frame, applies a pending resize, draws, and tells the sketch worker it may
 // compute the next frame. A callback that finds no new frame, or that comes before the frame's turn
-// under ?fps=, draws nothing.
+// under ?fps=, draws nothing. In a worker, each callback also sets a timer that wakes the thread
+// shortly before the next callback is due.
 
 import { controlViews, Slot } from '../shared/control';
 import { FrameRecorder, Role } from '../shared/metrics';
@@ -15,6 +16,27 @@ export interface RenderLoop {
 	/** Hold mode's loop: draws the held frame when first asked, and resolves once it has. */
 	drawHeld?(): Promise<void>;
 }
+
+/**
+ * How long before its next frame callback is due a worker that draws wakes up. Safari runs a
+ * worker's frame callbacks from a timer, which fires late when the worker has slept through most of
+ * the frame. A wake-up this long before the callback leaves too short a sleep for that.
+ */
+const WAKE_AHEAD_MS = 4;
+/** The display rate that the wake-up assumes until the refresh meter has measured the callbacks. */
+const ASSUMED_DISPLAY_HZ = 60;
+const MS_PER_SECOND = 1000;
+
+/**
+ * The delay, in whole milliseconds, from the start of a frame callback to the wake-up before the
+ * next one, for callbacks `hz` times a second. A whole number reaches the timer without allocating.
+ */
+export function wakeDelayMs(hz: number): number {
+	return Math.max(0, Math.round(MS_PER_SECOND / hz - WAKE_AHEAD_MS));
+}
+
+/** The wake-up's timer callback: waking the thread is all it is for. */
+function wakeUp(): void {}
 
 /** A frame input that `emptySceneInput` can fill again each frame. */
 type ReusableInput = { frame: number; background: [number, number, number] };
@@ -40,6 +62,10 @@ export class Presenter {
 	private readonly input: ReusableInput = { frame: 0, background: [0, 0, 0] };
 	private readonly refresh = new RefreshMeter();
 	private readonly pacer: FramePacer;
+	/** The wake-up's delay at the refresh rate that the meter measured last. */
+	private wakeDelay = wakeDelayMs(ASSUMED_DISPLAY_HZ);
+	/** A worker's frame callbacks can run from a timer; a page's always follow the display. */
+	private readonly inWorker = typeof document === 'undefined';
 	readonly record: FrameRecorder;
 
 	/** `fps` is the frame rate that ?fps= holds, or undefined to draw at the display's rate. */
@@ -59,7 +85,18 @@ export class Presenter {
 	 */
 	tick(timestamp: number): void {
 		const hz = this.refresh.tick(timestamp);
-		if (hz !== undefined) this.record.setRefreshHz(hz);
+		if (hz === undefined) return;
+		this.record.setRefreshHz(hz);
+		this.wakeDelay = wakeDelayMs(hz);
+	}
+
+	/**
+	 * In a worker, sets a timer that wakes the thread shortly before the next frame callback is due.
+	 * Call it as a callback starts. Where a worker's frame callbacks follow the display, the timer
+	 * runs and does nothing else.
+	 */
+	wakeBeforeNextFrame(): void {
+		if (this.inWorker) setTimeout(wakeUp, this.wakeDelay);
 	}
 
 	/**
@@ -159,6 +196,7 @@ export function runRenderLoop(
 	const frame = (timestamp: number) => {
 		if (stopped || Atomics.load(slots, Slot.Running) === 0) return;
 		presenter.tick(timestamp);
+		presenter.wakeBeforeNextFrame();
 		presenter.applyResize();
 		const published = Atomics.load(slots, Slot.FramesPublished);
 		if (published > taken && presenter.due(timestamp)) {
