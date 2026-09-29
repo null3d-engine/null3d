@@ -45,20 +45,27 @@ fn attachments_of(graph: &RenderGraph, pass: &str) -> Vec<Attachment> {
     plan.attachments(&plan.steps()[step]).to_vec()
 }
 
-/// The texture of a resource by name.
-fn texture_of(graph: &RenderGraph, resource: &str) -> PlannedTexture {
-    let plan = graph.plan().expect("the graph compiled");
-    match plan.texture_of(graph.find_resource(resource).unwrap()) {
-        Some(Surface::Texture(index)) => plan.textures()[index as usize],
-        other => panic!("{resource} is in {other:?}"),
-    }
-}
-
+/// Where passes draw into a resource, by name.
 fn texture_index(graph: &RenderGraph, resource: &str) -> Option<Surface> {
     graph
         .plan()
         .expect("the graph compiled")
         .texture_of(graph.find_resource(resource).unwrap())
+}
+
+/// The planned texture at a surface.
+fn texture_of_surface(graph: &RenderGraph, surface: Option<Surface>) -> PlannedTexture {
+    match surface {
+        Some(Surface::Texture(index)) => {
+            graph.plan().expect("the graph compiled").textures()[index as usize]
+        }
+        other => panic!("not a planned texture: {other:?}"),
+    }
+}
+
+/// The texture that passes draw into for a resource, by name.
+fn texture_of(graph: &RenderGraph, resource: &str) -> PlannedTexture {
+    texture_of_surface(graph, texture_index(graph, resource))
 }
 
 #[test]
@@ -889,6 +896,124 @@ fn a_pass_that_samples_a_target_of_the_render_pass_or_draws_at_another_size_star
         texture_of(&graph, "depth").usage,
         usage::RENDER_ATTACHMENT | usage::TEXTURE_BINDING
     );
+}
+
+#[test]
+fn each_layer_of_a_multisampled_array_resolves_after_its_last_draw() {
+    let probes = HDR.samples(4).layers(2);
+    let mut graph = RenderGraph::new();
+    graph.add_pass(
+        Pass::new("Face0", PassKind::Scene)
+            .creates("probes", probes)
+            .writes_layer("probes", 0),
+    );
+    graph.add_pass(Pass::new("Face1", PassKind::Scene).writes_layer("probes", 1));
+    graph.add_pass(Pass::new("Face0Decals", PassKind::Scene).writes_layer("probes", 0));
+    graph.add_pass(
+        Pass::new("Final", PassKind::Fullscreen)
+            .size(Size::Canvas)
+            .reads("probes")
+            .writes(CANVAS),
+    );
+    let graph = compiled(graph);
+    // Each pass draws into another layer than the one before it, so each has its own render pass.
+    assert_eq!(
+        steps(&graph),
+        [
+            vec!["Face0"],
+            vec!["Face1"],
+            vec!["Face0Decals"],
+            vec!["Final"]
+        ]
+    );
+    let plan = graph.plan().unwrap();
+    let resource = graph.find_resource("probes").unwrap();
+    let resolved = plan.sampled_texture_of(resource);
+    assert_ne!(resolved, plan.texture_of(resource));
+    assert_eq!(
+        texture_of_surface(&graph, resolved),
+        PlannedTexture {
+            target: HDR.layers(2),
+            size: Size::Full,
+            usage: usage::RENDER_ATTACHMENT | usage::TEXTURE_BINDING,
+        }
+    );
+    let ops = |pass: &str| {
+        let attachment = attachments_of(&graph, pass)[0];
+        (
+            attachment.layer,
+            attachment.load,
+            attachment.store,
+            attachment.resolve,
+        )
+    };
+    assert_eq!(
+        ops("Face0"),
+        (0, LoadOp::Clear, StoreOp::Store, None),
+        "a later pass draws over layer 0, so it keeps the samples and resolves nothing yet"
+    );
+    assert_eq!(
+        ops("Face1"),
+        (1, LoadOp::Clear, StoreOp::Discard, resolved),
+        "no later pass draws layer 1, so it resolves now"
+    );
+    assert_eq!(
+        ops("Face0Decals"),
+        (0, LoadOp::Load, StoreOp::Discard, resolved)
+    );
+}
+
+#[test]
+fn a_pass_that_reads_a_buffer_written_in_the_render_pass_starts_another() {
+    let mut graph = RenderGraph::new();
+    graph.import_buffer("instances");
+    // The opaque pass's fragment shader writes which objects it drew, and the outline pass reads
+    // that as a vertex buffer. One render pass cannot both write and read a buffer.
+    graph.add_pass(
+        Pass::new("Opaque", PassKind::Scene)
+            .creates("color", HDR)
+            .reads("instances")
+            .creates_buffer("drawn"),
+    );
+    graph.add_pass(
+        Pass::new("Outline", PassKind::Scene)
+            .writes("color")
+            .reads("drawn")
+            .reads("instances"),
+    );
+    graph.add_pass(
+        Pass::new("Final", PassKind::Fullscreen)
+            .size(Size::Canvas)
+            .reads("color")
+            .writes(CANVAS),
+    );
+    let graph = compiled(graph);
+    assert_eq!(
+        steps(&graph),
+        [vec!["Opaque"], vec!["Outline"], vec!["Final"]]
+    );
+    let color = attachments_of(&graph, "Outline")[0];
+    assert_eq!(
+        (color.load, color.store),
+        (LoadOp::Load, StoreOp::Store),
+        "the outline draws over the stored scene"
+    );
+
+    // Passes that only read the same buffer share one render pass.
+    let mut graph = RenderGraph::new();
+    graph.import_buffer("instances");
+    graph.add_pass(
+        Pass::new("Opaque", PassKind::Scene)
+            .creates("color", HDR)
+            .reads("instances"),
+    );
+    graph.add_pass(
+        Pass::new("Outline", PassKind::Scene)
+            .writes("color")
+            .reads("instances"),
+    );
+    let graph = compiled(graph);
+    assert_eq!(steps(&graph), [vec!["Opaque", "Outline"]]);
 }
 
 #[test]

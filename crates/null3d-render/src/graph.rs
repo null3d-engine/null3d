@@ -39,11 +39,12 @@
 //! # Render passes
 //!
 //! Neighboring passes that draw at one size and sample count into the same targets, or into a
-//! subset of them, share one render pass, unless one of them samples a target that the render pass
-//! draws into. Tile-based GPUs then keep the targets on chip from one pass to the next. A pass that
-//! joins a render pass draws with all of its attachments: its pipelines take the render pass's
-//! formats and mask the targets it does not write. Neighboring compute passes share one compute
-//! pass.
+//! subset of them, share one render pass. They do not when one of them samples a target that the
+//! render pass draws into, or reads a buffer that another of them writes, since WebGPU forbids
+//! both within one render pass. Tile-based GPUs then keep the targets on chip from one pass to the
+//! next. A pass that joins a render pass draws with all of its attachments: its pipelines take the
+//! render pass's formats and mask the targets it does not write. Neighboring compute passes share
+//! one compute pass, as each dispatch sees what the ones before it wrote.
 //!
 //! # Memory
 //!
@@ -55,8 +56,9 @@
 //!
 //! The graph works out each texture's usage from how the passes use it, and each attachment's load
 //! and store operations. A target is cleared at its first write in the frame and loaded after
-//! that, and a render pass stores it only when a later pass or frame needs it. A multisampled color
-//! target that a later pass samples is resolved at the end of the render pass that writes it last.
+//! that, and a render pass stores it only when a later pass or frame needs it. When a later pass
+//! samples a multisampled color target, each of the target's layers is resolved at the end of the
+//! last render pass that draws into that layer.
 //! A frame target that lives within one render pass gets the transient attachment usage where the
 //! device supports it, so it can stay in tile memory.
 //!
@@ -64,8 +66,9 @@
 //!
 //! Declaring passes, switching them on and off and changing the transient attachment flag mark the
 //! graph changed. [`RenderGraph::compile`] then compiles once for the whole batch of changes, and
-//! does nothing while nothing changes. Compiling reuses its memory: once the graph has compiled
-//! with each pass on and off, compiling again allocates nothing.
+//! does nothing while nothing changes. Compiling reuses its lists, so it allocates only when a
+//! compile needs more room in one of them than every earlier compile did. With every pass on, the
+//! first compile usually needs the most, and switching passes then allocates nothing.
 
 use std::borrow::Cow;
 

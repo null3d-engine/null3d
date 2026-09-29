@@ -1,7 +1,7 @@
 //! Compiling a render graph's declarations into a plan: the checks, the order, the render and
 //! compute passes the GPU runs, each attachment's load and store operations, texture usage, and the
 //! textures that targets share. The compiler keeps every list between compiles, so a compile
-//! allocates only when the graph has grown past what an earlier compile needed.
+//! allocates only when it needs more room in a list than every earlier compile did.
 
 use std::ops::Range;
 
@@ -266,8 +266,10 @@ struct PassState {
     samples: u32,
     /// Its attachments: a range of the compiler's target list.
     targets: (u32, u32),
-    /// The textures it samples: a range of the compiler's sampled list.
-    sampled: (u32, u32),
+    /// The textures and buffers it reads: a range of the compiler's read list.
+    reads: (u32, u32),
+    /// The buffers it writes, for a pass that draws: a range of the compiler's store list.
+    stores: (u32, u32),
     /// Passes it runs after that have not been placed yet, while scheduling.
     waiting: u16,
     scheduled: bool,
@@ -289,8 +291,10 @@ struct OpenStep {
     first_pass: usize,
     /// Its attachments so far.
     targets: Vec<Attached>,
-    /// The textures its passes sample.
-    sampled: Vec<u16>,
+    /// The textures and buffers its passes read.
+    reads: Vec<u16>,
+    /// The buffers its passes write. A render pass cannot read a buffer that it also writes.
+    stores: Vec<u16>,
 }
 
 /// One texture's use by one resource, for placing it in a shared texture.
@@ -345,7 +349,8 @@ pub(super) struct Compiler {
     resources: Vec<ResourceState>,
     passes: Vec<PassState>,
     targets: Vec<Attached>,
-    sampled: Vec<u16>,
+    reads: Vec<u16>,
+    stores: Vec<u16>,
     writers: Vec<u16>,
     /// Pairs of passes where the second runs after the first, sorted by the first.
     edges: Vec<(u16, u16)>,
@@ -399,7 +404,8 @@ impl Compiler {
         self.passes.clear();
         self.passes.resize(graph.passes.len(), PassState::default());
         self.targets.clear();
-        self.sampled.clear();
+        self.reads.clear();
+        self.stores.clear();
         self.writers.clear();
         self.edges.clear();
         self.first_edge.clear();
@@ -454,12 +460,14 @@ impl Compiler {
     }
 
     /// Checks that every resource a running pass uses exists, and that the targets of each pass
-    /// that draws fit one render pass. Lists each pass's attachments and sampled textures.
+    /// that draws fit one render pass. Lists what each pass that draws attaches, reads and
+    /// writes, for the steps it may share.
     fn check_passes(&mut self, graph: Decls<'_>) -> Result<(), GraphError> {
         for (index, pass) in graph.running() {
             let id = PassId(index as u16);
             let targets = self.targets.len() as u32;
-            let sampled = self.sampled.len() as u32;
+            let reads = self.reads.len() as u32;
+            let stores = self.stores.len() as u32;
             let mut samples = 0;
             let mut depth = false;
             for access in graph.uses(index) {
@@ -470,16 +478,20 @@ impl Compiler {
                     resource: Some(resource),
                     reason,
                 };
-                match state.kind {
-                    Kind::Unknown => return Err(GraphError::MissingInput { pass: id, resource }),
-                    Kind::Buffer => continue,
-                    Kind::Texture => {}
+                if state.kind == Kind::Unknown {
+                    return Err(GraphError::MissingInput { pass: id, resource });
                 }
-                if !access.mode.writes() {
-                    self.sampled.push(access.resource);
+                // Compute passes share a compute pass with any other, so only passes that draw
+                // need their reads and writes listed.
+                if !pass.kind.draws() {
                     continue;
                 }
-                if !pass.kind.draws() {
+                if !access.mode.writes() {
+                    self.reads.push(access.resource);
+                    continue;
+                }
+                if state.kind == Kind::Buffer {
+                    self.stores.push(access.resource);
                     continue;
                 }
                 if state.size != pass.size {
@@ -517,7 +529,8 @@ impl Compiler {
             self.passes[index] = PassState {
                 samples,
                 targets: (targets, self.targets.len() as u32),
-                sampled: (sampled, self.sampled.len() as u32),
+                reads: (reads, self.reads.len() as u32),
+                stores: (stores, self.stores.len() as u32),
                 ..PassState::default()
             };
         }
@@ -630,14 +643,20 @@ impl Compiler {
         &self.targets[start as usize..end as usize]
     }
 
-    fn pass_sampled(&self, index: usize) -> &[u16] {
-        let (start, end) = self.passes[index].sampled;
-        &self.sampled[start as usize..end as usize]
+    fn pass_reads(&self, index: usize) -> &[u16] {
+        let (start, end) = self.passes[index].reads;
+        &self.reads[start as usize..end as usize]
     }
 
-    /// True when the pass can join the open step: a compute pass joins a compute step, and a pass
+    fn pass_stores(&self, index: usize) -> &[u16] {
+        let (start, end) = self.passes[index].stores;
+        &self.stores[start as usize..end as usize]
+    }
+
+    /// True when the pass can join the open step. A compute pass joins a compute step. A pass
     /// that draws joins a render step at its size and sample count when one of their target sets
-    /// holds the other, and neither samples a target of the joined step.
+    /// holds the other, and when nothing that one of them reads is attached in the joined step or
+    /// written by the other.
     fn can_join(&self, graph: Decls<'_>, index: usize) -> bool {
         let pass = &graph.passes[index];
         match self.step.kind {
@@ -656,8 +675,16 @@ impl Compiler {
                 }
                 let joined = if inside { open } else { mine };
                 let attached = |resource: &u16| joined.iter().any(|t| t.resource == *resource);
-                !self.pass_sampled(index).iter().any(attached)
-                    && !self.step.sampled.iter().any(attached)
+                let stores = self.pass_stores(index);
+                !self
+                    .pass_reads(index)
+                    .iter()
+                    .any(|r| attached(r) || self.step.stores.contains(r))
+                    && !self
+                        .step
+                        .reads
+                        .iter()
+                        .any(|r| attached(r) || stores.contains(r))
             }
         }
     }
@@ -674,22 +701,26 @@ impl Compiler {
         });
         self.step.first_pass = self.plan.order.len();
         self.step.targets.clear();
-        self.step.sampled.clear();
+        self.step.reads.clear();
+        self.step.stores.clear();
         self.join_step(index);
     }
 
-    /// Adds a pass to the open step: its targets become the step's when they hold the step's.
+    /// Adds a pass to the open step: its targets become the step's when they hold the step's, and
+    /// its reads and writes join the step's.
     fn join_step(&mut self, index: usize) {
-        let (start, end) = self.passes[index].targets;
-        let mine = &self.targets[start as usize..end as usize];
+        let state = self.passes[index];
+        let mine = &self.targets[state.targets.0 as usize..state.targets.1 as usize];
         if !mine.iter().all(|t| self.step.targets.contains(t)) {
             self.step.targets.clear();
             self.step.targets.extend_from_slice(mine);
         }
-        let (start, end) = self.passes[index].sampled;
         self.step
-            .sampled
-            .extend_from_slice(&self.sampled[start as usize..end as usize]);
+            .reads
+            .extend_from_slice(&self.reads[state.reads.0 as usize..state.reads.1 as usize]);
+        self.step
+            .stores
+            .extend_from_slice(&self.stores[state.stores.0 as usize..state.stores.1 as usize]);
     }
 
     /// Closes the open step and adds it to the plan, with its color attachments first.
@@ -826,9 +857,17 @@ impl Compiler {
                         texture,
                     });
                     if resolves && !state.sampled.is_empty() {
+                        // Each layer resolves after the last render pass that draws it. With one
+                        // layer that is the last to draw the target; for an array, the first
+                        // render pass that draws any layer is a safe start.
+                        let first_resolve = if state.target.layers == 1 {
+                            state.attached.last
+                        } else {
+                            state.attached.first
+                        };
                         self.surfaces.push(SurfaceUse {
                             span: Span {
-                                first: state.attached.last,
+                                first: first_resolve,
                                 last: state.sampled.last,
                             },
                             resource: index as u16,
@@ -898,14 +937,16 @@ impl Compiler {
                 } else {
                     LoadOp::Clear
                 };
+                // A multisampled color target is only drawn into; passes sample its resolved
+                // texture. Each layer resolves at the end of the last render pass that draws it.
+                let drawn_later =
+                    self.attached_in(resource, attachment.layer, index + 1..self.plan.steps.len());
                 let later = if state.target.resolves() {
-                    self.attached_in(resource, attachment.layer, index + 1..self.plan.steps.len())
+                    drawn_later
                 } else {
                     state.uses.last > at
                 };
-                let resolves = state.target.resolves()
-                    && !state.sampled.is_empty()
-                    && state.attached.last == at;
+                let resolves = state.target.resolves() && !state.sampled.is_empty() && !drawn_later;
                 // Every attached texture was placed, and the canvas places itself.
                 debug_assert!(placement.texture.is_some(), "an attachment has no texture");
                 self.plan.attachments[place] = Attachment {
