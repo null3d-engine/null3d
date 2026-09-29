@@ -5,8 +5,7 @@
 // never blocks.
 
 import { controlViews, Slot } from '../shared/control';
-import { startCore } from '../shared/core';
-import { type JobWorkerInit, replyToPage, startSteps } from './protocol';
+import { type JobWorkerInit, replyToPage, startSteps, startWorkerCore } from './protocol';
 
 const step = startSteps('job');
 step('loaded');
@@ -14,7 +13,7 @@ step('loaded');
 self.onmessage = async (event: MessageEvent<JobWorkerInit>) => {
 	const message = event.data;
 	try {
-		const { glue: core } = await startCore(message.build, message.module, message.memory, step);
+		const { glue: core } = await startWorkerCore(message, step);
 		replyToPage({
 			type: 'ready',
 			role: 'job',

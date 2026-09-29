@@ -1,16 +1,19 @@
 // createEngine: the page side of the engine. It probes the device, picks the build and the GPU tier,
 // starts the workers, and hands the canvas to the thread that draws. The page loads the renderer
-// only when it draws itself.
+// only when it draws itself, and the sketch runner and the scene API only when it runs the sketch
+// itself.
 
-import { ERRORS, type ErrorCode } from '../errors/codes';
-import { EngineError } from '../errors/engine-error';
+import { EngineError, isErrorCode, setErrorFixes } from '../errors/engine-error';
+import { ERROR_FIXES } from '../errors/fixes';
 import { type DrawModule, loadDrawModule } from '../render/load-draw';
 import type { Drawing } from '../render/recovery';
 import type { Renderer, Tier } from '../render/renderer';
+import { awaitLater } from '../shared/await-later';
 import { controlViews, createControlBuffer, Slot } from '../shared/control';
 import { type Build, type CoreGlue, startCore } from '../shared/core';
 import { createMetricsBuffer, MetricsReader } from '../shared/metrics';
-import { SketchRunner } from '../sketch/runner';
+import { loadSketch } from '../sketch/define-sketch';
+import type { SketchRunner } from '../sketch/runner';
 import type { CoreHandoff, RendererSetup, WorkerReply } from '../workers/protocol';
 import { abortable } from './abortable';
 import { type CapabilityReport, type PowerPreference, probeCapabilities } from './capabilities';
@@ -234,12 +237,22 @@ type Pending = { resolve: (reply: WorkerReply) => void; reject: (error: Error) =
  */
 export function startError(role: string, message: string): EngineError {
 	const code = /^(E\d{4}): /.exec(message)?.[1];
-	if (code && code in ERRORS) {
-		const error = new EngineError(code as ErrorCode, '');
+	if (code && isErrorCode(code)) {
+		const error = new EngineError(code, '');
 		error.message = message;
 		return error;
 	}
 	return new EngineError('E1405', `the ${role} worker did not start: ${message}.`);
+}
+
+type RunnerModule = typeof import('../sketch/runner');
+
+/**
+ * Starts loading the sketch runner and the scene API, which the page needs only when it runs the
+ * sketch itself. The bundler puts them in a file of their own.
+ */
+function loadRunnerModule(): Promise<RunnerModule> {
+	return awaitLater(import('../sketch/runner'));
 }
 
 /** WebAssembly that uses a SIMD instruction; a browser without SIMD rejects it. */
@@ -344,6 +357,9 @@ async function stopWorkers(workers: readonly EngineWorker[], jobs: readonly Engi
  */
 export async function createEngine(options: EngineOptions): Promise<Engine> {
 	const startedAt = performance.now();
+	// The page's errors end with the fixes from its own table, and each worker gets the same table
+	// in its handoff.
+	setErrorFixes(ERROR_FIXES);
 	const { signal, onProgress } = options;
 	signal?.throwIfAborted();
 	// Checked before any download, so an old browser learns at once why the engine cannot run.
@@ -357,17 +373,21 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 		typeof SharedArrayBuffer === 'function' &&
 		switches.threads;
 	const build: Build = threaded ? 'threaded' : 'single';
+	const latency = threaded ? (switches.latency ?? options.latency ?? 'pipelined') : 'single';
 	let coreMs = 0;
-	const coreLoad = loadCore(build, switches.memoryMiB).then((loaded) => {
-		coreMs = performance.now() - startedAt;
-		return loaded;
-	});
-	// A failed load is reported where the engine awaits the core, not as an unhandled rejection.
-	coreLoad.catch(() => {});
+	const coreLoad = awaitLater(
+		loadCore(build, switches.memoryMiB).then((loaded) => {
+			coreMs = performance.now() - startedAt;
+			return loaded;
+		}),
+	);
+	// The page runs the sketch itself only in single-threaded mode. It needs the sketch runner right
+	// after the core, so the runner downloads while the core does: a later start delays the first
+	// frame on a slow network.
+	const runnerModule = latency === 'single' ? loadRunnerModule() : undefined;
 	const powerPreference = options.powerPreference ?? DEFAULT_POWER_PREFERENCE;
 	const report = await abortable(probeCapabilities(powerPreference), signal);
 	const probeMs = performance.now() - startedAt;
-	const latency = threaded ? (switches.latency ?? options.latency ?? 'pipelined') : 'single';
 	const wanted = switches.gpu !== 'auto' ? switches.gpu : (options.gpu ?? 'auto');
 
 	let renderThread: EngineMode['renderThread'] =
@@ -415,6 +435,7 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 		control,
 		metrics,
 		device,
+		errorFixes: ERROR_FIXES,
 	};
 	const input = captureInput(
 		options.canvas,
@@ -499,6 +520,7 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 			localCore = started.glue;
 			const memory = started.memory as WebAssembly.Memory;
 			wasmMemory = memory;
+			const { SketchRunner } = await (runnerModule ?? loadRunnerModule());
 			localRunner = new SketchRunner((name, data) => onSketchMessage(name, data), metrics, {
 				glue: started.glue,
 				memory,
@@ -506,7 +528,7 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 				jobWorkers: 0,
 				device,
 			});
-			await localRunner.load(sketchUrl);
+			await localRunner.setup(await loadSketch(sketchUrl));
 			localDrawing = await drawOnPage(memory, localRunner);
 		} else {
 			sketch = new EngineWorker(

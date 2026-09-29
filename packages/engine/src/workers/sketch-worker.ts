@@ -7,9 +7,9 @@ import { type DrawModule, loadDrawModule } from '../render/load-draw';
 import type { Drawing } from '../render/recovery';
 import type { Renderer } from '../render/renderer';
 import { controlViews, Slot } from '../shared/control';
-import { startCore } from '../shared/core';
+import { loadSketch } from '../sketch/define-sketch';
 import { SketchRunner } from '../sketch/runner';
-import { replyToPage, type SketchWorkerMessage, startSteps } from './protocol';
+import { replyToPage, type SketchWorkerMessage, startSteps, startWorkerCore } from './protocol';
 
 let runner: SketchRunner | undefined;
 let draw: DrawModule | undefined;
@@ -57,7 +57,7 @@ self.onmessage = async (event: MessageEvent<SketchWorkerMessage>) => {
 			// The renderer loads while the core and the sketch start.
 			const drawModule = message.renderer && loadDrawModule();
 			controlSlots = controlViews(message.control).slots;
-			const started = await startCore(message.build, message.module, message.memory, step);
+			const started = await startWorkerCore(message, step);
 			const core = started.glue;
 			const memory = started.memory as WebAssembly.Memory;
 			runner = new SketchRunner(
@@ -72,7 +72,7 @@ self.onmessage = async (event: MessageEvent<SketchWorkerMessage>) => {
 				},
 			);
 			step('engine created');
-			await runner.load(message.sketchUrl);
+			await runner.setup(await loadSketch(message.sketchUrl));
 			step('sketch loaded');
 			if (message.renderer && drawModule) {
 				draw = await drawModule;

@@ -1,8 +1,8 @@
 // Turns a failure the engine core reported into an EngineError. The core reports a numeric code
 // from the engine's error table and two detail numbers; this names the call and the object.
 
-import { ERRORS, type ErrorCode } from './codes';
-import { EngineError } from './engine-error';
+import { EngineError, isErrorCode } from './engine-error';
+import type { ErrorCode } from './fixes';
 
 /** The core's error functions, which every build exports. */
 export interface CoreErrors {
@@ -90,9 +90,9 @@ export function coreFailure(core: CoreErrors, call: string, what = 'an object'):
 				`${call}() failed: ${RENDER_LIMITS[a] ?? 'a render limit was reached'}.`,
 			);
 		default: {
-			const known = `E${code}` in ERRORS;
+			const id = `E${code}`;
 			return error(
-				known ? (`E${code}` as ErrorCode) : 'E1105',
+				isErrorCode(id) ? id : 'E1105',
 				`${call}() failed in the engine core with code ${code}.`,
 			);
 		}

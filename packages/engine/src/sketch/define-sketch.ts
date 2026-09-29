@@ -1,5 +1,11 @@
 // defineSketch: the entry point of a sketch module, which the engine runs in the sketch worker.
+// loadSketch imports a sketch module on the thread that runs it. The page imports loadSketch from
+// this module in every mode, so a bundler keeps defineSketch in the page's file. A sketch module
+// imports defineSketch from that file, and the sketch worker finds the file in the browser's cache.
+// In a file of its own, defineSketch would cost the sketch worker one more request before the
+// sketch runs.
 
+import { EngineError } from '../errors/engine-error';
 import type { Geometry, Materials } from '../scene/resources';
 import type { Scene } from '../scene/scene';
 
@@ -100,10 +106,18 @@ export function defineSketch(setup: SketchSetup): SketchDefinition {
 	return { [SKETCH_MARKER]: true, setup };
 }
 
-export function isSketchDefinition(value: unknown): value is SketchDefinition {
+function isSketchDefinition(value: unknown): value is SketchDefinition {
 	return (
 		typeof value === 'object' &&
 		value !== null &&
 		(value as Record<symbol, unknown>)[SKETCH_MARKER] === true
 	);
+}
+
+/** Imports a sketch module and returns its sketch, or throws E1401 when it exports none. */
+export async function loadSketch(url: string): Promise<SketchDefinition> {
+	const module = (await import(/* @vite-ignore */ url)) as { default?: unknown };
+	if (!isSketchDefinition(module.default))
+		throw new EngineError('E1401', `${url} must export default defineSketch(...).`);
+	return module.default;
 }

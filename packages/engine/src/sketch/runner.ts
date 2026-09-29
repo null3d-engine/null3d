@@ -1,10 +1,9 @@
-// Runs a sketch module: starts the engine core on this thread, loads the module, calls its setup
-// function once with the scene API, and steps it once per frame. A frame runs the sketch's update,
-// then the core's steps, and publishes the frame's draw list; each step's CPU time is recorded, and
-// so is the time each job worker spent on the frame's work.
+// Runs a sketch: starts the engine on this thread's core, calls the sketch's setup function once with
+// the scene API, and steps it once per frame. A frame runs the sketch's update, then the core's
+// steps, and publishes the frame's draw list; each step's CPU time is recorded, and so is the time
+// each job worker spent on the frame's work.
 
 import { coreFailure } from '../errors/core-failure';
-import { EngineError } from '../errors/engine-error';
 import type { CoreDevice } from '../page/limits';
 import { CoreMemory } from '../scene/memory';
 import { Geometry, Materials } from '../scene/resources';
@@ -13,8 +12,7 @@ import { Slot } from '../shared/control';
 import type { CoreGlue } from '../shared/core';
 import { Counter, FrameRecorder, Phase, Role } from '../shared/metrics';
 import { FrameClock } from './clock';
-import type { SketchCallbacks, SketchContext } from './define-sketch';
-import { isSketchDefinition } from './define-sketch';
+import type { SketchCallbacks, SketchContext, SketchDefinition } from './define-sketch';
 
 export type PagePoster = (type: string, data: unknown, transfer?: Transferable[]) => void;
 
@@ -119,13 +117,9 @@ export class SketchRunner {
 		};
 	}
 
-	/** Imports the sketch module and runs its setup function. */
-	async load(sketchUrl: string): Promise<void> {
-		const module = (await import(/* @vite-ignore */ sketchUrl)) as { default?: unknown };
-		if (!isSketchDefinition(module.default)) {
-			throw new EngineError('E1401', `${sketchUrl} must export default defineSketch(...).`);
-		}
-		this.callbacks = (await module.default.setup(this.context)) ?? {};
+	/** Runs the sketch's setup function, which returns the sketch's callbacks. */
+	async setup(sketch: SketchDefinition): Promise<void> {
+		this.callbacks = (await sketch.setup(this.context)) ?? {};
 	}
 
 	/** Delivers a message the page sent with engine.postToSketch. */

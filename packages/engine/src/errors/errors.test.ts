@@ -1,7 +1,20 @@
-import { describe, expect, it } from 'bun:test';
+import { beforeEach, describe, expect, it } from 'bun:test';
+import { startError } from '../page/engine';
 import { checkNumber, checkVector, DEV } from './checks';
 import { ERRORS } from './codes';
-import { EngineError } from './engine-error';
+import { type CoreErrors, coreFailure } from './core-failure';
+import { EngineError, isErrorCode, setErrorFixes } from './engine-error';
+import { ERROR_FIXES, type ErrorCode } from './fixes';
+
+const DOCS = 'https://github.com/null3d-engine/null3d/blob/main/docs/errors/';
+
+/** A core that reports one failure: its code and two detail numbers. */
+function failedCore(code: number, a = 0, b = 0): CoreErrors {
+	return { lastErrorCode: () => code, lastErrorDetail: (index) => (index === 0 ? a : b) };
+}
+
+// Each thread sets the table before it raises an error: the page its own, a worker the page's copy.
+beforeEach(() => setErrorFixes(ERROR_FIXES));
 
 describe('EngineError', () => {
 	it('carries its code, the fix and a link to the code page', () => {
@@ -17,9 +30,76 @@ describe('EngineError', () => {
 		expect(error).toBeInstanceOf(Error);
 	});
 
+	it("ends each code's message with the code's fix and docs page, from a worker's copy too", () => {
+		const message = (code: ErrorCode) => new EngineError(code, 'what failed.').message;
+		const expected = (code: ErrorCode) =>
+			`${code}: what failed. ${ERRORS[code].fix} See ${DOCS}${code}.md`;
+		const codes = Object.keys(ERRORS) as ErrorCode[];
+		for (const code of codes) expect(message(code)).toBe(expected(code));
+		// A worker holds a copy of the page's table, as a message to the worker carries it.
+		setErrorFixes(structuredClone(ERROR_FIXES));
+		for (const code of codes) expect(message(code)).toBe(expected(code));
+	});
+
 	it('uses codes whose examples start with the code', () => {
 		for (const [code, entry] of Object.entries(ERRORS))
 			expect(entry.example.startsWith(`${code}: `)).toBe(true);
+	});
+});
+
+describe('the error table', () => {
+	it("joins every code's docs with its fix, in one order", () => {
+		expect(Object.keys(ERRORS)).toEqual(Object.keys(ERROR_FIXES));
+		for (const [code, entry] of Object.entries(ERRORS))
+			expect(entry.fix).toBe(ERROR_FIXES[code as ErrorCode]);
+	});
+
+	it('knows its own codes and nothing else', () => {
+		for (const code of Object.keys(ERROR_FIXES)) expect(isErrorCode(code)).toBe(true);
+		for (const code of ['E9999', 'E1', 'toString', 'constructor'])
+			expect(isErrorCode(code)).toBe(false);
+	});
+});
+
+describe('failures the engine core reports', () => {
+	it('name the call and the details', () => {
+		const error = coreFailure(failedCore(1108, 1200, 1000), 'setActiveCount');
+		expect(error.code).toBe('E1108');
+		expect(error.message).toBe(
+			`E1108: setActiveCount() got 1200, above the limit of 1000. ${ERROR_FIXES.E1108} See ${DOCS}E1108.md`,
+		);
+	});
+
+	it('keep a code of the table without its own wording, and turn any other code into E1105', () => {
+		expect(coreFailure(failedCore(1405), 'createEngine').message).toStartWith(
+			'E1405: createEngine() failed in the engine core with code 1405.',
+		);
+		const unknown = coreFailure(failedCore(4242), 'createEngine');
+		expect(unknown.code).toBe('E1105');
+		expect(unknown.message).toStartWith(
+			'E1105: createEngine() failed in the engine core with code 4242.',
+		);
+	});
+});
+
+describe('errors a worker reports while it starts', () => {
+	it('keep the code and the full message of an engine error', () => {
+		const inWorker = new EngineError('E1402', 'the threaded engine core lacks isThreadedBuild.');
+		const error = startError('render', inWorker.message);
+		expect(error).toBeInstanceOf(EngineError);
+		expect(error.code).toBe('E1402');
+		expect(error.message).toBe(inWorker.message);
+		expect(error.docs).toBe(inWorker.docs);
+	});
+
+	it('become E1405, naming the worker, for any other failure', () => {
+		for (const message of ['no WebGPU adapter', 'E9999: not a code of the table']) {
+			const error = startError('render', message);
+			expect(error.code).toBe('E1405');
+			expect(error.message).toBe(
+				`E1405: the render worker did not start: ${message}. ${ERROR_FIXES.E1405} See ${DOCS}E1405.md`,
+			);
+		}
 	});
 });
 

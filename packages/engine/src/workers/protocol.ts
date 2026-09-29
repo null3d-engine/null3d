@@ -1,9 +1,11 @@
 // Messages between the page and the engine's workers.
 
+import { setErrorFixes } from '../errors/engine-error';
+import type { ErrorFixes } from '../errors/fixes';
 import type { PowerPreference } from '../page/capabilities';
 import type { CoreDevice } from '../page/limits';
 import type { Tier } from '../render/renderer';
-import type { Build } from '../shared/core';
+import { type Build, type StartedCore, startCore } from '../shared/core';
 
 export interface CoreHandoff {
 	build: Build;
@@ -15,6 +17,20 @@ export interface CoreHandoff {
 	metrics: ArrayBufferLike;
 	/** The device the engine draws with, as the core and the renderer use it. */
 	device: CoreDevice;
+	/** The page's table of error fixes, so a worker's errors carry the same messages as the page's. */
+	errorFixes: ErrorFixes;
+}
+
+/**
+ * Starts the engine core in a worker from what the page handed it. The worker takes the page's
+ * error fixes first, so every error it raises from then on carries its full message.
+ */
+export function startWorkerCore(
+	handoff: CoreHandoff,
+	step: (name: string) => void,
+): Promise<StartedCore> {
+	setErrorFixes(handoff.errorFixes);
+	return startCore(handoff.build, handoff.module, handoff.memory, step);
 }
 
 /** What the thread that draws needs: its canvas, the GPU path and how it paces its frames. */

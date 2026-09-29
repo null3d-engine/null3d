@@ -5,8 +5,13 @@ import { captureFrame, startDrawing } from '../render/draw';
 import type { Drawing } from '../render/recovery';
 import type { Renderer } from '../render/renderer';
 import { controlViews } from '../shared/control';
-import { startCore } from '../shared/core';
-import { type RendererRequest, type RenderWorkerInit, replyToPage, startSteps } from './protocol';
+import {
+	type RendererRequest,
+	type RenderWorkerInit,
+	replyToPage,
+	startSteps,
+	startWorkerCore,
+} from './protocol';
 
 let drawing: Drawing<Renderer> | undefined;
 let controlSlots: Int32Array | undefined;
@@ -19,7 +24,7 @@ self.onmessage = async (event: MessageEvent<RenderWorkerInit | RendererRequest>)
 	if (message.type === 'init') {
 		try {
 			controlSlots = controlViews(message.control).slots;
-			const { glue: core } = await startCore(message.build, message.module, message.memory, step);
+			const { glue: core } = await startWorkerCore(message, step);
 			drawing = await startDrawing({
 				...message,
 				scene: message.memory && { memory: message.memory, control: message.control },

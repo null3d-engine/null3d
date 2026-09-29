@@ -65,11 +65,13 @@ export interface EnginePart {
 
 /**
  * The parts of the engine's JavaScript. The renderer loads on demand on the page and in the sketch
- * worker, so a page downloads it only for the thread that draws.
+ * worker, so a page downloads it only for the thread that draws. The sketch runner and the scene API
+ * load on demand on the page, which runs the sketch only in single-threaded mode.
  */
 export const ENGINE_PARTS: readonly EnginePart[] = [
 	{ name: 'page.js', module: 'page/engine.ts' },
 	{ name: 'page-renderer.js', module: 'render/draw.ts', loadedBy: 'page.js' },
+	{ name: 'page-sketch-runner.js', module: 'sketch/runner.ts', loadedBy: 'page.js' },
 	{ name: 'sketch-worker.js', module: 'workers/sketch-worker.ts' },
 	{ name: 'sketch-worker-renderer.js', module: 'render/draw.ts', loadedBy: 'sketch-worker.js' },
 	{ name: 'render-worker.js', module: 'workers/render-worker.ts' },
@@ -104,7 +106,10 @@ export const DOWNLOADS: readonly Download[] = [
 		mode: 'drawing on the main thread',
 		parts: ['page.js', 'page-renderer.js', 'probe-worker.js', 'sketch-worker.js', 'job-worker.js'],
 	},
-	{ mode: 'single-threaded', parts: ['page.js', 'page-renderer.js', 'probe-worker.js'] },
+	{
+		mode: 'single-threaded',
+		parts: ['page.js', 'page-sketch-runner.js', 'page-renderer.js', 'probe-worker.js'],
+	},
 ];
 
 /** True for a source file of a page that uses the engine, such as a test page. */
