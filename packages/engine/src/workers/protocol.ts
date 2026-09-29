@@ -2,6 +2,7 @@
 
 import { setErrorFixes } from '../errors/engine-error';
 import type { ErrorFixes } from '../errors/fixes';
+import { messageOf } from '../errors/message';
 import type { PowerPreference } from '../page/capabilities';
 import type { CoreDevice } from '../page/limits';
 import type { Tier } from '../render/renderer';
@@ -33,6 +34,13 @@ export function startWorkerCore(
 	return startCore(handoff.build, handoff.module, handoff.memory, step);
 }
 
+/** A frame read back from the GPU: its pixels as RGBA8 rows, top row first. */
+export interface CapturedFrame {
+	width: number;
+	height: number;
+	pixels: Uint8Array;
+}
+
 /** What the thread that draws needs: its canvas, the GPU path and how it paces its frames. */
 export interface RendererSetup {
 	canvas: OffscreenCanvas;
@@ -41,6 +49,8 @@ export interface RendererSetup {
 	powerPreference?: PowerPreference;
 	/** The frame rate that ?fps= holds, or undefined to draw at the display's rate. */
 	fps?: number;
+	/** Hold mode: the thread runs no frame loop, and draws the held frame once, when a capture asks. */
+	hold?: boolean;
 }
 
 export type SketchWorkerInit = CoreHandoff & {
@@ -50,6 +60,8 @@ export type SketchWorkerInit = CoreHandoff & {
 	jobWorkers: number;
 	/** Present in low-latency mode, where the sketch worker also draws. */
 	renderer?: RendererSetup;
+	/** Hold mode's sketch time in seconds, which the sketch worker steps the sketch to after setup. */
+	hold?: number;
 };
 
 export type RenderWorkerInit = CoreHandoff & RendererSetup & { type: 'init' };
@@ -79,7 +91,8 @@ export type WorkerReply =
 	/** The browser took the GPU away from the worker that draws, which stopped drawing. */
 	| { type: 'lost'; role: 'sketch' | 'render'; reason: string }
 	| { type: 'sketch-message'; name: string; data: unknown }
-	| { type: 'captured'; width: number; height: number; pixels: Uint8Array };
+	| ({ type: 'captured' } & CapturedFrame)
+	| { type: 'capture-failed'; message: string };
 
 export type SketchWorkerMessage =
 	| SketchWorkerInit
@@ -89,6 +102,16 @@ export type SketchWorkerMessage =
 /** Sends a reply from a worker to the page, moving the `transfer` objects instead of copying them. */
 export function replyToPage(message: WorkerReply, transfer: Transferable[] = []): void {
 	postMessage(message, { transfer });
+}
+
+/** Sends the page a captured frame once `capture` resolves, or the reason it failed. */
+export async function replyWithCapture(capture: Promise<CapturedFrame>): Promise<void> {
+	try {
+		const captured = await capture;
+		replyToPage({ type: 'captured', ...captured }, [captured.pixels.buffer]);
+	} catch (e) {
+		replyToPage({ type: 'capture-failed', message: messageOf(e) });
+	}
 }
 
 /** Returns a function that reports each step of a worker's start to the page as it finishes. */

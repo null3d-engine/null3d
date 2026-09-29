@@ -1,6 +1,7 @@
 // Turns the frame records of one measurement into its metrics: CPU time per frame by thread and
 // phase, GPU time, frame intervals, uploads and draw calls, memory, load time and download size.
 
+import { messageOf } from '../errors/message';
 import { CORE_NOT_COUNTED } from '../generated/core';
 import {
 	COUNTER_NAMES,
@@ -312,7 +313,7 @@ export class HeapSampler {
 		};
 		sample().catch((error: unknown) => {
 			this.running = false;
-			const reason = error instanceof Error ? error.message : String(error);
+			const reason = messageOf(error);
 			this.failure = `the browser refused the measurement: ${reason}`;
 		});
 	}

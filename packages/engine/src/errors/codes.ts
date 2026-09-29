@@ -156,6 +156,21 @@ const DOCS = {
 		example: 'E1406: /assets/null3d_memory-3f9c1a2b.json did not download: HTTP 404.',
 		since: '0.1',
 	},
+	E1407: {
+		title: 'Invalid hold time',
+		cause:
+			'The ?hold= switch or the hold option of createEngine gave a hold time that is not a number of seconds from 0 to 600.',
+		example: 'E1407: ?hold=1500ms is not a number of seconds from 0 to 600.',
+		since: '0.1',
+	},
+	E1408: {
+		title: 'Hold failed',
+		cause:
+			'The sketch or the engine failed in hold mode, before the engine read the held frame back. A live engine logs an error in the sketch and carries on. Hold mode stops at the first one, so a test fails at once.',
+		example:
+			'E1408: hold mode stopped at 0.75 seconds, in frame 46: TypeError: player is undefined.',
+		since: '0.1',
+	},
 	E1501: {
 		title: 'Render space full',
 		cause:

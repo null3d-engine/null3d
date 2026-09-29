@@ -26,7 +26,7 @@ function fakeRenderer(): FakeRenderer {
 
 const settle = () => new Promise((resolve) => setTimeout(resolve, 0));
 
-function setup(create?: () => Promise<FakeRenderer>) {
+function setup(create?: () => Promise<FakeRenderer>, recovers = true) {
 	const slots = new Int32Array(32);
 	const renderers = [fakeRenderer()];
 	const loops: Loop[] = [];
@@ -51,6 +51,7 @@ function setup(create?: () => Promise<FakeRenderer>) {
 		},
 		slots,
 		(reason) => failures.push(reason),
+		recovers,
 	);
 	const last = () => renderers[renderers.length - 1] as FakeRenderer;
 	return { slots, renderers, loops, failures, drawing, last };
@@ -88,6 +89,17 @@ describe('Drawing', () => {
 		last().lose('driver reset');
 		await settle();
 		expect(failures).toEqual(['driver reset, and no new GPU device started: no adapter']);
+	});
+
+	it('reports the first loss at once when it may not recover, as in hold mode', async () => {
+		const { slots, renderers, loops, failures, last } = setup(undefined, false);
+		last().lose('driver reset');
+		await settle();
+		expect(renderers).toHaveLength(1);
+		expect(renderers[0]?.destroyed).toBe(true);
+		expect(loops[0]?.stopped).toBe(true);
+		expect(Atomics.load(slots, Slot.GpuEpoch)).toBe(0);
+		expect(failures).toEqual(['driver reset, in hold mode, which draws on one device only']);
 	});
 
 	it('destroys a replacement that arrives after the engine stopped', async () => {

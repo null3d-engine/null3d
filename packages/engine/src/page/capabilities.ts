@@ -2,6 +2,7 @@
 // engine never decides anything from browser or GPU names. The report is plain JSON, so test
 // runners can store it and compare it across devices.
 
+import { messageOf } from '../errors/message';
 import type { WorkerProbe } from '../workers/probe-worker';
 
 /** Limits the engine reads, from its portable WebGPU budget. */
@@ -165,10 +166,6 @@ export interface CapabilityReport {
 	webgl2: WebGL2Report;
 	/** What a dedicated worker can do, or why the probe worker failed. */
 	worker: WorkerProbe | { error: string };
-}
-
-function messageOf(e: unknown): string {
-	return e instanceof Error ? e.message : String(e);
 }
 
 async function probeWebGPU(powerPreference?: PowerPreference): Promise<WebGPUReport> {

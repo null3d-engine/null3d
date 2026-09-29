@@ -3,13 +3,20 @@
 // Atomics.waitAsync, so its event loop stays alive for promises and messages. In low-latency mode it
 // also owns the canvas and draws each frame itself; only then does it load the renderer.
 
+import { messageOf } from '../errors/message';
 import { type DrawModule, loadDrawModule } from '../render/load-draw';
 import type { Drawing } from '../render/recovery';
 import type { Renderer } from '../render/renderer';
 import { controlViews, Slot } from '../shared/control';
 import { loadSketch } from '../sketch/define-sketch';
 import { SketchRunner } from '../sketch/runner';
-import { replyToPage, type SketchWorkerMessage, startSteps, startWorkerCore } from './protocol';
+import {
+	replyToPage,
+	replyWithCapture,
+	type SketchWorkerMessage,
+	startSteps,
+	startWorkerCore,
+} from './protocol';
 
 let runner: SketchRunner | undefined;
 let draw: DrawModule | undefined;
@@ -70,10 +77,11 @@ self.onmessage = async (event: MessageEvent<SketchWorkerMessage>) => {
 					jobWorkers: message.jobWorkers,
 					device: message.device,
 				},
+				message.hold,
 			);
 			step('engine created');
 			await runner.setup(await loadSketch(message.sketchUrl));
-			step('sketch loaded');
+			step(message.hold === undefined ? 'sketch loaded' : 'sketch loaded and held');
 			if (message.renderer && drawModule) {
 				draw = await drawModule;
 				step('renderer loaded');
@@ -86,7 +94,7 @@ self.onmessage = async (event: MessageEvent<SketchWorkerMessage>) => {
 					sketch: runner,
 					fail: (reason) => replyToPage({ type: 'lost', role: 'sketch', reason }),
 				});
-			} else {
+			} else if (message.hold === undefined) {
 				void runPipelined(runner, message.control);
 			}
 			replyToPage({
@@ -100,14 +108,13 @@ self.onmessage = async (event: MessageEvent<SketchWorkerMessage>) => {
 			replyToPage({
 				type: 'error',
 				role: 'sketch',
-				message: e instanceof Error ? e.message : String(e),
+				message: messageOf(e),
 			});
 		}
 	} else if (message.type === 'post') {
 		runner?.receive(message.name, message.data);
 	} else if (message.type === 'capture' && draw && drawing && controlSlots) {
-		const captured = await draw.captureFrame(drawing, controlSlots);
-		replyToPage({ type: 'captured', ...captured }, [captured.pixels.buffer]);
+		await replyWithCapture(draw.captureFrame(drawing, controlSlots));
 	} else if (message.type === 'lose-gpu') {
 		drawing?.simulateLoss();
 	}

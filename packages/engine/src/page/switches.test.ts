@@ -12,7 +12,14 @@ describe('parseSwitches', () => {
 			fps: undefined,
 			jobs: undefined,
 			memoryMiB: undefined,
+			hold: undefined,
 		});
+	});
+
+	it('keeps the text of ?hold for the engine to check, and an empty text for a bare ?hold', () => {
+		expect(parseSwitches('?hold=1.5').hold).toBe('1.5');
+		expect(parseSwitches('?gpu=webgl2&hold').hold).toBe('');
+		expect(parseSwitches('?hold=soon').hold).toBe('soon');
 	});
 
 	it('reads the job worker count and the memory maximum as whole numbers', () => {

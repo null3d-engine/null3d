@@ -1,9 +1,12 @@
 // Runs a sketch: starts the engine on this thread's core, calls the sketch's setup function once with
 // the scene API, and steps it once per frame. A frame runs the sketch's update, then the core's
 // steps, and publishes the frame's draw list; each step's CPU time is recorded, and so is the time
-// each job worker spent on the frame's work.
+// each job worker spent on the frame's work. In hold mode it seeds this thread's Math.random, steps
+// the sketch to the held time in fixed steps after the setup, and publishes the last frame alone.
 
 import { coreFailure } from '../errors/core-failure';
+import { EngineError } from '../errors/engine-error';
+import { messageOf } from '../errors/message';
 import type { CoreDevice } from '../page/limits';
 import { CoreMemory } from '../scene/memory';
 import { Geometry, Materials } from '../scene/resources';
@@ -11,8 +14,9 @@ import { Scene } from '../scene/scene';
 import { Slot } from '../shared/control';
 import type { CoreGlue } from '../shared/core';
 import { Counter, FrameRecorder, Phase, Role } from '../shared/metrics';
-import { FrameClock } from './clock';
+import { FrameClock, holdSteps } from './clock';
 import type { SketchCallbacks, SketchContext, SketchDefinition } from './define-sketch';
+import { HOLD_SEED, seedMathRandom } from './random';
 
 export type PagePoster = (type: string, data: unknown, transfer?: Transferable[]) => void;
 
@@ -59,12 +63,22 @@ export class SketchRunner {
 	private readonly reported = new Set<string>();
 	/** When the current phase of the frame started. */
 	private phaseStart = 0;
+	/** True while hold mode steps the sketch: the first failure then stops it. */
+	private holding = false;
+	/** Gives the thread its own Math.random back, after hold mode seeded it. */
+	private restoreRandom: (() => void) | undefined;
 	readonly context: SketchContext;
 
+	/**
+	 * Starts the engine on the core's thread. `holdSeconds` starts hold mode at that sketch time: it
+	 * seeds this thread's Math.random at once, so the runner must exist before the sketch module
+	 * loads, and `setup` then steps the sketch to that time.
+	 */
 	constructor(
 		post: PagePoster,
 		metrics: ArrayBufferLike,
 		private readonly sketch: SketchCore,
+		private readonly holdSeconds?: number,
 	) {
 		this.record = new FrameRecorder(metrics, Role.Sketch);
 		this.jobRecords = Array.from(
@@ -115,11 +129,23 @@ export class SketchRunner {
 				},
 			},
 		};
+		// Last, so a constructor that fails leaves the thread's own Math.random in place.
+		if (holdSeconds !== undefined) this.restoreRandom = seedMathRandom(HOLD_SEED);
 	}
 
-	/** Runs the sketch's setup function, which returns the sketch's callbacks. */
+	/**
+	 * Runs the sketch's setup function, which returns the sketch's callbacks. In hold mode, it then
+	 * steps the sketch to the held time (see `hold`).
+	 */
 	async setup(sketch: SketchDefinition): Promise<void> {
 		this.callbacks = (await sketch.setup(this.context)) ?? {};
+		if (this.holdSeconds !== undefined) this.hold(this.holdSeconds);
+	}
+
+	/** Gives the thread its own Math.random back, where hold mode seeded it. */
+	dispose(): void {
+		this.restoreRandom?.();
+		this.restoreRandom = undefined;
 	}
 
 	/** Delivers a message the page sent with engine.postToSketch. */
@@ -134,23 +160,64 @@ export class SketchRunner {
 		this.phaseStart = now;
 	}
 
-	/** Reports a failure once per distinct message, so a repeating one does not flood the console. */
+	/**
+	 * Reports a failure in the sketch or the core, logging each distinct message once so a repeating
+	 * one does not flood the console. A live engine carries on; hold mode stops at the first one.
+	 */
 	private report(error: unknown): void {
-		const message = error instanceof Error ? error.message : String(error);
-		if (this.reported.has(message)) return;
-		this.reported.add(message);
-		console.error(error);
+		const message = messageOf(error);
+		if (!this.reported.has(message)) {
+			this.reported.add(message);
+			console.error(error);
+		}
+		if (this.holding) throw error;
 	}
 
 	/**
-	 * Advances the sketch by one frame and returns the new frame number, counting from 1. `now` is a
-	 * timestamp in milliseconds; in hold mode the caller passes a fixed time instead.
+	 * Advances the sketch by one frame and returns the new frame number, counting from 1.
+	 * `timestamp` is the frame's time in milliseconds.
 	 */
-	step(now: number): number {
+	step(timestamp: number): number {
+		this.clock.advance(timestamp, Atomics.load(this.sketch.slots, Slot.Resumes));
+		return this.frame();
+	}
+
+	/**
+	 * Hold mode: steps the sketch from time 0 to `seconds` in fixed steps, with no frame loop, and
+	 * publishes the last frame for the thread that draws. That thread draws none of the earlier
+	 * frames, so the last one creates every GPU object and uploads the whole scene, as after a GPU
+	 * loss. The first failure in the sketch or the core stops the hold with E1408.
+	 */
+	private hold(seconds: number): void {
+		const steps = holdSteps(seconds);
+		const { slots } = this.sketch;
+		let frame = 0;
+		this.holding = true;
+		try {
+			for (let step = 0; step <= steps; step++) {
+				this.clock.holdStep(step, steps, seconds);
+				// Like a new GPU device, the thread that draws has none of the objects that the earlier
+				// frames' lists created, so the last frame records as it does after a GPU loss.
+				if (step === steps) this.gpuEpoch = -1;
+				frame = this.frame();
+			}
+		} catch (error) {
+			throw new EngineError(
+				'E1408',
+				`hold mode stopped at ${Number(this.clock.now.toFixed(3))} seconds, in frame ${this.context.time.frame}: ${messageOf(error)}`,
+			);
+		} finally {
+			this.holding = false;
+		}
+		Atomics.store(slots, Slot.FramesPublished, frame);
+		Atomics.notify(slots, Slot.FramesPublished);
+	}
+
+	/** Runs one frame at the clock's time and step, and returns its number. */
+	private frame(): number {
 		const start = performance.now();
 		const { time } = this.context;
 		const { glue, slots } = this.sketch;
-		this.clock.advance(now, Atomics.load(slots, Slot.Resumes));
 		const dt = this.clock.dt;
 		time.now = this.clock.now;
 		time.frame++;

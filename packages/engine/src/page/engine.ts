@@ -5,6 +5,7 @@
 
 import { EngineError, isErrorCode, setErrorFixes } from '../errors/engine-error';
 import { ERROR_FIXES } from '../errors/fixes';
+import { messageOf } from '../errors/message';
 import { type DrawModule, loadDrawModule } from '../render/load-draw';
 import type { Drawing } from '../render/recovery';
 import type { Renderer, Tier } from '../render/renderer';
@@ -14,7 +15,7 @@ import { type Build, type CoreGlue, startCore } from '../shared/core';
 import { createMetricsBuffer, MetricsReader } from '../shared/metrics';
 import { loadSketch } from '../sketch/define-sketch';
 import type { SketchRunner } from '../sketch/runner';
-import type { CoreHandoff, RendererSetup, WorkerReply } from '../workers/protocol';
+import type { CapturedFrame, CoreHandoff, RendererSetup, WorkerReply } from '../workers/protocol';
 import { abortable } from './abortable';
 import { type CapabilityReport, type PowerPreference, probeCapabilities } from './capabilities';
 import {
@@ -24,12 +25,13 @@ import {
 	threadRoles,
 	wasmDownloadBytes,
 } from './frame-stats';
+import { holdFailure, holdSeconds, publishHold } from './hold';
 import { captureInput } from './input';
 import { coreDevice, maxInstances } from './limits';
 import { loadCore } from './loader';
 import { MainThreadWatch } from './main-thread';
 import { watchPreferences } from './preferences';
-import { type GpuSwitch, type LatencyMode, parseSwitches } from './switches';
+import { type GpuSwitch, type LatencyMode, parseSwitches, type Switches } from './switches';
 
 /**
  * Options for `createEngine`.
@@ -70,6 +72,14 @@ export interface EngineOptions {
 	 * stops the engine's threads and rejects with the signal's reason.
 	 */
 	signal?: AbortSignal;
+	/**
+	 * Starts the engine in hold mode for image tests, held at this many seconds of sketch time. The
+	 * engine steps the sketch from 0 to the time in fixed steps of 1/60 second, with no frame loop.
+	 * `Math.random` in the sketch's thread gives the same numbers on every run. The engine then
+	 * draws that one frame and reads it back, and `createEngine` resolves. The `?hold=<seconds>`
+	 * switch overrides this time, and a bare `?hold` holds at it, or at 0 without it.
+	 */
+	hold?: number;
 }
 
 /**
@@ -120,6 +130,8 @@ export interface EngineMode {
 	renderThread: 'render-worker' | 'sketch-worker' | 'main';
 	/** The job workers that share the engine's parallel work. */
 	jobWorkers: number;
+	/** The sketch time in seconds that hold mode holds the sketch at, or null for a live engine. */
+	hold: number | null;
 }
 
 /**
@@ -172,7 +184,10 @@ export interface Engine {
 	 * and phase, GPU time, frame intervals, uploads, draw calls, memory and load time.
 	 */
 	measure(seconds: number): Promise<FrameMetrics>;
-	/** Draws one frame offscreen and returns its pixels as RGBA8 rows, top row first. */
+	/**
+	 * Draws one frame offscreen and returns its pixels as RGBA8 rows, top row first. In hold mode,
+	 * it returns the held frame.
+	 */
 	captureFrame(): Promise<{ width: number; height: number; pixels: Uint8Array }>;
 	/**
 	 * Acts out a loss of the GPU, as a driver reset causes. The engine starts a new GPU device and
@@ -351,21 +366,43 @@ async function stopWorkers(workers: readonly EngineWorker[], jobs: readonly Engi
 
 /**
  * Starts the engine on the page. It tests the device, picks the build and the GPU path, starts the
- * workers, and runs the sketch module.
+ * workers, and runs the sketch module. In hold mode it also steps the sketch to the held time, then
+ * draws that frame and reads it back. It publishes the frame, or the error that stopped it, as
+ * `window.__null3dHold` for test tools.
  *
  * @category api/engine
  */
 export async function createEngine(options: EngineOptions): Promise<Engine> {
-	const startedAt = performance.now();
 	// The page's errors end with the fixes from its own table, and each worker gets the same table
 	// in its handoff.
 	setErrorFixes(ERROR_FIXES);
+	const switches = parseSwitches(globalThis.location?.search ?? '');
+	const holding = options.hold !== undefined || switches.hold !== undefined;
+	try {
+		const hold = holdSeconds(options.hold, switches.hold);
+		if (holding) publishHold(undefined);
+		return await startEngine(options, switches, hold);
+	} catch (error) {
+		if (holding) publishHold(holdFailure(error));
+		throw error;
+	}
+}
+
+/**
+ * Starts the engine with the page's switches. With a hold time, it resolves once the held frame
+ * is read back, and publishes it.
+ */
+async function startEngine(
+	options: EngineOptions,
+	switches: Switches,
+	hold: number | undefined,
+): Promise<Engine> {
+	const startedAt = performance.now();
 	const { signal, onProgress } = options;
 	signal?.throwIfAborted();
 	// Checked before any download, so an old browser learns at once why the engine cannot run.
 	if (!WebAssembly.validate(SIMD_PROBE))
 		throw new EngineError('E1303', 'this browser runs WebAssembly without SIMD.');
-	const switches = parseSwitches(globalThis.location?.search ?? '');
 	// The build follows from facts the page has at once, so the core downloads and compiles while
 	// the probe tests the GPU paths.
 	const threaded =
@@ -411,6 +448,7 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 		forceCompat,
 		powerPreference,
 		fps: switches.fps,
+		hold: hold !== undefined,
 	};
 
 	const jobWorkers = threaded
@@ -508,6 +546,7 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 		for (const slot of [Slot.Running, Slot.FramesTaken, Slot.Paused, Slot.JobsReady])
 			Atomics.notify(slots, slot);
 		localDrawing?.stop();
+		localRunner?.dispose();
 		localCore?.destroyEngine();
 		input.stop();
 		stopPreferences();
@@ -521,13 +560,12 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 			const memory = started.memory as WebAssembly.Memory;
 			wasmMemory = memory;
 			const { SketchRunner } = await (runnerModule ?? loadRunnerModule());
-			localRunner = new SketchRunner((name, data) => onSketchMessage(name, data), metrics, {
-				glue: started.glue,
-				memory,
-				slots,
-				jobWorkers: 0,
-				device,
-			});
+			localRunner = new SketchRunner(
+				(name, data) => onSketchMessage(name, data),
+				metrics,
+				{ glue: started.glue, memory, slots, jobWorkers: 0, device },
+				hold,
+			);
 			await localRunner.setup(await loadSketch(sketchUrl));
 			localDrawing = await drawOnPage(memory, localRunner);
 		} else {
@@ -550,12 +588,13 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 						sketchUrl,
 						jobWorkers,
 						renderer: { canvas, ...rendererSetup },
+						hold,
 					},
 					[canvas],
 				);
 				rendererHost = sketch;
 			} else {
-				sketch.worker.postMessage({ type: 'init', ...handoff, sketchUrl, jobWorkers });
+				sketch.worker.postMessage({ type: 'init', ...handoff, sketchUrl, jobWorkers, hold });
 				if (renderThread === 'render-worker') {
 					const canvas = options.canvas.transferControlToOffscreen();
 					rendererHost = new EngineWorker(
@@ -608,7 +647,7 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 	}
 
 	const engineStartMs = performance.now() - startedAt;
-	const mode: EngineMode = { build, latency, renderThread, jobWorkers };
+	const mode: EngineMode = { build, latency, renderThread, jobWorkers, hold: hold ?? null };
 	onProgress?.('sketch');
 	// The thread that draws writes the time the GPU finished the first frame; the page checks for
 	// it once per animation frame until it appears.
@@ -629,8 +668,19 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 		tier === 'webgl2'
 			? Object.keys(report.webgl2.extensions).filter((n) => report.webgl2.extensions[n])
 			: report.webgpu.features;
+	/** Hold mode's frame, read back once. */
+	let held: CapturedFrame | undefined;
+	/** Draws a frame offscreen on the thread that draws, and reads it back. */
+	const capture = async (): Promise<CapturedFrame> => {
+		if (localDrawing && draw) return draw.captureFrame(localDrawing, slots);
+		const reply = await rendererHost?.request({ type: 'capture' });
+		if (reply?.type === 'captured')
+			return { width: reply.width, height: reply.height, pixels: reply.pixels };
+		const reason = reply?.type === 'capture-failed' ? `: ${reply.message}` : '';
+		throw new Error(`the frame could not be captured${reason}`);
+	};
 
-	return {
+	const engine: Engine = {
 		capabilities: {
 			tier,
 			threaded,
@@ -708,10 +758,7 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 			};
 		},
 		async captureFrame() {
-			if (localDrawing && draw) return draw.captureFrame(localDrawing, slots);
-			const reply = await rendererHost?.request({ type: 'capture' });
-			if (reply?.type !== 'captured') throw new Error('the frame could not be captured');
-			return { width: reply.width, height: reply.height, pixels: reply.pixels };
+			return held ? { ...held, pixels: held.pixels.slice() } : capture();
 		},
 		simulateGpuLoss() {
 			if (localDrawing) localDrawing.simulateLoss();
@@ -721,4 +768,46 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 			return stop();
 		},
 	};
+	if (hold === undefined) return engine;
+	try {
+		held = await abortable(holdFrame(capture, failureHandlers), signal);
+	} catch (error) {
+		await stop();
+		throw error;
+	}
+	publishHold({
+		ok: true,
+		time: hold,
+		frame: Atomics.load(slots, Slot.FramesTaken),
+		tier,
+		...held,
+	});
+	return engine;
+}
+
+/**
+ * Draws the held frame and reads it back through `capture`. The first failure that the engine
+ * reports meanwhile, such as a lost GPU, ends the hold instead. A failure without a code becomes
+ * E1408.
+ */
+async function holdFrame<T>(
+	capture: () => Promise<T>,
+	failureHandlers: Set<(error: EngineError) => void>,
+): Promise<T> {
+	let fail: (error: EngineError) => void = () => {};
+	const failed = new Promise<never>((_, reject) => {
+		fail = reject;
+	});
+	failureHandlers.add(fail);
+	try {
+		return await Promise.race([capture(), failed]);
+	} catch (error) {
+		if (error instanceof EngineError) throw error;
+		throw new EngineError(
+			'E1408',
+			`hold mode stopped before it read the held frame back: ${messageOf(error)}.`,
+		);
+	} finally {
+		failureHandlers.delete(fail);
+	}
 }

@@ -13,7 +13,7 @@ import {
 	TIERS,
 	type Tier,
 } from '../lib/parity';
-import { BACKGROUND, PARITY_CANVAS, S2_NODES_PER_TREE, s2Trees } from '../scenes/spec';
+import { BACKGROUND, HOLD_TIME, PARITY_CANVAS, S2_NODES_PER_TREE, s2Trees } from '../scenes/spec';
 
 const SCENES = PARITY_SCENES;
 /** The pages each scene is tested on, with the renderer each one reports. */
@@ -81,7 +81,7 @@ interface Report {
 	renderer: string;
 	tier?: string;
 	/** null3D pages: the engine's mode. */
-	mode?: { latency: string };
+	mode?: { latency: string; hold: number | null };
 	n: number;
 }
 
@@ -184,6 +184,8 @@ for (const scene of SCENES) {
 				// A page that fell back to another tier or mode would pass for the wrong one.
 				expect(result.tier).toBe(null3d.reported);
 				expect(result.mode?.latency).toBe(null3d.latency);
+				// The engine's hold mode stepped the scene to the hold time.
+				expect(result.mode?.hold).toBe(HOLD_TIME);
 				compareToReference(scene, null3d.tier, pixels, width, height, {
 					referenceDir: join(REFERENCE_DIR, testInfo.project.name),
 					failureDir: FAILURE_DIR,

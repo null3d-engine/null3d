@@ -30,26 +30,32 @@ Every command prints short text results (pass or fail, reasons, file paths), so 
 
 ## 2. Image tests in hold mode
 
-Hold mode renders with a fixed time step and a fixed random seed, and without the frame loop, so the same code always gives the same image.
+Hold mode draws one frame at a set sketch time, the same frame on every run (`guides/testing`).
 
 ```ts
-// tests/boat.visual.ts
-import { defineVisualTest } from '@null3d/engine/testing';
-
-export default defineVisualTest({
-  name: 'boat at sunset',
-  sketch: () => import('../src/sketch'),       // the real sketch module
-  setup: (ctx) => ctx.page.post('test-view', 'harbor'),  // optional: pick a camera or state
-  time: 2.0,                                // seconds of simulated time before capture
-  size: [640, 360],
-  tolerance: { threshold: 0.1, maxDiffRatio: 0.001 },   // three.js's comparison uses 0.1%
+// page.ts
+const engine = await createEngine({
+  canvas,
+  sketch: new URL('./sketch.ts', import.meta.url),
+  hold: 1.5, // seconds of sketch time; ?hold=1.5 in the page address does the same
 });
+const { width, height, pixels } = await engine.captureFrame(); // the held frame, RGBA8, top row first
 ```
 
-- References are stored per GPU tier: `tests/__references__/<name>.<tier>.png`. Tiers can differ slightly, so compare like with like.
-- Pixels are read back through the engine, never through a canvas screenshot, because some browsers alter canvas reads for privacy.
-- A failure writes `<name>.actual.png` and `<name>.diff.png` next to the reference. Open both before deciding whether the code or the reference is wrong.
-- Randomness must come from `ctx.random` (seeded) in code that tests cover.
+- The engine seeds `Math.random` in the sketch's thread and runs the setup. It steps the sketch from time 0 to the held time in fixed steps of 1/60 second, with no frame loop. Then it draws that one frame and reads it back through the engine.
+- `createEngine` resolves once the frame is read back. `engine.mode.hold` holds the time, or `null` in a live engine. A bare `?hold` holds at the `hold` option's time, or at 0.
+- The engine publishes the result as `window.__null3dHold`: `{ ok: true, time, frame, tier, width, height, pixels }`, or `{ ok: false, code, error }` at the first failure. A test runner waits for it, so a page that failed never costs a timeout.
+- The first error stops the hold: E1407 for a bad time, and E1408 for an error in `onUpdate` or the core. E1408 gives the sketch time of the error. A live engine would log that error and carry on.
+- Keep one reference image per GPU tier, and force the tier with `?gpu=`. Tiers, and software and real GPUs, can differ slightly at edges, so compare with a small tolerance, such as three.js's 0.1%.
+- Pixels come back through the engine, never through a canvas screenshot, because some browsers alter canvas reads for privacy.
+- When a comparison fails, open the actual image and the diff before deciding whether the code or the reference is wrong.
+
+Keep held frames the same on every run:
+
+- Move things with `time.now` and `dt`, never `Date.now()` or `performance.now()`.
+- Draw random numbers from `Math.random`, which hold mode seeds; `crypto.getRandomValues` is not seeded.
+- Await every asset in the setup, because the hold starts when the setup resolves.
+- Pass test settings in the sketch module's address, such as `new URL('./sketch.ts?view=harbor', import.meta.url)`, and read them from `import.meta.url` in the sketch. Page messages reach the sketch only after the hold.
 
 ## 3. Behavior tests
 
@@ -84,6 +90,7 @@ URL switches for the dev server (engine docs `guides/testing`):
 | `?jobs=4` | Start this many job workers, from 1 to 255, instead of the logical cores minus 2 |
 | `?memory=2048` | Set the maximum of the memory that worker threads share, in MiB, up to 4096; the default is 1024 |
 | `?fps=30` | Hold drawing at this many frames per second, at most the display's rate, to compare runs on displays of different refresh rates |
+| `?hold=1.5` | Hold mode: step the sketch to 1.5 seconds, draw that one frame and publish it as `window.__null3dHold`; a bare `?hold` holds at the `hold` option's time, or at 0 |
 
 Reaching the dev server:
 

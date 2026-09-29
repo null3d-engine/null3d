@@ -1,6 +1,7 @@
 // The render worker: owns the canvas and every GPU object, runs no sketch code, and draws only inside
 // its own requestAnimationFrame callback.
 
+import { messageOf } from '../errors/message';
 import { captureFrame, startDrawing } from '../render/draw';
 import type { Drawing } from '../render/recovery';
 import type { Renderer } from '../render/renderer';
@@ -9,6 +10,7 @@ import {
 	type RendererRequest,
 	type RenderWorkerInit,
 	replyToPage,
+	replyWithCapture,
 	startSteps,
 	startWorkerCore,
 } from './protocol';
@@ -41,12 +43,11 @@ self.onmessage = async (event: MessageEvent<RenderWorkerInit | RendererRequest>)
 			replyToPage({
 				type: 'error',
 				role: 'render',
-				message: e instanceof Error ? e.message : String(e),
+				message: messageOf(e),
 			});
 		}
 	} else if (message.type === 'capture' && drawing && controlSlots) {
-		const captured = await captureFrame(drawing, controlSlots);
-		replyToPage({ type: 'captured', ...captured }, [captured.pixels.buffer]);
+		await replyWithCapture(captureFrame(drawing, controlSlots));
 	} else if (message.type === 'lose-gpu') {
 		drawing?.simulateLoss();
 	}

@@ -1,28 +1,12 @@
-// What every null3d benchmark sketch shares: its options from its own module address, the view
-// (background, lights and camera) from the shared scene module, and a camera that follows a path.
+// What every null3d benchmark sketch shares: its object count from its own module address, the
+// view (background, lights and camera) from the shared scene module, and a camera that follows a
+// path. A sketch poses its scene at the sketch time, which hold mode steps to the held time.
 import type { Camera, SketchContext } from '@null3d/engine';
 import { AMBIENT, BACKGROUND, CAMERA, type OutArray, SUN } from '../../scenes/spec';
 
-export interface SketchOptions {
-	/** The object count. */
-	count: number;
-	/** The scene time to draw on every frame, or null to follow the sketch's clock. */
-	hold: number | null;
-}
-
-/** Reads `n` and `holdMs` from the sketch module's address, where the page harness puts them. */
-export function readSketchOptions(moduleUrl: string): SketchOptions {
-	const params = new URL(moduleUrl).searchParams;
-	const holdMs = params.get('holdMs');
-	return {
-		count: Number(params.get('n') ?? '0'),
-		hold: holdMs === null ? null : Number(holdMs) / 1000,
-	};
-}
-
-/** The scene time of a frame: the held time in hold mode, else the time since the sketch started. */
-export function sceneTime(options: SketchOptions, context: SketchContext): number {
-	return options.hold ?? context.time.now;
+/** Reads the object count `n` from the sketch module's address, where the page harness puts it. */
+export function readCount(moduleUrl: string): number {
+	return Number(new URL(moduleUrl).searchParams.get('n') ?? '0');
 }
 
 /** Sets the background and the lights, and makes the active camera. */

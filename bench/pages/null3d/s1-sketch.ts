@@ -1,21 +1,21 @@
 // The null3d version of S1, the swarm: every instance moves every frame, and the camera orbits.
 import { defineSketch } from '@null3d/engine';
 import { s1Camera } from '../../scenes/spec';
-import { followPath, readSketchOptions, sceneTime, setUpView } from './sketch-common';
+import { followPath, readCount, setUpView } from './sketch-common';
 import { createSwarm } from './swarm';
 
 export default defineSketch((context) => {
-	const options = readSketchOptions(import.meta.url);
+	const { time } = context;
 	const moveCamera = followPath(setUpView(context), s1Camera);
-	const swarm = createSwarm(context, options.count, true);
+	const swarm = createSwarm(context, readCount(import.meta.url), true);
 	const pose = (t: number) => {
 		swarm.pose(t);
 		moveCamera(t);
 	};
-	pose(sceneTime(options, context));
+	pose(time.now);
 	return {
 		onUpdate() {
-			pose(sceneTime(options, context));
+			pose(time.now);
 		},
 	};
 });

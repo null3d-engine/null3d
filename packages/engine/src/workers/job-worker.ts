@@ -4,6 +4,7 @@
 // has stopped. Serving blocks this worker's thread, which a job worker may do; the sketch worker
 // never blocks.
 
+import { messageOf } from '../errors/message';
 import { controlViews, Slot } from '../shared/control';
 import { type JobWorkerInit, replyToPage, startSteps, startWorkerCore } from './protocol';
 
@@ -32,7 +33,7 @@ self.onmessage = async (event: MessageEvent<JobWorkerInit>) => {
 		replyToPage({
 			type: 'error',
 			role: 'job',
-			message: e instanceof Error ? e.message : String(e),
+			message: messageOf(e),
 		});
 	}
 };

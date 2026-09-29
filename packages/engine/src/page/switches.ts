@@ -1,6 +1,7 @@
 // URL switches that let one device exercise every engine path: ?gpu=, ?threads=off, ?render=main,
 // ?latency= and ?uploads=copy. Three more set what the benchmarks vary: ?fps= for a fixed frame
-// rate, ?jobs= for the job worker count and ?memory= for the shared memory's maximum.
+// rate, ?jobs= for the job worker count and ?memory= for the shared memory's maximum. ?hold starts
+// hold mode for image tests.
 
 export type GpuSwitch = 'auto' | 'webgpu' | 'compat' | 'webgl2';
 /**
@@ -30,6 +31,11 @@ export interface Switches {
 	jobs: number | undefined;
 	/** The shared memory's declared maximum in MiB from ?memory=, or undefined for the default. */
 	memoryMiB: number | undefined;
+	/**
+	 * The text of ?hold=, an empty text for a bare ?hold, or undefined without the switch. The
+	 * engine checks it when it starts, so a bad time fails at once instead of starting a live engine.
+	 */
+	hold: string | undefined;
 }
 
 /** The most job workers the engine core runs. */
@@ -64,5 +70,6 @@ export function parseSwitches(search: string): Switches {
 		fps: positive(params.get('fps')),
 		jobs: whole(params.get('jobs'), MAX_JOB_WORKERS),
 		memoryMiB: whole(params.get('memory')),
+		hold: params.get('hold') ?? undefined,
 	};
 }

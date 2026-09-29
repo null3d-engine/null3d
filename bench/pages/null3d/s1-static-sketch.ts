@@ -2,19 +2,19 @@
 // the camera flies through them.
 import { defineSketch } from '@null3d/engine';
 import { s1StaticCamera } from '../../scenes/spec';
-import { followPath, readSketchOptions, sceneTime, setUpView } from './sketch-common';
+import { followPath, readCount, setUpView } from './sketch-common';
 import { createSwarm } from './swarm';
 
 export default defineSketch((context) => {
-	const options = readSketchOptions(import.meta.url);
+	const { time } = context;
 	const moveCamera = followPath(setUpView(context), s1StaticCamera);
-	const swarm = createSwarm(context, options.count, false);
+	const swarm = createSwarm(context, readCount(import.meta.url), false);
 	swarm.pose(0);
 	swarm.batch.markDirty();
-	moveCamera(sceneTime(options, context));
+	moveCamera(time.now);
 	return {
 		onUpdate() {
-			moveCamera(sceneTime(options, context));
+			moveCamera(time.now);
 		},
 	};
 });

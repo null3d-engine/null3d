@@ -18,6 +18,7 @@ export type {
 	MemoryStats,
 	ThreadStats,
 } from './page/frame-stats';
+export type { HeldFrame, HoldFailure, HoldResult } from './page/hold';
 export type { LatencyMode } from './page/switches';
 export type { Tier } from './render/renderer';
 export type { ColorInput } from './scene/color';

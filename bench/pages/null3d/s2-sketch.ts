@@ -11,13 +11,12 @@ import {
 	s2RootRotation,
 	s2Trees,
 } from '../../scenes/spec';
-import { followPath, readSketchOptions, sceneTime, setUpView } from './sketch-common';
+import { followPath, readCount, setUpView } from './sketch-common';
 
 export default defineSketch((context) => {
-	const { scene, materials, geometry } = context;
-	const options = readSketchOptions(import.meta.url);
+	const { scene, materials, geometry, time } = context;
 	const moveCamera = followPath(setUpView(context), s2Camera);
-	const data = createS2(2, s2Trees(options.count));
+	const data = createS2(2, s2Trees(readCount(import.meta.url)));
 	const meshes = Array.from({ length: S2_MESH_COUNT }, (_, k) => {
 		const [width, height, depth] = s2MeshSize(k);
 		return geometry.box({ width, height, depth });
@@ -57,10 +56,10 @@ export default defineSketch((context) => {
 		}
 		moveCamera(t);
 	};
-	pose(sceneTime(options, context));
+	pose(time.now);
 	return {
 		onUpdate() {
-			pose(sceneTime(options, context));
+			pose(time.now);
 		},
 	};
 });

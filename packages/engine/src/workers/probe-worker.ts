@@ -1,6 +1,8 @@
 // A short-lived worker that tests what a dedicated worker can do: the worker frame timer, WebGL2 in
 // an OffscreenCanvas, and WebGPU with a canvas context. The render worker depends on all three.
 
+import { messageOf } from '../errors/message';
+
 /**
  * What a dedicated worker can do, in `CapabilityReport.worker`. A render worker needs the frame
  * timer and an offscreen canvas for its GPU path.
@@ -43,7 +45,7 @@ async function probe(): Promise<WorkerProbe> {
 			device.destroy();
 		}
 	} catch (e) {
-		result.error = e instanceof Error ? e.message : String(e);
+		result.error = messageOf(e);
 	}
 	return result;
 }

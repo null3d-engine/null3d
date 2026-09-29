@@ -41,7 +41,7 @@ What the browser and device can do, as plain JSON. The engine picks its build an
 function createEngine(options: EngineOptions): Promise<Engine>
 ```
 
-Starts the engine on the page. It tests the device, picks the build and the GPU path, starts the workers, and runs the sketch module.
+Starts the engine on the page. It tests the device, picks the build and the GPU path, starts the workers, and runs the sketch module. In hold mode it also steps the sketch to the held time, then draws that frame and reads it back. It publishes the frame, or the error that stopped it, as `window.__null3dHold` for test tools.
 
 ### `Engine`
 
@@ -62,7 +62,7 @@ A running engine, as `createEngine` returns it.
 | `detach(): void` | Takes the canvas off the page and pauses the engine. The engine keeps its threads, its GPU resources and the scene, and stops reading input. Use it when a single-page app leaves the view that shows the canvas, and `attach` when the view comes back. |
 | `attach(container: Element): void` | Puts the canvas at the end of `container` and resumes the engine where it stopped, unless `setPaused(true)` paused it. |
 | `measure(seconds: number): Promise<FrameMetrics>` | Measures the running engine for a number of seconds, then returns CPU time per frame by thread and phase, GPU time, frame intervals, uploads, draw calls, memory and load time. |
-| `captureFrame(): Promise<{ width: number; height: number; pixels: Uint8Array; }>` | Draws one frame offscreen and returns its pixels as RGBA8 rows, top row first. |
+| `captureFrame(): Promise<{ width: number; height: number; pixels: Uint8Array; }>` | Draws one frame offscreen and returns its pixels as RGBA8 rows, top row first. In hold mode, it returns the held frame. |
 | `simulateGpuLoss(): void` | Acts out a loss of the GPU, as a driver reset causes. The engine starts a new GPU device and draws the whole scene again, as it does after a real loss. Use it to test how your page handles one. |
 | `destroy(): Promise<void>` | Stops the engine and its workers. The engine cannot start again. The promise resolves once every worker has stopped, when the browser can free the engine's memory. Wait for it before you start another engine on the same page: an iPad has room for only a few engines' memory. |
 
@@ -103,6 +103,7 @@ How the engine runs on this device: its build, its latency mode and its threads.
 | `latency: LatencyMode \| 'single'` | The latency mode in use, or `single` for the single-thread build. |
 | `renderThread: 'render-worker' \| 'sketch-worker' \| 'main'` | The thread that owns the canvas and draws. |
 | `jobWorkers: number` | The job workers that share the engine's parallel work. |
+| `hold: number \| null` | The sketch time in seconds that hold mode holds the sketch at, or null for a live engine. |
 
 ### `EngineOptions`
 
@@ -121,6 +122,7 @@ Options for `createEngine`.
 | `onProgress?: (stage: StartupStage) => void` | Called as the start reaches each stage, in this order: `core` once the engine core is compiled and the GPU paths are tested, `sketch` once the sketch's setup has run, and `first-frame` once the GPU has finished the first frame. |
 | `onSketchMessage?: (name: string, data: unknown) => void` | Receives the messages the sketch sends with `ctx.page.post`, from the start of the sketch's setup. Use it for progress that the sketch reports while it loads. `engine.onSketchMessage` adds more handlers once the engine has started. |
 | `signal?: AbortSignal` | Cancels a start in progress, for example when the user leaves the page. `createEngine` then stops the engine's threads and rejects with the signal's reason. |
+| `hold?: number` | Starts the engine in hold mode for image tests, held at this many seconds of sketch time. The engine steps the sketch from 0 to the time in fixed steps of 1/60 second, with no frame loop. `Math.random` in the sketch's thread gives the same numbers on every run. The engine then draws that one frame and reads it back, and `createEngine` resolves. The `?hold=<seconds>` switch overrides this time, and a bare `?hold` holds at it, or at 0 without it. |
 
 ### `ErrorCode`
 
@@ -146,10 +148,48 @@ type ErrorCode =
 	| 'E1404'
 	| 'E1405'
 	| 'E1406'
+	| 'E1407'
+	| 'E1408'
 	| 'E1501';
 ```
 
 The code of an engine error. Each code has a docs page that gives its cause and its fix.
+
+### `HeldFrame`
+
+Interface `HeldFrame`.
+
+The frame that hold mode drew and read back, as `window.__null3dHold` holds it.
+
+| Member | Description |
+| --- | --- |
+| `ok: true` | True: the engine drew the held frame and read it back. |
+| `time: number` | The sketch time of the frame, in seconds. |
+| `frame: number` | The frame's number, counting from 1: the steps to the held time, plus one. |
+| `tier: Tier` | The GPU path that drew the frame. |
+| `width: number` | The frame's width in pixels. |
+| `height: number` | The frame's height in pixels. |
+| `pixels: Uint8Array` | The frame's pixels as RGBA8 rows, top row first. |
+
+### `HoldFailure`
+
+Interface `HoldFailure`.
+
+The error that stopped hold mode, as `window.__null3dHold` holds it.
+
+| Member | Description |
+| --- | --- |
+| `ok: false` | False: the engine stopped before it read the held frame back. |
+| `code: ErrorCode \| null` | The error's code, or null for an error that has none, such as one the sketch threw. |
+| `error: string` | The error's message. |
+
+### `HoldResult`
+
+```ts
+type HoldResult = HeldFrame | HoldFailure;
+```
+
+What hold mode publishes on the page as `window.__null3dHold`: the held frame, or the error that stopped the hold. The engine publishes it the moment it knows either, so a test tool never waits out a timeout on a page that failed.
 
 ### `LatencyMode`
 

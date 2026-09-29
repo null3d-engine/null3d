@@ -12,6 +12,8 @@ import type { FrameInput, Renderer } from './renderer';
 
 export interface RenderLoop {
 	stop(): void;
+	/** Hold mode's loop: draws the held frame when first asked, and resolves once it has. */
+	drawHeld?(): Promise<void>;
 }
 
 /** A frame input that `emptySceneInput` can fill again each frame. */
@@ -98,6 +100,48 @@ export class Presenter {
 		} else this.record.interval(timestamp - this.lastPresented);
 		this.lastPresented = timestamp;
 		this.record.commit(performance.now() - start);
+	}
+}
+
+/**
+ * Hold mode's loop, which runs no frame loop. When first asked, it draws the frame that the sketch
+ * thread published, in one animation frame callback, and it draws nothing after.
+ */
+export class HoldLoop implements RenderLoop {
+	private readonly presenter: Presenter;
+	private drawn: Promise<void> | undefined;
+	private stopped = false;
+
+	constructor(
+		private readonly slots: Int32Array,
+		renderer: Renderer,
+		metrics: ArrayBufferLike,
+	) {
+		this.presenter = new Presenter(slots, renderer, metrics, undefined);
+	}
+
+	drawHeld(): Promise<void> {
+		this.drawn ??= new Promise((resolve, reject) => {
+			requestAnimationFrame((timestamp) => {
+				const frame = Atomics.load(this.slots, Slot.FramesPublished);
+				if (this.stopped) reject(new Error('the engine stopped before it drew the held frame'));
+				else if (frame === 0) reject(new Error('the sketch thread published no held frame'));
+				else
+					try {
+						this.presenter.applyResize();
+						Atomics.store(this.slots, Slot.FramesTaken, frame);
+						this.presenter.draw(frame, timestamp);
+						resolve();
+					} catch (error) {
+						reject(error);
+					}
+			});
+		});
+		return this.drawn;
+	}
+
+	stop(): void {
+		this.stopped = true;
 	}
 }
 
