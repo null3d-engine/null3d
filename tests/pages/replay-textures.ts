@@ -4,8 +4,8 @@
 // upload and a copy. It draws into single layers and mip levels through views, into depth alone,
 // into an sRGB texture, and through a multisampled resolve. It then draws a 4 x 4 grid into the
 // canvas's stand-in, where each cell shows the effect of one command through a sampler, a
-// viewport or a scissor. The test compares the image with a reference for each path, and every
-// path draws the same image.
+// viewport or a scissor. Every path must draw the same image. The page reports its tier in the
+// engine's names, as the tier it asked for, and whether the WebGPU device has core features.
 import {
 	type GlslTemplate,
 	type RenderTemplate,
@@ -574,5 +574,12 @@ run('replay-textures', async () => {
 	});
 	const { pixels, errors, core } =
 		tier === 'webgl2' ? drawWebGL2(memory, image) : await drawWebGPU(memory, image);
-	return { tier, core, errors, width: SIZE, height: SIZE, pixels: toBase64(pixels) };
+	return {
+		tier: tier === 'compat' ? 'webgpu-compat' : tier,
+		core,
+		errors,
+		width: SIZE,
+		height: SIZE,
+		pixels: toBase64(pixels),
+	};
 });

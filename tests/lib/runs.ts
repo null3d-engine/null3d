@@ -36,6 +36,22 @@ export interface ItemResult {
 	[key: string]: unknown;
 }
 
+/** Text as a name that is safe in files and URLs: lowercase words joined by dashes. */
+export const slug = (text: string) => text.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+
+/** How many of a page's last steps a failure's message quotes. */
+const LAST_STEPS = 6;
+
+/** The last steps of a page's trail, as a failure's message quotes them, or nothing without one. */
+export function lastSteps(trail: unknown): string {
+	const steps = Array.isArray(trail) ? trail.map(String) : [];
+	return steps.length > 0 ? `; the page's last steps: ${steps.slice(-LAST_STEPS).join('; ')}` : '';
+}
+
+/** What a failed page's result says went wrong, with the last steps the page got through. */
+export const failureText = (result: ItemResult) =>
+	`${result.error ?? 'the page failed without a message'}${lastSteps(result.trail)}`;
+
 /** A run name from its plan's name and the time: sortable, and safe as a folder name. */
 export function runName(planName: string, now = new Date()): string {
 	const stamp = now.toISOString().replace(/[-:]/g, '').replace('T', '-').slice(0, 15);

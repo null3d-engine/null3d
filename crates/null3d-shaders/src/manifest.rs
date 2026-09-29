@@ -3,7 +3,7 @@
 
 use std::collections::BTreeMap;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
 
 /// A language that a variant builds for.
 #[derive(Clone, Copy, Debug, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
@@ -48,7 +48,7 @@ pub struct Shader {
 }
 
 /// The entry points of one render pipeline.
-#[derive(Clone, Debug, Deserialize, PartialEq, Eq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq, Eq)]
 #[serde(deny_unknown_fields)]
 pub struct Pipeline {
     /// The vertex entry point.
@@ -90,7 +90,13 @@ impl Manifest {
     /// manifest key it is about.
     pub fn parse(text: &str) -> Result<Self, Vec<String>> {
         let mut manifest: Manifest = toml::from_str(text).map_err(|e| vec![e.to_string()])?;
-        let errors = manifest.check();
+        let mut errors = Vec::new();
+        for (name, shader) in &manifest.shaders {
+            let key = format!("shaders.{name}");
+            check_name(&mut errors, &key, name);
+            check_file(&mut errors, &key, &shader.file);
+            errors.extend(check_builds(&key, &shader.pipelines, &shader.variants));
+        }
         if !errors.is_empty() {
             return Err(errors);
         }
@@ -102,45 +108,54 @@ impl Manifest {
         }
         Ok(manifest)
     }
+}
 
-    fn check(&self) -> Vec<String> {
-        let mut errors = Vec::new();
-        for (name, shader) in &self.shaders {
-            let key = format!("shaders.{name}");
-            check_name(&mut errors, &key, name);
-            check_file(&mut errors, &key, &shader.file);
-            for (pipeline_name, pipeline) in &shader.pipelines {
-                let pipeline_key = format!("{key}.pipelines.{pipeline_name}");
-                check_name(&mut errors, &pipeline_key, pipeline_name);
-                check_name(
-                    &mut errors,
-                    &format!("{pipeline_key}.vertex"),
-                    &pipeline.vertex,
-                );
-                check_name(
-                    &mut errors,
-                    &format!("{pipeline_key}.fragment"),
-                    &pipeline.fragment,
-                );
-            }
-            if shader.variants.is_empty() {
-                errors.push(format!(
-                    "{key} has no variants. Add one, for example `variants.plain = {{ targets = [\"wgsl\", \"glsl\"] }}`."
-                ));
-            }
-            for (variant_name, variant) in &shader.variants {
-                let variant_key = format!("{key}.variants.{variant_name}");
-                check_name(&mut errors, &variant_key, variant_name);
-                check_variant(&mut errors, &variant_key, variant);
-                if variant.has(Target::Glsl) && shader.pipelines.is_empty() {
-                    errors.push(format!(
-                        "{variant_key} targets \"glsl\", but {key} names no pipelines. WebGL2 needs a vertex and a fragment shader for each program: add `pipelines.main = {{ vertex = \"vs_main\", fragment = \"fs_main\" }}` with your entry point names."
-                    ));
-                }
-            }
+/// Checks the names, targets and shader defs of a shader's pipelines and variants. `key` names
+/// the shader in the messages; an empty key is a shader on its own, outside a manifest.
+pub(crate) fn check_builds(
+    key: &str,
+    pipelines: &BTreeMap<String, Pipeline>,
+    variants: &BTreeMap<String, Variant>,
+) -> Vec<String> {
+    let child = |name: String| {
+        if key.is_empty() {
+            name
+        } else {
+            format!("{key}.{name}")
         }
-        errors
+    };
+    let shader = if key.is_empty() { "the shader" } else { key };
+    let mut errors = Vec::new();
+    for (pipeline_name, pipeline) in pipelines {
+        let pipeline_key = child(format!("pipelines.{pipeline_name}"));
+        check_name(&mut errors, &pipeline_key, pipeline_name);
+        check_name(
+            &mut errors,
+            &format!("{pipeline_key}.vertex"),
+            &pipeline.vertex,
+        );
+        check_name(
+            &mut errors,
+            &format!("{pipeline_key}.fragment"),
+            &pipeline.fragment,
+        );
     }
+    if variants.is_empty() {
+        errors.push(format!(
+            "{shader} has no variants. Add one, for example `variants.plain = {{ targets = [\"wgsl\", \"glsl\"] }}`."
+        ));
+    }
+    for (variant_name, variant) in variants {
+        let variant_key = child(format!("variants.{variant_name}"));
+        check_name(&mut errors, &variant_key, variant_name);
+        check_variant(&mut errors, &variant_key, variant);
+        if variant.has(Target::Glsl) && pipelines.is_empty() {
+            errors.push(format!(
+                "{variant_key} targets \"glsl\", but {shader} names no pipelines. WebGL2 needs a vertex and a fragment shader for each program: add `pipelines.main = {{ vertex = \"vs_main\", fragment = \"fs_main\" }}` with your entry point names."
+            ));
+        }
+    }
+    errors
 }
 
 fn check_variant(errors: &mut Vec<String>, key: &str, variant: &Variant) {

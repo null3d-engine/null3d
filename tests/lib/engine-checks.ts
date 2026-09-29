@@ -11,7 +11,7 @@ export interface EngineMode {
 	jobWorkers?: number;
 }
 
-export const ENGINE_MODES: readonly EngineMode[] = [
+export const ENGINE_MODES = [
 	{
 		name: 'pipelined',
 		query: '',
@@ -40,7 +40,27 @@ export const ENGINE_MODES: readonly EngineMode[] = [
 		latency: 'pipelined',
 		renderThread: 'main',
 	},
-];
+] as const satisfies readonly EngineMode[];
+
+/** The name of a thread mode, as the image test manifest lists it. */
+export type EngineModeName = (typeof ENGINE_MODES)[number]['name'];
+
+/** The thread mode the engine reports it runs in. */
+export interface ReportedMode {
+	build: string;
+	latency: string;
+	renderThread: string;
+}
+
+/** What differs between the thread mode the engine reports and the mode the switches asked for. */
+export function modeProblems(reported: ReportedMode, mode: EngineMode): string[] {
+	const problems: string[] = [];
+	if (reported.build !== mode.build) problems.push(`loaded the ${reported.build} build`);
+	if (reported.latency !== mode.latency) problems.push(`ran ${reported.latency} latency`);
+	if (reported.renderThread !== mode.renderThread)
+		problems.push(`drew on ${reported.renderThread}, expected ${mode.renderThread}`);
+	return problems;
+}
 
 interface Spread {
 	count: number;
@@ -119,12 +139,8 @@ export function jobWorkersProblem(
 
 /** What is wrong with a result of the engine page, run in a mode on a GPU tier; empty when nothing is. */
 export function engineProblems(result: EngineResult, mode: EngineMode, tier: string): string[] {
-	const problems: string[] = [];
 	const { stats } = result;
-	if (result.mode.build !== mode.build) problems.push(`loaded the ${result.mode.build} build`);
-	if (result.mode.latency !== mode.latency) problems.push(`ran ${result.mode.latency} latency`);
-	if (result.mode.renderThread !== mode.renderThread)
-		problems.push(`drew on ${result.mode.renderThread}, expected ${mode.renderThread}`);
+	const problems = modeProblems(result.mode, mode);
 	if (result.mode.jobWorkers >= 1 !== (mode.build === 'threaded'))
 		problems.push(`started ${result.mode.jobWorkers} job workers`);
 	const jobs = jobWorkersProblem(result.mode.jobWorkers, mode.jobWorkers);

@@ -1,7 +1,10 @@
 import { defineConfig } from '@playwright/test';
+import type { Environment } from './lib/images.ts';
 import { HTTP_PORT, PREVIEW_PORT, REPO_ROOT } from './lib/server.ts';
 
 const ci = Boolean(process.env.CI);
+/** The main project's environment, which names the references that its image tests compare with. */
+const environment: Environment = ci ? 'chromium-swiftshader' : 'chrome-real-gpu';
 
 /** Chromium flags for WebGPU and WebGL2 on SwiftShader, the software GPU, on Linux CI. */
 const SWIFTSHADER_ARGS = [
@@ -38,20 +41,22 @@ export default defineConfig({
 			reuseExistingServer: !ci,
 		},
 		{
-			// A fresh production build every run, so the test never serves stale files.
-			command: `bunx vite build && bunx vite preview --port ${PREVIEW_PORT} --strictPort`,
+			// A fresh production build every run, so the tests never serve stale files. The errors
+			// page builds on its own, so the engine test page stays as the startup benchmark loads it.
+			command: `bunx vite build && NULL3D_BUILD_PAGE=errors bunx vite build && bunx vite preview --port ${PREVIEW_PORT} --strictPort`,
 			cwd: REPO_ROOT,
 			url: `http://localhost:${PREVIEW_PORT}/tests/pages/engine.html`,
 			reuseExistingServer: false,
 		},
 	],
 	projects: [
-		{ name: ci ? 'chromium-swiftshader' : 'chrome-real-gpu', testIgnore: 'resize.spec.ts' },
-		// The engine test again, on the production build: the sketch module and the engine core must
-		// survive bundling on both GPU paths and in every thread mode.
+		{ name: environment, testIgnore: 'resize.spec.ts' },
+		// The engine and errors tests again, on the production build. The sketch module and the engine
+		// core must survive bundling on both GPU paths and in every thread mode. So must the engine's
+		// errors in a sketch, whose bundle holds its own copy of the engine's error code.
 		{
 			name: 'production build',
-			testMatch: 'engine.spec.ts',
+			testMatch: ['engine.spec.ts', 'errors.spec.ts'],
 			use: { baseURL: `http://localhost:${PREVIEW_PORT}/tests/pages/` },
 		},
 		// The resize tests, on a high-density screen. Playwright's emulated pixel ratio does not reach

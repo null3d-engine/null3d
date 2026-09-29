@@ -1,6 +1,7 @@
-// Builds the engine's two WebAssembly files, then reports their sizes and the sizes of the engine's
-// JavaScript in a production build of the engine test page. Run from the repository root:
-//   bun tools/build-wasm.ts                 build both variants, then print the size report
+// Builds the engine's two WebAssembly files and the shader compiler, then reports their sizes and
+// the sizes of the engine's JavaScript in a production build of the engine test page. Run from
+// the repository root:
+//   bun tools/build-wasm.ts                 build everything, then print the size report
 //   bun tools/build-wasm.ts --check-size    also fail when a file grew past the allowed margin
 //   bun tools/build-wasm.ts --update-size   also rewrite the committed size baseline
 //   bun tools/build-wasm.ts --names         keep the core's function names, for a CPU profile;
@@ -9,11 +10,13 @@
 // The threaded build uses atomics and shared memory, so it rebuilds the standard library with
 // them. The single-threaded build runs on pages that are not cross-origin isolated. The
 // wasm-bindgen command-line tool must match the crate version exactly, so the script downloads
-// that release into the build folder and verifies its checksum.
+// that release into the build folder and verifies its checksum. The shader compiler runs in build
+// tools, never in a page, so it has no size budget.
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
 	chmodSync,
+	copyFileSync,
 	existsSync,
 	mkdirSync,
 	readdirSync,
@@ -22,7 +25,9 @@ import {
 	rmSync,
 	writeFileSync,
 } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import { SHADER_COMPILER_URL } from '../packages/vite-plugin/src/shader-compiler';
 import {
 	type BuiltFile,
 	downloadSizes,
@@ -47,6 +52,10 @@ const WASM_BUDGET_BYTES = 600 * 1024;
 const JS_BUDGET_BYTES = 60 * 1024;
 /** Where the size report builds the engine test page, apart from the build the browser tests serve. */
 const JS_BUILD_DIR = 'target/js-size';
+/** The crate that builds the shader compiler, the shader crate as a WebAssembly module. */
+const SHADER_COMPILER_CRATE = 'null3d-shaders-wasm';
+/** Where the Vite plugin loads the shader compiler from. */
+const SHADER_COMPILER_PATH = fileURLToPath(SHADER_COMPILER_URL);
 
 interface Variant {
 	name: 'threaded' | 'single';
@@ -198,6 +207,33 @@ function buildVariant(variant: Variant, bindgen: string): void {
 		writeFileSync(join(root, outDir, 'null3d_memory.json'), `${JSON.stringify(limits)}\n`);
 }
 
+/**
+ * Builds the shader compiler. It takes and gives JSON through its memory, so it needs no
+ * JavaScript glue. The build drops the function names and skips wasm-opt, which on this module
+ * takes longer than the whole build, saves almost nothing after Brotli and makes compiles no faster.
+ */
+function buildShaderCompiler(): void {
+	const targetDir = 'target/wasm-shaders';
+	console.log('\nbuilding the shader compiler');
+	run(
+		'cargo',
+		[
+			'build',
+			'-p',
+			SHADER_COMPILER_CRATE,
+			'--release',
+			'--target',
+			'wasm32-unknown-unknown',
+			'--target-dir',
+			targetDir,
+		],
+		{ RUSTFLAGS: '-Cstrip=symbols' },
+	);
+	const built = `${targetDir}/wasm32-unknown-unknown/release/${SHADER_COMPILER_CRATE.replace(/-/g, '_')}.wasm`;
+	mkdirSync(dirname(SHADER_COMPILER_PATH), { recursive: true });
+	copyFileSync(join(root, built), SHADER_COMPILER_PATH);
+}
+
 export interface MemoryLimits {
 	/** Initial size in 64 KB pages. */
 	initial: number;
@@ -311,6 +347,7 @@ async function main(): Promise<void> {
 	const version = lockedVersion(readFileSync(join(root, 'Cargo.lock'), 'utf8'), 'wasm-bindgen');
 	const bindgen = await wasmBindgen(version);
 	for (const variant of VARIANTS) buildVariant(variant, bindgen);
+	buildShaderCompiler();
 
 	const sizes: Record<string, SizeEntry> = {};
 	for (const variant of VARIANTS) {
@@ -336,6 +373,8 @@ async function main(): Promise<void> {
 		"\nthe engine's JavaScript that a page downloads in each thread mode, besides the core's glue (budget: 60 KB after Brotli)",
 	);
 	for (const { mode, size } of downloads) printSize(mode, size, JS_BUDGET_BYTES);
+	console.log('\nthe shader compiler, which only build tools load (no budget)');
+	printSize('shader-compiler.wasm', measure(readFileSync(SHADER_COMPILER_PATH)));
 
 	const problems = Object.entries(sizes)
 		.filter(([file, size]) => file.endsWith('.wasm') && size.brotli > WASM_BUDGET_BYTES)

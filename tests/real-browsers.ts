@@ -50,6 +50,7 @@ import {
 } from '../bench/lib/parity.ts';
 import { forwardPort, openOnPhone, phoneModel } from './lib/adb.ts';
 import { HeatLog, type HeatSample, type HeatSummary, heatText, summarizeHeat } from './lib/heat.ts';
+import { clearCandidates } from './lib/images.ts';
 import {
 	benchSummary,
 	judge,
@@ -57,6 +58,7 @@ import {
 	memorySummary,
 	NO_RESULT,
 	NONE_MISSING,
+	neededPath,
 	PLANS,
 } from './lib/plans.ts';
 import { RUNS_DIR } from './lib/report-collector.ts';
@@ -69,6 +71,7 @@ import {
 	receivedAt,
 	runName,
 	setTurns,
+	slug,
 	turnBatches,
 	waitForRunners,
 	writePlan,
@@ -255,8 +258,6 @@ type LaunchedRunner = Runner & { launch: Launch };
 
 type Launches = ReadonlyMap<string, Launch>;
 
-const slug = (text: string) => text.toLowerCase().replace(/[^a-z0-9]+/g, '-');
-
 function runnersOf(options: Options): LaunchedRunner[] {
 	const runners: LaunchedRunner[] = options.mac.map((app) => ({
 		name: `mac-${slug(app)}`,
@@ -277,6 +278,9 @@ function runnersOf(options: Options): LaunchedRunner[] {
 		runners.push({ name, device: name.split('-')[0] as string, launch: { kind: 'lan' } });
 	return runners;
 }
+
+/** The GPU paths' names, as a skipped page's line gives the one the browser lacks. */
+const GPU_PATH_NAMES = { webgpu: 'WebGPU', webgl2: 'WebGL2' } as const;
 
 /** Time a macOS app may take to open the runner page before its turn counts as failed. */
 const OPEN_TIMEOUT_MS = 60_000;
@@ -423,7 +427,9 @@ async function runPlan(
 	const storedBaselines: StoredBaselines = existsSync(storedPath)
 		? parseStoredBaselines(readFileSync(storedPath, 'utf8'))
 		: {};
-	for (const { name } of runners) {
+	let imageFailures = 0;
+	for (const runner of runners) {
+		const { name } = runner;
 		const device = readDevice(run, name);
 		const braveShields = braveShieldsOf(name, device, options.shields);
 		const counts: RunnerSummary = {
@@ -443,7 +449,10 @@ async function runPlan(
 			resultOf: (id: string) => readResult(run, name, id),
 			imageDir: join(RUNS_DIR, run, name),
 			storedBaselines,
+			runner: { name, device: runner.device },
 		};
+		// The images this runner saved for review in an earlier run are stale once this run is judged.
+		clearCandidates({ runner: name, device: runner.device });
 		for (const item of plan.items) {
 			const result = readResult(run, name, item.id);
 			const notes: string[] = [];
@@ -459,7 +468,9 @@ async function runPlan(
 			if (Object.keys(facts).length > 0) addToResult(run, name, item.id, facts);
 			if (verdict === 'skip') {
 				counts.skip++;
-				console.log(`skip  ${name}: ${item.id}, no WebGPU`);
+				console.log(
+					`skip  ${name}: ${item.id}, no ${GPU_PATH_NAMES[neededPath(item.check) ?? 'webgpu']}`,
+				);
 				continue;
 			}
 			if (verdict.length === 0) {
@@ -467,6 +478,7 @@ async function runPlan(
 				console.log(`pass  ${name}: ${item.id}`);
 			} else {
 				counts.fail++;
+				if (item.check.kind === 'image') imageFailures++;
 				console.log(`FAIL  ${name}: ${item.id}: ${verdict.join('; ')}`);
 			}
 			for (const text of notes) console.log(`      note: ${text}`);
@@ -485,6 +497,8 @@ async function runPlan(
 	}
 	for (const [name, counts] of Object.entries(summary)) console.log(summaryLine(name, counts));
 	console.log(`results: ${join(RUNS_DIR, run)}`);
+	if (imageFailures > 0)
+		console.log('Review the new and changed images with their diffs: bun run images:review');
 	return failures;
 }
 

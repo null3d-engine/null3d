@@ -22,9 +22,10 @@ use naga::valid::{
 use naga::{AddressSpace, Block, Expression, Handle, Statement, TypeInner};
 use naga_oil::compose::{Composer, ComposerError, ComposerErrorInner};
 
-use crate::Problem;
-use crate::library::{View, locate};
+use crate::library::{Library, View, owner};
+use crate::position::{Position, to_u32};
 use crate::scan::{self, Kind, Token};
+use crate::{Problem, composition};
 
 /// The WGSL language features that Chrome, Safari and Firefox all report.
 pub const ALLOWED_LANGUAGE_FEATURES: [&str; 3] = [
@@ -60,55 +61,87 @@ const TIER1_TEXEL_FORMATS: [&str; 23] = [
     "rg11b10ufloat",
 ];
 
+/// The public docs page that states the rules this check enforces. Messages link to it the way
+/// the engine's error messages link to their pages.
+const RULES_PAGE: &str =
+    "https://github.com/null3d-engine/null3d/blob/main/docs/shaders/wgsl-rules.md";
+
+/// Each language feature whose code the check finds, and how to rewrite that code.
+const FIXES: [(&str, &str); 11] = [
+    (
+        "swizzle_assignment",
+        "Assign each component on its own, for example `v.x = a.x; v.y = a.y;`, or assign the whole vector.",
+    ),
+    (
+        "texture_and_sampler_let",
+        "Use the texture or sampler variable directly instead of copying it into a `let`.",
+    ),
+    (
+        "unrestricted_pointer_parameters",
+        "Pass a pointer to a whole `function` or `private` variable, or use the global variable directly inside the function.",
+    ),
+    (
+        "uniform_buffer_standard_layout",
+        "Give arrays in uniform buffers a 16-byte stride, for example `array<vec4f, 4>`, and align nested structs to 16 bytes.",
+    ),
+    ("immediate_address_space", "Use a uniform buffer instead."),
+    (
+        "linear_indexing",
+        "Compute the index from `global_invocation_id` or `workgroup_id` and the workgroup size.",
+    ),
+    (
+        "subgroup_id",
+        "Subgroups are optional in WebGPU: keep this code behind a capability flag with a fallback.",
+    ),
+    (
+        "fragment_depth",
+        "Write `@builtin(frag_depth)` without a depth mode.",
+    ),
+    (
+        "buffer_view",
+        "Declare the variable with the type it holds.",
+    ),
+    (
+        "texture_formats_tier1",
+        "Use a core storage texel format, such as `rgba8unorm`, `rgba16float`, `r32float` or `rgba32float`.",
+    ),
+    (
+        "atomic_vec2u_min_max",
+        "Use 32-bit atomics, such as `atomicMin` on `atomic<u32>`.",
+    ),
+];
+
 /// How to rewrite code that uses a language feature.
 fn fix(feature: &str) -> &'static str {
-    match feature {
-        "swizzle_assignment" => {
-            "Assign each component on its own, for example `v.x = a.x; v.y = a.y;`, or assign the whole vector."
-        }
-        "texture_and_sampler_let" => {
-            "Use the texture or sampler variable directly instead of copying it into a `let`."
-        }
-        "unrestricted_pointer_parameters" => {
-            "Pass a pointer to a whole `function` or `private` variable, or use the global variable directly inside the function."
-        }
-        "uniform_buffer_standard_layout" => {
-            "Give arrays in uniform buffers a 16-byte stride, for example `array<vec4f, 4>`, and align nested structs to 16 bytes."
-        }
-        "immediate_address_space" => "Use a uniform buffer instead.",
-        "linear_indexing" => {
-            "Compute the index from `global_invocation_id` or `workgroup_id` and the workgroup size."
-        }
-        "subgroup_id" => {
-            "Subgroups are optional in WebGPU: keep this code behind a capability flag with a fallback."
-        }
-        "fragment_depth" => "Write `@builtin(frag_depth)` without a depth mode.",
-        "buffer_view" => "Declare the variable with the type it holds.",
-        "texture_formats_tier1" => {
-            "Use a core storage texel format, such as `rgba8unorm`, `rgba16float`, `r32float` or `rgba32float`."
-        }
-        "atomic_vec2u_min_max" => "Use 32-bit atomics, such as `atomicMin` on `atomic<u32>`.",
-        _ => REMOVE_REQUIRES,
-    }
+    FIXES
+        .iter()
+        .find(|(name, _)| *name == feature)
+        .map_or(REMOVE_REQUIRES, |(_, fix)| fix)
 }
 
 /// How to fix a `requires` directive that names a feature outside the allowed three.
 const REMOVE_REQUIRES: &str = "Remove the feature from the directive, and rewrite the code that needs it or keep that code behind a capability flag with a fallback.";
 
 /// A problem about a language feature, found at `what` in a file.
-fn language_feature(path: &str, line: Option<u32>, feature: &str, what: &str) -> Problem {
-    feature_problem(path, line, feature, what, fix(feature))
+fn language_feature(path: &str, position: Option<Position>, feature: &str, what: &str) -> Problem {
+    feature_problem(path, position, feature, what, fix(feature))
 }
 
-fn feature_problem(path: &str, line: Option<u32>, feature: &str, what: &str, fix: &str) -> Problem {
+fn feature_problem(
+    path: &str,
+    position: Option<Position>,
+    feature: &str,
+    what: &str,
+    fix: &str,
+) -> Problem {
     let [first, second, third] = ALLOWED_LANGUAGE_FEATURES;
     Problem {
         feature: Some(feature.to_owned()),
         ..Problem::at(
             path,
-            line,
+            position,
             format!(
-                "{what} uses the WGSL language feature `{feature}`, which not every browser supports. The engine's WGSL may use only `{first}`, `{second}` and `{third}` (AGENTS.md hard rule 10). {fix}"
+                "{what} uses the WGSL language feature `{feature}`, which not every browser supports. null3D shaders may use only `{first}`, `{second}` and `{third}`. {fix} See {RULES_PAGE}"
             ),
         )
     }
@@ -116,12 +149,12 @@ fn feature_problem(path: &str, line: Option<u32>, feature: &str, what: &str, fix
 
 /// A pointer parameter into an address space that needs `unrestricted_pointer_parameters`.
 fn pointer_parameter(views: &[View], function: &str, parameter: &str, space: &str) -> Problem {
-    let (view, item) = locate(views, function);
-    let line = scan::find_function(&view.tokens, item)
-        .map(|d| scan::param_line(&view.tokens, &d, parameter).unwrap_or(d.line));
+    let (view, item) = owner(views, function);
+    let position = scan::find_function(&view.tokens, item)
+        .map(|d| view.position(scan::param(&view.tokens, &d, parameter).unwrap_or(d.name)));
     language_feature(
         view.path,
-        line,
+        position,
         "unrestricted_pointer_parameters",
         &format!("Parameter `{parameter}` of `{item}`, a pointer into the {space} address space,"),
     )
@@ -184,6 +217,8 @@ fn is_assignment(operator: &str) -> bool {
     )
 }
 
+/// Scans one file. Each problem points at the token its message names: an attribute's `@`, the
+/// name of a function, type or texel format, or the start of a swizzle.
 fn scan_file(
     view: &View,
     members: &BTreeSet<&str>,
@@ -196,25 +231,29 @@ fn scan_file(
     for (index, token) in tokens.iter().enumerate() {
         let next = |n: usize| tokens.get(index + n).map_or("", |t| t.text);
         let previous = index.checked_sub(1).map_or("", |p| tokens[p].text);
-        let line = Some(token.line);
-        let mut found = |feature: &str, what: &str| {
-            problems.push(language_feature(path, line, feature, what));
+        let mut found = |at: usize, feature: &str, what: &str| {
+            problems.push(language_feature(
+                path,
+                Some(view.position(at)),
+                feature,
+                what,
+            ));
         };
         match token.text {
             "{" => depth += 1,
             "}" => depth = depth.saturating_sub(1),
             "requires" if depth == 0 && matches!(previous, "" | ";" | "}") => {
-                let names = tokens[index + 1..]
-                    .iter()
-                    .take_while(|t| t.text != ";")
-                    .filter(|t| t.kind == Kind::Ident);
+                let names = (index + 1..tokens.len())
+                    .take_while(|&i| tokens[i].text != ";")
+                    .filter(|&i| tokens[i].kind == Kind::Ident);
                 for name in names {
-                    if !ALLOWED_LANGUAGE_FEATURES.contains(&name.text) {
+                    let feature = tokens[name].text;
+                    if !ALLOWED_LANGUAGE_FEATURES.contains(&feature) {
                         problems.push(feature_problem(
                             path,
-                            Some(name.line),
-                            name.text,
-                            &format!("`requires {}`", name.text),
+                            Some(view.position(name)),
+                            feature,
+                            &format!("`requires {feature}`"),
                             REMOVE_REQUIRES,
                         ));
                     }
@@ -222,22 +261,24 @@ fn scan_file(
             }
             "." if is_swizzle(next(1)) && is_assignment(next(2)) && !members.contains(next(1)) => {
                 found(
+                    index,
                     "swizzle_assignment",
                     &format!("An assignment to the swizzle `.{}`", next(1)),
                 );
             }
             "var" if next(1) == "<" && next(2) == "immediate" => {
-                found("immediate_address_space", "`var<immediate>`");
+                found(index, "immediate_address_space", "`var<immediate>`");
             }
             "builtin" if previous == "@" && next(1) == "(" => match next(2) {
                 name @ ("global_invocation_index" | "workgroup_index") => {
-                    found("linear_indexing", &format!("`@builtin({name})`"));
+                    found(index - 1, "linear_indexing", &format!("`@builtin({name})`"));
                 }
                 name @ ("subgroup_id" | "num_subgroups") => {
-                    found("subgroup_id", &format!("`@builtin({name})`"));
+                    found(index - 1, "subgroup_id", &format!("`@builtin({name})`"));
                 }
                 "frag_depth" if next(3) == "," => {
                     found(
+                        index - 1,
                         "fragment_depth",
                         "A depth mode in `@builtin(frag_depth, ...)`",
                     );
@@ -252,31 +293,34 @@ fn scan_file(
             {
                 problems.push(Problem::at(
                     path,
-                    line,
-                    "flat interpolation must be written `@interpolate(flat, either)` (AGENTS.md hard rule 10). `@interpolate(flat)` means `flat, first`, which WebGL2 and WebGPU compatibility mode cannot provide.",
+                    Some(view.position(index - 1)),
+                    format!(
+                        "flat interpolation must be written `@interpolate(flat, either)`. `@interpolate(flat)` means `flat, first`, which WebGL2 and WebGPU compatibility mode cannot provide. See {RULES_PAGE}"
+                    ),
                 ));
             }
             name @ ("bufferView" | "bufferArrayView" | "bufferLength")
                 if next(1) == "(" && !declared.contains(name) =>
             {
-                found("buffer_view", &format!("`{name}`"));
+                found(index, "buffer_view", &format!("`{name}`"));
             }
             "buffer"
                 if !declared.contains("buffer")
                     && (previous == ":" || (matches!(previous, "," | "<") && next(1) == "<")) =>
             {
-                found("buffer_view", "The `buffer` type");
+                found(index, "buffer_view", "The `buffer` type");
             }
             name @ ("atomicStoreMin" | "atomicStoreMax")
                 if next(1) == "(" && !declared.contains(name) =>
             {
-                found("atomic_vec2u_min_max", &format!("`{name}`"));
+                found(index, "atomic_vec2u_min_max", &format!("`{name}`"));
             }
             name if name.starts_with("texture_storage_")
                 && next(1) == "<"
                 && TIER1_TEXEL_FORMATS.contains(&next(2)) =>
             {
                 found(
+                    index + 2,
                     "texture_formats_tier1",
                     &format!("The storage texel format `{}`", next(2)),
                 );
@@ -300,7 +344,10 @@ pub(crate) fn check_directive_placement(path: &str, source: &str) -> Vec<Problem
         match (is_directive(trimmed), at_top) {
             (true, false) => problems.push(Problem::at(
                 path,
-                u32::try_from(index + 1).ok(),
+                Some(Position {
+                    line: to_u32(index + 1),
+                    column: to_u32(line.chars().take_while(|c| c.is_whitespace()).count() + 1),
+                }),
                 format!(
                     "`{trimmed}` comes after a line that is not a directive. The shader composer passes WGSL directives on only from the top of a file, so move it above the first `#import`, `#define_import_path` or declaration."
                 ),
@@ -376,12 +423,14 @@ fn check_function(
     views: &[View],
     problems: &mut Vec<Problem>,
 ) {
-    let (view, item) = locate(views, name);
+    let (view, item) = owner(views, name);
     let tokens = &view.tokens;
     let declaration = scan::find_function(tokens, item);
-    // The line of something found inside the function, or else the function's own line.
-    let line_in = |find: &dyn Fn(&scan::Function) -> Option<u32>| {
-        declaration.as_ref().map(|d| find(d).unwrap_or(d.line))
+    // The place of something found inside the function, or else the function's name.
+    let place_in = |find: &dyn Fn(&scan::Function) -> Option<usize>| {
+        declaration
+            .as_ref()
+            .map(|d| view.position(find(d).unwrap_or(d.name)))
     };
 
     for argument in &function.arguments {
@@ -401,7 +450,7 @@ fn check_function(
         };
         problems.push(language_feature(
             view.path,
-            line_in(&|d| scan::let_line(tokens, d, binding)),
+            place_in(&|d| scan::let_binding(tokens, d, binding)),
             "texture_and_sampler_let",
             &format!("`let {binding}` in `{item}`, which holds {holds},"),
         ));
@@ -433,19 +482,19 @@ fn check_function(
         }
         *partial_seen += 1;
         let callee_name = callee_function.name.as_deref().unwrap_or_default();
-        let (_, callee_item) = locate(views, callee_name);
-        let line = line_in(&|d| {
+        let (_, callee_item) = owner(views, callee_name);
+        let position = place_in(&|d| {
             let calls = scan::calls(tokens, d, &[callee_name, callee_item]);
             let call = calls
                 .iter()
                 .filter(|call| call.passes_part)
                 .nth(*partial_seen - 1);
             call.or_else(|| calls.get(*calls_seen - 1))
-                .map(|call| call.line)
+                .map(|call| call.name)
         });
         problems.push(language_feature(
             view.path,
-            line,
+            position,
             "unrestricted_pointer_parameters",
             &format!(
                 "The call to `{callee_item}` in `{item}`, which passes a pointer to part of a variable,"
@@ -487,27 +536,29 @@ fn for_each_call(
     }
 }
 
-/// Turns a composer error into a problem. Errors that come from a language feature name it, and
-/// the rest keep the composer's message, which shows the file and line.
+/// Turns a composer error into a problem at the place it points to. Errors that come from a
+/// language feature name it.
 pub(crate) fn composition_problem(
     error: &ComposerError,
     composer: &Composer,
     views: &[View],
+    library: &Library,
 ) -> Problem {
-    let rendered = error.emit_to_string(composer).trim_end().to_owned();
+    let found = composition::describe(error, composer, views, library);
     match &error.inner {
         ComposerErrorInner::WgslParseError(parse)
             if parse.notes().any(|note| note.contains("assignments to swizzles")) =>
         {
-            let path = error.source.path(composer);
-            let mut problem =
-                language_feature(path, None, "swizzle_assignment", "An assignment to a swizzle");
-            problem.message = format!("{}\n{rendered}", problem.message);
-            problem
+            language_feature(
+                &found.path,
+                found.position,
+                "swizzle_assignment",
+                "An assignment to a swizzle",
+            )
         }
         ComposerErrorInner::ShaderValidationError(validation) => {
             validation_problem(validation.as_inner(), views).unwrap_or_else(|| {
-                let mut problem = Problem::general(rendered);
+                let mut problem = Problem::at(&found.path, found.position, found.message);
                 if uses_draw_index(validation.as_inner()) {
                     problem.message.push_str(
                         "\n`@builtin(draw_index)` works only in a variant whose targets are just [\"glsl\"]: the WebGL2 shader reads `gl_DrawID` from WEBGL_multi_draw, and WebGPU has no draw index.",
@@ -516,7 +567,7 @@ pub(crate) fn composition_problem(
                 problem
             })
         }
-        _ => Problem::general(rendered),
+        _ => Problem::at(&found.path, found.position, found.message),
     }
 }
 
@@ -543,10 +594,10 @@ fn validation_problem(error: &ValidationError, views: &[View]) -> Option<Problem
             source: GlobalVariableError::Alignment(AddressSpace::Uniform, _, disalignment),
             ..
         } => {
-            let (view, item) = locate(views, name);
+            let (view, item) = owner(views, name);
             Some(language_feature(
                 view.path,
-                scan::global_line(&view.tokens, item),
+                scan::global(&view.tokens, item).map(|index| view.position(index)),
                 "uniform_buffer_standard_layout",
                 &format!(
                     "The uniform buffer `{item}` breaks the uniform layout rules ({}), so it",
@@ -576,4 +627,31 @@ fn lowercase_first(text: &str) -> String {
         .next()
         .map(|first| first.to_lowercase().chain(chars).collect())
         .unwrap_or_default()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_page_that_messages_link_to_states_each_rule_the_check_enforces() {
+        let (_, page) = RULES_PAGE
+            .split_once("/blob/main/")
+            .expect("a link to a file on main");
+        let path = format!("{}/../../{page}", env!("CARGO_MANIFEST_DIR"));
+        let text = std::fs::read_to_string(&path).expect("the rules page");
+        let features = ALLOWED_LANGUAGE_FEATURES
+            .iter()
+            .chain(FIXES.iter().map(|(name, _)| name));
+        for feature in features {
+            assert!(
+                text.contains(&format!("`{feature}`")),
+                "{page} does not name `{feature}`"
+            );
+        }
+        assert!(
+            text.contains("`@interpolate(flat, either)`"),
+            "{page} lacks the flat rule"
+        );
+    }
 }

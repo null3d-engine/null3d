@@ -1,6 +1,7 @@
 // Reads what a test or benchmark page publishes on its window: the page's own result when it
 // finishes, other values a page publishes, and the result of the engine's hold mode.
-import type { JSHandle, Page } from '@playwright/test';
+import { errors, type JSHandle, type Page } from '@playwright/test';
+import type { ItemResult } from './runs.ts';
 
 /** Waits until the page's window holds a value under `name`, and returns a handle to it. */
 function waitForWindowValue(page: Page, name: string, timeoutMs: number): Promise<JSHandle> {
@@ -17,6 +18,23 @@ export async function windowValue<T>(page: Page, name: string, timeoutMs: number
 /** Waits until the page publishes its result, and returns it. Throws when the time runs out. */
 export function pageResult<T>(page: Page, timeoutMs: number): Promise<T> {
 	return windowValue<T>(page, '__null3dResult', timeoutMs);
+}
+
+/**
+ * Opens a page and returns the result it publishes, as the runner page records it: a page that
+ * publishes nothing in time gives a failure with the steps it got through, and never throws.
+ */
+export async function loadResult(page: Page, path: string, timeoutMs: number): Promise<ItemResult> {
+	await page.goto(path);
+	try {
+		return await pageResult<ItemResult>(page, timeoutMs);
+	} catch (e) {
+		if (!(e instanceof errors.TimeoutError)) throw e;
+		const trail = await page.evaluate(
+			() => (globalThis as { __null3dProgress?: string[] }).__null3dProgress ?? [],
+		);
+		return { ok: false, error: `no result within ${timeoutMs / 1000} s`, trail };
+	}
 }
 
 /** Hold mode's result as a test reads it: the engine's own, with the pixels in base64. */

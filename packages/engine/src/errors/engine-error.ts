@@ -2,21 +2,32 @@
 // to the code's docs page. Each thread sets the table of fixes that ends the messages before it can
 // raise an error: createEngine sets the page's own table, and each worker sets the copy that the
 // page hands it, so no worker's file carries the text.
+//
+// A thread can hold two copies of this module: in a production build, the sketch worker runs the
+// engine's worker code, and the sketch's bundle imports the engine again from the page's file. So
+// the table of fixes and the mark on each error live under registered symbols, which every copy in
+// the thread shares. Each copy then reads the same table, and instanceof accepts the errors of both.
 
 import type { ErrorCode, ErrorFixes } from './fixes';
 
 const DOCS_BASE = 'https://github.com/null3d-engine/null3d/blob/main/docs/errors/';
 
-/** Each code's fix on this thread. A thread sets it before it can raise an error. */
-let fixes: ErrorFixes | undefined;
+/** The key of the thread's table of fixes on its global object. */
+const FIXES = Symbol.for('null3d.errorFixes');
+/** The mark that every copy of EngineError puts on its errors. */
+const ENGINE_ERROR = Symbol.for('null3d.engineError');
+
+/** The thread's global object, which holds the table of fixes for every copy of this module. */
+const thread = globalThis as { [FIXES]?: ErrorFixes };
 
 /** Gives this thread the fix of each code: the page's own table, or a worker's copy of it. */
 export function setErrorFixes(table: ErrorFixes): void {
-	fixes = table;
+	thread[FIXES] = table;
 }
 
 /** True for a code in the engine's error table. */
 export function isErrorCode(code: string): code is ErrorCode {
+	const fixes = thread[FIXES];
 	return fixes !== undefined && Object.hasOwn(fixes, code);
 }
 
@@ -34,9 +45,26 @@ export class EngineError extends Error {
 
 	constructor(code: ErrorCode, detail: string) {
 		const docs = `${DOCS_BASE}${code}.md`;
-		super(`${code}: ${detail} ${fixes?.[code]} See ${docs}`);
+		// A thread without a table, such as the page before createEngine, leaves the fix out.
+		const fix = thread[FIXES]?.[code];
+		super(`${code}: ${detail} ${fix === undefined ? '' : `${fix} `}See ${docs}`);
 		this.name = 'EngineError';
 		this.code = code;
 		this.docs = docs;
+	}
+
+	/**
+	 * True for an error from any copy of this class in the thread, by the mark that each copy puts
+	 * on its errors. A subclass keeps the usual check of the prototype chain.
+	 */
+	static [Symbol.hasInstance](value: unknown): value is EngineError {
+		// biome-ignore lint/complexity/noThisInStatic: this is the class that instanceof names
+		if (this !== EngineError) return Function.prototype[Symbol.hasInstance].call(this, value);
+		return typeof value === 'object' && value !== null && ENGINE_ERROR in value;
+	}
+
+	/** Marks every error of this class as an engine error. */
+	get [ENGINE_ERROR](): true {
+		return true;
 	}
 }
