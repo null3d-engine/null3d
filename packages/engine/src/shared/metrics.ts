@@ -62,7 +62,7 @@ export enum Counter {
 	UploadBytes = 0,
 	DrawCalls = 1,
 	Dispatches = 2,
-	/** Draw bundles recorded: nonzero in a frame whose structure change rebuilt the draw tables. */
+	/** 1 in a frame whose structure change rebuilt the draw tables, on the sketch thread's record. */
 	Rebuilds = 3,
 	/** Render and compute pipelines the GPU built for the frame. */
 	Pipelines = 4,
@@ -80,6 +80,13 @@ export type CounterName = (typeof COUNTER_NAMES)[number];
 
 /** Records each ring holds: several seconds of frames, far longer than the page waits between drains. */
 export const RING_RECORDS = 1024;
+
+/**
+ * One frame in this many has its GPU time measured and its completion tracked. Doing both costs
+ * the thread that draws about as much as drawing a small scene, so the engine samples frames
+ * instead of paying it every frame.
+ */
+export const SAMPLED_EVERY = 8;
 
 // 32-bit words of a record.
 const SEQUENCE = 0;

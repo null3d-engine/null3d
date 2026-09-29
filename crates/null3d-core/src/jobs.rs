@@ -182,6 +182,8 @@ pub struct JobSystem {
     job: UnsafeCell<JobDesc>,
     busy: AtomicBool,
     panicked: AtomicBool,
+    /// True once a loop handed chunks to the job workers, until [`JobSystem::prepare_frame`] reads it.
+    dispatched: AtomicBool,
     sleepers: AtomicU32,
     shutdown: AtomicBool,
     workers: u32,
@@ -228,6 +230,7 @@ impl JobSystem {
             }),
             busy: AtomicBool::new(false),
             panicked: AtomicBool::new(false),
+            dispatched: AtomicBool::new(false),
             sleepers: AtomicU32::new(0),
             shutdown: AtomicBool::new(false),
             workers,
@@ -299,6 +302,7 @@ impl JobSystem {
         self.ticket
             .0
             .store(u64::from(chunks) << 32, Ordering::SeqCst);
+        self.dispatched.store(true, Ordering::Relaxed);
         self.wake_workers(true);
 
         while let Some(chunk) = self.try_claim() {
@@ -310,6 +314,18 @@ impl JobSystem {
         let panicked = self.panicked.swap(false, Ordering::Relaxed);
         self.busy.store(false, Ordering::Release);
         assert!(!panicked, "a parallel_for chunk panicked");
+    }
+
+    /// Wakes sleeping job workers at the start of a frame when the previous frame handed them
+    /// work, so they are spinning when this frame's work arrives: a sleeping worker takes longer
+    /// to start than a short loop runs. A scene without parallel work lets them sleep. Returns
+    /// true when it woke them.
+    pub fn prepare_frame(&self) -> bool {
+        let woke = self.dispatched.swap(false, Ordering::Relaxed);
+        if woke {
+            self.wake_workers(true);
+        }
+        woke
     }
 
     /// Queues a background task. Fails with [`CoreError::CapacityExceeded`] when the queue is

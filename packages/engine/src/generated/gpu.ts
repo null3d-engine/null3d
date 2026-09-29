@@ -11,6 +11,7 @@ export const OP_CREATE_RENDER_PIPELINE = 7;
 export const OP_CREATE_COMPUTE_PIPELINE = 8;
 export const OP_CREATE_BIND_GROUP = 9;
 export const OP_CLEAR_BUFFER = 10;
+export const OP_WRITE_TEXTURE = 11;
 export const OP_BEGIN_RENDER_PASS = 16;
 export const OP_SET_PIPELINE = 17;
 export const OP_SET_BIND_GROUP = 18;
@@ -21,6 +22,7 @@ export const OP_DRAW_INDEXED = 22;
 export const OP_DRAW_INDEXED_INDIRECT = 23;
 export const OP_EXECUTE_BUNDLES = 24;
 export const OP_END_RENDER_PASS = 25;
+export const OP_MULTI_DRAW_INDEXED = 26;
 export const OP_BEGIN_BUNDLE = 32;
 export const OP_END_BUNDLE = 33;
 export const OP_BEGIN_COMPUTE_PASS = 40;
@@ -39,6 +41,8 @@ export const FORMAT_BGRA8_UNORM = 3;
 export const FORMAT_RGBA16_FLOAT = 4;
 export const FORMAT_DEPTH24_PLUS = 5;
 export const FORMAT_DEPTH32_FLOAT = 6;
+export const FORMAT_RGBA32_FLOAT = 7;
+export const FORMAT_R32_UINT = 8;
 
 export const INDEX_FORMAT_UINT16 = 0;
 export const INDEX_FORMAT_UINT32 = 1;
@@ -54,11 +58,30 @@ export const RESOURCE_SAMPLER = 2;
 
 export const LAYOUT_FRAME = 0;
 export const LAYOUT_CULL = 1;
+export const LAYOUT_DRAWS = 2;
+export const LAYOUT_INSTANCES = 3;
+
+export const PERMUTATION_DRAW_INDEX = 1;
+
+export const STATE_CULL_NONE = 1;
 
 export const TEMPLATE_INSTANCED_LIT = 1;
 export const TEMPLATE_INSTANCED_UNLIT = 2;
 export const TEMPLATE_CULL = 16;
 
+export const BUFFER_USAGE_MAP_READ = 1;
+export const BUFFER_USAGE_COPY_SRC = 4;
+export const BUFFER_USAGE_COPY_DST = 8;
+export const BUFFER_USAGE_INDEX = 16;
+export const BUFFER_USAGE_VERTEX = 32;
+export const BUFFER_USAGE_UNIFORM = 64;
+export const BUFFER_USAGE_STORAGE = 128;
+export const BUFFER_USAGE_INDIRECT = 256;
+
+export const TEXTURE_USAGE_COPY_SRC = 1;
+export const TEXTURE_USAGE_COPY_DST = 2;
+export const TEXTURE_USAGE_TEXTURE_BINDING = 4;
+export const TEXTURE_USAGE_RENDER_ATTACHMENT = 16;
 export const TEXTURE_USAGE_TRANSIENT_ATTACHMENT = 32;
 
 export const SIZE_VERTEX_STRIDE = 24;
@@ -66,3 +89,9 @@ export const SIZE_INSTANCE_STRIDE = 64;
 export const SIZE_FRAME_UNIFORM_BYTES = 128;
 export const SIZE_CULL_WORKGROUP_SIZE = 128;
 export const SIZE_INDIRECT_WORDS = 5;
+export const SIZE_MATRIX_TEXELS = 3;
+export const SIZE_MATRICES_PER_TEXTURE_ROW = 512;
+export const SIZE_INDICES_PER_TEXTURE_ROW = 2048;
+export const SIZE_DRAW_RECORD_BYTES = 16;
+export const SIZE_MULTI_DRAW_RECORDS = 256;
+export const SIZE_MAX_MATERIALS = 1024;

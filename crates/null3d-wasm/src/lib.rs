@@ -21,12 +21,14 @@ use null3d_core::instances::BatchTable;
 use null3d_core::jobs::{JobConfig, JobSystem};
 use null3d_core::scene::{CommandRing, SceneStorage};
 use null3d_core::snapshot::FrameSnapshot;
+use null3d_gpu::caps::Capabilities;
 use null3d_gpu::drawlist::sizes;
 use null3d_render::camera::Perspective;
+use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
+use null3d_render::frame::{FrameBuilder, FrameInput, RecordError};
 use null3d_render::geometry::{box_geometry, sphere_geometry};
 use null3d_render::gpu_driven::{
-    BYTES_PER_SOURCE, FrameInput, GpuDrivenRenderer, MAX_USEFUL_BINDING_BYTES, RecordError,
-    RendererConfig,
+    BYTES_PER_SOURCE, GpuDrivenRenderer, MAX_USEFUL_BINDING_BYTES, RendererConfig,
 };
 use null3d_render::materials::{MaterialError, Shading};
 use wasm_bindgen::prelude::*;
@@ -82,8 +84,35 @@ struct Engine {
     ring: CommandRing,
     batches: BatchTable,
     snapshot: FrameSnapshot,
-    renderer: GpuDrivenRenderer,
+    renderer: Box<dyn FrameBuilder>,
     structure_changed: bool,
+    /// True when the last recorded frame rebuilt its draw tables.
+    rebuilt: bool,
+}
+
+impl Engine {
+    /// The frame builder, and the frame's input for it. The frame's upload list is recorded once,
+    /// by the frame's first step.
+    fn frame(
+        &mut self,
+        frame: u32,
+        canvas: (u32, u32),
+        jobs: &'static JobSystem,
+    ) -> (&mut dyn FrameBuilder, FrameInput<'_>) {
+        if self.snapshot.frame() != frame {
+            self.snapshot.record(frame, &self.scene, &self.batches);
+        }
+        let input = FrameInput {
+            frame,
+            scene: &self.scene,
+            batches: &self.batches,
+            snapshot: &self.snapshot,
+            canvas,
+            structure_changed: self.structure_changed,
+            jobs,
+        };
+        (self.renderer.as_mut(), input)
+    }
 }
 
 /// The engine, which only the sketch thread touches.
@@ -114,18 +143,16 @@ fn render_failure(detail: u32, value: u32) -> u32 {
 }
 
 fn record_failure(error: RecordError) -> u32 {
-    render_failure(
-        match error {
-            RecordError::DrawListFull => render_detail::DRAW_LIST_FULL,
-            RecordError::MeshBuffersFull => render_detail::MESH_BUFFERS_FULL,
-            RecordError::TooManySources { .. } => render_detail::TOO_MANY_SOURCES,
-            RecordError::UploadsFull => render_detail::UPLOADS_FULL,
-        },
-        match error {
-            RecordError::TooManySources { limit } => limit,
-            _ => 0,
-        },
-    )
+    let (detail, value) = match error {
+        RecordError::DrawListFull => (render_detail::DRAW_LIST_FULL, 0),
+        RecordError::MeshBuffersFull => (render_detail::MESH_BUFFERS_FULL, 0),
+        RecordError::TooManySources { limit } => (render_detail::TOO_MANY_SOURCES, limit),
+        RecordError::UploadsFull => (render_detail::UPLOADS_FULL, 0),
+        RecordError::OutOfMemory { bytes } => {
+            return core_failure(CoreError::OutOfMemory { bytes });
+        }
+    };
+    render_failure(detail, value)
 }
 
 fn material_failure(error: MaterialError) -> u32 {
@@ -176,15 +203,21 @@ pub fn last_error_detail(index: u32) -> u32 {
 }
 
 /// Creates the engine on the sketch thread, and the job system that `job_workers` job workers
-/// serve, timing their work with the browser's clock. `storage_binding_bytes` is the largest
-/// storage binding of the device the engine draws with. Every capacity is fixed from here on.
+/// serve, timing their work with the browser's clock. On WebGPU, `storage_binding_bytes` is the
+/// largest storage binding of the device the engine draws with. On WebGL2 (`webgl2`), the
+/// capability flags say whether the device has multi-draw, and `max_texture_size` is its largest
+/// texture. Every capacity is fixed from here on.
 #[wasm_bindgen(js_name = initEngine)]
+#[allow(clippy::too_many_arguments)]
 pub fn init_engine(
     job_workers: u32,
     scene_capacity: u32,
     max_batches: u32,
     commands: u32,
     storage_binding_bytes: u32,
+    webgl2: bool,
+    capabilities: u32,
+    max_texture_size: u32,
 ) -> u32 {
     // SAFETY: as in `with_engine`; this is the first call on the sketch thread.
     let cell = unsafe { &mut *ENGINE.0.get() };
@@ -201,14 +234,24 @@ pub fn init_engine(
         ring: CommandRing::with_capacity(commands),
         batches: BatchTable::with_capacity(max_batches),
         snapshot: FrameSnapshot::with_capacity(UPLOAD_RANGES),
-        renderer: GpuDrivenRenderer::new(RendererConfig {
-            storage_binding_bytes: storage_binding_bytes.clamp(
-                sizes::PORTABLE_STORAGE_BINDING_BYTES,
-                MAX_USEFUL_BINDING_BYTES,
-            ),
-            ..RendererConfig::default()
-        }),
+        renderer: if webgl2 {
+            let capabilities = Capabilities::from_bits(u64::from(capabilities));
+            Box::new(CpuCulledRenderer::new(CpuCulledConfig {
+                multi_draw: capabilities.contains(Capabilities::MULTI_DRAW),
+                max_texture_size: max_texture_size.max(CpuCulledConfig::default().max_texture_size),
+                ..CpuCulledConfig::default()
+            }))
+        } else {
+            Box::new(GpuDrivenRenderer::new(RendererConfig {
+                storage_binding_bytes: storage_binding_bytes.clamp(
+                    sizes::PORTABLE_STORAGE_BINDING_BYTES,
+                    MAX_USEFUL_BINDING_BYTES,
+                ),
+                ..RendererConfig::default()
+            }))
+        },
         structure_changed: true,
+        rebuilt: false,
     });
     0
 }
@@ -312,6 +355,15 @@ pub fn begin_frame(frame: u32) -> u32 {
     })
 }
 
+/// Wakes the job workers at the start of a frame when the previous frame gave them work, so they
+/// are ready when this frame's parallel work comes.
+#[wasm_bindgen(js_name = prepareJobs)]
+pub fn prepare_jobs() {
+    if let Some(jobs) = JOBS.get() {
+        jobs.prepare_frame();
+    }
+}
+
 /// Updates world matrices and bounding spheres of scene objects, in parallel on the job workers.
 #[wasm_bindgen(js_name = updateTransforms)]
 pub fn update_transforms() -> u32 {
@@ -336,27 +388,50 @@ pub fn update_batches(frame: u32) -> u32 {
     })
 }
 
+/// Finds the frame's visible objects on the job workers, where the frame builder culls on the CPU,
+/// for a canvas of this size in device pixels. Call it before `recordFrame`.
+#[wasm_bindgen(js_name = cullFrame)]
+pub fn cull_frame(frame: u32, width: u32, height: u32) -> u32 {
+    let Some(jobs) = JOBS.get() else {
+        return fail(codes::NOT_READY, [0, 0]);
+    };
+    with_engine(|e| {
+        let (renderer, input) = e.frame(frame, (width, height), jobs);
+        match renderer.cull(&input) {
+            Ok(()) => 0,
+            Err(error) => record_failure(error),
+        }
+    })
+}
+
 /// Records the frame's upload list and its draw list for a canvas of this size in device pixels.
 #[wasm_bindgen(js_name = recordFrame)]
 pub fn record_frame(frame: u32, width: u32, height: u32) -> u32 {
+    let Some(jobs) = JOBS.get() else {
+        return fail(codes::NOT_READY, [0, 0]);
+    };
     with_engine(|e| {
-        e.snapshot.record(frame, &e.scene, &e.batches);
-        let input = FrameInput {
-            frame,
-            scene: &e.scene,
-            batches: &e.batches,
-            snapshot: &e.snapshot,
-            canvas: (width, height),
-            structure_changed: e.structure_changed,
-        };
-        match e.renderer.record(&input) {
-            Ok(()) => {
+        let (renderer, input) = e.frame(frame, (width, height), jobs);
+        match renderer.record(&input) {
+            Ok(rebuilt) => {
                 e.structure_changed = false;
+                e.rebuilt = rebuilt;
                 0
             }
             Err(error) => record_failure(error),
         }
     })
+}
+
+/// True when the last recorded frame rebuilt its draw tables after a structure change.
+#[wasm_bindgen(js_name = drawTablesRebuilt)]
+pub fn draw_tables_rebuilt() -> bool {
+    let mut rebuilt = false;
+    with_engine(|e| {
+        rebuilt = e.rebuilt;
+        0
+    });
+    rebuilt
 }
 
 /// Makes the next recorded frame create every GPU object again and upload the whole scene, after
@@ -389,7 +464,7 @@ pub fn create_batch(capacity: u32, dynamic: bool, colors: bool, mesh: u32, mater
     value_with_engine(|e| {
         let Some(slot) = mesh
             .checked_sub(1)
-            .and_then(|id| e.renderer.meshes().mesh(id))
+            .and_then(|id| e.renderer.settings().meshes().mesh(id))
         else {
             return Err(render_failure(render_detail::UNKNOWN_MESH, mesh));
         };
@@ -496,6 +571,7 @@ pub fn memory_epoch() -> u32 {
 fn add_mesh(e: &mut Engine, geometry: &null3d_render::geometry::Geometry) -> Result<u32, u32> {
     let id = e
         .renderer
+        .settings_mut()
         .meshes_mut()
         .add(geometry)
         .map_err(|_| render_failure(render_detail::BAD_MESH, 0))?;
@@ -547,7 +623,7 @@ pub fn mesh_radius(mesh: u32) -> f32 {
     with_engine(|e| {
         if let Some(slot) = mesh
             .checked_sub(1)
-            .and_then(|id| e.renderer.meshes().mesh(id))
+            .and_then(|id| e.renderer.settings().meshes().mesh(id))
         {
             radius = slot.radius;
         }
@@ -563,6 +639,7 @@ pub fn create_material(unlit: bool, r: f32, g: f32, b: f32, a: f32) -> u32 {
     let shading = if unlit { Shading::Unlit } else { Shading::Lit };
     value_with_engine(|e| {
         e.renderer
+            .settings_mut()
             .materials_mut()
             .create(shading, [r, g, b, a])
             .map(|id| id + 1)
@@ -576,6 +653,7 @@ pub fn set_material_color(material: u32, r: f32, g: f32, b: f32, a: f32) -> u32 
     with_engine(|e| {
         match e
             .renderer
+            .settings_mut()
             .materials_mut()
             .set_color(material.wrapping_sub(1), [r, g, b, a])
         {
@@ -591,7 +669,7 @@ pub fn set_material_color(material: u32, r: f32, g: f32, b: f32, a: f32) -> u32 
 #[wasm_bindgen(js_name = setCamera)]
 pub fn set_camera(camera: u32, fov_degrees: f32, near: f32, far: f32) -> u32 {
     with_engine(|e| {
-        e.renderer.set_camera(
+        e.renderer.settings_mut().set_camera(
             Handle::from_raw(camera),
             Perspective {
                 fov_degrees,
@@ -607,7 +685,7 @@ pub fn set_camera(camera: u32, fov_degrees: f32, near: f32, far: f32) -> u32 {
 #[wasm_bindgen(js_name = setSun)]
 pub fn set_sun(dx: f32, dy: f32, dz: f32, r: f32, g: f32, b: f32) -> u32 {
     with_engine(|e| {
-        e.renderer.set_sun([dx, dy, dz], [r, g, b]);
+        e.renderer.settings_mut().set_sun([dx, dy, dz], [r, g, b]);
         0
     })
 }
@@ -616,7 +694,7 @@ pub fn set_sun(dx: f32, dy: f32, dz: f32, r: f32, g: f32, b: f32) -> u32 {
 #[wasm_bindgen(js_name = setAmbient)]
 pub fn set_ambient(r: f32, g: f32, b: f32) -> u32 {
     with_engine(|e| {
-        e.renderer.set_ambient([r, g, b]);
+        e.renderer.settings_mut().set_ambient([r, g, b]);
         0
     })
 }
@@ -625,7 +703,7 @@ pub fn set_ambient(r: f32, g: f32, b: f32) -> u32 {
 #[wasm_bindgen(js_name = setBackground)]
 pub fn set_background(r: f32, g: f32, b: f32) -> u32 {
     with_engine(|e| {
-        e.renderer.set_background([r, g, b]);
+        e.renderer.settings_mut().set_background([r, g, b]);
         0
     })
 }

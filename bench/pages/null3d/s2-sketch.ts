@@ -1,15 +1,15 @@
-// The null3d version of S2, the hierarchy: 14 trees of separate meshes whose roots turn every
-// frame. Every node is a scene object under its parent; the engine propagates the roots' turns to
-// the static children, level by level on its job workers.
+// The null3d version of S2, the hierarchy: trees of separate meshes (14 unless the page asks for
+// another count) whose roots turn every frame. Every node is a scene object under its parent; the
+// engine propagates the roots' turns to the static children, level by level on its job workers.
 import { defineSketch, type Mesh } from '@null3d/engine';
 import {
 	createS2,
 	S2_COLORS,
 	S2_MESH_COUNT,
-	S2_NODE_COUNT,
 	s2Camera,
 	s2MeshSize,
 	s2RootRotation,
+	s2Trees,
 } from '../../scenes/spec';
 import { followPath, readSketchOptions, sceneTime, setUpView } from './sketch-common';
 
@@ -17,7 +17,7 @@ export default defineSketch((context) => {
 	const { scene, materials, geometry } = context;
 	const options = readSketchOptions(import.meta.url);
 	const moveCamera = followPath(setUpView(context), s2Camera);
-	const data = createS2();
+	const data = createS2(2, s2Trees(options.count));
 	const meshes = Array.from({ length: S2_MESH_COUNT }, (_, k) => {
 		const [width, height, depth] = s2MeshSize(k);
 		return geometry.box({ width, height, depth });
@@ -25,7 +25,7 @@ export default defineSketch((context) => {
 	const colors = S2_COLORS.map((color) => materials.standard({ color }));
 	const nodes: Mesh[] = [];
 	const roots: Mesh[] = [];
-	for (let i = 0; i < S2_NODE_COUNT; i++) {
+	for (let i = 0; i < data.parent.length; i++) {
 		const mesh = meshes[data.mesh[i] ?? -1];
 		const material = colors[data.material[i] ?? -1];
 		if (!mesh || !material)

@@ -3,12 +3,19 @@
 
 import { type CompletionSignal, FenceCompletion, QueueCompletion } from '../gpu/completion';
 import { readbackWebGL2, readbackWebGPU } from '../gpu/readback';
+import {
+	contextFinished,
+	releaseContext,
+	simulateContextLoss,
+	webgl2Context,
+} from '../gpu/webgl2/context';
 import { GpuTimer } from '../gpu/webgpu/gpu-timer';
 import { RenderPassSetup, submitOne } from '../gpu/webgpu/reusable';
 import type { PowerPreference } from '../page/capabilities';
+import type { CoreDevice } from '../page/limits';
 import { type FrameRecorder, Phase } from '../shared/metrics';
 import { contextLoss, contextRestored, deviceLoss } from './loss';
-import { WebGPUSceneRenderer } from './scene-renderer';
+import { WebGL2SceneRenderer, WebGPUSceneRenderer } from './scene-renderer';
 
 /**
  * The GPU path the engine draws with: core WebGPU, WebGPU in compatibility mode on devices that
@@ -53,22 +60,19 @@ export interface RendererOptions {
 	forceCompat?: boolean;
 	/** The metrics buffer, which receives GPU times where the device has timestamp queries. */
 	metrics?: ArrayBufferLike;
-	/** The largest storage binding to request from a WebGPU device. */
-	storageBindingBytes: number;
+	/** The device as the engine uses it: the storage binding to request, and how WebGL2 uploads. */
+	device: CoreDevice;
 	/** Which GPU to draw with on a device with two; the browser chooses without it. */
 	powerPreference?: PowerPreference;
 	/**
-	 * Engine memory and the control block: with both, a WebGPU renderer draws the scene from the
-	 * draw lists the sketch thread records; without them it clears to the frame's background.
+	 * Engine memory and the control block: with both, the renderer draws the scene from the draw
+	 * lists the sketch thread records; without them it clears to the frame's background.
 	 */
 	scene?: { memory: WebAssembly.Memory; control: ArrayBufferLike };
 }
 
 /** WebGPU's default `maxBufferSize`, which every device offers. */
 const DEFAULT_MAX_BUFFER_BYTES = 256 * 1024 * 1024;
-
-/** How long a simulated WebGL2 loss keeps the context away. */
-const SIMULATED_RESTORE_MS = 50;
 
 /** Encodes a linear color channel as sRGB, the way the final output does. */
 export function linearToSrgb(c: number): number {
@@ -177,14 +181,8 @@ class WebGL2Renderer implements Renderer {
 		powerPreference: PowerPreference | undefined,
 	) {
 		this.lost = contextLoss(canvas, () => this.released);
-		const gl = canvas.getContext('webgl2', {
-			antialias: false,
-			alpha: false,
-			powerPreference,
-		}) as WebGL2RenderingContext | null;
-		if (!gl) throw new Error('the canvas has no WebGL2 context');
-		this.gl = gl;
-		this.completions = metrics && new FenceCompletion(gl, metrics);
+		this.gl = webgl2Context(canvas, powerPreference);
+		this.completions = metrics && new FenceCompletion(this.gl, metrics);
 	}
 
 	resize(width: number, height: number): void {
@@ -219,37 +217,16 @@ class WebGL2Renderer implements Renderer {
 	}
 
 	simulateLoss(): void {
-		const lose = this.gl.getExtension('WEBGL_lose_context');
-		lose?.loseContext();
-		// A driver reset gives the context back after a moment; so does this.
-		setTimeout(() => lose?.restoreContext(), SIMULATED_RESTORE_MS);
+		simulateContextLoss(this.gl);
 	}
 
 	finished(): Promise<void> {
-		const { gl } = this;
-		const fence = gl.fenceSync(gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
-		gl.flush();
-		return new Promise((resolve) => {
-			// Checked on a timer, never waited on, so the thread stays free (hard rule 4).
-			const check = () => {
-				if (
-					fence &&
-					!gl.isContextLost() &&
-					gl.getSyncParameter(fence, gl.SYNC_STATUS) !== gl.SIGNALED
-				) {
-					setTimeout(check, 1);
-					return;
-				}
-				if (fence && !gl.isContextLost()) gl.deleteSync(fence);
-				resolve();
-			};
-			check();
-		});
+		return contextFinished(this.gl);
 	}
 
 	destroy(): void {
 		this.released = true;
-		if (!this.gl.isContextLost()) this.gl.getExtension('WEBGL_lose_context')?.loseContext();
+		releaseContext(this.gl);
 	}
 }
 
@@ -261,6 +238,15 @@ export async function createRenderer(
 	if (options.tier === 'webgl2') {
 		// After a loss, the context must come back before the engine can draw with it again.
 		await contextRestored(canvas);
+		if (options.scene)
+			return new WebGL2SceneRenderer(
+				canvas,
+				options.scene.memory,
+				options.scene.control,
+				options.metrics,
+				options.powerPreference,
+				options.device.sharedUploads,
+			);
 		return new WebGL2Renderer(canvas, options.metrics, options.powerPreference);
 	}
 	const adapter = await navigator.gpu?.requestAdapter({
@@ -273,7 +259,7 @@ export async function createRenderer(
 	if (core) requiredFeatures.push('core-features-and-limits' as GPUFeatureName);
 	if (options.metrics && adapter.features.has('timestamp-query'))
 		requiredFeatures.push('timestamp-query');
-	const binding = options.storageBindingBytes;
+	const binding = options.device.storageBindingBytes;
 	const device = await adapter.requestDevice({
 		requiredFeatures,
 		// A buffer as large as a binding must fit the device's largest buffer too.

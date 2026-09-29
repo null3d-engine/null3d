@@ -38,7 +38,10 @@ export interface FrameSummary {
 	cpuMsAllThreads: Percentiles;
 	/** Per thread, by name: `main`, `sketch-worker`, `render-worker`, `job-0` and so on. */
 	threads: Record<string, ThreadStats>;
-	/** GPU time per frame, where the device has timestamp queries. */
+	/**
+	 * GPU time per frame, where the device has timestamp queries. The engine times one frame in
+	 * eight, which keeps the cost of measuring small.
+	 */
 	gpuMs: Percentiles | null;
 	/**
 	 * The step between GPU times when the browser rounds its timestamps, or null when they look exact.
@@ -51,12 +54,15 @@ export interface FrameSummary {
 	presentedFps: number;
 	/**
 	 * Frames per second that the GPU finished. Below `presentedFps`, frames queue on the GPU, and the
-	 * display shows fewer than the presented rate suggests. Null when no completion arrived.
+	 * display shows fewer than the presented rate suggests. The engine tracks one frame in eight: the
+	 * GPU finishes frames in order, so each tracked frame also accounts for the frames before it.
+	 * Null when no completion arrived.
 	 */
 	completedFps: number | null;
 	/**
-	 * Time from a frame's submit to the GPU finishing it. With a WebGL2 fence, the engine sees
-	 * completion at its next frame callback, so the figure rounds up to frame intervals.
+	 * Time from a frame's submit to the GPU finishing it, on one frame in eight. With a WebGL2
+	 * fence, the engine sees completion at its next frame callback, so the figure rounds up to frame
+	 * intervals.
 	 */
 	gpuLatencyMs: Percentiles | null;
 	/** Bytes uploaded to the GPU per frame. */
@@ -232,7 +238,7 @@ export function summarizeFrames(
 		gpuLatencyMs: completion.busy.length > 0 ? percentiles(completion.busy) : null,
 		uploadBytes: percentiles(render.counters[Counter.UploadBytes] ?? []),
 		drawCalls: percentiles(render.counters[Counter.DrawCalls] ?? []),
-		rebuilds: (render.counters[Counter.Rebuilds] ?? []).filter((n) => n > 0).length,
+		rebuilds: (ring(Role.Sketch).counters[Counter.Rebuilds] ?? []).filter((n) => n > 0).length,
 		pipelines: (render.counters[Counter.Pipelines] ?? []).reduce((sum, n) => sum + n, 0),
 	};
 }

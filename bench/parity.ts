@@ -7,12 +7,16 @@
 //   bun run parity
 //   bun run parity -- --scene s1,s2 --tier webgpu
 //   bun run parity -- --pair threejs-webgl,threejs-webgpu
+//   bun run parity -- --save-baselines
 // Options:
 //   --scene <list>   scenes: s1, s1-static, s2; the default is all three
 //   --tier <list>    GPU tiers: webgpu, webgl2; the default is both
 //   --pair <a>,<b>   compare page kind a with page kind b, the reference, instead of the tiers.
 //                    Page kinds: threejs-webgl, threejs-webgpu, null3d-webgl2, null3d-webgpu
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+//   --save-baselines save how much three.js's two renderers differ on each scene in
+//                    bench/parity-baselines.json, where the device runner reads it for devices
+//                    that cannot draw with both
+import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { type Browser, chromium, errors } from '@playwright/test';
 import { pageResult } from '../tests/lib/page-result.ts';
@@ -25,6 +29,7 @@ import {
 	comparisonName,
 	decodeHoldResult,
 	differenceText,
+	formatStoredBaselines,
 	type HoldFrame,
 	holdPagePath,
 	type ImageComparison,
@@ -32,7 +37,10 @@ import {
 	type ParityScene,
 	parityFiles,
 	parseParityArgs,
+	parseStoredBaselines,
 	passesWithBaseline,
+	STORED_BASELINES_FILE,
+	type StoredBaselines,
 } from './lib/parity';
 
 const OUTPUT_DIR = join(REPO_ROOT, 'test-results/parity');
@@ -104,6 +112,22 @@ function runComparison(
 	};
 }
 
+/**
+ * Keeps the measured baselines for devices that cannot draw with both of three.js's renderers,
+ * next to the ones stored for scenes this run did not measure.
+ */
+function saveBaselines(measured: StoredBaselines): void {
+	const path = join(REPO_ROOT, STORED_BASELINES_FILE);
+	const stored = existsSync(path) ? parseStoredBaselines(readFileSync(path, 'utf8')) : {};
+	writeFileSync(path, formatStoredBaselines({ ...stored, ...measured }));
+	const scenes = Object.keys(measured);
+	console.log(
+		scenes.length > 0
+			? `saved the baselines of ${scenes.join(', ')} in ${STORED_BASELINES_FILE}.`
+			: 'no baseline was measured, so none was saved.',
+	);
+}
+
 async function main(): Promise<void> {
 	const options = parseParityArgs(process.argv.slice(2));
 	// Each run starts with an empty folder, so no image from an earlier run can pass for this one.
@@ -113,6 +137,7 @@ async function main(): Promise<void> {
 	const { headless, channel, launchOptions } = browserTests.use ?? {};
 	let passed = 0;
 	let total = 0;
+	const measured: StoredBaselines = {};
 	try {
 		const browser = await chromium.launch({ ...launchOptions, headless, channel });
 		try {
@@ -133,9 +158,11 @@ async function main(): Promise<void> {
 							typeof webgl === 'string' || typeof webgpu === 'string'
 								? null
 								: compareFrames(webgl, webgpu).share;
+						if (baseline !== null) measured[scene] = baseline;
 					}
 					return baseline;
 				};
+				if (options.saveBaselines) await baselineShare();
 				for (const comparison of options.comparisons) {
 					const engines = comparison.candidate.startsWith('null3d');
 					const { pass, line } = runComparison(
@@ -157,6 +184,7 @@ async function main(): Promise<void> {
 		server.stop();
 	}
 	console.log(`${passed} of ${total} comparisons pass.`);
+	if (options.saveBaselines) saveBaselines(measured);
 	process.exit(passed === total ? 0 : 1);
 }
 

@@ -1,6 +1,8 @@
 //! The render graph, passes, materials and the post-processing chain.
 //!
 //! - `camera`: perspective projection with reversed depth, and view matrices
+//! - `cpu_culled`: the WebGL2 frame builder, with culling on the job workers and an index list
+//! - `frame`: what every frame builder shares: its input, the scene settings, the per-parity lists
 //! - `frame_data`: the per-frame uniform block the shaders read
 //! - `geometry`: generators with three.js's parameters and vertex order
 //! - `gpu_driven`: the WebGPU frame builder, with GPU culling and one prerecorded bundle
@@ -9,6 +11,8 @@
 //! - `parallel_record`: draw lists recorded in chunks on the job workers, joined in chunk order
 
 pub mod camera;
+pub mod cpu_culled;
+pub mod frame;
 pub mod frame_data;
 pub mod geometry;
 pub mod gpu_driven;

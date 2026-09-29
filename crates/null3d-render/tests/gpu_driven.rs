@@ -6,6 +6,7 @@ mod common;
 use common::{BATCH_ROWS, SCENE_CAPACITY, World, count};
 use null3d_gpu::drawlist::Op;
 use null3d_gpu::mock::MockBackend;
+use null3d_render::frame::FrameBuilder;
 
 const MATRIX_BYTES: u32 = 48;
 
@@ -230,9 +231,8 @@ fn a_new_active_count_rewrites_the_rows_without_a_rebuild() {
 #[test]
 fn the_source_limit_follows_the_device_storage_binding() {
     use null3d_gpu::drawlist::sizes;
-    use null3d_render::gpu_driven::{
-        MAX_USEFUL_BINDING_BYTES, PORTABLE_MAX_SOURCES, grown_size, max_sources,
-    };
+    use null3d_render::frame::grown_size;
+    use null3d_render::gpu_driven::{MAX_USEFUL_BINDING_BYTES, PORTABLE_MAX_SOURCES, max_sources};
 
     // Every device: WebGPU's default binding holds the instances of 2,097,152 sources.
     let portable = sizes::PORTABLE_STORAGE_BINDING_BYTES;
@@ -259,7 +259,8 @@ fn the_source_limit_follows_the_device_storage_binding() {
 #[test]
 fn a_scene_past_the_device_limit_is_refused_with_that_limit() {
     use null3d_gpu::drawlist::sizes;
-    use null3d_render::gpu_driven::{RecordError, RendererConfig};
+    use null3d_render::frame::RecordError;
+    use null3d_render::gpu_driven::RendererConfig;
 
     let device = |sources: u32| RendererConfig {
         storage_binding_bytes: sources * sizes::INSTANCE_STRIDE,
@@ -295,6 +296,7 @@ fn pipelines_follow_the_shading_model_and_objects_sharing_a_mesh_and_material_sh
     let lit = |world: &mut World, shade: f32| {
         world
             .renderer
+            .settings_mut()
             .materials_mut()
             .create(Shading::Lit, [shade, 0.5, 0.5, 1.0])
             .unwrap()

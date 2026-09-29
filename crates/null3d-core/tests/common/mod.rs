@@ -6,6 +6,7 @@
 use std::sync::Arc;
 use std::thread::JoinHandle;
 
+use null3d_core::culling::Frustum;
 use null3d_core::jobs::{JobConfig, JobSystem};
 
 /// A job system with native threads running its worker loops. Dropping it shuts the system down
@@ -190,4 +191,108 @@ pub fn perspective(fov_y: f32, aspect: f32, near: f32, far: f32) -> [f32; 16] {
     m[11] = -1.0;
     m[14] = near * far / (near - far);
     m
+}
+
+pub type Mat4 = [f32; 16];
+
+/// A perspective projection with reversed depth (1 at near, 0 at far), or an infinite far plane
+/// when `far` is `None`.
+pub fn reversed_perspective(fov_y: f32, aspect: f32, near: f32, far: Option<f32>) -> Mat4 {
+    let f = 1.0 / (fov_y / 2.0).tan();
+    let mut m = [0.0; 16];
+    m[0] = f / aspect;
+    m[5] = f;
+    m[11] = -1.0;
+    match far {
+        Some(far) => {
+            m[10] = near / (far - near);
+            m[14] = far * near / (far - near);
+        }
+        None => m[14] = near,
+    }
+    m
+}
+
+/// An orthographic projection in WebGPU's clip space.
+pub fn orthographic(left: f32, right: f32, bottom: f32, top: f32, near: f32, far: f32) -> Mat4 {
+    let mut m = [0.0; 16];
+    m[0] = 2.0 / (right - left);
+    m[5] = 2.0 / (top - bottom);
+    m[10] = 1.0 / (near - far);
+    m[12] = -(right + left) / (right - left);
+    m[13] = -(top + bottom) / (top - bottom);
+    m[14] = near / (near - far);
+    m[15] = 1.0;
+    m
+}
+
+/// A view matrix for a camera at `eye` turned by `yaw` about Y and `pitch` about X.
+pub fn view(eye: [f32; 3], yaw: f32, pitch: f32) -> Mat4 {
+    let (sy, cy) = yaw.sin_cos();
+    let (sp, cp) = pitch.sin_cos();
+    // Rows of the inverse rotation are the camera axes.
+    let right = [cy, 0.0, -sy];
+    let up = [sy * sp, cp, cy * sp];
+    let back = [sy * cp, -sp, cy * cp];
+    let dot = |a: [f32; 3]| a[0] * eye[0] + a[1] * eye[1] + a[2] * eye[2];
+    [
+        right[0],
+        up[0],
+        back[0],
+        0.0, //
+        right[1],
+        up[1],
+        back[1],
+        0.0, //
+        right[2],
+        up[2],
+        back[2],
+        0.0, //
+        -dot(right),
+        -dot(up),
+        -dot(back),
+        1.0,
+    ]
+}
+
+pub fn frusta() -> Vec<Frustum> {
+    let matrices = [
+        perspective(1.0, 16.0 / 9.0, 0.1, 500.0),
+        mul4(
+            &perspective(0.6, 1.0, 1.0, 80.0),
+            &view([3.0, 10.0, 40.0], 0.7, -0.3),
+        ),
+        mul4(
+            &reversed_perspective(1.2, 1.5, 0.5, Some(200.0)),
+            &view([-20.0, 0.0, 5.0], -1.9, 0.2),
+        ),
+        mul4(
+            &reversed_perspective(1.4, 2.0, 0.25, None),
+            &view([0.0, 50.0, 0.0], 3.0, -1.2),
+        ),
+        mul4(
+            &orthographic(-60.0, 60.0, -30.0, 30.0, 1.0, 300.0),
+            &view([0.0, 0.0, 100.0], 0.2, 0.1),
+        ),
+    ];
+    matrices.iter().map(Frustum::from_view_projection).collect()
+}
+
+/// `count` random spheres in a 400-unit cube, some hidden, some huge, and a few degenerate.
+pub fn random_spheres(count: usize, seed: u64) -> [Vec<f32>; 4] {
+    let mut rng = Rng::new(seed);
+    let mut arrays: [Vec<f32>; 4] = Default::default();
+    for _ in 0..count {
+        arrays[0].push(rng.range(-200.0, 200.0));
+        arrays[1].push(rng.range(-200.0, 200.0));
+        arrays[2].push(rng.range(-200.0, 200.0));
+        arrays[3].push(match rng.below(100) {
+            0 => f32::NEG_INFINITY,
+            1 => f32::NAN,
+            2 => rng.range(50.0, 400.0),
+            3 => 0.0,
+            _ => rng.range(0.0, 8.0),
+        });
+    }
+    arrays
 }

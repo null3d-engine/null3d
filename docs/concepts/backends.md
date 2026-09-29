@@ -34,7 +34,7 @@ These facts were checked in September 2026. Browser support changes often, so th
 
 On WebGPU, the GPU culls the scene itself. The engine records each group of objects that share a pipeline, a mesh and a material once, in a render bundle. The GPU then fills in the draw counts every frame. The CPU's cost per frame grows with the number of those groups, and stays almost flat as the object count grows.
 
-On WebGL2 there are no compute shaders, so the job workers cull in parallel on the CPU. Static objects keep their data on the GPU, and each frame uploads only a list of which instances are visible. Where the browser has the `WEBGL_multi_draw` extension, one call draws many groups.
+On WebGL2 there are no compute shaders, so the job workers cull in parallel on the CPU and group the visible objects the same way. Each object's matrix sits in a data texture on the GPU. Static objects upload theirs only when they change. Moving instance batches write theirs each frame into the next of three textures. A frame then never writes a texture that the GPU may still read. Each frame lists the visible objects, 4 bytes each, and uploads the list only when it changed. A static instance batch that has stopped changing is culled in groups of 64 nearby rows, with one test and one list entry per group. A group partly in view draws all its rows, and the GPU clips the ones outside. Where the browser has the `WEBGL_multi_draw` extension, one call draws every group with the same shading and the same mesh buffer. Firefox lacks the extension, so there each group takes one call.
 
 Every feature works on both paths, or its page describes its WebGL2 fallback.
 
@@ -79,6 +79,8 @@ The storage binding is the one limit the engine raises past this budget. When a 
 
 Development builds warn once when a scene passes 2,097,152, because a device with the default limits refuses that scene.
 
+On WebGL2 the limit follows the largest texture the device allows. Each object's matrix takes 3 texels of a data texture, 512 matrices to a texel row. That is 2,097,152 objects and instance rows at 4,096 pixels, and 8,388,608 at 16,384. WebGL2 promises at least 2,048 pixels, which holds 1,048,576. `engine.capabilities.maxInstances` gives the number on WebGL2 too.
+
 Engine memory holds the rows too. A page with worker threads gives the engine at most 1 GiB, which holds about 5 million instance rows. A call that needs more memory than the engine can get fails with E1109.
 
 A 2018 iPad Pro on iPadOS 26 reports almost exactly WebGPU's default limits, which makes it a good test that the budget holds.
@@ -95,9 +97,11 @@ Some laptops have a separate graphics chip next to the one built into the proces
 
 `createEngine({ gpu: 'webgl2' })` forces a tier, and so do the URL switches `?gpu=webgpu`, `?gpu=compat` and `?gpu=webgl2`. A device can then test every path it supports. Use them for testing only; in production, let the engine choose.
 
+On WebGL2, uploads read straight from the engine's shared memory. A browser that refuses to read shared memory gets a copy of each upload instead. The switch `?uploads=copy` makes the engine copy everywhere, so one device can test both routes.
+
 ## When the GPU goes away
 
-A WebGPU device can be lost, for example after a driver reset. The render worker then creates a new device and rebuilds the GPU resources from data the engine kept. If the device is lost twice within one minute, the engine restarts the render worker on WebGL2. The sketch worker keeps running, so your sketch's state survives.
+A WebGPU device can be lost, for example after a driver reset, and so can a WebGL2 context. The thread that draws then makes a new device, or waits for the context to come back. It draws the whole scene again from data the engine kept. The sketch worker keeps running, so your sketch's state survives. If the GPU is lost more than twice within one minute, or no new device starts, the engine stops drawing and reports E1302.
 
 ## Minimum browsers
 

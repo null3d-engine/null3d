@@ -79,6 +79,7 @@ URL switches for the dev server (engine docs `guides/testing`):
 | `?gpu=webgpu`, `?gpu=compat`, `?gpu=webgl2` | Force a GPU tier, if the device supports it |
 | `?threads=off` | Single-threaded build |
 | `?render=main` | Render on the main thread |
+| `?uploads=copy` | On WebGL2, copy each upload out of shared memory first, as browsers that refuse shared memory need |
 | `?latency=pipelined`, `?latency=low` | Latency mode |
 | `?preset=low` (to `ultra`), `?fps=60` | Fix preset and frame rate |
 | `?hold` | Render one frame in hold mode |

@@ -9,6 +9,8 @@ use common::World;
 use null3d_core::jobs::JobSystem;
 use null3d_core::testing::CountingAllocator;
 use null3d_gpu::drawlist::{DrawList, Op};
+use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
+use null3d_render::frame::FrameBuilder;
 use null3d_render::geometry::sphere_geometry;
 use null3d_render::parallel_record::ParallelRecorder;
 
@@ -33,8 +35,76 @@ fn recording_steady_frames_allocates_nothing() {
     assert_eq!(CountingAllocator::disarm(), 0);
 }
 
+/// The world drawn by the WebGL2 frame builder, with or without multi-draw.
+fn webgl2_world(multi_draw: bool) -> World<CpuCulledRenderer> {
+    World::build(CpuCulledRenderer::new(CpuCulledConfig {
+        multi_draw,
+        ..CpuCulledConfig::default()
+    }))
+}
+
+#[test]
+fn recording_steady_webgl2_frames_allocates_nothing() {
+    let _only = CountingAllocator::exclusive();
+    CountingAllocator::track_this_thread();
+    for multi_draw in [true, false] {
+        let mut world = webgl2_world(multi_draw);
+        // Frames of both parities and every ring slot warm up the lists, arenas and textures.
+        for frame in 1..=6 {
+            world.frame = frame;
+            world.record(frame == 1);
+        }
+        CountingAllocator::arm();
+        for frame in 7..=200 {
+            world.frame = frame;
+            world.record(false);
+        }
+        assert_eq!(CountingAllocator::disarm(), 0, "multi-draw {multi_draw}");
+    }
+}
+
+#[test]
+fn webgl2_structure_changes_after_warm_up_allocate_nothing() {
+    let _only = CountingAllocator::exclusive();
+    CountingAllocator::track_this_thread();
+    for multi_draw in [true, false] {
+        let mut world = webgl2_world(multi_draw);
+        world.record(true);
+        record_until(&mut world, 6, false);
+        CountingAllocator::arm();
+        record_until(&mut world, 40, true);
+        assert_eq!(CountingAllocator::disarm(), 0, "multi-draw {multi_draw}");
+    }
+}
+
+#[test]
+fn webgl2_static_batches_coming_to_rest_allocate_nothing() {
+    let _only = CountingAllocator::exclusive();
+    CountingAllocator::track_this_thread();
+    for multi_draw in [true, false] {
+        let mut world = webgl2_world(multi_draw);
+        let still = world.batches.create(3000, false, false, 1, 1, 0.9).unwrap();
+        world.record(true);
+        record_until(&mut world, 6, false);
+        CountingAllocator::arm();
+        // Some rows move every fifth frame, and every structure change rebuilds the layout: each
+        // time the batch is culled by row, then comes to rest, builds its clusters again and
+        // uploads their order.
+        while world.frame < 200 {
+            world.frame += 1;
+            if world.frame.is_multiple_of(5) {
+                let batch = world.batches.get_mut(still).unwrap();
+                batch.positions_mut()[3] += 0.5;
+                batch.mark_dirty(1, 40).unwrap();
+            }
+            world.record(world.frame.is_multiple_of(7));
+        }
+        assert_eq!(CountingAllocator::disarm(), 0, "multi-draw {multi_draw}");
+    }
+}
+
 /// Records frames up to `last`, each with its structure changed or not.
-fn record_until(world: &mut World, last: u32, structure_changed: bool) {
+fn record_until<B: FrameBuilder>(world: &mut World<B>, last: u32, structure_changed: bool) {
     while world.frame < last {
         world.frame += 1;
         world.record(structure_changed);
@@ -64,6 +134,7 @@ fn only_the_frames_after_the_scene_grows_allocate() {
     // A new mesh and a new batch: the next frame of each parity makes room for them.
     let ball = world
         .renderer
+        .settings_mut()
         .meshes_mut()
         .add(&sphere_geometry(0.5, 16, 12))
         .unwrap()

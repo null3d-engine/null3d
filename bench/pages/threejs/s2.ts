@@ -1,7 +1,8 @@
-// The three.js twin of S2, the hierarchy: 14 trees of separate meshes whose roots turn every frame.
-// Every node is a regular Mesh in an Object3D hierarchy, and three.js updates the world matrices
-// itself. BatchedMesh, three.js's usual tool for many draws, cannot hold a hierarchy, so it does not
-// fit this scene. The object count is fixed: the page ignores `?n=` and reports the real count.
+// The three.js twin of S2, the hierarchy: trees of separate meshes (14 unless `?n=` asks for another
+// count) whose roots turn every frame. Every node is a regular Mesh in an Object3D hierarchy, and
+// three.js updates the world matrices itself. BatchedMesh, three.js's usual tool for many draws,
+// cannot hold a hierarchy, so it does not fit this scene. The page rounds `?n=` up to whole trees and
+// reports the real count.
 import type * as ThreeModule from 'three';
 import {
 	createS2,
@@ -11,11 +12,12 @@ import {
 	s2Camera,
 	s2MeshSize,
 	s2RootRotation,
+	s2Trees,
 } from '../../scenes/spec';
 import { runThreePage } from './harness';
 
-runThreePage('s2', (three, scene) => {
-	const data = createS2();
+runThreePage('s2', (three, scene, { count }) => {
+	const data = createS2(2, s2Trees(count ?? S2_NODE_COUNT));
 	const geometries = Array.from(
 		{ length: S2_MESH_COUNT },
 		(_, k) => new three.BoxGeometry(...s2MeshSize(k)),
@@ -23,7 +25,7 @@ runThreePage('s2', (three, scene) => {
 	const materials = S2_COLORS.map((color) => new three.MeshLambertMaterial({ color }));
 	const nodes: ThreeModule.Mesh[] = [];
 	const roots: ThreeModule.Mesh[] = [];
-	for (let i = 0; i < S2_NODE_COUNT; i++) {
+	for (let i = 0; i < data.parent.length; i++) {
 		const geometry = geometries[data.mesh[i] ?? -1];
 		const material = materials[data.material[i] ?? -1];
 		if (!geometry || !material)
@@ -46,7 +48,7 @@ runThreePage('s2', (three, scene) => {
 		nodes.push(node);
 	}
 	return {
-		n: S2_NODE_COUNT,
+		n: data.parent.length,
 		update(t) {
 			for (let r = 0; r < roots.length; r++) {
 				const root = roots[r];

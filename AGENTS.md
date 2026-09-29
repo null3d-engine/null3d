@@ -28,9 +28,9 @@ This repository holds the null3d engine, its tools, its documentation and its ag
 | `bun run test:real-browsers Safari Firefox` | The same test pages in browser apps that Playwright cannot drive, through the runner page (macOS) |
 | `bun run devices` | The same checks on an Android phone over USB (Chrome, then Brave) and on runner pages that wait on the local network (an iPad's Safari and Brave) |
 | `bun run test:bench` | The benchmark pages of both engines in Chrome, through Playwright |
-| `bun run parity` | Compare each benchmark scene's hold frame in null3d with three.js's, per GPU tier |
-| `bun run bench:run` | The benchmark protocol in a visible Chrome window: fresh runs of each scene in both engines and of the scene code both run, with a summary of each engine's whole frame and own work; `--sweep` charts S1 from 1,000 to 100,000 instances |
-| `bun run bench:allocation` | Sample what the sketch worker and the render worker allocate per frame in S1, with Chrome's heap profiler |
+| `bun run parity` | Compare each benchmark scene's hold frame in null3d with three.js's, per GPU tier; `--save-baselines` stores how much three.js's two renderers differ, for devices that lack one of them |
+| `bun run bench:run` | The benchmark protocol in a visible Chrome window: fresh runs of each scene in both engines and of the scene code both run, with a summary of each engine's whole frame and own work; `--sweep` runs each scene from one object up, on both null3d paths and both three.js renderers, and compares each path with three.js's faster renderer and with three.js on the same API |
+| `bun run bench:allocation` | Sample what the sketch worker and the render worker allocate per frame in S1, with Chrome's heap profiler; `--gpu webgl2` samples the WebGL2 path |
 | `bun run bench:startup` | A cold start of the engine test page's production build in Chrome, on Slow 4G with an empty cache: the startup milestones, requests and bytes of each run |
 | `bun run readme-media` | Render the README's animation of S1 with the engine |
 | `bun run dev` | Serve the test and benchmark pages with the isolation headers on port 5173 |

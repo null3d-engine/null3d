@@ -28,19 +28,22 @@
 # "glsl" may read `@builtin(draw_index)`: its vertex shader reads `gl_DrawID` from
 # WEBGL_multi_draw, which WebGPU does not have.
 
-# Meshes drawn by instance, lit (Lambert) or unlit. WebGL2 gets its variant with the WebGL2 path.
+# Meshes drawn by instance, lit (Lambert) or unlit. WebGL2 reads instances from data textures, one
+# draw per bucket, or many buckets in one multi-draw call where WEBGL_multi_draw exists.
 [shaders.mesh]
 file = "mesh.wgsl"
 pipelines.lit = { vertex = "vs", fragment = "fs_lit" }
 pipelines.unlit = { vertex = "vs", fragment = "fs_unlit" }
 variants.webgpu = { targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2"], targets = ["glsl"] }
+variants.webgl2_multi_draw = { defs = ["WEBGL2", "DRAW_INDEX"], targets = ["glsl"] }
 
 # GPU culling into buckets for indirect draws; its compute entry point is `main`. WebGPU only.
 [shaders.cull]
 file = "cull.wgsl"
 variants.webgpu = { targets = ["wgsl"] }
 
-# A test shader for the build itself, and the only GLSL until the WebGL2 path adds its variants.
+# A test shader for the build itself.
 [shaders.test_mesh]
 file = "test_mesh.wgsl"
 pipelines.main = { vertex = "vs_main", fragment = "fs_main" }

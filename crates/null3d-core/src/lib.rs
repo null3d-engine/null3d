@@ -14,6 +14,7 @@
 //! | [`scene`] | Scene objects by slot, 16-byte commands, the hierarchy and the transform update |
 //! | [`instances`] | Instance batches: per-row arrays, dirty ranges, the batch table, memory epoch |
 //! | [`culling`] | Frustum planes and SIMD sphere culling, serial and parallel |
+//! | [`clusters`] | Groups of nearby rows that culling tests as one sphere each |
 //! | [`arena`] | Per-thread bump allocators reset each frame |
 //! | [`alloc`] | Allocation that reports running out of memory instead of aborting |
 //! | [`snapshot`] | The frame handoff between the sketch worker and the render worker |
@@ -32,6 +33,7 @@
 pub mod alloc;
 pub mod arena;
 pub mod bitset;
+pub mod clusters;
 pub mod culling;
 pub mod error;
 pub mod handle;

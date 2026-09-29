@@ -1,6 +1,7 @@
 // Messages between the page and the engine's workers.
 
 import type { PowerPreference } from '../page/capabilities';
+import type { CoreDevice } from '../page/limits';
 import type { Tier } from '../render/renderer';
 import type { Build } from '../shared/core';
 
@@ -12,11 +13,8 @@ export interface CoreHandoff {
 	control: ArrayBufferLike;
 	/** Per-frame timing records, which every thread writes and the page reads. */
 	metrics: ArrayBufferLike;
-	/**
-	 * The largest storage binding of the device the engine draws with. The renderer requests it,
-	 * and the core sizes the scene it can draw by it.
-	 */
-	storageBindingBytes: number;
+	/** The device the engine draws with, as the core and the renderer use it. */
+	device: CoreDevice;
 }
 
 export interface RendererSetup {

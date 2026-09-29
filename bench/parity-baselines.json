@@ -1,0 +1,8 @@
+{
+	"note": "How much three.js's two renderers differ on each scene's hold frame, as a share of pixels. Written by `bun run parity --save-baselines`.",
+	"scenes": {
+		"s1": 0.043715277777777777,
+		"s1-static": 0.012886284722222223,
+		"s2": 0.0033203125
+	}
+}

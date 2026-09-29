@@ -38,7 +38,6 @@ export class WebGPUBackend {
 		stagedBytes: 0,
 		drawCalls: 0,
 		dispatches: 0,
-		bundles: 0,
 		pipelines: 0,
 	};
 	// Pass descriptors that every frame fills again, so replay allocates none of its own.
@@ -118,7 +117,6 @@ export class WebGPUBackend {
 		this.counts.stagedBytes = 0;
 		this.counts.drawCalls = 0;
 		this.counts.dispatches = 0;
-		this.counts.bundles = 0;
 		this.counts.pipelines = 0;
 	}
 
@@ -356,7 +354,6 @@ export class WebGPUBackend {
 					pass = undefined;
 					break;
 				case G.OP_BEGIN_BUNDLE: {
-					this.counts.bundles++;
 					bundleId = words[a] as number;
 					this.bundleDraws[bundleId] = 0;
 					const depthFormat = this.format(words[a + 2] as number);

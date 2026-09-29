@@ -12,6 +12,7 @@ import {
 	shareOfThree,
 	summarizeRuns,
 	summaryTable,
+	sweepReport,
 } from './report';
 
 function result(cpu: number, stats = false): BenchResult {
@@ -111,14 +112,59 @@ describe('benchmark reports', () => {
 			{ scene: 's1', kind: 'threejs-webgl', summary: threejs[1] as RunSummary },
 			{ scene: 's1', kind: 'scene-code', summary: sceneCode },
 		];
+		// WebGPU compares with three.js's faster renderer, WebGL, and with three.js on WebGPU.
 		expect(comparisonLines(rows)).toEqual([
-			"s1: null3d on WebGPU takes 79% of the CPU time per frame of three.js's faster renderer (2.54 ms against 3.20 ms).",
-			"s1: null3d's own work on its busiest thread, apart from the sketch's code, is 20% of three.js's (0.16 ms against 0.80 ms); three.js's is its frame less the scene code timed alone (2.40 ms).",
+			"s1: null3d on WebGPU takes 79% of the CPU time per frame of three.js's faster renderer, WebGL (2.54 ms against 3.20 ms), and 71% of that of three.js's WebGPU renderer (2.54 ms against 3.60 ms).",
+			"s1: null3d's own work on WebGPU, on its busiest thread and apart from the sketch's code, is 20% of that of three.js's faster renderer, WebGL (0.16 ms against 0.80 ms), and 13% of that of three.js's WebGPU renderer (0.16 ms against 1.20 ms); three.js's is its frame less the scene code timed alone (2.40 ms).",
+		]);
+		// A run with both null3d paths compares each of them; on WebGL2 the same API is the faster
+		// renderer. Here the render worker's 0.30 ms is the busiest thread's own work, more than the
+		// sketch worker's 0.18 ms after its update.
+		const webgl2 = null3dRun({ 'sketch-worker': 2.56, 'render-worker': 0.3 }, 2.38);
+		const both = [...rows, { scene: 's1', kind: 'null3d-webgl2', summary: webgl2 }];
+		expect(comparisonLines(both).slice(2)).toEqual([
+			"s1: null3d on WebGL2 takes 80% of the CPU time per frame of three.js's faster renderer, WebGL (2.56 ms against 3.20 ms).",
+			"s1: null3d's own work on WebGL2, on its busiest thread and apart from the sketch's code, is 37% of that of three.js's faster renderer, WebGL (0.30 ms against 0.80 ms); three.js's is its frame less the scene code timed alone (2.40 ms).",
 		]);
 		const table = summaryTable(rows).split('\n');
 		expect(table[0]).toContain('| Own work, busiest thread |');
 		expect(table[2]).toContain('| 0.16 |');
 		expect(table[5]).toContain('| scene-code | 1 | 2.40 (2.40 to 2.40) | 2.88 | n/a |');
+	});
+
+	test('sweep a scene with tables of both measures and verdicts that name slower counts', () => {
+		const point = (
+			n: number,
+			webgpu: number,
+			webgl2: number,
+			threeGpu: number,
+			threeGl: number,
+		) => ({
+			n,
+			summaries: {
+				'null3d-webgpu': null3dRun({ 'render-worker': webgpu }, 0),
+				'null3d-webgl2': null3dRun({ 'render-worker': webgl2 }, 0),
+				'threejs-webgpu': summarizeRuns([result(threeGpu)]),
+				'threejs-webgl': summarizeRuns([result(threeGl)]),
+				'scene-code': summarizeRuns([result(0.01)]),
+			},
+		});
+		const lines = sweepReport('s1-static', [
+			point(1, 0.1, 0.04, 0.27, 0.05),
+			point(100_000, 0.12, 0.08, 0.3, 0.12),
+		]);
+		expect(lines[0]).toBe('### s1-static: CPU time per frame on the busiest thread, ms');
+		expect(lines[4]).toBe('| 1 | 0.10 | 0.04 | 0.27 | 0.05 | 200% | 37% | 80% | 80% |');
+		expect(lines[5]).toBe('| 100,000 | 0.12 | 0.08 | 0.30 | 0.12 | 100% | 40% | 67% | 67% |');
+		expect(lines.slice(7, 11)).toEqual([
+			"s1-static, whole frame: null3d on WebGPU is not faster than three.js's faster renderer at these object counts: 1 (200%), 100,000 (100%).",
+			"s1-static, whole frame: null3d on WebGPU is faster than three.js's WebGPU renderer at every count.",
+			"s1-static, whole frame: null3d on WebGL2 is faster than three.js's faster renderer at every count.",
+			"s1-static, whole frame: null3d on WebGL2 is faster than three.js's WebGL renderer at every count.",
+		]);
+		expect(lines).toContain(
+			'### s1-static: own work on the busiest thread, apart from the scene code, ms',
+		);
 	});
 
 	test('draw a chart with one line per series and escaped labels', () => {

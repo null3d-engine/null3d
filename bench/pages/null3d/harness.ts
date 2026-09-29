@@ -16,14 +16,15 @@ const sleep = (seconds: number) => new Promise((resolve) => setTimeout(resolve, 
 
 /**
  * Runs `sketch`, a sketch module next to the page, as the scene `sceneName` with `defaultCount`
- * objects, or with the count `?n=` asks for when the scene's count is not fixed. The sketch module
- * reads `n` and `holdMs` from its own address.
+ * objects, or with the count `?n=` asks for. A scene built of whole parts passes `wholeCount`, which
+ * turns an asked-for count into the count the scene draws. The sketch module reads `n` and `holdMs`
+ * from its own address.
  */
 export function runNull3dPage(
 	sceneName: string,
 	sketch: URL,
 	defaultCount: number,
-	fixedCount = false,
+	wholeCount: (count: number) => number = (count) => count,
 ): void {
 	const params = new URLSearchParams(location.search);
 	run(pageReport(params), async () => {
@@ -35,7 +36,7 @@ export function runNull3dPage(
 		canvas.style.display = 'block';
 		document.body.prepend(canvas);
 		const sketchUrl = new URL(sketch);
-		const n = fixedCount ? defaultCount : (options.count ?? defaultCount);
+		const n = wholeCount(options.count ?? defaultCount);
 		sketchUrl.searchParams.set('n', String(n));
 		// Whole milliseconds: the dev server would read a decimal number at the end of the module's
 		// address as its file extension.

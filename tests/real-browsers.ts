@@ -13,8 +13,13 @@
 //   --lan <list>        names of runner pages that wait on the local network, as device-browser,
 //                       such as ipad-safari; pages on one device take turns
 import { execFileSync } from 'node:child_process';
-import { writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import {
+	parseStoredBaselines,
+	STORED_BASELINES_FILE,
+	type StoredBaselines,
+} from '../bench/lib/parity.ts';
 import {
 	type BenchResult,
 	comparisonLines,
@@ -38,7 +43,7 @@ import {
 	waitForRunners,
 	writePlan,
 } from './lib/runs.ts';
-import { HTTP_PORT, startServer } from './lib/server.ts';
+import { HTTP_PORT, REPO_ROOT, startServer } from './lib/server.ts';
 
 export interface Options {
 	plan: string;
@@ -192,6 +197,11 @@ async function main(): Promise<void> {
 
 	let failures = 0;
 	const summary: Record<string, { pass: number; skip: number; fail: number }> = {};
+	// For a device without both of three.js's renderers, the parity check falls back to these.
+	const storedPath = join(REPO_ROOT, STORED_BASELINES_FILE);
+	const storedBaselines: StoredBaselines = existsSync(storedPath)
+		? parseStoredBaselines(readFileSync(storedPath, 'utf8'))
+		: {};
 	for (const { name } of runners) {
 		const counts = { pass: 0, skip: 0, fail: 0 };
 		summary[name] = counts;
@@ -204,6 +214,7 @@ async function main(): Promise<void> {
 		const context = {
 			resultOf: (id: string) => readResult(run, name, id),
 			imageDir: join(RUNS_DIR, run, name),
+			storedBaselines,
 		};
 		for (const item of plan.items) {
 			const result = readResult(run, name, item.id);

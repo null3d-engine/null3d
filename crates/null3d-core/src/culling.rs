@@ -5,6 +5,7 @@
 //! same code. The SIMD test and the scalar reference use the same operations in the same order,
 //! without fused multiply-adds, so they return identical results, even on plane boundaries.
 
+use std::collections::TryReserveError;
 use std::ops::Range;
 use std::simd::prelude::*;
 
@@ -153,7 +154,7 @@ pub fn cull_spheres(
         // ones count. `n` is at most `i - start`, so the store stays inside `out`, which holds a
         // slot per sphere.
         let indices = (u32x4::splat(i as u32) + lanes).to_ne_bytes();
-        let packed = indices.swizzle_dyn(u8x16::from_array(COMPACT[bits]));
+        let packed = shuffle_bytes(indices, u8x16::from_array(COMPACT[bits]));
         u32x4::from_ne_bytes(packed).copy_to_slice(&mut out[n..n + 4]);
         n += bits.count_ones() as usize;
         i += 4;
@@ -163,6 +164,22 @@ pub fn cull_spheres(
         n += usize::from(frustum.contains_sphere(xs[i], ys[i], zs[i], rs[i]));
     }
     n
+}
+
+/// The bytes of `bytes` that `picks` selects, with 0 where a pick is 16 or more. On WebAssembly
+/// this is one `i8x16.swizzle`: the portable `swizzle_dyn` lowers to it only in code compiled
+/// with SIMD, and the standard library that the single-threaded build links was compiled without.
+#[inline(always)]
+fn shuffle_bytes(bytes: u8x16, picks: u8x16) -> u8x16 {
+    #[cfg(all(target_arch = "wasm32", target_feature = "simd128"))]
+    {
+        use std::arch::wasm32::{u8x16_swizzle, v128};
+        u8x16_swizzle(v128::from(bytes), v128::from(picks)).into()
+    }
+    #[cfg(not(all(target_arch = "wasm32", target_feature = "simd128")))]
+    {
+        bytes.swizzle_dyn(picks)
+    }
 }
 
 /// The scalar version of [`cull_spheres`], one sphere at a time. It returns the same indices.
@@ -193,6 +210,9 @@ pub fn cull_spheres_reference(
 /// Visible indices at or above this count are packed by a parallel loop; fewer are copied on
 /// the calling thread, which is faster than waking the workers.
 const PARALLEL_PACK_THRESHOLD: usize = 1 << 15;
+/// Spheres at or above this count are culled on the job workers too; fewer are culled on the
+/// calling thread, which takes less time than waking the workers and waiting for them.
+const PARALLEL_CULL_THRESHOLD: usize = 1 << 14;
 
 /// The output of [`cull_parallel`]: the index list, a scratch list each chunk culls into, and one
 /// offset per chunk, all allocated once with room for every sphere.
@@ -237,8 +257,9 @@ impl CullOutput {
 }
 
 /// Culls every sphere on the calling thread and the job workers, in chunks of [`CULL_CHUNK`],
-/// and compacts the visible indices into one list in increasing order. It allocates nothing and
-/// returns the number of visible spheres.
+/// and compacts the visible indices into one list in increasing order. A few thousand spheres or
+/// fewer are culled on the calling thread alone. It allocates nothing and returns the number of
+/// visible spheres.
 ///
 /// Each chunk culls into its own part of a scratch list and records its count. A prefix sum over
 /// the counts gives each chunk's place in the output, and a second loop copies every chunk
@@ -259,7 +280,7 @@ pub fn cull_parallel(
         out.capacity()
     );
     let chunks = count.div_ceil(CULL_CHUNK) as usize;
-    if chunks <= 1 || jobs.worker_count() == 0 {
+    if (count as usize) < PARALLEL_CULL_THRESHOLD || jobs.worker_count() == 0 {
         // One thread culls straight into the output.
         out.len = cull_spheres(
             frustum,
@@ -318,6 +339,288 @@ pub fn cull_parallel(
         });
     } else {
         (0..chunks).for_each(pack);
+    }
+    out.len = total as usize;
+    out.len
+}
+
+/// The bucket of a run whose rows each look up their own bucket in the row bucket table.
+pub const BY_ROW: u32 = u32::MAX - 1;
+/// A row bucket that draws nowhere: the row is culled but never listed.
+pub const NO_BUCKET: u32 = u32::MAX;
+
+/// A run of rows for [`cull_into_buckets`]: rows `start..end` of one set of sphere arrays.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CullRun {
+    /// The set that holds the run's spheres, numbered as the caller's set function reads it.
+    pub set: u32,
+    /// The first row.
+    pub start: u32,
+    /// One past the last row.
+    pub end: u32,
+    /// The bucket of every visible row, or [`BY_ROW`] to look each row up in the row buckets.
+    pub bucket: u32,
+    /// Added to each visible row to make its list entry.
+    pub base: u32,
+}
+
+impl CullRun {
+    fn len(&self) -> usize {
+        (self.end - self.start) as usize
+    }
+}
+
+/// The output and working space of [`cull_into_buckets`]: the list of visible entries grouped by
+/// bucket, and the scratch space behind it. Buffers grow only through [`BucketedCull::try_reserve`],
+/// so culling itself never allocates.
+#[derive(Clone, Debug, Default)]
+pub struct BucketedCull {
+    indices: Vec<u32>,
+    bucket_starts: Vec<u32>,
+    scratch: Vec<u32>,
+    run_offsets: Vec<u32>,
+    run_counts: Vec<u32>,
+    run_positions: Vec<u32>,
+    /// Per [`BY_ROW`] run, one count per bucket; then the next write position per bucket.
+    histograms: Vec<u32>,
+    cursors: Vec<u32>,
+    buckets: usize,
+    len: usize,
+}
+
+impl BucketedCull {
+    /// Makes room for `rows` rows in `runs` runs, `by_row_runs` of them looking up their rows'
+    /// buckets, and `buckets` buckets, or fails when memory cannot grow. Room only grows.
+    pub fn try_reserve(
+        &mut self,
+        rows: u32,
+        runs: u32,
+        by_row_runs: u32,
+        buckets: u32,
+    ) -> Result<(), TryReserveError> {
+        fn grow(v: &mut Vec<u32>, len: usize) -> Result<(), TryReserveError> {
+            if v.len() < len {
+                v.try_reserve_exact(len - v.len())?;
+                v.resize(len, 0);
+            }
+            Ok(())
+        }
+        let (rows, runs, buckets) = (rows as usize, runs as usize, buckets as usize);
+        grow(&mut self.indices, rows)?;
+        grow(&mut self.scratch, rows)?;
+        grow(&mut self.bucket_starts, buckets + 1)?;
+        grow(&mut self.cursors, buckets)?;
+        grow(&mut self.run_offsets, runs)?;
+        grow(&mut self.run_counts, runs)?;
+        grow(&mut self.run_positions, runs)?;
+        grow(&mut self.histograms, by_row_runs as usize * buckets)?;
+        Ok(())
+    }
+
+    /// Every visible entry, bucket by bucket; within a bucket, in run order and row order.
+    pub fn indices(&self) -> &[u32] {
+        &self.indices[..self.len]
+    }
+
+    /// Where each bucket's entries start in [`BucketedCull::indices`], and, last, the total.
+    pub fn bucket_starts(&self) -> &[u32] {
+        &self.bucket_starts[..self.buckets + 1]
+    }
+
+    /// The number of visible entries.
+    pub fn len(&self) -> usize {
+        self.len
+    }
+
+    /// True when nothing is visible.
+    pub fn is_empty(&self) -> bool {
+        self.len == 0
+    }
+}
+
+/// Culls runs of rows from several sets of sphere arrays, on the calling thread and the job
+/// workers, and lists the visible rows grouped by bucket. Each visible row's entry is its row
+/// plus its run's base. A run either puts every visible row in one bucket, or looks each row up
+/// in `row_buckets`, where [`NO_BUCKET`] drops the row. Returns the number of entries.
+///
+/// Each run culls into its own part of a scratch list and counts its rows per bucket, on the
+/// job workers too when the runs hold many rows. A prefix sum over the buckets and runs then
+/// gives each run the places of its rows in the list, and a second pass copies them there, in
+/// parallel when the list is long. Runs are best kept to [`CULL_CHUNK`] rows or fewer, so the
+/// work spreads over the workers.
+///
+/// # Panics
+/// When `out` has less room than the runs, their rows or the buckets need, or a run's bucket is
+/// out of range.
+pub fn cull_into_buckets<'a>(
+    jobs: &JobSystem,
+    frustum: &Frustum,
+    sets: &(dyn Fn(u32) -> SphereArrays<'a> + Sync),
+    runs: &[CullRun],
+    row_buckets: &[u32],
+    buckets: u32,
+    out: &mut BucketedCull,
+) -> usize {
+    let bucket_count = buckets as usize;
+    assert!(
+        runs.len() <= out.run_offsets.len() && bucket_count < out.bucket_starts.len(),
+        "the output has room for {} runs and {} buckets, fewer than {} and {bucket_count}",
+        out.run_offsets.len(),
+        out.bucket_starts.len().saturating_sub(1),
+        runs.len()
+    );
+    out.buckets = bucket_count;
+    // Each run's part of the scratch list, and for a looked-up run the start of its histogram,
+    // which it keeps in its position slot until the second pass.
+    let mut rows = 0;
+    let mut histogram_at = 0;
+    for (index, run) in runs.iter().enumerate() {
+        assert!(
+            run.bucket == BY_ROW || run.bucket < buckets,
+            "run bucket {} is out of range",
+            run.bucket
+        );
+        out.run_offsets[index] = rows as u32;
+        rows += run.len();
+        if run.bucket == BY_ROW {
+            out.run_positions[index] = histogram_at as u32;
+            histogram_at += bucket_count;
+        }
+    }
+    assert!(
+        rows <= out.scratch.len() && histogram_at <= out.histograms.len(),
+        "the output has too little room for {rows} rows and {histogram_at} histogram counts"
+    );
+
+    // Pass 1: cull each run into its part of the scratch list, and count looked-up rows per
+    // bucket in the run's histogram.
+    let scratch = SharedMut::new(&mut out.scratch);
+    let counts = SharedMut::new(&mut out.run_counts);
+    let histograms = SharedMut::new(&mut out.histograms);
+    let (offsets, positions) = (&out.run_offsets, &out.run_positions);
+    let cull = |index: usize| {
+        let run = runs[index];
+        let spheres = sets(run.set);
+        // SAFETY: each run writes only its own part of the scratch list, its own count and its
+        // own histogram; the parts of different runs do not overlap.
+        let dst = unsafe { scratch.slice(offsets[index] as usize, run.len()) };
+        let visible = cull_spheres(
+            frustum,
+            spheres.xs,
+            spheres.ys,
+            spheres.zs,
+            spheres.radii,
+            run.start..run.end,
+            dst,
+        );
+        // SAFETY: as above.
+        unsafe { counts.write(index, visible as u32) };
+        if run.bucket == BY_ROW {
+            // SAFETY: as above.
+            let histogram = unsafe { histograms.slice(positions[index] as usize, bucket_count) };
+            histogram.fill(0);
+            for &row in &dst[..visible] {
+                let bucket = row_buckets[row as usize];
+                if bucket != NO_BUCKET {
+                    histogram[bucket as usize] += 1;
+                }
+            }
+        }
+    };
+    if rows >= PARALLEL_CULL_THRESHOLD {
+        jobs.parallel_for(runs.len() as u32, 1, &|range, _| {
+            for index in range {
+                cull(index as usize);
+            }
+        });
+    } else {
+        (0..runs.len()).for_each(cull);
+    }
+
+    // Bucket totals, then each bucket's start, then each run's place in its buckets.
+    let totals = &mut out.cursors[..bucket_count];
+    totals.fill(0);
+    for (index, run) in runs.iter().enumerate() {
+        if run.bucket == BY_ROW {
+            let at = out.run_positions[index] as usize;
+            for (total, count) in totals
+                .iter_mut()
+                .zip(&out.histograms[at..at + bucket_count])
+            {
+                *total += count;
+            }
+        } else {
+            totals[run.bucket as usize] += out.run_counts[index];
+        }
+    }
+    let mut total = 0;
+    for (start, cursor) in out.bucket_starts.iter_mut().zip(totals.iter_mut()) {
+        *start = total;
+        total += *cursor;
+        *cursor = *start;
+    }
+    out.bucket_starts[bucket_count] = total;
+    let cursors = &mut out.cursors[..bucket_count];
+    for (index, run) in runs.iter().enumerate() {
+        if run.bucket == BY_ROW {
+            let at = out.run_positions[index] as usize;
+            for (count, cursor) in out.histograms[at..at + bucket_count]
+                .iter_mut()
+                .zip(cursors.iter_mut())
+            {
+                let start = *cursor;
+                *cursor += *count;
+                *count = start;
+            }
+        } else {
+            let cursor = &mut cursors[run.bucket as usize];
+            out.run_positions[index] = *cursor;
+            *cursor += out.run_counts[index];
+        }
+    }
+
+    // Pass 2: copy each run's visible rows to their places, adding the run's base.
+    let (scratch, offsets, counts, positions) = (
+        &out.scratch,
+        &out.run_offsets,
+        &out.run_counts,
+        &out.run_positions,
+    );
+    let indices = SharedMut::new(&mut out.indices);
+    let histograms = SharedMut::new(&mut out.histograms);
+    let place = |index: usize| {
+        let run = runs[index];
+        let from = offsets[index] as usize;
+        let visible = &scratch[from..from + counts[index] as usize];
+        if run.bucket == BY_ROW {
+            // SAFETY: the run's histogram holds its own write positions, and the prefix sum gave
+            // each run and bucket its own range of the list, so no two runs write one place.
+            let next = unsafe { histograms.slice(positions[index] as usize, bucket_count) };
+            for &row in visible {
+                let bucket = row_buckets[row as usize];
+                if bucket != NO_BUCKET {
+                    let at = &mut next[bucket as usize];
+                    // SAFETY: as above.
+                    unsafe { indices.write(*at as usize, row + run.base) };
+                    *at += 1;
+                }
+            }
+        } else {
+            // SAFETY: as above.
+            let dst = unsafe { indices.slice(positions[index] as usize, visible.len()) };
+            for (entry, &row) in dst.iter_mut().zip(visible) {
+                *entry = row + run.base;
+            }
+        }
+    };
+    if total as usize >= PARALLEL_PACK_THRESHOLD {
+        jobs.parallel_for(runs.len() as u32, 1, &|range, _| {
+            for index in range {
+                place(index as usize);
+            }
+        });
+    } else {
+        (0..runs.len()).for_each(place);
     }
     out.len = total as usize;
     out.len

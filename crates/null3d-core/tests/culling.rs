@@ -3,115 +3,12 @@
 
 mod common;
 
-use common::{Rng, Workers, mul4, perspective};
+use common::{Rng, Workers, frusta, orthographic, perspective, random_spheres};
 use null3d_core::culling::{
-    CullOutput, Frustum, cull_parallel, cull_spheres, cull_spheres_reference,
+    BY_ROW, BucketedCull, CULL_CHUNK, CullOutput, CullRun, Frustum, NO_BUCKET, cull_into_buckets,
+    cull_parallel, cull_spheres, cull_spheres_reference,
 };
 use null3d_core::world::SphereArrays;
-
-type Mat4 = [f32; 16];
-
-/// A perspective projection with reversed depth (1 at near, 0 at far), or an infinite far plane
-/// when `far` is `None`.
-fn reversed_perspective(fov_y: f32, aspect: f32, near: f32, far: Option<f32>) -> Mat4 {
-    let f = 1.0 / (fov_y / 2.0).tan();
-    let mut m = [0.0; 16];
-    m[0] = f / aspect;
-    m[5] = f;
-    m[11] = -1.0;
-    match far {
-        Some(far) => {
-            m[10] = near / (far - near);
-            m[14] = far * near / (far - near);
-        }
-        None => m[14] = near,
-    }
-    m
-}
-
-/// An orthographic projection in WebGPU's clip space.
-fn orthographic(left: f32, right: f32, bottom: f32, top: f32, near: f32, far: f32) -> Mat4 {
-    let mut m = [0.0; 16];
-    m[0] = 2.0 / (right - left);
-    m[5] = 2.0 / (top - bottom);
-    m[10] = 1.0 / (near - far);
-    m[12] = -(right + left) / (right - left);
-    m[13] = -(top + bottom) / (top - bottom);
-    m[14] = near / (near - far);
-    m[15] = 1.0;
-    m
-}
-
-/// A view matrix for a camera at `eye` turned by `yaw` about Y and `pitch` about X.
-fn view(eye: [f32; 3], yaw: f32, pitch: f32) -> Mat4 {
-    let (sy, cy) = yaw.sin_cos();
-    let (sp, cp) = pitch.sin_cos();
-    // Rows of the inverse rotation are the camera axes.
-    let right = [cy, 0.0, -sy];
-    let up = [sy * sp, cp, cy * sp];
-    let back = [sy * cp, -sp, cy * cp];
-    let dot = |a: [f32; 3]| a[0] * eye[0] + a[1] * eye[1] + a[2] * eye[2];
-    [
-        right[0],
-        up[0],
-        back[0],
-        0.0, //
-        right[1],
-        up[1],
-        back[1],
-        0.0, //
-        right[2],
-        up[2],
-        back[2],
-        0.0, //
-        -dot(right),
-        -dot(up),
-        -dot(back),
-        1.0,
-    ]
-}
-
-fn frusta() -> Vec<Frustum> {
-    let matrices = [
-        perspective(1.0, 16.0 / 9.0, 0.1, 500.0),
-        mul4(
-            &perspective(0.6, 1.0, 1.0, 80.0),
-            &view([3.0, 10.0, 40.0], 0.7, -0.3),
-        ),
-        mul4(
-            &reversed_perspective(1.2, 1.5, 0.5, Some(200.0)),
-            &view([-20.0, 0.0, 5.0], -1.9, 0.2),
-        ),
-        mul4(
-            &reversed_perspective(1.4, 2.0, 0.25, None),
-            &view([0.0, 50.0, 0.0], 3.0, -1.2),
-        ),
-        mul4(
-            &orthographic(-60.0, 60.0, -30.0, 30.0, 1.0, 300.0),
-            &view([0.0, 0.0, 100.0], 0.2, 0.1),
-        ),
-    ];
-    matrices.iter().map(Frustum::from_view_projection).collect()
-}
-
-/// `count` random spheres in a 400-unit cube, some hidden, some huge, and a few degenerate.
-fn random_spheres(count: usize, seed: u64) -> [Vec<f32>; 4] {
-    let mut rng = Rng::new(seed);
-    let mut arrays: [Vec<f32>; 4] = Default::default();
-    for _ in 0..count {
-        arrays[0].push(rng.range(-200.0, 200.0));
-        arrays[1].push(rng.range(-200.0, 200.0));
-        arrays[2].push(rng.range(-200.0, 200.0));
-        arrays[3].push(match rng.below(100) {
-            0 => f32::NEG_INFINITY,
-            1 => f32::NAN,
-            2 => rng.range(50.0, 400.0),
-            3 => 0.0,
-            _ => rng.range(0.0, 8.0),
-        });
-    }
-    arrays
-}
 
 #[test]
 fn simd_matches_the_scalar_reference_on_100k_random_spheres() {
@@ -214,6 +111,153 @@ fn parallel_culling_matches_the_reference_for_0_to_8_workers() {
             }
         }
     }
+}
+
+/// Splits rows `0..rows` of a set into runs of at most one culling chunk.
+fn runs_of(set: u32, rows: u32, bucket: u32, base: u32, out: &mut Vec<CullRun>) {
+    let mut start = 0;
+    while start < rows {
+        let end = (start + CULL_CHUNK).min(rows);
+        out.push(CullRun {
+            set,
+            start,
+            end,
+            bucket,
+            base,
+        });
+        start = end;
+    }
+}
+
+/// The list [`cull_into_buckets`] must make, one run and one row at a time: every visible entry
+/// in bucket order, and within a bucket in run order and row order.
+fn bucketed_reference(
+    frustum: &Frustum,
+    sets: &[[Vec<f32>; 4]],
+    runs: &[CullRun],
+    row_buckets: &[u32],
+    buckets: u32,
+) -> (Vec<u32>, Vec<u32>) {
+    let mut by_bucket = vec![Vec::new(); buckets as usize];
+    for run in runs {
+        let [xs, ys, zs, rs] = &sets[run.set as usize];
+        let mut visible = vec![0; xs.len()];
+        let n = cull_spheres_reference(frustum, xs, ys, zs, rs, run.start..run.end, &mut visible);
+        for &row in &visible[..n] {
+            let bucket = if run.bucket == BY_ROW {
+                row_buckets[row as usize]
+            } else {
+                run.bucket
+            };
+            if bucket != NO_BUCKET {
+                by_bucket[bucket as usize].push(row + run.base);
+            }
+        }
+    }
+    let mut starts = vec![0];
+    for list in &by_bucket {
+        starts.push(starts.last().unwrap() + list.len() as u32);
+    }
+    (by_bucket.concat(), starts)
+}
+
+#[test]
+fn bucketed_culling_matches_the_reference_for_0_to_8_workers() {
+    const BUCKETS: u32 = 7;
+    // A scene whose rows look up their buckets, some drawing nowhere, and two batches that each
+    // fill one bucket. The first batch is long enough that the copy pass runs in parallel.
+    let sets = [
+        random_spheres(10_001, 21),
+        random_spheres(90_000, 22),
+        random_spheres(4_099, 23),
+    ];
+    let mut rng = Rng::new(24);
+    let row_buckets: Vec<u32> = (0..10_001)
+        .map(|_| match rng.below(10) {
+            0 => NO_BUCKET,
+            _ => rng.below(BUCKETS),
+        })
+        .collect();
+    let mut runs = Vec::new();
+    runs_of(0, 10_001, BY_ROW, 0, &mut runs);
+    runs_of(1, 90_000, 3, 20_000, &mut runs);
+    runs.push(CullRun {
+        set: 2,
+        start: 7,
+        end: 7,
+        bucket: 5,
+        base: 0,
+    });
+    runs_of(2, 4_099, 3, 200_000, &mut runs);
+    let by_row = runs.iter().filter(|r| r.bucket == BY_ROW).count() as u32;
+    let rows: u32 = runs.iter().map(|r| r.end - r.start).sum();
+    let spheres = |set: u32| {
+        let [xs, ys, zs, rs] = &sets[set as usize];
+        SphereArrays::new(xs, ys, zs, rs)
+    };
+    // The usual views, and one that culls nothing, so the list is long enough for the parallel
+    // copy.
+    let mut views = frusta();
+    views.push(Frustum::from_planes([[0.0; 4]; 6]));
+    for workers in [0, 1, 2, 3, 4, 8] {
+        let pool = Workers::start(workers);
+        let mut out = BucketedCull::default();
+        out.try_reserve(rows, runs.len() as u32, by_row, BUCKETS)
+            .unwrap();
+        let mut longest = 0;
+        for (f, frustum) in views.iter().enumerate() {
+            let n = cull_into_buckets(
+                pool.jobs(),
+                frustum,
+                &spheres,
+                &runs,
+                &row_buckets,
+                BUCKETS,
+                &mut out,
+            );
+            let (entries, starts) =
+                bucketed_reference(frustum, &sets, &runs, &row_buckets, BUCKETS);
+            assert_eq!(n, entries.len(), "{workers} workers, frustum {f}");
+            assert_eq!(
+                out.indices(),
+                &entries[..],
+                "{workers} workers, frustum {f}"
+            );
+            assert_eq!(
+                out.bucket_starts(),
+                &starts[..],
+                "{workers} workers, frustum {f}"
+            );
+            longest = longest.max(n);
+        }
+        assert!(
+            longest > 1 << 15,
+            "no view made a long list: {longest} entries"
+        );
+    }
+}
+
+#[test]
+#[should_panic(expected = "fewer than")]
+fn a_bucketed_output_without_room_for_the_runs_panics() {
+    let v = vec![0.0; 10];
+    let frustum = Frustum::from_view_projection(&perspective(1.0, 1.0, 0.1, 10.0));
+    let run = CullRun {
+        set: 0,
+        start: 0,
+        end: 10,
+        bucket: 0,
+        base: 0,
+    };
+    cull_into_buckets(
+        &null3d_core::jobs::JobSystem::new(0),
+        &frustum,
+        &|_| SphereArrays::new(&v, &v, &v, &v),
+        &[run],
+        &[],
+        1,
+        &mut BucketedCull::default(),
+    );
 }
 
 #[test]

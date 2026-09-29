@@ -132,15 +132,17 @@ describe('summarizeFrames', () => {
 			[3, 3],
 			[4, 1],
 		] as const) {
-			record(sketch, frame, busy, busy);
+			sketch.begin(frame);
+			sketch.addPhase(Phase.Update, busy);
+			// Only the first frame rebuilt its draw tables.
+			sketch.count(Counter.Rebuilds, frame === 1 ? 1 : 0);
+			sketch.commit(busy);
 			record(job, frame, 0.5);
 		}
 		for (const frame of [1, 2, 3]) {
 			render.begin(frame);
 			render.interval(frame === 1 ? 0 : 16);
 			render.count(Counter.DrawCalls, 10);
-			// Only the first frame rebuilt its draw tables.
-			render.count(Counter.Rebuilds, frame === 1 ? 1 : 0);
 			render.commit(2);
 			record(gpu, frame, 0.1 * frame);
 			// The GPU finishes each frame 4 ms after its submit, 32 ms apart: half the presented rate.

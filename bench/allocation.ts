@@ -3,9 +3,11 @@
 // the few places that allocate because the browser does each have a budget below. It opens the
 // null3d S1 page in Chrome, lets the browser optimize the frame code, attaches the heap profiler to
 // both workers through Chrome's debugging protocol, samples allocations for a few seconds, and
-// prints the bytes per frame of every place that allocated. From the repository root:
+// prints the bytes per frame of every place that allocated. It draws with WebGPU, or with WebGL2
+// when `--gpu webgl2` asks for it. From the repository root:
 //   bun run bench:allocation
-//   bun run bench:allocation -- --n 30000 --seconds 5 --warmup 30
+//   bun run bench:allocation --n 30000 --seconds 5 --warmup 30
+//   bun run bench:allocation --gpu webgl2
 // At 30,000 instances a frame's upload goes through the staging ring; at 100,000 it does not.
 import { chromium } from '@playwright/test';
 import { startServer } from '../tests/lib/server.ts';
@@ -222,6 +224,9 @@ async function main(): Promise<void> {
 	};
 	const n = option('--n', 100_000);
 	const seconds = option('--seconds', 5);
+	const gpu = args.includes('--gpu') ? args[args.indexOf('--gpu') + 1] : 'webgpu';
+	if (gpu !== 'webgpu' && gpu !== 'webgl2')
+		throw new Error(`--gpu takes webgpu or webgl2, not ${gpu}`);
 	// The browser optimizes code that runs once per frame only after many frames; until then,
 	// numbers that such code computes are allocated.
 	const warmup = option('--warmup', WARMUP_SECONDS);
@@ -235,7 +240,8 @@ async function main(): Promise<void> {
 		const page = await browser.newPage({ viewport: { width: 1400, height: 800 } });
 		// The page's own measurement starts after the sampling ends, so its timers stay off.
 		const pageSeconds = warmup + seconds + 60;
-		const url = `${server.url}${pagePath('s1', 'null3d-webgpu', `seconds=${pageSeconds}&n=${n}`)}`;
+		const kind = gpu === 'webgl2' ? 'null3d-webgl2' : 'null3d-webgpu';
+		const url = `${server.url}${pagePath('s1', kind, `seconds=${pageSeconds}&n=${n}`)}`;
 		await page.goto(url);
 		// Counts the display's frames on the page, which the render worker draws at the same rate.
 		await page.evaluate(() => {
@@ -287,7 +293,7 @@ async function main(): Promise<void> {
 		const frames = (await framesSoFar()) - startFrames;
 		devtools.close();
 		console.log(
-			`S1 with ${n} instances, sampled for ${seconds} s after ${warmup} s: ${frames} frames`,
+			`S1 on ${gpu} with ${n} instances, sampled for ${seconds} s after ${warmup} s: ${frames} frames`,
 		);
 		const over: string[] = [];
 		for (const [worker, head] of profiles) {

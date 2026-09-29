@@ -66,7 +66,7 @@ self.onmessage = async (event: MessageEvent<SketchWorkerMessage>) => {
 					memory,
 					slots: controlSlots,
 					jobWorkers: message.jobWorkers,
-					storageBindingBytes: message.storageBindingBytes,
+					device: message.device,
 				},
 			);
 			await runner.load(message.sketchUrl);
@@ -76,7 +76,7 @@ self.onmessage = async (event: MessageEvent<SketchWorkerMessage>) => {
 					createRenderer(setup.canvas, {
 						...setup,
 						metrics: message.metrics,
-						storageBindingBytes: message.storageBindingBytes,
+						device: message.device,
 						scene: { memory, control: message.control },
 					});
 				const sketch = runner;

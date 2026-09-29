@@ -229,7 +229,7 @@ export function s1StaticCamera(t: number, outPosition: OutArray, outTarget: OutA
 
 // S2, the hierarchy: a forest of trees of separate objects, whose roots turn every frame.
 
-/** Trees in the forest. */
+/** Trees in the forest when a page asks for no count. */
 export const S2_ROOTS = 14;
 /** Children of every node above the last level. */
 export const S2_BRANCHING = 3;
@@ -237,7 +237,7 @@ export const S2_BRANCHING = 3;
 export const S2_DEPTH = 6;
 /** Nodes per tree: 1 + 3 + 9 + 27 + 81 + 243. */
 export const S2_NODES_PER_TREE = (S2_BRANCHING ** S2_DEPTH - 1) / (S2_BRANCHING - 1);
-/** Nodes in the forest. */
+/** Nodes in the forest when a page asks for no count. */
 export const S2_NODE_COUNT = S2_ROOTS * S2_NODES_PER_TREE;
 /** Box meshes that the nodes share. */
 export const S2_MESH_COUNT = 20;
@@ -279,24 +279,31 @@ export interface S2Data {
 	scale: Float32Array;
 }
 
+/** The trees of a forest with at least `count` nodes: whole trees, and at least one. */
+export function s2Trees(count: number): number {
+	return Math.max(1, Math.ceil(count / S2_NODES_PER_TREE));
+}
+
 /**
- * Makes the forest. For each node in depth-first order, the generator draws, below the roots
- * only, the offset angle, the height in [-1, 1) and the rotation; then, for every node, the mesh
- * and the material. A root's rotation is 0 here, because `s2RootRotation` sets it each frame.
+ * Makes a forest of `trees` trees. For each node in depth-first order, the generator draws, below
+ * the roots only, the offset angle, the height in [-1, 1) and the rotation; then, for every node,
+ * the mesh and the material. A root's rotation is 0 here, because `s2RootRotation` sets it each
+ * frame.
  */
-export function createS2(seed = 2): S2Data {
+export function createS2(seed = 2, trees = S2_ROOTS): S2Data {
 	const random = mulberry32(seed);
+	const nodes = trees * S2_NODES_PER_TREE;
 	const data: S2Data = {
-		parent: new Int32Array(S2_NODE_COUNT),
-		depth: new Uint8Array(S2_NODE_COUNT),
-		mesh: new Uint8Array(S2_NODE_COUNT),
-		material: new Uint8Array(S2_NODE_COUNT),
-		position: new Float32Array(S2_NODE_COUNT * 3),
-		rotationY: new Float32Array(S2_NODE_COUNT),
-		scale: new Float32Array(S2_NODE_COUNT),
+		parent: new Int32Array(nodes),
+		depth: new Uint8Array(nodes),
+		mesh: new Uint8Array(nodes),
+		material: new Uint8Array(nodes),
+		position: new Float32Array(nodes * 3),
+		rotationY: new Float32Array(nodes),
+		scale: new Float32Array(nodes),
 	};
 	const { columns, spacing } = S2_GRID;
-	const rows = Math.ceil(S2_ROOTS / columns);
+	const rows = Math.ceil(trees / columns);
 	let next = 0;
 	const addNode = (parent: number, depth: number, root: number): void => {
 		const i = next++;
@@ -321,7 +328,7 @@ export function createS2(seed = 2): S2Data {
 			for (let c = 0; c < S2_BRANCHING; c++) addNode(i, depth + 1, root);
 		}
 	};
-	for (let root = 0; root < S2_ROOTS; root++) addNode(-1, 0, root);
+	for (let root = 0; root < trees; root++) addNode(-1, 0, root);
 	return data;
 }
 

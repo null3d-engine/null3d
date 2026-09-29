@@ -2,7 +2,7 @@
 //! command a real GPU would reject.
 
 use crate::caps::OFFSET_ALIGNMENT;
-use crate::drawlist::{Command, NO_TARGET, Op, decode};
+use crate::drawlist::{Command, NO_TARGET, Op, decode, resource_kind};
 use std::collections::{HashMap, HashSet};
 
 #[derive(Debug, PartialEq, Eq)]
@@ -18,7 +18,8 @@ pub enum MockError {
 #[derive(Default)]
 pub struct MockBackend {
     buffers: HashMap<u32, u32>,
-    textures: HashSet<u32>,
+    /// Width and height of each texture.
+    textures: HashMap<u32, (u32, u32)>,
     render_pipelines: HashSet<u32>,
     compute_pipelines: HashSet<u32>,
     bind_groups: HashSet<u32>,
@@ -75,11 +76,21 @@ impl MockBackend {
                     return Err(MockError::OutOfRange { op, id: o[0] });
                 }
             }
+            Op::WriteTexture => {
+                let &(width, height) = self.textures.get(&o[0]).ok_or(MockError::Missing {
+                    op,
+                    what: "texture",
+                    id: o[0],
+                })?;
+                if o[1] + o[3] > width || o[2] + o[4] > height {
+                    return Err(MockError::OutOfRange { op, id: o[0] });
+                }
+            }
             Op::DestroyBuffer => {
                 self.buffers.remove(&o[0]);
             }
             Op::CreateTexture => {
-                self.textures.insert(o[0]);
+                self.textures.insert(o[0], (o[1], o[2]));
             }
             Op::DestroyTexture => {
                 self.textures.remove(&o[0]);
@@ -103,13 +114,20 @@ impl MockBackend {
             }
             Op::CreateBindGroup => {
                 for entry in o[3..].chunks(5) {
-                    if entry[1] == crate::drawlist::resource_kind::BUFFER {
-                        Self::require(
+                    match entry[1] {
+                        resource_kind::BUFFER => Self::require(
                             self.buffers.contains_key(&entry[2]),
                             op,
                             "buffer",
                             entry[2],
-                        )?;
+                        )?,
+                        resource_kind::TEXTURE => Self::require(
+                            self.textures.contains_key(&entry[2]),
+                            op,
+                            "texture",
+                            entry[2],
+                        )?,
+                        _ => {}
                     }
                 }
                 self.bind_groups.insert(o[0]);
@@ -117,7 +135,7 @@ impl MockBackend {
             Op::BeginRenderPass => {
                 for target in [o[0], o[1], o[2]] {
                     if target != 0 && target != NO_TARGET {
-                        Self::require(self.textures.contains(&target), op, "texture", target)?;
+                        Self::require(self.textures.contains_key(&target), op, "texture", target)?;
                     }
                 }
                 self.in_render_pass = true;
@@ -170,7 +188,7 @@ impl MockBackend {
                 Self::require(self.buffers.contains_key(&o[0]), op, "buffer", o[0])?;
                 self.index_buffer_set = true;
             }
-            Op::Draw | Op::DrawIndexed | Op::DrawIndexedIndirect => {
+            Op::Draw | Op::DrawIndexed | Op::DrawIndexedIndirect | Op::MultiDrawIndexed => {
                 if !self.in_draw_scope() {
                     return Err(MockError::Outside {
                         op,
@@ -203,7 +221,7 @@ impl MockBackend {
                         o[0],
                     )?;
                 }
-                self.draws += 1;
+                self.draws += if op == Op::MultiDrawIndexed { o[0] } else { 1 };
             }
             Op::ExecuteBundles => {
                 if !self.in_render_pass {
@@ -331,6 +349,60 @@ mod tests {
         let mut backend = MockBackend::default();
         assert_eq!(backend.replay(list.words()), Ok(()));
         assert_eq!((backend.draws, backend.submits), (1, 1));
+    }
+
+    #[test]
+    fn a_frame_that_reads_instances_from_data_textures_replays() {
+        let mut list = DrawList::with_capacity(256);
+        setup(&mut list);
+        list.push(
+            Op::CreateTexture,
+            &[2, 1536, 4, 1, format::RGBA32_FLOAT, 0x06, 1, 1],
+        )
+        .unwrap();
+        list.push(
+            Op::CreateBindGroup,
+            &[
+                2,
+                crate::drawlist::layout::INSTANCES,
+                1,
+                0,
+                resource_kind::TEXTURE,
+                2,
+                0,
+                0,
+            ],
+        )
+        .unwrap();
+        list.push(Op::WriteTexture, &[2, 0, 0, 1536, 4, 0x1000, 1536 * 4 * 16])
+            .unwrap();
+        list.push(
+            Op::BeginRenderPass,
+            &[0, NO_TARGET, 1, 0, 0, 0, 0, 0, pass_flags::CLEAR_COLOR],
+        )
+        .unwrap();
+        list.push(Op::SetPipeline, &[1]).unwrap();
+        list.push(Op::SetBindGroup, &[2, 2, 0]).unwrap();
+        list.push(Op::SetVertexBuffer, &[0, 1, 0, 0]).unwrap();
+        list.push(Op::SetIndexBuffer, &[2, index_format::UINT16, 0, 0])
+            .unwrap();
+        list.push(Op::MultiDrawIndexed, &[3, 0x2000, 0x2010, 0x2020])
+            .unwrap();
+        list.push(Op::EndRenderPass, &[]).unwrap();
+
+        let mut backend = MockBackend::default();
+        assert_eq!(backend.replay(list.words()), Ok(()));
+        assert_eq!(backend.draws, 3, "each draw of a multi-draw counts");
+
+        let mut past_the_edge = DrawList::with_capacity(256);
+        setup(&mut past_the_edge);
+        past_the_edge
+            .push(Op::WriteTexture, &[1, 32, 60, 64, 8, 0x1000, 64 * 8 * 16])
+            .unwrap();
+        assert!(matches!(
+            MockBackend::default().replay(past_the_edge.words()),
+            Err(MockError::OutOfRange { .. })
+        ));
     }
 
     #[test]

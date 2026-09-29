@@ -2,9 +2,11 @@
 // built on frame callbacks keeps counting at the display rate while the GPU falls behind, so the
 // engine also counts completions. WebGPU reports them through the queue. WebGL2 reports them
 // through a fence, which the renderer checks at the start of its next frame and never waits on, so
-// a fence's time rounds up to that frame. Tracking runs only while the page measures.
+// a fence's time rounds up to that frame. Tracking runs only while the page measures, on one
+// submitted frame in every SAMPLED_EVERY: the GPU finishes frames in order, so a tracked frame's
+// completion also completes the frames submitted before it.
 
-import { FrameRecorder, Role } from '../shared/metrics';
+import { FrameRecorder, Role, SAMPLED_EVERY } from '../shared/metrics';
 
 /** How a renderer learns that the GPU finished a frame. */
 export type CompletionSignal = 'queue' | 'fence';
@@ -12,13 +14,17 @@ export type CompletionSignal = 'queue' | 'fence';
 /** Frames whose completion can be awaited at once; a frame that finds none free goes untracked. */
 const SLOTS = 8;
 
-/** Submit times and frame numbers of the frames in flight, in submit order, and their records. */
+/** Submit times and frame numbers of the tracked frames in flight, in submit order, and their records. */
 class InFlight {
 	private readonly submitted = new Float64Array(SLOTS);
 	private readonly frames = new Uint32Array(SLOTS);
+	/** For each tracked frame, the count of frames submitted up to it. */
+	private readonly submits = new Float64Array(SLOTS);
 	private head = 0;
 	private tail = 0;
 	private lastDone = -1;
+	private lastSubmits = 0;
+	private submitCount = 0;
 
 	constructor(private readonly recorder: FrameRecorder) {}
 
@@ -30,25 +36,35 @@ class InFlight {
 		return this.head - this.tail;
 	}
 
-	/** Remembers a submitted frame; false when every slot is taken. */
+	/**
+	 * Counts a submitted frame and remembers it when it is a sampled one; false when it is not
+	 * sampled or every slot is taken.
+	 */
 	push(frame: number): boolean {
-		if (this.count >= SLOTS) return false;
+		if (this.submitCount++ % SAMPLED_EVERY !== 0 || this.count >= SLOTS) return false;
 		const slot = this.head % SLOTS;
 		this.submitted[slot] = performance.now();
 		this.frames[slot] = frame;
+		this.submits[slot] = this.submitCount;
 		this.head++;
 		return true;
 	}
 
-	/** Records the oldest frame in flight as finished now. */
+	/**
+	 * Records the oldest tracked frame as finished now. The time since the previous completion
+	 * covers every frame submitted in between, so each frame's share of it is its interval.
+	 */
 	finish(): void {
 		if (this.count === 0) return;
 		const slot = this.tail % SLOTS;
 		const now = performance.now();
+		const submits = this.submits[slot] as number;
 		this.recorder.begin(this.frames[slot] as number);
-		if (this.lastDone >= 0) this.recorder.interval(now - this.lastDone);
+		if (this.lastDone >= 0)
+			this.recorder.interval((now - this.lastDone) / (submits - this.lastSubmits));
 		this.recorder.commit(now - (this.submitted[slot] as number));
 		this.lastDone = now;
+		this.lastSubmits = submits;
 		this.tail++;
 	}
 }
@@ -66,7 +82,7 @@ export class QueueCompletion {
 		this.frames = new InFlight(new FrameRecorder(metrics, Role.Completion));
 	}
 
-	/** Tracks the frame just submitted, while the page measures. */
+	/** Tracks the frame just submitted, while the page measures, when it is a sampled frame. */
 	afterSubmit(frame: number): void {
 		if (!this.frames.measuring || !this.frames.push(frame)) return;
 		this.queue.onSubmittedWorkDone().then(this.onDone, this.onDone);
@@ -90,7 +106,7 @@ export class FenceCompletion {
 		this.frames = new InFlight(new FrameRecorder(metrics, Role.Completion));
 	}
 
-	/** Places a fence after the frame just submitted, while the page measures. */
+	/** Places a fence after the frame just submitted, while the page measures, when it is a sampled frame. */
 	afterSubmit(frame: number): void {
 		if (!this.frames.measuring || !this.frames.push(frame)) return;
 		this.fences[this.head++ % SLOTS] = this.gl.fenceSync(this.gl.SYNC_GPU_COMMANDS_COMPLETE, 0);

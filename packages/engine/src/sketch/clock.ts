@@ -10,20 +10,23 @@ export const MAX_STEP_SECONDS = 0.25;
 export class FrameClock {
 	/** Sketch time in seconds: the sum of every step, so paused and hidden time do not count. */
 	now = 0;
+	/** The last frame's step in seconds. */
+	dt = 0;
 	private last = -1;
 	private resumes = 0;
 
 	/**
-	 * The step in seconds for a frame at `timestamp` milliseconds. `resumes` is the page's count of
-	 * resumes, which changes each time the sketch resumes or a hidden page shows again.
+	 * Takes the step for a frame at `timestamp` milliseconds into `dt` and adds it to `now`.
+	 * `resumes` is the page's count of resumes, which changes each time the sketch resumes or a
+	 * hidden page shows again. The step stays in a field, because a fraction returned from a call
+	 * becomes a new number object each frame.
 	 */
-	step(timestamp: number, resumes: number): number {
+	advance(timestamp: number, resumes: number): void {
 		const resumed = resumes !== this.resumes;
 		this.resumes = resumes;
 		const raw = this.last < 0 || resumed ? 0 : (timestamp - this.last) / 1000;
 		this.last = timestamp;
-		const dt = Math.min(Math.max(raw, 0), MAX_STEP_SECONDS);
-		this.now += dt;
-		return dt;
+		this.dt = Math.min(Math.max(raw, 0), MAX_STEP_SECONDS);
+		this.now += this.dt;
 	}
 }

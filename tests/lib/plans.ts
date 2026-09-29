@@ -18,6 +18,7 @@ import {
 	parityFiles,
 	passesWithBaseline,
 	SCENE_CODE,
+	type StoredBaselines,
 	TIER_PAIRS,
 } from '../../bench/lib/parity.ts';
 import { MEASURE_SECONDS, WARMUP_SECONDS } from '../../bench/scenes/spec.ts';
@@ -49,6 +50,8 @@ export interface JudgeContext {
 	resultOf(id: string): ItemResult | undefined;
 	/** The folder for images that judging saves, such as parity diffs. */
 	imageDir: string;
+	/** Baselines measured on a device that draws with both of three.js's renderers. */
+	storedBaselines?: StoredBaselines;
 }
 
 const TEST_PAGES = '/tests/pages/';
@@ -140,6 +143,7 @@ const BENCH_RUNS = 3;
  */
 const BENCH_PAGES: readonly [BenchPageKind, Tier][] = [
 	['null3d-webgpu', 'webgpu'],
+	['null3d-webgl2', 'webgl2'],
 	['threejs-webgpu', 'webgpu'],
 	['threejs-webgl', 'webgl2'],
 	[SCENE_CODE, 'webgl2'],
@@ -208,16 +212,27 @@ function missingPath(path: Tier, error: string | undefined): boolean {
 	return error !== undefined && starts.some((start) => error.startsWith(start));
 }
 
-/** How much three.js's two renderers differ on a scene's hold frame in the same run, if both drew it. */
-function baselineShare(scene: ParityScene, context: JudgeContext): number | null {
+/**
+ * How much three.js's two renderers differ on a scene's hold frame: in the same run when both drew
+ * it, or else as stored from a device that draws with both.
+ */
+function baselineShare(
+	scene: ParityScene,
+	context: JudgeContext,
+): { share: number; stored: boolean } | null {
 	try {
 		const webgl = context.resultOf(parityItemId(scene, BASELINE_PAIR.candidate));
 		const webgpu = context.resultOf(parityItemId(scene, BASELINE_PAIR.reference));
-		if (!webgl || !webgpu) return null;
-		return compareFrames(decodeHoldResult(webgl), decodeHoldResult(webgpu)).share;
+		if (webgl?.ok && webgpu?.ok)
+			return {
+				share: compareFrames(decodeHoldResult(webgl), decodeHoldResult(webgpu)).share,
+				stored: false,
+			};
 	} catch {
-		return null;
+		// A frame that cannot be read gives no baseline from this run.
 	}
+	const stored = context.storedBaselines?.[scene];
+	return stored === undefined ? null : { share: stored, stored: true };
 }
 
 /**
@@ -246,9 +261,10 @@ function parityProblems(
 		mkdirSync(context.imageDir, { recursive: true });
 		for (const { file, png } of files) writeFileSync(join(context.imageDir, file), png);
 		const baseline = baselineShare(check.scene, context);
-		if (passesWithBaseline(comparison.share, baseline)) return [];
+		if (passesWithBaseline(comparison.share, baseline?.share ?? null)) return [];
 		const images = files.map(({ file }) => join(context.imageDir, file)).join(', ');
-		return [`against ${referenceId}, ${differenceText(comparison, baseline)}. Images: ${images}`];
+		const text = differenceText(comparison, baseline?.share ?? null, baseline?.stored);
+		return [`against ${referenceId}, ${text}. Images: ${images}`];
 	} catch (e) {
 		return [(e as Error).message];
 	}

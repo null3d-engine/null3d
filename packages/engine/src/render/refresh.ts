@@ -12,7 +12,11 @@ const SNAP_SHARE = 0.03;
 
 /** The display rate within a few percent of a measured rate, or the measured rate rounded. */
 export function snapToDisplayRate(hz: number): number {
-	for (const rate of DISPLAY_RATES) if (Math.abs(hz - rate) <= rate * SNAP_SHARE) return rate;
+	// Index loops, as in `tick`: an iterator would allocate on every call.
+	for (let k = 0; k < DISPLAY_RATES.length; k++) {
+		const rate = DISPLAY_RATES[k] as number;
+		if (Math.abs(hz - rate) <= rate * SNAP_SHARE) return rate;
+	}
 	return Math.round(hz);
 }
 
@@ -33,7 +37,8 @@ export class RefreshMeter {
 		const median = this.sorted[SAMPLES >> 1] as number;
 		let sum = 0;
 		let near = 0;
-		for (const interval of this.sorted) {
+		for (let k = 0; k < SAMPLES; k++) {
+			const interval = this.sorted[k] as number;
 			if (Math.abs(interval - median) > median * NEAR_MEDIAN) continue;
 			sum += interval;
 			near++;

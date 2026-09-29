@@ -33,6 +33,9 @@ pub enum Op {
     CreateBindGroup = 9,
     /// [buffer id, offset, size]
     ClearBuffer = 10,
+    /// [texture id, x, y, width, height, source address in engine memory, byte length]: writes a
+    /// rectangle of a data texture from tightly packed rows.
+    WriteTexture = 11,
     /// [color target texture id or 0 for the canvas, resolve target texture id or 0 for the
     /// canvas or `NO_TARGET`, depth texture id or `NO_TARGET`, clear red, green, blue, alpha (f32),
     /// clear depth (f32), pass flags]
@@ -55,6 +58,10 @@ pub enum Op {
     ExecuteBundles = 24,
     /// []
     EndRenderPass = 25,
+    /// [draw count, index counts address, index byte offsets address, instance counts address]:
+    /// many indexed draws in one call, each with one entry in each of the three `i32` arrays in
+    /// engine memory. Only on devices with `Capabilities::MULTI_DRAW`.
+    MultiDrawIndexed = 26,
     /// [bundle id, color format, depth format, sample count]; the commands up to `EndBundle` record
     /// the bundle, which then replays with `ExecuteBundles` until it is recorded again.
     BeginBundle = 32,
@@ -75,7 +82,7 @@ pub enum Op {
 }
 
 impl Op {
-    pub const ALL: [Op; 28] = [
+    pub const ALL: [Op; 30] = [
         Op::CreateBuffer,
         Op::WriteBuffer,
         Op::DestroyBuffer,
@@ -86,6 +93,7 @@ impl Op {
         Op::CreateComputePipeline,
         Op::CreateBindGroup,
         Op::ClearBuffer,
+        Op::WriteTexture,
         Op::BeginRenderPass,
         Op::SetPipeline,
         Op::SetBindGroup,
@@ -96,6 +104,7 @@ impl Op {
         Op::DrawIndexedIndirect,
         Op::ExecuteBundles,
         Op::EndRenderPass,
+        Op::MultiDrawIndexed,
         Op::BeginBundle,
         Op::EndBundle,
         Op::BeginComputePass,
@@ -122,6 +131,7 @@ impl Op {
             Op::CreateComputePipeline => "CREATE_COMPUTE_PIPELINE",
             Op::CreateBindGroup => "CREATE_BIND_GROUP",
             Op::ClearBuffer => "CLEAR_BUFFER",
+            Op::WriteTexture => "WRITE_TEXTURE",
             Op::BeginRenderPass => "BEGIN_RENDER_PASS",
             Op::SetPipeline => "SET_PIPELINE",
             Op::SetBindGroup => "SET_BIND_GROUP",
@@ -132,6 +142,7 @@ impl Op {
             Op::DrawIndexedIndirect => "DRAW_INDEXED_INDIRECT",
             Op::ExecuteBundles => "EXECUTE_BUNDLES",
             Op::EndRenderPass => "END_RENDER_PASS",
+            Op::MultiDrawIndexed => "MULTI_DRAW_INDEXED",
             Op::BeginBundle => "BEGIN_BUNDLE",
             Op::EndBundle => "END_BUNDLE",
             Op::BeginComputePass => "BEGIN_COMPUTE_PASS",
@@ -179,6 +190,10 @@ pub mod format {
     pub const RGBA16_FLOAT: u32 = 4;
     pub const DEPTH24_PLUS: u32 = 5;
     pub const DEPTH32_FLOAT: u32 = 6;
+    /// Four 32-bit floats per texel: rows of world matrices in a data texture.
+    pub const RGBA32_FLOAT: u32 = 7;
+    /// One 32-bit unsigned integer per texel: indices in a data texture.
+    pub const R32_UINT: u32 = 8;
 }
 
 /// Index formats for `SetIndexBuffer`.
@@ -214,6 +229,22 @@ pub mod layout {
     pub const FRAME: u32 = 0;
     /// Group 0 of the culling compute pipeline.
     pub const CULL: u32 = 1;
+    /// Group 1 of render pipelines that read instances from data textures: the draw records.
+    pub const DRAWS: u32 = 2;
+    /// Group 2 of render pipelines that read instances from data textures: the textures.
+    pub const INSTANCES: u32 = 3;
+}
+
+/// Bits of a render pipeline's permutation word, which pick a shader variant.
+pub mod permutation {
+    /// The vertex shader reads its draw's index, from `WEBGL_multi_draw`.
+    pub const DRAW_INDEX: u32 = 1;
+}
+
+/// Bits of a render pipeline's state flags.
+pub mod state_flags {
+    /// Draws both faces of each triangle.
+    pub const CULL_NONE: u32 = 1;
 }
 
 /// Sizes of the data that the render pipelines read. The shaders in `crates/null3d-shaders/wgsl/`
@@ -232,6 +263,21 @@ pub mod sizes {
     /// WebGPU's default `maxStorageBufferBindingSize`: the largest storage buffer that every device
     /// lets a shader bind. Many devices offer more.
     pub const PORTABLE_STORAGE_BINDING_BYTES: u32 = 128 * 1024 * 1024;
+    /// Texels of an `RGBA32_FLOAT` data texture per world matrix: one per matrix row.
+    pub const MATRIX_TEXELS: u32 = 3;
+    /// World matrices per row of a data texture. The texture is 1,536 texels wide, inside the
+    /// 2,048 that every WebGL2 device allows.
+    pub const MATRICES_PER_TEXTURE_ROW: u32 = 512;
+    /// Indices per row of an index list texture: WebGL2's smallest allowed texture width.
+    pub const INDICES_PER_TEXTURE_ROW: u32 = 2048;
+    /// Bytes of one draw record: the start of the draw's slice of the index list, its material
+    /// and the data texture its instances come from, and one spare word.
+    pub const DRAW_RECORD_BYTES: u32 = 16;
+    /// Draw records one multi-draw call reads: a 4 KiB uniform block.
+    pub const MULTI_DRAW_RECORDS: u32 = 256;
+    /// Materials in the material table; as a uniform block this is 16 KiB, the largest block
+    /// every WebGL2 device allows.
+    pub const MAX_MATERIALS: u32 = 1024;
 }
 
 /// Shader templates for `CreateRenderPipeline` and `CreateComputePipeline`.
@@ -365,7 +411,7 @@ pub fn typescript_constants() -> String {
         out.push_str(&format!("export const OP_{} = {};\n", op.name(), op as u8));
     }
     out.push_str(&format!("\nexport const NO_TARGET = {NO_TARGET};\n\n"));
-    let groups: [(&str, &[(&str, u32)]); 8] = [
+    let groups: [(&str, &[(&str, u32)]); 11] = [
         (
             "FORMAT",
             &[
@@ -376,6 +422,8 @@ pub fn typescript_constants() -> String {
                 ("RGBA16_FLOAT", format::RGBA16_FLOAT),
                 ("DEPTH24_PLUS", format::DEPTH24_PLUS),
                 ("DEPTH32_FLOAT", format::DEPTH32_FLOAT),
+                ("RGBA32_FLOAT", format::RGBA32_FLOAT),
+                ("R32_UINT", format::R32_UINT),
             ],
         ),
         (
@@ -404,8 +452,15 @@ pub fn typescript_constants() -> String {
         ),
         (
             "LAYOUT",
-            &[("FRAME", layout::FRAME), ("CULL", layout::CULL)],
+            &[
+                ("FRAME", layout::FRAME),
+                ("CULL", layout::CULL),
+                ("DRAWS", layout::DRAWS),
+                ("INSTANCES", layout::INSTANCES),
+            ],
         ),
+        ("PERMUTATION", &[("DRAW_INDEX", permutation::DRAW_INDEX)]),
+        ("STATE", &[("CULL_NONE", state_flags::CULL_NONE)]),
         (
             "TEMPLATE",
             &[
@@ -415,8 +470,27 @@ pub fn typescript_constants() -> String {
             ],
         ),
         (
+            "BUFFER_USAGE",
+            &[
+                ("MAP_READ", buffer_usage::MAP_READ),
+                ("COPY_SRC", buffer_usage::COPY_SRC),
+                ("COPY_DST", buffer_usage::COPY_DST),
+                ("INDEX", buffer_usage::INDEX),
+                ("VERTEX", buffer_usage::VERTEX),
+                ("UNIFORM", buffer_usage::UNIFORM),
+                ("STORAGE", buffer_usage::STORAGE),
+                ("INDIRECT", buffer_usage::INDIRECT),
+            ],
+        ),
+        (
             "TEXTURE_USAGE",
-            &[("TRANSIENT_ATTACHMENT", texture_usage::TRANSIENT_ATTACHMENT)],
+            &[
+                ("COPY_SRC", texture_usage::COPY_SRC),
+                ("COPY_DST", texture_usage::COPY_DST),
+                ("TEXTURE_BINDING", texture_usage::TEXTURE_BINDING),
+                ("RENDER_ATTACHMENT", texture_usage::RENDER_ATTACHMENT),
+                ("TRANSIENT_ATTACHMENT", texture_usage::TRANSIENT_ATTACHMENT),
+            ],
         ),
         (
             "SIZE",
@@ -426,6 +500,12 @@ pub fn typescript_constants() -> String {
                 ("FRAME_UNIFORM_BYTES", sizes::FRAME_UNIFORM_BYTES),
                 ("CULL_WORKGROUP_SIZE", sizes::CULL_WORKGROUP_SIZE),
                 ("INDIRECT_WORDS", sizes::INDIRECT_WORDS),
+                ("MATRIX_TEXELS", sizes::MATRIX_TEXELS),
+                ("MATRICES_PER_TEXTURE_ROW", sizes::MATRICES_PER_TEXTURE_ROW),
+                ("INDICES_PER_TEXTURE_ROW", sizes::INDICES_PER_TEXTURE_ROW),
+                ("DRAW_RECORD_BYTES", sizes::DRAW_RECORD_BYTES),
+                ("MULTI_DRAW_RECORDS", sizes::MULTI_DRAW_RECORDS),
+                ("MAX_MATERIALS", sizes::MAX_MATERIALS),
             ],
         ),
     ];
@@ -450,6 +530,34 @@ mod tests {
         let words = format!("const INDIRECT_WORDS: u32 = {}u;", sizes::INDIRECT_WORDS);
         assert!(cull.contains(&workgroup), "cull.wgsl lacks {workgroup}");
         assert!(cull.contains(&words), "cull.wgsl lacks {words}");
+    }
+
+    #[test]
+    fn the_mesh_shader_declares_the_same_sizes() {
+        let mesh = include_str!("../../null3d-shaders/wgsl/mesh.wgsl");
+        let shift = |per_row: u32| per_row.trailing_zeros();
+        assert!(sizes::MATRICES_PER_TEXTURE_ROW.is_power_of_two());
+        assert!(sizes::INDICES_PER_TEXTURE_ROW.is_power_of_two());
+        assert_eq!(
+            sizes::MATRIX_TEXELS,
+            3,
+            "the shader reads three texels per matrix"
+        );
+        for line in [
+            format!(
+                "const MATRIX_ROW_SHIFT: u32 = {}u;",
+                shift(sizes::MATRICES_PER_TEXTURE_ROW)
+            ),
+            format!(
+                "const INDEX_ROW_SHIFT: u32 = {}u;",
+                shift(sizes::INDICES_PER_TEXTURE_ROW)
+            ),
+            format!("const DRAW_RECORDS: u32 = {}u;", sizes::MULTI_DRAW_RECORDS),
+            format!("const MAX_MATERIALS: u32 = {}u;", sizes::MAX_MATERIALS),
+        ] {
+            assert!(mesh.contains(&line), "mesh.wgsl lacks {line}");
+        }
+        assert_eq!(sizes::DRAW_RECORD_BYTES, 16, "a draw record is one vec4u");
     }
 
     #[test]

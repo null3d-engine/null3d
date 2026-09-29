@@ -6,6 +6,7 @@ import {
 	LAYOUT_FRAME,
 	SIZE_INSTANCE_STRIDE,
 	SIZE_VERTEX_STRIDE,
+	STATE_CULL_NONE,
 	TEMPLATE_CULL,
 	TEMPLATE_INSTANCED_LIT,
 	TEMPLATE_INSTANCED_UNLIT,
@@ -24,9 +25,6 @@ const MESH = wgsl(SHADERS.mesh);
 const CULL = wgsl(SHADERS.cull);
 /** The culling shader's compute entry point. */
 const CULL_ENTRY_POINT = 'main';
-
-/** Bits of a render pipeline's state flags. */
-export const STATE_CULL_NONE = 1;
 
 export class Pipelines {
 	readonly layouts: GPUBindGroupLayout[] = [];

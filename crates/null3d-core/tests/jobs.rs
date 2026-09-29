@@ -327,3 +327,22 @@ fn shutdown_wakes_sleeping_workers_and_later_loops_run_inline() {
     });
     assert_eq!(count.load(Ordering::Relaxed), 1000);
 }
+
+#[test]
+fn a_frame_wakes_the_workers_only_after_a_frame_that_gave_them_work() {
+    let pool = Workers::start(2);
+    let jobs = pool.jobs();
+    assert!(!jobs.prepare_frame(), "no loop has handed out work yet");
+    // One chunk runs on the calling thread, and so does a loop without workers' help.
+    jobs.parallel_for(10, 100, &|_, _| {});
+    assert!(!jobs.prepare_frame());
+    jobs.parallel_for(1000, 10, &|_, _| {});
+    assert!(
+        jobs.prepare_frame(),
+        "the loop handed chunks to the workers"
+    );
+    assert!(
+        !jobs.prepare_frame(),
+        "each frame's work wakes the next frame's start once"
+    );
+}

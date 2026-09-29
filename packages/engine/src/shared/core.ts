@@ -31,6 +31,9 @@ export interface CoreGlue extends CoreErrors {
 		maxBatches: number,
 		commands: number,
 		storageBindingBytes: number,
+		webgl2: boolean,
+		capabilities: number,
+		maxTextureSize: number,
 	): number;
 	jobWorkerLoop(index: number): void;
 	/** Milliseconds a job worker spent on work since the last call for it; resets its total. */
@@ -41,10 +44,19 @@ export interface CoreGlue extends CoreErrors {
 	reserveObject(): number;
 	worldMatrix(handle: number, out: Float32Array): number;
 	commandRing(field: number): number;
+	/**
+	 * Wakes the job workers at the start of a frame when the previous frame gave them work, so they
+	 * are ready when this frame's parallel work comes.
+	 */
+	prepareJobs(): void;
 	beginFrame(frame: number): number;
 	updateTransforms(): number;
 	updateBatches(frame: number): number;
+	/** Finds the frame's visible objects on the job workers, where the path culls on the CPU. */
+	cullFrame(frame: number, width: number, height: number): number;
 	recordFrame(frame: number, width: number, height: number): number;
+	/** True when the last recorded frame rebuilt its draw tables after a structure change. */
+	drawTablesRebuilt(): boolean;
 	resetGpu(): number;
 	drawListAddress(parity: number): number;
 	drawListWords(frame: number): number;
@@ -93,10 +105,13 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'reserveObject',
 	'worldMatrix',
 	'commandRing',
+	'prepareJobs',
 	'beginFrame',
 	'updateTransforms',
 	'updateBatches',
+	'cullFrame',
 	'recordFrame',
+	'drawTablesRebuilt',
 	'resetGpu',
 	'drawListAddress',
 	'drawListWords',

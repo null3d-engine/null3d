@@ -47,9 +47,10 @@ export interface GlslStage {
 }
 
 /**
- * The shaders of one render pipeline, to link into one WebGL2 program. The vertex shader flips Y
- * and moves depth into GL's clip range, so render targets keep WebGPU's row order and front faces
- * wind the other way. A vertex shader that reads the instance or draw index also declares the
+ * The shaders of one render pipeline, to link into one WebGL2 program. The vertex shader moves
+ * depth into GL's clip range and keeps GL's row order: the canvas shows the image the right way
+ * up, a pixel read returns the bottom row first, and front faces wind counter-clockwise, as on
+ * WebGPU. A vertex shader that reads the instance or draw index also declares the
  * uniform `naga_vs_first_instance`, which the backend leaves unset because WebGL2 draws have no
  * first instance.
  */

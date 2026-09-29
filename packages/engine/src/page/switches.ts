@@ -1,5 +1,5 @@
 // URL switches that let one device exercise every engine path: ?gpu=, ?threads=off, ?render=main,
-// ?latency=, ?preset=, ?fps= and ?hold.
+// ?latency=, ?uploads=copy, ?preset=, ?fps= and ?hold.
 
 export type GpuSwitch = 'auto' | 'webgpu' | 'compat' | 'webgl2';
 /**
@@ -19,6 +19,8 @@ export interface Switches {
 	/** True when ?render=main asks for rendering on the page's main thread. */
 	renderOnMain: boolean;
 	latency: LatencyMode | undefined;
+	/** True when ?uploads=copy makes the WebGL2 path copy uploads out of shared memory first. */
+	copyUploads: boolean;
 	preset: PresetSwitch | undefined;
 	/** A fixed frame rate from ?fps=, or undefined for the display rate. */
 	fps: number | undefined;
@@ -40,6 +42,7 @@ export function parseSwitches(search: string): Switches {
 		threads: params.get('threads') !== 'off',
 		renderOnMain: params.get('render') === 'main',
 		latency: oneOf(params.get('latency'), ['pipelined', 'low'] as const),
+		copyUploads: params.get('uploads') === 'copy',
 		preset: oneOf(params.get('preset'), ['low', 'medium', 'high', 'ultra'] as const),
 		fps: Number.isFinite(fps) && fps > 0 ? fps : undefined,
 		hold: params.has('hold'),

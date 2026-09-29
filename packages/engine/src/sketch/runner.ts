@@ -5,12 +5,13 @@
 
 import { coreFailure } from '../errors/core-failure';
 import { EngineError } from '../errors/engine-error';
+import type { CoreDevice } from '../page/limits';
 import { CoreMemory } from '../scene/memory';
 import { Geometry, Materials } from '../scene/resources';
 import { Scene } from '../scene/scene';
 import { Slot } from '../shared/control';
 import type { CoreGlue } from '../shared/core';
-import { FrameRecorder, Phase, Role } from '../shared/metrics';
+import { Counter, FrameRecorder, Phase, Role } from '../shared/metrics';
 import { FrameClock } from './clock';
 import type { SketchCallbacks, SketchContext } from './define-sketch';
 import { isSketchDefinition } from './define-sketch';
@@ -28,8 +29,8 @@ export interface SketchCore {
 	/** The control block's slots: the canvas size in, the published draw lists out. */
 	slots: Int32Array;
 	jobWorkers: number;
-	/** The largest storage binding of the device the engine draws with. */
-	storageBindingBytes: number;
+	/** The device the engine draws with. */
+	device: CoreDevice;
 }
 
 export class SketchRunner {
@@ -59,13 +60,16 @@ export class SketchRunner {
 			{ length: sketch.jobWorkers },
 			(_, k) => new FrameRecorder(metrics, Role.Job + k),
 		);
-		const { glue, slots } = sketch;
+		const { glue, slots, device } = sketch;
 		const status = glue.initEngine(
 			sketch.jobWorkers,
 			SCENE_CAPACITY,
 			MAX_BATCHES,
 			COMMAND_CAPACITY,
-			sketch.storageBindingBytes,
+			device.storageBindingBytes,
+			device.webgl2,
+			device.capabilities,
+			device.maxTextureSize,
 		);
 		if (status !== 0) throw coreFailure(glue, 'createEngine');
 		this.core = new CoreMemory(glue, sketch.memory);
@@ -134,7 +138,9 @@ export class SketchRunner {
 		const start = performance.now();
 		const { time } = this.context;
 		const { glue, slots } = this.sketch;
-		const dt = this.clock.step(now, Atomics.load(slots, Slot.Resumes));
+		glue.prepareJobs();
+		this.clock.advance(now, Atomics.load(slots, Slot.Resumes));
+		const dt = this.clock.dt;
 		time.now = this.clock.now;
 		time.frame++;
 		const frame = time.frame;
@@ -172,7 +178,10 @@ export class SketchRunner {
 			if (glue.resetGpu() !== 0) this.report(coreFailure(glue, 'the GPU reset'));
 			this.gpuEpoch = epoch;
 		}
+		if (glue.cullFrame(frame, width, height) !== 0) this.report(coreFailure(glue, 'the frame'));
+		this.endPhase(Phase.Cull);
 		if (glue.recordFrame(frame, width, height) !== 0) this.report(coreFailure(glue, 'the frame'));
+		this.record.count(Counter.Rebuilds, glue.drawTablesRebuilt() ? 1 : 0);
 		Atomics.store(slots, Slot.DrawListWords0 + (frame & 1), glue.drawListWords(frame));
 		Atomics.store(slots, Slot.FrameEpoch0 + (frame & 1), epoch);
 		this.endPhase(Phase.Record);

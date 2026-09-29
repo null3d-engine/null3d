@@ -107,6 +107,39 @@ export function comparisonName(scene: ParityScene, { candidate, reference }: Pag
 /** three.js's two renderers: how much their frames differ is the baseline for engine comparisons. */
 export const BASELINE_PAIR: PagePair = { candidate: 'threejs-webgl', reference: 'threejs-webgpu' };
 
+/** Where `bun run parity --save-baselines` keeps the stored baselines, from the repository root. */
+export const STORED_BASELINES_FILE = 'bench/parity-baselines.json';
+
+/**
+ * How much three.js's two renderers differ on each scene's hold frame, as last measured on a device
+ * that draws with both. A device that has only one of them, such as a phone without WebGPU, compares
+ * with these instead.
+ */
+export type StoredBaselines = Partial<Record<ParityScene, number>>;
+
+/** The stored baselines in a file's text; unknown scenes and values that are not a share drop out. */
+export function parseStoredBaselines(text: string): StoredBaselines {
+	const scenes = (JSON.parse(text) as { scenes?: Record<string, unknown> }).scenes ?? {};
+	const baselines: StoredBaselines = {};
+	for (const scene of PARITY_SCENES) {
+		const share = scenes[scene];
+		if (typeof share === 'number' && share >= 0 && share <= 1) baselines[scene] = share;
+	}
+	return baselines;
+}
+
+/** The file's text for stored baselines, in scene order. */
+export function formatStoredBaselines(baselines: StoredBaselines): string {
+	const scenes: StoredBaselines = {};
+	for (const scene of PARITY_SCENES) {
+		const share = baselines[scene];
+		if (share !== undefined) scenes[scene] = share;
+	}
+	const note =
+		"How much three.js's two renderers differ on each scene's hold frame, as a share of pixels. Written by `bun run parity --save-baselines`.";
+	return `${JSON.stringify({ note, scenes }, null, '\t')}\n`;
+}
+
 /**
  * True when a comparison of two engines passes: under three.js's limit, or no worse than three.js's
  * own two renderers differ on the same frame. Rasterizers disagree on edges and on objects one or
@@ -119,15 +152,19 @@ export function passesWithBaseline(share: number, baselineShare: number | null):
 
 const percent = (share: number) => `${(share * 100).toFixed(3)}%`;
 
-/** How much two images differ, and what may differ, in words for a report. */
+/**
+ * How much two images differ, and what may differ, in words for a report. A `stored` baseline was
+ * measured on another device, because this one cannot draw with both of three.js's renderers.
+ */
 export function differenceText(
 	{ share }: Pick<ImageComparison, 'share'>,
 	baselineShare: number | null = null,
+	stored = false,
 ): string {
 	const limit = `${percent(share)} of pixels differ; three.js's rule allows under ${MAX_DIFFERENT_PERCENT}%`;
-	return baselineShare === null
-		? limit
-		: `${limit}, and three.js's two renderers differ by ${percent(baselineShare)}`;
+	if (baselineShare === null) return limit;
+	const where = stored ? `, in ${STORED_BASELINES_FILE} from a device that draws with both` : '';
+	return `${limit}, and three.js's two renderers differ by ${percent(baselineShare)}${where}`;
 }
 
 // The parity command's switches.
@@ -140,10 +177,12 @@ export interface Comparison extends PagePair {
 export interface ParityOptions {
 	scenes: ParityScene[];
 	comparisons: Comparison[];
+	/** Save how much three.js's two renderers differ on each scene, for devices that lack one. */
+	saveBaselines: boolean;
 }
 
 export const PARITY_USAGE =
-	'usage: bun run parity [-- [--scene <scenes>] [--tier <tiers>] [--pair <page kind>,<page kind>]]';
+	'usage: bun run parity [-- [--scene <scenes>] [--tier <tiers>] [--pair <page kind>,<page kind>] [--save-baselines]]';
 
 function readList<T extends string>(
 	value: string | undefined,
@@ -173,10 +212,12 @@ export function parseParityArgs(args: readonly string[]): ParityOptions {
 	let scenes: ParityScene[] = [...PARITY_SCENES];
 	let tiers: Tier[] | undefined;
 	let pair: PageKind[] | undefined;
+	let saveBaselines = false;
 	for (let i = 0; i < args.length; i++) {
 		const arg = args[i];
 		if (arg === '--') continue;
-		if (arg === '--scene') scenes = readList(args[++i], PARITY_SCENES, 'scene');
+		if (arg === '--save-baselines') saveBaselines = true;
+		else if (arg === '--scene') scenes = readList(args[++i], PARITY_SCENES, 'scene');
 		else if (arg === '--tier') tiers = readList(args[++i], TIERS, 'tier');
 		else if (arg === '--pair') pair = readList(args[++i], PAGE_KINDS, 'page kind');
 		else throw new Error(`unknown option ${arg}\n${PARITY_USAGE}`);
@@ -191,11 +232,13 @@ export function parseParityArgs(args: readonly string[]): ParityOptions {
 		return {
 			scenes,
 			comparisons: [{ label: `${candidate} vs ${reference}`, candidate, reference }],
+			saveBaselines,
 		};
 	}
 	return {
 		scenes,
 		comparisons: (tiers ?? [...TIERS]).map((tier) => ({ label: tier, ...TIER_PAIRS[tier] })),
+		saveBaselines,
 	};
 }
 

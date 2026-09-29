@@ -1,6 +1,7 @@
 //! Frame code allocates nothing: a counting global allocator watches the test thread and every
 //! job worker while whole frames run (structural commands, transforms, batch updates, culling,
-//! parallel loops with arena scratch memory, background tasks, and the frame handoff).
+//! cluster builds, parallel loops with arena scratch memory, background tasks, and the frame
+//! handoff).
 #![allow(clippy::disallowed_methods)] // The self-check reads the clock.
 
 mod common;
@@ -10,7 +11,11 @@ use std::time::{Duration, Instant};
 
 use common::{Rng, Workers, mul4, perspective, translation};
 use null3d_core::arena::ArenaPool;
-use null3d_core::culling::{CullOutput, Frustum, cull_parallel};
+use null3d_core::clusters::{ClusterScratch, RowClusters};
+use null3d_core::culling::{
+    BY_ROW, BucketedCull, CULL_CHUNK, CullOutput, CullRun, Frustum, cull_into_buckets,
+    cull_parallel,
+};
 use null3d_core::handle::Handle;
 use null3d_core::instances::BatchTable;
 use null3d_core::jobs::{BackgroundTask, JobConfig, WorkerId};
@@ -46,6 +51,13 @@ struct World {
     still: Handle,
     scene_culled: CullOutput,
     batch_culled: CullOutput,
+    /// The scene and both batches culled into draw buckets, as the WebGL2 frame builder culls.
+    bucketed: BucketedCull,
+    runs: Vec<CullRun>,
+    row_buckets: Vec<u32>,
+    /// The still batch's rows in clusters, which the bucketed cull also culls.
+    clusters: RowClusters,
+    cluster_scratch: ClusterScratch,
     arenas: ArenaPool,
     handoff: FrameHandoff,
 }
@@ -93,6 +105,23 @@ fn build() -> World {
         still,
         scene_culled: CullOutput::with_capacity(8193),
         batch_culled: CullOutput::with_capacity(20_000),
+        bucketed: {
+            let mut out = BucketedCull::default();
+            out.try_reserve(8193 + 40_000 + 313, 17, 3, 4).unwrap();
+            out
+        },
+        runs: Vec::with_capacity(16),
+        row_buckets: (0..8193).map(|slot| slot % 3).collect(),
+        clusters: {
+            let mut clusters = RowClusters::default();
+            clusters.try_reserve(20_000).unwrap();
+            clusters
+        },
+        cluster_scratch: {
+            let mut scratch = ClusterScratch::default();
+            scratch.try_reserve(20_000).unwrap();
+            scratch
+        },
         arenas: ArenaPool::new(5, 256 * 1024),
         handoff: FrameHandoff::new(4096),
     }
@@ -163,6 +192,50 @@ fn frame(world: &mut World, jobs: &null3d_core::jobs::JobSystem, frame: u32, rng
         moving.current_world().spheres(),
         &mut world.batch_culled,
     );
+    // The scene's rows look up their buckets; each batch fills a bucket of its own, and the
+    // still batch's clusters one more.
+    world.runs.clear();
+    let still = world.table.get(world.still).unwrap();
+    world.clusters.build(
+        still.world(parity).spheres(),
+        20_000,
+        &mut world.cluster_scratch,
+    );
+    for (set, rows, bucket, base) in [
+        (0, 8193, BY_ROW, 0),
+        (1, 20_000, 3, 8193),
+        (2, 20_000, 3, 28_193),
+        (3, world.clusters.len(), 2, 0),
+    ] {
+        let mut start = 0;
+        while start < rows {
+            let end = (start + CULL_CHUNK).min(rows);
+            world.runs.push(CullRun {
+                set,
+                start,
+                end,
+                bucket,
+                base,
+            });
+            start = end;
+        }
+    }
+    let (scene, clusters) = (&world.scene, &world.clusters);
+    let sets = |set: u32| match set {
+        0 => scene.world(parity).spheres(),
+        1 => moving.world(parity).spheres(),
+        2 => still.world(parity).spheres(),
+        _ => clusters.spheres(),
+    };
+    cull_into_buckets(
+        jobs,
+        &frustum,
+        &sets,
+        &world.runs,
+        &world.row_buckets,
+        4,
+        &mut world.bucketed,
+    );
 
     // A parallel loop that takes scratch memory from each thread's arena, and a background task.
     world.arenas.reset_all();
@@ -222,6 +295,7 @@ fn frames_allocate_nothing() {
     let allocations = CountingAllocator::disarm();
     assert_eq!(allocations, 0, "frames made {allocations} allocator calls");
     assert!(!world.scene_culled.is_empty() && !world.batch_culled.is_empty());
+    assert!(!world.bucketed.is_empty());
 
     // The counter sees allocations on job workers: a loop whose worker chunks each allocate
     // once must be counted. The caller's chunks wait for a worker chunk, so one runs.

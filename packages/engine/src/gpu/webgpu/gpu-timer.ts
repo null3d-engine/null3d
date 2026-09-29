@@ -1,9 +1,10 @@
 // GPU time per frame from WebGPU timestamp queries. The first pass of a frame writes a timestamp
 // when it starts and every pass writes one when it ends, so a frame's two values span all its
 // passes. Results come back through mappable buffers a few frames later. A frame that finds no free
-// buffer goes untimed instead of stalling the GPU. Timing runs only while the page measures.
+// buffer goes untimed instead of stalling the GPU. Timing runs only while the page measures, on
+// one drawn frame in every SAMPLED_EVERY.
 
-import { FrameRecorder, Role } from '../../shared/metrics';
+import { FrameRecorder, Role, SAMPLED_EVERY } from '../../shared/metrics';
 
 /** Frames whose results can be in flight at once. */
 const SLOTS = 4;
@@ -24,6 +25,7 @@ export class GpuTimer {
 	private slot = -1;
 	private passes = 0;
 	private next = 0;
+	private drawn = 0;
 
 	private constructor(
 		device: GPUDevice,
@@ -60,11 +62,12 @@ export class GpuTimer {
 		return new GpuTimer(device, new FrameRecorder(metrics, Role.Gpu));
 	}
 
-	/** Starts timing a frame, if the page is measuring and a readback buffer is free. */
+	/** Starts timing a frame, if the page is measuring, it is a sampled frame, and a readback buffer is free. */
 	beginFrame(frame: number): void {
 		this.slot = -1;
 		this.passes = 0;
-		if (!this.recorder.measuring || this.pending[this.next] !== 0) return;
+		if (!this.recorder.measuring || this.drawn++ % SAMPLED_EVERY !== 0) return;
+		if (this.pending[this.next] !== 0) return;
 		this.slot = this.next;
 		this.frames[this.slot] = frame;
 		this.next = (this.next + 1) % SLOTS;

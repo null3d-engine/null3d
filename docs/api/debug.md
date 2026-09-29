@@ -45,12 +45,12 @@ Per-frame figures of a measurement: CPU time by thread, GPU time, frame interval
 | `cpuMs: Percentiles` | CPU time per frame of the busiest thread, the time that limits the frame rate. |
 | `cpuMsAllThreads: Percentiles` | CPU time per frame summed over every thread. |
 | `threads: Record<string, ThreadStats>` | Per thread, by name: `main`, `sketch-worker`, `render-worker`, `job-0` and so on. |
-| `gpuMs: Percentiles \| null` | GPU time per frame, where the device has timestamp queries. |
+| `gpuMs: Percentiles \| null` | GPU time per frame, where the device has timestamp queries. The engine times one frame in eight, which keeps the cost of measuring small. |
 | `gpuStepMs: number \| null` | The step between GPU times when the browser rounds its timestamps, or null when they look exact. Chrome rounds them unless its WebGPU developer features are turned on. |
 | `intervalMs: Percentiles` | Time between presented frames. |
 | `presentedFps: number` | Frames per second that the renderer presented. |
-| `completedFps: number \| null` | Frames per second that the GPU finished. Below `presentedFps`, frames queue on the GPU, and the display shows fewer than the presented rate suggests. Null when no completion arrived. |
-| `gpuLatencyMs: Percentiles \| null` | Time from a frame's submit to the GPU finishing it. With a WebGL2 fence, the engine sees completion at its next frame callback, so the figure rounds up to frame intervals. |
+| `completedFps: number \| null` | Frames per second that the GPU finished. Below `presentedFps`, frames queue on the GPU, and the display shows fewer than the presented rate suggests. The engine tracks one frame in eight: the GPU finishes frames in order, so each tracked frame also accounts for the frames before it. Null when no completion arrived. |
+| `gpuLatencyMs: Percentiles \| null` | Time from a frame's submit to the GPU finishing it, on one frame in eight. With a WebGL2 fence, the engine sees completion at its next frame callback, so the figure rounds up to frame intervals. |
 | `uploadBytes: Percentiles` | Bytes uploaded to the GPU per frame. |
 | `drawCalls: Percentiles` | Draw calls per frame. |
 | `rebuilds: number` | Frames whose structure change rebuilt the draw tables: objects created or destroyed, meshes or materials changed, or batches created or destroyed. Steady play has none; showing or hiding objects and changing a batch's active count do not rebuild. |

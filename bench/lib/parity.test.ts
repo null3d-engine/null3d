@@ -6,6 +6,7 @@ import {
 	comparisonName,
 	decodeHoldResult,
 	differenceText,
+	formatStoredBaselines,
 	type HoldFrame,
 	holdPagePath,
 	MAX_DIFFERENT_PERCENT,
@@ -14,6 +15,7 @@ import {
 	pagePath,
 	parityFiles,
 	parseParityArgs,
+	parseStoredBaselines,
 	passesWithBaseline,
 	type RgbaImage,
 	TIER_PAIRS,
@@ -263,6 +265,18 @@ describe('the pages', () => {
 	});
 });
 
+describe('stored baselines', () => {
+	test('round-trip through their file text in scene order, keeping only shares of known scenes', () => {
+		const text = formatStoredBaselines({ s2: 0.00332, s1: 0.04372 });
+		expect(Object.keys(JSON.parse(text).scenes)).toEqual(['s1', 's2']);
+		expect(parseStoredBaselines(text)).toEqual({ s1: 0.04372, s2: 0.00332 });
+		expect(
+			parseStoredBaselines(JSON.stringify({ scenes: { s1: 2, 's1-static': 'x', s3: 0.1 } })),
+		).toEqual({});
+		expect(parseStoredBaselines('{}')).toEqual({});
+	});
+});
+
 describe('parseParityArgs', () => {
 	test('compares every scene on both GPU tiers by default', () => {
 		expect(parseParityArgs([])).toEqual({
@@ -271,6 +285,7 @@ describe('parseParityArgs', () => {
 				{ label: 'webgpu', candidate: 'null3d-webgpu', reference: 'threejs-webgpu' },
 				{ label: 'webgl2', candidate: 'null3d-webgl2', reference: 'threejs-webgl' },
 			],
+			saveBaselines: false,
 		});
 	});
 
@@ -278,7 +293,9 @@ describe('parseParityArgs', () => {
 		expect(parseParityArgs(['--', '--scene', 's2,s1', '--tier', 'webgl2'])).toEqual({
 			scenes: ['s2', 's1'],
 			comparisons: [{ label: 'webgl2', candidate: 'null3d-webgl2', reference: 'threejs-webgl' }],
+			saveBaselines: false,
 		});
+		expect(parseParityArgs(['--save-baselines']).saveBaselines).toBe(true);
 	});
 
 	test('compares any two kinds of page with --pair, the second one being the reference', () => {
@@ -291,6 +308,7 @@ describe('parseParityArgs', () => {
 					reference: 'threejs-webgpu',
 				},
 			],
+			saveBaselines: false,
 		});
 	});
 

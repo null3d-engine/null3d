@@ -1,19 +1,22 @@
 // Runs the benchmark protocol in a visible Chrome or Brave window on this Mac: each scene's null3d
 // page, three.js pages and scene-code page, several fresh runs each, then prints and saves a
 // summary. The scene-code page times the scene code both engines run, so the summary also compares
-// each engine's own work. With --sweep it runs S1 at growing instance counts and draws CPU time per
-// frame against the count. From the repository root:
+// each engine's own work. With --sweep it runs each scene from one object up to far more than the
+// protocol's count, on both null3d paths and both three.js renderers, and reports and charts each
+// path against three.js's faster renderer and against three.js on the same API at every count.
+// From the repository root:
 //   bun run bench:run                                (S1: 5 runs of 5 s warm-up and 30 s measured)
 //   bun run bench:run -- --scenes s1,s1-static,s2 --runs 3 --seconds 10
 //   bun run bench:run -- --sweep --seconds 5
 //   bun run bench:run -- --browser brave
 // Options:
-//   --scenes <list>   s1, s1-static, s2; the default is s1
+//   --scenes <list>   s1, s1-static, s2; the default is s1, and every scene with --sweep
 //   --pages <list>    page kinds; the default is null3d-webgpu, threejs-webgpu, threejs-webgl,
-//                     scene-code
+//                     scene-code, and every page kind with --sweep
 //   --runs <n>        fresh runs of each page; the default is 5
 //   --seconds <n>     warm-up and measured time of each run; the default is the protocol's 5 and 30
-//   --sweep           S1 at 1,000 to 100,000 instances, with a chart, instead of the runs above
+//   --sweep           each scene at the object counts in SWEEP_COUNTS, one run each, instead of
+//                     the runs above
 //   --browser <name>  chrome (the default) or brave
 // Chrome and Brave start with WebGPU's developer features on, so GPU timestamps are not rounded.
 import { mkdirSync, writeFileSync } from 'node:fs';
@@ -36,16 +39,24 @@ import {
 	comparisonLines,
 	lineChartSvg,
 	ms,
-	ownShareOfThree,
-	type RunSummary,
 	type SummaryRow,
+	type SweepPoint,
 	summarizeRuns,
 	summaryTable,
+	sweepReport,
 } from './lib/report';
-import { MEASURE_SECONDS, WARMUP_SECONDS } from './scenes/spec';
+import { MEASURE_SECONDS, S2_NODES_PER_TREE, S2_ROOTS, WARMUP_SECONDS } from './scenes/spec';
 
 const BRAVE = '/Applications/Brave Browser.app/Contents/MacOS/Brave Browser';
-const SWEEP_COUNTS = [1_000, 3_000, 10_000, 30_000, 100_000];
+/**
+ * Object counts of a sweep, per scene: from one object, where each engine's fixed cost per frame
+ * shows, to far more than the protocol's count. S2's counts are whole trees: 1, 3, 14 and 42.
+ */
+const SWEEP_COUNTS: Record<ParityScene, readonly number[]> = {
+	s1: [1, 10, 100, 1_000, 10_000, 100_000],
+	's1-static': [1, 10, 100, 1_000, 10_000, 100_000],
+	s2: [1, 3, S2_ROOTS, 3 * S2_ROOTS].map((trees) => trees * S2_NODES_PER_TREE),
+};
 const DEFAULT_PAGES: BenchPageKind[] = [
 	'null3d-webgpu',
 	'threejs-webgpu',
@@ -56,8 +67,9 @@ const DEFAULT_PAGES: BenchPageKind[] = [
 const START_MARGIN_MS = 60_000;
 
 export interface BenchOptions {
-	scenes: ParityScene[];
-	pages: BenchPageKind[];
+	/** The scenes and page kinds to run; null takes the default of the run's kind. */
+	scenes: ParityScene[] | null;
+	pages: BenchPageKind[] | null;
 	runs: number;
 	seconds: number | null;
 	sweep: boolean;
@@ -78,8 +90,8 @@ function list<T extends string>(
 
 export function parseBenchArgs(args: readonly string[]): BenchOptions {
 	const options: BenchOptions = {
-		scenes: ['s1'],
-		pages: DEFAULT_PAGES,
+		scenes: null,
+		pages: null,
 		runs: 5,
 		seconds: null,
 		sweep: false,
@@ -129,8 +141,8 @@ async function runProtocol(
 		((seconds ?? MEASURE_SECONDS) + (seconds ?? WARMUP_SECONDS)) * 1000 + START_MARGIN_MS;
 	const rows: SummaryRow[] = [];
 	const failures: string[] = [];
-	for (const scene of options.scenes) {
-		for (const kind of options.pages) {
+	for (const scene of options.scenes ?? ['s1']) {
+		for (const kind of options.pages ?? DEFAULT_PAGES) {
 			const results: BenchResult[] = [];
 			for (let run = 1; run <= options.runs; run++) {
 				const result = await runPage(
@@ -157,6 +169,24 @@ async function runProtocol(
 	return lines.join('\n');
 }
 
+/** Every page kind: a sweep compares both null3d paths with both three.js renderers. */
+const SWEEP_PAGES: BenchPageKind[] = [
+	'null3d-webgpu',
+	'null3d-webgl2',
+	'threejs-webgpu',
+	'threejs-webgl',
+	SCENE_CODE,
+];
+
+/** Chart lines of a sweep, by page kind or by the name of a derived series. */
+const SWEEP_LINES: Record<string, Omit<ChartSeries, 'points'>> = {
+	'null3d-webgpu': { name: 'null3d WebGPU, whole frame', color: '#2a6fdb' },
+	'null3d-webgl2': { name: 'null3d WebGL2, whole frame', color: '#18a058' },
+	'threejs-webgpu': { name: 'three.js WebGPU, whole frame', color: '#e8554e' },
+	'threejs-webgl': { name: 'three.js WebGL, whole frame', color: '#f2a13e' },
+	[SCENE_CODE]: { name: 'scene code both engines run', color: '#9a9a9a' },
+};
+
 async function runSweep(
 	browser: Browser,
 	baseUrl: string,
@@ -165,64 +195,54 @@ async function runSweep(
 ): Promise<string> {
 	const seconds = options.seconds ?? 5;
 	const timeoutMs = 2 * seconds * 1000 + START_MARGIN_MS;
-	const points: Record<string, { x: number; y: number }[]> = {};
-	const add = (name: string, x: number, y: number | undefined) => {
-		if (y !== undefined) points[name] = [...(points[name] ?? []), { x, y }];
-	};
-	for (const n of SWEEP_COUNTS) {
-		const summaries: Partial<Record<BenchPageKind, RunSummary>> = {};
-		for (const kind of DEFAULT_PAGES) {
-			const result = await runPage(
-				browser,
-				`${baseUrl}${pagePath('s1', kind, `seconds=${seconds}&n=${n}`)}`,
-				timeoutMs,
-			);
-			writeFileSync(join(dir, `sweep-${kind}-${n}.json`), JSON.stringify(result, null, '\t'));
-			if (!result.ok) {
-				console.log(`sweep ${kind} n=${n}: failed: ${result.error}`);
-				continue;
+	const report: string[] = [];
+	// A window larger than the charts; each picture is of its chart alone.
+	const chartPage = await browser.newPage({ viewport: { width: 1200, height: 800 } });
+	for (const scene of options.scenes ?? PARITY_SCENES) {
+		const points: SweepPoint[] = [];
+		const series: Record<string, { x: number; y: number }[]> = {};
+		for (const n of SWEEP_COUNTS[scene]) {
+			const summaries: SweepPoint['summaries'] = {};
+			for (const kind of options.pages ?? SWEEP_PAGES) {
+				const result = await runPage(
+					browser,
+					`${baseUrl}${pagePath(scene, kind, `seconds=${seconds}&n=${n}`)}`,
+					timeoutMs,
+				);
+				writeFileSync(
+					join(dir, `sweep-${scene}-${kind}-${n}.json`),
+					JSON.stringify(result, null, '\t'),
+				);
+				if (!result.ok) {
+					console.log(`sweep ${scene} ${kind} n=${n}: failed: ${result.error}`);
+					report.push(`Failed: ${scene} ${kind} at ${n}: ${result.error}`);
+					continue;
+				}
+				// The count the page drew, which a scene of whole parts rounds up.
+				const drawn = result.n;
+				console.log(`sweep ${scene} ${kind} n=${drawn}: ${ms(result.cpuMs.median)} ms`);
+				summaries[kind] = summarizeRuns([result]);
+				series[kind] = [...(series[kind] ?? []), { x: drawn, y: result.cpuMs.median }];
 			}
-			console.log(`sweep ${kind} n=${n}: ${ms(result.cpuMs.median)} ms`);
-			add(kind, n, result.cpuMs.median);
-			summaries[kind] = summarizeRuns([result]);
+			points.push({ n, summaries });
 		}
-		const null3d = summaries['null3d-webgpu'];
-		const sceneCode = summaries[SCENE_CODE];
-		const threejs = [summaries['threejs-webgpu'], summaries['threejs-webgl']];
-		const own = ownShareOfThree(null3d, threejs, sceneCode);
-		add('null3d own work', n, own?.null3dMs);
-		add('three.js own work', n, own?.threeMs);
-		// Every thread's work, job workers included, less the sketch's update.
-		if (null3d?.allThreadsMs !== undefined)
-			add('null3d engine', n, null3d.allThreadsMs - (null3d.updateMs ?? 0));
+		const svg = lineChartSvg(
+			`${scene}: CPU time per frame`,
+			'objects (log scale)',
+			'milliseconds per frame',
+			Object.entries(series).map(([key, points]) => ({
+				...(SWEEP_LINES[key] ?? { name: key, color: '#000000' }),
+				points,
+			})),
+		);
+		const svgFile = join(dir, `sweep-${scene}.svg`);
+		writeFileSync(svgFile, svg);
+		await chartPage.setContent(svg);
+		await chartPage.locator('svg').screenshot({ path: join(dir, `sweep-${scene}.png`) });
+		report.push(...sweepReport(scene, points), `Chart: ${relative(REPO_ROOT, svgFile)}`, '');
 	}
-	const lines: Record<string, Omit<ChartSeries, 'points'>> = {
-		'null3d-webgpu': { name: 'null3d, whole frame', color: '#2a6fdb' },
-		'null3d own work': { name: 'null3d, own work', color: '#2a6fdb', dashed: true },
-		'null3d engine': { name: 'null3d engine, all threads', color: '#18a058' },
-		'threejs-webgl': { name: 'three.js WebGL, whole frame', color: '#f2a13e' },
-		'threejs-webgpu': { name: 'three.js WebGPU, whole frame', color: '#e8554e' },
-		'three.js own work': { name: 'three.js, own work', color: '#f2a13e', dashed: true },
-		[SCENE_CODE]: { name: 'scene code both engines run', color: '#9a9a9a' },
-	};
-	const series: ChartSeries[] = Object.entries(points).map(([key, points]) => ({
-		...(lines[key] ?? { name: key, color: '#000000' }),
-		points,
-	}));
-	const svg = lineChartSvg(
-		'S1: CPU time per frame',
-		'instances (log scale)',
-		'milliseconds per frame',
-		series,
-	);
-	const svgFile = join(dir, 'sweep.svg');
-	writeFileSync(svgFile, svg);
-	// A window larger than the chart; the picture is of the chart alone.
-	const page = await browser.newPage({ viewport: { width: 1200, height: 800 } });
-	await page.setContent(svg);
-	await page.locator('svg').screenshot({ path: join(dir, 'sweep.png') });
-	await page.close();
-	return `Sweep chart: ${relative(REPO_ROOT, svgFile)} and sweep.png`;
+	await chartPage.close();
+	return report.join('\n');
 }
 
 async function main(): Promise<void> {

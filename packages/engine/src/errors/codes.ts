@@ -167,7 +167,7 @@ export const ERRORS = {
 	E1501: {
 		title: 'Render space full',
 		cause:
-			'The scene needs more room than the renderer set aside. The full part is the draw list, the mesh buffers, the material table, the upload space or the culling pass. The culling pass covers 2,097,152 objects and instance rows on every device, and more on devices with larger GPU buffers. The number for the device is in engine.capabilities.maxInstances.',
+			'The scene needs more room than the renderer set aside. The full part is the draw list, the mesh buffers, the material table, the upload space or the culling pass. On WebGPU the culling pass covers 2,097,152 objects and instance rows on every device, and more on devices with larger GPU buffers. On WebGL2 the number follows the largest texture the device allows. The number for the device is in engine.capabilities.maxInstances.',
 		fix: 'Share meshes and materials between objects instead of creating them per object. Draw many copies of one mesh with an instance batch. Every row of a batch counts toward the culling limit, active or not, so size each batch for the rows it uses.',
 		example: 'E1501: materials.standard() failed: the material table is full.',
 		since: '0.1',

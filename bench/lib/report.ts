@@ -226,32 +226,161 @@ export function summaryTable(rows: readonly SummaryRow[]): string {
 	return lines.join('\n');
 }
 
+/** three.js's pages, and the name of each renderer. */
+const THREE_PAGES = [
+	['threejs-webgpu', 'WebGPU'],
+	['threejs-webgl', 'WebGL'],
+] as const;
+
+/** The null3d pages that reports compare with three.js: the GPU path each draws with, and three.js's page on the same API. */
+const NULL3D_PAGES = [
+	['null3d-webgpu', 'WebGPU', 'threejs-webgpu'],
+	['null3d-webgl2', 'WebGL2', 'threejs-webgl'],
+] as const;
+
+const percent = (share: number) => `${(share * 100).toFixed(0)}%`;
+
+/** The name of the renderer a three.js page kind draws with. */
+const rendererName = (kind: string) => THREE_PAGES.find(([page]) => page === kind)?.[1] ?? kind;
+
+/** How null3d on one GPU path compares with three.js on one scene, by one measure. */
+interface PathComparison {
+	/** Against three.js's faster renderer by the measure, and that renderer's name. */
+	faster: Share;
+	fasterName: string;
+	/** Against three.js on the same API; null when that page did not run. */
+	same: Share | null;
+}
+
 /**
- * Sentences for each scene: null3d's CPU time per frame as a share of three.js's faster renderer,
- * and, with the scene-code page's run, its own work as a share of three.js's.
+ * null3d's value of `measure` on one path against three.js's faster renderer and against three.js
+ * on the same API, from one scene's summaries by page kind; null without null3d's or three.js's.
+ */
+function comparePath(
+	of: (kind: string) => RunSummary | undefined,
+	kind: string,
+	same: string,
+	measure: (summary: RunSummary) => number,
+): PathComparison | null {
+	const null3d = of(kind);
+	const three = THREE_PAGES.map(([page, name]) => ({ name, summary: of(page) }));
+	const faster = shareBy(
+		null3d,
+		three.map((t) => t.summary),
+		measure,
+	);
+	if (!faster) return null;
+	const fasterName =
+		three.find((t) => t.summary && measure(t.summary) === faster.threeMs)?.name ?? 'three.js';
+	return { faster, fasterName, same: shareBy(null3d, [of(same)], measure) };
+}
+
+/**
+ * The comparison as words: against the faster renderer, then against three.js on the same API
+ * when that is the other renderer. `what` names the first measure, such as "the CPU time per
+ * frame of".
+ */
+function comparedWith(c: PathComparison, what: string, sameName: string): string {
+	const against = (share: Share, of: string, whose: string) =>
+		`${percent(share.share)} of ${of} ${whose} (${ms(share.null3dMs)} ms against ${ms(share.threeMs)} ms)`;
+	const faster = against(c.faster, what, `three.js's faster renderer, ${c.fasterName}`);
+	return c.same && c.fasterName !== sameName
+		? `${faster}, and ${against(c.same, 'that of', `three.js's ${sameName} renderer`)}`
+		: faster;
+}
+
+/**
+ * Sentences for each scene and each null3d GPU path in the run: null3d's CPU time per frame as a
+ * share of three.js's faster renderer and of three.js on the same API, and, with the scene-code
+ * page's run, its own work as a share of three.js's.
  */
 export function comparisonLines(rows: readonly SummaryRow[]): string[] {
-	const percent = (share: number) => `${(share * 100).toFixed(0)}%`;
 	const scenes = [...new Set(rows.map((r) => r.scene))];
 	return scenes.flatMap((scene) => {
 		const of = (kind: string) => summaryOf(rows, scene, kind);
-		const null3d = of('null3d-webgpu');
-		const threejs = [of('threejs-webgpu'), of('threejs-webgl')];
-		const whole = shareOfThree(null3d, threejs);
-		const own = ownShareOfThree(null3d, threejs, of(SCENE_CODE));
-		return [
-			...(whole
-				? [
-						`${scene}: null3d on WebGPU takes ${percent(whole.share)} of the CPU time per frame of three.js's faster renderer (${ms(whole.null3dMs)} ms against ${ms(whole.threeMs)} ms).`,
-					]
-				: []),
-			...(own
-				? [
-						`${scene}: null3d's own work on its busiest thread, apart from the sketch's code, is ${percent(own.share)} of three.js's (${ms(own.null3dMs)} ms against ${ms(own.threeMs)} ms); three.js's is its frame less the scene code timed alone (${ms(own.sceneCodeMs)} ms).`,
-					]
-				: []),
-		];
+		const sceneCode = of(SCENE_CODE);
+		return NULL3D_PAGES.flatMap(([kind, path, same]) => {
+			const sameName = rendererName(same);
+			const whole = comparePath(of, kind, same, (s) => s.cpuMs.median);
+			const own =
+				sceneCode && comparePath(of, kind, same, (s) => ownWorkMs(s, sceneCode.cpuMs.median));
+			return [
+				...(whole
+					? [
+							`${scene}: null3d on ${path} takes ${comparedWith(whole, 'the CPU time per frame of', sameName)}.`,
+						]
+					: []),
+				...(own && sceneCode
+					? [
+							`${scene}: null3d's own work on ${path}, on its busiest thread and apart from the sketch's code, is ${comparedWith(own, 'that of', sameName)}; three.js's is its frame less the scene code timed alone (${ms(sceneCode.cpuMs.median)} ms).`,
+						]
+					: []),
+			];
+		});
 	});
+}
+
+/** One count of a sweep: the summary of each page kind that ran at it. */
+export interface SweepPoint {
+	n: number;
+	summaries: Partial<Record<string, RunSummary>>;
+}
+
+/**
+ * A sweep of one scene as Markdown: for the whole frame and for each engine's own work, a table of
+ * each page's time at each count and each null3d path's share of three.js's faster renderer and of
+ * three.js on the same API, then one line per path and comparison that names the counts where
+ * null3d is not faster.
+ */
+export function sweepReport(scene: string, points: readonly SweepPoint[]): string[] {
+	const measures = [
+		['Whole frame', 'CPU time per frame on the busiest thread', null],
+		['Own work', 'own work on the busiest thread, apart from the scene code', SCENE_CODE],
+	] as const;
+	const pages = [...NULL3D_PAGES.map(([kind]) => kind), ...THREE_PAGES.map(([kind]) => kind)];
+	const lines: string[] = [];
+	for (const [title, what, needs] of measures) {
+		lines.push(
+			`### ${scene}: ${what}, ms`,
+			'',
+			`| Objects | ${pages.join(' | ')} | ${NULL3D_PAGES.map(([, path, same]) => `${path} against three.js's faster | ${path} against three.js ${rendererName(same)}`).join(' | ')} |`,
+			`| --- |${' --- |'.repeat(pages.length + 2 * NULL3D_PAGES.length)}`,
+		);
+		const slower = NULL3D_PAGES.map(() => ({ faster: [] as string[], same: [] as string[] }));
+		for (const { n, summaries } of points) {
+			const of = (kind: string) => summaries[kind];
+			const sceneCode = of(SCENE_CODE);
+			if (needs && !sceneCode) continue;
+			const measure = (s: RunSummary) =>
+				sceneCode && needs ? ownWorkMs(s, sceneCode.cpuMs.median) : s.cpuMs.median;
+			const times = pages.map((kind) => {
+				const summary = of(kind);
+				return summary ? ms(measure(summary)) : 'n/a';
+			});
+			const shares = NULL3D_PAGES.flatMap(([kind, , same], k) => {
+				const c = comparePath(of, kind, same, measure);
+				const at = n.toLocaleString('en-US');
+				if (c && c.faster.share >= 1) slower[k]?.faster.push(`${at} (${percent(c.faster.share)})`);
+				if (c?.same && c.same.share >= 1) slower[k]?.same.push(`${at} (${percent(c.same.share)})`);
+				return [c ? percent(c.faster.share) : 'n/a', c?.same ? percent(c.same.share) : 'n/a'];
+			});
+			lines.push(`| ${n.toLocaleString('en-US')} | ${[...times, ...shares].join(' | ')} |`);
+		}
+		lines.push('');
+		NULL3D_PAGES.forEach(([, path, same], k) => {
+			const { faster, same: sameApi } = slower[k] ?? { faster: [], same: [] };
+			const verdict = (against: string, counts: string[]) =>
+				counts.length === 0
+					? `${scene}, ${title.toLowerCase()}: null3d on ${path} is faster than ${against} at every count.`
+					: `${scene}, ${title.toLowerCase()}: null3d on ${path} is not faster than ${against} at these object counts: ${counts.join(', ')}.`;
+			lines.push(
+				verdict("three.js's faster renderer", faster),
+				verdict(`three.js's ${rendererName(same)} renderer`, sameApi),
+			);
+		});
+		lines.push('');
+	}
+	return lines;
 }
 
 export interface ChartSeries {

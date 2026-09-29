@@ -171,6 +171,39 @@ describe('the parity plan', () => {
 		}
 	});
 
+	it('falls back to the stored baseline where three.js cannot draw with both renderers', () => {
+		const imageDir = mkdtempSync(join(tmpdir(), 'null3d-parity-'));
+		try {
+			const THREE_WEBGL = 'parity-s1-threejs-webgl';
+			// Only the WebGL page drew: the device has no WebGPU.
+			const results: Record<string, ItemResult> = {
+				[THREE_WEBGL]: holdResult([10, 20, 30]),
+				[THREE_WEBGPU]: { ok: false, error: 'This browser has no WebGPU' },
+			};
+			const { check } = item('parity-s1-null3d-webgl2');
+			// A quarter of the frame differs: over three.js's rule, under a stored 30%.
+			const quarter = holdResult([10, 20, 30]);
+			const pixels = Buffer.from(quarter.pixels as string, 'base64');
+			for (let i = 0; i < pixels.length / 4; i += 4) pixels[i] = 200;
+			const frame = { ...quarter, pixels: pixels.toString('base64') };
+			const resultOf = (id: string) => results[id];
+			expect(judge(check, frame, NO_WEBGPU, { resultOf, imageDir })).toHaveLength(1);
+			expect(
+				judge(check, frame, NO_WEBGPU, { resultOf, imageDir, storedBaselines: { s1: 0.3 } }),
+			).toEqual([]);
+			const [problem] = judge(check, frame, NO_WEBGPU, {
+				resultOf,
+				imageDir,
+				storedBaselines: { s1: 0.1 },
+			}) as string[];
+			expect(problem).toContain(
+				"25.000% of pixels differ; three.js's rule allows under 0.1%, and three.js's two renderers differ by 10.000%, in bench/parity-baselines.json from a device that draws with both",
+			);
+		} finally {
+			rmSync(imageDir, { recursive: true, force: true });
+		}
+	});
+
 	it('says what is missing when a frame cannot be compared', () => {
 		const { check } = item(NULL3D_WEBGPU);
 		const frame = holdResult([10, 20, 30]);

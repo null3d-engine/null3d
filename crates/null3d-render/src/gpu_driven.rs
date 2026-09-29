@@ -20,13 +20,6 @@
 //! only rewrites those sources' entries in the bucket table, where `HIDDEN` makes the culling
 //! shader skip them.
 //!
-//! # Frames in flight
-//!
-//! The sketch worker records frame `f + 1` while the render worker replays frame `f`. Everything a
-//! frame's list reads from engine memory is therefore kept per frame parity: the list itself, and
-//! an upload arena that holds copies of the small tables and new mesh data. World matrices come
-//! straight from the core's world buffer of the frame's parity, which the core keeps the same way.
-//!
 //! # Memory
 //!
 //! Frames record without the general-purpose allocator. At the start of each frame the arena gets
@@ -40,25 +33,20 @@ use null3d_core::culling::Frustum;
 use null3d_core::handle::Handle;
 use null3d_core::instances::BatchTable;
 use null3d_core::scene::SceneStorage;
-use null3d_core::snapshot::{FrameSnapshot, SCENE_TARGET};
+use null3d_core::snapshot::SCENE_TARGET;
 use null3d_core::world::MATRIX_FLOATS;
 use null3d_gpu::drawlist::{
-    DrawList, DrawListError, Op, buffer_usage as usage, format, index_format, layout, pass_flags,
-    resource_kind, sizes, template, texture_usage,
+    DrawList, Op, buffer_usage as usage, format, index_format, layout, resource_kind, sizes,
+    template,
 };
 
-use crate::camera::{Affine, Perspective};
-use crate::frame_data::{FrameUniform, normalized_direction};
-use crate::materials::{MATERIAL_FLOATS, MaterialTable, Shading};
+use crate::frame::{
+    FrameBuilder, FrameInput, HIDDEN, PageUploads, ParityLists, RecordError, SceneSettings,
+    SceneTargets, UploadArena, address, bucket_of, collect_bucket_keys, floats_as_bytes,
+    grown_size, words_as_bytes,
+};
+use crate::materials::{MATERIAL_FLOATS, Shading};
 use crate::meshes::{MeshStorage, Packing};
-
-/// Engine mesh ids count from 1; 0 marks an object with no mesh, such as a group or a camera.
-pub const NO_MESH: u32 = 0;
-/// Engine material ids count from 1 too: material table index plus one.
-pub const NO_MATERIAL: u32 = 0;
-
-/// The bucket of a source that draws nowhere, as the culling shader reads it.
-const HIDDEN: u32 = u32::MAX;
 /// Bytes of the culling parameters: six planes, the source count and padding.
 const CULL_PARAMS_BYTES: u32 = 112;
 /// Bytes of one bucket record in the culling shader: base, material, radius, padding.
@@ -120,15 +108,6 @@ fn write_entries(
     Ok(())
 }
 
-/// The size to create a buffer at when it must hold `needed` bytes: room to grow, so a slowly
-/// growing scene rarely recreates it, but never past `binding_bytes`, the largest storage binding.
-pub fn grown_size(needed: u32, binding_bytes: u32) -> u32 {
-    needed
-        .saturating_add(needed / 2)
-        .next_multiple_of(256)
-        .min(binding_bytes)
-        .max(needed)
-}
 /// Words of the culling pass's bind group entries: three for the group, five per buffer.
 const CULL_GROUP_WORDS: usize = 3 + 6 * 5;
 
@@ -178,96 +157,12 @@ impl Default for RendererConfig {
     fn default() -> Self {
         Self {
             samples: 4,
-            max_materials: 1024,
+            max_materials: sizes::MAX_MATERIALS,
             vertex_bytes: 16 * 1024 * 1024,
             index_bytes: 4 * 1024 * 1024,
             draw_list_words: 16 * 1024,
             storage_binding_bytes: sizes::PORTABLE_STORAGE_BINDING_BYTES,
         }
-    }
-}
-
-/// Why a frame could not be recorded.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum RecordError {
-    /// The frame's commands do not fit the draw list.
-    DrawListFull,
-    /// The meshes need more room than the shared vertex or index buffer has.
-    MeshBuffersFull,
-    /// More sources than the builder can draw on this device; see [`max_sources`].
-    TooManySources {
-        /// The most sources the builder can draw on this device.
-        limit: u32,
-    },
-    /// The frame's copies do not fit its upload arena, which the builder sizes for every frame.
-    UploadsFull,
-}
-
-impl From<DrawListError> for RecordError {
-    fn from(_: DrawListError) -> Self {
-        RecordError::DrawListFull
-    }
-}
-
-/// What one frame of the scene looks like to the builder.
-pub struct FrameInput<'a> {
-    /// The frame number, counting from 1.
-    pub frame: u32,
-    pub scene: &'a SceneStorage,
-    pub batches: &'a BatchTable,
-    /// The frame's upload list.
-    pub snapshot: &'a FrameSnapshot,
-    /// The canvas size in device pixels.
-    pub canvas: (u32, u32),
-    /// True when the scene's structure changed this frame (see the module documentation).
-    pub structure_changed: bool,
-}
-
-/// The engine memory address of bytes, as the replay loop reads it: an offset into WebAssembly
-/// memory. Native builds keep the low bits, which is enough for tests that compare addresses.
-pub fn address(bytes: &[u8]) -> u32 {
-    bytes.as_ptr() as usize as u32
-}
-
-fn floats_as_bytes(floats: &[f32]) -> &[u8] {
-    // SAFETY: any `f32` is four initialized bytes, and `u8` has no alignment requirement.
-    unsafe {
-        std::slice::from_raw_parts(floats.as_ptr().cast::<u8>(), std::mem::size_of_val(floats))
-    }
-}
-
-fn words_as_bytes(words: &[u32]) -> &[u8] {
-    // SAFETY: any `u32` is four initialized bytes, and `u8` has no alignment requirement.
-    unsafe { std::slice::from_raw_parts(words.as_ptr().cast::<u8>(), std::mem::size_of_val(words)) }
-}
-
-/// Copies of data a frame's list uploads. Chunks never move once allocated, so addresses stay
-/// valid until the arena is reset for the next frame of the same parity.
-#[derive(Default)]
-struct UploadArena {
-    bytes: Vec<u8>,
-}
-
-impl UploadArena {
-    /// Empties the arena and makes room for `total` bytes. The list of the frame that last used
-    /// the arena has been replayed, so its copies may move.
-    fn reset(&mut self, total: usize) {
-        self.bytes.clear();
-        self.bytes.reserve_exact(total);
-    }
-
-    /// Copies bytes into the arena, padded to four bytes, and returns their address and padded
-    /// length. The arena never grows during a frame, as that would move the copies whose addresses
-    /// the list already holds.
-    fn push(&mut self, bytes: &[u8]) -> Result<(u32, u32), RecordError> {
-        let padded = bytes.len().next_multiple_of(4);
-        let start = self.bytes.len();
-        if self.bytes.capacity() - start < padded {
-            return Err(RecordError::UploadsFull);
-        }
-        self.bytes.extend_from_slice(bytes);
-        self.bytes.resize(start + padded, 0);
-        Ok((address(&self.bytes[start..]), padded as u32))
     }
 }
 
@@ -323,27 +218,13 @@ impl Layout {
     }
 }
 
-/// Settings the sketch changes rarely: the camera and the lights.
-#[derive(Clone, Copy, Debug)]
-struct Lighting {
-    sun_direction: [f32; 4],
-    sun_color: [f32; 4],
-    ambient: [f32; 4],
-    /// Linear background color.
-    background: [f32; 3],
-}
-
 /// Records one draw list per frame for the GPU-driven WebGPU path.
 pub struct GpuDrivenRenderer {
     config: RendererConfig,
-    meshes: MeshStorage,
-    uploaded_vertex_floats: usize,
-    uploaded_indices: usize,
-    materials: MaterialTable,
-    camera: Option<(Handle, Perspective)>,
-    lighting: Lighting,
-    lists: [DrawList; 2],
-    arenas: [UploadArena; 2],
+    settings: SceneSettings,
+    /// How much of the one mesh page the shared buffers hold.
+    uploaded: PageUploads,
+    lists: ParityLists,
     layout: Layout,
     /// Sizes of the GPU buffers the layout decides, 0 before they exist, by buffer id.
     buffer_sizes: [u32; 11],
@@ -355,25 +236,15 @@ impl GpuDrivenRenderer {
     pub fn new(config: RendererConfig) -> Self {
         Self {
             config,
-            meshes: MeshStorage::with_page_limit(
-                Packing::SharedBuffers,
-                u64::from(config.vertex_bytes.min(config.index_bytes)),
+            settings: SceneSettings::new(
+                MeshStorage::with_page_limit(
+                    Packing::SharedBuffers,
+                    u64::from(config.vertex_bytes.min(config.index_bytes)),
+                ),
+                config.max_materials,
             ),
-            uploaded_vertex_floats: 0,
-            uploaded_indices: 0,
-            materials: MaterialTable::with_capacity(config.max_materials),
-            camera: None,
-            lighting: Lighting {
-                sun_direction: [0.0, -1.0, 0.0, 0.0],
-                sun_color: [0.0; 4],
-                ambient: [0.0; 4],
-                background: [0.0; 3],
-            },
-            lists: [
-                DrawList::with_capacity(config.draw_list_words),
-                DrawList::with_capacity(config.draw_list_words),
-            ],
-            arenas: [UploadArena::default(), UploadArena::default()],
+            uploaded: PageUploads::default(),
+            lists: ParityLists::new(config.draw_list_words),
             layout: Layout::default(),
             buffer_sizes: [0; 11],
             created: false,
@@ -381,105 +252,26 @@ impl GpuDrivenRenderer {
         }
     }
 
-    /// The most sources, scene slots and instance rows together, that the builder can draw on
-    /// this device.
-    pub fn max_sources(&self) -> u32 {
-        max_sources(self.config.storage_binding_bytes)
-    }
-
-    /// Makes room for a layout of `sources` sources in the tables and upload space that grow with
-    /// the scene, or fails when memory cannot grow for them. Called before the scene grows, so a
-    /// later frame never runs out of memory while it records.
-    pub fn reserve_sources(&mut self, sources: u32) -> Result<(), TryReserveError> {
-        let buckets = &mut self.layout.instance_buckets;
-        buckets.try_reserve((sources as usize).saturating_sub(buckets.len()))?;
-        let bound = self.upload_bound() + sources.saturating_sub(self.layout.sources) as usize * 4;
-        for arena in &mut self.arenas {
-            arena
-                .bytes
-                .try_reserve(bound.saturating_sub(arena.bytes.len()))?;
+    fn targets(&self) -> SceneTargets {
+        SceneTargets {
+            color: ids::COLOR,
+            depth: ids::DEPTH,
+            samples: self.config.samples,
         }
-        Ok(())
-    }
-
-    pub fn meshes(&self) -> &MeshStorage {
-        &self.meshes
-    }
-
-    /// Mesh storage; a new mesh's engine id is its storage id plus one.
-    pub fn meshes_mut(&mut self) -> &mut MeshStorage {
-        &mut self.meshes
-    }
-
-    /// The material table; a material's engine id is its table id plus one.
-    pub fn materials_mut(&mut self) -> &mut MaterialTable {
-        &mut self.materials
-    }
-
-    /// The camera the frame is drawn from: a scene object, and its lens.
-    pub fn set_camera(&mut self, camera: Handle, lens: Perspective) {
-        self.camera = Some((camera, lens));
-    }
-
-    /// The directional light: the direction its light travels, and its linear color times its
-    /// intensity.
-    pub fn set_sun(&mut self, direction: [f32; 3], color: [f32; 3]) {
-        self.lighting.sun_direction = normalized_direction(direction);
-        self.lighting.sun_color = [color[0], color[1], color[2], 0.0];
-    }
-
-    /// The ambient light's linear color times its intensity.
-    pub fn set_ambient(&mut self, color: [f32; 3]) {
-        self.lighting.ambient = [color[0], color[1], color[2], 0.0];
-    }
-
-    /// The linear color behind every object.
-    pub fn set_background(&mut self, color: [f32; 3]) {
-        self.lighting.background = color;
-    }
-
-    /// Forgets every GPU object the draw lists created and every upload they made, so the next
-    /// frame creates them all again and uploads the whole scene. The thread that draws asks for
-    /// this after the browser took the GPU away and it made a new device.
-    pub fn reset_gpu(&mut self) {
-        self.created = false;
-        self.canvas = (0, 0);
-        self.buffer_sizes = [0; 11];
-        self.layout.built = false;
-        self.uploaded_vertex_floats = 0;
-        self.uploaded_indices = 0;
-        self.materials.mark_changed();
-    }
-
-    /// The list recorded for a frame's parity, as the render worker replays it.
-    pub fn list(&self, frame: u32) -> &DrawList {
-        &self.lists[(frame & 1) as usize]
-    }
-
-    /// Records the frame's draw list into the list of its parity.
-    pub fn record(&mut self, input: &FrameInput<'_>) -> Result<(), RecordError> {
-        let parity = (input.frame & 1) as usize;
-        let mut list = std::mem::replace(&mut self.lists[parity], DrawList::with_capacity(0));
-        let mut arena = std::mem::take(&mut self.arenas[parity]);
-        list.clear();
-        let result = self.record_into(input, parity, &mut list, &mut arena);
-        self.lists[parity] = list;
-        self.arenas[parity] = arena;
-        result
     }
 
     fn record_into(
         &mut self,
         input: &FrameInput<'_>,
-        parity: usize,
         list: &mut DrawList,
         arena: &mut UploadArena,
-    ) -> Result<(), RecordError> {
+    ) -> Result<bool, RecordError> {
+        let parity = input.parity();
         if !self.created {
             self.create_fixed(list)?;
         }
         if input.canvas != self.canvas {
-            self.resize(list, input.canvas)?;
+            self.canvas = self.targets().record_resize(list, input.canvas)?;
         }
         let upload_everything = input.structure_changed || !self.layout.built;
         if upload_everything {
@@ -487,8 +279,9 @@ impl GpuDrivenRenderer {
         }
         arena.reset(self.upload_bound());
         self.upload_meshes(list, arena)?;
-        if self.materials.take_changed() {
-            let (at, bytes) = arena.push(floats_as_bytes(self.materials.parameters()))?;
+        if self.settings.materials_mut().take_changed() {
+            let parameters = self.settings.materials().parameters();
+            let (at, bytes) = arena.push(floats_as_bytes(parameters))?;
             list.push(Op::WriteBuffer, &[ids::MATERIALS, 0, at, bytes])?;
         }
         if upload_everything {
@@ -498,27 +291,18 @@ impl GpuDrivenRenderer {
         }
         self.upload_matrices(list, input, parity, upload_everything)?;
 
-        let Some((camera, lens)) = self.camera else {
-            return self.clear_only(list);
-        };
-        let Ok(slot) = input.scene.resolve(camera) else {
-            return self.clear_only(list);
-        };
-        let world: Affine = *input.scene.world(parity).matrix(slot as usize);
-        let aspect = input.canvas.0 as f32 / input.canvas.1.max(1) as f32;
-        let view_proj = lens.view_projection(&world, aspect);
-        let uniform = FrameUniform {
-            view_proj,
-            camera_position: [world[3], world[7], world[11], 1.0],
-            sun_direction: self.lighting.sun_direction,
-            sun_color: self.lighting.sun_color,
-            ambient: self.lighting.ambient,
+        let Some(uniform) = self
+            .settings
+            .frame_uniform(input.scene, parity, input.canvas)
+        else {
+            self.settings.record_clear_only(list, self.targets())?;
+            return Ok(upload_everything);
         };
         let (at, bytes) = arena.push(uniform.as_bytes())?;
         list.push(Op::WriteBuffer, &[ids::FRAME, 0, at, bytes])?;
 
         let mut params = [0u32; (CULL_PARAMS_BYTES / 4) as usize];
-        for (plane, out) in Frustum::from_view_projection(&view_proj)
+        for (plane, out) in Frustum::from_view_projection(&uniform.view_proj)
             .planes()
             .iter()
             .zip(params.chunks_mut(4))
@@ -542,11 +326,11 @@ impl GpuDrivenRenderer {
             list.push(Op::Dispatch, &[groups, 1, 1])?;
             list.push(Op::EndComputePass, &[])?;
         }
-        self.begin_pass(list)?;
+        self.settings.record_begin_pass(list, self.targets())?;
         list.push(Op::ExecuteBundles, &[1, ids::SCENE_BUNDLE])?;
         list.push(Op::EndRenderPass, &[])?;
         list.push(Op::Submit, &[])?;
-        Ok(())
+        Ok(upload_everything)
     }
 
     fn create_fixed(&mut self, list: &mut DrawList) -> Result<(), RecordError> {
@@ -621,75 +405,26 @@ impl GpuDrivenRenderer {
         Ok(())
     }
 
-    fn resize(
-        &mut self,
-        list: &mut DrawList,
-        (width, height): (u32, u32),
-    ) -> Result<(), RecordError> {
-        let (width, height) = (width.max(1), height.max(1));
-        list.push(Op::ResizeCanvas, &[width, height])?;
-        for (id, tex_format) in [
-            (ids::COLOR, format::CANVAS),
-            (ids::DEPTH, format::DEPTH32_FLOAT),
-        ] {
-            list.push(
-                Op::CreateTexture,
-                &[
-                    id,
-                    width,
-                    height,
-                    1,
-                    tex_format,
-                    texture_usage::RENDER_ATTACHMENT,
-                    self.config.samples,
-                    1,
-                ],
-            )?;
-        }
-        self.canvas = (width, height);
-        Ok(())
-    }
-
     /// Uploads mesh data added since the last upload, from copies in the frame's arena.
     fn upload_meshes(
         &mut self,
         list: &mut DrawList,
         arena: &mut UploadArena,
     ) -> Result<(), RecordError> {
-        let Some(page) = self.meshes.pages().first() else {
+        let pages = self.settings.meshes().pages();
+        let Some(page) = pages.first() else {
             return Ok(());
         };
-        if self.meshes.pages().len() > 1 {
+        if pages.len() > 1 {
             return Err(RecordError::MeshBuffersFull);
         }
-        let new_vertices = &page.vertices[self.uploaded_vertex_floats..];
-        if !new_vertices.is_empty() {
-            let offset = (self.uploaded_vertex_floats * 4) as u32;
-            let (at, bytes) = arena.push(floats_as_bytes(new_vertices))?;
-            if offset + bytes > self.config.vertex_bytes {
-                return Err(RecordError::MeshBuffersFull);
-            }
-            list.push(Op::WriteBuffer, &[ids::VERTICES, offset, at, bytes])?;
-            self.uploaded_vertex_floats = page.vertices.len();
-        }
-        // Writes land on four-byte boundaries, so index uploads start at an even index; the index
-        // before the new ones is uploaded again when the previous upload ended on an odd one.
-        let first = self.uploaded_indices & !1;
-        let new_indices = &page.indices[first..];
-        if self.uploaded_indices < page.indices.len() {
-            // SAFETY: any `u16` is two initialized bytes.
-            let raw = unsafe {
-                std::slice::from_raw_parts(new_indices.as_ptr().cast::<u8>(), new_indices.len() * 2)
-            };
-            let offset = (first * 2) as u32;
-            let (at, bytes) = arena.push(raw)?;
-            if offset + bytes > self.config.index_bytes {
-                return Err(RecordError::MeshBuffersFull);
-            }
-            list.push(Op::WriteBuffer, &[ids::INDICES, offset, at, bytes])?;
-            self.uploaded_indices = page.indices.len();
-        }
-        Ok(())
+        self.uploaded.upload(
+            list,
+            arena,
+            page,
+            [ids::VERTICES, ids::INDICES],
+            [self.config.vertex_bytes, self.config.index_bytes],
+        )
     }
 
     /// Assigns every source to a bucket and lays the buckets out, from the frame's world state. It
@@ -714,46 +449,28 @@ impl GpuDrivenRenderer {
         }
         layout.sources = sources;
 
+        let settings = &self.settings;
         let key_of = |mesh: u32, material: u32| -> Option<BucketKey> {
-            if mesh == NO_MESH || material == NO_MATERIAL {
-                return None;
-            }
-            self.meshes.mesh(mesh - 1)?;
-            let shading = self.materials.shading(material - 1).ok()?;
-            Some((shading, mesh, material))
+            Some((settings.shading_of(mesh, material)?, mesh, material))
         };
         let world = scene.world(parity);
         let scene_key = |slot: usize| key_of(scene.meshes()[slot], scene.materials()[slot]);
 
-        // Every object's key once, shown or hidden, and every batch's key with all its rows.
-        // Sorted, equal keys merge into one entry per bucket, in key order.
-        layout.key_counts.clear();
-        layout
-            .key_counts
-            .reserve(scene_rows as usize + layout.batch_bases.len());
-        for slot in 0..scene_rows as usize {
-            if let Some(key) = scene_key(slot) {
-                layout.key_counts.push((key, 1));
-            }
-        }
-        for (_, batch) in batches.iter() {
-            if let Some(key) = key_of(batch.mesh(), batch.material()) {
-                layout.key_counts.push((key, batch.capacity()));
-            }
-        }
-        layout.key_counts.sort_unstable_by_key(|&(key, _)| key);
-        layout.key_counts.dedup_by(|next, kept| {
-            let same = next.0 == kept.0;
-            if same {
-                kept.1 += next.1;
-            }
-            same
-        });
+        collect_bucket_keys(
+            &mut layout.key_counts,
+            scene,
+            batches,
+            scene_key,
+            |_, batch| key_of(batch.mesh(), batch.material()),
+        );
 
         layout.buckets.clear();
         let mut base = 0;
         for &((shading, mesh, material), count) in &layout.key_counts {
-            let slot = self.meshes.mesh(mesh - 1).expect("keys name known meshes");
+            let slot = settings
+                .meshes()
+                .mesh(mesh - 1)
+                .expect("keys name known meshes");
             layout.buckets.push(Bucket {
                 shading,
                 material,
@@ -768,10 +485,7 @@ impl GpuDrivenRenderer {
         }
 
         let counts = &layout.key_counts;
-        let bucket_of = |key: Option<BucketKey>| {
-            key.and_then(|key| counts.binary_search_by_key(&key, |&(k, _)| k).ok())
-                .map_or(HIDDEN, |bucket| bucket as u32)
-        };
+        let bucket_of = |key: Option<BucketKey>| bucket_of(counts, key).unwrap_or(HIDDEN);
         layout.instance_buckets.clear();
         layout.home_buckets.clear();
         for slot in 0..scene_rows as usize {
@@ -816,11 +530,13 @@ impl GpuDrivenRenderer {
     /// uploaded yet, the whole material table, the layout's tables, the frame's constants and the
     /// indirect draws.
     fn upload_bound(&self) -> usize {
-        let meshes = self.meshes.pages().first().map_or(0, |page| {
-            (page.vertices.len() - self.uploaded_vertex_floats) * 4
-                + ((page.indices.len() - (self.uploaded_indices & !1)) * 2).next_multiple_of(4)
-        });
-        let materials = self.materials.capacity() as usize * MATERIAL_FLOATS * 4;
+        let meshes = self
+            .settings
+            .meshes()
+            .pages()
+            .first()
+            .map_or(0, |page| self.uploaded.pending_bytes(page));
+        let materials = self.settings.materials().capacity() as usize * MATERIAL_FLOATS * 4;
         let buckets = self.layout.buckets.len() * (BUCKET_BYTES + INDIRECT_BYTES) as usize;
         let frame = (sizes::FRAME_UNIFORM_BYTES + CULL_PARAMS_BYTES) as usize;
         meshes + materials + self.layout.sources as usize * 4 + buckets + frame
@@ -1057,41 +773,48 @@ impl GpuDrivenRenderer {
         }
         Ok(())
     }
-
-    fn begin_pass(&self, list: &mut DrawList) -> Result<(), RecordError> {
-        // The targets hold sRGB-encoded values, as the shaders write them.
-        let [r, g, b] = self.lighting.background.map(linear_to_srgb);
-        list.push(
-            Op::BeginRenderPass,
-            &[
-                ids::COLOR,
-                0,
-                ids::DEPTH,
-                r.to_bits(),
-                g.to_bits(),
-                b.to_bits(),
-                1f32.to_bits(),
-                0f32.to_bits(),
-                pass_flags::CLEAR_COLOR | pass_flags::CLEAR_DEPTH,
-            ],
-        )?;
-        Ok(())
-    }
-
-    /// A frame with no camera: the background only.
-    fn clear_only(&self, list: &mut DrawList) -> Result<(), RecordError> {
-        self.begin_pass(list)?;
-        list.push(Op::EndRenderPass, &[])?;
-        list.push(Op::Submit, &[])?;
-        Ok(())
-    }
 }
 
-/// Encodes a linear color channel as sRGB.
-pub fn linear_to_srgb(c: f32) -> f32 {
-    if c <= 0.003_130_8 {
-        12.92 * c
-    } else {
-        1.055 * c.powf(1.0 / 2.4) - 0.055
+impl FrameBuilder for GpuDrivenRenderer {
+    fn settings(&self) -> &SceneSettings {
+        &self.settings
+    }
+
+    fn settings_mut(&mut self) -> &mut SceneSettings {
+        &mut self.settings
+    }
+
+    fn max_sources(&self) -> u32 {
+        max_sources(self.config.storage_binding_bytes)
+    }
+
+    fn reserve_sources(&mut self, sources: u32) -> Result<(), TryReserveError> {
+        let buckets = &mut self.layout.instance_buckets;
+        buckets.try_reserve((sources as usize).saturating_sub(buckets.len()))?;
+        let bound = self.upload_bound() + sources.saturating_sub(self.layout.sources) as usize * 4;
+        for arena in self.lists.arenas_mut() {
+            arena.try_reserve(bound)?;
+        }
+        Ok(())
+    }
+
+    fn record(&mut self, input: &FrameInput<'_>) -> Result<bool, RecordError> {
+        let (mut list, mut arena) = self.lists.take(input.frame);
+        let result = self.record_into(input, &mut list, &mut arena);
+        self.lists.restore(input.frame, list, arena);
+        result
+    }
+
+    fn reset_gpu(&mut self) {
+        self.created = false;
+        self.canvas = (0, 0);
+        self.buffer_sizes = [0; 11];
+        self.layout.built = false;
+        self.uploaded = PageUploads::default();
+        self.settings.materials_mut().mark_changed();
+    }
+
+    fn list(&self, frame: u32) -> &DrawList {
+        self.lists.list(frame)
     }
 }

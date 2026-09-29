@@ -4,15 +4,15 @@ import { expect, type Page, test } from '@playwright/test';
 import { encode } from 'fast-png';
 import { pageResult } from '../../tests/lib/page-result.ts';
 import { PARITY_SCENES, type PageKind, pagePath, SCENE_CODE } from '../lib/parity';
-import { BACKGROUND, PARITY_CANVAS, S2_NODE_COUNT } from '../scenes/spec';
+import { BACKGROUND, PARITY_CANVAS, S2_NODES_PER_TREE, s2Trees } from '../scenes/spec';
 
 const SCENES = PARITY_SCENES;
-/** The pages each scene is tested on, with the renderer each one reports. The null3d WebGL2 path
- * draws only its background until its renderer arrives, so its pages are not tested yet. */
+/** The pages each scene is tested on, with the renderer each one reports. */
 const PAGES: { kind: PageKind; renderer: string }[] = [
 	{ kind: 'threejs-webgl', renderer: 'webgl' },
 	{ kind: 'threejs-webgpu', renderer: 'webgpu' },
 	{ kind: 'null3d-webgpu', renderer: 'null3d' },
+	{ kind: 'null3d-webgl2', renderer: 'null3d' },
 ];
 
 /** Where the hold frames are saved, for people to review. */
@@ -30,6 +30,8 @@ const MIN_DRAWN_SHARE: Record<(typeof SCENES)[number], number> = {
 };
 /** The instance count of the short benchmark runs. */
 const SHORT_RUN_COUNT = 1000;
+/** S2 draws whole trees, so it rounds the short runs' count up to them. */
+const S2_SHORT_RUN_COUNT = s2Trees(SHORT_RUN_COUNT) * S2_NODES_PER_TREE;
 
 interface Report {
 	ok: boolean;
@@ -138,7 +140,7 @@ for (const scene of SCENES) {
 				pagePath(scene, kind, `seconds=2&n=${SHORT_RUN_COUNT}`),
 			);
 			expect([result.scene, result.renderer]).toEqual([scene, renderer]);
-			expect(result.n).toBe(scene === 's2' ? S2_NODE_COUNT : SHORT_RUN_COUNT);
+			expect(result.n).toBe(scene === 's2' ? S2_SHORT_RUN_COUNT : SHORT_RUN_COUNT);
 			expect(result.frames).toBeGreaterThan(0);
 			expect(result.cpuMs.median).toBeGreaterThan(0);
 			expect(result.intervalMs.median).toBeGreaterThan(0);
@@ -154,7 +156,7 @@ for (const scene of SCENES) {
 			pagePath(scene, SCENE_CODE, `seconds=1&n=${SHORT_RUN_COUNT}`),
 		);
 		expect([result.scene, result.renderer]).toEqual([scene, SCENE_CODE]);
-		expect(result.n).toBe(scene === 's2' ? S2_NODE_COUNT : SHORT_RUN_COUNT);
+		expect(result.n).toBe(scene === 's2' ? S2_SHORT_RUN_COUNT : SHORT_RUN_COUNT);
 		expect(result.frames).toBeGreaterThan(0);
 		// S1 moves every instance; the other scenes' code is a camera path and a few turns, which can
 		// take less time than the browser's clock resolves.

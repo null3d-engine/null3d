@@ -22,6 +22,7 @@ import {
 	s2Camera,
 	s2MeshSize,
 	s2RootRotation,
+	s2Trees,
 } from './spec';
 
 const TAU = 2 * Math.PI;
@@ -225,6 +226,15 @@ describe('S2', () => {
 	test('is the same for the same seed and different for another seed', () => {
 		expect(createS2()).toEqual(data);
 		expect(createS2(3).position).not.toEqual(data.position);
+	});
+
+	test('rounds a count up to whole trees, at least one', () => {
+		expect([0, 1, 364, 365, 5096].map(s2Trees)).toEqual([1, 1, 1, 2, 14]);
+		const three = createS2(2, 3);
+		expect(three.parent).toHaveLength(3 * S2_NODES_PER_TREE);
+		// The first trees of a smaller forest match the default forest's, on a grid with one row.
+		expect(three.mesh).toEqual(data.mesh.subarray(0, 3 * S2_NODES_PER_TREE));
+		expect(three.position[2]).toBe(0);
 	});
 
 	test('has 5,096 nodes: 14 trees of 364 nodes', () => {

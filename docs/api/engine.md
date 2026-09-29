@@ -78,7 +78,7 @@ The GPU path the engine chose, and what it offers.
 | `threaded: boolean` | True when the engine runs the threaded build. |
 | `features: string[]` | The optional features of the GPU path: WebGPU features, or the WebGL2 extensions present. |
 | `limits: Record<string, number \| null>` | The WebGPU limits, or an empty object on WebGL2. |
-| `maxInstances: number` | The most objects and instance rows, counted together, that a scene can draw on this device. Every device draws at least 2,097,152. A device with larger GPU buffers draws more, up to 8,388,480. Engine memory can run out first: see E1109. |
+| `maxInstances: number` | The most objects and instance rows, counted together, that a scene can draw on this device. On WebGPU every device draws at least 2,097,152, and a device with larger GPU buffers draws more, up to 8,388,480. On WebGL2 the number follows the largest texture the device allows: 2,097,152 at 4,096 pixels, and 1,048,576 at the 2,048 that every device allows. Engine memory can run out first: see E1109. |
 
 ### `EngineError`
 
@@ -196,7 +196,7 @@ What the browser's WebGL2 offers, in `CapabilityReport.webgl2`.
 | `maxSamples: number \| null` | The most samples per pixel for antialiasing, or null without WebGL2. |
 | `maxTextureSize: number \| null` | The largest texture width and height in pixels, or null without WebGL2. |
 | `maxUniformBlockSize: number \| null` | The largest uniform block in bytes, or null without WebGL2. |
-| `sharedMemoryUploads: { bufferSubData: boolean; texSubImage2D: boolean; } \| null` | Whether WebGL accepts views on shared memory for uploads; null without shared memory. |
+| `sharedMemoryUploads: { bufferSubData: boolean; texSubImage2D: boolean; multiDraw: boolean \| null; } \| null` | Whether WebGL accepts views on shared memory: for buffer and texture uploads, and for the arrays of multi-draw calls (null without `WEBGL_multi_draw`). Null without shared memory. |
 | `renderer: string \| null` | Reported for the record only; the engine never branches on it. |
 | `error?: string` | Why the probe failed, when it did. |
 
