@@ -5,15 +5,9 @@
 import { type CompletionSignal, FenceCompletion, QueueCompletion } from '../gpu/completion';
 import { readbackWebGL2, readbackWebGPU } from '../gpu/readback';
 import { WebGL2Backend } from '../gpu/webgl2/backend';
-import {
-	contextFinished,
-	releaseContext,
-	simulateContextLoss,
-	webgl2Context,
-} from '../gpu/webgl2/context';
+import { contextFinished, releaseContext, simulateContextLoss } from '../gpu/webgl2/context';
 import { WebGPUBackend } from '../gpu/webgpu/backend';
 import { GpuTimer } from '../gpu/webgpu/gpu-timer';
-import type { PowerPreference } from '../page/capabilities';
 import { controlViews, Slot } from '../shared/control';
 import { Counter, type FrameRecorder, Phase } from '../shared/metrics';
 import { contextLoss, deviceLoss } from './loss';
@@ -146,28 +140,26 @@ export class WebGL2SceneRenderer implements Renderer {
 	readonly tier: Tier = 'webgl2';
 	readonly completion: CompletionSignal = 'fence';
 	readonly lost: Promise<string>;
-	private readonly gl: WebGL2RenderingContext;
 	private readonly backend: WebGL2Backend;
 	private readonly lists: DrawLists;
 	private readonly completions: FenceCompletion | undefined;
 	private released = false;
 
 	/**
-	 * `sharedUploads` is false where WebGL refuses views on shared memory, so the backend copies
-	 * uploads out of engine memory first.
+	 * `gl` is the canvas's context, made with the engine's settings. `sharedUploads` is false where
+	 * WebGL refuses views on shared memory, so the backend copies uploads out of engine memory first.
 	 */
 	constructor(
 		private readonly canvas: RenderCanvas,
+		private readonly gl: WebGL2RenderingContext,
 		memory: WebAssembly.Memory,
 		control: ArrayBufferLike,
 		metrics: ArrayBufferLike | undefined,
-		powerPreference: PowerPreference | undefined,
 		sharedUploads: boolean,
 	) {
 		this.lost = contextLoss(canvas, () => this.released);
-		this.gl = webgl2Context(canvas, powerPreference);
-		this.backend = new WebGL2Backend(this.gl, canvas, sharedUploads);
-		this.completions = metrics && new FenceCompletion(this.gl, metrics);
+		this.backend = new WebGL2Backend(gl, canvas, sharedUploads);
+		this.completions = metrics && new FenceCompletion(gl, metrics);
 		this.lists = new DrawLists(memory, control);
 	}
 

@@ -39,12 +39,11 @@ export function contextLoss(
 	});
 }
 
-/** Waits until the canvas's lost WebGL2 context comes back, and fails if it does not in time. */
-export function contextRestored(canvas: OffscreenCanvas | HTMLCanvasElement): Promise<void> {
-	const gl = canvas.getContext('webgl2') as WebGL2RenderingContext | null;
-	if (!gl?.isContextLost()) return Promise.resolve();
+/** Waits until a lost WebGL2 context comes back, and fails if it does not in time. */
+export function contextRestored(gl: WebGL2RenderingContext): Promise<void> {
+	if (!gl.isContextLost()) return Promise.resolve();
 	return new Promise((resolve, reject) => {
-		const target = canvas as EventTarget;
+		const target = gl.canvas as EventTarget;
 		const done = () => {
 			clearTimeout(timer);
 			for (const name of RESTORED_EVENTS) target.removeEventListener(name, done);

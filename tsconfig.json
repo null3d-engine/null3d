@@ -22,5 +22,6 @@
 		"tests/lib/**/*.ts",
 		"tests/image/**/*.ts",
 		"vite.config.ts"
-	]
+	],
+	"exclude": ["packages/engine/**"]
 }

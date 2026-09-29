@@ -170,19 +170,17 @@ class WebGPURenderer implements Renderer {
 class WebGL2Renderer implements Renderer {
 	readonly tier: Tier = 'webgl2';
 	readonly completion: CompletionSignal = 'fence';
-	private readonly gl: WebGL2RenderingContext;
 	private readonly completions: FenceCompletion | undefined;
 	private released = false;
 	readonly lost: Promise<string>;
 
 	constructor(
 		private readonly canvas: RenderCanvas,
+		private readonly gl: WebGL2RenderingContext,
 		metrics: ArrayBufferLike | undefined,
-		powerPreference: PowerPreference | undefined,
 	) {
 		this.lost = contextLoss(canvas, () => this.released);
-		this.gl = webgl2Context(canvas, powerPreference);
-		this.completions = metrics && new FenceCompletion(this.gl, metrics);
+		this.completions = metrics && new FenceCompletion(gl, metrics);
 	}
 
 	resize(width: number, height: number): void {
@@ -236,18 +234,21 @@ export async function createRenderer(
 	options: RendererOptions,
 ): Promise<Renderer> {
 	if (options.tier === 'webgl2') {
+		// A canvas keeps the settings of the first request for its context and ignores later ones,
+		// so the context is made here with the engine's settings, before anything else asks for it.
+		const gl = webgl2Context(canvas, options.powerPreference);
 		// After a loss, the context must come back before the engine can draw with it again.
-		await contextRestored(canvas);
+		await contextRestored(gl);
 		if (options.scene)
 			return new WebGL2SceneRenderer(
 				canvas,
+				gl,
 				options.scene.memory,
 				options.scene.control,
 				options.metrics,
-				options.powerPreference,
 				options.device.sharedUploads,
 			);
-		return new WebGL2Renderer(canvas, options.metrics, options.powerPreference);
+		return new WebGL2Renderer(canvas, gl, options.metrics);
 	}
 	const adapter = await navigator.gpu?.requestAdapter({
 		featureLevel: 'compatibility',
