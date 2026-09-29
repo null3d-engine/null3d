@@ -557,33 +557,55 @@ describe('the memory plan', () => {
 	const ALLOCATION_ERROR = 'WebAssembly.Memory(): could not allocate memory';
 	const allocationFailed: ItemResult = { ok: false, error: ALLOCATION_ERROR };
 
-	it('loads the engine page 20 times at each maximum, from low to high', () => {
+	it('counts the room and then loads the engine page 20 times at each maximum, from low to high', () => {
 		const items = memoryPlan();
 		expect(PLANS.memory).toBe(memoryPlan);
 		expect(MEMORY_MAXIMUMS_MIB).toEqual([256, 512, 1024, 2048, 4096]);
-		expect(items).toHaveLength(100);
+		expect(items).toHaveLength(105);
 		expect(new Set(items.map(({ id }) => id)).size).toBe(items.length);
 		expect(items[0]).toEqual({
+			id: 'room-256',
+			path: '/tests/pages/shared-memory.html?kinds=dropped&cycles=1&maximum=4096',
+			timeoutSeconds: 60,
+			check: { kind: 'room', maximumMiB: 256 },
+		});
+		expect(items[1]).toEqual({
 			id: 'memory-256-1',
 			path: '/tests/pages/engine.html?memory=256&seconds=2',
 			timeoutSeconds: 45,
 			check: { kind: 'memory', maximumMiB: 256 },
 		});
-		expect(items[20]?.id).toBe('memory-512-1');
+		expect(items[21]?.id).toBe('room-512');
 		expect(items.at(-1)?.id).toBe('memory-4096-20');
 		expect(memoryPlan({ runs: 2 }).map(({ id }) => id)).toEqual(
-			MEMORY_MAXIMUMS_MIB.flatMap((maximum) => [`memory-${maximum}-1`, `memory-${maximum}-2`]),
+			MEMORY_MAXIMUMS_MIB.flatMap((maximum) => [
+				`room-${maximum}`,
+				`memory-${maximum}-1`,
+				`memory-${maximum}-2`,
+			]),
+		);
+		expect(memoryPlan({ runs: 0 }).map(({ id }) => id)).toEqual(
+			MEMORY_MAXIMUMS_MIB.map((maximum) => `room-${maximum}`),
 		);
 	});
 
 	it('passes a load only when the engine started with shared memory', () => {
-		const [item] = memoryPlan({ runs: 1 });
-		if (!item) throw new Error('the plan has no items');
+		const item = memoryPlan({ runs: 1 }).find(({ check }) => check.kind === 'memory');
+		if (!item) throw new Error('the plan has no loads');
 		expect(judge(item.check, loaded(), NONE_MISSING)).toEqual([]);
 		expect(judge(item.check, loaded('single'), NONE_MISSING)).toEqual([
 			'the engine started without shared memory, so the load tested no maximum',
 		]);
 		expect(judge(item.check, allocationFailed, NO_WEBGPU)).toEqual([ALLOCATION_ERROR]);
+	});
+
+	it('passes a room count only when the page counted its room', () => {
+		const room = memoryPlan({ runs: 0 })[0];
+		if (!room) throw new Error('the plan has no room counts');
+		expect(judge(room.check, { ok: true, room: 6 }, NONE_MISSING)).toEqual([]);
+		expect(judge(room.check, { ok: true }, NONE_MISSING)).toEqual([
+			'the page did not count its room',
+		]);
 	});
 
 	it('counts the loads that started the engine at each maximum, and names the largest that always did', () => {
@@ -595,20 +617,29 @@ describe('the memory plan', () => {
 		results['memory-4096-2'] = allocationFailed;
 		// The browser closed the runner's tab during the last load.
 		delete results['memory-4096-3'];
+		results['room-256'] = { ok: true, room: 64 };
+		results['room-512'] = { ok: true, room: 30 };
+		results['room-1024'] = { ok: true, room: 6 };
+		results['room-2048'] = { ok: true, room: 2 };
+		results['room-4096'] = { ok: false, error: 'no result within 60 s' };
 		expect(memorySummary(items, (id) => results[id])?.split('\n')).toEqual([
-			'| Memory maximum | Loads that started the engine | Why the others failed |',
-			'| --- | --- | --- |',
-			'| 256 MiB | 3 of 3 | none |',
-			'| 512 MiB | 3 of 3 | none |',
-			'| 1024 MiB | 3 of 3 | none |',
-			`| 2048 MiB | 2 of 3 | 1 load: ${ALLOCATION_ERROR} |`,
-			`| 4096 MiB | 0 of 3 | 2 loads: ${ALLOCATION_ERROR}; 1 load: ${NO_RESULT} |`,
+			'| Memory maximum | Loads that started the engine | Engines that fit at once | Why the other loads failed |',
+			'| --- | --- | --- | --- |',
+			'| 256 MiB | 3 of 3 | 64 or more | none |',
+			'| 512 MiB | 3 of 3 | 30 | none |',
+			'| 1024 MiB | 3 of 3 | 6 | none |',
+			`| 2048 MiB | 2 of 3 | 2 | 1 load: ${ALLOCATION_ERROR} |`,
+			`| 4096 MiB | 0 of 3 | not counted | 2 loads: ${ALLOCATION_ERROR}; 1 load: ${NO_RESULT} |`,
 			'',
 			'The largest maximum that loaded 3 of 3 times: 1024 MiB.',
 		]);
 		const nothing = memorySummary(items, () => allocationFailed);
 		expect(nothing?.split('\n').at(-1)).toBe('No maximum loaded every time.');
 		expect(memorySummary(benchPlan({ runs: 1 }), () => loaded())).toBeUndefined();
+		const roomOnly = memoryPlan({ runs: 0 });
+		expect(memorySummary(roomOnly, () => ({ ok: true, room: 1 }))?.split('\n')).toContain(
+			'| 4096 MiB | not loaded | 1 | none |',
+		);
 	});
 });
 

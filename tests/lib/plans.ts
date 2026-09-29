@@ -54,6 +54,7 @@ export type Check =
 	| { kind: 'engine'; tier: Tier; mode: EngineMode }
 	| { kind: 'restarts'; mode: EngineMode }
 	| { kind: 'memory'; maximumMiB: number }
+	| { kind: 'room'; maximumMiB: number }
 	| { kind: 'uploads'; tier: Tier }
 	| { kind: 'hold'; tier: Tier }
 	| { kind: 'parity'; tier: Tier; scene: ParityScene; pair: PagePair }
@@ -279,21 +280,37 @@ export function benchPlan({
 export const MEMORY_MAXIMUMS_MIB = [256, 512, 1024, 2048, 4096] as const;
 /** Loads of the engine page at each maximum in the memory plan. */
 export const MEMORY_LOADS = 20;
+/** WebAssembly memory comes in pages of 64 KiB, 16 to a MiB. */
+const PAGES_PER_MIB = 16;
+/** How long the shared memory page may take to count its room twice, a few seconds apart. */
+const ROOM_TIMEOUT_SECONDS = 60;
+/** The most memories the shared memory page counts; a browser with room for this many has more. */
+const MOST_COUNTED = 64;
 
 /**
- * Loads the engine test page `runs` times at each shared memory maximum, from low to high, on the
- * GPU path that the browser picks. A load passes when the engine starts with the threaded build,
- * the one whose shared memory has the maximum.
+ * At each shared memory maximum, from low to high, counts how many memories with that maximum the
+ * browser holds at once, as engines that fit on one page, on the shared memory test page. Then it
+ * loads the engine test page `runs` times, on the GPU path that the browser picks. A load passes
+ * when the engine starts with the threaded build, the one whose shared memory has the maximum.
  */
 export function memoryPlan({ runs = MEMORY_LOADS }: PlanSettings = {}): PlanItem<Check>[] {
-	return MEMORY_MAXIMUMS_MIB.flatMap((maximumMiB) =>
-		Array.from({ length: runs }, (_, load) =>
+	return MEMORY_MAXIMUMS_MIB.flatMap((maximumMiB) => [
+		pageItem(
+			`room-${maximumMiB}`,
+			'shared-memory',
+			{ kind: 'room', maximumMiB },
+			{
+				switches: ['kinds=dropped', 'cycles=1', `maximum=${maximumMiB * PAGES_PER_MIB}`],
+				timeoutSeconds: ROOM_TIMEOUT_SECONDS,
+			},
+		),
+		...Array.from({ length: runs }, (_, load) =>
 			engineItem(`memory-${maximumMiB}-${load + 1}`, [`memory=${maximumMiB}`], {
 				kind: 'memory',
 				maximumMiB,
 			}),
 		),
-	);
+	]);
 }
 
 export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanItem<Check>[]>> = {
@@ -549,6 +566,8 @@ export function judge(
 			return (result.mode as { build?: string } | undefined)?.build === 'threaded'
 				? []
 				: ['the engine started without shared memory, so the load tested no maximum'];
+		case 'room':
+			return typeof result.room === 'number' ? [] : ['the page did not count its room'];
 		case 'uploads': {
 			const sizes = (result.sizes ?? []) as number[];
 			const frames = (result.frames ?? []) as { wrong: number[]; errors?: string[] }[];
@@ -620,23 +639,34 @@ interface MemoryTally {
 	failures: Map<string, number>;
 }
 
+/** How many shared memories with a maximum fit at once, as the room item counted them. */
+function roomText(result: ItemResult | undefined): string {
+	if (typeof result?.room !== 'number') return 'not counted';
+	return result.room >= MOST_COUNTED ? `${MOST_COUNTED} or more` : String(result.room);
+}
+
 /**
- * How many loads at each shared memory maximum started the engine, as a Markdown table, and the
- * largest maximum at which every load did. A failed allocation fails its load, and so does a load
- * without a result, as after the browser closed the runner's tab. Undefined when the plan has no
- * memory loads.
+ * How many loads at each shared memory maximum started the engine, and how many engines' memories
+ * fit at once at that maximum, as a Markdown table, with the largest maximum at which every load
+ * started the engine. A failed allocation fails its load, and so does a load without a result, as
+ * after the browser closed the runner's tab. Undefined when the plan has no memory items.
  */
 export function memorySummary(
 	items: readonly PlanItem<Check>[],
 	resultOf: (id: string) => ItemResult | undefined,
 ): string | undefined {
 	const tallies = new Map<number, MemoryTally>();
+	const rooms = new Map<number, string>();
 	for (const { id, check } of items) {
-		if (check.kind !== 'memory') continue;
+		if (check.kind !== 'memory' && check.kind !== 'room') continue;
 		const tally = tallies.get(check.maximumMiB) ?? { loads: 0, started: 0, failures: new Map() };
 		tallies.set(check.maximumMiB, tally);
-		tally.loads++;
 		const result = resultOf(id);
+		if (check.kind === 'room') {
+			rooms.set(check.maximumMiB, roomText(result));
+			continue;
+		}
+		tally.loads++;
 		const verdict = result ? judge(check, result, NONE_MISSING) : [NO_RESULT];
 		const problems = verdict === 'skip' ? ['skipped'] : verdict;
 		if (problems.length === 0) tally.started++;
@@ -645,18 +675,18 @@ export function memorySummary(
 	}
 	if (tallies.size === 0) return undefined;
 	const lines = [
-		'| Memory maximum | Loads that started the engine | Why the others failed |',
-		'| --- | --- | --- |',
+		'| Memory maximum | Loads that started the engine | Engines that fit at once | Why the other loads failed |',
+		'| --- | --- | --- | --- |',
 	];
 	let largest: [number, MemoryTally] | undefined;
 	for (const [maximumMiB, tally] of [...tallies].sort(([a], [b]) => a - b)) {
 		const why = [...tally.failures].map(
 			([problem, loads]) => `${loads} ${loads === 1 ? 'load' : 'loads'}: ${problem}`,
 		);
-		lines.push(
-			`| ${maximumMiB} MiB | ${tally.started} of ${tally.loads} | ${why.join('; ') || 'none'} |`,
-		);
-		if (tally.started === tally.loads) largest = [maximumMiB, tally];
+		const started = tally.loads > 0 ? `${tally.started} of ${tally.loads}` : 'not loaded';
+		const room = rooms.get(maximumMiB) ?? 'not counted';
+		lines.push(`| ${maximumMiB} MiB | ${started} | ${room} | ${why.join('; ') || 'none'} |`);
+		if (tally.loads > 0 && tally.started === tally.loads) largest = [maximumMiB, tally];
 	}
 	lines.push(
 		'',
