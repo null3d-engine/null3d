@@ -32,7 +32,10 @@ const NULL3D_TIERS = new Map<PageKind, { tier: Tier; reported: string }>(
 		{ tier, reported: tier === 'compat' ? 'webgpu-compat' : tier },
 	]),
 );
-/** The reference images of the null3D hold frames, one folder per GPU tier. */
+/**
+ * The reference images of the null3D hold frames: one set per test environment, as a software GPU
+ * and a real one differ at object edges, and in each set one folder per GPU tier.
+ */
 const REFERENCE_DIR = join(import.meta.dirname, 'references');
 
 /** Where the hold frames are saved, for people to review. */
@@ -125,7 +128,9 @@ function meanBrightness(pixels: Uint8Array, width: number, fromRow: number, toRo
 
 for (const scene of SCENES) {
 	for (const { kind, renderer } of PAGES) {
-		test(`${scene} on ${kind} renders a hold frame that is not blank`, async ({ page }) => {
+		test(`${scene} on ${kind} renders a hold frame that is not blank`, async ({
+			page,
+		}, testInfo) => {
 			const result = await runPage<HoldReport>(page, pagePath(scene, kind, 'hold'));
 			expect([result.scene, result.renderer]).toEqual([scene, renderer]);
 			const { width, height } = PARITY_CANVAS;
@@ -161,7 +166,7 @@ for (const scene of SCENES) {
 				// A page that fell back to another tier would compare the wrong image.
 				expect(result.tier).toBe(null3d.reported);
 				compareToReference(scene, null3d.tier, pixels, width, height, {
-					referenceDir: REFERENCE_DIR,
+					referenceDir: join(REFERENCE_DIR, testInfo.project.name),
 					failureDir: FAILURE_DIR,
 				});
 			}
