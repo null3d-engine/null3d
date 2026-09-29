@@ -103,6 +103,7 @@ A live engine logs an error in `onUpdate` and carries on. Hold mode stops instea
 
 - Move things with `time.now` and the `dt` that `onUpdate` receives. `Date.now()` and `performance.now()` change from run to run.
 - Use `Math.random`: hold mode seeds it. Random numbers from another source, such as `crypto.getRandomValues`, are not seeded.
+- Expect no input. In hold mode, the sketch gets none: every key and button stays up, and the pointer stays at the canvas's top-left corner.
 - Finish loading in the setup. Await every asset there, because the hold starts when the setup's promise resolves.
 - Pass test settings in the sketch module's address, such as `new URL('./sketch.ts?view=harbor', import.meta.url)`, and read them in the sketch with `new URL(import.meta.url).searchParams`. The page's messages reach the sketch only after the hold, because `createEngine` resolves after it.
 - Keep a reference image per GPU tier, and force the tier with `?gpu=webgpu`, `?gpu=compat` or `?gpu=webgl2`. The tiers can differ slightly at edges.

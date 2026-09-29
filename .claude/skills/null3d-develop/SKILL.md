@@ -143,7 +143,7 @@ Interaction:
 | Orbit or map camera | `createOrbitControls` or `createMapControls` from `@null3d/controls` | `api/controls` |
 | Fly or first-person camera | `createFlyControls` or `createFirstPersonControls` (0.2) | `api/controls` |
 | Click or hover on objects | `obj.on('click', fn)` and `'pointerenter'` or `'pointerleave'` (0.2), or `camera.screenToRay` with `scene.raycast` | `api/raycast` |
-| Keys, pointer, gamepad | `input.isDown`, `input.pointer`, `input.actions.define` | `api/input` |
+| Keys, pointer, touch, gamepad | `input.isDown`, `input.wasPressed`, `input.value`, `input.pointer`, `input.touches`, `input.actions.define` | `api/input` |
 | HTML UI and settings panels | On the page, sending messages to the sketch | `guides/ui-overlays` |
 | Labels above objects | `ui.trackLabel` in the sketch, `engine.labels.bind` on the page (0.2) | `api/ui` |
 | A product or marketing page with a 3D scene | Fallback page first, a load deadline, reveal on `engine.firstFrame`, pause off screen | `guides/content-pages`, `references/content-pages.md` |

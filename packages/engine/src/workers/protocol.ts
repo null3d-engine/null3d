@@ -56,6 +56,11 @@ export interface RendererSetup {
 export type SketchWorkerInit = CoreHandoff & {
 	type: 'init';
 	sketchUrl: string;
+	/**
+	 * The key names, in the order of the numbers that the page gives keys in the input ring. The
+	 * page hands them over, so the sketch worker's file needs no copy.
+	 */
+	keyCodes: readonly string[];
 	/** Job workers that serve the sketch's job system. */
 	jobWorkers: number;
 	/** Present in low-latency mode, where the sketch worker also draws. */

@@ -305,12 +305,13 @@ Hit objects are the same wrappers you created; `hit.instance` is the row index f
 ## 14. Input (`api/input`) and controls (`api/controls`)
 
 ```ts
-input.pointer;          // { x, y (CSS pixels), ndcX, ndcY, buttons, dx, dy, wheel, isTouch }
-input.isDown('KeyW');   // KeyboardEvent.code names, mouse 'Mouse0', gamepad 'GamepadA'
-input.wasPressed('Space'); input.wasReleased('Space');
+input.pointer;          // { x, y (CSS pixels), ndcX, ndcY, buttons, dx, dy (this frame), wheel (this frame), isTouch }
+input.isDown('KeyW');   // KeyboardEvent.code names; 'Mouse0' to 'Mouse4' (Mouse0 is also a tap); 'GamepadA'
+input.wasPressed('Space'); input.wasReleased('Space');   // true for one frame; a tap between frames gives both
+input.value('GamepadRT');                // 0 to 1: triggers and stick directions such as 'GamepadLeftStickLeft'
 input.actions.define({ jump: ['Space', 'GamepadA'], fire: ['Mouse0', 'GamepadRT'] });
-input.isDown('jump');
-input.touches;          // active touches, for custom gestures
+input.isDown('jump');   // actions work in every input call; an unknown name throws E1205
+input.touches;          // fingers on the canvas, oldest first: { id, x, y, dx, dy }; changes in place
 
 import { createOrbitControls } from '@null3d/controls';
 const controls = createOrbitControls(ctx, camera, {
@@ -320,6 +321,8 @@ const controls = createOrbitControls(ctx, camera, {
 // in onUpdate: controls.update(dt)
 // also createMapControls; createFlyControls and createFirstPersonControls (0.2)
 ```
+
+Input changes once per frame, before `onUpdate`. Give a canvas that takes touch gestures `touch-action: none` in its CSS, or the browser scrolls the page and cancels the touches.
 
 ## 15. Post-processing (`api/post`)
 

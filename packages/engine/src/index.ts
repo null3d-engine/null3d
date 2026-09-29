@@ -60,6 +60,7 @@ export type {
 	SketchSetup,
 } from './sketch/define-sketch';
 export { defineSketch } from './sketch/define-sketch';
+export type { Input, InputActions, InputPointer, InputTouch } from './sketch/input';
 export type { WorkerProbe } from './workers/probe-worker';
 
 /**

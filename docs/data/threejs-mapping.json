@@ -1253,8 +1253,8 @@
       "three": "DOM pointer, mouse, touch and keyboard listeners",
       "status": "changed",
       "since": "0.1",
-      "target": "input.pointer, input.isDown('KeyW'), input.actions; obj.on('pointerenter' | 'pointerleave' | 'click', fn) (0.2)",
-      "notes": "Input reaches the sketch worker through shared memory; the sketch never adds DOM listeners.",
+      "target": "input.pointer, input.isDown('KeyW'), input.wasPressed('Mouse0'), input.touches, input.actions.define(); obj.on('pointerenter' | 'pointerleave' | 'click', fn) (0.2)",
+      "notes": "The page forwards pointer, touch, keyboard and gamepad input to the sketch, which reads it once per frame and adds no DOM listeners. Keys take KeyboardEvent.code names, and the main mouse button or a tap is Mouse0. A canvas that takes touch gestures needs touch-action: none in its CSS.",
       "docs": "api/input",
       "detect": "addEventListener\\s*\\(\\s*['\"](pointer\\w*|mouse\\w*|click|dblclick|touch\\w*|keydown|keyup|wheel|contextmenu)['\"]"
     },

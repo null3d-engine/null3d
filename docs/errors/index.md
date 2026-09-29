@@ -23,6 +23,7 @@ Every error the engine throws is an `EngineError` with a code. Its message names
 | [E1109](E1109.md) | Engine memory full | The engine could not grow its WebAssembly memory for the call. A page with worker threads gives the engine 1 GiB at most. Each instance row takes about 180 bytes, or about 230 with per-row colors. So about 5 million rows fill it, along with the rest of the scene. A browser can refuse memory sooner, as phones often do. |
 | [E1203](E1203.md) | Invalid number | A call received a number that is not finite, such as NaN or Infinity. |
 | [E1204](E1204.md) | Invalid color | A call received a color that is not a hex string, a number from 0 to 0xffffff, or three numbers from 0 to 1. |
+| [E1205](E1205.md) | Unknown input name | An input call received a name that no key, button or action has, or `input.actions.define()` received an action name that a key or button already has. Names are case-sensitive: `KeyW` is the W key, and `keyW` names nothing. |
 | [E1301](E1301.md) | No usable GPU path | The browser offers neither WebGPU nor WebGL2 for the way the engine was asked to draw. |
 | [E1302](E1302.md) | GPU lost | The browser took the GPU away while the engine drew, for example after a driver reset or a GPU crash, and the engine could not carry on. No new GPU device started, or the GPU was lost more than twice within a minute. The engine stopped drawing. |
 | [E1303](E1303.md) | WebAssembly SIMD missing | The browser runs WebAssembly without SIMD, which the engine's core needs. |
