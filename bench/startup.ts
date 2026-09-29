@@ -1,7 +1,8 @@
 // Measures a cold start of the engine on a slow network: it builds the engine test page for
-// production, serves the build, and loads it in a fresh Chrome profile, whose cache starts empty,
-// with Chrome's Slow 4G profile. It prints each run's startup milestones, requests and bytes, and
-// their medians. `--switches` adds the engine's page switches, which pick another thread mode.
+// production, serves the build on the production preview's port (tests/lib/server.ts), and loads
+// it in a fresh Chrome profile, whose cache starts empty, with Chrome's Slow 4G profile. It prints
+// each run's startup milestones, requests and bytes, and their medians. `--switches` adds the
+// engine's page switches, which pick another thread mode.
 // From the repository root:
 //   bun run bench:startup                 (3 runs on WebGPU, pipelined)
 //   bun run bench:startup -- --runs 5 --gpu webgl2
@@ -10,7 +11,7 @@ import { type ChildProcess, spawn, spawnSync } from 'node:child_process';
 import { parseArgs } from 'node:util';
 import { chromium } from '@playwright/test';
 import { pageResult } from '../tests/lib/page-result.ts';
-import { REPO_ROOT } from '../tests/lib/server.ts';
+import { PREVIEW_PORT, REPO_ROOT } from '../tests/lib/server.ts';
 import { median } from './lib/report.ts';
 
 /** Chrome's Slow 4G profile: 562.5 ms round trips, 1.4 Mbps down and 675 kbps up, at 90%. */
@@ -20,8 +21,7 @@ const SLOW_4G = {
 	downloadThroughput: ((1.4 * 1_000_000) / 8) * 0.9,
 	uploadThroughput: ((675 * 1000) / 8) * 0.9,
 };
-const PORT = 4175;
-const URL_BASE = `http://localhost:${PORT}/tests/pages/engine.html`;
+const URL_BASE = `http://localhost:${PREVIEW_PORT}/tests/pages/engine.html`;
 
 interface StartupRun {
 	/** From the start of createEngine: the GPU probe, the core's download and compile, and all. */
@@ -35,14 +35,14 @@ interface StartupRun {
 }
 
 function startPreview(): Promise<ChildProcess> {
-	const child = spawn('bunx', ['vite', 'preview', '--port', String(PORT), '--strictPort'], {
+	const child = spawn('bunx', ['vite', 'preview', '--port', String(PREVIEW_PORT), '--strictPort'], {
 		cwd: REPO_ROOT,
 		stdio: ['ignore', 'pipe', 'pipe'],
 	});
 	return new Promise((resolve, reject) => {
 		const deadline = setTimeout(() => reject(new Error('vite preview did not start')), 30_000);
 		child.stdout?.on('data', (chunk: Buffer) => {
-			if (chunk.toString().includes(String(PORT))) {
+			if (chunk.toString().includes(String(PREVIEW_PORT))) {
 				clearTimeout(deadline);
 				resolve(child);
 			}
