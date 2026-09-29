@@ -267,9 +267,10 @@ pub fn init_engine(
     0
 }
 
-/// Drops the engine and every object in it, so that `initEngine` can create another in this
-/// instance. The page calls it when it stops an engine that runs on its own thread, as the
-/// single-threaded build does: the page keeps that build's instance for the next engine.
+// The page calls this when it stops an engine that runs on the page's own thread, as the
+// single-threaded build does, because the page keeps that build's instance for the next engine.
+// Its doc comment stays short: wasm-bindgen copies it into the glue that every page downloads.
+/// Drops the engine, so that `initEngine` can create another.
 #[wasm_bindgen(js_name = destroyEngine)]
 pub fn destroy_engine() {
     // SAFETY: as in `with_engine`; the sketch thread calls it after the engine's last step.

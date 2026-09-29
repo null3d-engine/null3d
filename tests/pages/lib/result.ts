@@ -78,6 +78,6 @@ export async function run(
 	try {
 		await publish(name, { ok: true, ...(await body()) });
 	} catch (e) {
-		await publish(name, { ok: false, error: (e as Error).message });
+		await publish(name, { ok: false, error: (e as Error).message, trail: [...trail] });
 	}
 }

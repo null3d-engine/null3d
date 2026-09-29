@@ -164,6 +164,14 @@ export const ERRORS = {
 		example: 'E1405: the render worker did not start: no WebGPU adapter.',
 		since: '0.1',
 	},
+	E1406: {
+		title: 'Engine core not downloaded',
+		cause:
+			'A file of the engine core did not download whole: the server answered with an error, or the connection broke off.',
+		fix: "Check that the host serves the files from the engine's dist/wasm folder at the paths that the build gave them. If the page loads at other times, the network dropped: reload the page.",
+		example: 'E1406: /assets/null3d_memory-3f9c1a2b.json did not download: HTTP 404.',
+		since: '0.1',
+	},
 	E1501: {
 		title: 'Render space full',
 		cause:

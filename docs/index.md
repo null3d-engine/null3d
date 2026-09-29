@@ -179,6 +179,7 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 | [E1403: Engine core not ready](errors/E1403.md) | An engine call ran before the engine core started in this worker, or the core started twice. | generated | 0.1 |
 | [E1404: Engine thread failed](errors/E1404.md) | An engine thread hit an error it could not handle after the engine started, so the engine may have stopped. | generated | 0.1 |
 | [E1405: Engine thread did not start](errors/E1405.md) | An engine thread failed while the engine started, before the sketch ran. | generated | 0.1 |
+| [E1406: Engine core not downloaded](errors/E1406.md) | A file of the engine core did not download whole: the server answered with an error, or the connection broke off. | generated | 0.1 |
 | [E1501: Render space full](errors/E1501.md) | The scene needs more room than the renderer set aside. The full part is the draw list, the mesh buffers, the material table, the upload space or the culling pass. On WebGPU the culling pass covers 2,097,152 objects and instance rows on every device, and more on devices with larger GPU buffers. On WebGL2 the number follows the largest texture the device allows. The number for the device is in engine.capabilities.maxInstances. | generated | 0.1 |
 | [Error codes](errors/index.md) | Every EngineError code with its cause and fix. | generated | 0.1 |
 

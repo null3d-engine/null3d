@@ -31,4 +31,5 @@ Every error the engine throws is an `EngineError` with a code. Its message names
 | [E1403](E1403.md) | Engine core not ready | An engine call ran before the engine core started in this worker, or the core started twice. |
 | [E1404](E1404.md) | Engine thread failed | An engine thread hit an error it could not handle after the engine started, so the engine may have stopped. |
 | [E1405](E1405.md) | Engine thread did not start | An engine thread failed while the engine started, before the sketch ran. |
+| [E1406](E1406.md) | Engine core not downloaded | A file of the engine core did not download whole: the server answered with an error, or the connection broke off. |
 | [E1501](E1501.md) | Render space full | The scene needs more room than the renderer set aside. The full part is the draw list, the mesh buffers, the material table, the upload space or the culling pass. On WebGPU the culling pass covers 2,097,152 objects and instance rows on every device, and more on devices with larger GPU buffers. On WebGL2 the number follows the largest texture the device allows. The number for the device is in engine.capabilities.maxInstances. |

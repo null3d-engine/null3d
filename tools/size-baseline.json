@@ -1,18 +1,18 @@
 {
 	"threaded/null3d_bg.wasm": {
-		"raw": 156061,
-		"brotli": 53412
+		"raw": 158306,
+		"brotli": 54215
 	},
 	"threaded/null3d.js": {
-		"raw": 18335,
-		"brotli": 4074
+		"raw": 18778,
+		"brotli": 4161
 	},
 	"single/null3d_bg.wasm": {
-		"raw": 150966,
-		"brotli": 52634
+		"raw": 153247,
+		"brotli": 53460
 	},
 	"single/null3d.js": {
-		"raw": 17724,
-		"brotli": 3946
+		"raw": 18167,
+		"brotli": 4020
 	}
 }
