@@ -4,6 +4,7 @@
 // report takes away from each engine's busiest thread to show the engine's own work.
 import { run } from '../../../tests/pages/lib/result';
 import { MEASURE_SECONDS, WARMUP_SECONDS } from '../../scenes/spec';
+import { showPageName } from '../lib/fit';
 import { measureFrames } from '../lib/measure';
 import { pageReport, type RunOptions, readRunOptions } from '../lib/options';
 
@@ -20,6 +21,7 @@ export function runSceneCodePage(
 	build: (options: RunOptions) => SceneCode,
 ): void {
 	const params = new URLSearchParams(location.search);
+	showPageName();
 	run(pageReport(params), async () => {
 		const options = readRunOptions(params);
 		if (options.hold !== null || options.demo) {

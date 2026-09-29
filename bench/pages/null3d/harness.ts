@@ -7,7 +7,7 @@
 import { createEngine } from '@null3d/engine';
 import { run, toBase64 } from '../../../tests/pages/lib/result';
 import { CANVAS, MEASURE_SECONDS, PARITY_CANVAS, WARMUP_SECONDS } from '../../scenes/spec';
-import { fitToWindow } from '../lib/fit';
+import { fitToWindow, showPageName } from '../lib/fit';
 import { pageReport, readRunOptions } from '../lib/options';
 
 /** Time a hold page lets the engine draw before it captures, so the frame is complete. */
@@ -28,6 +28,7 @@ export function runNull3dPage(
 	wholeCount: (count: number) => number = (count) => count,
 ): void {
 	const params = new URLSearchParams(location.search);
+	showPageName();
 	run(pageReport(params), async () => {
 		const options = readRunOptions(params);
 		const size = options.hold !== null ? PARITY_CANVAS : CANVAS;
@@ -35,7 +36,7 @@ export function runNull3dPage(
 		canvas.style.width = `${size.width}px`;
 		canvas.style.height = `${size.height}px`;
 		canvas.style.display = 'block';
-		document.body.prepend(canvas);
+		document.body.append(canvas);
 		const sketchUrl = new URL(sketch);
 		const n = wholeCount(options.count ?? defaultCount);
 		sketchUrl.searchParams.set('n', String(n));
