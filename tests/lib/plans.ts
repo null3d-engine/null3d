@@ -592,8 +592,11 @@ export function judge(
 			const cpu = (result.cpuMs as { median?: number } | undefined)?.median ?? 0;
 			const workers = (result.mode as { jobWorkers?: number } | undefined)?.jobWorkers;
 			const jobs = jobWorkersProblem(workers, check.jobs);
+			// The scene-code page's work can take less than one step of the browser's timer, as in S2.
+			const timed = cpu > 0 || check.page === SCENE_CODE;
 			return [
-				...(frames > 0 && cpu > 0 ? [] : [`the run measured ${frames} frames`]),
+				...(frames > 0 ? [] : ['the run measured no frames']),
+				...(frames > 0 && !timed ? ['the run recorded no CPU time'] : []),
 				...(jobs ? [jobs] : []),
 			];
 		}

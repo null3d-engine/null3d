@@ -493,6 +493,26 @@ describe('the bench plan', () => {
 		expect(sweep.map((item) => item.id)).toEqual(['bench-s2-null3d-webgpu-low-jobs2-1']);
 	});
 
+	it('fails a run with no frames, and an engine run with no CPU time', () => {
+		const pages = benchPlan({ runs: 1, scenes: ['s2'] });
+		const engine = pages.find(
+			({ check }) => check.kind === 'bench' && check.page === 'null3d-webgpu',
+		);
+		const sceneCode = pages.find(
+			({ check }) => check.kind === 'bench' && check.page === 'scene-code',
+		);
+		if (!engine || !sceneCode) throw new Error('the plan lacks the pages');
+		const run = (frames: number, median: number) => ({ ok: true, frames, cpuMs: { median } });
+		expect(judge(engine.check, run(1800, 0.3), NONE_MISSING)).toEqual([]);
+		expect(judge(engine.check, run(0, 0), NONE_MISSING)).toEqual(['the run measured no frames']);
+		expect(judge(engine.check, run(1800, 0), NONE_MISSING)).toEqual([
+			'the run recorded no CPU time',
+		]);
+		// S2's scene code takes less than one step of the browser's timer.
+		expect(judge(sceneCode.check, run(1800, 0), NONE_MISSING)).toEqual([]);
+		expect(judge(sceneCode.check, run(0, 0), NONE_MISSING)).toEqual(['the run measured no frames']);
+	});
+
 	it('fails a run whose engine started another number of job workers than it asked for', () => {
 		const [item] = benchPlan({ runs: 1, jobs: [4] });
 		if (!item) throw new Error('the plan has no items');
