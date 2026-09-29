@@ -9,6 +9,11 @@ import { type Build, coreUrls, type MemoryLimits } from '../shared/core';
 const DEFAULT_MAXIMUM_MIB = 1024;
 /** WebAssembly memory comes in pages of 64 KiB, 16 to a MiB. */
 const PAGES_PER_MIB = 16;
+/**
+ * How long to wait before each further try to create the shared memory, in ms: about 3 seconds in
+ * all, which covers the time a slow machine takes to free a stopped engine's memory.
+ */
+export const MEMORY_RETRY_MS: readonly number[] = [50, 100, 200, 400, 800, 1600];
 
 export interface LoadedCore {
 	build: Build;
@@ -54,6 +59,39 @@ export function maximumPages(limits: MemoryLimits, maximumMiB: number): number {
 	return Math.max(limits.initial, Math.min(limits.maximum ?? wanted, wanted));
 }
 
+const wait = (ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms));
+
+/**
+ * Creates the shared memory, trying again while the browser refuses it. A browser refuses a new
+ * shared memory when the address space it keeps for them, or its budget of their pages, is full.
+ * A stopped engine's memory counts against both until the engine's workers have finished, which
+ * Safari does a moment after the engine stops. So after each refusal the loader waits longer and
+ * tries again, for about 3 seconds in all, and a refusal after that fails with E1109. `create` and
+ * `pause` stand in for the browser in tests.
+ */
+export async function createSharedMemory(
+	descriptor: WebAssembly.MemoryDescriptor,
+	create: (descriptor: WebAssembly.MemoryDescriptor) => WebAssembly.Memory = (d) =>
+		new WebAssembly.Memory(d),
+	pause: (ms: number) => Promise<void> = wait,
+): Promise<WebAssembly.Memory> {
+	for (let tries = 1; ; tries++) {
+		try {
+			return create(descriptor);
+		} catch (e) {
+			const delay = MEMORY_RETRY_MS[tries - 1];
+			if (delay === undefined) {
+				const mib = Math.ceil((descriptor.maximum ?? descriptor.initial) / PAGES_PER_MIB);
+				throw new EngineError(
+					'E1109',
+					`the browser refused the engine's shared memory of ${mib} MiB ${tries} times: ${(e as Error).message}.`,
+				);
+			}
+			await pause(delay);
+		}
+	}
+}
+
 export async function loadCore(
 	build: Build,
 	maximumMiB = DEFAULT_MAXIMUM_MIB,
@@ -68,6 +106,6 @@ export async function loadCore(
 	return {
 		build,
 		module,
-		memory: new WebAssembly.Memory({ initial: limits.initial, maximum, shared: true }),
+		memory: await createSharedMemory({ initial: limits.initial, maximum, shared: true }),
 	};
 }
