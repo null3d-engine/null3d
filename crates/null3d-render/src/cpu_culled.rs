@@ -58,9 +58,9 @@ use null3d_gpu::drawlist::{
 };
 
 use crate::frame::{
-    FrameBuilder, FrameInput, PageUploads, ParityLists, RecordError, SceneSettings, SceneTargets,
-    UploadArena, address, bucket_of, collect_bucket_keys, floats_as_bytes, grown_size, put_u32,
-    words_as_bytes,
+    FrameBuilder, FrameInput, HIDDEN, PageUploads, ParityLists, RecordError, SceneSettings,
+    SceneTargets, UploadArena, address, bucket_of, collect_bucket_keys, drawn_rows,
+    floats_as_bytes, grown_size, put_u32, words_as_bytes,
 };
 use crate::frame_data::FrameUniform;
 use crate::materials::{MATERIAL_FLOATS, Shading};
@@ -78,6 +78,56 @@ const MATRIX_BYTES: u32 = (MATRIX_FLOATS * 4) as u32;
 /// The data texture of a bucket's instances, as its draw record names it.
 const RESIDENT: u32 = 0;
 const STREAMED: u32 = 1;
+// A scene slot that draws nowhere has the same marker in the culling tables and the upload trims.
+const _: () = assert!(NO_BUCKET == HIDDEN);
+
+/// A slot of one of the frame rings that moves on only when a frame writes new data, so a frame
+/// whose data did not change draws from the slot that already holds it. A slot is written again
+/// only after the two other slots, so the GPU has finished reading it, as with a ring that moves
+/// every frame.
+#[derive(Clone, Copy, Debug, Default)]
+struct RingSlot {
+    slot: u32,
+    /// The frame whose data the slot holds, or 0 for none.
+    holds: u32,
+}
+
+impl RingSlot {
+    /// True when the slot holds data that a frame can draw from.
+    fn holds_any(&self) -> bool {
+        self.holds != 0
+    }
+
+    /// True when the slot holds the data of the frame before `frame`.
+    fn holds_previous(&self, frame: u32) -> bool {
+        self.holds_any() && self.holds == frame.wrapping_sub(1)
+    }
+
+    /// The slot `frame` draws from: the next one when the frame writes new data.
+    fn take(&mut self, frame: u32, write: bool) -> u32 {
+        if write {
+            self.slot = (self.slot + 1) % RING;
+        }
+        self.holds = frame;
+        self.slot
+    }
+
+    /// Forgets what the slot holds, so the next frame writes its data again.
+    fn forget(&mut self) {
+        self.holds = 0;
+    }
+}
+
+/// The ring slots a frame draws from.
+#[derive(Clone, Copy, Debug)]
+struct FrameSlots {
+    /// The frame uniform's slot.
+    uniform: u32,
+    /// The streamed texture's slot.
+    streamed: u32,
+    /// The index list texture's and the draw records' slot.
+    listed: u32,
+}
 
 /// The builder's GPU objects. It owns every id it uses.
 mod ids {
@@ -260,11 +310,12 @@ pub struct CpuCulledRenderer {
     cluster_scratch: ClusterScratch,
     /// Rows of the resident, streamed, index list and cluster textures; 0 before they exist.
     texture_rows: [u32; 4],
-    /// The ring slot whose index list texture and draw records hold the culling output of frame
-    /// `listed_for`, or 0 for none. A frame whose output matches the previous frame's draws from
-    /// that slot again instead of uploading the same list.
-    listed_slot: u32,
-    listed_for: u32,
+    /// The frame rings' slots: the frame uniform, whose last upload is `uniform_uploaded`, the
+    /// streamed texture, and the index list texture with its draw records.
+    uniform_slot: RingSlot,
+    uniform_uploaded: FrameUniform,
+    streamed_slot: RingSlot,
+    listed_slot: RingSlot,
     draws_bytes: u32,
     created: bool,
     canvas: (u32, u32),
@@ -290,8 +341,10 @@ impl CpuCulledRenderer {
             cluster_sets: Vec::new(),
             cluster_scratch: ClusterScratch::default(),
             texture_rows: [0; 4],
-            listed_slot: 0,
-            listed_for: 0,
+            uniform_slot: RingSlot::default(),
+            uniform_uploaded: FrameUniform::default(),
+            streamed_slot: RingSlot::default(),
+            listed_slot: RingSlot::default(),
             draws_bytes: 0,
             created: false,
             canvas: (0, 0),
@@ -465,7 +518,8 @@ impl CpuCulledRenderer {
         }
         layout.built = true;
         layout.built_in = input.frame;
-        self.listed_for = 0;
+        // New buckets make new draw records, and the index list textures may be new.
+        self.listed_slot.forget();
         // Room for every static batch's cluster order, so a batch coming to rest later uploads
         // its clusters without growing the arena.
         let bound = self.upload_bound_without_clusters() + self.layout.cluster_rows as usize * 4;
@@ -824,7 +878,11 @@ impl CpuCulledRenderer {
         for range in input.snapshot.uploads() {
             if range.target == SCENE_TARGET {
                 let scene = input.scene.world(parity).matrices();
-                upload(list, 0, scene, range.start, range.count)?;
+                if let Some((start, count)) =
+                    drawn_rows(&layout.scene_buckets, range.start, range.count)
+                {
+                    upload(list, 0, scene, start, count)?;
+                }
                 continue;
             }
             let Some(slot) = layout.batch(range.target).filter(|slot| !slot.dynamic) else {
@@ -844,51 +902,67 @@ impl CpuCulledRenderer {
         Ok(())
     }
 
-    /// Writes the active rows of every dynamic batch into the ring slot's streamed texture, and,
-    /// for a new list, the frame's index list into the listed slot's index list texture.
+    /// True when a dynamic batch has active rows this frame, which it writes into a new slot of
+    /// the streamed ring.
+    fn has_moving_rows(&self, input: &FrameInput<'_>) -> bool {
+        let parity = input.parity();
+        self.layout.batches.iter().any(|slot| {
+            slot.dynamic
+                && input
+                    .batches
+                    .get(slot.id)
+                    .is_ok_and(|batch| batch.frame_active_count(parity) > 0)
+        })
+    }
+
+    /// Writes the active rows of every dynamic batch into the streamed texture of `streamed`, and
+    /// the frame's index list into the index list texture of `listed`; `None` writes nothing.
     fn upload_frame_data(
         &self,
         list: &mut DrawList,
         input: &FrameInput<'_>,
-        ring: u32,
-        new_list: bool,
+        streamed: Option<u32>,
+        listed: Option<u32>,
     ) -> Result<(), RecordError> {
         let parity = input.parity();
-        for slot in self.layout.batches.iter().filter(|slot| slot.dynamic) {
-            let Ok(batch) = input.batches.get(slot.id) else {
-                continue;
-            };
-            let active = batch.frame_active_count(parity);
-            let matrices = matrices_of(batch.world(parity).matrices(), 0, active);
-            write_matrices(list, ids::STREAMED + ring, slot.base, matrices)?;
+        if let Some(streamed) = streamed {
+            for slot in self.layout.batches.iter().filter(|slot| slot.dynamic) {
+                let Ok(batch) = input.batches.get(slot.id) else {
+                    continue;
+                };
+                let active = batch.frame_active_count(parity);
+                let matrices = matrices_of(batch.world(parity).matrices(), 0, active);
+                write_matrices(list, ids::STREAMED + streamed, slot.base, matrices)?;
+            }
         }
-        if !new_list {
+        let Some(listed) = listed else {
             return Ok(());
-        }
+        };
         let indices = self.culls[parity].indices();
         write_rows(
             list,
-            ids::VISIBLE + self.listed_slot,
+            ids::VISIBLE + listed,
             TextureRows::indices(0, indices.len() as u32),
             address(words_as_bytes(indices)),
         )
     }
 
     /// Writes the frame's draw records into the listed slot of the record ring for a new list,
-    /// then records the render pass that draws every bucket with visible instances.
+    /// then records the render pass that draws every bucket with visible instances from the
+    /// frame's ring slots.
     fn record_draws(
         &self,
         list: &mut DrawList,
         arena: &mut UploadArena,
         input: &FrameInput<'_>,
-        ring: u32,
+        slots: FrameSlots,
         new_list: bool,
     ) -> Result<(), RecordError> {
         let buckets = &self.layout.buckets;
         let starts = self.culls[input.parity()].bucket_starts();
         let visible = |b: usize| starts[b + 1] - starts[b];
         let multi = self.config.multi_draw;
-        let slot = self.listed_slot * self.layout.draws_slot_bytes;
+        let slot = slots.listed * self.layout.draws_slot_bytes;
         // A multi-draw call binds a block of records; a single draw binds one aligned record.
         let stride = if multi {
             MULTI_DRAW_BLOCK_BYTES
@@ -920,9 +994,9 @@ impl CpuCulledRenderer {
         self.settings.record_begin_pass(list, self.targets())?;
         list.push(
             Op::SetBindGroup,
-            &[0, ids::FRAME_GROUP, 1, ring * FRAME_SLOT_BYTES],
+            &[0, ids::FRAME_GROUP, 1, slots.uniform * FRAME_SLOT_BYTES],
         )?;
-        let instances = ids::INSTANCES_GROUP + ring * RING + self.listed_slot;
+        let instances = ids::INSTANCES_GROUP + slots.streamed * RING + slots.listed;
         list.push(Op::SetBindGroup, &[2, instances, 0])?;
         let mut pipeline = None;
         let mut run = usize::MAX;
@@ -1017,30 +1091,39 @@ impl CpuCulledRenderer {
             self.settings.record_clear_only(list, self.targets())?;
             return Ok(rebuilt);
         };
-        let ring = input.frame % RING;
+        // Each ring moves to a new slot only for new data: a changed frame uniform, moving rows,
+        // or an index list that differs from the previous frame's.
+        let frame = input.frame;
+        let new_uniform = !self.uniform_slot.holds_any() || uniform != self.uniform_uploaded;
+        let moving = self.has_moving_rows(input);
         let new_list = !self.keeps_previous_list(input);
-        if new_list {
-            self.listed_slot = (self.listed_slot + 1) % RING;
-        }
-        self.listed_for = input.frame;
-        self.upload_frame_data(list, input, ring, new_list)?;
-        let (at, bytes) = arena.push(uniform.as_bytes())?;
-        list.push(
-            Op::WriteBuffer,
-            &[ids::FRAME, ring * FRAME_SLOT_BYTES, at, bytes],
+        let slots = FrameSlots {
+            uniform: self.uniform_slot.take(frame, new_uniform),
+            streamed: self.streamed_slot.take(frame, moving),
+            listed: self.listed_slot.take(frame, new_list),
+        };
+        self.upload_frame_data(
+            list,
+            input,
+            moving.then_some(slots.streamed),
+            new_list.then_some(slots.listed),
         )?;
-        self.record_draws(list, arena, input, ring, new_list)?;
+        if new_uniform {
+            let (at, bytes) = arena.push(uniform.as_bytes())?;
+            let offset = slots.uniform * FRAME_SLOT_BYTES;
+            list.push(Op::WriteBuffer, &[ids::FRAME, offset, at, bytes])?;
+            self.uniform_uploaded = uniform;
+        }
+        self.record_draws(list, arena, input, slots, new_list)?;
         Ok(rebuilt)
     }
 
     /// True when the listed slot holds the previous frame's culling output and this frame's is the
     /// same: the same entries in the same buckets. The frame then draws from that slot as it is.
-    /// A new list goes into the next slot, which the GPU read no later than the ring allows.
     fn keeps_previous_list(&self, input: &FrameInput<'_>) -> bool {
         let parity = input.parity();
         let (now, before) = (&self.culls[parity], &self.culls[parity ^ 1]);
-        self.listed_for != 0
-            && self.listed_for == input.frame.wrapping_sub(1)
+        self.listed_slot.holds_previous(input.frame)
             && now.bucket_starts() == before.bucket_starts()
             && now.indices() == before.indices()
     }
@@ -1167,7 +1250,9 @@ impl FrameBuilder for CpuCulledRenderer {
         self.layout.built = false;
         self.pages.clear();
         self.texture_rows = [0; 4];
-        self.listed_for = 0;
+        self.uniform_slot.forget();
+        self.streamed_slot.forget();
+        self.listed_slot.forget();
         self.draws_bytes = 0;
         self.culled = 0;
         self.settings.materials_mut().mark_changed();

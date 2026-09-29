@@ -42,8 +42,8 @@ use null3d_gpu::drawlist::{
 
 use crate::frame::{
     FrameBuilder, FrameInput, HIDDEN, PageUploads, ParityLists, RecordError, SceneSettings,
-    SceneTargets, UploadArena, address, bucket_of, collect_bucket_keys, floats_as_bytes,
-    grown_size, words_as_bytes,
+    SceneTargets, UploadArena, address, bucket_of, collect_bucket_keys, drawn_rows,
+    floats_as_bytes, grown_size, words_as_bytes,
 };
 use crate::materials::{MATERIAL_FLOATS, Shading};
 use crate::meshes::{MeshStorage, Packing};
@@ -750,10 +750,13 @@ impl GpuDrivenRenderer {
             )
         };
         if everything || input.snapshot.overflowed() {
+            // Slots past the highest one ever used, and rows past a batch's active count, draw
+            // nothing; they upload when they change.
             let scene = input.scene.world(parity).matrices();
-            upload(0, scene, 0, input.scene.capacity() + 1)?;
+            upload(0, scene, 0, input.scene.slots().high_water())?;
             for ((_, batch), &(_, base)) in input.batches.iter().zip(&self.layout.batch_bases) {
-                upload(base, batch.world(parity).matrices(), 0, batch.capacity())?;
+                let active = batch.frame_active_count(parity);
+                upload(base, batch.world(parity).matrices(), 0, active)?;
             }
             return Ok(());
         }
@@ -761,15 +764,24 @@ impl GpuDrivenRenderer {
             let Some(base) = self.layout.base_of(range.target) else {
                 continue;
             };
-            let matrices = if range.target == SCENE_TARGET {
-                input.scene.world(parity).matrices()
-            } else {
-                let Ok(batch) = input.batches.get(Handle::from_raw(range.target)) else {
-                    continue;
-                };
-                batch.world(parity).matrices()
+            if range.target == SCENE_TARGET {
+                let scene = input.scene.world(parity).matrices();
+                if let Some((start, count)) =
+                    drawn_rows(&self.layout.home_buckets, range.start, range.count)
+                {
+                    upload(base, scene, start, count)?;
+                }
+                continue;
+            }
+            let Ok(batch) = input.batches.get(Handle::from_raw(range.target)) else {
+                continue;
             };
-            upload(base, matrices, range.start, range.count)?;
+            upload(
+                base,
+                batch.world(parity).matrices(),
+                range.start,
+                range.count,
+            )?;
         }
         Ok(())
     }

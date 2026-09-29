@@ -18,7 +18,8 @@ const RESIDENT: u32 = 3;
 const STREAMED: u32 = 4;
 const VISIBLE: u32 = 7;
 const CLUSTERS: u32 = 10;
-/// The buffer of draw records.
+/// The buffers of the frame uniform ring and of the draw records.
+const FRAME: u32 = 1;
 const DRAWS: u32 = 3;
 /// Scene slots up to the highest the world uses: slot 0 is never used, then the camera and four
 /// objects.
@@ -135,6 +136,23 @@ fn bound_instances(commands: &[(Op, Vec<u32>)]) -> u32 {
         .1[1]
 }
 
+/// The frame uniform's offset that a frame's list binds.
+fn bound_uniform_offset(commands: &[(Op, Vec<u32>)]) -> u32 {
+    commands
+        .iter()
+        .find(|(op, o)| *op == Op::SetBindGroup && o[0] == 0)
+        .unwrap()
+        .1[3]
+}
+
+/// Buffer writes of a frame into one buffer.
+fn buffer_writes(commands: &[(Op, Vec<u32>)], buffer: u32) -> usize {
+    commands
+        .iter()
+        .filter(|(op, o)| *op == Op::WriteBuffer && o[0] == buffer)
+        .count()
+}
+
 #[test]
 fn steady_frames_upload_the_moving_rows_into_the_ring_and_keep_an_unchanged_index_list() {
     let mut world = world(true);
@@ -168,12 +186,11 @@ fn steady_frames_upload_the_moving_rows_into_the_ring_and_keep_an_unchanged_inde
         for listed in 0..3 {
             assert!(texture_writes(&commands, VISIBLE + listed).is_empty());
         }
-        let draws = commands
-            .iter()
-            .filter(|(op, o)| *op == Op::WriteBuffer && o[0] == DRAWS)
-            .count();
-        assert_eq!(draws, 0, "frame {frame}");
+        assert_eq!(buffer_writes(&commands, DRAWS), 0, "frame {frame}");
         assert_eq!(bound_instances(&commands), instances_group(ring, 1));
+        // The camera did not move, so the frame uniform stays in the slot the first frame wrote.
+        assert_eq!(buffer_writes(&commands, FRAME), 0, "frame {frame}");
+        assert_eq!(bound_uniform_offset(&commands), 256);
     }
     // A hidden object changes the list: it goes into the next slot, with its draw records.
     world.frame = 6;
@@ -186,14 +203,40 @@ fn steady_frames_upload_the_moving_rows_into_the_ring_and_keep_an_unchanged_inde
     mock.replay(world.renderer.list(6).words()).unwrap();
     let commands = world.commands();
     assert_eq!(texture_writes(&commands, VISIBLE + 2).len(), 1);
-    assert_eq!(
-        commands
-            .iter()
-            .filter(|(op, o)| *op == Op::WriteBuffer && o[0] == DRAWS)
-            .count(),
-        1
-    );
+    assert_eq!(buffer_writes(&commands, DRAWS), 1);
     assert_eq!(bound_instances(&commands), instances_group(0, 2));
+
+    // A moved camera writes the frame uniform into its next slot, and no matrix: the camera draws
+    // nothing.
+    world.frame = 7;
+    world.scene.begin_frame(7);
+    world
+        .scene
+        .set_position(world.camera, [0.0, 0.5, 20.0])
+        .unwrap();
+    world.record(false);
+    mock.replay(world.renderer.list(7).words()).unwrap();
+    let commands = world.commands();
+    assert_eq!(buffer_writes(&commands, FRAME), 1);
+    assert_eq!(bound_uniform_offset(&commands), 512);
+    assert!(texture_writes(&commands, RESIDENT).is_empty());
+
+    // With no active moving rows, the streamed ring keeps its slot.
+    let streamed = (bound_instances(&commands) - 3) / 3;
+    world
+        .batches
+        .get_mut(world.batch)
+        .unwrap()
+        .set_active_count(0)
+        .unwrap();
+    world.frame = 8;
+    world.record(false);
+    mock.replay(world.renderer.list(8).words()).unwrap();
+    let commands = world.commands();
+    for slot in 0..3 {
+        assert!(texture_writes(&commands, STREAMED + slot).is_empty());
+    }
+    assert_eq!((bound_instances(&commands) - 3) / 3, streamed);
 }
 
 #[test]
@@ -420,11 +463,11 @@ fn a_static_batch_at_rest_is_culled_and_drawn_by_cluster() {
             assert_eq!(instances[..2], [1, clusters << CLUSTER_SHIFT]);
         }
         // The next frame draws the same clusters and uploads nothing new for them, nor the same
-        // index list and draw records again: only the frame uniform.
+        // index list, draw records and frame uniform again.
         step(&mut world, &mut mock, false);
         assert_eq!(bucket_counts(&world)[0], (1, clusters));
         assert!(texture_writes(&world.commands(), CLUSTERS).is_empty());
-        assert_eq!(count(&world.commands(), Op::WriteBuffer), 1);
+        assert_eq!(count(&world.commands(), Op::WriteBuffer), 0);
         for listed in 0..3 {
             assert!(texture_writes(&world.commands(), VISIBLE + listed).is_empty());
         }

@@ -30,6 +30,17 @@ pub const NO_MATERIAL: u32 = 0;
 /// The bucket of a source that draws nowhere.
 pub const HIDDEN: u32 = u32::MAX;
 
+/// The part of scene rows `start..start + count` from the first to the last row whose bucket is
+/// not [`HIDDEN`], by each slot's bucket in `buckets`, or `None` when no row of it draws. A camera,
+/// a light or an empty group moves without anything to upload.
+pub(crate) fn drawn_rows(buckets: &[u32], start: u32, count: u32) -> Option<(u32, u32)> {
+    let end = start.saturating_add(count).min(buckets.len() as u32);
+    let draws = |slot: &u32| buckets[*slot as usize] != HIDDEN;
+    let first = (start..end).find(draws)?;
+    let last = (first..end).rev().find(draws)?;
+    Some((first, last + 1 - first))
+}
+
 /// Why a frame could not be recorded.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RecordError {
@@ -525,5 +536,20 @@ pub fn linear_to_srgb(c: f32) -> f32 {
         12.92 * c
     } else {
         1.055 * c.powf(1.0 / 2.4) - 0.055
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn drawn_rows_trim_the_rows_that_draw_nowhere() {
+        let buckets = [HIDDEN, 3, HIDDEN, 4, HIDDEN, HIDDEN];
+        assert_eq!(drawn_rows(&buckets, 0, 6), Some((1, 3)));
+        assert_eq!(drawn_rows(&buckets, 2, 2), Some((3, 1)));
+        assert_eq!(drawn_rows(&buckets, 4, 2), None);
+        assert_eq!(drawn_rows(&buckets, 5, 9), None);
+        assert_eq!(drawn_rows(&buckets, 1, 0), None);
     }
 }
