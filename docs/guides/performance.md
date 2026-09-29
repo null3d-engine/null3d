@@ -134,6 +134,7 @@ The render worker picks how each upload travels, so you do not need to. Uploads 
 | `cpuMsAllThreads` | CPU time per frame summed over every thread, job workers included |
 | `threads` | Each thread's time per frame by name, such as `sketch-worker`, `render-worker` and `job-0`, with its steps |
 | `gpuMs` | GPU time per frame, where the device has timestamp queries |
+| `gpuPassMs` | The parts of `gpuMs`: the copies before the first pass, each pass, and the time between passes |
 | `intervalMs` | Time between frames on the screen |
 | `presentedFps` and `completedFps` | Frames per second that the renderer presented, and that the GPU finished |
 | `gpuLatencyMs` | Time from a frame's submit to the GPU finishing it |
@@ -159,6 +160,7 @@ Chrome measures the heap of the page and its workers only when every worker answ
 - Compare runs at the same display refresh rate. `refreshHz` records it with each measurement. Runs at 120 and at 144 frames per second differed by about 10% for both engines.
 - To compare displays with different refresh rates, add `?fps=60` to the page's address. The engine then draws 60 frames per second on any display of 60 Hz or more.
 - Chrome rounds GPU times to 65.5 microseconds unless you start it with `--enable-webgpu-developer-features`.
+- In Safari, a worker's frame callbacks run from a timer of about 15 ms, not from the display. So there `presentedFps` and `refreshHz` can differ from the display's rate.
 - Compare engines in the same browser, one run after another.
 
 ## Browsers differ

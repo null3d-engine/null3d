@@ -52,3 +52,16 @@ The engine's hot paths stay allocation-free with these habits (hard rule 1):
 - Safari 26 drops a whole submit if its commands hold two or more copies from one buffer that was mapped when they were recorded. WebGPU allows that, and Chrome and Firefox accept it. The staging ring therefore records a frame's copies after it unmaps the buffer, just before the frame's next command.
 - The uploads test page reports each frame's WebGPU errors, which show such a failure.
 - Work around a browser's fault with an order or a call that is valid everywhere, as the staging ring does. Where browsers differ in speed, time the choices on the device, as the upload routes do. When neither works, detect the fault with a feature test, never from the user agent (hard rule 14).
+
+## Safari's frame path
+
+Safari 26 does work for each WebGPU frame that no GPU timestamp covers. It shows only in `gpuLatencyMs` and in the frame rate. [Benchmarks](benchmarks.md#safaris-own-work) says how to see it.
+
+- Safari 26 encodes a render bundle that holds an indirect draw again at every `executeBundles`. Each time, it also builds a Metal indirect command buffer of 16,384 commands, because a command count wraps below zero.
+- On an M5 Max, that took Safari's GPU process 9.6 ms of CPU per frame, in S1-static and in S2 alike. WebKit fixed it in August 2026, and Safari 27.2's beta notes list the fix.
+- So the WebGPU backend makes no native render bundles. It keeps each bundle's recorded commands and replays them into the render pass. In Chrome, S2's 100 draws added about 15 microseconds to the render worker's frame.
+- A worker's WebGPU canvas reaches the page through two synchronous calls after each frame callback. The second copies the frame into the page's canvas, and it first waits for the GPU to finish the frame.
+- So the worker stays blocked until Safari's GPU process has run all the frame's commands and the GPU has drawn the frame. Safari's own work, the GPU time and the copy add up to the worker's frame.
+- `gpuLatencyMs` counts from the submit until the drawing thread sees the frame finish, so in Safari it includes that blocked time. With native bundles on the Mac, most of its 11 ms was Safari's command buffer build.
+- Safari runs a worker's `requestAnimationFrame` from a 15 ms timer, not from the display. After the worker sleeps through most of a frame, the timer fires about 3 ms late.
+- Safari writes no timestamps, or stale ones, for a pass without work. The GPU timer's start mark therefore dispatches one invocation that does nothing.
