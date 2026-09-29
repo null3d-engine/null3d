@@ -122,6 +122,8 @@ Keep the `certs` folder out of version control, because it holds a private key. 
 export default defineConfig({ plugins: [null3d({ https: true, certDir: 'certs' })] });
 ```
 
+The plugin serves this HTTPS over HTTP/1.1. Over HTTP/2, Safari on an iPad sometimes stops while a worker loads its modules. The dev server sends each module as its own file, and every engine thread loads its own copy of each.
+
 The device must trust mkcert's root certificate. `mkcert -CAROOT` prints its folder. Copy `rootCA.pem` to the device and install it. On an iPhone or iPad, also turn on full trust in Settings > General > About > Certificate Trust Settings.
 
 ## What isolation changes

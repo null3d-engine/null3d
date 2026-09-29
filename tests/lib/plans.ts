@@ -52,6 +52,7 @@ export type Check =
 	| { kind: 'clear'; tier: Tier }
 	| { kind: 'shaders' }
 	| { kind: 'engine'; tier: Tier; mode: EngineMode }
+	| { kind: 'restarts'; mode: EngineMode }
 	| { kind: 'memory'; maximumMiB: number }
 	| { kind: 'uploads'; tier: Tier }
 	| { kind: 'hold'; tier: Tier }
@@ -74,6 +75,8 @@ const TEST_PAGES = '/tests/pages/';
 const TIERS: readonly Tier[] = ['webgpu', 'webgl2'];
 /** How long a benchmark page may take to publish its hold frame on a slow device. */
 const HOLD_TIMEOUT_SECONDS = 60;
+/** How long the restart page may take: up to ten starts and stops, and two counts of the room. */
+const RESTARTS_TIMEOUT_SECONDS = 120;
 
 const slug = (text: string) => text.toLowerCase().replace(/[^a-z0-9]+/g, '-');
 
@@ -143,9 +146,9 @@ export function benchItem(
 const CAPABILITIES = 'capabilities';
 
 /**
- * The browser checks: the capability report, isolation, clear colors, and the engine in every mode
- * on both GPU paths. The capabilities page loads again last, so its extension answers can be
- * compared across loads.
+ * The browser checks: the capability report, isolation, clear colors, the engine in every mode on
+ * both GPU paths, and the engine started and stopped again and again in every mode. The
+ * capabilities page loads again last, so its extension answers can be compared across loads.
  */
 export function checksPlan(): PlanItem<Check>[] {
 	return [
@@ -163,6 +166,14 @@ export function checksPlan(): PlanItem<Check>[] {
 					tier,
 					mode,
 				}),
+			),
+		),
+		...ENGINE_MODES.map((mode) =>
+			pageItem(
+				`restarts-${slug(mode.name)}`,
+				'shared-memory',
+				{ kind: 'restarts', mode },
+				{ switches: [mode.query], timeoutSeconds: RESTARTS_TIMEOUT_SECONDS },
 			),
 		),
 		pageItem(`${CAPABILITIES}-reload`, 'capabilities', {
@@ -434,6 +445,54 @@ function reloadProblems(
 		);
 }
 
+/** How many of a page's last steps a failure's message quotes. */
+const LAST_STEPS = 6;
+
+/** The last steps of a page's trail, as a failure's message quotes them, or nothing without one. */
+export function lastSteps(trail: unknown): string {
+	const steps = Array.isArray(trail) ? trail.map(String) : [];
+	return steps.length > 0 ? `; the page's last steps: ${steps.slice(-LAST_STEPS).join('; ')}` : '';
+}
+
+/** What the restart page reports about the engine's starts and stops. */
+export interface RestartResult {
+	/** Shared memories the page could hold at once before the starts, where it counted them. */
+	room?: number;
+	cycles: number;
+	kinds: {
+		engine?: { cycles: number; error?: string; trail?: string[]; roomLater?: number };
+	};
+}
+
+/**
+ * Room for shared memories that the page may lose over its restarts: the single-threaded build's
+ * page keeps one core for the next engine.
+ */
+const ROOM_KEPT = 1;
+
+/**
+ * What is wrong with the restart page's result: a start or a stop that failed, or room for shared
+ * memory that the browser did not get back from the stopped engines.
+ */
+export function restartProblems(result: RestartResult): string[] {
+	const engine = result.kinds.engine;
+	if (!engine) return ['the page started no engine'];
+	const problems: string[] = [];
+	if (engine.error)
+		problems.push(
+			`start and stop ${engine.cycles + 1} of ${result.cycles} failed: ${engine.error}${lastSteps(engine.trail)}`,
+		);
+	if (
+		result.room !== undefined &&
+		engine.roomLater !== undefined &&
+		engine.roomLater < result.room - ROOM_KEPT
+	)
+		problems.push(
+			`the browser did not get back the memory of stopped engines: it had room for ${result.room} shared memories before ${engine.cycles} starts and stops, and for ${engine.roomLater} after`,
+		);
+	return problems;
+}
+
 /**
  * What is wrong with a page's result; empty when nothing is. A check whose GPU path the browser
  * lacks is a skip when `missing` allows it: some devices have no WebGPU in any browser, and some
@@ -449,7 +508,7 @@ export function judge(
 	if (!result.ok) {
 		const path = neededPath(check);
 		if (path && missing[path] && missingPath(path, result.error)) return 'skip';
-		return [result.error ?? 'the page failed without a message'];
+		return [`${result.error ?? 'the page failed without a message'}${lastSteps(result.trail)}`];
 	}
 	switch (check.kind) {
 		case 'capabilities':
@@ -484,6 +543,8 @@ export function judge(
 		}
 		case 'engine':
 			return engineProblems(result as unknown as EngineResult, check.mode, check.tier);
+		case 'restarts':
+			return restartProblems(result as unknown as RestartResult);
 		case 'memory':
 			return (result.mode as { build?: string } | undefined)?.build === 'threaded'
 				? []

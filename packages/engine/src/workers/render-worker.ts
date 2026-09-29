@@ -6,13 +6,13 @@ import { Drawing } from '../render/recovery';
 import { createRenderer, type Renderer } from '../render/renderer';
 import { controlViews, Slot } from '../shared/control';
 import { startCore } from '../shared/core';
-import type { RendererRequest, RenderWorkerInit, WorkerReply } from './protocol';
+import { type RendererRequest, type RenderWorkerInit, replyToPage, startSteps } from './protocol';
 
 let drawing: Drawing<Renderer> | undefined;
 let controlSlots: Int32Array | undefined;
 
-const reply = (message: WorkerReply, transfer: Transferable[] = []) =>
-	postMessage(message, { transfer });
+const step = startSteps('render');
+step('loaded');
 
 self.onmessage = async (event: MessageEvent<RenderWorkerInit | RendererRequest>) => {
 	const message = event.data;
@@ -20,7 +20,7 @@ self.onmessage = async (event: MessageEvent<RenderWorkerInit | RendererRequest>)
 		try {
 			const slots = controlViews(message.control).slots;
 			controlSlots = slots;
-			const { glue: core } = await startCore(message.build, message.module, message.memory);
+			const { glue: core } = await startCore(message.build, message.module, message.memory, step);
 			const create = () =>
 				createRenderer(message.canvas, {
 					...message,
@@ -31,9 +31,9 @@ self.onmessage = async (event: MessageEvent<RenderWorkerInit | RendererRequest>)
 				create,
 				(renderer) => runRenderLoop(renderer, message.control, message.metrics, message.fps),
 				slots,
-				(reason) => reply({ type: 'lost', role: 'render', reason }),
+				(reason) => replyToPage({ type: 'lost', role: 'render', reason }),
 			);
-			reply({
+			replyToPage({
 				type: 'ready',
 				role: 'render',
 				threaded: core.isThreadedBuild(),
@@ -41,13 +41,17 @@ self.onmessage = async (event: MessageEvent<RenderWorkerInit | RendererRequest>)
 				tier: drawing.renderer.tier,
 			});
 		} catch (e) {
-			reply({ type: 'error', role: 'render', message: e instanceof Error ? e.message : String(e) });
+			replyToPage({
+				type: 'error',
+				role: 'render',
+				message: e instanceof Error ? e.message : String(e),
+			});
 		}
 	} else if (message.type === 'capture' && drawing && controlSlots) {
 		const captured = await drawing.renderer.capture(
 			emptySceneInput(Atomics.load(controlSlots, Slot.FramesTaken)),
 		);
-		reply({ type: 'captured', ...captured }, [captured.pixels.buffer]);
+		replyToPage({ type: 'captured', ...captured }, [captured.pixels.buffer]);
 	} else if (message.type === 'lose-gpu') {
 		drawing?.simulateLoss();
 	}

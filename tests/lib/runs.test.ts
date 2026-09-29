@@ -207,6 +207,59 @@ describe('the checks plan', () => {
 			),
 		).toEqual(['the page is not cross-origin isolated', 'the threaded build did not load']);
 	});
+
+	it('starts and stops the engine again and again in every mode', () => {
+		const restarts = items.filter((item) => item.check.kind === 'restarts');
+		expect(restarts.map((item) => item.path)).toEqual([
+			'/tests/pages/shared-memory.html',
+			'/tests/pages/shared-memory.html?latency=low',
+			'/tests/pages/shared-memory.html?threads=off',
+			'/tests/pages/shared-memory.html?render=main',
+		]);
+	});
+
+	it('fails restarts that fail, or whose memory the browser does not get back', () => {
+		const [restart] = items.filter((item) => item.check.kind === 'restarts');
+		if (!restart) throw new Error('the plan lacks the restart pages');
+		const engine = { cycles: 10, roomLater: 5 };
+		const result = (fields: object) => ({
+			ok: true,
+			room: 6,
+			cycles: 10,
+			kinds: { engine },
+			...fields,
+		});
+		expect(judge(restart.check, result({}), NONE_MISSING)).toEqual([]);
+		expect(
+			judge(
+				restart.check,
+				result({ kinds: { engine: { ...engine, roomLater: 2 } } }),
+				NONE_MISSING,
+			),
+		).toEqual([
+			'the browser did not get back the memory of stopped engines: it had room for 6 shared memories before 10 starts and stops, and for 2 after',
+		]);
+		const failed = {
+			cycles: 2,
+			error: 'the engine start took more than 20 s',
+			trail: ['10 ms core', '11 ms null3d-sketch: started'],
+			roomLater: 6,
+		};
+		expect(judge(restart.check, result({ kinds: { engine: failed } }), NONE_MISSING)).toEqual([
+			"start and stop 3 of 10 failed: the engine start took more than 20 s; the page's last steps: 10 ms core; 11 ms null3d-sketch: started",
+		]);
+	});
+
+	it('quotes the last steps of a page that gave no result', () => {
+		const [item] = items;
+		if (!item) throw new Error('the plan is empty');
+		const trail = Array.from({ length: 8 }, (_, i) => `${i} ms step ${i}`);
+		expect(
+			judge(item.check, { ok: false, error: 'no result within 30 s', trail }, NONE_MISSING),
+		).toEqual([
+			"no result within 30 s; the page's last steps: 2 ms step 2; 3 ms step 3; 4 ms step 4; 5 ms step 5; 6 ms step 6; 7 ms step 7",
+		]);
+	});
 });
 
 describe('the parity plan', () => {

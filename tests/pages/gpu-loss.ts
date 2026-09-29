@@ -29,7 +29,7 @@ run('gpu-loss', async () => {
 		engine.simulateGpuLoss();
 		await new Promise((resolve) => setTimeout(resolve, RECOVERY_MS));
 		const after = await engine.measure(0.5);
-		engine.destroy();
+		await engine.destroy();
 		return {
 			mode: engine.mode,
 			tier: engine.capabilities.tier,
@@ -41,7 +41,7 @@ run('gpu-loss', async () => {
 	const deadline = performance.now() + REPORT_MS;
 	while (!failure && performance.now() < deadline)
 		await new Promise((resolve) => setTimeout(resolve, 100));
-	engine.destroy();
+	await engine.destroy();
 	const code = (failure as EngineError | null)?.code ?? null;
 	return { mode: engine.mode, tier: engine.capabilities.tier, code };
 });

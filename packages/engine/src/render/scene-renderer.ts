@@ -143,7 +143,7 @@ export class WebGL2SceneRenderer implements Renderer {
 	private readonly backend: WebGL2Backend;
 	private readonly lists: DrawLists;
 	private readonly completions: FenceCompletion | undefined;
-	private released = false;
+	private readonly release = new AbortController();
 
 	/**
 	 * `gl` is the canvas's context, made with the engine's settings. `sharedUploads` is false where
@@ -157,7 +157,7 @@ export class WebGL2SceneRenderer implements Renderer {
 		metrics: ArrayBufferLike | undefined,
 		sharedUploads: boolean,
 	) {
-		this.lost = contextLoss(canvas, () => this.released);
+		this.lost = contextLoss(canvas, this.release.signal);
 		this.backend = new WebGL2Backend(gl, canvas, sharedUploads);
 		this.completions = metrics && new FenceCompletion(gl, metrics);
 		this.lists = new DrawLists(memory, control);
@@ -222,7 +222,7 @@ export class WebGL2SceneRenderer implements Renderer {
 	}
 
 	destroy(): void {
-		this.released = true;
+		this.release.abort();
 		this.backend.destroy();
 		releaseContext(this.gl);
 	}

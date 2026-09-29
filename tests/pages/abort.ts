@@ -42,6 +42,6 @@ run('abort', async () => {
 	const engine = await createEngine({ canvas: freshCanvas(), sketch });
 	await engine.firstFrame;
 	const stats = await engine.measure(0.5);
-	engine.destroy();
+	await engine.destroy();
 	return { early, late, framesAfter: stats.frames };
 });

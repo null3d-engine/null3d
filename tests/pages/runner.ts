@@ -108,7 +108,12 @@ async function runItem(item: PlanItem): Promise<Result> {
 			if (published) return published;
 			await sleep(RESULT_POLL_MS);
 		}
-		return { ok: false, error: `no result within ${item.timeoutSeconds} s` };
+		const trail = (frame.contentWindow as { __null3dProgress?: string[] } | null)?.__null3dProgress;
+		return {
+			ok: false,
+			error: `no result within ${item.timeoutSeconds} s`,
+			trail: trail ? [...trail] : [],
+		};
 	} finally {
 		frame.remove();
 	}
@@ -130,17 +135,27 @@ async function runPlan(run: string): Promise<void> {
 	show(`run ${run}: finished`);
 }
 
-/** Waits for runs whose turn list names this runner, and runs each one it has not finished. */
+/**
+ * Waits for runs whose turn list names this runner, and runs each one it has not finished. After
+ * its first run, the page reloads before each new run, so that no run inherits memory that an
+ * earlier run's pages kept: some browsers free it only when the page unloads.
+ */
 async function listen(): Promise<void> {
+	let ranOne = false;
 	for (;;) {
 		try {
 			const current = (await (
 				await fetch('/__null3d/runs/current', { cache: 'no-store' })
 			).json()) as { run?: string; turns?: string[] };
 			const due = current.run !== undefined && current.turns?.includes(runner) === true;
-			if (due && !(await fetch(`/__null3d/runs/${current.run}/${runner}/done`)).ok)
+			if (due && !(await fetch(`/__null3d/runs/${current.run}/${runner}/done`)).ok) {
+				if (ranOne) {
+					location.reload();
+					return;
+				}
+				ranOne = true;
 				await runPlan(current.run as string);
-			else show('waiting for a run');
+			} else show('waiting for a run');
 		} catch (e) {
 			show(`waiting for the dev server (${(e as Error).message})`);
 		}

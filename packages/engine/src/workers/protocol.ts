@@ -53,6 +53,13 @@ export type WorkerReply =
 			tier?: Tier;
 	  }
 	| { type: 'error'; role: 'sketch' | 'render' | 'job'; message: string }
+	/** A job worker left the job system after the engine stopped, so it no longer blocks. */
+	| { type: 'stopped'; role: 'job'; index: number }
+	/**
+	 * A step of a worker's start, sent as the worker finishes it. The page ignores these; a test
+	 * that gets no reply from a worker reads them to learn which step never finished.
+	 */
+	| { type: 'progress'; role: 'sketch' | 'render' | 'job'; step: string }
 	/** The browser took the GPU away from the worker that draws, which stopped drawing. */
 	| { type: 'lost'; role: 'sketch' | 'render'; reason: string }
 	| { type: 'sketch-message'; name: string; data: unknown }
@@ -62,3 +69,13 @@ export type SketchWorkerMessage =
 	| SketchWorkerInit
 	| RendererRequest
 	| { type: 'post'; name: string; data: unknown };
+
+/** Sends a reply from a worker to the page, moving the `transfer` objects instead of copying them. */
+export function replyToPage(message: WorkerReply, transfer: Transferable[] = []): void {
+	postMessage(message, { transfer });
+}
+
+/** Returns a function that reports each step of a worker's start to the page as it finishes. */
+export function startSteps(role: 'sketch' | 'render' | 'job'): (step: string) => void {
+	return (step) => replyToPage({ type: 'progress', role, step });
+}

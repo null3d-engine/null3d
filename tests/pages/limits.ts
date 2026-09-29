@@ -50,7 +50,7 @@ run('limits', async () => {
 	if (full.ok) await ask('destroy', 'destroyed');
 	const after = await batch(1000);
 	const afterDrawn = after.ok ? await drawnPixels() : 0;
-	engine.destroy();
+	await engine.destroy();
 	return {
 		mode: engine.mode,
 		maxInstances,

@@ -49,7 +49,7 @@ run('retain', async () => {
 	let removedHeard = 0;
 	engine.onSketchMessage(() => removedHeard++)();
 	await frame();
-	engine.destroy();
+	await engine.destroy();
 	return {
 		mode: engine.mode,
 		beforeDetach,

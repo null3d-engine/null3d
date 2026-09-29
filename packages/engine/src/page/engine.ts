@@ -8,7 +8,7 @@ import { emptySceneInput, type RenderLoop, runRenderLoop } from '../render/loop'
 import { Drawing } from '../render/recovery';
 import { createRenderer, type Renderer, type Tier } from '../render/renderer';
 import { controlViews, createControlBuffer, Slot } from '../shared/control';
-import { type Build, startCore } from '../shared/core';
+import { type Build, type CoreGlue, startCore } from '../shared/core';
 import { createMetricsBuffer, MetricsReader } from '../shared/metrics';
 import { SketchRunner } from '../sketch/runner';
 import type { CoreHandoff, RendererSetup, WorkerReply } from '../workers/protocol';
@@ -177,8 +177,12 @@ export interface Engine {
 	 * handles one.
 	 */
 	simulateGpuLoss(): void;
-	/** Stops the engine and its workers. The engine cannot start again. */
-	destroy(): void;
+	/**
+	 * Stops the engine and its workers. The engine cannot start again. The promise resolves once
+	 * every worker has stopped, when the browser can free the engine's memory. Wait for it before
+	 * you start another engine on the same page: an iPad has room for only a few engines' memory.
+	 */
+	destroy(): Promise<void>;
 }
 
 const DEFAULT_MAX_PIXEL_RATIO = 2;
@@ -190,6 +194,8 @@ const RESERVED_CORES = 2;
 const DRAIN_INTERVAL_MS = 250;
 /** How many sketch messages the page keeps while no handler listens. */
 const MAX_EARLY_MESSAGES = 256;
+/** How long stopping the engine waits for its job workers to leave the job system. */
+const STOP_TIMEOUT_MS = 2_000;
 
 interface TierChoice {
 	tier: Tier;
@@ -246,6 +252,7 @@ const SIMD_PROBE = new Uint8Array([
 class EngineWorker {
 	private readonly waiting: Pending[] = [];
 	private readyPromise: Promise<WorkerReply>;
+	private readonly stoppedPromise: Promise<void>;
 	private started = false;
 
 	constructor(
@@ -263,6 +270,10 @@ class EngineWorker {
 			},
 			() => {},
 		);
+		let markStopped = () => {};
+		this.stoppedPromise = new Promise((resolve) => {
+			markStopped = resolve;
+		});
 		worker.onmessage = (event: MessageEvent<WorkerReply>) => {
 			const reply = event.data;
 			if (reply.type === 'sketch-message') {
@@ -275,12 +286,15 @@ class EngineWorker {
 				);
 				return;
 			}
+			if (reply.type === 'stopped' || reply.type === 'error') markStopped();
+			if (reply.type === 'stopped' || reply.type === 'progress') return;
 			const pending = this.waiting.shift();
 			if (!pending) return;
 			if (reply.type === 'error') pending.reject(startError(reply.role, reply.message));
 			else pending.resolve(reply);
 		};
 		worker.onerror = (event) => {
+			markStopped();
 			const message = event.message || 'a worker failed';
 			this.waiting.shift()?.reject(startError(role, message));
 			if (this.started)
@@ -292,12 +306,34 @@ class EngineWorker {
 		return this.readyPromise;
 	}
 
+	/** Settles once a job worker has left the job system, or once the worker has failed. */
+	stopped(): Promise<void> {
+		return this.stoppedPromise;
+	}
+
 	request(message: { type: 'capture' }): Promise<WorkerReply> {
 		return new Promise((resolve, reject) => {
 			this.waiting.push({ resolve, reject });
 			this.worker.postMessage(message);
 		});
 	}
+}
+
+/**
+ * Stops the workers once every job worker has left the job system, or after a timeout. A job
+ * worker without work blocks its thread in a wait. When Safari stops a thread inside such a wait,
+ * it keeps the thread's shared memory until the tab closes, even across reloads.
+ */
+async function stopWorkers(workers: readonly EngineWorker[], jobs: readonly EngineWorker[]) {
+	let timer: ReturnType<typeof setTimeout> | undefined;
+	await Promise.race([
+		Promise.all(jobs.map((job) => job.stopped())),
+		new Promise((resolve) => {
+			timer = setTimeout(resolve, STOP_TIMEOUT_MS);
+		}),
+	]);
+	clearTimeout(timer);
+	for (const w of workers) w.worker.terminate();
 }
 
 /**
@@ -434,14 +470,29 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 	};
 
 	const workers: EngineWorker[] = [];
+	const jobs: EngineWorker[] = [];
 	let sketch: EngineWorker | undefined;
 	let rendererHost: EngineWorker | undefined;
 	let localDrawing: Drawing<Renderer> | undefined;
 	let localRunner: SketchRunner | undefined;
+	/** The single-threaded build's core, which the page keeps for the next engine it starts. */
+	let localCore: CoreGlue | undefined;
+	/** Stops every loop and then the workers, and wakes each thread that waits, so it sees the stop. */
+	const stop = () => {
+		Atomics.store(slots, Slot.Running, 0);
+		for (const slot of [Slot.Running, Slot.FramesTaken, Slot.Paused, Slot.JobsReady])
+			Atomics.notify(slots, slot);
+		localDrawing?.stop();
+		localCore?.destroyEngine();
+		input.stop();
+		stopPreferences();
+		return stopWorkers(workers, jobs);
+	};
 
 	try {
 		if (latency === 'single') {
 			const started = await startCore('single', core.module);
+			localCore = started.glue;
 			const memory = started.memory as WebAssembly.Memory;
 			wasmMemory = memory;
 			localRunner = new SketchRunner((name, data) => onSketchMessage(name, data), metrics, {
@@ -516,6 +567,7 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 					onFailure,
 				);
 				workers.push(job);
+				jobs.push(job);
 				job.worker.postMessage({ type: 'init', ...handoff, index });
 				// Job workers join the job system as each becomes ready: until then the sketch thread
 				// and the job workers already running take every chunk, so no frame waits for them.
@@ -530,11 +582,7 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 		}
 		signal?.throwIfAborted();
 	} catch (e) {
-		Atomics.store(slots, Slot.Running, 0);
-		localDrawing?.stop();
-		for (const w of workers) w.worker.terminate();
-		input.stop();
-		stopPreferences();
+		await stop();
 		throw e;
 	}
 
@@ -652,13 +700,7 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 			else rendererHost?.worker.postMessage({ type: 'lose-gpu' });
 		},
 		destroy() {
-			Atomics.store(slots, Slot.Running, 0);
-			Atomics.notify(slots, Slot.FramesTaken);
-			Atomics.notify(slots, Slot.Paused);
-			localDrawing?.stop();
-			for (const w of workers) w.worker.terminate();
-			input.stop();
-			stopPreferences();
+			return stop();
 		},
 	};
 }

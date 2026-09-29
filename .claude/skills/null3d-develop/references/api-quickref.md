@@ -61,7 +61,7 @@ engine.capabilities;  // { tier: 'webgpu' | 'webgpu-compat' | 'webgl2', threaded
 engine.setPaused(true);                           // the first step after resuming counts no time
 engine.onFailure((error) => { /* error.code: E1302 GPU lost for good, E1404 engine thread failed */ });
 engine.simulateGpuLoss();                         // acts out a driver reset; the engine recovers
-engine.destroy();
+await engine.destroy();                 // workers stop; wait before this page starts another engine
 ```
 
 ## 2. Sketch: defineSketch and the context (`api/sketch`)

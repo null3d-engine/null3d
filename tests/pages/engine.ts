@@ -1,11 +1,11 @@
 // Starts the engine with an empty sketch in the mode the URL's switches ask for, on the GPU that
 // ?power prefers, and measures it for a few seconds. Then it reports the mode, the capabilities,
-// the frame metrics, how many times the sketch updated, its largest step and the names of the
-// messages it sent. With ?pause, it pauses and resumes the sketch before it asks, and reports the
-// frames drawn during the pause and after it.
+// the frame metrics, how many times the sketch updated, its largest step, the names of the
+// messages it sent, how long the engine took to stop, and the page's steps. With ?pause, it pauses
+// and resumes the sketch before it asks, and reports the frames drawn during the pause and after.
 import { createEngine, type Engine, type FrameMetrics } from '@null3d/engine';
 import type { FrameCounts } from '../lib/engine-checks';
-import { run, toBase64 } from './lib/result';
+import { progress, run, toBase64 } from './lib/result';
 
 const params = new URLSearchParams(location.search);
 const seconds = Number(params.get('seconds') ?? '2');
@@ -44,7 +44,10 @@ run('engine', async () => {
 	const engine = await createEngine({
 		canvas,
 		sketch: new URL('./sketches/empty-sketch.ts', import.meta.url),
-		onProgress: (stage) => stages.push(stage),
+		onProgress: (stage) => {
+			stages.push(stage);
+			progress(stage);
+		},
 		powerPreference: (params.get('power') ?? undefined) as
 			| 'high-performance'
 			| 'low-power'
@@ -62,7 +65,9 @@ run('engine', async () => {
 		engine.postToSketch('count');
 	});
 	const capture = params.has('capture') ? await engine.captureFrame() : undefined;
-	engine.destroy();
+	const stopStarted = performance.now();
+	await engine.destroy();
+	const stopMs = performance.now() - stopStarted;
 	return {
 		mode: engine.mode,
 		capabilities: engine.capabilities,
@@ -72,6 +77,8 @@ run('engine', async () => {
 		messages,
 		count,
 		pause,
+		stopMs,
+		trail: window.__null3dProgress,
 		capture: capture && {
 			width: capture.width,
 			height: capture.height,

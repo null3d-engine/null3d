@@ -77,7 +77,7 @@ export function runNull3dPage(
 				userAgent: navigator.userAgent,
 			};
 		} finally {
-			engine.destroy();
+			await engine.destroy();
 		}
 	});
 }

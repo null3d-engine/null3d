@@ -1,8 +1,7 @@
 // Signals that the browser took the GPU away from a renderer. A renderer that releases its own GPU
-// on purpose never signals, so shutting the engine down is not reported as a loss.
-
-/** A promise that never settles. */
-const NEVER = new Promise<string>(() => {});
+// on purpose never signals, so shutting the engine down is not reported as a loss. Neither signal
+// keeps a released renderer, and the engine memory it reads, reachable: the page's canvas and the
+// GPU device outlive the renderer.
 
 /** How long a lost WebGL2 context may take to come back before the engine gives up on it. */
 const RESTORE_TIMEOUT_MS = 5000;
@@ -12,9 +11,12 @@ const RESTORE_TIMEOUT_MS = 5000;
  * itself never signals, unless `simulated` says it did so to act out a loss.
  */
 export function deviceLoss(device: GPUDevice, simulated: () => boolean): Promise<string> {
-	return device.lost.then((info) =>
-		info.reason === 'destroyed' && !simulated() ? NEVER : info.message || 'the GPU device was lost',
-	);
+	return new Promise((resolve) => {
+		void device.lost.then((info) => {
+			if (info.reason !== 'destroyed' || simulated())
+				resolve(info.message || 'the GPU device was lost');
+		});
+	});
 }
 
 /** Both names of each context event: an offscreen canvas and a canvas element name them apart. */
@@ -22,20 +24,21 @@ const LOST_EVENTS = ['contextlost', 'webglcontextlost'];
 const RESTORED_EVENTS = ['contextrestored', 'webglcontextrestored'];
 
 /**
- * Resolves when the browser takes the WebGL2 context away, unless `released` says the renderer
- * gave it up itself.
+ * Resolves when the browser takes the WebGL2 context away. Once `released` aborts, as when the
+ * renderer gives the context up itself, it stops listening and never resolves.
  */
 export function contextLoss(
 	canvas: OffscreenCanvas | HTMLCanvasElement,
-	released: () => boolean,
+	released: AbortSignal,
 ): Promise<string> {
 	return new Promise((resolve) => {
 		const onLost = (event: Event) => {
 			// Without this, the browser never offers the context back.
 			event.preventDefault();
-			if (!released()) resolve('the WebGL2 context was lost');
+			resolve('the WebGL2 context was lost');
 		};
-		for (const name of LOST_EVENTS) (canvas as EventTarget).addEventListener(name, onLost);
+		for (const name of LOST_EVENTS)
+			(canvas as EventTarget).addEventListener(name, onLost, { signal: released });
 	});
 }
 

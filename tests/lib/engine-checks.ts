@@ -83,6 +83,8 @@ export interface EngineResult {
 	messages: string[];
 	/** With `?pause`: the frames drawn while the sketch was paused, and after it resumed. */
 	pause?: { paused: FrameCounts; resumed: FrameCounts };
+	/** How long the engine took to stop. */
+	stopMs: number;
 }
 
 /** Slower than this median frame interval means the loop is not keeping up with the display. */
@@ -90,6 +92,11 @@ const MAX_MEDIAN_INTERVAL_MS = 34;
 const MIN_FRAMES = 30;
 /** A measured refresh rate outside this range is a measuring fault, not a display. */
 const REFRESH_HZ_RANGE = [20, 500] as const;
+/**
+ * A clean stop takes milliseconds. A stop that takes longer ran into the engine's time limit, which
+ * means a job worker never left the job system and was stopped inside its wait.
+ */
+const MAX_STOP_MS = 1_000;
 
 /** The threads that record frames in a mode. */
 function expectedThreads(mode: EngineMode): string[] {
@@ -167,5 +174,9 @@ export function engineProblems(result: EngineResult, mode: EngineMode, tier: str
 	if (!((stats.memory.wasmBytes ?? 0) > 0)) problems.push('the WebAssembly memory size is missing');
 	if (result.count.updates <= MIN_FRAMES)
 		problems.push(`the sketch updated only ${result.count.updates} times`);
+	if (!(result.stopMs < MAX_STOP_MS))
+		problems.push(
+			`the engine took ${Math.round(result.stopMs)} ms to stop: a job worker did not leave the job system`,
+		);
 	return problems;
 }

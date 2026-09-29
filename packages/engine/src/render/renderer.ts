@@ -171,7 +171,7 @@ class WebGL2Renderer implements Renderer {
 	readonly tier: Tier = 'webgl2';
 	readonly completion: CompletionSignal = 'fence';
 	private readonly completions: FenceCompletion | undefined;
-	private released = false;
+	private readonly release = new AbortController();
 	readonly lost: Promise<string>;
 
 	constructor(
@@ -179,7 +179,7 @@ class WebGL2Renderer implements Renderer {
 		private readonly gl: WebGL2RenderingContext,
 		metrics: ArrayBufferLike | undefined,
 	) {
-		this.lost = contextLoss(canvas, () => this.released);
+		this.lost = contextLoss(canvas, this.release.signal);
 		this.completions = metrics && new FenceCompletion(gl, metrics);
 	}
 
@@ -223,7 +223,7 @@ class WebGL2Renderer implements Renderer {
 	}
 
 	destroy(): void {
-		this.released = true;
+		this.release.abort();
 		releaseContext(this.gl);
 	}
 }

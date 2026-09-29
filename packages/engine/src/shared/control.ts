@@ -45,6 +45,8 @@ export enum Slot {
 	FrameEpoch1 = 16,
 	/** Nonzero while the user's system asks pages for less motion. */
 	ReducedMotion = 17,
+	/** Nonzero once the sketch thread has created the job system that the job workers serve. */
+	JobsReady = 18,
 }
 
 const SLOT_COUNT = 20;

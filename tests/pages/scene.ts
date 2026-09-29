@@ -27,7 +27,7 @@ run('scene', async () => {
 	}
 	const stats = await engine.measure(seconds);
 	const capture = await engine.captureFrame();
-	engine.destroy();
+	await engine.destroy();
 	return {
 		mode: engine.mode,
 		capabilities: engine.capabilities,

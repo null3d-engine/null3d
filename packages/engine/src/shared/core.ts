@@ -39,6 +39,8 @@ export interface CoreGlue extends CoreErrors {
 	/** Milliseconds a job worker spent on work since the last call for it; resets its total. */
 	takeJobBusyMs(index: number): number;
 	shutdownJobs(): void;
+	/** Drops the engine, so this instance can create another; the page's own instance needs it. */
+	destroyEngine(): void;
 	sceneCapacity(): number;
 	sceneArrays(field: number): number;
 	reserveObject(): number;
@@ -105,6 +107,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'jobWorkerLoop',
 	'takeJobBusyMs',
 	'shutdownJobs',
+	'destroyEngine',
 	'sceneCapacity',
 	'sceneArrays',
 	'reserveObject',
@@ -189,15 +192,21 @@ export interface StartedCore {
 	memory: WebAssembly.Memory | undefined;
 }
 
-/** Instantiates the core in this thread with an already compiled module. */
+/**
+ * Instantiates the core in this thread with an already compiled module. `step` hears each step as
+ * it finishes: the glue loaded, then the core started.
+ */
 export async function startCore(
 	build: Build,
 	module: WebAssembly.Module,
 	memory?: WebAssembly.Memory,
+	step?: (name: string) => void,
 ): Promise<StartedCore> {
 	const glue = await loadGlue(build);
+	step?.('glue loaded');
 	const exports = glue.initSync(
 		build === 'threaded' ? { module, memory, thread_stack_size: THREAD_STACK_BYTES } : { module },
 	);
+	step?.('core started');
 	return { glue, memory: memory ?? exports.memory };
 }

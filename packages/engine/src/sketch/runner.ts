@@ -33,6 +33,19 @@ export interface SketchCore {
 	device: CoreDevice;
 }
 
+/**
+ * Waits without blocking for the engine to stop, then ends the job workers' loops. The page stops
+ * the job workers only after they leave their loops, where each blocks its thread while it has no
+ * work.
+ */
+async function shutDownJobsOnStop(glue: CoreGlue, slots: Int32Array): Promise<void> {
+	while (Atomics.load(slots, Slot.Running) !== 0) {
+		const wait = Atomics.waitAsync(slots, Slot.Running, 1);
+		if (wait.async) await wait.value;
+	}
+	glue.shutdownJobs();
+}
+
 export class SketchRunner {
 	private readonly messageHandlers = new Set<(type: string, data: unknown) => void>();
 	private readonly preferenceHandlers = new Set<() => void>();
@@ -72,6 +85,11 @@ export class SketchRunner {
 			device.maxTextureSize,
 		);
 		if (status !== 0) throw coreFailure(glue, 'createEngine');
+		if (sketch.jobWorkers > 0) {
+			Atomics.store(slots, Slot.JobsReady, 1);
+			Atomics.notify(slots, Slot.JobsReady);
+			void shutDownJobsOnStop(glue, slots);
+		}
 		this.core = new CoreMemory(glue, sketch.memory);
 		Atomics.store(slots, Slot.DrawListAddress0, glue.drawListAddress(0));
 		Atomics.store(slots, Slot.DrawListAddress1, glue.drawListAddress(1));

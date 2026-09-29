@@ -43,6 +43,15 @@ export const immutableAssetsMiddleware: Connect.NextHandleFunction = (req, res, 
 	next();
 };
 
+/**
+ * The HTTPS server's settings: the certificate, and HTTP/1.1 only. Vite serves HTTPS over HTTP/2,
+ * where Safari on iPad sometimes stalls while a worker loads its modules: a development server
+ * sends each module as its own file, and every engine thread loads its own copies.
+ */
+function httpsOptions(certificate: { cert: Buffer; key: Buffer }) {
+	return { ...certificate, ALPNCallback: () => 'http/1.1' };
+}
+
 function readCertificate(root: string, certDir: string): { cert: Buffer; key: Buffer } {
 	const dir = resolve(root, certDir);
 	const cert = resolve(dir, 'cert.pem');
@@ -111,7 +120,7 @@ export default function null3d(options: Null3dPluginOptions = {}): Plugin {
 		config(config, { mode }) {
 			const root = config.root ?? process.cwd();
 			const https = options.https
-				? readCertificate(root, options.certDir ?? DEV_CERT_DIR)
+				? httpsOptions(readCertificate(root, options.certDir ?? DEV_CERT_DIR))
 				: undefined;
 			return {
 				// Development checks stay in dev builds; release builds drop them as dead code.

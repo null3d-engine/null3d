@@ -10,14 +10,11 @@ import { createRenderer, type Renderer } from '../render/renderer';
 import { controlViews, Slot } from '../shared/control';
 import { startCore } from '../shared/core';
 import { SketchRunner } from '../sketch/runner';
-import type { SketchWorkerMessage, WorkerReply } from './protocol';
+import { replyToPage, type SketchWorkerMessage, startSteps } from './protocol';
 
 let runner: SketchRunner | undefined;
 let drawing: Drawing<Renderer> | undefined;
 let controlSlots: Int32Array | undefined;
-
-const reply = (message: WorkerReply, transfer: Transferable[] = []) =>
-	postMessage(message, { transfer });
 
 /**
  * A promise that settles when the slot no longer holds `value`, or undefined when it already
@@ -50,16 +47,19 @@ async function runPipelined(sketch: SketchRunner, control: ArrayBufferLike): Pro
 	}
 }
 
+const step = startSteps('sketch');
+step('loaded');
+
 self.onmessage = async (event: MessageEvent<SketchWorkerMessage>) => {
 	const message = event.data;
 	if (message.type === 'init') {
 		try {
 			controlSlots = controlViews(message.control).slots;
-			const started = await startCore(message.build, message.module, message.memory);
+			const started = await startCore(message.build, message.module, message.memory, step);
 			const core = started.glue;
 			const memory = started.memory as WebAssembly.Memory;
 			runner = new SketchRunner(
-				(name, data, transfer) => reply({ type: 'sketch-message', name, data }, transfer),
+				(name, data, transfer) => replyToPage({ type: 'sketch-message', name, data }, transfer),
 				message.metrics,
 				{
 					glue: core,
@@ -69,7 +69,9 @@ self.onmessage = async (event: MessageEvent<SketchWorkerMessage>) => {
 					device: message.device,
 				},
 			);
+			step('engine created');
 			await runner.load(message.sketchUrl);
+			step('sketch loaded');
 			if (message.renderer) {
 				const setup = message.renderer;
 				const create = () =>
@@ -86,12 +88,12 @@ self.onmessage = async (event: MessageEvent<SketchWorkerMessage>) => {
 					(renderer) =>
 						runDirectLoop(sketch, renderer, message.control, message.metrics, setup.fps),
 					controlSlots,
-					(reason) => reply({ type: 'lost', role: 'sketch', reason }),
+					(reason) => replyToPage({ type: 'lost', role: 'sketch', reason }),
 				);
 			} else {
 				void runPipelined(runner, message.control);
 			}
-			reply({
+			replyToPage({
 				type: 'ready',
 				role: 'sketch',
 				threaded: core.isThreadedBuild(),
@@ -99,7 +101,11 @@ self.onmessage = async (event: MessageEvent<SketchWorkerMessage>) => {
 				tier: drawing?.renderer.tier,
 			});
 		} catch (e) {
-			reply({ type: 'error', role: 'sketch', message: e instanceof Error ? e.message : String(e) });
+			replyToPage({
+				type: 'error',
+				role: 'sketch',
+				message: e instanceof Error ? e.message : String(e),
+			});
 		}
 	} else if (message.type === 'post') {
 		runner?.receive(message.name, message.data);
@@ -107,7 +113,7 @@ self.onmessage = async (event: MessageEvent<SketchWorkerMessage>) => {
 		const captured = await drawing.renderer.capture(
 			emptySceneInput(Atomics.load(controlSlots, Slot.FramesTaken)),
 		);
-		reply({ type: 'captured', ...captured }, [captured.pixels.buffer]);
+		replyToPage({ type: 'captured', ...captured }, [captured.pixels.buffer]);
 	} else if (message.type === 'lose-gpu') {
 		drawing?.simulateLoss();
 	}
