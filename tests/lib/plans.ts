@@ -9,9 +9,11 @@ import {
 	comparisonName,
 	decodeHoldResult,
 	differenceText,
+	gpuApiOf,
 	type HoldFrame,
 	holdPagePath,
 	PARITY_SCENES,
+	TIERS as PARITY_TIERS,
 	type PagePair,
 	type ParityScene,
 	pagePath,
@@ -109,14 +111,16 @@ export function checksPlan(): PlanItem<Check>[] {
 const parityItemId = (scene: ParityScene, kind: string) => `parity-${scene}-${kind}`;
 
 /**
- * The benchmark scenes' hold frames from null3d and three.js on both GPU tiers. Each three.js
- * page must publish a frame. Each null3d page must match the three.js page of its tier from the
- * same run, which judging compares.
+ * The benchmark scenes' hold frames from null3D and three.js on every GPU tier. Each three.js
+ * page must publish a frame. Each null3D page must match the three.js page of its tier from the
+ * same run, which judging compares. Compatibility mode needs WebGPU, and it shares core WebGPU's
+ * three.js page, which the plan opens once.
  */
 export function parityPlan(): PlanItem<Check>[] {
-	return PARITY_SCENES.flatMap((scene) =>
-		TIERS.flatMap((tier) => {
-			const pair = TIER_PAIRS[tier];
+	const items = PARITY_SCENES.flatMap((scene) =>
+		PARITY_TIERS.flatMap((parityTier) => {
+			const pair = TIER_PAIRS[parityTier];
+			const tier = gpuApiOf(parityTier);
 			return [
 				{
 					id: parityItemId(scene, pair.reference),
@@ -133,6 +137,7 @@ export function parityPlan(): PlanItem<Check>[] {
 			];
 		}),
 	);
+	return items.filter((item, index) => items.findIndex(({ id }) => id === item.id) === index);
 }
 
 /** Fresh runs of each benchmark page in the bench plan, as the benchmark protocol asks. */

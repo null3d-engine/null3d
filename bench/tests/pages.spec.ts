@@ -2,8 +2,17 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
 import { encode } from 'fast-png';
+import { compareToReference } from '../../tests/lib/images.ts';
 import { pageResult } from '../../tests/lib/page-result.ts';
-import { PARITY_SCENES, type PageKind, pagePath, SCENE_CODE } from '../lib/parity';
+import {
+	PARITY_SCENES,
+	type PageKind,
+	pagePath,
+	SCENE_CODE,
+	TIER_PAIRS,
+	TIERS,
+	type Tier,
+} from '../lib/parity';
 import { BACKGROUND, PARITY_CANVAS, S2_NODES_PER_TREE, s2Trees } from '../scenes/spec';
 
 const SCENES = PARITY_SCENES;
@@ -13,10 +22,23 @@ const PAGES: { kind: PageKind; renderer: string }[] = [
 	{ kind: 'threejs-webgpu', renderer: 'webgpu' },
 	{ kind: 'null3d-webgpu', renderer: 'null3d' },
 	{ kind: 'null3d-webgl2', renderer: 'null3d' },
+	{ kind: 'null3d-compat', renderer: 'null3d' },
 ];
+
+/** The GPU tier of each null3D page, and the tier the engine reports when it draws with it. */
+const NULL3D_TIERS = new Map<PageKind, { tier: Tier; reported: string }>(
+	TIERS.map((tier) => [
+		TIER_PAIRS[tier].candidate,
+		{ tier, reported: tier === 'compat' ? 'webgpu-compat' : tier },
+	]),
+);
+/** The reference images of the null3D hold frames, one folder per GPU tier. */
+const REFERENCE_DIR = join(import.meta.dirname, 'references');
 
 /** Where the hold frames are saved, for people to review. */
 const IMAGE_DIR = join(import.meta.dirname, '../../test-results/bench');
+/** Where a frame that differs from its reference is saved with the diff. */
+const FAILURE_DIR = join(IMAGE_DIR, 'references');
 /** A channel this close to the background's still counts as background: sRGB encoding rounds. */
 const BACKGROUND_TOLERANCE = 2;
 /**
@@ -38,6 +60,7 @@ interface Report {
 	error?: string;
 	scene: string;
 	renderer: string;
+	tier?: string;
 	n: number;
 }
 
@@ -131,6 +154,16 @@ for (const scene of SCENES) {
 				expect(meanBrightness(pixels, width, middle, height)).toBeGreaterThan(
 					meanBrightness(pixels, width, 0, middle),
 				);
+			}
+
+			const null3d = NULL3D_TIERS.get(kind);
+			if (null3d) {
+				// A page that fell back to another tier would compare the wrong image.
+				expect(result.tier).toBe(null3d.reported);
+				compareToReference(scene, null3d.tier, pixels, width, height, {
+					referenceDir: REFERENCE_DIR,
+					failureDir: FAILURE_DIR,
+				});
 			}
 		});
 

@@ -7,6 +7,7 @@ import {
 	decodeHoldResult,
 	differenceText,
 	formatStoredBaselines,
+	gpuApiOf,
 	type HoldFrame,
 	holdPagePath,
 	MAX_DIFFERENT_PERCENT,
@@ -19,6 +20,7 @@ import {
 	passesWithBaseline,
 	type RgbaImage,
 	TIER_PAIRS,
+	TIERS,
 } from './parity';
 
 /** An opaque image of one color. */
@@ -239,12 +241,14 @@ describe('the pages', () => {
 		);
 		expect(holdPagePath('s2', 'null3d-webgl2')).toBe('/bench/pages/null3d/s2.html?gpu=webgl2&hold');
 		expect(holdPagePath('s2', 'null3d-webgpu')).toBe('/bench/pages/null3d/s2.html?gpu=webgpu&hold');
+		expect(holdPagePath('s1', 'null3d-compat')).toBe('/bench/pages/null3d/s1.html?gpu=compat&hold');
 		expect(pagePath('s1', 'scene-code', 'n=1000')).toBe('/bench/pages/scene-code/s1.html?n=1000');
 	});
 
-	test('pairs the null3d page with the three.js page of the same GPU tier', () => {
+	test('pairs the null3D page with the three.js page of the same GPU interface', () => {
 		expect(TIER_PAIRS).toEqual({
 			webgpu: { candidate: 'null3d-webgpu', reference: 'threejs-webgpu' },
+			compat: { candidate: 'null3d-compat', reference: 'threejs-webgpu' },
 			webgl2: { candidate: 'null3d-webgl2', reference: 'threejs-webgl' },
 		});
 		expect(PAGE_KINDS).toEqual([
@@ -252,7 +256,9 @@ describe('the pages', () => {
 			'threejs-webgpu',
 			'null3d-webgl2',
 			'null3d-webgpu',
+			'null3d-compat',
 		]);
+		expect(TIERS.map(gpuApiOf)).toEqual(['webgpu', 'webgpu', 'webgl2']);
 	});
 
 	test('names the image files after the scene and the two pages', () => {
@@ -278,11 +284,12 @@ describe('stored baselines', () => {
 });
 
 describe('parseParityArgs', () => {
-	test('compares every scene on both GPU tiers by default', () => {
+	test('compares every scene on every GPU tier by default', () => {
 		expect(parseParityArgs([])).toEqual({
 			scenes: ['s1', 's1-static', 's2'],
 			comparisons: [
 				{ label: 'webgpu', candidate: 'null3d-webgpu', reference: 'threejs-webgpu' },
+				{ label: 'compat', candidate: 'null3d-compat', reference: 'threejs-webgpu' },
 				{ label: 'webgl2', candidate: 'null3d-webgl2', reference: 'threejs-webgl' },
 			],
 			saveBaselines: false,
@@ -316,7 +323,7 @@ describe('parseParityArgs', () => {
 		expect(() => parseParityArgs(['--scene', 's3'])).toThrow(
 			'"s3" is not a scene. Use one of: s1, s1-static, s2.',
 		);
-		expect(() => parseParityArgs(['--tier', 'compat'])).toThrow('"compat" is not a tier.');
+		expect(() => parseParityArgs(['--tier', 'webgl1'])).toThrow('"webgl1" is not a tier.');
 		expect(() => parseParityArgs(['--pair', 'threejs-webgl'])).toThrow(
 			'--pair needs two different page kinds',
 		);

@@ -156,8 +156,16 @@ describe('the parity plan', () => {
 
 	it('opens every hold page once and pairs each null3d page with three.js on its tier', () => {
 		expect(PLANS.parity).toBe(parityPlan);
-		expect(items).toHaveLength(12);
+		// Per scene: two three.js pages and three null3D pages, one per GPU tier.
+		expect(items).toHaveLength(15);
 		expect(new Set(items.map(({ id }) => id)).size).toBe(items.length);
+		// Compatibility mode needs WebGPU, and it is compared with three.js's WebGPU page.
+		expect(item('parity-s1-null3d-compat').check).toEqual({
+			kind: 'parity',
+			tier: 'webgpu',
+			scene: 's1',
+			pair: { candidate: 'null3d-compat', reference: 'threejs-webgpu' },
+		});
 		for (const { path } of items) expect(path).toMatch(/^\/bench\/pages\/.+\.html\?.+&hold$/);
 		const pairs = items.flatMap(({ id, check }) =>
 			check.kind === 'parity' ? [`${id} ${check.pair.reference}`] : [],
@@ -165,6 +173,7 @@ describe('the parity plan', () => {
 		expect(pairs).toEqual(
 			['s1', 's1-static', 's2'].flatMap((scene) => [
 				`parity-${scene}-null3d-webgpu threejs-webgpu`,
+				`parity-${scene}-null3d-compat threejs-webgpu`,
 				`parity-${scene}-null3d-webgl2 threejs-webgl`,
 			]),
 		);

@@ -10,9 +10,11 @@
 //   bun run parity -- --save-baselines
 // Options:
 //   --scene <list>   scenes: s1, s1-static, s2; the default is all three
-//   --tier <list>    GPU tiers: webgpu, webgl2; the default is both
+//   --tier <list>    GPU tiers: webgpu, compat (WebGPU forced into compatibility mode), webgl2;
+//                    the default is all three
 //   --pair <a>,<b>   compare page kind a with page kind b, the reference, instead of the tiers.
-//                    Page kinds: threejs-webgl, threejs-webgpu, null3d-webgl2, null3d-webgpu
+//                    Page kinds: threejs-webgl, threejs-webgpu, null3d-webgl2, null3d-webgpu,
+//                    null3d-compat
 //   --save-baselines save how much three.js's two renderers differ on each scene in
 //                    bench/parity-baselines.json, where the device runner reads it for devices
 //                    that cannot draw with both

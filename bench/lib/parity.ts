@@ -52,8 +52,14 @@ export interface ImageComparison {
 export const PARITY_SCENES = ['s1', 's1-static', 's2'] as const;
 export type ParityScene = (typeof PARITY_SCENES)[number];
 
-export const TIERS = ['webgpu', 'webgl2'] as const;
+/** The GPU tiers: core WebGPU, WebGPU forced into compatibility mode, and WebGL2. */
+export const TIERS = ['webgpu', 'compat', 'webgl2'] as const;
 export type Tier = (typeof TIERS)[number];
+
+/** The GPU interface a tier draws with: compatibility mode is WebGPU within lower limits. */
+export function gpuApiOf(tier: Tier): 'webgpu' | 'webgl2' {
+	return tier === 'webgl2' ? 'webgl2' : 'webgpu';
+}
 
 /** Each kind of benchmark page: its folder, and the switch that picks its GPU path. */
 const PAGES = {
@@ -61,6 +67,7 @@ const PAGES = {
 	'threejs-webgpu': { folder: 'threejs', gpu: 'renderer=webgpu' },
 	'null3d-webgl2': { folder: 'null3d', gpu: 'gpu=webgl2' },
 	'null3d-webgpu': { folder: 'null3d', gpu: 'gpu=webgpu' },
+	'null3d-compat': { folder: 'null3d', gpu: 'gpu=compat' },
 } as const satisfies Record<string, { folder: string; gpu: string }>;
 
 export type PageKind = keyof typeof PAGES;
@@ -85,6 +92,7 @@ export interface PagePair {
 /** On each GPU tier, the null3d page and the three.js page that it must match. */
 export const TIER_PAIRS: Readonly<Record<Tier, PagePair>> = {
 	webgpu: { candidate: 'null3d-webgpu', reference: 'threejs-webgpu' },
+	compat: { candidate: 'null3d-compat', reference: 'threejs-webgpu' },
 	webgl2: { candidate: 'null3d-webgl2', reference: 'threejs-webgl' },
 };
 
