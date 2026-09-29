@@ -19,7 +19,8 @@
 //   --allow-no-webgl2   a browser without WebGL2 skips the WebGL2 pages instead of failing them
 //   --n <count>         the instance count of the bench plan's pages
 //   --runs <count>      fresh runs of each bench plan page, the protocol's 5 by default, or loads
-//                       at each maximum of the memory plan, 20 by default
+//                       at each maximum of the memory plan, 20 by default; 0 there runs only the
+//                       counts of how many engines fit at once
 //   --jobs <list>       job worker counts, such as 2,4,6,8: the bench plan then runs null3D's two
 //                       GPU paths at each count instead of its usual pages
 //   --pages <list>      the bench plan's page kinds, such as null3d-webgl2,null3d-webgl2-low
@@ -136,10 +137,10 @@ export function parseArgs(args: readonly string[]): Options {
 			throw new Error(`${flag}: use ${allowed.join(' or ')}\n${USAGE}`);
 		return value as T;
 	};
-	const wholeNumber = (flag: string, value: string | undefined) => {
+	const wholeNumber = (flag: string, value: string | undefined, least = 1) => {
 		const n = Number(value);
-		if (!(Number.isSafeInteger(n) && n > 0))
-			throw new Error(`${flag}: use a whole number above 0\n${USAGE}`);
+		if (!(Number.isSafeInteger(n) && n >= least))
+			throw new Error(`${flag}: use a whole number of at least ${least}\n${USAGE}`);
 		return n;
 	};
 	for (let i = 0; i < args.length; i++) {
@@ -147,7 +148,7 @@ export function parseArgs(args: readonly string[]): Options {
 		if (arg === '--allow-no-webgpu') missing.webgpu = true;
 		else if (arg === '--allow-no-webgl2') missing.webgl2 = true;
 		else if (arg === '--n') options.count = wholeNumber(arg, args[++i]);
-		else if (arg === '--runs') options.runs = wholeNumber(arg, args[++i]);
+		else if (arg === '--runs') options.runs = wholeNumber(arg, args[++i], 0);
 		else if (arg === '--jobs') options.jobs = readJobCounts(args[++i]);
 		else if (arg === '--pages') options.pages = known(arg, list(args[++i]), BENCH_PAGE_KINDS);
 		else if (arg === '--scenes') options.scenes = known(arg, list(args[++i]), PARITY_SCENES);
@@ -160,6 +161,9 @@ export function parseArgs(args: readonly string[]): Options {
 	}
 	if (!PLAN_NAMES.includes(options.plan))
 		throw new Error(`no plan named ${options.plan}; plans: ${PLAN_NAMES.join(', ')}`);
+	// The memory plan still counts the room at each maximum without loads; other plans need runs.
+	if (options.runs === 0 && options.plan !== 'memory')
+		throw new Error(`--runs 0 works with --plan memory only\n${USAGE}`);
 	for (const [flag, given] of [
 		['--jobs', options.jobs],
 		['--pages', options.pages],

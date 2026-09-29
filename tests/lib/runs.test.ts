@@ -672,8 +672,10 @@ describe('parseArgs', () => {
 		expect(parseArgs(['--plan', 'bench', '--jobs', '2,4,6,8', 'Safari']).jobs).toEqual([
 			2, 4, 6, 8,
 		]);
-		expect(() => parseArgs(['--n', 'many'])).toThrow('--n: use a whole number above 0');
-		expect(() => parseArgs(['--runs', '0'])).toThrow('--runs: use a whole number above 0');
+		expect(() => parseArgs(['--n', 'many'])).toThrow('--n: use a whole number of at least 1');
+		expect(() => parseArgs(['--runs', '-1'])).toThrow('--runs: use a whole number of at least 0');
+		expect(() => parseArgs(['--runs', '0'])).toThrow('--runs 0 works with --plan memory only');
+		expect(parseArgs(['--plan', 'memory', '--runs', '0', 'Safari']).runs).toBe(0);
 		expect(() => parseArgs(['--plan', 'bench', '--jobs', '0'])).toThrow(
 			'--jobs: use a comma-separated list of whole numbers above 0',
 		);
