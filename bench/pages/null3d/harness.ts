@@ -4,7 +4,7 @@
 // the scene until the page closes. Otherwise it warms up, measures the engine, and publishes the
 // frame metrics. The engine's own switches, such as `?gpu=webgpu` or `?latency=low`, pick the GPU
 // path and the thread mode.
-import { createEngine } from '@null3d/engine';
+import { createEngine, type Engine } from '@null3d/engine';
 import { run, toBase64 } from '../../../tests/pages/lib/result';
 import { CANVAS, MEASURE_SECONDS, PARITY_CANVAS, WARMUP_SECONDS } from '../../scenes/spec';
 import { fitToWindow, showPageName } from '../lib/fit';
@@ -58,8 +58,12 @@ export function runNull3dPage(
 			mode: engine.mode,
 			n,
 		};
-		// A demo keeps the engine running until the page closes.
-		if (options.demo) return report;
+		// A demo keeps the engine running until the page closes. A tool that watches a long run, such
+		// as the soak test, measures the engine through the page.
+		if (options.demo) {
+			(globalThis as { __null3dEngine?: Engine }).__null3dEngine = engine;
+			return report;
+		}
 		try {
 			if (options.hold !== null) {
 				await sleep(HOLD_SETTLE_SECONDS);

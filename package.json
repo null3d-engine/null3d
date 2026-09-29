@@ -37,6 +37,7 @@
 		"bench:allocation": "bun bench/allocation.ts",
 		"bench:profile": "bun bench/profile.ts",
 		"bench:startup": "bun bench/startup.ts",
+		"bench:soak": "bun bench/soak.ts",
 		"readme-media": "bun bench/readme-media.ts",
 		"dev": "vite",
 		"dev-cert": "bun tools/dev-cert.ts",

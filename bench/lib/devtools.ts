@@ -113,6 +113,16 @@ export interface Attached {
 	workers: Map<string, string>;
 }
 
+/** A worker that a debugging session attached to. */
+export interface AttachedWorker {
+	sessionId: string;
+	/** The address of the worker's script. */
+	url: string;
+}
+
+/** How long a page's workers may take to appear after the tool attaches to the page. */
+const WORKERS_TIMEOUT_MS = 30_000;
+
 /** The pages whose address holds the path of `url`. */
 export async function pagesAt(devtools: DevTools, url: string): Promise<TargetInfo[]> {
 	const path = new URL(url).pathname;
@@ -122,35 +132,104 @@ export async function pagesAt(devtools: DevTools, url: string): Promise<TargetIn
 
 /**
  * Attaches to a page and then to its workers, which Chrome reports only to a session that asks to
- * attach to a page's related targets. A worker is named by a part of its script's address.
+ * attach to a page's related targets. It waits until `enough` accepts the workers so far, or for
+ * a while at most.
  */
-export async function attachWorkers(
+async function attachPage(
 	devtools: DevTools,
 	targetId: string,
-	names: readonly string[],
-): Promise<Attached> {
+	enough: (workers: readonly AttachedWorker[]) => boolean,
+): Promise<{ page: string; workers: AttachedWorker[] }> {
 	const { sessionId } = await devtools.send<{ sessionId: string }>('Target.attachToTarget', {
 		targetId,
 		flatten: true,
 	});
-	const workers = new Map<string, string>();
+	const workers: AttachedWorker[] = [];
 	devtools.on('Target.attachedToTarget', (params, parent) => {
 		const { sessionId: worker, targetInfo } = params as {
 			sessionId: string;
 			targetInfo: TargetInfo;
 		};
-		const name = names.find((w) => targetInfo.type === 'worker' && targetInfo.url.includes(w));
-		if (parent === sessionId && name) workers.set(name, worker);
+		if (parent === sessionId && targetInfo.type === 'worker')
+			workers.push({ sessionId: worker, url: targetInfo.url });
 	});
 	await devtools.send(
 		'Target.setAutoAttach',
 		{ autoAttach: true, waitForDebuggerOnStart: false, flatten: true },
 		sessionId,
 	);
-	for (let tries = 0; tries < 300 && workers.size < names.length; tries++) await sleep(100);
-	const missing = names.filter((w) => !workers.has(w));
-	if (missing.length > 0) throw new Error(`no worker target appeared for ${missing.join(', ')}`);
+	const deadline = Date.now() + WORKERS_TIMEOUT_MS;
+	while (!enough(workers) && Date.now() < deadline) await sleep(100);
 	return { page: sessionId, workers };
+}
+
+/** Attaches to a page and to its named workers. A worker is named by a part of its script's address. */
+export async function attachWorkers(
+	devtools: DevTools,
+	targetId: string,
+	names: readonly string[],
+): Promise<Attached> {
+	const named = (workers: readonly AttachedWorker[]) =>
+		new Map(
+			names.flatMap((name) => {
+				const worker = workers.findLast((w) => w.url.includes(name));
+				return worker ? [[name, worker.sessionId] as const] : [];
+			}),
+		);
+	const { page, workers } = await attachPage(
+		devtools,
+		targetId,
+		(attached) => named(attached).size === names.length,
+	);
+	const found = named(workers);
+	const missing = names.filter((w) => !found.has(w));
+	if (missing.length > 0) throw new Error(`no worker target appeared for ${missing.join(', ')}`);
+	return { page, workers: found };
+}
+
+/** Attaches to a page and to every one of its workers, of which `count` must appear. */
+export async function attachEveryWorker(
+	devtools: DevTools,
+	targetId: string,
+	count: number,
+): Promise<{ page: string; workers: AttachedWorker[] }> {
+	const attached = await attachPage(devtools, targetId, (workers) => workers.length >= count);
+	if (attached.workers.length < count)
+		throw new Error(`${attached.workers.length} of the page's ${count} workers appeared`);
+	return attached;
+}
+
+/**
+ * The bytes of every WebAssembly memory that a page or worker holds. It finds the memories through
+ * the debugger, as the engine keeps its memory out of the page's global scope.
+ */
+export async function wasmMemoryBytes(devtools: DevTools, sessionId: string): Promise<number> {
+	const objectGroup = 'null3d-wasm-memory';
+	try {
+		const { result: prototype } = await devtools.send<{ result: { objectId: string } }>(
+			'Runtime.evaluate',
+			{ expression: 'WebAssembly.Memory.prototype', objectGroup },
+			sessionId,
+		);
+		const { objects } = await devtools.send<{ objects: { objectId: string } }>(
+			'Runtime.queryObjects',
+			{ prototypeObjectId: prototype.objectId, objectGroup },
+			sessionId,
+		);
+		const { result } = await devtools.send<{ result: { value: number } }>(
+			'Runtime.callFunctionOn',
+			{
+				objectId: objects.objectId,
+				functionDeclaration:
+					'function () { return this.reduce((sum, memory) => sum + memory.buffer.byteLength, 0); }',
+				returnByValue: true,
+			},
+			sessionId,
+		);
+		return result.value;
+	} finally {
+		await devtools.send('Runtime.releaseObjectGroup', { objectGroup }, sessionId);
+	}
 }
 
 /** Evaluates an expression in a page or worker and returns its value, copied out as JSON. */
