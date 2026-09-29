@@ -1,10 +1,10 @@
-// Link checks for the Markdown the repository publishes: every page under docs/, the README and
-// AGENTS.md. Internal links (page to page, heading anchors, relative paths, and github.com links
+// Link checks for the Markdown the repository publishes: every page under docs/, the README,
+// AGENTS.md and the maintainer guides in .dev/. Internal links (page to page, heading anchors, relative paths, and github.com links
 // into this repository) are checked across the whole tree, because a renamed or deleted page breaks
 // the links in other files. External URLs are probed separately, by the commit hook, for the files
 // a commit changes.
 import { posix } from 'node:path';
-import { docsFiles, readIfExists } from './files';
+import { docsFiles, guideFiles, readIfExists } from './files';
 
 /** Root-level Markdown files that link into the docs and are checked with them. */
 export const ROOT_LINKED_FILES = ['README.md', 'AGENTS.md'];
@@ -197,7 +197,7 @@ export function checkLinkTree(
 /** Every file whose links are checked, keyed by repository-relative path. */
 export function linkedFiles(root: string): Map<string, string> {
 	const files = new Map<string, string>();
-	for (const path of [...ROOT_LINKED_FILES, ...docsFiles(root)]) {
+	for (const path of [...ROOT_LINKED_FILES, ...guideFiles(root), ...docsFiles(root)]) {
 		const content = readIfExists(root, path);
 		if (content !== null) files.set(path, content);
 	}

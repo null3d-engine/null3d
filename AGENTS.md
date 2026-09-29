@@ -1,6 +1,6 @@
 # Rules for people and agents working in this repository
 
-This repository holds the null3D engine, its tools, its documentation and its agent skills. This file holds the working rules. The pages in [`docs/`](docs/index.md) describe the design.
+This repository holds the null3D engine, its tools, its documentation and its agent skills. This file holds the working rules. The pages in [`docs/`](docs/index.md) describe the design, and the [maintainer guides](.dev/README.md) in `.dev/` hold the detail behind these rules.
 
 ## Where things are
 
@@ -15,6 +15,7 @@ This repository holds the null3D engine, its tools, its documentation and its ag
 | `tests/` | Browser tests: test pages, Playwright image tests, reference images and the real-browser runner |
 | `tools/` | The WebAssembly build, the docs generator, the skills check and the commit hooks |
 | `examples/`, `bench/`, `templates/`, `porting-corpus/` | Demos, benchmarks, starter projects and the three.js porting corpus, as the milestones add them |
+| `.dev/` | Maintainer guides: [benchmarks](.dev/benchmarks.md), [device sessions](.dev/devices.md), [implementation notes](.dev/implementation-notes.md) and [releases](.dev/releases.md) |
 
 ## Commands
 
@@ -92,42 +93,13 @@ Code review enforces these rules.
 
 ## Performance work
 
-The benchmarks compare null3D with three.js in the same browser. These points come from the first checkpoint's measurements.
+The benchmarks compare null3D with three.js in the same browser. [Benchmarks](.dev/benchmarks.md) says how to run them and read them. [Device sessions](.dev/devices.md) covers phones, tablets and the Mac's browser apps. [Implementation notes](.dev/implementation-notes.md) holds the habits and browser faults behind the hard rules. These points apply to every change:
 
 - A report gives each engine's whole frame and its own work on the busiest thread. The desktop target uses own work, because both engines run the same scene code.
-- null3D's own work comes from its phase timers: each thread's time less its `update` step. three.js's own work is its frame time less the scene code, timed alone on the scene-code page. That page's loop compiles to slower code than an engine's loop, so this estimate of three.js's own work is low.
-- Keep the Mac's screen unlocked and its display awake during browser runs. Safari stops running pages while the Mac is locked, and the runner then waits until its deadline. Chrome started by Playwright keeps running.
-- Do not edit engine or benchmark page files during a run. The dev server reloads the pages being measured.
+- Do not edit engine or benchmark page files, or the dev server's config, during a browser run. The dev server reloads the pages being measured, and restarts when its config changes.
 - Every tool finds the dev server on port 5173, and uses the one that already answers there. A second copy of the repository, such as a git worktree, would test the first copy's code. Give each copy its own ports with `NULL3D_PORT`, for example `NULL3D_PORT=6173 bun run test:browser`. Its dev server takes that port, the HTTPS server the next one, and the production preview the one after.
-- Compare results at the same display refresh rate. The engine measures it, and each benchmark result records it with the presented and finished frame rates and the GPU delay. Runs at 120 and at 144 frames per second differed by about 10% for both engines.
-- The page switch `?fps=<n>` holds null3D's drawing at n frames per second, at most the display's rate. Use it to compare runs on displays of different rates. The three.js pages do not read it.
-- Phones run the benchmarks through the runner page. Its `scale` plan finds phone scale: the largest S1 count at which three.js holds 30 frames per second. Run it with `bun tests/real-browsers.ts --plan scale --allow-no-webgpu --android chrome`. Then `--plan bench --n <count>` runs the protocol at that count, with five runs of each page.
-- On an Android phone, the runner reads the phone's heat every 10 seconds. It reads the temperatures, the speed cap of each group of cores, and Samsung's throttle level. Each result records the heat it ran in.
-- Do not touch the phone during a run, because a tap can close the runner's tab. A runner page that goes quiet counts as stopped after its slowest page's timeout and 30 more seconds.
-- Before a run on a phone or tablet, the runner prints a checklist. The display needs a fixed refresh rate and fixed brightness. Low Power Mode and battery saver must be off, and the device must be rested and cool. The runner cannot read Brave's Shields. Run Brave once with Shields on and once with them off for the dev server's site, and pass `--shields on` or `--shields off` to match. The runner records the state in each Brave result and in the run's summary.
-- The checks plan also starts and stops the engine again and again in each thread mode, on the shared memory test page. Where the browser has room for few shared memories, as on an iPad, the page starts more engines than fit at once. The check fails when a start fails. It also fails when the room for shared memory does not come back after the engines stop. With `?kinds=`, the page tests other ways a worker can hold a shared memory. These tests found that Safari never frees the memory of a thread it stops inside a blocking wait.
-- A runner page that waits on the local network reloads itself before each run after its first. No run then inherits memory that an earlier run kept. The runner reports a page that gives no result in time with its last steps. The steps are each worker it started, each step of each worker's start, and the errors it logged.
-- The dev server serves HTTPS over HTTP/1.1, because Safari on an iPad sometimes stops loading a worker's modules over HTTP/2. The failure looks like an engine start that never finishes.
-- The checks plan loads the capabilities page first and again last. Each extension that the engine asks for by name must get the same answer in both loads. The runner notes whether the browser's list of supported extensions kept its order, because Brave shuffles it (hard rule 13).
-- On WebGL2, `measure` reports `visibleEntries`, the entries in each frame's list of visible objects, and the bench summary divides the upload by it. When only the camera moves, as in S1-static, the upload is about 4 bytes per entry.
-- Heat decides phone results. A Galaxy S24+ reaches Samsung's throttle level 2 within two minutes of S1 at phone scale. Its fastest cores then run at about half speed. Its phone scale was 300,000 when it started cool and 250,000 when it started warm. Start each browser's run from the same cool state, and let the phone rest between runs.
-- Three sweeps measure the defaults that are still open: the latency mode, the job worker count and the shared memory's maximum. Each runs on the Mac, and on a phone or an iPad through the runner page.
-- The page kinds that end in `-low` run null3D in low-latency mode, and the bench plan runs them beside the pipelined pages. On the Mac, run `bun run bench:run --pages null3d-webgpu,null3d-webgpu-low,null3d-webgl2,null3d-webgl2-low`. On a phone, run the bench plan as above. Compare the presented frame rate, the 95th and 99th percentiles of the frame interval, and the busiest thread. In low-latency mode the sketch worker draws, so its time includes the drawing.
-- The page switch `?jobs=<n>` starts n job workers. On the Mac, `bun run bench:run --jobs 1,2,4,8,16` runs null3D's two GPU paths at each count. On a phone, add the counts to the bench plan: `bun tests/real-browsers.ts --plan bench --allow-no-webgpu --android chrome --n 300000 --jobs 2,4,6,8`. The summary gives each count's frame time, busiest thread and the sketch worker's own work. A run whose engine started another count fails.
-- `--seconds <n>` sets each bench page's warm-up and measured time, n seconds each. For the protocol's 10-minute sustained run on a phone, use `--seconds 300`: 5 minutes of warm-up, then 5 measured.
-- The bench plan runs S1 on its usual pages. `--pages` and `--scenes` pick others, for example to compare two null3D paths on a phone: `bun tests/real-browsers.ts --plan bench --allow-no-webgpu --android chrome --scenes s1-static,s2 --pages null3d-webgl2,null3d-webgl2-low`.
-- The page switch `?memory=<MiB>` sets the shared memory's maximum, up to the 4096 MiB that the engine core declares. The `memory` plan loads the engine test page 20 times at each maximum from 256 to 4096 MiB. It names the largest maximum that loaded every time. Run `bun tests/real-browsers.ts --plan memory --android chrome` on a phone, add `--lan ipad-safari` for an iPad, or name a macOS app such as Safari. A failed allocation counts as a failed load, and `--runs <n>` changes the number of loads. Before the loads at each maximum, the plan counts how many shared memories with that maximum fit at once. That is how many engines a page can hold. `--runs 0` runs only these counts.
-- The image tests read frames through the engine's capture, which does not use the canvas. A frame that never reaches the screen still passes them. After a change to how frames reach the canvas, look at a demo page, and on a phone check `adb logcat` for GL errors.
-- `bun run bench:allocation` samples allocations after a warm-up of at least 30 seconds and 3,600 frames. The browser optimizes code that runs once per frame only after thousands of frames, so a display at 60 Hz takes a minute. Places that allocate because the browser does have budgets with their reasons in `bench/allocation.ts`, and every other place must stay under 4 bytes per frame. Add `--n 30000` to include the staging ring.
-- The engine's hot paths stay allocation-free with these habits. Read typed arrays by index rather than by destructuring. Reuse WebGPU descriptors (`RenderPassSetup` and `submitOne` in `packages/engine/src/gpu/webgpu/reusable.ts`). Pass typed arrays straight to WebGPU, as `setBindGroup` reads dynamic offsets from the draw list. Keep reused lists at a fixed length. Do not wrap browser promises in `async` functions, and use `Math.sqrt` rather than `Math.hypot`. Keep closures out of functions that run every frame, even in a branch that rarely runs. Until the browser optimizes such a function, it allocates the variables a closure captures on every call.
-- `bun run bench:profile` shows where the render worker's replay spends its time. A browser call costs the same from any language. The engine's own share of the replay is therefore the most that a replay loop in another language could save. It samples every 50 microseconds after a 20-second warm-up. Code the browser has not optimized yet counts as the engine's, so a shorter warm-up overstates the engine's share.
-- Rust tests that count allocations use `null3d_core::testing::CountingAllocator`, from the core crate's `testing` feature. It counts only the threads a test marks, so the test runner's own threads cannot reach the count.
-- The frame recorder sizes a frame's upload arena for the most that any frame can copy for the scene as it stands. It keeps its layout tables and scratch space between rebuilds. Only the frames right after the scene grows allocate. Pipelined frames keep one arena per frame parity, so the allocation tests change the structure on both parities after warm-up.
-- Uploads from 64 KiB to 4 MiB take the route that the render worker measures as faster on the device: `queue.writeBuffer` or the staging ring. In Chrome on a Mac the ring is 3 to 6 times faster there, as `writeBuffer` takes up to 0.8 ms per MB. In Safari `writeBuffer` wins at every size, because unmapping a staging buffer costs time in proportion to the buffer's size. Outside that range `writeBuffer` wins in every browser measured.
-- Safari 26 drops a whole submit if its commands hold two or more copies from one buffer that was mapped when they were recorded. WebGPU allows that, and Chrome and Firefox accept it. The staging ring therefore records a frame's copies after it unmaps the buffer, just before the frame's next command. The uploads test page reports each frame's WebGPU errors, which show such a failure.
-- Work around a browser's fault with an order or a call that is valid everywhere, as the staging ring does. Where browsers differ in speed, time the choices on the device, as the upload routes do. When neither works, detect the fault with a feature test, never from the user agent (hard rule 14).
-- Chrome's page-wide memory measurement waits up to a minute for the job workers, and it counts shared memory once per worker. Chrome's debugger gives exact heaps per worker through `Runtime.getHeapUsage`.
-- On GitHub's macOS machines, Safari has no WebGPU and Firefox has no WebGL2. The CI job passes `--allow-no-webgpu` and `--allow-no-webgl2`, so those pages count as skipped there.
+- Run one device runner at a time. Runs share one file that tells waiting runner pages which run to start.
+- Keep hot paths free of allocation with the habits in the implementation notes, and check them with `bun run bench:allocation`.
 
 ## Docs and skills stay in sync
 
@@ -139,7 +111,7 @@ The benchmarks compare null3D with three.js in the same browser. These points co
 
 ## Writing docs
 
-Published Markdown (every page under `docs/`, the skills, the README, the package READMEs, `CHANGELOG.md` and this file) follows these rules.
+Published Markdown (every page under `docs/`, the skills, the README, the package READMEs, `CHANGELOG.md`, this file and the guides in `.dev/`) follows these rules.
 
 - Write plain English in short sentences, at most 25 words each, in the active voice. Simplified Technical English is the model.
 - Use sentence case in headings, with no emojis.
@@ -147,7 +119,7 @@ Published Markdown (every page under `docs/`, the skills, the README, the packag
 - Use straight quotes and apostrophes.
 - A concept page opens with a Mermaid diagram and a plain explanation, followed by examples.
 - A page describes what exists now. Its status label says whether the feature is built.
-- Write for developers who use the engine. Never mention the maintainers' milestones, checkpoints, task IDs, proposals or internal plans, and never explain where a fact came from in those terms. Give the reason when it helps the reader, such as a browser or GPU limit. Name the engine's benchmarks when you cite a figure. Notes for maintainers belong in code comments or in this file. This file is for contributors, so this rule does not apply to it.
+- Write for developers who use the engine. Never mention the maintainers' milestones, checkpoints, task IDs, proposals or internal plans, and never explain where a fact came from in those terms. Give the reason when it helps the reader, such as a browser or GPU limit. Name the engine's benchmarks when you cite a figure. Notes for maintainers belong in code comments, in this file or in the guides in `.dev/`. Those files are for contributors, so this rule does not apply to them, but public docs never link to them.
 - Commit subjects and pull request titles become lines in the public changelog, so they follow these rules too.
 - Show commands with Bun: `bun add`, `bun install`, `bun run` and `bunx`, never the npm or npx forms. Run the command line tool as `bunx @null3d/cli <command>`, with the scope. Both rules cover code blocks too.
 - Run the humanizer skill over any prose you write or change. This covers user-facing text that lives in data or code too: the mapping notes, error messages and TSDoc comments.
@@ -163,12 +135,12 @@ Before each commit:
 - Biome (errors only) and the TypeScript check.
 - When Rust files or Cargo settings are staged: `cargo fmt --check` and Clippy, with warnings treated as errors.
 - Generated files are current and staged. The hook regenerates the docs and the skills copy in memory, and fails if a committed file differs or has unstaged changes. It also fails when a public export lacks the doc comments that the API reference needs.
-- Every command in `package.json` is in the table under "Commands", and every command that this file and the README run with `bun run` exists.
+- Every command in `package.json` is in the table under "Commands", and every command that this file, the README and the guides in `.dev/` run with `bun run` exists.
 
 On each commit message:
 
 - The message follows [Conventional Commits](https://www.conventionalcommits.org/). The scope names the area, such as `core`, `gpu`, `engine`, `docs`, `tools` or `ci`.
-- A commit that changes `crates/*/src/`, `packages/*/src/`, `packages/*/bin/` or `skills/` needs a `Docs-Checked:` trailer. This file and the README describe the repository's tools, so a commit that changes them needs one too. They are `tools/`, `bench/` apart from its tests, the test runner (`tests/real-browsers.ts` and `tests/lib/`) and `package.json`. The trailer names the docs pages you updated or re-read, or says why none apply. The pass also confirms that those pages speak only to developers who use the engine.
+- A commit that changes `crates/*/src/`, `packages/*/src/`, `packages/*/bin/` or `skills/` needs a `Docs-Checked:` trailer. This file, the README and the guides in `.dev/` describe the repository's tools, so a commit that changes the tools needs one too. They are `tools/`, `bench/` apart from its tests, the test runner (`tests/real-browsers.ts` and `tests/lib/`) and `package.json`. The trailer names the docs pages you updated or re-read, or says why none apply. The pass also confirms that those pages speak only to developers who use the engine.
 - A commit that changes a package's source, the WGSL shader library, `skills/` or `docs/data/threejs-mapping.json` needs a `Skills-Checked:` trailer. It names the skill files you updated or re-read.
 - Every internal link in the published Markdown resolves, and new external links in changed files answer.
 - Changed published Markdown and the commit's subject pass the docs style check. Errors block the commit; warnings only print.
@@ -186,24 +158,4 @@ Maintainers also add a `Task:` footer with the milestone task ID.
 
 ## Releases
 
-Pull requests merge by squash only. The squash writes one line on main: the pull request's title, or the commit's subject when the pull request has one commit. That line becomes a changelog entry, so the PR title workflow checks it with commitlint and the docs style check.
-
-To release, run the Release workflow from the Actions tab and pick a release type. The workflow:
-
-1. Waits for CI to pass on main's latest commit.
-2. Runs `bun run release --apply` on a `release/<version>` branch. This sets the version in every package manifest, the engine's `VERSION` export, the Rust workspace and `Cargo.lock`. It adds the release's section to `CHANGELOG.md` and regenerates the docs.
-3. Opens a pull request. Review the changelog there, and edit `CHANGELOG.md` on that branch if a line needs it.
-
-Merging that pull request runs the Release Publish workflow. It tags the merge commit with the plain version, such as `0.0.1`, and publishes the GitHub Release with the changelog section. Then it publishes every package that is not private to npm, and skips a version that npm already has.
-
-Versions follow the roadmap in the README. The `auto` release type always releases a patch. Pick `minor` or `major` when a roadmap release is done. The release script refuses an x.y.0 version while a docs page with that `since` or an earlier one is still `planned` (hard rule 19).
-
-1.0 is the first public release. The roadmap is internal, so it stays in the README until then. Before releasing 1.0, remove it: the Roadmap section, its navigation link, the status badge's link and the by-version table under Features. Replace the pre-alpha status line too. The release script refuses 1.0.0 and every later version while the README has the roadmap.
-
-At 1.0, also announce the agent skills. Add the Claude Code plugin commands to the README's "For AI agents" section, and link `guides/agents` for other agent tools. Until then, `.claude-plugin/marketplace.json` exists and each release attaches the skill zips, but the README does not name them.
-
-One-time setup:
-
-- A GitHub App with write access to contents and pull requests, installed on the repository. Its ID and private key go in the `RELEASE_APP_ID` and `RELEASE_APP_PRIVATE_KEY` secrets. A pull request opened with the default token starts no workflows, so its CI would never run.
-- npm trusted publishing. Publish each public package's first version by hand with a token. Then, in the package's settings on npmjs.com, name this repository and `release-publish.yml` as its trusted publisher. A public package also needs `"publishConfig": { "access": "public", "provenance": true }`.
-- The publish job builds nothing, because the only public package is the command-line tool. Add the engine's WebAssembly build to the job before the engine becomes public.
+Pull requests merge by squash only. The squash writes one line on main: the pull request's title, or the commit's subject when the pull request has one commit. That line becomes a changelog entry, so the PR title workflow checks it with commitlint and the docs style check. [Releases](.dev/releases.md) covers how a release is made.

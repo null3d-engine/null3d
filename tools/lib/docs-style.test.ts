@@ -13,9 +13,15 @@ describe('checkDocsStyle errors', () => {
 	});
 
 	it('blocks any mention of the private build plan, even in code', () => {
-		expect(rules('Read `.dev/plan/x.md`.')).toEqual(['error:private_plan:1']);
+		expect(rules('Read `.internal/plan/x.md`.')).toEqual(['error:private_plan:1']);
+		expect(rules('See [the plan](../.internal/plan/x.md).')).toEqual(['error:private_plan:1']);
 		expect(rules('| Plan | `PLAN.md` |')).toEqual(['error:private_plan:1']);
 		expect(rules('See https://null3d.dev/docs.')).toEqual([]);
+	});
+
+	it('blocks links from the public docs to the maintainer guides', () => {
+		expect(rules('See [devices](../.dev/devices.md).')).toEqual(['error:maintainer_guide:1']);
+		expect(rules('Read `.dev/benchmarks.md`.')).toEqual(['error:maintainer_guide:1']);
 	});
 
 	it('blocks the build process in docs for engine users', () => {
@@ -69,7 +75,8 @@ describe('checkDocsStyle errors', () => {
 			checkDocsStyle(md, 'contributors').map((f) => `${f.severity}:${f.rule}:${f.line}`);
 		expect(contributors('Add the milestone task ID, such as M0-J1.')).toEqual([]);
 		expect(contributors('M1 adds shadows.')).toEqual([]);
-		expect(contributors('Read `.dev/plan/x.md`.')).toEqual(['error:private_plan:1']);
+		expect(contributors('Read `.internal/plan/x.md`.')).toEqual(['error:private_plan:1']);
+		expect(contributors('See [devices](.dev/devices.md).')).toEqual([]);
 	});
 
 	it('ignores front matter, fenced code, inline code and comments', () => {

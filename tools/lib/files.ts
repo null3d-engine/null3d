@@ -30,3 +30,13 @@ export function readIfExists(root: string, path: string): string | null {
 export function docsFiles(root: string): string[] {
 	return walkFiles(root, 'docs', (p) => p.endsWith('.md'));
 }
+
+/** True for a maintainer guide: a Markdown file directly in `.dev/`. */
+export function isGuide(path: string): boolean {
+	return /^\.dev\/[^/]+\.md$/.test(path);
+}
+
+/** The maintainer guides that AGENTS.md links to, which follow its writing rules. */
+export function guideFiles(root: string): string[] {
+	return walkFiles(root, '.dev', isGuide);
+}

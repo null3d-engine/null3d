@@ -6,7 +6,7 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { checkDocsStyle, type DocsAudience, type StyleFinding } from '../lib/docs-style';
-import { docsFiles, walkFiles } from '../lib/files';
+import { docsFiles, guideFiles, isGuide, walkFiles } from '../lib/files';
 import { ROOT_LINKED_FILES } from '../lib/links';
 import { effectiveMessage, isExemptCommit, stagedFiles } from './commit-ack';
 
@@ -16,12 +16,13 @@ const CHANGELOG = 'CHANGELOG.md';
 const CONTRIBUTOR_FILES = new Set(['AGENTS.md']);
 
 /**
- * Published Markdown: every docs page, the skills, the README, the package READMEs, the changelog
- * and AGENTS.md.
+ * Published Markdown: every docs page, the skills, the README, the package READMEs, the changelog,
+ * AGENTS.md and the maintainer guides.
  */
 export function isStyleChecked(path: string): boolean {
 	return (
 		ROOT_LINKED_FILES.includes(path) ||
+		isGuide(path) ||
 		path === CHANGELOG ||
 		/^(docs|skills)\/.+\.md$/.test(path) ||
 		/^packages\/[^/]+\/README\.md$/.test(path)
@@ -29,7 +30,7 @@ export function isStyleChecked(path: string): boolean {
 }
 
 export function audienceOf(path: string): DocsAudience {
-	return CONTRIBUTOR_FILES.has(path) ? 'contributors' : 'users';
+	return CONTRIBUTOR_FILES.has(path) || isGuide(path) ? 'contributors' : 'users';
 }
 
 function publishedFiles(root: string): string[] {
@@ -38,6 +39,7 @@ function publishedFiles(root: string): string[] {
 		.filter((path) => existsSync(join(root, path)));
 	return [
 		...ROOT_LINKED_FILES,
+		...guideFiles(root),
 		...(existsSync(join(root, CHANGELOG)) ? [CHANGELOG] : []),
 		...packageReadmes,
 		...docsFiles(root),

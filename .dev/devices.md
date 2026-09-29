@@ -1,0 +1,54 @@
+# Device sessions
+
+This guide covers the checks and benchmarks on phones, tablets and the Mac's browser apps. [AGENTS.md](../AGENTS.md) holds the rules and the commands.
+
+## The runner
+
+- The device runner, `tests/real-browsers.ts`, runs a plan of test or benchmark pages in browsers that Playwright cannot drive. Each browser loads the runner page, which opens each page of the plan in a frame and posts its result.
+- The plans are `checks` (the default), `parity`, `bench`, `memory` and `scale`. `bun run devices` runs the checks on the phone and on the iPad.
+- Run one runner at a time. All runs share one file, `target/runs/current.json`, which tells waiting runner pages which run to start. A second runner can replace it before a waiting page reads it, and that page then waits forever.
+- A runner page that waits on the local network reloads itself before each run after its first. No run then inherits memory that an earlier run kept.
+- The runner reports a page that gives no result in time with its last steps. The steps are each worker it started, each step of each worker's start, and the errors it logged. A page that fails reports its steps too.
+- Before a run on a phone or tablet, the runner prints a checklist. The display needs a fixed refresh rate and fixed brightness. Low Power Mode and battery saver must be off, and the device must be rested and cool.
+- The runner cannot read Brave's Shields. Run Brave once with Shields on and once with them off for the dev server's site, and pass `--shields on` or `--shields off` to match. The runner records the state in each Brave result and in the run's summary.
+- Do not edit engine or benchmark page files, or `vite.config.ts`, during a run. The dev server reloads the pages being measured, and restarts when its config changes.
+- Do not add or move files in the tree that the dev server watches during a run. A new HTML file anywhere in it reloads every open page, and a page reloaded while it measures reports 0 frames.
+- Close the browser tabs that testing opens as soon as each test ends. Old tabs keep pages running, which costs heat and skews later runs.
+
+## What the checks plan covers
+
+- The capabilities page loads first and again last. Each extension that the engine asks for by name must get the same answer in both loads. The runner notes whether the browser's list of supported extensions kept its order, because Brave shuffles it (hard rule 13).
+- The shared memory test page starts and stops the engine again and again in each thread mode. Where the browser has room for few shared memories, as on an iPad, the page starts more engines than fit at once. The check fails when a start fails, or when the room for shared memory does not come back after the engines stop.
+- With `?kinds=`, the shared memory page tests other ways a worker can hold a shared memory. These tests found that Safari never frees the memory of a thread it stops inside a blocking wait, not even after a reload.
+- The image tests read frames through the engine's capture, which does not use the canvas. A frame that never reaches the screen still passes them. After a change to how frames reach the canvas, look at a demo page, and on a phone check `adb logcat` for GL errors.
+
+## Browser apps on the Mac
+
+- Keep the Mac's screen unlocked and its display awake during runs. Safari stops running pages while the Mac is locked, and the runner then waits until its deadline. Chrome started by Playwright keeps running.
+- Close a Safari tab that a test opened with AppleScript: tell Safari to close the tabs whose address holds `localhost:517`.
+- On GitHub's macOS machines, Safari has no WebGPU and Firefox has no WebGL2. The CI job passes `--allow-no-webgpu` and `--allow-no-webgl2`, so those pages count as skipped there.
+
+## Android phone
+
+The team's phone is a Galaxy S24+ (SM-S926B, Exynos 2400, Android 16).
+
+- Connect it by USB with USB debugging on, and trust the Mac. `bun run android` forwards the dev server's port to the phone. The runner opens each browser's runner page itself.
+- For benchmarks, fix the display at 60 Hz: `adb shell settings put secure refresh_rate_mode 0` (Motion smoothness: Standard). A value of 1 gives adaptive rates up to 120 Hz, for the 120 Hz pass. Set brightness to manual, and keep the performance profile at Standard.
+- Heat decides phone results. Within two minutes of S1 at phone scale, Samsung's heat manager reaches throttle level 2 (`adb shell getprop sys.siop.level`). Its fastest cores then run at about half speed. The caps lift after a few minutes of rest.
+- Start each browser's run cool: throttle level 0 and a skin temperature of at most about 37 °C (`adb shell dumpsys thermalservice`). The core speed caps are in `/sys/devices/system/cpu/cpu*/cpufreq/scaling_max_freq`. USB charging adds heat.
+- During a run, the runner reads the phone's heat every 10 seconds: the temperatures, each core group's speed cap and Samsung's throttle level. Each result records the heat it ran in.
+- Do not touch the phone during a run, because a tap can close the runner's tab. A runner page that goes quiet counts as stopped after its slowest page's timeout and 30 more seconds.
+- Close stale pages through Chrome's debugging protocol: `adb forward tcp:9334 localabstract:chrome_devtools_remote`, then `Target.closeTarget` for each page on `localhost`.
+- The `scale` plan finds phone scale: the largest S1 count at which three.js holds 30 frames per second. Run `bun tests/real-browsers.ts --plan scale --allow-no-webgpu --android chrome`. In Chrome 154 on 29 September 2026, it was 300,000 from a cool start and 250,000 on a warm phone.
+
+## iPad
+
+The team's tablet is an iPad Pro 11-inch with 8 cores. Safari there reports a Mac user agent.
+
+- The iPad reaches the Mac over HTTPS on the local network. `bun run dev-cert` makes the certificate. Copy its root certificate to the iPad, install the profile, and turn on full trust in Settings > General > About > Certificate Trust Settings.
+- `NULL3D_HTTPS=1 bun run dev` serves HTTPS on port 5174 under the Mac's `.local` name. The dev server sends it over HTTP/1.1, because Safari on an iPad sometimes stops loading a worker's modules over HTTP/2. That failure looks like an engine start that never finishes.
+- Each browser opens its own runner page: `https://<mac>.local:5174/tests/pages/runner.html?listen&runner=ipad-safari` in Safari, and `runner=ipad-brave` in Brave. The name must match the browser, or the page waits for the other browser's runs. Pass `--lan ipad-safari` or `--lan ipad-brave` to the runner.
+- For benchmarks, turn on Settings > Accessibility > Motion > Limit Frame Rate, which holds the display at 60 Hz.
+- Safari there holds only a few shared memories at once. It holds 6 with the engine's default maximum of 1 GiB, 18 at 256 MiB and 3 at 4 GiB. A test that stops a worker inside a blocking wait leaks one until Safari quits. After such a test, quit Safari from the app switcher and open the runner page again.
+- Brave with Shields on reports 3 cores, where Safari reports 8, so the engine starts fewer job workers there.
+- The iPad's scale at 60 Hz was measured in Safari 26.6 on 29 September 2026. three.js's WebGPU renderer holds 30 frames per second up to 240,000 objects, and its WebGL renderer up to 140,000.

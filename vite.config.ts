@@ -20,7 +20,9 @@ const DENIED = [
 	'.env.*',
 	'*.{crt,pem}',
 	'**/.git/**',
-	...['.dev', 'target', '.claude'].map((folder) => `${import.meta.dirname}/${folder}/**`),
+	...['.dev', '.internal', 'target', '.claude'].map(
+		(folder) => `${import.meta.dirname}/${folder}/**`,
+	),
 ];
 
 /** Sends the server's bare address to the list of test pages. */
@@ -45,7 +47,15 @@ export default defineConfig({
 		port: https ? HTTPS_PORT : HTTP_PORT,
 		strictPort: true,
 		fs: { strict: true, allow: [searchForWorkspaceRoot(import.meta.dirname)], deny: DENIED },
-		watch: { ignored: ['**/target/**', '**/.claude/**', '**/.dev/**', '**/test-results/**'] },
+		watch: {
+			ignored: [
+				'**/target/**',
+				'**/.claude/**',
+				'**/.dev/**',
+				'**/.internal/**',
+				'**/test-results/**',
+			],
+		},
 	},
 	optimizeDeps: { entries: ['tests/pages/**/*.html', 'bench/pages/**/*.html'] },
 	// The production build of the engine test page, which the production browser test serves.

@@ -64,11 +64,18 @@ const STOCK_WORDS = [
 
 const HEDGES = ['generally', 'arguably', 'tends to', 'more or less', 'for the most part'];
 
-/** The maintainers' build plan is private, so published text never points at it. */
-const PRIVATE_PLAN = /\bPLAN\.md\b|(^|[\s(`'"])\.dev\/|\bbuild plan\b/i;
+/** The maintainers' build plan and records are private, so published text never points at them. */
+const PRIVATE_PLAN = /\bPLAN\.md\b|(^|[\s(`'"/])\.internal\/|\bbuild plan\b/i;
 
 export function mentionsPrivatePlan(text: string): boolean {
 	return PRIVATE_PLAN.test(text);
+}
+
+/** The maintainer guides in `.dev/` are for contributors, so the public docs never point at them. */
+const MAINTAINER_GUIDE = /(^|[\s(`'"/])\.dev\//;
+
+export function mentionsMaintainerGuide(text: string): boolean {
+	return MAINTAINER_GUIDE.test(text);
 }
 
 /**
@@ -306,7 +313,16 @@ export function checkDocsStyle(md: string, audience: DocsAudience = 'users'): St
 				'error',
 				block.line,
 				raw,
-				"Public files never point at the maintainers' private build plan.",
+				"Published files never point at the maintainers' private plan and records.",
+			);
+		}
+		if (audience === 'users' && mentionsMaintainerGuide(raw)) {
+			add(
+				'maintainer_guide',
+				'error',
+				block.line,
+				raw,
+				'Public docs never point at the maintainer guides in .dev/, which are for contributors.',
 			);
 		}
 		if (audience === 'users') {

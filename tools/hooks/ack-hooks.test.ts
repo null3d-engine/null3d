@@ -168,6 +168,7 @@ describe('the docs style hook', () => {
 			'skills/demo/SKILL.md',
 			'skills/demo/references/notes.md',
 			'packages/cli/README.md',
+			'.dev/devices.md',
 		])
 			expect(isStyleChecked(path)).toBe(true);
 		for (const path of [
@@ -175,12 +176,15 @@ describe('the docs style hook', () => {
 			'skills/demo/evals/evals.json',
 			'packages/engine/src/README.md',
 			'tools/gen-docs.ts',
+			'.internal/plan/notes.md',
+			'.dev/notes/draft.md',
 		])
 			expect(isStyleChecked(path)).toBe(false);
 	});
 
-	it('treats AGENTS.md as a contributor file', () => {
+	it('treats AGENTS.md and the maintainer guides as contributor files', () => {
 		expect(audienceOf('AGENTS.md')).toBe('contributors');
+		expect(audienceOf('.dev/benchmarks.md')).toBe('contributors');
 		expect(audienceOf('README.md')).toBe('users');
 	});
 
