@@ -22,6 +22,8 @@ export interface BenchResult {
 	/** three.js pages: the part of each frame that the scene update took. */
 	updateMs?: { median: number };
 	intervalMs: { median: number };
+	/** Pages that time their own frames: frames per second drawn. null3d pages report it in `stats`. */
+	presentedFps?: number;
 	stats?: {
 		cpuMsAllThreads: { median: number };
 		gpuMs: { median: number } | null;
@@ -46,7 +48,8 @@ export interface RunSummary {
 	cpuP95Ms: number;
 	/** The scene update's share of a frame: the sketch's update phase for null3d. */
 	updateMs?: number;
-	intervalMs: number;
+	/** Frames per second drawn: each run's frames over the time they took. */
+	presentedFps?: number;
 	/** null3d only: CPU time summed over threads, GPU time, and the median time of each phase. */
 	allThreadsMs?: number;
 	/** null3d only: the median CPU time per frame of each thread, by name. */
@@ -55,8 +58,7 @@ export interface RunSummary {
 	phases?: Record<string, number>;
 	uploadBytes?: number;
 	drawCalls?: number;
-	/** null3d only: frames per second presented and finished by the GPU, and the GPU's delay. */
-	presentedFps?: number;
+	/** null3d only: frames per second finished by the GPU, and the GPU's delay. */
 	completedFps?: number | null;
 	gpuLatencyMs?: number | null;
 	/** null3d only: the display's refresh rate as the engine measured it. */
@@ -80,8 +82,11 @@ export function summarizeRuns(results: readonly BenchResult[]): RunSummary {
 		runs: results.length,
 		cpuMs: { median: median(cpu), min: Math.min(...cpu), max: Math.max(...cpu) },
 		cpuP95Ms: median(results.map((r) => r.cpuMs.p95)),
-		intervalMs: median(results.map((r) => r.intervalMs.median)),
 	};
+	const known = (values: (number | null | undefined)[]) =>
+		values.filter((v): v is number => v != null);
+	const presented = known(results.map((r) => r.stats?.presentedFps ?? r.presentedFps));
+	if (presented.length > 0) summary.presentedFps = median(presented);
 	const updates = results.map((r) => r.updateMs?.median).filter((v) => v !== undefined);
 	if (updates.length === results.length) summary.updateMs = median(updates);
 	const stats = results.map((r) => r.stats).filter((s) => s !== undefined);
@@ -91,11 +96,7 @@ export function summarizeRuns(results: readonly BenchResult[]): RunSummary {
 		summary.gpuMs = gpu.length > 0 ? median(gpu) : null;
 		summary.uploadBytes = median(stats.map((s) => s.uploadBytes.median));
 		summary.drawCalls = median(stats.map((s) => s.drawCalls.median));
-		const known = (values: (number | null | undefined)[]) =>
-			values.filter((v): v is number => v != null);
 		const orNull = (values: number[]) => (values.length > 0 ? median(values) : null);
-		const presented = known(stats.map((s) => s.presentedFps));
-		if (presented.length > 0) summary.presentedFps = median(presented);
 		summary.completedFps = orNull(known(stats.map((s) => s.completedFps)));
 		summary.gpuLatencyMs = orNull(known(stats.map((s) => s.gpuLatencyMs?.median)));
 		summary.refreshHz = orNull(known(stats.map((s) => s.refreshHz)));
@@ -209,8 +210,8 @@ const summaryOf = (rows: readonly SummaryRow[], scene: string, kind: string) =>
 /** The run's summaries as a Markdown table. */
 export function summaryTable(rows: readonly SummaryRow[]): string {
 	const lines = [
-		'| Scene | Page | Runs | CPU ms per frame, median (lowest to highest run) | p95 | Own work, busiest thread | Scene update | All threads | GPU ms | Frame interval | Presented / finished fps | GPU delay ms | Refresh Hz | Upload per frame | Draw calls |',
-		'| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+		'| Scene | Page | Runs | CPU ms per frame, median (lowest to highest run) | p95 | Own work, busiest thread | Scene update | All threads | GPU ms | Presented / finished fps | GPU delay ms | Refresh Hz | Upload per frame | Draw calls |',
+		'| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
 	];
 	for (const { scene, kind, summary: s } of rows) {
 		const upload = s.uploadBytes === undefined ? 'n/a' : `${(s.uploadBytes / 1e6).toFixed(2)} MB`;
@@ -220,7 +221,7 @@ export function summaryTable(rows: readonly SummaryRow[]): string {
 		const rates =
 			s.presentedFps === undefined ? 'n/a' : `${fps(s.presentedFps)} / ${fps(s.completedFps)}`;
 		lines.push(
-			`| ${scene} | ${kind} | ${s.runs} | ${ms(s.cpuMs.median)} (${ms(s.cpuMs.min)} to ${ms(s.cpuMs.max)}) | ${ms(s.cpuP95Ms)} | ${ms(own)} | ${ms(s.updateMs)} | ${ms(s.allThreadsMs)} | ${ms(s.gpuMs)} | ${ms(s.intervalMs)} | ${rates} | ${ms(s.gpuLatencyMs)} | ${s.refreshHz ?? 'n/a'} | ${upload} | ${s.drawCalls ?? 'n/a'} |`,
+			`| ${scene} | ${kind} | ${s.runs} | ${ms(s.cpuMs.median)} (${ms(s.cpuMs.min)} to ${ms(s.cpuMs.max)}) | ${ms(s.cpuP95Ms)} | ${ms(own)} | ${ms(s.updateMs)} | ${ms(s.allThreadsMs)} | ${ms(s.gpuMs)} | ${rates} | ${ms(s.gpuLatencyMs)} | ${s.refreshHz ?? 'n/a'} | ${upload} | ${s.drawCalls ?? 'n/a'} |`,
 		);
 	}
 	return lines.join('\n');

@@ -1,5 +1,5 @@
-// Percentiles of per-frame samples. Every engine's benchmark report uses these functions, so the
-// figures of null3d and of the engines it is compared with are computed the same way.
+// Percentiles and rates of per-frame samples. Every engine's benchmark report uses these functions,
+// so the figures of null3d and of the engines it is compared with are computed the same way.
 
 /**
  * A summary of per-frame samples.
@@ -45,4 +45,15 @@ export function percentiles(samples: ArrayLike<number>): Percentiles {
 		p99: percentile(sorted, 0.99),
 		mean: sorted.length === 0 ? 0 : sum / sorted.length,
 	};
+}
+
+/**
+ * Events per second from the intervals between them: the count over the time they took, so a few
+ * long intervals lower the rate as much as they cost. Null without intervals.
+ */
+export function ratePerSecond(intervalsMs: ArrayLike<number>): number | null {
+	if (intervalsMs.length === 0) return null;
+	let sum = 0;
+	for (let i = 0; i < intervalsMs.length; i++) sum += intervalsMs[i] as number;
+	return sum > 0 ? (1000 * intervalsMs.length) / sum : null;
 }

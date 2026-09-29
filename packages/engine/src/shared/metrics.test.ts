@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test';
-import { ratePerSecond, summarizeFrames, threadRoles, timerStep } from '../page/frame-stats';
+import { summarizeFrames, threadRoles, timerStep } from '../page/frame-stats';
 import { Counter, createMetricsBuffer, FrameRecorder, MetricsReader, Phase, Role } from './metrics';
+import { ratePerSecond } from './stats';
 
 function record(recorder: FrameRecorder, frame: number, busy: number, update = 0): void {
 	recorder.begin(frame);

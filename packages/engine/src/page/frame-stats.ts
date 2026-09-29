@@ -9,7 +9,7 @@ import {
 	type RingRecords,
 	Role,
 } from '../shared/metrics';
-import { type Percentiles, percentiles } from '../shared/stats';
+import { type Percentiles, percentiles, ratePerSecond } from '../shared/stats';
 
 /**
  * One thread's CPU time per frame, in `FrameSummary.threads`.
@@ -241,14 +241,6 @@ export function summarizeFrames(
 		rebuilds: (ring(Role.Sketch).counters[Counter.Rebuilds] ?? []).filter((n) => n > 0).length,
 		pipelines: (render.counters[Counter.Pipelines] ?? []).reduce((sum, n) => sum + n, 0),
 	};
-}
-
-/** Events per second from the intervals between them, or null without intervals. */
-export function ratePerSecond(intervalsMs: readonly number[]): number | null {
-	if (intervalsMs.length === 0) return null;
-	let sum = 0;
-	for (const ms of intervalsMs) sum += ms;
-	return sum > 0 ? (1000 * intervalsMs.length) / sum : null;
 }
 
 /** Below this, a step between GPU times is timer precision, not rounding. */

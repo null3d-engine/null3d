@@ -60,6 +60,16 @@ describe('benchmark reports', () => {
 		expect(summarizeRuns([result(5)]).allThreadsMs).toBeUndefined();
 	});
 
+	test('report the frames a page drew per second, not its median frame interval', () => {
+		// Late frames keep the display's beat in their timestamps: the median interval says 60 fps.
+		const drawn = [43.7, 40.6, 38.9].map((fps) => ({ ...result(25), presentedFps: fps }));
+		const summary = summarizeRuns(drawn);
+		expect(summary.presentedFps).toBe(40.6);
+		const table = summaryTable([{ scene: 's1', kind: 'threejs-webgl', summary }]).split('\n');
+		expect(table[0]).not.toContain('interval');
+		expect(table[2]).toContain('| 40.6 / n/a |');
+	});
+
 	test("compare null3d with three.js's faster renderer", () => {
 		const null3d = summarizeRuns([result(1)]);
 		const share = shareOfThree(null3d, [summarizeRuns([result(4)]), summarizeRuns([result(2)])]);
