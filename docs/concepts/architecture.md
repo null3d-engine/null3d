@@ -73,6 +73,10 @@ The render worker, drawing frame N inside its own `requestAnimationFrame` callba
 
 The engine times each step on every thread, job workers included. The [performance guide](../guides/performance.md) shows how to read those figures.
 
+## Precision far from the origin
+
+Positions are 32-bit floats, as in three.js. Far from the origin such a value moves in coarse steps: about 8 mm at 100 km. The engine therefore keeps each world matrix relative to the center of a grid cell, 1,024 m wide. Each frame the engine computes the offset from the camera to each cell in use, in 64-bit floats. The GPU adds those offsets, so it draws positions relative to the camera, which stay precise near it. Static matrices stay on the GPU while the camera moves. [Culling](culling.md) describes the cells.
+
 ## Latency modes
 
 | Mode | The render step runs on | Added latency | Best for |

@@ -552,7 +552,8 @@ export class Scene {
 	readonly eye = new Float64Array(3);
 	/** @internal */
 	readonly target = new Float64Array(3);
-	private readonly matrix = new Float32Array(C.CORE_MATRIX_FLOATS);
+	/** A world matrix, whose translation keeps 64-bit precision far from the origin. */
+	private readonly matrix = new Float64Array(C.CORE_MATRIX_FLOATS);
 	/** Rows of the live instance batches, which development builds count. */
 	private batchRows = 0;
 	private warnedPastPortable = false;
@@ -601,7 +602,7 @@ export class Scene {
 	}
 
 	/** @internal */
-	worldMatrix(object: Object3D, call: string): Float32Array {
+	worldMatrix(object: Object3D, call: string): Float64Array {
 		this.core.check(
 			this.core.glue.worldMatrix(object.handle, this.matrix),
 			call,

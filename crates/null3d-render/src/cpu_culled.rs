@@ -36,6 +36,17 @@
 //! frame's update copies the change into the other world buffer, so both buffers hold the same
 //! rows: that frame builds the batch's clusters again, and the cluster texture gets their order.
 //!
+//! # Cells
+//!
+//! World matrices are relative to their grid cells' centers (see [`null3d_core::cells`]). Each
+//! index list entry holds its row, or its cluster, with the row's cell index above it. Each frame
+//! uploads the offset from the camera to each cell in use beside the frame's constants, and the
+//! vertex shader adds an instance's offset to its matrix, so it draws positions relative to the
+//! camera. The job workers cull each run of rows in one cell against the frustum moved into that
+//! cell, and add each row's offset to its sphere where a run's rows lie in different cells. When
+//! only the camera moves, static matrices stay in the resident texture, and the frame uploads its
+//! constants, its offsets and, when it changed, its index list.
+//!
 //! # Memory
 //!
 //! Frames record without the general-purpose allocator. Each frame parity keeps its own culling
@@ -45,12 +56,15 @@
 
 use std::collections::TryReserveError;
 
+use null3d_core::cells::{CELL_SHIFT, MAX_CELLS, ORIGIN_CELL};
 use null3d_core::clusters::{CLUSTER_ROWS, CLUSTER_SHIFT, ClusterScratch, NO_ROW, RowClusters};
-use null3d_core::culling::{BY_ROW, BucketedCull, CULL_CHUNK, CullRun, Frustum, NO_BUCKET};
+use null3d_core::culling::{
+    BY_ROW, BucketedCull, CULL_CHUNK, CullRun, CullSet, Frustum, NO_BUCKET, ROW_CELLS,
+};
 use null3d_core::handle::Handle;
 use null3d_core::instances::InstanceBatch;
 use null3d_core::snapshot::SCENE_TARGET;
-use null3d_core::world::{MATRIX_FLOATS, SphereArrays};
+use null3d_core::world::MATRIX_FLOATS;
 use null3d_gpu::caps::OFFSET_ALIGNMENT;
 use null3d_gpu::drawlist::{
     DrawList, Op, buffer_usage as usage, format, index_format, layout, permutation, resource_kind,
@@ -58,9 +72,9 @@ use null3d_gpu::drawlist::{
 };
 
 use crate::frame::{
-    FrameBuilder, FrameInput, HIDDEN, PageUploads, ParityLists, RecordError, SceneSettings,
-    SceneTargets, UploadArena, address, bucket_of, collect_bucket_keys, drawn_rows,
-    floats_as_bytes, grown_size, put_u32, words_as_bytes,
+    CELL_OFFSET_BYTES, CellOffsets, FrameBuilder, FrameInput, FrameView, HIDDEN, PageUploads,
+    ParityLists, RecordError, SceneSettings, SceneTargets, UploadArena, address, bucket_of,
+    collect_bucket_keys, drawn_rows, floats_as_bytes, grown_size, put_u32, words_as_bytes,
 };
 use crate::frame_data::FrameUniform;
 use crate::materials::{MATERIAL_FLOATS, Shading};
@@ -69,8 +83,13 @@ use crate::meshes::{MAX_BUFFER_BYTES, MeshStorage, Packing, Page};
 /// Frames that the rings of streamed and index list textures cover: the frame being recorded and
 /// the two the GPU may still be drawing.
 const RING: u32 = 3;
-/// Bytes of one frame's slot in the ring of frame uniforms: the uniform block, aligned for binding.
-const FRAME_SLOT_BYTES: u32 = OFFSET_ALIGNMENT;
+/// Where a frame's slot in the ring of frame uniforms holds the offset from the camera to each
+/// cell: after the uniform block, aligned for binding.
+const OFFSETS_AT: u32 = OFFSET_ALIGNMENT;
+/// Bytes of the offsets from the camera to the cells, as the vertex shader's block holds them.
+const OFFSETS_BYTES: u32 = MAX_CELLS * CELL_OFFSET_BYTES;
+/// Bytes of one frame's slot in the ring of frame uniforms: the uniform block, then the offsets.
+const FRAME_SLOT_BYTES: u32 = OFFSETS_AT + OFFSETS_BYTES;
 /// Bytes of the draw record block that one multi-draw call binds.
 const MULTI_DRAW_BLOCK_BYTES: u32 = sizes::MULTI_DRAW_RECORDS * sizes::DRAW_RECORD_BYTES;
 /// Bytes of one world matrix: three rows of four floats.
@@ -185,10 +204,19 @@ impl Default for CpuCulledConfig {
 }
 
 /// The most sources the builder can draw on a device whose textures reach `max_texture_size`:
-/// each texture group, and the index list, must fit one texture.
+/// each texture group, and the index list, must fit one texture, and an index list entry holds a
+/// source below its cell index, in [`MAX_SOURCE_BITS`] bits.
 pub const fn max_sources(max_texture_size: u32) -> u32 {
-    sizes::MATRICES_PER_TEXTURE_ROW.saturating_mul(max_texture_size)
+    let by_texture = sizes::MATRICES_PER_TEXTURE_ROW.saturating_mul(max_texture_size);
+    if by_texture < 1 << MAX_SOURCE_BITS {
+        by_texture
+    } else {
+        1 << MAX_SOURCE_BITS
+    }
 }
+
+/// Bits of a source in an index list entry: those below the cell index.
+pub const MAX_SOURCE_BITS: u32 = CELL_SHIFT;
 
 /// What makes a bucket, in draw order: the pipeline, the vertex page, the engine mesh and material
 /// ids, and the data texture.
@@ -303,7 +331,11 @@ pub struct CpuCulledRenderer {
     /// The frame whose culling `culls` holds for its parity, and that frame's constants, or
     /// `None` when it has no camera.
     culled: u32,
-    uniform: Option<FrameUniform>,
+    view: Option<FrameView>,
+    /// The offset from the camera to each cell for the frame that culled last, and the offsets
+    /// the frame ring's current slot holds.
+    offsets: CellOffsets,
+    offsets_uploaded: CellOffsets,
     pages: Vec<PageBuffers>,
     /// Each batch's clusters, in the layout's batch order; only static batches use theirs.
     cluster_sets: Vec<ClusterSet>,
@@ -336,7 +368,9 @@ impl CpuCulledRenderer {
             culls: [BucketedCull::default(), BucketedCull::default()],
             runs: Vec::new(),
             culled: 0,
-            uniform: None,
+            view: None,
+            offsets: CellOffsets::new(),
+            offsets_uploaded: CellOffsets::new(),
             pages: Vec::new(),
             cluster_sets: Vec::new(),
             cluster_scratch: ClusterScratch::default(),
@@ -560,7 +594,7 @@ impl CpuCulledRenderer {
             .sum();
         let materials = self.settings.materials().capacity() as usize * MATERIAL_FLOATS * 4;
         let draws = self.layout.draws_slot_bytes as usize + self.layout.buckets.len() * 12;
-        meshes + materials + sizes::FRAME_UNIFORM_BYTES as usize + draws
+        meshes + materials + (sizes::FRAME_UNIFORM_BYTES + OFFSETS_BYTES) as usize + draws
     }
 
     /// The static batches whose current clusters the cluster texture does not hold yet, with
@@ -636,17 +670,24 @@ impl CpuCulledRenderer {
                 &[id, size, usage::UNIFORM | usage::COPY_DST],
             )?;
         }
+        // The frame's slot offset moves the uniform block and the cell offsets together, and the
+        // backend gives dynamic offsets to a group's buffers in their order here.
         list.push(
             Op::CreateBindGroup,
             &[
                 ids::FRAME_GROUP,
                 layout::FRAME,
-                2,
+                3,
                 0,
                 resource_kind::BUFFER,
                 ids::FRAME,
                 0,
                 sizes::FRAME_UNIFORM_BYTES,
+                2,
+                resource_kind::BUFFER,
+                ids::FRAME,
+                OFFSETS_AT,
+                OFFSETS_BYTES,
                 1,
                 resource_kind::BUFFER,
                 ids::MATERIALS,
@@ -995,7 +1036,13 @@ impl CpuCulledRenderer {
         self.settings.record_begin_pass(list, self.targets())?;
         list.push(
             Op::SetBindGroup,
-            &[0, ids::FRAME_GROUP, 1, slots.uniform * FRAME_SLOT_BYTES],
+            &[
+                0,
+                ids::FRAME_GROUP,
+                2,
+                slots.uniform * FRAME_SLOT_BYTES,
+                slots.uniform * FRAME_SLOT_BYTES,
+            ],
         )?;
         let instances = ids::INSTANCES_GROUP + slots.streamed * RING + slots.listed;
         list.push(Op::SetBindGroup, &[2, instances, 0])?;
@@ -1088,14 +1135,17 @@ impl CpuCulledRenderer {
         };
         self.upload_resident(list, input, rebuilt || new_texture)?;
         self.upload_clusters(list, arena)?;
-        let Some(uniform) = self.uniform else {
+        let Some(view) = self.view else {
             self.settings.record_clear_only(list, self.targets())?;
             return Ok(rebuilt);
         };
-        // Each ring moves to a new slot only for new data: a changed frame uniform, moving rows,
-        // or an index list that differs from the previous frame's.
+        // Each ring moves to a new slot only for new data: a changed frame uniform or cell offset,
+        // moving rows, or an index list that differs from the previous frame's.
         let frame = input.frame;
-        let new_uniform = !self.uniform_slot.holds_any() || uniform != self.uniform_uploaded;
+        let uniform = view.uniform;
+        let new_uniform = !self.uniform_slot.holds_any()
+            || uniform != self.uniform_uploaded
+            || self.offsets.as_slice() != self.offsets_uploaded.as_slice();
         let moving = self.has_moving_rows(input);
         let new_list = !self.keeps_previous_list(input);
         let slots = FrameSlots {
@@ -1110,10 +1160,13 @@ impl CpuCulledRenderer {
             new_list.then_some(slots.listed),
         )?;
         if new_uniform {
+            let slot = slots.uniform * FRAME_SLOT_BYTES;
             let (at, bytes) = arena.push(uniform.as_bytes())?;
-            let offset = slots.uniform * FRAME_SLOT_BYTES;
-            list.push(Op::WriteBuffer, &[ids::FRAME, offset, at, bytes])?;
+            list.push(Op::WriteBuffer, &[ids::FRAME, slot, at, bytes])?;
+            let (at, bytes) = arena.push(self.offsets.as_bytes())?;
+            list.push(Op::WriteBuffer, &[ids::FRAME, slot + OFFSETS_AT, at, bytes])?;
             self.uniform_uploaded = uniform;
+            self.offsets_uploaded.copy_from(&self.offsets);
         }
         self.record_draws(list, arena, input, slots, new_list)?;
         Ok(rebuilt)
@@ -1153,23 +1206,23 @@ impl FrameBuilder for CpuCulledRenderer {
             self.rebuild_layout(input)?;
         }
         let parity = input.parity();
-        self.uniform = self
-            .settings
-            .frame_uniform(input.scene, parity, input.canvas);
+        self.view = self.settings.frame_view(input.scene, parity, input.canvas);
         self.culled = input.frame;
-        let Some(uniform) = &self.uniform else {
+        let Some(view) = &self.view else {
             return Ok(());
         };
+        self.offsets.update(input.scene, view);
         let layout = &self.layout;
+        let scene = input.scene;
         self.runs.clear();
         // Slots past the highest one ever used hold no object.
-        push_runs(
-            &mut self.runs,
-            0,
-            input.scene.slots().high_water(),
-            BY_ROW,
-            0,
-        );
+        let scene_cells = if scene.cell_table().origin_only() {
+            RunCells::One(ORIGIN_CELL)
+        } else {
+            RunCells::Rows(scene.cells())
+        };
+        let runs = &mut self.runs;
+        push_runs(runs, 0, scene.slots().high_water(), BY_ROW, 0, scene_cells);
         // Set 0 is the scene, sets 1 to n the batches' rows, and the next n the batches' clusters.
         let first_cluster_set = layout.batches.len() as u32 + 1;
         for (k, slot) in layout.batches.iter().enumerate() {
@@ -1181,52 +1234,66 @@ impl FrameBuilder for CpuCulledRenderer {
                 .get(slot.id)
                 .expect("the layout names live batches");
             let active = batch.frame_active_count(parity);
+            let common = batch.common_cell();
             if slot.clustered() {
                 let set = &mut self.cluster_sets[slot.id.slot() as usize];
                 // At rest: nothing changed in this frame's update, which also copies the previous
                 // frame's changes into this buffer, so both world buffers hold the same rows.
+                // Clusters form only in a batch whose rows share one cell.
                 let at_rest = batch.frame() == input.frame
                     && batch.changed_ranges().is_empty()
                     && batch.frame_active_count(parity ^ 1) == active;
-                if !at_rest {
-                    set.current = false;
-                } else if !set.current {
-                    let spheres = batch.world(parity).spheres();
-                    set.clusters
-                        .build(spheres, active, &mut self.cluster_scratch);
-                    set.current = true;
-                    set.uploaded = false;
-                }
-                if set.current {
-                    let clusters = set.clusters.len();
-                    let bucket = slot.bucket + 1;
-                    let set = first_cluster_set + k as u32;
-                    push_runs(&mut self.runs, set, clusters, bucket, slot.first_cluster);
-                    continue;
+                match common {
+                    Some(cell) if at_rest => {
+                        if !set.current {
+                            let spheres = batch.world(parity).spheres();
+                            set.clusters
+                                .build(spheres, active, &mut self.cluster_scratch);
+                            set.current = true;
+                            set.uploaded = false;
+                        }
+                        let clusters = set.clusters.len();
+                        let bucket = slot.bucket + 1;
+                        let set = first_cluster_set + k as u32;
+                        let cells = RunCells::One(cell);
+                        push_runs(runs, set, clusters, bucket, slot.first_cluster, cells);
+                        continue;
+                    }
+                    _ => set.current = false,
                 }
             }
-            push_runs(&mut self.runs, k as u32 + 1, active, slot.bucket, slot.base);
+            let cells = common.map_or(RunCells::Rows(batch.cells()), RunCells::One);
+            push_runs(runs, k as u32 + 1, active, slot.bucket, slot.base, cells);
         }
-        let (scene, batches, cluster_sets) = (input.scene, input.batches, &self.cluster_sets);
+        let (batches, cluster_sets) = (input.batches, &self.cluster_sets);
         let slots = &layout.batches;
-        let sets = |set: u32| -> SphereArrays<'_> {
+        let sets = |set: u32| -> CullSet<'_> {
             let set = set as usize;
             if set == 0 {
-                return scene.world(parity).spheres();
+                return CullSet {
+                    spheres: scene.world(parity).spheres(),
+                    cells: scene.cells(),
+                };
             }
             if set <= slots.len() {
-                return batches
+                let batch = batches
                     .get(slots[set - 1].id)
-                    .expect("the layout names live batches")
-                    .world(parity)
-                    .spheres();
+                    .expect("the layout names live batches");
+                return CullSet {
+                    spheres: batch.world(parity).spheres(),
+                    cells: batch.cells(),
+                };
             }
             let slot = &slots[set - 1 - slots.len()];
-            cluster_sets[slot.id.slot() as usize].clusters.spheres()
+            CullSet {
+                spheres: cluster_sets[slot.id.slot() as usize].clusters.spheres(),
+                cells: &[],
+            }
         };
         null3d_core::culling::cull_into_buckets(
             input.jobs,
-            &Frustum::from_view_projection(&uniform.view_proj),
+            &Frustum::from_view_projection(&view.uniform.view_proj),
+            self.offsets.as_slice(),
             &sets,
             &self.runs,
             &layout.scene_buckets,
@@ -1246,7 +1313,7 @@ impl FrameBuilder for CpuCulledRenderer {
     fn visible_entries(&self, frame: u32) -> Option<u32> {
         // A frame that did not cull, or has no camera, draws nothing: its parity's culling output
         // is still an older frame's.
-        let drew = self.culled == frame && self.uniform.is_some();
+        let drew = self.culled == frame && self.view.is_some();
         Some(if drew {
             self.culled(frame).len() as u32
         } else {
@@ -1443,17 +1510,45 @@ mod tests {
     }
 }
 
-/// Splits rows `0..rows` of a set into culling runs of at most one chunk each.
-fn push_runs(runs: &mut Vec<CullRun>, set: u32, rows: u32, bucket: u32, base: u32) {
+/// Where the rows of a set lie: all in one cell, or each in the cell its entry of a list names.
+#[derive(Clone, Copy, Debug)]
+enum RunCells<'a> {
+    One(u32),
+    Rows(&'a [u32]),
+}
+
+/// Splits rows `0..rows` of a set into culling runs of at most one chunk each. A run whose rows
+/// share a cell culls as that cell's run; the others look each row's cell up.
+fn push_runs(
+    runs: &mut Vec<CullRun>,
+    set: u32,
+    rows: u32,
+    bucket: u32,
+    base: u32,
+    cells: RunCells<'_>,
+) {
     let mut start = 0;
     while start < rows {
         let end = (start + CULL_CHUNK).min(rows);
+        let cell = match cells {
+            RunCells::One(cell) => cell,
+            RunCells::Rows(cells) => {
+                let run = &cells[start as usize..end as usize];
+                let first = run[0];
+                if run.iter().all(|&cell| cell == first) {
+                    first
+                } else {
+                    ROW_CELLS
+                }
+            }
+        };
         runs.push(CullRun {
             set,
             start,
             end,
             bucket,
             base,
+            cell,
         });
         start = end;
     }

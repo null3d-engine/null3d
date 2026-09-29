@@ -8,6 +8,7 @@
 //! | --- | --- |
 //! | [`handle`] | 30-bit handles (20-bit slot, 10-bit generation) and the slot allocator |
 //! | [`bitset`] | Fixed-length bitsets walked 64 bits at a time |
+//! | [`cells`] | Grid cells that keep world matrices small, and the camera-to-cell offsets |
 //! | [`error`] | [`CoreError`] and the numeric codes of the TypeScript error table |
 //! | [`math`] | 3 × 4 affine matrices: compose, multiply, bounding spheres |
 //! | [`world`] | Per-frame world output: matrices and bounding spheres, double-buffered |
@@ -33,6 +34,7 @@
 pub mod alloc;
 pub mod arena;
 pub mod bitset;
+pub mod cells;
 pub mod clusters;
 pub mod culling;
 pub mod error;

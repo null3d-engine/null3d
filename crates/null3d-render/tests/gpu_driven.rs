@@ -3,7 +3,7 @@
 
 mod common;
 
-use common::{BATCH_ROWS, SCENE_CAPACITY, World, count};
+use common::{BATCH_ROWS, SCENE_CAPACITY, World, count, far_out};
 use null3d_gpu::drawlist::Op;
 use null3d_gpu::mock::MockBackend;
 use null3d_render::frame::FrameBuilder;
@@ -354,4 +354,87 @@ fn pipelines_follow_the_shading_model_and_objects_sharing_a_mesh_and_material_sh
     let second = world.commands();
     assert_eq!(count(&second, Op::CreateRenderPipeline), 0);
     assert_eq!(count(&second, Op::DrawIndexedIndirect), 3 + 1 + 10 + 1);
+}
+
+/// Writes of a frame into the culling parameters: offset and byte count.
+fn cull_params_writes(commands: &[(Op, Vec<u32>)]) -> Vec<(u32, u32)> {
+    commands
+        .iter()
+        .filter(|(op, o)| *op == Op::WriteBuffer && o[0] == 2)
+        .map(|(_, o)| (o[1], o[3]))
+        .collect()
+}
+
+#[test]
+fn far_from_the_origin_only_the_camera_offsets_upload_when_the_camera_moves() {
+    let mut world = World::new();
+    let mut mock = MockBackend::default();
+    // The objects and the camera 1,000 km out; the batch's rows stay at the origin.
+    world.move_far_out();
+    let camera = world.camera;
+    world.record(true);
+    mock.replay(world.renderer.list(1).words()).unwrap();
+    let far = world.far_cell();
+    for &object in &world.objects {
+        let slot = world.scene.resolve(object).unwrap() as usize;
+        assert_eq!(world.scene.cells()[slot], far);
+    }
+    // The planes, then the offsets from the camera to the two cells in use.
+    let params = vec![(0, 112), (112, 2 * 16)];
+    assert_eq!(cull_params_writes(&world.commands()), params);
+
+    for frame in 2..=5 {
+        world.frame = frame;
+        world.scene.begin_frame(frame);
+        let x = frame as f32 * 0.25;
+        world
+            .scene
+            .set_position(camera, far_out(x, 0.5, 20.0))
+            .unwrap();
+        world.record(false);
+        mock.replay(world.renderer.list(frame).words()).unwrap();
+        let commands = world.commands();
+        // The static objects keep their matrices on the GPU, and the camera draws nothing: only the
+        // batch's rows, after every scene slot, upload.
+        let scene_writes = commands
+            .iter()
+            .filter(|(op, o)| *op == Op::WriteBuffer && o[0] == 4)
+            .filter(|(_, o)| o[1] < (SCENE_CAPACITY + 1) * MATRIX_BYTES)
+            .count();
+        assert_eq!(scene_writes, 0, "frame {frame}");
+        assert!(bucket_table_writes(&commands).is_empty(), "frame {frame}");
+        assert_eq!(cull_params_writes(&commands), params, "frame {frame}");
+    }
+}
+
+#[test]
+fn an_object_that_moves_into_another_cell_rewrites_its_entry() {
+    let mut world = World::new();
+    let mut mock = MockBackend::default();
+    world.record(true);
+    mock.replay(world.renderer.list(1).words()).unwrap();
+    assert_eq!(
+        cull_params_writes(&world.commands()),
+        vec![(0, 112), (112, 16)]
+    );
+
+    world.frame = 2;
+    world.scene.begin_frame(2);
+    let object = world.objects[0];
+    world
+        .scene
+        .set_position(object, [0.0, 0.0, -2_000.0])
+        .unwrap();
+    world.record(false);
+    mock.replay(world.renderer.list(2).words()).unwrap();
+    let slot = world.scene.resolve(object).unwrap();
+    let commands = world.commands();
+    // Its matrix, now relative to its new cell, and its entry, which names that cell, upload.
+    assert_eq!(bucket_table_writes(&commands), vec![(slot * 4, 4)]);
+    assert!(
+        commands
+            .iter()
+            .any(|(op, o)| *op == Op::WriteBuffer && o[0] == 4 && o[1] == slot * MATRIX_BYTES)
+    );
+    assert_eq!(cull_params_writes(&commands), vec![(0, 112), (112, 2 * 16)]);
 }

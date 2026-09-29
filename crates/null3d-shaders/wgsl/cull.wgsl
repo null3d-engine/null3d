@@ -3,6 +3,16 @@
 // raising the instance count of the bucket's indirect draw with an atomic add. The sphere comes
 // from the world matrix: its center is the translation, and its radius is the mesh's radius times
 // the largest axis scale.
+//
+// World matrices are relative to the centers of their grid cells, and the planes to the camera. An
+// instance's entry in the bucket table holds its cell index above its bucket, and the thread moves
+// the instance by its cell's offset from the camera before it tests it. The compacted instance
+// buffer then holds matrices relative to the camera, which the vertex shader draws as they are.
+
+/// An entry holds its bucket in the bits below CELL_SHIFT, and the instance's cell index above.
+const CELL_SHIFT: u32 = 23u;
+/// Grid cells in use at most: the length of the table of offsets from the camera to each cell.
+const MAX_CELLS: u32 = 512u;
 
 struct CullParams {
     planes: array<vec4f, 6>,
@@ -10,6 +20,8 @@ struct CullParams {
     pad0: u32,
     pad1: u32,
     pad2: u32,
+    /// The offset from the camera to the center of each grid cell, by cell index.
+    cell_offsets: array<vec4f, MAX_CELLS>,
 }
 
 /// A bucket: one pipeline, mesh and material, with its slice of the compacted instance buffer.
@@ -39,13 +51,15 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
     if i >= params.instance_count {
         return;
     }
-    let b = instance_buckets[i];
-    if b == HIDDEN {
+    let entry = instance_buckets[i];
+    if entry == HIDDEN {
         return;
     }
-    let r0 = matrices[i * 3u];
-    let r1 = matrices[i * 3u + 1u];
-    let r2 = matrices[i * 3u + 2u];
+    let b = entry & ((1u << CELL_SHIFT) - 1u);
+    let offset = params.cell_offsets[entry >> CELL_SHIFT];
+    let r0 = matrices[i * 3u] + vec4f(0.0, 0.0, 0.0, offset.x);
+    let r1 = matrices[i * 3u + 1u] + vec4f(0.0, 0.0, 0.0, offset.y);
+    let r2 = matrices[i * 3u + 2u] + vec4f(0.0, 0.0, 0.0, offset.z);
     let center = vec3f(r0.w, r1.w, r2.w);
     let scale = max(
         length(vec3f(r0.x, r1.x, r2.x)),

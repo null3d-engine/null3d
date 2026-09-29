@@ -20,6 +20,16 @@
 //! only rewrites those sources' entries in the bucket table, where `HIDDEN` makes the culling
 //! shader skip them.
 //!
+//! # Cells
+//!
+//! World matrices are relative to their grid cells' centers (see [`null3d_core::cells`]). A
+//! source's entry in the bucket table holds its cell index above its bucket, so a source that
+//! changes cells rewrites its entry, as a hidden one does. Each frame uploads the offset from the
+//! camera to each cell in use beside the culling planes, which are relative to the camera. The
+//! culling shader adds a source's offset to its matrix as it copies the matrix into the compacted
+//! instance buffer, so the vertex shader draws positions relative to the camera. When only the
+//! camera moves, static matrices stay on the GPU and only the offsets upload.
+//!
 //! # Memory
 //!
 //! Frames record without the general-purpose allocator. At the start of each frame the arena gets
@@ -29,9 +39,10 @@
 
 use std::collections::TryReserveError;
 
+use null3d_core::cells::{CELL_SHIFT, MAX_CELLS};
 use null3d_core::culling::Frustum;
 use null3d_core::handle::Handle;
-use null3d_core::instances::BatchTable;
+use null3d_core::instances::{BatchTable, InstanceBatch};
 use null3d_core::scene::SceneStorage;
 use null3d_core::snapshot::SCENE_TARGET;
 use null3d_core::world::MATRIX_FLOATS;
@@ -41,14 +52,16 @@ use null3d_gpu::drawlist::{
 };
 
 use crate::frame::{
-    FrameBuilder, FrameInput, HIDDEN, PageUploads, ParityLists, RecordError, SceneSettings,
-    SceneTargets, UploadArena, address, bucket_of, collect_bucket_keys, drawn_rows,
-    floats_as_bytes, grown_size, words_as_bytes,
+    CELL_OFFSET_BYTES, CellOffsets, FrameBuilder, FrameInput, HIDDEN, PageUploads, ParityLists,
+    RecordError, SceneSettings, SceneTargets, UploadArena, address, bucket_of, collect_bucket_keys,
+    drawn_rows, floats_as_bytes, grown_size, words_as_bytes,
 };
 use crate::materials::{MATERIAL_FLOATS, Shading};
 use crate::meshes::{MeshStorage, Packing};
-/// Bytes of the culling parameters: six planes, the source count and padding.
-const CULL_PARAMS_BYTES: u32 = 112;
+/// Bytes of the culling planes: six planes, the source count and padding.
+const CULL_PLANES_BYTES: u32 = 112;
+/// Bytes of the culling parameters: the planes, then the offset from the camera to each cell.
+const CULL_PARAMS_BYTES: u32 = CULL_PLANES_BYTES + MAX_CELLS * CELL_OFFSET_BYTES;
 /// Bytes of one bucket record in the culling shader: base, material, radius, padding.
 const BUCKET_BYTES: u32 = 16;
 /// Bytes of one world matrix: three rows of four floats.
@@ -70,6 +83,10 @@ pub const fn max_sources(binding_bytes: u32) -> u32 {
     }
 }
 
+// Buckets never outnumber sources, so every bucket fits below a cell index in a table entry, and
+// the entry of a drawn source is never `HIDDEN`.
+const _: () = assert!(u16::MAX as u32 * sizes::CULL_WORKGROUP_SIZE < (1 << CELL_SHIFT) - 1);
+
 /// Engine memory the builder keeps for each source: its bucket table entry, and room for that
 /// entry in both frames' upload arenas.
 pub const BYTES_PER_SOURCE: u32 = 12;
@@ -82,13 +99,32 @@ pub const PORTABLE_MAX_SOURCES: u32 = max_sources(sizes::PORTABLE_STORAGE_BINDIN
 pub const MAX_USEFUL_BINDING_BYTES: u32 =
     u16::MAX as u32 * sizes::CULL_WORKGROUP_SIZE * sizes::INSTANCE_STRIDE;
 
-/// A scene object's entry in the bucket table: its bucket, or `HIDDEN` while it is hidden, which
-/// its world radius says.
-fn scene_membership(home: u32, world_radius: f32) -> u32 {
+/// A source's entry in the bucket table: its bucket with its cell index above it, or `HIDDEN` for
+/// a source that draws nowhere.
+fn entry(bucket: u32, cell: u32) -> u32 {
+    if bucket == HIDDEN {
+        HIDDEN
+    } else {
+        bucket | (cell << CELL_SHIFT)
+    }
+}
+
+/// A scene object's entry in the bucket table: its bucket and cell, or `HIDDEN` while it is
+/// hidden, which its world radius says.
+fn scene_entry(home: u32, world_radius: f32, cell: u32) -> u32 {
     if world_radius == f32::NEG_INFINITY {
         HIDDEN
     } else {
-        home
+        entry(home, cell)
+    }
+}
+
+/// The entry of a batch's `row`: the batch's bucket and the row's cell while the row is active.
+fn row_entry(bucket: u32, batch: &InstanceBatch, row: u32, active: u32) -> u32 {
+    if row < active {
+        entry(bucket, batch.cells()[row as usize])
+    } else {
+        HIDDEN
     }
 }
 
@@ -189,7 +225,7 @@ struct Layout {
     /// Each batch's raw id and the first source of its rows.
     batch_bases: Vec<(u32, u32)>,
     buckets: Vec<Bucket>,
-    /// The bucket of every source, or `HIDDEN`.
+    /// The entry of every source: its bucket and cell, or `HIDDEN`.
     instance_buckets: Vec<u32>,
     /// The bucket of every scene slot whether it is shown or not, or `HIDDEN` for a slot with no
     /// mesh or material.
@@ -230,6 +266,8 @@ pub struct GpuDrivenRenderer {
     buffer_sizes: [u32; 11],
     created: bool,
     canvas: (u32, u32),
+    /// The offset from the camera to each cell in use, for the frame being recorded.
+    offsets: CellOffsets,
 }
 
 impl GpuDrivenRenderer {
@@ -249,6 +287,7 @@ impl GpuDrivenRenderer {
             buffer_sizes: [0; 11],
             created: false,
             canvas: (0, 0),
+            offsets: CellOffsets::new(),
         }
     }
 
@@ -291,18 +330,17 @@ impl GpuDrivenRenderer {
         }
         self.upload_matrices(list, input, parity, upload_everything)?;
 
-        let Some(uniform) = self
-            .settings
-            .frame_uniform(input.scene, parity, input.canvas)
-        else {
+        let Some(view) = self.settings.frame_view(input.scene, parity, input.canvas) else {
             self.settings.record_clear_only(list, self.targets())?;
             return Ok(upload_everything);
         };
-        let (at, bytes) = arena.push(uniform.as_bytes())?;
+        let (at, bytes) = arena.push(view.uniform.as_bytes())?;
         list.push(Op::WriteBuffer, &[ids::FRAME, 0, at, bytes])?;
 
-        let mut params = [0u32; (CULL_PARAMS_BYTES / 4) as usize];
-        for (plane, out) in Frustum::from_view_projection(&uniform.view_proj)
+        // The planes are relative to the camera; the shader moves each source by its cell's
+        // offset from the camera before it tests the source.
+        let mut params = [0u32; (CULL_PLANES_BYTES / 4) as usize];
+        for (plane, out) in Frustum::from_view_projection(&view.uniform.view_proj)
             .planes()
             .iter()
             .zip(params.chunks_mut(4))
@@ -314,6 +352,12 @@ impl GpuDrivenRenderer {
         params[24] = self.layout.sources;
         let (at, bytes) = arena.push(words_as_bytes(&params))?;
         list.push(Op::WriteBuffer, &[ids::CULL_PARAMS, 0, at, bytes])?;
+        self.offsets.update(input.scene, &view);
+        let (at, bytes) = arena.push(self.offsets.as_bytes())?;
+        list.push(
+            Op::WriteBuffer,
+            &[ids::CULL_PARAMS, CULL_PLANES_BYTES, at, bytes],
+        )?;
 
         let buckets = self.layout.buckets.len() as u32;
         if buckets > 0 {
@@ -488,21 +532,22 @@ impl GpuDrivenRenderer {
         let bucket_of = |key: Option<BucketKey>| bucket_of(counts, key).unwrap_or(HIDDEN);
         layout.instance_buckets.clear();
         layout.home_buckets.clear();
-        for slot in 0..scene_rows as usize {
+        let slots = world.radii().iter().zip(scene.cells());
+        for (slot, (&radius, &cell)) in slots.take(scene_rows as usize).enumerate() {
             let home = bucket_of(scene_key(slot));
             layout.home_buckets.push(home);
             layout
                 .instance_buckets
-                .push(scene_membership(home, world.radii()[slot]));
+                .push(scene_entry(home, radius, cell));
         }
         layout.batch_rows.clear();
         for (_, batch) in batches.iter() {
             let bucket = bucket_of(key_of(batch.mesh(), batch.material()));
             let active = batch.frame_active_count(parity);
             layout.batch_rows.push((bucket, active));
-            layout.instance_buckets.extend(
-                (0..batch.capacity()).map(|row| if row < active { bucket } else { HIDDEN }),
-            );
+            layout
+                .instance_buckets
+                .extend((0..batch.capacity()).map(|row| row_entry(bucket, batch, row, active)));
         }
 
         layout.indirect_template.clear();
@@ -542,9 +587,10 @@ impl GpuDrivenRenderer {
         meshes + materials + self.layout.sources as usize * 4 + buckets + frame
     }
 
-    /// Rewrites the bucket table entries of the sources whose membership changed since the layout
-    /// was built, without a rebuild: scene objects shown or hidden this frame, which the frame's
-    /// uploads name, and the batch rows that a new active count added or removed.
+    /// Rewrites the bucket table entries of the sources whose membership or cell changed since the
+    /// layout was built, without a rebuild: scene objects shown, hidden or moved to another cell
+    /// this frame, which the frame's uploads name, the batch rows that a new active count added or
+    /// removed, and the batch rows that changed cells.
     fn update_membership(
         &mut self,
         list: &mut DrawList,
@@ -554,12 +600,13 @@ impl GpuDrivenRenderer {
     ) -> Result<(), RecordError> {
         let layout = &mut self.layout;
         let radii = input.scene.world(parity).radii();
+        let cells = input.scene.cells();
         let scene_rows = layout.home_buckets.len() as u32;
         let mut check = |start: u32, count: u32| -> Result<(), RecordError> {
             let mut changed: Option<(u32, u32)> = None;
             for slot in start..(start + count).min(scene_rows) {
                 let s = slot as usize;
-                let wanted = scene_membership(layout.home_buckets[s], radii[s]);
+                let wanted = scene_entry(layout.home_buckets[s], radii[s], cells[s]);
                 if layout.instance_buckets[s] != wanted {
                     layout.instance_buckets[s] = wanted;
                     changed =
@@ -585,14 +632,19 @@ impl GpuDrivenRenderer {
         for (index, (_, batch)) in input.batches.iter().enumerate() {
             let (bucket, was) = layout.batch_rows[index];
             let now = batch.frame_active_count(parity);
-            if now == was {
-                continue;
+            let moved = batch.cell_changes();
+            let mut rows = (now != was).then(|| (was.min(now), was.max(now)));
+            if moved.count > 0 {
+                let (start, end) = (moved.start, moved.start + moved.count);
+                rows =
+                    Some(rows.map_or((start, end), |(low, high)| (low.min(start), high.max(end))));
             }
+            let Some((low, high)) = rows else {
+                continue;
+            };
             let base = layout.batch_bases[index].1;
-            let (low, high) = (was.min(now), was.max(now));
             for row in low..high {
-                layout.instance_buckets[(base + row) as usize] =
-                    if row < now { bucket } else { HIDDEN };
+                layout.instance_buckets[(base + row) as usize] = row_entry(bucket, batch, row, now);
             }
             layout.batch_rows[index].1 = now;
             write_entries(

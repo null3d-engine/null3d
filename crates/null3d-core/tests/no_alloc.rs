@@ -11,10 +11,11 @@ use std::time::{Duration, Instant};
 
 use common::{Rng, Workers, mul4, perspective, translation};
 use null3d_core::arena::ArenaPool;
+use null3d_core::cells::{CellPosition, MAX_CELLS, ORIGIN_CELL};
 use null3d_core::clusters::{ClusterScratch, RowClusters};
 use null3d_core::culling::{
-    BY_ROW, BucketedCull, CULL_CHUNK, CullOutput, CullRun, Frustum, cull_into_buckets,
-    cull_parallel,
+    BY_ROW, BucketedCull, CULL_CHUNK, CullOutput, CullRun, CullSet, Frustum, ROW_CELLS,
+    cull_into_buckets, cull_parallel,
 };
 use null3d_core::handle::Handle;
 use null3d_core::instances::BatchTable;
@@ -55,6 +56,8 @@ struct World {
     bucketed: BucketedCull,
     runs: Vec<CullRun>,
     row_buckets: Vec<u32>,
+    /// The offset from the camera to each cell.
+    offsets: Vec<[f32; 4]>,
     /// The still batch's rows in clusters, which the bucketed cull also culls.
     clusters: RowClusters,
     cluster_scratch: ClusterScratch,
@@ -112,6 +115,7 @@ fn build() -> World {
         },
         runs: Vec::with_capacity(16),
         row_buckets: (0..8193).map(|slot| slot % 3).collect(),
+        offsets: vec![[0.0; 4]; MAX_CELLS as usize],
         clusters: {
             let mut clusters = RowClusters::default();
             clusters.try_reserve(20_000).unwrap();
@@ -130,11 +134,16 @@ fn build() -> World {
 /// One frame of sketch work, as the sketch worker runs it.
 fn frame(world: &mut World, jobs: &null3d_core::jobs::JobSystem, frame: u32, rng: &mut Rng) {
     // Sketch code: roots rotate, a few static objects move, rows of both batches change.
-    for &root in &world.roots {
+    for (k, &root) in world.roots.iter().enumerate() {
         let slot = world.scene.resolve(root).unwrap() as usize;
         let angle = frame as f32 * 0.01;
         world.scene.rotations_mut()[slot * 4 + 1] = angle.sin();
         world.scene.rotations_mut()[slot * 4 + 3] = angle.cos();
+        // Two trees hop between cells, far out and back, taking their descendants along.
+        if k < 2 {
+            let x = if frame.is_multiple_of(2) { 0.0 } else { 1.0e6 };
+            world.scene.positions_mut()[slot * 3] = x + k as f32 * 5000.0;
+        }
     }
     for _ in 0..5 {
         let leaf = world.leaves[rng.below(world.leaves.len() as u32) as usize];
@@ -170,11 +179,21 @@ fn frame(world: &mut World, jobs: &null3d_core::jobs::JobSystem, frame: u32, rng
     for x in batch.positions_mut().iter_mut().step_by(3) {
         *x += 0.01;
     }
+    // A few moving rows cross into other cells and back.
+    for row in (0..20_000).step_by(997) {
+        batch.positions_mut()[row * 3 + 2] = if frame.is_multiple_of(3) {
+            0.0
+        } else {
+            -3000.0
+        };
+    }
     let batch = world.table.get_mut(world.still).unwrap();
     let start = rng.below(19_000);
     batch.positions_mut()[start as usize * 3] = frame as f32;
     batch.mark_dirty(start, 1 + rng.below(500)).unwrap();
-    world.table.update(jobs, frame);
+    world
+        .table
+        .update(jobs, frame, world.scene.cell_table_mut());
 
     // Culling on the job workers.
     let frustum = camera();
@@ -210,26 +229,50 @@ fn frame(world: &mut World, jobs: &null3d_core::jobs::JobSystem, frame: u32, rng
         let mut start = 0;
         while start < rows {
             let end = (start + CULL_CHUNK).min(rows);
+            // The scene's and the moving batch's rows lie in different cells.
+            let cell = if set < 2 { ROW_CELLS } else { ORIGIN_CELL };
             world.runs.push(CullRun {
                 set,
                 start,
                 end,
                 bucket,
                 base,
+                cell,
             });
             start = end;
         }
     }
+    let camera_at = CellPosition {
+        cell: [0, 0, 0],
+        local: [0.0, 1.0, 30.0],
+    };
+    let cells = world
+        .scene
+        .cell_table()
+        .write_offsets(&camera_at, &mut world.offsets);
     let (scene, clusters) = (&world.scene, &world.clusters);
     let sets = |set: u32| match set {
-        0 => scene.world(parity).spheres(),
-        1 => moving.world(parity).spheres(),
-        2 => still.world(parity).spheres(),
-        _ => clusters.spheres(),
+        0 => CullSet {
+            spheres: scene.world(parity).spheres(),
+            cells: scene.cells(),
+        },
+        1 => CullSet {
+            spheres: moving.world(parity).spheres(),
+            cells: moving.cells(),
+        },
+        2 => CullSet {
+            spheres: still.world(parity).spheres(),
+            cells: &[],
+        },
+        _ => CullSet {
+            spheres: clusters.spheres(),
+            cells: &[],
+        },
     };
     cull_into_buckets(
         jobs,
         &frustum,
+        &world.offsets[..cells],
         &sets,
         &world.runs,
         &world.row_buckets,

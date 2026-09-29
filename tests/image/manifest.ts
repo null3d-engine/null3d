@@ -53,6 +53,29 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 		switches: ['uploads=copy'],
 		reference: 'scene',
 	},
+	// A scene that spans grid cells, with a turned tree and a camera on a turned rig.
+	{ name: 'cells', sketch: 'tests/pages/sketches/cells-sketch.ts', hold: 1 },
+	// The same scene 100 km out, away from a cell's center, and about 1,000 km out at the center of a
+	// cell, 977 cells of 1,024 m along x. Each must draw the scene's image. 100 km out, the tree's
+	// children and the camera round below a hundredth of a millimeter, which changes a pixel or so;
+	// at a cell's center the engine computes the same numbers as at the origin. With threshold 0,
+	// any change of color counts, except on anti-aliased edges. With world matrices relative to the
+	// origin instead of to cells, 60 such pixels change 100 km out and 124 at 1,000 km, while the
+	// default tolerance would count at most one of them.
+	{
+		name: 'cells-100km',
+		sketch: 'tests/pages/sketches/cells-sketch.ts?x=100000',
+		hold: 1,
+		reference: 'cells',
+		tolerance: { threshold: 0, maxDiffRatio: 0.0003 },
+	},
+	{
+		name: 'cells-1000km',
+		sketch: `tests/pages/sketches/cells-sketch.ts?x=${977 * 1024}`,
+		hold: 1,
+		reference: 'cells',
+		tolerance: { threshold: 0, maxDiffRatio: 0 },
+	},
 	// The benchmark scenes' hold frames, which the parity command also compares with three.js.
 	// S2's trees cover under 1% of its frame, so other devices may differ in fewer of its pixels.
 	...PARITY_SCENES.map(

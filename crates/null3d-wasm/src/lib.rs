@@ -330,17 +330,20 @@ pub fn reserve_object() -> u32 {
     value_with_engine(|e| e.scene.reserve().map(Handle::raw).map_err(core_failure))
 }
 
-/// Copies an object's world matrix of the current frame (12 floats, rows of a 3 × 4 matrix).
+/// Copies an object's world matrix of the current frame (12 numbers, rows of a 3 × 4 matrix), with
+/// its translation from the origin in 64-bit floats.
 #[wasm_bindgen(js_name = worldMatrix)]
-pub fn world_matrix(handle: u32, out: &mut [f32]) -> u32 {
-    with_engine(|e| match e.scene.world_matrix(Handle::from_raw(handle)) {
-        Ok(matrix) => {
-            let n = out.len().min(matrix.len());
-            out[..n].copy_from_slice(&matrix[..n]);
-            0
-        }
-        Err(error) => core_failure(error),
-    })
+pub fn world_matrix(handle: u32, out: &mut [f64]) -> u32 {
+    with_engine(
+        |e| match e.scene.absolute_world_matrix(Handle::from_raw(handle)) {
+            Ok(matrix) => {
+                let n = out.len().min(matrix.len());
+                out[..n].copy_from_slice(&matrix[..n]);
+                0
+            }
+            Err(error) => core_failure(error),
+        },
+    )
 }
 
 /// The command ring (see `constants::ring_field`): the record array's address, its capacity in
@@ -404,7 +407,7 @@ pub fn update_batches(frame: u32) -> u32 {
         return fail(codes::NOT_READY, [0, 0]);
     };
     with_engine(|e| {
-        e.batches.update(jobs, frame);
+        e.batches.update(jobs, frame, e.scene.cell_table_mut());
         0
     })
 }
@@ -532,15 +535,18 @@ pub fn create_batch(capacity: u32, dynamic: bool, colors: bool, mesh: u32, mater
 
 #[wasm_bindgen(js_name = destroyBatch)]
 pub fn destroy_batch(batch: u32, frame: u32) -> u32 {
-    with_engine(
-        |e| match e.batches.destroy(Handle::from_raw(batch), frame) {
+    with_engine(|e| {
+        match e
+            .batches
+            .destroy(Handle::from_raw(batch), frame, e.scene.cell_table_mut())
+        {
             Ok(()) => {
                 e.structure_changed = true;
                 0
             }
             Err(error) => core_failure(error),
-        },
-    )
+        }
+    })
 }
 
 /// The address of one of a batch's row arrays (see `constants::batch_field`): positions (3 floats

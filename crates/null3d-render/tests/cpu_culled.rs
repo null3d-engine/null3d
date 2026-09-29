@@ -3,7 +3,8 @@
 
 mod common;
 
-use common::{BATCH_ROWS, World, count};
+use common::{BATCH_ROWS, World, count, far_out};
+use null3d_core::cells::CELL_SHIFT;
 use null3d_core::clusters::{CLUSTER_ROWS, CLUSTER_SHIFT};
 use null3d_core::handle::Handle;
 use null3d_core::scene::Command;
@@ -22,6 +23,9 @@ const CLUSTERS: u32 = 10;
 /// The buffers of the frame uniform ring and of the draw records.
 const FRAME: u32 = 1;
 const DRAWS: u32 = 3;
+/// Bytes of one frame's slot in the frame uniform ring: the uniform block, aligned for binding,
+/// then the offsets from the camera to 512 cells.
+const FRAME_SLOT: u32 = 256 + 512 * 16;
 /// Scene slots up to the highest the world uses: slot 0 is never used, then the camera and four
 /// objects.
 const SCENE_ROWS: u32 = 6;
@@ -189,9 +193,10 @@ fn steady_frames_upload_the_moving_rows_into_the_ring_and_keep_an_unchanged_inde
         }
         assert_eq!(buffer_writes(&commands, DRAWS), 0, "frame {frame}");
         assert_eq!(bound_instances(&commands), instances_group(ring, 1));
-        // The camera did not move, so the frame uniform stays in the slot the first frame wrote.
+        // The camera did not move, so the frame uniform and the cell offsets stay in the slot the
+        // first frame wrote.
         assert_eq!(buffer_writes(&commands, FRAME), 0, "frame {frame}");
-        assert_eq!(bound_uniform_offset(&commands), 256);
+        assert_eq!(bound_uniform_offset(&commands), FRAME_SLOT);
     }
     // A hidden object changes the list: it goes into the next slot, with its draw records.
     world.frame = 6;
@@ -207,8 +212,8 @@ fn steady_frames_upload_the_moving_rows_into_the_ring_and_keep_an_unchanged_inde
     assert_eq!(buffer_writes(&commands, DRAWS), 1);
     assert_eq!(bound_instances(&commands), instances_group(0, 2));
 
-    // A moved camera writes the frame uniform into its next slot, and no matrix: the camera draws
-    // nothing.
+    // A moved camera writes the frame uniform and the cell offsets into its next slot, and no
+    // matrix: the camera draws nothing.
     world.frame = 7;
     world.scene.begin_frame(7);
     world
@@ -218,8 +223,8 @@ fn steady_frames_upload_the_moving_rows_into_the_ring_and_keep_an_unchanged_inde
     world.record(false);
     mock.replay(world.renderer.list(7).words()).unwrap();
     let commands = world.commands();
-    assert_eq!(buffer_writes(&commands, FRAME), 1);
-    assert_eq!(bound_uniform_offset(&commands), 512);
+    assert_eq!(buffer_writes(&commands, FRAME), 2);
+    assert_eq!(bound_uniform_offset(&commands), 2 * FRAME_SLOT);
     assert!(texture_writes(&commands, RESIDENT).is_empty());
 
     // With no active moving rows, the streamed ring keeps its slot.
@@ -551,4 +556,51 @@ fn a_frame_counts_the_index_list_entries_it_draws() {
     );
     step(&mut world, &mut mock, false);
     assert_eq!(world.renderer.visible_entries(world.frame), Some(0));
+}
+
+#[test]
+fn far_from_the_origin_static_objects_stay_resident_and_list_their_cell() {
+    let mut world = world(true);
+    let mut mock = MockBackend::default();
+    // The objects and the camera 1,000 km out; the batch's rows stay at the origin, out of view.
+    world.move_far_out();
+    let camera = world.camera;
+    world.record(true);
+    mock.replay(world.renderer.list(1).words()).unwrap();
+    let far = world.far_cell();
+    // Each shown object is listed with its cell above its slot.
+    let mut listed = world.renderer.culled(world.frame).indices().to_vec();
+    listed.sort_unstable();
+    let slot = |k: usize| world.scene.resolve(world.objects[k]).unwrap();
+    let mut expected: Vec<u32> = (0..3).map(|k| slot(k) | (far << CELL_SHIFT)).collect();
+    expected.sort_unstable();
+    assert_eq!(listed, expected);
+
+    for frame in 2..=5 {
+        world.frame = frame;
+        world.scene.begin_frame(frame);
+        let x = frame as f32 * 0.25;
+        world
+            .scene
+            .set_position(camera, far_out(x, 0.5, 20.0))
+            .unwrap();
+        world.record(false);
+        mock.replay(world.renderer.list(frame).words()).unwrap();
+        let commands = world.commands();
+        assert!(
+            texture_writes(&commands, RESIDENT).is_empty(),
+            "frame {frame}"
+        );
+        for listed in 0..3 {
+            assert!(texture_writes(&commands, VISIBLE + listed).is_empty());
+        }
+        // Only the frame's constants and the offsets from the camera to the two cells in use go
+        // into the next slot of the ring.
+        let frame_writes: Vec<(u32, u32)> = commands
+            .iter()
+            .filter(|(op, o)| *op == Op::WriteBuffer && o[0] == FRAME)
+            .map(|(_, o)| (o[1] % FRAME_SLOT, o[3]))
+            .collect();
+        assert_eq!(frame_writes, vec![(0, 128), (256, 2 * 16)], "frame {frame}");
+    }
 }

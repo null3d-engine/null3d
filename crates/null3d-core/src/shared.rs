@@ -73,3 +73,19 @@ impl<T> SharedMut<T> {
         unsafe { self.ptr.add(i).read() }
     }
 }
+
+impl SharedMut<u64> {
+    /// Sets `bits` in word `i` with an atomic OR, so several threads can set bits of one word.
+    ///
+    /// # Safety
+    /// `i` is inside the buffer, and every thread that touches word `i` meanwhile uses this call.
+    #[inline(always)]
+    pub(crate) unsafe fn fetch_or(&self, i: usize, bits: u64) {
+        debug_assert!(i < self.len);
+        // SAFETY: guaranteed by the caller; `AtomicU64` has the size and alignment of `u64`.
+        unsafe {
+            std::sync::atomic::AtomicU64::from_ptr(self.ptr.add(i))
+                .fetch_or(bits, std::sync::atomic::Ordering::Relaxed);
+        }
+    }
+}

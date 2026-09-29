@@ -59,7 +59,7 @@ export const PAGES: readonly PageEntry[] = [
 	{ id: 'concepts/render-layers', title: 'Render layers', since: '0.1', summary: '32-bit layer masks on objects, cameras, raycasts and passes.' },
 	{ id: 'concepts/render-graph', title: 'The render graph', since: '0.1', summary: 'Declared reads and writes; automatic order; transient memory; validation errors; the text dump.' },
 	{ id: 'concepts/large-worlds', title: 'Large worlds and precision', since: '0.2', summary: 'Cell-relative positions and per-frame camera-to-cell offsets; reversed depth; largeWorld mode; batch origins; floating-origin geometry.' },
-	{ id: 'concepts/culling', title: 'Culling', since: '0.1', summary: 'Grid-cell culling; frustum and small-object tests; two-phase GPU occlusion culling on WebGPU; software occlusion culling and blocker meshes on WebGL2 (0.2).' },
+	{ id: 'concepts/culling', title: 'Culling', since: '0.1', summary: 'Frustum culling on the GPU on WebGPU and on the job workers on WebGL2; grid cells and positions relative to the camera.' },
 	{ id: 'concepts/lod', title: 'Levels of detail', since: '0.2', summary: 'LOD groups; generated LODs; per-instance selection.' },
 	{ id: 'concepts/assets', title: 'Assets and prefabs', since: '0.2', summary: 'glTF, KTX2, meshopt; prefabs and instantiate; upload budgets; memory.' },
 	{ id: 'concepts/post-processing', title: 'The post-processing chain', since: '0.2', summary: 'HDR target; bloom; ambient occlusion; the single final pass; custom effects.' },

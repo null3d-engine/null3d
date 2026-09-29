@@ -152,7 +152,8 @@ impl<B: FrameBuilder> World<B> {
             self.scene.begin_frame(frame);
         }
         self.scene.update_transforms(&self.jobs);
-        self.batches.update(&self.jobs, frame);
+        self.batches
+            .update(&self.jobs, frame, self.scene.cell_table_mut());
         self.snapshot.record(frame, &self.scene, &self.batches);
         let input = FrameInput {
             frame,
@@ -180,4 +181,35 @@ impl<B: FrameBuilder> World<B> {
 
 pub fn count(commands: &[(Op, Vec<u32>)], op: Op) -> usize {
     commands.iter().filter(|(o, _)| *o == op).count()
+}
+
+/// A position 1,000 km out along x.
+pub fn far_out(x: f32, y: f32, z: f32) -> [f32; 3] {
+    [1.0e6 + x, y, z]
+}
+
+impl<B: FrameBuilder> World<B> {
+    /// Moves the objects and the camera 1,000 km out along x, in the same layout; the batch's rows
+    /// stay at the origin.
+    pub fn move_far_out(&mut self) {
+        for (k, &object) in self.objects.iter().enumerate() {
+            let x = k as f32 * 2.0 - 3.0;
+            self.scene
+                .set_position(object, far_out(x, 0.0, 0.0))
+                .unwrap();
+        }
+        self.scene
+            .set_position(self.camera, far_out(0.0, 0.0, 20.0))
+            .unwrap();
+    }
+
+    /// The index of the grid cell that holds the objects that [`World::move_far_out`] moved,
+    /// once a frame has run.
+    pub fn far_cell(&self) -> u32 {
+        let cell = null3d_core::cells::cell_of(far_out(0.0, 0.0, 0.0));
+        self.scene
+            .cell_table()
+            .find(cell)
+            .expect("the objects are there")
+    }
 }

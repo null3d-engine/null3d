@@ -1,5 +1,6 @@
 //! The output of a transform update: a 3 × 4 world matrix and a world bounding sphere per row,
-//! plus an optional colour per row for instance batches.
+//! plus an optional colour per row for instance batches. Matrices and sphere centers are relative
+//! to the center of the row's grid cell (see [`crate::cells`]).
 //!
 //! Scene storage and instance batches keep two [`WorldArrays`], one per frame parity: frame `f`
 //! writes buffer `f & 1` while the render worker reads the other one through a [`WorldView`] (see
@@ -164,6 +165,18 @@ impl WorldArrays {
         self.ys[row] = 0.0;
         self.zs[row] = 0.0;
         self.radii[row] = HIDDEN_RADIUS;
+    }
+
+    /// Moves the translation and sphere center of `row` by `delta`: the row's matrix becomes
+    /// relative to a point `delta` away from the one it was relative to.
+    pub(crate) fn shift_row(&mut self, row: usize, delta: [f32; 3]) {
+        let m = &mut self.matrices[row * MATRIX_FLOATS..(row + 1) * MATRIX_FLOATS];
+        m[3] += delta[0];
+        m[7] += delta[1];
+        m[11] += delta[2];
+        self.xs[row] += delta[0];
+        self.ys[row] += delta[1];
+        self.zs[row] += delta[2];
     }
 
     /// Raw pointers for parallel writers.
