@@ -205,7 +205,7 @@ const DOCS = {
 	E1505: {
 		title: 'Pass targets do not match',
 		cause:
-			'A render pass draws into targets that one GPU render pass cannot hold together. A target can have another size than the pass, or the targets can have different sample counts. The pass can also draw into two depth targets, into a whole texture array instead of one layer, or into no target.',
+			"A render pass draws into targets that one GPU render pass cannot hold together. A target can have another size than the pass, or the targets can have different sample counts. The pass can also draw into two depth targets, into a whole texture array instead of one layer, or into no target. A resolve pass fails the same way when it cannot resolve its target into the canvas. That target must be multisampled, in the canvas's format and size, and read by no other running pass.",
 		example: 'E1505: the pass "Blur" draws at half size into "sceneColor", which is full size.',
 		since: '0.1',
 	},
