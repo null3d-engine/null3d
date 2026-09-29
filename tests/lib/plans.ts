@@ -50,7 +50,7 @@ import {
 	jobWorkersProblem,
 } from './engine-checks.ts';
 import { type HarnessDirs, type ImageRun, imageProblems } from './images.ts';
-import { type LoadKind, loadPath, runnerKey } from './load-routes.ts';
+import { type Load, type LoadKind, loadPath, runnerKey } from './load-routes.ts';
 import { failureText, type ItemResult, lastSteps, type PlanItem, slug } from './runs.ts';
 
 /** The GPU interface that a page draws with. */
@@ -99,7 +99,10 @@ const RESTARTS_TIMEOUT_SECONDS = 120;
 /** The result text of an item that the runner page never reached. */
 export const NO_RESULT = 'no result; the runner stopped before this page';
 
-/** The runner page's item for a test page with these switches, of which empty ones are left out. */
+/**
+ * The runner page's item for a test page with these switches, of which empty ones are left out. With
+ * a load, the page comes from the production build, under that load's address prefix.
+ */
 function pageItem(
 	id: string,
 	page: string,
@@ -107,22 +110,33 @@ function pageItem(
 	{
 		switches = [],
 		timeoutSeconds = 30,
-	}: { switches?: readonly string[]; timeoutSeconds?: number } = {},
+		load,
+	}: { switches?: readonly string[]; timeoutSeconds?: number; load?: Load } = {},
 ): PlanItem<Check> {
 	const query = switches.filter(Boolean).join('&');
+	const file = `${TEST_PAGES}${page}.html${query ? `?${query}` : ''}`;
 	return {
 		id,
-		path: `${TEST_PAGES}${page}.html${query ? `?${query}` : ''}`,
+		path: load ? loadPath(load, file.slice(1)) : file,
 		timeoutSeconds,
 		check,
 	};
 }
 
-/** The runner page's item for the engine test page with these switches, measured for 2 seconds. */
-function engineItem(id: string, switches: readonly string[], check: Check): PlanItem<Check> {
+/**
+ * The runner page's item for the engine test page with these switches, measured for 2 seconds: the
+ * development page, or with a load, the production build.
+ */
+function engineItem(
+	id: string,
+	switches: readonly string[],
+	check: Check,
+	load?: Load,
+): PlanItem<Check> {
 	return pageItem(id, 'engine', check, {
 		switches: [...switches, 'seconds=2'],
 		timeoutSeconds: 45,
+		load,
 	});
 }
 
@@ -175,10 +189,17 @@ function imageItem(run: ImageRun): PlanItem<Check> {
 }
 
 /**
+ * The production build of the engine test page, which the checks plan runs in every mode, under one
+ * address prefix of the runner's own. A production build bundles the engine into shared files, so
+ * some faults show only there. On WebGL2, which every device has.
+ */
+const PRODUCTION_BUILD: Load = { kind: 'warm', key: runnerKey('production') };
+
+/**
  * The browser checks: the capability report, isolation, every run of the image test manifest, the
- * engine in every mode on both GPU paths, and the engine started and stopped again and again in
- * every mode. The capabilities page loads again last, so its extension answers can be compared
- * across loads.
+ * engine in every mode on both GPU paths, and again on the production build, and the engine
+ * started and stopped again and again in every mode. The capabilities page loads again last, so its
+ * extension answers can be compared across loads.
  */
 export function checksPlan(): PlanItem<Check>[] {
 	return [
@@ -194,6 +215,14 @@ export function checksPlan(): PlanItem<Check>[] {
 					tier,
 					mode,
 				}),
+			),
+		),
+		...ENGINE_MODES.map((mode) =>
+			engineItem(
+				`engine-production-${slug(mode.name)}`,
+				['gpu=webgl2', mode.query],
+				{ kind: 'engine', tier: 'webgl2', mode },
+				PRODUCTION_BUILD,
 			),
 		),
 		...ENGINE_MODES.map((mode) =>
@@ -359,13 +388,16 @@ const STARTUP_SECONDS = 0.2;
 function startupItem(mode: EngineMode, load: LoadKind, run: number | 'first'): PlanItem<Check> {
 	const name = `${slug(mode.name)}-${load}`;
 	const key = runnerKey(load === 'cold' ? `${name}-${run}` : name);
-	const query = [`seconds=${STARTUP_SECONDS}`, mode.query].filter(Boolean).join('&');
-	return {
-		id: `startup-${name}-${run}`,
-		path: loadPath({ kind: load, key }, `tests/pages/engine.html?${query}`),
-		timeoutSeconds: STARTUP_TIMEOUT_SECONDS,
-		check: { kind: 'startup', mode, load, ...(run === 'first' && { first: true as const }) },
-	};
+	return pageItem(
+		`startup-${name}-${run}`,
+		'engine',
+		{ kind: 'startup', mode, load, ...(run === 'first' && { first: true as const }) },
+		{
+			switches: [`seconds=${STARTUP_SECONDS}`, mode.query],
+			timeoutSeconds: STARTUP_TIMEOUT_SECONDS,
+			load: { kind: load, key },
+		},
+	);
 }
 
 /**
