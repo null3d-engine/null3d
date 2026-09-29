@@ -17,13 +17,16 @@ This guide covers the image test manifest, its references, and the review that m
 1. Add the test's entry. A sketch stays under 150 lines, and takes its settings from the query of its path, such as `sketch.ts?fog=exp2`.
 2. Run the test on the Mac: `bun run test:images -g <name>`. It has no reference yet, so it fails and saves its image.
 3. Look at the image with `bun run images:review`. Make it the reference with `bun run images:review --accept <name>`.
-4. Push. CI has no SwiftShader reference for the test yet, so the run fails and saves its images. Fetch them with `bun run images:review --ci <run>`, look at them, and accept them.
+4. Make its SwiftShader reference the same way: `CI=1 bun run test:images -g <name>`, then review and accept the image. On the Mac, Playwright's Chromium draws CI's SwiftShader images byte for byte.
 5. Run the checks plan in Safari and Firefox on the Mac. Run it on the phone and the iPad too, when their GPUs may draw the test another way.
+
+A CI run that finds a missing or changed image saves it too. `bun run images:review --ci <run>` fetches those images for review.
 
 ## References
 
 - References live in `tests/image/references/<set>/<tier>/<test>.png`. Each environment has a full set. `chromium-swiftshader` is Chromium on SwiftShader, the software GPU that CI draws with. `chrome-real-gpu` is Chrome on the Mac's GPU.
-- SwiftShader and the Mac's GPU differ at object edges, in up to 0.33% of S1's pixels. Playwright's runs use the SwiftShader set in CI and the real-GPU set elsewhere. `CI=1 bun run test:images` runs CI's SwiftShader setup on the Mac.
+- SwiftShader and the Mac's GPU differ at object edges, in up to 0.33% of S1's pixels.
+- Playwright's runs use the SwiftShader set in CI, and the real-GPU set elsewhere. With `CI=1`, a run on the Mac uses CI's SwiftShader setup and draws CI's images.
 - A comparison passes when at most 0.1% of the pixels differ by more than pixelmatch's threshold of 0.1. Pixels on anti-aliased edges never count. A test can set its own tolerance.
 - An image without a reference, or one that differs from its reference, fails its test. The harness saves it as a candidate in `test-results/images/<place>/<tier>/`, with the reference, the diff and the facts of the comparison.
 - Only `bun run images:review --accept` turns a candidate into a reference. The review lists each candidate in the terminal, and writes a page that shows it beside its reference and its diff.

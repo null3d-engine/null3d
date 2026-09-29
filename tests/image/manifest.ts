@@ -9,8 +9,8 @@
 //
 // To add a test, add its entry and run it: bun run test:images -g <name>. Its first run has no
 // reference, so it saves its image as a candidate. Look at it with bun run images:review, and make it
-// the reference with bun run images:review --accept. CI saves the SwiftShader image the same way:
-// fetch it with bun run images:review --ci <run>, and accept it.
+// the reference with bun run images:review --accept. Then do the same with CI=1 for the SwiftShader
+// reference: on the Mac, Playwright's Chromium draws CI's SwiftShader images byte for byte.
 import { PARITY_SCENES } from '../../bench/lib/parity.ts';
 import { HOLD_TIME, PARITY_CANVAS } from '../../bench/scenes/spec.ts';
 import type { EngineModeName } from '../lib/engine-checks.ts';

@@ -86,7 +86,8 @@ function main(): void {
 		return;
 	}
 	if (candidates.length > 0) writeFileSync(page, reviewPage(candidates, folder));
-	console.log(reviewLines(candidates, page).join('\n'));
+	const named = folder === HARNESS_DIRS.candidates ? undefined : folder;
+	console.log(reviewLines(candidates, page, named).join('\n'));
 }
 
 if (import.meta.main) {

@@ -64,13 +64,22 @@ function filesOf({ base }: Candidate): { label: string; path: string }[] {
 	return files.filter(({ path }) => existsSync(path));
 }
 
-const shown = (path: string) => relative(REPO_ROOT, path) || '.';
+/** A path for people to read: from the repository root inside it, and in full outside it. */
+function shown(path: string): string {
+	const inside = relative(REPO_ROOT, path);
+	return inside.startsWith('..') ? path : inside || '.';
+}
 
 /**
  * The review as lines for the terminal: each candidate with its status and files, the candidates
- * that cannot become references and why, and the command that accepts the others.
+ * that cannot become references and why, and the command that accepts the others. `from` is the
+ * folder of the candidates, when the command must name it.
  */
-export function reviewLines(candidates: readonly Candidate[], page: string): string[] {
+export function reviewLines(
+	candidates: readonly Candidate[],
+	page: string,
+	from?: string,
+): string[] {
 	if (candidates.length === 0) return ['No new or changed images to review.'];
 	const lines: string[] = [];
 	for (const candidate of candidates) {
@@ -80,9 +89,10 @@ export function reviewLines(candidates: readonly Candidate[], page: string): str
 	}
 	const open = candidates.filter((candidate) => !candidate.fixed);
 	lines.push('', `The review page: ${shown(page)}`);
+	const accept = `bun run images:review${from ? ` --from ${shown(from)}` : ''} --accept`;
 	if (open.length > 0)
 		lines.push(
-			`Accept ${open.length === 1 ? 'the image' : `the ${open.length} images`} that can become references with bun run images:review --accept, or only some tests' images with --accept ${open[0]?.test}.`,
+			`Accept ${open.length === 1 ? 'the image' : `the ${open.length} images`} that can become references with ${accept}, or only some tests' images with --accept ${open[0]?.test}.`,
 		);
 	return lines;
 }

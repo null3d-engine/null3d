@@ -81,6 +81,10 @@ describe('the review', () => {
 			"Accept the 2 images that can become references with bun run images:review --accept, or only some tests' images with --accept boxes.",
 		);
 		expect(reviewLines([], 'review.html')).toEqual(['No new or changed images to review.']);
+		const fetched = reviewLines(candidates, 'review.html', join(dirs.candidates, 'run'));
+		expect(fetched.at(-1)).toContain(
+			`with bun run images:review --from ${join(dirs.candidates, 'run')} --accept,`,
+		);
 	});
 
 	it('shows each candidate on the page beside its reference and its diff', () => {
