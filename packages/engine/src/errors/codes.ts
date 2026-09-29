@@ -1,7 +1,9 @@
 // The engine's error table for the docs: each code's title, cause, example and first version, joined
 // with its fix from fixes.ts. tools/gen-docs.ts writes each code's docs page from it (docs/errors/).
 // The engine's runtime code never imports this file, because that would bundle the docs text of
-// every code into the engine's JavaScript: it imports the fixes alone.
+// every code into the engine's JavaScript: it imports the fixes alone. The render graph's codes
+// (15xx from 1502) are `GraphError` in crates/null3d-render/src/graph/error.rs, and a Rust test
+// keeps their examples equal to the messages the graph prints.
 
 import { ERROR_FIXES, type ErrorCode } from './fixes';
 
@@ -176,6 +178,35 @@ const DOCS = {
 		cause:
 			'The scene needs more room than the renderer set aside. The full part is the draw list, the mesh buffers, the material table, the upload space or the culling pass. On WebGPU the culling pass covers 2,097,152 objects and instance rows on every device, and more on devices with larger GPU buffers. On WebGL2 the number follows the largest texture the device allows. The number for the device is in engine.capabilities.maxInstances.',
 		example: 'E1501: materials.standard() failed: the material table is full.',
+		since: '0.1',
+	},
+	E1502: {
+		title: 'Pass input missing',
+		cause:
+			'A render pass uses a target or buffer that no pass creates, or reads one that no pass running in the frame writes. The render graph checks every pass before the frame draws.',
+		example:
+			'E1502: the pass "Final" reads "sceneColor", but no pass that runs this frame writes it.',
+		since: '0.1',
+	},
+	E1503: {
+		title: 'Target created twice',
+		cause:
+			'Two render passes create the same target, or a pass creates a target that the render graph keeps between frames. Each target has one creator, which sets its format and size.',
+		example: 'E1503: both "Opaque" and "Sky" create "sceneColor".',
+		since: '0.1',
+	},
+	E1504: {
+		title: 'Render pass cycle',
+		cause:
+			'Render passes need each other in a loop, so no order runs each pass after the passes whose output it reads.',
+		example: 'E1504: the passes form a cycle: "Tint" runs after "Glow", and "Glow" after "Tint".',
+		since: '0.1',
+	},
+	E1505: {
+		title: 'Pass targets do not match',
+		cause:
+			'A render pass draws into targets that one GPU render pass cannot hold together. A target can have another size than the pass, or the targets can have different sample counts. The pass can also draw into two depth targets, into a whole texture array instead of one layer, or into no target.',
+		example: 'E1505: the pass "Blur" draws at half size into "sceneColor", which is full size.',
 		since: '0.1',
 	},
 } satisfies Record<ErrorCode, Omit<ErrorEntry, 'fix'>>;

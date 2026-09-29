@@ -150,7 +150,11 @@ type ErrorCode =
 	| 'E1406'
 	| 'E1407'
 	| 'E1408'
-	| 'E1501';
+	| 'E1501'
+	| 'E1502'
+	| 'E1503'
+	| 'E1504'
+	| 'E1505';
 ```
 
 The code of an engine error. Each code has a docs page that gives its cause and its fix.

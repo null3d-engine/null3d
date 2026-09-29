@@ -4,6 +4,10 @@
 // codes.ts, which only the docs generator and the tests import. Codes group by area: 11xx objects
 // and handles, 12xx values, 13xx browsers and GPUs, 14xx setup and loading, 15xx rendering.
 
+/** The fix for every render graph error: only the engine declares render passes. */
+const RENDER_GRAPH_FIX =
+	'The engine declares every render pass itself, so this is an engine bug. Report it with the message, the browser and the quality preset.';
+
 export const ERROR_FIXES = {
 	E1101:
 		'Stop using an object after you call destroy() on it. Look for places that still keep a reference, such as arrays of enemies or selection state.',
@@ -50,6 +54,10 @@ export const ERROR_FIXES = {
 		'Fix the error that the message quotes. When the message gives a sketch time, the sketch failed at that time, and the console shows the error with its stack.',
 	E1501:
 		'Share meshes and materials between objects instead of creating them per object. Draw many copies of one mesh with an instance batch. Every row of a batch counts toward the culling limit, active or not, so size each batch for the rows it uses.',
+	E1502: RENDER_GRAPH_FIX,
+	E1503: RENDER_GRAPH_FIX,
+	E1504: RENDER_GRAPH_FIX,
+	E1505: RENDER_GRAPH_FIX,
 } satisfies Record<string, string>;
 
 /**

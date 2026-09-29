@@ -175,6 +175,8 @@ pub mod texture_usage {
     pub const COPY_SRC: u32 = 0x01;
     pub const COPY_DST: u32 = 0x02;
     pub const TEXTURE_BINDING: u32 = 0x04;
+    /// Written by compute shaders.
+    pub const STORAGE_BINDING: u32 = 0x08;
     pub const RENDER_ATTACHMENT: u32 = 0x10;
     /// Only after checking `Capabilities::TRANSIENT_ATTACHMENTS`.
     pub const TRANSIENT_ATTACHMENT: u32 = 0x20;
@@ -488,6 +490,7 @@ pub fn typescript_constants() -> String {
                 ("COPY_SRC", texture_usage::COPY_SRC),
                 ("COPY_DST", texture_usage::COPY_DST),
                 ("TEXTURE_BINDING", texture_usage::TEXTURE_BINDING),
+                ("STORAGE_BINDING", texture_usage::STORAGE_BINDING),
                 ("RENDER_ATTACHMENT", texture_usage::RENDER_ATTACHMENT),
                 ("TRANSIENT_ATTACHMENT", texture_usage::TRANSIENT_ATTACHMENT),
             ],

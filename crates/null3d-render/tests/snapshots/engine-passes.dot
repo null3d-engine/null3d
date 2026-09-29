@@ -1,0 +1,63 @@
+digraph "render graph" {
+  graph [rankdir=LR, fontname="Helvetica", fontsize=10];
+  node [fontname="Helvetica", fontsize=10];
+  edge [fontname="Helvetica", fontsize=9];
+  subgraph "cluster 1" {
+    label="compute pass";
+    "pass LightClusters" [shape=box, label="1. LightClusters\ncompute pass"];
+  }
+  subgraph "cluster 2" {
+    label="render pass: 2048 x 2048\nshadowMap layer 0: clear, store";
+    "pass ShadowCascade0" [shape=box, label="2. ShadowCascade0\nshadow pass, 2048 x 2048, layers 0x00000001"];
+  }
+  subgraph "cluster 3" {
+    label="render pass: 2048 x 2048\nshadowMap layer 1: clear, store";
+    "pass ShadowCascade1" [shape=box, label="3. ShadowCascade1\nshadow pass, 2048 x 2048, layers 0x00000001"];
+  }
+  subgraph "cluster 4" {
+    label="render pass: 2048 x 2048\nshadowMap layer 2: clear, store";
+    "pass ShadowCascade2" [shape=box, label="4. ShadowCascade2\nshadow pass, 2048 x 2048, layers 0x00000001"];
+  }
+  subgraph "cluster 5" {
+    label="render pass: 2048 x 2048\nshadowMap layer 3: clear, store";
+    "pass ShadowCascade3" [shape=box, label="5. ShadowCascade3\nshadow pass, 2048 x 2048, layers 0x00000001"];
+  }
+  subgraph "cluster 6" {
+    label="render pass: full size, 4 samples\nsceneColor: clear, discard, resolve\nsceneDepth: clear, discard";
+    "pass DepthPrepass" [shape=box, label="6. DepthPrepass\nscene pass, full size, layers 0x00000003"];
+    "pass Opaque" [shape=box, label="7. Opaque\nscene pass, full size, layers 0x00000003"];
+    "pass Transparent" [shape=box, label="8. Transparent\nscene pass, full size, layers 0x00000003"];
+    "pass DebugLines" [shape=box, label="9. DebugLines\nscene pass, full size, layers 0x00000003"];
+  }
+  subgraph "cluster 7" {
+    label="render pass: canvas size\ncanvas: clear, store";
+    "pass Final" [shape=box, label="10. Final\nfullscreen pass, canvas size"];
+  }
+  "resource canvas" [shape=ellipse, label="canvas"];
+  "resource shadowMap" [shape=ellipse, label="shadowMap\ndepth32float, 2048 x 2048, 4 layers\nkept in texture 0: attachment, sampled"];
+  "resource lights" [shape=note, label="lights\nbuffer from outside the graph"];
+  "resource lightGrid" [shape=note, label="lightGrid\nbuffer"];
+  "resource sceneDepth" [shape=ellipse, label="sceneDepth\ndepth32float, full size, 4 samples\ntexture 1: attachment, transient"];
+  "resource sceneColor" [shape=ellipse, label="sceneColor\nrgba16float, full size, 4 samples\ntexture 2: attachment, transient\nresolves into texture 3: attachment, sampled"];
+  "resource lights" -> "pass LightClusters";
+  "pass LightClusters" -> "resource lightGrid" [label="creates"];
+  "pass ShadowCascade0" -> "resource shadowMap" [label="layer 0"];
+  "pass ShadowCascade1" -> "resource shadowMap" [label="layer 1"];
+  "pass ShadowCascade2" -> "resource shadowMap" [label="layer 2"];
+  "pass ShadowCascade3" -> "resource shadowMap" [label="layer 3"];
+  "pass DepthPrepass" -> "resource sceneDepth" [label="creates"];
+  "pass Opaque" -> "resource sceneColor" [label="creates"];
+  "pass Opaque" -> "resource sceneDepth";
+  "resource shadowMap" -> "pass Opaque";
+  "resource lightGrid" -> "pass Opaque";
+  "resource lights" -> "pass Opaque";
+  "pass Transparent" -> "resource sceneColor";
+  "pass Transparent" -> "resource sceneDepth";
+  "resource shadowMap" -> "pass Transparent";
+  "resource lightGrid" -> "pass Transparent";
+  "resource lights" -> "pass Transparent";
+  "pass DebugLines" -> "resource sceneColor";
+  "pass DebugLines" -> "resource sceneDepth";
+  "resource sceneColor" -> "pass Final";
+  "pass Final" -> "resource canvas";
+}

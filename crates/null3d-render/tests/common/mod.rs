@@ -1,6 +1,9 @@
 //! A small scene for frame builder tests: a camera, scene objects with two meshes and two
-//! materials, and a dynamic instance batch, stepped frame by frame as the engine steps them.
+//! materials, and a dynamic instance batch, stepped frame by frame as the engine steps them. The
+//! `graph` module declares the engine's render passes for the render graph tests.
 #![allow(dead_code)]
+
+pub mod graph;
 
 use null3d_core::handle::Handle;
 use null3d_core::instances::BatchTable;

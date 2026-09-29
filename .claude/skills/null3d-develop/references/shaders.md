@@ -180,7 +180,7 @@ const heat = textures.fromPass('heat');   // use it in a material or effect
 
 - `kind: 'scene'` draws objects with a camera and a layer mask, optionally with a `materialOverride`.
 - `kind: 'compute'` exists on WebGPU only; check `ctx.engine.capabilities.tier` and give WebGL2 users a fallback.
-- The graph checks every declaration: a read with no writer, two creators of one resource, and cycles are errors with codes. `render.dumpGraph()` prints the compiled graph as Graphviz DOT text.
+- The graph checks every declaration and reports each problem as an error with a code. See `concepts/render-graph` for the checks. `render.dumpGraph()` prints the compiled graph as Graphviz DOT text.
 
 ## 8. Portable WGSL rules
 
