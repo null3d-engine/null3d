@@ -2,19 +2,25 @@
 // page, three.js pages and scene-code page, several fresh runs each, then prints and saves a
 // summary. The scene-code page times the scene code both engines run, so the summary also compares
 // each engine's own work. With --sweep it runs each scene from one object up to far more than the
-// protocol's count, on both null3d paths and both three.js renderers, and reports and charts each
+// protocol's count, on the null3d paths and both three.js renderers, and reports and charts each
 // path against three.js's faster renderer and against three.js on the same API at every count.
+// With --jobs it runs the null3d pages at each job worker count instead, and reports each count.
 // From the repository root:
 //   bun run bench:run                                (S1: 5 runs of 5 s warm-up and 30 s measured)
 //   bun run bench:run -- --scenes s1,s1-static,s2 --runs 3 --seconds 10
+//   bun run bench:run -- --pages null3d-webgpu,null3d-webgpu-low
+//   bun run bench:run -- --jobs 1,2,4,8,16
 //   bun run bench:run -- --sweep --seconds 5
 //   bun run bench:run -- --browser brave
 // Options:
 //   --scenes <list>   s1, s1-static, s2; the default is s1, and every scene with --sweep
-//   --pages <list>    page kinds; the default is null3d-webgpu, threejs-webgpu, threejs-webgl,
-//                     scene-code, and every page kind with --sweep
+//   --pages <list>    page kinds; the default is null3d-webgpu, threejs-webgpu, threejs-webgl and
+//                     scene-code. With --jobs it is null3d-webgpu and null3d-webgl2, and with
+//                     --sweep every kind but null3d-compat. The kinds that end in -low run null3d
+//                     in low-latency mode
 //   --runs <n>        fresh runs of each page; the default is 5
 //   --seconds <n>     warm-up and measured time of each run; the default is the protocol's 5 and 30
+//   --jobs <list>     job worker counts, such as 1,2,4,8: runs each null3d page at each count
 //   --sweep           each scene at the object counts in SWEEP_COUNTS, one run each, instead of
 //                     the runs above
 //   --browser <name>  chrome (the default) or brave
@@ -22,27 +28,30 @@
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { type Browser, chromium } from '@playwright/test';
+import { jobWorkersProblem } from '../tests/lib/engine-checks.ts';
 import { pageResult } from '../tests/lib/page-result.ts';
 import { runName } from '../tests/lib/runs.ts';
 import { REPO_ROOT, startServer } from '../tests/lib/server.ts';
 import {
 	BENCH_PAGE_KINDS,
 	type BenchPageKind,
+	isNull3dPage,
+	JOBS_PAGES,
 	PARITY_SCENES,
 	type ParityScene,
 	pagePath,
+	readJobCounts,
 	SCENE_CODE,
 } from './lib/parity';
 import {
 	type BenchResult,
+	benchReport,
 	type ChartSeries,
-	comparisonLines,
 	lineChartSvg,
 	ms,
 	type SummaryRow,
 	type SweepPoint,
 	summarizeRuns,
-	summaryTable,
 	sweepReport,
 } from './lib/report';
 import { MEASURE_SECONDS, S2_NODES_PER_TREE, S2_ROOTS, WARMUP_SECONDS } from './scenes/spec';
@@ -72,6 +81,8 @@ export interface BenchOptions {
 	pages: BenchPageKind[] | null;
 	runs: number;
 	seconds: number | null;
+	/** Job worker counts, at each of which the null3d pages run; null for the engine's own count. */
+	jobs: number[] | null;
 	sweep: boolean;
 	browser: 'chrome' | 'brave';
 }
@@ -94,6 +105,7 @@ export function parseBenchArgs(args: readonly string[]): BenchOptions {
 		pages: null,
 		runs: 5,
 		seconds: null,
+		jobs: null,
 		sweep: false,
 		browser: 'chrome',
 	};
@@ -104,6 +116,7 @@ export function parseBenchArgs(args: readonly string[]): BenchOptions {
 		else if (arg === '--pages') options.pages = list(value(), BENCH_PAGE_KINDS, '--pages');
 		else if (arg === '--runs') options.runs = Number(value());
 		else if (arg === '--seconds') options.seconds = Number(value());
+		else if (arg === '--jobs') options.jobs = readJobCounts(value());
 		else if (arg === '--sweep') options.sweep = true;
 		else if (arg === '--browser')
 			options.browser = list(value(), ['chrome', 'brave'], '--browser')[0] as 'chrome';
@@ -113,6 +126,12 @@ export function parseBenchArgs(args: readonly string[]): BenchOptions {
 		throw new Error('--runs: use a whole number above 0');
 	if (options.seconds !== null && !(options.seconds > 0))
 		throw new Error('--seconds: use a number above 0');
+	if (options.jobs && options.sweep) throw new Error('use --jobs or --sweep, not both');
+	const other = options.jobs && options.pages?.filter((kind) => !isNull3dPage(kind));
+	if (other && other.length > 0)
+		throw new Error(
+			`--jobs: job workers belong to null3d pages only; leave out ${other.join(', ')}`,
+		);
 	return options;
 }
 
@@ -136,52 +155,75 @@ async function runProtocol(
 	dir: string,
 ): Promise<string> {
 	const seconds = options.seconds;
-	const switches = seconds === null ? '' : `seconds=${seconds}`;
 	const timeoutMs =
 		((seconds ?? MEASURE_SECONDS) + (seconds ?? WARMUP_SECONDS)) * 1000 + START_MARGIN_MS;
 	const rows: SummaryRow[] = [];
 	const failures: string[] = [];
+	const pages = options.pages ?? (options.jobs ? JOBS_PAGES : DEFAULT_PAGES);
 	for (const scene of options.scenes ?? ['s1']) {
-		for (const kind of options.pages ?? DEFAULT_PAGES) {
-			const results: BenchResult[] = [];
-			for (let run = 1; run <= options.runs; run++) {
-				const result = await runPage(
-					browser,
-					`${baseUrl}${pagePath(scene, kind, switches)}`,
-					timeoutMs,
-				);
-				writeFileSync(
-					join(dir, `${scene}-${kind}-${run}.json`),
-					JSON.stringify(result, null, '\t'),
-				);
-				if (result.ok) results.push(result);
-				else failures.push(`${scene} ${kind} run ${run}: ${result.error}`);
-				console.log(
-					`${scene} ${kind} run ${run}: ${result.ok ? `${ms(result.cpuMs.median)} ms` : `failed: ${result.error}`}`,
-				);
+		for (const jobs of options.jobs ?? [undefined]) {
+			const switches = [
+				...(seconds === null ? [] : [`seconds=${seconds}`]),
+				...(jobs === undefined ? [] : [`jobs=${jobs}`]),
+			].join('&');
+			for (const kind of pages) {
+				const name = jobs === undefined ? `${scene}-${kind}` : `${scene}-${kind}-jobs${jobs}`;
+				const results: BenchResult[] = [];
+				for (let run = 1; run <= options.runs; run++) {
+					const result = await runPage(
+						browser,
+						`${baseUrl}${pagePath(scene, kind, switches)}`,
+						timeoutMs,
+					);
+					writeFileSync(join(dir, `${name}-${run}.json`), JSON.stringify(result, null, '\t'));
+					// A page that ran with another job worker count would put its times under the wrong count.
+					const problem = result.ok
+						? jobWorkersProblem(result.mode?.jobWorkers, jobs)
+						: (result.error ?? 'the page failed without a message');
+					if (problem === undefined) results.push(result);
+					else failures.push(`${name} run ${run}: ${problem}`);
+					console.log(
+						`${name} run ${run}: ${problem === undefined ? `${ms(result.cpuMs.median)} ms` : `failed: ${problem}`}`,
+					);
+				}
+				if (results.length > 0) rows.push({ scene, kind, jobs, summary: summarizeRuns(results) });
 			}
-			if (results.length > 0) rows.push({ scene, kind, summary: summarizeRuns(results) });
 		}
 	}
-	const lines = [summaryTable(rows), '', ...comparisonLines(rows)];
+	const lines = benchReport(rows);
 	for (const failure of failures) lines.push(`Failed: ${failure}`);
 	writeFileSync(join(dir, 'summary.json'), JSON.stringify(rows, null, '\t'));
 	return lines.join('\n');
 }
 
-/** Every page kind: a sweep compares both null3d paths with both three.js renderers. */
+/**
+ * The page kinds a sweep runs: both null3d paths in both latency modes, both three.js renderers
+ * and the scene code.
+ */
 const SWEEP_PAGES: BenchPageKind[] = [
 	'null3d-webgpu',
 	'null3d-webgl2',
+	'null3d-webgpu-low',
+	'null3d-webgl2-low',
 	'threejs-webgpu',
 	'threejs-webgl',
 	SCENE_CODE,
 ];
 
-/** Chart lines of a sweep, by page kind or by the name of a derived series. */
+/** Chart lines of a sweep, by page kind: low-latency mode dashed, in its path's color. */
 const SWEEP_LINES: Record<string, Omit<ChartSeries, 'points'>> = {
 	'null3d-webgpu': { name: 'null3d WebGPU, whole frame', color: '#2a6fdb' },
 	'null3d-webgl2': { name: 'null3d WebGL2, whole frame', color: '#18a058' },
+	'null3d-webgpu-low': {
+		name: 'null3d WebGPU, low latency, whole frame',
+		color: '#2a6fdb',
+		dashed: true,
+	},
+	'null3d-webgl2-low': {
+		name: 'null3d WebGL2, low latency, whole frame',
+		color: '#18a058',
+		dashed: true,
+	},
 	'threejs-webgpu': { name: 'three.js WebGPU, whole frame', color: '#e8554e' },
 	'threejs-webgl': { name: 'three.js WebGL, whole frame', color: '#f2a13e' },
 	[SCENE_CODE]: { name: 'scene code both engines run', color: '#9a9a9a' },
@@ -247,7 +289,7 @@ async function runSweep(
 
 async function main(): Promise<void> {
 	const options = parseBenchArgs(process.argv.slice(2));
-	const run = runName(options.sweep ? 'sweep' : 'bench');
+	const run = runName(options.sweep ? 'sweep' : options.jobs ? 'jobs' : 'bench');
 	const dir = join(REPO_ROOT, 'target/bench', run);
 	mkdirSync(dir, { recursive: true });
 	const server = await startServer();

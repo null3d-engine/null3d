@@ -23,15 +23,31 @@ const PAGES: { kind: PageKind; renderer: string }[] = [
 	{ kind: 'null3d-webgpu', renderer: 'null3d' },
 	{ kind: 'null3d-webgl2', renderer: 'null3d' },
 	{ kind: 'null3d-compat', renderer: 'null3d' },
+	{ kind: 'null3d-webgpu-low', renderer: 'null3d' },
+	{ kind: 'null3d-webgl2-low', renderer: 'null3d' },
 ];
 
-/** The GPU tier of each null3D page, and the tier the engine reports when it draws with it. */
-const NULL3D_TIERS = new Map<PageKind, { tier: Tier; reported: string }>(
-	TIERS.map((tier) => [
+interface Null3dPage {
+	/** The GPU tier whose reference images the page's hold frames must match. */
+	tier: Tier;
+	/** The tier that the engine reports when it runs the page. */
+	reported: string;
+	/** The latency mode that the engine reports when it runs the page. */
+	latency: 'pipelined' | 'low';
+}
+
+/**
+ * Each null3D page's GPU tier and latency mode. Low latency changes when a frame draws, not what
+ * it draws, so its pages match the references of their tier.
+ */
+const NULL3D_PAGES = new Map<PageKind, Null3dPage>([
+	...TIERS.map((tier): [PageKind, Null3dPage] => [
 		TIER_PAIRS[tier].candidate,
-		{ tier, reported: tier === 'compat' ? 'webgpu-compat' : tier },
+		{ tier, reported: tier === 'compat' ? 'webgpu-compat' : tier, latency: 'pipelined' },
 	]),
-);
+	['null3d-webgpu-low', { tier: 'webgpu', reported: 'webgpu', latency: 'low' }],
+	['null3d-webgl2-low', { tier: 'webgl2', reported: 'webgl2', latency: 'low' }],
+]);
 /**
  * The reference images of the null3D hold frames: one set per test environment, as a software GPU
  * and a real one differ at object edges, and in each set one folder per GPU tier.
@@ -64,6 +80,8 @@ interface Report {
 	scene: string;
 	renderer: string;
 	tier?: string;
+	/** null3D pages: the engine's mode. */
+	mode?: { latency: string };
 	n: number;
 }
 
@@ -161,10 +179,11 @@ for (const scene of SCENES) {
 				);
 			}
 
-			const null3d = NULL3D_TIERS.get(kind);
+			const null3d = NULL3D_PAGES.get(kind);
 			if (null3d) {
-				// A page that fell back to another tier would compare the wrong image.
+				// A page that fell back to another tier or mode would pass for the wrong one.
 				expect(result.tier).toBe(null3d.reported);
+				expect(result.mode?.latency).toBe(null3d.latency);
 				compareToReference(scene, null3d.tier, pixels, width, height, {
 					referenceDir: join(REFERENCE_DIR, testInfo.project.name),
 					failureDir: FAILURE_DIR,

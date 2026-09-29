@@ -8,13 +8,20 @@
 //   bun tests/real-browsers.ts --allow-no-webgpu --android chrome,brave --lan ipad-safari,ipad-brave
 //   bun tests/real-browsers.ts --plan scale --allow-no-webgpu --android chrome
 //   bun tests/real-browsers.ts --plan bench --allow-no-webgpu --android chrome --n 250000
+//   bun tests/real-browsers.ts --plan bench --allow-no-webgpu --android chrome --n 300000 --jobs 2,4,6,8
+//   bun tests/real-browsers.ts --plan memory --android chrome --lan ipad-safari
 // Options:
-//   --plan <name>       the plan to run: checks (the default), parity, bench, or scale, which finds
-//                       the largest S1 count at which three.js holds 30 frames per second
+//   --plan <name>       the plan to run: checks (the default), parity, bench, memory, which loads
+//                       the engine page 20 times at each shared memory maximum from 256 to 4096 MiB,
+//                       or scale, which finds the largest S1 count at which three.js holds 30
+//                       frames per second
 //   --allow-no-webgpu   a browser without WebGPU skips the WebGPU pages instead of failing them
 //   --allow-no-webgl2   a browser without WebGL2 skips the WebGL2 pages instead of failing them
 //   --n <count>         the instance count of the bench plan's pages
-//   --runs <count>      fresh runs of each bench plan page; the default is the protocol's 5
+//   --runs <count>      fresh runs of each bench plan page, the protocol's 5 by default, or loads
+//                       at each maximum of the memory plan, 20 by default
+//   --jobs <list>       job worker counts, such as 2,4,6,8: the bench plan then runs null3D's two
+//                       GPU paths at each count instead of its usual pages
 //   --android <list>    browsers on the Android phone: chrome, chrome-beta, brave, firefox, samsung
 //   --lan <list>        names of runner pages that wait on the local network, as device-browser,
 //                       such as ipad-safari; pages on one device take turns
@@ -23,23 +30,24 @@ import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
 	parseStoredBaselines,
+	readJobCounts,
 	STORED_BASELINES_FILE,
 	type StoredBaselines,
 } from '../bench/lib/parity.ts';
-import {
-	type BenchResult,
-	comparisonLines,
-	type SummaryRow,
-	summarizeRuns,
-	summaryTable,
-} from '../bench/lib/report.ts';
 import { forwardPort, openOnPhone, phoneModel } from './lib/adb.ts';
 import { HeatLog, type HeatSample, type HeatSummary, heatText, summarizeHeat } from './lib/heat.ts';
-import { type Check, judge, type MissingAllowed, NONE_MISSING, PLANS } from './lib/plans.ts';
+import {
+	benchSummary,
+	judge,
+	type MissingAllowed,
+	memorySummary,
+	NO_RESULT,
+	NONE_MISSING,
+	PLANS,
+} from './lib/plans.ts';
 import { RUNS_DIR } from './lib/report-collector.ts';
 import {
 	type ItemResult,
-	type PlanItem,
 	type Runner,
 	readDevice,
 	readResult,
@@ -71,8 +79,10 @@ export interface Options {
 	missing: MissingAllowed;
 	/** The instance count of the bench plan's pages, when given. */
 	count?: number;
-	/** Fresh runs of each bench plan page, when given. */
+	/** Fresh runs of each bench plan page, or loads at each memory maximum, when given. */
 	runs?: number;
+	/** Job worker counts for the bench plan, when given. */
+	jobs?: number[];
 	/** macOS app names, such as Safari. */
 	mac: string[];
 	android: string[];
@@ -80,7 +90,7 @@ export interface Options {
 }
 
 const USAGE =
-	'usage: bun tests/real-browsers.ts [--plan <name>] [--allow-no-webgpu] [--allow-no-webgl2] [--n <count>] [--runs <count>] [--android <browsers>] [--lan <runners>] [<macOS app>...]';
+	'usage: bun tests/real-browsers.ts [--plan <name>] [--allow-no-webgpu] [--allow-no-webgl2] [--n <count>] [--runs <count>] [--jobs <counts>] [--android <browsers>] [--lan <runners>] [<macOS app>...]';
 
 /** The plans the runner knows: the fixed plans, and the phone-scale search. */
 const PLAN_NAMES = [...Object.keys(PLANS), SCALE_PLAN];
@@ -101,6 +111,7 @@ export function parseArgs(args: readonly string[]): Options {
 		else if (arg === '--allow-no-webgl2') missing.webgl2 = true;
 		else if (arg === '--n') options.count = wholeNumber(arg, args[++i]);
 		else if (arg === '--runs') options.runs = wholeNumber(arg, args[++i]);
+		else if (arg === '--jobs') options.jobs = readJobCounts(args[++i]);
 		else if (arg === '--plan') options.plan = args[++i] ?? '';
 		else if (arg === '--android') options.android = list(args[++i]);
 		else if (arg === '--lan') options.lan = list(args[++i]);
@@ -109,6 +120,8 @@ export function parseArgs(args: readonly string[]): Options {
 	}
 	if (!PLAN_NAMES.includes(options.plan))
 		throw new Error(`no plan named ${options.plan}; plans: ${PLAN_NAMES.join(', ')}`);
+	if (options.jobs && options.plan !== 'bench')
+		throw new Error(`--jobs works with --plan bench only\n${USAGE}`);
 	return options;
 }
 
@@ -140,27 +153,6 @@ function runnersOf(options: Options): LaunchedRunner[] {
 	for (const name of options.lan.map(slug))
 		runners.push({ name, device: name.split('-')[0] as string, launch: { kind: 'lan' } });
 	return runners;
-}
-
-/** The benchmark summary of one runner's results, or undefined when the plan has no benchmarks. */
-function benchSummary(
-	items: readonly PlanItem<Check>[],
-	resultOf: (id: string) => ItemResult | undefined,
-): string | undefined {
-	const groups = new Map<string, { scene: string; kind: string; results: BenchResult[] }>();
-	for (const item of items) {
-		if (item.check.kind !== 'bench') continue;
-		const { scene, page } = item.check;
-		const result = resultOf(item.id);
-		const group = groups.get(`${scene} ${page}`) ?? { scene, kind: page, results: [] };
-		if (result?.ok) group.results.push(result as unknown as BenchResult);
-		groups.set(`${scene} ${page}`, group);
-	}
-	if (groups.size === 0) return undefined;
-	const rows: SummaryRow[] = [...groups.values()]
-		.filter((g) => g.results.length > 0)
-		.map(({ scene, kind, results }) => ({ scene, kind, summary: summarizeRuns(results) }));
-	return [summaryTable(rows), '', ...comparisonLines(rows)].join('\n');
 }
 
 /** Time a macOS app may take to open the runner page before its turn counts as failed. */
@@ -257,7 +249,10 @@ async function runPlan(
 ): Promise<number> {
 	const makeItems = PLANS[options.plan] as NonNullable<(typeof PLANS)[string]>;
 	const run = runName(options.plan);
-	const plan = writePlan(run, makeItems({ count: options.count, runs: options.runs }));
+	const plan = writePlan(
+		run,
+		makeItems({ count: options.count, runs: options.runs, jobs: options.jobs }),
+	);
 	const heatReadings = new Map<string, HeatSample[]>();
 	try {
 		for (const batch of turnBatches(runners)) {
@@ -314,9 +309,7 @@ async function runPlan(
 		};
 		for (const item of plan.items) {
 			const result = readResult(run, name, item.id);
-			const verdict = result
-				? judge(item.check, result, options.missing, context)
-				: ['no result; the runner stopped before this page'];
+			const verdict = result ? judge(item.check, result, options.missing, context) : [NO_RESULT];
 			if (verdict === 'skip') {
 				counts.skip++;
 				console.log(`skip  ${name}: ${item.id}, no WebGPU`);
@@ -336,8 +329,9 @@ async function runPlan(
 	}
 	writeFileSync(join(RUNS_DIR, run, 'summary.json'), JSON.stringify(summary, null, '\t'));
 	for (const { name } of runners) {
-		const table = benchSummary(plan.items, (id) => readResult(run, name, id));
-		if (table) console.log(`\n${name}\n${table}\n`);
+		const resultOf = (id: string) => readResult(run, name, id);
+		for (const table of [benchSummary(plan.items, resultOf), memorySummary(plan.items, resultOf)])
+			if (table) console.log(`\n${name}\n${table}\n`);
 		const heat = wholeHeatText(heatReadings.get(name) ?? []);
 		if (heat) console.log(`${name}, heat through the run: ${heat}`);
 	}

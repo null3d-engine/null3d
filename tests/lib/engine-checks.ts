@@ -7,6 +7,8 @@ export interface EngineMode {
 	build: 'threaded' | 'single';
 	latency: 'pipelined' | 'low' | 'single';
 	renderThread: 'render-worker' | 'sketch-worker' | 'main';
+	/** The job workers that the switches ask for with `jobs=`; undefined leaves the count to the device. */
+	jobWorkers?: number;
 }
 
 export const ENGINE_MODES: readonly EngineMode[] = [
@@ -85,6 +87,18 @@ function expectedThreads(mode: EngineMode): string[] {
 	return ['sketch-worker', mode.renderThread];
 }
 
+/**
+ * Why an engine's job worker count is wrong when a page asked for `asked` with `?jobs=`, or
+ * undefined when the page asked for none or the engine started that many.
+ */
+export function jobWorkersProblem(
+	started: number | undefined,
+	asked: number | undefined,
+): string | undefined {
+	if (asked === undefined || started === asked) return undefined;
+	return `started ${started ?? 'no'} job workers, not the ${asked} that ?jobs= asked for`;
+}
+
 /** What is wrong with a result of the engine page, run in a mode on a GPU tier; empty when nothing is. */
 export function engineProblems(result: EngineResult, mode: EngineMode, tier: string): string[] {
 	const problems: string[] = [];
@@ -95,6 +109,8 @@ export function engineProblems(result: EngineResult, mode: EngineMode, tier: str
 		problems.push(`drew on ${result.mode.renderThread}, expected ${mode.renderThread}`);
 	if (result.mode.jobWorkers >= 1 !== (mode.build === 'threaded'))
 		problems.push(`started ${result.mode.jobWorkers} job workers`);
+	const jobs = jobWorkersProblem(result.mode.jobWorkers, mode.jobWorkers);
+	if (jobs) problems.push(jobs);
 	if (!result.capabilities.tier.startsWith(tier)) problems.push(`used ${result.capabilities.tier}`);
 	if (stats.frames <= MIN_FRAMES) problems.push(`measured only ${stats.frames} frames`);
 	if (stats.intervalMs.median >= MAX_MEDIAN_INTERVAL_MS)

@@ -1,7 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 import {
 	type BenchResult,
+	benchReport,
+	busiestThread,
 	comparisonLines,
+	jobsTable,
 	lineChartSvg,
 	median,
 	niceStep,
@@ -13,6 +16,7 @@ import {
 	summarizeRuns,
 	summaryTable,
 	sweepReport,
+	threadOwnWorkMs,
 } from './report';
 
 function result(cpu: number, stats = false): BenchResult {
@@ -23,7 +27,7 @@ function result(cpu: number, stats = false): BenchResult {
 		n: 1000,
 		frames: 100,
 		cpuMs: { median: cpu, p95: cpu * 1.2, p99: cpu * 1.5, mean: cpu },
-		intervalMs: { median: 16.7 },
+		intervalMs: { median: 16.7, p95: 20, p99: 33.4 },
 		stats: stats
 			? {
 					cpuMsAllThreads: { median: cpu * 2 },
@@ -60,14 +64,47 @@ describe('benchmark reports', () => {
 		expect(summarizeRuns([result(5)]).allThreadsMs).toBeUndefined();
 	});
 
-	test('report the frames a page drew per second, not its median frame interval', () => {
+	test('report the frames a page drew per second, and the pacing of its frame intervals', () => {
 		// Late frames keep the display's beat in their timestamps: the median interval says 60 fps.
-		const drawn = [43.7, 40.6, 38.9].map((fps) => ({ ...result(25), presentedFps: fps }));
+		const intervals = [
+			{ median: 16.7, p95: 18, p99: 40 },
+			{ median: 16.7, p95: 25, p99: 33.4 },
+			{ median: 16.7, p95: 20, p99: 30 },
+		];
+		const drawn = [43.7, 40.6, 38.9].map((fps, run) => ({
+			...result(25),
+			presentedFps: fps,
+			intervalMs: intervals[run] as BenchResult['intervalMs'],
+		}));
 		const summary = summarizeRuns(drawn);
 		expect(summary.presentedFps).toBe(40.6);
+		expect([summary.intervalP95Ms, summary.intervalP99Ms]).toEqual([20, 33.4]);
 		const table = summaryTable([{ scene: 's1', kind: 'threejs-webgl', summary }]).split('\n');
-		expect(table[0]).not.toContain('interval');
-		expect(table[2]).toContain('| 40.6 / n/a |');
+		expect(table[0]).toContain('| Presented / finished fps | Frame interval p95 / p99 ms |');
+		expect(table[0]).not.toContain('median interval');
+		expect(table[2]).toContain('| 40.6 / n/a | 20.00 / 33.40 |');
+	});
+
+	test('name the busiest thread in each latency mode, and the main thread for three.js', () => {
+		const withThreads = (threadsMs: Record<string, number>): RunSummary => ({
+			...summarizeRuns([result(Math.max(...Object.values(threadsMs)))]),
+			threadsMs,
+		});
+		// Pipelined, a heavy draw: the render worker limits the frame.
+		const pipelined = withThreads({ 'sketch-worker': 1.2, 'render-worker': 2.1, 'job-0': 0.3 });
+		expect(busiestThread(pipelined)).toEqual({ thread: 'render-worker', ms: 2.1 });
+		// Low latency: the sketch worker draws too, and no render worker exists.
+		const low = withThreads({ 'sketch-worker': 3.1, 'job-0': 0.3 });
+		expect(busiestThread(low)).toEqual({ thread: 'sketch-worker', ms: 3.1 });
+		expect(busiestThread(summarizeRuns([result(4.2)]))).toEqual({ thread: 'main', ms: 4.2 });
+		const table = summaryTable([
+			{ scene: 's1', kind: 'null3d-webgpu', summary: pipelined },
+			{ scene: 's1', kind: 'null3d-webgpu-low', summary: low },
+		]).split('\n');
+		expect(table[0]).toContain('| p95 | Busiest thread, ms | Own work, busiest thread |');
+		expect(table[2]).toContain('| render-worker 2.10 |');
+		expect(table[3]).toContain('| null3d-webgpu-low |');
+		expect(table[3]).toContain('| sketch-worker 3.10 |');
 	});
 
 	test("compare null3d with three.js's faster renderer", () => {
@@ -138,8 +175,48 @@ describe('benchmark reports', () => {
 		]);
 		const table = summaryTable(rows).split('\n');
 		expect(table[0]).toContain('| Own work, busiest thread |');
-		expect(table[2]).toContain('| 0.16 |');
-		expect(table[5]).toContain('| scene-code | 1 | 2.40 (2.40 to 2.40) | 2.88 | n/a |');
+		expect(table[2]).toContain('| sketch-worker 2.54 | 0.16 |');
+		expect(table[5]).toContain('| scene-code | 1 | 2.40 (2.40 to 2.40) | 2.88 | main 2.40 | n/a |');
+		expect(benchReport(rows)).toEqual([summaryTable(rows), '', ...comparisonLines(rows)]);
+	});
+
+	test('compare the low-latency pages with three.js like the pipelined ones', () => {
+		const low = null3dRun({ 'sketch-worker': 2.7, 'job-0': 0.1 }, 2.38);
+		const rows: SummaryRow[] = [
+			{ scene: 's1', kind: 'null3d-webgl2-low', summary: low },
+			{ scene: 's1', kind: 'threejs-webgl', summary: summarizeRuns([result(3.2)]) },
+			{ scene: 's1', kind: 'scene-code', summary: summarizeRuns([result(2.4)]) },
+		];
+		expect(comparisonLines(rows)).toEqual([
+			"s1: null3d on WebGL2 with low latency takes 84% of the CPU time per frame of three.js's faster renderer, WebGL (2.70 ms against 3.20 ms).",
+			"s1: null3d's own work on WebGL2 with low latency, on its busiest thread and apart from the sketch's code, is 40% of that of three.js's faster renderer, WebGL (0.32 ms against 0.80 ms); three.js's is its frame less the scene code timed alone (2.40 ms).",
+		]);
+	});
+
+	test('report each job worker count: the whole frame, the busiest thread and the own work', () => {
+		// More job workers take the parallel loops off the sketch worker.
+		const counts: [number, Record<string, number>][] = [
+			[1, { 'sketch-worker': 3.1, 'render-worker': 0.4, 'job-0': 0.9 }],
+			[2, { 'sketch-worker': 2.8, 'render-worker': 0.4, 'job-0': 0.6, 'job-1': 0.6 }],
+		];
+		const rows: SummaryRow[] = counts.map(([jobs, threads]) => ({
+			scene: 's1',
+			kind: 'null3d-webgl2',
+			jobs,
+			summary: null3dRun(threads, 2.3),
+		}));
+		expect(threadOwnWorkMs(rows[0]?.summary as RunSummary, 'sketch-worker')).toBeCloseTo(0.8);
+		expect(threadOwnWorkMs(rows[0]?.summary as RunSummary, 'main')).toBeNull();
+		const table = jobsTable(rows).split('\n');
+		expect(table[0]).toBe(
+			"| Scene | Job workers | Page | Runs | CPU ms per frame, median (lowest to highest run) | Busiest thread, ms | Own work, busiest thread | Sketch worker's own work |",
+		);
+		expect(table.slice(2)).toEqual([
+			'| s1 | 1 | null3d-webgl2 | 1 | 3.10 (3.10 to 3.10) | sketch-worker 3.10 | 0.90 | 0.80 |',
+			'| s1 | 2 | null3d-webgl2 | 1 | 2.80 (2.80 to 2.80) | sketch-worker 2.80 | 0.60 | 0.50 |',
+		]);
+		// A run with job worker counts reports them instead of comparing engines.
+		expect(benchReport(rows)).toEqual([jobsTable(rows)]);
 	});
 
 	test('sweep a scene with tables of both measures and verdicts that name slower counts', () => {
@@ -175,6 +252,26 @@ describe('benchmark reports', () => {
 		expect(lines).toContain(
 			'### s1-static: own work on the busiest thread, apart from the scene code, ms',
 		);
+		// Only the null3d paths that ran get columns and verdicts: here WebGPU in low-latency mode.
+		const low = sweepReport('s1', [
+			{
+				n: 1,
+				summaries: {
+					'null3d-webgpu-low': null3dRun({ 'sketch-worker': 0.2 }, 0),
+					'threejs-webgpu': summarizeRuns([result(0.27)]),
+					'threejs-webgl': summarizeRuns([result(0.05)]),
+				},
+			},
+		]);
+		expect(low[2]).toBe(
+			"| Objects | null3d-webgpu-low | threejs-webgpu | threejs-webgl | WebGPU with low latency against three.js's faster | WebGPU with low latency against three.js WebGPU |",
+		);
+		expect(low[4]).toBe('| 1 | 0.20 | 0.27 | 0.05 | 400% | 74% |');
+		expect(low.slice(6, 8)).toEqual([
+			"s1, whole frame: null3d on WebGPU with low latency is not faster than three.js's faster renderer at these object counts: 1 (400%).",
+			"s1, whole frame: null3d on WebGPU with low latency is faster than three.js's WebGPU renderer at every count.",
+		]);
+		expect(low.join('\n')).not.toContain('WebGL2');
 	});
 
 	test('draw a chart with one line per series and escaped labels', () => {

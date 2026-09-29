@@ -10,6 +10,8 @@ import {
 	gpuApiOf,
 	type HoldFrame,
 	holdPagePath,
+	isNull3dPage,
+	JOBS_PAGES,
 	MAX_DIFFERENT_PERCENT,
 	PAGE_KINDS,
 	PIXEL_THRESHOLD,
@@ -19,6 +21,7 @@ import {
 	parseStoredBaselines,
 	passesWithBaseline,
 	type RgbaImage,
+	readJobCounts,
 	TIER_PAIRS,
 	TIERS,
 } from './parity';
@@ -257,8 +260,41 @@ describe('the pages', () => {
 			'null3d-webgl2',
 			'null3d-webgpu',
 			'null3d-compat',
+			'null3d-webgpu-low',
+			'null3d-webgl2-low',
 		]);
 		expect(TIERS.map(gpuApiOf)).toEqual(['webgpu', 'webgpu', 'webgl2']);
+	});
+
+	test('runs the low-latency pages on the pipelined pages with the latency switch', () => {
+		expect(pagePath('s1', 'null3d-webgpu-low', 'seconds=2')).toBe(
+			'/bench/pages/null3d/s1.html?gpu=webgpu&latency=low&seconds=2',
+		);
+		expect(pagePath('s2', 'null3d-webgl2-low')).toBe(
+			'/bench/pages/null3d/s2.html?gpu=webgl2&latency=low',
+		);
+		// Low latency changes when a frame draws, not what it draws, so parity needs no pair for it.
+		const candidates = Object.values(TIER_PAIRS).map(({ candidate }) => candidate);
+		expect(candidates).not.toContain('null3d-webgpu-low');
+		expect(candidates).not.toContain('null3d-webgl2-low');
+	});
+
+	test('sweeps job worker counts on the null3D pages only', () => {
+		expect(JOBS_PAGES).toEqual(['null3d-webgpu', 'null3d-webgl2']);
+		expect(PAGE_KINDS.filter(isNull3dPage)).toEqual([
+			'null3d-webgl2',
+			'null3d-webgpu',
+			'null3d-compat',
+			'null3d-webgpu-low',
+			'null3d-webgl2-low',
+		]);
+		expect(isNull3dPage('scene-code')).toBe(false);
+		expect(readJobCounts('1,2,4,8,16')).toEqual([1, 2, 4, 8, 16]);
+		expect(readJobCounts('4,2,4')).toEqual([4, 2]);
+		for (const text of [undefined, '', '0', '2,x', '1.5', '-1'])
+			expect(() => readJobCounts(text)).toThrow(
+				'--jobs: use a comma-separated list of whole numbers above 0, such as 1,2,4,8',
+			);
 	});
 
 	test('names the image files after the scene and the two pages', () => {

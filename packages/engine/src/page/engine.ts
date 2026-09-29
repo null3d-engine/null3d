@@ -322,7 +322,7 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 		switches.threads;
 	const build: Build = threaded ? 'threaded' : 'single';
 	let coreMs = 0;
-	const coreLoad = loadCore(build).then((loaded) => {
+	const coreLoad = loadCore(build, switches.memoryMiB).then((loaded) => {
 		coreMs = performance.now() - startedAt;
 		return loaded;
 	});
@@ -350,7 +350,9 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 		throw new EngineError('E1301', `no usable GPU path for ?gpu=${wanted} in this browser.`);
 	const { tier, forceCompat } = choice;
 
-	const jobWorkers = threaded ? Math.max(1, report.hardwareConcurrency - RESERVED_CORES) : 0;
+	const jobWorkers = threaded
+		? (switches.jobs ?? Math.max(1, report.hardwareConcurrency - RESERVED_CORES))
+		: 0;
 	const control = createControlBuffer(threaded);
 	const metrics = createMetricsBuffer(threaded, jobWorkers);
 	const { slots } = controlViews(control);

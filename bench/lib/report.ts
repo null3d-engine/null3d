@@ -1,6 +1,6 @@
 // Benchmark results: the summary of repeated runs of one page, the comparison of null3d with
-// three.js's faster renderer, and a line chart as SVG. Everything here is pure, so the benchmark
-// command and the runner's results share it.
+// three.js's faster renderer, the table of a sweep of job worker counts, and a line chart as SVG.
+// Everything here is pure, so the benchmark command and the runner's results share it.
 //
 // A frame's CPU time includes the sketch's code, which moves the scene alike in every engine's version
 // of a scene. A report also compares each engine's own work: the CPU time its own code takes on its
@@ -21,9 +21,12 @@ export interface BenchResult {
 	cpuMs: { median: number; p95: number; p99: number; mean: number };
 	/** three.js pages: the part of each frame that the scene update took. */
 	updateMs?: { median: number };
-	intervalMs: { median: number };
+	/** Time between presented frames. */
+	intervalMs: { median: number; p95: number; p99: number };
 	/** Pages that time their own frames: frames per second drawn. null3d pages report it in `stats`. */
 	presentedFps?: number;
+	/** null3d pages: how the engine ran, such as how many job workers it started. */
+	mode?: { jobWorkers: number };
 	stats?: {
 		cpuMsAllThreads: { median: number };
 		gpuMs: { median: number } | null;
@@ -46,6 +49,10 @@ export interface RunSummary {
 	/** The median of the runs' median CPU times, and their lowest and highest. */
 	cpuMs: { median: number; min: number; max: number };
 	cpuP95Ms: number;
+	/** Pacing: the median of the runs' 95th percentiles of the time between presented frames. */
+	intervalP95Ms: number;
+	/** Pacing: the median of the runs' 99th percentiles of the time between presented frames. */
+	intervalP99Ms: number;
 	/** The scene update's share of a frame: the sketch's update phase for null3d. */
 	updateMs?: number;
 	/** Frames per second drawn: each run's frames over the time they took. */
@@ -82,6 +89,8 @@ export function summarizeRuns(results: readonly BenchResult[]): RunSummary {
 		runs: results.length,
 		cpuMs: { median: median(cpu), min: Math.min(...cpu), max: Math.max(...cpu) },
 		cpuP95Ms: median(results.map((r) => r.cpuMs.p95)),
+		intervalP95Ms: median(results.map((r) => r.intervalMs.p95)),
+		intervalP99Ms: median(results.map((r) => r.intervalMs.p99)),
 	};
 	const known = (values: (number | null | undefined)[]) =>
 		values.filter((v): v is number => v != null);
@@ -146,9 +155,31 @@ export function ownWorkMs(summary: RunSummary, sceneCodeMs: number): number {
 	const threads = summary.threadsMs;
 	if (!threads) return Math.max(0, summary.cpuMs.median - sceneCodeMs);
 	let busiest = 0;
-	for (const [thread, time] of Object.entries(threads))
-		busiest = Math.max(busiest, time - (summary.phases?.[`${thread}.update`] ?? 0));
+	for (const thread of Object.keys(threads))
+		busiest = Math.max(busiest, threadOwnWorkMs(summary, thread) ?? 0);
 	return busiest;
+}
+
+/**
+ * A null3d thread's own work per frame: its median CPU time less the sketch's update phase on it.
+ * Null when the run has no thread of that name.
+ */
+export function threadOwnWorkMs(summary: RunSummary, thread: string): number | null {
+	const time = summary.threadsMs?.[thread];
+	return time === undefined ? null : time - (summary.phases?.[`${thread}.update`] ?? 0);
+}
+
+/**
+ * The thread with the most CPU time per frame, by its median over the runs, and that time. The
+ * engine reports each thread's time with every role that ran on it, so in low-latency mode the
+ * sketch worker's time includes the drawing. A page without per-thread times, such as three.js's,
+ * runs on the page's main thread.
+ */
+export function busiestThread(summary: RunSummary): { thread: string; ms: number } {
+	const threads = Object.entries(summary.threadsMs ?? {});
+	if (threads.length === 0) return { thread: 'main', ms: summary.cpuMs.median };
+	const [thread, ms] = threads.reduce((busiest, next) => (next[1] > busiest[1] ? next : busiest));
+	return { thread, ms };
 }
 
 /** null3d's value of `measure` as a share of three.js's lowest; null when a side is missing or zero. */
@@ -197,6 +228,8 @@ export interface SummaryRow {
 	scene: string;
 	/** The page kind, such as null3d-webgpu. */
 	kind: string;
+	/** The job workers that the page asked for with `?jobs=`, or undefined for the engine's own count. */
+	jobs?: number;
 	summary: RunSummary;
 }
 
@@ -207,11 +240,21 @@ export const ms = (value: number | null | undefined) => (value == null ? 'n/a' :
 const summaryOf = (rows: readonly SummaryRow[], scene: string, kind: string) =>
 	rows.find((r) => r.scene === scene && r.kind === kind)?.summary;
 
+/** The median CPU time per frame, with the lowest and highest run's in parentheses. */
+const cpuSpread = ({ cpuMs }: RunSummary) =>
+	`${ms(cpuMs.median)} (${ms(cpuMs.min)} to ${ms(cpuMs.max)})`;
+
+/** The busiest thread's name and its CPU time per frame. */
+const busiestText = (summary: RunSummary) => {
+	const { thread, ms: time } = busiestThread(summary);
+	return `${thread} ${ms(time)}`;
+};
+
 /** The run's summaries as a Markdown table. */
 export function summaryTable(rows: readonly SummaryRow[]): string {
 	const lines = [
-		'| Scene | Page | Runs | CPU ms per frame, median (lowest to highest run) | p95 | Own work, busiest thread | Scene update | All threads | GPU ms | Presented / finished fps | GPU delay ms | Refresh Hz | Upload per frame | Draw calls |',
-		'| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+		'| Scene | Page | Runs | CPU ms per frame, median (lowest to highest run) | p95 | Busiest thread, ms | Own work, busiest thread | Scene update | All threads | GPU ms | Presented / finished fps | Frame interval p95 / p99 ms | GPU delay ms | Refresh Hz | Upload per frame | Draw calls |',
+		'| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
 	];
 	for (const { scene, kind, summary: s } of rows) {
 		const upload = s.uploadBytes === undefined ? 'n/a' : `${(s.uploadBytes / 1e6).toFixed(2)} MB`;
@@ -220,11 +263,41 @@ export function summaryTable(rows: readonly SummaryRow[]): string {
 		const fps = (value: number | null | undefined) => (value == null ? 'n/a' : value.toFixed(1));
 		const rates =
 			s.presentedFps === undefined ? 'n/a' : `${fps(s.presentedFps)} / ${fps(s.completedFps)}`;
+		const pacing = `${ms(s.intervalP95Ms)} / ${ms(s.intervalP99Ms)}`;
 		lines.push(
-			`| ${scene} | ${kind} | ${s.runs} | ${ms(s.cpuMs.median)} (${ms(s.cpuMs.min)} to ${ms(s.cpuMs.max)}) | ${ms(s.cpuP95Ms)} | ${ms(own)} | ${ms(s.updateMs)} | ${ms(s.allThreadsMs)} | ${ms(s.gpuMs)} | ${rates} | ${ms(s.gpuLatencyMs)} | ${s.refreshHz ?? 'n/a'} | ${upload} | ${s.drawCalls ?? 'n/a'} |`,
+			`| ${scene} | ${kind} | ${s.runs} | ${cpuSpread(s)} | ${ms(s.cpuP95Ms)} | ${busiestText(s)} | ${ms(own)} | ${ms(s.updateMs)} | ${ms(s.allThreadsMs)} | ${ms(s.gpuMs)} | ${rates} | ${pacing} | ${ms(s.gpuLatencyMs)} | ${s.refreshHz ?? 'n/a'} | ${upload} | ${s.drawCalls ?? 'n/a'} |`,
 		);
 	}
 	return lines.join('\n');
+}
+
+/**
+ * A sweep of job worker counts as a Markdown table: for each scene, count and page, the CPU time
+ * per frame, the busiest thread, the own work on the busiest thread and the sketch worker's own
+ * work. The job workers take over the sketch worker's parallel loops, so its own work shows what
+ * each count saves.
+ */
+export function jobsTable(rows: readonly SummaryRow[]): string {
+	const lines = [
+		"| Scene | Job workers | Page | Runs | CPU ms per frame, median (lowest to highest run) | Busiest thread, ms | Own work, busiest thread | Sketch worker's own work |",
+		'| --- | --- | --- | --- | --- | --- | --- | --- |',
+	];
+	// null3d times the sketch's update itself, so its own work needs no scene-code page.
+	const noSceneCode = 0;
+	for (const { scene, kind, jobs, summary: s } of rows)
+		lines.push(
+			`| ${scene} | ${jobs ?? 'default'} | ${kind} | ${s.runs} | ${cpuSpread(s)} | ${busiestText(s)} | ${ms(ownWorkMs(s, noSceneCode))} | ${ms(threadOwnWorkMs(s, 'sketch-worker'))} |`,
+		);
+	return lines.join('\n');
+}
+
+/**
+ * A benchmark run's report as Markdown lines: the summary table and the comparisons with three.js,
+ * or the table of a sweep of job worker counts.
+ */
+export function benchReport(rows: readonly SummaryRow[]): string[] {
+	if (rows.some((row) => row.jobs !== undefined)) return [jobsTable(rows)];
+	return [summaryTable(rows), '', ...comparisonLines(rows)];
 }
 
 /** three.js's pages, and the name of each renderer. */
@@ -233,10 +306,15 @@ const THREE_PAGES = [
 	['threejs-webgl', 'WebGL'],
 ] as const;
 
-/** The null3d pages that reports compare with three.js: the GPU path each draws with, and three.js's page on the same API. */
+/**
+ * The null3d pages that reports compare with three.js: the GPU path and latency mode each runs,
+ * and three.js's page on the same API.
+ */
 const NULL3D_PAGES = [
 	['null3d-webgpu', 'WebGPU', 'threejs-webgpu'],
 	['null3d-webgl2', 'WebGL2', 'threejs-webgl'],
+	['null3d-webgpu-low', 'WebGPU with low latency', 'threejs-webgpu'],
+	['null3d-webgl2-low', 'WebGL2 with low latency', 'threejs-webgl'],
 ] as const;
 
 const percent = (share: number) => `${(share * 100).toFixed(0)}%`;
@@ -331,23 +409,24 @@ export interface SweepPoint {
  * A sweep of one scene as Markdown: for the whole frame and for each engine's own work, a table of
  * each page's time at each count and each null3d path's share of three.js's faster renderer and of
  * three.js on the same API, then one line per path and comparison that names the counts where
- * null3d is not faster.
+ * null3d is not faster. Only the null3d paths that the sweep ran get columns and lines.
  */
 export function sweepReport(scene: string, points: readonly SweepPoint[]): string[] {
 	const measures = [
 		['Whole frame', 'CPU time per frame on the busiest thread', null],
 		['Own work', 'own work on the busiest thread, apart from the scene code', SCENE_CODE],
 	] as const;
-	const pages = [...NULL3D_PAGES.map(([kind]) => kind), ...THREE_PAGES.map(([kind]) => kind)];
+	const paths = NULL3D_PAGES.filter(([kind]) => points.some(({ summaries }) => summaries[kind]));
+	const pages = [...paths.map(([kind]) => kind), ...THREE_PAGES.map(([kind]) => kind)];
 	const lines: string[] = [];
 	for (const [title, what, needs] of measures) {
 		lines.push(
 			`### ${scene}: ${what}, ms`,
 			'',
-			`| Objects | ${pages.join(' | ')} | ${NULL3D_PAGES.map(([, path, same]) => `${path} against three.js's faster | ${path} against three.js ${rendererName(same)}`).join(' | ')} |`,
-			`| --- |${' --- |'.repeat(pages.length + 2 * NULL3D_PAGES.length)}`,
+			`| Objects | ${pages.join(' | ')} | ${paths.map(([, path, same]) => `${path} against three.js's faster | ${path} against three.js ${rendererName(same)}`).join(' | ')} |`,
+			`| --- |${' --- |'.repeat(pages.length + 2 * paths.length)}`,
 		);
-		const slower = NULL3D_PAGES.map(() => ({ faster: [] as string[], same: [] as string[] }));
+		const slower = paths.map(() => ({ faster: [] as string[], same: [] as string[] }));
 		for (const { n, summaries } of points) {
 			const of = (kind: string) => summaries[kind];
 			const sceneCode = of(SCENE_CODE);
@@ -358,7 +437,7 @@ export function sweepReport(scene: string, points: readonly SweepPoint[]): strin
 				const summary = of(kind);
 				return summary ? ms(measure(summary)) : 'n/a';
 			});
-			const shares = NULL3D_PAGES.flatMap(([kind, , same], k) => {
+			const shares = paths.flatMap(([kind, , same], k) => {
 				const c = comparePath(of, kind, same, measure);
 				const at = n.toLocaleString('en-US');
 				if (c && c.faster.share >= 1) slower[k]?.faster.push(`${at} (${percent(c.faster.share)})`);
@@ -368,7 +447,7 @@ export function sweepReport(scene: string, points: readonly SweepPoint[]): strin
 			lines.push(`| ${n.toLocaleString('en-US')} | ${[...times, ...shares].join(' | ')} |`);
 		}
 		lines.push('');
-		NULL3D_PAGES.forEach(([, path, same], k) => {
+		paths.forEach(([, path, same], k) => {
 			const { faster, same: sameApi } = slower[k] ?? { faster: [], same: [] };
 			const verdict = (against: string, counts: string[]) =>
 				counts.length === 0
@@ -387,7 +466,7 @@ export function sweepReport(scene: string, points: readonly SweepPoint[]): strin
 export interface ChartSeries {
 	name: string;
 	color: string;
-	/** Draw the line dashed, as for a part of another series in the same color. */
+	/** Draw the line dashed, as for a part or a variant of another series in the same color. */
 	dashed?: boolean;
 	points: readonly { x: number; y: number }[];
 }

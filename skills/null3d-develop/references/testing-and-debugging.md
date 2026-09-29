@@ -81,6 +81,8 @@ URL switches for the dev server (engine docs `guides/testing`):
 | `?render=main` | Render on the main thread |
 | `?uploads=copy` | On WebGL2, copy each upload out of shared memory first, as browsers that refuse shared memory need |
 | `?latency=pipelined`, `?latency=low` | Latency mode |
+| `?jobs=4` | Start this many job workers, from 1 to 255, instead of the logical cores minus 2 |
+| `?memory=2048` | Set the maximum of the memory that worker threads share, in MiB, up to 4096; the default is 1024 |
 | `?preset=low` (to `ultra`), `?fps=60` | Fix preset and frame rate |
 | `?hold` | Render one frame in hold mode |
 

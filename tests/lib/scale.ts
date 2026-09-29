@@ -2,8 +2,8 @@
 // second on a device. The benchmark then runs both engines at that count, a load the device can
 // carry. The search tries one count at a time: it doubles the count until three.js drops below the
 // rate, then narrows the gap between the count that held and the one that dropped.
-import { type BenchPageKind, pagePath } from '../../bench/lib/parity.ts';
-import type { Check, Tier } from './plans.ts';
+import type { BenchPageKind } from '../../bench/lib/parity.ts';
+import { benchItem, type Check, type Tier } from './plans.ts';
 import type { ItemResult, PlanItem } from './runs.ts';
 
 /** The plan name that runs the search instead of a fixed plan. */
@@ -66,12 +66,7 @@ export function afterCount(search: ScaleSearch, count: number, held: boolean): S
 
 /** The runner page's item for one renderer at one count. */
 export function scaleItem(page: BenchPageKind, tier: Tier, count: number): PlanItem<Check> {
-	return {
-		id: `scale-${page}-${count}`,
-		path: pagePath('s1', page, `seconds=${SCALE_SECONDS}&n=${count}`),
-		timeoutSeconds: 2 * SCALE_SECONDS + 60,
-		check: { kind: 'bench', tier, scene: 's1', page },
-	};
+	return benchItem(`scale-${page}-${count}`, page, tier, { seconds: SCALE_SECONDS, n: count });
 }
 
 /** Frames per second a benchmark page drew, from its result. */

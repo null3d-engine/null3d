@@ -12,14 +12,24 @@ for (const gpu of ['webgpu', 'webgl2'] as const) {
 			expect(engineProblems(result, mode, gpu)).toEqual([]);
 		});
 	}
+	const [pipelined] = ENGINE_MODES;
+	if (!pipelined) throw new Error('no engine modes');
 	for (const power of ['high-performance', 'low-power'] as const) {
-		const [mode] = ENGINE_MODES;
-		if (!mode) throw new Error('no engine modes');
 		test(`the engine runs on ${gpu} with the ${power} GPU`, async ({ page }) => {
 			await page.goto(`engine.html?gpu=${gpu}&seconds=1&power=${power}`);
 			const result = await pageResult<EngineResult & { error?: string }>(page, 30_000);
 			expect(result.error).toBeUndefined();
-			expect(engineProblems(result, mode, gpu)).toEqual([]);
+			expect(engineProblems(result, pipelined, gpu)).toEqual([]);
 		});
 	}
+	test(`the engine starts the job workers that ?jobs= asks for on ${gpu}`, async ({ page }) => {
+		const mode = { ...pipelined, query: 'jobs=3', jobWorkers: 3 };
+		await page.goto(`engine.html?gpu=${gpu}&seconds=1&${mode.query}`);
+		const result = await pageResult<EngineResult & { error?: string }>(page, 30_000);
+		expect(result.error).toBeUndefined();
+		expect(engineProblems(result, mode, gpu)).toEqual([]);
+		// Each job worker records every frame, so the figures name exactly three.
+		const jobThreads = Object.keys(result.stats.threads).filter((name) => name.startsWith('job-'));
+		expect(jobThreads).toEqual(['job-0', 'job-1', 'job-2']);
+	});
 }

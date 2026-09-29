@@ -3,7 +3,19 @@ import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseArgs } from '../real-browsers.ts';
-import { benchPlan, checksPlan, judge, NONE_MISSING, PLANS, parityPlan } from './plans.ts';
+import {
+	benchPlan,
+	benchSummary,
+	checksPlan,
+	judge,
+	MEMORY_MAXIMUMS_MIB,
+	memoryPlan,
+	memorySummary,
+	NO_RESULT,
+	NONE_MISSING,
+	PLANS,
+	parityPlan,
+} from './plans.ts';
 
 /** A browser may lack WebGPU, and must have WebGL2. */
 const NO_WEBGPU = { webgpu: true, webgl2: false };
@@ -74,7 +86,9 @@ describe('the checks plan', () => {
 	it('has unique item names and pages on the test pages path', () => {
 		expect(new Set(items.map((item) => item.id)).size).toBe(items.length);
 		for (const item of items) expect(item.path.startsWith('/tests/pages/')).toBe(true);
-		expect(items.map((item) => item.id)).toContain('engine-webgl2-single-threaded');
+		expect(items.find((item) => item.id === 'engine-webgl2-single-threaded')?.path).toBe(
+			'/tests/pages/engine.html?gpu=webgl2&threads=off&seconds=2',
+		);
 		expect(batchTimeoutMs({ run: 'r', createdAt: '', items })).toBeGreaterThan(
 			items.length * 30_000,
 		);
@@ -279,21 +293,180 @@ describe('the parity plan', () => {
 describe('the bench plan', () => {
 	it('runs each page five times by default, and the pages take turns run by run', () => {
 		const items = benchPlan();
-		expect(items).toHaveLength(25);
-		expect(items.slice(0, 5).map((item) => item.id)).toEqual([
+		expect(items).toHaveLength(35);
+		expect(items.slice(0, 7).map((item) => item.id)).toEqual([
 			'bench-s1-null3d-webgpu-1',
 			'bench-s1-null3d-webgl2-1',
+			'bench-s1-null3d-webgpu-low-1',
+			'bench-s1-null3d-webgl2-low-1',
 			'bench-s1-threejs-webgpu-1',
 			'bench-s1-threejs-webgl-1',
 			'bench-s1-scene-code-1',
 		]);
 		expect(items.at(-1)?.id).toBe('bench-s1-scene-code-5');
+		// Both latency modes run, so a device's results compare them.
+		expect(items[2]).toEqual({
+			id: 'bench-s1-null3d-webgpu-low-1',
+			path: '/bench/pages/null3d/s1.html?gpu=webgpu&latency=low',
+			timeoutSeconds: 95,
+			check: { kind: 'bench', tier: 'webgpu', scene: 's1', page: 'null3d-webgpu-low' },
+		});
 	});
 
 	it('takes the number of runs and the instance count', () => {
 		const items = benchPlan({ runs: 2, count: 1000 });
-		expect(items).toHaveLength(10);
+		expect(items).toHaveLength(14);
 		expect(items.every((item) => item.path.endsWith('n=1000'))).toBe(true);
+	});
+
+	it("runs null3D's two GPU paths at each job worker count, every count in each run", () => {
+		const items = benchPlan({ runs: 2, count: 300_000, jobs: [2, 4] });
+		expect(PLANS.bench).toBe(benchPlan);
+		expect(items.map((item) => item.id)).toEqual([
+			'bench-s1-null3d-webgpu-jobs2-1',
+			'bench-s1-null3d-webgl2-jobs2-1',
+			'bench-s1-null3d-webgpu-jobs4-1',
+			'bench-s1-null3d-webgl2-jobs4-1',
+			'bench-s1-null3d-webgpu-jobs2-2',
+			'bench-s1-null3d-webgl2-jobs2-2',
+			'bench-s1-null3d-webgpu-jobs4-2',
+			'bench-s1-null3d-webgl2-jobs4-2',
+		]);
+		expect(items[3]).toEqual({
+			id: 'bench-s1-null3d-webgl2-jobs4-1',
+			path: '/bench/pages/null3d/s1.html?gpu=webgl2&n=300000&jobs=4',
+			timeoutSeconds: 95,
+			check: { kind: 'bench', tier: 'webgl2', scene: 's1', page: 'null3d-webgl2', jobs: 4 },
+		});
+	});
+
+	it('fails a run whose engine started another number of job workers than it asked for', () => {
+		const [item] = benchPlan({ runs: 1, jobs: [4] });
+		if (!item) throw new Error('the plan has no items');
+		const run = (jobWorkers: number) => ({
+			ok: true,
+			frames: 300,
+			cpuMs: { median: 2.1 },
+			mode: { build: 'threaded', jobWorkers },
+		});
+		expect(judge(item.check, run(4), NONE_MISSING)).toEqual([]);
+		expect(judge(item.check, run(8), NONE_MISSING)).toEqual([
+			'started 8 job workers, not the 4 that ?jobs= asked for',
+		]);
+		// Without the switch, any count passes.
+		const [plain] = benchPlan({ runs: 1 });
+		if (!plain) throw new Error('the plan has no items');
+		expect(judge(plain.check, run(8), NONE_MISSING)).toEqual([]);
+	});
+
+	it("summarizes a device's runs apart for each job worker count", () => {
+		const items = benchPlan({ runs: 2, jobs: [2, 4] });
+		/** A null3D run whose sketch worker takes less time with more job workers. */
+		const result = (id: string): ItemResult => {
+			const sketchMs = id.includes('-jobs2-') ? 3 : 2.5;
+			const at = { median: sketchMs, p95: sketchMs, p99: sketchMs };
+			return {
+				ok: true,
+				frames: 300,
+				cpuMs: { ...at, mean: sketchMs },
+				intervalMs: { median: 16.7, p95: 17, p99: 18 },
+				stats: {
+					cpuMsAllThreads: { median: sketchMs + 1 },
+					gpuMs: null,
+					uploadBytes: { median: 0 },
+					drawCalls: { median: 1 },
+					threads: {
+						'sketch-worker': { busyMs: at, phases: { update: { median: 2 } } },
+						'job-0': { busyMs: { median: 0.5 }, phases: {} },
+					},
+				},
+			};
+		};
+		const lines = benchSummary(items, result)?.split('\n') ?? [];
+		expect(lines[0]).toContain('| Scene | Job workers | Page |');
+		expect(lines.slice(2)).toEqual([
+			'| s1 | 2 | null3d-webgpu | 2 | 3.00 (3.00 to 3.00) | sketch-worker 3.00 | 1.00 | 1.00 |',
+			'| s1 | 2 | null3d-webgl2 | 2 | 3.00 (3.00 to 3.00) | sketch-worker 3.00 | 1.00 | 1.00 |',
+			'| s1 | 4 | null3d-webgpu | 2 | 2.50 (2.50 to 2.50) | sketch-worker 2.50 | 0.50 | 0.50 |',
+			'| s1 | 4 | null3d-webgl2 | 2 | 2.50 (2.50 to 2.50) | sketch-worker 2.50 | 0.50 | 0.50 |',
+		]);
+		// Without job worker counts, the summary compares the pages as the protocol does: a row per
+		// page, then how null3D compares with three.js.
+		const plain = benchSummary(benchPlan({ runs: 1 }), result)?.split('\n') ?? [];
+		expect(plain[0]).toContain('| Scene | Page | Runs |');
+		expect(plain.slice(2, 10).map((line) => line.split(' | ')[1])).toEqual([
+			'null3d-webgpu',
+			'null3d-webgl2',
+			'null3d-webgpu-low',
+			'null3d-webgl2-low',
+			'threejs-webgpu',
+			'threejs-webgl',
+			'scene-code',
+			undefined,
+		]);
+		expect(plain[10]).toStartWith('s1: null3d on WebGPU takes');
+		expect(benchSummary(memoryPlan({ runs: 1 }), result)).toBeUndefined();
+	});
+});
+
+describe('the memory plan', () => {
+	/** An engine page's result: started with shared memory, or with the single-threaded build. */
+	const loaded = (build = 'threaded'): ItemResult => ({ ok: true, mode: { build, jobWorkers: 8 } });
+	const ALLOCATION_ERROR = 'WebAssembly.Memory(): could not allocate memory';
+	const allocationFailed: ItemResult = { ok: false, error: ALLOCATION_ERROR };
+
+	it('loads the engine page 20 times at each maximum, from low to high', () => {
+		const items = memoryPlan();
+		expect(PLANS.memory).toBe(memoryPlan);
+		expect(MEMORY_MAXIMUMS_MIB).toEqual([256, 512, 1024, 2048, 4096]);
+		expect(items).toHaveLength(100);
+		expect(new Set(items.map(({ id }) => id)).size).toBe(items.length);
+		expect(items[0]).toEqual({
+			id: 'memory-256-1',
+			path: '/tests/pages/engine.html?memory=256&seconds=2',
+			timeoutSeconds: 45,
+			check: { kind: 'memory', maximumMiB: 256 },
+		});
+		expect(items[20]?.id).toBe('memory-512-1');
+		expect(items.at(-1)?.id).toBe('memory-4096-20');
+		expect(memoryPlan({ runs: 2 }).map(({ id }) => id)).toEqual(
+			MEMORY_MAXIMUMS_MIB.flatMap((maximum) => [`memory-${maximum}-1`, `memory-${maximum}-2`]),
+		);
+	});
+
+	it('passes a load only when the engine started with shared memory', () => {
+		const [item] = memoryPlan({ runs: 1 });
+		if (!item) throw new Error('the plan has no items');
+		expect(judge(item.check, loaded(), NONE_MISSING)).toEqual([]);
+		expect(judge(item.check, loaded('single'), NONE_MISSING)).toEqual([
+			'the engine started without shared memory, so the load tested no maximum',
+		]);
+		expect(judge(item.check, allocationFailed, NO_WEBGPU)).toEqual([ALLOCATION_ERROR]);
+	});
+
+	it('counts the loads that started the engine at each maximum, and names the largest that always did', () => {
+		const items = memoryPlan({ runs: 3 });
+		const results: Record<string, ItemResult> = {};
+		for (const { id } of items) results[id] = loaded();
+		results['memory-2048-2'] = allocationFailed;
+		results['memory-4096-1'] = allocationFailed;
+		results['memory-4096-2'] = allocationFailed;
+		// The browser closed the runner's tab during the last load.
+		delete results['memory-4096-3'];
+		expect(memorySummary(items, (id) => results[id])?.split('\n')).toEqual([
+			'| Memory maximum | Loads that started the engine | Why the others failed |',
+			'| --- | --- | --- |',
+			'| 256 MiB | 3 of 3 | none |',
+			'| 512 MiB | 3 of 3 | none |',
+			'| 1024 MiB | 3 of 3 | none |',
+			`| 2048 MiB | 2 of 3 | 1 load: ${ALLOCATION_ERROR} |`,
+			`| 4096 MiB | 0 of 3 | 2 loads: ${ALLOCATION_ERROR}; 1 load: ${NO_RESULT} |`,
+			'',
+			'The largest maximum that loaded 3 of 3 times: 1024 MiB.',
+		]);
+		const nothing = memorySummary(items, () => allocationFailed);
+		expect(nothing?.split('\n').at(-1)).toBe('No maximum loaded every time.');
+		expect(memorySummary(benchPlan({ runs: 1 }), () => loaded())).toBeUndefined();
 	});
 });
 
@@ -322,8 +495,18 @@ describe('parseArgs', () => {
 		expect(parseArgs(['--plan', 'bench', '--n', '30000', 'Safari']).count).toBe(30000);
 		expect(parseArgs(['--plan', 'bench', '--runs', '3', 'Safari']).runs).toBe(3);
 		expect(parseArgs(['--plan', 'scale', '--android', 'chrome']).plan).toBe('scale');
+		expect(parseArgs(['--plan', 'memory', 'Safari']).plan).toBe('memory');
+		expect(parseArgs(['--plan', 'bench', '--jobs', '2,4,6,8', 'Safari']).jobs).toEqual([
+			2, 4, 6, 8,
+		]);
 		expect(() => parseArgs(['--n', 'many'])).toThrow('--n: use a whole number above 0');
 		expect(() => parseArgs(['--runs', '0'])).toThrow('--runs: use a whole number above 0');
+		expect(() => parseArgs(['--plan', 'bench', '--jobs', '0'])).toThrow(
+			'--jobs: use a comma-separated list of whole numbers above 0',
+		);
+		expect(() => parseArgs(['--plan', 'memory', '--jobs', '2'])).toThrow(
+			'--jobs works with --plan bench only',
+		);
 		expect(() => parseArgs(['--plan', 'nothing'])).toThrow('no plan named nothing');
 		expect(() => parseArgs(['--fast'])).toThrow('unknown option --fast');
 	});

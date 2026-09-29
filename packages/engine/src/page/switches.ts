@@ -1,5 +1,6 @@
 // URL switches that let one device exercise every engine path: ?gpu=, ?threads=off, ?render=main,
-// ?latency=, ?uploads=copy, ?preset=, ?fps= and ?hold.
+// ?latency=, ?uploads=copy, ?preset=, ?fps= and ?hold. Two more set what the benchmarks vary:
+// ?jobs= for the job worker count and ?memory= for the shared memory's maximum.
 
 export type GpuSwitch = 'auto' | 'webgpu' | 'compat' | 'webgl2';
 /**
@@ -26,7 +27,14 @@ export interface Switches {
 	fps: number | undefined;
 	/** Hold mode: one frame at a fixed time, for image tests. */
 	hold: boolean;
+	/** The job workers that ?jobs= asks for, or undefined for the count from the device's cores. */
+	jobs: number | undefined;
+	/** The shared memory's declared maximum in MiB from ?memory=, or undefined for the default. */
+	memoryMiB: number | undefined;
 }
+
+/** The most job workers the engine core runs. */
+const MAX_JOB_WORKERS = 255;
 
 function oneOf<T extends string>(value: string | null, allowed: readonly T[]): T | undefined {
 	return value !== null && (allowed as readonly string[]).includes(value)
@@ -34,9 +42,20 @@ function oneOf<T extends string>(value: string | null, allowed: readonly T[]): T
 		: undefined;
 }
 
+/** A number above 0, or undefined for a missing or unusable value. */
+function positive(value: string | null): number | undefined {
+	const n = Number(value);
+	return Number.isFinite(n) && n > 0 ? n : undefined;
+}
+
+/** A whole number from 1 to `max`, or undefined for a missing or unusable value. */
+function whole(value: string | null, max = Number.MAX_SAFE_INTEGER): number | undefined {
+	const n = positive(value);
+	return n !== undefined && Number.isInteger(n) && n <= max ? n : undefined;
+}
+
 export function parseSwitches(search: string): Switches {
 	const params = new URLSearchParams(search);
-	const fps = Number(params.get('fps'));
 	return {
 		gpu: oneOf(params.get('gpu'), ['webgpu', 'compat', 'webgl2'] as const) ?? 'auto',
 		threads: params.get('threads') !== 'off',
@@ -44,7 +63,9 @@ export function parseSwitches(search: string): Switches {
 		latency: oneOf(params.get('latency'), ['pipelined', 'low'] as const),
 		copyUploads: params.get('uploads') === 'copy',
 		preset: oneOf(params.get('preset'), ['low', 'medium', 'high', 'ultra'] as const),
-		fps: Number.isFinite(fps) && fps > 0 ? fps : undefined,
+		fps: positive(params.get('fps')),
 		hold: params.has('hold'),
+		jobs: whole(params.get('jobs'), MAX_JOB_WORKERS),
+		memoryMiB: whole(params.get('memory')),
 	};
 }

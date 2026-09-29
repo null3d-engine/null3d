@@ -61,14 +61,19 @@ export function gpuApiOf(tier: Tier): 'webgpu' | 'webgl2' {
 	return tier === 'webgl2' ? 'webgl2' : 'webgpu';
 }
 
-/** Each kind of benchmark page: its folder, and the switch that picks its GPU path. */
+/**
+ * Each kind of benchmark page: its folder, and the switches that pick its GPU path and, for the
+ * null3D pages that end in -low, the low-latency mode.
+ */
 const PAGES = {
-	'threejs-webgl': { folder: 'threejs', gpu: 'renderer=webgl' },
-	'threejs-webgpu': { folder: 'threejs', gpu: 'renderer=webgpu' },
-	'null3d-webgl2': { folder: 'null3d', gpu: 'gpu=webgl2' },
-	'null3d-webgpu': { folder: 'null3d', gpu: 'gpu=webgpu' },
-	'null3d-compat': { folder: 'null3d', gpu: 'gpu=compat' },
-} as const satisfies Record<string, { folder: string; gpu: string }>;
+	'threejs-webgl': { folder: 'threejs', switches: 'renderer=webgl' },
+	'threejs-webgpu': { folder: 'threejs', switches: 'renderer=webgpu' },
+	'null3d-webgl2': { folder: 'null3d', switches: 'gpu=webgl2' },
+	'null3d-webgpu': { folder: 'null3d', switches: 'gpu=webgpu' },
+	'null3d-compat': { folder: 'null3d', switches: 'gpu=compat' },
+	'null3d-webgpu-low': { folder: 'null3d', switches: 'gpu=webgpu&latency=low' },
+	'null3d-webgl2-low': { folder: 'null3d', switches: 'gpu=webgl2&latency=low' },
+} as const satisfies Record<string, { folder: string; switches: string }>;
 
 export type PageKind = keyof typeof PAGES;
 export const PAGE_KINDS = Object.keys(PAGES) as PageKind[];
@@ -82,6 +87,25 @@ export const SCENE_CODE = 'scene-code';
 /** Every kind of page a benchmark run can time: the engines' pages and the scene code alone. */
 export type BenchPageKind = PageKind | typeof SCENE_CODE;
 export const BENCH_PAGE_KINDS: readonly BenchPageKind[] = [...PAGE_KINDS, SCENE_CODE];
+
+/** True for a null3D page, whose engine takes switches such as `?jobs=`. */
+export function isNull3dPage(kind: BenchPageKind): boolean {
+	return kind !== SCENE_CODE && PAGES[kind].folder === 'null3d';
+}
+
+/** The pages that a sweep of job worker counts runs: both null3D GPU paths, pipelined. */
+export const JOBS_PAGES: readonly PageKind[] = ['null3d-webgpu', 'null3d-webgl2'];
+
+/**
+ * The job worker counts of a `--jobs` list, such as `1,2,4,8`, each once and in the order given.
+ * It throws unless each count is a whole number above 0.
+ */
+export function readJobCounts(text: string | undefined): number[] {
+	const counts = (text ?? '').split(',').filter(Boolean).map(Number);
+	if (counts.length === 0 || !counts.every((n) => Number.isSafeInteger(n) && n > 0))
+		throw new Error('--jobs: use a comma-separated list of whole numbers above 0, such as 1,2,4,8');
+	return [...new Set(counts)];
+}
 
 /** Two pages whose frames must match. The diff image dims the reference's frame. */
 export interface PagePair {
@@ -98,8 +122,8 @@ export const TIER_PAIRS: Readonly<Record<Tier, PagePair>> = {
 
 /** The dev-server path of one scene's page of one kind, with more switches after its own. */
 export function pagePath(scene: ParityScene, kind: BenchPageKind, switches = ''): string {
-	const page = kind === SCENE_CODE ? { folder: SCENE_CODE, gpu: '' } : PAGES[kind];
-	return `/bench/pages/${page.folder}/${scene}.html?${[page.gpu, switches].filter(Boolean).join('&')}`;
+	const page = kind === SCENE_CODE ? { folder: SCENE_CODE, switches: '' } : PAGES[kind];
+	return `/bench/pages/${page.folder}/${scene}.html?${[page.switches, switches].filter(Boolean).join('&')}`;
 }
 
 /** The dev-server path of the page that draws one scene's hold frame. */

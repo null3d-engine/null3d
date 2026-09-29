@@ -1,5 +1,6 @@
-// Plans for the runner page, and how each page's result is judged. A plan item says which page to
-// open with which switches, and what to check in the page's result.
+// Plans for the runner page, how each page's result is judged, and how a runner's results add up
+// to a report. A plan item says which page to open with which switches, and what to check in the
+// page's result.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
@@ -12,6 +13,7 @@ import {
 	gpuApiOf,
 	type HoldFrame,
 	holdPagePath,
+	JOBS_PAGES,
 	PARITY_SCENES,
 	TIERS as PARITY_TIERS,
 	type PagePair,
@@ -23,12 +25,19 @@ import {
 	type StoredBaselines,
 	TIER_PAIRS,
 } from '../../bench/lib/parity.ts';
+import {
+	type BenchResult,
+	benchReport,
+	type SummaryRow,
+	summarizeRuns,
+} from '../../bench/lib/report.ts';
 import { MEASURE_SECONDS, WARMUP_SECONDS } from '../../bench/scenes/spec.ts';
 import {
 	ENGINE_MODES,
 	type EngineMode,
 	type EngineResult,
 	engineProblems,
+	jobWorkersProblem,
 } from './engine-checks.ts';
 import { compareToReference } from './images.ts';
 import type { ItemResult, PlanItem } from './runs.ts';
@@ -41,10 +50,11 @@ export type Check =
 	| { kind: 'clear'; tier: Tier }
 	| { kind: 'shaders' }
 	| { kind: 'engine'; tier: Tier; mode: EngineMode }
+	| { kind: 'memory'; maximumMiB: number }
 	| { kind: 'uploads'; tier: Tier }
 	| { kind: 'hold'; tier: Tier }
 	| { kind: 'parity'; tier: Tier; scene: ParityScene; pair: PagePair }
-	| { kind: 'bench'; tier: Tier; scene: ParityScene; page: BenchPageKind };
+	| { kind: 'bench'; tier: Tier; scene: ParityScene; page: BenchPageKind; jobs?: number };
 
 /** What judging can reach besides the result itself. */
 export interface JudgeContext {
@@ -62,6 +72,47 @@ const TIERS: readonly Tier[] = ['webgpu', 'webgl2'];
 const HOLD_TIMEOUT_SECONDS = 60;
 
 const slug = (text: string) => text.toLowerCase().replace(/[^a-z0-9]+/g, '-');
+
+/** The result text of an item that the runner page never reached. */
+export const NO_RESULT = 'no result; the runner stopped before this page';
+
+/** The runner page's item for the engine test page with these switches, measured for 2 seconds. */
+function engineItem(id: string, switches: readonly string[], check: Check): PlanItem<Check> {
+	return {
+		id,
+		path: `${TEST_PAGES}engine.html?${[...switches, 'seconds=2'].filter(Boolean).join('&')}`,
+		timeoutSeconds: 45,
+		check,
+	};
+}
+
+/** Switches of a timed run of a benchmark page, each left out when undefined. */
+export interface BenchSwitches {
+	/** The warm-up and the measured seconds, or undefined for the protocol's times. */
+	seconds?: number;
+	/** The instance count, or undefined for the scene's default. */
+	n?: number;
+	/** The job workers a null3D page starts, or undefined for the engine's own count. */
+	jobs?: number;
+}
+
+/** The runner page's item for a timed run of one S1 benchmark page. */
+export function benchItem(
+	id: string,
+	page: BenchPageKind,
+	tier: Tier,
+	{ seconds, n, jobs }: BenchSwitches = {},
+): PlanItem<Check> {
+	const switches = Object.entries({ seconds, n, jobs }).flatMap(([name, value]) =>
+		value === undefined ? [] : [`${name}=${value}`],
+	);
+	return {
+		id,
+		path: pagePath('s1', page, switches.join('&')),
+		timeoutSeconds: (seconds === undefined ? WARMUP_SECONDS + MEASURE_SECONDS : 2 * seconds) + 60,
+		check: { kind: 'bench', tier, scene: 's1', page, ...(jobs !== undefined && { jobs }) },
+	};
+}
 
 /** The browser checks: the capability report, isolation, clear colors, and the engine in every mode on both GPU paths. */
 export function checksPlan(): PlanItem<Check>[] {
@@ -97,12 +148,13 @@ export function checksPlan(): PlanItem<Check>[] {
 			check: { kind: 'clear' as const, tier },
 		})),
 		...TIERS.flatMap((tier) =>
-			ENGINE_MODES.map((mode) => ({
-				id: `engine-${tier}-${slug(mode.name)}`,
-				path: `${TEST_PAGES}engine.html?${[`gpu=${tier}`, 'seconds=2', mode.query].filter(Boolean).join('&')}`,
-				timeoutSeconds: 45,
-				check: { kind: 'engine' as const, tier, mode },
-			})),
+			ENGINE_MODES.map((mode) =>
+				engineItem(`engine-${tier}-${slug(mode.name)}`, [`gpu=${tier}`, mode.query], {
+					kind: 'engine',
+					tier,
+					mode,
+				}),
+			),
 		),
 	];
 }
@@ -149,6 +201,8 @@ export const BENCH_RUNS = 5;
 const BENCH_PAGES: readonly [BenchPageKind, Tier][] = [
 	['null3d-webgpu', 'webgpu'],
 	['null3d-webgl2', 'webgl2'],
+	['null3d-webgpu-low', 'webgpu'],
+	['null3d-webgl2-low', 'webgl2'],
 	['threejs-webgpu', 'webgpu'],
 	['threejs-webgl', 'webgl2'],
 	[SCENE_CODE, 'webgl2'],
@@ -158,30 +212,68 @@ const BENCH_PAGES: readonly [BenchPageKind, Tier][] = [
 export interface PlanSettings {
 	/** The instance count of the benchmark pages, or undefined for the scene's default. */
 	count?: number;
-	/** Fresh runs of each benchmark page, or undefined for the protocol's number. */
+	/** Fresh runs of each benchmark page, or loads at each memory maximum; undefined for the plan's own number. */
 	runs?: number;
+	/** Job worker counts, at each of which the bench plan runs the null3D pages instead. */
+	jobs?: readonly number[];
 }
 
 /**
  * The benchmark protocol for S1 in browsers that Playwright cannot drive: `runs` fresh runs of each
- * page, each a 5-second warm-up and 30 measured seconds, with `count` instances when given. The
- * pages take turns run by run, so a device that slows as it warms up slows every engine alike.
+ * page, each a 5-second warm-up and 30 measured seconds, with `count` instances when given. With
+ * job worker counts, each run times null3D's two GPU paths once at each count instead. The pages
+ * take turns run by run, so a device that slows as it warms up slows every page alike.
  */
-export function benchPlan({ count, runs = BENCH_RUNS }: PlanSettings = {}): PlanItem<Check>[] {
+export function benchPlan({
+	count,
+	runs = BENCH_RUNS,
+	jobs,
+}: PlanSettings = {}): PlanItem<Check>[] {
+	const pages = jobs
+		? jobs.flatMap((workers) =>
+				BENCH_PAGES.filter(([page]) => JOBS_PAGES.some((kind) => kind === page)).map(
+					([page, tier]) => ({ page, tier, jobs: workers }),
+				),
+			)
+		: BENCH_PAGES.map(([page, tier]) => ({ page, tier, jobs: undefined }));
 	return Array.from({ length: runs }, (_, run) =>
-		BENCH_PAGES.map(([page, tier]) => ({
-			id: `bench-s1-${page}-${run + 1}`,
-			path: pagePath('s1', page, count === undefined ? '' : `n=${count}`),
-			timeoutSeconds: WARMUP_SECONDS + MEASURE_SECONDS + 60,
-			check: { kind: 'bench' as const, tier, scene: 's1' as const, page },
-		})),
+		pages.map(({ page, tier, jobs: workers }) =>
+			benchItem(
+				`bench-s1-${page}${workers === undefined ? '' : `-jobs${workers}`}-${run + 1}`,
+				page,
+				tier,
+				{ n: count, jobs: workers },
+			),
+		),
 	).flat();
+}
+
+/** The shared memory maximums that the memory plan tries, in MiB, from low to high. */
+export const MEMORY_MAXIMUMS_MIB = [256, 512, 1024, 2048, 4096] as const;
+/** Loads of the engine page at each maximum in the memory plan. */
+export const MEMORY_LOADS = 20;
+
+/**
+ * Loads the engine test page `runs` times at each shared memory maximum, from low to high, on the
+ * GPU path that the browser picks. A load passes when the engine starts with the threaded build,
+ * the one whose shared memory has the maximum.
+ */
+export function memoryPlan({ runs = MEMORY_LOADS }: PlanSettings = {}): PlanItem<Check>[] {
+	return MEMORY_MAXIMUMS_MIB.flatMap((maximumMiB) =>
+		Array.from({ length: runs }, (_, load) =>
+			engineItem(`memory-${maximumMiB}-${load + 1}`, [`memory=${maximumMiB}`], {
+				kind: 'memory',
+				maximumMiB,
+			}),
+		),
+	);
 }
 
 export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanItem<Check>[]>> = {
 	checks: checksPlan,
 	parity: parityPlan,
 	bench: benchPlan,
+	memory: memoryPlan,
 };
 
 /**
@@ -325,6 +417,10 @@ export function judge(
 		}
 		case 'engine':
 			return engineProblems(result as unknown as EngineResult, check.mode, check.tier);
+		case 'memory':
+			return (result.mode as { build?: string } | undefined)?.build === 'threaded'
+				? []
+				: ['the engine started without shared memory, so the load tested no maximum'];
 		case 'uploads': {
 			const sizes = (result.sizes ?? []) as number[];
 			const frames = (result.frames ?? []) as { wrong: number[]; errors?: string[] }[];
@@ -344,7 +440,12 @@ export function judge(
 		case 'bench': {
 			const frames = Number(result.frames ?? 0);
 			const cpu = (result.cpuMs as { median?: number } | undefined)?.median ?? 0;
-			return frames > 0 && cpu > 0 ? [] : [`the run measured ${frames} frames`];
+			const workers = (result.mode as { jobWorkers?: number } | undefined)?.jobWorkers;
+			const jobs = jobWorkersProblem(workers, check.jobs);
+			return [
+				...(frames > 0 && cpu > 0 ? [] : [`the run measured ${frames} frames`]),
+				...(jobs ? [jobs] : []),
+			];
 		}
 		case 'hold':
 			try {
@@ -356,4 +457,84 @@ export function judge(
 		case 'parity':
 			return parityProblems(check, result, context);
 	}
+}
+
+/**
+ * The benchmark report of one runner's results: each page's runs summarized, apart for each job
+ * worker count. Undefined when the plan has no benchmarks.
+ */
+export function benchSummary(
+	items: readonly PlanItem<Check>[],
+	resultOf: (id: string) => ItemResult | undefined,
+): string | undefined {
+	const groups = new Map<string, Omit<SummaryRow, 'summary'> & { results: BenchResult[] }>();
+	for (const item of items) {
+		if (item.check.kind !== 'bench') continue;
+		const { scene, page, jobs } = item.check;
+		const key = `${scene} ${page} ${jobs ?? ''}`;
+		const group = groups.get(key) ?? { scene, kind: page, jobs, results: [] };
+		const result = resultOf(item.id);
+		if (result?.ok) group.results.push(result as unknown as BenchResult);
+		groups.set(key, group);
+	}
+	if (groups.size === 0) return undefined;
+	const rows: SummaryRow[] = [...groups.values()]
+		.filter((group) => group.results.length > 0)
+		.map(({ results, ...row }) => ({ ...row, summary: summarizeRuns(results) }));
+	return benchReport(rows).join('\n');
+}
+
+/** What the loads at one shared memory maximum came to. */
+interface MemoryTally {
+	loads: number;
+	started: number;
+	/** How many loads failed for each reason. */
+	failures: Map<string, number>;
+}
+
+/**
+ * How many loads at each shared memory maximum started the engine, as a Markdown table, and the
+ * largest maximum at which every load did. A failed allocation fails its load, and so does a load
+ * without a result, as after the browser closed the runner's tab. Undefined when the plan has no
+ * memory loads.
+ */
+export function memorySummary(
+	items: readonly PlanItem<Check>[],
+	resultOf: (id: string) => ItemResult | undefined,
+): string | undefined {
+	const tallies = new Map<number, MemoryTally>();
+	for (const { id, check } of items) {
+		if (check.kind !== 'memory') continue;
+		const tally = tallies.get(check.maximumMiB) ?? { loads: 0, started: 0, failures: new Map() };
+		tallies.set(check.maximumMiB, tally);
+		tally.loads++;
+		const result = resultOf(id);
+		const verdict = result ? judge(check, result, NONE_MISSING) : [NO_RESULT];
+		const problems = verdict === 'skip' ? ['skipped'] : verdict;
+		if (problems.length === 0) tally.started++;
+		for (const problem of problems)
+			tally.failures.set(problem, (tally.failures.get(problem) ?? 0) + 1);
+	}
+	if (tallies.size === 0) return undefined;
+	const lines = [
+		'| Memory maximum | Loads that started the engine | Why the others failed |',
+		'| --- | --- | --- |',
+	];
+	let largest: [number, MemoryTally] | undefined;
+	for (const [maximumMiB, tally] of [...tallies].sort(([a], [b]) => a - b)) {
+		const why = [...tally.failures].map(
+			([problem, loads]) => `${loads} ${loads === 1 ? 'load' : 'loads'}: ${problem}`,
+		);
+		lines.push(
+			`| ${maximumMiB} MiB | ${tally.started} of ${tally.loads} | ${why.join('; ') || 'none'} |`,
+		);
+		if (tally.started === tally.loads) largest = [maximumMiB, tally];
+	}
+	lines.push(
+		'',
+		largest
+			? `The largest maximum that loaded ${largest[1].loads} of ${largest[1].loads} times: ${largest[0]} MiB.`
+			: 'No maximum loaded every time.',
+	);
+	return lines.join('\n');
 }
