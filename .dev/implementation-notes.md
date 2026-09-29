@@ -46,6 +46,7 @@ The engine's hot paths stay allocation-free with these habits (hard rule 1):
 
 - A job worker without work blocks its thread in a wait (hard rule 5). When Safari stops a thread inside such a wait, it keeps the thread's shared memory until the tab closes, even across reloads. The engine therefore ends the job workers' loops before it stops them, and `destroy()` resolves once they have stopped.
 - The single-threaded build's core runs on the page. The page keeps it for the next engine, and `destroyEngine` empties it when an engine stops.
+- A production build can load an engine module twice in one thread. The sketch worker's file holds one copy, and the page's file that a sketch imports holds another. Module state that the thread sets reaches one copy only, and each copy has its own classes. Keep state that every copy needs on `globalThis` under a `Symbol.for` key. For `instanceof`, mark a class's objects under such a key and check the mark in a static `Symbol.hasInstance`, as `errors/engine-error.ts` does.
 
 ## Browser faults
 

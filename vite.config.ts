@@ -25,6 +25,15 @@ const DENIED = [
 	),
 ];
 
+/**
+ * The test page that a production build holds: the engine test page, or the page that
+ * NULL3D_BUILD_PAGE names. Each page builds on its own, so no other page shares a file with the
+ * engine test page or changes what the startup benchmark downloads. Another page's build adds its
+ * files to the engine test page's build, with its assets in a folder of their own.
+ */
+const builtPage = process.env.NULL3D_BUILD_PAGE || 'engine';
+const enginePage = builtPage === 'engine';
+
 /** Sends the server's bare address to the list of test pages. */
 const indexRedirect: Plugin = {
 	name: 'null3d-index-redirect',
@@ -58,10 +67,13 @@ export default defineConfig({
 		},
 	},
 	optimizeDeps: { entries: ['tests/pages/**/*.html', 'bench/pages/**/*.html'] },
-	// The production build of the engine test page, which the production browser test serves.
+	// The production builds of the test pages, which the production browser tests serve.
 	build: {
 		outDir: 'target/production-pages',
-		emptyOutDir: true,
-		rollupOptions: { input: { engine: `${import.meta.dirname}/tests/pages/engine.html` } },
+		emptyOutDir: enginePage,
+		assetsDir: enginePage ? 'assets' : `assets/${builtPage}`,
+		rollupOptions: {
+			input: { [builtPage]: `${import.meta.dirname}/tests/pages/${builtPage}.html` },
+		},
 	},
 });

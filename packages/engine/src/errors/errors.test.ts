@@ -8,6 +8,18 @@ import { ERROR_FIXES, type ErrorCode } from './fixes';
 
 const DOCS = 'https://github.com/null3d-engine/null3d/blob/main/docs/errors/';
 
+/** Where a thread keeps its table of fixes: on its global object, under a registered symbol. */
+const FIXES_KEY = Symbol.for('null3d.errorFixes');
+
+/**
+ * A second copy of the error module in this thread, as a production build gives the sketch worker:
+ * one copy in the engine's worker code, and one in the sketch's bundle. Bun loads a path with a
+ * query as a module of its own.
+ */
+async function secondCopy(): Promise<typeof import('./engine-error')> {
+	return await import(`${import.meta.dirname}/engine-error.ts?second-copy`);
+}
+
 /** A core that reports one failure: its code and two detail numbers. */
 function failedCore(code: number, a = 0, b = 0): CoreErrors {
 	return { lastErrorCode: () => code, lastErrorDetail: (index) => (index === 0 ? a : b) };
@@ -41,9 +53,54 @@ describe('EngineError', () => {
 		for (const code of codes) expect(message(code)).toBe(expected(code));
 	});
 
+	it('leaves the fix out of the message on a thread without a table of fixes', () => {
+		delete (globalThis as Record<symbol, unknown>)[FIXES_KEY];
+		try {
+			expect(new EngineError('E1108', 'what failed.').message).toBe(
+				`E1108: what failed. See ${DOCS}E1108.md`,
+			);
+			expect(isErrorCode('E1108')).toBe(false);
+		} finally {
+			setErrorFixes(ERROR_FIXES);
+		}
+	});
+
 	it('uses codes whose examples start with the code', () => {
 		for (const [code, entry] of Object.entries(ERRORS))
 			expect(entry.example.startsWith(`${code}: `)).toBe(true);
+	});
+
+	it('is not an Error with the same name and code, nor any other value', () => {
+		const lookalike = Object.assign(new Error('E1108: what failed.'), {
+			name: 'EngineError',
+			code: 'E1108',
+		});
+		const values: unknown[] = [lookalike, { name: 'EngineError', code: 'E1108' }, null, 'E1108'];
+		for (const value of values) expect(value instanceof EngineError).toBe(false);
+	});
+
+	it('keeps the usual check for a subclass', () => {
+		class SketchError extends EngineError {}
+		expect(new SketchError('E1108', 'what failed.') instanceof EngineError).toBe(true);
+		expect(new SketchError('E1108', 'what failed.') instanceof SketchError).toBe(true);
+		expect(new EngineError('E1108', 'what failed.') instanceof SketchError).toBe(false);
+	});
+});
+
+describe('a second copy of the error module in the thread', () => {
+	it('makes errors that every copy sees as EngineErrors', async () => {
+		const copy = await secondCopy();
+		expect(copy.EngineError).not.toBe(EngineError);
+		expect(new copy.EngineError('E1108', 'what failed.') instanceof EngineError).toBe(true);
+		expect(new EngineError('E1108', 'what failed.') instanceof copy.EngineError).toBe(true);
+	});
+
+	it('finds the table of fixes that the other copy set', async () => {
+		const copy = await secondCopy();
+		expect(new copy.EngineError('E1108', 'what failed.').message).toBe(
+			`E1108: what failed. ${ERROR_FIXES.E1108} See ${DOCS}E1108.md`,
+		);
+		expect(copy.isErrorCode('E1108')).toBe(true);
 	});
 });
 
