@@ -6,13 +6,15 @@
 // inside the job system's loop, so their heaps are read as they are. The test fails when the sketch
 // worker's or the render worker's heap grows after the warm-up by more than a small allowance, when
 // the WebAssembly memory grows after it, when the page reports an error, or when the engine no
-// longer draws at the end. From the repository root:
+// longer draws at the end. It runs the production build of the benchmark pages, as a developer ships
+// the engine; `--dev` runs the dev server's pages, with the engine's development checks. From the
+// repository root:
 //   bun run bench:soak
 //   bun run bench:soak --gpu webgl2 --minutes 20 --n 30000
 import { parseArgs } from 'node:util';
 import { chromium, type Page } from '@playwright/test';
 import { pageResult } from '../tests/lib/page-result.ts';
-import { DEBUG_PORT, startServer } from '../tests/lib/server.ts';
+import { DEBUG_PORT } from '../tests/lib/server.ts';
 import {
 	type AttachedWorker,
 	attachEveryWorker,
@@ -22,6 +24,7 @@ import {
 	wasmMemoryBytes,
 } from './lib/devtools';
 import { pagePath } from './lib/parity';
+import { pagesText, serveBenchPages } from './lib/serve';
 import { judgeSoak, kb, mb, type SoakSample, soakTable } from './lib/soak';
 
 /** Seconds between samples. */
@@ -48,6 +51,7 @@ interface Options {
 	gpu: 'webgpu' | 'webgl2';
 	minutes: number;
 	n: number;
+	dev: boolean;
 }
 
 function readOptions(args: string[]): Options {
@@ -57,6 +61,7 @@ function readOptions(args: string[]): Options {
 			gpu: { type: 'string', default: 'webgpu' },
 			minutes: { type: 'string', default: '10' },
 			n: { type: 'string', default: '100000' },
+			dev: { type: 'boolean', default: false },
 		},
 	});
 	const { gpu } = values;
@@ -67,7 +72,7 @@ function readOptions(args: string[]): Options {
 	const n = Number(values.n);
 	if (!Number.isSafeInteger(n) || n < 1)
 		throw new Error(`--n takes a whole number above 0, not ${values.n}`);
-	return { gpu, minutes, n };
+	return { gpu, minutes, n, dev: values.dev };
 }
 
 /** What the page publishes once the engine runs the scene in demo mode. */
@@ -174,7 +179,7 @@ function measureEnd(page: Page): Promise<{ frames: number; presentedFps: number 
 
 async function main(): Promise<void> {
 	const options = readOptions(process.argv.slice(2));
-	const server = await startServer();
+	const server = await serveBenchPages({ dev: options.dev });
 	const browser = await chromium.launch({
 		channel: 'chrome',
 		args: [`--remote-debugging-port=${DEBUG_PORT}`],
@@ -197,7 +202,7 @@ async function main(): Promise<void> {
 			const { jobWorkers, latency } = started.mode;
 			const attached = await attachEveryWorker(devtools, target.targetId, 2 + jobWorkers);
 			console.log(
-				`Soak: S1 with ${options.n.toLocaleString('en-US')} instances on ${started.tier}, ${latency}, with ${jobWorkers} job workers, for ${options.minutes} min, sampled every ${SAMPLE_SECONDS} s`,
+				`Soak: S1 with ${options.n.toLocaleString('en-US')} instances on ${started.tier}, ${latency}, with ${jobWorkers} job workers, ${pagesText(options.dev)}, for ${options.minutes} min, sampled every ${SAMPLE_SECONDS} s`,
 			);
 			const samples = await sampleRun(devtools, attached, options.minutes);
 			const end = await measureEnd(page);
