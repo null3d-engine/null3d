@@ -63,3 +63,8 @@ export const DisplayInterval = 22;
  * them in the order of their ids, which count from 1, so every id up to this count arrived.
  */
 export const ImagesArrived = 23;
+/**
+ * Device pixels per CSS pixel that the engine draws with, as float bits: the display's ratio,
+ * capped by the page's `maxPixelRatio`.
+ */
+export const PixelRatio = 25;

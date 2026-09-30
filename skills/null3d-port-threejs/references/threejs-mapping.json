@@ -44,7 +44,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "Automatic",
-      "notes": "The engine follows the canvas's CSS size and updates every camera's aspect ratio. Delete resize handlers and updateProjectionMatrix calls.",
+      "notes": "The engine follows the canvas's CSS size. Perspective cameras, and orthographic cameras made with a height, follow its aspect ratio in every frame. Delete resize handlers and updateProjectionMatrix calls.",
       "docs": "api/engine",
       "detect": "\\.setSize\\s*\\(|\\.updateProjectionMatrix\\s*\\(|\\.aspect\\s*="
     },
@@ -473,7 +473,7 @@
       "status": "direct",
       "since": "0.1",
       "target": "scene.createPerspectiveCamera({ fov, near, far, position, target })",
-      "notes": "fov is vertical and in degrees, as in three.js. The aspect ratio is automatic.",
+      "notes": "fov is vertical and in degrees, as in three.js. The aspect ratio is automatic. The fov, near and far properties are read-only: change them with camera.setFov(degrees) and camera.setNearFar(near, far).",
       "docs": "api/cameras",
       "detect": "\\bPerspectiveCamera\\b"
     },
@@ -483,8 +483,8 @@
       "three": "OrthographicCamera(left, right, top, bottom, near, far)",
       "status": "direct",
       "since": "0.1",
-      "target": "scene.createOrthographicCamera({ height, near, far }), or left/right/top/bottom",
-      "notes": "With height only, the width follows the canvas aspect ratio.",
+      "target": "scene.createOrthographicCamera({ height, near, far, position, target }), or left, right, top and bottom in place of height",
+      "notes": "With height alone, the width follows the canvas's aspect ratio, so code that recomputes left and right on resize goes away. The four edges keep their shape on any canvas, as in three.js. To zoom, call camera.setOrthoHeight with the original height divided by three.js's zoom.",
       "docs": "api/cameras",
       "detect": "\\bOrthographicCamera\\b"
     },
@@ -1341,8 +1341,8 @@
       "three": "Clock / getDelta / getElapsedTime",
       "status": "changed",
       "since": "0.1",
-      "target": "onUpdate(dt) and ctx.time.now",
-      "notes": "",
+      "target": "onUpdate(dt) or ctx.time.dt, and ctx.time.now",
+      "notes": "getDelta() becomes the dt that onUpdate gets, also in ctx.time.dt, and getElapsedTime() becomes ctx.time.now. Sketch time stops while the engine is paused or the page is hidden. A fixed-step simulation, such as world.step(1 / 60), moves to onFixedUpdate.",
       "docs": "api/time",
       "detect": "\\bClock\\b|\\.getDelta\\s*\\(|\\.getElapsedTime\\s*\\("
     },
