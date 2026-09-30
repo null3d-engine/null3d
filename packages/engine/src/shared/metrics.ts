@@ -8,36 +8,15 @@
 // its sequence word holds the expected value before and after the fields are copied, so a record
 // the writer overwrote meanwhile is counted as lost instead of read half-written.
 
-/** The rings of the metrics buffer, one per thread role. Job worker k writes ring `Role.Job + k`. */
-export enum Role {
-	Sketch = 0,
-	Render = 1,
-	/** GPU time per frame and per pass from timestamp queries, written by the thread that draws. */
-	Gpu = 2,
-	/**
-	 * Frames the GPU finished: each record's busy time is the time from the frame's submit to its
-	 * completion, and its interval the time since the previous completion.
-	 */
-	Completion = 3,
-	Job = 4,
-}
+import * as Counter from './counter';
+import * as GpuCounter from './gpu-counter';
+import * as Phase from './phase';
+import * as Role from './role';
 
-/** CPU phases of a frame, in the order they run. */
-export enum Phase {
-	/** The sketch's update callback. */
-	Update = 0,
-	/** Structural changes applied from the command ring. */
-	Commands = 1,
-	Transforms = 2,
-	Batches = 3,
-	Cull = 4,
-	/** Draw-list recording. */
-	Record = 5,
-	/** Writes of changed data to GPU buffers. */
-	Upload = 6,
-	/** Draw-list replay into GPU commands, including the submit. */
-	Replay = 7,
-}
+// The numbered names of the metrics buffer: the rings, one per thread role (job worker k writes
+// ring `Role.Job + k`), the CPU phases of a frame in the order they run, the counters of a frame
+// record, and what a GPU record's counter slots hold.
+export { Counter, GpuCounter, Phase, Role };
 
 export const PHASE_NAMES = [
 	'update',
@@ -57,21 +36,6 @@ export const PHASE_NAMES = [
  * @category api/debug
  */
 export type PhaseName = (typeof PHASE_NAMES)[number];
-
-export enum Counter {
-	UploadBytes = 0,
-	DrawCalls = 1,
-	Dispatches = 2,
-	/** 1 in a frame whose structure change rebuilt the draw tables, on the sketch thread's record. */
-	Rebuilds = 3,
-	/** Render and compute pipelines the GPU built for the frame. */
-	Pipelines = 4,
-	/**
-	 * The frame's index list entries, on the sketch thread's record, or `CORE_NOT_COUNTED` where the
-	 * GPU culls.
-	 */
-	VisibleEntries = 5,
-}
 
 export const COUNTER_NAMES = [
 	'uploadBytes',
@@ -93,14 +57,6 @@ export const GPU_TIMED_PASSES = PHASE_NAMES.length - 1;
 
 /** A GPU record's time for a part of the frame that the browser gave no timestamps for. */
 export const UNTIMED = -1;
-
-/** What a GPU record's counter slots hold. */
-export enum GpuCounter {
-	/** The passes of the frame, timed alone or not. */
-	Passes = 0,
-	/** Bit k is set when the frame's pass k is a render pass, and clear when it is a compute pass. */
-	RenderPasses = 1,
-}
 
 /** Records each ring holds: several seconds of frames, far longer than the page waits between drains. */
 export const RING_RECORDS = 1024;
@@ -208,13 +164,13 @@ export class FrameRecorder {
 		this.at = at;
 	}
 
-	addPhase(phase: Phase, ms: number): void {
+	addPhase(phase: number, ms: number): void {
 		const { floats } = this.views;
 		const at = this.at + PHASES + phase;
 		floats[at] = (floats[at] as number) + ms;
 	}
 
-	count(counter: Counter, value: number): void {
+	count(counter: number, value: number): void {
 		this.views.words[this.at + COUNTERS + counter] = value;
 	}
 
