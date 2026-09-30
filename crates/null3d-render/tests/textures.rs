@@ -162,7 +162,7 @@ fn an_array_that_grows_makes_its_group_again_and_webgpu_records_its_bundle_again
         let texture = settings.textures_mut().create(map_desc(SIZE)).unwrap();
         settings
             .textures_mut()
-            .set_image(texture, SIZE, SIZE)
+            .set_image(texture, SIZE, SIZE, 0)
             .unwrap();
     }
     let commands = step(&mut world, &mut mock, false);
