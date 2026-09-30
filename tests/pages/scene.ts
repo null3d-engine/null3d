@@ -2,7 +2,8 @@
 // and captures the drawn frame through the engine. With ?hold, the engine's hold mode draws the
 // frame. Without it, the page measures the engine's frames for a second first. With ?lose-gpu, it
 // also acts out a loss of the GPU before that, so the capture shows the scene the engine drew again
-// on a new device.
+// on a new device. ?sketch= draws another sketch module, by its path from this page, with the
+// sketch's own query after it.
 import { createEngine } from '@null3d/engine';
 import { run, toBase64 } from './lib/result';
 
@@ -16,7 +17,7 @@ run('scene', async () => {
 	if (!canvas) throw new Error('the page has no canvas');
 	const engine = await createEngine({
 		canvas,
-		sketch: new URL('./sketches/boxes-sketch.ts', import.meta.url),
+		sketch: new URL(params.get('sketch') ?? './sketches/boxes-sketch.ts', import.meta.url),
 		maxPixelRatio: 1,
 	});
 	const failures: string[] = [];

@@ -393,6 +393,10 @@ const STARTUP_TIMEOUT_SECONDS = 60;
 /** The engine page's measured time after its first frame: short, as a load needs only its start. */
 const STARTUP_SECONDS = 0.2;
 
+/** The name of the startup plan's item for one load of the engine test page in `mode`. */
+const startupItemId = (mode: EngineMode, load: LoadKind, run: number | 'first') =>
+	`startup-${slug(mode.name)}-${load}-${run}`;
+
 /**
  * The runner page's item for one startup load of the engine test page in `mode`, on the GPU path
  * that the engine picks. The load's key names the run and the runner, which the runner page fills
@@ -403,7 +407,7 @@ function startupItem(mode: EngineMode, load: LoadKind, run: number | 'first'): P
 	const name = `${slug(mode.name)}-${load}`;
 	const key = runnerKey(load === 'cold' ? `${name}-${run}` : name);
 	return pageItem(
-		`startup-${name}-${run}`,
+		startupItemId(mode, load, run),
 		'engine',
 		{ kind: 'startup', mode, load, ...(run === 'first' && { first: true as const }) },
 		{
@@ -439,6 +443,30 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	depth: depthPlan,
 	startup: startupPlan,
 };
+
+/**
+ * The items that an item needs earlier in the same run, by name: the items whose results judging
+ * it reads, and for a later warm startup load, the first warm load of its mode, which fills the
+ * cache it loads from. A shard of a plan keeps each item with the items it needs.
+ */
+export function itemsNeeded(check: Check): string[] {
+	switch (check.kind) {
+		case 'capabilities-reload':
+			return [check.first];
+		case 'image':
+			return check.run.sameAs === undefined ? [] : [imageItemId(check.run.sameAs)];
+		case 'parity':
+			return [
+				...new Set([check.pair.reference, BASELINE_PAIR.reference, BASELINE_PAIR.candidate]),
+			].map((kind) => parityItemId(check.scene, kind));
+		case 'startup':
+			return check.load === 'warm' && !check.first
+				? [startupItemId(check.mode, 'warm', 'first')]
+				: [];
+		default:
+			return [];
+	}
+}
 
 /**
  * The starts of the errors that mean the browser offers no WebGPU at all: the engine's, and those

@@ -27,10 +27,10 @@ This repository holds the null3D engine, its tools, its documentation and its ag
 | `bun run build` | Build both WebAssembly files, the threaded one and the single-threaded one, and the shader compiler for the Vite plugin. Print their sizes and the sizes of the engine's JavaScript in a production build |
 | `bun run build:check-size` | Build, then compare each file's size after Brotli compression with main's build. Fail when a file grew more than 2% and no `Size-Growth:` trailer explains it. `--base <ref>` compares with another commit |
 | `bun run test` | Unit tests for the engine, the benchmark scenes and the repository tools |
-| `bun run test:browser` | The browser tests in Chrome, through Playwright: the image test manifest on every GPU tier, and the engine's behavior. The engine and errors tests run again on a production build served by `vite preview`. CI splits the tests into shards with `--shard=1/2` |
+| `bun run test:browser` | The browser tests in Chrome, through Playwright: the image test manifest on every GPU tier, and the engine's behavior. The engine, errors and sketch shaders tests run again on a production build served by `vite preview`. CI splits the tests into shards with `--shard=1/2` |
 | `bun run test:images` | The image test manifest alone. Add Playwright's options, such as `-g scene` for the tests whose names hold scene |
 | `bun run images:review` | Show the images that runs saved because they have no reference or differ from it, each beside its reference and diff. `--accept` makes them references, and `--ci <run>` fetches a CI run's images first |
-| `bun run test:shader-compiler` | Run the shader crate's build tests again through the shader compiler, which must give the native build's results, then the compiler's own tests. Run `bun run build` first |
+| `bun run test:shader-compiler` | Run the shader crate's build tests again through the shader compiler, which must give the native build's results, then the compiler's own tests and the Vite plugin's WGSL tests. Run `bun run build` first |
 | `bun run test:real-browsers Safari Firefox` | The same test pages and the image test manifest in browser apps that Playwright cannot drive, through the runner page (macOS) |
 | `bun run devices` | The same checks on an Android phone over USB (Chrome, then Brave) and on runner pages that wait on the local network (an iPad's Safari and Brave). Add `--shields on` or `--shields off` to record the state of Brave's Shields |
 | `bun run test:bench` | The benchmark pages of both engines in Chrome, through Playwright |

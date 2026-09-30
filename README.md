@@ -81,7 +81,7 @@ bun add @null3d/engine
 bun add -d vite @null3d/vite-plugin
 ```
 
-The Vite plugin sends the headers that worker threads need and builds the sketch worker:
+The Vite plugin sends the headers that worker threads need, builds the sketch worker, and compiles your WGSL for WebGPU and WebGL2:
 
 ```ts
 // vite.config.ts

@@ -19,12 +19,29 @@ thread_local! {
     static TRACKED: Cell<bool> = const { Cell::new(false) };
 }
 
+/// A counting test's hold on the shared counter, from [`CountingAllocator::exclusive`]. When it
+/// drops, at the end of the test, it stops counting the current thread before it lets the next
+/// test take the counter. The test runner's own work on the thread after the test then cannot
+/// reach the next test's count.
+pub struct Exclusive {
+    _lock: MutexGuard<'static, ()>,
+}
+
+impl Drop for Exclusive {
+    fn drop(&mut self) {
+        TRACKED.with(|t| t.set(false));
+    }
+}
+
 impl CountingAllocator {
-    /// Runs counting tests one at a time: they share one counter. Take it before tracking.
-    pub fn exclusive() -> MutexGuard<'static, ()> {
-        EXCLUSIVE
-            .lock()
-            .unwrap_or_else(|poisoned| poisoned.into_inner())
+    /// Runs counting tests one at a time: they share one counter. Take it before tracking, and
+    /// keep it until the test ends.
+    pub fn exclusive() -> Exclusive {
+        Exclusive {
+            _lock: EXCLUSIVE
+                .lock()
+                .unwrap_or_else(|poisoned| poisoned.into_inner()),
+        }
     }
 
     /// Counts allocations made from now on by the current thread.
