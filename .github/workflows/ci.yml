@@ -151,12 +151,12 @@ jobs:
           path: test-results/
           if-no-files-found: ignore
 
-  real-browsers:
-    # Safari and Firefox on GitHub's macOS machines, through the same test pages. A missing WebGPU
-    # adapter or WebGL2 context is reported as a skip, because these virtual machines may not give a
-    # browser one: Safari gets no WebGPU there, and Firefox no WebGL2.
-    runs-on: macos-15
-    timeout-minutes: 30
+  real-browsers-build:
+    # The engine's two WebAssembly files for the Safari and Firefox jobs, built once on Linux. The
+    # files are the same on every platform, and GitHub gives few macOS machines at once, so each
+    # macOS job downloads them instead of spending more than a minute to build them again.
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
     env:
       HUSKY: "0"
     steps:
@@ -168,16 +168,56 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
-      - run: bun run build
+      - name: Build the two WebAssembly files
+        run: bun tools/build-wasm.ts --core-only
+      - uses: actions/upload-artifact@v4
+        with:
+          name: engine-core
+          path: packages/engine/dist/
+          if-no-files-found: error
+          retention-days: 1
+
+  real-browsers:
+    # Safari and Firefox on GitHub's macOS machines, through the same test pages, with each
+    # browser's checks split into shards that run at once. A missing WebGPU adapter or WebGL2
+    # context is reported as a skip, because these virtual machines may not give a browser one:
+    # Safari gets no WebGPU there, and Firefox no WebGL2.
+    name: real-browsers (${{ matrix.browser }} ${{ matrix.shard }}/${{ matrix.shards }})
+    needs: real-browsers-build
+    runs-on: macos-15
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { browser: Safari, shard: 1, shards: 1 }
+          - { browser: Firefox, shard: 1, shards: 1 }
+          - { browser: Safari, shard: 1, shards: 2 }
+          - { browser: Safari, shard: 2, shards: 2 }
+          - { browser: Firefox, shard: 1, shards: 2 }
+          - { browser: Firefox, shard: 2, shards: 2 }
+    env:
+      HUSKY: "0"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          name: engine-core
+          path: packages/engine/dist/
       # An app with the downloaded-file flag asks before its first launch, and nobody can answer.
       - name: Let Firefox open without the first-launch prompt
+        if: matrix.browser == 'Firefox'
         run: xattr -dr com.apple.quarantine /Applications/Firefox.app || true
-      - name: Safari and Firefox
-        run: bun tests/real-browsers.ts --allow-no-webgpu --allow-no-webgl2 Safari Firefox
+      - name: ${{ matrix.browser }}, shard ${{ matrix.shard }} of ${{ matrix.shards }}
+        run: bun tests/real-browsers.ts --allow-no-webgpu --allow-no-webgl2 --shard ${{ matrix.shard }}/${{ matrix.shards }} ${{ matrix.browser }}
       - uses: actions/upload-artifact@v4
-        if: failure() || cancelled()
+        if: always()
         with:
-          name: real-browser-runs
+          name: real-browser-runs-${{ matrix.browser }}-${{ matrix.shard }}-of-${{ matrix.shards }}
           path: |
             target/runs/
             test-results/images/

@@ -117,6 +117,44 @@ export function finished(run: string, runner: string): boolean {
 	return existsSync(join(RUNS_DIR, run, runner, 'done.json'));
 }
 
+/** One shard of a plan: the index-th of `count` shards, counting from 1. */
+export interface Shard {
+	index: number;
+	count: number;
+}
+
+/**
+ * The items of one shard of a plan, in the plan's order. An item stays in the shard of the items
+ * that `needs` names for it, so each group of items that need each other moves as one. The groups,
+ * in the order of their first items, go each to the shard with the fewest items so far, the first
+ * such shard on a tie. So the split depends only on the plan, and the shards' item counts differ
+ * by at most the size of the largest group.
+ */
+export function shardItems<Check>(
+	items: readonly PlanItem<Check>[],
+	{ index, count }: Shard,
+	needs: (item: PlanItem<Check>) => readonly string[],
+): PlanItem<Check>[] {
+	// Each item points to another item of its group, and the group's root points to itself.
+	const parent = new Map(items.map((item) => [item.id, item.id]));
+	const root = (id: string): string => {
+		const up = parent.get(id) as string;
+		return up === id ? id : root(up);
+	};
+	for (const item of items)
+		for (const id of needs(item)) if (parent.has(id)) parent.set(root(item.id), root(id));
+	const sizes = new Map<string, number>();
+	for (const item of items) sizes.set(root(item.id), (sizes.get(root(item.id)) ?? 0) + 1);
+	const counts = new Array<number>(count).fill(0);
+	const shardOf = new Map<string, number>();
+	for (const [group, size] of sizes) {
+		const fewest = counts.indexOf(Math.min(...counts));
+		shardOf.set(group, fewest);
+		counts[fewest] = (counts[fewest] ?? 0) + size;
+	}
+	return items.filter((item) => shardOf.get(root(item.id)) === index - 1);
+}
+
 /** A runner page in one browser, and the physical device that browser runs on. */
 export interface Runner {
 	name: string;
