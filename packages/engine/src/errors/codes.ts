@@ -74,7 +74,7 @@ const DOCS = {
 	E1108: {
 		title: 'Value out of range',
 		cause:
-			'A call received a number outside the range it takes. Examples are a row past the capacity of an instance batch, an opacity above 1, and a negative radius.',
+			"A call received a number outside the range it takes. Examples are a row past the capacity of an instance batch, an opacity above 1, a negative radius, and a camera's far plane that does not lie beyond its near plane.",
 		example: 'E1108: setActiveCount() got 1200, above the limit of 1000.',
 		since: '0.1',
 	},

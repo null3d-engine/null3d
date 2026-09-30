@@ -2,12 +2,11 @@
 // three.js pages, which must show the scene. The image test manifest compares null3D's hold frames
 // with their references, and the parity command compares them with three.js's.
 import { join } from 'node:path';
-import { expect, type Page, test } from '@playwright/test';
-import { watchConsole } from '../../packages/cli/src/page.js';
+import { expect, test } from '@playwright/test';
 import { writePng } from '../../packages/cli/src/png.js';
-import { pageResult } from '../../tests/lib/page-result.ts';
 import { isNull3dPage, PARITY_SCENES, type PageKind, pagePath, SCENE_CODE } from '../lib/parity';
 import { BACKGROUND, PARITY_CANVAS, S2_NODES_PER_TREE, s2Trees } from '../scenes/spec';
+import { openPage, type PageReport, runPage } from './open-page';
 
 const SCENES = PARITY_SCENES;
 /** The pages each scene is tested on, with the renderer each one reports. */
@@ -39,9 +38,7 @@ const SHORT_RUN_COUNT = 1000;
 /** S2 draws whole trees, so it rounds the short runs' count up to them. */
 const S2_SHORT_RUN_COUNT = s2Trees(SHORT_RUN_COUNT) * S2_NODES_PER_TREE;
 
-interface Report {
-	ok: boolean;
-	error?: string;
+interface Report extends PageReport {
 	scene: string;
 	renderer: string;
 	n: number;
@@ -58,26 +55,6 @@ interface BenchReport extends Report {
 	cpuMs: { median: number; p95: number; p99: number; mean: number };
 	intervalMs: { median: number; p95: number; p99: number };
 	userAgent: string;
-}
-
-/** Runs in the page: the result the page published, once it exists. */
-/** Opens a page and returns the result that it publishes, with every error that it logs. */
-async function openPage<T extends Report>(
-	page: Page,
-	path: string,
-): Promise<{ result: T; errors: string[] }> {
-	const { errors } = watchConsole(page);
-	await page.goto(path);
-	return { result: await pageResult<T>(page, 90_000), errors };
-}
-
-/** Opens a page and returns its result. It fails on a page error and on any error in the console. */
-async function runPage<T extends Report>(page: Page, path: string): Promise<T> {
-	const { result, errors } = await openPage<T>(page, path);
-	expect(result.error).toBeUndefined();
-	expect(result.ok).toBe(true);
-	expect(errors).toEqual([]);
-	return result;
 }
 
 /** How many pixels of an RGBA8 image have the background color, within the tolerance. */

@@ -100,8 +100,8 @@ export default defineSketch(async (ctx) => {
 | `scene.instantiate(prefab, { position, rotation, scale, parent })` (0.2) | Node | Creates a loaded glTF model |
 | `scene.clone(obj)` (0.2) | same type | Deep copy of a built object |
 | `scene.find(name)` | Node or undefined | The first live node with the name; use at setup, not per frame |
-| `scene.createPerspectiveCamera({ fov, near, far, position, target, layers })` | Camera | fov is vertical, in degrees |
-| `scene.createOrthographicCamera({ height, near, far, position, target })` | Camera | Or left, right, top, bottom |
+| `scene.createPerspectiveCamera({ fov, near, far, position, target, layers })` | PerspectiveCamera | fov is vertical, in degrees |
+| `scene.createOrthographicCamera({ height, near, far, position, target, layers })` | OrthographicCamera | Or left, right, top, bottom in place of height |
 | `scene.setActiveCamera(camera)` | | |
 | `scene.createDirectionalLight(opts)` and the other lights | Light | Section 7 |
 | `scene.setBackground('#rrggbb' or texture or environment or { sky })` | | `{ sky: { turbidity, rayleigh, sunDirection } }` (0.2) |
@@ -178,11 +178,16 @@ A prefab with several meshes (0.2) gives one batch per mesh inside a group batch
 ## 6. Cameras (`api/cameras`)
 
 ```ts
-camera.setFov(deg); camera.setNearFar(near, far); camera.setOrthoHeight(h);
+camera.setNearFar(near, far);     camera.near; camera.far;     // both kinds
+camera.isOrthographic;            // false for PerspectiveCamera, true for OrthographicCamera
+camera.setFov(deg);               camera.fov;                  // PerspectiveCamera
+camera.setOrthoHeight(h);         camera.height; camera.width; // OrthographicCamera; width undefined while it follows the canvas
 camera.setLayers(mask);
-camera.screenToRay(x, y, ray);    // x, y in CSS pixels; ray = { origin: number[3], direction: number[3] }
-camera.worldToScreen(p, out);     // out = [x, y, depth]; depth < 0 means behind the camera
+camera.screenToRay(x, y, ray);    // (0.2) x, y in CSS pixels; ray = { origin: number[3], direction: number[3] }
+camera.worldToScreen(p, out);     // (0.2) out = [x, y, depth]; depth < 0 means behind the camera
 ```
+
+An orthographic camera made with `height` follows the canvas's aspect ratio; one made with `left`, `right`, `top` and `bottom` keeps those edges, and `setOrthoHeight` scales them about their center.
 
 ## 7. Lights (`api/lights`)
 
