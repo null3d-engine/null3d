@@ -138,7 +138,8 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 	} else if (message.type === 'post') {
 		runner?.receive(message.name, message.data);
 	} else if (message.type === 'capture' && draw && drawing && controlSlots) {
-		await replyWithCapture(draw.captureFrame(drawing, controlSlots));
+		const capture = message.image ? draw.captureImage : draw.captureFrame;
+		await replyWithCapture(capture(drawing, controlSlots));
 	} else if (message.type === 'lose-gpu') {
 		drawing?.simulateLoss();
 	}

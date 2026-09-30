@@ -7,7 +7,7 @@ const repoRoot = join(import.meta.dir, '../..');
 
 const skill = (body: string) =>
 	`---\nname: demo-skill\ndescription: Demonstrates the skills check.\n---\n\n# Demo\n\n${body}\n`;
-const EVALS = JSON.stringify({ skill_name: 'demo-skill', evals: [] });
+const EVALS = JSON.stringify({ skill_name: 'demo-skill', engine_version: '0.1', evals: [] });
 const PAGE =
 	'---\nid: concepts/handles\ntitle: Handles\nstatus: planned\nsince: "0.1"\nsummary: S\n---\n';
 
@@ -29,6 +29,18 @@ describe('checkSkills', () => {
 		const { problems } = checkSkills(root);
 		expect(problems).toEqual([
 			'docs page "concepts/missing-page" does not exist (named in skills/demo-skill/SKILL.md)',
+		]);
+	});
+
+	it('fails when evals.json pins no engine version', () => {
+		const root = fixture({
+			'docs/concepts/handles.md': PAGE,
+			'skills/demo-skill/SKILL.md': skill('See `concepts/handles`.'),
+			'skills/demo-skill/evals/evals.json': JSON.stringify({ skill_name: 'demo-skill', evals: [] }),
+		});
+		syncSkills(root);
+		expect(checkSkills(root).problems).toEqual([
+			'demo-skill: evals.json needs engine_version, the engine version its expectations assume, such as "0.1"',
 		]);
 	});
 

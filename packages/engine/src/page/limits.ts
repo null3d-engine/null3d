@@ -1,12 +1,19 @@
 // What the engine core and the thread that draws need to know about the device and the canvas: on
 // WebGPU, the storage binding size the engine asks the GPU for; on WebGL2, multi-draw, the texture
 // size, whether WebGL reads shared memory and how depth is stored; on both, the target that scene
-// passes draw into and whether the canvas is transparent. They also set how many objects and
+// passes draw into and whether the canvas is transparent. The permutation bits that the device
+// fixes pick the shader module that the thread that draws loads. They also set how many objects and
 // instance rows a scene can draw, and past how many development builds warn that other devices of
 // the same GPU path draw fewer.
 
 import * as C from '../generated/core';
-import { FORMAT_CANVAS, FORMAT_RG11B10_UFLOAT, FORMAT_RGBA16_FLOAT } from '../generated/gpu';
+import {
+	FORMAT_CANVAS,
+	FORMAT_RG11B10_UFLOAT,
+	FORMAT_RGBA16_FLOAT,
+	PERMUTATION_DRAW_INDEX,
+	PERMUTATION_TONE_MAP,
+} from '../generated/gpu';
 import type { Tier } from '../render/renderer';
 import type { DepthMode, Switches } from './switches';
 
@@ -55,13 +62,24 @@ export interface CoreDevice {
 	sceneColor: number;
 	/** True when the canvas keeps premultiplied alpha, and stays clear where nothing draws. */
 	transparent: boolean;
+	/**
+	 * The permutation bits that the device fixes, in every pipeline it builds: the draw index where
+	 * WebGL2 has multi-draw, and tone mapping in the shader on the 8-bit path. They pick the module
+	 * of shader builds that the thread that draws loads.
+	 */
+	shaderBits: number;
+	/** False when the core culls every object and instance row, with no grid cells skipped first. */
+	cellCulling: boolean;
 }
 
 /**
- * How the page asks the engine to use the device: the test switches that force a route, and the
- * canvas's transparency.
+ * How the page asks the engine to use the device: the test switches that force a route or turn
+ * cell culling off for benchmarks, and the canvas's transparency.
  */
-export type DeviceOptions = Pick<Switches, 'copyUploads' | 'depth' | 'hdr' | 'parallelCompile'> & {
+export type DeviceOptions = Pick<
+	Switches,
+	'copyUploads' | 'depth' | 'hdr' | 'parallelCompile' | 'cells'
+> & {
 	/** True for a transparent canvas. */
 	transparent: boolean;
 };
@@ -125,13 +143,17 @@ export function sceneColorFormat(
  * The device and the canvas as the engine uses them on a tier, from the capability report and the
  * options. The test switches make the WebGL2 path copy uploads out of shared memory even where
  * WebGL reads it, force a WebGL2 depth mode, make WebGL2 wait for each program's compile, or force
- * the 8-bit path, so tests reach every route.
+ * the 8-bit path, so tests reach every route. `cells` off makes the core cull without grid cells,
+ * for benchmarks.
  */
 export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOptions): CoreDevice {
+	const sceneColor = sceneColorFormat(tier, report, options.hdr, options.transparent);
+	const toneMap = sceneColor === FORMAT_CANVAS ? PERMUTATION_TONE_MAP : 0;
 	const common = {
 		parallelCompile: options.parallelCompile,
-		sceneColor: sceneColorFormat(tier, report, options.hdr, options.transparent),
+		sceneColor,
 		transparent: options.transparent,
+		cellCulling: options.cells,
 	};
 	if (tier !== 'webgl2') {
 		return {
@@ -141,6 +163,7 @@ export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOpti
 			maxTextureSize: 0,
 			sharedUploads: true,
 			depth: 'reversed',
+			shaderBits: toneMap,
 			...common,
 		};
 	}
@@ -155,6 +178,7 @@ export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOpti
 		sharedUploads:
 			!options.copyUploads && uploads !== null && uploads.bufferSubData && uploads.texSubImage2D,
 		depth: webgl2Depth(gl.extensions.EXT_clip_control === true, options.depth),
+		shaderBits: (multiDraw ? PERMUTATION_DRAW_INDEX : 0) | toneMap,
 		...common,
 	};
 }

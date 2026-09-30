@@ -2,7 +2,7 @@
 
 three.js chains full-screen passes, each reading and writing the whole screen. null3D plans a built-in chain: an HDR scene buffer, and optional half-resolution bloom and ambient occlusion. Then one final pass merges tone mapping, grading, per-pixel custom effects, FXAA and dithering. You port settings, not passes. Engine docs: `porting/threejs-postprocessing`, `api/post`, `concepts/post-processing`, `concepts/backends`.
 
-Versions: the HDR scene buffer, the final pass and `post.set({ toneMapping, exposure })` come later in 0.1. Every other setting in this file, `post.addEffect` and custom passes come in 0.2. Until then, every GPU tier draws 8-bit color with 4 samples per pixel (MSAA) and no tone mapping. So a port leaves the three.js chain out for now, and the report lists each effect it dropped.
+Versions: the HDR scene buffer, the final pass and `post.set({ toneMapping, exposure })` are built. Every other setting in this file, `post.addEffect` and custom passes come in 0.2. Until then, a port keeps only the tone mapping and the exposure of the three.js chain, and the report lists each effect it dropped.
 
 ## Contents
 
@@ -26,7 +26,7 @@ Versions: the HDR scene buffer, the final pass and `post.set({ toneMapping, expo
 | Pass and parameters | null3D | Notes |
 | --- | --- | --- |
 | `RenderPass(scene, camera)` | Nothing | The scene pass is built in |
-| `OutputPass` | Nothing | The engine converts to sRGB for the display once; tone mapping joins it in the final pass later in 0.1 |
+| `OutputPass` | Nothing | The engine's final pass tone maps and converts to sRGB for the display once |
 | `GammaCorrectionShader`, `SRGBShader` in a `ShaderPass` | Delete | Keeping it applies gamma twice |
 | `UnrealBloomPass(resolution, strength, radius, threshold)` | `bloom: { strength, radius, threshold }` (0.2) | `resolution` is not needed: bloom runs at half resolution |
 | `SSAOPass` (`kernelRadius`, `minDistance`, `maxDistance`) | `ao: { radius, intensity }` (0.2) | GTAO on High and Ultra presets; start with radius in world units about the original kernel radius |
@@ -46,9 +46,9 @@ Versions: the HDR scene buffer, the final pass and `post.set({ toneMapping, expo
 
 | Effect | null3D |
 | --- | --- |
-| `EffectComposer`, `RenderPass`, `EffectPass` | Nothing: settings go in `post.set` (later in 0.1 for tone mapping, 0.2 for effects) |
+| `EffectComposer`, `RenderPass`, `EffectPass` | Nothing: settings go in `post.set` (tone mapping now, effects in 0.2) |
 | `BloomEffect` (`intensity`, `luminanceThreshold`, `luminanceSmoothing`, `mipmapBlur`) | `bloom: { strength: intensity, threshold: luminanceThreshold }` (0.2); smoothing and mip blur are built in |
-| `ToneMappingEffect` (`mode`) | `toneMapping` (later in 0.1) |
+| `ToneMappingEffect` (`mode`) | `toneMapping` |
 | `SMAAEffect`, `FXAAEffect` | MSAA, which every tier draws now, or `fxaa: true` (0.2) |
 | `VignetteEffect` (`offset`, `darkness`) | `vignette: { amount }` (0.2); tune until it matches |
 | `SSAOEffect`, N8AO | `ao` (0.2) |
@@ -61,7 +61,7 @@ Versions: the HDR scene buffer, the final pass and `post.set({ toneMapping, expo
 
 | three.js | null3D |
 | --- | --- |
-| `new PostProcessing(renderer)`, `pass(scene, camera)`, `postProcessing.outputNode = ...` | `post.set` (later in 0.1 for tone mapping, 0.2 for effects) |
+| `new PostProcessing(renderer)`, `pass(scene, camera)`, `postProcessing.outputNode = ...` | `post.set` (tone mapping now, effects in 0.2) |
 | `bloom(node, strength, radius, threshold)` | `bloom: { strength, radius, threshold }` (0.2) |
 | `fxaa(node)`, `smaa(node)` | `fxaa: true` (0.2), or MSAA, which every tier draws now |
 | `ao(...)`, `gtao(...)` | `ao` (0.2) |

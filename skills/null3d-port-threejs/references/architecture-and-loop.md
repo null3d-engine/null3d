@@ -54,8 +54,8 @@ engine.postToSketch('settings', { volume: 0.8, quality: 'medium' });
 
 Rules:
 
-- Send events and changes, not per-frame state. A three.js app that updates the DOM every frame from scene data (for example a speedometer) should send the value only when it changes by a visible amount.
-- Positions for HTML elements use `ui.trackLabel`, which needs no messages at all.
+- Send events and changes, not per-frame state. Some three.js apps update the DOM every frame from scene data, such as a speedometer. Send such a value only when it changes by a visible amount.
+- Positions for HTML elements use `ui.trackLabel` (0.2), which needs no messages at all.
 - Give message types names and a TypeScript union type shared by both sides, so typos fail at compile time.
 - Large one-off data (a level file) goes straight to the sketch with `fetch`, not through the page.
 
@@ -123,7 +123,7 @@ function updateEnemies(dt: number) {
   for (let i = 0; i < N; i++) {
     const o = i * 3;
     let dx = playerPos[0] - p[o], dy = playerPos[1] - p[o + 1], dz = playerPos[2] - p[o + 2];
-    const len = Math.hypot(dx, dy, dz) || 1;
+    const len = Math.sqrt(dx * dx + dy * dy + dz * dz) || 1;
     dx /= len; dy /= len; dz /= len;
     vel[o] += (dx - vel[o]) * 0.1; vel[o + 1] += (dy - vel[o + 1]) * 0.1; vel[o + 2] += (dz - vel[o + 2]) * 0.1;
     p[o] += vel[o] * dt; p[o + 1] += vel[o + 1] * dt; p[o + 2] += vel[o + 2] * dt;
@@ -155,12 +155,12 @@ Pointer events that land on HTML UI elements above the canvas do not reach the e
 | Library | What to do |
 | --- | --- |
 | lil-gui, dat.gui, Tweakpane | Keep on the page; send values to the sketch |
-| stats.js | Replace with `debug.stats(true)` |
+| stats.js | `engine.measure()` on the page now; the overlay `debug.stats(true)` comes later in 0.1 |
 | GSAP, tween.js | For scene values, lerp in `onUpdate` (property animation comes after 1.0); DOM tweens stay on the page |
 | cannon-es, Rapier, Ammo | Run in the sketch worker; copy transforms into dynamic objects or batches after each step |
 | three-mesh-bvh | Delete; raycasting uses built-in acceleration structures (0.2) |
 | troika-three-text | Not available: use HTML labels, pre-rendered text textures, or text meshes baked into glTF |
-| postprocessing (pmndrs) | Map effects to `post.set` (`references/post-processing.md`) |
+| postprocessing (pmndrs) | Map effects to `post.set`: tone mapping now, effects in 0.2 (`references/post-processing.md`) |
 | three-stdlib, three/addons utilities | Check each import in the mapping table; many become built-in features |
 
 ## 7. The two-step route for large apps
@@ -170,4 +170,4 @@ Large apps mix DOM and scene code everywhere, which makes a direct move to the w
 1. Port with `createEngine({ sketchThread: 'main' })` (later in 0.1). Sketch code runs on the main thread, so DOM access keeps working while you replace three.js calls. Reach parity here.
 2. Move the DOM-touching code into `page.ts` and messages, then switch to the default worker mode. The scanner's "DOM access" warning lists the files to fix.
 
-Main-thread mode keeps the render and job workers, but sketch code then shares the main thread with the page, so layout work and page scripts can delay frames. Treat it as a stage of the port, not the destination.
+Main-thread mode keeps the render and job workers. But sketch code then shares the main thread with the page, so layout work and page scripts can delay frames. Treat it as a stage of the port, not the destination.

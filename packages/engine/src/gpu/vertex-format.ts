@@ -20,6 +20,12 @@ export function forEachVertexAttribute(
 	}
 }
 
+/** The vertex shader location of the optional attribute with this format bit. */
+export function locationOfAttribute(bit: number): number {
+	for (const [attribute, , location] of VERTEX_ATTRIBUTES) if (attribute === bit) return location;
+	throw new Error(`no vertex attribute has the format bit ${bit}`);
+}
+
 /** Bytes per vertex of a vertex format. */
 export function vertexStride(format: number): number {
 	let stride = 0;

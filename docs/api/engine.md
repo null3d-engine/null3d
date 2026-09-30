@@ -3,12 +3,12 @@ id: api/engine
 title: "Page API: createEngine"
 status: experimental
 since: "0.1"
-summary: "createEngine options; engine.postToSketch, capture, labels, requestPointerLock, capabilities, destroy."
+summary: "createEngine options and start errors; memory; capabilities and mode; pausing, detaching, failures, measuring, captureFrame, messages and destroy."
 ---
 
 # Page API: createEngine
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. The `createEngine` option `sketchThread`, and `engine.capture`, are not built yet, so coding agents must not use them.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. The `createEngine` option `sketchThread` is not built yet, so coding agents must not use it.
 
 `createEngine` starts the engine on a canvas and runs a sketch. It returns an `Engine`, the page's handle on the running engine. The page keeps the HTML, and the sketch builds the scene in a worker of its own.
 
@@ -40,15 +40,19 @@ try {
 
 | Code | Cause |
 | --- | --- |
+| [E1407](../errors/E1407.md) | The `hold` option or the `?hold=` switch gives a time that is not a number of seconds from 0 to 600. |
 | [E1213](../errors/E1213.md) | The `preset` option names no preset, or `maxPixelRatio` is not a number from 0.5 up. |
 | [E1409](../errors/E1409.md) | The `memory` option asks for a maximum that is not a whole number of MiB from 256 to 4096. |
 | [E1303](../errors/E1303.md) | The browser runs WebAssembly without SIMD. |
 | [E1301](../errors/E1301.md) | The browser has no usable GPU path, or no path that `gpu` or `?gpu=` asks for. |
 | [E1406](../errors/E1406.md) | A file of the engine core did not download. |
+| [E1402](../errors/E1402.md) | Development builds only: the engine core's file comes from another build than the engine's JavaScript. |
 | [E1109](../errors/E1109.md) | The browser refused the engine's memory, even after about 3 seconds of tries. |
 | [E1410](../errors/E1410.md) | The sketch module did not load: it did not download, or its code threw an error while it loaded. |
 | [E1401](../errors/E1401.md) | The sketch module's default export is not `defineSketch(...)`. |
+| [E1214](../errors/E1214.md) | An option of `defineSketch` is out of its range. |
 | [E1405](../errors/E1405.md) | An engine thread did not start. |
+| [E1408](../errors/E1408.md) | In hold mode, the sketch or the engine failed before the engine read the held frame back. |
 
 An error that the sketch's setup throws also rejects the start ([Sketch API](sketch.md#the-setup-function)).
 
@@ -62,7 +66,7 @@ An error that the sketch's setup throws also rejects the start ([Sketch API](ske
 | `maxPixelRatio` | The preset's cap | Caps the screen's pixel ratio that the engine draws at, in place of the preset's cap |
 | `gpu` | `'auto'` | Forces a GPU path, for tests only. The `?gpu=` switch in the page's address wins over it. |
 | `powerPreference` | `'high-performance'` | Picks the GPU on a device that has two. `'low-power'` saves battery. |
-| `latency` | `'pipelined'` | The latency mode, `'pipelined'` or `'low'`: [Architecture](../concepts/architecture.md) |
+| `latency` | `'pipelined'` | The latency mode, `'pipelined'` or `'low'`: [Architecture](../concepts/architecture.md#latency-modes). The `?latency=` switch wins over it, and the single-threaded build ignores it. |
 | `transparent` | false | Makes a see-through canvas: [A transparent canvas](#a-transparent-canvas) |
 | `memory` | `{ maximumMiB: 1024 }` | The most memory that the engine's threads share: [Memory](#memory) |
 | `onProgress` | None | Reports each stage of the start |
@@ -111,11 +115,33 @@ The single-threaded build's memory is not shared. It grows as the scene needs, s
 - `onFailure(handler)` receives a failure after the start: a GPU that the engine could not get back ([E1302](../errors/E1302.md)), or an engine thread that failed ([E1404](../errors/E1404.md)). Without a handler, the engine logs the failure to the console.
 - `simulateGpuLoss()` acts out a loss of the GPU, so you can test how the page handles one. The engine starts a new GPU device and draws the whole scene again.
 - `measure(seconds)` measures the running engine: CPU time per frame by thread, GPU time, frame intervals, uploads, draw calls, memory and load time. [Performance guide](../guides/performance.md) explains the numbers.
-- `captureFrame()` draws one frame offscreen and returns its pixels as RGBA8 rows, top row first. On a transparent canvas the pixels keep their premultiplied alpha.
+- `capture()` resolves with a PNG image of the next frame that the engine draws: [Screenshots](#screenshots).
+- `captureFrame()` draws one frame offscreen and returns its pixels as RGBA8 rows, top row first. On a transparent canvas the pixels keep their premultiplied alpha. Tests use it: [Testing your sketch](../guides/testing.md).
 - `postToSketch` and `onSketchMessage` send and receive [messages](page.md).
 - `destroy()` stops the engine and its threads, and the engine cannot start again. Wait for its promise before you start another engine on the same page, because the browser frees the engine's memory only then.
 
 Each `on...` call returns a function that removes its handler. `engine.labels` and `engine.requestPointerLock` come in null3D 0.2.
+
+## Screenshots
+
+`engine.capture()` resolves with an image of the next frame that the engine draws, as a PNG `Blob`. It takes the place of three.js's `preserveDrawingBuffer` with `canvas.toDataURL()`. The page cannot read a frame from the canvas itself: a worker usually draws on it, and the browser clears it after each frame.
+
+```ts
+shotButton.onclick = async () => {
+  const blob = await engine.capture();
+  const link = Object.assign(document.createElement('a'), {
+    href: URL.createObjectURL(blob),
+    download: 'shot.png',
+  });
+  link.click();
+};
+```
+
+The thread that draws reads the frame back from the GPU and encodes the image. When a worker draws, the page's thread does no work for it. The image has the size that the engine draws at, in pixels. It is opaque, as the canvas is, unless the engine draws on a [transparent canvas](#a-transparent-canvas): then the image keeps the frame's alpha.
+
+- While the engine is paused, and in hold mode, the image shows the frame on the canvas.
+- A page in a hidden tab draws no frames, so its image comes when the tab shows again.
+- After `destroy()`, `capture()` fails with [E1414](../errors/E1414.md).
 
 ## Related pages
 
@@ -183,7 +209,8 @@ A running engine, as `createEngine` returns it.
 | `detach(): void` | Takes the canvas off the page and pauses the engine. The engine keeps its threads, its GPU resources and the scene, and stops reading input. Use it when a single-page app leaves the view that shows the canvas, and `attach` when the view comes back. |
 | `attach(container: Element): void` | Puts the canvas at the end of `container` and resumes the engine where it stopped, unless `setPaused(true)` paused it. |
 | `measure(seconds: number): Promise<FrameMetrics>` | Measures the running engine for a number of seconds, then returns CPU time per frame by thread and phase, GPU time, frame intervals, uploads, draw calls, memory and load time. |
-| `captureFrame(): Promise<{ width: number; height: number; pixels: Uint8Array; }>` | Draws one frame offscreen and returns its pixels as RGBA8 rows, top row first. In hold mode, it returns the held frame. |
+| `capture(): Promise<Blob>` | Resolves with an image of the next frame that the engine draws, as a PNG file. The thread that draws reads the frame back and encodes it, so the page's thread does no work for it when a worker draws. In hold mode, and while the engine is paused, the image shows the frame on the canvas. A hidden page draws no frames, so its image comes once the page shows again. Fails with E1414 once the engine has stopped. |
+| `captureFrame(): Promise<{ width: number; height: number; pixels: Uint8Array; }>` | Draws one frame offscreen and returns its pixels as RGBA8 rows, top row first, for tests. In hold mode, it returns the held frame. |
 | `simulateGpuLoss(): void` | Acts out a loss of the GPU, as a driver reset causes. The engine starts a new GPU device and draws the whole scene again, as it does after a real loss. Use it to test how your page handles one. |
 | `destroy(): Promise<void>` | Stops the engine and its workers. The engine cannot start again. The promise resolves once every worker has stopped, when the browser can free the engine's memory. Wait for it before you start another engine on the same page: an iPad has room for only a few engines' memory. |
 
@@ -291,6 +318,7 @@ type ErrorCode =
 	| 'E1411'
 	| 'E1412'
 	| 'E1413'
+	| 'E1414'
 	| 'E1501'
 	| 'E1502'
 	| 'E1503'

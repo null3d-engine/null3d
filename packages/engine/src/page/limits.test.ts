@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'bun:test';
 import * as C from '../generated/core';
-import { FORMAT_CANVAS, FORMAT_RG11B10_UFLOAT, FORMAT_RGBA16_FLOAT } from '../generated/gpu';
+import {
+	FORMAT_CANVAS,
+	FORMAT_RG11B10_UFLOAT,
+	FORMAT_RGBA16_FLOAT,
+	PERMUTATION_DRAW_INDEX,
+	PERMUTATION_TONE_MAP,
+} from '../generated/gpu';
 import {
 	type CoreDevice,
 	coreDevice,
@@ -28,6 +34,8 @@ const webgpu = (storageBindingBytes: number): CoreDevice => ({
 	parallelCompile: true,
 	sceneColor: FORMAT_RGBA16_FLOAT,
 	transparent: false,
+	shaderBits: 0,
+	cellCulling: true,
 });
 
 /** A WebGL2 device that draws RGBA16F targets with the engine's MSAA. */
@@ -54,6 +62,7 @@ const PLAIN: DeviceOptions = {
 	copyUploads: false,
 	depth: undefined,
 	parallelCompile: true,
+	cells: true,
 	hdr: true,
 	transparent: false,
 };
@@ -153,6 +162,14 @@ describe('coreDevice on WebGL2', () => {
 			false,
 		);
 	});
+
+	it('culls by grid cell on both paths unless ?cells=off asks it not to', () => {
+		const off: DeviceOptions = { ...PLAIN, cells: false };
+		for (const tier of ['webgl2', 'webgpu'] as const) {
+			expect(coreDevice(tier, report({}), PLAIN).cellCulling).toBe(true);
+			expect(coreDevice(tier, report({}), off).cellCulling).toBe(false);
+		}
+	});
 });
 
 describe('the warning past the rows that every device of a GPU path draws', () => {
@@ -204,6 +221,25 @@ describe('the depth mode', () => {
 		expect(coreDevice('webgpu', report({}), { ...PLAIN, depth: 'standard' }).depth).toBe(
 			'reversed',
 		);
+	});
+});
+
+describe('the permutation bits that a device fixes', () => {
+	it('hold the draw index where WebGL2 has multi-draw, and nothing on WebGPU with HDR', () => {
+		const multiDraw = report({ extensions: { WEBGL_multi_draw: true } });
+		expect(coreDevice('webgl2', multiDraw, PLAIN).shaderBits).toBe(PERMUTATION_DRAW_INDEX);
+		expect(coreDevice('webgl2', report({}), PLAIN).shaderBits).toBe(0);
+		expect(coreDevice('webgpu', multiDraw, PLAIN).shaderBits).toBe(0);
+	});
+
+	it('hold tone mapping in the shader on the 8-bit path', () => {
+		const multiDraw = report({ extensions: { WEBGL_multi_draw: true }, floatRenderTargets: null });
+		const both = PERMUTATION_DRAW_INDEX | PERMUTATION_TONE_MAP;
+		expect(coreDevice('webgl2', multiDraw, PLAIN).shaderBits).toBe(both);
+		expect(coreDevice('webgl2', report({}), { ...PLAIN, hdr: false }).shaderBits).toBe(
+			PERMUTATION_TONE_MAP,
+		);
+		expect(coreDevice('webgpu-compat', report({}), PLAIN).shaderBits).toBe(PERMUTATION_TONE_MAP);
 	});
 });
 

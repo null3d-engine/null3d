@@ -143,7 +143,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "await engine.capture() on the page",
-      "notes": "Returns an image of the next complete frame. Tests use the engine's readback instead.",
+      "notes": "Resolves with a PNG Blob of the next frame that the engine draws. Tests read pixels with engine.captureFrame() instead.",
       "docs": "api/engine",
       "detect": "preserveDrawingBuffer|readRenderTargetPixels|\\.toDataURL\\s*\\("
     },
@@ -726,8 +726,8 @@
       "status": "direct",
       "since": "0.1",
       "target": "materials.standard({ color, map, metalness, roughness, normalMap, aoMap, emissive, ... })",
-      "notes": "See the materials reference for every parameter and its new name.",
-      "docs": "porting/threejs-materials",
+      "notes": "Both follow glTF's metallic-roughness model with the same formulas, so color, metalness, roughness and emissive values carry over. Texture maps are not built yet.",
+      "docs": "api/materials",
       "detect": "\\bMeshStandardMaterial\\b"
     },
     {
@@ -748,7 +748,7 @@
       "status": "direct",
       "since": "0.1",
       "target": "materials.unlit({ color, map, opacity, alphaMode, vertexColors })",
-      "notes": "",
+      "notes": "Texture maps and alpha modes are not built yet.",
       "docs": "api/materials",
       "detect": "\\bMeshBasicMaterial\\b"
     },
@@ -759,8 +759,8 @@
       "status": "changed",
       "since": "0.1",
       "target": "materials.standard with metalness 0 and roughness near 1 (Lambert), or roughness tuned to the Phong shininess",
-      "notes": "Expect small visual differences; check with parity images and accept or tune.",
-      "docs": "porting/threejs-materials",
+      "notes": "Expect small visual differences: the standard material adds a faint highlight and keeps energy as three.js's MeshStandardMaterial does. Check with parity images and accept or tune.",
+      "docs": "api/materials",
       "detect": "\\bMesh(Lambert|Phong)Material\\b"
     },
     {
@@ -858,7 +858,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "Nothing to do",
-      "notes": "Options that change the shader, such as a normal map, are fixed when a material is created. Create each variant during loading: a new one compiles a pipeline, which can stall a frame.",
+      "notes": "Options that change the shader or the pipeline, such as vertexColors, doubleSided and flatShading, are fixed when a material is created. Create each variant during loading: a new one compiles a pipeline, which can make a frame late.",
       "docs": "concepts/materials",
       "detect": "\\bmaterial\\w*\\.needsUpdate\\b"
     },

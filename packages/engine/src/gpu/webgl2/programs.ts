@@ -16,18 +16,14 @@ import {
 import {
 	DEBUG_LINES_SHADER,
 	DEPTH_MAPPING_UNIFORM,
-	FINAL_SHADER,
+	type DeviceShaders,
 	type GlslProgram,
 	type GlslStage,
-	LIT_SHADER,
-	MIPMAP_SHADER,
-	TEXCOORDS_SHADER,
-	UNLIT_MAP_SHADER,
-	UNLIT_SHADER,
+	type ShaderVariants,
 } from '../../generated/shaders';
 import { DEV } from '../dev';
 import { LINE_VERTICES } from '../line-vertices';
-import { type ShaderVariants, variantFor } from '../variants';
+import { variantFor } from '../variants';
 import type { DepthSetup } from './depth';
 
 /** Texture units and uniform block binding points of each bind group: one per binding. */
@@ -88,14 +84,14 @@ export interface Pipeline {
 	readonly vertices: GPUVertexBufferLayout | undefined;
 }
 
-/** The engine's render pipeline templates, by template id. */
-export function engineTemplates(): (GlslTemplate | undefined)[] {
+/** The engine's render pipeline templates, by template id, from the shaders the device loaded. */
+export function engineTemplates(shaders: DeviceShaders): (GlslTemplate | undefined)[] {
 	const templates: (GlslTemplate | undefined)[] = [];
-	templates[TEMPLATE_INSTANCED_LIT] = { shader: LIT_SHADER, pipeline: 'main' };
-	templates[TEMPLATE_INSTANCED_UNLIT] = { shader: UNLIT_SHADER, pipeline: 'main' };
-	templates[TEMPLATE_INSTANCED_TEXCOORDS] = { shader: TEXCOORDS_SHADER, pipeline: 'main' };
-	templates[TEMPLATE_INSTANCED_UNLIT_MAP] = { shader: UNLIT_MAP_SHADER, pipeline: 'main' };
-	templates[TEMPLATE_FINAL] = { shader: FINAL_SHADER, pipeline: 'main' };
+	templates[TEMPLATE_INSTANCED_LIT] = { shader: shaders.lit, pipeline: 'main' };
+	templates[TEMPLATE_INSTANCED_UNLIT] = { shader: shaders.unlit, pipeline: 'main' };
+	templates[TEMPLATE_INSTANCED_TEXCOORDS] = { shader: shaders.texcoords, pipeline: 'main' };
+	templates[TEMPLATE_INSTANCED_UNLIT_MAP] = { shader: shaders.unlit_map, pipeline: 'main' };
+	templates[TEMPLATE_FINAL] = { shader: shaders.final, pipeline: 'main' };
 	if (DEV)
 		templates[TEMPLATE_DEBUG_LINES] = {
 			shader: DEBUG_LINES_SHADER,
@@ -105,8 +101,13 @@ export function engineTemplates(): (GlslTemplate | undefined)[] {
 	return templates;
 }
 
-/** The program that draws a mip level of a texture array's layer from the level before it. */
-export const MIPMAP_TEMPLATE: GlslTemplate = { shader: MIPMAP_SHADER, pipeline: 'main' };
+/**
+ * The program that draws a mip level of a texture array's layer from the level before it, from the
+ * shaders the device loaded.
+ */
+export function mipmapTemplate(shaders: DeviceShaders): GlslTemplate {
+	return { shader: shaders.mipmap, pipeline: 'main' };
+}
 
 function compile(gl: WebGL2RenderingContext, type: number, stage: GlslStage): WebGLShader {
 	const shader = gl.createShader(type);

@@ -2,6 +2,7 @@
 // worker (low-latency mode) or on the page's main thread (single-threaded mode and ?render=main).
 
 import { FORMAT_RG11B10_UFLOAT } from '../generated/gpu';
+import { loadGlslShaders, loadWgslShaders } from '../generated/shaders';
 import { type Completion, FenceCompletion, QueueCompletion } from '../gpu/completion';
 import { readbackWebGL2, readbackWebGPU } from '../gpu/readback';
 import {
@@ -34,6 +35,8 @@ export interface FrameInput {
 
 export interface Renderer {
 	readonly tier: Tier;
+	/** True when the canvas keeps premultiplied alpha, so a captured image keeps the frame's alpha. */
+	readonly transparent: boolean;
 	/**
 	 * Counts the frames that the GPU finished, and says how many it has not; undefined without a
 	 * metrics buffer.
@@ -94,6 +97,7 @@ export function linearToSrgb(c: number): number {
 }
 
 class WebGPURenderer implements Renderer {
+	readonly transparent = false;
 	private readonly context: GPUCanvasContext;
 	private readonly format: GPUTextureFormat;
 	private readonly timer: GpuTimer | undefined;
@@ -189,6 +193,7 @@ class WebGPURenderer implements Renderer {
 
 class WebGL2Renderer implements Renderer {
 	readonly tier: Tier = 'webgl2';
+	readonly transparent = false;
 	readonly completions: FenceCompletion | undefined;
 	private readonly release = new AbortController();
 	readonly lost: Promise<string>;
@@ -257,25 +262,51 @@ export async function createRenderer(
 	canvas: RenderCanvas,
 	options: RendererOptions,
 ): Promise<Renderer> {
-	const { device: engineDevice } = options;
+	const { scene, device, metrics } = options;
 	if (options.tier === 'webgl2') {
 		// A canvas keeps the settings of the first request for its context and ignores later ones,
 		// so the context is made here with the engine's settings, before anything else asks for it.
-		const gl = webgl2Context(canvas, options.powerPreference, engineDevice.transparent);
-		// After a loss, the context must come back before the engine can draw with it again.
-		await contextRestored(gl);
-		if (options.scene)
+		const gl = webgl2Context(canvas, options.powerPreference, device.transparent);
+		// After a loss, the context must come back before the engine can draw with it again. A
+		// scene's shaders download meanwhile.
+		const [, shaders] = await Promise.all([
+			contextRestored(gl),
+			scene && loadGlslShaders(device.shaderBits),
+		]);
+		if (scene && shaders)
 			return new WebGL2SceneRenderer(
 				canvas,
 				gl,
-				options.scene.memory,
-				options.scene.control,
-				options.metrics,
-				engineDevice,
+				scene.memory,
+				scene.control,
+				metrics,
+				device,
 				options.imageTable,
+				shaders,
 			);
-		return new WebGL2Renderer(canvas, gl, options.metrics);
+		return new WebGL2Renderer(canvas, gl, metrics);
 	}
+	const [gpu, shaders] = await Promise.all([
+		requestDevice(options),
+		scene && loadWgslShaders(device.shaderBits),
+	]);
+	if (scene && shaders)
+		return new WebGPUSceneRenderer(
+			gpu.tier,
+			gpu.device,
+			canvas,
+			scene.memory,
+			scene.control,
+			metrics,
+			options.imageTable,
+			shaders,
+			device.transparent,
+		);
+	return new WebGPURenderer(gpu.tier, gpu.device, canvas, metrics);
+}
+
+/** Requests a WebGPU device with the features and limits that the engine uses, and its tier. */
+async function requestDevice(options: RendererOptions): Promise<{ tier: Tier; device: GPUDevice }> {
 	const adapter = await navigator.gpu?.requestAdapter({
 		featureLevel: 'compatibility',
 		powerPreference: options.powerPreference,
@@ -286,9 +317,9 @@ export async function createRenderer(
 	if (core) requiredFeatures.push('core-features-and-limits' as GPUFeatureName);
 	if (options.metrics && adapter.features.has('timestamp-query'))
 		requiredFeatures.push('timestamp-query');
-	if (engineDevice.sceneColor === FORMAT_RG11B10_UFLOAT)
+	if (options.device.sceneColor === FORMAT_RG11B10_UFLOAT)
 		requiredFeatures.push('rg11b10ufloat-renderable');
-	const binding = engineDevice.storageBindingBytes;
+	const binding = options.device.storageBindingBytes;
 	const device = await adapter.requestDevice({
 		requiredFeatures,
 		// A buffer as large as a binding must fit the device's largest buffer too.
@@ -297,17 +328,5 @@ export async function createRenderer(
 			maxBufferSize: Math.max(binding, DEFAULT_MAX_BUFFER_BYTES),
 		},
 	});
-	const tier = core ? 'webgpu' : 'webgpu-compat';
-	if (options.scene)
-		return new WebGPUSceneRenderer(
-			tier,
-			device,
-			canvas,
-			options.scene.memory,
-			options.scene.control,
-			options.metrics,
-			options.imageTable,
-			engineDevice.transparent,
-		);
-	return new WebGPURenderer(tier, device, canvas, options.metrics);
+	return { tier: core ? 'webgpu' : 'webgpu-compat', device };
 }

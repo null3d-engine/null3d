@@ -4,8 +4,9 @@ enable draw_index;
 // MeshBasicMaterial draws them with a `map`. The map is a layer of a texture array, read at the
 // first texture coordinates. Materials whose maps share an array and a sampler share the maps'
 // bind group, and each material's row in the material table gives its layer. A map whose image is
-// not on the GPU yet has no layer, and the material draws as without it. null3d::mesh finds each instance on both
-// GPU paths.
+// not on the GPU yet has no layer, and the material draws as without it. The VERTEX_COLOR builds
+// multiply the color by the mesh's vertex colors too. null3d::mesh finds each instance on both GPU
+// paths.
 #import null3d::mesh::{InstanceIn, clip_position, find_instance, finish}
 #import null3d::mesh::{map_layer, map_ready, material_of}
 
@@ -23,12 +24,18 @@ enable draw_index;
 struct VertexIn {
     @location(0) position: vec3f,
     @location(2) uv0: vec2f,
+#ifdef VERTEX_COLOR
+    @location(5) vertex_color: vec4f,
+#endif
 }
 
 struct VertexOut {
     @builtin(position) clip: vec4f,
     @location(0) uv0: vec2f,
     @location(1) @interpolate(flat, either) material: u32,
+#ifdef VERTEX_COLOR
+    @location(2) vertex_color: vec4f,
+#endif
 }
 
 @vertex
@@ -38,6 +45,9 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
     out.clip = clip_position(found, v.position);
     out.uv0 = v.uv0;
     out.material = found.material;
+#ifdef VERTEX_COLOR
+    out.vertex_color = v.vertex_color;
+#endif
     return out;
 }
 
@@ -49,6 +59,9 @@ fn fs(in: VertexOut) -> @location(0) vec4f {
     let m = material_of(in.material);
     let texel = textureSample(map_layers, map_sampler, in.uv0, map_layer(m.maps.x));
     let map = select(vec4f(1.0), texel, map_ready(m.maps.x));
-    let base = m.color.rgb * map.rgb;
+    var base = m.color.rgb * map.rgb;
+#ifdef VERTEX_COLOR
+    base *= in.vertex_color.rgb;
+#endif
     return finish(base, in.clip.xy);
 }

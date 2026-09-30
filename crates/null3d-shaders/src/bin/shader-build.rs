@@ -1,5 +1,5 @@
 //! The shader build command. It builds every shader variant in the manifest and writes the
-//! generated TypeScript module, or with `--check` fails when the committed module is out of date.
+//! generated TypeScript modules, or with `--check` fails when a committed module is out of date.
 //!
 //! ```text
 //! cargo run -p null3d-shaders --bin shader-build [-- --check] [-- --root <repository>]
@@ -8,7 +8,7 @@
 use std::path::PathBuf;
 use std::process::ExitCode;
 
-use null3d_shaders::{COMMAND, OUTPUT_PATH, Written};
+use null3d_shaders::{COMMAND, OUTPUT_DIR, Written};
 
 const USAGE: &str = "usage: shader-build [--check] [--root <repository root>]";
 
@@ -32,11 +32,14 @@ fn main() -> ExitCode {
     }
 
     let result = if check {
-        null3d_shaders::check(&root).map(|()| format!("{OUTPUT_PATH} is up to date."))
+        null3d_shaders::check(&root)
+            .map(|()| format!("The shader modules in {OUTPUT_DIR} are up to date."))
     } else {
         null3d_shaders::write(&root).map(|written| match written {
-            Written::Updated => format!("Wrote {OUTPUT_PATH}."),
-            Written::Unchanged => format!("{OUTPUT_PATH} was already up to date."),
+            Written::Updated => format!("Wrote the shader modules in {OUTPUT_DIR}."),
+            Written::Unchanged => {
+                format!("The shader modules in {OUTPUT_DIR} were already up to date.")
+            }
         })
     };
     match result {
