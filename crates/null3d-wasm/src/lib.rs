@@ -32,12 +32,16 @@ use null3d_render::gpu_driven::{
     BYTES_PER_SOURCE, GpuDrivenRenderer, MAX_USEFUL_BINDING_BYTES, RendererConfig,
 };
 use null3d_render::materials::{MaterialError, MaterialTable, Shading};
+use null3d_render::textures::{MAX_TEXTURES, Sampling, TextureDesc, TextureError};
 use null3d_render::view::ViewId;
 use wasm_bindgen::prelude::*;
 
 pub mod constants;
 
-use constants::{arrays_problem, batch_field, mesh_arrays, ring_field, scene_field, shading};
+use constants::{
+    arrays_problem, batch_field, mesh_arrays, ring_field, scene_field, shading, texture_option,
+    texture_stat,
+};
 
 /// The engine version, as the loader reports it.
 #[wasm_bindgen(js_name = engineVersion)]
@@ -80,6 +84,11 @@ mod render_detail {
     pub const UNKNOWN_MESH: u32 = 6;
     pub const BAD_MESH: u32 = 7;
     pub const UPLOADS_FULL: u32 = 8;
+    /// The second detail is the largest texture size the device allows.
+    pub const TEXTURE_TOO_LARGE: u32 = 9;
+    /// The second detail is the most textures that live at once.
+    pub const TEXTURES_FULL: u32 = 10;
+    pub const BAD_TEXTURE: u32 = 11;
 }
 
 struct Engine {
@@ -171,6 +180,15 @@ fn arrays_failure(error: ArraysError) -> u32 {
         ArraysError::NotFinite { array, at } => (arrays_problem::NOT_FINITE + array as u32, at),
     };
     fail(codes::BAD_ARRAYS, [problem, value])
+}
+
+fn texture_failure(error: TextureError) -> u32 {
+    match error {
+        TextureError::Handle(error) => core_failure(error),
+        TextureError::TooLarge { limit } => render_failure(render_detail::TEXTURE_TOO_LARGE, limit),
+        TextureError::Full => render_failure(render_detail::TEXTURES_FULL, MAX_TEXTURES),
+        TextureError::Unsupported => render_failure(render_detail::BAD_TEXTURE, 0),
+    }
 }
 
 fn material_failure(error: MaterialError) -> u32 {
@@ -803,6 +821,7 @@ pub fn create_material(shading: u32, r: f32, g: f32, b: f32, a: f32) -> u32 {
     let shading = match shading {
         shading::UNLIT => Shading::Unlit,
         shading::TEXCOORDS => Shading::TexCoords,
+        shading::UNLIT_MAP => Shading::UnlitMap,
         _ => Shading::Lit,
     };
     value_with_engine(|e| {
@@ -838,6 +857,162 @@ fn change_material(
             Ok(()) => 0,
             Err(error) => material_failure(error),
         }
+    })
+}
+
+// Gives a material a map, a texture's handle, or none with 0. Which objects draw with a map
+// changes the draw tables, as a new material does.
+/// Gives a material a map.
+#[wasm_bindgen(js_name = setMaterialMap)]
+pub fn set_material_map(material: u32, texture: u32) -> u32 {
+    with_engine(|e| {
+        let settings = e.renderer.settings_mut();
+        let map = Handle::from_raw(texture);
+        if !map.is_none()
+            && let Err(error) = settings.textures().bytes(map)
+        {
+            return texture_failure(error);
+        }
+        match settings
+            .materials_mut()
+            .set_map(material.wrapping_sub(1), map)
+        {
+            Ok(()) => {
+                e.structure_changed = true;
+                0
+            }
+            Err(error) => material_failure(error),
+        }
+    })
+}
+
+// --- Textures ---
+
+// Creates a texture of `width` x `height` texels, with no image yet, in a layer of a texture
+// array, and returns its handle. `format` is the engine's format code: sRGB for colors, linear
+// for data. `mipmaps` asks for a whole chain of mip levels, which the GPU makes from each image.
+// The rest set its sampler: the address modes along u and v, the filters of magnified and
+// minified texels and between mip levels, and the anisotropy.
+/// Creates a texture and returns its handle.
+#[wasm_bindgen(js_name = createTexture)]
+#[allow(clippy::too_many_arguments)]
+pub fn create_texture(
+    width: u32,
+    height: u32,
+    format: u32,
+    mipmaps: bool,
+    wrap_u: u32,
+    wrap_v: u32,
+    mag_filter: u32,
+    min_filter: u32,
+    mip_filter: u32,
+    anisotropy: u32,
+) -> u32 {
+    value_with_engine(|e| {
+        let desc = TextureDesc {
+            width,
+            height,
+            format,
+            mipmaps,
+            sampling: Sampling {
+                wrap: [wrap_u, wrap_v],
+                mag_filter,
+                min_filter,
+                mip_filter,
+                anisotropy,
+            },
+        };
+        let textures = e.renderer.settings_mut().textures_mut();
+        textures
+            .create(desc)
+            .map(Handle::raw)
+            .map_err(texture_failure)
+    })
+}
+
+// Gives a texture an image of `width` x `height` pixels, the texture's size, and returns the
+// image's id. TypeScript sends the image to the thread that draws under that id, in id order, and
+// the image uploads once the thread has it.
+/// Gives a texture an image and returns the image's id.
+#[wasm_bindgen(js_name = setTextureImage)]
+pub fn set_texture_image(texture: u32, width: u32, height: u32) -> u32 {
+    value_with_engine(|e| {
+        let textures = e.renderer.settings_mut().textures_mut();
+        textures
+            .set_image(Handle::from_raw(texture), width, height)
+            .map_err(texture_failure)
+    })
+}
+
+// Destroys a texture. Materials that map it draw with their colors alone, which changes the draw
+// tables.
+/// Destroys a texture.
+#[wasm_bindgen(js_name = destroyTexture)]
+pub fn destroy_texture(texture: u32, frame: u32) -> u32 {
+    with_engine(|e| {
+        let textures = e.renderer.settings_mut().textures_mut();
+        match textures.destroy(Handle::from_raw(texture), frame) {
+            Ok(()) => {
+                e.structure_changed = true;
+                0
+            }
+            Err(error) => texture_failure(error),
+        }
+    })
+}
+
+// Tells the texture store what the thread that draws has: the images it received, in id order,
+// and the newest frame it took. The sketch thread calls it before it records each frame.
+/// Tells the texture store what the thread that draws has.
+#[wasm_bindgen(js_name = syncTextures)]
+pub fn sync_textures(images_arrived: u32, frames_taken: u32) {
+    with_engine(|e| {
+        let textures = e.renderer.settings_mut().textures_mut();
+        textures.sync(images_arrived, frames_taken);
+        0
+    });
+}
+
+// One of the texture store's numbers (`constants::texture_stat`). `texture` names the texture of
+// the numbers about one texture. Fails with 0 for a texture that is not live.
+/// Reads one of the texture store's numbers.
+#[wasm_bindgen(js_name = textureStat)]
+pub fn texture_stat(field: u32, texture: u32) -> f64 {
+    let mut value = 0.0;
+    with_engine(|e| {
+        let textures = e.renderer.settings().textures();
+        let stats = textures.stats();
+        let bytes = |b: u64| b as f64;
+        value = match field {
+            texture_stat::MEMORY_BYTES => bytes(textures.memory_bytes()),
+            texture_stat::TEXTURE_BYTES => match textures.bytes(Handle::from_raw(texture)) {
+                Ok(b) => bytes(b),
+                Err(error) => return texture_failure(error),
+            },
+            texture_stat::LAST_FRAME_BYTES => f64::from(stats.last_frame_bytes),
+            texture_stat::LARGEST_FRAME_BYTES => f64::from(stats.largest_frame_bytes),
+            texture_stat::WAITING => f64::from(stats.waiting),
+            texture_stat::IMAGES_SENT => f64::from(textures.images_sent()),
+            _ => f64::from(textures.max_size()),
+        };
+        0
+    });
+    value
+}
+
+// Changes one of the texture store's settings (`constants::texture_option`): the bytes one frame
+// may upload, the largest anisotropy, or an upload of every waiting image in the next frame.
+/// Changes one of the texture store's settings.
+#[wasm_bindgen(js_name = setTextureOption)]
+pub fn set_texture_option(option: u32, value: u32) -> u32 {
+    with_engine(|e| {
+        let textures = e.renderer.settings_mut().textures_mut();
+        match option {
+            texture_option::UPLOAD_BUDGET => textures.set_budget(value),
+            texture_option::MAX_ANISOTROPY => textures.set_max_anisotropy(value),
+            _ => textures.upload_all_next_frame(),
+        }
+        0
     })
 }
 

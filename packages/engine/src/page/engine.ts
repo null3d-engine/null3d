@@ -6,12 +6,14 @@
 import { EngineError, isErrorCode, setErrorFixes } from '../errors/engine-error';
 import { ERROR_FIXES } from '../errors/fixes';
 import { messageOf } from '../errors/message';
+import type { DrawingSetup } from '../render/draw';
 import { type DrawModule, loadDrawModule } from '../render/load-draw';
 import type { Drawing } from '../render/recovery';
 import type { Renderer, Tier } from '../render/renderer';
 import { awaitLater } from '../shared/await-later';
 import { controlViews, createControlBuffer, Slot } from '../shared/control';
 import { type Build, type CoreGlue, startCore } from '../shared/core';
+import { ImageTable, sendToTable } from '../shared/images';
 import { KEY_CODES } from '../shared/key-codes';
 import { createMetricsBuffer, MetricsReader } from '../shared/metrics';
 import { loadSketch } from '../sketch/define-sketch';
@@ -575,9 +577,14 @@ async function startEngine(
 	let draw: DrawModule | undefined;
 	/**
 	 * Draws on the page's thread from the draw lists in `memory`, with the renderer that the page
-	 * loads for it. With a sketch, the page steps it before each draw.
+	 * loads for it. With a sketch, the page steps it before each draw. Texture images come into the
+	 * page's table from that sketch, or through a port from the sketch worker.
 	 */
-	const drawOnPage = async (memory: WebAssembly.Memory | undefined, sketch?: SketchRunner) => {
+	const drawOnPage = async (
+		memory: WebAssembly.Memory | undefined,
+		images: Pick<DrawingSetup, 'imageTable' | 'imagePort'>,
+		sketch?: SketchRunner,
+	) => {
 		draw = await (drawModule ?? loadDrawModule());
 		return draw.startDrawing({
 			canvas: options.canvas,
@@ -587,6 +594,7 @@ async function startEngine(
 			scene: memory && { memory, control },
 			control,
 			sketch,
+			...images,
 			fail: pageLoss,
 		});
 	};
@@ -621,6 +629,7 @@ async function startEngine(
 			const memory = started.memory as WebAssembly.Memory;
 			wasmMemory = memory;
 			const { SketchRunner } = await (runnerModule ?? loadRunnerModule());
+			const imageTable = new ImageTable();
 			localRunner = new SketchRunner(
 				(name, data) => onSketchMessage(name, data),
 				metrics,
@@ -632,11 +641,12 @@ async function startEngine(
 					jobWorkers: 0,
 					device,
 					capabilities,
+					sendImage: sendToTable(imageTable, slots),
 				},
 				hold,
 			);
 			await localRunner.setup(await (sketchModule ?? loadSketch(sketchUrl)));
-			localDrawing = await drawOnPage(memory, localRunner);
+			localDrawing = await drawOnPage(memory, { imageTable }, localRunner);
 		} else {
 			sketch = new EngineWorker(
 				new Worker(new URL('../workers/sketch-worker.ts', import.meta.url), {
@@ -662,7 +672,9 @@ async function startEngine(
 				sketch.worker.postMessage({ ...init, renderer: { canvas, ...rendererSetup } }, [canvas]);
 				rendererHost = sketch;
 			} else {
-				sketch.worker.postMessage(init);
+				// Texture images go from the sketch worker straight to the thread that draws.
+				const images = new MessageChannel();
+				sketch.worker.postMessage({ ...init, imagePort: images.port1 }, [images.port1]);
 				if (renderThread === 'render-worker') {
 					const canvas = options.canvas.transferControlToOffscreen();
 					rendererHost = new EngineWorker(
@@ -675,11 +687,13 @@ async function startEngine(
 						onFailure,
 					);
 					workers.push(rendererHost);
-					rendererHost.worker.postMessage({ type: 'init', ...handoff, canvas, ...rendererSetup }, [
-						canvas,
-					]);
+					const imagePort = images.port2;
+					rendererHost.worker.postMessage(
+						{ type: 'init', ...handoff, canvas, ...rendererSetup, imagePort },
+						[canvas, imagePort],
+					);
 				} else {
-					localDrawing = await drawOnPage(core.memory);
+					localDrawing = await drawOnPage(core.memory, { imagePort: images.port2 });
 				}
 			}
 			// The sketch and render threads start first; the engine is ready once they are.
@@ -839,6 +853,7 @@ async function startEngine(
 		frame: Atomics.load(slots, Slot.FramesTaken),
 		tier,
 		...held,
+		stats: summarizeFrames(new MetricsReader(metrics).readWritten(), threadRoles(mode)),
 	});
 	return engine;
 }

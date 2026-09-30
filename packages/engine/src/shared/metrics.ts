@@ -315,6 +315,16 @@ export class MetricsReader {
 		return this.views.times[REFRESH_HZ] as number;
 	}
 
+	/**
+	 * Keeps the records that the rings still hold, without turning the costly timing on: the frames
+	 * of a hold, which the engine stepped before the page could read them.
+	 */
+	readWritten(): RingRecords[] {
+		this.records = Array.from({ length: this.views.rings }, emptyRecords);
+		this.drain();
+		return this.records;
+	}
+
 	/** Forgets older records, then keeps every record written from now on. */
 	begin(): void {
 		const { header } = this.views;

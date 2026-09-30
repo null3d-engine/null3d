@@ -85,6 +85,13 @@ const DOCS = {
 		example: 'E1109: createInstances() failed: the engine could not get 1282 MB more memory.',
 		since: '0.1',
 	},
+	E1110: {
+		title: 'Unmarked write to a static object',
+		cause:
+			"A static object's position, rotation, scale or bounding radius changed without a setter. The engine recomputes a static object only in a frame where a setter marks it or its parent moves. So such a change can show late, or never. Development builds check these values of every static object before each frame's transform update. Release builds leave the check out.",
+		example: 'E1110: the position of "Crate" (slot 7) changed without a setter.',
+		since: '0.1',
+	},
 	E1203: {
 		title: 'Invalid number',
 		cause: 'A call received a number that is not finite, such as NaN or Infinity.',
@@ -156,7 +163,7 @@ const DOCS = {
 	E1402: {
 		title: 'Engine core out of date',
 		cause:
-			'The engine core WebAssembly file lacks functions that the TypeScript side calls, so the two come from different builds.',
+			'The engine core WebAssembly file lacks functions that the TypeScript side calls, so the two come from different builds. Development builds check this when the core loads.',
 		example: 'E1402: the threaded engine core lacks isThreadedBuild.',
 		since: '0.1',
 	},

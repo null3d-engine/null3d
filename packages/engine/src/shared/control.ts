@@ -61,13 +61,18 @@ export enum Slot {
 	 */
 	DisplayInterval = 22,
 	/**
+	 * The images that the thread that draws received for texture uploads. The sketch thread sends
+	 * them in the order of their ids, which count from 1, so every id up to this count arrived.
+	 */
+	ImagesArrived = 23,
+	/**
 	 * Device pixels per CSS pixel that the engine draws with, as float bits: the display's ratio,
 	 * capped by the page's `maxPixelRatio`.
 	 */
-	PixelRatio = 23,
+	PixelRatio = 25,
 }
 
-const SLOT_COUNT = 24;
+const SLOT_COUNT = 26;
 
 /** Int32 values per input event record. */
 export const INPUT_EVENT_INTS = 8;

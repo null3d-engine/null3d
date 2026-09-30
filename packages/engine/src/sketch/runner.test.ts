@@ -60,6 +60,7 @@ async function start(
 			depth: 'reversed',
 		},
 		capabilities: CAPABILITIES,
+		sendImage: () => {},
 	});
 	let context: SketchContext | undefined;
 	await runner.setup(
