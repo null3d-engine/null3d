@@ -407,6 +407,7 @@ export class WebGPUBackend {
 					this.counts.pipelines++;
 					this.renderPipelines[words[a] as number] = this.pipelines.render(
 						words[a + 1] as number,
+						words[a + 2] as number,
 						this.format(words[a + 3] as number),
 						this.format(words[a + 4] as number),
 						words[a + 5] as number,

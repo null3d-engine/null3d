@@ -49,6 +49,11 @@ export interface WgslShader<Pipeline extends string = string> {
 
 /** One variant of a shader, with its output for each backend it targets. */
 export interface ShaderVariant<Pipeline extends string = string> {
+	/**
+	 * The permutation bits that the variant was built with, as a render pipeline's permutation
+	 * word holds them: 0 for a variant without permutation bits.
+	 */
+	readonly permutation: number;
 	/** WGSL for WebGPU, or null when the variant does not target WebGPU. */
 	readonly wgsl: WgslShader<Pipeline> | null;
 	/** GLSL programs for WebGL2 by pipeline, or null when the variant does not target WebGL2. */

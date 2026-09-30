@@ -40,6 +40,9 @@ pub struct Output {
 /// One built variant.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
 pub struct VariantOutput {
+    /// The permutation bits the build was made with, as a render pipeline's permutation word
+    /// holds them: 0 for a variant without permutation bits.
+    pub permutation: u32,
     /// WGSL for WebGPU, when the variant targets it.
     pub wgsl: Option<WgslOutput>,
     /// GLSL programs for WebGL2 by pipeline name, when the variant targets it.
