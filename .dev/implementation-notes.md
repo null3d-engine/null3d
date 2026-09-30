@@ -13,6 +13,9 @@ The engine's hot paths stay allocation-free with these habits (hard rule 1):
 - Do not wrap browser promises in `async` functions, and use `Math.sqrt` rather than `Math.hypot`.
 - Keep closures out of functions that run every frame, even in a branch that rarely runs. Until the browser optimizes such a function, it allocates the variables a closure captures on every call.
 - Shrink a reused list with `pop`, never by setting its length to 0. In Chrome, a length of 0 frees the list's storage, and the next `push` allocates it again. The sketch's list of touches works this way.
+- Keep numbers that change every frame in typed arrays, not in an object's properties. Playwright's headless Chromium 153, which CI tests with, makes a new object for each fraction stored in a property, while Chrome 154 does not. Six such stores in the camera controls' update made 144 bytes of garbage a frame there. The controls keep those numbers in one `Float64Array`.
+- Pass fractions to a per-frame helper in a typed array, not as arguments. A call that the browser does not inline puts each fraction it passes in an object of its own.
+- The allocation checks of the math helpers and the camera controls sample a loop in a test page (`tests/lib/allocations.ts`). Give such a loop fractions, as real input has: whole numbers never allocate, so they hide these faults.
 
 ## Allocation in Rust
 
@@ -127,6 +130,8 @@ The shader compiler is the shader crate built as a WebAssembly module. Build too
 - A change of preset starts the first frame's wait again. The sketch thread writes the frame in the control block's `PipelineHold` before it publishes the frame. The replay (`FrameReplay.prepare`) then holds that frame, and later ones, until one draws with every pipeline built. The canvas keeps the last frame meanwhile, on both paths.
 - The direct loop takes the frames that the setup publishes only when `Presenter.due` allows, as it steps play frames. The preset check then measures at the pace of play, within the limit of frames in flight.
 - Each backend counts the draw commands that a building pipeline skips, in `counts.skippedDraws`. The measurement sums them, and a test that expects no missing objects checks that the sum stays at 0.
+- The engine's shaders ship in one module for each GPU path and each value of the permutation bits that a device fixes ([D-13](decisions/D-13-shader-variants.md)). The thread that draws starts to load its module while it waits for the WebGPU device or the WebGL2 context. The renderer starts once both are ready.
+- A device module holds the builds of each shader that a device with its bits asks for. So the culling shader, which has no bits, is in every WGSL module. A device whose bits have no module fails to start its renderer, with an error that names the bits.
 
 ## Depth on WebGL2
 

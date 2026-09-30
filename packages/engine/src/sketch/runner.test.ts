@@ -145,6 +145,7 @@ async function start(
 			sharedUploads: false,
 			depth: 'reversed',
 			parallelCompile: true,
+			shaderBits: 0,
 		},
 		capabilities: CAPABILITIES,
 		quality,

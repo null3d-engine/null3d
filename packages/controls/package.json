@@ -1,0 +1,25 @@
+{
+	"name": "@null3d/controls",
+	"version": "0.0.0",
+	"private": true,
+	"description": "Orbit and map camera controls for null3D sketches, with three.js's option names and behavior.",
+	"license": "MIT OR Apache-2.0",
+	"repository": {
+		"type": "git",
+		"url": "git+https://github.com/null3d-engine/null3d.git",
+		"directory": "packages/controls"
+	},
+	"type": "module",
+	"exports": {
+		".": "./src/index.ts"
+	},
+	"peerDependencies": {
+		"@null3d/engine": "workspace:*"
+	},
+	"devDependencies": {
+		"@null3d/engine": "workspace:*",
+		"@types/three": "0.186.0",
+		"@webgpu/types": "0.1.74",
+		"three": "0.186.1"
+	}
+}

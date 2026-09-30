@@ -1,14 +1,28 @@
-// The API reference, read from the engine's public exports and their TSDoc comments with the
-// TypeScript compiler, and rendered into the docs page that each export names with its
-// `@category api/<page>` tag. The reference therefore always matches the code: `bun run docs`
+// The API reference, read from the public exports of the engine and of its other packages, and
+// their TSDoc comments, with the TypeScript compiler. Each export goes into the docs page that its
+// `@category api/<page>` tag names. The reference therefore always matches the code: `bun run docs`
 // rewrites it, and the docs check fails when a committed page differs.
+import { existsSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import ts from 'typescript';
 
-/** The engine's public entry point, relative to the repository root. */
-export const API_ENTRY = 'packages/engine/src/index.ts';
-/** The engine's source folder, relative to the repository root. */
-export const API_SOURCE = 'packages/engine/src';
+/** A package whose public exports the API reference shows, by paths from the repository root. */
+export interface ApiPackage {
+	/** Its public entry point. */
+	entry: string;
+	/** Its source folder. A public declaration may name a type from here only when it is exported. */
+	source: string;
+}
+
+/**
+ * The packages in the API reference: the engine first, then the packages built on it, whose public
+ * declarations name the engine's types. One compiler program reads them all with the engine's
+ * settings, so a type that two packages name is one symbol.
+ */
+export const API_PACKAGES: readonly ApiPackage[] = [
+	{ entry: 'packages/engine/src/index.ts', source: 'packages/engine/src' },
+	{ entry: 'packages/controls/src/index.ts', source: 'packages/controls/src' },
+];
 const API_TSCONFIG = 'packages/engine/tsconfig.json';
 
 /** One member of a class or interface in the reference. */
@@ -187,13 +201,13 @@ function membersOf(
 }
 
 /**
- * The engine's own types that the nodes name but the entry point does not export. A reader of the
+ * The packages' own types that the nodes name but no entry point exports. A reader of the
  * reference could not look them up.
  */
 function unexportedTypes(
 	nodes: readonly ts.Node[],
 	checker: ts.TypeChecker,
-	source: string,
+	sources: readonly string[],
 	exported: ReadonlySet<ts.Symbol>,
 ): string[] {
 	const found = new Set<string>();
@@ -210,8 +224,8 @@ function unexportedTypes(
 		const file = symbol?.declarations?.[0]?.getSourceFile().fileName;
 		// A type parameter is declared with the signature that names it, which shows it.
 		const shown = symbol && symbol.flags & ts.SymbolFlags.TypeParameter;
-		if (symbol && !shown && file?.startsWith(source) && !exported.has(symbol))
-			found.add(symbol.name);
+		const own = file !== undefined && sources.some((source) => file.startsWith(source));
+		if (symbol && !shown && own && !exported.has(symbol)) found.add(symbol.name);
 		ts.forEachChild(node, visit);
 	};
 	for (const node of nodes) visit(node);
@@ -289,33 +303,40 @@ function namespaceMembers(
 	return { members, others };
 }
 
-/** The engine's public exports, and the problems that keep some of them out of the reference. */
+/** The packages' public exports, and the problems that keep some of them out of the reference. */
 export interface ApiReference {
 	symbols: ApiSymbol[];
 	problems: string[];
 }
 
 /**
- * Reads every public export of the engine. The problems are an export with no summary or no
- * `@category` tag, a member with no summary, and a public declaration that names a type the
- * engine does not export.
+ * Reads every public export of the packages. The engine must exist; a package without its entry
+ * point, as in a test's fixture, is left out. The problems are an export with no summary or no
+ * `@category` tag, a member with no summary, and a public declaration that names a type that no
+ * package exports.
  */
 export function readApi(root: string): ApiReference {
 	const tsconfig = join(root, API_TSCONFIG);
 	const config = ts.readConfigFile(tsconfig, ts.sys.readFile);
 	const parsed = ts.parseJsonConfigFileContent(config.config, ts.sys, dirname(tsconfig));
-	const entry = join(root, API_ENTRY);
-	const program = ts.createProgram({ rootNames: [entry], options: parsed.options });
+	const packages = API_PACKAGES.filter(
+		(pkg, index) => index === 0 || existsSync(join(root, pkg.entry)),
+	);
+	const entries = packages.map((pkg) => join(root, pkg.entry));
+	const program = ts.createProgram({ rootNames: entries, options: parsed.options });
 	const checker = program.getTypeChecker();
-	const module = checker.getSymbolAtLocation(program.getSourceFile(entry) as ts.SourceFile);
-	if (!module) throw new Error(`${API_ENTRY} is not a module the compiler can read`);
-	const source = join(root, API_SOURCE);
+	const sources = packages.map((pkg) => join(root, pkg.source));
 
-	const exports = checker.getExportsOfModule(module).map((exported) => ({
-		name: exported.name,
-		alias: exported,
-		symbol: exported.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(exported) : exported,
-	}));
+	const exports = packages.flatMap((pkg, index) => {
+		const file = program.getSourceFile(entries[index] as string);
+		const module = file && checker.getSymbolAtLocation(file);
+		if (!module) throw new Error(`${pkg.entry} is not a module the compiler can read`);
+		return checker.getExportsOfModule(module).map((exported) => ({
+			name: exported.name,
+			alias: exported,
+			symbol: exported.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(exported) : exported,
+		}));
+	});
 	const exported = new Set(exports.map((e) => e.symbol));
 	const symbols: ApiSymbol[] = [];
 	const problems: string[] = [];
@@ -359,7 +380,7 @@ export function readApi(root: string): ApiReference {
 			members = membersOf(checker.getDeclaredTypeOfSymbol(symbol), checker, declaration, used);
 		} else if (ts.isTypeAliasDeclaration(declaration)) {
 			kind = 'type';
-			const expand = unexportedTypes([declaration.type], checker, source, exported).length > 0;
+			const expand = unexportedTypes([declaration.type], checker, sources, exported).length > 0;
 			signature = aliasOf(declaration, symbol, checker, expand);
 		} else {
 			kind = 'const';
@@ -368,8 +389,8 @@ export function readApi(root: string): ApiReference {
 		}
 		for (const member of members)
 			if (!member.summary) problems.push(`${where}: member ${member.name} has no TSDoc summary`);
-		for (const hidden of unexportedTypes(used, checker, source, exported))
-			problems.push(`${where} names ${hidden}, which the engine does not export`);
+		for (const hidden of unexportedTypes(used, checker, sources, exported))
+			problems.push(`${where} names ${hidden}, which its package does not export`);
 		symbols.push({ name, kind, page: page ?? '', signature, summary, extends: bases, members });
 	}
 	symbols.sort((a, b) => a.name.localeCompare(b.name));
