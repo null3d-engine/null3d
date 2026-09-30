@@ -45,7 +45,8 @@ export default defineSketch(({ scene, geometry, materials }) => {
 | `createGroup(options)` | A `Group`: an empty object that holds other objects |
 | `createMesh({ mesh, material, ...options })` | A `Mesh`: an object that draws a mesh with a material |
 | `createInstances(mesh, count, { material })` | An `InstanceBatch`: `count` copies of one mesh with one material |
-| `createPerspectiveCamera(options)` | A `Camera` that the scene can draw from |
+| `createPerspectiveCamera(options)` | A `PerspectiveCamera` that the scene can draw from |
+| `createOrthographicCamera(options)` | An `OrthographicCamera`, whose view is a box, that the scene can draw from |
 | `createDirectionalLight(options)` | The scene's directional light |
 | `createAmbientLight(options)` | The scene's ambient light |
 
@@ -67,7 +68,7 @@ door?.setVisible(false);
 
 ## The camera and the background
 
-The canvas shows the scene from the active camera, which `setActiveCamera` picks, and [Cameras](cameras.md) covers the lens. Until you pick a camera, the canvas shows only the background. `setBackground` takes a color. The default background is black, or the page behind a transparent canvas. Exposure and tone mapping change the background as they change the objects: [Color management](../concepts/color-management.md#the-background).
+The canvas shows the scene from the active camera, which `setActiveCamera` picks. It can be either kind of camera, and [Cameras](cameras.md) covers both lenses. Until you pick a camera, the canvas shows only the background. `setBackground` takes a color. The default background is black, or the page behind a transparent canvas. Exposure and tone mapping change the background as they change the objects: [Color management](../concepts/color-management.md#the-background).
 
 ## Lights
 
@@ -174,7 +175,8 @@ The scene: every object, the active camera, the lights and the background.
 | `createGroup(options: NodeOptions = {}): Group` | An empty node, for hierarchy. |
 | `createMesh(options: MeshOptions): Mesh` | A drawn object. It is static unless `dynamic: true`. |
 | `createInstances(mesh: MeshGeometry, count: number, options: InstanceOptions): InstanceBatch` | Many copies of one mesh and material, with typed arrays of rows. |
-| `createPerspectiveCamera(options: CameraOptions = {}): Camera` | A perspective camera; `fov` is vertical, in degrees. Cameras are dynamic by default. |
+| `createPerspectiveCamera(options: PerspectiveCameraOptions = {}): PerspectiveCamera` | A perspective camera; `fov` is vertical, in degrees. Cameras are dynamic by default. |
+| `createOrthographicCamera(options: OrthographicCameraOptions = {}): OrthographicCamera` | An orthographic camera, whose view is a box: things keep their size at every distance. Give `height`, and the width follows the canvas, or give `left`, `right`, `top` and `bottom`. Cameras are dynamic by default. |
 | `setActiveCamera(camera: Camera): void` | Draws the scene from this camera. |
 | `createDirectionalLight(options: DirectionalLightOptions = {}): DirectionalLight` | Light from one direction. This version has one directional light: a newer one replaces the older. |
 | `createAmbientLight(options: LightOptions = {}): AmbientLight` | Light on every surface. This version has one ambient light: a newer one replaces the older. |

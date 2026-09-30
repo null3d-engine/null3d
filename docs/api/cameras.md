@@ -8,9 +8,9 @@ summary: "Perspective and orthographic cameras; screenToRay; worldToScreen; laye
 
 # Cameras
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Orthographic cameras, `setOrthoHeight`, `screenToRay` and `worldToScreen` are not built yet, so coding agents must not use them.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. `screenToRay` and `worldToScreen` come in null3D 0.2, so coding agents must not use them.
 
-A camera is the object that the engine draws the scene from. `scene.createPerspectiveCamera` makes one, and `scene.setActiveCamera` picks the camera that the canvas shows.
+A camera is the object that the engine draws the scene from. There are two kinds: `scene.createPerspectiveCamera` makes a perspective camera, and `scene.createOrthographicCamera` makes an orthographic one. `scene.setActiveCamera` picks the camera that the canvas shows.
 
 ```ts
 import { defineSketch } from '@null3d/engine';
@@ -30,15 +30,40 @@ export default defineSketch(({ scene, time }) => {
 });
 ```
 
-## The lens
+## Perspective cameras
 
 A perspective camera shows near things larger than far things, as the eye does.
 
 - `fov` is the vertical field of view in degrees. The default is 50.
 - `near` and `far` are the distances to the nearest and farthest things the camera shows. The defaults are 0.1 and 2000.
-- `setFov(degrees)` and `setNearFar(near, far)` change the lens later.
+- `setFov(degrees)` and `setNearFar(near, far)` change the lens later. The `fov`, `near` and `far` properties read it.
 
 The defaults match three.js's `PerspectiveCamera`. The aspect ratio follows the canvas in every frame, so a camera needs no call when the canvas changes size.
+
+The field of view goes from 0 to 180 degrees, and the near plane must lie in front of the camera, beyond 0. In development builds, values outside these ranges throw E1108.
+
+## Orthographic cameras
+
+An orthographic camera's view is a box. Things keep their size at every distance, as in maps and isometric games.
+
+```ts
+const camera = scene.createOrthographicCamera({ height: 20, near: 1, far: 200, position: [30, 25, 30], target: [0, 0, 0] });
+scene.setActiveCamera(camera);
+```
+
+- `height` is the height of the view in world units. The width follows the canvas's aspect ratio in every frame. The default height is 2, as in three.js.
+- `left`, `right`, `top` and `bottom` give the four edges instead, as three.js's `OrthographicCamera` takes them. The view then keeps these edges on any canvas, and stretches to fill it. Give all four edges and no `height`.
+- `near` and `far` are the distances along the view to its nearest and farthest planes. The defaults are 0.1 and 2000. The near plane can lie behind the camera, because nothing in the view grows as it gets closer.
+- `setOrthoHeight(height)` zooms: a smaller height shows less of the scene, and shows it larger. A view made from four edges scales about its center and keeps its shape, as three.js's `zoom` scales it.
+- The `height` property reads the view's height. The `width` property reads the width of a view made from edges, and is `undefined` while the width follows the canvas.
+
+In development builds, a view with no size throws E1108. So does a far plane that is not beyond the near plane, for both kinds of camera.
+
+## Which kind of camera
+
+`camera.isOrthographic` is true for an orthographic camera and false for a perspective one. Code that works with either kind, such as camera controls, reads `fov` or `height` after that check.
+
+Both kinds draw reversed depth on every GPU tier, which keeps surfaces apart far from the camera. [GPU tiers and backends](../concepts/backends.md#depth-on-each-tier) covers depth on each tier.
 
 ## Moving a camera
 
@@ -71,25 +96,75 @@ A scene can have several cameras, and `setActiveCamera` switches between them. T
 
 Class `Camera`, which extends `Object3D`.
 
-A perspective camera. Make it the scene's view with `scene.setActiveCamera`.
+An object that the scene can be drawn from. `scene.setActiveCamera` picks the camera that the canvas shows. A camera is a `PerspectiveCamera` or an `OrthographicCamera`, and `isOrthographic` tells them apart.
 
 | Member | Description |
 | --- | --- |
+| `readonly isOrthographic: boolean` | True for an `OrthographicCamera`, false for a `PerspectiveCamera`. |
+| `readonly near: number` | The distance to the near clipping plane. |
+| `readonly far: number` | The distance to the far clipping plane. |
 | `setLayers(mask: number): void` | Sets the layers the camera draws, as a 32-bit mask: it draws the objects whose masks share a layer with it. The default, 1, draws layer 0, where every object starts. |
-| `setFov(degrees: number): void` | Sets the vertical field of view in degrees. |
 | `setNearFar(near: number, far: number): void` | Sets the distances to the near and far clipping planes. |
 
 ### `CameraOptions`
 
 Interface `CameraOptions`, which extends `NodeOptions`.
 
+Options that both kinds of camera take.
+
+| Member | Description |
+| --- | --- |
+| `near?: number` | The distance to the near clipping plane. The default is 0.1. |
+| `far?: number` | The distance to the far clipping plane. The default is 2000. |
+| `target?: Vec3` | A point the camera turns toward. |
+
+### `OrthographicCamera`
+
+Class `OrthographicCamera`, which extends `Camera`.
+
+A camera whose view is a box: things keep their size at every distance, as in maps and isometric games.
+
+| Member | Description |
+| --- | --- |
+| `readonly isOrthographic: true` | True: an orthographic camera. |
+| `readonly height: number` | The view's height in world units. |
+| `readonly width: number \| undefined` | The view's width in world units, or undefined when the width follows the canvas's aspect ratio. |
+| `setOrthoHeight(height: number): void` | Sets the view's height in world units. A width that follows the canvas keeps following it. A view made from four edges scales about its center and keeps its shape, as three.js's `zoom` scales it. |
+
+### `OrthographicCameraOptions`
+
+Interface `OrthographicCameraOptions`, which extends `CameraOptions`.
+
+Options for `scene.createOrthographicCamera`. Give `height`, and the width follows the canvas's aspect ratio. Or give all four edges, as three.js's `OrthographicCamera` takes them, for a view that keeps its shape on any canvas.
+
+| Member | Description |
+| --- | --- |
+| `height?: number` | The view's height in world units. The default is 2. Leave it out when you give the edges. |
+| `left?: number` | The view's left edge, in world units from the camera's axis. |
+| `right?: number` | The view's right edge, in world units from the camera's axis. |
+| `top?: number` | The view's top edge, in world units from the camera's axis. |
+| `bottom?: number` | The view's bottom edge, in world units from the camera's axis. |
+
+### `PerspectiveCamera`
+
+Class `PerspectiveCamera`, which extends `Camera`.
+
+A camera that shows near things larger than far things, as the eye does.
+
+| Member | Description |
+| --- | --- |
+| `readonly isOrthographic: false` | False: a perspective camera. |
+| `readonly fov: number` | The vertical field of view in degrees. |
+| `setFov(degrees: number): void` | Sets the vertical field of view in degrees. |
+
+### `PerspectiveCameraOptions`
+
+Interface `PerspectiveCameraOptions`, which extends `CameraOptions`.
+
 Options for `scene.createPerspectiveCamera`.
 
 | Member | Description |
 | --- | --- |
 | `fov?: number` | The vertical field of view in degrees. The default is 50. |
-| `near?: number` | The distance to the near clipping plane. The default is 0.1. |
-| `far?: number` | The distance to the far clipping plane. The default is 2000. |
-| `target?: Vec3` | A point the camera turns toward. |
 
 <!-- null3d:api:end -->

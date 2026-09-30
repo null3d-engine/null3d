@@ -15,7 +15,13 @@ import { hexValue, invalidColor } from '../math/hex';
 import type { Vec3Like } from '../math/types';
 import { type ColorInput, isComponent } from '../scene/color';
 import type { CoreMemory } from '../scene/memory';
-import { type Camera, type DirectionalLight, Object3D } from '../scene/scene';
+import {
+	type Camera,
+	type DirectionalLight,
+	Object3D,
+	type OrthographicCamera,
+	type PerspectiveCamera,
+} from '../scene/scene';
 import type { Debug, DebugGridOptions, DebugLightOptions } from './debug';
 
 /** The points that the arrays first make room for: 2,048 lines. */
@@ -259,7 +265,7 @@ export class DebugDraw implements Debug {
 			if (this.core.glue.worldMatrix(object.handle, this.matrix) !== 0) continue;
 			const value = this.followedValues[k] as number;
 			if (this.followedKinds[k] === FRUSTUM)
-				this.drawFrustum(object as Camera, width / height, value);
+				this.drawFrustum(object as PerspectiveCamera | OrthographicCamera, width / height, value);
 			else this.drawAxes(value);
 		}
 		this.followedCount = 0;
@@ -296,19 +302,43 @@ export class DebugDraw implements Debug {
 	}
 
 	/**
-	 * The frustum of the camera whose world matrix the flush just read: its near and far planes in
-	 * the canvas's shape, and the edges between them. A camera looks down its -z axis.
+	 * The frustum of the camera whose world matrix the flush just read: its near and far planes,
+	 * in the canvas's shape unless an orthographic view has its own, and the edges between them. A
+	 * camera looks down its -z axis.
 	 */
-	private drawFrustum(camera: Camera, aspect: number, color: number): void {
+	private drawFrustum(
+		camera: PerspectiveCamera | OrthographicCamera,
+		aspect: number,
+		color: number,
+	): void {
 		if (!this.room(24)) return;
 		const m = this.matrix;
 		const corners = this.corners;
-		const slope = Math.tan((camera.fov * Math.PI) / 360);
+		// Each plane's half width and half height at a depth: they grow from nothing at the camera
+		// for a perspective camera, and stay the same at every depth for an orthographic one, whose
+		// box can sit off the camera's axis.
+		let centerX = 0;
+		let centerY = 0;
+		let halfWidth = 0;
+		let halfHeight = 0;
+		let widthSlope = 0;
+		let heightSlope = 0;
+		if (camera.isOrthographic) {
+			const { view } = camera;
+			halfHeight = view.height / 2;
+			halfWidth = view.width > 0 ? view.width / 2 : halfHeight * aspect;
+			centerX = view.centerX;
+			centerY = view.centerY;
+		} else {
+			heightSlope = Math.tan((camera.fov * Math.PI) / 360);
+			widthSlope = heightSlope * aspect;
+		}
 		for (let k = 0; k < 8; k++) {
 			const depth = k < 4 ? camera.near : camera.far;
-			const h = depth * slope;
-			const cx = (k & 3) === 0 || (k & 3) === 3 ? -h * aspect : h * aspect;
-			const cy = (k & 3) < 2 ? -h : h;
+			const w = halfWidth + depth * widthSlope;
+			const h = halfHeight + depth * heightSlope;
+			const cx = centerX + ((k & 3) === 0 || (k & 3) === 3 ? -w : w);
+			const cy = centerY + ((k & 3) < 2 ? -h : h);
 			const cz = -depth;
 			for (let row = 0; row < 3; row++) {
 				const r = row * 4;
