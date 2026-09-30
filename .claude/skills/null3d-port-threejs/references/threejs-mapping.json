@@ -297,7 +297,7 @@
       "status": "direct",
       "since": "0.1",
       "target": "obj.lookAt(x, y, z)",
-      "notes": "Cameras look down -Z, as in three.js, and lights will too when they become objects later in 0.1.",
+      "notes": "Cameras and lights look down -Z, as in three.js.",
       "docs": "api/objects",
       "detect": "\\.lookAt\\s*\\("
     },
@@ -517,7 +517,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "scene.createDirectionalLight({ direction, color, intensity, castShadows })",
-      "notes": "Shadow cascades fit the view automatically, so delete shadow.camera bounds and target updates.",
+      "notes": "The light is an object. Pass the target minus the position as direction, or call light.lookAt(x, y, z), again whenever the target moves. Surfaces show the first directional light created, and castShadows is stored until shadows draw. Delete shadow.camera bounds: the engine's shadow cascades will fit the view by themselves.",
       "docs": "api/lights",
       "detect": "\\bDirectionalLight\\b"
     },
@@ -528,7 +528,7 @@
       "status": "direct",
       "since": "0.1",
       "target": "scene.createPointLight({ position, color, intensity, range, decay })",
-      "notes": "distance becomes range; 0 (infinite) is not allowed, because clustered lighting needs a range.",
+      "notes": "distance becomes range, which every point light needs: 0, a light with no end, is not allowed, because the engine finds the lights near each surface by their ranges. The light is stored but does not light surfaces yet.",
       "docs": "api/lights",
       "detect": "\\bPointLight\\b"
     },
@@ -538,8 +538,8 @@
       "three": "SpotLight(color, intensity, distance, angle, penumbra, decay)",
       "status": "direct",
       "since": "0.1",
-      "target": "scene.createSpotLight({ position, direction | target, angle, penumbra, range, intensity })",
-      "notes": "Spot light cookies (light.map) come after 1.0.",
+      "target": "scene.createSpotLight({ position, direction | target, angle, penumbra, range, decay, intensity })",
+      "notes": "distance becomes range, which every spot light needs. target is a point: call light.lookAt(x, y, z) when it moves. The light is stored but does not light surfaces yet. Spot light cookies (light.map) come after 1.0.",
       "docs": "api/lights",
       "detect": "\\bSpotLight\\b"
     },
@@ -550,7 +550,7 @@
       "status": "direct",
       "since": "0.1",
       "target": "scene.createHemisphereLight({ skyColor, groundColor, intensity })",
-      "notes": "",
+      "notes": "The sky lies along the light's +Y axis: turn the light to tilt it, where three.js moves it. The light is stored but does not light surfaces yet.",
       "docs": "api/lights",
       "detect": "\\bHemisphereLight\\b"
     },
@@ -561,7 +561,7 @@
       "status": "direct",
       "since": "0.1",
       "target": "scene.createAmbientLight({ color, intensity })",
-      "notes": "",
+      "notes": "Several ambient lights add up.",
       "docs": "api/lights",
       "detect": "\\bAmbientLight\\b"
     },
