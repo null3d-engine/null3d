@@ -258,11 +258,17 @@ describe.skipIf(!ENABLED)('compileWgsl', () => {
 		expect(built.functions).toEqual(['surface']);
 		expect(Object.keys(built.variants).sort()).toEqual([
 			'webgl2',
+			'webgl2_alpha_mask',
 			'webgl2_draw_index',
+			'webgl2_draw_index_alpha_mask',
 			'webgl2_draw_index_vertex_color',
+			'webgl2_draw_index_vertex_color_alpha_mask',
 			'webgl2_vertex_color',
+			'webgl2_vertex_color_alpha_mask',
 			'webgpu',
+			'webgpu_alpha_mask',
 			'webgpu_vertex_color',
+			'webgpu_vertex_color_alpha_mask',
 		]);
 		const webgpu = built.variants.webgpu;
 		expect(webgpu?.wgsl?.source).toMatch(/fn surface\(\w+: SurfaceInput\) -> Surface/);
