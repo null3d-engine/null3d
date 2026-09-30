@@ -80,7 +80,7 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 | Page | What it covers | Status | Version |
 | --- | --- | --- | --- |
 | [Page API: createEngine](api/engine.md) | createEngine options; engine.postToSketch, capture, labels, requestPointerLock, capabilities, destroy. | planned | 0.1 |
-| [Sketch API: defineSketch and the context](api/sketch.md) | The context object: scene, assets, materials, geometry, textures, input, time, quality, post, render, page, ui, debug; the callbacks. | planned | 0.1 |
+| [Sketch API: defineSketch and the context](api/sketch.md) | The context object: scene, assets, materials, geometry, textures, input, time, quality, post, render, page, ui, debug; the callbacks. | experimental | 0.1 |
 | [Scene](api/scene.md) | Creating objects; find; background, environment, fog, sky; warmUp. | experimental | 0.1 |
 | [Objects and transforms](api/objects.md) | Setters and getters; parents; flags; destroy. | experimental | 0.1 |
 | [Cameras](api/cameras.md) | Perspective and orthographic cameras; screenToRay; worldToScreen; layers. | experimental | 0.1 |
@@ -122,7 +122,7 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 | [Using a physics library](guides/physics.md) | Running Rapier or cannon-es in the sketch worker; copying transforms. | planned | 0.1 |
 | [Multiple views](guides/multiple-views.md) | Split screens with scene.createView, after 1.0; minimaps work from 0.2 through render-to-texture passes. | planned | after 1.0 |
 | [The asset pipeline (the `assets` command)](guides/assets-pipeline.md) | optimize, env, convert; LODs; texture compression; budget reports. | planned | 0.2 |
-| [Testing your sketch](guides/testing.md) | Hold mode; image tests; reading results; frames that stay the same on every run. | planned | 0.1 |
+| [Testing your sketch](guides/testing.md) | Hold mode; image tests; reading results; frames that stay the same on every run. | experimental | 0.1 |
 | [Debugging](guides/debugging.md) | Error codes; the inspector; the MCP server; the render-graph dump; common failures. | planned | 0.1 |
 | [Deploying](guides/deploying.md) | Headers on common hosts; asset caching; size budgets. | planned | 0.3 |
 | [Working with AI agents](guides/agents.md) | Installing the null3D skills in Claude Code, claude.ai and other agent tools; docs by ID; the MCP server and AGENTS.md in templates (0.3). | experimental | 0.1 |
