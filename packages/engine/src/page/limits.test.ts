@@ -19,12 +19,13 @@ const webgpu = (storageBindingBytes: number) => ({
 	maxTextureSize: 0,
 	sharedUploads: true,
 	depth: 'reversed' as const,
+	cellCulling: true,
 });
 
 /** No test switch. */
-const NO_SWITCHES = { copyUploads: false, depth: undefined };
+const NO_SWITCHES = { copyUploads: false, depth: undefined, cells: true };
 /** ?uploads=copy. */
-const COPY_UPLOADS = { copyUploads: true, depth: undefined };
+const COPY_UPLOADS = { copyUploads: true, depth: undefined, cells: true };
 
 /** A report whose WebGL2 part has these fields. */
 function report(webgl2: Partial<DeviceReport['webgl2']>): DeviceReport {
@@ -100,6 +101,14 @@ describe('coreDevice on WebGL2', () => {
 			false,
 		);
 	});
+
+	it('culls by grid cell on both paths unless ?cells=off asks it not to', () => {
+		const off = { ...NO_SWITCHES, cells: false };
+		for (const webgl2 of [true, false]) {
+			expect(coreDevice(webgl2, report({}), NO_SWITCHES).cellCulling).toBe(true);
+			expect(coreDevice(webgl2, report({}), off).cellCulling).toBe(false);
+		}
+	});
 });
 
 describe('the depth mode', () => {
@@ -113,13 +122,11 @@ describe('the depth mode', () => {
 
 	it('follows ?depth= on WebGL2, but never to reversed depth without EXT_clip_control', () => {
 		for (const wanted of ['reversed', 'reversed-gl', 'standard'] as const)
-			expect(coreDevice(true, clipControl, { copyUploads: false, depth: wanted }).depth).toBe(
-				wanted,
-			);
+			expect(coreDevice(true, clipControl, { ...NO_SWITCHES, depth: wanted }).depth).toBe(wanted);
 		expect(webgl2Depth(false, 'standard')).toBe('standard');
 		expect(webgl2Depth(false, 'reversed-gl')).toBe('reversed-gl');
 		expect(webgl2Depth(false, 'reversed')).toBe(DEPTH_WITHOUT_CLIP_CONTROL);
-		expect(coreDevice(false, report({}), { copyUploads: false, depth: 'standard' }).depth).toBe(
+		expect(coreDevice(false, report({}), { ...NO_SWITCHES, depth: 'standard' }).depth).toBe(
 			'reversed',
 		);
 	});

@@ -6,12 +6,20 @@ mod common;
 use std::collections::HashMap;
 
 use common::{BATCH_ROWS, SCENE_CAPACITY, World, count, far_out};
+use null3d_core::handle::Handle;
+use null3d_core::scene::{Command, NO_PARENT, flags};
+use null3d_core::world::SphereArrays;
 use null3d_gpu::drawlist::{NO_TARGET, Op, layout};
 use null3d_gpu::mock::MockBackend;
+use null3d_render::camera::Perspective;
 use null3d_render::frame::FrameBuilder;
+use null3d_render::gpu_driven::{GpuDrivenRenderer, RendererConfig};
 use null3d_render::view::ViewId;
 
 const MATRIX_BYTES: u32 = 48;
+/// Where a view's culling parameters hold the runs of the cell order: after the planes and the
+/// offsets to 512 cells.
+const RANGES: u32 = 112 + 512 * 16;
 /// The builder's buffers of world matrices and of the bucket of every source.
 const MATRICES: u32 = 2;
 const INSTANCE_BUCKETS: u32 = 3;
@@ -579,8 +587,10 @@ fn far_from_the_origin_only_the_camera_offsets_upload_when_the_camera_moves() {
         let slot = world.scene.resolve(object).unwrap() as usize;
         assert_eq!(world.scene.cells()[slot], far);
     }
-    // One write: the planes, then the offsets from the camera to the two cells in use.
-    let params = vec![(0, 112 + 2 * 16)];
+    // The planes, then the offsets from the camera to the two cells in use, in one write. Then the
+    // runs of the cell order that the view culls: the far cell's still objects and the batch's
+    // moving rows, which follow them, joined into one.
+    let params = vec![(0, 112 + 2 * 16), (RANGES, 16)];
     let buffer = views_of(&world.commands())[0].culling[0];
     assert_eq!(cull_params_writes(&world.commands(), buffer), params);
 
@@ -640,8 +650,233 @@ fn an_object_that_moves_into_another_cell_rewrites_its_entry() {
     assert!(commands.iter().any(|(op, o)| {
         *op == Op::WriteBuffer && o[0] == MATRICES && o[1] == slot * MATRIX_BYTES
     }));
+    // Two runs of the cell order: the origin cell's still objects and the batch's moving rows. The
+    // moved object's cell, out of view, lies between them.
     assert_eq!(
         cull_params_writes(&commands, buffer),
-        vec![(0, 112 + 2 * 16)]
+        vec![(0, 112 + 2 * 16), (RANGES, 2 * 16)]
     );
+}
+
+/// A WebGPU world spread over 5 x 5 grid cells, with room for `objects` more scene objects, and
+/// its static batch.
+fn spread_world(objects: u32, rows: u32) -> (World, Handle) {
+    let renderer = GpuDrivenRenderer::new(RendererConfig::default());
+    let mut world = World::build_sized(renderer, objects + 16);
+    let batch = world.spread(objects, rows, 11);
+    world.record(true);
+    (world, batch)
+}
+
+/// The first source of each batch: after the scene's slots, the world's moving batch, then the
+/// spread world's static batch.
+fn batch_bases(world: &World) -> [u32; 2] {
+    let scene_rows = world.scene.capacity() + 1;
+    [scene_rows, scene_rows + BATCH_ROWS]
+}
+
+/// How many times the camera view's culling pass tests each source in the last frame.
+fn tested(world: &World) -> HashMap<u32, u32> {
+    let mut tested = HashMap::new();
+    for source in world.renderer.culled_sources(ViewId::CAMERA) {
+        *tested.entry(source).or_insert(0) += 1;
+    }
+    tested
+}
+
+#[test]
+fn each_view_culls_the_sources_of_the_cells_it_can_see_and_every_moving_source() {
+    const OBJECTS: u32 = 400;
+    const ROWS: u32 = 6000;
+    let (mut world, batch) = spread_world(OBJECTS, ROWS);
+    let [moving_base, still_base] = batch_bases(&world);
+    let sources = still_base + ROWS;
+    let mut all_tested = 0;
+    for k in 0..10 {
+        let k = k as f32;
+        world.frame += 1;
+        world.scene.begin_frame(world.frame);
+        let at = [
+            (k * 731.0) % 4000.0 - 2000.0,
+            10.0,
+            (k * 1173.0) % 4000.0 - 2000.0,
+        ];
+        world.aim(at, k * 0.9, (k * 0.7).sin() * 0.15);
+        world.record(false);
+        let tested = tested(&world);
+        assert!(
+            tested.values().all(|&n| n == 1),
+            "pose {k}: a source tested twice"
+        );
+        // The moving batch's rows are always tested; of the rest, cells out of view leave some.
+        let still = sources - BATCH_ROWS;
+        let still_tested = tested.len() as u32 - BATCH_ROWS;
+        assert!(
+            still_tested < still,
+            "pose {k}: {still_tested} of {still} other sources tested"
+        );
+        all_tested += still_tested;
+        // Every source whose sphere is in the frustum moved into its cell is tested, and so is
+        // every row of the moving batch.
+        let frame = *world.renderer.view_frame(ViewId::CAMERA).unwrap();
+        let table = world.scene.cell_table();
+        let in_view = |spheres: SphereArrays<'_>, row: usize, cell: u32| {
+            let offset = frame.camera.offset_to(table.coords(cell));
+            let [x, y, z, r] = [spheres.xs, spheres.ys, spheres.zs, spheres.radii].map(|v| v[row]);
+            frame.frustum.moved_by(offset).contains_sphere(x, y, z, r)
+        };
+        let parity = world.scene.parity();
+        let scene_spheres = world.scene.world(parity).spheres();
+        let mut seen = 0;
+        for &object in &world.objects {
+            let slot = world.scene.resolve(object).unwrap();
+            if in_view(
+                scene_spheres,
+                slot as usize,
+                world.scene.cells()[slot as usize],
+            ) {
+                seen += 1;
+                assert!(tested.contains_key(&slot), "pose {k}: object {slot}");
+            }
+        }
+        let still = world.batches.get(batch).unwrap();
+        let rows = still.world(parity).spheres();
+        for row in 0..ROWS {
+            if in_view(rows, row as usize, still.cells()[row as usize]) {
+                seen += 1;
+                let source = still_base + row;
+                assert!(tested.contains_key(&source), "pose {k}: row {row}");
+            }
+        }
+        assert!(seen > 0, "pose {k} sees nothing");
+        let moving = moving_base..moving_base + BATCH_ROWS;
+        assert!(
+            moving
+                .into_iter()
+                .all(|source| tested.contains_key(&source))
+        );
+    }
+    let every = 10 * (sources - BATCH_ROWS);
+    assert!(all_tested * 3 < every, "{all_tested} of {every} tested");
+}
+
+#[test]
+fn the_cell_order_follows_creates_destroys_and_moves_between_cells() {
+    const OBJECTS: u32 = 60;
+    const ROWS: u32 = 500;
+    let (mut world, batch) = spread_world(OBJECTS, ROWS);
+    let [moving_base, still_base] = batch_bases(&world);
+    // A camera high above the square, looking straight down, sees all of it.
+    let lens = Perspective {
+        fov_degrees: 120.0,
+        near: 1.0,
+        far: 20_000.0,
+    };
+    world.renderer.settings_mut().set_camera(world.camera, lens);
+    let (sin, cos) = std::f32::consts::FRAC_PI_4.sin_cos();
+    let step = |world: &mut World, structure_changed: bool| {
+        world.frame += 1;
+        world.scene.begin_frame(world.frame);
+        world.aim([0.0, 3000.0, 0.0], 0.0, 0.0);
+        world
+            .scene
+            .set_rotation(world.camera, [-sin, 0.0, 0.0, cos])
+            .unwrap();
+        world.record(structure_changed);
+        tested(world)
+    };
+    // Each drawn source is tested once. The pass takes the still sources cell by cell, then the
+    // moving ones.
+    let check = |world: &World, tested: &HashMap<u32, u32>| {
+        assert!(tested.values().all(|&n| n == 1));
+        for &object in &world.objects {
+            let slot = world.scene.resolve(object).unwrap();
+            assert!(tested.contains_key(&slot), "object {slot} is left out");
+        }
+        for source in moving_base..still_base + ROWS {
+            assert!(tested.contains_key(&source), "source {source} is left out");
+        }
+        let rows = world.batches.get(batch).unwrap();
+        let (scene, parents) = (&world.scene, world.scene.parents());
+        let still_cell = |source: u32| -> Option<u32> {
+            if source >= still_base {
+                return Some(rows.cells()[(source - still_base) as usize]);
+            }
+            let mut at = source;
+            while at < moving_base {
+                if scene.flags()[at as usize] & flags::DYNAMIC != 0 {
+                    return None;
+                }
+                match parents[at as usize] {
+                    NO_PARENT => return Some(scene.cells()[source as usize]),
+                    parent => at = parent,
+                }
+            }
+            None
+        };
+        let cells: Vec<Option<u32>> = world
+            .renderer
+            .culled_sources(ViewId::CAMERA)
+            .into_iter()
+            .map(still_cell)
+            .collect();
+        let end = cells
+            .iter()
+            .rposition(Option::is_some)
+            .map_or(0, |at| at + 1);
+        assert!(
+            cells[..end].iter().all(Option::is_some),
+            "a moving source among still ones"
+        );
+        let still: Vec<u32> = cells[..end].iter().flatten().copied().collect();
+        assert!(
+            still.windows(2).all(|w| w[0] <= w[1]),
+            "still sources out of cell order"
+        );
+    };
+    let tested = step(&mut world, false);
+    check(&world, &tested);
+
+    // A new object, and a destroyed one.
+    let made = world.scene.reserve().unwrap();
+    world
+        .scene
+        .set_position(made, [1900.0, 0.0, -1900.0])
+        .unwrap();
+    world.scene.set_local_radius(made, 1.0).unwrap();
+    let gone = world.objects.remove(3);
+    let gone_slot = world.scene.resolve(gone).unwrap();
+    let commands = [
+        Command::create(made, Handle::NONE, 1, flags::VISIBLE),
+        Command::set_material(made, 1),
+        Command::destroy(gone),
+    ];
+    world
+        .scene
+        .apply_commands(&commands, world.frame + 1)
+        .unwrap();
+    world.objects.push(made);
+    let tested = step(&mut world, true);
+    check(&world, &tested);
+    let made_slot = world.scene.resolve(made).unwrap();
+    assert_ne!(made_slot, gone_slot);
+    assert!(tested.contains_key(&made_slot));
+    assert!(
+        !tested.contains_key(&gone_slot),
+        "the destroyed object is still culled"
+    );
+
+    // A still object and a still row move into other cells, with no structure change.
+    let slot = world.scene.resolve(world.objects[0]).unwrap() as usize;
+    let before = world.scene.cells()[slot];
+    world
+        .scene
+        .set_position(world.objects[0], [-2400.0, 0.0, 2400.0])
+        .unwrap();
+    let rows = world.batches.get_mut(batch).unwrap();
+    rows.positions_mut()[..3].copy_from_slice(&[2400.0, 0.0, 2400.0]);
+    rows.mark_dirty(0, 1).unwrap();
+    let tested = step(&mut world, false);
+    assert_ne!(world.scene.cells()[slot], before);
+    check(&world, &tested);
 }

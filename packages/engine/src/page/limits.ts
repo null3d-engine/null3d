@@ -36,6 +36,8 @@ export interface CoreDevice {
 	sharedUploads: boolean;
 	/** How the GPU path stores depth: always `reversed` on WebGPU. */
 	depth: DepthMode;
+	/** False when the core culls every object and instance row, with no grid cells skipped first. */
+	cellCulling: boolean;
 }
 
 /** The depth mode of a WebGL2 device without `EXT_clip_control`. */
@@ -65,12 +67,13 @@ export function storageBindingBytes(limits: Record<string, number | null>): numb
 /**
  * The device as the engine uses it on WebGL2 or WebGPU, from the capability report and the test
  * switches. `copyUploads` makes the WebGL2 path copy uploads out of shared memory even where
- * WebGL reads it, and `depth` forces a WebGL2 depth mode, so tests reach every route.
+ * WebGL reads it, and `depth` forces a WebGL2 depth mode, so tests reach every route. `cells` off
+ * makes the core cull without grid cells, for benchmarks.
  */
 export function coreDevice(
 	webgl2: boolean,
 	report: DeviceReport,
-	{ copyUploads, depth }: Pick<Switches, 'copyUploads' | 'depth'>,
+	{ copyUploads, depth, cells }: Pick<Switches, 'copyUploads' | 'depth' | 'cells'>,
 ): CoreDevice {
 	if (!webgl2) {
 		return {
@@ -80,6 +83,7 @@ export function coreDevice(
 			maxTextureSize: 0,
 			sharedUploads: true,
 			depth: 'reversed',
+			cellCulling: cells,
 		};
 	}
 	const gl = report.webgl2;
@@ -92,6 +96,7 @@ export function coreDevice(
 		maxTextureSize: Math.max(C.LIMIT_WEBGL2_MIN_TEXTURE_SIZE, gl.maxTextureSize ?? 0),
 		sharedUploads: !copyUploads && shared !== null && shared.bufferSubData && shared.texSubImage2D,
 		depth: webgl2Depth(gl.extensions.EXT_clip_control === true, depth),
+		cellCulling: cells,
 	};
 }
 

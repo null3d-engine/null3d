@@ -10,6 +10,7 @@ describe('parseSwitches', () => {
 			latency: undefined,
 			copyUploads: false,
 			depth: undefined,
+			cells: true,
 			fps: undefined,
 			jobs: undefined,
 			memoryMiB: undefined,
@@ -51,5 +52,11 @@ describe('parseSwitches', () => {
 		expect(parseSwitches('?depth=reversed-gl').depth).toBe('reversed-gl');
 		expect(parseSwitches('?depth=reversed').depth).toBe('reversed');
 		expect(parseSwitches('?depth=log').depth).toBeUndefined();
+	});
+
+	it('turns grid-cell culling off with ?cells=off only', () => {
+		expect(parseSwitches('?gpu=webgl2&cells=off').cells).toBe(false);
+		expect(parseSwitches('?cells=on').cells).toBe(true);
+		expect(parseSwitches('?cells=no').cells).toBe(true);
 	});
 });

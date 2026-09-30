@@ -102,6 +102,7 @@ export class SketchRunner {
 			device.webgl2,
 			device.capabilities,
 			device.maxTextureSize,
+			device.cellCulling,
 		);
 		if (status !== 0) throw coreFailure(glue, 'createEngine');
 		if (sketch.jobWorkers > 0) {

@@ -16,7 +16,7 @@
 //   bun run bench:run -- --browser brave
 //   bun run bench:run -- --compare ../baseline,. --runs 3 --seconds 10
 // Options:
-//   --scenes <list>   s1, s1-static, s2; the default is s1, and every scene with --sweep or
+//   --scenes <list>   s1, s1-static, s1-cells, s2; the default is s1, and every scene with --sweep or
 //                     --compare
 //   --pages <list>    page kinds; the default is null3d-webgpu, threejs-webgpu, threejs-webgl and
 //                     scene-code. With --jobs or --compare it is null3d-webgpu and null3d-webgl2,
@@ -93,6 +93,7 @@ const BRAVE = '/Applications/Brave Browser.app/Contents/MacOS/Brave Browser';
 const SWEEP_COUNTS: Record<ParityScene, readonly number[]> = {
 	s1: [1, 10, 100, 1_000, 10_000, 100_000],
 	's1-static': [1, 10, 100, 1_000, 10_000, 100_000],
+	's1-cells': [1, 10, 100, 1_000, 10_000, 100_000],
 	s2: [1, 3, S2_ROOTS, 3 * S2_ROOTS].map((trees) => trees * S2_NODES_PER_TREE),
 };
 const DEFAULT_PAGES: BenchPageKind[] = [
@@ -419,7 +420,16 @@ async function runComparison(
 	for (const root of Object.values(roots))
 		if (!existsSync(join(root, BUILT_CORE)))
 			throw new Error(`${root} holds no built engine: run bun run build there first`);
-	const scenes = options.scenes ?? PARITY_SCENES;
+	// A scene that one checkout lacks, such as a benchmark that the new build adds, has nothing to
+	// compare with, so it runs in neither.
+	const scenes = (options.scenes ?? PARITY_SCENES).filter((scene) =>
+		Object.values(roots).every((root) =>
+			existsSync(join(root, pagePath(scene, 'null3d-webgpu').split('?')[0] as string)),
+		),
+	);
+	for (const scene of options.scenes ?? PARITY_SCENES)
+		if (!scenes.includes(scene))
+			console.log(`${scene}: skipped, because one of the checkouts has no page for it`);
 	const pages = options.pages ?? JOBS_PAGES;
 	const switches = options.seconds === null ? '' : `seconds=${options.seconds}`;
 	const timeoutMs = pageTimeoutMs(options.seconds);

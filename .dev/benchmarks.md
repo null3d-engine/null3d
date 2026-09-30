@@ -18,7 +18,7 @@ The benchmarks compare null3D with three.js in the same browser. These points co
 - The Benchmarks workflow compares a new commit with a baseline on one of GitHub's machines. It runs on every push to main, against the commit before it on main.
 - For a pull request it runs on demand, against the pull request's merge base. Add the `benchmark` label, and each push runs it again while the label stays. You can also start the workflow from the Actions tab with a pull request's number, a branch or a commit.
 - GitHub's machines are shared, and their speed changes from run to run. So the job judges a new commit only against a baseline measured in the same job. It builds both commits on one machine, each in a git worktree of its own, with `bun run build`.
-- It then runs `bun run bench:run --compare <baseline>,<new>` in Chrome. S1, S1-static and S2 run on null3D's two GPU paths. The job runs 10 rounds. Each round runs every page once in each build, the two runs back to back, and even rounds run the new build first. Each run has 5 s of warm-up and 5 s measured.
+- It then runs `bun run bench:run --compare <baseline>,<new>` in Chrome. S1, S1-static, S1-cells and S2 run on null3D's two GPU paths. A scene that one of the two commits has no page for runs in neither. So a pull request that adds a benchmark is compared on the other scenes. The job runs 10 rounds. Each round runs every page once in each build, the two runs back to back, and even rounds run the new build first. Each run has 5 s of warm-up and 5 s measured.
 - It drops a run that measured no frames, and a run that measured another refresh rate than most runs of its page did.
 - Each run gives two medians of CPU time per frame: the busiest thread's time, and the engine's own work on that thread. For each page and measure, the job divides the new build's median by the baseline's in each round. The change is the median of these ratios. A machine that changes speed between rounds then changes both runs of a round alike.
 - The job fails when the busiest thread's change is more than 5% and more than 0.01 ms. It also fails when own work's change is more than 15% and more than 0.02 ms. The browser's timer counts in steps of 5 microseconds, so a small time moves by whole steps between runs.
@@ -68,6 +68,13 @@ Build two checkouts, such as a git worktree of main beside your branch, with `bu
 - Phones and tablets run the benchmarks through the device runner. First find the device's scale with the `scale` plan. Then `--plan bench --n <count>` runs the protocol at that count, with five runs of each page. The pages take turns run by run.
 - The bench plan runs S1 on its usual pages. `--pages` and `--scenes` pick others. For example, to compare two null3D paths on a phone: `bun tests/real-browsers.ts --plan bench --allow-no-webgpu --android chrome --scenes s1-static,s2 --pages null3d-webgl2,null3d-webgl2-low`.
 - `--seconds <n>` sets each bench page's warm-up and measured time, n seconds each. For the protocol's 10-minute sustained run on a phone, use `--seconds 300`: 5 minutes of warm-up, then 5 measured.
+
+## Grid-cell culling
+
+- S1-cells spreads S1-static's boxes over 8 x 8 grid cells, 8 km on each side. Its camera flies low along -Z at 200 m/s, so a few cells are in view, and new ones come into view about every 5 seconds.
+- The page kinds that end in `-cells-off` start null3D with `?cells=off`. Culling then skips no cell: WebGPU's culling pass covers every source. WebGL2 culls every object. It builds no clusters for a static batch whose rows lie in several cells.
+- On the Mac, compare both paths with and without cells: `bun run bench:run --scenes s1-cells --pages null3d-webgpu,null3d-webgpu-cells-off,null3d-webgl2,null3d-webgl2-cells-off,threejs-webgpu,threejs-webgl,scene-code`.
+- On the phone: `bun tests/real-browsers.ts --plan bench --allow-no-webgpu --android chrome --scenes s1-cells --pages null3d-webgl2,null3d-webgl2-cells-off,threejs-webgl`.
 
 ## Sweeps for the open defaults
 

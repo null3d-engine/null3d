@@ -135,6 +135,7 @@ export const SIZE_MULTI_DRAW_RECORDS = 256;
 export const SIZE_MAX_MATERIALS = 1024;
 export const SIZE_MAX_CELLS = 512;
 export const SIZE_CELL_SHIFT = 23;
+export const SIZE_MAX_CULL_RANGES = 257;
 
 /** Bytes per texel of each format, by format code. */
 export const FORMAT_TEXEL_BYTES: readonly number[] = [0, 4, 4, 4, 8, 0, 4, 16, 4, 4];

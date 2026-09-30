@@ -85,9 +85,10 @@ export const CULL_SHADER: {
     planes: array<vec4<f32>, 6>,
     instance_count: u32,
     pad0_: u32,
-    pad1_: u32,
+    range_count: u32,
     pad2_: u32,
     cell_offsets: array<vec4<f32>, 512>,
+    ranges: array<vec4<u32>, 257>,
 }
 
 struct Bucket {
@@ -103,8 +104,11 @@ struct Bucket {
 
 const CELL_SHIFT: u32 = 23u;
 const MAX_CELLS: u32 = 512u;
+const MAX_RANGES: u32 = 257u;
+const WORKGROUP_SIZE: u32 = 128u;
 const HIDDEN: u32 = 4294967295u;
 const INDIRECT_WORDS: u32 = 5u;
+const NONE: u32 = 4294967295u;
 
 @group(0) @binding(0)
 var<uniform> params: CullParams;
@@ -118,28 +122,70 @@ var<storage> buckets: array<Bucket>;
 var<storage, read_write> visible: array<vec4<f32>>;
 @group(0) @binding(5)
 var<storage, read_write> indirect: array<atomic<u32>>;
+@group(0) @binding(7)
+var<storage> order: array<u32>;
+
+fn instance_of(group_1: u32, lane_1: u32) -> u32 {
+    var low: u32 = 0u;
+    var high: u32;
+
+    let _e3 = params.range_count;
+    if (_e3 == 0u) {
+        let i = ((group_1 * WORKGROUP_SIZE) + lane_1);
+        let _e14 = params.instance_count;
+        return select(NONE, i, (i < _e14));
+    }
+    let _e19 = params.range_count;
+    high = _e19;
+    loop {
+        let _e22 = high;
+        let _e23 = low;
+        if ((_e22 - _e23) > 1u) {
+        } else {
+            break;
+        }
+        {
+            let _e27 = low;
+            let _e28 = high;
+            let middle = ((_e27 + _e28) / 2u);
+            let _e36 = params.ranges[middle].z;
+            if (_e36 <= group_1) {
+                low = middle;
+            } else {
+                high = middle;
+            }
+        }
+    }
+    let _e40 = low;
+    let range = params.ranges[_e40];
+    let position = ((range.x + ((group_1 - range.z) * WORKGROUP_SIZE)) + lane_1);
+    if (position >= range.y) {
+        return NONE;
+    }
+    let _e55 = order[position];
+    return _e55;
+}
 
 @compute @workgroup_size(128, 1, 1)
-fn main(@builtin(global_invocation_id) id: vec3<u32>) {
+fn main(@builtin(workgroup_id) group: vec3<u32>, @builtin(local_invocation_index) lane: u32) {
     var p: u32 = 0u;
     var d: u32 = 1u;
 
-    let i = id.x;
-    let _e6 = params.instance_count;
-    if (i >= _e6) {
+    let _e5 = instance_of(group.x, lane);
+    if (_e5 == NONE) {
         return;
     }
-    let entry = instance_buckets[i];
+    let entry = instance_buckets[_e5];
     if (entry == HIDDEN) {
         return;
     }
     let b = (entry & 8388607u);
     let offset = params.cell_offsets[(entry >> CELL_SHIFT)];
-    let _e25 = matrices[(i * 3u)];
+    let _e25 = matrices[(_e5 * 3u)];
     let r0_ = (_e25 + vec4<f32>(0f, 0f, 0f, offset.x));
-    let _e38 = matrices[((i * 3u) + 1u)];
+    let _e38 = matrices[((_e5 * 3u) + 1u)];
     let r1_ = (_e38 + vec4<f32>(0f, 0f, 0f, offset.y));
-    let _e51 = matrices[((i * 3u) + 2u)];
+    let _e51 = matrices[((_e5 * 3u) + 2u)];
     let r2_ = (_e51 + vec4<f32>(0f, 0f, 0f, offset.z));
     let center = vec3<f32>(r0_.w, r1_.w, r2_.w);
     let scale = max(length(vec3<f32>(r0_.x, r1_.x, r2_.x)), max(length(vec3<f32>(r0_.y, r1_.y, r2_.y)), length(vec3<f32>(r0_.z, r1_.z, r2_.z))));

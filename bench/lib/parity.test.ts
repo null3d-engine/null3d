@@ -263,6 +263,8 @@ describe('the pages', () => {
 			'null3d-compat',
 			'null3d-webgpu-low',
 			'null3d-webgl2-low',
+			'null3d-webgpu-cells-off',
+			'null3d-webgl2-cells-off',
 		]);
 		expect(TIERS.map(gpuApiOf)).toEqual(['webgpu', 'webgpu', 'webgl2']);
 	});
@@ -280,6 +282,15 @@ describe('the pages', () => {
 		expect(candidates).not.toContain('null3d-webgl2-low');
 	});
 
+	test('runs the pages without cell culling on the pipelined pages with the cells switch', () => {
+		expect(pagePath('s1-cells', 'null3d-webgl2-cells-off', 'seconds=2')).toBe(
+			'/bench/pages/null3d/s1-cells.html?gpu=webgl2&cells=off&seconds=2',
+		);
+		expect(pagePath('s1-cells', 'null3d-webgpu-cells-off')).toBe(
+			'/bench/pages/null3d/s1-cells.html?gpu=webgpu&cells=off',
+		);
+	});
+
 	test('sweeps job worker counts on the null3D pages only', () => {
 		expect(JOBS_PAGES).toEqual(['null3d-webgpu', 'null3d-webgl2']);
 		expect(PAGE_KINDS.filter(isNull3dPage)).toEqual([
@@ -288,6 +299,8 @@ describe('the pages', () => {
 			'null3d-compat',
 			'null3d-webgpu-low',
 			'null3d-webgl2-low',
+			'null3d-webgpu-cells-off',
+			'null3d-webgl2-cells-off',
 		]);
 		expect(isNull3dPage('scene-code')).toBe(false);
 		expect(PAGE_KINDS.map(gpuApiOfPage)).toEqual([
@@ -296,6 +309,8 @@ describe('the pages', () => {
 			'webgl2',
 			'webgpu',
 			'webgpu',
+			'webgpu',
+			'webgl2',
 			'webgpu',
 			'webgl2',
 		]);
@@ -333,7 +348,7 @@ describe('stored baselines', () => {
 describe('parseParityArgs', () => {
 	test('compares every scene on every GPU tier by default', () => {
 		expect(parseParityArgs([])).toEqual({
-			scenes: ['s1', 's1-static', 's2'],
+			scenes: ['s1', 's1-static', 's1-cells', 's2'],
 			comparisons: [
 				{ label: 'webgpu', candidate: 'null3d-webgpu', reference: 'threejs-webgpu' },
 				{ label: 'compat', candidate: 'null3d-compat', reference: 'threejs-webgpu' },
@@ -354,7 +369,7 @@ describe('parseParityArgs', () => {
 
 	test('compares any two kinds of page with --pair, the second one being the reference', () => {
 		expect(parseParityArgs(['--pair', 'threejs-webgl,threejs-webgpu'])).toEqual({
-			scenes: ['s1', 's1-static', 's2'],
+			scenes: ['s1', 's1-static', 's1-cells', 's2'],
 			comparisons: [
 				{
 					label: 'threejs-webgl vs threejs-webgpu',
@@ -368,7 +383,7 @@ describe('parseParityArgs', () => {
 
 	test('refuses unknown names, a pair that is not two pages, and --tier with --pair', () => {
 		expect(() => parseParityArgs(['--scene', 's3'])).toThrow(
-			'"s3" is not a scene. Use one of: s1, s1-static, s2.',
+			'"s3" is not a scene. Use one of: s1, s1-static, s1-cells, s2.',
 		);
 		expect(() => parseParityArgs(['--tier', 'webgl1'])).toThrow('"webgl1" is not a tier.');
 		expect(() => parseParityArgs(['--pair', 'threejs-webgl'])).toThrow(

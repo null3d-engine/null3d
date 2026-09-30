@@ -161,7 +161,7 @@ Keep each row's own data, such as a velocity, in your own typed arrays in the sa
 
 ## Culling
 
-Each row has its own bounding sphere. The sphere's center is the row's position, and its radius is the mesh's radius times the row's largest scale. The engine culls row by row in each view, and skips the rows outside the view. On WebGPU a compute pass on the GPU culls. On WebGL2 the job workers cull, and they test a static batch at rest in groups of 64 nearby rows. A group that is partly in view draws whole, and the GPU clips the rows outside.
+Each row has its own bounding sphere. The sphere's center is the row's position, and its radius is the mesh's radius times the row's largest scale. The engine culls row by row in each view, and skips the rows outside the view. On WebGPU a compute pass on the GPU culls. On WebGL2 the job workers cull. They test a static batch at rest in groups of 64 nearby rows, each group inside one grid cell. A group that is partly in view draws whole, and the GPU clips the rows outside. When the scene spreads over several grid cells, both paths skip the rows of static batches in the cells out of view, as [Culling](culling.md) describes.
 
 ## Automatic batching
 

@@ -7,7 +7,8 @@ use common::{Rng, Workers, frusta, orthographic, perspective, random_spheres};
 use null3d_core::cells::CELL_SHIFT;
 use null3d_core::culling::{
     BY_ROW, BucketedCull, CULL_CHUNK, CullOutput, CullRun, CullSet, Frustum, NO_BUCKET, ROW_CELLS,
-    cull_into_buckets, cull_parallel, cull_spheres, cull_spheres_in_cells, cull_spheres_reference,
+    SetOrder, cull_into_buckets, cull_parallel, cull_spheres, cull_spheres_in_cells,
+    cull_spheres_reference,
 };
 use null3d_core::world::SphereArrays;
 
@@ -226,6 +227,7 @@ fn bucketed_culling_matches_the_reference_for_0_to_8_workers() {
         CullSet {
             spheres: SphereArrays::new(xs, ys, zs, rs),
             cells: &cells[set as usize],
+            order: SetOrder::Rows,
         }
     };
     // The usual views, and one that culls nothing, so the list is long enough for the parallel
@@ -300,6 +302,118 @@ fn spheres_in_cells_cull_like_spheres_moved_by_their_offsets() {
 }
 
 #[test]
+fn runs_through_a_list_of_rows_list_the_rows_that_culling_each_row_keeps() {
+    const ROWS: usize = 12_345;
+    let arrays = random_spheres(ROWS, 41);
+    let [xs, ys, zs, rs] = &arrays;
+    let mut rng = Rng::new(42);
+    let cells: Vec<u32> = (0..ROWS).map(|_| rng.below(OFFSETS.len() as u32)).collect();
+    // Two rows in three, in a shuffled order, and copies of their spheres in that order.
+    let mut list: Vec<u32> = (0..ROWS as u32).filter(|row| row % 3 != 1).collect();
+    for i in (1..list.len()).rev() {
+        list.swap(i, rng.below(i as u32 + 1) as usize);
+    }
+    let copies: [Vec<f32>; 4] =
+        std::array::from_fn(|k| list.iter().map(|&row| arrays[k][row as usize]).collect());
+    let spheres = SphereArrays::new(xs, ys, zs, rs);
+    let copied = SphereArrays::new(&copies[0], &copies[1], &copies[2], &copies[3]);
+    let positions = list.len() as u32;
+    // Each run covers all the list's positions: the copies in one cell, and the gathered rows each
+    // in its own cell.
+    let run = |set: u32, cell: u32| CullRun {
+        set,
+        start: 0,
+        end: positions,
+        bucket: 0,
+        base: 0,
+        cell,
+    };
+    let jobs = null3d_core::jobs::JobSystem::new(0);
+    for frustum in frusta() {
+        for (set, order, cell) in [
+            (0, SetOrder::Copied(&list), 2),
+            (1, SetOrder::Gathered(&list), ROW_CELLS),
+        ] {
+            let spheres = if set == 0 { copied } else { spheres };
+            let mut out = BucketedCull::default();
+            out.try_reserve(positions, 1, 0, 1).unwrap();
+            let sets = |_| CullSet {
+                spheres,
+                cells: &cells,
+                order,
+            };
+            let n = cull_into_buckets(
+                &jobs,
+                &frustum,
+                &OFFSETS,
+                &sets,
+                &[run(set, cell)],
+                &[],
+                1,
+                &mut out,
+            );
+            // The reference tests each listed row where it lies, in the list's order.
+            let expected: Vec<u32> = list
+                .iter()
+                .filter(|&&row| {
+                    let r = row as usize;
+                    let at = if cell == ROW_CELLS { cells[r] } else { cell };
+                    let [x, y, z, _] = OFFSETS[at as usize];
+                    if cell == ROW_CELLS {
+                        frustum.contains_sphere(xs[r] + x, ys[r] + y, zs[r] + z, rs[r])
+                    } else {
+                        frustum
+                            .moved_by([x, y, z])
+                            .contains_sphere(xs[r], ys[r], zs[r], rs[r])
+                    }
+                })
+                .map(|&row| {
+                    let at = if cell == ROW_CELLS {
+                        cells[row as usize]
+                    } else {
+                        cell
+                    };
+                    row | (at << CELL_SHIFT)
+                })
+                .collect();
+            assert_eq!(n, expected.len(), "{order:?}, cell {cell}");
+            assert_eq!(out.indices(), &expected[..], "cell {cell}");
+        }
+    }
+}
+
+#[test]
+#[should_panic(expected = "one cell")]
+fn a_run_of_copied_spheres_in_several_cells_panics() {
+    let v = vec![0.0; 8];
+    let list: Vec<u32> = (0..8).collect();
+    let run = CullRun {
+        set: 0,
+        start: 0,
+        end: 8,
+        bucket: 0,
+        base: 0,
+        cell: ROW_CELLS,
+    };
+    let mut out = BucketedCull::default();
+    out.try_reserve(8, 1, 0, 1).unwrap();
+    cull_into_buckets(
+        &null3d_core::jobs::JobSystem::new(0),
+        &Frustum::from_view_projection(&perspective(1.0, 1.0, 0.1, 10.0)),
+        &OFFSETS,
+        &|_| CullSet {
+            spheres: SphereArrays::new(&v, &v, &v, &v),
+            cells: &[0; 8],
+            order: SetOrder::Copied(&list),
+        },
+        &[run],
+        &[],
+        1,
+        &mut out,
+    );
+}
+
+#[test]
 fn a_frustum_moved_into_a_cell_sees_what_the_camera_sees() {
     let [xs, ys, zs, rs] = random_spheres(20_000, 33);
     for frustum in frusta() {
@@ -345,6 +459,7 @@ fn a_bucketed_output_without_room_for_the_runs_panics() {
         &|_| CullSet {
             spheres: SphereArrays::new(&v, &v, &v, &v),
             cells: &[],
+            order: SetOrder::Rows,
         },
         &[run],
         &[],

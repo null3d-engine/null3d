@@ -64,9 +64,10 @@ run('replay', async () => {
 	frame.set([3, 3, 3, 0], 24);
 	frame.set([0.4, 0.4, 0.4, 0], 28);
 	const materials = new Float32Array([0.8, 0.1, 0.1, 1, 0.1, 0.3, 0.9, 1]);
-	// The planes and the instance count, then the offset from the camera to each grid cell. Every
-	// instance here lies in cell 0, whose zero offset keeps the positions in world space.
-	const cull = new Float32Array(28 + 4 * G.SIZE_MAX_CELLS);
+	// The planes and the instance count, then the offset from the camera to each grid cell, then the
+	// runs of the cell order. Every instance here lies in cell 0, whose zero offset keeps the
+	// positions in world space, and no run is listed, so thread i culls instance i.
+	const cull = new Float32Array(28 + 4 * G.SIZE_MAX_CELLS + 4 * G.SIZE_MAX_CULL_RANGES);
 	cull.set(frustumPlanes(viewProj), 0);
 	new Uint32Array(cull.buffer).set([positions.length, 0, 0, 0], 24);
 	const indirect = new Uint32Array([36, 0, 0, 0, 0, 36, 0, 0, 0, 0]);
@@ -104,6 +105,8 @@ run('replay', async () => {
 		[8, positions.length * INSTANCE_BYTES, U.VERTEX | U.STORAGE, -1],
 		[9, indirect.byteLength, U.INDIRECT | U.STORAGE | U.COPY_DST | U.COPY_SRC, blobs.indirect],
 		[10, cull.byteLength, U.UNIFORM | U.COPY_DST, blobs.cull],
+		// The cell order, which a dispatch with no runs never reads.
+		[11, 4, U.STORAGE | U.COPY_DST, -1],
 	];
 	for (const [id, size, usage] of buffers) memory.push(G.OP_CREATE_BUFFER, id, size, usage);
 	for (const [id, size, , source] of buffers)
@@ -164,8 +167,22 @@ run('replay', async () => {
 		G.OP_CREATE_BIND_GROUP,
 		2,
 		G.LAYOUT_CULL,
-		6,
-		...[10, 5, 6, 7, 8, 9].flatMap((buffer, binding) => [binding, G.RESOURCE_BUFFER, buffer, 0, 0]),
+		7,
+		...[
+			[0, 10],
+			[1, 5],
+			[2, 6],
+			[3, 7],
+			[4, 8],
+			[5, 9],
+			[7, 11],
+		].flatMap(([binding, buffer]) => [
+			binding as number,
+			G.RESOURCE_BUFFER,
+			buffer as number,
+			0,
+			0,
+		]),
 	);
 	memory.push(G.OP_BEGIN_BUNDLE, 1, G.FORMAT_CANVAS, G.FORMAT_DEPTH32_FLOAT, SAMPLES);
 	memory.push(G.OP_SET_PIPELINE, 1);

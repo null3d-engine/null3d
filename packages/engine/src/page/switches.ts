@@ -1,7 +1,7 @@
 // URL switches that let one device exercise every engine path: ?gpu=, ?threads=off, ?render=main,
-// ?latency=, ?uploads=copy and ?depth=. Three more set what the benchmarks vary: ?fps= for a fixed
-// frame rate, ?jobs= for the job worker count and ?memory= for the shared memory's maximum. ?hold
-// starts hold mode for image tests.
+// ?latency=, ?uploads=copy and ?depth=. Four more set what the benchmarks vary: ?fps= for a fixed
+// frame rate, ?jobs= for the job worker count, ?memory= for the shared memory's maximum and
+// ?cells=off for culling without grid cells. ?hold starts hold mode for image tests.
 
 export type GpuSwitch = 'auto' | 'webgpu' | 'compat' | 'webgl2';
 /**
@@ -39,6 +39,11 @@ export interface Switches {
 	 * own. A device without `EXT_clip_control` cannot draw `reversed`, and draws its own instead.
 	 */
 	depth: DepthMode | undefined;
+	/**
+	 * False when ?cells=off makes the core cull every object and instance row, with no whole grid
+	 * cells skipped first, for benchmarks that measure what cell culling saves.
+	 */
+	cells: boolean;
 	/**
 	 * The frame rate from ?fps= that the thread that draws holds, up to the display's rate, or
 	 * undefined to draw at the display's rate.
@@ -88,6 +93,7 @@ export function parseSwitches(search: string): Switches {
 		latency: oneOf(params.get('latency'), ['pipelined', 'low'] as const),
 		copyUploads: params.get('uploads') === 'copy',
 		depth: oneOf(params.get('depth'), ['reversed', 'reversed-gl', 'standard'] as const),
+		cells: params.get('cells') !== 'off',
 		fps: positive(params.get('fps')),
 		jobs: whole(params.get('jobs'), MAX_JOB_WORKERS),
 		memoryMiB: whole(params.get('memory')),

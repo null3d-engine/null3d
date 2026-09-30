@@ -49,7 +49,7 @@ export interface ImageComparison {
 
 // The scenes and the pages that draw their hold frames.
 
-export const PARITY_SCENES = ['s1', 's1-static', 's2'] as const;
+export const PARITY_SCENES = ['s1', 's1-static', 's1-cells', 's2'] as const;
 export type ParityScene = (typeof PARITY_SCENES)[number];
 
 /** The GPU tiers: core WebGPU, WebGPU forced into compatibility mode, and WebGL2. */
@@ -63,7 +63,8 @@ export function gpuApiOf(tier: Tier): 'webgpu' | 'webgl2' {
 
 /**
  * Each kind of benchmark page: its folder, the switches that pick its GPU path and, for the null3D
- * pages that end in -low, the low-latency mode, and the GPU interface it draws with.
+ * pages that end in -low, the low-latency mode, and for those that end in -cells-off, culling with
+ * no grid cells skipped, and the GPU interface it draws with.
  */
 const PAGES = {
 	'threejs-webgl': { folder: 'threejs', switches: 'renderer=webgl', api: 'webgl2' },
@@ -73,6 +74,8 @@ const PAGES = {
 	'null3d-compat': { folder: 'null3d', switches: 'gpu=compat', api: 'webgpu' },
 	'null3d-webgpu-low': { folder: 'null3d', switches: 'gpu=webgpu&latency=low', api: 'webgpu' },
 	'null3d-webgl2-low': { folder: 'null3d', switches: 'gpu=webgl2&latency=low', api: 'webgl2' },
+	'null3d-webgpu-cells-off': { folder: 'null3d', switches: 'gpu=webgpu&cells=off', api: 'webgpu' },
+	'null3d-webgl2-cells-off': { folder: 'null3d', switches: 'gpu=webgl2&cells=off', api: 'webgl2' },
 } as const satisfies Record<string, { folder: string; switches: string; api: 'webgpu' | 'webgl2' }>;
 
 export type PageKind = keyof typeof PAGES;

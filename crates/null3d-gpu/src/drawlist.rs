@@ -541,6 +541,10 @@ pub mod sizes {
     /// Where a cell index starts in a word that packs it above a bucket or a row: a bucket table
     /// entry of the culling shader, or an index list entry.
     pub const CELL_SHIFT: u32 = 23;
+    /// Runs of sources in cell order that one culling dispatch covers at most: the culling
+    /// parameters list them for the cells a view can see. Runs that follow each other join, so
+    /// there is at most one per pair of cells, and one more for the sources that move.
+    pub const MAX_CULL_RANGES: u32 = MAX_CELLS / 2 + 1;
 }
 
 /// Shader templates for `CreateRenderPipeline` and `CreateComputePipeline`.
@@ -827,6 +831,7 @@ pub fn typescript_constants() -> String {
                 ("MAX_MATERIALS", sizes::MAX_MATERIALS),
                 ("MAX_CELLS", sizes::MAX_CELLS),
                 ("CELL_SHIFT", sizes::CELL_SHIFT),
+                ("MAX_CULL_RANGES", sizes::MAX_CULL_RANGES),
             ],
         ),
     ];
@@ -865,6 +870,11 @@ mod tests {
             format!("const INDIRECT_WORDS: u32 = {}u;", sizes::INDIRECT_WORDS),
             format!("const CELL_SHIFT: u32 = {}u;", sizes::CELL_SHIFT),
             format!("const MAX_CELLS: u32 = {}u;", sizes::MAX_CELLS),
+            format!("const MAX_RANGES: u32 = {}u;", sizes::MAX_CULL_RANGES),
+            format!(
+                "const WORKGROUP_SIZE: u32 = {}u;",
+                sizes::CULL_WORKGROUP_SIZE
+            ),
         ] {
             assert!(cull.contains(&line), "cull.wgsl lacks {line}");
         }

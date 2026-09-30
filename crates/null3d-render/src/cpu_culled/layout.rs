@@ -4,7 +4,9 @@
 
 use std::collections::TryReserveError;
 
-use null3d_core::clusters::{CLUSTER_ROWS, CLUSTER_SHIFT, ClusterScratch, NO_ROW, RowClusters};
+use null3d_core::clusters::{
+    CLUSTER_ROWS, CLUSTER_SHIFT, ClusterScratch, NO_ROW, RowCells, RowClusters, cluster_room,
+};
 use null3d_core::culling::{CULL_CHUNK, NO_BUCKET};
 use null3d_core::handle::Handle;
 use null3d_core::instances::{BatchTable, InstanceBatch};
@@ -73,13 +75,15 @@ impl BatchSlot {
 }
 
 /// The room that each view's culling output needs for the layout: rows, culling runs, runs that
-/// look up their rows' buckets, and buckets.
+/// look up their rows' buckets, and buckets, and the batches whose culling each frame notes.
+/// Views that see many grid cells cull more, shorter runs, and grow their room as they need it.
 #[derive(Clone, Copy, Debug, Default)]
 pub(super) struct CullRoom {
     pub(super) rows: u32,
     pub(super) runs: u32,
     pub(super) by_row: u32,
     pub(super) buckets: u32,
+    pub(super) batches: u32,
 }
 
 /// The source layout and bucket tables, rebuilt when the structure changes.
@@ -88,7 +92,8 @@ pub(super) struct Layout {
     pub(super) scene_rows: u32,
     pub(super) resident_rows: u32,
     pub(super) streamed_rows: u32,
-    /// Entries of the cluster texture: each static batch's rows, rounded up to whole clusters.
+    /// Entries of the cluster texture: each static batch's room for clusters inside cells, whole
+    /// clusters each.
     pub(super) cluster_rows: u32,
     pub(super) batches: Vec<BatchSlot>,
     pub(super) buckets: Vec<Bucket>,
@@ -150,7 +155,7 @@ impl Layout {
             });
             *rows = rows.saturating_add(batch.capacity());
             if !dynamic {
-                clusters = clusters.saturating_add(batch.capacity().div_ceil(CLUSTER_ROWS));
+                clusters = clusters.saturating_add(cluster_room(batch.capacity()));
                 largest_static = largest_static.max(batch.capacity());
             }
         }
@@ -242,6 +247,7 @@ impl Layout {
             runs,
             by_row: self.scene_rows.div_ceil(CULL_CHUNK),
             buckets: self.buckets.len() as u32,
+            batches: self.batches.len() as u32,
         };
         Ok(())
     }
@@ -264,6 +270,9 @@ pub(super) struct ClusterSet {
     pub(super) clusters: RowClusters,
     /// True when the clusters match the batch's rows in both world buffers.
     current: bool,
+    /// True when the batch's rows, as they rest, lie in more cells than its room for clusters
+    /// allows, so it culls row by row until it changes.
+    unfit: bool,
     /// True when the cluster texture holds the clusters' order at the batch's place.
     uploaded: bool,
 }
@@ -282,22 +291,34 @@ impl Clusters {
         &self.sets[slot.id.slot() as usize]
     }
 
+    /// The rows of the batch in a layout slot in cluster order, while its clusters are current.
+    pub(super) fn current_order(&self, slot: &BatchSlot) -> Option<&[u32]> {
+        let set = self.sets.get(slot.id.slot() as usize)?;
+        (set.id == slot.id && set.current).then(|| set.clusters.order())
+    }
+
     /// Keeps a static batch's clusters in step with its rows: they go stale while the batch
-    /// changes, and once it is at rest, with `active` rows whose spheres are `spheres`, they are
-    /// built again, to upload their order. Returns the number of clusters while they are current.
+    /// changes, and once it is at rest, with `active` rows whose spheres are `spheres` and whose
+    /// cells are `cells`, they are built again, to upload their order. Returns the number of
+    /// clusters while they are current. Rows spread over more cells than the batch's room for
+    /// clusters allows get none, and cull row by row.
     pub(super) fn refresh(
         &mut self,
         slot: &BatchSlot,
         at_rest: bool,
         spheres: SphereArrays<'_>,
         active: u32,
+        cells: RowCells<'_>,
     ) -> Option<u32> {
         let set = &mut self.sets[slot.id.slot() as usize];
         if !at_rest {
             set.current = false;
-        } else if !set.current {
-            set.clusters.build(spheres, active, &mut self.scratch);
-            set.current = true;
+            set.unfit = false;
+        } else if !set.current && !set.unfit {
+            set.current = set
+                .clusters
+                .build(spheres, active, cells, &mut self.scratch);
+            set.unfit = !set.current;
             set.uploaded = false;
         }
         set.current.then(|| set.clusters.len())

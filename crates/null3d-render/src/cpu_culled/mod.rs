@@ -52,10 +52,12 @@ mod opaque;
 use std::collections::TryReserveError;
 
 use null3d_core::cells::CELL_SHIFT;
-use null3d_core::culling::BucketedCull;
+use null3d_core::culling::{BucketedCull, NO_BUCKET};
+use null3d_core::handle::Handle;
 use null3d_core::snapshot::SCENE_TARGET;
 use null3d_gpu::drawlist::{DrawList, Op, buffer_usage as usage, sizes};
 
+use crate::cells::CellCulling;
 use crate::frame::{
     FrameBuilder, FrameInput, MeshBuffers, ParityLists, PipelineTable, RecordError, SceneSettings,
     UploadArena, drawn_rows, floats_as_bytes,
@@ -136,6 +138,9 @@ pub struct CpuCulledConfig {
     pub max_texture_size: u32,
     /// True when the device has `WEBGL_multi_draw`.
     pub multi_draw: bool,
+    /// True to skip every still object of a grid cell out of view before testing objects; false
+    /// to test every object, as a benchmark of cell culling compares.
+    pub cell_culling: bool,
 }
 
 impl Default for CpuCulledConfig {
@@ -146,6 +151,7 @@ impl Default for CpuCulledConfig {
             draw_list_words: 64 * 1024,
             max_texture_size: 2048,
             multi_draw: false,
+            cell_culling: true,
         }
     }
 }
@@ -173,6 +179,8 @@ pub struct CpuCulledRenderer {
     graph: FrameGraph,
     layout: Layout,
     clusters: Clusters,
+    /// Grid-cell culling: the still scene objects in cell order, and each cell's box.
+    cells: CellCulling,
     culling: Culling,
     opaque: Opaque,
     /// The vertex pages' vertex and index buffers.
@@ -198,6 +206,7 @@ impl CpuCulledRenderer {
             graph: FrameGraph::new(config.samples, false, ids::TARGETS),
             layout: Layout::default(),
             clusters: Clusters::default(),
+            cells: CellCulling::new(config.cell_culling, true),
             culling: Culling::default(),
             opaque: Opaque::new(config.multi_draw),
             meshes: MeshBuffers::new(ids::PAGES),
@@ -223,6 +232,19 @@ impl CpuCulledRenderer {
         self.culling.frame(view)
     }
 
+    /// The objects, instance rows and clusters that a view's culling tested in the frame that
+    /// culled last. For tests of what grid-cell culling skips.
+    pub fn tested(&self, view: ViewId) -> u32 {
+        self.culling.tested(view)
+    }
+
+    /// A static batch's rows in cluster order, while its clusters are current: each cluster holds
+    /// 64 entries, and a cell's last cluster ends with `u32::MAX`. For tests.
+    pub fn cluster_order(&self, batch: Handle) -> Option<&[u32]> {
+        let slot = self.layout.batch(batch.raw())?;
+        self.clusters.current_order(slot)
+    }
+
     /// Assigns every source to a data texture and a bucket, then makes room for the new layout:
     /// the clusters, the culling runs and every view's output, and the upload arenas.
     fn rebuild_layout(&mut self, input: &FrameInput<'_>) -> Result<(), RecordError> {
@@ -240,6 +262,10 @@ impl CpuCulledRenderer {
         };
         self.clusters
             .prepare(input.batches, &self.layout)
+            .map_err(out_of_memory)?;
+        let scene_buckets = &self.layout.scene_buckets;
+        self.cells
+            .classify(input.scene, &|slot| scene_buckets[slot] != NO_BUCKET)
             .map_err(out_of_memory)?;
         let views = self.settings.views().len();
         self.culling.reserve(room, views).map_err(out_of_memory)?;
@@ -531,9 +557,13 @@ impl FrameBuilder for CpuCulledRenderer {
             self.rebuild_layout(input)?;
         }
         self.add_culled_views()?;
+        self.cells.update(input);
+        let (layout, cells) = (&self.layout, &self.cells);
         self.culling
-            .cull(input, &self.settings, &self.layout, &mut self.clusters);
-        Ok(())
+            .cull(input, &self.settings, layout, &mut self.clusters, cells)
+            .map_err(|_| RecordError::OutOfMemory {
+                bytes: layout.room.rows.saturating_mul(8),
+            })
     }
 
     fn record(&mut self, input: &FrameInput<'_>) -> Result<bool, RecordError> {

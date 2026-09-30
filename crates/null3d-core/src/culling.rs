@@ -124,13 +124,12 @@ fn normalize_plane(p: [f32; 4]) -> [f32; 4] {
     }
 }
 
-/// Checks the arguments shared by both culling functions and returns the range as `usize`.
-fn check_range(xs: &[f32], ys: &[f32], zs: &[f32], rs: &[f32], range: &Range<u32>, out: &[u32]) {
-    let end = range.end as usize;
+/// Checks the range and the output room shared by every culling function.
+fn check_range(positions: usize, range: &Range<u32>, out: &[u32]) {
     assert!(range.start <= range.end, "range {range:?} is reversed");
     assert!(
-        end <= xs.len() && end <= ys.len() && end <= zs.len() && end <= rs.len(),
-        "range {range:?} is past the sphere arrays"
+        range.end as usize <= positions,
+        "range {range:?} is past the {positions} positions"
     );
     assert!(
         out.len() >= range.len(),
@@ -138,6 +137,117 @@ fn check_range(xs: &[f32], ys: &[f32], zs: &[f32], rs: &[f32], range: &Range<u32
         out.len(),
         range.len()
     );
+}
+
+/// Where a culling loop finds the sphere at each position of its range, and the row it lists for
+/// that position.
+trait Positions {
+    /// The centres' x, y and z, and the radii, of positions `i..i + 4`, one position per lane.
+    fn spheres4(&self, i: usize) -> [f32x4; 4];
+    /// The centre and the radius at position `i`.
+    fn sphere(&self, i: usize) -> [f32; 4];
+    /// The rows of positions `i..i + 4`.
+    fn rows4(&self, i: usize) -> u32x4;
+    /// The row of position `i`.
+    fn row(&self, i: usize) -> u32;
+}
+
+/// Spheres whose positions are their rows.
+struct InOrder<'a>(SphereArrays<'a>);
+
+impl Positions for InOrder<'_> {
+    #[inline(always)]
+    fn spheres4(&self, i: usize) -> [f32x4; 4] {
+        let SphereArrays { xs, ys, zs, radii } = self.0;
+        [xs, ys, zs, radii].map(|v| f32x4::from_slice(&v[i..i + 4]))
+    }
+
+    #[inline(always)]
+    fn sphere(&self, i: usize) -> [f32; 4] {
+        let SphereArrays { xs, ys, zs, radii } = self.0;
+        [xs[i], ys[i], zs[i], radii[i]]
+    }
+
+    #[inline(always)]
+    fn rows4(&self, i: usize) -> u32x4 {
+        u32x4::splat(i as u32) + u32x4::from_array([0, 1, 2, 3])
+    }
+
+    #[inline(always)]
+    fn row(&self, i: usize) -> u32 {
+        i as u32
+    }
+}
+
+/// Spheres stored by row, at the rows that a list names by position.
+struct Gathered<'a> {
+    spheres: SphereArrays<'a>,
+    rows: &'a [u32],
+}
+
+impl Positions for Gathered<'_> {
+    #[inline(always)]
+    fn spheres4(&self, i: usize) -> [f32x4; 4] {
+        let rows = self.rows4(i).to_array().map(|row| row as usize);
+        let SphereArrays { xs, ys, zs, radii } = self.spheres;
+        [xs, ys, zs, radii].map(|v| f32x4::from_array(rows.map(|row| v[row])))
+    }
+
+    #[inline(always)]
+    fn sphere(&self, i: usize) -> [f32; 4] {
+        InOrder(self.spheres).sphere(self.rows[i] as usize)
+    }
+
+    #[inline(always)]
+    fn rows4(&self, i: usize) -> u32x4 {
+        u32x4::from_slice(&self.rows[i..i + 4])
+    }
+
+    #[inline(always)]
+    fn row(&self, i: usize) -> u32 {
+        self.rows[i]
+    }
+}
+
+/// Spheres in different cells, each moved by its row's cell's offset from the camera,
+/// `offsets[cells[row]]`, so a frustum relative to the camera tests them. The four lanes and the
+/// single sphere add the offsets the same way, so they agree.
+struct InCells<'a, P> {
+    positions: P,
+    cells: &'a [u32],
+    offsets: &'a [[f32; 4]],
+}
+
+impl<P: Positions> Positions for InCells<'_, P> {
+    #[inline(always)]
+    fn spheres4(&self, i: usize) -> [f32x4; 4] {
+        let [x, y, z, r] = self.positions.spheres4(i);
+        let rows = self.positions.rows4(i).to_array();
+        let o = rows.map(|row| self.offsets[self.cells[row as usize] as usize]);
+        [
+            x + f32x4::from_array(o.map(|v| v[0])),
+            y + f32x4::from_array(o.map(|v| v[1])),
+            z + f32x4::from_array(o.map(|v| v[2])),
+            r,
+        ]
+    }
+
+    #[inline(always)]
+    fn sphere(&self, i: usize) -> [f32; 4] {
+        let [x, y, z, r] = self.positions.sphere(i);
+        let o = self.offsets[self.cells[self.positions.row(i) as usize] as usize];
+        [x + o[0], y + o[1], z + o[2], r]
+    }
+
+    #[inline(always)]
+    fn rows4(&self, i: usize) -> u32x4 {
+        self.positions.rows4(i)
+    }
+
+    #[inline(always)]
+    fn row(&self, i: usize) -> u32 {
+        self.positions.row(i)
+    }
 }
 
 /// Writes the indices of the spheres in `range` that are inside the frustum to `out`, in
@@ -154,21 +264,20 @@ pub fn cull_spheres(
     range: Range<u32>,
     out: &mut [u32],
 ) -> usize {
-    check_range(xs, ys, zs, rs, &range, out);
-    cull_centers(
-        frustum,
-        rs,
-        range,
-        out,
-        |i| {
-            [
-                f32x4::from_slice(&xs[i..i + 4]),
-                f32x4::from_slice(&ys[i..i + 4]),
-                f32x4::from_slice(&zs[i..i + 4]),
-            ]
-        },
-        |i| [xs[i], ys[i], zs[i]],
-    )
+    let spheres = SphereArrays {
+        xs,
+        ys,
+        zs,
+        radii: rs,
+    };
+    check_range(shortest(&spheres), &range, out);
+    cull_positions(frustum, range, out, &InOrder(spheres))
+}
+
+/// The length of the shortest of the four sphere arrays.
+fn shortest(spheres: &SphereArrays<'_>) -> usize {
+    let SphereArrays { xs, ys, zs, radii } = spheres;
+    xs.len().min(ys.len()).min(zs.len()).min(radii.len())
 }
 
 /// [`cull_spheres`] for spheres in different cells: each center first moves by its cell's offset
@@ -186,72 +295,49 @@ pub fn cull_spheres_in_cells(
     range: Range<u32>,
     out: &mut [u32],
 ) -> usize {
-    let SphereArrays { xs, ys, zs, radii } = spheres;
-    check_range(xs, ys, zs, radii, &range, out);
-    assert!(
-        range.end as usize <= cells.len(),
-        "range {range:?} is past the {} cells",
-        cells.len()
-    );
-    let offset = |i: usize| offsets[cells[i] as usize];
-    cull_centers(
-        frustum,
-        radii,
-        range,
-        out,
-        |i| {
-            let o = [offset(i), offset(i + 1), offset(i + 2), offset(i + 3)];
-            [
-                f32x4::from_slice(&xs[i..i + 4]) + f32x4::from_array(o.map(|v| v[0])),
-                f32x4::from_slice(&ys[i..i + 4]) + f32x4::from_array(o.map(|v| v[1])),
-                f32x4::from_slice(&zs[i..i + 4]) + f32x4::from_array(o.map(|v| v[2])),
-            ]
-        },
-        |i| {
-            let o = offset(i);
-            [xs[i] + o[0], ys[i] + o[1], zs[i] + o[2]]
-        },
-    )
+    check_range(shortest(&spheres).min(cells.len()), &range, out);
+    let positions = InCells {
+        positions: InOrder(spheres),
+        cells,
+        offsets,
+    };
+    cull_positions(frustum, range, out, &positions)
 }
 
-/// Writes the indices of the spheres in `range` that are inside the frustum to `out`, in
-/// increasing order, and returns how many it wrote. `centers4` gives the centers of four spheres
-/// from an index on, and `center` one sphere's, in the frustum's space; `rs` holds the radii.
+/// Writes the rows of the positions in `range` whose spheres are inside the frustum to `out`, in
+/// the order of their positions, and returns how many it wrote.
 #[inline(always)]
-fn cull_centers(
+fn cull_positions(
     frustum: &Frustum,
-    rs: &[f32],
     range: Range<u32>,
     out: &mut [u32],
-    centers4: impl Fn(usize) -> [f32x4; 3],
-    center: impl Fn(usize) -> [f32; 3],
+    positions: &impl Positions,
 ) -> usize {
     let planes = frustum.planes.map(|p| p.map(f32x4::splat));
     let (start, end) = (range.start as usize, range.end as usize);
     let simd_end = start + (end - start) / 4 * 4;
-    let lanes = u32x4::from_array([0, 1, 2, 3]);
     let mut n = 0;
     let mut i = start;
     while i < simd_end {
-        let [x, y, z] = centers4(i);
-        let limit = -f32x4::from_slice(&rs[i..i + 4]);
+        let [x, y, z, r] = positions.spheres4(i);
+        let limit = -r;
         let mut inside = mask32x4::splat(true);
         for p in &planes {
             inside &= (x * p[0] + y * p[1] + z * p[2] + p[3]).simd_ge(limit);
         }
         let bits = inside.to_bitmask() as usize;
-        // Shuffle the visible indices to the front and store all four lanes; only the visible
-        // ones count. `n` is at most `i - start`, so the store stays inside `out`, which holds a
-        // slot per sphere.
-        let indices = (u32x4::splat(i as u32) + lanes).to_ne_bytes();
-        let packed = shuffle_bytes(indices, u8x16::from_array(COMPACT[bits]));
+        // Shuffle the visible rows to the front and store all four lanes; only the visible ones
+        // count. `n` is at most `i - start`, so the store stays inside `out`, which holds a slot
+        // per sphere.
+        let rows = positions.rows4(i).to_ne_bytes();
+        let packed = shuffle_bytes(rows, u8x16::from_array(COMPACT[bits]));
         u32x4::from_ne_bytes(packed).copy_to_slice(&mut out[n..n + 4]);
         n += bits.count_ones() as usize;
         i += 4;
     }
-    for (i, &radius) in (simd_end..end).zip(&rs[simd_end..end]) {
-        let [x, y, z] = center(i);
-        out[n] = i as u32;
+    for i in simd_end..end {
+        let [x, y, z, radius] = positions.sphere(i);
+        out[n] = positions.row(i);
         n += usize::from(frustum.contains_sphere(x, y, z, radius));
     }
     n
@@ -286,7 +372,13 @@ pub fn cull_spheres_reference(
     range: Range<u32>,
     out: &mut [u32],
 ) -> usize {
-    check_range(xs, ys, zs, rs, &range, out);
+    let spheres = SphereArrays {
+        xs,
+        ys,
+        zs,
+        radii: rs,
+    };
+    check_range(shortest(&spheres), &range, out);
     let mut n = 0;
     for i in range {
         let k = i as usize;
@@ -455,14 +547,15 @@ pub const NO_BUCKET: u32 = u32::MAX;
 /// The cell of a run whose rows each look up their own cell in their set's cells.
 pub const ROW_CELLS: u32 = u32::MAX;
 
-/// A run of rows for [`cull_into_buckets`]: rows `start..end` of one set of sphere arrays.
+/// A run of rows for [`cull_into_buckets`]: positions `start..end` of one set of sphere arrays,
+/// which are its rows unless the set lists its rows in an order of their own ([`SetOrder`]).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct CullRun {
     /// The set that holds the run's spheres, numbered as the caller's set function reads it.
     pub set: u32,
-    /// The first row.
+    /// The first position.
     pub start: u32,
-    /// One past the last row.
+    /// One past the last position.
     pub end: u32,
     /// The bucket of every visible row, or [`BY_ROW`] to look each row up in the row buckets.
     pub bucket: u32,
@@ -478,14 +571,74 @@ impl CullRun {
     }
 }
 
-/// The rows of one set that runs cull: their spheres, relative to their cells' centers, and each
-/// row's cell index, which only runs with [`ROW_CELLS`] read.
+/// How a set's runs reach its rows: the rows of a scene kept in cell order, for example, are not
+/// in the order of their slots.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SetOrder<'a> {
+    /// A run's positions are the set's rows, and the spheres are by row.
+    Rows,
+    /// A run's positions index this list of rows, and the spheres are copies of the rows' spheres
+    /// at their positions in the list. The runs of such a set each lie in one cell.
+    Copied(&'a [u32]),
+    /// A run's positions index this list of rows, and the spheres are by row. Each sphere moves
+    /// by its row's offset from the camera, as with [`ROW_CELLS`], whatever the run's cell.
+    Gathered(&'a [u32]),
+}
+
+/// The rows of one set that runs cull: their spheres, relative to their cells' centers, each row's
+/// cell index, which only runs with [`ROW_CELLS`] read, and how runs reach the rows.
 #[derive(Clone, Copy, Debug)]
 pub struct CullSet<'a> {
-    /// The spheres, one per row.
+    /// The spheres, by row or by position as `order` says.
     pub spheres: SphereArrays<'a>,
     /// Each row's cell index, or an empty slice when no run of the set looks cells up.
     pub cells: &'a [u32],
+    /// How the runs' positions name rows.
+    pub order: SetOrder<'a>,
+}
+
+/// Culls one run of a set into `dst`, and returns how many rows it wrote there: the rows of the
+/// run's positions whose spheres are inside the frustum, moved into the run's cell, or with each
+/// sphere moved by its row's offset for [`ROW_CELLS`]. A run of a set whose spheres are by row
+/// through a list always moves each sphere by its row's offset, whatever the run's cell.
+///
+/// # Panics
+/// When the run is past its set's spheres or list of rows, or a copied set's run looks cells up.
+fn cull_run(
+    frustum: &Frustum,
+    offsets: &[[f32; 4]],
+    set: CullSet<'_>,
+    run: &CullRun,
+    dst: &mut [u32],
+) -> usize {
+    let range = run.start..run.end;
+    let (spheres, cells) = (set.spheres, set.cells);
+    match set.order {
+        SetOrder::Rows | SetOrder::Copied(_) if run.cell != ROW_CELLS => {
+            let [x, y, z, _] = offsets[run.cell as usize];
+            check_range(shortest(&spheres), &range, dst);
+            let visible =
+                cull_positions(&frustum.moved_by([x, y, z]), range, dst, &InOrder(spheres));
+            if let SetOrder::Copied(rows) = set.order {
+                // The copies stand for the rows that the list names at their positions.
+                for entry in &mut dst[..visible] {
+                    *entry = rows[*entry as usize];
+                }
+            }
+            visible
+        }
+        SetOrder::Rows => cull_spheres_in_cells(frustum, spheres, cells, offsets, range, dst),
+        SetOrder::Copied(_) => panic!("a run of copied spheres lies in one cell"),
+        SetOrder::Gathered(rows) => {
+            check_range(rows.len(), &range, dst);
+            let positions = InCells {
+                positions: Gathered { spheres, rows },
+                cells,
+                offsets,
+            };
+            cull_positions(frustum, range, dst, &positions)
+        }
+    }
 }
 
 /// The output and working space of [`cull_into_buckets`]: the list of visible entries grouped by
@@ -586,6 +739,7 @@ fn same_words(a: &[u32], b: &[u32]) -> bool {
 /// `frustum` is relative to the camera, and `offsets` holds the offset from the camera to each
 /// cell's center, by cell index. A run whose rows share a cell is culled against the frustum moved
 /// into that cell; a run with [`ROW_CELLS`] moves each row's sphere by its cell's offset instead.
+/// A run of a set in an order of its own ([`SetOrder`]) lists the rows its positions name.
 ///
 /// Each run culls into its own part of a scratch list and counts its rows per bucket, on the
 /// job workers too when the runs hold many rows. A prefix sum over the buckets and runs then
@@ -655,28 +809,7 @@ pub fn cull_into_buckets<'a>(
         // SAFETY: each run writes only its own part of the scratch list, its own count and its
         // own histogram; the parts of different runs do not overlap.
         let dst = unsafe { scratch.slice(run_offsets[index] as usize, run.len()) };
-        let visible = if run.cell == ROW_CELLS {
-            cull_spheres_in_cells(
-                frustum,
-                set.spheres,
-                set.cells,
-                offsets,
-                run.start..run.end,
-                dst,
-            )
-        } else {
-            let [x, y, z, _] = offsets[run.cell as usize];
-            let spheres = set.spheres;
-            cull_spheres(
-                &frustum.moved_by([x, y, z]),
-                spheres.xs,
-                spheres.ys,
-                spheres.zs,
-                spheres.radii,
-                run.start..run.end,
-                dst,
-            )
-        };
+        let visible = cull_run(frustum, offsets, set, &run, dst);
         // SAFETY: as above.
         unsafe { counts.write(index, visible as u32) };
         if run.bucket == BY_ROW {
