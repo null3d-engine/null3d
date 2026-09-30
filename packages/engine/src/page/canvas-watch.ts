@@ -1,7 +1,8 @@
 // The canvas's size for the engine's threads. The page writes the canvas size in device pixels and
-// in CSS pixels into the control block whenever it changes; the thread that owns the canvas applies
-// it at frame start, and the sketch reads the CSS size for pointer positions. A hidden page that
-// shows again counts as a resume, so the sketch's next step counts no time.
+// in CSS pixels, and the pixel ratio, into the control block whenever they change; the thread that
+// owns the canvas applies the size at frame start, and the sketch reads the CSS size and the ratio
+// for pointer positions and its viewport. A hidden page that shows again counts as a resume, so the
+// sketch's next step counts no time.
 
 import { controlViews, Slot } from '../shared/control';
 
@@ -29,6 +30,7 @@ export function watchCanvas(
 		const height = exact ? devicePixels.height : Math.round(cssHeight * ratio);
 		slotFloats[Slot.CanvasCssWidth] = cssWidth;
 		slotFloats[Slot.CanvasCssHeight] = cssHeight;
+		slotFloats[Slot.PixelRatio] = ratio;
 		Atomics.store(slots, Slot.CanvasWidth, Math.max(1, width));
 		Atomics.store(slots, Slot.CanvasHeight, Math.max(1, height));
 		Atomics.add(slots, Slot.ResizeSerial, 1);

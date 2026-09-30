@@ -59,7 +59,7 @@ Getters copy into an array you pass, so they allocate nothing. Make the array on
 - `getWorldPosition(out)` copies the position in the world, and `getWorldQuaternion(out)` the rotation in the world.
 - `getWorldMatrix(out)` copies the world matrix: 16 numbers, column by column, as the [math helpers](math.md) and three.js's `matrixWorld` hold them.
 
-The world getters read the last frame that the engine processed. A change that you make in `onUpdate` shows in them from the next `onUpdate` call on. Their positions are 64-bit numbers, which keep their precision far from the origin. Pass a plain array or a `Float64Array`, because a `Float32Array` rounds them to 32 bits.
+The world getters read the engine's last transform update. A change that you make in `onUpdate` shows in them in the same frame's `onLateUpdate`, and from the next `onUpdate` call on. Their positions are 64-bit numbers, which keep their precision far from the origin. Pass a plain array or a `Float64Array`, because a `Float32Array` rounds them to 32 bits.
 
 ## Parents
 
@@ -71,6 +71,8 @@ By default the object keeps its position, rotation and scale relative to the par
 // Pick up a crate: it stays where it is, then moves with the hand.
 crate.setParent(hand, { keepWorld: true });
 ```
+
+In the [objects and parents demo](https://github.com/null3d-engine/null3d/tree/main/examples/objects), crates step on and off a turntable this way.
 
 The engine works out those values when it applies the change, after `onUpdate` returns. It uses the transforms that the object and both parents have at that moment. So set the object's own transform before `setParent` in the same frame. A setter called after it writes a value relative to the old parent.
 

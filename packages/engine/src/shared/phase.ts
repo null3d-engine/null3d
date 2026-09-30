@@ -2,10 +2,11 @@
 // Each is a plain constant, which the bundler writes into the code as a number; an enum would ship
 // as an object with every name, in every thread's file.
 
-/** The sketch's update callback. */
+/** The sketch's callbacks: its fixed steps, its update and its late update. */
 export const Update = 0;
 /** Structural changes applied from the command ring. */
 export const Commands = 1;
+/** The transform update, and the second one after the sketch's late update. */
 export const Transforms = 2;
 export const Batches = 3;
 export const Cull = 4;

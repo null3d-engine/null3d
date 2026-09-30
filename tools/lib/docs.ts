@@ -66,7 +66,7 @@ export const PAGES: readonly PageEntry[] = [
 	{ id: 'concepts/post-processing', title: 'The post-processing chain', since: '0.2', summary: 'HDR target; bloom; ambient occlusion; the single final pass; custom effects.' },
 
 	{ id: 'api/engine', title: 'Page API: createEngine', since: '0.1', summary: 'createEngine options; engine.postToSketch, capture, labels, requestPointerLock, capabilities, destroy.' },
-	{ id: 'api/sketch', title: 'Sketch API: defineSketch and the context', since: '0.1', summary: 'The context object: scene, assets, materials, geometry, textures, input, time, quality, post, render, page, ui, debug; the callbacks.' },
+	{ id: 'api/sketch', title: 'Sketch API: defineSketch and the context', since: '0.1', summary: 'The context object: scene, assets, materials, geometry, textures, input, time, engine, quality, post, render, page, ui, debug; the callbacks.' },
 	{ id: 'api/scene', title: 'Scene', since: '0.1', summary: 'Creating objects; find; background, environment, fog, sky; warmUp.' },
 	{ id: 'api/objects', title: 'Objects and transforms', since: '0.1', summary: 'Setters and getters; parents; flags; destroy.' },
 	{ id: 'api/cameras', title: 'Cameras', since: '0.1', summary: 'Perspective and orthographic cameras; screenToRay; worldToScreen; layers.' },

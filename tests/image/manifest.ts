@@ -155,6 +155,14 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 	},
 	// A small static scene: lit and unlit meshes, a hierarchy and an instance batch.
 	{ name: 'scene', sketch: 'tests/pages/sketches/boxes-sketch.ts', hold: 0, modes: ALL_MODES },
+	// A box that fixed steps move at 50 steps per second, and a camera that follows it from the late
+	// update, held at 1.5 seconds: the box stays at the center, and every mode runs the same steps.
+	{
+		name: 'follow',
+		sketch: 'tests/pages/sketches/follow-sketch.ts',
+		hold: 1.5,
+		modes: ALL_MODES,
+	},
 	// The sketch of the project that the command-line tool's tests run in, held at 1.5 seconds. The
 	// shot command draws the project's own page, and its images must match these references.
 	{ name: 'project', sketch: 'tests/fixtures/project/sketch.ts', hold: 1.5 },
