@@ -90,7 +90,13 @@ const engineFacts = (
 	hold: number | null = 1.5,
 ) => ({
 	tier,
-	mode: { build: mode.build, latency: mode.latency, renderThread: mode.renderThread, hold },
+	mode: {
+		build: mode.build,
+		latency: mode.latency,
+		sketchThread: mode.sketchThread,
+		renderThread: mode.renderThread,
+		hold,
+	},
 });
 
 let dirs: HarnessDirs;
@@ -114,7 +120,9 @@ describe('the manifest', () => {
 		expect(tiers('replay-instanced')).toBe('webgpu');
 		for (const test of ['replay-textures', 'held', 'scene', 's1', 's1-static', 's2'])
 			expect(tiers(test)).toBe('webgpu,compat,webgl2');
-		expect(IMAGE_RUNS.filter((r) => r.test === 'held').map((r) => r.mode?.name)).toHaveLength(12);
+		expect(IMAGE_RUNS.filter((r) => r.test === 'held').map((r) => r.mode?.name)).toHaveLength(
+			3 * ENGINE_MODES.length,
+		);
 		expect(manifestRun('s1', 'compat', 'low latency').path).toBe(
 			'/bench/pages/null3d/s1.html?gpu=compat&latency=low&hold=2',
 		);

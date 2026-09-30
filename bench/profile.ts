@@ -24,7 +24,7 @@ import {
 	pageResultOf,
 	sleep,
 } from './lib/devtools';
-import { PARITY_SCENES, type ParityScene, pagePath } from './lib/parity';
+import { BENCH_SCENES, type BenchScene, pagePath } from './lib/parity';
 import { type CpuProfile, type EntrySplit, splitEntry } from './lib/profile';
 import { DEV_OPTION, pagesText, serveBenchPages } from './lib/serve';
 import type { BuildNames } from './lib/source-names';
@@ -65,7 +65,7 @@ const THREADS = {
 type ThreadName = keyof typeof THREADS;
 
 interface Options {
-	scenes: ParityScene[];
+	scenes: BenchScene[];
 	gpu: 'webgl2' | 'webgpu';
 	thread: ThreadName;
 	n: number | null;
@@ -86,10 +86,10 @@ function parseArgs(args: string[]): Options {
 		if (!(parsed > 0)) throw new Error(`${name} takes a positive number, not ${text}`);
 		return parsed;
 	};
-	const scenes = (value('--scene')?.split(',') ?? [...PARITY_SCENES]) as ParityScene[];
+	const scenes = (value('--scene')?.split(',') ?? [...BENCH_SCENES]) as BenchScene[];
 	for (const scene of scenes)
-		if (!PARITY_SCENES.includes(scene))
-			throw new Error(`"${scene}" is not a scene. Use one of: ${PARITY_SCENES.join(', ')}.`);
+		if (!BENCH_SCENES.includes(scene))
+			throw new Error(`"${scene}" is not a scene. Use one of: ${BENCH_SCENES.join(', ')}.`);
 	const gpu = value('--gpu') ?? 'webgl2';
 	if (gpu !== 'webgl2' && gpu !== 'webgpu')
 		throw new Error(`--gpu takes webgl2 or webgpu, not ${gpu}`);
@@ -130,7 +130,7 @@ async function waitForResult(devtools: DevTools, page: string, timeoutMs: number
 }
 
 interface SceneProfile {
-	scene: ParityScene;
+	scene: BenchScene;
 	result: PageResult;
 	split: EntrySplit;
 }
@@ -142,7 +142,7 @@ interface SceneProfile {
 async function profileScene(
 	devtools: DevTools,
 	serverUrl: string,
-	scene: ParityScene,
+	scene: BenchScene,
 	options: Options,
 	names: BuildNames | undefined,
 ): Promise<SceneProfile> {

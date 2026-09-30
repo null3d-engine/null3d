@@ -9,7 +9,8 @@
 //   bun run parity -- --pair threejs-webgl,threejs-webgpu
 //   bun run parity -- --save-baselines
 // Options:
-//   --scene <list>   scenes: s1, s1-static, s1-cells, s2; the default is all four
+//   --scene <list>   scenes: s1, s1-static, s1-cells, s2, s3; the default is every scene whose
+//                    features null3D draws (PARITY_SCENES in bench/lib/parity.ts)
 //   --tier <list>    GPU tiers: webgpu, compat (WebGPU forced into compatibility mode), webgl2;
 //                    the default is all three
 //   --pair <a>,<b>   compare page kind a with page kind b, the reference, instead of the tiers.
@@ -27,6 +28,7 @@ import { pageResult } from '../tests/lib/page-result.ts';
 import { REPO_ROOT, startServer } from '../tests/lib/server.ts';
 import {
 	BASELINE_PAIR,
+	type BenchScene,
 	type Comparison,
 	compareFrames,
 	comparisonName,
@@ -37,7 +39,6 @@ import {
 	holdPagePath,
 	type ImageComparison,
 	type PageKind,
-	type ParityScene,
 	parityFiles,
 	parseParityArgs,
 	parseStoredBaselines,
@@ -58,7 +59,7 @@ const RESULT_TIMEOUT_MS = 90_000;
 async function loadFrame(
 	browser: Browser,
 	baseUrl: string,
-	scene: ParityScene,
+	scene: BenchScene,
 	kind: PageKind,
 ): Promise<HoldFrame | string> {
 	const path = holdPagePath(scene, kind);
@@ -84,7 +85,7 @@ async function loadFrame(
 
 /** Compares the frames of one comparison for one scene, and reports in one line. */
 function runComparison(
-	scene: ParityScene,
+	scene: BenchScene,
 	comparison: Comparison,
 	candidate: HoldFrame | string,
 	reference: HoldFrame | string,

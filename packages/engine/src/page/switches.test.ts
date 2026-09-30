@@ -7,6 +7,7 @@ describe('parseSwitches', () => {
 			gpu: 'auto',
 			threads: true,
 			renderOnMain: false,
+			sketchThread: undefined,
 			latency: undefined,
 			copyUploads: false,
 			depth: undefined,
@@ -58,6 +59,12 @@ describe('parseSwitches', () => {
 		expect(parseSwitches('?queue=off').queue).toBe(Number.POSITIVE_INFINITY);
 		expect(parseSwitches('?queue=0').queue).toBeUndefined();
 		expect(parseSwitches('?queue=1.5').queue).toBeUndefined();
+	});
+
+	it('reads the thread that runs the sketch, and ignores a thread it does not know', () => {
+		expect(parseSwitches('?sketch-thread=main').sketchThread).toBe('main');
+		expect(parseSwitches('?latency=low&sketch-thread=worker').sketchThread).toBe('worker');
+		expect(parseSwitches('?sketch-thread=page').sketchThread).toBeUndefined();
 	});
 
 	it('turns background compiles off with ?compile=wait only', () => {
