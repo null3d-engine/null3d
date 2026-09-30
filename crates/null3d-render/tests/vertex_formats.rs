@@ -13,6 +13,7 @@ use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::frame::FrameBuilder;
 use null3d_render::geometry::sphere_geometry;
 use null3d_render::materials::Shading;
+use null3d_render::view::ViewId;
 
 /// The world's scene, plus a small grid with the texture coordinate view, a grid of 90,601
 /// vertices that splits into two parts, lit, and the world's box with the texture coordinate
@@ -105,7 +106,7 @@ fn a_split_mesh_draws_each_part_on_both_webgl2_draw_paths() {
         assert_eq!(world.renderer.settings().meshes().pages().len(), 4);
         // The index list holds the grids' objects once each, beside the world's entries: both
         // parts of the large grid draw the same entry.
-        let culled = world.renderer.culled(world.frame);
+        let culled = world.renderer.culled(world.frame, ViewId::CAMERA);
         assert_eq!(culled.len() as u32, BATCH_ROWS + 3 + 2);
     }
 }

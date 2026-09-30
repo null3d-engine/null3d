@@ -3,9 +3,16 @@ import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { IMAGE_RUNS } from '../image/manifest.ts';
-import { braveShieldsOf, deviceChecklist, parseArgs, summaryLine } from '../real-browsers.ts';
-import { ENGINE_MODES } from './engine-checks.ts';
+import {
+	braveShieldsOf,
+	deviceChecklist,
+	parseArgs,
+	planItems,
+	summaryLine,
+} from '../real-browsers.ts';
+import { ENGINE_MODES, type EngineMode } from './engine-checks.ts';
 import { writePng } from './images.ts';
+import { isLoadPath } from './load-routes.ts';
 import {
 	benchPlan,
 	benchSummary,
@@ -18,6 +25,9 @@ import {
 	NONE_MISSING,
 	PLANS,
 	parityPlan,
+	STARTUP_RUNS,
+	startupPlan,
+	startupSummary,
 } from './plans.ts';
 
 /** A browser may lack WebGPU, and must have WebGL2. */
@@ -88,13 +98,38 @@ describe('the checks plan', () => {
 
 	it('has unique item names, and pages on the test and benchmark pages paths', () => {
 		expect(new Set(items.map((item) => item.id)).size).toBe(items.length);
-		for (const item of items) expect(item.path).toMatch(/^\/(tests|bench)\/pages\//);
+		for (const item of items)
+			expect(item.path).toMatch(
+				/^(\/__null3d\/load\/warm\/\{run\}\.\{runner\}\.production)?\/(tests|bench)\/pages\//,
+			);
 		expect(items.find((item) => item.id === 'engine-webgl2-single-threaded')?.path).toBe(
 			'/tests/pages/engine.html?gpu=webgl2&threads=off&seconds=2',
 		);
 		expect(batchTimeoutMs({ run: 'r', createdAt: '', items })).toBeGreaterThan(
 			items.length * 30_000,
 		);
+	});
+
+	it('runs the engine page again on its production build in every mode, on WebGL2', () => {
+		const production = items.filter((item) => item.id.startsWith('engine-production-'));
+		expect(production.map(({ id }) => id)).toEqual([
+			'engine-production-pipelined',
+			'engine-production-low-latency',
+			'engine-production-single-threaded',
+			'engine-production-drawing-on-the-main-thread',
+		]);
+		expect(production[1]).toEqual({
+			id: 'engine-production-low-latency',
+			path: '/__null3d/load/warm/{run}.{runner}.production/tests/pages/engine.html?gpu=webgl2&latency=low&seconds=2',
+			timeoutSeconds: 45,
+			check: { kind: 'engine', tier: 'webgl2', mode: ENGINE_MODES[1] },
+		});
+		// The runner builds the production pages for a plan that loads them, and only then.
+		expect(planItems(parseArgs(['Safari']))?.some((item) => isLoadPath(item.path))).toBe(true);
+		expect(
+			planItems(parseArgs(['--plan', 'parity', 'Safari']))?.some((item) => isLoadPath(item.path)),
+		).toBe(false);
+		expect(planItems(parseArgs(['--plan', 'scale', 'Safari']))).toBeUndefined();
 	});
 
 	it('skips a WebGPU page on a browser without WebGPU only when allowed', () => {
@@ -770,6 +805,97 @@ describe('the memory plan', () => {
 	});
 });
 
+describe('the startup plan', () => {
+	const PIPELINED = ENGINE_MODES[0] as EngineMode;
+	/** A startup load's result: the engine page's times, and what the server sent. */
+	const loaded = (frameDoneMs: number, build = 'threaded'): ItemResult => ({
+		ok: true,
+		createEngineAtMs: 40,
+		mode: { build, latency: 'pipelined', renderThread: 'render-worker', jobWorkers: 8 },
+		capabilities: { tier: 'webgpu' },
+		stats: {
+			load: {
+				probeMs: 30,
+				coreMs: 60,
+				engineStartMs: 90,
+				firstFrameMs: frameDoneMs - 10,
+				firstFrameDoneMs: frameDoneMs,
+			},
+		},
+		downloads: { requests: 11, bytes: 2048, files: [] },
+	});
+
+	it('fills the cache in each mode first, then loads every mode cold and warm in each run', () => {
+		const items = startupPlan();
+		expect(PLANS.startup).toBe(startupPlan);
+		expect(STARTUP_RUNS).toBe(5);
+		expect(items).toHaveLength(4 + 5 * 4 * 2);
+		expect(new Set(items.map(({ id }) => id)).size).toBe(items.length);
+		expect(items.slice(0, 4).map(({ id }) => id)).toEqual([
+			'startup-pipelined-warm-first',
+			'startup-low-latency-warm-first',
+			'startup-single-threaded-warm-first',
+			'startup-drawing-on-the-main-thread-warm-first',
+		]);
+		expect(items[0]).toEqual({
+			id: 'startup-pipelined-warm-first',
+			path: '/__null3d/load/warm/{run}.{runner}.pipelined-warm/tests/pages/engine.html?seconds=0.2',
+			timeoutSeconds: 60,
+			check: { kind: 'startup', mode: PIPELINED, load: 'warm', first: true },
+		});
+		expect(items[4]).toEqual({
+			id: 'startup-pipelined-cold-1',
+			path: '/__null3d/load/cold/{run}.{runner}.pipelined-cold-1/tests/pages/engine.html?seconds=0.2',
+			timeoutSeconds: 60,
+			check: { kind: 'startup', mode: PIPELINED, load: 'cold' },
+		});
+		expect(items[5]?.path).toBe(items[0]?.path.replace('-first', ''));
+		expect(items[7]?.path).toBe(
+			'/__null3d/load/warm/{run}.{runner}.low-latency-warm/tests/pages/engine.html?seconds=0.2&latency=low',
+		);
+		expect(items.at(-1)?.id).toBe('startup-drawing-on-the-main-thread-warm-5');
+		expect(startupPlan({ runs: 1 })).toHaveLength(4 + 4 * 2);
+	});
+
+	it('passes a load in its mode with its times and downloads', () => {
+		const item = startupPlan({ runs: 1 })[4];
+		if (!item) throw new Error('the plan has no cold load');
+		expect(judge(item.check, loaded(500), NONE_MISSING)).toEqual([]);
+		expect(judge(item.check, loaded(500, 'single'), NONE_MISSING)).toEqual([
+			'loaded the single build',
+		]);
+		expect(judge(item.check, { ...loaded(500), downloads: undefined }, NO_WEBGPU)).toEqual([
+			'the server counted no requests for the load',
+		]);
+		expect(judge(item.check, { ok: false, error: 'E1301: no usable GPU path' }, NO_WEBGPU)).toEqual(
+			['E1301: no usable GPU path'],
+		);
+	});
+
+	it("reports the medians of each mode's cold and warm loads, without the loads that fill the cache", () => {
+		const items = startupPlan({ runs: 3 }).filter(({ check }) =>
+			check.kind === 'startup' ? check.mode === PIPELINED : false,
+		);
+		const results: Record<string, ItemResult> = {
+			'startup-pipelined-warm-first': loaded(9000),
+			'startup-pipelined-cold-1': loaded(900),
+			'startup-pipelined-cold-2': loaded(700),
+			'startup-pipelined-cold-3': loaded(800, 'single'),
+			'startup-pipelined-warm-1': loaded(300),
+			'startup-pipelined-warm-2': loaded(500),
+		};
+		const lines = startupSummary(items, (id) => results[id])?.split('\n') ?? [];
+		expect(lines.slice(0, 4)).toEqual([
+			'| Thread mode | Load | GPU | Loads | Script, ms | Probe, ms | Core, ms | Ready, ms | Frame, ms | Frame done, ms | Requests | KB |',
+			'| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+			'| pipelined | cold | webgpu | 2 | 40 | 70 | 100 | 130 | 790 | 800 | 11 | 2.0 |',
+			'| pipelined | warm | webgpu | 2 | 40 | 70 | 100 | 130 | 390 | 400 | 11 | 2.0 |',
+		]);
+		expect(lines[5]).toStartWith('Each time is a median');
+		expect(startupSummary(benchPlan({ runs: 1 }), () => loaded(1))).toBeUndefined();
+	});
+});
+
 describe('parseArgs', () => {
 	it('reads the plan, the flags, the device lists and the macOS apps', () => {
 		expect(
@@ -796,6 +922,10 @@ describe('parseArgs', () => {
 		expect(parseArgs(['--plan', 'bench', '--runs', '3', 'Safari']).runs).toBe(3);
 		expect(parseArgs(['--plan', 'scale', '--android', 'chrome']).plan).toBe('scale');
 		expect(parseArgs(['--plan', 'memory', 'Safari']).plan).toBe('memory');
+		expect(parseArgs(['--plan', 'startup', '--runs', '2', 'Safari'])).toMatchObject({
+			plan: 'startup',
+			runs: 2,
+		});
 		expect(parseArgs(['--plan', 'bench', '--jobs', '2,4,6,8', 'Safari']).jobs).toEqual([
 			2, 4, 6, 8,
 		]);

@@ -577,6 +577,12 @@ impl DrawList {
         self.len = 0;
     }
 
+    /// Forgets the commands recorded after the first `len` words, a length that [`DrawList::len`]
+    /// returned between two commands.
+    pub fn truncate(&mut self, len: usize) {
+        self.len = self.len.min(len);
+    }
+
     pub fn len(&self) -> usize {
         self.len
     }

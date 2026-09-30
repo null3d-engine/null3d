@@ -32,9 +32,9 @@
 //! Compiling fails with an engine error code ([`GraphError`]) when a pass uses a resource that no
 //! pass creates or reads one that no running pass writes (1502), when two passes create one
 //! resource (1503), when the passes form a cycle (1504), and when one pass's targets cannot share
-//! a render pass (1505). A pass that is switched off counts as absent, but its declaration stays:
-//! a frame target whose creator is off still exists, and the first running pass that writes it
-//! clears it.
+//! a render pass or a resolve pass cannot resolve its target into the canvas (1505). A pass that
+//! is switched off counts as absent, but its declaration stays: a frame target whose creator is
+//! off still exists, and the first running pass that writes it clears it.
 //!
 //! # Render passes
 //!
@@ -58,7 +58,8 @@
 //! and store operations. A target is cleared at its first write in the frame and loaded after
 //! that, and a render pass stores it only when a later pass or frame needs it. When a later pass
 //! samples a multisampled color target, each of the target's layers is resolved at the end of the
-//! last render pass that draws into that layer.
+//! last render pass that draws into that layer. A resolve pass ([`PassKind::Resolve`]) resolves
+//! its target into the canvas there instead.
 //! A frame target that lives within one render pass gets the transient attachment usage where the
 //! device supports it, so it can stay in tile memory.
 //!
@@ -127,10 +128,17 @@ pub enum PassKind {
     Fullscreen,
     /// Runs compute shaders, which write buffers and storage textures. Only WebGPU has them.
     Compute,
+    /// Resolves a multisampled color target into the canvas and draws nothing. It reads the
+    /// target, which has the canvas's format and one layer, and writes the canvas. It joins the
+    /// render pass that last draws the target, whose color attachment then resolves into the
+    /// canvas, so it costs no pass of its own. It stands in for a final pass that would only copy
+    /// the target. The whole target reaches the canvas, so a render scale below 1 needs a pass
+    /// that scales the image up instead.
+    Resolve,
 }
 
 impl PassKind {
-    /// True for passes that draw into attachments inside a render pass.
+    /// True for passes that run inside a render pass: every kind but compute.
     pub const fn draws(self) -> bool {
         !matches!(self, Self::Compute)
     }
@@ -142,6 +150,7 @@ impl PassKind {
             Self::Shadow => "shadow",
             Self::Fullscreen => "fullscreen",
             Self::Compute => "compute",
+            Self::Resolve => "resolve",
         }
     }
 }

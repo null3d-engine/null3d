@@ -39,6 +39,34 @@ fn recording_steady_frames_allocates_nothing() {
     assert_eq!(CountingAllocator::disarm(), 0);
 }
 
+/// Records warm-up frames of a world with a second view, then steady frames and frames whose
+/// structure changes, and returns what those allocated.
+fn two_view_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
+    world.add_view([5.0, 0.0, 6.0]);
+    world.record(true);
+    // Frames of both parities and every ring slot, and a rebuild on each parity, warm up.
+    record_until(&mut world, 6, false);
+    record_until(&mut world, 8, true);
+    CountingAllocator::arm();
+    record_until(&mut world, 100, false);
+    record_until(&mut world, 120, true);
+    CountingAllocator::disarm()
+}
+
+#[test]
+fn recording_frames_of_two_views_allocates_nothing() {
+    let _only = CountingAllocator::exclusive();
+    CountingAllocator::track_this_thread();
+    assert_eq!(two_view_allocations(World::new()), 0, "WebGPU");
+    for multi_draw in [true, false] {
+        assert_eq!(
+            two_view_allocations(webgl2_world(multi_draw)),
+            0,
+            "WebGL2, multi-draw {multi_draw}"
+        );
+    }
+}
+
 /// The world drawn by the WebGL2 frame builder, with or without multi-draw.
 fn webgl2_world(multi_draw: bool) -> World<CpuCulledRenderer> {
     World::build(CpuCulledRenderer::new(CpuCulledConfig {

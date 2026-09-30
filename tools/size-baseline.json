@@ -1,47 +1,47 @@
 {
 	"threaded/null3d_bg.wasm": {
-		"raw": 177732,
-		"brotli": 60577
+		"raw": 211997,
+		"brotli": 73470
 	},
 	"threaded/null3d.js": {
 		"raw": 19728,
 		"brotli": 4373
 	},
 	"single/null3d_bg.wasm": {
-		"raw": 172277,
-		"brotli": 59688
+		"raw": 207075,
+		"brotli": 72405
 	},
 	"single/null3d.js": {
 		"raw": 19117,
 		"brotli": 4238
 	},
 	"js/page.js": {
-		"raw": 36445,
-		"brotli": 12309
+		"raw": 36910,
+		"brotli": 12482
 	},
 	"js/page-renderer.js": {
 		"raw": 105205,
-		"brotli": 19005
+		"brotli": 19004
 	},
 	"js/page-sketch-runner.js": {
 		"raw": 18979,
-		"brotli": 6196
+		"brotli": 6195
 	},
 	"js/sketch-worker.js": {
-		"raw": 26329,
-		"brotli": 8503
+		"raw": 26439,
+		"brotli": 8537
 	},
 	"js/sketch-worker-renderer.js": {
 		"raw": 105500,
-		"brotli": 18906
+		"brotli": 18941
 	},
 	"js/render-worker.js": {
-		"raw": 111236,
-		"brotli": 20908
+		"raw": 111346,
+		"brotli": 20895
 	},
 	"js/job-worker.js": {
-		"raw": 3600,
-		"brotli": 1535
+		"raw": 3705,
+		"brotli": 1571
 	},
 	"js/probe-worker.js": {
 		"raw": 633,

@@ -1,6 +1,5 @@
 //! What every frame builder shares: the frame's input, the scene settings (meshes, materials, the
-//! camera and the lights), the draw lists and upload arenas kept per frame parity, and the
-//! commands that size and clear the render targets.
+//! views and the lights), and the draw lists and upload arenas kept per frame parity.
 //!
 //! # Frames in flight
 //!
@@ -16,14 +15,15 @@ use null3d_core::instances::{BatchTable, InstanceBatch};
 use null3d_core::jobs::JobSystem;
 use null3d_core::scene::SceneStorage;
 use null3d_core::snapshot::FrameSnapshot;
-use null3d_gpu::drawlist::{
-    DrawList, DrawListError, Op, buffer_usage, format, pass_flags, texture_usage, view,
-};
+use null3d_gpu::drawlist::{DrawList, DrawListError, Op, buffer_usage};
 
-use crate::camera::{Affine, Perspective};
+use crate::camera::Perspective;
 use crate::frame_data::{FrameUniform, normalized_direction};
+use crate::frame_graph::{COLOR_FORMAT, DEPTH_FORMAT};
+use crate::graph::GraphError;
 use crate::materials::{MaterialTable, Shading};
 use crate::meshes::{MAX_BUFFER_BYTES, MeshStorage, Page};
+use crate::view::{MAX_VIEWS, View, ViewFrame, ViewId};
 
 /// Engine mesh ids count from 1; 0 marks an object with no mesh, such as a group or a camera.
 pub const NO_MESH: u32 = 0;
@@ -60,6 +60,8 @@ pub enum RecordError {
         /// The bytes the tables needed, or `u32::MAX` for more than that.
         bytes: u32,
     },
+    /// The render graph of the frame's passes did not compile.
+    Graph(GraphError),
 }
 
 impl From<DrawListError> for RecordError {
@@ -260,11 +262,12 @@ struct Lighting {
     background: [f32; 3],
 }
 
-/// What the sketch sets and changes rarely: meshes, materials, the camera and the lights.
+/// What the sketch sets and changes rarely: meshes, materials, the views and the lights.
 pub struct SceneSettings {
     meshes: MeshStorage,
     materials: MaterialTable,
-    camera: Option<(Handle, Perspective)>,
+    /// The views, the camera's first.
+    views: Vec<View>,
     lighting: Lighting,
 }
 
@@ -273,7 +276,7 @@ impl SceneSettings {
         Self {
             meshes,
             materials: MaterialTable::with_capacity(max_materials),
-            camera: None,
+            views: vec![View::default()],
             lighting: Lighting {
                 sun_direction: [0.0, -1.0, 0.0, 0.0],
                 sun_color: [0.0; 4],
@@ -301,9 +304,24 @@ impl SceneSettings {
         &mut self.materials
     }
 
-    /// The camera the frame is drawn from: a scene object, and its lens.
+    /// The camera the canvas shows the scene from: a scene object, and its lens.
     pub fn set_camera(&mut self, camera: Handle, lens: Perspective) {
-        self.camera = Some((camera, lens));
+        self.views[ViewId::CAMERA.index()].set_camera(camera, lens);
+    }
+
+    /// Adds a view that draws the scene into color and depth targets of its own, or returns
+    /// `None` when the builder already draws [`MAX_VIEWS`] views.
+    pub fn add_view(&mut self, view: View) -> Option<ViewId> {
+        if self.views.len() >= MAX_VIEWS {
+            return None;
+        }
+        self.views.push(view);
+        Some(ViewId::from_index(self.views.len() - 1))
+    }
+
+    /// The views, the camera's first.
+    pub fn views(&self) -> &[View] {
+        &self.views
     }
 
     /// The directional light: the direction its light travels, and its linear color times its
@@ -323,6 +341,13 @@ impl SceneSettings {
         self.lighting.background = color;
     }
 
+    /// The color that clears the color targets, as the scene's render passes hold it: the
+    /// background, encoded as sRGB as the shaders write their colors, and opaque.
+    pub(crate) fn clear_color(&self) -> [f32; 4] {
+        let [r, g, b] = self.lighting.background.map(linear_to_srgb);
+        [r, g, b, 1.0]
+    }
+
     /// The pipeline of a mesh and material pair, by engine ids, or `None` when the pair draws
     /// nowhere: no mesh, no material, an id that names nothing, or a mesh without the vertex
     /// attributes that the material's shading reads.
@@ -336,104 +361,27 @@ impl SceneSettings {
         ((format & needs) == needs).then_some(PipelineKey { shading, format })
     }
 
-    /// The frame's constants for a canvas of this size, or `None` when the frame has no camera to
-    /// draw from.
-    pub fn frame_uniform(
+    /// A view's values for a frame whose targets have the canvas's size, or `None` when the view
+    /// has no camera to draw from.
+    pub fn view_frame(
         &self,
+        view: ViewId,
         scene: &SceneStorage,
         parity: usize,
         canvas: (u32, u32),
-    ) -> Option<FrameUniform> {
-        let (camera, lens) = self.camera?;
-        let slot = scene.resolve(camera).ok()?;
-        let world: Affine = *scene.world(parity).matrix(slot as usize);
+    ) -> Option<ViewFrame> {
         let aspect = canvas.0 as f32 / canvas.1.max(1) as f32;
-        Some(FrameUniform {
-            view_proj: lens.view_projection(&world, aspect),
-            camera_position: [world[3], world[7], world[11], 1.0],
+        let (view_proj, camera_position) = self
+            .views
+            .get(view.index())?
+            .transform(scene, parity, aspect)?;
+        Some(ViewFrame::new(FrameUniform {
+            view_proj,
+            camera_position,
             sun_direction: self.lighting.sun_direction,
             sun_color: self.lighting.sun_color,
             ambient: self.lighting.ambient,
-        })
-    }
-
-    /// Begins the scene's render pass: both targets cleared, the color resolved into the canvas,
-    /// and neither multisampled target stored, as tile-based GPUs need.
-    pub(crate) fn record_begin_pass(
-        &self,
-        list: &mut DrawList,
-        targets: SceneTargets,
-    ) -> Result<(), RecordError> {
-        // The targets hold sRGB-encoded values, as the shaders write them.
-        let [r, g, b] = self.lighting.background.map(linear_to_srgb);
-        list.push(
-            Op::BeginRenderPass,
-            &[
-                targets.color,
-                0,
-                targets.depth,
-                r.to_bits(),
-                g.to_bits(),
-                b.to_bits(),
-                1f32.to_bits(),
-                0f32.to_bits(),
-                pass_flags::CLEAR_COLOR | pass_flags::CLEAR_DEPTH,
-            ],
-        )?;
-        Ok(())
-    }
-
-    /// A frame with no camera: the background only.
-    pub(crate) fn record_clear_only(
-        &self,
-        list: &mut DrawList,
-        targets: SceneTargets,
-    ) -> Result<(), RecordError> {
-        self.record_begin_pass(list, targets)?;
-        list.push(Op::EndRenderPass, &[])?;
-        list.push(Op::Submit, &[])?;
-        Ok(())
-    }
-}
-
-/// A builder's multisampled color and depth targets: their texture ids and sample count.
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct SceneTargets {
-    pub color: u32,
-    pub depth: u32,
-    pub samples: u32,
-}
-
-impl SceneTargets {
-    /// Resizes the canvas and makes the targets for its new size, in the frame built for that
-    /// size. Returns the size, at least one pixel each way.
-    pub(crate) fn record_resize(
-        self,
-        list: &mut DrawList,
-        (width, height): (u32, u32),
-    ) -> Result<(u32, u32), RecordError> {
-        let (width, height) = (width.max(1), height.max(1));
-        list.push(Op::ResizeCanvas, &[width, height])?;
-        for (id, tex_format) in [
-            (self.color, format::CANVAS),
-            (self.depth, format::DEPTH32_FLOAT),
-        ] {
-            list.push(
-                Op::CreateTexture,
-                &[
-                    id,
-                    width,
-                    height,
-                    1,
-                    tex_format,
-                    texture_usage::RENDER_ATTACHMENT,
-                    self.samples,
-                    1,
-                    view::D2,
-                ],
-            )?;
-        }
-        Ok((width, height))
+        }))
     }
 }
 
@@ -526,8 +474,8 @@ impl PipelineTable {
                     self.created as u32 + 1,
                     key.shading.template(),
                     permutation,
-                    format::CANVAS,
-                    format::DEPTH32_FLOAT,
+                    COLOR_FORMAT,
+                    DEPTH_FORMAT,
                     samples,
                     0,
                     key.format,

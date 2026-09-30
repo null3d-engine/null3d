@@ -3,6 +3,8 @@
 // the frame metrics, how many times the sketch updated, its largest step, the names of the
 // messages it sent, how long the engine took to stop, and the page's steps. With ?pause, it pauses
 // and resumes the sketch before it asks, and reports the frames drawn during the pause and after.
+// It also reports when it called createEngine, from navigation start, which places the engine's
+// own start times on the page's timeline.
 import { createEngine, type Engine, type FrameMetrics } from '@null3d/engine';
 import type { FrameCounts } from '../lib/engine-checks';
 import { progress, run, toBase64 } from './lib/result';
@@ -41,6 +43,7 @@ run('engine', async () => {
 	const canvas = document.querySelector('canvas');
 	if (!canvas) throw new Error('the page has no canvas');
 	const stages: string[] = [];
+	const createEngineAtMs = performance.now();
 	const engine = await createEngine({
 		canvas,
 		sketch: new URL('./sketches/empty-sketch.ts', import.meta.url),
@@ -72,6 +75,7 @@ run('engine', async () => {
 		mode: engine.mode,
 		capabilities: engine.capabilities,
 		report: engine.report,
+		createEngineAtMs,
 		stats,
 		stages,
 		messages,
