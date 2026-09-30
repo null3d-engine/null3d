@@ -37,6 +37,18 @@ export const CAMERA = { fov: 60, near: 0.1, far: 1000 } as const;
 export const SUN = { direction: [-1, -2, -1], color: '#ffffff', intensity: 3 } as const;
 /** The ambient light. */
 export const AMBIENT = { color: '#ffffff', intensity: 0.4 } as const;
+
+/** A scene's directional light, its sun, and its ambient light. */
+export interface SceneLights {
+	sun: {
+		readonly direction: readonly [number, number, number];
+		readonly color: string;
+		readonly intensity: number;
+	};
+	ambient: { readonly color: string; readonly intensity: number };
+}
+/** The sun and the ambient light of every scene that names no others. */
+export const VIEW_LIGHTS: SceneLights = { sun: SUN, ambient: AMBIENT };
 /** The scene time, in seconds, of the single frame that hold mode renders. */
 export const HOLD_TIME = 2.0;
 /** A benchmark run's warm-up and measured seconds: the protocol that the bench command shares. */
@@ -148,9 +160,9 @@ export interface S1Data {
 	spin: Float32Array;
 }
 
-function assertCount(n: number): void {
+function assertCount(scene: string, n: number): void {
 	if (!Number.isInteger(n) || n < 0) {
-		throw new RangeError(`S1 needs a whole number of instances, 0 or more, not ${n}.`);
+		throw new RangeError(`${scene} needs a whole number of instances, 0 or more, not ${n}.`);
 	}
 }
 
@@ -160,7 +172,7 @@ function assertCount(n: number): void {
  * the top of its range up to the bound itself.
  */
 export function createS1(n: number, seed = 1): S1Data {
-	assertCount(n);
+	assertCount('S1', n);
 	const random = mulberry32(seed);
 	const base = new Float32Array(n * 3);
 	const phase = new Float32Array(n);
@@ -221,6 +233,61 @@ export function s1StaticCamera(t: number, outPosition: OutArray, outTarget: OutA
 	outPosition[1] = height;
 	outPosition[2] = z;
 	outTarget[0] = 0;
+	outTarget[1] = height;
+	outTarget[2] = z - 1;
+}
+
+// S1-cells: S1-static's boxes spread over 8 x 8 of the engine's grid cells, 8 km on each side,
+// and a camera that flies low over them, so only a few cells are in view at once.
+
+/**
+ * The square that S1-cells spreads its boxes over. The engine's grid cells are 1,024 m wide, and
+ * the origin cell spans 512 m on each side of the origin, so the square covers the cells from -4
+ * to 3 along x and along z, 64 cells in all.
+ */
+export const S1_CELLS_SQUARE = { cellSize: 1024, cells: 8, firstCell: -4 } as const;
+
+/** The flight: the camera moves along -Z, `height` above the origin, then starts again. */
+export const S1_CELLS_FLIGHT = {
+	x: 300,
+	startZ: 3000,
+	endZ: -4000,
+	seconds: 35,
+	height: 5,
+} as const;
+
+/** Maps a coordinate of S1's cube onto the square's side: from -S1_EXTENT to the square's start. */
+function acrossSquare(v: number): number {
+	const { cellSize, cells, firstCell } = S1_CELLS_SQUARE;
+	const start = (firstCell - 0.5) * cellSize;
+	return start + ((v + S1_EXTENT) / (2 * S1_EXTENT)) * cells * cellSize;
+}
+
+/**
+ * Writes S1-cells' instance i: S1's instance frozen at time 0, with its x and z spread from S1's
+ * cube over the square. Its height and rotation stay S1's.
+ */
+export function s1CellsInstanceAt(
+	data: S1Data,
+	i: number,
+	_t: number,
+	outPosition: OutArray,
+	outQuaternion: OutArray,
+): void {
+	s1InstanceAt(data, i, 0, outPosition, outQuaternion);
+	outPosition[0] = acrossSquare(outPosition[0] as number);
+	outPosition[2] = acrossSquare(outPosition[2] as number);
+}
+
+/** Writes S1-cells' camera at time t. It looks along -Z, the way it flies. */
+export function s1CellsCamera(t: number, outPosition: OutArray, outTarget: OutArray): void {
+	const { x, startZ, endZ, seconds, height } = S1_CELLS_FLIGHT;
+	const progress = (((t % seconds) + seconds) % seconds) / seconds;
+	const z = startZ + (endZ - startZ) * progress;
+	outPosition[0] = x;
+	outPosition[1] = height;
+	outPosition[2] = z;
+	outTarget[0] = x;
 	outTarget[1] = height;
 	outTarget[2] = z - 1;
 }
@@ -347,4 +414,198 @@ export function s2RootRotation(t: number, rootIndex: number): number {
 /** Writes S2's camera at time t: an orbit of the origin, one turn per `ORBIT_SECONDS`. */
 export function s2Camera(t: number, outPosition: OutArray, outTarget: OutArray): void {
 	orbitCamera(t, S2_ORBIT.radius, S2_ORBIT.height, outPosition, outTarget);
+}
+
+// S3, the lights: still boxes in one batch on a floor, lit by many point lights with a range that
+// move every frame, and a camera that orbits them.
+
+/** The box count when the page has no `?n=` switch. */
+export const S3_DEFAULT_COUNT = 20_000;
+/** The point lights. Their count is fixed: `?n=` changes the box count only. */
+export const S3_LIGHT_COUNT = 256;
+/** Half the side of the square that holds the boxes and the centers of the lights' paths. */
+export const S3_EXTENT = 100;
+/**
+ * The floor: a square plane under the boxes, wide enough for the lights' paths, with one standard
+ * material. The rotation, a quaternion in x, y, z, w order, turns the plane from facing +Z to
+ * facing +Y.
+ */
+export const S3_FLOOR = {
+	size: 240,
+	color: '#6c7480',
+	rotation: [-Math.SQRT1_2, 0, 0, Math.SQRT1_2],
+} as const;
+/**
+ * The boxes: one unit box, scaled to this width and to a height from `minHeight` up to
+ * `maxHeight`, with one standard material.
+ */
+export const S3_BOX = { width: 0.8, minHeight: 0.5, maxHeight: 3, color: '#d8dce0' } as const;
+/** Every point light: its range in meters, its decay, and its intensity in candela. */
+export const S3_LIGHT = { range: 12, decay: 2, intensity: 30 } as const;
+/** The point lights' colors: light i has the color at i modulo the list's length. */
+export const S3_LIGHT_COLORS = [
+	'#ff4d4d',
+	'#ffa64d',
+	'#ffff4d',
+	'#4dff4d',
+	'#4dffff',
+	'#4d88ff',
+	'#a64dff',
+	'#ff4dd2',
+] as const;
+/**
+ * The lights' paths: circles with a radius in meters, at a height above the floor, at a turn rate
+ * in radians per second, each from its minimum up to its maximum.
+ */
+export const S3_PATHS = {
+	minRadius: 2,
+	maxRadius: 10,
+	minHeight: 1.5,
+	maxHeight: 4,
+	minSpeed: 0.2,
+	maxSpeed: 0.8,
+} as const;
+/** The seed of the lights' generator, which is not the boxes', so every box count has the same lights. */
+export const S3_LIGHT_SEED = 30;
+/** A dim sun and ambient light, so that the point lights show. */
+export const S3_VIEW_LIGHTS: SceneLights = {
+	sun: { direction: SUN.direction, color: '#b4c4ff', intensity: 0.4 },
+	ambient: { color: AMBIENT.color, intensity: 0.1 },
+};
+/** The camera orbit: radius and height above the origin. */
+export const S3_ORBIT = { radius: 120, height: 50 } as const;
+
+/** Per-box and per-light data of S3. */
+export interface S3Data {
+	/** The box count. */
+	count: number;
+	/** Box positions on the floor, x and z per box, each in its cell of `s3Grid`. */
+	base: Float32Array;
+	/** Box heights. */
+	height: Float32Array;
+	/** Box turns about +Y, in radians, in [0, 2π). */
+	yaw: Float32Array;
+	/** The centers of the lights' circles, x and z per light, each in [-S3_EXTENT, S3_EXTENT). */
+	lightCenter: Float32Array;
+	/** The radii of the lights' circles. */
+	lightRadius: Float32Array;
+	/** The lights' heights above the floor. */
+	lightHeight: Float32Array;
+	/** The lights' turn rates about +Y, in radians per second; a negative rate turns clockwise. */
+	lightSpeed: Float32Array;
+	/** The lights' angles on their circles at time 0, in radians, in [0, 2π). */
+	lightPhase: Float32Array;
+}
+
+/** The value at `share` of the way from `min` to `max`. */
+const between = (min: number, max: number, share: number) => min + (max - min) * share;
+
+/**
+ * The grid that S3's boxes stand on, over the square of the boxes: `side` cells on each side of the
+ * square, the fewest that hold `n` boxes, `spacing` meters apart. Box i stands in cell i, in rows
+ * along +X from the -X and -Z corner, and moves from the cell's center by at most `jitter` along
+ * each axis. The jitter keeps every turned box inside its cell, so no two boxes touch when the
+ * cells are wide enough. Boxes that met would give pixels of equal depth, which GPUs draw in
+ * either order.
+ */
+export function s3Grid(n: number): { side: number; spacing: number; jitter: number } {
+	const side = Math.max(1, Math.ceil(Math.sqrt(n)));
+	const spacing = (2 * S3_EXTENT) / side;
+	// The farthest that a turned box reaches from its center, plus a margin, in each direction.
+	const reach = S3_BOX.width * Math.SQRT1_2 * 1.05;
+	return { side, spacing, jitter: Math.max(0, spacing / 2 - reach) };
+}
+
+/**
+ * Makes S3's boxes and lights. The boxes' generator draws the offset in x and z from the cell's
+ * center, the height and the turn for box 0, then the same four values for box 1, and so on. The
+ * lights' generator draws each light's center x and z, radius, height, turn rate, direction of turn
+ * and angle at time 0.
+ */
+export function createS3(n: number, seed = 3): S3Data {
+	assertCount('S3', n);
+	const boxes = mulberry32(seed);
+	const base = new Float32Array(n * 2);
+	const height = new Float32Array(n);
+	const yaw = new Float32Array(n);
+	const { side, spacing, jitter } = s3Grid(n);
+	for (let i = 0; i < n; i++) {
+		const column = i % side;
+		const row = Math.floor(i / side);
+		base[i * 2] = -S3_EXTENT + (column + 0.5) * spacing + between(-jitter, jitter, boxes());
+		base[i * 2 + 1] = -S3_EXTENT + (row + 0.5) * spacing + between(-jitter, jitter, boxes());
+		height[i] = between(S3_BOX.minHeight, S3_BOX.maxHeight, boxes());
+		yaw[i] = boxes() * TAU;
+	}
+	const lights = mulberry32(S3_LIGHT_SEED);
+	const lightCenter = new Float32Array(S3_LIGHT_COUNT * 2);
+	const lightRadius = new Float32Array(S3_LIGHT_COUNT);
+	const lightHeight = new Float32Array(S3_LIGHT_COUNT);
+	const lightSpeed = new Float32Array(S3_LIGHT_COUNT);
+	const lightPhase = new Float32Array(S3_LIGHT_COUNT);
+	const { minRadius, maxRadius, minHeight, maxHeight, minSpeed, maxSpeed } = S3_PATHS;
+	for (let i = 0; i < S3_LIGHT_COUNT; i++) {
+		lightCenter[i * 2] = between(-S3_EXTENT, S3_EXTENT, lights());
+		lightCenter[i * 2 + 1] = between(-S3_EXTENT, S3_EXTENT, lights());
+		lightRadius[i] = between(minRadius, maxRadius, lights());
+		lightHeight[i] = between(minHeight, maxHeight, lights());
+		const speed = between(minSpeed, maxSpeed, lights());
+		lightSpeed[i] = lights() < 0.5 ? -speed : speed;
+		lightPhase[i] = lights() * TAU;
+	}
+	return {
+		count: n,
+		base,
+		height,
+		yaw,
+		lightCenter,
+		lightRadius,
+		lightHeight,
+		lightSpeed,
+		lightPhase,
+	};
+}
+
+/**
+ * Writes box i's position, rotation and scale. The box stands on the floor, so its center is half
+ * its height above it. The rotation is a quaternion in x, y, z, w order, about +Y.
+ */
+export function s3BoxAt(
+	data: S3Data,
+	i: number,
+	outPosition: OutArray,
+	outQuaternion: OutArray,
+	outScale: OutArray,
+): void {
+	const height = data.height[i] ?? 0;
+	outPosition[0] = data.base[i * 2] ?? 0;
+	outPosition[1] = height / 2;
+	outPosition[2] = data.base[i * 2 + 1] ?? 0;
+	const halfAngle = 0.5 * (data.yaw[i] ?? 0);
+	outQuaternion[0] = 0;
+	outQuaternion[1] = Math.sin(halfAngle);
+	outQuaternion[2] = 0;
+	outQuaternion[3] = Math.cos(halfAngle);
+	outScale[0] = S3_BOX.width;
+	outScale[1] = height;
+	outScale[2] = S3_BOX.width;
+}
+
+/** The color of point light i. */
+export function s3LightColor(i: number): string {
+	return S3_LIGHT_COLORS[i % S3_LIGHT_COLORS.length] as string;
+}
+
+/** Writes point light i's position at time t: on its circle, at its height above the floor. */
+export function s3LightAt(data: S3Data, i: number, t: number, outPosition: OutArray): void {
+	const angle = (data.lightSpeed[i] ?? 0) * t + (data.lightPhase[i] ?? 0);
+	const radius = data.lightRadius[i] ?? 0;
+	outPosition[0] = (data.lightCenter[i * 2] ?? 0) + radius * Math.cos(angle);
+	outPosition[1] = data.lightHeight[i] ?? 0;
+	outPosition[2] = (data.lightCenter[i * 2 + 1] ?? 0) + radius * Math.sin(angle);
+}
+
+/** Writes S3's camera at time t: an orbit of the origin, one turn per `ORBIT_SECONDS`. */
+export function s3Camera(t: number, outPosition: OutArray, outTarget: OutArray): void {
+	orbitCamera(t, S3_ORBIT.radius, S3_ORBIT.height, outPosition, outTarget);
 }

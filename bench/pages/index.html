@@ -24,8 +24,8 @@
 				its pixels for parity images.
 			</li>
 			<li>
-				<code>?n=1000</code>: the instance count of S1 and S1-static, instead of the full count. S2
-				has a fixed count and ignores it.
+				<code>?n=1000</code>: the instance count of S1, S1-static and S1-cells, or the box count of
+				S3, instead of the full count. S2 rounds it up to whole trees.
 			</li>
 			<li>
 				<code>?seconds=2</code>: warm up and measure for this many seconds each, for quick checks.
@@ -53,6 +53,15 @@
 				<a href="threejs/s1-static.html?renderer=webgpu&amp;seconds=2&amp;n=1000">WebGPU</a>
 			</li>
 			<li>
+				S1-cells (still instances over 8 x 8 grid cells, low flight):
+				<a href="threejs/s1-cells.html?renderer=webgl">WebGL</a>,
+				<a href="threejs/s1-cells.html?renderer=webgpu">WebGPU</a>; hold frame on
+				<a href="threejs/s1-cells.html?renderer=webgl&amp;hold">WebGL</a>,
+				<a href="threejs/s1-cells.html?renderer=webgpu&amp;hold">WebGPU</a>; quick run on
+				<a href="threejs/s1-cells.html?renderer=webgl&amp;seconds=2&amp;n=1000">WebGL</a>,
+				<a href="threejs/s1-cells.html?renderer=webgpu&amp;seconds=2&amp;n=1000">WebGPU</a>
+			</li>
+			<li>
 				S2, the hierarchy (trees of separate objects whose roots turn, orbiting camera):
 				<a href="threejs/s2.html?renderer=webgl">WebGL</a>,
 				<a href="threejs/s2.html?renderer=webgpu">WebGPU</a>; hold frame on
@@ -60,6 +69,15 @@
 				<a href="threejs/s2.html?renderer=webgpu&amp;hold">WebGPU</a>; quick run on
 				<a href="threejs/s2.html?renderer=webgl&amp;seconds=2">WebGL</a>,
 				<a href="threejs/s2.html?renderer=webgpu&amp;seconds=2">WebGPU</a>
+			</li>
+			<li>
+				S3, the lights (still boxes on a floor, 256 moving point lights, orbiting camera):
+				<a href="threejs/s3.html?renderer=webgl">WebGL</a>,
+				<a href="threejs/s3.html?renderer=webgpu">WebGPU</a>; hold frame on
+				<a href="threejs/s3.html?renderer=webgl&amp;hold">WebGL</a>,
+				<a href="threejs/s3.html?renderer=webgpu&amp;hold">WebGPU</a>; quick run on
+				<a href="threejs/s3.html?renderer=webgl&amp;seconds=2&amp;n=1000">WebGL</a>,
+				<a href="threejs/s3.html?renderer=webgpu&amp;seconds=2&amp;n=1000">WebGPU</a>
 			</li>
 		</ul>
 
@@ -73,6 +91,14 @@
 				The orthographic camera:
 				<a href="threejs/ortho-camera.html?renderer=webgl">WebGL</a>,
 				<a href="threejs/ortho-camera.html?renderer=webgpu">WebGPU</a>
+			</li>
+			<li>
+				Linear fog:
+				<a href="threejs/fog.html?fog=linear&amp;renderer=webgl">WebGL</a>,
+				<a href="threejs/fog.html?fog=linear&amp;renderer=webgpu">WebGPU</a>; exponential squared
+				fog:
+				<a href="threejs/fog.html?fog=exp2&amp;renderer=webgl">WebGL</a>,
+				<a href="threejs/fog.html?fog=exp2&amp;renderer=webgpu">WebGPU</a>
 			</li>
 		</ul>
 	</body>

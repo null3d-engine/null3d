@@ -36,7 +36,7 @@ HTML, CSS, UI, audio   -->   input, onUpdate, scene changes -->  GPU uploads and
 creates the engine           shared typed arrays                 never runs your code
 ```
 
-- `page.ts` runs on the main thread. It creates the engine and owns the DOM, HTML UI and Web Audio. `sketch.ts` runs in the sketch worker: scene setup and per-frame logic. The sketch worker has no `document` and no `window`. The two sides talk with `engine.postToSketch` and `page.onMessage`, and with `page.post` and `engine.onSketchMessage`. (`concepts/architecture`, `api/page`)
+- `page.ts` runs on the main thread. It creates the engine and owns the DOM, HTML UI and Web Audio. `sketch.ts` runs in the sketch worker: scene setup and per-frame logic. The sketch worker has no `document` and no `window`. `createEngine({ sketchThread: 'main' })` runs the sketch on the main thread instead, where it can reach the DOM. Use it only for DOM-heavy apps and for debugging, because the sketch's frames then share the main thread with the page. The two sides talk with `engine.postToSketch` and `page.onMessage`, and with `page.post` and `engine.onSketchMessage`. (`concepts/architecture`, `api/page`)
 - Scene objects are small wrappers around 30-bit integer handles. Change them with setters such as `setPosition`; never assign properties like `mesh.position.x = 1`. (`concepts/handles`, `api/objects`)
 - For many objects, write typed arrays directly: instance batches and dynamic objects. This is where null3D gets its speed. (`concepts/instances`)
 - Objects are static by default: they cost nothing per frame until a setter changes them. Objects created with `dynamic: true` are recomputed every frame and may be written through arrays. (`concepts/static-dynamic`)
@@ -156,7 +156,7 @@ Effects:
 | Bloom, ambient occlusion, color grading, outlines | `post.set({ ... })` (0.2) | `api/post` |
 | A custom full-screen effect | `post.addEffect({ name, wgsl, uniforms })` (0.2) | `api/post` |
 | Render to a texture, or add a pass | `render.addPass({ ... })` (0.2) | `guides/custom-passes` |
-| Fog or sky | `scene.setFog` (later in 0.1), `scene.setBackground({ sky })` (0.2) | `api/scene` |
+| Fog or sky | `scene.setFog` with the fog's color in `scene.setBackground`; `scene.setBackground({ sky })` (0.2) | `api/scene` |
 
 ## 6. Custom shaders in brief
 

@@ -1,5 +1,5 @@
 //! What every frame builder shares: the frame's input, the scene settings (meshes, materials, the
-//! views and the lights), and the draw lists and upload arenas kept per frame parity.
+//! views, the lights and the fog), and the draw lists and upload arenas kept per frame parity.
 //!
 //! # Frames in flight
 //!
@@ -23,6 +23,7 @@ use null3d_gpu::drawlist::{
 
 use crate::camera::Lens;
 use crate::debug_lines::DebugLines;
+use crate::fog::Fog;
 use crate::frame_data::{FrameUniform, normalized_direction};
 use crate::graph::GraphError;
 use crate::materials::{
@@ -345,7 +346,7 @@ pub(crate) enum MaterialStorage {
     Texture(u32),
 }
 
-/// The lights and the background.
+/// The lights, the background and the fog.
 #[derive(Clone, Copy, Debug)]
 struct Lighting {
     sun_direction: [f32; 4],
@@ -353,10 +354,11 @@ struct Lighting {
     ambient: [f32; 4],
     /// Linear background color.
     background: [f32; 3],
+    fog: Fog,
 }
 
-/// What the sketch sets and changes rarely: meshes, materials, textures, the views and the
-/// lights.
+/// What the sketch sets and changes rarely: meshes, materials, textures, the views, the lights
+/// and the fog.
 pub struct SceneSettings {
     meshes: MeshStorage,
     materials: MaterialTable,
@@ -378,6 +380,7 @@ impl SceneSettings {
                 sun_color: [0.0; 4],
                 ambient: [0.0; 4],
                 background: [0.0; 3],
+                fog: Fog::None,
             },
         }
     }
@@ -525,6 +528,12 @@ impl SceneSettings {
         self.lighting.background = color;
     }
 
+    /// The fog that every view's objects take, apart from materials that opt out. The background
+    /// takes none.
+    pub fn set_fog(&mut self, fog: Fog) {
+        self.lighting.fog = fog;
+    }
+
     /// The color that clears the color targets, as the scene's render passes hold it: the
     /// background, encoded as sRGB as the shaders write their colors, and opaque.
     pub(crate) fn clear_color(&self) -> [f32; 4] {
@@ -536,8 +545,9 @@ impl SceneSettings {
     /// when the pair draws nowhere: no mesh, no material, an id that names nothing, or a mesh
     /// without the vertex attributes that the material's shading reads. A material whose map is
     /// gone, or whose mesh has no texture coordinates for it, draws with its color alone. A
-    /// material with vertex colors reads them only from a mesh that has them, and a double-sided
-    /// material culls no faces.
+    /// material with vertex colors reads them only from a mesh that has them, a masked material
+    /// draws with the shader variant that discards fragments, and a double-sided material culls no
+    /// faces. The material's depth options and depth bias set the pipeline's depth state.
     pub fn pipeline_of(&self, mesh: u32, material: u32) -> Option<DrawKey> {
         if mesh == NO_MESH || material == NO_MATERIAL {
             return None;
@@ -555,23 +565,22 @@ impl SceneSettings {
         }
         let needs = shading.attributes();
         let features = self.materials.features(material - 1);
-        let vertex_colors = features & feature::VERTEX_COLORS != 0
-            && format & vertex::COLOR != 0
-            && shading.takes_vertex_colors();
-        let double_sided = features & feature::DOUBLE_SIDED != 0;
+        let has = |bit: u32| features & bit != 0;
+        let base_color = shading.reads_base_color();
+        let vertex_colors = has(feature::VERTEX_COLORS) && format & vertex::COLOR != 0;
+        let bit = |on: bool, bit: u32| if on { bit } else { 0 };
         ((format & needs) == needs).then_some(DrawKey {
             template: shading.template(),
-            permutation: if vertex_colors {
-                permutation::VERTEX_COLOR
-            } else {
-                0
-            },
+            permutation: bit(base_color && vertex_colors, permutation::VERTEX_COLOR)
+                | bit(
+                    base_color && has(feature::ALPHA_MASK),
+                    permutation::ALPHA_MASK,
+                ),
             vertex_format: format,
-            state: if double_sided {
-                state_flags::CULL_NONE
-            } else {
-                0
-            },
+            state: bit(has(feature::DOUBLE_SIDED), state_flags::CULL_NONE)
+                | bit(has(feature::NO_DEPTH_WRITE), state_flags::NO_DEPTH_WRITE)
+                | bit(has(feature::NO_DEPTH_TEST), state_flags::NO_DEPTH_TEST),
+            bias: self.materials.depth_bias(material - 1),
         })
     }
 
@@ -588,13 +597,14 @@ impl SceneSettings {
     ) -> Option<ViewFrame> {
         let aspect = canvas.0 as f32 / canvas.1.max(1) as f32;
         let view = self.views.get(view.index())?;
-        let (view_proj, eye, camera) = view.transform(scene, parity, aspect)?;
+        let (view_proj, eye, forward, camera) = view.transform(scene, parity, aspect)?;
         let uniform = FrameUniform {
             view_proj,
             camera_position: eye,
             sun_direction: self.lighting.sun_direction,
             sun_color: self.lighting.sun_color,
             ambient: self.lighting.ambient,
+            fog: self.lighting.fog.uniform(forward),
         };
         Some(ViewFrame::new(uniform, camera, view.layers()))
     }

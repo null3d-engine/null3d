@@ -112,6 +112,8 @@ export const VERTEX_INSTANCE_LOCATION = 8;
 
 export const STATE_CULL_NONE = 1;
 export const STATE_LINE_LIST = 2;
+export const STATE_NO_DEPTH_WRITE = 8;
+export const STATE_NO_DEPTH_TEST = 16;
 
 export const TEMPLATE_INSTANCED_LIT = 1;
 export const TEMPLATE_INSTANCED_UNLIT = 2;
@@ -138,7 +140,7 @@ export const TEXTURE_USAGE_RENDER_ATTACHMENT = 16;
 export const TEXTURE_USAGE_TRANSIENT_ATTACHMENT = 32;
 
 export const SIZE_INSTANCE_STRIDE = 64;
-export const SIZE_FRAME_UNIFORM_BYTES = 128;
+export const SIZE_FRAME_UNIFORM_BYTES = 176;
 export const SIZE_CULL_WORKGROUP_SIZE = 128;
 export const SIZE_INDIRECT_WORDS = 5;
 export const SIZE_MATRIX_TEXELS = 3;
@@ -150,6 +152,7 @@ export const SIZE_MAX_MATERIALS = 1024;
 export const SIZE_MATERIAL_BYTES = 128;
 export const SIZE_MAX_CELLS = 512;
 export const SIZE_CELL_SHIFT = 23;
+export const SIZE_MAX_CULL_RANGES = 257;
 export const SIZE_LINE_VERTEX_BYTES = 16;
 
 /** Bytes per texel of each format, by format code. */
