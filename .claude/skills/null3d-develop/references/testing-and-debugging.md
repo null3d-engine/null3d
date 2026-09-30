@@ -22,11 +22,11 @@ Engine docs: `guides/testing`, `guides/debugging`, `errors/index`, `cli/null3d`.
 | `bunx @null3d/cli test` | Type checks, lint, and all visual and behavior tests, headless |
 | `bunx @null3d/cli test --gpu webgpu,webgl2,compat` | Runs visual tests on each GPU tier |
 | `bunx @null3d/cli test --update-references` | Rewrites reference images; review the diff before committing |
-| `bunx @null3d/cli bench --scene <name>` | Benchmark: 5 runs of 30 seconds after warm-up; median and spread per phase |
+| `bunx @null3d/cli bench [--gpu webgpu,webgl2] [--page /other.html]` | Builds the project for production and measures the page headless: 5 fresh runs of 30 seconds, each after 5 seconds of warm-up. Prints the median and the spread of CPU time per frame by thread, GPU time and frame rates, and saves every run's figures in `bench.json` |
 | `bunx @null3d/cli doctor` | Checks versions, headers, asset CORS, and the capabilities of the local browser |
 | `bunx @null3d/cli docs show <id>` / `bunx @null3d/cli docs search "<words>"` | Prints docs for the installed engine version |
 
-Of these commands, `shot` is built. The note on `cli/null3d` names the commands that are not built yet: do not run those.
+Of these commands, `shot` and `bench` are built. The note on `cli/null3d` names the commands that are not built yet: do not run those.
 
 Every command prints short text results (pass or fail, reasons, file paths), so you can read them directly. Open the image files it names when a visual check fails.
 
@@ -95,6 +95,7 @@ URL switches for the dev server (engine docs `guides/testing`):
 | `?fps=30` | Hold drawing at this many frames per second, at most the display's rate, to compare runs on displays of different refresh rates |
 | `?queue=3` | Let this many frames wait unfinished on the GPU instead of 2; `?queue=off` sets no limit, as browsers do on their own (`guides/performance`) |
 | `?hold=1.5` | Hold mode: step the sketch to 1.5 seconds, draw that one frame and publish it as `window.__null3dHold`; a bare `?hold` holds at the `hold` option's time, or at 0 |
+| `?bench` | Publish the running engine as `window.__null3dEngine`, where a benchmark tool calls `measure`; `bunx @null3d/cli bench` adds it |
 
 Reaching the dev server:
 

@@ -12,7 +12,7 @@ summary: "engine.measure and its figures; debug.line, box, axes, grid, frustum; 
 
 `engine.measure(seconds)` on the page measures the running engine for that many seconds. It returns a `FrameMetrics` object. That holds CPU time per frame by thread and step, GPU time per frame and per pass, frame rates, uploads and draw calls. It also holds memory and load times. Each figure that varies from frame to frame comes as `Percentiles`: the median, the 95th and 99th percentiles, the mean and the number of frames.
 
-Each thread writes a few numbers per frame into a buffer that the page reads, so a measurement costs the frame almost nothing. GPU timing and the tracking of finished frames run only while the page measures, and only on one frame in eight. [Performance guide](../guides/performance.md#measure) explains each figure and how to measure fairly.
+Each thread writes a few numbers per frame into a buffer that the page reads, so a measurement costs the frame almost nothing. GPU timing runs only while the page measures, and only on one frame in eight. The engine tracks every frame that the GPU finishes, all the time, because it holds new frames back while two are unfinished. [Performance guide](../guides/performance.md#measure) explains each figure and how to measure fairly.
 
 ## Example: measure a running scene
 

@@ -1,7 +1,8 @@
 // URL switches that let one device exercise every engine path: ?gpu=, ?threads=off, ?render=main,
 // ?latency=, ?uploads=copy and ?depth=. Four more set what the benchmarks vary: ?fps= for a fixed
 // frame rate, ?jobs= for the job worker count, ?memory= for the shared memory's maximum and ?queue=
-// for the frames that may wait on the GPU. ?hold starts hold mode for image tests.
+// for the frames that may wait on the GPU. ?hold starts hold mode for image tests, and ?bench
+// publishes the running engine for benchmark tools.
 
 export type GpuSwitch = 'auto' | 'webgpu' | 'compat' | 'webgl2';
 /**
@@ -61,6 +62,8 @@ export interface Switches {
 	 * engine checks it when it starts, so a bad time fails at once instead of starting a live engine.
 	 */
 	hold: string | undefined;
+	/** True when ?bench asks the engine to publish itself on the page for a benchmark tool. */
+	bench: boolean;
 }
 
 /** The most job workers the engine core runs. */
@@ -98,5 +101,6 @@ export function parseSwitches(search: string): Switches {
 		queue: params.get('queue') === 'off' ? Number.POSITIVE_INFINITY : whole(params.get('queue')),
 		memoryMiB: whole(params.get('memory')),
 		hold: params.get('hold') ?? undefined,
+		bench: params.has('bench'),
 	};
 }

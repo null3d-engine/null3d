@@ -70,6 +70,7 @@ export type Check =
 	| { kind: 'isolation' }
 	| { kind: 'image'; run: ImageRun }
 	| { kind: 'shaders' }
+	| { kind: 'shader-library'; tier: Tier }
 	| { kind: 'engine'; tier: Tier; mode: EngineMode }
 	| { kind: 'restarts'; mode: EngineMode }
 	| { kind: 'memory'; maximumMiB: number }
@@ -216,9 +217,9 @@ function imageItem(run: ImageRun): PlanItem<Check> {
 const PRODUCTION_BUILD: Load = { kind: 'warm', key: runnerKey('production') };
 
 /**
- * The browser checks: the capability report, isolation, every run of the image test manifest, the
- * engine in every mode on both GPU paths, and again on the production build, and the engine
- * started and stopped again and again in every mode. The capabilities page loads again last, so its
+ * The browser checks: the capability report, isolation, the shader library's values on both GPU
+ * paths, every run of the image test manifest, the engine in every mode on both GPU paths, and
+ * again on the production build, and the engine started and stopped again and again in every mode. The capabilities page loads again last, so its
  * extension answers can be compared across loads.
  */
 export function checksPlan(): PlanItem<Check>[] {
@@ -226,6 +227,14 @@ export function checksPlan(): PlanItem<Check>[] {
 		pageItem(CAPABILITIES, 'capabilities', { kind: 'capabilities' }),
 		pageItem('isolation', 'isolation', { kind: 'isolation' }),
 		pageItem('shaders', 'shaders', { kind: 'shaders' }),
+		...TIERS.map((tier) =>
+			pageItem(
+				`shader-library-${tier}`,
+				'shader-library',
+				{ kind: 'shader-library', tier },
+				{ switches: [`gpu=${tier}`] },
+			),
+		),
 		pageItem('uploads', 'uploads', { kind: 'uploads', tier: 'webgpu' }, { timeoutSeconds: 90 }),
 		...IMAGE_RUNS.map(imageItem),
 		...TIERS.flatMap((tier) =>
@@ -764,6 +773,18 @@ export function judge(
 			const problems = failures.map((f) => `${f.shader} ${f.stage}: ${f.log.split('\n')[0]}`);
 			if (!(Number(result.glslPrograms) > 0)) problems.push('no GLSL program was compiled');
 			if (!result.webgpu && !missing.webgpu) problems.push('no WebGPU to compile the WGSL');
+			return problems;
+		}
+		case 'shader-library': {
+			const mismatches = (result.mismatches ?? []) as {
+				function: string;
+				expected: number[];
+				got: number[];
+			}[];
+			const problems = mismatches.map(
+				(m) => `${m.function}: expected ${m.expected.join(', ')}, got ${m.got.join(', ')}`,
+			);
+			if (!(Number(result.cases) > 0)) problems.push('the page ran no cases');
 			return problems;
 		}
 		case 'engine':

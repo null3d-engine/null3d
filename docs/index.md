@@ -134,7 +134,7 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 | [WGSL rules for portable shaders](shaders/wgsl-rules.md) | The three shared language features; optional features; flat interpolation; limits budget; rules the build cannot check. | experimental | 0.1 |
 | [Surface functions](shaders/surface-functions.md) | The surface record; vertex-offset functions; per-instance attributes. | planned | 0.1 |
 | [Built-in shader inputs](shaders/builtins.md) | Camera, time, object, instance and light values available to custom shaders. | planned | 0.1 |
-| [Shader library and imports](shaders/library.md) | Importing engine shader modules (math, noise, lighting helpers). | planned | 0.1 |
+| [Shader library and imports](shaders/library.md) | The WGSL modules that ship with the engine: math, noise, color, lighting, fog, vertex, depth and signed distance helpers, and how to import them. | experimental | 0.1 |
 
 ### Porting from three.js
 
