@@ -742,7 +742,13 @@ async function startEngine(
 	/** Stops every loop and then the workers, and wakes each thread that waits, so it sees the stop. */
 	const stop = () => {
 		Atomics.store(slots, Slot.Running, 0);
-		for (const slot of [Slot.Running, Slot.FramesTaken, Slot.Paused, Slot.JobsReady])
+		for (const slot of [
+			Slot.Running,
+			Slot.FramesTaken,
+			Slot.Paused,
+			Slot.JobsReady,
+			Slot.PipelinesBuilt,
+		])
 			Atomics.notify(slots, slot);
 		localDrawing?.stop();
 		localRunner?.dispose();
@@ -778,8 +784,12 @@ async function startEngine(
 				},
 				hold,
 			);
-			await localRunner.setup(await (sketchModule ?? loadSketch(sketchUrl)));
+			// In hold mode the sketch module loads only now, after the runner seeded the random
+			// numbers. The renderer starts before the setup, so a warm-up in the setup has a renderer
+			// to build its pipelines.
+			const sketchLoad = sketchModule ?? awaitLater(loadSketch(sketchUrl));
 			localDrawing = await drawOnPage(memory, { imageTable }, localRunner);
+			await localRunner.setup(await sketchLoad);
 		} else if (threads) {
 			const { sketch, render, jobs } = threads;
 			// The job workers get the core first. A stop waits until each job worker reports that it left
@@ -919,6 +929,8 @@ async function startEngine(
 						reader.firstFrameDoneTime > 0
 							? reader.firstFrameDoneTime - performance.timeOrigin
 							: null,
+					warmUpMs: reader.warmUpMs,
+					firstFramePipelines: reader.firstFramePipelines,
 				},
 				downloadBytes: { wasm: wasmDownloadBytes() },
 				lostRecords: reader.lost,

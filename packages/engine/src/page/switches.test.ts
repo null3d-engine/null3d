@@ -10,6 +10,7 @@ describe('parseSwitches', () => {
 			latency: undefined,
 			copyUploads: false,
 			depth: undefined,
+			parallelCompile: true,
 			hdr: true,
 			fps: undefined,
 			queue: undefined,
@@ -62,6 +63,11 @@ describe('parseSwitches', () => {
 		expect(parseSwitches('?queue=off').queue).toBe(Number.POSITIVE_INFINITY);
 		expect(parseSwitches('?queue=0').queue).toBeUndefined();
 		expect(parseSwitches('?queue=1.5').queue).toBeUndefined();
+	});
+
+	it('turns background compiles off with ?compile=wait only', () => {
+		expect(parseSwitches('?gpu=webgl2&compile=wait').parallelCompile).toBe(false);
+		expect(parseSwitches('?compile=later').parallelCompile).toBe(true);
 	});
 
 	it('reads the WebGL2 depth mode, and ignores a mode it does not know', () => {

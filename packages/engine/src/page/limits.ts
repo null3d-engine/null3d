@@ -44,6 +44,11 @@ export interface CoreDevice {
 	/** How the GPU path stores depth: always `reversed` on WebGPU. */
 	depth: DepthMode;
 	/**
+	 * WebGL2: true to compile programs in the background where the context has
+	 * `KHR_parallel_shader_compile`, false to wait for each program's compile at its first draw.
+	 */
+	parallelCompile: boolean;
+	/**
 	 * The format code of the target that scene passes draw into: a float format for HDR color, which
 	 * the final pass tone maps, or the canvas's format on the 8-bit path.
 	 */
@@ -56,7 +61,7 @@ export interface CoreDevice {
  * How the page asks the engine to use the device: the test switches that force a route, and the
  * canvas's transparency.
  */
-export type DeviceOptions = Pick<Switches, 'copyUploads' | 'depth' | 'hdr'> & {
+export type DeviceOptions = Pick<Switches, 'copyUploads' | 'depth' | 'hdr' | 'parallelCompile'> & {
 	/** True for a transparent canvas. */
 	transparent: boolean;
 };
@@ -119,10 +124,12 @@ export function sceneColorFormat(
 /**
  * The device and the canvas as the engine uses them on a tier, from the capability report and the
  * options. The test switches make the WebGL2 path copy uploads out of shared memory even where
- * WebGL reads it, force a WebGL2 depth mode, or force the 8-bit path, so tests reach every route.
+ * WebGL reads it, force a WebGL2 depth mode, make WebGL2 wait for each program's compile, or force
+ * the 8-bit path, so tests reach every route.
  */
 export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOptions): CoreDevice {
-	const canvas = {
+	const common = {
+		parallelCompile: options.parallelCompile,
 		sceneColor: sceneColorFormat(tier, report, options.hdr, options.transparent),
 		transparent: options.transparent,
 	};
@@ -134,21 +141,21 @@ export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOpti
 			maxTextureSize: 0,
 			sharedUploads: true,
 			depth: 'reversed',
-			...canvas,
+			...common,
 		};
 	}
 	const gl = report.webgl2;
 	const multiDraw = gl.extensions.WEBGL_multi_draw === true;
-	const shared = gl.sharedMemoryUploads;
+	const uploads = gl.sharedMemoryUploads;
 	return {
 		webgl2: true,
 		storageBindingBytes: C.LIMIT_PORTABLE_STORAGE_BINDING_BYTES,
 		capabilities: multiDraw ? C.CAPABILITY_MULTI_DRAW : 0,
 		maxTextureSize: Math.max(C.LIMIT_WEBGL2_MIN_TEXTURE_SIZE, gl.maxTextureSize ?? 0),
 		sharedUploads:
-			!options.copyUploads && shared !== null && shared.bufferSubData && shared.texSubImage2D,
+			!options.copyUploads && uploads !== null && uploads.bufferSubData && uploads.texSubImage2D,
 		depth: webgl2Depth(gl.extensions.EXT_clip_control === true, options.depth),
-		...canvas,
+		...common,
 	};
 }
 

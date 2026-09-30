@@ -274,8 +274,9 @@ impl GpuDrivenRenderer {
         self.frames.get(view.index())?.as_ref()
     }
 
-    /// Records a frame into its parity's list and arena: the objects the GPU lacks, the uploads,
-    /// then the passes of the render graph. Returns true when the frame rebuilt the draw tables.
+    /// Records a frame into its parity's list and arena: the pipelines the GPU lacks, then the
+    /// other objects it lacks, the uploads, and the passes of the render graph. Returns true when
+    /// the frame rebuilt the draw tables.
     fn record_into(
         &mut self,
         input: &FrameInput<'_>,
@@ -283,19 +284,6 @@ impl GpuDrivenRenderer {
         arena: &mut UploadArena,
     ) -> Result<bool, RecordError> {
         let parity = input.parity();
-        if !self.created {
-            self.create_fixed(list)?;
-        }
-        self.graph.sync_views(self.settings.views());
-        self.graph.set_debug_lines(!input.lines.is_empty());
-        self.graph.prepare(list, input.canvas)?;
-        let views = self.settings.views().len();
-        let first_new = self.culling.views();
-        for index in first_new..views {
-            opaque::create_view(list, ViewId::from_index(index))?;
-        }
-        self.culling.add_views(list, views)?;
-
         let upload_everything = input.structure_changed || !self.layout.built;
         if upload_everything {
             let limit = max_sources(self.config.storage_binding_bytes);
@@ -309,13 +297,36 @@ impl GpuDrivenRenderer {
                 limit,
             )?;
         }
+        // The list starts with the pipelines it creates, so the thread that draws can start to
+        // build them before it replays the rest (see `null3d_gpu::drawlist`).
+        if !self.created {
+            cull::create_pipeline(list)?;
+        }
+        self.lines.request_pipeline(
+            &input.lines,
+            &mut self.pipelines,
+            self.graph.scene_targets(),
+        );
+        self.graph.request_pipelines(&mut self.pipelines);
+        self.pipelines.create_new(list)?;
+        if !self.created {
+            self.create_fixed(list)?;
+        }
+        self.graph.sync_views(self.settings.views());
+        self.graph.set_debug_lines(!input.lines.is_empty());
+        self.graph.prepare(list, input.canvas)?;
+        let views = self.settings.views().len();
+        let first_new = self.culling.views();
+        for index in first_new..views {
+            opaque::create_view(list, ViewId::from_index(index))?;
+        }
+        self.culling.add_views(list, views)?;
+
         arena.reset(self.upload_bound() + LinesPass::upload_bytes(&input.lines));
-        self.graph
-            .upload(list, arena, self.settings.output(), &mut self.pipelines)?;
+        self.graph.upload(list, arena, self.settings.output())?;
         let pages_remade = self
             .meshes
             .upload(list, arena, self.settings.meshes().pages())?;
-        self.pipelines.create_new(list)?;
         let table = MaterialStorage::Buffer(ids::MATERIALS);
         let groups_remade = self
             .settings
@@ -364,14 +375,8 @@ impl GpuDrivenRenderer {
             self.frames.push(frame);
         }
         let camera = self.frames[ViewId::CAMERA.index()].as_ref();
-        self.lines.upload(
-            list,
-            arena,
-            &input.lines,
-            camera.map(|frame| &frame.camera),
-            &mut self.pipelines,
-            self.graph.scene_targets(),
-        )?;
+        self.lines
+            .upload(list, arena, &input.lines, camera.map(|frame| &frame.camera))?;
 
         let (frames, layout, lines) = (&self.frames, &self.layout, &self.lines);
         let drawn = |view: ViewId| frames[view.index()].is_some();
@@ -385,10 +390,8 @@ impl GpuDrivenRenderer {
         Ok(upload_everything)
     }
 
-    /// Records the creation of the culling pipeline and of the material table, whose size never
-    /// changes.
+    /// Records the creation of the material table, whose size never changes.
     fn create_fixed(&mut self, list: &mut DrawList) -> Result<(), RecordError> {
-        cull::create_pipeline(list)?;
         let materials = self.config.max_materials.max(1);
         list.push(
             Op::CreateBuffer,

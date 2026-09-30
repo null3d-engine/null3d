@@ -1055,6 +1055,7 @@ export class Scene {
 		private readonly time: { readonly frame: number },
 		/** True when the engine draws with WebGL2, whose devices draw fewer rows than WebGPU's. */
 		private readonly webgl2: boolean,
+		private readonly warmUpScene: () => Promise<void> = () => Promise.resolve(),
 	) {
 		if (DEV) this.unmarkedWrites = new UnmarkedWrites(this);
 	}
@@ -1359,5 +1360,16 @@ export class Scene {
 	setBackground(color: ColorInput): void {
 		const [r, g, b] = linearColor(color, 'setBackground');
 		this.core.glue.setBackground(r, g, b);
+	}
+
+	/**
+	 * Builds every GPU pipeline that the scene needs as it stands, and resolves once they are all
+	 * built. Hidden objects count too. After the first frame, an object whose pipeline is still
+	 * building draws nothing, so create a loading stage's objects hidden, warm up, then show them.
+	 * The first frame waits for its pipelines anyway. In the setup, a warm-up draws that frame once
+	 * they are built, before the setup goes on.
+	 */
+	warmUp(): Promise<void> {
+		return this.warmUpScene();
 	}
 }

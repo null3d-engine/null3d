@@ -7,6 +7,7 @@ import { messageOf } from '../errors/message';
 import { type DrawModule, loadDrawModule } from '../render/load-draw';
 import type { Drawing } from '../render/recovery';
 import type { Renderer } from '../render/renderer';
+import { awaitLater } from '../shared/await-later';
 import { controlViews, Slot } from '../shared/control';
 import { ImageTable, sendThrough, sendToTable } from '../shared/images';
 import { loadSketch } from '../sketch/define-sketch';
@@ -38,7 +39,8 @@ function changeOf(slots: Int32Array, slot: number, value: number): Promise<unkno
 
 async function runPipelined(sketch: SketchRunner, control: ArrayBufferLike): Promise<void> {
 	const { slots } = controlViews(control);
-	let published = 0;
+	// A warm-up during the setup may have published a frame that the render worker has not taken.
+	let published = Atomics.load(slots, Slot.FramesPublished);
 	while (Atomics.load(slots, Slot.Running) !== 0) {
 		const paused = Atomics.load(slots, Slot.Paused);
 		if (paused !== 0) {
@@ -97,8 +99,9 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 				message.hold,
 			);
 			step('engine created');
-			await runner.setup(await loadSketch(message.sketchUrl));
-			step(message.hold === undefined ? 'sketch loaded' : 'sketch loaded and held');
+			// The sketch downloads while the renderer starts. The renderer starts before the setup,
+			// so a warm-up in the setup has a renderer to build its pipelines.
+			const sketch = awaitLater(loadSketch(message.sketchUrl));
 			if (message.renderer && drawModule) {
 				draw = await drawModule;
 				step('renderer loaded');
@@ -112,9 +115,10 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 					imageTable,
 					fail: (reason) => replyToPage({ type: 'lost', role: 'sketch', reason }),
 				});
-			} else if (message.hold === undefined) {
-				void runPipelined(runner, message.control);
 			}
+			await runner.setup(await sketch);
+			step(message.hold === undefined ? 'sketch loaded' : 'sketch loaded and held');
+			if (!drawing && message.hold === undefined) void runPipelined(runner, message.control);
 			replyToPage({
 				type: 'ready',
 				role: 'sketch',

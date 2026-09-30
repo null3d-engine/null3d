@@ -274,17 +274,23 @@ impl FrameGraph {
         Ok(())
     }
 
+    /// Asks `pipelines` for the pipelines of the graph's own passes: on the HDR path, the final
+    /// pass's. A builder asks before it records the pipelines that its frame creates.
+    pub(crate) fn request_pipelines(&mut self, pipelines: &mut PipelineCache) {
+        if self.scene_color.is_hdr() {
+            self.final_pass.request_pipeline(pipelines);
+        }
+    }
+
     /// Records what the graph's own passes need before the frame's passes, from copies in the
     /// frame's arena: on the HDR path, the final pass's objects, its settings when they changed,
-    /// and its binding of the scene color when the frame made the plan's textures. The final pass
-    /// takes its pipeline from `pipelines`, so call it before their next creation, and after
+    /// and its binding of the scene color when the frame made the plan's textures. Call it after
     /// [`FrameGraph::prepare`].
     pub(crate) fn upload(
         &mut self,
         list: &mut DrawList,
         arena: &mut UploadArena,
         output: Output,
-        pipelines: &mut PipelineCache,
     ) -> Result<(), RecordError> {
         if !self.scene_color.is_hdr() {
             return Ok(());
@@ -302,7 +308,6 @@ impl FrameGraph {
         self.final_pass.prepare(
             list,
             arena,
-            pipelines,
             output.uniform(),
             scene_color,
             self.textures_made,

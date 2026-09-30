@@ -192,30 +192,41 @@ impl LinesPass {
         lines.points() * LINE_VERTEX_BYTES as usize
     }
 
-    /// Uploads the frame's lines relative to the camera, whose position `camera` gives, into a
-    /// vertex buffer large enough for them. The pipeline draws into the scene's `targets`, and
-    /// `pipelines` creates it the first time. Without lines or without a camera, it records
-    /// nothing, and the pass draws nothing.
-    pub(crate) fn upload(
+    /// Asks `pipelines` for the pipeline of a frame with `lines`, which draws into the scene's
+    /// `targets`. A builder asks before it records the pipelines that its frame creates, so the
+    /// list creates this one with the others, at its start. Without lines, it asks for nothing.
+    pub(crate) fn request_pipeline(
         &mut self,
-        list: &mut DrawList,
-        arena: &mut UploadArena,
         lines: &DebugLines<'_>,
-        camera: Option<&CellPosition>,
         pipelines: &mut PipelineCache,
         targets: PassTargets,
-    ) -> Result<(), RecordError> {
-        self.points = 0;
-        let Some(camera) = camera.filter(|_| !lines.is_empty()) else {
-            return Ok(());
-        };
+    ) {
+        if lines.is_empty() {
+            return;
+        }
         // The lines' shader reads no draw index. It tone maps on the 8-bit path, as scene shaders do.
         let targets = PassTargets {
             permutation: targets.permutation & permutation::TONE_MAP,
             ..targets
         };
         self.pipeline = pipelines.id(LINES_DRAW.in_pass(targets));
-        pipelines.create_new(list)?;
+    }
+
+    /// Uploads the frame's lines relative to the camera, whose position `camera` gives, into a
+    /// vertex buffer large enough for them. They draw with the pipeline that `request_pipeline`
+    /// asked for. Without lines or without a camera, it records nothing, and the pass draws
+    /// nothing.
+    pub(crate) fn upload(
+        &mut self,
+        list: &mut DrawList,
+        arena: &mut UploadArena,
+        lines: &DebugLines<'_>,
+        camera: Option<&CellPosition>,
+    ) -> Result<(), RecordError> {
+        self.points = 0;
+        let Some(camera) = camera.filter(|_| !lines.is_empty()) else {
+            return Ok(());
+        };
         let bytes = Self::upload_bytes(lines) as u32;
         if bytes > self.buffer_bytes {
             self.buffer_bytes = grown_size(bytes, u32::MAX);

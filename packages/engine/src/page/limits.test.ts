@@ -25,6 +25,7 @@ const webgpu = (storageBindingBytes: number): CoreDevice => ({
 	maxTextureSize: 0,
 	sharedUploads: true,
 	depth: 'reversed',
+	parallelCompile: true,
 	sceneColor: FORMAT_RGBA16_FLOAT,
 	transparent: false,
 });
@@ -52,6 +53,7 @@ function report(webgl2: Partial<DeviceReport['webgl2']>, features: string[] = []
 const PLAIN: DeviceOptions = {
 	copyUploads: false,
 	depth: undefined,
+	parallelCompile: true,
 	hdr: true,
 	transparent: false,
 };
@@ -202,5 +204,13 @@ describe('the depth mode', () => {
 		expect(coreDevice('webgpu', report({}), { ...PLAIN, depth: 'standard' }).depth).toBe(
 			'reversed',
 		);
+	});
+});
+
+describe('background compiles', () => {
+	it('stay on unless ?compile=wait turns them off', () => {
+		expect(coreDevice('webgl2', report({}), PLAIN).parallelCompile).toBe(true);
+		const wait: DeviceOptions = { ...PLAIN, parallelCompile: false };
+		expect(coreDevice('webgl2', report({}), wait).parallelCompile).toBe(false);
 	});
 });
