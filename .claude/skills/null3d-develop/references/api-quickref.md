@@ -94,11 +94,11 @@ export default defineSketch(async (ctx) => {
 | --- | --- | --- |
 | `scene.createGroup({ name, position, rotation, scale, parent })` | Group | Empty node for hierarchy |
 | `scene.createMesh({ mesh, material, position, rotation, scale, dynamic, castShadows, receiveShadows, layers, name, parent })` | Mesh | Static unless `dynamic: true` |
-| `scene.createInstances(meshOrPrefab, count, { dynamic, colors, attributes, material, origin })` | InstanceBatch | Section 5 |
+| `scene.createInstances(meshOrPrefab, count, { dynamic, colors, attributes, material, layers, origin })` | InstanceBatch | Section 5 |
 | `scene.instantiate(prefab, { position, rotation, scale, parent })` (0.2) | Node | Creates a loaded glTF model |
 | `scene.clone(obj)` (0.2) | same type | Deep copy of a built object |
 | `scene.find(name)` | Node or null | Use at setup, not per frame |
-| `scene.createPerspectiveCamera({ fov, near, far, position, target })` | Camera | fov is vertical, in degrees |
+| `scene.createPerspectiveCamera({ fov, near, far, position, target, layers })` | Camera | fov is vertical, in degrees |
 | `scene.createOrthographicCamera({ height, near, far, position, target })` | Camera | Or left, right, top, bottom |
 | `scene.setActiveCamera(camera)` | | |
 | `scene.createDirectionalLight(opts)` and the other lights | Light | Section 7 |
@@ -147,6 +147,7 @@ const rocks = scene.createInstances(geometry.sphere({ radius: 0.2 }), 10_000, {
   material: materials.standard({ color: '#888888', roughness: 0.9 }),
   dynamic: true,              // uploads every row every frame; false = upload marked rows only
   colors: true,               // adds batch.colors (RGBA, linear, 4 floats per row)
+  layers: 1 << 2,             // every row is on layer 2; the default, 1, is layer 0
   attributes: { tint: 4 },    // (0.2) custom per-instance floats, readable in surface functions
   origin: [0, 0, 0],          // (0.2) rows are relative to this point; set it in large worlds
 });
@@ -158,6 +159,7 @@ rocks.colors;      // Float32Array, 4 floats per row, when colors: true
 rocks.attributes.tint;  // (0.2)
 rocks.count;              // capacity
 rocks.setActiveCount(n);  // draw only the first n rows (pooling)
+rocks.setLayers(mask);    // every row's layers; no rebuild (concepts/render-layers)
 rocks.markDirty(start, count);  // static batches: upload these rows
 rocks.destroy();
 ```

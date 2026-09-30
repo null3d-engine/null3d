@@ -78,6 +78,8 @@ export interface CoreGlue extends CoreErrors {
 	destroyBatch(batch: number, frame: number): number;
 	batchArrays(batch: number, field: number): number;
 	setBatchActiveCount(batch: number, count: number): number;
+	/** Sets the layer mask of every row of a batch, as an unsigned 32-bit number. */
+	setBatchLayers(batch: number, mask: number): number;
 	markBatchDirty(batch: number, start: number, count: number): number;
 	memoryEpoch(): number;
 	/**
@@ -112,7 +114,8 @@ export interface CoreGlue extends CoreErrors {
 	setMaterialColor(material: number, r: number, g: number, b: number): number;
 	/** Changes a material's opacity and keeps its color. */
 	setMaterialOpacity(material: number, opacity: number): number;
-	setCamera(camera: number, fovDegrees: number, near: number, far: number): number;
+	/** Draws from a camera object: its lens, and the layers of the objects it draws. */
+	setCamera(camera: number, fovDegrees: number, near: number, far: number, layers: number): number;
 	setSun(dx: number, dy: number, dz: number, r: number, g: number, b: number): number;
 	setAmbient(r: number, g: number, b: number): number;
 	setBackground(r: number, g: number, b: number): number;
@@ -149,6 +152,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'destroyBatch',
 	'batchArrays',
 	'setBatchActiveCount',
+	'setBatchLayers',
 	'markBatchDirty',
 	'memoryEpoch',
 	'createShapeMesh',

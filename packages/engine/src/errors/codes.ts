@@ -113,6 +113,13 @@ const DOCS = {
 		example: 'E1206: geometry.fromArrays() got 9 numbers in normals for 4 vertices, not 12.',
 		since: '0.1',
 	},
+	E1207: {
+		title: 'Invalid layer mask',
+		cause:
+			'A call that sets layers received a number that is not a 32-bit layer mask: a fraction, NaN, or a number past 32 bits.',
+		example: 'E1207: setLayers() got 2.5 on "Player" (slot 12), which is not a 32-bit layer mask.',
+		since: '0.1',
+	},
 	E1213: {
 		title: 'Invalid setting',
 		cause:
