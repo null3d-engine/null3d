@@ -270,7 +270,7 @@ const stripes = materials.shader({ ...anyStandardOption, wgsl });  // wgsl: a ta
 - `materials.shader` keeps the standard look and lighting, and a WGSL surface function changes the surface before the engine lights it. Every `materials.standard` option feeds `defaultSurface()`. `references/shaders.md` has the contract.
 - Later in 0.1: texture maps (`map`, `normalMap`, `metalnessRoughnessMap`, `aoMap`, `emissiveMap`, `lightMap`), `alphaMode`, `alphaCutoff`, `blending`, `depthWrite`, `depthTest`, `depthBias`, `uvTransform`, `fog: false`, and in `materials.shader` uniforms, textures, vertex offsets and full shaders.
 - `envIntensity` (0.2) comes with environment lighting, and `materials.shadowCatcher` in 0.2.
-- `set()` changes values cheaply at any time. Options that change the shader, such as a texture map, will be fixed when you create the material. So plan to create each variant before play, and switch with `setMaterial`.
+- `set()` changes values cheaply at any time. Options that change the shader or the pipeline are fixed when you create the material: `doubleSided`, `vertexColors`, `flatShading`, and later the texture maps. So create each variant before play, and switch with `setMaterial`.
 
 ## 10. Textures (`api/textures`)
 
