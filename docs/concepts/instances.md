@@ -158,7 +158,7 @@ function remove(row: number): void {
 
 Keep each row's own data, such as a velocity, in your own typed arrays in the same row order, and move it the same way. An active count past the capacity throws [E1108](../errors/E1108.md).
 
-`destroy()` removes a batch at once and frees its rows. After it, stop using the batch and every array that you read from it. Its calls throw [E1101](../errors/E1101.md), and its arrays can point at memory that the engine gives to other data.
+`destroy()` removes a batch at once and frees its rows. After it, stop using the batch and every array that you read from it. Its calls throw [E1101](../errors/E1101.md), and so do its array getters, such as `positions`, in every build. An array that you read before the destroy can point at memory that the engine gives to another batch.
 
 ## Culling
 

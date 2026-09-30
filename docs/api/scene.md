@@ -166,7 +166,7 @@ Many copies of one mesh and material. Write rows straight into the typed arrays;
 | `setActiveCount(count: number): void` | Draws only the first `count` rows. |
 | `setLayers(mask: number): void` | Puts every row on the layers of a 32-bit mask, as `Object3D.setLayers` does for one object. A new mask needs no rebuild. |
 | `markDirty(start = 0, count = this.count - start): void` | Marks rows of a static batch to update and upload. |
-| `destroy(): void` | Removes the batch and frees its rows. Its typed arrays are not valid after this. |
+| `destroy(): void` | Removes the batch and frees its rows. Its typed arrays are not valid after this: another batch can take their memory. |
 
 ### `InstanceOptions`
 
