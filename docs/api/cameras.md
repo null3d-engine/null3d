@@ -8,7 +8,7 @@ summary: "Perspective and orthographic cameras; screenToRay; worldToScreen; laye
 
 # Cameras
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Orthographic cameras, `setOrthoHeight`, `setLayers`, `screenToRay` and `worldToScreen` are not built yet, so coding agents must not use them.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Orthographic cameras, `setOrthoHeight`, `screenToRay` and `worldToScreen` are not built yet, so coding agents must not use them.
 
 A camera is the object that the engine draws the scene from. `scene.createPerspectiveCamera` makes one, and `scene.setActiveCamera` picks the camera that the canvas shows.
 
@@ -46,6 +46,12 @@ A camera is an object, so it has every call of [Objects and transforms](objects.
 
 Cameras are dynamic by default, because most cameras move. Pass `dynamic: false` for a camera that stays still. A camera under a parent moves with it: a camera on a car follows the car.
 
+## Layers
+
+`setLayers(mask)` sets the layers that the camera draws, as a 32-bit mask. The camera draws the objects and instance batches whose masks share a bit with its own. The `layers` option sets the mask when you create the camera. The default, 1, draws layer 0, where every new object starts.
+
+A new mask needs no rebuild, so a sketch can switch a camera's layers in any frame. [Render layers](../concepts/render-layers.md) has an example that shows and hides a group of markers.
+
 ## Several cameras
 
 A scene can have several cameras, and `setActiveCamera` switches between them. The canvas shows the scene from one camera at a time. Until you pick one, and after the engine removes the active camera, the canvas shows only the background.
@@ -54,6 +60,7 @@ A scene can have several cameras, and `setActiveCamera` switches between them. T
 
 - [Scene](scene.md): creating cameras and picking the active one.
 - [Objects and transforms](objects.md): the calls that cameras share with other objects.
+- [Render layers](../concepts/render-layers.md): which objects a camera draws.
 - [Math helpers](math.md): `quat.lookAt`, and why cameras swap its eye and target.
 
 ## API reference
@@ -68,6 +75,7 @@ A perspective camera. Make it the scene's view with `scene.setActiveCamera`.
 
 | Member | Description |
 | --- | --- |
+| `setLayers(mask: number): void` | Sets the layers the camera draws, as a 32-bit mask: it draws the objects whose masks share a layer with it. The default, 1, draws layer 0, where every object starts. |
 | `setFov(degrees: number): void` | Sets the vertical field of view in degrees. |
 | `setNearFar(near: number, far: number): void` | Sets the distances to the near and far clipping planes. |
 

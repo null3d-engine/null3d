@@ -285,8 +285,15 @@ impl PartBuilder {
 
 #[cfg(test)]
 mod tests {
+    use std::f64::consts::{PI, TAU};
+
     use super::*;
     use crate::geometry::{box_geometry, sphere_geometry};
+
+    /// A whole sphere from the engine's generator.
+    fn sphere(radius: f64, segments: [u32; 2]) -> Geometry {
+        sphere_geometry(radius, segments, (0.0, TAU), (0.0, PI)).unwrap()
+    }
 
     /// The vertices that a mesh's triangles reach, in index order, through every part.
     fn resolved_vertices(storage: &MeshStorage, id: u32) -> Vec<Vec<f32>> {
@@ -346,9 +353,9 @@ mod tests {
     #[test]
     fn rebased_indices_reach_the_same_vertices_in_both_packings() {
         let meshes = [
-            box_geometry(1.0, 1.0, 1.0, [1, 1, 1]),
-            sphere_geometry(0.5, 16, 8),
-            box_geometry(2.0, 1.0, 0.5, [2, 2, 2]),
+            box_geometry(1.0, 1.0, 1.0, [1, 1, 1]).unwrap(),
+            sphere(0.5, [16, 8]),
+            box_geometry(2.0, 1.0, 0.5, [2, 2, 2]).unwrap(),
         ];
         for packing in [Packing::SharedBuffers, Packing::Pages] {
             let mut storage = MeshStorage::new(packing);
@@ -402,7 +409,7 @@ mod tests {
     #[test]
     fn pages_hold_at_most_65535_vertices() {
         // Spheres of 33 x 17 = 561 vertices fit 116 to a page.
-        let sphere = sphere_geometry(1.0, 32, 16);
+        let sphere = sphere(1.0, [32, 16]);
         let mut storage = MeshStorage::new(Packing::Pages);
         for _ in 0..300 {
             storage.add(&sphere).unwrap();
@@ -504,7 +511,7 @@ mod tests {
 
     #[test]
     fn no_shared_buffer_exceeds_its_byte_limit() {
-        let mesh = box_geometry(1.0, 1.0, 1.0, [1, 1, 1]);
+        let mesh = box_geometry(1.0, 1.0, 1.0, [1, 1, 1]).unwrap();
         let limit = 4096;
         let mut storage = MeshStorage::with_page_limit(Packing::SharedBuffers, limit);
         for _ in 0..100 {
@@ -545,7 +552,7 @@ mod tests {
     fn a_box_radius_reaches_its_corners() {
         let mut storage = MeshStorage::new(Packing::SharedBuffers);
         let id = storage
-            .add(&box_geometry(0.6, 0.6, 0.6, [1, 1, 1]))
+            .add(&box_geometry(0.6, 0.6, 0.6, [1, 1, 1]).unwrap())
             .unwrap();
         assert!((storage.mesh(id).unwrap().radius - 0.3 * 3f32.sqrt()).abs() < 1e-6);
     }
