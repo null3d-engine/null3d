@@ -1,7 +1,7 @@
 // The renderer interface. The same renderer runs in the render worker (pipelined mode), in the sketch
 // worker (low-latency mode) or on the page's main thread (single-threaded mode and ?render=main).
 
-import { type CompletionSignal, FenceCompletion, QueueCompletion } from '../gpu/completion';
+import { type Completion, FenceCompletion, QueueCompletion } from '../gpu/completion';
 import { readbackWebGL2, readbackWebGPU } from '../gpu/readback';
 import {
 	contextFinished,
@@ -33,8 +33,11 @@ export interface FrameInput {
 
 export interface Renderer {
 	readonly tier: Tier;
-	/** How the renderer learns that the GPU finished a frame, which it counts while the page measures. */
-	readonly completion: CompletionSignal;
+	/**
+	 * Counts the frames that the GPU finished, and says how many it has not; undefined without a
+	 * metrics buffer.
+	 */
+	readonly completions: Completion | undefined;
 	/** Resizes the drawing buffer, in device pixels. Only the thread that owns the canvas calls this. */
 	resize(width: number, height: number): void;
 	/** Draws a frame to the canvas, adding its phase times and counters to the frame's record. */
@@ -85,9 +88,8 @@ class WebGPURenderer implements Renderer {
 	private readonly format: GPUTextureFormat;
 	private readonly timer: GpuTimer | undefined;
 	private readonly pass = new RenderPassSetup();
-	private readonly completions: QueueCompletion | undefined;
+	readonly completions: QueueCompletion | undefined;
 	private simulated = false;
-	readonly completion: CompletionSignal = 'queue';
 	readonly lost: Promise<string>;
 
 	constructor(
@@ -171,8 +173,7 @@ class WebGPURenderer implements Renderer {
 
 class WebGL2Renderer implements Renderer {
 	readonly tier: Tier = 'webgl2';
-	readonly completion: CompletionSignal = 'fence';
-	private readonly completions: FenceCompletion | undefined;
+	readonly completions: FenceCompletion | undefined;
 	private readonly release = new AbortController();
 	readonly lost: Promise<string>;
 
@@ -204,7 +205,6 @@ class WebGL2Renderer implements Renderer {
 
 	drawFrame(input: FrameInput, record: FrameRecorder): void {
 		const start = performance.now();
-		this.completions?.poll();
 		this.clear(input.background);
 		this.completions?.afterSubmit(input.frame);
 		record.addPhase(Phase.Replay, performance.now() - start);

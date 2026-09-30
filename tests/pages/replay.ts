@@ -67,7 +67,11 @@ run('replay', async () => {
 	frame.set([sun[0]! / length, sun[1]! / length, sun[2]! / length, 0], 20);
 	frame.set([3, 3, 3, 0], 24);
 	frame.set([0.4, 0.4, 0.4, 0], 28);
-	const materials = new Float32Array([0.8, 0.1, 0.1, 1, 0.1, 0.3, 0.9, 1]);
+	// Two rows of the material table, each starting with its color and opacity. The shader reads
+	// nothing else of them.
+	const materials = new Float32Array((2 * G.SIZE_MATERIAL_BYTES) / 4);
+	materials.set([0.8, 0.1, 0.1, 1], 0);
+	materials.set([0.1, 0.3, 0.9, 1], G.SIZE_MATERIAL_BYTES / 4);
 	// The planes, the instance count and the view's layers, then the offset from the camera to each
 	// grid cell. Every instance here lies in cell 0, whose zero offset keeps the positions in world
 	// space.
@@ -111,8 +115,6 @@ run('replay', async () => {
 		[9, indirect.byteLength, U.INDIRECT | U.STORAGE | U.COPY_DST | U.COPY_SRC, blobs.indirect],
 		[10, cull.byteLength, U.UNIFORM | U.COPY_DST, blobs.cull],
 		[11, instanceLayers.byteLength, U.STORAGE | U.COPY_DST, blobs.instanceLayers],
-		// The maps table, which the frame group binds, though no pipeline here reads a map.
-		[12, materials.byteLength, U.STORAGE | U.COPY_DST, -1],
 	];
 	for (const [id, size, usage] of buffers) memory.push(G.OP_CREATE_BUFFER, id, size, usage);
 	for (const [id, size, , source] of buffers)
@@ -157,10 +159,9 @@ run('replay', async () => {
 		G.OP_CREATE_BIND_GROUP,
 		1,
 		G.LAYOUT_FRAME,
-		3,
+		2,
 		...[0, G.RESOURCE_BUFFER, 3, 0, 0],
 		...[1, G.RESOURCE_BUFFER, 4, 0, 0],
-		...[2, G.RESOURCE_BUFFER, 12, 0, 0],
 	);
 	memory.push(
 		G.OP_CREATE_BIND_GROUP,

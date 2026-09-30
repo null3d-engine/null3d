@@ -48,8 +48,8 @@ These numbers are starting points. The engine docs page `guides/performance` hol
 3. Read numbers in code or tests: `debug.frameStats()` returns the same values.
 4. Profile JavaScript in the browser's performance panel. Sketch code runs in the worker named `null3d-sketch`; look there, not on the main thread.
 5. Check the WebGL2 path: add `?gpu=webgl2` to the URL. Phones without WebGPU use this path, and it does more CPU work (culling on job workers).
-6. On phones, GPU timers are rare (under 1% of Android and iOS reports have them on WebGL2), so judge the GPU by frame intervals with the CPU phases subtracted.
-7. `engine.measure(seconds)` on the page returns these figures. The `guides/performance` page explains each one and how to measure fairly. Warm up, keep the page visible and the screen unlocked, and compare runs at the same `refreshHz`. When `completedFps` is below `presentedFps`, the GPU is the bottleneck: frames queue on it.
+6. On phones, GPU timers are rare: under 1% of Android and iOS reports have them on WebGL2. Judge the GPU there by the completed rate, `completedFps`, and by `gpuLatencyMs`.
+7. `engine.measure(seconds)` on the page returns these figures. The `guides/performance` page explains each one and how to measure fairly. Warm up, keep the page visible and the screen unlocked, and compare runs at the same `refreshHz`. The engine lets at most two frames wait on the GPU. When the GPU is the bottleneck, `completedFps` and `presentedFps` fall below `refreshHz` together, and `gpuLatencyMs` stays near two frame intervals.
 
 ## 4. Symptoms, causes and fixes
 
@@ -146,3 +146,4 @@ Performance advice for three.js and other engines assumes things that do not hol
 | Turn off matrix updates for still objects | Objects are static by default and cost nothing until a setter changes them |
 | Set a needs-update flag after a change | Setters mark changes themselves |
 | Track GPU completion yourself | `engine.measure` reports `completedFps` and `gpuLatencyMs` |
+| Limit the frames in flight | The engine holds them to two |
