@@ -209,23 +209,29 @@ pub struct GpuDrivenRenderer {
     created: bool,
 }
 
+/// The builder's scene settings: meshes in shared buffers, `max_materials` materials, and
+/// textures with the builder's ids, as large as every WebGPU device allows.
+fn scene_settings(max_materials: u32) -> SceneSettings {
+    let textures = TextureStore::new(
+        TextureIds {
+            first_texture: ids::TEXTURE_ARRAYS,
+            first_sampler: ids::SAMPLERS,
+            first_group: ids::TEXTURE_GROUPS,
+        },
+        BUDGET[Limit::TextureDimension2D as usize],
+    );
+    SceneSettings::new(
+        MeshStorage::new(Packing::SharedBuffers),
+        max_materials,
+        textures,
+    )
+}
+
 impl GpuDrivenRenderer {
     pub fn new(config: RendererConfig) -> Self {
-        let textures = TextureStore::new(
-            TextureIds {
-                first_texture: ids::TEXTURE_ARRAYS,
-                first_sampler: ids::SAMPLERS,
-                first_group: ids::TEXTURE_GROUPS,
-            },
-            BUDGET[Limit::TextureDimension2D as usize],
-        );
         Self {
             config,
-            settings: SceneSettings::new(
-                MeshStorage::new(Packing::SharedBuffers),
-                config.max_materials,
-                textures,
-            ),
+            settings: scene_settings(config.max_materials),
             meshes: MeshBuffers::new(ids::PAGES),
             pipelines: PipelineCache::default(),
             lists: ParityLists::new(config.draw_list_words),

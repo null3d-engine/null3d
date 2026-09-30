@@ -21,6 +21,7 @@ pub mod scene_field {
     pub const SCALES: u32 = 2;
     pub const LOCAL_RADII: u32 = 3;
     pub const DIRTY_WORDS: u32 = 4;
+    pub const LOCAL_CENTERS: u32 = 5;
 }
 
 /// Fields of `batchArrays`.
@@ -142,12 +143,22 @@ pub fn typescript() -> String {
                 ("SET_DYNAMIC", op::SET_DYNAMIC),
                 ("SET_VISIBLE", op::SET_VISIBLE),
                 ("SET_LAYERS", op::SET_LAYERS),
+                ("SET_FLAGS", op::SET_FLAGS),
+                ("SET_RENDER_ORDER", op::SET_RENDER_ORDER),
+                ("KEEP_WORLD", op::KEEP_WORLD),
                 ("WORDS", COMMAND_WORDS),
             ],
         ),
         (
             "FLAG",
-            &[("DYNAMIC", flags::DYNAMIC), ("VISIBLE", flags::VISIBLE)],
+            &[
+                ("DYNAMIC", flags::DYNAMIC),
+                ("VISIBLE", flags::VISIBLE),
+                ("CAST_SHADOWS", flags::CAST_SHADOWS),
+                ("RECEIVE_SHADOWS", flags::RECEIVE_SHADOWS),
+                ("UNCULLED", flags::UNCULLED),
+                ("CUSTOM_BOUNDS", flags::CUSTOM_BOUNDS),
+            ],
         ),
         ("LAYERS", &[("DEFAULT", DEFAULT_LAYERS)]),
         (
@@ -158,6 +169,7 @@ pub fn typescript() -> String {
                 ("SCALES", scene_field::SCALES),
                 ("LOCAL_RADII", scene_field::LOCAL_RADII),
                 ("DIRTY_WORDS", scene_field::DIRTY_WORDS),
+                ("LOCAL_CENTERS", scene_field::LOCAL_CENTERS),
             ],
         ),
         (

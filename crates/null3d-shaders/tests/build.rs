@@ -850,3 +850,138 @@ fn the_output_is_the_same_on_every_build() {
     let second = typescript(&build(&inputs).unwrap());
     assert_eq!(first, second);
 }
+
+/// The library modules that shaders import.
+const LIBRARY_MODULES: [&str; 8] = [
+    "math", "noise", "color", "lighting", "fog", "vertex", "depth", "sdf",
+];
+
+/// Splits a parameter list at the commas outside angle brackets and parentheses.
+fn split_parameters(list: &str) -> Vec<&str> {
+    let mut parts = Vec::new();
+    let (mut depth, mut start) = (0, 0);
+    for (at, c) in list.char_indices() {
+        match c {
+            '<' | '(' => depth += 1,
+            '>' | ')' => depth -= 1,
+            ',' if depth == 0 => {
+                parts.push(list[start..at].trim());
+                start = at + 1;
+            }
+            _ => {}
+        }
+    }
+    parts.push(list[start..].trim());
+    parts.into_iter().filter(|part| !part.is_empty()).collect()
+}
+
+/// A fragment shader that imports one library module whole and calls each of its functions with
+/// zero values, and the names of those functions.
+fn calls_every_function(module: &str, text: &str) -> (String, Vec<String>) {
+    let structs: Vec<&str> = text
+        .lines()
+        .filter_map(|line| line.strip_prefix("struct "))
+        .filter_map(|rest| rest.split_whitespace().next())
+        .collect();
+    let lines: Vec<&str> = text.lines().collect();
+    let mut names = Vec::new();
+    let mut calls = String::new();
+    for (at, line) in lines.iter().enumerate() {
+        if !line.starts_with("fn ") {
+            continue;
+        }
+        let end = at
+            + lines[at..]
+                .iter()
+                .position(|l| l.trim_end().ends_with('{'))
+                .unwrap();
+        let signature = lines[at..=end].join(" ");
+        let name = signature["fn ".len()..].split('(').next().unwrap().trim();
+        let open = signature.find('(').unwrap();
+        let close = signature.rfind(')').unwrap();
+        let arguments: Vec<String> = split_parameters(&signature[open + 1..close])
+            .into_iter()
+            .map(|parameter| {
+                let ty = parameter.split_once(':').unwrap().1.trim();
+                if structs.contains(&ty) {
+                    format!("null3d::{module}::{ty}()")
+                } else {
+                    format!("{ty}()")
+                }
+            })
+            .collect();
+        calls.push_str(&format!(
+            "    _ = null3d::{module}::{name}({});\n",
+            arguments.join(", ")
+        ));
+        names.push(name.to_owned());
+    }
+    let source = format!(
+        "#import null3d::{module}\n\n@vertex\nfn vs_main() -> @builtin(position) vec4f {{\n    return vec4f(0.0);\n}}\n\n@fragment\nfn fs_main() -> @location(0) vec4f {{\n{calls}    return vec4f(1.0);\n}}\n"
+    );
+    (source, names)
+}
+
+#[test]
+fn each_library_module_builds_every_function_for_webgpu_and_webgl2() {
+    let root = std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/../.."));
+    let library = Inputs::read(root).unwrap().files;
+    for module in LIBRARY_MODULES {
+        let text = &library[&format!("lib/{module}.wgsl")];
+        let (source, names) = calls_every_function(module, text);
+        assert!(!names.is_empty(), "null3d::{module} has no functions");
+        let mut inputs = project(&source, &[("v", BOTH_TARGETS)], &[]);
+        inputs.files.extend(
+            library
+                .iter()
+                .filter(|(file, _)| file.starts_with("lib/"))
+                .map(|(file, text)| (file.clone(), text.clone())),
+        );
+        let output = build(&inputs)
+            .unwrap_or_else(|e| panic!("null3d::{module} does not build:\n{e}\n{source}"));
+        let variant = &output.shaders["shader"]["v"];
+        let wgsl = &variant.wgsl.as_ref().unwrap().source;
+        let glsl = &variant.glsl.as_ref().unwrap()["main"].fragment.source;
+        for name in &names {
+            // The output writer adds `_` to a name that ends in a digit.
+            let called = |text: &str| {
+                text.contains(&format!("{name}(")) || text.contains(&format!("{name}_("))
+            };
+            assert!(
+                called(wgsl),
+                "null3d::{module}::{name} is missing from the WGSL"
+            );
+            assert!(
+                called(glsl),
+                "null3d::{module}::{name} is missing from the GLSL"
+            );
+        }
+    }
+}
+
+#[test]
+fn a_name_that_an_imported_module_takes_fails_with_a_fix() {
+    let source = "#import null3d::math\n\n@fragment\nfn fs_main() -> @location(0) vec4f {\n    let math = 2.0;\n    return vec4f(math);\n}\n";
+    let problem = only_problem(build_wgsl(source));
+    let shown = problem.to_string();
+    assert_eq!(problem.file.as_deref(), Some(SHADER), "{shown}");
+    assert_eq!(
+        (problem.line, problem.column),
+        (Some(5), Some(9)),
+        "{shown}"
+    );
+    assert!(
+        problem
+            .message
+            .starts_with("`math` is the name of the module null3d::math"),
+        "{shown}"
+    );
+    assert!(
+        problem.message.contains("`#import null3d::math::{item}`"),
+        "{shown}"
+    );
+
+    // Importing items by name leaves the module's name free.
+    let named = source.replace("#import null3d::math", "#import null3d::math::{square}");
+    build_wgsl(&named).unwrap();
+}

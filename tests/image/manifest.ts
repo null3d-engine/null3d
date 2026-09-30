@@ -95,6 +95,10 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 		switches: ['uploads=copy'],
 		reference: 'scene',
 	},
+	// Object calls: turns about an object's own axes, a move along them, a hand moved under a turned
+	// and scaled arm with keepWorld, which then swings with the arm, and bounds that culling tests:
+	// one box that its bounds hide, and one that is never culled.
+	{ name: 'objects', sketch: 'tests/pages/sketches/objects-sketch.ts', hold: 1 },
 	// A scene that spans grid cells, with a turned tree and a camera on a turned rig.
 	{ name: 'cells', sketch: 'tests/pages/sketches/cells-sketch.ts', hold: 1 },
 	// The same scene 100 km out, away from a cell's center, and about 1,000 km out at the center of a

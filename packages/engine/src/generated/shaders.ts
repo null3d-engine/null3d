@@ -102,9 +102,9 @@ struct Bucket {
     radius: f32,
     first_draw: u32,
     draws: u32,
-    pad0_: u32,
-    pad1_: u32,
-    pad2_: u32,
+    center_x: f32,
+    center_y: f32,
+    center_z: f32,
 }
 
 const CELL_SHIFT: u32 = 23u;
@@ -158,45 +158,46 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     let r1_ = (_e52 + vec4<f32>(0f, 0f, 0f, offset.y));
     let _e65 = matrices[((i * 3u) + 2u)];
     let r2_ = (_e65 + vec4<f32>(0f, 0f, 0f, offset.z));
-    let center = vec3<f32>(r0_.w, r1_.w, r2_.w);
-    let scale = max(length(vec3<f32>(r0_.x, r1_.x, r2_.x)), max(length(vec3<f32>(r0_.y, r1_.y, r2_.y)), length(vec3<f32>(r0_.z, r1_.z, r2_.z))));
     let bucket = buckets[b];
+    let local_center = vec4<f32>(bucket.center_x, bucket.center_y, bucket.center_z, 1f);
+    let center = vec3<f32>(dot(r0_, local_center), dot(r1_, local_center), dot(r2_, local_center));
+    let scale = max(length(vec3<f32>(r0_.x, r1_.x, r2_.x)), max(length(vec3<f32>(r0_.y, r1_.y, r2_.y)), length(vec3<f32>(r0_.z, r1_.z, r2_.z))));
     let radius = (bucket.radius * scale);
     loop {
-        let _e99 = p;
-        if (_e99 < 6u) {
+        let _e104 = p;
+        if (_e104 < 6u) {
         } else {
             break;
         }
         {
-            let _e104 = p;
-            let plane = params.planes[_e104];
+            let _e109 = p;
+            let plane = params.planes[_e109];
             if ((dot(plane.xyz, center) + plane.w) < -(radius)) {
                 return;
             }
         }
         continuing {
-            let _e114 = p;
-            p = (_e114 + 1u);
+            let _e119 = p;
+            p = (_e119 + 1u);
         }
     }
-    let _e124 = atomicAdd((&indirect[((bucket.first_draw * INDIRECT_WORDS) + 1u)]), 1u);
+    let _e129 = atomicAdd((&indirect[((bucket.first_draw * INDIRECT_WORDS) + 1u)]), 1u);
     loop {
-        let _e126 = d;
-        if (_e126 < bucket.draws) {
+        let _e131 = d;
+        if (_e131 < bucket.draws) {
         } else {
             break;
         }
         {
-            let _e130 = d;
-            let _e139 = atomicAdd((&indirect[(((bucket.first_draw + _e130) * INDIRECT_WORDS) + 1u)]), 1u);
+            let _e135 = d;
+            let _e144 = atomicAdd((&indirect[(((bucket.first_draw + _e135) * INDIRECT_WORDS) + 1u)]), 1u);
         }
         continuing {
-            let _e141 = d;
-            d = (_e141 + 1u);
+            let _e146 = d;
+            d = (_e146 + 1u);
         }
     }
-    let dst = ((bucket.base + _e124) * 4u);
+    let dst = ((bucket.base + _e129) * 4u);
     visible[dst] = r0_;
     visible[(dst + 1u)] = r1_;
     visible[(dst + 2u)] = r2_;
@@ -427,6 +428,11 @@ struct Frame {
 struct Material {
     vec4 color;
 };
+struct Transform {
+    vec4 x;
+    vec4 y;
+    vec4 z;
+};
 struct InstanceIn {
     uint instance;
 };
@@ -455,10 +461,14 @@ struct VertexOut {
     vec3 normal;
     uint material;
 };
+const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
 const uint CELL_SHIFT = 23u;
+const float PI = 3.1415927;
+const float INV_PI = 0.31830987;
+const float EPSILON = 1e-6;
 
 layout(std140) uniform Frame_block_0Vertex { Frame _group_0_binding_0_vs; };
 
@@ -478,6 +488,20 @@ layout(location = 0) in vec3 _p2vs_location0;
 layout(location = 1) in vec3 _p2vs_location1;
 smooth out vec3 _vs2fs_location0;
 flat out uint _vs2fs_location1;
+
+vec3 transform_point(Transform t, vec3 p) {
+    vec4 q = vec4(p, 1.0);
+    return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
+}
+
+vec3 transform_direction(Transform t_1, vec3 d) {
+    vec4 q_1 = vec4(d, 0.0);
+    return vec3(dot(t_1.x, q_1), dot(t_1.y, q_1), dot(t_1.z, q_1));
+}
+
+vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
+    return (view_proj * vec4(relative_position, 1.0));
+}
 
 Instance instance_of(uvec4 record, uint instance) {
     uint source = 0u;
@@ -532,18 +556,25 @@ Instance find_instance(InstanceIn i_1) {
     return _e6;
 }
 
-vec4 clip_position(Instance found, vec3 position) {
-    vec4 p = vec4(position, 1.0);
-    if (!(found.drawn)) {
-        return vec4(2.0, 2.0, 2.0, 1.0);
-    }
-    mat4x4 _e13 = _group_0_binding_0_vs.view_proj;
-    return (_e13 * vec4(dot(found.row_x, p), dot(found.row_y, p), dot(found.row_z, p), 1.0));
+Transform transform_of(Instance found) {
+    return Transform(found.row_x, found.row_y, found.row_z);
 }
 
-vec3 world_direction(Instance found_1, vec3 direction) {
-    vec4 d = vec4(direction, 0.0);
-    return vec3(dot(found_1.row_x, d), dot(found_1.row_y, d), dot(found_1.row_z, d));
+vec4 clip_position(Instance found_1, vec3 position) {
+    if (!(found_1.drawn)) {
+        return OUTSIDE_CLIP;
+    }
+    mat4x4 _e6 = _group_0_binding_0_vs.view_proj;
+    Transform _e7 = transform_of(found_1);
+    vec3 _e9 = transform_point(_e7, position);
+    vec4 _e10 = to_clip(_e6, _e9);
+    return _e10;
+}
+
+vec3 world_direction(Instance found_2, vec3 direction) {
+    Transform _e1 = transform_of(found_2);
+    vec3 _e3 = transform_direction(_e1, direction);
+    return _e3;
 }
 
 vec3 lambert(vec3 albedo, vec3 normal, vec3 to_light, vec3 light, vec3 ambient) {
@@ -635,6 +666,11 @@ struct Frame {
 struct Material {
     vec4 color;
 };
+struct Transform {
+    vec4 x;
+    vec4 y;
+    vec4 z;
+};
 struct InstanceIn {
     uint instance;
 };
@@ -663,10 +699,14 @@ struct VertexOut {
     vec3 normal;
     uint material;
 };
+const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
 const uint CELL_SHIFT = 23u;
+const float PI = 3.1415927;
+const float INV_PI = 0.31830987;
+const float EPSILON = 1e-6;
 
 layout(std140) uniform Frame_block_0Fragment { Frame _group_0_binding_0_fs; };
 
@@ -676,23 +716,44 @@ smooth in vec3 _vs2fs_location0;
 flat in uint _vs2fs_location1;
 layout(location = 0) out vec4 _fs2p_location0;
 
+vec3 transform_point(Transform t, vec3 p) {
+    vec4 q = vec4(p, 1.0);
+    return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
+}
+
+vec3 transform_direction(Transform t_1, vec3 d) {
+    vec4 q_1 = vec4(d, 0.0);
+    return vec3(dot(t_1.x, q_1), dot(t_1.y, q_1), dot(t_1.z, q_1));
+}
+
+vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
+    return (view_proj * vec4(relative_position, 1.0));
+}
+
 Material material_of(uint id) {
     Material _e4 = _group_0_binding_1_fs.items[id];
     return _e4;
 }
 
-vec4 clip_position(Instance found, vec3 position) {
-    vec4 p = vec4(position, 1.0);
-    if (!(found.drawn)) {
-        return vec4(2.0, 2.0, 2.0, 1.0);
-    }
-    mat4x4 _e13 = _group_0_binding_0_fs.view_proj;
-    return (_e13 * vec4(dot(found.row_x, p), dot(found.row_y, p), dot(found.row_z, p), 1.0));
+Transform transform_of(Instance found) {
+    return Transform(found.row_x, found.row_y, found.row_z);
 }
 
-vec3 world_direction(Instance found_1, vec3 direction) {
-    vec4 d = vec4(direction, 0.0);
-    return vec3(dot(found_1.row_x, d), dot(found_1.row_y, d), dot(found_1.row_z, d));
+vec4 clip_position(Instance found_1, vec3 position) {
+    if (!(found_1.drawn)) {
+        return OUTSIDE_CLIP;
+    }
+    mat4x4 _e6 = _group_0_binding_0_fs.view_proj;
+    Transform _e7 = transform_of(found_1);
+    vec3 _e9 = transform_point(_e7, position);
+    vec4 _e10 = to_clip(_e6, _e9);
+    return _e10;
+}
+
+vec3 world_direction(Instance found_2, vec3 direction) {
+    Transform _e1 = transform_of(found_2);
+    vec3 _e3 = transform_direction(_e1, direction);
+    return _e3;
 }
 
 vec3 lambert(vec3 albedo, vec3 normal, vec3 to_light, vec3 light, vec3 ambient) {
@@ -761,6 +822,11 @@ struct Frame {
 struct Material {
     vec4 color;
 };
+struct Transform {
+    vec4 x;
+    vec4 y;
+    vec4 z;
+};
 struct InstanceIn {
     uint instance;
     uint draw;
@@ -790,10 +856,14 @@ struct VertexOut {
     vec3 normal;
     uint material;
 };
+const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
 const uint CELL_SHIFT = 23u;
+const float PI = 3.1415927;
+const float INV_PI = 0.31830987;
+const float EPSILON = 1e-6;
 
 layout(std140) uniform Frame_block_0Vertex { Frame _group_0_binding_0_vs; };
 
@@ -813,6 +883,20 @@ layout(location = 0) in vec3 _p2vs_location0;
 layout(location = 1) in vec3 _p2vs_location1;
 smooth out vec3 _vs2fs_location0;
 flat out uint _vs2fs_location1;
+
+vec3 transform_point(Transform t, vec3 p) {
+    vec4 q = vec4(p, 1.0);
+    return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
+}
+
+vec3 transform_direction(Transform t_1, vec3 d) {
+    vec4 q_1 = vec4(d, 0.0);
+    return vec3(dot(t_1.x, q_1), dot(t_1.y, q_1), dot(t_1.z, q_1));
+}
+
+vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
+    return (view_proj * vec4(relative_position, 1.0));
+}
 
 Instance instance_of(uvec4 record, uint instance) {
     uint source = 0u;
@@ -867,18 +951,25 @@ Instance find_instance(InstanceIn i_1) {
     return _e7;
 }
 
-vec4 clip_position(Instance found, vec3 position) {
-    vec4 p = vec4(position, 1.0);
-    if (!(found.drawn)) {
-        return vec4(2.0, 2.0, 2.0, 1.0);
-    }
-    mat4x4 _e13 = _group_0_binding_0_vs.view_proj;
-    return (_e13 * vec4(dot(found.row_x, p), dot(found.row_y, p), dot(found.row_z, p), 1.0));
+Transform transform_of(Instance found) {
+    return Transform(found.row_x, found.row_y, found.row_z);
 }
 
-vec3 world_direction(Instance found_1, vec3 direction) {
-    vec4 d = vec4(direction, 0.0);
-    return vec3(dot(found_1.row_x, d), dot(found_1.row_y, d), dot(found_1.row_z, d));
+vec4 clip_position(Instance found_1, vec3 position) {
+    if (!(found_1.drawn)) {
+        return OUTSIDE_CLIP;
+    }
+    mat4x4 _e6 = _group_0_binding_0_vs.view_proj;
+    Transform _e7 = transform_of(found_1);
+    vec3 _e9 = transform_point(_e7, position);
+    vec4 _e10 = to_clip(_e6, _e9);
+    return _e10;
+}
+
+vec3 world_direction(Instance found_2, vec3 direction) {
+    Transform _e1 = transform_of(found_2);
+    vec3 _e3 = transform_direction(_e1, direction);
+    return _e3;
 }
 
 vec3 lambert(vec3 albedo, vec3 normal, vec3 to_light, vec3 light, vec3 ambient) {
@@ -970,6 +1061,11 @@ struct Frame {
 struct Material {
     vec4 color;
 };
+struct Transform {
+    vec4 x;
+    vec4 y;
+    vec4 z;
+};
 struct InstanceIn {
     uint instance;
     uint draw;
@@ -999,10 +1095,14 @@ struct VertexOut {
     vec3 normal;
     uint material;
 };
+const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
 const uint CELL_SHIFT = 23u;
+const float PI = 3.1415927;
+const float INV_PI = 0.31830987;
+const float EPSILON = 1e-6;
 
 layout(std140) uniform Frame_block_0Fragment { Frame _group_0_binding_0_fs; };
 
@@ -1012,23 +1112,44 @@ smooth in vec3 _vs2fs_location0;
 flat in uint _vs2fs_location1;
 layout(location = 0) out vec4 _fs2p_location0;
 
+vec3 transform_point(Transform t, vec3 p) {
+    vec4 q = vec4(p, 1.0);
+    return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
+}
+
+vec3 transform_direction(Transform t_1, vec3 d) {
+    vec4 q_1 = vec4(d, 0.0);
+    return vec3(dot(t_1.x, q_1), dot(t_1.y, q_1), dot(t_1.z, q_1));
+}
+
+vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
+    return (view_proj * vec4(relative_position, 1.0));
+}
+
 Material material_of(uint id) {
     Material _e4 = _group_0_binding_1_fs.items[id];
     return _e4;
 }
 
-vec4 clip_position(Instance found, vec3 position) {
-    vec4 p = vec4(position, 1.0);
-    if (!(found.drawn)) {
-        return vec4(2.0, 2.0, 2.0, 1.0);
-    }
-    mat4x4 _e13 = _group_0_binding_0_fs.view_proj;
-    return (_e13 * vec4(dot(found.row_x, p), dot(found.row_y, p), dot(found.row_z, p), 1.0));
+Transform transform_of(Instance found) {
+    return Transform(found.row_x, found.row_y, found.row_z);
 }
 
-vec3 world_direction(Instance found_1, vec3 direction) {
-    vec4 d = vec4(direction, 0.0);
-    return vec3(dot(found_1.row_x, d), dot(found_1.row_y, d), dot(found_1.row_z, d));
+vec4 clip_position(Instance found_1, vec3 position) {
+    if (!(found_1.drawn)) {
+        return OUTSIDE_CLIP;
+    }
+    mat4x4 _e6 = _group_0_binding_0_fs.view_proj;
+    Transform _e7 = transform_of(found_1);
+    vec3 _e9 = transform_point(_e7, position);
+    vec4 _e10 = to_clip(_e6, _e9);
+    return _e10;
+}
+
+vec3 world_direction(Instance found_2, vec3 direction) {
+    Transform _e1 = transform_of(found_2);
+    vec3 _e3 = transform_direction(_e1, direction);
+    return _e3;
 }
 
 vec3 lambert(vec3 albedo, vec3 normal, vec3 to_light, vec3 light, vec3 ambient) {
@@ -1087,6 +1208,12 @@ struct Material {
     color: vec4<f32>,
 }
 
+struct Transform {
+    x: vec4<f32>,
+    y: vec4<f32>,
+    z: vec4<f32>,
+}
+
 struct InstanceIn {
     @location(8) row_x: vec4<f32>,
     @location(9) row_y: vec4<f32>,
@@ -1113,10 +1240,29 @@ struct VertexOut {
     @location(1) @interpolate(flat, either) material: u32,
 }
 
+const OUTSIDE_CLIP: vec4<f32> = vec4<f32>(2f, 2f, 2f, 1f);
+const PI: f32 = 3.1415927f;
+const INV_PI: f32 = 0.31830987f;
+const EPSILON: f32 = 0.000001f;
+
 @group(0) @binding(0)
 var<uniform> frame: Frame;
 @group(0) @binding(1)
 var<storage> materials: array<Material>;
+
+fn transform_point(t: Transform, p: vec3<f32>) -> vec3<f32> {
+    let q = vec4<f32>(p, 1f);
+    return vec3<f32>(dot(t.x, q), dot(t.y, q), dot(t.z, q));
+}
+
+fn transform_direction(t_1: Transform, d: vec3<f32>) -> vec3<f32> {
+    let q_1 = vec4<f32>(d, 0f);
+    return vec3<f32>(dot(t_1.x, q_1), dot(t_1.y, q_1), dot(t_1.z, q_1));
+}
+
+fn to_clip(view_proj: mat4x4<f32>, relative_position: vec3<f32>) -> vec4<f32> {
+    return (view_proj * vec4<f32>(relative_position, 1f));
+}
 
 fn material_of(id: u32) -> Material {
     let _e3 = materials[id];
@@ -1127,18 +1273,25 @@ fn find_instance(i_1: InstanceIn) -> Instance {
     return Instance(i_1.row_x, i_1.row_y, i_1.row_z, i_1.ids.x, true);
 }
 
-fn clip_position(found: Instance, position: vec3<f32>) -> vec4<f32> {
-    let p = vec4<f32>(position, 1f);
-    if !(found.drawn) {
-        return vec4<f32>(2f, 2f, 2f, 1f);
-    }
-    let _e13 = frame.view_proj;
-    return (_e13 * vec4<f32>(dot(found.row_x, p), dot(found.row_y, p), dot(found.row_z, p), 1f));
+fn transform_of(found: Instance) -> Transform {
+    return Transform(found.row_x, found.row_y, found.row_z);
 }
 
-fn world_direction(found_1: Instance, direction: vec3<f32>) -> vec3<f32> {
-    let d = vec4<f32>(direction, 0f);
-    return vec3<f32>(dot(found_1.row_x, d), dot(found_1.row_y, d), dot(found_1.row_z, d));
+fn clip_position(found_1: Instance, position: vec3<f32>) -> vec4<f32> {
+    if !(found_1.drawn) {
+        return OUTSIDE_CLIP;
+    }
+    let _e6 = frame.view_proj;
+    let _e7 = transform_of(found_1);
+    let _e9 = transform_point(_e7, position);
+    let _e10 = to_clip(_e6, _e9);
+    return _e10;
+}
+
+fn world_direction(found_2: Instance, direction: vec3<f32>) -> vec3<f32> {
+    let _e1 = transform_of(found_2);
+    let _e3 = transform_direction(_e1, direction);
+    return _e3;
 }
 
 fn lambert(albedo: vec3<f32>, normal: vec3<f32>, to_light: vec3<f32>, light: vec3<f32>, ambient: vec3<f32>) -> vec3<f32> {
@@ -1312,6 +1465,4429 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
 			},
 		},
 		glsl: null,
+	},
+};
+
+/** The variants of the `test_library` shader, by variant name. */
+export const TEST_LIBRARY_SHADER: {
+	readonly main: ShaderVariant<'main'>;
+} = {
+	main: {
+		permutation: 0,
+		wgsl: {
+			source: `struct Transform {
+    x: vec4<f32>,
+    y: vec4<f32>,
+    z: vec4<f32>,
+}
+
+struct PbrMaterial {
+    base_color: vec3<f32>,
+    diffuse: vec3<f32>,
+    specular: vec3<f32>,
+    specular_blended: vec3<f32>,
+    specular_grazing: f32,
+    roughness: f32,
+    metalness: f32,
+}
+
+struct Scattering {
+    single: vec3<f32>,
+    multi: vec3<f32>,
+}
+
+struct Reflected {
+    diffuse: vec3<f32>,
+    specular: vec3<f32>,
+}
+
+struct Results {
+    a: vec4<u32>,
+    b: vec4<u32>,
+    c: vec4<u32>,
+    d: vec4<u32>,
+}
+
+const OUTSIDE_CLIP: vec4<f32> = vec4<f32>(2f, 2f, 2f, 1f);
+const PI: f32 = 3.1415927f;
+const INV_PI: f32 = 0.31830987f;
+const EPSILON: f32 = 0.000001f;
+const TAU: f32 = 6.2831855f;
+const HALF_PI: f32 = 1.5707964f;
+const ACES_INPUT: mat3x3<f32> = mat3x3<f32>(vec3<f32>(0.59719f, 0.076f, 0.0284f), vec3<f32>(0.35458f, 0.90834f, 0.13383f), vec3<f32>(0.04823f, 0.01566f, 0.83777f));
+const ACES_OUTPUT: mat3x3<f32> = mat3x3<f32>(vec3<f32>(1.60475f, -0.10208f, -0.00327f), vec3<f32>(-0.53108f, 1.10813f, -0.07276f), vec3<f32>(-0.07367f, -0.00605f, 1.07602f));
+const LINEAR_SRGB_TO_LINEAR_REC2020_: mat3x3<f32> = mat3x3<f32>(vec3<f32>(0.6274f, 0.0691f, 0.0164f), vec3<f32>(0.3293f, 0.9195f, 0.088f), vec3<f32>(0.0433f, 0.0113f, 0.8956f));
+const AGX_INSET: mat3x3<f32> = mat3x3<f32>(vec3<f32>(0.85662717f, 0.13731897f, 0.11189821f), vec3<f32>(0.09512124f, 0.761242f, 0.076799415f), vec3<f32>(0.048251607f, 0.10143904f, 0.81130236f));
+const AGX_OUTSET: mat3x3<f32> = mat3x3<f32>(vec3<f32>(1.1271006f, -0.14132977f, -0.14132977f), vec3<f32>(-0.11060664f, 1.1578237f, -0.11060664f), vec3<f32>(-0.016493939f, -0.016493939f, 1.2519364f));
+const LINEAR_REC2020_TO_LINEAR_SRGB: mat3x3<f32> = mat3x3<f32>(vec3<f32>(1.6605f, -0.1246f, -0.0182f), vec3<f32>(-0.5876f, 1.1329f, -0.1006f), vec3<f32>(-0.0728f, -0.0083f, 1.1187f));
+const INPUTS: i32 = 8i;
+
+@group(0) @binding(0)
+var cases: texture_2d<u32>;
+
+fn transform_point(t: Transform, p: vec3<f32>) -> vec3<f32> {
+    let q_3 = vec4<f32>(p, 1f);
+    return vec3<f32>(dot(t.x, q_3), dot(t.y, q_3), dot(t.z, q_3));
+}
+
+fn transform_direction(t_1: Transform, d: vec3<f32>) -> vec3<f32> {
+    let q_4 = vec4<f32>(d, 0f);
+    return vec3<f32>(dot(t_1.x, q_4), dot(t_1.y, q_4), dot(t_1.z, q_4));
+}
+
+fn transform_normal(t_2: Transform, n: vec3<f32>) -> vec3<f32> {
+    let a_11 = t_2.x.xyz;
+    let b_11 = t_2.y.xyz;
+    let c_12 = t_2.z.xyz;
+    let bc = cross(b_11, c_12);
+    let ca = cross(c_12, a_11);
+    let ab = cross(a_11, b_11);
+    let facing = select(-1f, 1f, (dot(a_11, bc) >= 0f));
+    return normalize((vec3<f32>(dot(bc, n), dot(ca, n), dot(ab, n)) * facing));
+}
+
+fn move_transform(t_3: Transform, offset: vec3<f32>) -> Transform {
+    return Transform((t_3.x + vec4<f32>(0f, 0f, 0f, offset.x)), (t_3.y + vec4<f32>(0f, 0f, 0f, offset.y)), (t_3.z + vec4<f32>(0f, 0f, 0f, offset.z)));
+}
+
+fn to_clip(view_proj: mat4x4<f32>, relative_position: vec3<f32>) -> vec4<f32> {
+    return (view_proj * vec4<f32>(relative_position, 1f));
+}
+
+fn square(x: f32) -> f32 {
+    return (x * x);
+}
+
+fn lambert(albedo: vec3<f32>, normal: vec3<f32>, to_light: vec3<f32>, light: vec3<f32>, ambient: vec3<f32>) -> vec3<f32> {
+    let n_dot_l_1 = max(dot(normal, to_light), 0f);
+    return ((albedo / vec3(3.1415927f)) * ((n_dot_l_1 * light) + ambient));
+}
+
+fn brdf_lambert(diffuse: vec3<f32>) -> vec3<f32> {
+    return (INV_PI * diffuse);
+}
+
+fn f_schlick(f0_: vec3<f32>, f90_: f32, v_dot_h: f32) -> vec3<f32> {
+    let fresnel = exp2((((-5.55473f * v_dot_h) - 6.98316f) * v_dot_h));
+    return ((f0_ * (1f - fresnel)) + vec3((f90_ * fresnel)));
+}
+
+fn d_ggx(alpha: f32, n_dot_h: f32) -> f32 {
+    let a2_ = (alpha * alpha);
+    let denom = (((n_dot_h * n_dot_h) * (a2_ - 1f)) + 1f);
+    return ((INV_PI * a2_) / (denom * denom));
+}
+
+fn v_ggx_smith_correlated(alpha_1: f32, n_dot_l: f32, n_dot_v: f32) -> f32 {
+    let a2_1 = (alpha_1 * alpha_1);
+    let gv = (n_dot_l * sqrt((a2_1 + (((1f - a2_1) * n_dot_v) * n_dot_v))));
+    let gl = (n_dot_v * sqrt((a2_1 + (((1f - a2_1) * n_dot_l) * n_dot_l))));
+    return (0.5f / max((gv + gl), EPSILON));
+}
+
+fn brdf_ggx(to_light_1: vec3<f32>, to_view: vec3<f32>, normal_1: vec3<f32>, f0_1: vec3<f32>, f90_1: f32, roughness: f32) -> vec3<f32> {
+    let alpha_2 = (roughness * roughness);
+    let half_dir = normalize((to_light_1 + to_view));
+    let n_dot_l_2 = saturate(dot(normal_1, to_light_1));
+    let n_dot_v_3 = saturate(dot(normal_1, to_view));
+    let n_dot_h_1 = saturate(dot(normal_1, half_dir));
+    let v_dot_h_1 = saturate(dot(to_view, half_dir));
+    let _e17 = f_schlick(f0_1, f90_1, v_dot_h_1);
+    let _e18 = v_ggx_smith_correlated(alpha_2, n_dot_l_2, n_dot_v_3);
+    let _e19 = d_ggx(alpha_2, n_dot_h_1);
+    return (_e17 * (_e18 * _e19));
+}
+
+fn dfg_approx(n_dot_v_1: f32, roughness_1: f32) -> vec2<f32> {
+    let c0_ = vec4<f32>(-1f, -0.0275f, -0.572f, 0.022f);
+    let c1_ = vec4<f32>(1f, 0.0425f, 1.04f, -0.04f);
+    let r_2 = ((roughness_1 * c0_) + c1_);
+    let a004_ = ((min((r_2.x * r_2.x), exp2((-9.28f * n_dot_v_1))) * r_2.x) + r_2.y);
+    return ((vec2<f32>(-1.04f, 1.04f) * a004_) + r_2.zw);
+}
+
+fn environment_brdf(f0_2: vec3<f32>, f90_2: f32, dfg: vec2<f32>) -> vec3<f32> {
+    return ((f0_2 * dfg.x) + vec3((f90_2 * dfg.y)));
+}
+
+fn multiscattering(f0_3: vec3<f32>, f90_3: f32, dfg_1: vec2<f32>) -> Scattering {
+    let single = ((f0_3 * dfg_1.x) + vec3((f90_3 * dfg_1.y)));
+    let ess = (dfg_1.x + dfg_1.y);
+    let ems = (1f - ess);
+    let average = (f0_3 + ((vec3(1f) - f0_3) * 0.047619f));
+    let multi = ((single * average) / (vec3(1f) - (ems * average)));
+    return Scattering(single, (multi * ems));
+}
+
+fn multiscatter_compensation(f0_4: vec3<f32>, dfg_2: vec2<f32>) -> vec3<f32> {
+    return (vec3(1f) + (f0_4 * ((1f / (dfg_2.x + dfg_2.y)) - 1f)));
+}
+
+fn specular_occlusion(n_dot_v_2: f32, occlusion: f32, roughness_2: f32) -> f32 {
+    return saturate(((pow((n_dot_v_2 + occlusion), exp2(((-16f * roughness_2) - 1f))) - 1f) + occlusion));
+}
+
+fn distance_attenuation(distance_: f32, cutoff: f32, decay: f32) -> f32 {
+    var falloff: f32;
+
+    falloff = (1f / max(pow(distance_, decay), 0.01f));
+    if (cutoff > 0f) {
+        let _e12 = square((distance_ / cutoff));
+        let _e13 = falloff;
+        let _e18 = square(saturate((1f - (_e12 * _e12))));
+        falloff = (_e13 * _e18);
+    }
+    let _e20 = falloff;
+    return _e20;
+}
+
+fn spot_attenuation(cone_cos: f32, penumbra_cos: f32, angle_cos: f32) -> f32 {
+    return smoothstep(cone_cos, penumbra_cos, angle_cos);
+}
+
+fn hemisphere_irradiance(normal_2: vec3<f32>, up: vec3<f32>, sky: vec3<f32>, ground: vec3<f32>) -> vec3<f32> {
+    let weight = ((0.5f * dot(normal_2, up)) + 0.5f);
+    return mix(ground, sky, weight);
+}
+
+fn sh_irradiance(normal_3: vec3<f32>, sh: array<vec3<f32>, 9>) -> vec3<f32> {
+    var result: vec3<f32>;
+
+    let x_9 = normal_3.x;
+    let y_3 = normal_3.y;
+    let z_1 = normal_3.z;
+    result = (sh[0] * 0.886227f);
+    let _e9 = result;
+    result = (_e9 + (sh[1] * (1.023328f * y_3)));
+    let _e15 = result;
+    result = (_e15 + (sh[2] * (1.023328f * z_1)));
+    let _e21 = result;
+    result = (_e21 + (sh[3] * (1.023328f * x_9)));
+    let _e27 = result;
+    result = (_e27 + (sh[4] * ((0.858086f * x_9) * y_3)));
+    let _e34 = result;
+    result = (_e34 + (sh[5] * ((0.858086f * y_3) * z_1)));
+    let _e41 = result;
+    result = (_e41 + (sh[6] * (((0.743125f * z_1) * z_1) - 0.247708f)));
+    let _e50 = result;
+    result = (_e50 + (sh[7] * ((0.858086f * x_9) * z_1)));
+    let _e57 = result;
+    result = (_e57 + (sh[8] * (0.429043f * ((x_9 * x_9) - (y_3 * y_3)))));
+    let _e66 = result;
+    return _e66;
+}
+
+fn pbr_material(base_color: vec3<f32>, metalness: f32, roughness_3: f32, geometry_roughness: f32) -> PbrMaterial {
+    var m: PbrMaterial;
+
+    m.base_color = base_color;
+    m.diffuse = (base_color * (1f - metalness));
+    m.specular = vec3(0.04f);
+    let _e13 = m.specular;
+    m.specular_blended = mix(_e13, base_color, metalness);
+    m.specular_grazing = 1f;
+    m.roughness = min((max(roughness_3, 0.0525f) + geometry_roughness), 1f);
+    m.metalness = metalness;
+    let _e26 = m;
+    return _e26;
+}
+
+fn direct_light(m_1: PbrMaterial, normal_4: vec3<f32>, to_view_1: vec3<f32>, to_light_2: vec3<f32>, light_1: vec3<f32>, compensation: vec3<f32>) -> Reflected {
+    let irradiance_2 = (saturate(dot(normal_4, to_light_2)) * light_1);
+    let _e11 = brdf_ggx(to_light_2, to_view_1, normal_4, m_1.specular_blended, m_1.specular_grazing, m_1.roughness);
+    let v_dot_h_2 = saturate(dot(to_view_1, normalize((to_light_2 + to_view_1))));
+    let _e18 = f_schlick(m_1.specular, m_1.specular_grazing, v_dot_h_2);
+    let _e20 = brdf_lambert(m_1.diffuse);
+    return Reflected(((irradiance_2 * _e20) * (vec3(1f) - _e18)), ((irradiance_2 * _e11) * compensation));
+}
+
+fn indirect_diffuse(m_2: PbrMaterial, irradiance: vec3<f32>, dfg_3: vec2<f32>) -> vec3<f32> {
+    let _e4 = multiscattering(m_2.specular, m_2.specular_grazing, dfg_3);
+    let _e6 = brdf_lambert(m_2.diffuse);
+    return ((irradiance * _e6) * ((vec3(1f) - _e4.single) - _e4.multi));
+}
+
+fn indirect_specular(m_3: PbrMaterial, radiance: vec3<f32>, irradiance_1: vec3<f32>, dfg_4: vec2<f32>) -> Reflected {
+    let _e4 = multiscattering(m_3.specular, m_3.specular_grazing, dfg_4);
+    let _e7 = multiscattering(m_3.base_color, m_3.specular_grazing, dfg_4);
+    let single_1 = mix(_e4.single, _e7.single, m_3.metalness);
+    let multi_1 = mix(_e4.multi, _e7.multi, m_3.metalness);
+    let cosine_weighted = (irradiance_1 * INV_PI);
+    let diffuse_1 = (m_3.diffuse * (vec3(1f) - (_e4.single + _e4.multi)));
+    return Reflected((diffuse_1 * cosine_weighted), ((radiance * single_1) + (multi_1 * cosine_weighted)));
+}
+
+fn max_component(v: vec3<f32>) -> f32 {
+    return max(max(v.x, v.y), v.z);
+}
+
+fn min_component(v_1: vec3<f32>) -> f32 {
+    return min(min(v_1.x, v_1.y), v_1.z);
+}
+
+fn inverse_lerp(a: f32, b: f32, x_1: f32) -> f32 {
+    return ((x_1 - a) / (b - a));
+}
+
+fn remap(x_2: f32, in_min: f32, in_max: f32, out_min: f32, out_max: f32) -> f32 {
+    let _e3 = inverse_lerp(in_min, in_max, x_2);
+    return mix(out_min, out_max, _e3);
+}
+
+fn modulo(x_3: f32, y: f32) -> f32 {
+    return (x_3 - (y * floor((x_3 / y))));
+}
+
+fn rotate_2d(p_1: vec2<f32>, angle: f32) -> vec2<f32> {
+    let c_13 = cos(angle);
+    let s = sin(angle);
+    return vec2<f32>(((c_13 * p_1.x) - (s * p_1.y)), ((s * p_1.x) + (c_13 * p_1.y)));
+}
+
+fn rotate_axis(v_2: vec3<f32>, axis: vec3<f32>, angle_1: f32) -> vec3<f32> {
+    let c_14 = cos(angle_1);
+    let s_1 = sin(angle_1);
+    return (((v_2 * c_14) + (cross(axis, v_2) * s_1)) + (axis * (dot(axis, v_2) * (1f - c_14))));
+}
+
+fn quat_rotate(q: vec4<f32>, v_3: vec3<f32>) -> vec3<f32> {
+    let t_5 = (2f * cross(q.xyz, v_3));
+    return ((v_3 + (q.w * t_5)) + cross(q.xyz, t_5));
+}
+
+fn basis_from_normal(n_1: vec3<f32>) -> mat3x3<f32> {
+    let s_2 = select(-1f, 1f, (n_1.z >= 0f));
+    let a_12 = (-1f / (s_2 + n_1.z));
+    let b_12 = ((n_1.x * n_1.y) * a_12);
+    let tangent = vec3<f32>((1f + (((s_2 * n_1.x) * n_1.x) * a_12)), (s_2 * b_12), (-(s_2) * n_1.x));
+    let bitangent = vec3<f32>(b_12, (s_2 + ((n_1.y * n_1.y) * a_12)), -(n_1.y));
+    return mat3x3<f32>(tangent, bitangent, n_1);
+}
+
+fn pcg(v_4: u32) -> u32 {
+    let state = ((v_4 * 747796405u) + 2891336453u);
+    let word = (((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u);
+    return ((word >> 22u) ^ word);
+}
+
+fn pcg3d(v_5: vec3<u32>) -> vec3<u32> {
+    var p_2: vec3<u32>;
+
+    p_2 = ((v_5 * 1664525u) + vec3(1013904223u));
+    let _e8 = p_2.x;
+    let _e10 = p_2.y;
+    let _e12 = p_2.z;
+    p_2.x = (_e8 + (_e10 * _e12));
+    let _e16 = p_2.y;
+    let _e18 = p_2.z;
+    let _e20 = p_2.x;
+    p_2.y = (_e16 + (_e18 * _e20));
+    let _e24 = p_2.z;
+    let _e26 = p_2.x;
+    let _e28 = p_2.y;
+    p_2.z = (_e24 + (_e26 * _e28));
+    let _e31 = p_2;
+    let _e32 = p_2;
+    p_2 = (_e31 ^ (_e32 >> vec3(16u)));
+    let _e38 = p_2.x;
+    let _e40 = p_2.y;
+    let _e42 = p_2.z;
+    p_2.x = (_e38 + (_e40 * _e42));
+    let _e46 = p_2.y;
+    let _e48 = p_2.z;
+    let _e50 = p_2.x;
+    p_2.y = (_e46 + (_e48 * _e50));
+    let _e54 = p_2.z;
+    let _e56 = p_2.x;
+    let _e58 = p_2.y;
+    p_2.z = (_e54 + (_e56 * _e58));
+    let _e61 = p_2;
+    return _e61;
+}
+
+fn to_unit(h: u32) -> f32 {
+    return (f32((h >> 8u)) / 16777216f);
+}
+
+fn random(seed: u32) -> f32 {
+    let _e1 = pcg(seed);
+    let _e2 = to_unit(_e1);
+    return _e2;
+}
+
+fn random2_(p_3: vec2<f32>) -> f32 {
+    let bits = bitcast<vec2<u32>>(p_3);
+    let _e4 = pcg(bits.y);
+    let _e6 = pcg((bits.x ^ _e4));
+    let _e7 = to_unit(_e6);
+    return _e7;
+}
+
+fn random3_(p_4: vec3<f32>) -> f32 {
+    let _e2 = pcg3d(bitcast<vec3<u32>>(p_4));
+    let _e4 = to_unit(_e2.x);
+    return _e4;
+}
+
+fn lattice(c: vec3<i32>) -> vec3<u32> {
+    let _e2 = pcg3d(bitcast<vec3<u32>>(c));
+    return _e2;
+}
+
+fn fade(t_4: vec3<f32>) -> vec3<f32> {
+    return (((t_4 * t_4) * t_4) * ((t_4 * ((t_4 * 6f) - vec3(15f))) + vec3(10f)));
+}
+
+fn value3_(p_5: vec3<f32>) -> f32 {
+    let i_1 = vec3<i32>(floor(p_5));
+    let _e4 = fade(fract(p_5));
+    let _e5 = lattice(i_1);
+    let _e7 = to_unit(_e5.x);
+    let _e13 = lattice((i_1 + vec3<i32>(1i, 0i, 0i)));
+    let _e15 = to_unit(_e13.x);
+    let x00_ = mix(_e7, _e15, _e4.x);
+    let _e23 = lattice((i_1 + vec3<i32>(0i, 1i, 0i)));
+    let _e25 = to_unit(_e23.x);
+    let _e31 = lattice((i_1 + vec3<i32>(1i, 1i, 0i)));
+    let _e33 = to_unit(_e31.x);
+    let x10_ = mix(_e25, _e33, _e4.x);
+    let _e41 = lattice((i_1 + vec3<i32>(0i, 0i, 1i)));
+    let _e43 = to_unit(_e41.x);
+    let _e49 = lattice((i_1 + vec3<i32>(1i, 0i, 1i)));
+    let _e51 = to_unit(_e49.x);
+    let x01_ = mix(_e43, _e51, _e4.x);
+    let _e59 = lattice((i_1 + vec3<i32>(0i, 1i, 1i)));
+    let _e61 = to_unit(_e59.x);
+    let _e67 = lattice((i_1 + vec3<i32>(1i, 1i, 1i)));
+    let _e69 = to_unit(_e67.x);
+    let x11_ = mix(_e61, _e69, _e4.x);
+    return mix(mix(x00_, x10_, _e4.y), mix(x01_, x11_, _e4.y), _e4.z);
+}
+
+fn value2_(p_6: vec2<f32>) -> f32 {
+    let i_2 = vec3<i32>(vec2<i32>(floor(p_6)), 0i);
+    let _e8 = fade(vec3<f32>(fract(p_6), 0f));
+    let _e9 = lattice(i_2);
+    let _e11 = to_unit(_e9.x);
+    let _e17 = lattice((i_2 + vec3<i32>(1i, 0i, 0i)));
+    let _e19 = to_unit(_e17.x);
+    let x0_ = mix(_e11, _e19, _e8.x);
+    let _e27 = lattice((i_2 + vec3<i32>(0i, 1i, 0i)));
+    let _e29 = to_unit(_e27.x);
+    let _e35 = lattice((i_2 + vec3<i32>(1i, 1i, 0i)));
+    let _e37 = to_unit(_e35.x);
+    let x1_ = mix(_e29, _e37, _e8.x);
+    return mix(x0_, x1_, _e8.y);
+}
+
+fn gradient(h_1: u32, f_1: vec3<f32>) -> f32 {
+    var local: bool;
+
+    let k_3 = (h_1 & 15u);
+    let u_2 = select(f_1.y, f_1.x, (k_3 < 8u));
+    if !((k_3 == 12u)) {
+        local = (k_3 == 14u);
+    } else {
+        local = true;
+    }
+    let _e19 = local;
+    let v_11 = select(select(f_1.z, f_1.x, _e19), f_1.y, (k_3 < 4u));
+    return (select(-(u_2), u_2, ((k_3 & 1u) == 0u)) + select(-(v_11), v_11, ((k_3 & 2u) == 0u)));
+}
+
+fn perlin3_(p_7: vec3<f32>) -> f32 {
+    let i_3 = vec3<i32>(floor(p_7));
+    let f_3 = fract(p_7);
+    let _e4 = fade(f_3);
+    let _e5 = lattice(i_3);
+    let _e7 = gradient(_e5.x, f_3);
+    let _e13 = lattice((i_3 + vec3<i32>(1i, 0i, 0i)));
+    let _e20 = gradient(_e13.x, (f_3 - vec3<f32>(1f, 0f, 0f)));
+    let x00_1 = mix(_e7, _e20, _e4.x);
+    let _e28 = lattice((i_3 + vec3<i32>(0i, 1i, 0i)));
+    let _e35 = gradient(_e28.x, (f_3 - vec3<f32>(0f, 1f, 0f)));
+    let _e41 = lattice((i_3 + vec3<i32>(1i, 1i, 0i)));
+    let _e48 = gradient(_e41.x, (f_3 - vec3<f32>(1f, 1f, 0f)));
+    let x10_1 = mix(_e35, _e48, _e4.x);
+    let _e56 = lattice((i_3 + vec3<i32>(0i, 0i, 1i)));
+    let _e63 = gradient(_e56.x, (f_3 - vec3<f32>(0f, 0f, 1f)));
+    let _e69 = lattice((i_3 + vec3<i32>(1i, 0i, 1i)));
+    let _e76 = gradient(_e69.x, (f_3 - vec3<f32>(1f, 0f, 1f)));
+    let x01_1 = mix(_e63, _e76, _e4.x);
+    let _e84 = lattice((i_3 + vec3<i32>(0i, 1i, 1i)));
+    let _e91 = gradient(_e84.x, (f_3 - vec3<f32>(0f, 1f, 1f)));
+    let _e97 = lattice((i_3 + vec3<i32>(1i, 1i, 1i)));
+    let _e104 = gradient(_e97.x, (f_3 - vec3<f32>(1f, 1f, 1f)));
+    let x11_1 = mix(_e91, _e104, _e4.x);
+    return mix(mix(x00_1, x10_1, _e4.y), mix(x01_1, x11_1, _e4.y), _e4.z);
+}
+
+fn perlin2_(p_8: vec2<f32>) -> f32 {
+    let i_4 = vec3<i32>(vec2<i32>(floor(p_8)), 0i);
+    let f_4 = vec3<f32>(fract(p_8), 0f);
+    let _e8 = fade(f_4);
+    let _e9 = lattice(i_4);
+    let _e11 = gradient(_e9.x, f_4);
+    let _e17 = lattice((i_4 + vec3<i32>(1i, 0i, 0i)));
+    let _e24 = gradient(_e17.x, (f_4 - vec3<f32>(1f, 0f, 0f)));
+    let x0_1 = mix(_e11, _e24, _e8.x);
+    let _e32 = lattice((i_4 + vec3<i32>(0i, 1i, 0i)));
+    let _e39 = gradient(_e32.x, (f_4 - vec3<f32>(0f, 1f, 0f)));
+    let _e45 = lattice((i_4 + vec3<i32>(1i, 1i, 0i)));
+    let _e52 = gradient(_e45.x, (f_4 - vec3<f32>(1f, 1f, 0f)));
+    let x1_1 = mix(_e39, _e52, _e8.x);
+    return mix(x0_1, x1_1, _e8.y);
+}
+
+fn simplex_corner(c_1: vec3<i32>, x_4: vec3<f32>, r2_: f32) -> f32 {
+    let t_6 = max((r2_ - dot(x_4, x_4)), 0f);
+    let t2_ = (t_6 * t_6);
+    let _e9 = lattice(c_1);
+    let _e11 = gradient(_e9.x, x_4);
+    return ((t2_ * t2_) * _e11);
+}
+
+fn simplex3_(p_9: vec3<f32>) -> f32 {
+    let skew = (((p_9.x + p_9.y) + p_9.z) / 3f);
+    let cell = floor((p_9 + vec3(skew)));
+    let unskew = (((cell.x + cell.y) + cell.z) / 6f);
+    let x0_2 = (p_9 - (cell - vec3(unskew)));
+    let g = step(x0_2.yzx, x0_2.xyz);
+    let l = (vec3(1f) - g);
+    let i1_ = min(g, l.zxy);
+    let i2_ = max(g, l.zxy);
+    let x1_2 = ((x0_2 - i1_) + vec3(0.16666667f));
+    let x2_ = ((x0_2 - i2_) + vec3(0.33333334f));
+    let x3_ = (x0_2 - vec3(0.5f));
+    let i_5 = vec3<i32>(cell);
+    let _e44 = simplex_corner(i_5, x0_2, 0.6f);
+    let _e48 = simplex_corner((i_5 + vec3<i32>(i1_)), x1_2, 0.6f);
+    let _e53 = simplex_corner((i_5 + vec3<i32>(i2_)), x2_, 0.6f);
+    let _e61 = simplex_corner((i_5 + vec3<i32>(1i, 1i, 1i)), x3_, 0.6f);
+    let n_2 = (((_e44 + _e48) + _e53) + _e61);
+    return (32f * n_2);
+}
+
+fn simplex2_(p_10: vec2<f32>) -> f32 {
+    let skew_1 = ((p_10.x + p_10.y) * 0.36602542f);
+    let cell_1 = floor((p_10 + vec2(skew_1)));
+    let unskew_1 = ((cell_1.x + cell_1.y) * 0.21132487f);
+    let x0_3 = (p_10 - (cell_1 - vec2(unskew_1)));
+    let i1_1 = select(vec2<f32>(0f, 1f), vec2<f32>(1f, 0f), (x0_3.x > x0_3.y));
+    let x1_3 = ((x0_3 - i1_1) + vec2(0.21132487f));
+    let x2_1 = ((x0_3 - vec2(1f)) + vec2(0.42264974f));
+    let i_6 = vec3<i32>(vec2<i32>(cell_1), 0i);
+    let _e43 = simplex_corner(i_6, vec3<f32>(x0_3, 0f), 0.5f);
+    let _e51 = simplex_corner((i_6 + vec3<i32>(vec2<i32>(i1_1), 0i)), vec3<f32>(x1_3, 0f), 0.5f);
+    let _e61 = simplex_corner((i_6 + vec3<i32>(1i, 1i, 0i)), vec3<f32>(x2_1, 0f), 0.5f);
+    let n_3 = ((_e43 + _e51) + _e61);
+    return (70f * n_3);
+}
+
+fn worley3_(p_11: vec3<f32>) -> f32 {
+    var nearest: f32 = 8f;
+    var z: i32 = -1i;
+    var y_1: i32;
+    var x_5: i32;
+
+    let i_7 = vec3<i32>(floor(p_11));
+    let f_5 = fract(p_11);
+    loop {
+        let _e7 = z;
+        if (_e7 <= 1i) {
+        } else {
+            break;
+        }
+        {
+            y_1 = -1i;
+            loop {
+                let _e12 = y_1;
+                if (_e12 <= 1i) {
+                } else {
+                    break;
+                }
+                {
+                    x_5 = -1i;
+                    loop {
+                        let _e17 = x_5;
+                        if (_e17 <= 1i) {
+                        } else {
+                            break;
+                        }
+                        {
+                            let _e20 = x_5;
+                            let _e21 = y_1;
+                            let _e22 = z;
+                            let o = vec3<i32>(_e20, _e21, _e22);
+                            let _e25 = lattice((i_7 + o));
+                            let d_4 = ((vec3<f32>(o) + (vec3<f32>((_e25 >> vec3(8u))) / vec3(16777216f))) - f_5);
+                            let _e37 = nearest;
+                            nearest = min(_e37, dot(d_4, d_4));
+                        }
+                        continuing {
+                            let _e41 = x_5;
+                            x_5 = (_e41 + 1i);
+                        }
+                    }
+                }
+                continuing {
+                    let _e44 = y_1;
+                    y_1 = (_e44 + 1i);
+                }
+            }
+        }
+        continuing {
+            let _e47 = z;
+            z = (_e47 + 1i);
+        }
+    }
+    let _e49 = nearest;
+    return sqrt(_e49);
+}
+
+fn worley2_(p_12: vec2<f32>) -> f32 {
+    var nearest_1: f32 = 8f;
+    var y_2: i32 = -1i;
+    var x_6: i32;
+
+    let i_8 = vec2<i32>(floor(p_12));
+    let f_6 = fract(p_12);
+    loop {
+        let _e7 = y_2;
+        if (_e7 <= 1i) {
+        } else {
+            break;
+        }
+        {
+            x_6 = -1i;
+            loop {
+                let _e12 = x_6;
+                if (_e12 <= 1i) {
+                } else {
+                    break;
+                }
+                {
+                    let _e15 = x_6;
+                    let _e16 = y_2;
+                    let o_1 = vec2<i32>(_e15, _e16);
+                    let _e21 = lattice(vec3<i32>((i_8 + o_1), 0i));
+                    let d_5 = ((vec2<f32>(o_1) + (vec2<f32>((_e21.xy >> vec2(8u))) / vec2(16777216f))) - f_6);
+                    let _e34 = nearest_1;
+                    nearest_1 = min(_e34, dot(d_5, d_5));
+                }
+                continuing {
+                    let _e38 = x_6;
+                    x_6 = (_e38 + 1i);
+                }
+            }
+        }
+        continuing {
+            let _e41 = y_2;
+            y_2 = (_e41 + 1i);
+        }
+    }
+    let _e43 = nearest_1;
+    return sqrt(_e43);
+}
+
+fn fbm3_(p_13: vec3<f32>, octaves: u32) -> f32 {
+    var sum: f32 = 0f;
+    var total: f32 = 0f;
+    var amplitude: f32 = 1f;
+    var q_1: vec3<f32>;
+    var octave: u32 = 0u;
+
+    q_1 = p_13;
+    loop {
+        let _e7 = octave;
+        if (_e7 < octaves) {
+        } else {
+            break;
+        }
+        {
+            let _e11 = sum;
+            let _e12 = amplitude;
+            let _e13 = q_1;
+            let _e14 = simplex3_(_e13);
+            sum = (_e11 + (_e12 * _e14));
+            let _e18 = total;
+            let _e19 = amplitude;
+            total = (_e18 + _e19);
+            let _e21 = amplitude;
+            amplitude = (_e21 * 0.5f);
+            let _e24 = q_1;
+            q_1 = (_e24 * 2f);
+        }
+        continuing {
+            let _e28 = octave;
+            octave = (_e28 + 1u);
+        }
+    }
+    let _e30 = sum;
+    let _e31 = total;
+    let _e33 = total;
+    return select(0f, (_e30 / _e31), (_e33 > 0f));
+}
+
+fn fbm2_(p_14: vec2<f32>, octaves_1: u32) -> f32 {
+    var sum_1: f32 = 0f;
+    var total_1: f32 = 0f;
+    var amplitude_1: f32 = 1f;
+    var q_2: vec2<f32>;
+    var octave_1: u32 = 0u;
+
+    q_2 = p_14;
+    loop {
+        let _e7 = octave_1;
+        if (_e7 < octaves_1) {
+        } else {
+            break;
+        }
+        {
+            let _e11 = sum_1;
+            let _e12 = amplitude_1;
+            let _e13 = q_2;
+            let _e14 = simplex2_(_e13);
+            sum_1 = (_e11 + (_e12 * _e14));
+            let _e18 = total_1;
+            let _e19 = amplitude_1;
+            total_1 = (_e18 + _e19);
+            let _e21 = amplitude_1;
+            amplitude_1 = (_e21 * 0.5f);
+            let _e24 = q_2;
+            q_2 = (_e24 * 2f);
+        }
+        continuing {
+            let _e28 = octave_1;
+            octave_1 = (_e28 + 1u);
+        }
+    }
+    let _e30 = sum_1;
+    let _e31 = total_1;
+    let _e33 = total_1;
+    return select(0f, (_e30 / _e31), (_e33 > 0f));
+}
+
+fn linear_to_srgb(c_2: vec3<f32>) -> vec3<f32> {
+    let low = (c_2 * 12.92f);
+    let high = ((1.055f * pow(c_2, vec3(0.41666666f))) - vec3(0.055f));
+    return select(high, low, (c_2 <= vec3(0.0031308f)));
+}
+
+fn srgb_to_linear(c_3: vec3<f32>) -> vec3<f32> {
+    let low_1 = (c_3 / vec3(12.92f));
+    let high_1 = pow(((c_3 + vec3(0.055f)) / vec3(1.055f)), vec3(2.4f));
+    return select(high_1, low_1, (c_3 <= vec3(0.04045f)));
+}
+
+fn luminance(c_4: vec3<f32>) -> f32 {
+    return dot(c_4, vec3<f32>(0.2126f, 0.7152f, 0.0722f));
+}
+
+fn rgb_to_hsv(c_5: vec3<f32>) -> vec3<f32> {
+    let k_4 = vec4<f32>(0f, -0.33333334f, 0.6666667f, -1f);
+    let p_25 = mix(vec4<f32>(c_5.zy, k_4.wz), vec4<f32>(c_5.yz, k_4.xy), step(c_5.z, c_5.y));
+    let q_5 = mix(vec4<f32>(p_25.xyw, c_5.x), vec4<f32>(c_5.x, p_25.yzx), step(p_25.x, c_5.x));
+    let d_6 = (q_5.x - min(q_5.w, q_5.y));
+    return vec3<f32>(abs((q_5.z + ((q_5.w - q_5.y) / ((6f * d_6) + 0.0000000001f)))), (d_6 / (q_5.x + 0.0000000001f)), q_5.x);
+}
+
+fn hsv_to_rgb(c_6: vec3<f32>) -> vec3<f32> {
+    let k_5 = vec4<f32>(1f, 0.6666667f, 0.33333334f, 3f);
+    let p_26 = abs(((fract((c_6.xxx + k_5.xyz)) * 6f) - k_5.www));
+    return (c_6.z * mix(k_5.xxx, saturate((p_26 - k_5.xxx)), c_6.y));
+}
+
+fn rrt_and_odt_fit(v_6: vec3<f32>) -> vec3<f32> {
+    let a_13 = ((v_6 * (v_6 + vec3(0.0245786f))) - vec3(0.000090537f));
+    let b_13 = ((v_6 * ((0.983729f * v_6) + vec3(0.432951f))) + vec3(0.238081f));
+    return (a_13 / b_13);
+}
+
+fn tone_map_aces(c_7: vec3<f32>) -> vec3<f32> {
+    let _e6 = rrt_and_odt_fit((ACES_INPUT * (c_7 / vec3(0.6f))));
+    return saturate((ACES_OUTPUT * _e6));
+}
+
+fn agx_contrast(x_7: vec3<f32>) -> vec3<f32> {
+    let x2_2 = (x_7 * x_7);
+    let x4_ = (x2_2 * x2_2);
+    return ((((((((15.5f * x4_) * x2_2) - ((40.14f * x4_) * x_7)) + (31.96f * x4_)) - ((6.868f * x2_2) * x_7)) + (0.4298f * x2_2)) + (0.1191f * x_7)) - vec3(0.00232f));
+}
+
+fn tone_map_agx(c_8: vec3<f32>) -> vec3<f32> {
+    let inset = (AGX_INSET * (LINEAR_SRGB_TO_LINEAR_REC2020_ * c_8));
+    let logged = ((log2(max(inset, vec3(0.0000000001f))) - vec3(-12.47393f)) / vec3(16.5f));
+    let _e16 = agx_contrast(saturate(logged));
+    let curved = (AGX_OUTSET * _e16);
+    let rec2020_ = pow(max(curved, vec3(0f)), vec3(2.2f));
+    return saturate((LINEAR_REC2020_TO_LINEAR_SRGB * rec2020_));
+}
+
+fn tone_map_neutral(c_9: vec3<f32>) -> vec3<f32> {
+    let x_10 = min(c_9.x, min(c_9.y, c_9.z));
+    let toe = select(0.04f, (x_10 - ((6.25f * x_10) * x_10)), (x_10 < 0.08f));
+    let shifted = (c_9 - vec3(toe));
+    let peak = max(shifted.x, max(shifted.y, shifted.z));
+    if (peak < 0.76f) {
+        return shifted;
+    }
+    let d_7 = (1f - 0.76f);
+    let new_peak = (1f - ((d_7 * d_7) / ((peak + d_7) - 0.76f)));
+    let g_1 = (1f - (1f / ((0.15f * (peak - new_peak)) + 1f)));
+    return mix((shifted * (new_peak / peak)), vec3(new_peak), g_1);
+}
+
+fn fog_depth(relative_position_1: vec3<f32>, forward: vec3<f32>) -> f32 {
+    return dot(relative_position_1, forward);
+}
+
+fn fog_linear(depth: f32, near: f32, far: f32) -> f32 {
+    return smoothstep(near, far, depth);
+}
+
+fn fog_exp2_(depth_1: f32, density: f32) -> f32 {
+    return (1f - exp((((-(density) * density) * depth_1) * depth_1)));
+}
+
+fn apply_fog(c_10: vec3<f32>, fog_color: vec3<f32>, factor: f32) -> vec3<f32> {
+    return mix(c_10, fog_color, factor);
+}
+
+fn perspective_depth_to_view_z(depth_2: f32, near_1: f32, far_1: f32) -> f32 {
+    return ((-(near_1) * far_1) / (near_1 + (depth_2 * (far_1 - near_1))));
+}
+
+fn view_z_to_perspective_depth(view_z: f32, near_2: f32, far_2: f32) -> f32 {
+    return ((near_2 * (view_z + far_2)) / (-(view_z) * (far_2 - near_2)));
+}
+
+fn orthographic_depth_to_view_z(depth_3: f32, near_3: f32, far_3: f32) -> f32 {
+    return ((depth_3 * (far_3 - near_3)) - far_3);
+}
+
+fn view_z_to_orthographic_depth(view_z_1: f32, near_4: f32, far_4: f32) -> f32 {
+    return ((view_z_1 + far_4) / (far_4 - near_4));
+}
+
+fn linear_depth(depth_4: f32, near_5: f32, far_5: f32) -> f32 {
+    let _e3 = perspective_depth_to_view_z(depth_4, near_5, far_5);
+    return -(_e3);
+}
+
+fn view_position(uv: vec2<f32>, depth_5: f32, inverse_projection: mat4x4<f32>) -> vec3<f32> {
+    let clip = vec4<f32>(((uv.x * 2f) - 1f), (1f - (uv.y * 2f)), depth_5, 1f);
+    let p_27 = (inverse_projection * clip);
+    return (p_27.xyz / vec3(p_27.w));
+}
+
+fn sphere(p_15: vec3<f32>, radius: f32) -> f32 {
+    return (length(p_15) - radius);
+}
+
+fn box(p_16: vec3<f32>, half_size: vec3<f32>) -> f32 {
+    let q_6 = (abs(p_16) - half_size);
+    return (length(max(q_6, vec3(0f))) + min(max(q_6.x, max(q_6.y, q_6.z)), 0f));
+}
+
+fn round_box(p_17: vec3<f32>, half_size_1: vec3<f32>, radius_1: f32) -> f32 {
+    let _e5 = box(p_17, (half_size_1 - vec3(radius_1)));
+    return (_e5 - radius_1);
+}
+
+fn torus(p_18: vec3<f32>, major: f32, minor: f32) -> f32 {
+    let q_7 = vec2<f32>((length(p_18.xz) - major), p_18.y);
+    return (length(q_7) - minor);
+}
+
+fn capsule(p_19: vec3<f32>, a_1: vec3<f32>, b_1: vec3<f32>, radius_2: f32) -> f32 {
+    let pa = (p_19 - a_1);
+    let ba = (b_1 - a_1);
+    let h_2 = saturate((dot(pa, ba) / dot(ba, ba)));
+    return (length((pa - (ba * h_2))) - radius_2);
+}
+
+fn cylinder(p_20: vec3<f32>, half_height: f32, radius_3: f32) -> f32 {
+    let d_8 = (abs(vec2<f32>(length(p_20.xz), p_20.y)) - vec2<f32>(radius_3, half_height));
+    return (min(max(d_8.x, d_8.y), 0f) + length(max(d_8, vec2(0f))));
+}
+
+fn plane(p_21: vec3<f32>, normal_5: vec3<f32>, offset_1: f32) -> f32 {
+    return (dot(p_21, normal_5) - offset_1);
+}
+
+fn circle(p_22: vec2<f32>, radius_4: f32) -> f32 {
+    return (length(p_22) - radius_4);
+}
+
+fn rect(p_23: vec2<f32>, half_size_2: vec2<f32>) -> f32 {
+    let d_9 = (abs(p_23) - half_size_2);
+    return (length(max(d_9, vec2(0f))) + min(max(d_9.x, d_9.y), 0f));
+}
+
+fn segment(p_24: vec2<f32>, a_2: vec2<f32>, b_2: vec2<f32>) -> f32 {
+    let pa_1 = (p_24 - a_2);
+    let ba_1 = (b_2 - a_2);
+    let h_3 = saturate((dot(pa_1, ba_1) / dot(ba_1, ba_1)));
+    return length((pa_1 - (ba_1 * h_3)));
+}
+
+fn merge(a_3: f32, b_3: f32) -> f32 {
+    return min(a_3, b_3);
+}
+
+fn subtract(a_4: f32, b_4: f32) -> f32 {
+    return max(a_4, -(b_4));
+}
+
+fn intersect(a_5: f32, b_5: f32) -> f32 {
+    return max(a_5, b_5);
+}
+
+fn smooth_merge(a_6: f32, b_6: f32, k: f32) -> f32 {
+    let h_4 = saturate((0.5f + ((0.5f * (b_6 - a_6)) / k)));
+    return (mix(b_6, a_6, h_4) - ((k * h_4) * (1f - h_4)));
+}
+
+fn smooth_subtract(a_7: f32, b_7: f32, k_1: f32) -> f32 {
+    let h_5 = saturate((0.5f - ((0.5f * (a_7 + b_7)) / k_1)));
+    return (mix(a_7, -(b_7), h_5) + ((k_1 * h_5) * (1f - h_5)));
+}
+
+fn smooth_intersect(a_8: f32, b_8: f32, k_2: f32) -> f32 {
+    let h_6 = saturate((0.5f - ((0.5f * (b_8 - a_8)) / k_2)));
+    return (mix(b_8, a_8, h_6) + ((k_2 * h_6) * (1f - h_6)));
+}
+
+fn rounded(d_1: f32, radius_5: f32) -> f32 {
+    return (d_1 - radius_5);
+}
+
+fn onion(d_2: f32, thickness: f32) -> f32 {
+    return (abs(d_2) - thickness);
+}
+
+fn floats(a_9: vec4<f32>, b_9: vec4<f32>, c_11: vec4<f32>, d_3: vec4<f32>) -> Results {
+    return Results(bitcast<vec4<u32>>(a_9), bitcast<vec4<u32>>(b_9), bitcast<vec4<u32>>(c_11), bitcast<vec4<u32>>(d_3));
+}
+
+fn scalar(x_8: f32) -> Results {
+    let _e11 = floats(vec4<f32>(x_8, 0f, 0f, 0f), vec4(0f), vec4(0f), vec4(0f));
+    return _e11;
+}
+
+fn pair(v_7: vec2<f32>) -> Results {
+    let _e10 = floats(vec4<f32>(v_7, 0f, 0f), vec4(0f), vec4(0f), vec4(0f));
+    return _e10;
+}
+
+fn triple(v_8: vec3<f32>) -> Results {
+    let _e9 = floats(vec4<f32>(v_8, 0f), vec4(0f), vec4(0f), vec4(0f));
+    return _e9;
+}
+
+fn quad(v_9: vec4<f32>) -> Results {
+    let _e7 = floats(v_9, vec4(0f), vec4(0f), vec4(0f));
+    return _e7;
+}
+
+fn triples(a_10: vec3<f32>, b_10: vec3<f32>) -> Results {
+    let _e10 = floats(vec4<f32>(a_10, 0f), vec4<f32>(b_10, 0f), vec4(0f), vec4(0f));
+    return _e10;
+}
+
+fn whole(v_10: vec4<u32>) -> Results {
+    return Results(v_10, vec4(0u), vec4(0u), vec4(0u));
+}
+
+fn transform(r: array<vec4<f32>, 8>) -> Transform {
+    return Transform(r[0], r[1], r[2]);
+}
+
+fn material(r_1: array<vec4<f32>, 8>) -> PbrMaterial {
+    let _e9 = pbr_material(r_1[0].xyz, r_1[0].w, r_1[1].x, r_1[1].y);
+    return _e9;
+}
+
+fn run(function_: u32, u_1: array<vec4<u32>, 8>, f_2: array<vec4<f32>, 8>) -> Results {
+    switch function_ {
+        case 0u: {
+            let _e4 = square(f_2[0].x);
+            let _e5 = scalar(_e4);
+            return _e5;
+        }
+        case 1u: {
+            let _e8 = max_component(f_2[0].xyz);
+            let _e9 = scalar(_e8);
+            return _e9;
+        }
+        case 2u: {
+            let _e12 = min_component(f_2[0].xyz);
+            let _e13 = scalar(_e12);
+            return _e13;
+        }
+        case 3u: {
+            let _e20 = inverse_lerp(f_2[0].x, f_2[0].y, f_2[0].z);
+            let _e21 = scalar(_e20);
+            return _e21;
+        }
+        case 4u: {
+            let _e32 = remap(f_2[0].x, f_2[0].y, f_2[0].z, f_2[0].w, f_2[1].x);
+            let _e33 = scalar(_e32);
+            return _e33;
+        }
+        case 5u: {
+            let _e38 = modulo(f_2[0].x, f_2[0].y);
+            let _e39 = scalar(_e38);
+            return _e39;
+        }
+        case 6u: {
+            let _e44 = rotate_2d(f_2[0].xy, f_2[0].z);
+            let _e45 = pair(_e44);
+            return _e45;
+        }
+        case 7u: {
+            let _e52 = rotate_axis(f_2[0].xyz, f_2[1].xyz, f_2[1].w);
+            let _e53 = triple(_e52);
+            return _e53;
+        }
+        case 8u: {
+            let _e57 = quat_rotate(f_2[0], f_2[1].xyz);
+            let _e58 = triple(_e57);
+            return _e58;
+        }
+        case 9u: {
+            let _e61 = basis_from_normal(f_2[0].xyz);
+            let _e73 = floats(vec4<f32>(_e61[0], 0f), vec4<f32>(_e61[1], 0f), vec4<f32>(_e61[2], 0f), vec4(0f));
+            return _e73;
+        }
+        case 10u: {
+            let turns = vec4<f32>(3.1415927f, 6.2831855f, 1.5707964f, 0.31830987f);
+            let _e88 = floats(turns, vec4<f32>(0.000001f, 0f, 0f, 0f), vec4(0f), vec4(0f));
+            return _e88;
+        }
+        case 11u: {
+            let _e92 = pcg(u_1[0].x);
+            let _e97 = whole(vec4<u32>(_e92, 0u, 0u, 0u));
+            return _e97;
+        }
+        case 12u: {
+            let _e100 = pcg3d(u_1[0].xyz);
+            let _e103 = whole(vec4<u32>(_e100, 0u));
+            return _e103;
+        }
+        case 13u: {
+            let _e106 = to_unit(u_1[0].x);
+            let _e107 = scalar(_e106);
+            return _e107;
+        }
+        case 14u: {
+            let _e110 = random(u_1[0].x);
+            let _e111 = scalar(_e110);
+            return _e111;
+        }
+        case 15u: {
+            let _e114 = random2_(f_2[0].xy);
+            let _e115 = scalar(_e114);
+            return _e115;
+        }
+        case 16u: {
+            let _e118 = random3_(f_2[0].xyz);
+            let _e119 = scalar(_e118);
+            return _e119;
+        }
+        case 17u: {
+            let _e123 = lattice(bitcast<vec3<i32>>(u_1[0].xyz));
+            let _e126 = whole(vec4<u32>(_e123, 0u));
+            return _e126;
+        }
+        case 18u: {
+            let _e129 = fade(f_2[0].xyz);
+            let _e130 = triple(_e129);
+            return _e130;
+        }
+        case 19u: {
+            let _e133 = value3_(f_2[0].xyz);
+            let _e134 = scalar(_e133);
+            return _e134;
+        }
+        case 20u: {
+            let _e137 = value2_(f_2[0].xy);
+            let _e138 = scalar(_e137);
+            return _e138;
+        }
+        case 21u: {
+            let _e143 = gradient(u_1[0].x, f_2[1].xyz);
+            let _e144 = scalar(_e143);
+            return _e144;
+        }
+        case 22u: {
+            let _e147 = perlin3_(f_2[0].xyz);
+            let _e148 = scalar(_e147);
+            return _e148;
+        }
+        case 23u: {
+            let _e151 = perlin2_(f_2[0].xy);
+            let _e152 = scalar(_e151);
+            return _e152;
+        }
+        case 24u: {
+            let _e160 = simplex_corner(bitcast<vec3<i32>>(u_1[0].xyz), f_2[1].xyz, f_2[1].w);
+            let _e161 = scalar(_e160);
+            return _e161;
+        }
+        case 25u: {
+            let _e164 = simplex3_(f_2[0].xyz);
+            let _e165 = scalar(_e164);
+            return _e165;
+        }
+        case 26u: {
+            let _e168 = simplex2_(f_2[0].xy);
+            let _e169 = scalar(_e168);
+            return _e169;
+        }
+        case 27u: {
+            let _e172 = worley3_(f_2[0].xyz);
+            let _e173 = scalar(_e172);
+            return _e173;
+        }
+        case 28u: {
+            let _e176 = worley2_(f_2[0].xy);
+            let _e177 = scalar(_e176);
+            return _e177;
+        }
+        case 29u: {
+            let _e182 = fbm3_(f_2[0].xyz, u_1[1].x);
+            let _e183 = scalar(_e182);
+            return _e183;
+        }
+        case 30u: {
+            let _e188 = fbm2_(f_2[0].xy, u_1[1].x);
+            let _e189 = scalar(_e188);
+            return _e189;
+        }
+        case 31u: {
+            let _e192 = linear_to_srgb(f_2[0].xyz);
+            let _e193 = triple(_e192);
+            return _e193;
+        }
+        case 32u: {
+            let _e196 = srgb_to_linear(f_2[0].xyz);
+            let _e197 = triple(_e196);
+            return _e197;
+        }
+        case 33u: {
+            let _e200 = luminance(f_2[0].xyz);
+            let _e201 = scalar(_e200);
+            return _e201;
+        }
+        case 34u: {
+            let _e204 = rgb_to_hsv(f_2[0].xyz);
+            let _e205 = triple(_e204);
+            return _e205;
+        }
+        case 35u: {
+            let _e208 = hsv_to_rgb(f_2[0].xyz);
+            let _e209 = triple(_e208);
+            return _e209;
+        }
+        case 36u: {
+            let _e212 = rrt_and_odt_fit(f_2[0].xyz);
+            let _e213 = triple(_e212);
+            return _e213;
+        }
+        case 37u: {
+            let _e216 = tone_map_aces(f_2[0].xyz);
+            let _e217 = triple(_e216);
+            return _e217;
+        }
+        case 38u: {
+            let _e220 = agx_contrast(f_2[0].xyz);
+            let _e221 = triple(_e220);
+            return _e221;
+        }
+        case 39u: {
+            let _e224 = tone_map_agx(f_2[0].xyz);
+            let _e225 = triple(_e224);
+            return _e225;
+        }
+        case 40u: {
+            let _e228 = tone_map_neutral(f_2[0].xyz);
+            let _e229 = triple(_e228);
+            return _e229;
+        }
+        case 41u: {
+            let _e240 = lambert(f_2[0].xyz, f_2[1].xyz, f_2[2].xyz, f_2[3].xyz, f_2[4].xyz);
+            let _e241 = triple(_e240);
+            return _e241;
+        }
+        case 42u: {
+            let _e244 = brdf_lambert(f_2[0].xyz);
+            let _e245 = triple(_e244);
+            return _e245;
+        }
+        case 43u: {
+            let _e252 = f_schlick(f_2[0].xyz, f_2[0].w, f_2[1].x);
+            let _e253 = triple(_e252);
+            return _e253;
+        }
+        case 44u: {
+            let _e258 = d_ggx(f_2[0].x, f_2[0].y);
+            let _e259 = scalar(_e258);
+            return _e259;
+        }
+        case 45u: {
+            let _e266 = v_ggx_smith_correlated(f_2[0].x, f_2[0].y, f_2[0].z);
+            let _e267 = scalar(_e266);
+            return _e267;
+        }
+        case 46u: {
+            let _e280 = brdf_ggx(f_2[0].xyz, f_2[1].xyz, f_2[2].xyz, f_2[3].xyz, f_2[3].w, f_2[4].x);
+            let _e281 = triple(_e280);
+            return _e281;
+        }
+        case 47u: {
+            let _e286 = dfg_approx(f_2[0].x, f_2[0].y);
+            let _e287 = pair(_e286);
+            return _e287;
+        }
+        case 48u: {
+            let _e294 = environment_brdf(f_2[0].xyz, f_2[0].w, f_2[1].xy);
+            let _e295 = triple(_e294);
+            return _e295;
+        }
+        case 49u: {
+            let _e302 = multiscattering(f_2[0].xyz, f_2[0].w, f_2[1].xy);
+            let _e305 = triples(_e302.single, _e302.multi);
+            return _e305;
+        }
+        case 50u: {
+            let _e310 = multiscatter_compensation(f_2[0].xyz, f_2[1].xy);
+            let _e311 = triple(_e310);
+            return _e311;
+        }
+        case 51u: {
+            let _e318 = specular_occlusion(f_2[0].x, f_2[0].y, f_2[0].z);
+            let _e319 = scalar(_e318);
+            return _e319;
+        }
+        case 52u: {
+            let _e326 = distance_attenuation(f_2[0].x, f_2[0].y, f_2[0].z);
+            let _e327 = scalar(_e326);
+            return _e327;
+        }
+        case 53u: {
+            let _e334 = spot_attenuation(f_2[0].x, f_2[0].y, f_2[0].z);
+            let _e335 = scalar(_e334);
+            return _e335;
+        }
+        case 54u: {
+            let _e344 = hemisphere_irradiance(f_2[0].xyz, f_2[1].xyz, f_2[2].xyz, f_2[3].xyz);
+            let _e345 = triple(_e344);
+            return _e345;
+        }
+        case 55u: {
+            let sh_1 = array<vec3<f32>, 9>(f_2[1].xyz, vec3<f32>(f_2[1].w, f_2[2].xy), vec3<f32>(f_2[2].zw, f_2[3].x), f_2[3].yzw, f_2[4].xyz, vec3<f32>(f_2[4].w, f_2[5].xy), vec3<f32>(f_2[5].zw, f_2[6].x), f_2[6].yzw, f_2[7].xyz);
+            let _e379 = sh_irradiance(f_2[0].xyz, sh_1);
+            let _e380 = triple(_e379);
+            return _e380;
+        }
+        case 56u: {
+            let _e389 = pbr_material(f_2[0].xyz, f_2[0].w, f_2[1].x, f_2[1].y);
+            let _e402 = floats(vec4<f32>(_e389.base_color, _e389.specular_grazing), vec4<f32>(_e389.diffuse, _e389.roughness), vec4<f32>(_e389.specular, _e389.metalness), vec4<f32>(_e389.specular_blended, 0f));
+            return _e402;
+        }
+        case 57u: {
+            let _e403 = material(f_2);
+            let _e414 = direct_light(_e403, f_2[2].xyz, f_2[3].xyz, f_2[4].xyz, f_2[5].xyz, f_2[6].xyz);
+            let _e417 = triples(_e414.diffuse, _e414.specular);
+            return _e417;
+        }
+        case 58u: {
+            let _e418 = material(f_2);
+            let _e423 = indirect_diffuse(_e418, f_2[2].xyz, f_2[3].xy);
+            let _e424 = triple(_e423);
+            return _e424;
+        }
+        case 59u: {
+            let _e425 = material(f_2);
+            let _e432 = indirect_specular(_e425, f_2[2].xyz, f_2[3].xyz, f_2[4].xy);
+            let _e435 = triples(_e432.diffuse, _e432.specular);
+            return _e435;
+        }
+        case 60u: {
+            let _e440 = fog_depth(f_2[0].xyz, f_2[1].xyz);
+            let _e441 = scalar(_e440);
+            return _e441;
+        }
+        case 61u: {
+            let _e448 = fog_linear(f_2[0].x, f_2[0].y, f_2[0].z);
+            let _e449 = scalar(_e448);
+            return _e449;
+        }
+        case 62u: {
+            let _e454 = fog_exp2_(f_2[0].x, f_2[0].y);
+            let _e455 = scalar(_e454);
+            return _e455;
+        }
+        case 63u: {
+            let _e462 = apply_fog(f_2[0].xyz, f_2[1].xyz, f_2[2].x);
+            let _e463 = triple(_e462);
+            return _e463;
+        }
+        case 64u: {
+            let _e464 = transform(f_2);
+            let _e467 = transform_point(_e464, f_2[3].xyz);
+            let _e468 = triple(_e467);
+            return _e468;
+        }
+        case 65u: {
+            let _e469 = transform(f_2);
+            let _e472 = transform_direction(_e469, f_2[3].xyz);
+            let _e473 = triple(_e472);
+            return _e473;
+        }
+        case 66u: {
+            let _e474 = transform(f_2);
+            let _e477 = transform_normal(_e474, f_2[3].xyz);
+            let _e478 = triple(_e477);
+            return _e478;
+        }
+        case 67u: {
+            let _e479 = transform(f_2);
+            let _e482 = move_transform(_e479, f_2[3].xyz);
+            let _e488 = floats(_e482.x, _e482.y, _e482.z, vec4(0f));
+            return _e488;
+        }
+        case 68u: {
+            let _e496 = to_clip(mat4x4<f32>(f_2[0], f_2[1], f_2[2], f_2[3]), f_2[4].xyz);
+            let _e497 = quad(_e496);
+            return _e497;
+        }
+        case 69u: {
+            let _e499 = quad(OUTSIDE_CLIP);
+            return _e499;
+        }
+        case 70u: {
+            let _e506 = perspective_depth_to_view_z(f_2[0].x, f_2[0].y, f_2[0].z);
+            let _e507 = scalar(_e506);
+            return _e507;
+        }
+        case 71u: {
+            let _e514 = view_z_to_perspective_depth(f_2[0].x, f_2[0].y, f_2[0].z);
+            let _e515 = scalar(_e514);
+            return _e515;
+        }
+        case 72u: {
+            let _e522 = orthographic_depth_to_view_z(f_2[0].x, f_2[0].y, f_2[0].z);
+            let _e523 = scalar(_e522);
+            return _e523;
+        }
+        case 73u: {
+            let _e530 = view_z_to_orthographic_depth(f_2[0].x, f_2[0].y, f_2[0].z);
+            let _e531 = scalar(_e530);
+            return _e531;
+        }
+        case 74u: {
+            let _e538 = linear_depth(f_2[0].x, f_2[0].y, f_2[0].z);
+            let _e539 = scalar(_e538);
+            return _e539;
+        }
+        case 75u: {
+            let _e549 = view_position(f_2[0].xy, f_2[0].z, mat4x4<f32>(f_2[1], f_2[2], f_2[3], f_2[4]));
+            let _e550 = triple(_e549);
+            return _e550;
+        }
+        case 76u: {
+            let _e555 = sphere(f_2[0].xyz, f_2[0].w);
+            let _e556 = scalar(_e555);
+            return _e556;
+        }
+        case 77u: {
+            let _e561 = box(f_2[0].xyz, f_2[1].xyz);
+            let _e562 = scalar(_e561);
+            return _e562;
+        }
+        case 78u: {
+            let _e569 = round_box(f_2[0].xyz, f_2[1].xyz, f_2[1].w);
+            let _e570 = scalar(_e569);
+            return _e570;
+        }
+        case 79u: {
+            let _e577 = torus(f_2[0].xyz, f_2[1].x, f_2[1].y);
+            let _e578 = scalar(_e577);
+            return _e578;
+        }
+        case 80u: {
+            let _e587 = capsule(f_2[0].xyz, f_2[1].xyz, f_2[2].xyz, f_2[2].w);
+            let _e588 = scalar(_e587);
+            return _e588;
+        }
+        case 81u: {
+            let _e595 = cylinder(f_2[0].xyz, f_2[1].x, f_2[1].y);
+            let _e596 = scalar(_e595);
+            return _e596;
+        }
+        case 82u: {
+            let _e603 = plane(f_2[0].xyz, f_2[1].xyz, f_2[1].w);
+            let _e604 = scalar(_e603);
+            return _e604;
+        }
+        case 83u: {
+            let _e609 = circle(f_2[0].xy, f_2[0].z);
+            let _e610 = scalar(_e609);
+            return _e610;
+        }
+        case 84u: {
+            let _e615 = rect(f_2[0].xy, f_2[0].zw);
+            let _e616 = scalar(_e615);
+            return _e616;
+        }
+        case 85u: {
+            let _e623 = segment(f_2[0].xy, f_2[0].zw, f_2[1].xy);
+            let _e624 = scalar(_e623);
+            return _e624;
+        }
+        case 86u: {
+            let _e629 = merge(f_2[0].x, f_2[0].y);
+            let _e630 = scalar(_e629);
+            return _e630;
+        }
+        case 87u: {
+            let _e635 = subtract(f_2[0].x, f_2[0].y);
+            let _e636 = scalar(_e635);
+            return _e636;
+        }
+        case 88u: {
+            let _e641 = intersect(f_2[0].x, f_2[0].y);
+            let _e642 = scalar(_e641);
+            return _e642;
+        }
+        case 89u: {
+            let _e649 = smooth_merge(f_2[0].x, f_2[0].y, f_2[0].z);
+            let _e650 = scalar(_e649);
+            return _e650;
+        }
+        case 90u: {
+            let _e657 = smooth_subtract(f_2[0].x, f_2[0].y, f_2[0].z);
+            let _e658 = scalar(_e657);
+            return _e658;
+        }
+        case 91u: {
+            let _e665 = smooth_intersect(f_2[0].x, f_2[0].y, f_2[0].z);
+            let _e666 = scalar(_e665);
+            return _e666;
+        }
+        case 92u: {
+            let _e671 = rounded(f_2[0].x, f_2[0].y);
+            let _e672 = scalar(_e671);
+            return _e672;
+        }
+        case 93u: {
+            let _e677 = onion(f_2[0].x, f_2[0].y);
+            let _e678 = scalar(_e677);
+            return _e678;
+        }
+        default: {
+            let _e681 = whole(vec4(4294967295u));
+            return _e681;
+        }
+    }
+}
+
+@vertex
+fn vs(@builtin(vertex_index) corner: u32) -> @builtin(position) vec4<f32> {
+    let x_11 = ((f32(((corner << 1u) & 2u)) * 2f) - 1f);
+    let y_4 = ((f32((corner & 2u)) * 2f) - 1f);
+    return vec4<f32>(x_11, y_4, 0.5f, 1f);
+}
+
+@fragment
+fn fs(@builtin(position) position: vec4<f32>) -> @location(0) vec4<u32> {
+    var u: array<vec4<u32>, 8>;
+    var f: array<vec4<f32>, 8>;
+    var i: i32 = 0i;
+
+    let row = i32(position.y);
+    loop {
+        let _e5 = i;
+        if (_e5 < INPUTS) {
+        } else {
+            break;
+        }
+        {
+            let _e9 = i;
+            let _e11 = i;
+            let _e17 = textureLoad(cases, vec2<i32>((_e11 + 1i), row), 0i);
+            u[_e9] = _e17;
+            let _e19 = i;
+            let _e21 = i;
+            let _e23 = u[_e21];
+            f[_e19] = bitcast<vec4<f32>>(_e23);
+        }
+        continuing {
+            let _e26 = i;
+            i = (_e26 + 1i);
+        }
+    }
+    let _e32 = textureLoad(cases, vec2<i32>(0i, row), 0i);
+    let _e34 = u;
+    let _e35 = f;
+    let _e36 = run(_e32.x, _e34, _e35);
+    switch u32(position.x) {
+        case 0u: {
+            return _e36.a;
+        }
+        case 1u: {
+            return _e36.b;
+        }
+        case 2u: {
+            return _e36.c;
+        }
+        default: {
+            return _e36.d;
+        }
+    }
+}
+`,
+			pipelines: {
+				main: {
+					vertex: 'vs',
+					fragment: 'fs',
+				},
+			},
+		},
+		glsl: {
+			main: {
+				vertex: {
+					source: `#version 300 es
+uniform vec2 null3d_depth_mapping;
+
+precision highp float;
+precision highp int;
+
+struct Transform {
+    vec4 x;
+    vec4 y;
+    vec4 z;
+};
+struct PbrMaterial {
+    vec3 base_color;
+    vec3 diffuse;
+    vec3 specular;
+    vec3 specular_blended;
+    float specular_grazing;
+    float roughness;
+    float metalness;
+};
+struct Scattering {
+    vec3 single;
+    vec3 multi;
+};
+struct Reflected {
+    vec3 diffuse;
+    vec3 specular;
+};
+struct Results {
+    uvec4 a;
+    uvec4 b;
+    uvec4 c;
+    uvec4 d;
+};
+const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
+const float PI = 3.1415927;
+const float INV_PI = 0.31830987;
+const float EPSILON = 1e-6;
+const float TAU = 6.2831855;
+const float HALF_PI = 1.5707964;
+const mat3x3 ACES_INPUT = mat3x3(vec3(0.59719, 0.076, 0.0284), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
+const mat3x3 ACES_OUTPUT = mat3x3(vec3(1.60475, -0.10208, -0.00327), vec3(-0.53108, 1.10813, -0.07276), vec3(-0.07367, -0.00605, 1.07602));
+const mat3x3 LINEAR_SRGB_TO_LINEAR_REC2020_ = mat3x3(vec3(0.6274, 0.0691, 0.0164), vec3(0.3293, 0.9195, 0.088), vec3(0.0433, 0.0113, 0.8956));
+const mat3x3 AGX_INSET = mat3x3(vec3(0.85662717, 0.13731897, 0.11189821), vec3(0.09512124, 0.761242, 0.076799415), vec3(0.048251607, 0.10143904, 0.81130236));
+const mat3x3 AGX_OUTSET = mat3x3(vec3(1.1271006, -0.14132977, -0.14132977), vec3(-0.11060664, 1.1578237, -0.11060664), vec3(-0.016493939, -0.016493939, 1.2519364));
+const mat3x3 LINEAR_REC2020_TO_LINEAR_SRGB = mat3x3(vec3(1.6605, -0.1246, -0.0182), vec3(-0.5876, 1.1329, -0.1006), vec3(-0.0728, -0.0083, 1.1187));
+const int INPUTS = 8;
+
+
+vec3 transform_point(Transform t, vec3 p) {
+    vec4 q_3 = vec4(p, 1.0);
+    return vec3(dot(t.x, q_3), dot(t.y, q_3), dot(t.z, q_3));
+}
+
+vec3 transform_direction(Transform t_1, vec3 d) {
+    vec4 q_4 = vec4(d, 0.0);
+    return vec3(dot(t_1.x, q_4), dot(t_1.y, q_4), dot(t_1.z, q_4));
+}
+
+vec3 transform_normal(Transform t_2, vec3 n) {
+    vec3 a_11 = t_2.x.xyz;
+    vec3 b_11 = t_2.y.xyz;
+    vec3 c_12 = t_2.z.xyz;
+    vec3 bc = cross(b_11, c_12);
+    vec3 ca = cross(c_12, a_11);
+    vec3 ab = cross(a_11, b_11);
+    float facing = ((dot(a_11, bc) >= 0.0) ? 1.0 : -1.0);
+    return normalize((vec3(dot(bc, n), dot(ca, n), dot(ab, n)) * facing));
+}
+
+Transform move_transform(Transform t_3, vec3 offset) {
+    return Transform((t_3.x + vec4(0.0, 0.0, 0.0, offset.x)), (t_3.y + vec4(0.0, 0.0, 0.0, offset.y)), (t_3.z + vec4(0.0, 0.0, 0.0, offset.z)));
+}
+
+vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
+    return (view_proj * vec4(relative_position, 1.0));
+}
+
+float square(float x) {
+    return (x * x);
+}
+
+vec3 lambert(vec3 albedo, vec3 normal, vec3 to_light, vec3 light, vec3 ambient) {
+    float n_dot_l_1 = max(dot(normal, to_light), 0.0);
+    return ((albedo / vec3(3.1415927)) * ((n_dot_l_1 * light) + ambient));
+}
+
+vec3 brdf_lambert(vec3 diffuse) {
+    return (INV_PI * diffuse);
+}
+
+vec3 f_schlick(vec3 f0_, float f90_, float v_dot_h) {
+    float fresnel = exp2((((-5.55473 * v_dot_h) - 6.98316) * v_dot_h));
+    return ((f0_ * (1.0 - fresnel)) + vec3((f90_ * fresnel)));
+}
+
+float d_ggx(float alpha, float n_dot_h) {
+    float a2_ = (alpha * alpha);
+    float denom = (((n_dot_h * n_dot_h) * (a2_ - 1.0)) + 1.0);
+    return ((INV_PI * a2_) / (denom * denom));
+}
+
+float v_ggx_smith_correlated(float alpha_1, float n_dot_l, float n_dot_v) {
+    float a2_1 = (alpha_1 * alpha_1);
+    float gv = (n_dot_l * sqrt((a2_1 + (((1.0 - a2_1) * n_dot_v) * n_dot_v))));
+    float gl = (n_dot_v * sqrt((a2_1 + (((1.0 - a2_1) * n_dot_l) * n_dot_l))));
+    return (0.5 / max((gv + gl), EPSILON));
+}
+
+vec3 brdf_ggx(vec3 to_light_1, vec3 to_view, vec3 normal_1, vec3 f0_1, float f90_1, float roughness) {
+    float alpha_2 = (roughness * roughness);
+    vec3 half_dir = normalize((to_light_1 + to_view));
+    float n_dot_l_2 = clamp(dot(normal_1, to_light_1), 0.0, 1.0);
+    float n_dot_v_3 = clamp(dot(normal_1, to_view), 0.0, 1.0);
+    float n_dot_h_1 = clamp(dot(normal_1, half_dir), 0.0, 1.0);
+    float v_dot_h_1 = clamp(dot(to_view, half_dir), 0.0, 1.0);
+    vec3 _e17 = f_schlick(f0_1, f90_1, v_dot_h_1);
+    float _e18 = v_ggx_smith_correlated(alpha_2, n_dot_l_2, n_dot_v_3);
+    float _e19 = d_ggx(alpha_2, n_dot_h_1);
+    return (_e17 * (_e18 * _e19));
+}
+
+vec2 dfg_approx(float n_dot_v_1, float roughness_1) {
+    vec4 c0_ = vec4(-1.0, -0.0275, -0.572, 0.022);
+    vec4 c1_ = vec4(1.0, 0.0425, 1.04, -0.04);
+    vec4 r_2 = ((roughness_1 * c0_) + c1_);
+    float a004_ = ((min((r_2.x * r_2.x), exp2((-9.28 * n_dot_v_1))) * r_2.x) + r_2.y);
+    return ((vec2(-1.04, 1.04) * a004_) + r_2.zw);
+}
+
+vec3 environment_brdf(vec3 f0_2, float f90_2, vec2 dfg) {
+    return ((f0_2 * dfg.x) + vec3((f90_2 * dfg.y)));
+}
+
+Scattering multiscattering(vec3 f0_3, float f90_3, vec2 dfg_1) {
+    vec3 single = ((f0_3 * dfg_1.x) + vec3((f90_3 * dfg_1.y)));
+    float ess = (dfg_1.x + dfg_1.y);
+    float ems = (1.0 - ess);
+    vec3 average = (f0_3 + ((vec3(1.0) - f0_3) * 0.047619));
+    vec3 multi = ((single * average) / (vec3(1.0) - (ems * average)));
+    return Scattering(single, (multi * ems));
+}
+
+vec3 multiscatter_compensation(vec3 f0_4, vec2 dfg_2) {
+    return (vec3(1.0) + (f0_4 * ((1.0 / (dfg_2.x + dfg_2.y)) - 1.0)));
+}
+
+float specular_occlusion(float n_dot_v_2, float occlusion, float roughness_2) {
+    return clamp(((pow((n_dot_v_2 + occlusion), exp2(((-16.0 * roughness_2) - 1.0))) - 1.0) + occlusion), 0.0, 1.0);
+}
+
+float distance_attenuation(float distance_, float cutoff, float decay) {
+    float falloff = 0.0;
+    falloff = (1.0 / max(pow(distance_, decay), 0.01));
+    if ((cutoff > 0.0)) {
+        float _e12 = square((distance_ / cutoff));
+        float _e13 = falloff;
+        float _e18 = square(clamp((1.0 - (_e12 * _e12)), 0.0, 1.0));
+        falloff = (_e13 * _e18);
+    }
+    float _e20 = falloff;
+    return _e20;
+}
+
+float spot_attenuation(float cone_cos, float penumbra_cos, float angle_cos) {
+    return smoothstep(cone_cos, penumbra_cos, angle_cos);
+}
+
+vec3 hemisphere_irradiance(vec3 normal_2, vec3 up, vec3 sky, vec3 ground) {
+    float weight = ((0.5 * dot(normal_2, up)) + 0.5);
+    return mix(ground, sky, weight);
+}
+
+vec3 sh_irradiance(vec3 normal_3, vec3 sh[9]) {
+    vec3 result = vec3(0.0);
+    float x_9 = normal_3.x;
+    float y_3 = normal_3.y;
+    float z_1 = normal_3.z;
+    result = (sh[0] * 0.886227);
+    vec3 _e9 = result;
+    result = (_e9 + (sh[1] * (1.023328 * y_3)));
+    vec3 _e15 = result;
+    result = (_e15 + (sh[2] * (1.023328 * z_1)));
+    vec3 _e21 = result;
+    result = (_e21 + (sh[3] * (1.023328 * x_9)));
+    vec3 _e27 = result;
+    result = (_e27 + (sh[4] * ((0.858086 * x_9) * y_3)));
+    vec3 _e34 = result;
+    result = (_e34 + (sh[5] * ((0.858086 * y_3) * z_1)));
+    vec3 _e41 = result;
+    result = (_e41 + (sh[6] * (((0.743125 * z_1) * z_1) - 0.247708)));
+    vec3 _e50 = result;
+    result = (_e50 + (sh[7] * ((0.858086 * x_9) * z_1)));
+    vec3 _e57 = result;
+    result = (_e57 + (sh[8] * (0.429043 * ((x_9 * x_9) - (y_3 * y_3)))));
+    vec3 _e66 = result;
+    return _e66;
+}
+
+PbrMaterial pbr_material(vec3 base_color, float metalness, float roughness_3, float geometry_roughness) {
+    PbrMaterial m = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
+    m.base_color = base_color;
+    m.diffuse = (base_color * (1.0 - metalness));
+    m.specular = vec3(0.04);
+    vec3 _e13 = m.specular;
+    m.specular_blended = mix(_e13, base_color, metalness);
+    m.specular_grazing = 1.0;
+    m.roughness = min((max(roughness_3, 0.0525) + geometry_roughness), 1.0);
+    m.metalness = metalness;
+    PbrMaterial _e26 = m;
+    return _e26;
+}
+
+Reflected direct_light(PbrMaterial m_1, vec3 normal_4, vec3 to_view_1, vec3 to_light_2, vec3 light_1, vec3 compensation) {
+    vec3 irradiance_2 = (clamp(dot(normal_4, to_light_2), 0.0, 1.0) * light_1);
+    vec3 _e11 = brdf_ggx(to_light_2, to_view_1, normal_4, m_1.specular_blended, m_1.specular_grazing, m_1.roughness);
+    float v_dot_h_2 = clamp(dot(to_view_1, normalize((to_light_2 + to_view_1))), 0.0, 1.0);
+    vec3 _e18 = f_schlick(m_1.specular, m_1.specular_grazing, v_dot_h_2);
+    vec3 _e20 = brdf_lambert(m_1.diffuse);
+    return Reflected(((irradiance_2 * _e20) * (vec3(1.0) - _e18)), ((irradiance_2 * _e11) * compensation));
+}
+
+vec3 indirect_diffuse(PbrMaterial m_2, vec3 irradiance, vec2 dfg_3) {
+    Scattering _e4 = multiscattering(m_2.specular, m_2.specular_grazing, dfg_3);
+    vec3 _e6 = brdf_lambert(m_2.diffuse);
+    return ((irradiance * _e6) * ((vec3(1.0) - _e4.single) - _e4.multi));
+}
+
+Reflected indirect_specular(PbrMaterial m_3, vec3 radiance, vec3 irradiance_1, vec2 dfg_4) {
+    Scattering _e4 = multiscattering(m_3.specular, m_3.specular_grazing, dfg_4);
+    Scattering _e7 = multiscattering(m_3.base_color, m_3.specular_grazing, dfg_4);
+    vec3 single_1 = mix(_e4.single, _e7.single, m_3.metalness);
+    vec3 multi_1 = mix(_e4.multi, _e7.multi, m_3.metalness);
+    vec3 cosine_weighted = (irradiance_1 * INV_PI);
+    vec3 diffuse_1 = (m_3.diffuse * (vec3(1.0) - (_e4.single + _e4.multi)));
+    return Reflected((diffuse_1 * cosine_weighted), ((radiance * single_1) + (multi_1 * cosine_weighted)));
+}
+
+float max_component(vec3 v) {
+    return max(max(v.x, v.y), v.z);
+}
+
+float min_component(vec3 v_1) {
+    return min(min(v_1.x, v_1.y), v_1.z);
+}
+
+float inverse_lerp(float a, float b, float x_1) {
+    return ((x_1 - a) / (b - a));
+}
+
+float remap(float x_2, float in_min, float in_max, float out_min, float out_max) {
+    float _e3 = inverse_lerp(in_min, in_max, x_2);
+    return mix(out_min, out_max, _e3);
+}
+
+float modulo(float x_3, float y) {
+    return (x_3 - (y * floor((x_3 / y))));
+}
+
+vec2 rotate_2d(vec2 p_1, float angle) {
+    float c_13 = cos(angle);
+    float s = sin(angle);
+    return vec2(((c_13 * p_1.x) - (s * p_1.y)), ((s * p_1.x) + (c_13 * p_1.y)));
+}
+
+vec3 rotate_axis(vec3 v_2, vec3 axis, float angle_1) {
+    float c_14 = cos(angle_1);
+    float s_1 = sin(angle_1);
+    return (((v_2 * c_14) + (cross(axis, v_2) * s_1)) + (axis * (dot(axis, v_2) * (1.0 - c_14))));
+}
+
+vec3 quat_rotate(vec4 q, vec3 v_3) {
+    vec3 t_5 = (2.0 * cross(q.xyz, v_3));
+    return ((v_3 + (q.w * t_5)) + cross(q.xyz, t_5));
+}
+
+mat3x3 basis_from_normal(vec3 n_1) {
+    float s_2 = ((n_1.z >= 0.0) ? 1.0 : -1.0);
+    float a_12 = (-1.0 / (s_2 + n_1.z));
+    float b_12 = ((n_1.x * n_1.y) * a_12);
+    vec3 tangent = vec3((1.0 + (((s_2 * n_1.x) * n_1.x) * a_12)), (s_2 * b_12), (-(s_2) * n_1.x));
+    vec3 bitangent = vec3(b_12, (s_2 + ((n_1.y * n_1.y) * a_12)), -(n_1.y));
+    return mat3x3(tangent, bitangent, n_1);
+}
+
+uint pcg(uint v_4) {
+    uint state = ((v_4 * 747796405u) + 2891336453u);
+    uint word = (((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u);
+    return ((word >> 22u) ^ word);
+}
+
+uvec3 pcg3d(uvec3 v_5) {
+    uvec3 p_2 = uvec3(0u);
+    p_2 = ((v_5 * 1664525u) + uvec3(1013904223u));
+    uint _e8 = p_2.x;
+    uint _e10 = p_2.y;
+    uint _e12 = p_2.z;
+    p_2.x = (_e8 + (_e10 * _e12));
+    uint _e16 = p_2.y;
+    uint _e18 = p_2.z;
+    uint _e20 = p_2.x;
+    p_2.y = (_e16 + (_e18 * _e20));
+    uint _e24 = p_2.z;
+    uint _e26 = p_2.x;
+    uint _e28 = p_2.y;
+    p_2.z = (_e24 + (_e26 * _e28));
+    uvec3 _e31 = p_2;
+    uvec3 _e32 = p_2;
+    p_2 = (_e31 ^ (_e32 >> uvec3(16u)));
+    uint _e38 = p_2.x;
+    uint _e40 = p_2.y;
+    uint _e42 = p_2.z;
+    p_2.x = (_e38 + (_e40 * _e42));
+    uint _e46 = p_2.y;
+    uint _e48 = p_2.z;
+    uint _e50 = p_2.x;
+    p_2.y = (_e46 + (_e48 * _e50));
+    uint _e54 = p_2.z;
+    uint _e56 = p_2.x;
+    uint _e58 = p_2.y;
+    p_2.z = (_e54 + (_e56 * _e58));
+    uvec3 _e61 = p_2;
+    return _e61;
+}
+
+float to_unit(uint h) {
+    return (float((h >> 8u)) / 16777216.0);
+}
+
+float random(uint seed) {
+    uint _e1 = pcg(seed);
+    float _e2 = to_unit(_e1);
+    return _e2;
+}
+
+float random2_(vec2 p_3) {
+    uvec2 bits = floatBitsToUint(p_3);
+    uint _e4 = pcg(bits.y);
+    uint _e6 = pcg((bits.x ^ _e4));
+    float _e7 = to_unit(_e6);
+    return _e7;
+}
+
+float random3_(vec3 p_4) {
+    uvec3 _e2 = pcg3d(floatBitsToUint(p_4));
+    float _e4 = to_unit(_e2.x);
+    return _e4;
+}
+
+uvec3 lattice(ivec3 c) {
+    uvec3 _e2 = pcg3d(uvec3(c));
+    return _e2;
+}
+
+vec3 fade(vec3 t_4) {
+    return (((t_4 * t_4) * t_4) * ((t_4 * ((t_4 * 6.0) - vec3(15.0))) + vec3(10.0)));
+}
+
+float value3_(vec3 p_5) {
+    ivec3 i_1 = ivec3(floor(p_5));
+    vec3 _e4 = fade(fract(p_5));
+    uvec3 _e5 = lattice(i_1);
+    float _e7 = to_unit(_e5.x);
+    uvec3 _e13 = lattice((i_1 + ivec3(1, 0, 0)));
+    float _e15 = to_unit(_e13.x);
+    float x00_ = mix(_e7, _e15, _e4.x);
+    uvec3 _e23 = lattice((i_1 + ivec3(0, 1, 0)));
+    float _e25 = to_unit(_e23.x);
+    uvec3 _e31 = lattice((i_1 + ivec3(1, 1, 0)));
+    float _e33 = to_unit(_e31.x);
+    float x10_ = mix(_e25, _e33, _e4.x);
+    uvec3 _e41 = lattice((i_1 + ivec3(0, 0, 1)));
+    float _e43 = to_unit(_e41.x);
+    uvec3 _e49 = lattice((i_1 + ivec3(1, 0, 1)));
+    float _e51 = to_unit(_e49.x);
+    float x01_ = mix(_e43, _e51, _e4.x);
+    uvec3 _e59 = lattice((i_1 + ivec3(0, 1, 1)));
+    float _e61 = to_unit(_e59.x);
+    uvec3 _e67 = lattice((i_1 + ivec3(1, 1, 1)));
+    float _e69 = to_unit(_e67.x);
+    float x11_ = mix(_e61, _e69, _e4.x);
+    return mix(mix(x00_, x10_, _e4.y), mix(x01_, x11_, _e4.y), _e4.z);
+}
+
+float value2_(vec2 p_6) {
+    ivec3 i_2 = ivec3(ivec2(floor(p_6)), 0);
+    vec3 _e8 = fade(vec3(fract(p_6), 0.0));
+    uvec3 _e9 = lattice(i_2);
+    float _e11 = to_unit(_e9.x);
+    uvec3 _e17 = lattice((i_2 + ivec3(1, 0, 0)));
+    float _e19 = to_unit(_e17.x);
+    float x0_ = mix(_e11, _e19, _e8.x);
+    uvec3 _e27 = lattice((i_2 + ivec3(0, 1, 0)));
+    float _e29 = to_unit(_e27.x);
+    uvec3 _e35 = lattice((i_2 + ivec3(1, 1, 0)));
+    float _e37 = to_unit(_e35.x);
+    float x1_ = mix(_e29, _e37, _e8.x);
+    return mix(x0_, x1_, _e8.y);
+}
+
+float gradient(uint h_1, vec3 f_1) {
+    bool local = false;
+    uint k_3 = (h_1 & 15u);
+    float u_2 = ((k_3 < 8u) ? f_1.x : f_1.y);
+    if (!((k_3 == 12u))) {
+        local = (k_3 == 14u);
+    } else {
+        local = true;
+    }
+    bool _e19 = local;
+    float v_11 = ((k_3 < 4u) ? f_1.y : (_e19 ? f_1.x : f_1.z));
+    return ((((k_3 & 1u) == 0u) ? u_2 : -(u_2)) + (((k_3 & 2u) == 0u) ? v_11 : -(v_11)));
+}
+
+float perlin3_(vec3 p_7) {
+    ivec3 i_3 = ivec3(floor(p_7));
+    vec3 f_3 = fract(p_7);
+    vec3 _e4 = fade(f_3);
+    uvec3 _e5 = lattice(i_3);
+    float _e7 = gradient(_e5.x, f_3);
+    uvec3 _e13 = lattice((i_3 + ivec3(1, 0, 0)));
+    float _e20 = gradient(_e13.x, (f_3 - vec3(1.0, 0.0, 0.0)));
+    float x00_1 = mix(_e7, _e20, _e4.x);
+    uvec3 _e28 = lattice((i_3 + ivec3(0, 1, 0)));
+    float _e35 = gradient(_e28.x, (f_3 - vec3(0.0, 1.0, 0.0)));
+    uvec3 _e41 = lattice((i_3 + ivec3(1, 1, 0)));
+    float _e48 = gradient(_e41.x, (f_3 - vec3(1.0, 1.0, 0.0)));
+    float x10_1 = mix(_e35, _e48, _e4.x);
+    uvec3 _e56 = lattice((i_3 + ivec3(0, 0, 1)));
+    float _e63 = gradient(_e56.x, (f_3 - vec3(0.0, 0.0, 1.0)));
+    uvec3 _e69 = lattice((i_3 + ivec3(1, 0, 1)));
+    float _e76 = gradient(_e69.x, (f_3 - vec3(1.0, 0.0, 1.0)));
+    float x01_1 = mix(_e63, _e76, _e4.x);
+    uvec3 _e84 = lattice((i_3 + ivec3(0, 1, 1)));
+    float _e91 = gradient(_e84.x, (f_3 - vec3(0.0, 1.0, 1.0)));
+    uvec3 _e97 = lattice((i_3 + ivec3(1, 1, 1)));
+    float _e104 = gradient(_e97.x, (f_3 - vec3(1.0, 1.0, 1.0)));
+    float x11_1 = mix(_e91, _e104, _e4.x);
+    return mix(mix(x00_1, x10_1, _e4.y), mix(x01_1, x11_1, _e4.y), _e4.z);
+}
+
+float perlin2_(vec2 p_8) {
+    ivec3 i_4 = ivec3(ivec2(floor(p_8)), 0);
+    vec3 f_4 = vec3(fract(p_8), 0.0);
+    vec3 _e8 = fade(f_4);
+    uvec3 _e9 = lattice(i_4);
+    float _e11 = gradient(_e9.x, f_4);
+    uvec3 _e17 = lattice((i_4 + ivec3(1, 0, 0)));
+    float _e24 = gradient(_e17.x, (f_4 - vec3(1.0, 0.0, 0.0)));
+    float x0_1 = mix(_e11, _e24, _e8.x);
+    uvec3 _e32 = lattice((i_4 + ivec3(0, 1, 0)));
+    float _e39 = gradient(_e32.x, (f_4 - vec3(0.0, 1.0, 0.0)));
+    uvec3 _e45 = lattice((i_4 + ivec3(1, 1, 0)));
+    float _e52 = gradient(_e45.x, (f_4 - vec3(1.0, 1.0, 0.0)));
+    float x1_1 = mix(_e39, _e52, _e8.x);
+    return mix(x0_1, x1_1, _e8.y);
+}
+
+float simplex_corner(ivec3 c_1, vec3 x_4, float r2_) {
+    float t_6 = max((r2_ - dot(x_4, x_4)), 0.0);
+    float t2_ = (t_6 * t_6);
+    uvec3 _e9 = lattice(c_1);
+    float _e11 = gradient(_e9.x, x_4);
+    return ((t2_ * t2_) * _e11);
+}
+
+float simplex3_(vec3 p_9) {
+    float skew = (((p_9.x + p_9.y) + p_9.z) / 3.0);
+    vec3 cell = floor((p_9 + vec3(skew)));
+    float unskew = (((cell.x + cell.y) + cell.z) / 6.0);
+    vec3 x0_2 = (p_9 - (cell - vec3(unskew)));
+    vec3 g = step(x0_2.yzx, x0_2.xyz);
+    vec3 l = (vec3(1.0) - g);
+    vec3 i1_ = min(g, l.zxy);
+    vec3 i2_ = max(g, l.zxy);
+    vec3 x1_2 = ((x0_2 - i1_) + vec3(0.16666667));
+    vec3 x2_ = ((x0_2 - i2_) + vec3(0.33333334));
+    vec3 x3_ = (x0_2 - vec3(0.5));
+    ivec3 i_5 = ivec3(cell);
+    float _e44 = simplex_corner(i_5, x0_2, 0.6);
+    float _e48 = simplex_corner((i_5 + ivec3(i1_)), x1_2, 0.6);
+    float _e53 = simplex_corner((i_5 + ivec3(i2_)), x2_, 0.6);
+    float _e61 = simplex_corner((i_5 + ivec3(1, 1, 1)), x3_, 0.6);
+    float n_2 = (((_e44 + _e48) + _e53) + _e61);
+    return (32.0 * n_2);
+}
+
+float simplex2_(vec2 p_10) {
+    float skew_1 = ((p_10.x + p_10.y) * 0.36602542);
+    vec2 cell_1 = floor((p_10 + vec2(skew_1)));
+    float unskew_1 = ((cell_1.x + cell_1.y) * 0.21132487);
+    vec2 x0_3 = (p_10 - (cell_1 - vec2(unskew_1)));
+    vec2 i1_1 = ((x0_3.x > x0_3.y) ? vec2(1.0, 0.0) : vec2(0.0, 1.0));
+    vec2 x1_3 = ((x0_3 - i1_1) + vec2(0.21132487));
+    vec2 x2_1 = ((x0_3 - vec2(1.0)) + vec2(0.42264974));
+    ivec3 i_6 = ivec3(ivec2(cell_1), 0);
+    float _e43 = simplex_corner(i_6, vec3(x0_3, 0.0), 0.5);
+    float _e51 = simplex_corner((i_6 + ivec3(ivec2(i1_1), 0)), vec3(x1_3, 0.0), 0.5);
+    float _e61 = simplex_corner((i_6 + ivec3(1, 1, 0)), vec3(x2_1, 0.0), 0.5);
+    float n_3 = ((_e43 + _e51) + _e61);
+    return (70.0 * n_3);
+}
+
+float worley3_(vec3 p_11) {
+    float nearest = 8.0;
+    int z = -1;
+    int y_1 = 0;
+    int x_5 = 0;
+    ivec3 i_7 = ivec3(floor(p_11));
+    vec3 f_5 = fract(p_11);
+    bool loop_init = true;
+    while(true) {
+        if (!loop_init) {
+            int _e47 = z;
+            z = (_e47 + 1);
+        }
+        loop_init = false;
+        int _e7 = z;
+        if ((_e7 <= 1)) {
+        } else {
+            break;
+        }
+        {
+            y_1 = -1;
+            bool loop_init_1 = true;
+            while(true) {
+                if (!loop_init_1) {
+                    int _e44 = y_1;
+                    y_1 = (_e44 + 1);
+                }
+                loop_init_1 = false;
+                int _e12 = y_1;
+                if ((_e12 <= 1)) {
+                } else {
+                    break;
+                }
+                {
+                    x_5 = -1;
+                    bool loop_init_2 = true;
+                    while(true) {
+                        if (!loop_init_2) {
+                            int _e41 = x_5;
+                            x_5 = (_e41 + 1);
+                        }
+                        loop_init_2 = false;
+                        int _e17 = x_5;
+                        if ((_e17 <= 1)) {
+                        } else {
+                            break;
+                        }
+                        {
+                            int _e20 = x_5;
+                            int _e21 = y_1;
+                            int _e22 = z;
+                            ivec3 o = ivec3(_e20, _e21, _e22);
+                            uvec3 _e25 = lattice((i_7 + o));
+                            vec3 d_4 = ((vec3(o) + (vec3((_e25 >> uvec3(8u))) / vec3(16777216.0))) - f_5);
+                            float _e37 = nearest;
+                            nearest = min(_e37, dot(d_4, d_4));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    float _e49 = nearest;
+    return sqrt(_e49);
+}
+
+float worley2_(vec2 p_12) {
+    float nearest_1 = 8.0;
+    int y_2 = -1;
+    int x_6 = 0;
+    ivec2 i_8 = ivec2(floor(p_12));
+    vec2 f_6 = fract(p_12);
+    bool loop_init_3 = true;
+    while(true) {
+        if (!loop_init_3) {
+            int _e41 = y_2;
+            y_2 = (_e41 + 1);
+        }
+        loop_init_3 = false;
+        int _e7 = y_2;
+        if ((_e7 <= 1)) {
+        } else {
+            break;
+        }
+        {
+            x_6 = -1;
+            bool loop_init_4 = true;
+            while(true) {
+                if (!loop_init_4) {
+                    int _e38 = x_6;
+                    x_6 = (_e38 + 1);
+                }
+                loop_init_4 = false;
+                int _e12 = x_6;
+                if ((_e12 <= 1)) {
+                } else {
+                    break;
+                }
+                {
+                    int _e15 = x_6;
+                    int _e16 = y_2;
+                    ivec2 o_1 = ivec2(_e15, _e16);
+                    uvec3 _e21 = lattice(ivec3((i_8 + o_1), 0));
+                    vec2 d_5 = ((vec2(o_1) + (vec2((_e21.xy >> uvec2(8u))) / vec2(16777216.0))) - f_6);
+                    float _e34 = nearest_1;
+                    nearest_1 = min(_e34, dot(d_5, d_5));
+                }
+            }
+        }
+    }
+    float _e43 = nearest_1;
+    return sqrt(_e43);
+}
+
+float fbm3_(vec3 p_13, uint octaves) {
+    float sum = 0.0;
+    float total = 0.0;
+    float amplitude = 1.0;
+    vec3 q_1 = vec3(0.0);
+    uint octave = 0u;
+    q_1 = p_13;
+    bool loop_init_5 = true;
+    while(true) {
+        if (!loop_init_5) {
+            uint _e28 = octave;
+            octave = (_e28 + 1u);
+        }
+        loop_init_5 = false;
+        uint _e7 = octave;
+        if ((_e7 < octaves)) {
+        } else {
+            break;
+        }
+        {
+            float _e11 = sum;
+            float _e12 = amplitude;
+            vec3 _e13 = q_1;
+            float _e14 = simplex3_(_e13);
+            sum = (_e11 + (_e12 * _e14));
+            float _e18 = total;
+            float _e19 = amplitude;
+            total = (_e18 + _e19);
+            float _e21 = amplitude;
+            amplitude = (_e21 * 0.5);
+            vec3 _e24 = q_1;
+            q_1 = (_e24 * 2.0);
+        }
+    }
+    float _e30 = sum;
+    float _e31 = total;
+    float _e33 = total;
+    return ((_e33 > 0.0) ? (_e30 / _e31) : 0.0);
+}
+
+float fbm2_(vec2 p_14, uint octaves_1) {
+    float sum_1 = 0.0;
+    float total_1 = 0.0;
+    float amplitude_1 = 1.0;
+    vec2 q_2 = vec2(0.0);
+    uint octave_1 = 0u;
+    q_2 = p_14;
+    bool loop_init_6 = true;
+    while(true) {
+        if (!loop_init_6) {
+            uint _e28 = octave_1;
+            octave_1 = (_e28 + 1u);
+        }
+        loop_init_6 = false;
+        uint _e7 = octave_1;
+        if ((_e7 < octaves_1)) {
+        } else {
+            break;
+        }
+        {
+            float _e11 = sum_1;
+            float _e12 = amplitude_1;
+            vec2 _e13 = q_2;
+            float _e14 = simplex2_(_e13);
+            sum_1 = (_e11 + (_e12 * _e14));
+            float _e18 = total_1;
+            float _e19 = amplitude_1;
+            total_1 = (_e18 + _e19);
+            float _e21 = amplitude_1;
+            amplitude_1 = (_e21 * 0.5);
+            vec2 _e24 = q_2;
+            q_2 = (_e24 * 2.0);
+        }
+    }
+    float _e30 = sum_1;
+    float _e31 = total_1;
+    float _e33 = total_1;
+    return ((_e33 > 0.0) ? (_e30 / _e31) : 0.0);
+}
+
+vec3 linear_to_srgb(vec3 c_2) {
+    vec3 low = (c_2 * 12.92);
+    vec3 high = ((1.055 * pow(c_2, vec3(0.41666666))) - vec3(0.055));
+    return mix(high, low, lessThanEqual(c_2, vec3(0.0031308)));
+}
+
+vec3 srgb_to_linear(vec3 c_3) {
+    vec3 low_1 = (c_3 / vec3(12.92));
+    vec3 high_1 = pow(((c_3 + vec3(0.055)) / vec3(1.055)), vec3(2.4));
+    return mix(high_1, low_1, lessThanEqual(c_3, vec3(0.04045)));
+}
+
+float luminance(vec3 c_4) {
+    return dot(c_4, vec3(0.2126, 0.7152, 0.0722));
+}
+
+vec3 rgb_to_hsv(vec3 c_5) {
+    vec4 k_4 = vec4(0.0, -0.33333334, 0.6666667, -1.0);
+    vec4 p_25 = mix(vec4(c_5.zy, k_4.wz), vec4(c_5.yz, k_4.xy), step(c_5.z, c_5.y));
+    vec4 q_5 = mix(vec4(p_25.xyw, c_5.x), vec4(c_5.x, p_25.yzx), step(p_25.x, c_5.x));
+    float d_6 = (q_5.x - min(q_5.w, q_5.y));
+    return vec3(abs((q_5.z + ((q_5.w - q_5.y) / ((6.0 * d_6) + 1e-10)))), (d_6 / (q_5.x + 1e-10)), q_5.x);
+}
+
+vec3 hsv_to_rgb(vec3 c_6) {
+    vec4 k_5 = vec4(1.0, 0.6666667, 0.33333334, 3.0);
+    vec3 p_26 = abs(((fract((c_6.xxx + k_5.xyz)) * 6.0) - k_5.www));
+    return (c_6.z * mix(k_5.xxx, clamp((p_26 - k_5.xxx), vec3(0.0), vec3(1.0)), c_6.y));
+}
+
+vec3 rrt_and_odt_fit(vec3 v_6) {
+    vec3 a_13 = ((v_6 * (v_6 + vec3(0.0245786))) - vec3(9.0537e-5));
+    vec3 b_13 = ((v_6 * ((0.983729 * v_6) + vec3(0.432951))) + vec3(0.238081));
+    return (a_13 / b_13);
+}
+
+vec3 tone_map_aces(vec3 c_7) {
+    vec3 _e6 = rrt_and_odt_fit((ACES_INPUT * (c_7 / vec3(0.6))));
+    return clamp((ACES_OUTPUT * _e6), vec3(0.0), vec3(1.0));
+}
+
+vec3 agx_contrast(vec3 x_7) {
+    vec3 x2_2 = (x_7 * x_7);
+    vec3 x4_ = (x2_2 * x2_2);
+    return ((((((((15.5 * x4_) * x2_2) - ((40.14 * x4_) * x_7)) + (31.96 * x4_)) - ((6.868 * x2_2) * x_7)) + (0.4298 * x2_2)) + (0.1191 * x_7)) - vec3(0.00232));
+}
+
+vec3 tone_map_agx(vec3 c_8) {
+    vec3 inset = (AGX_INSET * (LINEAR_SRGB_TO_LINEAR_REC2020_ * c_8));
+    vec3 logged = ((log2(max(inset, vec3(1e-10))) - vec3(-12.47393)) / vec3(16.5));
+    vec3 _e16 = agx_contrast(clamp(logged, vec3(0.0), vec3(1.0)));
+    vec3 curved = (AGX_OUTSET * _e16);
+    vec3 rec2020_ = pow(max(curved, vec3(0.0)), vec3(2.2));
+    return clamp((LINEAR_REC2020_TO_LINEAR_SRGB * rec2020_), vec3(0.0), vec3(1.0));
+}
+
+vec3 tone_map_neutral(vec3 c_9) {
+    float x_10 = min(c_9.x, min(c_9.y, c_9.z));
+    float toe = ((x_10 < 0.08) ? (x_10 - ((6.25 * x_10) * x_10)) : 0.04);
+    vec3 shifted = (c_9 - vec3(toe));
+    float peak = max(shifted.x, max(shifted.y, shifted.z));
+    if ((peak < 0.76)) {
+        return shifted;
+    }
+    float d_7 = (1.0 - 0.76);
+    float new_peak = (1.0 - ((d_7 * d_7) / ((peak + d_7) - 0.76)));
+    float g_1 = (1.0 - (1.0 / ((0.15 * (peak - new_peak)) + 1.0)));
+    return mix((shifted * (new_peak / peak)), vec3(new_peak), g_1);
+}
+
+float fog_depth(vec3 relative_position_1, vec3 forward) {
+    return dot(relative_position_1, forward);
+}
+
+float fog_linear(float depth, float near, float far) {
+    return smoothstep(near, far, depth);
+}
+
+float fog_exp2_(float depth_1, float density) {
+    return (1.0 - exp((((-(density) * density) * depth_1) * depth_1)));
+}
+
+vec3 apply_fog(vec3 c_10, vec3 fog_color, float factor) {
+    return mix(c_10, fog_color, factor);
+}
+
+float perspective_depth_to_view_z(float depth_2, float near_1, float far_1) {
+    return ((-(near_1) * far_1) / (near_1 + (depth_2 * (far_1 - near_1))));
+}
+
+float view_z_to_perspective_depth(float view_z, float near_2, float far_2) {
+    return ((near_2 * (view_z + far_2)) / (-(view_z) * (far_2 - near_2)));
+}
+
+float orthographic_depth_to_view_z(float depth_3, float near_3, float far_3) {
+    return ((depth_3 * (far_3 - near_3)) - far_3);
+}
+
+float view_z_to_orthographic_depth(float view_z_1, float near_4, float far_4) {
+    return ((view_z_1 + far_4) / (far_4 - near_4));
+}
+
+float linear_depth(float depth_4, float near_5, float far_5) {
+    float _e3 = perspective_depth_to_view_z(depth_4, near_5, far_5);
+    return -(_e3);
+}
+
+vec3 view_position(vec2 uv, float depth_5, mat4x4 inverse_projection) {
+    vec4 clip = vec4(((uv.x * 2.0) - 1.0), (1.0 - (uv.y * 2.0)), depth_5, 1.0);
+    vec4 p_27 = (inverse_projection * clip);
+    return (p_27.xyz / vec3(p_27.w));
+}
+
+float sphere(vec3 p_15, float radius) {
+    return (length(p_15) - radius);
+}
+
+float box(vec3 p_16, vec3 half_size) {
+    vec3 q_6 = (abs(p_16) - half_size);
+    return (length(max(q_6, vec3(0.0))) + min(max(q_6.x, max(q_6.y, q_6.z)), 0.0));
+}
+
+float round_box(vec3 p_17, vec3 half_size_1, float radius_1) {
+    float _e5 = box(p_17, (half_size_1 - vec3(radius_1)));
+    return (_e5 - radius_1);
+}
+
+float torus(vec3 p_18, float major, float minor) {
+    vec2 q_7 = vec2((length(p_18.xz) - major), p_18.y);
+    return (length(q_7) - minor);
+}
+
+float capsule(vec3 p_19, vec3 a_1, vec3 b_1, float radius_2) {
+    vec3 pa = (p_19 - a_1);
+    vec3 ba = (b_1 - a_1);
+    float h_2 = clamp((dot(pa, ba) / dot(ba, ba)), 0.0, 1.0);
+    return (length((pa - (ba * h_2))) - radius_2);
+}
+
+float cylinder(vec3 p_20, float half_height, float radius_3) {
+    vec2 d_8 = (abs(vec2(length(p_20.xz), p_20.y)) - vec2(radius_3, half_height));
+    return (min(max(d_8.x, d_8.y), 0.0) + length(max(d_8, vec2(0.0))));
+}
+
+float plane(vec3 p_21, vec3 normal_5, float offset_1) {
+    return (dot(p_21, normal_5) - offset_1);
+}
+
+float circle(vec2 p_22, float radius_4) {
+    return (length(p_22) - radius_4);
+}
+
+float rect(vec2 p_23, vec2 half_size_2) {
+    vec2 d_9 = (abs(p_23) - half_size_2);
+    return (length(max(d_9, vec2(0.0))) + min(max(d_9.x, d_9.y), 0.0));
+}
+
+float segment(vec2 p_24, vec2 a_2, vec2 b_2) {
+    vec2 pa_1 = (p_24 - a_2);
+    vec2 ba_1 = (b_2 - a_2);
+    float h_3 = clamp((dot(pa_1, ba_1) / dot(ba_1, ba_1)), 0.0, 1.0);
+    return length((pa_1 - (ba_1 * h_3)));
+}
+
+float merge(float a_3, float b_3) {
+    return min(a_3, b_3);
+}
+
+float subtract(float a_4, float b_4) {
+    return max(a_4, -(b_4));
+}
+
+float intersect(float a_5, float b_5) {
+    return max(a_5, b_5);
+}
+
+float smooth_merge(float a_6, float b_6, float k) {
+    float h_4 = clamp((0.5 + ((0.5 * (b_6 - a_6)) / k)), 0.0, 1.0);
+    return (mix(b_6, a_6, h_4) - ((k * h_4) * (1.0 - h_4)));
+}
+
+float smooth_subtract(float a_7, float b_7, float k_1) {
+    float h_5 = clamp((0.5 - ((0.5 * (a_7 + b_7)) / k_1)), 0.0, 1.0);
+    return (mix(a_7, -(b_7), h_5) + ((k_1 * h_5) * (1.0 - h_5)));
+}
+
+float smooth_intersect(float a_8, float b_8, float k_2) {
+    float h_6 = clamp((0.5 - ((0.5 * (b_8 - a_8)) / k_2)), 0.0, 1.0);
+    return (mix(b_8, a_8, h_6) + ((k_2 * h_6) * (1.0 - h_6)));
+}
+
+float rounded(float d_1, float radius_5) {
+    return (d_1 - radius_5);
+}
+
+float onion(float d_2, float thickness) {
+    return (abs(d_2) - thickness);
+}
+
+Results floats(vec4 a_9, vec4 b_9, vec4 c_11, vec4 d_3) {
+    return Results(floatBitsToUint(a_9), floatBitsToUint(b_9), floatBitsToUint(c_11), floatBitsToUint(d_3));
+}
+
+Results scalar(float x_8) {
+    Results _e11 = floats(vec4(x_8, 0.0, 0.0, 0.0), vec4(0.0), vec4(0.0), vec4(0.0));
+    return _e11;
+}
+
+Results pair(vec2 v_7) {
+    Results _e10 = floats(vec4(v_7, 0.0, 0.0), vec4(0.0), vec4(0.0), vec4(0.0));
+    return _e10;
+}
+
+Results triple(vec3 v_8) {
+    Results _e9 = floats(vec4(v_8, 0.0), vec4(0.0), vec4(0.0), vec4(0.0));
+    return _e9;
+}
+
+Results quad(vec4 v_9) {
+    Results _e7 = floats(v_9, vec4(0.0), vec4(0.0), vec4(0.0));
+    return _e7;
+}
+
+Results triples(vec3 a_10, vec3 b_10) {
+    Results _e10 = floats(vec4(a_10, 0.0), vec4(b_10, 0.0), vec4(0.0), vec4(0.0));
+    return _e10;
+}
+
+Results whole(uvec4 v_10) {
+    return Results(v_10, uvec4(0u), uvec4(0u), uvec4(0u));
+}
+
+Transform transform(vec4 r[8]) {
+    return Transform(r[0], r[1], r[2]);
+}
+
+PbrMaterial material(vec4 r_1[8]) {
+    PbrMaterial _e9 = pbr_material(r_1[0].xyz, r_1[0].w, r_1[1].x, r_1[1].y);
+    return _e9;
+}
+
+Results run(uint function, uvec4 u_1[8], vec4 f_2[8]) {
+    switch(function) {
+        case 0u: {
+            float _e4 = square(f_2[0].x);
+            Results _e5 = scalar(_e4);
+            return _e5;
+        }
+        case 1u: {
+            float _e8 = max_component(f_2[0].xyz);
+            Results _e9 = scalar(_e8);
+            return _e9;
+        }
+        case 2u: {
+            float _e12 = min_component(f_2[0].xyz);
+            Results _e13 = scalar(_e12);
+            return _e13;
+        }
+        case 3u: {
+            float _e20 = inverse_lerp(f_2[0].x, f_2[0].y, f_2[0].z);
+            Results _e21 = scalar(_e20);
+            return _e21;
+        }
+        case 4u: {
+            float _e32 = remap(f_2[0].x, f_2[0].y, f_2[0].z, f_2[0].w, f_2[1].x);
+            Results _e33 = scalar(_e32);
+            return _e33;
+        }
+        case 5u: {
+            float _e38 = modulo(f_2[0].x, f_2[0].y);
+            Results _e39 = scalar(_e38);
+            return _e39;
+        }
+        case 6u: {
+            vec2 _e44 = rotate_2d(f_2[0].xy, f_2[0].z);
+            Results _e45 = pair(_e44);
+            return _e45;
+        }
+        case 7u: {
+            vec3 _e52 = rotate_axis(f_2[0].xyz, f_2[1].xyz, f_2[1].w);
+            Results _e53 = triple(_e52);
+            return _e53;
+        }
+        case 8u: {
+            vec3 _e57 = quat_rotate(f_2[0], f_2[1].xyz);
+            Results _e58 = triple(_e57);
+            return _e58;
+        }
+        case 9u: {
+            mat3x3 _e61 = basis_from_normal(f_2[0].xyz);
+            Results _e73 = floats(vec4(_e61[0], 0.0), vec4(_e61[1], 0.0), vec4(_e61[2], 0.0), vec4(0.0));
+            return _e73;
+        }
+        case 10u: {
+            vec4 turns = vec4(3.1415927, 6.2831855, 1.5707964, 0.31830987);
+            Results _e88 = floats(turns, vec4(1e-6, 0.0, 0.0, 0.0), vec4(0.0), vec4(0.0));
+            return _e88;
+        }
+        case 11u: {
+            uint _e92 = pcg(u_1[0].x);
+            Results _e97 = whole(uvec4(_e92, 0u, 0u, 0u));
+            return _e97;
+        }
+        case 12u: {
+            uvec3 _e100 = pcg3d(u_1[0].xyz);
+            Results _e103 = whole(uvec4(_e100, 0u));
+            return _e103;
+        }
+        case 13u: {
+            float _e106 = to_unit(u_1[0].x);
+            Results _e107 = scalar(_e106);
+            return _e107;
+        }
+        case 14u: {
+            float _e110 = random(u_1[0].x);
+            Results _e111 = scalar(_e110);
+            return _e111;
+        }
+        case 15u: {
+            float _e114 = random2_(f_2[0].xy);
+            Results _e115 = scalar(_e114);
+            return _e115;
+        }
+        case 16u: {
+            float _e118 = random3_(f_2[0].xyz);
+            Results _e119 = scalar(_e118);
+            return _e119;
+        }
+        case 17u: {
+            uvec3 _e123 = lattice(ivec3(u_1[0].xyz));
+            Results _e126 = whole(uvec4(_e123, 0u));
+            return _e126;
+        }
+        case 18u: {
+            vec3 _e129 = fade(f_2[0].xyz);
+            Results _e130 = triple(_e129);
+            return _e130;
+        }
+        case 19u: {
+            float _e133 = value3_(f_2[0].xyz);
+            Results _e134 = scalar(_e133);
+            return _e134;
+        }
+        case 20u: {
+            float _e137 = value2_(f_2[0].xy);
+            Results _e138 = scalar(_e137);
+            return _e138;
+        }
+        case 21u: {
+            float _e143 = gradient(u_1[0].x, f_2[1].xyz);
+            Results _e144 = scalar(_e143);
+            return _e144;
+        }
+        case 22u: {
+            float _e147 = perlin3_(f_2[0].xyz);
+            Results _e148 = scalar(_e147);
+            return _e148;
+        }
+        case 23u: {
+            float _e151 = perlin2_(f_2[0].xy);
+            Results _e152 = scalar(_e151);
+            return _e152;
+        }
+        case 24u: {
+            float _e160 = simplex_corner(ivec3(u_1[0].xyz), f_2[1].xyz, f_2[1].w);
+            Results _e161 = scalar(_e160);
+            return _e161;
+        }
+        case 25u: {
+            float _e164 = simplex3_(f_2[0].xyz);
+            Results _e165 = scalar(_e164);
+            return _e165;
+        }
+        case 26u: {
+            float _e168 = simplex2_(f_2[0].xy);
+            Results _e169 = scalar(_e168);
+            return _e169;
+        }
+        case 27u: {
+            float _e172 = worley3_(f_2[0].xyz);
+            Results _e173 = scalar(_e172);
+            return _e173;
+        }
+        case 28u: {
+            float _e176 = worley2_(f_2[0].xy);
+            Results _e177 = scalar(_e176);
+            return _e177;
+        }
+        case 29u: {
+            float _e182 = fbm3_(f_2[0].xyz, u_1[1].x);
+            Results _e183 = scalar(_e182);
+            return _e183;
+        }
+        case 30u: {
+            float _e188 = fbm2_(f_2[0].xy, u_1[1].x);
+            Results _e189 = scalar(_e188);
+            return _e189;
+        }
+        case 31u: {
+            vec3 _e192 = linear_to_srgb(f_2[0].xyz);
+            Results _e193 = triple(_e192);
+            return _e193;
+        }
+        case 32u: {
+            vec3 _e196 = srgb_to_linear(f_2[0].xyz);
+            Results _e197 = triple(_e196);
+            return _e197;
+        }
+        case 33u: {
+            float _e200 = luminance(f_2[0].xyz);
+            Results _e201 = scalar(_e200);
+            return _e201;
+        }
+        case 34u: {
+            vec3 _e204 = rgb_to_hsv(f_2[0].xyz);
+            Results _e205 = triple(_e204);
+            return _e205;
+        }
+        case 35u: {
+            vec3 _e208 = hsv_to_rgb(f_2[0].xyz);
+            Results _e209 = triple(_e208);
+            return _e209;
+        }
+        case 36u: {
+            vec3 _e212 = rrt_and_odt_fit(f_2[0].xyz);
+            Results _e213 = triple(_e212);
+            return _e213;
+        }
+        case 37u: {
+            vec3 _e216 = tone_map_aces(f_2[0].xyz);
+            Results _e217 = triple(_e216);
+            return _e217;
+        }
+        case 38u: {
+            vec3 _e220 = agx_contrast(f_2[0].xyz);
+            Results _e221 = triple(_e220);
+            return _e221;
+        }
+        case 39u: {
+            vec3 _e224 = tone_map_agx(f_2[0].xyz);
+            Results _e225 = triple(_e224);
+            return _e225;
+        }
+        case 40u: {
+            vec3 _e228 = tone_map_neutral(f_2[0].xyz);
+            Results _e229 = triple(_e228);
+            return _e229;
+        }
+        case 41u: {
+            vec3 _e240 = lambert(f_2[0].xyz, f_2[1].xyz, f_2[2].xyz, f_2[3].xyz, f_2[4].xyz);
+            Results _e241 = triple(_e240);
+            return _e241;
+        }
+        case 42u: {
+            vec3 _e244 = brdf_lambert(f_2[0].xyz);
+            Results _e245 = triple(_e244);
+            return _e245;
+        }
+        case 43u: {
+            vec3 _e252 = f_schlick(f_2[0].xyz, f_2[0].w, f_2[1].x);
+            Results _e253 = triple(_e252);
+            return _e253;
+        }
+        case 44u: {
+            float _e258 = d_ggx(f_2[0].x, f_2[0].y);
+            Results _e259 = scalar(_e258);
+            return _e259;
+        }
+        case 45u: {
+            float _e266 = v_ggx_smith_correlated(f_2[0].x, f_2[0].y, f_2[0].z);
+            Results _e267 = scalar(_e266);
+            return _e267;
+        }
+        case 46u: {
+            vec3 _e280 = brdf_ggx(f_2[0].xyz, f_2[1].xyz, f_2[2].xyz, f_2[3].xyz, f_2[3].w, f_2[4].x);
+            Results _e281 = triple(_e280);
+            return _e281;
+        }
+        case 47u: {
+            vec2 _e286 = dfg_approx(f_2[0].x, f_2[0].y);
+            Results _e287 = pair(_e286);
+            return _e287;
+        }
+        case 48u: {
+            vec3 _e294 = environment_brdf(f_2[0].xyz, f_2[0].w, f_2[1].xy);
+            Results _e295 = triple(_e294);
+            return _e295;
+        }
+        case 49u: {
+            Scattering _e302 = multiscattering(f_2[0].xyz, f_2[0].w, f_2[1].xy);
+            Results _e305 = triples(_e302.single, _e302.multi);
+            return _e305;
+        }
+        case 50u: {
+            vec3 _e310 = multiscatter_compensation(f_2[0].xyz, f_2[1].xy);
+            Results _e311 = triple(_e310);
+            return _e311;
+        }
+        case 51u: {
+            float _e318 = specular_occlusion(f_2[0].x, f_2[0].y, f_2[0].z);
+            Results _e319 = scalar(_e318);
+            return _e319;
+        }
+        case 52u: {
+            float _e326 = distance_attenuation(f_2[0].x, f_2[0].y, f_2[0].z);
+            Results _e327 = scalar(_e326);
+            return _e327;
+        }
+        case 53u: {
+            float _e334 = spot_attenuation(f_2[0].x, f_2[0].y, f_2[0].z);
+            Results _e335 = scalar(_e334);
+            return _e335;
+        }
+        case 54u: {
+            vec3 _e344 = hemisphere_irradiance(f_2[0].xyz, f_2[1].xyz, f_2[2].xyz, f_2[3].xyz);
+            Results _e345 = triple(_e344);
+            return _e345;
+        }
+        case 55u: {
+            vec3 sh_1[9] = vec3[9](f_2[1].xyz, vec3(f_2[1].w, f_2[2].xy), vec3(f_2[2].zw, f_2[3].x), f_2[3].yzw, f_2[4].xyz, vec3(f_2[4].w, f_2[5].xy), vec3(f_2[5].zw, f_2[6].x), f_2[6].yzw, f_2[7].xyz);
+            vec3 _e379 = sh_irradiance(f_2[0].xyz, sh_1);
+            Results _e380 = triple(_e379);
+            return _e380;
+        }
+        case 56u: {
+            PbrMaterial _e389 = pbr_material(f_2[0].xyz, f_2[0].w, f_2[1].x, f_2[1].y);
+            Results _e402 = floats(vec4(_e389.base_color, _e389.specular_grazing), vec4(_e389.diffuse, _e389.roughness), vec4(_e389.specular, _e389.metalness), vec4(_e389.specular_blended, 0.0));
+            return _e402;
+        }
+        case 57u: {
+            PbrMaterial _e403 = material(f_2);
+            Reflected _e414 = direct_light(_e403, f_2[2].xyz, f_2[3].xyz, f_2[4].xyz, f_2[5].xyz, f_2[6].xyz);
+            Results _e417 = triples(_e414.diffuse, _e414.specular);
+            return _e417;
+        }
+        case 58u: {
+            PbrMaterial _e418 = material(f_2);
+            vec3 _e423 = indirect_diffuse(_e418, f_2[2].xyz, f_2[3].xy);
+            Results _e424 = triple(_e423);
+            return _e424;
+        }
+        case 59u: {
+            PbrMaterial _e425 = material(f_2);
+            Reflected _e432 = indirect_specular(_e425, f_2[2].xyz, f_2[3].xyz, f_2[4].xy);
+            Results _e435 = triples(_e432.diffuse, _e432.specular);
+            return _e435;
+        }
+        case 60u: {
+            float _e440 = fog_depth(f_2[0].xyz, f_2[1].xyz);
+            Results _e441 = scalar(_e440);
+            return _e441;
+        }
+        case 61u: {
+            float _e448 = fog_linear(f_2[0].x, f_2[0].y, f_2[0].z);
+            Results _e449 = scalar(_e448);
+            return _e449;
+        }
+        case 62u: {
+            float _e454 = fog_exp2_(f_2[0].x, f_2[0].y);
+            Results _e455 = scalar(_e454);
+            return _e455;
+        }
+        case 63u: {
+            vec3 _e462 = apply_fog(f_2[0].xyz, f_2[1].xyz, f_2[2].x);
+            Results _e463 = triple(_e462);
+            return _e463;
+        }
+        case 64u: {
+            Transform _e464 = transform(f_2);
+            vec3 _e467 = transform_point(_e464, f_2[3].xyz);
+            Results _e468 = triple(_e467);
+            return _e468;
+        }
+        case 65u: {
+            Transform _e469 = transform(f_2);
+            vec3 _e472 = transform_direction(_e469, f_2[3].xyz);
+            Results _e473 = triple(_e472);
+            return _e473;
+        }
+        case 66u: {
+            Transform _e474 = transform(f_2);
+            vec3 _e477 = transform_normal(_e474, f_2[3].xyz);
+            Results _e478 = triple(_e477);
+            return _e478;
+        }
+        case 67u: {
+            Transform _e479 = transform(f_2);
+            Transform _e482 = move_transform(_e479, f_2[3].xyz);
+            Results _e488 = floats(_e482.x, _e482.y, _e482.z, vec4(0.0));
+            return _e488;
+        }
+        case 68u: {
+            vec4 _e496 = to_clip(mat4x4(f_2[0], f_2[1], f_2[2], f_2[3]), f_2[4].xyz);
+            Results _e497 = quad(_e496);
+            return _e497;
+        }
+        case 69u: {
+            Results _e499 = quad(OUTSIDE_CLIP);
+            return _e499;
+        }
+        case 70u: {
+            float _e506 = perspective_depth_to_view_z(f_2[0].x, f_2[0].y, f_2[0].z);
+            Results _e507 = scalar(_e506);
+            return _e507;
+        }
+        case 71u: {
+            float _e514 = view_z_to_perspective_depth(f_2[0].x, f_2[0].y, f_2[0].z);
+            Results _e515 = scalar(_e514);
+            return _e515;
+        }
+        case 72u: {
+            float _e522 = orthographic_depth_to_view_z(f_2[0].x, f_2[0].y, f_2[0].z);
+            Results _e523 = scalar(_e522);
+            return _e523;
+        }
+        case 73u: {
+            float _e530 = view_z_to_orthographic_depth(f_2[0].x, f_2[0].y, f_2[0].z);
+            Results _e531 = scalar(_e530);
+            return _e531;
+        }
+        case 74u: {
+            float _e538 = linear_depth(f_2[0].x, f_2[0].y, f_2[0].z);
+            Results _e539 = scalar(_e538);
+            return _e539;
+        }
+        case 75u: {
+            vec3 _e549 = view_position(f_2[0].xy, f_2[0].z, mat4x4(f_2[1], f_2[2], f_2[3], f_2[4]));
+            Results _e550 = triple(_e549);
+            return _e550;
+        }
+        case 76u: {
+            float _e555 = sphere(f_2[0].xyz, f_2[0].w);
+            Results _e556 = scalar(_e555);
+            return _e556;
+        }
+        case 77u: {
+            float _e561 = box(f_2[0].xyz, f_2[1].xyz);
+            Results _e562 = scalar(_e561);
+            return _e562;
+        }
+        case 78u: {
+            float _e569 = round_box(f_2[0].xyz, f_2[1].xyz, f_2[1].w);
+            Results _e570 = scalar(_e569);
+            return _e570;
+        }
+        case 79u: {
+            float _e577 = torus(f_2[0].xyz, f_2[1].x, f_2[1].y);
+            Results _e578 = scalar(_e577);
+            return _e578;
+        }
+        case 80u: {
+            float _e587 = capsule(f_2[0].xyz, f_2[1].xyz, f_2[2].xyz, f_2[2].w);
+            Results _e588 = scalar(_e587);
+            return _e588;
+        }
+        case 81u: {
+            float _e595 = cylinder(f_2[0].xyz, f_2[1].x, f_2[1].y);
+            Results _e596 = scalar(_e595);
+            return _e596;
+        }
+        case 82u: {
+            float _e603 = plane(f_2[0].xyz, f_2[1].xyz, f_2[1].w);
+            Results _e604 = scalar(_e603);
+            return _e604;
+        }
+        case 83u: {
+            float _e609 = circle(f_2[0].xy, f_2[0].z);
+            Results _e610 = scalar(_e609);
+            return _e610;
+        }
+        case 84u: {
+            float _e615 = rect(f_2[0].xy, f_2[0].zw);
+            Results _e616 = scalar(_e615);
+            return _e616;
+        }
+        case 85u: {
+            float _e623 = segment(f_2[0].xy, f_2[0].zw, f_2[1].xy);
+            Results _e624 = scalar(_e623);
+            return _e624;
+        }
+        case 86u: {
+            float _e629 = merge(f_2[0].x, f_2[0].y);
+            Results _e630 = scalar(_e629);
+            return _e630;
+        }
+        case 87u: {
+            float _e635 = subtract(f_2[0].x, f_2[0].y);
+            Results _e636 = scalar(_e635);
+            return _e636;
+        }
+        case 88u: {
+            float _e641 = intersect(f_2[0].x, f_2[0].y);
+            Results _e642 = scalar(_e641);
+            return _e642;
+        }
+        case 89u: {
+            float _e649 = smooth_merge(f_2[0].x, f_2[0].y, f_2[0].z);
+            Results _e650 = scalar(_e649);
+            return _e650;
+        }
+        case 90u: {
+            float _e657 = smooth_subtract(f_2[0].x, f_2[0].y, f_2[0].z);
+            Results _e658 = scalar(_e657);
+            return _e658;
+        }
+        case 91u: {
+            float _e665 = smooth_intersect(f_2[0].x, f_2[0].y, f_2[0].z);
+            Results _e666 = scalar(_e665);
+            return _e666;
+        }
+        case 92u: {
+            float _e671 = rounded(f_2[0].x, f_2[0].y);
+            Results _e672 = scalar(_e671);
+            return _e672;
+        }
+        case 93u: {
+            float _e677 = onion(f_2[0].x, f_2[0].y);
+            Results _e678 = scalar(_e677);
+            return _e678;
+        }
+        default: {
+            Results _e681 = whole(uvec4(4294967295u));
+            return _e681;
+        }
+    }
+}
+
+void main() {
+    uint corner = uint(gl_VertexID);
+    float x_11 = ((float(((corner << 1u) & 2u)) * 2.0) - 1.0);
+    float y_4 = ((float((corner & 2u)) * 2.0) - 1.0);
+    gl_Position = vec4(x_11, y_4, 0.5, 1.0);
+    gl_Position.z = gl_Position.z * null3d_depth_mapping.x + gl_Position.w * null3d_depth_mapping.y;
+    return;
+}
+`,
+					uniformBlocks: [],
+					textures: [],
+				},
+				fragment: {
+					source: `#version 300 es
+
+precision highp float;
+precision highp int;
+
+struct Transform {
+    vec4 x;
+    vec4 y;
+    vec4 z;
+};
+struct PbrMaterial {
+    vec3 base_color;
+    vec3 diffuse;
+    vec3 specular;
+    vec3 specular_blended;
+    float specular_grazing;
+    float roughness;
+    float metalness;
+};
+struct Scattering {
+    vec3 single;
+    vec3 multi;
+};
+struct Reflected {
+    vec3 diffuse;
+    vec3 specular;
+};
+struct Results {
+    uvec4 a;
+    uvec4 b;
+    uvec4 c;
+    uvec4 d;
+};
+const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
+const float PI = 3.1415927;
+const float INV_PI = 0.31830987;
+const float EPSILON = 1e-6;
+const float TAU = 6.2831855;
+const float HALF_PI = 1.5707964;
+const mat3x3 ACES_INPUT = mat3x3(vec3(0.59719, 0.076, 0.0284), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
+const mat3x3 ACES_OUTPUT = mat3x3(vec3(1.60475, -0.10208, -0.00327), vec3(-0.53108, 1.10813, -0.07276), vec3(-0.07367, -0.00605, 1.07602));
+const mat3x3 LINEAR_SRGB_TO_LINEAR_REC2020_ = mat3x3(vec3(0.6274, 0.0691, 0.0164), vec3(0.3293, 0.9195, 0.088), vec3(0.0433, 0.0113, 0.8956));
+const mat3x3 AGX_INSET = mat3x3(vec3(0.85662717, 0.13731897, 0.11189821), vec3(0.09512124, 0.761242, 0.076799415), vec3(0.048251607, 0.10143904, 0.81130236));
+const mat3x3 AGX_OUTSET = mat3x3(vec3(1.1271006, -0.14132977, -0.14132977), vec3(-0.11060664, 1.1578237, -0.11060664), vec3(-0.016493939, -0.016493939, 1.2519364));
+const mat3x3 LINEAR_REC2020_TO_LINEAR_SRGB = mat3x3(vec3(1.6605, -0.1246, -0.0182), vec3(-0.5876, 1.1329, -0.1006), vec3(-0.0728, -0.0083, 1.1187));
+const int INPUTS = 8;
+
+uniform highp usampler2D _group_0_binding_0_fs;
+
+layout(location = 0) out uvec4 _fs2p_location0;
+
+vec3 transform_point(Transform t, vec3 p) {
+    vec4 q_3 = vec4(p, 1.0);
+    return vec3(dot(t.x, q_3), dot(t.y, q_3), dot(t.z, q_3));
+}
+
+vec3 transform_direction(Transform t_1, vec3 d) {
+    vec4 q_4 = vec4(d, 0.0);
+    return vec3(dot(t_1.x, q_4), dot(t_1.y, q_4), dot(t_1.z, q_4));
+}
+
+vec3 transform_normal(Transform t_2, vec3 n) {
+    vec3 a_11 = t_2.x.xyz;
+    vec3 b_11 = t_2.y.xyz;
+    vec3 c_12 = t_2.z.xyz;
+    vec3 bc = cross(b_11, c_12);
+    vec3 ca = cross(c_12, a_11);
+    vec3 ab = cross(a_11, b_11);
+    float facing = ((dot(a_11, bc) >= 0.0) ? 1.0 : -1.0);
+    return normalize((vec3(dot(bc, n), dot(ca, n), dot(ab, n)) * facing));
+}
+
+Transform move_transform(Transform t_3, vec3 offset) {
+    return Transform((t_3.x + vec4(0.0, 0.0, 0.0, offset.x)), (t_3.y + vec4(0.0, 0.0, 0.0, offset.y)), (t_3.z + vec4(0.0, 0.0, 0.0, offset.z)));
+}
+
+vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
+    return (view_proj * vec4(relative_position, 1.0));
+}
+
+float square(float x) {
+    return (x * x);
+}
+
+vec3 lambert(vec3 albedo, vec3 normal, vec3 to_light, vec3 light, vec3 ambient) {
+    float n_dot_l_1 = max(dot(normal, to_light), 0.0);
+    return ((albedo / vec3(3.1415927)) * ((n_dot_l_1 * light) + ambient));
+}
+
+vec3 brdf_lambert(vec3 diffuse) {
+    return (INV_PI * diffuse);
+}
+
+vec3 f_schlick(vec3 f0_, float f90_, float v_dot_h) {
+    float fresnel = exp2((((-5.55473 * v_dot_h) - 6.98316) * v_dot_h));
+    return ((f0_ * (1.0 - fresnel)) + vec3((f90_ * fresnel)));
+}
+
+float d_ggx(float alpha, float n_dot_h) {
+    float a2_ = (alpha * alpha);
+    float denom = (((n_dot_h * n_dot_h) * (a2_ - 1.0)) + 1.0);
+    return ((INV_PI * a2_) / (denom * denom));
+}
+
+float v_ggx_smith_correlated(float alpha_1, float n_dot_l, float n_dot_v) {
+    float a2_1 = (alpha_1 * alpha_1);
+    float gv = (n_dot_l * sqrt((a2_1 + (((1.0 - a2_1) * n_dot_v) * n_dot_v))));
+    float gl = (n_dot_v * sqrt((a2_1 + (((1.0 - a2_1) * n_dot_l) * n_dot_l))));
+    return (0.5 / max((gv + gl), EPSILON));
+}
+
+vec3 brdf_ggx(vec3 to_light_1, vec3 to_view, vec3 normal_1, vec3 f0_1, float f90_1, float roughness) {
+    float alpha_2 = (roughness * roughness);
+    vec3 half_dir = normalize((to_light_1 + to_view));
+    float n_dot_l_2 = clamp(dot(normal_1, to_light_1), 0.0, 1.0);
+    float n_dot_v_3 = clamp(dot(normal_1, to_view), 0.0, 1.0);
+    float n_dot_h_1 = clamp(dot(normal_1, half_dir), 0.0, 1.0);
+    float v_dot_h_1 = clamp(dot(to_view, half_dir), 0.0, 1.0);
+    vec3 _e17 = f_schlick(f0_1, f90_1, v_dot_h_1);
+    float _e18 = v_ggx_smith_correlated(alpha_2, n_dot_l_2, n_dot_v_3);
+    float _e19 = d_ggx(alpha_2, n_dot_h_1);
+    return (_e17 * (_e18 * _e19));
+}
+
+vec2 dfg_approx(float n_dot_v_1, float roughness_1) {
+    vec4 c0_ = vec4(-1.0, -0.0275, -0.572, 0.022);
+    vec4 c1_ = vec4(1.0, 0.0425, 1.04, -0.04);
+    vec4 r_2 = ((roughness_1 * c0_) + c1_);
+    float a004_ = ((min((r_2.x * r_2.x), exp2((-9.28 * n_dot_v_1))) * r_2.x) + r_2.y);
+    return ((vec2(-1.04, 1.04) * a004_) + r_2.zw);
+}
+
+vec3 environment_brdf(vec3 f0_2, float f90_2, vec2 dfg) {
+    return ((f0_2 * dfg.x) + vec3((f90_2 * dfg.y)));
+}
+
+Scattering multiscattering(vec3 f0_3, float f90_3, vec2 dfg_1) {
+    vec3 single = ((f0_3 * dfg_1.x) + vec3((f90_3 * dfg_1.y)));
+    float ess = (dfg_1.x + dfg_1.y);
+    float ems = (1.0 - ess);
+    vec3 average = (f0_3 + ((vec3(1.0) - f0_3) * 0.047619));
+    vec3 multi = ((single * average) / (vec3(1.0) - (ems * average)));
+    return Scattering(single, (multi * ems));
+}
+
+vec3 multiscatter_compensation(vec3 f0_4, vec2 dfg_2) {
+    return (vec3(1.0) + (f0_4 * ((1.0 / (dfg_2.x + dfg_2.y)) - 1.0)));
+}
+
+float specular_occlusion(float n_dot_v_2, float occlusion, float roughness_2) {
+    return clamp(((pow((n_dot_v_2 + occlusion), exp2(((-16.0 * roughness_2) - 1.0))) - 1.0) + occlusion), 0.0, 1.0);
+}
+
+float distance_attenuation(float distance_, float cutoff, float decay) {
+    float falloff = 0.0;
+    falloff = (1.0 / max(pow(distance_, decay), 0.01));
+    if ((cutoff > 0.0)) {
+        float _e12 = square((distance_ / cutoff));
+        float _e13 = falloff;
+        float _e18 = square(clamp((1.0 - (_e12 * _e12)), 0.0, 1.0));
+        falloff = (_e13 * _e18);
+    }
+    float _e20 = falloff;
+    return _e20;
+}
+
+float spot_attenuation(float cone_cos, float penumbra_cos, float angle_cos) {
+    return smoothstep(cone_cos, penumbra_cos, angle_cos);
+}
+
+vec3 hemisphere_irradiance(vec3 normal_2, vec3 up, vec3 sky, vec3 ground) {
+    float weight = ((0.5 * dot(normal_2, up)) + 0.5);
+    return mix(ground, sky, weight);
+}
+
+vec3 sh_irradiance(vec3 normal_3, vec3 sh[9]) {
+    vec3 result = vec3(0.0);
+    float x_9 = normal_3.x;
+    float y_3 = normal_3.y;
+    float z_1 = normal_3.z;
+    result = (sh[0] * 0.886227);
+    vec3 _e9 = result;
+    result = (_e9 + (sh[1] * (1.023328 * y_3)));
+    vec3 _e15 = result;
+    result = (_e15 + (sh[2] * (1.023328 * z_1)));
+    vec3 _e21 = result;
+    result = (_e21 + (sh[3] * (1.023328 * x_9)));
+    vec3 _e27 = result;
+    result = (_e27 + (sh[4] * ((0.858086 * x_9) * y_3)));
+    vec3 _e34 = result;
+    result = (_e34 + (sh[5] * ((0.858086 * y_3) * z_1)));
+    vec3 _e41 = result;
+    result = (_e41 + (sh[6] * (((0.743125 * z_1) * z_1) - 0.247708)));
+    vec3 _e50 = result;
+    result = (_e50 + (sh[7] * ((0.858086 * x_9) * z_1)));
+    vec3 _e57 = result;
+    result = (_e57 + (sh[8] * (0.429043 * ((x_9 * x_9) - (y_3 * y_3)))));
+    vec3 _e66 = result;
+    return _e66;
+}
+
+PbrMaterial pbr_material(vec3 base_color, float metalness, float roughness_3, float geometry_roughness) {
+    PbrMaterial m = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
+    m.base_color = base_color;
+    m.diffuse = (base_color * (1.0 - metalness));
+    m.specular = vec3(0.04);
+    vec3 _e13 = m.specular;
+    m.specular_blended = mix(_e13, base_color, metalness);
+    m.specular_grazing = 1.0;
+    m.roughness = min((max(roughness_3, 0.0525) + geometry_roughness), 1.0);
+    m.metalness = metalness;
+    PbrMaterial _e26 = m;
+    return _e26;
+}
+
+Reflected direct_light(PbrMaterial m_1, vec3 normal_4, vec3 to_view_1, vec3 to_light_2, vec3 light_1, vec3 compensation) {
+    vec3 irradiance_2 = (clamp(dot(normal_4, to_light_2), 0.0, 1.0) * light_1);
+    vec3 _e11 = brdf_ggx(to_light_2, to_view_1, normal_4, m_1.specular_blended, m_1.specular_grazing, m_1.roughness);
+    float v_dot_h_2 = clamp(dot(to_view_1, normalize((to_light_2 + to_view_1))), 0.0, 1.0);
+    vec3 _e18 = f_schlick(m_1.specular, m_1.specular_grazing, v_dot_h_2);
+    vec3 _e20 = brdf_lambert(m_1.diffuse);
+    return Reflected(((irradiance_2 * _e20) * (vec3(1.0) - _e18)), ((irradiance_2 * _e11) * compensation));
+}
+
+vec3 indirect_diffuse(PbrMaterial m_2, vec3 irradiance, vec2 dfg_3) {
+    Scattering _e4 = multiscattering(m_2.specular, m_2.specular_grazing, dfg_3);
+    vec3 _e6 = brdf_lambert(m_2.diffuse);
+    return ((irradiance * _e6) * ((vec3(1.0) - _e4.single) - _e4.multi));
+}
+
+Reflected indirect_specular(PbrMaterial m_3, vec3 radiance, vec3 irradiance_1, vec2 dfg_4) {
+    Scattering _e4 = multiscattering(m_3.specular, m_3.specular_grazing, dfg_4);
+    Scattering _e7 = multiscattering(m_3.base_color, m_3.specular_grazing, dfg_4);
+    vec3 single_1 = mix(_e4.single, _e7.single, m_3.metalness);
+    vec3 multi_1 = mix(_e4.multi, _e7.multi, m_3.metalness);
+    vec3 cosine_weighted = (irradiance_1 * INV_PI);
+    vec3 diffuse_1 = (m_3.diffuse * (vec3(1.0) - (_e4.single + _e4.multi)));
+    return Reflected((diffuse_1 * cosine_weighted), ((radiance * single_1) + (multi_1 * cosine_weighted)));
+}
+
+float max_component(vec3 v) {
+    return max(max(v.x, v.y), v.z);
+}
+
+float min_component(vec3 v_1) {
+    return min(min(v_1.x, v_1.y), v_1.z);
+}
+
+float inverse_lerp(float a, float b, float x_1) {
+    return ((x_1 - a) / (b - a));
+}
+
+float remap(float x_2, float in_min, float in_max, float out_min, float out_max) {
+    float _e3 = inverse_lerp(in_min, in_max, x_2);
+    return mix(out_min, out_max, _e3);
+}
+
+float modulo(float x_3, float y) {
+    return (x_3 - (y * floor((x_3 / y))));
+}
+
+vec2 rotate_2d(vec2 p_1, float angle) {
+    float c_13 = cos(angle);
+    float s = sin(angle);
+    return vec2(((c_13 * p_1.x) - (s * p_1.y)), ((s * p_1.x) + (c_13 * p_1.y)));
+}
+
+vec3 rotate_axis(vec3 v_2, vec3 axis, float angle_1) {
+    float c_14 = cos(angle_1);
+    float s_1 = sin(angle_1);
+    return (((v_2 * c_14) + (cross(axis, v_2) * s_1)) + (axis * (dot(axis, v_2) * (1.0 - c_14))));
+}
+
+vec3 quat_rotate(vec4 q, vec3 v_3) {
+    vec3 t_5 = (2.0 * cross(q.xyz, v_3));
+    return ((v_3 + (q.w * t_5)) + cross(q.xyz, t_5));
+}
+
+mat3x3 basis_from_normal(vec3 n_1) {
+    float s_2 = ((n_1.z >= 0.0) ? 1.0 : -1.0);
+    float a_12 = (-1.0 / (s_2 + n_1.z));
+    float b_12 = ((n_1.x * n_1.y) * a_12);
+    vec3 tangent = vec3((1.0 + (((s_2 * n_1.x) * n_1.x) * a_12)), (s_2 * b_12), (-(s_2) * n_1.x));
+    vec3 bitangent = vec3(b_12, (s_2 + ((n_1.y * n_1.y) * a_12)), -(n_1.y));
+    return mat3x3(tangent, bitangent, n_1);
+}
+
+uint pcg(uint v_4) {
+    uint state = ((v_4 * 747796405u) + 2891336453u);
+    uint word = (((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u);
+    return ((word >> 22u) ^ word);
+}
+
+uvec3 pcg3d(uvec3 v_5) {
+    uvec3 p_2 = uvec3(0u);
+    p_2 = ((v_5 * 1664525u) + uvec3(1013904223u));
+    uint _e8 = p_2.x;
+    uint _e10 = p_2.y;
+    uint _e12 = p_2.z;
+    p_2.x = (_e8 + (_e10 * _e12));
+    uint _e16 = p_2.y;
+    uint _e18 = p_2.z;
+    uint _e20 = p_2.x;
+    p_2.y = (_e16 + (_e18 * _e20));
+    uint _e24 = p_2.z;
+    uint _e26 = p_2.x;
+    uint _e28 = p_2.y;
+    p_2.z = (_e24 + (_e26 * _e28));
+    uvec3 _e31 = p_2;
+    uvec3 _e32 = p_2;
+    p_2 = (_e31 ^ (_e32 >> uvec3(16u)));
+    uint _e38 = p_2.x;
+    uint _e40 = p_2.y;
+    uint _e42 = p_2.z;
+    p_2.x = (_e38 + (_e40 * _e42));
+    uint _e46 = p_2.y;
+    uint _e48 = p_2.z;
+    uint _e50 = p_2.x;
+    p_2.y = (_e46 + (_e48 * _e50));
+    uint _e54 = p_2.z;
+    uint _e56 = p_2.x;
+    uint _e58 = p_2.y;
+    p_2.z = (_e54 + (_e56 * _e58));
+    uvec3 _e61 = p_2;
+    return _e61;
+}
+
+float to_unit(uint h) {
+    return (float((h >> 8u)) / 16777216.0);
+}
+
+float random(uint seed) {
+    uint _e1 = pcg(seed);
+    float _e2 = to_unit(_e1);
+    return _e2;
+}
+
+float random2_(vec2 p_3) {
+    uvec2 bits = floatBitsToUint(p_3);
+    uint _e4 = pcg(bits.y);
+    uint _e6 = pcg((bits.x ^ _e4));
+    float _e7 = to_unit(_e6);
+    return _e7;
+}
+
+float random3_(vec3 p_4) {
+    uvec3 _e2 = pcg3d(floatBitsToUint(p_4));
+    float _e4 = to_unit(_e2.x);
+    return _e4;
+}
+
+uvec3 lattice(ivec3 c) {
+    uvec3 _e2 = pcg3d(uvec3(c));
+    return _e2;
+}
+
+vec3 fade(vec3 t_4) {
+    return (((t_4 * t_4) * t_4) * ((t_4 * ((t_4 * 6.0) - vec3(15.0))) + vec3(10.0)));
+}
+
+float value3_(vec3 p_5) {
+    ivec3 i_1 = ivec3(floor(p_5));
+    vec3 _e4 = fade(fract(p_5));
+    uvec3 _e5 = lattice(i_1);
+    float _e7 = to_unit(_e5.x);
+    uvec3 _e13 = lattice((i_1 + ivec3(1, 0, 0)));
+    float _e15 = to_unit(_e13.x);
+    float x00_ = mix(_e7, _e15, _e4.x);
+    uvec3 _e23 = lattice((i_1 + ivec3(0, 1, 0)));
+    float _e25 = to_unit(_e23.x);
+    uvec3 _e31 = lattice((i_1 + ivec3(1, 1, 0)));
+    float _e33 = to_unit(_e31.x);
+    float x10_ = mix(_e25, _e33, _e4.x);
+    uvec3 _e41 = lattice((i_1 + ivec3(0, 0, 1)));
+    float _e43 = to_unit(_e41.x);
+    uvec3 _e49 = lattice((i_1 + ivec3(1, 0, 1)));
+    float _e51 = to_unit(_e49.x);
+    float x01_ = mix(_e43, _e51, _e4.x);
+    uvec3 _e59 = lattice((i_1 + ivec3(0, 1, 1)));
+    float _e61 = to_unit(_e59.x);
+    uvec3 _e67 = lattice((i_1 + ivec3(1, 1, 1)));
+    float _e69 = to_unit(_e67.x);
+    float x11_ = mix(_e61, _e69, _e4.x);
+    return mix(mix(x00_, x10_, _e4.y), mix(x01_, x11_, _e4.y), _e4.z);
+}
+
+float value2_(vec2 p_6) {
+    ivec3 i_2 = ivec3(ivec2(floor(p_6)), 0);
+    vec3 _e8 = fade(vec3(fract(p_6), 0.0));
+    uvec3 _e9 = lattice(i_2);
+    float _e11 = to_unit(_e9.x);
+    uvec3 _e17 = lattice((i_2 + ivec3(1, 0, 0)));
+    float _e19 = to_unit(_e17.x);
+    float x0_ = mix(_e11, _e19, _e8.x);
+    uvec3 _e27 = lattice((i_2 + ivec3(0, 1, 0)));
+    float _e29 = to_unit(_e27.x);
+    uvec3 _e35 = lattice((i_2 + ivec3(1, 1, 0)));
+    float _e37 = to_unit(_e35.x);
+    float x1_ = mix(_e29, _e37, _e8.x);
+    return mix(x0_, x1_, _e8.y);
+}
+
+float gradient(uint h_1, vec3 f_1) {
+    bool local = false;
+    uint k_3 = (h_1 & 15u);
+    float u_2 = ((k_3 < 8u) ? f_1.x : f_1.y);
+    if (!((k_3 == 12u))) {
+        local = (k_3 == 14u);
+    } else {
+        local = true;
+    }
+    bool _e19 = local;
+    float v_11 = ((k_3 < 4u) ? f_1.y : (_e19 ? f_1.x : f_1.z));
+    return ((((k_3 & 1u) == 0u) ? u_2 : -(u_2)) + (((k_3 & 2u) == 0u) ? v_11 : -(v_11)));
+}
+
+float perlin3_(vec3 p_7) {
+    ivec3 i_3 = ivec3(floor(p_7));
+    vec3 f_3 = fract(p_7);
+    vec3 _e4 = fade(f_3);
+    uvec3 _e5 = lattice(i_3);
+    float _e7 = gradient(_e5.x, f_3);
+    uvec3 _e13 = lattice((i_3 + ivec3(1, 0, 0)));
+    float _e20 = gradient(_e13.x, (f_3 - vec3(1.0, 0.0, 0.0)));
+    float x00_1 = mix(_e7, _e20, _e4.x);
+    uvec3 _e28 = lattice((i_3 + ivec3(0, 1, 0)));
+    float _e35 = gradient(_e28.x, (f_3 - vec3(0.0, 1.0, 0.0)));
+    uvec3 _e41 = lattice((i_3 + ivec3(1, 1, 0)));
+    float _e48 = gradient(_e41.x, (f_3 - vec3(1.0, 1.0, 0.0)));
+    float x10_1 = mix(_e35, _e48, _e4.x);
+    uvec3 _e56 = lattice((i_3 + ivec3(0, 0, 1)));
+    float _e63 = gradient(_e56.x, (f_3 - vec3(0.0, 0.0, 1.0)));
+    uvec3 _e69 = lattice((i_3 + ivec3(1, 0, 1)));
+    float _e76 = gradient(_e69.x, (f_3 - vec3(1.0, 0.0, 1.0)));
+    float x01_1 = mix(_e63, _e76, _e4.x);
+    uvec3 _e84 = lattice((i_3 + ivec3(0, 1, 1)));
+    float _e91 = gradient(_e84.x, (f_3 - vec3(0.0, 1.0, 1.0)));
+    uvec3 _e97 = lattice((i_3 + ivec3(1, 1, 1)));
+    float _e104 = gradient(_e97.x, (f_3 - vec3(1.0, 1.0, 1.0)));
+    float x11_1 = mix(_e91, _e104, _e4.x);
+    return mix(mix(x00_1, x10_1, _e4.y), mix(x01_1, x11_1, _e4.y), _e4.z);
+}
+
+float perlin2_(vec2 p_8) {
+    ivec3 i_4 = ivec3(ivec2(floor(p_8)), 0);
+    vec3 f_4 = vec3(fract(p_8), 0.0);
+    vec3 _e8 = fade(f_4);
+    uvec3 _e9 = lattice(i_4);
+    float _e11 = gradient(_e9.x, f_4);
+    uvec3 _e17 = lattice((i_4 + ivec3(1, 0, 0)));
+    float _e24 = gradient(_e17.x, (f_4 - vec3(1.0, 0.0, 0.0)));
+    float x0_1 = mix(_e11, _e24, _e8.x);
+    uvec3 _e32 = lattice((i_4 + ivec3(0, 1, 0)));
+    float _e39 = gradient(_e32.x, (f_4 - vec3(0.0, 1.0, 0.0)));
+    uvec3 _e45 = lattice((i_4 + ivec3(1, 1, 0)));
+    float _e52 = gradient(_e45.x, (f_4 - vec3(1.0, 1.0, 0.0)));
+    float x1_1 = mix(_e39, _e52, _e8.x);
+    return mix(x0_1, x1_1, _e8.y);
+}
+
+float simplex_corner(ivec3 c_1, vec3 x_4, float r2_) {
+    float t_6 = max((r2_ - dot(x_4, x_4)), 0.0);
+    float t2_ = (t_6 * t_6);
+    uvec3 _e9 = lattice(c_1);
+    float _e11 = gradient(_e9.x, x_4);
+    return ((t2_ * t2_) * _e11);
+}
+
+float simplex3_(vec3 p_9) {
+    float skew = (((p_9.x + p_9.y) + p_9.z) / 3.0);
+    vec3 cell = floor((p_9 + vec3(skew)));
+    float unskew = (((cell.x + cell.y) + cell.z) / 6.0);
+    vec3 x0_2 = (p_9 - (cell - vec3(unskew)));
+    vec3 g = step(x0_2.yzx, x0_2.xyz);
+    vec3 l = (vec3(1.0) - g);
+    vec3 i1_ = min(g, l.zxy);
+    vec3 i2_ = max(g, l.zxy);
+    vec3 x1_2 = ((x0_2 - i1_) + vec3(0.16666667));
+    vec3 x2_ = ((x0_2 - i2_) + vec3(0.33333334));
+    vec3 x3_ = (x0_2 - vec3(0.5));
+    ivec3 i_5 = ivec3(cell);
+    float _e44 = simplex_corner(i_5, x0_2, 0.6);
+    float _e48 = simplex_corner((i_5 + ivec3(i1_)), x1_2, 0.6);
+    float _e53 = simplex_corner((i_5 + ivec3(i2_)), x2_, 0.6);
+    float _e61 = simplex_corner((i_5 + ivec3(1, 1, 1)), x3_, 0.6);
+    float n_2 = (((_e44 + _e48) + _e53) + _e61);
+    return (32.0 * n_2);
+}
+
+float simplex2_(vec2 p_10) {
+    float skew_1 = ((p_10.x + p_10.y) * 0.36602542);
+    vec2 cell_1 = floor((p_10 + vec2(skew_1)));
+    float unskew_1 = ((cell_1.x + cell_1.y) * 0.21132487);
+    vec2 x0_3 = (p_10 - (cell_1 - vec2(unskew_1)));
+    vec2 i1_1 = ((x0_3.x > x0_3.y) ? vec2(1.0, 0.0) : vec2(0.0, 1.0));
+    vec2 x1_3 = ((x0_3 - i1_1) + vec2(0.21132487));
+    vec2 x2_1 = ((x0_3 - vec2(1.0)) + vec2(0.42264974));
+    ivec3 i_6 = ivec3(ivec2(cell_1), 0);
+    float _e43 = simplex_corner(i_6, vec3(x0_3, 0.0), 0.5);
+    float _e51 = simplex_corner((i_6 + ivec3(ivec2(i1_1), 0)), vec3(x1_3, 0.0), 0.5);
+    float _e61 = simplex_corner((i_6 + ivec3(1, 1, 0)), vec3(x2_1, 0.0), 0.5);
+    float n_3 = ((_e43 + _e51) + _e61);
+    return (70.0 * n_3);
+}
+
+float worley3_(vec3 p_11) {
+    float nearest = 8.0;
+    int z = -1;
+    int y_1 = 0;
+    int x_5 = 0;
+    ivec3 i_7 = ivec3(floor(p_11));
+    vec3 f_5 = fract(p_11);
+    bool loop_init = true;
+    while(true) {
+        if (!loop_init) {
+            int _e47 = z;
+            z = (_e47 + 1);
+        }
+        loop_init = false;
+        int _e7 = z;
+        if ((_e7 <= 1)) {
+        } else {
+            break;
+        }
+        {
+            y_1 = -1;
+            bool loop_init_1 = true;
+            while(true) {
+                if (!loop_init_1) {
+                    int _e44 = y_1;
+                    y_1 = (_e44 + 1);
+                }
+                loop_init_1 = false;
+                int _e12 = y_1;
+                if ((_e12 <= 1)) {
+                } else {
+                    break;
+                }
+                {
+                    x_5 = -1;
+                    bool loop_init_2 = true;
+                    while(true) {
+                        if (!loop_init_2) {
+                            int _e41 = x_5;
+                            x_5 = (_e41 + 1);
+                        }
+                        loop_init_2 = false;
+                        int _e17 = x_5;
+                        if ((_e17 <= 1)) {
+                        } else {
+                            break;
+                        }
+                        {
+                            int _e20 = x_5;
+                            int _e21 = y_1;
+                            int _e22 = z;
+                            ivec3 o = ivec3(_e20, _e21, _e22);
+                            uvec3 _e25 = lattice((i_7 + o));
+                            vec3 d_4 = ((vec3(o) + (vec3((_e25 >> uvec3(8u))) / vec3(16777216.0))) - f_5);
+                            float _e37 = nearest;
+                            nearest = min(_e37, dot(d_4, d_4));
+                        }
+                    }
+                }
+            }
+        }
+    }
+    float _e49 = nearest;
+    return sqrt(_e49);
+}
+
+float worley2_(vec2 p_12) {
+    float nearest_1 = 8.0;
+    int y_2 = -1;
+    int x_6 = 0;
+    ivec2 i_8 = ivec2(floor(p_12));
+    vec2 f_6 = fract(p_12);
+    bool loop_init_3 = true;
+    while(true) {
+        if (!loop_init_3) {
+            int _e41 = y_2;
+            y_2 = (_e41 + 1);
+        }
+        loop_init_3 = false;
+        int _e7 = y_2;
+        if ((_e7 <= 1)) {
+        } else {
+            break;
+        }
+        {
+            x_6 = -1;
+            bool loop_init_4 = true;
+            while(true) {
+                if (!loop_init_4) {
+                    int _e38 = x_6;
+                    x_6 = (_e38 + 1);
+                }
+                loop_init_4 = false;
+                int _e12 = x_6;
+                if ((_e12 <= 1)) {
+                } else {
+                    break;
+                }
+                {
+                    int _e15 = x_6;
+                    int _e16 = y_2;
+                    ivec2 o_1 = ivec2(_e15, _e16);
+                    uvec3 _e21 = lattice(ivec3((i_8 + o_1), 0));
+                    vec2 d_5 = ((vec2(o_1) + (vec2((_e21.xy >> uvec2(8u))) / vec2(16777216.0))) - f_6);
+                    float _e34 = nearest_1;
+                    nearest_1 = min(_e34, dot(d_5, d_5));
+                }
+            }
+        }
+    }
+    float _e43 = nearest_1;
+    return sqrt(_e43);
+}
+
+float fbm3_(vec3 p_13, uint octaves) {
+    float sum = 0.0;
+    float total = 0.0;
+    float amplitude = 1.0;
+    vec3 q_1 = vec3(0.0);
+    uint octave = 0u;
+    q_1 = p_13;
+    bool loop_init_5 = true;
+    while(true) {
+        if (!loop_init_5) {
+            uint _e28 = octave;
+            octave = (_e28 + 1u);
+        }
+        loop_init_5 = false;
+        uint _e7 = octave;
+        if ((_e7 < octaves)) {
+        } else {
+            break;
+        }
+        {
+            float _e11 = sum;
+            float _e12 = amplitude;
+            vec3 _e13 = q_1;
+            float _e14 = simplex3_(_e13);
+            sum = (_e11 + (_e12 * _e14));
+            float _e18 = total;
+            float _e19 = amplitude;
+            total = (_e18 + _e19);
+            float _e21 = amplitude;
+            amplitude = (_e21 * 0.5);
+            vec3 _e24 = q_1;
+            q_1 = (_e24 * 2.0);
+        }
+    }
+    float _e30 = sum;
+    float _e31 = total;
+    float _e33 = total;
+    return ((_e33 > 0.0) ? (_e30 / _e31) : 0.0);
+}
+
+float fbm2_(vec2 p_14, uint octaves_1) {
+    float sum_1 = 0.0;
+    float total_1 = 0.0;
+    float amplitude_1 = 1.0;
+    vec2 q_2 = vec2(0.0);
+    uint octave_1 = 0u;
+    q_2 = p_14;
+    bool loop_init_6 = true;
+    while(true) {
+        if (!loop_init_6) {
+            uint _e28 = octave_1;
+            octave_1 = (_e28 + 1u);
+        }
+        loop_init_6 = false;
+        uint _e7 = octave_1;
+        if ((_e7 < octaves_1)) {
+        } else {
+            break;
+        }
+        {
+            float _e11 = sum_1;
+            float _e12 = amplitude_1;
+            vec2 _e13 = q_2;
+            float _e14 = simplex2_(_e13);
+            sum_1 = (_e11 + (_e12 * _e14));
+            float _e18 = total_1;
+            float _e19 = amplitude_1;
+            total_1 = (_e18 + _e19);
+            float _e21 = amplitude_1;
+            amplitude_1 = (_e21 * 0.5);
+            vec2 _e24 = q_2;
+            q_2 = (_e24 * 2.0);
+        }
+    }
+    float _e30 = sum_1;
+    float _e31 = total_1;
+    float _e33 = total_1;
+    return ((_e33 > 0.0) ? (_e30 / _e31) : 0.0);
+}
+
+vec3 linear_to_srgb(vec3 c_2) {
+    vec3 low = (c_2 * 12.92);
+    vec3 high = ((1.055 * pow(c_2, vec3(0.41666666))) - vec3(0.055));
+    return mix(high, low, lessThanEqual(c_2, vec3(0.0031308)));
+}
+
+vec3 srgb_to_linear(vec3 c_3) {
+    vec3 low_1 = (c_3 / vec3(12.92));
+    vec3 high_1 = pow(((c_3 + vec3(0.055)) / vec3(1.055)), vec3(2.4));
+    return mix(high_1, low_1, lessThanEqual(c_3, vec3(0.04045)));
+}
+
+float luminance(vec3 c_4) {
+    return dot(c_4, vec3(0.2126, 0.7152, 0.0722));
+}
+
+vec3 rgb_to_hsv(vec3 c_5) {
+    vec4 k_4 = vec4(0.0, -0.33333334, 0.6666667, -1.0);
+    vec4 p_25 = mix(vec4(c_5.zy, k_4.wz), vec4(c_5.yz, k_4.xy), step(c_5.z, c_5.y));
+    vec4 q_5 = mix(vec4(p_25.xyw, c_5.x), vec4(c_5.x, p_25.yzx), step(p_25.x, c_5.x));
+    float d_6 = (q_5.x - min(q_5.w, q_5.y));
+    return vec3(abs((q_5.z + ((q_5.w - q_5.y) / ((6.0 * d_6) + 1e-10)))), (d_6 / (q_5.x + 1e-10)), q_5.x);
+}
+
+vec3 hsv_to_rgb(vec3 c_6) {
+    vec4 k_5 = vec4(1.0, 0.6666667, 0.33333334, 3.0);
+    vec3 p_26 = abs(((fract((c_6.xxx + k_5.xyz)) * 6.0) - k_5.www));
+    return (c_6.z * mix(k_5.xxx, clamp((p_26 - k_5.xxx), vec3(0.0), vec3(1.0)), c_6.y));
+}
+
+vec3 rrt_and_odt_fit(vec3 v_6) {
+    vec3 a_13 = ((v_6 * (v_6 + vec3(0.0245786))) - vec3(9.0537e-5));
+    vec3 b_13 = ((v_6 * ((0.983729 * v_6) + vec3(0.432951))) + vec3(0.238081));
+    return (a_13 / b_13);
+}
+
+vec3 tone_map_aces(vec3 c_7) {
+    vec3 _e6 = rrt_and_odt_fit((ACES_INPUT * (c_7 / vec3(0.6))));
+    return clamp((ACES_OUTPUT * _e6), vec3(0.0), vec3(1.0));
+}
+
+vec3 agx_contrast(vec3 x_7) {
+    vec3 x2_2 = (x_7 * x_7);
+    vec3 x4_ = (x2_2 * x2_2);
+    return ((((((((15.5 * x4_) * x2_2) - ((40.14 * x4_) * x_7)) + (31.96 * x4_)) - ((6.868 * x2_2) * x_7)) + (0.4298 * x2_2)) + (0.1191 * x_7)) - vec3(0.00232));
+}
+
+vec3 tone_map_agx(vec3 c_8) {
+    vec3 inset = (AGX_INSET * (LINEAR_SRGB_TO_LINEAR_REC2020_ * c_8));
+    vec3 logged = ((log2(max(inset, vec3(1e-10))) - vec3(-12.47393)) / vec3(16.5));
+    vec3 _e16 = agx_contrast(clamp(logged, vec3(0.0), vec3(1.0)));
+    vec3 curved = (AGX_OUTSET * _e16);
+    vec3 rec2020_ = pow(max(curved, vec3(0.0)), vec3(2.2));
+    return clamp((LINEAR_REC2020_TO_LINEAR_SRGB * rec2020_), vec3(0.0), vec3(1.0));
+}
+
+vec3 tone_map_neutral(vec3 c_9) {
+    float x_10 = min(c_9.x, min(c_9.y, c_9.z));
+    float toe = ((x_10 < 0.08) ? (x_10 - ((6.25 * x_10) * x_10)) : 0.04);
+    vec3 shifted = (c_9 - vec3(toe));
+    float peak = max(shifted.x, max(shifted.y, shifted.z));
+    if ((peak < 0.76)) {
+        return shifted;
+    }
+    float d_7 = (1.0 - 0.76);
+    float new_peak = (1.0 - ((d_7 * d_7) / ((peak + d_7) - 0.76)));
+    float g_1 = (1.0 - (1.0 / ((0.15 * (peak - new_peak)) + 1.0)));
+    return mix((shifted * (new_peak / peak)), vec3(new_peak), g_1);
+}
+
+float fog_depth(vec3 relative_position_1, vec3 forward) {
+    return dot(relative_position_1, forward);
+}
+
+float fog_linear(float depth, float near, float far) {
+    return smoothstep(near, far, depth);
+}
+
+float fog_exp2_(float depth_1, float density) {
+    return (1.0 - exp((((-(density) * density) * depth_1) * depth_1)));
+}
+
+vec3 apply_fog(vec3 c_10, vec3 fog_color, float factor) {
+    return mix(c_10, fog_color, factor);
+}
+
+float perspective_depth_to_view_z(float depth_2, float near_1, float far_1) {
+    return ((-(near_1) * far_1) / (near_1 + (depth_2 * (far_1 - near_1))));
+}
+
+float view_z_to_perspective_depth(float view_z, float near_2, float far_2) {
+    return ((near_2 * (view_z + far_2)) / (-(view_z) * (far_2 - near_2)));
+}
+
+float orthographic_depth_to_view_z(float depth_3, float near_3, float far_3) {
+    return ((depth_3 * (far_3 - near_3)) - far_3);
+}
+
+float view_z_to_orthographic_depth(float view_z_1, float near_4, float far_4) {
+    return ((view_z_1 + far_4) / (far_4 - near_4));
+}
+
+float linear_depth(float depth_4, float near_5, float far_5) {
+    float _e3 = perspective_depth_to_view_z(depth_4, near_5, far_5);
+    return -(_e3);
+}
+
+vec3 view_position(vec2 uv, float depth_5, mat4x4 inverse_projection) {
+    vec4 clip = vec4(((uv.x * 2.0) - 1.0), (1.0 - (uv.y * 2.0)), depth_5, 1.0);
+    vec4 p_27 = (inverse_projection * clip);
+    return (p_27.xyz / vec3(p_27.w));
+}
+
+float sphere(vec3 p_15, float radius) {
+    return (length(p_15) - radius);
+}
+
+float box(vec3 p_16, vec3 half_size) {
+    vec3 q_6 = (abs(p_16) - half_size);
+    return (length(max(q_6, vec3(0.0))) + min(max(q_6.x, max(q_6.y, q_6.z)), 0.0));
+}
+
+float round_box(vec3 p_17, vec3 half_size_1, float radius_1) {
+    float _e5 = box(p_17, (half_size_1 - vec3(radius_1)));
+    return (_e5 - radius_1);
+}
+
+float torus(vec3 p_18, float major, float minor) {
+    vec2 q_7 = vec2((length(p_18.xz) - major), p_18.y);
+    return (length(q_7) - minor);
+}
+
+float capsule(vec3 p_19, vec3 a_1, vec3 b_1, float radius_2) {
+    vec3 pa = (p_19 - a_1);
+    vec3 ba = (b_1 - a_1);
+    float h_2 = clamp((dot(pa, ba) / dot(ba, ba)), 0.0, 1.0);
+    return (length((pa - (ba * h_2))) - radius_2);
+}
+
+float cylinder(vec3 p_20, float half_height, float radius_3) {
+    vec2 d_8 = (abs(vec2(length(p_20.xz), p_20.y)) - vec2(radius_3, half_height));
+    return (min(max(d_8.x, d_8.y), 0.0) + length(max(d_8, vec2(0.0))));
+}
+
+float plane(vec3 p_21, vec3 normal_5, float offset_1) {
+    return (dot(p_21, normal_5) - offset_1);
+}
+
+float circle(vec2 p_22, float radius_4) {
+    return (length(p_22) - radius_4);
+}
+
+float rect(vec2 p_23, vec2 half_size_2) {
+    vec2 d_9 = (abs(p_23) - half_size_2);
+    return (length(max(d_9, vec2(0.0))) + min(max(d_9.x, d_9.y), 0.0));
+}
+
+float segment(vec2 p_24, vec2 a_2, vec2 b_2) {
+    vec2 pa_1 = (p_24 - a_2);
+    vec2 ba_1 = (b_2 - a_2);
+    float h_3 = clamp((dot(pa_1, ba_1) / dot(ba_1, ba_1)), 0.0, 1.0);
+    return length((pa_1 - (ba_1 * h_3)));
+}
+
+float merge(float a_3, float b_3) {
+    return min(a_3, b_3);
+}
+
+float subtract(float a_4, float b_4) {
+    return max(a_4, -(b_4));
+}
+
+float intersect(float a_5, float b_5) {
+    return max(a_5, b_5);
+}
+
+float smooth_merge(float a_6, float b_6, float k) {
+    float h_4 = clamp((0.5 + ((0.5 * (b_6 - a_6)) / k)), 0.0, 1.0);
+    return (mix(b_6, a_6, h_4) - ((k * h_4) * (1.0 - h_4)));
+}
+
+float smooth_subtract(float a_7, float b_7, float k_1) {
+    float h_5 = clamp((0.5 - ((0.5 * (a_7 + b_7)) / k_1)), 0.0, 1.0);
+    return (mix(a_7, -(b_7), h_5) + ((k_1 * h_5) * (1.0 - h_5)));
+}
+
+float smooth_intersect(float a_8, float b_8, float k_2) {
+    float h_6 = clamp((0.5 - ((0.5 * (b_8 - a_8)) / k_2)), 0.0, 1.0);
+    return (mix(b_8, a_8, h_6) + ((k_2 * h_6) * (1.0 - h_6)));
+}
+
+float rounded(float d_1, float radius_5) {
+    return (d_1 - radius_5);
+}
+
+float onion(float d_2, float thickness) {
+    return (abs(d_2) - thickness);
+}
+
+Results floats(vec4 a_9, vec4 b_9, vec4 c_11, vec4 d_3) {
+    return Results(floatBitsToUint(a_9), floatBitsToUint(b_9), floatBitsToUint(c_11), floatBitsToUint(d_3));
+}
+
+Results scalar(float x_8) {
+    Results _e11 = floats(vec4(x_8, 0.0, 0.0, 0.0), vec4(0.0), vec4(0.0), vec4(0.0));
+    return _e11;
+}
+
+Results pair(vec2 v_7) {
+    Results _e10 = floats(vec4(v_7, 0.0, 0.0), vec4(0.0), vec4(0.0), vec4(0.0));
+    return _e10;
+}
+
+Results triple(vec3 v_8) {
+    Results _e9 = floats(vec4(v_8, 0.0), vec4(0.0), vec4(0.0), vec4(0.0));
+    return _e9;
+}
+
+Results quad(vec4 v_9) {
+    Results _e7 = floats(v_9, vec4(0.0), vec4(0.0), vec4(0.0));
+    return _e7;
+}
+
+Results triples(vec3 a_10, vec3 b_10) {
+    Results _e10 = floats(vec4(a_10, 0.0), vec4(b_10, 0.0), vec4(0.0), vec4(0.0));
+    return _e10;
+}
+
+Results whole(uvec4 v_10) {
+    return Results(v_10, uvec4(0u), uvec4(0u), uvec4(0u));
+}
+
+Transform transform(vec4 r[8]) {
+    return Transform(r[0], r[1], r[2]);
+}
+
+PbrMaterial material(vec4 r_1[8]) {
+    PbrMaterial _e9 = pbr_material(r_1[0].xyz, r_1[0].w, r_1[1].x, r_1[1].y);
+    return _e9;
+}
+
+Results run(uint function, uvec4 u_1[8], vec4 f_2[8]) {
+    switch(function) {
+        case 0u: {
+            float _e4 = square(f_2[0].x);
+            Results _e5 = scalar(_e4);
+            return _e5;
+        }
+        case 1u: {
+            float _e8 = max_component(f_2[0].xyz);
+            Results _e9 = scalar(_e8);
+            return _e9;
+        }
+        case 2u: {
+            float _e12 = min_component(f_2[0].xyz);
+            Results _e13 = scalar(_e12);
+            return _e13;
+        }
+        case 3u: {
+            float _e20 = inverse_lerp(f_2[0].x, f_2[0].y, f_2[0].z);
+            Results _e21 = scalar(_e20);
+            return _e21;
+        }
+        case 4u: {
+            float _e32 = remap(f_2[0].x, f_2[0].y, f_2[0].z, f_2[0].w, f_2[1].x);
+            Results _e33 = scalar(_e32);
+            return _e33;
+        }
+        case 5u: {
+            float _e38 = modulo(f_2[0].x, f_2[0].y);
+            Results _e39 = scalar(_e38);
+            return _e39;
+        }
+        case 6u: {
+            vec2 _e44 = rotate_2d(f_2[0].xy, f_2[0].z);
+            Results _e45 = pair(_e44);
+            return _e45;
+        }
+        case 7u: {
+            vec3 _e52 = rotate_axis(f_2[0].xyz, f_2[1].xyz, f_2[1].w);
+            Results _e53 = triple(_e52);
+            return _e53;
+        }
+        case 8u: {
+            vec3 _e57 = quat_rotate(f_2[0], f_2[1].xyz);
+            Results _e58 = triple(_e57);
+            return _e58;
+        }
+        case 9u: {
+            mat3x3 _e61 = basis_from_normal(f_2[0].xyz);
+            Results _e73 = floats(vec4(_e61[0], 0.0), vec4(_e61[1], 0.0), vec4(_e61[2], 0.0), vec4(0.0));
+            return _e73;
+        }
+        case 10u: {
+            vec4 turns = vec4(3.1415927, 6.2831855, 1.5707964, 0.31830987);
+            Results _e88 = floats(turns, vec4(1e-6, 0.0, 0.0, 0.0), vec4(0.0), vec4(0.0));
+            return _e88;
+        }
+        case 11u: {
+            uint _e92 = pcg(u_1[0].x);
+            Results _e97 = whole(uvec4(_e92, 0u, 0u, 0u));
+            return _e97;
+        }
+        case 12u: {
+            uvec3 _e100 = pcg3d(u_1[0].xyz);
+            Results _e103 = whole(uvec4(_e100, 0u));
+            return _e103;
+        }
+        case 13u: {
+            float _e106 = to_unit(u_1[0].x);
+            Results _e107 = scalar(_e106);
+            return _e107;
+        }
+        case 14u: {
+            float _e110 = random(u_1[0].x);
+            Results _e111 = scalar(_e110);
+            return _e111;
+        }
+        case 15u: {
+            float _e114 = random2_(f_2[0].xy);
+            Results _e115 = scalar(_e114);
+            return _e115;
+        }
+        case 16u: {
+            float _e118 = random3_(f_2[0].xyz);
+            Results _e119 = scalar(_e118);
+            return _e119;
+        }
+        case 17u: {
+            uvec3 _e123 = lattice(ivec3(u_1[0].xyz));
+            Results _e126 = whole(uvec4(_e123, 0u));
+            return _e126;
+        }
+        case 18u: {
+            vec3 _e129 = fade(f_2[0].xyz);
+            Results _e130 = triple(_e129);
+            return _e130;
+        }
+        case 19u: {
+            float _e133 = value3_(f_2[0].xyz);
+            Results _e134 = scalar(_e133);
+            return _e134;
+        }
+        case 20u: {
+            float _e137 = value2_(f_2[0].xy);
+            Results _e138 = scalar(_e137);
+            return _e138;
+        }
+        case 21u: {
+            float _e143 = gradient(u_1[0].x, f_2[1].xyz);
+            Results _e144 = scalar(_e143);
+            return _e144;
+        }
+        case 22u: {
+            float _e147 = perlin3_(f_2[0].xyz);
+            Results _e148 = scalar(_e147);
+            return _e148;
+        }
+        case 23u: {
+            float _e151 = perlin2_(f_2[0].xy);
+            Results _e152 = scalar(_e151);
+            return _e152;
+        }
+        case 24u: {
+            float _e160 = simplex_corner(ivec3(u_1[0].xyz), f_2[1].xyz, f_2[1].w);
+            Results _e161 = scalar(_e160);
+            return _e161;
+        }
+        case 25u: {
+            float _e164 = simplex3_(f_2[0].xyz);
+            Results _e165 = scalar(_e164);
+            return _e165;
+        }
+        case 26u: {
+            float _e168 = simplex2_(f_2[0].xy);
+            Results _e169 = scalar(_e168);
+            return _e169;
+        }
+        case 27u: {
+            float _e172 = worley3_(f_2[0].xyz);
+            Results _e173 = scalar(_e172);
+            return _e173;
+        }
+        case 28u: {
+            float _e176 = worley2_(f_2[0].xy);
+            Results _e177 = scalar(_e176);
+            return _e177;
+        }
+        case 29u: {
+            float _e182 = fbm3_(f_2[0].xyz, u_1[1].x);
+            Results _e183 = scalar(_e182);
+            return _e183;
+        }
+        case 30u: {
+            float _e188 = fbm2_(f_2[0].xy, u_1[1].x);
+            Results _e189 = scalar(_e188);
+            return _e189;
+        }
+        case 31u: {
+            vec3 _e192 = linear_to_srgb(f_2[0].xyz);
+            Results _e193 = triple(_e192);
+            return _e193;
+        }
+        case 32u: {
+            vec3 _e196 = srgb_to_linear(f_2[0].xyz);
+            Results _e197 = triple(_e196);
+            return _e197;
+        }
+        case 33u: {
+            float _e200 = luminance(f_2[0].xyz);
+            Results _e201 = scalar(_e200);
+            return _e201;
+        }
+        case 34u: {
+            vec3 _e204 = rgb_to_hsv(f_2[0].xyz);
+            Results _e205 = triple(_e204);
+            return _e205;
+        }
+        case 35u: {
+            vec3 _e208 = hsv_to_rgb(f_2[0].xyz);
+            Results _e209 = triple(_e208);
+            return _e209;
+        }
+        case 36u: {
+            vec3 _e212 = rrt_and_odt_fit(f_2[0].xyz);
+            Results _e213 = triple(_e212);
+            return _e213;
+        }
+        case 37u: {
+            vec3 _e216 = tone_map_aces(f_2[0].xyz);
+            Results _e217 = triple(_e216);
+            return _e217;
+        }
+        case 38u: {
+            vec3 _e220 = agx_contrast(f_2[0].xyz);
+            Results _e221 = triple(_e220);
+            return _e221;
+        }
+        case 39u: {
+            vec3 _e224 = tone_map_agx(f_2[0].xyz);
+            Results _e225 = triple(_e224);
+            return _e225;
+        }
+        case 40u: {
+            vec3 _e228 = tone_map_neutral(f_2[0].xyz);
+            Results _e229 = triple(_e228);
+            return _e229;
+        }
+        case 41u: {
+            vec3 _e240 = lambert(f_2[0].xyz, f_2[1].xyz, f_2[2].xyz, f_2[3].xyz, f_2[4].xyz);
+            Results _e241 = triple(_e240);
+            return _e241;
+        }
+        case 42u: {
+            vec3 _e244 = brdf_lambert(f_2[0].xyz);
+            Results _e245 = triple(_e244);
+            return _e245;
+        }
+        case 43u: {
+            vec3 _e252 = f_schlick(f_2[0].xyz, f_2[0].w, f_2[1].x);
+            Results _e253 = triple(_e252);
+            return _e253;
+        }
+        case 44u: {
+            float _e258 = d_ggx(f_2[0].x, f_2[0].y);
+            Results _e259 = scalar(_e258);
+            return _e259;
+        }
+        case 45u: {
+            float _e266 = v_ggx_smith_correlated(f_2[0].x, f_2[0].y, f_2[0].z);
+            Results _e267 = scalar(_e266);
+            return _e267;
+        }
+        case 46u: {
+            vec3 _e280 = brdf_ggx(f_2[0].xyz, f_2[1].xyz, f_2[2].xyz, f_2[3].xyz, f_2[3].w, f_2[4].x);
+            Results _e281 = triple(_e280);
+            return _e281;
+        }
+        case 47u: {
+            vec2 _e286 = dfg_approx(f_2[0].x, f_2[0].y);
+            Results _e287 = pair(_e286);
+            return _e287;
+        }
+        case 48u: {
+            vec3 _e294 = environment_brdf(f_2[0].xyz, f_2[0].w, f_2[1].xy);
+            Results _e295 = triple(_e294);
+            return _e295;
+        }
+        case 49u: {
+            Scattering _e302 = multiscattering(f_2[0].xyz, f_2[0].w, f_2[1].xy);
+            Results _e305 = triples(_e302.single, _e302.multi);
+            return _e305;
+        }
+        case 50u: {
+            vec3 _e310 = multiscatter_compensation(f_2[0].xyz, f_2[1].xy);
+            Results _e311 = triple(_e310);
+            return _e311;
+        }
+        case 51u: {
+            float _e318 = specular_occlusion(f_2[0].x, f_2[0].y, f_2[0].z);
+            Results _e319 = scalar(_e318);
+            return _e319;
+        }
+        case 52u: {
+            float _e326 = distance_attenuation(f_2[0].x, f_2[0].y, f_2[0].z);
+            Results _e327 = scalar(_e326);
+            return _e327;
+        }
+        case 53u: {
+            float _e334 = spot_attenuation(f_2[0].x, f_2[0].y, f_2[0].z);
+            Results _e335 = scalar(_e334);
+            return _e335;
+        }
+        case 54u: {
+            vec3 _e344 = hemisphere_irradiance(f_2[0].xyz, f_2[1].xyz, f_2[2].xyz, f_2[3].xyz);
+            Results _e345 = triple(_e344);
+            return _e345;
+        }
+        case 55u: {
+            vec3 sh_1[9] = vec3[9](f_2[1].xyz, vec3(f_2[1].w, f_2[2].xy), vec3(f_2[2].zw, f_2[3].x), f_2[3].yzw, f_2[4].xyz, vec3(f_2[4].w, f_2[5].xy), vec3(f_2[5].zw, f_2[6].x), f_2[6].yzw, f_2[7].xyz);
+            vec3 _e379 = sh_irradiance(f_2[0].xyz, sh_1);
+            Results _e380 = triple(_e379);
+            return _e380;
+        }
+        case 56u: {
+            PbrMaterial _e389 = pbr_material(f_2[0].xyz, f_2[0].w, f_2[1].x, f_2[1].y);
+            Results _e402 = floats(vec4(_e389.base_color, _e389.specular_grazing), vec4(_e389.diffuse, _e389.roughness), vec4(_e389.specular, _e389.metalness), vec4(_e389.specular_blended, 0.0));
+            return _e402;
+        }
+        case 57u: {
+            PbrMaterial _e403 = material(f_2);
+            Reflected _e414 = direct_light(_e403, f_2[2].xyz, f_2[3].xyz, f_2[4].xyz, f_2[5].xyz, f_2[6].xyz);
+            Results _e417 = triples(_e414.diffuse, _e414.specular);
+            return _e417;
+        }
+        case 58u: {
+            PbrMaterial _e418 = material(f_2);
+            vec3 _e423 = indirect_diffuse(_e418, f_2[2].xyz, f_2[3].xy);
+            Results _e424 = triple(_e423);
+            return _e424;
+        }
+        case 59u: {
+            PbrMaterial _e425 = material(f_2);
+            Reflected _e432 = indirect_specular(_e425, f_2[2].xyz, f_2[3].xyz, f_2[4].xy);
+            Results _e435 = triples(_e432.diffuse, _e432.specular);
+            return _e435;
+        }
+        case 60u: {
+            float _e440 = fog_depth(f_2[0].xyz, f_2[1].xyz);
+            Results _e441 = scalar(_e440);
+            return _e441;
+        }
+        case 61u: {
+            float _e448 = fog_linear(f_2[0].x, f_2[0].y, f_2[0].z);
+            Results _e449 = scalar(_e448);
+            return _e449;
+        }
+        case 62u: {
+            float _e454 = fog_exp2_(f_2[0].x, f_2[0].y);
+            Results _e455 = scalar(_e454);
+            return _e455;
+        }
+        case 63u: {
+            vec3 _e462 = apply_fog(f_2[0].xyz, f_2[1].xyz, f_2[2].x);
+            Results _e463 = triple(_e462);
+            return _e463;
+        }
+        case 64u: {
+            Transform _e464 = transform(f_2);
+            vec3 _e467 = transform_point(_e464, f_2[3].xyz);
+            Results _e468 = triple(_e467);
+            return _e468;
+        }
+        case 65u: {
+            Transform _e469 = transform(f_2);
+            vec3 _e472 = transform_direction(_e469, f_2[3].xyz);
+            Results _e473 = triple(_e472);
+            return _e473;
+        }
+        case 66u: {
+            Transform _e474 = transform(f_2);
+            vec3 _e477 = transform_normal(_e474, f_2[3].xyz);
+            Results _e478 = triple(_e477);
+            return _e478;
+        }
+        case 67u: {
+            Transform _e479 = transform(f_2);
+            Transform _e482 = move_transform(_e479, f_2[3].xyz);
+            Results _e488 = floats(_e482.x, _e482.y, _e482.z, vec4(0.0));
+            return _e488;
+        }
+        case 68u: {
+            vec4 _e496 = to_clip(mat4x4(f_2[0], f_2[1], f_2[2], f_2[3]), f_2[4].xyz);
+            Results _e497 = quad(_e496);
+            return _e497;
+        }
+        case 69u: {
+            Results _e499 = quad(OUTSIDE_CLIP);
+            return _e499;
+        }
+        case 70u: {
+            float _e506 = perspective_depth_to_view_z(f_2[0].x, f_2[0].y, f_2[0].z);
+            Results _e507 = scalar(_e506);
+            return _e507;
+        }
+        case 71u: {
+            float _e514 = view_z_to_perspective_depth(f_2[0].x, f_2[0].y, f_2[0].z);
+            Results _e515 = scalar(_e514);
+            return _e515;
+        }
+        case 72u: {
+            float _e522 = orthographic_depth_to_view_z(f_2[0].x, f_2[0].y, f_2[0].z);
+            Results _e523 = scalar(_e522);
+            return _e523;
+        }
+        case 73u: {
+            float _e530 = view_z_to_orthographic_depth(f_2[0].x, f_2[0].y, f_2[0].z);
+            Results _e531 = scalar(_e530);
+            return _e531;
+        }
+        case 74u: {
+            float _e538 = linear_depth(f_2[0].x, f_2[0].y, f_2[0].z);
+            Results _e539 = scalar(_e538);
+            return _e539;
+        }
+        case 75u: {
+            vec3 _e549 = view_position(f_2[0].xy, f_2[0].z, mat4x4(f_2[1], f_2[2], f_2[3], f_2[4]));
+            Results _e550 = triple(_e549);
+            return _e550;
+        }
+        case 76u: {
+            float _e555 = sphere(f_2[0].xyz, f_2[0].w);
+            Results _e556 = scalar(_e555);
+            return _e556;
+        }
+        case 77u: {
+            float _e561 = box(f_2[0].xyz, f_2[1].xyz);
+            Results _e562 = scalar(_e561);
+            return _e562;
+        }
+        case 78u: {
+            float _e569 = round_box(f_2[0].xyz, f_2[1].xyz, f_2[1].w);
+            Results _e570 = scalar(_e569);
+            return _e570;
+        }
+        case 79u: {
+            float _e577 = torus(f_2[0].xyz, f_2[1].x, f_2[1].y);
+            Results _e578 = scalar(_e577);
+            return _e578;
+        }
+        case 80u: {
+            float _e587 = capsule(f_2[0].xyz, f_2[1].xyz, f_2[2].xyz, f_2[2].w);
+            Results _e588 = scalar(_e587);
+            return _e588;
+        }
+        case 81u: {
+            float _e595 = cylinder(f_2[0].xyz, f_2[1].x, f_2[1].y);
+            Results _e596 = scalar(_e595);
+            return _e596;
+        }
+        case 82u: {
+            float _e603 = plane(f_2[0].xyz, f_2[1].xyz, f_2[1].w);
+            Results _e604 = scalar(_e603);
+            return _e604;
+        }
+        case 83u: {
+            float _e609 = circle(f_2[0].xy, f_2[0].z);
+            Results _e610 = scalar(_e609);
+            return _e610;
+        }
+        case 84u: {
+            float _e615 = rect(f_2[0].xy, f_2[0].zw);
+            Results _e616 = scalar(_e615);
+            return _e616;
+        }
+        case 85u: {
+            float _e623 = segment(f_2[0].xy, f_2[0].zw, f_2[1].xy);
+            Results _e624 = scalar(_e623);
+            return _e624;
+        }
+        case 86u: {
+            float _e629 = merge(f_2[0].x, f_2[0].y);
+            Results _e630 = scalar(_e629);
+            return _e630;
+        }
+        case 87u: {
+            float _e635 = subtract(f_2[0].x, f_2[0].y);
+            Results _e636 = scalar(_e635);
+            return _e636;
+        }
+        case 88u: {
+            float _e641 = intersect(f_2[0].x, f_2[0].y);
+            Results _e642 = scalar(_e641);
+            return _e642;
+        }
+        case 89u: {
+            float _e649 = smooth_merge(f_2[0].x, f_2[0].y, f_2[0].z);
+            Results _e650 = scalar(_e649);
+            return _e650;
+        }
+        case 90u: {
+            float _e657 = smooth_subtract(f_2[0].x, f_2[0].y, f_2[0].z);
+            Results _e658 = scalar(_e657);
+            return _e658;
+        }
+        case 91u: {
+            float _e665 = smooth_intersect(f_2[0].x, f_2[0].y, f_2[0].z);
+            Results _e666 = scalar(_e665);
+            return _e666;
+        }
+        case 92u: {
+            float _e671 = rounded(f_2[0].x, f_2[0].y);
+            Results _e672 = scalar(_e671);
+            return _e672;
+        }
+        case 93u: {
+            float _e677 = onion(f_2[0].x, f_2[0].y);
+            Results _e678 = scalar(_e677);
+            return _e678;
+        }
+        default: {
+            Results _e681 = whole(uvec4(4294967295u));
+            return _e681;
+        }
+    }
+}
+
+void main() {
+    vec4 position = gl_FragCoord;
+    uvec4 u[8] = uvec4[8](uvec4(0u), uvec4(0u), uvec4(0u), uvec4(0u), uvec4(0u), uvec4(0u), uvec4(0u), uvec4(0u));
+    vec4 f[8] = vec4[8](vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0));
+    int i = 0;
+    int row = int(position.y);
+    bool loop_init_7 = true;
+    while(true) {
+        if (!loop_init_7) {
+            int _e26 = i;
+            i = (_e26 + 1);
+        }
+        loop_init_7 = false;
+        int _e5 = i;
+        if ((_e5 < INPUTS)) {
+        } else {
+            break;
+        }
+        {
+            int _e9 = i;
+            int _e11 = i;
+            uvec4 _e17 = texelFetch(_group_0_binding_0_fs, ivec2((_e11 + 1), row), 0);
+            u[_e9] = _e17;
+            int _e19 = i;
+            int _e21 = i;
+            uvec4 _e23 = u[_e21];
+            f[_e19] = uintBitsToFloat(_e23);
+        }
+    }
+    uvec4 _e32 = texelFetch(_group_0_binding_0_fs, ivec2(0, row), 0);
+    uvec4 _e34[8] = u;
+    vec4 _e35[8] = f;
+    Results _e36 = run(_e32.x, _e34, _e35);
+    switch(uint(position.x)) {
+        case 0u: {
+            _fs2p_location0 = _e36.a;
+            return;
+        }
+        case 1u: {
+            _fs2p_location0 = _e36.b;
+            return;
+        }
+        case 2u: {
+            _fs2p_location0 = _e36.c;
+            return;
+        }
+        default: {
+            _fs2p_location0 = _e36.d;
+            return;
+        }
+    }
+}
+`,
+					uniformBlocks: [],
+					textures: [
+						{
+							name: '_group_0_binding_0_fs',
+							group: 0,
+							binding: 0,
+							sampler: null,
+						},
+					],
+				},
+			},
+		},
 	},
 };
 
@@ -2264,6 +6840,11 @@ struct Frame {
     vec4 sun_color;
     vec4 ambient;
 };
+struct Transform {
+    vec4 x;
+    vec4 y;
+    vec4 z;
+};
 struct InstanceIn {
     uint instance;
 };
@@ -2288,6 +6869,7 @@ struct VertexOut {
     vec4 clip;
     vec2 uv0_;
 };
+const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -2310,6 +6892,15 @@ layout(std140) uniform Frame_block_2Vertex { Frame _group_0_binding_0_vs; };
 layout(location = 0) in vec3 _p2vs_location0;
 layout(location = 2) in vec2 _p2vs_location2;
 smooth out vec2 _vs2fs_location0;
+
+vec3 transform_point(Transform t, vec3 p) {
+    vec4 q = vec4(p, 1.0);
+    return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
+}
+
+vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
+    return (view_proj * vec4(relative_position, 1.0));
+}
 
 Instance instance_of(uvec4 record, uint instance) {
     uint source = 0u;
@@ -2364,13 +6955,19 @@ Instance find_instance(InstanceIn i_1) {
     return _e6;
 }
 
-vec4 clip_position(Instance found, vec3 position) {
-    vec4 p = vec4(position, 1.0);
-    if (!(found.drawn)) {
-        return vec4(2.0, 2.0, 2.0, 1.0);
+Transform transform_of(Instance found) {
+    return Transform(found.row_x, found.row_y, found.row_z);
+}
+
+vec4 clip_position(Instance found_1, vec3 position) {
+    if (!(found_1.drawn)) {
+        return OUTSIDE_CLIP;
     }
-    mat4x4 _e13 = _group_0_binding_0_vs.view_proj;
-    return (_e13 * vec4(dot(found.row_x, p), dot(found.row_y, p), dot(found.row_z, p), 1.0));
+    mat4x4 _e6 = _group_0_binding_0_vs.view_proj;
+    Transform _e7 = transform_of(found_1);
+    vec3 _e9 = transform_point(_e7, position);
+    vec4 _e10 = to_clip(_e6, _e9);
+    return _e10;
 }
 
 void main() {
@@ -2445,6 +7042,11 @@ struct Frame {
     vec4 sun_color;
     vec4 ambient;
 };
+struct Transform {
+    vec4 x;
+    vec4 y;
+    vec4 z;
+};
 struct InstanceIn {
     uint instance;
 };
@@ -2469,6 +7071,7 @@ struct VertexOut {
     vec4 clip;
     vec2 uv0_;
 };
+const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -2476,6 +7079,19 @@ const uint CELL_SHIFT = 23u;
 
 smooth in vec2 _vs2fs_location0;
 layout(location = 0) out vec4 _fs2p_location0;
+
+vec3 transform_point(Transform t, vec3 p) {
+    vec4 q = vec4(p, 1.0);
+    return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
+}
+
+vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
+    return (view_proj * vec4(relative_position, 1.0));
+}
+
+Transform transform_of(Instance found) {
+    return Transform(found.row_x, found.row_y, found.row_z);
+}
 
 void main() {
     VertexOut in_ = VertexOut(gl_FragCoord, _vs2fs_location0);
@@ -2511,6 +7127,11 @@ struct Frame {
     vec4 sun_color;
     vec4 ambient;
 };
+struct Transform {
+    vec4 x;
+    vec4 y;
+    vec4 z;
+};
 struct InstanceIn {
     uint instance;
     uint draw;
@@ -2536,6 +7157,7 @@ struct VertexOut {
     vec4 clip;
     vec2 uv0_;
 };
+const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -2558,6 +7180,15 @@ layout(std140) uniform Frame_block_2Vertex { Frame _group_0_binding_0_vs; };
 layout(location = 0) in vec3 _p2vs_location0;
 layout(location = 2) in vec2 _p2vs_location2;
 smooth out vec2 _vs2fs_location0;
+
+vec3 transform_point(Transform t, vec3 p) {
+    vec4 q = vec4(p, 1.0);
+    return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
+}
+
+vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
+    return (view_proj * vec4(relative_position, 1.0));
+}
 
 Instance instance_of(uvec4 record, uint instance) {
     uint source = 0u;
@@ -2612,13 +7243,19 @@ Instance find_instance(InstanceIn i_1) {
     return _e7;
 }
 
-vec4 clip_position(Instance found, vec3 position) {
-    vec4 p = vec4(position, 1.0);
-    if (!(found.drawn)) {
-        return vec4(2.0, 2.0, 2.0, 1.0);
+Transform transform_of(Instance found) {
+    return Transform(found.row_x, found.row_y, found.row_z);
+}
+
+vec4 clip_position(Instance found_1, vec3 position) {
+    if (!(found_1.drawn)) {
+        return OUTSIDE_CLIP;
     }
-    mat4x4 _e13 = _group_0_binding_0_vs.view_proj;
-    return (_e13 * vec4(dot(found.row_x, p), dot(found.row_y, p), dot(found.row_z, p), 1.0));
+    mat4x4 _e6 = _group_0_binding_0_vs.view_proj;
+    Transform _e7 = transform_of(found_1);
+    vec3 _e9 = transform_point(_e7, position);
+    vec4 _e10 = to_clip(_e6, _e9);
+    return _e10;
 }
 
 void main() {
@@ -2693,6 +7330,11 @@ struct Frame {
     vec4 sun_color;
     vec4 ambient;
 };
+struct Transform {
+    vec4 x;
+    vec4 y;
+    vec4 z;
+};
 struct InstanceIn {
     uint instance;
     uint draw;
@@ -2718,6 +7360,7 @@ struct VertexOut {
     vec4 clip;
     vec2 uv0_;
 };
+const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -2725,6 +7368,19 @@ const uint CELL_SHIFT = 23u;
 
 smooth in vec2 _vs2fs_location0;
 layout(location = 0) out vec4 _fs2p_location0;
+
+vec3 transform_point(Transform t, vec3 p) {
+    vec4 q = vec4(p, 1.0);
+    return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
+}
+
+vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
+    return (view_proj * vec4(relative_position, 1.0));
+}
+
+Transform transform_of(Instance found) {
+    return Transform(found.row_x, found.row_y, found.row_z);
+}
 
 void main() {
     VertexOut in_ = VertexOut(gl_FragCoord, _vs2fs_location0);
@@ -2747,6 +7403,12 @@ void main() {
     sun_direction: vec4<f32>,
     sun_color: vec4<f32>,
     ambient: vec4<f32>,
+}
+
+struct Transform {
+    x: vec4<f32>,
+    y: vec4<f32>,
+    z: vec4<f32>,
 }
 
 struct InstanceIn {
@@ -2774,20 +7436,37 @@ struct VertexOut {
     @location(0) uv0_: vec2<f32>,
 }
 
+const OUTSIDE_CLIP: vec4<f32> = vec4<f32>(2f, 2f, 2f, 1f);
+
 @group(0) @binding(0)
 var<uniform> frame: Frame;
+
+fn transform_point(t: Transform, p: vec3<f32>) -> vec3<f32> {
+    let q = vec4<f32>(p, 1f);
+    return vec3<f32>(dot(t.x, q), dot(t.y, q), dot(t.z, q));
+}
+
+fn to_clip(view_proj: mat4x4<f32>, relative_position: vec3<f32>) -> vec4<f32> {
+    return (view_proj * vec4<f32>(relative_position, 1f));
+}
 
 fn find_instance(i_1: InstanceIn) -> Instance {
     return Instance(i_1.row_x, i_1.row_y, i_1.row_z, i_1.ids.x, true);
 }
 
-fn clip_position(found: Instance, position: vec3<f32>) -> vec4<f32> {
-    let p = vec4<f32>(position, 1f);
-    if !(found.drawn) {
-        return vec4<f32>(2f, 2f, 2f, 1f);
+fn transform_of(found: Instance) -> Transform {
+    return Transform(found.row_x, found.row_y, found.row_z);
+}
+
+fn clip_position(found_1: Instance, position: vec3<f32>) -> vec4<f32> {
+    if !(found_1.drawn) {
+        return OUTSIDE_CLIP;
     }
-    let _e13 = frame.view_proj;
-    return (_e13 * vec4<f32>(dot(found.row_x, p), dot(found.row_y, p), dot(found.row_z, p), 1f));
+    let _e6 = frame.view_proj;
+    let _e7 = transform_of(found_1);
+    let _e9 = transform_point(_e7, position);
+    let _e10 = to_clip(_e6, _e9);
+    return _e10;
 }
 
 @vertex
@@ -2866,6 +7545,11 @@ struct Frame {
 struct Material {
     vec4 color;
 };
+struct Transform {
+    vec4 x;
+    vec4 y;
+    vec4 z;
+};
 struct InstanceIn {
     uint instance;
 };
@@ -2892,6 +7576,7 @@ struct VertexOut {
     vec4 clip;
     uint material;
 };
+const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -2913,6 +7598,15 @@ layout(std140) uniform Frame_block_2Vertex { Frame _group_0_binding_0_vs; };
 
 layout(location = 0) in vec3 _p2vs_location0;
 flat out uint _vs2fs_location0;
+
+vec3 transform_point(Transform t, vec3 p) {
+    vec4 q = vec4(p, 1.0);
+    return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
+}
+
+vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
+    return (view_proj * vec4(relative_position, 1.0));
+}
 
 Instance instance_of(uvec4 record, uint instance) {
     uint source = 0u;
@@ -2967,13 +7661,19 @@ Instance find_instance(InstanceIn i_1) {
     return _e6;
 }
 
-vec4 clip_position(Instance found, vec3 position) {
-    vec4 p = vec4(position, 1.0);
-    if (!(found.drawn)) {
-        return vec4(2.0, 2.0, 2.0, 1.0);
+Transform transform_of(Instance found) {
+    return Transform(found.row_x, found.row_y, found.row_z);
+}
+
+vec4 clip_position(Instance found_1, vec3 position) {
+    if (!(found_1.drawn)) {
+        return OUTSIDE_CLIP;
     }
-    mat4x4 _e13 = _group_0_binding_0_vs.view_proj;
-    return (_e13 * vec4(dot(found.row_x, p), dot(found.row_y, p), dot(found.row_z, p), 1.0));
+    mat4x4 _e6 = _group_0_binding_0_vs.view_proj;
+    Transform _e7 = transform_of(found_1);
+    vec3 _e9 = transform_point(_e7, position);
+    vec4 _e10 = to_clip(_e6, _e9);
+    return _e10;
 }
 
 vec3 linear_to_srgb(vec3 c) {
@@ -3057,6 +7757,11 @@ struct Frame {
 struct Material {
     vec4 color;
 };
+struct Transform {
+    vec4 x;
+    vec4 y;
+    vec4 z;
+};
 struct InstanceIn {
     uint instance;
 };
@@ -3083,6 +7788,7 @@ struct VertexOut {
     vec4 clip;
     uint material;
 };
+const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -3093,9 +7799,22 @@ layout(std140) uniform MaterialTable_block_0Fragment { MaterialTable _group_0_bi
 flat in uint _vs2fs_location0;
 layout(location = 0) out vec4 _fs2p_location0;
 
+vec3 transform_point(Transform t, vec3 p) {
+    vec4 q = vec4(p, 1.0);
+    return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
+}
+
+vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
+    return (view_proj * vec4(relative_position, 1.0));
+}
+
 Material material_of(uint id) {
     Material _e4 = _group_0_binding_1_fs.items[id];
     return _e4;
+}
+
+Transform transform_of(Instance found) {
+    return Transform(found.row_x, found.row_y, found.row_z);
 }
 
 vec3 linear_to_srgb(vec3 c) {
@@ -3149,6 +7868,11 @@ struct Frame {
 struct Material {
     vec4 color;
 };
+struct Transform {
+    vec4 x;
+    vec4 y;
+    vec4 z;
+};
 struct InstanceIn {
     uint instance;
     uint draw;
@@ -3176,6 +7900,7 @@ struct VertexOut {
     vec4 clip;
     uint material;
 };
+const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -3197,6 +7922,15 @@ layout(std140) uniform Frame_block_2Vertex { Frame _group_0_binding_0_vs; };
 
 layout(location = 0) in vec3 _p2vs_location0;
 flat out uint _vs2fs_location0;
+
+vec3 transform_point(Transform t, vec3 p) {
+    vec4 q = vec4(p, 1.0);
+    return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
+}
+
+vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
+    return (view_proj * vec4(relative_position, 1.0));
+}
 
 Instance instance_of(uvec4 record, uint instance) {
     uint source = 0u;
@@ -3251,13 +7985,19 @@ Instance find_instance(InstanceIn i_1) {
     return _e7;
 }
 
-vec4 clip_position(Instance found, vec3 position) {
-    vec4 p = vec4(position, 1.0);
-    if (!(found.drawn)) {
-        return vec4(2.0, 2.0, 2.0, 1.0);
+Transform transform_of(Instance found) {
+    return Transform(found.row_x, found.row_y, found.row_z);
+}
+
+vec4 clip_position(Instance found_1, vec3 position) {
+    if (!(found_1.drawn)) {
+        return OUTSIDE_CLIP;
     }
-    mat4x4 _e13 = _group_0_binding_0_vs.view_proj;
-    return (_e13 * vec4(dot(found.row_x, p), dot(found.row_y, p), dot(found.row_z, p), 1.0));
+    mat4x4 _e6 = _group_0_binding_0_vs.view_proj;
+    Transform _e7 = transform_of(found_1);
+    vec3 _e9 = transform_point(_e7, position);
+    vec4 _e10 = to_clip(_e6, _e9);
+    return _e10;
 }
 
 vec3 linear_to_srgb(vec3 c) {
@@ -3341,6 +8081,11 @@ struct Frame {
 struct Material {
     vec4 color;
 };
+struct Transform {
+    vec4 x;
+    vec4 y;
+    vec4 z;
+};
 struct InstanceIn {
     uint instance;
     uint draw;
@@ -3368,6 +8113,7 @@ struct VertexOut {
     vec4 clip;
     uint material;
 };
+const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -3378,9 +8124,22 @@ layout(std140) uniform MaterialTable_block_0Fragment { MaterialTable _group_0_bi
 flat in uint _vs2fs_location0;
 layout(location = 0) out vec4 _fs2p_location0;
 
+vec3 transform_point(Transform t, vec3 p) {
+    vec4 q = vec4(p, 1.0);
+    return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
+}
+
+vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
+    return (view_proj * vec4(relative_position, 1.0));
+}
+
 Material material_of(uint id) {
     Material _e4 = _group_0_binding_1_fs.items[id];
     return _e4;
+}
+
+Transform transform_of(Instance found) {
+    return Transform(found.row_x, found.row_y, found.row_z);
 }
 
 vec3 linear_to_srgb(vec3 c) {
@@ -3424,6 +8183,12 @@ struct Material {
     color: vec4<f32>,
 }
 
+struct Transform {
+    x: vec4<f32>,
+    y: vec4<f32>,
+    z: vec4<f32>,
+}
+
 struct InstanceIn {
     @location(8) row_x: vec4<f32>,
     @location(9) row_y: vec4<f32>,
@@ -3448,10 +8213,21 @@ struct VertexOut {
     @location(0) @interpolate(flat, either) material: u32,
 }
 
+const OUTSIDE_CLIP: vec4<f32> = vec4<f32>(2f, 2f, 2f, 1f);
+
 @group(0) @binding(1)
 var<storage> materials: array<Material>;
 @group(0) @binding(0)
 var<uniform> frame: Frame;
+
+fn transform_point(t: Transform, p: vec3<f32>) -> vec3<f32> {
+    let q = vec4<f32>(p, 1f);
+    return vec3<f32>(dot(t.x, q), dot(t.y, q), dot(t.z, q));
+}
+
+fn to_clip(view_proj: mat4x4<f32>, relative_position: vec3<f32>) -> vec4<f32> {
+    return (view_proj * vec4<f32>(relative_position, 1f));
+}
 
 fn material_of(id: u32) -> Material {
     let _e3 = materials[id];
@@ -3462,13 +8238,19 @@ fn find_instance(i_1: InstanceIn) -> Instance {
     return Instance(i_1.row_x, i_1.row_y, i_1.row_z, i_1.ids.x, true);
 }
 
-fn clip_position(found: Instance, position: vec3<f32>) -> vec4<f32> {
-    let p = vec4<f32>(position, 1f);
-    if !(found.drawn) {
-        return vec4<f32>(2f, 2f, 2f, 1f);
+fn transform_of(found: Instance) -> Transform {
+    return Transform(found.row_x, found.row_y, found.row_z);
+}
+
+fn clip_position(found_1: Instance, position: vec3<f32>) -> vec4<f32> {
+    if !(found_1.drawn) {
+        return OUTSIDE_CLIP;
     }
-    let _e13 = frame.view_proj;
-    return (_e13 * vec4<f32>(dot(found.row_x, p), dot(found.row_y, p), dot(found.row_z, p), 1f));
+    let _e6 = frame.view_proj;
+    let _e7 = transform_of(found_1);
+    let _e9 = transform_point(_e7, position);
+    let _e10 = to_clip(_e6, _e9);
+    return _e10;
 }
 
 fn linear_to_srgb(c: vec3<f32>) -> vec3<f32> {
@@ -3537,6 +8319,11 @@ struct Frame {
 struct Material {
     vec4 color;
 };
+struct Transform {
+    vec4 x;
+    vec4 y;
+    vec4 z;
+};
 struct InstanceIn {
     uint instance;
 };
@@ -3568,6 +8355,7 @@ struct VertexOut {
     vec2 uv0_;
     uint material;
 };
+const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
 const uint NO_LAYER = 4294967295u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
@@ -3592,6 +8380,15 @@ layout(location = 0) in vec3 _p2vs_location0;
 layout(location = 2) in vec2 _p2vs_location2;
 smooth out vec2 _vs2fs_location0;
 flat out uint _vs2fs_location1;
+
+vec3 transform_point(Transform t, vec3 p) {
+    vec4 q = vec4(p, 1.0);
+    return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
+}
+
+vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
+    return (view_proj * vec4(relative_position, 1.0));
+}
 
 Instance instance_of(uvec4 record, uint instance) {
     uint source = 0u;
@@ -3646,13 +8443,19 @@ Instance find_instance(InstanceIn i_1) {
     return _e6;
 }
 
-vec4 clip_position(Instance found, vec3 position) {
-    vec4 p = vec4(position, 1.0);
-    if (!(found.drawn)) {
-        return vec4(2.0, 2.0, 2.0, 1.0);
+Transform transform_of(Instance found) {
+    return Transform(found.row_x, found.row_y, found.row_z);
+}
+
+vec4 clip_position(Instance found_1, vec3 position) {
+    if (!(found_1.drawn)) {
+        return OUTSIDE_CLIP;
     }
-    mat4x4 _e13 = _group_0_binding_0_vs.view_proj;
-    return (_e13 * vec4(dot(found.row_x, p), dot(found.row_y, p), dot(found.row_z, p), 1.0));
+    mat4x4 _e6 = _group_0_binding_0_vs.view_proj;
+    Transform _e7 = transform_of(found_1);
+    vec3 _e9 = transform_point(_e7, position);
+    vec4 _e10 = to_clip(_e6, _e9);
+    return _e10;
 }
 
 vec3 linear_to_srgb(vec3 c) {
@@ -3738,6 +8541,11 @@ struct Frame {
 struct Material {
     vec4 color;
 };
+struct Transform {
+    vec4 x;
+    vec4 y;
+    vec4 z;
+};
 struct InstanceIn {
     uint instance;
 };
@@ -3769,6 +8577,7 @@ struct VertexOut {
     vec2 uv0_;
     uint material;
 };
+const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
 const uint NO_LAYER = 4294967295u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
@@ -3785,6 +8594,15 @@ smooth in vec2 _vs2fs_location0;
 flat in uint _vs2fs_location1;
 layout(location = 0) out vec4 _fs2p_location0;
 
+vec3 transform_point(Transform t, vec3 p) {
+    vec4 q = vec4(p, 1.0);
+    return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
+}
+
+vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
+    return (view_proj * vec4(relative_position, 1.0));
+}
+
 Material material_of(uint id) {
     Material _e4 = _group_0_binding_1_fs.items[id];
     return _e4;
@@ -3793,6 +8611,10 @@ Material material_of(uint id) {
 uint map_layer_of(uint id_1) {
     uint _e5 = _group_0_binding_3_fs.items[id_1].x;
     return _e5;
+}
+
+Transform transform_of(Instance found) {
+    return Transform(found.row_x, found.row_y, found.row_z);
 }
 
 vec3 linear_to_srgb(vec3 c) {
@@ -3866,6 +8688,11 @@ struct Frame {
 struct Material {
     vec4 color;
 };
+struct Transform {
+    vec4 x;
+    vec4 y;
+    vec4 z;
+};
 struct InstanceIn {
     uint instance;
     uint draw;
@@ -3898,6 +8725,7 @@ struct VertexOut {
     vec2 uv0_;
     uint material;
 };
+const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
 const uint NO_LAYER = 4294967295u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
@@ -3922,6 +8750,15 @@ layout(location = 0) in vec3 _p2vs_location0;
 layout(location = 2) in vec2 _p2vs_location2;
 smooth out vec2 _vs2fs_location0;
 flat out uint _vs2fs_location1;
+
+vec3 transform_point(Transform t, vec3 p) {
+    vec4 q = vec4(p, 1.0);
+    return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
+}
+
+vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
+    return (view_proj * vec4(relative_position, 1.0));
+}
 
 Instance instance_of(uvec4 record, uint instance) {
     uint source = 0u;
@@ -3976,13 +8813,19 @@ Instance find_instance(InstanceIn i_1) {
     return _e7;
 }
 
-vec4 clip_position(Instance found, vec3 position) {
-    vec4 p = vec4(position, 1.0);
-    if (!(found.drawn)) {
-        return vec4(2.0, 2.0, 2.0, 1.0);
+Transform transform_of(Instance found) {
+    return Transform(found.row_x, found.row_y, found.row_z);
+}
+
+vec4 clip_position(Instance found_1, vec3 position) {
+    if (!(found_1.drawn)) {
+        return OUTSIDE_CLIP;
     }
-    mat4x4 _e13 = _group_0_binding_0_vs.view_proj;
-    return (_e13 * vec4(dot(found.row_x, p), dot(found.row_y, p), dot(found.row_z, p), 1.0));
+    mat4x4 _e6 = _group_0_binding_0_vs.view_proj;
+    Transform _e7 = transform_of(found_1);
+    vec3 _e9 = transform_point(_e7, position);
+    vec4 _e10 = to_clip(_e6, _e9);
+    return _e10;
 }
 
 vec3 linear_to_srgb(vec3 c) {
@@ -4068,6 +8911,11 @@ struct Frame {
 struct Material {
     vec4 color;
 };
+struct Transform {
+    vec4 x;
+    vec4 y;
+    vec4 z;
+};
 struct InstanceIn {
     uint instance;
     uint draw;
@@ -4100,6 +8948,7 @@ struct VertexOut {
     vec2 uv0_;
     uint material;
 };
+const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
 const uint NO_LAYER = 4294967295u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
@@ -4116,6 +8965,15 @@ smooth in vec2 _vs2fs_location0;
 flat in uint _vs2fs_location1;
 layout(location = 0) out vec4 _fs2p_location0;
 
+vec3 transform_point(Transform t, vec3 p) {
+    vec4 q = vec4(p, 1.0);
+    return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
+}
+
+vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
+    return (view_proj * vec4(relative_position, 1.0));
+}
+
 Material material_of(uint id) {
     Material _e4 = _group_0_binding_1_fs.items[id];
     return _e4;
@@ -4124,6 +8982,10 @@ Material material_of(uint id) {
 uint map_layer_of(uint id_1) {
     uint _e5 = _group_0_binding_3_fs.items[id_1].x;
     return _e5;
+}
+
+Transform transform_of(Instance found) {
+    return Transform(found.row_x, found.row_y, found.row_z);
 }
 
 vec3 linear_to_srgb(vec3 c) {
@@ -4187,6 +9049,12 @@ struct Material {
     color: vec4<f32>,
 }
 
+struct Transform {
+    x: vec4<f32>,
+    y: vec4<f32>,
+    z: vec4<f32>,
+}
+
 struct InstanceIn {
     @location(8) row_x: vec4<f32>,
     @location(9) row_y: vec4<f32>,
@@ -4213,6 +9081,7 @@ struct VertexOut {
     @location(1) @interpolate(flat, either) material: u32,
 }
 
+const OUTSIDE_CLIP: vec4<f32> = vec4<f32>(2f, 2f, 2f, 1f);
 const NO_LAYER: u32 = 4294967295u;
 
 @group(0) @binding(1)
@@ -4225,6 +9094,15 @@ var<uniform> frame: Frame;
 var map_layers: texture_2d_array<f32>;
 @group(1) @binding(1)
 var map_sampler: sampler;
+
+fn transform_point(t: Transform, p: vec3<f32>) -> vec3<f32> {
+    let q = vec4<f32>(p, 1f);
+    return vec3<f32>(dot(t.x, q), dot(t.y, q), dot(t.z, q));
+}
+
+fn to_clip(view_proj: mat4x4<f32>, relative_position: vec3<f32>) -> vec4<f32> {
+    return (view_proj * vec4<f32>(relative_position, 1f));
+}
 
 fn material_of(id: u32) -> Material {
     let _e3 = materials[id];
@@ -4240,13 +9118,19 @@ fn find_instance(i_1: InstanceIn) -> Instance {
     return Instance(i_1.row_x, i_1.row_y, i_1.row_z, i_1.ids.x, true);
 }
 
-fn clip_position(found: Instance, position: vec3<f32>) -> vec4<f32> {
-    let p = vec4<f32>(position, 1f);
-    if !(found.drawn) {
-        return vec4<f32>(2f, 2f, 2f, 1f);
+fn transform_of(found: Instance) -> Transform {
+    return Transform(found.row_x, found.row_y, found.row_z);
+}
+
+fn clip_position(found_1: Instance, position: vec3<f32>) -> vec4<f32> {
+    if !(found_1.drawn) {
+        return OUTSIDE_CLIP;
     }
-    let _e13 = frame.view_proj;
-    return (_e13 * vec4<f32>(dot(found.row_x, p), dot(found.row_y, p), dot(found.row_z, p), 1f));
+    let _e6 = frame.view_proj;
+    let _e7 = transform_of(found_1);
+    let _e9 = transform_point(_e7, position);
+    let _e10 = to_clip(_e6, _e9);
+    return _e10;
 }
 
 fn linear_to_srgb(c: vec3<f32>) -> vec3<f32> {
@@ -4297,6 +9181,7 @@ export const SHADERS = {
 	debug_lines: DEBUG_LINES_SHADER,
 	lit: LIT_SHADER,
 	mipmap: MIPMAP_SHADER,
+	test_library: TEST_LIBRARY_SHADER,
 	test_mesh: TEST_MESH_SHADER,
 	test_textures: TEST_TEXTURES_SHADER,
 	texcoords: TEXCOORDS_SHADER,

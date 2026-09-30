@@ -46,7 +46,8 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { cpus, platform } from 'node:os';
 import { join, relative, resolve } from 'node:path';
 import { type Browser, chromium } from '@playwright/test';
-import { SWIFTSHADER_ARGS } from '../packages/cli/src/browser.js';
+import { SWIFTSHADER_ARGS, WEBGPU_DEVELOPER_FEATURES } from '../packages/cli/src/browser.js';
+import { RUNS } from '../packages/cli/src/protocol.js';
 import { jobWorkersProblem } from '../tests/lib/engine-checks.ts';
 import { pageResult } from '../tests/lib/page-result.ts';
 import { runName } from '../tests/lib/runs.ts';
@@ -107,8 +108,6 @@ const DEFAULT_PAGES: BenchPageKind[] = [
 const START_MARGIN_MS = 60_000;
 /** The browsers the command can drive. */
 const BROWSERS = ['chrome', 'brave', 'chromium'] as const;
-/** WebGPU's developer features, without which the browser rounds GPU timestamps. */
-const WEBGPU_DEVELOPER_FEATURES = '--enable-webgpu-developer-features';
 /** A comparison of two builds needs this many runs of each page per build, or more. */
 const MIN_COMPARE_RUNS = 3;
 
@@ -156,7 +155,7 @@ export function parseBenchArgs(args: readonly string[]): BenchOptions {
 	const options: BenchOptions = {
 		scenes: null,
 		pages: null,
-		runs: 5,
+		runs: RUNS,
 		seconds: null,
 		jobs: null,
 		sweep: false,
