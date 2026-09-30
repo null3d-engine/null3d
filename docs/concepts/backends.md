@@ -18,7 +18,7 @@ flowchart TD
     adapter -- "no" --> gl["WebGL2"]
 ```
 
-null3D draws with WebGPU where the browser offers it, and with WebGL2 everywhere else. The same sketch code runs on both, with no backend checks in it. The engine picks the tier once, at startup, from feature tests.
+null3D draws with WebGPU where the browser offers it, and with WebGL2 everywhere else. The same sketch code runs on both, with no backend checks in it. The engine picks the tier once, at startup, from feature tests. It tests the thread that will draw: where a worker draws, the engine picks the best tier that the worker can use. After two starts in a row that crashed the tab on WebGPU, the engine starts on WebGL2. A page that names a GPU path keeps it ([Quality presets](quality-presets.md#starts-that-crashed-the-tab)).
 
 ## The three tiers
 
@@ -34,9 +34,13 @@ These facts were checked in September 2026. Browser support changes often, so th
 
 On WebGPU, the GPU culls the scene itself. The engine records one draw for each group of objects that share a pipeline, a mesh and a material, and replays these draws every frame. The GPU fills in each draw's count. The CPU's cost per frame grows with the number of those groups, and stays almost flat as the object count grows.
 
-On WebGL2 there are no compute shaders, so the job workers cull in parallel on the CPU and group the visible objects the same way. Each object's matrix sits in a data texture on the GPU. Static objects upload theirs only when they change. Moving instance batches write theirs each frame into the next of three textures. A frame then never writes a texture that the GPU may still read. Each frame lists the visible objects, 4 bytes each, and uploads the list only when it changed. The `visibleEntries` figure of `engine.measure` counts the entries of each frame's list. A static instance batch that has stopped changing is culled in groups of 64 nearby rows, with one test and one list entry per group. On both paths, a scene spread over several grid cells skips the still objects of the cells out of view first ([Culling](culling.md)). A group partly in view draws all its rows, and the GPU clips the ones outside. Where the browser has the `WEBGL_multi_draw` extension, one call draws every group with the same shading and the same mesh buffer. Firefox lacks the extension, so there each group takes one call.
+On WebGL2 there are no compute shaders, so the job workers cull in parallel on the CPU and group the visible objects the same way. Each object's matrix sits in a data texture on the GPU. Static objects upload theirs only when they change. Moving instance batches write theirs each frame into the next of three textures. A frame then never writes a texture that the GPU may still read. Each frame lists the visible objects, 4 bytes each, and uploads the list only when it changed. The `visibleEntries` figure of `engine.measure` counts the entries of each frame's list. A static instance batch that has stopped changing is culled in groups of 64 nearby rows, with one test and one list entry per group. A group partly in view draws all its rows, and the GPU clips the ones outside. On both paths, a scene spread over several grid cells skips the still objects of the cells out of view first ([Culling](culling.md)). Where the browser has the `WEBGL_multi_draw` extension, one call draws every group with the same shading and the same mesh buffer. Firefox lacks the extension, so there each group takes one call.
 
-Every feature works on both paths, or its page describes its WebGL2 fallback.
+Every feature works on both paths, or its page describes its WebGL2 fallback. The page downloads only the shaders of the path that it draws with.
+
+## Quality presets on each tier
+
+WebGL2 and WebGPU's compatibility mode run at most the Medium [quality preset](quality-presets.md), even when the page or the `?preset=` switch asks for more. So on those tiers the preset's pixel ratio cap is at most 2. Its anisotropic filtering cap is at most 4x, and its texture upload budget at most 4 MiB per frame.
 
 ## Color and anti-aliasing on each tier
 
@@ -94,7 +98,7 @@ The WebGPU path stays inside WebGPU's default limits, and inside compatibility m
 | Compute threads per workgroup | 128 |
 | Uniform binding size | 16 KB |
 | Color attachments | 4 |
-| Texture size | 4096 pixels (8192 only after a check) |
+| Texture size | 4096 pixels, the widest and tallest texture that the engine makes |
 | Texture array layers | 256 |
 | Buffer size | 256 MB |
 | Storage binding size | 128 MB |
@@ -124,13 +128,15 @@ Some laptops have a separate graphics chip next to the one built into the proces
 
 On WebGL2, uploads read straight from the engine's shared memory. A browser that refuses to read shared memory gets a copy of each upload instead. The switch `?uploads=copy` makes the engine copy everywhere, so one device can test both routes.
 
+On WebGL2, the engine compiles shader programs in the background where the browser has the `KHR_parallel_shader_compile` extension. The switch `?compile=wait` makes it wait for each compile at the program's first draw instead, as a browser without the extension does.
+
 The switch `?depth=` forces a WebGL2 depth mode: `reversed`, `reversed-gl` or `standard`, which draws depth as three.js's WebGL renderer does by default. A browser without `EXT_clip_control` cannot draw `reversed`, so it draws its own mode instead.
 
 KTX2 textures take the compressed format of the first family that the device has: ASTC, BC7 or ETC2 by the file's data ([Textures](../api/textures.md#ktx2-files)). The switch `?compression=` keeps them to the families that it lists, such as `?compression=bc`, or to none with `?compression=none`. One device can then test the format of each kind of device.
 
 ## When the GPU goes away
 
-A WebGPU device can be lost, for example after a driver reset, and so can a WebGL2 context. The thread that draws then makes a new device, or waits for the context to come back. It draws the whole scene again from data the engine kept. The sketch worker keeps running, so your sketch's state survives. If the GPU is lost more than twice within one minute, or no new device starts, the engine stops drawing and reports E1302.
+A WebGPU device can be lost, for example after a driver reset, and so can a WebGL2 context. The thread that draws then makes a new device, or waits for the context to come back. It draws the whole scene again from data the engine kept. The engine keeps no copy of a texture's texels once their upload is done. Such a texture draws without its map until it gets an update ([Textures](../api/textures.md#when-the-browser-takes-the-gpu-away)). The sketch worker keeps running, so your sketch's state survives. If the GPU is lost more than twice within one minute, or no new device starts, the engine stops drawing and reports E1302.
 
 ## Minimum browsers
 
@@ -138,9 +144,9 @@ A WebGPU device can be lost, for example after a driver reset, and so can a WebG
 | --- | --- |
 | Safari on macOS and iOS | 16.4 |
 | Chrome and Edge | 91 |
-| Firefox | 89 |
+| Firefox | 89, or 145 on a cross-origin isolated page |
 
-WebAssembly SIMD sets these minimums. An older browser gets a clear "browser not supported" message instead of a slow path.
+WebAssembly SIMD sets these minimums. An older browser gets a clear "browser not supported" message instead of a slow path. On a cross-origin isolated page, the engine runs worker threads, which wait with `Atomics.waitAsync`. Firefox has it from version 145, so an older Firefox cannot start the engine on such a page.
 
 ## Related pages
 
