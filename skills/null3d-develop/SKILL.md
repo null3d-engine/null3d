@@ -19,11 +19,11 @@ The engine docs are the source of truth. This skill describes the API planned fo
 2. Read docs pages by ID, in this order:
    - inside the null3D repository itself: `docs/<id>.md`;
    - in a null3D project: `node_modules/@null3d/engine/docs/<id>.md`;
-   - from any terminal: `bunx @null3d/cli docs show <id>`, or `bunx @null3d/cli docs search "<words>"`.
+   - from any terminal (0.3): `bunx @null3d/cli docs show <id>`, or `bunx @null3d/cli docs search "<words>"`.
 3. Each page starts with front matter. `status: stable` or `status: experimental` means the API exists (experimental APIs may still change). `status: planned` means it does not exist in this version. The note under an experimental page's title can name parts that are not built yet: treat those parts as planned too. Do not call a planned API; tell the user, and use the workaround the page gives.
 4. If the docs and this skill disagree, follow the docs and mention the difference in your summary, so the skill can be fixed.
 
-Doc IDs appear in backticks throughout, for example `concepts/architecture`. Version numbers in parentheses, such as (0.2), give the first engine version with that API; no number means 0.1.
+Doc IDs appear in backticks throughout, for example `concepts/architecture`. Version numbers in parentheses, such as (0.2), give the first engine version with that API; no number means 0.1. "Later in 0.1" marks a part of 0.1 that is not built yet.
 
 ## 2. The model
 
@@ -59,16 +59,15 @@ await createEngine({
 // sketch.ts (sketch worker)
 import { defineSketch } from '@null3d/engine';
 
-export default defineSketch(async ({ scene, geometry, materials }) => {
+export default defineSketch(({ scene, geometry, materials }) => {
   const camera = scene.createPerspectiveCamera({ fov: 60, position: [0, 1.5, 4], target: [0, 0, 0] });
   scene.setActiveCamera(camera);
-  scene.createDirectionalLight({ direction: [-1, -2, -1], intensity: 3, castShadows: true });
-  scene.createHemisphereLight({ skyColor: '#dfe8ff', groundColor: '#404040', intensity: 0.6 });
+  scene.createDirectionalLight({ direction: [-1, -2, -1], intensity: 3 });
+  scene.createAmbientLight({ intensity: 0.4 });
 
   const cube = scene.createMesh({
     mesh: geometry.box({ width: 1, height: 1, depth: 1 }),
-    material: materials.standard({ color: '#4a8cff', roughness: 0.5 }),
-    castShadows: true,
+    material: materials.standard({ color: '#4a8cff' }),
     dynamic: true, // it moves every frame
   });
 
@@ -86,7 +85,7 @@ export default defineSketch(async ({ scene, geometry, materials }) => {
 2. Read the doc pages for the features involved (section 1).
 3. Make the change in small steps. Scene logic goes in `sketch.ts`; DOM, HTML UI and audio go in `page.ts`.
 4. Look at the result. `bunx vite` serves the project, and the null3D Vite plugin adds the right headers. `bunx @null3d/cli shot --out shot.png` renders one frame headless and saves it. Open the image and check it: code that compiles can still draw nothing.
-5. Check the cost with `bunx @null3d/cli bench`, or with `debug.stats(true)` while running. Compare the frame phases with the preset's budget (`references/performance.md`).
+5. Check the cost with `bunx @null3d/cli bench`, or with `await engine.measure(5)` on the page while it runs. Compare the frame phases with the preset's budget (`references/performance.md`).
 6. Add or update a test. Anything visual gets a hold-mode image test, listed in `null3d.json` (`references/testing-and-debugging.md`). Run `bunx @null3d/cli test`, and open the images of each test that fails.
 7. If the change touches rendering, check the WebGL2 path: add `?gpu=webgl2` to the dev URL, or run `bunx @null3d/cli test --gpu webgl2`.
 8. Summarize what changed, how you verified it (images, numbers), and any limits: planned APIs you avoided, device classes you could not test.
@@ -99,12 +98,12 @@ Each rule comes with its reason, because the reason covers cases the rule does n
 2. Use an instance batch for many copies of one mesh. A batch is one engine object and one typed array for you, where the same number of `createMesh` calls means as many objects to manage. (`concepts/instances`)
 3. Move many objects by writing arrays, not by calling setters in a loop. Each setter call crosses from JavaScript into WebAssembly; a typed-array write does not cross at all.
 4. Create an object with `dynamic: true` only if it changes most frames. Static objects cost nothing until changed, and dynamic ones are recomputed every frame. Only dynamic objects and batches may be written through arrays, because static objects rely on setters to mark them changed.
-5. Create and destroy in bulk, and pool short-lived objects such as bullets: make a batch with a fixed capacity and use `setActiveCount`. A frame with a structural change (create, destroy, a new mesh or material) rebuilds the draw tables; `setVisible` and `setActiveCount` do not. The engine sizes its memory for the scene it holds, so create meshes, materials and batches during setup: one created during play makes engine memory grow in the next frame.
+5. Create and destroy in bulk, and pool short-lived objects such as bullets: make a batch with a fixed capacity and use `setActiveCount`. A frame with a structural change (create, destroy, a new mesh or material) rebuilds the draw tables; `setVisible` and `setActiveCount` do not. The engine sizes its memory for the scene it holds, so create meshes, materials and batches during setup. One created during play makes engine memory grow in the next frame.
 6. Load and warm up before play: `await assets.preload([...])` and `await scene.warmUp()` behind a loading screen. A new shading model, vertex format or shader feature, such as a normal map, needs a new pipeline. The first frame waits for its pipelines. During play, an object whose pipeline is still building draws nothing, or the frame waits in browsers that cannot build in the background. Shader features are fixed when you create a material, so create every variant before play. For a later stage, create its objects hidden, await `scene.warmUp()`, then show them. (`guides/loading-screens`)
 7. Keep the DOM on the page, and keep messages rare: send events, not per-frame state. Labels that follow objects use `ui.trackLabel` (0.2), which needs no messages. (`guides/ui-overlays`)
-8. Use layer masks to limit work. A raycast with a mask tests fewer objects, and a camera with a mask draws fewer. (`concepts/render-layers`)
+8. Use layer masks to limit work. A camera with a mask draws fewer objects, and a raycast (0.2) with a mask tests fewer. (`concepts/render-layers`)
 9. Respect the quality preset. Do not force a heavier preset on phones. Keep your own values per preset, such as particle counts or AI update rates, in one table keyed by `quality.preset`. Never check the device type yourself, and listen to `quality.onChange` to apply the values. (`concepts/quality-presets`)
-10. Ship optimized assets: glTF with meshopt compression and KTX2 textures, made with `bunx @null3d/cli assets optimize`. Large PNG files and uncompressed meshes cost download time and GPU memory. (`guides/assets-pipeline`)
+10. Ship optimized assets: KTX2 textures (later in 0.1), and glTF models with meshopt compression (0.2), made with `bunx @null3d/cli assets optimize` (0.2). Large PNG files and uncompressed meshes cost download time and GPU memory. (`guides/assets-pipeline`)
 11. Keep custom WGSL portable. Use only the three language features every browser shares, and write flat interpolation as `@interpolate(flat, either)`. The build rejects other features, `enable` lines and `f16`, but it cannot check the portable limits or `textureSample` in branches. Test those on each GPU path. (`shaders/wgsl-rules`)
 12. Never branch on GPU names or user agents; read `engine.capabilities` on the page. Several browsers hide GPU names, and a name does not tell you what the engine enabled.
 
@@ -128,13 +127,13 @@ Materials:
 
 | Need | Use | Docs |
 | --- | --- | --- |
-| Physically based surfaces, which is most things | `materials.standard` | `api/materials` |
+| Lit surfaces, which is most things | `materials.standard` | `api/materials` |
 | Flat color or texture without lighting | `materials.unlit` | `api/materials` |
 | A ground plane that only shows shadows | `materials.shadowCatcher` (0.2) | `api/materials` |
 | A custom look that still gets lights, shadows and fog | `materials.shader({ wgsl })` with `fn surface` in the WGSL | `shaders/surface-functions` |
-| A fully custom effect, such as a hologram | `materials.shader({ wgsl })` with `@vertex` and `@fragment` entry points (not built yet) | `guides/custom-shaders` |
+| A fully custom effect, such as a hologram | `materials.shader({ wgsl })` with `@vertex` and `@fragment` entry points (later in 0.1) | `guides/custom-shaders` |
 
-Lighting and shadows: one directional light with shadows, plus a hemisphere light or an environment map, covers most outdoor scenes. Point and spot lights are cheap without shadows, because lighting is clustered, and expensive with them. Shadow quality follows the preset. (`concepts/lighting`, `concepts/shadows`)
+Lighting and shadows: for now, surfaces show one directional light and the ambient lights. Point, spot and hemisphere lights exist, and they light surfaces later in 0.1, when shadows come too. Then one directional light with shadows, plus a hemisphere light, covers most outdoor scenes. Point and spot lights are cheap without shadows, because lighting is clustered, and expensive with them. Shadow quality follows the preset. Environment maps come in 0.2. (`api/lights`, `concepts/lighting`, `concepts/shadows`)
 
 Interaction:
 
@@ -153,11 +152,11 @@ Effects:
 
 | Need | Use | Docs |
 | --- | --- | --- |
-| Tone mapping and exposure | `post.set({ toneMapping, exposure })` | `api/post` |
+| Tone mapping and exposure | `post.set({ toneMapping, exposure })` (later in 0.1) | `api/post` |
 | Bloom, ambient occlusion, color grading, outlines | `post.set({ ... })` (0.2) | `api/post` |
 | A custom full-screen effect | `post.addEffect({ name, wgsl, uniforms })` (0.2) | `api/post` |
 | Render to a texture, or add a pass | `render.addPass({ ... })` (0.2) | `guides/custom-passes` |
-| Fog or sky | `scene.setFog`, `scene.setBackground({ sky })` (sky 0.2) | `api/scene` |
+| Fog or sky | `scene.setFog` (later in 0.1), `scene.setBackground({ sky })` (0.2) | `api/scene` |
 
 ## 6. Custom shaders in brief
 
@@ -177,7 +176,7 @@ const rings = materials.shader({
 rings.set({ roughness: 0.2 }); // the standard values, which defaultSurface reads
 ```
 
-`references/shaders.md` has the full contract: every field of `SurfaceInput` and `Surface`, the names to avoid, and the WGSL rules. Uniforms (`struct Uniforms` in the WGSL), textures, the built-in values (`frame`, `camera`, `object`), vertex offsets and full shaders are not built yet.
+`references/shaders.md` has the full contract: every field of `SurfaceInput` and `Surface`, the names to avoid, and the WGSL rules. Uniforms (`struct Uniforms` in the WGSL), textures, the built-in values (`frame`, `camera`, `object`), vertex offsets and full shaders come later in 0.1.
 
 ## 7. When something goes wrong
 
@@ -189,7 +188,7 @@ rings.set({ roughness: 0.2 }); // the standard values, which defaultSurface read
 | A stutter every few seconds | Allocations in per-frame code | Scratch values created once; confirm with the browser's memory profiler |
 | Something appears a moment late, or a hitch when it first appears | Its pipeline was building during play | Create it hidden, `await scene.warmUp()`, then show it (`guides/loading-screens`) |
 | Fine on desktop, slow or crashing on a phone | Preset, pixel ratio or memory | `guides/phones`, `references/performance.md` |
-| An `EngineError` with a code | An invalid call | Read the fix in the message, then `bunx @null3d/cli docs show errors/<code>` |
+| An `EngineError` with a code | An invalid call | Read the fix in the message, then the docs page `errors/<code>` (section 1) |
 
 The full table and the debugging tools are in `references/testing-and-debugging.md`.
 
@@ -198,10 +197,10 @@ The full table and the debugging tools are in `references/testing-and-debugging.
 Read these when the task needs them:
 
 - `references/api-quickref.md`: the API by area, with the version that adds each part and the doc ID to read. Read it before using an API for the first time in a session.
-- `references/recipes.md`: patterns for common tasks, including camera controls, animated models, thousands of moving objects, pooling, picking, labels, loading screens, HTML UI, physics, video, custom effects and large worlds.
+- `references/recipes.md`: patterns for common tasks. They include camera controls, animated models, thousands of moving objects, pooling, picking, labels, loading screens, HTML UI, physics, video, custom effects and large worlds.
 - `references/performance.md`: budgets, how to measure, symptom-to-fix tables and phone rules.
 - `references/shaders.md`: the surface-function contract, built-in values, uniforms and textures, portable WGSL rules, custom post effects and custom passes.
-- `references/testing-and-debugging.md`: `bunx @null3d/cli test`, image tests, testing on devices, the MCP server tools, error codes and a full troubleshooting table.
+- `references/testing-and-debugging.md`: `bunx @null3d/cli test`, image tests, testing on devices, the MCP server tools (0.3), error codes and a full troubleshooting table.
 - `references/content-pages.md`: product and marketing pages with a 3D scene: the fallback page, a load deadline, pausing, scroll-driven cameras, caching and crashes.
 
 ## 9. Before you finish

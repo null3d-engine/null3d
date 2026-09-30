@@ -14,7 +14,7 @@ import {
 	SHADING_CUSTOM_FIRST,
 	SHADING_LIT,
 } from '../generated/core';
-import type { ShaderVariants } from '../gpu/variants';
+import type { ShaderVariants } from '../generated/shaders';
 import { fromHex } from '../math/color';
 import type { CoreGlue } from '../shared/core';
 import { CoreMemory } from './memory';

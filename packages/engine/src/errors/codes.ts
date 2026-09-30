@@ -206,7 +206,8 @@ const DOCS = {
 	},
 	E1405: {
 		title: 'Engine thread did not start',
-		cause: 'An engine thread failed while the engine started, before the sketch ran.',
+		cause:
+			"An engine worker failed while the engine started. The worker's script, the engine core or the renderer did not start there, or the sketch's setup function threw an error without an engine code.",
 		example: 'E1405: the render worker did not start: no WebGPU adapter.',
 		since: '0.1',
 	},
@@ -270,6 +271,13 @@ const DOCS = {
 			"A loading call could not read a file from another origin. The browser reads such a file only when its server allows the page's origin with an Access-Control-Allow-Origin header. The browser gives no reason, so the server may also have been unreachable.",
 		example:
 			'E1413: assets.loadTexture() could not read https://cdn.example.com/brick.png: its server did not allow this page to read it, or could not be reached (Failed to fetch).',
+		since: '0.1',
+	},
+	E1414: {
+		title: 'Frame not captured',
+		cause:
+			'engine.capture() could not give an image of a frame. The engine had stopped, or the thread that draws could not read the frame back from the GPU or encode it.',
+		example: 'E1414: engine.capture() failed: the engine has stopped.',
 		since: '0.1',
 	},
 	E1501: {

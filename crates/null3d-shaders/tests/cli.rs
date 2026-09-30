@@ -1,12 +1,12 @@
 //! The `shader-build` command, run against a copy of the repository's shader inputs, and the
-//! committed module checked against a fresh build.
+//! committed modules checked against a fresh build.
 
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 use std::sync::atomic::{AtomicUsize, Ordering};
 
-use null3d_shaders::{MANIFEST_PATH, OUTPUT_PATH, SHADER_DIR};
+use null3d_shaders::{MANIFEST_PATH, OUTPUT_DIR, OUTPUT_PATH, SHADER_DIR};
 
 fn repository() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
@@ -73,7 +73,10 @@ fn check_fails_after_the_generated_file_is_edited_and_passes_after_regeneration(
 
     let written = scratch.run(false);
     assert!(written.status.success(), "{}", text(&written.stderr));
-    assert!(text(&written.stdout).contains("Wrote packages/engine/src/generated/shaders.ts."));
+    assert!(
+        text(&written.stdout)
+            .contains("Wrote the shader modules in packages/engine/src/generated.")
+    );
     let fresh = fs::read_to_string(&output).unwrap();
     assert!(scratch.run(true).status.success());
 
@@ -93,6 +96,53 @@ fn check_fails_after_the_generated_file_is_edited_and_passes_after_regeneration(
     assert!(scratch.run(true).status.success());
     let unchanged = scratch.run(false);
     assert!(text(&unchanged.stdout).contains("already up to date"));
+}
+
+#[test]
+fn the_build_writes_a_module_for_each_target_and_value_of_the_bits_a_device_fixes() {
+    let scratch = Scratch::new();
+    assert!(scratch.run(false).status.success());
+    let folder = scratch.0.join(OUTPUT_DIR);
+    for module in [
+        "shaders-wgsl.ts",
+        "shaders-glsl.ts",
+        "shaders-glsl-draw-index.ts",
+    ] {
+        let text = fs::read_to_string(folder.join(module)).unwrap();
+        assert!(
+            text.contains("export const SHADERS: DeviceShaders = {"),
+            "{module}"
+        );
+    }
+    let wgsl = fs::read_to_string(folder.join("shaders-wgsl.ts")).unwrap();
+    assert!(wgsl.contains("\tlit: {\n\t\twebgpu: {") && !wgsl.contains("#version"));
+    let glsl = fs::read_to_string(folder.join("shaders-glsl-draw-index.ts")).unwrap();
+    assert!(glsl.contains("\tlit: {\n\t\twebgl2_draw_index: {"));
+    assert!(glsl.contains("\tcull: {},") && !glsl.contains("\tlit: {\n\t\twebgl2: {"));
+    // A shader without permutation bits is in every module of its target.
+    assert!(glsl.contains("\tmipmap: {\n\t\twebgl2: {"));
+    let main = fs::read_to_string(scratch.0.join(OUTPUT_PATH)).unwrap();
+    assert!(main.contains("\t1: () => import('./shaders-glsl-draw-index'),"));
+    assert!(!main.contains("LIT_SHADER") && main.contains("TEST_MESH_SHADER"));
+}
+
+#[test]
+fn a_device_module_that_the_build_no_longer_makes_fails_the_check_and_is_deleted() {
+    let scratch = Scratch::new();
+    assert!(scratch.run(false).status.success());
+    let stale = scratch.0.join(OUTPUT_DIR).join("shaders-glsl-skin.ts");
+    fs::write(&stale, "export {};\n").unwrap();
+    let check = scratch.run(true);
+    assert_eq!(check.status.code(), Some(1));
+    let message = text(&check.stderr);
+    assert!(
+        message
+            .contains("shaders-glsl-skin.ts: the shader build no longer makes this device module"),
+        "{message}"
+    );
+    assert!(scratch.run(false).status.success());
+    assert!(!stale.exists());
+    assert!(scratch.run(true).status.success());
 }
 
 #[test]
@@ -132,7 +182,7 @@ fn unknown_arguments_are_rejected() {
 }
 
 #[test]
-fn the_committed_module_matches_a_fresh_build() {
+fn the_committed_modules_match_a_fresh_build() {
     if let Err(error) = null3d_shaders::check(&repository()) {
         panic!("{error}");
     }

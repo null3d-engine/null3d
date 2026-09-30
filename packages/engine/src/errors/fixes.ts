@@ -61,7 +61,7 @@ export const ERROR_FIXES = {
 	E1404:
 		'This is an engine bug. Report it with the message and the browser, then destroy the engine and start it again.',
 	E1405:
-		'Read the message for the thread and its cause. Check that the page is served with the isolation headers and that the engine files load, then report it if it repeats.',
+		"Read the message: it names the worker that did not start, and why. The sketch worker also reports an error that your sketch's setup function threw, with that error's message: fix the setup function. Otherwise, check that the page is served with the isolation headers and that the engine files load, then report the error if it repeats.",
 	E1406:
 		"Check that the host serves the files from the engine's dist/wasm folder at the paths that the build gave them. If the page loads at other times, the network dropped: reload the page.",
 	E1407:
@@ -78,6 +78,8 @@ export const ERROR_FIXES = {
 		'Give loadTexture and loadImageBitmap a PNG, JPEG or WebP file, or an AVIF file in browsers that decode AVIF. Give loadJson valid JSON. Check that the server sends the file itself, not an error page.',
 	E1413:
 		"Serve the file from the same origin as the page, or have its server send Access-Control-Allow-Origin with the page's origin or *. On a page with Cross-Origin-Embedder-Policy: require-corp, the file needs that header too.",
+	E1414:
+		'Call engine.capture() while the engine runs, before destroy(). When the message names a GPU failure, wait for the engine to recover from it and call capture() again.',
 	E1501:
 		'Share meshes and materials between objects instead of creating them per object. Draw many copies of one mesh with an instance batch. Every row of a batch counts toward the culling limit, active or not, so size each batch for the rows it uses.',
 	E1502: RENDER_GRAPH_FIX,

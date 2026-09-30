@@ -2,13 +2,15 @@
 
 All engine shaders are WGSL. The build translates them to GLSL for the WebGL2 path, so one source serves both backends. The null3D Vite plugin compiles the WGSL in your code: `.wgsl` files that you import, and template literals tagged `/* wgsl */`. The WebGL2 build sets the shader def `WEBGL2`. Engine docs: `guides/custom-shaders`, `shaders/surface-functions`, `shaders/builtins`, `shaders/wgsl-rules`, `shaders/library`.
 
+Custom materials with surface functions are built: sections 1 and 2 and 8 to 10 apply now. Sections 3 to 5 describe parts that come later in 0.1: do not ship code that uses them until their docs pages say they are built.
+
 ## Contents
 
 1. Choose the kind of shader
 2. Surface functions
-3. Built-in values
-4. Uniforms, textures and per-instance data
-5. Vertex offsets and full shaders
+3. Built-in values (later in 0.1)
+4. Uniforms, textures and per-instance data (later in 0.1)
+5. Vertex offsets and full shaders (later in 0.1)
 6. Custom post effects (0.2)
 7. Custom passes (0.2)
 8. Portable WGSL rules
@@ -20,8 +22,8 @@ All engine shaders are WGSL. The build translates them to GLSL for the WebGL2 pa
 | Goal | Kind | Keeps lights, shadows, fog and instancing |
 | --- | --- | --- |
 | Change how a surface looks (color, roughness, patterns, dissolve, water) | Surface function | Yes |
-| Move vertices (waves, wind, swelling) | Vertex offset, alone or with a surface function (not built yet) | Yes |
-| Something the lighting model cannot express (holograms, custom lighting) | Full shader (not built yet) | No: you write everything |
+| Move vertices (waves, wind, swelling) | Vertex offset, alone or with a surface function (later in 0.1) | Yes |
+| Something the lighting model cannot express (holograms, custom lighting) | Full shader (later in 0.1) | No: you write everything |
 | A full-screen image effect | Post effect (section 6) | Not applicable |
 | An extra render or compute step | Custom pass (section 7) | Not applicable |
 
@@ -90,7 +92,7 @@ Planned additions, not built yet: `worldPosition`, `uv1`, `fragCoord` and `insta
 
 Names: your WGSL shares a file with the engine's standard material. Do not declare `SurfaceInput`, `Surface`, `defaultSurface`, `shade`, `light_surface`, `material_row`, `VertexIn`, `VertexOut`, `vs` or `fs`. Import library items by name (`#import null3d::noise::{fbm2}`), because a whole-module import reserves the module's name. No `enable` directives.
 
-## 3. Built-in values (not built yet)
+## 3. Built-in values (later in 0.1)
 
 | Name | Fields | Notes |
 | --- | --- | --- |
@@ -101,7 +103,7 @@ Names: your WGSL shares a file with the engine's standard material. Do not decla
 
 The engine renders relative to the camera. `input.relativePosition` is therefore exact near the camera, even in very large worlds. Use it for distances, fades and view-dependent effects. Until `worldPosition` exists, use `input.uv` for a pattern that must stay on the surface as the camera moves.
 
-## 4. Uniforms, textures and per-instance data (not built yet)
+## 4. Uniforms, textures and per-instance data (later in 0.1)
 
 The WGSL declares the uniforms once, as `struct Uniforms`, and reads them from `material`. The `uniforms` option gives their first values by field name:
 
@@ -151,7 +153,7 @@ const dissolve = materials.shader({
 - Textures come with a `textures` option; their WGSL form is not settled yet.
 - Per-instance data: `createInstances(mesh, count, { material, attributes: { tint: 4 } })` (0.2).
 
-## 5. Vertex offsets and full shaders (not built yet)
+## 5. Vertex offsets and full shaders (later in 0.1)
 
 A vertex offset moves vertices in object space before the engine applies transforms and instancing. It goes in the same WGSL as the surface function:
 
@@ -244,6 +246,6 @@ Importing a module whole reserves its name. After `#import null3d::color`, no va
 - A shader error stops Vite with the file, line and column. It shows in Vite's overlay and the terminal on the dev server, and in the output of `vite build`. Fix the WGSL; never edit generated GLSL. (`guides/custom-shaders`)
 - A surface function's error names its own line in your file. An error that says it is in the engine's standard material usually comes from a name clash or a whole-module import.
 - Output an intermediate value as color: `s.emissive = vec3f(n); s.baseColor = vec3f(0.0);` shows `n` directly.
-- `debug.view('normals')` and `debug.view('overdraw')` show normals and overdraw for the whole scene.
+- `debug.view('normals')` and `debug.view('overdraw')` (later in 0.1) show normals and overdraw for the whole scene.
 - Shader hot reload: the null3D Vite plugin reloads WGSL files and inline WGSL strings without reloading the page (0.2). Until then, editing a shader reloads the page.
 - Check both backends: `?gpu=webgl2` runs the translated shaders.
