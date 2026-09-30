@@ -101,7 +101,10 @@ export interface CoreGlue extends CoreErrors {
 	meshRadius(mesh: number): number;
 	/** A material with a linear color; `shading` is one of the `SHADING_*` codes. */
 	createMaterial(shading: number, r: number, g: number, b: number, a: number): number;
-	setMaterialColor(material: number, r: number, g: number, b: number, a: number): number;
+	/** Changes a material's linear color and keeps its opacity. */
+	setMaterialColor(material: number, r: number, g: number, b: number): number;
+	/** Changes a material's opacity and keeps its color. */
+	setMaterialOpacity(material: number, opacity: number): number;
 	setCamera(camera: number, fovDegrees: number, near: number, far: number): number;
 	setSun(dx: number, dy: number, dz: number, r: number, g: number, b: number): number;
 	setAmbient(r: number, g: number, b: number): number;
@@ -148,6 +151,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'meshRadius',
 	'createMaterial',
 	'setMaterialColor',
+	'setMaterialOpacity',
 	'setCamera',
 	'setSun',
 	'setAmbient',

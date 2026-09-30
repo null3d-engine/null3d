@@ -12,7 +12,7 @@ export const ERROR_FIXES = {
 	E1101:
 		'Stop using an object after you call destroy() on it. Look for places that still keep a reference, such as arrays of enemies or selection state.',
 	E1102:
-		'Use scene.createInstances() for many copies of one mesh: a batch is one object however many rows it has. Destroy objects you no longer need.',
+		'Draw many copies of one mesh with scene.createInstances(): a batch takes none of the places for objects, however many rows it has. Destroy the objects and batches that you no longer need, and spread a very large number of changes over several frames.',
 	E1103:
 		'Pass objects created by this engine. Each engine has its own scene, and objects do not move between engines.',
 	E1104:
@@ -20,7 +20,7 @@ export const ERROR_FIXES = {
 	E1105:
 		'Reinstall the engine package so all of its parts come from one version. If you build the engine from source, run bun run build again.',
 	E1106:
-		'Read world positions and matrices from the next frame on, for example in the next onUpdate call.',
+		'Fix the call that created the object. When the frame applied that call, the engine logged why it failed, such as E1101 for a parent that was already destroyed.',
 	E1107: 'This is an engine bug. Report it with the code that created the object.',
 	E1108:
 		'Keep counts and indices within the capacity you created the batch with, or create a larger batch.',

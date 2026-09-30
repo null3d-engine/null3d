@@ -125,7 +125,7 @@ Apply these habits to `onUpdate` and everything it calls.
 Some calls rebuild the scene's draw tables in the frame they take effect: the bundle is recorded again and every matrix uploads. Others upload only what they changed. The engine docs page `guides/performance` has the full table.
 
 - Cheap: moving objects, writing batch arrays, `setVisible`, and `setActiveCount`.
-- Rebuilds: creating or destroying objects and batches, `setMesh`, `setMaterial`, `setParent` and `setDynamic`.
+- Rebuilds: creating or destroying objects and batches, `setMaterial`, `setParent` and `setDynamic`.
 - Create everything a level needs during setup. Hide with `setVisible` instead of destroying.
 - Pool bullets, particles and pickups in a batch sized for its most rows. Show the live ones with `setActiveCount`, and keep them at the front of the arrays.
 - For a look that changes often, such as a highlight, keep two objects and swap their visibility.
