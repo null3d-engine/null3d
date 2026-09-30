@@ -53,7 +53,7 @@ export const TOLERANCE: Tolerance = { threshold: 0.1, maxDiffRatio: 0.001 };
 
 /**
  * The tolerance of other browsers and devices against the real-GPU references, for GPUs that
- * rasterize edges a little differently. SwiftShader differs from the Mac's GPU in up to 0.33% of
+ * rasterize edges a little differently. SwiftShader differs from the Mac's GPU in up to 0.35% of
  * S1's pixels, at box edges. Safari and Firefox on the Mac draw Chrome's images there. A test whose
  * scene covers little of its frame records a tighter tolerance, so a frame that lost it still fails.
  */
