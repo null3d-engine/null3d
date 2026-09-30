@@ -51,7 +51,7 @@ describe('the phone-scale search', () => {
 	it('times three.js at each count with a short run', () => {
 		expect(scaleItem('threejs-webgl', 250_000)).toEqual({
 			id: 'scale-threejs-webgl-250000',
-			path: '/bench/pages/threejs/s1.html?renderer=webgl&seconds=5&n=250000',
+			path: '/__null3d/load/warm/{run}.{runner}.bench/bench/pages/threejs/s1.html?renderer=webgl&seconds=5&n=250000',
 			timeoutSeconds: 70,
 			check: { kind: 'bench', tier: 'webgl2', scene: 's1', page: 'threejs-webgl' },
 		});

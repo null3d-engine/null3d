@@ -1,7 +1,8 @@
 {
 	"extends": "../tsconfig.web.base.json",
 	"compilerOptions": {
-		"types": ["@webgpu/types"]
+		"types": ["@webgpu/types"],
+		"allowJs": true
 	},
 	"include": ["scenes/**/*.ts", "pages/**/*.ts"],
 	"exclude": ["**/*.test.ts"]

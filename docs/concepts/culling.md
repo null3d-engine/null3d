@@ -34,6 +34,21 @@ On WebGL2 there are no compute shaders, so the job workers cull on the CPU. They
 
 [GPU tiers and backends](backends.md) describes each path's draw calls and uploads.
 
+## Bounds that you set
+
+By default, culling tests an object's mesh sphere: the sphere around the object's origin that holds every vertex of its mesh. The object's scale grows it, and its rotation turns it. A shader that moves vertices, such as waves on water, can move them outside that sphere. Culling then hides the object while parts of it are still in view. Two mesh calls change what culling tests:
+
+- `setBounds(center, radius)` gives the object a sphere of its own, with its center relative to the object's origin. Bounds that cover the moved vertices keep culling at work.
+- `setFrustumCulled(false)` turns culling off for the object, so the engine draws it wherever it is.
+
+```ts
+// Waves lift the water's vertices by up to 2 m. A sphere 1 m higher and 1 m wider than the
+// mesh's sphere holds every lifted vertex.
+water.setBounds([0, 1, 0], waterMesh.radius + 1);
+```
+
+Both calls rebuild the draw tables, so make them at setup. On WebGPU, each object with a sphere of its own draws from a group of its own, as the GPU tests one sphere per group. On WebGL2, the job workers test each object's own sphere and the cost stays the same.
+
 ## Grid cells
 
 The engine divides space into cells 1,024 m wide. The origin cell spans 512 m on each side of the origin, so a scene within 512 m of it uses one cell.
@@ -63,7 +78,7 @@ The cells have these limits:
 
 - The engine stores positions as 32-bit floats. It places an object 100 km from the origin to within about 4 mm, and 1,000 km out to within about 3 cm. What it computes from those positions, such as a child's place under its parent, keeps its precision.
 - A mesh's vertices are offsets from its object's origin, and they stay 32-bit. Put large coordinates in object positions, never in vertices.
-- `getWorldPosition` gives 64-bit numbers. Pass it a plain array or a `Float64Array`, because a `Float32Array` rounds them to 32 bits.
+- `getWorldPosition` and `getWorldMatrix` give 64-bit positions. Pass them a plain array or a `Float64Array`, because a `Float32Array` rounds them to 32 bits.
 - At most 512 cells hold objects at once. An object in a cell past that stays in the origin cell, where its position keeps only 32-bit precision.
 
 ## Related pages
