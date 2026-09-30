@@ -3170,10 +3170,28 @@ fn fs_sample(in: VertexOut) -> @location(0) vec4<f32> {
 	},
 };
 
+/** The variants of the `timer_mark` shader, by variant name. */
+export const TIMER_MARK_SHADER: {
+	readonly webgpu: ShaderVariant<never>;
+} = {
+	webgpu: {
+		wgsl: {
+			source: `@compute @workgroup_size(1, 1, 1)
+fn main() {
+    return;
+}
+`,
+			pipelines: {},
+		},
+		glsl: null,
+	},
+};
+
 /** Every shader variant, by shader name and variant name. */
 export const SHADERS = {
 	cull: CULL_SHADER,
 	mesh: MESH_SHADER,
 	test_mesh: TEST_MESH_SHADER,
 	test_textures: TEST_TEXTURES_SHADER,
+	timer_mark: TIMER_MARK_SHADER,
 } as const;

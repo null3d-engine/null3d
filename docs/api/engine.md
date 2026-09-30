@@ -40,6 +40,7 @@ try {
 
 | Code | Cause |
 | --- | --- |
+| [E1409](../errors/E1409.md) | The `memory` option asks for a maximum that is not a whole number of MiB from 256 to 4096. |
 | [E1303](../errors/E1303.md) | The browser runs WebAssembly without SIMD. |
 | [E1301](../errors/E1301.md) | The browser has no usable GPU path, or no path that `gpu` or `?gpu=` asks for. |
 | [E1406](../errors/E1406.md) | A file of the engine core did not download. |
@@ -59,10 +60,25 @@ An error that the sketch's setup throws also rejects the start ([Sketch API](ske
 | `gpu` | `'auto'` | Forces a GPU path, for tests only. The `?gpu=` switch in the page's address wins over it. |
 | `powerPreference` | `'high-performance'` | Picks the GPU on a device that has two. `'low-power'` saves battery. |
 | `latency` | `'pipelined'` | The latency mode, `'pipelined'` or `'low'`: [Architecture](../concepts/architecture.md) |
+| `memory` | `{ maximumMiB: 1024 }` | The most memory that the engine's threads share: [Memory](#memory) |
 | `onProgress` | None | Reports each stage of the start |
 | `onSketchMessage` | None | Receives the sketch's messages from the start of its setup: [Messages](page.md) |
 | `signal` | None | Cancels the start |
 | `hold` | None | Holds the sketch at a time for image tests: [Testing your sketch](../guides/testing.md) |
+
+## Memory
+
+On a page with worker threads, the engine's threads share one WebAssembly memory, which holds the scene. The memory's maximum is 1024 MiB. A scene that needs more can ask for up to 4096 MiB, in whole MiB:
+
+```ts
+const engine = await createEngine({ canvas, sketch, memory: { maximumMiB: 2048 } });
+```
+
+The browser reserves address space for the whole maximum when the engine starts, and the memory grows into it as the scene needs. Every other engine and WebAssembly module on the page, such as a physics engine, shares the address space that is left. So a larger maximum leaves less room for them. In Safari on an iPad Pro, a page holds the memories of 6 engines at 1024 MiB, and of 3 at 4096 MiB.
+
+Ask for more only when a scene needs it. Each instance row takes about 180 bytes of engine memory, so 1024 MiB holds about 5 million rows with the rest of the scene. A scene that needs more memory than the maximum fails with [E1109](../errors/E1109.md). A maximum that is not a whole number of MiB from 256 to 4096 fails the start with [E1409](../errors/E1409.md).
+
+The single-threaded build's memory is not shared. It grows as the scene needs, so the option does not change it. The `?memory=<MiB>` switch in the page's address wins over the option, for tests.
 
 ## What the engine reports
 
@@ -206,6 +222,7 @@ Options for `createEngine`.
 | `gpu?: 'auto' \| 'webgpu' \| 'webgl2'` | Forces a GPU tier, for testing only. |
 | `powerPreference?: 'high-performance' \| 'low-power'` | Which GPU to draw with on a device that has two, such as a laptop with a separate graphics chip: `high-performance`, the default, for the faster one, or `low-power` to save battery. The browser treats it as a request. A device with one GPU ignores it. |
 | `latency?: LatencyMode` | The latency mode. The default is `pipelined`. |
+| `memory?: { maximumMiB: number; }` | The engine's memory. `maximumMiB` sets the most memory that the engine's threads share, in MiB: a whole number from 256 to 4096, 1024 by default. Another value fails with E1409. The browser reserves address space for the whole maximum when the engine starts. So a larger maximum leaves less room for other engines and WebAssembly modules on the page. Ask for more only when a scene needs it. The single-threaded build's memory is not shared, so this option does not change it. The `?memory=<MiB>` switch wins over it. |
 | `onProgress?: (stage: StartupStage) => void` | Called as the start reaches each stage, in this order: `core` once the engine core is compiled and the GPU paths are tested, `sketch` once the sketch's setup has run, and `first-frame` once the GPU has finished the first frame. |
 | `onSketchMessage?: (name: string, data: unknown) => void` | Receives the messages the sketch sends with `ctx.page.post`, from the start of the sketch's setup. Use it for progress that the sketch reports while it loads. `engine.onSketchMessage` adds more handlers once the engine has started. |
 | `signal?: AbortSignal` | Cancels a start in progress, for example when the user leaves the page. `createEngine` then stops the engine's threads and rejects with the signal's reason. |
@@ -240,6 +257,7 @@ type ErrorCode =
 	| 'E1406'
 	| 'E1407'
 	| 'E1408'
+	| 'E1409'
 	| 'E1501'
 	| 'E1502'
 	| 'E1503'
