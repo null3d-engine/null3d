@@ -10,7 +10,7 @@ Measure first, then change one thing, then measure again. Read `guides/performan
 4. Symptoms, causes and fixes
 5. Phones and tablets
 6. Memory
-7. The quality governor and your own systems
+7. Quality presets, the governor and your own systems
 8. Per-frame code that allocates nothing
 9. Objects during play
 10. Advice written for other engines
@@ -46,7 +46,7 @@ These numbers are starting points. The engine docs page `guides/performance` hol
 1. Measure the running page with `await engine.measure(5)`. It returns CPU time per thread and phase, GPU time where the device has timers, the frame rates, draw calls, uploaded bytes, rebuilds and pipelines. The phase `update` is your code, and `commands`, `transforms`, `batches`, `cull`, `record`, `upload` and `replay` are the engine's. The preset is in `engine.mode.preset`. Later in 0.1, the overlay `debug.stats(true)` shows these figures on the canvas.
 2. Run the repeatable benchmark: `bunx @null3d/cli bench --gpu webgpu,webgl2`. It builds the project for production and runs the page 5 times for 30 seconds, each after a warm-up. It prints the median and the spread of CPU time per frame by thread, GPU time and frame rates, and saves each run's phases in `bench.json`. Use it before and after a change, on the same computer.
 3. Read numbers in the sketch: `debug.frameStats()` returns the same values later in 0.1. Until then, measure on the page and send what the sketch needs as a message.
-4. Profile JavaScript in the browser's performance panel. Sketch code runs in the worker named `null3d-sketch`; look there, not on the main thread.
+4. Profile JavaScript in the browser's performance panel. Sketch code runs in the worker named `null3d-sketch`; look there, not on the main thread. With `sketchThread: 'main'` it runs on the main thread.
 5. Check the WebGL2 path: add `?gpu=webgl2` to the URL. Phones without WebGPU use this path, and it does more CPU work (culling on job workers).
 6. On phones, GPU timers are rare: under 1% of Android and iOS reports have them on WebGL2. Judge the GPU there by the completed rate, `completedFps`, and by `gpuLatencyMs`.
 7. Warm up, keep the page visible and the screen unlocked, and compare runs at the same `refreshHz`. The `guides/performance` page explains each figure and how to measure fairly.
@@ -69,7 +69,7 @@ The lower of `presentedFps` and `completedFps` is the rate users see. The engine
 | Periodic spikes in "update" | Garbage collection | Remove allocations from per-frame code: no `new`, literals or closures; use scratch arrays |
 | High "transforms" | Many dynamic objects or deep hierarchies | Make objects static when they rarely move; flatten hierarchies; use instance batches |
 | High "animation" (0.2) | Many skinned characters | Lower far update rates (preset); share poses between identical characters; use LODs |
-| High "culling" on WebGL2 | Many objects checked on the CPU | Instances; static batches, which WebGL2 culls 64 rows at a time once they stop changing; larger static groups; layer masks; LODs |
+| High "culling" on WebGL2 | Many objects checked on the CPU | Instances; static batches, which WebGL2 culls 64 rows at a time once they stop changing; static scenery in a world over several grid cells, whose cells out of view are skipped whole (`concepts/culling`); larger static groups; layer masks; LODs |
 | Objects behind walls or buildings still cost GPU time on WebGL2 | No blocker meshes | Run the asset tool on level geometry so it makes blocker meshes (0.2); call `setOccluder(true)` on large custom walls (0.2, `concepts/culling`) |
 | High "upload" bytes | Dynamic batches or objects that rarely change | Static batches with `markDirty(start, count)` for the rows that changed |
 | On WebGL2, `uploadBytes` far above 4 times `visibleEntries` when only the camera moves | Dynamic batches: every frame uploads each active row's 48-byte matrix, visible or not | Make still batches static, and mark only the changed rows (`guides/performance`) |
@@ -77,7 +77,7 @@ The lower of `presentedFps` and `completedFps` is the rate users see. The engine
 | High "replay" or draw calls | Too many mesh and material combinations | Share materials; pack textures into arrays with `bunx @null3d/cli assets` (0.2); merge small static meshes offline |
 | GPU time high, CPU low | Pixels or shader cost | Lower `maxPixelRatio`; cheaper materials; fewer shadowed lights; avoid large transparent areas |
 | Hitch when something new appears, or it appears a moment late | A rebuild (`rebuilds` above zero), or a pipeline build (`pipelines` above zero) | Create materials and objects during loading; create a later stage hidden, `await scene.warmUp()`, then show it |
-| Hitch while loading during play | Uploads and decoding | Load before play, or stream smaller files; the per-frame upload budget spreads uploads |
+| Hitch while loading during play | Uploads and decoding | Load before play, or stream smaller files; the per-frame upload budget spreads uploads, and `quality.set({ uploadBytesPerFrame })` lowers it |
 | Frame rate drops after a few minutes on a phone | Heat | Aim for 70% of the budget; test 10-minute runs. The governor steps quality down later in 0.1 |
 
 ## 5. Phones and tablets
@@ -86,7 +86,7 @@ The lower of `presentedFps` and `completedFps` is the rate users see. The engine
 - Many phones run the WebGL2 path (for example Samsung Exynos phones in Chrome 154). Budget for it.
 - On the WebGL2 path (0.2), job workers hide objects that sit behind blocker meshes, which the asset tool makes from large static meshes. See-through meshes such as glass and fences must not be blockers: call `setOccluder(false)` on them if the tool picked them.
 - Pixel ratio is the largest GPU lever: a ratio of 3 draws 2.25 times the pixels of a ratio of 2. Presets cap it; do not raise the cap on phones.
-- The engine starts phones and tablets on lighter presets than desktops, and WebGL2 runs at most Medium. The page reads the preset in `engine.mode.preset`, and `?preset=low` fixes one for a test (`concepts/quality-presets`).
+- The engine starts phones and tablets on lighter presets than desktops. WebGL2 and WebGPU's compatibility mode run at most Medium. The page reads the preset in `engine.mode.preset`, and `?preset=low` fixes one for a test (`concepts/quality-presets`).
 - After a start that crashed the tab, the engine starts one preset lower, and at Low after two. A phone that ran out of memory shows it in `engine.mode.crashedStarts`.
 - Shadows (later in 0.1): one cascade on Low, two on Medium. Each shadowed point light draws the scene six times; avoid them on phones.
 - Transparent and additive effects covering the screen (smoke, glass) cost the most on phone GPUs.
@@ -108,13 +108,20 @@ The lower of `presentedFps` and `completedFps` is the rate users see. The engine
 
 The number of objects and instance rows one scene can draw depends on the GPU path and the device. On WebGPU every device draws 2,097,152, and a device with larger GPU buffers draws more, up to 8,388,480. On WebGL2 the number follows the largest texture the device allows. It is 1,048,576 at the 2,048 pixels that every WebGL2 device allows, 2,097,152 at 4,096, and at most 8,388,608. For the device the page runs on, `engine.capabilities.maxInstances` gives the number. Past it, the call fails with E1501. With worker threads, engine memory stops at 1 GiB by default, about 5 million rows; past that, the call fails with E1109. The `memory` option of `createEngine` raises the maximum up to 4096 MiB (`api/engine`). A larger maximum leaves less address space for other engines and WebAssembly modules on the page. Raise it only for a scene that needs it. In development builds the engine warns once when a scene passes the number that every device of its GPU path draws. That is 2,097,152 on WebGPU and 1,048,576 on WebGL2. The engine picks the GPU path for each device. So test a scene of more than 1,048,576 on both paths, on the devices your users have.
 
-## 7. The quality governor and your own systems
+## 7. Quality presets, the governor and your own systems
 
-Keep your own values per preset in one table, and apply them in `quality.onChange`. Later in 0.1, a governor lowers settings in a fixed order when frames run over budget: render scale first, then shadow updates, then effects. It never changes the preset during play. It raises the settings again after a stable period, so quality does not flicker. Your systems can join in through `setBudget` (0.2):
+The engine starts each device on one of four presets: Low, Medium, High or Ultra (`concepts/quality-presets`). Phones start at Low, tablets at Medium and desktops at High. The preset sets the pixel ratio cap, the anisotropy cap, the texture upload budget and the engine's memory maximum. The preset table marks its other settings, such as anti-aliasing and shadows, as planned.
+
+- The sketch reads the preset in `quality.preset`, and the page in `engine.mode.preset`. The preset stays the same during play.
+- `quality.set({ maxPixelRatio, maxAnisotropy, uploadBytesPerFrame })` changes these settings during play, for example from a settings menu. Other settings throw E1213.
+- Do not raise the preset of a phone. Check each preset that your users can get with `?preset=low` to `?preset=ultra`.
+
+Keep your own values per preset in one table. Apply them in the setup, and again in `quality.onChange`, which runs when a setting changes. Later in 0.1, a governor lowers settings in a fixed order when frames run over budget: render scale first, then shadow updates, then effects. It never changes the preset during play. It raises the settings again after a stable period, so quality does not flicker. Your systems can join in through `setBudget` (0.2):
 
 ```ts
 quality.setBudget({ name: 'ai', ms: 2, onScale: (s) => { aiUpdateEvery = s < 0.5 ? 4 : s < 0.8 ? 2 : 1; } });  // (0.2)
 const RAIN = { low: 2000, medium: 5000, high: 10000, ultra: 10000 };  // one table, keyed by preset
+rain.setActiveCount(RAIN[quality.preset]);
 quality.onChange(() => { rain.setActiveCount(RAIN[quality.preset]); });
 ```
 

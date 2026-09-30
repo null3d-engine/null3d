@@ -165,6 +165,13 @@ const DOCS = {
 			"E1216: materials.shader.set() got speeed, which is not a uniform of the material's WGSL.",
 		since: '0.1',
 	},
+	E1217: {
+		title: 'Invalid material option',
+		cause:
+			'A material factory received a value that one of its options does not take, such as an alpha mode that the engine does not know.',
+		example: `E1217: materials.standard() got the alpha mode "cutout"; it takes 'opaque' or 'mask'.`,
+		since: '0.1',
+	},
 	E1301: {
 		title: 'No usable GPU path',
 		cause: 'The browser offers neither WebGPU nor WebGL2 for the way the engine was asked to draw.',
@@ -286,6 +293,14 @@ const DOCS = {
 		cause:
 			'engine.capture() could not give an image of a frame. The engine had stopped, or the thread that draws could not read the frame back from the GPU or encode it.',
 		example: 'E1414: engine.capture() failed: the engine has stopped.',
+		since: '0.1',
+	},
+	E1415: {
+		title: 'Page thread already runs a sketch',
+		cause:
+			"createEngine() was asked to run a sketch on the page's thread while another engine still runs its sketch there. The page's copy of the engine core serves one engine at a time. This happens with sketchThread: 'main', and in the single-threaded build, which runs every sketch on the page's thread.",
+		example:
+			'E1415: createEngine() found another engine that runs its sketch on this page, which has not stopped.',
 		since: '0.1',
 	},
 	E1501: {

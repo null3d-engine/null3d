@@ -24,10 +24,11 @@ const webgpu = (storageBindingBytes: number) => ({
 	depth: 'reversed' as const,
 	parallelCompile: true,
 	shaderBits: 0,
+	cellCulling: true,
 });
 
 /** No test switch. */
-const NO_SWITCHES = { copyUploads: false, depth: undefined, parallelCompile: true };
+const NO_SWITCHES = { copyUploads: false, depth: undefined, parallelCompile: true, cells: true };
 /** ?uploads=copy. */
 const COPY_UPLOADS = { ...NO_SWITCHES, copyUploads: true };
 /** ?compile=wait. */
@@ -106,6 +107,14 @@ describe('coreDevice on WebGL2', () => {
 		expect(coreDevice(true, report({ sharedMemoryUploads: null }), NO_SWITCHES).sharedUploads).toBe(
 			false,
 		);
+	});
+
+	it('culls by grid cell on both paths unless ?cells=off asks it not to', () => {
+		const off = { ...NO_SWITCHES, cells: false };
+		for (const webgl2 of [true, false]) {
+			expect(coreDevice(webgl2, report({}), NO_SWITCHES).cellCulling).toBe(true);
+			expect(coreDevice(webgl2, report({}), off).cellCulling).toBe(false);
+		}
 	});
 });
 

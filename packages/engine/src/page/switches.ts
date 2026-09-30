@@ -1,9 +1,10 @@
 // URL switches that let one device exercise every engine path: ?gpu=, ?threads=off, ?render=main,
-// ?latency=, ?uploads=copy, ?depth= and ?compile=wait. Four more set what the benchmarks vary:
+// ?sketch-thread=main, ?latency=, ?uploads=copy, ?depth= and ?compile=wait. Five more set what the
+// benchmarks vary:
 // ?fps= for a fixed frame rate, ?jobs= for the job worker count, ?memory= for the shared memory's
-// maximum and ?queue= for the frames that may wait on the GPU. ?hold starts hold mode for image
-// tests, ?preset= fixes the quality preset, and ?bench publishes the running engine for benchmark
-// tools.
+// maximum, ?queue= for the frames that may wait on the GPU and ?cells=off for culling without grid
+// cells. ?hold starts hold mode for image tests, ?preset= fixes the quality preset, and ?bench
+// publishes the running engine for benchmark tools.
 
 import { QUALITY_PRESETS, type QualityPreset } from '../quality/presets';
 
@@ -16,6 +17,16 @@ export type GpuSwitch = 'auto' | 'webgpu' | 'compat' | 'webgl2';
  * @category api/engine
  */
 export type LatencyMode = 'pipelined' | 'low';
+
+/**
+ * The thread that runs the sketch's code and the engine core. With `worker`, the default, the
+ * sketch runs in a worker of its own. With `main`, it runs on the page's main thread, where it can
+ * reach the DOM, while the render worker draws. The single-threaded build always runs it on the
+ * page's thread.
+ *
+ * @category api/engine
+ */
+export type SketchThread = 'worker' | 'main';
 
 /**
  * How the GPU path stores depth. In `reversed` depth, the near plane stores 1 and the far plane 0,
@@ -35,6 +46,8 @@ export interface Switches {
 	threads: boolean;
 	/** True when ?render=main asks for rendering on the page's main thread. */
 	renderOnMain: boolean;
+	/** The thread that ?sketch-thread= asks to run the sketch on, which wins over the option. */
+	sketchThread: SketchThread | undefined;
 	latency: LatencyMode | undefined;
 	/** True when ?uploads=copy makes the WebGL2 path copy uploads out of shared memory first. */
 	copyUploads: boolean;
@@ -48,6 +61,11 @@ export interface Switches {
 	 * draw, as it does in a browser without `KHR_parallel_shader_compile`.
 	 */
 	parallelCompile: boolean;
+	/**
+	 * False when ?cells=off makes the core cull every object and instance row, with no whole grid
+	 * cells skipped first, for benchmarks that measure what cell culling saves.
+	 */
+	cells: boolean;
 	/**
 	 * The frame rate from ?fps= that the thread that draws holds, up to the display's rate, or
 	 * undefined to draw at the display's rate.
@@ -106,10 +124,12 @@ export function parseSwitches(search: string): Switches {
 		gpu: oneOf(params.get('gpu'), ['webgpu', 'compat', 'webgl2'] as const) ?? 'auto',
 		threads: params.get('threads') !== 'off',
 		renderOnMain: params.get('render') === 'main',
+		sketchThread: oneOf(params.get('sketch-thread'), ['worker', 'main'] as const),
 		latency: oneOf(params.get('latency'), ['pipelined', 'low'] as const),
 		copyUploads: params.get('uploads') === 'copy',
 		depth: oneOf(params.get('depth'), ['reversed', 'reversed-gl', 'standard'] as const),
 		parallelCompile: params.get('compile') !== 'wait',
+		cells: params.get('cells') !== 'off',
 		fps: positive(params.get('fps')),
 		jobs: whole(params.get('jobs'), MAX_JOB_WORKERS),
 		queue: params.get('queue') === 'off' ? Number.POSITIVE_INFINITY : whole(params.get('queue')),

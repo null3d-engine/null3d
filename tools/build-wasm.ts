@@ -8,8 +8,9 @@
 //                                           sizes for a size check that builds this commit as its base
 //   bun tools/build-wasm.ts --names         keep the core's function names, for a CPU profile;
 //                                           the names add size, so this skips the size checks
-//   bun tools/build-wasm.ts --core-only     build only the two WebAssembly files, which is all
-//                                           that the test pages load, with no size report
+//   bun tools/build-wasm.ts --pages-only    build only what the test pages need, with no size
+//                                           report: the two WebAssembly files, and the shader
+//                                           compiler that the dev server runs on their WGSL
 //
 // The threaded build uses atomics and shared memory, so it rebuilds the standard library with
 // them. The single-threaded build runs on pages that are not cross-origin isolated. The
@@ -97,6 +98,8 @@ interface Variant {
 	rustflags: string;
 	cargoArgs: string[];
 	wasmOptFeatures: string[];
+	/** True when the glue needs `releaseInstance` (`addReleaseInstance`). */
+	releasesInstance: boolean;
 }
 
 const COMMON_WASM_FEATURES = [
@@ -132,15 +135,36 @@ export const VARIANTS: Variant[] = [
 		].join(' '),
 		cargoArgs: ['-Z', 'build-std=panic_abort,std'],
 		wasmOptFeatures: [...COMMON_WASM_FEATURES, '--enable-threads'],
+		releasesInstance: true,
 	},
 	{
 		name: 'single',
 		rustflags: '-Ctarget-feature=+simd128',
 		cargoArgs: [],
 		wasmOptFeatures: COMMON_WASM_FEATURES,
+		releasesInstance: false,
 	},
 ];
 
+/** The glue's variables that hold the instance of the thread. */
+const INSTANCE_VARIABLES = 'let wasmModule, wasmInstance, wasm;';
+
+/**
+ * Adds `releaseInstance` to the glue. wasm-bindgen's glue keeps the instance that its thread
+ * started, with views of the instance's memory, and initSync returns that instance on each later
+ * call. Each threaded engine has a shared memory of its own, so a page that runs the sketch calls
+ * `releaseInstance` once the engine has stopped. The browser can then free the engine's memory, and
+ * the next initSync starts a new instance in the memory of the next engine.
+ */
+export function addReleaseInstance(glue: string): string {
+	const views = [...glue.matchAll(/^let (cached\w*Memory0) = null;$/gm)].map((match) => match[1]);
+	if (!glue.includes(INSTANCE_VARIABLES) || views.length === 0)
+		throw new Error(
+			'the glue no longer holds its instance as this build expects: update addReleaseInstance for this wasm-bindgen version',
+		);
+	const clears = views.map((view) => `    ${view} = null;\n`).join('');
+	return `${glue}\nexport function releaseInstance() {\n    wasmModule = wasmInstance = wasm = undefined;\n${clears}}\n`;
+}
 /** The locked version of a package in Cargo.lock. */
 export function lockedVersion(cargoLock: string, name: string): string {
 	const match = cargoLock.match(
@@ -206,12 +230,12 @@ export interface BuildOptions {
 	sizesOnly: boolean;
 	/** Keep the core's function names, which a CPU profile shows. */
 	keepNames: boolean;
-	/** Build only the two WebAssembly files: no shader compiler and no size report. */
-	coreOnly: boolean;
+	/** Build only what the test pages need: the two WebAssembly files and the shader compiler. */
+	pagesOnly: boolean;
 }
 
 const USAGE =
-	'usage: bun tools/build-wasm.ts [--check-size [--base <ref>] | --sizes-only | --names | --core-only]';
+	'usage: bun tools/build-wasm.ts [--check-size [--base <ref>] | --sizes-only | --names | --pages-only]';
 
 /** Reads the command line. It throws on an unknown option and on options that exclude each other. */
 export function parseOptions(args: readonly string[]): BuildOptions {
@@ -219,14 +243,14 @@ export function parseOptions(args: readonly string[]): BuildOptions {
 		checkSize: false,
 		sizesOnly: false,
 		keepNames: false,
-		coreOnly: false,
+		pagesOnly: false,
 	};
 	for (let i = 0; i < args.length; i++) {
 		const arg = args[i];
 		if (arg === '--check-size') options.checkSize = true;
 		else if (arg === '--sizes-only') options.sizesOnly = true;
 		else if (arg === '--names') options.keepNames = true;
-		else if (arg === '--core-only') options.coreOnly = true;
+		else if (arg === '--pages-only') options.pagesOnly = true;
 		else if (arg === '--base' && args[i + 1] && !args[i + 1]?.startsWith('-'))
 			options.base = args[++i];
 		else
@@ -236,8 +260,8 @@ export function parseOptions(args: readonly string[]): BuildOptions {
 	}
 	if (options.keepNames && (options.checkSize || options.sizesOnly))
 		throw new Error('--names adds the function names to the core, so it cannot measure sizes');
-	if (options.coreOnly && (options.checkSize || options.sizesOnly))
-		throw new Error('--core-only makes no size report, so it cannot measure sizes');
+	if (options.pagesOnly && (options.checkSize || options.sizesOnly))
+		throw new Error('--pages-only makes no size report, so it cannot measure sizes');
 	if (options.checkSize && options.sizesOnly)
 		throw new Error(
 			'--sizes-only measures a base for the size check, so it cannot also run the check',
@@ -279,6 +303,10 @@ function buildVariant(variant: Variant, bindgen: string, keepNames: boolean): vo
 		'null3d',
 		`${targetDir}/wasm32-unknown-unknown/release/${CRATE.replace(/-/g, '_')}.wasm`,
 	]);
+	if (variant.releasesInstance) {
+		const glue = join(root, outDir, 'null3d.js');
+		writeFileSync(glue, addReleaseInstance(readFileSync(glue, 'utf8')));
+	}
 	const wasm = `${outDir}/null3d_bg.wasm`;
 	run(join(root, 'node_modules/.bin/wasm-opt'), [
 		'-O3',
@@ -555,8 +583,8 @@ async function main(): Promise<void> {
 	const version = lockedVersion(readFileSync(join(root, 'Cargo.lock'), 'utf8'), 'wasm-bindgen');
 	const bindgen = await wasmBindgen(version);
 	for (const variant of VARIANTS) buildVariant(variant, bindgen, options.keepNames);
-	if (options.coreOnly) return;
 	if (!options.sizesOnly) buildShaderCompiler();
+	if (options.pagesOnly) return;
 
 	const sizes: Record<string, SizeEntry> = {};
 	for (const variant of VARIANTS)

@@ -160,8 +160,9 @@ jobs:
           if-no-files-found: ignore
 
   real-browsers-build:
-    # The engine's two WebAssembly files for the Safari and Firefox jobs, built once on Linux. The
-    # files are the same on every platform, and GitHub gives few macOS machines at once, so each
+    # The WebAssembly files that the Safari and Firefox jobs need, built once on Linux: the engine's
+    # two files, and the shader compiler that the dev server runs on the WGSL in the test sketches.
+    # The files are the same on every platform, and GitHub gives few macOS machines at once, so each
     # macOS job downloads them instead of spending more than a minute to build them again.
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -176,12 +177,14 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
-      - name: Build the two WebAssembly files
-        run: bun tools/build-wasm.ts --core-only
+      - name: Build the WebAssembly files that the test pages need
+        run: bun tools/build-wasm.ts --pages-only
       - uses: actions/upload-artifact@v4
         with:
-          name: engine-core
-          path: packages/engine/dist/
+          name: page-wasm
+          path: |
+            packages/engine/dist/
+            packages/vite-plugin/dist/
           if-no-files-found: error
           retention-days: 1
 
@@ -218,11 +221,12 @@ jobs:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
         if: env.IN_QUEUE == 'true'
+      # The artifact holds both dist folders below packages/, their closest shared folder.
       - uses: actions/download-artifact@v4
         if: env.IN_QUEUE == 'true'
         with:
-          name: engine-core
-          path: packages/engine/dist/
+          name: page-wasm
+          path: packages/
       # An app with the downloaded-file flag asks before its first launch, and nobody can answer.
       - name: Let Firefox open without the first-launch prompt
         if: env.IN_QUEUE == 'true' && matrix.browser == 'Firefox'

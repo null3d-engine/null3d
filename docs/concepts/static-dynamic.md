@@ -28,6 +28,7 @@ Every scene object is static or dynamic. The engine recomputes a static object o
 | --- | --- | --- |
 | Recomputed | Only in a frame where a setter marked it dirty, or where its parent moved | Every frame |
 | GPU data | Uploaded once, then left alone | Uploaded every frame |
+| Culling in a scene over several grid cells | Skipped with its whole cell when the cell is out of view, unless a parent is dynamic | Tested in every view, every frame |
 | Best for | Scenery, buildings, a door that opens now and then | Characters, projectiles, anything that moves most frames |
 
 Objects are static unless you create them with `dynamic: true`. Cameras are the exception: they are dynamic unless you pass `dynamic: false`. `setDynamic` changes the kind from the next frame:

@@ -3,9 +3,10 @@
 use null3d_gpu::drawlist::sizes::FRAME_UNIFORM_BYTES;
 
 use crate::camera::Mat4;
+use crate::fog::FogUniform;
 
-/// Per-frame values: the camera and the lights. Colors are linear and include the intensity.
-/// Shaders work in positions relative to the camera.
+/// Per-frame values: the camera, the lights and the fog. Colors are linear and include the
+/// intensity. Shaders work in positions relative to the camera.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct FrameUniform {
@@ -21,6 +22,8 @@ pub struct FrameUniform {
     pub sun_direction: [f32; 4],
     pub sun_color: [f32; 4],
     pub ambient: [f32; 4],
+    /// The scene's fog, seen from the view's camera.
+    pub fog: FogUniform,
 }
 
 const _: () = assert!(std::mem::size_of::<FrameUniform>() == FRAME_UNIFORM_BYTES as usize);
@@ -28,8 +31,8 @@ const _: () = assert!(std::mem::size_of::<FrameUniform>() == FRAME_UNIFORM_BYTES
 impl FrameUniform {
     /// The block as bytes, for an upload.
     pub fn as_bytes(&self) -> &[u8] {
-        // SAFETY: the struct is `repr(C)` and made only of `f32`s, so it has no padding, and any
-        // bytes of it are initialized.
+        // SAFETY: the struct is `repr(C)` and made only of 4-byte fields, so it has no padding,
+        // and any bytes of it are initialized.
         unsafe {
             std::slice::from_raw_parts(
                 (self as *const Self).cast::<u8>(),
