@@ -88,10 +88,13 @@ export type {
 	PlaneOptions,
 	RingOptions,
 	SphereOptions,
+	StandardMaps,
 	StandardOptions,
 	StandardValues,
 	TorusOptions,
 	UnlitOptions,
+	UnlitValues,
+	UvTransform,
 } from './scene/resources';
 export type {
 	AmbientLight,

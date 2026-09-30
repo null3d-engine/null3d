@@ -88,6 +88,7 @@ export interface DeviceShaders {
 	readonly final: ShaderVariants<'main'>;
 	readonly lit: ShaderVariants<'main'>;
 	readonly mipmap: ShaderVariants<'main'>;
+	readonly standard_maps: ShaderVariants<'main'>;
 	readonly texcoords: ShaderVariants<'main'>;
 	readonly unlit: ShaderVariants<'main'>;
 	readonly unlit_map: ShaderVariants<'main'>;

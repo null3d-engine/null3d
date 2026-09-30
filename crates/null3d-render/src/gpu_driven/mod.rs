@@ -319,6 +319,7 @@ impl GpuDrivenRenderer {
         let upload_everything = input.structure_changed || !self.layout.built;
         if upload_everything {
             let limit = max_sources(self.config.storage_binding_bytes);
+            self.settings.update_map_groups();
             self.layout.rebuild(
                 &self.settings,
                 &mut self.pipelines,
