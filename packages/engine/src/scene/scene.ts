@@ -14,7 +14,13 @@ import {
 import { EngineError } from '../errors/engine-error';
 import * as C from '../generated/core';
 import { copy as copyMatrix, decompose } from '../math/mat4';
-import { fromEuler as quaternionFromEuler, rotateX, rotateY, rotateZ } from '../math/quat';
+import {
+	fromEuler as quaternionFromEuler,
+	rotateX,
+	rotateY,
+	rotateZ,
+	rotationTo,
+} from '../math/quat';
 import type { EulerOrder, Mat4Like, QuatLike, Vec3Like } from '../math/types';
 import { transformQuat } from '../math/vec3';
 import { rowLimitWarning } from '../page/limits';
@@ -193,11 +199,11 @@ export interface InstanceOptions {
 }
 
 /**
- * Options every light takes.
+ * Options every light takes, besides the options of every node.
  *
  * @category api/lights
  */
-export interface LightOptions {
+export interface LightOptions extends NodeOptions {
 	/** The light's color. The default is white. */
 	color?: ColorInput;
 	/** A factor that scales the color. The default is 1. */
@@ -210,9 +216,105 @@ export interface LightOptions {
  * @category api/lights
  */
 export interface DirectionalLightOptions extends LightOptions {
-	/** The direction the light travels. The default, (0, -1, 0), points straight down. */
+	/**
+	 * The direction the light travels, relative to the parent. The default, (0, -1, 0), points
+	 * straight down. It sets the light's rotation, so it wins over `rotation`.
+	 */
 	direction?: Vec3;
+	/**
+	 * True makes the light cast shadows, like `setCastShadows(true)`. The default is false. This
+	 * version stores the setting but draws no shadows yet.
+	 */
+	castShadows?: boolean;
 }
+
+/**
+ * Options for `scene.createPointLight`.
+ *
+ * @category api/lights
+ */
+export interface PointLightOptions extends LightOptions {
+	/**
+	 * The distance in meters where the light ends, above 0. Every point light needs one, because the
+	 * engine finds the lights near each surface by their ranges.
+	 */
+	range: number;
+	/** How fast the light fades with distance, at least 0. The default, 2, is the physical rate. */
+	decay?: number;
+	/**
+	 * True makes the light cast shadows, like `setCastShadows(true)`. The default is false. This
+	 * version stores the setting but draws no shadows yet.
+	 */
+	castShadows?: boolean;
+}
+
+/**
+ * Options for `scene.createSpotLight`.
+ *
+ * @category api/lights
+ */
+export interface SpotLightOptions extends PointLightOptions {
+	/**
+	 * The direction the light travels, relative to the parent. The default, (0, -1, 0), points
+	 * straight down. It sets the light's rotation, so it wins over `rotation`.
+	 */
+	direction?: Vec3;
+	/** A point the light turns toward. It wins over `direction`. */
+	target?: Vec3;
+	/**
+	 * The angle in radians from the light's direction to the edge of its cone, above 0 and at most
+	 * π/2. The default is π/3.
+	 */
+	angle?: number;
+	/**
+	 * The part of the cone, from 0 to 1, over which the light fades out toward the edge. The
+	 * default, 0, gives a sharp edge.
+	 */
+	penumbra?: number;
+}
+
+/**
+ * Options for `scene.createHemisphereLight`.
+ *
+ * @category api/lights
+ */
+export interface HemisphereLightOptions extends NodeOptions {
+	/** The color of the light from above. The default is white. */
+	skyColor?: ColorInput;
+	/** The color of the light from below. The default is white. */
+	groundColor?: ColorInput;
+	/** A factor that scales both colors. The default is 1. */
+	intensity?: number;
+}
+
+/** The options of any light, as the scene's shared create path reads them. */
+type AnyLightOptions = LightOptions & Partial<Omit<SpotLightOptions, keyof LightOptions>>;
+
+/** The numbers of a light's options, and their codes in the light table. */
+const LIGHT_NUMBERS = [
+	['intensity', C.LIGHT_VALUE_INTENSITY],
+	['range', C.LIGHT_VALUE_RANGE],
+	['decay', C.LIGHT_VALUE_DECAY],
+	['angle', C.LIGHT_VALUE_ANGLE],
+	['penumbra', C.LIGHT_VALUE_PENUMBRA],
+] as const;
+
+/**
+ * Each light number's name, lowest and highest value, and its range in words, by its code, for the
+ * development checks.
+ */
+const LIGHT_LIMITS: Record<number, readonly [string, number, number, string]> = {
+	[C.LIGHT_VALUE_INTENSITY]: ['intensity', -Infinity, Infinity, 'a finite number'],
+	[C.LIGHT_VALUE_RANGE]: ['range', Number.MIN_VALUE, Number.MAX_VALUE, 'above 0'],
+	[C.LIGHT_VALUE_DECAY]: ['decay', 0, Number.MAX_VALUE, 'at least 0'],
+	[C.LIGHT_VALUE_ANGLE]: ['angle', Number.MIN_VALUE, Math.PI / 2, 'above 0 and at most π/2'],
+	[C.LIGHT_VALUE_PENUMBRA]: ['penumbra', 0, 1, 'from 0 to 1'],
+};
+
+/** The direction a new directional or spot light points: straight down. */
+const DOWN: Vec3 = [0, -1, 0];
+/** The axis that a light's light travels along before the light turns: -Z, as a camera looks. */
+const LIGHT_AXIS: Vec3 = [0, 0, -1];
 
 /** Views of the per-slot arrays and the command ring. */
 class SceneViews {
@@ -813,104 +915,193 @@ export class OrthographicCamera extends Camera {
 }
 
 /**
- * Light arriving from one direction, like sunlight. Its direction and intensity setters allocate
- * nothing.
+ * A light: a scene object that lights the objects around it. Each kind of light has a class of its
+ * own. Setters allocate nothing except those that convert a color, so `onUpdate` can animate
+ * lights.
  *
  * @category api/lights
  */
-export class DirectionalLight {
-	/** @internal The direction the light travels. */
-	readonly direction = new Float64Array(3);
-	/** @internal The color in linear RGB, before the intensity scales it. */
-	readonly linear = new Float64Array(3);
+export class Light extends Object3D {
+	/** @internal The light's row in the engine's light table. */
+	id = 0;
+	/** @internal The light's color in linear RGB, before the intensity scales it. */
+	readonly linear = new Float64Array([1, 1, 1]);
 
-	constructor(
-		private readonly scene: Scene,
-		direction: readonly [number, number, number],
-		color: ColorInput,
-		private intensity: number,
-	) {
-		this.direction.set(direction);
-		this.linear.set(linearColor(color, 'createDirectionalLight'));
-		this.apply();
-	}
-
-	private apply(): void {
-		const d = this.direction;
-		const c = this.linear;
-		const k = this.intensity;
-		this.scene.core.glue.setSun(
-			d[0] as number,
-			d[1] as number,
-			d[2] as number,
-			(c[0] as number) * k,
-			(c[1] as number) * k,
-			(c[2] as number) * k,
-		);
-	}
-
-	/** Sets the direction the light travels. */
-	setDirection(x: number, y: number, z: number): void {
-		const d = this.direction;
-		d[0] = x;
-		d[1] = y;
-		d[2] = z;
-		this.apply();
+	protected override get looksDownMinusZ(): boolean {
+		return true;
 	}
 
 	/** Sets the color. Converting a color allocates, so per-frame code sets the intensity instead. */
 	setColor(color: ColorInput): void {
-		this.linear.set(linearColor(color, 'setColor'));
-		this.apply();
+		this.paint('setColor', C.LIGHT_COLOR_MAIN, color);
 	}
 
 	/** Sets the factor that scales the color. */
 	setIntensity(intensity: number): void {
-		this.intensity = intensity;
-		this.apply();
+		this.write('setIntensity', C.LIGHT_VALUE_INTENSITY, intensity);
+	}
+
+	/** Removes the light at the next frame. Its children become roots. */
+	override destroy(): void {
+		super.destroy();
+		const { core } = this.scene;
+		core.check(core.glue.destroyLight(this.id), 'destroy', this.label, true);
+	}
+
+	/** @internal Sets one of the light's colors, by its code in the light table. */
+	paint(call: string, which: number, color: ColorInput): void {
+		if (DEV) checkLive(call, this);
+		const rgb = linearColor(color, call);
+		if (which === C.LIGHT_COLOR_MAIN) this.linear.set(rgb);
+		this.scene.core.glue.setLightColor(this.id, which, rgb[0], rgb[1], rgb[2]);
+	}
+
+	/** @internal Sets one of the light's numbers, by its code in the light table. */
+	write(call: string, which: number, value: number): void {
+		if (DEV) {
+			checkLive(call, this);
+			const limits = LIGHT_LIMITS[which] as (typeof LIGHT_LIMITS)[number];
+			if (typeof value === 'number') checkNumber(call, limits[0], value, this);
+			if (!(value >= limits[1] && value <= limits[2]))
+				throw new EngineError(
+					'E1108',
+					`${call}() got the ${limits[0]} ${value} on ${this.describe()}, which must be ${limits[3]}.`,
+				);
+		}
+		this.scene.core.glue.setLightValue(this.id, which, value);
+	}
+
+	/**
+	 * @internal Turns the light so that its light travels along (x, y, z), relative to its parent.
+	 */
+	aim(call: string, x: number, y: number, z: number): void {
+		if (DEV) {
+			checkLive(call, this);
+			checkVector(call, this, x, y, z);
+			if (x === 0 && y === 0 && z === 0)
+				throw new EngineError(
+					'E1108',
+					`${call}() got the direction (0, 0, 0) on ${this.describe()}, which points nowhere.`,
+				);
+		}
+		const { scene } = this;
+		const d = scene.target;
+		const k = 1 / (Math.sqrt(x * x + y * y + z * z) || 1);
+		d[0] = x * k;
+		d[1] = y * k;
+		d[2] = z * k;
+		rotationTo(scene.scratch, LIGHT_AXIS, d);
+		scene.views.rotations.set(scene.scratch, this.slot * 4);
+		scene.markDirty(this.slot);
 	}
 }
 
 /**
- * Light that reaches every surface equally. Its intensity setter allocates nothing.
+ * Light from one direction, like sunlight. It travels along the light's -Z axis, which
+ * `setDirection`, `lookAt` and the light's parents turn. Its position does not matter.
  *
  * @category api/lights
  */
-export class AmbientLight {
-	/** The color in linear RGB, before the intensity scales it. */
-	private readonly linear = new Float64Array(3);
-
-	constructor(
-		private readonly scene: Scene,
-		color: ColorInput,
-		private intensity: number,
-	) {
-		this.linear.set(linearColor(color, 'createAmbientLight'));
-		this.apply();
+export class DirectionalLight extends Light {
+	/** Turns the light so that its light travels along (x, y, z), relative to its parent. */
+	setDirection(x: number, y: number, z: number): void {
+		this.aim('setDirection', x, y, z);
 	}
 
-	private apply(): void {
-		const c = this.linear;
-		const k = this.intensity;
-		this.scene.core.glue.setAmbient(
-			(c[0] as number) * k,
-			(c[1] as number) * k,
-			(c[2] as number) * k,
-		);
-	}
-
-	/** Sets the color. Converting a color allocates, so per-frame code sets the intensity instead. */
-	setColor(color: ColorInput): void {
-		this.linear.set(linearColor(color, 'setColor'));
-		this.apply();
-	}
-
-	/** Sets the factor that scales the color. */
-	setIntensity(intensity: number): void {
-		this.intensity = intensity;
-		this.apply();
+	/**
+	 * Makes the light cast shadows, or stop. The default is false. This version stores the setting
+	 * but draws no shadows yet.
+	 */
+	setCastShadows(cast: boolean): void {
+		this.setFlag('setCastShadows', C.FLAG_CAST_SHADOWS, cast);
 	}
 }
+
+/**
+ * Light from a point in every direction, which fades with distance and ends at its range.
+ *
+ * @category api/lights
+ */
+export class PointLight extends Light {
+	/** Sets the distance in meters where the light ends, above 0. */
+	setRange(range: number): void {
+		this.write('setRange', C.LIGHT_VALUE_RANGE, range);
+	}
+
+	/** Sets how fast the light fades with distance, at least 0: 2 is the physical rate. */
+	setDecay(decay: number): void {
+		this.write('setDecay', C.LIGHT_VALUE_DECAY, decay);
+	}
+
+	/**
+	 * Makes the light cast shadows, or stop. The default is false. This version stores the setting
+	 * but draws no shadows yet.
+	 */
+	setCastShadows(cast: boolean): void {
+		this.setFlag('setCastShadows', C.FLAG_CAST_SHADOWS, cast);
+	}
+}
+
+/**
+ * Light from a point in a cone, which fades with distance and ends at its range. The cone points
+ * along the light's -Z axis, which `setDirection`, `lookAt` and the light's parents turn.
+ *
+ * @category api/lights
+ */
+export class SpotLight extends Light {
+	/** Sets the distance in meters where the light ends, above 0. */
+	setRange(range: number): void {
+		this.write('setRange', C.LIGHT_VALUE_RANGE, range);
+	}
+
+	/** Sets how fast the light fades with distance, at least 0: 2 is the physical rate. */
+	setDecay(decay: number): void {
+		this.write('setDecay', C.LIGHT_VALUE_DECAY, decay);
+	}
+
+	/** Sets the angle in radians from the light's direction to the edge of its cone: up to π/2. */
+	setAngle(angle: number): void {
+		this.write('setAngle', C.LIGHT_VALUE_ANGLE, angle);
+	}
+
+	/** Sets the part of the cone, from 0 to 1, over which the light fades out toward the edge. */
+	setPenumbra(penumbra: number): void {
+		this.write('setPenumbra', C.LIGHT_VALUE_PENUMBRA, penumbra);
+	}
+
+	/** Turns the light so that its light travels along (x, y, z), relative to its parent. */
+	setDirection(x: number, y: number, z: number): void {
+		this.aim('setDirection', x, y, z);
+	}
+
+	/**
+	 * Makes the light cast shadows, or stop. The default is false. This version stores the setting
+	 * but draws no shadows yet.
+	 */
+	setCastShadows(cast: boolean): void {
+		this.setFlag('setCastShadows', C.FLAG_CAST_SHADOWS, cast);
+	}
+}
+
+/**
+ * Light from the sky above and the ground below, which fades from one color to the other with the
+ * way a surface faces. The sky lies along the light's +Y axis. `setColor` sets the sky color.
+ *
+ * @category api/lights
+ */
+export class HemisphereLight extends Light {
+	/** Sets the ground color. Converting a color allocates. */
+	setGroundColor(color: ColorInput): void {
+		this.paint('setGroundColor', C.LIGHT_COLOR_GROUND, color);
+	}
+}
+
+/**
+ * Light that reaches every surface equally.
+ *
+ * @category api/lights
+ */
+export class AmbientLight extends Light {}
 
 /**
  * Many copies of one mesh and material. Write rows straight into the typed arrays; a dynamic batch
@@ -1336,22 +1527,70 @@ export class Scene {
 	}
 
 	/**
-	 * Light from one direction. This version has one directional light: a newer one replaces the
-	 * older.
+	 * Creates a light of class `kind` from the next frame: its object, its row in the light table,
+	 * and the values of `options`. A directional or spot light turns to its target or direction.
 	 */
+	private createLight<T extends Light>(
+		kind: ObjectClass<T>,
+		type: number,
+		options: AnyLightOptions,
+		call: string,
+	): T {
+		const flags = options.castShadows ? C.FLAG_CAST_SHADOWS : 0;
+		const light = this.create(kind, options, C.CORE_NO_MESH, 0, flags, call);
+		light.id = this.core.check(this.core.glue.createLight(light.handle, type), call, options.name);
+		if (options.color !== undefined) light.paint(call, C.LIGHT_COLOR_MAIN, options.color);
+		const ranged = type === C.LIGHT_KIND_POINT || type === C.LIGHT_KIND_SPOT;
+		for (const [key, which] of LIGHT_NUMBERS) {
+			const value = options[key];
+			if (value !== undefined || (ranged && which === C.LIGHT_VALUE_RANGE))
+				light.write(call, which, value as number);
+		}
+		if (type === C.LIGHT_KIND_DIRECTIONAL || type === C.LIGHT_KIND_SPOT) {
+			if (options.target) light.lookAt(...options.target);
+			else if (options.direction || !options.rotation)
+				light.aim(call, ...(options.direction ?? DOWN));
+		}
+		return light;
+	}
+
+	/** Light from one direction, like sunlight: `direction` is the way it travels. */
 	createDirectionalLight(options: DirectionalLightOptions = {}): DirectionalLight {
-		const [x, y, z] = options.direction ?? [0, -1, 0];
-		return new DirectionalLight(
-			this,
-			[x, y, z],
-			options.color ?? '#ffffff',
-			options.intensity ?? 1,
+		return this.createLight(
+			DirectionalLight,
+			C.LIGHT_KIND_DIRECTIONAL,
+			options,
+			'createDirectionalLight',
 		);
 	}
 
-	/** Light on every surface. This version has one ambient light: a newer one replaces the older. */
+	/** Light from a point in every direction, out to `range` meters, which it needs. */
+	createPointLight(options: PointLightOptions): PointLight {
+		return this.createLight(PointLight, C.LIGHT_KIND_POINT, options, 'createPointLight');
+	}
+
+	/** Light from a point in a cone, out to `range` meters, which it needs. */
+	createSpotLight(options: SpotLightOptions): SpotLight {
+		return this.createLight(SpotLight, C.LIGHT_KIND_SPOT, options, 'createSpotLight');
+	}
+
+	/** Light from the sky above and the ground below. */
+	createHemisphereLight(options: HemisphereLightOptions = {}): HemisphereLight {
+		const call = 'createHemisphereLight';
+		const light = this.createLight(
+			HemisphereLight,
+			C.LIGHT_KIND_HEMISPHERE,
+			{ ...options, color: options.skyColor },
+			call,
+		);
+		if (options.groundColor !== undefined)
+			light.paint(call, C.LIGHT_COLOR_GROUND, options.groundColor);
+		return light;
+	}
+
+	/** Light on every surface, from no direction. */
 	createAmbientLight(options: LightOptions = {}): AmbientLight {
-		return new AmbientLight(this, options.color ?? '#ffffff', options.intensity ?? 1);
+		return this.createLight(AmbientLight, C.LIGHT_KIND_AMBIENT, options, 'createAmbientLight');
 	}
 
 	/** The color behind every object. */

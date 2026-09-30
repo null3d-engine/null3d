@@ -23,6 +23,21 @@ export const FLAG_CUSTOM_BOUNDS = 32;
 
 export const LAYERS_DEFAULT = 1;
 
+export const LIGHT_KIND_DIRECTIONAL = 1;
+export const LIGHT_KIND_POINT = 2;
+export const LIGHT_KIND_SPOT = 3;
+export const LIGHT_KIND_HEMISPHERE = 4;
+export const LIGHT_KIND_AMBIENT = 5;
+
+export const LIGHT_COLOR_MAIN = 0;
+export const LIGHT_COLOR_GROUND = 1;
+
+export const LIGHT_VALUE_INTENSITY = 0;
+export const LIGHT_VALUE_RANGE = 1;
+export const LIGHT_VALUE_DECAY = 2;
+export const LIGHT_VALUE_ANGLE = 3;
+export const LIGHT_VALUE_PENUMBRA = 4;
+
 export const SCENE_FIELD_POSITIONS = 0;
 export const SCENE_FIELD_ROTATIONS = 1;
 export const SCENE_FIELD_SCALES = 2;
