@@ -72,6 +72,13 @@ const VERTEX_FORMATS = {
 	modes: ['pipelined', 'single-threaded'],
 } as const;
 
+/** The geometry generators sketch, and how its tests draw it. */
+const GENERATORS = {
+	sketch: 'tests/pages/sketches/generators-sketch.ts',
+	hold: 0,
+	size: [480, 270],
+} as const;
+
 /** The page of the depth precision tests, and its image's size. */
 const DEPTH_PAGE = { page: 'tests/pages/depth-precision.html', size: PRECISION.size, hold: 0 };
 
@@ -171,15 +178,19 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 	// Compatibility mode takes the 8-bit path, which averages the samples of antialiased edges after
 	// the tone mapping, so its edges differ from the HDR path's and it keeps references of its own.
 	{ name: 'vertex-formats-compat', ...VERTEX_FORMATS, tiers: ['compat'], expect: { hdr: false } },
-	// The nine geometry generators, each lit and with its texture coordinates shown as colors. Every
-	// tier must draw the WebGPU image.
+	// The nine geometry generators, each lit and with its texture coordinates shown as colors.
+	// WebGL2 must draw the WebGPU image, apart from the antialiased edges that dithering keeps
+	// pixelmatch from passing over.
 	{
 		name: 'generators',
-		sketch: 'tests/pages/sketches/generators-sketch.ts',
-		hold: 0,
-		size: [480, 270],
+		...GENERATORS,
+		tiers: ['webgpu', 'webgl2'],
 		sameOnEveryTier: true,
+		tolerance: { maxDiffRatio: 0.005 },
 	},
+	// Compatibility mode's 8-bit path averages antialiased edges after the tone mapping, so it keeps
+	// references of its own.
+	{ name: 'generators-compat', ...GENERATORS, tiers: ['compat'], expect: { hdr: false } },
 	// Two surfaces 1 cm apart at each distance from 1 m to 10 km, in each GPU path's own depth mode.
 	// The page paints each pixel where the farther surface shows through as the nearer one, and
 	// publishes their count. The engine must draw the depth it chose, no mode may fight up to 40 m,
