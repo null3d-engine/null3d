@@ -73,6 +73,15 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 		modes: ['pipelined', 'single-threaded'],
 		sameOnEveryTier: true,
 	},
+	// The nine geometry generators, each lit and with its texture coordinates shown as colors. Every
+	// tier must draw the WebGPU image.
+	{
+		name: 'generators',
+		sketch: 'tests/pages/sketches/generators-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+		sameOnEveryTier: true,
+	},
 	// Two surfaces 1 cm apart at each distance from 1 m to 10 km, in each GPU path's own depth mode.
 	// The page paints each pixel where the farther surface shows through as the nearer one, and
 	// publishes their count. The engine must draw the depth it chose, no mode may fight up to 40 m,

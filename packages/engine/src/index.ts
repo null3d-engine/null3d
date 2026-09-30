@@ -61,13 +61,20 @@ export type { Tier } from './render/renderer';
 export type { ColorInput } from './scene/color';
 export type {
 	BoxOptions,
+	CapsuleOptions,
+	CircleOptions,
+	ConeOptions,
+	CylinderOptions,
 	Geometry,
 	Material,
 	MaterialOptions,
 	Materials,
 	MeshArrays,
 	MeshGeometry,
+	PlaneOptions,
+	RingOptions,
 	SphereOptions,
+	TorusOptions,
 } from './scene/resources';
 export type {
 	AmbientLight,

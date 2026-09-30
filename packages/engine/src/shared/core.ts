@@ -79,15 +79,21 @@ export interface CoreGlue extends CoreErrors {
 	setBatchActiveCount(batch: number, count: number): number;
 	markBatchDirty(batch: number, start: number, count: number): number;
 	memoryEpoch(): number;
-	createBoxMesh(
-		width: number,
-		height: number,
-		depth: number,
-		widthSegments: number,
-		heightSegments: number,
-		depthSegments: number,
+	/**
+	 * A mesh from a geometry generator: `shape` is one of the `SHAPE_*` codes, and the numbers after
+	 * it are the arguments of the three.js class's constructor, in their order. Returns the mesh id.
+	 */
+	createShapeMesh(
+		shape: number,
+		a: number,
+		b: number,
+		c: number,
+		d: number,
+		e: number,
+		f: number,
+		g: number,
+		h: number,
 	): number;
-	createSphereMesh(radius: number, widthSegments: number, heightSegments: number): number;
 	/**
 	 * Makes room for a mesh's arrays in engine memory, `words` 32-bit words, and returns their
 	 * address; `createMeshFromArrays` reads and frees them.
@@ -141,8 +147,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setBatchActiveCount',
 	'markBatchDirty',
 	'memoryEpoch',
-	'createBoxMesh',
-	'createSphereMesh',
+	'createShapeMesh',
 	'meshArrays',
 	'createMeshFromArrays',
 	'meshRadius',
