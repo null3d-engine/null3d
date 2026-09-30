@@ -6,9 +6,11 @@ import { messageOf } from '../errors/message';
 import type { PowerPreference } from '../page/capabilities';
 import type { EngineCapabilities } from '../page/engine';
 import type { CoreDevice } from '../page/limits';
+import type { QualitySettings } from '../quality/presets';
 import type { Tier } from '../render/renderer';
 import { awaitLater } from '../shared/await-later';
 import { type Build, loadGlue, type StartedCore, startCore } from '../shared/core';
+import type { QualityStart } from '../sketch/quality';
 
 export interface CoreHandoff {
 	build: Build;
@@ -75,6 +77,8 @@ export type SketchWorkerInit = CoreHandoff & {
 	renderer?: RendererSetup;
 	/** Hold mode's sketch time in seconds, which the sketch worker steps the sketch to after setup. */
 	hold?: number;
+	/** The quality preset and settings that the page chose. */
+	quality: QualityStart;
 	/** The port that texture images go through to the thread that draws, when that is another. */
 	imagePort?: MessagePort;
 };
@@ -114,6 +118,8 @@ export type WorkerReply =
 	/** The browser took the GPU away from the worker that draws, which stopped drawing. */
 	| { type: 'lost'; role: 'sketch' | 'render'; reason: string }
 	| { type: 'sketch-message'; name: string; data: unknown }
+	/** The quality settings after the sketch changed them, for the settings that the page applies. */
+	| { type: 'quality'; settings: QualitySettings }
 	| ({ type: 'captured' } & CapturedFrame)
 	| { type: 'captured-image'; image: Blob }
 	| { type: 'capture-failed'; message: string };

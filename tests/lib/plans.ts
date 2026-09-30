@@ -41,6 +41,12 @@ import {
 	startupTable,
 } from '../../bench/lib/startup.ts';
 import { MEASURE_SECONDS, WARMUP_SECONDS } from '../../bench/scenes/spec.ts';
+import {
+	choosePreset,
+	type DeviceHints,
+	deviceKind,
+} from '../../packages/engine/src/quality/chooser.ts';
+import type { Tier as GpuPath } from '../../packages/engine/src/shared/tier.ts';
 import { IMAGE_RUNS } from '../image/manifest.ts';
 import { distanceLabel, PRECISION, type PrecisionFacts } from '../pages/lib/depth-precision.ts';
 import {
@@ -79,6 +85,7 @@ export type Check =
 	| { kind: 'memory'; maximumMiB: number }
 	| { kind: 'room'; maximumMiB: number }
 	| { kind: 'uploads'; tier: Tier }
+	| { kind: 'quality' }
 	/** The warm-up page: pipelines build before the first frame, and a warm-up during play. */
 	| { kind: 'warm-up'; tier: Tier }
 	| { kind: 'hold'; tier: Tier }
@@ -242,6 +249,7 @@ export function checksPlan(): PlanItem<Check>[] {
 			),
 		),
 		pageItem('uploads', 'uploads', { kind: 'uploads', tier: 'webgpu' }, { timeoutSeconds: 90 }),
+		pageItem('quality', 'quality', { kind: 'quality' }),
 		...TIERS.map((tier) =>
 			pageItem(
 				`warm-up-${tier}`,
@@ -847,6 +855,8 @@ export function judge(
 				...((result.uncaptured ?? []) as string[]).map((error) => `WebGPU error: ${error}`),
 			];
 		}
+		case 'quality':
+			return qualityProblems(result as unknown as QualityResult, context);
 		case 'bench': {
 			const frames = Number(result.frames ?? 0);
 			const cpu = (result.cpuMs as { median?: number } | undefined)?.median ?? 0;
@@ -880,6 +890,29 @@ export function judge(
 			return overloaded.completedFps ? [] : ['no frame completions were counted'];
 		}
 	}
+}
+
+/** What the quality page reports: the preset, the GPU path and the device hints it chose from. */
+interface QualityResult {
+	mode: { preset: string; crashedStarts: number };
+	tier: GpuPath;
+	hints: DeviceHints;
+}
+
+/**
+ * Checks that the engine ran the preset that the chooser gives for the device hints and the GPU
+ * path it reported, and notes the preset and the hints, so each device's choice is on record.
+ */
+function qualityProblems(result: QualityResult, context?: JudgeContext): string[] {
+	const { mode, tier, hints } = result;
+	const expected = choosePreset({ wanted: 'auto', hints, crashedStarts: mode.crashedStarts }, tier);
+	const memory = hints.deviceMemoryGB === null ? 'no memory reading' : `${hints.deviceMemoryGB} GB`;
+	context?.note?.(
+		`quality preset ${mode.preset} on ${tier} for a ${deviceKind(hints)} (${hints.coarsePointer ? 'coarse' : 'fine'} pointer, smaller screen edge ${hints.screenMinEdge} px, ${memory}, ${mode.crashedStarts} crashed starts)`,
+	);
+	return mode.preset === expected
+		? []
+		: [`the engine ran the ${mode.preset} preset, where the chooser gives ${expected}`];
 }
 
 /**

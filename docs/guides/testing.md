@@ -154,3 +154,4 @@ The [hold mode demo](https://github.com/null3d-engine/null3d/tree/main/examples/
 | `?render=main` | Draw on the page's main thread |
 | `?sketch-thread=main` | Run the sketch on the page's main thread, over the `sketchThread` option |
 | `?latency=pipelined`, `?latency=low` | Pick the latency mode |
+| `?preset=low`, `?preset=medium`, `?preset=high`, `?preset=ultra` | Fix the quality preset, within the GPU path's highest; the engine then ignores starts that crashed before |
