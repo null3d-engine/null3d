@@ -12,7 +12,8 @@
 		"isolatedModules": true,
 		"verbatimModuleSyntax": true,
 		"allowImportingTsExtensions": true,
-		"resolveJsonModule": true
+		"resolveJsonModule": true,
+		"allowJs": true
 	},
 	"include": [
 		"tools/**/*.ts",
@@ -21,6 +22,7 @@
 		"tests/*.ts",
 		"tests/lib/**/*.ts",
 		"tests/image/**/*.ts",
+		"tests/fixtures/*/vite.config.ts",
 		"vite.config.ts"
 	],
 	"exclude": ["packages/engine/**"]

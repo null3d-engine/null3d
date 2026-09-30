@@ -92,7 +92,7 @@ export const PAGES: readonly PageEntry[] = [
 
 	{ id: 'guides/performance', title: 'Performance guide', since: '0.1', summary: 'Measuring; the frame budget; common causes of slow frames and their fixes.' },
 	{ id: 'guides/phones', title: 'Phones and tablets', since: '0.1', summary: 'Pixel-ratio caps; memory budgets; heat; testing on real devices.' },
-	{ id: 'guides/custom-shaders', title: 'Custom shaders', since: '0.1', summary: 'Surface functions; full shaders; uniforms and typed materials; hot reload.' },
+	{ id: 'guides/custom-shaders', title: 'Custom shaders', since: '0.1', summary: 'WGSL in sketch code; shader errors; surface functions; full shaders; uniforms and typed materials; hot reload.' },
 	{ id: 'guides/custom-passes', title: 'Custom passes and render targets', since: '0.2', summary: 'Declaring passes; reading and writing named textures; layer masks.' },
 	{ id: 'guides/loading-screens', title: 'Loading screens and warm-up', since: '0.1', summary: 'preload; onProgress; scene.warmUp; upload budgets.' },
 	{ id: 'guides/accessibility', title: 'Accessibility', since: '0.1', summary: 'What the canvas tells assistive technology; keyboard use; reduced motion; pausing; loading and errors.' },
@@ -108,7 +108,7 @@ export const PAGES: readonly PageEntry[] = [
 	{ id: 'guides/deploying', title: 'Deploying', since: '0.3', summary: 'Headers on common hosts; asset caching; size budgets.' },
 	{ id: 'guides/agents', title: 'Working with AI agents', since: '0.1', summary: 'Installing the null3D skills in Claude Code, claude.ai and other agent tools; docs by ID; the MCP server and AGENTS.md in templates (0.3).' },
 
-	{ id: 'shaders/wgsl-rules', title: 'WGSL rules for portable shaders', since: '0.1', summary: 'The three shared language features; limits budget; flat interpolation; what the build rejects.' },
+	{ id: 'shaders/wgsl-rules', title: 'WGSL rules for portable shaders', since: '0.1', summary: 'The three shared language features; optional features; flat interpolation; limits budget; rules the build cannot check.' },
 	{ id: 'shaders/surface-functions', title: 'Surface functions', since: '0.1', summary: 'The surface record; vertex-offset functions; per-instance attributes.' },
 	{ id: 'shaders/builtins', title: 'Built-in shader inputs', since: '0.1', summary: 'Camera, time, object, instance and light values available to custom shaders.' },
 	{ id: 'shaders/library', title: 'Shader library and imports', since: '0.1', summary: 'Importing engine shader modules (math, noise, lighting helpers).' },
@@ -122,7 +122,7 @@ export const PAGES: readonly PageEntry[] = [
 	{ id: 'porting/threejs-unsupported', title: 'Unsupported three.js features', since: '0.3', summary: 'Features after 1.0 or out of scope, with workarounds.' },
 	{ id: 'porting/verification', title: 'Verifying a port', since: '0.3', summary: 'Parity images per camera view; performance comparison; the WebGL2 path; phones.' },
 
-	{ id: 'cli/null3d', title: 'The `null3d` command', since: '0.3', summary: 'create, test, bench, shot, assets, docs, port, skills, mcp, doctor.' },
+	{ id: 'cli/null3d', title: 'The `null3d` command', since: '0.1', summary: 'create, test, bench, shot, assets, docs, port, skills, mcp, doctor.' },
 	{ id: 'cookbook/index', title: 'Cookbook', since: '0.2', summary: 'Short recipes; each is also a tested example.' },
 ];
 

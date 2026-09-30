@@ -6,6 +6,7 @@
 // From the repository root:
 //   bun tests/real-browsers.ts Safari Firefox
 //   bun tests/real-browsers.ts --allow-no-webgpu --android chrome,brave --lan ipad-safari,ipad-brave
+//   bun tests/real-browsers.ts --allow-no-webgpu --allow-no-webgl2 --shard 1/2 Safari
 //   bun tests/real-browsers.ts --plan scale --allow-no-webgpu --android chrome
 //   bun tests/real-browsers.ts --plan bench --allow-no-webgpu --android chrome --n 250000
 //   bun tests/real-browsers.ts --plan bench --allow-no-webgpu --android chrome --n 300000 --jobs 2,4,6,8
@@ -33,6 +34,9 @@
 //   --scenes <list>     the bench plan's scenes: s1, s1-static, s2; the default is s1
 //   --seconds <n>       the bench plan's warm-up and measured seconds, each, instead of the
 //                       protocol's 5 and 30; 300 gives the protocol's 10-minute sustained run
+//   --shard <i>/<n>     run only the i-th of n shards of a fixed plan, as CI does on each of its
+//                       machines: the plan's items split evenly, and an item stays with the items
+//                       whose results its check compares with
 //   --shields on|off    the state of Brave's Shields for the dev server's site, which the runner
 //                       cannot read: it goes into each Brave result and the run's summary
 //   --android <list>    browsers on the Android phone: chrome, chrome-beta, brave, firefox, samsung
@@ -63,6 +67,7 @@ import {
 	benchSummary,
 	type Check,
 	depthSummary,
+	itemsNeeded,
 	judge,
 	type MissingAllowed,
 	memorySummary,
@@ -82,7 +87,9 @@ import {
 	readResult,
 	receivedAt,
 	runName,
+	type Shard,
 	setTurns,
+	shardItems,
 	slug,
 	turnBatches,
 	waitForRunners,
@@ -121,6 +128,8 @@ export interface Options {
 	seconds?: number;
 	/** The state of Brave's Shields for the dev server's site, when given. */
 	shields?: ShieldsState;
+	/** The one shard of a fixed plan to run, when given. */
+	shard?: Shard;
 	/** macOS app names, such as Safari. */
 	mac: string[];
 	android: string[];
@@ -128,7 +137,7 @@ export interface Options {
 }
 
 const USAGE =
-	'usage: bun tests/real-browsers.ts [--plan <name>] [--allow-no-webgpu] [--allow-no-webgl2] [--n <count>] [--runs <count>] [--jobs <counts>] [--pages <kinds>] [--scenes <scenes>] [--seconds <n>] [--shields on|off] [--android <browsers>] [--lan <runners>] [<macOS app>...]';
+	'usage: bun tests/real-browsers.ts [--plan <name>] [--allow-no-webgpu] [--allow-no-webgl2] [--n <count>] [--runs <count>] [--jobs <counts>] [--pages <kinds>] [--scenes <scenes>] [--seconds <n>] [--shard <i>/<n>] [--shields on|off] [--android <browsers>] [--lan <runners>] [<macOS app>...]';
 
 /** The states of Brave's Shields that --shields takes. */
 const SHIELDS_STATES = ['on', 'off'] as const;
@@ -162,6 +171,12 @@ export function parseArgs(args: readonly string[]): Options {
 			throw new Error(`${flag}: use a whole number of at least ${least}\n${USAGE}`);
 		return n;
 	};
+	const shard = (value: string | undefined): Shard => {
+		const [, index = 0, count = 0] = /^(\d+)\/(\d+)$/.exec(value ?? '')?.map(Number) ?? [];
+		if (!(index >= 1 && index <= count))
+			throw new Error(`--shard: use <i>/<n>, such as 1/2, with i from 1 to n\n${USAGE}`);
+		return { index, count };
+	};
 	for (let i = 0; i < args.length; i++) {
 		const arg = args[i] as string;
 		if (arg === '--allow-no-webgpu') missing.webgpu = true;
@@ -172,6 +187,7 @@ export function parseArgs(args: readonly string[]): Options {
 		else if (arg === '--pages') options.pages = known(arg, list(args[++i]), BENCH_PAGE_KINDS);
 		else if (arg === '--scenes') options.scenes = known(arg, list(args[++i]), PARITY_SCENES);
 		else if (arg === '--seconds') options.seconds = wholeNumber(arg, args[++i]);
+		else if (arg === '--shard') options.shard = shard(args[++i]);
 		else if (arg === '--shields') options.shields = oneOf(arg, args[++i], SHIELDS_STATES);
 		else if (arg === '--plan') options.plan = args[++i] ?? '';
 		else if (arg === '--android') options.android = list(args[++i]);
@@ -181,6 +197,8 @@ export function parseArgs(args: readonly string[]): Options {
 	}
 	if (!PLAN_NAMES.includes(options.plan))
 		throw new Error(`no plan named ${options.plan}; plans: ${PLAN_NAMES.join(', ')}`);
+	if (options.shard && options.plan === SCALE_PLAN)
+		throw new Error(`--shard splits a fixed plan, so it does not work with --plan ${SCALE_PLAN}`);
 	// The memory plan still counts the room at each maximum without loads; other plans need runs.
 	if (options.runs === 0 && options.plan !== 'memory')
 		throw new Error(`--runs 0 works with --plan memory only\n${USAGE}`);
@@ -376,9 +394,12 @@ function wholeHeatText(samples: readonly HeatSample[]): string | undefined {
 	return heat ? heatText(heat) : undefined;
 }
 
-/** A fixed plan's items with the command line's settings, or undefined for the phone-scale search. */
+/**
+ * A fixed plan's items with the command line's settings, or only its shard's items, or undefined
+ * for the phone-scale search.
+ */
 export function planItems(options: Options): PlanItem<Check>[] | undefined {
-	return PLANS[options.plan]?.({
+	const items = PLANS[options.plan]?.({
 		count: options.count,
 		runs: options.runs,
 		jobs: options.jobs,
@@ -386,6 +407,14 @@ export function planItems(options: Options): PlanItem<Check>[] | undefined {
 		scenes: options.scenes,
 		seconds: options.seconds,
 	});
+	const { shard } = options;
+	if (!items || !shard) return items;
+	const part = shardItems(items, shard, (item) => itemsNeeded(item.check));
+	if (part.length === 0)
+		throw new Error(
+			`shard ${shard.index} of ${shard.count} has no items: the ${options.plan} plan has too few items for ${shard.count} shards`,
+		);
+	return part;
 }
 
 /**

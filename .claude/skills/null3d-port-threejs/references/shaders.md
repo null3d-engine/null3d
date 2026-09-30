@@ -239,7 +239,7 @@ The null3D version is the dissolve example in the null3d-develop skill's `refere
 
 ## 10. Pitfalls checklist
 
-- `textureSample` inside a branch that differs between pixels fails to compile in WGSL (GLSL allowed it). Sample before the branch, or use `textureSampleLevel`.
+- `textureSample` inside a branch that differs between pixels breaks a WGSL rule that GLSL did not have. Chrome rejects such a shader, and the null3D build cannot catch it. Sample before the branch, or use `textureSampleLevel`.
 - `%` is not `mod`: negative inputs give different results.
 - No swizzle assignment (`v.xy = ...`): write the whole vector.
 - Flip y for `gl_FragCoord` and full-screen UV math (section 4).
