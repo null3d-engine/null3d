@@ -117,6 +117,7 @@ export class Pipelines {
 			{ binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
 			{ binding: 4, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
 			{ binding: 5, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+			{ binding: 6, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
 		]);
 		for (const [id, pipeline, meshLocations] of [
 			[TEMPLATE_INSTANCED_LIT, 'lit', [0, 1]],

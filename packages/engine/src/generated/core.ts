@@ -8,10 +8,13 @@ export const COMMAND_SET_MESH = 4;
 export const COMMAND_SET_MATERIAL = 5;
 export const COMMAND_SET_DYNAMIC = 6;
 export const COMMAND_SET_VISIBLE = 7;
+export const COMMAND_SET_LAYERS = 8;
 export const COMMAND_WORDS = 4;
 
 export const FLAG_DYNAMIC = 1;
 export const FLAG_VISIBLE = 2;
+
+export const LAYERS_DEFAULT = 1;
 
 export const SCENE_FIELD_POSITIONS = 0;
 export const SCENE_FIELD_ROTATIONS = 1;
