@@ -97,7 +97,7 @@ export default defineSketch(async (ctx) => {
 | `scene.createInstances(meshOrPrefab, count, { dynamic, colors, attributes, material, layers, origin })` | InstanceBatch | Section 5 |
 | `scene.instantiate(prefab, { position, rotation, scale, parent })` (0.2) | Node | Creates a loaded glTF model |
 | `scene.clone(obj)` (0.2) | same type | Deep copy of a built object |
-| `scene.find(name)` | Node or null | Use at setup, not per frame |
+| `scene.find(name)` | Node or undefined | The first live node with the name; use at setup, not per frame |
 | `scene.createPerspectiveCamera({ fov, near, far, position, target, layers })` | Camera | fov is vertical, in degrees |
 | `scene.createOrthographicCamera({ height, near, far, position, target })` | Camera | Or left, right, top, bottom |
 | `scene.setActiveCamera(camera)` | | |
@@ -120,16 +120,14 @@ Every node (group, mesh, camera, instantiated model) has these calls. Lights bec
 obj.setPosition(x, y, z);            obj.getPosition(out);         // out: number[3] or Float32Array
 obj.setRotation(qx, qy, qz, qw);     obj.getRotation(out);         // quaternion
 obj.setRotationEuler(x, y, z, 'XYZ');                               // radians, three.js order names
-obj.rotateX(a); obj.rotateY(a); obj.rotateZ(a);                     // local axes
-obj.setScale(x, y, z);               obj.translate(x, y, z);       // local translate
+obj.rotateX(a); obj.rotateY(a); obj.rotateZ(a);                     // about the object's own axes
+obj.setScale(x, y, z);               obj.translate(x, y, z);       // along the object's own axes, scale ignored
 obj.lookAt(x, y, z);                                                // cameras look down -Z, and so will lights
-obj.getWorldPosition(out); obj.getWorldQuaternion(out); obj.getWorldMatrix(out);
+obj.getWorldPosition(out); obj.getWorldQuaternion(out); obj.getWorldMatrix(out);  // last frame; matrix column by column
 obj.setParent(parent);               obj.setParent(parent, { keepWorld: true }); obj.setParent(null);
 obj.setVisible(false);               obj.setDynamic(true);
-obj.setCastShadows(true);            obj.setReceiveShadows(true);
-obj.setLayers(mask);                 obj.setRenderOrder(n);        // render order sorts transparent objects
-obj.setFrustumCulled(false);         obj.setBounds(center, radius);
-obj.setMaterial(material);           obj.setMorphWeight(nameOrIndex, w);   // morph (0.2)
+obj.setLayers(mask);
+obj.setMorphWeight(nameOrIndex, w);  // morph (0.2)
 obj.setOutlined(true);               // (0.2) with post.set({ outline })
 obj.setOccluder(false);              // (0.2) WebGL2 path: stop this object hiding others; true makes it a blocker
 obj.on('click', fn); obj.off('click', fn);  // (0.2) 'pointerenter', 'pointerleave', 'pointerdown', 'pointerup'
@@ -138,7 +136,16 @@ obj.destroy();
 obj.name;                            // string, read-only after creation
 ```
 
-Getters write into the `out` array you pass, so they allocate nothing. Use a setter for static objects; direct array writes are for dynamic objects and batches.
+Meshes also have these calls. `setCastShadows` and `setReceiveShadows` are stored until shadows draw, and `setRenderOrder` orders transparent objects, which do not draw yet.
+
+```ts
+mesh.setMaterial(material);          mesh.setMesh(geometry);       // setMesh brings back the mesh's bounds
+mesh.setCastShadows(true);           mesh.setReceiveShadows(true); // false by default, as in three.js
+mesh.setRenderOrder(n);                                             // transparent objects, lower first
+mesh.setFrustumCulled(false);        mesh.setBounds(center, radius);  // center relative to the origin, before scale
+```
+
+Getters write into the `out` array you pass, so they allocate nothing. The world getters read the last frame the engine processed. Pass them a plain array or `Float64Array` to keep 64-bit positions. Use a setter for static objects; direct array writes are for dynamic objects and batches. A parent change with `keepWorld: true` works out the new local transform when the frame applies it, so set the object's transform first. These calls rebuild the draw tables, so make them at setup: `setMaterial`, `setMesh`, `setParent`, `setDynamic`, `setBounds` and `setFrustumCulled`.
 
 ## 5. Instance batches (`concepts/instances`)
 
@@ -241,25 +248,34 @@ materials.shader({ ...anyStandardOption, uniforms, textures, surface, vertexOffs
 ## 10. Textures (`api/textures`)
 
 ```ts
-const tex = await assets.loadTexture('/tex/bricks.ktx2', {
+const tex = await assets.loadTexture('/tex/bricks.png', {  // PNG, JPEG, WebP, AVIF where decoded
   colorSpace: 'srgb',        // 'srgb' for color maps; 'linear' for normal, roughness, metalness, AO
-  flipY: false,
+  flipY: true,               // default, as three.js's TextureLoader; glTF textures use false
   wrap: 'repeat',            // 'repeat' | 'clamp' | 'mirror', or [u, v]
   filter: 'linear',          // or 'nearest'
   mipmaps: true,
   anisotropy: 8,             // capped by the preset
   uvSet: 0,                  // which UV set the map uses (three.js texture.channel)
-  premultipliedAlpha: false, // true for textures stored premultiplied
+  premultipliedAlpha: false, // true to store color multiplied by alpha
 });
-textures.fromData({ width, height, depth, format: 'rgba8unorm', data });
-textures.fromImageBitmap(bitmap, { colorSpace });  // draw on an OffscreenCanvas in the worker
-tex.update(bitmap);
+textures.fromData({ width, height, depth: 1, format: 'rgba8unorm', colorSpace: 'linear', data }); // 4 numbers per texel
+textures.fromData({ width, height, format: 'rgba16float', data: new Float32Array(width * height * 4) });
+// fromImageBitmap uploads the bitmap as it is: decode with imageOrientation: 'flipY' to stand upright
+textures.fromImageBitmap(await createImageBitmap(offscreenCanvas, { imageOrientation: 'flipY' }));
+tex.update(bitmap);        // a new size is fine; or tex.update(data) of the same size
+tex.width; tex.height; tex.bytes;   // size and GPU memory
 tex.destroy();
 ```
+
+Textures return at once and upload over the next frames, within each frame's upload budget. A material draws with its color alone until the texels arrive.
 
 ## 11. Assets (`api/assets`)
 
 ```ts
+assets.onProgress((loaded, total) => page.post('loading', loaded / total));
+await assets.preload(['/tex/bricks.png', '/level.json']);      // later loads take these from memory
+const data = await assets.loadJson('/level.json');             // also loadBinary, loadImageBitmap
+// relative addresses resolve against the page; errors: E1411 download, E1412 decode, E1413 CORS
 const ship = await assets.loadGltf('/models/ship.glb');        // (0.2) Prefab
 ship.animations;           // clip names
 ship.find('Turret');       // a node inside the prefab
@@ -268,10 +284,7 @@ const env = await assets.loadEnvironment('/env/studio.ktx2');  // (0.2) from `bu
 const studio = assets.builtinEnvironment('studio');            // (0.2) neutral lighting, no download
 const sky = await assets.loadCubemap([px, nx, py, ny, pz, nz]);  // (0.2)
 const lut = await assets.loadLut('/grade.cube');                // (0.2)
-await assets.preload(['/models/ship.glb', '/tex/bricks.ktx2']);
-assets.onProgress((loaded, total) => page.post('loading', loaded / total));
-const data = await assets.loadJson('/level.json');   // also loadBinary, loadImageBitmap
-ship.destroy();   // frees GPU data once no instance uses it
+ship.destroy();   // (0.2) frees GPU data once no instance uses it
 ```
 
 ## 12. Animation (0.2) (`api/animation`)

@@ -96,6 +96,27 @@ bunx @null3d/cli shot --out shot.png --time 1.5 --gpu webgl2
 
 Beside the image, it saves `shot.json` with the frame's time, number, GPU tier and figures, and with what the page logged. When the hold fails, it prints the error and saves no image. [The `null3d` command](../cli/null3d.md) lists its options.
 
+## Image tests from the command line
+
+`bunx @null3d/cli test` runs your image tests with no test code. List them in `null3d.json` in your project's folder:
+
+```json
+{
+  "tests": [
+    { "name": "start", "sketch": "sketch.ts", "hold": 1.5 },
+    { "name": "harbor", "sketch": "sketch.ts?view=harbor", "hold": 4, "tiers": ["webgpu", "webgl2"] }
+  ]
+}
+```
+
+`test` type checks the project and runs its lint script. Then it holds each sketch at its time on each of its GPU tiers, 320 x 180 pixels unless the test gives a `size`. It compares each image with its reference in `tests/references/`, and prints one line per result, with the image files:
+
+```text
+PASS  start on webgl2: it matches the reference (image test-results/null3d/chrome-real-gpu/webgl2/start.png)
+```
+
+The first run of a new test fails, because the test has no reference yet. Open its image, and when it is right, keep it with `bunx @null3d/cli test --update-references`. [The `null3d` command](../cli/null3d.md#test) gives the settings of a test, where the files go, and what each line says.
+
 ## When a hold fails
 
 Hold mode stops at the first error and publishes it with `ok: false`:
@@ -119,6 +140,8 @@ A live engine logs an error in `onUpdate` and carries on. Hold mode stops instea
 - Pass test settings in the sketch module's address, such as `new URL('./sketch.ts?view=harbor', import.meta.url)`, and read them in the sketch with `new URL(import.meta.url).searchParams`. The page's messages reach the sketch only after the hold, because `createEngine` resolves after it.
 - Keep a reference image per GPU tier, and force the tier with `?gpu=webgpu`, `?gpu=compat` or `?gpu=webgl2`. The tiers can differ slightly at edges.
 - Compare with a small tolerance. A software GPU in CI and a real GPU differ at object edges. three.js's own rule counts a pixel as different past 10% of the color range. It fails an image when 0.1% or more of its pixels differ.
+
+The [hold mode demo](https://github.com/null3d-engine/null3d/tree/main/examples/hold-mode) drops 400 balls from random places, and moves them by each frame's step. Every live run differs. With `?hold=3`, every run draws the same frame.
 
 ## Switches for tests
 

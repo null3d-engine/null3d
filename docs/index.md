@@ -88,7 +88,7 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 | [Geometry](api/geometry.md) | Generators with three.js parameters; meshes from arrays; vertex formats; large meshes. | experimental | 0.1 |
 | [Materials](api/materials.md) | standard, unlit, shader, shadowCatcher; every option. | experimental | 0.1 |
 | [Textures](api/textures.md) | loadTexture options; fromData; fromImageBitmap; fromPass; cube maps. | experimental | 0.1 |
-| [Assets](api/assets.md) | loadGltf, loadTexture, loadEnvironment, preload, onProgress, destroy. | planned | 0.2 |
+| [Assets](api/assets.md) | loadTexture, loadImageBitmap, loadJson, loadBinary, preload, onProgress; glTF models and environments. | experimental | 0.1 |
 | [Animation](api/animation.md) | The animator; play, crossFade, layers, events; morph weights. | planned | 0.2 |
 | [Raycasting and spatial queries](api/raycast.md) | raycast, raycastAny, raycastAll, raycastBatch, overlap queries, pointer events on objects. | planned | 0.2 |
 | [Input](api/input.md) | Pointer, keyboard, touch and gamepad; action maps. | experimental | 0.1 |
@@ -113,7 +113,7 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 | [Phones and tablets](guides/phones.md) | Pixel-ratio caps; memory budgets; heat; testing on real devices. | planned | 0.1 |
 | [Custom shaders](guides/custom-shaders.md) | WGSL in sketch code; shader errors; surface functions; full shaders; uniforms and typed materials; hot reload. | experimental | 0.1 |
 | [Custom passes and render targets](guides/custom-passes.md) | Declaring passes; reading and writing named textures; layer masks. | planned | 0.2 |
-| [Loading screens and warm-up](guides/loading-screens.md) | preload; onProgress; scene.warmUp; upload budgets. | planned | 0.1 |
+| [Loading screens and warm-up](guides/loading-screens.md) | preload; onProgress; scene.warmUp; upload budgets. | experimental | 0.1 |
 | [Accessibility](guides/accessibility.md) | What the canvas tells assistive technology; keyboard use; reduced motion; pausing; loading and errors. | experimental | 0.1 |
 | [3D scenes on content pages](guides/content-pages.md) | Product and marketing pages: the fallback page, a load deadline, pausing off screen, scroll-driven cameras, second visits and crashes. | experimental | 0.1 |
 | [UI, HTML overlays and labels](guides/ui-overlays.md) | HTML UI on the page; labels that follow objects; GUI panels. | planned | 0.2 |
@@ -125,7 +125,7 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 | [Testing your sketch](guides/testing.md) | Hold mode; image tests; reading results; frames that stay the same on every run. | experimental | 0.1 |
 | [Debugging](guides/debugging.md) | Error codes; the inspector; the MCP server; the render-graph dump; common failures. | planned | 0.1 |
 | [Deploying](guides/deploying.md) | Headers on common hosts; asset caching; size budgets. | planned | 0.3 |
-| [Working with AI agents](guides/agents.md) | Installing the null3D skills in Claude Code, claude.ai and other agent tools; docs by ID; the MCP server and AGENTS.md in templates (0.3). | experimental | 0.1 |
+| [Working with AI agents](guides/agents.md) | Installing the null3D skills in Claude Code, claude.ai and other agent tools; docs by ID; the test loop; the MCP server and AGENTS.md in templates (0.3). | experimental | 0.1 |
 
 ### Shaders
 
@@ -167,14 +167,15 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 | [E1105: Unknown command](errors/E1105.md) | The engine core received a structural change it does not know, so the TypeScript side and the core come from different builds. | generated | 0.1 |
 | [E1106: Object never created](errors/E1106.md) | A call such as `setVisible` or `setParent` queued a change for an object that the engine never created. The engine creates an object when the next frame starts. When that fails, for example because its parent was destroyed, the object never joins the scene. | generated | 0.1 |
 | [E1107: Object created twice](errors/E1107.md) | The engine core received a second create command for one object, so the TypeScript side and the core disagree about the scene. | generated | 0.1 |
-| [E1108: Value out of range](errors/E1108.md) | A call received a count or an index past its limit, such as a row past the capacity of an instance batch. | generated | 0.1 |
+| [E1108: Value out of range](errors/E1108.md) | A call received a number outside the range it takes. Examples are a row past the capacity of an instance batch, an opacity above 1, and a negative radius. | generated | 0.1 |
 | [E1109: Engine memory full](errors/E1109.md) | The engine could not create or grow its WebAssembly memory. A page with worker threads gives the engine 1 GiB by default, and up to 4 GiB through the memory option of createEngine. Each instance row takes about 180 bytes, or about 230 with per-row colors. So about 5 million rows fill 1 GiB, along with the rest of the scene. A browser can refuse memory sooner, as phones often do. It can also refuse a new engine's memory while the memory of an engine that stopped a moment before is not free yet. The engine then tries again for about 3 seconds before it fails. | generated | 0.1 |
-| [E1110: Unmarked write to a static object](errors/E1110.md) | A static object's position, rotation, scale or bounding radius changed without a setter. The engine recomputes a static object only in a frame where a setter marks it or its parent moves. So such a change can show late, or never. Development builds check these values of every static object before each frame's transform update. Release builds leave the check out. | generated | 0.1 |
+| [E1110: Unmarked write to a static object](errors/E1110.md) | A static object's position, rotation, scale or bounding sphere changed without a setter. The engine recomputes a static object only in a frame where a setter marks it or its parent moves. So such a change can show late, or never. Development builds check these values of every static object before each frame's transform update. Release builds leave the check out. | generated | 0.1 |
 | [E1203: Invalid number](errors/E1203.md) | A call received a number that is not finite, such as NaN or Infinity. | generated | 0.1 |
 | [E1204: Invalid color](errors/E1204.md) | A call received a color that is not a hex string, a number from 0 to 0xffffff, or three numbers from 0 to 1. | generated | 0.1 |
 | [E1205: Unknown input name](errors/E1205.md) | An input call received a name that no key, button or action has, or `input.actions.define()` received an action name that a key or button already has. Names are case-sensitive: `KeyW` is the W key, and `keyW` names nothing. | generated | 0.1 |
 | [E1206: Invalid mesh arrays](errors/E1206.md) | geometry.fromArrays() received arrays that make no mesh. An array can have the wrong length for the vertex count, an index can name no vertex, or a value can be NaN or Infinity. Normals can also be missing, or both given and computed. | generated | 0.1 |
 | [E1207: Invalid layer mask](errors/E1207.md) | A call that sets layers received a number that is not a 32-bit layer mask: a fraction, NaN, or a number past 32 bits. | generated | 0.1 |
+| [E1208: Invalid texture](errors/E1208.md) | A call that makes or updates a texture received something it cannot use. It can be an option the engine does not know, or an image without pixels or larger than the device takes. It can also be data that does not fit the texture's size and format. | generated | 0.1 |
 | [E1301: No usable GPU path](errors/E1301.md) | The browser offers neither WebGPU nor WebGL2 for the way the engine was asked to draw. | generated | 0.1 |
 | [E1302: GPU lost](errors/E1302.md) | The browser took the GPU away while the engine drew, for example after a driver reset or a GPU crash, and the engine could not carry on. No new GPU device started, or the GPU was lost more than twice within a minute. The engine stopped drawing. | generated | 0.1 |
 | [E1303: WebAssembly SIMD missing](errors/E1303.md) | The browser runs WebAssembly without SIMD, which the engine's core needs. | generated | 0.1 |
@@ -188,6 +189,9 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 | [E1408: Hold failed](errors/E1408.md) | The sketch or the engine failed in hold mode, before the engine read the held frame back. A live engine logs an error in the sketch and carries on. Hold mode stops at the first one, so a test fails at once. | generated | 0.1 |
 | [E1409: Invalid memory maximum](errors/E1409.md) | The memory option of createEngine asked for a maximum that is not a whole number of MiB from 256 to 4096. | generated | 0.1 |
 | [E1410: Sketch module not loaded](errors/E1410.md) | The sketch module that createEngine got did not load. It did not download, or its code threw an error while the module loaded. | generated | 0.1 |
+| [E1411: Asset not downloaded](errors/E1411.md) | A loading call could not download its file. The server answered with an error, such as 404 for a missing file, or the network failed. | generated | 0.1 |
+| [E1412: Asset not decoded](errors/E1412.md) | A loading call downloaded its file but could not read it. The browser could not decode the image, as with a format it does not support, or the file was not valid JSON. | generated | 0.1 |
+| [E1413: Asset from another origin blocked](errors/E1413.md) | A loading call could not read a file from another origin. The browser reads such a file only when its server allows the page's origin with an Access-Control-Allow-Origin header. The browser gives no reason, so the server may also have been unreachable. | generated | 0.1 |
 | [E1501: Render space full](errors/E1501.md) | The scene needs more room than the renderer set aside. The full part is the draw list, the material table, the upload space or the culling pass. On WebGPU the culling pass covers 2,097,152 objects and instance rows on every device, and more on devices with larger GPU buffers. On WebGL2 the number follows the largest texture the device allows. The number for the device is in engine.capabilities.maxInstances. | generated | 0.1 |
 | [E1502: Pass input missing](errors/E1502.md) | A render pass uses a target or buffer that no pass creates, or reads one that no pass running in the frame writes. The render graph checks every pass before the frame draws. | generated | 0.1 |
 | [E1503: Target created twice](errors/E1503.md) | Two render passes create the same target, or a pass creates a target that the render graph keeps between frames. Each target has one creator, which sets its format and size. | generated | 0.1 |

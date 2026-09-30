@@ -7,12 +7,15 @@ This guide covers the image test manifest, its references, and the review that m
 - `tests/image/manifest.ts` lists every image test. One harness, `tests/lib/images.ts`, runs each test in Chrome through Playwright. The device runner's checks plan runs each test in the other browsers.
 - A sketch test names a sketch module and a hold time. The image page, `tests/pages/image.html`, draws the sketch in the engine's hold mode. The image is 320 x 180 pixels unless the test gives another size.
 - A page test names a test page that draws and publishes its image itself, such as the texture page or a benchmark page.
+- Each demo in `examples/demos.ts` is a sketch test named `demo-` and the demo's name, held at the demo's hold time. A new demo needs no entry of its own in the manifest. A unit test checks that `examples/demos.ts` lists every demo folder, and that each sketch stays under 150 lines.
 - A test draws on all three GPU tiers unless it lists fewer. A sketch draws in the pipelined thread mode unless it lists others.
 - Every thread mode of a test must draw the pixels of its first mode exactly. A thread mode changes only when the engine draws a frame, so the pixels must stay the same.
 - A test can borrow the references of another test: the same scene drawn another way, such as with `?uploads=copy`. A test can also require that every tier draws the image of its first tier.
 - A test can require values in its page's result besides the image, such as the replay page's counts of visible boxes.
 - Test images live in `tests/pages/assets/`, and sketches fetch them from their own address. The texture tests decode one small picture from PNG, JPEG, WebP and AVIF files, and make their other images in code.
 - The command-line tool's tests, `tests/image/cli.spec.ts`, run `bunx @null3d/cli shot` in the fixture project `tests/fixtures/project`. Its images must match the references of the manifest's `project` test, which draws the same sketch. Change the fixture's sketch, and its references change too.
+- The tests of `bunx @null3d/cli test`, `tests/image/cli-test.spec.ts`, run it in copies of the fixture project, each with its own `null3d.json`. A copy's references are copies of the manifest's `project` references, so its passing tests need no reference images of their own.
+- The harness and `bunx @null3d/cli test` judge images with the same code and the same default tolerance, from `packages/cli/src/compare.js`.
 - A page may paint over what GPUs draw differently, and publish it as data instead. The depth precision page paints each pixel where depth fought as the nearer surface, so every GPU matches one reference. It publishes the fighting pixels as fields.
 
 ## Adding a test

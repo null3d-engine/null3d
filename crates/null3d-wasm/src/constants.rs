@@ -6,13 +6,13 @@ use null3d_core::layers::DEFAULT_LAYERS;
 use null3d_core::scene::{NO_PARENT, flags, op};
 use null3d_core::world::MATRIX_FLOATS;
 use null3d_gpu::caps::Capabilities;
-use null3d_gpu::drawlist::{address, filter, format, sizes};
+use null3d_gpu::drawlist::{address, filter, format, sizes, upload_flags};
 use null3d_render::arrays::ArrayName;
 use null3d_render::cpu_culled::{CpuCulledConfig, MAX_SOURCE_BITS};
 use null3d_render::frame::{NO_MATERIAL, NO_MESH};
 use null3d_render::geometry::Shape;
 use null3d_render::gpu_driven::{MAX_USEFUL_BINDING_BYTES, PORTABLE_MAX_SOURCES};
-use null3d_render::textures::{DEFAULT_MAX_ANISOTROPY, DEFAULT_UPLOAD_BUDGET};
+use null3d_render::textures::{DEFAULT_MAX_ANISOTROPY, DEFAULT_UPLOAD_BUDGET, MAX_LAYERS};
 
 /// Fields of `sceneArrays`.
 pub mod scene_field {
@@ -21,6 +21,7 @@ pub mod scene_field {
     pub const SCALES: u32 = 2;
     pub const LOCAL_RADII: u32 = 3;
     pub const DIRTY_WORDS: u32 = 4;
+    pub const LOCAL_CENTERS: u32 = 5;
 }
 
 /// Fields of `batchArrays`.
@@ -136,12 +137,22 @@ pub fn typescript() -> String {
                 ("SET_DYNAMIC", op::SET_DYNAMIC),
                 ("SET_VISIBLE", op::SET_VISIBLE),
                 ("SET_LAYERS", op::SET_LAYERS),
+                ("SET_FLAGS", op::SET_FLAGS),
+                ("SET_RENDER_ORDER", op::SET_RENDER_ORDER),
+                ("KEEP_WORLD", op::KEEP_WORLD),
                 ("WORDS", COMMAND_WORDS),
             ],
         ),
         (
             "FLAG",
-            &[("DYNAMIC", flags::DYNAMIC), ("VISIBLE", flags::VISIBLE)],
+            &[
+                ("DYNAMIC", flags::DYNAMIC),
+                ("VISIBLE", flags::VISIBLE),
+                ("CAST_SHADOWS", flags::CAST_SHADOWS),
+                ("RECEIVE_SHADOWS", flags::RECEIVE_SHADOWS),
+                ("UNCULLED", flags::UNCULLED),
+                ("CUSTOM_BOUNDS", flags::CUSTOM_BOUNDS),
+            ],
         ),
         ("LAYERS", &[("DEFAULT", DEFAULT_LAYERS)]),
         (
@@ -152,6 +163,7 @@ pub fn typescript() -> String {
                 ("SCALES", scene_field::SCALES),
                 ("LOCAL_RADII", scene_field::LOCAL_RADII),
                 ("DIRTY_WORDS", scene_field::DIRTY_WORDS),
+                ("LOCAL_CENTERS", scene_field::LOCAL_CENTERS),
             ],
         ),
         (
@@ -239,6 +251,9 @@ pub fn typescript() -> String {
             &[
                 ("FORMAT_SRGB", format::RGBA8_UNORM_SRGB),
                 ("FORMAT_LINEAR", format::RGBA8_UNORM),
+                ("FORMAT_HALF_FLOAT", format::RGBA16_FLOAT),
+                ("PREMULTIPLIED_ALPHA", upload_flags::PREMULTIPLIED_ALPHA),
+                ("MAX_DEPTH", MAX_LAYERS),
                 ("WRAP_CLAMP", address::CLAMP_TO_EDGE),
                 ("WRAP_REPEAT", address::REPEAT),
                 ("WRAP_MIRROR", address::MIRROR_REPEAT),

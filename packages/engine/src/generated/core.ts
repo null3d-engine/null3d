@@ -9,10 +9,17 @@ export const COMMAND_SET_MATERIAL = 5;
 export const COMMAND_SET_DYNAMIC = 6;
 export const COMMAND_SET_VISIBLE = 7;
 export const COMMAND_SET_LAYERS = 8;
+export const COMMAND_SET_FLAGS = 9;
+export const COMMAND_SET_RENDER_ORDER = 10;
+export const COMMAND_KEEP_WORLD = 1;
 export const COMMAND_WORDS = 4;
 
 export const FLAG_DYNAMIC = 1;
 export const FLAG_VISIBLE = 2;
+export const FLAG_CAST_SHADOWS = 4;
+export const FLAG_RECEIVE_SHADOWS = 8;
+export const FLAG_UNCULLED = 16;
+export const FLAG_CUSTOM_BOUNDS = 32;
 
 export const LAYERS_DEFAULT = 1;
 
@@ -21,6 +28,7 @@ export const SCENE_FIELD_ROTATIONS = 1;
 export const SCENE_FIELD_SCALES = 2;
 export const SCENE_FIELD_LOCAL_RADII = 3;
 export const SCENE_FIELD_DIRTY_WORDS = 4;
+export const SCENE_FIELD_LOCAL_CENTERS = 5;
 
 export const BATCH_FIELD_POSITIONS = 0;
 export const BATCH_FIELD_ROTATIONS = 1;
@@ -66,6 +74,9 @@ export const TEXTURE_STAT_MAX_SIZE = 6;
 
 export const TEXTURE_FORMAT_SRGB = 9;
 export const TEXTURE_FORMAT_LINEAR = 2;
+export const TEXTURE_FORMAT_HALF_FLOAT = 4;
+export const TEXTURE_PREMULTIPLIED_ALPHA = 1;
+export const TEXTURE_MAX_DEPTH = 256;
 export const TEXTURE_WRAP_CLAMP = 0;
 export const TEXTURE_WRAP_REPEAT = 1;
 export const TEXTURE_WRAP_MIRROR = 2;

@@ -20,7 +20,7 @@ use null3d_render::frame::{FrameBuilder, FrameInput, NO_MESH, RecordError};
 use null3d_render::geometry::{Geometry, box_geometry, sphere_geometry};
 use null3d_render::gpu_driven::{GpuDrivenRenderer, RendererConfig};
 use null3d_render::graph::ALL_LAYERS;
-use null3d_render::materials::Shading;
+use null3d_render::materials::{MapSlot, Shading};
 use null3d_render::textures::{Sampling, TextureDesc};
 use null3d_render::view::{View, ViewId};
 
@@ -228,13 +228,16 @@ impl<B: FrameBuilder> World<B> {
         let texture = settings.textures_mut().create(map_desc(size)).unwrap();
         settings
             .textures_mut()
-            .set_image(texture, size, size)
+            .set_image(texture, size, size, 0)
             .unwrap();
         let material = settings
             .materials_mut()
             .create(Shading::UnlitMap, [1.0; 4])
             .unwrap();
-        settings.materials_mut().set_map(material, texture).unwrap();
+        settings
+            .materials_mut()
+            .set_map(material, MapSlot::BaseColor, texture)
+            .unwrap();
         let object = self.scene.reserve().unwrap();
         self.scene.set_local_radius(object, 1.0).unwrap();
         let commands = [
@@ -288,6 +291,7 @@ pub fn map_desc(size: u32) -> TextureDesc {
     TextureDesc {
         width: size,
         height: size,
+        depth: 1,
         format: format::RGBA8_UNORM_SRGB,
         mipmaps: true,
         sampling: Sampling::default(),

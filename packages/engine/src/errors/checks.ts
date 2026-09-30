@@ -39,12 +39,15 @@ export interface Destroyable extends Described {
 	readonly destroyedFrame: number;
 }
 
-/** Throws E1101 when a call reaches an object after it was destroyed. Call it inside `if (DEV)`. */
-export function checkLive(call: string, target: Destroyable): void {
+/**
+ * Throws E1101 when a call reaches an object after it was destroyed: the object that the call runs
+ * on, or with `argument`, an object that the call got. Call it inside `if (DEV)`.
+ */
+export function checkLive(call: string, target: Destroyable, argument = false): void {
 	if (target.destroyedFrame >= 0)
 		throw new EngineError(
 			'E1101',
-			`${call}() was called on ${target.describe()}, which was destroyed in frame ${target.destroyedFrame}.`,
+			`${call}() ${argument ? 'got' : 'was called on'} ${target.describe()}, which was destroyed in frame ${target.destroyedFrame}.`,
 		);
 }
 

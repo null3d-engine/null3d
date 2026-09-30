@@ -31,7 +31,7 @@ use null3d_render::geometry::{Geometry, OutOfMemory, Shape, generate};
 use null3d_render::gpu_driven::{
     BYTES_PER_SOURCE, GpuDrivenRenderer, MAX_USEFUL_BINDING_BYTES, RendererConfig,
 };
-use null3d_render::materials::{MaterialError, MaterialTable, Shading};
+use null3d_render::materials::{MapSlot, MaterialError, MaterialTable, Shading};
 use null3d_render::textures::{MAX_TEXTURES, Sampling, TextureDesc, TextureError};
 use null3d_render::view::ViewId;
 use wasm_bindgen::prelude::*;
@@ -184,7 +184,7 @@ fn arrays_failure(error: ArraysError) -> u32 {
 
 fn texture_failure(error: TextureError) -> u32 {
     match error {
-        TextureError::Handle(error) => core_failure(error),
+        TextureError::Core(error) => core_failure(error),
         TextureError::TooLarge { limit } => render_failure(render_detail::TEXTURE_TOO_LARGE, limit),
         TextureError::Full => render_failure(render_detail::TEXTURES_FULL, MAX_TEXTURES),
         TextureError::Unsupported => render_failure(render_detail::BAD_TEXTURE, 0),
@@ -345,8 +345,8 @@ pub fn scene_capacity() -> u32 {
 }
 
 /// The address of one of the per-slot arrays TypeScript writes (see `constants::scene_field`):
-/// positions (3 floats), rotations (4), scales (3), local bounding radii (1), or the dirty
-/// bitset's words, which TypeScript views as 32-bit words.
+/// positions (3 floats), rotations (4), scales (3), local bounding radii (1), local bounding
+/// sphere centres (3), or the dirty bitset's words, which TypeScript views as 32-bit words.
 #[wasm_bindgen(js_name = sceneArrays)]
 pub fn scene_arrays(field: u32) -> u32 {
     value_with_engine(|e| {
@@ -355,6 +355,7 @@ pub fn scene_arrays(field: u32) -> u32 {
             scene_field::ROTATIONS => address(e.scene.rotations()),
             scene_field::SCALES => address(e.scene.scales()),
             scene_field::LOCAL_RADII => address(e.scene.local_radii()),
+            scene_field::LOCAL_CENTERS => address(e.scene.local_centers()),
             _ => address(e.scene.dirty().words()),
         })
     })
@@ -865,7 +866,7 @@ pub fn set_material_map(material: u32, texture: u32) -> u32 {
         }
         match settings
             .materials_mut()
-            .set_map(material.wrapping_sub(1), map)
+            .set_map(material.wrapping_sub(1), MapSlot::BaseColor, map)
         {
             Ok(()) => {
                 e.structure_changed = true;
@@ -878,17 +879,18 @@ pub fn set_material_map(material: u32, texture: u32) -> u32 {
 
 // --- Textures ---
 
-// Creates a texture of `width` x `height` texels, with no image yet, in a layer of a texture
-// array, and returns its handle. `format` is the engine's format code: sRGB for colors, linear
-// for data. `mipmaps` asks for a whole chain of mip levels, which the GPU makes from each image.
-// The rest set its sampler: the address modes along u and v, the filters of magnified and
-// minified texels and between mip levels, and the anisotropy.
+// Creates a texture of `width` x `height` texels in `depth` layers, with no texels yet, in a
+// texture array, and returns its handle. `format` is the engine's format code: sRGB for colors,
+// linear for data, or half floats. `mipmaps` asks for a whole chain of mip levels, which the GPU
+// makes from each upload. The rest set its sampler: the address modes along u and v, the filters
+// of magnified and minified texels and between mip levels, and the anisotropy.
 /// Creates a texture and returns its handle.
 #[wasm_bindgen(js_name = createTexture)]
 #[allow(clippy::too_many_arguments)]
 pub fn create_texture(
     width: u32,
     height: u32,
+    depth: u32,
     format: u32,
     mipmaps: bool,
     wrap_u: u32,
@@ -902,6 +904,7 @@ pub fn create_texture(
         let desc = TextureDesc {
             width,
             height,
+            depth,
             format,
             mipmaps,
             sampling: Sampling {
@@ -920,17 +923,38 @@ pub fn create_texture(
     })
 }
 
-// Gives a texture an image of `width` x `height` pixels, the texture's size, and returns the
-// image's id. TypeScript sends the image to the thread that draws under that id, in id order, and
-// the image uploads once the thread has it.
+// Gives a texture an image of `width` x `height` pixels, uploaded with the `upload_flags` in
+// `flags`, and returns the image's id. TypeScript sends the image to the thread that draws under
+// that id, in id order, and the image uploads once the thread has it. An image of another size
+// moves the texture to another array, which changes the draw tables.
 /// Gives a texture an image and returns the image's id.
 #[wasm_bindgen(js_name = setTextureImage)]
-pub fn set_texture_image(texture: u32, width: u32, height: u32) -> u32 {
+pub fn set_texture_image(texture: u32, width: u32, height: u32, flags: u32) -> u32 {
     value_with_engine(|e| {
         let textures = e.renderer.settings_mut().textures_mut();
-        textures
-            .set_image(Handle::from_raw(texture), width, height)
-            .map_err(texture_failure)
+        let (image, moved) = textures
+            .set_image(Handle::from_raw(texture), width, height, flags)
+            .map_err(texture_failure)?;
+        e.structure_changed |= moved;
+        Ok(image)
+    })
+}
+
+// Gives a texture new texels of `width` x `height` in each of its layers, and returns the address
+// of the memory that TypeScript fills with them at once: tightly packed rows, layer after layer.
+// The texels upload in the texture's turn, and the store frees the memory once no list reads it.
+// Texels of another size move the texture to another array, which changes the draw tables.
+/// Gives a texture new texels and returns the address to write them at.
+#[wasm_bindgen(js_name = setTextureData)]
+pub fn set_texture_data(texture: u32, width: u32, height: u32) -> u32 {
+    value_with_engine(|e| {
+        let textures = e.renderer.settings_mut().textures_mut();
+        let (words, moved) = textures
+            .set_data(Handle::from_raw(texture), width, height)
+            .map_err(texture_failure)?;
+        let at = address(words);
+        e.structure_changed |= moved;
+        Ok(at)
     })
 }
 

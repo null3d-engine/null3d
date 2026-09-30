@@ -74,7 +74,7 @@ export const PAGES: readonly PageEntry[] = [
 	{ id: 'api/geometry', title: 'Geometry', since: '0.1', summary: 'Generators with three.js parameters; meshes from arrays; vertex formats; large meshes.' },
 	{ id: 'api/materials', title: 'Materials', since: '0.1', summary: 'standard, unlit, shader, shadowCatcher; every option.' },
 	{ id: 'api/textures', title: 'Textures', since: '0.1', summary: 'loadTexture options; fromData; fromImageBitmap; fromPass; cube maps.' },
-	{ id: 'api/assets', title: 'Assets', since: '0.2', summary: 'loadGltf, loadTexture, loadEnvironment, preload, onProgress, destroy.' },
+	{ id: 'api/assets', title: 'Assets', since: '0.1', summary: 'loadTexture, loadImageBitmap, loadJson, loadBinary, preload, onProgress; glTF models and environments.' },
 	{ id: 'api/animation', title: 'Animation', since: '0.2', summary: 'The animator; play, crossFade, layers, events; morph weights.' },
 	{ id: 'api/raycast', title: 'Raycasting and spatial queries', since: '0.2', summary: 'raycast, raycastAny, raycastAll, raycastBatch, overlap queries, pointer events on objects.' },
 	{ id: 'api/input', title: 'Input', since: '0.1', summary: 'Pointer, keyboard, touch and gamepad; action maps.' },
@@ -107,7 +107,7 @@ export const PAGES: readonly PageEntry[] = [
 	{ id: 'guides/testing', title: 'Testing your sketch', since: '0.1', summary: 'Hold mode; image tests; reading results; frames that stay the same on every run.' },
 	{ id: 'guides/debugging', title: 'Debugging', since: '0.1', summary: 'Error codes; the inspector; the MCP server; the render-graph dump; common failures.' },
 	{ id: 'guides/deploying', title: 'Deploying', since: '0.3', summary: 'Headers on common hosts; asset caching; size budgets.' },
-	{ id: 'guides/agents', title: 'Working with AI agents', since: '0.1', summary: 'Installing the null3D skills in Claude Code, claude.ai and other agent tools; docs by ID; the MCP server and AGENTS.md in templates (0.3).' },
+	{ id: 'guides/agents', title: 'Working with AI agents', since: '0.1', summary: 'Installing the null3D skills in Claude Code, claude.ai and other agent tools; docs by ID; the test loop; the MCP server and AGENTS.md in templates (0.3).' },
 
 	{ id: 'shaders/wgsl-rules', title: 'WGSL rules for portable shaders', since: '0.1', summary: 'The three shared language features; optional features; flat interpolation; limits budget; rules the build cannot check.' },
 	{ id: 'shaders/surface-functions', title: 'Surface functions', since: '0.1', summary: 'The surface record; vertex-offset functions; per-instance attributes.' },

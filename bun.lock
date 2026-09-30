@@ -30,6 +30,13 @@
         "vite": "8.3.1",
       },
     },
+    "examples": {
+      "name": "@null3d/examples",
+      "devDependencies": {
+        "@null3d/engine": "workspace:*",
+        "@webgpu/types": "0.1.74",
+      },
+    },
     "packages/cli": {
       "name": "@null3d/cli",
       "version": "0.0.0",
@@ -38,6 +45,7 @@
       },
       "dependencies": {
         "fast-png": "8.0.0",
+        "pixelmatch": "7.2.0",
         "playwright-core": "1.63.0",
       },
       "devDependencies": {
@@ -73,7 +81,6 @@
         "@null3d/vite-plugin": "workspace:*",
         "@playwright/test": "1.63.0",
         "@webgpu/types": "0.1.74",
-        "pixelmatch": "7.2.0",
         "vite": "8.3.1",
       },
     },
@@ -148,6 +155,8 @@
     "@null3d/cli": ["@null3d/cli@workspace:packages/cli"],
 
     "@null3d/engine": ["@null3d/engine@workspace:packages/engine"],
+
+    "@null3d/examples": ["@null3d/examples@workspace:examples"],
 
     "@null3d/tests": ["@null3d/tests@workspace:tests"],
 

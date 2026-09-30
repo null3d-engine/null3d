@@ -50,6 +50,8 @@ export interface RendererSetup {
 	powerPreference?: PowerPreference;
 	/** The frame rate that ?fps= holds, or undefined to draw at the display's rate. */
 	fps?: number;
+	/** The most frames that ?queue= lets wait on the GPU, or undefined for the engine's limit. */
+	queue?: number;
 	/** Hold mode: the thread runs no frame loop, and draws the held frame once, when a capture asks. */
 	hold?: boolean;
 }
@@ -57,6 +59,8 @@ export interface RendererSetup {
 export type SketchWorkerInit = CoreHandoff & {
 	type: 'init';
 	sketchUrl: string;
+	/** The page's address, which the sketch's relative asset addresses resolve against. */
+	pageUrl: string;
 	/**
 	 * The key names, in the order of the numbers that the page gives keys in the input ring. The
 	 * page hands them over, so the sketch worker's file needs no copy.
