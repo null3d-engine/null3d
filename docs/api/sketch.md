@@ -8,7 +8,7 @@ summary: "The context object: scene, assets, materials, geometry, textures, inpu
 
 # Sketch API: defineSketch and the context
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. The context fields `assets`, `textures`, `quality`, `post`, `render`, `ui` and `debug` are not built yet, so coding agents must not use them.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. The context fields `assets`, `textures`, `post`, `render`, `ui` and `debug` are not built yet, so coding agents must not use them.
 
 In null3D, a 3D scene is called a sketch. A sketch module builds the scene and updates it every frame, and its default export is `defineSketch(setup)`. The engine loads the module, calls `setup` once with the sketch's context, and then calls the callbacks that `setup` returns.
 
@@ -75,6 +75,7 @@ An option out of its range fails the start with [E1214](../errors/E1214.md), bef
 | `geometry` | Mesh generators, such as `geometry.box` and `geometry.sphere` |
 | `materials` | Material factories: [Materials](materials.md) |
 | `input` | Pointer, touch, keyboard and gamepad input, and action maps: [Input](input.md) |
+| `quality` | The quality preset that the engine runs, and its settings: [Quality API](quality.md) |
 | `time` | Sketch time in seconds, the frame's step and the frame number: [Time](time.md) |
 | `engine` | The canvas's size, and what the device can do: [The engine field](#the-engine-field) |
 | `preferences` | What the user's system asks of every page, such as less motion: [Accessibility](../guides/accessibility.md) |
@@ -82,7 +83,7 @@ An option out of its range fails the start with [E1214](../errors/E1214.md), bef
 
 ## The engine field
 
-`engine.viewport` holds the canvas's size in CSS pixels, as `width` and `height`. Its `pixelRatio` gives the device pixels per CSS pixel that the engine draws with. That is the display's ratio, capped by the `maxPixelRatio` option of `createEngine`. The engine reads the size at the start of each frame, so it stays the same throughout a frame. The object changes in place, so read its fields when you need them.
+`engine.viewport` holds the canvas's size in CSS pixels, as `width` and `height`. Its `pixelRatio` gives the device pixels per CSS pixel that the engine draws with. That is the display's ratio, capped by the `maxPixelRatio` setting of [`ctx.quality`](quality.md). The engine reads the size at the start of each frame, so it stays the same throughout a frame. The object changes in place, so read its fields when you need them.
 
 `engine.capabilities` holds the values of `engine.capabilities` on the page: the GPU path, its optional features and limits, the depth mode, and the most objects the device draws. [Page API: createEngine](engine.md#what-the-engine-reports) describes them. Check a capability before you use an optional feature, and never check GPU or browser names.
 
@@ -195,6 +196,7 @@ What the engine passes to a sketch's setup function.
 | `textures: Textures` | Textures from decoded images and from data. |
 | `assets: Assets` | Loading of textures and files, with a count of downloads for loading screens. |
 | `input: Input` | Pointer, touch, keyboard and gamepad input, which the page forwards to the sketch. |
+| `quality: Quality` | The quality preset that the engine runs, its settings, and a notice when they change. |
 | `time: SketchTime` | Sketch time, the frame's step and the frame number. |
 | `engine: SketchEngine` | The canvas's size, and what the device can do. |
 | `preferences: SketchPreferences` | What the user's system asks of every page, and a notice when that changes. |
@@ -263,6 +265,6 @@ The canvas's size. The engine reads it at the start of each frame, so it stays t
 | --- | --- |
 | `readonly width: number` | The canvas width in CSS pixels. |
 | `readonly height: number` | The canvas height in CSS pixels. |
-| `readonly pixelRatio: number` | Device pixels per CSS pixel that the engine draws with: the display's ratio, capped by `createEngine`'s `maxPixelRatio`. |
+| `readonly pixelRatio: number` | Device pixels per CSS pixel that the engine draws with: the display's ratio, capped by the `maxPixelRatio` quality setting. |
 
 <!-- null3d:api:end -->
