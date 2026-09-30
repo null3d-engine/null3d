@@ -101,9 +101,8 @@ Three sweeps measure the defaults that are still open: the latency mode, the job
 - `--android` drives Chrome on the phone instead. It makes five loads of each kind, in every thread mode, cold and warm, on both networks. [Device sessions](devices.md#startup-times) says how cold loads avoid the phone's caches without clearing them.
 - Chrome refuses network limits on a worker. It applies the page's limit to a worker's own requests only once the debugging protocol's Network domain is on in that worker. So on Slow 4G the tool attaches to each worker, which waits at its start until the domain is on.
 - Without that step, the workers would load the core's loader and the sketch at full speed. The first frame would then come about a second early.
-- On Slow 4G the start is a chain of round trips of at least 562 ms each. After the page and its script come the core and the probe worker, then the other workers. Then the workers load the core's loader, and then the sketch.
-- In single-threaded mode the sketch downloads with the core. The page asks for the core's loader and the renderer once the core has compiled, and both take about one round trip.
-- The engine starts its workers only once the core has compiled. On Slow 4G their scripts and imports therefore add two round trips after the core.
+- On Slow 4G the start is a chain of round trips of at least 562 ms each. After the page and its script come the core, the probe worker and every other download that the start needs. With worker threads these are the workers and the sketch module. In single-threaded mode they are the core's loader, the sketch module and the renderer. The workers then load the core's loader while the core still downloads.
+- So the core is the last download in most modes, and the engine is ready soon after it. [Implementation notes](implementation-notes.md#start-order) give the order and the times.
 - The MacBook Pro was measured in Chrome 154 on 30 September 2026. A cold load in the pipelined mode finished its first frame after 4.0 s on Slow 4G. A warm load took 0.7 s, and both took about 0.1 s at full speed.
 
 ## Soak
