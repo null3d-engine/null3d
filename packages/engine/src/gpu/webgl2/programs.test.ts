@@ -1,16 +1,16 @@
 import { describe, expect, it } from 'bun:test';
 import {
+	everyShader,
 	type GlslProgram,
 	type GlslStage,
-	SHADERS,
 	type ShaderBinding,
 } from '../../generated/shaders';
 import { MIN_UNIFORM_BLOCK_SLOTS, slotOf, UPLOAD_UNIT } from './programs';
 
 /** Every GLSL stage that the shader build writes, by a name that says where it comes from. */
-function glslStages(): [string, GlslStage][] {
+async function glslStages(): Promise<[string, GlslStage][]> {
 	const stages: [string, GlslStage][] = [];
-	for (const [shader, variants] of Object.entries(SHADERS)) {
+	for (const [shader, variants] of Object.entries(await everyShader())) {
 		for (const [variant, built] of Object.entries(variants)) {
 			const programs: Record<string, GlslProgram> = built.glsl ?? {};
 			for (const [pipeline, program] of Object.entries(programs)) {
@@ -24,8 +24,8 @@ function glslStages(): [string, GlslStage][] {
 
 const key = (b: ShaderBinding) => `${b.group}:${b.binding}`;
 
-describe('WebGL2 slots of bind groups', () => {
-	const stages = glslStages();
+describe('WebGL2 slots of bind groups', async () => {
+	const stages = await glslStages();
 
 	it('finds the GLSL shaders', () => {
 		expect(stages.length).toBeGreaterThan(0);

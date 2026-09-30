@@ -54,7 +54,7 @@ const off = engine.onSketchMessage((type, data) => { /* ... */ }); // the first 
 off();                                   // every on... call returns a function that removes its handler
 engine.detach();                         // single-page apps: canvas off the page, engine paused, scene kept
 engine.attach(container);                // canvas back on the page; the engine resumes with no new start
-const image = await engine.capture();             // Blob of the next complete frame
+const image = await engine.capture();             // PNG Blob of the next frame; E1414 after destroy()
 // engine.registerVideo and textures.fromVideo come after 1.0; recipe 14 shows the workaround
 engine.labels.bind('hp-12', element);             // (0.2) HTML label that follows an object
 await engine.requestPointerLock();                // (0.2) for first-person controls
@@ -138,7 +138,7 @@ obj.destroy();
 obj.name;                            // string, read-only after creation
 ```
 
-Meshes also have these calls. `setCastShadows` and `setReceiveShadows` rebuild the draw tables, so set them at setup; `setRenderOrder` orders transparent objects, which do not draw yet.
+Meshes also have these calls. `setRenderOrder` orders transparent objects, which do not draw yet.
 
 ```ts
 mesh.setMaterial(material);          mesh.setMesh(geometry);       // setMesh brings back the mesh's bounds
@@ -147,7 +147,7 @@ mesh.setRenderOrder(n);                                             // transpare
 mesh.setFrustumCulled(false);        mesh.setBounds(center, radius);  // center relative to the origin, before scale
 ```
 
-Getters write into the `out` array you pass, so they allocate nothing. The world getters read the last frame the engine processed. Pass them a plain array or `Float64Array` to keep 64-bit positions. Use a setter for static objects; direct array writes are for dynamic objects and batches. A parent change with `keepWorld: true` works out the new local transform when the frame applies it, so set the object's transform first. These calls rebuild the draw tables, so make them at setup: `setMaterial`, `setMesh`, `setParent`, `setDynamic`, `setBounds` and `setFrustumCulled`.
+Getters write into the `out` array you pass, so they allocate nothing. The world getters read the last frame the engine processed. Pass them a plain array or `Float64Array` to keep 64-bit positions. Use a setter for static objects; direct array writes are for dynamic objects and batches. A parent change with `keepWorld: true` works out the new local transform when the frame applies it, so set the object's transform first. These calls rebuild the draw tables, so make them at setup: `setMaterial`, `setMesh`, `setParent`, `setDynamic`, `setBounds`, `setFrustumCulled`, `setCastShadows` and `setReceiveShadows`.
 
 ## 5. Instance batches (`concepts/instances`)
 

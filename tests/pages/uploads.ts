@@ -4,6 +4,7 @@
 // every target buffer back and checks each byte against what that frame uploaded. It also reports
 // the WebGPU errors each frame raised, which explain lost uploads.
 import {
+	loadWgslShaders,
 	STAGING_MAX_BYTES,
 	STAGING_MIN_BYTES,
 	UploadRoutes,
@@ -33,7 +34,14 @@ run('uploads', async () => {
 		uncaptured.push((event as GPUUncapturedErrorEvent).error.message);
 	});
 	// Every upload in the ring's range takes the ring, whichever route this device favors.
-	const backend = new WebGPUBackend(device, undefined, 'rgba8unorm', new UploadRoutes(true));
+	const shaders = await loadWgslShaders(0);
+	const backend = new WebGPUBackend(
+		device,
+		undefined,
+		'rgba8unorm',
+		shaders,
+		new UploadRoutes(true),
+	);
 	const total = SIZES.reduce((sum, size) => sum + size, 0);
 	const memory = new TestMemory(total + SIZES.length * 256 + 64 * KIB, 256);
 	const sources = SIZES.map((size) => memory.put(new Uint8Array(size)));

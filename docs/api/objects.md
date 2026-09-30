@@ -111,7 +111,7 @@ A mesh has these calls besides the ones above. Like the structural calls, they t
 - `setFrustumCulled(false)` makes the engine draw the mesh even when its bounds are out of view, as three.js's `frustumCulled = false` does.
 - `setBounds(center, radius)` gives the mesh a bounding sphere of its own, which culling tests instead of the mesh's sphere. The center is relative to the object's origin, and both values are before the object's scale. Use it when a shader moves vertices outside the mesh's sphere: bounds that cover the moved vertices keep culling at work, where `setFrustumCulled(false)` turns it off. A negative radius throws E1108 in development builds.
 
-`setMaterial`, `setMesh`, `setBounds` and `setFrustumCulled` rebuild the draw tables, so call them at setup or behind a loading screen. The [performance guide](../guides/performance.md#objects-during-play) lists the cost of each call. [Culling](../concepts/culling.md#bounds-that-you-set) explains how the engine culls with your bounds.
+`setMaterial`, `setMesh`, `setBounds`, `setFrustumCulled`, `setCastShadows` and `setReceiveShadows` rebuild the draw tables, so call them at setup or behind a loading screen. The [performance guide](../guides/performance.md#objects-during-play) lists the cost of each call. [Culling](../concepts/culling.md#bounds-that-you-set) explains how the engine culls with your bounds.
 
 ## Names
 

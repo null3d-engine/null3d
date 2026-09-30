@@ -124,6 +124,8 @@ The shader compiler is the shader crate built as a WebAssembly module. Build too
 - Without `KHR_parallel_shader_compile`, a WebGL2 program never counts as building, and its first draw waits for its compile. The switch `?compile=wait` gives that path in a browser that has the extension.
 - A warm-up in the setup records a frame itself, since no frame loop runs yet. So the renderer must exist before the setup: low-latency and single-threaded modes start it first.
 - Sketch code that runs between frames, such as a message handler or the code after a warm-up, gets fresh views of engine memory first. The single-threaded build's memory detaches every view when it grows, which a frame may have done.
+- The engine's shaders ship in one module for each GPU path and each value of the permutation bits that a device fixes ([D-13](decisions/D-13-shader-variants.md)). The thread that draws starts to load its module while it waits for the WebGPU device or the WebGL2 context. The renderer starts once both are ready.
+- A device module holds the builds of each shader that a device with its bits asks for. So the culling shader, which has no bits, is in every WGSL module. A device whose bits have no module fails to start its renderer, with an error that names the bits.
 
 ## Depth on WebGL2
 

@@ -49,8 +49,8 @@ This repository holds the null3D engine, its tools, its documentation and its ag
 | `bun run docs:style` | Check the writing rules in all published Markdown |
 | `bun run skills` | Sync `.claude/skills/` from `skills/`, then check the skills |
 | `bun run skills:check` | Check the skills without syncing |
-| `bun run shaders` | Build every shader variant in the shader manifest and write the generated TypeScript module |
-| `bun run shaders:check` | Fail when the committed shader module is out of date |
+| `bun run shaders` | Build every shader variant in the shader manifest and write the generated TypeScript modules: the main module, and the engine's shaders in one module for each GPU path and each value of the bits a device fixes |
+| `bun run shaders:check` | Fail when a committed shader module is out of date |
 | `bun run check` | Lint and format check (Biome) |
 | `bun run check:fix` | Lint and format, fixing what Biome can |
 | `bun run typecheck` | TypeScript check |
