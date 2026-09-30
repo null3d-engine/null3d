@@ -141,6 +141,8 @@ A live engine logs an error in `onUpdate` and carries on. Hold mode stops instea
 - Keep a reference image per GPU tier, and force the tier with `?gpu=webgpu`, `?gpu=compat` or `?gpu=webgl2`. The tiers can differ slightly at edges.
 - Compare with a small tolerance. A software GPU in CI and a real GPU differ at object edges. three.js's own rule counts a pixel as different past 10% of the color range. It fails an image when 0.1% or more of its pixels differ.
 
+The [hold mode demo](https://github.com/null3d-engine/null3d/tree/main/examples/hold-mode) drops 400 balls from random places, and moves them by each frame's step. Every live run differs. With `?hold=3`, every run draws the same frame.
+
 ## Switches for tests
 
 | Switch | Effect |

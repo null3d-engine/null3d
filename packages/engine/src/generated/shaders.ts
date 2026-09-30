@@ -102,9 +102,9 @@ struct Bucket {
     radius: f32,
     first_draw: u32,
     draws: u32,
-    pad0_: u32,
-    pad1_: u32,
-    pad2_: u32,
+    center_x: f32,
+    center_y: f32,
+    center_z: f32,
 }
 
 const CELL_SHIFT: u32 = 23u;
@@ -158,45 +158,46 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     let r1_ = (_e52 + vec4<f32>(0f, 0f, 0f, offset.y));
     let _e65 = matrices[((i * 3u) + 2u)];
     let r2_ = (_e65 + vec4<f32>(0f, 0f, 0f, offset.z));
-    let center = vec3<f32>(r0_.w, r1_.w, r2_.w);
-    let scale = max(length(vec3<f32>(r0_.x, r1_.x, r2_.x)), max(length(vec3<f32>(r0_.y, r1_.y, r2_.y)), length(vec3<f32>(r0_.z, r1_.z, r2_.z))));
     let bucket = buckets[b];
+    let local_center = vec4<f32>(bucket.center_x, bucket.center_y, bucket.center_z, 1f);
+    let center = vec3<f32>(dot(r0_, local_center), dot(r1_, local_center), dot(r2_, local_center));
+    let scale = max(length(vec3<f32>(r0_.x, r1_.x, r2_.x)), max(length(vec3<f32>(r0_.y, r1_.y, r2_.y)), length(vec3<f32>(r0_.z, r1_.z, r2_.z))));
     let radius = (bucket.radius * scale);
     loop {
-        let _e99 = p;
-        if (_e99 < 6u) {
+        let _e104 = p;
+        if (_e104 < 6u) {
         } else {
             break;
         }
         {
-            let _e104 = p;
-            let plane = params.planes[_e104];
+            let _e109 = p;
+            let plane = params.planes[_e109];
             if ((dot(plane.xyz, center) + plane.w) < -(radius)) {
                 return;
             }
         }
         continuing {
-            let _e114 = p;
-            p = (_e114 + 1u);
+            let _e119 = p;
+            p = (_e119 + 1u);
         }
     }
-    let _e124 = atomicAdd((&indirect[((bucket.first_draw * INDIRECT_WORDS) + 1u)]), 1u);
+    let _e129 = atomicAdd((&indirect[((bucket.first_draw * INDIRECT_WORDS) + 1u)]), 1u);
     loop {
-        let _e126 = d;
-        if (_e126 < bucket.draws) {
+        let _e131 = d;
+        if (_e131 < bucket.draws) {
         } else {
             break;
         }
         {
-            let _e130 = d;
-            let _e139 = atomicAdd((&indirect[(((bucket.first_draw + _e130) * INDIRECT_WORDS) + 1u)]), 1u);
+            let _e135 = d;
+            let _e144 = atomicAdd((&indirect[(((bucket.first_draw + _e135) * INDIRECT_WORDS) + 1u)]), 1u);
         }
         continuing {
-            let _e141 = d;
-            d = (_e141 + 1u);
+            let _e146 = d;
+            d = (_e146 + 1u);
         }
     }
-    let dst = ((bucket.base + _e124) * 4u);
+    let dst = ((bucket.base + _e129) * 4u);
     visible[dst] = r0_;
     visible[(dst + 1u)] = r1_;
     visible[(dst + 2u)] = r2_;
