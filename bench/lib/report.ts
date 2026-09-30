@@ -1,141 +1,28 @@
-// Benchmark results: the summary of repeated runs of one page, the comparison of null3d with
-// three.js's faster renderer, the table of a sweep of job worker counts, and a line chart as SVG.
-// Everything here is pure, so the benchmark command and the runner's results share it.
+// Benchmark results: the comparison of null3d with three.js's faster renderer, the table of a sweep
+// of job worker counts, and a line chart as SVG. The median and spread of repeated runs of one page
+// come from the benchmark protocol in the command-line tool's package, which its bench command
+// shares. Everything here is pure, so the benchmark command and the runner's results share it.
 //
 // A frame's CPU time includes the sketch's code, which moves the scene alike in every engine's version
 // of a scene. A report also compares each engine's own work: the CPU time its own code takes on its
 // busiest thread. null3d times the sketch's update itself. three.js calls its own code from inside
 // the sketch's loop, so its own work is its frame time less the scene code, which the scene-code page
 // times alone.
+import { ms, type RunSummary, type TimedRun } from '../../packages/cli/src/protocol.js';
 import { SCENE_CODE } from './parity';
 
+export { median, ms, summarizeRuns } from '../../packages/cli/src/protocol.js';
+export type { RunSummary };
+
 /** What a timed benchmark page publishes. null3d pages add the engine's full frame metrics. */
-export interface BenchResult {
+export interface BenchResult extends TimedRun {
 	ok: boolean;
 	error?: string;
 	scene: string;
 	renderer: string;
 	n: number;
-	frames: number;
-	/** CPU time per frame: the main thread for three.js, the busiest thread for null3d. */
-	cpuMs: { median: number; p95: number; p99: number; mean: number };
-	/** three.js pages: the part of each frame that the scene update took. */
-	updateMs?: { median: number };
-	/** Time between presented frames. */
-	intervalMs: { median: number; p95: number; p99: number };
-	/** Pages that time their own frames: frames per second drawn. null3d pages report it in `stats`. */
-	presentedFps?: number;
 	/** null3d pages: how the engine ran, such as how many job workers it started. */
 	mode?: { jobWorkers: number };
-	stats?: {
-		cpuMsAllThreads: { median: number };
-		gpuMs: { median: number } | null;
-		presentedFps?: number;
-		completedFps?: number | null;
-		gpuLatencyMs?: { median: number } | null;
-		refreshHz?: number | null;
-		uploadBytes: { median: number };
-		drawCalls: { median: number };
-		/** Entries per frame in the list of visible objects; null where the GPU culls. */
-		visibleEntries?: { median: number } | null;
-		threads: Record<
-			string,
-			{ busyMs: { median: number }; phases: Record<string, { median: number }> }
-		>;
-	};
-}
-
-/** Repeated runs of one page, summarized. */
-export interface RunSummary {
-	runs: number;
-	/** The median of the runs' median CPU times, and their lowest and highest. */
-	cpuMs: { median: number; min: number; max: number };
-	cpuP95Ms: number;
-	/** Pacing: the median of the runs' 95th percentiles of the time between presented frames. */
-	intervalP95Ms: number;
-	/** Pacing: the median of the runs' 99th percentiles of the time between presented frames. */
-	intervalP99Ms: number;
-	/** The scene update's share of a frame: the sketch's update phase for null3d. */
-	updateMs?: number;
-	/** Frames per second drawn: each run's frames over the time they took. */
-	presentedFps?: number;
-	/** null3d only: CPU time summed over threads, GPU time, and the median time of each phase. */
-	allThreadsMs?: number;
-	/** null3d only: the median CPU time per frame of each thread, by name. */
-	threadsMs?: Record<string, number>;
-	gpuMs?: number | null;
-	phases?: Record<string, number>;
-	uploadBytes?: number;
-	drawCalls?: number;
-	/**
-	 * null3d on WebGL2 only, where the job workers cull: entries per frame in the list of visible
-	 * objects. Null where the GPU culls.
-	 */
-	visibleEntries?: number | null;
-	/** null3d only: frames per second finished by the GPU, and the GPU's delay. */
-	completedFps?: number | null;
-	gpuLatencyMs?: number | null;
-	/** null3d only: the display's refresh rate as the engine measured it. */
-	refreshHz?: number | null;
-}
-
-/** The middle value, or the mean of the two middle values. */
-export function median(values: readonly number[]): number {
-	const sorted = [...values].sort((a, b) => a - b);
-	const middle = sorted.length >> 1;
-	if (sorted.length === 0) return 0;
-	return sorted.length % 2 === 1
-		? (sorted[middle] as number)
-		: ((sorted[middle - 1] as number) + (sorted[middle] as number)) / 2;
-}
-
-/** Summarizes runs of one page; failed runs must be left out first. */
-export function summarizeRuns(results: readonly BenchResult[]): RunSummary {
-	const cpu = results.map((r) => r.cpuMs.median);
-	const summary: RunSummary = {
-		runs: results.length,
-		cpuMs: { median: median(cpu), min: Math.min(...cpu), max: Math.max(...cpu) },
-		cpuP95Ms: median(results.map((r) => r.cpuMs.p95)),
-		intervalP95Ms: median(results.map((r) => r.intervalMs.p95)),
-		intervalP99Ms: median(results.map((r) => r.intervalMs.p99)),
-	};
-	const known = (values: (number | null | undefined)[]) =>
-		values.filter((v): v is number => v != null);
-	const presented = known(results.map((r) => r.stats?.presentedFps ?? r.presentedFps));
-	if (presented.length > 0) summary.presentedFps = median(presented);
-	const updates = results.map((r) => r.updateMs?.median).filter((v) => v !== undefined);
-	if (updates.length === results.length) summary.updateMs = median(updates);
-	const stats = results.map((r) => r.stats).filter((s) => s !== undefined);
-	if (stats.length === results.length && stats.length > 0) {
-		summary.allThreadsMs = median(stats.map((s) => s.cpuMsAllThreads.median));
-		const gpu = stats.map((s) => s.gpuMs?.median).filter((v) => v !== undefined);
-		summary.gpuMs = gpu.length > 0 ? median(gpu) : null;
-		summary.uploadBytes = median(stats.map((s) => s.uploadBytes.median));
-		summary.drawCalls = median(stats.map((s) => s.drawCalls.median));
-		const orNull = (values: number[]) => (values.length > 0 ? median(values) : null);
-		summary.visibleEntries = orNull(known(stats.map((s) => s.visibleEntries?.median)));
-		summary.completedFps = orNull(known(stats.map((s) => s.completedFps)));
-		summary.gpuLatencyMs = orNull(known(stats.map((s) => s.gpuLatencyMs?.median)));
-		summary.refreshHz = orNull(known(stats.map((s) => s.refreshHz)));
-		const phases: Record<string, number[]> = {};
-		const threads: Record<string, number[]> = {};
-		for (const s of stats) {
-			for (const [thread, { busyMs, phases: byPhase }] of Object.entries(s.threads)) {
-				threads[thread] = [...(threads[thread] ?? []), busyMs.median];
-				for (const [phase, { median: value }] of Object.entries(byPhase)) {
-					const key = `${thread}.${phase}`;
-					phases[key] = [...(phases[key] ?? []), value];
-				}
-			}
-		}
-		const medians = (lists: Record<string, number[]>) =>
-			Object.fromEntries(Object.entries(lists).map(([key, values]) => [key, median(values)]));
-		summary.phases = medians(phases);
-		summary.threadsMs = medians(threads);
-		const update = summary.phases['sketch-worker.update'] ?? summary.phases['main.update'];
-		if (update !== undefined) summary.updateMs = update;
-	}
-	return summary;
 }
 
 /** null3d's value of a measure against three.js's lowest value of it over its renderers. */
@@ -240,9 +127,6 @@ export interface SummaryRow {
 	jobs?: number;
 	summary: RunSummary;
 }
-
-/** Milliseconds for a report: two decimals, or n/a. */
-export const ms = (value: number | null | undefined) => (value == null ? 'n/a' : value.toFixed(2));
 
 /**
  * Bytes uploaded per visible entry: the median upload per frame over the median count of visible

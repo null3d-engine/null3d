@@ -172,7 +172,7 @@ export class SketchRunner {
 	}
 
 	/** Records the time since the previous phase ended as a phase of the frame. */
-	private endPhase(phase: Phase): void {
+	private endPhase(phase: number): void {
 		const now = performance.now();
 		this.record.addPhase(phase, now - this.phaseStart);
 		this.phaseStart = now;
