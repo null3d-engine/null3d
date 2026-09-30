@@ -10,7 +10,7 @@ summary: "Setters and getters; parents; flags; destroy."
 
 > Ships in null3D 0.1. The API is experimental, so it can still change between versions.
 
-Groups, meshes and cameras are objects: nodes in the scene with a position, a rotation, a scale and a parent. Each class extends `Object3D`, so the calls in the first sections of this page work on all three. Meshes have more calls, which [Mesh calls](#mesh-calls) lists. Lights are not objects in this version, and [Lights](lights.md) gives their own calls.
+Groups, meshes, cameras and lights are objects: nodes in the scene with a position, a rotation, a scale and a parent. Each class extends `Object3D`, so the calls in the first sections of this page work on all of them. Meshes have more calls, which [Mesh calls](#mesh-calls) lists, and [Lights](lights.md) gives the calls of each kind of light.
 
 ```ts
 import { defineSketch, vec3 } from '@null3d/engine';
@@ -47,7 +47,7 @@ Each object has a position, a rotation and a scale, all relative to its parent. 
 - `setRotation(x, y, z, w)` sets the rotation as a quaternion. `setRotationEuler(x, y, z, order)` sets it from Euler angles, with three.js's axis orders. The default order is `'XYZ'`.
 - `rotateX(angle)`, `rotateY(angle)` and `rotateZ(angle)` turn the object about its own axes, as three.js's calls of the same names do.
 - `translate(x, y, z)` moves the object along its own axes, as three.js's `translateX`, `translateY` and `translateZ` do together. The object's rotation turns the vector, but its scale does not stretch it. So `camera.translate(0, 0, -1)` moves a camera 1 m forward.
-- `lookAt(x, y, z)` turns a mesh or a group so that its +Z axis points at a point. A camera turns its -Z axis there instead. The call assumes that the object's parents are not rotated.
+- `lookAt(x, y, z)` turns a mesh or a group so that its +Z axis points at a point. A camera or a light turns its -Z axis there instead. The call assumes that the object's parents are not rotated.
 
 Setters write straight into the engine's memory and mark the object as changed. They send no message and allocate nothing, so `onUpdate` can call them for many objects in every frame. In development builds, a setter that gets `NaN` or an infinite number throws E1203.
 
