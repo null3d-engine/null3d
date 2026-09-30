@@ -24,8 +24,8 @@
 //!
 //! Each part has a module: `layout` keeps the sources, buckets and clusters, `data` the data
 //! textures and their rings, `cull` culls each view on the job workers, and `opaque` records the
-//! opaque passes. The render graph ([`crate::frame_graph`]) orders the passes and begins their
-//! render passes.
+//! opaque passes. The debug lines pass, which both builders share, is [`crate::debug_lines`]. The
+//! render graph ([`crate::frame_graph`]) orders the passes and begins their render passes.
 //!
 //! # Cells
 //!
@@ -56,6 +56,7 @@ use null3d_core::culling::BucketedCull;
 use null3d_core::snapshot::SCENE_TARGET;
 use null3d_gpu::drawlist::{DrawList, Op, buffer_usage as usage, sizes};
 
+use crate::debug_lines::{LineIds, LinesPass};
 use crate::frame::{
     FrameBuilder, FrameInput, MeshBuffers, ParityLists, PipelineTable, RecordError, SceneSettings,
     UploadArena, drawn_rows, floats_as_bytes,
@@ -87,8 +88,15 @@ mod ids {
         frame(view) + 1
     }
 
+    /// The vertices of the debug lines.
+    pub const LINES: u32 = VIEW_BUFFERS + 2 * MAX_VIEWS as u32;
     /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
-    pub const PAGES: u32 = VIEW_BUFFERS + 2 * MAX_VIEWS as u32;
+    pub const PAGES: u32 = LINES + 1;
+
+    /// The render pipeline of the debug lines.
+    pub const LINES_PIPELINE: u32 = 1;
+    /// The render pipelines of the scene's objects, from this id on.
+    pub const MESH_PIPELINES: u32 = 2;
 
     pub const RESIDENT: u32 = 1;
     /// The ring of streamed textures, one per ring slot.
@@ -175,6 +183,7 @@ pub struct CpuCulledRenderer {
     clusters: Clusters,
     culling: Culling,
     opaque: Opaque,
+    lines: LinesPass,
     /// The vertex pages' vertex and index buffers.
     meshes: MeshBuffers,
     pipelines: PipelineTable,
@@ -200,8 +209,12 @@ impl CpuCulledRenderer {
             clusters: Clusters::default(),
             culling: Culling::default(),
             opaque: Opaque::new(config.multi_draw),
+            lines: LinesPass::new(LineIds {
+                pipeline: ids::LINES_PIPELINE,
+                buffer: ids::LINES,
+            }),
             meshes: MeshBuffers::new(ids::PAGES),
-            pipelines: PipelineTable::default(),
+            pipelines: PipelineTable::starting_at(ids::MESH_PIPELINES),
             textures: SharedTextures::default(),
             streamed_slot: RingSlot::default(),
             created: false,
@@ -441,12 +454,13 @@ impl CpuCulledRenderer {
             self.create_fixed(list)?;
         }
         self.graph.sync_views(self.settings.views());
+        self.graph.set_debug_lines(!input.lines.is_empty());
         self.graph.prepare(list, input.canvas)?;
         let views = self.settings.views().len();
         let first_new = self.opaque.views();
         self.opaque.add_views(list, views)?;
         let rebuilt = self.layout.built_in == input.frame;
-        arena.reset(self.upload_bound());
+        arena.reset(self.upload_bound() + LinesPass::upload_bytes(&input.lines));
         self.meshes
             .upload(list, arena, self.settings.meshes().pages())?;
         self.opaque
@@ -494,14 +508,26 @@ impl CpuCulledRenderer {
                     .upload(list, arena, view, upload, &self.layout)?;
             }
         }
+        let camera = self.culling.frame(ViewId::CAMERA);
+        self.lines.upload(
+            list,
+            arena,
+            &input.lines,
+            camera.map(|values| &values.camera),
+            self.config.samples,
+        )?;
 
-        let (culling, opaque) = (&self.culling, &self.opaque);
+        let (culling, opaque, lines) = (&self.culling, &self.opaque, &self.lines);
         let (layout, meshes) = (&self.layout, &self.meshes);
         self.graph
             .record(list, self.settings.clear_color(), |list, role| match role {
                 Role::Opaque(view) if culling.frame(view).is_some() => {
                     let starts = culling.culled(frame, view).bucket_starts();
                     opaque.record(list, arena, view, starts, layout, meshes)
+                }
+                Role::DebugLines => {
+                    let slot = opaque.frame_slot(ViewId::CAMERA);
+                    lines.record(list, ids::frame_group(ViewId::CAMERA), &[slot, slot])
                 }
                 _ => Ok(()),
             })?;
@@ -556,6 +582,7 @@ impl FrameBuilder for CpuCulledRenderer {
         self.textures.forget_gpu();
         self.culling.forget_gpu();
         self.opaque.forget_gpu();
+        self.lines.forget_gpu();
         self.streamed_slot.forget();
         self.settings.materials_mut().mark_changed();
     }

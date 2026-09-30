@@ -10,6 +10,10 @@
 //! compacted instances and indirect draws, which its opaque pass reads. On WebGL2 the job workers
 //! cull each view before the frame records, so that graph has no culling passes.
 //!
+//! The debug lines pass draws the lines that the sketch drew (see [`crate::debug_lines`]) into the
+//! scene color and depth, after the camera's opaque pass and in its render pass. It is on only in
+//! frames with lines, so the plan of a frame without them has no such pass.
+//!
 //! Two passes can take the scene color to the canvas. The final pass samples it and draws the
 //! canvas. It has no work yet, so it stays off. The resolve pass runs instead: the render pass
 //! that draws the scene resolves its multisampled color straight into the canvas, with no pass,
@@ -43,6 +47,8 @@ pub(crate) const DEPTH_FORMAT: u32 = format::DEPTH32_FLOAT;
 const OBJECTS: &str = "objects";
 /// The camera's color target, which reaches the canvas.
 const SCENE_COLOR: &str = "sceneColor";
+/// The camera's depth target.
+const SCENE_DEPTH: &str = "sceneDepth";
 
 /// What a declared pass records.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -51,6 +57,8 @@ pub(crate) enum Role {
     Cull(ViewId),
     /// Draws a view's opaque objects.
     Opaque(ViewId),
+    /// Draws the frame's debug lines into the camera's view.
+    DebugLines,
     /// Resolves the scene color into the canvas. It records nothing: the color attachment of its
     /// render pass resolves.
     Resolve,
@@ -93,6 +101,8 @@ pub(crate) struct FrameGraph {
     gpu_culling: bool,
     /// The number of views the declarations cover.
     views: usize,
+    /// The debug lines pass, once the passes are declared.
+    debug_lines: Option<PassId>,
     /// The id of the texture that holds the plan's first texture. The others follow it.
     first_texture: u32,
     /// Each texture of the plan that the draw lists made, with the size it was made at.
@@ -111,6 +121,7 @@ impl FrameGraph {
             samples,
             gpu_culling,
             views: 0,
+            debug_lines: None,
             first_texture,
             made: Vec::new(),
             canvas: (0, 0),
@@ -129,13 +140,21 @@ impl FrameGraph {
         }
     }
 
+    /// Switches the debug lines pass on for a frame with lines, and off for one without. The
+    /// graph compiles again only when that changes.
+    pub(crate) fn set_debug_lines(&mut self, on: bool) {
+        if let Some(pass) = self.debug_lines {
+            self.graph.set_enabled(pass, on);
+        }
+    }
+
     fn add(&mut self, pass: Pass, role: Role) -> PassId {
         self.roles.push(role);
         self.graph.add_pass(pass)
     }
 
     /// Declares the engine's passes for `views`: each view's culling pass on WebGPU, each view's
-    /// opaque pass, then the resolve pass and the final pass, which is off.
+    /// opaque pass, the debug lines pass and the final pass, which are off, and the resolve pass.
     fn declare(&mut self, views: &[View]) {
         self.graph.clear();
         self.roles.clear();
@@ -154,12 +173,18 @@ impl FrameGraph {
             let mut pass = Pass::new(view_name(index, "Opaque", "Opaque"), PassKind::Scene)
                 .layers(view.layers())
                 .creates(view_name(index, SCENE_COLOR, "color"), color)
-                .creates(view_name(index, "sceneDepth", "depth"), depth);
+                .creates(view_name(index, SCENE_DEPTH, "depth"), depth);
             if self.gpu_culling {
                 pass = pass.reads(view_name(index, "visible", "visible"));
             }
             self.add(pass, Role::Opaque(ViewId::from_index(index)));
         }
+        let lines = Pass::new("DebugLines", PassKind::Scene)
+            .writes(SCENE_COLOR)
+            .writes(SCENE_DEPTH);
+        let lines = self.add(lines, Role::DebugLines);
+        self.graph.set_enabled(lines, false);
+        self.debug_lines = Some(lines);
         let resolve = Pass::new("Resolve", PassKind::Resolve)
             .reads(SCENE_COLOR)
             .writes(CANVAS);
@@ -368,7 +393,13 @@ mod tests {
         frames.sync_views(&[View::default(), View::default()]);
         let graph = frames.graph();
         let names = [
-            "Culling", "Culling1", "Opaque", "Opaque1", "Resolve", "Final",
+            "Culling",
+            "Culling1",
+            "Opaque",
+            "Opaque1",
+            "DebugLines",
+            "Resolve",
+            "Final",
         ];
         assert_eq!(graph.pass_count(), names.len());
         for (place, name) in names.into_iter().enumerate() {
@@ -381,17 +412,65 @@ mod tests {
                 Role::Cull(ViewId::from_index(1)),
                 Role::Opaque(ViewId::CAMERA),
                 Role::Opaque(ViewId::from_index(1)),
+                Role::DebugLines,
                 Role::Resolve,
                 Role::Final,
             ]
         );
-        let final_pass = graph.find_pass("Final").unwrap();
-        assert!(!graph.is_enabled(final_pass));
+        for off in ["DebugLines", "Final"] {
+            assert!(!graph.is_enabled(graph.find_pass(off).unwrap()), "{off}");
+        }
 
         // The WebGL2 path culls on the job workers, so its graph has no culling passes.
         let mut frames = FrameGraph::new(4, false, 1);
         frames.sync_views(&[View::default()]);
-        assert_eq!(frames.graph().pass_count(), 3);
+        assert_eq!(frames.graph().pass_count(), 4);
         assert_eq!(frames.roles[0], Role::Opaque(ViewId::CAMERA));
+    }
+
+    /// The names of the passes in each step of the compiled plan.
+    fn steps(frames: &FrameGraph) -> Vec<Vec<String>> {
+        let graph = frames.graph();
+        let plan = graph.plan().expect("the graph compiled");
+        plan.steps()
+            .iter()
+            .map(|step| {
+                plan.passes(step)
+                    .iter()
+                    .map(|&pass| graph.pass_name(pass).to_owned())
+                    .collect()
+            })
+            .collect()
+    }
+
+    #[test]
+    fn debug_lines_join_the_camera_render_pass_only_in_frames_with_lines() {
+        let mut frames = FrameGraph::new(4, true, 1);
+        frames.sync_views(&[View::default(), View::default()]);
+        let mut list = DrawList::with_capacity(256);
+        frames.prepare(&mut list, (64, 64)).unwrap();
+        let without = steps(&frames);
+        assert_eq!(
+            without,
+            [
+                vec!["Culling", "Culling1"],
+                vec!["Opaque", "Resolve"],
+                vec!["Opaque1"]
+            ]
+        );
+
+        frames.set_debug_lines(true);
+        frames.prepare(&mut list, (64, 64)).unwrap();
+        assert_eq!(
+            steps(&frames)[1],
+            ["Opaque", "DebugLines", "Resolve"],
+            "the lines draw over the camera's opaque objects, before the color resolves"
+        );
+        // The lines change no texture of the plan.
+        list.clear();
+        frames.set_debug_lines(false);
+        frames.prepare(&mut list, (64, 64)).unwrap();
+        assert_eq!(steps(&frames), without);
+        assert!(list.is_empty(), "switching the lines makes no texture");
     }
 }

@@ -8,3 +8,10 @@ fn linear_to_srgb(c: vec3f) -> vec3f {
     let high = 1.055 * pow(c, vec3f(1.0 / 2.4)) - 0.055;
     return select(high, low, c <= vec3f(0.0031308));
 }
+
+/// Decodes an sRGB color, such as a hex color gives, to linear.
+fn srgb_to_linear(c: vec3f) -> vec3f {
+    let low = c / 12.92;
+    let high = pow((c + 0.055) / 1.055, vec3f(2.4));
+    return select(high, low, c <= vec3f(0.04045));
+}

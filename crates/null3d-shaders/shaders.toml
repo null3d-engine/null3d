@@ -40,6 +40,14 @@ variants.webgpu = { targets = ["wgsl"] }
 variants.webgl2 = { defs = ["WEBGL2"], targets = ["glsl"] }
 variants.webgl2_multi_draw = { defs = ["WEBGL2", "DRAW_INDEX"], targets = ["glsl"] }
 
+# Debug lines, which development builds of the engine draw after the opaque objects: a position
+# relative to the camera and an sRGB color per vertex, from a vertex buffer of their own.
+[shaders.debug_lines]
+file = "debug_lines.wgsl"
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgpu = { targets = ["wgsl"] }
+variants.webgl2 = { targets = ["glsl"] }
+
 # GPU culling into buckets for indirect draws; its compute entry point is `main`. WebGPU only.
 [shaders.cull]
 file = "cull.wgsl"

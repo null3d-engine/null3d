@@ -4,8 +4,12 @@
 // is recorded, and so is the time each job worker spent on the frame's work. In hold mode it seeds
 // this thread's math.random and routes Math.random to it, steps the sketch to the held time in
 // fixed steps after the setup, and publishes the last frame alone. Hold mode reads no input, so the
-// held frame never depends on it.
+// held frame never depends on it. In development builds, the frame's debug drawing reaches the core
+// just before the frame records; release builds give the sketch calls that do nothing.
 
+import { type Debug, RELEASE_DEBUG } from '../debug/debug';
+import { DebugDraw } from '../debug/draw';
+import { DEV } from '../errors/checks';
 import { coreFailure, QUEUED_CHANGE } from '../errors/core-failure';
 import { EngineError } from '../errors/engine-error';
 import { messageOf } from '../errors/message';
@@ -73,6 +77,8 @@ export class SketchRunner {
 	/** Gives the thread its own Math.random back, after hold mode seeded it. */
 	private restoreRandom: (() => void) | undefined;
 	private readonly input: InputReader;
+	/** The sketch's debug drawing, in development builds only. */
+	private readonly debugDraw: DebugDraw | undefined;
 	readonly context: SketchContext;
 
 	/**
@@ -114,6 +120,8 @@ export class SketchRunner {
 		Atomics.store(slots, Slot.DrawListAddress1, glue.drawListAddress(1));
 		this.reducedMotion = Atomics.load(slots, Slot.ReducedMotion);
 		this.input = new InputReader(sketch.control, sketch.keyCodes);
+		this.debugDraw = DEV ? new DebugDraw(this.core) : undefined;
+		const debug: Debug = this.debugDraw ?? RELEASE_DEBUG;
 		const time = { now: 0, frame: 0 };
 		this.context = {
 			time,
@@ -137,6 +145,7 @@ export class SketchRunner {
 					return () => this.messageHandlers.delete(handler);
 				},
 			},
+			debug,
 		};
 		// Last, so a constructor that fails leaves the thread's own Math.random in place.
 		if (holdSeconds !== undefined) this.restoreRandom = seedMathRandom(HOLD_SEED);
@@ -272,6 +281,13 @@ export class SketchRunner {
 		}
 		if (glue.cullFrame(frame, width, height) !== 0) this.report(coreFailure(glue, 'the frame'));
 		this.endPhase(Phase.Cull);
+		if (DEV && this.debugDraw) {
+			try {
+				this.debugDraw.flush(width / height);
+			} catch (error) {
+				this.report(error);
+			}
+		}
 		if (glue.recordFrame(frame, width, height) !== 0) this.report(coreFailure(glue, 'the frame'));
 		this.record.count(Counter.Rebuilds, glue.drawTablesRebuilt() ? 1 : 0);
 		this.record.count(Counter.VisibleEntries, glue.visibleEntries(frame));

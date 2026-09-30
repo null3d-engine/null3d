@@ -193,6 +193,191 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
 	},
 };
 
+/** The variants of the `debug_lines` shader, by variant name. */
+export const DEBUG_LINES_SHADER: {
+	readonly webgl2: ShaderVariant<'main'>;
+	readonly webgpu: ShaderVariant<'main'>;
+} = {
+	webgl2: {
+		wgsl: null,
+		glsl: {
+			main: {
+				vertex: {
+					source: `#version 300 es
+uniform vec2 null3d_depth_mapping;
+
+precision highp float;
+precision highp int;
+
+struct Frame {
+    mat4x4 view_proj;
+    vec4 camera_position;
+    vec4 sun_direction;
+    vec4 sun_color;
+    vec4 ambient;
+};
+struct VertexIn {
+    vec3 position;
+    vec4 srgb;
+};
+struct VertexOut {
+    vec4 clip;
+    vec3 linear;
+};
+layout(std140) uniform Frame_block_0Vertex { Frame _group_0_binding_0_vs; };
+
+layout(location = 0) in vec3 _p2vs_location0;
+layout(location = 1) in vec4 _p2vs_location1;
+smooth out vec3 _vs2fs_location0;
+
+vec3 linear_to_srgb(vec3 c) {
+    vec3 low = (c * 12.92);
+    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
+    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
+}
+
+vec3 srgb_to_linear(vec3 c_1) {
+    vec3 low_1 = (c_1 / vec3(12.92));
+    vec3 high_1 = pow(((c_1 + vec3(0.055)) / vec3(1.055)), vec3(2.4));
+    return mix(high_1, low_1, lessThanEqual(c_1, vec3(0.04045)));
+}
+
+void main() {
+    VertexIn v = VertexIn(_p2vs_location0, _p2vs_location1);
+    VertexOut out_ = VertexOut(vec4(0.0), vec3(0.0));
+    mat4x4 _e5 = _group_0_binding_0_vs.view_proj;
+    out_.clip = (_e5 * vec4(v.position, 1.0));
+    vec3 _e13 = srgb_to_linear(v.srgb.xyz);
+    out_.linear = _e13;
+    VertexOut _e14 = out_;
+    gl_Position = _e14.clip;
+    _vs2fs_location0 = _e14.linear;
+    gl_Position.z = gl_Position.z * null3d_depth_mapping.x + gl_Position.w * null3d_depth_mapping.y;
+    return;
+}
+`,
+					uniformBlocks: [
+						{
+							name: 'Frame_block_0Vertex',
+							group: 0,
+							binding: 0,
+						},
+					],
+					textures: [],
+				},
+				fragment: {
+					source: `#version 300 es
+
+precision highp float;
+precision highp int;
+
+struct Frame {
+    mat4x4 view_proj;
+    vec4 camera_position;
+    vec4 sun_direction;
+    vec4 sun_color;
+    vec4 ambient;
+};
+struct VertexIn {
+    vec3 position;
+    vec4 srgb;
+};
+struct VertexOut {
+    vec4 clip;
+    vec3 linear;
+};
+smooth in vec3 _vs2fs_location0;
+layout(location = 0) out vec4 _fs2p_location0;
+
+vec3 linear_to_srgb(vec3 c) {
+    vec3 low = (c * 12.92);
+    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
+    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
+}
+
+vec3 srgb_to_linear(vec3 c_1) {
+    vec3 low_1 = (c_1 / vec3(12.92));
+    vec3 high_1 = pow(((c_1 + vec3(0.055)) / vec3(1.055)), vec3(2.4));
+    return mix(high_1, low_1, lessThanEqual(c_1, vec3(0.04045)));
+}
+
+void main() {
+    VertexOut in_ = VertexOut(gl_FragCoord, _vs2fs_location0);
+    vec3 _e2 = linear_to_srgb(in_.linear);
+    _fs2p_location0 = vec4(_e2, 1.0);
+    return;
+}
+`,
+					uniformBlocks: [],
+					textures: [],
+				},
+			},
+		},
+	},
+	webgpu: {
+		wgsl: {
+			source: `struct Frame {
+    view_proj: mat4x4<f32>,
+    camera_position: vec4<f32>,
+    sun_direction: vec4<f32>,
+    sun_color: vec4<f32>,
+    ambient: vec4<f32>,
+}
+
+struct VertexIn {
+    @location(0) position: vec3<f32>,
+    @location(1) srgb: vec4<f32>,
+}
+
+struct VertexOut {
+    @builtin(position) clip: vec4<f32>,
+    @location(0) linear: vec3<f32>,
+}
+
+@group(0) @binding(0)
+var<uniform> frame: Frame;
+
+fn linear_to_srgb(c: vec3<f32>) -> vec3<f32> {
+    let low = (c * 12.92f);
+    let high = ((1.055f * pow(c, vec3(0.41666666f))) - vec3(0.055f));
+    return select(high, low, (c <= vec3(0.0031308f)));
+}
+
+fn srgb_to_linear(c_1: vec3<f32>) -> vec3<f32> {
+    let low_1 = (c_1 / vec3(12.92f));
+    let high_1 = pow(((c_1 + vec3(0.055f)) / vec3(1.055f)), vec3(2.4f));
+    return select(high_1, low_1, (c_1 <= vec3(0.04045f)));
+}
+
+@vertex
+fn vs(v: VertexIn) -> VertexOut {
+    var out: VertexOut;
+
+    let _e5 = frame.view_proj;
+    out.clip = (_e5 * vec4<f32>(v.position, 1f));
+    let _e13 = srgb_to_linear(v.srgb.xyz);
+    out.linear = _e13;
+    let _e14 = out;
+    return _e14;
+}
+
+@fragment
+fn fs(in: VertexOut) -> @location(0) vec4<f32> {
+    let _e2 = linear_to_srgb(in.linear);
+    return vec4<f32>(_e2, 1f);
+}
+`,
+			pipelines: {
+				main: {
+					vertex: 'vs',
+					fragment: 'fs',
+				},
+			},
+		},
+		glsl: null,
+	},
+};
+
 /** The variants of the `mesh` shader, by variant name. */
 export const MESH_SHADER: {
 	readonly webgl2: ShaderVariant<'lit' | 'texcoords' | 'unlit'>;
@@ -3162,6 +3347,7 @@ fn fs_sample(in: VertexOut) -> @location(0) vec4<f32> {
 /** Every shader variant, by shader name and variant name. */
 export const SHADERS = {
 	cull: CULL_SHADER,
+	debug_lines: DEBUG_LINES_SHADER,
 	mesh: MESH_SHADER,
 	test_mesh: TEST_MESH_SHADER,
 	test_textures: TEST_TEXTURES_SHADER,

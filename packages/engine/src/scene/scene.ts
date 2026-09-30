@@ -357,9 +357,10 @@ export class Camera extends Object3D {
  * @category api/lights
  */
 export class DirectionalLight {
-	private readonly direction = new Float64Array(3);
-	/** The color in linear RGB, before the intensity scales it. */
-	private readonly linear = new Float64Array(3);
+	/** @internal The direction the light travels. */
+	readonly direction = new Float64Array(3);
+	/** @internal The color in linear RGB, before the intensity scales it. */
+	readonly linear = new Float64Array(3);
 
 	constructor(
 		private readonly scene: Scene,

@@ -4,8 +4,8 @@
 
 use crate::caps::{BUDGET, Capabilities, Limit, OFFSET_ALIGNMENT};
 use crate::drawlist::{
-    Command, NO_TARGET, Op, address, compare, decode, filter, format, resource_kind, texture_usage,
-    upload_flags, vertex, view,
+    Command, NO_TARGET, Op, address, compare, decode, filter, format, resource_kind, state_flags,
+    texture_usage, upload_flags, vertex, view,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -764,6 +764,11 @@ impl MockBackend {
                     "a render pipeline writes color, depth or both",
                 )?;
                 check(matches!(o[5], 1 | 4), op, "the sample count is 1 or 4")?;
+                check(
+                    o[6] & !state_flags::ALL == 0,
+                    op,
+                    "a render pipeline sets known state flags",
+                )?;
                 self.render_pipelines.insert(o[0]);
             }
             Op::CreateComputePipeline => {
@@ -897,6 +902,11 @@ impl MockBackend {
                         self.read_resource(op, resource)?;
                     }
                 }
+                // WebGPU clears the pass's pipeline and buffers after it replays bundles, so a
+                // draw after them sets its own.
+                self.pipeline_set = false;
+                self.vertex_buffer_set = false;
+                self.index_buffer_set = false;
             }
             Op::EndRenderPass => {
                 if self.pass.take().is_none() {
@@ -968,7 +978,7 @@ impl MockBackend {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::drawlist::{DrawList, buffer_usage, index_format, layout, pass_flags};
+    use crate::drawlist::{DrawList, buffer_usage, index_format, layout, pass_flags, template};
 
     const MSAA_COLOR: u32 = 5;
     const MSAA_DEPTH: u32 = 1;
@@ -1064,6 +1074,86 @@ mod tests {
         let mut backend = MockBackend::default();
         assert_eq!(backend.replay(list.words()), Ok(()));
         assert_eq!((backend.draws, backend.submits), (1, 1));
+    }
+
+    /// A frame that replays a bundle, then draws lines from a vertex buffer of their own with
+    /// `lines`, the commands after the bundle.
+    fn lines_after_a_bundle(lines: &[(Op, &[u32])]) -> DrawList {
+        let mut list = DrawList::with_capacity(256);
+        setup(&mut list);
+        list.push(
+            Op::CreateRenderPipeline,
+            &[
+                2,
+                template::DEBUG_LINES,
+                0,
+                format::CANVAS,
+                format::DEPTH32_FLOAT,
+                4,
+                state_flags::LINE_LIST,
+                0,
+            ],
+        )
+        .unwrap();
+        list.push(
+            Op::CreateBuffer,
+            &[5, 256, buffer_usage::VERTEX | buffer_usage::COPY_DST],
+        )
+        .unwrap();
+        list.push(Op::ResizeCanvas, &[64, 64]).unwrap();
+        list.push(
+            Op::BeginBundle,
+            &[9, format::CANVAS, format::DEPTH32_FLOAT, 4],
+        )
+        .unwrap();
+        draw_bucket(&mut list);
+        list.push(Op::EndBundle, &[]).unwrap();
+        begin_scene_pass(&mut list);
+        list.push(Op::ExecuteBundles, &[1, 9]).unwrap();
+        for &(op, operands) in lines {
+            list.push(op, operands).unwrap();
+        }
+        list.push(Op::EndRenderPass, &[]).unwrap();
+        list
+    }
+
+    #[test]
+    fn draws_after_a_bundle_set_their_own_pipeline_and_lines_draw_from_a_vertex_buffer() {
+        let lines = lines_after_a_bundle(&[
+            (Op::SetPipeline, &[2]),
+            (Op::SetBindGroup, &[0, 1, 1, 256]),
+            (Op::SetVertexBuffer, &[0, 5, 0, 64]),
+            (Op::Draw, &[4, 1, 0, 0]),
+        ]);
+        let mut backend = MockBackend::default();
+        assert_eq!(backend.replay(lines.words()), Ok(()));
+        assert_eq!(backend.draws, 2);
+
+        // WebGPU forgets the bundle's pipeline once the pass has replayed it.
+        let no_pipeline = lines_after_a_bundle(&[(Op::Draw, &[4, 1, 0, 0])]);
+        assert_eq!(
+            MockBackend::default().replay(no_pipeline.words()),
+            Err(MockError::NotReady {
+                op: Op::Draw,
+                what: "a pipeline"
+            })
+        );
+
+        let mut unknown = DrawList::with_capacity(64);
+        let flags = state_flags::ALL + 1;
+        unknown
+            .push(
+                Op::CreateRenderPipeline,
+                &[1, 1, 0, format::CANVAS, format::NONE, 1, flags, 0],
+            )
+            .unwrap();
+        assert_eq!(
+            MockBackend::default().replay(unknown.words()),
+            Err(MockError::Invalid {
+                op: Op::CreateRenderPipeline,
+                rule: "a render pipeline sets known state flags"
+            })
+        );
     }
 
     #[test]

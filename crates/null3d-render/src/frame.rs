@@ -19,6 +19,7 @@ use null3d_core::snapshot::FrameSnapshot;
 use null3d_gpu::drawlist::{DrawList, DrawListError, Op, buffer_usage};
 
 use crate::camera::Perspective;
+use crate::debug_lines::DebugLines;
 use crate::frame_data::{FrameUniform, normalized_direction};
 use crate::frame_graph::{COLOR_FORMAT, DEPTH_FORMAT};
 use crate::graph::GraphError;
@@ -94,6 +95,9 @@ pub struct FrameInput<'a> {
     pub structure_changed: bool,
     /// The job system, for work that runs on the job workers.
     pub jobs: &'a JobSystem,
+    /// The lines that the sketch drew for the frame, which development builds draw over the
+    /// camera's view. Release builds draw none.
+    pub lines: DebugLines<'a>,
 }
 
 impl FrameInput<'_> {
@@ -486,16 +490,28 @@ pub struct PipelineKey {
     pub format: u32,
 }
 
-/// The render pipelines that a builder draws with. A pipeline's id is its place in the table plus
-/// one, and it keeps its id while the builder lives, so layouts can hold ids across rebuilds.
-#[derive(Debug, Default)]
+/// The render pipelines that a builder draws its scene with. A pipeline's id is its place in the
+/// table plus the table's first id, and it keeps its id while the builder lives, so layouts can
+/// hold ids across rebuilds. Ids below the first belong to the builder's other pipelines.
+#[derive(Debug)]
 pub(crate) struct PipelineTable {
     keys: Vec<PipelineKey>,
     /// The pipelines that the GPU has: the first `created` keys.
     created: usize,
+    /// The id of the first key's pipeline.
+    first: u32,
 }
 
 impl PipelineTable {
+    /// A table whose pipelines take ids from `first` on.
+    pub(crate) fn starting_at(first: u32) -> Self {
+        Self {
+            keys: Vec::new(),
+            created: 0,
+            first,
+        }
+    }
+
     /// The id of a key's pipeline. A new key's pipeline is created by the next
     /// [`PipelineTable::create_new`].
     pub(crate) fn id(&mut self, key: PipelineKey) -> u32 {
@@ -506,7 +522,7 @@ impl PipelineTable {
                 self.keys.len() - 1
             }
         };
-        index as u32 + 1
+        self.first + index as u32
     }
 
     /// Records the creation of every pipeline that the GPU does not have yet, for the scene's
@@ -521,7 +537,7 @@ impl PipelineTable {
             list.push(
                 Op::CreateRenderPipeline,
                 &[
-                    self.created as u32 + 1,
+                    self.first + self.created as u32,
                     key.shading.template(),
                     permutation,
                     COLOR_FORMAT,
