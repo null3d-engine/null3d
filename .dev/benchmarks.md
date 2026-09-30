@@ -63,6 +63,7 @@ Three sweeps measure the defaults that are still open: the latency mode, the job
 ## Allocation and profiling
 
 - `bun run bench:allocation` samples allocations after a warm-up of at least 30 seconds and 3,600 frames. The browser optimizes code that runs once per frame only after thousands of frames, so a display at 60 Hz takes a minute.
+- While it warms up and samples, the check moves the mouse over the canvas and presses a key and the mouse button. So the sample covers the sketch's reading of input, and that code is warm when the sample starts.
 - Places that allocate because the browser does have budgets with their reasons in `bench/allocation.ts`. Every other place must stay under 4 bytes per frame. Add `--n 30000` to include the staging ring.
 - `bun run bench:profile` shows where the render worker's replay spends its time. A browser call costs the same from any language. The engine's own share of the replay is therefore the most that a replay loop in another language could save.
 - The profiler samples every 50 microseconds after a 20-second warm-up. Code the browser has not optimized yet counts as the engine's, so a shorter warm-up overstates the engine's share.

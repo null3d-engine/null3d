@@ -3,13 +3,15 @@
 // the few places that allocate because the browser does each have a budget below. It opens the
 // null3d S1 page in Chrome, lets the browser optimize the frame code, attaches the heap profiler to
 // both workers through Chrome's debugging protocol, samples allocations for a few seconds, and
-// prints the bytes per frame of every place that allocated. It draws with WebGPU, or with WebGL2
-// when `--gpu webgl2` asks for it. From the repository root:
+// prints the bytes per frame of every place that allocated. From the page's start to the end of
+// the sample, it moves the mouse over the canvas and presses a key and the mouse button, so the
+// sample covers the sketch's reading of input. It draws with WebGPU, or with WebGL2 when
+// `--gpu webgl2` asks for it. From the repository root:
 //   bun run bench:allocation
 //   bun run bench:allocation --n 30000 --seconds 5 --warmup 30
 //   bun run bench:allocation --gpu webgl2
 // At 30,000 instances a frame's upload goes through the staging ring; at 100,000 it does not.
-import { chromium } from '@playwright/test';
+import { chromium, type Page } from '@playwright/test';
 import { DEBUG_PORT, startServer } from '../tests/lib/server.ts';
 import { attachWorkers, DevTools, pagesAt, placeName, sleep } from './lib/devtools';
 import { pagePath } from './lib/parity';
@@ -84,6 +86,30 @@ function totalSize(node: ProfileNode): number {
 
 /** Callers shown for each place that allocates. */
 const CALLERS_SHOWN = 2;
+
+/** How often the input driver acts, in milliseconds: about once per frame at 60 Hz. */
+const INPUT_STEP_MS = 16;
+
+/**
+ * Moves the mouse in circles over the canvas until `running` turns false. It presses a key every
+ * 10 steps and holds the mouse button down for a few steps in every 30, so the page writes moves,
+ * drags, clicks and key presses into the input ring.
+ */
+async function driveInput(page: Page, running: () => boolean): Promise<void> {
+	const box = await page.locator('canvas').boundingBox();
+	if (!box) throw new Error('the benchmark page has no canvas');
+	for (let step = 0; running(); step++) {
+		const angle = step * 0.2;
+		await page.mouse.move(
+			box.x + box.width * (0.5 + 0.3 * Math.cos(angle)),
+			box.y + box.height * (0.5 + 0.3 * Math.sin(angle)),
+		);
+		if (step % 10 === 0) await page.keyboard.press('KeyW');
+		if (step % 30 === 0) await page.mouse.down();
+		if (step % 30 === 5) await page.mouse.up();
+		await sleep(INPUT_STEP_MS);
+	}
+}
 
 interface Place {
 	bytes: number;
@@ -161,6 +187,11 @@ async function main(): Promise<void> {
 		const [target] = await pagesAt(devtools, url);
 		if (!target) throw new Error(`no page target for ${url}`);
 		const { workers: sessions } = await attachWorkers(devtools, target.targetId, WORKERS);
+		// Input runs from now to the end of the sample, so the code that reads it warms up too.
+		let driving = true;
+		const input = driveInput(page, () => driving);
+		// A failure is reported where the input is awaited, after the sample.
+		input.catch(() => {});
 		// Let the sketch run its setup and warm up before sampling.
 		await sleep(warmup * 1000);
 		while ((await framesSoFar()) < WARMUP_FRAMES) await sleep(1000);
@@ -190,6 +221,8 @@ async function main(): Promise<void> {
 			profiles.set(name, profile.head);
 		}
 		const frames = (await framesSoFar()) - startFrames;
+		driving = false;
+		await input;
 		devtools.close();
 		console.log(
 			`S1 on ${gpu} with ${n} instances, sampled for ${seconds} s after ${warmup} s: ${frames} frames`,

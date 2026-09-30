@@ -20,8 +20,8 @@ import {
 import type { CoreMemory } from './memory';
 import type { MeshArrays } from './resources';
 
-/** The code of an E1205 failure that the engine core reports. */
-const BAD_ARRAYS = 1205;
+/** The code of an E1206 failure that the engine core reports. */
+const BAD_ARRAYS = 1206;
 
 type FloatArrayName = 'positions' | 'normals' | 'uvs' | 'uvs1' | 'colors' | 'tangents';
 
@@ -115,13 +115,13 @@ function arraysFailure(core: CoreMemory, arrays: MeshArrays, call: string): Engi
 		const index = arrays.indices?.[at];
 		const vertices = arrays.positions.length / 3;
 		return new EngineError(
-			'E1205',
+			'E1206',
 			`${call}() got the index ${index} at indices[${at}], past the last of ${vertices} vertices.`,
 		);
 	}
 	// A value that is not a finite number: its array's code follows the problem's.
 	const name = FLOAT_ARRAYS[problem - ARRAYS_PROBLEM_NOT_FINITE]?.[0];
 	if (name)
-		return new EngineError('E1205', `${call}() got ${arrays[name]?.[at]} at ${name}[${at}].`);
-	return new EngineError('E1205', `${call}() got arrays that do not make whole vertices.`);
+		return new EngineError('E1206', `${call}() got ${arrays[name]?.[at]} at ${name}[${at}].`);
+	return new EngineError('E1206', `${call}() got arrays that do not make whole vertices.`);
 }

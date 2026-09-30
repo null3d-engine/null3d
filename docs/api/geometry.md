@@ -63,7 +63,7 @@ The arrays follow these rules:
 - `positions` is required. Give `normals`, or set `computeNormals: true`.
 - `indices` takes a `Uint16Array`, a `Uint32Array` or an array of numbers, with three indices per triangle. Without indices, each three vertices in a row make one triangle.
 - A triangle's front face has its vertices in counter-clockwise order.
-- Each array's length must fit the vertex count, each index must name a vertex, and each value must be a finite number. Otherwise the call throws [E1205](../errors/E1205.md).
+- Each array's length must fit the vertex count, each index must name a vertex, and each value must be a finite number. Otherwise the call throws [E1206](../errors/E1206.md).
 - The engine copies the arrays. You can change or drop them after the call.
 
 ## Computing normals and tangents
@@ -128,7 +128,7 @@ Mesh generators with the parameters and defaults of three.js's geometry classes,
 | --- | --- |
 | `box(options: BoxOptions = {}): MeshGeometry` | A box, like three.js's `BoxGeometry`. |
 | `sphere(options: SphereOptions = {}): MeshGeometry` | A sphere, like three.js's `SphereGeometry`. |
-| `fromArrays(arrays: MeshArrays): MeshGeometry` | A mesh from arrays of vertex attributes and triangle indices, like three.js's `BufferGeometry` with `setAttribute` and `setIndex`. The mesh keeps the attributes it gets, and meshes with the same attributes share GPU buffers. A mesh can have any number of vertices. Throws E1205 when an array's length does not fit the vertex count or an index names no vertex, and for a value that is not a finite number. |
+| `fromArrays(arrays: MeshArrays): MeshGeometry` | A mesh from arrays of vertex attributes and triangle indices, like three.js's `BufferGeometry` with `setAttribute` and `setIndex`. The mesh keeps the attributes it gets, and meshes with the same attributes share GPU buffers. A mesh can have any number of vertices. Throws E1206 when an array's length does not fit the vertex count or an index names no vertex, and for a value that is not a finite number. |
 
 ### `MeshArrays`
 

@@ -99,10 +99,17 @@ const DOCS = {
 		since: '0.1',
 	},
 	E1205: {
+		title: 'Unknown input name',
+		cause:
+			'An input call received a name that no key, button or action has, or `input.actions.define()` received an action name that a key or button already has. Names are case-sensitive: `KeyW` is the W key, and `keyW` names nothing.',
+		example: 'E1205: isDown() got "keyW", which names no key, button or action.',
+		since: '0.1',
+	},
+	E1206: {
 		title: 'Invalid mesh arrays',
 		cause:
 			'geometry.fromArrays() received arrays that make no mesh. An array can have the wrong length for the vertex count, an index can name no vertex, or a value can be NaN or Infinity. Normals can also be missing, or both given and computed.',
-		example: 'E1205: geometry.fromArrays() got 9 numbers in normals for 4 vertices, not 12.',
+		example: 'E1206: geometry.fromArrays() got 9 numbers in normals for 4 vertices, not 12.',
 		since: '0.1',
 	},
 	E1301: {

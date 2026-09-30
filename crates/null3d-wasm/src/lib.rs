@@ -63,7 +63,7 @@ const UPLOAD_RANGES: u32 = 4096;
 /// Engine error codes for failures that do not come from the core.
 mod codes {
     /// Arrays that make no mesh; the details give the problem (`constants::arrays_problem`).
-    pub const BAD_ARRAYS: u32 = 1205;
+    pub const BAD_ARRAYS: u32 = 1206;
     /// A function that needs the engine ran before `initEngine`, or `initEngine` ran twice.
     pub const NOT_READY: u32 = 1403;
     /// A mesh, material or GPU buffer is full, or an id names nothing (details say which).

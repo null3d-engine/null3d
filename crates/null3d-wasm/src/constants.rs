@@ -65,7 +65,7 @@ pub mod mesh_arrays {
     pub const COMPUTE_TANGENTS: u32 = 256;
 }
 
-/// The first detail of an E1205 failure: what is wrong with the arrays. The second detail is the
+/// The first detail of an E1206 failure: what is wrong with the arrays. The second detail is the
 /// array's code, or for the last two problems the element's place.
 pub mod arrays_problem {
     pub const NO_VERTICES: u32 = 1;

@@ -151,13 +151,13 @@ export class Geometry {
 	 * A mesh from arrays of vertex attributes and triangle indices, like three.js's
 	 * `BufferGeometry` with `setAttribute` and `setIndex`. The mesh keeps the attributes it gets,
 	 * and meshes with the same attributes share GPU buffers. A mesh can have any number of
-	 * vertices. Throws E1205 when an array's length does not fit the vertex count or an index names
+	 * vertices. Throws E1206 when an array's length does not fit the vertex count or an index names
 	 * no vertex, and for a value that is not a finite number.
 	 */
 	fromArrays(arrays: MeshArrays): MeshGeometry {
 		const call = 'geometry.fromArrays';
 		const problem = arraysProblem(arrays);
-		if (problem) throw new EngineError('E1205', `${call}() ${problem}`);
+		if (problem) throw new EngineError('E1206', `${call}() ${problem}`);
 		return this.mesh(meshFromArrays(this.core, arrays, call), call);
 	}
 }

@@ -111,7 +111,7 @@ describe('meshes from arrays in engine memory', () => {
 	});
 
 	test('that the core refuses name the value it found wrong', () => {
-		const outside = fakeCore({ code: 1205, details: [ARRAYS_PROBLEM_INDEX_OUT_OF_RANGE, 4] });
+		const outside = fakeCore({ code: 1206, details: [ARRAYS_PROBLEM_INDEX_OUT_OF_RANGE, 4] });
 		const indices = new Uint16Array([0, 1, 2, 0, 7, 3]);
 		const refuse = (core: CoreMemory, arrays: MeshArrays) => {
 			try {
@@ -122,17 +122,17 @@ describe('meshes from arrays in engine memory', () => {
 			throw new Error('the mesh was built');
 		};
 		const index = refuse(outside.core, { ...QUAD, indices });
-		expect(index.code).toBe('E1205');
+		expect(index.code).toBe('E1206');
 		expect(index.message).toStartWith(
-			'E1205: geometry.fromArrays() got the index 7 at indices[4], past the last of 4 vertices.',
+			'E1206: geometry.fromArrays() got the index 7 at indices[4], past the last of 4 vertices.',
 		);
 		const notFinite = fakeCore({
-			code: 1205,
+			code: 1206,
 			details: [ARRAYS_PROBLEM_NOT_FINITE + ARRAY_UVS, 3],
 		});
 		const uvs = [0, 0, 1, Number.NaN, 1, 1, 0, 1];
 		expect(refuse(notFinite.core, { ...QUAD, uvs }).message).toStartWith(
-			'E1205: geometry.fromArrays() got NaN at uvs[3].',
+			'E1206: geometry.fromArrays() got NaN at uvs[3].',
 		);
 		const memoryFull = fakeCore({ code: 1109, details: [64 * 1024 * 1024, 0] });
 		expect(refuse(memoryFull.core, QUAD).code).toBe('E1109');
