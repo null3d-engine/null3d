@@ -130,7 +130,7 @@ export class SketchRunner {
 		this.context = {
 			time: this.time,
 			engine: { viewport: this.viewport, capabilities: sketch.capabilities },
-			scene: new Scene(this.core, this.time),
+			scene: new Scene(this.core, this.time, device.webgl2),
 			materials: new Materials(this.core),
 			geometry: new Geometry(this.core),
 			input: this.input,
