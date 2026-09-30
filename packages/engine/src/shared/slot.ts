@@ -68,3 +68,8 @@ export const ImagesArrived = 23;
  * thread that draws reports it. `scene.warmUp` waits for it.
  */
 export const PipelinesBuilt = 24;
+/**
+ * Device pixels per CSS pixel that the engine draws with, as float bits: the display's ratio,
+ * capped by the page's `maxPixelRatio`.
+ */
+export const PixelRatio = 25;

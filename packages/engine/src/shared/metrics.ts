@@ -30,8 +30,8 @@ export const PHASE_NAMES = [
 ] as const;
 
 /**
- * A step of a frame that `engine.measure` times. The `update` step is the sketch's own code, and the
- * other steps are the engine's.
+ * A step of a frame that `engine.measure` times. The `update` step is the sketch's own code, in all
+ * of its callbacks, and the other steps are the engine's.
  *
  * @category api/debug
  */

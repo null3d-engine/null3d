@@ -21,6 +21,7 @@ Each recipe states the goal, gives the code, explains why it is written that way
 15. Custom full-screen effect (0.2)
 16. Very large worlds (0.2)
 17. Move a player with keys, a gamepad or touch
+18. Camera that follows a moving object
 
 ## 1. Start a new project
 
@@ -450,3 +451,39 @@ export default defineSketch(({ scene, geometry, materials, input }) => {
 ```
 
 An action names the keys and buttons for one move, so keyboard and gamepad players share one code path. With `value`, a stick pushed part of the way steers slowly, and a key steers at full speed. Touch has no keys: the first finger presses `Mouse0` and moves `input.pointer`, and `input.touches` lists every finger. Give the canvas `touch-action: none` in the page's CSS, or the browser scrolls the page and cancels the touches. Input changes once per frame, before `onUpdate`, and a tap shorter than a frame still counts as a press. Docs: `api/input`.
+
+## 18. Camera that follows a moving object
+
+```ts
+import { defineSketch, vec3 } from '@null3d/engine';
+
+export default defineSketch(({ scene, geometry, materials, input }) => {
+  const camera = scene.createPerspectiveCamera({ fov: 50 });
+  scene.setActiveCamera(camera);
+  scene.createDirectionalLight({ direction: [-1, -2, -1], intensity: 3 });
+  const player = scene.createMesh({
+    mesh: geometry.box({ width: 1, height: 1, depth: 1 }),
+    material: materials.standard({ color: '#4a8cff' }),
+    dynamic: true,
+  });
+  const at = vec3.create();                  // scratch arrays, made once
+  const eye = vec3.create();
+  const offset = vec3.create();
+  vec3.set(offset, 0, 4, 10);                // above and behind the player
+  let x = 0;
+  return {
+    onUpdate(dt) {
+      x += (input.value('ArrowRight') - input.value('ArrowLeft')) * 5 * dt;
+      player.setPosition(x, 0.5, 0);
+    },
+    onLateUpdate() {
+      player.getWorldPosition(at);           // this frame's position, after onUpdate moved it
+      vec3.add(eye, at, offset);
+      camera.setPosition(eye[0], eye[1], eye[2]);
+      camera.lookAt(at[0], at[1], at[2]);
+    },
+  };
+});
+```
+
+`onLateUpdate` runs after the engine updates transforms and before it culls and draws. So `getWorldPosition` gives the player's place in this frame, and the camera's move shows in the same frame. In `onUpdate` the same code reads the previous frame's place. The camera then trails the player by a frame, which shows as jitter at speed. For a softer follow, keep the camera's own position in a vector. Ease it toward `eye` with `vec3.lerp` and the factor `1 - Math.exp(-lambda * dt)`, where `dt` is the argument that `onLateUpdate` gets. Docs: `api/sketch`, `api/time`.
