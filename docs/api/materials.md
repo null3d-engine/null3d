@@ -8,7 +8,7 @@ summary: "standard, unlit, shader, shadowCatcher; every option."
 
 # Materials
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Texture maps, transparency, `materials.shader` and `materials.shadowCatcher` are not built yet, so coding agents must not use them.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Texture maps, the `blend` alpha mode, `blending`, `materials.shader` and `materials.shadowCatcher` are not built yet, so coding agents must not use them.
 
 A material sets how the surfaces of the objects that use it look. `materials.standard` makes a lit material, and `materials.unlit` makes one that ignores lights. Create materials in the setup, and share each one between the objects that look alike.
 
@@ -45,7 +45,8 @@ Without lights, a standard material draws black, apart from its emissive color. 
 | Option | Range | Default | What it does |
 | --- | --- | --- | --- |
 | `color` | An sRGB color | White | The base color: the color of diffuse light, and of a metal's reflections |
-| `opacity` | 0 to 1 | 1 | How opaque the surface is |
+| `opacity` | 0 to 1 | 1 | How opaque the surface is. The `mask` alpha mode tests it |
+| `alphaCutoff` | 0 to 1 | 0.5 | With the `mask` alpha mode, the alpha below which the surface draws nothing |
 | `metalness` | 0 to 1 | 0 | 0 is a surface such as paint or plastic, and 1 is a metal |
 | `roughness` | 0 to 1 | 1 | 0 is a mirror finish with a small, sharp highlight, and 1 is fully matte |
 | `emissive` | An sRGB color | Black | Light that the surface gives off itself, whatever the lights |
@@ -59,7 +60,7 @@ The values have the meaning and the defaults of three.js's `MeshStandardMaterial
 
 ## Changing a material
 
-`set(options)` changes a material's values at any time, and every object that uses the material changes with it. It changes only the options that you pass. The others keep their values, so `set({ roughness: 0.5 })` keeps the color. A standard material's `set` takes every value in the table above, and an unlit material's `set` takes `color` and `opacity`.
+`set(options)` changes a material's values at any time, and every object that uses the material changes with it. It changes only the options that you pass. The others keep their values, so `set({ roughness: 0.5 })` keeps the color. A standard material's `set` takes every value in the table above, and an unlit material's `set` takes `color`, `opacity` and `alphaCutoff`.
 
 `set` checks every value before it changes any, so a call that throws changes nothing. Converting a new color allocates a little, as a light's `setColor` does, so do not change a color in every frame. To change one object alone, give it another material with `mesh.setMaterial(material)`.
 
@@ -72,12 +73,50 @@ These options choose the material's shader or its pipeline, so they are fixed wh
 | `doubleSided` | Both | false | Draws both faces of each triangle. A back face lights as if it faced the camera, as with three.js's `side: DoubleSide` |
 | `vertexColors` | Both | false | Multiplies the base color by the mesh's vertex colors, on meshes that have them. [Geometry](geometry.md) makes meshes with colors |
 | `flatShading` | Standard | false | Lights each triangle with the normal of its face, so the mesh looks faceted |
+| `alphaMode` | Both | `'opaque'` | How the material uses its alpha: `'opaque'` or `'mask'`. See "Alpha modes" |
+| `depthWrite` | Both | true | False writes no depth, so the surface hides nothing that draws after it |
+| `depthTest` | Both | true | False draws the surface whatever lies in front of it. It then writes no depth either, as in three.js's WebGL renderer |
+| `depthBias` | Both | No bias | Moves the surface's depth, as three.js's polygon offset does. See "Depth bias" |
 
 A material with `vertexColors` draws a mesh without colors in its base color alone. The kind of material, standard or unlit, is fixed too.
 
+## Alpha modes
+
+A surface's alpha is its `opacity`. With `vertexColors`, the alpha of the mesh's vertex colors multiplies it. `alphaMode` says how the material uses the alpha:
+
+| Mode | What it draws | three.js |
+| --- | --- | --- |
+| `'opaque'` | The whole surface, opaque. The alpha has no effect | The default material |
+| `'mask'` | Nothing where the alpha is below `alphaCutoff`, and the rest opaque | `alphaTest: alphaCutoff` |
+
+A masked surface has hard edges, and it hides what lies behind it as an opaque one does, so its objects draw in any order. Use it for leaves, fences and cut-out shapes. Only masked materials draw with the shader that drops fragments, so opaque ones keep the GPU's early depth test.
+
+```ts
+// sketch.ts: leaves whose vertex alpha cuts their shape.
+const leaves = materials.standard({ color: '#5bc27a', vertexColors: true, alphaMode: 'mask', alphaCutoff: 0.4 });
+// Later: a lower cutoff grows the leaves, at no cost.
+leaves.set({ alphaCutoff: 0.2 });
+```
+
+## Depth bias
+
+`depthBias: { constant, slopeScale }` moves a surface's depth before the depth test. A decal that lies on a wall has the wall's depth, so without a bias the two fight pixel by pixel. A bias toward the camera makes the decal win.
+
+| Field | three.js | What it does |
+| --- | --- | --- |
+| `constant` | `polygonOffsetUnits` | Steps of the depth buffer's smallest difference. A fraction rounds to the nearest whole number |
+| `slopeScale` | `polygonOffsetFactor` | A factor of how steeply the surface's depth changes across the screen. It moves surfaces seen at a grazing angle further |
+
+Negative values pull the surface toward the camera, and positive values push it away, as in three.js. The engine draws with reversed depth, and it turns the signs for you. Both fields default to 0.
+
+```ts
+// sketch.ts: a poster on a wall, as three.js's polygonOffsetFactor: -4, polygonOffsetUnits: -4.
+const poster = materials.standard({ color: '#e8554e', depthBias: { constant: -4, slopeScale: -4 } });
+```
+
 ## Ranges
 
-`opacity`, `metalness` and `roughness` go from 0 to 1, and `emissiveIntensity` takes 0 or more. When a factory or `set` gets a value outside its range, development builds throw E1108. This version stores the opacity, but it draws every material opaque.
+`opacity`, `alphaCutoff`, `metalness` and `roughness` go from 0 to 1, and `emissiveIntensity` takes 0 or more. When a factory or `set` gets a value outside its range, development builds throw E1108. An `alphaMode` that the engine does not know throws E1217, and a depth bias that is not a finite number throws E1203. This version draws no blended materials, so outside the `mask` mode the opacity has no effect.
 
 ## Limits
 
@@ -94,6 +133,14 @@ One engine holds up to 1,024 materials, and a material lasts as long as the engi
 
 <!-- null3d:api:start -->
 
+### `AlphaMode`
+
+```ts
+type AlphaMode = 'opaque' | 'mask';
+```
+
+How a material uses its alpha: its opacity, times its mesh's vertex alpha with `vertexColors`. The `opaque` mode ignores the alpha. The `mask` mode draws nothing where the alpha falls below `alphaCutoff`, and draws the rest opaque. It works as glTF's alpha mode `MASK` and three.js's `alphaTest` do.
+
 ### `ColorInput`
 
 ```ts
@@ -101,6 +148,17 @@ type ColorInput = string | number | readonly [number, number, number];
 ```
 
 A color: a hex string such as `'#4a8cff'` or `'#48f'`, a number such as `0x4a8cff`, or three sRGB components from 0 to 1.
+
+### `DepthBias`
+
+Interface `DepthBias`.
+
+A depth bias, as three.js's polygon offset gives. It moves a surface's depth, so a decal on a wall wins the depth test and does not fight with the wall. Negative values pull the surface toward the camera, as in three.js.
+
+| Member | Description |
+| --- | --- |
+| `constant?: number` | Steps of the depth buffer's smallest difference, as three.js's `polygonOffsetUnits`. A fraction rounds to the nearest whole number, as WebGPU takes it. The default is 0. |
+| `slopeScale?: number` | A factor of how steeply the surface's depth changes across the screen, as three.js's `polygonOffsetFactor`. The default is 0. |
 
 ### `Material`
 
@@ -121,7 +179,11 @@ The options that choose how a material's shader and pipeline draw it. They are f
 | Member | Description |
 | --- | --- |
 | `doubleSided?: boolean` | Draws both faces of each triangle. Back faces light as if they faced the camera. The default is false. |
-| `vertexColors?: boolean` | Multiplies the base color by the mesh's vertex colors, on meshes that have them. The default is false. |
+| `vertexColors?: boolean` | Multiplies the base color by the mesh's vertex colors, and the alpha by their alpha, on meshes that have them. The default is false. |
+| `alphaMode?: AlphaMode` | How the material uses its alpha. The default is `opaque`. |
+| `depthWrite?: boolean` | False to write no depth, so the surface hides nothing behind it. The default is true. |
+| `depthTest?: boolean` | False to draw the surface whatever lies in front of it. It then writes no depth either, as in three.js's WebGL renderer. The default is true. |
+| `depthBias?: DepthBias` | Moves the surface's depth, as three.js's polygon offset does. The default is no bias. |
 
 ### `MaterialOptions`
 
@@ -132,7 +194,8 @@ Options every material takes.
 | Member | Description |
 | --- | --- |
 | `color?: ColorInput` | The base color: a hex string, a number, or three sRGB components from 0 to 1. |
-| `opacity?: number` | How opaque the surface is, from 0 to 1. The default is 1. This version stores the value but draws every material opaque. |
+| `opacity?: number` | How opaque the surface is, from 0 to 1. The default is 1. With the `mask` alpha mode, it is part of the alpha that the cutoff tests. This version draws no blended materials, so it has no other effect yet. |
+| `alphaCutoff?: number` | With the `mask` alpha mode, the alpha below which the surface draws nothing, from 0 to 1. The default is 0.5, as in glTF. |
 
 ### `Materials`
 

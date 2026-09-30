@@ -176,6 +176,8 @@ run('replay', async () => {
 		SAMPLES,
 		0,
 		0,
+		0,
+		0,
 	);
 	memory.push(G.OP_CREATE_COMPUTE_PIPELINE, 1, G.TEMPLATE_CULL, 0);
 	memory.push(

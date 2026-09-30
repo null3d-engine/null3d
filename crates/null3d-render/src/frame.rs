@@ -520,8 +520,9 @@ impl SceneSettings {
     /// when the pair draws nowhere: no mesh, no material, an id that names nothing, or a mesh
     /// without the vertex attributes that the material's shading reads. A material whose map is
     /// gone, or whose mesh has no texture coordinates for it, draws with its color alone. A
-    /// material with vertex colors reads them only from a mesh that has them, and a double-sided
-    /// material culls no faces.
+    /// material with vertex colors reads them only from a mesh that has them, a masked material
+    /// draws with the shader variant that discards fragments, and a double-sided material culls no
+    /// faces. The material's depth options and depth bias set the pipeline's depth state.
     pub fn pipeline_of(&self, mesh: u32, material: u32) -> Option<DrawKey> {
         if mesh == NO_MESH || material == NO_MATERIAL {
             return None;
@@ -539,23 +540,22 @@ impl SceneSettings {
         }
         let needs = shading.attributes();
         let features = self.materials.features(material - 1);
-        let vertex_colors = features & feature::VERTEX_COLORS != 0
-            && format & vertex::COLOR != 0
-            && shading.takes_vertex_colors();
-        let double_sided = features & feature::DOUBLE_SIDED != 0;
+        let has = |bit: u32| features & bit != 0;
+        let base_color = shading.reads_base_color();
+        let vertex_colors = has(feature::VERTEX_COLORS) && format & vertex::COLOR != 0;
+        let bit = |on: bool, bit: u32| if on { bit } else { 0 };
         ((format & needs) == needs).then_some(DrawKey {
             template: shading.template(),
-            permutation: if vertex_colors {
-                permutation::VERTEX_COLOR
-            } else {
-                0
-            },
+            permutation: bit(base_color && vertex_colors, permutation::VERTEX_COLOR)
+                | bit(
+                    base_color && has(feature::ALPHA_MASK),
+                    permutation::ALPHA_MASK,
+                ),
             vertex_format: format,
-            state: if double_sided {
-                state_flags::CULL_NONE
-            } else {
-                0
-            },
+            state: bit(has(feature::DOUBLE_SIDED), state_flags::CULL_NONE)
+                | bit(has(feature::NO_DEPTH_WRITE), state_flags::NO_DEPTH_WRITE)
+                | bit(has(feature::NO_DEPTH_TEST), state_flags::NO_DEPTH_TEST),
+            bias: self.materials.depth_bias(material - 1),
         })
     }
 
