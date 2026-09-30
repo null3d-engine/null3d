@@ -154,6 +154,36 @@ describe('SketchQuality', () => {
 	});
 });
 
+describe('SketchQuality.lower', () => {
+	it('moves to the next lighter preset, and waits for its frame, as setPreset does', async () => {
+		const { quality, applied, settled } = medium();
+		await quality.lower();
+		expect(quality.preset).toBe('low');
+		expect(quality.settings).toEqual(presetSettings('low'));
+		expect(applied.at(-1)?.preset).toBe('low');
+		expect(settled.count).toBe(1);
+		expect(quality.takeRestart()).toBe(true);
+	});
+
+	it('keeps the settings that the sketch chose itself and those of the page', async () => {
+		const { quality, changes } = medium({
+			options: { maxPixelRatio: 1 },
+			settings: { ...MEDIUM, maxPixelRatio: 1 },
+		});
+		quality.set({ maxAnisotropy: 16 });
+		quality.own('uploadBytesPerFrame');
+		await quality.lower();
+		expect(quality.preset).toBe('low');
+		expect(quality.settings).toEqual({
+			maxPixelRatio: 1,
+			maxAnisotropy: 16,
+			uploadBytesPerFrame: MEDIUM.uploadBytesPerFrame,
+		});
+		// The preset changed, and none of the settings did.
+		expect(changes.at(-1)).toEqual([]);
+	});
+});
+
 describe('SketchQuality.setPreset', () => {
 	it("gives every setting the new preset's value, and waits for the new preset's frame", async () => {
 		const { quality, applied, changes, settled } = medium();
@@ -217,6 +247,16 @@ describe('SketchQuality.setPreset', () => {
 		);
 		expect(quality.preset).toBe('medium');
 		expect(applied).toEqual([]);
+	});
+
+	it("puts back the preset's values of the settings that set changed", async () => {
+		const { quality } = medium();
+		quality.set({ maxAnisotropy: 16 });
+		await quality.setPreset('low');
+		expect(quality.settings).toEqual(presetSettings('low'));
+		// The sketch's choice ended with the preset change, so the check's lower preset applies.
+		await quality.lower();
+		expect(quality.settings.maxAnisotropy).toBe(presetSettings('low').maxAnisotropy);
 	});
 
 	it('gives the page the preset check with the preset it chose, and changes no setting', () => {

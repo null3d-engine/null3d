@@ -28,7 +28,7 @@ import {
 } from '../generated/core';
 import type { EngineCapabilities } from '../page/engine';
 import type { CoreDevice } from '../page/limits';
-import { lowered, SKETCH_SETTINGS } from '../quality/presets';
+import { SKETCH_SETTINGS } from '../quality/presets';
 import { Assets } from '../scene/assets';
 import { CoreMemory } from '../scene/memory';
 import { Geometry, Materials } from '../scene/resources';
@@ -189,7 +189,9 @@ export class SketchRunner {
 		Atomics.store(slots, Slot.DrawListAddress1, glue.drawListAddress(1));
 		this.reducedMotion = Atomics.load(slots, Slot.ReducedMotion);
 		this.input = new InputReader(sketch.control, sketch.keyCodes);
-		const textures = new Textures(this.core, sketch.sendImage, this.recorded);
+		const textures = new Textures(this.core, sketch.sendImage, this.recorded, () =>
+			this.quality.own('uploadBytesPerFrame'),
+		);
 		// The core takes every texture setting of the preset before the setup runs, so a sketch's own
 		// budget wins until the setting changes. The page applies the settings it owns.
 		textures.applyQuality(sketch.quality.settings, SKETCH_SETTINGS);
@@ -275,7 +277,7 @@ export class SketchRunner {
 					get preset() {
 						return quality.preset;
 					},
-					lower: () => quality.setPreset(lowered(quality.preset, 1)),
+					lower: () => quality.lower(),
 					drawFrame: () => this.drawSetupFrame(),
 					uploading: () => glue.textureStat(TEXTURE_STAT_WAITING, 0) > 0,
 					maxFps: fps,

@@ -106,7 +106,7 @@ Device hints only suggest a preset. A laptop with a weak GPU and a desktop with 
 1. The sketch's setup runs at the chosen preset and builds its scene.
 2. The engine draws the first frame, with every pipeline built, and then draws the scene for a moment more. The sketch's `onUpdate` does not run yet.
 3. The engine measures two rates: the frames that it presented, and the frames that the GPU finished. It reads the lower one, so frames that wait in a queue on the GPU cannot pass for a healthy rate.
-4. When that rate misses the target, the engine lowers the preset by one, waits for the new preset's first frame, and measures again. It stops at a preset that holds the target, or at Low.
+4. When that rate misses the target, the engine lowers the preset by one, waits for the new preset's first frame, and measures again. It stops at a preset that holds the target, or at Low. A setting that the setup changed with `quality.set` keeps its value on the lighter preset.
 5. `createEngine` resolves after the check. The sketch's `quality.onChange` handlers then hear of the new preset at the start of the first frame of play.
 
 <!-- null3d:preset-check:start -->

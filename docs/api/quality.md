@@ -59,7 +59,7 @@ console.log(engine.mode.presetCheck); // { from: 'high', targetFps: 60, rounds: 
 
 ## Switching presets
 
-`quality.setPreset(preset)` switches to another preset at a point that the sketch picks, such as a menu or a loading screen. Every setting takes the new preset's value, including the settings that change only at the start, apart from those that the page's options give. The GPU path caps the preset: `setPreset('ultra')` on WebGL2 runs Medium.
+`quality.setPreset(preset)` switches to another preset at a point that the sketch picks, such as a menu or a loading screen. Every setting takes the new preset's value, including the settings that change only at the start, apart from those that the page's options give. The values that `set` gave end with the switch too. The preset check is different: when it lowers the preset after the setup, the settings that the setup changed with `set` keep their values. The GPU path caps the preset: `setPreset('ultra')` on WebGL2 runs Medium.
 
 ```ts
 export default defineSketch(({ quality, page }) => {
@@ -134,7 +134,7 @@ The quality preset and settings, as a sketch reads and changes them through `ctx
 | `readonly preset: QualityPreset` | The preset that the engine runs. |
 | `readonly settings: Readonly<QualitySettings>` | The settings in use: the preset's values, with the values of the page's options and the changes that `set` made. |
 | `set(settings: Partial<QualitySettings>): Promise<void>` | Changes settings. It takes the settings that `settings` lists, each with a value that the setting takes, and throws E1213 for any other setting or value. A setting that it does not get keeps its value. A setting that changes during play applies from the next frame on, and the promise resolves at once. A setting fixed while a preset runs makes the change wait as `setPreset` does: the last frame stays on screen until the engine has drawn a frame with the new settings and all of its pipelines built, and then the promise resolves. |
-| `setPreset(preset: QualityPreset): Promise<void>` | Switches to another preset at a point that the sketch picks, such as a menu or a loading screen. Every setting takes the new preset's value, apart from those that the page's options give. The GPU path caps the preset, as it caps the page's choice. The promise resolves once the engine has drawn a frame at the new preset with all of its pipelines built. Until then the last frame stays on screen, and the sketch's frames wait. A name that is no preset throws E1213. |
+| `setPreset(preset: QualityPreset): Promise<void>` | Switches to another preset at a point that the sketch picks, such as a menu or a loading screen. Every setting takes the new preset's value, apart from those that the page's options give, including the settings that `set` changed. The GPU path caps the preset, as it caps the page's choice. The promise resolves once the engine has drawn a frame at the new preset with all of its pipelines built. Until then the last frame stays on screen, and the sketch's frames wait. A name that is no preset throws E1213. |
 | `onChange(handler: (quality: Quality) => void): () => void` | Calls `handler` at the start of the first frame after the settings change. Returns a function that removes the handler. |
 
 ### `QualityPreset`

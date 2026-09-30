@@ -458,6 +458,25 @@ describe('SketchRunner and quality presets', () => {
 		]);
 	}, 10_000);
 
+	it("keeps the settings that the sketch's setup chose when the check lowers the preset", async () => {
+		const { context, log, stopDrawing } = await start(
+			(ctx, log) => {
+				ctx.textures.setUploadBudget(2048);
+				ctx.quality.set({ maxAnisotropy: 16 });
+				log.length = 0;
+				return {};
+			},
+			undefined,
+			{ quality: { ...MEDIUM, check: {} }, drawing: { presentedMs: 16, completedMs: 40 } },
+		);
+		stopDrawing();
+		expect(context.quality.preset).toBe('low');
+		// Low's pixel ratio cap applies, and the sketch's own anisotropy cap and upload budget stay.
+		expect(context.quality.settings.maxPixelRatio).toBe(1.5);
+		expect(context.quality.settings.maxAnisotropy).toBe(16);
+		expect(log.filter((line) => line.startsWith('setTextureOption'))).toEqual([]);
+	}, 10_000);
+
 	it('asks for no more than the frame rate that ?fps= holds', async () => {
 		const { context, updates, stopDrawing } = await start(() => ({}), undefined, {
 			quality: { ...MEDIUM, check: { fps: 30 } },

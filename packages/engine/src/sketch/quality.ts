@@ -3,12 +3,14 @@
 // settings their first values. A change of a setting that can change during play applies from the
 // next frame on. A change of preset, or of a setting fixed while a preset runs, restarts the
 // preset: the first frame after it waits for its new pipelines, as the first frame of the engine
-// does, and the change resolves once the thread that draws has taken that frame.
+// does, and the change resolves once the thread that draws has taken that frame. A setting that the
+// sketch chose itself keeps its value when the engine's preset check lowers the preset.
 
 import type { PresetCheck } from '../quality/check';
 import {
 	checkSettings,
 	LIVE_SETTINGS,
+	lowered,
 	presetArgument,
 	presetIndex,
 	presetSettings,
@@ -70,7 +72,8 @@ export interface Quality {
 	/**
 	 * Switches to another preset at a point that the sketch picks, such as a menu or a loading
 	 * screen. Every setting takes the new preset's value, apart from those that the page's options
-	 * give. The GPU path caps the preset, as it caps the page's choice. The promise resolves once
+	 * give, including the settings that `set` changed. The GPU path caps the preset, as it caps the
+	 * page's choice. The promise resolves once
 	 * the engine has drawn a frame at the new preset with all of its pipelines built. Until then
 	 * the last frame stays on screen, and the sketch's frames wait. A name that is no preset throws
 	 * E1213.
@@ -102,6 +105,8 @@ export class SketchQuality implements Quality {
 	private change = NO_CHANGE;
 	/** True from a restart until the next frame records. */
 	private restart = false;
+	/** The settings that the sketch chose itself since the preset it last asked for. */
+	private readonly owned = new Set<QualitySettingName>();
 	private readonly options: Partial<QualitySettings>;
 	private readonly highest: QualityPreset;
 
@@ -118,13 +123,36 @@ export class SketchQuality implements Quality {
 
 	set(settings: Partial<QualitySettings>): Promise<void> {
 		checkSettings('quality.set()', settings);
+		for (const [name, value] of Object.entries(settings))
+			if (value !== undefined) this.owned.add(name as QualitySettingName);
 		return this.update(this.preset, settings);
 	}
 
 	setPreset(preset: QualityPreset): Promise<void> {
 		const wanted = presetArgument(preset);
 		const next = presetIndex(wanted) > presetIndex(this.highest) ? this.highest : wanted;
+		this.owned.clear();
 		return this.update(next, presetSettings(next, this.options));
+	}
+
+	/**
+	 * Counts a setting as the sketch's own choice, for a call that sets it outside `set`, such as
+	 * a texture upload budget below the setting's range.
+	 */
+	own(name: QualitySettingName): void {
+		this.owned.add(name);
+	}
+
+	/**
+	 * The preset check's step to the next lighter preset. The settings that the page's options give,
+	 * and those that the sketch chose itself, keep their values.
+	 */
+	lower(): Promise<void> {
+		const next = lowered(this.preset, 1);
+		const kept: Record<string, unknown> = { ...this.options };
+		const current = this.settings as unknown as Record<string, unknown>;
+		for (const name of this.owned) kept[name] = current[name];
+		return this.update(next, presetSettings(next, kept as Partial<QualitySettings>));
 	}
 
 	onChange(handler: (quality: Quality) => void): () => void {
