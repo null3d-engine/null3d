@@ -40,7 +40,8 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 		page: 'tests/pages/replay.html',
 		size: [256, 256],
 		tiers: ['webgpu'],
-		// 13 red and 12 blue boxes are in view; the 26th box sits behind the camera.
+		// 13 red and 12 blue boxes are in view. The 26th box sits behind the camera, and the 27th
+		// above the grid on a layer that the view leaves out.
 		expect: { visible: [13, 12] },
 	},
 	// An animated scene held at 1.5 seconds: the same steps and seeded random numbers in every mode.
@@ -95,6 +96,10 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 		reference: 'cells',
 		tolerance: { threshold: 0, maxDiffRatio: 0 },
 	},
+	// Objects, a parent and its child, and instance batches on three layers, some of them moved to
+	// other layers after they were created, and a camera that draws two of the layers. A child keeps
+	// its own layers, so the child of a parent that the camera leaves out still draws.
+	{ name: 'layers', sketch: 'tests/pages/sketches/layers-sketch.ts', hold: 0.1 },
 	// Meshes from arrays in every vertex format, a mesh too big for 16-bit indices that splits into
 	// parts, and normals and tangents that the engine computes: on job workers in the threaded build,
 	// and on the page in the single-threaded build, which must compute the same values. WebGL2 lays

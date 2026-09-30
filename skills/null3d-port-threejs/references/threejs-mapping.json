@@ -349,10 +349,10 @@
       "id": "layers",
       "category": "Scene graph",
       "three": "object.layers / camera.layers (set, enable, disable)",
-      "status": "direct",
+      "status": "changed",
       "since": "0.1",
-      "target": "obj.setLayers(mask), camera.setLayers(mask)",
-      "notes": "The same 32 bits. Raycasts and declared passes take a layer mask too.",
+      "target": "obj.setLayers(mask), camera.setLayers(mask), batch.setLayers(mask); the layers option of createMesh, createInstances and createPerspectiveCamera",
+      "notes": "Masks have the same 32 bits and the same default, layer 0 alone, and a camera draws an object when their masks share a bit. layers.set(n) becomes setLayers(1 << n). For enable and disable, keep the mask in your code and pass the new mask. An InstancedMesh's layers become its batch's, for every row. Raycasts and declared passes take layer masks from 0.2.",
       "docs": "concepts/render-layers",
       "detect": "\\.layers\\.(set|enable|disable|toggle|enableAll|disableAll|mask)\\b"
     },

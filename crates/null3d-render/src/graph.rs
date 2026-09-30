@@ -86,7 +86,7 @@ pub use error::{GraphError, Mismatch};
 pub const CANVAS: &str = "canvas";
 
 /// A layer mask that selects every layer, and the mask of a pass that sets none.
-pub const ALL_LAYERS: u32 = u32::MAX;
+pub use null3d_core::layers::ALL_LAYERS;
 
 /// The most passes one graph holds. Indices are 16 bits, and the compiler keeps the two highest
 /// values as markers.
