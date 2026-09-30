@@ -3,12 +3,14 @@ import * as C from '../generated/core';
 import { FORMAT_CANVAS, FORMAT_RG11B10_UFLOAT, FORMAT_RGBA16_FLOAT } from '../generated/gpu';
 import type { Tier } from '../render/renderer';
 import {
+	ANTIALIAS_CODES,
 	type AntialiasMode,
 	type CoreDevice,
 	coreDevice,
 	DEPTH_WITHOUT_CLIP_CONTROL,
 	type DeviceOptions,
 	type DeviceReport,
+	drawsHdr,
 	maxInstances,
 	portableMaxInstances,
 	rowLimitWarning,
@@ -28,8 +30,7 @@ const webgpu = (storageBindingBytes: number): CoreDevice => ({
 	sharedUploads: true,
 	depth: 'reversed',
 	parallelCompile: true,
-	sceneColor: FORMAT_RGBA16_FLOAT,
-	antialias: C.ANTIALIAS_MSAA,
+	sceneColors: { none: FORMAT_RGBA16_FLOAT, fxaa: FORMAT_RGBA16_FLOAT, msaa: FORMAT_RGBA16_FLOAT },
 	transparent: false,
 });
 
@@ -58,13 +59,18 @@ const PLAIN: DeviceOptions = {
 	depth: undefined,
 	parallelCompile: true,
 	hdr: true,
-	antialias: 'msaa',
 	transparent: false,
 };
 
-/** The scene color format on a tier for a page with the plain options and these changes. */
-const formatOn = (tier: Tier, device: DeviceReport, options: Partial<DeviceOptions> = {}) =>
-	sceneColorFormat(tier, device, { ...PLAIN, ...options });
+/**
+ * The scene color format on a tier in an anti-aliasing mode, MSAA unless given, for a page with the
+ * plain options and these changes.
+ */
+const formatOn = (
+	tier: Tier,
+	device: DeviceReport,
+	{ antialias = 'msaa', ...options }: Partial<DeviceOptions> & { antialias?: AntialiasMode } = {},
+) => sceneColorFormat(tier, device, { ...PLAIN, ...options }, antialias);
 
 describe('sceneColorFormat', () => {
 	const small = ['rg11b10ufloat-renderable'];
@@ -91,9 +97,8 @@ describe('sceneColorFormat', () => {
 		}
 		for (const tier of ['webgpu', 'webgpu-compat', 'webgl2'] as const) {
 			const device = coreDevice(tier, report({}), PLAIN);
-			const multisampledFloat =
-				device.antialias === C.ANTIALIAS_MSAA && device.sceneColor !== FORMAT_CANVAS;
-			expect(multisampledFloat).toBe(tier !== 'webgpu-compat');
+			expect(drawsHdr(device, 'msaa')).toBe(tier !== 'webgpu-compat');
+			expect(drawsHdr(device, 'fxaa')).toBe(true);
 		}
 	});
 
@@ -114,16 +119,26 @@ describe('sceneColorFormat', () => {
 		}
 	});
 
-	it('reaches the core with the canvas transparency and the anti-aliasing mode', () => {
+	it('gives the core the canvas transparency, and the scene color of each anti-aliasing mode', () => {
 		const device = coreDevice('webgpu', report({}, small), { ...PLAIN, transparent: true });
-		expect([device.sceneColor, device.transparent]).toEqual([FORMAT_RGBA16_FLOAT, true]);
-		expect(coreDevice('webgl2', report({}), PLAIN).sceneColor).toBe(FORMAT_RGBA16_FLOAT);
-		const codes = { none: C.ANTIALIAS_NONE, fxaa: C.ANTIALIAS_FXAA, msaa: C.ANTIALIAS_MSAA };
-		for (const [antialias, code] of Object.entries(codes))
-			expect(
-				coreDevice('webgpu', report({}), { ...PLAIN, antialias: antialias as AntialiasMode })
-					.antialias,
-			).toBe(code);
+		expect([device.sceneColors.msaa, device.transparent]).toEqual([FORMAT_RGBA16_FLOAT, true]);
+		expect(coreDevice('webgl2', report({}), PLAIN).sceneColors.msaa).toBe(FORMAT_RGBA16_FLOAT);
+		// A mode that the sketch switches to later takes its own target: compatibility mode draws
+		// MSAA on the 8-bit path and the other modes in HDR.
+		const fewSamples = { rgba16f: { ...HDR_TARGETS.rgba16f, samples: 2 } };
+		expect(coreDevice('webgpu-compat', report({}, small), PLAIN).sceneColors).toEqual({
+			none: FORMAT_RG11B10_UFLOAT,
+			fxaa: FORMAT_RG11B10_UFLOAT,
+			msaa: FORMAT_CANVAS,
+		});
+		expect(
+			coreDevice('webgl2', report({ floatRenderTargets: fewSamples }), PLAIN).sceneColors,
+		).toEqual({ none: FORMAT_RGBA16_FLOAT, fxaa: FORMAT_RGBA16_FLOAT, msaa: FORMAT_CANVAS });
+		expect(ANTIALIAS_CODES).toEqual({
+			none: C.ANTIALIAS_NONE,
+			fxaa: C.ANTIALIAS_FXAA,
+			msaa: C.ANTIALIAS_MSAA,
+		});
 	});
 
 	it('tells the WebGPU core about transient attachments where the browser has them', () => {

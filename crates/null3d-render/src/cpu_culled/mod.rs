@@ -67,6 +67,7 @@ use crate::frame_graph::{FrameGraph, GraphIds, Role};
 use crate::graph::RenderGraph;
 use crate::materials::{MATERIAL_FLOATS, MATERIAL_TEXELS};
 use crate::meshes::{MeshStorage, Packing};
+use crate::output::{Antialias, SceneColor};
 use crate::pipelines::{PassTargets, PipelineCache};
 use crate::textures::{TextureIds, TextureStore};
 use crate::view::{ViewFrame, ViewId};
@@ -650,6 +651,15 @@ impl FrameBuilder for CpuCulledRenderer {
         self.streamed_slot.forget();
         self.settings.materials_mut().mark_changed();
         self.settings.textures_mut().reset_gpu();
+    }
+
+    fn set_antialias(&mut self, antialias: Antialias, scene_color: SceneColor) {
+        if self
+            .graph
+            .set_antialias(&mut self.settings, antialias, scene_color)
+        {
+            self.layout.built = false;
+        }
     }
 
     fn list(&self, frame: u32) -> &DrawList {

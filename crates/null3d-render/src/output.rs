@@ -14,8 +14,10 @@
 //! The tone mapping operators follow three.js's formulas, as `null3d::color` in the shader library
 //! writes them. Their codes are the same in the core, `null3d::tonemap` and the TypeScript API.
 //!
-//! The anti-aliasing mode is fixed when the frame builder starts. MSAA draws the scene with 4
-//! samples per pixel. FXAA and no anti-aliasing draw it with one, and the final pass runs FXAA on
+//! The frame builder starts in one anti-aliasing mode. It changes the mode together with the scene
+//! color's target (`FrameBuilder::set_antialias`), when the sketch changes the quality settings.
+//! MSAA draws the scene with 4 samples per pixel. FXAA and no anti-aliasing draw it with one, and
+//! the final pass runs FXAA on
 //! the scene color before the output transform. The 8-bit path resolves MSAA into the canvas as
 //! before; with one sample, its final pass reads the scene color as display color and only copies
 //! it, or runs FXAA on it.

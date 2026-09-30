@@ -93,8 +93,11 @@ async function start(
 			sharedUploads: false,
 			depth: 'reversed',
 			parallelCompile: true,
-			sceneColor: FORMAT_RGBA16_FLOAT,
-			antialias: C.ANTIALIAS_MSAA,
+			sceneColors: {
+				none: FORMAT_RGBA16_FLOAT,
+				fxaa: FORMAT_RGBA16_FLOAT,
+				msaa: FORMAT_RGBA16_FLOAT,
+			},
 			transparent: false,
 		},
 		capabilities: CAPABILITIES,

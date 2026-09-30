@@ -538,6 +538,21 @@ pub fn visible_entries(frame: u32) -> u32 {
     })
 }
 
+/// The anti-aliasing mode, by code, and the format of the target that scene passes draw into, from
+/// the next recorded frame on. That frame makes the scene's targets again, and creates the
+/// pipelines that draw into them. The TypeScript API checks the mode, so an unknown code keeps the
+/// mode as it was.
+#[wasm_bindgen(js_name = setAntialias)]
+pub fn set_antialias(antialias: u32, scene_color: u32) -> u32 {
+    with_engine(|e| {
+        let antialias = Antialias::from_code(antialias)
+            .unwrap_or_else(|| e.renderer.settings().canvas().antialias);
+        e.renderer
+            .set_antialias(antialias, SceneColor::from_format(scene_color));
+        0
+    })
+}
+
 /// True when the last recorded frame rebuilt its draw tables after a structure change.
 #[wasm_bindgen(js_name = drawTablesRebuilt)]
 pub fn draw_tables_rebuilt() -> bool {

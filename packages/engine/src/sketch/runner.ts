@@ -20,7 +20,7 @@ import { EngineError } from '../errors/engine-error';
 import { messageOf } from '../errors/message';
 import { TEXTURE_OPTION_UPLOAD_ALL, TEXTURE_STAT_IMAGES_SENT } from '../generated/core';
 import type { EngineCapabilities } from '../page/engine';
-import type { CoreDevice } from '../page/limits';
+import { ANTIALIAS_CODES, type AntialiasMode, type CoreDevice, drawsHdr } from '../page/limits';
 import type { QualitySettings } from '../quality/presets';
 import { Assets } from '../scene/assets';
 import { CoreMemory } from '../scene/memory';
@@ -133,6 +133,8 @@ export class SketchRunner {
 	private restoreRandom: (() => void) | undefined;
 	private readonly input: InputReader;
 	private readonly quality: SketchQuality;
+	/** The anti-aliasing mode that the core draws in. */
+	private antialias: AntialiasMode;
 	/** The sketch's debug drawing, in development builds only. */
 	private readonly debugDraw: DebugDraw | undefined;
 	readonly context: SketchContext;
@@ -155,6 +157,8 @@ export class SketchRunner {
 		);
 		const { glue, device } = sketch;
 		const { slots } = sketch.control;
+		const { antialias } = sketch.quality.settings;
+		this.antialias = antialias;
 		const status = glue.initEngine(
 			sketch.jobWorkers,
 			SCENE_CAPACITY,
@@ -164,8 +168,8 @@ export class SketchRunner {
 			device.webgl2,
 			device.capabilities,
 			device.maxTextureSize,
-			device.sceneColor,
-			device.antialias,
+			device.sceneColors[antialias],
+			ANTIALIAS_CODES[antialias],
 			device.transparent,
 		);
 		if (status !== 0) throw coreFailure(glue, 'createEngine');
@@ -179,7 +183,10 @@ export class SketchRunner {
 		Atomics.store(slots, Slot.DrawListAddress1, glue.drawListAddress(1));
 		this.reducedMotion = Atomics.load(slots, Slot.ReducedMotion);
 		this.input = new InputReader(sketch.control, sketch.keyCodes);
-		this.quality = new SketchQuality(sketch.quality, (settings) => sketch.applyQuality(settings));
+		this.quality = new SketchQuality(sketch.quality, (settings) => {
+			if (settings.antialias !== this.antialias) this.setAntialias(settings.antialias);
+			sketch.applyQuality(settings);
+		});
 		this.readViewport();
 		this.debugDraw = DEV ? new DebugDraw(this.core) : undefined;
 		const debug: Debug = this.debugDraw ?? RELEASE_DEBUG;
@@ -227,6 +234,19 @@ export class SketchRunner {
 		this.callbacks = (await sketch.setup(this.context)) ?? {};
 		this.setUp = true;
 		if (this.holdSeconds !== undefined) await this.hold(this.holdSeconds);
+	}
+
+	/**
+	 * Gives the core a new anti-aliasing mode, with the target that scene passes draw into in that
+	 * mode, from the next recorded frame on. `engine.capabilities.hdr` follows, as the mode decides
+	 * the target in WebGPU's compatibility mode.
+	 */
+	private setAntialias(mode: AntialiasMode): void {
+		const { glue, device, capabilities } = this.sketch;
+		if (glue.setAntialias(ANTIALIAS_CODES[mode], device.sceneColors[mode]) !== 0)
+			throw coreFailure(glue, 'quality.set');
+		this.antialias = mode;
+		capabilities.hdr = drawsHdr(device, mode);
 	}
 
 	/** True once the setup function has returned, so the frame loop may step the sketch. */

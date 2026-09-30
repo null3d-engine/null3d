@@ -140,6 +140,11 @@ pub trait FrameBuilder {
     /// frame creates them all again and uploads the whole scene. The thread that draws asks for
     /// this after the browser took the GPU away and it made a new device.
     fn reset_gpu(&mut self);
+    /// Changes the anti-aliasing mode, and the target that scene passes draw into, from the next
+    /// recorded frame on. That frame makes the scene's targets again, and asks for the pipelines
+    /// that draw into them, which the thread that draws builds before the frame shows. The
+    /// canvas's transparency stays.
+    fn set_antialias(&mut self, antialias: Antialias, scene_color: SceneColor);
     /// The list recorded for a frame's parity, as the render worker replays it.
     fn list(&self, frame: u32) -> &DrawList;
 }
@@ -326,8 +331,9 @@ struct Lighting {
     background: Option<[f32; 3]>,
 }
 
-/// How frames reach the canvas, fixed when the builder starts: the target that scene passes draw
-/// into, the anti-aliasing mode, and whether the canvas is transparent.
+/// How frames reach the canvas: the target that scene passes draw into, the anti-aliasing mode,
+/// and whether the canvas is transparent. The builder starts with it. The target and the mode
+/// change together through [`FrameBuilder::set_antialias`], and the transparency never changes.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct CanvasOutput {
     pub scene_color: SceneColor,
@@ -377,6 +383,13 @@ impl SceneSettings {
     /// How frames reach the canvas.
     pub fn canvas(&self) -> CanvasOutput {
         self.canvas
+    }
+
+    /// Sets how frames reach the canvas, and returns true when that changed.
+    pub(crate) fn set_canvas(&mut self, canvas: CanvasOutput) -> bool {
+        let changed = canvas != self.canvas;
+        self.canvas = canvas;
+        changed
     }
 
     /// The exposure and the tone mapping.

@@ -1,7 +1,7 @@
 // What the engine core and the thread that draws need to know about the device and the canvas: on
 // WebGPU, the storage binding size the engine asks the GPU for; on WebGL2, multi-draw, the texture
 // size, whether WebGL reads shared memory and how depth is stored; on both, the target that scene
-// passes draw into, the anti-aliasing mode and whether the canvas is transparent. On WebGPU the
+// passes draw into in each anti-aliasing mode, and whether the canvas is transparent. On WebGPU the
 // core also learns whether the device has transient attachments. They also set how many objects and
 // instance rows a scene can draw, and past how many development builds warn that other devices of
 // the same GPU path draw fewer.
@@ -16,7 +16,7 @@ import type { DepthMode, Switches } from './switches';
 export type AntialiasMode = QualitySettings['antialias'];
 
 /** Each anti-aliasing mode's code in the core. */
-const ANTIALIAS_CODES: Record<AntialiasMode, number> = {
+export const ANTIALIAS_CODES: Record<AntialiasMode, number> = {
 	none: C.ANTIALIAS_NONE,
 	fxaa: C.ANTIALIAS_FXAA,
 	msaa: C.ANTIALIAS_MSAA,
@@ -65,23 +65,20 @@ export interface CoreDevice {
 	 */
 	parallelCompile: boolean;
 	/**
-	 * The format code of the target that scene passes draw into: a float format for HDR color, which
-	 * the final pass tone maps, or the canvas's format on the 8-bit path.
+	 * The format code of the target that scene passes draw into in each anti-aliasing mode: a float
+	 * format for HDR color, which the final pass tone maps, or the canvas's format on the 8-bit
+	 * path. The quality settings' mode picks one when the engine starts, and again when it changes.
 	 */
-	sceneColor: number;
-	/** The anti-aliasing mode's code in the core. */
-	antialias: number;
+	sceneColors: Record<AntialiasMode, number>;
 	/** True when the canvas keeps premultiplied alpha, and stays clear where nothing draws. */
 	transparent: boolean;
 }
 
 /**
- * How the page asks the engine to use the device: the test switches that force a route, the
- * anti-aliasing mode and the canvas's transparency.
+ * How the page asks the engine to use the device: the test switches that force a route, and the
+ * canvas's transparency.
  */
 export type DeviceOptions = Pick<Switches, 'copyUploads' | 'depth' | 'hdr' | 'parallelCompile'> & {
-	/** The anti-aliasing mode. */
-	antialias: AntialiasMode;
 	/** True for a transparent canvas. */
 	transparent: boolean;
 };
@@ -124,16 +121,17 @@ export function webgl2DrawsHdr(report: DeviceReport['webgl2'], antialias: Antial
 }
 
 /**
- * The format of the target that scene passes draw into. WebGPU draws HDR color, in rg11b10ufloat,
- * which takes half the bytes, where the device draws into it and the canvas needs no alpha, and in
- * rgba16float elsewhere. Compatibility mode cannot multisample float targets, so with MSAA it takes
- * the 8-bit path. WebGL2 takes it too, unless the device draws HDR color in the anti-aliasing
- * mode. `hdr` false forces the 8-bit path.
+ * The format of the target that scene passes draw into in the `antialias` mode. WebGPU draws HDR
+ * color, in rg11b10ufloat, which takes half the bytes, where the device draws into it and the
+ * canvas needs no alpha, and in rgba16float elsewhere. Compatibility mode cannot multisample float
+ * targets, so with MSAA it takes the 8-bit path. WebGL2 takes it too, unless the device draws HDR
+ * color in the anti-aliasing mode. `hdr` false forces the 8-bit path.
  */
 export function sceneColorFormat(
 	tier: Tier,
 	report: DeviceReport,
-	{ hdr, transparent, antialias }: Pick<DeviceOptions, 'hdr' | 'transparent' | 'antialias'>,
+	{ hdr, transparent }: Pick<DeviceOptions, 'hdr' | 'transparent'>,
+	antialias: AntialiasMode,
 ): number {
 	if (!hdr) return FORMAT_CANVAS;
 	if (tier === 'webgl2')
@@ -151,10 +149,11 @@ export function sceneColorFormat(
  * the 8-bit path, so tests reach every route.
  */
 export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOptions): CoreDevice {
+	const sceneColor = (antialias: AntialiasMode) =>
+		sceneColorFormat(tier, report, options, antialias);
 	const common = {
 		parallelCompile: options.parallelCompile,
-		sceneColor: sceneColorFormat(tier, report, options),
-		antialias: ANTIALIAS_CODES[options.antialias],
+		sceneColors: { none: sceneColor('none'), fxaa: sceneColor('fxaa'), msaa: sceneColor('msaa') },
 		transparent: options.transparent,
 	};
 	if (tier !== 'webgl2') {
@@ -181,6 +180,14 @@ export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOpti
 		depth: webgl2Depth(gl.extensions.EXT_clip_control === true, options.depth),
 		...common,
 	};
+}
+
+/** True when the device draws HDR color in the `antialias` mode, false on the 8-bit path. */
+export function drawsHdr(
+	device: Pick<CoreDevice, 'sceneColors'>,
+	antialias: AntialiasMode,
+): boolean {
+	return device.sceneColors[antialias] !== FORMAT_CANVAS;
 }
 
 /**

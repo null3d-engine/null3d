@@ -6,7 +6,6 @@
 import { EngineError, isErrorCode, setErrorFixes } from '../errors/engine-error';
 import { ERROR_FIXES } from '../errors/fixes';
 import { messageOf } from '../errors/message';
-import { FORMAT_CANVAS } from '../generated/gpu';
 import { choosePreset, crashTier, memoryPreset, type PresetRequest } from '../quality/chooser';
 import {
 	checkSettings,
@@ -54,7 +53,7 @@ import {
 } from './frame-stats';
 import { holdFailure, holdSeconds, publishHold } from './hold';
 import { captureInput } from './input';
-import { coreDevice, maxInstances } from './limits';
+import { coreDevice, drawsHdr, maxInstances } from './limits';
 import { loadCore, memoryMaximumMiB } from './loader';
 import { MainThreadWatch } from './main-thread';
 import { watchPreferences } from './preferences';
@@ -175,7 +174,8 @@ export interface EngineCapabilities {
 	 * canvas. False on the 8-bit path, where each shader tone maps its own output: in WebGPU's
 	 * compatibility mode with MSAA, and on WebGL2 devices whose float targets fail the engine's
 	 * test. Both paths show the same colors. Edges differ a little with MSAA, because the 8-bit path
-	 * averages the samples after the tone mapping.
+	 * averages the samples after the tone mapping. It changes when the sketch changes the
+	 * anti-aliasing mode between MSAA and the others in compatibility mode.
 	 */
 	hdr: boolean;
 	/**
@@ -662,8 +662,12 @@ async function startEngine(
 	const events: WorkerEvents = {
 		sketchMessage: onSketchMessage,
 		failure: onFailure,
-		// The page applies the settings that it owns: the pixel ratio cap sizes the canvas.
-		quality: (settings) => canvasWatch.setMaxPixelRatio(settings.maxPixelRatio),
+		// The page applies the settings that it owns: the pixel ratio cap sizes the canvas. The
+		// anti-aliasing mode can change whether the scene draws HDR color.
+		quality: (settings) => {
+			canvasWatch.setMaxPixelRatio(settings.maxPixelRatio);
+			capabilities.hdr = drawsHdr(device, settings.antialias);
+		},
 	};
 
 	const jobWorkers = threaded
@@ -751,7 +755,6 @@ async function startEngine(
 	let wasmMemory = core.memory;
 	const device = coreDevice(tier, report, {
 		...switches,
-		antialias: quality.settings.antialias,
 		transparent: options.transparent === true,
 	});
 	const capabilities: EngineCapabilities = {
@@ -762,7 +765,7 @@ async function startEngine(
 				? Object.keys(report.webgl2.extensions).filter((n) => report.webgl2.extensions[n])
 				: report.webgpu.features,
 		limits: tier === 'webgl2' ? {} : report.webgpu.limits,
-		hdr: device.sceneColor !== FORMAT_CANVAS,
+		hdr: drawsHdr(device, quality.settings.antialias),
 		maxInstances: maxInstances(device),
 		depth: device.depth,
 	};

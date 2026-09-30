@@ -58,19 +58,31 @@ pub(crate) struct FinalPass {
 impl FinalPass {
     /// The final pass of a builder whose scene draws into `scene_color` in the `antialias` mode.
     pub(crate) fn new(ids: FinalIds, scene_color: SceneColor, antialias: Antialias) -> Self {
-        Self {
+        let mut pass = Self {
             ids,
-            fxaa: antialias == Antialias::Fxaa,
-            flags: if scene_color.is_hdr() {
-                0
-            } else {
-                OutputUniform::DISPLAY_COLOR
-            },
+            fxaa: false,
+            flags: 0,
             pipeline: None,
             created: false,
             uploaded: None,
             bound: None,
-        }
+        };
+        pass.set_mode(scene_color, antialias);
+        pass
+    }
+
+    /// Makes the pass read a scene color in `scene_color`, in the `antialias` mode, from the next
+    /// frame on. The pass asks for its pipeline again, and binds the scene color again, as the
+    /// frame makes its targets again. Its settings buffer stays.
+    pub(crate) fn set_mode(&mut self, scene_color: SceneColor, antialias: Antialias) {
+        self.fxaa = antialias == Antialias::Fxaa;
+        self.flags = if scene_color.is_hdr() {
+            0
+        } else {
+            OutputUniform::DISPLAY_COLOR
+        };
+        self.pipeline = None;
+        self.bound = None;
     }
 
     /// Bytes the pass may copy into a frame's arena: the output settings.

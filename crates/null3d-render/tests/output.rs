@@ -416,6 +416,78 @@ fn msaa_on_float_targets_needs_a_device_that_multisamples_them() {
     }
 }
 
+/// The render pipelines that a frame creates: the scene's mesh pipelines, then the final pass's.
+fn pipelines_made(commands: &[(Op, Vec<u32>)]) -> (Vec<Vec<u32>>, Vec<Vec<u32>>) {
+    operands(commands, Op::CreateRenderPipeline)
+        .into_iter()
+        .partition(|o| o[1] != template::FINAL)
+}
+
+/// Starts a world in one mode and switches it to others while it runs, as compatibility mode
+/// switches: MSAA on the 8-bit path, then FXAA and no anti-aliasing on HDR color, then MSAA again.
+/// Each frame replays on a device that multisamples no float target, which checks that every
+/// pipeline and bundle matches the samples of the pass it draws in. The frame after a switch that
+/// changes the scene color's format or samples makes the scene's targets again, and creates the
+/// pipelines that draw into them. A mode that the builder drew before takes its pipelines from the
+/// cache.
+fn check_switches<B: FrameBuilder>(mut world: World<B>) {
+    let mut device = MockBackend::with_capabilities(Capabilities::RG11B10_RENDERABLE);
+    world.record(true);
+    device
+        .replay(world.renderer.list(world.frame).words())
+        .unwrap();
+    let hdr = SceneColor::from_format(format::RGBA16_FLOAT);
+    let eight_bit = SceneColor::EIGHT_BIT;
+    for (antialias, scene, new_meshes, new_final, remade) in [
+        (Antialias::Fxaa, hdr, 2, Some(permutation::FXAA), true),
+        (Antialias::None, hdr, 0, Some(0), false),
+        (Antialias::Msaa, eight_bit, 0, None, true),
+        (Antialias::Fxaa, hdr, 0, None, true),
+    ] {
+        world.renderer.set_antialias(antialias, scene);
+        let commands = next(&mut world, &mut device);
+        let label = format!("{antialias:?} {}", scene.format());
+        let (meshes, finals) = pipelines_made(&commands);
+        assert_eq!(meshes.len(), new_meshes, "{label}: {meshes:?}");
+        for mesh in &meshes {
+            assert_eq!((mesh[3], mesh[5]), (scene.format(), antialias.samples()));
+        }
+        assert_eq!(
+            finals.iter().map(|o| o[2]).collect::<Vec<_>>(),
+            new_final.into_iter().collect::<Vec<_>>(),
+            "{label}"
+        );
+        let targets: Vec<_> = operands(&commands, Op::CreateTexture)
+            .into_iter()
+            .filter(|o| o[5] & texture_usage::RENDER_ATTACHMENT != 0)
+            .collect();
+        assert_eq!(!targets.is_empty(), remade, "{label}");
+        assert!(
+            targets
+                .iter()
+                .all(|o| o[6] == antialias.samples() || o[6] == 1),
+            "{label}: {targets:?}"
+        );
+        let passes = operands(&commands, Op::BeginRenderPass);
+        let final_runs = scene.is_hdr() || antialias != Antialias::Msaa;
+        assert_eq!(passes.len(), if final_runs { 2 } else { 1 }, "{label}");
+        let quiet = next(&mut world, &mut device);
+        assert_eq!(count(&quiet, Op::CreateRenderPipeline), 0, "{label}");
+        assert_eq!(count(&quiet, Op::CreateTexture), 0, "{label}");
+    }
+    // The mode it runs asks for nothing new.
+    world.renderer.set_antialias(Antialias::Fxaa, hdr);
+    let commands = next(&mut world, &mut device);
+    assert_eq!(count(&commands, Op::CreateTexture), 0);
+}
+
+#[test]
+fn the_anti_aliasing_mode_changes_while_the_builder_runs_on_both_paths() {
+    let (webgpu, webgl2) = worlds_in(format::CANVAS, Antialias::Msaa, false);
+    check_switches(webgpu);
+    check_switches(webgl2);
+}
+
 /// The usage of each render target that the first frame of a WebGPU world makes.
 fn target_usages(transient_attachments: bool, device: &mut MockBackend) -> Vec<u32> {
     let mut world = World::with_config(RendererConfig {

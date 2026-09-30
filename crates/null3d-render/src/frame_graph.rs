@@ -43,7 +43,7 @@ use std::borrow::Cow;
 use null3d_gpu::drawlist::{DrawList, NO_TARGET, Op, format, pass_flags, texture_usage, view};
 
 use crate::final_pass::{FinalIds, FinalPass};
-use crate::frame::{CanvasOutput, RecordError, UploadArena};
+use crate::frame::{CanvasOutput, RecordError, SceneSettings, UploadArena};
 use crate::graph::{
     CANVAS, LoadOp, Pass, PassId, PassKind, Plan, PlannedTexture, RenderGraph, Size, Step,
     StepKind, StoreOp, Surface, Target,
@@ -132,7 +132,7 @@ pub(crate) struct FrameGraph {
     /// True when the final pass takes the scene color to the canvas, and false when the resolve
     /// pass does.
     final_runs: bool,
-    /// The number of views the declarations cover.
+    /// The number of views the declarations cover, or 0 when the passes need declaring.
     views: usize,
     /// The debug lines pass, once the passes are declared.
     debug_lines: Option<PassId>,
@@ -170,14 +170,14 @@ impl FrameGraph {
         } = canvas;
         let mut graph = RenderGraph::new();
         graph.set_transient_attachments(transient_attachments);
-        Self {
+        let mut frame_graph = Self {
             graph,
             roles: Vec::new(),
             opaque: Vec::new(),
-            samples: antialias.samples(),
+            samples: 1,
             gpu_culling,
             scene_color,
-            final_runs: scene_color.is_hdr() || antialias != Antialias::Msaa,
+            final_runs: true,
             views: 0,
             debug_lines: None,
             first_texture: ids.first_texture,
@@ -187,7 +187,46 @@ impl FrameGraph {
             layer_views: Vec::new(),
             made_views: 0,
             final_pass: FinalPass::new(ids.final_pass, scene_color, antialias),
+        };
+        frame_graph.set_canvas(canvas);
+        frame_graph
+    }
+
+    /// Gives `settings` and the graph the anti-aliasing mode and the scene color, from the next
+    /// frame on (see [`FrameGraph::set_canvas`]). Returns true when they changed, which leaves
+    /// the builder's scene pipelines drawing into targets that the next frame replaces.
+    pub(crate) fn set_antialias(
+        &mut self,
+        settings: &mut SceneSettings,
+        antialias: Antialias,
+        scene_color: SceneColor,
+    ) -> bool {
+        let canvas = CanvasOutput {
+            scene_color,
+            antialias,
+            ..settings.canvas()
+        };
+        let changed = settings.set_canvas(canvas);
+        if changed {
+            self.set_canvas(canvas);
         }
+        changed
+    }
+
+    /// Makes scene passes draw into the canvas output's scene color, with the samples of its
+    /// anti-aliasing mode, from the next frame on. That frame declares the passes again, so the
+    /// graph compiles again, and the frame makes each target whose format or samples changed.
+    pub(crate) fn set_canvas(&mut self, canvas: CanvasOutput) {
+        let CanvasOutput {
+            scene_color,
+            antialias,
+            ..
+        } = canvas;
+        self.samples = antialias.samples();
+        self.scene_color = scene_color;
+        self.final_runs = scene_color.is_hdr() || antialias != Antialias::Msaa;
+        self.final_pass.set_mode(scene_color, antialias);
+        self.views = 0;
     }
 
     /// The render graph.

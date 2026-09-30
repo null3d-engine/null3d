@@ -286,7 +286,8 @@ export async function createRenderer(
 	if (core) requiredFeatures.push('core-features-and-limits' as GPUFeatureName);
 	if (options.metrics && adapter.features.has('timestamp-query'))
 		requiredFeatures.push('timestamp-query');
-	if (engineDevice.sceneColor === FORMAT_RG11B10_UFLOAT)
+	// Any anti-aliasing mode may draw into the small float format, as the sketch can change modes.
+	if (Object.values(engineDevice.sceneColors).includes(FORMAT_RG11B10_UFLOAT))
 		requiredFeatures.push('rg11b10ufloat-renderable');
 	const binding = engineDevice.storageBindingBytes;
 	const device = await adapter.requestDevice({

@@ -207,6 +207,11 @@ export interface CoreGlue extends CoreErrors {
 	setBackground(r: number, g: number, b: number): number;
 	/** The tone mapping, by code, and the exposure, from the next frame on. */
 	setOutput(toneMapping: number, exposure: number): number;
+	/**
+	 * The anti-aliasing mode, by code, and the format of the target that scene passes draw into, from
+	 * the next frame on. That frame makes the scene's targets again.
+	 */
+	setAntialias(antialias: number, sceneColor: number): number;
 }
 
 const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
@@ -270,6 +275,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setLightValue',
 	'setBackground',
 	'setOutput',
+	'setAntialias',
 ];
 
 /** Stack size for each engine thread. */
