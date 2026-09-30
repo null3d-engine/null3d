@@ -438,6 +438,8 @@ Passes are declarations: the engine checks them, orders them, and shares memory 
 quality.preset;                         // 'low' | 'medium' | 'high' | 'ultra': the preset the engine runs
 quality.settings.maxPixelRatio;         // the settings in use
 quality.set({ maxPixelRatio: 1.5 });    // from the next frame; E1213 for another setting or value
+quality.renderScale;                    // the part of the canvas's width and height the scene draws at now
+quality.set({ minRenderScale: 0.5, maxRenderScale: 1 });  // the range dynamic resolution moves in; 1 and 1 turn it off
 quality.set({ maxAnisotropy: 4, uploadBytesPerFrame: 2 * 1024 * 1024 });  // texture sampling cap, upload bytes per frame
 quality.set({ antialias: 'fxaa', shadowCascades: 2 });  // planned: the preset table gives each setting's status
 const PARTICLES = { low: 500, medium: 2000, high: 5000, ultra: 10000 };  // your values per preset, in one table
@@ -446,7 +448,7 @@ quality.setBudget({ name: 'ai', ms: 2, onScale: (scale) => { aiRate = scale; } }
 engine.mode.preset;                     // on the page: the preset, crashedStarts and memoryMaximumMiB
 ```
 
-The page's `?preset=low` switch fixes the preset for tests. After a start that crashed the tab, the engine starts one preset lower. The frame-budget governor lowers settings in a fixed order when frames run long, and raises them again after a stable period.
+The page's `?preset=low` switch fixes the preset for tests. After a start that crashed the tab, the engine starts one preset lower. Dynamic resolution lowers the render scale by 0.05 after about a second over budget, and raises it after 5 seconds with time to spare. Hold mode draws at `maxRenderScale`. The frame-budget governor, which also lowers other settings, is planned.
 
 ## 18. Messages and UI (`api/page`, `api/ui`)
 

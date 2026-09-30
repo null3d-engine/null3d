@@ -709,7 +709,8 @@ pub mod template {
     /// Instanced meshes with the standard material and its texture maps, which the first texture
     /// coordinates place, or the second for a map on the second set.
     pub const INSTANCED_STANDARD_MAPS: u32 = 6;
-    /// The final pass: one triangle over the canvas, which tone maps the scene color into it.
+    /// The final pass: one triangle over the canvas, which scales the scene color up to it and
+    /// tone maps HDR color.
     pub const FINAL: u32 = 7;
     /// The GPU culling compute shader.
     pub const CULL: u32 = 16;

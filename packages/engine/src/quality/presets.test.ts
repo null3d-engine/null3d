@@ -82,13 +82,16 @@ describe('the preset table', () => {
 		// WebGPU samplers take an anisotropy of at most 16.
 		expect(QUALITY_SETTINGS.maxAnisotropy.values.max).toBe(16);
 		// The render scale draws into a corner of targets made at the full size, never past it.
-		expect(PLANNED_SETTINGS.minRenderScale.values.max).toBe(1);
+		expect(QUALITY_SETTINGS.minRenderScale.values.max).toBe(1);
+		expect(QUALITY_SETTINGS.maxRenderScale.values.max).toBe(1);
 	});
 
 	it('keeps each setting in one table: applied or planned', () => {
 		for (const name of Object.keys(PLANNED_SETTINGS)) expect(name in QUALITY_SETTINGS).toBe(false);
 		expect(ROWS.filter((row) => row.built).map((row) => row.name)).toEqual([
 			'maxPixelRatio',
+			'minRenderScale',
+			'maxRenderScale',
 			'maxAnisotropy',
 			'uploadBytesPerFrame',
 			'memoryMaximumMiB',
@@ -107,7 +110,13 @@ describe('the preset table', () => {
 
 	it('lets a sketch read and change the settings that can change after the load', () => {
 		expect(sameNames).toBe(true);
-		expect(SKETCH_SETTINGS).toEqual(['maxPixelRatio', 'maxAnisotropy', 'uploadBytesPerFrame']);
+		expect(SKETCH_SETTINGS).toEqual([
+			'maxPixelRatio',
+			'minRenderScale',
+			'maxRenderScale',
+			'maxAnisotropy',
+			'uploadBytesPerFrame',
+		]);
 	});
 
 	it('names every setting and prints every value in the docs', () => {
@@ -124,23 +133,32 @@ describe('the preset table', () => {
 
 describe('presetSettings', () => {
 	it("gives a sketch each preset's values", () => {
+		const full = { maxRenderScale: 1 };
 		expect(presetSettings('low')).toEqual({
 			maxPixelRatio: 1.5,
+			minRenderScale: 0.5,
+			...full,
 			maxAnisotropy: 2,
 			uploadBytesPerFrame: 2 * MIB,
 		});
 		expect(presetSettings('medium')).toEqual({
 			maxPixelRatio: 2,
+			minRenderScale: 0.6,
+			...full,
 			maxAnisotropy: 4,
 			uploadBytesPerFrame: 4 * MIB,
 		});
 		expect(presetSettings('high')).toEqual({
 			maxPixelRatio: 2,
+			minRenderScale: 0.75,
+			...full,
 			maxAnisotropy: 8,
 			uploadBytesPerFrame: 8 * MIB,
 		});
 		expect(presetSettings('ultra')).toEqual({
 			maxPixelRatio: Number.POSITIVE_INFINITY,
+			minRenderScale: 1,
+			...full,
 			maxAnisotropy: 16,
 			uploadBytesPerFrame: 16 * MIB,
 		});
@@ -194,7 +212,7 @@ describe('checkSettings', () => {
 
 	it('refuses a setting that the call does not take, with E1213, and names those it takes', () => {
 		expect(() => checkSettings('quality.set()', { shadows: { cascades: 2 } })).toThrow(
-			'E1213: quality.set() got "shadows", which is not a setting it takes. It takes maxPixelRatio, maxAnisotropy or uploadBytesPerFrame.',
+			'E1213: quality.set() got "shadows", which is not a setting it takes. It takes maxPixelRatio, minRenderScale, maxRenderScale, maxAnisotropy or uploadBytesPerFrame.',
 		);
 		// A setting whose feature is not built yet, and one that is fixed before the engine loads.
 		expect(() => checkSettings('quality.set()', { antialias: 'fxaa' })).toThrow('E1213');

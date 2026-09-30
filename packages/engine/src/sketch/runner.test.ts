@@ -37,15 +37,18 @@ const RING = 64;
 /** The fake core's first ring block, past room for every scene field. */
 const RING_BLOCK = 16;
 
+/** The calls whose arguments the fake core keeps. */
+const KEPT_ARGUMENTS = new Set(['recordFrame', 'setRenderScaling']);
+
 /** How the log shows a change of one of the core's texture settings. */
 const textureOption = (option: number, value: number) => `setTextureOption ${option} ${value}`;
 
 /**
  * A core that keeps the scene arrays and the command ring in memory, hands out slots, and logs each
- * frame step it takes and each texture setting it gets. Its transform updates clear the dirty bits,
- * as the core's do. Its other calls do nothing.
+ * frame step it takes and each texture setting it gets. It keeps the arguments of some calls in
+ * `calls`. Its transform updates clear the dirty bits, as the core's do. Its other calls do nothing.
  */
-function fakeGlue(log: string[], memory: WebAssembly.Memory): CoreGlue {
+function fakeGlue(log: string[], memory: WebAssembly.Memory, calls: unknown[][] = []): CoreGlue {
 	// Each scene field, then each ring field, in its own 4 KB block.
 	const block = (index: number) => 4096 * (index + 1);
 	let slots = 0;
@@ -65,6 +68,7 @@ function fakeGlue(log: string[], memory: WebAssembly.Memory): CoreGlue {
 		get: (_, name: string) =>
 			kept[name as keyof CoreGlue] ??
 			((...args: number[]) => {
+				if (KEPT_ARGUMENTS.has(name)) calls.push([name, ...args]);
 				if (FRAME_STEPS.has(name)) log.push(name);
 				if (name === 'setTextureOption') log.push(textureOption(args[0] ?? -1, args[1] ?? -1));
 				if (name === 'updateTransforms' || name === 'updateLateTransforms') clearDirty();
@@ -80,38 +84,45 @@ function fakeGlue(log: string[], memory: WebAssembly.Memory): CoreGlue {
 async function start(
 	callbacks: (context: SketchContext, log: string[]) => object,
 	options?: SketchOptions,
+	holdSeconds?: number,
 ) {
 	const log: string[] = [];
+	const calls: unknown[][] = [];
 	const control = controlViews(createControlBuffer(false));
 	control.slotFloats[Slot.CanvasCssWidth] = 320;
 	control.slotFloats[Slot.CanvasCssHeight] = 180;
 	control.slotFloats[Slot.PixelRatio] = 2;
 	const memory = new WebAssembly.Memory({ initial: 2 });
-	const runner = new SketchRunner(() => {}, createMetricsBuffer(false, 0), {
-		glue: fakeGlue(log, memory),
-		memory,
-		control,
-		keyCodes: [],
-		jobWorkers: 0,
-		device: {
-			webgl2: true,
-			storageBindingBytes: 0,
-			capabilities: 0,
-			maxTextureSize: 4096,
-			sharedUploads: false,
-			depth: 'reversed',
-			parallelCompile: true,
-			sceneColor: FORMAT_RGBA16_FLOAT,
-			transparent: false,
-			shaderBits: 0,
-			cellCulling: true,
+	const runner = new SketchRunner(
+		() => {},
+		createMetricsBuffer(false, 0),
+		{
+			glue: fakeGlue(log, memory, calls),
+			memory,
+			control,
+			keyCodes: [],
+			jobWorkers: 0,
+			device: {
+				webgl2: true,
+				storageBindingBytes: 0,
+				capabilities: 0,
+				maxTextureSize: 4096,
+				sharedUploads: false,
+				depth: 'reversed',
+				parallelCompile: true,
+				sceneColor: FORMAT_RGBA16_FLOAT,
+				transparent: false,
+				shaderBits: 0,
+				cellCulling: true,
+			},
+			capabilities: CAPABILITIES,
+			quality: { preset: 'medium', settings: presetSettings('medium') },
+			applyQuality: (settings) => log.push(`page ${JSON.stringify(settings)}`),
+			sendImage: () => {},
+			pageUrl: 'http://localhost/',
 		},
-		capabilities: CAPABILITIES,
-		quality: { preset: 'medium', settings: presetSettings('medium') },
-		applyQuality: (settings) => log.push(`page ${JSON.stringify(settings)}`),
-		sendImage: () => {},
-		pageUrl: 'http://localhost/',
-	});
+		holdSeconds,
+	);
 	let context: SketchContext | undefined;
 	await runner.setup(
 		defineSketch((ctx) => {
@@ -119,7 +130,7 @@ async function start(
 			return callbacks(ctx, log);
 		}, options),
 	);
-	return { runner, log, control, context: context as SketchContext };
+	return { runner, log, calls, control, context: context as SketchContext };
 }
 
 describe('SketchRunner', () => {
@@ -243,6 +254,64 @@ describe('SketchRunner', () => {
 		}
 	});
 
+	it("draws at the range's highest render scale, and lets the core scale while the scale can drop", async () => {
+		const { runner, calls } = await start(() => ({}));
+		runner.step(0);
+		expect(calls[0]).toEqual(['setRenderScaling', true]);
+		const record = calls.find((call) => call[0] === 'recordFrame');
+		expect(record?.[4]).toBe(1000);
+	});
+
+	it('draws the frame being drawn at a range that the sketch fixes in its update', async () => {
+		const { runner, calls } = await start(({ quality }) => ({
+			onUpdate: () => {
+				quality.set({ minRenderScale: 0.5, maxRenderScale: 0.5 });
+				expect(quality.renderScale).toBe(0.5);
+			},
+		}));
+		runner.step(0);
+		const records = calls.filter((call) => call[0] === 'recordFrame');
+		expect(records.map((call) => call[4])).toEqual([500]);
+		expect(calls.filter((call) => call[0] === 'setRenderScaling').at(-1)).toEqual([
+			'setRenderScaling',
+			true,
+		]);
+	});
+
+	it('holds at the highest render scale, with the passes of its range', async () => {
+		const whole = await start(
+			({ quality }) => {
+				quality.set({ minRenderScale: 1 });
+				return {};
+			},
+			undefined,
+			0,
+		);
+		expect(whole.calls.filter((call) => call[0] === 'setRenderScaling').at(-1)).toEqual([
+			'setRenderScaling',
+			false,
+		]);
+		expect(whole.calls.find((call) => call[0] === 'recordFrame')?.[4]).toBe(1000);
+		const preset = await start(() => ({}), undefined, 0);
+		expect(preset.calls.filter((call) => call[0] === 'setRenderScaling')).toEqual([
+			['setRenderScaling', true],
+		]);
+		expect(preset.calls.find((call) => call[0] === 'recordFrame')?.[4]).toBe(1000);
+		const scaled = await start(
+			({ quality }) => {
+				quality.set({ minRenderScale: 0.5, maxRenderScale: 0.75 });
+				return {};
+			},
+			undefined,
+			0,
+		);
+		expect(scaled.calls.filter((call) => call[0] === 'setRenderScaling').at(-1)).toEqual([
+			'setRenderScaling',
+			true,
+		]);
+		expect(scaled.calls.find((call) => call[0] === 'recordFrame')?.[4]).toBe(750);
+	});
+
 	it("gives the core the preset's texture settings before the setup, then only those that change", async () => {
 		const { log, context } = await start((ctx, log) => {
 			log.push('setup');
@@ -265,7 +334,7 @@ describe('SketchRunner', () => {
 		expect(log).toEqual([
 			textureOption(C.TEXTURE_OPTION_UPLOAD_BUDGET, 65_536),
 			textureOption(C.TEXTURE_OPTION_MAX_ANISOTROPY, 2),
-			`page ${JSON.stringify({ maxPixelRatio: 1, maxAnisotropy: 2, uploadBytesPerFrame: 65_536 })}`,
+			`page ${JSON.stringify({ ...medium, maxPixelRatio: 1, maxAnisotropy: 2, uploadBytesPerFrame: 65_536 })}`,
 		]);
 	});
 

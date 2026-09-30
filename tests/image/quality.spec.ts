@@ -227,6 +227,6 @@ test('a sketch that changes a setting the engine does not take gets E1213', asyn
 	const result = await openQuality(page, `gpu=webgpu&set=${JSON.stringify({ antialias: 'fxaa' })}`);
 	expect(result.changed).toBeUndefined();
 	expect(result.refused).toContain(
-		'E1213: quality.set() got "antialias", which is not a setting it takes. It takes maxPixelRatio, maxAnisotropy or uploadBytesPerFrame.',
+		'E1213: quality.set() got "antialias", which is not a setting it takes. It takes maxPixelRatio, minRenderScale, maxRenderScale, maxAnisotropy or uploadBytesPerFrame.',
 	);
 });

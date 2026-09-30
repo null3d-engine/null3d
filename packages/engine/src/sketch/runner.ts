@@ -22,6 +22,7 @@ import { TEXTURE_OPTION_UPLOAD_ALL, TEXTURE_STAT_IMAGES_SENT } from '../generate
 import type { EngineCapabilities } from '../page/engine';
 import type { CoreDevice } from '../page/limits';
 import { type QualitySettings, SKETCH_SETTINGS } from '../quality/presets';
+import { DynamicResolution, FULL_SCALE, thousandths } from '../quality/resolution';
 import { Assets } from '../scene/assets';
 import { CoreMemory } from '../scene/memory';
 import { Post } from '../scene/post';
@@ -171,6 +172,10 @@ export class SketchRunner {
 	private restoreRandom: (() => void) | undefined;
 	private readonly input: InputReader;
 	private readonly quality: SketchQuality;
+	/** Dynamic resolution, which moves the render scale during play; none in hold mode. */
+	private readonly resolution: DynamicResolution | undefined;
+	/** The render scale in thousandths where no dynamic resolution moves it: the highest. */
+	private heldScale = FULL_SCALE;
 	/** The sketch's debug drawing, in development builds only. */
 	private readonly debugDraw: DebugDraw | undefined;
 	readonly context: SketchContext;
@@ -221,10 +226,17 @@ export class SketchRunner {
 		// The core takes every texture setting of the preset before the setup runs, so a sketch's own
 		// budget wins until the setting changes. The page applies the settings it owns.
 		textures.applyQuality(sketch.quality.settings, SKETCH_SETTINGS);
-		this.quality = new SketchQuality(sketch.quality, (settings, changed) => {
-			textures.applyQuality(settings, changed);
-			sketch.applyQuality(settings);
-		});
+		this.resolution = holdSeconds === undefined ? new DynamicResolution(metrics) : undefined;
+		this.quality = new SketchQuality(
+			sketch.quality,
+			(settings, changed) => {
+				this.applyRenderScale(settings);
+				textures.applyQuality(settings, changed);
+				sketch.applyQuality(settings);
+			},
+			() => this.renderScale() / FULL_SCALE,
+		);
+		this.applyRenderScale(this.quality.settings);
 		this.readViewport();
 		this.debugDraw = DEV ? new DebugDraw(this.core) : undefined;
 		const debug: Debug = this.debugDraw ?? RELEASE_DEBUG;
@@ -360,6 +372,26 @@ export class SketchRunner {
 		if (this.holding) throw error;
 	}
 
+	/** The render scale of the frame being drawn, in thousandths. */
+	private renderScale(): number {
+		return this.resolution ? this.resolution.controller.scale : this.heldScale;
+	}
+
+	/**
+	 * Gives dynamic resolution the render scale's range, and tells the core whether the scale can
+	 * drop below the whole canvas. Hold mode draws at the highest scale of the range, with the
+	 * passes that play draws the range with.
+	 */
+	private applyRenderScale(settings: QualitySettings): void {
+		const low = thousandths(settings.minRenderScale);
+		const high = thousandths(settings.maxRenderScale);
+		this.heldScale = high;
+		this.resolution?.controller.setRange(low, high);
+		const { glue } = this.sketch;
+		if (glue.setRenderScaling(low < FULL_SCALE) !== 0)
+			this.report(coreFailure(glue, 'quality.set'));
+	}
+
 	/** Calls each of the sketch's handlers with `value`, and reports each error that one throws. */
 	private notify<T>(handlers: Iterable<(value: T) => void>, value: T): void {
 		for (const handler of handlers) {
@@ -453,6 +485,12 @@ export class SketchRunner {
 		this.core.refresh();
 		this.phaseStart = start;
 		this.readViewport();
+		// Dynamic resolution judges the frames so far before the sketch's update, which then sees
+		// the render scale of this frame.
+		if (play && this.resolution) {
+			this.resolution.now[0] = start;
+			this.resolution.frame();
+		}
 		// The sketch's part of the frame: the input the page wrote, preference changes, the fixed
 		// steps and the update. It stays in this function: a call that passed the step on would
 		// allocate a number for it in every frame.
@@ -523,7 +561,8 @@ export class SketchRunner {
 				this.report(error);
 			}
 		}
-		if (glue.recordFrame(frame, width, height) !== 0) this.report(coreFailure(glue, 'the frame'));
+		if (glue.recordFrame(frame, width, height, this.renderScale()) !== 0)
+			this.report(coreFailure(glue, 'the frame'));
 		this.record.count(Counter.Rebuilds, glue.drawTablesRebuilt() ? 1 : 0);
 		this.record.count(Counter.VisibleEntries, glue.visibleEntries(frame));
 		Atomics.store(slots, Slot.DrawListWords0 + (frame & 1), glue.drawListWords(frame));

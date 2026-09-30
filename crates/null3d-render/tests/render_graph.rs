@@ -8,7 +8,7 @@ use common::graph::{CAMERA_LAYERS, CASCADES, SAMPLES, SHADOW_MAP, engine_passes}
 use null3d_gpu::drawlist::{format, texture_usage as usage};
 use null3d_render::graph::{
     ALL_LAYERS, Attachment, CANVAS, GraphError, LoadOp, Mismatch, Pass, PassId, PassKind,
-    PlannedTexture, RenderGraph, Size, StepKind, StoreOp, Surface, Target,
+    PlannedTexture, RenderGraph, RenderScale, Size, StepKind, StoreOp, Surface, Target,
 };
 
 const HDR: Target = Target::color(format::RGBA16_FLOAT);
@@ -1170,14 +1170,25 @@ fn sizes_follow_the_canvas_and_the_render_scale() {
     assert_eq!(Size::Full.extent((0, 0)), (1, 1));
 
     // A lower render scale draws into a corner of the same textures.
-    assert_eq!(Size::Full.viewport(canvas, 0.5), (501, 300));
-    assert_eq!(Size::Half.viewport(canvas, 0.5), (251, 150));
-    assert_eq!(Size::Canvas.viewport(canvas, 0.5), (1001, 600));
-    assert_eq!(SHADOW_MAP.viewport(canvas, 0.5), (2048, 2048));
-    assert_eq!(Size::Full.viewport(canvas, 1.0), canvas);
-    assert_eq!(Size::Full.viewport(canvas, 2.0), canvas);
-    assert_eq!(Size::Full.viewport(canvas, f32::NAN), canvas);
-    assert_eq!(Size::Quarter.viewport(canvas, 0.0), (1, 1));
+    let half = RenderScale::from_thousandths(500);
+    assert_eq!(Size::Full.viewport(canvas, half), (501, 300));
+    assert_eq!(Size::Half.viewport(canvas, half), (251, 150));
+    assert_eq!(Size::Canvas.viewport(canvas, half), (1001, 600));
+    assert_eq!(SHADOW_MAP.viewport(canvas, half), (2048, 2048));
+    assert_eq!(Size::Full.viewport(canvas, RenderScale::FULL), canvas);
+    assert_eq!(
+        Size::Full.viewport(canvas, RenderScale::from_thousandths(2000)),
+        canvas
+    );
+    assert_eq!(
+        Size::Quarter.viewport(canvas, RenderScale::from_thousandths(0)),
+        (1, 1)
+    );
+    // Whole thousandths give exact sizes, rounded up.
+    let scale = RenderScale::from_thousandths(600);
+    assert_eq!(Size::Full.viewport((320, 180), scale), (192, 108));
+    assert_eq!(RenderScale::from_thousandths(750).of(1001), 751);
+    assert_eq!(RenderScale::default(), RenderScale::FULL);
 }
 
 #[test]

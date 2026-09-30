@@ -560,7 +560,8 @@ impl CpuCulledRenderer {
         }
         self.graph.sync_views(self.settings.views());
         self.graph.set_debug_lines(!input.lines.is_empty());
-        self.graph.prepare(list, input.canvas)?;
+        self.graph.set_scaling(self.settings.render_scaling());
+        self.graph.prepare(list, input.canvas, input.render_scale)?;
         let views = self.settings.views().len();
         let first_new = self.opaque.views();
         self.opaque.add_views(list, views)?;

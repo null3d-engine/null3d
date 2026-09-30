@@ -8,7 +8,7 @@ summary: "quality.preset, quality.set, frame budgets, quality events."
 
 # Quality API
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. `quality.set` takes `maxPixelRatio`, `maxAnisotropy` and `uploadBytesPerFrame`: the other settings of the preset table are not built yet. Neither are `quality.setPreset`, the frame-budget governor and its budgets (`quality.setBudget` comes in null3D 0.2). Coding agents must not use them.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. `quality.set` takes `maxPixelRatio`, `minRenderScale`, `maxRenderScale`, `maxAnisotropy` and `uploadBytesPerFrame`: the other settings of the preset table are not built yet. Neither are `quality.setPreset`, the frame-budget governor and its budgets (`quality.setBudget` comes in null3D 0.2). Coding agents must not use them.
 
 `ctx.quality` gives a sketch the quality preset that the engine runs and its settings. The sketch can change the settings that change during play, and hear when they change. [Quality presets](../concepts/quality-presets.md) explains how the engine chooses the preset, and lists each preset's values.
 
@@ -51,10 +51,23 @@ console.log(engine.mode.preset, engine.mode.crashedStarts, engine.mode.memoryMax
 | Setting | Takes | Changes |
 | --- | --- | --- |
 | `maxPixelRatio` | A number from 0.5 up. `Infinity` draws at the screen's full pixel ratio. | During play. The canvas takes its new size within a frame or two. |
+| `minRenderScale` | A number from 0.25 to 1, at most `maxRenderScale`: the lowest render scale that dynamic resolution may draw at. 1 keeps the whole canvas. | During play. |
+| `maxRenderScale` | A number from 0.25 to 1: the highest render scale, where the engine starts. | During play. |
 | `maxAnisotropy` | A whole number from 1 to 16. A texture whose `anisotropy` option is higher samples at this value. | During play. Textures sample with the new cap from the next frame. |
 | `uploadBytesPerFrame` | A whole number of texel bytes from 65,536 (64 KiB) to 67,108,864 (64 MiB). | During play, from the next frame. |
 
-`quality.set(settings)` changes the settings it gets and keeps the others. A setting that it does not take, or a value outside the setting's range, throws [E1213](../errors/E1213.md) and changes nothing. So does a preset name that `createEngine` does not know.
+`quality.set(settings)` changes the settings it gets and keeps the others. A setting that it does not take, or a value outside the setting's range, throws [E1213](../errors/E1213.md) and changes nothing. So does a `minRenderScale` above `maxRenderScale`, and a preset name that `createEngine` does not know. To move both ends of the render scale's range past each other, give both in one call.
+
+## Render scale
+
+`quality.renderScale` is the render scale that the engine draws the scene at: the part of the canvas's width and height, from `minRenderScale` to `maxRenderScale`. The engine lowers it when frames take too long, and raises it again when they have time to spare. Its final pass scales the image up to the canvas. Give both settings one value to fix the scale:
+
+```ts
+quality.set({ minRenderScale: 0.75, maxRenderScale: 0.75 });
+console.log(quality.renderScale); // 0.75
+```
+
+[Quality presets](../concepts/quality-presets.md#dynamic-resolution) says when the engine moves the scale.
 
 ## Quality events
 
@@ -92,7 +105,8 @@ The quality preset and settings, as a sketch reads and changes them through `ctx
 | --- | --- |
 | `readonly preset: QualityPreset` | The preset that the engine runs. |
 | `readonly settings: Readonly<QualitySettings>` | The settings in use: the preset's values, with the values of the page's options and the changes that `set` made. |
-| `set(settings: Partial<QualitySettings>): void` | Changes settings from the next frame on. It takes the settings that can change during play, each with a value that the setting takes, and throws E1213 for any other setting or value. A setting that it does not get keeps its value. |
+| `readonly renderScale: number` | The render scale that the engine draws the scene at: the part of the canvas's width and height, from `minRenderScale` to `maxRenderScale`. The engine lowers it when frames take too long and raises it again when they have time to spare. A change of the range applies to the frame being drawn. |
+| `set(settings: Partial<QualitySettings>): void` | Changes settings from the next frame on. It takes the settings that can change during play, each with a value that the setting takes, and throws E1213 for any other setting or value, or for a `minRenderScale` above `maxRenderScale`. A setting that it does not get keeps its value. |
 | `onChange(handler: (quality: Quality) => void): () => void` | Calls `handler` at the start of the first frame after the settings change. Returns a function that removes the handler. |
 
 ### `QualityPreset`
@@ -112,6 +126,8 @@ The quality settings that a sketch reads and changes through `ctx.quality`. Each
 | Member | Description |
 | --- | --- |
 | `maxPixelRatio: number` | The highest device pixel ratio that the engine draws at. The canvas's drawing buffer is its CSS size times the lower of this and the screen's pixel ratio. `Infinity` draws at the screen's full ratio. It takes a number from 0.5 up, and changes during play: the canvas takes its new size within a frame or two. |
+| `minRenderScale: number` | The lowest render scale: the smallest part of the canvas's width and height that the scene draws at when frames take too long. The engine draws the scene at a render scale between this and `maxRenderScale`, and scales the image up to the canvas. It takes a number from 0.25 to 1, at most `maxRenderScale`, and changes during play. 1 keeps the whole canvas. |
+| `maxRenderScale: number` | The highest render scale, where the engine starts. It takes a number from 0.25 to 1, and changes during play. With `minRenderScale` at the same value, the scene always draws at that scale. |
 | `maxAnisotropy: number` | The highest anisotropy that textures sample with. A texture whose own `anisotropy` option is higher samples at this value. It takes a whole number from 1 to 16, and changes during play. |
 | `uploadBytesPerFrame: number` | The texel bytes that one frame may upload, so that loading many textures does not make one frame slow. A larger texture goes up in bands of rows over several frames. It takes a whole number from 65,536 (64 KiB) to 67,108,864 (64 MiB), and changes during play. |
 

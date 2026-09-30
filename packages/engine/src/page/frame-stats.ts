@@ -118,6 +118,11 @@ export interface FrameSummary {
 	 * steady play builds none.
 	 */
 	pipelines: number;
+	/**
+	 * GPU buffers, textures, texture views, samplers and bind groups that the engine made during the
+	 * measurement. Steady play makes none, and neither does a new render scale.
+	 */
+	gpuObjects: number;
 }
 
 /**
@@ -294,6 +299,7 @@ export function summarizeFrames(
 		visibleEntries: visible.length > 0 ? percentiles(visible) : null,
 		rebuilds: (sketch.counters[Counter.Rebuilds] ?? []).filter((n) => n > 0).length,
 		pipelines: (render.counters[Counter.Pipelines] ?? []).reduce((sum, n) => sum + n, 0),
+		gpuObjects: (render.counters[Counter.GpuObjects] ?? []).reduce((sum, n) => sum + n, 0),
 	};
 }
 

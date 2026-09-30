@@ -86,6 +86,7 @@ The lower of `presentedFps` and `completedFps` is the rate users see. The engine
 - Many phones run the WebGL2 path (for example Samsung Exynos phones in Chrome 154). Budget for it.
 - On the WebGL2 path (0.2), job workers hide objects that sit behind blocker meshes, which the asset tool makes from large static meshes. See-through meshes such as glass and fences must not be blockers: call `setOccluder(false)` on them if the tool picked them.
 - Pixel ratio is the largest GPU lever: a ratio of 3 draws 2.25 times the pixels of a ratio of 2. Presets cap it; do not raise the cap on phones.
+- Dynamic resolution is on by default. When frames run over budget, the engine draws the scene at a lower render scale, down to 0.5 on Low. It scales the image up to the canvas. Read it in `quality.renderScale`. `quality.set({ minRenderScale: 1 })` turns it off. One value for both `minRenderScale` and `maxRenderScale` fixes the scale (`concepts/quality-presets`). Draw text and interface in HTML over the canvas, which stays sharp.
 - The engine starts phones and tablets on lighter presets than desktops. WebGL2 and WebGPU's compatibility mode run at most Medium. The page reads the preset in `engine.mode.preset`, and `?preset=low` fixes one for a test (`concepts/quality-presets`).
 - After a start that crashed the tab, the engine starts one preset lower, and at Low after two. A phone that ran out of memory shows it in `engine.mode.crashedStarts`.
 - Shadows (later in 0.1): one cascade on Low, two on Medium. Each shadowed point light draws the scene six times; avoid them on phones.
@@ -110,10 +111,10 @@ The number of objects and instance rows one scene can draw depends on the GPU pa
 
 ## 7. Quality presets, the governor and your own systems
 
-The engine starts each device on one of four presets: Low, Medium, High or Ultra (`concepts/quality-presets`). Phones start at Low, tablets at Medium and desktops at High. The preset sets the pixel ratio cap, the anisotropy cap, the texture upload budget and the engine's memory maximum. The preset table marks its other settings, such as anti-aliasing and shadows, as planned.
+The engine starts each device on one of four presets: Low, Medium, High or Ultra (`concepts/quality-presets`). Phones start at Low, tablets at Medium and desktops at High. The preset sets the pixel ratio cap, the render scale range, the anisotropy cap, the texture upload budget and the engine's memory maximum. The preset table marks its other settings, such as anti-aliasing and shadows, as planned.
 
 - The sketch reads the preset in `quality.preset`, and the page in `engine.mode.preset`. The preset stays the same during play.
-- `quality.set({ maxPixelRatio, maxAnisotropy, uploadBytesPerFrame })` changes these settings during play, for example from a settings menu. Other settings throw E1213.
+- `quality.set({ maxPixelRatio, minRenderScale, maxRenderScale, maxAnisotropy, uploadBytesPerFrame })` changes these settings during play, for example from a settings menu. Other settings throw E1213.
 - Do not raise the preset of a phone. Check each preset that your users can get with `?preset=low` to `?preset=ultra`.
 
 Keep your own values per preset in one table. Apply them in the setup, and again in `quality.onChange`, which runs when a setting changes. Later in 0.1, a governor lowers settings in a fixed order when frames run over budget: render scale first, then shadow updates, then effects. It never changes the preset during play. It raises the settings again after a stable period, so quality does not flicker. Your systems can join in through `setBudget` (0.2):

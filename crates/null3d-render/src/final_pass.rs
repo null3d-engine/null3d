@@ -1,7 +1,8 @@
-//! The final pass: one triangle over the canvas, which reads the HDR scene color, applies the
-//! exposure and the tone mapping, encodes sRGB and dithers (see [`crate::output`]). It runs only on
-//! the HDR path. Each frame builder owns one, with GPU object ids from its own ranges, and its
-//! pipeline comes from the builder's pipeline cache like every other.
+//! The final pass: one triangle over the canvas, which reads the scene color, scales the render
+//! scale's corner of it up to the canvas, and on the HDR path applies the exposure and the tone
+//! mapping, encodes sRGB and dithers (see [`crate::output`]). Each frame builder owns one, with GPU
+//! object ids from its own ranges, and its pipeline comes from the builder's pipeline cache like
+//! every other.
 
 use null3d_gpu::drawlist::{
     DrawList, Op, buffer_usage as usage, format, layout as bind_layout, resource_kind,

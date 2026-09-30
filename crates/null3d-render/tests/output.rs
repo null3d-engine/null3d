@@ -207,11 +207,12 @@ fn check_final_updates<B: FrameBuilder>(mut world: World<B>) {
     assert_eq!(final_work(&next(&mut world, &mut device), settings), (1, 0));
     assert_eq!(final_work(&next(&mut world, &mut device), settings), (0, 0));
 
-    // A new canvas size makes the textures again, so the pass binds the new scene color.
+    // A new canvas size makes the textures again, so the pass binds the new scene color and
+    // uploads the new render size.
     world.canvas = (800, 600);
     let resized = next(&mut world, &mut device);
     assert_eq!(targets_made(&resized), 3);
-    assert_eq!(final_work(&resized, settings), (0, 1));
+    assert_eq!(final_work(&resized, settings), (1, 1));
 
     // After the GPU is replaced, the pass makes its pipeline, buffer and group again.
     world.renderer.reset_gpu();
@@ -252,11 +253,15 @@ fn check_eight_bit_frame<B: FrameBuilder>(mut world: World<B>) {
         .unwrap();
     let commands = world.commands();
     let pipelines = operands(&commands, Op::CreateRenderPipeline);
-    assert_eq!(pipelines.len(), 2);
-    for pipeline in pipelines {
+    let (finals, meshes): (Vec<_>, Vec<_>) =
+        pipelines.iter().partition(|o| o[1] == template::FINAL);
+    assert_eq!(meshes.len(), 2);
+    for pipeline in meshes {
         assert_ne!(pipeline[2] & permutation::TONE_MAP, 0, "{pipeline:?}");
         assert_eq!(pipeline[3], format::CANVAS);
     }
+    // The final pass's pipeline is made too, for the frames whose render scale drops.
+    assert_eq!(finals.len(), 1);
     // The scene's render pass resolves into the canvas, and nothing draws after it.
     let passes = operands(&commands, Op::BeginRenderPass);
     assert_eq!(passes.len(), 1);

@@ -72,7 +72,7 @@ export interface CoreGlue extends CoreErrors {
 	updateBatches(frame: number): number;
 	/** Finds the frame's visible objects on the job workers, where the path culls on the CPU. */
 	cullFrame(frame: number, width: number, height: number): number;
-	recordFrame(frame: number, width: number, height: number): number;
+	recordFrame(frame: number, width: number, height: number, scale: number): number;
 	/**
 	 * The index list entries that a recorded frame draws, where the path culls on the CPU, or
 	 * `CORE_NOT_COUNTED` where the GPU culls.
@@ -230,6 +230,8 @@ export interface CoreGlue extends CoreErrors {
 	setBackground(r: number, g: number, b: number): number;
 	/** The tone mapping, by code, and the exposure, from the next frame on. */
 	setOutput(toneMapping: number, exposure: number): number;
+	/** Whether the render scale can drop below the whole canvas, from the next frame on. */
+	setRenderScaling(scaling: boolean): number;
 	/**
 	 * The scene's fog: its kind (`FOG_KIND_*`), its linear color, the near and far distances of
 	 * linear fog, and the density of exponential squared fog.
@@ -305,6 +307,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setLightValue',
 	'setBackground',
 	'setOutput',
+	'setRenderScaling',
 	'setFog',
 ];
 

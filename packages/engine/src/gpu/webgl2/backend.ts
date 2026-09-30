@@ -239,8 +239,8 @@ export class WebGL2Backend {
 	private mipSampler: WebGLSampler | null = null;
 	/** Where drawing into the canvas goes during a capture; the canvas itself otherwise. */
 	canvasTarget: CanvasTarget | undefined;
-	/** What the replays since the last reset uploaded, drew and built. */
-	readonly counts = { uploadBytes: 0, drawCalls: 0, pipelines: 0 };
+	/** What the replays since the last reset uploaded, drew, built, and the other objects they made. */
+	readonly counts = { uploadBytes: 0, drawCalls: 0, pipelines: 0, objects: 0 };
 
 	// Views on engine memory, rebuilt when it grows, and copies for browsers that refuse views on
 	// shared memory. The replay's own views give the words and the floats.
@@ -452,6 +452,7 @@ export class WebGL2Backend {
 		this.counts.uploadBytes = 0;
 		this.counts.drawCalls = 0;
 		this.counts.pipelines = 0;
+		this.counts.objects = 0;
 	}
 
 	/**
@@ -486,6 +487,7 @@ export class WebGL2Backend {
 			const a = i + 1;
 			switch (op) {
 				case G.OP_CREATE_BUFFER:
+					this.counts.objects++;
 					this.createBuffer(words[a] as number, words[a + 1] as number, words[a + 2] as number);
 					break;
 				case G.OP_WRITE_BUFFER: {
@@ -506,9 +508,11 @@ export class WebGL2Backend {
 					this.destroyBuffer(words[a] as number);
 					break;
 				case G.OP_CREATE_TEXTURE:
+					this.counts.objects++;
 					this.createTexture(words, a);
 					break;
 				case G.OP_CREATE_TEXTURE_VIEW:
+					this.counts.objects++;
 					this.createView(words, a);
 					break;
 				case G.OP_DESTROY_TEXTURE:
@@ -530,6 +534,7 @@ export class WebGL2Backend {
 					this.copyTexture(words, a);
 					break;
 				case G.OP_CREATE_SAMPLER:
+					this.counts.objects++;
 					this.createSampler(words, floats, a);
 					break;
 				case G.OP_RESIZE_CANVAS: {
@@ -546,6 +551,7 @@ export class WebGL2Backend {
 					this.createPipeline(words, a, false);
 					break;
 				case G.OP_CREATE_BIND_GROUP: {
+					this.counts.objects++;
 					const entries: BindEntry[] = [];
 					for (let k = 0; k < (words[a + 2] as number); k++) {
 						const e = a + 3 + k * 5;

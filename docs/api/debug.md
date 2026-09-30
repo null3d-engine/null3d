@@ -195,6 +195,7 @@ Per-frame figures of a measurement: CPU time by thread, GPU time, frame interval
 | `visibleEntries: Percentiles \| null` | Entries per frame in the list of visible objects on WebGL2, where the job workers cull. Each visible object or instance row is one entry. So is each visible group of 64 rows in a static batch that has stopped changing. The list uploads 4 bytes per entry in each frame that changes it. Null on WebGPU, where the GPU culls and the CPU never learns the count. |
 | `rebuilds: number` | Frames whose structure change rebuilt the draw tables: objects created or destroyed, meshes or materials changed, or batches created or destroyed. Steady play has none; showing or hiding objects and changing a batch's active count do not rebuild. |
 | `pipelines: number` | GPU pipelines built during the measurement. A build can stall the frame it happens in. The engine builds its pipelines in the first frame and after the browser replaces the GPU, so steady play builds none. |
+| `gpuObjects: number` | GPU buffers, textures, texture views, samplers and bind groups that the engine made during the measurement. Steady play makes none, and neither does a new render scale. |
 
 ### `GpuPassStats`
 

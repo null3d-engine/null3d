@@ -231,7 +231,8 @@ fn the_first_frame_creates_everything_and_a_valid_frame_replays() {
         .replay(world.renderer.list(1).words())
         .unwrap();
 
-    assert_eq!(count(&commands, Op::CreateRenderPipeline), 2);
+    // Lit and unlit, and the final pass's, made for frames whose render scale drops.
+    assert_eq!(count(&commands, Op::CreateRenderPipeline), 3);
     assert_eq!(count(&commands, Op::CreateComputePipeline), 1);
     assert_eq!(count(&commands, Op::ResizeCanvas), 1);
     // The color and depth targets, and the table of specular terms.
@@ -550,8 +551,9 @@ fn pipelines_follow_the_shading_model_and_objects_sharing_a_mesh_and_material_sh
     world.scene.apply_commands(&commands, 1).unwrap();
     world.record(true);
     let first = world.commands();
-    // Pipelines depend on the shading model, not on materials: lit, unlit and the culling pass.
-    assert_eq!(count(&first, Op::CreateRenderPipeline), 2);
+    // Pipelines depend on the shading model, not on materials: lit, unlit, the final pass and
+    // the culling pass.
+    assert_eq!(count(&first, Op::CreateRenderPipeline), 3);
     assert_eq!(count(&first, Op::CreateComputePipeline), 1);
     // One draw per mesh and material: the world's three, one for the ten boxes, one per ball.
     assert_eq!(count(&first, Op::DrawIndexedIndirect), 3 + 1 + 10);

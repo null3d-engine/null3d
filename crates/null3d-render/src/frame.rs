@@ -25,7 +25,7 @@ use crate::camera::Lens;
 use crate::debug_lines::DebugLines;
 use crate::fog::Fog;
 use crate::frame_data::{FrameUniform, normalized_direction};
-use crate::graph::GraphError;
+use crate::graph::{GraphError, RenderScale};
 use crate::materials::{
     MATERIAL_FLOATS, MATERIAL_TEXELS, MapSlot, MaterialTable, Shading, feature,
 };
@@ -98,6 +98,8 @@ pub struct FrameInput<'a> {
     pub snapshot: &'a FrameSnapshot,
     /// The canvas size in device pixels.
     pub canvas: (u32, u32),
+    /// The render scale: the part of the canvas's width and height that the scene draws at.
+    pub render_scale: RenderScale,
     /// True when the scene's structure changed this frame: objects created or destroyed, meshes
     /// or materials changed, batches created or destroyed.
     pub structure_changed: bool,
@@ -356,6 +358,8 @@ pub struct SceneSettings {
     lighting: Lighting,
     canvas: CanvasOutput,
     output: Output,
+    /// True when the render scale may drop below the whole canvas.
+    render_scaling: bool,
 }
 
 impl SceneSettings {
@@ -380,6 +384,7 @@ impl SceneSettings {
             },
             canvas,
             output: Output::default(),
+            render_scaling: false,
         }
     }
 
@@ -396,6 +401,18 @@ impl SceneSettings {
     /// Sets the exposure and the tone mapping, from the next recorded frame on.
     pub fn set_output(&mut self, output: Output) {
         self.output = output;
+    }
+
+    /// True when the render scale may drop below the whole canvas.
+    pub fn render_scaling(&self) -> bool {
+        self.render_scaling
+    }
+
+    /// Says whether the render scale may drop below the whole canvas. Where the scene color holds
+    /// 8-bit display color, a scale below it needs the final pass, which then replaces the
+    /// resolve into the canvas. Frames at a lower scale while this is off draw the whole canvas.
+    pub fn set_render_scaling(&mut self, scaling: bool) {
+        self.render_scaling = scaling;
     }
 
     pub fn meshes(&self) -> &MeshStorage {
