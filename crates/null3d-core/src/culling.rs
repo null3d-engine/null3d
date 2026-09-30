@@ -314,7 +314,7 @@ const PARALLEL_CULL_THRESHOLD: usize = 1 << 14;
 const AWAKE_PARALLEL_CULL_THRESHOLD: usize = 2 * CULL_CHUNK as usize;
 
 /// True when culling `spheres` spheres goes faster spread over the job workers.
-fn cull_in_parallel(jobs: &JobSystem, spheres: usize) -> bool {
+pub(crate) fn cull_in_parallel(jobs: &JobSystem, spheres: usize) -> bool {
     let threshold = if jobs.workers_busy_this_frame() {
         AWAKE_PARALLEL_CULL_THRESHOLD
     } else {
@@ -518,7 +518,7 @@ pub struct CullView<'a> {
 
 /// Keeps the rows of `rows` whose masks share a bit with the view's `layers`, in order, and
 /// returns how many it kept. Row `r` has the mask at `masks[r]`.
-fn keep_layers(rows: &mut [u32], masks: &[u32], layers: u32) -> usize {
+pub(crate) fn keep_layers(rows: &mut [u32], masks: &[u32], layers: u32) -> usize {
     let mut kept = 0;
     for i in 0..rows.len() {
         let row = rows[i];
