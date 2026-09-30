@@ -69,6 +69,15 @@ export interface CoreGlue extends CoreErrors {
 	resetGpu(): number;
 	drawListAddress(parity: number): number;
 	drawListWords(frame: number): number;
+	/**
+	 * Makes room for `points` points of debug lines, keeping those written since the last recorded
+	 * frame. The arrays can move, so their addresses must be read again.
+	 */
+	reserveDebugLines(points: number): number;
+	/** The address of a debug line array: `DEBUG_LINE_FIELD_POSITIONS` or `..._COLORS`. */
+	debugLineArrays(field: number): number;
+	/** Draws the first `points` points of the debug line arrays in the next recorded frame. */
+	drawDebugLines(points: number): number;
 	createBatch(
 		capacity: number,
 		dynamic: boolean,
@@ -118,12 +127,13 @@ export interface CoreGlue extends CoreErrors {
 	/** Gives a material a map, a texture's handle, or none with 0. */
 	setMaterialMap(material: number, texture: number): number;
 	/**
-	 * A texture with no image yet, in a layer of a texture array. `format` is a `FORMAT_*` code;
+	 * A texture with no texels yet, in `depth` layers of a texture array. `format` is a `FORMAT_*` code;
 	 * the rest set its sampler with `ADDRESS_*` and `FILTER_*` codes. Returns its handle.
 	 */
 	createTexture(
 		width: number,
 		height: number,
+		depth: number,
 		format: number,
 		mipmaps: boolean,
 		wrapU: number,
@@ -133,8 +143,16 @@ export interface CoreGlue extends CoreErrors {
 		mipFilter: number,
 		anisotropy: number,
 	): number;
-	/** Gives a texture an image of its size, and returns the image's id for the thread that draws. */
-	setTextureImage(texture: number, width: number, height: number): number;
+	/**
+	 * Gives a texture an image, uploaded with the `TEXTURE_PREMULTIPLIED_ALPHA` flag or 0, and
+	 * returns the image's id for the thread that draws. An image of another size resizes it.
+	 */
+	setTextureImage(texture: number, width: number, height: number, flags: number): number;
+	/**
+	 * Gives a texture texels of `width` x `height` in each layer, and returns the address that
+	 * TypeScript writes them at, as tightly packed rows, layer after layer.
+	 */
+	setTextureData(texture: number, width: number, height: number): number;
 	destroyTexture(texture: number, frame: number): number;
 	/** Tells the texture store what the thread that draws has: images received, and frames taken. */
 	syncTextures(imagesArrived: number, framesTaken: number): void;
@@ -184,6 +202,9 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'resetGpu',
 	'drawListAddress',
 	'drawListWords',
+	'reserveDebugLines',
+	'debugLineArrays',
+	'drawDebugLines',
 	'createBatch',
 	'destroyBatch',
 	'batchArrays',
@@ -201,6 +222,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setMaterialMap',
 	'createTexture',
 	'setTextureImage',
+	'setTextureData',
 	'destroyTexture',
 	'syncTextures',
 	'textureStat',

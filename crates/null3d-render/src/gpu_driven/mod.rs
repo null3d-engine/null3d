@@ -50,7 +50,8 @@
 //! own: its culling parameters, compacted instances and indirect draws, its frame uniform, and its
 //! bundle. Each pass has a module: `cull` records the culling passes and `opaque` the opaque
 //! passes, and `layout` keeps the sources and buckets that every view reads, with their uploads.
-//! The render graph ([`crate::frame_graph`]) orders the passes and begins their render passes.
+//! The debug lines pass, which both builders share, is [`crate::debug_lines`]. The render graph
+//! ([`crate::frame_graph`]) orders the passes and begins their render passes.
 //!
 //! # Memory
 //!
@@ -68,6 +69,7 @@ use std::collections::TryReserveError;
 use null3d_gpu::caps::{BUDGET, Limit};
 use null3d_gpu::drawlist::{DrawList, Op, buffer_usage as usage, sizes};
 
+use crate::debug_lines::LinesPass;
 use crate::frame::{
     FrameBuilder, FrameInput, MaterialStorage, MeshBuffers, ParityLists, RecordError,
     SceneSettings, UploadArena,
@@ -135,8 +137,10 @@ mod ids {
         frame(view) + 3
     }
 
+    /// The vertices of the debug lines.
+    pub const LINES: u32 = VIEW_BUFFERS + 4 * MAX_VIEWS as u32;
     /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
-    pub const PAGES: u32 = VIEW_BUFFERS + 4 * MAX_VIEWS as u32;
+    pub const PAGES: u32 = LINES + 1;
 
     /// The render graph's textures, from this id on.
     pub const TARGETS: u32 = 1;
@@ -197,6 +201,7 @@ pub struct GpuDrivenRenderer {
     graph: FrameGraph,
     layout: Layout,
     culling: Culling,
+    lines: LinesPass,
     /// Each view's values in the frame being recorded, or `None` for a view with no camera.
     frames: Vec<Option<ViewFrame>>,
     created: bool,
@@ -231,6 +236,7 @@ impl GpuDrivenRenderer {
             graph: FrameGraph::new(config.samples, true, ids::TARGETS),
             layout: Layout::default(),
             culling: Culling::default(),
+            lines: LinesPass::new(ids::LINES),
             frames: Vec::new(),
             created: false,
         }
@@ -260,6 +266,7 @@ impl GpuDrivenRenderer {
             self.create_fixed(list)?;
         }
         self.graph.sync_views(self.settings.views());
+        self.graph.set_debug_lines(!input.lines.is_empty());
         self.graph.prepare(list, input.canvas)?;
         let views = self.settings.views().len();
         let first_new = self.culling.views();
@@ -281,7 +288,7 @@ impl GpuDrivenRenderer {
                 limit,
             )?;
         }
-        arena.reset(self.upload_bound());
+        arena.reset(self.upload_bound() + LinesPass::upload_bytes(&input.lines));
         let pages_remade = self
             .meshes
             .upload(list, arena, self.settings.meshes().pages())?;
@@ -327,13 +334,23 @@ impl GpuDrivenRenderer {
             }
             self.frames.push(frame);
         }
+        let camera = self.frames[ViewId::CAMERA.index()].as_ref();
+        self.lines.upload(
+            list,
+            arena,
+            &input.lines,
+            camera.map(|frame| &frame.camera),
+            &mut self.pipelines,
+            self.graph.scene_targets(),
+        )?;
 
-        let (frames, layout) = (&self.frames, &self.layout);
+        let (frames, layout, lines) = (&self.frames, &self.layout, &self.lines);
         let drawn = |view: ViewId| frames[view.index()].is_some();
         self.graph
             .record(list, self.settings.clear_color(), |list, role| match role {
                 Role::Cull(view) if drawn(view) => Culling::record(list, view, layout),
                 Role::Opaque(view) if drawn(view) => opaque::record(list, view),
+                Role::DebugLines => lines.record(list, ids::frame_group(ViewId::CAMERA), &[]),
                 _ => Ok(()),
             })?;
         Ok(upload_everything)
@@ -402,6 +419,7 @@ impl FrameBuilder for GpuDrivenRenderer {
         self.graph.reset_gpu();
         self.layout.forget_gpu();
         self.culling.forget_gpu();
+        self.lines.forget_gpu();
         self.meshes.forget();
         self.pipelines.forget();
         self.settings.materials_mut().mark_changed();

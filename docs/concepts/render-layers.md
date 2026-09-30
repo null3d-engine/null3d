@@ -98,3 +98,4 @@ The rule is the same as three.js's: an object draws when its mask and the camera
 - [Cameras](../api/cameras.md): the camera's layers.
 - [Scene](../api/scene.md): the `layers` option, and when changes take effect.
 - [Culling](culling.md): the test that masks join.
+- [The render layers demo](https://github.com/null3d-engine/null3d/tree/main/examples/layers): a camera that changes its layers every 2 seconds, to show or hide roofs and map pins.

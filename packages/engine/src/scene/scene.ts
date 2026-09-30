@@ -751,6 +751,8 @@ export class Camera extends Object3D {
 export class Light extends Object3D {
 	/** @internal The light's row in the engine's light table. */
 	id = 0;
+	/** @internal The light's color in linear RGB, before the intensity scales it. */
+	readonly linear = new Float64Array([1, 1, 1]);
 
 	protected override get looksDownMinusZ(): boolean {
 		return true;
@@ -776,8 +778,9 @@ export class Light extends Object3D {
 	/** @internal Sets one of the light's colors, by its code in the light table. */
 	paint(call: string, which: number, color: ColorInput): void {
 		if (DEV) checkLive(call, this);
-		const [r, g, b] = linearColor(color, call);
-		this.scene.core.glue.setLightColor(this.id, which, r, g, b);
+		const rgb = linearColor(color, call);
+		if (which === C.LIGHT_COLOR_MAIN) this.linear.set(rgb);
+		this.scene.core.glue.setLightColor(this.id, which, rgb[0], rgb[1], rgb[2]);
 	}
 
 	/** @internal Sets one of the light's numbers, by its code in the light table. */

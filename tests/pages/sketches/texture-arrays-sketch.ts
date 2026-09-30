@@ -6,8 +6,8 @@
 // the frames that upload the new objects' tables are done. Once every
 // image is on the GPU, it sends the page `loaded` with its settings, the frames it took, the most
 // bytes that any frame uploaded, the GPU memory of the textures, and the bytes of one texture.
-import { defineSketch, type MeshArrays } from '@null3d/engine';
-import { type Texture, texturesOf, unlitMapMaterial } from '@null3d/engine/internal';
+import { defineSketch, type MeshArrays, type Texture } from '@null3d/engine';
+import { unlitMapMaterial } from '@null3d/engine/internal';
 
 /** The bytes that one frame may upload: half of one image. */
 const UPLOAD_BUDGET = 2 * 1024;
@@ -42,8 +42,7 @@ function image(k: number): Promise<ImageBitmap> {
 }
 
 export default defineSketch(async (ctx) => {
-	const { scene, materials, geometry, page, time } = ctx;
-	const textures = texturesOf(ctx);
+	const { scene, materials, geometry, page, time, textures } = ctx;
 	textures.setUploadBudget(UPLOAD_BUDGET);
 	scene.setBackground('#181c20');
 	const camera = scene.createPerspectiveCamera({

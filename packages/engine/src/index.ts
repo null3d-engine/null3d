@@ -1,6 +1,7 @@
 // The null3d engine: createEngine runs on the page, defineSketch in the sketch module, and the math
 // helpers in both.
 
+export type { Debug, DebugGridOptions, DebugLightOptions } from './debug/debug';
 export { EngineError } from './errors/engine-error';
 export type { ErrorCode } from './errors/fixes';
 /**
@@ -59,6 +60,12 @@ export type {
 export type { HeldFrame, HoldFailure, HoldResult } from './page/hold';
 export type { DepthMode, LatencyMode } from './page/switches';
 export type { Tier } from './render/renderer';
+export type {
+	Assets,
+	LoadImageOptions,
+	LoadTextureOptions,
+	ProgressHandler,
+} from './scene/assets';
 export type { ColorInput } from './scene/color';
 export type {
 	BoxOptions,
@@ -103,6 +110,17 @@ export type {
 	SpotLightOptions,
 	Vec3,
 } from './scene/scene';
+export type {
+	Texture,
+	TextureColorSpace,
+	TextureData,
+	TextureDataArray,
+	TextureFilter,
+	TextureFormat,
+	TextureOptions,
+	Textures,
+	TextureWrap,
+} from './scene/textures';
 export type { PhaseName } from './shared/metrics';
 export type { Percentiles } from './shared/stats';
 export type {

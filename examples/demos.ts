@@ -31,6 +31,13 @@ export const DEMOS: readonly Demo[] = [
 		hold: 1,
 	},
 	{
+		name: 'generators',
+		title: 'Geometry generators',
+		summary:
+			'The nine shapes that geometry makes, from a box to a ring, with the parameters of three.js geometry classes.',
+		hold: 1,
+	},
+	{
 		name: 'math',
 		title: 'Math helpers',
 		summary:
@@ -51,6 +58,13 @@ export const DEMOS: readonly Demo[] = [
 		summary:
 			'A tray of 2 cm keys and a spinning wheel 1,000 km from the origin, seen from 40 cm. Grid cells keep every position precise to a fraction of a millimeter.',
 		hold: 2,
+	},
+	{
+		name: 'layers',
+		title: 'Render layers',
+		summary:
+			'A street of houses with roofs and map pins on layers of their own. Every 2 seconds the camera draws another set of layers.',
+		hold: 5,
 	},
 	{
 		name: 'hold-mode',
