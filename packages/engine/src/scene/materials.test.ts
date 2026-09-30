@@ -2,6 +2,9 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import { type EngineError, setErrorFixes } from '../errors/engine-error';
 import { ERROR_FIXES } from '../errors/fixes';
 import {
+	MAP_SLOT_BASE_COLOR,
+	MAP_SLOT_LIGHT,
+	MAP_SLOT_NORMAL,
 	MATERIAL_FEATURE_ADDITIVE,
 	MATERIAL_FEATURE_ALPHA_MASK,
 	MATERIAL_FEATURE_BLEND,
@@ -16,14 +19,22 @@ import {
 	MATERIAL_PARAM_COLOR,
 	MATERIAL_PARAM_EMISSIVE,
 	MATERIAL_PARAM_EMISSIVE_INTENSITY,
+	MATERIAL_PARAM_LIGHT_MAP_INTENSITY,
 	MATERIAL_PARAM_METALNESS,
+	MATERIAL_PARAM_NORMAL_SCALE,
+	MATERIAL_PARAM_OCCLUSION_STRENGTH,
 	MATERIAL_PARAM_OPACITY,
 	MATERIAL_PARAM_ROUGHNESS,
+	MATERIAL_PARAM_UV_U,
+	MATERIAL_PARAM_UV_V,
+	SHADING_UNLIT,
+	SHADING_UNLIT_MAP,
 } from '../generated/core';
 import { fromHex } from '../math/color';
 import type { CoreGlue } from '../shared/core';
 import { CoreMemory } from './memory';
 import { Materials } from './resources';
+import type { Texture } from './textures';
 
 beforeEach(() => setErrorFixes(ERROR_FIXES));
 
@@ -39,7 +50,15 @@ const WIDTHS = new Map([
 	[MATERIAL_PARAM_METALNESS, 1],
 	[MATERIAL_PARAM_ROUGHNESS, 1],
 	[MATERIAL_PARAM_EMISSIVE_INTENSITY, 1],
+	[MATERIAL_PARAM_NORMAL_SCALE, 2],
+	[MATERIAL_PARAM_OCCLUSION_STRENGTH, 1],
+	[MATERIAL_PARAM_LIGHT_MAP_INTENSITY, 1],
+	[MATERIAL_PARAM_UV_U, 3],
+	[MATERIAL_PARAM_UV_V, 3],
 ]);
+
+/** A texture as materials see it: its handle, and the coordinates its maps read. */
+const texture = (handle: number, uvSet: 0 | 1 = 0) => ({ handle, uvSet }) as unknown as Texture;
 
 /**
  * A core that keeps each material's row of values, from the linear color and opacity on, as the
@@ -48,6 +67,9 @@ const WIDTHS = new Map([
 function fakeCore() {
 	const table: number[][] = [];
 	const features: number[] = [];
+	const shadings: number[] = [];
+	/** Each map a material got: its material, slot, texture handle and coordinate set. */
+	const maps: number[][] = [];
 	const biases: [number, number][] = [];
 	let failure = { code: 0, details: [0, 0] };
 	/** Runs a change on a known material, or reports the core's error for an unknown one. */
@@ -62,7 +84,7 @@ function fakeCore() {
 	};
 	const glue = {
 		createMaterial: (
-			_shading: number,
+			shading: number,
 			bits: number,
 			r: number,
 			g: number,
@@ -71,17 +93,25 @@ function fakeCore() {
 			biasConstant: number,
 			biasSlope: number,
 		) => {
-			const row = new Array<number>(16).fill(0);
+			const row = new Array<number>(32).fill(0);
 			row.splice(0, 4, r, g, b, a);
 			row[MATERIAL_PARAM_ALPHA_CUTOFF] = 0.5;
 			row[MATERIAL_PARAM_ROUGHNESS] = 1;
 			row[MATERIAL_PARAM_EMISSIVE_INTENSITY] = 1;
 			features.push(bits);
+			shadings.push(shading);
 			biases.push([biasConstant, biasSlope]);
 			return table.push(row);
 		},
 		setMaterialValue: (material: number, param: number, x: number, y: number, z: number) =>
-			change(material, (values) => values.splice(param, WIDTHS.get(param) ?? 0, x, y, z)),
+			change(material, (values) => {
+				const width = WIDTHS.get(param) ?? 0;
+				values.splice(param, width, ...[x, y, z].slice(0, width));
+			}),
+		setMaterialMap: (material: number, slot: number, handle: number, second: number) =>
+			change(material, () => {
+				maps.push([material, slot, handle, second]);
+			}),
 		lastErrorCode: () => failure.code,
 		lastErrorDetail: (index: number) => failure.details[index] ?? 0,
 	};
@@ -89,6 +119,8 @@ function fakeCore() {
 	return {
 		table,
 		features,
+		shadings,
+		maps,
 		biases,
 		materials: new Materials(new CoreMemory(glue as unknown as CoreGlue, memory)),
 	};
@@ -212,6 +244,55 @@ describe('Material.set', () => {
 			MATERIAL_FEATURE_BLEND | MATERIAL_FEATURE_MULTIPLY,
 			MATERIAL_FEATURE_BLEND,
 		]);
+	});
+
+	test('maps go into their slots, on the coordinates of their texture', () => {
+		const { maps, shadings, materials } = fakeCore();
+		materials.standard({ map: texture(5), normalMap: texture(6), lightMap: texture(7, 1) });
+		materials.unlit({ map: texture(8) });
+		materials.unlit();
+		expect(maps).toEqual([
+			[1, MAP_SLOT_BASE_COLOR, 5, 0],
+			[1, MAP_SLOT_NORMAL, 6, 0],
+			[1, MAP_SLOT_LIGHT, 7, 1],
+			[2, MAP_SLOT_BASE_COLOR, 8, 0],
+		]);
+		expect(shadings.slice(1)).toEqual([SHADING_UNLIT_MAP, SHADING_UNLIT]);
+	});
+
+	test('writes map values, and the transform as three.js places a texture', () => {
+		const { table, materials } = fakeCore();
+		const stone = materials.standard({ normalScale: [0.5, -1], aoMapIntensity: 0.25 });
+		const row = () => table[0] as number[];
+		expect(row().slice(MATERIAL_PARAM_NORMAL_SCALE, MATERIAL_PARAM_NORMAL_SCALE + 2)).toEqual([
+			0.5, -1,
+		]);
+		expect(row()[MATERIAL_PARAM_OCCLUSION_STRENGTH]).toBe(0.25);
+		stone.set({ uvTransform: { offset: [0.5, 0.25], repeat: [2, 3], rotation: Math.PI / 2 } });
+		const u = row().slice(MATERIAL_PARAM_UV_U, MATERIAL_PARAM_UV_U + 3);
+		const v = row().slice(MATERIAL_PARAM_UV_V, MATERIAL_PARAM_UV_V + 3);
+		const close = (values: number[], expected: number[]) => {
+			for (const [k, value] of values.entries())
+				expect(value).toBeCloseTo(expected[k] as number, 12);
+		};
+		close(u, [0, 2, 0.5]);
+		close(v, [-3, 0, 0.25]);
+		stone.set({ uvTransform: { repeat: [4, 4] } });
+		close(row().slice(MATERIAL_PARAM_UV_U, MATERIAL_PARAM_UV_U + 3), [4, 0, 0]);
+		stone.set({ lightMapIntensity: 3 });
+		expect(row()[MATERIAL_PARAM_LIGHT_MAP_INTENSITY]).toBe(3);
+	});
+
+	test('checks the map values before it changes any', () => {
+		const { table, materials } = fakeCore();
+		const stone = materials.standard();
+		const before = [...(table[0] as number[])];
+		expect(thrown(() => stone.set({ aoMapIntensity: 1.5 })).code).toBe('E1108');
+		expect(thrown(() => stone.set({ lightMapIntensity: -1 })).code).toBe('E1108');
+		expect(thrown(() => stone.set({ normalScale: [Number.NaN, 1] })).code).toBe('E1108');
+		const turned = thrown(() => stone.set({ roughness: 0.5, uvTransform: { rotation: Infinity } }));
+		expect(turned.code).toBe('E1108');
+		expect(table[0]).toEqual(before);
 	});
 
 	test('passes the alpha mode and the depth options, and none by default', () => {

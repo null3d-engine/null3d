@@ -275,11 +275,34 @@ struct SamplerSlot {
     created: bool,
 }
 
-/// A bind group of one array and one sampler.
+/// The maps of one map set's bind group, in the order of the material's map slots.
+pub const MAP_SET_SLOTS: usize = 6;
+
+/// What a bind group binds: one array and its sampler, or a map set of an array and a sampler
+/// for each map slot.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum GroupKey {
+    Single {
+        array: u32,
+        sampler: u32,
+    },
+    /// Each slot's array, then its sampler.
+    Maps([(u32, u32); MAP_SET_SLOTS]),
+}
+
+impl GroupKey {
+    fn binds_array(&self, array: u32) -> bool {
+        match self {
+            GroupKey::Single { array: a, .. } => *a == array,
+            GroupKey::Maps(slots) => slots.iter().any(|&(a, _)| a == array),
+        }
+    }
+}
+
+/// A bind group, and whether the GPU has it.
 #[derive(Clone, Copy, Debug)]
 struct GroupSlot {
-    array: u32,
-    sampler: u32,
+    key: GroupKey,
     created: bool,
 }
 
@@ -319,6 +342,9 @@ pub struct TextureStore {
     /// True when a map became ready or stopped drawing since the last check.
     layers_changed: bool,
     stats: UploadStats,
+    /// A white texture of one texel, which the empty slots of map sets bind, once a map set
+    /// needs it.
+    placeholder: Handle,
 }
 
 impl TextureStore {
@@ -347,6 +373,7 @@ impl TextureStore {
             max_anisotropy: DEFAULT_MAX_ANISOTROPY,
             layers_changed: false,
             stats: UploadStats::default(),
+            placeholder: Handle::NONE,
         }
     }
 
@@ -476,19 +503,46 @@ impl TextureStore {
     }
 
     fn group_for(&mut self, array: u32, sampler: u32) -> u32 {
-        let found = self
-            .groups
-            .iter()
-            .position(|g| g.array == array && g.sampler == sampler);
-        if let Some(index) = found {
+        self.group_of_key(GroupKey::Single { array, sampler })
+    }
+
+    /// The index of the bind group of `key`, which is new when no group binds it yet.
+    fn group_of_key(&mut self, key: GroupKey) -> u32 {
+        if let Some(index) = self.groups.iter().position(|g| g.key == key) {
             return index as u32;
         }
         self.groups.push(GroupSlot {
-            array,
-            sampler,
+            key,
             created: false,
         });
         self.groups.len() as u32 - 1
+    }
+
+    /// The GPU id of the bind group that samples a material's maps, one per map slot: each live
+    /// texture's array with its sampler, and a white texel where a slot has none. Materials whose
+    /// maps share arrays and samplers share the group. A texture that moves to another array needs
+    /// its material's group again.
+    pub fn map_set_group(&mut self, maps: &[Handle; MAP_SET_SLOTS]) -> Result<u32, TextureError> {
+        if !self.is_live(self.placeholder) {
+            self.placeholder = self.create(TextureDesc {
+                width: 1,
+                height: 1,
+                depth: 1,
+                format: format::RGBA8_UNORM,
+                mipmaps: false,
+                sampling: Sampling::default(),
+            })?;
+            let (texels, _) = self.set_data(self.placeholder, 1, 1)?;
+            texels.fill(u32::MAX);
+        }
+        let empty = *self.slot(self.placeholder)?;
+        let mut slots = [(empty.array, empty.sampler); MAP_SET_SLOTS];
+        for (slot, &map) in slots.iter_mut().zip(maps) {
+            if let Ok(texture) = self.slot(map) {
+                *slot = (texture.array, texture.sampler);
+            }
+        }
+        Ok(self.ids.first_group + self.group_of_key(GroupKey::Maps(slots)))
     }
 
     /// Gives a texture a new image of `width` x `height` pixels, uploaded with the
@@ -852,7 +906,7 @@ impl TextureStore {
     }
 
     fn forget_groups_of(&mut self, array: u32) {
-        for group in self.groups.iter_mut().filter(|g| g.array == array) {
+        for group in self.groups.iter_mut().filter(|g| g.key.binds_array(array)) {
             group.created = false;
         }
     }
@@ -1005,27 +1059,66 @@ impl TextureStore {
         let mut made = false;
         for index in 0..self.groups.len() {
             let group = self.groups[index];
-            if group.created || self.arrays[group.array as usize].capacity == 0 {
-                continue;
+            let without_texture = |array: u32| self.arrays[array as usize].capacity == 0;
+            let id = self.ids.first_group + index as u32;
+            match group.key {
+                _ if group.created => continue,
+                GroupKey::Single { array, sampler } => {
+                    if without_texture(array) {
+                        continue;
+                    }
+                    list.push(
+                        Op::CreateBindGroup,
+                        &[
+                            id,
+                            layout::TEXTURES,
+                            2,
+                            0,
+                            resource_kind::TEXTURE,
+                            self.array_id(array),
+                            0,
+                            0,
+                            1,
+                            resource_kind::SAMPLER,
+                            self.ids.first_sampler + sampler,
+                            0,
+                            0,
+                        ],
+                    )?;
+                }
+                GroupKey::Maps(slots) => {
+                    if slots.iter().any(|&(array, _)| without_texture(array)) {
+                        continue;
+                    }
+                    // Each slot's array at the binding of its slot, then each slot's sampler
+                    // after every array.
+                    let mut words = [0; 3 + 2 * MAP_SET_SLOTS * 5];
+                    words[..3].copy_from_slice(&[
+                        id,
+                        layout::MATERIAL_MAPS,
+                        2 * MAP_SET_SLOTS as u32,
+                    ]);
+                    for (k, &(array, sampler)) in slots.iter().enumerate() {
+                        let texture = 3 + 5 * k;
+                        words[texture..texture + 5].copy_from_slice(&[
+                            k as u32,
+                            resource_kind::TEXTURE,
+                            self.array_id(array),
+                            0,
+                            0,
+                        ]);
+                        let at = 3 + 5 * (MAP_SET_SLOTS + k);
+                        words[at..at + 5].copy_from_slice(&[
+                            (MAP_SET_SLOTS + k) as u32,
+                            resource_kind::SAMPLER,
+                            self.ids.first_sampler + sampler,
+                            0,
+                            0,
+                        ]);
+                    }
+                    list.push(Op::CreateBindGroup, &words)?;
+                }
             }
-            list.push(
-                Op::CreateBindGroup,
-                &[
-                    self.ids.first_group + index as u32,
-                    layout::TEXTURES,
-                    2,
-                    0,
-                    resource_kind::TEXTURE,
-                    self.array_id(group.array),
-                    0,
-                    0,
-                    1,
-                    resource_kind::SAMPLER,
-                    self.ids.first_sampler + group.sampler,
-                    0,
-                    0,
-                ],
-            )?;
             self.groups[index].created = true;
             made = true;
         }

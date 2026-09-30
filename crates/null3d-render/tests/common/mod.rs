@@ -279,7 +279,7 @@ impl<B: FrameBuilder> World<B> {
             .unwrap();
         settings
             .materials_mut()
-            .set_map(material, MapSlot::BaseColor, texture)
+            .set_map(material, MapSlot::BaseColor, texture, false)
             .unwrap();
         let object = self.scene.reserve().unwrap();
         self.scene.set_local_radius(object, 1.0).unwrap();

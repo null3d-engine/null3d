@@ -325,6 +325,7 @@ impl GpuDrivenRenderer {
         let views = self.settings.views().len();
         if upload_everything {
             let limit = max_sources(self.config.storage_binding_bytes);
+            self.settings.update_map_groups();
             let targets = self.graph.scene_targets();
             self.layout.rebuild(
                 &self.settings,

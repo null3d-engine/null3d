@@ -8,12 +8,12 @@ summary: "Built-in materials; permutations; pipeline warm-up; why changing shade
 
 # Materials and pipelines
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Texture maps and custom materials are not built yet, so coding agents must not use them.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Custom materials are not built yet, so coding agents must not use them.
 
 ```mermaid
 flowchart LR
     values["Values:<br/>color, metalness, roughness, emissive"] -->|"set() writes them"| row["The material's row<br/>in the material table"]
-    fixed["Options fixed at creation:<br/>kind, vertexColors, alphaMode, doubleSided, depth"] --> key["Pipeline key"]
+    fixed["Options fixed at creation:<br/>kind, maps, vertexColors, alphaMode, doubleSided, depth"] --> key["Pipeline key"]
     format["The mesh's vertex format"] --> key
     key -->|"compiled once per key"| pipeline["Render pipeline:<br/>shader variant and state"]
     row --> draw["Each draw"]
@@ -49,6 +49,7 @@ A feature that changes what a shader costs is a variant of the shader, which the
 | Option | Where it goes |
 | --- | --- |
 | The kind: standard or unlit | The shader |
+| Texture maps | A shader variant that samples maps, and another for a normal map on a mesh with tangents |
 | `vertexColors` | A shader variant that reads the mesh's colors, on meshes that have them |
 | `alphaMode: 'mask'` | A shader variant that drops the fragments whose alpha is below the cutoff |
 | `alphaMode: 'blend'`, `blending` | The pipeline's blend state, and the transparent pass |

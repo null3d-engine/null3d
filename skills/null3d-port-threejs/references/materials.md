@@ -2,7 +2,7 @@
 
 Engine docs: `porting/threejs-materials`, `api/materials`, `api/textures`, `concepts/color-management`, `shaders/surface-functions`.
 
-Versions: `materials.standard` takes `color`, `opacity`, `metalness`, `roughness`, `emissive` and `emissiveIntensity` now, and shades as three.js's `MeshStandardMaterial` does. `materials.unlit` takes `color` and `opacity`. Both take `doubleSided`, `vertexColors`, `fog`, `alphaMode`, `alphaCutoff`, `blending`, `depthWrite`, `depthTest` and `depthBias`, and the standard material takes `flatShading`. The other options below come later in 0.1 unless a row gives another version, and so do `materials.shader` and surface functions. The texture options of `assets.loadTexture` in section 7 exist now, but no material can use a texture yet.
+Versions: `materials.standard` takes `color`, `opacity`, `metalness`, `roughness`, `emissive`, `emissiveIntensity` and the texture maps of section 1 now, and shades as three.js's `MeshStandardMaterial` does. `materials.unlit` takes `color`, `opacity` and `map`. Both take `uvTransform`, `doubleSided`, `vertexColors`, `fog`, `alphaMode`, `alphaCutoff`, `blending` and the depth options, and the standard material takes `flatShading`. The other options below come later in 0.1 unless a row gives another version, and so do `materials.shader` and surface functions.
 
 ## Contents
 
@@ -23,20 +23,20 @@ Versions: `materials.standard` takes `color`, `opacity`, `metalness`, `roughness
 | three.js | null3D | Notes |
 | --- | --- | --- |
 | `color` | `color` | Hex values are sRGB in both |
-| `map` | `map` (later in 0.1) | Must be sRGB (`colorSpace: 'srgb'`) |
+| `map` | `map` | Must be sRGB (`colorSpace: 'srgb'`). Its alpha multiplies `opacity` |
 | `roughness`, `metalness` | `roughness`, `metalness` | Same meaning (perceptual roughness) and the same defaults |
-| `roughnessMap`, `metalnessMap` | `metalnessRoughnessMap` (later in 0.1) | One texture: roughness in G, metalness in B, as glTF packs them. If the original uses two textures, pack them offline with `bunx @null3d/cli assets pack-orm` (0.2; the same texture can hold AO in R) |
-| `normalMap`, `normalScale` | `normalMap`, `normalScale: [x, y]` (later in 0.1) | Tangent-space only; object-space normal maps are not supported |
+| `roughnessMap`, `metalnessMap` | `metalnessRoughnessMap` | One texture: roughness in G, metalness in B, as glTF packs them. If the original uses two textures, pack them offline with `bunx @null3d/cli assets pack-orm` (0.2; the same texture can hold AO in R) |
+| `normalMap`, `normalScale` | `normalMap`, `normalScale: [x, y]` | Tangent space only. The frame comes from the mesh's tangents where it has them, else from the pixels around it, as in three.js |
 | `normalMapType: ObjectSpaceNormalMap` | Not supported | Convert to tangent space offline |
-| `aoMap`, `aoMapIntensity` | `aoMap`, `aoMapIntensity` (later in 0.1) | three.js reads AO from the R channel; so does null3D |
-| `lightMap`, `lightMapIntensity` | `lightMap`, `lightMapIntensity` (later in 0.1) | Usually on the second UV set: the texture option `uvSet: 1` |
+| `aoMap`, `aoMapIntensity` | `aoMap`, `aoMapIntensity` | three.js reads AO from the R channel; so does null3D |
+| `lightMap`, `lightMapIntensity` | `lightMap`, `lightMapIntensity` | Usually on the second UV set: the texture option `uvSet: 1` |
 | `emissive`, `emissiveIntensity` | Same names | `emissive` is an sRGB color, as in three.js |
-| `emissiveMap` | `emissiveMap` (later in 0.1) | Must be sRGB |
+| `emissiveMap` | `emissiveMap` | Must be sRGB |
 | `envMap`, `envMapIntensity` | Scene environment, `envIntensity` (0.2) | Per-material environment maps are not supported; one scene environment lights everything |
 | `envMapRotation` | `scene.setEnvironment(env, { rotation })` (0.2) | |
 | `bumpMap`, `bumpScale` | A normal map made offline: `bunx @null3d/cli assets normal-from-bump` (0.2) | |
 | `displacementMap`, `displacementScale`, `displacementBias` | A `vertexOffset` function (later in 0.1; section 8 of `references/shaders.md`) | Enlarge bounds with `setBounds` |
-| `alphaMap` | A surface function, or alpha packed into `map` offline (later in 0.1) | three.js reads the alpha map's G channel (recipe in section 8) |
+| `alphaMap` | Alpha packed into `map` offline, or a surface function (later in 0.1) | three.js reads the alpha map's G channel (recipe in section 8) |
 | `transparent: true`, `opacity` | `alphaMode: 'blend'`, `opacity` | Blended objects draw after the opaque ones, farthest first; an instance batch's rows sort one by one |
 | `alphaTest` | `alphaMode: 'mask'`, `alphaCutoff` | Pass the `alphaTest` value as `alphaCutoff`, whose default is 0.5, as in glTF |
 | `alphaHash` | `alphaMode: 'mask'` | Hashed transparency is not supported |
@@ -71,13 +71,13 @@ Tell the user which of these a scene relies on before porting it. Glass and car-
 
 ## 3. MeshBasicMaterial
 
-`materials.unlit`: `color`, `opacity`, `vertexColors`, `doubleSided`, `fog`, `alphaMode`, `alphaCutoff`, `blending` and the depth options now; `map` later in 0.1. Its `envMap` and `reflectivity` (fake reflections) are not supported; use `materials.standard` with high metalness and low roughness for a reflective look.
+`materials.unlit`: `color`, `opacity`, `map`, `uvTransform`, `vertexColors`, `doubleSided`, `fog`, `alphaMode`, `alphaCutoff`, `blending` and the depth options now. Its `envMap` and `reflectivity` (fake reflections) are not supported; use `materials.standard` with high metalness and low roughness for a reflective look.
 
 ## 4. MeshLambertMaterial and MeshPhongMaterial
 
 Both become `materials.standard` with `metalness: 0`. The standard material adds a faint highlight, and keeps energy as `MeshStandardMaterial` does. So small differences are expected: accept them after a parity check, or tune.
 
-- Lambert: `roughness: 1`. Emissive carries over, and maps later in 0.1.
+- Lambert: `roughness: 1`. Emissive and maps carry over.
 - Phong: start from `roughness = (2 / (shininess + 2)) ** 0.25`. That converts Blinn-Phong shininess to a GGX roughness through the common Beckmann approximation; treat it as a starting point and tune with parity images. Typical values: shininess 30 becomes about 0.49, shininess 100 about 0.37.
 - Phong `specular` color has no direct equivalent in a metalness workflow. Gray specular maps to roughness only; strongly colored specular needs a surface function.
 - `specularMap` (Phong) can become a roughness map: bright specular means low roughness. Convert offline.
@@ -107,7 +107,7 @@ Both become surface-function recipes (section 8), later in 0.1. Toon shading nee
 | No color space (data textures) | `colorSpace: 'linear'` |
 | `flipY` (TextureLoader default true) | `flipY: true`; glTF textures always use `false` |
 | `wrapS`, `wrapT` | `wrap: 'repeat' | 'clamp' | 'mirror'`, or `[u, v]` |
-| `repeat`, `offset`, `rotation` | The material's `uvTransform: { repeat, offset, rotation }` (later in 0.1) |
+| `repeat`, `offset`, `rotation` | The material's `uvTransform: { repeat, offset, rotation }`. Every map of the material shares it, where three.js keeps one per texture |
 | `center` | Bake into `offset`: rotating about center c equals rotating about the origin, then offsetting by c minus the rotated c |
 | `anisotropy` | `anisotropy`, from 1 to 16 |
 | `magFilter`, `minFilter` (`NearestFilter`) | `filter: 'nearest'` |

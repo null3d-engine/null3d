@@ -7,7 +7,6 @@
 //   covers it where they overlap; and a plane behind the wall with no depth test, which shows;
 // - a glow map with alpha, loaded with and without premultiplied colors, which must match.
 import { defineSketch } from '@null3d/engine';
-import { unlitMapMaterial } from '@null3d/engine/internal';
 
 /** The batch's quads: a row of cards that step back from the camera and to the right. */
 const CARDS = 12;
@@ -92,7 +91,7 @@ export default defineSketch(async ({ scene, materials, geometry, assets }) => {
 		const map = await assets.loadTexture('assets/textures/glow.png', { premultipliedAlpha });
 		scene.createMesh({
 			mesh: glow,
-			material: unlitMapMaterial(materials, map, { alphaMode: 'blend' }),
+			material: materials.unlit({ map, alphaMode: 'blend' }),
 			position: [x, 2.4, -1],
 		});
 	}

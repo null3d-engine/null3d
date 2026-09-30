@@ -8,6 +8,7 @@
 import {
 	TEMPLATE_DEBUG_LINES,
 	TEMPLATE_INSTANCED_LIT,
+	TEMPLATE_INSTANCED_STANDARD_MAPS,
 	TEMPLATE_INSTANCED_TEXCOORDS,
 	TEMPLATE_INSTANCED_UNLIT,
 	TEMPLATE_INSTANCED_UNLIT_MAP,
@@ -118,6 +119,7 @@ export function engineTemplates(shaders: DeviceShaders): (GlslTemplate | undefin
 	templates[TEMPLATE_INSTANCED_UNLIT] = { shader: shaders.unlit, pipeline: 'main' };
 	templates[TEMPLATE_INSTANCED_TEXCOORDS] = { shader: shaders.texcoords, pipeline: 'main' };
 	templates[TEMPLATE_INSTANCED_UNLIT_MAP] = { shader: shaders.unlit_map, pipeline: 'main' };
+	templates[TEMPLATE_INSTANCED_STANDARD_MAPS] = { shader: shaders.standard_maps, pipeline: 'main' };
 	if (DEV)
 		templates[TEMPLATE_DEBUG_LINES] = {
 			shader: DEBUG_LINES_SHADER,

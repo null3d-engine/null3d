@@ -20,7 +20,7 @@ use null3d_core::lights::{LightTable, LightView};
 use null3d_core::scene::SceneStorage;
 use null3d_core::snapshot::FrameSnapshot;
 use null3d_gpu::drawlist::{
-    DrawList, DrawListError, Op, buffer_usage, permutation, state_flags, vertex,
+    DrawList, DrawListError, Op, buffer_usage, permutation, state_flags, template, vertex,
 };
 
 use crate::camera::Lens;
@@ -398,6 +398,9 @@ pub struct SceneSettings {
     meshes: MeshStorage,
     materials: MaterialTable,
     textures: TextureStore,
+    /// The bind group of each material's maps, by material id, for the standard materials with a
+    /// live map, and 0 for the others.
+    map_groups: Vec<u32>,
     /// The views, the camera's first.
     views: Vec<View>,
     lighting: Lighting,
@@ -409,6 +412,7 @@ impl SceneSettings {
             meshes,
             materials: MaterialTable::with_capacity(max_materials),
             textures,
+            map_groups: Vec::new(),
             views: vec![View::default()],
             lighting: Lighting {
                 sun_direction: [0.0, -1.0, 0.0, 0.0],
@@ -495,14 +499,46 @@ impl SceneSettings {
         Ok(remade)
     }
 
-    /// The bind group of the map that a material draws with through `pipeline`, as
+    /// The bind group of the maps that a material draws with through `pipeline`, as
     /// [`SceneSettings::pipeline_of`] chose it, or 0 when that pipeline reads no map.
     pub fn texture_group(&self, material: u32, pipeline: DrawKey) -> u32 {
-        if pipeline.template != Shading::UnlitMap.template() {
-            return 0;
+        match pipeline.template {
+            template::INSTANCED_UNLIT_MAP => {
+                let map = self.materials.map(material - 1, MapSlot::BaseColor);
+                self.textures.group_id(map).unwrap_or(0)
+            }
+            template::INSTANCED_STANDARD_MAPS => self
+                .map_groups
+                .get(material as usize - 1)
+                .copied()
+                .unwrap_or(0),
+            _ => 0,
         }
-        let map = self.materials.map(material - 1, MapSlot::BaseColor);
-        self.textures.group_id(map).unwrap_or(0)
+    }
+
+    /// True when a material has a map in any slot whose texture lives.
+    fn has_live_map(&self, id: u32) -> bool {
+        self.materials
+            .maps(id)
+            .iter()
+            .any(|&map| self.textures.is_live(map))
+    }
+
+    /// Finds the bind group of each standard material's maps, before the draw tables are built
+    /// again. A texture that moves to another array changes its material's group, and such a move
+    /// comes with a rebuild.
+    pub(crate) fn update_map_groups(&mut self) {
+        let count = self.materials.len();
+        self.map_groups.resize(count as usize, 0);
+        for id in 0..count {
+            let standard = self.materials.shading(id) == Ok(Shading::Lit);
+            self.map_groups[id as usize] = if standard && self.has_live_map(id) {
+                let maps = self.materials.maps(id);
+                self.textures.map_set_group(&maps).unwrap_or(0)
+            } else {
+                0
+            };
+        }
     }
 
     /// The camera the canvas shows the scene from: a scene object, and its lens.
@@ -590,6 +626,8 @@ impl SceneSettings {
     /// when the pair draws nowhere: no mesh, no material, an id that names nothing, or a mesh
     /// without the vertex attributes that the material's shading reads. A material whose map is
     /// gone, or whose mesh has no texture coordinates for it, draws with its color alone. A
+    /// standard material with a live map draws with the maps template, whose normal map takes its
+    /// frame from the mesh's tangents where the mesh has them. A
     /// material with vertex colors reads them only from a mesh that has them, a masked material
     /// draws with the shader variant that discards fragments, and a double-sided material culls no
     /// faces. The material's depth options and depth bias set the pipeline's depth state, and a
@@ -599,33 +637,37 @@ impl SceneSettings {
             return None;
         }
         let format = self.meshes.mesh(mesh - 1)?.format;
-        let mut shading = self.materials.shading(material - 1).ok()?;
-        let needs = shading.attributes();
-        if shading == Shading::UnlitMap
-            && ((format & needs) != needs
-                || !self
-                    .textures
-                    .is_live(self.materials.map(material - 1, MapSlot::BaseColor)))
-        {
+        let id = material - 1;
+        let mut shading = self.materials.shading(id).ok()?;
+        let uv0 = format & vertex::UV0 != 0;
+        let live = |slot: MapSlot| self.textures.is_live(self.materials.map(id, slot));
+        if shading == Shading::UnlitMap && !(uv0 && live(MapSlot::BaseColor)) {
             shading = Shading::Unlit;
         }
+        if shading == Shading::Lit && uv0 && self.has_live_map(id) {
+            shading = Shading::StandardMaps;
+        }
         let needs = shading.attributes();
-        let features = self.materials.features(material - 1);
+        let features = self.materials.features(id);
         let has = |bit: u32| features & bit != 0;
         let base_color = shading.reads_base_color();
         let vertex_colors = has(feature::VERTEX_COLORS) && format & vertex::COLOR != 0;
         let masked = has(feature::ALPHA_MASK) && !has(feature::BLEND);
+        let tangents = shading == Shading::StandardMaps
+            && live(MapSlot::Normal)
+            && format & vertex::TANGENT != 0;
         let bit = |on: bool, bit: u32| if on { bit } else { 0 };
         ((format & needs) == needs).then_some(DrawKey {
             template: shading.template(),
             permutation: bit(base_color && vertex_colors, permutation::VERTEX_COLOR)
-                | bit(base_color && masked, permutation::ALPHA_MASK),
+                | bit(base_color && masked, permutation::ALPHA_MASK)
+                | bit(tangents, permutation::VERTEX_TANGENT),
             vertex_format: format,
             state: bit(has(feature::DOUBLE_SIDED), state_flags::CULL_NONE)
                 | bit(has(feature::NO_DEPTH_WRITE), state_flags::NO_DEPTH_WRITE)
                 | bit(has(feature::NO_DEPTH_TEST), state_flags::NO_DEPTH_TEST)
                 | blend_state(features),
-            bias: self.materials.depth_bias(material - 1),
+            bias: self.materials.depth_bias(id),
         })
     }
 
