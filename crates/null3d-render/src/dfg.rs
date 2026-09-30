@@ -31,7 +31,7 @@
 
 use null3d_gpu::drawlist::{DrawList, Op, format, texture_usage, view};
 
-use crate::frame::{RecordError, UploadArena, floats_as_bytes};
+use crate::frame::{RecordError, UploadArena};
 
 /// Entries along each side of the table.
 pub const SIZE: u32 = 16;
@@ -105,20 +105,8 @@ const HALVES: [u16; 2 * (SIZE * SIZE) as usize] = [
     0x38aa, 0x06f7, 0x37f4, 0x0648, 0x36ac, 0x0576, 0x3586, 0x049f,
 ];
 
-/// The table as `RGBA32_FLOAT` texels, row after row: the scale, the bias, and two zeros.
-pub const TEXELS: [f32; 4 * (SIZE * SIZE) as usize] = {
-    let mut texels = [0.0; 4 * (SIZE * SIZE) as usize];
-    let mut k = 0;
-    while k < (SIZE * SIZE) as usize {
-        texels[4 * k] = half_to_f32(HALVES[2 * k]);
-        texels[4 * k + 1] = half_to_f32(HALVES[2 * k + 1]);
-        k += 1;
-    }
-    texels
-};
-
-/// Bytes that [`upload`] copies into a frame's upload arena.
-pub const BYTES: usize = std::mem::size_of::<[f32; 4 * (SIZE * SIZE) as usize]>();
+/// Bytes that [`upload`] copies into a frame's upload arena: the table as `RGBA32_FLOAT` texels.
+pub const BYTES: usize = 16 * (SIZE * SIZE) as usize;
 
 /// A half float's value. The table holds no infinities and no NaNs.
 const fn half_to_f32(half: u16) -> f32 {
@@ -158,7 +146,15 @@ pub(crate) fn upload(
     arena: &mut UploadArena,
     texture: u32,
 ) -> Result<(), RecordError> {
-    let (at, bytes) = arena.push(floats_as_bytes(&TEXELS))?;
+    // The core keeps the half floats, a quarter of the texels' bytes, and writes the texels here:
+    // the scale, the bias, and two zeros.
+    let (at, texels) = arena.push_zeroed(BYTES)?;
+    let (entries, _) = HALVES.as_chunks::<2>();
+    for (texel, entry) in texels.as_chunks_mut::<16>().0.iter_mut().zip(entries) {
+        texel[..4].copy_from_slice(&half_to_f32(entry[0]).to_le_bytes());
+        texel[4..8].copy_from_slice(&half_to_f32(entry[1]).to_le_bytes());
+    }
+    let bytes = BYTES as u32;
     list.push(
         Op::WriteTexture,
         &[texture, 0, 0, 0, 0, SIZE, SIZE, 1, at, bytes],
@@ -172,8 +168,8 @@ mod tests {
 
     /// The entry of roughness column `x` and view row `y`: its scale and bias.
     fn entry(x: usize, y: usize) -> [f32; 2] {
-        let k = 4 * (y * SIZE as usize + x);
-        [TEXELS[k], TEXELS[k + 1]]
+        let k = 2 * (y * SIZE as usize + x);
+        [half_to_f32(HALVES[k]), half_to_f32(HALVES[k + 1])]
     }
 
     /// The engine's copy equals the shader library test's copy, which a unit test holds equal to
@@ -208,8 +204,8 @@ mod tests {
         assert_eq!(entry(0, 0), [half_to_f32(0x30b5), half_to_f32(0x3ad1)]);
         // Rough, seen head on.
         assert_eq!(entry(15, 15), [half_to_f32(0x3586), half_to_f32(0x049f)]);
-        for (k, texel) in TEXELS.chunks(4).enumerate() {
-            assert_eq!(&texel[2..], &[0.0, 0.0]);
+        for k in 0..(SIZE * SIZE) as usize {
+            let texel = entry(k % SIZE as usize, k / SIZE as usize);
             assert!(texel[0] > 0.0 && texel[0] <= 1.0, "scale of entry {k}");
             // Half floats round the sum a little above 1 in a few entries.
             assert!(
