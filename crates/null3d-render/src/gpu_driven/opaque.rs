@@ -11,7 +11,7 @@ use super::cull::INDIRECT_BYTES;
 use super::ids;
 use super::layout::Layout;
 use crate::frame::{MeshBuffers, RecordError, UploadArena};
-use crate::frame_graph::{COLOR_FORMAT, DEPTH_FORMAT};
+use crate::pipelines::PassTargets;
 use crate::view::{ViewFrame, ViewId};
 
 /// The group index of the maps' bind group in the mesh pipelines that sample a map.
@@ -79,17 +79,22 @@ pub(super) fn upload(
 
 /// Records a view's bundle: each draw of every bucket of the layout, with the bucket's slice of
 /// the view's compacted instances and the bind group of its material's map, from its mesh page's
-/// buffers in `meshes`, into targets with `samples` samples.
+/// buffers in `meshes`, into the scene's targets.
 pub(super) fn record_bundle(
     list: &mut DrawList,
     view: ViewId,
     layout: &Layout,
     meshes: &MeshBuffers,
-    samples: u32,
+    targets: PassTargets,
 ) -> Result<(), RecordError> {
     list.push(
         Op::BeginBundle,
-        &[ids::bundle(view), COLOR_FORMAT, DEPTH_FORMAT, samples],
+        &[
+            ids::bundle(view),
+            targets.color_format,
+            targets.depth_format,
+            targets.samples,
+        ],
     )?;
     list.push(Op::SetBindGroup, &[0, ids::frame_group(view), 0])?;
     let (mut pipeline, mut page, mut group) = (None, None, 0);

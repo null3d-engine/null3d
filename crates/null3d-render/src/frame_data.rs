@@ -4,9 +4,10 @@ use null3d_gpu::drawlist::sizes::FRAME_UNIFORM_BYTES;
 
 use crate::camera::Mat4;
 use crate::fog::FogUniform;
+use crate::output::OutputUniform;
 
-/// Per-frame values: the camera, the lights and the fog. Colors are linear and include the
-/// intensity. Shaders work in positions relative to the camera.
+/// Per-frame values: the camera, the lights, the output settings and the fog. Colors are linear and
+/// include the intensity. Shaders work in positions relative to the camera.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct FrameUniform {
@@ -28,6 +29,8 @@ pub struct FrameUniform {
     /// The light grid's tiles across, tiles up, slices and slices per doubling of the slice depth.
     /// The slices are 0 for a view whose grid lists no light.
     pub cluster_grid: [f32; 4],
+    /// The exposure and the tone mapping, which the 8-bit path's fragment shaders apply.
+    pub output: OutputUniform,
     /// The scene's fog, seen from the view's camera.
     pub fog: FogUniform,
 }

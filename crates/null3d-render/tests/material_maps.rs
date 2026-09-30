@@ -90,7 +90,7 @@ fn map_pipelines(commands: &[(Op, Vec<u32>)]) -> Vec<(u32, u32)> {
         .filter(|(op, o)| {
             *op == Op::CreateRenderPipeline && o[1] == template::INSTANCED_STANDARD_MAPS
         })
-        .map(|(_, o)| (o[2] & !permutation::DRAW_INDEX, o[7]))
+        .map(|(_, o)| (o[2] & !permutation::DEVICE, o[7]))
         .collect();
     made.sort_unstable();
     made

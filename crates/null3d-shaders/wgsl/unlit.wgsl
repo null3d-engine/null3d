@@ -4,8 +4,7 @@ enable draw_index;
 // them, times the mesh's vertex colors in the VERTEX_COLOR builds. The ALPHA_MASK builds draw
 // nothing where the alpha falls below the material's cutoff. null3d::mesh finds each instance on
 // both GPU paths.
-#import null3d::color
-#import null3d::mesh::{InstanceIn, clip_of, find_instance, fogged, material_of}
+#import null3d::mesh::{InstanceIn, clip_of, find_instance, finish, fogged, material_of}
 #import null3d::mesh::relative_position
 
 /// The vertex attributes that the template reads.
@@ -53,5 +52,5 @@ fn fs(in: VertexOut) -> @location(0) vec4f {
         discard;
     }
 #endif
-    return vec4f(null3d::color::linear_to_srgb(fogged(base, in.relative, m)), 1.0);
+    return finish(fogged(base, in.relative, m), in.clip.xy);
 }

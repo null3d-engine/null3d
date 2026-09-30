@@ -62,12 +62,12 @@ fn add_biased<B: FrameBuilder>(
 }
 
 /// Each render pipeline that a list creates for the triangles: its template, permutation bits
-/// without the pass's own, and state flags, sorted.
+/// without the pass's own, which the device fixes, and state flags, sorted.
 fn triangle_pipelines(commands: &[(Op, Vec<u32>)]) -> Vec<(u32, u32, u32)> {
     let mut made: Vec<(u32, u32, u32)> = commands
         .iter()
         .filter(|(op, o)| *op == Op::CreateRenderPipeline && o[7] & vertex::COLOR != 0)
-        .map(|(_, o)| (o[1], o[2] & !permutation::DRAW_INDEX, o[6]))
+        .map(|(_, o)| (o[1], o[2] & !permutation::DEVICE, o[6]))
         .collect();
     made.sort_unstable();
     made
@@ -135,12 +135,13 @@ fn features_choose_the_pipeline_on_webgl2() {
 }
 
 /// Each render pipeline that a list creates for meshes without vertex colors: its template,
-/// permutation bits without the pass's own, state flags and depth bias, sorted, once each.
+/// permutation bits without the pass's own, which the device fixes, state flags and depth bias,
+/// sorted, once each.
 fn plain_pipelines(commands: &[(Op, Vec<u32>)]) -> Vec<(u32, u32, u32, u32, u32)> {
     let mut made: Vec<_> = commands
         .iter()
         .filter(|(op, o)| *op == Op::CreateRenderPipeline && o[7] & vertex::COLOR == 0)
-        .map(|(_, o)| (o[1], o[2] & !permutation::DRAW_INDEX, o[6], o[8], o[9]))
+        .map(|(_, o)| (o[1], o[2] & !permutation::DEVICE, o[6], o[8], o[9]))
         .collect();
     made.sort_unstable();
     made.dedup();

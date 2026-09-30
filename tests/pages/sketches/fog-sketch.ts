@@ -15,9 +15,11 @@ import {
 const params = new URL(import.meta.url).searchParams;
 const fogName = (params.get('fog') ?? 'linear') as FogName;
 
-export default defineSketch(({ scene, materials, geometry }) => {
+export default defineSketch(({ scene, materials, geometry, post }) => {
 	const fog = FOG_SETTINGS[fogName];
 	if (!fog) throw new Error('?fog= must be linear or exp2');
+	// The three.js twin draws with no tone mapping, three.js's default.
+	post.set({ toneMapping: 'none' });
 	scene.setBackground(FOG_COLOR);
 	scene.setFog(fog);
 	scene.createDirectionalLight({

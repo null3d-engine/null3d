@@ -3,7 +3,11 @@
 import { defineSketch } from '@null3d/engine';
 import { PRECISION, precisionSurfaces } from '../lib/depth-precision';
 
-export default defineSketch(({ scene, materials, geometry }) => {
+export default defineSketch(({ scene, materials, geometry, post }) => {
+	// The page finds fighting pixels by their red channel. A tone mapping curve such as ACES mixes
+	// the channels, which would give the nearer surface some red, so the colors pass through as
+	// they are.
+	post.set({ toneMapping: 'none' });
 	scene.setBackground(PRECISION.background);
 	const camera = scene.createPerspectiveCamera({
 		fov: PRECISION.fovDegrees,

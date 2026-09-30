@@ -1,7 +1,9 @@
 // The orthographic camera's scene (bench/scenes/ortho-camera.ts), which the parity test also draws
 // with three.js. ?x= moves the scene and the camera that many meters along x, and the image must
 // not change. ?edges makes the camera from four edges twice the view's size, then halves them with
-// setOrthoHeight, which must draw the same view as a height whose width follows the canvas.
+// setOrthoHeight, which must draw the same view as a height whose width follows the canvas. The
+// three.js twin draws with no tone mapping, three.js's default, so the sketch turns off the engine's
+// default of ACES.
 import { defineSketch } from '@null3d/engine';
 import {
 	AMBIENT,
@@ -26,8 +28,9 @@ const at = (p: readonly [number, number, number]): [number, number, number] => [
 	p[2],
 ];
 
-export default defineSketch(({ scene, materials, geometry }) => {
+export default defineSketch(({ scene, materials, geometry, post }) => {
 	if (!Number.isFinite(X)) throw new Error('?x= must be a number of meters');
+	post.set({ toneMapping: 'none' });
 	scene.setBackground(BACKGROUND);
 	scene.createDirectionalLight({
 		direction: SUN.direction,
