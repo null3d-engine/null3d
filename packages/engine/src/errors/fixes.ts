@@ -60,6 +60,8 @@ export const ERROR_FIXES = {
 		'Fix the error that the message quotes. When the message gives a sketch time, the sketch failed at that time, and the console shows the error with its stack.',
 	E1409:
 		'Give memory.maximumMiB a whole number of MiB from 256 to 4096, such as 2048, or leave the option out for the default of 1024.',
+	E1410:
+		"Pass the sketch as new URL('./sketch.ts', import.meta.url), so that the bundler ships the module and the engine finds it. When the download worked, the module's own code threw the error that the message quotes while the module loaded: fix that error.",
 	E1501:
 		'Share meshes and materials between objects instead of creating them per object. Draw many copies of one mesh with an instance batch. Every row of a batch counts toward the culling limit, active or not, so size each batch for the rows it uses.',
 	E1502: RENDER_GRAPH_FIX,
