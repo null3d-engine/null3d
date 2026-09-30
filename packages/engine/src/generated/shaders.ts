@@ -403,6 +403,7 @@ export const LIT_SHADER: {
 	readonly webgl2: ShaderVariant<'main'>;
 	readonly webgl2_draw_index: ShaderVariant<'main'>;
 	readonly webgpu: ShaderVariant<'main'>;
+	readonly webgpu_receive_shadows: ShaderVariant<'main'>;
 } = {
 	webgl2: {
 		permutation: 0,
@@ -794,14 +795,18 @@ vec3 linear_to_srgb(vec3 c) {
 
 void main() {
     VertexOut in_ = VertexOut(gl_FragCoord, _vs2fs_location0, _vs2fs_location1);
+    vec3 sun = vec3(0.0);
     Material _e2 = material_of(in_.material);
     vec3 albedo_1 = _e2.color.xyz;
-    vec4 _e9 = _group_0_binding_0_fs.sun_direction;
-    vec4 _e14 = _group_0_binding_0_fs.sun_color;
-    vec4 _e18 = _group_0_binding_0_fs.ambient;
-    vec3 _e20 = lambert(albedo_1, normalize(in_.normal), -(_e9.xyz), _e14.xyz, _e18.xyz);
-    vec3 _e21 = linear_to_srgb(_e20);
-    _fs2p_location0 = vec4(_e21, 1.0);
+    vec3 normal_1 = normalize(in_.normal);
+    vec4 _e9 = _group_0_binding_0_fs.sun_color;
+    sun = _e9.xyz;
+    vec4 _e14 = _group_0_binding_0_fs.sun_direction;
+    vec3 _e17 = sun;
+    vec4 _e20 = _group_0_binding_0_fs.ambient;
+    vec3 _e22 = lambert(albedo_1, normal_1, -(_e14.xyz), _e17, _e20.xyz);
+    vec3 _e23 = linear_to_srgb(_e22);
+    _fs2p_location0 = vec4(_e23, 1.0);
     return;
 }
 `,
@@ -1217,14 +1222,18 @@ vec3 linear_to_srgb(vec3 c) {
 
 void main() {
     VertexOut in_ = VertexOut(gl_FragCoord, _vs2fs_location0, _vs2fs_location1);
+    vec3 sun = vec3(0.0);
     Material _e2 = material_of(in_.material);
     vec3 albedo_1 = _e2.color.xyz;
-    vec4 _e9 = _group_0_binding_0_fs.sun_direction;
-    vec4 _e14 = _group_0_binding_0_fs.sun_color;
-    vec4 _e18 = _group_0_binding_0_fs.ambient;
-    vec3 _e20 = lambert(albedo_1, normalize(in_.normal), -(_e9.xyz), _e14.xyz, _e18.xyz);
-    vec3 _e21 = linear_to_srgb(_e20);
-    _fs2p_location0 = vec4(_e21, 1.0);
+    vec3 normal_1 = normalize(in_.normal);
+    vec4 _e9 = _group_0_binding_0_fs.sun_color;
+    sun = _e9.xyz;
+    vec4 _e14 = _group_0_binding_0_fs.sun_direction;
+    vec3 _e17 = sun;
+    vec4 _e20 = _group_0_binding_0_fs.ambient;
+    vec3 _e22 = lambert(albedo_1, normal_1, -(_e14.xyz), _e17, _e20.xyz);
+    vec3 _e23 = linear_to_srgb(_e22);
+    _fs2p_location0 = vec4(_e23, 1.0);
     return;
 }
 `,
@@ -1382,14 +1391,248 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
 
 @fragment
 fn fs(in: VertexOut) -> @location(0) vec4<f32> {
+    var sun: vec3<f32>;
+
     let _e2 = material_of(in.material);
     let albedo_1 = _e2.color.xyz;
-    let _e9 = frame.sun_direction;
-    let _e14 = frame.sun_color;
-    let _e18 = frame.ambient;
-    let _e20 = lambert(albedo_1, normalize(in.normal), -(_e9.xyz), _e14.xyz, _e18.xyz);
-    let _e21 = linear_to_srgb(_e20);
-    return vec4<f32>(_e21, 1f);
+    let normal_1 = normalize(in.normal);
+    let _e9 = frame.sun_color;
+    sun = _e9.xyz;
+    let _e14 = frame.sun_direction;
+    let _e17 = sun;
+    let _e20 = frame.ambient;
+    let _e22 = lambert(albedo_1, normal_1, -(_e14.xyz), _e17, _e20.xyz);
+    let _e23 = linear_to_srgb(_e22);
+    return vec4<f32>(_e23, 1f);
+}
+`,
+			pipelines: {
+				main: {
+					vertex: 'vs',
+					fragment: 'fs',
+				},
+			},
+		},
+		glsl: null,
+	},
+	webgpu_receive_shadows: {
+		permutation: 32,
+		wgsl: {
+			source: `struct Frame {
+    view_proj: mat4x4<f32>,
+    camera_position: vec4<f32>,
+    sun_direction: vec4<f32>,
+    sun_color: vec4<f32>,
+    ambient: vec4<f32>,
+}
+
+struct Material {
+    color: vec4<f32>,
+    emissive: vec4<f32>,
+    surface: vec4<f32>,
+    strengths: vec4<f32>,
+    uv_u: vec4<f32>,
+    uv_v: vec4<f32>,
+    maps: vec4<f32>,
+    more_maps: vec4<f32>,
+}
+
+struct Transform {
+    x: vec4<f32>,
+    y: vec4<f32>,
+    z: vec4<f32>,
+}
+
+struct InstanceIn {
+    @location(8) row_x: vec4<f32>,
+    @location(9) row_y: vec4<f32>,
+    @location(10) row_z: vec4<f32>,
+    @location(11) ids: vec4<u32>,
+}
+
+struct Instance {
+    row_x: vec4<f32>,
+    row_y: vec4<f32>,
+    row_z: vec4<f32>,
+    material: u32,
+    drawn: bool,
+}
+
+struct ShadowCascades {
+    view_proj: array<mat4x4<f32>, 4>,
+    ends: vec4<f32>,
+    forward: vec4<f32>,
+    normal_offsets: vec4<f32>,
+    depth_biases: vec4<f32>,
+}
+
+struct VertexIn {
+    @location(0) position: vec3<f32>,
+    @location(1) normal: vec3<f32>,
+}
+
+struct VertexOut {
+    @builtin(position) clip: vec4<f32>,
+    @location(0) normal: vec3<f32>,
+    @location(1) @interpolate(flat, either) material: u32,
+    @location(2) relative: vec3<f32>,
+}
+
+const OUTSIDE_CLIP: vec4<f32> = vec4<f32>(2f, 2f, 2f, 1f);
+const PI: f32 = 3.1415927f;
+const INV_PI: f32 = 0.31830987f;
+const EPSILON: f32 = 0.000001f;
+
+@group(0) @binding(0)
+var<uniform> frame: Frame;
+@group(0) @binding(1)
+var<storage> materials: array<Material>;
+@group(0) @binding(6)
+var<uniform> cascades: ShadowCascades;
+@group(0) @binding(4)
+var shadow_map: texture_depth_2d_array;
+@group(0) @binding(5)
+var shadow_sampler: sampler_comparison;
+
+fn transform_point(t: Transform, p: vec3<f32>) -> vec3<f32> {
+    let q = vec4<f32>(p, 1f);
+    return vec3<f32>(dot(t.x, q), dot(t.y, q), dot(t.z, q));
+}
+
+fn transform_direction(t_1: Transform, d: vec3<f32>) -> vec3<f32> {
+    let q_1 = vec4<f32>(d, 0f);
+    return vec3<f32>(dot(t_1.x, q_1), dot(t_1.y, q_1), dot(t_1.z, q_1));
+}
+
+fn to_clip(view_proj: mat4x4<f32>, relative_position: vec3<f32>) -> vec4<f32> {
+    return (view_proj * vec4<f32>(relative_position, 1f));
+}
+
+fn material_of(id: u32) -> Material {
+    let _e3 = materials[id];
+    return _e3;
+}
+
+fn find_instance(i_1: InstanceIn) -> Instance {
+    return Instance(i_1.row_x, i_1.row_y, i_1.row_z, i_1.ids.x, true);
+}
+
+fn transform_of(found: Instance) -> Transform {
+    return Transform(found.row_x, found.row_y, found.row_z);
+}
+
+fn clip_position(found_1: Instance, position: vec3<f32>) -> vec4<f32> {
+    if !(found_1.drawn) {
+        return OUTSIDE_CLIP;
+    }
+    let _e6 = frame.view_proj;
+    let _e7 = transform_of(found_1);
+    let _e9 = transform_point(_e7, position);
+    let _e10 = to_clip(_e6, _e9);
+    return _e10;
+}
+
+fn world_direction(found_2: Instance, direction: vec3<f32>) -> vec3<f32> {
+    let _e1 = transform_of(found_2);
+    let _e3 = transform_direction(_e1, direction);
+    return _e3;
+}
+
+fn sun_shadow(relative: vec3<f32>, normal: vec3<f32>) -> f32 {
+    var cascade: u32 = 0u;
+    var local: bool;
+    var uv: vec2<f32>;
+
+    let _e4 = cascades.forward;
+    let along = dot(relative, _e4.xyz);
+    let _e10 = cascades.forward.w;
+    let count = u32(_e10);
+    loop {
+        let _e13 = cascade;
+        if (_e13 < count) {
+            let _e17 = cascade;
+            let _e19 = cascades.ends[_e17];
+            local = (along >= _e19);
+        } else {
+            local = false;
+        }
+        let _e24 = local;
+        if _e24 {
+        } else {
+            break;
+        }
+        {
+            let _e25 = cascade;
+            cascade = (_e25 + 1u);
+        }
+    }
+    let _e28 = cascade;
+    if (_e28 >= count) {
+        return 1f;
+    }
+    let _e34 = cascade;
+    let _e36 = cascades.normal_offsets[_e34];
+    let moved = (relative + (normal * _e36));
+    let _e41 = cascade;
+    let _e43 = cascades.view_proj[_e41];
+    let clip = (_e43 * vec4<f32>(moved, 1f));
+    uv = ((clip.xy * vec2<f32>(0.5f, -0.5f)) + vec2(0.5f));
+    let _e59 = cascade;
+    let _e61 = cascades.depth_biases[_e59];
+    let depth = (clip.z + _e61);
+    let _e65 = uv;
+    let _e66 = cascade;
+    let lit = textureSampleCompareLevel(shadow_map, shadow_sampler, _e65, _e66, depth);
+    let end = cascades.ends[(count - 1u)];
+    return mix(lit, 1f, smoothstep((end * 0.9f), end, along));
+}
+
+fn lambert(albedo: vec3<f32>, normal_1: vec3<f32>, to_light: vec3<f32>, light: vec3<f32>, ambient: vec3<f32>) -> vec3<f32> {
+    let n_dot_l = max(dot(normal_1, to_light), 0f);
+    return ((albedo / vec3(3.1415927f)) * ((n_dot_l * light) + ambient));
+}
+
+fn linear_to_srgb(c: vec3<f32>) -> vec3<f32> {
+    let low = (c * 12.92f);
+    let high = ((1.055f * pow(c, vec3(0.41666666f))) - vec3(0.055f));
+    return select(high, low, (c <= vec3(0.0031308f)));
+}
+
+@vertex
+fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
+    var out: VertexOut;
+
+    let _e1 = find_instance(i);
+    let _e6 = clip_position(_e1, v.position);
+    out.clip = _e6;
+    let _e9 = world_direction(_e1, v.normal);
+    out.normal = _e9;
+    out.material = _e1.material;
+    let _e13 = transform_of(_e1);
+    let _e15 = transform_point(_e13, v.position);
+    out.relative = _e15;
+    let _e16 = out;
+    return _e16;
+}
+
+@fragment
+fn fs(in: VertexOut) -> @location(0) vec4<f32> {
+    var sun: vec3<f32>;
+
+    let _e2 = material_of(in.material);
+    let albedo_1 = _e2.color.xyz;
+    let normal_2 = normalize(in.normal);
+    let _e9 = frame.sun_color;
+    sun = _e9.xyz;
+    let _e12 = sun;
+    let _e14 = sun_shadow(in.relative, normal_2);
+    sun = (_e12 * _e14);
+    let _e18 = frame.sun_direction;
+    let _e21 = sun;
+    let _e24 = frame.ambient;
+    let _e26 = lambert(albedo_1, normal_2, -(_e18.xyz), _e21, _e24.xyz);
+    let _e27 = linear_to_srgb(_e26);
+    return vec4<f32>(_e27, 1f);
 }
 `,
 			pipelines: {
@@ -1522,6 +1765,109 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
 				main: {
 					vertex: 'vs_main',
 					fragment: 'fs_main',
+				},
+			},
+		},
+		glsl: null,
+	},
+};
+
+/** The variants of the `shadow_depth` shader, by variant name. */
+export const SHADOW_DEPTH_SHADER: {
+	readonly webgpu: ShaderVariant<'main'>;
+} = {
+	webgpu: {
+		permutation: 0,
+		wgsl: {
+			source: `struct Frame {
+    view_proj: mat4x4<f32>,
+    camera_position: vec4<f32>,
+    sun_direction: vec4<f32>,
+    sun_color: vec4<f32>,
+    ambient: vec4<f32>,
+}
+
+struct Transform {
+    x: vec4<f32>,
+    y: vec4<f32>,
+    z: vec4<f32>,
+}
+
+struct InstanceIn {
+    @location(8) row_x: vec4<f32>,
+    @location(9) row_y: vec4<f32>,
+    @location(10) row_z: vec4<f32>,
+    @location(11) ids: vec4<u32>,
+}
+
+struct Instance {
+    row_x: vec4<f32>,
+    row_y: vec4<f32>,
+    row_z: vec4<f32>,
+    material: u32,
+    drawn: bool,
+}
+
+struct VertexIn {
+    @location(0) position: vec3<f32>,
+}
+
+const OUTSIDE_CLIP: vec4<f32> = vec4<f32>(2f, 2f, 2f, 1f);
+
+@group(0) @binding(0)
+var<uniform> frame: Frame;
+
+fn transform_point(t: Transform, p: vec3<f32>) -> vec3<f32> {
+    let q = vec4<f32>(p, 1f);
+    return vec3<f32>(dot(t.x, q), dot(t.y, q), dot(t.z, q));
+}
+
+fn to_clip(view_proj: mat4x4<f32>, relative_position: vec3<f32>) -> vec4<f32> {
+    return (view_proj * vec4<f32>(relative_position, 1f));
+}
+
+fn find_instance(i_1: InstanceIn) -> Instance {
+    return Instance(i_1.row_x, i_1.row_y, i_1.row_z, i_1.ids.x, true);
+}
+
+fn transform_of(found: Instance) -> Transform {
+    return Transform(found.row_x, found.row_y, found.row_z);
+}
+
+fn clip_position(found_1: Instance, position: vec3<f32>) -> vec4<f32> {
+    if !(found_1.drawn) {
+        return OUTSIDE_CLIP;
+    }
+    let _e6 = frame.view_proj;
+    let _e7 = transform_of(found_1);
+    let _e9 = transform_point(_e7, position);
+    let _e10 = to_clip(_e6, _e9);
+    return _e10;
+}
+
+@vertex
+fn vs(v: VertexIn, i: InstanceIn) -> @builtin(position) vec4<f32> {
+    var clip: vec4<f32>;
+
+    let _e1 = find_instance(i);
+    let _e4 = clip_position(_e1, v.position);
+    clip = _e4;
+    let _e8 = clip.z;
+    let _e10 = clip.w;
+    clip.z = min(_e8, _e10);
+    let _e12 = clip;
+    return _e12;
+}
+
+@fragment
+fn fs() {
+    return;
+}
+`,
+			pipelines: {
+				main: {
+					vertex: 'vs',
+					fragment: 'fs',
 				},
 			},
 		},
@@ -9350,6 +9696,7 @@ export const SHADERS = {
 	debug_lines: DEBUG_LINES_SHADER,
 	lit: LIT_SHADER,
 	mipmap: MIPMAP_SHADER,
+	shadow_depth: SHADOW_DEPTH_SHADER,
 	test_library: TEST_LIBRARY_SHADER,
 	test_mesh: TEST_MESH_SHADER,
 	test_textures: TEST_TEXTURES_SHADER,

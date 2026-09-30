@@ -138,7 +138,7 @@ obj.destroy();
 obj.name;                            // string, read-only after creation
 ```
 
-Meshes also have these calls. `setCastShadows` and `setReceiveShadows` are stored until shadows draw, and `setRenderOrder` orders transparent objects, which do not draw yet.
+Meshes also have these calls. `setCastShadows` and `setReceiveShadows` rebuild the draw tables, so set them at setup; `setRenderOrder` orders transparent objects, which do not draw yet.
 
 ```ts
 mesh.setMaterial(material);          mesh.setMesh(geometry);       // setMesh brings back the mesh's bounds
@@ -193,7 +193,7 @@ An orthographic camera made with `height` follows the canvas's aspect ratio; one
 
 ```ts
 scene.createDirectionalLight({ direction, color, intensity, castShadows,
-  shadow: { cascades, mapSize, bias, normalBias } });                       // shadow: later in 0.1
+  shadow: { cascades, mapSize, distance, bias, normalBias } });              // shadows: WebGPU only for now
 scene.createPointLight({ position, color, intensity, range, decay, castShadows });  // range is required
 scene.createSpotLight({ position, direction, target, angle, penumbra, range, decay, intensity, castShadows });
 scene.createHemisphereLight({ skyColor, groundColor, intensity });
@@ -204,12 +204,15 @@ light.setDirection(x, y, z);                 // directional and spot lights
 light.setRange(r); light.setDecay(d);        // point and spot lights
 light.setAngle(a); light.setPenumbra(p);     // spot lights
 light.setGroundColor(c);                     // hemisphere lights; setColor sets the sky
-light.setCastShadows(true);                  // directional, point and spot lights
+light.setCastShadows(true);                  // directional lights cast; point and spot lights store it
+sun.setShadow({ cascades: 2, distance: 80 }); // directional lights; changes only the settings given
 ```
 
 Lights are nodes: they take the node options (`name`, `position`, `parent`, `dynamic`, `layers` and the rest) and have the calls in section 4. Directional and spot lights shine along their -Z axis, so `lookAt` aims them; a hemisphere light's sky is its +Y axis. A light lights a camera's view when their layer masks share a bit. Units match three.js r155 and later: directional intensity in lux-like units, point and spot intensity in candela. Shadow cascades fit the view by themselves.
 
-Later in 0.1: point, spot and hemisphere lights light surfaces (clustered lighting), and shadows draw. Until then, surfaces show the first directional light created and the ambient lights, and `castShadows` is stored.
+Shadows: the first directional light created casts them onto meshes with `receiveShadows`, from meshes with `castShadows`. Defaults: 3 cascades, 2,048 texels, 200 m, bias 0.5 and normal bias 1, both in texels of each cascade. Unlit materials show no shadows (`concepts/shadows`).
+
+Later in 0.1: point, spot and hemisphere lights light surfaces (clustered lighting), and WebGL2 draws shadows. Instance batches cast and receive them, and point and spot lights cast them. Until then, surfaces show the first directional light created and the ambient lights.
 
 ## 8. Geometry (`api/geometry`)
 

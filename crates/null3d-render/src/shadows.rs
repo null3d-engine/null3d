@@ -30,9 +30,14 @@
 //! [`ShadowSettings::bias`] texels, then compares its depth with the shadow map's. Past the shadow
 //! distance nothing is shadowed, and shadows fade out over the last tenth of the distance.
 
+use null3d_core::cells::CellPosition;
 use null3d_core::culling::Frustum;
 
+use null3d_gpu::drawlist::sizes::SHADOW_UNIFORM_BYTES;
+
 use crate::camera::{Affine, Lens, Mat4};
+use crate::frame_data::FrameUniform;
+use crate::view::ViewFrame;
 
 /// The most cascades a directional light's shadow map has.
 pub const MAX_CASCADES: usize = 4;
@@ -298,6 +303,43 @@ fn cascade_of(
     }
 }
 
+/// The main directional light's shadows in one frame: its cascades, fitted to the camera's view,
+/// and what its shadow passes need.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ShadowFrame {
+    pub cascades: Cascades,
+    pub settings: ShadowSettings,
+    /// The camera's cell, and its position in the cell: the cascades' matrices take positions
+    /// relative to it.
+    pub camera: CellPosition,
+    /// The light's layer mask, which selects the casters.
+    pub layers: u32,
+}
+
+impl ShadowFrame {
+    /// The values of a cascade's view: its matrix, and its culling frustum, which has no plane on
+    /// the light's side. Its culling moves sources by the offsets from the camera, as the camera's
+    /// view does.
+    pub fn view_frame(&self, cascade: usize) -> ViewFrame {
+        let cascade = &self.cascades.cascades[cascade];
+        ViewFrame {
+            uniform: FrameUniform {
+                view_proj: cascade.view_proj,
+                camera_position: [0.0, 0.0, 0.0, 1.0],
+                ..FrameUniform::default()
+            },
+            frustum: cascade.frustum,
+            camera: self.camera,
+            layers: self.layers,
+        }
+    }
+
+    /// The uniform block that receivers read.
+    pub fn uniform(&self) -> ShadowUniform {
+        ShadowUniform::new(&self.cascades, &self.settings)
+    }
+}
+
 /// The share of the shadow distance over which shadows fade out.
 pub const FADE_SHARE: f32 = 0.1;
 
@@ -318,10 +360,7 @@ pub struct ShadowUniform {
     pub depth_biases: [f32; MAX_CASCADES],
 }
 
-/// Bytes of [`ShadowUniform`].
-pub const SHADOW_UNIFORM_BYTES: usize = 320;
-
-const _: () = assert!(std::mem::size_of::<ShadowUniform>() == SHADOW_UNIFORM_BYTES);
+const _: () = assert!(std::mem::size_of::<ShadowUniform>() == SHADOW_UNIFORM_BYTES as usize);
 
 impl ShadowUniform {
     /// The uniform of a frame's cascades, with the biases of `settings`.
@@ -556,7 +595,7 @@ mod tests {
         };
         let uniform = ShadowUniform::new(&cascades, &settings);
         assert_eq!(uniform.forward[3], 3.0);
-        assert_eq!(uniform.as_bytes().len(), SHADOW_UNIFORM_BYTES);
+        assert_eq!(uniform.as_bytes().len(), SHADOW_UNIFORM_BYTES as usize);
         for (k, cascade) in cascades.used().iter().enumerate() {
             assert_eq!(uniform.view_proj[k], cascade.view_proj);
             assert_eq!(uniform.ends[k], cascade.end);
