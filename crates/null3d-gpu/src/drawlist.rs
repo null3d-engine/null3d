@@ -48,8 +48,11 @@ pub enum Op {
     /// built for that size, so the canvas and the frame's render targets always match.
     ResizeCanvas = 6,
     /// [render pipeline id, template, permutation bits, color format, depth format, sample count,
-    /// state flags, vertex format]: the vertex format (`vertex::*` bits) places the attributes that
-    /// the template's vertex shader reads, in the vertex buffer of slot 0.
+    /// state flags, vertex format, depth bias (i32), depth bias slope scale (f32)]: the vertex
+    /// format (`vertex::*` bits) places the attributes that the template's vertex shader reads, in
+    /// the vertex buffer of slot 0. The depth bias adds to each fragment's depth as WebGPU's does,
+    /// in reversed depth, so a positive bias moves a surface toward the camera. Its clamp is 0, as
+    /// compatibility mode requires.
     CreateRenderPipeline = 7,
     /// [compute pipeline id, template, permutation bits]
     CreateComputePipeline = 8,
@@ -507,8 +510,12 @@ pub mod state_flags {
     pub const CULL_NONE: u32 = 1;
     /// Draws each pair of vertices as a line one pixel wide, instead of each three as a triangle.
     pub const LINE_LIST: u32 = 2;
+    /// Writes no depth.
+    pub const NO_DEPTH_WRITE: u32 = 8;
+    /// Draws every fragment whatever the depth target holds, and writes no depth.
+    pub const NO_DEPTH_TEST: u32 = 16;
     /// Every flag.
-    pub const ALL: u32 = CULL_NONE | LINE_LIST;
+    pub const ALL: u32 = CULL_NONE | LINE_LIST | NO_DEPTH_WRITE | NO_DEPTH_TEST;
 }
 
 /// Vertex formats. Every vertex has a position and a normal, three floats each. A format adds
@@ -913,6 +920,8 @@ pub fn typescript_constants() -> String {
             &[
                 ("CULL_NONE", state_flags::CULL_NONE),
                 ("LINE_LIST", state_flags::LINE_LIST),
+                ("NO_DEPTH_WRITE", state_flags::NO_DEPTH_WRITE),
+                ("NO_DEPTH_TEST", state_flags::NO_DEPTH_TEST),
             ],
         ),
         (

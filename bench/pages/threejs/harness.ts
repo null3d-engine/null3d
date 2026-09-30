@@ -27,6 +27,8 @@ export type Three = Pick<
 	typeof ThreeModule,
 	| 'AmbientLight'
 	| 'BoxGeometry'
+	| 'BufferAttribute'
+	| 'BufferGeometry'
 	| 'Color'
 	| 'DirectionalLight'
 	| 'DynamicDrawUsage'

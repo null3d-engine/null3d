@@ -253,16 +253,25 @@ A mesh keeps the attributes it gets, and meshes with the same attributes share G
 ## 9. Materials (`api/materials`)
 
 ```ts
-const blue = materials.standard({ color: '#4a8cff' });   // lit by the scene's lights
+const paint = materials.standard({
+  color: '#e8554e',                            // base color (sRGB), converted to linear once
+  metalness: 0, roughness: 1,                  // glTF metallic-roughness, three.js's defaults
+  emissive: '#000000', emissiveIntensity: 1,   // light the surface gives off itself
+  opacity: 1,                                  // stored; every material draws opaque for now
+  doubleSided: false, vertexColors: false, flatShading: false,  // fixed at creation
+});
 const glow = materials.unlit({ color: '#ffcc00' });      // ignores lights, like three.js's MeshBasicMaterial
-blue.set({ color: '#ff0000' });  // every object that uses it changes; converting a color allocates
-materials.unlit({ color: '#ffffff', opacity: 0.5 });     // opacity 0 to 1 is stored; every material draws opaque for now
+paint.set({ roughness: 0.4 });  // changes only the options you pass; converting a color allocates
+
+const stripes = materials.shader({ ...anyStandardOption, wgsl });  // later in 0.1; wgsl: a tagged /* wgsl */ literal or .wgsl import with fn surface
 ```
 
-- `materials.standard` shades diffuse light only for now, as three.js's `MeshLambertMaterial` does. With no ambient light, a white directional light of intensity π shows a surface that faces it in its full color.
-- Later in 0.1: metalness and roughness (glTF metallic-roughness), texture maps (`map`, `normalMap`, `metalnessRoughnessMap`, `aoMap`, `emissiveMap`, `lightMap`), `emissive`, `alphaMode`, `alphaCutoff`, `blending`, `doubleSided`, `vertexColors`, `flatShading`, `depthWrite`, `depthTest`, `depthBias`, `uvTransform`, and `materials.shader` for custom materials (SKILL.md section 6).
+- `materials.standard` shades as three.js's `MeshStandardMaterial` does, with its formulas and its table of specular terms.
+- `fog: false` keeps a material's color out of the scene's fog (`scene.setFog`).
+- Later in 0.1, `materials.shader` keeps the standard look and lighting, and a WGSL surface function changes the surface before the engine lights it. Every `materials.standard` option feeds `defaultSurface()`. `references/shaders.md` has the contract.
+- Later in 0.1: texture maps (`map`, `normalMap`, `metalnessRoughnessMap`, `aoMap`, `emissiveMap`, `lightMap`), `alphaMode`, `alphaCutoff`, `blending`, `depthWrite`, `depthTest`, `depthBias`, `uvTransform`, and in `materials.shader` uniforms, textures, vertex offsets and full shaders.
 - `envIntensity` (0.2) comes with environment lighting, and `materials.shadowCatcher` in 0.2.
-- `set()` changes values cheaply at any time. Options that change the shader, such as a texture map, will be fixed when you create the material. So plan to create each variant before play, and switch with `setMaterial`.
+- `set()` changes values cheaply at any time. Options that change the shader or the pipeline are fixed when you create the material: `doubleSided`, `vertexColors`, `flatShading`, and later the texture maps. So create each variant before play, and switch with `setMaterial`.
 
 ## 10. Textures (`api/textures`)
 

@@ -35,6 +35,7 @@ use null3d_render::gpu_driven::{
     BYTES_PER_SOURCE, GpuDrivenRenderer, MAX_USEFUL_BINDING_BYTES, RendererConfig,
 };
 use null3d_render::materials::{self, MapSlot, MaterialError, Shading};
+use null3d_render::pipelines::DepthBias;
 use null3d_render::textures::{MAX_TEXTURES, Sampling, TextureDesc, TextureError};
 use null3d_render::view::ViewId;
 use wasm_bindgen::prelude::*;
@@ -888,23 +889,35 @@ pub fn mesh_radius(mesh: u32) -> f32 {
 /// Creates a material with a linear color and opacity, and returns its id, counting from 1. Its
 /// shading (`constants::shading`) is the standard material, like three.js's
 /// `MeshStandardMaterial`, unlit, like its `MeshBasicMaterial`, or the first texture coordinates as
-/// colors, for the engine's own tests. Its features (`constants::material_feature`) are fixed from
-/// now on.
+/// colors, for the engine's own tests. Its features (`constants::material_feature`) and its depth
+/// bias are fixed from now on. The bias takes three.js's `polygonOffsetUnits` as `bias_constant`
+/// and its `polygonOffsetFactor` as `bias_slope`, whose positive values push the surface away.
 #[wasm_bindgen(js_name = createMaterial)]
-pub fn create_material(shading: u32, features: u32, r: f32, g: f32, b: f32, a: f32) -> u32 {
+#[allow(clippy::too_many_arguments)]
+pub fn create_material(
+    shading: u32,
+    features: u32,
+    r: f32,
+    g: f32,
+    b: f32,
+    a: f32,
+    bias_constant: f32,
+    bias_slope: f32,
+) -> u32 {
     let shading = match shading {
         shading::UNLIT => Shading::Unlit,
         shading::TEXCOORDS => Shading::TexCoords,
         shading::UNLIT_MAP => Shading::UnlitMap,
         _ => Shading::Lit,
     };
+    let bias = DepthBias::from_polygon_offset(bias_constant, bias_slope);
     value_with_engine(|e| {
-        e.renderer
-            .settings_mut()
-            .materials_mut()
+        let table = e.renderer.settings_mut().materials_mut();
+        let id = table
             .create(shading, features, [r, g, b, a])
-            .map(|id| id + 1)
-            .map_err(material_failure)
+            .map_err(material_failure)?;
+        table.set_depth_bias(id, bias).map_err(material_failure)?;
+        Ok(id + 1)
     })
 }
 

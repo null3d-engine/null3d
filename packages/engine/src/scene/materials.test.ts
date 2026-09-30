@@ -2,10 +2,14 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import { type EngineError, setErrorFixes } from '../errors/engine-error';
 import { ERROR_FIXES } from '../errors/fixes';
 import {
+	MATERIAL_FEATURE_ALPHA_MASK,
 	MATERIAL_FEATURE_DOUBLE_SIDED,
 	MATERIAL_FEATURE_FLAT_SHADING,
+	MATERIAL_FEATURE_NO_DEPTH_TEST,
+	MATERIAL_FEATURE_NO_DEPTH_WRITE,
 	MATERIAL_FEATURE_NO_FOG,
 	MATERIAL_FEATURE_VERTEX_COLORS,
+	MATERIAL_PARAM_ALPHA_CUTOFF,
 	MATERIAL_PARAM_COLOR,
 	MATERIAL_PARAM_EMISSIVE,
 	MATERIAL_PARAM_EMISSIVE_INTENSITY,
@@ -28,6 +32,7 @@ const WIDTHS = new Map([
 	[MATERIAL_PARAM_COLOR, 3],
 	[MATERIAL_PARAM_EMISSIVE, 3],
 	[MATERIAL_PARAM_OPACITY, 1],
+	[MATERIAL_PARAM_ALPHA_CUTOFF, 1],
 	[MATERIAL_PARAM_METALNESS, 1],
 	[MATERIAL_PARAM_ROUGHNESS, 1],
 	[MATERIAL_PARAM_EMISSIVE_INTENSITY, 1],
@@ -35,11 +40,12 @@ const WIDTHS = new Map([
 
 /**
  * A core that keeps each material's row of values, from the linear color and opacity on, as the
- * engine core's table does, and each material's features.
+ * engine core's table does, and each material's features and depth bias.
  */
 function fakeCore() {
 	const table: number[][] = [];
 	const features: number[] = [];
+	const biases: [number, number][] = [];
 	let failure = { code: 0, details: [0, 0] };
 	/** Runs a change on a known material, or reports the core's error for an unknown one. */
 	const change = (material: number, apply: (values: number[]) => void) => {
@@ -59,12 +65,16 @@ function fakeCore() {
 			g: number,
 			b: number,
 			a: number,
+			biasConstant: number,
+			biasSlope: number,
 		) => {
 			const row = new Array<number>(16).fill(0);
 			row.splice(0, 4, r, g, b, a);
+			row[MATERIAL_PARAM_ALPHA_CUTOFF] = 0.5;
 			row[MATERIAL_PARAM_ROUGHNESS] = 1;
 			row[MATERIAL_PARAM_EMISSIVE_INTENSITY] = 1;
 			features.push(bits);
+			biases.push([biasConstant, biasSlope]);
 			return table.push(row);
 		},
 		setMaterialValue: (material: number, param: number, x: number, y: number, z: number) =>
@@ -76,6 +86,7 @@ function fakeCore() {
 	return {
 		table,
 		features,
+		biases,
 		materials: new Materials(new CoreMemory(glue as unknown as CoreGlue, memory)),
 	};
 }
@@ -184,6 +195,54 @@ describe('Material.set', () => {
 			MATERIAL_FEATURE_NO_FOG,
 			0,
 		]);
+	});
+
+	test('passes the alpha mode and the depth options, and none by default', () => {
+		const { features, biases, materials } = fakeCore();
+		materials.standard({ alphaMode: 'mask', depthWrite: false });
+		materials.unlit({ alphaMode: 'opaque', depthTest: false, depthBias: { constant: -4 } });
+		materials.unlit({ depthBias: { slopeScale: -1.5 }, depthWrite: true, depthTest: true });
+		expect(features).toEqual([
+			MATERIAL_FEATURE_ALPHA_MASK | MATERIAL_FEATURE_NO_DEPTH_WRITE,
+			MATERIAL_FEATURE_NO_DEPTH_TEST,
+			0,
+		]);
+		expect(biases).toEqual([
+			[0, 0],
+			[-4, 0],
+			[0, -1.5],
+		]);
+	});
+
+	test('writes the alpha cutoff when created and when set, within 0 to 1', () => {
+		const { table, materials } = fakeCore();
+		const leaves = materials.unlit({ alphaMode: 'mask', alphaCutoff: 0.3 });
+		const cutoff = () => (table[0] as number[])[MATERIAL_PARAM_ALPHA_CUTOFF];
+		expect(cutoff()).toBe(0.3);
+		leaves.set({ alphaCutoff: 0.75 });
+		expect(cutoff()).toBe(0.75);
+		const error = thrown(() => leaves.set({ alphaCutoff: 1.5 }));
+		expect(error.code).toBe('E1108');
+		expect(error.message).toStartWith(
+			'E1108: materials.unlit.set() got the alpha cutoff 1.5, outside 0 to 1.',
+		);
+		materials.standard({ alphaMode: 'mask' });
+		expect((table[1] as number[])[MATERIAL_PARAM_ALPHA_CUTOFF]).toBe(0.5);
+	});
+
+	test('rejects an alpha mode it does not know and a depth bias that is not finite', () => {
+		const { table, materials } = fakeCore();
+		const mode = thrown(() =>
+			materials.standard({ alphaMode: 'cutout' as unknown as 'mask', color: 0xff0000 }),
+		);
+		expect(mode.code).toBe('E1217');
+		expect(mode.message).toStartWith(
+			`E1217: materials.standard() got the alpha mode "cutout"; it takes 'opaque' or 'mask'.`,
+		);
+		const bias = thrown(() => materials.unlit({ depthBias: { slopeScale: Number.NaN } }));
+		expect(bias.code).toBe('E1203');
+		expect(bias.message).toStartWith('E1203: materials.unlit() got NaN for depthBias.slopeScale.');
+		expect(table).toHaveLength(0);
 	});
 
 	test('throws the error that the engine core reports', () => {

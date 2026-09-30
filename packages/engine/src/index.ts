@@ -70,11 +70,13 @@ export type {
 export type { ColorInput } from './scene/color';
 export type { Exp2FogOptions, FogOptions, LinearFogOptions } from './scene/fog';
 export type {
+	AlphaMode,
 	BoxOptions,
 	CapsuleOptions,
 	CircleOptions,
 	ConeOptions,
 	CylinderOptions,
+	DepthBias,
 	Geometry,
 	Material,
 	MaterialFeatures,
