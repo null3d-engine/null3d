@@ -14,14 +14,5 @@ export {
 } from './gpu/webgpu/upload-routes';
 export { probeCapabilities } from './page/capabilities';
 export { texCoordsMaterial } from './scene/resources';
-export {
-	Texture,
-	type TextureFilter,
-	type TextureOptions,
-	Textures,
-	type TextureUploads,
-	type TextureWrap,
-	texturesOf,
-	unlitMapMaterial,
-} from './scene/textures';
+export { type TextureUploads, unlitMapMaterial } from './scene/textures';
 export { coreUrls, startCore } from './shared/core';

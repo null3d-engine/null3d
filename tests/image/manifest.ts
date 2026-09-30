@@ -78,6 +78,16 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		size: [480, 270],
 	},
+	// The texture calls of a sketch: loadTexture with and without the flip, loadImageBitmap with
+	// fromImageBitmap, data in bytes, half floats and layers, updates that bring new texels and a new
+	// size, a destroyed map, and colors multiplied by alpha. Every thread mode must draw one image.
+	{
+		name: 'texture-api',
+		sketch: 'tests/pages/sketches/texture-api-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+		modes: ALL_MODES,
+	},
 	// Fifty textures that load in waves in a live engine, a band of rows per frame under a small
 	// upload budget, while their array grows twice, to 64 layers. No frame may upload more than the
 	// budget, and the GPU memory count must match the array.
@@ -127,6 +137,28 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 		sketch: `tests/pages/sketches/cells-sketch.ts?x=${977 * 1024}`,
 		hold: 1,
 		reference: 'cells',
+		tolerance: { threshold: 0, maxDiffRatio: 0 },
+	},
+	// Debug drawing: every shape of ctx.debug over a small scene, the axes of a spinning box and the
+	// frustum of a second camera. The single-threaded mode runs the sketch on the page, which draws
+	// the same lines.
+	{
+		name: 'debug',
+		sketch: 'tests/pages/sketches/debug-sketch.ts',
+		hold: 1,
+		size: [400, 225],
+		modes: ['pipelined', 'single-threaded'],
+		tolerance: { threshold: 0, maxDiffRatio: 0 },
+	},
+	// The same scene about 1,000 km out, at the center of a cell: the lines keep 64-bit positions,
+	// which the engine draws relative to the camera, so the frame must match. In 32-bit floats from
+	// the origin, the lines would move in steps of 6 cm there.
+	{
+		name: 'debug-1000km',
+		sketch: `tests/pages/sketches/debug-sketch.ts?x=${977 * 1024}`,
+		hold: 1,
+		size: [400, 225],
+		reference: 'debug',
 		tolerance: { threshold: 0, maxDiffRatio: 0 },
 	},
 	// Objects, a parent and its child, and instance batches on three layers, some of them moved to

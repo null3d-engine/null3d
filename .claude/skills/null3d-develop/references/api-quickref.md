@@ -248,25 +248,34 @@ materials.shader({ ...anyStandardOption, uniforms, textures, surface, vertexOffs
 ## 10. Textures (`api/textures`)
 
 ```ts
-const tex = await assets.loadTexture('/tex/bricks.ktx2', {
+const tex = await assets.loadTexture('/tex/bricks.png', {  // PNG, JPEG, WebP, AVIF where decoded
   colorSpace: 'srgb',        // 'srgb' for color maps; 'linear' for normal, roughness, metalness, AO
-  flipY: false,
+  flipY: true,               // default, as three.js's TextureLoader; glTF textures use false
   wrap: 'repeat',            // 'repeat' | 'clamp' | 'mirror', or [u, v]
   filter: 'linear',          // or 'nearest'
   mipmaps: true,
   anisotropy: 8,             // capped by the preset
   uvSet: 0,                  // which UV set the map uses (three.js texture.channel)
-  premultipliedAlpha: false, // true for textures stored premultiplied
+  premultipliedAlpha: false, // true to store color multiplied by alpha
 });
-textures.fromData({ width, height, depth, format: 'rgba8unorm', data });
-textures.fromImageBitmap(bitmap, { colorSpace });  // draw on an OffscreenCanvas in the worker
-tex.update(bitmap);
+textures.fromData({ width, height, depth: 1, format: 'rgba8unorm', colorSpace: 'linear', data }); // 4 numbers per texel
+textures.fromData({ width, height, format: 'rgba16float', data: new Float32Array(width * height * 4) });
+// fromImageBitmap uploads the bitmap as it is: decode with imageOrientation: 'flipY' to stand upright
+textures.fromImageBitmap(await createImageBitmap(offscreenCanvas, { imageOrientation: 'flipY' }));
+tex.update(bitmap);        // a new size is fine; or tex.update(data) of the same size
+tex.width; tex.height; tex.bytes;   // size and GPU memory
 tex.destroy();
 ```
+
+Textures return at once and upload over the next frames, within each frame's upload budget. A material draws with its color alone until the texels arrive.
 
 ## 11. Assets (`api/assets`)
 
 ```ts
+assets.onProgress((loaded, total) => page.post('loading', loaded / total));
+await assets.preload(['/tex/bricks.png', '/level.json']);      // later loads take these from memory
+const data = await assets.loadJson('/level.json');             // also loadBinary, loadImageBitmap
+// relative addresses resolve against the page; errors: E1411 download, E1412 decode, E1413 CORS
 const ship = await assets.loadGltf('/models/ship.glb');        // (0.2) Prefab
 ship.animations;           // clip names
 ship.find('Turret');       // a node inside the prefab
@@ -275,10 +284,7 @@ const env = await assets.loadEnvironment('/env/studio.ktx2');  // (0.2) from `bu
 const studio = assets.builtinEnvironment('studio');            // (0.2) neutral lighting, no download
 const sky = await assets.loadCubemap([px, nx, py, ny, pz, nz]);  // (0.2)
 const lut = await assets.loadLut('/grade.cube');                // (0.2)
-await assets.preload(['/models/ship.glb', '/tex/bricks.ktx2']);
-assets.onProgress((loaded, total) => page.post('loading', loaded / total));
-const data = await assets.loadJson('/level.json');   // also loadBinary, loadImageBitmap
-ship.destroy();   // frees GPU data once no instance uses it
+ship.destroy();   // (0.2) frees GPU data once no instance uses it
 ```
 
 ## 12. Animation (0.2) (`api/animation`)
@@ -407,15 +413,22 @@ Messages are fire-and-forget. Send events, not per-frame state.
 ## 19. Debug (`api/debug`)
 
 ```ts
-debug.stats(true);                       // overlay: frame phases per thread, tier, preset
-const s = debug.frameStats();            // numbers for tests and logs
-debug.view('normals');                   // 'lit' | 'normals' | 'depth' | 'wireframe' | 'overdraw'
-debug.line(a, b, '#ff0000'); debug.box(min, max, color); debug.sphere(center, r, color);
-debug.arrow(origin, dir, length, color); debug.axes(objOrPosition, size); debug.grid(size, divisions);
-debug.frustum(camera); debug.light(light); debug.skeleton(obj);
+// Call these in onUpdate: each call draws its lines for one frame.
+debug.line([0, 0, 0], [1, 2, 0], '#ff0000');     // colors as for materials; yellow by default
+debug.box(min, max, color); debug.sphere(center, radius, color);
+debug.arrow(origin, direction, length, color);  // length 1 unless given
+debug.axes(objectOrPosition, size);             // an object's axes follow it in the same frame
+debug.grid(size, divisions, { center, color, centerColor });  // GridHelper's defaults, 10 and 10
+debug.frustum(camera, color);                   // in the canvas's shape
+debug.light(sun, { position, size, color });    // a directional light's direction
+debug.skeleton(obj);                            // (0.2)
+
+debug.stats(true);                       // later in 0.1: overlay of frame phases per thread, tier, preset
+const s = debug.frameStats();            // later in 0.1: numbers for tests and logs
+debug.view('normals');                   // later in 0.1: 'lit' | 'normals' | 'depth' | 'wireframe' | 'overdraw'
 ```
 
-Debug drawing exists in development builds only and costs nothing in release builds.
+Debug drawing exists in development builds only. In a production build every call does nothing, and the build holds none of the drawing code. Lines are one pixel wide, and objects in front of them hide them.
 
 ## 20. Math, color and time (`api/math`, `api/time`)
 

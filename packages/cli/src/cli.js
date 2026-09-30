@@ -19,6 +19,11 @@ const COMMANDS = {
 		summary: "Draws one frame of the project's page headless, and saves it as a PNG file",
 		load: () => import('./shot.js'),
 	},
+	test: {
+		summary:
+			'Type checks and lints the project, and compares its image tests with their references',
+		load: () => import('./test.js'),
+	},
 };
 
 /** The version of this package. */
