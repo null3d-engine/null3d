@@ -118,8 +118,8 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 | [3D scenes on content pages](guides/content-pages.md) | Product and marketing pages: the fallback page, a load deadline, pausing off screen, scroll-driven cameras, second visits and crashes. | experimental | 0.1 |
 | [UI, HTML overlays and labels](guides/ui-overlays.md) | HTML UI on the page; labels that follow objects; GUI panels. | planned | 0.2 |
 | [Video textures](guides/video-textures.md) | Planned after 1.0. Until then, the page sends ImageBitmap frames to the sketch; browser limits. | planned | after 1.0 |
-| [Audio with Web Audio](guides/audio.md) | Why audio stays on the page; sending positions from the sketch. | planned | 0.1 |
-| [Using a physics library](guides/physics.md) | Running Rapier or cannon-es in the sketch worker; copying transforms. | planned | 0.1 |
+| [Audio with Web Audio](guides/audio.md) | Why audio stays on the page; sending positions from the sketch. | experimental | 0.1 |
+| [Using a physics library](guides/physics.md) | Running Rapier or cannon-es in the sketch worker; copying transforms. | experimental | 0.1 |
 | [Multiple views](guides/multiple-views.md) | Split screens with scene.createView, after 1.0; minimaps work from 0.2 through render-to-texture passes. | planned | after 1.0 |
 | [The asset pipeline (the `assets` command)](guides/assets-pipeline.md) | optimize, env, convert; LODs; texture compression; budget reports. | planned | 0.2 |
 | [Testing your sketch](guides/testing.md) | Hold mode; image tests; reading results; frames that stay the same on every run. | experimental | 0.1 |

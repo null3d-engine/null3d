@@ -1584,7 +1584,7 @@
       "status": "unsupported",
       "since": null,
       "target": "Web Audio on the page",
-      "notes": "The sketch sends positions with page.post: every frame for moving sounds, or on events only.",
+      "notes": "The sketch writes the positions of moving sounds into a shared array, which it sends to the page once. It sends one message with page.post for each sound event.",
       "docs": "guides/audio",
       "detect": "\\b(PositionalAudio|AudioListener|AudioLoader|AudioAnalyser)\\b"
     },

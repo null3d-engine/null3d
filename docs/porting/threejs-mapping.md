@@ -244,7 +244,7 @@ The "Since" column gives the first engine version with the feature:
 | three.js | null3D | Status | Since | Notes | Docs |
 | --- | --- | --- | --- | --- | --- |
 | WebXR (renderer.xr, VRButton, ARButton) | None | unsupported | - | XR is out of scope for version 1. | `porting/threejs-unsupported` |
-| Audio / PositionalAudio / AudioListener / AudioLoader | Web Audio on the page | unsupported | - | The sketch sends positions with page.post: every frame for moving sounds, or on events only. | `guides/audio` |
+| Audio / PositionalAudio / AudioListener / AudioLoader | Web Audio on the page | unsupported | - | The sketch writes the positions of moving sounds into a shared array, which it sends to the page once. It sends one message with page.post for each sound event. | `guides/audio` |
 | lil-gui / dat.gui panels | Keep the panel on the page; send changes with engine.postToSketch and receive them with page.onMessage | changed | 0.1 |  | `guides/ui-overlays` |
 | cannon-es / Rapier / Ammo / Oimo | Run the physics library in the sketch worker; copy body transforms into dynamic arrays after each step | changed | 0.1 | WebAssembly physics builds run in workers. An official Rapier adapter comes after 1.0. | `guides/physics` |
 | three-mesh-bvh (computeBoundsTree, acceleratedRaycast) | Built in | direct | 0.2 | Delete the setup. | `api/raycast` |
