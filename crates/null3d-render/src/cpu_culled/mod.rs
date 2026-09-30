@@ -455,6 +455,9 @@ impl CpuCulledRenderer {
             self.cull(input)?;
         }
         self.add_culled_views()?;
+        // The list starts with the pipelines it creates, so the thread that draws can start to
+        // build them before it replays the rest (see `null3d_gpu::drawlist`).
+        self.pipelines.create_new(list)?;
         if !self.created {
             self.create_fixed(list)?;
         }
@@ -467,7 +470,6 @@ impl CpuCulledRenderer {
         arena.reset(self.upload_bound());
         self.meshes
             .upload(list, arena, self.settings.meshes().pages())?;
-        self.pipelines.create_new(list)?;
         if self.settings.materials_mut().take_changed() {
             let parameters = self.settings.materials().parameters();
             let (at, bytes) = arena.push(floats_as_bytes(parameters))?;

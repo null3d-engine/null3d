@@ -60,9 +60,14 @@ export enum Slot {
 	 * callbacks, or 0 before the first measurement. A worker that draws holds its frames to it.
 	 */
 	DisplayInterval = 22,
+	/**
+	 * The newest frame whose pipelines are all built, with those of every frame before it, as the
+	 * thread that draws reports it. `scene.warmUp` waits for it.
+	 */
+	PipelinesBuilt = 24,
 }
 
-const SLOT_COUNT = 23;
+const SLOT_COUNT = 25;
 
 /** Int32 values per input event record. */
 export const INPUT_EVENT_INTS = 8;

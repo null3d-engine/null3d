@@ -587,7 +587,13 @@ async function startEngine(
 	/** Stops every loop and then the workers, and wakes each thread that waits, so it sees the stop. */
 	const stop = () => {
 		Atomics.store(slots, Slot.Running, 0);
-		for (const slot of [Slot.Running, Slot.FramesTaken, Slot.Paused, Slot.JobsReady])
+		for (const slot of [
+			Slot.Running,
+			Slot.FramesTaken,
+			Slot.Paused,
+			Slot.JobsReady,
+			Slot.PipelinesBuilt,
+		])
 			Atomics.notify(slots, slot);
 		localDrawing?.stop();
 		localRunner?.dispose();
@@ -612,8 +618,11 @@ async function startEngine(
 				{ glue: started.glue, memory, control: views, keyCodes: KEY_CODES, jobWorkers: 0, device },
 				hold,
 			);
-			await localRunner.setup(await loadSketch(sketchUrl));
+			// The sketch downloads while the renderer starts. The renderer starts before the setup,
+			// so a warm-up in the setup has a renderer to build its pipelines.
+			const sketchModule = awaitLater(loadSketch(sketchUrl));
 			localDrawing = await drawOnPage(memory, localRunner);
+			await localRunner.setup(await sketchModule);
 		} else {
 			sketch = new EngineWorker(
 				new Worker(new URL('../workers/sketch-worker.ts', import.meta.url), {
@@ -794,6 +803,8 @@ async function startEngine(
 						reader.firstFrameDoneTime > 0
 							? reader.firstFrameDoneTime - performance.timeOrigin
 							: null,
+					warmUpMs: reader.warmUpMs,
+					firstFramePipelines: reader.firstFramePipelines,
 				},
 				downloadBytes: { wasm: wasmDownloadBytes() },
 				lostRecords: reader.lost,

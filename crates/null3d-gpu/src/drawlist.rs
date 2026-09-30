@@ -14,6 +14,11 @@
 //! commands recorded since the previous `Submit`, so a list writes a buffer or a texture before the
 //! commands that read it, never after a command that used it in the same submit.
 //!
+//! A frame's list creates its pipelines before any other command. The thread that draws then
+//! starts to build them, without waiting, before it replays the rest of the list. A draw with a
+//! pipeline that is still building draws nothing, and the first frame on a GPU device waits until
+//! every pipeline that it creates is built.
+//!
 //! Rectangles of `SetViewport` and `SetScissor` are in pixels of the render target, from its
 //! top-left corner with y down, as WebGPU counts them. WebGL2 counts from the bottom-left corner,
 //! so its backend flips them, and each rectangle covers the same part of the image on both paths.

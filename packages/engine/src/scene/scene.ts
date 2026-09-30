@@ -566,6 +566,7 @@ export class Scene {
 	constructor(
 		/** @internal */ readonly core: CoreMemory,
 		private readonly time: { readonly frame: number },
+		private readonly warmUpScene: () => Promise<void> = () => Promise.resolve(),
 	) {}
 
 	/** @internal */
@@ -731,5 +732,16 @@ export class Scene {
 	setBackground(color: ColorInput): void {
 		const [r, g, b] = linearColor(color, 'setBackground');
 		this.core.glue.setBackground(r, g, b);
+	}
+
+	/**
+	 * Builds every GPU pipeline that the scene needs as it stands, and resolves once they are all
+	 * built. Objects that are hidden count too. Call it after the objects of a loading stage exist,
+	 * and show them when it resolves: an object whose pipeline is still building draws nothing. The
+	 * first frame always waits for its pipelines, so a setup function that awaits it lets the page
+	 * see the first frame as soon as the setup returns.
+	 */
+	warmUp(): Promise<void> {
+		return this.warmUpScene();
 	}
 }

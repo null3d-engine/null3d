@@ -59,7 +59,7 @@ What `engine.measure` returns: the per-frame figures, memory, load time and down
 | --- | --- |
 | `seconds: number` | Length of the measurement. |
 | `memory: MemoryStats` | The engine's WebAssembly memory and the JavaScript heap. |
-| `load: { engineStartMs: number; probeMs: number; coreMs: number; firstFrameMs: number \| null; firstFrameDoneMs: number \| null; }` | How long the engine took to start and to draw its first frame, in milliseconds. |
+| `load: { engineStartMs: number; probeMs: number; coreMs: number; firstFrameMs: number \| null; firstFrameDoneMs: number \| null; warmUpMs: number \| null; firstFramePipelines: number \| null; }` | How long the engine took to start and to draw its first frame, in milliseconds. |
 | `downloadBytes: { wasm: number \| null; }` | Bytes of the engine's WebAssembly file as the page downloaded it. |
 | `lostRecords: number` | Frame records the page read too late; nonzero means some frames are missing from the figures. |
 | `completionSignal: 'queue' \| 'fence'` | How the renderer learned that the GPU finished a frame: its queue (WebGPU) or a fence (WebGL2). |

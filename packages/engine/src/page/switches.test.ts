@@ -10,6 +10,7 @@ describe('parseSwitches', () => {
 			latency: undefined,
 			copyUploads: false,
 			depth: undefined,
+			parallelCompile: true,
 			fps: undefined,
 			jobs: undefined,
 			memoryMiB: undefined,
@@ -44,6 +45,11 @@ describe('parseSwitches', () => {
 	it('reads a frame rate above 0, with decimals', () => {
 		expect(parseSwitches('?fps=59.94').fps).toBe(59.94);
 		expect(parseSwitches('?fps=0').fps).toBeUndefined();
+	});
+
+	it('turns background compiles off with ?compile=wait only', () => {
+		expect(parseSwitches('?gpu=webgl2&compile=wait').parallelCompile).toBe(false);
+		expect(parseSwitches('?compile=later').parallelCompile).toBe(true);
 	});
 
 	it('reads the WebGL2 depth mode, and ignores a mode it does not know', () => {

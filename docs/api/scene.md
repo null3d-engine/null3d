@@ -159,5 +159,6 @@ The scene: every object, the active camera, the lights and the background.
 | `createDirectionalLight(options: DirectionalLightOptions = {}): DirectionalLight` | Light from one direction. This version has one directional light: a newer one replaces the older. |
 | `createAmbientLight(options: LightOptions = {}): AmbientLight` | Light on every surface. This version has one ambient light: a newer one replaces the older. |
 | `setBackground(color: ColorInput): void` | The color behind every object. |
+| `warmUp(): Promise<void>` | Builds every GPU pipeline that the scene needs as it stands, and resolves once they are all built. Objects that are hidden count too. Call it after the objects of a loading stage exist, and show them when it resolves: an object whose pipeline is still building draws nothing. The first frame always waits for its pipelines, so a setup function that awaits it lets the page see the first frame as soon as the setup returns. |
 
 <!-- null3d:api:end -->

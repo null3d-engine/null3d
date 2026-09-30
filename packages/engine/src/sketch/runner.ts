@@ -1,10 +1,11 @@
 // Runs a sketch: starts the engine on this thread's core, calls the sketch's setup function once with
 // the scene API, and steps it once per frame. A frame reads the input the page wrote, runs the
 // sketch's update, then the core's steps, and publishes the frame's draw list; each step's CPU time
-// is recorded, and so is the time each job worker spent on the frame's work. In hold mode it seeds
-// this thread's math.random and routes Math.random to it, steps the sketch to the held time in
-// fixed steps after the setup, and publishes the last frame alone. Hold mode reads no input, so the
-// held frame never depends on it.
+// is recorded, and so is the time each job worker spent on the frame's work. A warm-up during the
+// setup records and publishes a frame of the scene as it stands, with no update, so the thread that
+// draws builds its pipelines. In hold mode it seeds this thread's math.random and routes
+// Math.random to it, steps the sketch to the held time in fixed steps after the setup, and
+// publishes the last frame alone. Hold mode reads no input, so the held frame never depends on it.
 
 import { coreFailure, QUEUED_CHANGE } from '../errors/core-failure';
 import { EngineError } from '../errors/engine-error';
@@ -40,6 +41,26 @@ export interface SketchCore {
 	device: CoreDevice;
 }
 
+/** How often a wait for a control slot checks it, where the control block is not shared memory. */
+const SLOT_POLL_MS = 4;
+
+/**
+ * Resolves once a control slot holds `target` or more, or once the engine stops. It waits without
+ * blocking the thread, and checks the slot on a timer where the control block is not shared memory.
+ */
+async function reached(slots: Int32Array, slot: Slot, target: number): Promise<void> {
+	const shared =
+		typeof SharedArrayBuffer !== 'undefined' && slots.buffer instanceof SharedArrayBuffer;
+	for (;;) {
+		const value = Atomics.load(slots, slot);
+		if (value >= target || Atomics.load(slots, Slot.Running) === 0) return;
+		if (shared) {
+			const wait = Atomics.waitAsync(slots, slot, value);
+			if (wait.async) await wait.value;
+		} else await new Promise((resolve) => setTimeout(resolve, SLOT_POLL_MS));
+	}
+}
+
 /**
  * Waits without blocking for the engine to stop, then ends the job workers' loops. The page stops
  * the job workers only after they leave their loops, where each blocks its thread while it has no
@@ -59,6 +80,10 @@ export class SketchRunner {
 	/** The motion preference as the sketch last saw it. */
 	private reducedMotion: number;
 	private callbacks: SketchCallbacks = {};
+	/** True once the setup function has returned. */
+	private setUp = false;
+	/** The frames that warm-ups during the setup published, one after another, as the last one's number. */
+	private setupFrames: Promise<number> = Promise.resolve(0);
 	private readonly clock = new FrameClock();
 	private gpuEpoch = 0;
 	private readonly record: FrameRecorder;
@@ -117,7 +142,7 @@ export class SketchRunner {
 		const time = { now: 0, frame: 0 };
 		this.context = {
 			time,
-			scene: new Scene(this.core, time),
+			scene: new Scene(this.core, time, () => this.warmUp()),
 			materials: new Materials(this.core),
 			geometry: new Geometry(this.core),
 			input: this.input,
@@ -148,7 +173,48 @@ export class SketchRunner {
 	 */
 	async setup(sketch: SketchDefinition): Promise<void> {
 		this.callbacks = (await sketch.setup(this.context)) ?? {};
+		this.setUp = true;
 		if (this.holdSeconds !== undefined) this.hold(this.holdSeconds);
+	}
+
+	/** True once the setup function has returned, so the frame loop may step the sketch. */
+	get started(): boolean {
+		return this.setUp;
+	}
+
+	/**
+	 * Resolves once the thread that draws has built every pipeline that the scene needs as it
+	 * stands. The next frame that the sketch records creates each pipeline the GPU lacks, and the
+	 * thread that draws reports each frame whose pipelines are built. The setup has no frame loop,
+	 * so there a warm-up records that frame itself. Hold mode draws one frame, which waits for its
+	 * pipelines, so there a warm-up resolves at once.
+	 */
+	async warmUp(): Promise<void> {
+		if (this.holdSeconds !== undefined) return;
+		const { slots } = this.sketch.control;
+		let target = this.context.time.frame + 1;
+		if (!this.setUp) {
+			this.setupFrames = this.setupFrames.then(() => this.publishSetupFrame());
+			target = await this.setupFrames;
+		}
+		await reached(slots, Slot.PipelinesBuilt, target);
+		// The sketch's code carries on between frames, after frames that may have grown engine
+		// memory, so its views of that memory are made again first.
+		this.core.refresh();
+	}
+
+	/**
+	 * Records a frame of the scene as the setup has built it so far, with no update, and publishes
+	 * it for the thread that draws. The frame before the last shares its list, so it waits for that
+	 * frame to be taken first.
+	 */
+	private async publishSetupFrame(): Promise<number> {
+		const { slots } = this.sketch.control;
+		await reached(slots, Slot.FramesTaken, this.context.time.frame - 1);
+		const frame = this.frame(false);
+		Atomics.store(slots, Slot.FramesPublished, frame);
+		Atomics.notify(slots, Slot.FramesPublished);
+		return frame;
 	}
 
 	/** Gives the thread its own Math.random back, where hold mode seeded it. */
@@ -157,8 +223,12 @@ export class SketchRunner {
 		this.restoreRandom = undefined;
 	}
 
-	/** Delivers a message the page sent with engine.postToSketch. */
+	/**
+	 * Delivers a message the page sent with engine.postToSketch. It arrives between frames, after
+	 * any frame that grew engine memory, so the sketch's views of that memory are made again first.
+	 */
 	receive(type: string, data: unknown): void {
+		this.core.refresh();
 		for (const handler of this.messageHandlers) handler(type, data);
 	}
 
@@ -222,19 +292,9 @@ export class SketchRunner {
 		Atomics.notify(slots, Slot.FramesPublished);
 	}
 
-	/** Runs one frame at the clock's time and step, and returns its number. */
-	private frame(): number {
-		const start = performance.now();
-		const { time } = this.context;
-		const { glue } = this.sketch;
+	/** The sketch's part of a frame: the input the page wrote, preference changes and the update. */
+	private update(frame: number, dt: number): void {
 		const { slots } = this.sketch.control;
-		const dt = this.clock.dt;
-		time.now = this.clock.now;
-		time.frame++;
-		const frame = time.frame;
-		this.record.begin(frame);
-		this.core.refresh();
-		this.phaseStart = start;
 		if (this.holdSeconds === undefined) this.input.beginFrame(frame);
 		const reducedMotion = Atomics.load(slots, Slot.ReducedMotion);
 		if (reducedMotion !== this.reducedMotion) {
@@ -252,6 +312,25 @@ export class SketchRunner {
 		} catch (error) {
 			this.report(error);
 		}
+	}
+
+	/**
+	 * Runs one frame at the clock's time and step, and returns its number. Without `play`, the
+	 * frame reads no input and runs none of the sketch's code: only the core's steps.
+	 */
+	private frame(play = true): number {
+		const start = performance.now();
+		const { time } = this.context;
+		const { glue } = this.sketch;
+		const { slots } = this.sketch.control;
+		const dt = this.clock.dt;
+		time.now = this.clock.now;
+		time.frame++;
+		const frame = time.frame;
+		this.record.begin(frame);
+		this.core.refresh();
+		this.phaseStart = start;
+		if (play) this.update(frame, dt);
 		this.endPhase(Phase.Update);
 		// Job workers woken now start while the engine applies the frame's commands; woken before
 		// the sketch's update, they would spin through it and sleep again.
