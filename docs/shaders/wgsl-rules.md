@@ -1,16 +1,16 @@
 ---
 id: shaders/wgsl-rules
 title: WGSL rules for portable shaders
-status: planned
+status: experimental
 since: "0.1"
 summary: "The three shared language features; limits budget; flat interpolation; what the build rejects."
 ---
 
 # WGSL rules for portable shaders
 
-> Planned for null3D 0.1. No release has these APIs yet, so coding agents must not use them.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Custom shaders in sketch code are not built yet, so coding agents must not write them.
 
-One WGSL shader runs on every null3D path: WebGPU, WebGPU's compatibility mode and WebGL2. For WebGL2, the build translates it to GLSL. A shader can therefore use only what every path and every target browser supports. The shader build checks each shader against the rules on this page. When a shader breaks a rule, the build fails and gives the file, line and column, with a fix.
+One WGSL shader runs on every null3D path: WebGPU, WebGPU's compatibility mode and WebGL2. For WebGL2, null3D's shader build translates it to GLSL ES 3.00. A shader can therefore use only what every path and every target browser supports. The build checks each shader against the rules on this page. When a shader breaks a rule, the build fails and gives the file, line and column, with a fix.
 
 ## Language features
 
@@ -38,13 +38,18 @@ A shader can use a feature without a `requires` directive, so the build looks fo
 
 A `requires` directive that names any feature outside the three also fails the build.
 
+## Other code the build rejects
+
+- The build allows only what every WebGPU device supports. It rejects code that needs an optional feature, such as the `f16` type or `enable subgroups;`.
+- For WebGL2, the build rejects code that GLSL ES 3.00 cannot express, such as a storage buffer. The message names the pipeline and the shader stage.
+
 ## Flat interpolation
 
 Write flat interpolation as `@interpolate(flat, either)`, so that any vertex of a triangle can give the value. `@interpolate(flat)` means `flat, first`: the first vertex of each triangle gives the value. WebGL2 and WebGPU's compatibility mode cannot provide that, so the build rejects `@interpolate(flat)` and `@interpolate(flat, first)`.
 
 ## Limits
 
-A shader stays within WebGPU's default limits, and within the lower limits of compatibility mode. [The portable budget](../concepts/backends.md#the-portable-budget) gives the engine's limits for bind groups, buffers and textures. In each shader stage, the budget is:
+A shader stays within WebGPU's default limits, and within the lower limits of compatibility mode. [The portable budget](../concepts/backends.md#the-portable-budget) gives the engine's limits for bind groups, buffers and textures. The budget for shaders is:
 
 | Limit | Budget |
 | --- | --- |
@@ -55,10 +60,10 @@ A shader stays within WebGPU's default limits, and within the lower limits of co
 | Uniform buffers in a stage | 12 |
 | Storage buffers in a stage | 8, but 4 in the fragment stage and none in the vertex stage |
 | Storage textures in a stage | 4, and none in the vertex stage |
-| Compute workgroup size | 128 in x and in y, and 64 in z |
+| Compute workgroup size | 128 invocations in all: at most 128 in x and in y, and 64 in z |
 | Workgroup memory | 16 KB |
 
-The build does not check these limits. [Choosing a tier for testing](../concepts/backends.md#choosing-a-tier-for-testing) shows how to run a shader on each path.
+The build does not check these limits, so test on each path. [Choosing a tier for testing](../concepts/backends.md#choosing-a-tier-for-testing) shows how to force each one.
 
 ## Directives
 
