@@ -89,7 +89,7 @@ These habits keep play free of rebuilds:
 - Hide and show objects with `setVisible` instead of destroying and creating them.
 - Pool short-lived things, such as bullets and particles, in an instance batch sized for the most rows it will ever need. Show fewer with `setActiveCount`, and keep the live rows at the front of the arrays.
 - For a look that changes often, such as a highlight, keep two objects and swap their visibility. Keep `setMaterial` for rare changes.
-- Every row of a batch counts toward the scene's limit of objects and instance rows, active or not. On WebGPU every device draws 2,097,152. On WebGL2 the limit follows the largest texture the device allows. `engine.capabilities.maxInstances` gives the limit of the device the page runs on (E1501). Engine memory holds about 5 million rows (E1109). So size each batch for the rows it uses.
+- Every row of a batch counts toward the scene's limit of objects and instance rows, active or not. On WebGPU every device draws 2,097,152. On WebGL2 the limit follows the largest texture the device allows. It is 1,048,576 at 2,048 pixels, the least that WebGL2 allows. For the device the page runs on, `engine.capabilities.maxInstances` gives the limit (E1501). Engine memory holds about 5 million rows (E1109). So size each batch for the rows it uses.
 - Check with `measure`. A `rebuilds` count above zero during play points to one of the calls in the lower rows of the table.
 
 ## How the engine batches, builds pipelines and times frames

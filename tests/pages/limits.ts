@@ -1,10 +1,10 @@
-// Asks the engine for instance batches around its limits: one past the limit that every device
-// draws, one as large as the device's own limit, and a small one after both. Reports the device's
+// Asks the engine for instance batches around its limits: one past the limit that every WebGPU
+// device draws, one as large as the device's own limit, and a small one after both. Reports the device's
 // limit, what each request returned, and how many pixels the large batch drew.
 import { createEngine } from '@null3d/engine';
 import { run } from './lib/result';
 
-/** Rows of the batch that passes the limit every device draws. */
+/** Rows of the batch that passes the limit every WebGPU device draws. */
 const PAST_PORTABLE = 3_000_000;
 
 interface BatchResult {

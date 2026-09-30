@@ -455,7 +455,7 @@ fn the_source_limit_follows_the_device_storage_binding() {
     use null3d_render::frame::grown_size;
     use null3d_render::gpu_driven::{MAX_USEFUL_BINDING_BYTES, PORTABLE_MAX_SOURCES, max_sources};
 
-    // Every device: WebGPU's default binding holds the instances of 2,097,152 sources.
+    // Every WebGPU device: the default binding holds the instances of 2,097,152 sources.
     let portable = sizes::PORTABLE_STORAGE_BINDING_BYTES;
     assert_eq!(PORTABLE_MAX_SOURCES, 2_097_152);
     assert_eq!(PORTABLE_MAX_SOURCES * sizes::INSTANCE_STRIDE, portable);
