@@ -23,5 +23,5 @@
 		"tests/image/**/*.ts",
 		"vite.config.ts"
 	],
-	"exclude": ["packages/engine/**"]
+	"exclude": ["packages/engine/**", "packages/controls/**"]
 }
