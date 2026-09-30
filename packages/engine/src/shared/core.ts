@@ -74,6 +74,15 @@ export interface CoreGlue extends CoreErrors {
 	resetGpu(): number;
 	drawListAddress(parity: number): number;
 	drawListWords(frame: number): number;
+	/**
+	 * Makes room for `points` points of debug lines, keeping those written since the last recorded
+	 * frame. The arrays can move, so their addresses must be read again.
+	 */
+	reserveDebugLines(points: number): number;
+	/** The address of a debug line array: `DEBUG_LINE_FIELD_POSITIONS` or `..._COLORS`. */
+	debugLineArrays(field: number): number;
+	/** Draws the first `points` points of the debug line arrays in the next recorded frame. */
+	drawDebugLines(points: number): number;
 	createBatch(
 		capacity: number,
 		dynamic: boolean,
@@ -191,6 +200,9 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'resetGpu',
 	'drawListAddress',
 	'drawListWords',
+	'reserveDebugLines',
+	'debugLineArrays',
+	'drawDebugLines',
 	'createBatch',
 	'destroyBatch',
 	'batchArrays',

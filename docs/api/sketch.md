@@ -199,6 +199,7 @@ What the engine passes to a sketch's setup function.
 | `engine: SketchEngine` | The canvas's size, and what the device can do. |
 | `preferences: SketchPreferences` | What the user's system asks of every page, and a notice when that changes. |
 | `page: { post(type: string, data?: unknown, transfer?: Transferable[]): void; onMessage(handler: (type: string, data: unknown) => void): () => void; }` | Messages between the sketch and the page. `onMessage` returns a function that removes the handler. |
+| `debug: Debug` | Debug drawing: lines, boxes, spheres, arrows, axes, grids, camera frustums and lights, drawn for one frame. Only development builds draw them. |
 
 ### `SketchDefinition`
 

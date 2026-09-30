@@ -26,6 +26,7 @@ use null3d_gpu::drawlist::sizes;
 use null3d_render::arrays::{ArrayName, ArraysError, MeshArrays, from_arrays};
 use null3d_render::camera::Perspective;
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
+use null3d_render::debug_lines::LineStore;
 use null3d_render::frame::{FrameBuilder, FrameInput, RecordError};
 use null3d_render::geometry::{Geometry, OutOfMemory, Shape, generate};
 use null3d_render::gpu_driven::{
@@ -39,8 +40,8 @@ use wasm_bindgen::prelude::*;
 pub mod constants;
 
 use constants::{
-    arrays_problem, batch_field, mesh_arrays, ring_field, scene_field, shading, texture_option,
-    texture_stat,
+    arrays_problem, batch_field, debug_line_field, mesh_arrays, ring_field, scene_field, shading,
+    texture_option, texture_stat,
 };
 
 /// The engine version, as the loader reports it.
@@ -102,6 +103,8 @@ struct Engine {
     rebuilt: bool,
     /// The words that TypeScript writes a mesh's arrays into, for `createMeshFromArrays`.
     staging: Vec<u32>,
+    /// The debug lines of the next frame, which only development builds of the engine write.
+    lines: LineStore,
 }
 
 impl Engine {
@@ -124,6 +127,7 @@ impl Engine {
             canvas,
             structure_changed: self.structure_changed,
             jobs,
+            lines: self.lines.lines(),
         };
         (self.renderer.as_mut(), input)
     }
@@ -300,6 +304,7 @@ pub fn init_engine(
         structure_changed: true,
         rebuilt: false,
         staging: Vec::new(),
+        lines: LineStore::default(),
     });
     0
 }
@@ -476,6 +481,7 @@ pub fn cull_frame(frame: u32, width: u32, height: u32) -> u32 {
     })
 }
 
+// The frame draws the debug lines that `drawDebugLines` gave it, and then forgets them.
 /// Records the frame's upload list and its draw list for a canvas of this size in device pixels.
 #[wasm_bindgen(js_name = recordFrame)]
 pub fn record_frame(frame: u32, width: u32, height: u32) -> u32 {
@@ -484,7 +490,9 @@ pub fn record_frame(frame: u32, width: u32, height: u32) -> u32 {
     };
     with_engine(|e| {
         let (renderer, input) = e.frame(frame, (width, height), jobs);
-        match renderer.record(&input) {
+        let recorded = renderer.record(&input);
+        e.lines.clear();
+        match recorded {
             Ok(rebuilt) => {
                 e.structure_changed = false;
                 e.rebuilt = rebuilt;
@@ -537,6 +545,53 @@ pub fn draw_list_address(parity: u32) -> u32 {
 #[wasm_bindgen(js_name = drawListWords)]
 pub fn draw_list_words(frame: u32) -> u32 {
     value_with_engine(|e| Ok(e.renderer.list(frame).len() as u32))
+}
+
+// --- Debug lines, which only development builds of the engine draw ---
+//
+// TypeScript writes each frame's points into the arrays whose addresses `debugLineArrays` gives,
+// after `reserveDebugLines` makes room for them, and `drawDebugLines` has the next recorded frame
+// draw them. Making room keeps the points written since the last recorded frame, but can move
+// the arrays, so TypeScript then reads their addresses again. The arrays hold each point's
+// position, three 64-bit floats, and its sRGB color, one 32-bit word (`constants::debug_line_field`).
+// The doc comments stay short: wasm-bindgen copies them into the glue that every page downloads.
+
+/// Makes room for debug line points.
+#[wasm_bindgen(js_name = reserveDebugLines)]
+pub fn reserve_debug_lines(points: u32) -> u32 {
+    with_engine(|e| match e.lines.reserve(points) {
+        Ok(()) => 0,
+        Err(_) => core_failure(CoreError::OutOfMemory {
+            bytes: points.saturating_mul(28),
+        }),
+    })
+}
+
+/// The address of a debug line array.
+#[wasm_bindgen(js_name = debugLineArrays)]
+pub fn debug_line_arrays(field: u32) -> u32 {
+    value_with_engine(|e| {
+        Ok(match field {
+            debug_line_field::POSITIONS => address(e.lines.positions()),
+            _ => address(e.lines.colors()),
+        })
+    })
+}
+
+// Fails when the arrays have room for fewer points.
+/// Draws debug line points in the next frame.
+#[wasm_bindgen(js_name = drawDebugLines)]
+pub fn draw_debug_lines(points: u32) -> u32 {
+    with_engine(|e| {
+        if e.lines.set_points(points) {
+            0
+        } else {
+            core_failure(CoreError::OutOfRange {
+                value: points,
+                limit: e.lines.capacity(),
+            })
+        }
+    })
 }
 
 // --- Instance batches ---

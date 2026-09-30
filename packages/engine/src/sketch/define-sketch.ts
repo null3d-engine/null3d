@@ -5,6 +5,7 @@
 // In a file of its own, defineSketch would cost the sketch worker one more request before the
 // sketch runs.
 
+import type { Debug } from '../debug/debug';
 import { EngineError } from '../errors/engine-error';
 import { messageOf } from '../errors/message';
 import type { EngineCapabilities } from '../page/engine';
@@ -146,6 +147,11 @@ export interface SketchContext {
 		post(type: string, data?: unknown, transfer?: Transferable[]): void;
 		onMessage(handler: (type: string, data: unknown) => void): () => void;
 	};
+	/**
+	 * Debug drawing: lines, boxes, spheres, arrows, axes, grids, camera frustums and lights, drawn
+	 * for one frame. Only development builds draw them.
+	 */
+	debug: Debug;
 }
 
 /**

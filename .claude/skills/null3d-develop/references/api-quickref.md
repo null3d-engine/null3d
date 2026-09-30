@@ -415,15 +415,22 @@ Messages are fire-and-forget. Send events, not per-frame state.
 ## 19. Debug (`api/debug`)
 
 ```ts
-debug.stats(true);                       // overlay: frame phases per thread, tier, preset
-const s = debug.frameStats();            // numbers for tests and logs
-debug.view('normals');                   // 'lit' | 'normals' | 'depth' | 'wireframe' | 'overdraw'
-debug.line(a, b, '#ff0000'); debug.box(min, max, color); debug.sphere(center, r, color);
-debug.arrow(origin, dir, length, color); debug.axes(objOrPosition, size); debug.grid(size, divisions);
-debug.frustum(camera); debug.light(light); debug.skeleton(obj);
+// Call these in onUpdate: each call draws its lines for one frame.
+debug.line([0, 0, 0], [1, 2, 0], '#ff0000');     // colors as for materials; yellow by default
+debug.box(min, max, color); debug.sphere(center, radius, color);
+debug.arrow(origin, direction, length, color);  // length 1 unless given
+debug.axes(objectOrPosition, size);             // an object's axes follow it in the same frame
+debug.grid(size, divisions, { center, color, centerColor });  // GridHelper's defaults, 10 and 10
+debug.frustum(camera, color);                   // in the canvas's shape
+debug.light(sun, { position, size, color });    // a directional light's direction
+debug.skeleton(obj);                            // (0.2)
+
+debug.stats(true);                       // later in 0.1: overlay of frame phases per thread, tier, preset
+const s = debug.frameStats();            // later in 0.1: numbers for tests and logs
+debug.view('normals');                   // later in 0.1: 'lit' | 'normals' | 'depth' | 'wireframe' | 'overdraw'
 ```
 
-Debug drawing exists in development builds only and costs nothing in release builds.
+Debug drawing exists in development builds only. In a production build every call does nothing, and the build holds none of the drawing code. Lines are one pixel wide, and objects in front of them hide them.
 
 ## 20. Math, color and time (`api/math`, `api/time`)
 
