@@ -11,7 +11,7 @@
 // reference, so it saves its image as a candidate. Look at it with bun run images:review, and make it
 // the reference with bun run images:review --accept. Then do the same with CI=1 for the SwiftShader
 // reference: on the Mac, Playwright's Chromium draws CI's SwiftShader images byte for byte.
-import { PARITY_SCENES } from '../../bench/lib/parity.ts';
+import { BENCH_SCENES } from '../../bench/lib/parity.ts';
 import { ORTHO_IMAGE } from '../../bench/scenes/ortho-camera.ts';
 import { HOLD_TIME, PARITY_CANVAS } from '../../bench/scenes/spec.ts';
 import { DEMOS } from '../../examples/demos.ts';
@@ -287,10 +287,10 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 			hold: demo.hold,
 		}),
 	),
-	// The benchmark scenes' hold frames, which the parity command also compares with three.js.
-	// S2's trees and S1-cells' boxes each cover under 1% of their frame, so other devices may differ
-	// in fewer of their pixels.
-	...PARITY_SCENES.map(
+	// The benchmark scenes' hold frames, which the parity command also compares with three.js once
+	// null3D draws every feature of the scene. S2's trees and S1-cells' boxes each cover under 1% of
+	// their frame, so other devices may differ in fewer of their pixels.
+	...BENCH_SCENES.map(
 		(scene): ImageTest => ({
 			name: scene,
 			page: `bench/pages/null3d/${scene}.html`,
