@@ -8,7 +8,7 @@ summary: "createEngine options and start errors; memory; capabilities and mode; 
 
 # Page API: createEngine
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. The `createEngine` options `preset`, `transparent` and `sketchThread`, and `engine.capture`, are not built yet, so coding agents must not use them.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. The `createEngine` options `transparent` and `sketchThread`, and `engine.capture`, are not built yet, so coding agents must not use them.
 
 `createEngine` starts the engine on a canvas and runs a sketch. It returns an `Engine`, the page's handle on the running engine. The page keeps the HTML, and the sketch builds the scene in a worker of its own.
 
@@ -41,6 +41,7 @@ try {
 | Code | Cause |
 | --- | --- |
 | [E1407](../errors/E1407.md) | The `hold` option or the `?hold=` switch gives a time that is not a number of seconds from 0 to 600. |
+| [E1213](../errors/E1213.md) | The `preset` option names no preset, or `maxPixelRatio` is not a number from 0.5 up. |
 | [E1409](../errors/E1409.md) | The `memory` option asks for a maximum that is not a whole number of MiB from 256 to 4096. |
 | [E1303](../errors/E1303.md) | The browser runs WebAssembly without SIMD. |
 | [E1301](../errors/E1301.md) | The browser has no usable GPU path, or no path that `gpu` or `?gpu=` asks for. |
@@ -61,7 +62,8 @@ An error that the sketch's setup throws also rejects the start ([Sketch API](ske
 
 | Option | Default | What it does |
 | --- | --- | --- |
-| `maxPixelRatio` | 2 | Caps the screen's pixel ratio that the engine draws at |
+| `preset` | `'auto'` | The quality preset, which the engine chooses for the device unless the page names one: [Quality presets](../concepts/quality-presets.md) |
+| `maxPixelRatio` | The preset's cap | Caps the screen's pixel ratio that the engine draws at, in place of the preset's cap |
 | `gpu` | `'auto'` | Forces a GPU path, for tests only. The `?gpu=` switch in the page's address wins over it. |
 | `powerPreference` | `'high-performance'` | Picks the GPU on a device that has two. `'low-power'` saves battery. |
 | `latency` | `'pipelined'` | The latency mode, `'pipelined'` or `'low'`: [Architecture](../concepts/architecture.md#latency-modes). The `?latency=` switch wins over it, and the single-threaded build ignores it. |
@@ -73,7 +75,7 @@ An error that the sketch's setup throws also rejects the start ([Sketch API](ske
 
 ## Memory
 
-On a page with worker threads, the engine's threads share one WebAssembly memory, which holds the scene. The memory's maximum is 1024 MiB. A scene that needs more can ask for up to 4096 MiB, in whole MiB:
+On a page with worker threads, the engine's threads share one WebAssembly memory, which holds the scene. The memory's maximum is 1024 MiB on every quality preset. A scene that needs more can ask for up to 4096 MiB, in whole MiB:
 
 ```ts
 const engine = await createEngine({ canvas, sketch, memory: { maximumMiB: 2048 } });
@@ -88,7 +90,7 @@ The single-threaded build's memory is not shared. It grows as the scene needs, s
 ## What the engine reports
 
 - `engine.capabilities` gives the GPU path (`tier`), whether the engine runs threaded, and the optional features and limits of the GPU path. It also gives the depth mode, and the most objects and instance rows that the device draws (`maxInstances`). [GPU tiers and backends](../concepts/backends.md) explains each.
-- `engine.mode` gives the build, the latency mode, the thread that draws, the number of job workers, and the held time in hold mode.
+- `engine.mode` gives the build, the latency mode, the thread that draws, the number of job workers, and the held time in hold mode. It also gives the quality preset, the starts that crashed the tab before this one, and the memory maximum.
 - `engine.report` holds every result of the start's tests, as plain JSON.
 
 ## The running engine
@@ -117,9 +119,9 @@ Each `on...` call returns a function that removes its handler. `engine.labels` a
 
 ### `CapabilityReport`
 
-Interface `CapabilityReport`.
+Interface `CapabilityReport`, which extends `DeviceHints`.
 
-What the browser and device can do, as plain JSON. The engine picks its build and GPU path from these feature tests, never from browser or GPU names.
+What the browser and device can do, as plain JSON. The engine picks its build and GPU path from these feature tests, and its quality preset from the device hints. It never decides from browser or GPU names.
 
 | Member | Description |
 | --- | --- |
@@ -212,6 +214,9 @@ How the engine runs on this device: its build, its latency mode and its threads.
 | `renderThread: 'render-worker' \| 'sketch-worker' \| 'main'` | The thread that owns the canvas and draws. |
 | `jobWorkers: number` | The job workers that share the engine's parallel work. |
 | `hold: number \| null` | The sketch time in seconds that hold mode holds the sketch at, or null for a live engine. |
+| `preset: QualityPreset` | The quality preset that the engine runs. |
+| `crashedStarts: number` | The starts of this sketch before this one that crashed the tab, one after another, as the engine's note in `localStorage` records them. After one, the engine starts a preset lower, and after two at `low`. |
+| `memoryMaximumMiB: number \| null` | The shared memory's maximum in MiB, or null for the single-threaded build, whose memory is not shared. |
 
 ### `EngineOptions`
 
@@ -223,7 +228,8 @@ Options for `createEngine`.
 | --- | --- |
 | `canvas: HTMLCanvasElement` | The canvas to draw into, sized by CSS. |
 | `sketch: URL \| string` | The sketch module, which runs in the sketch worker; `new URL('./sketch.ts', import.meta.url)`. |
-| `maxPixelRatio?: number` | Cap for the device pixel ratio. |
+| `preset?: 'auto' \| QualityPreset` | The quality preset: `auto`, the default, lets the engine choose one for the device, and `low`, `medium`, `high` or `ultra` names one. The GPU path caps it: WebGL2 and WebGPU's compatibility mode run at most `medium`. After a start that crashed the tab, the engine starts a preset lower. Another value fails with E1213. The `?preset=` switch wins over it. |
+| `maxPixelRatio?: number` | Cap for the device pixel ratio, a number from 0.5 up. Without it, the quality preset sets the cap. `ctx.quality.set` changes it during play. |
 | `gpu?: 'auto' \| 'webgpu' \| 'webgl2'` | Forces a GPU tier, for testing only. |
 | `powerPreference?: 'high-performance' \| 'low-power'` | Which GPU to draw with on a device that has two, such as a laptop with a separate graphics chip: `high-performance`, the default, for the faster one, or `low-power` to save battery. The browser treats it as a request. A device with one GPU ignores it. |
 | `latency?: LatencyMode` | The latency mode. The default is `pipelined`. |
@@ -253,6 +259,7 @@ type ErrorCode =
 	| 'E1206'
 	| 'E1207'
 	| 'E1208'
+	| 'E1213'
 	| 'E1214'
 	| 'E1301'
 	| 'E1302'
