@@ -46,7 +46,7 @@ The engine's hot paths stay allocation-free with these habits (hard rule 1):
 
 - One table in `quality/presets.ts` holds every setting with its value on each preset. A feature adds its setting there as planned, then marks it applied where it reads the value. An applied setting that a sketch can change is also a member of `QualitySettings`, and a unit test keeps the two lists equal. The docs generator writes the preset tables on `concepts/quality-presets` from the table and the chooser's constants.
 - The docs generator and the device runner import the chooser and the table, and the tools' type check has no browser types. So `quality/presets.ts`, `quality/chooser.ts`, `quality/preset-docs.ts` and `shared/tier.ts` import no module that names a browser type, not even for types.
-- The page chooses the preset: workers have no media queries and no screen. The memory maximum follows the device hints and the crash marker alone, which the page has at once, so the core's download and the shared memory never wait for the GPU probe.
+- The page chooses the preset: workers have no media queries and no screen. The memory maximum follows the device hints and the crash marker alone, which the page has at once. So the core's download and the shared memory never wait for the GPU probe.
 - Hold mode and `?preset=` neither read nor write the crash marker, so a test that crashes can never lower the next test's preset.
 
 ## Textures on both GPU paths

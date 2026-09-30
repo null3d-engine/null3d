@@ -8,7 +8,7 @@ summary: "Pixel-ratio caps; memory budgets; heat; testing on real devices."
 
 # Phones and tablets
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Dynamic resolution, the frame-budget governor that lowers settings when a phone heats up, and the texture memory budgets are not built yet, so coding agents must not use them.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Dynamic resolution and the texture memory budgets are not built yet. Neither is the frame-budget governor, which lowers settings when a phone heats up. Coding agents must not use them.
 
 Phones have small GPUs, sharp screens and little memory, and they slow down when they heat up. The quality presets set how much work the engine does on each device. This guide says what the engine does on a phone or a tablet, and how to test your sketch on one.
 
@@ -46,7 +46,7 @@ A phone closes a tab that uses too much memory, with no warning. On a page with 
 
 To use less memory, share meshes and materials, draw many copies with instance batches, and create objects during setup. `engine.measure` reports the WebAssembly memory in use.
 
-When the tab crashes during a start, the next start of the sketch runs one preset lower, and a second crash in a row starts it at Low. [Quality presets](../concepts/quality-presets.md#starts-that-crashed-the-tab) explains the note that the engine keeps for this. The page reads the count in `engine.mode.crashedStarts`.
+When the tab crashes during a start, the next start of the sketch runs one preset lower. A second crash in a row starts it at Low. [Quality presets](../concepts/quality-presets.md#starts-that-crashed-the-tab) explains the note that the engine keeps for this. The page reads the count in `engine.mode.crashedStarts`.
 
 ## Heat
 
