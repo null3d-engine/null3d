@@ -86,11 +86,11 @@ test('hold mode steps the sketch in fixed steps to the held time, with seeded ra
 		expect(state.smallestStep).toBeCloseTo(1 / 60, 12);
 		expect(state.largestStep).toBeCloseTo(1 / 60, 12);
 		expect([mode.name, state.firstRandom]).toEqual([mode.name, seededNumbers(3)]);
-		// The single-threaded build runs the sketch on the page's thread, which gets its own
-		// Math.random back when the engine stops. Elsewhere the page's Math.random never changes.
+		// Where the page runs the sketch, the page's thread gets its own Math.random back when the
+		// engine stops. Elsewhere the page's Math.random never changes.
 		expect([mode.name, seededOnPage, ownAfterStop]).toEqual([
 			mode.name,
-			mode.build === 'single',
+			mode.sketchThread === 'main',
 			true,
 		]);
 	}

@@ -44,7 +44,7 @@ const engine = await createEngine({
   signal: controller.signal,             // abort to cancel the start; createEngine then rejects
   hold: 1.5,             // image tests: step the sketch to 1.5 s, draw that one frame, and run no frame loop
   transparent: false,    // later in 0.1: true for a see-through canvas
-  sketchThread: 'worker',  // later in 0.1: 'main' for DOM-heavy apps and debugging
+  sketchThread: 'worker',  // or 'main': sketch code on the page's thread, for DOM-heavy apps and debugging
   largeWorld: false,     // (0.2) planet-scale scenes: cell-relative positions, batch origins
 });
 // createEngine rejects with an EngineError when the browser cannot run the engine (error.code)
@@ -57,7 +57,7 @@ engine.detach();                         // single-page apps: canvas off the pag
 engine.attach(container);                // canvas back on the page; the engine resumes with no new start
 engine.setPaused(true);                  // the first step after resuming counts no time
 engine.capabilities;  // { tier: 'webgpu' | 'webgpu-compat' | 'webgl2', threaded, features, limits, maxInstances, depth }
-engine.mode;          // { build, latency, renderThread, jobWorkers, hold, preset, crashedStarts, memoryMaximumMiB }
+engine.mode;          // { build, latency, sketchThread, renderThread, jobWorkers, hold, preset, crashedStarts, memoryMaximumMiB }
 const metrics = await engine.measure(5);          // CPU time per thread and phase, GPU time, frame rates, memory
 const frame = await engine.captureFrame();        // { width, height, pixels }: RGBA8 rows, top row first
 engine.onFailure((error) => { /* error.code: E1302 GPU lost for good, E1404 engine thread failed */ });

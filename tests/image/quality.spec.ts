@@ -10,6 +10,7 @@ import {
 	type QualityPreset,
 	type QualitySettings,
 } from '../../packages/engine/src/quality/presets.ts';
+import { ENGINE_MODES } from '../lib/engine-checks.ts';
 import { pageResult } from '../lib/page-result.ts';
 
 /** The texture settings that the core holds. */
@@ -179,14 +180,20 @@ test('storage that the browser refuses counts as a normal start', async ({ page 
 	expect(result.notesAtFirstFrame).toBeNull();
 });
 
-test('a sketch changes its pixel ratio cap, and hears of the change', async ({ page }) => {
-	const result = await openQuality(
+// The sketch's thread hands the change to the page, which sizes the canvas: through a message
+// from a worker, or at once where the page runs the sketch.
+for (const mode of ENGINE_MODES) {
+	test(`a sketch changes its pixel ratio cap, and hears of the change, ${mode.name}`, async ({
 		page,
-		`gpu=webgpu&preset=high&set=${JSON.stringify({ maxPixelRatio: 1.25 })}`,
-	);
-	expect(result.changed?.settings).toEqual({ ...presetSettings('high'), maxPixelRatio: 1.25 });
-	expect(result.refused).toBeUndefined();
-});
+	}) => {
+		const result = await openQuality(
+			page,
+			`gpu=webgpu&preset=high&set=${JSON.stringify({ maxPixelRatio: 1.25 })}&${mode.query}`,
+		);
+		expect(result.changed?.settings).toEqual({ ...presetSettings('high'), maxPixelRatio: 1.25 });
+		expect(result.refused).toBeUndefined();
+	});
+}
 
 for (const gpu of ['webgpu', 'webgl2'] as const) {
 	test(`a sketch changes its texture settings during play, and the core takes them on ${gpu}`, async ({
