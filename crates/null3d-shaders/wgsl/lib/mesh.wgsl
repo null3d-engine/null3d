@@ -1,6 +1,7 @@
 enable draw_index;
 #define_import_path null3d::mesh
 #import null3d::globals::{Frame, Material}
+#import null3d::vertex::{OUTSIDE_CLIP, Transform, to_clip, transform_direction, transform_point}
 
 // What every template for meshes drawn by instance shares: the frame's bindings, where each
 // instance's world matrix and material come from, and positions in clip space. A template's vertex
@@ -166,19 +167,21 @@ fn find_instance(i: InstanceIn) -> Instance {
 #endif
 }
 
+/// The instance's world matrix, relative to the camera.
+fn transform_of(found: Instance) -> Transform {
+    return Transform(found.row_x, found.row_y, found.row_z);
+}
+
 /// A position in clip space: the instance's world matrix, then the camera. An instance that draws
 /// nothing lands outside the clip volume on every axis, so the whole triangle is clipped away.
 fn clip_position(found: Instance, position: vec3f) -> vec4f {
-    let p = vec4f(position, 1.0);
     if !found.drawn {
-        return vec4f(2.0, 2.0, 2.0, 1.0);
+        return OUTSIDE_CLIP;
     }
-    return frame.view_proj
-        * vec4f(dot(found.row_x, p), dot(found.row_y, p), dot(found.row_z, p), 1.0);
+    return to_clip(frame.view_proj, transform_point(transform_of(found), position));
 }
 
 /// A direction from the mesh into the world: the instance's world matrix without its translation.
 fn world_direction(found: Instance, direction: vec3f) -> vec3f {
-    let d = vec4f(direction, 0.0);
-    return vec3f(dot(found.row_x, d), dot(found.row_y, d), dot(found.row_z, d));
+    return transform_direction(transform_of(found), direction);
 }

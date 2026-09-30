@@ -326,6 +326,25 @@ describe('the checks plan', () => {
 		expect(judge(webgpu.check, pageMissing, noWebGL2)).toEqual([pageMissing.error]);
 	});
 
+	it("runs the shader library's values on both GPU paths, and names each wrong value", () => {
+		const library = items.filter((item) => item.check.kind === 'shader-library');
+		expect(library.map(({ id, path }) => [id, path])).toEqual([
+			['shader-library-webgpu', '/tests/pages/shader-library.html?gpu=webgpu'],
+			['shader-library-webgl2', '/tests/pages/shader-library.html?gpu=webgl2'],
+		]);
+		const check = library[0]?.check;
+		if (!check) throw new Error('the plan lacks the shader library page');
+		expect(judge(check, { ok: true, cases: 3, mismatches: [] }, NONE_MISSING)).toEqual([]);
+		const wrong = { function: 'math::square', expected: [4, 0], got: [4.5, 0] };
+		expect(judge(check, { ok: true, cases: 3, mismatches: [wrong] }, NONE_MISSING)).toEqual([
+			'math::square: expected 4, 0, got 4.5, 0',
+		]);
+		expect(judge(check, { ok: true, cases: 0, mismatches: [] }, NONE_MISSING)).toEqual([
+			'the page ran no cases',
+		]);
+		expect(judge(check, { ok: false, error: 'no WebGPU adapter' }, NO_WEBGPU)).toBe('skip');
+	});
+
 	it('loads the capabilities page again last, to compare it with the first load', () => {
 		expect(items[0]?.id).toBe('capabilities');
 		expect(items.at(-1)).toEqual({
