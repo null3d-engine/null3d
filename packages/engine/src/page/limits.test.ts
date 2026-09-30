@@ -1,13 +1,22 @@
 import { describe, expect, it } from 'bun:test';
 import * as C from '../generated/core';
-import { PERMUTATION_DRAW_INDEX } from '../generated/gpu';
 import {
+	FORMAT_CANVAS,
+	FORMAT_RG11B10_UFLOAT,
+	FORMAT_RGBA16_FLOAT,
+	PERMUTATION_DRAW_INDEX,
+	PERMUTATION_TONE_MAP,
+} from '../generated/gpu';
+import {
+	type CoreDevice,
 	coreDevice,
 	DEPTH_WITHOUT_CLIP_CONTROL,
+	type DeviceOptions,
 	type DeviceReport,
 	maxInstances,
 	portableMaxInstances,
 	rowLimitWarning,
+	sceneColorFormat,
 	storageBindingBytes,
 	webgl2Depth,
 } from './limits';
@@ -15,37 +24,80 @@ import {
 const MIB = 1024 * 1024;
 
 /** A WebGPU device with this storage binding. */
-const webgpu = (storageBindingBytes: number) => ({
+const webgpu = (storageBindingBytes: number): CoreDevice => ({
 	webgl2: false,
 	storageBindingBytes,
 	capabilities: 0,
 	maxTextureSize: 0,
 	sharedUploads: true,
-	depth: 'reversed' as const,
+	depth: 'reversed',
 	parallelCompile: true,
+	sceneColor: FORMAT_RGBA16_FLOAT,
+	transparent: false,
 	shaderBits: 0,
 	cellCulling: true,
 });
 
-/** No test switch. */
-const NO_SWITCHES = { copyUploads: false, depth: undefined, parallelCompile: true, cells: true };
-/** ?uploads=copy. */
-const COPY_UPLOADS = { ...NO_SWITCHES, copyUploads: true };
-/** ?compile=wait. */
-const COMPILE_WAIT = { ...NO_SWITCHES, parallelCompile: false };
+/** A WebGL2 device that draws RGBA16F targets with the engine's MSAA. */
+const HDR_TARGETS = {
+	rgba16f: { complete: true, readsBack: true, samples: C.LIMIT_MSAA_SAMPLES },
+};
 
-/** A report whose WebGL2 part has these fields. */
-function report(webgl2: Partial<DeviceReport['webgl2']>): DeviceReport {
+/** A report whose WebGL2 part has these fields, from a device with no optional WebGPU feature. */
+function report(webgl2: Partial<DeviceReport['webgl2']>, features: string[] = []): DeviceReport {
 	return {
-		webgpu: { limits: {} },
+		webgpu: { limits: {}, features },
 		webgl2: {
 			extensions: {},
 			maxTextureSize: 4096,
 			sharedMemoryUploads: { bufferSubData: true, texSubImage2D: true },
+			floatRenderTargets: HDR_TARGETS,
 			...webgl2,
 		},
 	};
 }
+
+/** The options of a page that asks for nothing special. */
+const PLAIN: DeviceOptions = {
+	copyUploads: false,
+	depth: undefined,
+	parallelCompile: true,
+	cells: true,
+	hdr: true,
+	transparent: false,
+};
+
+describe('sceneColorFormat', () => {
+	const small = ['rg11b10ufloat-renderable'];
+
+	it('draws HDR color on core WebGPU, in the small float format where the canvas needs no alpha', () => {
+		expect(sceneColorFormat('webgpu', report({}), true, false)).toBe(FORMAT_RGBA16_FLOAT);
+		expect(sceneColorFormat('webgpu', report({}, small), true, false)).toBe(FORMAT_RG11B10_UFLOAT);
+		expect(sceneColorFormat('webgpu', report({}, small), true, true)).toBe(FORMAT_RGBA16_FLOAT);
+	});
+
+	it('takes the 8-bit path in compatibility mode, and where the page turns HDR off', () => {
+		expect(sceneColorFormat('webgpu-compat', report({}, small), true, false)).toBe(FORMAT_CANVAS);
+		expect(sceneColorFormat('webgpu', report({}, small), false, false)).toBe(FORMAT_CANVAS);
+		expect(sceneColorFormat('webgl2', report({}), false, false)).toBe(FORMAT_CANVAS);
+	});
+
+	it('draws HDR color on WebGL2 only where RGBA16F targets work with the MSAA the engine uses', () => {
+		expect(sceneColorFormat('webgl2', report({}), true, false)).toBe(FORMAT_RGBA16_FLOAT);
+		const fewSamples = { rgba16f: { ...HDR_TARGETS.rgba16f, samples: 2 } };
+		const clipped = { rgba16f: { ...HDR_TARGETS.rgba16f, readsBack: false } };
+		for (const floatRenderTargets of [null, fewSamples, clipped])
+			expect(sceneColorFormat('webgl2', report({ floatRenderTargets }), true, false)).toBe(
+				FORMAT_CANVAS,
+			);
+	});
+
+	it('reaches the core with the canvas transparency', () => {
+		const device = coreDevice('webgpu', report({}, small), { ...PLAIN, transparent: true });
+		expect([device.sceneColor, device.transparent]).toEqual([FORMAT_RGBA16_FLOAT, true]);
+		expect(coreDevice('webgl2', report({}), PLAIN).sceneColor).toBe(FORMAT_RGBA16_FLOAT);
+	});
+});
 
 describe('storageBindingBytes', () => {
 	it('keeps WebGPU default where the adapter offers no more, or reports nothing', () => {
@@ -78,49 +130,51 @@ describe('storageBindingBytes', () => {
 });
 
 describe('coreDevice on WebGL2', () => {
+	const copied: DeviceOptions = { ...PLAIN, copyUploads: true };
+
 	it('sizes the scene by the texture size, never below what every device allows', () => {
-		const device = coreDevice(true, report({ maxTextureSize: 8192 }), NO_SWITCHES);
+		const device = coreDevice('webgl2', report({ maxTextureSize: 8192 }), PLAIN);
 		expect(maxInstances(device)).toBe(C.LIMIT_MATRICES_PER_TEXTURE_ROW * 8192);
-		const small = coreDevice(true, report({ maxTextureSize: 1024 }), NO_SWITCHES);
+		const small = coreDevice('webgl2', report({ maxTextureSize: 1024 }), PLAIN);
 		expect(small.maxTextureSize).toBe(C.LIMIT_WEBGL2_MIN_TEXTURE_SIZE);
 	});
 
 	it('stops at the sources an index list entry can name, however large the textures', () => {
-		const large = coreDevice(true, report({ maxTextureSize: 32768 }), NO_SWITCHES);
+		const large = coreDevice('webgl2', report({ maxTextureSize: 32768 }), PLAIN);
 		expect(maxInstances(large)).toBe(C.LIMIT_WEBGL2_MAX_SOURCES);
 		expect(C.LIMIT_WEBGL2_MAX_SOURCES).toBe(C.LIMIT_MATRICES_PER_TEXTURE_ROW * 16384);
 	});
 
 	it('passes multi-draw to the core only where the extension exists', () => {
 		const withIt = report({ extensions: { WEBGL_multi_draw: true } });
-		expect(coreDevice(true, withIt, NO_SWITCHES).capabilities).toBe(C.CAPABILITY_MULTI_DRAW);
-		expect(coreDevice(true, report({}), NO_SWITCHES).capabilities).toBe(0);
+		expect(coreDevice('webgl2', withIt, PLAIN).capabilities).toBe(C.CAPABILITY_MULTI_DRAW);
+		expect(coreDevice('webgl2', report({}), PLAIN).capabilities).toBe(0);
 	});
 
 	it('reads shared memory only where WebGL accepts it for both kinds of upload', () => {
-		expect(coreDevice(true, report({}), NO_SWITCHES).sharedUploads).toBe(true);
-		expect(coreDevice(true, report({}), COPY_UPLOADS).sharedUploads).toBe(false);
+		expect(coreDevice('webgl2', report({}), PLAIN).sharedUploads).toBe(true);
+		expect(coreDevice('webgl2', report({}), copied).sharedUploads).toBe(false);
 		const noTextures = report({
 			sharedMemoryUploads: { bufferSubData: true, texSubImage2D: false },
 		});
-		expect(coreDevice(true, noTextures, NO_SWITCHES).sharedUploads).toBe(false);
-		expect(coreDevice(true, report({ sharedMemoryUploads: null }), NO_SWITCHES).sharedUploads).toBe(
+		expect(coreDevice('webgl2', noTextures, PLAIN).sharedUploads).toBe(false);
+		expect(coreDevice('webgl2', report({ sharedMemoryUploads: null }), PLAIN).sharedUploads).toBe(
 			false,
 		);
 	});
 
 	it('culls by grid cell on both paths unless ?cells=off asks it not to', () => {
-		const off = { ...NO_SWITCHES, cells: false };
-		for (const webgl2 of [true, false]) {
-			expect(coreDevice(webgl2, report({}), NO_SWITCHES).cellCulling).toBe(true);
-			expect(coreDevice(webgl2, report({}), off).cellCulling).toBe(false);
+		const off: DeviceOptions = { ...PLAIN, cells: false };
+		for (const tier of ['webgl2', 'webgpu'] as const) {
+			expect(coreDevice(tier, report({}), PLAIN).cellCulling).toBe(true);
+			expect(coreDevice(tier, report({}), off).cellCulling).toBe(false);
 		}
 	});
 });
 
 describe('the warning past the rows that every device of a GPU path draws', () => {
-	const smallWebGL2 = coreDevice(true, report({ maxTextureSize: 2048 }), NO_SWITCHES);
-	const largeWebGL2 = coreDevice(true, report({ maxTextureSize: 16384 }), NO_SWITCHES);
+	const smallWebGL2 = coreDevice('webgl2', report({ maxTextureSize: 2048 }), PLAIN);
+	const largeWebGL2 = coreDevice('webgl2', report({ maxTextureSize: 16384 }), PLAIN);
 
 	it('comes on WebGL2 past the limit of a device whose textures reach 2,048 pixels', () => {
 		expect(maxInstances(smallWebGL2)).toBe(1_048_576);
@@ -153,35 +207,46 @@ describe('the depth mode', () => {
 	const clipControl = report({ extensions: { EXT_clip_control: true } });
 
 	it('is reversed on WebGPU, and on WebGL2 where the browser has EXT_clip_control', () => {
-		expect(coreDevice(false, report({}), NO_SWITCHES).depth).toBe('reversed');
-		expect(coreDevice(true, clipControl, NO_SWITCHES).depth).toBe('reversed');
-		expect(coreDevice(true, report({}), NO_SWITCHES).depth).toBe(DEPTH_WITHOUT_CLIP_CONTROL);
+		expect(coreDevice('webgpu', report({}), PLAIN).depth).toBe('reversed');
+		expect(coreDevice('webgl2', clipControl, PLAIN).depth).toBe('reversed');
+		expect(coreDevice('webgl2', report({}), PLAIN).depth).toBe(DEPTH_WITHOUT_CLIP_CONTROL);
 	});
 
 	it('follows ?depth= on WebGL2, but never to reversed depth without EXT_clip_control', () => {
 		for (const wanted of ['reversed', 'reversed-gl', 'standard'] as const)
-			expect(coreDevice(true, clipControl, { ...NO_SWITCHES, depth: wanted }).depth).toBe(wanted);
+			expect(coreDevice('webgl2', clipControl, { ...PLAIN, depth: wanted }).depth).toBe(wanted);
 		expect(webgl2Depth(false, 'standard')).toBe('standard');
 		expect(webgl2Depth(false, 'reversed-gl')).toBe('reversed-gl');
 		expect(webgl2Depth(false, 'reversed')).toBe(DEPTH_WITHOUT_CLIP_CONTROL);
-		expect(coreDevice(false, report({}), { ...NO_SWITCHES, depth: 'standard' }).depth).toBe(
+		expect(coreDevice('webgpu', report({}), { ...PLAIN, depth: 'standard' }).depth).toBe(
 			'reversed',
 		);
 	});
 });
 
 describe('the permutation bits that a device fixes', () => {
-	it('hold the draw index where WebGL2 has multi-draw, and nothing on WebGPU', () => {
+	it('hold the draw index where WebGL2 has multi-draw, and nothing on WebGPU with HDR', () => {
 		const multiDraw = report({ extensions: { WEBGL_multi_draw: true } });
-		expect(coreDevice(true, multiDraw, NO_SWITCHES).shaderBits).toBe(PERMUTATION_DRAW_INDEX);
-		expect(coreDevice(true, report({}), NO_SWITCHES).shaderBits).toBe(0);
-		expect(coreDevice(false, multiDraw, NO_SWITCHES).shaderBits).toBe(0);
+		expect(coreDevice('webgl2', multiDraw, PLAIN).shaderBits).toBe(PERMUTATION_DRAW_INDEX);
+		expect(coreDevice('webgl2', report({}), PLAIN).shaderBits).toBe(0);
+		expect(coreDevice('webgpu', multiDraw, PLAIN).shaderBits).toBe(0);
+	});
+
+	it('hold tone mapping in the shader on the 8-bit path', () => {
+		const multiDraw = report({ extensions: { WEBGL_multi_draw: true }, floatRenderTargets: null });
+		const both = PERMUTATION_DRAW_INDEX | PERMUTATION_TONE_MAP;
+		expect(coreDevice('webgl2', multiDraw, PLAIN).shaderBits).toBe(both);
+		expect(coreDevice('webgl2', report({}), { ...PLAIN, hdr: false }).shaderBits).toBe(
+			PERMUTATION_TONE_MAP,
+		);
+		expect(coreDevice('webgpu-compat', report({}), PLAIN).shaderBits).toBe(PERMUTATION_TONE_MAP);
 	});
 });
 
 describe('background compiles', () => {
 	it('stay on unless ?compile=wait turns them off', () => {
-		expect(coreDevice(true, report({}), NO_SWITCHES).parallelCompile).toBe(true);
-		expect(coreDevice(true, report({}), COMPILE_WAIT).parallelCompile).toBe(false);
+		expect(coreDevice('webgl2', report({}), PLAIN).parallelCompile).toBe(true);
+		const wait: DeviceOptions = { ...PLAIN, parallelCompile: false };
+		expect(coreDevice('webgl2', report({}), wait).parallelCompile).toBe(false);
 	});
 });

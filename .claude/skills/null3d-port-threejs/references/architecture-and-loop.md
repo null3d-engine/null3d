@@ -17,7 +17,7 @@ three.js apps usually run everything on the main thread: DOM, input, scene updat
 | Piece of the three.js app | null3D location | How |
 | --- | --- | --- |
 | `<canvas>` or `renderer.domElement` | `index.html` and `page.ts` | Put the canvas in HTML; pass it to `createEngine` |
-| Renderer options (antialias, alpha, pixel ratio, tone mapping) | `createEngine` options, `post.set` (later in 0.1) | Mapping table, "Renderer and loop" |
+| Renderer options (antialias, alpha, pixel ratio, tone mapping) | `createEngine` options, `post.set` | Mapping table, "Renderer and loop" |
 | Resize handling | Nowhere | The engine follows the canvas's CSS size |
 | Scene, cameras, lights, meshes, loaders | `sketch.ts` | `defineSketch` setup code |
 | The animation loop | `sketch.ts` | `onUpdate`, `onFixedUpdate`, `onLateUpdate` |
@@ -160,7 +160,7 @@ Pointer events that land on HTML UI elements above the canvas do not reach the e
 | cannon-es, Rapier, Ammo | Run in the sketch worker; copy transforms into dynamic objects or batches after each step |
 | three-mesh-bvh | Delete; raycasting uses built-in acceleration structures (0.2) |
 | troika-three-text | Not available: use HTML labels, pre-rendered text textures, or text meshes baked into glTF |
-| postprocessing (pmndrs) | Map effects to `post.set`: tone mapping later in 0.1, effects in 0.2 (`references/post-processing.md`) |
+| postprocessing (pmndrs) | Map effects to `post.set`: tone mapping now, effects in 0.2 (`references/post-processing.md`) |
 | three-stdlib, three/addons utilities | Check each import in the mapping table; many become built-in features |
 
 ## 7. The two-step route for large apps

@@ -56,6 +56,14 @@ for (const mode of ENGINE_MODES) {
  */
 const MOST_FRAMES_IN_FLIGHT = 2.5;
 
+/**
+ * The time on the GPU after which the engine's completion tracker stops counting a frame as in
+ * flight, so that a completion the browser never reports cannot stop the drawing. Frames that each
+ * take longer leave nothing in flight to hold back, so they cannot show the limit. CI's software
+ * GPU draws WebGL2's HDR frames that slowly.
+ */
+const STALL_MS = 1000;
+
 for (const tier of ['webgpu', 'webgl2'] as const) {
 	test(`a GPU that falls behind has at most two frames waiting on it, ${tier}`, async ({
 		page,
@@ -67,6 +75,10 @@ for (const tier of ['webgpu', 'webgl2'] as const) {
 		const step = result.overloaded;
 		test.skip(!step, 'no step of the page overloaded this GPU');
 		if (!step) return;
+		test.skip(
+			(step.gpuLatencyMs?.median ?? 0) >= STALL_MS,
+			'each frame took longer on this GPU than the engine counts a frame in flight',
+		);
 		expect(ratesParted(step), 'the presented rate stayed above the completed rate').toBe(false);
 		expect(framesInFlight(step) ?? Number.POSITIVE_INFINITY).toBeLessThan(MOST_FRAMES_IN_FLIGHT);
 	});

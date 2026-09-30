@@ -16,12 +16,17 @@ export function readCount(moduleUrl: string): number {
 	return Number(new URL(moduleUrl).searchParams.get('n') ?? '0');
 }
 
-/** Sets the background, the sun and the ambient light, and makes the active camera. */
+/**
+ * Sets the background, the sun and the ambient light, and makes the active camera. The three.js
+ * twins draw with no tone mapping, three.js's default, so the null3D pages turn off the engine's
+ * default of ACES.
+ */
 export function setUpView(
-	{ scene }: SketchContext,
+	{ scene, post }: SketchContext,
 	{ sun, ambient }: SceneLights = VIEW_LIGHTS,
 	background: string = BACKGROUND,
 ): Camera {
+	post.set({ toneMapping: 'none' });
 	scene.setBackground(background);
 	scene.createDirectionalLight({
 		direction: sun.direction,
