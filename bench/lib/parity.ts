@@ -46,8 +46,30 @@ export interface ImageComparison {
 
 // The scenes and the pages that draw their hold frames.
 
-export const PARITY_SCENES = ['s1', 's1-static', 's1-cells', 's2'] as const;
-export type ParityScene = (typeof PARITY_SCENES)[number];
+/** Every benchmark scene. The benchmark runs, the page tests and the image tests cover each one. */
+export const BENCH_SCENES = ['s1', 's1-static', 's1-cells', 's2', 's3'] as const;
+export type BenchScene = (typeof BENCH_SCENES)[number];
+
+/**
+ * Why the parity checks leave a scene out: a feature that its three.js twin draws and null3D does
+ * not draw yet, or a twin page that cannot draw the scene. Such a scene runs and has image
+ * references of its own. The pull request that builds a feature takes it off here, and makes the
+ * scene's references again.
+ */
+export const LEFT_OUT_OF_PARITY: Readonly<Record<BenchScene, readonly string[]>> = {
+	s1: [],
+	's1-static': [],
+	's1-cells': [],
+	s2: [],
+	// Every check compares with WebGLRenderer's frame, on its tier and in the baseline between
+	// three.js's renderers.
+	s3: ["WebGLRenderer's shader for 256 point lights, which most GPUs cannot build"],
+};
+
+/** The benchmark scenes whose hold frames the parity checks compare with three.js's. */
+export const PARITY_SCENES: readonly BenchScene[] = BENCH_SCENES.filter(
+	(scene) => LEFT_OUT_OF_PARITY[scene].length === 0,
+);
 
 /** The GPU interface a tier draws with: compatibility mode is WebGPU within lower limits. */
 export function gpuApiOf(tier: Tier): 'webgpu' | 'webgl2' {
@@ -125,18 +147,18 @@ export const TIER_PAIRS: Readonly<Record<Tier, PagePair>> = {
 };
 
 /** The dev-server path of one scene's page of one kind, with more switches after its own. */
-export function pagePath(scene: ParityScene, kind: BenchPageKind, switches = ''): string {
+export function pagePath(scene: BenchScene, kind: BenchPageKind, switches = ''): string {
 	const page = kind === SCENE_CODE ? { folder: SCENE_CODE, switches: '' } : PAGES[kind];
 	return `/bench/pages/${page.folder}/${scene}.html?${[page.switches, switches].filter(Boolean).join('&')}`;
 }
 
 /** The dev-server path of the page that draws one scene's hold frame. */
-export function holdPagePath(scene: ParityScene, kind: PageKind): string {
+export function holdPagePath(scene: BenchScene, kind: PageKind): string {
 	return pagePath(scene, kind, 'hold');
 }
 
 /** The name that a comparison's image files start with. */
-export function comparisonName(scene: ParityScene, { candidate, reference }: PagePair): string {
+export function comparisonName(scene: BenchScene, { candidate, reference }: PagePair): string {
 	return `${scene}-${candidate}-vs-${reference}`;
 }
 
@@ -151,13 +173,13 @@ export const STORED_BASELINES_FILE = 'bench/parity-baselines.json';
  * that draws with both. A device that has only one of them, such as a phone without WebGPU, compares
  * with these instead.
  */
-export type StoredBaselines = Partial<Record<ParityScene, number>>;
+export type StoredBaselines = Partial<Record<BenchScene, number>>;
 
 /** The stored baselines in a file's text; unknown scenes and values that are not a share drop out. */
 export function parseStoredBaselines(text: string): StoredBaselines {
 	const scenes = (JSON.parse(text) as { scenes?: Record<string, unknown> }).scenes ?? {};
 	const baselines: StoredBaselines = {};
-	for (const scene of PARITY_SCENES) {
+	for (const scene of BENCH_SCENES) {
 		const share = scenes[scene];
 		if (typeof share === 'number' && share >= 0 && share <= 1) baselines[scene] = share;
 	}
@@ -167,7 +189,7 @@ export function parseStoredBaselines(text: string): StoredBaselines {
 /** The file's text for stored baselines, in scene order. */
 export function formatStoredBaselines(baselines: StoredBaselines): string {
 	const scenes: StoredBaselines = {};
-	for (const scene of PARITY_SCENES) {
+	for (const scene of BENCH_SCENES) {
 		const share = baselines[scene];
 		if (share !== undefined) scenes[scene] = share;
 	}
@@ -209,7 +231,7 @@ export interface Comparison extends PagePair {
 }
 
 export interface ParityOptions {
-	scenes: ParityScene[];
+	scenes: BenchScene[];
 	comparisons: Comparison[];
 	/** Save how much three.js's two renderers differ on each scene, for devices that lack one. */
 	saveBaselines: boolean;
@@ -239,11 +261,12 @@ function readList<T extends string>(
 }
 
 /**
- * Reads the parity command's switches. With no switch, it compares every scene on both GPU tiers.
+ * Reads the parity command's switches. With no switch, it compares every scene of the parity checks
+ * on every GPU tier. `--scene` can name any benchmark scene, to see how far one still differs.
  * `--pair a,b` compares page kind a with page kind b instead, where b is the reference.
  */
 export function parseParityArgs(args: readonly string[]): ParityOptions {
-	let scenes: ParityScene[] = [...PARITY_SCENES];
+	let scenes: BenchScene[] = [...PARITY_SCENES];
 	let tiers: Tier[] | undefined;
 	let pair: PageKind[] | undefined;
 	let saveBaselines = false;
@@ -251,7 +274,7 @@ export function parseParityArgs(args: readonly string[]): ParityOptions {
 		const arg = args[i];
 		if (arg === '--') continue;
 		if (arg === '--save-baselines') saveBaselines = true;
-		else if (arg === '--scene') scenes = readList(args[++i], PARITY_SCENES, 'scene');
+		else if (arg === '--scene') scenes = readList(args[++i], BENCH_SCENES, 'scene');
 		else if (arg === '--tier') tiers = readList(args[++i], TIERS, 'tier');
 		else if (arg === '--pair') pair = readList(args[++i], PAGE_KINDS, 'page kind');
 		else throw new Error(`unknown option ${arg}\n${PARITY_USAGE}`);
