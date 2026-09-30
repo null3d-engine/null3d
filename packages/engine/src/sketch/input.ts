@@ -252,6 +252,8 @@ export class InputReader implements Input {
 	private mouseButtons = 0;
 	/** The frame the state belongs to, or -1 before the first, so nothing counts as just pressed. */
 	private frame = -1;
+	/** The engine's frames so far that ran no sketch code: the setup's. */
+	private setupFrames = 0;
 	/** The index of the next record to read. */
 	private next = 0;
 
@@ -283,10 +285,12 @@ export class InputReader implements Input {
 
 	/**
 	 * Takes the events the page wrote since the previous frame, for frame `frame`. Movement and wheel
-	 * scroll start again from 0.
+	 * scroll start again from 0. `setupFrames` is the count of the engine's frames that ran no
+	 * sketch code, which the pointer's frame numbers leave out, as the sketch's `time.frame` does.
 	 */
-	beginFrame(frame: number): void {
+	beginFrame(frame: number, setupFrames = 0): void {
 		this.frame = frame;
+		this.setupFrames = setupFrames;
 		const { pointer, touches } = this;
 		pointer.dx = 0;
 		pointer.dy = 0;
@@ -476,7 +480,7 @@ export class InputReader implements Input {
 		pointer.x = x;
 		pointer.y = y;
 		pointer.isTouch = (flags & FLAG_TOUCH) !== 0;
-		pointer.frame = ints[base + FIELD_FRAME] as number;
+		pointer.frame = Math.max(0, (ints[base + FIELD_FRAME] as number) - this.setupFrames);
 		const buttons = ints[base + FIELD_BUTTONS] as number;
 		const changed = buttons ^ this.mouseButtons;
 		this.mouseButtons = buttons;

@@ -7,6 +7,13 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { ERRORS, type ErrorEntry } from '../../packages/engine/src/errors/codes.ts';
 import {
+	CHECK_GRACE_MS,
+	CHECK_HOLD_SHARE,
+	CHECK_MAX_FPS,
+	CHECK_UPLOAD_WAIT_MS,
+	CHECK_WINDOW_MS,
+} from '../../packages/engine/src/quality/check.ts';
+import {
 	DEVICE_PRESETS,
 	type DeviceKind,
 	LOW_MEMORY_GB,
@@ -66,7 +73,7 @@ export const PAGES: readonly PageEntry[] = [
 	{ id: 'concepts/static-dynamic', title: 'Static and dynamic objects', since: '0.1', summary: 'When to mark objects static; setters versus direct array writes; dirty ranges.' },
 	{ id: 'concepts/instances', title: 'Instances and batching', since: '0.1', summary: 'createInstances; typed-array views; markDirty; automatic batching; per-instance attributes.' },
 	{ id: 'concepts/backends', title: 'GPU tiers and backends', since: '0.1', summary: 'WebGPU core, compatibility mode and WebGL2; capability flags; the portable budget; never branching on GPU names.' },
-	{ id: 'concepts/quality-presets', title: 'Quality presets, dynamic resolution and frame budgets', since: '0.1', summary: 'Low to Ultra; pixel-ratio caps; the frame-budget governor; quality events for sketch code.' },
+	{ id: 'concepts/quality-presets', title: 'Quality presets, dynamic resolution and frame budgets', since: '0.1', summary: 'Low to Ultra; pixel-ratio caps; the preset check; switching presets; the frame-budget governor; quality events for sketch code.' },
 	{ id: 'concepts/color-management', title: 'Color management', since: '0.1', summary: 'Linear working space; sRGB hex colors; texture color spaces; parity with three.js.' },
 	{ id: 'concepts/materials', title: 'Materials and pipelines', since: '0.1', summary: 'Built-in materials; permutations; pipeline warm-up; why changing shader features can stall a frame.' },
 	{ id: 'concepts/lighting', title: 'Lighting and environment', since: '0.1', summary: 'Light types and units; clustered lighting; environment maps and spherical harmonics.' },
@@ -95,7 +102,7 @@ export const PAGES: readonly PageEntry[] = [
 	{ id: 'api/controls', title: 'Camera controls (@null3d/controls)', since: '0.1', summary: 'Orbit and map controls (0.1); fly and first-person controls (0.2).' },
 	{ id: 'api/post', title: 'Post-processing API', since: '0.2', summary: 'post.set options; post.addEffect for custom WGSL effects.' },
 	{ id: 'api/render', title: 'Render graph API', since: '0.2', summary: 'render.addPass declarations; enabling and disabling passes; dumpGraph.' },
-	{ id: 'api/quality', title: 'Quality API', since: '0.1', summary: 'quality.preset, quality.set, frame budgets, quality events.' },
+	{ id: 'api/quality', title: 'Quality API', since: '0.1', summary: 'quality.preset, quality.set, quality.setPreset, the preset check, frame budgets, quality events.' },
 	{ id: 'api/debug', title: 'Debug drawing and stats', since: '0.1', summary: 'debug.line, box, sphere, arrow, axes, grid, frustum and light; engine.measure and its figures; debug.view; debug.stats.' },
 	{ id: 'api/math', title: 'Math helpers', since: '0.1', summary: 'vec3, quat, mat4 and color on plain arrays; math.clamp, lerp, damp and a random generator that hold mode seeds.' },
 	{ id: 'api/time', title: 'Time', since: '0.1', summary: 'dt, time.now, fixed steps.' },
@@ -109,7 +116,7 @@ export const PAGES: readonly PageEntry[] = [
 	{ id: 'guides/phones', title: 'Phones and tablets', since: '0.1', summary: 'Pixel-ratio caps; memory budgets; heat; testing on real devices.' },
 	{ id: 'guides/custom-shaders', title: 'Custom shaders', since: '0.1', summary: 'WGSL in sketch code; shader errors; surface functions; full shaders; uniforms and typed materials; hot reload.' },
 	{ id: 'guides/custom-passes', title: 'Custom passes and render targets', since: '0.2', summary: 'Declaring passes; reading and writing named textures; layer masks.' },
-	{ id: 'guides/loading-screens', title: 'Loading screens and warm-up', since: '0.1', summary: 'preload; onProgress; scene.warmUp; upload budgets.' },
+	{ id: 'guides/loading-screens', title: 'Loading screens and warm-up', since: '0.1', summary: 'preload; onProgress; scene.warmUp; the preset check; upload budgets; switching presets behind a loading screen.' },
 	{ id: 'guides/accessibility', title: 'Accessibility', since: '0.1', summary: 'What the canvas tells assistive technology; keyboard use; reduced motion; pausing; loading and errors.' },
 	{ id: 'guides/content-pages', title: '3D scenes on content pages', since: '0.1', summary: 'Product and marketing pages: the fallback page, a load deadline, pausing off screen, scroll-driven cameras, second visits and crashes.' },
 	{ id: 'guides/ui-overlays', title: 'UI, HTML overlays and labels', since: '0.2', summary: 'HTML UI on the page; labels that follow objects; GUI panels.' },
@@ -194,6 +201,20 @@ export function presetSettingsTable(): string {
 	return markdownTable(['Setting', ...QUALITY_PRESETS.map(presetTitle), 'Changes', 'Status'], rows);
 }
 
+/** The preset check's rules, from its constants. */
+export function presetCheckTable(): string {
+	const rows = [
+		['Target frame rate', `The display's refresh rate, at most ${CHECK_MAX_FPS} frames per second`],
+		['A preset holds its target', `At ${CHECK_HOLD_SHARE * 100}% of the target or more`],
+		[
+			'Frames drawn before each measurement',
+			`${CHECK_GRACE_MS} ms, and up to ${CHECK_UPLOAD_WAIT_MS} ms more while textures upload`,
+		],
+		['Measurement of each preset', `${CHECK_WINDOW_MS} ms`],
+	];
+	return markdownTable(['Rule', 'Value'], rows);
+}
+
 /**
  * The tables that the generator writes into written pages, each between its markers. A page
  * named here must hold the markers of each of its tables.
@@ -203,6 +224,7 @@ export const PAGE_TABLES: Readonly<Record<string, readonly (readonly [string, ()
 		['preset-devices', presetDeviceTable],
 		['preset-ceilings', presetCeilingTable],
 		['preset-settings', presetSettingsTable],
+		['preset-check', presetCheckTable],
 	],
 };
 

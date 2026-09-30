@@ -91,13 +91,17 @@ export class WebGPUBackend {
 	private readonly canvasFormat: GPUTextureFormat;
 	/** Times the passes of each frame, while the page measures. */
 	timer: GpuTimer | undefined;
-	/** What the replays since the last reset uploaded, the part that went through staging, and drew. */
+	/**
+	 * What the replays since the last reset uploaded, the part that went through staging, drew and
+	 * built, and the draw commands they skipped because their pipeline was still building.
+	 */
 	readonly counts = {
 		uploadBytes: 0,
 		stagedBytes: 0,
 		drawCalls: 0,
 		dispatches: 0,
 		pipelines: 0,
+		skippedDraws: 0,
 	};
 	// Descriptors that every frame fills again, so replay allocates none of its own.
 	private readonly renderPass = new RenderPassSetup();
@@ -334,6 +338,7 @@ export class WebGPUBackend {
 		this.counts.drawCalls = 0;
 		this.counts.dispatches = 0;
 		this.counts.pipelines = 0;
+		this.counts.skippedDraws = 0;
 	}
 
 	/**
@@ -753,7 +758,7 @@ export class WebGPUBackend {
 				return true;
 			}
 			case G.OP_DRAW:
-				if (this.skipDraws) return true;
+				if (this.skipDraws) return this.skipDraw();
 				this.counts.drawCalls++;
 				pass.draw(
 					words[a] as number,
@@ -763,7 +768,7 @@ export class WebGPUBackend {
 				);
 				return true;
 			case G.OP_DRAW_INDEXED:
-				if (this.skipDraws) return true;
+				if (this.skipDraws) return this.skipDraw();
 				this.counts.drawCalls++;
 				pass.drawIndexed(
 					words[a] as number,
@@ -774,7 +779,7 @@ export class WebGPUBackend {
 				);
 				return true;
 			case G.OP_DRAW_INDEXED_INDIRECT:
-				if (this.skipDraws) return true;
+				if (this.skipDraws) return this.skipDraw();
 				this.counts.drawCalls++;
 				pass.drawIndexedIndirect(
 					this.need(this.buffers, words[a] as number, 'buffer'),
@@ -784,6 +789,12 @@ export class WebGPUBackend {
 			default:
 				return false;
 		}
+	}
+
+	/** Counts a draw that its pipeline's build keeps from drawing, and reports the command as handled. */
+	private skipDraw(): true {
+		this.counts.skippedDraws++;
+		return true;
 	}
 
 	/** Replays a recorded bundle's commands into the render pass. */

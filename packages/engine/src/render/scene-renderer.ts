@@ -32,15 +32,36 @@ interface SceneBackend {
 		end: number,
 		memory: ArrayBufferLike,
 	): void;
+	/** What the replays since the last reset did; WebGL2 dispatches no compute work. */
+	readonly counts: {
+		uploadBytes: number;
+		drawCalls: number;
+		dispatches?: number;
+		pipelines: number;
+		skippedDraws: number;
+	};
+	resetCounts(): void;
+}
+
+/** Adds what the backend did since its last reset to a frame's record, then resets its counts. */
+function recordCounts(record: FrameRecorder, backend: SceneBackend): void {
+	const { counts } = backend;
+	record.count(Counter.UploadBytes, counts.uploadBytes);
+	record.count(Counter.DrawCalls, counts.drawCalls);
+	record.count(Counter.Dispatches, counts.dispatches ?? 0);
+	record.count(Counter.Pipelines, counts.pipelines);
+	record.count(Counter.SkippedDraws, counts.skippedDraws);
+	backend.resetCounts();
 }
 
 /**
  * The replay of each frame's draw list, as the sketch thread published it, which both scene
  * renderers share. It keeps views on engine memory, rebuilt only when memory grows. A frame's
  * pipelines start to build the first time the frame is prepared or replayed. Until a frame has
- * drawn with every pipeline built, a frame waits for its pipelines.
+ * drawn with every pipeline built, a frame waits for its pipelines. A change of quality preset
+ * starts that wait again, from the frame that the control block's hold names.
  */
-class FrameReplay {
+export class FrameReplay {
 	private words = new Uint32Array(0);
 	private floats = new Float32Array(0);
 	private viewsOf: ArrayBufferLike = new ArrayBuffer(0);
@@ -49,8 +70,10 @@ class FrameReplay {
 	/** The frame whose pipelines started to build last, and where the rest of its list starts. */
 	private prepared = 0;
 	private rest = 0;
-	/** True once a frame has drawn with every pipeline built. */
+	/** True once a frame has drawn with every pipeline built, since the last hold began. */
 	private complete = false;
+	/** The first frame of the last hold that a prepared frame reached. */
+	private held = 0;
 
 	constructor(
 		private readonly backend: SceneBackend,
@@ -63,6 +86,11 @@ class FrameReplay {
 	/** Starts the builds of a frame's pipelines, once, and returns true when the frame may draw. */
 	prepare(frame: number): boolean {
 		this.restOf(frame);
+		const hold = Atomics.load(this.slots, Slot.PipelineHold);
+		if (hold > this.held && frame >= hold) {
+			this.held = hold;
+			this.complete = false;
+		}
 		return this.complete || !this.backend.building;
 	}
 
@@ -155,11 +183,7 @@ export class WebGPUSceneRenderer implements Renderer {
 		this.frames.replay(input.frame);
 		this.completions?.afterSubmit(input.frame);
 		record.addPhase(Phase.Replay, performance.now() - start);
-		record.count(Counter.UploadBytes, backend.counts.uploadBytes);
-		record.count(Counter.DrawCalls, backend.counts.drawCalls);
-		record.count(Counter.Dispatches, backend.counts.dispatches);
-		record.count(Counter.Pipelines, backend.counts.pipelines);
-		backend.resetCounts();
+		recordCounts(record, backend);
 	}
 
 	/**
@@ -258,14 +282,10 @@ export class WebGL2SceneRenderer implements Renderer {
 	 */
 	drawFrame(input: FrameInput, record: FrameRecorder): void {
 		const start = performance.now();
-		const { backend } = this;
 		this.frames.replay(input.frame);
 		this.completions?.afterSubmit(input.frame);
 		record.addPhase(Phase.Replay, performance.now() - start);
-		record.count(Counter.UploadBytes, backend.counts.uploadBytes);
-		record.count(Counter.DrawCalls, backend.counts.drawCalls);
-		record.count(Counter.Pipelines, backend.counts.pipelines);
-		backend.resetCounts();
+		recordCounts(record, this.backend);
 	}
 
 	/**

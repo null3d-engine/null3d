@@ -114,10 +114,16 @@ export interface FrameSummary {
 	rebuilds: number;
 	/**
 	 * GPU pipelines built during the measurement. A build can stall the frame it happens in. The
-	 * engine builds its pipelines in the first frame and after the browser replaces the GPU, so
-	 * steady play builds none.
+	 * engine builds its pipelines in the first frame, after a change of quality preset, and after
+	 * the browser replaces the GPU, so steady play builds none.
 	 */
 	pipelines: number;
+	/**
+	 * Draw commands that frames skipped during the measurement because their pipeline was still
+	 * building, so the objects they draw were missing from those frames. `scene.warmUp()` before
+	 * new objects show, and `quality.setPreset()`, keep it at 0.
+	 */
+	skippedDraws: number;
 }
 
 /**
@@ -228,6 +234,13 @@ const NO_RECORDS: RingRecords = {
 	counters: COUNTER_NAMES.map(() => []),
 };
 
+/** The sum of a counter's values over the frames. */
+function sumOf(values: readonly number[] = []): number {
+	let sum = 0;
+	for (const value of values) sum += value;
+	return sum;
+}
+
 /** Joins the records of every role by frame and summarizes them per frame and per thread. */
 export function summarizeFrames(
 	records: readonly RingRecords[],
@@ -289,7 +302,8 @@ export function summarizeFrames(
 		drawCalls: percentiles(render.counters[Counter.DrawCalls] ?? []),
 		visibleEntries: visible.length > 0 ? percentiles(visible) : null,
 		rebuilds: (sketch.counters[Counter.Rebuilds] ?? []).filter((n) => n > 0).length,
-		pipelines: (render.counters[Counter.Pipelines] ?? []).reduce((sum, n) => sum + n, 0),
+		pipelines: sumOf(render.counters[Counter.Pipelines]),
+		skippedDraws: sumOf(render.counters[Counter.SkippedDraws]),
 	};
 }
 
