@@ -132,7 +132,8 @@ export interface CoreGlue extends CoreErrors {
 	meshRadius(mesh: number): number;
 	/**
 	 * A material with a linear color and opacity. `shading` is one of the `SHADING_*` codes, and
-	 * `features` holds `MATERIAL_FEATURE_*` bits, fixed from then on.
+	 * `features` holds `MATERIAL_FEATURE_*` bits, fixed from then on, as is the depth bias: three.js's
+	 * polygon offset units and factor.
 	 */
 	createMaterial(
 		shading: number,
@@ -141,6 +142,8 @@ export interface CoreGlue extends CoreErrors {
 		g: number,
 		b: number,
 		a: number,
+		biasConstant: number,
+		biasSlope: number,
 	): number;
 	/**
 	 * Changes one value of a material, `param` (a `MATERIAL_PARAM_*` code), and keeps the others.

@@ -44,6 +44,8 @@ export const ERROR_FIXES = {
 		"Pass only the settings that the call has, each with a value that it takes. The call's docs page lists them.",
 	E1214:
 		'Give fixedRate the fixed steps per second, a number above 0 such as 60 or 120. Give maxFixedSteps a whole number of 1 or more, such as 8.',
+	E1217:
+		"Give alphaMode 'opaque' or 'mask'. three.js's alphaTest is alphaMode: 'mask' with alphaCutoff.",
 	E1301:
 		'Remove a ?gpu= switch or createEngine gpu option that forces a path this browser lacks. Update the browser, or turn on hardware acceleration in its settings.',
 	E1302:

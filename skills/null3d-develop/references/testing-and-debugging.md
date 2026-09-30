@@ -23,6 +23,7 @@ Engine docs: `guides/testing`, `guides/debugging`, `errors/index`, `cli/null3d`.
 | `bunx @null3d/cli test --gpu webgpu,webgl2` | Draws the image tests on these GPU tiers only |
 | `bunx @null3d/cli test --update-references` | Keeps each new or changed image as its reference; check the images before committing them |
 | `bunx @null3d/cli bench [--gpu webgpu,webgl2] [--page /other.html]` | Builds the project for production and measures the page headless: 5 fresh runs of 30 seconds, each after 5 seconds of warm-up. Prints the median and the spread of CPU time per frame by thread, GPU time and frame rates, and saves every run's figures in `bench.json` |
+| `bunx @null3d/cli bench --runs 3 --seconds 10 --warmup 5 --size 390x844` | Measures with fewer or shorter runs, or in another window size in CSS pixels. Compare only runs made with the same options on the same computer |
 | `bunx @null3d/cli doctor` (0.3) | Checks versions, headers, asset CORS, and the capabilities of the local browser |
 | `bunx @null3d/cli docs show <id>` / `bunx @null3d/cli docs search "<words>"` (0.3) | Prints docs for the installed engine version |
 
