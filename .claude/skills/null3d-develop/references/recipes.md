@@ -20,6 +20,7 @@ Each recipe states the goal, gives the code, explains why it is written that way
 14. Video on a surface (after 1.0; a workaround now)
 15. Custom full-screen effect (0.2)
 16. Very large worlds (0.2)
+17. Move a player with keys, a gamepad or touch
 
 ## 1. Start a new project
 
@@ -408,3 +409,41 @@ const trees = scene.createInstances(treeMesh, 5000, { material: bark, origin: ti
 ```
 
 The engine stores positions relative to cells about 1 km wide, and each frame it sends the GPU one camera-to-cell offset per visible cell. Objects millions of meters from the origin do not jitter, and static objects stay on the GPU without re-uploads. Vertex positions must be small offsets from their object's center, and batch rows small offsets from the batch origin. Docs: `concepts/large-worlds`.
+
+## 17. Move a player with keys, a gamepad or touch
+
+```ts
+import { defineSketch } from '@null3d/engine';
+
+export default defineSketch(({ scene, geometry, materials, input }) => {
+  scene.setActiveCamera(scene.createPerspectiveCamera({ fov: 50, position: [0, 4, 10], target: [0, 0, 0] }));
+  const player = scene.createMesh({
+    mesh: geometry.box({ width: 1, height: 1, depth: 1 }),
+    material: materials.standard({ color: '#4a8cff' }),
+    dynamic: true,
+  });
+  input.actions.define({
+    left: ['KeyA', 'ArrowLeft', 'GamepadLeftStickLeft', 'GamepadDpadLeft'],
+    right: ['KeyD', 'ArrowRight', 'GamepadLeftStickRight', 'GamepadDpadRight'],
+    jump: ['Space', 'GamepadA'],
+  });
+  let x = 0, y = 0, vy = 0, fingers = 0;
+  return {
+    onUpdate(dt) {
+      let steer = input.value('right') - input.value('left');            // -1 to 1
+      // Touch: a finger on the left or right half steers, and a second finger jumps.
+      if (input.pointer.isTouch && input.isDown('Mouse0')) steer = input.pointer.ndcX < 0 ? -1 : 1;
+      const secondFinger = input.touches.length === 2 && fingers < 2;
+      fingers = input.touches.length;
+      if (y === 0 && (input.wasPressed('jump') || secondFinger)) vy = 6;
+      vy -= 20 * dt;
+      y = Math.max(0, y + vy * dt);
+      if (y === 0) vy = 0;
+      x += steer * 5 * dt;
+      player.setPosition(x, y + 0.5, 0);
+    },
+  };
+});
+```
+
+An action names the keys and buttons for one move, so keyboard and gamepad players share one code path. With `value`, a stick pushed part of the way steers slowly, and a key steers at full speed. Touch has no keys: the first finger presses `Mouse0` and moves `input.pointer`, and `input.touches` lists every finger. Give the canvas `touch-action: none` in the page's CSS, or the browser scrolls the page and cancels the touches. Input changes once per frame, before `onUpdate`, and a tap shorter than a frame still counts as a press. Docs: `api/input`.

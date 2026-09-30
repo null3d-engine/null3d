@@ -20,7 +20,7 @@ The engine docs are the source of truth. This skill describes the API planned fo
    - inside the null3D repository itself: `docs/<id>.md`;
    - in a null3D project: `node_modules/@null3d/engine/docs/<id>.md`;
    - from any terminal: `bunx @null3d/cli docs show <id>`, or `bunx @null3d/cli docs search "<words>"`.
-3. Each page starts with front matter. `status: stable` or `status: experimental` means the API exists (experimental APIs may still change). `status: planned` means it does not exist in this version. Do not call a planned API; tell the user, and use the workaround the page gives.
+3. Each page starts with front matter. `status: stable` or `status: experimental` means the API exists (experimental APIs may still change). `status: planned` means it does not exist in this version. The note under an experimental page's title can name parts that are not built yet: treat those parts as planned too. Do not call a planned API; tell the user, and use the workaround the page gives.
 4. If the docs and this skill disagree, follow the docs and mention the difference in your summary, so the skill can be fixed.
 
 Doc IDs appear in backticks throughout, for example `concepts/architecture`. Version numbers in parentheses, such as (0.2), give the first engine version with that API; no number means 0.1.
@@ -41,7 +41,7 @@ creates the engine           shared typed arrays                 never runs your
 - For many objects, write typed arrays directly: instance batches and dynamic objects. This is where null3D gets its speed. (`concepts/instances`)
 - Objects are static by default: they cost nothing per frame until a setter changes them. Objects created with `dynamic: true` are recomputed every frame and may be written through arrays. (`concepts/static-dynamic`)
 - The engine renders every frame by itself. Sketch code has no render call and no `requestAnimationFrame`; per-frame logic goes in `onUpdate(dt)`.
-- The same code runs on WebGPU and WebGL2. When a feature is optional, check `ctx.engine.capabilities`; never check browser or GPU names. (`concepts/backends`)
+- The same code runs on WebGPU and WebGL2. When a feature is optional, check `engine.capabilities` on the page, which sends the sketch what it needs; never check browser or GPU names. (`concepts/backends`)
 
 A complete minimal project:
 
@@ -106,7 +106,7 @@ Each rule comes with its reason, because the reason covers cases the rule does n
 9. Respect the quality preset. Do not force High settings on phones. Listen to `quality.onChange` to scale your own systems, such as particle counts or AI update rates. (`concepts/quality-presets`)
 10. Ship optimized assets: glTF with meshopt compression and KTX2 textures, made with `bunx @null3d/cli assets optimize`. Large PNG files and uncompressed meshes cost download time and GPU memory. (`guides/assets-pipeline`)
 11. Keep custom WGSL portable: use only the three language features every browser shares, stay within the portable limits, and write flat interpolation as `@interpolate(flat, either)`. The build rejects anything else. (`shaders/wgsl-rules`)
-12. Never branch on GPU names or user agents; read `ctx.engine.capabilities`. Several browsers hide GPU names, and a name does not tell you what the engine enabled.
+12. Never branch on GPU names or user agents; read `engine.capabilities` on the page. Several browsers hide GPU names, and a name does not tell you what the engine enabled.
 
 ## 5. Choosing the right tool
 
@@ -143,7 +143,7 @@ Interaction:
 | Orbit or map camera | `createOrbitControls` or `createMapControls` from `@null3d/controls` | `api/controls` |
 | Fly or first-person camera | `createFlyControls` or `createFirstPersonControls` (0.2) | `api/controls` |
 | Click or hover on objects | `obj.on('click', fn)` and `'pointerenter'` or `'pointerleave'` (0.2), or `camera.screenToRay` with `scene.raycast` | `api/raycast` |
-| Keys, pointer, gamepad | `input.isDown`, `input.pointer`, `input.actions.define` | `api/input` |
+| Keys, pointer, touch, gamepad | `input.isDown`, `input.wasPressed`, `input.value`, `input.pointer`, `input.touches`, `input.actions.define` | `api/input` |
 | HTML UI and settings panels | On the page, sending messages to the sketch | `guides/ui-overlays` |
 | Labels above objects | `ui.trackLabel` in the sketch, `engine.labels.bind` on the page (0.2) | `api/ui` |
 | A product or marketing page with a 3D scene | Fallback page first, a load deadline, reveal on `engine.firstFrame`, pause off screen | `guides/content-pages`, `references/content-pages.md` |
@@ -208,6 +208,7 @@ Read these when the task needs them:
 ## 9. Before you finish
 
 - The code uses only APIs whose docs status is `stable` or `experimental` in the installed engine.
+- The code uses no part that a page's note says is not built yet.
 - Per-frame callbacks allocate nothing.
 - DOM, audio and HTML UI code is in `page.ts`.
 - You looked at a rendered image, from `bunx @null3d/cli shot` or the dev server, and not only at build output.

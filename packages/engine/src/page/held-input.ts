@@ -1,11 +1,13 @@
 // Which keys and pointers are down, so the page can release them when the sketch can no longer see
 // them go up, and which page elements take typing, whose key presses belong to the page.
 
-/** A pointer that is down: where it was last seen and which button pressed it. */
+/** A pointer that is down: where it was last seen, which button pressed it, and its kind. */
 interface HeldPointer {
 	x: number;
 	y: number;
 	button: number;
+	/** The pointer's kind, as the input ring's flags give it. */
+	flags: number;
 }
 
 /** Keys and pointers that are down, so a lost focus or a cancelled touch can release them. */
@@ -13,17 +15,20 @@ export class HeldInput {
 	private readonly keys = new Set<number>();
 	private readonly pointers = new Map<number, HeldPointer>();
 
-	keyDown(code: number): void {
-		this.keys.add(code);
+	/** Notes a key as down, and says whether it was up before: a key that was down is repeating. */
+	keyDown(key: number): boolean {
+		if (this.keys.has(key)) return false;
+		this.keys.add(key);
+		return true;
 	}
 
 	/** Forgets a key and says whether it was down. */
-	keyUp(code: number): boolean {
-		return this.keys.delete(code);
+	keyUp(key: number): boolean {
+		return this.keys.delete(key);
 	}
 
-	pointerDown(id: number, x: number, y: number, button: number): void {
-		this.pointers.set(id, { x, y, button });
+	pointerDown(id: number, x: number, y: number, button: number, flags: number): void {
+		this.pointers.set(id, { x, y, button, flags });
 	}
 
 	pointerMove(id: number, x: number, y: number): void {
@@ -39,15 +44,20 @@ export class HeldInput {
 		return this.pointers.delete(id);
 	}
 
+	/** Releases every key that is down. */
+	releaseKeys(keyUp: (key: number) => void): void {
+		for (const key of this.keys) keyUp(key);
+		this.keys.clear();
+	}
+
 	/** Releases everything that is down, pointers first, then keys. */
 	releaseAll(
-		pointerUp: (id: number, x: number, y: number, button: number) => void,
-		keyUp: (code: number) => void,
+		pointerUp: (id: number, x: number, y: number, button: number, flags: number) => void,
+		keyUp: (key: number) => void,
 	): void {
-		for (const [id, held] of this.pointers) pointerUp(id, held.x, held.y, held.button);
-		for (const code of this.keys) keyUp(code);
+		for (const [id, held] of this.pointers) pointerUp(id, held.x, held.y, held.button, held.flags);
 		this.pointers.clear();
-		this.keys.clear();
+		this.releaseKeys(keyUp);
 	}
 }
 

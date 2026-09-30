@@ -1,6 +1,6 @@
 //! The sources and buckets that every view culls and draws: the data texture and row of each
-//! source, the buckets with their two draws each, and the clusters of static batches, with the
-//! upload of their order.
+//! source, the buckets with a draw for each part of their mesh, and the clusters of static
+//! batches, with the upload of their order.
 
 use std::collections::TryReserveError;
 
@@ -15,10 +15,9 @@ use null3d_gpu::drawlist::{DrawList, sizes};
 use super::data::{TextureRows, write_rows};
 use super::ids;
 use crate::frame::{
-    FrameInput, HIDDEN, RecordError, SceneSettings, UploadArena, bucket_of, collect_bucket_keys,
-    put_u32,
+    FrameInput, HIDDEN, PipelineKey, PipelineTable, RecordError, SceneSettings, UploadArena,
+    bucket_of, collect_bucket_keys, put_u32,
 };
-use crate::materials::Shading;
 
 /// The data texture of a bucket's instances, as its draw record names it.
 pub(super) const RESIDENT: u32 = 0;
@@ -28,23 +27,30 @@ pub(super) const MULTI_DRAW_BLOCK_BYTES: u32 = sizes::MULTI_DRAW_RECORDS * sizes
 // A scene slot that draws nowhere has the same marker in the culling tables and the upload trims.
 const _: () = assert!(NO_BUCKET == HIDDEN);
 
-/// What makes a bucket, in draw order: the pipeline, the vertex page, the engine mesh and material
-/// ids, and the data texture.
-type BucketKey = (Shading, u32, u32, u32, u32);
+/// What makes a bucket, in draw order: the pipeline, the vertex page of the mesh's first part,
+/// the engine mesh and material ids, and the data texture.
+type BucketKey = (PipelineKey, u32, u32, u32, u32);
 
-/// One draw of a bucket key. Each key has two, next to each other: the draw whose index list
-/// entries are rows, then the draw whose entries are clusters of rows.
+/// One bucket of a bucket key. Each key has two, next to each other: the bucket whose index list
+/// entries are rows, then the bucket whose entries are clusters of rows.
 #[derive(Clone, Copy, Debug)]
 pub(super) struct Bucket {
-    pub(super) shading: Shading,
-    pub(super) page: u32,
     /// The engine material id.
     pub(super) material: u32,
     pub(super) group: u32,
-    pub(super) index_count: u32,
-    pub(super) first_index: u32,
     /// Instances per index list entry, as a shift: 0 for rows, [`CLUSTER_SHIFT`] for clusters.
     pub(super) shift: u32,
+}
+
+/// One draw: a part of a bucket's mesh, which draws every instance that the bucket lists.
+#[derive(Clone, Copy, Debug)]
+pub(super) struct Draw {
+    /// The id of its render pipeline.
+    pub(super) pipeline: u32,
+    pub(super) page: u32,
+    pub(super) bucket: u32,
+    pub(super) index_count: u32,
+    pub(super) first_index: u32,
 }
 
 /// A batch's place in the layout: its data texture, its first row there, its bucket of rows
@@ -86,6 +92,10 @@ pub(super) struct Layout {
     pub(super) cluster_rows: u32,
     pub(super) batches: Vec<BatchSlot>,
     pub(super) buckets: Vec<Bucket>,
+    /// Every bucket's draws, in bucket order. Buckets are sorted by pipeline and by the vertex page
+    /// of their mesh's first part, so the draws of one pipeline and page sit together, apart from
+    /// the later parts of meshes split over several pages.
+    pub(super) draws: Vec<Draw>,
     /// Each scene slot's bucket, shown or hidden, or `NO_BUCKET` for a slot that draws nowhere.
     pub(super) scene_buckets: Vec<u32>,
     /// Scratch for rebuilds: every bucket key with its source count, sorted and merged.
@@ -106,14 +116,15 @@ impl Layout {
         self.batches.iter().find(|slot| slot.id.raw() == target)
     }
 
-    /// Assigns every source to a data texture and a bucket, from the frame's world state. It
-    /// reuses the layout's tables, which grow only with the scene. A scene of more than `limit`
-    /// sources fails. With `multi_draw`, one block of draw records serves each multi-draw call;
-    /// else each draw has an aligned record of its own. The caller marks the layout built once
-    /// the room it needs is made.
+    /// Assigns every source to a data texture and a bucket, from the frame's world state, with
+    /// each draw's pipeline id from `pipelines`. It reuses the layout's tables, which grow only
+    /// with the scene. A scene of more than `limit` sources fails. With `multi_draw`, one block of
+    /// draw records serves each multi-draw call; else each draw has an aligned record of its own.
+    /// The caller marks the layout built once the room it needs is made.
     pub(super) fn rebuild(
         &mut self,
         settings: &SceneSettings,
+        pipelines: &mut PipelineTable,
         input: &FrameInput<'_>,
         limit: u32,
         multi_draw: bool,
@@ -151,10 +162,11 @@ impl Layout {
         self.cluster_rows = clusters.saturating_mul(CLUSTER_ROWS);
         self.largest_static = largest_static;
 
+        let meshes = settings.meshes();
         let key_of = |mesh: u32, material: u32, group: u32| -> Option<BucketKey> {
-            let shading = settings.shading_of(mesh, material)?;
-            let page = settings.meshes().mesh(mesh - 1)?.page;
-            Some((shading, page, mesh, material, group))
+            let pipeline = settings.pipeline_of(mesh, material)?;
+            let page = meshes.parts(meshes.mesh(mesh - 1)?).first()?.page;
+            Some((pipeline, page, mesh, material, group))
         };
         let group_of = |batch: &InstanceBatch| {
             if batch.is_dynamic() {
@@ -174,21 +186,25 @@ impl Layout {
         );
 
         self.buckets.clear();
-        for &((shading, page, mesh, material, group), _) in &self.key_counts {
-            let slot = settings
-                .meshes()
-                .mesh(mesh - 1)
-                .expect("keys name known meshes");
+        self.draws.clear();
+        for &((pipeline, _, mesh, material, group), _) in &self.key_counts {
+            let slot = meshes.mesh(mesh - 1).expect("keys name known meshes");
+            let pipeline = pipelines.id(pipeline);
             for shift in [0, CLUSTER_SHIFT] {
+                let bucket = self.buckets.len() as u32;
                 self.buckets.push(Bucket {
-                    shading,
-                    page,
                     material,
                     group,
-                    index_count: slot.index_count,
-                    first_index: slot.first_index,
                     shift,
                 });
+                self.draws
+                    .extend(meshes.parts(slot).iter().map(|part| Draw {
+                        pipeline,
+                        page: part.page,
+                        bucket,
+                        index_count: part.index_count,
+                        first_index: part.first_index,
+                    }));
             }
         }
         // A key's bucket of rows; its bucket of clusters is the next one.
@@ -208,38 +224,37 @@ impl Layout {
         }
 
         // The ring slot of draw records: one block per multi-draw call, or one aligned record per
-        // bucket.
-        let buckets = self.buckets.len() as u32;
+        // draw.
         self.draws_slot_bytes = if multi_draw {
             let mut calls = 0;
             let mut start = 0;
-            while start < self.buckets.len() {
-                let run = run_end(&self.buckets, start) - start;
+            while start < self.draws.len() {
+                let run = run_end(&self.draws, start) - start;
                 calls += (run as u32).div_ceil(sizes::MULTI_DRAW_RECORDS);
                 start += run;
             }
             calls.max(1) * MULTI_DRAW_BLOCK_BYTES
         } else {
-            buckets.max(1) * OFFSET_ALIGNMENT
+            (self.draws.len() as u32).max(1) * OFFSET_ALIGNMENT
         };
         self.room = CullRoom {
             rows: resident.saturating_add(streamed),
             runs,
             by_row: self.scene_rows.div_ceil(CULL_CHUNK),
-            buckets,
+            buckets: self.buckets.len() as u32,
         };
         Ok(())
     }
 }
 
-/// The end of the run of buckets that starts at `start`: the buckets that share its pipeline and
+/// The end of the run of draws that starts at `start`: the draws that share its pipeline and
 /// vertex page.
-pub(super) fn run_end(buckets: &[Bucket], start: usize) -> usize {
-    let first = buckets[start];
-    buckets[start..]
+pub(super) fn run_end(draws: &[Draw], start: usize) -> usize {
+    let first = draws[start];
+    draws[start..]
         .iter()
-        .position(|b| b.shading != first.shading || b.page != first.page)
-        .map_or(buckets.len(), |n| start + n)
+        .position(|d| d.pipeline != first.pipeline || d.page != first.page)
+        .map_or(draws.len(), |n| start + n)
 }
 
 /// A static batch's clusters, kept across layout rebuilds by the batch's id.

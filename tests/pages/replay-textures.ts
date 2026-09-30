@@ -340,6 +340,7 @@ function drawList(): TestMemory {
 			depth,
 			samples,
 			G.STATE_CULL_NONE,
+			0,
 		);
 	pipeline(PIPELINE.depth, TEMPLATE_SOLID, G.FORMAT_NONE, G.FORMAT_DEPTH32_FLOAT);
 	pipeline(PIPELINE.rgba, TEMPLATE_SOLID, G.FORMAT_RGBA8_UNORM, G.FORMAT_NONE);
@@ -546,7 +547,8 @@ function drawWebGL2(memory: TestMemory, image: ImageBitmap): Drawn {
 	gl.renderbufferStorage(gl.RENDERBUFFER, gl.RGBA8, SIZE, SIZE);
 	gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
 	gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.RENDERBUFFER, color);
-	const backend = new WebGL2Backend(gl, canvas, true);
+	// Reversed depth, as on WebGPU, so every path draws the same reference image.
+	const backend = new WebGL2Backend(gl, canvas, true, 'reversed');
 	backend.canvasTarget = { framebuffer, width: SIZE, height: SIZE };
 	const glsl = SHADERS.test_textures.webgl2.glsl;
 	if (!glsl) throw new Error('the texture test shader has no WebGL2 build');

@@ -56,7 +56,7 @@ export type {
 	ThreadStats,
 } from './page/frame-stats';
 export type { HeldFrame, HoldFailure, HoldResult } from './page/hold';
-export type { LatencyMode } from './page/switches';
+export type { DepthMode, LatencyMode } from './page/switches';
 export type { Tier } from './render/renderer';
 export type { ColorInput } from './scene/color';
 export type {
@@ -65,6 +65,7 @@ export type {
 	Material,
 	MaterialOptions,
 	Materials,
+	MeshArrays,
 	MeshGeometry,
 	SphereOptions,
 } from './scene/resources';
@@ -96,6 +97,7 @@ export type {
 	SketchSetup,
 } from './sketch/define-sketch';
 export { defineSketch } from './sketch/define-sketch';
+export type { Input, InputActions, InputPointer, InputTouch } from './sketch/input';
 export type { WorkerProbe } from './workers/probe-worker';
 
 /**

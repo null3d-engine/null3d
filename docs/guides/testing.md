@@ -1,14 +1,14 @@
 ---
 id: guides/testing
 title: Testing your sketch
-status: planned
+status: experimental
 since: "0.1"
 summary: "Hold mode; image tests; reading results; frames that stay the same on every run."
 ---
 
 # Testing your sketch
 
-> Planned for null3D 0.1. No release has these APIs yet, so coding agents must not use them.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart LR
@@ -103,6 +103,7 @@ A live engine logs an error in `onUpdate` and carries on. Hold mode stops instea
 
 - Move things with `time.now` and the `dt` that `onUpdate` receives. `Date.now()` and `performance.now()` change from run to run.
 - Use `math.random` or `Math.random`: hold mode seeds both. Random numbers from another source, such as `crypto.getRandomValues`, are not seeded.
+- Expect no input. In hold mode, the sketch gets none: every key and button stays up, and the pointer stays at the canvas's top-left corner.
 - Finish loading in the setup. Await every asset there, because the hold starts when the setup's promise resolves.
 - Pass test settings in the sketch module's address, such as `new URL('./sketch.ts?view=harbor', import.meta.url)`, and read them in the sketch with `new URL(import.meta.url).searchParams`. The page's messages reach the sketch only after the hold, because `createEngine` resolves after it.
 - Keep a reference image per GPU tier, and force the tier with `?gpu=webgpu`, `?gpu=compat` or `?gpu=webgl2`. The tiers can differ slightly at edges.
@@ -114,6 +115,7 @@ A live engine logs an error in `onUpdate` and carries on. Hold mode stops instea
 | --- | --- |
 | `?hold=1.5` | Hold mode at 1.5 seconds of sketch time; a bare `?hold` holds at the `hold` option's time, or at 0 |
 | `?gpu=webgpu`, `?gpu=compat`, `?gpu=webgl2` | Force a GPU tier, where the device has it |
+| `?depth=reversed`, `?depth=reversed-gl`, `?depth=standard` | Force a WebGL2 depth mode. `reversed-gl` draws as browsers without the `EXT_clip_control` extension do, such as Firefox |
 | `?threads=off` | The single-threaded build |
 | `?render=main` | Draw on the page's main thread |
 | `?latency=pipelined`, `?latency=low` | Pick the latency mode |

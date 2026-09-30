@@ -1,20 +1,98 @@
 ---
 id: api/engine
 title: "Page API: createEngine"
-status: planned
+status: experimental
 since: "0.1"
 summary: "createEngine options; engine.postToSketch, capture, labels, requestPointerLock, capabilities, destroy."
 ---
 
-<!-- null3d:placeholder -->
-
 # Page API: createEngine
 
-> Planned for null3D 0.1. No release has these APIs yet, so coding agents must not use them. The reference below lists the APIs the engine has now. The rest of the page is not written yet.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. The `createEngine` options `preset`, `transparent` and `sketchThread`, and `engine.capture`, are not built yet, so coding agents must not use them.
 
-This page will cover: createEngine options; engine.postToSketch, capture, labels, requestPointerLock, capabilities, destroy.
+`createEngine` starts the engine on a canvas and runs a sketch. It returns an `Engine`, the page's handle on the running engine. The page keeps the HTML, and the sketch builds the scene in a worker of its own.
+
+```ts
+// page.ts
+import { createEngine } from '@null3d/engine';
+
+const canvas = document.querySelector('canvas')!;
+try {
+  const engine = await createEngine({
+    canvas,
+    sketch: new URL('./sketch.ts', import.meta.url),
+    onProgress: (stage) => console.log('start:', stage), // core, sketch, first-frame
+  });
+  engine.onFailure((error) => console.error(error.code, error.message));
+  await engine.firstFrame; // the first frame is on the screen: remove the loading screen
+} catch (error) {
+  // The browser cannot run the engine: show the page without the scene.
+}
+```
+
+## The start
+
+`createEngine` tests what the browser offers, and picks the build and the GPU path from those tests, never from browser or GPU names. It starts the engine's threads, loads the sketch module and runs the sketch's setup. It resolves once the setup has run, and `engine.firstFrame` resolves once the GPU has finished the first frame.
+
+`onProgress` reports each stage of the start: `core` once the engine core is compiled and the GPU paths are tested, `sketch` after the sketch's setup, and `first-frame`. An `AbortSignal` in `signal` cancels a start in progress: `createEngine` then stops the engine's threads and rejects with the signal's reason.
+
+`createEngine` rejects with an `EngineError` when the engine cannot start:
+
+| Code | Cause |
+| --- | --- |
+| [E1303](../errors/E1303.md) | The browser runs WebAssembly without SIMD. |
+| [E1301](../errors/E1301.md) | The browser has no usable GPU path, or no path that `gpu` or `?gpu=` asks for. |
+| [E1406](../errors/E1406.md) | A file of the engine core did not download. |
+| [E1109](../errors/E1109.md) | The browser refused the engine's memory, even after about 3 seconds of tries. |
+| [E1401](../errors/E1401.md) | The sketch module's default export is not `defineSketch(...)`. |
+| [E1405](../errors/E1405.md) | An engine thread did not start. |
+
+An error that the sketch's setup throws also rejects the start ([Sketch API](sketch.md#the-setup-function)).
+
+## Options
+
+`canvas` and `sketch` are required. The canvas takes its size from CSS, and `sketch` is the address of the sketch module, usually `new URL('./sketch.ts', import.meta.url)`.
+
+| Option | Default | What it does |
+| --- | --- | --- |
+| `maxPixelRatio` | 2 | Caps the screen's pixel ratio that the engine draws at |
+| `gpu` | `'auto'` | Forces a GPU path, for tests only. The `?gpu=` switch in the page's address wins over it. |
+| `powerPreference` | `'high-performance'` | Picks the GPU on a device that has two. `'low-power'` saves battery. |
+| `latency` | `'pipelined'` | The latency mode, `'pipelined'` or `'low'`: [Architecture](../concepts/architecture.md) |
+| `onProgress` | None | Reports each stage of the start |
+| `onSketchMessage` | None | Receives the sketch's messages from the start of its setup: [Messages](page.md) |
+| `signal` | None | Cancels the start |
+| `hold` | None | Holds the sketch at a time for image tests: [Testing your sketch](../guides/testing.md) |
+
+## What the engine reports
+
+- `engine.capabilities` gives the GPU path (`tier`), whether the engine runs threaded, and the optional features and limits of the GPU path. It also gives the depth mode, and the most objects and instance rows that the device draws (`maxInstances`). [GPU tiers and backends](../concepts/backends.md) explains each.
+- `engine.mode` gives the build, the latency mode, the thread that draws, the number of job workers, and the held time in hold mode.
+- `engine.report` holds every result of the start's tests, as plain JSON.
+
+## The running engine
+
+- `setPaused(true)` stops the sketch's frames, and `setPaused(false)` resumes them. The first step after a pause is 0 seconds.
+- `detach()` takes the canvas off the page and pauses the engine, and `attach(container)` puts it back. Use them when a single-page app leaves the view with the canvas and comes back. The engine keeps its threads, its GPU resources and the scene.
+- `onFailure(handler)` receives a failure after the start: a GPU that the engine could not get back ([E1302](../errors/E1302.md)), or an engine thread that failed ([E1404](../errors/E1404.md)). Without a handler, the engine logs the failure to the console.
+- `simulateGpuLoss()` acts out a loss of the GPU, so you can test how the page handles one. The engine starts a new GPU device and draws the whole scene again.
+- `measure(seconds)` measures the running engine: CPU time per frame by thread, GPU time, frame intervals, uploads, draw calls, memory and load time. [Performance guide](../guides/performance.md) explains the numbers.
+- `captureFrame()` draws one frame offscreen and returns its pixels as RGBA8 rows, top row first.
+- `postToSketch` and `onSketchMessage` send and receive [messages](page.md).
+- `destroy()` stops the engine and its threads, and the engine cannot start again. Wait for its promise before you start another engine on the same page, because the browser frees the engine's memory only then.
+
+Each `on...` call returns a function that removes its handler. `engine.labels` and `engine.requestPointerLock` come in null3D 0.2.
+
+## Related pages
+
+- [Your first scene](../getting-started/first-scene.md): a page and a sketch that run together.
+- [Sketch API: defineSketch and the context](sketch.md): the sketch's side of the engine.
+- [Hosting and cross-origin isolation](../getting-started/hosting.md): the headers that let the engine run threaded.
+- [3D scenes on content pages](../guides/content-pages.md): fallbacks, load deadlines and pausing on product pages.
 
 ## API reference
+
+<!-- null3d:api:start -->
 
 ### `CapabilityReport`
 
@@ -43,6 +121,14 @@ function createEngine(options: EngineOptions): Promise<Engine>
 
 Starts the engine on the page. It tests the device, picks the build and the GPU path, starts the workers, and runs the sketch module. In hold mode it also steps the sketch to the held time, then draws that frame and reads it back. It publishes the frame, or the error that stopped it, as `window.__null3dHold` for test tools.
 
+### `DepthMode`
+
+```ts
+type DepthMode = 'reversed' | 'reversed-gl' | 'standard';
+```
+
+How the GPU path stores depth. In `reversed` depth, the near plane stores 1 and the far plane 0, in a 32-bit float depth buffer. That keeps depth precise far from the camera. WebGPU always draws it. WebGL2 draws it where the browser has the `EXT_clip_control` extension, which gives WebGL2 the depth range from 0 to 1 that WebGPU has. The `reversed-gl` mode keeps the same order, but in WebGL2's own depth range from -1 to 1, which loses most of the precision. In `standard` depth, the near plane stores 0, as in three.js's WebGL renderer.
+
 ### `Engine`
 
 Interface `Engine`.
@@ -58,7 +144,7 @@ A running engine, as `createEngine` returns it.
 | `postToSketch(name: string, data?: unknown, transfer?: Transferable[]): void` | Sends a message to the sketch, which receives it through `ctx.page.onMessage`. |
 | `onSketchMessage(handler: (name: string, data: unknown) => void): () => void` | Receives the messages the sketch sends with `ctx.page.post`. When no handler listened from the start, the first handler also receives the messages sent before it was registered. Returns a function that removes the handler. |
 | `onFailure(handler: (error: EngineError) => void): () => void` | Receives a failure after the engine started: the browser took the GPU away and the engine could not carry on with a new device (E1302), or an engine thread failed (E1404). The engine reports each failure once. Without a handler, it logs the failure to the console. Returns a function that removes the handler. |
-| `setPaused(paused: boolean): void` | Pauses or resumes the sketch's frames. |
+| `setPaused(paused: boolean): void` | Pauses or resumes the sketch's frames. A pause also stops input: the sketch sees every key and button that was down come up, and input that comes during the pause never reaches it. |
 | `detach(): void` | Takes the canvas off the page and pauses the engine. The engine keeps its threads, its GPU resources and the scene, and stops reading input. Use it when a single-page app leaves the view that shows the canvas, and `attach` when the view comes back. |
 | `attach(container: Element): void` | Puts the canvas at the end of `container` and resumes the engine where it stopped, unless `setPaused(true)` paused it. |
 | `measure(seconds: number): Promise<FrameMetrics>` | Measures the running engine for a number of seconds, then returns CPU time per frame by thread and phase, GPU time, frame intervals, uploads, draw calls, memory and load time. |
@@ -79,6 +165,7 @@ The GPU path the engine chose, and what it offers.
 | `features: string[]` | The optional features of the GPU path: WebGPU features, or the WebGL2 extensions present. |
 | `limits: Record<string, number \| null>` | The WebGPU limits, or an empty object on WebGL2. |
 | `maxInstances: number` | The most objects and instance rows, counted together, that a scene can draw on this device. On WebGPU every device draws at least 2,097,152, and a device with larger GPU buffers draws more, up to 8,388,480. On WebGL2 the number follows the largest texture the device allows: 2,097,152 at 4,096 pixels, and 1,048,576 at the 2,048 that every device allows. Engine memory can run out first: see E1109. |
+| `depth: DepthMode` | How the GPU path stores depth. WebGPU, and WebGL2 in browsers with `EXT_clip_control`, draw `reversed` depth, which stays precise far from the camera. |
 
 ### `EngineError`
 
@@ -122,7 +209,7 @@ Options for `createEngine`.
 | `onProgress?: (stage: StartupStage) => void` | Called as the start reaches each stage, in this order: `core` once the engine core is compiled and the GPU paths are tested, `sketch` once the sketch's setup has run, and `first-frame` once the GPU has finished the first frame. |
 | `onSketchMessage?: (name: string, data: unknown) => void` | Receives the messages the sketch sends with `ctx.page.post`, from the start of the sketch's setup. Use it for progress that the sketch reports while it loads. `engine.onSketchMessage` adds more handlers once the engine has started. |
 | `signal?: AbortSignal` | Cancels a start in progress, for example when the user leaves the page. `createEngine` then stops the engine's threads and rejects with the signal's reason. |
-| `hold?: number` | Starts the engine in hold mode for image tests, held at this many seconds of sketch time. The engine steps the sketch from 0 to the time in fixed steps of 1/60 second, with no frame loop. `math.random` and `Math.random` in the sketch's thread give the same numbers on every run. The engine then draws that one frame and reads it back, and `createEngine` resolves. The `?hold=<seconds>` switch overrides this time, and a bare `?hold` holds at it, or at 0 without it. |
+| `hold?: number` | Starts the engine in hold mode for image tests, held at this many seconds of sketch time. The engine steps the sketch from 0 to the time in fixed steps of 1/60 second, with no frame loop. `math.random` and `Math.random` in the sketch's thread give the same numbers on every run, and the sketch gets no input: every key and button stays up. The engine then draws that one frame and reads it back, and `createEngine` resolves. The `?hold=<seconds>` switch overrides this time, and a bare `?hold` holds at it, or at 0 without it. |
 
 ### `ErrorCode`
 
@@ -139,6 +226,8 @@ type ErrorCode =
 	| 'E1109'
 	| 'E1203'
 	| 'E1204'
+	| 'E1205'
+	| 'E1206'
 	| 'E1301'
 	| 'E1302'
 	| 'E1303'
@@ -276,3 +365,5 @@ What a dedicated worker can do, in `CapabilityReport.worker`. A render worker ne
 | `offscreenWebGL2: boolean` | True when a worker can draw with WebGL2 into an `OffscreenCanvas`. |
 | `offscreenWebGPU: boolean` | True when a worker can draw with WebGPU into an `OffscreenCanvas`. |
 | `error?: string` | Why the probe failed, when it did. |
+
+<!-- null3d:api:end -->

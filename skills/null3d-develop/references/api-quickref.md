@@ -57,7 +57,7 @@ const image = await engine.capture();             // Blob of the next complete f
 // engine.registerVideo and textures.fromVideo come after 1.0; recipe 14 shows the workaround
 engine.labels.bind('hp-12', element);             // (0.2) HTML label that follows an object
 await engine.requestPointerLock();                // (0.2) for first-person controls
-engine.capabilities;  // { tier: 'webgpu' | 'webgpu-compat' | 'webgl2', threaded, features, limits, maxInstances }
+engine.capabilities;  // { tier: 'webgpu' | 'webgpu-compat' | 'webgl2', threaded, features, limits, maxInstances, depth }
 engine.setPaused(true);                           // the first step after resuming counts no time
 engine.onFailure((error) => { /* error.code: E1302 GPU lost for good, E1404 engine thread failed */ });
 engine.simulateGpuLoss();                         // acts out a driver reset; the engine recovers
@@ -194,13 +194,17 @@ Units match three.js r155 and later: directional intensity in lux-like units, po
 
 ```ts
 const mesh = geometry.fromArrays({
-  positions, normals, uvs, uvs1, colors, tangents,   // Float32Arrays
-  indices,                                            // Uint16Array or Uint32Array
-  computeNormals: false, computeTangents: false,
+  positions,                // 3 numbers per vertex: a Float32Array or a number[]
+  normals,                  // 3 per vertex, or computeNormals: true instead
+  uvs, uvs1, colors,        // 2, 2, and 3 or 4 per vertex; colors are linear
+  tangents,                 // 4 per vertex, or computeTangents: true (needs uvs)
+  indices,                  // Uint16Array, Uint32Array or number[]; omit for one triangle per 3 vertices
 });
 mesh.updateVertices('positions', data, start, count);  // (0.2) vertices that change at run time
 mesh.destroy();
 ```
+
+A mesh keeps the attributes it gets, and meshes with the same attributes share GPU buffers, so pass only the attributes the materials use. Bad arrays throw E1206. `api/geometry` covers vertex formats and meshes over 65,535 vertices.
 
 ## 9. Materials (`api/materials`)
 
@@ -305,12 +309,13 @@ Hit objects are the same wrappers you created; `hit.instance` is the row index f
 ## 14. Input (`api/input`) and controls (`api/controls`)
 
 ```ts
-input.pointer;          // { x, y (CSS pixels), ndcX, ndcY, buttons, dx, dy, wheel, isTouch }
-input.isDown('KeyW');   // KeyboardEvent.code names, mouse 'Mouse0', gamepad 'GamepadA'
-input.wasPressed('Space'); input.wasReleased('Space');
+input.pointer;          // { x, y (CSS pixels), ndcX, ndcY, buttons, dx, dy (this frame), wheel (this frame), isTouch }
+input.isDown('KeyW');   // KeyboardEvent.code names; 'Mouse0' to 'Mouse4' (Mouse0 is also a tap); 'GamepadA'
+input.wasPressed('Space'); input.wasReleased('Space');   // true for one frame; a tap between frames gives both
+input.value('GamepadRT');                // 0 to 1: triggers and stick directions such as 'GamepadLeftStickLeft'
 input.actions.define({ jump: ['Space', 'GamepadA'], fire: ['Mouse0', 'GamepadRT'] });
-input.isDown('jump');
-input.touches;          // active touches, for custom gestures
+input.isDown('jump');   // actions work in every input call; an unknown name throws E1205
+input.touches;          // fingers on the canvas, oldest first: { id, x, y, dx, dy }; changes in place
 
 import { createOrbitControls } from '@null3d/controls';
 const controls = createOrbitControls(ctx, camera, {
@@ -320,6 +325,8 @@ const controls = createOrbitControls(ctx, camera, {
 // in onUpdate: controls.update(dt)
 // also createMapControls; createFlyControls and createFirstPersonControls (0.2)
 ```
+
+Input changes once per frame, before `onUpdate`. Give a canvas that takes touch gestures `touch-action: none` in its CSS, or the browser scrolls the page and cancels the touches.
 
 ## 15. Post-processing (`api/post`)
 

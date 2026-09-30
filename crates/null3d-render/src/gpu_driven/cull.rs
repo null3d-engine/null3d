@@ -1,7 +1,8 @@
 //! The culling passes: one compute dispatch per view. Each thread tests one source's bounding
 //! sphere against the view's frustum, appends a visible source to its bucket's slice of the view's
-//! compacted instance buffer, and counts it in the bucket's indirect draw, which the view's bundle
-//! then draws. Every view reads the same sources and bucket tables, and writes buffers of its own.
+//! compacted instance buffer, and counts it in each of the bucket's indirect draws, which the
+//! view's bundle then draws. Every view reads the same sources and bucket tables, and writes
+//! buffers of its own.
 
 use null3d_gpu::drawlist::{
     DrawList, Op, buffer_usage as usage, layout as bind_layout, resource_kind, sizes, template,
@@ -77,7 +78,7 @@ impl Culling {
         binding_bytes: u32,
     ) -> Result<(), RecordError> {
         let buffers = &mut self.views[view.index()];
-        let buckets = layout.buckets.len() as u32;
+        let draws = layout.draws.len() as u32;
         let needed = [
             (
                 ids::visible(view),
@@ -88,7 +89,7 @@ impl Culling {
             (
                 ids::indirect(view),
                 &mut buffers.indirect,
-                buckets.max(1) * INDIRECT_BYTES,
+                draws.max(1) * INDIRECT_BYTES,
                 usage::INDIRECT | usage::STORAGE | usage::COPY_DST,
             ),
         ];
@@ -146,7 +147,7 @@ impl Culling {
         params[24] = layout.sources;
         let (at, bytes) = arena.push(words_as_bytes(&params))?;
         list.push(Op::WriteBuffer, &[ids::cull_params(view), 0, at, bytes])?;
-        if !layout.buckets.is_empty() {
+        if !layout.draws.is_empty() {
             let (at, bytes) = arena.push(words_as_bytes(&layout.indirect_template))?;
             list.push(Op::WriteBuffer, &[ids::indirect(view), 0, at, bytes])?;
         }

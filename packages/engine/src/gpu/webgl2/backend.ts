@@ -9,12 +9,19 @@
 // The backend flips viewport and scissor rectangles, which the draw list gives from the top, so each
 // covers the same part of the image as on WebGPU. Writes, uploads and copies address texels as
 // stored, the same on both paths.
+//
+// Draw lists give depth as WebGPU's reversed depth. The backend draws it in its depth mode, and
+// turns clear values and viewport depth ranges around for standard depth.
 
 import * as G from '../../generated/gpu';
+import type { DepthMode } from '../../page/switches';
+import { forEachVertexAttribute, vertexStride } from '../vertex-format';
+import { type DepthSetup, setDepthMode } from './depth';
 import {
 	createProgram,
 	engineTemplates,
 	type GlslTemplate,
+	type Pipeline,
 	type Program,
 	prepareProgram,
 	SLOTS_PER_GROUP,
@@ -87,11 +94,12 @@ interface BindEntry {
 	size: number;
 }
 
-/** A vertex page's vertex array object, and the buffers it was made for. */
+/** A vertex page's vertex array object, and the buffers and vertex format it was made for. */
 interface VertexArray {
 	vao: WebGLVertexArrayObject;
 	vertices: WebGLBuffer;
 	indices: WebGLBuffer;
+	format: number;
 }
 
 /** How GL stores each texture format, by format code. */
@@ -154,7 +162,9 @@ export class WebGL2Backend {
 	private readonly samplers: (WebGLSampler | undefined)[] = [];
 	/** Images the page handed over for uploads, by id. */
 	private readonly images: (ImageBitmap | undefined)[] = [];
-	private readonly programs: (Program | undefined)[] = [];
+	private readonly pipelines: (Pipeline | undefined)[] = [];
+	/** The programs of the templates and permutations in use, which their pipelines share. */
+	private readonly programs = new Map<string, Program>();
 	private readonly templates: (GlslTemplate | undefined)[] = engineTemplates();
 	private readonly bindGroups: (BindEntry[] | undefined)[] = [];
 	private readonly vertexArrays: (VertexArray | undefined)[] = [];
@@ -166,6 +176,7 @@ export class WebGL2Backend {
 	private readonly anisotropic: EXT_texture_filter_anisotropic | null;
 	private readonly maxAnisotropy: number;
 	private readonly maxSamples: number;
+	private readonly depth: DepthSetup;
 	/** A vertex array with no attributes, for draws whose vertex shaders make their vertices. */
 	private shaderVertices: WebGLVertexArrayObject | null = null;
 	/** The framebuffer through which copies read their source. */
@@ -210,9 +221,9 @@ export class WebGL2Backend {
 	private depthTest = false;
 	private depthMask = true;
 	// Fractions passed to WebGL become new number objects, so the clear values and the depth range
-	// are set only when they change.
+	// are set only when they change. The depth values are the draw list's, before any turn.
 	private readonly clearColor = [0, 0, 0, 0];
-	private clearDepth = 1;
+	private clearDepth: number;
 	private readonly viewport = [0, 0, 0, 0];
 	private depthNear = 0;
 	private depthFar = 1;
@@ -220,7 +231,7 @@ export class WebGL2Backend {
 	private readonly scissor = [0, 0, 0, 0];
 
 	// The pass and draw state the list set last.
-	private current: Program | undefined;
+	private current: Pipeline | undefined;
 	private vertexBuffer = 0;
 	private indexBuffer = 0;
 	private indexType = 0;
@@ -234,12 +245,13 @@ export class WebGL2Backend {
 
 	/**
 	 * `sharedUploads` is false where WebGL refuses views on shared memory, so uploads and multi-draw
-	 * arrays go through copies.
+	 * arrays go through copies. `depthMode` is how the backend stores depth.
 	 */
 	constructor(
 		private readonly gl: WebGL2RenderingContext,
 		private readonly canvas: OffscreenCanvas | HTMLCanvasElement,
 		private readonly sharedUploads: boolean,
+		depthMode: DepthMode,
 	) {
 		this.multiDraw = gl.getExtension('WEBGL_multi_draw');
 		gl.getExtension('KHR_parallel_shader_compile');
@@ -259,8 +271,9 @@ export class WebGL2Backend {
 		(this.minFilters[G.FILTER_LINEAR] as number[])[G.FILTER_NEAREST] = gl.LINEAR_MIPMAP_NEAREST;
 		(this.minFilters[G.FILTER_LINEAR] as number[])[G.FILTER_LINEAR] = gl.LINEAR_MIPMAP_LINEAR;
 		this.indexType = gl.UNSIGNED_SHORT;
-		// Depth is reversed on both GPU paths: 1 at the near plane, 0 at the far plane.
-		gl.depthFunc(gl.GREATER);
+		this.depth = setDepthMode(gl, depthMode);
+		// GL clears depth to 1 until told otherwise, which is the draw list's 0 in standard depth.
+		this.clearDepth = this.depth.standard ? 0 : 1;
 		// Texel rows in engine memory are tightly packed, whatever their width.
 		gl.pixelStorei(gl.UNPACK_ALIGNMENT, 1);
 	}
@@ -374,13 +387,12 @@ export class WebGL2Backend {
 					break;
 				}
 				case G.OP_CREATE_RENDER_PIPELINE:
-					this.programs[words[a] as number] = createProgram(
-						gl,
-						this.need(this.templates, words[a + 1] as number, 'render pipeline template'),
-						words[a + 2] as number,
-						words[a + 4] as number,
-						words[a + 6] as number,
-					);
+					this.pipelines[words[a] as number] = {
+						program: this.programOf(words[a + 1] as number, words[a + 2] as number),
+						cullNone: ((words[a + 6] as number) & G.STATE_CULL_NONE) !== 0,
+						depth: words[a + 4] !== G.FORMAT_NONE,
+						vertexFormat: words[a + 7] as number,
+					};
 					this.counts.pipelines++;
 					break;
 				case G.OP_CREATE_BIND_GROUP: {
@@ -422,7 +434,7 @@ export class WebGL2Backend {
 					);
 					break;
 				case G.OP_SET_PIPELINE:
-					this.setPipeline(this.need(this.programs, words[a] as number, 'render pipeline'));
+					this.setPipeline(this.need(this.pipelines, words[a] as number, 'render pipeline'));
 					break;
 				case G.OP_SET_BIND_GROUP:
 					this.setBindGroup(words, a);
@@ -472,6 +484,18 @@ export class WebGL2Backend {
 			}
 			i += length;
 		}
+	}
+
+	/** The program of a template and permutation, which starts compiling the first time. */
+	private programOf(template: number, permutation: number): Program {
+		const key = `${template} ${permutation}`;
+		let program = this.programs.get(key);
+		if (!program) {
+			const glsl = this.need(this.templates, template, 'render pipeline template');
+			program = createProgram(this.gl, glsl, permutation);
+			this.programs.set(key, program);
+		}
+		return program;
 	}
 
 	/** Makes the staging buffer hold at least `bytes`. */
@@ -978,7 +1002,7 @@ export class WebGL2Backend {
 			}
 			if (this.clearDepth !== floats[a + 7]) {
 				this.clearDepth = floats[a + 7] as number;
-				gl.clearDepth(this.clearDepth);
+				gl.clearDepth(this.depth.standard ? 1 - this.clearDepth : this.clearDepth);
 			}
 			clear |= gl.DEPTH_BUFFER_BIT;
 		}
@@ -1038,7 +1062,8 @@ export class WebGL2Backend {
 
 	private setDepthRange(near: number, far: number): void {
 		if (this.depthNear === near && this.depthFar === far) return;
-		this.gl.depthRange(near, far);
+		if (this.depth.standard) this.gl.depthRange(1 - far, 1 - near);
+		else this.gl.depthRange(near, far);
 		this.depthNear = near;
 		this.depthFar = far;
 	}
@@ -1064,20 +1089,19 @@ export class WebGL2Backend {
 		scissor[3] = height;
 	}
 
-	private setPipeline(p: Program): void {
+	private setPipeline(p: Pipeline): void {
 		const gl = this.gl;
-		if (!p.ready) {
-			prepareProgram(gl, p);
-			this.program = p.program;
+		const program = p.program;
+		if (!program.ready) {
+			prepareProgram(gl, program, this.depth);
+			this.program = program.program;
 		}
-		if (this.program !== p.program) {
-			gl.useProgram(p.program);
-			this.program = p.program;
+		if (this.program !== program.program) {
+			gl.useProgram(program.program);
+			this.program = program.program;
 		}
-		if (this.current !== p) {
-			this.current = p;
-			this.samplersChanged = true;
-		}
+		if (this.current?.program !== program) this.samplersChanged = true;
+		this.current = p;
 		const cull = !p.cullNone;
 		if (cull !== this.cullFace) {
 			if (cull) gl.enable(gl.CULL_FACE);
@@ -1144,33 +1168,55 @@ export class WebGL2Backend {
 		return this.shaderVertices;
 	}
 
-	/** Binds the vertex array of the current vertex and index buffers. */
+	/**
+	 * Binds the vertex array of the current vertex and index buffers, which holds every attribute
+	 * of the current pipeline's vertex format. A program reads the attributes it declares, and any
+	 * other location reads GL's constant default.
+	 */
 	private useMeshVertexArray(): void {
 		const gl = this.gl;
+		const p = this.current;
+		if (!p) throw new Error('draw list draws before it sets a pipeline');
+		const format = p.vertexFormat;
 		const vertices = this.need(this.buffers, this.vertexBuffer, 'buffer').buffer;
 		const indices = this.need(this.buffers, this.indexBuffer, 'buffer').buffer;
 		const cached = this.vertexArrays[this.vertexBuffer];
-		if (cached && cached.vertices === vertices && cached.indices === indices) {
+		if (
+			cached &&
+			cached.vertices === vertices &&
+			cached.indices === indices &&
+			cached.format === format
+		) {
 			this.useVertexArray(cached.vao);
 			return;
 		}
 		if (cached) gl.deleteVertexArray(cached.vao);
+		this.createMeshVertexArray(vertices, indices, format);
+	}
+
+	/**
+	 * Makes and binds the vertex array of the current vertex buffer. It runs only when the buffers
+	 * or the format change, and keeps its closure out of the function that every draw calls.
+	 */
+	private createMeshVertexArray(vertices: WebGLBuffer, indices: WebGLBuffer, format: number): void {
+		const gl = this.gl;
 		const vao = gl.createVertexArray();
 		if (!vao) throw new Error('WebGL2 could not create a vertex array');
 		this.useVertexArray(vao);
 		gl.bindBuffer(gl.ARRAY_BUFFER, vertices);
-		gl.enableVertexAttribArray(0);
-		gl.vertexAttribPointer(0, 3, gl.FLOAT, false, G.SIZE_VERTEX_STRIDE, 0);
-		gl.enableVertexAttribArray(1);
-		gl.vertexAttribPointer(1, 3, gl.FLOAT, false, G.SIZE_VERTEX_STRIDE, 12);
+		const stride = vertexStride(format);
+		forEachVertexAttribute(format, (location, floats, offset) => {
+			gl.enableVertexAttribArray(location);
+			gl.vertexAttribPointer(location, floats, gl.FLOAT, false, stride, offset);
+		});
 		gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indices);
-		this.vertexArrays[this.vertexBuffer] = { vao, vertices, indices };
+		this.vertexArrays[this.vertexBuffer] = { vao, vertices, indices, format };
 	}
 
 	/** Readies the current program for a draw: its first instance, and its units' samplers. */
 	private prepareDraw(firstInstance: number): void {
 		const gl = this.gl;
-		const p = this.current;
+		const p = this.current?.program;
 		if (!p) throw new Error('draw list draws before it sets a pipeline');
 		if (p.firstInstance && p.firstInstanceValue !== firstInstance) {
 			gl.uniform1ui(p.firstInstance, firstInstance);
@@ -1247,7 +1293,7 @@ export class WebGL2Backend {
 		for (let id = 0; id < this.textures.length; id++) this.destroyTexture(id);
 		for (let id = 0; id < this.samplers.length; id++) this.destroySampler(id);
 		for (const image of this.images) image?.close();
-		for (const p of this.programs) if (p) gl.deleteProgram(p.program);
+		for (const p of this.programs.values()) gl.deleteProgram(p.program);
 		for (const v of this.vertexArrays) if (v) gl.deleteVertexArray(v.vao);
 		if (this.shaderVertices) gl.deleteVertexArray(this.shaderVertices);
 		if (this.copyFramebuffer) gl.deleteFramebuffer(this.copyFramebuffer);

@@ -1,35 +1,18 @@
 //! The opaque passes: one scene pass per view, which replays the view's bundle. The bundle binds
 //! the view's frame uniform and draws every bucket from the view's compacted instances with the
 //! view's indirect draws, so the draws' first instance stays 0. It is recorded again only when the
-//! layout changes.
+//! layout or the mesh buffers change.
 
 use null3d_gpu::drawlist::{
     DrawList, Op, buffer_usage as usage, index_format, layout as bind_layout, resource_kind, sizes,
-    template,
 };
 
 use super::cull::INDIRECT_BYTES;
 use super::ids;
 use super::layout::Layout;
-use crate::frame::{RecordError, UploadArena};
+use crate::frame::{MeshBuffers, RecordError, UploadArena};
 use crate::frame_graph::{COLOR_FORMAT, DEPTH_FORMAT};
-use crate::materials::Shading;
 use crate::view::{ViewFrame, ViewId};
-
-/// Records the creation of the render pipelines, which draw into the scene's color and depth
-/// targets with `samples` samples.
-pub(super) fn create_pipelines(list: &mut DrawList, samples: u32) -> Result<(), RecordError> {
-    for (id, tmpl) in [
-        (ids::LIT, template::INSTANCED_LIT),
-        (ids::UNLIT, template::INSTANCED_UNLIT),
-    ] {
-        list.push(
-            Op::CreateRenderPipeline,
-            &[id, tmpl, 0, COLOR_FORMAT, DEPTH_FORMAT, samples, 0],
-        )?;
-    }
-    Ok(())
-}
 
 /// Records the creation of a view's frame uniform buffer, and of the group that binds it with the
 /// material table.
@@ -75,12 +58,14 @@ pub(super) fn upload(
     Ok(())
 }
 
-/// Records a view's bundle: every bucket of the layout, drawn from the view's compacted instances
-/// with its indirect draws, into targets with `samples` samples.
+/// Records a view's bundle: each draw of every bucket of the layout, with the bucket's slice of
+/// the view's compacted instances, from its mesh page's buffers in `meshes`, into targets with
+/// `samples` samples.
 pub(super) fn record_bundle(
     list: &mut DrawList,
     view: ViewId,
     layout: &Layout,
+    meshes: &MeshBuffers,
     samples: u32,
 ) -> Result<(), RecordError> {
     list.push(
@@ -88,20 +73,11 @@ pub(super) fn record_bundle(
         &[ids::bundle(view), COLOR_FORMAT, DEPTH_FORMAT, samples],
     )?;
     list.push(Op::SetBindGroup, &[0, ids::frame_group(view), 0])?;
-    list.push(Op::SetVertexBuffer, &[0, ids::VERTICES, 0, 0])?;
-    list.push(
-        Op::SetIndexBuffer,
-        &[ids::INDICES, index_format::UINT16, 0, 0],
-    )?;
-    let mut pipeline = None;
-    for (index, bucket) in layout.buckets.iter().enumerate() {
-        let wanted = match bucket.shading {
-            Shading::Lit => ids::LIT,
-            Shading::Unlit => ids::UNLIT,
-        };
-        if pipeline != Some(wanted) {
-            list.push(Op::SetPipeline, &[wanted])?;
-            pipeline = Some(wanted);
+    let (mut pipeline, mut page) = (None, None);
+    for bucket in &layout.buckets {
+        if pipeline != Some(bucket.pipeline) {
+            list.push(Op::SetPipeline, &[bucket.pipeline])?;
+            pipeline = Some(bucket.pipeline);
         }
         list.push(
             Op::SetVertexBuffer,
@@ -112,10 +88,19 @@ pub(super) fn record_bundle(
                 bucket.capacity.max(1) * sizes::INSTANCE_STRIDE,
             ],
         )?;
-        list.push(
-            Op::DrawIndexedIndirect,
-            &[ids::indirect(view), index as u32 * INDIRECT_BYTES],
-        )?;
+        for index in bucket.first_draw..bucket.first_draw + bucket.draws {
+            let draw = layout.draws[index as usize];
+            if page != Some(draw.page) {
+                let (vertices, indices) = meshes.ids(draw.page);
+                list.push(Op::SetVertexBuffer, &[0, vertices, 0, 0])?;
+                list.push(Op::SetIndexBuffer, &[indices, index_format::UINT16, 0, 0])?;
+                page = Some(draw.page);
+            }
+            list.push(
+                Op::DrawIndexedIndirect,
+                &[ids::indirect(view), index * INDIRECT_BYTES],
+            )?;
+        }
     }
     list.push(Op::EndBundle, &[])?;
     Ok(())

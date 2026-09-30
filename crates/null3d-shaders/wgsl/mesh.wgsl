@@ -1,15 +1,21 @@
 enable draw_index;
 
 // Meshes drawn by instance. The lit pipeline shades like three.js's MeshLambertMaterial, and the
-// unlit pipeline like its MeshBasicMaterial.
+// unlit pipeline like its MeshBasicMaterial. The texcoords pipeline shows each vertex's first
+// texture coordinates as red and green, for the engine's own tests of vertex formats.
+//
+// Vertex attributes take the fixed locations of the engine's vertex formats (drawlist.rs, module
+// `vertex`): the position at 0, the normal at 1 and the first texture coordinates at 2. Each
+// pipeline reads only the attributes its entry point declares, wherever the mesh's format puts
+// them.
 //
 // On WebGPU each instance brings three rows of its world matrix and its material id as
-// instance-rate vertex attributes, never through a storage buffer, so the same vertex stage runs
-// in WebGPU's compatibility mode. On WebGL2 (the WEBGL2 variants) the vertex shader finds its
-// instance in the frame's index list, directly or through a cluster of rows, reads the matrix rows
-// from a data texture, and takes the material from its draw's record. The DRAW_INDEX variant draws
-// many buckets in one multi-draw call and reads each draw's record by `gl_DrawID`; the other
-// variant gets one record per draw.
+// instance-rate vertex attributes, after the vertex attributes' locations, never through a storage
+// buffer, so the same vertex stage runs in WebGPU's compatibility mode. On WebGL2 (the WEBGL2
+// variants) the vertex shader finds its instance in the frame's index list, directly or through a
+// cluster of rows, reads the matrix rows from a data texture, and takes the material from its
+// draw's record. The DRAW_INDEX variant draws many buckets in one multi-draw call and reads each
+// draw's record by `gl_DrawID`; the other variant gets one record per draw.
 #import null3d::color
 #import null3d::globals::{Frame, Material}
 #import null3d::lighting
@@ -52,23 +58,37 @@ struct DrawTable {
 @group(2) @binding(3) var cluster_rows: texture_2d<u32>;
 #else
 @group(0) @binding(1) var<storage, read> materials: array<Material>;
+
+/// The instance's attributes: three rows of its world matrix, then its ids.
+struct InstanceIn {
+    @location(8) row0: vec4f,
+    @location(9) row1: vec4f,
+    @location(10) row2: vec4f,
+    @location(11) ids: vec4u,
+}
 #endif
 
+/// The vertex attributes of the lit and unlit pipelines.
 struct VertexIn {
     @location(0) position: vec3f,
     @location(1) normal: vec3f,
-#ifndef WEBGL2
-    @location(2) row0: vec4f,
-    @location(3) row1: vec4f,
-    @location(4) row2: vec4f,
-    @location(5) ids: vec4u,
-#endif
 }
 
 struct VertexOut {
     @builtin(position) clip: vec4f,
     @location(0) normal: vec3f,
     @location(1) @interpolate(flat, either) material: u32,
+}
+
+/// The vertex attributes of the texcoords pipeline.
+struct TexCoordsIn {
+    @location(0) position: vec3f,
+    @location(2) uv0: vec2f,
+}
+
+struct TexCoordsOut {
+    @builtin(position) clip: vec4f,
+    @location(0) uv0: vec2f,
 }
 
 /// One instance: the rows of its world matrix, its material, and whether it draws at all.
@@ -120,11 +140,46 @@ fn instance_of(record: vec4u, instance: u32) -> Instance {
 }
 #endif
 
+/// The instance that a vertex shader invocation draws.
+fn find_instance(
+#ifdef WEBGL2
+    instance: u32,
+#ifdef DRAW_INDEX
+    draw: u32,
+#endif
+#else
+    i: InstanceIn,
+#endif
+) -> Instance {
+#ifdef WEBGL2
+#ifdef DRAW_INDEX
+    return instance_of(draws.items[draw], instance);
+#else
+    return instance_of(draws.items[0], instance);
+#endif
+#else
+    return Instance(i.row0, i.row1, i.row2, i.ids.x, true);
+#endif
+}
+
+/// A position in clip space: the instance's world matrix, then the camera. An instance that draws
+/// nothing lands outside the clip volume on every axis, so the whole triangle is clipped away.
+fn clip_position(found: Instance, position: vec3f) -> vec4f {
+    let p = vec4f(position, 1.0);
+    if !found.drawn {
+        return vec4f(2.0, 2.0, 2.0, 1.0);
+    }
+    return frame.view_proj
+        * vec4f(dot(found.row0, p), dot(found.row1, p), dot(found.row2, p), 1.0);
+}
+
 @vertex
 fn vs(
     v: VertexIn,
 #ifdef WEBGL2
     @builtin(instance_index) instance: u32,
+#else
+    i: InstanceIn,
 #endif
 #ifdef DRAW_INDEX
     @builtin(draw_index) draw: u32,
@@ -132,26 +187,45 @@ fn vs(
 ) -> VertexOut {
 #ifdef WEBGL2
 #ifdef DRAW_INDEX
-    let found = instance_of(draws.items[draw], instance);
+    let found = find_instance(instance, draw);
 #else
-    let found = instance_of(draws.items[0], instance);
+    let found = find_instance(instance);
 #endif
 #else
-    let found = Instance(v.row0, v.row1, v.row2, v.ids.x, true);
+    let found = find_instance(i);
 #endif
-    let p = vec4f(v.position, 1.0);
     let n = vec4f(v.normal, 0.0);
     var out: VertexOut;
-    out.clip = frame.view_proj
-        * vec4f(dot(found.row0, p), dot(found.row1, p), dot(found.row2, p), 1.0);
+    out.clip = clip_position(found, v.position);
     out.normal = vec3f(dot(found.row0, n), dot(found.row1, n), dot(found.row2, n));
     out.material = found.material;
+    return out;
+}
+
+@vertex
+fn vs_texcoords(
+    v: TexCoordsIn,
 #ifdef WEBGL2
-    if !found.drawn {
-        // Outside the clip volume on every axis, so the whole triangle is clipped away.
-        out.clip = vec4f(2.0, 2.0, 2.0, 1.0);
-    }
+    @builtin(instance_index) instance: u32,
+#else
+    i: InstanceIn,
 #endif
+#ifdef DRAW_INDEX
+    @builtin(draw_index) draw: u32,
+#endif
+) -> TexCoordsOut {
+#ifdef WEBGL2
+#ifdef DRAW_INDEX
+    let found = find_instance(instance, draw);
+#else
+    let found = find_instance(instance);
+#endif
+#else
+    let found = find_instance(i);
+#endif
+    var out: TexCoordsOut;
+    out.clip = clip_position(found, v.position);
+    out.uv0 = v.uv0;
     return out;
 }
 
@@ -171,4 +245,11 @@ fn fs_lit(in: VertexOut) -> @location(0) vec4f {
 @fragment
 fn fs_unlit(in: VertexOut) -> @location(0) vec4f {
     return vec4f(null3d::color::linear_to_srgb(material(in.material).color.rgb), 1.0);
+}
+
+/// The first texture coordinates as they are, red for u and green for v, with no color encoding,
+/// so a coordinate of 0.5 reads back as 128.
+@fragment
+fn fs_texcoords(in: TexCoordsOut) -> @location(0) vec4f {
+    return vec4f(in.uv0, 0.0, 1.0);
 }
