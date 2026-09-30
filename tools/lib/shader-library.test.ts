@@ -78,16 +78,15 @@ describe('parseModule', () => {
 });
 
 describe('readLibrary', () => {
-	it('asks for a decision on a module that neither list names', () => {
+	it('reads only the public modules, and reports a missing one', () => {
 		const root = fixture({
 			[`${LIBRARY_DIR}/math.wgsl`]: MODULE.replace('null3d::demo', 'null3d::math'),
-			[`${LIBRARY_DIR}/extra.wgsl`]: '#define_import_path null3d::extra\n',
+			[`${LIBRARY_DIR}/internal.wgsl`]: '#define_import_path null3d::internal\nfn f() {}\n',
 		});
-		const { problems } = readLibrary(root);
-		expect(problems).toContain(
-			`${LIBRARY_DIR}/extra.wgsl: add the module to PUBLIC_MODULES or INTERNAL_MODULES in tools/lib/shader-library.ts`,
-		);
+		const { modules, problems } = readLibrary(root);
+		expect(modules.map((m) => m.name)).toEqual(['null3d::math']);
 		expect(problems).toContain(`${LIBRARY_DIR}/noise.wgsl is missing`);
+		expect(problems.some((problem) => problem.includes('internal'))).toBe(false);
 	});
 
 	it("reads every public module of the repository's library without problems", () => {

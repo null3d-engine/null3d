@@ -14,7 +14,8 @@ This repository holds the null3D engine, its tools, its documentation and its ag
 | `packages/` | npm packages: `engine`, `vite-plugin`, and `cli`, which is the `null3d` command |
 | `tests/` | Browser tests: test pages, the image test manifest and its reference images, the Playwright tests and the real-browser runner |
 | `tools/` | The WebAssembly build, the docs generator, the skills check and the commit hooks |
-| `examples/`, `bench/`, `templates/`, `porting-corpus/` | Demos, benchmarks, starter projects and the three.js porting corpus, as the milestones add them |
+| `examples/` | Feature demos: one sketch of under 150 lines each, listed in `examples/demos.ts`. The examples page runs each demo live, and the image test manifest draws each one in hold mode |
+| `bench/`, `templates/`, `porting-corpus/` | Benchmarks, starter projects and the three.js porting corpus, as the milestones add them |
 | `.dev/` | Maintainer guides: [benchmarks](.dev/benchmarks.md), [device sessions](.dev/devices.md), [image tests](.dev/image-tests.md), [implementation notes](.dev/implementation-notes.md) and [releases](.dev/releases.md) |
 | `.dev/decisions/` | [Decision records](.dev/decisions/README.md): the data behind measured design choices. Read the record before you change a choice it settled |
 
@@ -40,7 +41,7 @@ This repository holds the null3D engine, its tools, its documentation and its ag
 | `bun run bench:startup` | Starts of the engine test page's production build in Chrome, from navigation to the first frame: the medians of each stage, requests and bytes. By default it times cold loads on Slow 4G. `--loads cold,warm`, `--network slow-4g,full` and `--modes all` add warm loads, full speed and every thread mode. `--android` runs them all in Chrome on a phone connected by USB |
 | `bun run bench:soak` | S1 in Chrome for 10 minutes, with the JavaScript heap of the page and of each engine worker and the WebAssembly memory sampled every 30 seconds. It fails when the sketch worker's or the render worker's heap grows after the warm-up, or when the WebAssembly memory does; `--gpu webgl2` and `--minutes` change the GPU path and the length, and `--dev` runs the dev server's pages |
 | `bun run readme-media` | Render the README's animation of S1 with the engine |
-| `bun run dev` | Serve the test and benchmark pages with the isolation headers on port 5173, or on the port that `NULL3D_PORT` names |
+| `bun run dev` | Serve the test pages, the benchmark pages and the demos with the isolation headers on port 5173, or on the port that `NULL3D_PORT` names |
 | `bun run dev-cert` | Make a local HTTPS certificate for testing on phones and tablets |
 | `bun run android` | Forward port 5173 to an Android phone connected by USB |
 | `bun run docs` | Regenerate placeholder pages, the API reference, the error pages, the page list in `docs/index.md`, and the mapping page and copies |

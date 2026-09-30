@@ -474,7 +474,7 @@ function checkOpacity(opacity: number, call: string): void {
 export class Material {
 	constructor(
 		/** @internal */ readonly id: number,
-		private readonly core: CoreMemory,
+		/** @internal */ readonly core: CoreMemory,
 		/** The name that errors from `set` give the call, such as 'materials.standard.set'. */
 		private readonly call: string,
 	) {}

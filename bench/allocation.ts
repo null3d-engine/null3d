@@ -45,6 +45,10 @@ const WORKERS = ['sketch-worker', 'render-worker'] as const;
  *   between tasks;
  * - the render worker's WebGPU objects: the command encoder, the passes, the command buffer, and
  *   the canvas texture and its view;
+ * - the completion tracker's object for each frame: the queue's promise and its reaction on WebGPU,
+ *   which the browser counts in the renderer's `drawFrame` where it inlines the tracker, or the fence
+ *   on WebGL2; and the clock readings at each frame's submit and completion, and at each check of
+ *   the frames still in flight;
  * - the staging ring's mapping, for uploads that go through it: the mapped range and the views that
  *   copy into it, and the promise of the request to map the buffer again;
  * - the upload route timing, which reads the clock around the uploads of one submit in a few;
@@ -67,15 +71,18 @@ const BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = {
 		'replay webgpu/backend.ts': 320,
 		'commandEncoder webgpu/backend.ts': 32,
 		'draw render/loop.ts': 64,
-		'drawFrame render/scene-renderer.ts': 48,
+		'drawFrame render/scene-renderer.ts': 192,
 		'(IDLE)': 48,
 		'(JS)': 24,
 		'take webgpu/staging.ts': 160,
 		'write webgpu/staging.ts': 96,
 		'afterSubmit webgpu/staging.ts': 160,
-		'then (built-in)': 80,
+		'then (built-in)': 128,
 		'Uint8Array (built-in)': 64,
 		'submit webgpu/backend.ts': 32,
+		'push gpu/completion.ts': 24,
+		'finish gpu/completion.ts': 40,
+		'unfinished gpu/completion.ts': 16,
 	},
 };
 /** The most bytes per frame any other place may allocate: sampling noise, less than one object. */

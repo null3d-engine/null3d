@@ -2,8 +2,9 @@
 // frustum planes and appends each survivor to its bucket's slice of the compacted instance buffer,
 // raising the instance count of the bucket's indirect draws with atomic adds. A bucket has one
 // draw per part of its mesh, and each part's draw reads the same slice, so every draw of the
-// bucket counts each survivor. The sphere comes from the world matrix: its center is the
-// translation, and its radius is the mesh's radius times the largest axis scale.
+// bucket counts each survivor. The sphere comes from the bucket's local sphere and the world
+// matrix: the matrix moves the local center, which is the origin for most buckets, and the radius
+// is the local radius times the largest axis scale.
 //
 // World matrices are relative to the centers of their grid cells, and the planes to the camera. An
 // instance's entry in the bucket table holds its cell index above its bucket, and the thread moves
@@ -42,16 +43,17 @@ struct CullParams {
 }
 
 /// A bucket: one pipeline, mesh and material, with its slice of the compacted instance buffer and
-/// its indirect draws, one per part of the mesh, from `first_draw` on.
+/// its indirect draws, one per part of the mesh, from `first_draw` on. Its instances are culled
+/// with the local sphere of `radius` around `center_x`, `center_y` and `center_z`.
 struct Bucket {
     base: u32,
     material: u32,
     radius: f32,
     first_draw: u32,
     draws: u32,
-    pad0: u32,
-    pad1: u32,
-    pad2: u32,
+    center_x: f32,
+    center_y: f32,
+    center_z: f32,
 }
 
 @group(0) @binding(0) var<uniform> params: CullParams;
@@ -116,12 +118,13 @@ fn main(
     let r0 = matrices[i * 3u] + vec4f(0.0, 0.0, 0.0, offset.x);
     let r1 = matrices[i * 3u + 1u] + vec4f(0.0, 0.0, 0.0, offset.y);
     let r2 = matrices[i * 3u + 2u] + vec4f(0.0, 0.0, 0.0, offset.z);
-    let center = vec3f(r0.w, r1.w, r2.w);
+    let bucket = buckets[b];
+    let local_center = vec4f(bucket.center_x, bucket.center_y, bucket.center_z, 1.0);
+    let center = vec3f(dot(r0, local_center), dot(r1, local_center), dot(r2, local_center));
     let scale = max(
         length(vec3f(r0.x, r1.x, r2.x)),
         max(length(vec3f(r0.y, r1.y, r2.y)), length(vec3f(r0.z, r1.z, r2.z))),
     );
-    let bucket = buckets[b];
     let radius = bucket.radius * scale;
     for (var p = 0u; p < 6u; p++) {
         let plane = params.planes[p];
