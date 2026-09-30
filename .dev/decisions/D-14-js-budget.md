@@ -1,6 +1,6 @@
 # D-14: The engine's JavaScript budget through M1
 
-Status: proposed, for the owner to decide. Date: 2026-09-30.
+Status: decided by the owner on 2026-09-30. Date: 2026-09-30.
 
 ## Question
 
@@ -8,7 +8,7 @@ M1's exit gate holds the engine's JavaScript that a page downloads to 60 KB afte
 
 ## Rule
 
-Proposed: take an option when, by the estimate below, it keeps every thread mode on each GPU path within 60 KB at the gate. The estimate may be 20% low, so leave room for that. An option must add no round trip before the first frame of a page that does not use the feature. It may add one round trip at a feature's first use, if the page waits for that feature anyway, as it does for a texture.
+Take an option when, by the estimate below, it keeps every thread mode on each GPU path within the budget at the gate. The estimate may be 20% low, so leave room for that. An option must add no round trip before the first frame of a page that does not use the feature. It may add one round trip at a feature's first use, if the page waits for that feature anyway, as it does for a texture.
 
 ## Data
 
@@ -154,7 +154,12 @@ The shader row comes from the measurements for D-13, which sized stand-in shader
 
 ## Decision
 
-Proposed, for the owner:
+Decided by the owner on 2026-09-30:
+
+- The engine's JavaScript that a page downloads may take up to 70 KB after Brotli, in each thread mode on each GPU path, for now. The standard material's shaders take a pipelined page to about 57 KB, and texture maps, shadows and lights add more before the gate.
+- The budget may rise again, but only with the owner's approval in writing. Until then, a pull request that passes 70 KB fails the size check.
+
+The options in the table stay open, and each task can still take one to keep the download down. The proposal before the owner's decision was:
 
 1. Keep 60 KB for the code that a page downloads before its first frame, in each thread mode on each GPU path. Report files that load on first use or after the first frame beside it, without a budget, as M1-D7 already asks for the KTX2 transcoder.
 2. Take options A to E as their tasks land:

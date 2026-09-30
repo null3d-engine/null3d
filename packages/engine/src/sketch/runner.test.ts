@@ -93,6 +93,8 @@ async function start(
 			parallelCompile: true,
 		},
 		capabilities: CAPABILITIES,
+		quality: { preset: 'medium', settings: { maxPixelRatio: 2 } },
+		applyQuality: () => {},
 		sendImage: () => {},
 		sendShader: () => {},
 		pageUrl: 'http://localhost/',

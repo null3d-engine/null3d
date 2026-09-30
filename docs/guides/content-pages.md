@@ -236,6 +236,8 @@ else {
 
 Wrap every storage access, because private browsing can make it throw. A second tab of the same page can leave a marker behind too, so let a marker expire. For a game, show a message after a crash and offer a normal start, instead of the fallback page.
 
+The engine keeps a note of its own for each sketch. After a start that crashed the tab, the next start runs one quality preset lower, and `engine.mode.crashedStarts` gives the count ([Quality presets](../concepts/quality-presets.md#starts-that-crashed-the-tab)).
+
 ## Related pages
 
 - [Accessibility](accessibility.md): the canvas, the keyboard and motion.

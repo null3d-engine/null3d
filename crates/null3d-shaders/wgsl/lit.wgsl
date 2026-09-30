@@ -168,7 +168,10 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
     input.relativePosition = in.relative;
     // Back faces draw only for double-sided materials, and light as front faces do.
     input.normal = normalize(in.normal) * select(-1.0, 1.0, front);
-    input.viewDirection = normalize(-in.relative);
+    // Toward the camera: from the point for a perspective camera, and one direction for an
+    // orthographic camera, whose view rays are parallel.
+    let eye = frame.camera_position;
+    input.viewDirection = normalize(eye.xyz - in.relative * eye.w);
     input.vertexColor = vec4f(1.0);
 #ifdef VERTEX_COLOR
     input.vertexColor = in.vertex_color;

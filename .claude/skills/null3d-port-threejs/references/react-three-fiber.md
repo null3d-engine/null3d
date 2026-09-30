@@ -126,7 +126,7 @@ Never mirror per-frame scene state into React state: it re-renders React every f
 | R3F or drei | null3D |
 | --- | --- |
 | `<Canvas camera={{ position, fov }}>` | `scene.createPerspectiveCamera({ position, fov })` in `sketch.ts` |
-| `<Canvas dpr={[1, 2]}>` | `createEngine({ maxPixelRatio: 2 })`; presets and dynamic resolution handle the rest |
+| `<Canvas dpr={[1, 2]}>` | `createEngine({ maxPixelRatio: 2 })`, or leave it out and the quality preset sets the cap |
 | `<Canvas shadows>` | `castShadows` on lights and meshes, `receiveShadows` on receivers |
 | `<Canvas gl={{ antialias, alpha }}>` | Presets (MSAA), `createEngine({ transparent: true })` |
 | `<Canvas frameloop="demand">` | No on-demand mode in 1.0: pause with `engine.setPaused(true)` while nothing changes, or use the battery-saver 30 fps cap |

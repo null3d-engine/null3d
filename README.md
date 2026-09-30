@@ -188,7 +188,7 @@ On WebGPU, the GPU then culls and counts the draws itself, and the CPU replays t
 | The engine's own CPU time per frame on its busiest thread, 100,000 moving instances, desktop Chrome on WebGPU | At most 50% of three.js's |
 | CPU time per frame at phone scale, on WebGPU and WebGL2 phones and tablets | At most 100% of three.js |
 | Core download size | At most 600 KB after Brotli compression |
-| The engine's JavaScript that a page downloads | At most 60 KB after Brotli compression |
+| The engine's JavaScript that a page downloads | At most 70 KB after Brotli compression |
 
 An engine's own time leaves out the sketch code that moves the instances, which runs alike in both engines. "Phone scale" is the largest instance count at which three.js still holds 30 frames per second on that device. The [performance guide](docs/guides/performance.md) gives the measured figures, and `bun run bench:run` measures them on your own computer.
 

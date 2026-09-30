@@ -1118,14 +1118,15 @@ void main() {
     material_row = _e2;
     input_.relativePosition = in_.relative;
     input_.normal = (normalize(in_.normal) * (front ? 1.0 : -1.0));
-    input_.viewDirection = normalize(-(in_.relative));
+    vec4 eye = _group_0_binding_0_fs.camera_position;
+    input_.viewDirection = normalize((eye.xyz - (in_.relative * eye.w)));
     input_.vertexColor = vec4(1.0);
     input_.frontFacing = front;
-    SurfaceInput _e23 = input_;
-    Surface _e24 = defaultSurface(_e23);
-    SurfaceInput _e25 = input_;
-    vec4 _e26 = shade(_e24, _e25);
-    _fs2p_location0 = _e26;
+    SurfaceInput _e29 = input_;
+    Surface _e30 = defaultSurface(_e29);
+    SurfaceInput _e31 = input_;
+    vec4 _e32 = shade(_e30, _e31);
+    _fs2p_location0 = _e32;
     return;
 }
 `,
@@ -1868,14 +1869,15 @@ void main() {
     material_row = _e2;
     input_.relativePosition = in_.relative;
     input_.normal = (normalize(in_.normal) * (front ? 1.0 : -1.0));
-    input_.viewDirection = normalize(-(in_.relative));
+    vec4 eye = _group_0_binding_0_fs.camera_position;
+    input_.viewDirection = normalize((eye.xyz - (in_.relative * eye.w)));
     input_.vertexColor = vec4(1.0);
     input_.frontFacing = front;
-    SurfaceInput _e23 = input_;
-    Surface _e24 = defaultSurface(_e23);
-    SurfaceInput _e25 = input_;
-    vec4 _e26 = shade(_e24, _e25);
-    _fs2p_location0 = _e26;
+    SurfaceInput _e29 = input_;
+    Surface _e30 = defaultSurface(_e29);
+    SurfaceInput _e31 = input_;
+    vec4 _e32 = shade(_e30, _e31);
+    _fs2p_location0 = _e32;
     return;
 }
 `,
@@ -2627,15 +2629,16 @@ void main() {
     material_row = _e2;
     input_.relativePosition = in_.relative;
     input_.normal = (normalize(in_.normal) * (front ? 1.0 : -1.0));
-    input_.viewDirection = normalize(-(in_.relative));
+    vec4 eye = _group_0_binding_0_fs.camera_position;
+    input_.viewDirection = normalize((eye.xyz - (in_.relative * eye.w)));
     input_.vertexColor = vec4(1.0);
     input_.vertexColor = in_.vertex_color;
     input_.frontFacing = front;
-    SurfaceInput _e25 = input_;
-    Surface _e26 = defaultSurface(_e25);
-    SurfaceInput _e27 = input_;
-    vec4 _e28 = shade(_e26, _e27);
-    _fs2p_location0 = _e28;
+    SurfaceInput _e31 = input_;
+    Surface _e32 = defaultSurface(_e31);
+    SurfaceInput _e33 = input_;
+    vec4 _e34 = shade(_e32, _e33);
+    _fs2p_location0 = _e34;
     return;
 }
 `,
@@ -3384,15 +3387,16 @@ void main() {
     material_row = _e2;
     input_.relativePosition = in_.relative;
     input_.normal = (normalize(in_.normal) * (front ? 1.0 : -1.0));
-    input_.viewDirection = normalize(-(in_.relative));
+    vec4 eye = _group_0_binding_0_fs.camera_position;
+    input_.viewDirection = normalize((eye.xyz - (in_.relative * eye.w)));
     input_.vertexColor = vec4(1.0);
     input_.vertexColor = in_.vertex_color;
     input_.frontFacing = front;
-    SurfaceInput _e25 = input_;
-    Surface _e26 = defaultSurface(_e25);
-    SurfaceInput _e27 = input_;
-    vec4 _e28 = shade(_e26, _e27);
-    _fs2p_location0 = _e28;
+    SurfaceInput _e31 = input_;
+    Surface _e32 = defaultSurface(_e31);
+    SurfaceInput _e33 = input_;
+    vec4 _e34 = shade(_e32, _e33);
+    _fs2p_location0 = _e34;
     return;
 }
 `,
@@ -3754,14 +3758,15 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f3
     material_row = _e2;
     input.relativePosition = in.relative;
     input.normal = (normalize(in.normal) * select(-1f, 1f, front));
-    input.viewDirection = normalize(-(in.relative));
+    let eye = frame.camera_position;
+    input.viewDirection = normalize((eye.xyz - (in.relative * eye.w)));
     input.vertexColor = vec4(1f);
     input.frontFacing = front;
-    let _e23 = input;
-    let _e24 = defaultSurface(_e23);
-    let _e25 = input;
-    let _e26 = shade(_e24, _e25);
-    return _e26;
+    let _e29 = input;
+    let _e30 = defaultSurface(_e29);
+    let _e31 = input;
+    let _e32 = shade(_e30, _e31);
+    return _e32;
 }
 `,
 			pipelines: {
@@ -4109,15 +4114,16 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f3
     material_row = _e2;
     input.relativePosition = in.relative;
     input.normal = (normalize(in.normal) * select(-1f, 1f, front));
-    input.viewDirection = normalize(-(in.relative));
+    let eye = frame.camera_position;
+    input.viewDirection = normalize((eye.xyz - (in.relative * eye.w)));
     input.vertexColor = vec4(1f);
     input.vertexColor = in.vertex_color;
     input.frontFacing = front;
-    let _e25 = input;
-    let _e26 = defaultSurface(_e25);
-    let _e27 = input;
-    let _e28 = shade(_e26, _e27);
-    return _e28;
+    let _e31 = input;
+    let _e32 = defaultSurface(_e31);
+    let _e33 = input;
+    let _e34 = shade(_e32, _e33);
+    return _e34;
 }
 `,
 			pipelines: {
