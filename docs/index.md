@@ -57,7 +57,7 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 
 | Page | What it covers | Status | Version |
 | --- | --- | --- | --- |
-| [Architecture: threads and the frame](concepts/architecture.md) | Main thread, sketch worker, render worker, job workers; the pipelined frame; latency modes. | planned | 0.1 |
+| [Architecture: threads and the frame](concepts/architecture.md) | Main thread, sketch worker, render worker, job workers; the pipelined frame; latency modes. | experimental | 0.1 |
 | [Handles and objects](concepts/handles.md) | 30-bit handles; wrapper objects; stale-handle errors; keeping per-object data in your own arrays. | experimental | 0.1 |
 | [Static and dynamic objects](concepts/static-dynamic.md) | When to mark objects static; setters versus direct array writes; dirty ranges. | experimental | 0.1 |
 | [Instances and batching](concepts/instances.md) | createInstances; typed-array views; markDirty; automatic batching; per-instance attributes. | experimental | 0.1 |
@@ -70,7 +70,7 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 | [Render layers](concepts/render-layers.md) | 32-bit layer masks on objects, cameras, raycasts and passes. | planned | 0.1 |
 | [The render graph](concepts/render-graph.md) | Declared reads and writes; automatic order; transient memory; validation errors; the text dump. | experimental | 0.1 |
 | [Large worlds and precision](concepts/large-worlds.md) | Cell-relative positions and per-frame camera-to-cell offsets; reversed depth; largeWorld mode; batch origins; floating-origin geometry. | planned | 0.2 |
-| [Culling](concepts/culling.md) | Grid-cell culling; frustum and small-object tests; two-phase GPU occlusion culling on WebGPU; software occlusion culling and blocker meshes on WebGL2 (0.2). | planned | 0.1 |
+| [Culling](concepts/culling.md) | Frustum culling on the GPU on WebGPU and on the job workers on WebGL2; grid cells and positions relative to the camera. | experimental | 0.1 |
 | [Levels of detail](concepts/lod.md) | LOD groups; generated LODs; per-instance selection. | planned | 0.2 |
 | [Assets and prefabs](concepts/assets.md) | glTF, KTX2, meshopt; prefabs and instantiate; upload budgets; memory. | planned | 0.2 |
 | [The post-processing chain](concepts/post-processing.md) | HDR target; bloom; ambient occlusion; the single final pass; custom effects. | planned | 0.2 |
@@ -96,7 +96,7 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 | [Post-processing API](api/post.md) | post.set options; post.addEffect for custom WGSL effects. | planned | 0.2 |
 | [Render graph API](api/render.md) | render.addPass declarations; enabling and disabling passes; dumpGraph. | planned | 0.2 |
 | [Quality API](api/quality.md) | quality.preset, quality.set, frame budgets, quality events. | planned | 0.1 |
-| [Debug drawing and stats](api/debug.md) | debug.line, box, axes, grid, frustum; debug.view; debug.stats. | planned | 0.1 |
+| [Debug drawing and stats](api/debug.md) | engine.measure and its figures; debug.line, box, axes, grid, frustum; debug.view; debug.stats. | experimental | 0.1 |
 | [Math helpers](api/math.md) | vec3, quat, mat4 and color on plain arrays; math.clamp, lerp, damp and a random generator that hold mode seeds. | experimental | 0.1 |
 | [Time](api/time.md) | dt, time.now, fixed steps. | experimental | 0.1 |
 | [Sprites](api/sprites.md) | createSprites; world and screen size modes; atlases. | planned | 0.2 |
@@ -109,7 +109,7 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 
 | Page | What it covers | Status | Version |
 | --- | --- | --- | --- |
-| [Performance guide](guides/performance.md) | Measuring; the frame budget; common causes of slow frames and their fixes. | planned | 0.1 |
+| [Performance guide](guides/performance.md) | Measuring; the frame budget; common causes of slow frames and their fixes. | experimental | 0.1 |
 | [Phones and tablets](guides/phones.md) | Pixel-ratio caps; memory budgets; heat; testing on real devices. | planned | 0.1 |
 | [Custom shaders](guides/custom-shaders.md) | Surface functions; full shaders; uniforms and typed materials; hot reload. | planned | 0.1 |
 | [Custom passes and render targets](guides/custom-passes.md) | Declaring passes; reading and writing named textures; layer masks. | planned | 0.2 |
@@ -161,14 +161,14 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 | Page | What it covers | Status | Version |
 | --- | --- | --- | --- |
 | [E1101: Stale handle](errors/E1101.md) | A call used an object after it was destroyed. Its slot may already hold a new object. | generated | 0.1 |
-| [E1102: Too many objects](errors/E1102.md) | The scene reached the most objects one engine holds. | generated | 0.1 |
+| [E1102: Too many objects](errors/E1102.md) | The scene, the table of instance batches or the queue of changes for the next frame is full. The message names which one, and how many it holds. | generated | 0.1 |
 | [E1103: Object from another engine](errors/E1103.md) | A call received an object that this engine did not create. | generated | 0.1 |
 | [E1104: Parent loop](errors/E1104.md) | A call would make an object its own ancestor: the new parent is the object itself or one of its descendants. | generated | 0.1 |
 | [E1105: Unknown command](errors/E1105.md) | The engine core received a structural change it does not know, so the TypeScript side and the core come from different builds. | generated | 0.1 |
-| [E1106: Object not created yet](errors/E1106.md) | A call read world data of an object in the frame that created it. New objects join the scene when the next frame starts. | generated | 0.1 |
+| [E1106: Object never created](errors/E1106.md) | A call such as `setVisible` or `setParent` queued a change for an object that the engine never created. The engine creates an object when the next frame starts. When that fails, for example because its parent was destroyed, the object never joins the scene. | generated | 0.1 |
 | [E1107: Object created twice](errors/E1107.md) | The engine core received a second create command for one object, so the TypeScript side and the core disagree about the scene. | generated | 0.1 |
 | [E1108: Value out of range](errors/E1108.md) | A call received a count or an index past its limit, such as a row past the capacity of an instance batch. | generated | 0.1 |
-| [E1109: Engine memory full](errors/E1109.md) | The engine could not create or grow its WebAssembly memory. A page with worker threads gives the engine 1 GiB at most. Each instance row takes about 180 bytes, or about 230 with per-row colors. So about 5 million rows fill it, along with the rest of the scene. A browser can refuse memory sooner, as phones often do. It can also refuse a new engine's memory while the memory of an engine that stopped a moment before is not free yet. The engine then tries again for about 3 seconds before it fails. | generated | 0.1 |
+| [E1109: Engine memory full](errors/E1109.md) | The engine could not create or grow its WebAssembly memory. A page with worker threads gives the engine 1 GiB by default, and up to 4 GiB through the memory option of createEngine. Each instance row takes about 180 bytes, or about 230 with per-row colors. So about 5 million rows fill 1 GiB, along with the rest of the scene. A browser can refuse memory sooner, as phones often do. It can also refuse a new engine's memory while the memory of an engine that stopped a moment before is not free yet. The engine then tries again for about 3 seconds before it fails. | generated | 0.1 |
 | [E1203: Invalid number](errors/E1203.md) | A call received a number that is not finite, such as NaN or Infinity. | generated | 0.1 |
 | [E1204: Invalid color](errors/E1204.md) | A call received a color that is not a hex string, a number from 0 to 0xffffff, or three numbers from 0 to 1. | generated | 0.1 |
 | [E1205: Unknown input name](errors/E1205.md) | An input call received a name that no key, button or action has, or `input.actions.define()` received an action name that a key or button already has. Names are case-sensitive: `KeyW` is the W key, and `keyW` names nothing. | generated | 0.1 |
@@ -185,6 +185,7 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 | [E1406: Engine core not downloaded](errors/E1406.md) | A file of the engine core did not download whole: the server answered with an error, or the connection broke off. | generated | 0.1 |
 | [E1407: Invalid hold time](errors/E1407.md) | The ?hold= switch or the hold option of createEngine gave a hold time that is not a number of seconds from 0 to 600. | generated | 0.1 |
 | [E1408: Hold failed](errors/E1408.md) | The sketch or the engine failed in hold mode, before the engine read the held frame back. A live engine logs an error in the sketch and carries on. Hold mode stops at the first one, so a test fails at once. | generated | 0.1 |
+| [E1409: Invalid memory maximum](errors/E1409.md) | The memory option of createEngine asked for a maximum that is not a whole number of MiB from 256 to 4096. | generated | 0.1 |
 | [E1501: Render space full](errors/E1501.md) | The scene needs more room than the renderer set aside. The full part is the draw list, the material table, the upload space or the culling pass. On WebGPU the culling pass covers 2,097,152 objects and instance rows on every device, and more on devices with larger GPU buffers. On WebGL2 the number follows the largest texture the device allows. The number for the device is in engine.capabilities.maxInstances. | generated | 0.1 |
 | [E1502: Pass input missing](errors/E1502.md) | A render pass uses a target or buffer that no pass creates, or reads one that no pass running in the frame writes. The render graph checks every pass before the frame draws. | generated | 0.1 |
 | [E1503: Target created twice](errors/E1503.md) | Two render passes create the same target, or a pass creates a target that the render graph keeps between frames. Each target has one creator, which sets its format and size. | generated | 0.1 |

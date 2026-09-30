@@ -4,7 +4,9 @@
 // messages it sent, how long the engine took to stop, and the page's steps. With ?pause, it pauses
 // and resumes the sketch before it asks, and reports the frames drawn during the pause and after.
 // It also reports when it called createEngine, from navigation start, which places the engine's
-// own start times on the page's timeline.
+// own start times on the page's timeline. With ?memory-option=<MiB>, it passes that maximum in the
+// memory option of createEngine, and reports the maximum of each shared memory that the engine
+// asked the browser for.
 import { createEngine, type Engine, type FrameMetrics } from '@null3d/engine';
 import type { FrameCounts } from '../lib/engine-checks';
 import { progress, run, toBase64 } from './lib/result';
@@ -20,6 +22,24 @@ const PAUSE_MS = 600;
 const SETTLE_MS = 100;
 /** How long the page counts frames after the sketch resumes. */
 const RESUMED_MS = 500;
+/** The maximum that ?memory-option= asks the page to pass in createEngine's memory option. */
+const memoryOption = params.has('memory-option') ? Number(params.get('memory-option')) : undefined;
+
+/**
+ * Records the maximum in MiB of each shared memory that the page creates from now on, as the
+ * browser is asked for it.
+ */
+function recordSharedMemories(): number[] {
+	const maxima: number[] = [];
+	WebAssembly.Memory = new Proxy(WebAssembly.Memory, {
+		construct(target, args: [WebAssembly.MemoryDescriptor]) {
+			const [{ shared, maximum }] = args;
+			if (shared && maximum !== undefined) maxima.push(maximum / 16);
+			return Reflect.construct(target, args);
+		},
+	});
+	return maxima;
+}
 
 const frameCounts = (stats: FrameMetrics): FrameCounts => ({
 	frames: stats.frames,
@@ -43,6 +63,7 @@ run('engine', async () => {
 	const canvas = document.querySelector('canvas');
 	if (!canvas) throw new Error('the page has no canvas');
 	const stages: string[] = [];
+	const sharedMemoryMiB = memoryOption === undefined ? undefined : recordSharedMemories();
 	const createEngineAtMs = performance.now();
 	const engine = await createEngine({
 		canvas,
@@ -55,6 +76,7 @@ run('engine', async () => {
 			| 'high-performance'
 			| 'low-power'
 			| undefined,
+		memory: memoryOption === undefined ? undefined : { maximumMiB: memoryOption },
 	});
 	await engine.firstFrame;
 	const stats = await engine.measure(seconds);
@@ -82,6 +104,7 @@ run('engine', async () => {
 		count,
 		pause,
 		stopMs,
+		sharedMemoryMiB,
 		trail: window.__null3dProgress,
 		capture: capture && {
 			width: capture.width,

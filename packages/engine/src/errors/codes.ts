@@ -31,14 +31,15 @@ const DOCS = {
 	},
 	E1102: {
 		title: 'Too many objects',
-		cause: 'The scene reached the most objects one engine holds.',
-		example: 'E1102: createMesh() failed: the scene already holds 1048575 objects.',
+		cause:
+			'The scene, the table of instance batches or the queue of changes for the next frame is full. The message names which one, and how many it holds.',
+		example: 'E1102: createMesh() failed: the scene already holds 16383 objects.',
 		since: '0.1',
 	},
 	E1103: {
 		title: 'Object from another engine',
 		cause: 'A call received an object that this engine did not create.',
-		example: 'E1103: setParent() got an object that is not from this engine.',
+		example: 'E1103: createInstances() got a mesh that is not from this engine.',
 		since: '0.1',
 	},
 	E1104: {
@@ -46,7 +47,7 @@ const DOCS = {
 		cause:
 			'A call would make an object its own ancestor: the new parent is the object itself or one of its descendants.',
 		example:
-			'E1104: setParent() on "Arm" (slot 9) would put it under its own descendant (slot 12).',
+			'E1104: a queued change on an object (slot 9) would put it under its own descendant (slot 12).',
 		since: '0.1',
 	},
 	E1105: {
@@ -57,10 +58,10 @@ const DOCS = {
 		since: '0.1',
 	},
 	E1106: {
-		title: 'Object not created yet',
+		title: 'Object never created',
 		cause:
-			'A call read world data of an object in the frame that created it. New objects join the scene when the next frame starts.',
-		example: 'E1106: getWorldPosition() on "Crate" (slot 7) ran before the frame that creates it.',
+			'A call such as `setVisible` or `setParent` queued a change for an object that the engine never created. The engine creates an object when the next frame starts. When that fails, for example because its parent was destroyed, the object never joins the scene.',
+		example: 'E1106: a queued change named an object (slot 7), which the engine never created.',
 		since: '0.1',
 	},
 	E1107: {
@@ -80,7 +81,7 @@ const DOCS = {
 	E1109: {
 		title: 'Engine memory full',
 		cause:
-			"The engine could not create or grow its WebAssembly memory. A page with worker threads gives the engine 1 GiB at most. Each instance row takes about 180 bytes, or about 230 with per-row colors. So about 5 million rows fill it, along with the rest of the scene. A browser can refuse memory sooner, as phones often do. It can also refuse a new engine's memory while the memory of an engine that stopped a moment before is not free yet. The engine then tries again for about 3 seconds before it fails.",
+			"The engine could not create or grow its WebAssembly memory. A page with worker threads gives the engine 1 GiB by default, and up to 4 GiB through the memory option of createEngine. Each instance row takes about 180 bytes, or about 230 with per-row colors. So about 5 million rows fill 1 GiB, along with the rest of the scene. A browser can refuse memory sooner, as phones often do. It can also refuse a new engine's memory while the memory of an engine that stopped a moment before is not free yet. The engine then tries again for about 3 seconds before it fails.",
 		example: 'E1109: createInstances() failed: the engine could not get 1282 MB more memory.',
 		since: '0.1',
 	},
@@ -192,6 +193,14 @@ const DOCS = {
 			'The sketch or the engine failed in hold mode, before the engine read the held frame back. A live engine logs an error in the sketch and carries on. Hold mode stops at the first one, so a test fails at once.',
 		example:
 			'E1408: hold mode stopped at 0.75 seconds, in frame 46: TypeError: player is undefined.',
+		since: '0.1',
+	},
+	E1409: {
+		title: 'Invalid memory maximum',
+		cause:
+			'The memory option of createEngine asked for a maximum that is not a whole number of MiB from 256 to 4096.',
+		example:
+			'E1409: the memory.maximumMiB option 8192 is not a whole number of MiB from 256 to 4096.',
 		since: '0.1',
 	},
 	E1501: {

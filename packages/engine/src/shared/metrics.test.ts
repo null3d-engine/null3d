@@ -1,7 +1,17 @@
 import { describe, expect, it } from 'bun:test';
 import { CORE_NOT_COUNTED } from '../generated/core';
-import { summarizeFrames, threadRoles, timerStep } from '../page/frame-stats';
-import { Counter, createMetricsBuffer, FrameRecorder, MetricsReader, Phase, Role } from './metrics';
+import { gpuPassStats, summarizeFrames, threadRoles, timerStep } from '../page/frame-stats';
+import {
+	Counter,
+	createMetricsBuffer,
+	FrameRecorder,
+	GPU_TIMED_PASSES,
+	MetricsReader,
+	Phase,
+	type RingRecords,
+	Role,
+	UNTIMED,
+} from './metrics';
 import { ratePerSecond } from './stats';
 
 function record(recorder: FrameRecorder, frame: number, busy: number, update = 0): void {
@@ -196,6 +206,88 @@ describe('summarizeFrames', () => {
 		// The sketch worker also draws: 1 + 2, 2 + 2, 3 + 2.
 		expect(summary.cpuMs.median).toBe(4);
 		expect(summary.threads['sketch-worker']?.busyMs.median).toBe(4);
+	});
+});
+
+describe('gpuPassStats', () => {
+	/** Reads back GPU records of frames whose passes are render passes where `render` says so. */
+	function gpuRecords(
+		frames: { copies: number; passes: number[]; render: boolean[]; frameMs: number }[],
+	) {
+		const buffer = createMetricsBuffer(false, 0);
+		const reader = new MetricsReader(buffer);
+		reader.begin();
+		const gpu = new FrameRecorder(buffer, Role.Gpu);
+		frames.forEach(({ copies, passes, render, frameMs }, index) => {
+			gpu.begin(index + 1);
+			let renderPasses = 0;
+			render.forEach((isRender, pass) => {
+				if (isRender) renderPasses |= 1 << pass;
+			});
+			gpu.gpuPasses(passes.length, renderPasses);
+			gpu.gpuTime(0, copies);
+			passes.slice(0, GPU_TIMED_PASSES).forEach((ms, pass) => {
+				gpu.gpuTime(1 + pass, ms);
+			});
+			gpu.commit(frameMs);
+		});
+		reader.end();
+		return reader.records[Role.Gpu] as RingRecords;
+	}
+
+	it('names each pass by its kind and place, after the copies and before the gaps', () => {
+		const parts = gpuPassStats(
+			gpuRecords([
+				{ copies: 0.25, passes: [0.5, 1], render: [false, true], frameMs: 2 },
+				{ copies: 0.75, passes: [1.5, 2], render: [false, true], frameMs: 5 },
+			]),
+		);
+		expect(parts?.map((part) => part.name)).toEqual([
+			'copies',
+			'compute 1',
+			'render 1',
+			'between passes',
+		]);
+		expect(parts?.[1]?.ms).toMatchObject({ count: 2, median: 1 });
+		expect(parts?.[2]?.ms).toMatchObject({ count: 2, median: 1.5 });
+		// Frame 1 leaves 2 - 0.25 - 0.5 - 1 = 0.25 ms between passes, frame 2 leaves 0.75 ms.
+		expect(parts?.[3]?.ms.median).toBeCloseTo(0.5, 9);
+	});
+
+	it('counts passes of each kind apart, and reports no gap for a frame of one pass', () => {
+		const three = gpuPassStats(
+			gpuRecords([{ copies: 0, passes: [1, 1, 1], render: [true, false, true], frameMs: 3 }]),
+		);
+		expect(three?.map((part) => part.name)).toEqual([
+			'copies',
+			'render 1',
+			'compute 1',
+			'render 2',
+			'between passes',
+		]);
+		const one = gpuPassStats(gpuRecords([{ copies: 0, passes: [1], render: [true], frameMs: 1 }]));
+		expect(one?.map((part) => part.name)).toEqual(['copies', 'render 1']);
+	});
+
+	it('leaves out the copies where the browser gave no time for them', () => {
+		const parts = gpuPassStats(
+			gpuRecords([{ copies: UNTIMED, passes: [0.5, 1], render: [false, true], frameMs: 2 }]),
+		);
+		expect(parts?.map((part) => part.name)).toEqual(['compute 1', 'render 1', 'between passes']);
+		expect(parts?.[2]?.ms.median).toBeCloseTo(0.5, 9);
+	});
+
+	it('names only the passes timed alone, and gives null without GPU records', () => {
+		const many = Array.from({ length: GPU_TIMED_PASSES + 2 }, () => 1);
+		const parts = gpuPassStats(
+			gpuRecords([{ copies: 0, passes: many, render: many.map(() => true), frameMs: 20 }]),
+		);
+		expect(parts?.map((part) => part.name)).toEqual([
+			'copies',
+			...many.slice(0, GPU_TIMED_PASSES).map((_, pass) => `render ${pass + 1}`),
+			'between passes',
+		]);
+		expect(gpuPassStats(gpuRecords([]))).toBeNull();
 	});
 });
 

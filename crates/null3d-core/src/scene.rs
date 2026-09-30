@@ -40,6 +40,14 @@
 //! each changed matrix is written once into each buffer. See [`crate::snapshot`] for the handoff
 //! to the render worker.
 //!
+//! # Cells
+//!
+//! World matrices and spheres are relative to the center of the object's grid cell (see
+//! [`crate::cells`]). A root object takes the cell that holds its position; a child takes its
+//! parent's cell, so a whole tree shares its root's cell. The update finds the objects that
+//! changed cells in each level's loop, and moves them in the table between levels, one thread
+//! alone, so each level's children read their parents' final cells.
+//!
 //! # Commands
 //!
 //! Structural changes arrive as 16-byte [`Command`] records, applied in one batch per frame by
@@ -62,10 +70,11 @@
 
 use std::ops::Range;
 use std::simd::prelude::*;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use crate::arena::Pod;
 use crate::bitset::Bitset;
+use crate::cells::{self, CellCoords, CellPosition, CellTable, ORIGIN_CELL};
 use crate::error::{CoreError, Resource};
 use crate::handle::{Handle, SlotAllocator};
 use crate::jobs::JobSystem;
@@ -296,6 +305,33 @@ struct Level {
     end: u32,
 }
 
+/// The context of a transform update of `$scene`'s current frame, which writes frame parity
+/// `$parity`'s buffer. It borrows the scene field by field, so the caller can still use the
+/// scene's other fields, such as the late update's bitset, while the context lives.
+macro_rules! update_context {
+    ($scene:expr, $parity:expr) => {
+        UpdateContext {
+            frame: $scene.frame,
+            order: &$scene.order,
+            positions: &$scene.positions,
+            rotations: &$scene.rotations,
+            scales: &$scene.scales,
+            local_radii: &$scene.local_radii,
+            parents: &$scene.parents,
+            flags: &$scene.flags,
+            dirty: $scene.dirty.words(),
+            changed_frames: SharedMut::new(&mut $scene.changed_frames),
+            out: $scene.world[$parity].ptrs(),
+            previous: $scene.world[$parity ^ 1].ptrs(),
+            cells: &$scene.cells,
+            cell_coords: $scene.table.all_coords(),
+            origin_only: $scene.table.origin_only(),
+            moved: SharedMut::new($scene.moved.words_mut()),
+            moved_any: &$scene.moved_any,
+        }
+    };
+}
+
 /// Scene objects, stored as one array per field and indexed by slot. See the module
 /// documentation.
 pub struct SceneStorage {
@@ -310,6 +346,11 @@ pub struct SceneStorage {
     meshes: Vec<u32>,
     materials: Vec<u32>,
     cells: Vec<u32>,
+    /// The cells in use by scene objects and instance rows.
+    table: CellTable,
+    /// Objects whose cell changed in the current level's loop, and whether there are any.
+    moved: Bitset,
+    moved_any: AtomicBool,
     depths: Vec<u32>,
     dirty: Bitset,
     /// Objects with at least one child, rebuilt with the hierarchy order.
@@ -355,7 +396,10 @@ impl SceneStorage {
             flags: vec![0; rows],
             meshes: vec![0; rows],
             materials: vec![0; rows],
-            cells: vec![0; rows],
+            cells: vec![ORIGIN_CELL; rows],
+            table: CellTable::new(),
+            moved: Bitset::new(rows as u32),
+            moved_any: AtomicBool::new(false),
             depths: vec![0; rows],
             dirty: Bitset::new(rows as u32),
             branches: Bitset::new(rows as u32),
@@ -474,9 +518,29 @@ impl SceneStorage {
         &self.materials
     }
 
-    /// Cell indices for large worlds. Always 0 (the origin cell) for now.
+    /// Each object's cell, as an index into [`SceneStorage::cell_table`]. Valid after an update.
     pub fn cells(&self) -> &[u32] {
         &self.cells
+    }
+
+    /// The cells in use by scene objects and instance rows.
+    pub fn cell_table(&self) -> &CellTable {
+        &self.table
+    }
+
+    /// The cell table, for the instance batches' update, which moves rows between cells.
+    pub fn cell_table_mut(&mut self) -> &mut CellTable {
+        &mut self.table
+    }
+
+    /// Where the object in `slot` is in frame parity `parity`'s buffer: its cell, and its world
+    /// translation relative to the cell's center.
+    pub fn cell_position(&self, slot: u32, parity: usize) -> CellPosition {
+        let m = self.world(parity).matrix(slot as usize);
+        CellPosition {
+            cell: self.table.coords(self.cells[slot as usize]),
+            local: [m[3], m[7], m[11]],
+        }
     }
 
     /// Hierarchy depths: 0 for roots. Valid after an update.
@@ -555,10 +619,21 @@ impl SceneStorage {
         Ok(())
     }
 
-    /// The world matrix of an object in the current frame's buffer.
+    /// The world matrix of an object in the current frame's buffer, relative to the center of the
+    /// object's cell.
     pub fn world_matrix(&self, handle: Handle) -> Result<Affine, CoreError> {
         let slot = self.slots.resolve(handle)?;
         Ok(*self.current_world().matrix(slot as usize))
+    }
+
+    /// The world matrix of an object in the current frame's buffer, with its translation relative
+    /// to the origin in 64-bit floats.
+    pub fn absolute_world_matrix(&self, handle: Handle) -> Result<[f64; 12], CoreError> {
+        let slot = self.slots.resolve(handle)?;
+        let position = self.cell_position(slot, self.parity()).absolute();
+        let mut matrix = self.current_world().matrix(slot as usize).map(f64::from);
+        (matrix[3], matrix[7], matrix[11]) = (position[0], position[1], position[2]);
+        Ok(matrix)
     }
 
     /// Starts frame `frame`. Frames must advance by one; after a gap, every object is recomputed
@@ -688,7 +763,6 @@ impl SceneStorage {
                 self.meshes[s] = command.b;
                 self.flags[s] = (command.op >> 8) & 0xFF;
                 self.materials[s] = 0;
-                self.cells[s] = 0;
                 self.created.set(slot);
                 self.dirty.set(slot);
                 self.dead_pending.clear(slot);
@@ -717,7 +791,8 @@ impl SceneStorage {
                 self.flags[s] = 0;
                 self.meshes[s] = 0;
                 self.materials[s] = 0;
-                self.cells[s] = 0;
+                self.table.release(self.cells[s]);
+                self.cells[s] = ORIGIN_CELL;
                 self.depths[s] = 0;
                 self.slots.release(handle, self.frame)?;
             }
@@ -896,31 +971,21 @@ impl SceneStorage {
             self.rebuild_order();
         }
         let parity = self.parity();
-        let previous = self.world[parity ^ 1].ptrs();
-        let ctx = UpdateContext {
-            frame: self.frame,
-            order: &self.order,
-            positions: &self.positions,
-            rotations: &self.rotations,
-            scales: &self.scales,
-            local_radii: &self.local_radii,
-            parents: &self.parents,
-            flags: &self.flags,
-            dirty: self.dirty.words(),
-            changed_frames: SharedMut::new(&mut self.changed_frames),
-            out: self.world[parity].ptrs(),
-            previous,
-        };
-        for (index, level) in self.levels[..self.level_count].iter().enumerate() {
+        for index in 0..self.level_count {
+            let level = self.levels[index];
             let count = level.end - level.start;
             let root = index == 0;
-            if count >= PARALLEL_LEVEL_THRESHOLD {
-                jobs.parallel_for(count, LEVEL_CHUNK, &|range, _| {
-                    ctx.update_range(level, root, range);
-                });
-            } else {
-                ctx.update_range(level, root, 0..count);
+            {
+                let ctx = update_context!(self, parity);
+                if count >= PARALLEL_LEVEL_THRESHOLD {
+                    jobs.parallel_for(count, LEVEL_CHUNK, &|range, _| {
+                        ctx.update_range(&level, root, range);
+                    });
+                } else {
+                    ctx.update_range(&level, root, 0..count);
+                }
             }
+            self.move_cells(parity);
         }
         // Dirty bits only exist below the high-water slot.
         let used_words = self.slots.high_water().div_ceil(64) as usize;
@@ -964,43 +1029,70 @@ impl SceneStorage {
             return;
         }
         let parity = self.parity();
-        let ctx = UpdateContext {
-            frame: self.frame,
-            order: &self.order,
-            positions: &self.positions,
-            rotations: &self.rotations,
-            scales: &self.scales,
-            local_radii: &self.local_radii,
-            parents: &self.parents,
-            flags: &self.flags,
-            dirty: self.dirty.words(),
-            changed_frames: SharedMut::new(&mut self.changed_frames),
-            out: self.world[parity].ptrs(),
-            previous: self.world[parity ^ 1].ptrs(),
-        };
-        // No moved object down to the shallowest moved branch has a moved ancestor, so each one
-        // reads its parent's final matrix.
-        for slot in self.late.iter_ones() {
-            let depth = self.depths[slot as usize];
-            if branch_depth.is_none_or(|d| depth <= d) {
-                ctx.compute(slot, depth == 0);
+        {
+            // No moved object down to the shallowest moved branch has a moved ancestor, so each
+            // one reads its parent's final matrix and cell.
+            let ctx = update_context!(self, parity);
+            for slot in self.late.iter_ones() {
+                let depth = self.depths[slot as usize];
+                if branch_depth.is_none_or(|d| depth <= d) {
+                    ctx.compute(slot, depth == 0);
+                }
             }
         }
+        self.move_cells(parity);
         if let Some(depth) = branch_depth {
-            // A branch has children, so the levels below it exist.
-            for level in &self.levels[depth as usize + 1..self.level_count] {
-                for &slot in &self.order[level.start as usize..level.end as usize] {
-                    if self.late.get(slot) || self.late.get(self.parents[slot as usize]) {
-                        ctx.compute(slot, false);
-                        self.late.set(slot);
+            // A branch has children, so the levels below it exist. Each level reads the final
+            // cells of the level above it.
+            for index in depth as usize + 1..self.level_count {
+                let level = self.levels[index];
+                {
+                    let ctx = update_context!(self, parity);
+                    for &slot in &self.order[level.start as usize..level.end as usize] {
+                        if self.late.get(slot) || self.late.get(self.parents[slot as usize]) {
+                            ctx.compute(slot, false);
+                            self.late.set(slot);
+                        }
                     }
                 }
+                self.move_cells(parity);
             }
         }
         let changed = self.changed.words_mut()[..used_words].iter_mut();
         for (changed, late) in changed.zip(self.late.words()) {
             *changed |= late;
         }
+    }
+
+    /// Moves the objects that the last level's loop found in a new cell into that cell: a root into
+    /// the cell that holds its position, a child into its parent's. Their world rows already hold
+    /// matrices relative to the new cell. A root goes into the origin cell when the table has no
+    /// room for its cell (see [`cells::enter_cell`]). Does nothing when the loop found none.
+    fn move_cells(&mut self, parity: usize) {
+        if !std::mem::take(self.moved_any.get_mut()) {
+            return;
+        }
+        // In slot order, so cells take the same indices on every run.
+        for slot in self.moved.iter_ones() {
+            let s = slot as usize;
+            let parent = self.parents[s];
+            self.cells[s] = if parent == NO_PARENT {
+                let position = [
+                    self.positions[s * 3],
+                    self.positions[s * 3 + 1],
+                    self.positions[s * 3 + 2],
+                ];
+                let world = &mut self.world[parity];
+                cells::enter_cell(&mut self.table, world, s, position, self.cells[s])
+            } else {
+                let cell = self.cells[parent as usize];
+                self.table.retain(cell);
+                self.table.release(self.cells[s]);
+                cell
+            };
+        }
+        let used_words = self.slots.high_water().div_ceil(64) as usize;
+        self.moved.words_mut()[..used_words].fill(0);
     }
 
     /// Sets the changed bitset from this frame's stamps, 64 slots per word.
@@ -1054,6 +1146,15 @@ struct UpdateContext<'a> {
     changed_frames: SharedMut<u32>,
     out: WorldPtrs,
     previous: WorldPtrs,
+    /// Each object's cell, which the loop only reads.
+    cells: &'a [u32],
+    /// The coordinates of each cell index.
+    cell_coords: &'a [CellCoords],
+    /// True when every object is in the origin cell, so a child's cell needs no check.
+    origin_only: bool,
+    /// The words of the bitset of objects found in a new cell, for [`SceneStorage::move_cells`].
+    moved: SharedMut<u64>,
+    moved_any: &'a AtomicBool,
 }
 
 impl UpdateContext<'_> {
@@ -1090,16 +1191,35 @@ impl UpdateContext<'_> {
         }
     }
 
-    /// Recomputes one object's world matrix and sphere, and stamps it with this frame.
+    /// Recomputes one object's world matrix and sphere relative to its cell's center, and stamps it
+    /// with this frame. A root's cell is the one that holds its position, and a child's is its
+    /// parent's; an object whose cell changed is listed for [`SceneStorage::move_cells`].
     #[inline(always)]
     fn compute(&self, slot: u32, root: bool) {
         let s = slot as usize;
+        let position = [
+            self.positions[s * 3],
+            self.positions[s * 3 + 1],
+            self.positions[s * 3 + 2],
+        ];
+        let (translation, moved) = if root {
+            let (cell, local) = cells::split(position);
+            (local, self.cell_coords[self.cells[s] as usize] != cell)
+        } else {
+            let parent = self.parents[s] as usize;
+            (
+                position,
+                !self.origin_only && self.cells[s] != self.cells[parent],
+            )
+        };
+        if moved {
+            // SAFETY: the bitset has a bit for every slot, and threads only set bits in it, with
+            // atomic operations, while the loop runs.
+            unsafe { self.moved.fetch_or(s / 64, 1 << (s % 64)) };
+            self.moved_any.store(true, Ordering::Relaxed);
+        }
         let local = math::compose(
-            [
-                self.positions[s * 3],
-                self.positions[s * 3 + 1],
-                self.positions[s * 3 + 2],
-            ],
+            translation,
             [
                 self.rotations[s * 4],
                 self.rotations[s * 4 + 1],
@@ -1624,5 +1744,202 @@ mod tests {
     #[should_panic(expected = "start a frame")]
     fn a_late_update_before_the_first_frame_panics() {
         SceneStorage::with_capacity(4).update_late_transforms();
+    }
+
+    #[test]
+    fn a_late_update_moves_a_tree_into_the_cell_its_root_crossed_into() {
+        let jobs = JobSystem::new(0);
+        let mut scene = SceneStorage::with_capacity(8);
+        let (rig, c1) = object(&mut scene, [100_000.5, 0.0, 0.0], Handle::NONE, SHOWN);
+        let (camera, c2) = object(&mut scene, [0.0, 2.0, 8.0], rig, SHOWN);
+        let (probe, c3) = object(&mut scene, [3.0, 0.0, 0.0], Handle::NONE, SHOWN);
+        scene.apply_commands(&[c1, c2, c3], 1).unwrap();
+        scene.update_transforms(&jobs);
+        let (cell, _) = cell_and_translation(&scene, rig);
+        assert_eq!(scene.cell_table().coords(cell), [98, 0, 0]);
+
+        // The rig crosses into the next cell in the late update, and the camera below it follows.
+        scene.begin_frame(2);
+        scene.update_transforms(&jobs);
+        scene.set_position(rig, [100_900.0, 0.0, 0.0]).unwrap();
+        scene.set_position(probe, [4.0, 0.0, 0.0]).unwrap();
+        scene.update_late_transforms();
+        let (next, local) = cell_and_translation(&scene, rig);
+        assert_eq!(scene.cell_table().coords(next), [99, 0, 0]);
+        assert_eq!(local, [-476.0, 0.0, 0.0]);
+        assert_eq!(
+            cell_and_translation(&scene, camera),
+            (next, [-476.0, 2.0, 8.0])
+        );
+        assert_eq!(scene.cell_table().count(next), 2);
+        assert_eq!(
+            scene.cell_table().find([98, 0, 0]),
+            None,
+            "the old cell emptied"
+        );
+        assert_eq!(
+            cell_and_translation(&scene, probe),
+            (ORIGIN_CELL, [4.0, 0.0, 0.0])
+        );
+    }
+
+    /// The cell index of an object, and its world translation relative to that cell's center.
+    fn cell_and_translation(scene: &SceneStorage, h: Handle) -> (u32, [f32; 3]) {
+        let slot = scene.resolve(h).unwrap() as usize;
+        (scene.cells()[slot], translation(scene, h))
+    }
+
+    #[test]
+    fn roots_take_the_cell_of_their_position_and_children_their_roots_cell() {
+        let jobs = JobSystem::new(0);
+        let mut scene = SceneStorage::with_capacity(16);
+        let (near, c1) = object(&mut scene, [3.0, 0.0, -2.0], Handle::NONE, SHOWN);
+        let (far, c2) = object(
+            &mut scene,
+            [100_000.5, 0.0, -100_000.0],
+            Handle::NONE,
+            SHOWN,
+        );
+        let (child, c3) = object(&mut scene, [1.0, 2.0, 0.0], far, SHOWN);
+        let (grandchild, c4) = object(&mut scene, [700.0, 0.0, 0.0], child, SHOWN);
+        scene.apply_commands(&[c1, c2, c3, c4], 1).unwrap();
+        scene.update_transforms(&jobs);
+
+        assert_eq!(
+            cell_and_translation(&scene, near),
+            (ORIGIN_CELL, [3.0, 0.0, -2.0])
+        );
+        // 100,000.5 m is 98 cells and -351.5 m out; -100,000 m is -98 cells and 352 m.
+        let (cell, local) = cell_and_translation(&scene, far);
+        assert_eq!(scene.cell_table().coords(cell), [98, 0, -98]);
+        assert_eq!(local, [-351.5, 0.0, 352.0]);
+        // Children keep their root's cell, even 700 m further out.
+        assert_eq!(
+            cell_and_translation(&scene, child),
+            (cell, [-350.5, 2.0, 352.0])
+        );
+        assert_eq!(
+            cell_and_translation(&scene, grandchild),
+            (cell, [349.5, 2.0, 352.0])
+        );
+        assert_eq!(scene.cell_table().count(cell), 3);
+        let absolute = scene.absolute_world_matrix(grandchild).unwrap();
+        assert_eq!(
+            [absolute[3], absolute[7], absolute[11]],
+            [100_701.5, 2.0, -100_000.0]
+        );
+
+        // The root crosses into the next cell, and its tree follows in the same update.
+        scene
+            .set_position(far, [100_900.0, 0.0, -100_000.0])
+            .unwrap();
+        scene.begin_frame(2);
+        scene.update_transforms(&jobs);
+        let (next, local) = cell_and_translation(&scene, far);
+        assert_eq!(scene.cell_table().coords(next), [99, 0, -98]);
+        assert_eq!(local, [-476.0, 0.0, 352.0]);
+        assert_eq!(cell_and_translation(&scene, grandchild).0, next);
+        assert_eq!(scene.cell_table().count(next), 3);
+        assert_eq!(
+            scene.cell_table().find([98, 0, -98]),
+            None,
+            "the old cell emptied"
+        );
+
+        // Destroying the tree gives the cell back.
+        scene
+            .apply_commands(
+                &[
+                    Command::destroy(grandchild),
+                    Command::destroy(child),
+                    Command::destroy(far),
+                ],
+                3,
+            )
+            .unwrap();
+        scene.update_transforms(&jobs);
+        assert!(scene.cell_table().origin_only());
+    }
+
+    #[test]
+    fn a_child_of_a_turned_root_far_out_keeps_its_precision() {
+        let jobs = JobSystem::new(0);
+        let mut scene = SceneStorage::with_capacity(8);
+        let (root, c1) = object(&mut scene, [1.0e6, 0.0, -2.0e6], Handle::NONE, SHOWN);
+        let (child, c2) = object(&mut scene, [0.3, 0.0, 0.2], root, SHOWN);
+        // A turn of 0.5 radians about +Y.
+        let (sin, cos) = (0.25f32.sin(), 0.25f32.cos());
+        scene.set_rotation(root, [0.0, sin, 0.0, cos]).unwrap();
+        scene.apply_commands(&[c1, c2], 1).unwrap();
+        scene.update_transforms(&jobs);
+        // The child's place, worked out in 64-bit floats from the same rotation.
+        let (s, c) = (f64::from(2.0 * sin * cos), f64::from(cos * cos - sin * sin));
+        let expected = [1.0e6 + 0.3 * c + 0.2 * s, 0.0, -2.0e6 - 0.3 * s + 0.2 * c];
+        let m = scene.absolute_world_matrix(child).unwrap();
+        for (axis, want) in [(3, expected[0]), (11, expected[2])] {
+            // 32-bit world positions 1,000 km out move in steps of 6 cm; the cell keeps 0.1 mm.
+            assert!((m[axis] - want).abs() < 1e-4, "{} != {want}", m[axis]);
+        }
+    }
+
+    #[test]
+    fn a_child_moved_under_a_far_root_takes_its_cell() {
+        let jobs = JobSystem::new(0);
+        let mut scene = SceneStorage::with_capacity(8);
+        let (far, c1) = object(&mut scene, [0.0, 6_378_137.0, 0.0], Handle::NONE, SHOWN);
+        let (near, c2) = object(&mut scene, [0.0, 0.0, 0.0], Handle::NONE, SHOWN);
+        let (child, c3) = object(&mut scene, [0.0, 1.0, 0.0], near, SHOWN);
+        scene.apply_commands(&[c1, c2, c3], 1).unwrap();
+        scene.update_transforms(&jobs);
+        let far_cell = cell_and_translation(&scene, far).0;
+        assert_eq!(scene.cell_table().coords(far_cell), [0, 6229, 0]);
+        assert_eq!(cell_and_translation(&scene, child).0, ORIGIN_CELL);
+
+        scene
+            .apply_commands(&[Command::set_parent(child, far)], 2)
+            .unwrap();
+        scene.update_transforms(&jobs);
+        let (cell, local) = cell_and_translation(&scene, child);
+        assert_eq!(cell, far_cell);
+        // 6,378,138 m is 6,229 cells less 358 m.
+        assert_eq!(local, [0.0, -358.0, 0.0]);
+        // Made a root again, it takes the cell of its own position: the origin cell.
+        scene
+            .apply_commands(&[Command::set_parent(child, Handle::NONE)], 3)
+            .unwrap();
+        scene.update_transforms(&jobs);
+        assert_eq!(
+            cell_and_translation(&scene, child),
+            (ORIGIN_CELL, [0.0, 1.0, 0.0])
+        );
+        assert_eq!(scene.cell_table().count(far_cell), 1);
+    }
+
+    #[test]
+    fn a_full_cell_table_keeps_new_roots_in_the_origin_cell() {
+        let jobs = JobSystem::new(0);
+        let mut scene = SceneStorage::with_capacity(8);
+        // Every cell but the origin cell is taken.
+        for k in 1..crate::cells::MAX_CELLS as i32 {
+            scene.cell_table_mut().acquire([k, 0, 7]).unwrap();
+        }
+        let (h, c) = object(&mut scene, [0.0, 0.0, 3_072.0], Handle::NONE, SHOWN);
+        scene.apply_commands(&[c], 1).unwrap();
+        scene.update_transforms(&jobs);
+        // The object keeps its place, relative to the origin, with 32-bit precision.
+        assert_eq!(
+            cell_and_translation(&scene, h),
+            (ORIGIN_CELL, [0.0, 0.0, 3_072.0])
+        );
+        let slot = scene.resolve(h).unwrap() as usize;
+        assert_eq!(scene.current_world().sphere(slot)[2], 3_072.0);
+        // Once a cell frees up, the next update of the object moves it there.
+        scene.cell_table_mut().release(5);
+        scene.set_position(h, [0.0, 0.0, 3_073.0]).unwrap();
+        scene.begin_frame(2);
+        scene.update_transforms(&jobs);
+        let (cell, local) = cell_and_translation(&scene, h);
+        assert_eq!(scene.cell_table().coords(cell), [0, 0, 3]);
+        assert_eq!(local, [0.0, 0.0, 1.0]);
     }
 }

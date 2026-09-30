@@ -7,7 +7,7 @@
 // routes Math.random to it, steps the sketch to the held time in fixed steps after the setup, and
 // publishes the last frame alone. Hold mode reads no input, so the held frame never depends on it.
 
-import { coreFailure } from '../errors/core-failure';
+import { coreFailure, QUEUED_CHANGE } from '../errors/core-failure';
 import { EngineError } from '../errors/engine-error';
 import { messageOf } from '../errors/message';
 import type { EngineCapabilities } from '../page/engine';
@@ -26,7 +26,7 @@ import { HOLD_SEED, seedMathRandom } from './random';
 export type PagePoster = (type: string, data: unknown, transfer?: Transferable[]) => void;
 
 /** Fixed sizes of the engine core. */
-const SCENE_CAPACITY = 16_383;
+export const SCENE_CAPACITY = 16_383;
 const MAX_BATCHES = 256;
 const COMMAND_CAPACITY = 1 << 16;
 
@@ -296,7 +296,7 @@ export class SketchRunner {
 		// Job workers woken now start while the engine applies the frame's commands; woken before
 		// the sketch's update, they would spin through it and sleep again.
 		glue.prepareJobs();
-		if (glue.beginFrame(frame) !== 0) this.report(coreFailure(glue, 'the frame'));
+		if (glue.beginFrame(frame) !== 0) this.report(coreFailure(glue, QUEUED_CHANGE));
 		this.endPhase(Phase.Commands);
 		glue.updateTransforms();
 		this.endPhase(Phase.Transforms);

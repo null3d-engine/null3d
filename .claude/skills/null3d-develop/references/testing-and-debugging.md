@@ -52,7 +52,7 @@ const { width, height, pixels } = await engine.captureFrame(); // the held frame
 
 Keep held frames the same on every run:
 
-- Move things with `time.now` and `dt`, never `Date.now()` or `performance.now()`.
+- Move things with `time.now` and `dt` (also `time.dt`), or in `onFixedUpdate`, never `Date.now()` or `performance.now()`. Every hold runs the same fixed steps.
 - Draw random numbers from `math.random` or `Math.random`, which hold mode seeds; `crypto.getRandomValues` is not seeded.
 - Await every asset in the setup, because the hold starts when the setup resolves.
 - Pass test settings in the sketch module's address, such as `new URL('./sketch.ts?view=harbor', import.meta.url)`, and read them from `import.meta.url` in the sketch. Page messages reach the sketch only after the hold.
@@ -89,7 +89,7 @@ URL switches for the dev server (engine docs `guides/testing`):
 | `?depth=reversed-gl` | On WebGL2, force a depth mode: `reversed`, `reversed-gl` (as in browsers without `EXT_clip_control`, such as Firefox) or `standard` (`concepts/backends`) |
 | `?latency=pipelined`, `?latency=low` | Latency mode |
 | `?jobs=4` | Start this many job workers, from 1 to 255, instead of the logical cores minus 2 |
-| `?memory=2048` | Set the maximum of the memory that worker threads share, in MiB, up to 4096; the default is 1024 |
+| `?memory=2048` | Set the maximum of the memory that worker threads share, in MiB, up to 4096, over the `memory` option of `createEngine`; the default is 1024 |
 | `?fps=30` | Hold drawing at this many frames per second, at most the display's rate, to compare runs on displays of different refresh rates |
 | `?hold=1.5` | Hold mode: step the sketch to 1.5 seconds, draw that one frame and publish it as `window.__null3dHold`; a bare `?hold` holds at the `hold` option's time, or at 0 |
 

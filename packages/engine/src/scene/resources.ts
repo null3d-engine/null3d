@@ -177,6 +177,12 @@ export interface MaterialOptions {
 	opacity?: number;
 }
 
+/** Throws E1108 for an opacity outside 0 to 1. Call it inside `if (DEV)`. */
+function checkOpacity(opacity: number, call: string): void {
+	if (!(opacity >= 0 && opacity <= 1))
+		throw new EngineError('E1108', `${call}() got the opacity ${opacity}, outside 0 to 1.`);
+}
+
 /**
  * A material: how the surfaces of the objects that use it look.
  *
@@ -186,18 +192,25 @@ export class Material {
 	constructor(
 		/** @internal */ readonly id: number,
 		private readonly core: CoreMemory,
+		/** The name that errors from `set` give the call, such as 'materials.standard.set'. */
 		private readonly call: string,
 	) {}
 
-	/** Changes the material's values; cheap at any time. */
+	/**
+	 * Changes the options that it gets and keeps the values of the others. Every object that uses
+	 * the material changes with it. Converting a new color allocates.
+	 */
 	set(options: MaterialOptions): void {
-		const [r, g, b] = linearColor(options.color ?? '#ffffff', `${this.call}.set`);
-		this.core.check(
-			this.core.glue.setMaterialColor(this.id, r, g, b, options.opacity ?? 1),
-			`${this.call}.set`,
-			undefined,
-			true,
-		);
+		const { core, call } = this;
+		const { color, opacity } = options;
+		// Every value is checked before the first change, so a call that throws changes nothing.
+		if (DEV && opacity !== undefined) checkOpacity(opacity, call);
+		if (color !== undefined) {
+			const [r, g, b] = linearColor(color, call);
+			core.check(core.glue.setMaterialColor(this.id, r, g, b), call, undefined, true);
+		}
+		if (opacity !== undefined)
+			core.check(core.glue.setMaterialOpacity(this.id, opacity), call, undefined, true);
 	}
 }
 
@@ -214,10 +227,9 @@ export class Materials {
 	create(shading: number, options: MaterialOptions, call: string): Material {
 		const [r, g, b] = linearColor(options.color ?? '#ffffff', call);
 		const opacity = options.opacity ?? 1;
-		if (DEV && !(opacity >= 0 && opacity <= 1))
-			throw new EngineError('E1108', `${call}() got the opacity ${opacity}, outside 0 to 1.`);
+		if (DEV) checkOpacity(opacity, call);
 		const id = this.core.check(this.core.glue.createMaterial(shading, r, g, b, opacity), call);
-		return new Material(id, this.core, call);
+		return new Material(id, this.core, `${call}.set`);
 	}
 
 	/** A lit material. */
