@@ -163,8 +163,11 @@ export interface CoreGlue extends CoreErrors {
 		z: number,
 		w: number,
 	): number;
-	/** Gives a material a map, a texture's handle, or none with 0. */
-	setMaterialMap(material: number, texture: number): number;
+	/**
+	 * Gives a material a map in `slot` (a `MAP_SLOT_*` code): a texture's handle, or none with 0.
+	 * The shader reads it at the second texture coordinates when `secondUv` is 1.
+	 */
+	setMaterialMap(material: number, slot: number, texture: number, secondUv: number): number;
 	/**
 	 * A texture with no texels yet, in `depth` layers of a texture array. `format` is a `FORMAT_*` code;
 	 * the rest set its sampler with `ADDRESS_*` and `FILTER_*` codes. Returns its handle.

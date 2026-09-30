@@ -5,7 +5,6 @@
 // covers two floors that recede from the camera, with a trilinear filter on the left and
 // anisotropic filtering on the right, which keeps the squares sharp further along the floor.
 import { defineSketch, type MeshArrays, type TextureOptions } from '@null3d/engine';
-import { unlitMapMaterial } from '@null3d/engine/internal';
 
 /** Texels on each side of the checkerboard, and of each of its squares. */
 const SIZE = 256;
@@ -56,7 +55,7 @@ export default defineSketch(async (ctx) => {
 	});
 	scene.setActiveCamera(camera);
 	const material = async (options: TextureOptions) =>
-		unlitMapMaterial(materials, textures.fromImageBitmap(await checkerboard(), options));
+		materials.unlit({ map: textures.fromImageBitmap(await checkerboard(), options) });
 
 	const quad = geometry.fromArrays(QUAD);
 	const width = SIDES.reduce((sum, side) => sum + side, 0) + GAP * (SIDES.length - 1);

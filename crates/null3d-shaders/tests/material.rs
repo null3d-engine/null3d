@@ -66,7 +66,7 @@ fn a_surface_function_builds_into_every_variant_of_the_template() {
     );
     let wgsl = &built.variants["webgpu"].wgsl.as_ref().expect("WGSL").source;
     assert!(wgsl.contains("fn square(x: f32) -> f32"), "{wgsl}");
-    assert!(wgsl.contains("@location(2) uv: vec2<f32>"), "{wgsl}");
+    assert!(wgsl.contains("@location(2) uv0"), "{wgsl}");
     assert!(!wgsl.contains("discard"), "{wgsl}");
     // A masked variant tests the alpha that the surface function returns.
     let masked = &built.variants["webgpu_alpha_mask"]

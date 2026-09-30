@@ -298,6 +298,7 @@ impl CpuCulledRenderer {
     /// Assigns every source to a data texture and a bucket, then makes room for the new layout:
     /// the clusters, the culling runs and every view's output, and the upload arenas.
     fn rebuild_layout(&mut self, input: &FrameInput<'_>) -> Result<(), RecordError> {
+        self.settings.update_map_groups();
         let limit = FrameBuilder::max_sources(self);
         let targets = self.scene_targets();
         self.layout.rebuild(
