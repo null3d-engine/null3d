@@ -795,10 +795,10 @@ export class Scene {
 
 	/**
 	 * Builds every GPU pipeline that the scene needs as it stands, and resolves once they are all
-	 * built. Objects that are hidden count too. Call it after the objects of a loading stage exist,
-	 * and show them when it resolves: an object whose pipeline is still building draws nothing. The
-	 * first frame always waits for its pipelines, so a setup function that awaits it lets the page
-	 * see the first frame as soon as the setup returns.
+	 * built. Hidden objects count too. After the first frame, an object whose pipeline is still
+	 * building draws nothing, so create a loading stage's objects hidden, warm up, then show them.
+	 * The first frame waits for its pipelines anyway. In the setup, a warm-up draws that frame once
+	 * they are built, before the setup goes on.
 	 */
 	warmUp(): Promise<void> {
 		return this.warmUpScene();

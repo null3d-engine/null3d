@@ -47,6 +47,8 @@ run('warm-up', async () => {
 		tier: engine.capabilities.tier,
 		firstFramePipelines: play.load.firstFramePipelines,
 		warmUpMs: play.load.warmUpMs,
+		engineStartMs: play.load.engineStartMs,
+		firstFrameDoneMs: play.load.firstFrameDoneMs,
 		playPipelines: play.pipelines,
 		addedPipelines: added.pipelines,
 		afterPipelines: after.pipelines,

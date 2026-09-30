@@ -292,28 +292,6 @@ export class SketchRunner {
 		Atomics.notify(slots, Slot.FramesPublished);
 	}
 
-	/** The sketch's part of a frame: the input the page wrote, preference changes and the update. */
-	private update(frame: number, dt: number): void {
-		const { slots } = this.sketch.control;
-		if (this.holdSeconds === undefined) this.input.beginFrame(frame);
-		const reducedMotion = Atomics.load(slots, Slot.ReducedMotion);
-		if (reducedMotion !== this.reducedMotion) {
-			this.reducedMotion = reducedMotion;
-			for (const handler of this.preferenceHandlers) {
-				try {
-					handler();
-				} catch (error) {
-					this.report(error);
-				}
-			}
-		}
-		try {
-			this.callbacks.onUpdate?.(dt);
-		} catch (error) {
-			this.report(error);
-		}
-	}
-
 	/**
 	 * Runs one frame at the clock's time and step, and returns its number. Without `play`, the
 	 * frame reads no input and runs none of the sketch's code: only the core's steps.
@@ -330,7 +308,28 @@ export class SketchRunner {
 		this.record.begin(frame);
 		this.core.refresh();
 		this.phaseStart = start;
-		if (play) this.update(frame, dt);
+		// The sketch's part of the frame: the input the page wrote, preference changes and the
+		// update. It stays in this function: a call that passed the step on would allocate a number
+		// for it in every frame.
+		if (play) {
+			if (this.holdSeconds === undefined) this.input.beginFrame(frame);
+			const reducedMotion = Atomics.load(slots, Slot.ReducedMotion);
+			if (reducedMotion !== this.reducedMotion) {
+				this.reducedMotion = reducedMotion;
+				for (const handler of this.preferenceHandlers) {
+					try {
+						handler();
+					} catch (error) {
+						this.report(error);
+					}
+				}
+			}
+			try {
+				this.callbacks.onUpdate?.(dt);
+			} catch (error) {
+				this.report(error);
+			}
+		}
 		this.endPhase(Phase.Update);
 		// Job workers woken now start while the engine applies the frame's commands; woken before
 		// the sketch's update, they would spin through it and sleep again.

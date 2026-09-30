@@ -147,7 +147,7 @@ Look up the full explanation with `bunx @null3d/cli docs show errors/E1203`. Rel
 | A console warning that the browser took the GPU away, then the scene draws again | A driver reset or a GPU crash; the engine started a new device and drew the whole scene again | Nothing, unless it repeats. Test your page's handling with `engine.simulateGpuLoss()` | `api/engine` |
 | `engine.onFailure` reports E1302 and the canvas stops changing | The GPU did not come back, or it was lost more than twice within a minute | Destroy the engine, put a new canvas in place of the old one and start again; lower the preset; report reproducible cases | `errors/E1302` |
 | Stutter every few seconds | Garbage collection | Remove per-frame allocations | `guides/performance` |
-| Hitch when something appears | Pipeline compile | Create earlier; `scene.warmUp()` | `guides/loading-screens` |
+| Something appears late, or a hitch when it appears | Its pipeline was building | Create it hidden, `await scene.warmUp()`, then show it | `guides/loading-screens` |
 | Tab reloads or crashes on a phone | Memory limit | Compressed textures, fewer and smaller assets, destroy unused prefabs | `guides/phones` |
 | `document is not defined` or `window is not defined` | DOM code in `sketch.ts` | Move it to `page.ts`; send data with messages | `api/page` |
 | `createEngine` rejects with E1410 | The sketch module did not load: a wrong address, or an error that its top-level code threw | Pass `sketch: new URL('./sketch.ts', import.meta.url)`; fix the error that the message quotes | `errors/E1410` |
