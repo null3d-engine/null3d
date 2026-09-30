@@ -24,10 +24,10 @@ export function growthReason(value: string, named: readonly string[]): string {
 		.replace(/^[\s,.;:()+-]+|[\s,.;:()+-]+$/g, '');
 }
 
-/** The files of `files` that a trailer value names, or none when it gives no reason. */
-function explains(value: string, files: readonly string[]): string[] {
+/** The files of `files` that a trailer value names, and whether it also gives a reason. */
+function readTrailer(value: string, files: readonly string[]) {
 	const named = files.filter((file) => namesFile(value, file));
-	return named.length > 0 && !isBareAck(growthReason(value, named)) ? named : [];
+	return { named, reasoned: named.length > 0 && !isBareAck(growthReason(value, named)) };
 }
 
 /**
@@ -40,8 +40,10 @@ export function explainedFiles(
 ): Map<string, string> {
 	const explained = new Map<string, string>();
 	for (const { sha, message } of commits)
-		for (const value of findAckValues(message, SIZE_GROWTH_TRAILER))
-			for (const file of explains(value, files)) if (!explained.has(file)) explained.set(file, sha);
+		for (const value of findAckValues(message, SIZE_GROWTH_TRAILER)) {
+			const { named, reasoned } = readTrailer(value, files);
+			if (reasoned) for (const file of named) if (!explained.has(file)) explained.set(file, sha);
+		}
 	return explained;
 }
 
@@ -53,12 +55,10 @@ export function sizeGrowthProblems(
 	const message = effectiveMessage(rawMessage);
 	if (message.length === 0 || isExemptCommit(message)) return [];
 	return findAckValues(message, SIZE_GROWTH_TRAILER).flatMap((value) => {
-		const named = files.filter((file) => namesFile(value, file));
+		const { named, reasoned } = readTrailer(value, files);
 		if (named.length === 0)
 			return [`Size-Growth value "${value}" names no file that the size report measures.`];
-		if (isBareAck(growthReason(value, named)))
-			return [`Size-Growth value "${value}" gives no reason for the growth.`];
-		return [];
+		return reasoned ? [] : [`Size-Growth value "${value}" gives no reason for the growth.`];
 	});
 }
 
