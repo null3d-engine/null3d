@@ -56,13 +56,18 @@ export enum Slot {
 	CanvasCssWidth = 20,
 	CanvasCssHeight = 21,
 	/**
+	 * The display's refresh period in whole microseconds, as the page measures it from its own frame
+	 * callbacks, or 0 before the first measurement. A worker that draws holds its frames to it.
+	 */
+	DisplayInterval = 22,
+	/**
 	 * The images that the thread that draws received for texture uploads. The sketch thread sends
 	 * them in the order of their ids, which count from 1, so every id up to this count arrived.
 	 */
-	ImagesArrived = 22,
+	ImagesArrived = 23,
 }
 
-const SLOT_COUNT = 23;
+const SLOT_COUNT = 24;
 
 /** Int32 values per input event record. */
 export const INPUT_EVENT_INTS = 8;

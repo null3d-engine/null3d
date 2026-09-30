@@ -44,14 +44,18 @@ fn step<B: FrameBuilder>(
     commands
 }
 
-/// The buffer that a list's frame groups bind as the maps table: their third entry.
-fn maps_buffer(commands: &[(Op, Vec<u32>)]) -> u32 {
+/// The buffer that a list's frame groups bind as the maps table: their last entry, at `binding`.
+fn maps_buffer(commands: &[(Op, Vec<u32>)], binding: u32) -> u32 {
     let (_, frame_group) = commands
         .iter()
         .find(|(op, o)| *op == Op::CreateBindGroup && o[1] == layout::FRAME)
         .expect("the first frame makes the frame group");
-    assert_eq!(frame_group[3 + 2 * 5], 2, "the maps table is binding 2");
-    frame_group[3 + 2 * 5 + 2]
+    let last = 3 + (frame_group[2] as usize - 1) * 5;
+    assert_eq!(
+        frame_group[last], binding,
+        "the maps table is binding {binding}"
+    );
+    frame_group[last + 2]
 }
 
 /// The writes of the maps table in a frame's list.
@@ -78,7 +82,7 @@ fn a_mapped_material_draws_its_layer_once_the_image_is_on_the_gpu_on_webgpu() {
     let (first, _, _) = world.add_mapped(SIZE);
     let (second, _, _) = world.add_mapped(SIZE);
     let commands = step(&mut world, &mut mock, true);
-    let maps = maps_buffer(&commands);
+    let maps = maps_buffer(&commands, 2);
     assert_eq!(map_writes(&commands, maps), 1, "no map is ready");
     assert_eq!(
         commands
@@ -179,7 +183,7 @@ fn webgl2_draws_bind_each_maps_group_once_per_run_on_both_draw_paths() {
         let (large, _, _) = world.add_mapped(2 * SIZE);
         let (other_small, _, _) = world.add_mapped(SIZE);
         let commands = step(&mut world, &mut mock, true);
-        let maps = maps_buffer(&commands);
+        let maps = maps_buffer(&commands, 3);
         let store = world.renderer.settings().textures();
         let (a, b) = (
             store.group_id(small).unwrap(),

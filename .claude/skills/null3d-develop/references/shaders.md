@@ -119,9 +119,9 @@ materials.shader({
 ```
 
 - The build reads your WGSL and your `uniforms` and generates a typed `set()`: `mat.set({ speed: 2 })` type-checks in TypeScript (0.2; in 0.1 `set` is untyped).
-- `set()` with values is cheap at any time. Adding or removing a texture key changes the shader, so do it before play.
+- `set()` changes only the uniforms you pass, cheaply at any time, and the others keep their values. The texture keys are fixed when you create the material, because they change the shader.
 - Color strings and hex numbers are sRGB and are converted to linear. Arrays are used as given.
-- Per-instance data: `createInstances(..., { attributes: { tint: 4 } })` (0.2) makes `batch.attributes.tint` in TypeScript and `instanceAttr.tint` (`vec4f`) in the surface function.
+- Per-instance data: `createInstances(mesh, count, { material, attributes: { tint: 4 } })` (0.2) makes `batch.attributes.tint` in TypeScript and `instanceAttr.tint` (`vec4f`) in the surface function.
 
 ## 5. Vertex offsets and full shaders
 
@@ -189,7 +189,7 @@ These rules come from the capabilities browsers report; `shaders/wgsl-rules` lis
 1. Use only these WGSL language features: `packed_4x8_integer_dot_product`, `pointer_composite_access`, `readonly_and_readwrite_storage_textures`. They are the three that Chrome, Safari and Firefox all report.
 2. Write flat interpolation as `@interpolate(flat, either)`; compatibility mode accepts no other flat form.
 3. Stay within these limits unless you check capabilities first: 16 vertex attributes (including built-ins in compatibility mode), 15 values passed between stages, 16 sampled textures and 16 samplers per stage, 4 storage buffers in fragment shaders and none in vertex shaders, 16 KB of uniform data per binding, compute workgroups of at most 128 invocations, 16 KB of workgroup memory, textures up to 4096 pixels.
-4. `f16` needs the `shader-f16` feature: guard it and provide an `f32` fallback.
+4. Do not use `f16`. The build rejects it, as it rejects every optional WebGPU feature, such as `enable subgroups;`. Write the math in `f32`.
 5. Do not read 32-bit float textures with filtering. Filtering them is an optional GPU feature, and some devices, such as iPads, lack it. Use `textureLoad`, or 16-bit float textures.
 6. Keep `textureSample` in uniform control flow, or use `textureSampleLevel` inside branches that differ between pixels.
 7. WGSL's `%` on floats keeps the sign of the left operand, like C, so `-1.5 % 1.0` is `-0.5`. For GLSL-style `mod`, write `x - y * floor(x / y)`.

@@ -1,14 +1,15 @@
 //! The sources and buckets that every view culls and draws, and their uploads: the world matrices,
-//! the bucket of every source, and the bucket records that the culling shader reads.
+//! the bucket and cell of every source, and the bucket records that the culling shader reads.
 
 use std::collections::TryReserveError;
 
+use null3d_core::cells::CELL_SHIFT;
 use null3d_core::handle::Handle;
-use null3d_core::instances::BatchTable;
+use null3d_core::instances::{BatchTable, InstanceBatch};
 use null3d_core::scene::SceneStorage;
 use null3d_core::snapshot::SCENE_TARGET;
 use null3d_core::world::MATRIX_FLOATS;
-use null3d_gpu::drawlist::{DrawList, Op, buffer_usage as usage};
+use null3d_gpu::drawlist::{DrawList, Op, buffer_usage as usage, sizes};
 
 use super::ids;
 use crate::frame::{
@@ -52,13 +53,36 @@ pub(super) struct Draw {
     pub(super) base_vertex: u32,
 }
 
-/// A scene object's entry in the bucket table: its bucket, or `HIDDEN` while it is hidden, which
-/// its world radius says.
-fn scene_membership(home: u32, world_radius: f32) -> u32 {
+// Buckets never outnumber sources, so every bucket fits below a cell index in a table entry, and
+// the entry of a drawn source is never `HIDDEN`.
+const _: () = assert!(u16::MAX as u32 * sizes::CULL_WORKGROUP_SIZE < (1 << CELL_SHIFT) - 1);
+
+/// A source's entry in the bucket table: its bucket with its cell index above it, or `HIDDEN` for
+/// a source that draws nowhere.
+fn entry(bucket: u32, cell: u32) -> u32 {
+    if bucket == HIDDEN {
+        HIDDEN
+    } else {
+        bucket | (cell << CELL_SHIFT)
+    }
+}
+
+/// A scene object's entry in the bucket table: its bucket and cell, or `HIDDEN` while it is
+/// hidden, which its world radius says.
+fn scene_entry(home: u32, world_radius: f32, cell: u32) -> u32 {
     if world_radius == f32::NEG_INFINITY {
         HIDDEN
     } else {
-        home
+        entry(home, cell)
+    }
+}
+
+/// The entry of a batch's `row`: the batch's bucket and the row's cell while the row is active.
+fn row_entry(bucket: u32, batch: &InstanceBatch, row: u32, active: u32) -> u32 {
+    if row < active {
+        entry(bucket, batch.cells()[row as usize])
+    } else {
+        HIDDEN
     }
 }
 
@@ -87,7 +111,7 @@ pub(super) struct Layout {
     pub(super) buckets: Vec<Bucket>,
     /// Every bucket's draws, bucket by bucket; a draw's place is its indirect draw's.
     pub(super) draws: Vec<Draw>,
-    /// The bucket of every source, or `HIDDEN`.
+    /// The entry of every source: its bucket and cell, or `HIDDEN`.
     instance_buckets: Vec<u32>,
     /// The bucket of every scene slot whether it is shown or not, or `HIDDEN` for a slot with no
     /// mesh or material.
@@ -211,20 +235,19 @@ impl Layout {
         let bucket_of = |key: Option<BucketKey>| bucket_of(counts, key).unwrap_or(HIDDEN);
         self.instance_buckets.clear();
         self.home_buckets.clear();
-        for slot in 0..scene_rows as usize {
+        let slots = world.radii().iter().zip(scene.cells());
+        for (slot, (&radius, &cell)) in slots.take(scene_rows as usize).enumerate() {
             let home = bucket_of(scene_key(slot));
             self.home_buckets.push(home);
-            self.instance_buckets
-                .push(scene_membership(home, world.radii()[slot]));
+            self.instance_buckets.push(scene_entry(home, radius, cell));
         }
         self.batch_rows.clear();
         for (_, batch) in batches.iter() {
             let bucket = bucket_of(key_of(batch.mesh(), batch.material()));
             let active = batch.frame_active_count(parity);
             self.batch_rows.push((bucket, active));
-            self.instance_buckets.extend(
-                (0..batch.capacity()).map(|row| if row < active { bucket } else { HIDDEN }),
-            );
+            self.instance_buckets
+                .extend((0..batch.capacity()).map(|row| row_entry(bucket, batch, row, active)));
         }
 
         self.indirect_template.clear();
@@ -290,9 +313,10 @@ impl Layout {
         Ok(recreated)
     }
 
-    /// Rewrites the bucket table entries of the sources whose membership changed since the layout
-    /// was built, without a rebuild: scene objects shown or hidden this frame, which the frame's
-    /// uploads name, and the batch rows that a new active count added or removed.
+    /// Rewrites the bucket table entries of the sources whose membership or cell changed since the
+    /// layout was built, without a rebuild: scene objects shown, hidden or moved to another cell
+    /// this frame, which the frame's uploads name, the batch rows that a new active count added or
+    /// removed, and the batch rows that changed cells.
     pub(super) fn update_membership(
         &mut self,
         list: &mut DrawList,
@@ -301,13 +325,14 @@ impl Layout {
         parity: usize,
     ) -> Result<(), RecordError> {
         let radii = input.scene.world(parity).radii();
+        let cells = input.scene.cells();
         let scene_rows = self.home_buckets.len() as u32;
         let (home_buckets, instance_buckets) = (&self.home_buckets, &mut self.instance_buckets);
         let mut check = |start: u32, count: u32| -> Result<(), RecordError> {
             let mut changed: Option<(u32, u32)> = None;
             for slot in start..(start + count).min(scene_rows) {
                 let s = slot as usize;
-                let wanted = scene_membership(home_buckets[s], radii[s]);
+                let wanted = scene_entry(home_buckets[s], radii[s], cells[s]);
                 if instance_buckets[s] != wanted {
                     instance_buckets[s] = wanted;
                     changed =
@@ -331,14 +356,19 @@ impl Layout {
         for (index, (_, batch)) in input.batches.iter().enumerate() {
             let (bucket, was) = self.batch_rows[index];
             let now = batch.frame_active_count(parity);
-            if now == was {
-                continue;
+            let moved = batch.cell_changes();
+            let mut rows = (now != was).then(|| (was.min(now), was.max(now)));
+            if moved.count > 0 {
+                let (start, end) = (moved.start, moved.start + moved.count);
+                rows =
+                    Some(rows.map_or((start, end), |(low, high)| (low.min(start), high.max(end))));
             }
+            let Some((low, high)) = rows else {
+                continue;
+            };
             let base = self.batch_bases[index].1;
-            let (low, high) = (was.min(now), was.max(now));
             for row in low..high {
-                self.instance_buckets[(base + row) as usize] =
-                    if row < now { bucket } else { HIDDEN };
+                self.instance_buckets[(base + row) as usize] = row_entry(bucket, batch, row, now);
             }
             self.batch_rows[index].1 = now;
             write_entries(list, arena, &self.instance_buckets, base + low, base + high)?;

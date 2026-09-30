@@ -13,6 +13,50 @@ The benchmarks compare null3D with three.js in the same browser. These points co
 - The page switch `?fps=<n>` holds null3D's drawing at n frames per second, at most the display's rate. Use it to compare runs on displays of different rates. The three.js pages do not read it.
 - On WebGL2, `measure` reports `visibleEntries`, the entries in each frame's list of visible objects, and the bench summary divides the upload by it. When only the camera moves, as in S1-static, the upload is about 4 bytes per entry.
 
+## The benchmark job in CI
+
+- The Benchmarks workflow compares a new commit with a baseline on one of GitHub's machines. On main it runs one job at a time, so it leaves GitHub's other Mac machines to the pull requests' Safari and Firefox checks.
+- A push to main waits while a job runs, and a newer push replaces the job that waits. So the baseline of a push is the last commit on main that a job measured with success, which `bench/ci-baseline.ts` finds. The next job then measures the change of every push that got no job.
+- Without such a commit, the baseline is the commit before. After a failed job, the next job still compares with the last commit that passed. Main's job then fails until a commit fixes the slowdown or names it in a `Bench-Expected:` trailer.
+- For a pull request it runs on demand, against the pull request's merge base. Add the `benchmark` label, and each push runs it again while the label stays. You can also start the workflow from the Actions tab with a pull request's number, a branch or a commit.
+- GitHub's machines are shared, and their speed changes from run to run. So the job judges a new commit only against a baseline measured in the same job. It builds both commits on one machine, each in a git worktree of its own, with `bun run build`.
+- It then runs `bun run bench:run --compare <baseline>,<new>` in Chrome. S1, S1-static and S2 run on null3D's two GPU paths. The job runs 10 rounds. Each round runs every page once in each build, the two runs back to back, and even rounds run the new build first. Each run has 5 s of warm-up and 5 s measured.
+- It drops a run that measured no frames, and a run that measured another refresh rate than most runs of its page did.
+- Each run gives two medians of CPU time per frame: the busiest thread's time, and the engine's own work on that thread. For each page and measure, the job divides the new build's median by the baseline's in each round. The change is the median of these ratios. A machine that changes speed between rounds then changes both runs of a round alike.
+- The job fails when the busiest thread's change is more than 5% and more than 0.01 ms. It also fails when own work's change is more than 15% and more than 0.02 ms. The browser's timer counts in steps of 5 microseconds, so a small time moves by whole steps between runs.
+- A pull request that makes a benchmark more than 3% slower still needs its written reason (hard rule 17). One job cannot tell such a change from the machine's noise, but its table shows every change.
+- The job runs on GitHub's Mac machine (`macos-15`, 3 cores of an Apple M1 in a virtual machine). Its GPU is shared with other machines, so the job reports GPU time but never judges it. Device sessions measure the GPU.
+- A job takes about 25 minutes: 3 minutes to set up, 3 to build both commits and 20 to run the pages.
+- The summary goes to the run's page. Each run's result, `summary.json` and `summary.md` stay in an artifact for 90 days, so the workflow's list of runs holds the history.
+
+### How the machine and the rules were chosen
+
+On 30 September 2026, jobs compared two builds of identical engine code, so every change they measured was noise.
+
+- On the Linux machine, the software GPU drew S1 and S1-static at under one frame per second. A run of 10 s measured 5 to 7 frames, and the software GPU took the processor from the engine's threads. Identical builds differed by up to 29% in own work. The job also dropped every run of S2, whose refresh rate varied from 20 to 30 Hz.
+- The Mac machine kept every run at 60 Hz, but its speed changed often. The same scene code took 3.4 to 5.4 ms per frame in runs 20 seconds apart. So the job compares the builds round by round. The builds' plain medians differed by up to 22% on identical builds.
+- Six jobs on the Mac ran 5 rounds of 10 s, 10 rounds of 5 s or 15 rounds of 3 s each. Round by round, the largest slowdowns of identical builds were +4.7% for the busiest thread and +12.0% for own work, both in S1. In S1-static and S2 the largest was 0.012 ms. Shorter runs gave noisier rounds, and 10 rounds of 5 s gave the least noise for the time.
+- Own work is the busiest thread's time less the scene's update: a small difference of two larger times. In S1 it also waits for a job worker, whose timing varies on 3 cores. Both make own work noisier, so its rule is wider.
+- The busiest thread's rule is the smallest tested that none of the six jobs broke: 3% failed three jobs, and 4% failed two. For own work, 10% failed two jobs and 12% one. Its rule of 15% keeps 3 points above the largest slowdown.
+- More rounds narrow the noise only slowly. A job of 20 rounds would take about 45 minutes, and its medians would still wander by about 2%.
+
+### Mark an expected slowdown
+
+A commit that makes a benchmark slower on purpose names the change and gives the reason in a `Bench-Expected:` trailer:
+
+```text
+Bench-Expected: s1/null3d-webgl2: the batch pass now writes normals, about 0.1 ms per frame
+```
+
+- Before the colon, name the benchmarks: a scene, then a page and a measure if needed. For example `s1`, `s1/null3d-webgl2` or `s1/null3d-webgl2/own-work`. The measures are `busiest-thread` and `own-work`. A `*` stands for any part, and a comma separates two benchmarks.
+- After the colon, give the reason. A bare value such as "yes" does not count.
+- The job reads the trailers of every commit from the baseline to the new commit. A squash merge keeps them, because main's squash messages list each commit's message.
+- A trailer that does not parse excuses nothing, and the summary lists it.
+
+### Run a comparison on your computer
+
+Build two checkouts, such as a git worktree of main beside your branch, with `bun run build` in each. Then run `bun run bench:run --compare ../main,. --runs 10 --seconds 5`, the job's settings. The baseline's dev server takes the port that `NULL3D_PORT` names, and the new build's server the next one.
+
 ## Hold frames
 
 - A benchmark page with `?hold` draws one frame at the scene's hold time, 2 seconds, and publishes its pixels. `?hold=<seconds>` holds at another time.
@@ -33,7 +77,7 @@ Three sweeps measure the defaults that are still open: the latency mode, the job
 
 - The page kinds that end in `-low` run null3D in low-latency mode, and the bench plan runs them beside the pipelined pages. On the Mac, run `bun run bench:run --pages null3d-webgpu,null3d-webgpu-low,null3d-webgl2,null3d-webgl2-low`. Compare the presented frame rate, the 95th and 99th percentiles of the frame interval, and the busiest thread. In low-latency mode the sketch worker draws, so its time includes the drawing.
 - The page switch `?jobs=<n>` starts n job workers. On the Mac, `bun run bench:run --jobs 1,2,4,8,16` runs null3D's two GPU paths at each count. On a phone, add the counts to the bench plan: `bun tests/real-browsers.ts --plan bench --allow-no-webgpu --android chrome --n 300000 --jobs 2,4,6,8`. The summary gives each count's frame time, busiest thread and the sketch worker's own work. A run whose engine started another count fails.
-- The page switch `?memory=<MiB>` sets the shared memory's maximum, up to the 4096 MiB that the engine core declares. The `memory` plan loads the engine test page 20 times at each maximum from 256 to 4096 MiB. It names the largest maximum that loaded every time. A failed allocation counts as a failed load, and `--runs <n>` changes the number of loads.
+- The page switch `?memory=<MiB>` sets the shared memory's maximum, up to the 4096 MiB that the engine core declares. It wins over the `memory` option of `createEngine`. The `memory` plan loads the engine test page 20 times at each maximum from 256 to 4096 MiB. It names the largest maximum that loaded every time. A failed allocation counts as a failed load, and `--runs <n>` changes the number of loads.
 - Before the loads at each maximum, the memory plan counts how many shared memories with that maximum fit at once. That is how many engines a page can hold. `--runs 0` runs only these counts.
 
 ## Download size
@@ -79,3 +123,24 @@ Three sweeps measure the defaults that are still open: the latency mode, the job
 - `--thread sketch` samples the sketch worker's frame step instead, and splits it between the engine's code, the engine core and the browser. It also lists the engine's per-frame phase times on that thread, such as the update and the batch pass.
 - The shipped core has no function names. Build it with `bun tools/build-wasm.ts --names` before a profile, so the profile names the core's functions. The names add size, so that build skips the size checks: build again without it before you check sizes.
 - Chrome's page-wide memory measurement waits up to a minute for the job workers, and it counts shared memory once per worker. Chrome's debugger gives exact heaps per worker through `Runtime.getHeapUsage`.
+
+## GPU time per pass
+
+- On WebGPU, `measure` returns `gpuPassMs` beside `gpuMs`: the copies before the frame's first pass, each pass, and the time between passes. The bench plan's results keep it in each result's stats.
+- In Chrome, the time between the culling pass and the main pass is Chrome's own check of the indirect draws. At 240,000 boxes it takes about 0.1 to 0.3 ms.
+- The timestamps cover only the GPU passes. Work that the browser does outside them shows in `gpuLatencyMs` and in the frame rate, as [Safari's frame path](implementation-notes.md#safaris-frame-path) describes.
+
+## Safari's own work
+
+Safari runs WebGPU in its GPU process, `com.apple.WebKit.GPU`, and no engine timer sees the work it does there. Instruments shows it. With Xcode installed, run these while a benchmark page runs in Safari with `?demo`:
+
+```sh
+export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
+xcrun xctrace record --template 'Metal System Trace' --all-processes --time-limit 3s --output metal.trace
+xcrun xctrace record --template 'Time Profiler' --attach <pid> --time-limit 4s --output safari-gpu.trace
+xcrun xctrace export --input metal.trace --toc
+```
+
+- The Metal trace names the GPU process's id. Other apps that embed WebKit have GPU processes of their own, so `pgrep -fl com.apple.WebKit.GPU` can list several.
+- Export a table with `--xpath '/trace-toc/run[@number="1"]/data/table[@schema="<name>"]'`. `metal-gpu-intervals` gives each encoder's GPU time. `metal-application-command-buffer-submissions` gives each command buffer's time from creation to commit. `time-profile` holds the CPU samples.
+- In S1-static at 240,000 boxes, the Metal trace showed about 1.5 ms of GPU work per frame. The profile showed Safari's GPU process spending 9.6 ms of CPU per frame on a native render bundle, which the engine no longer makes.

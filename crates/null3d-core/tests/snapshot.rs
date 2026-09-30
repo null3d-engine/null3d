@@ -1,10 +1,11 @@
 //! The frame handoff under two threads: a producer computes and publishes real frames while a
 //! consumer reads them, and the consumer checks that it never sees a half-written frame.
 //!
-//! Every value the producer writes encodes the frame that wrote it. A dynamic object's x
-//! coordinate is the frame number; a static object's is the last frame that moved it. If the
+//! Every value the producer writes encodes the frame that wrote it. A dynamic object's position
+//! encodes the frame number; a static object's encodes the last frame that moved it. If the
 //! consumer ever read a buffer while the producer wrote a later frame into it, some value would
-//! belong to that later frame and a check would fail.
+//! belong to that later frame and a check would fail. The positions stay in the origin cell, so
+//! world translations equal them.
 
 mod common;
 
@@ -32,6 +33,22 @@ fn last_move(frame: u32, k: u32, period: u32) -> u32 {
     } else {
         frame - (frame - k) % period
     }
+}
+
+/// The position that encodes `frame`: x and y below 512, inside the origin cell.
+fn position_of(frame: u32) -> [f32; 3] {
+    [(frame % 256) as f32, (frame / 256) as f32, 0.0]
+}
+
+/// The x and y translations of `row`'s matrix.
+fn translation_xy(m: &[f32], row: usize) -> [f32; 2] {
+    [m[row * 12 + 3], m[row * 12 + 7]]
+}
+
+/// The x and y of `frame`'s position, moved `dx` along x.
+fn xy_of(frame: u32, dx: f32) -> [f32; 2] {
+    let [x, y, _] = position_of(frame);
+    [x + dx, y]
 }
 
 fn pause(rng: &mut Rng) {
@@ -112,25 +129,26 @@ fn the_consumer_never_sees_a_half_written_frame() {
                     std::hint::spin_loop();
                 };
                 assert_eq!(write.frame(), frame);
-                let x = frame as f32;
+                let p = position_of(frame);
                 for &s in &dynamic_slots {
-                    scene.positions_mut()[s * 3] = x;
+                    scene.positions_mut()[s * 3..s * 3 + 3].copy_from_slice(&p);
                 }
                 let k = (frame % STATIC) as usize;
-                scene.set_position(statics[k], [x, 0.0, 0.0]).unwrap();
+                scene.set_position(statics[k], p).unwrap();
                 let batch = table.get_mut(moving).unwrap();
                 for row in 0..ROWS as usize {
-                    batch.positions_mut()[row * 3] = x;
+                    batch.positions_mut()[row * 3..row * 3 + 3].copy_from_slice(&p);
                 }
                 let batch = table.get_mut(still).unwrap();
                 let row = frame % ROWS;
-                batch.positions_mut()[row as usize * 3] = x;
+                let r = row as usize;
+                batch.positions_mut()[r * 3..r * 3 + 3].copy_from_slice(&p);
                 batch.mark_dirty(row, 1).unwrap();
 
                 let initial: &[Command] = if frame == 1 { &commands } else { &[] };
                 scene.apply_commands(initial, frame).unwrap();
                 scene.update_transforms(&jobs);
-                table.update(&jobs, frame);
+                table.update(&jobs, frame, scene.cell_table_mut());
                 write.snapshot_mut().record(frame, &scene, &table);
                 pause(&mut rng);
                 write.publish();
@@ -158,20 +176,24 @@ fn the_consumer_never_sees_a_half_written_frame() {
                         batch_views[1][p].matrices(),
                     )
                 };
-                let x = |m: &[f32], row: usize| m[row * 12 + 3];
+                let now = xy_of(g, 0.0);
                 for &s in &dynamic_slots {
-                    assert_eq!(x(m, s), g as f32, "frame {g}: dynamic slot {s}");
+                    assert_eq!(translation_xy(m, s), now, "frame {g}: dynamic slot {s}");
                 }
                 for k in 0..STATIC as usize {
-                    let want = last_move(g, k as u32, STATIC) as f32;
-                    assert_eq!(x(m, static_slots[k]), want, "frame {g}: static root {k}");
-                    assert_eq!(x(m, child_slots[k]), want + 1.0, "frame {g}: child {k}");
+                    let moved = last_move(g, k as u32, STATIC);
+                    let (root, child) = (static_slots[k], child_slots[k]);
+                    let root_at = translation_xy(m, root);
+                    assert_eq!(root_at, xy_of(moved, 0.0), "frame {g}: static root {k}");
+                    let child_at = translation_xy(m, child);
+                    assert_eq!(child_at, xy_of(moved, 1.0), "frame {g}: child {k}");
                 }
                 for row in 0..ROWS {
-                    assert_eq!(x(moving_m, row as usize), g as f32, "frame {g}: row {row}");
-                    let want = last_move(g, row, ROWS) as f32;
+                    let r = row as usize;
+                    assert_eq!(translation_xy(moving_m, r), now, "frame {g}: row {row}");
+                    let want = xy_of(last_move(g, row, ROWS), 0.0);
                     assert_eq!(
-                        x(still_m, row as usize),
+                        translation_xy(still_m, r),
                         want,
                         "frame {g}: static row {row}"
                     );

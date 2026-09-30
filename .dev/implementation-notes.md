@@ -100,3 +100,20 @@ The shader compiler is the shader crate built as a WebAssembly module. Build too
 - The uploads test page reports each frame's WebGPU errors, which show such a failure.
 - SwiftShader, the software GPU of the CI machines, loses depth precision past 100 m even in reversed depth from 0 to 1. The depth precision scene fights there at 250 m, 4 km and 10 km, on WebGPU too. The image tests therefore expect no fighting in reversed depth only on a real GPU.
 - Work around a browser's fault with an order or a call that is valid everywhere, as the staging ring does. Where browsers differ in speed, time the choices on the device, as the upload routes do. When neither works, detect the fault with a feature test, never from the user agent (hard rule 14).
+
+## Safari's frame path
+
+Safari 26 does work for each WebGPU frame that no GPU timestamp covers. It shows only in `gpuLatencyMs` and in the frame rate. [Benchmarks](benchmarks.md#safaris-own-work) says how to see it.
+
+- Safari 26 encodes a render bundle that holds an indirect draw again at every `executeBundles`. Each time, it also builds a Metal indirect command buffer of 16,384 commands, because a command count wraps below zero.
+- On an M5 Max, that took Safari's GPU process 9.6 ms of CPU per frame, in S1-static and in S2 alike. WebKit fixed it in August 2026, and Safari 27.2's beta notes list the fix.
+- So the WebGPU backend makes no native render bundles. It keeps each bundle's recorded commands and replays them into the render pass. In Chrome, S2's 100 draws added about 15 microseconds to the render worker's frame.
+- A worker's WebGPU canvas reaches the page through two synchronous calls after each frame callback. The second copies the frame into the page's canvas, and it first waits for the GPU to finish the frame.
+- So the worker stays blocked until Safari's GPU process has run all the frame's commands and the GPU has drawn the frame. Safari's own work, the GPU time and the copy add up to the worker's frame.
+- `gpuLatencyMs` counts from the submit until the drawing thread sees the frame finish, so in Safari it includes that blocked time. With native bundles on the Mac, most of its 11 ms was Safari's command buffer build.
+- Safari runs a worker's `requestAnimationFrame` from a 15 ms timer, not from the display. After the worker sleeps through most of a frame, the timer fires about 3 ms late.
+- So the frame loops set a timer at the start of each callback in a worker, due 4 ms before the next callback. The worker then sleeps too briefly for Safari's timer to fire late. In S1-static at 240,000 boxes on a busy Mac, Safari presented 62.5 frames per second with it and 54.4 without. On a quiet Mac, the timer fired less late, and Safari presented 59.4 to 60 without it.
+- Safari's worker timer then calls the worker about 64 times a second, more often than a 60 Hz display shows frames. On the iPad, the worker drew 61 frames per second, and on the Mac 64.7, so some frames were never shown.
+- So the page measures the display's refresh period from its own frame callbacks, which follow the display in every browser. It writes the period to the control block. A worker whose callbacks come at a rate that matches no display's holds its frames to that period. Chrome's worker callbacks follow the display, so Chrome draws as before, even when a busy page thread measures a slower rate.
+- With the hold, Safari on the Mac's built-in screen presented 60.0 frames per second in 4 of 4 runs. Safari runs the page's frame callbacks at 60 Hz on that 120 Hz screen, and at 72 Hz on a 144 Hz screen. On the 144 Hz screen, the worker's 64.6 frames per second stay below the page's rate, so the hold skips no callback there.
+- Safari writes no timestamps, or stale ones, for a pass without work. The GPU timer's start mark therefore dispatches one invocation that does nothing.

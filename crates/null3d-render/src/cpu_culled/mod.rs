@@ -27,6 +27,16 @@
 //! opaque passes. The render graph ([`crate::frame_graph`]) orders the passes and begins their
 //! render passes.
 //!
+//! # Cells
+//!
+//! World matrices are relative to their grid cells' centers (see [`null3d_core::cells`]). Each
+//! index list entry holds its row, or its cluster, with the row's cell index above it. Each frame
+//! uploads, for each view, the offset from the view's camera to each cell in use beside the view's
+//! frame constants, and the vertex shader adds an instance's offset to its matrix, so it draws
+//! positions relative to the camera. When only the cameras move, static matrices stay in the
+//! resident texture, and each view uploads its constants, its offsets and, when it changed, its
+//! index list.
+//!
 //! # Memory
 //!
 //! Frames record without the general-purpose allocator. Each frame parity keeps its own culling
@@ -41,6 +51,7 @@ mod opaque;
 
 use std::collections::TryReserveError;
 
+use null3d_core::cells::CELL_SHIFT;
 use null3d_core::culling::BucketedCull;
 use null3d_core::snapshot::SCENE_TARGET;
 use null3d_gpu::caps::{BUDGET, Limit};
@@ -59,7 +70,7 @@ use crate::view::{ViewFrame, ViewId};
 use cull::Culling;
 use data::{RingSlot, SharedTextures, matrices_of, write_matrices};
 use layout::{Clusters, Layout};
-use opaque::{Opaque, ViewUpload};
+use opaque::{OFFSETS_BYTES, Opaque, ViewUpload};
 
 /// The builder's GPU objects. It owns every id it uses; each view has a range of its own.
 mod ids {
@@ -150,10 +161,19 @@ impl Default for CpuCulledConfig {
 }
 
 /// The most sources the builder can draw on a device whose textures reach `max_texture_size`:
-/// each texture group, and the index list, must fit one texture.
+/// each texture group, and the index list, must fit one texture, and an index list entry holds a
+/// source below its cell index, in [`MAX_SOURCE_BITS`] bits.
 pub const fn max_sources(max_texture_size: u32) -> u32 {
-    sizes::MATRICES_PER_TEXTURE_ROW.saturating_mul(max_texture_size)
+    let by_texture = sizes::MATRICES_PER_TEXTURE_ROW.saturating_mul(max_texture_size);
+    if by_texture < 1 << MAX_SOURCE_BITS {
+        by_texture
+    } else {
+        1 << MAX_SOURCE_BITS
+    }
 }
+
+/// Bits of a source in an index list entry: those below the cell index.
+pub const MAX_SOURCE_BITS: u32 = CELL_SHIFT;
 
 /// Records one draw list per frame for the WebGL2 path.
 pub struct CpuCulledRenderer {
@@ -285,7 +305,7 @@ impl CpuCulledRenderer {
         let meshes = self.meshes.pending_bytes(self.settings.meshes().pages());
         let materials =
             self.settings.materials().capacity() as usize * (MATERIAL_FLOATS + MAP_WORDS) * 4;
-        let per_view = sizes::FRAME_UNIFORM_BYTES as usize
+        let per_view = (sizes::FRAME_UNIFORM_BYTES + OFFSETS_BYTES) as usize
             + self.layout.draws_slot_bytes as usize
             + self.layout.draws.len() * 12;
         meshes + materials + self.settings.views().len() * per_view
@@ -495,6 +515,7 @@ impl CpuCulledRenderer {
                 let upload = ViewUpload {
                     frame,
                     values: &values,
+                    offsets: self.culling.offsets(view),
                     streamed,
                     listed,
                     new_list,

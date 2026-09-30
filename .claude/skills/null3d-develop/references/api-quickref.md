@@ -1,6 +1,6 @@
 # null3D API quick reference
 
-This is the API planned for null3D 1.0. A version in parentheses, such as (0.2), is the first engine version with that part; no number means 0.1. Before using a part, check the status of its docs page (`stable`, `experimental` or `planned`), as SKILL.md section 1 explains. Each heading names the doc ID with the full reference.
+This is the API planned for null3D 1.0. A version in parentheses, such as (0.2), is the first engine version with that part; no number means 0.1. "Later in 0.1" marks a part of 0.1 that is not built yet, but other parts can be missing too. Before using a part, check its docs page's status (`stable`, `experimental` or `planned`) and the note under its title, as SKILL.md section 1 explains. Each heading names the doc ID with the full reference.
 
 ## Contents
 
@@ -38,9 +38,10 @@ const engine = await createEngine({
   gpu: 'auto',           // 'auto' | 'webgpu' | 'webgl2' (testing only)
   powerPreference: 'high-performance',   // the default; 'low-power' saves battery on devices with two GPUs
   latency: 'pipelined',  // or 'low'; 'pipelined' is the default
+  memory: { maximumMiB: 1024 },          // the default; up to 4096 for scenes that need more (E1409 outside 256 to 4096)
   transparent: false,    // true for a see-through canvas
   largeWorld: false,     // (0.2) planet-scale scenes: cell-relative positions, batch origins
-  sketchThread: 'worker',  // or 'main' for DOM-heavy apps and debugging
+  sketchThread: 'worker',  // later in 0.1: 'main' for DOM-heavy apps and debugging
   onProgress: (stage) => {},             // 'core', then 'sketch' after the sketch's setup, then 'first-frame'
   onSketchMessage: (type, data) => {},     // sketch messages from the start of setup, such as load progress
   signal: controller.signal,             // abort to cancel the start; createEngine then rejects
@@ -113,7 +114,7 @@ export default defineSketch(async (ctx) => {
 
 ## 4. Objects and transforms (`api/objects`)
 
-Every node (group, mesh, light, camera, instantiated model) has:
+Every node (group, mesh, camera, instantiated model) has these calls. Lights become nodes with the same calls later in 0.1; until then they have only the calls in section 7.
 
 ```ts
 obj.setPosition(x, y, z);            obj.getPosition(out);         // out: number[3] or Float32Array
@@ -121,7 +122,7 @@ obj.setRotation(qx, qy, qz, qw);     obj.getRotation(out);         // quaternion
 obj.setRotationEuler(x, y, z, 'XYZ');                               // radians, three.js order names
 obj.rotateX(a); obj.rotateY(a); obj.rotateZ(a);                     // local axes
 obj.setScale(x, y, z);               obj.translate(x, y, z);       // local translate
-obj.lookAt(x, y, z);                                                // cameras and lights look down -Z
+obj.lookAt(x, y, z);                                                // cameras look down -Z, and so will lights
 obj.getWorldPosition(out); obj.getWorldQuaternion(out); obj.getWorldMatrix(out);
 obj.setParent(parent);               obj.setParent(parent, { keepWorld: true }); obj.setParent(null);
 obj.setVisible(false);               obj.setDynamic(true);
@@ -225,7 +226,7 @@ const m = materials.standard({
   envIntensity: 1, fog: true,
   uvTransform: { offset: [0, 0], repeat: [1, 1], rotation: 0 },
 });
-m.set({ roughness: 0.4 });                     // cheap: uniform values only
+m.set({ roughness: 0.4 });                     // changes only the options you pass; the rest keep their values
 
 materials.unlit({ color, map, opacity, alphaMode, alphaCutoff, vertexColors, doubleSided, fog });
 materials.shadowCatcher({ opacity: 0.5 });     // (0.2)
@@ -233,7 +234,7 @@ materials.shader({ ...anyStandardOption, uniforms, textures, surface, vertexOffs
 // every materials.standard option feeds defaultSurface(), so a surface function can adjust a standard look
 ```
 
-Changing `alphaMode`, adding or removing a texture, or switching `vertexColors` changes the shader, so set them up before play. `set()` with plain values is cheap at any time. Custom shaders: `references/shaders.md`.
+`set()` changes values, such as colors and numbers, cheaply at any time. Options that change the shader, such as `alphaMode`, `vertexColors` or a texture that the material did not have, are fixed when you create the material. Create each variant before play, and switch with `setMaterial`. Custom shaders: `references/shaders.md`.
 
 ## 10. Textures (`api/textures`)
 
@@ -425,7 +426,8 @@ math.random(); math.seed(42); math.randFloat(lo, hi); math.randInt(lo, hi); math
 color.fromHex(out, '#ff8800');            // linear RGB from an sRGB hex value
 color.fromSrgb(out, r, g, b); color.fromHsl(out, h, s, l); color.srgbToLinear(c); color.linearToSrgb(c);
 
-time.now; time.dt; time.frame;            // seconds, seconds, frame counter
+time.now; time.frame;                     // seconds, frame counter
+time.dt;                                  // later in 0.1: the frame's step in seconds; until then use onUpdate's dt
 ```
 
 - Each helper writes its result into its first argument, `out`, and returns it. Inputs can be tuples such as `[0, 1, 0]`, plain arrays or typed arrays. Make `out` arrays with `create()`, never in per-frame code.

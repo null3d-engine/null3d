@@ -4,9 +4,10 @@
 mod common;
 
 use common::{Rng, Workers, frusta, orthographic, perspective, random_spheres};
+use null3d_core::cells::CELL_SHIFT;
 use null3d_core::culling::{
-    BY_ROW, BucketedCull, CULL_CHUNK, CullOutput, CullRun, Frustum, NO_BUCKET, cull_into_buckets,
-    cull_parallel, cull_spheres, cull_spheres_reference,
+    BY_ROW, BucketedCull, CULL_CHUNK, CullOutput, CullRun, CullSet, Frustum, NO_BUCKET, ROW_CELLS,
+    cull_into_buckets, cull_parallel, cull_spheres, cull_spheres_in_cells, cull_spheres_reference,
 };
 use null3d_core::world::SphereArrays;
 
@@ -113,8 +114,17 @@ fn parallel_culling_matches_the_reference_for_0_to_8_workers() {
     }
 }
 
-/// Splits rows `0..rows` of a set into runs of at most one culling chunk.
-fn runs_of(set: u32, rows: u32, bucket: u32, base: u32, out: &mut Vec<CullRun>) {
+/// Offsets from the camera to four cells, which the tests spread spheres over.
+const OFFSETS: [[f32; 4]; 4] = [
+    [0.0; 4],
+    [-12.0, 0.0, 0.0, 0.0],
+    [0.0, 3.0, 10.0, 0.0],
+    [5.0, -3.0, -20.0, 0.0],
+];
+
+/// Splits rows `0..rows` of a set into runs of at most one culling chunk, in one cell or each row
+/// in its own.
+fn runs_of(set: u32, rows: u32, bucket: u32, base: u32, cell: u32, out: &mut Vec<CullRun>) {
     let mut start = 0;
     while start < rows {
         let end = (start + CULL_CHUNK).min(rows);
@@ -124,16 +134,20 @@ fn runs_of(set: u32, rows: u32, bucket: u32, base: u32, out: &mut Vec<CullRun>) 
             end,
             bucket,
             base,
+            cell,
         });
         start = end;
     }
 }
 
 /// The list [`cull_into_buckets`] must make, one run and one row at a time: every visible entry
-/// in bucket order, and within a bucket in run order and row order.
+/// in bucket order, and within a bucket in run order and row order. A run in one cell tests its
+/// spheres against the frustum moved into the cell; a run whose rows lie in different cells moves
+/// each sphere by its cell's offset.
 fn bucketed_reference(
     frustum: &Frustum,
     sets: &[[Vec<f32>; 4]],
+    cells: &[Vec<u32>],
     runs: &[CullRun],
     row_buckets: &[u32],
     buckets: u32,
@@ -141,16 +155,25 @@ fn bucketed_reference(
     let mut by_bucket = vec![Vec::new(); buckets as usize];
     for run in runs {
         let [xs, ys, zs, rs] = &sets[run.set as usize];
-        let mut visible = vec![0; xs.len()];
-        let n = cull_spheres_reference(frustum, xs, ys, zs, rs, run.start..run.end, &mut visible);
-        for &row in &visible[..n] {
+        for row in run.start..run.end {
+            let r = row as usize;
+            let (cell, visible) = if run.cell == ROW_CELLS {
+                let cell = cells[run.set as usize][r];
+                let [x, y, z, _] = OFFSETS[cell as usize];
+                let visible = frustum.contains_sphere(xs[r] + x, ys[r] + y, zs[r] + z, rs[r]);
+                (cell, visible)
+            } else {
+                let [x, y, z, _] = OFFSETS[run.cell as usize];
+                let moved = frustum.moved_by([x, y, z]);
+                (run.cell, moved.contains_sphere(xs[r], ys[r], zs[r], rs[r]))
+            };
             let bucket = if run.bucket == BY_ROW {
-                row_buckets[row as usize]
+                row_buckets[r]
             } else {
                 run.bucket
             };
-            if bucket != NO_BUCKET {
-                by_bucket[bucket as usize].push(row + run.base);
+            if visible && bucket != NO_BUCKET {
+                by_bucket[bucket as usize].push(row + run.base + (cell << CELL_SHIFT));
             }
         }
     }
@@ -165,7 +188,8 @@ fn bucketed_reference(
 fn bucketed_culling_matches_the_reference_for_0_to_8_workers() {
     const BUCKETS: u32 = 7;
     // A scene whose rows look up their buckets, some drawing nowhere, and two batches that each
-    // fill one bucket. The first batch is long enough that the copy pass runs in parallel.
+    // fill one bucket. The scene's rows and the first batch's lie in different cells; the second
+    // batch lies in one cell. The first batch is long enough that the copy pass runs in parallel.
     let sets = [
         random_spheres(10_001, 21),
         random_spheres(90_000, 22),
@@ -178,22 +202,31 @@ fn bucketed_culling_matches_the_reference_for_0_to_8_workers() {
             _ => rng.below(BUCKETS),
         })
         .collect();
+    let mut cells: Vec<Vec<u32>> = [10_001, 90_000]
+        .iter()
+        .map(|&n| (0..n).map(|_| rng.below(OFFSETS.len() as u32)).collect())
+        .collect();
+    cells.push(vec![2; 4_099]);
     let mut runs = Vec::new();
-    runs_of(0, 10_001, BY_ROW, 0, &mut runs);
-    runs_of(1, 90_000, 3, 20_000, &mut runs);
+    runs_of(0, 10_001, BY_ROW, 0, ROW_CELLS, &mut runs);
+    runs_of(1, 90_000, 3, 20_000, ROW_CELLS, &mut runs);
     runs.push(CullRun {
         set: 2,
         start: 7,
         end: 7,
         bucket: 5,
         base: 0,
+        cell: 2,
     });
-    runs_of(2, 4_099, 3, 200_000, &mut runs);
+    runs_of(2, 4_099, 3, 200_000, 2, &mut runs);
     let by_row = runs.iter().filter(|r| r.bucket == BY_ROW).count() as u32;
     let rows: u32 = runs.iter().map(|r| r.end - r.start).sum();
-    let spheres = |set: u32| {
+    let set = |set: u32| {
         let [xs, ys, zs, rs] = &sets[set as usize];
-        SphereArrays::new(xs, ys, zs, rs)
+        CullSet {
+            spheres: SphereArrays::new(xs, ys, zs, rs),
+            cells: &cells[set as usize],
+        }
     };
     // The usual views, and one that culls nothing, so the list is long enough for the parallel
     // copy.
@@ -209,14 +242,15 @@ fn bucketed_culling_matches_the_reference_for_0_to_8_workers() {
             let n = cull_into_buckets(
                 pool.jobs(),
                 frustum,
-                &spheres,
+                &OFFSETS,
+                &set,
                 &runs,
                 &row_buckets,
                 BUCKETS,
                 &mut out,
             );
             let (entries, starts) =
-                bucketed_reference(frustum, &sets, &runs, &row_buckets, BUCKETS);
+                bucketed_reference(frustum, &sets, &cells, &runs, &row_buckets, BUCKETS);
             assert_eq!(n, entries.len(), "{workers} workers, frustum {f}");
             assert_eq!(
                 out.indices(),
@@ -238,6 +272,60 @@ fn bucketed_culling_matches_the_reference_for_0_to_8_workers() {
 }
 
 #[test]
+fn spheres_in_cells_cull_like_spheres_moved_by_their_offsets() {
+    let [xs, ys, zs, rs] = random_spheres(10_003, 31);
+    let mut rng = Rng::new(32);
+    let cells: Vec<u32> = (0..xs.len())
+        .map(|_| rng.below(OFFSETS.len() as u32))
+        .collect();
+    let moved: [Vec<f32>; 3] = std::array::from_fn(|k| {
+        let axis = [&xs, &ys, &zs][k];
+        axis.iter()
+            .zip(&cells)
+            .map(|(v, &cell)| v + OFFSETS[cell as usize][k])
+            .collect()
+    });
+    let spheres = SphereArrays::new(&xs, &ys, &zs, &rs);
+    for (f, frustum) in frusta().iter().enumerate() {
+        for range in [0..10_003, 3..10_001, 9_999..10_003] {
+            let mut simd = vec![0; xs.len()];
+            let mut scalar = vec![0; xs.len()];
+            let a =
+                cull_spheres_in_cells(frustum, spheres, &cells, &OFFSETS, range.clone(), &mut simd);
+            let [mx, my, mz] = &moved;
+            let b = cull_spheres_reference(frustum, mx, my, mz, &rs, range.clone(), &mut scalar);
+            assert_eq!(simd[..a], scalar[..b], "frustum {f}, range {range:?}");
+        }
+    }
+}
+
+#[test]
+fn a_frustum_moved_into_a_cell_sees_what_the_camera_sees() {
+    let [xs, ys, zs, rs] = random_spheres(20_000, 33);
+    for frustum in frusta() {
+        for [x, y, z, _] in OFFSETS {
+            let moved = frustum.moved_by([x, y, z]);
+            for i in 0..xs.len() {
+                let (cx, cy, cz, r) = (xs[i], ys[i], zs[i], rs[i]);
+                let camera = frustum.contains_sphere(cx + x, cy + y, cz + z, r);
+                if moved.contains_sphere(cx, cy, cz, r) == camera {
+                    continue;
+                }
+                // The two may differ by rounding only, for a sphere that grazes a plane.
+                let grazes = frustum.planes().iter().any(|p| {
+                    let d = f64::from(p[0]) * f64::from(cx + x)
+                        + f64::from(p[1]) * f64::from(cy + y)
+                        + f64::from(p[2]) * f64::from(cz + z)
+                        + f64::from(p[3]);
+                    (d + f64::from(r)).abs() < 1e-4
+                });
+                assert!(grazes, "sphere {i} at offset {:?}", [x, y, z]);
+            }
+        }
+    }
+}
+
+#[test]
 #[should_panic(expected = "fewer than")]
 fn a_bucketed_output_without_room_for_the_runs_panics() {
     let v = vec![0.0; 10];
@@ -248,11 +336,16 @@ fn a_bucketed_output_without_room_for_the_runs_panics() {
         end: 10,
         bucket: 0,
         base: 0,
+        cell: 0,
     };
     cull_into_buckets(
         &null3d_core::jobs::JobSystem::new(0),
         &frustum,
-        &|_| SphereArrays::new(&v, &v, &v, &v),
+        &OFFSETS,
+        &|_| CullSet {
+            spheres: SphereArrays::new(&v, &v, &v, &v),
+            cells: &[],
+        },
         &[run],
         &[],
         1,

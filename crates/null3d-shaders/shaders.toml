@@ -55,6 +55,12 @@ variants.webgl2 = { targets = ["glsl"] }
 
 # A test shader for the GPU layer's texture commands, which the texture replay test page draws
 # with. The engine does not import it, so its download does not hold it.
+# The GPU timer's start mark, one invocation that does nothing; its compute entry point is `main`.
+# WebGPU only.
+[shaders.timer_mark]
+file = "timer_mark.wgsl"
+variants.webgpu = { targets = ["wgsl"] }
+
 [shaders.test_textures]
 file = "test_textures.wgsl"
 pipelines.sample = { vertex = "vs_main", fragment = "fs_sample" }

@@ -79,6 +79,14 @@ impl Perspective {
             perspective_reversed(self.fov_degrees.to_radians(), aspect, self.near, self.far);
         multiply(&projection, &view_matrix(world))
     }
+
+    /// The view-projection matrix for positions relative to the camera: the camera's rotation and
+    /// scale from its world transform, with the camera itself at the origin.
+    pub fn relative_view_projection(&self, world: &Affine, aspect: f32) -> Mat4 {
+        let mut at_origin = *world;
+        (at_origin[3], at_origin[7], at_origin[11]) = (0.0, 0.0, 0.0);
+        self.view_projection(&at_origin, aspect)
+    }
 }
 
 #[cfg(test)]
@@ -116,6 +124,26 @@ mod tests {
             let back = transform(&view, world_point);
             for k in 0..3 {
                 assert!((back[k] - p[k]).abs() < 1e-5, "{back:?} != {p:?}");
+            }
+        }
+    }
+
+    #[test]
+    fn the_relative_view_projection_sees_offsets_as_the_world_one_sees_positions() {
+        let lens = Perspective {
+            fov_degrees: 50.0,
+            near: 0.1,
+            far: 500.0,
+        };
+        // A camera at (3, 4, 10), turned 90 degrees about +Y.
+        let world: Affine = [0.0, 0.0, 1.0, 3.0, 0.0, 1.0, 0.0, 4.0, -1.0, 0.0, 0.0, 10.0];
+        let absolute = lens.view_projection(&world, 1.5);
+        let relative = lens.relative_view_projection(&world, 1.5);
+        for p in [[-20.0, 1.0, 9.0], [0.5, 4.0, 10.0]] {
+            let a = transform(&absolute, p);
+            let r = transform(&relative, [p[0] - 3.0, p[1] - 4.0, p[2] - 10.0]);
+            for k in 0..4 {
+                assert!((a[k] - r[k]).abs() < 1e-4, "{a:?} != {r:?}");
             }
         }
     }

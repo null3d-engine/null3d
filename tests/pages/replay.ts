@@ -64,7 +64,9 @@ run('replay', async () => {
 	frame.set([3, 3, 3, 0], 24);
 	frame.set([0.4, 0.4, 0.4, 0], 28);
 	const materials = new Float32Array([0.8, 0.1, 0.1, 1, 0.1, 0.3, 0.9, 1]);
-	const cull = new Float32Array(28);
+	// The planes and the instance count, then the offset from the camera to each grid cell. Every
+	// instance here lies in cell 0, whose zero offset keeps the positions in world space.
+	const cull = new Float32Array(28 + 4 * G.SIZE_MAX_CELLS);
 	cull.set(frustumPlanes(viewProj), 0);
 	new Uint32Array(cull.buffer).set([positions.length, 0, 0, 0], 24);
 	const indirect = new Uint32Array([36, 0, 0, 0, 0, 36, 0, 0, 0, 0]);
