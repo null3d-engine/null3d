@@ -35,14 +35,25 @@ export function writePng(path, image) {
 }
 
 /**
+ * Decodes a PNG file's bytes as 8-bit RGBA pixels, and throws for any other kind of PNG.
+ *
+ * @param {Uint8Array} bytes
+ * @param {string} name The file's name, for the error.
+ * @returns {RgbaImage}
+ */
+export function decodePng(bytes, name) {
+	const { width, height, data, channels } = decode(bytes);
+	if (channels !== 4 || !(data instanceof Uint8Array))
+		throw new Error(`${name} is not an 8-bit RGBA image`);
+	return { width, height, data };
+}
+
+/**
  * Reads a PNG file of 8-bit RGBA pixels, and throws for any other kind of PNG.
  *
  * @param {string} path
  * @returns {RgbaImage}
  */
 export function readPng(path) {
-	const { width, height, data, channels } = decode(readFileSync(path));
-	if (channels !== 4 || !(data instanceof Uint8Array))
-		throw new Error(`${path} is not an 8-bit RGBA image`);
-	return { width, height, data };
+	return decodePng(readFileSync(path), path);
 }

@@ -70,3 +70,22 @@ export async function captureFrame(
 	await drawing.drawHeld();
 	return drawing.renderer.capture(emptySceneInput(Atomics.load(slots, Slot.FramesTaken)));
 }
+
+/**
+ * Draws the newest frame offscreen, as `captureFrame` does, and encodes it as a PNG file. The
+ * canvas is opaque, so every pixel of the image is opaque too, whatever alpha the GPU wrote.
+ */
+export async function captureImage(drawing: Drawing<Renderer>, slots: Int32Array): Promise<Blob> {
+	const { width, height, pixels } = await captureFrame(drawing, slots);
+	for (let i = 3; i < pixels.length; i += 4) pixels[i] = 255;
+	const canvas = new OffscreenCanvas(width, height);
+	const context = canvas.getContext('2d');
+	if (!context) throw new Error('the browser has no 2D canvas to encode the frame with');
+	const texels = new Uint8ClampedArray(
+		pixels.buffer as ArrayBuffer,
+		pixels.byteOffset,
+		pixels.length,
+	);
+	context.putImageData(new ImageData(texels, width, height), 0, 0);
+	return canvas.convertToBlob({ type: 'image/png' });
+}

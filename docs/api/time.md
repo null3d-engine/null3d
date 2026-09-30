@@ -106,7 +106,7 @@ export default defineSketch(({ scene, geometry, materials }) => {
 - The options of `defineSketch` set the rate and that cap, as in `defineSketch(setup, { fixedRate: 120, maxFixedSteps: 16 })`. [Sketch API](sketch.md#options) lists them.
 - `time` keeps the frame's values during the fixed steps. To count time in steps, add `step` to a number of your own in each step.
 - Input changes once per frame, so every step of a frame sees the same input, and some frames run no step. Read presses such as `input.wasPressed` in `onUpdate`, keep what they ask for, and act on it in the next step.
-- In hold mode, each frame after the first runs one step at the default rate. Every hold runs the same steps, so the held frame of a simulation is the same on every run.
+- In hold mode, each frame after the first runs one step at the default rate. When the held time is not a whole number of steps, the last frame is shorter than a step and runs none. Every hold runs the same steps, so the held frame of a simulation is the same on every run.
 
 A display faster than the fixed rate draws some frames that run no step. An object that only the fixed steps move then stands still in those frames. Where that motion must look smooth, raise `fixedRate` to the display's rate or more.
 

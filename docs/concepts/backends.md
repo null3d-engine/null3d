@@ -82,7 +82,7 @@ The features it tests include:
 - MSAA on 16-bit float targets
 - rendering into 16-bit and 32-bit float textures on WebGL2 (`engine.report.webgl2.floatRenderTargets`)
 
-Code that uses an optional feature checks this object first. The sketch worker has no copy of its own, so the page sends the sketch what it needs: `engine.postToSketch('capabilities', engine.capabilities)`.
+Code that uses an optional feature checks this object first. A sketch reads the same values in its context, as `ctx.engine.capabilities`.
 
 ## The portable budget
 
