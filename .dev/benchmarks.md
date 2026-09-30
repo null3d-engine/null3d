@@ -15,7 +15,7 @@ The benchmarks compare null3D with three.js in the same browser. These points co
 
 ## The benchmark job in CI
 
-- The Benchmarks workflow compares a new commit with a baseline on one of GitHub's machines. On main it runs one job at a time, so it leaves GitHub's other Mac machines to the pull requests' Safari and Firefox checks.
+- The Benchmarks workflow compares a new commit with a baseline on one of GitHub's machines. On main it runs one job at a time, so it leaves GitHub's other Mac machines to the merge queue's Safari and Firefox checks.
 - A push to main waits while a job runs, and a newer push replaces the job that waits. So the baseline of a push is the last commit on main that a job measured with success, which `bench/ci-baseline.ts` finds. The next job then measures the change of every push that got no job.
 - Without such a commit, the baseline is the commit before. After a failed job, the next job still compares with the last commit that passed. Main's job then fails until a commit fixes the slowdown or names it in a `Bench-Expected:` trailer.
 - For a pull request it runs on demand, against the pull request's merge base. Add the `benchmark` label, and each push runs it again while the label stays. You can also start the workflow from the Actions tab with a pull request's number, a branch or a commit.

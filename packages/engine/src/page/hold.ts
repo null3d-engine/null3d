@@ -6,6 +6,7 @@ import { EngineError } from '../errors/engine-error';
 import type { ErrorCode } from '../errors/fixes';
 import { messageOf } from '../errors/message';
 import type { Tier } from '../render/renderer';
+import type { FrameSummary } from './frame-stats';
 
 /** The most sketch time hold mode steps through, in seconds: 36,000 steps. */
 export const MAX_HOLD_SECONDS = 600;
@@ -33,6 +34,14 @@ export interface HeldFrame {
 	height: number;
 	/** The frame's pixels as RGBA8 rows, top row first. */
 	pixels: Uint8Array;
+	/**
+	 * The held frame's figures, in the form that `engine.measure` returns: CPU time by thread and
+	 * phase, draw calls, uploads and pipelines, for the held frame alone. The engine draws no frame
+	 * before the held one, so the held frame creates every GPU object and uploads the whole scene.
+	 * `rebuilds` and `visibleEntries` cover every step of the hold. GPU time is null, because the
+	 * engine times the GPU only while `engine.measure` runs.
+	 */
+	stats: FrameSummary;
 }
 
 /**

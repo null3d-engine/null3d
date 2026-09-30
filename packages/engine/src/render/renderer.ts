@@ -4,6 +4,7 @@
 import type { CompletionSignal } from '../gpu/completion';
 import type { PowerPreference } from '../page/capabilities';
 import type { CoreDevice } from '../page/limits';
+import type { ImageTable } from '../shared/images';
 import type { FrameRecorder } from '../shared/metrics';
 
 /**
@@ -61,6 +62,8 @@ export interface RendererOptions {
 	 * lists the sketch thread records; without them it clears to the frame's background.
 	 */
 	scene?: { memory: WebAssembly.Memory; control: ArrayBufferLike };
+	/** The images that texture uploads read, which the thread keeps across GPU devices. */
+	imageTable?: ImageTable;
 }
 
 /** Encodes a linear color channel as sRGB, the way the final output does. */

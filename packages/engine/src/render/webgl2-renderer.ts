@@ -12,6 +12,7 @@ import {
 	webgl2Context,
 } from '../gpu/webgl2/context';
 import type { CoreDevice } from '../page/limits';
+import type { ImageTable } from '../shared/images';
 import { Counter, type FrameRecorder, Phase } from '../shared/metrics';
 import { captureFrame, type DrawingSetup, startDrawingWith } from './draw';
 import { DrawLists } from './draw-lists';
@@ -99,7 +100,7 @@ class WebGL2SceneRenderer implements Renderer {
 	/**
 	 * `gl` is the canvas's context, made with the engine's settings. Where WebGL refuses views on
 	 * shared memory, the device says so, and the backend copies uploads out of engine memory first.
-	 * The device also gives the depth mode.
+	 * The device also gives the depth mode. `images` holds the images that texture uploads read.
 	 */
 	constructor(
 		private readonly canvas: RenderCanvas,
@@ -108,9 +109,10 @@ class WebGL2SceneRenderer implements Renderer {
 		control: ArrayBufferLike,
 		metrics: ArrayBufferLike | undefined,
 		device: CoreDevice,
+		images: ImageTable | undefined,
 	) {
 		this.lost = contextLoss(canvas, this.release.signal);
-		this.backend = new WebGL2Backend(gl, canvas, device.sharedUploads, device.depth);
+		this.backend = new WebGL2Backend(gl, canvas, device.sharedUploads, device.depth, images);
 		this.completions = metrics && new FenceCompletion(gl, metrics);
 		this.lists = new DrawLists(memory, control);
 	}
@@ -198,6 +200,7 @@ export async function createRenderer(
 			options.scene.control,
 			options.metrics,
 			options.device,
+			options.imageTable,
 		);
 	return new WebGL2Renderer(canvas, gl, options.metrics);
 }

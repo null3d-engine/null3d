@@ -1,16 +1,16 @@
 //! The job system with real threads: coverage of every index, nested and back-to-back jobs,
-//! panics, background tasks and their priority, and shutdown.
+//! panics, background tasks and their priority, and shutdown. The checks hold on a busy machine:
+//! no test needs a thread to run within a set time.
 #![allow(clippy::disallowed_methods)] // Tests time work and sleep on native threads.
 
 mod common;
 
-use std::collections::HashSet;
 use std::sync::Mutex;
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
-use common::Workers;
+use common::{Workers, wait_for_every_thread, wait_until};
 use null3d_core::jobs::{BackgroundTask, JobConfig, JobSystem, WorkerId};
 
 /// Busy-waits for `d`, so the thread stays on its core the way real work would.
@@ -100,15 +100,14 @@ fn job_workers_time_their_chunks_before_the_loop_returns() {
 }
 
 #[test]
-fn job_workers_share_the_work() {
+fn every_job_worker_takes_part_in_a_loop_that_waits_for_it() {
     let pool = Workers::start(4);
-    let ids = AtomicU64::new(0);
-    pool.jobs().parallel_for(400, 1, &|_, worker| {
-        ids.fetch_or(1 << worker.index(), Ordering::Relaxed);
-        spin_for(Duration::from_micros(50));
+    let jobs = pool.jobs();
+    let threads = jobs.thread_count();
+    let joined = AtomicU64::new(0);
+    jobs.parallel_for(400, 1, &|_, worker| {
+        wait_for_every_thread(&joined, worker, threads);
     });
-    let distinct = ids.load(Ordering::Relaxed).count_ones();
-    assert!(distinct >= 2, "only {distinct} thread ran chunks");
 }
 
 #[test]
@@ -199,51 +198,48 @@ fn background_tasks_run_exactly_once_on_job_workers() {
             })
             .unwrap();
     }
-    let deadline = Instant::now() + Duration::from_secs(10);
-    while BACKGROUND_RUNS.load(Ordering::Relaxed) < 500 && Instant::now() < deadline {
-        std::thread::sleep(Duration::from_millis(1));
-    }
+    wait_until("every background task to run", || {
+        BACKGROUND_RUNS.load(Ordering::Relaxed) >= 500
+    });
     assert_eq!(BACKGROUND_RUNS.load(Ordering::Relaxed), 500);
     assert_eq!(pool.jobs().pending_background(), 0);
 }
 
-/// Background task starts: the worker index and nanoseconds since the test began.
-struct TaskLog {
-    epoch: Instant,
-    starts: Mutex<Vec<(u32, u64)>>,
+/// Numbers that every thread draws from one sequence, so a test can order what the threads did
+/// without a clock.
+static EVENTS: AtomicU64 = AtomicU64::new(0);
+
+fn next_event() -> u64 {
+    EVENTS.fetch_add(1, Ordering::SeqCst)
 }
 
-static TASK_LOG: OnceLock<TaskLog> = OnceLock::new();
-const TASK_TIME: Duration = Duration::from_millis(5);
+/// Each background task's start: the worker's index and the start's event number.
+static TASK_STARTS: Mutex<Vec<(usize, u64)>> = Mutex::new(Vec::new());
+/// The background tasks running now.
+static TASKS_RUNNING: AtomicU32 = AtomicU32::new(0);
 
 fn long_background_task(_: u64, worker: WorkerId) {
-    let log = TASK_LOG.get().unwrap();
-    let start = log.epoch.elapsed().as_nanos() as u64;
-    log.starts
-        .lock()
-        .unwrap()
-        .push((worker.index() as u32, start));
-    spin_for(TASK_TIME);
+    TASKS_RUNNING.fetch_add(1, Ordering::SeqCst);
+    let started = next_event();
+    TASK_STARTS.lock().unwrap().push((worker.index(), started));
+    spin_for(Duration::from_millis(2));
+    TASKS_RUNNING.fetch_sub(1, Ordering::SeqCst);
 }
 
+/// A worker checks for frame work before each background task, so after a frame job becomes
+/// visible it starts at most one more task: one it took just before. The test orders the events
+/// by number, not by time, and each frame job waits until every worker has joined it. How long a
+/// worker takes to join is a benchmark (`bench_job_workers_join_a_frame_job` in `bench.rs`).
 #[test]
-fn background_work_never_delays_frame_work_beyond_one_task() {
+fn background_work_delays_each_job_worker_by_at_most_one_task() {
     const WORKERS: u32 = 4;
-    const CHUNKS: u32 = 400;
-    const CHUNK_TIME: Duration = Duration::from_micros(250);
-    // Generous slack for thread scheduling on a busy machine.
-    const SLACK: Duration = Duration::from_millis(20);
-
-    let log = TASK_LOG.get_or_init(|| TaskLog {
-        epoch: Instant::now(),
-        starts: Mutex::new(Vec::with_capacity(4096)),
-    });
     let pool = Workers::with_config(JobConfig {
         workers: WORKERS,
         background_capacity: 4096,
         ..JobConfig::default()
     });
     let jobs = pool.jobs();
+    let threads = jobs.thread_count();
     for i in 0..4000 {
         jobs.spawn_background(BackgroundTask {
             run: long_background_task,
@@ -251,51 +247,39 @@ fn background_work_never_delays_frame_work_beyond_one_task() {
         })
         .unwrap();
     }
-    let now = || log.epoch.elapsed().as_nanos() as u64;
     for round in 0..15 {
-        // Let the workers pick up background tasks between frame jobs.
-        std::thread::sleep(Duration::from_millis(3));
-        let chunk_starts: Vec<AtomicU64> = (0..CHUNKS).map(|_| AtomicU64::new(0)).collect();
-        let chunk_workers: Vec<AtomicU32> = (0..CHUNKS).map(|_| AtomicU32::new(0)).collect();
-        let job_start = now();
-        jobs.parallel_for(CHUNKS, 1, &|range, worker| {
-            chunk_starts[range.start as usize].store(now(), Ordering::Relaxed);
-            chunk_workers[range.start as usize].store(worker.index() as u32, Ordering::Relaxed);
-            spin_for(CHUNK_TIME);
+        // A worker is inside a background task first, so the frame job usually starts while one
+        // runs: the case under test.
+        wait_until("a background task to start", || {
+            TASKS_RUNNING.load(Ordering::SeqCst) > 0
         });
-        let last_claim = chunk_starts
+        let joined = AtomicU64::new(0);
+        let chunk_starts: Vec<AtomicU64> = (0..threads).map(|_| AtomicU64::new(0)).collect();
+        // One chunk per thread, and each chunk waits for every thread, so frame work stays
+        // unclaimed until the last worker joins.
+        jobs.parallel_for(threads, 1, &|_, worker| {
+            chunk_starts[worker.index()].store(next_event(), Ordering::SeqCst);
+            wait_for_every_thread(&joined, worker, threads);
+        });
+        // Chunks start only once the job is visible, so the first chunk's start comes after it.
+        let visible = chunk_starts
             .iter()
-            .map(|s| s.load(Ordering::Relaxed))
-            .max()
+            .map(|s| s.load(Ordering::SeqCst))
+            .min()
             .unwrap();
-
-        let starts = log.starts.lock().unwrap();
-        for w in 1..=WORKERS {
-            // Each job worker joined the frame job within one background task of its start.
-            let first = (0..CHUNKS as usize)
-                .filter(|&c| chunk_workers[c].load(Ordering::Relaxed) == w)
-                .map(|c| chunk_starts[c].load(Ordering::Relaxed))
-                .min()
-                .unwrap_or_else(|| panic!("round {round}: worker {w} ran no chunk"));
-            let joined_after = Duration::from_nanos(first - job_start);
-            assert!(
-                joined_after <= TASK_TIME + SLACK,
-                "round {round}: worker {w} joined {joined_after:?} after the job started"
-            );
-            // While chunks waited to be claimed, a worker started at most one background task:
-            // one it took just before the job became visible.
+        let starts = TASK_STARTS.lock().unwrap();
+        for (w, joined_at) in chunk_starts.iter().enumerate().skip(1) {
+            let joined_at = joined_at.load(Ordering::SeqCst);
             let started = starts
                 .iter()
-                .filter(|&&(sw, s)| sw == w && s > job_start && s < last_claim)
+                .filter(|&&(sw, s)| sw == w && s > visible && s < joined_at)
                 .count();
             assert!(
                 started <= 1,
-                "round {round}: worker {w} started {started} background tasks during the frame job"
+                "round {round}: worker {w} started {started} background tasks while the frame job waited for it"
             );
         }
     }
-    // Background tasks did run in the gaps.
-    assert!(!log.starts.lock().unwrap().is_empty());
 }
 
 #[test]
@@ -307,15 +291,12 @@ fn shutdown_wakes_sleeping_workers_and_later_loops_run_inline() {
     });
     // Give the workers time to block.
     std::thread::sleep(Duration::from_millis(50));
-    let seen = Mutex::new(HashSet::new());
-    pool.jobs().parallel_for(200, 1, &|_, worker| {
-        seen.lock().unwrap().insert(worker);
-        spin_for(Duration::from_micros(50));
+    let threads = pool.jobs().thread_count();
+    let joined = AtomicU64::new(0);
+    // The loop ends only once every sleeping worker has woken and claimed a chunk.
+    pool.jobs().parallel_for(threads, 1, &|_, worker| {
+        wait_for_every_thread(&joined, worker, threads);
     });
-    assert!(
-        seen.lock().unwrap().len() >= 2,
-        "sleeping workers never woke"
-    );
     pool.stop();
 
     let jobs = JobSystem::new(4);

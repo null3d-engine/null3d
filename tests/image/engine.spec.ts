@@ -49,7 +49,9 @@ test('the page asks for the sketch module before the core loader in single-threa
 	expect(engineProblems(result, singleThreaded, 'webgl2')).toEqual([]);
 	const asked = (file: RegExp) => result.downloads?.find(({ name }) => file.test(name))?.startTime;
 	const sketch = asked(/\/empty-sketch[^/]*\.[jt]s$/);
-	const coreLoader = asked(/\/null3d[^/_]*\.js$/);
+	// The loader is null3d.js, or null3d-<hash>.js once bundled, where the hash may hold any of
+	// the characters of URL-safe base64, the underscore among them.
+	const coreLoader = asked(/\/null3d(-[\w-]+)?\.js$/);
 	expect(sketch).toBeDefined();
 	expect(coreLoader).toBeDefined();
 	expect(sketch).toBeLessThan(coreLoader as number);

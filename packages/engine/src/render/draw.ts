@@ -6,6 +6,7 @@
 // and for its own GPU path only.
 
 import { controlViews, Slot } from '../shared/control';
+import { ImageTable, receiveImages } from '../shared/images';
 import type { SketchRunner } from '../sketch/runner';
 import { runDirectLoop } from './direct-loop';
 import { emptySceneInput, HoldLoop, runRenderLoop } from './loop';
@@ -31,6 +32,8 @@ export interface DrawingSetup extends RendererOptions {
 	hold?: boolean;
 	/** Hears the reason when the engine stops drawing after GPU losses. */
 	fail: (reason: string) => void;
+	/** The port through which the sketch thread sends texture images, when another thread runs it. */
+	imagePort?: MessagePort;
 }
 
 /** What a thread that draws uses: the frame loops with the renderer of one GPU path. */
@@ -41,8 +44,10 @@ export interface DrawModule {
 }
 
 /**
- * Starts drawing on this thread's canvas with the renderer that `createRenderer` makes, and with a
- * new one after each GPU loss.
+ * Starts drawing on this thread's canvas with the renderers that `createRenderer` makes: a new one
+ * after each GPU loss. The images for
+ * texture uploads come through the setup's port, or into its table from the sketch that this thread
+ * runs, and every renderer reads them.
  */
 export async function startDrawingWith(
 	createRenderer: CreateRenderer,
@@ -50,14 +55,19 @@ export async function startDrawingWith(
 ): Promise<Drawing<Renderer>> {
 	const { canvas, control, metrics, fps, sketch, hold = false } = setup;
 	const { slots } = controlViews(control);
-	const create = () => createRenderer(canvas, setup);
+	const imageTable = setup.imageTable ?? new ImageTable();
+	if (setup.imagePort) receiveImages(setup.imagePort, imageTable, slots);
+	const options = { ...setup, imageTable };
+	const create = () => createRenderer(canvas, options);
 	const run = (renderer: Renderer) =>
 		hold
 			? new HoldLoop(slots, renderer, metrics)
 			: sketch
 				? runDirectLoop(sketch, renderer, control, metrics, fps)
 				: runRenderLoop(renderer, control, metrics, fps);
-	return new Drawing(await create(), create, run, slots, setup.fail, !hold);
+	return new Drawing(await create(), create, run, slots, setup.fail, !hold, () =>
+		imageTable.clear(),
+	);
 }
 
 /**
