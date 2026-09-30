@@ -125,7 +125,7 @@ export class SketchRunner {
 		const time = { now: 0, frame: 0 };
 		this.context = {
 			time,
-			scene: new Scene(this.core, time),
+			scene: new Scene(this.core, time, device.webgl2),
 			materials: new Materials(this.core),
 			geometry: new Geometry(this.core),
 			input: this.input,
