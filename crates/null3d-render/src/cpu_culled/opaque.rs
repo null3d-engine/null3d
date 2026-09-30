@@ -13,19 +13,16 @@
 use null3d_core::cells::MAX_CELLS;
 use null3d_gpu::caps::OFFSET_ALIGNMENT;
 use null3d_gpu::drawlist::{
-    DrawList, Op, buffer_usage as usage, index_format, layout as bind_layout, permutation,
-    resource_kind, sizes,
+    DrawList, Op, buffer_usage as usage, index_format, layout as bind_layout, resource_kind, sizes,
 };
 
 use super::data::{RING, RingSlot};
 use super::ids;
 use super::layout::{Draw, Layout, MULTI_DRAW_BLOCK_BYTES, run_end};
 use crate::frame::{
-    CELL_OFFSET_BYTES, CellOffsets, MeshBuffers, PipelineTable, RecordError, UploadArena,
-    grown_size, put_u32,
+    CELL_OFFSET_BYTES, CellOffsets, MeshBuffers, RecordError, UploadArena, grown_size, put_u32,
 };
 use crate::frame_data::FrameUniform;
-use crate::frame_graph::SceneTargets;
 use crate::view::{ViewFrame, ViewId};
 
 /// Where a frame's slot in a view's ring of frame uniforms holds the offset from the camera to
@@ -163,23 +160,6 @@ impl Opaque {
             views: Vec::new(),
             multi_draw,
         }
-    }
-
-    /// Records the creation of every render pipeline of `pipelines` that the GPU lacks, which
-    /// draw into the scene's targets, in the shader variant that reads the draw's index where the
-    /// device has multi-draw.
-    pub(super) fn create_pipelines(
-        &self,
-        list: &mut DrawList,
-        pipelines: &mut PipelineTable,
-        targets: SceneTargets,
-    ) -> Result<(), RecordError> {
-        let bits = if self.multi_draw {
-            permutation::DRAW_INDEX
-        } else {
-            0
-        };
-        pipelines.create_new(list, targets, bits)
     }
 
     /// The number of views whose rings exist.

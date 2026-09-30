@@ -53,7 +53,7 @@ export default defineSketch(({ post, time }) => {
 
 | Code | Cause |
 | --- | --- |
-| [E1207](../errors/E1207.md) | A setting that this version does not have, a tone mapping that the engine does not know, or an exposure below 0. |
+| [E1213](../errors/E1213.md) | A setting that this version does not have, a tone mapping that the engine does not know, or an exposure below 0. |
 | [E1203](../errors/E1203.md) | An exposure that is not a finite number, such as NaN. |
 
 ## Related pages
@@ -74,7 +74,7 @@ The post-processing settings, as `ctx.post`. The engine applies them to every pi
 
 | Member | Description |
 | --- | --- |
-| `set(settings: PostSettings): void` | Changes the settings that `settings` gives, from the next frame on. It allocates nothing, so a sketch can change the exposure every frame. It throws E1207 for a setting or a tone mapping it does not know, or a negative exposure, and E1203 for an exposure that is not a number. |
+| `set(settings: PostSettings): void` | Changes the settings that `settings` gives, from the next frame on. It allocates nothing, so a sketch can change the exposure every frame. It throws E1213 for a setting or a tone mapping it does not know, or a negative exposure, and E1203 for an exposure that is not a number. |
 
 ### `PostSettings`
 

@@ -5,8 +5,6 @@
 // it is first drawn with, so the driver can compile a frame's programs in parallel.
 
 import {
-	PERMUTATION_DRAW_INDEX,
-	PERMUTATION_TONE_MAP,
 	TEMPLATE_FINAL,
 	TEMPLATE_INSTANCED_LIT,
 	TEMPLATE_INSTANCED_TEXCOORDS,
@@ -17,8 +15,11 @@ import {
 	FINAL_SHADER,
 	type GlslProgram,
 	type GlslStage,
-	MESH_SHADER,
+	LIT_SHADER,
+	TEXCOORDS_SHADER,
+	UNLIT_SHADER,
 } from '../../generated/shaders';
+import { type ShaderVariants, variantFor } from '../variants';
 import type { DepthSetup } from './depth';
 
 /** Texture units and uniform block binding points of each bind group: one per binding. */
@@ -27,23 +28,13 @@ export const SLOTS_PER_GROUP = 4;
 export const NO_SAMPLER = -1;
 
 /**
- * The GLSL programs of a render pipeline template: the plain one, and where the template has
- * them, the one that reads the draw index of `WEBGL_multi_draw`, and the 8-bit path's ones, which
- * tone map their output themselves.
+ * How the backend builds the programs of one render pipeline template: the shader's variants, of
+ * which a pipeline's permutation word picks one, and the render pipeline that the template draws
+ * with.
  */
 export interface GlslTemplate {
-	readonly plain: GlslProgram;
-	readonly multiDraw?: GlslProgram;
-	readonly toneMap?: GlslProgram;
-	readonly toneMapMultiDraw?: GlslProgram;
-}
-
-/** The program of a template for a pipeline's permutation bits, or undefined where it has none. */
-function programOf(template: GlslTemplate, permutation: number): GlslProgram | undefined {
-	const multiDraw = (permutation & PERMUTATION_DRAW_INDEX) !== 0;
-	if (permutation & PERMUTATION_TONE_MAP)
-		return multiDraw ? template.toneMapMultiDraw : template.toneMap;
-	return multiDraw ? template.multiDraw : template.plain;
+	readonly shader: ShaderVariants;
+	readonly pipeline: string;
 }
 
 /** A linked, or linking, program, which every pipeline of its template and permutation shares. */
@@ -75,31 +66,13 @@ export interface Pipeline {
 	readonly vertexFormat: number;
 }
 
-/** The WebGL2 build of a shader variant. */
-function glslOf<Name extends string>(variant: {
-	glsl: Readonly<Record<Name, GlslProgram>> | null;
-}): Readonly<Record<Name, GlslProgram>> {
-	if (!variant.glsl) throw new Error('a shader variant has no WebGL2 build');
-	return variant.glsl;
-}
-
-/** The mesh template of one pipeline of the mesh shader, in each of its WebGL2 variants. */
-function meshTemplate(pipeline: 'lit' | 'unlit' | 'texcoords'): GlslTemplate {
-	return {
-		plain: glslOf(MESH_SHADER.webgl2)[pipeline],
-		multiDraw: glslOf(MESH_SHADER.webgl2_multi_draw)[pipeline],
-		toneMap: glslOf(MESH_SHADER.webgl2_tone_map)[pipeline],
-		toneMapMultiDraw: glslOf(MESH_SHADER.webgl2_multi_draw_tone_map)[pipeline],
-	};
-}
-
 /** The engine's render pipeline templates, by template id. */
 export function engineTemplates(): (GlslTemplate | undefined)[] {
 	const templates: (GlslTemplate | undefined)[] = [];
-	templates[TEMPLATE_INSTANCED_LIT] = meshTemplate('lit');
-	templates[TEMPLATE_INSTANCED_UNLIT] = meshTemplate('unlit');
-	templates[TEMPLATE_INSTANCED_TEXCOORDS] = meshTemplate('texcoords');
-	templates[TEMPLATE_FINAL] = { plain: glslOf(FINAL_SHADER.main).main };
+	templates[TEMPLATE_INSTANCED_LIT] = { shader: LIT_SHADER, pipeline: 'main' };
+	templates[TEMPLATE_INSTANCED_UNLIT] = { shader: UNLIT_SHADER, pipeline: 'main' };
+	templates[TEMPLATE_INSTANCED_TEXCOORDS] = { shader: TEXCOORDS_SHADER, pipeline: 'main' };
+	templates[TEMPLATE_FINAL] = { shader: FINAL_SHADER, pipeline: 'main' };
 	return templates;
 }
 
@@ -111,13 +84,16 @@ function compile(gl: WebGL2RenderingContext, type: number, stage: GlslStage): We
 	return shader;
 }
 
-/** Starts compiling and linking a template's program, without waiting for the result. */
+/**
+ * Starts compiling and linking a template's program, in the shader variant that the permutation
+ * bits pick, without waiting for the result.
+ */
 export function createProgram(
 	gl: WebGL2RenderingContext,
 	template: GlslTemplate,
 	permutation: number,
 ): Program {
-	const source = programOf(template, permutation);
+	const source = variantFor(template.shader, permutation, 'glsl')?.glsl?.[template.pipeline];
 	if (!source)
 		throw new Error(`this render pipeline template has no variant for permutation ${permutation}`);
 	const program = gl.createProgram();

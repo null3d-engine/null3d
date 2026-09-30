@@ -32,16 +32,20 @@ run('replay', async () => {
 	const backend = new WebGPUBackend(device, undefined, 'rgba8unorm');
 	backend.canvasTarget = target;
 
-	// Instances: a 5 x 5 grid in two buckets, plus one behind the camera that culling must drop.
+	// Instances: a 5 x 5 grid in two buckets, on the view's two layers, plus one behind the camera
+	// and one above the grid on a layer the view leaves out, which culling must both drop.
 	const positions: [number, number, number][] = [];
 	for (let z = 0; z < 5; z++)
 		for (let x = 0; x < 5; x++) positions.push([(x - 2) * 2, 0, (z - 2) * 2]);
-	positions.push([0, 0, 20]);
+	positions.push([0, 0, 20], [0, 1.5, 0]);
 	const bucketOf = (i: number) => (i === 25 ? 0 : i % 2);
+	const viewLayers = 0b011;
+	const layersOf = (i: number) => (i === 26 ? 0b100 : i % 3 === 0 ? 0b010 : 0b001);
 	const matrices = new Float32Array(positions.length * 12);
 	for (const [i, [x, y, z]] of positions.entries())
 		matrices.set([1, 0, 0, x, 0, 1, 0, y, 0, 0, 1, z], i * 12);
 	const instanceBuckets = new Uint32Array(positions.map((_, i) => bucketOf(i)));
+	const instanceLayers = new Uint32Array(positions.map((_, i) => layersOf(i)));
 	const capacity = [
 		instanceBuckets.filter((b) => b === 0).length,
 		instanceBuckets.filter((b) => b === 1).length,
@@ -70,11 +74,12 @@ run('replay', async () => {
 	frame[32] = 1;
 	new Uint32Array(frame.buffer)[33] = C.TONE_MAPPING_NONE;
 	const materials = new Float32Array([0.8, 0.1, 0.1, 1, 0.1, 0.3, 0.9, 1]);
-	// The planes and the instance count, then the offset from the camera to each grid cell. Every
-	// instance here lies in cell 0, whose zero offset keeps the positions in world space.
+	// The planes, the instance count and the view's layers, then the offset from the camera to each
+	// grid cell. Every instance here lies in cell 0, whose zero offset keeps the positions in world
+	// space.
 	const cull = new Float32Array(28 + 4 * G.SIZE_MAX_CELLS);
 	cull.set(frustumPlanes(viewProj), 0);
-	new Uint32Array(cull.buffer).set([positions.length, 0, 0, 0], 24);
+	new Uint32Array(cull.buffer).set([positions.length, viewLayers, 0, 0], 24);
 	const indirect = new Uint32Array([36, 0, 0, 0, 0, 36, 0, 0, 0, 0]);
 	const mesh = boxMesh(BOX);
 
@@ -86,6 +91,7 @@ run('replay', async () => {
 		materials: memory.put(materials),
 		matrices: memory.put(matrices),
 		instanceBuckets: memory.put(instanceBuckets),
+		instanceLayers: memory.put(instanceLayers),
 		buckets: memory.put(bucketInfo),
 		indirect: memory.put(indirect),
 		cull: memory.put(cull),
@@ -110,6 +116,7 @@ run('replay', async () => {
 		[8, positions.length * INSTANCE_BYTES, U.VERTEX | U.STORAGE, -1],
 		[9, indirect.byteLength, U.INDIRECT | U.STORAGE | U.COPY_DST | U.COPY_SRC, blobs.indirect],
 		[10, cull.byteLength, U.UNIFORM | U.COPY_DST, blobs.cull],
+		[11, instanceLayers.byteLength, U.STORAGE | U.COPY_DST, blobs.instanceLayers],
 	];
 	for (const [id, size, usage] of buffers) memory.push(G.OP_CREATE_BUFFER, id, size, usage);
 	for (const [id, size, , source] of buffers)
@@ -170,8 +177,14 @@ run('replay', async () => {
 		G.OP_CREATE_BIND_GROUP,
 		2,
 		G.LAYOUT_CULL,
-		6,
-		...[10, 5, 6, 7, 8, 9].flatMap((buffer, binding) => [binding, G.RESOURCE_BUFFER, buffer, 0, 0]),
+		7,
+		...[10, 5, 6, 7, 8, 9, 11].flatMap((buffer, binding) => [
+			binding,
+			G.RESOURCE_BUFFER,
+			buffer,
+			0,
+			0,
+		]),
 	);
 	memory.push(G.OP_BEGIN_BUNDLE, 1, G.FORMAT_CANVAS, G.FORMAT_DEPTH32_FLOAT, SAMPLES);
 	memory.push(G.OP_SET_PIPELINE, 1);

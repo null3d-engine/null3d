@@ -39,7 +39,7 @@ describe('post.set', () => {
 		expect(calls).toEqual([[C.TONE_MAPPING_ACES, 1]]);
 	});
 
-	it('refuses an unknown setting or tone mapping, and a negative exposure, with E1207', () => {
+	it('refuses an unknown setting or tone mapping, and a negative exposure, with E1213', () => {
 		const { post: output, calls } = post();
 		for (const bad of [
 			{ bloom: { strength: 1 } },
@@ -47,7 +47,7 @@ describe('post.set', () => {
 			{ toneMapping: 'toString' },
 			{ exposure: -1 },
 		])
-			expect(() => output.set(bad as PostSettings)).toThrow('E1207');
+			expect(() => output.set(bad as PostSettings)).toThrow('E1213');
 		expect(calls).toEqual([]);
 	});
 

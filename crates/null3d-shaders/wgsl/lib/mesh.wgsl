@@ -1,13 +1,17 @@
 enable draw_index;
+#define_import_path null3d::mesh
+#import null3d::globals::{Frame, Material}
+#import null3d::tonemap
 
-// Meshes drawn by instance. The lit pipeline shades like three.js's MeshLambertMaterial, and the
-// unlit pipeline like its MeshBasicMaterial. The texcoords pipeline shows each vertex's first
-// texture coordinates as red and green, for the engine's own tests of vertex formats.
+// What every template for meshes drawn by instance shares: the frame's bindings, where each
+// instance's world matrix and material come from, and positions in clip space. A template's vertex
+// entry point takes an `InstanceIn` beside its vertex attributes, and `find_instance` turns it into
+// the instance's matrix rows and material.
 //
 // Vertex attributes take the fixed locations of the engine's vertex formats (drawlist.rs, module
 // `vertex`): the position at 0, the normal at 1 and the first texture coordinates at 2. Each
-// pipeline reads only the attributes its entry point declares, wherever the mesh's format puts
-// them.
+// pipeline reads only the attributes that its template's vertex entry point declares, wherever the
+// mesh's format puts them.
 //
 // Positions are relative to the camera: the frame's view-projection matrix puts the camera at the
 // origin, and each instance's world matrix is moved by the offset from the camera to its grid cell.
@@ -15,19 +19,16 @@ enable draw_index;
 // On WebGPU each instance brings three rows of its world matrix and its material id as
 // instance-rate vertex attributes, after the vertex attributes' locations, never through a storage
 // buffer, so the same vertex stage runs in WebGPU's compatibility mode. The culling shader has
-// already moved each matrix by its cell's offset. On WebGL2 (the WEBGL2 variants) the vertex shader
+// already moved each matrix by its cell's offset. On WebGL2 (the WEBGL2 builds) the vertex shader
 // finds its instance in the frame's index list, directly or through a cluster of rows, reads the
 // matrix rows from a data texture, and adds the offset of the cell that the list entry names. It
-// takes the material from its draw's record. The DRAW_INDEX variant draws many buckets in one
-// multi-draw call and reads each draw's record by `gl_DrawID`; the other variant gets one record
-// per draw.
+// takes the material from its draw's record. The DRAW_INDEX builds draw many buckets in one
+// multi-draw call and read each draw's record by `gl_DrawID`; the other builds get one record per
+// draw.
 //
 // The fragment shaders write linear color into the HDR scene color, which the final pass tone maps.
-// On the 8-bit path (the TONE_MAP variants) they apply the frame's exposure and tone mapping, and
-// encode sRGB, themselves, into a target that resolves straight into the canvas.
-#import null3d::globals::{Frame, Material}
-#import null3d::lighting
-#import null3d::tonemap
+// On the 8-bit path (the TONE_MAP builds) `finish` applies the frame's exposure and tone mapping,
+// and encodes sRGB, into a target that resolves straight into the canvas.
 
 @group(0) @binding(0) var<uniform> frame: Frame;
 
@@ -78,49 +79,40 @@ struct CellOffsets {
 @group(2) @binding(3) var cluster_rows: texture_2d<u32>;
 #else
 @group(0) @binding(1) var<storage, read> materials: array<Material>;
-
-/// The instance's attributes: three rows of its world matrix, then its ids.
-struct InstanceIn {
-    @location(8) row0: vec4f,
-    @location(9) row1: vec4f,
-    @location(10) row2: vec4f,
-    @location(11) ids: vec4u,
-}
 #endif
 
-/// The vertex attributes of the lit and unlit pipelines.
-struct VertexIn {
-    @location(0) position: vec3f,
-    @location(1) normal: vec3f,
+/// What a vertex shader invocation learns of its instance. On WebGPU: the three rows of the
+/// instance's world matrix that give x, y and z, then its ids. On WebGL2: the instance's number in its draw, and with
+/// DRAW_INDEX, the draw's number in its multi-draw call.
+struct InstanceIn {
+#ifdef WEBGL2
+    @builtin(instance_index) instance: u32,
+#ifdef DRAW_INDEX
+    @builtin(draw_index) draw: u32,
+#endif
+#else
+    @location(8) row_x: vec4f,
+    @location(9) row_y: vec4f,
+    @location(10) row_z: vec4f,
+    @location(11) ids: vec4u,
+#endif
 }
 
-struct VertexOut {
-    @builtin(position) clip: vec4f,
-    @location(0) normal: vec3f,
-    @location(1) @interpolate(flat, either) material: u32,
-}
-
-/// The vertex attributes of the texcoords pipeline.
-struct TexCoordsIn {
-    @location(0) position: vec3f,
-    @location(2) uv0: vec2f,
-}
-
-struct TexCoordsOut {
-    @builtin(position) clip: vec4f,
-    @location(0) uv0: vec2f,
-}
-
-/// One instance: the rows of its world matrix, its material, and whether it draws at all.
+/// One instance: the rows of its world matrix that give x, y and z, its material, and whether it
+/// draws at all. (Library modules keep names that end in a digit out of their structs, because the
+/// shader composer cannot keep them.)
 struct Instance {
-    row0: vec4f,
-    row1: vec4f,
-    row2: vec4f,
+    row_x: vec4f,
+    row_y: vec4f,
+    row_z: vec4f,
     material: u32,
     drawn: bool,
 }
 
-fn material(id: u32) -> Material {
+/// A material's parameters, by its id in the material table. (A shader that imports it by name
+/// cannot also read a field called `material`, since the composer reads that name as this
+/// function.)
+fn material_of(id: u32) -> Material {
 #ifdef WEBGL2
     return materials.items[id];
 #else
@@ -149,42 +141,33 @@ fn instance_of(record: vec4u, instance: u32) -> Instance {
     let matrix_row = (1u << MATRIX_ROW_SHIFT) - 1u;
     let at = vec2u((row & matrix_row) * 3u, row >> MATRIX_ROW_SHIFT);
     if record.z == 0u {
-        out.row0 = textureLoad(resident_rows, at, 0);
-        out.row1 = textureLoad(resident_rows, at + vec2u(1u, 0u), 0);
-        out.row2 = textureLoad(resident_rows, at + vec2u(2u, 0u), 0);
+        out.row_x = textureLoad(resident_rows, at, 0);
+        out.row_y = textureLoad(resident_rows, at + vec2u(1u, 0u), 0);
+        out.row_z = textureLoad(resident_rows, at + vec2u(2u, 0u), 0);
     } else {
-        out.row0 = textureLoad(streamed_rows, at, 0);
-        out.row1 = textureLoad(streamed_rows, at + vec2u(1u, 0u), 0);
-        out.row2 = textureLoad(streamed_rows, at + vec2u(2u, 0u), 0);
+        out.row_x = textureLoad(streamed_rows, at, 0);
+        out.row_y = textureLoad(streamed_rows, at + vec2u(1u, 0u), 0);
+        out.row_z = textureLoad(streamed_rows, at + vec2u(2u, 0u), 0);
     }
     let offset = cell_offsets.items[entry >> CELL_SHIFT];
-    out.row0.w += offset.x;
-    out.row1.w += offset.y;
-    out.row2.w += offset.z;
+    out.row_x.w += offset.x;
+    out.row_y.w += offset.y;
+    out.row_z.w += offset.z;
     out.material = record.y;
     return out;
 }
 #endif
 
 /// The instance that a vertex shader invocation draws.
-fn find_instance(
-#ifdef WEBGL2
-    instance: u32,
-#ifdef DRAW_INDEX
-    draw: u32,
-#endif
-#else
-    i: InstanceIn,
-#endif
-) -> Instance {
+fn find_instance(i: InstanceIn) -> Instance {
 #ifdef WEBGL2
 #ifdef DRAW_INDEX
-    return instance_of(draws.items[draw], instance);
+    return instance_of(draws.items[i.draw], i.instance);
 #else
-    return instance_of(draws.items[0], instance);
+    return instance_of(draws.items[0], i.instance);
 #endif
 #else
-    return Instance(i.row0, i.row1, i.row2, i.ids.x, true);
+    return Instance(i.row_x, i.row_y, i.row_z, i.ids.x, true);
 #endif
 }
 
@@ -196,63 +179,13 @@ fn clip_position(found: Instance, position: vec3f) -> vec4f {
         return vec4f(2.0, 2.0, 2.0, 1.0);
     }
     return frame.view_proj
-        * vec4f(dot(found.row0, p), dot(found.row1, p), dot(found.row2, p), 1.0);
+        * vec4f(dot(found.row_x, p), dot(found.row_y, p), dot(found.row_z, p), 1.0);
 }
 
-@vertex
-fn vs(
-    v: VertexIn,
-#ifdef WEBGL2
-    @builtin(instance_index) instance: u32,
-#else
-    i: InstanceIn,
-#endif
-#ifdef DRAW_INDEX
-    @builtin(draw_index) draw: u32,
-#endif
-) -> VertexOut {
-#ifdef WEBGL2
-#ifdef DRAW_INDEX
-    let found = find_instance(instance, draw);
-#else
-    let found = find_instance(instance);
-#endif
-#else
-    let found = find_instance(i);
-#endif
-    let n = vec4f(v.normal, 0.0);
-    var out: VertexOut;
-    out.clip = clip_position(found, v.position);
-    out.normal = vec3f(dot(found.row0, n), dot(found.row1, n), dot(found.row2, n));
-    out.material = found.material;
-    return out;
-}
-
-@vertex
-fn vs_texcoords(
-    v: TexCoordsIn,
-#ifdef WEBGL2
-    @builtin(instance_index) instance: u32,
-#else
-    i: InstanceIn,
-#endif
-#ifdef DRAW_INDEX
-    @builtin(draw_index) draw: u32,
-#endif
-) -> TexCoordsOut {
-#ifdef WEBGL2
-#ifdef DRAW_INDEX
-    let found = find_instance(instance, draw);
-#else
-    let found = find_instance(instance);
-#endif
-#else
-    let found = find_instance(i);
-#endif
-    var out: TexCoordsOut;
-    out.clip = clip_position(found, v.position);
-    out.uv0 = v.uv0;
-    return out;
+/// A direction from the mesh into the world: the instance's world matrix without its translation.
+fn world_direction(found: Instance, direction: vec3f) -> vec3f {
+    let d = vec4f(direction, 0.0);
+    return vec3f(dot(found.row_x, d), dot(found.row_y, d), dot(found.row_z, d));
 }
 
 /// The color a fragment writes for linear color `c` at framebuffer position `pixel`: `c` itself for
@@ -264,28 +197,4 @@ fn finish(c: vec3f, pixel: vec2f) -> vec4f {
 #else
     return vec4f(c, 1.0);
 #endif
-}
-
-@fragment
-fn fs_lit(in: VertexOut) -> @location(0) vec4f {
-    let albedo = material(in.material).color.rgb;
-    let shaded = null3d::lighting::lambert(
-        albedo,
-        normalize(in.normal),
-        -frame.sun_direction.xyz,
-        frame.sun_color.rgb,
-        frame.ambient.rgb,
-    );
-    return finish(shaded, in.clip.xy);
-}
-
-@fragment
-fn fs_unlit(in: VertexOut) -> @location(0) vec4f {
-    return finish(material(in.material).color.rgb, in.clip.xy);
-}
-
-/// The first texture coordinates as linear color, red for u and green for v.
-@fragment
-fn fs_texcoords(in: TexCoordsOut) -> @location(0) vec4f {
-    return finish(vec3f(in.uv0, 0.0), in.clip.xy);
 }

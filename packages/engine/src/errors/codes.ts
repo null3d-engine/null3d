@@ -81,7 +81,7 @@ const DOCS = {
 	E1109: {
 		title: 'Engine memory full',
 		cause:
-			"The engine could not create or grow its WebAssembly memory. A page with worker threads gives the engine 1 GiB at most. Each instance row takes about 180 bytes, or about 230 with per-row colors. So about 5 million rows fill it, along with the rest of the scene. A browser can refuse memory sooner, as phones often do. It can also refuse a new engine's memory while the memory of an engine that stopped a moment before is not free yet. The engine then tries again for about 3 seconds before it fails.",
+			"The engine could not create or grow its WebAssembly memory. A page with worker threads gives the engine 1 GiB by default, and up to 4 GiB through the memory option of createEngine. Each instance row takes about 180 bytes, or about 230 with per-row colors. So about 5 million rows fill 1 GiB, along with the rest of the scene. A browser can refuse memory sooner, as phones often do. It can also refuse a new engine's memory while the memory of an engine that stopped a moment before is not free yet. The engine then tries again for about 3 seconds before it fails.",
 		example: 'E1109: createInstances() failed: the engine could not get 1282 MB more memory.',
 		since: '0.1',
 	},
@@ -114,10 +114,17 @@ const DOCS = {
 		since: '0.1',
 	},
 	E1207: {
+		title: 'Invalid layer mask',
+		cause:
+			'A call that sets layers received a number that is not a 32-bit layer mask: a fraction, NaN, or a number past 32 bits.',
+		example: 'E1207: setLayers() got 2.5 on "Player" (slot 12), which is not a 32-bit layer mask.',
+		since: '0.1',
+	},
+	E1213: {
 		title: 'Invalid setting',
 		cause:
 			'A call received a setting that it does not have, or a value that the setting does not take. Examples are a tone mapping that the engine does not know, and a negative exposure.',
-		example: `E1207: post.set() got the tone mapping "filmic", which is not 'aces', 'agx', 'neutral' or 'none'.`,
+		example: `E1213: post.set() got the tone mapping "filmic", which is not 'aces', 'agx', 'neutral' or 'none'.`,
 		since: '0.1',
 	},
 	E1301: {
@@ -193,6 +200,22 @@ const DOCS = {
 			'The sketch or the engine failed in hold mode, before the engine read the held frame back. A live engine logs an error in the sketch and carries on. Hold mode stops at the first one, so a test fails at once.',
 		example:
 			'E1408: hold mode stopped at 0.75 seconds, in frame 46: TypeError: player is undefined.',
+		since: '0.1',
+	},
+	E1409: {
+		title: 'Invalid memory maximum',
+		cause:
+			'The memory option of createEngine asked for a maximum that is not a whole number of MiB from 256 to 4096.',
+		example:
+			'E1409: the memory.maximumMiB option 8192 is not a whole number of MiB from 256 to 4096.',
+		since: '0.1',
+	},
+	E1410: {
+		title: 'Sketch module not loaded',
+		cause:
+			'The sketch module that createEngine got did not load. It did not download, or its code threw an error while the module loaded.',
+		example:
+			'E1410: the sketch module https://example.com/assets/sketch-3f9c1a2b.js did not load: Failed to fetch dynamically imported module: https://example.com/assets/sketch-3f9c1a2b.js.',
 		since: '0.1',
 	},
 	E1501: {

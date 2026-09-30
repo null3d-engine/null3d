@@ -95,6 +95,12 @@ export const LAYOUT_FINAL = 4;
 
 export const PERMUTATION_DRAW_INDEX = 1;
 export const PERMUTATION_TONE_MAP = 2;
+export const PERMUTATION_VERTEX_COLOR = 4;
+export const PERMUTATION_NORMAL_MAP = 8;
+export const PERMUTATION_ALPHA_MASK = 16;
+export const PERMUTATION_RECEIVE_SHADOWS = 32;
+export const PERMUTATION_SKIN = 64;
+export const PERMUTATION_MORPH = 128;
 
 export const VERTEX_UV0 = 1;
 export const VERTEX_UV1 = 2;

@@ -25,7 +25,7 @@ export const ERROR_FIXES = {
 	E1108:
 		'Keep counts and indices within the capacity you created the batch with, or create a larger batch.',
 	E1109:
-		'Use fewer instance rows. Size each batch for the rows it uses, and give a batch colors only when it needs them. Destroy the batches you no longer draw. When a new engine fails to start this way, destroy the engines you no longer use, or keep one engine and detach and attach it.',
+		'Use fewer instance rows. Size each batch for the rows it uses, and give a batch colors only when it needs them. Destroy the batches you no longer draw. A scene that needs more memory can ask for a larger maximum with the memory option of createEngine. When a new engine fails to start this way, destroy the engines you no longer use, or keep one engine and detach and attach it. A smaller maximum leaves room for more engines.',
 	E1203:
 		'Check the value computed before this call. NaN often comes from dividing zero by zero, or from normalizing a zero-length vector.',
 	E1204:
@@ -35,6 +35,8 @@ export const ERROR_FIXES = {
 	E1206:
 		'Give positions and normals three numbers per vertex, uvs and uvs1 two, colors three or four, and tangents four. Give three indices per triangle, each below the vertex count. Without indices, use a vertex count that is a multiple of three. Pass normals or computeNormals: true, and pass uvs with computeTangents: true. Replace NaN and Infinity values.',
 	E1207:
+		'Pass a whole number whose bits name the layers: 1 << n is layer n. The operator | joins layers, so (1 << 0) | (1 << 3) is layers 0 and 3. Layers run from 0 to 31.',
+	E1213:
 		"Pass only the settings that the call has, each with a value that it takes. The call's docs page lists them.",
 	E1301:
 		'Remove a ?gpu= switch or createEngine gpu option that forces a path this browser lacks. Update the browser, or turn on hardware acceleration in its settings.',
@@ -58,6 +60,10 @@ export const ERROR_FIXES = {
 		'Give the sketch time to hold at in seconds, such as ?hold=1.5 or hold: 1.5. A bare ?hold holds at the time of the hold option, or at 0 without one.',
 	E1408:
 		'Fix the error that the message quotes. When the message gives a sketch time, the sketch failed at that time, and the console shows the error with its stack.',
+	E1409:
+		'Give memory.maximumMiB a whole number of MiB from 256 to 4096, such as 2048, or leave the option out for the default of 1024.',
+	E1410:
+		"Pass the sketch as new URL('./sketch.ts', import.meta.url), so that the bundler ships the module and the engine finds it. When the download worked, the module's own code threw the error that the message quotes while the module loaded: fix that error.",
 	E1501:
 		'Share meshes and materials between objects instead of creating them per object. Draw many copies of one mesh with an instance batch. Every row of a batch counts toward the culling limit, active or not, so size each batch for the rows it uses.',
 	E1502: RENDER_GRAPH_FIX,

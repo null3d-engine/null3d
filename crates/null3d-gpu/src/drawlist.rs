@@ -393,7 +393,11 @@ pub mod layout {
     pub const FINAL: u32 = 4;
 }
 
-/// Bits of a render pipeline's permutation word, which pick a shader variant.
+/// Bits of a render pipeline's permutation word, which pick a shader variant. A feature that
+/// changes what a shader costs is a bit, so a pipeline without the feature does not pay for it. A
+/// cheap option is a uniform value instead. A shader reads each bit as the shader def of the bit's
+/// name in [`NAMES`], and the shader manifest lists the bits that each shader is built with. A bit
+/// that no shader reads yet is reserved for the feature it names, so no two features share one.
 pub mod permutation {
     /// The vertex shader reads its draw's index, from `WEBGL_multi_draw`.
     pub const DRAW_INDEX: u32 = 1;
@@ -401,6 +405,46 @@ pub mod permutation {
     /// an 8-bit target that resolves straight into the canvas. Without it, the shader writes
     /// linear color for the final pass.
     pub const TONE_MAP: u32 = 2;
+    /// The mesh's vertex colors multiply the material's base color.
+    pub const VERTEX_COLOR: u32 = 4;
+    /// A normal map bends the surface's normals.
+    pub const NORMAL_MAP: u32 = 8;
+    /// Fragments whose alpha is below the material's cutoff draw nothing.
+    pub const ALPHA_MASK: u32 = 16;
+    /// The surface reads the shadow maps, so shadows fall on it.
+    pub const RECEIVE_SHADOWS: u32 = 32;
+    /// Bones move the mesh's vertices.
+    pub const SKIN: u32 = 64;
+    /// Morph targets move the mesh's vertices.
+    pub const MORPH: u32 = 128;
+
+    /// Every bit with its name: the shader def that turns its code on, in bit order.
+    pub const NAMES: [(&str, u32); 8] = [
+        ("DRAW_INDEX", DRAW_INDEX),
+        ("TONE_MAP", TONE_MAP),
+        ("VERTEX_COLOR", VERTEX_COLOR),
+        ("NORMAL_MAP", NORMAL_MAP),
+        ("ALPHA_MASK", ALPHA_MASK),
+        ("RECEIVE_SHADOWS", RECEIVE_SHADOWS),
+        ("SKIN", SKIN),
+        ("MORPH", MORPH),
+    ];
+
+    /// Every bit.
+    pub const ALL: u32 = {
+        let mut all = 0;
+        let mut k = 0;
+        while k < NAMES.len() {
+            all |= NAMES[k].1;
+            k += 1;
+        }
+        all
+    };
+
+    /// The bit of a name in [`NAMES`], or `None` for a name that is not a bit.
+    pub fn bit(name: &str) -> Option<u32> {
+        NAMES.iter().find(|(n, _)| *n == name).map(|&(_, bit)| bit)
+    }
 }
 
 /// Bits of a render pipeline's state flags.
@@ -783,13 +827,7 @@ pub fn typescript_constants() -> String {
                 ("FINAL", layout::FINAL),
             ],
         ),
-        (
-            "PERMUTATION",
-            &[
-                ("DRAW_INDEX", permutation::DRAW_INDEX),
-                ("TONE_MAP", permutation::TONE_MAP),
-            ],
-        ),
+        ("PERMUTATION", &permutation::NAMES),
         (
             "VERTEX",
             &[
@@ -901,8 +939,8 @@ mod tests {
     }
 
     #[test]
-    fn the_mesh_shader_declares_the_same_sizes() {
-        let mesh = include_str!("../../null3d-shaders/wgsl/mesh.wgsl");
+    fn the_mesh_shaders_declare_the_same_sizes() {
+        let mesh = include_str!("../../null3d-shaders/wgsl/lib/mesh.wgsl");
         let shift = |per_row: u32| per_row.trailing_zeros();
         assert!(sizes::MATRICES_PER_TEXTURE_ROW.is_power_of_two());
         assert!(sizes::INDICES_PER_TEXTURE_ROW.is_power_of_two());
@@ -925,23 +963,58 @@ mod tests {
             format!("const CELL_SHIFT: u32 = {}u;", sizes::CELL_SHIFT),
             format!("const MAX_CELLS: u32 = {}u;", sizes::MAX_CELLS),
         ] {
-            assert!(mesh.contains(&line), "mesh.wgsl lacks {line}");
+            assert!(mesh.contains(&line), "lib/mesh.wgsl lacks {line}");
         }
         assert_eq!(sizes::DRAW_RECORD_BYTES, 16, "a draw record is one vec4u");
-        // The vertex attributes the shader reads, at their formats' locations, and the instance
-        // attributes after every vertex attribute's location.
-        let [position, normal, uv0, ..] = vertex::ATTRIBUTES;
+        // The instance attributes come after every vertex attribute's location.
         let instance = vertex::INSTANCE_LOCATION;
         for line in [
-            format!("@location({}) position: vec3f", position.location),
-            format!("@location({}) normal: vec3f", normal.location),
-            format!("@location({}) uv0: vec2f", uv0.location),
-            format!("@location({instance}) row0: vec4f"),
+            format!("@location({instance}) row_x: vec4f"),
             format!("@location({}) ids: vec4u", instance + 3),
         ] {
-            assert!(mesh.contains(&line), "mesh.wgsl lacks {line}");
+            assert!(mesh.contains(&line), "lib/mesh.wgsl lacks {line}");
         }
+        // Each template reads the vertex attributes at their formats' locations.
+        let [position, normal, uv0, ..] = vertex::ATTRIBUTES;
+        let templates = [
+            ("lit", include_str!("../../null3d-shaders/wgsl/lit.wgsl")),
+            (
+                "unlit",
+                include_str!("../../null3d-shaders/wgsl/unlit.wgsl"),
+            ),
+            (
+                "texcoords",
+                include_str!("../../null3d-shaders/wgsl/texcoords.wgsl"),
+            ),
+        ];
+        for (name, source) in templates {
+            let line = format!("@location({}) position: vec3f", position.location);
+            assert!(source.contains(&line), "{name}.wgsl lacks {line}");
+        }
+        let normal_line = format!("@location({}) normal: vec3f", normal.location);
+        assert!(
+            templates[0].1.contains(&normal_line),
+            "lit.wgsl lacks {normal_line}"
+        );
+        let uv0_line = format!("@location({}) uv0: vec2f", uv0.location);
+        assert!(
+            templates[2].1.contains(&uv0_line),
+            "texcoords.wgsl lacks {uv0_line}"
+        );
         assert_eq!(uv0.bit, vertex::UV0);
+    }
+
+    #[test]
+    fn permutation_bits_are_distinct_single_bits_with_their_names() {
+        let mut seen = 0;
+        for (name, bit) in permutation::NAMES {
+            assert!(bit.is_power_of_two(), "{name}");
+            assert_eq!(seen & bit, 0, "{name} shares a bit");
+            seen |= bit;
+            assert_eq!(permutation::bit(name), Some(bit));
+        }
+        assert_eq!(seen, permutation::ALL);
+        assert_eq!(permutation::bit("SHINY"), None);
     }
 
     #[test]

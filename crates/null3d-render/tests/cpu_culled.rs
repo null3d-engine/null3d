@@ -841,3 +841,83 @@ fn far_from_the_origin_static_objects_stay_resident_and_list_their_cell() {
         );
     }
 }
+
+#[test]
+fn each_view_lists_only_the_sources_on_its_layers_without_a_rebuild() {
+    let mut world = world(true);
+    let mut mock = MockBackend::default();
+    // A second view from the camera's place, which draws layers 1 and 3.
+    let side = world.add_view([0.0, 0.0, 20.0]);
+    world.renderer.settings_mut().set_layers(side, 0b1010);
+    world.record(true);
+    mock.replay(world.renderer.list(1).words()).unwrap();
+    assert!(world.scene.take_structure_changed());
+    // Every object and the batch start on layer 0, which the camera's view draws and the side
+    // view does not. Each pair counts a bucket's rows and clusters: the lit box object, the
+    // batch, the lit balls (one of them hidden) and the unlit box.
+    let everything = vec![(1, 0), (BATCH_ROWS, 0), (1, 0), (1, 0)];
+    assert_eq!(bucket_counts(&world), everything);
+    assert_eq!(view_bucket_counts(&world, side), vec![(0, 0); 4]);
+
+    // The lit box moves to layer 1 and the batch to layers 1 and 2, with no rebuild. The camera
+    // no longer lists them, and the side view lists them alone.
+    world.frame = 2;
+    world
+        .scene
+        .apply_commands(&[Command::set_layers(world.objects[0], 0b10)], 2)
+        .unwrap();
+    assert!(!world.scene.take_structure_changed());
+    world
+        .batches
+        .get_mut(world.batch)
+        .unwrap()
+        .set_layers(0b110);
+    assert!(!world.record(false));
+    mock.replay(world.renderer.list(2).words()).unwrap();
+    let commands = world.commands();
+    assert_eq!(count(&commands, Op::CreateTexture), 0);
+    assert_eq!(count(&commands, Op::CreateBindGroup), 0);
+    assert_eq!(bucket_counts(&world), vec![(0, 0), (0, 0), (1, 0), (1, 0)]);
+    assert_eq!(
+        view_bucket_counts(&world, side),
+        vec![(1, 0), (BATCH_ROWS, 0), (0, 0), (0, 0)]
+    );
+
+    // The camera's view takes every layer, with no rebuild, and lists everything again.
+    world.frame = 3;
+    world
+        .renderer
+        .settings_mut()
+        .set_layers(ViewId::CAMERA, ALL_LAYERS);
+    assert!(!world.record(false));
+    mock.replay(world.renderer.list(3).words()).unwrap();
+    assert_eq!(bucket_counts(&world), everything);
+    let graph = world.renderer.render_graph();
+    assert_eq!(
+        graph.pass_layers(graph.find_pass("Opaque").unwrap()),
+        ALL_LAYERS
+    );
+}
+
+#[test]
+fn a_static_batch_off_the_view_layers_lists_none_of_its_clusters() {
+    let mut world = world(true);
+    let mut mock = MockBackend::default();
+    world.record(true);
+    mock.replay(world.renderer.list(1).words()).unwrap();
+    let batch = add_static_batch(&mut world, 2000);
+    step(&mut world, &mut mock, true);
+    // At rest, the batch's clusters take the place of its rows.
+    step(&mut world, &mut mock, false);
+    let (_, clusters) = bucket_counts(&world)[0];
+    assert!(clusters > 0);
+    // On a layer that the camera leaves out, the batch lists no cluster, and it stays at rest.
+    world.batches.get_mut(batch).unwrap().set_layers(0b100);
+    step(&mut world, &mut mock, false);
+    assert_eq!(bucket_counts(&world)[0], (1, 0));
+    assert!(texture_writes(&world.commands(), CLUSTERS).is_empty());
+    // Back on the camera's layer, the same clusters return.
+    world.batches.get_mut(batch).unwrap().set_layers(0b101);
+    step(&mut world, &mut mock, false);
+    assert_eq!(bucket_counts(&world)[0], (1, clusters));
+}

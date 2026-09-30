@@ -23,10 +23,16 @@ export interface WgslPipeline {
 	readonly fragment: string;
 }
 
-/** One build of a shader. */
+/** One variant of a shader: a build for each combination of its permutation bits. */
 export interface ShaderVariantSpec {
-	/** Shader defs that are true in this build, for `#ifdef NAME` lines. */
+	/** Shader defs that are true in every build of the variant, for `#ifdef NAME` lines. */
 	readonly defs?: readonly string[];
+	/**
+	 * Permutation bits by name, such as `TONE_MAP`. The variant builds once for each combination
+	 * of them, with the names of the bits it has as more shader defs. The build without any bit
+	 * takes the variant's name, and each other build adds the names of its bits in lowercase.
+	 */
+	readonly permutations?: readonly string[];
 	/**
 	 * The languages to write. A variant whose only target is `glsl` may read
 	 * `@builtin(draw_index)`: its vertex shader then reads `gl_DrawID` from `WEBGL_multi_draw`.
@@ -109,6 +115,11 @@ export interface WgslShader<Pipeline extends string = string> {
 
 /** One variant of a shader, with its output for each backend it targets. */
 export interface ShaderVariant<Pipeline extends string = string> {
+	/**
+	 * The permutation bits that the variant was built with, as a render pipeline's permutation
+	 * word holds them: 0 for a variant without permutation bits.
+	 */
+	readonly permutation: number;
 	/** WGSL for WebGPU, or null when the variant does not target WebGPU. */
 	readonly wgsl: WgslShader<Pipeline> | null;
 	/** GLSL programs for WebGL2 by pipeline, or null when the variant does not target WebGL2. */

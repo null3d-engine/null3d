@@ -60,7 +60,7 @@ export class Post {
 
 	/**
 	 * Changes the settings that `settings` gives, from the next frame on. It allocates nothing, so
-	 * a sketch can change the exposure every frame. It throws E1207 for a setting or a tone mapping
+	 * a sketch can change the exposure every frame. It throws E1213 for a setting or a tone mapping
 	 * it does not know, or a negative exposure, and E1203 for an exposure that is not a number.
 	 */
 	set(settings: PostSettings): void {
@@ -83,18 +83,18 @@ function checkSettings(settings: PostSettings): void {
 	for (const key in settings)
 		if (!(SETTINGS as readonly string[]).includes(key))
 			throw new EngineError(
-				'E1207',
+				'E1213',
 				`post.set() got the setting ${key}, and this version has only toneMapping and exposure.`,
 			);
 	const { toneMapping, exposure } = settings;
 	if (toneMapping !== undefined && !Object.hasOwn(CODES, toneMapping))
 		throw new EngineError(
-			'E1207',
+			'E1213',
 			`post.set() got the tone mapping ${JSON.stringify(toneMapping)}, which is not ${TONE_MAPPINGS}.`,
 		);
 	if (exposure === undefined) return;
 	if (!Number.isFinite(exposure))
 		throw new EngineError('E1203', `post.set() got ${exposure} for exposure.`);
 	if (exposure < 0)
-		throw new EngineError('E1207', `post.set() got the exposure ${exposure}, below 0.`);
+		throw new EngineError('E1213', `post.set() got the exposure ${exposure}, below 0.`);
 }

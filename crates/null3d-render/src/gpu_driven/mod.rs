@@ -36,6 +36,14 @@
 //! the camera. When only the cameras move, static matrices stay on the GPU and only the offsets
 //! upload.
 //!
+//! # Layers
+//!
+//! A layer table beside the bucket table holds each source's layer mask (see
+//! [`null3d_core::layers`]): a scene object's own, or its batch's for every row of a batch. Each
+//! view's culling parameters hold the view's mask, and the culling shader skips a source whose
+//! mask shares no bit with it. A new mask rewrites the source's entry in the layer table, or a
+//! batch's rows, with no rebuild, as showing or hiding an object does.
+//!
 //! # Views and passes
 //!
 //! Every view (see [`crate::view`]) culls the same sources and bucket tables, into buffers of its
@@ -61,13 +69,14 @@ use null3d_gpu::drawlist::{DrawList, Op, buffer_usage as usage, sizes};
 
 use crate::final_pass::FinalIds;
 use crate::frame::{
-    CanvasOutput, FrameBuilder, FrameInput, MeshBuffers, ParityLists, PipelineTable, RecordError,
-    SceneSettings, UploadArena, floats_as_bytes,
+    CanvasOutput, FrameBuilder, FrameInput, MeshBuffers, ParityLists, RecordError, SceneSettings,
+    UploadArena, floats_as_bytes,
 };
 use crate::frame_graph::{FrameGraph, GraphIds, Role};
 use crate::graph::RenderGraph;
 use crate::materials::MATERIAL_FLOATS;
 use crate::meshes::{MeshStorage, Packing};
+use crate::pipelines::PipelineCache;
 use crate::view::{ViewFrame, ViewId};
 use cull::{CULL_PARAMS_BYTES, Culling, INDIRECT_BYTES};
 use layout::Layout;
@@ -86,11 +95,12 @@ pub const fn max_sources(binding_bytes: u32) -> u32 {
     }
 }
 
-/// Engine memory the builder keeps for each source: its bucket table entry, and room for that
-/// entry in both frames' upload arenas.
-pub const BYTES_PER_SOURCE: u32 = 12;
+/// Engine memory the builder keeps for each source: its entries in the bucket table and the layer
+/// table, and room for both in both frames' upload arenas.
+pub const BYTES_PER_SOURCE: u32 = 24;
 
-/// The most sources on every device: [`max_sources`] at WebGPU's default storage binding limit.
+/// The most sources on every WebGPU device: [`max_sources`] at WebGPU's default storage binding
+/// limit. The WebGL2 path has its own limit, which follows the device's largest texture.
 pub const PORTABLE_MAX_SOURCES: u32 = max_sources(sizes::PORTABLE_STORAGE_BINDING_BYTES);
 
 /// The largest storage binding the builder can use: the instance buffer of the most sources one
@@ -106,9 +116,10 @@ mod ids {
     pub const MATRICES: u32 = 2;
     pub const INSTANCE_BUCKETS: u32 = 3;
     pub const BUCKETS: u32 = 4;
+    pub const SOURCE_LAYERS: u32 = 5;
     /// Each view's buffers: its frame uniform, culling parameters, compacted instances and
     /// indirect draws, four ids from `VIEW_BUFFERS + 4 * view`.
-    const VIEW_BUFFERS: u32 = 5;
+    const VIEW_BUFFERS: u32 = 6;
 
     pub const fn frame(view: ViewId) -> u32 {
         VIEW_BUFFERS + 4 * view.index() as u32
@@ -131,10 +142,6 @@ mod ids {
 
     /// The render graph's textures, from this id on.
     pub const TARGETS: u32 = 1;
-
-    /// The final pass's render pipeline. The scene's render pipelines take ids after it.
-    pub const FINAL: u32 = 1;
-    pub const SCENE_PIPELINES: u32 = 2;
 
     pub const CULL: u32 = 1;
 
@@ -186,7 +193,7 @@ pub struct GpuDrivenRenderer {
     settings: SceneSettings,
     /// The mesh pages' vertex and index buffers.
     meshes: MeshBuffers,
-    pipelines: PipelineTable,
+    pipelines: PipelineCache,
     lists: ParityLists,
     graph: FrameGraph,
     layout: Layout,
@@ -206,7 +213,7 @@ impl GpuDrivenRenderer {
                 config.canvas,
             ),
             meshes: MeshBuffers::new(ids::PAGES),
-            pipelines: PipelineTable::new(ids::SCENE_PIPELINES),
+            pipelines: PipelineCache::default(),
             lists: ParityLists::new(config.draw_list_words),
             graph: FrameGraph::new(
                 config.samples,
@@ -215,7 +222,6 @@ impl GpuDrivenRenderer {
                 GraphIds {
                     first_texture: ids::TARGETS,
                     final_pass: FinalIds {
-                        pipeline: ids::FINAL,
                         settings: ids::FINAL_SETTINGS,
                         group: ids::FINAL_GROUP,
                     },
@@ -266,6 +272,7 @@ impl GpuDrivenRenderer {
             self.layout.rebuild(
                 &self.settings,
                 &mut self.pipelines,
+                self.graph.scene_targets(),
                 input.scene,
                 input.batches,
                 parity,
@@ -273,12 +280,12 @@ impl GpuDrivenRenderer {
             )?;
         }
         arena.reset(self.upload_bound());
-        self.graph.upload(list, arena, self.settings.output())?;
+        self.graph
+            .upload(list, arena, self.settings.output(), &mut self.pipelines)?;
         let pages_remade = self
             .meshes
             .upload(list, arena, self.settings.meshes().pages())?;
-        let targets = self.graph.scene_targets();
-        self.pipelines.create_new(list, targets, 0)?;
+        self.pipelines.create_new(list)?;
         if self.settings.materials_mut().take_changed() {
             let parameters = self.settings.materials().parameters();
             let (at, bytes) = arena.push(floats_as_bytes(parameters))?;
@@ -302,7 +309,13 @@ impl GpuDrivenRenderer {
             let view = ViewId::from_index(index);
             self.culling
                 .apply(list, view, &self.layout, shared_recreated, binding_bytes)?;
-            opaque::record_bundle(list, view, &self.layout, &self.meshes, targets)?;
+            opaque::record_bundle(
+                list,
+                view,
+                &self.layout,
+                &self.meshes,
+                self.graph.scene_targets(),
+            )?;
         }
         self.layout
             .upload_matrices(list, input, parity, upload_everything)?;

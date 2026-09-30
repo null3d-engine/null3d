@@ -7,7 +7,6 @@ import {
 	LAYOUT_CULL,
 	LAYOUT_FINAL,
 	LAYOUT_FRAME,
-	PERMUTATION_TONE_MAP,
 	SIZE_INSTANCE_STRIDE,
 	STATE_CULL_NONE,
 	TEMPLATE_CULL,
@@ -17,7 +16,15 @@ import {
 	TEMPLATE_INSTANCED_UNLIT,
 	VERTEX_INSTANCE_LOCATION,
 } from '../../generated/gpu';
-import { CULL_SHADER, FINAL_SHADER, MESH_SHADER, type WgslShader } from '../../generated/shaders';
+import {
+	CULL_SHADER,
+	FINAL_SHADER,
+	LIT_SHADER,
+	TEXCOORDS_SHADER,
+	UNLIT_SHADER,
+	type WgslShader,
+} from '../../generated/shaders';
+import { type ShaderVariants, variantFor } from '../variants';
 import { vertexAttribute, vertexStride } from '../vertex-format';
 
 /** The WebGPU build of a shader variant. */
@@ -32,13 +39,11 @@ export function wgslOf<Pipeline extends string>(variant: {
 export interface RenderTemplate {
 	/** A name for the browser's messages. */
 	readonly label: string;
-	/** The WGSL module, which the backend compiles once for every template that shares it. */
-	readonly shader: WgslShader;
 	/**
-	 * The module of the 8-bit path's pipelines, whose fragment shaders tone map their output
-	 * themselves, where the template has one.
+	 * The shader's variants. A pipeline's permutation word picks one, whose WGSL module the
+	 * backend compiles once for every pipeline that draws with it.
 	 */
-	readonly toneMapShader?: WgslShader;
+	readonly shader: ShaderVariants;
 	/** The render pipeline of the shader that the template draws with. */
 	readonly pipeline: string;
 	/** The bind group layout of each group, by layout id, from group 0 on. */
@@ -52,9 +57,6 @@ export interface RenderTemplate {
 	readonly vertexBuffers: GPUVertexBufferLayout[];
 }
 
-const MESH = wgslOf(MESH_SHADER.webgpu);
-const MESH_TONE_MAP = wgslOf(MESH_SHADER.webgpu_tone_map);
-const FINAL = wgslOf(FINAL_SHADER.main);
 const CULL = wgslOf(CULL_SHADER.webgpu);
 /** The culling shader's compute entry point. */
 const CULL_ENTRY_POINT = 'main';
@@ -127,6 +129,7 @@ export class Pipelines {
 			{ binding: 3, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
 			{ binding: 4, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
 			{ binding: 5, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
+			{ binding: 6, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
 		]);
 		// The final pass reads the scene color with textureLoad, which takes any float format.
 		this.defineLayout(LAYOUT_FINAL, 'final', [
@@ -137,16 +140,15 @@ export class Pipelines {
 				texture: { sampleType: 'unfilterable-float', viewDimension: '2d' },
 			},
 		]);
-		for (const [id, pipeline, meshLocations] of [
-			[TEMPLATE_INSTANCED_LIT, 'lit', [0, 1]],
-			[TEMPLATE_INSTANCED_UNLIT, 'unlit', [0, 1]],
-			[TEMPLATE_INSTANCED_TEXCOORDS, 'texcoords', [0, 2]],
+		for (const [id, label, shader, meshLocations] of [
+			[TEMPLATE_INSTANCED_LIT, 'lit', LIT_SHADER, [0, 1]],
+			[TEMPLATE_INSTANCED_UNLIT, 'unlit', UNLIT_SHADER, [0]],
+			[TEMPLATE_INSTANCED_TEXCOORDS, 'texcoords', TEXCOORDS_SHADER, [0, 2]],
 		] as const) {
 			this.defineTemplate(id, {
-				label: `mesh ${pipeline}`,
-				shader: MESH,
-				toneMapShader: MESH_TONE_MAP,
-				pipeline,
+				label: `mesh ${label}`,
+				shader,
+				pipeline: 'main',
 				layouts: [LAYOUT_FRAME],
 				meshLocations,
 				vertexBuffers: INSTANCE_BUFFERS,
@@ -154,7 +156,7 @@ export class Pipelines {
 		}
 		this.defineTemplate(TEMPLATE_FINAL, {
 			label: 'final',
-			shader: FINAL,
+			shader: FINAL_SHADER,
 			pipeline: 'main',
 			layouts: [LAYOUT_FINAL],
 			vertexBuffers: [],
@@ -171,7 +173,7 @@ export class Pipelines {
 	/** Adds a render pipeline template under an id that no other template has. */
 	defineTemplate(id: number, template: RenderTemplate): void {
 		if (this.templates[id]) throw new Error(`render pipeline template ${id} already exists`);
-		if (!template.shader.pipelines[template.pipeline])
+		if (!variantFor(template.shader, 0, 'wgsl')?.wgsl?.pipelines[template.pipeline])
 			throw new Error(`the shader of template ${id} has no pipeline ${template.pipeline}`);
 		this.templates[id] = template;
 	}
@@ -207,8 +209,9 @@ export class Pipelines {
 	): GPURenderPipeline {
 		const t = this.templates[template];
 		if (!t) throw new Error(`unknown render template ${template}`);
-		const shader = permutation & PERMUTATION_TONE_MAP ? t.toneMapShader : t.shader;
-		if (!shader) throw new Error(`render template ${template} has no tone-mapped variant`);
+		const shader = variantFor(t.shader, permutation, 'wgsl')?.wgsl;
+		if (!shader)
+			throw new Error(`render template ${template} has no variant for permutation ${permutation}`);
 		const module = this.module(t.label, shader);
 		const entryPoints = shader.pipelines[t.pipeline];
 		let layout = this.pipelineLayouts[template];

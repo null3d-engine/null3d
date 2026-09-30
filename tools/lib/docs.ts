@@ -81,7 +81,7 @@ export const PAGES: readonly PageEntry[] = [
 	{ id: 'api/post', title: 'Post-processing API', since: '0.1', summary: 'post.set for tone mapping and exposure; the effects and post.addEffect of 0.2.' },
 	{ id: 'api/render', title: 'Render graph API', since: '0.2', summary: 'render.addPass declarations; enabling and disabling passes; dumpGraph.' },
 	{ id: 'api/quality', title: 'Quality API', since: '0.1', summary: 'quality.preset, quality.set, frame budgets, quality events.' },
-	{ id: 'api/debug', title: 'Debug drawing and stats', since: '0.1', summary: 'debug.line, box, axes, grid, frustum; debug.view; debug.stats.' },
+	{ id: 'api/debug', title: 'Debug drawing and stats', since: '0.1', summary: 'engine.measure and its figures; debug.line, box, axes, grid, frustum; debug.view; debug.stats.' },
 	{ id: 'api/math', title: 'Math helpers', since: '0.1', summary: 'vec3, quat, mat4 and color on plain arrays; math.clamp, lerp, damp and a random generator that hold mode seeds.' },
 	{ id: 'api/time', title: 'Time', since: '0.1', summary: 'dt, time.now, fixed steps.' },
 	{ id: 'api/sprites', title: 'Sprites', since: '0.2', summary: 'createSprites; world and screen size modes; atlases.' },
@@ -122,7 +122,7 @@ export const PAGES: readonly PageEntry[] = [
 	{ id: 'porting/threejs-unsupported', title: 'Unsupported three.js features', since: '0.3', summary: 'Features after 1.0 or out of scope, with workarounds.' },
 	{ id: 'porting/verification', title: 'Verifying a port', since: '0.3', summary: 'Parity images per camera view; performance comparison; the WebGL2 path; phones.' },
 
-	{ id: 'cli/null3d', title: 'The `null3d` command', since: '0.3', summary: 'create, test, bench, shot, assets, docs, port, skills, mcp, doctor.' },
+	{ id: 'cli/null3d', title: 'The `null3d` command', since: '0.1', summary: 'create, test, bench, shot, assets, docs, port, skills, mcp, doctor.' },
 	{ id: 'cookbook/index', title: 'Cookbook', since: '0.2', summary: 'Short recipes; each is also a tested example.' },
 ];
 

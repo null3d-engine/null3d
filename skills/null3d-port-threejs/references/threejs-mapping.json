@@ -349,10 +349,10 @@
       "id": "layers",
       "category": "Scene graph",
       "three": "object.layers / camera.layers (set, enable, disable)",
-      "status": "direct",
+      "status": "changed",
       "since": "0.1",
-      "target": "obj.setLayers(mask), camera.setLayers(mask)",
-      "notes": "The same 32 bits. Raycasts and declared passes take a layer mask too.",
+      "target": "obj.setLayers(mask), camera.setLayers(mask), batch.setLayers(mask); the layers option of createMesh, createInstances and createPerspectiveCamera",
+      "notes": "Masks have the same 32 bits and the same default, layer 0 alone, and a camera draws an object when their masks share a bit. layers.set(n) becomes setLayers(1 << n). For enable and disable, keep the mask in your code and pass the new mask. An InstancedMesh's layers become its batch's, for every row. Raycasts and declared passes take layer masks from 0.2.",
       "docs": "concepts/render-layers",
       "detect": "\\.layers\\.(set|enable|disable|toggle|enableAll|disableAll|mask)\\b"
     },
@@ -615,10 +615,21 @@
       "three": "Box / Sphere / Plane / Cylinder / Cone / Torus / Capsule / Circle / Ring Geometry",
       "status": "direct",
       "since": "0.1",
-      "target": "geometry.box({ width, height, depth }), geometry.sphere(...), and so on",
-      "notes": "Same parameters and defaults as three.js, so the meshes match vertex for vertex.",
+      "target": "geometry.box({ width, height, depth }), geometry.sphere({ radius }), and one generator for each class",
+      "notes": "The constructor's arguments become options with the same names and defaults: new CylinderGeometry(0.3, 0.4, 2) is geometry.cylinder({ radiusTop: 0.3, radiusBottom: 0.4, height: 2 }). The meshes match three.js's vertex for vertex, with the same positions, normals, texture coordinates and triangles. Each object has one material, so an array of materials for the face groups of a box or a cylinder needs one object for each group.",
       "docs": "api/geometry",
       "detect": "\\b(Box|Sphere|Plane|Cylinder|Cone|Torus|Capsule|Circle|Ring)Geometry\\b"
+    },
+    {
+      "id": "geo-transform",
+      "category": "Geometry",
+      "three": "geometry.rotateX / rotateY / rotateZ / translate / scale / center / applyMatrix4",
+      "status": "changed",
+      "since": "0.1",
+      "target": "obj.setRotationEuler(x, y, z), obj.setPosition(x, y, z) or obj.setScale(x, y, z) on the object that draws the mesh",
+      "notes": "A mesh keeps the vertices its generator built, so the transform goes on each object or instance row: floor.setRotationEuler(-Math.PI / 2, 0, 0) lays a plane flat. To build the transform into the vertices, transform the arrays and pass them to geometry.fromArrays.",
+      "docs": "api/geometry",
+      "detect": "\\w*[Gg]eo(metry)?\\w*\\s*\\.\\s*(rotate[XYZ]|translate|scale|center|applyMatrix4)\\s*\\(|Geometry\\([^()]*\\)\\s*\\.\\s*(rotate[XYZ]|translate|scale|center|applyMatrix4)\\s*\\("
     },
     {
       "id": "geo-extra",

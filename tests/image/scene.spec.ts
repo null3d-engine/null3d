@@ -10,7 +10,7 @@ import { manifestRun } from './manifest.ts';
 interface SceneResult {
 	error?: string;
 	mode: { hold: number | null };
-	capabilities: { tier: string; hdr: boolean };
+	capabilities: { tier: string; features: string[]; hdr: boolean };
 	/** The live engine's frames; absent in hold mode, which draws one frame. */
 	stats?: {
 		drawCalls: { median: number };
@@ -18,6 +18,7 @@ interface SceneResult {
 		uploadBytes: { count: number };
 		frames: number;
 		rebuilds: number;
+		gpuPassMs: { name: string; ms: { count: number } }[] | null;
 	};
 	failures: string[];
 	width: number;
@@ -49,7 +50,32 @@ function expectFrames(result: SceneResult, tier: 'webgpu' | 'webgl2'): void {
 	// The measurement can start before the first frame, which builds the draw tables. The scene is
 	// still, so no later frame rebuilds them.
 	expect(stats.rebuilds).toBeLessThanOrEqual(1);
+	// Where the device has timestamp queries, the GPU timer covers the whole WebGPU frame: the copies
+	// before the first pass, the culling pass, the main pass, the final pass where the scene draws
+	// HDR color, and the time between them.
+	if (tier === 'webgpu' && result.capabilities.features.includes('timestamp-query')) {
+		const parts = stats.gpuPassMs ?? [];
+		const renders = result.capabilities.hdr ? ['render 1', 'render 2'] : ['render 1'];
+		expect(parts.map((part) => part.name).sort()).toEqual(
+			['between passes', 'compute 1', 'copies', ...renders].sort(),
+		);
+		for (const part of parts) expect(part.ms.count).toBeGreaterThan(0);
+	} else expect(stats.gpuPassMs).toBeNull();
 }
+
+/** The layers test's sketch, which moves objects, a batch and the camera between layers each frame. */
+const FLIPPING_LAYERS = encodeURIComponent('./sketches/layers-sketch.ts?flip');
+
+for (const tier of ['webgpu', 'webgl2'] as const)
+	test(`objects, batches and cameras change layers every frame with no rebuild on ${tier}`, async ({
+		page,
+	}) => {
+		const { stats } = await openScene(page, `gpu=${tier}&sketch=${FLIPPING_LAYERS}`);
+		if (!stats) throw new Error('the live page measured no frames');
+		expect(stats.frames).toBeGreaterThan(10);
+		// The measurement can start before the first frame, which builds the draw tables.
+		expect(stats.rebuilds).toBeLessThanOrEqual(1);
+	});
 
 for (const tier of ['webgpu', 'webgl2'] as const)
 	for (const mode of ENGINE_MODES) {

@@ -36,31 +36,11 @@ use crate::graph::{
     StepKind, StoreOp, Surface, Target,
 };
 use crate::output::{Output, SceneColor};
+use crate::pipelines::{PassTargets, PipelineCache};
 use crate::view::{View, ViewId};
 
 /// The format of the scene's depth targets.
 pub(crate) const DEPTH_FORMAT: u32 = format::DEPTH32_FLOAT;
-
-/// What the scene's render pipelines and bundles draw into: the scene color's format, the depth
-/// format and the sample count, and the permutation bits that the scene color sets.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) struct SceneTargets {
-    pub(crate) color: u32,
-    pub(crate) depth: u32,
-    pub(crate) samples: u32,
-    pub(crate) permutation: u32,
-}
-
-impl SceneTargets {
-    const fn new(scene_color: SceneColor, samples: u32) -> Self {
-        Self {
-            color: scene_color.format(),
-            depth: DEPTH_FORMAT,
-            samples,
-            permutation: scene_color.permutation(),
-        }
-    }
-}
 
 /// The GPU object ids that a frame builder gives its graph: its textures take ids from
 /// `first_texture` on, and the final pass has its own.
@@ -119,6 +99,8 @@ pub(crate) struct FrameGraph {
     graph: RenderGraph,
     /// What each declared pass records, by the pass's place in the order of declaration.
     roles: Vec<Role>,
+    /// Each view's opaque pass, by view.
+    opaque: Vec<PassId>,
     /// MSAA samples of the scene's color and depth targets.
     samples: u32,
     /// True when the GPU culls each view in a culling pass.
@@ -151,6 +133,7 @@ impl FrameGraph {
         Self {
             graph: RenderGraph::new(),
             roles: Vec::new(),
+            opaque: Vec::new(),
             samples,
             gpu_culling,
             scene_color,
@@ -168,9 +151,15 @@ impl FrameGraph {
         &self.graph
     }
 
-    /// What the scene's render pipelines and bundles draw into.
-    pub(crate) fn scene_targets(&self) -> SceneTargets {
-        SceneTargets::new(self.scene_color, self.samples)
+    /// What the scene's render pipelines and bundles draw into: the scene color's format, the depth
+    /// format and the sample count, with the permutation bits that the scene color sets.
+    pub(crate) fn scene_targets(&self) -> PassTargets {
+        PassTargets {
+            color_format: self.scene_color.format(),
+            depth_format: DEPTH_FORMAT,
+            samples: self.samples,
+            permutation: self.scene_color.permutation(),
+        }
     }
 
     /// Bytes that one frame may copy into its arena for the graph's own passes.
@@ -182,10 +171,14 @@ impl FrameGraph {
         }
     }
 
-    /// Declares the passes again when the number of views changed.
+    /// Declares the passes again when the number of views changed, and gives each view's opaque
+    /// pass the view's layers, which change without a new plan.
     pub(crate) fn sync_views(&mut self, views: &[View]) {
         if views.len() != self.views {
             self.declare(views);
+        }
+        for (&pass, view) in self.opaque.iter().zip(views) {
+            self.graph.set_layers(pass, view.layers());
         }
     }
 
@@ -200,6 +193,7 @@ impl FrameGraph {
     fn declare(&mut self, views: &[View]) {
         self.graph.clear();
         self.roles.clear();
+        self.opaque.clear();
         let color = Target::color(self.scene_color.format()).samples(self.samples);
         let depth = Target::depth(DEPTH_FORMAT).samples(self.samples);
         if self.gpu_culling {
@@ -219,7 +213,8 @@ impl FrameGraph {
             if self.gpu_culling {
                 pass = pass.reads(view_name(index, "visible", "visible"));
             }
-            self.add(pass, Role::Opaque(ViewId::from_index(index)));
+            let pass = self.add(pass, Role::Opaque(ViewId::from_index(index)));
+            self.opaque.push(pass);
         }
         let resolve = Pass::new("Resolve", PassKind::Resolve)
             .reads(SCENE_COLOR)
@@ -256,13 +251,15 @@ impl FrameGraph {
 
     /// Records what the graph's own passes need before the frame's passes, from copies in the
     /// frame's arena: on the HDR path, the final pass's objects, its settings when they changed,
-    /// and its binding of the scene color when the frame made the plan's textures. Call it after
+    /// and its binding of the scene color when the frame made the plan's textures. The final pass
+    /// takes its pipeline from `pipelines`, so call it before their next creation, and after
     /// [`FrameGraph::prepare`].
     pub(crate) fn upload(
         &mut self,
         list: &mut DrawList,
         arena: &mut UploadArena,
         output: Output,
+        pipelines: &mut PipelineCache,
     ) -> Result<(), RecordError> {
         if !self.scene_color.is_hdr() {
             return Ok(());
@@ -280,6 +277,7 @@ impl FrameGraph {
         self.final_pass.prepare(
             list,
             arena,
+            pipelines,
             output.uniform(),
             scene_color,
             self.textures_made,
@@ -465,7 +463,6 @@ mod tests {
     const IDS: GraphIds = GraphIds {
         first_texture: 1,
         final_pass: FinalIds {
-            pipeline: 9,
             settings: 9,
             group: 9,
         },

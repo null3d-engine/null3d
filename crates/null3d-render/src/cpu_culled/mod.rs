@@ -54,17 +54,18 @@ use std::collections::TryReserveError;
 use null3d_core::cells::CELL_SHIFT;
 use null3d_core::culling::BucketedCull;
 use null3d_core::snapshot::SCENE_TARGET;
-use null3d_gpu::drawlist::{DrawList, Op, buffer_usage as usage, sizes};
+use null3d_gpu::drawlist::{DrawList, Op, buffer_usage as usage, permutation, sizes};
 
 use crate::final_pass::FinalIds;
 use crate::frame::{
-    CanvasOutput, FrameBuilder, FrameInput, MeshBuffers, ParityLists, PipelineTable, RecordError,
-    SceneSettings, UploadArena, drawn_rows, floats_as_bytes,
+    CanvasOutput, FrameBuilder, FrameInput, MeshBuffers, ParityLists, RecordError, SceneSettings,
+    UploadArena, drawn_rows, floats_as_bytes,
 };
 use crate::frame_graph::{FrameGraph, GraphIds, Role};
 use crate::graph::RenderGraph;
 use crate::materials::MATERIAL_FLOATS;
 use crate::meshes::{MeshStorage, Packing};
+use crate::pipelines::{PassTargets, PipelineCache};
 use crate::view::{ViewFrame, ViewId};
 use cull::Culling;
 use data::{RingSlot, SharedTextures, matrices_of, write_matrices};
@@ -108,10 +109,6 @@ mod ids {
 
     /// The render graph's textures, from this id on.
     pub const TARGETS: u32 = VIEW_TEXTURES + RING * MAX_VIEWS as u32;
-
-    /// The final pass's render pipeline. The scene's render pipelines take ids after it.
-    pub const FINAL: u32 = 1;
-    pub const SCENE_PIPELINES: u32 = 2;
 
     /// Each view's bind groups: the frame group, the draw record group, then the groups of its
     /// instance textures, one per pair of ring slots.
@@ -189,7 +186,7 @@ pub struct CpuCulledRenderer {
     opaque: Opaque,
     /// The vertex pages' vertex and index buffers.
     meshes: MeshBuffers,
-    pipelines: PipelineTable,
+    pipelines: PipelineCache,
     textures: SharedTextures,
     /// The slot of the streamed textures, which every view reads.
     streamed_slot: RingSlot,
@@ -218,7 +215,6 @@ impl CpuCulledRenderer {
                 GraphIds {
                     first_texture: ids::TARGETS,
                     final_pass: FinalIds {
-                        pipeline: ids::FINAL,
                         settings: ids::FINAL_SETTINGS,
                         group: ids::FINAL_GROUP,
                     },
@@ -229,7 +225,7 @@ impl CpuCulledRenderer {
             culling: Culling::default(),
             opaque: Opaque::new(config.multi_draw),
             meshes: MeshBuffers::new(ids::PAGES),
-            pipelines: PipelineTable::new(ids::SCENE_PIPELINES),
+            pipelines: PipelineCache::default(),
             textures: SharedTextures::default(),
             streamed_slot: RingSlot::default(),
             created: false,
@@ -251,13 +247,30 @@ impl CpuCulledRenderer {
         self.culling.frame(view)
     }
 
+    /// What the scene's render pipelines draw into, in the shader variant that reads the draw's
+    /// index where the device has multi-draw.
+    fn scene_targets(&self) -> PassTargets {
+        let targets = self.graph.scene_targets();
+        let draw_index = if self.config.multi_draw {
+            permutation::DRAW_INDEX
+        } else {
+            0
+        };
+        PassTargets {
+            permutation: targets.permutation | draw_index,
+            ..targets
+        }
+    }
+
     /// Assigns every source to a data texture and a bucket, then makes room for the new layout:
     /// the clusters, the culling runs and every view's output, and the upload arenas.
     fn rebuild_layout(&mut self, input: &FrameInput<'_>) -> Result<(), RecordError> {
         let limit = FrameBuilder::max_sources(self);
+        let targets = self.scene_targets();
         self.layout.rebuild(
             &self.settings,
             &mut self.pipelines,
+            targets,
             input,
             limit,
             self.config.multi_draw,
@@ -475,11 +488,11 @@ impl CpuCulledRenderer {
         self.opaque.add_views(list, views)?;
         let rebuilt = self.layout.built_in == input.frame;
         arena.reset(self.upload_bound());
-        self.graph.upload(list, arena, self.settings.output())?;
+        self.graph
+            .upload(list, arena, self.settings.output(), &mut self.pipelines)?;
         self.meshes
             .upload(list, arena, self.settings.meshes().pages())?;
-        self.opaque
-            .create_pipelines(list, &mut self.pipelines, self.graph.scene_targets())?;
+        self.pipelines.create_new(list)?;
         if self.settings.materials_mut().take_changed() {
             let parameters = self.settings.materials().parameters();
             let (at, bytes) = arena.push(floats_as_bytes(parameters))?;

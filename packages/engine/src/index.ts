@@ -51,6 +51,7 @@ export { createEngine } from './page/engine';
 export type {
 	FrameMetrics,
 	FrameSummary,
+	GpuPassStats,
 	MainThreadStats,
 	MemoryStats,
 	ThreadStats,
@@ -62,13 +63,20 @@ export type { ColorInput } from './scene/color';
 export type { Post, PostSettings, ToneMapping } from './scene/post';
 export type {
 	BoxOptions,
+	CapsuleOptions,
+	CircleOptions,
+	ConeOptions,
+	CylinderOptions,
 	Geometry,
 	Material,
 	MaterialOptions,
 	Materials,
 	MeshArrays,
 	MeshGeometry,
+	PlaneOptions,
+	RingOptions,
 	SphereOptions,
+	TorusOptions,
 } from './scene/resources';
 export type {
 	AmbientLight,

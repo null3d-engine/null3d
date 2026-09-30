@@ -80,17 +80,25 @@ export interface CoreGlue extends CoreErrors {
 	destroyBatch(batch: number, frame: number): number;
 	batchArrays(batch: number, field: number): number;
 	setBatchActiveCount(batch: number, count: number): number;
+	/** Sets the layer mask of every row of a batch, as an unsigned 32-bit number. */
+	setBatchLayers(batch: number, mask: number): number;
 	markBatchDirty(batch: number, start: number, count: number): number;
 	memoryEpoch(): number;
-	createBoxMesh(
-		width: number,
-		height: number,
-		depth: number,
-		widthSegments: number,
-		heightSegments: number,
-		depthSegments: number,
+	/**
+	 * A mesh from a geometry generator: `shape` is one of the `SHAPE_*` codes, and the numbers after
+	 * it are the arguments of the three.js class's constructor, in their order. Returns the mesh id.
+	 */
+	createShapeMesh(
+		shape: number,
+		a: number,
+		b: number,
+		c: number,
+		d: number,
+		e: number,
+		f: number,
+		g: number,
+		h: number,
 	): number;
-	createSphereMesh(radius: number, widthSegments: number, heightSegments: number): number;
 	/**
 	 * Makes room for a mesh's arrays in engine memory, `words` 32-bit words, and returns their
 	 * address; `createMeshFromArrays` reads and frees them.
@@ -108,7 +116,8 @@ export interface CoreGlue extends CoreErrors {
 	setMaterialColor(material: number, r: number, g: number, b: number): number;
 	/** Changes a material's opacity and keeps its color. */
 	setMaterialOpacity(material: number, opacity: number): number;
-	setCamera(camera: number, fovDegrees: number, near: number, far: number): number;
+	/** Draws from a camera object: its lens, and the layers of the objects it draws. */
+	setCamera(camera: number, fovDegrees: number, near: number, far: number, layers: number): number;
 	setSun(dx: number, dy: number, dz: number, r: number, g: number, b: number): number;
 	setAmbient(r: number, g: number, b: number): number;
 	setBackground(r: number, g: number, b: number): number;
@@ -147,10 +156,10 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'destroyBatch',
 	'batchArrays',
 	'setBatchActiveCount',
+	'setBatchLayers',
 	'markBatchDirty',
 	'memoryEpoch',
-	'createBoxMesh',
-	'createSphereMesh',
+	'createShapeMesh',
 	'meshArrays',
 	'createMeshFromArrays',
 	'meshRadius',

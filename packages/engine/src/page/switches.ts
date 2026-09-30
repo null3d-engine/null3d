@@ -51,7 +51,10 @@ export interface Switches {
 	fps: number | undefined;
 	/** The job workers that ?jobs= asks for, or undefined for the count from the device's cores. */
 	jobs: number | undefined;
-	/** The shared memory's declared maximum in MiB from ?memory=, or undefined for the default. */
+	/**
+	 * The shared memory's declared maximum in MiB from ?memory=, which wins over the page's option,
+	 * or undefined to use the option or the default.
+	 */
 	memoryMiB: number | undefined;
 	/**
 	 * The text of ?hold=, an empty text for a bare ?hold, or undefined without the switch. The

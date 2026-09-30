@@ -38,6 +38,7 @@ const engine = await createEngine({
   gpu: 'auto',           // 'auto' | 'webgpu' | 'webgl2' (testing only)
   powerPreference: 'high-performance',   // the default; 'low-power' saves battery on devices with two GPUs
   latency: 'pipelined',  // or 'low'; 'pipelined' is the default
+  memory: { maximumMiB: 1024 },          // the default; up to 4096 for scenes that need more (E1409 outside 256 to 4096)
   transparent: false,    // true for a see-through canvas
   largeWorld: false,     // (0.2) planet-scale scenes: cell-relative positions, batch origins
   sketchThread: 'worker',  // later in 0.1: 'main' for DOM-heavy apps and debugging
@@ -93,11 +94,11 @@ export default defineSketch(async (ctx) => {
 | --- | --- | --- |
 | `scene.createGroup({ name, position, rotation, scale, parent })` | Group | Empty node for hierarchy |
 | `scene.createMesh({ mesh, material, position, rotation, scale, dynamic, castShadows, receiveShadows, layers, name, parent })` | Mesh | Static unless `dynamic: true` |
-| `scene.createInstances(meshOrPrefab, count, { dynamic, colors, attributes, material, origin })` | InstanceBatch | Section 5 |
+| `scene.createInstances(meshOrPrefab, count, { dynamic, colors, attributes, material, layers, origin })` | InstanceBatch | Section 5 |
 | `scene.instantiate(prefab, { position, rotation, scale, parent })` (0.2) | Node | Creates a loaded glTF model |
 | `scene.clone(obj)` (0.2) | same type | Deep copy of a built object |
 | `scene.find(name)` | Node or null | Use at setup, not per frame |
-| `scene.createPerspectiveCamera({ fov, near, far, position, target })` | Camera | fov is vertical, in degrees |
+| `scene.createPerspectiveCamera({ fov, near, far, position, target, layers })` | Camera | fov is vertical, in degrees |
 | `scene.createOrthographicCamera({ height, near, far, position, target })` | Camera | Or left, right, top, bottom |
 | `scene.setActiveCamera(camera)` | | |
 | `scene.createDirectionalLight(opts)` and the other lights | Light | Section 7 |
@@ -146,6 +147,7 @@ const rocks = scene.createInstances(geometry.sphere({ radius: 0.2 }), 10_000, {
   material: materials.standard({ color: '#888888', roughness: 0.9 }),
   dynamic: true,              // uploads every row every frame; false = upload marked rows only
   colors: true,               // adds batch.colors (RGBA, linear, 4 floats per row)
+  layers: 1 << 2,             // every row is on layer 2; the default, 1, is layer 0
   attributes: { tint: 4 },    // (0.2) custom per-instance floats, readable in surface functions
   origin: [0, 0, 0],          // (0.2) rows are relative to this point; set it in large worlds
 });
@@ -157,6 +159,7 @@ rocks.colors;      // Float32Array, 4 floats per row, when colors: true
 rocks.attributes.tint;  // (0.2)
 rocks.count;              // capacity
 rocks.setActiveCount(n);  // draw only the first n rows (pooling)
+rocks.setLayers(mask);    // every row's layers; no rebuild (concepts/render-layers)
 rocks.markDirty(start, count);  // static batches: upload these rows
 rocks.destroy();
 ```
@@ -190,7 +193,7 @@ Units match three.js r155 and later: directional intensity in lux-like units, po
 
 ## 8. Geometry (`api/geometry`)
 
-`ctx.geometry` has `box`, `sphere`, `plane`, `cylinder`, `cone`, `torus`, `capsule`, `circle` and `ring`, with the same parameters and defaults as the three.js geometry classes (for example `geometry.sphere({ radius, widthSegments, heightSegments })`). The package `@null3d/geometry` (0.2) adds `torusKnot`, `icosahedron`, `octahedron`, `tetrahedron`, `dodecahedron`, `polyhedron`, `lathe`, `extrude`, `shape` and `tube`.
+`ctx.geometry` has `box`, `sphere`, `plane`, `cylinder`, `cone`, `torus`, `capsule`, `circle` and `ring`, with the same parameters and defaults as the three.js geometry classes, as named options (for example `geometry.sphere({ radius, widthSegments, heightSegments })`). They build three.js's vertices, texture coordinates included. A mesh keeps the vertices its generator built, so turn, move or scale the object, not the mesh: three.js's `geometry.rotateX()` has no match. The package `@null3d/geometry` (0.2) adds `torusKnot`, `icosahedron`, `octahedron`, `tetrahedron`, `dodecahedron`, `polyhedron`, `lathe`, `extrude`, `shape` and `tube`.
 
 ```ts
 const mesh = geometry.fromArrays({
@@ -309,7 +312,8 @@ Hit objects are the same wrappers you created; `hit.instance` is the row index f
 ## 14. Input (`api/input`) and controls (`api/controls`)
 
 ```ts
-input.pointer;          // { x, y (CSS pixels), ndcX, ndcY, buttons, dx, dy (this frame), wheel (this frame), isTouch }
+input.pointer;          // { x, y (CSS pixels), ndcX, ndcY, buttons, dx, dy, dragDx, dragDy, wheel, pinch, isTouch }
+                        // per frame: dragDx/dragDy only while a button is held; pinch is the trackpad-pinch part of wheel
 input.isDown('KeyW');   // KeyboardEvent.code names; 'Mouse0' to 'Mouse4' (Mouse0 is also a tap); 'GamepadA'
 input.wasPressed('Space'); input.wasReleased('Space');   // true for one frame; a tap between frames gives both
 input.value('GamepadRT');                // 0 to 1: triggers and stick directions such as 'GamepadLeftStickLeft'

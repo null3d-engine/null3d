@@ -11,7 +11,7 @@ use super::cull::INDIRECT_BYTES;
 use super::ids;
 use super::layout::Layout;
 use crate::frame::{MeshBuffers, RecordError, UploadArena};
-use crate::frame_graph::SceneTargets;
+use crate::pipelines::PassTargets;
 use crate::view::{ViewFrame, ViewId};
 
 /// Records the creation of a view's frame uniform buffer, and of the group that binds it with the
@@ -66,14 +66,14 @@ pub(super) fn record_bundle(
     view: ViewId,
     layout: &Layout,
     meshes: &MeshBuffers,
-    targets: SceneTargets,
+    targets: PassTargets,
 ) -> Result<(), RecordError> {
     list.push(
         Op::BeginBundle,
         &[
             ids::bundle(view),
-            targets.color,
-            targets.depth,
+            targets.color_format,
+            targets.depth_format,
             targets.samples,
         ],
     )?;
