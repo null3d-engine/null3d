@@ -35,6 +35,9 @@ export const BATCH_FIELD_ROTATIONS = 1;
 export const BATCH_FIELD_SCALES = 2;
 export const BATCH_FIELD_COLORS = 3;
 
+export const DEBUG_LINE_FIELD_POSITIONS = 0;
+export const DEBUG_LINE_FIELD_COLORS = 1;
+
 export const RING_FIELD_RECORDS = 0;
 export const RING_FIELD_CAPACITY = 1;
 export const RING_FIELD_WRITE_INDEX = 2;
@@ -74,6 +77,9 @@ export const TEXTURE_STAT_MAX_SIZE = 6;
 
 export const TEXTURE_FORMAT_SRGB = 9;
 export const TEXTURE_FORMAT_LINEAR = 2;
+export const TEXTURE_FORMAT_HALF_FLOAT = 4;
+export const TEXTURE_PREMULTIPLIED_ALPHA = 1;
+export const TEXTURE_MAX_DEPTH = 256;
 export const TEXTURE_WRAP_CLAMP = 0;
 export const TEXTURE_WRAP_REPEAT = 1;
 export const TEXTURE_WRAP_MIRROR = 2;

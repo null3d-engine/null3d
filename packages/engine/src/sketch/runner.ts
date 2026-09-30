@@ -5,18 +5,23 @@
 // report static objects whose transform changed without a setter, before the transform update. In
 // hold mode it seeds this thread's math.random and routes Math.random to it, steps the sketch to the
 // held time in fixed steps after the setup, and publishes the last frame alone. Hold mode reads no
-// input, so the held frame never depends on it.
+// input, so the held frame never depends on it. In development builds, the frame's debug drawing
+// reaches the core just before the frame records; release builds give the sketch calls that do
+// nothing.
 
+import { type Debug, RELEASE_DEBUG } from '../debug/debug';
+import { DebugDraw } from '../debug/draw';
 import { DEV } from '../errors/checks';
 import { coreFailure, QUEUED_CHANGE } from '../errors/core-failure';
 import { EngineError } from '../errors/engine-error';
 import { messageOf } from '../errors/message';
 import { TEXTURE_OPTION_UPLOAD_ALL, TEXTURE_STAT_IMAGES_SENT } from '../generated/core';
 import type { CoreDevice } from '../page/limits';
+import { Assets } from '../scene/assets';
 import { CoreMemory } from '../scene/memory';
 import { Geometry, Materials } from '../scene/resources';
 import { Scene } from '../scene/scene';
-import { attachTextures, Textures } from '../scene/textures';
+import { Textures } from '../scene/textures';
 import { type ControlViews, Slot } from '../shared/control';
 import type { CoreGlue } from '../shared/core';
 import { type ImageSender, imagesArrived } from '../shared/images';
@@ -45,6 +50,8 @@ export interface SketchCore {
 	device: CoreDevice;
 	/** Sends texture images to the thread that draws. */
 	sendImage: ImageSender;
+	/** The page's address, which the sketch's relative asset addresses resolve against. */
+	pageUrl: string;
 }
 
 /**
@@ -80,6 +87,8 @@ export class SketchRunner {
 	/** Gives the thread its own Math.random back, after hold mode seeded it. */
 	private restoreRandom: (() => void) | undefined;
 	private readonly input: InputReader;
+	/** The sketch's debug drawing, in development builds only. */
+	private readonly debugDraw: DebugDraw | undefined;
 	readonly context: SketchContext;
 
 	/**
@@ -121,12 +130,17 @@ export class SketchRunner {
 		Atomics.store(slots, Slot.DrawListAddress1, glue.drawListAddress(1));
 		this.reducedMotion = Atomics.load(slots, Slot.ReducedMotion);
 		this.input = new InputReader(sketch.control, sketch.keyCodes);
+		this.debugDraw = DEV ? new DebugDraw(this.core) : undefined;
+		const debug: Debug = this.debugDraw ?? RELEASE_DEBUG;
 		const time = { now: 0, frame: 0 };
+		const textures = new Textures(this.core, sketch.sendImage, time);
 		this.context = {
 			time,
 			scene: new Scene(this.core, time, device.webgl2),
 			materials: new Materials(this.core),
 			geometry: new Geometry(this.core),
+			textures,
+			assets: new Assets(textures, sketch.pageUrl),
 			input: this.input,
 			preferences: {
 				get reducedMotion() {
@@ -144,8 +158,8 @@ export class SketchRunner {
 					return () => this.messageHandlers.delete(handler);
 				},
 			},
+			debug,
 		};
-		attachTextures(this.context, new Textures(this.core, sketch.sendImage, time));
 		// Last, so a constructor that fails leaves the thread's own Math.random in place.
 		if (holdSeconds !== undefined) this.restoreRandom = seedMathRandom(HOLD_SEED);
 	}
@@ -299,6 +313,13 @@ export class SketchRunner {
 		}
 		if (glue.cullFrame(frame, width, height) !== 0) this.report(coreFailure(glue, 'the frame'));
 		this.endPhase(Phase.Cull);
+		if (DEV && this.debugDraw) {
+			try {
+				this.debugDraw.flush(width, height);
+			} catch (error) {
+				this.report(error);
+			}
+		}
 		if (glue.recordFrame(frame, width, height) !== 0) this.report(coreFailure(glue, 'the frame'));
 		this.record.count(Counter.Rebuilds, glue.drawTablesRebuilt() ? 1 : 0);
 		this.record.count(Counter.VisibleEntries, glue.visibleEntries(frame));

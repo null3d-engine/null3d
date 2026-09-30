@@ -16,6 +16,7 @@ use null3d_gpu::drawlist::format;
 use null3d_gpu::drawlist::{Op, decode};
 use null3d_render::arrays::{MeshArrays, from_arrays};
 use null3d_render::camera::{Lens, Perspective};
+use null3d_render::debug_lines::LineStore;
 use null3d_render::frame::{FrameBuilder, FrameInput, NO_MESH, RecordError};
 use null3d_render::geometry::{Geometry, box_geometry, sphere_geometry};
 use null3d_render::gpu_driven::{GpuDrivenRenderer, RendererConfig};
@@ -44,6 +45,8 @@ pub struct World<B: FrameBuilder = GpuDrivenRenderer> {
     pub objects: Vec<Handle>,
     pub frame: u32,
     pub canvas: (u32, u32),
+    /// The debug lines of the frame that records next, which it then forgets, as the engine does.
+    pub lines: LineStore,
 }
 
 impl World {
@@ -144,6 +147,7 @@ impl<B: FrameBuilder> World<B> {
             objects,
             frame: 1,
             canvas: (640, 360),
+            lines: LineStore::default(),
         }
     }
 
@@ -199,9 +203,19 @@ impl<B: FrameBuilder> World<B> {
             canvas: self.canvas,
             structure_changed,
             jobs: &self.jobs,
+            lines: self.lines.lines(),
         };
-        self.renderer.cull(&input)?;
-        self.renderer.record(&input)
+        let recorded = self
+            .renderer
+            .cull(&input)
+            .and_then(|()| self.renderer.record(&input));
+        self.lines.clear();
+        recorded
+    }
+
+    /// Draws debug lines in the frame that records next: each pair of points is a line.
+    pub fn draw_lines(&mut self, points: &[([f64; 3], u32)]) {
+        self.lines.draw(points).unwrap();
     }
 
     /// Adds a mesh and a material to the builder, and an object that draws with them, in the
@@ -233,7 +247,7 @@ impl<B: FrameBuilder> World<B> {
         let texture = settings.textures_mut().create(map_desc(size)).unwrap();
         settings
             .textures_mut()
-            .set_image(texture, size, size)
+            .set_image(texture, size, size, 0)
             .unwrap();
         let material = settings
             .materials_mut()
@@ -296,6 +310,7 @@ pub fn map_desc(size: u32) -> TextureDesc {
     TextureDesc {
         width: size,
         height: size,
+        depth: 1,
         format: format::RGBA8_UNORM_SRGB,
         mipmaps: true,
         sampling: Sampling::default(),

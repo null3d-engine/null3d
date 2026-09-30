@@ -26,6 +26,7 @@ use null3d_gpu::drawlist::sizes;
 use null3d_render::arrays::{ArrayName, ArraysError, MeshArrays, from_arrays};
 use null3d_render::camera::{Lens, Orthographic, Perspective};
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
+use null3d_render::debug_lines::LineStore;
 use null3d_render::frame::{FrameBuilder, FrameInput, RecordError};
 use null3d_render::geometry::{Geometry, OutOfMemory, Shape, generate};
 use null3d_render::gpu_driven::{
@@ -39,8 +40,8 @@ use wasm_bindgen::prelude::*;
 pub mod constants;
 
 use constants::{
-    arrays_problem, batch_field, mesh_arrays, ring_field, scene_field, shading, texture_option,
-    texture_stat,
+    arrays_problem, batch_field, debug_line_field, mesh_arrays, ring_field, scene_field, shading,
+    texture_option, texture_stat,
 };
 
 /// The engine version, as the loader reports it.
@@ -102,6 +103,8 @@ struct Engine {
     rebuilt: bool,
     /// The words that TypeScript writes a mesh's arrays into, for `createMeshFromArrays`.
     staging: Vec<u32>,
+    /// The debug lines of the next frame, which only development builds of the engine write.
+    lines: LineStore,
 }
 
 impl Engine {
@@ -124,6 +127,7 @@ impl Engine {
             canvas,
             structure_changed: self.structure_changed,
             jobs,
+            lines: self.lines.lines(),
         };
         (self.renderer.as_mut(), input)
     }
@@ -184,7 +188,7 @@ fn arrays_failure(error: ArraysError) -> u32 {
 
 fn texture_failure(error: TextureError) -> u32 {
     match error {
-        TextureError::Handle(error) => core_failure(error),
+        TextureError::Core(error) => core_failure(error),
         TextureError::TooLarge { limit } => render_failure(render_detail::TEXTURE_TOO_LARGE, limit),
         TextureError::Full => render_failure(render_detail::TEXTURES_FULL, MAX_TEXTURES),
         TextureError::Unsupported => render_failure(render_detail::BAD_TEXTURE, 0),
@@ -300,6 +304,7 @@ pub fn init_engine(
         structure_changed: true,
         rebuilt: false,
         staging: Vec::new(),
+        lines: LineStore::default(),
     });
     0
 }
@@ -466,6 +471,7 @@ pub fn cull_frame(frame: u32, width: u32, height: u32) -> u32 {
     })
 }
 
+// The frame draws the debug lines that `drawDebugLines` gave it, and then forgets them.
 /// Records the frame's upload list and its draw list for a canvas of this size in device pixels.
 #[wasm_bindgen(js_name = recordFrame)]
 pub fn record_frame(frame: u32, width: u32, height: u32) -> u32 {
@@ -474,7 +480,9 @@ pub fn record_frame(frame: u32, width: u32, height: u32) -> u32 {
     };
     with_engine(|e| {
         let (renderer, input) = e.frame(frame, (width, height), jobs);
-        match renderer.record(&input) {
+        let recorded = renderer.record(&input);
+        e.lines.clear();
+        match recorded {
             Ok(rebuilt) => {
                 e.structure_changed = false;
                 e.rebuilt = rebuilt;
@@ -527,6 +535,53 @@ pub fn draw_list_address(parity: u32) -> u32 {
 #[wasm_bindgen(js_name = drawListWords)]
 pub fn draw_list_words(frame: u32) -> u32 {
     value_with_engine(|e| Ok(e.renderer.list(frame).len() as u32))
+}
+
+// --- Debug lines, which only development builds of the engine draw ---
+//
+// TypeScript writes each frame's points into the arrays whose addresses `debugLineArrays` gives,
+// after `reserveDebugLines` makes room for them, and `drawDebugLines` has the next recorded frame
+// draw them. Making room keeps the points written since the last recorded frame, but can move
+// the arrays, so TypeScript then reads their addresses again. The arrays hold each point's
+// position, three 64-bit floats, and its sRGB color, one 32-bit word (`constants::debug_line_field`).
+// The doc comments stay short: wasm-bindgen copies them into the glue that every page downloads.
+
+/// Makes room for debug line points.
+#[wasm_bindgen(js_name = reserveDebugLines)]
+pub fn reserve_debug_lines(points: u32) -> u32 {
+    with_engine(|e| match e.lines.reserve(points) {
+        Ok(()) => 0,
+        Err(_) => core_failure(CoreError::OutOfMemory {
+            bytes: points.saturating_mul(28),
+        }),
+    })
+}
+
+/// The address of a debug line array.
+#[wasm_bindgen(js_name = debugLineArrays)]
+pub fn debug_line_arrays(field: u32) -> u32 {
+    value_with_engine(|e| {
+        Ok(match field {
+            debug_line_field::POSITIONS => address(e.lines.positions()),
+            _ => address(e.lines.colors()),
+        })
+    })
+}
+
+// Fails when the arrays have room for fewer points.
+/// Draws debug line points in the next frame.
+#[wasm_bindgen(js_name = drawDebugLines)]
+pub fn draw_debug_lines(points: u32) -> u32 {
+    with_engine(|e| {
+        if e.lines.set_points(points) {
+            0
+        } else {
+            core_failure(CoreError::OutOfRange {
+                value: points,
+                limit: e.lines.capacity(),
+            })
+        }
+    })
 }
 
 // --- Instance batches ---
@@ -879,17 +934,18 @@ pub fn set_material_map(material: u32, texture: u32) -> u32 {
 
 // --- Textures ---
 
-// Creates a texture of `width` x `height` texels, with no image yet, in a layer of a texture
-// array, and returns its handle. `format` is the engine's format code: sRGB for colors, linear
-// for data. `mipmaps` asks for a whole chain of mip levels, which the GPU makes from each image.
-// The rest set its sampler: the address modes along u and v, the filters of magnified and
-// minified texels and between mip levels, and the anisotropy.
+// Creates a texture of `width` x `height` texels in `depth` layers, with no texels yet, in a
+// texture array, and returns its handle. `format` is the engine's format code: sRGB for colors,
+// linear for data, or half floats. `mipmaps` asks for a whole chain of mip levels, which the GPU
+// makes from each upload. The rest set its sampler: the address modes along u and v, the filters
+// of magnified and minified texels and between mip levels, and the anisotropy.
 /// Creates a texture and returns its handle.
 #[wasm_bindgen(js_name = createTexture)]
 #[allow(clippy::too_many_arguments)]
 pub fn create_texture(
     width: u32,
     height: u32,
+    depth: u32,
     format: u32,
     mipmaps: bool,
     wrap_u: u32,
@@ -903,6 +959,7 @@ pub fn create_texture(
         let desc = TextureDesc {
             width,
             height,
+            depth,
             format,
             mipmaps,
             sampling: Sampling {
@@ -921,17 +978,38 @@ pub fn create_texture(
     })
 }
 
-// Gives a texture an image of `width` x `height` pixels, the texture's size, and returns the
-// image's id. TypeScript sends the image to the thread that draws under that id, in id order, and
-// the image uploads once the thread has it.
+// Gives a texture an image of `width` x `height` pixels, uploaded with the `upload_flags` in
+// `flags`, and returns the image's id. TypeScript sends the image to the thread that draws under
+// that id, in id order, and the image uploads once the thread has it. An image of another size
+// moves the texture to another array, which changes the draw tables.
 /// Gives a texture an image and returns the image's id.
 #[wasm_bindgen(js_name = setTextureImage)]
-pub fn set_texture_image(texture: u32, width: u32, height: u32) -> u32 {
+pub fn set_texture_image(texture: u32, width: u32, height: u32, flags: u32) -> u32 {
     value_with_engine(|e| {
         let textures = e.renderer.settings_mut().textures_mut();
-        textures
-            .set_image(Handle::from_raw(texture), width, height)
-            .map_err(texture_failure)
+        let (image, moved) = textures
+            .set_image(Handle::from_raw(texture), width, height, flags)
+            .map_err(texture_failure)?;
+        e.structure_changed |= moved;
+        Ok(image)
+    })
+}
+
+// Gives a texture new texels of `width` x `height` in each of its layers, and returns the address
+// of the memory that TypeScript fills with them at once: tightly packed rows, layer after layer.
+// The texels upload in the texture's turn, and the store frees the memory once no list reads it.
+// Texels of another size move the texture to another array, which changes the draw tables.
+/// Gives a texture new texels and returns the address to write them at.
+#[wasm_bindgen(js_name = setTextureData)]
+pub fn set_texture_data(texture: u32, width: u32, height: u32) -> u32 {
+    value_with_engine(|e| {
+        let textures = e.renderer.settings_mut().textures_mut();
+        let (words, moved) = textures
+            .set_data(Handle::from_raw(texture), width, height)
+            .map_err(texture_failure)?;
+        let at = address(words);
+        e.structure_changed |= moved;
+        Ok(at)
     })
 }
 
