@@ -13,10 +13,10 @@ use null3d_gpu::drawlist::{DrawList, Op, buffer_usage as usage, sizes};
 
 use super::ids;
 use crate::frame::{
-    FrameInput, HIDDEN, PipelineKey, PipelineTable, RecordError, SceneSettings, UploadArena,
-    address, bucket_of, collect_bucket_keys, drawn_rows, floats_as_bytes, grown_size,
-    words_as_bytes,
+    FrameInput, HIDDEN, RecordError, SceneSettings, UploadArena, address, bucket_of,
+    collect_bucket_keys, drawn_rows, floats_as_bytes, grown_size, words_as_bytes,
 };
+use crate::pipelines::{DrawKey, PassTargets, PipelineCache};
 
 /// Bytes of one bucket record in the culling shader: base, material, radius, first draw, draw
 /// count, padding.
@@ -24,9 +24,9 @@ const BUCKET_BYTES: u32 = 32;
 /// Bytes of one world matrix: three rows of four floats.
 const MATRIX_BYTES: u32 = (MATRIX_FLOATS * 4) as u32;
 
-/// What makes a bucket, in draw order: its pipeline, the mesh page of its mesh's first part, and
-/// its engine mesh and material ids.
-type BucketKey = (PipelineKey, u32, u32, u32);
+/// What makes a bucket, in draw order: what its mesh and material ask of their pipeline, the mesh
+/// page of its mesh's first part, and its engine mesh and material ids.
+type BucketKey = (DrawKey, u32, u32, u32);
 
 /// One bucket: its pipeline, its slice of each view's compacted instance buffer, and its draws.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -163,12 +163,15 @@ impl Layout {
     }
 
     /// Assigns every source to a bucket and lays the buckets out, from the frame's world state,
-    /// with each bucket's pipeline id from `pipelines`. It reuses the layout's tables and scratch
-    /// space, which grow only with the scene. A scene of more than `limit` sources fails.
+    /// with each bucket's pipeline id from `pipelines`, for a pass that draws into `targets`. It
+    /// reuses the layout's tables and scratch space, which grow only with the scene. A scene of
+    /// more than `limit` sources fails.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn rebuild(
         &mut self,
         settings: &SceneSettings,
-        pipelines: &mut PipelineTable,
+        pipelines: &mut PipelineCache,
+        targets: PassTargets,
         scene: &SceneStorage,
         batches: &BatchTable,
         parity: usize,
@@ -210,7 +213,7 @@ impl Layout {
             let slot = meshes.mesh(mesh - 1).expect("keys name known meshes");
             let parts = meshes.parts(slot);
             self.buckets.push(Bucket {
-                pipeline: pipelines.id(pipeline),
+                pipeline: pipelines.id(pipeline.in_pass(targets)),
                 material,
                 base,
                 capacity: count,
