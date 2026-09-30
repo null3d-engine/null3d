@@ -324,3 +324,26 @@ fn a_full_shader_names_its_own_lines_and_needs_one_pipeline() {
         "{problem}"
     );
 }
+
+#[test]
+fn a_custom_material_that_breaks_a_portable_rule_fails_at_its_line_with_a_fix() {
+    let half = STRIPES.replace(
+        "    return s;",
+        "    let h: f16 = 1.0h;\n    s.metalness = f32(h);\n    return s;",
+    );
+    let problem = only_problem(&half);
+    assert_eq!(problem.file.as_deref(), Some(PATH));
+    assert_eq!(problem.line, Some(6));
+    assert!(problem.message.contains("`shader-f16`"), "{problem}");
+    assert!(
+        problem.message.contains("Write the math in `f32`"),
+        "{problem}"
+    );
+    let swizzle = STRIPES.replace(
+        "    return s;",
+        "    s.baseColor.xy = vec2f(1.0);\n    return s;",
+    );
+    let problem = only_problem(&swizzle);
+    assert_eq!(problem.line, Some(6));
+    assert!(problem.feature.is_some(), "{problem}");
+}
