@@ -172,6 +172,26 @@ describe('creating lights', () => {
 		expect(tableRow(sky).values[C.LIGHT_VALUE_INTENSITY]).toBe(0.6);
 	});
 
+	test("a directional light's shadow options land in the light table, and setShadow changes only those it names", () => {
+		const { scene, tableRow } = fakeCore();
+		const sun = scene.createDirectionalLight({
+			castShadows: true,
+			shadow: { cascades: 2, mapSize: 1024, bias: 1.5, normalBias: 0.5, distance: 80 },
+		});
+		const values = tableRow(sun).values;
+		expect(values[C.LIGHT_VALUE_SHADOW_CASCADES]).toBe(2);
+		expect(values[C.LIGHT_VALUE_SHADOW_MAP_SIZE]).toBe(1024);
+		expect(values[C.LIGHT_VALUE_SHADOW_BIAS]).toBe(1.5);
+		expect(values[C.LIGHT_VALUE_SHADOW_NORMAL_BIAS]).toBe(0.5);
+		expect(values[C.LIGHT_VALUE_SHADOW_DISTANCE]).toBe(80);
+		sun.setShadow({ cascades: 4 });
+		expect(tableRow(sun).values[C.LIGHT_VALUE_SHADOW_CASCADES]).toBe(4);
+		expect(tableRow(sun).values[C.LIGHT_VALUE_SHADOW_MAP_SIZE]).toBe(1024);
+		// Settings left out keep the core's defaults.
+		const plain = scene.createDirectionalLight({ shadow: {} });
+		expect(tableRow(plain).values).toEqual([]);
+	});
+
 	test('castShadows travels with the create command', () => {
 		const { scene, commands } = fakeCore();
 		const lights = [
@@ -370,6 +390,28 @@ describe('development checks', () => {
 		expect(thrown(() => spot.setColor('reddish')).code).toBe('E1204');
 		// A negative intensity takes light away, as in three.js.
 		spot.setIntensity(-1);
+	});
+
+	test('shadow settings outside their ranges throw E1108', () => {
+		const { scene } = fakeCore();
+		const sun = scene.createDirectionalLight({ name: 'Sun' });
+		const on = `on "Sun" (slot ${sun.slot})`;
+		expect(thrown(() => sun.setShadow({ cascades: 5 })).message).toStartWith(
+			`E1108: setShadow() got the shadow cascades 5 ${on}, which must be a whole number from 1 to 4.`,
+		);
+		expect(thrown(() => sun.setShadow({ cascades: 2.5 })).code).toBe('E1108');
+		expect(thrown(() => sun.setShadow({ mapSize: 1000 })).message).toStartWith(
+			`E1108: setShadow() got the shadow map size 1000 ${on}, which must be 256, 512, 1,024, 2,048 or 4,096.`,
+		);
+		expect(thrown(() => sun.setShadow({ mapSize: 8192 })).code).toBe('E1108');
+		expect(thrown(() => sun.setShadow({ bias: -1 })).code).toBe('E1108');
+		expect(thrown(() => sun.setShadow({ normalBias: -0.1 })).code).toBe('E1108');
+		expect(thrown(() => sun.setShadow({ distance: 0 })).code).toBe('E1108');
+		expect(thrown(() => sun.setShadow({ distance: Number.NaN })).code).toBe('E1203');
+		expect(
+			thrown(() => scene.createDirectionalLight({ shadow: { cascades: 0 } })).message,
+		).toStartWith('E1108: createDirectionalLight() got the shadow cascades 0');
+		sun.setShadow({ cascades: 1, mapSize: 256, bias: 0, normalBias: 0, distance: 0.5 });
 	});
 
 	test('the create calls check their options and name themselves', () => {

@@ -91,6 +91,7 @@ export type {
 	CameraOptions,
 	DirectionalLight,
 	DirectionalLightOptions,
+	DirectionalShadowOptions,
 	Group,
 	HemisphereLight,
 	HemisphereLightOptions,

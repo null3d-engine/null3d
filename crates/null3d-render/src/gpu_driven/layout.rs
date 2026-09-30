@@ -1,6 +1,12 @@
 //! The sources and buckets that every view culls and draws, and their uploads: the world matrices,
 //! the bucket, cell and layer mask of every source, and the bucket records that the culling shader
 //! reads.
+//!
+//! A layout holds one kind of bucket. The scene's layout holds every object and instance row with a
+//! mesh and a material, as the views of cameras draw them, and it owns the matrices and the layer
+//! table. The casters' layout holds the objects that cast shadows, grouped by mesh alone, as the
+//! shadow cascades draw their depth. It has a bucket table and bucket records of its own, and its
+//! culling reads the scene layout's matrices and layer table.
 
 use std::collections::TryReserveError;
 use std::ops::Range;
@@ -31,6 +37,21 @@ const MATRIX_BYTES: u32 = (MATRIX_FLOATS * 4) as u32;
 /// material ids, and the bounds that cull its sources (see [`bounds_of`]). The WebGL2 builder's
 /// keys have the same type, so both share one sort.
 type BucketKey = (DrawKey, u32, u32, u32, u32, u32);
+
+/// What a layout's buckets draw.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(super) enum Drawn {
+    /// Every object and instance row with a mesh and a material, as the views of cameras draw
+    /// them.
+    #[default]
+    Scene,
+    /// The objects that cast shadows, as the shadow cascades draw their depth.
+    Casters,
+}
+
+/// The material of every caster bucket: a caster's depth does not depend on its material, so
+/// casters of one mesh share a bucket.
+const CASTER_MATERIAL: u32 = 1;
 
 /// The bounds of sources culled with their mesh's sphere, centred on their origin.
 const MESH_BOUNDS: u32 = 0;
@@ -172,6 +193,8 @@ struct BatchRows {
 /// The source layout and bucket tables, rebuilt when the structure changes.
 #[derive(Default)]
 pub(super) struct Layout {
+    /// What the buckets draw.
+    drawn: Drawn,
     pub(super) sources: u32,
     /// Each batch's raw id and the first source of its rows.
     batch_bases: Vec<(u32, u32)>,
@@ -204,6 +227,27 @@ pub(super) struct Layout {
 }
 
 impl Layout {
+    /// An empty layout of buckets that draw `drawn`.
+    pub(super) fn new(drawn: Drawn) -> Self {
+        Self {
+            drawn,
+            ..Self::default()
+        }
+    }
+
+    /// The buffers of the bucket table and the bucket records, which the culling passes bind.
+    pub(super) fn table_ids(&self) -> (u32, u32) {
+        match self.drawn {
+            Drawn::Scene => (ids::INSTANCE_BUCKETS, ids::BUCKETS),
+            Drawn::Casters => (ids::CASTER_BUCKETS, ids::CASTER_RECORDS),
+        }
+    }
+
+    /// True for the scene's layout, which owns the matrices and the layer table.
+    fn owns_sources(&self) -> bool {
+        self.drawn == Drawn::Scene
+    }
+
     fn base_of(&self, target: u32) -> Option<u32> {
         if target == SCENE_TARGET {
             return Some(0);
@@ -227,10 +271,22 @@ impl Layout {
 
     /// Makes room for the bucket table and the layer table of `sources` sources.
     pub(super) fn reserve(&mut self, sources: u32) -> Result<(), TryReserveError> {
-        for table in [&mut self.instance_buckets, &mut self.source_layers] {
-            table.try_reserve((sources as usize).saturating_sub(table.len()))?;
+        let owned = if self.owns_sources() { sources } else { 0 };
+        for (table, rows) in [
+            (&mut self.instance_buckets, sources),
+            (&mut self.source_layers, owned),
+        ] {
+            table.try_reserve((rows as usize).saturating_sub(table.len()))?;
         }
         Ok(())
+    }
+
+    /// Empties the buckets, for a layout that draws nothing until it is built again.
+    pub(super) fn clear(&mut self) {
+        self.buckets.clear();
+        self.draws.clear();
+        self.indirect_template.clear();
+        self.bucket_records.clear();
     }
 
     /// Forgets the buffers, so the next layout makes them again and uploads everything.
@@ -240,9 +296,10 @@ impl Layout {
     }
 
     /// Assigns every source to a bucket and lays the buckets out, from the frame's world state,
-    /// with each bucket's pipeline id from `pipelines`, for a pass that draws into `targets`. It
-    /// reuses the layout's tables and scratch space, which grow only with the scene. A scene of
-    /// more than `limit` sources fails.
+    /// with each bucket's pipeline id from `pipelines`, for a pass that draws into `targets`. With
+    /// `shadows`, the scene's receivers draw with pipelines that read the shadow maps. It reuses
+    /// the layout's tables and scratch space, which grow only with the scene. A scene of more than
+    /// `limit` sources fails.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn rebuild(
         &mut self,
@@ -253,6 +310,7 @@ impl Layout {
         batches: &BatchTable,
         parity: usize,
         limit: u32,
+        shadows: bool,
     ) -> Result<(), RecordError> {
         let scene_rows = scene.capacity() + 1;
         self.batch_bases.clear();
@@ -267,18 +325,41 @@ impl Layout {
         self.sources = sources;
 
         let meshes = settings.meshes();
-        let key_of = |mesh: u32, material: u32, bounds: u32| -> Option<BucketKey> {
+        let drawn = self.drawn;
+        let key_of = |mesh: u32, material: u32, bounds: u32, object: u32| -> Option<BucketKey> {
             let pipeline = settings.pipeline_of(mesh, material)?;
-            let group = settings.texture_group(material, pipeline);
             let page = meshes.parts(meshes.mesh(mesh - 1)?).first()?.page;
+            if drawn == Drawn::Casters {
+                let caster = settings.caster_of(pipeline);
+                return Some((caster, 0, page, mesh, CASTER_MATERIAL, bounds));
+            }
+            let pipeline = if shadows && object & flags::RECEIVE_SHADOWS != 0 {
+                settings.receiving(pipeline)
+            } else {
+                pipeline
+            };
+            let group = settings.texture_group(material, pipeline);
             Some((pipeline, group, page, mesh, material, bounds))
         };
         let world = scene.world(parity);
         let scene_key = |slot: usize| {
+            let object = scene.flags()[slot];
+            if drawn == Drawn::Casters && (!shadows || object & flags::CAST_SHADOWS == 0) {
+                return None;
+            }
             let bounds = bounds_of(scene, slot);
-            key_of(scene.meshes()[slot], scene.materials()[slot], bounds)
+            key_of(
+                scene.meshes()[slot],
+                scene.materials()[slot],
+                bounds,
+                object,
+            )
         };
-        let batch_key = |batch: &InstanceBatch| key_of(batch.mesh(), batch.material(), MESH_BOUNDS);
+        // Instance batches cast no shadows yet.
+        let batch_key = |batch: &InstanceBatch| match drawn {
+            Drawn::Scene => key_of(batch.mesh(), batch.material(), MESH_BOUNDS, 0),
+            Drawn::Casters => None,
+        };
 
         collect_bucket_keys(
             &mut self.key_counts,
@@ -326,8 +407,10 @@ impl Layout {
             self.instance_buckets.push(scene_entry(home, radius, cell));
         }
         self.source_layers.clear();
-        self.source_layers
-            .extend_from_slice(&scene.layers()[..scene_rows as usize]);
+        if self.owns_sources() {
+            self.source_layers
+                .extend_from_slice(&scene.layers()[..scene_rows as usize]);
+        }
         self.scene_layers_default = scene.common_layers().is_some();
         self.batch_rows.clear();
         for (_, batch) in batches.iter() {
@@ -340,8 +423,10 @@ impl Layout {
             });
             self.instance_buckets
                 .extend((0..batch.capacity()).map(|row| row_entry(bucket, batch, row, active)));
-            let rows = self.source_layers.len() + batch.capacity() as usize;
-            self.source_layers.resize(rows, layers);
+            if self.owns_sources() {
+                let rows = self.source_layers.len() + batch.capacity() as usize;
+                self.source_layers.resize(rows, layers);
+            }
         }
 
         self.indirect_template.clear();
@@ -379,18 +464,17 @@ impl Layout {
         arena: &mut UploadArena,
         binding_bytes: u32,
     ) -> Result<bool, RecordError> {
+        let (entries, records) = self.table_ids();
+        let owned = if self.owns_sources() { self.sources } else { 0 };
         let needed = [
-            (ids::MATRICES, self.sources * MATRIX_BYTES),
-            (ids::INSTANCE_BUCKETS, self.sources * 4),
-            (ids::SOURCE_LAYERS, self.sources * 4),
-            (
-                ids::BUCKETS,
-                (self.buckets.len() as u32).max(1) * BUCKET_BYTES,
-            ),
+            (ids::MATRICES, owned * MATRIX_BYTES),
+            (entries, self.sources * 4),
+            (ids::SOURCE_LAYERS, owned * 4),
+            (records, (self.buckets.len() as u32).max(1) * BUCKET_BYTES),
         ];
         let mut recreated = false;
         for ((id, size), made) in needed.into_iter().zip(&mut self.buffer_sizes) {
-            if *made < size {
+            if size > 0 && *made < size {
                 *made = grown_size(size, binding_bytes);
                 list.push(
                     Op::CreateBuffer,
@@ -403,20 +487,22 @@ impl Layout {
         write_rows(
             list,
             arena,
-            ids::INSTANCE_BUCKETS,
+            entries,
             &self.instance_buckets,
             everything.clone(),
         )?;
-        write_rows(
-            list,
-            arena,
-            ids::SOURCE_LAYERS,
-            &self.source_layers,
-            everything,
-        )?;
+        if self.owns_sources() {
+            write_rows(
+                list,
+                arena,
+                ids::SOURCE_LAYERS,
+                &self.source_layers,
+                everything,
+            )?;
+        }
         if !self.buckets.is_empty() {
             let (at, bytes) = arena.push(words_as_bytes(&self.bucket_records))?;
-            list.push(Op::WriteBuffer, &[ids::BUCKETS, 0, at, bytes])?;
+            list.push(Op::WriteBuffer, &[records, 0, at, bytes])?;
         }
         Ok(recreated)
     }
@@ -436,10 +522,12 @@ impl Layout {
         let scene = input.scene;
         let (radii, cells, layers) = (scene.world(parity).radii(), scene.cells(), scene.layers());
         let scene_rows = self.home_buckets.len() as u32;
+        let (entries, _) = self.table_ids();
+        let owns_sources = self.owns_sources();
         // While no object has a mask of its own, and none had one when the table was last
         // written, every slot's mask is the default one the table holds.
         let all_default = scene.common_layers().is_some();
-        let check_layers = !(all_default && self.scene_layers_default);
+        let check_layers = owns_sources && !(all_default && self.scene_layers_default);
         self.scene_layers_default = all_default;
         let home_buckets = &self.home_buckets;
         let (instance_buckets, source_layers) =
@@ -448,7 +536,7 @@ impl Layout {
             let slots = start..(start + count).min(scene_rows);
             let entry = |s: usize| scene_entry(home_buckets[s], radii[s], cells[s]);
             if let Some(rows) = sync_rows(instance_buckets, slots.clone(), entry) {
-                write_rows(list, arena, ids::INSTANCE_BUCKETS, instance_buckets, rows)?;
+                write_rows(list, arena, entries, instance_buckets, rows)?;
             }
             if check_layers && let Some(rows) = sync_rows(source_layers, slots, |s| layers[s]) {
                 write_rows(list, arena, ids::SOURCE_LAYERS, source_layers, rows)?;
@@ -472,7 +560,7 @@ impl Layout {
             } = self.batch_rows[index];
             let base = self.batch_bases[index].1;
             let mask = batch.layers();
-            if mask != had {
+            if owns_sources && mask != had {
                 // Every row holds the batch's mask, so rows that become active later need none.
                 let rows = base..base + batch.capacity();
                 self.source_layers[rows.start as usize..rows.end as usize].fill(mask);
@@ -495,13 +583,7 @@ impl Layout {
             }
             self.batch_rows[index].active = now;
             let rows = base + low..base + high;
-            write_rows(
-                list,
-                arena,
-                ids::INSTANCE_BUCKETS,
-                &self.instance_buckets,
-                rows,
-            )?;
+            write_rows(list, arena, entries, &self.instance_buckets, rows)?;
         }
         Ok(())
     }
@@ -623,6 +705,7 @@ mod tests {
                 &batches,
                 parity,
                 u32::MAX,
+                false,
             )
             .unwrap();
         let mesh_radius = settings.meshes().mesh(mesh - 1).unwrap().radius;

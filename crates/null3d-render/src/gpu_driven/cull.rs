@@ -1,8 +1,9 @@
 //! The culling passes: one compute dispatch per view. Each thread tests one source's bounding
 //! sphere against the view's frustum, appends a visible source to its bucket's slice of the view's
 //! compacted instance buffer, and counts it in each of the bucket's indirect draws, which the
-//! view's bundle then draws. Every view reads the same sources and bucket tables, and writes
-//! buffers of its own.
+//! view's bundle then draws. Every view reads the same sources, and writes buffers of its own. The
+//! views of cameras read the scene layout's bucket tables, and the shadow cascades' views read the
+//! casters' layout's.
 //!
 //! A view's parameters also hold its layer mask, and the shader skips a source whose layer mask
 //! shares no bit with it.
@@ -50,7 +51,8 @@ struct ViewBuffers {
 /// The culling passes' GPU objects, and each view's buffers.
 #[derive(Debug, Default)]
 pub(super) struct Culling {
-    views: Vec<ViewBuffers>,
+    /// Each view's buffers by view id, or `None` for a view whose buffers do not exist.
+    views: Vec<Option<ViewBuffers>>,
     /// The offsets from the camera of the view being uploaded to each cell in use.
     offsets: CellOffsets,
 }
@@ -62,35 +64,39 @@ pub(super) fn create_pipeline(list: &mut DrawList) -> Result<(), RecordError> {
 }
 
 impl Culling {
-    /// The number of views whose culling buffers exist.
-    pub(super) fn views(&self) -> usize {
-        self.views.len()
+    /// True when a view's culling buffers exist.
+    pub(super) fn has_view(&self, view: ViewId) -> bool {
+        self.views.get(view.index()).is_some_and(Option::is_some)
     }
 
-    /// Creates the parameter buffer of each view from the first one without it up to `views`.
-    pub(super) fn add_views(
+    /// Creates a view's parameter buffer, unless it exists.
+    pub(super) fn add_view(
         &mut self,
         list: &mut DrawList,
-        views: usize,
+        view: ViewId,
     ) -> Result<(), RecordError> {
-        while self.views.len() < views {
-            let view = ViewId::from_index(self.views.len());
-            list.push(
-                Op::CreateBuffer,
-                &[
-                    ids::cull_params(view),
-                    CULL_PARAMS_BYTES,
-                    usage::UNIFORM | usage::COPY_DST,
-                ],
-            )?;
-            self.views.push(ViewBuffers::default());
+        if self.has_view(view) {
+            return Ok(());
         }
+        list.push(
+            Op::CreateBuffer,
+            &[
+                ids::cull_params(view),
+                CULL_PARAMS_BYTES,
+                usage::UNIFORM | usage::COPY_DST,
+            ],
+        )?;
+        if self.views.len() <= view.index() {
+            self.views.resize(view.index() + 1, None);
+        }
+        self.views[view.index()] = Some(ViewBuffers::default());
         Ok(())
     }
 
     /// Sizes a view's compacted instance and indirect buffers for the layout, at most
     /// `binding_bytes` each, and binds its culling group again when a buffer it binds is new:
-    /// one of its own, or one of the layout's (`shared_recreated`).
+    /// one of its own, or one of the layouts' (`shared_recreated`). The group binds the layout's
+    /// bucket tables beside the scene's matrices and layer table.
     pub(super) fn apply(
         &mut self,
         list: &mut DrawList,
@@ -99,7 +105,9 @@ impl Culling {
         shared_recreated: bool,
         binding_bytes: u32,
     ) -> Result<(), RecordError> {
-        let buffers = &mut self.views[view.index()];
+        let buffers = self.views[view.index()]
+            .as_mut()
+            .expect("a view's buffers exist before it culls");
         let draws = layout.draws.len() as u32;
         let needed = [
             (
@@ -130,11 +138,12 @@ impl Culling {
                 bind_layout::CULL,
                 CULL_BINDINGS as u32,
             ]);
+            let (bucket_table, bucket_records) = layout.table_ids();
             for (binding, buffer) in [
                 ids::cull_params(view),
                 ids::MATRICES,
-                ids::INSTANCE_BUCKETS,
-                ids::BUCKETS,
+                bucket_table,
+                bucket_records,
                 ids::visible(view),
                 ids::indirect(view),
                 ids::SOURCE_LAYERS,

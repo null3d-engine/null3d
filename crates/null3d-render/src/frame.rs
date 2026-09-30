@@ -14,10 +14,12 @@ use null3d_core::cells::{CellPosition, MAX_CELLS};
 use null3d_core::handle::Handle;
 use null3d_core::instances::{BatchTable, InstanceBatch};
 use null3d_core::jobs::JobSystem;
-use null3d_core::lights::{LightTable, LightView};
+use null3d_core::lights::{LightTable, LightView, SunShadow};
 use null3d_core::scene::SceneStorage;
 use null3d_core::snapshot::FrameSnapshot;
-use null3d_gpu::drawlist::{DrawList, DrawListError, Op, buffer_usage};
+use null3d_gpu::drawlist::{
+    DrawList, DrawListError, Op, buffer_usage, permutation, state_flags, template,
+};
 
 use crate::camera::Lens;
 use crate::debug_lines::DebugLines;
@@ -26,6 +28,7 @@ use crate::graph::GraphError;
 use crate::materials::{MATERIAL_FLOATS, MATERIAL_TEXELS, MapSlot, MaterialTable, Shading};
 use crate::meshes::{MAX_BUFFER_BYTES, MeshStorage, Page};
 use crate::pipelines::DrawKey;
+use crate::shadows::{ShadowFrame, ShadowSettings, fit_cascades};
 use crate::textures::TextureStore;
 use crate::view::{MAX_VIEWS, View, ViewFrame, ViewId};
 
@@ -321,6 +324,8 @@ struct Lighting {
     sun_direction: [f32; 4],
     sun_color: [f32; 4],
     ambient: [f32; 4],
+    /// The main directional light's shadows, or `None` when it casts none.
+    sun_shadow: Option<SunShadow>,
     /// Linear background color.
     background: [f32; 3],
 }
@@ -347,6 +352,7 @@ impl SceneSettings {
                 sun_direction: [0.0, -1.0, 0.0, 0.0],
                 sun_color: [0.0; 4],
                 ambient: [0.0; 4],
+                sun_shadow: None,
                 background: [0.0; 3],
             },
         }
@@ -495,6 +501,66 @@ impl SceneSettings {
         let lit = lights.gather(scene, parity, view.as_ref());
         self.set_sun(lit.sun_direction, lit.sun_color);
         self.set_ambient(lit.ambient);
+        self.set_sun_shadow(lit.sun_shadow);
+    }
+
+    /// The main directional light's shadows, or `None` when it casts none.
+    pub fn set_sun_shadow(&mut self, shadow: Option<SunShadow>) {
+        self.lighting.sun_shadow = shadow;
+    }
+
+    /// The cascades of the main directional light's shadows in a frame whose targets have the
+    /// canvas's size, fitted to the camera's view, or `None` when the light casts no shadows or
+    /// the camera has nothing to draw from.
+    pub fn shadow_frame(
+        &self,
+        scene: &SceneStorage,
+        parity: usize,
+        canvas: (u32, u32),
+    ) -> Option<ShadowFrame> {
+        let shadow = self.lighting.sun_shadow?;
+        let (camera, lens) = self.views[ViewId::CAMERA.index()].camera()?;
+        let slot = scene.resolve(camera).ok()?;
+        let world = scene.world(parity).matrix(slot as usize);
+        let aspect = canvas.0 as f32 / canvas.1.max(1) as f32;
+        let settings = ShadowSettings {
+            cascades: shadow.cascades,
+            map_size: shadow.map_size,
+            bias: shadow.bias,
+            normal_bias: shadow.normal_bias,
+            distance: shadow.distance,
+        };
+        let [x, y, z, _] = self.lighting.sun_direction;
+        Some(ShadowFrame {
+            cascades: fit_cascades(world, &lens, aspect, [x, y, z], &settings),
+            settings,
+            camera: scene.cell_position(slot, parity),
+            layers: shadow.layers,
+        })
+    }
+
+    /// The pipeline that draws the depth of a shadow caster whose mesh and material draw with
+    /// `pipeline`: only its back faces, as three.js draws them with its filtered shadow maps.
+    pub fn caster_of(&self, pipeline: DrawKey) -> DrawKey {
+        DrawKey {
+            template: template::SHADOW_DEPTH,
+            permutation: 0,
+            vertex_format: pipeline.vertex_format,
+            state: state_flags::CULL_FRONT,
+        }
+    }
+
+    /// The pipeline that draws an object with `pipeline` where it receives shadows: the same one,
+    /// reading the shadow maps where its shading reflects the lights.
+    pub fn receiving(&self, pipeline: DrawKey) -> DrawKey {
+        if pipeline.template == Shading::Lit.template() {
+            DrawKey {
+                permutation: pipeline.permutation | permutation::RECEIVE_SHADOWS,
+                ..pipeline
+            }
+        } else {
+            pipeline
+        }
     }
 
     /// The linear color behind every object.

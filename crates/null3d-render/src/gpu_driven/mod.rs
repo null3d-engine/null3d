@@ -48,8 +48,18 @@
 //!
 //! Every view (see [`crate::view`]) culls the same sources and bucket tables, into buffers of its
 //! own: its culling parameters, compacted instances and indirect draws, its frame uniform, and its
-//! bundle. Each pass has a module: `cull` records the culling passes and `opaque` the opaque
-//! passes, and `layout` keeps the sources and buckets that every view reads, with their uploads.
+//! bundle. Each pass has a module: `cull` records the culling passes, `opaque` the opaque passes
+//! and `shadow` the shadow passes, and `layout` keeps the sources and buckets that every view
+//! reads, with their uploads.
+//!
+//! # Shadows
+//!
+//! While the main directional light casts shadows, each cascade of its shadows (see
+//! [`crate::shadows`]) is a view too. The cascades cull a second layout, of the objects that cast
+//! shadows, grouped by mesh, and draw their depth with depth-only pipelines into their layers of
+//! the shadow map. The scene's objects that receive shadows draw with pipelines that read the map.
+//! Turning shadows on or off rebuilds both layouts. Every camera view's frame group binds the
+//! shadow map, which is one texel of one layer while no light casts shadows.
 //! The debug lines pass, which both builders share, is [`crate::debug_lines`]. The render graph
 //! ([`crate::frame_graph`]) orders the passes and begins their render passes.
 //!
@@ -63,6 +73,7 @@
 mod cull;
 mod layout;
 mod opaque;
+mod shadow;
 
 use std::collections::TryReserveError;
 
@@ -74,15 +85,16 @@ use crate::frame::{
     FrameBuilder, FrameInput, MaterialStorage, MeshBuffers, ParityLists, RecordError,
     SceneSettings, UploadArena,
 };
-use crate::frame_graph::{FrameGraph, Role};
+use crate::frame_graph::{FrameGraph, Role, ShadowPasses};
 use crate::graph::RenderGraph;
 use crate::materials::MATERIAL_FLOATS;
 use crate::meshes::{MeshStorage, Packing};
 use crate::pipelines::PipelineCache;
+use crate::shadows::{self, MAX_CASCADES};
 use crate::textures::{TextureIds, TextureStore};
 use crate::view::{ViewFrame, ViewId};
 use cull::{CULL_PARAMS_BYTES, Culling, INDIRECT_BYTES};
-use layout::Layout;
+use layout::{Drawn, Layout};
 
 /// The most sources the builder can draw, scene slots and instance rows together, on a device whose
 /// largest storage binding is `binding_bytes`. One culling dispatch covers at most 65,535
@@ -98,9 +110,9 @@ pub const fn max_sources(binding_bytes: u32) -> u32 {
     }
 }
 
-/// Engine memory the builder keeps for each source: its entries in the bucket table and the layer
-/// table, and room for both in both frames' upload arenas.
-pub const BYTES_PER_SOURCE: u32 = 24;
+/// Engine memory the builder keeps for each source: its entries in the bucket table, the layer
+/// table and the casters' bucket table, and room for all three in both frames' upload arenas.
+pub const BYTES_PER_SOURCE: u32 = 36;
 
 /// The most sources on every WebGPU device: [`max_sources`] at WebGPU's default storage binding
 /// limit. The WebGL2 path has its own limit, which follows the device's largest texture.
@@ -111,9 +123,10 @@ pub const PORTABLE_MAX_SOURCES: u32 = max_sources(sizes::PORTABLE_STORAGE_BINDIN
 pub const MAX_USEFUL_BINDING_BYTES: u32 =
     u16::MAX as u32 * sizes::CULL_WORKGROUP_SIZE * sizes::INSTANCE_STRIDE;
 
-/// The builder's GPU objects. It owns every id it uses; each view has a range of its own.
+/// The builder's GPU objects. It owns every id it uses; each view has a range of its own, the
+/// shadow cascades' views after the camera views.
 mod ids {
-    use crate::view::{MAX_VIEWS, ViewId};
+    use crate::view::{MAX_VIEW_IDS, ViewId};
 
     pub const MATERIALS: u32 = 1;
     pub const MATRICES: u32 = 2;
@@ -138,16 +151,23 @@ mod ids {
     }
 
     /// The vertices of the debug lines.
-    pub const LINES: u32 = VIEW_BUFFERS + 4 * MAX_VIEWS as u32;
+    pub const LINES: u32 = VIEW_BUFFERS + 4 * MAX_VIEW_IDS as u32;
+    /// The casters' bucket table and bucket records, which the shadow cascades' culling reads.
+    pub const CASTER_BUCKETS: u32 = LINES + 1;
+    pub const CASTER_RECORDS: u32 = LINES + 2;
+    /// The cascades' uniform block, which receivers read beside the shadow map.
+    pub const SHADOWS: u32 = LINES + 3;
     /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
-    pub const PAGES: u32 = LINES + 1;
+    pub const PAGES: u32 = LINES + 4;
 
     /// The render graph's textures, from this id on.
     pub const TARGETS: u32 = 1;
     /// The texture arrays of materials' maps, after every id the render graph can take.
     pub const TEXTURE_ARRAYS: u32 = TARGETS + 256;
-    /// The samplers of materials' maps, the only samplers the builder makes.
-    pub const SAMPLERS: u32 = 1;
+    /// The comparison sampler of the shadow map.
+    pub const SHADOW_SAMPLER: u32 = 1;
+    /// The samplers of materials' maps.
+    pub const SAMPLERS: u32 = 2;
 
     pub const CULL: u32 = 1;
 
@@ -159,7 +179,7 @@ mod ids {
         frame_group(view) + 1
     }
     /// The bind groups of materials' maps, after every view's groups.
-    pub const TEXTURE_GROUPS: u32 = 1 + 2 * MAX_VIEWS as u32;
+    pub const TEXTURE_GROUPS: u32 = 1 + 2 * MAX_VIEW_IDS as u32;
 
     pub const fn bundle(view: ViewId) -> u32 {
         1 + view.index() as u32
@@ -199,11 +219,22 @@ pub struct GpuDrivenRenderer {
     pipelines: PipelineCache,
     lists: ParityLists,
     graph: FrameGraph,
+    /// The scene's layout, which the camera views draw.
     layout: Layout,
+    /// The shadow casters' layout, which the shadow cascades draw.
+    casters: Layout,
+    /// True when the layouts were built for a frame with shadows.
+    layouts_shadowed: bool,
     culling: Culling,
     lines: LinesPass,
-    /// Each view's values in the frame being recorded, or `None` for a view with no camera.
+    /// Each camera view's values in the frame being recorded, or `None` for a view with no camera.
     frames: Vec<Option<ViewFrame>>,
+    /// Each shadow cascade's values in the frame being recorded, or `None` for a cascade that the
+    /// frame does not draw.
+    cascade_frames: [Option<ViewFrame>; MAX_CASCADES],
+    /// The camera views and the cascades whose GPU objects exist.
+    views_made: usize,
+    cascades_made: usize,
     created: bool,
 }
 
@@ -233,11 +264,20 @@ impl GpuDrivenRenderer {
             meshes: MeshBuffers::new(ids::PAGES),
             pipelines: PipelineCache::default(),
             lists: ParityLists::new(config.draw_list_words),
-            graph: FrameGraph::new(config.samples, true, ids::TARGETS),
-            layout: Layout::default(),
+            graph: {
+                let mut graph = FrameGraph::new(config.samples, true, ids::TARGETS);
+                graph.bind_shadow_map();
+                graph
+            },
+            layout: Layout::new(Drawn::Scene),
+            casters: Layout::new(Drawn::Casters),
+            layouts_shadowed: false,
             culling: Culling::default(),
             lines: LinesPass::new(ids::LINES),
             frames: Vec::new(),
+            cascade_frames: [None; MAX_CASCADES],
+            views_made: 0,
+            cascades_made: 0,
             created: false,
         }
     }
@@ -247,10 +287,13 @@ impl GpuDrivenRenderer {
         self.graph.graph()
     }
 
-    /// A view's values in the last recorded frame, or `None` when the view had no camera. Its
-    /// frustum is the one that the view's culling pass tested against.
+    /// A view's values in the last recorded frame, or `None` when the view had no camera, or a
+    /// cascade was not drawn. Its frustum is the one that the view's culling pass tested against.
     pub fn view_frame(&self, view: ViewId) -> Option<&ViewFrame> {
-        self.frames.get(view.index())?.as_ref()
+        match view.cascade_index() {
+            Some(cascade) => self.cascade_frames.get(cascade)?.as_ref(),
+            None => self.frames.get(view.index())?.as_ref(),
+        }
     }
 
     /// Records a frame into its parity's list and arena: the pipelines the GPU lacks, then the
@@ -263,9 +306,15 @@ impl GpuDrivenRenderer {
         arena: &mut UploadArena,
     ) -> Result<bool, RecordError> {
         let parity = input.parity();
-        let upload_everything = input.structure_changed || !self.layout.built;
+        let shadow = self
+            .settings
+            .shadow_frame(input.scene, parity, input.canvas);
+        let upload_everything = input.structure_changed
+            || !self.layout.built
+            || shadow.is_some() != self.layouts_shadowed;
         if upload_everything {
             let limit = max_sources(self.config.storage_binding_bytes);
+            let shadows = shadow.is_some();
             self.layout.rebuild(
                 &self.settings,
                 &mut self.pipelines,
@@ -274,7 +323,24 @@ impl GpuDrivenRenderer {
                 input.batches,
                 parity,
                 limit,
+                shadows,
             )?;
+            // The casters' layout holds buckets only while the light casts shadows.
+            if shadows {
+                self.casters.rebuild(
+                    &self.settings,
+                    &mut self.pipelines,
+                    shadows::TARGETS,
+                    input.scene,
+                    input.batches,
+                    parity,
+                    limit,
+                    shadows,
+                )?;
+            } else {
+                self.casters.clear();
+            }
+            self.layouts_shadowed = shadows;
         }
         // The list starts with the pipelines it creates, so the thread that draws can start to
         // build them before it replays the rest (see `null3d_gpu::drawlist`).
@@ -290,15 +356,40 @@ impl GpuDrivenRenderer {
         if !self.created {
             self.create_fixed(list)?;
         }
+        self.graph
+            .set_shadows(shadow.as_ref().map(|s| ShadowPasses {
+                cascades: s.cascades.count as u32,
+                map_size: s.settings.map_size,
+                layers: s.layers,
+            }));
         self.graph.sync_views(self.settings.views());
         self.graph.set_debug_lines(!input.lines.is_empty());
         self.graph.prepare(list, input.canvas)?;
+        let shadow_map = self
+            .graph
+            .shadow_map()
+            .expect("the builder's graph binds a shadow map");
         let views = self.settings.views().len();
-        let first_new = self.culling.views();
-        for index in first_new..views {
-            opaque::create_view(list, ViewId::from_index(index))?;
+        let first_new = self.views_made;
+        for index in 0..views {
+            let view = ViewId::from_index(index);
+            if index >= first_new {
+                opaque::create_frame_buffer(list, view)?;
+                self.culling.add_view(list, view)?;
+            }
+            if index >= first_new || self.graph.textures_made() {
+                opaque::bind_frame(list, view, shadow_map)?;
+            }
         }
-        self.culling.add_views(list, views)?;
+        self.views_made = self.views_made.max(views);
+        let cascades = shadow.as_ref().map_or(0, |s| s.cascades.count);
+        let first_new_cascade = self.cascades_made;
+        for cascade in first_new_cascade..cascades {
+            let view = ViewId::cascade(cascade);
+            shadow::create_view(list, view)?;
+            self.culling.add_view(list, view)?;
+        }
+        self.cascades_made = self.cascades_made.max(cascades);
 
         arena.reset(self.upload_bound() + LinesPass::upload_bytes(&input.lines));
         let pages_remade = self
@@ -309,11 +400,17 @@ impl GpuDrivenRenderer {
             .settings
             .record_materials(list, arena, table, input.frame)?;
         let binding_bytes = self.config.storage_binding_bytes;
-        let shared_recreated = if upload_everything {
-            self.layout.apply(list, arena, binding_bytes)?
+        let shadows = shadow.is_some();
+        let (shared_recreated, casters_recreated) = if upload_everything {
+            let shared = self.layout.apply(list, arena, binding_bytes)?;
+            let casters = shadows && self.casters.apply(list, arena, binding_bytes)?;
+            (shared, casters)
         } else {
             self.layout.update_membership(list, arena, input, parity)?;
-            false
+            if shadows {
+                self.casters.update_membership(list, arena, input, parity)?;
+            }
+            (false, false)
         };
         // A view's bundle names the buffers, the bind groups and the layout it draws, so each new
         // view, and every view after a new layout, new mesh buffers or new map groups, records its
@@ -323,11 +420,24 @@ impl GpuDrivenRenderer {
         } else {
             first_new
         };
+        let scene_targets = self.graph.scene_targets();
         for index in first_to_apply..views {
             let view = ViewId::from_index(index);
             self.culling
                 .apply(list, view, &self.layout, shared_recreated, binding_bytes)?;
-            opaque::record_bundle(list, view, &self.layout, &self.meshes, self.config.samples)?;
+            opaque::record_bundle(list, view, &self.layout, &self.meshes, scene_targets)?;
+        }
+        let first_cascade_to_apply = if upload_everything || pages_remade {
+            0
+        } else {
+            first_new_cascade
+        };
+        for cascade in first_cascade_to_apply..cascades {
+            let view = ViewId::cascade(cascade);
+            let recreated = shared_recreated || casters_recreated;
+            self.culling
+                .apply(list, view, &self.casters, recreated, binding_bytes)?;
+            opaque::record_bundle(list, view, &self.casters, &self.meshes, shadows::TARGETS)?;
         }
         self.layout
             .upload_matrices(list, input, parity, upload_everything)?;
@@ -345,24 +455,48 @@ impl GpuDrivenRenderer {
             }
             self.frames.push(frame);
         }
+        self.cascade_frames = [None; MAX_CASCADES];
+        if let Some(shadow) = &shadow {
+            shadows::upload(list, arena, ids::SHADOWS, shadow)?;
+            for cascade in 0..cascades {
+                let view = ViewId::cascade(cascade);
+                let frame = shadow.view_frame(cascade);
+                opaque::upload(list, arena, view, &frame)?;
+                self.culling
+                    .upload(list, arena, view, &frame, &self.casters, input.scene)?;
+                self.cascade_frames[cascade] = Some(frame);
+            }
+        }
         let camera = self.frames[ViewId::CAMERA.index()].as_ref();
         self.lines
             .upload(list, arena, &input.lines, camera.map(|frame| &frame.camera))?;
 
-        let (frames, layout, lines) = (&self.frames, &self.layout, &self.lines);
-        let drawn = |view: ViewId| frames[view.index()].is_some();
+        let (layout, casters, lines) = (&self.layout, &self.casters, &self.lines);
+        let (frames, cascade_frames) = (&self.frames, &self.cascade_frames);
+        let drawn = |view: ViewId| match view.cascade_index() {
+            Some(cascade) => cascade_frames[cascade].is_some(),
+            None => frames[view.index()].is_some(),
+        };
+        let layout_of = |view: ViewId| match view.cascade_index() {
+            Some(_) => casters,
+            None => layout,
+        };
         self.graph
             .record(list, self.settings.clear_color(), |list, role| match role {
-                Role::Cull(view) if drawn(view) => Culling::record(list, view, layout),
-                Role::Opaque(view) if drawn(view) => opaque::record(list, view),
+                Role::Cull(view) if drawn(view) => Culling::record(list, view, layout_of(view)),
+                Role::Opaque(view) | Role::Shadow(view) if drawn(view) => {
+                    opaque::record(list, view)
+                }
                 Role::DebugLines => lines.record(list, ids::frame_group(ViewId::CAMERA), &[]),
                 _ => Ok(()),
             })?;
         Ok(upload_everything)
     }
 
-    /// Records the creation of the material table, whose size never changes.
+    /// Records the creation of the material table, whose size never changes, and of the shadows'
+    /// uniform block and sampler.
     fn create_fixed(&mut self, list: &mut DrawList) -> Result<(), RecordError> {
+        shadows::create_objects(list, ids::SHADOWS, ids::SHADOW_SAMPLER)?;
         let materials = self.config.max_materials.max(1);
         list.push(
             Op::CreateBuffer,
@@ -377,14 +511,19 @@ impl GpuDrivenRenderer {
     }
 
     /// The most that one frame can copy into its arena for the scene as it stands: mesh data not
-    /// uploaded yet, the whole material table, the layout's tables, and each view's
-    /// frame uniform, culling parameters and indirect draws.
+    /// uploaded yet, the whole material table, both layouts' tables, each view's and each
+    /// cascade's frame uniform, culling parameters and indirect draws, and the cascades' uniform.
     fn upload_bound(&self) -> usize {
         let meshes = self.meshes.pending_bytes(self.settings.meshes().pages());
         let materials = self.settings.materials().capacity() as usize * MATERIAL_FLOATS * 4;
-        let per_view = (sizes::FRAME_UNIFORM_BYTES + CULL_PARAMS_BYTES) as usize
-            + self.layout.draws.len() * INDIRECT_BYTES as usize;
-        meshes + materials + self.layout.upload_bound() + self.settings.views().len() * per_view
+        let per_view = |layout: &Layout| {
+            (sizes::FRAME_UNIFORM_BYTES + CULL_PARAMS_BYTES) as usize
+                + layout.draws.len() * INDIRECT_BYTES as usize
+        };
+        let views = self.settings.views().len() * per_view(&self.layout);
+        let cascades = MAX_CASCADES * per_view(&self.casters);
+        let tables = self.layout.upload_bound() + self.casters.upload_bound();
+        meshes + materials + tables + views + cascades + sizes::SHADOW_UNIFORM_BYTES as usize
     }
 }
 
@@ -403,7 +542,8 @@ impl FrameBuilder for GpuDrivenRenderer {
 
     fn reserve_sources(&mut self, sources: u32) -> Result<(), TryReserveError> {
         self.layout.reserve(sources)?;
-        let bound = self.upload_bound() + sources.saturating_sub(self.layout.sources) as usize * 4;
+        self.casters.reserve(sources)?;
+        let bound = self.upload_bound() + sources.saturating_sub(self.layout.sources) as usize * 12;
         for arena in self.lists.arenas_mut() {
             arena.try_reserve(bound)?;
         }
@@ -421,7 +561,10 @@ impl FrameBuilder for GpuDrivenRenderer {
         self.created = false;
         self.graph.reset_gpu();
         self.layout.forget_gpu();
+        self.casters.forget_gpu();
         self.culling.forget_gpu();
+        self.views_made = 0;
+        self.cascades_made = 0;
         self.lines.forget_gpu();
         self.meshes.forget();
         self.pipelines.forget();
