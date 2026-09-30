@@ -1,7 +1,7 @@
 // Replays a hand-built draw list through the engine's WebGPU backend: GPU culling in a compute pass,
 // then indirect draws from a render bundle with 4x MSAA and reversed depth. It checks the GPU side of
 // the WebGPU render path before the core records these lists itself.
-import { readbackWebGPU, WebGPUBackend } from '@null3d/engine/internal';
+import { loadWgslShaders, readbackWebGPU, WebGPUBackend } from '@null3d/engine/internal';
 import * as G from '../../packages/engine/src/generated/gpu';
 import {
 	boxMesh,
@@ -27,7 +27,8 @@ run('replay', async () => {
 		format: 'rgba8unorm',
 		usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
 	});
-	const backend = new WebGPUBackend(device, undefined, 'rgba8unorm');
+	const shaders = await loadWgslShaders(0);
+	const backend = new WebGPUBackend(device, undefined, 'rgba8unorm', shaders);
 	backend.canvasTarget = target;
 
 	// Instances: a 5 x 5 grid in two buckets, on the view's two layers, plus one behind the camera

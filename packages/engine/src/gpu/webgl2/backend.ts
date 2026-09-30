@@ -14,6 +14,7 @@
 // turns clear values and viewport depth ranges around for standard depth.
 
 import * as G from '../../generated/gpu';
+import type { DeviceShaders } from '../../generated/shaders';
 import type { DepthMode } from '../../page/switches';
 import { forEachVertexAttribute, vertexStride } from '../vertex-format';
 import { type DepthSetup, setDepthMode } from './depth';
@@ -165,7 +166,7 @@ export class WebGL2Backend {
 	private readonly pipelines: (Pipeline | undefined)[] = [];
 	/** The programs of the templates and permutations in use, which their pipelines share. */
 	private readonly programs = new Map<string, Program>();
-	private readonly templates: (GlslTemplate | undefined)[] = engineTemplates();
+	private readonly templates: (GlslTemplate | undefined)[];
 	private readonly bindGroups: (BindEntry[] | undefined)[] = [];
 	private readonly vertexArrays: (VertexArray | undefined)[] = [];
 	private readonly formats: (GlFormat | undefined)[];
@@ -253,17 +254,21 @@ export class WebGL2Backend {
 	private passToCanvas = false;
 
 	/**
-	 * `sharedUploads` is false where WebGL refuses views on shared memory, so uploads and multi-draw
-	 * arrays go through copies. `depthMode` is how the backend stores depth. `parallelCompile` lets
-	 * programs compile in the background where the context has `KHR_parallel_shader_compile`.
+	 * `shaders` are the GLSL builds that the device loaded (`loadGlslShaders`), with the bits
+	 * that it fixes. `sharedUploads` is false where WebGL refuses views on shared memory, so uploads
+	 * and multi-draw arrays go through copies. `depthMode` is how the backend stores depth.
+	 * `parallelCompile` lets programs compile in the background where the context has
+	 * `KHR_parallel_shader_compile`.
 	 */
 	constructor(
 		private readonly gl: WebGL2RenderingContext,
 		private readonly canvas: OffscreenCanvas | HTMLCanvasElement,
+		shaders: DeviceShaders,
 		private readonly sharedUploads: boolean,
 		depthMode: DepthMode,
 		parallelCompile = true,
 	) {
+		this.templates = engineTemplates(shaders);
 		this.multiDraw = gl.getExtension('WEBGL_multi_draw');
 		this.parallel = parallelCompile ? gl.getExtension('KHR_parallel_shader_compile') : null;
 		this.anisotropic = gl.getExtension('EXT_texture_filter_anisotropic');

@@ -12,3 +12,4 @@ A decision record settles one design question with measured data. It states the 
 | [D-06: Success targets](D-06-success-targets.md) | Decided for the desktop target's measure, 2026-09-27 | The desktop target measures each engine's own CPU work on its busiest thread, apart from the game's code. Addenda keep the 600 KB budget and add the phone runs |
 | [D-07: Job worker count](D-07-job-workers.md) | Decided by the owner, 2026-09-30 | Keep "logical cores minus 2, at least 1" job workers |
 | [D-08: WebGL2 depth mode](D-08-webgl2-depth.md) | Proposed, 2026-09-30 | Draw `reversed` depth where the browser has `EXT_clip_control`, and `reversed-gl` elsewhere; the phone and tablet rows are pending |
+| [D-13: Shader variants](D-13-shader-variants.md) | Proposed, 2026-09-30 | Ship the shaders of each GPU path in one file for each value of the permutation bits that a device fixes, and load only the device's own; the phone and tablet warm-up times are pending |

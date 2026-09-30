@@ -11,13 +11,12 @@ import {
 } from '../../generated/gpu';
 import {
 	DEPTH_MAPPING_UNIFORM,
+	type DeviceShaders,
 	type GlslProgram,
 	type GlslStage,
-	LIT_SHADER,
-	TEXCOORDS_SHADER,
-	UNLIT_SHADER,
+	type ShaderVariants,
 } from '../../generated/shaders';
-import { type ShaderVariants, variantFor } from '../variants';
+import { variantFor } from '../variants';
 import type { DepthSetup } from './depth';
 
 /** Texture units and uniform block binding points of each bind group: one per binding. */
@@ -67,12 +66,12 @@ export interface Pipeline {
 	readonly vertexFormat: number;
 }
 
-/** The engine's render pipeline templates, by template id. */
-export function engineTemplates(): (GlslTemplate | undefined)[] {
+/** The engine's render pipeline templates, by template id, from the shaders the device loaded. */
+export function engineTemplates(shaders: DeviceShaders): (GlslTemplate | undefined)[] {
 	const templates: (GlslTemplate | undefined)[] = [];
-	templates[TEMPLATE_INSTANCED_LIT] = { shader: LIT_SHADER, pipeline: 'main' };
-	templates[TEMPLATE_INSTANCED_UNLIT] = { shader: UNLIT_SHADER, pipeline: 'main' };
-	templates[TEMPLATE_INSTANCED_TEXCOORDS] = { shader: TEXCOORDS_SHADER, pipeline: 'main' };
+	templates[TEMPLATE_INSTANCED_LIT] = { shader: shaders.lit, pipeline: 'main' };
+	templates[TEMPLATE_INSTANCED_UNLIT] = { shader: shaders.unlit, pipeline: 'main' };
+	templates[TEMPLATE_INSTANCED_TEXCOORDS] = { shader: shaders.texcoords, pipeline: 'main' };
 	return templates;
 }
 

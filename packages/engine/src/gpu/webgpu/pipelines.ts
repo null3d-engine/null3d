@@ -1,7 +1,7 @@
 // Standard bind group layouts and the render pipeline templates. Every render pipeline shares the
 // layouts of its template's groups, so switching pipelines never forces a rebind of the per-frame
-// group. The engine defines its own layouts and templates, and a page can add more, as the texture
-// test page does.
+// group. The engine defines its own layouts and templates, from the shaders that the device loaded,
+// and a page can add more, as the texture test page does.
 
 import {
 	LAYOUT_CULL,
@@ -14,14 +14,8 @@ import {
 	TEMPLATE_INSTANCED_UNLIT,
 	VERTEX_INSTANCE_LOCATION,
 } from '../../generated/gpu';
-import {
-	CULL_SHADER,
-	LIT_SHADER,
-	TEXCOORDS_SHADER,
-	UNLIT_SHADER,
-	type WgslShader,
-} from '../../generated/shaders';
-import { type ShaderVariants, variantFor } from '../variants';
+import type { DeviceShaders, ShaderVariants, WgslShader } from '../../generated/shaders';
+import { variantFor } from '../variants';
 import { vertexAttribute, vertexStride } from '../vertex-format';
 
 /** The WebGPU build of a shader variant. */
@@ -54,7 +48,6 @@ export interface RenderTemplate {
 	readonly vertexBuffers: GPUVertexBufferLayout[];
 }
 
-const CULL = wgslOf(CULL_SHADER.webgpu);
 /** The culling shader's compute entry point. */
 const CULL_ENTRY_POINT = 'main';
 
@@ -108,9 +101,14 @@ export class Pipelines {
 	/** Each template's pipeline layout, made for its first pipeline. */
 	private readonly pipelineLayouts: (GPUPipelineLayout | undefined)[] = [];
 	private readonly cullLayout: GPUPipelineLayout;
+	private readonly cull: WgslShader | undefined;
 	private readonly modules = new Map<WgslShader, GPUShaderModule>();
 
-	constructor(private readonly device: GPUDevice) {
+	/** `shaders` are the WGSL builds that the device loaded, with the bits that it fixes. */
+	constructor(
+		private readonly device: GPUDevice,
+		shaders: DeviceShaders,
+	) {
 		this.defineLayout(LAYOUT_FRAME, 'frame', [
 			{
 				binding: 0,
@@ -129,9 +127,9 @@ export class Pipelines {
 			{ binding: 6, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
 		]);
 		for (const [id, label, shader, meshLocations] of [
-			[TEMPLATE_INSTANCED_LIT, 'lit', LIT_SHADER, [0, 1]],
-			[TEMPLATE_INSTANCED_UNLIT, 'unlit', UNLIT_SHADER, [0]],
-			[TEMPLATE_INSTANCED_TEXCOORDS, 'texcoords', TEXCOORDS_SHADER, [0, 2]],
+			[TEMPLATE_INSTANCED_LIT, 'lit', shaders.lit, [0, 1]],
+			[TEMPLATE_INSTANCED_UNLIT, 'unlit', shaders.unlit, [0]],
+			[TEMPLATE_INSTANCED_TEXCOORDS, 'texcoords', shaders.texcoords, [0, 2]],
 		] as const) {
 			this.defineTemplate(id, {
 				label: `mesh ${label}`,
@@ -143,6 +141,7 @@ export class Pipelines {
 			});
 		}
 		this.cullLayout = device.createPipelineLayout({ bindGroupLayouts: [this.layout(LAYOUT_CULL)] });
+		this.cull = variantFor(shaders.cull, 0, 'wgsl')?.wgsl ?? undefined;
 	}
 
 	/** Adds a bind group layout under an id that no other layout has. */
@@ -154,7 +153,8 @@ export class Pipelines {
 	/** Adds a render pipeline template under an id that no other template has. */
 	defineTemplate(id: number, template: RenderTemplate): void {
 		if (this.templates[id]) throw new Error(`render pipeline template ${id} already exists`);
-		if (!variantFor(template.shader, 0, 'wgsl')?.wgsl?.pipelines[template.pipeline])
+		const variants = Object.values(template.shader);
+		if (!variants.some((variant) => variant.wgsl?.pipelines[template.pipeline]))
 			throw new Error(`the shader of template ${id} has no pipeline ${template.pipeline}`);
 		this.templates[id] = template;
 	}
@@ -230,10 +230,11 @@ export class Pipelines {
 	/** How to build a compute pipeline of a template. */
 	compute(template: number): GPUComputePipelineDescriptor {
 		if (template !== TEMPLATE_CULL) throw new Error(`unknown compute template ${template}`);
+		if (!this.cull) throw new Error("the device's shader module has no culling shader");
 		return {
 			label: 'cull',
 			layout: this.cullLayout,
-			compute: { module: this.module('cull', CULL), entryPoint: CULL_ENTRY_POINT },
+			compute: { module: this.module('cull', this.cull), entryPoint: CULL_ENTRY_POINT },
 		};
 	}
 }

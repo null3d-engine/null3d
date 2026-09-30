@@ -2,18 +2,17 @@
 // compile and link in WebGL2, and every uniform block and texture that the reflection names must
 // exist in the linked program. Each WGSL module must compile in WebGPU when the browser has it.
 // Failures carry the browser's info logs.
-import { SHADERS, type ShaderVariant } from '@null3d/engine/internal';
+import { everyShader } from '@null3d/engine/internal';
 import { run } from './lib/result';
 import { checkGlslPrograms, checkWgslModules, type ShaderFailure } from './lib/shader-checks';
 
-/** Every variant of every shader, with its name. */
-const VARIANTS = Object.entries(SHADERS).flatMap(([shaderName, variants]) =>
-	Object.entries(variants as Record<string, ShaderVariant>).map(
-		([variantName, variant]) => [`${shaderName}.${variantName}`, variant] as const,
-	),
-);
-
 run('shaders', async () => {
+	// Every variant of every shader, with its name, from the main module and each device module.
+	const VARIANTS = Object.entries(await everyShader()).flatMap(([shaderName, variants]) =>
+		Object.entries(variants).map(
+			([variantName, variant]) => [`${shaderName}.${variantName}`, variant] as const,
+		),
+	);
 	const failures: ShaderFailure[] = [];
 	const glsl = checkGlslPrograms(
 		VARIANTS.flatMap(([name, variant]) =>

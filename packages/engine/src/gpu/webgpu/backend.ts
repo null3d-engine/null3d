@@ -3,6 +3,7 @@
 // engine memory and allocates nothing per command, except when a command creates a GPU object.
 
 import * as G from '../../generated/gpu';
+import type { DeviceShaders } from '../../generated/shaders';
 import type { GpuTimer } from './gpu-timer';
 import { Pipelines, type RenderTemplate } from './pipelines';
 import { RenderPassSetup, submitOne, TexelCopySetup } from './reusable';
@@ -101,17 +102,19 @@ export class WebGPUBackend {
 	private readonly samplerSetup: GPUSamplerDescriptor = {};
 
 	/**
-	 * `routes` chooses between writeBuffer and the staging ring for mid-size uploads; by default it
-	 * times both routes and takes the faster one.
+	 * `shaders` are the WGSL builds that the device loaded (`loadWgslShaders`). `routes` chooses
+	 * between writeBuffer and the staging ring for mid-size uploads; by default it times both routes
+	 * and takes the faster one.
 	 */
 	constructor(
 		readonly device: GPUDevice,
 		private readonly context: GPUCanvasContext | undefined,
 		canvasFormat: GPUTextureFormat,
+		shaders: DeviceShaders,
 		private readonly routes = new UploadRoutes(),
 	) {
 		this.canvasFormat = canvasFormat;
-		this.pipelines = new Pipelines(device);
+		this.pipelines = new Pipelines(device, shaders);
 		this.staging = new StagingRing(device);
 	}
 

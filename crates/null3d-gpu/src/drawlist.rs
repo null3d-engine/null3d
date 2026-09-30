@@ -427,6 +427,12 @@ pub mod permutation {
         ("MORPH", MORPH),
     ];
 
+    /// The bits that a device fixes when the engine starts, the same in every pipeline it builds:
+    /// the draw index where WebGL2 has multi-draw, and tone mapping in the shader where the device
+    /// draws scene color in 8 bits. The shader build writes the engine's variants into one module
+    /// for each GPU path and each value of these bits, and a page loads only its own.
+    pub const DEVICE: u32 = DRAW_INDEX | TONE_MAP;
+
     /// Every bit.
     pub const ALL: u32 = {
         let mut all = 0;
