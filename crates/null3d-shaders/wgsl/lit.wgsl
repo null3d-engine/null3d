@@ -3,7 +3,8 @@ enable draw_index;
 // Meshes drawn by instance with the standard material: glTF's metallic-roughness model, shaded
 // with the formulas of three.js's MeshStandardMaterial. null3d::mesh finds each instance on both
 // GPU paths, and null3d::lighting holds the formulas. `light_surface` gathers the scene's lights,
-// so the rest of the shader does not change with where the lights come from.
+// so the rest of the shader does not change with where the lights come from. The ALPHA_MASK builds
+// draw nothing where the surface's alpha falls below the material's cutoff.
 //
 // The MAPS builds sample the material's texture maps: base color, metal-rough, normal, occlusion,
 // emissive and light maps, each a layer of a texture array with a sampler of its own. A map reads
@@ -23,7 +24,7 @@ const FLAT_SHADING: u32 = 1u;
 #ifdef MAPS
 /// The bit of a material's flags for the map of slot 0 on the second texture coordinates; the
 /// next slots take the bits above it.
-const SECOND_UV: u32 = 2u;
+const SECOND_UV: u32 = 256u;
 
 // The maps' bind group comes after the frame's group, and on WebGL2 after the groups of the draw
 // records and the data textures: each slot's texture array, then each slot's sampler.
@@ -175,8 +176,10 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
     let m = material_of(in.material);
     let flags = u32(m.strengths.z);
     var base = m.color.rgb;
+    var alpha = m.color.a;
 #ifdef VERTEX_COLOR
     base *= in.vertex_color.rgb;
+    alpha *= in.vertex_color.a;
 #endif
     var metalness = m.surface.x;
     var roughness = m.surface.y;
@@ -217,6 +220,7 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
             at.dy,
         );
         base *= texel.rgb;
+        alpha *= texel.a;
     }
     if map_ready(m.maps.y) {
         let at = map_uv(flags, 1u, first, second);
@@ -270,5 +274,11 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
     let n_dot_v = saturate(dot(normal, to_view));
     let dfg = null3d::lighting::dfg_lut(n_dot_v, pbr.roughness);
     let outgoing = light_surface(pbr, normal, to_view, dfg, extra, occlusion) + emitted;
+    // The test comes last, after every derivative, which a discarded fragment still helps compute.
+#ifdef ALPHA_MASK
+    if alpha < m.emissive.w {
+        discard;
+    }
+#endif
     return vec4f(null3d::color::linear_to_srgb(outgoing), 1.0);
 }

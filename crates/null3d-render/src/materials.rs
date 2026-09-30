@@ -17,6 +17,8 @@ use std::ops::Range;
 use null3d_core::handle::Handle;
 use null3d_gpu::drawlist::{sizes, template, vertex};
 
+use crate::pipelines::DepthBias;
+
 /// How a material shades.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Shading {
@@ -58,8 +60,9 @@ impl Shading {
         }
     }
 
-    /// True when its shader can multiply the base color by the mesh's vertex colors.
-    pub const fn takes_vertex_colors(self) -> bool {
+    /// True when its shader reads the material's base color and opacity, which vertex colors
+    /// multiply and a mask compares with the material's alpha cutoff.
+    pub const fn reads_base_color(self) -> bool {
         !matches!(self, Shading::TexCoords)
     }
 }
@@ -72,8 +75,15 @@ pub mod feature {
     pub const VERTEX_COLORS: u32 = 2;
     /// Each triangle lights with one normal, the normal of its face.
     pub const FLAT_SHADING: u32 = 4;
+    /// Fragments whose alpha is below the material's cutoff draw nothing: glTF's alpha mode `MASK`.
+    pub const ALPHA_MASK: u32 = 8;
+    /// The surface writes no depth.
+    pub const NO_DEPTH_WRITE: u32 = 32;
+    /// The surface draws whatever the depth target holds, and writes no depth.
+    pub const NO_DEPTH_TEST: u32 = 64;
     /// Every feature.
-    pub const ALL: u32 = DOUBLE_SIDED | VERTEX_COLORS | FLAT_SHADING;
+    pub const ALL: u32 =
+        DOUBLE_SIDED | VERTEX_COLORS | FLAT_SHADING | ALPHA_MASK | NO_DEPTH_WRITE | NO_DEPTH_TEST;
 }
 
 /// Bits of a row's flags, which shaders test with no cost worth a shader variant.
@@ -81,7 +91,7 @@ pub mod flag {
     /// The shader lights each triangle with its face's normal.
     pub const FLAT_SHADING: u32 = 1;
     /// The map of slot `s` reads the second texture coordinates when bit `SECOND_UV << s` is set.
-    pub const SECOND_UV: u32 = 2;
+    pub const SECOND_UV: u32 = 256;
 }
 
 /// Floats in each material's row: eight `vec4f`s.
@@ -207,6 +217,8 @@ pub struct MaterialTable {
     features: Vec<u32>,
     /// Each material's maps by slot, `Handle::NONE` where it has none.
     maps: Vec<[Handle; MAP_SLOTS]>,
+    /// Each material's depth bias.
+    biases: Vec<DepthBias>,
     capacity: u32,
     /// The ids whose rows changed since the last upload; empty when none did.
     changed: Range<u32>,
@@ -232,6 +244,7 @@ impl MaterialTable {
             shading: Vec::with_capacity(capacity as usize),
             features: Vec::with_capacity(capacity as usize),
             maps: Vec::with_capacity(capacity as usize),
+            biases: Vec::with_capacity(capacity as usize),
             capacity,
             changed: 0..0,
             maps_changed: false,
@@ -260,8 +273,28 @@ impl MaterialTable {
         self.shading.push(shading);
         self.features.push(features);
         self.maps.push([Handle::NONE; MAP_SLOTS]);
+        self.biases.push(DepthBias::NONE);
         self.mark_row(id);
         Ok(id)
+    }
+
+    /// Gives a material a depth bias. It is part of the material's pipeline, so it is set once,
+    /// right after [`MaterialTable::create`].
+    pub fn set_depth_bias(&mut self, id: u32, bias: DepthBias) -> Result<(), MaterialError> {
+        let slot = self
+            .biases
+            .get_mut(id as usize)
+            .ok_or(MaterialError::Unknown(id))?;
+        *slot = bias;
+        Ok(())
+    }
+
+    /// A material's depth bias, or none for an id that names no material.
+    pub fn depth_bias(&self, id: u32) -> DepthBias {
+        self.biases
+            .get(id as usize)
+            .copied()
+            .unwrap_or(DepthBias::NONE)
     }
 
     /// Changes the value that starts at float `at` of a material's row (`param::*`) and keeps the
@@ -558,6 +591,25 @@ mod tests {
         assert_eq!(table.features(9), 0);
         assert_eq!(row(&table, 0)[param::FLAGS], flag::FLAT_SHADING as f32);
         assert_eq!(row(&table, 1)[param::FLAGS], 0.0);
+    }
+
+    #[test]
+    fn each_material_keeps_its_depth_bias_and_none_is_the_default() {
+        let mut table = MaterialTable::with_capacity(2);
+        let plain = table.create(Shading::Lit, 0, [1.0; 4]).unwrap();
+        let decal = table
+            .create(Shading::Unlit, feature::NO_DEPTH_WRITE, [1.0; 4])
+            .unwrap();
+        let bias = DepthBias::from_polygon_offset(-2.0, -1.0);
+        table.set_depth_bias(decal, bias).unwrap();
+        assert_eq!(table.depth_bias(plain), DepthBias::NONE);
+        assert_eq!(table.depth_bias(decal), bias);
+        assert_eq!(table.features(decal), feature::NO_DEPTH_WRITE);
+        assert_eq!(
+            table.set_depth_bias(2, bias),
+            Err(MaterialError::Unknown(2))
+        );
+        assert_eq!(table.depth_bias(2), DepthBias::NONE);
     }
 
     #[test]

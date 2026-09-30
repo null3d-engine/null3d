@@ -8,12 +8,12 @@ summary: "Built-in materials; permutations; pipeline warm-up; why changing shade
 
 # Materials and pipelines
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Alpha modes and custom materials are not built yet, so coding agents must not use them.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. The `blend` alpha mode and custom materials are not built yet, so coding agents must not use them.
 
 ```mermaid
 flowchart LR
     values["Values:<br/>color, metalness, roughness, emissive"] -->|"set() writes them"| row["The material's row<br/>in the material table"]
-    fixed["Options fixed at creation:<br/>kind, vertexColors, doubleSided"] --> key["Pipeline key"]
+    fixed["Options fixed at creation:<br/>kind, vertexColors, alphaMode, doubleSided, depth"] --> key["Pipeline key"]
     format["The mesh's vertex format"] --> key
     key -->|"compiled once per key"| pipeline["Render pipeline:<br/>shader variant and state"]
     row --> draw["Each draw"]
@@ -51,7 +51,9 @@ A feature that changes what a shader costs is a variant of the shader, which the
 | The kind: standard or unlit | The shader |
 | Texture maps | A shader variant that samples maps, and another for a normal map on a mesh with tangents |
 | `vertexColors` | A shader variant that reads the mesh's colors, on meshes that have them |
+| `alphaMode: 'mask'` | A shader variant that drops the fragments whose alpha is below the cutoff |
 | `doubleSided` | The pipeline's state: it culls no faces |
+| `depthWrite`, `depthTest`, `depthBias` | The pipeline's depth state |
 | `flatShading` | The material's row: every standard shader can light with face normals |
 
 three.js compiles a new program when `material.needsUpdate` is set after such a change. null3D has no `needsUpdate`: create one material for each combination in the setup instead.
@@ -61,6 +63,12 @@ three.js compiles a new program when `material.needsUpdate` is set after such a 
 const faceted = materials.standard({ color: '#8098d0', flatShading: true });
 const cloth = materials.standard({ color: '#8098d0', doubleSided: true });
 ```
+
+## Alpha modes
+
+A material's `alphaMode` says what its alpha does. The default, `opaque`, ignores it. The `mask` mode draws nothing where the alpha is below the material's `alphaCutoff`, as three.js's `alphaTest` does. A masked surface is opaque where it draws, so it hides what lies behind it, and its objects draw in any order.
+
+The shader that drops fragments costs more than one that never does: a GPU cannot always test depth before it runs such a shader. So only masked materials draw with that variant. The cutoff is a value, and `set({ alphaCutoff })` changes it at no cost. [Materials](../api/materials.md#alpha-modes) shows both modes.
 
 ## Why a new combination can make a frame late
 

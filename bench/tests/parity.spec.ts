@@ -24,6 +24,7 @@ import { type PageReport, runPage } from './open-page';
 const FEATURE_SCENES = [
 	{ test: 'ortho-camera', twin: '/bench/pages/threejs/ortho-camera.html' },
 	{ test: 'standard-maps', twin: '/bench/pages/threejs/material-maps.html' },
+	{ test: 'alpha-mask', twin: '/bench/pages/threejs/alpha-mask.html' },
 ] as const;
 
 const OUTPUT_DIR = join(import.meta.dirname, '../../test-results/parity');
