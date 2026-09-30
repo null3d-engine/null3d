@@ -192,7 +192,7 @@ Run `target/runs/20260929-155111-bench` (the 31 results before a dev server rest
 
 Both parts of the iPad's phone target pass: null3D on WebGPU takes 58% of three.js WebGPU's CPU time and 69% of three.js WebGL's; forced WebGL2 takes 69% of three.js WebGL's. Own work is 18% to 25% of three.js's.
 
-With the S24+ addendum above, gate item 2 passes on every device and browser the team has, apart from Brave on the iPad (a to-do for the next iPad session).
+With the S24+ addendum above, gate item 2 passes on every device and browser the team has. Brave on the iPad followed on 2026-09-30 (addendum "the phone target in Brave on the iPad").
 
 A finding to follow up: on the iPad, null3D's frame rate is lower than three.js WebGPU's (26.8 against 31.5 frames per second) although its CPU time is lower. null3D's GPU time is 27.8 ms per frame, so the GPU limits it there. The phone target measures CPU time and passes, but the frame rate gap on Apple's GPU needs a profile in M1 (GPU timestamps per pass: culling, drawing, MSAA resolve).
 
@@ -298,4 +298,26 @@ The S1 runs from that attempt (60 Hz in effect, pages taking turns, no rest betw
 | 5 | null3D WebGL2 | 39.3 to 39.5 °C | 22.13 ms | 30.1 |
 | 6 | three.js WebGL | 39.5 to 40.4 °C | 23.98 ms | 43.3 |
 
-Cool, null3D took 75% of three.js's CPU time (runs 1 and 2). Once the phone was warm (Samsung throttle level 1 to 2), null3D's sketch worker took about as long per frame as three.js's main thread: its time grew by 70%, three.js's by 20 to 35%. At those times null3D's frames take longer than 16.7 ms, so in pipelined mode they present at 30 per second, while three.js presents 43 to 46. So on a warm S24+ the CPU margin is gone, which fits the thin margins of the controlled rerun (63%, 95% and 100%). The engine runs ten threads (the sketch worker, the render worker and eight job workers) against three.js's one. That may heat the phone faster, or place the sketch worker on a slower core once the phone throttles; the data here cannot tell which.
+Cool, null3D took 75% of three.js's CPU time (runs 1 and 2). Once the phone was warm (Samsung throttle level 1 to 2), null3D's sketch worker took about as long per frame as three.js's main thread. Its time grew by 70%, and three.js's by 20 to 35%. At those times null3D's frames take longer than 16.7 ms, so in pipelined mode they present at 30 per second, while three.js presents 43 to 46. So on a warm S24+ the CPU margin is gone, which fits the thin margins of the controlled rerun (63%, 95% and 100%). The engine runs ten threads (the sketch worker, the render worker and eight job workers) against three.js's one. That may heat the phone faster, or place the sketch worker on a slower core once the phone throttles; the data here cannot tell which.
+
+## Addendum, 2026-09-30: the phone target in Brave on the iPad
+
+S1 at 240,000 boxes, with the runner's bench plan: five runs of each page, taking turns. Brave had Shields on, and Limit Frame Rate held the iPad at 60 Hz. Main was at 104ea31, with the frame builders on the render graph. With Shields on, Brave reports 3 cores, so the engine ran 1 job worker. Run `target/runs/20260930-010518-bench`.
+
+| Page | CPU per frame | Own work, busiest thread | Presented fps | GPU ms |
+| --- | --- | --- | --- | --- |
+| null3D, WebGPU | 15.80 ms | 2.42 ms | 26.8 | 27.74 |
+| null3D, WebGL2 forced | 16.02 ms | 1.86 ms | 29.0 | n/a |
+| three.js, WebGPU | 28.92 ms | 15.80 ms | 30.4 | n/a |
+| three.js, WebGL | 29.17 ms | 16.05 ms | 16.4 | n/a |
+| Scene code alone | 13.12 ms | | 60.0 | |
+
+null3D takes 55% of three.js's CPU time on both GPU paths. On WebGPU it takes 15.80 ms against three.js WebGPU's 28.92 ms. On WebGL2 it takes 16.02 ms against three.js WebGL's 29.17 ms. Its own work is 12% to 15% of three.js's. With this row, the phone target passes on every device and browser the team has.
+
+## Addendum, 2026-09-30: the iPad's WebGPU cost in S1-static is gone
+
+The sustained S1-static run on the iPad presented 23 frames per second on WebGPU (addendum "sustained S1-static, and a WebGPU cost on the iPad"). On main at 21bcf46, that cost did not come back. Safari presented 58.4 frames per second in three short runs, and in the same 10-minute sustained run. The timed GPU work was 3.37 ms, and the time from submit to done was 10.1 ms (run `target/runs/20260929-203959-bench`).
+
+The slow run was on main at e54f443. That was before hold mode (#41), the render graph (#42) and the new GPU layer operations (#43). It is not known which change removed the cost, or whether Safari's state that night caused it.
+
+A Safari fault on the Mac explained part of the gap. Safari rebuilds a render bundle that holds an indirect draw on every replay; WebKit has fixed this, and Safari 27.2 lists the fix. Pull request #49 replays each bundle's commands into the render pass instead. On the iPad, it raised S1 at 240,000 boxes on WebGPU from 26.8 to 28.1 frames per second, in Safari and in Brave alike. The GPU time stayed at 27.8 ms, and the time from submit to done fell by 1.7 ms. The runs are `target/runs/20260930-013339-bench` to `20260930-015149-bench`. S1-static stayed at about 59, the display's rate.
