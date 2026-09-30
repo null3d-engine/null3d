@@ -1,0 +1,153 @@
+name: Benchmarks
+
+# Compares the speed of a new commit with a baseline. GitHub's shared machines change speed by 5 to
+# 20% from run to run, so the job builds both commits on one machine, runs their benchmark pages in
+# turns, and judges only that comparison. It runs on every push to main, against the previous
+# commit on main. For a pull request it runs on demand, against the pull request's merge base: add
+# the benchmark label, or start it from the Actions tab with the pull request's number.
+# .dev/benchmarks.md says how to read the summary and how to mark an expected slowdown.
+
+on:
+  push:
+    branches: [main, feat/ci-benchmarks]
+  pull_request:
+    types: [labeled, synchronize]
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: The branch, tag, commit or pull request number to measure
+        required: true
+        default: main
+      baseline:
+        description: The commit to compare with. Empty takes the merge base with main, or the commit before on main
+        required: false
+        default: ""
+
+permissions:
+  contents: read
+
+concurrency:
+  # Every push to main gets a run of its own. A pull request's newer run replaces its older one.
+  group: bench-${{ github.event_name == 'push' && github.sha || github.event.pull_request.number || github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+env:
+  BUN_VERSION: "1.3.14"
+
+jobs:
+  compare:
+    # A pull request runs the job while it has the benchmark label, from the moment the label is added.
+    if: >-
+      github.event_name != 'pull_request' ||
+      (contains(github.event.pull_request.labels.*.name, 'benchmark') &&
+      (github.event.action != 'labeled' || github.event.label.name == 'benchmark'))
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-latest
+            browser: chromium
+          - runner: macos-15
+            browser: chrome
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 60
+    env:
+      HUSKY: "0"
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: Choose the baseline and the new commit
+        id: commits
+        env:
+          EVENT: ${{ github.event_name }}
+          BEFORE: ${{ github.event.before }}
+          PR_HEAD: ${{ github.event.pull_request.head.sha }}
+          PR_BASE: ${{ github.event.pull_request.base.ref }}
+          INPUT_REF: ${{ inputs.ref }}
+          INPUT_BASELINE: ${{ inputs.baseline }}
+        run: |
+          # A pull request's number, a branch, a tag or a commit, as a commit.
+          resolve() {
+            if [[ "$1" =~ ^[0-9]+$ ]]; then git fetch --quiet --no-tags origin "pull/$1/head"
+            else git fetch --quiet --no-tags origin "$1"; fi
+            git rev-parse FETCH_HEAD
+          }
+          # The commit a new commit is compared with: the merge base with main, or the commit
+          # before it when it is on main already.
+          merge_base() {
+            local base
+            base="$(git merge-base origin/main "$1")"
+            if [ "$base" = "$1" ]; then git rev-parse "$1^"; else echo "$base"; fi
+          }
+          case "$EVENT" in
+            push)
+              new="$GITHUB_SHA"
+              if [ "$GITHUB_REF_NAME" != main ]; then baseline="$(merge_base "$new")"
+              elif git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then baseline="$BEFORE"
+              else baseline="$(git rev-parse "$new^")"; fi ;;
+            pull_request)
+              new="$PR_HEAD"
+              baseline="$(git merge-base "origin/$PR_BASE" "$new")" ;;
+            workflow_dispatch)
+              new="$(resolve "$INPUT_REF")"
+              if [ -n "$INPUT_BASELINE" ]; then baseline="$(resolve "$INPUT_BASELINE")"
+              else baseline="$(merge_base "$new")"; fi ;;
+          esac
+          echo "Baseline: $(git log -1 --format='%h %s' "$baseline")"
+          echo "New:      $(git log -1 --format='%h %s' "$new")"
+          echo "baseline=$baseline" >> "$GITHUB_OUTPUT"
+          echo "new=$new" >> "$GITHUB_OUTPUT"
+
+      - name: Install the pinned Rust toolchain
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ hashFiles('bun.lock') }}
+          restore-keys: bun-${{ runner.os }}-
+      - run: bun install --frozen-lockfile
+
+      # Each build gets a worktree of its own. The worktrees share this checkout's compiler output,
+      # which the Rust cache keeps, so the second build compiles only the engine's own crates.
+      - name: Build the baseline and the new commit
+        env:
+          BASELINE: ${{ steps.commits.outputs.baseline }}
+          NEW: ${{ steps.commits.outputs.new }}
+        run: |
+          mkdir -p target
+          for build in baseline new; do
+            commit="${BASELINE}"
+            if [ "$build" = new ]; then commit="${NEW}"; fi
+            dir="$RUNNER_TEMP/$build"
+            git worktree add --detach "$dir" "$commit"
+            ln -s "$GITHUB_WORKSPACE/target" "$dir/target"
+            (cd "$dir" && bun install --frozen-lockfile && bun run build)
+          done
+
+      - name: Install Chromium for Playwright
+        if: matrix.browser == 'chromium'
+        working-directory: tests
+        run: bunx playwright install --with-deps chromium
+
+      - name: Run both builds' benchmark pages in turns, and compare them
+        run: |
+          rm -rf target/bench
+          bun run bench:run --compare "$RUNNER_TEMP/baseline,$RUNNER_TEMP/new" --browser ${{ matrix.browser }} --runs 5 --seconds 10
+
+      - name: Show the summary on the job's page
+        if: always()
+        run: cat target/bench/*-compare/summary.md >> "$GITHUB_STEP_SUMMARY" || true
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: benchmarks-${{ matrix.runner }}-${{ steps.commits.outputs.new }}-${{ github.run_attempt }}
+          path: target/bench/
+          if-no-files-found: ignore
+          retention-days: 90

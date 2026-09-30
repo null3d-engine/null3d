@@ -58,18 +58,24 @@ async function answers(url: string): Promise<boolean> {
 	}
 }
 
-/** Starts the dev server, or reuses one that already runs, and waits until it answers. */
-export async function startServer(https = false): Promise<DevServer> {
-	const url = https
-		? `https://${localHostName()}.local:${HTTPS_PORT}`
-		: `http://localhost:${HTTP_PORT}`;
-	const selfUrl = https ? `https://localhost:${HTTPS_PORT}` : url;
-	const probe = `${selfUrl}/tests/pages/index.html`;
-	if (await answers(probe)) return { url, selfUrl, stop: () => {} };
+/** The page a starting dev server answers first, below its address. */
+const probeOf = (selfUrl: string) => `${selfUrl}/tests/pages/index.html`;
+
+/**
+ * Runs the dev server of the repository copy at `root` with `env` added, and waits until it answers
+ * at `selfUrl`. Stopping the server ends its process.
+ */
+async function spawnServer(
+	root: string,
+	env: Record<string, string>,
+	url: string,
+	selfUrl: string,
+): Promise<DevServer> {
+	const probe = probeOf(selfUrl);
 	const child: ChildProcess = spawn('bunx', ['vite'], {
-		cwd: REPO_ROOT,
+		cwd: root,
 		stdio: ['ignore', 'ignore', 'pipe'],
-		env: { ...process.env, NULL3D_HTTPS: https ? '1' : '0' },
+		env: { ...process.env, ...env },
 	});
 	let errors = '';
 	child.stderr?.on('data', (chunk: Buffer) => {
@@ -83,3 +89,42 @@ export async function startServer(https = false): Promise<DevServer> {
 	child.kill();
 	throw new Error(`the dev server did not answer at ${probe}\n${errors.trim()}`);
 }
+
+/** Starts the dev server, or reuses one that already runs, and waits until it answers. */
+export async function startServer(https = false): Promise<DevServer> {
+	const url = https
+		? `https://${localHostName()}.local:${HTTPS_PORT}`
+		: `http://localhost:${HTTP_PORT}`;
+	const selfUrl = https ? `https://localhost:${HTTPS_PORT}` : url;
+	if (await answers(probeOf(selfUrl))) return { url, selfUrl, stop: () => {} };
+	return spawnServer(REPO_ROOT, { NULL3D_HTTPS: https ? '1' : '0' }, url, selfUrl);
+}
+
+/**
+ * Starts the dev server of another copy of the repository, such as a git worktree that holds
+ * another build, on plain HTTP at `port`. It never reuses a server: one that already answers there
+ * could serve another copy's code, so the start fails instead.
+ */
+export async function startServerAt(root: string, port: number): Promise<DevServer> {
+	const url = `http://localhost:${port}`;
+	if (await answers(probeOf(url)))
+		throw new Error(
+			`a server already answers at ${url}; stop it, or give this checkout other ports with NULL3D_PORT`,
+		);
+	return spawnServer(root, { NULL3D_HTTPS: '0', NULL3D_PORT: String(port) }, url, url);
+}
+
+/**
+ * Chromium's flags for WebGPU and WebGL2 on SwiftShader, the software GPU that CI's Linux machines
+ * draw with.
+ */
+export const SWIFTSHADER_ARGS = [
+	'--enable-unsafe-webgpu',
+	'--enable-features=Vulkan',
+	'--use-angle=swiftshader',
+	'--use-vulkan=swiftshader',
+	'--enable-unsafe-swiftshader',
+	'--ignore-gpu-blocklist',
+	'--no-sandbox',
+	'--hide-scrollbars',
+];
