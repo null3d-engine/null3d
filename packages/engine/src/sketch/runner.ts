@@ -5,8 +5,12 @@
 // report static objects whose transform changed without a setter, before the transform update. In
 // hold mode it seeds this thread's math.random and routes Math.random to it, steps the sketch to the
 // held time in fixed steps after the setup, and publishes the last frame alone. Hold mode reads no
-// input, so the held frame never depends on it.
+// input, so the held frame never depends on it. In development builds, the frame's debug drawing
+// reaches the core just before the frame records; release builds give the sketch calls that do
+// nothing.
 
+import { type Debug, RELEASE_DEBUG } from '../debug/debug';
+import { DebugDraw } from '../debug/draw';
 import { DEV } from '../errors/checks';
 import { coreFailure, QUEUED_CHANGE } from '../errors/core-failure';
 import { EngineError } from '../errors/engine-error';
@@ -90,6 +94,8 @@ export class SketchRunner {
 	private restoreRandom: (() => void) | undefined;
 	private readonly input: InputReader;
 	private readonly quality: SketchQuality;
+	/** The sketch's debug drawing, in development builds only. */
+	private readonly debugDraw: DebugDraw | undefined;
 	readonly context: SketchContext;
 
 	/**
@@ -132,6 +138,8 @@ export class SketchRunner {
 		this.reducedMotion = Atomics.load(slots, Slot.ReducedMotion);
 		this.input = new InputReader(sketch.control, sketch.keyCodes);
 		this.quality = new SketchQuality(sketch.quality, (settings) => sketch.applyQuality(settings));
+		this.debugDraw = DEV ? new DebugDraw(this.core) : undefined;
+		const debug: Debug = this.debugDraw ?? RELEASE_DEBUG;
 		const time = { now: 0, frame: 0 };
 		const textures = new Textures(this.core, sketch.sendImage, time);
 		this.context = {
@@ -159,6 +167,7 @@ export class SketchRunner {
 					return () => this.messageHandlers.delete(handler);
 				},
 			},
+			debug,
 		};
 		// Last, so a constructor that fails leaves the thread's own Math.random in place.
 		if (holdSeconds !== undefined) this.restoreRandom = seedMathRandom(HOLD_SEED);
@@ -319,6 +328,13 @@ export class SketchRunner {
 		}
 		if (glue.cullFrame(frame, width, height) !== 0) this.report(coreFailure(glue, 'the frame'));
 		this.endPhase(Phase.Cull);
+		if (DEV && this.debugDraw) {
+			try {
+				this.debugDraw.flush(width, height);
+			} catch (error) {
+				this.report(error);
+			}
+		}
 		if (glue.recordFrame(frame, width, height) !== 0) this.report(coreFailure(glue, 'the frame'));
 		this.record.count(Counter.Rebuilds, glue.drawTablesRebuilt() ? 1 : 0);
 		this.record.count(Counter.VisibleEntries, glue.visibleEntries(frame));

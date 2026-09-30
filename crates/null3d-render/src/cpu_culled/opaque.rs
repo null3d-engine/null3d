@@ -170,6 +170,12 @@ impl Opaque {
         self.views.len()
     }
 
+    /// Where a view's frame group reads the frame uniform and the cell offsets of the frame being
+    /// recorded: the dynamic offset of the ring slot that [`Opaque::upload`] took for them.
+    pub(super) fn frame_slot(&self, view: ViewId) -> u32 {
+        self.views[view.index()].slots.uniform * FRAME_SLOT_BYTES
+    }
+
     /// Creates the ring of frame uniforms of each view from the first one without it up to
     /// `views`, with the group that binds its uniform block, its cell offsets and the material
     /// table's texture.
@@ -384,7 +390,7 @@ impl Opaque {
         let shift = |d: usize| buckets[draws[d].bucket as usize].shift;
         let stride = record_stride(multi_draw);
         let slot = slots.listed * layout.draws_slot_bytes;
-        let frame_slot = slots.uniform * FRAME_SLOT_BYTES;
+        let frame_slot = self.frame_slot(view);
         list.push(
             Op::SetBindGroup,
             &[0, ids::frame_group(view), 2, frame_slot, frame_slot],

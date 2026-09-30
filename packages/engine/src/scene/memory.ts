@@ -37,6 +37,10 @@ export class CoreMemory {
 		return this.view(Float32Array, address, length);
 	}
 
+	f64(address: number, length: number): Float64Array {
+		return this.view(Float64Array, address, length);
+	}
+
 	u32(address: number, length: number): Uint32Array {
 		return this.view(Uint32Array, address, length);
 	}
