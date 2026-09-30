@@ -163,7 +163,7 @@ Three figures show whether the GPU keeps up:
 
 The lower of the two rates is the rate that users see. The engine lets at most two frames wait unfinished on the GPU. So when the GPU falls behind, the presented rate falls to the completed rate, and `gpuLatencyMs` stays near two completed frame intervals. A rate below `refreshHz` with `gpuLatencyMs` near two frame intervals means that the GPU limits the frame rate. On a phone without GPU timers, `completedFps` and `gpuLatencyMs` are the GPU's only signal.
 
-Firefox reports finished WebGPU frames to the engine about a frame late. There the limit holds back frames that the GPU has already finished, which costs frame rate when the GPU is busy. In a GPU-bound test on a Mac, Firefox's WebGPU path drew 15% fewer frames at a load that used about 60% of each frame's GPU time. Under heavier load it drew far fewer. Firefox's WebGL2 path lost none.
+Firefox reports finished WebGPU frames to the engine about a frame late. There the limit holds back frames that the GPU has already finished, which costs frame rate when the GPU is busy. In a GPU-bound test on a Mac, Firefox's WebGPU path drew 15% fewer frames at a load that used 60% of the GPU. Under heavier load it drew far fewer. Firefox's WebGL2 path lost none.
 
 The engine checks a WebGL2 fence at its next frame callback, so there `gpuLatencyMs` rounds up to a frame interval. In Safari, a worker that draws with WebGPU waits for the GPU at the end of each frame, so there `gpuLatencyMs` stays near one frame interval. Some GPUs, such as Apple's, work on two frames at once, so a frame's `gpuMs` can be longer than the time between completed frames.
 
