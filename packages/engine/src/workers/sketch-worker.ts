@@ -20,6 +20,8 @@ import {
 } from './protocol';
 
 let runner: SketchRunner | undefined;
+/** The renderer, which this worker loads only in low-latency mode, where it draws. */
+let drawLoad: Promise<DrawModule> | undefined;
 let draw: DrawModule | undefined;
 let drawing: Drawing<Renderer> | undefined;
 let controlSlots: Int32Array | undefined;
@@ -59,10 +61,14 @@ const step = startSteps('sketch');
 
 startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => {
 	const message = event.data;
-	if (message.type === 'init') {
+	if (message.type === 'load-renderer') {
+		drawLoad ??= loadDrawModule();
+	} else if (message.type === 'init') {
 		try {
-			// The renderer loads while the core and the sketch start.
-			const drawModule = message.renderer && loadDrawModule();
+			// The renderer loads while the core and the sketch start, if the page did not ask for it
+			// sooner.
+			if (message.renderer) drawLoad ??= loadDrawModule();
+			const drawModule = message.renderer && drawLoad;
 			const control = controlViews(message.control);
 			controlSlots = control.slots;
 			const started = await startWorkerCore(message, step);
