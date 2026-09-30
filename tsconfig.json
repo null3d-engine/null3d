@@ -25,5 +25,5 @@
 		"tests/fixtures/*/vite.config.ts",
 		"vite.config.ts"
 	],
-	"exclude": ["packages/engine/**"]
+	"exclude": ["packages/engine/**", "packages/controls/**"]
 }
