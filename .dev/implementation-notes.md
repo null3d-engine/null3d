@@ -13,6 +13,9 @@ The engine's hot paths stay allocation-free with these habits (hard rule 1):
 - Do not wrap browser promises in `async` functions, and use `Math.sqrt` rather than `Math.hypot`.
 - Keep closures out of functions that run every frame, even in a branch that rarely runs. Until the browser optimizes such a function, it allocates the variables a closure captures on every call.
 - Shrink a reused list with `pop`, never by setting its length to 0. In Chrome, a length of 0 frees the list's storage, and the next `push` allocates it again. The sketch's list of touches works this way.
+- Keep numbers that change every frame in typed arrays, not in an object's properties. Playwright's headless Chromium 153, which CI tests with, makes a new object for each fraction stored in a property, while Chrome 154 does not. Six such stores in the camera controls' update made 144 bytes of garbage a frame there. The controls keep those numbers in one `Float64Array`.
+- Pass fractions to a per-frame helper in a typed array, not as arguments. A call that the browser does not inline puts each fraction it passes in an object of its own.
+- The allocation checks of the math helpers and the camera controls sample a loop in a test page (`tests/lib/allocations.ts`). Give such a loop fractions, as real input has: whole numbers never allocate, so they hide these faults.
 
 ## Allocation in Rust
 
