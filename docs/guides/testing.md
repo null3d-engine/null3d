@@ -129,3 +129,4 @@ A live engine logs an error in `onUpdate` and carries on. Hold mode stops instea
 | `?threads=off` | The single-threaded build |
 | `?render=main` | Draw on the page's main thread |
 | `?latency=pipelined`, `?latency=low` | Pick the latency mode |
+| `?cells=off` | Cull every object, with no [grid cell](../concepts/culling.md) out of view skipped first, to measure what skipping cells saves |
