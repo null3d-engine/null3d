@@ -194,3 +194,4 @@ Some calls change the scene's structure: creating or destroying an object or a b
 - [Handles and objects](handles.md): separate objects, and per-object data in your own arrays.
 - [Scene](../api/scene.md): `createInstances` and the reference of instance batches.
 - [Math helpers](../api/math.md): vectors, quaternions and colors for rows.
+- [The instance batch demo](https://github.com/null3d-engine/null3d/tree/main/examples/instances): 10,000 boxes in one batch that the sketch moves in each frame.
