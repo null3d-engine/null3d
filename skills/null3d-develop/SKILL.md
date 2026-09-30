@@ -20,7 +20,7 @@ The engine docs are the source of truth. This skill describes the API planned fo
    - inside the null3D repository itself: `docs/<id>.md`;
    - in a null3D project: `node_modules/@null3d/engine/docs/<id>.md`;
    - from any terminal: `bunx @null3d/cli docs show <id>`, or `bunx @null3d/cli docs search "<words>"`.
-3. Each page starts with front matter. `status: stable` or `status: experimental` means the API exists (experimental APIs may still change). `status: planned` means it does not exist in this version. Do not call a planned API; tell the user, and use the workaround the page gives.
+3. Each page starts with front matter. `status: stable` or `status: experimental` means the API exists (experimental APIs may still change). `status: planned` means it does not exist in this version. The note under an experimental page's title can name parts that are not built yet: treat those parts as planned too. Do not call a planned API; tell the user, and use the workaround the page gives.
 4. If the docs and this skill disagree, follow the docs and mention the difference in your summary, so the skill can be fixed.
 
 Doc IDs appear in backticks throughout, for example `concepts/architecture`. Version numbers in parentheses, such as (0.2), give the first engine version with that API; no number means 0.1.
@@ -208,6 +208,7 @@ Read these when the task needs them:
 ## 9. Before you finish
 
 - The code uses only APIs whose docs status is `stable` or `experimental` in the installed engine.
+- The code uses no part that a page's note says is not built yet.
 - Per-frame callbacks allocate nothing.
 - DOM, audio and HTML UI code is in `page.ts`.
 - You looked at a rendered image, from `bunx @null3d/cli shot` or the dev server, and not only at build output.
