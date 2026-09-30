@@ -196,6 +196,14 @@ const DOCS = {
 			'E1409: the memory.maximumMiB option 8192 is not a whole number of MiB from 256 to 4096.',
 		since: '0.1',
 	},
+	E1410: {
+		title: 'Sketch module not loaded',
+		cause:
+			'The sketch module that createEngine got did not load. It did not download, or its code threw an error while the module loaded.',
+		example:
+			'E1410: the sketch module https://example.com/assets/sketch-3f9c1a2b.js did not load: Failed to fetch dynamically imported module: https://example.com/assets/sketch-3f9c1a2b.js.',
+		since: '0.1',
+	},
 	E1501: {
 		title: 'Render space full',
 		cause:
