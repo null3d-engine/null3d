@@ -28,12 +28,14 @@ const DEPTH_MODES: readonly DepthMode[] = ['standard', 'reversed-gl', 'reversed'
 export const IMAGE_TESTS: readonly ImageTest[] = [
 	// A clear color, read back through the engine's readback on each GPU interface.
 	{ name: 'clear', page: 'tests/pages/clear.html', size: [64, 64], tiers: ['webgpu', 'webgl2'] },
-	// Every texture command of the GPU layer, replayed on each path, which must all draw one image.
+	// Every texture command of the GPU layer, replayed on each path, which must all draw one image,
+	// and release every image they had.
 	{
 		name: 'replay-textures',
 		page: 'tests/pages/replay-textures.html',
-		size: [256, 256],
+		size: [320, 256],
 		sameOnEveryTier: true,
+		expect: { released: true },
 	},
 	// A hand-built draw list: GPU culling, then indirect draws from a render bundle with MSAA.
 	{
@@ -51,6 +53,34 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 		sketch: 'tests/pages/sketches/animated-sketch.ts',
 		hold: 1.5,
 		modes: ALL_MODES,
+	},
+	// Textures from PNG, JPEG, WebP and AVIF files, sRGB and linear textures, each wrap mode, and
+	// magnified texels with each filter. Every thread mode sends the images to the thread that draws
+	// its own way, and must draw the same image.
+	{
+		name: 'textures',
+		sketch: 'tests/pages/sketches/textures-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+		modes: ALL_MODES,
+	},
+	// Mip levels that the GPU makes: a checkerboard that shrinks and a floor that recedes, with and
+	// without mip levels, and with anisotropic filtering.
+	{
+		name: 'texture-mipmaps',
+		sketch: 'tests/pages/sketches/texture-mipmaps-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+	},
+	// Fifty textures that load in waves in a live engine, a band of rows per frame under a small
+	// upload budget, while their array grows twice, to 64 layers. No frame may upload more than the
+	// budget, and the GPU memory count must match the array.
+	{
+		name: 'texture-arrays',
+		page: 'tests/pages/texture-arrays.html',
+		size: [400, 240],
+		modes: ALL_MODES,
+		expect: { withinBudget: true, memoryCounted: true },
 	},
 	// A small static scene: lit and unlit meshes, a hierarchy and an instance batch.
 	{ name: 'scene', sketch: 'tests/pages/sketches/boxes-sketch.ts', hold: 0, modes: ALL_MODES },

@@ -8,6 +8,9 @@ name: PR title
 on:
   pull_request:
     types: [opened, edited, synchronize, reopened]
+  # The merge queue requires this check too. The pull request's own run already checked its title,
+  # so the job skips there, and GitHub counts a skipped job as passed.
+  merge_group:
 
 permissions:
   contents: read
@@ -17,6 +20,7 @@ env:
 
 jobs:
   squash-title:
+    if: github.event_name == 'pull_request'
     runs-on: ubuntu-latest
     timeout-minutes: 5
     env:

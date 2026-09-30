@@ -167,4 +167,4 @@ Maintainers also add a `Task:` footer with the milestone task ID.
 
 ## Releases
 
-Pull requests merge by squash only. The squash writes one line on main: the pull request's title, or the commit's subject when the pull request has one commit. That line becomes a changelog entry, so the PR title workflow checks it with commitlint and the docs style check. [Releases](.dev/releases.md) covers how a release is made.
+Pull requests merge through GitHub's merge queue, by squash only. The queue runs CI on each pull request on top of main and the pull requests ahead of it. Two changes that pass alone therefore cannot break main together. A pull request joins the queue once its own checks pass, even when it is behind main. The squash writes one line on main: the pull request's title, or the commit's subject when the pull request has one commit. That line becomes a changelog entry, so the PR title workflow checks it with commitlint and the docs style check. [Releases](.dev/releases.md) covers how a release is made.
