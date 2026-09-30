@@ -1036,7 +1036,7 @@ impl SceneStorage {
             for slot in self.late.iter_ones() {
                 let depth = self.depths[slot as usize];
                 if branch_depth.is_none_or(|d| depth <= d) {
-                    ctx.compute(slot, depth == 0);
+                    ctx.compute_one(slot, depth == 0);
                 }
             }
         }
@@ -1050,7 +1050,7 @@ impl SceneStorage {
                     let ctx = update_context!(self, parity);
                     for &slot in &self.order[level.start as usize..level.end as usize] {
                         if self.late.get(slot) || self.late.get(self.parents[slot as usize]) {
-                            ctx.compute(slot, false);
+                            ctx.compute_one(slot, false);
                             self.late.set(slot);
                         }
                     }
@@ -1189,6 +1189,13 @@ impl UpdateContext<'_> {
                 unsafe { self.out.copy_row(&self.previous, s) };
             }
         }
+    }
+
+    /// [`UpdateContext::compute`] in a function of its own, for the late update, which recomputes
+    /// few objects: its loops then call one copy of the computation instead of inlining it twice.
+    #[inline(never)]
+    fn compute_one(&self, slot: u32, root: bool) {
+        self.compute(slot, root);
     }
 
     /// Recomputes one object's world matrix and sphere relative to its cell's center, and stamps it

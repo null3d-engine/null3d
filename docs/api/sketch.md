@@ -109,9 +109,9 @@ Each frame runs the callbacks in this order, and each callback is optional:
 
 Setters take effect at once. Changes that `onFixedUpdate` and `onUpdate` make show in the frame that the engine draws next. Creating, destroying and reparenting objects take effect when the engine processes the frame, after `onUpdate` returns ([Scene](scene.md#when-changes-take-effect)).
 
-In `onLateUpdate`, world positions already hold the frame's changes, so `getWorldPosition` gives the place where the frame draws an object. Setters that `onLateUpdate` calls show in the same frame. The engine updates the objects that they move, and the objects below them, before it culls and draws. So a camera that follows an object there never lags a frame behind it. Structural changes that `onLateUpdate` makes, such as creating an object, take effect in the next frame.
+In `onLateUpdate`, world positions already hold the frame's changes, so `getWorldPosition` gives the place where the frame draws an object. Setters that `onLateUpdate` calls also show in the same frame. Before it culls and draws, the engine updates the objects that they move and the objects below them. A camera that follows an object there does not lag a frame behind it. Structural changes that `onLateUpdate` makes, such as creating an object, take effect in the next frame.
 
-A sketch without `onLateUpdate` costs nothing for it. With one, the engine updates only the objects that it moved, and the objects below them.
+The engine runs this second update only for a sketch with `onLateUpdate`, and then only for the objects that it moved and the objects below them.
 
 ## Example: a camera that follows a moving object
 
@@ -177,7 +177,7 @@ Callbacks a sketch returns from its setup function. In each frame the engine cal
 | --- | --- |
 | `onFixedUpdate(step: number): void` | Runs at a fixed rate, 60 times per second of sketch time unless `defineSketch`'s options set another, with the step's length in seconds. A frame runs it once for each step that falls due since the previous frame, so 0 or more times, before `onUpdate`. After a slow frame, a frame runs at most 8 steps unless the options set another number, and drops the rest. Use it for simulation, such as physics, that must step the same at every frame rate. |
 | `onUpdate(dt: number): void` | Runs once per frame, before transforms, with the frame's step in seconds. The first frame, and the first after a pause or a hidden page, gets 0. No step is longer than a quarter second, so a very slow frame slows the sketch instead of jumping it. In hold mode, each frame after the first gets a fixed step of 1/60 second. |
-| `onLateUpdate(dt: number): void` | Runs once per frame after the engine updates transforms, and before it culls and draws, with the frame's step in seconds. World positions already hold the frame's changes, and the engine updates the objects that it moves before it draws the frame. So a camera that follows an object here never lags a frame behind it. |
+| `onLateUpdate(dt: number): void` | Runs once per frame after the engine updates transforms, and before it culls and draws, with the frame's step in seconds. World positions already hold the frame's changes, and the engine updates the objects that it moves before it draws the frame. A camera that follows an object here does not lag a frame behind it. |
 
 ### `SketchContext`
 

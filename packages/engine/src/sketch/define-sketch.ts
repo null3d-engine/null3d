@@ -37,8 +37,8 @@ export interface SketchCallbacks {
 	/**
 	 * Runs once per frame after the engine updates transforms, and before it culls and draws, with
 	 * the frame's step in seconds. World positions already hold the frame's changes, and the engine
-	 * updates the objects that it moves before it draws the frame. So a camera that follows an object
-	 * here never lags a frame behind it.
+	 * updates the objects that it moves before it draws the frame. A camera that follows an object
+	 * here does not lag a frame behind it.
 	 */
 	onLateUpdate?(dt: number): void;
 }

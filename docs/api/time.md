@@ -102,7 +102,7 @@ export default defineSketch(({ scene, geometry, materials }) => {
 
 - Step `n` falls due when sketch time reaches `n` steps. The engine counts the steps from the sketch time, so they never drift from it.
 - The first frame runs no step, because sketch time is still 0. The first frame after a pause runs none either, because a pause adds no time.
-- After a slow frame, a frame runs at most 8 steps and drops the rest. The simulation then falls behind the sketch time, instead of slowing the frames that follow.
+- After a slow frame, a frame runs at most 8 steps and drops the rest. The simulation falls behind the sketch time by the dropped steps. The cap keeps a simulation that runs too slowly from slowing down every frame after it.
 - The options of `defineSketch` set the rate and that cap, as in `defineSketch(setup, { fixedRate: 120, maxFixedSteps: 16 })`. [Sketch API](sketch.md#options) lists them.
 - `time` keeps the frame's values during the fixed steps. To count time in steps, add `step` to a number of your own in each step.
 - Input changes once per frame, so every step of a frame sees the same input, and some frames run no step. Read presses such as `input.wasPressed` in `onUpdate`, keep what they ask for, and act on it in the next step.
