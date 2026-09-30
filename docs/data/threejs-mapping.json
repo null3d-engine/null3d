@@ -528,7 +528,7 @@
       "status": "direct",
       "since": "0.1",
       "target": "scene.createPointLight({ position, color, intensity, range, decay })",
-      "notes": "distance becomes range, which every point light needs: 0, a light with no end, is not allowed, because the engine finds the lights near each surface by their ranges. The light is stored but does not light surfaces yet.",
+      "notes": "distance becomes range, which every point light needs: 0, a light with no end, is not allowed, because the engine finds the lights near each surface by their ranges.",
       "docs": "api/lights",
       "detect": "\\bPointLight\\b"
     },
@@ -539,7 +539,7 @@
       "status": "direct",
       "since": "0.1",
       "target": "scene.createSpotLight({ position, direction | target, angle, penumbra, range, decay, intensity })",
-      "notes": "distance becomes range, which every spot light needs. target is a point: call light.lookAt(x, y, z) when it moves. The light is stored but does not light surfaces yet. Spot light cookies (light.map) come after 1.0.",
+      "notes": "distance becomes range, which every spot light needs. target is a point: call light.lookAt(x, y, z) when it moves. Spot light cookies (light.map) come after 1.0.",
       "docs": "api/lights",
       "detect": "\\bSpotLight\\b"
     },

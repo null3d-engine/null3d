@@ -243,6 +243,23 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		size: [480, 270],
 	},
+	// Clustered point and spot lights over a floor of shapes, with no directional light: one point
+	// light, a grid of 16 and a grid of 256, three spot lights of different cones, and 16 point
+	// lights through an orthographic camera.
+	...(
+		[
+			['lights-1', 'lights=1'],
+			['lights-16', 'lights=16'],
+			['lights-256', 'lights=256'],
+			['lights-spot', 'scene=spot'],
+			['lights-ortho', 'lights=16&camera=ortho'],
+		] as const
+	).map(([name, query]) => ({
+		name,
+		sketch: `tests/pages/sketches/lights-sketch.ts?${query}`,
+		hold: 0,
+		size: [480, 270] as const,
+	})),
 	// Orbit controls after the controls test's drags, made through the controls' own calls. The
 	// controls test must draw this image after it makes the drags with Playwright.
 	{ name: 'controls', sketch: 'tests/pages/sketches/controls-sketch.ts?moved', hold: 0 },

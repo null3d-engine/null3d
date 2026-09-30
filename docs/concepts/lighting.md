@@ -8,7 +8,7 @@ summary: "Light types and units; clustered lighting; environment maps and spheri
 
 # Lighting and environment
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Clustered lighting is not built yet, so point, spot and hemisphere lights do not light surfaces, and surfaces show one directional light. Environment maps and spherical harmonics come in null3D 0.2. Coding agents must not rely on these parts.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Hemisphere lights do not light surfaces yet, and surfaces show one directional light. The quality presets do not set the light limits yet. Environment maps and spherical harmonics come in null3D 0.2. Coding agents must not rely on these parts.
 
 ```mermaid
 flowchart LR
@@ -18,7 +18,9 @@ flowchart LR
     table --> frame
     frame --> main["The first directional light,<br/>and the ambient lights"]
     frame --> list["Point and spot lights<br/>whose ranges reach the view"]
+    list --> grid["Light grid<br/>the lights of each cluster,<br/>on the job workers"]
     main --> shading["Standard material shading"]
+    grid --> shading
 ```
 
 Every light is a scene object with a row in the engine's light table. The object holds what every object holds: where the light is, which way it faces, its parent, whether it is visible, and its layers. The light table holds the rest: the light's kind, its colors, its intensity, and for point and spot lights their range, decay and cone.
@@ -28,6 +30,7 @@ Setters change the engine's memory at once, and they allocate nothing except tho
 1. It skips a light that is hidden by itself or a parent, or whose layer mask shares no bit with the camera's.
 2. The first directional light created that remains, and the sum of the ambient lights, become the light that standard materials reflect.
 3. It tests the sphere of each point and spot light's range against the camera's view, and lists the lights whose spheres reach into it.
+4. The job workers put each listed light into the clusters of the view that its sphere reaches, as [Clustered forward shading](#clustered-forward-shading) explains.
 
 ## Kinds of light and their units
 
@@ -41,7 +44,7 @@ Units follow three.js since r155, which dropped its legacy light mode. A scene t
 | Hemisphere | Sky and ground: light that fades from one color to the other with the way a surface faces | A factor on both colors |
 | Ambient | Light that bounces everywhere, from no direction | A factor on its color |
 
-A standard material reflects light with three.js's `MeshLambertMaterial` formula: the surface color divided by π, times the light that reaches it. A white directional light with an intensity of π therefore shows a white surface that faces it as white.
+A standard material reflects light with the formulas of three.js's `MeshStandardMaterial`, so the same intensities give the same result in both engines. A rough white surface that faces a white directional light with an intensity of π shows nearly white.
 
 Point and spot lights fade with distance by their `decay`. A decay of 2, the default, fades light with the square of the distance, as real light fades. Each also ends at its `range`, because the engine finds the lights near each surface by their ranges. three.js's `distance` of 0, a light with no end, has no equivalent.
 
@@ -55,6 +58,27 @@ export default defineSketch(({ scene }) => {
   scene.createPointLight({ position: [2, 1.5, 0], color: '#ffb46b', intensity: 12, range: 6 });
 });
 ```
+
+## Clustered forward shading
+
+A scene can hold hundreds of point and spot lights, but a surface only needs the few whose ranges reach it. The engine therefore cuts the camera's view into clusters. The screen splits into 16 tiles across and 9 up, and the depth splits into 24 slices. Slices grow with distance, from the near plane out to where the farthest light ends. Near the camera, where each meter covers more of the screen, slices are thin.
+
+Each frame the job workers list, for each cluster, the lights whose range spheres reach it. Each pixel of a standard material then finds its cluster and loops over that cluster's lights alone. The test is conservative: a cluster may list a light that ends just before it, but never misses a light that reaches it. Each light fades smoothly to nothing at its range, so a listed light that does not reach a pixel adds nothing.
+
+```mermaid
+flowchart LR
+    lights["Visible point and<br/>spot lights"] --> assign["Job workers:<br/>lights of each cluster"]
+    assign --> upload["Upload:<br/>grid, index list, lights"]
+    upload --> pixel["Each pixel:<br/>find its cluster,<br/>loop over its lights"]
+```
+
+The engine shades each surface in the pass that draws it. A deferred renderer would light the whole screen in a later pass instead. Forward shading favors phones and tablets:
+
+- A deferred renderer writes several full-screen buffers in every frame, and on the tile-based GPUs of phones that memory traffic is the main cost.
+- Forward shading works with MSAA directly, where deferred shading needs extra passes.
+- Transparent surfaces use the same lighting code as opaque ones.
+
+Both GPU paths light a scene the same way. WebGPU reads the lists from storage buffers, and WebGL2 from small data textures. In this version the camera lists up to 1,024 point and spot lights in a frame, the ones nearest to it. Each cluster lists up to 128. [Performance guide](../guides/performance.md#point-and-spot-lights) gives the cost of lights.
 
 ## Lights as objects
 

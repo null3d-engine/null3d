@@ -148,6 +148,17 @@ Mark objects and batches static when they rarely move, and call `markDirty` for 
 
 The render worker picks how each upload travels, so you do not need to. Uploads from 64 KiB up to 4 MiB have two routes: the direct write call, and staging buffers that the browser keeps mapped. The render worker times both on the device and uses the faster one. In Chrome the staging buffers are 3 to 6 times faster. In Safari the direct call is faster at every size.
 
+## Point and spot lights
+
+The engine lights each pixel with the point and spot lights of its cluster only, as [Lighting and environment](../concepts/lighting.md#clustered-forward-shading) explains. So a light costs GPU time only in the clusters that its range reaches:
+
+- A pixel's cost grows with the lights whose ranges reach its cluster. Give each light the shortest range that keeps its look, because a longer range reaches more clusters.
+- A light near the camera covers much of the screen, and its range reaches many clusters. Many large lights near the camera cost the most.
+- Each frame the job workers list the lights of each cluster on the CPU. A few hundred small lights take a fraction of a millisecond, on the sketch thread alone when the work is small.
+- A frame uploads the lists when the lights or the camera moved. It uploads 14 KB for the clusters, 4 bytes for each light in each cluster, and 64 bytes for each light. A still scene seen from a still camera uploads nothing.
+
+The camera lists up to 1,024 point and spot lights in a frame, the ones nearest to it, and up to 128 in each cluster.
+
 ## Measure
 
 `engine.measure(seconds)` on the page records every frame for that many seconds and returns these figures:

@@ -209,7 +209,7 @@ light.setCastShadows(true);                  // directional, point and spot ligh
 
 Lights are nodes: they take the node options (`name`, `position`, `parent`, `dynamic`, `layers` and the rest) and have the calls in section 4. Directional and spot lights shine along their -Z axis, so `lookAt` aims them; a hemisphere light's sky is its +Y axis. A light lights a camera's view when their layer masks share a bit. Units match three.js r155 and later: directional intensity in lux-like units, point and spot intensity in candela. Shadow cascades fit the view by themselves.
 
-Later in 0.1: point, spot and hemisphere lights light surfaces (clustered lighting), and shadows draw. Until then, surfaces show the first directional light created and the ambient lights, and `castShadows` is stored.
+Point and spot lights light the surfaces their ranges reach, through clustered lighting: keep each range as short as its look allows. Later in 0.1: hemisphere lights light surfaces, and shadows draw. Until then, surfaces show the first directional light created, the ambient lights and the point and spot lights, and `castShadows` is stored.
 
 ## 8. Geometry (`api/geometry`)
 
