@@ -579,8 +579,8 @@ fn far_from_the_origin_only_the_camera_offsets_upload_when_the_camera_moves() {
         let slot = world.scene.resolve(object).unwrap() as usize;
         assert_eq!(world.scene.cells()[slot], far);
     }
-    // The planes, then the offsets from the camera to the two cells in use.
-    let params = vec![(0, 112), (112, 2 * 16)];
+    // One write: the planes, then the offsets from the camera to the two cells in use.
+    let params = vec![(0, 112 + 2 * 16)];
     let buffer = views_of(&world.commands())[0].culling[0];
     assert_eq!(cull_params_writes(&world.commands(), buffer), params);
 
@@ -621,7 +621,7 @@ fn an_object_that_moves_into_another_cell_rewrites_its_entry() {
     let buffer = views_of(&world.commands())[0].culling[0];
     assert_eq!(
         cull_params_writes(&world.commands(), buffer),
-        vec![(0, 112), (112, 16)]
+        vec![(0, 112 + 16)]
     );
 
     world.frame = 2;
@@ -642,6 +642,6 @@ fn an_object_that_moves_into_another_cell_rewrites_its_entry() {
     }));
     assert_eq!(
         cull_params_writes(&commands, buffer),
-        vec![(0, 112), (112, 2 * 16)]
+        vec![(0, 112 + 2 * 16)]
     );
 }

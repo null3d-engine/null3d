@@ -161,13 +161,14 @@ impl Culling {
             }
         }
         params[24] = layout.sources;
-        let (at, bytes) = arena.push(words_as_bytes(&params))?;
-        list.push(Op::WriteBuffer, &[ids::cull_params(view), 0, at, bytes])?;
         self.offsets.update(scene, &frame.camera);
-        let (at, bytes) = arena.push(self.offsets.as_bytes())?;
+        // The planes fill whole words, so the arena lays the offsets right after them, as the
+        // parameters hold them, and one write carries both.
+        let (at, planes) = arena.push(words_as_bytes(&params))?;
+        let (_, offsets) = arena.push(self.offsets.as_bytes())?;
         list.push(
             Op::WriteBuffer,
-            &[ids::cull_params(view), CULL_PLANES_BYTES, at, bytes],
+            &[ids::cull_params(view), 0, at, planes + offsets],
         )?;
         if !layout.draws.is_empty() {
             let (at, bytes) = arena.push(words_as_bytes(&layout.indirect_template))?;
