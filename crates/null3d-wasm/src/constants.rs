@@ -7,7 +7,7 @@ use null3d_core::world::MATRIX_FLOATS;
 use null3d_gpu::caps::Capabilities;
 use null3d_gpu::drawlist::sizes;
 use null3d_render::arrays::ArrayName;
-use null3d_render::cpu_culled::CpuCulledConfig;
+use null3d_render::cpu_culled::{CpuCulledConfig, MAX_SOURCE_BITS};
 use null3d_render::frame::{NO_MATERIAL, NO_MESH};
 use null3d_render::geometry::Shape;
 use null3d_render::gpu_driven::{MAX_USEFUL_BINDING_BYTES, PORTABLE_MAX_SOURCES};
@@ -168,6 +168,7 @@ pub fn typescript() -> String {
                     "WEBGL2_MIN_TEXTURE_SIZE",
                     CpuCulledConfig::default().max_texture_size,
                 ),
+                ("WEBGL2_MAX_SOURCES", 1 << MAX_SOURCE_BITS),
             ],
         ),
         (

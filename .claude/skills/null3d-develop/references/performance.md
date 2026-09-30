@@ -60,7 +60,7 @@ These numbers are starting points. The engine docs page `guides/performance` hol
 | High "transforms" | Many dynamic objects or deep hierarchies | Make objects static when they rarely move; flatten hierarchies; use instance batches |
 | High "animation" | Many skinned characters | Lower far update rates (preset); share poses between identical characters; use LODs |
 | High "culling" on WebGL2 | Many objects checked on the CPU | Instances; static batches, which WebGL2 culls 64 rows at a time once they stop changing; larger static groups; layer masks; LODs |
-| Objects behind walls or buildings still cost GPU time on WebGL2 | No blocker meshes | Run the asset tool on level geometry so it makes blocker meshes (0.2); call `setOccluder(true)` on large custom walls (`concepts/culling`) |
+| Objects behind walls or buildings still cost GPU time on WebGL2 | No blocker meshes | Run the asset tool on level geometry so it makes blocker meshes (0.2); call `setOccluder(true)` on large custom walls (0.2, `concepts/culling`) |
 | High "upload" bytes | Dynamic batches or objects that rarely change | Static batches with `markDirty(start, count)` for the rows that changed |
 | On WebGL2, `uploadBytes` far above 4 times `visibleEntries` when only the camera moves | Dynamic batches: every frame uploads each active row's 48-byte matrix, visible or not | Make still batches static, and mark only the changed rows (`guides/performance`) |
 | `rebuilds` above zero during play, with upload and replay spikes in the same frames | Objects, meshes, materials or batches created, destroyed or changed during play: each such frame rebuilds the draw tables and uploads every matrix | Create during setup; hide and show with `setVisible` and pool with `setActiveCount`, which do not rebuild (`guides/performance`) |
@@ -94,7 +94,7 @@ These numbers are starting points. The engine docs page `guides/performance` hol
 
 Check `debug.frameStats().memory` for WebAssembly memory and GPU memory estimates.
 
-Every device draws 2,097,152 objects and instance rows in one scene. A device with larger GPU buffers draws more, up to 8,388,480: `engine.capabilities.maxInstances` gives the number. Past it, the call fails with E1501. With worker threads, engine memory stops at 1 GiB, about 5 million rows; past that, the call fails with E1109. In development builds the engine warns once when a scene passes 2,097,152, so test such scenes on the devices your users have.
+Every device draws 2,097,152 objects and instance rows in one scene. A device with larger GPU buffers draws more, up to 8,388,480: `engine.capabilities.maxInstances` gives the number. Past it, the call fails with E1501. With worker threads, engine memory stops at 1 GiB by default, about 5 million rows; past that, the call fails with E1109. The `memory` option of `createEngine` raises the maximum up to 4096 MiB (`api/engine`). A larger maximum leaves less address space for other engines and WebAssembly modules on the page. Raise it only for a scene that needs it. In development builds the engine warns once when a scene passes 2,097,152, so test such scenes on the devices your users have.
 
 ## 7. The quality governor and your own systems
 
@@ -125,7 +125,7 @@ Apply these habits to `onUpdate` and everything it calls.
 Some calls rebuild the scene's draw tables in the frame they take effect: the bundle is recorded again and every matrix uploads. Others upload only what they changed. The engine docs page `guides/performance` has the full table.
 
 - Cheap: moving objects, writing batch arrays, `setVisible`, and `setActiveCount`.
-- Rebuilds: creating or destroying objects and batches, `setMesh`, `setMaterial`, `setParent` and `setDynamic`.
+- Rebuilds: creating or destroying objects and batches, `setMaterial`, `setParent` and `setDynamic`.
 - Create everything a level needs during setup. Hide with `setVisible` instead of destroying.
 - Pool bullets, particles and pickups in a batch sized for its most rows. Show the live ones with `setActiveCount`, and keep them at the front of the arrays.
 - For a look that changes often, such as a highlight, keep two objects and swap their visibility.

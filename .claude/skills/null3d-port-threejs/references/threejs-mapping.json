@@ -297,7 +297,7 @@
       "status": "direct",
       "since": "0.1",
       "target": "obj.lookAt(x, y, z)",
-      "notes": "Cameras and lights look down -Z, as in three.js.",
+      "notes": "Cameras look down -Z, as in three.js, and lights will too when they become objects later in 0.1.",
       "docs": "api/objects",
       "detect": "\\.lookAt\\s*\\("
     },
@@ -847,7 +847,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "Nothing to do",
-      "notes": "Adding a shader feature to a material (for example a normal map) compiles a new pipeline, which can stall a frame. Set materials up during loading.",
+      "notes": "Options that change the shader, such as a normal map, are fixed when a material is created. Create each variant during loading: a new one compiles a pipeline, which can stall a frame.",
       "docs": "concepts/materials",
       "detect": "\\bmaterial\\w*\\.needsUpdate\\b"
     },
@@ -1165,7 +1165,7 @@
       "three": "InstancedMesh + setMatrixAt / setColorAt / instanceMatrix.needsUpdate",
       "status": "changed",
       "since": "0.1",
-      "target": "scene.createInstances(meshOrPrefab, count, { dynamic }); write batch.positions / rotations / scales / colors",
+      "target": "scene.createInstances(meshOrPrefab, count, { material, dynamic }); write batch.positions / rotations / scales / colors",
       "notes": "Static batches call markDirty(start, count) after writes; dynamic batches upload every frame without it.",
       "docs": "concepts/instances",
       "detect": "\\bInstancedMesh\\b|\\.set(Matrix|Color)At\\s*\\(|\\binstance(Matrix|Color)\\b"
@@ -1187,7 +1187,7 @@
       "three": "InstancedBufferGeometry / InstancedBufferAttribute (custom per-instance data)",
       "status": "changed",
       "since": "0.2",
-      "target": "createInstances(..., { attributes: { tint: 4 } }) adds per-instance arrays that surface functions can read",
+      "target": "createInstances(mesh, count, { material, attributes: { tint: 4 } }) adds per-instance arrays that surface functions can read",
       "notes": "",
       "docs": "concepts/instances",
       "detect": "\\bInstanced(Buffer)?(Geometry|Attribute|InterleavedBuffer)\\b|\\bInstancedBufferAttribute\\b"

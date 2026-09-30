@@ -37,6 +37,9 @@ impl Shading {
 
 /// Material parameters in the GPU layout: a linear base color and opacity.
 pub const MATERIAL_FLOATS: usize = 4;
+/// Where the linear base color and the opacity sit in a material's parameters.
+const COLOR: std::ops::Range<usize> = 0..3;
+const OPACITY: usize = 3;
 
 /// Materials by id, with a fixed capacity so the GPU table never moves.
 #[derive(Debug)]
@@ -77,15 +80,27 @@ impl MaterialTable {
         Ok(self.shading.len() as u32 - 1)
     }
 
-    pub fn set_color(&mut self, id: u32, color: [f32; 4]) -> Result<(), MaterialError> {
+    /// Changes a material's linear color and keeps its opacity.
+    pub fn set_color(&mut self, id: u32, color: [f32; 3]) -> Result<(), MaterialError> {
+        self.parameters_mut(id)?[COLOR].copy_from_slice(&color);
+        Ok(())
+    }
+
+    /// Changes a material's opacity and keeps its color.
+    pub fn set_opacity(&mut self, id: u32, opacity: f32) -> Result<(), MaterialError> {
+        self.parameters_mut(id)?[OPACITY] = opacity;
+        Ok(())
+    }
+
+    /// A material's parameters to change, which the next frame uploads.
+    fn parameters_mut(&mut self, id: u32) -> Result<&mut [f32], MaterialError> {
         let at = id as usize * MATERIAL_FLOATS;
-        let slot = self
+        let parameters = self
             .parameters
             .get_mut(at..at + MATERIAL_FLOATS)
             .ok_or(MaterialError::Unknown(id))?;
-        slot.copy_from_slice(&color);
         self.changed = true;
-        Ok(())
+        Ok(parameters)
     }
 
     pub fn shading(&self, id: u32) -> Result<Shading, MaterialError> {
@@ -138,10 +153,28 @@ mod tests {
         );
         assert!(table.take_changed());
         assert!(!table.take_changed());
-        table.set_color(1, [0.5, 0.5, 0.5, 1.0]).unwrap();
+        table.set_color(1, [0.5, 0.5, 0.5]).unwrap();
         assert!(table.take_changed());
         assert_eq!(&table.parameters()[4..8], &[0.5, 0.5, 0.5, 1.0]);
         assert_eq!(table.shading(1), Ok(Shading::Unlit));
-        assert_eq!(table.set_color(2, [0.0; 4]), Err(MaterialError::Unknown(2)));
+        assert_eq!(table.set_color(2, [0.0; 3]), Err(MaterialError::Unknown(2)));
+    }
+
+    #[test]
+    fn color_and_opacity_change_apart() {
+        let mut table = MaterialTable::with_capacity(2);
+        table.create(Shading::Lit, [1.0, 0.0, 0.0, 1.0]).unwrap();
+        table.create(Shading::Unlit, [0.0, 1.0, 0.0, 1.0]).unwrap();
+        table.take_changed();
+        table.set_opacity(0, 0.25).unwrap();
+        assert!(table.take_changed());
+        table.set_color(0, [0.0, 0.0, 1.0]).unwrap();
+        assert!(table.take_changed());
+        assert_eq!(
+            table.parameters(),
+            &[0.0, 0.0, 1.0, 0.25, 0.0, 1.0, 0.0, 1.0]
+        );
+        assert_eq!(table.set_opacity(2, 0.5), Err(MaterialError::Unknown(2)));
+        assert!(!table.take_changed());
     }
 }

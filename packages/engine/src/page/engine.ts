@@ -26,6 +26,7 @@ import type {
 import { abortable } from './abortable';
 import { watchCanvas } from './canvas-watch';
 import { type CapabilityReport, type PowerPreference, probeCapabilities } from './capabilities';
+import { watchDisplay } from './display';
 import {
 	type FrameMetrics,
 	HeapSampler,
@@ -36,7 +37,7 @@ import {
 import { holdFailure, holdSeconds, publishHold } from './hold';
 import { captureInput } from './input';
 import { coreDevice, maxInstances } from './limits';
-import { loadCore } from './loader';
+import { loadCore, memoryMaximumMiB } from './loader';
 import { MainThreadWatch } from './main-thread';
 import { watchPreferences } from './preferences';
 import {
@@ -69,6 +70,15 @@ export interface EngineOptions {
 	powerPreference?: 'high-performance' | 'low-power';
 	/** The latency mode. The default is `pipelined`. */
 	latency?: LatencyMode;
+	/**
+	 * The engine's memory. `maximumMiB` sets the most memory that the engine's threads share, in
+	 * MiB: a whole number from 256 to 4096, 1024 by default. Another value fails with E1409. The
+	 * browser reserves address space for the whole maximum when the engine starts. So a larger
+	 * maximum leaves less room for other engines and WebAssembly modules on the page. Ask for more
+	 * only when a scene needs it. The single-threaded build's memory is not shared, so this option
+	 * does not change it. The `?memory=<MiB>` switch wins over it.
+	 */
+	memory?: { maximumMiB: number };
 	/**
 	 * Called as the start reaches each stage, in this order: `core` once the engine core is compiled
 	 * and the GPU paths are tested, `sketch` once the sketch's setup has run, and `first-frame` once the
@@ -423,6 +433,7 @@ async function startEngine(
 	const startedAt = performance.now();
 	const { signal, onProgress } = options;
 	signal?.throwIfAborted();
+	const maximumMiB = memoryMaximumMiB(options.memory?.maximumMiB, switches.memoryMiB);
 	// Checked before any download, so an old browser learns at once why the engine cannot run.
 	if (!WebAssembly.validate(SIMD_PROBE))
 		throw new EngineError('E1303', 'this browser runs WebAssembly without SIMD.');
@@ -436,7 +447,7 @@ async function startEngine(
 	const latency = threaded ? (switches.latency ?? options.latency ?? 'pipelined') : 'single';
 	let coreMs = 0;
 	const coreLoad = awaitLater(
-		loadCore(build, switches.memoryMiB).then((loaded) => {
+		loadCore(build, maximumMiB).then((loaded) => {
 			coreMs = performance.now() - startedAt;
 			return loaded;
 		}),
@@ -510,6 +521,9 @@ async function startEngine(
 	const input = captureInput(options.canvas, control);
 	input.listen(takesInput);
 	const stopPreferences = watchPreferences(slots);
+	// A worker that draws holds its frames to the display's rate, which only the page can measure.
+	const stopDisplay =
+		renderThread !== 'main' && hold === undefined ? watchDisplay(slots) : undefined;
 
 	const messageHandlers = new Set<(name: string, data: unknown) => void>();
 	if (options.onSketchMessage) messageHandlers.add(options.onSketchMessage);
@@ -581,6 +595,7 @@ async function startEngine(
 		input.listen(false);
 		canvasWatch.listen(false);
 		stopPreferences();
+		stopDisplay?.();
 		return stopWorkers(workers, jobs);
 	};
 

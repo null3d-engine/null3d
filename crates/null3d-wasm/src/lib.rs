@@ -31,7 +31,7 @@ use null3d_render::geometry::{Geometry, OutOfMemory, Shape, generate};
 use null3d_render::gpu_driven::{
     BYTES_PER_SOURCE, GpuDrivenRenderer, MAX_USEFUL_BINDING_BYTES, RendererConfig,
 };
-use null3d_render::materials::{MaterialError, Shading};
+use null3d_render::materials::{MaterialError, MaterialTable, Shading};
 use wasm_bindgen::prelude::*;
 
 pub mod constants;
@@ -348,17 +348,20 @@ pub fn reserve_object() -> u32 {
     value_with_engine(|e| e.scene.reserve().map(Handle::raw).map_err(core_failure))
 }
 
-/// Copies an object's world matrix of the current frame (12 floats, rows of a 3 × 4 matrix).
+/// Copies an object's world matrix of the current frame (12 numbers, rows of a 3 × 4 matrix), with
+/// its translation from the origin in 64-bit floats.
 #[wasm_bindgen(js_name = worldMatrix)]
-pub fn world_matrix(handle: u32, out: &mut [f32]) -> u32 {
-    with_engine(|e| match e.scene.world_matrix(Handle::from_raw(handle)) {
-        Ok(matrix) => {
-            let n = out.len().min(matrix.len());
-            out[..n].copy_from_slice(&matrix[..n]);
-            0
-        }
-        Err(error) => core_failure(error),
-    })
+pub fn world_matrix(handle: u32, out: &mut [f64]) -> u32 {
+    with_engine(
+        |e| match e.scene.absolute_world_matrix(Handle::from_raw(handle)) {
+            Ok(matrix) => {
+                let n = out.len().min(matrix.len());
+                out[..n].copy_from_slice(&matrix[..n]);
+                0
+            }
+            Err(error) => core_failure(error),
+        },
+    )
 }
 
 /// The command ring (see `constants::ring_field`): the record array's address, its capacity in
@@ -422,7 +425,7 @@ pub fn update_batches(frame: u32) -> u32 {
         return fail(codes::NOT_READY, [0, 0]);
     };
     with_engine(|e| {
-        e.batches.update(jobs, frame);
+        e.batches.update(jobs, frame, e.scene.cell_table_mut());
         0
     })
 }
@@ -550,15 +553,18 @@ pub fn create_batch(capacity: u32, dynamic: bool, colors: bool, mesh: u32, mater
 
 #[wasm_bindgen(js_name = destroyBatch)]
 pub fn destroy_batch(batch: u32, frame: u32) -> u32 {
-    with_engine(
-        |e| match e.batches.destroy(Handle::from_raw(batch), frame) {
+    with_engine(|e| {
+        match e
+            .batches
+            .destroy(Handle::from_raw(batch), frame, e.scene.cell_table_mut())
+        {
             Ok(()) => {
                 e.structure_changed = true;
                 0
             }
             Err(error) => core_failure(error),
-        },
-    )
+        }
+    })
 }
 
 /// The address of one of a batch's row arrays (see `constants::batch_field`): positions (3 floats
@@ -785,16 +791,26 @@ pub fn create_material(shading: u32, r: f32, g: f32, b: f32, a: f32) -> u32 {
     })
 }
 
-/// Changes a material's linear color.
+/// Changes a material's linear color and keeps its opacity.
 #[wasm_bindgen(js_name = setMaterialColor)]
-pub fn set_material_color(material: u32, r: f32, g: f32, b: f32, a: f32) -> u32 {
+pub fn set_material_color(material: u32, r: f32, g: f32, b: f32) -> u32 {
+    change_material(material, |table, id| table.set_color(id, [r, g, b]))
+}
+
+/// Changes a material's opacity and keeps its color.
+#[wasm_bindgen(js_name = setMaterialOpacity)]
+pub fn set_material_opacity(material: u32, opacity: f32) -> u32 {
+    change_material(material, |table, id| table.set_opacity(id, opacity))
+}
+
+/// Applies a change to the material with this id, counting from 1.
+fn change_material(
+    material: u32,
+    change: impl FnOnce(&mut MaterialTable, u32) -> Result<(), MaterialError>,
+) -> u32 {
     with_engine(|e| {
-        match e
-            .renderer
-            .settings_mut()
-            .materials_mut()
-            .set_color(material.wrapping_sub(1), [r, g, b, a])
-        {
+        let table = e.renderer.settings_mut().materials_mut();
+        match change(table, material.wrapping_sub(1)) {
             Ok(()) => 0,
             Err(error) => material_failure(error),
         }

@@ -4,6 +4,7 @@
 // material table that fragment shaders read by material id.
 
 /// Per-frame values: the camera and the lights. Colors are linear and include the intensity.
+/// Positions are relative to the camera, so the camera sits at the origin.
 struct Frame {
     view_proj: mat4x4f,
     camera_position: vec4f,

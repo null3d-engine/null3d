@@ -10,6 +10,7 @@
 
 use std::collections::TryReserveError;
 
+use null3d_core::cells::{CellPosition, MAX_CELLS};
 use null3d_core::handle::Handle;
 use null3d_core::instances::{BatchTable, InstanceBatch};
 use null3d_core::jobs::JobSystem;
@@ -31,6 +32,14 @@ pub const NO_MESH: u32 = 0;
 pub const NO_MATERIAL: u32 = 0;
 /// The bucket of a source that draws nowhere.
 pub const HIDDEN: u32 = u32::MAX;
+/// Bytes of one cell's offset from the camera, as the shaders read it: a `vec4f`.
+pub const CELL_OFFSET_BYTES: u32 = 16;
+
+// The core's cell table and the shaders' tables of cell offsets agree.
+const _: () = assert!(
+    MAX_CELLS == null3d_gpu::drawlist::sizes::MAX_CELLS
+        && null3d_core::cells::CELL_SHIFT == null3d_gpu::drawlist::sizes::CELL_SHIFT
+);
 
 /// The part of scene rows `start..start + count` from the first to the last row whose bucket is
 /// not [`HIDDEN`], by each slot's bucket in `buckets`, or `None` when no row of it draws. A camera,
@@ -138,6 +147,45 @@ pub(crate) fn floats_as_bytes(floats: &[f32]) -> &[u8] {
     // SAFETY: any `f32` is four initialized bytes, and `u8` has no alignment requirement.
     unsafe {
         std::slice::from_raw_parts(floats.as_ptr().cast::<u8>(), std::mem::size_of_val(floats))
+    }
+}
+
+/// The offset from a view's camera to the center of each cell in use, by cell index, as the
+/// shaders read them. Allocated once.
+#[derive(Debug)]
+pub(crate) struct CellOffsets {
+    offsets: Vec<[f32; 4]>,
+    len: usize,
+}
+
+impl Default for CellOffsets {
+    fn default() -> Self {
+        Self {
+            offsets: vec![[0.0; 4]; MAX_CELLS as usize],
+            len: 0,
+        }
+    }
+}
+
+impl CellOffsets {
+    /// Computes the offsets of the scene's cells from a camera, in 64-bit floats.
+    pub(crate) fn update(&mut self, scene: &SceneStorage, camera: &CellPosition) {
+        self.len = scene.cell_table().write_offsets(camera, &mut self.offsets);
+    }
+
+    /// Copies another frame's offsets.
+    pub(crate) fn copy_from(&mut self, other: &CellOffsets) {
+        self.offsets[..other.len].copy_from_slice(other.as_slice());
+        self.len = other.len;
+    }
+
+    /// The offsets, one `(x, y, z, 0)` per cell index up to the highest in use.
+    pub(crate) fn as_slice(&self) -> &[[f32; 4]] {
+        &self.offsets[..self.len]
+    }
+
+    pub(crate) fn as_bytes(&self) -> &[u8] {
+        floats_as_bytes(self.as_slice().as_flattened())
     }
 }
 
@@ -362,7 +410,8 @@ impl SceneSettings {
     }
 
     /// A view's values for a frame whose targets have the canvas's size, or `None` when the view
-    /// has no camera to draw from.
+    /// has no camera to draw from. Shaders work in positions relative to the camera, so the
+    /// constants put the camera at the origin.
     pub fn view_frame(
         &self,
         view: ViewId,
@@ -371,17 +420,18 @@ impl SceneSettings {
         canvas: (u32, u32),
     ) -> Option<ViewFrame> {
         let aspect = canvas.0 as f32 / canvas.1.max(1) as f32;
-        let (view_proj, camera_position) = self
+        let (view_proj, camera) = self
             .views
             .get(view.index())?
             .transform(scene, parity, aspect)?;
-        Some(ViewFrame::new(FrameUniform {
+        let uniform = FrameUniform {
             view_proj,
-            camera_position,
+            camera_position: [0.0, 0.0, 0.0, 1.0],
             sun_direction: self.lighting.sun_direction,
             sun_color: self.lighting.sun_color,
             ambient: self.lighting.ambient,
-        }))
+        };
+        Some(ViewFrame::new(uniform, camera))
     }
 }
 
