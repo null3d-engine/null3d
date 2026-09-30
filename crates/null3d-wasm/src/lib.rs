@@ -938,11 +938,16 @@ pub fn set_material_value(material: u32, param: u32, x: f32, y: f32, z: f32) -> 
     })
 }
 
-// Gives a material a map, a texture's handle, or none with 0. Which objects draw with a map
-// changes the draw tables, as a new material does.
-/// Gives a material a map.
+// Gives a material a map in a slot, a texture's handle, or none with 0. Which objects draw with a
+// map changes the draw tables, as a new material does.
+/// Gives a material a map in a slot (`constants::map_slot`), which the shader reads at the second
+/// texture coordinates when `second_uv` is 1.
 #[wasm_bindgen(js_name = setMaterialMap)]
-pub fn set_material_map(material: u32, texture: u32) -> u32 {
+pub fn set_material_map(material: u32, slot: u32, texture: u32, second_uv: u32) -> u32 {
+    // The engine's own calls name only the slots that exist.
+    let Some(&slot) = MapSlot::ALL.get(slot as usize) else {
+        return render_failure(render_detail::UNKNOWN_MATERIAL, 0);
+    };
     with_engine(|e| {
         let settings = e.renderer.settings_mut();
         let map = Handle::from_raw(texture);
@@ -953,7 +958,7 @@ pub fn set_material_map(material: u32, texture: u32) -> u32 {
         }
         match settings
             .materials_mut()
-            .set_map(material.wrapping_sub(1), MapSlot::BaseColor, map)
+            .set_map(material.wrapping_sub(1), slot, map, second_uv != 0)
         {
             Ok(()) => {
                 e.structure_changed = true;

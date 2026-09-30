@@ -350,6 +350,7 @@ impl GpuDrivenRenderer {
         if upload_everything {
             let limit = max_sources(self.config.storage_binding_bytes);
             let shadows = shadow.is_some();
+            self.settings.update_map_groups();
             self.layout.rebuild(
                 &self.settings,
                 &mut self.pipelines,

@@ -266,15 +266,28 @@ const paint = materials.standard({
 const glow = materials.unlit({ color: '#ffcc00' });      // ignores lights, like three.js's MeshBasicMaterial
 paint.set({ roughness: 0.4 });  // changes only the options you pass; converting a color allocates
 
+const brick = materials.standard({   // maps are fixed at creation; the mesh needs texture coordinates
+  map: color,                        // sRGB texture; multiplies color (its alpha multiplies opacity)
+  metalnessRoughnessMap: orm,        // linear: roughness in G, metalness in B, as glTF packs them
+  aoMap: orm, aoMapIntensity: 1,     // linear: occlusion in R darkens ambient light
+  normalMap: normals, normalScale: [1, 1],   // linear, tangent space
+  emissiveMap: glow, emissive: '#ffffff',    // sRGB; multiplies emissive times emissiveIntensity
+  lightMap: baked, lightMapIntensity: 1,     // baked light; load it with uvSet: 1
+  uvTransform: { repeat: [4, 2], offset: [0, 0], rotation: 0 },  // every map shares it; set() changes it
+});
+const decal = materials.unlit({ map: color, alphaMode: 'mask', alphaCutoff: 0.5 });  // map alpha cuts the shape
+
 const stripes = materials.shader({ ...anyStandardOption, wgsl });  // later in 0.1; wgsl: a tagged /* wgsl */ literal or .wgsl import with fn surface
 ```
 
 - `materials.standard` shades as three.js's `MeshStandardMaterial` does, with its formulas and its table of specular terms.
 - `fog: false` keeps a material's color out of the scene's fog (`scene.setFog`).
 - Later in 0.1, `materials.shader` keeps the standard look and lighting, and a WGSL surface function changes the surface before the engine lights it. Every `materials.standard` option feeds `defaultSurface()`. `references/shaders.md` has the contract.
-- Later in 0.1: texture maps (`map`, `normalMap`, `metalnessRoughnessMap`, `aoMap`, `emissiveMap`, `lightMap`), `alphaMode`, `alphaCutoff`, `blending`, `depthWrite`, `depthTest`, `depthBias`, `uvTransform`, and in `materials.shader` uniforms, textures, vertex offsets and full shaders.
+- A map reads the texture coordinates that its texture's `uvSet` names, and a mesh without a second set gives its first. A mesh without texture coordinates draws the material without its maps. A normal map takes its frame from the mesh's tangents (`computeTangents: true`) where the mesh has them, and otherwise from the pixels around it, as three.js does.
+- `alphaMode: 'mask'` with `alphaCutoff` draws nothing where the alpha falls below the cutoff, as three.js's `alphaTest`. `depthWrite`, `depthTest` and `depthBias: { constant, slopeScale }` set the depth state.
+- Later in 0.1: the `blend` alpha mode, `blending`, and in `materials.shader` uniforms, textures, vertex offsets and full shaders.
 - `envIntensity` (0.2) comes with environment lighting, and `materials.shadowCatcher` in 0.2.
-- `set()` changes values cheaply at any time. Options that change the shader or the pipeline are fixed when you create the material: `doubleSided`, `vertexColors`, `flatShading`, and later the texture maps. So create each variant before play, and switch with `setMaterial`.
+- `set()` changes values cheaply at any time. Options that change the shader or the pipeline are fixed when you create the material: the texture maps, `doubleSided`, `vertexColors`, `flatShading`, `alphaMode`, `fog` and the depth options. So create each variant before play, and switch with `setMaterial`.
 
 ## 10. Textures (`api/textures`)
 
@@ -301,7 +314,7 @@ textures.memoryBytes; textures.maxSize;  // GPU bytes of every texture; the larg
 
 - Data rows go from the bottom up: the first row is at v = 0. `rgba8unorm` takes a `Uint8Array` or `Uint8ClampedArray`, and `rgba16float` a `Float32Array` or a `Uint16Array` of half floats. Bad data or options throw E1208.
 - Textures return at once and upload over the next frames, within each frame's upload budget.
-- Later in 0.1: texture maps on materials, texture backgrounds, and KTX2 files through `loadTexture`. `textures.fromPass` (0.2) and cube maps (0.2) follow.
+- Later in 0.1: texture backgrounds, and KTX2 files through `loadTexture`. `textures.fromPass` (0.2) and cube maps (0.2) follow.
 
 ## 11. Assets (`api/assets`)
 

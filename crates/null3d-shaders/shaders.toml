@@ -62,6 +62,16 @@ pipelines.main = { vertex = "vs", fragment = "fs" }
 variants.webgpu = { permutations = ["VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS"], targets = ["wgsl"] }
 variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "VERTEX_COLOR", "ALPHA_MASK"], targets = ["glsl"] }
 
+# The standard material with its texture maps, from the same file: base color, metal-rough, normal,
+# occlusion, emissive and light maps. VERTEX_TANGENT takes the normal map's frame from the mesh's
+# tangents, and VERTEX_COLOR, ALPHA_MASK and RECEIVE_SHADOWS act as for the standard material.
+[shaders.standard_maps]
+file = "lit.wgsl"
+by_device = true
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgpu = { defs = ["MAPS"], permutations = ["VERTEX_COLOR", "ALPHA_MASK", "RECEIVE_SHADOWS", "VERTEX_TANGENT"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2", "MAPS"], permutations = ["DRAW_INDEX", "VERTEX_COLOR", "ALPHA_MASK", "VERTEX_TANGENT"], targets = ["glsl"] }
+
 # The material's color alone, like three.js's MeshBasicMaterial, times the mesh's vertex colors
 # with VERTEX_COLOR. ALPHA_MASK as for the standard material.
 [shaders.unlit]

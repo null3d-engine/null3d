@@ -20,7 +20,7 @@ use null3d_gpu::mock::MockBackend;
 use null3d_render::frame::FrameBuilder;
 use null3d_render::gpu_driven::{GpuDrivenRenderer, RendererConfig};
 use null3d_render::materials::{Shading, feature};
-use null3d_render::pipelines::DepthBias;
+use null3d_render::pipelines::{DepthBias, DrawKey};
 use null3d_render::view::ViewId;
 
 /// Three cascades of 1,024 texels on each side, out to 60 m, on the default layer.
@@ -448,4 +448,27 @@ fn a_double_sided_caster_draws_both_faces_and_no_material_draws_its_depth_bias()
             [state_flags::CULL_FRONT, 0, 0]
         ]
     );
+}
+
+#[test]
+fn standard_materials_with_and_without_maps_receive_shadows_and_unlit_ones_do_not() {
+    let world = shadowed(SUN);
+    let key = |template: u32| DrawKey {
+        template,
+        permutation: permutation::VERTEX_COLOR,
+        vertex_format: 0,
+        state: 0,
+        bias: DepthBias::NONE,
+    };
+    let settings = world.renderer.settings();
+    for lit in [template::INSTANCED_LIT, template::INSTANCED_STANDARD_MAPS] {
+        let receiving = settings.receiving(key(lit));
+        assert_eq!(
+            receiving.permutation,
+            permutation::VERTEX_COLOR | permutation::RECEIVE_SHADOWS
+        );
+    }
+    for unlit in [template::INSTANCED_UNLIT, template::INSTANCED_UNLIT_MAP] {
+        assert_eq!(settings.receiving(key(unlit)), key(unlit));
+    }
 }
