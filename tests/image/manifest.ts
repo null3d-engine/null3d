@@ -201,10 +201,12 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 	// The same scene 100 km out, away from a cell's center, and about 1,000 km out at the center of a
 	// cell, 977 cells of 1,024 m along x. Each must draw the scene's image. 100 km out, the tree's
 	// children and the camera round below a hundredth of a millimeter, which changes a pixel or so;
-	// at a cell's center the engine computes the same numbers as at the origin. With threshold 0,
-	// any change of color counts, except on anti-aliased edges. With world matrices relative to the
-	// origin instead of to cells, 60 such pixels change 100 km out and 124 at 1,000 km, while the
-	// default tolerance would count at most one of them.
+	// at a cell's center the engine computes nearly the same numbers as at the origin. With
+	// threshold 0, any change of color counts, except on anti-aliased edges. With world matrices
+	// relative to the origin instead of to cells, 60 such pixels change 100 km out and 124 at
+	// 1,000 km, while the default tolerance would count at most one of them. At 1,000 km, CI's
+	// SwiftShader moved one channel of one pixel by one step on compatibility mode's 8-bit path, so
+	// a few such pixels may change there.
 	{
 		name: 'cells-100km',
 		sketch: 'tests/pages/sketches/cells-sketch.ts?x=100000',
@@ -217,7 +219,7 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 		sketch: `tests/pages/sketches/cells-sketch.ts?x=${977 * 1024}`,
 		hold: 1,
 		reference: 'cells',
-		tolerance: { threshold: 0, maxDiffRatio: 0 },
+		tolerance: { threshold: 0, maxDiffRatio: 0.0001 },
 	},
 	// Debug drawing: every shape of ctx.debug over a small scene, the axes of a spinning box and the
 	// frustum of a second camera. The single-threaded mode runs the sketch on the page, which draws
