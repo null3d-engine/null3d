@@ -41,8 +41,8 @@ const WORKERS = ['sketch-worker', 'render-worker'] as const;
  * Places that allocate for reasons outside the engine's frame code, by function and file, with the
  * most bytes per frame each may allocate:
  * - frame timers, which get a new number object from the browser's clock at each reading;
- * - the sketch worker's frame wait: the result and promise of `Atomics.waitAsync`, and settling it
- *   between tasks;
+ * - the sketch worker's frame wait in the frame loop, which the runner holds: the result and promise
+ *   of `Atomics.waitAsync`, the await on that promise, and settling it between tasks;
  * - the render worker's WebGPU objects: the command encoder, the passes, the command buffer, and
  *   the canvas texture and its view;
  * - the completion tracker's object for each frame: the queue's promise and its reaction on WebGPU,
@@ -61,8 +61,8 @@ const WORKERS = ['sketch-worker', 'render-worker'] as const;
 const BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = {
 	'sketch-worker': {
 		'frame sketch/runner.ts': 240,
-		'runPipelined workers/sketch-worker.ts': 128,
-		'changeOf workers/sketch-worker.ts': 16,
+		'runPipelined sketch/runner.ts': 128,
+		'changeOf sketch/runner.ts': 16,
 		'(IDLE)': 96,
 		'(anonymous) null3d/sketch-common.ts': 48,
 		'views scene/scene.ts': 16,
