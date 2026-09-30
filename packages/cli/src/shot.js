@@ -63,7 +63,7 @@ Playwright's Chromium on SwiftShader, the software GPU of machines without a GPU
  * @param {string} text
  * @returns {readonly [number, number]}
  */
-function readSize(text) {
+export function readSize(text) {
 	const [width, height, extra] = text.split('x').map(Number);
 	const side = (/** @type {number | undefined} */ n) =>
 		n !== undefined && Number.isSafeInteger(n) && n >= 1 && n <= MAX_SIDE;
@@ -72,6 +72,16 @@ function readSize(text) {
 	throw new UsageError(
 		`--size takes a width and a height in pixels from 1 to ${MAX_SIDE}, such as 1280x720, not "${text}"`,
 	);
+}
+
+/**
+ * Checks that `--page` gives a path on the project's server, not a full address.
+ *
+ * @param {string} page
+ */
+export function readPage(page) {
+	if (/^[a-z][a-z0-9+.-]*:/i.test(page))
+		throw new UsageError(`--page takes a path on the project's server, such as /, not "${page}"`);
 }
 
 /**
@@ -87,10 +97,7 @@ export function parseShotArgs(args) {
 	const gpu = /** @type {Tier | undefined} */ (values.gpu);
 	if (gpu !== undefined && !TIERS.includes(gpu))
 		throw new UsageError(`--gpu takes ${TIERS.join(', ')}, not "${gpu}"`);
-	if (/^[a-z][a-z0-9+.-]*:/i.test(page))
-		throw new UsageError(
-			`--page takes a path on the project's dev server, such as /, not "${page}"`,
-		);
+	readPage(page);
 	return {
 		out,
 		...(values.time !== undefined && { time: readSeconds('--time', values.time) }),
@@ -163,7 +170,7 @@ const SHOWN_LINES = 3;
  * @param {readonly string[]} entries
  * @param {string} kind
  */
-function listed(entries, kind) {
+export function listed(entries, kind) {
 	if (entries.length === 0) return [];
 	const noun = entries.length === 1 ? kind : `${kind}s`;
 	return [
@@ -211,7 +218,7 @@ export function shotSummary(report, { page, size, png, json }) {
  * @param {string} path
  * @param {unknown} value
  */
-function writeJson(path, value) {
+export function writeJson(path, value) {
 	mkdirSync(dirname(path), { recursive: true });
 	writeFileSync(path, `${JSON.stringify(value, null, '\t')}\n`);
 }

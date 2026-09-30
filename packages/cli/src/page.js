@@ -1,5 +1,6 @@
 // What tools read from a page in the browser: the result that the engine's hold mode publishes on
-// the window, other values that a page publishes, and the errors and warnings that the page logs.
+// the window, the engine that the bench switch publishes, other values that a page publishes, and
+// the errors and warnings that the page logs.
 
 /** @import { ConsoleMessage, JSHandle, Page } from 'playwright-core' */
 
@@ -24,6 +25,23 @@ export const HOLD_RESULT = '__null3dHold';
  * @typedef {{ ok: false, code: string | null, error: string }} HoldFailure
  */
 
+/** The global where the engine's `?bench` switch publishes the running engine. */
+export const ENGINE_GLOBAL = '__null3dEngine';
+
+/**
+ * A page's path with engine switches added to its own query: each switch with its value, or bare
+ * for an empty value. A switch without a value is left out.
+ *
+ * @param {string} path
+ * @param {Record<string, string | undefined>} switches
+ */
+export function switchedPath(path, switches) {
+	const url = new URL(path, 'http://localhost');
+	for (const [name, value] of Object.entries(switches))
+		if (value !== undefined) url.searchParams.set(name, value);
+	return `${url.pathname}${url.search}`;
+}
+
 /**
  * A page's path with hold mode's switches: the sketch time to hold at, or without a time a bare
  * switch, which holds at the page's own hold time or at 0. `gpu` forces a GPU tier.
@@ -31,12 +49,8 @@ export const HOLD_RESULT = '__null3dHold';
  * @param {string} path
  * @param {{ time?: number, gpu?: Tier }} switches
  */
-export function holdPath(path, { time, gpu } = {}) {
-	const url = new URL(path, 'http://localhost');
-	url.searchParams.set('hold', time === undefined ? '' : String(time));
-	if (gpu !== undefined) url.searchParams.set('gpu', gpu);
-	return `${url.pathname}${url.search}`;
-}
+export const holdPath = (path, { time, gpu } = {}) =>
+	switchedPath(path, { hold: time === undefined ? '' : String(time), gpu });
 
 /**
  * Waits until the page's window holds a value under `name`, and returns a handle to it.
