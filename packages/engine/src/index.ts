@@ -55,6 +55,7 @@ export type {
 	GpuPassStats,
 	MainThreadStats,
 	MemoryStats,
+	SecondRates,
 	ThreadStats,
 } from './page/frame-stats';
 export type { HeldFrame, HoldFailure, HoldResult } from './page/hold';

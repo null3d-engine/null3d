@@ -30,7 +30,7 @@ import {
 	type BenchResult,
 	benchReport,
 	type SummaryRow,
-	summarizeRuns,
+	summaryRow,
 } from '../../bench/lib/report.ts';
 import {
 	groupSamples,
@@ -936,7 +936,7 @@ export function benchSummary(
 	if (groups.size === 0) return undefined;
 	const rows: SummaryRow[] = [...groups.values()]
 		.filter((group) => group.results.length > 0)
-		.map(({ results, ...row }) => ({ ...row, summary: summarizeRuns(results) }));
+		.map(({ results, ...row }) => summaryRow(row, results));
 	return benchReport(rows).join('\n');
 }
 
