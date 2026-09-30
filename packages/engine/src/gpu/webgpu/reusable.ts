@@ -91,8 +91,12 @@ export class TexelCopySetup {
 		origin: this.destinationOrigin,
 		premultipliedAlpha: false,
 	};
-	/** The image that an upload reads. */
-	readonly image: GPUCopyExternalImageSourceInfo = { source: undefined as unknown as ImageBitmap };
+	private readonly imageOrigin: GPUOrigin2DDict = { x: 0, y: 0 };
+	/** The image that an upload reads, and where in it the upload starts. */
+	readonly image: GPUCopyExternalImageSourceInfo = {
+		source: undefined as unknown as ImageBitmap,
+		origin: this.imageOrigin,
+	};
 	/** How a write's texels lie in engine memory. */
 	readonly layout: GPUTexelCopyBufferLayout = { offset: 0, bytesPerRow: 0, rowsPerImage: 0 };
 	readonly size: GPUExtent3DDict = { width: 0, height: 0, depthOrArrayLayers: 1 };
@@ -113,6 +117,13 @@ export class TexelCopySetup {
 		this.destinationOrigin.x = words[at + 2] as number;
 		this.destinationOrigin.y = words[at + 3] as number;
 		this.destinationOrigin.z = words[at + 4] as number;
+	}
+
+	/** Sets the image that an upload reads, from its pixel at (`x`, `y`). */
+	setImage(image: ImageBitmap, x: number, y: number): void {
+		this.image.source = image;
+		this.imageOrigin.x = x;
+		this.imageOrigin.y = y;
 	}
 
 	setSize(width: number, height: number, layers: number): void {

@@ -1,6 +1,6 @@
 # D-08: WebGL2 depth mode
 
-Status: proposed. Date: 2026-09-30. Task: M1-L1. Test: T-29.
+Status: decided by the owner on 2026-09-30. Date: 2026-09-30. Task: M1-L1. Test: T-29.
 
 ## Question
 
@@ -63,7 +63,7 @@ Reading the counts: on the Mac, Chrome, Safari and Brave give identical counts. 
 
 ## Decision
 
-Proposed, for the owner to confirm; every row is in, and each supports it:
+Decided by the owner on 2026-09-30; every row is in, and each supports it:
 
 - Where the browser has `EXT_clip_control`: `reversed`. It fought in the fewest pixels in every browser that has the extension: none, against 5,441 in `reversed-gl` and 16,591 in `standard`, out to 10 km.
 - Where it does not: `reversed-gl`. The rule's second clause does not apply, because `reversed-gl` is better than `standard` in all four Mac browsers. It fought in 5,441 pixels against 16,591 in the three ANGLE browsers, and in 9,156 against 14,148 in Firefox, the one browser measured that needs the fallback. In the ANGLE browsers it also keeps the surfaces apart at 250 m, where `standard` already fights in 37% of the pixels.

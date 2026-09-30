@@ -1,13 +1,15 @@
-//! Helpers shared by the integration tests: native threads that act as job workers, a small
-//! deterministic random number generator, and reference math. The allocation counter is
-//! `null3d_core::testing::CountingAllocator`.
+//! Helpers shared by the integration tests: native threads that act as job workers, waits for
+//! other threads that no machine load can fail, a small deterministic random number generator, and
+//! reference math. The allocation counter is `null3d_core::testing::CountingAllocator`.
 #![allow(dead_code)]
 
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread::JoinHandle;
+use std::time::{Duration, Instant};
 
 use null3d_core::culling::Frustum;
-use null3d_core::jobs::{JobConfig, JobSystem};
+use null3d_core::jobs::{JobConfig, JobSystem, WorkerId};
 
 /// A job system with native threads running its worker loops. Dropping it shuts the system down
 /// and joins the threads.
@@ -69,6 +71,36 @@ impl Drop for Workers {
     fn drop(&mut self) {
         self.join();
     }
+}
+
+/// How long a test waits for another thread before it fails. A busy machine delays a thread by a
+/// fraction of a second at worst, so only a thread that never runs takes this long. The limit turns
+/// such a hang into a failure that names what the test waited for.
+pub const THREAD_TIMEOUT: Duration = Duration::from_secs(60);
+
+/// Yields the thread until `done` returns true. Panics, naming `what`, after [`THREAD_TIMEOUT`].
+#[allow(clippy::disallowed_methods)]
+pub fn wait_until(what: &str, done: impl Fn() -> bool) {
+    let deadline = Instant::now() + THREAD_TIMEOUT;
+    while !done() {
+        assert!(
+            Instant::now() < deadline,
+            "waited {THREAD_TIMEOUT:?} for {what}"
+        );
+        std::thread::yield_now();
+    }
+}
+
+/// Marks the chunk's thread in `joined`, then holds the chunk until every one of the job system's
+/// `threads` threads has marked itself. A thread runs one chunk at a time, so a loop whose chunks
+/// call this, with at least one chunk per thread, cannot end before each job worker has woken and
+/// claimed a chunk, however late the operating system runs it.
+pub fn wait_for_every_thread(joined: &AtomicU64, worker: WorkerId, threads: u32) {
+    let all = (1u64 << threads) - 1;
+    joined.fetch_or(1 << worker.index(), Ordering::SeqCst);
+    wait_until("every thread to claim a chunk", || {
+        joined.load(Ordering::SeqCst) == all
+    });
 }
 
 /// A small permuted congruential generator, so tests are repeatable without a dependency.

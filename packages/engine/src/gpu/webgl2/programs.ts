@@ -8,13 +8,16 @@ import {
 	TEMPLATE_INSTANCED_LIT,
 	TEMPLATE_INSTANCED_TEXCOORDS,
 	TEMPLATE_INSTANCED_UNLIT,
+	TEMPLATE_INSTANCED_UNLIT_MAP,
 } from '../../generated/gpu';
 import {
 	DEPTH_MAPPING_UNIFORM,
 	type GlslProgram,
 	type GlslStage,
 	LIT_SHADER,
+	MIPMAP_SHADER,
 	TEXCOORDS_SHADER,
+	UNLIT_MAP_SHADER,
 	UNLIT_SHADER,
 } from '../../generated/shaders';
 import { type ShaderVariants, variantFor } from '../variants';
@@ -73,8 +76,12 @@ export function engineTemplates(): (GlslTemplate | undefined)[] {
 	templates[TEMPLATE_INSTANCED_LIT] = { shader: LIT_SHADER, pipeline: 'main' };
 	templates[TEMPLATE_INSTANCED_UNLIT] = { shader: UNLIT_SHADER, pipeline: 'main' };
 	templates[TEMPLATE_INSTANCED_TEXCOORDS] = { shader: TEXCOORDS_SHADER, pipeline: 'main' };
+	templates[TEMPLATE_INSTANCED_UNLIT_MAP] = { shader: UNLIT_MAP_SHADER, pipeline: 'main' };
 	return templates;
 }
+
+/** The program that draws a mip level of a texture array's layer from the level before it. */
+export const MIPMAP_TEMPLATE: GlslTemplate = { shader: MIPMAP_SHADER, pipeline: 'main' };
 
 function compile(gl: WebGL2RenderingContext, type: number, stage: GlslStage): WebGLShader {
 	const shader = gl.createShader(type);

@@ -48,6 +48,18 @@ The engine's hot paths stay allocation-free with these habits (hard rule 1):
 - A shader that samples a target that a pass drew flips its v coordinate in its WebGL2 variant. The texture test shader (`test_textures.wgsl`) shows the pattern.
 - Writes and uploads land when the GPU queue gets them. On WebGPU that is before the commands recorded since the last submit. A draw list therefore writes a resource before any command in the same submit that uses it. The mock backend rejects a write after such a use.
 
+## Texture uploads
+
+- The texture store (`crates/null3d-render/src/textures.rs`) keeps every texture in a layer of a 2D array of its size, format and mip count. A frame's texture work comes before its passes. Arrays are made or grown first, then a submit follows when an array grew. Releases, uploads and mip levels come after it. A grown array's copies must land before the uploads, and WebGPU would run the uploads first within one submit.
+- A capture replays the frame's list a second time. So a list never releases what it uses itself. The next frame's list releases images and outgrown array textures. A release of an image that the backend no longer holds does nothing. The store's tests replay every list twice.
+- The engine core gives each image an id in the order the sketch thread sends them. The thread that draws counts the images it received in the control block (`Slot.ImagesArrived`), so every id up to the count arrived. One `MessagePort` carries them, so they arrive in order. Where one thread runs the sketch and draws, the images go straight into its table.
+- The image table lives outside the renderer, so a new GPU device uploads the images that the thread still holds. The store learns which were released from the frames that the thread took.
+- Hold mode draws one frame, which records as after a GPU loss. The sketch thread waits for every image to arrive first, and that frame uploads them all, whatever the budget.
+- Both backends draw each mip level of one layer with the mip shader (`mipmap.wgsl`), which samples the level before. On WebGPU the shader reads that level through a view of every layer, as compatibility mode binds whole arrays only. On WebGL2 the texture's base and highest levels are that level while the shader draws. The draw then reads no level that it writes.
+- WebGL2 has two shorter ways to make mip levels, and neither works here. `generateMipmap` on a 2D array texture remakes the levels of every layer. Each upload would then cost the whole array. In Firefox on macOS, a blit from one level to the next averages the stored bytes of sRGB texels, not their linear values. The levels then come out too dark.
+- An upload of a band of rows reads the image from a row inside it: `copyExternalImageToTexture` takes an origin, and WebGL2 applies `UNPACK_SKIP_PIXELS` and `UNPACK_SKIP_ROWS` to image bitmaps.
+- The sketch thread reads the texture constants from the core's generated module, not the GPU layer's. A value import of the GPU layer's constants would put them in a file of their own, which the size report refuses.
+
 ## The shader compiler
 
 The shader compiler is the shader crate built as a WebAssembly module. Build tools such as the Vite plugin load it in Node or Bun, so pages never download a shader translator. The crate `null3d-shaders-wasm` builds it, and the wrapper in `packages/vite-plugin/src/shader-compiler.ts` loads it and gives its API.

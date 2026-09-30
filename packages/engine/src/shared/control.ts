@@ -61,6 +61,11 @@ export enum Slot {
 	 */
 	DisplayInterval = 22,
 	/**
+	 * The images that the thread that draws received for texture uploads. The sketch thread sends
+	 * them in the order of their ids, which count from 1, so every id up to this count arrived.
+	 */
+	ImagesArrived = 23,
+	/**
 	 * The newest frame whose pipelines are all built, with those of every frame before it, as the
 	 * thread that draws reports it. `scene.warmUp` waits for it.
 	 */
