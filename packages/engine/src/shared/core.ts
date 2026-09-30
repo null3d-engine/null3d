@@ -165,8 +165,32 @@ export interface CoreGlue extends CoreErrors {
 	textureStat(field: number, texture: number): number;
 	/** Changes one of the texture store's settings, by `TEXTURE_OPTION_*` code. */
 	setTextureOption(option: number, value: number): number;
-	/** Draws from a camera object: its lens, and the layers of the objects it draws. */
-	setCamera(camera: number, fovDegrees: number, near: number, far: number, layers: number): number;
+	/**
+	 * Draws from a camera object with a perspective lens, a vertical field of view in degrees, and
+	 * the objects on `layers`.
+	 */
+	setPerspectiveCamera(
+		camera: number,
+		fovDegrees: number,
+		near: number,
+		far: number,
+		layers: number,
+	): number;
+	/**
+	 * Draws from a camera object with an orthographic lens: a view `height` tall and `width` wide,
+	 * where a width of 0 follows the canvas's aspect ratio, centered right of and above the
+	 * camera's axis by `centerX` and `centerY`, and the objects on `layers`.
+	 */
+	setOrthographicCamera(
+		camera: number,
+		height: number,
+		width: number,
+		centerX: number,
+		centerY: number,
+		near: number,
+		far: number,
+		layers: number,
+	): number;
 	setSun(dx: number, dy: number, dz: number, r: number, g: number, b: number): number;
 	setAmbient(r: number, g: number, b: number): number;
 	setBackground(r: number, g: number, b: number): number;
@@ -225,7 +249,8 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'syncTextures',
 	'textureStat',
 	'setTextureOption',
-	'setCamera',
+	'setPerspectiveCamera',
+	'setOrthographicCamera',
 	'setSun',
 	'setAmbient',
 	'setBackground',

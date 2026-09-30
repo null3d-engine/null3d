@@ -12,12 +12,20 @@
 // the reference with bun run images:review --accept. Then do the same with CI=1 for the SwiftShader
 // reference: on the Mac, Playwright's Chromium draws CI's SwiftShader images byte for byte.
 import { PARITY_SCENES } from '../../bench/lib/parity.ts';
+import { ORTHO_IMAGE } from '../../bench/scenes/ortho-camera.ts';
 import { HOLD_TIME, PARITY_CANVAS } from '../../bench/scenes/spec.ts';
 import { DEMOS } from '../../examples/demos.ts';
 import type { DepthMode } from '../../packages/engine/src/page/switches.ts';
 import type { EngineModeName } from '../lib/engine-checks.ts';
 import { ALL_MODES, type ImageRun, type ImageTest, imageRuns, type Tier } from '../lib/images.ts';
 import { PRECISION } from '../pages/lib/depth-precision.ts';
+
+/** The orthographic camera's sketch, and the size of its image. */
+const ORTHO = {
+	sketch: 'tests/pages/sketches/ortho-camera-sketch.ts',
+	size: [ORTHO_IMAGE.width, ORTHO_IMAGE.height] as const,
+	hold: 0,
+};
 
 /** The page of the depth precision tests, and its image's size. */
 const DEPTH_PAGE = { page: 'tests/pages/depth-precision.html', size: PRECISION.size, hold: 0 };
@@ -167,6 +175,38 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 	// other layers after they were created, and a camera that draws two of the layers. A child keeps
 	// its own layers, so the child of a parent that the camera leaves out still draws.
 	{ name: 'layers', sketch: 'tests/pages/sketches/layers-sketch.ts', hold: 0.1 },
+	// The orthographic camera: towers seen from above at an angle, with the near plane cutting the
+	// slab's front corner and the far plane cutting the bar at the back. The parity test compares
+	// the image with three.js's OrthographicCamera.
+	{ name: 'ortho-camera', ...ORTHO },
+	// The same view from four edges that setOrthoHeight then halves.
+	{
+		name: 'ortho-camera-edges',
+		...ORTHO,
+		sketch: `${ORTHO.sketch}?edges`,
+		reference: 'ortho-camera',
+	},
+	// The same scene 1,000 km out, at the center of a cell, where each cell's offset moves the
+	// view's box. It must draw exactly the scene's image, as the cells test does there.
+	{
+		name: 'ortho-camera-1000km',
+		...ORTHO,
+		sketch: `${ORTHO.sketch}?x=${977 * 1024}`,
+		reference: 'ortho-camera',
+		tolerance: { threshold: 0, maxDiffRatio: 0 },
+	},
+	// Each depth mode that ?depth= forces on WebGL2 must cut the scene at the same near and far
+	// planes, and draw its image.
+	...DEPTH_MODES.map(
+		(depth): ImageTest => ({
+			name: `ortho-camera-${depth}`,
+			...ORTHO,
+			tiers: ['webgl2'],
+			switches: [`depth=${depth}`],
+			reference: 'ortho-camera',
+			expect: { drewAsked: true },
+		}),
+	),
 	// Meshes from arrays in every vertex format, a mesh too big for 16-bit indices that splits into
 	// parts, and normals and tangents that the engine computes: on job workers in the threaded build,
 	// and on the page in the single-threaded build, which must compute the same values. WebGL2 lays

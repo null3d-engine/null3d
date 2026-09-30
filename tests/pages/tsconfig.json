@@ -1,7 +1,8 @@
 {
 	"extends": "../../tsconfig.web.base.json",
 	"compilerOptions": {
-		"types": ["@webgpu/types", "@null3d/vite-plugin/client"]
+		"types": ["@webgpu/types", "@null3d/vite-plugin/client"],
+		"allowJs": true
 	},
 	"include": ["**/*.ts"]
 }
