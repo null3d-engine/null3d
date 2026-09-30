@@ -269,6 +269,15 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		size: [480, 270],
 	},
+	// The built-in values of custom materials, at a held time: frame, camera and object, and the
+	// surface's world position, in a surface function and a vertex offset.
+	{
+		name: 'custom-builtins',
+		sketch: 'tests/pages/sketches/custom-builtins-sketch.ts',
+		hold: 1.5,
+		size: [480, 270],
+		modes: ALL_MODES,
+	},
 	// Orbit controls after the controls test's drags, made through the controls' own calls. The
 	// controls test must draw this image after it makes the drags with Playwright.
 	{ name: 'controls', sketch: 'tests/pages/sketches/controls-sketch.ts?moved', hold: 0 },

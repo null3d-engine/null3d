@@ -417,10 +417,15 @@ pub fn command_ring(field: u32) -> u32 {
 
 // --- The frame ---
 
-/// Starts a frame and applies every pending command. Frames count from 1.
+/// Starts a frame and applies every pending command. Frames count from 1. The sketch time in
+/// milliseconds and the step since the frame before in microseconds come as whole numbers, which
+/// cross into WebAssembly without a new number object each frame; shaders read them as seconds.
 #[wasm_bindgen(js_name = beginFrame)]
-pub fn begin_frame(frame: u32) -> u32 {
+pub fn begin_frame(frame: u32, time_ms: u32, step_us: u32) -> u32 {
     with_engine(|e| {
+        let time = time_ms as f32 / 1000.0;
+        let step = step_us as f32 / 1_000_000.0;
+        e.renderer.settings_mut().set_clock(time, step, frame);
         let applied = e.scene.apply_ring(&e.ring, frame);
         e.structure_changed |= e.scene.take_structure_changed();
         match applied {

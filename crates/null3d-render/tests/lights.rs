@@ -116,3 +116,22 @@ fn lights_reach_the_frame_on_webgl2() {
         CpuCulledConfig::default(),
     )));
 }
+
+/// The clock, the camera's place in the world and the target's size reach each view's uniform
+/// block, for the built-in values of custom materials.
+#[test]
+fn the_clock_the_camera_and_the_target_reach_the_frame() {
+    let mut world = World::new();
+    world.renderer.settings_mut().set_clock(1.5, 0.25, 90);
+    world.record(true);
+    let parity = world.scene.parity();
+    let frame = world
+        .renderer
+        .settings()
+        .view_frame(ViewId::CAMERA, &world.scene, parity, world.canvas)
+        .unwrap();
+    let u = frame.uniform;
+    assert_eq!(u.clock, [1.5, 0.25, f32::from_bits(90), 0.0]);
+    assert_eq!(u.camera_world, [0.0, 0.0, 20.0, 0.0]);
+    assert_eq!(u.target_size, [640.0, 360.0, 1.0 / 640.0, 1.0 / 360.0]);
+}

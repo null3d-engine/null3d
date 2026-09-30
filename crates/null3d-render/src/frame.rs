@@ -364,6 +364,9 @@ pub struct SceneSettings {
     /// The views, the camera's first.
     views: Vec<View>,
     lighting: Lighting,
+    /// The sketch time in seconds, the seconds since the frame before, and the frame's number as
+    /// the bits of a `u32`, as the frame uniform holds them.
+    clock: [f32; 4],
 }
 
 impl SceneSettings {
@@ -379,7 +382,14 @@ impl SceneSettings {
                 ambient: [0.0; 4],
                 background: [0.0; 3],
             },
+            clock: [0.0; 4],
         }
+    }
+
+    /// The frame's clock: the sketch time and the seconds since the frame before, in seconds,
+    /// and the frame's number.
+    pub fn set_clock(&mut self, time: f32, delta: f32, frame: u32) {
+        self.clock = [time, delta, f32::from_bits(frame), 0.0];
     }
 
     pub fn meshes(&self) -> &MeshStorage {
@@ -589,12 +599,17 @@ impl SceneSettings {
         let aspect = canvas.0 as f32 / canvas.1.max(1) as f32;
         let view = self.views.get(view.index())?;
         let (view_proj, eye, camera) = view.transform(scene, parity, aspect)?;
+        let [x, y, z] = camera.absolute().map(|v| v as f32);
+        let (width, height) = (canvas.0.max(1) as f32, canvas.1.max(1) as f32);
         let uniform = FrameUniform {
             view_proj,
             camera_position: eye,
             sun_direction: self.lighting.sun_direction,
             sun_color: self.lighting.sun_color,
             ambient: self.lighting.ambient,
+            clock: self.clock,
+            camera_world: [x, y, z, 0.0],
+            target_size: [width, height, 1.0 / width, 1.0 / height],
         };
         Some(ViewFrame::new(uniform, camera, view.layers()))
     }

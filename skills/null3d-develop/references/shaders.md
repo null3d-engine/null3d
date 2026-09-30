@@ -2,13 +2,13 @@
 
 All engine shaders are WGSL. The build translates them to GLSL for the WebGL2 path, so one source serves both backends. The null3D Vite plugin compiles the WGSL in your code: `.wgsl` files that you import, and template literals tagged `/* wgsl */`. The WebGL2 build sets the shader def `WEBGL2`. Engine docs: `guides/custom-shaders`, `shaders/surface-functions`, `shaders/builtins`, `shaders/wgsl-rules`, `shaders/library`.
 
-Custom materials with surface functions, uniforms and vertex offsets are built. Sections 1, 2, 4 (uniforms), 5 (vertex offsets) and 8 to 10 apply now. The rest of sections 3 to 5 describes parts that come later in 0.1: do not ship code that uses them until their docs pages say they are built.
+Custom materials with surface functions, uniforms, vertex offsets and the built-in values are built. Sections 1 to 3, 4 (uniforms), 5 (vertex offsets) and 8 to 10 apply now. The rest of sections 3 to 5 describes parts that come later in 0.1: do not ship code that uses them until their docs pages say they are built.
 
 ## Contents
 
 1. Choose the kind of shader
 2. Surface functions
-3. Built-in values (later in 0.1)
+3. Built-in values
 4. Uniforms, textures and per-instance data
 5. Vertex offsets and full shaders
 6. Custom post effects (0.2)
@@ -39,6 +39,7 @@ The engine calls your function once per pixel and lights the result.
 // Declared by the engine (do not declare these yourself):
 struct SurfaceInput {
   relativePosition: vec3f, // position relative to the camera; always precise
+  worldPosition: vec3f,    // absolute world position; fewer digits far from the origin
   normal: vec3f,           // unit normal, facing the camera on double-sided back faces
   viewDirection: vec3f,    // unit direction from the surface toward the camera
   vertexColor: vec4f,      // vertex color with vertexColors on a mesh that has colors, else (1, 1, 1, 1)
@@ -88,20 +89,24 @@ stripes.set({ roughness: 0.4 });
 
 Materials from the same WGSL share one shader and its pipelines. Make one WGSL per look, and many materials from it.
 
-Planned additions, not built yet: `worldPosition`, `uv1`, `fragCoord` and `instance` in `SurfaceInput`, and alpha modes that use `s.alpha`.
+Planned additions, not built yet: `uv1`, `fragCoord` and `instance` in `SurfaceInput`, and alpha modes that use `s.alpha`.
 
-Names: your WGSL shares a file with the engine's standard material. Do not declare `SurfaceInput`, `Surface`, `VertexInput`, `defaultSurface`, `shade`, `light_surface`, `material`, `material_row`, `load_material_uniforms`, `custom_value`, `VertexIn`, `VertexOut`, `vs` or `fs`. Import library items by name (`#import null3d::noise::{fbm2}`), because a whole-module import reserves the module's name. No `enable` directives.
+Names: your WGSL shares a file with the engine's standard material. Do not declare `SurfaceInput`, `Surface`, `VertexInput`, `defaultSurface`, `shade`, `light_surface`, `frame`, `camera`, `object`, `material`, `FrameValues`, `CameraValues`, `ObjectValues`, `fill_builtins`, `engine_frame`, `material_row`, `load_material_uniforms`, `custom_value`, `VertexIn`, `VertexOut`, `vs` or `fs`. Import library items by name (`#import null3d::noise::{fbm2}`), because a whole-module import reserves the module's name. No `enable` directives.
 
-## 3. Built-in values (later in 0.1)
+## 3. Built-in values
+
+Globals that the vertex offset and the surface function both read (`shaders/builtins`):
 
 | Name | Fields | Notes |
 | --- | --- | --- |
-| `frame` | `time`, `deltaTime`, `frameIndex` (u32), `resolution` (vec2f, render-target pixels) | Same values for every draw in a frame |
-| `camera` | `position` (absolute world position), `view`, `projection`, `viewProjection`, `near`, `far` | Matrices are `mat4x4f` |
-| `object` | `worldMatrix`, `normalMatrix`, `id` (u32) | For instances, the instance's values |
-| `material` | Your uniforms, as `struct Uniforms` declares them (built) | See section 4 |
+| `frame` | `time`, `deltaTime` (seconds), `index` (u32, from 1), `resolution` (vec2f, render-target pixels) | The sketch's `time`; the held time in hold mode |
+| `camera` | `position` (absolute world position), `viewProjection` (`mat4x4f`, from positions relative to the camera to clip space) | |
+| `object` | `position` (the object's or instance's origin in the world) | Gives each object a look of its own from one material |
+| `material` | Your uniforms, as `struct Uniforms` declares them | See section 4 |
 
-The engine renders relative to the camera. `input.relativePosition` is therefore exact near the camera, even in very large worlds. Use it for distances, fades and view-dependent effects. Until `worldPosition` exists, use `input.uv` for a pattern that must stay on the surface as the camera moves.
+Later in 0.1: `camera.view`, `projection`, `near` and `far`, and `object.worldMatrix`, `normalMatrix` and `id`.
+
+The engine renders relative to the camera. `input.relativePosition` is therefore exact near the camera, even in very large worlds. Use it for distances, fades and view-dependent effects. The world position of the input, `camera.position` and `object.position` are absolute. Far from the origin they hold fewer digits (1 mm steps at 10 km), so keep world-space patterns coarse there.
 
 ## 4. Uniforms, textures and per-instance data
 

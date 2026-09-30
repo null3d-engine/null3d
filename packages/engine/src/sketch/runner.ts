@@ -438,7 +438,10 @@ export class SketchRunner {
 		// Job workers woken now start while the engine applies the frame's commands; woken before
 		// the sketch's update, they would spin through it and sleep again.
 		glue.prepareJobs();
-		if (glue.beginFrame(frame) !== 0) this.report(coreFailure(glue, QUEUED_CHANGE));
+		// Whole milliseconds and microseconds cross into the core without a number object each.
+		const timeMs = Math.round(time.now * 1000);
+		const stepUs = Math.round(dt * 1_000_000);
+		if (glue.beginFrame(frame, timeMs, stepUs) !== 0) this.report(coreFailure(glue, QUEUED_CHANGE));
 		this.endPhase(Phase.Commands);
 		this.updateTransforms(false);
 		if (play && callbacks.onLateUpdate) {

@@ -51,8 +51,9 @@ const HOOKS: [Hook; 2] = [
     },
 ];
 
-/// The shader def of every custom material's build, which reads the first texture coordinates.
-const CUSTOM_DEF: &str = "CUSTOM";
+/// The shader defs of every custom material's build: the custom material's built-in values, and
+/// the first texture coordinates.
+const CUSTOM_DEFS: [&str; 2] = ["CUSTOM", "UV0"];
 
 /// What a problem in the template's own lines says after its message.
 const TEMPLATE_NOTE: &str = "The problem is in the engine's standard material, which your WGSL joins. Check that your WGSL does not declare a name that the engine's code uses, or import a module whole under a name that it uses. Import the items you use by name instead, as in `#import null3d::noise::{fbm3}`.";
@@ -212,7 +213,7 @@ impl Compiler {
             .iter()
             .map(|(name, variant)| {
                 let mut defs = variant.defs.clone();
-                defs.push(CUSTOM_DEF.to_owned());
+                defs.extend(CUSTOM_DEFS.map(str::to_owned));
                 defs.extend(declared.iter().map(|hook| hook.def.to_owned()));
                 defs.extend(uniforms.as_ref().map(|_| UNIFORMS_DEF.to_owned()));
                 defs.sort();

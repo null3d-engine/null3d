@@ -154,6 +154,9 @@ struct Frame {
     sun_direction: vec4<f32>,
     sun_color: vec4<f32>,
     ambient: vec4<f32>,
+    clock: vec4<f32>,
+    camera_world: vec4<f32>,
+    target_size: vec4<f32>,
 }
 
 struct Transform {
@@ -507,6 +510,9 @@ struct Frame {
     sun_direction: vec4<f32>,
     sun_color: vec4<f32>,
     ambient: vec4<f32>,
+    clock: vec4<f32>,
+    camera_world: vec4<f32>,
+    target_size: vec4<f32>,
 }
 
 struct Transform {
@@ -899,6 +905,9 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     sun_direction: vec4<f32>,
     sun_color: vec4<f32>,
     ambient: vec4<f32>,
+    clock: vec4<f32>,
+    camera_world: vec4<f32>,
+    target_size: vec4<f32>,
 }
 
 struct Transform {
@@ -1012,6 +1021,9 @@ fn fs(in: VertexOut) -> @location(0) vec4<f32> {
     sun_direction: vec4<f32>,
     sun_color: vec4<f32>,
     ambient: vec4<f32>,
+    clock: vec4<f32>,
+    camera_world: vec4<f32>,
+    target_size: vec4<f32>,
 }
 
 struct Material {
@@ -1152,6 +1164,9 @@ fn fs(in: VertexOut) -> @location(0) vec4<f32> {
     sun_direction: vec4<f32>,
     sun_color: vec4<f32>,
     ambient: vec4<f32>,
+    clock: vec4<f32>,
+    camera_world: vec4<f32>,
+    target_size: vec4<f32>,
 }
 
 struct Material {
@@ -1299,6 +1314,9 @@ fn fs(in: VertexOut) -> @location(0) vec4<f32> {
     sun_direction: vec4<f32>,
     sun_color: vec4<f32>,
     ambient: vec4<f32>,
+    clock: vec4<f32>,
+    camera_world: vec4<f32>,
+    target_size: vec4<f32>,
 }
 
 struct Material {
@@ -1458,6 +1476,9 @@ fn fs(in: VertexOut) -> @location(0) vec4<f32> {
     sun_direction: vec4<f32>,
     sun_color: vec4<f32>,
     ambient: vec4<f32>,
+    clock: vec4<f32>,
+    camera_world: vec4<f32>,
+    target_size: vec4<f32>,
 }
 
 struct Material {

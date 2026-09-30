@@ -122,6 +122,9 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct VertexIn {
     vec3 position;
@@ -184,6 +187,9 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct VertexIn {
     vec3 position;
@@ -230,6 +236,9 @@ void main() {
     sun_direction: vec4<f32>,
     sun_color: vec4<f32>,
     ambient: vec4<f32>,
+    clock: vec4<f32>,
+    camera_world: vec4<f32>,
+    target_size: vec4<f32>,
 }
 
 struct VertexIn {

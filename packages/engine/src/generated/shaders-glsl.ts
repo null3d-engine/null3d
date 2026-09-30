@@ -38,6 +38,9 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Transform {
     vec4 x;
@@ -412,6 +415,9 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Transform {
     vec4 x;
@@ -786,6 +792,9 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Transform {
     vec4 x;
@@ -1166,6 +1175,9 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Transform {
     vec4 x;
@@ -1615,6 +1627,9 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Transform {
     vec4 x;
@@ -1827,6 +1842,9 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Transform {
     vec4 x;
@@ -1919,6 +1937,9 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Material {
     vec4 color;
@@ -2145,6 +2166,9 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Material {
     vec4 color;
@@ -2286,6 +2310,9 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Material {
     vec4 color;
@@ -2518,6 +2545,9 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Material {
     vec4 color;
@@ -2666,6 +2696,9 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Material {
     vec4 color;
@@ -2906,6 +2939,9 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Material {
     vec4 color;
@@ -3073,6 +3109,9 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Material {
     vec4 color;
@@ -3319,6 +3358,9 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    vec4 clock;
+    vec4 camera_world;
+    vec4 target_size;
 };
 struct Material {
     vec4 color;
