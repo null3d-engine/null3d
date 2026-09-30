@@ -1,6 +1,15 @@
 import { describe, expect, test } from 'bun:test';
 import { controlViews, createControlBuffer, Slot } from './control';
-import { ImageTable, imagesArrived, receiveImages, sendThrough, sendToTable } from './images';
+import {
+	type CustomShader,
+	ImageTable,
+	imagesArrived,
+	receiveImages,
+	sendThrough,
+	sendToTable,
+	shadersThrough,
+	shadersToTable,
+} from './images';
 
 /** A decoded image as the tests need one: a close that the test can see. */
 function image(): ImageBitmap & { closed: boolean } {
@@ -70,5 +79,35 @@ describe('images on their way to the thread that draws', () => {
 		await arrived;
 		expect(Atomics.load(slots, Slot.ImagesArrived)).toBe(2);
 		expect([table.get(1), table.get(2)]).toEqual([first, second]);
+	});
+});
+
+describe("custom materials' shaders on their way to the thread that draws", () => {
+	const shader: CustomShader = { variants: {}, locations: [0, 1, 2] };
+
+	test('cross the port of the images by template, and no image counts them', () => {
+		const { slots } = controlViews(createControlBuffer(true));
+		const table = new ImageTable();
+		const posted: unknown[] = [];
+		const port = {
+			onmessage: null as ((event: MessageEvent) => void) | null,
+			postMessage(message: unknown) {
+				posted.push(message);
+			},
+		} as unknown as MessagePort;
+		shadersThrough(port)(64, shader);
+		expect(posted).toEqual([{ template: 64, shader }]);
+		receiveImages(port, table, slots);
+		port.onmessage?.({ data: posted[0] } as MessageEvent);
+		expect(table.shaders.get(64)).toBe(shader);
+		expect(Atomics.load(slots, Slot.ImagesArrived)).toBe(0);
+	});
+
+	test('reach a table on this thread at once, which forgets them when it clears', () => {
+		const table = new ImageTable();
+		shadersToTable(table)(65, shader);
+		expect(table.shaders.get(65)).toBe(shader);
+		table.clear();
+		expect(table.shaders.size).toBe(0);
 	});
 });
