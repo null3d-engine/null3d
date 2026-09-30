@@ -14,7 +14,6 @@ The benchmarks measure the engine as developers ship it. A production build leav
 - `bun run test:bench` checks the production build, as the benchmarks run it. The image test manifest and `bun run parity` still load the dev server's pages.
 - The device runner's bench and scale plans load the production build through the dev server's load routes. [Device sessions](devices.md#benchmark-runs) says how.
 - The build keeps hidden source maps beside its files, and the built files stay as a production build writes them. The profile and the allocation check read the maps to name each function and its source file, as the dev server's pages would.
-- DEVCOST_PLACEHOLDER [D-06](decisions/D-06-success-targets.md) gives the numbers of each scene.
 
 ## What a report measures
 
