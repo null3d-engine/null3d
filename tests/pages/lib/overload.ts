@@ -19,8 +19,11 @@ export const OVERLOAD_SPHERES = OVERLOAD_SCENE.side * OVERLOAD_SCENE.side * OVER
 
 /** How the page raises the load. */
 export const OVERLOAD_STEPS = {
-	/** The spheres of the first step; each step doubles them. */
-	firstCount: 16,
+	/**
+	 * The spheres of the first step; each step doubles them. One sphere is light enough that a
+	 * software GPU reaches the overloaded step at a rate that it can measure.
+	 */
+	firstCount: 1,
 	/** Seconds measured at each step. */
 	stepSeconds: 1,
 	/** The steps stop when the lower of the two rates falls below this share of the display's rate. */

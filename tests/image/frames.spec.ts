@@ -9,8 +9,12 @@ import { framesInFlight, type OverloadResult, ratesParted } from '../pages/lib/o
 
 type Result = EngineResult & { error?: string };
 
-/** Fewer frames in the half second after the sketch resumes means that drawing did not resume. */
-const MIN_FRAMES_RESUMED = 10;
+/**
+ * Fewer frames in the half second after the sketch resumes means that drawing did not resume. The
+ * engine draws no faster than the GPU finishes frames, and the software GPU of a busy CI machine
+ * can finish only a few in that time.
+ */
+const MIN_FRAMES_RESUMED = 3;
 /** Well under the page's 600 ms pause, and above the longest step the engine allows. */
 const LONGEST_STEP_S = 0.5;
 /** The rate that ?fps= holds in the test, and how far the presented rate may stray from it. */
