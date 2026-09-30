@@ -1,7 +1,7 @@
 // URL switches that let one device exercise every engine path: ?gpu=, ?threads=off, ?render=main,
-// ?latency= and ?uploads=copy. Three more set what the benchmarks vary: ?fps= for a fixed frame
-// rate, ?jobs= for the job worker count and ?memory= for the shared memory's maximum. ?hold starts
-// hold mode for image tests.
+// ?latency=, ?uploads=copy and ?hdr=off. Three more set what the benchmarks vary: ?fps= for a fixed
+// frame rate, ?jobs= for the job worker count and ?memory= for the shared memory's maximum. ?hold
+// starts hold mode for image tests.
 
 export type GpuSwitch = 'auto' | 'webgpu' | 'compat' | 'webgl2';
 /**
@@ -22,6 +22,11 @@ export interface Switches {
 	latency: LatencyMode | undefined;
 	/** True when ?uploads=copy makes the WebGL2 path copy uploads out of shared memory first. */
 	copyUploads: boolean;
+	/**
+	 * False when ?hdr=off makes the engine take the 8-bit path, where the scene shaders tone map
+	 * themselves, on a device that draws HDR color.
+	 */
+	hdr: boolean;
 	/**
 	 * The frame rate from ?fps= that the thread that draws holds, up to the display's rate, or
 	 * undefined to draw at the display's rate.
@@ -67,6 +72,7 @@ export function parseSwitches(search: string): Switches {
 		renderOnMain: params.get('render') === 'main',
 		latency: oneOf(params.get('latency'), ['pipelined', 'low'] as const),
 		copyUploads: params.get('uploads') === 'copy',
+		hdr: params.get('hdr') !== 'off',
 		fps: positive(params.get('fps')),
 		jobs: whole(params.get('jobs'), MAX_JOB_WORKERS),
 		memoryMiB: whole(params.get('memory')),

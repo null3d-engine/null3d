@@ -135,6 +135,7 @@ Look up the full explanation with `bunx @null3d/cli docs show errors/E1203`. Rel
 | Error: stale handle | The object was destroyed earlier | Drop your reference when you destroy; check the frame number in the message | `concepts/handles` |
 | Colors too dark or washed out | Texture color space | `'srgb'` for color maps, `'linear'` for data maps | `concepts/color-management` |
 | Lighting much brighter or darker than expected | Light units (physical, like three.js r155+) or exposure | Retune intensities; check `post.set({ exposure })` | `concepts/lighting` |
+| The background differs from the page's CSS color | Exposure and tone mapping change the background too | `post.set({ toneMapping: 'none' })`, or `createEngine({ transparent: true })` over a CSS background | `concepts/color-management` |
 | Shadows missing | Light or object not casting, receiver not receiving, or out of range | `castShadows` on light and caster, `receiveShadows` on the receiver | `concepts/shadows` |
 | Shadow acne or peter-panning | Bias | Adjust `shadow.bias` and `normalBias` in small steps | `concepts/shadows` |
 | Flicker between overlapping surfaces | Z-fighting | Separate the surfaces; raise the near plane | `api/cameras` |

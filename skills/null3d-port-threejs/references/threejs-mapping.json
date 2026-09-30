@@ -77,7 +77,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "post.set({ toneMapping: 'aces' | 'agx' | 'neutral' | 'none', exposure })",
-      "notes": "The engine default is ACES; three.js defaults to no tone mapping, so ports of scenes without it set toneMapping: \"none\". Reinhard and Cineon have no built-in equivalent: use \"neutral\", or a custom final effect (0.2).",
+      "notes": "The engine default is ACES; three.js defaults to no tone mapping, so ports of scenes without it set toneMapping: \"none\". The curves use three.js's formulas. \"none\" applies the exposure, as LinearToneMapping does; NoToneMapping ignores toneMappingExposure, so keep exposure at 1 when porting it. Reinhard and Cineon have no built-in equivalent: use \"neutral\", or a custom final effect (0.2).",
       "docs": "api/post",
       "detect": "\\b\\w+ToneMapping\\b|\\.toneMapping(Exposure)?\\s*="
     },
@@ -88,7 +88,7 @@
       "status": "direct",
       "since": "0.1",
       "target": "Nothing to do",
-      "notes": "Output is sRGB with a linear working space, as in three.js r152+ defaults. Hex colors are read as sRGB, as three.js does. Delete these lines.",
+      "notes": "Output is sRGB with a linear working space, as in three.js r152+ defaults: the final pass encodes sRGB and dithers. Hex colors are sRGB and [r, g, b] arrays are linear, as three.js reads them. Delete these lines.",
       "docs": "concepts/color-management",
       "detect": "\\.output(ColorSpace|Encoding)\\b|\\bColorManagement\\b"
     },
@@ -121,7 +121,7 @@
       "status": "direct",
       "since": "0.1",
       "target": "scene.setBackground('#rrggbb' | texture | environment)",
-      "notes": "",
+      "notes": "Exposure and tone mapping change the background, as in three.js's WebGPURenderer; WebGLRenderer draws a background color without them. For an exact page color, set toneMapping: \"none\", or use createEngine({ transparent: true }) over a CSS background. setClearColor(color, 0) on an alpha canvas becomes transparent: true with no background.",
       "docs": "api/scene",
       "detect": "\\.setClearColor\\s*\\(|\\.background\\s*="
     },
@@ -1342,7 +1342,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "'#rrggbb' strings, 0xrrggbb numbers, or [r, g, b] linear arrays; color.* helpers convert",
-      "notes": "Hex values are sRGB, as in three.js.",
+      "notes": "Hex values are sRGB, as setHex and setStyle read them, and [r, g, b] arrays are linear, as setRGB reads them.",
       "docs": "concepts/color-management",
       "detect": "\\.set(Hex|HSL|RGB|Style)\\s*\\("
     },

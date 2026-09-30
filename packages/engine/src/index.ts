@@ -22,6 +22,7 @@ export type { HeldFrame, HoldFailure, HoldResult } from './page/hold';
 export type { LatencyMode } from './page/switches';
 export type { Tier } from './render/renderer';
 export type { ColorInput } from './scene/color';
+export type { Post, PostSettings, ToneMapping } from './scene/post';
 export type {
 	BoxOptions,
 	Geometry,

@@ -11,10 +11,12 @@ use common::World;
 use common::graph::{CASCADES, engine_passes};
 use null3d_core::jobs::JobSystem;
 use null3d_core::testing::CountingAllocator;
-use null3d_gpu::drawlist::{DrawList, Op};
+use null3d_gpu::drawlist::{DrawList, Op, format};
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
-use null3d_render::frame::FrameBuilder;
+use null3d_render::frame::{CanvasOutput, FrameBuilder};
 use null3d_render::geometry::sphere_geometry;
+use null3d_render::gpu_driven::RendererConfig;
+use null3d_render::output::{Output, SceneColor, ToneMapping};
 use null3d_render::parallel_record::ParallelRecorder;
 
 #[global_allocator]
@@ -60,6 +62,49 @@ fn recording_frames_of_two_views_allocates_nothing() {
     for multi_draw in [true, false] {
         assert_eq!(
             two_view_allocations(webgl2_world(multi_draw)),
+            0,
+            "WebGL2, multi-draw {multi_draw}"
+        );
+    }
+}
+
+/// Records warm-up frames, then steady frames whose exposure changes every frame, so the final pass
+/// uploads its settings each time, and returns what those allocated.
+fn hdr_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
+    record_until(&mut world, 6, false);
+    CountingAllocator::arm();
+    for frame in 7..=200 {
+        world.frame = frame;
+        world.renderer.settings_mut().set_output(Output {
+            tone_mapping: ToneMapping::Agx,
+            exposure: frame as f32 / 100.0,
+        });
+        world.record(false);
+    }
+    CountingAllocator::disarm()
+}
+
+#[test]
+fn hdr_frames_whose_output_settings_change_allocate_nothing() {
+    let _only = CountingAllocator::exclusive();
+    CountingAllocator::track_this_thread();
+    let canvas = CanvasOutput {
+        scene_color: SceneColor::from_format(format::RGBA16_FLOAT),
+        transparent: false,
+    };
+    let webgpu = World::with_config(RendererConfig {
+        canvas,
+        ..RendererConfig::default()
+    });
+    assert_eq!(hdr_allocations(webgpu), 0, "WebGPU");
+    for multi_draw in [true, false] {
+        let webgl2 = World::build(CpuCulledRenderer::new(CpuCulledConfig {
+            canvas,
+            multi_draw,
+            ..CpuCulledConfig::default()
+        }));
+        assert_eq!(
+            hdr_allocations(webgl2),
             0,
             "WebGL2, multi-draw {multi_draw}"
         );

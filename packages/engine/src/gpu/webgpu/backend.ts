@@ -14,6 +14,7 @@ TEXTURE_FORMATS[G.FORMAT_RGBA8_UNORM] = 'rgba8unorm';
 TEXTURE_FORMATS[G.FORMAT_RGBA8_UNORM_SRGB] = 'rgba8unorm-srgb';
 TEXTURE_FORMATS[G.FORMAT_BGRA8_UNORM] = 'bgra8unorm';
 TEXTURE_FORMATS[G.FORMAT_RGBA16_FLOAT] = 'rgba16float';
+TEXTURE_FORMATS[G.FORMAT_RG11B10_UFLOAT] = 'rg11b10ufloat';
 TEXTURE_FORMATS[G.FORMAT_DEPTH24_PLUS] = 'depth24plus';
 TEXTURE_FORMATS[G.FORMAT_DEPTH32_FLOAT] = 'depth32float';
 TEXTURE_FORMATS[G.FORMAT_RGBA32_FLOAT] = 'rgba32float';
@@ -401,6 +402,7 @@ export class WebGPUBackend {
 					this.counts.pipelines++;
 					this.renderPipelines[words[a] as number] = this.pipelines.render(
 						words[a + 1] as number,
+						words[a + 2] as number,
 						this.format(words[a + 3] as number),
 						this.format(words[a + 4] as number),
 						words[a + 5] as number,

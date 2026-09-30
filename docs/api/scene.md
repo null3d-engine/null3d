@@ -86,4 +86,4 @@ The scene: every object, the active camera, the lights and the background.
 | `setActiveCamera(camera: Camera): void` | Draws the scene from this camera. |
 | `createDirectionalLight(options: DirectionalLightOptions = {}): DirectionalLight` | Light from one direction. This version has one directional light: a newer one replaces the older. |
 | `createAmbientLight(options: LightOptions = {}): AmbientLight` | Light on every surface. This version has one ambient light: a newer one replaces the older. |
-| `setBackground(color: ColorInput): void` | The color behind every object. |
+| `setBackground(color: ColorInput): void` | The color behind every object. Exposure and tone mapping change it with the rest of the scene. Without a background, the canvas shows black, or the page behind it on a transparent canvas. |

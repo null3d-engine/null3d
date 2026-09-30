@@ -10,9 +10,13 @@ enable draw_index;
 // from a data texture, and takes the material from its draw's record. The DRAW_INDEX variant draws
 // many buckets in one multi-draw call and reads each draw's record by `gl_DrawID`; the other
 // variant gets one record per draw.
-#import null3d::color
+//
+// The fragment shaders write linear color into the HDR scene color, which the final pass tone maps.
+// On the 8-bit path (the TONE_MAP variants) they apply the frame's exposure and tone mapping, and
+// encode sRGB, themselves, into a target that resolves straight into the canvas.
 #import null3d::globals::{Frame, Material}
 #import null3d::lighting
+#import null3d::tonemap
 
 @group(0) @binding(0) var<uniform> frame: Frame;
 
@@ -155,6 +159,17 @@ fn vs(
     return out;
 }
 
+/// The color a fragment writes for linear color `c` at framebuffer position `pixel`: `c` itself for
+/// the final pass, or on the 8-bit path, `c` tone mapped and encoded for the canvas.
+fn finish(c: vec3f, pixel: vec2f) -> vec4f {
+#ifdef TONE_MAP
+    let mapped = null3d::tonemap::tone_map(c, frame.output);
+    return vec4f(null3d::tonemap::encode(mapped, pixel), 1.0);
+#else
+    return vec4f(c, 1.0);
+#endif
+}
+
 @fragment
 fn fs_lit(in: VertexOut) -> @location(0) vec4f {
     let albedo = material(in.material).color.rgb;
@@ -165,10 +180,10 @@ fn fs_lit(in: VertexOut) -> @location(0) vec4f {
         frame.sun_color.rgb,
         frame.ambient.rgb,
     );
-    return vec4f(null3d::color::linear_to_srgb(shaded), 1.0);
+    return finish(shaded, in.clip.xy);
 }
 
 @fragment
 fn fs_unlit(in: VertexOut) -> @location(0) vec4f {
-    return vec4f(null3d::color::linear_to_srgb(material(in.material).color.rgb), 1.0);
+    return finish(material(in.material).color.rgb, in.clip.xy);
 }

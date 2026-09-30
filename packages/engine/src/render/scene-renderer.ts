@@ -8,6 +8,7 @@ import { WebGL2Backend } from '../gpu/webgl2/backend';
 import { contextFinished, releaseContext, simulateContextLoss } from '../gpu/webgl2/context';
 import { WebGPUBackend } from '../gpu/webgpu/backend';
 import { GpuTimer } from '../gpu/webgpu/gpu-timer';
+import type { CoreDevice } from '../page/limits';
 import { controlViews, Slot } from '../shared/control';
 import { Counter, type FrameRecorder, Phase } from '../shared/metrics';
 import { contextLoss, deviceLoss } from './loss';
@@ -57,6 +58,7 @@ export class WebGPUSceneRenderer implements Renderer {
 	readonly completion: CompletionSignal = 'queue';
 	readonly lost: Promise<string>;
 
+	/** A transparent canvas composites with premultiplied alpha; any other ignores alpha. */
 	constructor(
 		readonly tier: Tier,
 		private readonly device: GPUDevice,
@@ -64,13 +66,18 @@ export class WebGPUSceneRenderer implements Renderer {
 		memory: WebAssembly.Memory,
 		control: ArrayBufferLike,
 		metrics: ArrayBufferLike | undefined,
+		transparent: boolean,
 	) {
 		this.lost = deviceLoss(device, () => this.simulated);
 		const context = canvas.getContext('webgpu') as GPUCanvasContext | null;
 		if (!context) throw new Error('the canvas has no WebGPU context');
 		this.context = context;
 		this.format = navigator.gpu.getPreferredCanvasFormat();
-		context.configure({ device, format: this.format, alphaMode: 'opaque' });
+		context.configure({
+			device,
+			format: this.format,
+			alphaMode: transparent ? 'premultiplied' : 'opaque',
+		});
 		this.backend = new WebGPUBackend(device, context, this.format);
 		this.backend.timer = metrics && GpuTimer.create(device, metrics);
 		this.completions = metrics && new QueueCompletion(device.queue, metrics);
@@ -145,9 +152,13 @@ export class WebGL2SceneRenderer implements Renderer {
 	private readonly completions: FenceCompletion | undefined;
 	private readonly release = new AbortController();
 
+	/** The canvas's sized format, which a capture's stand-in for it takes: RGBA8 with alpha. */
+	private readonly canvasFormat: number;
+
 	/**
-	 * `gl` is the canvas's context, made with the engine's settings. `sharedUploads` is false where
-	 * WebGL refuses views on shared memory, so the backend copies uploads out of engine memory first.
+	 * `gl` is the canvas's context, made with the engine's settings. Where WebGL refuses views on
+	 * shared memory, `device.sharedUploads` is false, so the backend copies uploads out of engine
+	 * memory first. A transparent canvas has alpha.
 	 */
 	constructor(
 		private readonly canvas: RenderCanvas,
@@ -155,10 +166,11 @@ export class WebGL2SceneRenderer implements Renderer {
 		memory: WebAssembly.Memory,
 		control: ArrayBufferLike,
 		metrics: ArrayBufferLike | undefined,
-		sharedUploads: boolean,
+		device: CoreDevice,
 	) {
 		this.lost = contextLoss(canvas, this.release.signal);
-		this.backend = new WebGL2Backend(gl, canvas, sharedUploads);
+		this.backend = new WebGL2Backend(gl, canvas, device.sharedUploads, device.transparent);
+		this.canvasFormat = device.transparent ? gl.RGBA8 : gl.RGB8;
 		this.completions = metrics && new FenceCompletion(gl, metrics);
 		this.lists = new DrawLists(memory, control);
 	}
@@ -196,7 +208,7 @@ export class WebGL2SceneRenderer implements Renderer {
 		const color = gl.createRenderbuffer();
 		if (!framebuffer || !color) throw new Error('WebGL2 could not make a capture target');
 		gl.bindRenderbuffer(gl.RENDERBUFFER, color);
-		gl.renderbufferStorage(gl.RENDERBUFFER, gl.RGB8, width, height);
+		gl.renderbufferStorage(gl.RENDERBUFFER, this.canvasFormat, width, height);
 		gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
 		gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.RENDERBUFFER, color);
 		this.backend.canvasTarget = { framebuffer, width, height };

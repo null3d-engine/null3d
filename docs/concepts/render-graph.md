@@ -30,7 +30,7 @@ flowchart LR
 
 null3D draws each frame as a series of passes. A pass is one job for the GPU, such as drawing the shadow casters from the sun, or drawing the scene from the camera. Each pass declares what it reads and what it writes. The render graph reads these declarations before a frame draws. It puts the passes in order and plans the textures they draw into.
 
-In the diagram, boxes are passes and cylinders are data. An arrow into a pass shows what it reads, and an arrow out of a pass shows what it writes. The four scene passes share one render pass on the GPU. The dotted arrow is the resolve pass, which takes the place of the final pass when the final pass has no work.
+In the diagram, boxes are passes and cylinders are data. An arrow into a pass shows what it reads, and an arrow out of a pass shows what it writes. The four scene passes share one render pass on the GPU. The dotted arrow is the resolve pass. It takes the place of the final pass on devices where the scene shaders tone map their own output.
 
 ## The engine's passes
 
@@ -50,7 +50,7 @@ The depth prepass runs on the quality presets that turn it on. Debug lines run o
 
 A view is what one pass draws from: a camera or a light's frustum, a layer mask, and a target. The engine culls each view on its own. On WebGPU each view has a culling pass, and on WebGL2 the job workers list the visible objects of each view.
 
-The final pass runs when it has work to do on the scene color, such as tone mapping or scaling the image up. When it has none, the resolve pass runs instead. The resolve pass draws nothing: the scene's render pass resolves its multisampled color straight into the canvas. The frame then needs no extra pass, copy or texture.
+Where the scene draws HDR color, the final pass reads it and draws the canvas. It applies the exposure and the tone mapping, and encodes the color for the display. Some devices cannot use antialiasing on float targets. There the scene shaders tone map their own output into an 8-bit target. The resolve pass then runs instead of the final pass. It draws nothing: the scene's render pass resolves its multisampled color straight into the canvas. The frame then needs no extra pass, copy or texture. [Color management](color-management.md) covers both paths.
 
 ## Why passes are declarations
 

@@ -1,7 +1,9 @@
 // Replays a hand-built draw list through the engine's WebGPU backend: GPU culling in a compute pass,
 // then indirect draws from a render bundle with 4x MSAA and reversed depth. It checks the GPU side of
-// the WebGPU render path before the core records these lists itself.
+// the WebGPU render path before the core records these lists itself. It draws the 8-bit path, whose
+// shaders encode their colors for the 8-bit target themselves.
 import { readbackWebGPU, WebGPUBackend } from '@null3d/engine/internal';
+import * as C from '../../packages/engine/src/generated/core';
 import * as G from '../../packages/engine/src/generated/gpu';
 import {
 	boxMesh,
@@ -53,7 +55,7 @@ run('replay', async () => {
 
 	const view = lookAt([0, 6, 10], [0, 0, 0]);
 	const viewProj = multiply(perspectiveReversed((60 * Math.PI) / 180, 1, 0.1, 100), view);
-	const frame = new Float32Array(32);
+	const frame = new Float32Array(G.SIZE_FRAME_UNIFORM_BYTES / 4);
 	frame.set(viewProj, 0);
 	frame.set([0, 6, 10, 1], 16);
 	const sun = [-1, -2, -1];
@@ -61,6 +63,10 @@ run('replay', async () => {
 	frame.set([sun[0]! / length, sun[1]! / length, sun[2]! / length, 0], 20);
 	frame.set([3, 3, 3, 0], 24);
 	frame.set([0.4, 0.4, 0.4, 0], 28);
+	// The output settings: an exposure of 1 and no tone mapping, so the 8-bit target holds the lit
+	// colors encoded as sRGB.
+	frame[32] = 1;
+	new Uint32Array(frame.buffer)[33] = C.TONE_MAPPING_NONE;
 	const materials = new Float32Array([0.8, 0.1, 0.1, 1, 0.1, 0.3, 0.9, 1]);
 	const cull = new Float32Array(28);
 	cull.set(frustumPlanes(viewProj), 0);
@@ -132,7 +138,7 @@ run('replay', async () => {
 		G.OP_CREATE_RENDER_PIPELINE,
 		1,
 		G.TEMPLATE_INSTANCED_LIT,
-		0,
+		G.PERMUTATION_TONE_MAP,
 		G.FORMAT_CANVAS,
 		G.FORMAT_DEPTH32_FLOAT,
 		SAMPLES,

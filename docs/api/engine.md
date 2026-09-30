@@ -1,20 +1,88 @@
 ---
 id: api/engine
 title: "Page API: createEngine"
-status: planned
+status: experimental
 since: "0.1"
 summary: "createEngine options; engine.postToSketch, capture, labels, requestPointerLock, capabilities, destroy."
 ---
 
-<!-- null3d:placeholder -->
-
 # Page API: createEngine
 
-> Planned for null3D 0.1. No release has these APIs yet, so coding agents must not use them. The reference below lists the APIs the engine has now. The rest of the page is not written yet.
+`createEngine` starts the engine from the page's main thread. It tests the device, picks the build and the GPU path, starts the workers and runs your sketch module. It resolves with an `Engine`, which the page uses to talk to the sketch, measure frames and stop the engine.
 
-This page will cover: createEngine options; engine.postToSketch, capture, labels, requestPointerLock, capabilities, destroy.
+> Labels that follow objects (`engine.labels`) and `engine.requestPointerLock` come in null3D 0.2. No release has them yet, so coding agents must not use them.
+
+```ts
+import { createEngine } from '@null3d/engine';
+
+const engine = await createEngine({
+  canvas: document.querySelector('canvas')!,
+  sketch: new URL('./sketch.ts', import.meta.url),
+});
+await engine.firstFrame; // the first frame is on screen: remove the loading screen
+```
+
+## Options
+
+The [reference](#engineoptions) lists every option. The ones most pages set:
+
+| Option | Use |
+| --- | --- |
+| `canvas` | The canvas to draw into. CSS sets its size, and the engine follows it. |
+| `sketch` | The sketch module, which runs in the sketch worker. |
+| `maxPixelRatio` | Caps the device pixel ratio. The default is 2. |
+| `transparent` | Makes a see-through canvas. The default is false. |
+| `onProgress` | Reports each stage of the start, for a loading screen. |
+| `signal` | Cancels a start in progress. |
+
+## A transparent canvas
+
+With `transparent: true`, the page shows through wherever no object draws. The canvas holds premultiplied alpha, the form that browsers composite. The sketch can still set a background with `scene.setBackground`, which makes the canvas opaque again.
+
+```ts
+const engine = await createEngine({
+  canvas,
+  sketch: new URL('./sketch.ts', import.meta.url),
+  transparent: true,
+});
+```
+
+Use it to put a model over the page's own background, such as a product on a marketing page. [Color management](../concepts/color-management.md#transparent-canvases) covers how the edges of objects blend with the page.
+
+## What the engine reports
+
+- `engine.capabilities` gives the GPU path (`tier`), whether the scene draws HDR color (`hdr`), the optional features and limits, and `maxInstances`.
+- `engine.report` gives the full capability report as plain JSON, for logs and bug reports.
+- `engine.mode` gives the build, the latency mode, the thread that draws and the job worker count.
+
+Sketch code that uses an optional feature checks the capabilities first. [GPU tiers and backends](../concepts/backends.md) lists the tiers.
+
+## Messages, pausing and stopping
+
+- `engine.postToSketch` and `engine.onSketchMessage` carry messages between the page and the sketch. [Messages between sketch and page](page.md) covers both sides.
+- `engine.setPaused` pauses and resumes the sketch's frames.
+- `engine.detach` takes the canvas off the page and pauses the engine, and `engine.attach` puts it back. The engine keeps its threads, its GPU resources and the scene in between.
+- `engine.destroy` stops the engine and its workers. Wait for its promise before you start another engine on the same page.
+
+## Measuring and capturing
+
+- `engine.measure(seconds)` returns CPU time per thread and phase, GPU time, frame intervals, uploads and draw calls. The [performance guide](../guides/performance.md) explains the numbers.
+- `engine.captureFrame()` draws one frame offscreen and returns its pixels as RGBA8 rows, top row first. On a transparent canvas the pixels keep their premultiplied alpha.
+- The `hold` option starts hold mode for image tests: the engine steps the sketch to a fixed time, then draws and reads back that one frame. [Testing your sketch](../guides/testing.md) covers it.
+
+## Failures
+
+`createEngine` rejects with an `EngineError` when the browser cannot run the engine, such as [E1301](../errors/E1301.md) when it offers no GPU path. After the start, `engine.onFailure` receives failures such as a lost GPU ([E1302](../errors/E1302.md)). `engine.simulateGpuLoss()` acts out a loss, so you can test how your page handles one.
+
+## Related pages
+
+- [Your first scene](../getting-started/first-scene.md): a complete page and sketch.
+- [Architecture: threads and the frame](../concepts/architecture.md): which thread runs what.
+- [Color management](../concepts/color-management.md): HDR color, tone mapping and transparent canvases.
 
 ## API reference
+
+<!-- null3d:api:start -->
 
 ### `CapabilityReport`
 
@@ -78,6 +146,7 @@ The GPU path the engine chose, and what it offers.
 | `threaded: boolean` | True when the engine runs the threaded build. |
 | `features: string[]` | The optional features of the GPU path: WebGPU features, or the WebGL2 extensions present. |
 | `limits: Record<string, number \| null>` | The WebGPU limits, or an empty object on WebGL2. |
+| `hdr: boolean` | True when the scene draws high dynamic range color, which the final pass tone maps into the canvas. False on the 8-bit path, where each shader tone maps its own output: in WebGPU's compatibility mode, and on WebGL2 devices that cannot draw float targets with antialiasing. Both paths show the same colors. Antialiased edges differ a little, because the 8-bit path averages them after the tone mapping. |
 | `maxInstances: number` | The most objects and instance rows, counted together, that a scene can draw on this device. On WebGPU every device draws at least 2,097,152, and a device with larger GPU buffers draws more, up to 8,388,480. On WebGL2 the number follows the largest texture the device allows: 2,097,152 at 4,096 pixels, and 1,048,576 at the 2,048 that every device allows. Engine memory can run out first: see E1109. |
 
 ### `EngineError`
@@ -119,6 +188,7 @@ Options for `createEngine`.
 | `gpu?: 'auto' \| 'webgpu' \| 'webgl2'` | Forces a GPU tier, for testing only. |
 | `powerPreference?: 'high-performance' \| 'low-power'` | Which GPU to draw with on a device that has two, such as a laptop with a separate graphics chip: `high-performance`, the default, for the faster one, or `low-power` to save battery. The browser treats it as a request. A device with one GPU ignores it. |
 | `latency?: LatencyMode` | The latency mode. The default is `pipelined`. |
+| `transparent?: boolean` | True for a see-through canvas: the page shows through wherever no object draws, until the sketch sets a background color. The canvas holds premultiplied alpha, as a browser composites it. The default is false, an opaque canvas. |
 | `onProgress?: (stage: StartupStage) => void` | Called as the start reaches each stage, in this order: `core` once the engine core is compiled and the GPU paths are tested, `sketch` once the sketch's setup has run, and `first-frame` once the GPU has finished the first frame. |
 | `onSketchMessage?: (name: string, data: unknown) => void` | Receives the messages the sketch sends with `ctx.page.post`, from the start of the sketch's setup. Use it for progress that the sketch reports while it loads. `engine.onSketchMessage` adds more handlers once the engine has started. |
 | `signal?: AbortSignal` | Cancels a start in progress, for example when the user leaves the page. `createEngine` then stops the engine's threads and rejects with the signal's reason. |
@@ -139,6 +209,7 @@ type ErrorCode =
 	| 'E1109'
 	| 'E1203'
 	| 'E1204'
+	| 'E1207'
 	| 'E1301'
 	| 'E1302'
 	| 'E1303'
@@ -242,7 +313,7 @@ What the browser's WebGL2 offers, in `CapabilityReport.webgl2`.
 | `maxTextureSize: number \| null` | The largest texture width and height in pixels, or null without WebGL2. |
 | `maxUniformBlockSize: number \| null` | The largest uniform block in bytes, or null without WebGL2. |
 | `sharedMemoryUploads: { bufferSubData: boolean; texSubImage2D: boolean; } \| null` | Whether WebGL accepts views on shared memory for buffer and texture uploads. Null without shared memory. |
-| `floatRenderTargets: { rgba16f: { complete: boolean; readsBack: boolean; }; rgba32f: { complete: boolean; readsBack: boolean; }; } \| null` | Whether the device renders into float textures, which high dynamic range color needs. The engine tests a 16-bit and a 32-bit float RGBA texture. `complete` says whether a framebuffer with the texture is complete. `readsBack` says whether a clear to a known color, with a value above 1, reads back as floats. WebGL2 renders into both formats with `EXT_color_buffer_float`, and into the 16-bit one with `EXT_color_buffer_half_float`. Null without WebGL2. |
+| `floatRenderTargets: { rgba16f: { complete: boolean; readsBack: boolean; samples: number; }; rgba32f: { complete: boolean; readsBack: boolean; samples: number; }; } \| null` | Whether the device renders into float textures, which high dynamic range color needs. The engine tests a 16-bit and a 32-bit float RGBA texture. `complete` says whether a framebuffer with the texture is complete. `readsBack` says whether a clear to a known color, with a value above 1, reads back as floats. `samples` is the most samples per pixel for antialiasing that the format takes, or 0 where the device does not render into it. WebGL2 renders into both formats with `EXT_color_buffer_float`, and into the 16-bit one with `EXT_color_buffer_half_float`. The engine draws high dynamic range color where the 16-bit format passes both tests and takes 4 samples. Null without WebGL2. |
 | `renderer: string \| null` | Reported for the record only; the engine never branches on it. |
 | `error?: string` | Why the probe failed, when it did. |
 
@@ -276,3 +347,5 @@ What a dedicated worker can do, in `CapabilityReport.worker`. A render worker ne
 | `offscreenWebGL2: boolean` | True when a worker can draw with WebGL2 into an `OffscreenCanvas`. |
 | `offscreenWebGPU: boolean` | True when a worker can draw with WebGPU into an `OffscreenCanvas`. |
 | `error?: string` | Why the probe failed, when it did. |
+
+<!-- null3d:api:end -->

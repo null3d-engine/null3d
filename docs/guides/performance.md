@@ -98,10 +98,10 @@ Performance advice written for other engines often assumes things that do not ho
 
 | Question | null3D's answer |
 | --- | --- |
-| What makes the GPU build a pipeline? | A shading model, lit or unlit, with the canvas's color format, the depth format and the sample count. A material never does: materials are rows in one shared table, so a thousand lit materials share one lit pipeline. |
+| What makes the GPU build a pipeline? | A shading model, lit or unlit, with the scene color's format, the depth format and the sample count. A material never does: materials are rows in one shared table, so a thousand lit materials share one lit pipeline. Tone mapping and exposure are values the shaders read, so changing them builds nothing. |
 | When are pipelines built? | In the first frame, and again after the browser replaces the GPU. Sketch code never compiles one. `measure` counts builds in `pipelines`. |
 | What does the engine batch by itself? | Every object and instance row with the same shading model, mesh and material goes into one bucket, which one indirect draw call draws. Separate objects from `createMesh` batch the same way as the rows of an instance batch. |
-| Which passes walk the scene? | Two: a culling pass on the GPU, which tests every object and row against the view, and the main pass, which replays a draw bundle. The engine records the bundle again only when the scene's structure changes. |
+| Which passes walk the scene? | Two: a culling pass on the GPU, which tests every object and row against the view, and the main pass, which replays a draw bundle. The engine records the bundle again only when the scene's structure changes. Where the scene draws HDR color, a final pass then reads each pixel once to tone map it, whatever the scene holds. |
 | Does the engine know when the GPU finished a frame? | Yes. It listens to the WebGPU queue, or checks a WebGL2 fence, and blocks no thread. `measure` reports `completedFps` and `gpuLatencyMs`. Sketch code never waits for the GPU. |
 | What must stay the same for the engine to reuse its work? | The scene's structure. A static object costs nothing until a setter changes it. The calls that rebuild the draw tables are listed in [Objects during play](#objects-during-play). |
 

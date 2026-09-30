@@ -5,15 +5,18 @@
 
 import {
 	LAYOUT_CULL,
+	LAYOUT_FINAL,
 	LAYOUT_FRAME,
+	PERMUTATION_TONE_MAP,
 	SIZE_INSTANCE_STRIDE,
 	SIZE_VERTEX_STRIDE,
 	STATE_CULL_NONE,
 	TEMPLATE_CULL,
+	TEMPLATE_FINAL,
 	TEMPLATE_INSTANCED_LIT,
 	TEMPLATE_INSTANCED_UNLIT,
 } from '../../generated/gpu';
-import { CULL_SHADER, MESH_SHADER, type WgslShader } from '../../generated/shaders';
+import { CULL_SHADER, FINAL_SHADER, MESH_SHADER, type WgslShader } from '../../generated/shaders';
 
 /** The WebGPU build of a shader variant. */
 export function wgslOf<Pipeline extends string>(variant: {
@@ -29,6 +32,11 @@ export interface RenderTemplate {
 	readonly label: string;
 	/** The WGSL module, which the backend compiles once for every template that shares it. */
 	readonly shader: WgslShader;
+	/**
+	 * The module of the 8-bit path's pipelines, whose fragment shaders tone map their output
+	 * themselves, where the template has one.
+	 */
+	readonly toneMapShader?: WgslShader;
 	/** The render pipeline of the shader that the template draws with. */
 	readonly pipeline: string;
 	/** The bind group layout of each group, by layout id, from group 0 on. */
@@ -38,6 +46,8 @@ export interface RenderTemplate {
 }
 
 const MESH = wgslOf(MESH_SHADER.webgpu);
+const MESH_TONE_MAP = wgslOf(MESH_SHADER.webgpu_tone_map);
+const FINAL = wgslOf(FINAL_SHADER.main);
 const CULL = wgslOf(CULL_SHADER.webgpu);
 /** The culling shader's compute entry point. */
 const CULL_ENTRY_POINT = 'main';
@@ -89,6 +99,15 @@ export class Pipelines {
 			{ binding: 4, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
 			{ binding: 5, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
 		]);
+		// The final pass reads the scene color with textureLoad, which takes any float format.
+		this.defineLayout(LAYOUT_FINAL, 'final', [
+			{ binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+			{
+				binding: 1,
+				visibility: GPUShaderStage.FRAGMENT,
+				texture: { sampleType: 'unfilterable-float', viewDimension: '2d' },
+			},
+		]);
 		for (const [id, pipeline] of [
 			[TEMPLATE_INSTANCED_LIT, 'lit'],
 			[TEMPLATE_INSTANCED_UNLIT, 'unlit'],
@@ -96,11 +115,19 @@ export class Pipelines {
 			this.defineTemplate(id, {
 				label: `mesh ${pipeline}`,
 				shader: MESH,
+				toneMapShader: MESH_TONE_MAP,
 				pipeline,
 				layouts: [LAYOUT_FRAME],
 				vertexBuffers: MESH_BUFFERS,
 			});
 		}
+		this.defineTemplate(TEMPLATE_FINAL, {
+			label: 'final',
+			shader: FINAL,
+			pipeline: 'main',
+			layouts: [LAYOUT_FINAL],
+			vertexBuffers: [],
+		});
 		this.cullLayout = device.createPipelineLayout({ bindGroupLayouts: [this.layout(LAYOUT_CULL)] });
 	}
 
@@ -133,9 +160,13 @@ export class Pipelines {
 		return module;
 	}
 
-	/** A render pipeline of a template. Without a color format it draws depth only. */
+	/**
+	 * A render pipeline of a template, in the shader variant that its permutation bits pick.
+	 * Without a color format it draws depth only.
+	 */
 	render(
 		template: number,
+		permutation: number,
 		colorFormat: GPUTextureFormat | undefined,
 		depthFormat: GPUTextureFormat | undefined,
 		sampleCount: number,
@@ -143,8 +174,10 @@ export class Pipelines {
 	): GPURenderPipeline {
 		const t = this.templates[template];
 		if (!t) throw new Error(`unknown render template ${template}`);
-		const module = this.module(t.label, t.shader);
-		const entryPoints = t.shader.pipelines[t.pipeline];
+		const shader = permutation & PERMUTATION_TONE_MAP ? t.toneMapShader : t.shader;
+		if (!shader) throw new Error(`render template ${template} has no tone-mapped variant`);
+		const module = this.module(t.label, shader);
+		const entryPoints = shader.pipelines[t.pipeline];
 		let layout = this.pipelineLayouts[template];
 		if (!layout) {
 			layout = this.device.createPipelineLayout({

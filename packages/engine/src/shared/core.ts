@@ -34,6 +34,8 @@ export interface CoreGlue extends CoreErrors {
 		webgl2: boolean,
 		capabilities: number,
 		maxTextureSize: number,
+		sceneColor: number,
+		transparent: boolean,
 	): number;
 	jobWorkerLoop(index: number): void;
 	/** Milliseconds a job worker spent on work since the last call for it; resets its total. */
@@ -95,6 +97,8 @@ export interface CoreGlue extends CoreErrors {
 	setSun(dx: number, dy: number, dz: number, r: number, g: number, b: number): number;
 	setAmbient(r: number, g: number, b: number): number;
 	setBackground(r: number, g: number, b: number): number;
+	/** The tone mapping, by code, and the exposure, from the next frame on. */
+	setOutput(toneMapping: number, exposure: number): number;
 }
 
 const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
@@ -139,6 +143,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setSun',
 	'setAmbient',
 	'setBackground',
+	'setOutput',
 ];
 
 /** Stack size for each engine thread. */

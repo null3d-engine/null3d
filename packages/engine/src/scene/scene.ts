@@ -721,7 +721,10 @@ export class Scene {
 		return new AmbientLight(this, options.color ?? '#ffffff', options.intensity ?? 1);
 	}
 
-	/** The color behind every object. */
+	/**
+	 * The color behind every object. Exposure and tone mapping change it with the rest of the scene.
+	 * Without a background, the canvas shows black, or the page behind it on a transparent canvas.
+	 */
 	setBackground(color: ColorInput): void {
 		const [r, g, b] = linearColor(color, 'setBackground');
 		this.core.glue.setBackground(r, g, b);

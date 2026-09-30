@@ -94,8 +94,8 @@ interface VertexArray {
 	indices: WebGLBuffer;
 }
 
-/** How GL stores each texture format, by format code. */
-function glFormats(gl: WebGL2RenderingContext): (GlFormat | undefined)[] {
+/** How GL stores each texture format, by format code, for a canvas with alpha or without. */
+function glFormats(gl: WebGL2RenderingContext, canvasAlpha: boolean): (GlFormat | undefined)[] {
 	const formats: (GlFormat | undefined)[] = [];
 	const add = (
 		code: number,
@@ -107,12 +107,14 @@ function glFormats(gl: WebGL2RenderingContext): (GlFormat | undefined)[] {
 		formats[code] = { internal, format, type, attachment, bytes: G.FORMAT_TEXEL_BYTES[code] ?? 0 };
 	};
 	const color = gl.COLOR_ATTACHMENT0;
-	// The canvas holds three channels, because its context has no alpha, and a multisampled image
+	// The canvas holds three channels when its context has no alpha, and a multisampled image
 	// resolves only into the same format.
-	add(G.FORMAT_CANVAS, gl.RGB8, gl.RGB, gl.UNSIGNED_BYTE, color);
+	if (canvasAlpha) add(G.FORMAT_CANVAS, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, color);
+	else add(G.FORMAT_CANVAS, gl.RGB8, gl.RGB, gl.UNSIGNED_BYTE, color);
 	add(G.FORMAT_RGBA8_UNORM, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, color);
 	add(G.FORMAT_RGBA8_UNORM_SRGB, gl.SRGB8_ALPHA8, gl.RGBA, gl.UNSIGNED_BYTE, color);
 	add(G.FORMAT_RGBA16_FLOAT, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT, color);
+	add(G.FORMAT_RG11B10_UFLOAT, gl.R11F_G11F_B10F, gl.RGB, gl.UNSIGNED_INT_10F_11F_11F_REV, color);
 	add(G.FORMAT_RGBA32_FLOAT, gl.RGBA32F, gl.RGBA, gl.FLOAT, color);
 	add(G.FORMAT_R32_UINT, gl.R32UI, gl.RED_INTEGER, gl.UNSIGNED_INT, color);
 	const depth = gl.DEPTH_ATTACHMENT;
@@ -234,21 +236,26 @@ export class WebGL2Backend {
 
 	/**
 	 * `sharedUploads` is false where WebGL refuses views on shared memory, so uploads and multi-draw
-	 * arrays go through copies.
+	 * arrays go through copies. `canvasAlpha` says whether the canvas's context has alpha.
 	 */
 	constructor(
 		private readonly gl: WebGL2RenderingContext,
 		private readonly canvas: OffscreenCanvas | HTMLCanvasElement,
 		private readonly sharedUploads: boolean,
+		canvasAlpha = false,
 	) {
 		this.multiDraw = gl.getExtension('WEBGL_multi_draw');
 		gl.getExtension('KHR_parallel_shader_compile');
+		// Float render targets, for HDR color, where the device draws them: WebGL turns them on only
+		// when the extensions are asked for by name.
+		gl.getExtension('EXT_color_buffer_float');
+		gl.getExtension('EXT_color_buffer_half_float');
 		this.anisotropic = gl.getExtension('EXT_texture_filter_anisotropic');
 		this.maxAnisotropy = this.anisotropic
 			? (gl.getParameter(this.anisotropic.MAX_TEXTURE_MAX_ANISOTROPY_EXT) as number)
 			: 1;
 		this.maxSamples = gl.getParameter(gl.MAX_SAMPLES) as number;
-		this.formats = glFormats(gl);
+		this.formats = glFormats(gl, canvasAlpha);
 		this.addressModes[G.ADDRESS_CLAMP_TO_EDGE] = gl.CLAMP_TO_EDGE;
 		this.addressModes[G.ADDRESS_REPEAT] = gl.REPEAT;
 		this.addressModes[G.ADDRESS_MIRROR_REPEAT] = gl.MIRRORED_REPEAT;

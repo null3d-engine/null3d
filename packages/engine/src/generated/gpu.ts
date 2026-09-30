@@ -50,6 +50,7 @@ export const FORMAT_DEPTH32_FLOAT = 6;
 export const FORMAT_RGBA32_FLOAT = 7;
 export const FORMAT_R32_UINT = 8;
 export const FORMAT_RGBA8_UNORM_SRGB = 9;
+export const FORMAT_RG11B10_UFLOAT = 10;
 
 export const VIEW_2D = 0;
 export const VIEW_2D_ARRAY = 1;
@@ -90,13 +91,16 @@ export const LAYOUT_FRAME = 0;
 export const LAYOUT_CULL = 1;
 export const LAYOUT_DRAWS = 2;
 export const LAYOUT_INSTANCES = 3;
+export const LAYOUT_FINAL = 4;
 
 export const PERMUTATION_DRAW_INDEX = 1;
+export const PERMUTATION_TONE_MAP = 2;
 
 export const STATE_CULL_NONE = 1;
 
 export const TEMPLATE_INSTANCED_LIT = 1;
 export const TEMPLATE_INSTANCED_UNLIT = 2;
+export const TEMPLATE_FINAL = 3;
 export const TEMPLATE_CULL = 16;
 
 export const BUFFER_USAGE_MAP_READ = 1;
@@ -117,7 +121,8 @@ export const TEXTURE_USAGE_TRANSIENT_ATTACHMENT = 32;
 
 export const SIZE_VERTEX_STRIDE = 24;
 export const SIZE_INSTANCE_STRIDE = 64;
-export const SIZE_FRAME_UNIFORM_BYTES = 128;
+export const SIZE_FRAME_UNIFORM_BYTES = 144;
+export const SIZE_OUTPUT_UNIFORM_BYTES = 16;
 export const SIZE_CULL_WORKGROUP_SIZE = 128;
 export const SIZE_INDIRECT_WORDS = 5;
 export const SIZE_MATRIX_TEXELS = 3;
@@ -128,4 +133,4 @@ export const SIZE_MULTI_DRAW_RECORDS = 256;
 export const SIZE_MAX_MATERIALS = 1024;
 
 /** Bytes per texel of each format, by format code. */
-export const FORMAT_TEXEL_BYTES: readonly number[] = [0, 4, 4, 4, 8, 0, 4, 16, 4, 4];
+export const FORMAT_TEXEL_BYTES: readonly number[] = [0, 4, 4, 4, 8, 0, 4, 16, 4, 4, 4];

@@ -6,6 +6,7 @@
 import { EngineError, isErrorCode, setErrorFixes } from '../errors/engine-error';
 import { ERROR_FIXES } from '../errors/fixes';
 import { messageOf } from '../errors/message';
+import { FORMAT_CANVAS } from '../generated/gpu';
 import { type DrawModule, loadDrawModule } from '../render/load-draw';
 import type { Drawing } from '../render/recovery';
 import type { Renderer, Tier } from '../render/renderer';
@@ -56,6 +57,12 @@ export interface EngineOptions {
 	/** The latency mode. The default is `pipelined`. */
 	latency?: LatencyMode;
 	/**
+	 * True for a see-through canvas: the page shows through wherever no object draws, until the
+	 * sketch sets a background color. The canvas holds premultiplied alpha, as a browser composites
+	 * it. The default is false, an opaque canvas.
+	 */
+	transparent?: boolean;
+	/**
 	 * Called as the start reaches each stage, in this order: `core` once the engine core is compiled
 	 * and the GPU paths are tested, `sketch` once the sketch's setup has run, and `first-frame` once the
 	 * GPU has finished the first frame.
@@ -103,6 +110,14 @@ export interface EngineCapabilities {
 	features: string[];
 	/** The WebGPU limits, or an empty object on WebGL2. */
 	limits: Record<string, number | null>;
+	/**
+	 * True when the scene draws high dynamic range color, which the final pass tone maps into the
+	 * canvas. False on the 8-bit path, where each shader tone maps its own output: in WebGPU's
+	 * compatibility mode, and on WebGL2 devices that cannot draw float targets with antialiasing.
+	 * Both paths show the same colors. Antialiased edges differ a little, because the 8-bit path
+	 * averages them after the tone mapping.
+	 */
+	hdr: boolean;
 	/**
 	 * The most objects and instance rows, counted together, that a scene can draw on this device.
 	 * On WebGPU every device draws at least 2,097,152, and a device with larger GPU buffers draws
@@ -465,7 +480,11 @@ async function startEngine(
 	const drawModule = renderThread === 'main' ? loadDrawModule() : undefined;
 	let wasmMemory = core.memory;
 	const sketchUrl = new URL(options.sketch, globalThis.location?.href).href;
-	const device = coreDevice(tier === 'webgl2', report, switches.copyUploads);
+	const device = coreDevice(tier, report, {
+		copyUploads: switches.copyUploads,
+		hdr: switches.hdr,
+		transparent: options.transparent === true,
+	});
 	const handoff: CoreHandoff = {
 		build,
 		module: core.module,
@@ -686,6 +705,7 @@ async function startEngine(
 			threaded,
 			features,
 			limits: tier === 'webgl2' ? {} : report.webgpu.limits,
+			hdr: device.sceneColor !== FORMAT_CANVAS,
 			maxInstances: maxInstances(device),
 		},
 		report,

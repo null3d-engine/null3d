@@ -19,7 +19,7 @@ use super::ids;
 use super::layout::{Bucket, Layout, MULTI_DRAW_BLOCK_BYTES, run_end};
 use crate::frame::{RecordError, UploadArena, grown_size, put_u32};
 use crate::frame_data::FrameUniform;
-use crate::frame_graph::{COLOR_FORMAT, DEPTH_FORMAT};
+use crate::frame_graph::SceneTargets;
 use crate::materials::Shading;
 use crate::view::{ViewFrame, ViewId};
 
@@ -144,28 +144,20 @@ impl Opaque {
     }
 
     /// Records the creation of the render pipelines, which draw into the scene's color and depth
-    /// targets with `samples` samples, in the shader variant that reads the draw's index where
-    /// the device has multi-draw.
+    /// targets, in the shader variant that reads the draw's index where the device has
+    /// multi-draw.
     pub(super) fn create_pipelines(
         &self,
         list: &mut DrawList,
-        samples: u32,
+        targets: SceneTargets,
     ) -> Result<(), RecordError> {
         let bits = if self.multi_draw {
             permutation::DRAW_INDEX
         } else {
             0
         };
-        for (id, tmpl) in [
-            (ids::LIT, template::INSTANCED_LIT),
-            (ids::UNLIT, template::INSTANCED_UNLIT),
-        ] {
-            list.push(
-                Op::CreateRenderPipeline,
-                &[id, tmpl, bits, COLOR_FORMAT, DEPTH_FORMAT, samples, 0],
-            )?;
-        }
-        Ok(())
+        targets.create_pipeline(list, ids::LIT, template::INSTANCED_LIT, bits)?;
+        targets.create_pipeline(list, ids::UNLIT, template::INSTANCED_UNLIT, bits)
     }
 
     /// The number of views whose rings exist.

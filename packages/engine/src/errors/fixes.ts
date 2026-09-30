@@ -29,7 +29,9 @@ export const ERROR_FIXES = {
 	E1203:
 		'Check the value computed before this call. NaN often comes from dividing zero by zero, or from normalizing a zero-length vector.',
 	E1204:
-		"Pass a hex string such as '#4a8cff', a number such as 0x4a8cff, or three sRGB components from 0 to 1, such as [0.29, 0.55, 1].",
+		"Pass a hex string such as '#4a8cff', a number such as 0x4a8cff, or three linear components from 0 to 1, such as [0.07, 0.26, 1].",
+	E1207:
+		"Pass only the settings that the call has, each with a value that it takes. The call's docs page lists them.",
 	E1301:
 		'Remove a ?gpu= switch or createEngine gpu option that forces a path this browser lacks. Update the browser, or turn on hardware acceleration in its settings.',
 	E1302:

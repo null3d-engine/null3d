@@ -15,7 +15,7 @@ three.js chains full-screen passes, each reading and writing the whole screen. n
 
 1. Write down the original chain in order, with each pass's parameters.
 2. Delete `EffectComposer`, `RenderPass`, `OutputPass`, `GammaCorrectionShader` and `composer.render()`.
-3. Match tone mapping and exposure first: `post.set({ toneMapping, exposure })` (0.1).
+3. Match tone mapping and exposure first: `post.set({ toneMapping, exposure })` (0.1). `ACESFilmicToneMapping`, `AgXToneMapping` and `NeutralToneMapping` become `'aces'`, `'agx'` and `'neutral'`, with the same formulas. `LinearToneMapping` and `NoToneMapping` both become `'none'`; `NoToneMapping` ignores `toneMappingExposure`, so keep `exposure` at 1 for it.
 4. Add effects one at a time with `post.set` (0.2), and compare parity images after each.
 5. Port custom passes last, as `post.addEffect` (section 5).
 
@@ -94,6 +94,7 @@ This example is symmetric, so the UV flip does not matter here.
 ## 6. Traps
 
 - Double gamma: a leftover gamma or sRGB pass washes the image out. Delete them all.
+- Background: null3D tone maps the background color with the scene, as three.js's WebGPURenderer does. WebGLRenderer does not, so with `'aces'` or `'agx'` a dark background comes out darker. Where the exact color matters, use `toneMapping: 'none'` or a transparent canvas over a CSS background.
 - Tone mapping twice: `renderer.toneMapping` and a tone-mapping pass in the same three.js app means the original was tone-mapped twice. Decide with the user which look to keep; null3D tone-maps once.
 - Order: three.js lets you tone-map before bloom. null3D always blooms in HDR before tone mapping, which is physically correct but can look stronger; lower `strength` to match.
 - Resolution: three.js bloom set to full resolution looks sharper than null3D's half-resolution bloom; compare at the target resolution, not zoomed in.

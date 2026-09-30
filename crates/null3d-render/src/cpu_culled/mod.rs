@@ -42,11 +42,12 @@ use null3d_core::culling::BucketedCull;
 use null3d_core::snapshot::SCENE_TARGET;
 use null3d_gpu::drawlist::{DrawList, Op, buffer_usage as usage, sizes};
 
+use crate::final_pass::FinalIds;
 use crate::frame::{
-    FrameBuilder, FrameInput, PageUploads, ParityLists, RecordError, SceneSettings, UploadArena,
-    drawn_rows, floats_as_bytes, grown_size,
+    CanvasOutput, FrameBuilder, FrameInput, PageUploads, ParityLists, RecordError, SceneSettings,
+    UploadArena, drawn_rows, floats_as_bytes, grown_size,
 };
-use crate::frame_graph::{FrameGraph, Role};
+use crate::frame_graph::{FrameGraph, GraphIds, Role};
 use crate::graph::RenderGraph;
 use crate::materials::MATERIAL_FLOATS;
 use crate::meshes::{MAX_BUFFER_BYTES, MeshStorage, Packing, Page};
@@ -72,9 +73,11 @@ mod ids {
     pub const fn draws(view: ViewId) -> u32 {
         frame(view) + 1
     }
+    /// The final pass's output settings, after every view's buffers.
+    pub const FINAL_SETTINGS: u32 = VIEW_BUFFERS + 2 * MAX_VIEWS as u32;
 
     /// Page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in `PAGES + 2p + 1`.
-    const PAGES: u32 = VIEW_BUFFERS + 2 * MAX_VIEWS as u32;
+    const PAGES: u32 = FINAL_SETTINGS + 1;
 
     /// The vertex and index buffers of a mesh page.
     pub const fn page(page: u32) -> (u32, u32) {
@@ -99,10 +102,13 @@ mod ids {
 
     pub const LIT: u32 = 1;
     pub const UNLIT: u32 = 2;
+    pub const FINAL: u32 = 3;
 
     /// Each view's bind groups: the frame group, the draw record group, then the groups of its
     /// instance textures, one per pair of ring slots.
     const GROUPS_PER_VIEW: u32 = 2 + RING * RING;
+    /// The final pass's group, after every view's.
+    pub const FINAL_GROUP: u32 = 1 + GROUPS_PER_VIEW * MAX_VIEWS as u32;
 
     pub const fn frame_group(view: ViewId) -> u32 {
         1 + GROUPS_PER_VIEW * view.index() as u32
@@ -117,11 +123,13 @@ mod ids {
     }
 }
 
-/// Sizes the builder allocates once, and what the device offers.
+/// Sizes the builder allocates once, what the device offers, and how frames reach the canvas.
 #[derive(Clone, Copy, Debug)]
 pub struct CpuCulledConfig {
     /// MSAA samples of the color and depth targets.
     pub samples: u32,
+    /// The scene color's target and the canvas's transparency.
+    pub canvas: CanvasOutput,
     /// Materials the table holds, at most [`sizes::MAX_MATERIALS`].
     pub max_materials: u32,
     /// Words of each frame's draw list.
@@ -136,6 +144,7 @@ impl Default for CpuCulledConfig {
     fn default() -> Self {
         Self {
             samples: 4,
+            canvas: CanvasOutput::default(),
             max_materials: sizes::MAX_MATERIALS,
             draw_list_words: 64 * 1024,
             max_texture_size: 2048,
@@ -200,9 +209,25 @@ impl CpuCulledRenderer {
         );
         Self {
             config,
-            settings: SceneSettings::new(MeshStorage::new(Packing::Pages), config.max_materials),
+            settings: SceneSettings::new(
+                MeshStorage::new(Packing::Pages),
+                config.max_materials,
+                config.canvas,
+            ),
             lists: ParityLists::new(config.draw_list_words),
-            graph: FrameGraph::new(config.samples, false, ids::TARGETS),
+            graph: FrameGraph::new(
+                config.samples,
+                false,
+                config.canvas.scene_color,
+                GraphIds {
+                    first_texture: ids::TARGETS,
+                    final_pass: FinalIds {
+                        pipeline: ids::FINAL,
+                        settings: ids::FINAL_SETTINGS,
+                        group: ids::FINAL_GROUP,
+                    },
+                },
+            ),
             layout: Layout::default(),
             clusters: Clusters::default(),
             culling: Culling::default(),
@@ -272,7 +297,7 @@ impl CpuCulledRenderer {
 
     /// The most that one frame can copy into its arena for the scene as it stands: mesh data not
     /// uploaded yet, the material table, each view's frame uniform, draw records and multi-draw
-    /// arrays, and the cluster orders not uploaded yet.
+    /// arrays, the final pass's settings, and the cluster orders not uploaded yet.
     fn upload_bound(&self) -> usize {
         self.upload_bound_without_clusters() + self.clusters.pending_bytes(&self.layout)
     }
@@ -299,11 +324,12 @@ impl CpuCulledRenderer {
         let per_view = sizes::FRAME_UNIFORM_BYTES as usize
             + self.layout.draws_slot_bytes as usize
             + self.layout.buckets.len() * 12;
-        meshes + materials + self.settings.views().len() * per_view
+        meshes + materials + self.settings.views().len() * per_view + self.graph.upload_bound()
     }
 
     fn create_fixed(&mut self, list: &mut DrawList) -> Result<(), RecordError> {
-        self.opaque.create_pipelines(list, self.config.samples)?;
+        self.opaque
+            .create_pipelines(list, self.graph.scene_targets())?;
         let material_bytes = sizes::MAX_MATERIALS * MATERIAL_FLOATS as u32 * 4;
         list.push(
             Op::CreateBuffer,
@@ -508,6 +534,7 @@ impl CpuCulledRenderer {
         self.opaque.add_views(list, views)?;
         let rebuilt = self.layout.built_in == input.frame;
         arena.reset(self.upload_bound());
+        self.graph.upload(list, arena, self.settings.output())?;
         self.upload_meshes(list, arena)?;
         if self.settings.materials_mut().take_changed() {
             let parameters = self.settings.materials().parameters();

@@ -101,7 +101,7 @@ export class Geometry {
  * @category api/materials
  */
 export interface MaterialOptions {
-	/** The base color: a hex string, a number, or three sRGB components from 0 to 1. */
+	/** The base color: a hex string or a number in sRGB, or three linear components from 0 to 1. */
 	color?: ColorInput;
 	/**
 	 * How opaque the surface is, from 0 to 1. The default is 1. This version stores the value but
@@ -158,8 +158,9 @@ export class Materials {
 	}
 
 	/**
-	 * A material that ignores lights and shows its color as it is, like three.js's
-	 * `MeshBasicMaterial`.
+	 * A material that ignores lights and shows its color unlit, like three.js's
+	 * `MeshBasicMaterial`. The exposure and the tone mapping still apply to it, as three.js applies
+	 * them to that material.
 	 */
 	unlit(options: MaterialOptions = {}): Material {
 		return this.create(true, options, 'materials.unlit');

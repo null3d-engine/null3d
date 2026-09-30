@@ -1,6 +1,7 @@
 // The renderer interface. The same renderer runs in the render worker (pipelined mode), in the sketch
 // worker (low-latency mode) or on the page's main thread (single-threaded mode and ?render=main).
 
+import { FORMAT_RG11B10_UFLOAT } from '../generated/gpu';
 import { type CompletionSignal, FenceCompletion, QueueCompletion } from '../gpu/completion';
 import { readbackWebGL2, readbackWebGPU } from '../gpu/readback';
 import {
@@ -60,7 +61,10 @@ export interface RendererOptions {
 	forceCompat?: boolean;
 	/** The metrics buffer, which receives GPU times where the device has timestamp queries. */
 	metrics?: ArrayBufferLike;
-	/** The device as the engine uses it: the storage binding to request, and how WebGL2 uploads. */
+	/**
+	 * The device and the canvas as the engine uses them: the storage binding to request, how WebGL2
+	 * uploads, the scene color's format and whether the canvas is transparent.
+	 */
 	device: CoreDevice;
 	/** Which GPU to draw with on a device with two; the browser chooses without it. */
 	powerPreference?: PowerPreference;
@@ -233,10 +237,11 @@ export async function createRenderer(
 	canvas: RenderCanvas,
 	options: RendererOptions,
 ): Promise<Renderer> {
+	const { device: engineDevice } = options;
 	if (options.tier === 'webgl2') {
 		// A canvas keeps the settings of the first request for its context and ignores later ones,
 		// so the context is made here with the engine's settings, before anything else asks for it.
-		const gl = webgl2Context(canvas, options.powerPreference);
+		const gl = webgl2Context(canvas, options.powerPreference, engineDevice.transparent);
 		// After a loss, the context must come back before the engine can draw with it again.
 		await contextRestored(gl);
 		if (options.scene)
@@ -246,7 +251,7 @@ export async function createRenderer(
 				options.scene.memory,
 				options.scene.control,
 				options.metrics,
-				options.device.sharedUploads,
+				engineDevice,
 			);
 		return new WebGL2Renderer(canvas, gl, options.metrics);
 	}
@@ -260,7 +265,9 @@ export async function createRenderer(
 	if (core) requiredFeatures.push('core-features-and-limits' as GPUFeatureName);
 	if (options.metrics && adapter.features.has('timestamp-query'))
 		requiredFeatures.push('timestamp-query');
-	const binding = options.device.storageBindingBytes;
+	if (engineDevice.sceneColor === FORMAT_RG11B10_UFLOAT)
+		requiredFeatures.push('rg11b10ufloat-renderable');
+	const binding = engineDevice.storageBindingBytes;
 	const device = await adapter.requestDevice({
 		requiredFeatures,
 		// A buffer as large as a binding must fit the device's largest buffer too.
@@ -278,6 +285,7 @@ export async function createRenderer(
 			options.scene.memory,
 			options.scene.control,
 			options.metrics,
+			engineDevice.transparent,
 		);
 	return new WebGPURenderer(tier, device, canvas, options.metrics);
 }

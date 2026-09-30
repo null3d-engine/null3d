@@ -5,11 +5,18 @@
 import {
 	FORMAT_NONE,
 	PERMUTATION_DRAW_INDEX,
+	PERMUTATION_TONE_MAP,
 	STATE_CULL_NONE,
+	TEMPLATE_FINAL,
 	TEMPLATE_INSTANCED_LIT,
 	TEMPLATE_INSTANCED_UNLIT,
 } from '../../generated/gpu';
-import { type GlslProgram, type GlslStage, MESH_SHADER } from '../../generated/shaders';
+import {
+	FINAL_SHADER,
+	type GlslProgram,
+	type GlslStage,
+	MESH_SHADER,
+} from '../../generated/shaders';
 
 /** Texture units and uniform block binding points of each bind group: one per binding. */
 export const SLOTS_PER_GROUP = 4;
@@ -17,12 +24,23 @@ export const SLOTS_PER_GROUP = 4;
 export const NO_SAMPLER = -1;
 
 /**
- * The GLSL programs of a render pipeline template: the plain one, and the one that reads the draw
- * index of `WEBGL_multi_draw` where the template has it.
+ * The GLSL programs of a render pipeline template: the plain one, and where the template has
+ * them, the one that reads the draw index of `WEBGL_multi_draw`, and the 8-bit path's ones, which
+ * tone map their output themselves.
  */
 export interface GlslTemplate {
 	readonly plain: GlslProgram;
 	readonly multiDraw?: GlslProgram;
+	readonly toneMap?: GlslProgram;
+	readonly toneMapMultiDraw?: GlslProgram;
+}
+
+/** The program of a template for a pipeline's permutation bits, or undefined where it has none. */
+function programOf(template: GlslTemplate, permutation: number): GlslProgram | undefined {
+	const multiDraw = (permutation & PERMUTATION_DRAW_INDEX) !== 0;
+	if (permutation & PERMUTATION_TONE_MAP)
+		return multiDraw ? template.toneMapMultiDraw : template.toneMap;
+	return multiDraw ? template.multiDraw : template.plain;
 }
 
 /** A linked, or linking, program and the fixed-function state its pipeline asks for. */
@@ -45,12 +63,22 @@ export interface Program {
 	ready: boolean;
 }
 
-/** The mesh template of one pipeline of the mesh shader, plain and for multi-draw. */
+/** The WebGL2 build of a shader variant. */
+function glslOf<Pipeline extends string>(variant: {
+	glsl: Readonly<Record<Pipeline, GlslProgram>> | null;
+}): Readonly<Record<Pipeline, GlslProgram>> {
+	if (!variant.glsl) throw new Error('a shader variant has no WebGL2 build');
+	return variant.glsl;
+}
+
+/** The mesh template of one pipeline of the mesh shader, in each of its WebGL2 variants. */
 function meshTemplate(pipeline: 'lit' | 'unlit'): GlslTemplate {
-	const plain = MESH_SHADER.webgl2.glsl;
-	const multiDraw = MESH_SHADER.webgl2_multi_draw.glsl;
-	if (!plain || !multiDraw) throw new Error('the mesh shader has no WebGL2 build');
-	return { plain: plain[pipeline], multiDraw: multiDraw[pipeline] };
+	return {
+		plain: glslOf(MESH_SHADER.webgl2)[pipeline],
+		multiDraw: glslOf(MESH_SHADER.webgl2_multi_draw)[pipeline],
+		toneMap: glslOf(MESH_SHADER.webgl2_tone_map)[pipeline],
+		toneMapMultiDraw: glslOf(MESH_SHADER.webgl2_multi_draw_tone_map)[pipeline],
+	};
 }
 
 /** The engine's render pipeline templates, by template id. */
@@ -58,6 +86,7 @@ export function engineTemplates(): (GlslTemplate | undefined)[] {
 	const templates: (GlslTemplate | undefined)[] = [];
 	templates[TEMPLATE_INSTANCED_LIT] = meshTemplate('lit');
 	templates[TEMPLATE_INSTANCED_UNLIT] = meshTemplate('unlit');
+	templates[TEMPLATE_FINAL] = { plain: glslOf(FINAL_SHADER.main).main };
 	return templates;
 }
 
@@ -77,8 +106,9 @@ export function createProgram(
 	depthFormat: number,
 	stateFlags: number,
 ): Program {
-	const source = permutation & PERMUTATION_DRAW_INDEX ? template.multiDraw : template.plain;
-	if (!source) throw new Error('this render pipeline template has no multi-draw variant');
+	const source = programOf(template, permutation);
+	if (!source)
+		throw new Error(`this render pipeline template has no variant for permutation ${permutation}`);
 	const program = gl.createProgram();
 	if (!program) throw new Error('WebGL2 could not create a program');
 	const shaders = [

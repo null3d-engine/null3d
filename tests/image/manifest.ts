@@ -15,6 +15,52 @@ import { PARITY_SCENES } from '../../bench/lib/parity.ts';
 import { HOLD_TIME, PARITY_CANVAS } from '../../bench/scenes/spec.ts';
 import type { EngineModeName } from '../lib/engine-checks.ts';
 import { ALL_MODES, type ImageRun, type ImageTest, imageRuns, type Tier } from '../lib/images.ts';
+import { STOPS, TONE_MAPPINGS } from '../pages/lib/bright-scene.ts';
+
+/** The sketch of the tone mapping tests: tiles whose linear colors run from about 0.2 to 16. */
+export const BRIGHT_SKETCH = 'tests/pages/sketches/bright-sketch.ts';
+
+/** The name of the tone mapping test of a tone mapping at an exposure in stops. */
+export const toneMappingTest = (tone: string, stops: number) =>
+	`tone-${tone}${stops === 0 ? '' : '-half-exposure'}`;
+
+/** The name of the test that draws a tone mapping test at an exposure of 1 on the 8-bit path. */
+export const eightBitTest = (tone: string) => `tone-${tone}-8-bit`;
+
+/**
+ * How far the 8-bit path's image may stray from the HDR path's. Tile colors match, but the 8-bit
+ * path averages the samples of an antialiased edge after the tone mapping, and the HDR path before
+ * it, so a bright tile's edge against the dark background differs. On the Mac up to 1.5% of the
+ * pixels differ, all at edges. Dithering keeps pixelmatch from counting them as antialiasing.
+ */
+const EIGHT_BIT_TOLERANCE = { maxDiffRatio: 0.03 };
+
+/**
+ * The bright scene under each tone mapping, at an exposure of 1 and of 0.5. The 8-bit path, whose
+ * shaders tone map themselves, must draw the HDR path's image at an exposure of 1.
+ */
+function toneMappingTests(): ImageTest[] {
+	return TONE_MAPPINGS.flatMap((tone): ImageTest[] => [
+		...STOPS.map(
+			(stops): ImageTest => ({
+				name: toneMappingTest(tone, stops),
+				sketch: `${BRIGHT_SKETCH}?tone=${tone}&stops=${stops}`,
+				hold: 0,
+			}),
+		),
+		{
+			name: eightBitTest(tone),
+			sketch: `${BRIGHT_SKETCH}?tone=${tone}&stops=0`,
+			hold: 0,
+			tiers: ['webgpu', 'webgl2'],
+			switches: ['hdr=off'],
+			reference: toneMappingTest(tone, 0),
+			expect: { hdr: false },
+			tolerance: EIGHT_BIT_TOLERANCE,
+			deviceTolerance: EIGHT_BIT_TOLERANCE,
+		},
+	]);
+}
 
 export const IMAGE_TESTS: readonly ImageTest[] = [
 	// A clear color, read back through the engine's readback on each GPU interface.
@@ -52,6 +98,15 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 		tiers: ['webgl2'],
 		switches: ['uploads=copy'],
 		reference: 'scene',
+	},
+	...toneMappingTests(),
+	// The bright scene without a background on a transparent canvas, which keeps premultiplied
+	// alpha: the output spec checks the alpha of the captured pixels.
+	{
+		name: 'transparent',
+		sketch: `${BRIGHT_SKETCH}?background=none`,
+		hold: 0,
+		switches: ['transparent'],
 	},
 	// The benchmark scenes' hold frames, which the parity command also compares with three.js.
 	// S2's trees cover under 1% of its frame, so other devices may differ in fewer of its pixels.

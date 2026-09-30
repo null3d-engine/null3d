@@ -45,11 +45,12 @@ use std::collections::TryReserveError;
 
 use null3d_gpu::drawlist::{DrawList, Op, buffer_usage as usage, sizes};
 
+use crate::final_pass::FinalIds;
 use crate::frame::{
-    FrameBuilder, FrameInput, PageUploads, ParityLists, RecordError, SceneSettings, UploadArena,
-    floats_as_bytes,
+    CanvasOutput, FrameBuilder, FrameInput, PageUploads, ParityLists, RecordError, SceneSettings,
+    UploadArena, floats_as_bytes,
 };
-use crate::frame_graph::{FrameGraph, Role};
+use crate::frame_graph::{FrameGraph, GraphIds, Role};
 use crate::graph::RenderGraph;
 use crate::materials::MATERIAL_FLOATS;
 use crate::meshes::{MeshStorage, Packing};
@@ -85,7 +86,7 @@ pub const MAX_USEFUL_BINDING_BYTES: u32 =
 
 /// The builder's GPU objects. It owns every id it uses; each view has a range of its own.
 mod ids {
-    use crate::view::ViewId;
+    use crate::view::{MAX_VIEWS, ViewId};
 
     pub const MATERIALS: u32 = 1;
     pub const MATRICES: u32 = 2;
@@ -93,6 +94,8 @@ mod ids {
     pub const BUCKETS: u32 = 4;
     pub const VERTICES: u32 = 5;
     pub const INDICES: u32 = 6;
+    /// The final pass's output settings.
+    pub const FINAL_SETTINGS: u32 = 7;
     /// Each view's buffers: its frame uniform, culling parameters, compacted instances and
     /// indirect draws, four ids from `VIEW_BUFFERS + 4 * view`.
     const VIEW_BUFFERS: u32 = 8;
@@ -115,6 +118,7 @@ mod ids {
 
     pub const LIT: u32 = 1;
     pub const UNLIT: u32 = 2;
+    pub const FINAL: u32 = 3;
     pub const CULL: u32 = 1;
 
     /// Each view's bind groups: the frame group of its render pipelines, then its culling group.
@@ -124,17 +128,21 @@ mod ids {
     pub const fn cull_group(view: ViewId) -> u32 {
         frame_group(view) + 1
     }
+    /// The final pass's group, after every view's.
+    pub const FINAL_GROUP: u32 = 1 + 2 * MAX_VIEWS as u32;
 
     pub const fn bundle(view: ViewId) -> u32 {
         1 + view.index() as u32
     }
 }
 
-/// Sizes the builder allocates once.
+/// Sizes the builder allocates once, and how its frames reach the canvas.
 #[derive(Clone, Copy, Debug)]
 pub struct RendererConfig {
     /// MSAA samples of the color and depth targets.
     pub samples: u32,
+    /// The scene color's target and the canvas's transparency.
+    pub canvas: CanvasOutput,
     pub max_materials: u32,
     /// Bytes of the shared vertex buffer and of the shared index buffer.
     pub vertex_bytes: u32,
@@ -150,6 +158,7 @@ impl Default for RendererConfig {
     fn default() -> Self {
         Self {
             samples: 4,
+            canvas: CanvasOutput::default(),
             max_materials: sizes::MAX_MATERIALS,
             vertex_bytes: 16 * 1024 * 1024,
             index_bytes: 4 * 1024 * 1024,
@@ -184,10 +193,23 @@ impl GpuDrivenRenderer {
                     u64::from(config.vertex_bytes.min(config.index_bytes)),
                 ),
                 config.max_materials,
+                config.canvas,
             ),
             uploaded: PageUploads::default(),
             lists: ParityLists::new(config.draw_list_words),
-            graph: FrameGraph::new(config.samples, true, ids::TARGETS),
+            graph: FrameGraph::new(
+                config.samples,
+                true,
+                config.canvas.scene_color,
+                GraphIds {
+                    first_texture: ids::TARGETS,
+                    final_pass: FinalIds {
+                        pipeline: ids::FINAL,
+                        settings: ids::FINAL_SETTINGS,
+                        group: ids::FINAL_GROUP,
+                    },
+                },
+            ),
             layout: Layout::default(),
             culling: Culling::default(),
             frames: Vec::new(),
@@ -234,6 +256,7 @@ impl GpuDrivenRenderer {
                 .rebuild(&self.settings, input.scene, input.batches, parity, limit)?;
         }
         arena.reset(self.upload_bound());
+        self.graph.upload(list, arena, self.settings.output())?;
         self.upload_meshes(list, arena)?;
         if self.settings.materials_mut().take_changed() {
             let parameters = self.settings.materials().parameters();
@@ -250,11 +273,12 @@ impl GpuDrivenRenderer {
         // A view's bundle names the buffers and the layout it draws, so each new view, and every
         // view after a new layout, records its bundle.
         let first_to_apply = if upload_everything { 0 } else { first_new };
+        let targets = self.graph.scene_targets();
         for index in first_to_apply..views {
             let view = ViewId::from_index(index);
             self.culling
                 .apply(list, view, &self.layout, shared_recreated, binding_bytes)?;
-            opaque::record_bundle(list, view, &self.layout, self.config.samples)?;
+            opaque::record_bundle(list, view, &self.layout, targets)?;
         }
         self.layout
             .upload_matrices(list, input, parity, upload_everything)?;
@@ -285,7 +309,7 @@ impl GpuDrivenRenderer {
 
     /// Records the creation of the pipelines and of the buffers whose size never changes.
     fn create_fixed(&mut self, list: &mut DrawList) -> Result<(), RecordError> {
-        opaque::create_pipelines(list, self.config.samples)?;
+        opaque::create_pipelines(list, self.graph.scene_targets())?;
         cull::create_pipeline(list)?;
         let fixed = [
             (
@@ -334,8 +358,8 @@ impl GpuDrivenRenderer {
     }
 
     /// The most that one frame can copy into its arena for the scene as it stands: mesh data not
-    /// uploaded yet, the whole material table, the layout's tables, and each view's frame uniform,
-    /// culling parameters and indirect draws.
+    /// uploaded yet, the whole material table, the layout's tables, each view's frame uniform,
+    /// culling parameters and indirect draws, and the final pass's settings.
     fn upload_bound(&self) -> usize {
         let meshes = self
             .settings
@@ -346,7 +370,11 @@ impl GpuDrivenRenderer {
         let materials = self.settings.materials().capacity() as usize * MATERIAL_FLOATS * 4;
         let per_view = (sizes::FRAME_UNIFORM_BYTES + CULL_PARAMS_BYTES) as usize
             + self.layout.buckets.len() * INDIRECT_BYTES as usize;
-        meshes + materials + self.layout.upload_bound() + self.settings.views().len() * per_view
+        meshes
+            + materials
+            + self.layout.upload_bound()
+            + self.settings.views().len() * per_view
+            + self.graph.upload_bound()
     }
 }
 

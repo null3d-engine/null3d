@@ -9,6 +9,7 @@ import { EngineError } from '../errors/engine-error';
 import { messageOf } from '../errors/message';
 import type { CoreDevice } from '../page/limits';
 import { CoreMemory } from '../scene/memory';
+import { Post } from '../scene/post';
 import { Geometry, Materials } from '../scene/resources';
 import { Scene } from '../scene/scene';
 import { Slot } from '../shared/control';
@@ -95,6 +96,8 @@ export class SketchRunner {
 			device.webgl2,
 			device.capabilities,
 			device.maxTextureSize,
+			device.sceneColor,
+			device.transparent,
 		);
 		if (status !== 0) throw coreFailure(glue, 'createEngine');
 		if (sketch.jobWorkers > 0) {
@@ -112,6 +115,7 @@ export class SketchRunner {
 			scene: new Scene(this.core, time),
 			materials: new Materials(this.core),
 			geometry: new Geometry(this.core),
+			post: new Post(this.core),
 			preferences: {
 				get reducedMotion() {
 					return Atomics.load(slots, Slot.ReducedMotion) !== 0;

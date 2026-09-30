@@ -158,11 +158,418 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
 	},
 };
 
+/** The variants of the `final` shader, by variant name. */
+export const FINAL_SHADER: {
+	readonly main: ShaderVariant<'main'>;
+} = {
+	main: {
+		wgsl: {
+			source: `struct Output {
+    exposure: f32,
+    tone_mapping: u32,
+    spare_a: u32,
+    spare_b: u32,
+}
+
+const AGX: u32 = 1u;
+const LINEAR_SRGB_TO_LINEAR_REC2020_: mat3x3<f32> = mat3x3<f32>(vec3<f32>(0.6274f, 0.0691f, 0.0164f), vec3<f32>(0.3293f, 0.9195f, 0.088f), vec3<f32>(0.0433f, 0.0113f, 0.8956f));
+const AGX_INSET: mat3x3<f32> = mat3x3<f32>(vec3<f32>(0.85662717f, 0.13731897f, 0.11189821f), vec3<f32>(0.09512124f, 0.761242f, 0.076799415f), vec3<f32>(0.048251607f, 0.10143904f, 0.81130236f));
+const AGX_OUTSET: mat3x3<f32> = mat3x3<f32>(vec3<f32>(1.1271006f, -0.14132977f, -0.14132977f), vec3<f32>(-0.11060664f, 1.1578237f, -0.11060664f), vec3<f32>(-0.016493939f, -0.016493939f, 1.2519364f));
+const LINEAR_REC2020_TO_LINEAR_SRGB: mat3x3<f32> = mat3x3<f32>(vec3<f32>(1.6605f, -0.1246f, -0.0182f), vec3<f32>(-0.5876f, 1.1329f, -0.1006f), vec3<f32>(-0.0728f, -0.0083f, 1.1187f));
+const NEUTRAL: u32 = 2u;
+const NONE: u32 = 3u;
+const ACES_INPUT: mat3x3<f32> = mat3x3<f32>(vec3<f32>(0.59719f, 0.076f, 0.0284f), vec3<f32>(0.35458f, 0.90834f, 0.13383f), vec3<f32>(0.04823f, 0.01566f, 0.83777f));
+const ACES_OUTPUT: mat3x3<f32> = mat3x3<f32>(vec3<f32>(1.60475f, -0.10208f, -0.00327f), vec3<f32>(-0.53108f, 1.10813f, -0.07276f), vec3<f32>(-0.07367f, -0.00605f, 1.07602f));
+
+@group(0) @binding(0)
+var<uniform> settings_1: Output;
+@group(0) @binding(1)
+var scene_color: texture_2d<f32>;
+
+fn linear_to_srgb(c: vec3<f32>) -> vec3<f32> {
+    let low = (c * 12.92f);
+    let high = ((1.055f * pow(c, vec3(0.41666666f))) - vec3(0.055f));
+    return select(high, low, (c <= vec3(0.0031308f)));
+}
+
+fn agx_contrast(x: vec3<f32>) -> vec3<f32> {
+    let x2_ = (x * x);
+    let x4_ = (x2_ * x2_);
+    return ((((((((15.5f * x4_) * x2_) - ((40.14f * x4_) * x)) + (31.96f * x4_)) - ((6.868f * x2_) * x)) + (0.4298f * x2_)) + (0.1191f * x)) - vec3(0.00232f));
+}
+
+fn agx(c_1: vec3<f32>) -> vec3<f32> {
+    let inset = (AGX_INSET * (LINEAR_SRGB_TO_LINEAR_REC2020_ * c_1));
+    let logged = ((log2(max(inset, vec3(0.0000000001f))) - vec3(-12.47393f)) / vec3(16.5f));
+    let _e16 = agx_contrast(saturate(logged));
+    let curved = (AGX_OUTSET * _e16);
+    let rec2020_ = pow(max(curved, vec3(0f)), vec3(2.2f));
+    return saturate((LINEAR_REC2020_TO_LINEAR_SRGB * rec2020_));
+}
+
+fn neutral(c_2: vec3<f32>) -> vec3<f32> {
+    let x_1 = min(c_2.x, min(c_2.y, c_2.z));
+    let toe = select(0.04f, (x_1 - ((6.25f * x_1) * x_1)), (x_1 < 0.08f));
+    let shifted = (c_2 - vec3(toe));
+    let peak = max(shifted.x, max(shifted.y, shifted.z));
+    if (peak < 0.76f) {
+        return shifted;
+    }
+    let d = (1f - 0.76f);
+    let new_peak = (1f - ((d * d) / ((peak + d) - 0.76f)));
+    let g = (1f - (1f / ((0.15f * (peak - new_peak)) + 1f)));
+    return mix((shifted * (new_peak / peak)), vec3(new_peak), g);
+}
+
+fn rrt_and_odt_fit(v: vec3<f32>) -> vec3<f32> {
+    let a = ((v * (v + vec3(0.0245786f))) - vec3(0.000090537f));
+    let b = ((v * ((0.983729f * v) + vec3(0.432951f))) + vec3(0.238081f));
+    return (a / b);
+}
+
+fn aces(c_3: vec3<f32>) -> vec3<f32> {
+    let _e6 = rrt_and_odt_fit((ACES_INPUT * (c_3 / vec3(0.6f))));
+    return saturate((ACES_OUTPUT * _e6));
+}
+
+fn tone_map(c_4: vec3<f32>, settings: Output) -> vec3<f32> {
+    let exposed = (c_4 * settings.exposure);
+    if (settings.tone_mapping == AGX) {
+        let _e7 = agx(exposed);
+        return _e7;
+    }
+    if (settings.tone_mapping == NEUTRAL) {
+        let _e11 = neutral(exposed);
+        return _e11;
+    }
+    if (settings.tone_mapping == NONE) {
+        return saturate(exposed);
+    }
+    let _e16 = aces(exposed);
+    return _e16;
+}
+
+fn pcg(v_1: u32) -> u32 {
+    let state = ((v_1 * 747796405u) + 2891336453u);
+    let word = (((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u);
+    return ((word >> 22u) ^ word);
+}
+
+fn pixel_noise(pixel: vec2<f32>) -> f32 {
+    let _e5 = pcg(u32(pixel.y));
+    let _e7 = pcg((u32(pixel.x) + _e5));
+    return (f32((_e7 >> 8u)) / 16777216f);
+}
+
+fn encode(c_5: vec3<f32>, pixel_1: vec2<f32>) -> vec3<f32> {
+    let _e1 = pixel_noise(pixel_1);
+    let dither = ((_e1 - 0.5f) / 255f);
+    let _e7 = linear_to_srgb(c_5);
+    return (_e7 + vec3(dither));
+}
+
+@vertex
+fn vs(@builtin(vertex_index) vertex: u32) -> @builtin(position) vec4<f32> {
+    let x_2 = ((f32(((vertex << 1u) & 2u)) * 2f) - 1f);
+    let y = ((f32((vertex & 2u)) * 2f) - 1f);
+    return vec4<f32>(x_2, y, 0f, 1f);
+}
+
+@fragment
+fn fs(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
+    let texel = textureLoad(scene_color, vec2<i32>(position.xy), 0i);
+    let coverage = texel.w;
+    if (coverage <= 0f) {
+        return vec4(0f);
+    }
+    let _e15 = settings_1;
+    let _e16 = tone_map((texel.xyz / vec3(coverage)), _e15);
+    let _e18 = encode(_e16, position.xy);
+    let encoded = saturate(_e18);
+    return vec4<f32>((encoded * coverage), coverage);
+}
+`,
+			pipelines: {
+				main: {
+					vertex: 'vs',
+					fragment: 'fs',
+				},
+			},
+		},
+		glsl: {
+			main: {
+				vertex: {
+					source: `#version 300 es
+
+precision highp float;
+precision highp int;
+
+struct Output {
+    float exposure;
+    uint tone_mapping;
+    uint spare_a;
+    uint spare_b;
+};
+const uint AGX = 1u;
+const mat3x3 LINEAR_SRGB_TO_LINEAR_REC2020_ = mat3x3(vec3(0.6274, 0.0691, 0.0164), vec3(0.3293, 0.9195, 0.088), vec3(0.0433, 0.0113, 0.8956));
+const mat3x3 AGX_INSET = mat3x3(vec3(0.85662717, 0.13731897, 0.11189821), vec3(0.09512124, 0.761242, 0.076799415), vec3(0.048251607, 0.10143904, 0.81130236));
+const mat3x3 AGX_OUTSET = mat3x3(vec3(1.1271006, -0.14132977, -0.14132977), vec3(-0.11060664, 1.1578237, -0.11060664), vec3(-0.016493939, -0.016493939, 1.2519364));
+const mat3x3 LINEAR_REC2020_TO_LINEAR_SRGB = mat3x3(vec3(1.6605, -0.1246, -0.0182), vec3(-0.5876, 1.1329, -0.1006), vec3(-0.0728, -0.0083, 1.1187));
+const uint NEUTRAL = 2u;
+const uint NONE = 3u;
+const mat3x3 ACES_INPUT = mat3x3(vec3(0.59719, 0.076, 0.0284), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
+const mat3x3 ACES_OUTPUT = mat3x3(vec3(1.60475, -0.10208, -0.00327), vec3(-0.53108, 1.10813, -0.07276), vec3(-0.07367, -0.00605, 1.07602));
+
+
+vec3 linear_to_srgb(vec3 c) {
+    vec3 low = (c * 12.92);
+    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
+    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
+}
+
+vec3 agx_contrast(vec3 x) {
+    vec3 x2_ = (x * x);
+    vec3 x4_ = (x2_ * x2_);
+    return ((((((((15.5 * x4_) * x2_) - ((40.14 * x4_) * x)) + (31.96 * x4_)) - ((6.868 * x2_) * x)) + (0.4298 * x2_)) + (0.1191 * x)) - vec3(0.00232));
+}
+
+vec3 agx(vec3 c_1) {
+    vec3 inset = (AGX_INSET * (LINEAR_SRGB_TO_LINEAR_REC2020_ * c_1));
+    vec3 logged = ((log2(max(inset, vec3(1e-10))) - vec3(-12.47393)) / vec3(16.5));
+    vec3 _e16 = agx_contrast(clamp(logged, vec3(0.0), vec3(1.0)));
+    vec3 curved = (AGX_OUTSET * _e16);
+    vec3 rec2020_ = pow(max(curved, vec3(0.0)), vec3(2.2));
+    return clamp((LINEAR_REC2020_TO_LINEAR_SRGB * rec2020_), vec3(0.0), vec3(1.0));
+}
+
+vec3 neutral(vec3 c_2) {
+    float x_1 = min(c_2.x, min(c_2.y, c_2.z));
+    float toe = ((x_1 < 0.08) ? (x_1 - ((6.25 * x_1) * x_1)) : 0.04);
+    vec3 shifted = (c_2 - vec3(toe));
+    float peak = max(shifted.x, max(shifted.y, shifted.z));
+    if ((peak < 0.76)) {
+        return shifted;
+    }
+    float d = (1.0 - 0.76);
+    float new_peak = (1.0 - ((d * d) / ((peak + d) - 0.76)));
+    float g = (1.0 - (1.0 / ((0.15 * (peak - new_peak)) + 1.0)));
+    return mix((shifted * (new_peak / peak)), vec3(new_peak), g);
+}
+
+vec3 rrt_and_odt_fit(vec3 v) {
+    vec3 a = ((v * (v + vec3(0.0245786))) - vec3(9.0537e-5));
+    vec3 b = ((v * ((0.983729 * v) + vec3(0.432951))) + vec3(0.238081));
+    return (a / b);
+}
+
+vec3 aces(vec3 c_3) {
+    vec3 _e6 = rrt_and_odt_fit((ACES_INPUT * (c_3 / vec3(0.6))));
+    return clamp((ACES_OUTPUT * _e6), vec3(0.0), vec3(1.0));
+}
+
+vec3 tone_map(vec3 c_4, Output settings) {
+    vec3 exposed = (c_4 * settings.exposure);
+    if ((settings.tone_mapping == AGX)) {
+        vec3 _e7 = agx(exposed);
+        return _e7;
+    }
+    if ((settings.tone_mapping == NEUTRAL)) {
+        vec3 _e11 = neutral(exposed);
+        return _e11;
+    }
+    if ((settings.tone_mapping == NONE)) {
+        return clamp(exposed, vec3(0.0), vec3(1.0));
+    }
+    vec3 _e16 = aces(exposed);
+    return _e16;
+}
+
+uint pcg(uint v_1) {
+    uint state = ((v_1 * 747796405u) + 2891336453u);
+    uint word = (((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u);
+    return ((word >> 22u) ^ word);
+}
+
+float pixel_noise(vec2 pixel) {
+    uint _e5 = pcg(uint(pixel.y));
+    uint _e7 = pcg((uint(pixel.x) + _e5));
+    return (float((_e7 >> 8u)) / 16777216.0);
+}
+
+vec3 encode(vec3 c_5, vec2 pixel_1) {
+    float _e1 = pixel_noise(pixel_1);
+    float dither = ((_e1 - 0.5) / 255.0);
+    vec3 _e7 = linear_to_srgb(c_5);
+    return (_e7 + vec3(dither));
+}
+
+void main() {
+    uint vertex = uint(gl_VertexID);
+    float x_2 = ((float(((vertex << 1u) & 2u)) * 2.0) - 1.0);
+    float y = ((float((vertex & 2u)) * 2.0) - 1.0);
+    gl_Position = vec4(x_2, y, 0.0, 1.0);
+    gl_Position.z = gl_Position.z * 2.0 - gl_Position.w;
+    return;
+}
+`,
+					uniformBlocks: [],
+					textures: [],
+				},
+				fragment: {
+					source: `#version 300 es
+
+precision highp float;
+precision highp int;
+
+struct Output {
+    float exposure;
+    uint tone_mapping;
+    uint spare_a;
+    uint spare_b;
+};
+const uint AGX = 1u;
+const mat3x3 LINEAR_SRGB_TO_LINEAR_REC2020_ = mat3x3(vec3(0.6274, 0.0691, 0.0164), vec3(0.3293, 0.9195, 0.088), vec3(0.0433, 0.0113, 0.8956));
+const mat3x3 AGX_INSET = mat3x3(vec3(0.85662717, 0.13731897, 0.11189821), vec3(0.09512124, 0.761242, 0.076799415), vec3(0.048251607, 0.10143904, 0.81130236));
+const mat3x3 AGX_OUTSET = mat3x3(vec3(1.1271006, -0.14132977, -0.14132977), vec3(-0.11060664, 1.1578237, -0.11060664), vec3(-0.016493939, -0.016493939, 1.2519364));
+const mat3x3 LINEAR_REC2020_TO_LINEAR_SRGB = mat3x3(vec3(1.6605, -0.1246, -0.0182), vec3(-0.5876, 1.1329, -0.1006), vec3(-0.0728, -0.0083, 1.1187));
+const uint NEUTRAL = 2u;
+const uint NONE = 3u;
+const mat3x3 ACES_INPUT = mat3x3(vec3(0.59719, 0.076, 0.0284), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
+const mat3x3 ACES_OUTPUT = mat3x3(vec3(1.60475, -0.10208, -0.00327), vec3(-0.53108, 1.10813, -0.07276), vec3(-0.07367, -0.00605, 1.07602));
+
+layout(std140) uniform Output_block_0Fragment { Output _group_0_binding_0_fs; };
+
+uniform highp sampler2D _group_0_binding_1_fs;
+
+layout(location = 0) out vec4 _fs2p_location0;
+
+vec3 linear_to_srgb(vec3 c) {
+    vec3 low = (c * 12.92);
+    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
+    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
+}
+
+vec3 agx_contrast(vec3 x) {
+    vec3 x2_ = (x * x);
+    vec3 x4_ = (x2_ * x2_);
+    return ((((((((15.5 * x4_) * x2_) - ((40.14 * x4_) * x)) + (31.96 * x4_)) - ((6.868 * x2_) * x)) + (0.4298 * x2_)) + (0.1191 * x)) - vec3(0.00232));
+}
+
+vec3 agx(vec3 c_1) {
+    vec3 inset = (AGX_INSET * (LINEAR_SRGB_TO_LINEAR_REC2020_ * c_1));
+    vec3 logged = ((log2(max(inset, vec3(1e-10))) - vec3(-12.47393)) / vec3(16.5));
+    vec3 _e16 = agx_contrast(clamp(logged, vec3(0.0), vec3(1.0)));
+    vec3 curved = (AGX_OUTSET * _e16);
+    vec3 rec2020_ = pow(max(curved, vec3(0.0)), vec3(2.2));
+    return clamp((LINEAR_REC2020_TO_LINEAR_SRGB * rec2020_), vec3(0.0), vec3(1.0));
+}
+
+vec3 neutral(vec3 c_2) {
+    float x_1 = min(c_2.x, min(c_2.y, c_2.z));
+    float toe = ((x_1 < 0.08) ? (x_1 - ((6.25 * x_1) * x_1)) : 0.04);
+    vec3 shifted = (c_2 - vec3(toe));
+    float peak = max(shifted.x, max(shifted.y, shifted.z));
+    if ((peak < 0.76)) {
+        return shifted;
+    }
+    float d = (1.0 - 0.76);
+    float new_peak = (1.0 - ((d * d) / ((peak + d) - 0.76)));
+    float g = (1.0 - (1.0 / ((0.15 * (peak - new_peak)) + 1.0)));
+    return mix((shifted * (new_peak / peak)), vec3(new_peak), g);
+}
+
+vec3 rrt_and_odt_fit(vec3 v) {
+    vec3 a = ((v * (v + vec3(0.0245786))) - vec3(9.0537e-5));
+    vec3 b = ((v * ((0.983729 * v) + vec3(0.432951))) + vec3(0.238081));
+    return (a / b);
+}
+
+vec3 aces(vec3 c_3) {
+    vec3 _e6 = rrt_and_odt_fit((ACES_INPUT * (c_3 / vec3(0.6))));
+    return clamp((ACES_OUTPUT * _e6), vec3(0.0), vec3(1.0));
+}
+
+vec3 tone_map(vec3 c_4, Output settings) {
+    vec3 exposed = (c_4 * settings.exposure);
+    if ((settings.tone_mapping == AGX)) {
+        vec3 _e7 = agx(exposed);
+        return _e7;
+    }
+    if ((settings.tone_mapping == NEUTRAL)) {
+        vec3 _e11 = neutral(exposed);
+        return _e11;
+    }
+    if ((settings.tone_mapping == NONE)) {
+        return clamp(exposed, vec3(0.0), vec3(1.0));
+    }
+    vec3 _e16 = aces(exposed);
+    return _e16;
+}
+
+uint pcg(uint v_1) {
+    uint state = ((v_1 * 747796405u) + 2891336453u);
+    uint word = (((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u);
+    return ((word >> 22u) ^ word);
+}
+
+float pixel_noise(vec2 pixel) {
+    uint _e5 = pcg(uint(pixel.y));
+    uint _e7 = pcg((uint(pixel.x) + _e5));
+    return (float((_e7 >> 8u)) / 16777216.0);
+}
+
+vec3 encode(vec3 c_5, vec2 pixel_1) {
+    float _e1 = pixel_noise(pixel_1);
+    float dither = ((_e1 - 0.5) / 255.0);
+    vec3 _e7 = linear_to_srgb(c_5);
+    return (_e7 + vec3(dither));
+}
+
+void main() {
+    vec4 position = gl_FragCoord;
+    vec4 texel = texelFetch(_group_0_binding_1_fs, ivec2(position.xy), 0);
+    float coverage = texel.w;
+    if ((coverage <= 0.0)) {
+        _fs2p_location0 = vec4(0.0);
+        return;
+    }
+    Output _e15 = _group_0_binding_0_fs;
+    vec3 _e16 = tone_map((texel.xyz / vec3(coverage)), _e15);
+    vec3 _e18 = encode(_e16, position.xy);
+    vec3 encoded = clamp(_e18, vec3(0.0), vec3(1.0));
+    _fs2p_location0 = vec4((encoded * coverage), coverage);
+    return;
+}
+`,
+					uniformBlocks: [
+						{
+							name: 'Output_block_0Fragment',
+							group: 0,
+							binding: 0,
+						},
+					],
+					textures: [
+						{
+							name: '_group_0_binding_1_fs',
+							group: 0,
+							binding: 1,
+							sampler: null,
+						},
+					],
+				},
+			},
+		},
+	},
+};
+
 /** The variants of the `mesh` shader, by variant name. */
 export const MESH_SHADER: {
 	readonly webgl2: ShaderVariant<'lit' | 'unlit'>;
 	readonly webgl2_multi_draw: ShaderVariant<'lit' | 'unlit'>;
+	readonly webgl2_multi_draw_tone_map: ShaderVariant<'lit' | 'unlit'>;
+	readonly webgl2_tone_map: ShaderVariant<'lit' | 'unlit'>;
 	readonly webgpu: ShaderVariant<'lit' | 'unlit'>;
+	readonly webgpu_tone_map: ShaderVariant<'lit' | 'unlit'>;
 } = {
 	webgl2: {
 		wgsl: null,
@@ -176,12 +583,19 @@ precision highp int;
 
 uniform uint naga_vs_first_instance;
 
+struct Output {
+    float exposure;
+    uint tone_mapping;
+    uint spare_a;
+    uint spare_b;
+};
 struct Frame {
     mat4x4 view_proj;
     vec4 camera_position;
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Output output_;
 };
 struct Material {
     vec4 color;
@@ -236,12 +650,6 @@ vec3 lambert(vec3 albedo, vec3 normal, vec3 to_light, vec3 light, vec3 ambient) 
     return ((albedo / vec3(3.1415927)) * ((n_dot_l * light) + ambient));
 }
 
-vec3 linear_to_srgb(vec3 c) {
-    vec3 low = (c * 12.92);
-    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
-    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
-}
-
 Instance instance_of(uvec4 record, uint instance_1) {
     uint source = 0u;
     Instance out_1 = Instance(vec4(0.0), vec4(0.0), vec4(0.0), 0u, false);
@@ -279,6 +687,10 @@ Instance instance_of(uvec4 record, uint instance_1) {
     out_1.material = record.y;
     Instance _e96 = out_1;
     return _e96;
+}
+
+vec4 finish(vec3 c, vec2 pixel) {
+    return vec4(c, 1.0);
 }
 
 void main() {
@@ -349,12 +761,19 @@ void main() {
 precision highp float;
 precision highp int;
 
+struct Output {
+    float exposure;
+    uint tone_mapping;
+    uint spare_a;
+    uint spare_b;
+};
 struct Frame {
     mat4x4 view_proj;
     vec4 camera_position;
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Output output_;
 };
 struct Material {
     vec4 color;
@@ -400,15 +819,13 @@ vec3 lambert(vec3 albedo, vec3 normal, vec3 to_light, vec3 light, vec3 ambient) 
     return ((albedo / vec3(3.1415927)) * ((n_dot_l * light) + ambient));
 }
 
-vec3 linear_to_srgb(vec3 c) {
-    vec3 low = (c * 12.92);
-    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
-    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
-}
-
 Material material(uint id) {
     Material _e4 = _group_0_binding_1_fs.items[id];
     return _e4;
+}
+
+vec4 finish(vec3 c, vec2 pixel) {
+    return vec4(c, 1.0);
 }
 
 void main() {
@@ -419,8 +836,8 @@ void main() {
     vec4 _e14 = _group_0_binding_0_fs.sun_color;
     vec4 _e18 = _group_0_binding_0_fs.ambient;
     vec3 _e20 = lambert(albedo_1, normalize(in_.normal), -(_e9.xyz), _e14.xyz, _e18.xyz);
-    vec3 _e21 = linear_to_srgb(_e20);
-    _fs2p_location0 = vec4(_e21, 1.0);
+    vec4 _e23 = finish(_e20, in_.clip.xy);
+    _fs2p_location0 = _e23;
     return;
 }
 `,
@@ -448,12 +865,19 @@ precision highp int;
 
 uniform uint naga_vs_first_instance;
 
+struct Output {
+    float exposure;
+    uint tone_mapping;
+    uint spare_a;
+    uint spare_b;
+};
 struct Frame {
     mat4x4 view_proj;
     vec4 camera_position;
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Output output_;
 };
 struct Material {
     vec4 color;
@@ -508,12 +932,6 @@ vec3 lambert(vec3 albedo, vec3 normal, vec3 to_light, vec3 light, vec3 ambient) 
     return ((albedo / vec3(3.1415927)) * ((n_dot_l * light) + ambient));
 }
 
-vec3 linear_to_srgb(vec3 c) {
-    vec3 low = (c * 12.92);
-    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
-    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
-}
-
 Instance instance_of(uvec4 record, uint instance_1) {
     uint source = 0u;
     Instance out_1 = Instance(vec4(0.0), vec4(0.0), vec4(0.0), 0u, false);
@@ -551,6 +969,10 @@ Instance instance_of(uvec4 record, uint instance_1) {
     out_1.material = record.y;
     Instance _e96 = out_1;
     return _e96;
+}
+
+vec4 finish(vec3 c, vec2 pixel) {
+    return vec4(c, 1.0);
 }
 
 void main() {
@@ -621,12 +1043,19 @@ void main() {
 precision highp float;
 precision highp int;
 
+struct Output {
+    float exposure;
+    uint tone_mapping;
+    uint spare_a;
+    uint spare_b;
+};
 struct Frame {
     mat4x4 view_proj;
     vec4 camera_position;
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Output output_;
 };
 struct Material {
     vec4 color;
@@ -670,22 +1099,20 @@ vec3 lambert(vec3 albedo, vec3 normal, vec3 to_light, vec3 light, vec3 ambient) 
     return ((albedo / vec3(3.1415927)) * ((n_dot_l * light) + ambient));
 }
 
-vec3 linear_to_srgb(vec3 c) {
-    vec3 low = (c * 12.92);
-    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
-    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
-}
-
 Material material(uint id) {
     Material _e4 = _group_0_binding_1_fs.items[id];
     return _e4;
 }
 
+vec4 finish(vec3 c, vec2 pixel) {
+    return vec4(c, 1.0);
+}
+
 void main() {
     VertexOut in_1 = VertexOut(gl_FragCoord, _vs2fs_location0, _vs2fs_location1);
     Material _e2 = material(in_1.material);
-    vec3 _e5 = linear_to_srgb(_e2.color.xyz);
-    _fs2p_location0 = vec4(_e5, 1.0);
+    vec4 _e7 = finish(_e2.color.xyz, in_1.clip.xy);
+    _fs2p_location0 = _e7;
     return;
 }
 `,
@@ -714,12 +1141,19 @@ precision highp int;
 
 uniform uint naga_vs_first_instance;
 
+struct Output {
+    float exposure;
+    uint tone_mapping;
+    uint spare_a;
+    uint spare_b;
+};
 struct Frame {
     mat4x4 view_proj;
     vec4 camera_position;
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Output output_;
 };
 struct Material {
     vec4 color;
@@ -774,12 +1208,6 @@ vec3 lambert(vec3 albedo, vec3 normal, vec3 to_light, vec3 light, vec3 ambient) 
     return ((albedo / vec3(3.1415927)) * ((n_dot_l * light) + ambient));
 }
 
-vec3 linear_to_srgb(vec3 c) {
-    vec3 low = (c * 12.92);
-    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
-    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
-}
-
 Instance instance_of(uvec4 record, uint instance_1) {
     uint source = 0u;
     Instance out_1 = Instance(vec4(0.0), vec4(0.0), vec4(0.0), 0u, false);
@@ -817,6 +1245,10 @@ Instance instance_of(uvec4 record, uint instance_1) {
     out_1.material = record.y;
     Instance _e96 = out_1;
     return _e96;
+}
+
+vec4 finish(vec3 c, vec2 pixel) {
+    return vec4(c, 1.0);
 }
 
 void main() {
@@ -888,12 +1320,19 @@ void main() {
 precision highp float;
 precision highp int;
 
+struct Output {
+    float exposure;
+    uint tone_mapping;
+    uint spare_a;
+    uint spare_b;
+};
 struct Frame {
     mat4x4 view_proj;
     vec4 camera_position;
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Output output_;
 };
 struct Material {
     vec4 color;
@@ -939,15 +1378,13 @@ vec3 lambert(vec3 albedo, vec3 normal, vec3 to_light, vec3 light, vec3 ambient) 
     return ((albedo / vec3(3.1415927)) * ((n_dot_l * light) + ambient));
 }
 
-vec3 linear_to_srgb(vec3 c) {
-    vec3 low = (c * 12.92);
-    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
-    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
-}
-
 Material material(uint id) {
     Material _e4 = _group_0_binding_1_fs.items[id];
     return _e4;
+}
+
+vec4 finish(vec3 c, vec2 pixel) {
+    return vec4(c, 1.0);
 }
 
 void main() {
@@ -958,8 +1395,8 @@ void main() {
     vec4 _e14 = _group_0_binding_0_fs.sun_color;
     vec4 _e18 = _group_0_binding_0_fs.ambient;
     vec3 _e20 = lambert(albedo_1, normalize(in_.normal), -(_e9.xyz), _e14.xyz, _e18.xyz);
-    vec3 _e21 = linear_to_srgb(_e20);
-    _fs2p_location0 = vec4(_e21, 1.0);
+    vec4 _e23 = finish(_e20, in_.clip.xy);
+    _fs2p_location0 = _e23;
     return;
 }
 `,
@@ -988,12 +1425,19 @@ precision highp int;
 
 uniform uint naga_vs_first_instance;
 
+struct Output {
+    float exposure;
+    uint tone_mapping;
+    uint spare_a;
+    uint spare_b;
+};
 struct Frame {
     mat4x4 view_proj;
     vec4 camera_position;
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Output output_;
 };
 struct Material {
     vec4 color;
@@ -1048,12 +1492,6 @@ vec3 lambert(vec3 albedo, vec3 normal, vec3 to_light, vec3 light, vec3 ambient) 
     return ((albedo / vec3(3.1415927)) * ((n_dot_l * light) + ambient));
 }
 
-vec3 linear_to_srgb(vec3 c) {
-    vec3 low = (c * 12.92);
-    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
-    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
-}
-
 Instance instance_of(uvec4 record, uint instance_1) {
     uint source = 0u;
     Instance out_1 = Instance(vec4(0.0), vec4(0.0), vec4(0.0), 0u, false);
@@ -1091,6 +1529,10 @@ Instance instance_of(uvec4 record, uint instance_1) {
     out_1.material = record.y;
     Instance _e96 = out_1;
     return _e96;
+}
+
+vec4 finish(vec3 c, vec2 pixel) {
+    return vec4(c, 1.0);
 }
 
 void main() {
@@ -1162,12 +1604,19 @@ void main() {
 precision highp float;
 precision highp int;
 
+struct Output {
+    float exposure;
+    uint tone_mapping;
+    uint spare_a;
+    uint spare_b;
+};
 struct Frame {
     mat4x4 view_proj;
     vec4 camera_position;
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Output output_;
 };
 struct Material {
     vec4 color;
@@ -1211,22 +1660,20 @@ vec3 lambert(vec3 albedo, vec3 normal, vec3 to_light, vec3 light, vec3 ambient) 
     return ((albedo / vec3(3.1415927)) * ((n_dot_l * light) + ambient));
 }
 
-vec3 linear_to_srgb(vec3 c) {
-    vec3 low = (c * 12.92);
-    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
-    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
-}
-
 Material material(uint id) {
     Material _e4 = _group_0_binding_1_fs.items[id];
     return _e4;
 }
 
+vec4 finish(vec3 c, vec2 pixel) {
+    return vec4(c, 1.0);
+}
+
 void main() {
     VertexOut in_1 = VertexOut(gl_FragCoord, _vs2fs_location0, _vs2fs_location1);
     Material _e2 = material(in_1.material);
-    vec3 _e5 = linear_to_srgb(_e2.color.xyz);
-    _fs2p_location0 = vec4(_e5, 1.0);
+    vec4 _e7 = finish(_e2.color.xyz, in_1.clip.xy);
+    _fs2p_location0 = _e7;
     return;
 }
 `,
@@ -1242,14 +1689,1906 @@ void main() {
 			},
 		},
 	},
+	webgl2_multi_draw_tone_map: {
+		wgsl: null,
+		glsl: {
+			lit: {
+				vertex: {
+					source: `#version 300 es
+#extension GL_ANGLE_multi_draw : require
+
+precision highp float;
+precision highp int;
+
+uniform uint naga_vs_first_instance;
+
+struct Output {
+    float exposure;
+    uint tone_mapping;
+    uint spare_a;
+    uint spare_b;
+};
+struct Frame {
+    mat4x4 view_proj;
+    vec4 camera_position;
+    vec4 sun_direction;
+    vec4 sun_color;
+    vec4 ambient;
+    Output output_;
+};
+struct Material {
+    vec4 color;
+};
+struct MaterialTable {
+    Material items[1024];
+};
+struct DrawTable {
+    uvec4 items[256];
+};
+struct VertexIn {
+    vec3 position;
+    vec3 normal;
+};
+struct VertexOut {
+    vec4 clip;
+    vec3 normal;
+    uint material;
+};
+struct Instance {
+    vec4 row0_;
+    vec4 row1_;
+    vec4 row2_;
+    uint material;
+    bool drawn;
+};
+const uint AGX = 1u;
+const mat3x3 LINEAR_SRGB_TO_LINEAR_REC2020_ = mat3x3(vec3(0.6274, 0.0691, 0.0164), vec3(0.3293, 0.9195, 0.088), vec3(0.0433, 0.0113, 0.8956));
+const mat3x3 AGX_INSET = mat3x3(vec3(0.85662717, 0.13731897, 0.11189821), vec3(0.09512124, 0.761242, 0.076799415), vec3(0.048251607, 0.10143904, 0.81130236));
+const mat3x3 AGX_OUTSET = mat3x3(vec3(1.1271006, -0.14132977, -0.14132977), vec3(-0.11060664, 1.1578237, -0.11060664), vec3(-0.016493939, -0.016493939, 1.2519364));
+const mat3x3 LINEAR_REC2020_TO_LINEAR_SRGB = mat3x3(vec3(1.6605, -0.1246, -0.0182), vec3(-0.5876, 1.1329, -0.1006), vec3(-0.0728, -0.0083, 1.1187));
+const uint NEUTRAL = 2u;
+const uint NONE = 3u;
+const mat3x3 ACES_INPUT = mat3x3(vec3(0.59719, 0.076, 0.0284), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
+const mat3x3 ACES_OUTPUT = mat3x3(vec3(1.60475, -0.10208, -0.00327), vec3(-0.53108, 1.10813, -0.07276), vec3(-0.07367, -0.00605, 1.07602));
+const uint MAX_MATERIALS = 1024u;
+const uint MATRIX_ROW_SHIFT = 9u;
+const uint INDEX_ROW_SHIFT = 11u;
+const uint NO_ROW = 4294967295u;
+const uint DRAW_RECORDS = 256u;
+
+layout(std140) uniform Frame_block_0Vertex { Frame _group_0_binding_0_vs; };
+
+layout(std140) uniform DrawTable_block_1Vertex { DrawTable _group_1_binding_0_vs; };
+
+uniform highp sampler2D _group_2_binding_0_vs;
+
+uniform highp sampler2D _group_2_binding_1_vs;
+
+uniform highp usampler2D _group_2_binding_2_vs;
+
+uniform highp usampler2D _group_2_binding_3_vs;
+
+layout(location = 0) in vec3 _p2vs_location0;
+layout(location = 1) in vec3 _p2vs_location1;
+smooth out vec3 _vs2fs_location0;
+flat out uint _vs2fs_location1;
+
+vec3 linear_to_srgb(vec3 c) {
+    vec3 low = (c * 12.92);
+    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
+    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
+}
+
+vec3 agx_contrast(vec3 x) {
+    vec3 x2_ = (x * x);
+    vec3 x4_ = (x2_ * x2_);
+    return ((((((((15.5 * x4_) * x2_) - ((40.14 * x4_) * x)) + (31.96 * x4_)) - ((6.868 * x2_) * x)) + (0.4298 * x2_)) + (0.1191 * x)) - vec3(0.00232));
+}
+
+vec3 agx(vec3 c_1) {
+    vec3 inset = (AGX_INSET * (LINEAR_SRGB_TO_LINEAR_REC2020_ * c_1));
+    vec3 logged = ((log2(max(inset, vec3(1e-10))) - vec3(-12.47393)) / vec3(16.5));
+    vec3 _e16 = agx_contrast(clamp(logged, vec3(0.0), vec3(1.0)));
+    vec3 curved = (AGX_OUTSET * _e16);
+    vec3 rec2020_ = pow(max(curved, vec3(0.0)), vec3(2.2));
+    return clamp((LINEAR_REC2020_TO_LINEAR_SRGB * rec2020_), vec3(0.0), vec3(1.0));
+}
+
+vec3 neutral(vec3 c_2) {
+    float x_1 = min(c_2.x, min(c_2.y, c_2.z));
+    float toe = ((x_1 < 0.08) ? (x_1 - ((6.25 * x_1) * x_1)) : 0.04);
+    vec3 shifted = (c_2 - vec3(toe));
+    float peak = max(shifted.x, max(shifted.y, shifted.z));
+    if ((peak < 0.76)) {
+        return shifted;
+    }
+    float d = (1.0 - 0.76);
+    float new_peak = (1.0 - ((d * d) / ((peak + d) - 0.76)));
+    float g = (1.0 - (1.0 / ((0.15 * (peak - new_peak)) + 1.0)));
+    return mix((shifted * (new_peak / peak)), vec3(new_peak), g);
+}
+
+vec3 rrt_and_odt_fit(vec3 v_1) {
+    vec3 a = ((v_1 * (v_1 + vec3(0.0245786))) - vec3(9.0537e-5));
+    vec3 b = ((v_1 * ((0.983729 * v_1) + vec3(0.432951))) + vec3(0.238081));
+    return (a / b);
+}
+
+vec3 aces(vec3 c_3) {
+    vec3 _e6 = rrt_and_odt_fit((ACES_INPUT * (c_3 / vec3(0.6))));
+    return clamp((ACES_OUTPUT * _e6), vec3(0.0), vec3(1.0));
+}
+
+vec3 tone_map(vec3 c_4, Output settings) {
+    vec3 exposed = (c_4 * settings.exposure);
+    if ((settings.tone_mapping == AGX)) {
+        vec3 _e7 = agx(exposed);
+        return _e7;
+    }
+    if ((settings.tone_mapping == NEUTRAL)) {
+        vec3 _e11 = neutral(exposed);
+        return _e11;
+    }
+    if ((settings.tone_mapping == NONE)) {
+        return clamp(exposed, vec3(0.0), vec3(1.0));
+    }
+    vec3 _e16 = aces(exposed);
+    return _e16;
+}
+
+uint pcg(uint v_2) {
+    uint state = ((v_2 * 747796405u) + 2891336453u);
+    uint word = (((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u);
+    return ((word >> 22u) ^ word);
+}
+
+float pixel_noise(vec2 pixel) {
+    uint _e5 = pcg(uint(pixel.y));
+    uint _e7 = pcg((uint(pixel.x) + _e5));
+    return (float((_e7 >> 8u)) / 16777216.0);
+}
+
+vec3 encode(vec3 c_5, vec2 pixel_1) {
+    float _e1 = pixel_noise(pixel_1);
+    float dither = ((_e1 - 0.5) / 255.0);
+    vec3 _e7 = linear_to_srgb(c_5);
+    return (_e7 + vec3(dither));
+}
+
+vec3 lambert(vec3 albedo, vec3 normal, vec3 to_light, vec3 light, vec3 ambient) {
+    float n_dot_l = max(dot(normal, to_light), 0.0);
+    return ((albedo / vec3(3.1415927)) * ((n_dot_l * light) + ambient));
+}
+
+Instance instance_of(uvec4 record, uint instance_1) {
+    uint source = 0u;
+    Instance out_1 = Instance(vec4(0.0), vec4(0.0), vec4(0.0), 0u, false);
+    uint shift = record.w;
+    uint slot = (record.x + (instance_1 >> shift));
+    uvec4 _e13 = texelFetch(_group_2_binding_2_vs, ivec2(uvec2((slot & 2047u), (slot >> INDEX_ROW_SHIFT))), 0);
+    source = _e13.x;
+    if ((shift != 0u)) {
+        uint _e18 = source;
+        uint place = ((_e18 << shift) | (instance_1 & ((1u << shift) - 1u)));
+        uvec4 _e32 = texelFetch(_group_2_binding_3_vs, ivec2(uvec2((place & 2047u), (place >> INDEX_ROW_SHIFT))), 0);
+        source = _e32.x;
+    }
+    uint _e36 = source;
+    out_1.drawn = (_e36 != NO_ROW);
+    uint _e40 = source;
+    bool _e42 = out_1.drawn;
+    uint row = (_e42 ? _e40 : 0u);
+    uvec2 at = uvec2(((row & 511u) * 3u), (row >> MATRIX_ROW_SHIFT));
+    if ((record.z == 0u)) {
+        vec4 _e57 = texelFetch(_group_2_binding_0_vs, ivec2(at), 0);
+        out_1.row0_ = _e57;
+        vec4 _e65 = texelFetch(_group_2_binding_0_vs, ivec2((at + uvec2(1u, 0u))), 0);
+        out_1.row1_ = _e65;
+        vec4 _e73 = texelFetch(_group_2_binding_0_vs, ivec2((at + uvec2(2u, 0u))), 0);
+        out_1.row2_ = _e73;
+    } else {
+        vec4 _e77 = texelFetch(_group_2_binding_1_vs, ivec2(at), 0);
+        out_1.row0_ = _e77;
+        vec4 _e85 = texelFetch(_group_2_binding_1_vs, ivec2((at + uvec2(1u, 0u))), 0);
+        out_1.row1_ = _e85;
+        vec4 _e93 = texelFetch(_group_2_binding_1_vs, ivec2((at + uvec2(2u, 0u))), 0);
+        out_1.row2_ = _e93;
+    }
+    out_1.material = record.y;
+    Instance _e96 = out_1;
+    return _e96;
+}
+
+vec4 finish(vec3 c_6, vec2 pixel_2) {
+    Output _e2 = _group_0_binding_0_vs.output_;
+    vec3 _e4 = tone_map(c_6, _e2);
+    vec3 _e6 = encode(_e4, pixel_2);
+    return vec4(_e6, 1.0);
+}
+
+void main() {
+    VertexIn v = VertexIn(_p2vs_location0, _p2vs_location1);
+    uint instance = (uint(gl_InstanceID) + naga_vs_first_instance);
+    uint draw = uint(gl_DrawID);
+    VertexOut out_ = VertexOut(vec4(0.0), vec3(0.0), 0u);
+    uvec4 _e4 = _group_1_binding_0_vs.items[draw];
+    Instance _e6 = instance_of(_e4, instance);
+    vec4 p = vec4(v.position, 1.0);
+    vec4 n = vec4(v.normal, 0.0);
+    mat4x4 _e18 = _group_0_binding_0_vs.view_proj;
+    out_.clip = (_e18 * vec4(dot(_e6.row0_, p), dot(_e6.row1_, p), dot(_e6.row2_, p), 1.0));
+    out_.normal = vec3(dot(_e6.row0_, n), dot(_e6.row1_, n), dot(_e6.row2_, n));
+    out_.material = _e6.material;
+    if (!(_e6.drawn)) {
+        out_.clip = vec4(2.0, 2.0, 2.0, 1.0);
+    }
+    VertexOut _e46 = out_;
+    gl_Position = _e46.clip;
+    _vs2fs_location0 = _e46.normal;
+    _vs2fs_location1 = _e46.material;
+    gl_Position.z = gl_Position.z * 2.0 - gl_Position.w;
+    return;
+}
+`,
+					uniformBlocks: [
+						{
+							name: 'Frame_block_0Vertex',
+							group: 0,
+							binding: 0,
+						},
+						{
+							name: 'DrawTable_block_1Vertex',
+							group: 1,
+							binding: 0,
+						},
+					],
+					textures: [
+						{
+							name: '_group_2_binding_0_vs',
+							group: 2,
+							binding: 0,
+							sampler: null,
+						},
+						{
+							name: '_group_2_binding_1_vs',
+							group: 2,
+							binding: 1,
+							sampler: null,
+						},
+						{
+							name: '_group_2_binding_2_vs',
+							group: 2,
+							binding: 2,
+							sampler: null,
+						},
+						{
+							name: '_group_2_binding_3_vs',
+							group: 2,
+							binding: 3,
+							sampler: null,
+						},
+					],
+				},
+				fragment: {
+					source: `#version 300 es
+
+precision highp float;
+precision highp int;
+
+struct Output {
+    float exposure;
+    uint tone_mapping;
+    uint spare_a;
+    uint spare_b;
+};
+struct Frame {
+    mat4x4 view_proj;
+    vec4 camera_position;
+    vec4 sun_direction;
+    vec4 sun_color;
+    vec4 ambient;
+    Output output_;
+};
+struct Material {
+    vec4 color;
+};
+struct MaterialTable {
+    Material items[1024];
+};
+struct DrawTable {
+    uvec4 items[256];
+};
+struct VertexIn {
+    vec3 position;
+    vec3 normal;
+};
+struct VertexOut {
+    vec4 clip;
+    vec3 normal;
+    uint material;
+};
+struct Instance {
+    vec4 row0_;
+    vec4 row1_;
+    vec4 row2_;
+    uint material;
+    bool drawn;
+};
+const uint AGX = 1u;
+const mat3x3 LINEAR_SRGB_TO_LINEAR_REC2020_ = mat3x3(vec3(0.6274, 0.0691, 0.0164), vec3(0.3293, 0.9195, 0.088), vec3(0.0433, 0.0113, 0.8956));
+const mat3x3 AGX_INSET = mat3x3(vec3(0.85662717, 0.13731897, 0.11189821), vec3(0.09512124, 0.761242, 0.076799415), vec3(0.048251607, 0.10143904, 0.81130236));
+const mat3x3 AGX_OUTSET = mat3x3(vec3(1.1271006, -0.14132977, -0.14132977), vec3(-0.11060664, 1.1578237, -0.11060664), vec3(-0.016493939, -0.016493939, 1.2519364));
+const mat3x3 LINEAR_REC2020_TO_LINEAR_SRGB = mat3x3(vec3(1.6605, -0.1246, -0.0182), vec3(-0.5876, 1.1329, -0.1006), vec3(-0.0728, -0.0083, 1.1187));
+const uint NEUTRAL = 2u;
+const uint NONE = 3u;
+const mat3x3 ACES_INPUT = mat3x3(vec3(0.59719, 0.076, 0.0284), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
+const mat3x3 ACES_OUTPUT = mat3x3(vec3(1.60475, -0.10208, -0.00327), vec3(-0.53108, 1.10813, -0.07276), vec3(-0.07367, -0.00605, 1.07602));
+const uint MAX_MATERIALS = 1024u;
+const uint MATRIX_ROW_SHIFT = 9u;
+const uint INDEX_ROW_SHIFT = 11u;
+const uint NO_ROW = 4294967295u;
+const uint DRAW_RECORDS = 256u;
+
+layout(std140) uniform Frame_block_0Fragment { Frame _group_0_binding_0_fs; };
+
+layout(std140) uniform MaterialTable_block_1Fragment { MaterialTable _group_0_binding_1_fs; };
+
+smooth in vec3 _vs2fs_location0;
+flat in uint _vs2fs_location1;
+layout(location = 0) out vec4 _fs2p_location0;
+
+vec3 linear_to_srgb(vec3 c) {
+    vec3 low = (c * 12.92);
+    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
+    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
+}
+
+vec3 agx_contrast(vec3 x) {
+    vec3 x2_ = (x * x);
+    vec3 x4_ = (x2_ * x2_);
+    return ((((((((15.5 * x4_) * x2_) - ((40.14 * x4_) * x)) + (31.96 * x4_)) - ((6.868 * x2_) * x)) + (0.4298 * x2_)) + (0.1191 * x)) - vec3(0.00232));
+}
+
+vec3 agx(vec3 c_1) {
+    vec3 inset = (AGX_INSET * (LINEAR_SRGB_TO_LINEAR_REC2020_ * c_1));
+    vec3 logged = ((log2(max(inset, vec3(1e-10))) - vec3(-12.47393)) / vec3(16.5));
+    vec3 _e16 = agx_contrast(clamp(logged, vec3(0.0), vec3(1.0)));
+    vec3 curved = (AGX_OUTSET * _e16);
+    vec3 rec2020_ = pow(max(curved, vec3(0.0)), vec3(2.2));
+    return clamp((LINEAR_REC2020_TO_LINEAR_SRGB * rec2020_), vec3(0.0), vec3(1.0));
+}
+
+vec3 neutral(vec3 c_2) {
+    float x_1 = min(c_2.x, min(c_2.y, c_2.z));
+    float toe = ((x_1 < 0.08) ? (x_1 - ((6.25 * x_1) * x_1)) : 0.04);
+    vec3 shifted = (c_2 - vec3(toe));
+    float peak = max(shifted.x, max(shifted.y, shifted.z));
+    if ((peak < 0.76)) {
+        return shifted;
+    }
+    float d = (1.0 - 0.76);
+    float new_peak = (1.0 - ((d * d) / ((peak + d) - 0.76)));
+    float g = (1.0 - (1.0 / ((0.15 * (peak - new_peak)) + 1.0)));
+    return mix((shifted * (new_peak / peak)), vec3(new_peak), g);
+}
+
+vec3 rrt_and_odt_fit(vec3 v_1) {
+    vec3 a = ((v_1 * (v_1 + vec3(0.0245786))) - vec3(9.0537e-5));
+    vec3 b = ((v_1 * ((0.983729 * v_1) + vec3(0.432951))) + vec3(0.238081));
+    return (a / b);
+}
+
+vec3 aces(vec3 c_3) {
+    vec3 _e6 = rrt_and_odt_fit((ACES_INPUT * (c_3 / vec3(0.6))));
+    return clamp((ACES_OUTPUT * _e6), vec3(0.0), vec3(1.0));
+}
+
+vec3 tone_map(vec3 c_4, Output settings) {
+    vec3 exposed = (c_4 * settings.exposure);
+    if ((settings.tone_mapping == AGX)) {
+        vec3 _e7 = agx(exposed);
+        return _e7;
+    }
+    if ((settings.tone_mapping == NEUTRAL)) {
+        vec3 _e11 = neutral(exposed);
+        return _e11;
+    }
+    if ((settings.tone_mapping == NONE)) {
+        return clamp(exposed, vec3(0.0), vec3(1.0));
+    }
+    vec3 _e16 = aces(exposed);
+    return _e16;
+}
+
+uint pcg(uint v_2) {
+    uint state = ((v_2 * 747796405u) + 2891336453u);
+    uint word = (((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u);
+    return ((word >> 22u) ^ word);
+}
+
+float pixel_noise(vec2 pixel) {
+    uint _e5 = pcg(uint(pixel.y));
+    uint _e7 = pcg((uint(pixel.x) + _e5));
+    return (float((_e7 >> 8u)) / 16777216.0);
+}
+
+vec3 encode(vec3 c_5, vec2 pixel_1) {
+    float _e1 = pixel_noise(pixel_1);
+    float dither = ((_e1 - 0.5) / 255.0);
+    vec3 _e7 = linear_to_srgb(c_5);
+    return (_e7 + vec3(dither));
+}
+
+vec3 lambert(vec3 albedo, vec3 normal, vec3 to_light, vec3 light, vec3 ambient) {
+    float n_dot_l = max(dot(normal, to_light), 0.0);
+    return ((albedo / vec3(3.1415927)) * ((n_dot_l * light) + ambient));
+}
+
+Material material(uint id) {
+    Material _e4 = _group_0_binding_1_fs.items[id];
+    return _e4;
+}
+
+vec4 finish(vec3 c_6, vec2 pixel_2) {
+    Output _e2 = _group_0_binding_0_fs.output_;
+    vec3 _e4 = tone_map(c_6, _e2);
+    vec3 _e6 = encode(_e4, pixel_2);
+    return vec4(_e6, 1.0);
+}
+
+void main() {
+    VertexOut in_ = VertexOut(gl_FragCoord, _vs2fs_location0, _vs2fs_location1);
+    Material _e2 = material(in_.material);
+    vec3 albedo_1 = _e2.color.xyz;
+    vec4 _e9 = _group_0_binding_0_fs.sun_direction;
+    vec4 _e14 = _group_0_binding_0_fs.sun_color;
+    vec4 _e18 = _group_0_binding_0_fs.ambient;
+    vec3 _e20 = lambert(albedo_1, normalize(in_.normal), -(_e9.xyz), _e14.xyz, _e18.xyz);
+    vec4 _e23 = finish(_e20, in_.clip.xy);
+    _fs2p_location0 = _e23;
+    return;
+}
+`,
+					uniformBlocks: [
+						{
+							name: 'Frame_block_0Fragment',
+							group: 0,
+							binding: 0,
+						},
+						{
+							name: 'MaterialTable_block_1Fragment',
+							group: 0,
+							binding: 1,
+						},
+					],
+					textures: [],
+				},
+			},
+			unlit: {
+				vertex: {
+					source: `#version 300 es
+#extension GL_ANGLE_multi_draw : require
+
+precision highp float;
+precision highp int;
+
+uniform uint naga_vs_first_instance;
+
+struct Output {
+    float exposure;
+    uint tone_mapping;
+    uint spare_a;
+    uint spare_b;
+};
+struct Frame {
+    mat4x4 view_proj;
+    vec4 camera_position;
+    vec4 sun_direction;
+    vec4 sun_color;
+    vec4 ambient;
+    Output output_;
+};
+struct Material {
+    vec4 color;
+};
+struct MaterialTable {
+    Material items[1024];
+};
+struct DrawTable {
+    uvec4 items[256];
+};
+struct VertexIn {
+    vec3 position;
+    vec3 normal;
+};
+struct VertexOut {
+    vec4 clip;
+    vec3 normal;
+    uint material;
+};
+struct Instance {
+    vec4 row0_;
+    vec4 row1_;
+    vec4 row2_;
+    uint material;
+    bool drawn;
+};
+const uint AGX = 1u;
+const mat3x3 LINEAR_SRGB_TO_LINEAR_REC2020_ = mat3x3(vec3(0.6274, 0.0691, 0.0164), vec3(0.3293, 0.9195, 0.088), vec3(0.0433, 0.0113, 0.8956));
+const mat3x3 AGX_INSET = mat3x3(vec3(0.85662717, 0.13731897, 0.11189821), vec3(0.09512124, 0.761242, 0.076799415), vec3(0.048251607, 0.10143904, 0.81130236));
+const mat3x3 AGX_OUTSET = mat3x3(vec3(1.1271006, -0.14132977, -0.14132977), vec3(-0.11060664, 1.1578237, -0.11060664), vec3(-0.016493939, -0.016493939, 1.2519364));
+const mat3x3 LINEAR_REC2020_TO_LINEAR_SRGB = mat3x3(vec3(1.6605, -0.1246, -0.0182), vec3(-0.5876, 1.1329, -0.1006), vec3(-0.0728, -0.0083, 1.1187));
+const uint NEUTRAL = 2u;
+const uint NONE = 3u;
+const mat3x3 ACES_INPUT = mat3x3(vec3(0.59719, 0.076, 0.0284), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
+const mat3x3 ACES_OUTPUT = mat3x3(vec3(1.60475, -0.10208, -0.00327), vec3(-0.53108, 1.10813, -0.07276), vec3(-0.07367, -0.00605, 1.07602));
+const uint MAX_MATERIALS = 1024u;
+const uint MATRIX_ROW_SHIFT = 9u;
+const uint INDEX_ROW_SHIFT = 11u;
+const uint NO_ROW = 4294967295u;
+const uint DRAW_RECORDS = 256u;
+
+layout(std140) uniform Frame_block_0Vertex { Frame _group_0_binding_0_vs; };
+
+layout(std140) uniform DrawTable_block_1Vertex { DrawTable _group_1_binding_0_vs; };
+
+uniform highp sampler2D _group_2_binding_0_vs;
+
+uniform highp sampler2D _group_2_binding_1_vs;
+
+uniform highp usampler2D _group_2_binding_2_vs;
+
+uniform highp usampler2D _group_2_binding_3_vs;
+
+layout(location = 0) in vec3 _p2vs_location0;
+layout(location = 1) in vec3 _p2vs_location1;
+smooth out vec3 _vs2fs_location0;
+flat out uint _vs2fs_location1;
+
+vec3 linear_to_srgb(vec3 c) {
+    vec3 low = (c * 12.92);
+    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
+    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
+}
+
+vec3 agx_contrast(vec3 x) {
+    vec3 x2_ = (x * x);
+    vec3 x4_ = (x2_ * x2_);
+    return ((((((((15.5 * x4_) * x2_) - ((40.14 * x4_) * x)) + (31.96 * x4_)) - ((6.868 * x2_) * x)) + (0.4298 * x2_)) + (0.1191 * x)) - vec3(0.00232));
+}
+
+vec3 agx(vec3 c_1) {
+    vec3 inset = (AGX_INSET * (LINEAR_SRGB_TO_LINEAR_REC2020_ * c_1));
+    vec3 logged = ((log2(max(inset, vec3(1e-10))) - vec3(-12.47393)) / vec3(16.5));
+    vec3 _e16 = agx_contrast(clamp(logged, vec3(0.0), vec3(1.0)));
+    vec3 curved = (AGX_OUTSET * _e16);
+    vec3 rec2020_ = pow(max(curved, vec3(0.0)), vec3(2.2));
+    return clamp((LINEAR_REC2020_TO_LINEAR_SRGB * rec2020_), vec3(0.0), vec3(1.0));
+}
+
+vec3 neutral(vec3 c_2) {
+    float x_1 = min(c_2.x, min(c_2.y, c_2.z));
+    float toe = ((x_1 < 0.08) ? (x_1 - ((6.25 * x_1) * x_1)) : 0.04);
+    vec3 shifted = (c_2 - vec3(toe));
+    float peak = max(shifted.x, max(shifted.y, shifted.z));
+    if ((peak < 0.76)) {
+        return shifted;
+    }
+    float d = (1.0 - 0.76);
+    float new_peak = (1.0 - ((d * d) / ((peak + d) - 0.76)));
+    float g = (1.0 - (1.0 / ((0.15 * (peak - new_peak)) + 1.0)));
+    return mix((shifted * (new_peak / peak)), vec3(new_peak), g);
+}
+
+vec3 rrt_and_odt_fit(vec3 v_1) {
+    vec3 a = ((v_1 * (v_1 + vec3(0.0245786))) - vec3(9.0537e-5));
+    vec3 b = ((v_1 * ((0.983729 * v_1) + vec3(0.432951))) + vec3(0.238081));
+    return (a / b);
+}
+
+vec3 aces(vec3 c_3) {
+    vec3 _e6 = rrt_and_odt_fit((ACES_INPUT * (c_3 / vec3(0.6))));
+    return clamp((ACES_OUTPUT * _e6), vec3(0.0), vec3(1.0));
+}
+
+vec3 tone_map(vec3 c_4, Output settings) {
+    vec3 exposed = (c_4 * settings.exposure);
+    if ((settings.tone_mapping == AGX)) {
+        vec3 _e7 = agx(exposed);
+        return _e7;
+    }
+    if ((settings.tone_mapping == NEUTRAL)) {
+        vec3 _e11 = neutral(exposed);
+        return _e11;
+    }
+    if ((settings.tone_mapping == NONE)) {
+        return clamp(exposed, vec3(0.0), vec3(1.0));
+    }
+    vec3 _e16 = aces(exposed);
+    return _e16;
+}
+
+uint pcg(uint v_2) {
+    uint state = ((v_2 * 747796405u) + 2891336453u);
+    uint word = (((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u);
+    return ((word >> 22u) ^ word);
+}
+
+float pixel_noise(vec2 pixel) {
+    uint _e5 = pcg(uint(pixel.y));
+    uint _e7 = pcg((uint(pixel.x) + _e5));
+    return (float((_e7 >> 8u)) / 16777216.0);
+}
+
+vec3 encode(vec3 c_5, vec2 pixel_1) {
+    float _e1 = pixel_noise(pixel_1);
+    float dither = ((_e1 - 0.5) / 255.0);
+    vec3 _e7 = linear_to_srgb(c_5);
+    return (_e7 + vec3(dither));
+}
+
+vec3 lambert(vec3 albedo, vec3 normal, vec3 to_light, vec3 light, vec3 ambient) {
+    float n_dot_l = max(dot(normal, to_light), 0.0);
+    return ((albedo / vec3(3.1415927)) * ((n_dot_l * light) + ambient));
+}
+
+Instance instance_of(uvec4 record, uint instance_1) {
+    uint source = 0u;
+    Instance out_1 = Instance(vec4(0.0), vec4(0.0), vec4(0.0), 0u, false);
+    uint shift = record.w;
+    uint slot = (record.x + (instance_1 >> shift));
+    uvec4 _e13 = texelFetch(_group_2_binding_2_vs, ivec2(uvec2((slot & 2047u), (slot >> INDEX_ROW_SHIFT))), 0);
+    source = _e13.x;
+    if ((shift != 0u)) {
+        uint _e18 = source;
+        uint place = ((_e18 << shift) | (instance_1 & ((1u << shift) - 1u)));
+        uvec4 _e32 = texelFetch(_group_2_binding_3_vs, ivec2(uvec2((place & 2047u), (place >> INDEX_ROW_SHIFT))), 0);
+        source = _e32.x;
+    }
+    uint _e36 = source;
+    out_1.drawn = (_e36 != NO_ROW);
+    uint _e40 = source;
+    bool _e42 = out_1.drawn;
+    uint row = (_e42 ? _e40 : 0u);
+    uvec2 at = uvec2(((row & 511u) * 3u), (row >> MATRIX_ROW_SHIFT));
+    if ((record.z == 0u)) {
+        vec4 _e57 = texelFetch(_group_2_binding_0_vs, ivec2(at), 0);
+        out_1.row0_ = _e57;
+        vec4 _e65 = texelFetch(_group_2_binding_0_vs, ivec2((at + uvec2(1u, 0u))), 0);
+        out_1.row1_ = _e65;
+        vec4 _e73 = texelFetch(_group_2_binding_0_vs, ivec2((at + uvec2(2u, 0u))), 0);
+        out_1.row2_ = _e73;
+    } else {
+        vec4 _e77 = texelFetch(_group_2_binding_1_vs, ivec2(at), 0);
+        out_1.row0_ = _e77;
+        vec4 _e85 = texelFetch(_group_2_binding_1_vs, ivec2((at + uvec2(1u, 0u))), 0);
+        out_1.row1_ = _e85;
+        vec4 _e93 = texelFetch(_group_2_binding_1_vs, ivec2((at + uvec2(2u, 0u))), 0);
+        out_1.row2_ = _e93;
+    }
+    out_1.material = record.y;
+    Instance _e96 = out_1;
+    return _e96;
+}
+
+vec4 finish(vec3 c_6, vec2 pixel_2) {
+    Output _e2 = _group_0_binding_0_vs.output_;
+    vec3 _e4 = tone_map(c_6, _e2);
+    vec3 _e6 = encode(_e4, pixel_2);
+    return vec4(_e6, 1.0);
+}
+
+void main() {
+    VertexIn v = VertexIn(_p2vs_location0, _p2vs_location1);
+    uint instance = (uint(gl_InstanceID) + naga_vs_first_instance);
+    uint draw = uint(gl_DrawID);
+    VertexOut out_ = VertexOut(vec4(0.0), vec3(0.0), 0u);
+    uvec4 _e4 = _group_1_binding_0_vs.items[draw];
+    Instance _e6 = instance_of(_e4, instance);
+    vec4 p = vec4(v.position, 1.0);
+    vec4 n = vec4(v.normal, 0.0);
+    mat4x4 _e18 = _group_0_binding_0_vs.view_proj;
+    out_.clip = (_e18 * vec4(dot(_e6.row0_, p), dot(_e6.row1_, p), dot(_e6.row2_, p), 1.0));
+    out_.normal = vec3(dot(_e6.row0_, n), dot(_e6.row1_, n), dot(_e6.row2_, n));
+    out_.material = _e6.material;
+    if (!(_e6.drawn)) {
+        out_.clip = vec4(2.0, 2.0, 2.0, 1.0);
+    }
+    VertexOut _e46 = out_;
+    gl_Position = _e46.clip;
+    _vs2fs_location0 = _e46.normal;
+    _vs2fs_location1 = _e46.material;
+    gl_Position.z = gl_Position.z * 2.0 - gl_Position.w;
+    return;
+}
+`,
+					uniformBlocks: [
+						{
+							name: 'Frame_block_0Vertex',
+							group: 0,
+							binding: 0,
+						},
+						{
+							name: 'DrawTable_block_1Vertex',
+							group: 1,
+							binding: 0,
+						},
+					],
+					textures: [
+						{
+							name: '_group_2_binding_0_vs',
+							group: 2,
+							binding: 0,
+							sampler: null,
+						},
+						{
+							name: '_group_2_binding_1_vs',
+							group: 2,
+							binding: 1,
+							sampler: null,
+						},
+						{
+							name: '_group_2_binding_2_vs',
+							group: 2,
+							binding: 2,
+							sampler: null,
+						},
+						{
+							name: '_group_2_binding_3_vs',
+							group: 2,
+							binding: 3,
+							sampler: null,
+						},
+					],
+				},
+				fragment: {
+					source: `#version 300 es
+
+precision highp float;
+precision highp int;
+
+struct Output {
+    float exposure;
+    uint tone_mapping;
+    uint spare_a;
+    uint spare_b;
+};
+struct Frame {
+    mat4x4 view_proj;
+    vec4 camera_position;
+    vec4 sun_direction;
+    vec4 sun_color;
+    vec4 ambient;
+    Output output_;
+};
+struct Material {
+    vec4 color;
+};
+struct MaterialTable {
+    Material items[1024];
+};
+struct DrawTable {
+    uvec4 items[256];
+};
+struct VertexIn {
+    vec3 position;
+    vec3 normal;
+};
+struct VertexOut {
+    vec4 clip;
+    vec3 normal;
+    uint material;
+};
+struct Instance {
+    vec4 row0_;
+    vec4 row1_;
+    vec4 row2_;
+    uint material;
+    bool drawn;
+};
+const uint AGX = 1u;
+const mat3x3 LINEAR_SRGB_TO_LINEAR_REC2020_ = mat3x3(vec3(0.6274, 0.0691, 0.0164), vec3(0.3293, 0.9195, 0.088), vec3(0.0433, 0.0113, 0.8956));
+const mat3x3 AGX_INSET = mat3x3(vec3(0.85662717, 0.13731897, 0.11189821), vec3(0.09512124, 0.761242, 0.076799415), vec3(0.048251607, 0.10143904, 0.81130236));
+const mat3x3 AGX_OUTSET = mat3x3(vec3(1.1271006, -0.14132977, -0.14132977), vec3(-0.11060664, 1.1578237, -0.11060664), vec3(-0.016493939, -0.016493939, 1.2519364));
+const mat3x3 LINEAR_REC2020_TO_LINEAR_SRGB = mat3x3(vec3(1.6605, -0.1246, -0.0182), vec3(-0.5876, 1.1329, -0.1006), vec3(-0.0728, -0.0083, 1.1187));
+const uint NEUTRAL = 2u;
+const uint NONE = 3u;
+const mat3x3 ACES_INPUT = mat3x3(vec3(0.59719, 0.076, 0.0284), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
+const mat3x3 ACES_OUTPUT = mat3x3(vec3(1.60475, -0.10208, -0.00327), vec3(-0.53108, 1.10813, -0.07276), vec3(-0.07367, -0.00605, 1.07602));
+const uint MAX_MATERIALS = 1024u;
+const uint MATRIX_ROW_SHIFT = 9u;
+const uint INDEX_ROW_SHIFT = 11u;
+const uint NO_ROW = 4294967295u;
+const uint DRAW_RECORDS = 256u;
+
+layout(std140) uniform Frame_block_0Fragment { Frame _group_0_binding_0_fs; };
+
+layout(std140) uniform MaterialTable_block_1Fragment { MaterialTable _group_0_binding_1_fs; };
+
+smooth in vec3 _vs2fs_location0;
+flat in uint _vs2fs_location1;
+layout(location = 0) out vec4 _fs2p_location0;
+
+vec3 linear_to_srgb(vec3 c) {
+    vec3 low = (c * 12.92);
+    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
+    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
+}
+
+vec3 agx_contrast(vec3 x) {
+    vec3 x2_ = (x * x);
+    vec3 x4_ = (x2_ * x2_);
+    return ((((((((15.5 * x4_) * x2_) - ((40.14 * x4_) * x)) + (31.96 * x4_)) - ((6.868 * x2_) * x)) + (0.4298 * x2_)) + (0.1191 * x)) - vec3(0.00232));
+}
+
+vec3 agx(vec3 c_1) {
+    vec3 inset = (AGX_INSET * (LINEAR_SRGB_TO_LINEAR_REC2020_ * c_1));
+    vec3 logged = ((log2(max(inset, vec3(1e-10))) - vec3(-12.47393)) / vec3(16.5));
+    vec3 _e16 = agx_contrast(clamp(logged, vec3(0.0), vec3(1.0)));
+    vec3 curved = (AGX_OUTSET * _e16);
+    vec3 rec2020_ = pow(max(curved, vec3(0.0)), vec3(2.2));
+    return clamp((LINEAR_REC2020_TO_LINEAR_SRGB * rec2020_), vec3(0.0), vec3(1.0));
+}
+
+vec3 neutral(vec3 c_2) {
+    float x_1 = min(c_2.x, min(c_2.y, c_2.z));
+    float toe = ((x_1 < 0.08) ? (x_1 - ((6.25 * x_1) * x_1)) : 0.04);
+    vec3 shifted = (c_2 - vec3(toe));
+    float peak = max(shifted.x, max(shifted.y, shifted.z));
+    if ((peak < 0.76)) {
+        return shifted;
+    }
+    float d = (1.0 - 0.76);
+    float new_peak = (1.0 - ((d * d) / ((peak + d) - 0.76)));
+    float g = (1.0 - (1.0 / ((0.15 * (peak - new_peak)) + 1.0)));
+    return mix((shifted * (new_peak / peak)), vec3(new_peak), g);
+}
+
+vec3 rrt_and_odt_fit(vec3 v_1) {
+    vec3 a = ((v_1 * (v_1 + vec3(0.0245786))) - vec3(9.0537e-5));
+    vec3 b = ((v_1 * ((0.983729 * v_1) + vec3(0.432951))) + vec3(0.238081));
+    return (a / b);
+}
+
+vec3 aces(vec3 c_3) {
+    vec3 _e6 = rrt_and_odt_fit((ACES_INPUT * (c_3 / vec3(0.6))));
+    return clamp((ACES_OUTPUT * _e6), vec3(0.0), vec3(1.0));
+}
+
+vec3 tone_map(vec3 c_4, Output settings) {
+    vec3 exposed = (c_4 * settings.exposure);
+    if ((settings.tone_mapping == AGX)) {
+        vec3 _e7 = agx(exposed);
+        return _e7;
+    }
+    if ((settings.tone_mapping == NEUTRAL)) {
+        vec3 _e11 = neutral(exposed);
+        return _e11;
+    }
+    if ((settings.tone_mapping == NONE)) {
+        return clamp(exposed, vec3(0.0), vec3(1.0));
+    }
+    vec3 _e16 = aces(exposed);
+    return _e16;
+}
+
+uint pcg(uint v_2) {
+    uint state = ((v_2 * 747796405u) + 2891336453u);
+    uint word = (((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u);
+    return ((word >> 22u) ^ word);
+}
+
+float pixel_noise(vec2 pixel) {
+    uint _e5 = pcg(uint(pixel.y));
+    uint _e7 = pcg((uint(pixel.x) + _e5));
+    return (float((_e7 >> 8u)) / 16777216.0);
+}
+
+vec3 encode(vec3 c_5, vec2 pixel_1) {
+    float _e1 = pixel_noise(pixel_1);
+    float dither = ((_e1 - 0.5) / 255.0);
+    vec3 _e7 = linear_to_srgb(c_5);
+    return (_e7 + vec3(dither));
+}
+
+vec3 lambert(vec3 albedo, vec3 normal, vec3 to_light, vec3 light, vec3 ambient) {
+    float n_dot_l = max(dot(normal, to_light), 0.0);
+    return ((albedo / vec3(3.1415927)) * ((n_dot_l * light) + ambient));
+}
+
+Material material(uint id) {
+    Material _e4 = _group_0_binding_1_fs.items[id];
+    return _e4;
+}
+
+vec4 finish(vec3 c_6, vec2 pixel_2) {
+    Output _e2 = _group_0_binding_0_fs.output_;
+    vec3 _e4 = tone_map(c_6, _e2);
+    vec3 _e6 = encode(_e4, pixel_2);
+    return vec4(_e6, 1.0);
+}
+
+void main() {
+    VertexOut in_1 = VertexOut(gl_FragCoord, _vs2fs_location0, _vs2fs_location1);
+    Material _e2 = material(in_1.material);
+    vec4 _e7 = finish(_e2.color.xyz, in_1.clip.xy);
+    _fs2p_location0 = _e7;
+    return;
+}
+`,
+					uniformBlocks: [
+						{
+							name: 'Frame_block_0Fragment',
+							group: 0,
+							binding: 0,
+						},
+						{
+							name: 'MaterialTable_block_1Fragment',
+							group: 0,
+							binding: 1,
+						},
+					],
+					textures: [],
+				},
+			},
+		},
+	},
+	webgl2_tone_map: {
+		wgsl: null,
+		glsl: {
+			lit: {
+				vertex: {
+					source: `#version 300 es
+
+precision highp float;
+precision highp int;
+
+uniform uint naga_vs_first_instance;
+
+struct Output {
+    float exposure;
+    uint tone_mapping;
+    uint spare_a;
+    uint spare_b;
+};
+struct Frame {
+    mat4x4 view_proj;
+    vec4 camera_position;
+    vec4 sun_direction;
+    vec4 sun_color;
+    vec4 ambient;
+    Output output_;
+};
+struct Material {
+    vec4 color;
+};
+struct MaterialTable {
+    Material items[1024];
+};
+struct DrawTable {
+    uvec4 items[1];
+};
+struct VertexIn {
+    vec3 position;
+    vec3 normal;
+};
+struct VertexOut {
+    vec4 clip;
+    vec3 normal;
+    uint material;
+};
+struct Instance {
+    vec4 row0_;
+    vec4 row1_;
+    vec4 row2_;
+    uint material;
+    bool drawn;
+};
+const uint AGX = 1u;
+const mat3x3 LINEAR_SRGB_TO_LINEAR_REC2020_ = mat3x3(vec3(0.6274, 0.0691, 0.0164), vec3(0.3293, 0.9195, 0.088), vec3(0.0433, 0.0113, 0.8956));
+const mat3x3 AGX_INSET = mat3x3(vec3(0.85662717, 0.13731897, 0.11189821), vec3(0.09512124, 0.761242, 0.076799415), vec3(0.048251607, 0.10143904, 0.81130236));
+const mat3x3 AGX_OUTSET = mat3x3(vec3(1.1271006, -0.14132977, -0.14132977), vec3(-0.11060664, 1.1578237, -0.11060664), vec3(-0.016493939, -0.016493939, 1.2519364));
+const mat3x3 LINEAR_REC2020_TO_LINEAR_SRGB = mat3x3(vec3(1.6605, -0.1246, -0.0182), vec3(-0.5876, 1.1329, -0.1006), vec3(-0.0728, -0.0083, 1.1187));
+const uint NEUTRAL = 2u;
+const uint NONE = 3u;
+const mat3x3 ACES_INPUT = mat3x3(vec3(0.59719, 0.076, 0.0284), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
+const mat3x3 ACES_OUTPUT = mat3x3(vec3(1.60475, -0.10208, -0.00327), vec3(-0.53108, 1.10813, -0.07276), vec3(-0.07367, -0.00605, 1.07602));
+const uint MAX_MATERIALS = 1024u;
+const uint MATRIX_ROW_SHIFT = 9u;
+const uint INDEX_ROW_SHIFT = 11u;
+const uint NO_ROW = 4294967295u;
+const uint DRAW_RECORDS = 1u;
+
+layout(std140) uniform Frame_block_0Vertex { Frame _group_0_binding_0_vs; };
+
+layout(std140) uniform DrawTable_block_1Vertex { DrawTable _group_1_binding_0_vs; };
+
+uniform highp sampler2D _group_2_binding_0_vs;
+
+uniform highp sampler2D _group_2_binding_1_vs;
+
+uniform highp usampler2D _group_2_binding_2_vs;
+
+uniform highp usampler2D _group_2_binding_3_vs;
+
+layout(location = 0) in vec3 _p2vs_location0;
+layout(location = 1) in vec3 _p2vs_location1;
+smooth out vec3 _vs2fs_location0;
+flat out uint _vs2fs_location1;
+
+vec3 linear_to_srgb(vec3 c) {
+    vec3 low = (c * 12.92);
+    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
+    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
+}
+
+vec3 agx_contrast(vec3 x) {
+    vec3 x2_ = (x * x);
+    vec3 x4_ = (x2_ * x2_);
+    return ((((((((15.5 * x4_) * x2_) - ((40.14 * x4_) * x)) + (31.96 * x4_)) - ((6.868 * x2_) * x)) + (0.4298 * x2_)) + (0.1191 * x)) - vec3(0.00232));
+}
+
+vec3 agx(vec3 c_1) {
+    vec3 inset = (AGX_INSET * (LINEAR_SRGB_TO_LINEAR_REC2020_ * c_1));
+    vec3 logged = ((log2(max(inset, vec3(1e-10))) - vec3(-12.47393)) / vec3(16.5));
+    vec3 _e16 = agx_contrast(clamp(logged, vec3(0.0), vec3(1.0)));
+    vec3 curved = (AGX_OUTSET * _e16);
+    vec3 rec2020_ = pow(max(curved, vec3(0.0)), vec3(2.2));
+    return clamp((LINEAR_REC2020_TO_LINEAR_SRGB * rec2020_), vec3(0.0), vec3(1.0));
+}
+
+vec3 neutral(vec3 c_2) {
+    float x_1 = min(c_2.x, min(c_2.y, c_2.z));
+    float toe = ((x_1 < 0.08) ? (x_1 - ((6.25 * x_1) * x_1)) : 0.04);
+    vec3 shifted = (c_2 - vec3(toe));
+    float peak = max(shifted.x, max(shifted.y, shifted.z));
+    if ((peak < 0.76)) {
+        return shifted;
+    }
+    float d = (1.0 - 0.76);
+    float new_peak = (1.0 - ((d * d) / ((peak + d) - 0.76)));
+    float g = (1.0 - (1.0 / ((0.15 * (peak - new_peak)) + 1.0)));
+    return mix((shifted * (new_peak / peak)), vec3(new_peak), g);
+}
+
+vec3 rrt_and_odt_fit(vec3 v_1) {
+    vec3 a = ((v_1 * (v_1 + vec3(0.0245786))) - vec3(9.0537e-5));
+    vec3 b = ((v_1 * ((0.983729 * v_1) + vec3(0.432951))) + vec3(0.238081));
+    return (a / b);
+}
+
+vec3 aces(vec3 c_3) {
+    vec3 _e6 = rrt_and_odt_fit((ACES_INPUT * (c_3 / vec3(0.6))));
+    return clamp((ACES_OUTPUT * _e6), vec3(0.0), vec3(1.0));
+}
+
+vec3 tone_map(vec3 c_4, Output settings) {
+    vec3 exposed = (c_4 * settings.exposure);
+    if ((settings.tone_mapping == AGX)) {
+        vec3 _e7 = agx(exposed);
+        return _e7;
+    }
+    if ((settings.tone_mapping == NEUTRAL)) {
+        vec3 _e11 = neutral(exposed);
+        return _e11;
+    }
+    if ((settings.tone_mapping == NONE)) {
+        return clamp(exposed, vec3(0.0), vec3(1.0));
+    }
+    vec3 _e16 = aces(exposed);
+    return _e16;
+}
+
+uint pcg(uint v_2) {
+    uint state = ((v_2 * 747796405u) + 2891336453u);
+    uint word = (((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u);
+    return ((word >> 22u) ^ word);
+}
+
+float pixel_noise(vec2 pixel) {
+    uint _e5 = pcg(uint(pixel.y));
+    uint _e7 = pcg((uint(pixel.x) + _e5));
+    return (float((_e7 >> 8u)) / 16777216.0);
+}
+
+vec3 encode(vec3 c_5, vec2 pixel_1) {
+    float _e1 = pixel_noise(pixel_1);
+    float dither = ((_e1 - 0.5) / 255.0);
+    vec3 _e7 = linear_to_srgb(c_5);
+    return (_e7 + vec3(dither));
+}
+
+vec3 lambert(vec3 albedo, vec3 normal, vec3 to_light, vec3 light, vec3 ambient) {
+    float n_dot_l = max(dot(normal, to_light), 0.0);
+    return ((albedo / vec3(3.1415927)) * ((n_dot_l * light) + ambient));
+}
+
+Instance instance_of(uvec4 record, uint instance_1) {
+    uint source = 0u;
+    Instance out_1 = Instance(vec4(0.0), vec4(0.0), vec4(0.0), 0u, false);
+    uint shift = record.w;
+    uint slot = (record.x + (instance_1 >> shift));
+    uvec4 _e13 = texelFetch(_group_2_binding_2_vs, ivec2(uvec2((slot & 2047u), (slot >> INDEX_ROW_SHIFT))), 0);
+    source = _e13.x;
+    if ((shift != 0u)) {
+        uint _e18 = source;
+        uint place = ((_e18 << shift) | (instance_1 & ((1u << shift) - 1u)));
+        uvec4 _e32 = texelFetch(_group_2_binding_3_vs, ivec2(uvec2((place & 2047u), (place >> INDEX_ROW_SHIFT))), 0);
+        source = _e32.x;
+    }
+    uint _e36 = source;
+    out_1.drawn = (_e36 != NO_ROW);
+    uint _e40 = source;
+    bool _e42 = out_1.drawn;
+    uint row = (_e42 ? _e40 : 0u);
+    uvec2 at = uvec2(((row & 511u) * 3u), (row >> MATRIX_ROW_SHIFT));
+    if ((record.z == 0u)) {
+        vec4 _e57 = texelFetch(_group_2_binding_0_vs, ivec2(at), 0);
+        out_1.row0_ = _e57;
+        vec4 _e65 = texelFetch(_group_2_binding_0_vs, ivec2((at + uvec2(1u, 0u))), 0);
+        out_1.row1_ = _e65;
+        vec4 _e73 = texelFetch(_group_2_binding_0_vs, ivec2((at + uvec2(2u, 0u))), 0);
+        out_1.row2_ = _e73;
+    } else {
+        vec4 _e77 = texelFetch(_group_2_binding_1_vs, ivec2(at), 0);
+        out_1.row0_ = _e77;
+        vec4 _e85 = texelFetch(_group_2_binding_1_vs, ivec2((at + uvec2(1u, 0u))), 0);
+        out_1.row1_ = _e85;
+        vec4 _e93 = texelFetch(_group_2_binding_1_vs, ivec2((at + uvec2(2u, 0u))), 0);
+        out_1.row2_ = _e93;
+    }
+    out_1.material = record.y;
+    Instance _e96 = out_1;
+    return _e96;
+}
+
+vec4 finish(vec3 c_6, vec2 pixel_2) {
+    Output _e2 = _group_0_binding_0_vs.output_;
+    vec3 _e4 = tone_map(c_6, _e2);
+    vec3 _e6 = encode(_e4, pixel_2);
+    return vec4(_e6, 1.0);
+}
+
+void main() {
+    VertexIn v = VertexIn(_p2vs_location0, _p2vs_location1);
+    uint instance = (uint(gl_InstanceID) + naga_vs_first_instance);
+    VertexOut out_ = VertexOut(vec4(0.0), vec3(0.0), 0u);
+    uvec4 _e3 = _group_1_binding_0_vs.items[0];
+    Instance _e5 = instance_of(_e3, instance);
+    vec4 p = vec4(v.position, 1.0);
+    vec4 n = vec4(v.normal, 0.0);
+    mat4x4 _e17 = _group_0_binding_0_vs.view_proj;
+    out_.clip = (_e17 * vec4(dot(_e5.row0_, p), dot(_e5.row1_, p), dot(_e5.row2_, p), 1.0));
+    out_.normal = vec3(dot(_e5.row0_, n), dot(_e5.row1_, n), dot(_e5.row2_, n));
+    out_.material = _e5.material;
+    if (!(_e5.drawn)) {
+        out_.clip = vec4(2.0, 2.0, 2.0, 1.0);
+    }
+    VertexOut _e45 = out_;
+    gl_Position = _e45.clip;
+    _vs2fs_location0 = _e45.normal;
+    _vs2fs_location1 = _e45.material;
+    gl_Position.z = gl_Position.z * 2.0 - gl_Position.w;
+    return;
+}
+`,
+					uniformBlocks: [
+						{
+							name: 'Frame_block_0Vertex',
+							group: 0,
+							binding: 0,
+						},
+						{
+							name: 'DrawTable_block_1Vertex',
+							group: 1,
+							binding: 0,
+						},
+					],
+					textures: [
+						{
+							name: '_group_2_binding_0_vs',
+							group: 2,
+							binding: 0,
+							sampler: null,
+						},
+						{
+							name: '_group_2_binding_1_vs',
+							group: 2,
+							binding: 1,
+							sampler: null,
+						},
+						{
+							name: '_group_2_binding_2_vs',
+							group: 2,
+							binding: 2,
+							sampler: null,
+						},
+						{
+							name: '_group_2_binding_3_vs',
+							group: 2,
+							binding: 3,
+							sampler: null,
+						},
+					],
+				},
+				fragment: {
+					source: `#version 300 es
+
+precision highp float;
+precision highp int;
+
+struct Output {
+    float exposure;
+    uint tone_mapping;
+    uint spare_a;
+    uint spare_b;
+};
+struct Frame {
+    mat4x4 view_proj;
+    vec4 camera_position;
+    vec4 sun_direction;
+    vec4 sun_color;
+    vec4 ambient;
+    Output output_;
+};
+struct Material {
+    vec4 color;
+};
+struct MaterialTable {
+    Material items[1024];
+};
+struct DrawTable {
+    uvec4 items[1];
+};
+struct VertexIn {
+    vec3 position;
+    vec3 normal;
+};
+struct VertexOut {
+    vec4 clip;
+    vec3 normal;
+    uint material;
+};
+struct Instance {
+    vec4 row0_;
+    vec4 row1_;
+    vec4 row2_;
+    uint material;
+    bool drawn;
+};
+const uint AGX = 1u;
+const mat3x3 LINEAR_SRGB_TO_LINEAR_REC2020_ = mat3x3(vec3(0.6274, 0.0691, 0.0164), vec3(0.3293, 0.9195, 0.088), vec3(0.0433, 0.0113, 0.8956));
+const mat3x3 AGX_INSET = mat3x3(vec3(0.85662717, 0.13731897, 0.11189821), vec3(0.09512124, 0.761242, 0.076799415), vec3(0.048251607, 0.10143904, 0.81130236));
+const mat3x3 AGX_OUTSET = mat3x3(vec3(1.1271006, -0.14132977, -0.14132977), vec3(-0.11060664, 1.1578237, -0.11060664), vec3(-0.016493939, -0.016493939, 1.2519364));
+const mat3x3 LINEAR_REC2020_TO_LINEAR_SRGB = mat3x3(vec3(1.6605, -0.1246, -0.0182), vec3(-0.5876, 1.1329, -0.1006), vec3(-0.0728, -0.0083, 1.1187));
+const uint NEUTRAL = 2u;
+const uint NONE = 3u;
+const mat3x3 ACES_INPUT = mat3x3(vec3(0.59719, 0.076, 0.0284), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
+const mat3x3 ACES_OUTPUT = mat3x3(vec3(1.60475, -0.10208, -0.00327), vec3(-0.53108, 1.10813, -0.07276), vec3(-0.07367, -0.00605, 1.07602));
+const uint MAX_MATERIALS = 1024u;
+const uint MATRIX_ROW_SHIFT = 9u;
+const uint INDEX_ROW_SHIFT = 11u;
+const uint NO_ROW = 4294967295u;
+const uint DRAW_RECORDS = 1u;
+
+layout(std140) uniform Frame_block_0Fragment { Frame _group_0_binding_0_fs; };
+
+layout(std140) uniform MaterialTable_block_1Fragment { MaterialTable _group_0_binding_1_fs; };
+
+smooth in vec3 _vs2fs_location0;
+flat in uint _vs2fs_location1;
+layout(location = 0) out vec4 _fs2p_location0;
+
+vec3 linear_to_srgb(vec3 c) {
+    vec3 low = (c * 12.92);
+    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
+    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
+}
+
+vec3 agx_contrast(vec3 x) {
+    vec3 x2_ = (x * x);
+    vec3 x4_ = (x2_ * x2_);
+    return ((((((((15.5 * x4_) * x2_) - ((40.14 * x4_) * x)) + (31.96 * x4_)) - ((6.868 * x2_) * x)) + (0.4298 * x2_)) + (0.1191 * x)) - vec3(0.00232));
+}
+
+vec3 agx(vec3 c_1) {
+    vec3 inset = (AGX_INSET * (LINEAR_SRGB_TO_LINEAR_REC2020_ * c_1));
+    vec3 logged = ((log2(max(inset, vec3(1e-10))) - vec3(-12.47393)) / vec3(16.5));
+    vec3 _e16 = agx_contrast(clamp(logged, vec3(0.0), vec3(1.0)));
+    vec3 curved = (AGX_OUTSET * _e16);
+    vec3 rec2020_ = pow(max(curved, vec3(0.0)), vec3(2.2));
+    return clamp((LINEAR_REC2020_TO_LINEAR_SRGB * rec2020_), vec3(0.0), vec3(1.0));
+}
+
+vec3 neutral(vec3 c_2) {
+    float x_1 = min(c_2.x, min(c_2.y, c_2.z));
+    float toe = ((x_1 < 0.08) ? (x_1 - ((6.25 * x_1) * x_1)) : 0.04);
+    vec3 shifted = (c_2 - vec3(toe));
+    float peak = max(shifted.x, max(shifted.y, shifted.z));
+    if ((peak < 0.76)) {
+        return shifted;
+    }
+    float d = (1.0 - 0.76);
+    float new_peak = (1.0 - ((d * d) / ((peak + d) - 0.76)));
+    float g = (1.0 - (1.0 / ((0.15 * (peak - new_peak)) + 1.0)));
+    return mix((shifted * (new_peak / peak)), vec3(new_peak), g);
+}
+
+vec3 rrt_and_odt_fit(vec3 v_1) {
+    vec3 a = ((v_1 * (v_1 + vec3(0.0245786))) - vec3(9.0537e-5));
+    vec3 b = ((v_1 * ((0.983729 * v_1) + vec3(0.432951))) + vec3(0.238081));
+    return (a / b);
+}
+
+vec3 aces(vec3 c_3) {
+    vec3 _e6 = rrt_and_odt_fit((ACES_INPUT * (c_3 / vec3(0.6))));
+    return clamp((ACES_OUTPUT * _e6), vec3(0.0), vec3(1.0));
+}
+
+vec3 tone_map(vec3 c_4, Output settings) {
+    vec3 exposed = (c_4 * settings.exposure);
+    if ((settings.tone_mapping == AGX)) {
+        vec3 _e7 = agx(exposed);
+        return _e7;
+    }
+    if ((settings.tone_mapping == NEUTRAL)) {
+        vec3 _e11 = neutral(exposed);
+        return _e11;
+    }
+    if ((settings.tone_mapping == NONE)) {
+        return clamp(exposed, vec3(0.0), vec3(1.0));
+    }
+    vec3 _e16 = aces(exposed);
+    return _e16;
+}
+
+uint pcg(uint v_2) {
+    uint state = ((v_2 * 747796405u) + 2891336453u);
+    uint word = (((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u);
+    return ((word >> 22u) ^ word);
+}
+
+float pixel_noise(vec2 pixel) {
+    uint _e5 = pcg(uint(pixel.y));
+    uint _e7 = pcg((uint(pixel.x) + _e5));
+    return (float((_e7 >> 8u)) / 16777216.0);
+}
+
+vec3 encode(vec3 c_5, vec2 pixel_1) {
+    float _e1 = pixel_noise(pixel_1);
+    float dither = ((_e1 - 0.5) / 255.0);
+    vec3 _e7 = linear_to_srgb(c_5);
+    return (_e7 + vec3(dither));
+}
+
+vec3 lambert(vec3 albedo, vec3 normal, vec3 to_light, vec3 light, vec3 ambient) {
+    float n_dot_l = max(dot(normal, to_light), 0.0);
+    return ((albedo / vec3(3.1415927)) * ((n_dot_l * light) + ambient));
+}
+
+Material material(uint id) {
+    Material _e4 = _group_0_binding_1_fs.items[id];
+    return _e4;
+}
+
+vec4 finish(vec3 c_6, vec2 pixel_2) {
+    Output _e2 = _group_0_binding_0_fs.output_;
+    vec3 _e4 = tone_map(c_6, _e2);
+    vec3 _e6 = encode(_e4, pixel_2);
+    return vec4(_e6, 1.0);
+}
+
+void main() {
+    VertexOut in_ = VertexOut(gl_FragCoord, _vs2fs_location0, _vs2fs_location1);
+    Material _e2 = material(in_.material);
+    vec3 albedo_1 = _e2.color.xyz;
+    vec4 _e9 = _group_0_binding_0_fs.sun_direction;
+    vec4 _e14 = _group_0_binding_0_fs.sun_color;
+    vec4 _e18 = _group_0_binding_0_fs.ambient;
+    vec3 _e20 = lambert(albedo_1, normalize(in_.normal), -(_e9.xyz), _e14.xyz, _e18.xyz);
+    vec4 _e23 = finish(_e20, in_.clip.xy);
+    _fs2p_location0 = _e23;
+    return;
+}
+`,
+					uniformBlocks: [
+						{
+							name: 'Frame_block_0Fragment',
+							group: 0,
+							binding: 0,
+						},
+						{
+							name: 'MaterialTable_block_1Fragment',
+							group: 0,
+							binding: 1,
+						},
+					],
+					textures: [],
+				},
+			},
+			unlit: {
+				vertex: {
+					source: `#version 300 es
+
+precision highp float;
+precision highp int;
+
+uniform uint naga_vs_first_instance;
+
+struct Output {
+    float exposure;
+    uint tone_mapping;
+    uint spare_a;
+    uint spare_b;
+};
+struct Frame {
+    mat4x4 view_proj;
+    vec4 camera_position;
+    vec4 sun_direction;
+    vec4 sun_color;
+    vec4 ambient;
+    Output output_;
+};
+struct Material {
+    vec4 color;
+};
+struct MaterialTable {
+    Material items[1024];
+};
+struct DrawTable {
+    uvec4 items[1];
+};
+struct VertexIn {
+    vec3 position;
+    vec3 normal;
+};
+struct VertexOut {
+    vec4 clip;
+    vec3 normal;
+    uint material;
+};
+struct Instance {
+    vec4 row0_;
+    vec4 row1_;
+    vec4 row2_;
+    uint material;
+    bool drawn;
+};
+const uint AGX = 1u;
+const mat3x3 LINEAR_SRGB_TO_LINEAR_REC2020_ = mat3x3(vec3(0.6274, 0.0691, 0.0164), vec3(0.3293, 0.9195, 0.088), vec3(0.0433, 0.0113, 0.8956));
+const mat3x3 AGX_INSET = mat3x3(vec3(0.85662717, 0.13731897, 0.11189821), vec3(0.09512124, 0.761242, 0.076799415), vec3(0.048251607, 0.10143904, 0.81130236));
+const mat3x3 AGX_OUTSET = mat3x3(vec3(1.1271006, -0.14132977, -0.14132977), vec3(-0.11060664, 1.1578237, -0.11060664), vec3(-0.016493939, -0.016493939, 1.2519364));
+const mat3x3 LINEAR_REC2020_TO_LINEAR_SRGB = mat3x3(vec3(1.6605, -0.1246, -0.0182), vec3(-0.5876, 1.1329, -0.1006), vec3(-0.0728, -0.0083, 1.1187));
+const uint NEUTRAL = 2u;
+const uint NONE = 3u;
+const mat3x3 ACES_INPUT = mat3x3(vec3(0.59719, 0.076, 0.0284), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
+const mat3x3 ACES_OUTPUT = mat3x3(vec3(1.60475, -0.10208, -0.00327), vec3(-0.53108, 1.10813, -0.07276), vec3(-0.07367, -0.00605, 1.07602));
+const uint MAX_MATERIALS = 1024u;
+const uint MATRIX_ROW_SHIFT = 9u;
+const uint INDEX_ROW_SHIFT = 11u;
+const uint NO_ROW = 4294967295u;
+const uint DRAW_RECORDS = 1u;
+
+layout(std140) uniform Frame_block_0Vertex { Frame _group_0_binding_0_vs; };
+
+layout(std140) uniform DrawTable_block_1Vertex { DrawTable _group_1_binding_0_vs; };
+
+uniform highp sampler2D _group_2_binding_0_vs;
+
+uniform highp sampler2D _group_2_binding_1_vs;
+
+uniform highp usampler2D _group_2_binding_2_vs;
+
+uniform highp usampler2D _group_2_binding_3_vs;
+
+layout(location = 0) in vec3 _p2vs_location0;
+layout(location = 1) in vec3 _p2vs_location1;
+smooth out vec3 _vs2fs_location0;
+flat out uint _vs2fs_location1;
+
+vec3 linear_to_srgb(vec3 c) {
+    vec3 low = (c * 12.92);
+    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
+    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
+}
+
+vec3 agx_contrast(vec3 x) {
+    vec3 x2_ = (x * x);
+    vec3 x4_ = (x2_ * x2_);
+    return ((((((((15.5 * x4_) * x2_) - ((40.14 * x4_) * x)) + (31.96 * x4_)) - ((6.868 * x2_) * x)) + (0.4298 * x2_)) + (0.1191 * x)) - vec3(0.00232));
+}
+
+vec3 agx(vec3 c_1) {
+    vec3 inset = (AGX_INSET * (LINEAR_SRGB_TO_LINEAR_REC2020_ * c_1));
+    vec3 logged = ((log2(max(inset, vec3(1e-10))) - vec3(-12.47393)) / vec3(16.5));
+    vec3 _e16 = agx_contrast(clamp(logged, vec3(0.0), vec3(1.0)));
+    vec3 curved = (AGX_OUTSET * _e16);
+    vec3 rec2020_ = pow(max(curved, vec3(0.0)), vec3(2.2));
+    return clamp((LINEAR_REC2020_TO_LINEAR_SRGB * rec2020_), vec3(0.0), vec3(1.0));
+}
+
+vec3 neutral(vec3 c_2) {
+    float x_1 = min(c_2.x, min(c_2.y, c_2.z));
+    float toe = ((x_1 < 0.08) ? (x_1 - ((6.25 * x_1) * x_1)) : 0.04);
+    vec3 shifted = (c_2 - vec3(toe));
+    float peak = max(shifted.x, max(shifted.y, shifted.z));
+    if ((peak < 0.76)) {
+        return shifted;
+    }
+    float d = (1.0 - 0.76);
+    float new_peak = (1.0 - ((d * d) / ((peak + d) - 0.76)));
+    float g = (1.0 - (1.0 / ((0.15 * (peak - new_peak)) + 1.0)));
+    return mix((shifted * (new_peak / peak)), vec3(new_peak), g);
+}
+
+vec3 rrt_and_odt_fit(vec3 v_1) {
+    vec3 a = ((v_1 * (v_1 + vec3(0.0245786))) - vec3(9.0537e-5));
+    vec3 b = ((v_1 * ((0.983729 * v_1) + vec3(0.432951))) + vec3(0.238081));
+    return (a / b);
+}
+
+vec3 aces(vec3 c_3) {
+    vec3 _e6 = rrt_and_odt_fit((ACES_INPUT * (c_3 / vec3(0.6))));
+    return clamp((ACES_OUTPUT * _e6), vec3(0.0), vec3(1.0));
+}
+
+vec3 tone_map(vec3 c_4, Output settings) {
+    vec3 exposed = (c_4 * settings.exposure);
+    if ((settings.tone_mapping == AGX)) {
+        vec3 _e7 = agx(exposed);
+        return _e7;
+    }
+    if ((settings.tone_mapping == NEUTRAL)) {
+        vec3 _e11 = neutral(exposed);
+        return _e11;
+    }
+    if ((settings.tone_mapping == NONE)) {
+        return clamp(exposed, vec3(0.0), vec3(1.0));
+    }
+    vec3 _e16 = aces(exposed);
+    return _e16;
+}
+
+uint pcg(uint v_2) {
+    uint state = ((v_2 * 747796405u) + 2891336453u);
+    uint word = (((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u);
+    return ((word >> 22u) ^ word);
+}
+
+float pixel_noise(vec2 pixel) {
+    uint _e5 = pcg(uint(pixel.y));
+    uint _e7 = pcg((uint(pixel.x) + _e5));
+    return (float((_e7 >> 8u)) / 16777216.0);
+}
+
+vec3 encode(vec3 c_5, vec2 pixel_1) {
+    float _e1 = pixel_noise(pixel_1);
+    float dither = ((_e1 - 0.5) / 255.0);
+    vec3 _e7 = linear_to_srgb(c_5);
+    return (_e7 + vec3(dither));
+}
+
+vec3 lambert(vec3 albedo, vec3 normal, vec3 to_light, vec3 light, vec3 ambient) {
+    float n_dot_l = max(dot(normal, to_light), 0.0);
+    return ((albedo / vec3(3.1415927)) * ((n_dot_l * light) + ambient));
+}
+
+Instance instance_of(uvec4 record, uint instance_1) {
+    uint source = 0u;
+    Instance out_1 = Instance(vec4(0.0), vec4(0.0), vec4(0.0), 0u, false);
+    uint shift = record.w;
+    uint slot = (record.x + (instance_1 >> shift));
+    uvec4 _e13 = texelFetch(_group_2_binding_2_vs, ivec2(uvec2((slot & 2047u), (slot >> INDEX_ROW_SHIFT))), 0);
+    source = _e13.x;
+    if ((shift != 0u)) {
+        uint _e18 = source;
+        uint place = ((_e18 << shift) | (instance_1 & ((1u << shift) - 1u)));
+        uvec4 _e32 = texelFetch(_group_2_binding_3_vs, ivec2(uvec2((place & 2047u), (place >> INDEX_ROW_SHIFT))), 0);
+        source = _e32.x;
+    }
+    uint _e36 = source;
+    out_1.drawn = (_e36 != NO_ROW);
+    uint _e40 = source;
+    bool _e42 = out_1.drawn;
+    uint row = (_e42 ? _e40 : 0u);
+    uvec2 at = uvec2(((row & 511u) * 3u), (row >> MATRIX_ROW_SHIFT));
+    if ((record.z == 0u)) {
+        vec4 _e57 = texelFetch(_group_2_binding_0_vs, ivec2(at), 0);
+        out_1.row0_ = _e57;
+        vec4 _e65 = texelFetch(_group_2_binding_0_vs, ivec2((at + uvec2(1u, 0u))), 0);
+        out_1.row1_ = _e65;
+        vec4 _e73 = texelFetch(_group_2_binding_0_vs, ivec2((at + uvec2(2u, 0u))), 0);
+        out_1.row2_ = _e73;
+    } else {
+        vec4 _e77 = texelFetch(_group_2_binding_1_vs, ivec2(at), 0);
+        out_1.row0_ = _e77;
+        vec4 _e85 = texelFetch(_group_2_binding_1_vs, ivec2((at + uvec2(1u, 0u))), 0);
+        out_1.row1_ = _e85;
+        vec4 _e93 = texelFetch(_group_2_binding_1_vs, ivec2((at + uvec2(2u, 0u))), 0);
+        out_1.row2_ = _e93;
+    }
+    out_1.material = record.y;
+    Instance _e96 = out_1;
+    return _e96;
+}
+
+vec4 finish(vec3 c_6, vec2 pixel_2) {
+    Output _e2 = _group_0_binding_0_vs.output_;
+    vec3 _e4 = tone_map(c_6, _e2);
+    vec3 _e6 = encode(_e4, pixel_2);
+    return vec4(_e6, 1.0);
+}
+
+void main() {
+    VertexIn v = VertexIn(_p2vs_location0, _p2vs_location1);
+    uint instance = (uint(gl_InstanceID) + naga_vs_first_instance);
+    VertexOut out_ = VertexOut(vec4(0.0), vec3(0.0), 0u);
+    uvec4 _e3 = _group_1_binding_0_vs.items[0];
+    Instance _e5 = instance_of(_e3, instance);
+    vec4 p = vec4(v.position, 1.0);
+    vec4 n = vec4(v.normal, 0.0);
+    mat4x4 _e17 = _group_0_binding_0_vs.view_proj;
+    out_.clip = (_e17 * vec4(dot(_e5.row0_, p), dot(_e5.row1_, p), dot(_e5.row2_, p), 1.0));
+    out_.normal = vec3(dot(_e5.row0_, n), dot(_e5.row1_, n), dot(_e5.row2_, n));
+    out_.material = _e5.material;
+    if (!(_e5.drawn)) {
+        out_.clip = vec4(2.0, 2.0, 2.0, 1.0);
+    }
+    VertexOut _e45 = out_;
+    gl_Position = _e45.clip;
+    _vs2fs_location0 = _e45.normal;
+    _vs2fs_location1 = _e45.material;
+    gl_Position.z = gl_Position.z * 2.0 - gl_Position.w;
+    return;
+}
+`,
+					uniformBlocks: [
+						{
+							name: 'Frame_block_0Vertex',
+							group: 0,
+							binding: 0,
+						},
+						{
+							name: 'DrawTable_block_1Vertex',
+							group: 1,
+							binding: 0,
+						},
+					],
+					textures: [
+						{
+							name: '_group_2_binding_0_vs',
+							group: 2,
+							binding: 0,
+							sampler: null,
+						},
+						{
+							name: '_group_2_binding_1_vs',
+							group: 2,
+							binding: 1,
+							sampler: null,
+						},
+						{
+							name: '_group_2_binding_2_vs',
+							group: 2,
+							binding: 2,
+							sampler: null,
+						},
+						{
+							name: '_group_2_binding_3_vs',
+							group: 2,
+							binding: 3,
+							sampler: null,
+						},
+					],
+				},
+				fragment: {
+					source: `#version 300 es
+
+precision highp float;
+precision highp int;
+
+struct Output {
+    float exposure;
+    uint tone_mapping;
+    uint spare_a;
+    uint spare_b;
+};
+struct Frame {
+    mat4x4 view_proj;
+    vec4 camera_position;
+    vec4 sun_direction;
+    vec4 sun_color;
+    vec4 ambient;
+    Output output_;
+};
+struct Material {
+    vec4 color;
+};
+struct MaterialTable {
+    Material items[1024];
+};
+struct DrawTable {
+    uvec4 items[1];
+};
+struct VertexIn {
+    vec3 position;
+    vec3 normal;
+};
+struct VertexOut {
+    vec4 clip;
+    vec3 normal;
+    uint material;
+};
+struct Instance {
+    vec4 row0_;
+    vec4 row1_;
+    vec4 row2_;
+    uint material;
+    bool drawn;
+};
+const uint AGX = 1u;
+const mat3x3 LINEAR_SRGB_TO_LINEAR_REC2020_ = mat3x3(vec3(0.6274, 0.0691, 0.0164), vec3(0.3293, 0.9195, 0.088), vec3(0.0433, 0.0113, 0.8956));
+const mat3x3 AGX_INSET = mat3x3(vec3(0.85662717, 0.13731897, 0.11189821), vec3(0.09512124, 0.761242, 0.076799415), vec3(0.048251607, 0.10143904, 0.81130236));
+const mat3x3 AGX_OUTSET = mat3x3(vec3(1.1271006, -0.14132977, -0.14132977), vec3(-0.11060664, 1.1578237, -0.11060664), vec3(-0.016493939, -0.016493939, 1.2519364));
+const mat3x3 LINEAR_REC2020_TO_LINEAR_SRGB = mat3x3(vec3(1.6605, -0.1246, -0.0182), vec3(-0.5876, 1.1329, -0.1006), vec3(-0.0728, -0.0083, 1.1187));
+const uint NEUTRAL = 2u;
+const uint NONE = 3u;
+const mat3x3 ACES_INPUT = mat3x3(vec3(0.59719, 0.076, 0.0284), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
+const mat3x3 ACES_OUTPUT = mat3x3(vec3(1.60475, -0.10208, -0.00327), vec3(-0.53108, 1.10813, -0.07276), vec3(-0.07367, -0.00605, 1.07602));
+const uint MAX_MATERIALS = 1024u;
+const uint MATRIX_ROW_SHIFT = 9u;
+const uint INDEX_ROW_SHIFT = 11u;
+const uint NO_ROW = 4294967295u;
+const uint DRAW_RECORDS = 1u;
+
+layout(std140) uniform Frame_block_0Fragment { Frame _group_0_binding_0_fs; };
+
+layout(std140) uniform MaterialTable_block_1Fragment { MaterialTable _group_0_binding_1_fs; };
+
+smooth in vec3 _vs2fs_location0;
+flat in uint _vs2fs_location1;
+layout(location = 0) out vec4 _fs2p_location0;
+
+vec3 linear_to_srgb(vec3 c) {
+    vec3 low = (c * 12.92);
+    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
+    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
+}
+
+vec3 agx_contrast(vec3 x) {
+    vec3 x2_ = (x * x);
+    vec3 x4_ = (x2_ * x2_);
+    return ((((((((15.5 * x4_) * x2_) - ((40.14 * x4_) * x)) + (31.96 * x4_)) - ((6.868 * x2_) * x)) + (0.4298 * x2_)) + (0.1191 * x)) - vec3(0.00232));
+}
+
+vec3 agx(vec3 c_1) {
+    vec3 inset = (AGX_INSET * (LINEAR_SRGB_TO_LINEAR_REC2020_ * c_1));
+    vec3 logged = ((log2(max(inset, vec3(1e-10))) - vec3(-12.47393)) / vec3(16.5));
+    vec3 _e16 = agx_contrast(clamp(logged, vec3(0.0), vec3(1.0)));
+    vec3 curved = (AGX_OUTSET * _e16);
+    vec3 rec2020_ = pow(max(curved, vec3(0.0)), vec3(2.2));
+    return clamp((LINEAR_REC2020_TO_LINEAR_SRGB * rec2020_), vec3(0.0), vec3(1.0));
+}
+
+vec3 neutral(vec3 c_2) {
+    float x_1 = min(c_2.x, min(c_2.y, c_2.z));
+    float toe = ((x_1 < 0.08) ? (x_1 - ((6.25 * x_1) * x_1)) : 0.04);
+    vec3 shifted = (c_2 - vec3(toe));
+    float peak = max(shifted.x, max(shifted.y, shifted.z));
+    if ((peak < 0.76)) {
+        return shifted;
+    }
+    float d = (1.0 - 0.76);
+    float new_peak = (1.0 - ((d * d) / ((peak + d) - 0.76)));
+    float g = (1.0 - (1.0 / ((0.15 * (peak - new_peak)) + 1.0)));
+    return mix((shifted * (new_peak / peak)), vec3(new_peak), g);
+}
+
+vec3 rrt_and_odt_fit(vec3 v_1) {
+    vec3 a = ((v_1 * (v_1 + vec3(0.0245786))) - vec3(9.0537e-5));
+    vec3 b = ((v_1 * ((0.983729 * v_1) + vec3(0.432951))) + vec3(0.238081));
+    return (a / b);
+}
+
+vec3 aces(vec3 c_3) {
+    vec3 _e6 = rrt_and_odt_fit((ACES_INPUT * (c_3 / vec3(0.6))));
+    return clamp((ACES_OUTPUT * _e6), vec3(0.0), vec3(1.0));
+}
+
+vec3 tone_map(vec3 c_4, Output settings) {
+    vec3 exposed = (c_4 * settings.exposure);
+    if ((settings.tone_mapping == AGX)) {
+        vec3 _e7 = agx(exposed);
+        return _e7;
+    }
+    if ((settings.tone_mapping == NEUTRAL)) {
+        vec3 _e11 = neutral(exposed);
+        return _e11;
+    }
+    if ((settings.tone_mapping == NONE)) {
+        return clamp(exposed, vec3(0.0), vec3(1.0));
+    }
+    vec3 _e16 = aces(exposed);
+    return _e16;
+}
+
+uint pcg(uint v_2) {
+    uint state = ((v_2 * 747796405u) + 2891336453u);
+    uint word = (((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u);
+    return ((word >> 22u) ^ word);
+}
+
+float pixel_noise(vec2 pixel) {
+    uint _e5 = pcg(uint(pixel.y));
+    uint _e7 = pcg((uint(pixel.x) + _e5));
+    return (float((_e7 >> 8u)) / 16777216.0);
+}
+
+vec3 encode(vec3 c_5, vec2 pixel_1) {
+    float _e1 = pixel_noise(pixel_1);
+    float dither = ((_e1 - 0.5) / 255.0);
+    vec3 _e7 = linear_to_srgb(c_5);
+    return (_e7 + vec3(dither));
+}
+
+vec3 lambert(vec3 albedo, vec3 normal, vec3 to_light, vec3 light, vec3 ambient) {
+    float n_dot_l = max(dot(normal, to_light), 0.0);
+    return ((albedo / vec3(3.1415927)) * ((n_dot_l * light) + ambient));
+}
+
+Material material(uint id) {
+    Material _e4 = _group_0_binding_1_fs.items[id];
+    return _e4;
+}
+
+vec4 finish(vec3 c_6, vec2 pixel_2) {
+    Output _e2 = _group_0_binding_0_fs.output_;
+    vec3 _e4 = tone_map(c_6, _e2);
+    vec3 _e6 = encode(_e4, pixel_2);
+    return vec4(_e6, 1.0);
+}
+
+void main() {
+    VertexOut in_1 = VertexOut(gl_FragCoord, _vs2fs_location0, _vs2fs_location1);
+    Material _e2 = material(in_1.material);
+    vec4 _e7 = finish(_e2.color.xyz, in_1.clip.xy);
+    _fs2p_location0 = _e7;
+    return;
+}
+`,
+					uniformBlocks: [
+						{
+							name: 'Frame_block_0Fragment',
+							group: 0,
+							binding: 0,
+						},
+						{
+							name: 'MaterialTable_block_1Fragment',
+							group: 0,
+							binding: 1,
+						},
+					],
+					textures: [],
+				},
+			},
+		},
+	},
 	webgpu: {
 		wgsl: {
-			source: `struct Frame {
+			source: `struct Output {
+    exposure: f32,
+    tone_mapping: u32,
+    spare_a: u32,
+    spare_b: u32,
+}
+
+struct Frame {
     view_proj: mat4x4<f32>,
     camera_position: vec4<f32>,
     sun_direction: vec4<f32>,
     sun_color: vec4<f32>,
     ambient: vec4<f32>,
+    output: Output,
 }
 
 struct Material {
@@ -1289,15 +3628,13 @@ fn lambert(albedo: vec3<f32>, normal: vec3<f32>, to_light: vec3<f32>, light: vec
     return ((albedo / vec3(3.1415927f)) * ((n_dot_l * light) + ambient));
 }
 
-fn linear_to_srgb(c: vec3<f32>) -> vec3<f32> {
-    let low = (c * 12.92f);
-    let high = ((1.055f * pow(c, vec3(0.41666666f))) - vec3(0.055f));
-    return select(high, low, (c <= vec3(0.0031308f)));
-}
-
 fn material(id: u32) -> Material {
     let _e3 = materials[id];
     return _e3;
+}
+
+fn finish(c: vec3<f32>, pixel: vec2<f32>) -> vec4<f32> {
+    return vec4<f32>(c, 1f);
 }
 
 @vertex
@@ -1323,15 +3660,221 @@ fn fs_lit(in: VertexOut) -> @location(0) vec4<f32> {
     let _e14 = frame.sun_color;
     let _e18 = frame.ambient;
     let _e20 = lambert(albedo_1, normalize(in.normal), -(_e9.xyz), _e14.xyz, _e18.xyz);
-    let _e21 = linear_to_srgb(_e20);
-    return vec4<f32>(_e21, 1f);
+    let _e23 = finish(_e20, in.clip.xy);
+    return _e23;
 }
 
 @fragment
 fn fs_unlit(in_1: VertexOut) -> @location(0) vec4<f32> {
     let _e2 = material(in_1.material);
-    let _e5 = linear_to_srgb(_e2.color.xyz);
-    return vec4<f32>(_e5, 1f);
+    let _e7 = finish(_e2.color.xyz, in_1.clip.xy);
+    return _e7;
+}
+`,
+			pipelines: {
+				lit: {
+					vertex: 'vs',
+					fragment: 'fs_lit',
+				},
+				unlit: {
+					vertex: 'vs',
+					fragment: 'fs_unlit',
+				},
+			},
+		},
+		glsl: null,
+	},
+	webgpu_tone_map: {
+		wgsl: {
+			source: `struct Output {
+    exposure: f32,
+    tone_mapping: u32,
+    spare_a: u32,
+    spare_b: u32,
+}
+
+struct Frame {
+    view_proj: mat4x4<f32>,
+    camera_position: vec4<f32>,
+    sun_direction: vec4<f32>,
+    sun_color: vec4<f32>,
+    ambient: vec4<f32>,
+    output: Output,
+}
+
+struct Material {
+    color: vec4<f32>,
+}
+
+struct VertexIn {
+    @location(0) position: vec3<f32>,
+    @location(1) normal: vec3<f32>,
+    @location(2) row0_: vec4<f32>,
+    @location(3) row1_: vec4<f32>,
+    @location(4) row2_: vec4<f32>,
+    @location(5) ids: vec4<u32>,
+}
+
+struct VertexOut {
+    @builtin(position) clip: vec4<f32>,
+    @location(0) normal: vec3<f32>,
+    @location(1) @interpolate(flat, either) material: u32,
+}
+
+struct Instance {
+    row0_: vec4<f32>,
+    row1_: vec4<f32>,
+    row2_: vec4<f32>,
+    material: u32,
+    drawn: bool,
+}
+
+const AGX: u32 = 1u;
+const LINEAR_SRGB_TO_LINEAR_REC2020_: mat3x3<f32> = mat3x3<f32>(vec3<f32>(0.6274f, 0.0691f, 0.0164f), vec3<f32>(0.3293f, 0.9195f, 0.088f), vec3<f32>(0.0433f, 0.0113f, 0.8956f));
+const AGX_INSET: mat3x3<f32> = mat3x3<f32>(vec3<f32>(0.85662717f, 0.13731897f, 0.11189821f), vec3<f32>(0.09512124f, 0.761242f, 0.076799415f), vec3<f32>(0.048251607f, 0.10143904f, 0.81130236f));
+const AGX_OUTSET: mat3x3<f32> = mat3x3<f32>(vec3<f32>(1.1271006f, -0.14132977f, -0.14132977f), vec3<f32>(-0.11060664f, 1.1578237f, -0.11060664f), vec3<f32>(-0.016493939f, -0.016493939f, 1.2519364f));
+const LINEAR_REC2020_TO_LINEAR_SRGB: mat3x3<f32> = mat3x3<f32>(vec3<f32>(1.6605f, -0.1246f, -0.0182f), vec3<f32>(-0.5876f, 1.1329f, -0.1006f), vec3<f32>(-0.0728f, -0.0083f, 1.1187f));
+const NEUTRAL: u32 = 2u;
+const NONE: u32 = 3u;
+const ACES_INPUT: mat3x3<f32> = mat3x3<f32>(vec3<f32>(0.59719f, 0.076f, 0.0284f), vec3<f32>(0.35458f, 0.90834f, 0.13383f), vec3<f32>(0.04823f, 0.01566f, 0.83777f));
+const ACES_OUTPUT: mat3x3<f32> = mat3x3<f32>(vec3<f32>(1.60475f, -0.10208f, -0.00327f), vec3<f32>(-0.53108f, 1.10813f, -0.07276f), vec3<f32>(-0.07367f, -0.00605f, 1.07602f));
+
+@group(0) @binding(0)
+var<uniform> frame: Frame;
+@group(0) @binding(1)
+var<storage> materials: array<Material>;
+
+fn linear_to_srgb(c: vec3<f32>) -> vec3<f32> {
+    let low = (c * 12.92f);
+    let high = ((1.055f * pow(c, vec3(0.41666666f))) - vec3(0.055f));
+    return select(high, low, (c <= vec3(0.0031308f)));
+}
+
+fn agx_contrast(x: vec3<f32>) -> vec3<f32> {
+    let x2_ = (x * x);
+    let x4_ = (x2_ * x2_);
+    return ((((((((15.5f * x4_) * x2_) - ((40.14f * x4_) * x)) + (31.96f * x4_)) - ((6.868f * x2_) * x)) + (0.4298f * x2_)) + (0.1191f * x)) - vec3(0.00232f));
+}
+
+fn agx(c_1: vec3<f32>) -> vec3<f32> {
+    let inset = (AGX_INSET * (LINEAR_SRGB_TO_LINEAR_REC2020_ * c_1));
+    let logged = ((log2(max(inset, vec3(0.0000000001f))) - vec3(-12.47393f)) / vec3(16.5f));
+    let _e16 = agx_contrast(saturate(logged));
+    let curved = (AGX_OUTSET * _e16);
+    let rec2020_ = pow(max(curved, vec3(0f)), vec3(2.2f));
+    return saturate((LINEAR_REC2020_TO_LINEAR_SRGB * rec2020_));
+}
+
+fn neutral(c_2: vec3<f32>) -> vec3<f32> {
+    let x_1 = min(c_2.x, min(c_2.y, c_2.z));
+    let toe = select(0.04f, (x_1 - ((6.25f * x_1) * x_1)), (x_1 < 0.08f));
+    let shifted = (c_2 - vec3(toe));
+    let peak = max(shifted.x, max(shifted.y, shifted.z));
+    if (peak < 0.76f) {
+        return shifted;
+    }
+    let d = (1f - 0.76f);
+    let new_peak = (1f - ((d * d) / ((peak + d) - 0.76f)));
+    let g = (1f - (1f / ((0.15f * (peak - new_peak)) + 1f)));
+    return mix((shifted * (new_peak / peak)), vec3(new_peak), g);
+}
+
+fn rrt_and_odt_fit(v_1: vec3<f32>) -> vec3<f32> {
+    let a = ((v_1 * (v_1 + vec3(0.0245786f))) - vec3(0.000090537f));
+    let b = ((v_1 * ((0.983729f * v_1) + vec3(0.432951f))) + vec3(0.238081f));
+    return (a / b);
+}
+
+fn aces(c_3: vec3<f32>) -> vec3<f32> {
+    let _e6 = rrt_and_odt_fit((ACES_INPUT * (c_3 / vec3(0.6f))));
+    return saturate((ACES_OUTPUT * _e6));
+}
+
+fn tone_map(c_4: vec3<f32>, settings: Output) -> vec3<f32> {
+    let exposed = (c_4 * settings.exposure);
+    if (settings.tone_mapping == AGX) {
+        let _e7 = agx(exposed);
+        return _e7;
+    }
+    if (settings.tone_mapping == NEUTRAL) {
+        let _e11 = neutral(exposed);
+        return _e11;
+    }
+    if (settings.tone_mapping == NONE) {
+        return saturate(exposed);
+    }
+    let _e16 = aces(exposed);
+    return _e16;
+}
+
+fn pcg(v_2: u32) -> u32 {
+    let state = ((v_2 * 747796405u) + 2891336453u);
+    let word = (((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u);
+    return ((word >> 22u) ^ word);
+}
+
+fn pixel_noise(pixel: vec2<f32>) -> f32 {
+    let _e5 = pcg(u32(pixel.y));
+    let _e7 = pcg((u32(pixel.x) + _e5));
+    return (f32((_e7 >> 8u)) / 16777216f);
+}
+
+fn encode(c_5: vec3<f32>, pixel_1: vec2<f32>) -> vec3<f32> {
+    let _e1 = pixel_noise(pixel_1);
+    let dither = ((_e1 - 0.5f) / 255f);
+    let _e7 = linear_to_srgb(c_5);
+    return (_e7 + vec3(dither));
+}
+
+fn lambert(albedo: vec3<f32>, normal: vec3<f32>, to_light: vec3<f32>, light: vec3<f32>, ambient: vec3<f32>) -> vec3<f32> {
+    let n_dot_l = max(dot(normal, to_light), 0f);
+    return ((albedo / vec3(3.1415927f)) * ((n_dot_l * light) + ambient));
+}
+
+fn material(id: u32) -> Material {
+    let _e3 = materials[id];
+    return _e3;
+}
+
+fn finish(c_6: vec3<f32>, pixel_2: vec2<f32>) -> vec4<f32> {
+    let _e2 = frame.output;
+    let _e4 = tone_map(c_6, _e2);
+    let _e6 = encode(_e4, pixel_2);
+    return vec4<f32>(_e6, 1f);
+}
+
+@vertex
+fn vs(v: VertexIn) -> VertexOut {
+    var out: VertexOut;
+
+    let found = Instance(v.row0_, v.row1_, v.row2_, v.ids.x, true);
+    let p = vec4<f32>(v.position, 1f);
+    let n = vec4<f32>(v.normal, 0f);
+    let _e18 = frame.view_proj;
+    out.clip = (_e18 * vec4<f32>(dot(found.row0_, p), dot(found.row1_, p), dot(found.row2_, p), 1f));
+    out.normal = vec3<f32>(dot(found.row0_, n), dot(found.row1_, n), dot(found.row2_, n));
+    out.material = found.material;
+    let _e38 = out;
+    return _e38;
+}
+
+@fragment
+fn fs_lit(in: VertexOut) -> @location(0) vec4<f32> {
+    let _e2 = material(in.material);
+    let albedo_1 = _e2.color.xyz;
+    let _e9 = frame.sun_direction;
+    let _e14 = frame.sun_color;
+    let _e18 = frame.ambient;
+    let _e20 = lambert(albedo_1, normalize(in.normal), -(_e9.xyz), _e14.xyz, _e18.xyz);
+    let _e23 = finish(_e20, in.clip.xy);
+    return _e23;
+}
+
+@fragment
+fn fs_unlit(in_1: VertexOut) -> @location(0) vec4<f32> {
+    let _e2 = material(in_1.material);
+    let _e7 = finish(_e2.color.xyz, in_1.clip.xy);
+    return _e7;
 }
 `,
 			pipelines: {
@@ -2264,6 +4807,7 @@ fn fs_sample(in: VertexOut) -> @location(0) vec4<f32> {
 /** Every shader variant, by shader name and variant name. */
 export const SHADERS = {
 	cull: CULL_SHADER,
+	final: FINAL_SHADER,
 	mesh: MESH_SHADER,
 	test_mesh: TEST_MESH_SHADER,
 	test_textures: TEST_TEXTURES_SHADER,

@@ -6,6 +6,7 @@
 // sketch runs.
 
 import { EngineError } from '../errors/engine-error';
+import type { Post } from '../scene/post';
 import type { Geometry, Materials } from '../scene/resources';
 import type { Scene } from '../scene/scene';
 
@@ -56,6 +57,8 @@ export interface SketchContext {
 	materials: Materials;
 	/** Mesh generators. */
 	geometry: Geometry;
+	/** Post-processing: the tone mapping and the exposure of the scene's color. */
+	post: Post;
 	/**
 	 * Sketch time in seconds, which is the sum of every step that `onUpdate` received, so paused and
 	 * hidden time do not count. Also the current frame number. In hold mode, the last frame's time is

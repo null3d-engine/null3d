@@ -12,23 +12,18 @@ use super::cull::INDIRECT_BYTES;
 use super::ids;
 use super::layout::Layout;
 use crate::frame::{RecordError, UploadArena};
-use crate::frame_graph::{COLOR_FORMAT, DEPTH_FORMAT};
+use crate::frame_graph::SceneTargets;
 use crate::materials::Shading;
 use crate::view::{ViewFrame, ViewId};
 
 /// Records the creation of the render pipelines, which draw into the scene's color and depth
-/// targets with `samples` samples.
-pub(super) fn create_pipelines(list: &mut DrawList, samples: u32) -> Result<(), RecordError> {
-    for (id, tmpl) in [
-        (ids::LIT, template::INSTANCED_LIT),
-        (ids::UNLIT, template::INSTANCED_UNLIT),
-    ] {
-        list.push(
-            Op::CreateRenderPipeline,
-            &[id, tmpl, 0, COLOR_FORMAT, DEPTH_FORMAT, samples, 0],
-        )?;
-    }
-    Ok(())
+/// targets.
+pub(super) fn create_pipelines(
+    list: &mut DrawList,
+    targets: SceneTargets,
+) -> Result<(), RecordError> {
+    targets.create_pipeline(list, ids::LIT, template::INSTANCED_LIT, 0)?;
+    targets.create_pipeline(list, ids::UNLIT, template::INSTANCED_UNLIT, 0)
 }
 
 /// Records the creation of a view's frame uniform buffer, and of the group that binds it with the
@@ -76,16 +71,21 @@ pub(super) fn upload(
 }
 
 /// Records a view's bundle: every bucket of the layout, drawn from the view's compacted instances
-/// with its indirect draws, into targets with `samples` samples.
+/// with its indirect draws, into the scene's targets.
 pub(super) fn record_bundle(
     list: &mut DrawList,
     view: ViewId,
     layout: &Layout,
-    samples: u32,
+    targets: SceneTargets,
 ) -> Result<(), RecordError> {
     list.push(
         Op::BeginBundle,
-        &[ids::bundle(view), COLOR_FORMAT, DEPTH_FORMAT, samples],
+        &[
+            ids::bundle(view),
+            targets.color,
+            targets.depth,
+            targets.samples,
+        ],
     )?;
     list.push(Op::SetBindGroup, &[0, ids::frame_group(view), 0])?;
     list.push(Op::SetVertexBuffer, &[0, ids::VERTICES, 0, 0])?;

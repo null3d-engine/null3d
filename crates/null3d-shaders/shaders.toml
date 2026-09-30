@@ -29,14 +29,24 @@
 # WEBGL_multi_draw, which WebGPU does not have.
 
 # Meshes drawn by instance, lit (Lambert) or unlit. WebGL2 reads instances from data textures, one
-# draw per bucket, or many buckets in one multi-draw call where WEBGL_multi_draw exists.
+# draw per bucket, or many buckets in one multi-draw call where WEBGL_multi_draw exists. The
+# TONE_MAP variants tone map and encode their color themselves, for the 8-bit path.
 [shaders.mesh]
 file = "mesh.wgsl"
 pipelines.lit = { vertex = "vs", fragment = "fs_lit" }
 pipelines.unlit = { vertex = "vs", fragment = "fs_unlit" }
 variants.webgpu = { targets = ["wgsl"] }
+variants.webgpu_tone_map = { defs = ["TONE_MAP"], targets = ["wgsl"] }
 variants.webgl2 = { defs = ["WEBGL2"], targets = ["glsl"] }
+variants.webgl2_tone_map = { defs = ["WEBGL2", "TONE_MAP"], targets = ["glsl"] }
 variants.webgl2_multi_draw = { defs = ["WEBGL2", "DRAW_INDEX"], targets = ["glsl"] }
+variants.webgl2_multi_draw_tone_map = { defs = ["WEBGL2", "DRAW_INDEX", "TONE_MAP"], targets = ["glsl"] }
+
+# The final pass: one triangle over the canvas, which tone maps the HDR scene color into it.
+[shaders.final]
+file = "final.wgsl"
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.main = { targets = ["wgsl", "glsl"] }
 
 # GPU culling into buckets for indirect draws; its compute entry point is `main`. WebGPU only.
 [shaders.cull]

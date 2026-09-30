@@ -44,7 +44,7 @@ The engine reads what the device can do at startup and exposes it as `engine.cap
 
 ```ts
 engine.capabilities;
-// { tier: 'webgpu' | 'webgpu-compat' | 'webgl2', threaded, features, limits }
+// { tier: 'webgpu' | 'webgpu-compat' | 'webgl2', threaded, features, limits, hdr, maxInstances }
 ```
 
 The features it tests include:
@@ -57,6 +57,8 @@ The features it tests include:
 - GPU timer queries
 - MSAA on 16-bit float targets
 - rendering into 16-bit and 32-bit float textures on WebGL2 (`engine.report.webgl2.floatRenderTargets`)
+
+Where float targets take antialiasing, the scene draws high dynamic range color, and the final pass tone maps it. That holds on core WebGPU, and on WebGL2 devices that pass the float target test. `hdr` says whether the engine took that path. [Color management](color-management.md) covers the 8-bit path of the other devices.
 
 Sketch code that uses an optional feature checks this object first.
 
