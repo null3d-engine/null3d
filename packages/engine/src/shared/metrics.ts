@@ -62,9 +62,9 @@ export const UNTIMED = -1;
 export const RING_RECORDS = 1024;
 
 /**
- * One frame in this many has its GPU time measured and its completion tracked. Doing both costs
- * the thread that draws about as much as drawing a small scene, so the engine samples frames
- * instead of paying it every frame.
+ * One frame in this many has its GPU time measured while the page measures. Timing costs the
+ * thread that draws about as much as drawing a small scene, so the engine samples frames instead
+ * of paying it every frame.
  */
 export const SAMPLED_EVERY = 8;
 
@@ -131,6 +131,14 @@ class MetricsViews {
 		return (
 			recordsStart(this.rings) + (ring * this.capacity + (sequence % this.capacity)) * RECORD_WORDS
 		);
+	}
+
+	/**
+	 * True when the record at word `at` is the whole record with this sequence number: finished, and
+	 * not being written again.
+	 */
+	holds(at: number, sequence: number): boolean {
+		return Atomics.load(this.words, at + SEQUENCE) === sequence + 1;
 	}
 }
 
@@ -299,7 +307,7 @@ export class MetricsReader {
 			const out = this.records[ring] as RingRecords;
 			for (let sequence = from; sequence < written; sequence++) {
 				const at = this.views.record(ring, sequence);
-				if (Atomics.load(words, at + SEQUENCE) !== sequence + 1) {
+				if (!this.views.holds(at, sequence)) {
 					this.lost++;
 					continue;
 				}
@@ -310,7 +318,7 @@ export class MetricsReader {
 					out.phases[p]?.push(floats[at + PHASES + p] as number);
 				for (let c = 0; c < COUNTER_NAMES.length; c++)
 					out.counters[c]?.push(words[at + COUNTERS + c] as number);
-				if (Atomics.load(words, at + SEQUENCE) !== sequence + 1) {
+				if (!this.views.holds(at, sequence)) {
 					dropLast(out);
 					this.lost++;
 				}
@@ -323,6 +331,66 @@ export class MetricsReader {
 	end(): void {
 		this.drain();
 		Atomics.store(this.views.header, MEASURING, 0);
+	}
+}
+
+// What `RingSums.sums` holds, by index.
+/** Records taken in. */
+export const SUM_RECORDS = 0;
+/** Their busy times, summed. */
+export const SUM_BUSY_MS = 1;
+/** The longest of their busy times. */
+export const SUM_LONGEST_BUSY_MS = 2;
+/** Their intervals, summed. */
+export const SUM_INTERVAL_MS = 3;
+
+/**
+ * Sums the records that one ring receives, for code that judges the frames during play, such as
+ * the quality governor. `add` takes in the records written since its last call, and `clear` starts
+ * a new window. It allocates nothing and leaves the page's costly timing off, so any thread that
+ * holds the metrics buffer can call it as often as every frame. A record that the writer
+ * overwrote before `add` read it is left out. The records' count over their summed intervals is
+ * their rate. Every completion record has an interval, which is 0 for a frame that the GPU
+ * finished with the one before. The render ring's first record has none, so a window that holds
+ * the first presented frame counts one frame more than its intervals cover.
+ */
+export class RingSums {
+	/** The window's sums, by the `SUM_` indices. */
+	readonly sums = new Float64Array(SUM_INTERVAL_MS + 1);
+	private readonly views: MetricsViews;
+	private next: number;
+
+	/** Sums `ring`'s records from those written after this call. */
+	constructor(
+		buffer: ArrayBufferLike,
+		readonly ring: number,
+	) {
+		this.views = new MetricsViews(buffer);
+		this.next = Atomics.load(this.views.header, WRITTEN + ring);
+	}
+
+	/** Takes in the records written since the last call. */
+	add(): void {
+		const { views, sums } = this;
+		const written = Atomics.load(views.header, WRITTEN + this.ring);
+		const from = Math.max(this.next, written - views.capacity);
+		for (let sequence = from; sequence < written; sequence++) {
+			const at = views.record(this.ring, sequence);
+			if (!views.holds(at, sequence)) continue;
+			const busy = views.floats[at + BUSY] as number;
+			const interval = views.floats[at + INTERVAL] as number;
+			if (!views.holds(at, sequence)) continue;
+			sums[SUM_RECORDS] = (sums[SUM_RECORDS] as number) + 1;
+			sums[SUM_BUSY_MS] = (sums[SUM_BUSY_MS] as number) + busy;
+			sums[SUM_LONGEST_BUSY_MS] = Math.max(sums[SUM_LONGEST_BUSY_MS] as number, busy);
+			sums[SUM_INTERVAL_MS] = (sums[SUM_INTERVAL_MS] as number) + interval;
+		}
+		this.next = written;
+	}
+
+	/** Starts a new window: the sums go back to zero, and the place in the ring stays. */
+	clear(): void {
+		this.sums.fill(0);
 	}
 }
 

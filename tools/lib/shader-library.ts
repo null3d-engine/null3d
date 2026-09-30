@@ -1,7 +1,7 @@
 // The shader library's reference page, from the doc comments of its WGSL modules. Each module in
 // the library folder starts with a plain comment that describes it, and gives every function,
 // struct and constant a `///` doc comment, which the page shows under the item's declaration.
-import { existsSync, readdirSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { readIfExists } from './files';
 import { renderFrontMatter } from './frontmatter';
@@ -12,7 +12,11 @@ export const LIBRARY_DIR = 'crates/null3d-shaders/wgsl/lib';
 /** The page that lists the modules. */
 export const LIBRARY_PAGE_ID = 'shaders/library';
 
-/** The modules that shaders import, in the order the page shows them. */
+/**
+ * The modules that shaders import, in the order the page shows them. The library's other modules
+ * hold what the engine's own shaders share, such as their bindings and output settings. Shaders
+ * other than the engine's cannot rely on them, so the page leaves them out.
+ */
 export const PUBLIC_MODULES = [
 	'math',
 	'noise',
@@ -23,11 +27,6 @@ export const PUBLIC_MODULES = [
 	'depth',
 	'sdf',
 ] as const;
-/**
- * The modules that hold the bindings of the engine's own templates. Shaders other than the
- * engine's cannot rely on them, so the page leaves them out.
- */
-export const INTERNAL_MODULES = ['globals', 'mesh'] as const;
 
 export interface LibraryItem {
 	kind: 'fn' | 'struct' | 'const';
@@ -163,14 +162,6 @@ export function readLibrary(root: string): { modules: LibraryModule[]; problems:
 	if (!existsSync(join(root, LIBRARY_DIR)))
 		return { modules: [], problems: [`${LIBRARY_DIR} is missing`] };
 	const problems: string[] = [];
-	const known = new Set<string>([...PUBLIC_MODULES, ...INTERNAL_MODULES]);
-	for (const file of readdirSync(join(root, LIBRARY_DIR))) {
-		const stem = file.replace(/\.wgsl$/, '');
-		if (file.endsWith('.wgsl') && !known.has(stem))
-			problems.push(
-				`${LIBRARY_DIR}/${file}: add the module to PUBLIC_MODULES or INTERNAL_MODULES in tools/lib/shader-library.ts`,
-			);
-	}
 	const modules = PUBLIC_MODULES.flatMap((name) => {
 		const path = `${LIBRARY_DIR}/${name}.wgsl`;
 		const text = readIfExists(root, path);

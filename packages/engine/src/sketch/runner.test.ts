@@ -31,6 +31,8 @@ const CAPABILITIES: EngineCapabilities = {
 /** Scene slots of the fake core, and records of its command ring. */
 const CAPACITY = 15;
 const RING = 64;
+/** The fake core's first ring block, past room for every scene field. */
+const RING_BLOCK = 16;
 
 /**
  * A core that keeps the scene arrays and the command ring in memory, hands out slots, and logs each
@@ -40,12 +42,11 @@ const RING = 64;
 function fakeGlue(log: string[], memory: WebAssembly.Memory): CoreGlue {
 	// Each scene field, then each ring field, in its own 4 KB block.
 	const block = (index: number) => 4096 * (index + 1);
-	const ringBlock = C.SCENE_FIELD_DIRTY_WORDS + 1;
 	let slots = 0;
 	const kept: Partial<Record<keyof CoreGlue, (field: number) => number>> = {
 		sceneCapacity: () => CAPACITY,
 		sceneArrays: block,
-		commandRing: (field) => (field === C.RING_FIELD_CAPACITY ? RING : block(ringBlock + field)),
+		commandRing: (field) => (field === C.RING_FIELD_CAPACITY ? RING : block(RING_BLOCK + field)),
 		reserveObject: () => ++slots,
 	};
 	const clearDirty = () =>
@@ -75,7 +76,7 @@ async function start(
 	control.slotFloats[Slot.CanvasCssWidth] = 320;
 	control.slotFloats[Slot.CanvasCssHeight] = 180;
 	control.slotFloats[Slot.PixelRatio] = 2;
-	const memory = new WebAssembly.Memory({ initial: 1 });
+	const memory = new WebAssembly.Memory({ initial: 2 });
 	const runner = new SketchRunner(() => {}, createMetricsBuffer(false, 0), {
 		glue: fakeGlue(log, memory),
 		memory,
@@ -198,8 +199,9 @@ describe('SketchRunner', () => {
 		try {
 			let skip = false;
 			const { runner } = await start(({ scene, time }) => {
-				const mesh = { id: 1, radius: 1 } as MeshGeometry;
-				const material = { id: 1 } as Material;
+				const { core } = scene;
+				const mesh = { id: 1, radius: 1, core } as unknown as MeshGeometry;
+				const material = { id: 1, core } as unknown as Material;
 				const crate = scene.createMesh({ name: 'Crate', mesh, material });
 				const sign = scene.createMesh({ name: 'Sign', mesh, material });
 				return {

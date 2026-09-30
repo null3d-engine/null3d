@@ -8,7 +8,7 @@ summary: "Creating objects; find; background, environment, fog, sky; warmUp."
 
 # Scene
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Fog, sky, environments, texture backgrounds, `scene.find`, `scene.warmUp`, and the `castShadows` and `receiveShadows` options of `createMesh` are not built yet, so coding agents must not use them.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Fog, sky, environments, texture backgrounds and `scene.warmUp` are not built yet, so coding agents must not use them.
 
 The scene holds everything the engine draws: the objects, the camera that the canvas shows, the lights and the background. A sketch gets it as `scene` in its setup function, and creates everything through it.
 
@@ -49,7 +49,21 @@ export default defineSketch(({ scene, geometry, materials }) => {
 | `createDirectionalLight(options)` | The scene's directional light |
 | `createAmbientLight(options)` | The scene's ambient light |
 
-Groups, meshes and cameras take the same object options: `name`, `position`, `rotation`, `scale`, `parent`, `dynamic` and `layers`. [Objects and transforms](objects.md) describes them. Meshes come from `geometry` and materials from `materials` in the sketch context. One mesh and one material can serve any number of objects.
+Groups, meshes and cameras take the same object options: `name`, `position`, `rotation`, `scale`, `parent`, `dynamic` and `layers`. [Objects and transforms](objects.md) describes them. `createMesh` also takes `castShadows` and `receiveShadows`, which this version stores but does not draw yet. Meshes come from `geometry` and materials from `materials` in the sketch context. One mesh and one material can serve any number of objects.
+
+## Finding objects by name
+
+`scene.find(name)` returns the first object created with that name that is not destroyed, or `undefined` when no object has it. Names need not be unique. The scene keeps an index of names, so the call costs the same in a scene of any size.
+
+```ts
+import type { Mesh } from '@null3d/engine';
+
+// At setup: the sketch created a mesh named 'door' earlier.
+const door = scene.find('door') as Mesh | undefined;
+door?.setVisible(false);
+```
+
+`find` returns the general `Object3D` type. When you know which kind of object has the name, cast the result to its class, such as `Mesh`, to use its own calls. Look objects up at setup and keep them, rather than calling `find` in every frame.
 
 ## The camera and the background
 
@@ -61,7 +75,7 @@ The scene has one directional light and one ambient light. `createDirectionalLig
 
 ## When changes take effect
 
-Creating an object, `destroy`, `setParent`, `setVisible`, `setLayers`, `setDynamic` and `setMaterial` change the structure of the scene. The engine queues these changes and applies them after `onUpdate` returns, before it updates transforms and draws. The frame drawn after the call shows the change.
+Creating an object, `destroy`, `setParent`, `setVisible`, `setLayers` and `setDynamic` change the structure of the scene, and so do the mesh calls: `setMaterial`, `setMesh`, `setCastShadows`, `setReceiveShadows`, `setRenderOrder`, `setFrustumCulled` and `setBounds`. The engine queues these changes and applies them after `onUpdate` returns, before it updates transforms and draws. The frame drawn after the call shows the change. Some of them make the engine rebuild its draw tables, as the [performance guide](../guides/performance.md#objects-during-play) lists.
 
 Values that the engine computes, such as the result of `getWorldPosition`, come from the engine's last transform update. In `onUpdate` they come from the previous frame. In `onLateUpdate` they already hold the frame's changes, because the engine updates transforms before it calls `onLateUpdate`. Setters that `onLateUpdate` calls show in the same frame, and structural changes that it makes wait for the next frame ([Sketch API](sketch.md#when-changes-show)).
 
@@ -129,6 +143,8 @@ Options for `scene.createMesh`.
 | --- | --- |
 | `mesh: MeshGeometry` | The shape to draw, from `ctx.geometry`. |
 | `material: Material` | How the surface looks, from `ctx.materials`. |
+| `castShadows?: boolean` | True makes the mesh cast shadows, like `setCastShadows(true)`. The default is false. This version stores the setting but draws no shadows yet. |
+| `receiveShadows?: boolean` | True makes the mesh receive shadows, like `setReceiveShadows(true)`. The default is false. This version stores the setting but draws no shadows yet. |
 
 ### `NodeOptions`
 
@@ -154,6 +170,7 @@ The scene: every object, the active camera, the lights and the background.
 
 | Member | Description |
 | --- | --- |
+| `find(name: string): Object3D \| undefined` | The first object created with `name` that is not destroyed, or undefined when no object has the name. It looks the name up in an index, so its cost does not grow with the scene. Call it at setup and keep the object it returns. |
 | `createGroup(options: NodeOptions = {}): Group` | An empty node, for hierarchy. |
 | `createMesh(options: MeshOptions): Mesh` | A drawn object. It is static unless `dynamic: true`. |
 | `createInstances(mesh: MeshGeometry, count: number, options: InstanceOptions): InstanceBatch` | Many copies of one mesh and material, with typed arrays of rows. |

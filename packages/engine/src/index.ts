@@ -91,6 +91,7 @@ export type {
 	MeshOptions,
 	NodeOptions,
 	Object3D,
+	ParentOptions,
 	Quat,
 	Scene,
 	Vec3,

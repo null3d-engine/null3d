@@ -50,6 +50,8 @@ export interface RendererSetup {
 	powerPreference?: PowerPreference;
 	/** The frame rate that ?fps= holds, or undefined to draw at the display's rate. */
 	fps?: number;
+	/** The most frames that ?queue= lets wait on the GPU, or undefined for the engine's limit. */
+	queue?: number;
 	/** Hold mode: the thread runs no frame loop, and draws the held frame once, when a capture asks. */
 	hold?: boolean;
 }

@@ -4,11 +4,12 @@ import { loadServer } from './tests/lib/load-server.ts';
 import { reportCollector } from './tests/lib/report-collector.ts';
 import { HTTP_PORT, HTTPS_PORT } from './tests/lib/server.ts';
 
-// One dev server for every browser page in the repository: the test pages under tests/pages and the
-// benchmark pages under bench/pages, with the isolation headers. Plain HTTP stays on localhost,
-// which phones reach through adb. NULL3D_HTTPS=1 serves HTTPS on the local network instead, on
-// its own port, for tablets and phones that reach the Mac by its .local name. The dev server and
-// `vite preview` also serve the startup build of the engine test page, one address prefix per load.
+// One dev server for every browser page in the repository: the test pages under tests/pages, the
+// benchmark pages under bench/pages and the demos under examples, with the isolation headers.
+// Plain HTTP stays on localhost, which phones reach through adb. NULL3D_HTTPS=1 serves HTTPS on the
+// local network instead, on its own port, for tablets and phones that reach the Mac by its .local
+// name. The dev server and `vite preview` also serve the startup build of the engine test page, one
+// address prefix per load.
 
 const https = process.env.NULL3D_HTTPS === '1';
 
@@ -73,7 +74,9 @@ export default defineConfig({
 			],
 		},
 	},
-	optimizeDeps: { entries: ['tests/pages/**/*.html', 'bench/pages/**/*.html'] },
+	optimizeDeps: {
+		entries: ['tests/pages/**/*.html', 'bench/pages/**/*.html', 'examples/**/*.html'],
+	},
 	// The production builds of the test pages, which the production browser tests serve.
 	build: {
 		outDir: 'target/production-pages',
