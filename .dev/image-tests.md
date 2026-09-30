@@ -14,7 +14,7 @@ This guide covers the image test manifest, its references, and the review that m
 - The command-line tool's tests, `tests/image/cli.spec.ts`, run `bunx @null3d/cli shot` in the fixture project `tests/fixtures/project`. Its images must match the references of the manifest's `project` test, which draws the same sketch. Change the fixture's sketch, and its references change too.
 - The tests of `bunx @null3d/cli test`, `tests/image/cli-test.spec.ts`, run it in copies of the fixture project, each with its own `null3d.json`. A copy's references are copies of the manifest's `project` references, so its passing tests need no reference images of their own.
 - The harness and `bunx @null3d/cli test` judge images with the same code and the same default tolerance, from `packages/cli/src/compare.js`.
-- A page may paint over what GPUs draw differently, and publish it as data instead. The depth precision page paints each pixel where depth fought as the nearer surface, so every GPU matches one reference, and publishes the fighting pixels as fields.
+- A page may paint over what GPUs draw differently, and publish it as data instead. The depth precision page paints each pixel where depth fought as the nearer surface, so every GPU matches one reference. It publishes the fighting pixels as fields.
 
 ## Adding a test
 
@@ -49,4 +49,4 @@ A CI run that finds a missing or changed image saves it too. `bun run images:rev
 
 - CI splits the browser tests, the manifest among them, into shards that run at once, as the `browser` job's matrix lists them. Add a shard when one takes more than about 10 minutes.
 - A shard that fails uploads its `test-results/` folder with the candidates. `bun run images:review --ci <run>` downloads them with the GitHub CLI.
-- The `real-browsers` jobs run the manifest in Safari and Firefox on GitHub's macOS machines, each in shards of its own. [Device sessions](devices.md#browser-apps-on-the-mac) says how they split. A shard that fails uploads its runs and candidates as `real-browser-runs-<browser>-<shard>`, and `bun run images:review --ci <run>` downloads those too.
+- In the merge queue, the `real-browsers` jobs run the manifest in Safari and Firefox on GitHub's macOS machines, each in shards of its own. [Device sessions](devices.md#browser-apps-on-the-mac) says how they split. A shard that fails uploads its runs and candidates as `real-browser-runs-<browser>-<shard>`, and `bun run images:review --ci <run>` downloads those too.
