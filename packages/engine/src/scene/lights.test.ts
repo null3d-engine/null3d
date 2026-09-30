@@ -332,8 +332,11 @@ describe('light calls', () => {
 	test('destroy removes the object and frees the light row', () => {
 		const { scene, commands, tableRow } = fakeCore();
 		const lamp = scene.createPointLight({ name: 'Lamp', range: 3 });
+		const row = tableRow(lamp);
 		lamp.destroy();
-		expect(tableRow(lamp).live).toBe(false);
+		expect(row.live).toBe(false);
+		// The light no longer names its old row, which the next light created takes.
+		expect(lamp.id).toBe(0);
 		expect(commands().at(-1)).toEqual([C.COMMAND_DESTROY, lamp.handle, 0, 0]);
 		expect(scene.find('Lamp')).toBeUndefined();
 	});
