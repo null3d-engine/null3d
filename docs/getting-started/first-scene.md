@@ -41,7 +41,7 @@ Put the four files below in one folder. The project needs the `@null3d/engine` p
 </html>
 ```
 
-CSS sets the canvas's size. The engine draws at that size times the screen's pixel ratio, and caps the ratio at 2 unless you set `maxPixelRatio`.
+CSS sets the canvas's size. The engine draws at that size times the screen's pixel ratio, up to a cap that the [quality preset](../concepts/quality-presets.md) sets. The `maxPixelRatio` option of `createEngine` replaces the cap.
 
 ## The page module
 

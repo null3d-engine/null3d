@@ -62,7 +62,7 @@ All `@null3d/*` packages share one version number, because the WebAssembly core 
 
 ## The `null3d` command
 
-The `null3d` command, in the `@null3d/cli` package, is optional. It does jobs that a bundler does not do, such as headless tests, screenshots, benchmarks and model optimization. Install it when you need one of them, and run it as `bunx @null3d/cli` followed by the command:
+The `null3d` command, in the `@null3d/cli` package, is optional. It does jobs that a bundler does not do: image tests and screenshots in a headless browser, and benchmarks of a production build. Install it when you need one of them, and run it as `bunx @null3d/cli` followed by the command:
 
 ```sh
 bun add -d @null3d/cli
