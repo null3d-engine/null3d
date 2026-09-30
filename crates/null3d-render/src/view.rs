@@ -17,9 +17,10 @@ use null3d_core::culling::Frustum;
 use null3d_core::handle::Handle;
 use null3d_core::scene::SceneStorage;
 
+use null3d_core::layers::DEFAULT_LAYERS;
+
 use crate::camera::{Affine, Lens, Mat4};
 use crate::frame_data::FrameUniform;
-use crate::graph::ALL_LAYERS;
 
 /// The most views a builder draws. Each view has a fixed range of GPU object ids.
 pub const MAX_VIEWS: usize = 32;
@@ -43,7 +44,7 @@ impl ViewId {
 }
 
 /// What a view draws from: a camera object with its lens, and the layers of the objects it
-/// draws.
+/// draws (see [`null3d_core::layers`]).
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct View {
     camera: Option<(Handle, Lens)>,
@@ -51,10 +52,11 @@ pub struct View {
 }
 
 impl Default for View {
+    /// A view with no camera yet, of the objects on the default layer, as a new camera draws.
     fn default() -> Self {
         Self {
             camera: None,
-            layers: ALL_LAYERS,
+            layers: DEFAULT_LAYERS,
         }
     }
 }
@@ -82,6 +84,10 @@ impl View {
         self.layers
     }
 
+    pub(crate) fn set_layers(&mut self, mask: u32) {
+        self.layers = mask;
+    }
+
     /// The view-projection matrix for positions relative to the camera, for a target of `aspect`,
     /// the camera's place for those positions as [`Lens::eye`] gives it, and the camera's cell
     /// and position in it. `None` when the view has no camera, or its camera object is gone.
@@ -103,21 +109,24 @@ impl View {
 }
 
 /// A view's values for one frame: the uniform block its passes read, the frustum its culling
-/// tests against, both relative to its camera, and where its camera is.
+/// tests against, both relative to its camera, where its camera is, and the layers it draws.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ViewFrame {
     pub uniform: FrameUniform,
     pub frustum: Frustum,
     /// The camera's cell, and its position relative to the cell's center.
     pub camera: CellPosition,
+    /// The view's layer mask.
+    pub layers: u32,
 }
 
 impl ViewFrame {
-    pub(crate) fn new(uniform: FrameUniform, camera: CellPosition) -> Self {
+    pub(crate) fn new(uniform: FrameUniform, camera: CellPosition, layers: u32) -> Self {
         Self {
             frustum: Frustum::from_view_projection(&uniform.view_proj),
             uniform,
             camera,
+            layers,
         }
     }
 }

@@ -32,6 +32,7 @@ use null3d_render::gpu_driven::{
     BYTES_PER_SOURCE, GpuDrivenRenderer, MAX_USEFUL_BINDING_BYTES, RendererConfig,
 };
 use null3d_render::materials::{MaterialError, MaterialTable, Shading};
+use null3d_render::view::ViewId;
 use wasm_bindgen::prelude::*;
 
 pub mod constants;
@@ -600,6 +601,19 @@ pub fn set_batch_active_count(batch: u32, count: u32) -> u32 {
     })
 }
 
+/// Sets the layer mask of every row of a batch. Like a new active count, a new mask needs no
+/// rebuild of the renderer's tables.
+#[wasm_bindgen(js_name = setBatchLayers)]
+pub fn set_batch_layers(batch: u32, mask: u32) -> u32 {
+    with_engine(|e| match e.batches.get_mut(Handle::from_raw(batch)) {
+        Ok(batch) => {
+            batch.set_layers(mask);
+            0
+        }
+        Err(error) => core_failure(error),
+    })
+}
+
 /// Marks rows of a static batch for update and upload.
 #[wasm_bindgen(js_name = markBatchDirty)]
 pub fn mark_batch_dirty(batch: u32, start: u32, count: u32) -> u32 {
@@ -819,9 +833,16 @@ fn change_material(
 
 // --- Camera, lights and background ---
 
-/// Draws from this camera object with a perspective lens (vertical field of view in degrees).
+/// Draws from this camera object with a perspective lens (vertical field of view in degrees), the
+/// objects whose layer masks share a bit with `layers`.
 #[wasm_bindgen(js_name = setPerspectiveCamera)]
-pub fn set_perspective_camera(camera: u32, fov_degrees: f32, near: f32, far: f32) -> u32 {
+pub fn set_perspective_camera(
+    camera: u32,
+    fov_degrees: f32,
+    near: f32,
+    far: f32,
+    layers: u32,
+) -> u32 {
     set_camera(
         camera,
         Lens::Perspective(Perspective {
@@ -829,13 +850,16 @@ pub fn set_perspective_camera(camera: u32, fov_degrees: f32, near: f32, far: f32
             near,
             far,
         }),
+        layers,
     )
 }
 
 /// Draws from this camera object with an orthographic lens: a view `height` tall and `width` wide,
 /// with a width of 0 following the canvas's aspect ratio, centered right of and above the camera's
-/// axis by `center_x` and `center_y`.
+/// axis by `center_x` and `center_y`. It draws the objects whose layer masks share a bit with
+/// `layers`.
 #[wasm_bindgen(js_name = setOrthographicCamera)]
+#[allow(clippy::too_many_arguments)]
 pub fn set_orthographic_camera(
     camera: u32,
     height: f32,
@@ -844,6 +868,7 @@ pub fn set_orthographic_camera(
     center_y: f32,
     near: f32,
     far: f32,
+    layers: u32,
 ) -> u32 {
     set_camera(
         camera,
@@ -854,14 +879,15 @@ pub fn set_orthographic_camera(
             near,
             far,
         }),
+        layers,
     )
 }
 
-fn set_camera(camera: u32, lens: Lens) -> u32 {
+fn set_camera(camera: u32, lens: Lens, layers: u32) -> u32 {
     with_engine(|e| {
-        e.renderer
-            .settings_mut()
-            .set_camera(Handle::from_raw(camera), lens);
+        let settings = e.renderer.settings_mut();
+        settings.set_camera(Handle::from_raw(camera), lens);
+        settings.set_layers(ViewId::CAMERA, layers);
         0
     })
 }

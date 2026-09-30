@@ -1,8 +1,9 @@
 // The scene API: objects with transforms, cameras, lights and instance batches. Setters write
-// straight into engine memory; structural changes (create, destroy, reparent, visibility) go into
-// the command ring as 16-byte records, which the engine applies when the next frame starts.
+// straight into engine memory. Structural changes (create, destroy, reparent, visibility, layers)
+// go into the command ring as 16-byte records, which the engine applies when the next frame
+// starts.
 
-import { checkLive, checkVector, DEV, type Described } from '../errors/checks';
+import { checkLayers, checkLive, checkVector, DEV, type Described } from '../errors/checks';
 import { EngineError } from '../errors/engine-error';
 import * as C from '../generated/core';
 import { fromEuler as quaternionFromEuler } from '../math/quat';
@@ -62,6 +63,11 @@ export interface NodeOptions {
 	 * cameras, updates only when it changes.
 	 */
 	dynamic?: boolean;
+	/**
+	 * The layers the node is on, as a 32-bit mask: bit n puts it on layer n. A camera draws the
+	 * objects that share a layer with it. The default, 1, is layer 0.
+	 */
+	layers?: number;
 }
 
 /**
@@ -132,6 +138,8 @@ export interface InstanceOptions {
 	dynamic?: boolean;
 	/** Adds a color per row (RGBA, linear). This version stores the colors but does not draw them yet. */
 	colors?: boolean;
+	/** The layers every row is on, as a 32-bit mask. The default, 1, is layer 0. */
+	layers?: number;
 }
 
 /**
@@ -323,6 +331,19 @@ export class Object3D implements Described {
 		this.scene.command(C.COMMAND_SET_VISIBLE, this.handle, visible ? 1 : 0, 0, 'setVisible');
 	}
 
+	/**
+	 * Puts the object on the layers of a 32-bit mask: bit n puts it on layer n, so `1 << 2` is
+	 * layer 2 and `0b101` is layers 0 and 2. A camera draws the object only when their masks share
+	 * a layer. The object's children keep their own layers. A new mask needs no rebuild.
+	 */
+	setLayers(mask: number): void {
+		if (DEV) {
+			checkLive('setLayers', this);
+			checkLayers('setLayers', mask, this);
+		}
+		this.scene.command(C.COMMAND_SET_LAYERS, this.handle, mask >>> 0, 0, 'setLayers');
+	}
+
 	/** Makes the object dynamic or static from the next frame. See `NodeOptions.dynamic`. */
 	setDynamic(dynamic: boolean): void {
 		if (DEV) checkLive('setDynamic', this);
@@ -367,6 +388,9 @@ export abstract class Camera extends Object3D {
 	/** True for an `OrthographicCamera`, false for a `PerspectiveCamera`. */
 	abstract readonly isOrthographic: boolean;
 
+	/** @internal The layers of the objects the camera draws. */
+	layers: number = C.LAYERS_DEFAULT;
+
 	/** @internal */
 	constructor(
 		scene: Scene,
@@ -392,6 +416,16 @@ export abstract class Camera extends Object3D {
 		return this.farPlane;
 	}
 
+	/**
+	 * Sets the layers the camera draws, as a 32-bit mask: it draws the objects whose masks share a
+	 * layer with it. The default, 1, draws layer 0, where every object starts.
+	 */
+	override setLayers(mask: number): void {
+		super.setLayers(mask);
+		this.layers = mask >>> 0;
+		this.scene.lensChanged(this);
+	}
+
 	/** Sets the distances to the near and far clipping planes. */
 	setNearFar(near: number, far: number): void {
 		if (DEV) checkNearFar('setNearFar', near, far, !this.isOrthographic, this);
@@ -400,7 +434,10 @@ export abstract class Camera extends Object3D {
 		this.scene.lensChanged(this);
 	}
 
-	/** @internal Gives the engine core this camera's lens, which the active camera draws with. */
+	/**
+	 * @internal Gives the engine core this camera's lens and layers, which the active camera draws
+	 * with.
+	 */
 	abstract sendLens(glue: CoreGlue): void;
 }
 
@@ -439,7 +476,7 @@ export class PerspectiveCamera extends Camera {
 
 	/** @internal */
 	sendLens(glue: CoreGlue): void {
-		glue.setPerspectiveCamera(this.handle, this.verticalFov, this.near, this.far);
+		glue.setPerspectiveCamera(this.handle, this.verticalFov, this.near, this.far, this.layers);
 	}
 }
 
@@ -500,6 +537,7 @@ export class OrthographicCamera extends Camera {
 			view.centerY,
 			this.near,
 			this.far,
+			this.layers,
 		);
 	}
 }
@@ -680,6 +718,16 @@ export class InstanceBatch {
 		core.check(core.glue.setBatchActiveCount(this.id, count), 'setActiveCount', undefined, true);
 	}
 
+	/**
+	 * Puts every row on the layers of a 32-bit mask, as `Object3D.setLayers` does for one object. A
+	 * new mask needs no rebuild.
+	 */
+	setLayers(mask: number): void {
+		if (DEV) checkLayers('setLayers', mask);
+		const { core } = this.scene;
+		core.check(core.glue.setBatchLayers(this.id, mask >>> 0), 'setLayers', undefined, true);
+	}
+
 	/** Marks rows of a static batch to update and upload. */
 	markDirty(start = 0, count = this.count - start): void {
 		const { core } = this.scene;
@@ -795,6 +843,8 @@ export class Scene {
 	}
 
 	private create(options: NodeOptions, mesh: number, radius: number, call: string): number {
+		const { layers } = options;
+		if (DEV && layers !== undefined) checkLayers(call, layers);
 		const handle = this.core.check(this.core.glue.reserveObject(), call, options.name);
 		const slot = handle & SLOT_MASK;
 		const v = this.views;
@@ -804,6 +854,8 @@ export class Scene {
 		v.radii[slot] = radius;
 		const flags = C.FLAG_VISIBLE | (options.dynamic ? C.FLAG_DYNAMIC : 0);
 		this.command(C.COMMAND_CREATE | (flags << 8), handle, options.parent?.handle ?? 0, mesh, call);
+		if (layers !== undefined && layers >>> 0 !== C.LAYERS_DEFAULT)
+			this.command(C.COMMAND_SET_LAYERS, handle, layers >>> 0, 0, call);
 		return handle;
 	}
 
@@ -823,6 +875,8 @@ export class Scene {
 	/** Many copies of one mesh and material, with typed arrays of rows. */
 	createInstances(mesh: MeshGeometry, count: number, options: InstanceOptions): InstanceBatch {
 		const { core } = this;
+		const { layers } = options;
+		if (DEV && layers !== undefined) checkLayers('createInstances', layers);
 		const id = core.check(
 			core.glue.createBatch(
 				count,
@@ -837,6 +891,7 @@ export class Scene {
 		if (DEV) this.countBatchRows(count);
 		const batch = new InstanceBatch(this, id, count, options.colors ?? false);
 		batch.setActiveCount(count);
+		if (layers !== undefined) batch.setLayers(layers);
 		return batch;
 	}
 
@@ -878,8 +933,8 @@ export class Scene {
 	}
 
 	/**
-	 * Creates a camera's object, dynamic unless the options say otherwise, wraps it with `make`, and
-	 * turns it toward the options' target.
+	 * Creates a camera's object, dynamic unless the options say otherwise, wraps it with `make`,
+	 * gives it the options' layers to draw, and turns it toward the options' target.
 	 */
 	private createCamera<T extends Camera>(
 		options: CameraOptions,
@@ -888,6 +943,7 @@ export class Scene {
 	): T {
 		const handle = this.create({ dynamic: true, ...options }, C.CORE_NO_MESH, 0, call);
 		const camera = make(handle, options.name ?? '');
+		camera.layers = (options.layers ?? C.LAYERS_DEFAULT) >>> 0;
 		if (options.target) camera.lookAt(...options.target);
 		return camera;
 	}
