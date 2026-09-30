@@ -12,14 +12,24 @@ import {
 	startupTable,
 } from './startup.ts';
 
-const [PIPELINED, LOW, SINGLE] = ENGINE_MODES as [EngineMode, EngineMode, EngineMode, EngineMode];
+const [PIPELINED, LOW, SINGLE] = ENGINE_MODES as readonly EngineMode[] as [
+	EngineMode,
+	EngineMode,
+	EngineMode,
+];
 
 /** A load's result as the engine test page and the server report it. */
 function result(frameDoneMs: number, overrides: Partial<StartupResult> = {}): StartupResult {
 	return {
 		ok: true,
 		createEngineAtMs: 100,
-		mode: { build: 'threaded', latency: 'pipelined', renderThread: 'render-worker', jobWorkers: 8 },
+		mode: {
+			build: 'threaded',
+			latency: 'pipelined',
+			sketchThread: 'worker',
+			renderThread: 'render-worker',
+			jobWorkers: 8,
+		},
 		capabilities: { tier: 'webgl2' },
 		stats: {
 			load: {
@@ -59,6 +69,7 @@ describe('a startup load', () => {
 		expect(startupProblems(result(600), SINGLE)).toEqual([
 			'loaded the threaded build',
 			'ran pipelined latency',
+			'ran the sketch on worker, expected main',
 			'drew on render-worker, expected main',
 		]);
 		const bare: StartupResult = { ok: true, mode: result(1).mode };
@@ -162,7 +173,9 @@ describe('bench:startup', () => {
 				'jobs=4',
 			]),
 		).toMatchObject({ runs: 5, modes: [LOW, SINGLE], switches: 'jobs=4' });
-		expect(parseArgs(['--modes', 'all', '--network', 'full']).modes).toHaveLength(4);
+		expect(parseArgs(['--modes', 'all', '--network', 'full']).modes).toHaveLength(
+			ENGINE_MODES.length,
+		);
 		expect(() => parseArgs(['--runs', '0'])).toThrow('--runs: use a whole number of at least 1');
 		expect(() => parseArgs(['--gpu', 'metal'])).toThrow('--gpu: use auto, webgpu, webgl2');
 		expect(() => parseArgs(['--loads', 'hot'])).toThrow('--loads: use some of cold, warm');

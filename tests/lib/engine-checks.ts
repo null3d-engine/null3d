@@ -6,6 +6,8 @@ export interface EngineMode {
 	query: string;
 	build: 'threaded' | 'single';
 	latency: 'pipelined' | 'low' | 'single';
+	/** The thread that runs the sketch and the engine core. */
+	sketchThread: 'worker' | 'main';
 	renderThread: 'render-worker' | 'sketch-worker' | 'main';
 	/** The job workers that the switches ask for with `jobs=`; undefined leaves the count to the device. */
 	jobWorkers?: number;
@@ -17,6 +19,7 @@ export const ENGINE_MODES = [
 		query: '',
 		build: 'threaded',
 		latency: 'pipelined',
+		sketchThread: 'worker',
 		renderThread: 'render-worker',
 	},
 	{
@@ -24,6 +27,7 @@ export const ENGINE_MODES = [
 		query: 'latency=low',
 		build: 'threaded',
 		latency: 'low',
+		sketchThread: 'worker',
 		renderThread: 'sketch-worker',
 	},
 	{
@@ -31,6 +35,7 @@ export const ENGINE_MODES = [
 		query: 'threads=off',
 		build: 'single',
 		latency: 'single',
+		sketchThread: 'main',
 		renderThread: 'main',
 	},
 	{
@@ -38,7 +43,16 @@ export const ENGINE_MODES = [
 		query: 'render=main',
 		build: 'threaded',
 		latency: 'pipelined',
+		sketchThread: 'worker',
 		renderThread: 'main',
+	},
+	{
+		name: 'sketch on the main thread',
+		query: 'sketch-thread=main',
+		build: 'threaded',
+		latency: 'pipelined',
+		sketchThread: 'main',
+		renderThread: 'render-worker',
 	},
 ] as const satisfies readonly EngineMode[];
 
@@ -49,6 +63,7 @@ export type EngineModeName = (typeof ENGINE_MODES)[number]['name'];
 export interface ReportedMode {
 	build: string;
 	latency: string;
+	sketchThread: string;
 	renderThread: string;
 }
 
@@ -57,6 +72,8 @@ export function modeProblems(reported: ReportedMode, mode: EngineMode): string[]
 	const problems: string[] = [];
 	if (reported.build !== mode.build) problems.push(`loaded the ${reported.build} build`);
 	if (reported.latency !== mode.latency) problems.push(`ran ${reported.latency} latency`);
+	if (reported.sketchThread !== mode.sketchThread)
+		problems.push(`ran the sketch on ${reported.sketchThread}, expected ${mode.sketchThread}`);
 	if (reported.renderThread !== mode.renderThread)
 		problems.push(`drew on ${reported.renderThread}, expected ${mode.renderThread}`);
 	return problems;
@@ -74,7 +91,7 @@ export interface FrameCounts {
 }
 
 export interface EngineResult {
-	mode: { build: string; latency: string; renderThread: string; jobWorkers: number };
+	mode: ReportedMode & { jobWorkers: number };
 	capabilities: { tier: string; threaded: boolean; features: string[] };
 	report: { crossOriginIsolated: boolean };
 	stats: {
@@ -129,9 +146,8 @@ const MAX_STOP_MS = 1_000;
 
 /** The threads that record frames in a mode. */
 function expectedThreads(mode: EngineMode): string[] {
-	if (mode.latency === 'single') return ['main'];
-	if (mode.renderThread === 'sketch-worker') return ['sketch-worker'];
-	return ['sketch-worker', mode.renderThread];
+	const sketch = mode.sketchThread === 'main' ? 'main' : 'sketch-worker';
+	return mode.renderThread === sketch ? [sketch] : [sketch, mode.renderThread];
 }
 
 /**
@@ -182,8 +198,10 @@ export function engineProblems(result: EngineResult, mode: EngineMode, tier: str
 	const hz = stats.refreshHz ?? 0;
 	if (hz < REFRESH_HZ_RANGE[0] || hz > REFRESH_HZ_RANGE[1])
 		problems.push(`measured a refresh rate of ${stats.refreshHz} Hz`);
-	// With the drawing in workers, the page's thread must stay free (design principle 6).
-	if (mode.renderThread !== 'main' && (stats.mainThread?.longTasks ?? 0) > 0)
+	// With the sketch and the drawing in workers, the page's thread must stay free (design
+	// principle 6).
+	const pageFree = mode.renderThread !== 'main' && mode.sketchThread !== 'main';
+	if (pageFree && (stats.mainThread?.longTasks ?? 0) > 0)
 		problems.push(
 			`the page's thread ran ${stats.mainThread?.longTasks} long tasks, up to ${stats.mainThread?.longestTaskMs} ms`,
 		);

@@ -6,9 +6,10 @@
 //! draw records keep their ids across rebuilds.
 //!
 //! A key has two parts. What a mesh and material pair decides is a [`DrawKey`]: the template of its
-//! shading, the permutation bits of its features, its mesh's vertex format and its state flags.
-//! Builders sort their buckets by it. What a pass decides is its [`PassTargets`]: the formats and
-//! the sample count of its targets, and the permutation bits that it sets for every pipeline in it.
+//! shading, the permutation bits of its features, its mesh's vertex format, its state flags and its
+//! depth bias. Builders sort their buckets by it. What a pass decides is its [`PassTargets`]: the
+//! formats and the sample count of its targets, and the permutation bits that it sets for every
+//! pipeline in it.
 
 use null3d_gpu::drawlist::{DrawList, Op};
 
@@ -32,11 +33,13 @@ pub struct PipelineKey {
     pub samples: u32,
     /// The state flags (`state_flags::*`).
     pub state: u32,
+    /// The depth bias.
+    pub bias: DepthBias,
 }
 
 impl PipelineKey {
     /// The operands of `CreateRenderPipeline` that create this key's pipeline under `id`.
-    pub const fn operands(&self, id: u32) -> [u32; 8] {
+    pub const fn operands(&self, id: u32) -> [u32; 10] {
         [
             id,
             self.template,
@@ -46,7 +49,37 @@ impl PipelineKey {
             self.samples,
             self.state,
             self.vertex_format,
+            self.bias.constant as u32,
+            self.bias.slope_bits,
         ]
+    }
+}
+
+/// A pipeline's depth bias as the draw list holds it, in reversed depth: a positive bias moves a
+/// surface toward the camera. The constant counts the depth target's smallest steps, and the
+/// slope scale multiplies the surface's depth slope. The slope scale is kept as its bits, so keys
+/// compare exactly.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct DepthBias {
+    pub constant: i32,
+    pub slope_bits: u32,
+}
+
+impl DepthBias {
+    /// No bias.
+    pub const NONE: DepthBias = DepthBias {
+        constant: 0,
+        slope_bits: 0,
+    };
+
+    /// The bias of three.js's `polygonOffset` with a factor of `slope_scale` and `constant`
+    /// units, whose positive values push a surface away from the camera. The constant rounds to a
+    /// whole number of steps, as WebGPU takes it.
+    pub fn from_polygon_offset(constant: f32, slope_scale: f32) -> Self {
+        Self {
+            constant: -(constant.round() as i32),
+            slope_bits: (-slope_scale + 0.0).to_bits(),
+        }
     }
 }
 
@@ -62,14 +95,16 @@ pub struct PassTargets {
 }
 
 /// What a mesh and material pair decides about the pipeline that draws it: the template of the
-/// material's shading, the permutation bits of the pair's features, the mesh's vertex format and
-/// the material's state flags. Its order is the order in which builders sort their buckets.
+/// material's shading, the permutation bits of the pair's features, the mesh's vertex format, and
+/// the material's state flags and depth bias. Its order is the order in which builders sort their
+/// buckets.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub struct DrawKey {
     pub template: u32,
     pub permutation: u32,
     pub vertex_format: u32,
     pub state: u32,
+    pub bias: DepthBias,
 }
 
 impl DrawKey {
@@ -83,6 +118,7 @@ impl DrawKey {
             depth_format: targets.depth_format,
             samples: targets.samples,
             state: self.state,
+            bias: self.bias,
         }
     }
 }
@@ -154,6 +190,7 @@ mod tests {
             permutation: 0,
             vertex_format,
             state: 0,
+            bias: DepthBias::NONE,
         }
     }
 
@@ -174,6 +211,7 @@ mod tests {
             permutation: permutation::TONE_MAP,
             vertex_format: vertex::UV0 | vertex::COLOR,
             state: state_flags::CULL_NONE,
+            bias: DepthBias::from_polygon_offset(2.0, -1.5),
         }
         .in_pass(TARGETS);
         assert_eq!(
@@ -187,7 +225,28 @@ mod tests {
                 4,
                 state_flags::CULL_NONE,
                 vertex::UV0 | vertex::COLOR,
+                -2i32 as u32,
+                1.5f32.to_bits(),
             ]
+        );
+    }
+
+    #[test]
+    fn a_polygon_offset_turns_into_a_bias_of_reversed_depth() {
+        // three.js pushes a surface away from the camera with positive values, and reversed depth
+        // moves it away with negative ones. The constant rounds to whole steps.
+        let away = DepthBias::from_polygon_offset(1.4, 2.0);
+        assert_eq!(away.constant, -1);
+        assert_eq!(f32::from_bits(away.slope_bits), -2.0);
+        let toward = DepthBias::from_polygon_offset(-4.0, -1.0);
+        assert_eq!(
+            (toward.constant, f32::from_bits(toward.slope_bits)),
+            (4, 1.0)
+        );
+        assert_eq!(
+            DepthBias::from_polygon_offset(0.0, 0.0),
+            DepthBias::NONE,
+            "no offset is no bias, so its pipelines share keys with the default"
         );
     }
 
@@ -218,6 +277,10 @@ mod tests {
             PipelineKey { samples: 1, ..base },
             PipelineKey {
                 state: state_flags::CULL_NONE,
+                ..base
+            },
+            PipelineKey {
+                bias: DepthBias::from_polygon_offset(0.0, 1.0),
                 ..base
             },
         ];

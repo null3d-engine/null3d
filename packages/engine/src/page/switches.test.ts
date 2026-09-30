@@ -7,10 +7,12 @@ describe('parseSwitches', () => {
 			gpu: 'auto',
 			threads: true,
 			renderOnMain: false,
+			sketchThread: undefined,
 			latency: undefined,
 			copyUploads: false,
 			depth: undefined,
 			parallelCompile: true,
+			cells: true,
 			fps: undefined,
 			queue: undefined,
 			jobs: undefined,
@@ -59,6 +61,12 @@ describe('parseSwitches', () => {
 		expect(parseSwitches('?queue=1.5').queue).toBeUndefined();
 	});
 
+	it('reads the thread that runs the sketch, and ignores a thread it does not know', () => {
+		expect(parseSwitches('?sketch-thread=main').sketchThread).toBe('main');
+		expect(parseSwitches('?latency=low&sketch-thread=worker').sketchThread).toBe('worker');
+		expect(parseSwitches('?sketch-thread=page').sketchThread).toBeUndefined();
+	});
+
 	it('turns background compiles off with ?compile=wait only', () => {
 		expect(parseSwitches('?gpu=webgl2&compile=wait').parallelCompile).toBe(false);
 		expect(parseSwitches('?compile=later').parallelCompile).toBe(true);
@@ -69,6 +77,12 @@ describe('parseSwitches', () => {
 		expect(parseSwitches('?depth=reversed-gl').depth).toBe('reversed-gl');
 		expect(parseSwitches('?depth=reversed').depth).toBe('reversed');
 		expect(parseSwitches('?depth=log').depth).toBeUndefined();
+	});
+
+	it('turns grid-cell culling off with ?cells=off only', () => {
+		expect(parseSwitches('?gpu=webgl2&cells=off').cells).toBe(false);
+		expect(parseSwitches('?cells=on').cells).toBe(true);
+		expect(parseSwitches('?cells=no').cells).toBe(true);
 	});
 
 	it('reads the quality preset, and ignores a name that is no preset', () => {

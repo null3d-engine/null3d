@@ -69,7 +69,7 @@ export const PAGES: readonly PageEntry[] = [
 	{ id: 'concepts/quality-presets', title: 'Quality presets, dynamic resolution and frame budgets', since: '0.1', summary: 'Low to Ultra; pixel-ratio caps; the frame-budget governor; quality events for sketch code.' },
 	{ id: 'concepts/color-management', title: 'Color management', since: '0.1', summary: 'Linear working space; sRGB hex colors; texture color spaces; parity with three.js.' },
 	{ id: 'concepts/materials', title: 'Materials and pipelines', since: '0.1', summary: 'Built-in materials; permutations; pipeline warm-up; why changing shader features can stall a frame.' },
-	{ id: 'concepts/lighting', title: 'Lighting and environment', since: '0.1', summary: 'Light types and units; clustered lighting; environment maps and spherical harmonics.' },
+	{ id: 'concepts/lighting', title: 'Lighting and environment', since: '0.1', summary: 'Light types and units; clustered lighting; fog; environment maps and spherical harmonics.' },
 	{ id: 'concepts/shadows', title: 'Shadows', since: '0.1', summary: 'Cascades; update rates; filtering per preset; bias settings.' },
 	{ id: 'concepts/render-layers', title: 'Render layers', since: '0.1', summary: '32-bit layer masks on objects, cameras, raycasts and passes.' },
 	{ id: 'concepts/render-graph', title: 'The render graph', since: '0.1', summary: 'Declared reads and writes; automatic order; transient memory; validation errors; the text dump.' },
