@@ -50,29 +50,32 @@
 # one draw per bucket, or many buckets in one multi-draw call. The library module null3d::mesh
 # holds what they share. They load by device, with the culling shader.
 
-# Lit like three.js's MeshLambertMaterial.
+# The standard material, lit like three.js's MeshStandardMaterial. VERTEX_COLOR multiplies the
+# base color by the mesh's vertex colors.
 [shaders.lit]
 file = "lit.wgsl"
 by_device = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
-variants.webgpu = { targets = ["wgsl"] }
-variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX"], targets = ["glsl"] }
+variants.webgpu = { permutations = ["VERTEX_COLOR"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "VERTEX_COLOR"], targets = ["glsl"] }
 
-# The material's color alone, like three.js's MeshBasicMaterial.
+# The material's color alone, like three.js's MeshBasicMaterial, times the mesh's vertex colors
+# with VERTEX_COLOR.
 [shaders.unlit]
 file = "unlit.wgsl"
 by_device = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
-variants.webgpu = { targets = ["wgsl"] }
-variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX"], targets = ["glsl"] }
+variants.webgpu = { permutations = ["VERTEX_COLOR"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "VERTEX_COLOR"], targets = ["glsl"] }
 
-# The material's color times its map, like three.js's MeshBasicMaterial with a map.
+# The material's color times its map, like three.js's MeshBasicMaterial with a map, times the
+# mesh's vertex colors with VERTEX_COLOR.
 [shaders.unlit_map]
 file = "unlit_map.wgsl"
 by_device = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
-variants.webgpu = { targets = ["wgsl"] }
-variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX"], targets = ["glsl"] }
+variants.webgpu = { permutations = ["VERTEX_COLOR"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "VERTEX_COLOR"], targets = ["glsl"] }
 
 # Colored by the first texture coordinates, for the engine's own tests of vertex formats.
 [shaders.texcoords]

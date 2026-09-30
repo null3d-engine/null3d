@@ -9,12 +9,12 @@ metadata:
 
 # Porting three.js to null3D
 
-A good port looks like the original, runs faster, and reads like null3D code. Translating line by line reaches the first goal at best. three.js habits such as mutating objects every frame, per-object update methods, allocations in the render loop, and DOM access next to scene code keep the original's speed problems. Many of them do not work at all, because null3D sketch code runs in a worker. So port by intent: work out what each part of the original does, then write that the null3D way.
+A good port looks like the original, runs faster, and reads like null3D code. Translating line by line reaches the first goal at best. Some three.js habits keep the original's speed problems. Among them are objects changed every frame, per-object update methods, allocations in the render loop, and DOM access next to scene code. Many of them do not work at all, because null3D sketch code runs in a worker. So port by intent: work out what each part of the original does, then write that the null3D way.
 
 ## 1. Before you start
 
 1. If the null3d-develop skill is available, read its sections 1, 2 and 4: the docs system, the thread model and the performance rules. They apply to every port. Without it, read the engine docs pages `concepts/architecture` and `guides/performance`.
-2. Find the engine version in the target project, and read docs pages by ID: `node_modules/@null3d/engine/docs/<id>.md`, `docs/<id>.md` inside the null3D repository, or `bunx @null3d/cli docs show <id>`. A page with `status: planned` describes an API that does not exist in that version yet. The note under an experimental page's title can name parts that are not built yet: treat those parts as planned too.
+2. Find the engine version in the target project, and read docs pages by ID: `node_modules/@null3d/engine/docs/<id>.md`, `docs/<id>.md` inside the null3D repository, or `bunx @null3d/cli docs show <id>` (0.3). A page with `status: planned` describes an API that does not exist in that version yet. The note under an experimental page's title can name parts that are not built yet: treat those parts as planned too.
 3. Look up three.js APIs in `references/api-mapping.md`. For 147 three.js APIs it gives the null3D equivalent, a status, the first engine version with it, and a doc ID. The statuses:
    - `direct`: same concept, new name.
    - `changed`: supported with a different API or pattern; follow the note.
@@ -30,7 +30,7 @@ A good port looks like the original, runs faster, and reads like null3D code. Tr
 node <this-skill-dir>/scripts/analyze-threejs.mjs <three-project-dir> --md PORTING-INVENTORY.md --json porting-inventory.json
 ```
 
-The scanner lists every three.js feature it finds, grouped by status, with file and line references, the null3D equivalent, the lowest engine version the port needs, warnings (per-frame allocations, DOM access, GLSL, React Three Fiber) and a rough effort size. It matches text patterns, so read the code to confirm each row.
+The scanner lists every three.js feature it finds, grouped by status, with file and line references and the null3D equivalent. It also gives the lowest engine version the port needs, warnings (per-frame allocations, DOM access, GLSL, React Three Fiber) and a rough effort size. It matches text patterns, so read the code to confirm each row.
 
 Then tell the user, before writing any code:
 - which features need a hand rewrite, which are `post-1.0` or `unsupported`, and the workaround you propose for each;
@@ -55,7 +55,7 @@ Check parity images after each step. Each step needs the earlier ones to be visi
 
 1. Renderer and loop: `createEngine` on the page, `defineSketch` in `sketch.ts`, the loop body in `onUpdate`.
 2. Camera, camera controls and input.
-3. Models and textures. Optimize them with `bunx @null3d/cli assets optimize` (meshopt, KTX2).
+3. Models (0.2) and textures. Optimize them with `bunx @null3d/cli assets optimize` (0.2), which uses meshopt and KTX2.
 4. Materials and texture settings (`references/materials.md`).
 5. Lights, shadows, environment, fog, background.
 6. Geometry, instancing and batching.
@@ -82,7 +82,7 @@ Compare parity images for every camera view on WebGPU and on WebGL2 (`?gpu=webgl
 
 ### Phase 7: Report
 
-Write `PORTING-REPORT.md` with the template in `references/verification.md`: what was ported, the parity results per view, performance before and after, what changed visually and why, and every feature left out with its workaround.
+Write `PORTING-REPORT.md` with the template in `references/verification.md`. It says what was ported, the parity results per view, and performance before and after. It also says what changed visually and why, and lists every feature left out with its workaround.
 
 ## 3. Differences that break ports
 
@@ -95,7 +95,7 @@ Write `PORTING-REPORT.md` with the template in `references/verification.md`: wha
 | `new THREE.Vector3()` in the loop | Scratch arrays created once, with array math | Allocations cause garbage-collection stutter |
 | `document`, `window` and DOM events next to scene code | The page owns the DOM; input arrives in `ctx.input`; messages carry data | Sketch code runs in a worker without a DOM |
 | `obj.userData`, subclasses of `Mesh` | Your own maps or typed arrays keyed by handle or row | Engine objects are not extensible |
-| `onBeforeRender`, per-draw callbacks | `onUpdate` or `onLateUpdate`, or a declared pass | No sketch code runs in the render worker |
+| `onBeforeRender`, per-draw callbacks | `onUpdate` or `onLateUpdate`, or a declared pass (0.2) | No sketch code runs in the render worker |
 | `material.needsUpdate = true` to switch features at run time | Create both material variants while loading. Swap with `setMaterial` for a rare change; for a frequent one, keep two objects and swap their visibility | A shader change needs a new pipeline, whose objects draw nothing until it is built, and `setMaterial` rebuilds the draw tables |
 | `InstancedMesh.setMatrixAt` with a dummy `Object3D` | Write `positions`, `rotations` and `scales` arrays | No matrix composition in JavaScript: in the S1 benchmark it cost three.js about 0.5 ms per frame for 100,000 instances. The loop's own motion math costs the same in both engines, so keep it tight |
 | `object.traverse` every frame | Collect the handles you need at setup | Traversal costs work every frame |
@@ -103,7 +103,7 @@ Write `PORTING-REPORT.md` with the template in `references/verification.md`: wha
 | `matrixAutoUpdate = false` on still objects | Nothing | Objects are static by default and cost nothing until a setter changes them |
 | `renderer.compile` or `compileAsync` after loading | `await scene.warmUp()` in the sketch, and wait for `engine.firstFrame` on the page | The first frame waits for its pipelines; warm up a later loading stage before you show it |
 | Resize handlers and `setSize` | Nothing | The engine follows the canvas size |
-| `EffectComposer` pass chains | `post.set` and `post.addEffect` | The chain is built in and merged into few passes |
+| `EffectComposer` pass chains | `post.set` (later in 0.1) and `post.addEffect` (0.2) | The chain is built in and merged into few passes |
 | `localStorage` in scene code | Keep it on the page, or use IndexedDB, which workers have | Workers have no `localStorage` |
 
 ## 4. Settings that change the look
@@ -112,11 +112,11 @@ When parity images differ, check these first.
 
 - Color management. three.js r152 and later, like null3D, read hex colors as sRGB and light in linear space. Older projects (with `outputEncoding`, or `ColorManagement.enabled = false`) look different by design; decide with the user which look to keep.
 - Texture color spaces. Color and emissive maps are sRGB; normal, roughness, metalness and AO maps are linear. If the original forgot the sRGB flag, its look is wrong in a way users may like; ask before "fixing" it.
-- Tone mapping. three.js defaults to none; null3D defaults to ACES. Set `post.set({ toneMapping: 'none' })` to match an original without tone mapping, and copy `toneMappingExposure` to `exposure`.
+- Tone mapping. three.js defaults to none. null3D draws without tone mapping for now. Later in 0.1 it defaults to ACES: then set `post.set({ toneMapping: 'none' })` to match an original without tone mapping, and copy `toneMappingExposure` to `exposure`.
 - Light units. null3D uses physical units, as three.js r155 and later do. Scenes tuned with legacy lights need new intensities.
 - Point and spot light range. three.js `distance: 0` means infinite range; null3D needs a finite `range`. Pick the distance where the light no longer matters; the edge of the light may differ slightly.
-- Shadows. three.js shadow cameras are hand-fitted; null3D cascades fit the view. Tune `mapSize`, `cascades` and bias rather than copying `shadow.camera`.
-- Pixel ratio. Many three.js apps render at the full device pixel ratio (3 on many phones); null3D presets cap it at 2. For parity tests, fix the pixel ratio to 1 in both.
+- Shadows (later in 0.1). three.js shadow cameras are hand-fitted; null3D cascades fit the view. Tune `mapSize`, `cascades` and bias rather than copying `shadow.camera`.
+- Pixel ratio. Many three.js apps render at the full device pixel ratio (3 on many phones); null3D's presets cap it (`concepts/quality-presets`). For parity tests, fix the pixel ratio to 1 in both.
 - Material approximations. Lambert, Phong and Toon materials become standard materials or surface functions; small differences are expected (`references/materials.md`).
 - Post effects. Bloom and ambient occlusion are implemented differently; match the look by tuning, one effect at a time.
 
@@ -129,7 +129,9 @@ For `post-1.0` and `unsupported` rows:
 3. Never drop a feature silently. List every omission and workaround in the report.
 4. Do not layer a three.js canvas over the null3D canvas to keep one effect. Two GPU contexts double memory and break the frame pacing; use it only as a stopgap the user explicitly accepts.
 
-## 6. A small example
+## 6. A small example (later in 0.1)
+
+The null3D half needs two parts that come later in 0.1: hemisphere lights that light surfaces, and `post.set`.
 
 Before, in three.js:
 

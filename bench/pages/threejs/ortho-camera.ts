@@ -26,7 +26,7 @@ run('hold', async () => {
 
 	for (const { size, position, color, lit } of ORTHO_BOXES) {
 		const material = lit
-			? new three.MeshLambertMaterial({ color })
+			? new three.MeshStandardMaterial({ color })
 			: new three.MeshBasicMaterial({ color });
 		const box = new three.Mesh(new three.BoxGeometry(...size), material);
 		box.position.set(...position);
@@ -35,7 +35,7 @@ run('hold', async () => {
 	const edge = ORTHO_CUBE_SIZE;
 	const cubes = new three.InstancedMesh(
 		new three.BoxGeometry(edge, edge, edge),
-		new three.MeshLambertMaterial({ color: ORTHO_CUBE_COLOR }),
+		new three.MeshStandardMaterial({ color: ORTHO_CUBE_COLOR }),
 		ORTHO_CUBES.length,
 	);
 	const matrix = new three.Matrix4();

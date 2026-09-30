@@ -65,15 +65,29 @@ fn brdf_ggx(
     return fresnel * (v_ggx_smith_correlated(alpha, n_dot_l, n_dot_v) * d_ggx(alpha, n_dot_h));
 }
 
+/// three.js's table of the split-sum terms of specular light from all directions: 16 x 16 texels
+/// over the perceptual roughness (across) and the cosine of the view angle (down the rows), with
+/// the scale in red and the bias in green. The engine binds it in the frame's group of its mesh
+/// pipelines. A shader that calls `dfg_lut` binds it at the same place.
+@group(0) @binding(3) var dfg_table: texture_2d<f32>;
+
 /// The scale and bias of the split-sum approximation of specular light from all directions, for a
-/// view at `n_dot_v` and a perceptual `roughness`. This is Karis's analytic fit from "Physically
-/// Based Shading on Mobile". three.js reads the same two terms from a lookup texture instead.
-fn dfg_approx(n_dot_v: f32, roughness: f32) -> vec2f {
-    let c0 = vec4f(-1.0, -0.0275, -0.572, 0.022);
-    let c1 = vec4f(1.0, 0.0425, 1.04, -0.04);
-    let r = roughness * c0 + c1;
-    let a004 = min(r.x * r.x, exp2(-9.28 * n_dot_v)) * r.x + r.y;
-    return vec2f(-1.04, 1.04) * a004 + r.zw;
+/// view at `n_dot_v` and a perceptual `roughness`. It reads three.js's table of these terms, as
+/// three.js does, filtered between the nearest four entries. The engine binds the table in group
+/// 0 at binding 3 of its mesh pipelines, and a shader that calls this function binds it there too.
+/// The function reads the table with `textureLoad`, so the table needs no sampler and no
+/// filterable format.
+fn dfg_lut(n_dot_v: f32, roughness: f32) -> vec2f {
+    let size = vec2f(textureDimensions(dfg_table));
+    let at = clamp(vec2f(roughness, n_dot_v) * size - 0.5, vec2f(0.0), size - 1.0);
+    let low = vec2u(floor(at));
+    let high = min(low + 1u, vec2u(size) - 1u);
+    let t = fract(at);
+    let a = textureLoad(dfg_table, low, 0).xy;
+    let b = textureLoad(dfg_table, vec2u(high.x, low.y), 0).xy;
+    let c = textureLoad(dfg_table, vec2u(low.x, high.y), 0).xy;
+    let d = textureLoad(dfg_table, high, 0).xy;
+    return mix(mix(a, b, t.x), mix(c, d, t.x), t.y);
 }
 
 /// The specular reflectance of light from the environment, from the split-sum terms `dfg`, as

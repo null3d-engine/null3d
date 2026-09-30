@@ -41,7 +41,7 @@ Units follow three.js since r155, which dropped its legacy light mode. A scene t
 | Hemisphere | Sky and ground: light that fades from one color to the other with the way a surface faces | A factor on both colors |
 | Ambient | Light that bounces everywhere, from no direction | A factor on its color |
 
-A standard material reflects light with three.js's `MeshLambertMaterial` formula: the surface color divided by π, times the light that reaches it. A white directional light with an intensity of π therefore shows a white surface that faces it as white.
+A standard material reflects light with the formulas of three.js's `MeshStandardMaterial`. A rough surface that is not a metal reflects close to its color divided by π, times the light that reaches it. A white directional light with an intensity of π therefore shows a white, rough surface that faces it as nearly white.
 
 Point and spot lights fade with distance by their `decay`. A decay of 2, the default, fades light with the square of the distance, as real light fades. Each also ends at its `range`, because the engine finds the lights near each surface by their ranges. three.js's `distance` of 0, a light with no end, has no equivalent.
 

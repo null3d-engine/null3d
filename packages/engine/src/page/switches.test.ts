@@ -12,6 +12,7 @@ describe('parseSwitches', () => {
 			copyUploads: false,
 			depth: undefined,
 			parallelCompile: true,
+			cells: true,
 			fps: undefined,
 			queue: undefined,
 			jobs: undefined,
@@ -76,6 +77,12 @@ describe('parseSwitches', () => {
 		expect(parseSwitches('?depth=reversed-gl').depth).toBe('reversed-gl');
 		expect(parseSwitches('?depth=reversed').depth).toBe('reversed');
 		expect(parseSwitches('?depth=log').depth).toBeUndefined();
+	});
+
+	it('turns grid-cell culling off with ?cells=off only', () => {
+		expect(parseSwitches('?gpu=webgl2&cells=off').cells).toBe(false);
+		expect(parseSwitches('?cells=on').cells).toBe(true);
+		expect(parseSwitches('?cells=no').cells).toBe(true);
 	});
 
 	it('reads the quality preset, and ignores a name that is no preset', () => {

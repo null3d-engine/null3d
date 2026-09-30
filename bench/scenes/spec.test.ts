@@ -8,6 +8,7 @@ import {
 	mulberry32,
 	S1_BOB_HEIGHT,
 	S1_BOX_SIZE,
+	S1_CELLS_SQUARE,
 	S1_EXTENT,
 	S2_BRANCHING,
 	S2_DEPTH,
@@ -17,6 +18,8 @@ import {
 	S2_NODES_PER_TREE,
 	S2_ROOTS,
 	s1Camera,
+	s1CellsCamera,
+	s1CellsInstanceAt,
 	s1InstanceAt,
 	s1StaticCamera,
 	s2Camera,
@@ -217,6 +220,43 @@ describe('S1-static', () => {
 		expectClose(cameraAt(s1StaticCamera, 15).position, [0, 5, 0]);
 		expectClose(cameraAt(s1StaticCamera, 29.97).position, [0, 5, -99.8]);
 		expectClose(cameraAt(s1StaticCamera, 30).position, [0, 5, 100]);
+	});
+});
+
+describe('S1-cells', () => {
+	test("spreads S1's boxes over 8 x 8 grid cells and keeps each box's height and turn", () => {
+		const data = createS1(20_000);
+		const cells = new Set<string>();
+		const position = [0, 0, 0];
+		const rotation = [0, 0, 0, 0];
+		const still = [0, 0, 0];
+		const turn = [0, 0, 0, 0];
+		// The engine's cell of a coordinate: the whole number of cells nearest to it.
+		const cellOf = (v: number) => Math.floor(v / S1_CELLS_SQUARE.cellSize + 0.5);
+		for (let i = 0; i < data.count; i++) {
+			s1CellsInstanceAt(data, i, 7, position, rotation);
+			s1InstanceAt(data, i, 0, still, turn);
+			expect(position[1]).toBe(still[1] as number);
+			expect(rotation).toEqual(turn);
+			const [x, , z] = position as [number, number, number];
+			expect(cellOf(position[1] as number)).toBe(0);
+			cells.add(`${cellOf(x)},${cellOf(z)}`);
+		}
+		expect(cells.size).toBe(64);
+		for (const cell of cells)
+			for (const c of cell.split(',').map(Number)) {
+				expect(c).toBeGreaterThanOrEqual(-4);
+				expect(c).toBeLessThanOrEqual(3);
+			}
+	});
+
+	test('flies the camera low along -Z over 7 km every 35 s, looking ahead', () => {
+		const start = cameraAt(s1CellsCamera, 0);
+		expectClose(start.position, [300, 5, 3000]);
+		expectClose(start.target, [300, 5, 2999]);
+		expectClose(cameraAt(s1CellsCamera, 17.5).position, [300, 5, -500]);
+		expectClose(cameraAt(s1CellsCamera, 35).position, [300, 5, 3000]);
+		expectClose(cameraAt(s1CellsCamera, HOLD_TIME).position, [300, 5, 2600]);
 	});
 });
 

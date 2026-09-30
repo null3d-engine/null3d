@@ -6,9 +6,7 @@
 
 import type { Tier } from '../shared/tier';
 import { type DeviceKind, TABLET_MIN_EDGE } from './chooser';
-import { QUALITY_SETTINGS, type Setting, type SettingChange } from './presets';
-
-const MIB = 1024 * 1024;
+import { MIB, QUALITY_SETTINGS, type Setting, type SettingChange } from './presets';
 
 /**
  * The settings of features that are not built yet, with their planned value on each preset. A
@@ -54,16 +52,6 @@ export const PLANNED_SETTINGS = {
 		presets: [false, false, true, true],
 		changes: 'start',
 		values: 'flag',
-	},
-	maxAnisotropy: {
-		presets: [2, 4, 8, 16],
-		changes: 'live',
-		values: { min: 1, max: 16, whole: true },
-	},
-	uploadBytesPerFrame: {
-		presets: [2 * MIB, 4 * MIB, 8 * MIB, 16 * MIB],
-		changes: 'live',
-		values: { min: 64 * 1024, max: 64 * MIB, whole: true },
 	},
 	maxLights: {
 		presets: [256, 256, 512, 1024],

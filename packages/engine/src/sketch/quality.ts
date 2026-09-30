@@ -3,7 +3,12 @@
 // settings their first values. A sketch changes the settings that can change during play, and the
 // engine applies each change from the next frame on.
 
-import { checkSettings, type QualityPreset, type QualitySettings } from '../quality/presets';
+import {
+	checkSettings,
+	type QualityPreset,
+	type QualitySettingName,
+	type QualitySettings,
+} from '../quality/presets';
 
 /** The preset and the settings that the page starts a sketch with. */
 export interface QualityStart {
@@ -37,7 +42,13 @@ export interface Quality {
 	onChange(handler: (quality: Quality) => void): () => void;
 }
 
-/** The sketch's quality API. `apply` gives the page the settings after each change. */
+/** Applies the settings after a change. `changed` names the settings that took new values. */
+export type ApplySettings = (
+	settings: QualitySettings,
+	changed: readonly QualitySettingName[],
+) => void;
+
+/** The sketch's quality API. `apply` applies the settings after each change. */
 export class SketchQuality implements Quality {
 	readonly preset: QualityPreset;
 	readonly settings: QualitySettings;
@@ -46,7 +57,7 @@ export class SketchQuality implements Quality {
 
 	constructor(
 		start: QualityStart,
-		private readonly apply: (settings: QualitySettings) => void,
+		private readonly apply: ApplySettings,
 	) {
 		this.preset = start.preset;
 		this.settings = { ...start.settings };
@@ -55,15 +66,15 @@ export class SketchQuality implements Quality {
 	set(settings: Partial<QualitySettings>): void {
 		checkSettings('quality.set()', settings);
 		const current = this.settings as unknown as Record<string, unknown>;
-		let changed = false;
+		const changed: QualitySettingName[] = [];
 		for (const [name, value] of Object.entries(settings)) {
 			if (value === undefined || current[name] === value) continue;
 			current[name] = value;
-			changed = true;
+			changed.push(name as QualitySettingName);
 		}
-		if (!changed) return;
+		if (changed.length === 0) return;
 		this.changed = true;
-		this.apply({ ...this.settings });
+		this.apply({ ...this.settings }, changed);
 	}
 
 	onChange(handler: (quality: Quality) => void): () => void {

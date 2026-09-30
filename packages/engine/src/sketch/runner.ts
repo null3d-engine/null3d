@@ -21,7 +21,7 @@ import { messageOf } from '../errors/message';
 import { TEXTURE_OPTION_UPLOAD_ALL, TEXTURE_STAT_IMAGES_SENT } from '../generated/core';
 import type { EngineCapabilities } from '../page/engine';
 import type { CoreDevice } from '../page/limits';
-import type { QualitySettings } from '../quality/presets';
+import { type QualitySettings, SKETCH_SETTINGS } from '../quality/presets';
 import { Assets } from '../scene/assets';
 import { CoreMemory } from '../scene/memory';
 import { Geometry, Materials } from '../scene/resources';
@@ -201,6 +201,7 @@ export class SketchRunner {
 			device.webgl2,
 			device.capabilities,
 			device.maxTextureSize,
+			device.cellCulling,
 		);
 		if (status !== 0) throw coreFailure(glue, 'createEngine');
 		if (sketch.jobWorkers > 0) {
@@ -213,11 +214,17 @@ export class SketchRunner {
 		Atomics.store(slots, Slot.DrawListAddress1, glue.drawListAddress(1));
 		this.reducedMotion = Atomics.load(slots, Slot.ReducedMotion);
 		this.input = new InputReader(sketch.control, sketch.keyCodes);
-		this.quality = new SketchQuality(sketch.quality, (settings) => sketch.applyQuality(settings));
+		const textures = new Textures(this.core, sketch.sendImage, this.time);
+		// The core takes every texture setting of the preset before the setup runs, so a sketch's own
+		// budget wins until the setting changes. The page applies the settings it owns.
+		textures.applyQuality(sketch.quality.settings, SKETCH_SETTINGS);
+		this.quality = new SketchQuality(sketch.quality, (settings, changed) => {
+			textures.applyQuality(settings, changed);
+			sketch.applyQuality(settings);
+		});
 		this.readViewport();
 		this.debugDraw = DEV ? new DebugDraw(this.core) : undefined;
 		const debug: Debug = this.debugDraw ?? RELEASE_DEBUG;
-		const textures = new Textures(this.core, sketch.sendImage, this.time);
 		this.context = {
 			time: this.time,
 			engine: { viewport: this.viewport, capabilities: sketch.capabilities },
