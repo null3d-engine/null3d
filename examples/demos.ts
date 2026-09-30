@@ -60,6 +60,13 @@ export const DEMOS: readonly Demo[] = [
 		hold: 2,
 	},
 	{
+		name: 'objects',
+		title: 'Objects and parents',
+		summary:
+			'Crates ride a turntable and step off in turn. setParent with keepWorld moves each crate between the table and the ground without moving it in the world.',
+		hold: 2.5,
+	},
+	{
 		name: 'layers',
 		title: 'Render layers',
 		summary:
