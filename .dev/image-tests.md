@@ -28,7 +28,7 @@ A CI run that finds a missing or changed image saves it too. `bun run images:rev
 ## Parity with three.js
 
 - A test of a feature scene can have a three.js twin: a page in `bench/pages/threejs/` that draws the same scene. Both engines build the scene from one data module in `bench/scenes/`, such as `ortho-camera.ts`.
-- `bench/tests/parity.spec.ts` lists each such test with its twin. On each tier it compares the test's image with the twin's by three.js's rule, as `bun run parity` compares the benchmark scenes. It runs in `bun run test:bench`, on SwiftShader in CI.
+- `bench/tests/parity.spec.ts` lists each such test with its twin. On each tier it compares the test's image with the twin's by three.js's rule, as `bun run parity` compares the benchmark scenes. It runs in `bun run test:bench`, on SwiftShader in CI. The twin loads from the production build of the benchmark pages. The test's image loads from the dev server, because the image test page loads its sketch by address.
 - A comparison passes when fewer than 0.1% of the pixels differ, or when no more differ than between three.js's two renderers on the same scene. Each run saves both images and their diff in `test-results/parity/`.
 
 ## References

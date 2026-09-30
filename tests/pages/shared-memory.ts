@@ -1,18 +1,21 @@
 // Checks that the browser gets back the memory of a stopped engine, so a page can start the engine
 // again and again. It counts how many shared memories with the engine's default maximum the page
 // can hold at once: its room. It then starts and stops the engine, in the mode the page's switches
-// ask for, more times than that where the room is small, and counts the room again soon after and a
-// few seconds later. An engine whose memory the browser never gets back takes room that a later one
-// needs, so a later start fails or the room after is smaller. The page also reports how many of the
-// memories it gave to workers, and how many of those workers, it can still reach.
+// ask for, more times than that where the room is small, and counts the room again once they stop.
+// An engine whose memory the browser never gets back takes room that a later one needs, so a later
+// start fails or the room after is smaller. Safari gives a stopped engine's memory back only seconds
+// later on a slow machine, so a start that Safari refuses waits and tries again, and the page waits
+// for the room to come back, each within a bound, before it reports. The page also reports how many
+// of the memories it gave to workers, and how many of those workers, it can still reach.
 //
 // ?kinds= tests other ways a thread holds a shared memory, such as a worker stopped inside a
 // blocking wait (see ./lib/memory-holder.ts). ?cycles= sets the number of starts and stops, and
 // ?room=off skips the counts of the room.
-import { createEngine } from '@null3d/engine';
+import { createEngine, EngineError } from '@null3d/engine';
 import { coreUrls, probeCapabilities } from '@null3d/engine/internal';
 import { CORE_KINDS, type HoldKind, type HoldMessage, WOKEN_KINDS } from './lib/memory-holder';
 import { progress, run } from './lib/result';
+import { ROOM_KEPT } from './lib/room';
 
 const params = new URLSearchParams(location.search);
 /** The memories' maximum in 64 KiB pages: 1 GiB, the engine's default, unless ?maximum sets it. */
@@ -30,9 +33,20 @@ const SETTLE_MS = 50;
 /** How long a worker may take to get ready, and the engine to start and to draw its first frame. */
 const READY_TIMEOUT_MS = 5_000;
 const ENGINE_TIMEOUT_MS = 20_000;
-/** When the page counts the room again after the cycles: soon, and once late frees are done. */
-const SOON_MS = 1_000;
-const LATER_MS = 5_000;
+/**
+ * The pauses before each count of the room after the cycles, until the room comes back: 31 s in
+ * all. Safari frees a memory only after a full collection finds it unused and its sweeper then
+ * reaches it. Each count ends with a collection, and the pause gives Safari time to free what it
+ * found. The pauses grow, because each collection starts the sweep again.
+ */
+const ROOM_PAUSES_MS = [1_000, 1_000, 2_000, 4_000, 8_000, 15_000];
+/**
+ * How long, in all, the starts that the browser refuses may wait for it to free the stopped
+ * engines' memory, beyond the engine's own wait of about 3 seconds for each start.
+ */
+const LATE_STARTS_MS = 30_000;
+/** The pause before the page tries a refused start again. */
+const LATE_START_PAUSE_MS = 1_000;
 
 /** The ways of holding a memory: the engine's start and stop, or one of the smaller tests. */
 type Kind = 'engine' | 'dropped' | 'probe' | HoldKind;
@@ -44,9 +58,13 @@ interface KindResult {
 	error?: string;
 	/** The page's steps in the cycle that failed. */
 	trail?: string[];
-	/** The room soon after the cycles, and a few seconds later. */
-	roomAfter?: number;
+	/** Starts that the browser refused at first, and the time they waited for it, in all. */
+	lateStarts: number;
+	lateStartsMs: number;
+	/** Each count of the room after the cycles, the last of them, and the time they took. */
+	roomCounts?: number[];
 	roomLater?: number;
+	roomWaitMs?: number;
 	/** The memories the page gave workers, and those it can still reach. */
 	memoriesGiven: number;
 	memoriesReachable: number;
@@ -85,6 +103,23 @@ function countRoom(): { room: number; error?: string } {
 	} catch (e) {
 		return { room: memories.length, error: (e as Error).message };
 	}
+}
+
+/**
+ * Counts the room, then lets the browser find the counted memories unused. Once they are garbage,
+ * the page asks for one more memory. The count filled the room, so Safari refuses it and runs a full
+ * collection, which finds them. Otherwise Safari can keep them until a later refusal, and the next
+ * count finds less room.
+ */
+async function countRoomAndRelease(): Promise<{ room: number; error?: string }> {
+	const counted = countRoom();
+	await sleep(0);
+	try {
+		allocate();
+	} catch {
+		// The refusal is the point: it makes the browser collect.
+	}
+	return counted;
 }
 
 let coreModule: Promise<WebAssembly.Module> | undefined;
@@ -151,8 +186,40 @@ async function startAndStopEngine(): Promise<void> {
 	}
 }
 
+/** The starts that the browser refused at first, and their time from the first try to the last. */
+const late = { starts: 0, ms: 0 };
+
+/**
+ * Starts and stops the engine. When the browser refuses the engine's memory (E1109), Safari may not
+ * have freed the stopped engines' memory yet, so the page waits and tries again while its budget for
+ * late starts lasts. Memory that never comes back uses up the budget, and the start then fails.
+ */
+async function startAndStopEngineOnceFree(): Promise<void> {
+	const started = performance.now();
+	let refused = false;
+	try {
+		for (;;) {
+			try {
+				return await startAndStopEngine();
+			} catch (e) {
+				const waited = performance.now() - started;
+				if (!(e instanceof EngineError && e.code === 'E1109') || late.ms + waited > LATE_STARTS_MS)
+					throw e;
+				refused = true;
+				progress('the browser refused the memory, so the page waits and starts the engine again');
+				await sleep(LATE_START_PAUSE_MS);
+			}
+		}
+	} finally {
+		if (refused) {
+			late.starts++;
+			late.ms += performance.now() - started;
+		}
+	}
+}
+
 async function cycle(kind: Kind): Promise<void> {
-	if (kind === 'engine') await startAndStopEngine();
+	if (kind === 'engine') await startAndStopEngineOnceFree();
 	else if (kind === 'dropped') allocate();
 	else if (kind === 'probe') await probeCapabilities('high-performance');
 	else await holdAndStop(kind);
@@ -191,7 +258,7 @@ function reachableWorkers(): Record<string, number> {
 }
 
 run('shared-memory', async () => {
-	const before = COUNT_ROOM ? countRoom() : undefined;
+	const before = COUNT_ROOM ? await countRoomAndRelease() : undefined;
 	const room = before?.room ?? MOST_HELD;
 	const cycles = Number(
 		params.get('cycles') ?? Math.min(MAX_CYCLES, Math.max(MIN_CYCLES, room + EXTRA_CYCLES)),
@@ -201,6 +268,8 @@ run('shared-memory', async () => {
 		let done = 0;
 		let cycleStart = 0;
 		let failure: Pick<KindResult, 'error' | 'trail'> = {};
+		late.starts = 0;
+		late.ms = 0;
 		try {
 			for (; done < cycles; done++) {
 				cycleStart = window.__null3dProgress?.length ?? 0;
@@ -210,21 +279,29 @@ run('shared-memory', async () => {
 		} catch (e) {
 			failure = { error: (e as Error).message, trail: window.__null3dProgress?.slice(cycleStart) };
 		}
-		let roomAfter: number | undefined;
-		let roomLater: number | undefined;
-		if (COUNT_ROOM) {
-			await sleep(SOON_MS);
-			roomAfter = countRoom().room;
-			await sleep(LATER_MS);
-			roomLater = countRoom().room;
+		let roomCounts: number[] | undefined;
+		let roomWaitMs: number | undefined;
+		if (before) {
+			const waitStart = performance.now();
+			roomCounts = [];
+			for (const pause of ROOM_PAUSES_MS) {
+				await sleep(pause);
+				const { room } = await countRoomAndRelease();
+				roomCounts.push(room);
+				if (room >= before.room - ROOM_KEPT) break;
+			}
+			roomWaitMs = Math.round(performance.now() - waitStart);
 		}
 		// Where the browser offers a collection, as Chrome does with --js-flags=--expose-gc.
 		(globalThis as { gc?: () => void }).gc?.();
 		kinds[kind] = {
 			cycles: done,
 			...failure,
-			roomAfter,
-			roomLater,
+			lateStarts: late.starts,
+			lateStartsMs: Math.round(late.ms),
+			roomCounts,
+			roomLater: roomCounts?.at(-1),
+			roomWaitMs,
 			memoriesGiven: given.length,
 			memoriesReachable: given.filter((ref) => ref.deref() !== undefined).length,
 			workersStarted: started.length,

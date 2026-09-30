@@ -1,11 +1,14 @@
 // Feature scenes against their three.js twins. On each GPU tier, null3D's image of a feature scene,
 // as the image test manifest draws it, must match the image of the scene's three.js twin by
 // three.js's own rule, or at least as closely as three.js's two renderers match each other. Each
-// comparison saves both images side by side, and its diff, under test-results/parity/.
+// comparison saves both images side by side, and its diff, under test-results/parity/. The twins
+// load from the production build of the benchmark pages; null3D's side loads from the dev server,
+// because the image test page loads its sketch by address.
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
 import { manifestRun } from '../../tests/image/manifest.ts';
+import { HTTP_PORT } from '../../tests/lib/server.ts';
 import {
 	compareImages,
 	differenceText,
@@ -23,6 +26,8 @@ const FEATURE_SCENES = [
 ] as const;
 
 const OUTPUT_DIR = join(import.meta.dirname, '../../test-results/parity');
+/** The dev server, which serves the image test pages. */
+const DEV_SERVER_URL = `http://localhost:${HTTP_PORT}`;
 
 type Renderer = 'webgl' | 'webgpu';
 
@@ -60,7 +65,8 @@ for (const { test: name, twin } of FEATURE_SCENES) {
 			test(`matches three.js on ${tier}`, async ({ page }) => {
 				const renderer: Renderer = gpuApiOf(tier) === 'webgl2' ? 'webgl' : 'webgpu';
 				const reference = threeImages.get(renderer) as RgbaImage;
-				const candidate = await imageOf(page, manifestRun(name, tier, 'pipelined').path);
+				const run = manifestRun(name, tier, 'pipelined');
+				const candidate = await imageOf(page, DEV_SERVER_URL + run.path);
 				const comparison = compareImages(reference, candidate);
 				const files = parityFiles(
 					`${name}-null3d-${tier}-vs-threejs-${renderer}`,

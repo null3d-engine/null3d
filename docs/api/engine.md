@@ -136,7 +136,7 @@ What the browser and device can do, as plain JSON. The engine picks its build an
 function createEngine(options: EngineOptions): Promise<Engine>
 ```
 
-Starts the engine on the page. It tests the device, picks the build and the GPU path, starts the workers, and runs the sketch module. In hold mode it also steps the sketch to the held time, then draws that frame and reads it back. It publishes the frame, or the error that stopped it, as `window.__null3dHold` for test tools.
+Starts the engine on the page. It tests the device, picks the build and the GPU path, starts the workers, and runs the sketch module. In hold mode it also steps the sketch to the held time, then draws that frame and reads it back. It publishes the frame, or the error that stopped it, as `window.__null3dHold` for test tools. With the `?bench` switch, it publishes the running engine as `window.__null3dEngine`, where a benchmark tool calls `measure`.
 
 ### `DepthMode`
 

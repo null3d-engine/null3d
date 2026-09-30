@@ -2,7 +2,8 @@ name: Benchmarks
 
 # Compares the speed of a new commit with a baseline. GitHub's shared machines change speed from
 # run to run, so the job builds both commits on one machine, runs their benchmark pages in turns,
-# and judges only that comparison. On main it runs one job at a time, against the last commit on
+# and judges only that comparison. Each commit's pages run as a production build, as a developer
+# ships the engine, so development checks count in neither. On main it runs one job at a time, against the last commit on
 # main that a job measured with success. For a pull request it runs on demand, against the pull
 # request's merge base: add the benchmark label, or start it from the Actions tab with the pull
 # request's number. .dev/benchmarks.md says how to read the summary and how to mark an expected
@@ -129,7 +130,8 @@ jobs:
             (cd "$dir" && bun install --frozen-lockfile && bun run build)
           done
 
-      # Rounds and run length: see "The benchmark job in CI" in .dev/benchmarks.md.
+      # Rounds and run length: see "The benchmark job in CI" in .dev/benchmarks.md. The command builds
+      # each commit's benchmark pages for production, and serves each build on a port of its own.
       - name: Run both builds' benchmark pages in turns, and compare them
         run: |
           rm -rf target/bench
