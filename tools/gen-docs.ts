@@ -1,11 +1,19 @@
 // Generates the docs files that come from a single source, or checks that the committed ones are
 // current. Run from the repository root:
 //   bun tools/gen-docs.ts           write every generated file that changed, then fail on exports
-//                                   that the API reference cannot show
+//                                   that the API reference cannot show, and on shader library
+//                                   items without doc comments
 //   bun tools/gen-docs.ts --check   report those exports, stale files, missing pages, bad front
 //                                   matter and broken links
 import { readApi } from './lib/api-docs';
-import { checkDocs, generateDocs, PAGES, referenceProblems, writeGeneratedDocs } from './lib/docs';
+import {
+	checkDocs,
+	generateDocs,
+	libraryProblems,
+	PAGES,
+	referenceProblems,
+	writeGeneratedDocs,
+} from './lib/docs';
 
 const root = process.cwd();
 
@@ -24,6 +32,6 @@ const api = readApi(root);
 const written = writeGeneratedDocs(root, generateDocs(root, api));
 for (const path of written) console.log(`wrote ${path}`);
 console.log(`docs generated: ${written.length} file(s) changed`);
-const problems = referenceProblems(api);
+const problems = [...referenceProblems(api), ...libraryProblems(root)];
 for (const p of problems) console.log(`error: ${p}`);
 if (problems.length) process.exit(1);

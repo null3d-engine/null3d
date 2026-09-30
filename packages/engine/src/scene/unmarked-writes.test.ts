@@ -26,6 +26,7 @@ function fakeScene() {
 		C.SCENE_FIELD_ROTATIONS,
 		C.SCENE_FIELD_SCALES,
 		C.SCENE_FIELD_LOCAL_RADII,
+		C.SCENE_FIELD_LOCAL_CENTERS,
 		C.SCENE_FIELD_DIRTY_WORDS,
 	];
 	const ring = [C.RING_FIELD_RECORDS, C.RING_FIELD_WRITE_INDEX, C.RING_FIELD_READ_INDEX];
@@ -42,8 +43,8 @@ function fakeScene() {
 	const core = new CoreMemory(glue as unknown as CoreGlue, memory);
 	const time = { frame: 0 };
 	const s = new Scene(core, time, false);
-	const mesh = { id: 1, radius: 1 } as MeshGeometry;
-	const material = { id: 1 } as Material;
+	const mesh = { id: 1, radius: 1, core } as unknown as MeshGeometry;
+	const material = { id: 1, core } as unknown as Material;
 	return {
 		scene: s,
 		/** Creates a mesh with a name. */
@@ -104,8 +105,25 @@ describe('unmarked writes to static objects', () => {
 		);
 		v.radii[c.slot] = 4;
 		expect(frame()).toStartWith(
-			'E1110: the bounding radius of "C" (slot 3) changed without a setter.',
+			'E1110: the bounding sphere of "C" (slot 3) changed without a setter.',
 		);
+		v.centers[b.slot * 3 + 2] = -1;
+		expect(frame()).toStartWith(
+			'E1110: the bounding sphere of "B" (slot 2) changed without a setter.',
+		);
+	});
+
+	test('setBounds and setMesh leave no report once the core marks their object', () => {
+		const { scene, create, frame } = fakeScene();
+		const crate = create('Crate');
+		frame();
+		crate.setBounds([0, 2, 0], 3);
+		// The core marks the object when it applies the command that each setter queues.
+		scene.markDirty(crate.slot);
+		expect(frame()).toBeUndefined();
+		crate.setMesh({ id: 2, radius: 5, core: scene.core } as unknown as MeshGeometry);
+		scene.markDirty(crate.slot);
+		expect(frame()).toBeUndefined();
 	});
 
 	test('a write the dirty bit marks is not reported', () => {

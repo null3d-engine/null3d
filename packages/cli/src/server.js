@@ -1,9 +1,11 @@
 // Starts a project's own Vite dev server in the current folder, as `vite` would, with the project's
-// own Vite and config. It listens on a free port, so it never meets a dev server that already runs,
-// and it keeps the errors that it logs, such as a module that failed to compile, for the tool that
-// started it to report.
-import { existsSync } from 'node:fs';
+// own Vite and config, or builds the project for production and serves the build, as `vite build`
+// and `vite preview` would. Each server listens on a free port, so it never meets a server that
+// already runs, and it keeps the errors that it logs, such as a module that failed to compile, for
+// the tool that started it to report.
+import { existsSync, mkdtempSync, rmSync } from 'node:fs';
 import { createRequire } from 'node:module';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { stripVTControlCharacters } from 'node:util';
@@ -95,6 +97,58 @@ export async function startDevServer() {
 		};
 	} catch (error) {
 		await server.close();
+		throw error;
+	}
+}
+
+/**
+ * Builds the project in the current folder for production, as `vite build` would with its own
+ * config, into a new temporary folder, and serves the build as `vite preview` would. The project's
+ * own build folder stays as it was, and closing the server deletes the temporary one.
+ *
+ * @returns {Promise<DevServer>}
+ */
+export async function startBuildServer() {
+	const vite = await projectVite(process.cwd());
+	/** @type {string[]} */
+	const errors = [];
+	const outDir = mkdtempSync(join(tmpdir(), 'null3d-build-'));
+	const remove = () => rmSync(outDir, { recursive: true, force: true });
+	const shared = {
+		clearScreen: false,
+		logLevel: /** @type {const} */ ('warn'),
+		customLogger: collectingLogger(errors),
+	};
+	try {
+		await vite.build({ ...shared, build: { outDir, emptyOutDir: true } });
+	} catch (error) {
+		remove();
+		const message = error instanceof Error ? error.message : String(error);
+		throw new Error(`the production build of the project failed: ${message}`);
+	}
+	/** @type {import('vite').PreviewServer | undefined} */
+	let server;
+	try {
+		server = await vite.preview({
+			...shared,
+			build: { outDir },
+			preview: { port: 0, strictPort: true, open: false },
+		});
+		const url = server.resolvedUrls?.local[0];
+		if (!url) throw new Error('the preview server listens on no local address');
+		const preview = server;
+		return {
+			url,
+			errors,
+			hasFile: (path) => existsSync(join(outDir, path)),
+			async close() {
+				await preview.close();
+				remove();
+			},
+		};
+	} catch (error) {
+		await server?.close();
+		remove();
 		throw error;
 	}
 }
