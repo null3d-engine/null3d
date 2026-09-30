@@ -6,7 +6,7 @@ enable draw_index;
 // so the rest of the shader does not change with where the lights come from. The ALPHA_MASK builds
 // draw nothing where the surface's alpha falls below the material's cutoff.
 #import null3d::lighting
-#import null3d::mesh::{InstanceIn, clip_of, find_instance, finish, frame, material_of}
+#import null3d::mesh::{InstanceIn, clip_of, find_instance, finish, fogged, frame, material_of}
 #import null3d::mesh::{relative_position, world_normal}
 
 /// The bit of a material's flags that lights each triangle with its face's normal.
@@ -103,5 +103,5 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
         discard;
     }
 #endif
-    return finish(outgoing, in.clip.xy);
+    return finish(fogged(outgoing, in.relative, m), in.clip.xy);
 }

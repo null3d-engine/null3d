@@ -62,6 +62,7 @@ run('replay', async () => {
 
 	const view = lookAt([0, 6, 10], [0, 0, 0]);
 	const viewProj = multiply(perspectiveReversed((60 * Math.PI) / 180, 1, 0.1, 100), view);
+	// The frame's values; the fog's stay 0, which means no fog.
 	const frame = new Float32Array(G.SIZE_FRAME_UNIFORM_BYTES / 4);
 	frame.set(viewProj, 0);
 	frame.set([0, 6, 10, 1], 16);

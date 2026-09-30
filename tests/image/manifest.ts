@@ -13,6 +13,7 @@
 // reference: on the Mac, Playwright's Chromium draws CI's SwiftShader images byte for byte.
 import { PARITY_SCENES } from '../../bench/lib/parity.ts';
 import { MASK_IMAGE } from '../../bench/scenes/alpha-mask.ts';
+import { FOG_IMAGE } from '../../bench/scenes/fog.ts';
 import { ORTHO_IMAGE } from '../../bench/scenes/ortho-camera.ts';
 import { HOLD_TIME, PARITY_CANVAS } from '../../bench/scenes/spec.ts';
 import { DEMOS } from '../../examples/demos.ts';
@@ -313,6 +314,17 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 	// Compatibility mode's 8-bit path averages antialiased edges after the tone mapping, so it keeps
 	// references of its own.
 	{ name: 'generators-compat', ...GENERATORS, tiers: ['compat'], expect: { hdr: false } },
+	// Towers on a floor that runs into linear fog and exponential squared fog, lit and unlit, and two
+	// towers whose materials turn fog off. The parity test compares each image with three.js's `Fog`
+	// and `FogExp2`.
+	...(['linear', 'exp2'] as const).map(
+		(fog): ImageTest => ({
+			name: `fog-${fog}`,
+			sketch: `tests/pages/sketches/fog-sketch.ts?fog=${fog}`,
+			hold: 0,
+			size: [FOG_IMAGE.width, FOG_IMAGE.height],
+		}),
+	),
 	// The standard material's spheres over metalness and roughness, and each option that a
 	// material fixes when it is created: emissive color, flat shading, double-sided faces, and
 	// vertex colors with the standard and the unlit material.

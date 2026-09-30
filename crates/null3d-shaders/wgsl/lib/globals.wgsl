@@ -1,11 +1,12 @@
 #define_import_path null3d::globals
+#import null3d::fog::Fog
 #import null3d::tonemap
 
 // The data every render pipeline shares: per-frame values the core writes once a frame, and the
 // material table that fragment shaders read by material id.
 
-/// Per-frame values: the camera, the lights and the output settings. Colors are linear and include
-/// the intensity. Positions are relative to the camera.
+/// Per-frame values: the camera, the lights, the output settings and the fog. Colors are linear and
+/// include the intensity. Positions are relative to the camera.
 struct Frame {
     view_proj: mat4x4f,
     /// The camera as a homogeneous point: (0, 0, 0, 1) for a perspective camera, which sits at the
@@ -20,6 +21,8 @@ struct Frame {
     /// The exposure and the tone mapping, which fragment shaders apply themselves on the 8-bit
     /// path.
     output: null3d::tonemap::Output,
+    /// The scene's fog, seen from this camera.
+    fog: Fog,
 }
 
 /// One material's row of the material table, as the core writes it (`materials.rs` in the

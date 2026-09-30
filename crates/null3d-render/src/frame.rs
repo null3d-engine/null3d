@@ -1,5 +1,5 @@
 //! What every frame builder shares: the frame's input, the scene settings (meshes, materials, the
-//! views and the lights), and the draw lists and upload arenas kept per frame parity.
+//! views, the lights and the fog), and the draw lists and upload arenas kept per frame parity.
 //!
 //! # Frames in flight
 //!
@@ -23,6 +23,7 @@ use null3d_gpu::drawlist::{
 
 use crate::camera::Lens;
 use crate::debug_lines::DebugLines;
+use crate::fog::Fog;
 use crate::frame_data::{FrameUniform, normalized_direction};
 use crate::graph::GraphError;
 use crate::materials::{
@@ -320,7 +321,7 @@ pub(crate) enum MaterialStorage {
     Texture(u32),
 }
 
-/// The lights and the background.
+/// The lights, the background and the fog.
 #[derive(Clone, Copy, Debug)]
 struct Lighting {
     sun_direction: [f32; 4],
@@ -328,6 +329,7 @@ struct Lighting {
     ambient: [f32; 4],
     /// Linear background color, or `None` before the sketch sets one.
     background: Option<[f32; 3]>,
+    fog: Fog,
 }
 
 /// How frames reach the canvas, fixed when the builder starts: the target that scene passes draw
@@ -340,8 +342,8 @@ pub struct CanvasOutput {
     pub transparent: bool,
 }
 
-/// What the sketch sets and changes rarely: meshes, materials, textures, the views, the lights and
-/// the output settings.
+/// What the sketch sets and changes rarely: meshes, materials, textures, the views, the lights, the
+/// fog and the output settings.
 pub struct SceneSettings {
     meshes: MeshStorage,
     materials: MaterialTable,
@@ -370,6 +372,7 @@ impl SceneSettings {
                 sun_color: [0.0; 4],
                 ambient: [0.0; 4],
                 background: None,
+                fog: Fog::None,
             },
             canvas,
             output: Output::default(),
@@ -542,6 +545,12 @@ impl SceneSettings {
         self.lighting.background = Some(color);
     }
 
+    /// The fog that every view's objects take, apart from materials that opt out. The background
+    /// takes none.
+    pub fn set_fog(&mut self, fog: Fog) {
+        self.lighting.fog = fog;
+    }
+
     /// The color that clears the color targets, as the scene's render passes hold it.
     pub(crate) fn clear_color(&self) -> [f32; 4] {
         self.canvas.scene_color.clear_color(
@@ -607,7 +616,7 @@ impl SceneSettings {
     ) -> Option<ViewFrame> {
         let aspect = canvas.0 as f32 / canvas.1.max(1) as f32;
         let view = self.views.get(view.index())?;
-        let (view_proj, eye, camera) = view.transform(scene, parity, aspect)?;
+        let (view_proj, eye, forward, camera) = view.transform(scene, parity, aspect)?;
         let uniform = FrameUniform {
             view_proj,
             camera_position: eye,
@@ -615,6 +624,7 @@ impl SceneSettings {
             sun_color: self.lighting.sun_color,
             ambient: self.lighting.ambient,
             output: self.output.uniform(),
+            fog: self.lighting.fog.uniform(forward),
         };
         Some(ViewFrame::new(uniform, camera, view.layers()))
     }

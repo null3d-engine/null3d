@@ -8,8 +8,8 @@ enable draw_index;
 // multiply the color by the mesh's vertex colors too. The ALPHA_MASK builds draw nothing where the
 // alpha of the color, the map and the vertex colors falls below the material's cutoff.
 // null3d::mesh finds each instance on both GPU paths.
-#import null3d::mesh::{InstanceIn, clip_position, find_instance, finish}
-#import null3d::mesh::{map_layer, map_ready, material_of}
+#import null3d::mesh::{InstanceIn, clip_of, find_instance, finish, fogged}
+#import null3d::mesh::{map_layer, map_ready, material_of, relative_position}
 
 // The maps' bind group comes after the frame's group, and on WebGL2 after the groups of the draw
 // records and the data textures.
@@ -37,13 +37,16 @@ struct VertexOut {
 #ifdef VERTEX_COLOR
     @location(2) vertex_color: vec4f,
 #endif
+    /// The position relative to the camera.
+    @location(3) relative: vec3f,
 }
 
 @vertex
 fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
     let found = find_instance(i);
     var out: VertexOut;
-    out.clip = clip_position(found, v.position);
+    out.relative = relative_position(found, v.position);
+    out.clip = clip_of(found, out.relative);
     out.uv0 = v.uv0;
     out.material = found.material;
 #ifdef VERTEX_COLOR
@@ -71,5 +74,5 @@ fn fs(in: VertexOut) -> @location(0) vec4f {
         discard;
     }
 #endif
-    return finish(base, in.clip.xy);
+    return finish(fogged(base, in.relative, m), in.clip.xy);
 }

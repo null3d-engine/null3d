@@ -8,7 +8,7 @@ summary: "Creating objects; find; background, environment, fog, sky; warmUp."
 
 # Scene
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Fog, sky, environments and texture backgrounds are not built yet, so coding agents must not use them.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Sky, environments and texture backgrounds are not built yet, so coding agents must not use them.
 
 The scene holds everything the engine draws: the objects, the camera that the canvas shows, the lights and the background. A sketch gets it as `scene` in its setup function, and creates everything through it.
 
@@ -73,6 +73,25 @@ door?.setVisible(false);
 
 The canvas shows the scene from the active camera, which `setActiveCamera` picks. It can be either kind of camera, and [Cameras](cameras.md) covers both lenses. Until you pick a camera, the canvas shows only the background. `setBackground` takes a color. The default background is black, or the page behind a transparent canvas. Exposure and tone mapping change the background as they change the objects: [Color management](../concepts/color-management.md#the-background).
 
+## Fog
+
+`setFog` covers every object in fog, with three.js's formulas. Linear fog is clear up to `near` and hides objects from `far`, with a smooth change between them. Exponential squared fog thickens with the square of the distance, at a rate that `density` sets. Distances run from the camera along its view direction, for both kinds of camera. `setFog(null)` removes the fog.
+
+```ts
+scene.setBackground('#b8c4d0');
+scene.setFog({ type: 'linear', color: '#b8c4d0', near: 10, far: 70 });
+// Or thicker with distance: scene.setFog({ type: 'exp2', color: '#b8c4d0', density: 0.03 });
+```
+
+| Option | Fog | Default | What it sets |
+| --- | --- | --- | --- |
+| `color` | Both | none | The fog's color, in any form that `setBackground` takes |
+| `near` | Linear | 1 | The distance where the fog starts |
+| `far` | Linear | 1000 | The distance from which the fog hides every object. It must be above `near` |
+| `density` | Exponential squared | 0.00025 | How fast the fog thickens: 0 or more |
+
+The fog does not cover the background, so give the background the fog's color to fade far objects into it. A material created with `fog: false` keeps its color at every distance, as [Materials](materials.md#options-fixed-at-creation) says. The engine mixes the fog into each pixel as it shades the pixel, so fog adds almost no work. The fog applies from the next frame. Development builds throw E1108 for a `far` that is not above `near` and for a negative `density`, and E1203 for a value that is not a finite number. The `null3d::fog` module of the [shader library](../shaders/library.md#null3dfog) holds the same formulas for WGSL shaders.
+
 ## Lights
 
 Each light is an object, so a scene can hold many, and each call creates another. Without lights, standard materials draw black. [Lights](lights.md) covers each kind, and which of them light surfaces in this version.
@@ -111,6 +130,26 @@ An instance batch is one object that draws many copies of one mesh with one mate
 
 <!-- null3d:api:start -->
 
+### `Exp2FogOptions`
+
+Interface `Exp2FogOptions`.
+
+Exponential squared fog, as three.js's `FogExp2`: an object at distance d takes the fog color by a factor of 1 - exp(-(density × d)²). Distances run from the camera along its view direction.
+
+| Member | Description |
+| --- | --- |
+| `type: 'exp2'` | Exponential squared fog. |
+| `color: ColorInput` | The fog's color. |
+| `density?: number` | How fast the fog thickens with distance: 0 or more. The default is 0.00025. |
+
+### `FogOptions`
+
+```ts
+type FogOptions = LinearFogOptions | Exp2FogOptions;
+```
+
+Options of `scene.setFog`: linear fog or exponential squared fog.
+
 ### `InstanceBatch`
 
 Class `InstanceBatch`.
@@ -141,6 +180,19 @@ Options for `scene.createInstances`.
 | `dynamic?: boolean` | Every row updates and uploads every frame; a static batch updates rows marked dirty only. |
 | `colors?: boolean` | Adds a color per row (RGBA, linear). This version stores the colors but does not draw them yet. |
 | `layers?: number` | The layers every row is on, as a 32-bit mask. The default, 1, is layer 0. |
+
+### `LinearFogOptions`
+
+Interface `LinearFogOptions`.
+
+Linear fog, as three.js's `Fog`: none up to `near`, full from `far`, and a smooth step between them. Distances run from the camera along its view direction.
+
+| Member | Description |
+| --- | --- |
+| `type: 'linear'` | Linear fog. |
+| `color: ColorInput` | The fog's color. |
+| `near?: number` | The distance where the fog starts. The default is 1. |
+| `far?: number` | The distance from which the fog hides every object. It must be above `near`. The default is 1000. |
 
 ### `MeshOptions`
 
@@ -192,6 +244,7 @@ The scene: every object, the active camera, the lights and the background.
 | `createHemisphereLight(options: HemisphereLightOptions = {}): HemisphereLight` | Light from the sky above and the ground below. |
 | `createAmbientLight(options: LightOptions = {}): AmbientLight` | Light on every surface, from no direction. |
 | `setBackground(color: ColorInput): void` | The color behind every object. Exposure and tone mapping change it with the rest of the scene. Without a background, the canvas shows black, or the page behind it on a transparent canvas. |
+| `setFog(fog: FogOptions \| null): void` | Fog over every object, with three.js's formulas: linear fog as its `Fog`, or exponential squared fog as its `FogExp2`. Null removes the fog. The background takes no fog, and a material created with `fog: false` keeps its color. Converting the color allocates. |
 | `warmUp(): Promise<void>` | Builds every GPU pipeline that the scene needs as it stands, and resolves once they are all built. Hidden objects count too. After the first frame, an object whose pipeline is still building draws nothing, so create a loading stage's objects hidden, warm up, then show them. The first frame waits for its pipelines anyway. In the setup, a warm-up draws that frame once they are built, before the setup goes on. |
 
 <!-- null3d:api:end -->

@@ -125,6 +125,14 @@ struct Output {
     uint spare_a;
     uint spare_b;
 };
+struct Fog {
+    vec3 color;
+    uint kind;
+    vec3 forward;
+    float density;
+    float near;
+    float far;
+};
 struct Frame {
     mat4x4 view_proj;
     vec4 camera_position;
@@ -132,6 +140,7 @@ struct Frame {
     vec4 sun_color;
     vec4 ambient;
     Output output_;
+    Fog fog;
 };
 struct VertexIn {
     vec3 position;
@@ -199,6 +208,14 @@ struct Output {
     uint spare_a;
     uint spare_b;
 };
+struct Fog {
+    vec3 color;
+    uint kind;
+    vec3 forward;
+    float density;
+    float near;
+    float far;
+};
 struct Frame {
     mat4x4 view_proj;
     vec4 camera_position;
@@ -206,6 +223,7 @@ struct Frame {
     vec4 sun_color;
     vec4 ambient;
     Output output_;
+    Fog fog;
 };
 struct VertexIn {
     vec3 position;
@@ -275,6 +293,14 @@ struct Output {
     uint spare_a;
     uint spare_b;
 };
+struct Fog {
+    vec3 color;
+    uint kind;
+    vec3 forward;
+    float density;
+    float near;
+    float far;
+};
 struct Frame {
     mat4x4 view_proj;
     vec4 camera_position;
@@ -282,6 +308,7 @@ struct Frame {
     vec4 sun_color;
     vec4 ambient;
     Output output_;
+    Fog fog;
 };
 struct VertexIn {
     vec3 position;
@@ -436,6 +463,14 @@ struct Output {
     uint spare_a;
     uint spare_b;
 };
+struct Fog {
+    vec3 color;
+    uint kind;
+    vec3 forward;
+    float density;
+    float near;
+    float far;
+};
 struct Frame {
     mat4x4 view_proj;
     vec4 camera_position;
@@ -443,6 +478,7 @@ struct Frame {
     vec4 sun_color;
     vec4 ambient;
     Output output_;
+    Fog fog;
 };
 struct VertexIn {
     vec3 position;
@@ -591,6 +627,15 @@ void main() {
     spare_b: u32,
 }
 
+struct Fog {
+    color: vec3<f32>,
+    kind: u32,
+    forward: vec3<f32>,
+    density: f32,
+    near: f32,
+    far: f32,
+}
+
 struct Frame {
     view_proj: mat4x4<f32>,
     camera_position: vec4<f32>,
@@ -598,6 +643,7 @@ struct Frame {
     sun_color: vec4<f32>,
     ambient: vec4<f32>,
     output: Output,
+    fog: Fog,
 }
 
 struct VertexIn {
@@ -668,6 +714,15 @@ fn fs(in: VertexOut) -> @location(0) vec4<f32> {
     spare_b: u32,
 }
 
+struct Fog {
+    color: vec3<f32>,
+    kind: u32,
+    forward: vec3<f32>,
+    density: f32,
+    near: f32,
+    far: f32,
+}
+
 struct Frame {
     view_proj: mat4x4<f32>,
     camera_position: vec4<f32>,
@@ -675,6 +730,7 @@ struct Frame {
     sun_color: vec4<f32>,
     ambient: vec4<f32>,
     output: Output,
+    fog: Fog,
 }
 
 struct VertexIn {
@@ -857,6 +913,15 @@ struct Reflected {
     specular: vec3<f32>,
 }
 
+struct Fog {
+    color: vec3<f32>,
+    kind: u32,
+    forward: vec3<f32>,
+    density: f32,
+    near: f32,
+    far: f32,
+}
+
 struct Results {
     a: vec4<u32>,
     b: vec4<u32>,
@@ -876,6 +941,8 @@ const LINEAR_SRGB_TO_LINEAR_REC2020_: mat3x3<f32> = mat3x3<f32>(vec3<f32>(0.6274
 const AGX_INSET: mat3x3<f32> = mat3x3<f32>(vec3<f32>(0.85662717f, 0.13731897f, 0.11189821f), vec3<f32>(0.09512124f, 0.761242f, 0.076799415f), vec3<f32>(0.048251607f, 0.10143904f, 0.81130236f));
 const AGX_OUTSET: mat3x3<f32> = mat3x3<f32>(vec3<f32>(1.1271006f, -0.14132977f, -0.14132977f), vec3<f32>(-0.11060664f, 1.1578237f, -0.11060664f), vec3<f32>(-0.016493939f, -0.016493939f, 1.2519364f));
 const LINEAR_REC2020_TO_LINEAR_SRGB: mat3x3<f32> = mat3x3<f32>(vec3<f32>(1.6605f, -0.1246f, -0.0182f), vec3<f32>(-0.5876f, 1.1329f, -0.1006f), vec3<f32>(-0.0728f, -0.0083f, 1.1187f));
+const LINEAR: u32 = 1u;
+const EXP2_: u32 = 2u;
 const INPUTS: i32 = 8i;
 
 @group(0) @binding(3)
@@ -1622,6 +1689,14 @@ fn apply_fog(c_10: vec3<f32>, fog_color: vec3<f32>, factor: f32) -> vec3<f32> {
     return mix(c_10, fog_color, factor);
 }
 
+fn fog_factor(fog: Fog, relative_position_2: vec3<f32>) -> f32 {
+    let _e3 = fog_depth(relative_position_2, fog.forward);
+    let _e6 = fog_linear(_e3, fog.near, fog.far);
+    let linear = select(0f, _e6, (fog.kind == LINEAR));
+    let _e13 = fog_exp2_(_e3, fog.density);
+    return select(linear, _e13, (fog.kind == EXP2_));
+}
+
 fn perspective_depth_to_view_z(depth_2: f32, near_1: f32, far_1: f32) -> f32 {
     return ((-(near_1) * far_1) / (near_1 + (depth_2 * (far_1 - near_1))));
 }
@@ -2256,9 +2331,15 @@ fn run(function_: u32, u_1: array<vec4<u32>, 8>, f_2: array<vec4<f32>, 8>) -> Re
             let _e678 = scalar(_e677);
             return _e678;
         }
+        case 94u: {
+            let scene_fog = Fog(f_2[0].xyz, u_1[1].x, f_2[2].xyz, f_2[2].w, f_2[3].x, f_2[3].y);
+            let _e694 = fog_factor(scene_fog, f_2[4].xyz);
+            let _e695 = scalar(_e694);
+            return _e695;
+        }
         default: {
-            let _e681 = whole(vec4(4294967295u));
-            return _e681;
+            let _e698 = whole(vec4(4294967295u));
+            return _e698;
         }
     }
 }
@@ -2356,6 +2437,14 @@ struct Reflected {
     vec3 diffuse;
     vec3 specular;
 };
+struct Fog {
+    vec3 color;
+    uint kind;
+    vec3 forward;
+    float density;
+    float near;
+    float far;
+};
 struct Results {
     uvec4 a;
     uvec4 b;
@@ -2374,6 +2463,8 @@ const mat3x3 LINEAR_SRGB_TO_LINEAR_REC2020_ = mat3x3(vec3(0.6274, 0.0691, 0.0164
 const mat3x3 AGX_INSET = mat3x3(vec3(0.85662717, 0.13731897, 0.11189821), vec3(0.09512124, 0.761242, 0.076799415), vec3(0.048251607, 0.10143904, 0.81130236));
 const mat3x3 AGX_OUTSET = mat3x3(vec3(1.1271006, -0.14132977, -0.14132977), vec3(-0.11060664, 1.1578237, -0.11060664), vec3(-0.016493939, -0.016493939, 1.2519364));
 const mat3x3 LINEAR_REC2020_TO_LINEAR_SRGB = mat3x3(vec3(1.6605, -0.1246, -0.0182), vec3(-0.5876, 1.1329, -0.1006), vec3(-0.0728, -0.0083, 1.1187));
+const uint LINEAR = 1u;
+const uint EXP2_ = 2u;
 const int INPUTS = 8;
 
 
@@ -3103,6 +3194,14 @@ vec3 apply_fog(vec3 c_10, vec3 fog_color, float factor) {
     return mix(c_10, fog_color, factor);
 }
 
+float fog_factor(Fog fog, vec3 relative_position_2) {
+    float _e3 = fog_depth(relative_position_2, fog.forward);
+    float _e6 = fog_linear(_e3, fog.near, fog.far);
+    float linear = ((fog.kind == LINEAR) ? _e6 : 0.0);
+    float _e13 = fog_exp2_(_e3, fog.density);
+    return ((fog.kind == EXP2_) ? _e13 : linear);
+}
+
 float perspective_depth_to_view_z(float depth_2, float near_1, float far_1) {
     return ((-(near_1) * far_1) / (near_1 + (depth_2 * (far_1 - near_1))));
 }
@@ -3298,6 +3397,14 @@ struct Reflected {
     vec3 diffuse;
     vec3 specular;
 };
+struct Fog {
+    vec3 color;
+    uint kind;
+    vec3 forward;
+    float density;
+    float near;
+    float far;
+};
 struct Results {
     uvec4 a;
     uvec4 b;
@@ -3316,6 +3423,8 @@ const mat3x3 LINEAR_SRGB_TO_LINEAR_REC2020_ = mat3x3(vec3(0.6274, 0.0691, 0.0164
 const mat3x3 AGX_INSET = mat3x3(vec3(0.85662717, 0.13731897, 0.11189821), vec3(0.09512124, 0.761242, 0.076799415), vec3(0.048251607, 0.10143904, 0.81130236));
 const mat3x3 AGX_OUTSET = mat3x3(vec3(1.1271006, -0.14132977, -0.14132977), vec3(-0.11060664, 1.1578237, -0.11060664), vec3(-0.016493939, -0.016493939, 1.2519364));
 const mat3x3 LINEAR_REC2020_TO_LINEAR_SRGB = mat3x3(vec3(1.6605, -0.1246, -0.0182), vec3(-0.5876, 1.1329, -0.1006), vec3(-0.0728, -0.0083, 1.1187));
+const uint LINEAR = 1u;
+const uint EXP2_ = 2u;
 const int INPUTS = 8;
 
 uniform highp sampler2D _group_0_binding_3_fs;
@@ -4067,6 +4176,14 @@ vec3 apply_fog(vec3 c_10, vec3 fog_color, float factor) {
     return mix(c_10, fog_color, factor);
 }
 
+float fog_factor(Fog fog, vec3 relative_position_2) {
+    float _e3 = fog_depth(relative_position_2, fog.forward);
+    float _e6 = fog_linear(_e3, fog.near, fog.far);
+    float linear = ((fog.kind == LINEAR) ? _e6 : 0.0);
+    float _e13 = fog_exp2_(_e3, fog.density);
+    return ((fog.kind == EXP2_) ? _e13 : linear);
+}
+
 float perspective_depth_to_view_z(float depth_2, float near_1, float far_1) {
     return ((-(near_1) * far_1) / (near_1 + (depth_2 * (far_1 - near_1))));
 }
@@ -4701,9 +4818,15 @@ Results run(uint function, uvec4 u_1[8], vec4 f_2[8]) {
             Results _e678 = scalar(_e677);
             return _e678;
         }
+        case 94u: {
+            Fog scene_fog = Fog(f_2[0].xyz, u_1[1].x, f_2[2].xyz, f_2[2].w, f_2[3].x, f_2[3].y);
+            float _e694 = fog_factor(scene_fog, f_2[4].xyz);
+            Results _e695 = scalar(_e694);
+            return _e695;
+        }
         default: {
-            Results _e681 = whole(uvec4(4294967295u));
-            return _e681;
+            Results _e698 = whole(uvec4(4294967295u));
+            return _e698;
         }
     }
 }

@@ -32,6 +32,8 @@ export type Three = Pick<
 	| 'Color'
 	| 'DirectionalLight'
 	| 'DynamicDrawUsage'
+	| 'Fog'
+	| 'FogExp2'
 	| 'InstancedMesh'
 	| 'Matrix4'
 	| 'Mesh'
