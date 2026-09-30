@@ -30,9 +30,10 @@ export default defineConfig({
 			reuseExistingServer: !ci,
 		},
 		{
-			// A fresh production build every run, so the tests never serve stale files. The errors
-			// page builds on its own, so the engine test page stays as the startup benchmark loads it.
-			command: `bunx vite build && NULL3D_BUILD_PAGE=errors bunx vite build && bunx vite preview --port ${PREVIEW_PORT} --strictPort`,
+			// A fresh production build every run, so the tests never serve stale files. The errors and
+			// sketch shaders pages build on their own, so the engine test page stays as the startup
+			// benchmark loads it.
+			command: `bunx vite build && NULL3D_BUILD_PAGE=errors bunx vite build && NULL3D_BUILD_PAGE=sketch-shaders bunx vite build && bunx vite preview --port ${PREVIEW_PORT} --strictPort`,
 			cwd: REPO_ROOT,
 			url: `http://localhost:${PREVIEW_PORT}/tests/pages/engine.html`,
 			reuseExistingServer: false,
@@ -42,10 +43,11 @@ export default defineConfig({
 		{ name: environment, testIgnore: 'resize.spec.ts' },
 		// The engine and errors tests again, on the production build. The sketch module and the engine
 		// core must survive bundling on both GPU paths and in every thread mode. So must the engine's
-		// errors in a sketch, whose bundle holds its own copy of the engine's error code.
+		// errors in a sketch, whose bundle holds its own copy of the engine's error code, and the WGSL
+		// that the plugin compiles into a sketch's bundle.
 		{
 			name: 'production build',
-			testMatch: ['engine.spec.ts', 'errors.spec.ts'],
+			testMatch: ['engine.spec.ts', 'errors.spec.ts', 'sketch-shaders.spec.ts'],
 			use: { baseURL: `http://localhost:${PREVIEW_PORT}/tests/pages/` },
 		},
 		// The resize tests, on a high-density screen. Playwright's emulated pixel ratio does not reach

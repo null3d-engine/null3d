@@ -56,7 +56,11 @@ The shader compiler is the shader crate built as a WebAssembly module. Build too
 - A panic stops a call with a trap. The panic hook writes a response first. The wrapper then drops the instance, because a trap can leave its memory in any state.
 - The build drops the function names and skips wasm-opt. On this module, wasm-opt took longer than the whole build and saved 0.4% after Brotli, with no speed gain.
 - The shader composer rewrites each file before naga reads it, and imported names get longer. Its own error reports count columns in that copy, so the build maps each place back to the original file.
-- `bun run test:shader-compiler` runs the shader crate's build tests with `NULL3D_SHADER_COMPILER` set. Each build then runs again through the module in Bun, and both results must match. Plain `cargo test` skips that step, so a module built from older code cannot fail it.
+- `bun run test:shader-compiler` runs the shader crate's build tests with `NULL3D_SHADER_COMPILER` set. Each build then runs again through the module in Bun, and both results must match. Plain `cargo test` skips that step, so a module built from older code cannot fail it. The same command runs the Vite plugin's WGSL tests, which build small projects with Vite.
+- The Vite plugin compiles WGSL from projects (`packages/vite-plugin/src/wgsl.ts`). It reads a module's comments with Vite's parser, so the `/* wgsl */` tag counts only as a real comment before a real template literal. It runs before TypeScript becomes JavaScript, so the literal's place in the code is its place in the file.
+- Each project shader builds for WebGPU and, with the shader def `WEBGL2`, for WebGL2. It has one render pipeline for each `@fragment` entry point, with its one `@vertex` entry point. The plugin finds the entry points in the WGSL text, because the compiler takes the pipelines with the source.
+- Plugin errors count columns from 1, as editors do. Rollup counts its own from 0, but Vite and Rolldown only print the place, and Vite's overlay opens the editor at it.
+- naga turns off its checks of uniform control flow for derivatives and `textureSample`, because they reject valid shaders. The build therefore cannot catch `textureSample` in a branch that differs between pixels, which Chrome rejects when it creates the shader module.
 
 ## Meshes on both GPU paths
 
