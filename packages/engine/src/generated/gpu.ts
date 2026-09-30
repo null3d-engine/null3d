@@ -95,6 +95,7 @@ export const LAYOUT_DRAWS = 2;
 export const LAYOUT_INSTANCES = 3;
 export const LAYOUT_FINAL = 4;
 export const LAYOUT_TEXTURES = 5;
+export const LAYOUT_MATERIAL_MAPS = 6;
 
 export const PERMUTATION_DRAW_INDEX = 1;
 export const PERMUTATION_TONE_MAP = 2;
@@ -105,6 +106,7 @@ export const PERMUTATION_RECEIVE_SHADOWS = 32;
 export const PERMUTATION_SKIN = 64;
 export const PERMUTATION_MORPH = 128;
 export const PERMUTATION_FXAA = 256;
+export const PERMUTATION_VERTEX_TANGENT = 512;
 
 export const VERTEX_UV0 = 1;
 export const VERTEX_UV1 = 2;
@@ -123,6 +125,7 @@ export const TEMPLATE_INSTANCED_UNLIT = 2;
 export const TEMPLATE_INSTANCED_TEXCOORDS = 3;
 export const TEMPLATE_DEBUG_LINES = 4;
 export const TEMPLATE_INSTANCED_UNLIT_MAP = 5;
+export const TEMPLATE_INSTANCED_STANDARD_MAPS = 6;
 export const TEMPLATE_FINAL = 7;
 export const TEMPLATE_CULL = 16;
 
