@@ -1,0 +1,9 @@
+// Types for the modules that the null3D Vite plugin makes. A project adds them with
+// `/// <reference types="@null3d/vite-plugin/client" />`, or with `@null3d/vite-plugin/client` in
+// the `types` of its tsconfig.json.
+
+declare module '*.wgsl' {
+	/** The WGSL file, compiled for WebGPU and WebGL2. */
+	const shader: import('./src/shader-types').CompiledShader;
+	export default shader;
+}
