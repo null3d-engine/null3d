@@ -58,6 +58,7 @@ use null3d_gpu::caps::{BUDGET, Limit};
 use null3d_gpu::drawlist::{DrawList, Op, format, permutation, sizes, texture_usage, view};
 
 use crate::debug_lines::LinesPass;
+use crate::dfg;
 use crate::frame::{
     FrameBuilder, FrameInput, MaterialStorage, MeshBuffers, ParityLists, RecordError,
     SceneSettings, UploadArena, drawn_rows,
@@ -110,8 +111,10 @@ mod ids {
 
     /// The material table: one row of texels per material.
     pub const MATERIALS: u32 = VIEW_TEXTURES + RING * MAX_VIEWS as u32;
+    /// three.js's table of the split-sum terms of specular light.
+    pub const DFG: u32 = MATERIALS + 1;
     /// The render graph's textures, from this id on.
-    pub const TARGETS: u32 = MATERIALS + 1;
+    pub const TARGETS: u32 = DFG + 1;
     /// The texture arrays of materials' maps, after every id the render graph can take.
     pub const TEXTURE_ARRAYS: u32 = TARGETS + 256;
     /// The samplers of materials' maps, the only samplers the builder makes.
@@ -196,6 +199,8 @@ pub struct CpuCulledRenderer {
     /// The slot of the streamed textures, which every view reads.
     streamed_slot: RingSlot,
     created: bool,
+    /// True from the creation of three.js's table of specular terms until a frame uploads it.
+    dfg_pending: bool,
 }
 
 impl CpuCulledRenderer {
@@ -234,6 +239,7 @@ impl CpuCulledRenderer {
             textures: SharedTextures::default(),
             streamed_slot: RingSlot::default(),
             created: false,
+            dfg_pending: false,
         }
     }
 
@@ -316,7 +322,8 @@ impl CpuCulledRenderer {
     }
 
     /// The most that one frame can copy into its arena for the scene as it stands: mesh data not
-    /// uploaded yet, the material table, each view's frame uniform, draw records and
+    /// uploaded yet, the material table, three.js's table of specular terms, each view's frame
+    /// uniform, draw records and
     /// multi-draw arrays, and the cluster orders not uploaded yet.
     fn upload_bound(&self) -> usize {
         self.upload_bound_without_clusters() + self.clusters.pending_bytes(&self.layout)
@@ -325,7 +332,8 @@ impl CpuCulledRenderer {
     /// [`Self::upload_bound`] without the cluster orders.
     fn upload_bound_without_clusters(&self) -> usize {
         let meshes = self.meshes.pending_bytes(self.settings.meshes().pages());
-        let materials = self.settings.materials().capacity() as usize * MATERIAL_FLOATS * 4;
+        let materials =
+            self.settings.materials().capacity() as usize * MATERIAL_FLOATS * 4 + dfg::BYTES;
         let per_view = (sizes::FRAME_UNIFORM_BYTES + OFFSETS_BYTES) as usize
             + self.layout.draws_slot_bytes as usize
             + self.layout.draws.len() * 12;
@@ -333,7 +341,7 @@ impl CpuCulledRenderer {
     }
 
     /// Records the creation of the material table, a data texture with one row of texels for each
-    /// material it holds.
+    /// material it holds, and of three.js's table of specular terms.
     fn create_fixed(&mut self, list: &mut DrawList) -> Result<(), RecordError> {
         list.push(
             Op::CreateTexture,
@@ -349,6 +357,8 @@ impl CpuCulledRenderer {
                 view::D2,
             ],
         )?;
+        dfg::create(list, ids::DFG)?;
+        self.dfg_pending = true;
         self.created = true;
         Ok(())
     }
@@ -509,6 +519,9 @@ impl CpuCulledRenderer {
         self.opaque.add_views(list, views)?;
         let rebuilt = self.layout.built_in == input.frame;
         arena.reset(self.upload_bound() + LinesPass::upload_bytes(&input.lines));
+        if std::mem::take(&mut self.dfg_pending) {
+            dfg::upload(list, arena, ids::DFG)?;
+        }
         self.meshes
             .upload(list, arena, self.settings.meshes().pages())?;
         // Draws bind the maps' groups by id as they run, so a group made again needs nothing more.

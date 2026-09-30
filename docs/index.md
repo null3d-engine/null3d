@@ -64,7 +64,7 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 | [GPU tiers and backends](concepts/backends.md) | WebGPU core, compatibility mode and WebGL2; color, anti-aliasing and depth on each tier; capability flags; the portable budget; never branching on GPU names. | experimental | 0.1 |
 | [Quality presets, dynamic resolution and frame budgets](concepts/quality-presets.md) | Low to Ultra; pixel-ratio caps; the frame-budget governor; quality events for sketch code. | experimental | 0.1 |
 | [Color management](concepts/color-management.md) | Linear working space; sRGB hex colors; texture color spaces; parity with three.js. | experimental | 0.1 |
-| [Materials and pipelines](concepts/materials.md) | Built-in materials; permutations; pipeline warm-up; why changing shader features can stall a frame. | planned | 0.1 |
+| [Materials and pipelines](concepts/materials.md) | Built-in materials; permutations; pipeline warm-up; why changing shader features can stall a frame. | experimental | 0.1 |
 | [Lighting and environment](concepts/lighting.md) | Light types and units; clustered lighting; environment maps and spherical harmonics. | experimental | 0.1 |
 | [Shadows](concepts/shadows.md) | Cascades; update rates; filtering per preset; bias settings. | planned | 0.1 |
 | [Render layers](concepts/render-layers.md) | 32-bit layer masks that choose which cameras draw which objects and instance batches. | experimental | 0.1 |
@@ -185,7 +185,7 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 | [E1402: Engine core out of date](errors/E1402.md) | The engine core WebAssembly file lacks functions that the TypeScript side calls, so the two come from different builds. Development builds check this when the core loads. | generated | 0.1 |
 | [E1403: Engine core not ready](errors/E1403.md) | An engine call ran before the engine core started in this worker, or the core started twice. | generated | 0.1 |
 | [E1404: Engine thread failed](errors/E1404.md) | An engine thread hit an error it could not handle after the engine started, so the engine may have stopped. | generated | 0.1 |
-| [E1405: Engine thread did not start](errors/E1405.md) | An engine thread failed while the engine started, before the sketch ran. | generated | 0.1 |
+| [E1405: Engine thread did not start](errors/E1405.md) | An engine worker failed while the engine started. The worker's script, the engine core or the renderer did not start there, or the sketch's setup function threw an error without an engine code. | generated | 0.1 |
 | [E1406: Engine core not downloaded](errors/E1406.md) | A file of the engine core did not download whole: the server answered with an error, or the connection broke off. | generated | 0.1 |
 | [E1407: Invalid hold time](errors/E1407.md) | The ?hold= switch or the hold option of createEngine gave a hold time that is not a number of seconds from 0 to 600. | generated | 0.1 |
 | [E1408: Hold failed](errors/E1408.md) | The sketch or the engine failed in hold mode, before the engine read the held frame back. A live engine logs an error in the sketch and carries on. Hold mode stops at the first one, so a test fails at once. | generated | 0.1 |

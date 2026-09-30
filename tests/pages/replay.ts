@@ -94,6 +94,9 @@ run('replay', async () => {
 		buckets: memory.put(bucketInfo),
 		indirect: memory.put(indirect),
 		cull: memory.put(cull),
+		// A one-entry table of the split-sum terms of specular light that the frame group binds:
+		// the scale and bias of a smooth surface seen head on.
+		dfg: memory.put(new Float32Array([1, 0, 0, 0])),
 	};
 	const U = {
 		VERTEX: 0x20,
@@ -145,6 +148,19 @@ run('replay', async () => {
 		G.VIEW_2D,
 	);
 	memory.push(
+		G.OP_CREATE_TEXTURE,
+		3,
+		1,
+		1,
+		1,
+		G.FORMAT_RGBA32_FLOAT,
+		GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+		1,
+		1,
+		G.VIEW_2D,
+	);
+	memory.push(G.OP_WRITE_TEXTURE, 3, 0, 0, 0, 0, 1, 1, 1, blobs.dfg, 16);
+	memory.push(
 		G.OP_CREATE_RENDER_PIPELINE,
 		1,
 		G.TEMPLATE_INSTANCED_LIT,
@@ -160,9 +176,10 @@ run('replay', async () => {
 		G.OP_CREATE_BIND_GROUP,
 		1,
 		G.LAYOUT_FRAME,
-		2,
+		3,
 		...[0, G.RESOURCE_BUFFER, 3, 0, 0],
 		...[1, G.RESOURCE_BUFFER, 4, 0, 0],
+		...[3, G.RESOURCE_TEXTURE, 3, 0, 0],
 	);
 	memory.push(
 		G.OP_CREATE_BIND_GROUP,

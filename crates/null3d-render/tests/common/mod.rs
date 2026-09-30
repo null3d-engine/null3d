@@ -85,13 +85,13 @@ impl<B: FrameBuilder> World<B> {
         let lit = renderer
             .settings_mut()
             .materials_mut()
-            .create(Shading::Lit, [1.0, 0.0, 0.0, 1.0])
+            .create(Shading::Lit, 0, [1.0, 0.0, 0.0, 1.0])
             .unwrap()
             + 1;
         let unlit = renderer
             .settings_mut()
             .materials_mut()
-            .create(Shading::Unlit, [0.0, 0.0, 1.0, 1.0])
+            .create(Shading::Unlit, 0, [0.0, 0.0, 1.0, 1.0])
             .unwrap()
             + 1;
 
@@ -243,7 +243,7 @@ impl<B: FrameBuilder> World<B> {
         let mesh = settings.meshes_mut().add(mesh).unwrap() + 1;
         let material = settings
             .materials_mut()
-            .create(shading, [1.0, 1.0, 1.0, 1.0])
+            .create(shading, 0, [1.0, 1.0, 1.0, 1.0])
             .unwrap()
             + 1;
         let object = self.scene.reserve().unwrap();
@@ -269,7 +269,7 @@ impl<B: FrameBuilder> World<B> {
             .unwrap();
         let material = settings
             .materials_mut()
-            .create(Shading::UnlitMap, [1.0; 4])
+            .create(Shading::UnlitMap, 0, [1.0; 4])
             .unwrap();
         settings
             .materials_mut()

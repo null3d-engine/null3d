@@ -70,6 +70,7 @@ use null3d_gpu::caps::{BUDGET, Limit};
 use null3d_gpu::drawlist::{DrawList, Op, buffer_usage as usage, sizes};
 
 use crate::debug_lines::LinesPass;
+use crate::dfg;
 use crate::frame::{
     FrameBuilder, FrameInput, MaterialStorage, MeshBuffers, ParityLists, RecordError,
     SceneSettings, UploadArena,
@@ -142,8 +143,10 @@ mod ids {
     /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
     pub const PAGES: u32 = LINES + 1;
 
+    /// three.js's table of the split-sum terms of specular light.
+    pub const DFG: u32 = 1;
     /// The render graph's textures, from this id on.
-    pub const TARGETS: u32 = 1;
+    pub const TARGETS: u32 = DFG + 1;
     /// The texture arrays of materials' maps, after every id the render graph can take.
     pub const TEXTURE_ARRAYS: u32 = TARGETS + 256;
     /// The samplers of materials' maps, the only samplers the builder makes.
@@ -205,6 +208,8 @@ pub struct GpuDrivenRenderer {
     /// Each view's values in the frame being recorded, or `None` for a view with no camera.
     frames: Vec<Option<ViewFrame>>,
     created: bool,
+    /// True from the creation of three.js's table of specular terms until a frame uploads it.
+    dfg_pending: bool,
 }
 
 /// The builder's scene settings: meshes in shared buffers, `max_materials` materials, and
@@ -239,6 +244,7 @@ impl GpuDrivenRenderer {
             lines: LinesPass::new(ids::LINES),
             frames: Vec::new(),
             created: false,
+            dfg_pending: false,
         }
     }
 
@@ -301,6 +307,9 @@ impl GpuDrivenRenderer {
         self.culling.add_views(list, views)?;
 
         arena.reset(self.upload_bound() + LinesPass::upload_bytes(&input.lines));
+        if std::mem::take(&mut self.dfg_pending) {
+            dfg::upload(list, arena, ids::DFG)?;
+        }
         let pages_remade = self
             .meshes
             .upload(list, arena, self.settings.meshes().pages())?;
@@ -361,7 +370,8 @@ impl GpuDrivenRenderer {
         Ok(upload_everything)
     }
 
-    /// Records the creation of the material table, whose size never changes.
+    /// Records the creation of the material table and three.js's table of specular terms, whose
+    /// sizes never change.
     fn create_fixed(&mut self, list: &mut DrawList) -> Result<(), RecordError> {
         let materials = self.config.max_materials.max(1);
         list.push(
@@ -372,16 +382,19 @@ impl GpuDrivenRenderer {
                 usage::STORAGE | usage::COPY_DST,
             ],
         )?;
+        dfg::create(list, ids::DFG)?;
+        self.dfg_pending = true;
         self.created = true;
         Ok(())
     }
 
     /// The most that one frame can copy into its arena for the scene as it stands: mesh data not
-    /// uploaded yet, the whole material table, the layout's tables, and each view's
-    /// frame uniform, culling parameters and indirect draws.
+    /// uploaded yet, the whole material table, three.js's table of specular terms, the layout's
+    /// tables, and each view's frame uniform, culling parameters and indirect draws.
     fn upload_bound(&self) -> usize {
         let meshes = self.meshes.pending_bytes(self.settings.meshes().pages());
-        let materials = self.settings.materials().capacity() as usize * MATERIAL_FLOATS * 4;
+        let materials =
+            self.settings.materials().capacity() as usize * MATERIAL_FLOATS * 4 + dfg::BYTES;
         let per_view = (sizes::FRAME_UNIFORM_BYTES + CULL_PARAMS_BYTES) as usize
             + self.layout.draws.len() * INDIRECT_BYTES as usize;
         meshes + materials + self.layout.upload_bound() + self.settings.views().len() * per_view

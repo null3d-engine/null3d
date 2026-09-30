@@ -13,6 +13,7 @@ use null3d_render::cpu_culled::{CpuCulledConfig, MAX_SOURCE_BITS};
 use null3d_render::frame::{NO_MATERIAL, NO_MESH};
 use null3d_render::geometry::Shape;
 use null3d_render::gpu_driven::{MAX_USEFUL_BINDING_BYTES, PORTABLE_MAX_SOURCES};
+use null3d_render::materials::{feature, param};
 use null3d_render::textures::{DEFAULT_MAX_ANISOTROPY, DEFAULT_UPLOAD_BUDGET, MAX_LAYERS};
 
 /// Fields of `sceneArrays`.
@@ -52,7 +53,7 @@ pub const COMMAND_WORDS: u32 = 4;
 
 /// How a material shades, as `createMaterial` takes it.
 pub mod shading {
-    /// Lit, as three.js's `MeshLambertMaterial`.
+    /// The standard material, lit as three.js's `MeshStandardMaterial`.
     pub const LIT: u32 = 0;
     /// The base color only, as three.js's `MeshBasicMaterial`.
     pub const UNLIT: u32 = 1;
@@ -272,6 +273,33 @@ pub fn typescript() -> String {
                 ("UNLIT", shading::UNLIT),
                 ("TEXCOORDS", shading::TEXCOORDS),
                 ("UNLIT_MAP", shading::UNLIT_MAP),
+            ],
+        ),
+        // The features that `createMaterial` takes, fixed from then on.
+        (
+            "MATERIAL_FEATURE",
+            &[
+                ("DOUBLE_SIDED", feature::DOUBLE_SIDED),
+                ("VERTEX_COLORS", feature::VERTEX_COLORS),
+                ("FLAT_SHADING", feature::FLAT_SHADING),
+            ],
+        ),
+        // The values that `setMaterialValue` changes, by the float where each starts in a row.
+        (
+            "MATERIAL_PARAM",
+            &[
+                ("COLOR", param::COLOR as u32),
+                ("OPACITY", param::OPACITY as u32),
+                ("EMISSIVE", param::EMISSIVE as u32),
+                ("EMISSIVE_INTENSITY", param::EMISSIVE_INTENSITY as u32),
+                ("ALPHA_CUTOFF", param::ALPHA_CUTOFF as u32),
+                ("METALNESS", param::METALNESS as u32),
+                ("ROUGHNESS", param::ROUGHNESS as u32),
+                ("NORMAL_SCALE", param::NORMAL_SCALE as u32),
+                ("OCCLUSION_STRENGTH", param::OCCLUSION_STRENGTH as u32),
+                ("LIGHT_MAP_INTENSITY", param::LIGHT_MAP_INTENSITY as u32),
+                ("UV_U", param::UV_U as u32),
+                ("UV_V", param::UV_V as u32),
             ],
         ),
         (

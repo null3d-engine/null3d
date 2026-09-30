@@ -582,7 +582,7 @@ mod tests {
         let mut settings = scene_settings(4);
         let box_mesh = box_geometry(1.0, 1.0, 1.0, [1, 1, 1]).unwrap();
         let mesh = settings.meshes_mut().add(&box_mesh).unwrap() + 1;
-        let material = settings.materials_mut().create(Shading::Lit, [1.0; 4]);
+        let material = settings.materials_mut().create(Shading::Lit, 0, [1.0; 4]);
         let material = material.unwrap() + 1;
         let mut scene = SceneStorage::with_capacity(8);
         let mut commands = Vec::new();

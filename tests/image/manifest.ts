@@ -228,6 +228,21 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 		size: [480, 270],
 		sameOnEveryTier: true,
 	},
+	// The standard material's spheres over metalness and roughness, and each option that a
+	// material fixes when it is created: emissive color, flat shading, double-sided faces, and
+	// vertex colors with the standard and the unlit material.
+	{
+		name: 'standard-grid',
+		sketch: 'tests/pages/sketches/standard-sketch.ts?scene=grid',
+		hold: 0,
+		size: [480, 270],
+	},
+	{
+		name: 'standard-features',
+		sketch: 'tests/pages/sketches/standard-sketch.ts?scene=features',
+		hold: 0,
+		size: [480, 270],
+	},
 	// Orbit controls after the controls test's drags, made through the controls' own calls. The
 	// controls test must draw this image after it makes the drags with Playwright.
 	{ name: 'controls', sketch: 'tests/pages/sketches/controls-sketch.ts?moved', hold: 0 },
