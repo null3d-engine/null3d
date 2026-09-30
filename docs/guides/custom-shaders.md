@@ -8,7 +8,7 @@ summary: "WGSL in sketch code; shader errors; surface functions; full shaders; u
 
 # Custom shaders
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Custom materials with surface functions and uniforms are built. Full shaders, textures and vertex offsets in custom materials are not built yet, so coding agents must not use them. Hot reload that keeps the page running comes in 0.2.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Custom materials with surface functions, vertex offsets and uniforms are built. Full shaders and textures in custom materials are not built yet, so coding agents must not use them. Hot reload that keeps the page running comes in 0.2.
 
 ```mermaid
 flowchart LR
@@ -40,7 +40,7 @@ fn surface(input: SurfaceInput) -> Surface {
 const red = materials.shader({ wgsl: rings, color: '#e04040', roughness: 0.5 });
 ```
 
-The WGSL can declare uniforms as `struct Uniforms`, which `set()` changes at any time. [Surface functions](../shaders/surface-functions.md) describes the surface input, the surface record, `defaultSurface` and uniforms.
+The WGSL can declare uniforms as `struct Uniforms`, which `set()` changes at any time, and a vertex offset, `fn vertexOffset`, which moves the mesh's vertices. [Surface functions](../shaders/surface-functions.md) describes the surface input, the surface record, `defaultSurface`, uniforms and vertex offsets.
 
 ## WGSL in sketch code
 
@@ -83,7 +83,7 @@ The plugin puts the compiled shader where the literal was. Your code therefore r
 
 The plugin compiles two kinds of WGSL:
 
-- WGSL without entry points that declares `fn surface` is a custom material's WGSL. The plugin builds it into the standard material's shader, once for each of that shader's variants.
+- WGSL without entry points that declares `fn surface`, `fn vertexOffset` or both is a custom material's WGSL. The plugin builds it into the standard material's shader, once for each of that shader's variants.
 - WGSL with entry points is a whole shader. It has one `@vertex` entry point and one or more `@fragment` entry points. Each `@fragment` entry point makes one render pipeline, named after it, with the `@vertex` entry point. A shader with only `@compute` entry points builds for WebGPU alone, because WebGL2 has no compute shaders.
 
 WGSL that is neither stops the build with an error that says how to fix it.

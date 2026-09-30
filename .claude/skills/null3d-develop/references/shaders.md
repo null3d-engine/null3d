@@ -2,7 +2,7 @@
 
 All engine shaders are WGSL. The build translates them to GLSL for the WebGL2 path, so one source serves both backends. The null3D Vite plugin compiles the WGSL in your code: `.wgsl` files that you import, and template literals tagged `/* wgsl */`. The WebGL2 build sets the shader def `WEBGL2`. Engine docs: `guides/custom-shaders`, `shaders/surface-functions`, `shaders/builtins`, `shaders/wgsl-rules`, `shaders/library`.
 
-Custom materials with surface functions and uniforms are built: sections 1, 2, 4 (uniforms) and 8 to 10 apply now. The rest of sections 3 to 5 describes parts that come later in 0.1: do not ship code that uses them until their docs pages say they are built.
+Custom materials with surface functions, uniforms and vertex offsets are built. Sections 1, 2, 4 (uniforms), 5 (vertex offsets) and 8 to 10 apply now. The rest of sections 3 to 5 describes parts that come later in 0.1: do not ship code that uses them until their docs pages say they are built.
 
 ## Contents
 
@@ -10,7 +10,7 @@ Custom materials with surface functions and uniforms are built: sections 1, 2, 4
 2. Surface functions
 3. Built-in values (later in 0.1)
 4. Uniforms, textures and per-instance data
-5. Vertex offsets and full shaders (later in 0.1)
+5. Vertex offsets and full shaders
 6. Custom post effects (0.2)
 7. Custom passes (0.2)
 8. Portable WGSL rules
@@ -22,7 +22,7 @@ Custom materials with surface functions and uniforms are built: sections 1, 2, 4
 | Goal | Kind | Keeps lights, shadows, fog and instancing |
 | --- | --- | --- |
 | Change how a surface looks (color, roughness, patterns, dissolve, water) | Surface function | Yes |
-| Move vertices (waves, wind, swelling) | Vertex offset, alone or with a surface function (later in 0.1) | Yes |
+| Move vertices (waves, wind, swelling) | Vertex offset, alone or with a surface function | Yes (shadows use the unmoved vertices) |
 | Something the lighting model cannot express (holograms, custom lighting) | Full shader (later in 0.1) | No: you write everything |
 | A full-screen image effect | Post effect (section 6) | Not applicable |
 | An extra render or compute step | Custom pass (section 7) | Not applicable |
@@ -90,7 +90,7 @@ Materials from the same WGSL share one shader and its pipelines. Make one WGSL p
 
 Planned additions, not built yet: `worldPosition`, `uv1`, `fragCoord` and `instance` in `SurfaceInput`, and alpha modes that use `s.alpha`.
 
-Names: your WGSL shares a file with the engine's standard material. Do not declare `SurfaceInput`, `Surface`, `defaultSurface`, `shade`, `light_surface`, `material`, `material_row`, `load_material_uniforms`, `custom_value`, `VertexIn`, `VertexOut`, `vs` or `fs`. Import library items by name (`#import null3d::noise::{fbm2}`), because a whole-module import reserves the module's name. No `enable` directives.
+Names: your WGSL shares a file with the engine's standard material. Do not declare `SurfaceInput`, `Surface`, `VertexInput`, `defaultSurface`, `shade`, `light_surface`, `material`, `material_row`, `load_material_uniforms`, `custom_value`, `VertexIn`, `VertexOut`, `vs` or `fs`. Import library items by name (`#import null3d::noise::{fbm2}`), because a whole-module import reserves the module's name. No `enable` directives.
 
 ## 3. Built-in values (later in 0.1)
 
@@ -155,19 +155,24 @@ const dissolve = materials.shader({
 - Textures come with a `textures` option; their WGSL form is not settled yet.
 - Per-instance data: `createInstances(mesh, count, { material, attributes: { tint: 4 } })` (0.2).
 
-## 5. Vertex offsets and full shaders (later in 0.1)
+## 5. Vertex offsets and full shaders
 
-A vertex offset moves vertices in object space before the engine applies transforms and instancing. It goes in the same WGSL as the surface function:
+Vertex offsets are built; full shaders come later in 0.1. A vertex offset moves vertices in the mesh's own space before the engine applies transforms and instancing. It goes in the same WGSL as the surface function, and reads the same uniforms:
 
 ```wgsl
+struct Uniforms { height: f32 }
+
 fn vertexOffset(input: VertexInput) -> vec3f {
-  // VertexInput: position, normal, uv
-  let w = sin(input.position.x * 2.0) * 0.1;
+  // VertexInput: position, normal, uv, in the mesh's own space
+  let w = sin(input.position.x * 2.0) * material.height;
   return vec3f(0.0, w, 0.0);
 }
 ```
 
-Vertices that move outside the mesh's bounding sphere can be culled wrongly. Give the mesh a sphere that holds them with `mesh.setBounds(center, radius)`, at setup, because the call rebuilds the draw tables.
+- Exactly this signature; the build rejects another.
+- Normals stay the mesh's own. Use `flatShading: true` to light faces by their moved positions, or bend `s.normal` in the surface function.
+- Shadows use the unmoved vertices.
+- Vertices that move outside the mesh's bounding sphere can be culled wrongly. Give the object a sphere that holds them with `mesh.setBounds(center, radius)`, at setup, because the call rebuilds the draw tables.
 
 A full shader is WGSL with `@vertex` and `@fragment` entry points. The shader library's `null3d::vertex` module helps it keep instancing and camera-relative positions working. Full shaders do not receive lighting, shadows or fog unless you import the helpers (`null3d::lighting`, `null3d::fog`).
 

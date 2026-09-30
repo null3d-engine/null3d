@@ -261,6 +261,14 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		size: [480, 270],
 	},
+	// Custom materials with vertex offsets: waves that uniforms shape, a swelling with a surface
+	// function from the same WGSL, and a twist beside the same torus with the standard material.
+	{
+		name: 'custom-vertex-offset',
+		sketch: 'tests/pages/sketches/custom-vertex-offset-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+	},
 	// Orbit controls after the controls test's drags, made through the controls' own calls. The
 	// controls test must draw this image after it makes the drags with Playwright.
 	{ name: 'controls', sketch: 'tests/pages/sketches/controls-sketch.ts?moved', hold: 0 },

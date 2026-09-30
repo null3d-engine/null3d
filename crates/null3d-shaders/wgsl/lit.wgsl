@@ -11,11 +11,13 @@ enable draw_index;
 // fogs or blends the surface belongs in `shade`, so custom materials get both.
 //
 // Custom materials build this template with their WGSL added after its last line, and with the
-// shader def CUSTOM_SURFACE when that WGSL declares `fn surface`. When it declares
-// `struct Uniforms`, the build adds `load_material_uniforms` after it, and CUSTOM_UNIFORMS makes the
-// template fill `material` with the uniforms. Their WGSL shares this file's names, so the template
-// imports library items by name and keeps its own names few. It never imports a module whole,
-// which would reserve the module's name in their WGSL too.
+// shader def CUSTOM, which reads the first texture coordinates. CUSTOM_SURFACE makes the fragment
+// shader call their `fn surface`, and CUSTOM_VERTEX_OFFSET makes the vertex shader move each vertex
+// by their `fn vertexOffset`. When their WGSL declares `struct Uniforms`, the build adds
+// `load_material_uniforms` after it, and CUSTOM_UNIFORMS makes each stage fill `material` with the
+// uniforms. Their WGSL shares this file's names, so the template imports library items by name and
+// keeps its own names few. It never imports a module whole, which would reserve the module's name
+// in their WGSL too.
 #import null3d::color::{linear_to_srgb}
 #import null3d::lighting::{PbrMaterial, dfg_lut, direct_light, indirect_diffuse}
 #import null3d::lighting::{multiscatter_compensation, pbr_material}
@@ -30,7 +32,7 @@ const FLAT_SHADING: u32 = 1u;
 var<private> material_row: Material;
 
 #ifdef CUSTOM_UNIFORMS
-/// The custom material's uniforms, which the fragment shader reads once.
+/// The custom material's uniforms, which each stage reads once.
 var<private> material: Uniforms;
 #endif
 
@@ -38,7 +40,7 @@ var<private> material: Uniforms;
 struct VertexIn {
     @location(0) position: vec3f,
     @location(1) normal: vec3f,
-#ifdef CUSTOM_SURFACE
+#ifdef CUSTOM
     @location(2) uv: vec2f,
 #endif
 #ifdef VERTEX_COLOR
@@ -55,10 +57,23 @@ struct VertexOut {
 #ifdef VERTEX_COLOR
     @location(3) vertex_color: vec4f,
 #endif
-#ifdef CUSTOM_SURFACE
+#ifdef CUSTOM
     @location(4) uv: vec2f,
 #endif
 }
+
+#ifdef CUSTOM
+/// What a vertex offset function knows of a vertex of the mesh, in the mesh's own space, before
+/// the object's transform and instancing move it.
+struct VertexInput {
+    /// The vertex's position.
+    position: vec3f,
+    /// The vertex's unit normal.
+    normal: vec3f,
+    /// The vertex's first texture coordinates.
+    uv: vec2f,
+}
+#endif
 
 /// What a surface function knows of the point of the surface that a pixel shows. Positions and
 /// directions are in world space, relative to the camera.
@@ -73,7 +88,7 @@ struct SurfaceInput {
     /// The mesh's vertex color when the material takes vertex colors and the mesh has them, else
     /// white.
     vertexColor: vec4f,
-#ifdef CUSTOM_SURFACE
+#ifdef CUSTOM
     /// The mesh's first texture coordinates.
     uv: vec2f,
 #endif
@@ -124,15 +139,23 @@ fn defaultSurface(input: SurfaceInput) -> Surface {
 @vertex
 fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
     let found = find_instance(i);
+#ifdef CUSTOM_UNIFORMS
+    material = load_material_uniforms(found.material);
+#endif
     var out: VertexOut;
+#ifdef CUSTOM_VERTEX_OFFSET
+    let offset = vertexOffset(VertexInput(v.position, v.normal, v.uv));
+    out.relative = relative_position(found, v.position + offset);
+#else
     out.relative = relative_position(found, v.position);
+#endif
     out.clip = clip_of(found, out.relative);
     out.normal = world_normal(found, v.normal);
     out.material = found.material;
 #ifdef VERTEX_COLOR
     out.vertex_color = v.vertex_color;
 #endif
-#ifdef CUSTOM_SURFACE
+#ifdef CUSTOM
     out.uv = v.uv;
 #endif
     return out;
@@ -186,7 +209,7 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
 #ifdef VERTEX_COLOR
     input.vertexColor = in.vertex_color;
 #endif
-#ifdef CUSTOM_SURFACE
+#ifdef CUSTOM
     input.uv = in.uv;
 #endif
     input.frontFacing = front;

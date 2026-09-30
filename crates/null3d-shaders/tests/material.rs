@@ -205,3 +205,43 @@ fn uniforms_past_the_row_are_refused_at_the_first_that_does_not_fit() {
         "{problem}"
     );
 }
+
+/// A vertex offset that waves the mesh by a uniform.
+const WAVE: &str = "struct Uniforms { height: f32 }
+
+fn vertexOffset(input: VertexInput) -> vec3f {
+    return input.normal * sin(input.uv.x * 6.0) * material.height;
+}
+";
+
+#[test]
+fn a_vertex_offset_moves_the_vertex_in_every_variant_and_reads_the_uniforms() {
+    let built = compile(WAVE).expect("the vertex offset builds");
+    assert_eq!(built.functions, ["vertexOffset"]);
+    assert_eq!(built.variants.len(), 6);
+    let wgsl = &built.variants["webgpu"].wgsl.as_ref().expect("WGSL").source;
+    assert!(wgsl.contains("fn vertexOffset("), "{wgsl}");
+    assert!(!wgsl.contains("fn surface("), "{wgsl}");
+    let glsl = &built.variants["webgl2_draw_index"]
+        .glsl
+        .as_ref()
+        .expect("GLSL")["main"];
+    assert!(
+        glsl.vertex.source.contains("texelFetch("),
+        "{}",
+        glsl.vertex.source
+    );
+    let both = compile(&format!("{STRIPES}\n{WAVE}"))
+        .expect("a vertex offset and a surface function build together");
+    assert_eq!(both.functions, ["surface", "vertexOffset"]);
+}
+
+#[test]
+fn a_vertex_offset_with_another_signature_is_refused_at_its_name() {
+    let problem = only_problem(&WAVE.replace("-> vec3f", "-> vec4f"));
+    assert_eq!((problem.line, problem.column), (Some(3), Some(4)));
+    assert_eq!(
+        problem.message,
+        "`vertexOffset` does not have the signature that the engine calls. Declare it as `fn vertexOffset(input: VertexInput) -> vec3f`."
+    );
+}

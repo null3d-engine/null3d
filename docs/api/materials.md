@@ -8,7 +8,7 @@ summary: "standard, unlit, shader, shadowCatcher; every option."
 
 # Materials
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Texture maps, transparency and `materials.shadowCatcher` are not built yet, and `materials.shader` takes only a surface function and its uniforms. Coding agents must not use the parts that are not built.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Texture maps, transparency and `materials.shadowCatcher` are not built yet, and `materials.shader` takes only a surface function, a vertex offset and their uniforms. Coding agents must not use the parts that are not built.
 
 A material sets how the surfaces of the objects that use it look. `materials.standard` makes a lit material, and `materials.unlit` makes one that ignores lights. Create materials in the setup, and share each one between the objects that look alike.
 
@@ -37,7 +37,7 @@ export default defineSketch(({ scene, geometry, materials, page }) => {
 | --- | --- |
 | `materials.standard(options)` | Lit by the scene's lights with glTF's metallic-roughness model and the formulas of three.js's `MeshStandardMaterial` |
 | `materials.unlit(options)` | Its color as it is, whatever the lights, like three.js's `MeshBasicMaterial` |
-| `materials.shader(options)` | A standard material whose WGSL surface function changes its look before the engine lights it |
+| `materials.shader(options)` | A standard material whose WGSL changes its look before the engine lights it, or moves its vertices |
 
 Without lights, a standard material draws black, apart from its emissive color. [Lights](lights.md) explains how light colors and intensities shade it.
 
@@ -108,7 +108,7 @@ const paint = materials.shader({ wgsl: tinted, uniforms: { tint: '#ff6a00', stre
 paint.set({ strength: 0.8, roughness: 0.3 });
 ```
 
-Materials made from the same WGSL share one shader, and each has its own uniforms. A mesh needs texture coordinates to draw with a custom material. WGSL as plain text, which the plugin did not compile, throws E1215, and so does a whole shader with entry points. A uniform that the WGSL does not declare, or a value of the wrong kind, throws E1216. [Surface functions](../shaders/surface-functions.md) describes the WGSL.
+Materials made from the same WGSL share one shader, and each has its own uniforms. A mesh needs texture coordinates to draw with a custom material. WGSL as plain text, which the plugin did not compile, throws E1215, and so does a whole shader with entry points. A uniform that the WGSL does not declare, or a value of the wrong kind, throws E1216. The WGSL can also move the mesh's vertices with a vertex offset. [Surface functions](../shaders/surface-functions.md) describes the WGSL.
 
 ## Ranges
 

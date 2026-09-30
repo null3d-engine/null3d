@@ -263,13 +263,13 @@ const paint = materials.standard({
 const glow = materials.unlit({ color: '#ffcc00' });      // ignores lights, like three.js's MeshBasicMaterial
 paint.set({ roughness: 0.4 });  // changes only the options you pass; converting a color allocates
 
-const stripes = materials.shader({ ...anyStandardOption, wgsl, uniforms });  // wgsl: a tagged /* wgsl */ literal or .wgsl import with fn surface
+const stripes = materials.shader({ ...anyStandardOption, wgsl, uniforms });  // wgsl: a tagged /* wgsl */ literal or .wgsl import with fn surface, fn vertexOffset or both
 stripes.set({ speed: 2, roughness: 0.3 });  // uniforms of struct Uniforms and standard values alike
 ```
 
 - `materials.standard` shades as three.js's `MeshStandardMaterial` does, with its formulas and its table of specular terms.
 - `materials.shader` keeps the standard look and lighting, and a WGSL surface function changes the surface before the engine lights it. Every `materials.standard` option feeds `defaultSurface()`. `references/shaders.md` has the contract.
-- Later in 0.1: texture maps (`map`, `normalMap`, `metalnessRoughnessMap`, `aoMap`, `emissiveMap`, `lightMap`), `alphaMode`, `alphaCutoff`, `blending`, `depthWrite`, `depthTest`, `depthBias`, `uvTransform`, `fog: false`, and in `materials.shader` textures, vertex offsets and full shaders.
+- Later in 0.1: texture maps (`map`, `normalMap`, `metalnessRoughnessMap`, `aoMap`, `emissiveMap`, `lightMap`), `alphaMode`, `alphaCutoff`, `blending`, `depthWrite`, `depthTest`, `depthBias`, `uvTransform`, `fog: false`, and in `materials.shader` textures and full shaders.
 - `envIntensity` (0.2) comes with environment lighting, and `materials.shadowCatcher` in 0.2.
 - `set()` changes values cheaply at any time. Options that change the shader, such as a texture map, will be fixed when you create the material. So plan to create each variant before play, and switch with `setMaterial`.
 
