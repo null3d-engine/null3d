@@ -56,6 +56,11 @@ export interface RendererSetup {
 export type SketchWorkerInit = CoreHandoff & {
 	type: 'init';
 	sketchUrl: string;
+	/**
+	 * The key names, in the order of the numbers that the page gives keys in the input ring. The
+	 * page hands them over, so the sketch worker's file needs no copy.
+	 */
+	keyCodes: readonly string[];
 	/** Job workers that serve the sketch's job system. */
 	jobWorkers: number;
 	/** Present in low-latency mode, where the sketch worker also draws. */
@@ -117,4 +122,24 @@ export async function replyWithCapture(capture: Promise<CapturedFrame>): Promise
 /** Returns a function that reports each step of a worker's start to the page as it finishes. */
 export function startSteps(role: 'sketch' | 'render' | 'job'): (step: string) => void {
 	return (step) => replyToPage({ type: 'progress', role, step });
+}
+
+/**
+ * Starts a worker on the first run of its entry file in the thread: reports the first step, and
+ * handles the page's messages with `handle`. Safari runs a module worker's entry file again when
+ * another file imports it (WebKit bug 324459). A production build's files that a worker loads later
+ * import the entry file for the code they share with it. A later run starts nothing, so the handler
+ * of the first run keeps the worker's state.
+ */
+export function startWorker<Message>(
+	role: 'sketch' | 'render' | 'job',
+	step: (name: string) => void,
+	handle: (event: MessageEvent<Message>) => unknown,
+): void {
+	const started = Symbol.for(`null3d.${role}WorkerStarted`);
+	const thread = globalThis as { [started]?: true };
+	if (thread[started]) return;
+	thread[started] = true;
+	step('loaded');
+	self.onmessage = handle;
 }

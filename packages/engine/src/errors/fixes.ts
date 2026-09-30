@@ -25,11 +25,13 @@ export const ERROR_FIXES = {
 	E1108:
 		'Keep counts and indices within the capacity you created the batch with, or create a larger batch.',
 	E1109:
-		'Use fewer instance rows. Size each batch for the rows it uses, and give a batch colors only when it needs them. Destroy the batches you no longer draw.',
+		'Use fewer instance rows. Size each batch for the rows it uses, and give a batch colors only when it needs them. Destroy the batches you no longer draw. When a new engine fails to start this way, destroy the engines you no longer use, or keep one engine and detach and attach it.',
 	E1203:
 		'Check the value computed before this call. NaN often comes from dividing zero by zero, or from normalizing a zero-length vector.',
 	E1204:
 		"Pass a hex string such as '#4a8cff', a number such as 0x4a8cff, or three sRGB components from 0 to 1, such as [0.29, 0.55, 1].",
+	E1205:
+		"Use a KeyboardEvent.code name such as 'KeyW' or 'ArrowLeft', or a mouse button from 'Mouse0' to 'Mouse4'. Gamepad names start with 'Gamepad', such as 'GamepadA' or 'GamepadLeftStickUp'. Define an action with input.actions.define() before you use it, and give it a name that no key or button has.",
 	E1301:
 		'Remove a ?gpu= switch or createEngine gpu option that forces a path this browser lacks. Update the browser, or turn on hardware acceleration in its settings.',
 	E1302:

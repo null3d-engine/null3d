@@ -139,7 +139,8 @@ Enemies that need different meshes become one batch per mesh. Per-enemy state (h
 | --- | --- |
 | `addEventListener('pointermove', ...)` with NDC math | `input.pointer.ndcX`, `ndcY`; `input.pointer.x`, `y` in CSS pixels |
 | `addEventListener('keydown', ...)` and a key-state object | `input.isDown('KeyW')`, `input.wasPressed('Space')` |
-| Gamepad API polling | `input.isDown('GamepadA')`, or an action map |
+| `addEventListener('touchstart', ...)` and a list of touches | `input.touches`, and `touch-action: none` on the canvas |
+| Gamepad API polling | `input.isDown('GamepadA')`, `input.value('GamepadLeftStickRight')`, or an action map |
 | `OrbitControls(camera, renderer.domElement)` | `createOrbitControls(ctx, camera, options)`; same option names |
 | `controls.addEventListener('change', render)` for on-demand rendering | Not needed: the engine renders continuously and skips unchanged work |
 | `PointerLockControls` | `createFirstPersonControls` plus `engine.requestPointerLock()` on the page (0.2) |

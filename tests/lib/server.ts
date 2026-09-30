@@ -9,13 +9,17 @@ import { localHostName } from '../../tools/lib/host.ts';
  * The dev server's port: 5173, or the one that NULL3D_PORT names. Each copy of the repository, such
  * as a second worktree, can then run its own server, and its tools reach that one. The HTTPS server
  * takes the next port, `vite preview`, which serves the production build of the test pages, the
- * one after, and the soak test's Chrome debugging port the one after that.
+ * one after, and the Chrome debugging port of the benchmark tools the one after that.
  */
 export const HTTP_PORT = devServerPort(process.env.NULL3D_PORT);
 export const HTTPS_PORT = HTTP_PORT + 1;
 /** Where `vite preview` serves the production build of the test pages. */
 export const PREVIEW_PORT = HTTP_PORT + 2;
-/** Chrome's debugging port for the soak test, which starts its own Chrome. */
+/**
+ * Chrome's debugging port for the benchmark tools that drive Chrome through its debugging protocol:
+ * a Chrome they start here, or Chrome on a phone that adb forwards here. Each copy of the repository
+ * has its own, so two copies can run these tools at the same time.
+ */
 export const DEBUG_PORT = HTTP_PORT + 3;
 export const REPO_ROOT = join(import.meta.dirname, '../..');
 
@@ -33,13 +37,22 @@ const START_TIMEOUT_MS = 30_000;
 export interface DevServer {
 	/** The address browsers use: localhost for HTTP, the Mac's .local name for HTTPS. */
 	url: string;
+	/** The address this computer uses: localhost for both. */
+	selfUrl: string;
 	stop(): void;
+}
+
+/**
+ * Fetches from a server on this computer. The local certificate authority is not in Bun's trust
+ * store, so HTTPS skips verification here.
+ */
+export function localFetch(url: string): Promise<Response> {
+	return fetch(url, { tls: { rejectUnauthorized: false } });
 }
 
 async function answers(url: string): Promise<boolean> {
 	try {
-		// The local certificate authority is not in Bun's trust store, so HTTPS skips verification here.
-		return (await fetch(url, { tls: { rejectUnauthorized: false } })).ok;
+		return (await localFetch(url)).ok;
 	} catch {
 		return false;
 	}
@@ -50,8 +63,9 @@ export async function startServer(https = false): Promise<DevServer> {
 	const url = https
 		? `https://${localHostName()}.local:${HTTPS_PORT}`
 		: `http://localhost:${HTTP_PORT}`;
-	const probe = `${https ? `https://localhost:${HTTPS_PORT}` : url}/tests/pages/index.html`;
-	if (await answers(probe)) return { url, stop: () => {} };
+	const selfUrl = https ? `https://localhost:${HTTPS_PORT}` : url;
+	const probe = `${selfUrl}/tests/pages/index.html`;
+	if (await answers(probe)) return { url, selfUrl, stop: () => {} };
 	const child: ChildProcess = spawn('bunx', ['vite'], {
 		cwd: REPO_ROOT,
 		stdio: ['ignore', 'ignore', 'pipe'],
@@ -63,7 +77,7 @@ export async function startServer(https = false): Promise<DevServer> {
 	});
 	const deadline = Date.now() + START_TIMEOUT_MS;
 	while (Date.now() < deadline) {
-		if (await answers(probe)) return { url, stop: () => child.kill() };
+		if (await answers(probe)) return { url, selfUrl, stop: () => child.kill() };
 		await new Promise((resolve) => setTimeout(resolve, 250));
 	}
 	child.kill();

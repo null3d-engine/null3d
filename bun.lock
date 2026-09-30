@@ -41,14 +41,16 @@
       "name": "@null3d/engine",
       "version": "0.0.0",
       "devDependencies": {
+        "@types/three": "0.186.0",
         "@webgpu/types": "0.1.74",
+        "three": "0.186.1",
       },
     },
     "packages/vite-plugin": {
       "name": "@null3d/vite-plugin",
       "version": "0.0.0",
       "dependencies": {
-        "magic-string": "1.4.2",
+        "magic-string": "^1.4.2",
       },
       "devDependencies": {
         "vite": "8.3.1",
