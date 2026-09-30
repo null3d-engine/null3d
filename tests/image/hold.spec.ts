@@ -136,6 +136,18 @@ for (const mode of ENGINE_MODES)
 		expect(result.error).toContain('the throwing sketch threw on purpose');
 	});
 
+for (const mode of ENGINE_MODES)
+	test(`hold mode stops in the frame that skips a static object's setter, ${mode.name}`, async ({
+		page,
+	}) => {
+		const result = await hold(page, `hold=2&sketch=unmarked-write${modeSwitches(mode)}`);
+		if (result.ok) throw new Error('the hold passed, though the sketch skipped a setter');
+		expect(result.code).toBe('E1408');
+		expect(result.error).toContain(
+			'hold mode stopped at 0.5 seconds, in frame 31: E1110: the position of "Crate" (slot 1) changed without a setter.',
+		);
+	});
+
 test('hold mode publishes a failed setup at once, with its code', async ({ page }) => {
 	const started = Date.now();
 	const result = await hold(page, 'hold=1&sketch=failing-setup');
