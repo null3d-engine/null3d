@@ -12,9 +12,9 @@ summary: "Running Rapier or cannon-es in the sketch worker; copying transforms."
 
 ```mermaid
 flowchart LR
-    update["onUpdate(dt)"] --> step["The physics world<br/>takes fixed steps"]
-    step --> copy["The sketch copies each body's<br/>position and rotation"]
-    copy --> rows["Instance rows or objects<br/>in engine memory"]
+    fixed["onFixedUpdate(step)<br/>0 or more times"] --> step["The physics world<br/>takes one step"]
+    step --> update["onUpdate(dt) copies<br/>each body's position<br/>and rotation"]
+    update --> rows["Instance rows or objects<br/>in engine memory"]
     rows --> draw["The engine draws<br/>the frame"]
 ```
 
@@ -44,13 +44,11 @@ This sketch drops 300 crates onto a floor with Rapier. Each crate is a Rapier bo
 import RAPIER from '@dimforge/rapier3d-compat';
 import { defineSketch } from '@null3d/engine';
 
-const STEP = 1 / 60; // the physics step, in seconds
 const COUNT = 300;
 
 export default defineSketch(async ({ scene, geometry, materials }) => {
   await RAPIER.init(); // loads Rapier's WebAssembly in the sketch worker
   const world = new RAPIER.World({ x: 0, y: -9.81, z: 0 });
-  world.timestep = STEP;
 
   const camera = scene.createPerspectiveCamera({ fov: 50, position: [0, 6, 14], target: [0, 1, 0] });
   scene.setActiveCamera(camera);
@@ -79,14 +77,12 @@ export default defineSketch(async ({ scene, geometry, materials }) => {
     bodies.push(body);
   }
 
-  let owed = 0; // sketch time that the world has not stepped yet
   return {
-    onUpdate(dt) {
-      owed += dt;
-      while (owed >= STEP) {
-        world.step();
-        owed -= STEP;
-      }
+    onFixedUpdate(step) {
+      world.timestep = step; // 1/60 second at the default rate
+      world.step();
+    },
+    onUpdate() {
       const positions = crates.positions; // read the views in each frame
       const rotations = crates.rotations;
       for (let i = 0; i < COUNT; i++) {
@@ -114,11 +110,13 @@ The `-compat` package holds Rapier's WebAssembly inside its JavaScript, so it ne
 
 ## Step the world at a fixed rate
 
-A physics world stays stable when every step has the same length. The frame's step changes with the screen: 1/60 second at 60 Hz, 1/120 second at 120 Hz, and more when a frame is slow. So the sketch adds each frame's step to a total, and steps the world once for each 1/60 second in the total.
+A physics world stays stable when every step has the same length. A frame's step changes with the screen and with slow frames, so the examples step the world in `onFixedUpdate`. The engine calls it 60 times per second of sketch time, before `onUpdate`. The examples copy the transforms in `onUpdate`, once per frame, after the frame's steps.
 
-- The engine gives `onUpdate` no step longer than a quarter second. So a very slow frame runs at most 15 physics steps, and the sketch cannot fall further and further behind.
-- On a 120 Hz screen, the world steps in every second frame, so the bodies move in every second frame. For smooth motion, keep each body's previous transform and blend toward the new one by `owed / STEP`. The cannon-es library can do this blend for you, as the next section shows.
-- In hold mode, every frame after the first has a step of exactly 1/60 second. The world then takes one step per frame, and a held frame shows the same pile on every run. [Testing your sketch](testing.md) explains hold mode.
+- At 30 frames per second, each frame runs two steps. At 120 frames per second, every second frame runs one, so the bodies move in every second frame. For smooth motion on a fast screen, raise the rate with `defineSketch(setup, { fixedRate: 120 })`.
+- After a slow frame, a frame runs at most 8 steps and drops the rest. So a world that steps too slowly cannot slow down every frame after it.
+- In hold mode, each frame after the first runs one step. A held frame then shows the same pile on every run. [Testing your sketch](testing.md) explains hold mode.
+
+[Time](../api/time.md#fixed-steps) gives the rules of the fixed steps.
 
 ## Example: one object per body
 
@@ -128,8 +126,6 @@ For a few bodies, give each body a mesh of its own, and copy its transform with 
 // sketch.ts
 import * as CANNON from 'cannon-es';
 import { defineSketch } from '@null3d/engine';
-
-const STEP = 1 / 60;
 
 export default defineSketch(({ scene, geometry, materials }) => {
   const world = new CANNON.World({ gravity: new CANNON.Vec3(0, -9.82, 0) });
@@ -159,10 +155,12 @@ export default defineSketch(({ scene, geometry, materials }) => {
   });
 
   return {
-    onUpdate(dt) {
-      world.step(STEP, dt); // fixed steps that add up to dt
-      const p = ball.interpolatedPosition;
-      const q = ball.interpolatedQuaternion;
+    onFixedUpdate(step) {
+      world.step(step);
+    },
+    onUpdate() {
+      const p = ball.position;
+      const q = ball.quaternion;
       ballMesh.setPosition(p.x, p.y, p.z);
       ballMesh.setRotation(q.x, q.y, q.z, q.w);
     },
@@ -170,7 +168,7 @@ export default defineSketch(({ scene, geometry, materials }) => {
 });
 ```
 
-With `dt` as its second argument, `world.step` keeps the total of the frames' steps itself, and takes the fixed steps that the total allows. The body's `interpolatedPosition` and `interpolatedQuaternion` blend between the last two steps, so the ball moves smoothly on any screen. Do not use `world.fixedStep()` in a sketch. It reads the clock, so hold mode cannot fix its steps.
+With one argument, `world.step` takes one step of that length. Do not use `world.fixedStep()` in a sketch. It reads the clock, so hold mode cannot fix its steps.
 
 Give a mesh `dynamic: true` when its body moves in most frames. [Static and dynamic objects](../concepts/static-dynamic.md) explains the choice.
 
