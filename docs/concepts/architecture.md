@@ -3,7 +3,7 @@ id: concepts/architecture
 title: "Architecture: threads and the frame"
 status: experimental
 since: "0.1"
-summary: "Main thread, sketch worker, render worker, job workers; the pipelined frame; latency modes."
+summary: "Main thread, sketch worker, render worker, job workers; where the sketch runs; the pipelined frame and its passes; grid cells; latency modes."
 ---
 
 # Architecture: threads and the frame
@@ -73,19 +73,50 @@ The render worker, drawing frame N inside its own `requestAnimationFrame` callba
 
 The engine times each step of the sketch worker's frame, the replay on the drawing thread, and each job worker's busy time. The [performance guide](../guides/performance.md) shows how to read those figures.
 
+## The passes of a frame
+
+A frame's draw list holds a series of passes, and the [render graph](render-graph.md) puts them in order. A pass is one job for the GPU, such as drawing the scene from the camera. In this version the engine declares every pass itself:
+
+- On WebGPU, a culling pass comes first. This compute pass tests every object and instance row against the camera's view, on the GPU.
+- The opaque pass draws the objects in view into multisampled color and depth. Its render pass resolves the color straight into the canvas.
+- In development builds, a frame with [debug drawing](../api/debug.md) draws the lines after the opaque pass, in the same render pass.
+
+On WebGL2 the job workers cull before the frame records, so the frame has no culling pass there. The graph works out the order only when the passes change, so a frame whose passes stay the same pays nothing for it.
+
 ## Precision far from the origin
 
-Positions are 32-bit floats, as in three.js. Far from the origin such a value moves in coarse steps: about 8 mm at 100 km. The engine therefore keeps each world matrix relative to the center of a grid cell, 1,024 m wide. Each frame the engine computes the offset from the camera to each cell in use, in 64-bit floats. The GPU adds those offsets, so it draws positions relative to the camera, which stay precise near it. Static matrices stay on the GPU while the camera moves. [Culling](culling.md) describes the cells.
+Positions are 32-bit floats, as in three.js. Far from the origin such a value moves in coarse steps: about 8 mm at 100 km. The engine therefore keeps each world matrix relative to the center of a grid cell, 1,024 m wide. A root object takes the cell that holds its position, and its children take their root's cell. An instance row takes the cell that holds its own position.
+
+Each frame, the engine computes the offset from the camera to each cell in use, in 64-bit floats. The GPU adds those offsets, so it draws positions relative to the camera, which stay precise near it. Static matrices stay on the GPU while the camera moves. [Culling](culling.md) describes the cells and their limits.
 
 ## Latency modes
 
 | Mode | The render step runs on | Added latency | Best for |
 | --- | --- | --- | --- |
-| Pipelined | The render worker, one frame behind | 1 frame | Most sketches: the highest throughput and the steadiest frame pacing |
-| Low latency | The sketch worker, in the same frame | None | Sketches where input delay matters most, such as fast sketches, when the frame budget allows |
+| Pipelined | The render worker, one frame behind | 1 frame | Most sketches: the sketch's work and the GPU's work overlap, which gives the highest frame rate |
+| Low latency | The sketch worker, right after the update | None | Sketches where input must show one frame sooner, when the frame budget has room for the drawing too |
 | Single-threaded | One thread, in sequence | None | Pages without cross-origin isolation |
 
 Pipelined is the default when the page can use threads, and single-threaded otherwise. On a page that can use threads, `createEngine({ latency: 'low' })` asks for low latency.
+
+Low latency costs frame rate where the GPU is busy. In the S1 benchmark on an iPad Pro with WebGPU, it showed about a third fewer frames than pipelined mode. The GPU's work then overlaps less with the sketch's. With WebGL2 on the same iPad, both modes showed the same frame rate.
+
+In pipelined mode, the render worker takes a new frame only at a display refresh. A frame that takes a little longer than one refresh waits for the next one. So on a 60 Hz display, frames that take just over 16.7 ms show at 30 frames per second. The [performance guide](../guides/performance.md#the-frame-budget) shows what this costs on a phone.
+
+## Where the sketch runs
+
+The engine puts the sketch, the drawing and the parallel work on threads by the page's mode:
+
+| Mode | Your sketch and the engine core | Drawing | Parallel loops |
+| --- | --- | --- | --- |
+| Pipelined, the default | The sketch worker | The render worker | The job workers and the sketch worker |
+| Low latency | The sketch worker | The sketch worker | The job workers and the sketch worker |
+| Pipelined, where a worker cannot draw | The sketch worker | The page's main thread | The job workers and the sketch worker |
+| Single-threaded | The page's main thread | The page's main thread | The page's main thread |
+
+A worker can draw only where the browser gives it a WebGPU or WebGL2 context for a canvas that the page hands over. The engine tests this at startup. Where a worker cannot draw, the page draws, and the sketch still runs in its worker. Read `engine.mode` for the build, the latency mode, the thread that draws and the number of job workers.
+
+Worker threads need shared memory, and browsers allow shared memory only on cross-origin isolated pages. On any other page, the engine loads its single-threaded build, which runs the same code on one thread. [Hosting and cross-origin isolation](../getting-started/hosting.md) shows how to send the two headers that turn isolation on. The page switches `?threads=off` and `?render=main` force the other modes on one device, for tests ([Testing your sketch](../guides/testing.md)).
 
 ## Rules the engine keeps
 
@@ -94,14 +125,6 @@ Pipelined is the default when the page can use threads, and single-threaded othe
 - Each frame's data has two copies. The sketch worker writes one while the render worker reads the other, so neither waits on a lock.
 - Each parallel loop splits into chunks, and a worker that finishes early claims the next chunk. A phone's slower cores then take fewer chunks, so they hold up the frame less.
 - A hidden tab pauses the frames, because the browser stops `requestAnimationFrame` there. The job workers then sleep.
-
-## Sketch code on the main thread
-
-`createEngine({ sketchThread: 'main' })` runs your sketch code on the page's main thread. Use it for apps that work mostly with the DOM, and for debugging. The API stays the same.
-
-## Without cross-origin isolation
-
-Worker threads need shared memory, and browsers allow shared memory only on cross-origin isolated pages. On any other page the engine loads its single-threaded build, which runs the same code on one thread. [Hosting and cross-origin isolation](../getting-started/hosting.md) shows how to send the two headers that turn isolation on.
 
 ## The engine's lifetime
 
