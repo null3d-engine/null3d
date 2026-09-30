@@ -17,11 +17,14 @@ export const TIERS = ['webgpu', 'compat', 'webgl2'];
 export const HOLD_RESULT = '__null3dHold';
 
 /**
- * Hold mode's result as a tool reads it: the engine's own, with the pixels as base64.
+ * Hold mode's result as a tool reads it: the engine's own, with the pixels as base64. The held
+ * frame's figures take the form of the engine's frame summary, whose per-frame figures summarize
+ * the one held frame.
  *
  * @typedef {HeldReport | HoldFailure} HoldReport
- * @typedef {{ ok: true, time: number, frame: number, tier: string, width: number, height: number, pixels: string }} HeldReport
+ * @typedef {{ ok: true, time: number, frame: number, tier: string, width: number, height: number, pixels: string, stats?: HeldStats }} HeldReport
  * @typedef {{ ok: false, code: string | null, error: string }} HoldFailure
+ * @typedef {{ drawCalls: { median: number }, uploadBytes: { median: number }, pipelines: number } & Record<string, unknown>} HeldStats
  */
 
 /**

@@ -22,6 +22,7 @@ import { type ColorInput, linearColor } from './color';
 import type { CoreMemory } from './memory';
 import type { Material, MeshGeometry } from './resources';
 import { quaternionLookAt } from './rotation';
+import { UnmarkedWrites } from './unmarked-writes';
 
 /**
  * A vector (x, y, z).
@@ -452,13 +453,19 @@ export class Object3D implements Described {
 
 	/** Makes the object dynamic or static from the next frame. See `NodeOptions.dynamic`. */
 	setDynamic(dynamic: boolean): void {
-		if (DEV) checkLive('setDynamic', this);
+		if (DEV) {
+			checkLive('setDynamic', this);
+			this.scene.unmarkedWrites?.watch(this, !dynamic);
+		}
 		this.scene.command(C.COMMAND_SET_DYNAMIC, this.handle, dynamic ? 1 : 0, 0, 'setDynamic');
 	}
 
 	/** Removes the object at the next frame. Its children become roots. */
 	destroy(): void {
-		if (DEV) checkLive('destroy', this);
+		if (DEV) {
+			checkLive('destroy', this);
+			this.scene.unmarkedWrites?.watch(this, false);
+		}
 		this.scene.command(C.COMMAND_DESTROY, this.handle, 0, 0, 'destroy');
 		this.destroyedFrame = this.scene.frame;
 		this.scene.forget(this);
@@ -864,13 +871,20 @@ export class Scene {
 	/** Rows of the live instance batches, which development builds count. */
 	private batchRows = 0;
 	private warnedPastPortable = false;
+	/**
+	 * @internal Development builds: finds static objects whose transform changed without a setter.
+	 * Declared without a value, so release builds hold no trace of it.
+	 */
+	declare readonly unmarkedWrites: UnmarkedWrites | undefined;
 
 	constructor(
 		/** @internal */ readonly core: CoreMemory,
 		private readonly time: { readonly frame: number },
 		/** True when the engine draws with WebGL2, whose devices draw fewer rows than WebGPU's. */
 		private readonly webgl2: boolean,
-	) {}
+	) {
+		if (DEV) this.unmarkedWrites = new UnmarkedWrites(this);
+	}
 
 	/** @internal */
 	get frame(): number {
@@ -1047,6 +1061,7 @@ export class Scene {
 			this.command(C.COMMAND_SET_LAYERS, handle, layers >>> 0, 0, call);
 		const object = new kind(this, handle, options.name ?? '');
 		this.remember(object);
+		if (DEV) this.unmarkedWrites?.watch(object, !options.dynamic);
 		return object;
 	}
 

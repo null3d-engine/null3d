@@ -26,11 +26,11 @@ const BUCKET_BYTES: u32 = 32;
 /// Bytes of one world matrix: three rows of four floats.
 const MATRIX_BYTES: u32 = (MATRIX_FLOATS * 4) as u32;
 
-/// What makes a bucket, in draw order: what its mesh and material ask of their pipeline, the mesh
-/// page of its mesh's first part, its engine mesh and material ids, and the bounds that cull its
-/// sources (see [`bounds_of`]). The WebGL2 builder's keys have the same type, so both share one
-/// sort.
-type BucketKey = (DrawKey, u32, u32, u32, u32);
+/// What makes a bucket, in draw order: what its mesh and material ask of their pipeline, the bind
+/// group of its material's map, the mesh page of its mesh's first part, its engine mesh and
+/// material ids, and the bounds that cull its sources (see [`bounds_of`]). The WebGL2 builder's
+/// keys have the same type, so both share one sort.
+type BucketKey = (DrawKey, u32, u32, u32, u32, u32);
 
 /// The bounds of sources culled with their mesh's sphere, centred on their origin.
 const MESH_BOUNDS: u32 = 0;
@@ -71,6 +71,8 @@ fn local_sphere(scene: &SceneStorage, bounds: u32, mesh_radius: f32) -> ([f32; 3
 pub(super) struct Bucket {
     /// The id of its render pipeline.
     pub(super) pipeline: u32,
+    /// The bind group of its material's map, or 0 for a pipeline that reads none.
+    pub(super) group: u32,
     pub(super) material: u32,
     pub(super) base: u32,
     pub(super) capacity: u32,
@@ -267,8 +269,9 @@ impl Layout {
         let meshes = settings.meshes();
         let key_of = |mesh: u32, material: u32, bounds: u32| -> Option<BucketKey> {
             let pipeline = settings.pipeline_of(mesh, material)?;
+            let group = settings.texture_group(material, pipeline);
             let page = meshes.parts(meshes.mesh(mesh - 1)?).first()?.page;
-            Some((pipeline, page, mesh, material, bounds))
+            Some((pipeline, group, page, mesh, material, bounds))
         };
         let world = scene.world(parity);
         let scene_key = |slot: usize| {
@@ -288,12 +291,13 @@ impl Layout {
         self.buckets.clear();
         self.draws.clear();
         let mut base = 0;
-        for &((pipeline, _, mesh, material, bounds), count) in &self.key_counts {
+        for &((pipeline, group, _, mesh, material, bounds), count) in &self.key_counts {
             let slot = meshes.mesh(mesh - 1).expect("keys name known meshes");
             let parts = meshes.parts(slot);
             let (center, radius) = local_sphere(scene, bounds, slot.radius);
             self.buckets.push(Bucket {
                 pipeline: pipelines.id(pipeline.in_pass(targets)),
+                group,
                 material,
                 base,
                 capacity: count,
@@ -570,12 +574,12 @@ mod tests {
 
     use super::*;
     use crate::geometry::box_geometry;
+    use crate::gpu_driven::scene_settings;
     use crate::materials::Shading;
-    use crate::meshes::{MeshStorage, Packing};
 
     #[test]
     fn objects_with_bounds_of_their_own_or_none_cull_in_buckets_of_their_own() {
-        let mut settings = SceneSettings::new(MeshStorage::new(Packing::SharedBuffers), 4);
+        let mut settings = scene_settings(4);
         let box_mesh = box_geometry(1.0, 1.0, 1.0, [1, 1, 1]).unwrap();
         let mesh = settings.meshes_mut().add(&box_mesh).unwrap() + 1;
         let material = settings.materials_mut().create(Shading::Lit, [1.0; 4]);
