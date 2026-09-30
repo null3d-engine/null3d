@@ -24,6 +24,7 @@ import type { CoreDevice } from '../page/limits';
 import { type QualitySettings, SKETCH_SETTINGS } from '../quality/presets';
 import { Assets } from '../scene/assets';
 import { CoreMemory } from '../scene/memory';
+import { Post } from '../scene/post';
 import { Geometry, Materials } from '../scene/resources';
 import { Scene } from '../scene/scene';
 import { Textures } from '../scene/textures';
@@ -193,6 +194,8 @@ export class SketchRunner {
 			device.webgl2,
 			device.capabilities,
 			device.maxTextureSize,
+			device.sceneColor,
+			device.transparent,
 			device.cellCulling,
 		);
 		if (status !== 0) throw coreFailure(glue, 'createEngine');
@@ -226,6 +229,7 @@ export class SketchRunner {
 			textures,
 			assets: new Assets(textures, sketch.pageUrl),
 			input: this.input,
+			post: new Post(this.core),
 			quality: this.quality,
 			preferences: {
 				get reducedMotion() {

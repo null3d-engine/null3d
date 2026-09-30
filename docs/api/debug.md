@@ -56,7 +56,7 @@ export default defineSketch(({ scene, materials, geometry, debug }) => {
 | `frustum(camera, color)` | The near and far planes of a camera's view, and the edges between them | Orange |
 | `light(light, options)` | A directional light: a square that faces the light, and an arrow in the direction its light travels | The light's color |
 
-Colors take the same forms as material colors: a hex string such as `'#ff0000'`, a number such as `0xff0000`, or three sRGB components from 0 to 1. Positions are in world space, in arrays such as `[x, y, z]` or typed arrays.
+Colors take the same forms as material colors: a hex string such as `'#ff0000'`, a number such as `0xff0000`, or three linear components from 0 to 1. Positions are in world space, in arrays such as `[x, y, z]` or typed arrays.
 
 ### Objects and cameras
 

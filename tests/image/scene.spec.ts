@@ -10,7 +10,7 @@ import { manifestRun } from './manifest.ts';
 interface SceneResult {
 	error?: string;
 	mode: { hold: number | null };
-	capabilities: { tier: string; features: string[] };
+	capabilities: { tier: string; features: string[]; hdr: boolean };
 	/** The live engine's frames; absent in hold mode, which draws one frame. */
 	stats?: {
 		drawCalls: { median: number };
@@ -40,8 +40,9 @@ function expectFrames(result: SceneResult, tier: 'webgpu' | 'webgl2'): void {
 	const { stats } = result;
 	if (!stats) throw new Error('the live page measured no frames');
 	// Four buckets draw: the red box, the red sphere, the unlit blue box, and the green floor batch.
-	// WebGPU draws them from one bundle; WebGL2 in multi-draw calls, or one draw each.
-	expect(stats.drawCalls.median).toBe(4);
+	// WebGPU draws them from one bundle; WebGL2 in multi-draw calls, or one draw each. Where the
+	// scene draws HDR color, the final pass adds one triangle over the canvas.
+	expect(stats.drawCalls.median).toBe(result.capabilities.hdr ? 5 : 4);
 	// On WebGL2 the list of visible objects has the three meshes and one entry for the floor batch,
 	// whose 25 rows form one group once they stop changing. The GPU culls on WebGPU.
 	if (tier === 'webgl2') expect(stats.visibleEntries?.median).toBe(4);
@@ -50,15 +51,14 @@ function expectFrames(result: SceneResult, tier: 'webgpu' | 'webgl2'): void {
 	// still, so no later frame rebuilds them.
 	expect(stats.rebuilds).toBeLessThanOrEqual(1);
 	// Where the device has timestamp queries, the GPU timer covers the whole WebGPU frame: the copies
-	// before the first pass, the culling pass, the main pass and the time between them.
+	// before the first pass, the culling pass, the main pass, the final pass where the scene draws
+	// HDR color, and the time between them.
 	if (tier === 'webgpu' && result.capabilities.features.includes('timestamp-query')) {
 		const parts = stats.gpuPassMs ?? [];
-		expect(parts.map((part) => part.name).sort()).toEqual([
-			'between passes',
-			'compute 1',
-			'copies',
-			'render 1',
-		]);
+		const renders = result.capabilities.hdr ? ['render 1', 'render 2'] : ['render 1'];
+		expect(parts.map((part) => part.name).sort()).toEqual(
+			['between passes', 'compute 1', 'copies', ...renders].sort(),
+		);
 		for (const part of parts) expect(part.ms.count).toBeGreaterThan(0);
 	} else expect(stats.gpuPassMs).toBeNull();
 }

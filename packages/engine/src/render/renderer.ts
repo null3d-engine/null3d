@@ -1,6 +1,7 @@
 // The renderer interface. The same renderer runs in the render worker (pipelined mode), in the sketch
 // worker (low-latency mode) or on the page's main thread (single-threaded mode and ?render=main).
 
+import { FORMAT_RG11B10_UFLOAT } from '../generated/gpu';
 import { loadGlslShaders, loadWgslShaders } from '../generated/shaders';
 import { type Completion, FenceCompletion, QueueCompletion } from '../gpu/completion';
 import { readbackWebGL2, readbackWebGPU } from '../gpu/readback';
@@ -34,6 +35,8 @@ export interface FrameInput {
 
 export interface Renderer {
 	readonly tier: Tier;
+	/** True when the canvas keeps premultiplied alpha, so a captured image keeps the frame's alpha. */
+	readonly transparent: boolean;
 	/**
 	 * Counts the frames that the GPU finished, and says how many it has not; undefined without a
 	 * metrics buffer.
@@ -70,8 +73,8 @@ export interface RendererOptions {
 	/** The metrics buffer, which receives GPU times where the device has timestamp queries. */
 	metrics?: ArrayBufferLike;
 	/**
-	 * The device as the engine uses it: the storage binding to request, and how WebGL2 uploads and
-	 * stores depth.
+	 * The device and the canvas as the engine uses them: the storage binding to request, how WebGL2
+	 * uploads and stores depth, the scene color's format and whether the canvas is transparent.
 	 */
 	device: CoreDevice;
 	/** Which GPU to draw with on a device with two; the browser chooses without it. */
@@ -94,6 +97,7 @@ export function linearToSrgb(c: number): number {
 }
 
 class WebGPURenderer implements Renderer {
+	readonly transparent = false;
 	private readonly context: GPUCanvasContext;
 	private readonly format: GPUTextureFormat;
 	private readonly timer: GpuTimer | undefined;
@@ -189,6 +193,7 @@ class WebGPURenderer implements Renderer {
 
 class WebGL2Renderer implements Renderer {
 	readonly tier: Tier = 'webgl2';
+	readonly transparent = false;
 	readonly completions: FenceCompletion | undefined;
 	private readonly release = new AbortController();
 	readonly lost: Promise<string>;
@@ -261,7 +266,7 @@ export async function createRenderer(
 	if (options.tier === 'webgl2') {
 		// A canvas keeps the settings of the first request for its context and ignores later ones,
 		// so the context is made here with the engine's settings, before anything else asks for it.
-		const gl = webgl2Context(canvas, options.powerPreference);
+		const gl = webgl2Context(canvas, options.powerPreference, device.transparent);
 		// After a loss, the context must come back before the engine can draw with it again. A
 		// scene's shaders download meanwhile.
 		const [, shaders] = await Promise.all([
@@ -295,6 +300,7 @@ export async function createRenderer(
 			metrics,
 			options.imageTable,
 			shaders,
+			device.transparent,
 		);
 	return new WebGPURenderer(gpu.tier, gpu.device, canvas, metrics);
 }
@@ -311,6 +317,8 @@ async function requestDevice(options: RendererOptions): Promise<{ tier: Tier; de
 	if (core) requiredFeatures.push('core-features-and-limits' as GPUFeatureName);
 	if (options.metrics && adapter.features.has('timestamp-query'))
 		requiredFeatures.push('timestamp-query');
+	if (options.device.sceneColor === FORMAT_RG11B10_UFLOAT)
+		requiredFeatures.push('rg11b10ufloat-renderable');
 	const binding = options.device.storageBindingBytes;
 	const device = await adapter.requestDevice({
 		requiredFeatures,

@@ -6,7 +6,7 @@ mod common;
 
 use common::{World, count};
 use null3d_gpu::drawlist::sizes::LINE_VERTEX_BYTES;
-use null3d_gpu::drawlist::{Op, buffer_usage, format, state_flags, template};
+use null3d_gpu::drawlist::{Op, buffer_usage, format, permutation, state_flags, template};
 use null3d_gpu::mock::MockBackend;
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::frame::FrameBuilder;
@@ -103,7 +103,8 @@ fn check<B: FrameBuilder>(mut world: World<B>, name: &str) {
     assert_eq!(lines_pipeline(&first), None, "{name}");
 
     // The first frame with lines makes their pipeline and vertex buffer, uploads the points and
-    // draws them all in one call, last in the camera's render pass.
+    // draws them all in one call, last in the camera's render pass. On the 8-bit path, as here,
+    // the lines tone map themselves, as the mesh shaders do.
     let commands = next_frame(&mut world, &mut mock, &LINES, name);
     let pipeline = lines_pipeline(&commands).expect(name);
     let made = commands
@@ -113,7 +114,7 @@ fn check<B: FrameBuilder>(mut world: World<B>, name: &str) {
     assert_eq!(
         made.1[2..],
         [
-            0,
+            permutation::TONE_MAP,
             format::CANVAS,
             format::DEPTH32_FLOAT,
             4,
