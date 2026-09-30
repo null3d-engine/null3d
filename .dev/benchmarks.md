@@ -12,6 +12,7 @@ The benchmarks compare null3D with three.js in the same browser. These points co
 - Compare results at the same display refresh rate. The engine measures it, and each result records it with the presented and finished frame rates and the GPU delay. Runs at 120 and at 144 frames per second differed by about 10% for both engines.
 - The page switch `?fps=<n>` holds null3D's drawing at n frames per second, at most the display's rate. Use it to compare runs on displays of different rates. The three.js pages do not read it.
 - On WebGL2, `measure` reports `visibleEntries`, the entries in each frame's list of visible objects, and the bench summary divides the upload by it. When only the camera moves, as in S1-static, the upload is about 4 bytes per entry.
+- `packages/cli/src/protocol.js` holds the protocol's warm-up, measured time and run count. It also holds the timed run of a null3D page, and the median and spread of runs. The command-line tool's `bench` command runs the same protocol on a project's page, so a change there changes both.
 
 ## The benchmark job in CI
 
