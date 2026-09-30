@@ -92,7 +92,15 @@ export interface Program {
 export interface Pipeline {
 	readonly program: Program;
 	readonly cullNone: boolean;
+	/** True when it draws with a depth target, whose test it then runs. */
 	readonly depth: boolean;
+	/** True when it writes depth. */
+	readonly depthWrite: boolean;
+	/** True when every fragment passes the depth test. */
+	readonly depthAlways: boolean;
+	/** GL's polygon offset for the backend's depth mode: its factor and its units. */
+	readonly offsetFactor: number;
+	readonly offsetUnits: number;
 	/** The vertex format of the meshes it draws, which places their attributes in vertex arrays. */
 	readonly vertexFormat: number;
 	/** The primitive that its draws make: GL's `TRIANGLES`, or `LINES`. */

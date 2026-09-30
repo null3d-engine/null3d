@@ -791,9 +791,9 @@
       "three": "ShaderMaterial / RawShaderMaterial (GLSL)",
       "status": "manual",
       "since": "0.1",
-      "target": "materials.shader({ surface: wgslSource, uniforms, textures }) or a full WGSL shader",
-      "notes": "Rewrite in WGSL; prefer a surface function so lighting, shadows, fog and instancing keep working.",
-      "docs": "porting/threejs-shaders",
+      "target": "materials.shader({ wgsl, uniforms, textures }) with a WGSL surface function, or a full WGSL shader",
+      "notes": "Rewrite in WGSL, in one literal tagged /* wgsl */. Prefer a surface function, so lighting, shadows, fog and instancing keep working. Declare the uniforms once, as struct Uniforms.",
+      "docs": "shaders/surface-functions",
       "detect": "\\b(Raw)?ShaderMaterial\\b"
     },
     {
@@ -802,9 +802,9 @@
       "three": "material.onBeforeCompile (shader-chunk patching)",
       "status": "manual",
       "since": "0.1",
-      "target": "A surface function or a vertex-offset function",
-      "notes": "The engine has no shader chunks to patch.",
-      "docs": "porting/threejs-shaders",
+      "target": "materials.shader({ wgsl }) with a surface function or a vertex-offset function",
+      "notes": "The engine has no shader chunks to patch. Keep the standard options on the new material: defaultSurface applies them.",
+      "docs": "shaders/surface-functions",
       "detect": "\\.onBeforeCompile\\s*="
     },
     {
@@ -813,9 +813,9 @@
       "three": "TSL / NodeMaterial (three/tsl, three/webgpu)",
       "status": "manual",
       "since": "0.1",
-      "target": "WGSL surface functions",
+      "target": "materials.shader({ wgsl }) with a WGSL surface function",
       "notes": "Most TSL nodes map to one WGSL expression; see the shader porting reference.",
-      "docs": "porting/threejs-shaders",
+      "docs": "shaders/surface-functions",
       "detect": "from\\s+['\"]three/tsl['\"]|\\b\\w*NodeMaterial\\b"
     },
     {
@@ -1649,7 +1649,7 @@
       "three": "GLSL source strings (gl_FragColor, gl_Position, #include <chunk>)",
       "status": "manual",
       "since": "0.1",
-      "target": "WGSL",
+      "target": "WGSL, which the null3D Vite plugin compiles",
       "notes": "See the shader porting reference.",
       "docs": "porting/threejs-shaders",
       "detect": "gl_FragColor|gl_Position|#include\\s*<\\w+>|\\bvoid\\s+main\\s*\\("
