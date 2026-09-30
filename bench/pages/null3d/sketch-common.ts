@@ -1,8 +1,14 @@
 // What every null3d benchmark sketch shares: its object count from its own module address, the
-// view (background, lights and camera) from the shared scene module, and a camera that follows a
-// path. A sketch poses its scene at the sketch time, which hold mode steps to the held time.
+// view (background, sun, ambient light and camera) from the shared scene module, and a camera that
+// follows a path. A sketch poses its scene at the sketch time, which hold mode steps to the held time.
 import type { Camera, SketchContext } from '@null3d/engine';
-import { AMBIENT, BACKGROUND, CAMERA, type OutArray, SUN } from '../../scenes/spec';
+import {
+	BACKGROUND,
+	CAMERA,
+	type OutArray,
+	type SceneLights,
+	VIEW_LIGHTS,
+} from '../../scenes/spec';
 
 /** Reads the object count `n` from the sketch module's address, where the page harness puts it. */
 export function readCount(moduleUrl: string): number {
@@ -10,18 +16,22 @@ export function readCount(moduleUrl: string): number {
 }
 
 /**
- * Sets the background and the lights, and makes the active camera. The three.js twins draw with no
- * tone mapping, three.js's default, so the null3D pages turn off the engine's default of ACES.
+ * Sets the background, the sun and the ambient light, and makes the active camera. The three.js
+ * twins draw with no tone mapping, three.js's default, so the null3D pages turn off the engine's
+ * default of ACES.
  */
-export function setUpView({ scene, post }: SketchContext): Camera {
+export function setUpView(
+	{ scene, post }: SketchContext,
+	{ sun, ambient }: SceneLights = VIEW_LIGHTS,
+): Camera {
 	post.set({ toneMapping: 'none' });
 	scene.setBackground(BACKGROUND);
 	scene.createDirectionalLight({
-		direction: SUN.direction,
-		color: SUN.color,
-		intensity: SUN.intensity,
+		direction: sun.direction,
+		color: sun.color,
+		intensity: sun.intensity,
 	});
-	scene.createAmbientLight({ color: AMBIENT.color, intensity: AMBIENT.intensity });
+	scene.createAmbientLight({ color: ambient.color, intensity: ambient.intensity });
 	const camera = scene.createPerspectiveCamera({
 		fov: CAMERA.fov,
 		near: CAMERA.near,
