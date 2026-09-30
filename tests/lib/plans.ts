@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import {
 	BASELINE_PAIR,
 	type BenchPageKind,
+	type BenchScene,
 	compareFrames,
 	comparisonName,
 	decodeHoldResult,
@@ -18,7 +19,6 @@ import {
 	PARITY_SCENES,
 	TIERS as PARITY_TIERS,
 	type PagePair,
-	type ParityScene,
 	pagePath,
 	parityFiles,
 	passesWithBaseline,
@@ -92,8 +92,8 @@ export type Check =
 	/** The warm-up page: pipelines build before the first frame, and a warm-up during play. */
 	| { kind: 'warm-up'; tier: Tier }
 	| { kind: 'hold'; tier: Tier }
-	| { kind: 'parity'; tier: Tier; scene: ParityScene; pair: PagePair }
-	| { kind: 'bench'; tier: Tier; scene: ParityScene; page: BenchPageKind; jobs?: number }
+	| { kind: 'parity'; tier: Tier; scene: BenchScene; pair: PagePair }
+	| { kind: 'bench'; tier: Tier; scene: BenchScene; page: BenchPageKind; jobs?: number }
 	/** The GPU-bound page, with the ?queue= setting it ran with, if any. */
 	| { kind: 'overload'; tier: Tier; queue?: string }
 	/** A load of the startup build; `first` marks the first warm load, which fills the cache. */
@@ -194,7 +194,7 @@ export function benchItem(
 	id: string,
 	page: BenchPageKind,
 	{ seconds, n, jobs }: BenchSwitches = {},
-	scene: ParityScene = 's1',
+	scene: BenchScene = 's1',
 ): PlanItem<Check> {
 	const switches = Object.entries({ seconds, n, jobs }).flatMap(([name, value]) =>
 		value === undefined ? [] : [`${name}=${value}`],
@@ -320,7 +320,7 @@ export function checksPlan(): PlanItem<Check>[] {
 }
 
 /** The name of the parity plan's item for one scene's hold page of one kind. */
-const parityItemId = (scene: ParityScene, kind: string) => `parity-${scene}-${kind}`;
+const parityItemId = (scene: BenchScene, kind: string) => `parity-${scene}-${kind}`;
 
 /**
  * The benchmark scenes' hold frames from null3D and three.js on every GPU tier. Each three.js
@@ -376,7 +376,7 @@ export interface PlanSettings {
 	/** The bench plan's pages, or undefined for its usual pages, or null3D's two GPU paths with jobs. */
 	pages?: readonly BenchPageKind[];
 	/** The bench plan's scenes, or undefined for S1. */
-	scenes?: readonly ParityScene[];
+	scenes?: readonly BenchScene[];
 	/** The bench plan's warm-up and measured seconds, each, or undefined for the protocol's. */
 	seconds?: number;
 }
@@ -621,7 +621,7 @@ function missingPath(path: Tier, error: string | undefined): boolean {
  * it, or else as stored from a device that draws with both.
  */
 function baselineShare(
-	scene: ParityScene,
+	scene: BenchScene,
 	context: JudgeContext,
 ): { share: number; stored: boolean } | null {
 	try {
