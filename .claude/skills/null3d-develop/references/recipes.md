@@ -50,7 +50,7 @@ export default defineSketch(async (ctx) => {
 });
 ```
 
-Controls read forwarded input inside the sketch worker, so they need no DOM listeners. Damping only works when `update(dt)` runs every frame. Docs: `api/controls`.
+Controls read forwarded input inside the sketch worker, so the sketch adds no DOM listeners. On the page, give the canvas `touch-action: none` in its CSS, and stop its wheel events from scrolling and zooming the page: `canvas.addEventListener('wheel', (e) => e.preventDefault(), { passive: false })`. Damping only works when `update(dt)` runs every frame, and it takes the same time at every frame rate. Docs: `api/controls`.
 
 ## 3. Load a glTF model and play its animations (0.2)
 
