@@ -60,13 +60,14 @@ use std::collections::TryReserveError;
 use null3d_gpu::drawlist::{DrawList, Op, buffer_usage as usage, sizes};
 
 use crate::frame::{
-    FrameBuilder, FrameInput, MeshBuffers, ParityLists, PipelineTable, RecordError, SceneSettings,
-    UploadArena, floats_as_bytes,
+    FrameBuilder, FrameInput, MeshBuffers, ParityLists, RecordError, SceneSettings, UploadArena,
+    floats_as_bytes,
 };
 use crate::frame_graph::{FrameGraph, Role};
 use crate::graph::RenderGraph;
 use crate::materials::MATERIAL_FLOATS;
 use crate::meshes::{MeshStorage, Packing};
+use crate::pipelines::PipelineCache;
 use crate::view::{ViewFrame, ViewId};
 use cull::{CULL_PARAMS_BYTES, Culling, INDIRECT_BYTES};
 use layout::Layout;
@@ -174,7 +175,7 @@ pub struct GpuDrivenRenderer {
     settings: SceneSettings,
     /// The mesh pages' vertex and index buffers.
     meshes: MeshBuffers,
-    pipelines: PipelineTable,
+    pipelines: PipelineCache,
     lists: ParityLists,
     graph: FrameGraph,
     layout: Layout,
@@ -193,7 +194,7 @@ impl GpuDrivenRenderer {
                 config.max_materials,
             ),
             meshes: MeshBuffers::new(ids::PAGES),
-            pipelines: PipelineTable::default(),
+            pipelines: PipelineCache::default(),
             lists: ParityLists::new(config.draw_list_words),
             graph: FrameGraph::new(config.samples, true, ids::TARGETS),
             layout: Layout::default(),
@@ -241,6 +242,7 @@ impl GpuDrivenRenderer {
             self.layout.rebuild(
                 &self.settings,
                 &mut self.pipelines,
+                self.graph.scene_targets(),
                 input.scene,
                 input.batches,
                 parity,
@@ -251,7 +253,7 @@ impl GpuDrivenRenderer {
         let pages_remade = self
             .meshes
             .upload(list, arena, self.settings.meshes().pages())?;
-        self.pipelines.create_new(list, 0, self.config.samples)?;
+        self.pipelines.create_new(list)?;
         if self.settings.materials_mut().take_changed() {
             let parameters = self.settings.materials().parameters();
             let (at, bytes) = arena.push(floats_as_bytes(parameters))?;
