@@ -92,7 +92,7 @@ A KTX2 file takes the texture options above, with these differences:
 
 - The texture has the mip levels that the file holds. The GPU cannot make mip levels of compressed texels, so encode the file with them, as `basisu -mipmap` and `toktx --genmipmap` do. `mipmaps: false` keeps level 0 alone.
 - The color space comes from the file, which `basisu` writes as sRGB unless you give it `-linear`. The `colorSpace` option overrides it.
-- The file's first row goes to v = 0, the bottom of a plane, as with three.js's `KTX2Loader`. glTF models expect that order. For a plane, encode the file flipped, as `basisu -y_flip` does. Compressed rows cannot turn over, so `flipY: true` throws E1208, and so does `premultipliedAlpha: true`.
+- The file's first row goes to v = 0, the bottom of a plane, as with three.js's `KTX2Loader`. glTF models expect that order. For a plane, encode the file flipped, as `basisu -y_flip` does. Compressed rows cannot turn over. So in development builds, `flipY: true` throws E1208, and so does `premultipliedAlpha: true`. A production build ignores both.
 - A KTX2 file of several layers makes a texture of several layers. Cube maps, 3D textures, UASTC HDR data and KTX2 files of other formats throw [E1412](../errors/E1412.md).
 - `texture.update` throws E1208 on a texture from a KTX2 file. Load the file again instead.
 

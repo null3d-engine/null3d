@@ -1,9 +1,8 @@
 // The sketch's loading calls, `ctx.assets`: files downloaded with fetch and decoded by the browser,
 // or by the KTX2 transcoder (ktx2.ts), outside the sketch's frames, and a count of the downloads
-// for loading screens. Relative
-// addresses resolve against the page's address, in every thread mode. Files that `preload`
-// downloaded wait in memory until a load takes them, and loads of one address at the same time
-// share one download; the HTTP cache keeps everything else.
+// for loading screens. Relative addresses resolve against the page's address, in every thread
+// mode. Files that `preload` downloaded wait in memory until a load takes them, and loads of one
+// address at the same time share one download; the HTTP cache keeps everything else.
 
 import { DEV } from '../errors/checks';
 import { EngineError } from '../errors/engine-error';
