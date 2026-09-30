@@ -263,7 +263,8 @@ describe('the checks plan', () => {
 			};
 			expect(judge(compat.check, failed, NONE_MISSING, context)).toEqual([
 				'GPU error: a view is invalid',
-				'the image is 0 x 0 pixels, not 256 x 256',
+				'released is undefined, not true',
+				'the image is 0 x 0 pixels, not 320 x 256',
 			]);
 		} finally {
 			rmSync(root, { recursive: true, force: true });

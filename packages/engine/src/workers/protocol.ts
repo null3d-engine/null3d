@@ -71,9 +71,16 @@ export type SketchWorkerInit = CoreHandoff & {
 	hold?: number;
 	/** The quality preset and settings that the page chose. */
 	quality: QualityStart;
+	/** The port that texture images go through to the thread that draws, when that is another. */
+	imagePort?: MessagePort;
 };
 
-export type RenderWorkerInit = CoreHandoff & RendererSetup & { type: 'init' };
+export type RenderWorkerInit = CoreHandoff &
+	RendererSetup & {
+		type: 'init';
+		/** The port that texture images come through from the sketch worker. */
+		imagePort: MessagePort;
+	};
 
 export type JobWorkerInit = CoreHandoff & { type: 'init'; index: number };
 

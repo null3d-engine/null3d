@@ -34,7 +34,8 @@ export class Drawing<R extends Recoverable> {
 	/**
 	 * Starts drawing with `renderer`. `create` makes a replacement on the same canvas, `run` starts a
 	 * loop with a renderer, and `fail` hears the reason when the engine gives up. Without
-	 * `recovers`, the first loss is reported at once.
+	 * `recovers`, the first loss is reported at once. `release` frees what the renderers shared,
+	 * once drawing stops.
 	 */
 	constructor(
 		public renderer: R,
@@ -43,6 +44,7 @@ export class Drawing<R extends Recoverable> {
 		private readonly slots: Int32Array,
 		private readonly fail: (reason: string) => void,
 		private readonly recovers = true,
+		private readonly release?: () => void,
 	) {
 		this.loop = run(renderer);
 		this.watch();
@@ -105,5 +107,6 @@ export class Drawing<R extends Recoverable> {
 		this.stopped = true;
 		this.loop.stop();
 		this.renderer.destroy();
+		this.release?.();
 	}
 }
