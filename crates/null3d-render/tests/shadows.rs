@@ -170,8 +170,8 @@ fn each_cascade_culls_the_casters_and_draws_their_depth_into_its_layer() {
         1,
         "both casters' meshes have one vertex format"
     );
-    let [_, _, bits, color, depth_format, samples, state, _] = depth[0][..] else {
-        panic!("eight operands")
+    let [_, _, bits, color, depth_format, samples, state, ..] = depth[0][..] else {
+        panic!("a pipeline's operands")
     };
     assert_eq!(
         [bits, color, depth_format, samples, state],
