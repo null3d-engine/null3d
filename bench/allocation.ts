@@ -6,10 +6,12 @@
 // prints the bytes per frame of every place that allocated. From the page's start to the end of
 // the sample, it moves the mouse over the canvas and presses a key and the mouse button, so the
 // sample covers the sketch's reading of input. It draws with WebGPU, or with WebGL2 when
-// `--gpu webgl2` asks for it. From the repository root:
+// `--gpu webgl2` asks for it. `--scene s1-cells` runs S1-cells instead, whose views skip whole grid
+// cells. From the repository root:
 //   bun run bench:allocation
 //   bun run bench:allocation --n 30000 --seconds 5 --warmup 30
 //   bun run bench:allocation --gpu webgl2
+//   bun run bench:allocation --scene s1-cells --gpu webgl2
 // At 30,000 instances a frame's upload goes through the staging ring; at 100,000 it does not.
 import { chromium, type Page } from '@playwright/test';
 import { DEBUG_PORT, startServer } from '../tests/lib/server.ts';
@@ -149,6 +151,9 @@ async function main(): Promise<void> {
 	const gpu = args.includes('--gpu') ? args[args.indexOf('--gpu') + 1] : 'webgpu';
 	if (gpu !== 'webgpu' && gpu !== 'webgl2')
 		throw new Error(`--gpu takes webgpu or webgl2, not ${gpu}`);
+	const scene = args.includes('--scene') ? args[args.indexOf('--scene') + 1] : 's1';
+	if (scene !== 's1' && scene !== 's1-cells')
+		throw new Error(`--scene takes s1 or s1-cells, not ${scene}`);
 	// The browser optimizes code that runs once per frame only after many frames; until then,
 	// numbers that such code computes are allocated.
 	const warmup = option('--warmup', WARMUP_SECONDS);
@@ -163,7 +168,7 @@ async function main(): Promise<void> {
 		// The page's own measurement starts after the sampling ends, so its timers stay off.
 		const pageSeconds = warmup + seconds + 60;
 		const kind = gpu === 'webgl2' ? 'null3d-webgl2' : 'null3d-webgpu';
-		const url = `${server.url}${pagePath('s1', kind, `seconds=${pageSeconds}&n=${n}`)}`;
+		const url = `${server.url}${pagePath(scene, kind, `seconds=${pageSeconds}&n=${n}`)}`;
 		await page.goto(url);
 		// Counts the display's frames on the page, which the render worker draws at the same rate.
 		await page.evaluate(() => {

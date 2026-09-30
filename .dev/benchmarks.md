@@ -73,10 +73,12 @@ Build two checkouts, such as a git worktree of main beside your branch, with `bu
 
 ## Grid-cell culling
 
-- S1-cells spreads S1-static's boxes over 8 x 8 grid cells, 8 km on each side. Its camera flies low along -Z at 200 m/s, so a few cells are in view, and new ones come into view about every 5 seconds.
+- S1-cells spreads S1-static's boxes over 8 x 8 grid cells, 8 km on each side. Its camera flies low along -Z at 200 m/s, so a few cells are in view. New ones come into view about every 5 seconds.
 - The page kinds that end in `-cells-off` start null3D with `?cells=off`. Culling then skips no cell: WebGPU's culling pass covers every source. WebGL2 culls every object. It builds no clusters for a static batch whose rows lie in several cells.
 - On the Mac, compare both paths with and without cells: `bun run bench:run --scenes s1-cells --pages null3d-webgpu,null3d-webgpu-cells-off,null3d-webgl2,null3d-webgl2-cells-off,threejs-webgpu,threejs-webgl,scene-code`.
 - On the phone: `bun tests/real-browsers.ts --plan bench --allow-no-webgpu --android chrome --scenes s1-cells --pages null3d-webgl2,null3d-webgl2-cells-off,threejs-webgl`.
+- On 30 September 2026 the MacBook Pro ran S1-cells in Chrome at 144 Hz, 3 runs of 10 s per page (`target/bench/20260930-052100-bench`). Other builds loaded the machine at the time. On WebGL2, cells cut the busiest thread's CPU time from 0.21 ms to 0.07 ms per frame. They cut all threads' time from 0.54 ms to 0.12 ms. Each frame then listed 79 entries instead of 1,517. three.js's WebGL renderer took 0.07 ms.
+- On WebGPU the CPU time stayed at 0.10 ms, because the GPU culls. The culling pass took 0.025 ms of GPU time with cells and 0.039 ms without them, and the drawing pass 0.082 ms either way.
 
 ## Sweeps for the open defaults
 
