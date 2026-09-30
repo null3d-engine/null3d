@@ -17,7 +17,8 @@ import { hexValue, invalidColor } from '../math/hex';
  */
 export type ColorInput = string | number | readonly [number, number, number];
 
-const isComponent = (c: number) => Number.isFinite(c) && c >= 0 && c <= 1;
+/** True for a component that a color input takes: a finite number from 0 to 1. */
+export const isComponent = (c: number): boolean => Number.isFinite(c) && c >= 0 && c <= 1;
 
 /** The linear color of an input, times an intensity. It throws E1204 for anything else. */
 export function linearColor(

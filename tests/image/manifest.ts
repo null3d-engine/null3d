@@ -203,6 +203,28 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 		reference: 'cells',
 		tolerance: { threshold: 0, maxDiffRatio: 0 },
 	},
+	// Debug drawing: every shape of ctx.debug over a small scene, the axes of a spinning box and the
+	// frustum of a second camera. The single-threaded mode runs the sketch on the page, which draws
+	// the same lines.
+	{
+		name: 'debug',
+		sketch: 'tests/pages/sketches/debug-sketch.ts',
+		hold: 1,
+		size: [400, 225],
+		modes: ['pipelined', 'single-threaded'],
+		tolerance: { threshold: 0, maxDiffRatio: 0 },
+	},
+	// The same scene about 1,000 km out, at the center of a cell: the lines keep 64-bit positions,
+	// which the engine draws relative to the camera, so the frame must match. In 32-bit floats from
+	// the origin, the lines would move in steps of 6 cm there.
+	{
+		name: 'debug-1000km',
+		sketch: `tests/pages/sketches/debug-sketch.ts?x=${977 * 1024}`,
+		hold: 1,
+		size: [400, 225],
+		reference: 'debug',
+		tolerance: { threshold: 0, maxDiffRatio: 0 },
+	},
 	// Objects, a parent and its child, and instance batches on three layers, some of them moved to
 	// other layers after they were created, and a camera that draws two of the layers. A child keeps
 	// its own layers, so the child of a parent that the camera leaves out still draws.

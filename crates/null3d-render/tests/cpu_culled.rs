@@ -199,6 +199,7 @@ fn a_view_added_later_draws_from_its_own_rings_without_a_rebuild() {
 
 #[test]
 fn a_view_added_after_the_frame_culled_draws_from_the_next_frame() {
+    use null3d_render::debug_lines::DebugLines;
     use null3d_render::frame::FrameInput;
 
     let mut world = world(true);
@@ -222,6 +223,7 @@ fn a_view_added_after_the_frame_culled_draws_from_the_next_frame() {
         canvas: world.canvas,
         structure_changed: false,
         jobs: &world.jobs,
+        lines: DebugLines::NONE,
     };
     world.renderer.cull(&input).unwrap();
     let late = world

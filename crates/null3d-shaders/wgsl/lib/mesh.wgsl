@@ -215,10 +215,5 @@ fn world_direction(found: Instance, direction: vec3f) -> vec3f {
 /// The color a fragment writes for linear color `c` at framebuffer position `pixel`: `c` itself for
 /// the final pass, or on the 8-bit path, `c` tone mapped and encoded for the canvas.
 fn finish(c: vec3f, pixel: vec2f) -> vec4f {
-#ifdef TONE_MAP
-    let mapped = null3d::tonemap::tone_map(c, frame.output);
-    return vec4f(null3d::tonemap::encode(mapped, pixel), 1.0);
-#else
-    return vec4f(c, 1.0);
-#endif
+    return null3d::tonemap::finish(c, pixel, frame.output);
 }

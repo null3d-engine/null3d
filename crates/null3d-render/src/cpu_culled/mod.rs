@@ -24,8 +24,8 @@
 //!
 //! Each part has a module: `layout` keeps the sources, buckets and clusters, `data` the data
 //! textures and their rings, `cull` culls each view on the job workers, and `opaque` records the
-//! opaque passes. The render graph ([`crate::frame_graph`]) orders the passes and begins their
-//! render passes.
+//! opaque passes. The debug lines pass, which both builders share, is [`crate::debug_lines`]. The
+//! render graph ([`crate::frame_graph`]) orders the passes and begins their render passes.
 //!
 //! # Cells
 //!
@@ -57,6 +57,7 @@ use null3d_core::snapshot::SCENE_TARGET;
 use null3d_gpu::caps::{BUDGET, Limit};
 use null3d_gpu::drawlist::{DrawList, Op, format, permutation, sizes, texture_usage, view};
 
+use crate::debug_lines::LinesPass;
 use crate::final_pass::FinalIds;
 use crate::frame::{
     CanvasOutput, FrameBuilder, FrameInput, MaterialStorage, MeshBuffers, ParityLists, RecordError,
@@ -89,8 +90,10 @@ mod ids {
     pub const fn draws(view: ViewId) -> u32 {
         frame(view) + 1
     }
-    /// The final pass's output settings, after every view's buffers.
-    pub const FINAL_SETTINGS: u32 = VIEW_BUFFERS + 2 * MAX_VIEWS as u32;
+    /// The vertices of the debug lines.
+    pub const LINES: u32 = VIEW_BUFFERS + 2 * MAX_VIEWS as u32;
+    /// The final pass's output settings.
+    pub const FINAL_SETTINGS: u32 = LINES + 1;
     /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
     pub const PAGES: u32 = FINAL_SETTINGS + 1;
 
@@ -192,6 +195,7 @@ pub struct CpuCulledRenderer {
     clusters: Clusters,
     culling: Culling,
     opaque: Opaque,
+    lines: LinesPass,
     /// The vertex pages' vertex and index buffers.
     meshes: MeshBuffers,
     pipelines: PipelineCache,
@@ -243,6 +247,7 @@ impl CpuCulledRenderer {
             clusters: Clusters::default(),
             culling: Culling::default(),
             opaque: Opaque::new(config.multi_draw),
+            lines: LinesPass::new(ids::LINES),
             meshes: MeshBuffers::new(ids::PAGES),
             pipelines: PipelineCache::default(),
             textures: SharedTextures::default(),
@@ -508,12 +513,13 @@ impl CpuCulledRenderer {
             self.create_fixed(list)?;
         }
         self.graph.sync_views(self.settings.views());
+        self.graph.set_debug_lines(!input.lines.is_empty());
         self.graph.prepare(list, input.canvas)?;
         let views = self.settings.views().len();
         let first_new = self.opaque.views();
         self.opaque.add_views(list, views)?;
         let rebuilt = self.layout.built_in == input.frame;
-        arena.reset(self.upload_bound());
+        arena.reset(self.upload_bound() + LinesPass::upload_bytes(&input.lines));
         self.graph
             .upload(list, arena, self.settings.output(), &mut self.pipelines)?;
         self.meshes
@@ -561,14 +567,27 @@ impl CpuCulledRenderer {
                     .upload(list, arena, view, upload, &self.layout)?;
             }
         }
+        let camera = self.culling.frame(ViewId::CAMERA);
+        self.lines.upload(
+            list,
+            arena,
+            &input.lines,
+            camera.map(|values| &values.camera),
+            &mut self.pipelines,
+            self.graph.scene_targets(),
+        )?;
 
-        let (culling, opaque) = (&self.culling, &self.opaque);
+        let (culling, opaque, lines) = (&self.culling, &self.opaque, &self.lines);
         let (layout, meshes) = (&self.layout, &self.meshes);
         self.graph
             .record(list, self.settings.clear_color(), |list, role| match role {
                 Role::Opaque(view) if culling.frame(view).is_some() => {
                     let starts = culling.culled(frame, view).bucket_starts();
                     opaque.record(list, arena, view, starts, layout, meshes)
+                }
+                Role::DebugLines => {
+                    let slot = opaque.frame_slot(ViewId::CAMERA);
+                    lines.record(list, ids::frame_group(ViewId::CAMERA), &[slot, slot])
                 }
                 _ => Ok(()),
             })?;
@@ -623,6 +642,7 @@ impl FrameBuilder for CpuCulledRenderer {
         self.textures.forget_gpu();
         self.culling.forget_gpu();
         self.opaque.forget_gpu();
+        self.lines.forget_gpu();
         self.streamed_slot.forget();
         self.settings.materials_mut().mark_changed();
         self.settings.textures_mut().reset_gpu();

@@ -110,6 +110,32 @@ interface VertexArray {
 	format: number;
 }
 
+/** The vertex array of a buffer that a template's own layout describes, and what it was made for. */
+interface LayoutArray {
+	vao: WebGLVertexArrayObject;
+	vertices: WebGLBuffer;
+	layout: GPUVertexBufferLayout;
+}
+
+/** GL's size, type and normalization of a WebGPU vertex format that the backend reads. */
+function glAttribute(
+	gl: WebGL2RenderingContext,
+	format: GPUVertexFormat,
+): [number, number, boolean] {
+	switch (format) {
+		case 'float32x2':
+			return [2, gl.FLOAT, false];
+		case 'float32x3':
+			return [3, gl.FLOAT, false];
+		case 'float32x4':
+			return [4, gl.FLOAT, false];
+		case 'unorm8x4':
+			return [4, gl.UNSIGNED_BYTE, true];
+		default:
+			throw new Error(`the WebGL2 backend reads no vertex format ${format}`);
+	}
+}
+
 /** How GL stores each texture format, by format code, for a canvas with alpha or without. */
 function glFormats(gl: WebGL2RenderingContext, canvasAlpha: boolean): (GlFormat | undefined)[] {
 	const formats: (GlFormat | undefined)[] = [];
@@ -181,6 +207,8 @@ export class WebGL2Backend {
 	private readonly templates: (GlslTemplate | undefined)[] = engineTemplates();
 	private readonly bindGroups: (BindEntry[] | undefined)[] = [];
 	private readonly vertexArrays: (VertexArray | undefined)[] = [];
+	/** Vertex arrays of the buffers that templates with their own vertex layout draw from, by id. */
+	private readonly layoutArrays: (LayoutArray | undefined)[] = [];
 	private readonly formats: (GlFormat | undefined)[];
 	/** GL's address modes and min filters, by the draw list's codes. */
 	private readonly addressModes: number[] = [];
@@ -422,15 +450,20 @@ export class WebGL2Backend {
 					}
 					break;
 				}
-				case G.OP_CREATE_RENDER_PIPELINE:
+				case G.OP_CREATE_RENDER_PIPELINE: {
+					const template = words[a + 1] as number;
+					const flags = words[a + 6] as number;
 					this.pipelines[words[a] as number] = {
-						program: this.programOf(words[a + 1] as number, words[a + 2] as number),
-						cullNone: ((words[a + 6] as number) & G.STATE_CULL_NONE) !== 0,
+						program: this.programOf(template, words[a + 2] as number),
+						cullNone: (flags & G.STATE_CULL_NONE) !== 0,
 						depth: words[a + 4] !== G.FORMAT_NONE,
 						vertexFormat: words[a + 7] as number,
+						mode: flags & G.STATE_LINE_LIST ? gl.LINES : gl.TRIANGLES,
+						vertices: this.need(this.templates, template, 'render pipeline template').vertices,
 					};
 					this.counts.pipelines++;
 					break;
+				}
 				case G.OP_CREATE_BIND_GROUP: {
 					const entries: BindEntry[] = [];
 					for (let k = 0; k < (words[a + 2] as number); k++) {
@@ -486,10 +519,10 @@ export class WebGL2Backend {
 					this.indexBytes = words[a + 1] === G.INDEX_FORMAT_UINT32 ? 4 : 2;
 					break;
 				case G.OP_DRAW:
-					this.useVertexArray(this.shaderVertexArray());
+					this.useVertexArray(this.drawVertexArray());
 					this.prepareDraw(words[a + 3] as number);
 					gl.drawArraysInstanced(
-						gl.TRIANGLES,
+						(this.current as Pipeline).mode,
 						words[a + 2] as number,
 						words[a] as number,
 						words[a + 1] as number,
@@ -501,7 +534,7 @@ export class WebGL2Backend {
 					this.useMeshVertexArray();
 					this.prepareDraw(words[a + 4] as number);
 					gl.drawElementsInstanced(
-						gl.TRIANGLES,
+						(this.current as Pipeline).mode,
 						words[a] as number,
 						this.indexType,
 						(words[a + 2] as number) * this.indexBytes,
@@ -1284,6 +1317,53 @@ export class WebGL2Backend {
 		}
 	}
 
+	/**
+	 * The vertex array of a draw without indices: the current vertex buffer in the layout of the
+	 * pipeline's template, or none where the template's vertex shader makes its vertices.
+	 */
+	private drawVertexArray(): WebGLVertexArrayObject {
+		const layout = this.current?.vertices;
+		return layout ? this.layoutVertexArray(layout) : this.shaderVertexArray();
+	}
+
+	/** The vertex array of the current vertex buffer in a template's own layout. */
+	private layoutVertexArray(layout: GPUVertexBufferLayout): WebGLVertexArrayObject {
+		const vertices = this.need(this.buffers, this.vertexBuffer, 'buffer').buffer;
+		const cached = this.layoutArrays[this.vertexBuffer];
+		if (cached && cached.vertices === vertices && cached.layout === layout) return cached.vao;
+		if (cached) this.gl.deleteVertexArray(cached.vao);
+		return this.createLayoutVertexArray(vertices, layout);
+	}
+
+	/**
+	 * Makes the vertex array of the current vertex buffer in a template's layout. It runs only when
+	 * the buffer or the layout change.
+	 */
+	private createLayoutVertexArray(
+		vertices: WebGLBuffer,
+		layout: GPUVertexBufferLayout,
+	): WebGLVertexArrayObject {
+		const gl = this.gl;
+		const vao = gl.createVertexArray();
+		if (!vao) throw new Error('WebGL2 could not create a vertex array');
+		this.useVertexArray(vao);
+		gl.bindBuffer(gl.ARRAY_BUFFER, vertices);
+		for (const attribute of layout.attributes) {
+			const [size, type, normalized] = glAttribute(gl, attribute.format);
+			gl.enableVertexAttribArray(attribute.shaderLocation);
+			gl.vertexAttribPointer(
+				attribute.shaderLocation,
+				size,
+				type,
+				normalized,
+				layout.arrayStride,
+				attribute.offset,
+			);
+		}
+		this.layoutArrays[this.vertexBuffer] = { vao, vertices, layout };
+		return vao;
+	}
+
 	/** The vertex array of draws that read no vertex buffer: their vertex shaders make vertices. */
 	private shaderVertexArray(): WebGLVertexArrayObject {
 		if (this.vertexBuffer !== 0)
@@ -1391,10 +1471,11 @@ export class WebGL2Backend {
 		const instances = (words[a + 3] as number) / 4;
 		this.useMeshVertexArray();
 		this.prepareDraw(0);
+		const mode = (this.current as Pipeline).mode;
 		if (count === 1) {
 			// One draw needs no arrays. Its gl_DrawID is 0 either way, so it reads the same record.
 			this.gl.drawElementsInstanced(
-				this.gl.TRIANGLES,
+				mode,
 				ints[counts] as number,
 				this.indexType,
 				ints[offsets] as number,
@@ -1411,7 +1492,7 @@ export class WebGL2Backend {
 			lists[2 * count + k] = ints[instances + k] as number;
 		}
 		ext.multiDrawElementsInstancedWEBGL(
-			this.gl.TRIANGLES,
+			mode,
 			lists,
 			0,
 			this.indexType,
@@ -1432,6 +1513,7 @@ export class WebGL2Backend {
 		if (this.ownsImages) this.images.clear();
 		for (const p of this.programs.values()) gl.deleteProgram(p.program);
 		for (const v of this.vertexArrays) if (v) gl.deleteVertexArray(v.vao);
+		for (const v of this.layoutArrays) if (v) gl.deleteVertexArray(v.vao);
 		if (this.shaderVertices) gl.deleteVertexArray(this.shaderVertices);
 		if (this.copyFramebuffer) gl.deleteFramebuffer(this.copyFramebuffer);
 		if (this.mipFramebuffer) gl.deleteFramebuffer(this.mipFramebuffer);

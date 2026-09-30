@@ -52,3 +52,14 @@ fn encode(c: vec3f, pixel: vec2f) -> vec3f {
     let dither = (pixel_noise(pixel) - 0.5) / 255.0;
     return null3d::color::linear_to_srgb(c) + dither;
 }
+
+/// The color that a scene shader writes for linear color `c` at framebuffer position `pixel`: `c`
+/// itself into the HDR scene color, which the final pass tone maps, or on the 8-bit path (the
+/// TONE_MAP builds), `c` after the output transform that `settings` sets, encoded for the canvas.
+fn finish(c: vec3f, pixel: vec2f, settings: Output) -> vec4f {
+#ifdef TONE_MAP
+    return vec4f(encode(tone_map(c, settings), pixel), 1.0);
+#else
+    return vec4f(c, 1.0);
+#endif
+}

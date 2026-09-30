@@ -1,9 +1,9 @@
 //! Steady frames allocate nothing: a counting global allocator watches the test thread while the
 //! frame builder records frames of a scene whose batch moves every frame. It counts only the test
 //! thread, so the test runner's own work on other threads cannot reach the count. Frames whose
-//! structure changes allocate nothing either, on either frame parity, until the scene grows. The
-//! render graph allocates nothing while it stays the same, nor when passes switch on and off
-//! after it has compiled once.
+//! structure changes allocate nothing either, on either frame parity, until the scene grows, and
+//! neither do frames that draw debug lines or stop drawing them. The render graph allocates nothing
+//! while it stays the same, nor when passes switch on and off after it has compiled once.
 
 mod common;
 
@@ -278,6 +278,55 @@ fn record_until<B: FrameBuilder>(world: &mut World<B>, last: u32, structure_chan
     while world.frame < last {
         world.frame += 1;
         world.record(structure_changed);
+    }
+}
+
+/// Twelve lines of a box around the origin, drawn in some frames and not in others: returns what
+/// the frames after warm-up allocated.
+fn debug_line_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
+    let corner = |k: u32| {
+        let side = |bit: u32| if k & bit == 0 { -1.0 } else { 1.0 };
+        [side(1), side(2), side(4)]
+    };
+    let mut points = [([0.0; 3], 0xff00_ffff); 24];
+    let mut next = 0;
+    for a in 0..8u32 {
+        for bit in [1, 2, 4] {
+            if a & bit == 0 {
+                points[next].0 = corner(a);
+                points[next + 1].0 = corner(a | bit);
+                next += 2;
+            }
+        }
+    }
+    let run = |world: &mut World<B>, last: u32| {
+        while world.frame < last {
+            world.frame += 1;
+            // Lines in two frames of every three: each parity draws with them and without them.
+            if !world.frame.is_multiple_of(3) {
+                world.draw_lines(&points);
+            }
+            world.record(false);
+        }
+    };
+    world.record(true);
+    run(&mut world, 12);
+    CountingAllocator::arm();
+    run(&mut world, 200);
+    CountingAllocator::disarm()
+}
+
+#[test]
+fn frames_with_and_without_debug_lines_allocate_nothing_after_warm_up() {
+    let _only = CountingAllocator::exclusive();
+    CountingAllocator::track_this_thread();
+    assert_eq!(debug_line_allocations(World::new()), 0, "WebGPU");
+    for multi_draw in [true, false] {
+        assert_eq!(
+            debug_line_allocations(webgl2_world(multi_draw)),
+            0,
+            "WebGL2, multi-draw {multi_draw}"
+        );
     }
 }
 

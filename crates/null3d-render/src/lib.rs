@@ -4,6 +4,7 @@
 //! - `camera`: perspective projection with reversed depth, and view matrices
 //! - `cpu_culled`: the WebGL2 frame builder, with culling on the job workers and an index list per
 //!   view
+//! - `debug_lines`: the lines that a sketch draws for one frame, and the pass that draws them
 //! - `final_pass`: the pass that tone maps the HDR scene color into the canvas
 //! - `frame`: what every frame builder shares: its input, the scene settings, the per-parity lists
 //! - `frame_data`: the per-frame uniform block the shaders read
@@ -23,6 +24,7 @@
 pub mod arrays;
 pub mod camera;
 pub mod cpu_culled;
+pub mod debug_lines;
 mod final_pass;
 pub mod frame;
 pub mod frame_data;

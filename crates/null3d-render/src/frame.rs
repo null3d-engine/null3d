@@ -19,6 +19,7 @@ use null3d_core::snapshot::FrameSnapshot;
 use null3d_gpu::drawlist::{DrawList, DrawListError, Op, buffer_usage};
 
 use crate::camera::Perspective;
+use crate::debug_lines::DebugLines;
 use crate::frame_data::{FrameUniform, normalized_direction};
 use crate::graph::GraphError;
 use crate::materials::{MATERIAL_FLOATS, MATERIAL_TEXELS, MapSlot, MaterialTable, Shading};
@@ -96,6 +97,9 @@ pub struct FrameInput<'a> {
     pub structure_changed: bool,
     /// The job system, for work that runs on the job workers.
     pub jobs: &'a JobSystem,
+    /// The lines that the sketch drew for the frame, which development builds draw over the
+    /// camera's view. Release builds draw none.
+    pub lines: DebugLines<'a>,
 }
 
 impl FrameInput<'_> {
