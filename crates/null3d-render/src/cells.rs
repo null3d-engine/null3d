@@ -424,17 +424,7 @@ impl CellCulling {
                     return false;
                 }
                 self.bounds.add(cells[slot], &spheres, slot);
-                if self.copies {
-                    let at = self.positions[slot] as usize;
-                    for (array, value) in self.copy.iter_mut().zip([
-                        spheres.xs[slot],
-                        spheres.ys[slot],
-                        spheres.zs[slot],
-                        spheres.radii[slot],
-                    ]) {
-                        array[at] = value;
-                    }
-                }
+                self.copy_sphere(self.positions[slot] as usize, &spheres, slot);
             }
         }
         for (_, batch) in input.batches.iter() {
@@ -453,6 +443,18 @@ impl CellCulling {
             }
         }
         true
+    }
+
+    /// Copies the sphere of scene slot `slot` to `position` of the still spheres, for a builder
+    /// made with copies.
+    #[inline(always)]
+    fn copy_sphere(&mut self, position: usize, spheres: &SphereArrays<'_>, slot: usize) {
+        if self.copies {
+            let values = [spheres.xs, spheres.ys, spheres.zs, spheres.radii];
+            for (array, values) in self.copy.iter_mut().zip(values) {
+                array[position] = values[slot];
+            }
+        }
     }
 
     /// Visits each scene slot that draws, in slot order, with its cell when it is still, or
@@ -479,20 +481,12 @@ impl CellCulling {
         self.scene = order;
         self.bounds.clear();
         let still = self.scene.still();
-        for (position, &slot) in self.scene.sources()[..still].iter().enumerate() {
-            let s = slot as usize;
+        for position in 0..still {
+            let s = self.scene.sources()[position] as usize;
             self.placed[s] = cells[s];
             self.positions[s] = position as u32;
             self.bounds.add(cells[s], &spheres, s);
-            if self.copies {
-                for (array, values) in
-                    self.copy
-                        .iter_mut()
-                        .zip([spheres.xs, spheres.ys, spheres.zs, spheres.radii])
-                {
-                    array[position] = values[s];
-                }
-            }
+            self.copy_sphere(position, &spheres, s);
         }
         for (_, batch) in input.batches.iter().filter(|(_, b)| !b.is_dynamic()) {
             let rows = batch.world(parity).spheres();
