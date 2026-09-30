@@ -4,8 +4,8 @@
 // color; without them, they break into a pattern of stray texels. At the bottom, the checkerboard
 // covers two floors that recede from the camera, with a trilinear filter on the left and
 // anisotropic filtering on the right, which keeps the squares sharp further along the floor.
-import { defineSketch, type MeshArrays } from '@null3d/engine';
-import { type TextureOptions, texturesOf, unlitMapMaterial } from '@null3d/engine/internal';
+import { defineSketch, type MeshArrays, type TextureOptions } from '@null3d/engine';
+import { unlitMapMaterial } from '@null3d/engine/internal';
 
 /** Texels on each side of the checkerboard, and of each of its squares. */
 const SIZE = 256;
@@ -45,8 +45,7 @@ function checkerboard(): Promise<ImageBitmap> {
 }
 
 export default defineSketch(async (ctx) => {
-	const { scene, materials, geometry } = ctx;
-	const textures = texturesOf(ctx);
+	const { scene, materials, geometry, textures } = ctx;
 	scene.setBackground('#1a2a3a');
 	const camera = scene.createPerspectiveCamera({
 		fov: 45,

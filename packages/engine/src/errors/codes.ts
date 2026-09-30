@@ -127,6 +127,14 @@ const DOCS = {
 		example: 'E1207: setLayers() got 2.5 on "Player" (slot 12), which is not a 32-bit layer mask.',
 		since: '0.1',
 	},
+	E1208: {
+		title: 'Invalid texture',
+		cause:
+			"A call that makes or updates a texture received something it cannot use. It can be an option the engine does not know, or an image without pixels or larger than the device takes. It can also be data that does not fit the texture's size and format.",
+		example:
+			'E1208: textures.fromData() got 12 numbers for 2 x 2 x 1 texels, not 16: give four per texel.',
+		since: '0.1',
+	},
 	E1301: {
 		title: 'No usable GPU path',
 		cause: 'The browser offers neither WebGPU nor WebGL2 for the way the engine was asked to draw.',
@@ -216,6 +224,30 @@ const DOCS = {
 			'The sketch module that createEngine got did not load. It did not download, or its code threw an error while the module loaded.',
 		example:
 			'E1410: the sketch module https://example.com/assets/sketch-3f9c1a2b.js did not load: Failed to fetch dynamically imported module: https://example.com/assets/sketch-3f9c1a2b.js.',
+		since: '0.1',
+	},
+	E1411: {
+		title: 'Asset not downloaded',
+		cause:
+			'A loading call could not download its file. The server answered with an error, such as 404 for a missing file, or the network failed.',
+		example:
+			'E1411: assets.loadTexture() could not download https://example.com/tex/brick.png: HTTP 404.',
+		since: '0.1',
+	},
+	E1412: {
+		title: 'Asset not decoded',
+		cause:
+			'A loading call downloaded its file but could not read it. The browser could not decode the image, as with a format it does not support, or the file was not valid JSON.',
+		example:
+			'E1412: assets.loadTexture() could not decode https://example.com/tex/brick.tga as an image: The source image could not be decoded.',
+		since: '0.1',
+	},
+	E1413: {
+		title: 'Asset from another origin blocked',
+		cause:
+			"A loading call could not read a file from another origin. The browser reads such a file only when its server allows the page's origin with an Access-Control-Allow-Origin header. The browser gives no reason, so the server may also have been unreachable.",
+		example:
+			'E1413: assets.loadTexture() could not read https://cdn.example.com/brick.png: its server did not allow this page to read it, or could not be reached (Failed to fetch).',
 		since: '0.1',
 	},
 	E1501: {

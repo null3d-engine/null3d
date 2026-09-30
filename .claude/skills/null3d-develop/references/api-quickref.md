@@ -241,25 +241,34 @@ materials.shader({ ...anyStandardOption, uniforms, textures, surface, vertexOffs
 ## 10. Textures (`api/textures`)
 
 ```ts
-const tex = await assets.loadTexture('/tex/bricks.ktx2', {
+const tex = await assets.loadTexture('/tex/bricks.png', {  // PNG, JPEG, WebP, AVIF where decoded
   colorSpace: 'srgb',        // 'srgb' for color maps; 'linear' for normal, roughness, metalness, AO
-  flipY: false,
+  flipY: true,               // default, as three.js's TextureLoader; glTF textures use false
   wrap: 'repeat',            // 'repeat' | 'clamp' | 'mirror', or [u, v]
   filter: 'linear',          // or 'nearest'
   mipmaps: true,
   anisotropy: 8,             // capped by the preset
   uvSet: 0,                  // which UV set the map uses (three.js texture.channel)
-  premultipliedAlpha: false, // true for textures stored premultiplied
+  premultipliedAlpha: false, // true to store color multiplied by alpha
 });
-textures.fromData({ width, height, depth, format: 'rgba8unorm', data });
-textures.fromImageBitmap(bitmap, { colorSpace });  // draw on an OffscreenCanvas in the worker
-tex.update(bitmap);
+textures.fromData({ width, height, depth: 1, format: 'rgba8unorm', colorSpace: 'linear', data }); // 4 numbers per texel
+textures.fromData({ width, height, format: 'rgba16float', data: new Float32Array(width * height * 4) });
+// fromImageBitmap uploads the bitmap as it is: decode with imageOrientation: 'flipY' to stand upright
+textures.fromImageBitmap(await createImageBitmap(offscreenCanvas, { imageOrientation: 'flipY' }));
+tex.update(bitmap);        // a new size is fine; or tex.update(data) of the same size
+tex.width; tex.height; tex.bytes;   // size and GPU memory
 tex.destroy();
 ```
+
+Textures return at once and upload over the next frames, within each frame's upload budget. A material draws with its color alone until the texels arrive.
 
 ## 11. Assets (`api/assets`)
 
 ```ts
+assets.onProgress((loaded, total) => page.post('loading', loaded / total));
+await assets.preload(['/tex/bricks.png', '/level.json']);      // later loads take these from memory
+const data = await assets.loadJson('/level.json');             // also loadBinary, loadImageBitmap
+// relative addresses resolve against the page; errors: E1411 download, E1412 decode, E1413 CORS
 const ship = await assets.loadGltf('/models/ship.glb');        // (0.2) Prefab
 ship.animations;           // clip names
 ship.find('Turret');       // a node inside the prefab
@@ -268,10 +277,7 @@ const env = await assets.loadEnvironment('/env/studio.ktx2');  // (0.2) from `bu
 const studio = assets.builtinEnvironment('studio');            // (0.2) neutral lighting, no download
 const sky = await assets.loadCubemap([px, nx, py, ny, pz, nz]);  // (0.2)
 const lut = await assets.loadLut('/grade.cube');                // (0.2)
-await assets.preload(['/models/ship.glb', '/tex/bricks.ktx2']);
-assets.onProgress((loaded, total) => page.post('loading', loaded / total));
-const data = await assets.loadJson('/level.json');   // also loadBinary, loadImageBitmap
-ship.destroy();   // frees GPU data once no instance uses it
+ship.destroy();   // (0.2) frees GPU data once no instance uses it
 ```
 
 ## 12. Animation (0.2) (`api/animation`)

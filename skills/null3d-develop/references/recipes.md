@@ -203,8 +203,10 @@ The engine writes each label's screen position into shared memory every frame, a
 ```ts
 // sketch.ts
 assets.onProgress((loaded, total) => page.post('loading', loaded / total));
-await assets.preload(['/models/level.glb', '/env/sunset.ktx2', '/tex/terrain.ktx2']);
-const level = scene.instantiate(await assets.loadGltf('/models/level.glb'));
+await assets.preload(['/levels/one.json', '/tex/terrain.png', '/tex/rocks.png']);
+const level = await assets.loadJson<Level>('/levels/one.json');   // from memory: preload downloaded it
+const terrain = await assets.loadTexture('/tex/terrain.png', { wrap: 'repeat', anisotropy: 8 });
+buildLevel(scene, level, terrain);
 await scene.warmUp();                          // compile every pipeline before the first frame
 ```
 
@@ -356,7 +358,8 @@ Video textures (`engine.registerVideo` with `textures.fromVideo`) come after 1.0
 const video = Object.assign(document.createElement('video'), { src: '/intro.mp4', muted: true, loop: true, playsInline: true });
 await video.play();
 const sendFrame = async () => {
-  const bitmap = await createImageBitmap(video, { resizeWidth: 640, resizeHeight: 360 });
+  // flipY: textures take their first row at the bottom, as three.js flips them
+  const bitmap = await createImageBitmap(video, { resizeWidth: 640, resizeHeight: 360, imageOrientation: 'flipY' });
   engine.postToSketch('video-frame', bitmap, [bitmap]);   // transfer, do not copy
   video.requestVideoFrameCallback(sendFrame);           // or requestAnimationFrame where this is missing
 };
