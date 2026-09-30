@@ -43,6 +43,12 @@ export interface CoreGlue extends CoreErrors {
 	shutdownJobs(): void;
 	/** Drops the engine, so this instance can create another; the page's own instance needs it. */
 	destroyEngine(): void;
+	/**
+	 * Drops the instance that the threaded build's glue keeps for this thread, so the browser can
+	 * free its memory, and the next start makes a new instance. The single-threaded build lacks it:
+	 * the page keeps that instance for the next engine.
+	 */
+	releaseInstance?(): void;
 	sceneCapacity(): number;
 	sceneArrays(field: number): number;
 	reserveObject(): number;

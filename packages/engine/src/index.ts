@@ -59,7 +59,7 @@ export type {
 	ThreadStats,
 } from './page/frame-stats';
 export type { HeldFrame, HoldFailure, HoldResult } from './page/hold';
-export type { DepthMode, LatencyMode } from './page/switches';
+export type { DepthMode, LatencyMode, SketchThread } from './page/switches';
 export type { DeviceHints } from './quality/chooser';
 export type { QualityPreset, QualitySettings } from './quality/presets';
 export type {
