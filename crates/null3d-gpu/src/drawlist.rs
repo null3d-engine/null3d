@@ -499,6 +499,10 @@ pub mod permutation {
 pub mod state_flags {
     /// Draws both faces of each triangle.
     pub const CULL_NONE: u32 = 1;
+    /// Draws each pair of vertices as a line one pixel wide, instead of each three as a triangle.
+    pub const LINE_LIST: u32 = 2;
+    /// Every flag.
+    pub const ALL: u32 = CULL_NONE | LINE_LIST;
 }
 
 /// Vertex formats. Every vertex has a position and a normal, three floats each. A format adds
@@ -645,6 +649,9 @@ pub mod sizes {
     /// Where a cell index starts in a word that packs it above a bucket or a row: a bucket table
     /// entry of the culling shader, or an index list entry.
     pub const CELL_SHIFT: u32 = 23;
+    /// Bytes of one vertex of the debug lines: its position relative to the camera, three 32-bit
+    /// floats, then its sRGB color, four bytes from red to alpha.
+    pub const LINE_VERTEX_BYTES: u32 = 16;
 }
 
 /// Shader templates for `CreateRenderPipeline` and `CreateComputePipeline`.
@@ -656,6 +663,10 @@ pub mod template {
     /// Instanced meshes colored by their first texture coordinates, for the engine's own tests of
     /// vertex formats.
     pub const INSTANCED_TEXCOORDS: u32 = 3;
+    /// Debug lines: vertices relative to the camera with an sRGB color each, from a vertex buffer
+    /// of [`LINE_VERTEX_BYTES`](super::sizes::LINE_VERTEX_BYTES) per vertex. Only development
+    /// builds of the engine have it.
+    pub const DEBUG_LINES: u32 = 4;
     /// Instanced meshes without lighting, whose base color is multiplied by a map that the first
     /// texture coordinates place.
     pub const INSTANCED_UNLIT_MAP: u32 = 5;
@@ -886,13 +897,20 @@ pub fn typescript_constants() -> String {
                 ("INSTANCE_LOCATION", vertex::INSTANCE_LOCATION),
             ],
         ),
-        ("STATE", &[("CULL_NONE", state_flags::CULL_NONE)]),
+        (
+            "STATE",
+            &[
+                ("CULL_NONE", state_flags::CULL_NONE),
+                ("LINE_LIST", state_flags::LINE_LIST),
+            ],
+        ),
         (
             "TEMPLATE",
             &[
                 ("INSTANCED_LIT", template::INSTANCED_LIT),
                 ("INSTANCED_UNLIT", template::INSTANCED_UNLIT),
                 ("INSTANCED_TEXCOORDS", template::INSTANCED_TEXCOORDS),
+                ("DEBUG_LINES", template::DEBUG_LINES),
                 ("INSTANCED_UNLIT_MAP", template::INSTANCED_UNLIT_MAP),
                 ("CULL", template::CULL),
             ],
@@ -937,6 +955,7 @@ pub fn typescript_constants() -> String {
                 ("MATERIAL_BYTES", sizes::MATERIAL_BYTES),
                 ("MAX_CELLS", sizes::MAX_CELLS),
                 ("CELL_SHIFT", sizes::CELL_SHIFT),
+                ("LINE_VERTEX_BYTES", sizes::LINE_VERTEX_BYTES),
             ],
         ),
     ];

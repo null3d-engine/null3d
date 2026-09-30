@@ -32,6 +32,12 @@ pub mod batch_field {
     pub const COLORS: u32 = 3;
 }
 
+/// Fields of `debugLineArrays`.
+pub mod debug_line_field {
+    pub const POSITIONS: u32 = 0;
+    pub const COLORS: u32 = 1;
+}
+
 /// Fields of `commandRing`.
 pub mod ring_field {
     pub const RECORDS: u32 = 0;
@@ -173,6 +179,13 @@ pub fn typescript() -> String {
                 ("ROTATIONS", batch_field::ROTATIONS),
                 ("SCALES", batch_field::SCALES),
                 ("COLORS", batch_field::COLORS),
+            ],
+        ),
+        (
+            "DEBUG_LINE_FIELD",
+            &[
+                ("POSITIONS", debug_line_field::POSITIONS),
+                ("COLORS", debug_line_field::COLORS),
             ],
         ),
         (
