@@ -31,6 +31,7 @@ export type Three = Pick<
 	| 'BufferGeometry'
 	| 'Color'
 	| 'DirectionalLight'
+	| 'DoubleSide'
 	| 'DynamicDrawUsage'
 	| 'InstancedMesh'
 	| 'Matrix4'
@@ -39,8 +40,10 @@ export type Three = Pick<
 	| 'MeshStandardMaterial'
 	| 'OrthographicCamera'
 	| 'PerspectiveCamera'
+	| 'PlaneGeometry'
 	| 'Quaternion'
 	| 'Scene'
+	| 'SphereGeometry'
 	| 'Vector3'
 >;
 

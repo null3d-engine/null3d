@@ -171,8 +171,6 @@ export class SketchRunner {
 			void shutDownJobsOnStop(glue, slots);
 		}
 		this.core = new CoreMemory(glue, sketch.memory);
-		Atomics.store(slots, Slot.DrawListAddress0, glue.drawListAddress(0));
-		Atomics.store(slots, Slot.DrawListAddress1, glue.drawListAddress(1));
 		this.reducedMotion = Atomics.load(slots, Slot.ReducedMotion);
 		this.input = new InputReader(sketch.control, sketch.keyCodes);
 		this.quality = new SketchQuality(sketch.quality, (settings) => sketch.applyQuality(settings));
@@ -477,7 +475,11 @@ export class SketchRunner {
 		if (glue.recordFrame(frame, width, height) !== 0) this.report(coreFailure(glue, 'the frame'));
 		this.record.count(Counter.Rebuilds, glue.drawTablesRebuilt() ? 1 : 0);
 		this.record.count(Counter.VisibleEntries, glue.visibleEntries(frame));
-		Atomics.store(slots, Slot.DrawListWords0 + (frame & 1), glue.drawListWords(frame));
+		// A frame whose list needs more room than any before moves the list, so each frame gives
+		// the thread that draws its list's address.
+		const parity = frame & 1;
+		Atomics.store(slots, Slot.DrawListAddress0 + parity, glue.drawListAddress(parity));
+		Atomics.store(slots, Slot.DrawListWords0 + parity, glue.drawListWords(frame));
 		Atomics.store(slots, Slot.FrameEpoch0 + (frame & 1), epoch);
 		this.endPhase(Phase.Record);
 		this.record.commit(performance.now() - start);

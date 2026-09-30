@@ -23,19 +23,27 @@
 //!
 //! Each frame parity keeps its own culling output, because the render worker replays a frame's
 //! list while the next frame culls, and the list uploads the index list straight from that output.
+//!
+//! Each view then sorts the rows whose material blends (see [`crate::sorted`]). Their entries
+//! follow the opaque entries in the view's index list, farthest first, and the transparent pass
+//! draws them in that order. They are kept per frame parity too.
 
 use std::collections::TryReserveError;
 
 use null3d_core::cells::ORIGIN_CELL;
 use null3d_core::culling::{
-    BY_ROW, BucketedCull, CULL_CHUNK, CullRun, CullSet, CullView, NO_BUCKET, ROW_CELLS, SetLayers,
+    BY_ROW, BucketedCull, CullRun, CullSet, CullView, NO_BUCKET, SetLayers,
 };
 use null3d_gpu::drawlist::DrawList;
 
 use super::data::{DataTexture, RING, RingSlot, TextureRows, write_rows};
 use super::ids;
 use super::layout::{Clusters, CullRoom, Layout};
-use crate::frame::{CellOffsets, FrameInput, RecordError, SceneSettings, address, words_as_bytes};
+use crate::frame::{
+    CellOffsets, FrameInput, RecordError, RunCells, SceneSettings, address, push_runs,
+    words_as_bytes,
+};
+use crate::sorted::{SortedLayout, SortedView};
 use crate::view::{ViewFrame, ViewId};
 
 /// A view's culling output: its index list of each frame parity, and the textures it goes into.
@@ -51,6 +59,10 @@ struct ViewCull {
     listed: RingSlot,
     /// Rows of each index list texture, 0 before they exist.
     rows: u32,
+    /// The view's blended rows, sorted back to front, in the frame that culled last.
+    sorted: SortedView,
+    /// Each frame parity's index list entries of the sorted rows, in their order.
+    sorted_entries: [Vec<u32>; 2],
 }
 
 /// Each view's culling output, and the runs of rows that every view culls.
@@ -61,50 +73,6 @@ pub(super) struct Culling {
     runs: Vec<CullRun>,
     /// The frame whose culling the views hold for its parity, or 0 for none.
     culled: u32,
-}
-
-/// Where the rows of a set lie: all in one cell, or each in the cell its entry of a list names.
-#[derive(Clone, Copy, Debug)]
-enum RunCells<'a> {
-    One(u32),
-    Rows(&'a [u32]),
-}
-
-/// Splits rows `0..rows` of a set into culling runs of at most one chunk each. A run whose rows
-/// share a cell culls as that cell's run; the others look each row's cell up.
-fn push_runs(
-    runs: &mut Vec<CullRun>,
-    set: u32,
-    rows: u32,
-    bucket: u32,
-    base: u32,
-    cells: RunCells<'_>,
-) {
-    let mut start = 0;
-    while start < rows {
-        let end = (start + CULL_CHUNK).min(rows);
-        let cell = match cells {
-            RunCells::One(cell) => cell,
-            RunCells::Rows(cells) => {
-                let run = &cells[start as usize..end as usize];
-                let first = run[0];
-                if run.iter().all(|&cell| cell == first) {
-                    first
-                } else {
-                    ROW_CELLS
-                }
-            }
-        };
-        runs.push(CullRun {
-            set,
-            start,
-            end,
-            bucket,
-            base,
-            cell,
-        });
-        start = end;
-    }
 }
 
 impl Culling {
@@ -143,8 +111,25 @@ impl Culling {
         self.views
             .iter()
             .filter(|view| view.frame.is_some())
-            .map(|view| view.culls[parity].len() as u32)
+            .map(|view| (view.culls[parity].len() + view.sorted_entries[parity].len()) as u32)
             .sum()
+    }
+
+    /// A view's blended rows, sorted back to front, in the frame that culled last.
+    pub(super) fn sorted(&self, view: ViewId) -> &SortedView {
+        &self.views[view.index()].sorted
+    }
+
+    /// Makes room in every view's output for the transparent pass's rows and draws.
+    pub(super) fn reserve_sorted(&mut self, sorted: &SortedLayout) -> Result<(), TryReserveError> {
+        let rows = sorted.rows() as usize;
+        for view in &mut self.views {
+            sorted.reserve_view(&mut view.sorted)?;
+            for entries in &mut view.sorted_entries {
+                entries.try_reserve(rows.saturating_sub(entries.len()))?;
+            }
+        }
+        Ok(())
     }
 
     /// Makes room for the layout's runs, and for every view's output of both parities, with a
@@ -203,8 +188,9 @@ impl Culling {
         settings: &SceneSettings,
         layout: &Layout,
         clusters: &mut Clusters,
+        sorted: &SortedLayout,
     ) {
-        let (parity, scene) = (input.parity(), input.scene);
+        let (parity, scene, batches) = (input.parity(), input.scene, input.batches);
         self.culled = input.frame;
         let mut any = false;
         for (index, view) in self.views.iter_mut().enumerate() {
@@ -213,6 +199,13 @@ impl Culling {
             if let Some(frame) = &view.frame {
                 view.offsets.update(scene, &frame.camera);
                 any = true;
+            }
+            let frame = view.frame.as_ref();
+            sorted.sort(input.jobs, frame, scene, batches, parity, &mut view.sorted);
+            let entries = &mut view.sorted_entries[parity];
+            entries.clear();
+            for &item in view.sorted.items() {
+                entries.push(sorted.row(item, batches).entry);
             }
         }
         if !any {
@@ -343,17 +336,31 @@ impl Culling {
     ) -> Result<(u32, bool), RecordError> {
         let parity = (frame & 1) as usize;
         let state = &mut self.views[view.index()];
+        let entries = &state.sorted_entries;
         let kept = state.listed.holds_previous(frame)
-            && state.culls[parity].same_entries(&state.culls[parity ^ 1]);
+            && state.culls[parity].same_entries(&state.culls[parity ^ 1])
+            && entries[parity] == entries[parity ^ 1];
         let slot = state.listed.take(frame, !kept);
         if !kept {
             let indices = state.culls[parity].indices();
+            let texture = ids::visible(view) + slot;
+            let opaque = indices.len() as u32;
             write_rows(
                 list,
-                ids::visible(view) + slot,
-                TextureRows::indices(0, indices.len() as u32),
+                texture,
+                TextureRows::indices(0, opaque),
                 address(words_as_bytes(indices)),
             )?;
+            // The sorted rows follow the opaque ones, back to front.
+            let sorted = &entries[parity];
+            if !sorted.is_empty() {
+                write_rows(
+                    list,
+                    texture,
+                    TextureRows::indices(opaque, sorted.len() as u32),
+                    address(words_as_bytes(sorted)),
+                )?;
+            }
         }
         Ok((slot, !kept))
     }

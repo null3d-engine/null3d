@@ -374,7 +374,7 @@
       "status": "direct",
       "since": "0.1",
       "target": "mesh.setRenderOrder(n)",
-      "notes": "Affects the order of transparent objects. The engine orders opaque objects itself for speed. This version draws every material opaque, so the order has no effect yet.",
+      "notes": "Orders blended objects, lower first, before their depth, as in three.js. The engine orders opaque and masked objects itself for speed. The rows of an instance batch sort by depth one by one, where three.js sorts an InstancedMesh as one object.",
       "docs": "api/objects",
       "detect": "\\.renderOrder\\s*="
     },
@@ -748,7 +748,7 @@
       "status": "direct",
       "since": "0.1",
       "target": "materials.unlit({ color, map, opacity, alphaMode, vertexColors })",
-      "notes": "Texture maps and the blend alpha mode are not built yet.",
+      "notes": "Texture maps are not built yet.",
       "docs": "api/materials",
       "detect": "\\bMeshBasicMaterial\\b"
     },
@@ -825,7 +825,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "alphaMode: 'blend' | 'mask' (with alphaCutoff), doubleSided, depthWrite, depthTest, blending: 'normal' | 'additive' | 'multiply', vertexColors, flatShading",
-      "notes": "transparent: true becomes alphaMode: 'blend'; alphaTest becomes alphaMode: 'mask' with alphaCutoff; side: DoubleSide becomes doubleSided: true. BackSide has no equivalent: flip the geometry. depthTest: false writes no depth either, as in three.js's WebGL renderer. The blend alpha mode and blending are not built yet.",
+      "notes": "transparent: true becomes alphaMode: 'blend'; alphaTest becomes alphaMode: 'mask' with alphaCutoff; side: DoubleSide becomes doubleSided: true. BackSide has no equivalent: flip the geometry. depthTest: false writes no depth either, as in three.js's WebGL renderer. blending takes effect with alphaMode: 'blend' only, where three.js blends an opaque material with additive or multiply blending too.",
       "docs": "porting/threejs-materials",
       "detect": "\\b(transparent|alphaTest|side|depthWrite|depthTest|blending|vertexColors|flatShading)\\s*[:=]"
     },
@@ -1089,7 +1089,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "loadTexture(url, { premultipliedAlpha: true }), which multiplies each color by its alpha as the image decodes",
-      "notes": "Standard blending needs no flag.",
+      "notes": "Blending needs no material flag: the engine blends premultiplied colors, and takes the colors of a texture loaded with premultipliedAlpha: true as they are.",
       "docs": "api/textures",
       "detect": "premultipl(ied|y)Alpha\\b"
     },

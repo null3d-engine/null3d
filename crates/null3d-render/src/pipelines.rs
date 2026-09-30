@@ -11,7 +11,7 @@
 //! formats and the sample count of its targets, and the permutation bits that it sets for every
 //! pipeline in it.
 
-use null3d_gpu::drawlist::{DrawList, Op};
+use null3d_gpu::drawlist::{DrawList, Op, state_flags};
 
 use crate::frame::RecordError;
 
@@ -108,6 +108,11 @@ pub struct DrawKey {
 }
 
 impl DrawKey {
+    /// True when the pair blends, so it draws back to front in the transparent pass.
+    pub const fn blends(self) -> bool {
+        self.state & state_flags::BLEND != 0
+    }
+
     /// The key of the pipeline that draws the pair in a pass with these targets.
     pub const fn in_pass(self, targets: PassTargets) -> PipelineKey {
         PipelineKey {

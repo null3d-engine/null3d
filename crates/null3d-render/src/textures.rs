@@ -41,7 +41,8 @@
 use null3d_core::error::CoreError;
 use null3d_core::handle::{Handle, SlotAllocator};
 use null3d_gpu::drawlist::{
-    DrawList, Op, address, compare, filter, format, layout, resource_kind, texture_usage, view,
+    DrawList, Op, address, compare, filter, format, layout, resource_kind, texture_usage,
+    upload_flags, view,
 };
 
 use crate::frame::{RecordError, address as memory_address, words_as_bytes};
@@ -622,6 +623,20 @@ impl TextureStore {
     pub fn ready_layer(&self, texture: Handle) -> Option<u32> {
         let slot = self.slot(texture).ok()?;
         matches!(slot.state, State::Uploaded { .. }).then_some(slot.layer)
+    }
+
+    /// True when a texture's texels on the GPU come from an image that holds colors multiplied by
+    /// their alpha.
+    pub fn premultiplied(&self, texture: Handle) -> bool {
+        self.slot(texture).is_ok_and(|slot| {
+            matches!(
+                slot.state,
+                State::Uploaded {
+                    source: Source::Image { flags, .. },
+                    ..
+                } if flags & upload_flags::PREMULTIPLIED_ALPHA != 0
+            )
+        })
     }
 
     /// The GPU id of the bind group that samples a live texture: its array with its sampler.

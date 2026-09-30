@@ -138,12 +138,12 @@ obj.destroy();
 obj.name;                            // string, read-only after creation
 ```
 
-Meshes also have these calls. `setCastShadows` and `setReceiveShadows` are stored until shadows draw, and `setRenderOrder` orders transparent objects, which do not draw yet.
+Meshes also have these calls. `setCastShadows` and `setReceiveShadows` are stored until shadows draw. `setRenderOrder` orders blended objects before their depth.
 
 ```ts
 mesh.setMaterial(material);          mesh.setMesh(geometry);       // setMesh brings back the mesh's bounds
 mesh.setCastShadows(true);           mesh.setReceiveShadows(true); // false by default, as in three.js
-mesh.setRenderOrder(n);                                             // transparent objects, lower first
+mesh.setRenderOrder(n);                                             // blended objects, lower first
 mesh.setFrustumCulled(false);        mesh.setBounds(center, radius);  // center relative to the origin, before scale
 ```
 

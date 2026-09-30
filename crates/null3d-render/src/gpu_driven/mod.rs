@@ -48,8 +48,15 @@
 //!
 //! Every view (see [`crate::view`]) culls the same sources and bucket tables, into buffers of its
 //! own: its culling parameters, compacted instances and indirect draws, its frame uniform, and its
-//! bundle. Each pass has a module: `cull` records the culling passes and `opaque` the opaque
-//! passes, and `layout` keeps the sources and buckets that every view reads, with their uploads.
+//! bundle. Each pass has a module: `cull` records the culling passes, `opaque` the opaque passes
+//! and `transparent` the transparent passes, and `layout` keeps the sources and buckets that every
+//! view reads, with their uploads.
+//!
+//! # Blended sources
+//!
+//! A source whose material blends draws back to front, so it leaves the buckets that the GPU culls
+//! and joins the transparent pass's sources (see [`crate::sorted`]). Its entry in the bucket table
+//! is `HIDDEN`, and the job workers cull and sort it each frame for each view.
 //! The debug lines pass, which both builders share, is [`crate::debug_lines`]. The render graph
 //! ([`crate::frame_graph`]) orders the passes and begins their render passes.
 //!
@@ -63,6 +70,7 @@
 mod cull;
 mod layout;
 mod opaque;
+mod transparent;
 
 use std::collections::TryReserveError;
 
@@ -80,10 +88,12 @@ use crate::graph::RenderGraph;
 use crate::materials::MATERIAL_FLOATS;
 use crate::meshes::{MeshStorage, Packing};
 use crate::pipelines::PipelineCache;
+use crate::sorted::SortedLayout;
 use crate::textures::{TextureIds, TextureStore};
 use crate::view::{ViewFrame, ViewId};
 use cull::{CULL_PARAMS_BYTES, Culling, INDIRECT_BYTES};
 use layout::Layout;
+use transparent::Transparent;
 
 /// The most sources the builder can draw, scene slots and instance rows together, on a device whose
 /// largest storage binding is `binding_bytes`. One culling dispatch covers at most 65,535
@@ -111,6 +121,11 @@ pub const PORTABLE_MAX_SOURCES: u32 = max_sources(sizes::PORTABLE_STORAGE_BINDIN
 /// dispatch covers. A device that offers more gains nothing from a larger binding.
 pub const MAX_USEFUL_BINDING_BYTES: u32 =
     u16::MAX as u32 * sizes::CULL_WORKGROUP_SIZE * sizes::INSTANCE_STRIDE;
+
+/// The error of a table that memory could not grow for.
+fn out_of_memory(_: std::collections::TryReserveError) -> RecordError {
+    RecordError::OutOfMemory { bytes: u32::MAX }
+}
 
 /// The builder's GPU objects. It owns every id it uses; each view has a range of its own.
 mod ids {
@@ -140,8 +155,15 @@ mod ids {
 
     /// The vertices of the debug lines.
     pub const LINES: u32 = VIEW_BUFFERS + 4 * MAX_VIEWS as u32;
+    /// Each view's sorted instances of the transparent pass, one buffer per view from here.
+    const SORTED: u32 = LINES + 1;
+
+    pub const fn sorted(view: ViewId) -> u32 {
+        SORTED + view.index() as u32
+    }
+
     /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
-    pub const PAGES: u32 = LINES + 1;
+    pub const PAGES: u32 = SORTED + MAX_VIEWS as u32;
 
     /// three.js's table of the split-sum terms of specular light.
     pub const DFG: u32 = 1;
@@ -205,6 +227,9 @@ pub struct GpuDrivenRenderer {
     layout: Layout,
     culling: Culling,
     lines: LinesPass,
+    /// The sources of the transparent pass, and each view's sorted rows.
+    sorted: SortedLayout,
+    transparent: Transparent,
     /// Each view's values in the frame being recorded, or `None` for a view with no camera.
     frames: Vec<Option<ViewFrame>>,
     created: bool,
@@ -242,6 +267,8 @@ impl GpuDrivenRenderer {
             layout: Layout::default(),
             culling: Culling::default(),
             lines: LinesPass::new(ids::LINES),
+            sorted: SortedLayout::default(),
+            transparent: Transparent::default(),
             frames: Vec::new(),
             created: false,
             dfg_pending: false,
@@ -270,18 +297,37 @@ impl GpuDrivenRenderer {
     ) -> Result<bool, RecordError> {
         let parity = input.parity();
         let upload_everything = input.structure_changed || !self.layout.built;
+        let views = self.settings.views().len();
         if upload_everything {
             let limit = max_sources(self.config.storage_binding_bytes);
+            let targets = self.graph.scene_targets();
             self.layout.rebuild(
                 &self.settings,
                 &mut self.pipelines,
-                self.graph.scene_targets(),
+                targets,
                 input.scene,
                 input.batches,
                 parity,
                 limit,
             )?;
+            self.sorted
+                .rebuild(
+                    &self.settings,
+                    &mut self.pipelines,
+                    targets,
+                    input.scene,
+                    input.batches,
+                    |_, _| (0, 0),
+                    0,
+                )
+                .map_err(out_of_memory)?;
         }
+        self.transparent
+            .reserve(&self.sorted, views)
+            .map_err(out_of_memory)?;
+        list.reserve_words(
+            self.config.draw_list_words + Transparent::words_bound(&self.sorted, views),
+        );
         // The list starts with the pipelines it creates, so the thread that draws can start to
         // build them before it replays the rest (see `null3d_gpu::drawlist`).
         if !self.created {
@@ -298,8 +344,8 @@ impl GpuDrivenRenderer {
         }
         self.graph.sync_views(self.settings.views());
         self.graph.set_debug_lines(!input.lines.is_empty());
+        self.graph.set_transparent(!self.sorted.is_empty());
         self.graph.prepare(list, input.canvas)?;
-        let views = self.settings.views().len();
         let first_new = self.culling.views();
         for index in first_new..views {
             opaque::create_view(list, ViewId::from_index(index))?;
@@ -340,6 +386,7 @@ impl GpuDrivenRenderer {
         }
         self.layout
             .upload_matrices(list, input, parity, upload_everything)?;
+        self.transparent.size(list, &self.sorted, views)?;
 
         self.frames.clear();
         for index in 0..views {
@@ -354,17 +401,43 @@ impl GpuDrivenRenderer {
             }
             self.frames.push(frame);
         }
+        let (scene, batches) = (input.scene, input.batches);
+        self.sorted.gather(scene, batches, parity);
+        self.transparent.sort(
+            input.jobs,
+            &self.sorted,
+            &self.frames,
+            scene,
+            batches,
+            parity,
+        );
+        for index in 0..views {
+            let view = ViewId::from_index(index);
+            self.transparent.upload(
+                list,
+                arena,
+                view,
+                &self.sorted,
+                input.jobs,
+                scene,
+                batches,
+                parity,
+            )?;
+        }
         let camera = self.frames[ViewId::CAMERA.index()].as_ref();
         self.lines
             .upload(list, arena, &input.lines, camera.map(|frame| &frame.camera))?;
 
         let (frames, layout, lines) = (&self.frames, &self.layout, &self.lines);
+        let (sorted, transparent) = (&self.sorted, &self.transparent);
+        let (settings, meshes) = (&self.settings, &self.meshes);
         let drawn = |view: ViewId| frames[view.index()].is_some();
         self.graph
             .record(list, self.settings.clear_color(), |list, role| match role {
                 Role::Cull(view) if drawn(view) => Culling::record(list, view, layout),
                 Role::Opaque(view) if drawn(view) => opaque::record(list, view),
                 Role::DebugLines => lines.record(list, ids::frame_group(ViewId::CAMERA), &[]),
+                Role::Transparent(view) => transparent.record(list, view, sorted, settings, meshes),
                 _ => Ok(()),
             })?;
         Ok(upload_everything)
@@ -397,7 +470,12 @@ impl GpuDrivenRenderer {
             self.settings.materials().capacity() as usize * MATERIAL_FLOATS * 4 + dfg::BYTES;
         let per_view = (sizes::FRAME_UNIFORM_BYTES + CULL_PARAMS_BYTES) as usize
             + self.layout.draws.len() * INDIRECT_BYTES as usize;
-        meshes + materials + self.layout.upload_bound() + self.settings.views().len() * per_view
+        let views = self.settings.views().len();
+        meshes
+            + materials
+            + self.layout.upload_bound()
+            + views * per_view
+            + Transparent::upload_bound(&self.sorted, views)
     }
 }
 
@@ -436,6 +514,7 @@ impl FrameBuilder for GpuDrivenRenderer {
         self.layout.forget_gpu();
         self.culling.forget_gpu();
         self.lines.forget_gpu();
+        self.transparent.forget_gpu();
         self.meshes.forget();
         self.pipelines.forget();
         self.settings.materials_mut().mark_changed();

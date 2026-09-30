@@ -273,6 +273,7 @@ export class WebGL2Backend {
 	private depthTest = false;
 	private depthMask = true;
 	private depthAlways = false;
+	private blend = 0;
 	private offsetFactor = 0;
 	private offsetUnits = 0;
 	// Fractions passed to WebGL become new number objects, so the clear values and the depth range
@@ -420,6 +421,7 @@ export class WebGL2Backend {
 			depth,
 			depthWrite: depth && (flags & (G.STATE_NO_DEPTH_WRITE | G.STATE_NO_DEPTH_TEST)) === 0,
 			depthAlways: (flags & G.STATE_NO_DEPTH_TEST) !== 0,
+			blend: flags & G.STATE_BLEND,
 			offsetUnits: sign * ((words[a + 8] as number) | 0),
 			offsetFactor: sign * floatOfBits(words[a + 9] as number),
 			vertexFormat: words[a + 7] as number,
@@ -998,6 +1000,7 @@ export class WebGL2Backend {
 		this.setScissorTest(false);
 		this.setDepthTest(false);
 		this.setCullFace(false);
+		if (this.blend) this.setBlend(0);
 		this.editTexture(MIP_UNIT, gl.TEXTURE_2D_ARRAY, texture.texture);
 		if (this.unitSamplers[MIP_UNIT] !== this.mipSampler) {
 			gl.bindSampler(MIP_UNIT, this.mipSampler);
@@ -1358,6 +1361,24 @@ export class WebGL2Backend {
 			this.depthAlways = p.depthAlways;
 		}
 		this.setPolygonOffset(p.offsetFactor, p.offsetUnits);
+		if (p.blend !== this.blend) this.setBlend(p.blend);
+	}
+
+	/**
+	 * Sets GL's blending for a blend mode, whose fragments write color premultiplied by alpha, as
+	 * the WebGPU backend's blend states do.
+	 */
+	private setBlend(mode: number): void {
+		const gl = this.gl;
+		if (!mode) gl.disable(gl.BLEND);
+		else {
+			if (!this.blend) gl.enable(gl.BLEND);
+			if (mode === G.STATE_BLEND_ADDITIVE) gl.blendFunc(gl.ONE, gl.ONE);
+			else if (mode === G.STATE_BLEND_MULTIPLY)
+				gl.blendFuncSeparate(gl.DST_COLOR, gl.ONE_MINUS_SRC_ALPHA, gl.ZERO, gl.ONE);
+			else gl.blendFunc(gl.ONE, gl.ONE_MINUS_SRC_ALPHA);
+		}
+		this.blend = mode;
 	}
 
 	/** Sets GL's polygon offset, switched on only while it moves depth. */

@@ -4,11 +4,12 @@ enable draw_index;
 // with the formulas of three.js's MeshStandardMaterial. null3d::mesh finds each instance on both
 // GPU paths, and null3d::lighting holds the formulas. `light_surface` gathers the scene's lights,
 // so the rest of the shader does not change with where the lights come from. The ALPHA_MASK builds
-// draw nothing where the surface's alpha falls below the material's cutoff.
+// draw nothing where the surface's alpha falls below the material's cutoff, and a material that
+// blends writes premultiplied color.
 #import null3d::color
 #import null3d::lighting
 #import null3d::mesh::{InstanceIn, clip_of, find_instance, frame, material_of}
-#import null3d::mesh::{relative_position, world_normal}
+#import null3d::mesh::{fragment_color, relative_position, world_normal}
 
 /// The bit of a material's flags that lights each triangle with its face's normal.
 const FLAT_SHADING: u32 = 1u;
@@ -104,5 +105,5 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
         discard;
     }
 #endif
-    return vec4f(null3d::color::linear_to_srgb(outgoing), 1.0);
+    return fragment_color(m, null3d::color::linear_to_srgb(outgoing), alpha, alpha);
 }

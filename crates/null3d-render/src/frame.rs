@@ -11,6 +11,7 @@
 use std::collections::TryReserveError;
 
 use null3d_core::cells::{CellPosition, MAX_CELLS};
+use null3d_core::culling::{CULL_CHUNK, CullRun, ROW_CELLS};
 use null3d_core::handle::Handle;
 use null3d_core::instances::{BatchTable, InstanceBatch};
 use null3d_core::jobs::JobSystem;
@@ -26,7 +27,7 @@ use crate::debug_lines::DebugLines;
 use crate::frame_data::{FrameUniform, normalized_direction};
 use crate::graph::GraphError;
 use crate::materials::{
-    MATERIAL_FLOATS, MATERIAL_TEXELS, MapSlot, MaterialTable, Shading, feature,
+    MATERIAL_FLOATS, MATERIAL_TEXELS, MapSlot, MaterialTable, Shading, blend_state, feature,
 };
 use crate::meshes::{MAX_BUFFER_BYTES, MeshStorage, Page};
 use crate::pipelines::DrawKey;
@@ -57,6 +58,50 @@ pub(crate) fn drawn_rows(buckets: &[u32], start: u32, count: u32) -> Option<(u32
     let first = (start..end).find(draws)?;
     let last = (first..end).rev().find(draws)?;
     Some((first, last + 1 - first))
+}
+
+/// Where the rows of a set lie: all in one cell, or each in the cell its entry of a list names.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum RunCells<'a> {
+    One(u32),
+    Rows(&'a [u32]),
+}
+
+/// Splits rows `0..rows` of a set into culling runs of at most one chunk each. A run whose rows
+/// share a cell culls as that cell's run; the others look each row's cell up.
+pub(crate) fn push_runs(
+    runs: &mut Vec<CullRun>,
+    set: u32,
+    rows: u32,
+    bucket: u32,
+    base: u32,
+    cells: RunCells<'_>,
+) {
+    let mut start = 0;
+    while start < rows {
+        let end = (start + CULL_CHUNK).min(rows);
+        let cell = match cells {
+            RunCells::One(cell) => cell,
+            RunCells::Rows(cells) => {
+                let run = &cells[start as usize..end as usize];
+                let first = run[0];
+                if run.iter().all(|&cell| cell == first) {
+                    first
+                } else {
+                    ROW_CELLS
+                }
+            }
+        };
+        runs.push(CullRun {
+            set,
+            start,
+            end,
+            bucket,
+            base,
+            cell,
+        });
+        start = end;
+    }
 }
 
 /// Why a frame could not be recorded.
@@ -396,8 +441,11 @@ impl SceneSettings {
         let remade = self.textures.record(list, frame)?;
         let layers_changed = self.textures.take_layers_changed();
         let textures = &self.textures;
-        self.materials
-            .update_map_layers(layers_changed, |map| textures.ready_layer(map));
+        self.materials.update_map_layers(
+            layers_changed,
+            |map| textures.ready_layer(map),
+            |map| textures.premultiplied(map),
+        );
         if let Some(ids) = self.materials.take_changed() {
             let (at, bytes) = arena.push(floats_as_bytes(self.materials.rows(ids.clone())))?;
             match table {
@@ -519,7 +567,8 @@ impl SceneSettings {
     /// gone, or whose mesh has no texture coordinates for it, draws with its color alone. A
     /// material with vertex colors reads them only from a mesh that has them, a masked material
     /// draws with the shader variant that discards fragments, and a double-sided material culls no
-    /// faces. The material's depth options and depth bias set the pipeline's depth state.
+    /// faces. The material's depth options and depth bias set the pipeline's depth state, and a
+    /// blended material's blending sets its blend state, which draws it in the transparent pass.
     pub fn pipeline_of(&self, mesh: u32, material: u32) -> Option<DrawKey> {
         if mesh == NO_MESH || material == NO_MATERIAL {
             return None;
@@ -540,18 +589,17 @@ impl SceneSettings {
         let has = |bit: u32| features & bit != 0;
         let base_color = shading.reads_base_color();
         let vertex_colors = has(feature::VERTEX_COLORS) && format & vertex::COLOR != 0;
+        let masked = has(feature::ALPHA_MASK) && !has(feature::BLEND);
         let bit = |on: bool, bit: u32| if on { bit } else { 0 };
         ((format & needs) == needs).then_some(DrawKey {
             template: shading.template(),
             permutation: bit(base_color && vertex_colors, permutation::VERTEX_COLOR)
-                | bit(
-                    base_color && has(feature::ALPHA_MASK),
-                    permutation::ALPHA_MASK,
-                ),
+                | bit(base_color && masked, permutation::ALPHA_MASK),
             vertex_format: format,
             state: bit(has(feature::DOUBLE_SIDED), state_flags::CULL_NONE)
                 | bit(has(feature::NO_DEPTH_WRITE), state_flags::NO_DEPTH_WRITE)
-                | bit(has(feature::NO_DEPTH_TEST), state_flags::NO_DEPTH_TEST),
+                | bit(has(feature::NO_DEPTH_TEST), state_flags::NO_DEPTH_TEST)
+                | blend_state(features),
             bias: self.materials.depth_bias(material - 1),
         })
     }

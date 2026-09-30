@@ -2,11 +2,13 @@
 //! frame builder records frames of a scene whose batch moves every frame. It counts only the test
 //! thread, so the test runner's own work on other threads cannot reach the count. Frames whose
 //! structure changes allocate nothing either, on either frame parity, until the scene grows, and
-//! neither do frames that draw debug lines or stop drawing them. The render graph allocates nothing
-//! while it stays the same, nor when passes switch on and off after it has compiled once.
+//! neither do frames that draw debug lines or stop drawing them, nor frames that sort blended
+//! objects whose order changes. The render graph allocates nothing while it stays the same, nor
+//! when passes switch on and off after it has compiled once.
 
 mod common;
 
+use common::blended::add_scene;
 use common::graph::{CASCADES, engine_passes};
 use common::{World, base_sphere, grid};
 use null3d_core::jobs::JobSystem;
@@ -179,6 +181,47 @@ fn webgl2_static_batches_coming_to_rest_allocate_nothing() {
             world.record(world.frame.is_multiple_of(7));
         }
         assert_eq!(CountingAllocator::disarm(), 0, "multi-draw {multi_draw}");
+    }
+}
+
+/// Records warm-up frames of a world with blended objects and a second view, then frames in
+/// which the blended rows pass each other and a blended object moves, so the sorted order and
+/// its runs change, and frames whose structure changes. Returns what those allocated.
+fn sorted_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
+    let blended = add_scene(&mut world);
+    world.add_view([5.0, 0.0, 6.0]);
+    world.record(true);
+    let mut sort_frames = |world: &mut World<B>, last: u32| {
+        while world.frame < last {
+            world.frame += 1;
+            let frame = world.frame;
+            let rows = world.batches.get_mut(blended.batch).unwrap();
+            rows.positions_mut()[2] = (frame % 11) as f32 - 5.0;
+            rows.mark_dirty(0, 1).unwrap();
+            world
+                .scene
+                .set_position(blended.box_object, [0.0, 0.0, (frame % 7) as f32 - 3.0])
+                .unwrap();
+            world.record(frame.is_multiple_of(9));
+        }
+    };
+    sort_frames(&mut world, 20);
+    CountingAllocator::arm();
+    sort_frames(&mut world, 120);
+    CountingAllocator::disarm()
+}
+
+#[test]
+fn sorting_blended_objects_allocates_nothing() {
+    let _only = CountingAllocator::exclusive();
+    CountingAllocator::track_this_thread();
+    assert_eq!(sorted_allocations(World::new()), 0, "WebGPU");
+    for multi_draw in [true, false] {
+        assert_eq!(
+            sorted_allocations(webgl2_world(multi_draw)),
+            0,
+            "WebGL2, multi-draw {multi_draw}"
+        );
     }
 }
 

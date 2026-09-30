@@ -32,7 +32,7 @@ import {
 import type { ImageSender } from '../shared/images';
 import { toHalfFloats } from './half-float';
 import type { CoreMemory } from './memory';
-import type { Material, MaterialOptions, Materials } from './resources';
+import type { Material, Materials, UnlitOptions } from './resources';
 
 /**
  * What texture coordinates outside 0 to 1 read. `clamp` reads the texel at the edge, `repeat`
@@ -523,7 +523,7 @@ function checkName(
 export function unlitMapMaterial(
 	materials: Materials,
 	map: Texture,
-	options: MaterialOptions = {},
+	options: UnlitOptions = {},
 ): Material {
 	const call = 'unlitMapMaterial';
 	const material = materials.create(SHADING_UNLIT_MAP, options, call);

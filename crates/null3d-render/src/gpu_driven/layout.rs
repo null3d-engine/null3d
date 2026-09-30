@@ -267,8 +267,11 @@ impl Layout {
         self.sources = sources;
 
         let meshes = settings.meshes();
+        // Blended pairs draw in the transparent pass, which sorts them on the job workers.
         let key_of = |mesh: u32, material: u32, bounds: u32| -> Option<BucketKey> {
-            let pipeline = settings.pipeline_of(mesh, material)?;
+            let pipeline = settings
+                .pipeline_of(mesh, material)
+                .filter(|pipeline| !pipeline.blends())?;
             let group = settings.texture_group(material, pipeline);
             let page = meshes.parts(meshes.mesh(mesh - 1)?).first()?.page;
             Some((pipeline, group, page, mesh, material, bounds))

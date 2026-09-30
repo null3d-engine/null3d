@@ -3,6 +3,7 @@
 //! `graph` module declares the engine's render passes for the render graph tests.
 #![allow(dead_code)]
 
+pub mod blended;
 pub mod graph;
 
 use std::f64::consts::{PI, TAU};

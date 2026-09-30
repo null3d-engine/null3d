@@ -48,6 +48,7 @@ mod cull;
 mod data;
 mod layout;
 mod opaque;
+mod transparent;
 
 use std::collections::TryReserveError;
 
@@ -68,12 +69,14 @@ use crate::graph::RenderGraph;
 use crate::materials::{MATERIAL_FLOATS, MATERIAL_TEXELS};
 use crate::meshes::{MeshStorage, Packing};
 use crate::pipelines::{PassTargets, PipelineCache};
+use crate::sorted::SortedLayout;
 use crate::textures::{TextureIds, TextureStore};
 use crate::view::{ViewFrame, ViewId};
 use cull::Culling;
 use data::{RingSlot, SharedTextures, matrices_of, write_matrices};
-use layout::{Clusters, Layout};
+use layout::{Clusters, Layout, RESIDENT, STREAMED};
 use opaque::{OFFSETS_BYTES, Opaque, ViewUpload};
+use transparent::Transparent;
 
 /// The builder's GPU objects. It owns every id it uses; each view has a range of its own.
 mod ids {
@@ -192,6 +195,9 @@ pub struct CpuCulledRenderer {
     culling: Culling,
     opaque: Opaque,
     lines: LinesPass,
+    /// The sources of the transparent pass, and each view's draws of it.
+    sorted: SortedLayout,
+    transparent: Transparent,
     /// The vertex pages' vertex and index buffers.
     meshes: MeshBuffers,
     pipelines: PipelineCache,
@@ -234,6 +240,8 @@ impl CpuCulledRenderer {
             culling: Culling::default(),
             opaque: Opaque::new(config.multi_draw),
             lines: LinesPass::new(ids::LINES),
+            sorted: SortedLayout::default(),
+            transparent: Transparent::new(config.multi_draw),
             meshes: MeshBuffers::new(ids::PAGES),
             pipelines: PipelineCache::default(),
             textures: SharedTextures::default(),
@@ -290,11 +298,35 @@ impl CpuCulledRenderer {
         let out_of_memory = |_: TryReserveError| RecordError::OutOfMemory {
             bytes: room.rows.saturating_mul(8),
         };
+        let slots = &self.layout.batches;
+        let place = |index: usize, _: &_| {
+            let slot = slots[index];
+            (slot.base, if slot.dynamic { STREAMED } else { RESIDENT })
+        };
+        self.sorted
+            .rebuild(
+                &self.settings,
+                &mut self.pipelines,
+                targets,
+                input.scene,
+                input.batches,
+                place,
+                RESIDENT,
+            )
+            .map_err(out_of_memory)?;
+        let records = Transparent::records_bound(&self.sorted, self.config.multi_draw);
+        self.layout.add_sorted(records, self.sorted.scene_slots());
         self.clusters
             .prepare(input.batches, &self.layout)
             .map_err(out_of_memory)?;
         let views = self.settings.views().len();
         self.culling.reserve(room, views).map_err(out_of_memory)?;
+        self.culling
+            .reserve_sorted(&self.sorted)
+            .map_err(out_of_memory)?;
+        self.transparent
+            .reserve(&self.sorted, views)
+            .map_err(out_of_memory)?;
         // Room for every static batch's cluster order, so a batch coming to rest later uploads
         // its clusters without growing the arena.
         let bound = self.upload_bound_without_clusters() + self.layout.cluster_rows as usize * 4;
@@ -312,11 +344,16 @@ impl CpuCulledRenderer {
         let views = self.settings.views().len();
         if self.culling.views() < views {
             let room = self.layout.room;
+            let out_of_memory = |_| RecordError::OutOfMemory {
+                bytes: room.rows.saturating_mul(8),
+            };
+            self.culling.add_views(room, views).map_err(out_of_memory)?;
             self.culling
-                .add_views(room, views)
-                .map_err(|_| RecordError::OutOfMemory {
-                    bytes: room.rows.saturating_mul(8),
-                })?;
+                .reserve_sorted(&self.sorted)
+                .map_err(out_of_memory)?;
+            self.transparent
+                .reserve(&self.sorted, views)
+                .map_err(out_of_memory)?;
         }
         Ok(())
     }
@@ -337,7 +374,11 @@ impl CpuCulledRenderer {
         let per_view = (sizes::FRAME_UNIFORM_BYTES + OFFSETS_BYTES) as usize
             + self.layout.draws_slot_bytes as usize
             + self.layout.draws.len() * 12;
-        meshes + materials + self.settings.views().len() * per_view
+        let views = self.settings.views().len();
+        meshes
+            + materials
+            + views * per_view
+            + Transparent::upload_bound(&self.sorted, views, self.config.multi_draw)
     }
 
     /// Records the creation of the material table, a data texture with one row of texels for each
@@ -433,7 +474,7 @@ impl CpuCulledRenderer {
             if range.target == SCENE_TARGET {
                 let scene = input.scene.world(parity).matrices();
                 if let Some((start, count)) =
-                    drawn_rows(&layout.scene_buckets, range.start, range.count)
+                    drawn_rows(&layout.drawn_slots, range.start, range.count)
                 {
                     upload(list, 0, scene, start, count)?;
                 }
@@ -500,6 +541,10 @@ impl CpuCulledRenderer {
             self.cull(input)?;
         }
         self.add_culled_views()?;
+        let views = self.settings.views().len();
+        list.reserve_words(
+            self.config.draw_list_words + Transparent::words_bound(&self.sorted, views),
+        );
         // The list starts with the pipelines it creates, so the thread that draws can start to
         // build them before it replays the rest (see `null3d_gpu::drawlist`).
         self.lines.request_pipeline(
@@ -513,8 +558,8 @@ impl CpuCulledRenderer {
         }
         self.graph.sync_views(self.settings.views());
         self.graph.set_debug_lines(!input.lines.is_empty());
+        self.graph.set_transparent(!self.sorted.is_empty());
         self.graph.prepare(list, input.canvas)?;
-        let views = self.settings.views().len();
         let first_new = self.opaque.views();
         self.opaque.add_views(list, views)?;
         let rebuilt = self.layout.built_in == input.frame;
@@ -553,6 +598,7 @@ impl CpuCulledRenderer {
                     continue;
                 };
                 let (listed, new_list) = self.culling.upload(list, view, frame)?;
+                let starts = self.culling.culled(frame, view).bucket_starts();
                 let upload = ViewUpload {
                     frame,
                     values: &values,
@@ -560,10 +606,20 @@ impl CpuCulledRenderer {
                     streamed,
                     listed,
                     new_list,
-                    starts: self.culling.culled(frame, view).bucket_starts(),
+                    starts,
                 };
                 self.opaque
                     .upload(list, arena, view, upload, &self.layout)?;
+                // The sorted rows follow the opaque ones in the view's index list.
+                let first_sorted = starts.last().copied().unwrap_or(0);
+                let sorted = self.culling.sorted(view);
+                self.transparent
+                    .prepare(index, sorted, &self.sorted, &self.settings, first_sorted);
+                if new_list {
+                    let at = self.opaque.sorted_records_at(view, &self.layout);
+                    self.transparent
+                        .upload(list, arena, index, ids::draws(view), at)?;
+                }
             }
         }
         let camera = self.culling.frame(ViewId::CAMERA);
@@ -575,12 +631,18 @@ impl CpuCulledRenderer {
         )?;
 
         let (culling, opaque, lines) = (&self.culling, &self.opaque, &self.lines);
-        let (layout, meshes) = (&self.layout, &self.meshes);
+        let (layout, meshes, transparent) = (&self.layout, &self.meshes, &self.transparent);
         self.graph
             .record(list, self.settings.clear_color(), |list, role| match role {
                 Role::Opaque(view) if culling.frame(view).is_some() => {
                     let starts = culling.culled(frame, view).bucket_starts();
                     opaque.record(list, arena, view, starts, layout, meshes)
+                }
+                Role::Transparent(view) if culling.frame(view).is_some() => {
+                    let at = opaque.sorted_records_at(view, layout);
+                    let draws = ids::draws_group(view);
+                    let bind = |list: &mut DrawList| opaque.bind_view(list, view);
+                    transparent.record(list, arena, view.index(), draws, at, meshes, bind)
                 }
                 Role::DebugLines => {
                     let slot = opaque.frame_slot(ViewId::CAMERA);
@@ -614,8 +676,15 @@ impl FrameBuilder for CpuCulledRenderer {
             self.rebuild_layout(input)?;
         }
         self.add_culled_views()?;
-        self.culling
-            .cull(input, &self.settings, &self.layout, &mut self.clusters);
+        self.sorted
+            .gather(input.scene, input.batches, input.parity());
+        self.culling.cull(
+            input,
+            &self.settings,
+            &self.layout,
+            &mut self.clusters,
+            &self.sorted,
+        );
         Ok(())
     }
 

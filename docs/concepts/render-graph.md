@@ -16,11 +16,14 @@ flowchart LR
     visible --> opaque
     subgraph scene["One render pass"]
         opaque["Opaque"]
+        transparent["Transparent"]
         resolve["Resolve"]
     end
     opaque --> color[("scene color")]
     opaque --> depth[("scene depth")]
-    color --> resolve --> canvas[("canvas")]
+    color --> transparent
+    depth --> transparent
+    transparent --> resolve --> canvas[("canvas")]
     color -.-> final["Final pass<br/>off"] -.-> canvas
 ```
 
@@ -28,7 +31,7 @@ null3D draws each frame as a series of passes. A pass is one job for the GPU, su
 
 In 0.1 the render graph is internal: the engine declares every pass itself. The calls that add passes and print the graph come in null3D 0.2.
 
-In the diagram, boxes are passes and cylinders are data. An arrow into a pass shows what it reads, and an arrow out of a pass shows what it writes. The opaque and resolve passes share one render pass on the GPU. The final pass is off, so its arrows are dotted.
+In the diagram, boxes are passes and cylinders are data. An arrow into a pass shows what it reads, and an arrow out of a pass shows what it writes. The opaque, transparent and resolve passes share one render pass on the GPU. The final pass is off, so its arrows are dotted.
 
 ## The engine's passes
 
@@ -36,10 +39,11 @@ In the diagram, boxes are passes and cylinders are data. An arrow into a pass sh
 | --- | --- | --- | --- |
 | Culling | Compute, one pass per view, on WebGPU only | The world matrix and bounds of every object and instance | The view's visible instances and draw counts |
 | Opaque | Scene, one pass per view | The view's visible instances, on WebGPU | The scene color and depth |
+| Transparent | Scene, one pass per view, on while some object blends | The view's blended objects, sorted back to front on the job workers | The scene color and depth |
 | Resolve | Resolve | The scene color | The canvas |
 | Final pass | Fullscreen, off | The scene color | The canvas |
 
-On WebGL2 the job workers cull the objects before the frame draws, so the graph has no culling pass there. Passes for shadows, light clustering, a depth prepass, transparent objects and debug lines join the graph as those features ship.
+On WebGL2 the job workers cull the objects before the frame draws, so the graph has no culling pass there. Passes for shadows, light clustering and a depth prepass join the graph as those features ship.
 
 A view is the scene seen from one camera, culled on its own. On WebGPU each view has a culling pass, and on WebGL2 the job workers list the visible objects of each view. The engine draws one view: the camera's. Its opaque pass draws the scene color and depth, and the scene color reaches the canvas.
 
