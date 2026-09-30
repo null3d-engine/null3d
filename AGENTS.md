@@ -24,7 +24,7 @@ This repository holds the null3D engine, its tools, its documentation and its ag
 | --- | --- |
 | `bun install` | Install the tools and set up the git hooks |
 | `bun run build` | Build both WebAssembly files, the threaded one and the single-threaded one, and the shader compiler for the Vite plugin. Print their sizes and the sizes of the engine's JavaScript in a production build |
-| `bun run build:check-size` | Build, and fail when a WebAssembly file or a file of the engine's JavaScript grew more than 2% after Brotli compression |
+| `bun run build:check-size` | Build, then compare each file's size after Brotli compression with main's build. Fail when a file grew more than 2% and no `Size-Growth:` trailer explains it. `--base <ref>` compares with another commit |
 | `bun run test` | Unit tests for the engine, the benchmark scenes and the repository tools |
 | `bun run test:browser` | The browser tests in Chrome, through Playwright: the image test manifest on every GPU tier, and the engine's behavior. The engine and errors tests run again on a production build served by `vite preview`. CI splits the tests into shards with `--shard=1/2` |
 | `bun run test:images` | The image test manifest alone. Add Playwright's options, such as `-g scene` for the tests whose names hold scene |
@@ -55,7 +55,7 @@ This repository holds the null3D engine, its tools, its documentation and its ag
 | `bun run typecheck` | TypeScript check |
 | `bun run release` | Print the next version and its changelog. `--apply` writes them, as the Release workflow does, and `--notes <version>` prints one release's notes |
 
-A size growth over 2% needs a reason: explain it in the commit message and run `bun tools/build-wasm.ts --update-size`, which rewrites the committed baseline. A file over its budget fails every build. The budgets are 600 KB after Brotli for each WebAssembly file, and 60 KB for the engine's JavaScript that a page downloads.
+A file that grows more than 2% after Brotli against main's build needs a reason: a `Size-Growth:` trailer, as "Commit gates" says. A file over its budget fails every build. The budgets are 600 KB after Brotli for each WebAssembly file, and 60 KB for the engine's JavaScript that a page downloads. [Benchmarks](.dev/benchmarks.md#download-size) says how the check builds main.
 
 ## Design principles
 
@@ -147,6 +147,7 @@ On each commit message:
 - The message follows [Conventional Commits](https://www.conventionalcommits.org/). The scope names the area, such as `core`, `gpu`, `engine`, `docs`, `tools` or `ci`.
 - A commit that changes `crates/*/src/`, `packages/*/src/`, `packages/*/bin/` or `skills/` needs a `Docs-Checked:` trailer. This file, the README and the guides in `.dev/` describe the repository's tools, so a commit that changes the tools needs one too. They are `tools/`, `bench/` apart from its tests, the test runner (`tests/real-browsers.ts` and `tests/lib/`) and `package.json`. The trailer names the docs pages you updated or re-read, or says why none apply. The pass also confirms that those pages speak only to developers who use the engine.
 - A commit that changes a package's source, the WGSL shader library, `skills/` or `docs/data/threejs-mapping.json` needs a `Skills-Checked:` trailer. It names the skill files you updated or re-read.
+- A file that grows more than 2% after Brotli against main's build needs a `Size-Growth:` trailer on a commit of the pull request. The trailer names each file as the size report prints it and gives the reason, such as `Size-Growth: js/page.js +3.1%, the key table of the input ring`.
 - Every internal link in the published Markdown resolves, and new external links in changed files answer.
 - Changed published Markdown and the commit's subject pass the docs style check. Errors block the commit; warnings only print.
 

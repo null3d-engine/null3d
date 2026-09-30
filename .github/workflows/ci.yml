@@ -86,7 +86,10 @@ jobs:
     env:
       HUSKY: "0"
     steps:
+      # The size check finds its base in main's history and reads the commits since it.
       - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
       - name: Install the pinned Rust toolchain
         run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
@@ -94,7 +97,7 @@ jobs:
         with:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
-      - name: Build both WebAssembly files and the shader compiler, and check their sizes
+      - name: Build both WebAssembly files and the shader compiler, and check their sizes against main's build
         run: bun run build:check-size
       - name: The shader compiler gives the native shader build's results
         run: bun run test:shader-compiler

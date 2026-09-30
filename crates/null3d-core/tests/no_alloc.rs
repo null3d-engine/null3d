@@ -10,7 +10,7 @@ use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
 use common::{Rng, Workers, mul4, perspective, translation};
-use null3d_core::arena::ArenaPool;
+use null3d_core::arena::{ArenaPool, FrameArena};
 use null3d_core::cells::{CellPosition, MAX_CELLS, ORIGIN_CELL};
 use null3d_core::clusters::{ClusterScratch, RowClusters};
 use null3d_core::culling::{
@@ -19,7 +19,7 @@ use null3d_core::culling::{
 };
 use null3d_core::handle::Handle;
 use null3d_core::instances::BatchTable;
-use null3d_core::jobs::{BackgroundTask, JobConfig, WorkerId};
+use null3d_core::jobs::{BackgroundTask, JobConfig, JobSystem, WorkerId};
 use null3d_core::scene::{Command, CommandRing, SceneStorage, flags};
 use null3d_core::snapshot::FrameHandoff;
 use null3d_core::testing::CountingAllocator;
@@ -28,6 +28,14 @@ use null3d_core::testing::CountingAllocator;
 static ALLOCATOR: CountingAllocator = CountingAllocator;
 
 static BACKGROUND_SUM: AtomicU64 = AtomicU64::new(0);
+
+/// The items of the frame's scratch loop, and its chunk size. Each chunk takes one `u32` of
+/// scratch per item.
+const SCRATCH_ITEMS: u32 = 100_000;
+const SCRATCH_CHUNK: u32 = 1000;
+/// The most scratch one chunk takes, and the most the frame takes.
+const CHUNK_SCRATCH: usize = FrameArena::bytes_for::<u32>(SCRATCH_CHUNK as usize);
+const FRAME_SCRATCH: usize = SCRATCH_ITEMS.div_ceil(SCRATCH_CHUNK) as usize * CHUNK_SCRATCH;
 
 fn background(arg: u64, _: WorkerId) {
     BACKGROUND_SUM.fetch_add(arg, Ordering::Relaxed);
@@ -126,13 +134,13 @@ fn build() -> World {
             scratch.try_reserve(20_000).unwrap();
             scratch
         },
-        arenas: ArenaPool::new(5, 256 * 1024),
+        arenas: ArenaPool::new(5, FRAME_SCRATCH, CHUNK_SCRATCH),
         handoff: FrameHandoff::new(4096),
     }
 }
 
 /// One frame of sketch work, as the sketch worker runs it.
-fn frame(world: &mut World, jobs: &null3d_core::jobs::JobSystem, frame: u32, rng: &mut Rng) {
+fn frame(world: &mut World, jobs: &JobSystem, frame: u32, rng: &mut Rng) {
     // Sketch code: roots rotate, a few static objects move, rows of both batches change.
     for (k, &root) in world.roots.iter().enumerate() {
         let slot = world.scene.resolve(root).unwrap() as usize;
@@ -280,12 +288,12 @@ fn frame(world: &mut World, jobs: &null3d_core::jobs::JobSystem, frame: u32, rng
         &mut world.bucketed,
     );
 
-    // A parallel loop that takes scratch memory from each thread's arena, and a background task.
+    // A parallel loop that takes scratch memory from the threads' arenas, and a background task.
     world.arenas.reset_all();
     let total = AtomicU64::new(0);
     let arenas = &world.arenas;
-    jobs.parallel_for(100_000, 1000, &|range, worker| {
-        let scratch = arenas.arena(worker).alloc::<u32>(range.len()).unwrap();
+    jobs.parallel_for(SCRATCH_ITEMS, SCRATCH_CHUNK, &|range, worker| {
+        let scratch = arenas.alloc::<u32>(worker, range.len()).unwrap();
         for (s, i) in scratch.iter_mut().zip(range) {
             *s = i;
         }
@@ -294,7 +302,8 @@ fn frame(world: &mut World, jobs: &null3d_core::jobs::JobSystem, frame: u32, rng
             Ordering::Relaxed,
         );
     });
-    assert_eq!(total.load(Ordering::Relaxed), 99_999 * 100_000 / 2);
+    let items = u64::from(SCRATCH_ITEMS);
+    assert_eq!(total.load(Ordering::Relaxed), (items - 1) * items / 2);
     jobs.spawn_background(BackgroundTask {
         run: background,
         arg: 1,
@@ -314,6 +323,24 @@ fn frame(world: &mut World, jobs: &null3d_core::jobs::JobSystem, frame: u32, rng
     drop(read);
 }
 
+/// The allocator calls of a run of frames on `jobs`, counted after warm-up frames that build the
+/// hierarchy order and fill both buffers. It checks that the frames culled something too.
+fn frame_allocations(jobs: &JobSystem) -> u64 {
+    let mut world = build();
+    let mut rng = Rng::new(4);
+    for f in 1..=3 {
+        frame(&mut world, jobs, f, &mut rng);
+    }
+    CountingAllocator::arm();
+    for f in 4..=200 {
+        frame(&mut world, jobs, f, &mut rng);
+    }
+    let allocations = CountingAllocator::disarm();
+    assert!(!world.scene_culled.is_empty() && !world.batch_culled.is_empty());
+    assert!(!world.bucketed.is_empty());
+    allocations
+}
+
 #[test]
 fn frames_allocate_nothing() {
     let _exclusive = CountingAllocator::exclusive();
@@ -325,20 +352,8 @@ fn frames_allocate_nothing() {
         },
         CountingAllocator::track_this_thread,
     );
-    let mut world = build();
-    let mut rng = Rng::new(4);
-    // Warm-up frames build the hierarchy order and fill both buffers.
-    for f in 1..=3 {
-        frame(&mut world, pool.jobs(), f, &mut rng);
-    }
-    CountingAllocator::arm();
-    for f in 4..=200 {
-        frame(&mut world, pool.jobs(), f, &mut rng);
-    }
-    let allocations = CountingAllocator::disarm();
+    let allocations = frame_allocations(pool.jobs());
     assert_eq!(allocations, 0, "frames made {allocations} allocator calls");
-    assert!(!world.scene_culled.is_empty() && !world.batch_culled.is_empty());
-    assert!(!world.bucketed.is_empty());
 
     // The counter sees allocations on job workers: a loop whose worker chunks each allocate
     // once must be counted. The caller's chunks wait for a worker chunk, so one runs.
@@ -359,4 +374,15 @@ fn frames_allocate_nothing() {
         CountingAllocator::disarm() > 0,
         "the counter missed worker allocations"
     );
+}
+
+#[test]
+fn frames_allocate_nothing_when_one_thread_runs_every_chunk() {
+    let _exclusive = CountingAllocator::exclusive();
+    CountingAllocator::track_this_thread();
+    // Job workers that never start, like workers that wake late: every loop still hands its
+    // chunks out through the job system, and the calling thread claims them all. The background
+    // queue keeps each frame's task, as no worker runs them.
+    let allocations = frame_allocations(&JobSystem::new(4));
+    assert_eq!(allocations, 0, "frames made {allocations} allocator calls");
 }

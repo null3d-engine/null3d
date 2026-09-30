@@ -4,24 +4,28 @@ import {
 	downloadSizes,
 	ENGINE_SOURCE,
 	findEngineParts,
-	growthProblems,
 	measure,
+	REPORTED_FILES,
 } from './size-report';
 
-describe('size checks', () => {
+describe('measure', () => {
 	it('measures raw and Brotli sizes', () => {
 		const size = measure(Buffer.alloc(10_000, 7));
 		expect(size.raw).toBe(10_000);
 		expect(size.brotli).toBeLessThan(100);
 	});
+});
 
-	it('fails growth above 2% after Brotli, and ignores files with no baseline', () => {
-		const baseline = { 'a.wasm': { raw: 1000, brotli: 1000 } };
-		expect(growthProblems({ 'a.wasm': { raw: 1000, brotli: 1020 } }, baseline)).toEqual([]);
-		expect(growthProblems({ 'a.wasm': { raw: 1000, brotli: 1021 } }, baseline)[0]).toContain(
-			'grew 2.1%',
-		);
-		expect(growthProblems({ 'b.wasm': { raw: 1, brotli: 5000 } }, baseline)).toEqual([]);
+describe('REPORTED_FILES', () => {
+	it("names each core build's module and glue, then each part of the engine's JavaScript", () => {
+		expect(REPORTED_FILES.slice(0, 4)).toEqual([
+			'threaded/null3d_bg.wasm',
+			'threaded/null3d.js',
+			'single/null3d_bg.wasm',
+			'single/null3d.js',
+		]);
+		expect(REPORTED_FILES).toContain('js/page.js');
+		expect(REPORTED_FILES).toContain('js/render-worker.js');
 	});
 });
 
