@@ -4,7 +4,7 @@
 // with the pipelines it creates, which begin to build, without blocking, when the frame is first
 // prepared.
 
-import { type CompletionSignal, FenceCompletion, QueueCompletion } from '../gpu/completion';
+import { FenceCompletion, QueueCompletion } from '../gpu/completion';
 import { readbackWebGL2, readbackWebGPU } from '../gpu/readback';
 import { WebGL2Backend } from '../gpu/webgl2/backend';
 import { contextFinished, releaseContext, simulateContextLoss } from '../gpu/webgl2/context';
@@ -106,9 +106,8 @@ export class WebGPUSceneRenderer implements Renderer {
 	private readonly context: GPUCanvasContext;
 	private readonly format: GPUTextureFormat;
 	private readonly frames: FrameReplay;
-	private readonly completions: QueueCompletion | undefined;
+	readonly completions: QueueCompletion | undefined;
 	private simulated = false;
-	readonly completion: CompletionSignal = 'queue';
 	readonly lost: Promise<string>;
 
 	constructor(
@@ -204,11 +203,10 @@ export class WebGPUSceneRenderer implements Renderer {
 
 export class WebGL2SceneRenderer implements Renderer {
 	readonly tier: Tier = 'webgl2';
-	readonly completion: CompletionSignal = 'fence';
 	readonly lost: Promise<string>;
+	readonly completions: FenceCompletion | undefined;
 	private readonly backend: WebGL2Backend;
 	private readonly frames: FrameReplay;
-	private readonly completions: FenceCompletion | undefined;
 	private readonly release = new AbortController();
 
 	/**
@@ -256,7 +254,6 @@ export class WebGL2SceneRenderer implements Renderer {
 	drawFrame(input: FrameInput, record: FrameRecorder): void {
 		const start = performance.now();
 		const { backend } = this;
-		this.completions?.poll();
 		this.frames.replay(input.frame);
 		this.completions?.afterSubmit(input.frame);
 		record.addPhase(Phase.Replay, performance.now() - start);

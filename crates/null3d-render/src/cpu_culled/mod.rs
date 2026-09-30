@@ -55,15 +55,15 @@ use null3d_core::cells::CELL_SHIFT;
 use null3d_core::culling::BucketedCull;
 use null3d_core::snapshot::SCENE_TARGET;
 use null3d_gpu::caps::{BUDGET, Limit};
-use null3d_gpu::drawlist::{DrawList, Op, buffer_usage as usage, permutation, sizes};
+use null3d_gpu::drawlist::{DrawList, Op, format, permutation, sizes, texture_usage, view};
 
 use crate::frame::{
-    FrameBuilder, FrameInput, MeshBuffers, ParityLists, RecordError, SceneSettings, UploadArena,
-    drawn_rows, floats_as_bytes,
+    FrameBuilder, FrameInput, MaterialStorage, MeshBuffers, ParityLists, RecordError,
+    SceneSettings, UploadArena, drawn_rows,
 };
 use crate::frame_graph::{FrameGraph, Role};
 use crate::graph::RenderGraph;
-use crate::materials::{MAP_WORDS, MATERIAL_FLOATS};
+use crate::materials::{MATERIAL_FLOATS, MATERIAL_TEXELS};
 use crate::meshes::{MeshStorage, Packing};
 use crate::pipelines::{PassTargets, PipelineCache};
 use crate::textures::{TextureIds, TextureStore};
@@ -78,10 +78,9 @@ mod ids {
     use super::data::RING;
     use crate::view::{MAX_VIEWS, ViewId};
 
-    pub const MATERIALS: u32 = 1;
     /// Each view's buffers: its ring of frame uniforms, then its draw records, from
     /// `VIEW_BUFFERS + 2 * view`.
-    const VIEW_BUFFERS: u32 = 2;
+    const VIEW_BUFFERS: u32 = 1;
 
     pub const fn frame(view: ViewId) -> u32 {
         VIEW_BUFFERS + 2 * view.index() as u32
@@ -90,10 +89,8 @@ mod ids {
         frame(view) + 1
     }
 
-    /// The maps table, which names the layer of each material's map.
-    pub const MAPS: u32 = VIEW_BUFFERS + 2 * MAX_VIEWS as u32;
     /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
-    pub const PAGES: u32 = MAPS + 1;
+    pub const PAGES: u32 = VIEW_BUFFERS + 2 * MAX_VIEWS as u32;
 
     pub const RESIDENT: u32 = 1;
     /// The ring of streamed textures, one per ring slot.
@@ -108,8 +105,10 @@ mod ids {
         VIEW_TEXTURES + RING * view.index() as u32
     }
 
+    /// The material table: one row of texels per material.
+    pub const MATERIALS: u32 = VIEW_TEXTURES + RING * MAX_VIEWS as u32;
     /// The render graph's textures, from this id on.
-    pub const TARGETS: u32 = VIEW_TEXTURES + RING * MAX_VIEWS as u32;
+    pub const TARGETS: u32 = MATERIALS + 1;
     /// The texture arrays of materials' maps, after every id the render graph can take.
     pub const TEXTURE_ARRAYS: u32 = TARGETS + 256;
     /// The samplers of materials' maps, the only samplers the builder makes.
@@ -199,7 +198,7 @@ impl CpuCulledRenderer {
     pub fn new(config: CpuCulledConfig) -> Self {
         assert!(
             config.max_materials <= sizes::MAX_MATERIALS,
-            "the material block holds {} materials",
+            "the material texture holds {} materials",
             sizes::MAX_MATERIALS
         );
         let textures = TextureStore::new(
@@ -312,7 +311,7 @@ impl CpuCulledRenderer {
     }
 
     /// The most that one frame can copy into its arena for the scene as it stands: mesh data not
-    /// uploaded yet, the material and maps tables, each view's frame uniform, draw records and
+    /// uploaded yet, the material table, each view's frame uniform, draw records and
     /// multi-draw arrays, and the cluster orders not uploaded yet.
     fn upload_bound(&self) -> usize {
         self.upload_bound_without_clusters() + self.clusters.pending_bytes(&self.layout)
@@ -321,27 +320,30 @@ impl CpuCulledRenderer {
     /// [`Self::upload_bound`] without the cluster orders.
     fn upload_bound_without_clusters(&self) -> usize {
         let meshes = self.meshes.pending_bytes(self.settings.meshes().pages());
-        let materials =
-            self.settings.materials().capacity() as usize * (MATERIAL_FLOATS + MAP_WORDS) * 4;
+        let materials = self.settings.materials().capacity() as usize * MATERIAL_FLOATS * 4;
         let per_view = (sizes::FRAME_UNIFORM_BYTES + OFFSETS_BYTES) as usize
             + self.layout.draws_slot_bytes as usize
             + self.layout.draws.len() * 12;
         meshes + materials + self.settings.views().len() * per_view
     }
 
-    /// Records the creation of the material and maps tables, uniform blocks of the most materials
-    /// the shaders read.
+    /// Records the creation of the material table, a data texture with one row of texels for each
+    /// material it holds.
     fn create_fixed(&mut self, list: &mut DrawList) -> Result<(), RecordError> {
-        for (id, words) in [(ids::MATERIALS, MATERIAL_FLOATS), (ids::MAPS, MAP_WORDS)] {
-            list.push(
-                Op::CreateBuffer,
-                &[
-                    id,
-                    sizes::MAX_MATERIALS * words as u32 * 4,
-                    usage::UNIFORM | usage::COPY_DST,
-                ],
-            )?;
-        }
+        list.push(
+            Op::CreateTexture,
+            &[
+                ids::MATERIALS,
+                MATERIAL_TEXELS,
+                self.config.max_materials.max(1),
+                1,
+                format::RGBA32_FLOAT,
+                texture_usage::TEXTURE_BINDING | texture_usage::COPY_DST,
+                1,
+                1,
+                view::D2,
+            ],
+        )?;
         self.created = true;
         Ok(())
     }
@@ -498,14 +500,10 @@ impl CpuCulledRenderer {
         arena.reset(self.upload_bound());
         self.meshes
             .upload(list, arena, self.settings.meshes().pages())?;
-        if self.settings.materials_mut().take_changed() {
-            let parameters = self.settings.materials().parameters();
-            let (at, bytes) = arena.push(floats_as_bytes(parameters))?;
-            list.push(Op::WriteBuffer, &[ids::MATERIALS, 0, at, bytes])?;
-        }
         // Draws bind the maps' groups by id as they run, so a group made again needs nothing more.
+        let table = MaterialStorage::Texture(ids::MATERIALS);
         self.settings
-            .record_textures(list, arena, ids::MAPS, input.frame)?;
+            .record_materials(list, arena, table, input.frame)?;
         let new_texture = if rebuilt || first_new < views {
             self.size_resources(list, first_new, rebuilt)?
         } else {

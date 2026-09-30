@@ -224,6 +224,49 @@ describe('the direct loop', () => {
 	});
 });
 
+describe('the frames in flight', () => {
+	let loop: RenderLoop | undefined;
+	afterEach(() => loop?.stop());
+
+	/** A renderer whose GPU finishes frames only when the test says so. */
+	function slowGpu() {
+		const parts = setup();
+		const gpu = { unfinished: 0 };
+		Object.assign(parts.renderer, {
+			drawFrame: (input: FrameInput) => {
+				parts.drawn.push(input.frame);
+				gpu.unfinished++;
+			},
+			completions: { unfinished: () => gpu.unfinished },
+		});
+		return { ...parts, gpu };
+	}
+
+	it('takes no new frame while two frames are unfinished on the GPU', () => {
+		const { control, metrics, slots, drawn, renderer, gpu } = slowGpu();
+		loop = runRenderLoop(renderer, control, metrics, undefined);
+		// A sketch fast enough to publish a new frame before every callback.
+		const publish = (frame: number) => Atomics.store(slots, Slot.FramesPublished, frame);
+		refresh(DISPLAY_HZ, 4, (call) => publish(call + 1));
+		expect(drawn).toEqual([1, 2]);
+		// The sketch waits for the frame it published to be taken.
+		expect(Atomics.load(slots, Slot.FramesTaken)).toBe(2);
+		gpu.unfinished--;
+		refresh(DISPLAY_HZ, 1, () => publish(5));
+		expect(drawn).toEqual([1, 2, 5]);
+	});
+
+	it('steps the sketch of the direct loop only when the GPU has room for its frame', () => {
+		const { control, metrics, drawn, renderer, gpu } = slowGpu();
+		loop = runDirectLoop(countingSketch(), renderer, control, metrics, undefined);
+		refresh(DISPLAY_HZ, 4);
+		expect(drawn).toEqual([1, 2]);
+		gpu.unfinished = 0;
+		refresh(DISPLAY_HZ, 1);
+		expect(drawn).toEqual([1, 2, 3]);
+	});
+});
+
 describe('the wake-up before the next frame', () => {
 	let loop: RenderLoop | undefined;
 	afterEach(() => {

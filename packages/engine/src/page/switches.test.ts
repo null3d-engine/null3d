@@ -12,6 +12,7 @@ describe('parseSwitches', () => {
 			depth: undefined,
 			parallelCompile: true,
 			fps: undefined,
+			queue: undefined,
 			jobs: undefined,
 			memoryMiB: undefined,
 			hold: undefined,
@@ -51,6 +52,10 @@ describe('parseSwitches', () => {
 	it('reads a frame rate above 0, with decimals', () => {
 		expect(parseSwitches('?fps=59.94').fps).toBe(59.94);
 		expect(parseSwitches('?fps=0').fps).toBeUndefined();
+		expect(parseSwitches('?queue=3').queue).toBe(3);
+		expect(parseSwitches('?queue=off').queue).toBe(Number.POSITIVE_INFINITY);
+		expect(parseSwitches('?queue=0').queue).toBeUndefined();
+		expect(parseSwitches('?queue=1.5').queue).toBeUndefined();
 	});
 
 	it('turns background compiles off with ?compile=wait only', () => {

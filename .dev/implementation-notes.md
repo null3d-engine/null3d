@@ -112,6 +112,17 @@ The shader compiler is the shader crate built as a WebAssembly module. Build too
 - Safari runs a module worker's entry file again when another file imports it (WebKit bug 324459). Chrome and Firefox reuse the running module. A production build puts the code that a worker shares with its later files into the worker's own file. Those files then import it from there. In low-latency mode, the sketch worker loads the renderer's file, which imports the sketch worker's file.
 - A second run of a worker's file replaced its message handler with one that had no state. The page's messages to the sketch then went nowhere. Each worker therefore starts through `startWorker` in `workers/protocol.ts`, which starts it on the first run only. Apart from that call, a worker's file must have no effect when it runs.
 
+## Frames in flight
+
+- When the GPU falls behind, every browser but Safari on WebGPU lets frames queue on it. On the GPU-bound page, Chrome and Brave slowed the drawing worker's frame callbacks to the GPU's pace, yet kept 5 to 8 frames queued. Safari's WebGL2 path kept about 4. Firefox kept presenting at the display's rate and queued up to 89 frames, seconds of input lag. [D-11](decisions/D-11-frames-in-flight.md) has the figures.
+- So the completion tracker (`gpu/completion.ts`) tracks every frame, and the thread that draws takes no new frame while two are unfinished (`Presenter.due` in `render/loop.ts`). In the render worker, the sketch worker then waits on the frame-taken counter, so the hold needs no message.
+- Each tracked frame costs one browser object, the queue's promise or the fence, and two clock readings. `bun run bench:allocation` budgets them.
+- The tracker learns of a WebGL2 fence only when it checks, at a frame callback. Frames that it finds finished together share the time since the last completion. Firefox can settle several WebGPU promises in one task, at one clock reading, which gives a frame an interval of 0. Such an interval still counts toward the completed rate.
+- A frame whose completion never arrives stops counting as in flight after a second, so a lost signal slows the drawing without stopping it.
+- Firefox settles WebGPU's `onSubmittedWorkDone` about a frame after the GPU finishes, so the limit holds back frames that are already done. That costs Firefox's WebGPU path frame rate when the GPU is busy. Its WebGL2 path loses none.
+- Without the limit, Chrome's slower frame callbacks also slowed the refresh meter of the thread that draws. It read 36 Hz on a 144 Hz display. With the limit, the callbacks keep the display's rate, and so does the meter.
+- Apple's GPUs work on two frames at once. A frame's GPU time from timestamps can then exceed the time between completed frames.
+
 ## Browser faults
 
 - Safari 26 drops a whole submit if its commands hold two or more copies from one buffer that was mapped when they were recorded. WebGPU allows that, and Chrome and Firefox accept it. The staging ring therefore records a frame's copies after it unmaps the buffer, just before the frame's next command.
