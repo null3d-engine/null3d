@@ -94,7 +94,7 @@ These numbers are starting points. The engine docs page `guides/performance` hol
 
 Check `debug.frameStats().memory` for WebAssembly memory and GPU memory estimates.
 
-Every device draws 2,097,152 objects and instance rows in one scene. A device with larger GPU buffers draws more, up to 8,388,480: `engine.capabilities.maxInstances` gives the number. Past it, the call fails with E1501. With worker threads, engine memory stops at 1 GiB, about 5 million rows; past that, the call fails with E1109. In development builds the engine warns once when a scene passes 2,097,152, so test such scenes on the devices your users have.
+Every device draws 2,097,152 objects and instance rows in one scene. A device with larger GPU buffers draws more, up to 8,388,480: `engine.capabilities.maxInstances` gives the number. Past it, the call fails with E1501. With worker threads, engine memory stops at 1 GiB by default, about 5 million rows; past that, the call fails with E1109. The `memory` option of `createEngine` raises the maximum up to 4096 MiB (`api/engine`). A larger maximum leaves less address space for other engines and WebAssembly modules on the page. Raise it only for a scene that needs it. In development builds the engine warns once when a scene passes 2,097,152, so test such scenes on the devices your users have.
 
 ## 7. The quality governor and your own systems
 

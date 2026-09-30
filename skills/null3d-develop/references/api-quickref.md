@@ -38,6 +38,7 @@ const engine = await createEngine({
   gpu: 'auto',           // 'auto' | 'webgpu' | 'webgl2' (testing only)
   powerPreference: 'high-performance',   // the default; 'low-power' saves battery on devices with two GPUs
   latency: 'pipelined',  // or 'low'; 'pipelined' is the default
+  memory: { maximumMiB: 1024 },          // the default; up to 4096 for scenes that need more (E1409 outside 256 to 4096)
   transparent: false,    // true for a see-through canvas
   largeWorld: false,     // (0.2) planet-scale scenes: cell-relative positions, batch origins
   sketchThread: 'worker',  // later in 0.1: 'main' for DOM-heavy apps and debugging
@@ -314,7 +315,8 @@ Hit objects are the same wrappers you created; `hit.instance` is the row index f
 ## 14. Input (`api/input`) and controls (`api/controls`)
 
 ```ts
-input.pointer;          // { x, y (CSS pixels), ndcX, ndcY, buttons, dx, dy (this frame), wheel (this frame), isTouch }
+input.pointer;          // { x, y (CSS pixels), ndcX, ndcY, buttons, dx, dy, dragDx, dragDy, wheel, pinch, isTouch }
+                        // per frame: dragDx/dragDy only while a button is held; pinch is the trackpad-pinch part of wheel
 input.isDown('KeyW');   // KeyboardEvent.code names; 'Mouse0' to 'Mouse4' (Mouse0 is also a tap); 'GamepadA'
 input.wasPressed('Space'); input.wasReleased('Space');   // true for one frame; a tap between frames gives both
 input.value('GamepadRT');                // 0 to 1: triggers and stick directions such as 'GamepadLeftStickLeft'

@@ -5,6 +5,8 @@
 // protocol's count, on the null3d paths and both three.js renderers, and reports and charts each
 // path against three.js's faster renderer and against three.js on the same API at every count.
 // With --jobs it runs the null3d pages at each job worker count instead, and reports each count.
+// With --compare it runs the null3d pages of two built checkouts in turns and judges the second
+// against the first, as the benchmark job in CI does.
 // From the repository root:
 //   bun run bench:run                                (S1: 5 runs of 5 s warm-up and 30 s measured)
 //   bun run bench:run -- --scenes s1,s1-static,s2 --runs 3 --seconds 10
@@ -12,26 +14,53 @@
 //   bun run bench:run -- --jobs 1,2,4,8,16
 //   bun run bench:run -- --sweep --seconds 5
 //   bun run bench:run -- --browser brave
+//   bun run bench:run -- --compare ../baseline,. --runs 3 --seconds 10
 // Options:
-//   --scenes <list>   s1, s1-static, s2; the default is s1, and every scene with --sweep
+//   --scenes <list>   s1, s1-static, s2; the default is s1, and every scene with --sweep or
+//                     --compare
 //   --pages <list>    page kinds; the default is null3d-webgpu, threejs-webgpu, threejs-webgl and
-//                     scene-code. With --jobs it is null3d-webgpu and null3d-webgl2, and with
-//                     --sweep every kind but null3d-compat. The kinds that end in -low run null3d
-//                     in low-latency mode
-//   --runs <n>        fresh runs of each page; the default is 5
+//                     scene-code. With --jobs or --compare it is null3d-webgpu and null3d-webgl2,
+//                     and with --sweep every kind but null3d-compat. The kinds that end in -low run
+//                     null3d in low-latency mode
+//   --runs <n>        fresh runs of each page, of each build with --compare; the default is 5
 //   --seconds <n>     warm-up and measured time of each run; the default is the protocol's 5 and 30
 //   --jobs <list>     job worker counts, such as 1,2,4,8: runs each null3d page at each count
 //   --sweep           each scene at the object counts in SWEEP_COUNTS, one run each, instead of
 //                     the runs above
-//   --browser <name>  chrome (the default) or brave
-// Chrome and Brave start with WebGPU's developer features on, so GPU timestamps are not rounded.
-import { mkdirSync, writeFileSync } from 'node:fs';
-import { join, relative } from 'node:path';
+//   --compare <a>,<b> two checkouts, each built with bun run build: the baseline a and the new
+//                     build b. Each serves its pages on its own port, NULL3D_PORT's and the next.
+//                     The command fails when b is slower than the rules in bench/lib/compare.ts
+//                     allow and no Bench-Expected trailer in the commits from a to b names it
+//   --browser <name>  chrome (the default), brave, or chromium: Playwright's Chromium without a
+//                     window, drawing with SwiftShader as CI's Linux machines do
+// Every browser starts with WebGPU's developer features on, so GPU timestamps are not rounded.
+import { execFileSync } from 'node:child_process';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { cpus, platform } from 'node:os';
+import { join, relative, resolve } from 'node:path';
 import { type Browser, chromium } from '@playwright/test';
 import { jobWorkersProblem } from '../tests/lib/engine-checks.ts';
 import { pageResult } from '../tests/lib/page-result.ts';
 import { runName } from '../tests/lib/runs.ts';
-import { REPO_ROOT, startServer } from '../tests/lib/server.ts';
+import {
+	type DevServer,
+	HTTP_PORT,
+	REPO_ROOT,
+	SWIFTSHADER_ARGS,
+	startServer,
+	startServerAt,
+} from '../tests/lib/server.ts';
+import {
+	BUILDS,
+	type Build,
+	type BuildRun,
+	compareBuilds,
+	compareReport,
+	judge,
+	readExpectedChanges,
+	roundOrder,
+	selectRuns,
+} from './lib/compare';
 import {
 	BENCH_PAGE_KINDS,
 	type BenchPageKind,
@@ -74,6 +103,12 @@ const DEFAULT_PAGES: BenchPageKind[] = [
 ];
 /** Time for a page to start, beyond its warm-up and measured seconds. */
 const START_MARGIN_MS = 60_000;
+/** The browsers the command can drive. */
+const BROWSERS = ['chrome', 'brave', 'chromium'] as const;
+/** WebGPU's developer features, without which the browser rounds GPU timestamps. */
+const WEBGPU_DEVELOPER_FEATURES = '--enable-webgpu-developer-features';
+/** A comparison of two builds needs this many runs of each page per build, or more. */
+const MIN_COMPARE_RUNS = 3;
 
 export interface BenchOptions {
 	/** The scenes and page kinds to run; null takes the default of the run's kind. */
@@ -84,7 +119,21 @@ export interface BenchOptions {
 	/** Job worker counts, at each of which the null3d pages run; null for the engine's own count. */
 	jobs: number[] | null;
 	sweep: boolean;
-	browser: 'chrome' | 'brave';
+	/** The checkouts of the baseline and the new build to compare, or null for another kind of run. */
+	compare: [string, string] | null;
+	browser: (typeof BROWSERS)[number];
+}
+
+/** A run's warm-up and measured seconds: `--seconds` for both, or the protocol's. */
+const runSeconds = (seconds: number | null) => ({
+	warmup: seconds ?? WARMUP_SECONDS,
+	measure: seconds ?? MEASURE_SECONDS,
+});
+
+/** How long a page may take to publish its result. */
+function pageTimeoutMs(seconds: number | null): number {
+	const { warmup, measure } = runSeconds(seconds);
+	return (warmup + measure) * 1000 + START_MARGIN_MS;
 }
 
 function list<T extends string>(
@@ -107,6 +156,7 @@ export function parseBenchArgs(args: readonly string[]): BenchOptions {
 		seconds: null,
 		jobs: null,
 		sweep: false,
+		compare: null,
 		browser: 'chrome',
 	};
 	for (let i = 0; i < args.length; i++) {
@@ -118,21 +168,45 @@ export function parseBenchArgs(args: readonly string[]): BenchOptions {
 		else if (arg === '--seconds') options.seconds = Number(value());
 		else if (arg === '--jobs') options.jobs = readJobCounts(value());
 		else if (arg === '--sweep') options.sweep = true;
-		else if (arg === '--browser')
-			options.browser = list(value(), ['chrome', 'brave'], '--browser')[0] as 'chrome';
+		else if (arg === '--compare') {
+			const dirs = (value() ?? '').split(',');
+			const [baseline, next] = dirs;
+			if (dirs.length !== 2 || !baseline || !next)
+				throw new Error('--compare: name two checkouts, the baseline first, such as ../main,.');
+			options.compare = [baseline, next];
+		} else if (arg === '--browser')
+			options.browser = list(value(), BROWSERS, '--browser')[0] as BenchOptions['browser'];
 		else throw new Error(`unknown option ${arg}`);
 	}
 	if (!(Number.isInteger(options.runs) && options.runs > 0))
 		throw new Error('--runs: use a whole number above 0');
 	if (options.seconds !== null && !(options.seconds > 0))
 		throw new Error('--seconds: use a number above 0');
-	if (options.jobs && options.sweep) throw new Error('use --jobs or --sweep, not both');
-	const other = options.jobs && options.pages?.filter((kind) => !isNull3dPage(kind));
-	if (other && other.length > 0)
+	if ([options.jobs, options.sweep || null, options.compare].filter(Boolean).length > 1)
+		throw new Error('use one of --jobs, --sweep and --compare');
+	if (options.compare && options.runs < MIN_COMPARE_RUNS)
 		throw new Error(
-			`--jobs: job workers belong to null3d pages only; leave out ${other.join(', ')}`,
+			`--compare: use --runs ${MIN_COMPARE_RUNS} or more, so that a median still rests on two runs when one is dropped`,
 		);
+	const mode = options.jobs ? '--jobs' : options.compare ? '--compare' : null;
+	const other = mode && options.pages?.filter((kind) => !isNull3dPage(kind));
+	if (other && other.length > 0)
+		throw new Error(`${mode}: runs null3d pages only; leave out ${other.join(', ')}`);
 	return options;
+}
+
+/** Starts the browser: Chrome or Brave in a window, or Chromium without one on SwiftShader. */
+function launchBrowser(name: BenchOptions['browser']): Promise<Browser> {
+	if (name === 'chromium')
+		return chromium.launch({
+			headless: true,
+			args: [...SWIFTSHADER_ARGS, WEBGPU_DEVELOPER_FEATURES],
+		});
+	return chromium.launch({
+		headless: false,
+		...(name === 'brave' ? { executablePath: BRAVE } : { channel: 'chrome' }),
+		args: [WEBGPU_DEVELOPER_FEATURES],
+	});
 }
 
 /** Opens one benchmark page in a fresh tab and waits for its result. */
@@ -155,8 +229,7 @@ async function runProtocol(
 	dir: string,
 ): Promise<string> {
 	const seconds = options.seconds;
-	const timeoutMs =
-		((seconds ?? MEASURE_SECONDS) + (seconds ?? WARMUP_SECONDS)) * 1000 + START_MARGIN_MS;
+	const timeoutMs = pageTimeoutMs(seconds);
 	const rows: SummaryRow[] = [];
 	const failures: string[] = [];
 	const pages = options.pages ?? (options.jobs ? JOBS_PAGES : DEFAULT_PAGES);
@@ -287,26 +360,185 @@ async function runSweep(
 	return report.join('\n');
 }
 
+/** A file that only a built checkout holds: the threaded core. */
+const BUILT_CORE = 'packages/engine/dist/wasm/threaded/null3d_bg.wasm';
+
+function git(dir: string, ...args: string[]): string {
+	return execFileSync('git', ['-C', dir, ...args], {
+		encoding: 'utf8',
+		stdio: ['ignore', 'pipe', 'ignore'],
+	}).trim();
+}
+
+/**
+ * Each checkout's commit as its short hash and subject, and the messages of the commits that the
+ * new build adds to the baseline, where expected-change trailers are. A checkout outside git goes
+ * by its folder, with no messages.
+ */
+function commitsOf(roots: Record<Build, string>): {
+	labels: Record<Build, string>;
+	messages: string[];
+} {
+	const shas: Partial<Record<Build, string>> = {};
+	const labels = { ...roots };
+	for (const build of BUILDS)
+		try {
+			const sha = git(roots[build], 'rev-parse', 'HEAD');
+			shas[build] = sha;
+			labels[build] = `${sha.slice(0, 7)} "${git(roots[build], 'log', '-1', '--format=%s', sha)}"`;
+		} catch {}
+	if (!shas.baseline || !shas.new) return { labels, messages: [] };
+	try {
+		const log = git(roots.new, 'log', '--format=%B%x00', `${shas.baseline}..${shas.new}`);
+		return { labels, messages: log.split('\0').filter((message) => message.trim() !== '') };
+	} catch {
+		return { labels, messages: [] };
+	}
+}
+
+/** The browser and the machine, in a few words for the report. */
+function machineText(browser: Browser, name: BenchOptions['browser']): string {
+	const cores = cpus();
+	const engine = { chrome: 'Chrome', brave: 'Brave', chromium: 'Chromium on SwiftShader' }[name];
+	const system = { darwin: 'macOS', linux: 'Linux', win32: 'Windows' }[platform() as string];
+	return `${engine} ${browser.version()} on ${system ?? platform()}, ${cores.length} cores of ${cores[0]?.model.trim() ?? 'an unknown processor'}`;
+}
+
+/**
+ * Runs the null3d pages of two built checkouts in turns, each served by its own checkout's dev
+ * server, and judges the new build against the baseline. Every run's result, the summary of each
+ * build's runs and the comparison go to `dir`.
+ */
+async function runComparison(
+	browser: Browser,
+	options: BenchOptions,
+	[baselineDir, newDir]: [string, string],
+	dir: string,
+): Promise<{ report: string; pass: boolean }> {
+	const roots: Record<Build, string> = { baseline: resolve(baselineDir), new: resolve(newDir) };
+	for (const root of Object.values(roots))
+		if (!existsSync(join(root, BUILT_CORE)))
+			throw new Error(`${root} holds no built engine: run bun run build there first`);
+	const scenes = options.scenes ?? PARITY_SCENES;
+	const pages = options.pages ?? JOBS_PAGES;
+	const switches = options.seconds === null ? '' : `seconds=${options.seconds}`;
+	const timeoutMs = pageTimeoutMs(options.seconds);
+	const servers: DevServer[] = [];
+	const runs: BuildRun[] = [];
+	try {
+		// The new build takes the port after the dev server's, where the HTTPS server would be.
+		const baseline = await startServerAt(roots.baseline, HTTP_PORT);
+		servers.push(baseline);
+		const next = await startServerAt(roots.new, HTTP_PORT + 1);
+		servers.push(next);
+		const urls: Record<Build, string> = { baseline: baseline.url, new: next.url };
+		for (let round = 1; round <= options.runs; round++)
+			for (const scene of scenes)
+				for (const kind of pages)
+					for (const build of roundOrder(round)) {
+						const result = await runPage(
+							browser,
+							`${urls[build]}${pagePath(scene, kind, switches)}`,
+							timeoutMs,
+						);
+						const name = `${build}-${scene}-${kind}-${round}`;
+						writeFileSync(join(dir, `${name}.json`), JSON.stringify(result, null, '\t'));
+						runs.push({ build, scene, kind, round, result });
+						console.log(
+							`${name}: ${result.ok ? `${ms(result.cpuMs.median)} ms` : `failed: ${result.error}`}`,
+						);
+					}
+	} finally {
+		for (const server of servers) server.stop();
+	}
+	const { labels, messages } = commitsOf(roots);
+	const trailers = readExpectedChanges(messages, {
+		scenes: PARITY_SCENES,
+		kinds: BENCH_PAGE_KINDS,
+	});
+	const selection = selectRuns(runs);
+	const comparison = compareBuilds(selection, trailers.changes);
+	const verdict = judge(comparison);
+	const { warmup, measure } = runSeconds(options.seconds);
+	const report = compareReport(comparison, verdict, {
+		baseline: labels.baseline,
+		new: labels.new,
+		runs: options.runs,
+		warmupSeconds: warmup,
+		measureSeconds: measure,
+		browser: machineText(browser, options.browser),
+		selection,
+		trailers,
+	});
+	const summaries = BUILDS.flatMap((build) =>
+		scenes.flatMap((scene) =>
+			pages.flatMap((kind) => {
+				const kept = selection.kept.filter(
+					(r) => r.build === build && r.scene === scene && r.kind === kind,
+				);
+				return kept.length > 0
+					? [{ build, scene, kind, summary: summarizeRuns(kept.map((r) => r.result)) }]
+					: [];
+			}),
+		),
+	);
+	const dropped = selection.dropped.map(({ run: { build, scene, kind, round }, reason }) => ({
+		build,
+		scene,
+		kind,
+		round,
+		reason,
+	}));
+	writeFileSync(
+		join(dir, 'summary.json'),
+		JSON.stringify(
+			{
+				commits: labels,
+				refreshHz: selection.refreshHz,
+				dropped,
+				summaries,
+				...comparison,
+				verdict,
+			},
+			null,
+			'\t',
+		),
+	);
+	return { report: report.join('\n'), pass: verdict.pass };
+}
+
 async function main(): Promise<void> {
 	const options = parseBenchArgs(process.argv.slice(2));
-	const run = runName(options.sweep ? 'sweep' : options.jobs ? 'jobs' : 'bench');
-	const dir = join(REPO_ROOT, 'target/bench', run);
+	const kind = options.compare
+		? 'compare'
+		: options.sweep
+			? 'sweep'
+			: options.jobs
+				? 'jobs'
+				: 'bench';
+	const dir = join(REPO_ROOT, 'target/bench', runName(kind));
 	mkdirSync(dir, { recursive: true });
-	const server = await startServer();
-	const browser = await chromium.launch({
-		headless: false,
-		...(options.browser === 'brave' ? { executablePath: BRAVE } : { channel: 'chrome' }),
-		args: ['--enable-webgpu-developer-features'],
-	});
+	const browser = await launchBrowser(options.browser);
 	try {
-		const report = options.sweep
-			? await runSweep(browser, server.url, options, dir)
-			: await runProtocol(browser, server.url, options, dir);
+		let report: string;
+		if (options.compare) {
+			const comparison = await runComparison(browser, options, options.compare, dir);
+			report = comparison.report;
+			if (!comparison.pass) process.exitCode = 1;
+		} else {
+			const server = await startServer();
+			try {
+				report = options.sweep
+					? await runSweep(browser, server.url, options, dir)
+					: await runProtocol(browser, server.url, options, dir);
+			} finally {
+				server.stop();
+			}
+		}
 		writeFileSync(join(dir, 'summary.md'), `${report}\n`);
 		console.log(`\n${report}\n\nresults: ${relative(REPO_ROOT, dir)}`);
 	} finally {
 		await browser.close();
-		server.stop();
 	}
 }
 

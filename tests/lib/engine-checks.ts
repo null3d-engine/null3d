@@ -105,6 +105,13 @@ export interface EngineResult {
 	pause?: { paused: FrameCounts; resumed: FrameCounts };
 	/** How long the engine took to stop. */
 	stopMs: number;
+	/**
+	 * With `?memory-option=`: the maximum in MiB of each shared memory that the engine asked the
+	 * browser for.
+	 */
+	sharedMemoryMiB?: number[];
+	/** With `?downloads`: each file the page asked for, with when it asked and when the file arrived. */
+	downloads?: { name: string; startTime: number; responseEnd: number }[];
 }
 
 /** Slower than this median frame interval means the loop is not keeping up with the display. */
