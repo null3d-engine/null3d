@@ -140,10 +140,10 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
-    vec4 cluster_depth;
-    vec4 cluster_grid;
     Output output_;
     Fog fog;
+    vec4 cluster_depth;
+    vec4 cluster_grid;
 };
 struct VertexIn {
     vec3 position;
@@ -225,10 +225,10 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
-    vec4 cluster_depth;
-    vec4 cluster_grid;
     Output output_;
     Fog fog;
+    vec4 cluster_depth;
+    vec4 cluster_grid;
 };
 struct VertexIn {
     vec3 position;
@@ -312,10 +312,10 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
-    vec4 cluster_depth;
-    vec4 cluster_grid;
     Output output_;
     Fog fog;
+    vec4 cluster_depth;
+    vec4 cluster_grid;
 };
 struct VertexIn {
     vec3 position;
@@ -484,10 +484,10 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
-    vec4 cluster_depth;
-    vec4 cluster_grid;
     Output output_;
     Fog fog;
+    vec4 cluster_depth;
+    vec4 cluster_grid;
 };
 struct VertexIn {
     vec3 position;
@@ -651,10 +651,10 @@ struct Frame {
     sun_direction: vec4<f32>,
     sun_color: vec4<f32>,
     ambient: vec4<f32>,
-    cluster_depth: vec4<f32>,
-    cluster_grid: vec4<f32>,
     output: Output,
     fog: Fog,
+    cluster_depth: vec4<f32>,
+    cluster_grid: vec4<f32>,
 }
 
 struct VertexIn {
@@ -740,10 +740,10 @@ struct Frame {
     sun_direction: vec4<f32>,
     sun_color: vec4<f32>,
     ambient: vec4<f32>,
-    cluster_depth: vec4<f32>,
-    cluster_grid: vec4<f32>,
     output: Output,
     fog: Fog,
+    cluster_depth: vec4<f32>,
+    cluster_grid: vec4<f32>,
 }
 
 struct VertexIn {

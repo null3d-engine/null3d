@@ -344,10 +344,10 @@ struct Frame {
     sun_direction: vec4<f32>,
     sun_color: vec4<f32>,
     ambient: vec4<f32>,
-    cluster_depth: vec4<f32>,
-    cluster_grid: vec4<f32>,
     output: Output,
     fog: Fog,
+    cluster_depth: vec4<f32>,
+    cluster_grid: vec4<f32>,
 }
 
 struct Material {
@@ -931,10 +931,10 @@ struct Frame {
     sun_direction: vec4<f32>,
     sun_color: vec4<f32>,
     ambient: vec4<f32>,
-    cluster_depth: vec4<f32>,
-    cluster_grid: vec4<f32>,
     output: Output,
     fog: Fog,
+    cluster_depth: vec4<f32>,
+    cluster_grid: vec4<f32>,
 }
 
 struct Material {
@@ -1522,10 +1522,10 @@ struct Frame {
     sun_direction: vec4<f32>,
     sun_color: vec4<f32>,
     ambient: vec4<f32>,
-    cluster_depth: vec4<f32>,
-    cluster_grid: vec4<f32>,
     output: Output,
     fog: Fog,
+    cluster_depth: vec4<f32>,
+    cluster_grid: vec4<f32>,
 }
 
 struct Material {
@@ -2116,10 +2116,10 @@ struct Frame {
     sun_direction: vec4<f32>,
     sun_color: vec4<f32>,
     ambient: vec4<f32>,
-    cluster_depth: vec4<f32>,
-    cluster_grid: vec4<f32>,
     output: Output,
     fog: Fog,
+    cluster_depth: vec4<f32>,
+    cluster_grid: vec4<f32>,
 }
 
 struct Material {
@@ -2760,10 +2760,10 @@ struct Frame {
     sun_direction: vec4<f32>,
     sun_color: vec4<f32>,
     ambient: vec4<f32>,
-    cluster_depth: vec4<f32>,
-    cluster_grid: vec4<f32>,
     output: Output,
     fog: Fog,
+    cluster_depth: vec4<f32>,
+    cluster_grid: vec4<f32>,
 }
 
 struct Material {
@@ -3482,10 +3482,10 @@ struct Frame {
     sun_direction: vec4<f32>,
     sun_color: vec4<f32>,
     ambient: vec4<f32>,
-    cluster_depth: vec4<f32>,
-    cluster_grid: vec4<f32>,
     output: Output,
     fog: Fog,
+    cluster_depth: vec4<f32>,
+    cluster_grid: vec4<f32>,
 }
 
 struct Material {
@@ -4208,10 +4208,10 @@ struct Frame {
     sun_direction: vec4<f32>,
     sun_color: vec4<f32>,
     ambient: vec4<f32>,
-    cluster_depth: vec4<f32>,
-    cluster_grid: vec4<f32>,
     output: Output,
     fog: Fog,
+    cluster_depth: vec4<f32>,
+    cluster_grid: vec4<f32>,
 }
 
 struct Material {
@@ -4934,10 +4934,10 @@ struct Frame {
     sun_direction: vec4<f32>,
     sun_color: vec4<f32>,
     ambient: vec4<f32>,
-    cluster_depth: vec4<f32>,
-    cluster_grid: vec4<f32>,
     output: Output,
     fog: Fog,
+    cluster_depth: vec4<f32>,
+    cluster_grid: vec4<f32>,
 }
 
 struct Material {
@@ -5663,10 +5663,10 @@ struct Frame {
     sun_direction: vec4<f32>,
     sun_color: vec4<f32>,
     ambient: vec4<f32>,
-    cluster_depth: vec4<f32>,
-    cluster_grid: vec4<f32>,
     output: Output,
     fog: Fog,
+    cluster_depth: vec4<f32>,
+    cluster_grid: vec4<f32>,
 }
 
 struct Material {
@@ -6396,10 +6396,10 @@ struct Frame {
     sun_direction: vec4<f32>,
     sun_color: vec4<f32>,
     ambient: vec4<f32>,
-    cluster_depth: vec4<f32>,
-    cluster_grid: vec4<f32>,
     output: Output,
     fog: Fog,
+    cluster_depth: vec4<f32>,
+    cluster_grid: vec4<f32>,
 }
 
 struct Material {
@@ -7129,10 +7129,10 @@ struct Frame {
     sun_direction: vec4<f32>,
     sun_color: vec4<f32>,
     ambient: vec4<f32>,
-    cluster_depth: vec4<f32>,
-    cluster_grid: vec4<f32>,
     output: Output,
     fog: Fog,
+    cluster_depth: vec4<f32>,
+    cluster_grid: vec4<f32>,
 }
 
 struct Material {
@@ -7858,10 +7858,10 @@ struct Frame {
     sun_direction: vec4<f32>,
     sun_color: vec4<f32>,
     ambient: vec4<f32>,
-    cluster_depth: vec4<f32>,
-    cluster_grid: vec4<f32>,
     output: Output,
     fog: Fog,
+    cluster_depth: vec4<f32>,
+    cluster_grid: vec4<f32>,
 }
 
 struct Material {
@@ -8582,10 +8582,10 @@ struct Frame {
     sun_direction: vec4<f32>,
     sun_color: vec4<f32>,
     ambient: vec4<f32>,
-    cluster_depth: vec4<f32>,
-    cluster_grid: vec4<f32>,
     output: Output,
     fog: Fog,
+    cluster_depth: vec4<f32>,
+    cluster_grid: vec4<f32>,
 }
 
 struct Transform {
@@ -8821,10 +8821,10 @@ struct Frame {
     sun_direction: vec4<f32>,
     sun_color: vec4<f32>,
     ambient: vec4<f32>,
-    cluster_depth: vec4<f32>,
-    cluster_grid: vec4<f32>,
     output: Output,
     fog: Fog,
+    cluster_depth: vec4<f32>,
+    cluster_grid: vec4<f32>,
 }
 
 struct Material {
@@ -9115,10 +9115,10 @@ struct Frame {
     sun_direction: vec4<f32>,
     sun_color: vec4<f32>,
     ambient: vec4<f32>,
-    cluster_depth: vec4<f32>,
-    cluster_grid: vec4<f32>,
     output: Output,
     fog: Fog,
+    cluster_depth: vec4<f32>,
+    cluster_grid: vec4<f32>,
 }
 
 struct Material {
@@ -9413,10 +9413,10 @@ struct Frame {
     sun_direction: vec4<f32>,
     sun_color: vec4<f32>,
     ambient: vec4<f32>,
-    cluster_depth: vec4<f32>,
-    cluster_grid: vec4<f32>,
     output: Output,
     fog: Fog,
+    cluster_depth: vec4<f32>,
+    cluster_grid: vec4<f32>,
 }
 
 struct Material {
@@ -9714,10 +9714,10 @@ struct Frame {
     sun_direction: vec4<f32>,
     sun_color: vec4<f32>,
     ambient: vec4<f32>,
-    cluster_depth: vec4<f32>,
-    cluster_grid: vec4<f32>,
     output: Output,
     fog: Fog,
+    cluster_depth: vec4<f32>,
+    cluster_grid: vec4<f32>,
 }
 
 struct Material {
@@ -10021,10 +10021,10 @@ struct Frame {
     sun_direction: vec4<f32>,
     sun_color: vec4<f32>,
     ambient: vec4<f32>,
-    cluster_depth: vec4<f32>,
-    cluster_grid: vec4<f32>,
     output: Output,
     fog: Fog,
+    cluster_depth: vec4<f32>,
+    cluster_grid: vec4<f32>,
 }
 
 struct Material {
@@ -10339,10 +10339,10 @@ struct Frame {
     sun_direction: vec4<f32>,
     sun_color: vec4<f32>,
     ambient: vec4<f32>,
-    cluster_depth: vec4<f32>,
-    cluster_grid: vec4<f32>,
     output: Output,
     fog: Fog,
+    cluster_depth: vec4<f32>,
+    cluster_grid: vec4<f32>,
 }
 
 struct Material {
@@ -10661,10 +10661,10 @@ struct Frame {
     sun_direction: vec4<f32>,
     sun_color: vec4<f32>,
     ambient: vec4<f32>,
-    cluster_depth: vec4<f32>,
-    cluster_grid: vec4<f32>,
     output: Output,
     fog: Fog,
+    cluster_depth: vec4<f32>,
+    cluster_grid: vec4<f32>,
 }
 
 struct Material {
@@ -10986,10 +10986,10 @@ struct Frame {
     sun_direction: vec4<f32>,
     sun_color: vec4<f32>,
     ambient: vec4<f32>,
-    cluster_depth: vec4<f32>,
-    cluster_grid: vec4<f32>,
     output: Output,
     fog: Fog,
+    cluster_depth: vec4<f32>,
+    cluster_grid: vec4<f32>,
 }
 
 struct Material {

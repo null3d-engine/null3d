@@ -18,17 +18,17 @@ struct Frame {
     sun_direction: vec4f,
     sun_color: vec4f,
     ambient: vec4f,
+    /// The exposure and the tone mapping, which fragment shaders apply themselves on the 8-bit
+    /// path.
+    output: null3d::tonemap::Output,
+    /// The scene's fog, seen from this camera.
+    fog: Fog,
     /// The row that gives a position's slice depth in the light grid of clustered lighting (see
     /// null3d::lights).
     cluster_depth: vec4f,
     /// The light grid's tiles across, tiles up, slices, and slices per doubling of the slice
     /// depth. The slices are 0 when no point or spot light reaches the view.
     cluster_grid: vec4f,
-    /// The exposure and the tone mapping, which fragment shaders apply themselves on the 8-bit
-    /// path.
-    output: null3d::tonemap::Output,
-    /// The scene's fog, seen from this camera.
-    fog: Fog,
 }
 
 /// One material's row of the material table, as the core writes it (`materials.rs` in the

@@ -646,8 +646,8 @@ pub mod vertex {
 pub mod sizes {
     /// Bytes per compacted instance: three rows of the world matrix, then a vector of ids.
     pub const INSTANCE_STRIDE: u32 = 64;
-    /// Bytes of the per-frame uniform block: the view-projection matrix, six vectors, the output
-    /// settings and the fog's 48 bytes.
+    /// Bytes of the per-frame uniform block: the view-projection matrix, four vectors, the output
+    /// settings, the fog's 48 bytes, and the light grid's two vectors.
     pub const FRAME_UNIFORM_BYTES: u32 = 224;
     /// Bytes of the output settings: the exposure, the tone mapping and two spare words.
     pub const OUTPUT_UNIFORM_BYTES: u32 = 16;

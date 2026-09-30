@@ -23,16 +23,16 @@ pub struct FrameUniform {
     pub sun_direction: [f32; 4],
     pub sun_color: [f32; 4],
     pub ambient: [f32; 4],
+    /// The exposure and the tone mapping, which the 8-bit path's fragment shaders apply.
+    pub output: OutputUniform,
+    /// The scene's fog, seen from the view's camera.
+    pub fog: FogUniform,
     /// The row that gives a position's slice depth in the light grid: see
     /// [`crate::light_grid::GridUniform`].
     pub cluster_depth: [f32; 4],
     /// The light grid's tiles across, tiles up, slices and slices per doubling of the slice depth.
     /// The slices are 0 for a view whose grid lists no light.
     pub cluster_grid: [f32; 4],
-    /// The exposure and the tone mapping, which the 8-bit path's fragment shaders apply.
-    pub output: OutputUniform,
-    /// The scene's fog, seen from the view's camera.
-    pub fog: FogUniform,
 }
 
 const _: () = assert!(std::mem::size_of::<FrameUniform>() == FRAME_UNIFORM_BYTES as usize);

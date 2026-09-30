@@ -313,10 +313,10 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
-    vec4 cluster_depth;
-    vec4 cluster_grid;
     Output output_;
     Fog fog;
+    vec4 cluster_depth;
+    vec4 cluster_grid;
 };
 struct Material {
     vec4 color;
@@ -843,10 +843,10 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
-    vec4 cluster_depth;
-    vec4 cluster_grid;
     Output output_;
     Fog fog;
+    vec4 cluster_depth;
+    vec4 cluster_grid;
 };
 struct Material {
     vec4 color;
@@ -1470,10 +1470,10 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
-    vec4 cluster_depth;
-    vec4 cluster_grid;
     Output output_;
     Fog fog;
+    vec4 cluster_depth;
+    vec4 cluster_grid;
 };
 struct Material {
     vec4 color;
@@ -2000,10 +2000,10 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
-    vec4 cluster_depth;
-    vec4 cluster_grid;
     Output output_;
     Fog fog;
+    vec4 cluster_depth;
+    vec4 cluster_grid;
 };
 struct Material {
     vec4 color;
@@ -2631,10 +2631,10 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
-    vec4 cluster_depth;
-    vec4 cluster_grid;
     Output output_;
     Fog fog;
+    vec4 cluster_depth;
+    vec4 cluster_grid;
 };
 struct Material {
     vec4 color;
@@ -3167,10 +3167,10 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
-    vec4 cluster_depth;
-    vec4 cluster_grid;
     Output output_;
     Fog fog;
+    vec4 cluster_depth;
+    vec4 cluster_grid;
 };
 struct Material {
     vec4 color;
@@ -3801,10 +3801,10 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
-    vec4 cluster_depth;
-    vec4 cluster_grid;
     Output output_;
     Fog fog;
+    vec4 cluster_depth;
+    vec4 cluster_grid;
 };
 struct Material {
     vec4 color;
@@ -4337,10 +4337,10 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
-    vec4 cluster_depth;
-    vec4 cluster_grid;
     Output output_;
     Fog fog;
+    vec4 cluster_depth;
+    vec4 cluster_grid;
 };
 struct Material {
     vec4 color;
@@ -5056,10 +5056,10 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
-    vec4 cluster_depth;
-    vec4 cluster_grid;
     Output output_;
     Fog fog;
+    vec4 cluster_depth;
+    vec4 cluster_grid;
 };
 struct Material {
     vec4 color;
@@ -5616,10 +5616,10 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
-    vec4 cluster_depth;
-    vec4 cluster_grid;
     Output output_;
     Fog fog;
+    vec4 cluster_depth;
+    vec4 cluster_grid;
 };
 struct Material {
     vec4 color;
@@ -6419,10 +6419,10 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
-    vec4 cluster_depth;
-    vec4 cluster_grid;
     Output output_;
     Fog fog;
+    vec4 cluster_depth;
+    vec4 cluster_grid;
 };
 struct Material {
     vec4 color;
@@ -6979,10 +6979,10 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
-    vec4 cluster_depth;
-    vec4 cluster_grid;
     Output output_;
     Fog fog;
+    vec4 cluster_depth;
+    vec4 cluster_grid;
 };
 struct Material {
     vec4 color;
@@ -7786,10 +7786,10 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
-    vec4 cluster_depth;
-    vec4 cluster_grid;
     Output output_;
     Fog fog;
+    vec4 cluster_depth;
+    vec4 cluster_grid;
 };
 struct Material {
     vec4 color;
@@ -8370,10 +8370,10 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
-    vec4 cluster_depth;
-    vec4 cluster_grid;
     Output output_;
     Fog fog;
+    vec4 cluster_depth;
+    vec4 cluster_grid;
 };
 struct Material {
     vec4 color;
@@ -9174,10 +9174,10 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
-    vec4 cluster_depth;
-    vec4 cluster_grid;
     Output output_;
     Fog fog;
+    vec4 cluster_depth;
+    vec4 cluster_grid;
 };
 struct Material {
     vec4 color;
@@ -9740,10 +9740,10 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
-    vec4 cluster_depth;
-    vec4 cluster_grid;
     Output output_;
     Fog fog;
+    vec4 cluster_depth;
+    vec4 cluster_grid;
 };
 struct Material {
     vec4 color;
@@ -10550,10 +10550,10 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
-    vec4 cluster_depth;
-    vec4 cluster_grid;
     Output output_;
     Fog fog;
+    vec4 cluster_depth;
+    vec4 cluster_grid;
 };
 struct Material {
     vec4 color;
@@ -11116,10 +11116,10 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
-    vec4 cluster_depth;
-    vec4 cluster_grid;
     Output output_;
     Fog fog;
+    vec4 cluster_depth;
+    vec4 cluster_grid;
 };
 struct Material {
     vec4 color;
@@ -11930,10 +11930,10 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
-    vec4 cluster_depth;
-    vec4 cluster_grid;
     Output output_;
     Fog fog;
+    vec4 cluster_depth;
+    vec4 cluster_grid;
 };
 struct Material {
     vec4 color;
@@ -12520,10 +12520,10 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
-    vec4 cluster_depth;
-    vec4 cluster_grid;
     Output output_;
     Fog fog;
+    vec4 cluster_depth;
+    vec4 cluster_grid;
 };
 struct Material {
     vec4 color;
@@ -13331,10 +13331,10 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
-    vec4 cluster_depth;
-    vec4 cluster_grid;
     Output output_;
     Fog fog;
+    vec4 cluster_depth;
+    vec4 cluster_grid;
 };
 struct Material {
     vec4 color;
@@ -13921,10 +13921,10 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
-    vec4 cluster_depth;
-    vec4 cluster_grid;
     Output output_;
     Fog fog;
+    vec4 cluster_depth;
+    vec4 cluster_grid;
 };
 struct Material {
     vec4 color;
@@ -14728,10 +14728,10 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
-    vec4 cluster_depth;
-    vec4 cluster_grid;
     Output output_;
     Fog fog;
+    vec4 cluster_depth;
+    vec4 cluster_grid;
 };
 struct Material {
     vec4 color;
@@ -15312,10 +15312,10 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
-    vec4 cluster_depth;
-    vec4 cluster_grid;
     Output output_;
     Fog fog;
+    vec4 cluster_depth;
+    vec4 cluster_grid;
 };
 struct Material {
     vec4 color;
@@ -16114,10 +16114,10 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
-    vec4 cluster_depth;
-    vec4 cluster_grid;
     Output output_;
     Fog fog;
+    vec4 cluster_depth;
+    vec4 cluster_grid;
 };
 struct Transform {
     vec4 x;
@@ -16450,10 +16450,10 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
-    vec4 cluster_depth;
-    vec4 cluster_grid;
     Output output_;
     Fog fog;
+    vec4 cluster_depth;
+    vec4 cluster_grid;
 };
 struct Transform {
     vec4 x;
@@ -16691,10 +16691,10 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
-    vec4 cluster_depth;
-    vec4 cluster_grid;
     Output output_;
     Fog fog;
+    vec4 cluster_depth;
+    vec4 cluster_grid;
 };
 struct Material {
     vec4 color;
@@ -17069,10 +17069,10 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
-    vec4 cluster_depth;
-    vec4 cluster_grid;
     Output output_;
     Fog fog;
+    vec4 cluster_depth;
+    vec4 cluster_grid;
 };
 struct Material {
     vec4 color;
@@ -17385,10 +17385,10 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
-    vec4 cluster_depth;
-    vec4 cluster_grid;
     Output output_;
     Fog fog;
+    vec4 cluster_depth;
+    vec4 cluster_grid;
 };
 struct Material {
     vec4 color;
@@ -17763,10 +17763,10 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
-    vec4 cluster_depth;
-    vec4 cluster_grid;
     Output output_;
     Fog fog;
+    vec4 cluster_depth;
+    vec4 cluster_grid;
 };
 struct Material {
     vec4 color;
@@ -18083,10 +18083,10 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
-    vec4 cluster_depth;
-    vec4 cluster_grid;
     Output output_;
     Fog fog;
+    vec4 cluster_depth;
+    vec4 cluster_grid;
 };
 struct Material {
     vec4 color;
@@ -18467,10 +18467,10 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
-    vec4 cluster_depth;
-    vec4 cluster_grid;
     Output output_;
     Fog fog;
+    vec4 cluster_depth;
+    vec4 cluster_grid;
 };
 struct Material {
     vec4 color;
@@ -18790,10 +18790,10 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
-    vec4 cluster_depth;
-    vec4 cluster_grid;
     Output output_;
     Fog fog;
+    vec4 cluster_depth;
+    vec4 cluster_grid;
 };
 struct Material {
     vec4 color;
@@ -19174,10 +19174,10 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
-    vec4 cluster_depth;
-    vec4 cluster_grid;
     Output output_;
     Fog fog;
+    vec4 cluster_depth;
+    vec4 cluster_grid;
 };
 struct Material {
     vec4 color;
@@ -19503,10 +19503,10 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
-    vec4 cluster_depth;
-    vec4 cluster_grid;
     Output output_;
     Fog fog;
+    vec4 cluster_depth;
+    vec4 cluster_grid;
 };
 struct Material {
     vec4 color;
@@ -19898,10 +19898,10 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
-    vec4 cluster_depth;
-    vec4 cluster_grid;
     Output output_;
     Fog fog;
+    vec4 cluster_depth;
+    vec4 cluster_grid;
 };
 struct Material {
     vec4 color;
@@ -20245,10 +20245,10 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
-    vec4 cluster_depth;
-    vec4 cluster_grid;
     Output output_;
     Fog fog;
+    vec4 cluster_depth;
+    vec4 cluster_grid;
 };
 struct Material {
     vec4 color;
@@ -20640,10 +20640,10 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
-    vec4 cluster_depth;
-    vec4 cluster_grid;
     Output output_;
     Fog fog;
+    vec4 cluster_depth;
+    vec4 cluster_grid;
 };
 struct Material {
     vec4 color;
@@ -20991,10 +20991,10 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
-    vec4 cluster_depth;
-    vec4 cluster_grid;
     Output output_;
     Fog fog;
+    vec4 cluster_depth;
+    vec4 cluster_grid;
 };
 struct Material {
     vec4 color;
@@ -21392,10 +21392,10 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
-    vec4 cluster_depth;
-    vec4 cluster_grid;
     Output output_;
     Fog fog;
+    vec4 cluster_depth;
+    vec4 cluster_grid;
 };
 struct Material {
     vec4 color;
@@ -21746,10 +21746,10 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
-    vec4 cluster_depth;
-    vec4 cluster_grid;
     Output output_;
     Fog fog;
+    vec4 cluster_depth;
+    vec4 cluster_grid;
 };
 struct Material {
     vec4 color;
@@ -22147,10 +22147,10 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
-    vec4 cluster_depth;
-    vec4 cluster_grid;
     Output output_;
     Fog fog;
+    vec4 cluster_depth;
+    vec4 cluster_grid;
 };
 struct Material {
     vec4 color;
