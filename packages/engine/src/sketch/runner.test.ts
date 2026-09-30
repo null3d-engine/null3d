@@ -94,6 +94,8 @@ async function start(
 			cellCulling: true,
 		},
 		capabilities: CAPABILITIES,
+		quality: { preset: 'medium', settings: { maxPixelRatio: 2 } },
+		applyQuality: () => {},
 		sendImage: () => {},
 		pageUrl: 'http://localhost/',
 	});

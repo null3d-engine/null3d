@@ -16,6 +16,7 @@ describe('parseSwitches', () => {
 			queue: undefined,
 			jobs: undefined,
 			memoryMiB: undefined,
+			preset: undefined,
 			hold: undefined,
 			bench: false,
 		});
@@ -75,5 +76,12 @@ describe('parseSwitches', () => {
 		expect(parseSwitches('?gpu=webgl2&cells=off').cells).toBe(false);
 		expect(parseSwitches('?cells=on').cells).toBe(true);
 		expect(parseSwitches('?cells=no').cells).toBe(true);
+	});
+
+	it('reads the quality preset, and ignores a name that is no preset', () => {
+		for (const preset of ['low', 'medium', 'high', 'ultra'] as const)
+			expect(parseSwitches(`?preset=${preset}`).preset).toBe(preset);
+		for (const value of ['auto', 'Low', 'epic', ''])
+			expect(parseSwitches(`?preset=${value}`).preset).toBeUndefined();
 	});
 });

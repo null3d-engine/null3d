@@ -2,8 +2,10 @@
 // ?latency=, ?uploads=copy, ?depth= and ?compile=wait. Five more set what the benchmarks vary:
 // ?fps= for a fixed frame rate, ?jobs= for the job worker count, ?memory= for the shared memory's
 // maximum, ?queue= for the frames that may wait on the GPU and ?cells=off for culling without grid
-// cells. ?hold starts hold mode for image tests, and ?bench publishes the running engine for
-// benchmark tools.
+// cells. ?hold starts hold mode for image tests, ?preset= fixes the quality preset, and ?bench
+// publishes the running engine for benchmark tools.
+
+import { QUALITY_PRESETS, type QualityPreset } from '../quality/presets';
 
 export type GpuSwitch = 'auto' | 'webgpu' | 'compat' | 'webgl2';
 /**
@@ -69,6 +71,11 @@ export interface Switches {
 	 */
 	memoryMiB: number | undefined;
 	/**
+	 * The quality preset that ?preset= fixes, which wins over the page's option and over the
+	 * crash marker, or undefined without the switch or with a name that is no preset.
+	 */
+	preset: QualityPreset | undefined;
+	/**
 	 * The text of ?hold=, an empty text for a bare ?hold, or undefined without the switch. The
 	 * engine checks it when it starts, so a bad time fails at once instead of starting a live engine.
 	 */
@@ -113,6 +120,7 @@ export function parseSwitches(search: string): Switches {
 		jobs: whole(params.get('jobs'), MAX_JOB_WORKERS),
 		queue: params.get('queue') === 'off' ? Number.POSITIVE_INFINITY : whole(params.get('queue')),
 		memoryMiB: whole(params.get('memory')),
+		preset: oneOf(params.get('preset'), QUALITY_PRESETS),
 		hold: params.get('hold') ?? undefined,
 		bench: params.has('bench'),
 	};
