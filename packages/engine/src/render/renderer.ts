@@ -60,7 +60,10 @@ export interface RendererOptions {
 	forceCompat?: boolean;
 	/** The metrics buffer, which receives GPU times where the device has timestamp queries. */
 	metrics?: ArrayBufferLike;
-	/** The device as the engine uses it: the storage binding to request, and how WebGL2 uploads. */
+	/**
+	 * The device as the engine uses it: the storage binding to request, and how WebGL2 uploads and
+	 * stores depth.
+	 */
 	device: CoreDevice;
 	/** Which GPU to draw with on a device with two; the browser chooses without it. */
 	powerPreference?: PowerPreference;
@@ -246,7 +249,7 @@ export async function createRenderer(
 				options.scene.memory,
 				options.scene.control,
 				options.metrics,
-				options.device.sharedUploads,
+				options.device,
 			);
 		return new WebGL2Renderer(canvas, gl, options.metrics);
 	}

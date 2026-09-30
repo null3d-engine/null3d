@@ -175,7 +175,7 @@
       "three": "renderer.capabilities / renderer.extensions",
       "status": "changed",
       "since": "0.1",
-      "target": "engine.capabilities (page) or ctx.engine.capabilities (sketch)",
+      "target": "engine.capabilities on the page, which sends the sketch what it needs with engine.postToSketch",
       "notes": "Reports GPU tier, limits and features. Never branch on GPU names: some browsers hide them.",
       "docs": "concepts/backends",
       "detect": "\\.capabilities\\b|\\.extensions\\.(get|has)\\s*\\("
@@ -187,8 +187,8 @@
       "status": "direct",
       "since": "0.1",
       "target": "Nothing to do; createEngine({ largeWorld: true }) for planet-scale scenes",
-      "notes": "WebGPU uses reversed depth by default, and the engine renders relative to the camera through per-cell offsets.",
-      "docs": "concepts/large-worlds",
+      "notes": "The engine draws reversed depth in a 32-bit float buffer on WebGPU, and on WebGL2 where the browser has EXT_clip_control. engine.capabilities.depth says which depth the device draws. The engine also renders relative to the camera through per-cell offsets.",
+      "docs": "concepts/backends",
       "detect": "logarithmicDepthBuffer|reverseDepthBuffer"
     },
     {

@@ -41,8 +41,8 @@ The "Since" column gives the first engine version with the feature:
 | preserveDrawingBuffer + canvas.toDataURL / readRenderTargetPixels | await engine.capture() on the page | changed | 0.1 | Returns an image of the next complete frame. Tests use the engine's readback instead. | `api/engine` |
 | WebGLRenderTarget / RenderTarget / renderer.setRenderTarget (render to texture) | render.addPass({ kind: 'scene', camera, writes: 'myTexture', size }) and sample 'myTexture' in a material | changed | 0.2 | Passes are declared, not called: the render graph orders them and manages their memory. | `guides/custom-passes` |
 | renderer.setViewport / setScissor (split screens, picture in picture) | A render-to-texture pass plus a final effect, for minimaps and picture in picture (0.2) | post-1.0 | - | Several full views (scene.createView), such as split screens, come after 1.0. | `guides/multiple-views` |
-| renderer.capabilities / renderer.extensions | engine.capabilities (page) or ctx.engine.capabilities (sketch) | changed | 0.1 | Reports GPU tier, limits and features. Never branch on GPU names: some browsers hide them. | `concepts/backends` |
-| logarithmicDepthBuffer / reverseDepthBuffer | Nothing to do; createEngine({ largeWorld: true }) for planet-scale scenes | direct | 0.1 | WebGPU uses reversed depth by default, and the engine renders relative to the camera through per-cell offsets. | `concepts/large-worlds` |
+| renderer.capabilities / renderer.extensions | engine.capabilities on the page, which sends the sketch what it needs with engine.postToSketch | changed | 0.1 | Reports GPU tier, limits and features. Never branch on GPU names: some browsers hide them. | `concepts/backends` |
+| logarithmicDepthBuffer / reverseDepthBuffer | Nothing to do; createEngine({ largeWorld: true }) for planet-scale scenes | direct | 0.1 | The engine draws reversed depth in a 32-bit float buffer on WebGPU, and on WebGL2 where the browser has EXT_clip_control. engine.capabilities.depth says which depth the device draws. The engine also renders relative to the camera through per-cell offsets. | `concepts/backends` |
 
 ## Scene graph
 

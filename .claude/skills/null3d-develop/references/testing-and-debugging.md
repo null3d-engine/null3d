@@ -86,6 +86,7 @@ URL switches for the dev server (engine docs `guides/testing`):
 | `?threads=off` | Single-threaded build |
 | `?render=main` | Render on the main thread |
 | `?uploads=copy` | On WebGL2, copy each upload out of shared memory first, as browsers that refuse shared memory need |
+| `?depth=reversed-gl` | On WebGL2, force a depth mode: `reversed`, `reversed-gl` (as in browsers without `EXT_clip_control`, such as Firefox) or `standard` (`concepts/backends`) |
 | `?latency=pipelined`, `?latency=low` | Latency mode |
 | `?jobs=4` | Start this many job workers, from 1 to 255, instead of the logical cores minus 2 |
 | `?memory=2048` | Set the maximum of the memory that worker threads share, in MiB, up to 4096; the default is 1024 |

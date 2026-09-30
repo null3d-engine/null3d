@@ -10,7 +10,13 @@ import {
 	TEMPLATE_INSTANCED_TEXCOORDS,
 	TEMPLATE_INSTANCED_UNLIT,
 } from '../../generated/gpu';
-import { type GlslProgram, type GlslStage, MESH_SHADER } from '../../generated/shaders';
+import {
+	DEPTH_MAPPING_UNIFORM,
+	type GlslProgram,
+	type GlslStage,
+	MESH_SHADER,
+} from '../../generated/shaders';
+import type { DepthSetup } from './depth';
 
 /** Texture units and uniform block binding points of each bind group: one per binding. */
 export const SLOTS_PER_GROUP = 4;
@@ -106,10 +112,11 @@ export function createProgram(
 }
 
 /**
- * Checks the program's link result and binds its uniform blocks and textures to the slots of their
- * WGSL groups and bindings, once, at its first use. The program is in use afterwards.
+ * Checks the program's link result, binds its uniform blocks and textures to the slots of their
+ * WGSL groups and bindings, and sets its vertex shader's depth mapping for the backend's depth mode,
+ * once, at its first use. The program is in use afterwards.
  */
-export function prepareProgram(gl: WebGL2RenderingContext, p: Program): void {
+export function prepareProgram(gl: WebGL2RenderingContext, p: Program, depth: DepthSetup): void {
 	if (!gl.getProgramParameter(p.program, gl.LINK_STATUS)) {
 		const logs = p.shaders
 			.map((shader) => gl.getShaderInfoLog(shader))
@@ -146,5 +153,7 @@ export function prepareProgram(gl: WebGL2RenderingContext, p: Program): void {
 	}
 	p.samplerUnits = samplerUnits;
 	p.firstInstance = gl.getUniformLocation(p.program, 'naga_vs_first_instance');
+	const mapping = gl.getUniformLocation(p.program, DEPTH_MAPPING_UNIFORM);
+	if (mapping) gl.uniform2f(mapping, depth.scale, depth.offset);
 	p.ready = true;
 }

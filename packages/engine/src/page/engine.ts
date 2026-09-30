@@ -39,7 +39,13 @@ import { coreDevice, maxInstances } from './limits';
 import { loadCore } from './loader';
 import { MainThreadWatch } from './main-thread';
 import { watchPreferences } from './preferences';
-import { type GpuSwitch, type LatencyMode, parseSwitches, type Switches } from './switches';
+import {
+	type DepthMode,
+	type GpuSwitch,
+	type LatencyMode,
+	parseSwitches,
+	type Switches,
+} from './switches';
 
 /**
  * Options for `createEngine`.
@@ -120,6 +126,11 @@ export interface EngineCapabilities {
 	 * can run out first: see E1109.
 	 */
 	maxInstances: number;
+	/**
+	 * How the GPU path stores depth. WebGPU, and WebGL2 in browsers with `EXT_clip_control`, draw
+	 * `reversed` depth, which stays precise far from the camera.
+	 */
+	depth: DepthMode;
 }
 
 /**
@@ -478,7 +489,7 @@ async function startEngine(
 	const drawModule = renderThread === 'main' ? loadDrawModule() : undefined;
 	let wasmMemory = core.memory;
 	const sketchUrl = new URL(options.sketch, globalThis.location?.href).href;
-	const device = coreDevice(tier === 'webgl2', report, switches.copyUploads);
+	const device = coreDevice(tier === 'webgl2', report, switches);
 	const handoff: CoreHandoff = {
 		build,
 		module: core.module,
@@ -705,6 +716,7 @@ async function startEngine(
 			features,
 			limits: tier === 'webgl2' ? {} : report.webgpu.limits,
 			maxInstances: maxInstances(device),
+			depth: device.depth,
 		},
 		report,
 		mode,

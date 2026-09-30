@@ -61,7 +61,7 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 | [Handles and objects](concepts/handles.md) | 30-bit handles; wrapper objects; stale-handle errors; keeping per-object data in your own arrays. | planned | 0.1 |
 | [Static and dynamic objects](concepts/static-dynamic.md) | When to mark objects static; setters versus direct array writes; dirty ranges. | planned | 0.1 |
 | [Instances and batching](concepts/instances.md) | createInstances; typed-array views; markDirty; automatic batching; per-instance attributes. | planned | 0.1 |
-| [GPU tiers and backends](concepts/backends.md) | WebGPU core, compatibility mode and WebGL2; capability flags; the portable budget; never branching on GPU names. | planned | 0.1 |
+| [GPU tiers and backends](concepts/backends.md) | WebGPU core, compatibility mode and WebGL2; depth on each tier; capability flags; the portable budget; never branching on GPU names. | experimental | 0.1 |
 | [Quality presets, dynamic resolution and frame budgets](concepts/quality-presets.md) | Low to Ultra; pixel-ratio caps; the frame-budget governor; quality events for sketch code. | planned | 0.1 |
 | [Color management](concepts/color-management.md) | Linear working space; sRGB hex colors; texture color spaces; parity with three.js. | planned | 0.1 |
 | [Materials and pipelines](concepts/materials.md) | Built-in materials; permutations; pipeline warm-up; why changing shader features can stall a frame. | planned | 0.1 |
