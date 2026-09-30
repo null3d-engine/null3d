@@ -72,6 +72,8 @@ By default the object keeps its position, rotation and scale relative to the par
 crate.setParent(hand, { keepWorld: true });
 ```
 
+In the [objects and parents demo](https://github.com/null3d-engine/null3d/tree/main/examples/objects), crates step on and off a turntable this way.
+
 The engine works out those values when it applies the change, after `onUpdate` returns. It uses the transforms that the object and both parents have at that moment. So set the object's own transform before `setParent` in the same frame. A setter called after it writes a value relative to the old parent.
 
 Two kinds of parent change the result:
