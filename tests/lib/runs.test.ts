@@ -3,9 +3,16 @@ import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { IMAGE_RUNS } from '../image/manifest.ts';
-import { braveShieldsOf, deviceChecklist, parseArgs, summaryLine } from '../real-browsers.ts';
+import {
+	braveShieldsOf,
+	deviceChecklist,
+	parseArgs,
+	planItems,
+	summaryLine,
+} from '../real-browsers.ts';
 import { ENGINE_MODES, type EngineMode } from './engine-checks.ts';
 import { writePng } from './images.ts';
+import { isLoadPath } from './load-routes.ts';
 import {
 	benchPlan,
 	benchSummary,
@@ -91,13 +98,38 @@ describe('the checks plan', () => {
 
 	it('has unique item names, and pages on the test and benchmark pages paths', () => {
 		expect(new Set(items.map((item) => item.id)).size).toBe(items.length);
-		for (const item of items) expect(item.path).toMatch(/^\/(tests|bench)\/pages\//);
+		for (const item of items)
+			expect(item.path).toMatch(
+				/^(\/__null3d\/load\/warm\/\{run\}\.\{runner\}\.production)?\/(tests|bench)\/pages\//,
+			);
 		expect(items.find((item) => item.id === 'engine-webgl2-single-threaded')?.path).toBe(
 			'/tests/pages/engine.html?gpu=webgl2&threads=off&seconds=2',
 		);
 		expect(batchTimeoutMs({ run: 'r', createdAt: '', items })).toBeGreaterThan(
 			items.length * 30_000,
 		);
+	});
+
+	it('runs the engine page again on its production build in every mode, on WebGL2', () => {
+		const production = items.filter((item) => item.id.startsWith('engine-production-'));
+		expect(production.map(({ id }) => id)).toEqual([
+			'engine-production-pipelined',
+			'engine-production-low-latency',
+			'engine-production-single-threaded',
+			'engine-production-drawing-on-the-main-thread',
+		]);
+		expect(production[1]).toEqual({
+			id: 'engine-production-low-latency',
+			path: '/__null3d/load/warm/{run}.{runner}.production/tests/pages/engine.html?gpu=webgl2&latency=low&seconds=2',
+			timeoutSeconds: 45,
+			check: { kind: 'engine', tier: 'webgl2', mode: ENGINE_MODES[1] },
+		});
+		// The runner builds the production pages for a plan that loads them, and only then.
+		expect(planItems(parseArgs(['Safari']))?.some((item) => isLoadPath(item.path))).toBe(true);
+		expect(
+			planItems(parseArgs(['--plan', 'parity', 'Safari']))?.some((item) => isLoadPath(item.path)),
+		).toBe(false);
+		expect(planItems(parseArgs(['--plan', 'scale', 'Safari']))).toBeUndefined();
 	});
 
 	it('skips a WebGPU page on a browser without WebGPU only when allowed', () => {

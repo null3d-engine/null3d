@@ -12,8 +12,10 @@ summary: "Declared reads and writes; automatic order; transient memory; validati
 
 ```mermaid
 flowchart LR
+    objects[("objects")] --> culling["Culling"] --> visible[("visible instances")]
     lights[("light list")] --> clusters["Light clustering"] --> grid[("light grid")]
     cascades["Shadow cascades"] --> shadowMap[("shadow map")]
+    visible --> scene
     grid --> scene
     shadowMap --> scene
     subgraph scene["One render pass"]
@@ -23,25 +25,32 @@ flowchart LR
         lines["Debug lines"]
     end
     scene --> color[("scene color")] --> final["Final pass"] --> canvas[("canvas")]
+    color -. "Resolve" .-> canvas
 ```
 
 null3D draws each frame as a series of passes. A pass is one job for the GPU, such as drawing the shadow casters from the sun, or drawing the scene from the camera. Each pass declares what it reads and what it writes. The render graph reads these declarations before a frame draws. It puts the passes in order and plans the textures they draw into.
 
-In the diagram, boxes are passes and cylinders are data. An arrow into a pass shows what it reads, and an arrow out of a pass shows what it writes. The four scene passes share one render pass on the GPU.
+In the diagram, boxes are passes and cylinders are data. An arrow into a pass shows what it reads, and an arrow out of a pass shows what it writes. The four scene passes share one render pass on the GPU. The dotted arrow is the resolve pass, which takes the place of the final pass when the final pass has no work.
 
 ## The engine's passes
 
 | Pass | Kind | Reads | Writes |
 | --- | --- | --- | --- |
+| Culling | Compute, one pass per view | The world matrix and bounds of every object | The view's visible instances and draw counts |
 | Light clustering | Compute | The light list | The light grid, which lists the lights that reach each part of the view |
 | Shadow cascades | Shadow, one pass per cascade | Nothing | One layer of the shadow map each |
 | Depth prepass | Scene | Nothing | The scene depth |
-| Opaque | Scene | The shadow map, the light grid and the light list | The scene color and depth |
+| Opaque | Scene | The camera's visible instances, the shadow map, the light grid and the light list | The scene color and depth |
 | Transparent | Scene | The shadow map, the light grid and the light list | The scene color and depth |
 | Debug lines | Scene | Nothing | The scene color and depth |
 | Final pass | Fullscreen | The scene color | The canvas |
+| Resolve | Resolve | The scene color | The canvas |
 
-The depth prepass runs on the quality presets that turn it on. Debug lines run only while the sketch draws debug lines. On WebGL2 the job workers cluster the lights, so the graph has no clustering pass there.
+The depth prepass runs on the quality presets that turn it on. Debug lines run only while the sketch draws debug lines. On WebGL2 the job workers cull the objects and cluster the lights, so the graph has no culling or clustering pass there.
+
+A view is what one pass draws from: a camera or a light's frustum, a layer mask, and a target. The engine culls each view on its own. On WebGPU each view has a culling pass, and on WebGL2 the job workers list the visible objects of each view.
+
+The final pass runs when it has work to do on the scene color, such as tone mapping or scaling the image up. When it has none, the resolve pass runs instead. The resolve pass draws nothing: the scene's render pass resolves its multisampled color straight into the canvas. The frame then needs no extra pass, copy or texture.
 
 ## Why passes are declarations
 
@@ -81,7 +90,7 @@ The graph also works out how each texture is used: as a render target, as a text
 Phone GPUs draw in tiles, and copying tiles between the chip and memory takes much of their time. The graph keeps that copying low:
 
 - Neighboring passes that draw into the same targets share one render pass, so the targets stay on the chip between them. The four scene passes share one render pass this way.
-- A render pass stores a target only when a later pass or frame reads it. The scene's render pass resolves the multisampled scene color into a texture for the final pass. It then discards the multisampled color and the depth, so neither goes to memory.
+- A render pass stores a target only when a later pass or frame reads it. The scene's render pass resolves the multisampled scene color into a texture for the final pass. When the resolve pass runs, the color goes straight into the canvas instead. The render pass then discards the multisampled color and the depth, so neither goes to memory.
 - On devices that support transient attachments, a target that lives within one render pass gets that usage. The GPU can then keep it in tile memory only. Chrome 146 and later support them.
 
 ## Switching passes on and off
@@ -99,7 +108,7 @@ The graph checks the passes each time it compiles, and reports each problem as a
 | [E1502](../errors/E1502.md) | A pass uses a target or buffer that no pass creates, or reads one that no running pass writes. |
 | [E1503](../errors/E1503.md) | Two passes create the same target. |
 | [E1504](../errors/E1504.md) | The passes form a cycle, so no order works. |
-| [E1505](../errors/E1505.md) | A pass draws into targets that cannot share one render pass. |
+| [E1505](../errors/E1505.md) | A pass draws into targets that cannot share one render pass, or a resolve pass cannot resolve its target into the canvas. |
 
 In 0.1 the engine declares every pass, so these errors mean an engine bug. From 0.2, passes that you add get the same checks.
 

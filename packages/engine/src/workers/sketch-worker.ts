@@ -15,6 +15,7 @@ import {
 	replyWithCapture,
 	type SketchWorkerMessage,
 	startSteps,
+	startWorker,
 	startWorkerCore,
 } from './protocol';
 
@@ -55,9 +56,8 @@ async function runPipelined(sketch: SketchRunner, control: ArrayBufferLike): Pro
 }
 
 const step = startSteps('sketch');
-step('loaded');
 
-self.onmessage = async (event: MessageEvent<SketchWorkerMessage>) => {
+startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => {
 	const message = event.data;
 	if (message.type === 'init') {
 		try {
@@ -118,4 +118,4 @@ self.onmessage = async (event: MessageEvent<SketchWorkerMessage>) => {
 	} else if (message.type === 'lose-gpu') {
 		drawing?.simulateLoss();
 	}
-};
+});

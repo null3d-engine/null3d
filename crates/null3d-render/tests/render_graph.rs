@@ -1246,3 +1246,220 @@ fn the_error_table_shows_the_messages_the_graph_prints() {
         );
     }
 }
+
+/// The scene's color in the canvas's format and its depth, both multisampled; a resolve pass that
+/// takes the color to the canvas, and a final pass that would, switched off.
+fn resolved_scene() -> RenderGraph {
+    let mut graph = RenderGraph::new();
+    graph.add_pass(
+        Pass::new("Opaque", PassKind::Scene)
+            .creates("sceneColor", Target::color(format::CANVAS).samples(SAMPLES))
+            .creates("sceneDepth", DEPTH.samples(SAMPLES)),
+    );
+    graph.add_pass(
+        Pass::new("Resolve", PassKind::Resolve)
+            .reads("sceneColor")
+            .writes(CANVAS),
+    );
+    let final_pass = graph.add_pass(
+        Pass::new("Final", PassKind::Fullscreen)
+            .size(Size::Canvas)
+            .reads("sceneColor")
+            .writes(CANVAS),
+    );
+    graph.set_enabled(final_pass, false);
+    graph
+}
+
+#[test]
+fn a_resolve_pass_resolves_its_target_into_the_canvas_in_the_render_pass_that_draws_it() {
+    let mut graph = resolved_scene();
+    graph.set_transient_attachments(true);
+    let graph = compiled(graph);
+    // The resolve joins the scene's render pass and costs no pass, copy or texture of its own.
+    assert_eq!(steps(&graph), [vec!["Opaque", "Resolve"]]);
+    let [color, depth] = attachments_of(&graph, "Opaque")[..] else {
+        panic!("the scene's render pass has a color and a depth attachment");
+    };
+    assert_eq!(color.resolve, Some(Surface::Canvas));
+    assert_eq!((color.load, color.store), (LoadOp::Clear, StoreOp::Discard));
+    assert_eq!(
+        (depth.resolve, depth.load, depth.store),
+        (None, LoadOp::Clear, StoreOp::Discard)
+    );
+    let transient = usage::RENDER_ATTACHMENT | usage::TRANSIENT_ATTACHMENT;
+    assert_eq!(
+        graph.plan().unwrap().textures(),
+        [
+            PlannedTexture {
+                target: Target::color(format::CANVAS).samples(SAMPLES),
+                size: Size::Full,
+                usage: transient
+            },
+            PlannedTexture {
+                target: DEPTH.samples(SAMPLES),
+                size: Size::Full,
+                usage: transient
+            },
+        ],
+        "no texture to resolve into, and both targets stay in tile memory"
+    );
+    let color = graph.find_resource("sceneColor").unwrap();
+    assert_eq!(graph.plan().unwrap().sampled_texture_of(color), None);
+}
+
+#[test]
+fn switching_from_the_resolve_to_the_final_pass_resolves_into_a_texture_it_samples() {
+    let mut graph = resolved_scene();
+    let (resolve, final_pass) = (
+        graph.find_pass("Resolve").unwrap(),
+        graph.find_pass("Final").unwrap(),
+    );
+    graph.compile().unwrap();
+    graph.set_enabled(resolve, false);
+    graph.set_enabled(final_pass, true);
+    assert_eq!(graph.compile(), Ok(true), "one compile for both switches");
+    assert_eq!(steps(&graph), [vec!["Opaque"], vec!["Final"]]);
+    let color = attachments_of(&graph, "Opaque")[0];
+    let sampled = graph
+        .plan()
+        .unwrap()
+        .sampled_texture_of(graph.find_resource("sceneColor").unwrap());
+    assert!(matches!(sampled, Some(Surface::Texture(_))));
+    assert_eq!(color.resolve, sampled);
+    assert_eq!(
+        texture_of_surface(&graph, sampled).usage,
+        usage::RENDER_ATTACHMENT | usage::TEXTURE_BINDING
+    );
+
+    graph.set_enabled(resolve, true);
+    graph.set_enabled(final_pass, false);
+    graph.compile().unwrap();
+    assert_eq!(steps(&graph), [vec!["Opaque", "Resolve"]]);
+    assert_eq!(
+        attachments_of(&graph, "Opaque")[0].resolve,
+        Some(Surface::Canvas)
+    );
+}
+
+#[test]
+fn a_pass_that_draws_into_the_canvas_after_a_resolve_keeps_what_it_holds() {
+    let mut graph = resolved_scene();
+    graph.add_pass(
+        Pass::new("Overlay", PassKind::Fullscreen)
+            .size(Size::Canvas)
+            .writes(CANVAS),
+    );
+    let graph = compiled(graph);
+    assert_eq!(steps(&graph), [vec!["Opaque", "Resolve"], vec!["Overlay"]]);
+    let canvas = attachments_of(&graph, "Overlay")[0];
+    assert_eq!((canvas.load, canvas.store), (LoadOp::Load, StoreOp::Store));
+}
+
+#[test]
+fn a_resolve_of_a_kept_target_that_no_pass_draws_this_frame_loads_it() {
+    let mut graph = RenderGraph::new();
+    let kept = Target::color(format::CANVAS).samples(SAMPLES);
+    graph.keep("picture", kept, Size::Full);
+    let draw = graph.add_pass(Pass::new("Picture", PassKind::Scene).writes("picture"));
+    graph.add_pass(
+        Pass::new("Resolve", PassKind::Resolve)
+            .reads("picture")
+            .writes(CANVAS),
+    );
+    graph.set_enabled(draw, false);
+    let graph = compiled(graph);
+    assert_eq!(steps(&graph), [vec!["Resolve"]]);
+    let [picture] = attachments_of(&graph, "Resolve")[..] else {
+        panic!("the resolve's render pass attaches the kept target");
+    };
+    assert_eq!(picture.resolve, Some(Surface::Canvas));
+    assert_eq!(
+        (picture.load, picture.store),
+        (LoadOp::Load, StoreOp::Store)
+    );
+    assert_eq!(
+        texture_of(&graph, "picture").usage,
+        usage::RENDER_ATTACHMENT,
+        "attached, never sampled"
+    );
+}
+
+#[test]
+fn a_resolve_pass_that_cannot_resolve_into_the_canvas_fails_with_code_1505() {
+    let check = |mut graph: RenderGraph, target: Option<&str>| {
+        let error = graph.compile().unwrap_err();
+        assert!(
+            matches!(
+                error,
+                GraphError::TargetMismatch {
+                    reason: Mismatch::Resolve,
+                    ..
+                }
+            ),
+            "{error:?}"
+        );
+        let resolve = graph.find_pass("Resolve").unwrap();
+        let named = target.map_or(u32::MAX, |t| graph.find_resource(t).unwrap().index() as u32);
+        assert_eq!(error.details(), [resolve.index() as u32, named]);
+        graph.explain(error)
+    };
+    let scene = |color: Target| {
+        let mut graph = RenderGraph::new();
+        graph.add_pass(Pass::new("Opaque", PassKind::Scene).creates("color", color));
+        graph
+    };
+    let multisampled = Target::color(format::CANVAS).samples(SAMPLES);
+    let resolve = || Pass::new("Resolve", PassKind::Resolve);
+
+    // A target with one sample, and one in another format.
+    for color in [Target::color(format::CANVAS), HDR.samples(SAMPLES)] {
+        let mut graph = scene(color);
+        graph.add_pass(resolve().reads("color").writes(CANVAS));
+        assert_eq!(
+            check(graph, Some("color")),
+            r#"E1505: the pass "Resolve" cannot resolve "color" into the canvas. A resolve pass writes only the canvas. It reads one multisampled color target in the canvas's format and size, which no other running pass reads."#
+        );
+    }
+
+    // A target that another running pass samples, which would need a second resolve.
+    let mut graph = scene(multisampled);
+    graph.add_pass(
+        Pass::new("Glow", PassKind::Fullscreen)
+            .reads("color")
+            .creates("glow", HDR),
+    );
+    graph.add_pass(resolve().reads("color").writes(CANVAS));
+    check(graph, Some("color"));
+
+    // A resolve into anything but the canvas, and one that does not write the canvas.
+    let mut graph = scene(multisampled);
+    graph.add_pass(Pass::new("Other", PassKind::Scene).creates("other", HDR));
+    graph.add_pass(resolve().reads("color").writes("other"));
+    check(graph, Some("other"));
+    let mut graph = scene(multisampled);
+    graph.add_pass(resolve().reads("color"));
+    check(graph, Some("color"));
+
+    // A resolve that names no target.
+    let mut graph = scene(multisampled);
+    graph.add_pass(resolve().writes(CANVAS));
+    assert_eq!(
+        check(graph, None),
+        r#"E1505: the pass "Resolve" names no target to resolve into the canvas."#
+    );
+}
+
+#[test]
+fn the_text_dump_shows_a_resolve_into_the_canvas() {
+    let dot = resolved_scene().dot();
+    for line in [
+        r#"label="render pass: full size, 4 samples\nsceneColor: clear, discard, resolve into canvas\nsceneDepth: clear, discard";"#,
+        r#""pass Resolve" [shape=box, label="2. Resolve\nresolve pass, full size"];"#,
+        r#"texture 0: attachment\nresolves into canvas"];"#,
+        r#""resource sceneColor" -> "pass Resolve";"#,
+        r#""pass Resolve" -> "resource canvas";"#,
+    ] {
+        assert!(dot.contains(line), "{line}\n{dot}");
+    }
+}
