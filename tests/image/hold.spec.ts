@@ -3,10 +3,10 @@
 // tests read what the engine publishes on a page that handles no error itself. The image test
 // manifest's held test checks the held frame's pixels in every thread mode and on every tier.
 import { expect, type Page, test } from '@playwright/test';
+import { type HoldReport, holdResult, windowValue } from '../../packages/cli/src/page.js';
 import { randFloat, random, seed } from '../../packages/engine/src/math/math.ts';
 import { HOLD_SEED } from '../../packages/engine/src/sketch/random.ts';
 import { ENGINE_MODES, type EngineMode } from '../lib/engine-checks.ts';
-import { type HoldReport, holdResult, windowValue } from '../lib/page-result.ts';
 
 /** The sketch time the tests hold at, and the frame it gives: one frame, then 90 steps of 1/60 s. */
 const HOLD_SECONDS = 1.5;
@@ -64,6 +64,13 @@ test('hold mode steps the sketch in fixed steps to the held time, with seeded ra
 	for (const mode of ENGINE_MODES) {
 		const held = frameOf(await hold(page, `hold=${HOLD_SECONDS}${modeSwitches(mode)}`), mode.name);
 		expect([mode.name, held.time, held.frame]).toEqual([mode.name, HOLD_SECONDS, HELD_FRAME]);
+		// The held frame is the first that the engine draws: it builds its pipelines and uploads the
+		// whole scene. A hold times no GPU work.
+		const { stats } = held;
+		expect([mode.name, stats?.frames, stats?.gpuMs]).toEqual([mode.name, 1, null]);
+		expect(stats?.drawCalls.median).toBeGreaterThan(0);
+		expect(stats?.uploadBytes.median).toBeGreaterThan(0);
+		expect(stats?.pipelines).toBeGreaterThan(0);
 		const { state, mode: engineMode, seededOnPage, ownAfterStop } = await sketchState(page);
 		expect([mode.name, engineMode.hold, engineMode.renderThread]).toEqual([
 			mode.name,
@@ -134,6 +141,18 @@ for (const mode of ENGINE_MODES)
 		expect(result.code).toBe('E1408');
 		expect(result.error).toContain('hold mode stopped at 0.5 seconds, in frame 31');
 		expect(result.error).toContain('the throwing sketch threw on purpose');
+	});
+
+for (const mode of ENGINE_MODES)
+	test(`hold mode stops in the frame that skips a static object's setter, ${mode.name}`, async ({
+		page,
+	}) => {
+		const result = await hold(page, `hold=2&sketch=unmarked-write${modeSwitches(mode)}`);
+		if (result.ok) throw new Error('the hold passed, though the sketch skipped a setter');
+		expect(result.code).toBe('E1408');
+		expect(result.error).toContain(
+			'hold mode stopped at 0.5 seconds, in frame 31: E1110: the position of "Crate" (slot 1) changed without a setter.',
+		);
 	});
 
 test('hold mode publishes a failed setup at once, with its code', async ({ page }) => {

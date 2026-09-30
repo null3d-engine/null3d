@@ -6,7 +6,9 @@
 // path against three.js's faster renderer and against three.js on the same API at every count.
 // With --jobs it runs the null3d pages at each job worker count instead, and reports each count.
 // With --compare it runs the null3d pages of two built checkouts in turns and judges the second
-// against the first, as the benchmark job in CI does.
+// against the first, as the benchmark job in CI does. Every run measures the production build of the
+// benchmark pages, as a developer ships the engine: without development checks. --dev measures the
+// dev server's pages instead.
 // From the repository root:
 //   bun run bench:run                                (S1: 5 runs of 5 s warm-up and 30 s measured)
 //   bun run bench:run -- --scenes s1,s1-static,s2 --runs 3 --seconds 10
@@ -15,6 +17,7 @@
 //   bun run bench:run -- --sweep --seconds 5
 //   bun run bench:run -- --browser brave
 //   bun run bench:run -- --compare ../baseline,. --runs 3 --seconds 10
+//   bun run bench:run -- --dev --scenes s2 --pages null3d-webgpu
 // Options:
 //   --scenes <list>   s1, s1-static, s2; the default is s1, and every scene with --sweep or
 //                     --compare
@@ -28,9 +31,13 @@
 //   --sweep           each scene at the object counts in SWEEP_COUNTS, one run each, instead of
 //                     the runs above
 //   --compare <a>,<b> two checkouts, each built with bun run build: the baseline a and the new
-//                     build b. Each serves its pages on its own port, NULL3D_PORT's and the next.
-//                     The command fails when b is slower than the rules in bench/lib/compare.ts
-//                     allow and no Bench-Expected trailer in the commits from a to b names it
+//                     build b. Each checkout's pages get a production build of their own, served
+//                     on its own port, NULL3D_PORT's and the next. The command fails when b is
+//                     slower than the rules in bench/lib/compare.ts allow and no Bench-Expected
+//                     trailer in the commits from a to b names it
+//   --dev             the dev server's pages, where the engine runs its development checks,
+//                     instead of the production build; with --compare, each checkout's dev server
+//                     serves its own pages
 //   --browser <name>  chrome (the default), brave, or chromium: Playwright's Chromium without a
 //                     window, drawing with SwiftShader as CI's Linux machines do
 // Every browser starts with WebGPU's developer features on, so GPU timestamps are not rounded.
@@ -39,17 +46,11 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { cpus, platform } from 'node:os';
 import { join, relative, resolve } from 'node:path';
 import { type Browser, chromium } from '@playwright/test';
+import { SWIFTSHADER_ARGS } from '../packages/cli/src/browser.js';
 import { jobWorkersProblem } from '../tests/lib/engine-checks.ts';
 import { pageResult } from '../tests/lib/page-result.ts';
 import { runName } from '../tests/lib/runs.ts';
-import {
-	type DevServer,
-	HTTP_PORT,
-	REPO_ROOT,
-	SWIFTSHADER_ARGS,
-	startServer,
-	startServerAt,
-} from '../tests/lib/server.ts';
+import { type DevServer, HTTP_PORT, REPO_ROOT } from '../tests/lib/server.ts';
 import {
 	BUILDS,
 	type Build,
@@ -83,6 +84,7 @@ import {
 	summarizeRuns,
 	sweepReport,
 } from './lib/report';
+import { DEV_OPTION, pagesText, serveBenchPages } from './lib/serve';
 import { MEASURE_SECONDS, S2_NODES_PER_TREE, S2_ROOTS, WARMUP_SECONDS } from './scenes/spec';
 
 const BRAVE = '/Applications/Brave Browser.app/Contents/MacOS/Brave Browser';
@@ -122,6 +124,8 @@ export interface BenchOptions {
 	/** The checkouts of the baseline and the new build to compare, or null for another kind of run. */
 	compare: [string, string] | null;
 	browser: (typeof BROWSERS)[number];
+	/** The dev server's pages, with the engine's development checks, instead of the production build. */
+	dev: boolean;
 }
 
 /** A run's warm-up and measured seconds: `--seconds` for both, or the protocol's. */
@@ -158,6 +162,7 @@ export function parseBenchArgs(args: readonly string[]): BenchOptions {
 		sweep: false,
 		compare: null,
 		browser: 'chrome',
+		dev: false,
 	};
 	for (let i = 0; i < args.length; i++) {
 		const arg = args[i];
@@ -176,6 +181,7 @@ export function parseBenchArgs(args: readonly string[]): BenchOptions {
 			options.compare = [baseline, next];
 		} else if (arg === '--browser')
 			options.browser = list(value(), BROWSERS, '--browser')[0] as BenchOptions['browser'];
+		else if (arg === DEV_OPTION) options.dev = true;
 		else throw new Error(`unknown option ${arg}`);
 	}
 	if (!(Number.isInteger(options.runs) && options.runs > 0))
@@ -405,9 +411,10 @@ function machineText(browser: Browser, name: BenchOptions['browser']): string {
 }
 
 /**
- * Runs the null3d pages of two built checkouts in turns, each served by its own checkout's dev
- * server, and judges the new build against the baseline. Every run's result, the summary of each
- * build's runs and the comparison go to `dir`.
+ * Runs the null3d pages of two built checkouts in turns, and judges the new build against the
+ * baseline. Each checkout's pages get a production build of their own, which a server of their own
+ * serves; with `--dev`, each checkout's dev server serves its pages. Every run's result, the
+ * summary of each build's runs and the comparison go to `dir`.
  */
 async function runComparison(
 	browser: Browser,
@@ -427,11 +434,17 @@ async function runComparison(
 	const runs: BuildRun[] = [];
 	try {
 		// The new build takes the port after the dev server's, where the HTTPS server would be.
-		const baseline = await startServerAt(roots.baseline, HTTP_PORT);
-		servers.push(baseline);
-		const next = await startServerAt(roots.new, HTTP_PORT + 1);
-		servers.push(next);
-		const urls: Record<Build, string> = { baseline: baseline.url, new: next.url };
+		const urls = {} as Record<Build, string>;
+		for (const [index, build] of BUILDS.entries()) {
+			const server = await serveBenchPages({
+				dev: options.dev,
+				root: roots[build],
+				port: HTTP_PORT + index,
+				outDir: join(REPO_ROOT, `target/bench-pages-${build}`),
+			});
+			servers.push(server);
+			urls[build] = server.url;
+		}
 		for (let round = 1; round <= options.runs; round++)
 			for (const scene of scenes)
 				for (const kind of pages)
@@ -466,7 +479,7 @@ async function runComparison(
 		runs: options.runs,
 		warmupSeconds: warmup,
 		measureSeconds: measure,
-		browser: machineText(browser, options.browser),
+		browser: `${machineText(browser, options.browser)}, on each commit's ${pagesText(options.dev)}`,
 		selection,
 		trailers,
 	});
@@ -526,7 +539,7 @@ async function main(): Promise<void> {
 			report = comparison.report;
 			if (!comparison.pass) process.exitCode = 1;
 		} else {
-			const server = await startServer();
+			const server = await serveBenchPages({ dev: options.dev });
 			try {
 				report = options.sweep
 					? await runSweep(browser, server.url, options, dir)
@@ -534,6 +547,7 @@ async function main(): Promise<void> {
 			} finally {
 				server.stop();
 			}
+			report = `Benchmark pages: the ${pagesText(options.dev)}.\n\n${report}`;
 		}
 		writeFileSync(join(dir, 'summary.md'), `${report}\n`);
 		console.log(`\n${report}\n\nresults: ${relative(REPO_ROOT, dir)}`);

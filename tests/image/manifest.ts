@@ -27,12 +27,14 @@ const DEPTH_MODES: readonly DepthMode[] = ['standard', 'reversed-gl', 'reversed'
 export const IMAGE_TESTS: readonly ImageTest[] = [
 	// A clear color, read back through the engine's readback on each GPU interface.
 	{ name: 'clear', page: 'tests/pages/clear.html', size: [64, 64], tiers: ['webgpu', 'webgl2'] },
-	// Every texture command of the GPU layer, replayed on each path, which must all draw one image.
+	// Every texture command of the GPU layer, replayed on each path, which must all draw one image,
+	// and release every image they had.
 	{
 		name: 'replay-textures',
 		page: 'tests/pages/replay-textures.html',
-		size: [256, 256],
+		size: [320, 256],
 		sameOnEveryTier: true,
+		expect: { released: true },
 	},
 	// A hand-built draw list: GPU culling, then indirect draws from a render bundle with MSAA.
 	{
@@ -40,7 +42,8 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 		page: 'tests/pages/replay.html',
 		size: [256, 256],
 		tiers: ['webgpu'],
-		// 13 red and 12 blue boxes are in view; the 26th box sits behind the camera.
+		// 13 red and 12 blue boxes are in view. The 26th box sits behind the camera, and the 27th
+		// above the grid on a layer that the view leaves out.
 		expect: { visible: [13, 12] },
 	},
 	// An animated scene held at 1.5 seconds: the same steps and seeded random numbers in every mode.
@@ -50,8 +53,39 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 		hold: 1.5,
 		modes: ALL_MODES,
 	},
+	// Textures from PNG, JPEG, WebP and AVIF files, sRGB and linear textures, each wrap mode, and
+	// magnified texels with each filter. Every thread mode sends the images to the thread that draws
+	// its own way, and must draw the same image.
+	{
+		name: 'textures',
+		sketch: 'tests/pages/sketches/textures-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+		modes: ALL_MODES,
+	},
+	// Mip levels that the GPU makes: a checkerboard that shrinks and a floor that recedes, with and
+	// without mip levels, and with anisotropic filtering.
+	{
+		name: 'texture-mipmaps',
+		sketch: 'tests/pages/sketches/texture-mipmaps-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+	},
+	// Fifty textures that load in waves in a live engine, a band of rows per frame under a small
+	// upload budget, while their array grows twice, to 64 layers. No frame may upload more than the
+	// budget, and the GPU memory count must match the array.
+	{
+		name: 'texture-arrays',
+		page: 'tests/pages/texture-arrays.html',
+		size: [400, 240],
+		modes: ALL_MODES,
+		expect: { withinBudget: true, memoryCounted: true },
+	},
 	// A small static scene: lit and unlit meshes, a hierarchy and an instance batch.
 	{ name: 'scene', sketch: 'tests/pages/sketches/boxes-sketch.ts', hold: 0, modes: ALL_MODES },
+	// The sketch of the project that the command-line tool's tests run in, held at 1.5 seconds. The
+	// shot command draws the project's own page, and its images must match these references.
+	{ name: 'project', sketch: 'tests/fixtures/project/sketch.ts', hold: 1.5 },
 	// The same scene on WebGL2 with each upload copied out of shared memory first.
 	{
 		name: 'scene-copied-uploads',
@@ -84,6 +118,10 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 		reference: 'cells',
 		tolerance: { threshold: 0, maxDiffRatio: 0 },
 	},
+	// Objects, a parent and its child, and instance batches on three layers, some of them moved to
+	// other layers after they were created, and a camera that draws two of the layers. A child keeps
+	// its own layers, so the child of a parent that the camera leaves out still draws.
+	{ name: 'layers', sketch: 'tests/pages/sketches/layers-sketch.ts', hold: 0.1 },
 	// Meshes from arrays in every vertex format, a mesh too big for 16-bit indices that splits into
 	// parts, and normals and tangents that the engine computes: on job workers in the threaded build,
 	// and on the page in the single-threaded build, which must compute the same values. WebGL2 lays
@@ -94,6 +132,15 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		size: [400, 300],
 		modes: ['pipelined', 'single-threaded'],
+		sameOnEveryTier: true,
+	},
+	// The nine geometry generators, each lit and with its texture coordinates shown as colors. Every
+	// tier must draw the WebGPU image.
+	{
+		name: 'generators',
+		sketch: 'tests/pages/sketches/generators-sketch.ts',
+		hold: 0,
+		size: [480, 270],
 		sameOnEveryTier: true,
 	},
 	// Two surfaces 1 cm apart at each distance from 1 m to 10 km, in each GPU path's own depth mode.

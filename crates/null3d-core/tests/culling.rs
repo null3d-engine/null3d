@@ -6,9 +6,11 @@ mod common;
 use common::{Rng, Workers, frusta, orthographic, perspective, random_spheres};
 use null3d_core::cells::CELL_SHIFT;
 use null3d_core::culling::{
-    BY_ROW, BucketedCull, CULL_CHUNK, CullOutput, CullRun, CullSet, Frustum, NO_BUCKET, ROW_CELLS,
-    cull_into_buckets, cull_parallel, cull_spheres, cull_spheres_in_cells, cull_spheres_reference,
+    BY_ROW, BucketedCull, CULL_CHUNK, CullOutput, CullRun, CullSet, CullView, Frustum, NO_BUCKET,
+    ROW_CELLS, SetLayers, cull_into_buckets, cull_parallel, cull_spheres, cull_spheres_in_cells,
+    cull_spheres_reference,
 };
+use null3d_core::layers::{ALL_LAYERS, DEFAULT_LAYERS};
 use null3d_core::world::SphereArrays;
 
 #[test]
@@ -141,22 +143,28 @@ fn runs_of(set: u32, rows: u32, bucket: u32, base: u32, cell: u32, out: &mut Vec
 }
 
 /// The list [`cull_into_buckets`] must make, one run and one row at a time: every visible entry
-/// in bucket order, and within a bucket in run order and row order. A run in one cell tests its
-/// spheres against the frustum moved into the cell; a run whose rows lie in different cells moves
-/// each sphere by its cell's offset.
+/// on the view's layers in bucket order, and within a bucket in run order and row order. A run in
+/// one cell tests its spheres against the frustum moved into the cell; a run whose rows lie in
+/// different cells moves each sphere by its cell's offset.
 fn bucketed_reference(
-    frustum: &Frustum,
+    view: CullView<'_>,
     sets: &[[Vec<f32>; 4]],
     cells: &[Vec<u32>],
+    layers: &[SetLayers<'_>],
     runs: &[CullRun],
     row_buckets: &[u32],
     buckets: u32,
 ) -> (Vec<u32>, Vec<u32>) {
+    let frustum = view.frustum;
     let mut by_bucket = vec![Vec::new(); buckets as usize];
     for run in runs {
         let [xs, ys, zs, rs] = &sets[run.set as usize];
         for row in run.start..run.end {
             let r = row as usize;
+            let mask = match layers[run.set as usize] {
+                SetLayers::All(mask) => mask,
+                SetLayers::Rows(masks) => masks[r],
+            };
             let (cell, visible) = if run.cell == ROW_CELLS {
                 let cell = cells[run.set as usize][r];
                 let [x, y, z, _] = OFFSETS[cell as usize];
@@ -172,7 +180,7 @@ fn bucketed_reference(
             } else {
                 run.bucket
             };
-            if visible && bucket != NO_BUCKET {
+            if visible && bucket != NO_BUCKET && mask & view.layers != 0 {
                 by_bucket[bucket as usize].push(row + run.base + (cell << CELL_SHIFT));
             }
         }
@@ -190,6 +198,7 @@ fn bucketed_culling_matches_the_reference_for_0_to_8_workers() {
     // A scene whose rows look up their buckets, some drawing nowhere, and two batches that each
     // fill one bucket. The scene's rows and the first batch's lie in different cells; the second
     // batch lies in one cell. The first batch is long enough that the copy pass runs in parallel.
+    // The scene's rows have layer masks of their own, and each batch has one mask for its rows.
     let sets = [
         random_spheres(10_001, 21),
         random_spheres(90_000, 22),
@@ -207,6 +216,15 @@ fn bucketed_culling_matches_the_reference_for_0_to_8_workers() {
         .map(|&n| (0..n).map(|_| rng.below(OFFSETS.len() as u32)).collect())
         .collect();
     cells.push(vec![2; 4_099]);
+    let masks = [0, DEFAULT_LAYERS, 2, 3, 1 << 31, ALL_LAYERS];
+    let scene_layers: Vec<u32> = (0..10_001)
+        .map(|_| masks[rng.below(masks.len() as u32) as usize])
+        .collect();
+    let layers = [
+        SetLayers::Rows(&scene_layers),
+        SetLayers::All(DEFAULT_LAYERS),
+        SetLayers::All(2),
+    ];
     let mut runs = Vec::new();
     runs_of(0, 10_001, BY_ROW, 0, ROW_CELLS, &mut runs);
     runs_of(1, 90_000, 3, 20_000, ROW_CELLS, &mut runs);
@@ -226,23 +244,34 @@ fn bucketed_culling_matches_the_reference_for_0_to_8_workers() {
         CullSet {
             spheres: SphereArrays::new(xs, ys, zs, rs),
             cells: &cells[set as usize],
+            layers: layers[set as usize],
         }
     };
-    // The usual views, and one that culls nothing, so the list is long enough for the parallel
-    // copy.
-    let mut views = frusta();
-    views.push(Frustum::from_planes([[0.0; 4]; 6]));
+    // The usual frusta, and one that culls nothing, so the list is long enough for the parallel
+    // copy. Each is seen on every layer, on the default layer alone, and on two layers that leave
+    // out the first batch's.
+    let mut frusta = frusta();
+    frusta.push(Frustum::from_planes([[0.0; 4]; 6]));
+    let views: Vec<CullView<'_>> = frusta
+        .iter()
+        .flat_map(|frustum| {
+            [ALL_LAYERS, DEFAULT_LAYERS, 2 | 1 << 31].map(|layers| CullView {
+                frustum,
+                offsets: &OFFSETS,
+                layers,
+            })
+        })
+        .collect();
     for workers in [0, 1, 2, 3, 4, 8] {
         let pool = Workers::start(workers);
         let mut out = BucketedCull::default();
         out.try_reserve(rows, runs.len() as u32, by_row, BUCKETS)
             .unwrap();
         let mut longest = 0;
-        for (f, frustum) in views.iter().enumerate() {
+        for (v, &view) in views.iter().enumerate() {
             let n = cull_into_buckets(
                 pool.jobs(),
-                frustum,
-                &OFFSETS,
+                view,
                 &set,
                 &runs,
                 &row_buckets,
@@ -250,17 +279,13 @@ fn bucketed_culling_matches_the_reference_for_0_to_8_workers() {
                 &mut out,
             );
             let (entries, starts) =
-                bucketed_reference(frustum, &sets, &cells, &runs, &row_buckets, BUCKETS);
-            assert_eq!(n, entries.len(), "{workers} workers, frustum {f}");
-            assert_eq!(
-                out.indices(),
-                &entries[..],
-                "{workers} workers, frustum {f}"
-            );
+                bucketed_reference(view, &sets, &cells, &layers, &runs, &row_buckets, BUCKETS);
+            assert_eq!(n, entries.len(), "{workers} workers, view {v}");
+            assert_eq!(out.indices(), &entries[..], "{workers} workers, view {v}");
             assert_eq!(
                 out.bucket_starts(),
                 &starts[..],
-                "{workers} workers, frustum {f}"
+                "{workers} workers, view {v}"
             );
             longest = longest.max(n);
         }
@@ -338,13 +363,18 @@ fn a_bucketed_output_without_room_for_the_runs_panics() {
         base: 0,
         cell: 0,
     };
+    let view = CullView {
+        frustum: &frustum,
+        offsets: &OFFSETS,
+        layers: ALL_LAYERS,
+    };
     cull_into_buckets(
         &null3d_core::jobs::JobSystem::new(0),
-        &frustum,
-        &OFFSETS,
+        view,
         &|_| CullSet {
             spheres: SphereArrays::new(&v, &v, &v, &v),
             cells: &[],
+            layers: SetLayers::All(DEFAULT_LAYERS),
         },
         &[run],
         &[],

@@ -21,9 +21,10 @@ use null3d_gpu::drawlist::{DrawList, DrawListError, Op, buffer_usage};
 use crate::camera::Perspective;
 use crate::frame_data::{FrameUniform, normalized_direction};
 use crate::graph::GraphError;
-use crate::materials::MaterialTable;
+use crate::materials::{MaterialTable, Shading};
 use crate::meshes::{MAX_BUFFER_BYTES, MeshStorage, Page};
 use crate::pipelines::DrawKey;
+use crate::textures::TextureStore;
 use crate::view::{MAX_VIEWS, View, ViewFrame, ViewId};
 
 /// Engine mesh ids count from 1; 0 marks an object with no mesh, such as a group or a camera.
@@ -310,20 +311,23 @@ struct Lighting {
     background: [f32; 3],
 }
 
-/// What the sketch sets and changes rarely: meshes, materials, the views and the lights.
+/// What the sketch sets and changes rarely: meshes, materials, textures, the views and the
+/// lights.
 pub struct SceneSettings {
     meshes: MeshStorage,
     materials: MaterialTable,
+    textures: TextureStore,
     /// The views, the camera's first.
     views: Vec<View>,
     lighting: Lighting,
 }
 
 impl SceneSettings {
-    pub fn new(meshes: MeshStorage, max_materials: u32) -> Self {
+    pub fn new(meshes: MeshStorage, max_materials: u32, textures: TextureStore) -> Self {
         Self {
             meshes,
             materials: MaterialTable::with_capacity(max_materials),
+            textures,
             views: vec![View::default()],
             lighting: Lighting {
                 sun_direction: [0.0, -1.0, 0.0, 0.0],
@@ -352,9 +356,58 @@ impl SceneSettings {
         &mut self.materials
     }
 
+    pub fn textures(&self) -> &TextureStore {
+        &self.textures
+    }
+
+    pub fn textures_mut(&mut self) -> &mut TextureStore {
+        &mut self.textures
+    }
+
+    /// Records the frame's texture work, then uploads the maps table into buffer `maps` when a
+    /// map changed, or a texture's layer became ready or stopped drawing. Returns true when a
+    /// map's bind group was made again, which render bundles that bind it must see.
+    pub(crate) fn record_textures(
+        &mut self,
+        list: &mut DrawList,
+        arena: &mut UploadArena,
+        maps: u32,
+        frame: u32,
+    ) -> Result<bool, RecordError> {
+        let remade = self.textures.record(list, frame)?;
+        let layers_changed = self.textures.take_layers_changed();
+        let textures = &self.textures;
+        let words = self
+            .materials
+            .changed_map_words(layers_changed, |map| textures.ready_layer(map));
+        if let Some(words) = words {
+            let (at, bytes) = arena.push(words_as_bytes(words))?;
+            list.push(Op::WriteBuffer, &[maps, 0, at, bytes])?;
+        }
+        Ok(remade)
+    }
+
+    /// The bind group of the map that a material draws with through `pipeline`, as
+    /// [`SceneSettings::pipeline_of`] chose it, or 0 when that pipeline reads no map.
+    pub fn texture_group(&self, material: u32, pipeline: DrawKey) -> u32 {
+        if pipeline.template != Shading::UnlitMap.template() {
+            return 0;
+        }
+        let map = self.materials.map(material - 1);
+        self.textures.group_id(map).unwrap_or(0)
+    }
+
     /// The camera the canvas shows the scene from: a scene object, and its lens.
     pub fn set_camera(&mut self, camera: Handle, lens: Perspective) {
         self.views[ViewId::CAMERA.index()].set_camera(camera, lens);
+    }
+
+    /// Sets the layers of the objects a view draws. A change needs no rebuild of the draw
+    /// tables: culling tests the view's mask every frame.
+    pub fn set_layers(&mut self, view: ViewId, mask: u32) {
+        if let Some(view) = self.views.get_mut(view.index()) {
+            view.set_layers(mask);
+        }
     }
 
     /// Adds a view that draws the scene into color and depth targets of its own, or returns
@@ -398,13 +451,21 @@ impl SceneSettings {
 
     /// What a mesh and material pair, by engine ids, asks of the pipeline that draws it, or `None`
     /// when the pair draws nowhere: no mesh, no material, an id that names nothing, or a mesh
-    /// without the vertex attributes that the material's shading reads.
+    /// without the vertex attributes that the material's shading reads. A material whose map is
+    /// gone, or whose mesh has no texture coordinates for it, draws with its color alone.
     pub fn pipeline_of(&self, mesh: u32, material: u32) -> Option<DrawKey> {
         if mesh == NO_MESH || material == NO_MATERIAL {
             return None;
         }
         let format = self.meshes.mesh(mesh - 1)?.format;
-        let shading = self.materials.shading(material - 1).ok()?;
+        let mut shading = self.materials.shading(material - 1).ok()?;
+        let needs = shading.attributes();
+        if shading == Shading::UnlitMap
+            && ((format & needs) != needs
+                || !self.textures.is_live(self.materials.map(material - 1)))
+        {
+            shading = Shading::Unlit;
+        }
         let needs = shading.attributes();
         ((format & needs) == needs).then_some(DrawKey {
             template: shading.template(),
@@ -425,10 +486,8 @@ impl SceneSettings {
         canvas: (u32, u32),
     ) -> Option<ViewFrame> {
         let aspect = canvas.0 as f32 / canvas.1.max(1) as f32;
-        let (view_proj, camera) = self
-            .views
-            .get(view.index())?
-            .transform(scene, parity, aspect)?;
+        let view = self.views.get(view.index())?;
+        let (view_proj, camera) = view.transform(scene, parity, aspect)?;
         let uniform = FrameUniform {
             view_proj,
             camera_position: [0.0, 0.0, 0.0, 1.0],
@@ -436,7 +495,7 @@ impl SceneSettings {
             sun_color: self.lighting.sun_color,
             ambient: self.lighting.ambient,
         };
-        Some(ViewFrame::new(uniform, camera))
+        Some(ViewFrame::new(uniform, camera, view.layers()))
     }
 }
 

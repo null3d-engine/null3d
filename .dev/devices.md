@@ -6,7 +6,7 @@ This guide covers the checks and benchmarks on phones, tablets and the Mac's bro
 
 - The device runner, `tests/real-browsers.ts`, runs a plan of test or benchmark pages in browsers that Playwright cannot drive. Each browser loads the runner page, which opens each page of the plan in a frame and posts its result.
 - The plans are `checks` (the default), `parity`, `bench`, `memory`, `depth`, `scale` and `startup`. `bun run devices` runs the checks on the phone and on the iPad.
-- The runner page fills in its run and its own name where a plan item's address has `{run}` and `{runner}`. The startup plan uses them, so each browser loads under addresses of its own.
+- The runner page fills in its run and its own name where a plan item's address has `{run}` and `{runner}`. The startup, bench and scale plans use them, so each browser loads under addresses of its own.
 - Run one runner at a time. All runs share one file, `target/runs/current.json`, which tells waiting runner pages which run to start. A second runner can replace it before a waiting page reads it, and that page then waits forever.
 - A runner page that waits on the local network reloads itself before each run after its first. No run then inherits memory that an earlier run kept.
 - The runner reports a page that gives no result in time with its last steps. The steps are each worker it started, each step of each worker's start, and the errors it logged. A page that fails reports its steps too.
@@ -19,13 +19,20 @@ This guide covers the checks and benchmarks on phones, tablets and the Mac's bro
 ## What the checks plan covers
 
 - The capabilities page loads first and again last. Each extension that the engine asks for by name must get the same answer in both loads. The runner notes whether the browser's list of supported extensions kept its order, because Brave shuffles it (hard rule 13).
-- The shared memory test page starts and stops the engine again and again in each thread mode. Where the browser has room for few shared memories, as on an iPad, the page starts more engines than fit at once. The check fails when a start fails, or when the room for shared memory does not come back after the engines stop.
+- The shared memory test page starts and stops the engine again and again in each thread mode. Where the browser has room for few shared memories, as on an iPad, the page starts more engines than fit at once. The check fails when a start fails, or when the room for shared memory does not come back within 31 s after the engines stop. Safari frees memory late on a slow machine. So a start that Safari refuses waits and tries again, for 30 s in all per page, as [the implementation notes](implementation-notes.md#threads-and-shared-memory) explain.
 - With `?kinds=`, the shared memory page tests other ways a worker can hold a shared memory. These tests found that Safari never frees the memory of a thread it stops inside a blocking wait, not even after a reload.
 - The engine test page runs again on its production build, in each thread mode on WebGL2. The runner builds the page, and the dev server serves it as it serves the startup loads. A production build bundles the engine into shared files, so some faults show only there. These checks found that Safari runs a worker's file a second time when another file imports it.
 - The checks plan runs every test of the image test manifest, and compares each image with the real-GPU reference at the device tolerance. [Image tests](image-tests.md) covers the tolerance, device references and the review of new images.
 - The texture page, one of those tests, replays every texture command of the GPU layer on each tier. Every tier must draw one image.
 - The image tests read frames through the engine's capture, which does not use the canvas. A frame that never reaches the screen still passes them. After a change to how frames reach the canvas, look at a demo page, and on a phone check `adb logcat` for GL errors.
 - The parity plan's null3D pages use the engine's hold mode, which steps each scene to its hold time before it draws. On a slow device, that adds the update time of 121 frames to each hold page. A page whose sketch fails reports the error at once, with the sketch time where it happened.
+
+## Benchmark runs
+
+- The bench and scale plans load the production build of the benchmark pages, as the benchmark tools on the Mac do. [Benchmarks](benchmarks.md#production-builds) says why.
+- The runner builds the pages into `target/bench-pages` before the run. The dev server serves the build under the load routes, as it serves the startup loads, with one address prefix for each run and runner.
+- The phone over USB and the tablet over the local network both reach the main checkout's dev server, so both load the same build.
+- A dev server that started before the load routes served the benchmark pages cannot serve these plans. The runner then stops and asks you to restart that server.
 
 ## Startup times
 
@@ -63,7 +70,13 @@ To collect the numbers, rest each device first and close its other tabs:
 
 - Keep the Mac's screen unlocked and its display awake during runs. Safari stops running pages while the Mac is locked, and the runner then waits until its deadline. Chrome started by Playwright keeps running.
 - Close a Safari tab that a test opened with AppleScript: tell Safari to close the tabs whose address holds `localhost:517`.
-- On GitHub's macOS machines, Safari has no WebGPU and Firefox has no WebGL2. The CI job passes `--allow-no-webgpu` and `--allow-no-webgl2`, so those pages count as skipped there.
+- On GitHub's macOS machines, Safari has no WebGPU and Firefox has no WebGL2. The CI jobs pass `--allow-no-webgpu` and `--allow-no-webgl2`, so those pages count as skipped there.
+- CI runs the checks plan in each browser in a job of its own, such as `real-browsers (Safari 1/1)`. A Linux job first builds the two WebAssembly files with `bun tools/build-wasm.ts --core-only`, and each macOS job downloads them.
+- Until 1.0, these jobs test only in the merge queue, once for each pull request before it merges. On a pull request and on main, each passes at once on a Linux machine. The pull request then still reports the check that the queue requires. Run `bun run test:real-browsers Safari Firefox` on the Mac before you push a change that Safari or Firefox may treat differently.
+- The runner's `--shard <i>/<n>` runs one of n shards of a fixed plan. The plan's items split evenly, and each item stays with the items whose results its check compares with. Examples are the capabilities page's second load and an image test's first thread mode.
+- On 30 September 2026, one job for both browsers took about 7.7 minutes. It built for 1.5 minutes, then ran the two browsers in turn for 5.6 minutes. The Rust cache did not shorten the build much. The threaded build compiled the standard library again each time, and the shader compiler took another half minute.
+- The split jobs took 3.3 minutes for Safari and 3.4 for Firefox, after a Linux build of 1 minute. That is 6.6 minutes of macOS machines per run. Two shards per browser took at most 2.3 minutes each, but 8.0 machine minutes and four machines at once.
+- GitHub's free plan gives 5 macOS machines at once, and main's benchmark job holds one for about 25 minutes after each merge. So add a shard only when a browser's job takes longer than the slowest Linux job, about 5 minutes. Before that, a run finishes no sooner, and other runs wait longer for a machine.
 
 ## Android phone
 

@@ -55,7 +55,9 @@ for (const mode of ENGINE_MODES) {
 		// Each step's time is whole milliseconds since the page started, as resource timing counts.
 		const coreAt = Number.parseInt(trail[core] as string, 10);
 		const files: Record<string, RegExp> = { 'the sketch module': /\/empty-sketch[^/]*\.[jt]s$/ };
-		if (mode.build === 'single') files["the core's loader"] = /\/null3d[^/_]*\.js$/;
+		// The loader is null3d.js, or null3d-<hash>.js once bundled, where the hash may hold any of
+		// the characters of URL-safe base64, the underscore among them.
+		if (mode.build === 'single') files["the core's loader"] = /\/null3d(-[\w-]+)?\.js$/;
 		if (mode.renderThread === 'main') files['the renderer'] = /\/draw(-[^/]*)?\.[jt]s$/;
 		for (const [what, file] of Object.entries(files)) {
 			const asked = result.downloads?.find(({ name }) => file.test(name))?.startTime;

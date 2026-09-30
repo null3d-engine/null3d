@@ -63,11 +63,11 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 | [Instances and batching](concepts/instances.md) | createInstances; typed-array views; markDirty; automatic batching; per-instance attributes. | experimental | 0.1 |
 | [GPU tiers and backends](concepts/backends.md) | WebGPU core, compatibility mode and WebGL2; depth on each tier; capability flags; the portable budget; never branching on GPU names. | experimental | 0.1 |
 | [Quality presets, dynamic resolution and frame budgets](concepts/quality-presets.md) | Low to Ultra; pixel-ratio caps; the frame-budget governor; quality events for sketch code. | planned | 0.1 |
-| [Color management](concepts/color-management.md) | Linear working space; sRGB hex colors; texture color spaces; parity with three.js. | planned | 0.1 |
+| [Color management](concepts/color-management.md) | Linear working space; sRGB hex colors; texture color spaces; parity with three.js. | experimental | 0.1 |
 | [Materials and pipelines](concepts/materials.md) | Built-in materials; permutations; pipeline warm-up; why changing shader features can stall a frame. | planned | 0.1 |
 | [Lighting and environment](concepts/lighting.md) | Light types and units; clustered lighting; environment maps and spherical harmonics. | planned | 0.1 |
 | [Shadows](concepts/shadows.md) | Cascades; update rates; filtering per preset; bias settings. | planned | 0.1 |
-| [Render layers](concepts/render-layers.md) | 32-bit layer masks on objects, cameras, raycasts and passes. | planned | 0.1 |
+| [Render layers](concepts/render-layers.md) | 32-bit layer masks that choose which cameras draw which objects and instance batches. | experimental | 0.1 |
 | [The render graph](concepts/render-graph.md) | Declared reads and writes; automatic order; transient memory; validation errors; the text dump. | experimental | 0.1 |
 | [Large worlds and precision](concepts/large-worlds.md) | Cell-relative positions and per-frame camera-to-cell offsets; reversed depth; largeWorld mode; batch origins; floating-origin geometry. | planned | 0.2 |
 | [Culling](concepts/culling.md) | Frustum culling on the GPU on WebGPU and on the job workers on WebGL2; grid cells and positions relative to the camera. | experimental | 0.1 |
@@ -87,7 +87,7 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 | [Lights](api/lights.md) | Directional, point, spot, hemisphere and ambient lights; shadow options. | experimental | 0.1 |
 | [Geometry](api/geometry.md) | Generators with three.js parameters; meshes from arrays; vertex formats; large meshes. | experimental | 0.1 |
 | [Materials](api/materials.md) | standard, unlit, shader, shadowCatcher; every option. | experimental | 0.1 |
-| [Textures](api/textures.md) | loadTexture options; fromData; fromImageBitmap; fromPass; cube maps. | planned | 0.1 |
+| [Textures](api/textures.md) | loadTexture options; fromData; fromImageBitmap; fromPass; cube maps. | experimental | 0.1 |
 | [Assets](api/assets.md) | loadGltf, loadTexture, loadEnvironment, preload, onProgress, destroy. | planned | 0.2 |
 | [Animation](api/animation.md) | The animator; play, crossFade, layers, events; morph weights. | planned | 0.2 |
 | [Raycasting and spatial queries](api/raycast.md) | raycast, raycastAny, raycastAll, raycastBatch, overlap queries, pointer events on objects. | planned | 0.2 |
@@ -111,7 +111,7 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 | --- | --- | --- | --- |
 | [Performance guide](guides/performance.md) | Measuring; the frame budget; common causes of slow frames and their fixes. | experimental | 0.1 |
 | [Phones and tablets](guides/phones.md) | Pixel-ratio caps; memory budgets; heat; testing on real devices. | planned | 0.1 |
-| [Custom shaders](guides/custom-shaders.md) | Surface functions; full shaders; uniforms and typed materials; hot reload. | planned | 0.1 |
+| [Custom shaders](guides/custom-shaders.md) | WGSL in sketch code; shader errors; surface functions; full shaders; uniforms and typed materials; hot reload. | experimental | 0.1 |
 | [Custom passes and render targets](guides/custom-passes.md) | Declaring passes; reading and writing named textures; layer masks. | planned | 0.2 |
 | [Loading screens and warm-up](guides/loading-screens.md) | preload; onProgress; scene.warmUp; upload budgets. | planned | 0.1 |
 | [Accessibility](guides/accessibility.md) | What the canvas tells assistive technology; keyboard use; reduced motion; pausing; loading and errors. | experimental | 0.1 |
@@ -131,7 +131,7 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 
 | Page | What it covers | Status | Version |
 | --- | --- | --- | --- |
-| [WGSL rules for portable shaders](shaders/wgsl-rules.md) | The three shared language features; limits budget; flat interpolation; what the build rejects. | experimental | 0.1 |
+| [WGSL rules for portable shaders](shaders/wgsl-rules.md) | The three shared language features; optional features; flat interpolation; limits budget; rules the build cannot check. | experimental | 0.1 |
 | [Surface functions](shaders/surface-functions.md) | The surface record; vertex-offset functions; per-instance attributes. | planned | 0.1 |
 | [Built-in shader inputs](shaders/builtins.md) | Camera, time, object, instance and light values available to custom shaders. | planned | 0.1 |
 | [Shader library and imports](shaders/library.md) | Importing engine shader modules (math, noise, lighting helpers). | planned | 0.1 |
@@ -154,7 +154,7 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 
 | Page | What it covers | Status | Version |
 | --- | --- | --- | --- |
-| [The `null3d` command](cli/null3d.md) | create, test, bench, shot, assets, docs, port, skills, mcp, doctor. | planned | 0.3 |
+| [The `null3d` command](cli/null3d.md) | create, test, bench, shot, assets, docs, port, skills, mcp, doctor. | experimental | 0.1 |
 
 ### Errors
 
@@ -169,15 +169,17 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 | [E1107: Object created twice](errors/E1107.md) | The engine core received a second create command for one object, so the TypeScript side and the core disagree about the scene. | generated | 0.1 |
 | [E1108: Value out of range](errors/E1108.md) | A call received a count or an index past its limit, such as a row past the capacity of an instance batch. | generated | 0.1 |
 | [E1109: Engine memory full](errors/E1109.md) | The engine could not create or grow its WebAssembly memory. A page with worker threads gives the engine 1 GiB by default, and up to 4 GiB through the memory option of createEngine. Each instance row takes about 180 bytes, or about 230 with per-row colors. So about 5 million rows fill 1 GiB, along with the rest of the scene. A browser can refuse memory sooner, as phones often do. It can also refuse a new engine's memory while the memory of an engine that stopped a moment before is not free yet. The engine then tries again for about 3 seconds before it fails. | generated | 0.1 |
+| [E1110: Unmarked write to a static object](errors/E1110.md) | A static object's position, rotation, scale or bounding radius changed without a setter. The engine recomputes a static object only in a frame where a setter marks it or its parent moves. So such a change can show late, or never. Development builds check these values of every static object before each frame's transform update. Release builds leave the check out. | generated | 0.1 |
 | [E1203: Invalid number](errors/E1203.md) | A call received a number that is not finite, such as NaN or Infinity. | generated | 0.1 |
 | [E1204: Invalid color](errors/E1204.md) | A call received a color that is not a hex string, a number from 0 to 0xffffff, or three numbers from 0 to 1. | generated | 0.1 |
 | [E1205: Unknown input name](errors/E1205.md) | An input call received a name that no key, button or action has, or `input.actions.define()` received an action name that a key or button already has. Names are case-sensitive: `KeyW` is the W key, and `keyW` names nothing. | generated | 0.1 |
 | [E1206: Invalid mesh arrays](errors/E1206.md) | geometry.fromArrays() received arrays that make no mesh. An array can have the wrong length for the vertex count, an index can name no vertex, or a value can be NaN or Infinity. Normals can also be missing, or both given and computed. | generated | 0.1 |
+| [E1207: Invalid layer mask](errors/E1207.md) | A call that sets layers received a number that is not a 32-bit layer mask: a fraction, NaN, or a number past 32 bits. | generated | 0.1 |
 | [E1301: No usable GPU path](errors/E1301.md) | The browser offers neither WebGPU nor WebGL2 for the way the engine was asked to draw. | generated | 0.1 |
 | [E1302: GPU lost](errors/E1302.md) | The browser took the GPU away while the engine drew, for example after a driver reset or a GPU crash, and the engine could not carry on. No new GPU device started, or the GPU was lost more than twice within a minute. The engine stopped drawing. | generated | 0.1 |
 | [E1303: WebAssembly SIMD missing](errors/E1303.md) | The browser runs WebAssembly without SIMD, which the engine's core needs. | generated | 0.1 |
 | [E1401: Not a sketch module](errors/E1401.md) | The module passed to createEngine as the sketch does not export a sketch as its default export. | generated | 0.1 |
-| [E1402: Engine core out of date](errors/E1402.md) | The engine core WebAssembly file lacks functions that the TypeScript side calls, so the two come from different builds. | generated | 0.1 |
+| [E1402: Engine core out of date](errors/E1402.md) | The engine core WebAssembly file lacks functions that the TypeScript side calls, so the two come from different builds. Development builds check this when the core loads. | generated | 0.1 |
 | [E1403: Engine core not ready](errors/E1403.md) | An engine call ran before the engine core started in this worker, or the core started twice. | generated | 0.1 |
 | [E1404: Engine thread failed](errors/E1404.md) | An engine thread hit an error it could not handle after the engine started, so the engine may have stopped. | generated | 0.1 |
 | [E1405: Engine thread did not start](errors/E1405.md) | An engine thread failed while the engine started, before the sketch ran. | generated | 0.1 |

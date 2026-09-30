@@ -8,15 +8,16 @@
 mod common;
 
 use common::graph::{CASCADES, engine_passes};
-use common::{World, grid};
+use common::{World, base_sphere, grid};
 use null3d_core::jobs::JobSystem;
+use null3d_core::scene::Command;
 use null3d_core::testing::CountingAllocator;
 use null3d_gpu::drawlist::{DrawList, Op};
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::frame::FrameBuilder;
-use null3d_render::geometry::sphere_geometry;
 use null3d_render::materials::Shading;
 use null3d_render::parallel_record::ParallelRecorder;
+use null3d_render::view::ViewId;
 
 #[global_allocator]
 static ALLOCATOR: CountingAllocator = CountingAllocator;
@@ -61,6 +62,52 @@ fn recording_frames_of_two_views_allocates_nothing() {
     for multi_draw in [true, false] {
         assert_eq!(
             two_view_allocations(webgl2_world(multi_draw)),
+            0,
+            "WebGL2, multi-draw {multi_draw}"
+        );
+    }
+}
+
+/// Records frames of a world with a second view up to `last`, each giving an object, the batch
+/// and both views new layers, with no structure change.
+fn record_layer_changes<B: FrameBuilder>(world: &mut World<B>, side: ViewId, last: u32) {
+    while world.frame < last {
+        world.frame += 1;
+        let frame = world.frame;
+        let mask = 1 << (frame % 3);
+        let object = world.objects[frame as usize % world.objects.len()];
+        world
+            .scene
+            .apply_commands(&[Command::set_layers(object, mask)], frame)
+            .unwrap();
+        let batch = world.batches.get_mut(world.batch).unwrap();
+        batch.set_layers(mask | 1);
+        let settings = world.renderer.settings_mut();
+        settings.set_layers(ViewId::CAMERA, mask | 0b1000);
+        settings.set_layers(side, mask);
+        world.record(false);
+    }
+}
+
+/// Records warm-up frames of a world with a second view, then frames that change layers, and
+/// returns what those allocated.
+fn layer_change_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
+    let side = world.add_view([5.0, 0.0, 6.0]);
+    world.record(true);
+    record_layer_changes(&mut world, side, 8);
+    CountingAllocator::arm();
+    record_layer_changes(&mut world, side, 100);
+    CountingAllocator::disarm()
+}
+
+#[test]
+fn layer_changes_allocate_nothing() {
+    let _only = CountingAllocator::exclusive();
+    CountingAllocator::track_this_thread();
+    assert_eq!(layer_change_allocations(World::new()), 0, "WebGPU");
+    for multi_draw in [true, false] {
+        assert_eq!(
+            layer_change_allocations(webgl2_world(multi_draw)),
             0,
             "WebGL2, multi-draw {multi_draw}"
         );
@@ -135,6 +182,52 @@ fn webgl2_static_batches_coming_to_rest_allocate_nothing() {
     }
 }
 
+/// Records warm-up frames of a world with a map that uploads, then frames that upload a larger
+/// map in bands, and steady frames, and returns what those allocated.
+fn map_upload_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
+    world.add_mapped(16);
+    world.record(true);
+    let textures = world.renderer.settings_mut().textures_mut();
+    textures.set_budget(16 * 1024);
+    textures.sync(1, 0);
+    record_until(&mut world, 6, false);
+    // A map of 256 rows, 1 KiB each, goes up in 16 bands, and its object draws once it is up.
+    let (texture, _, _) = world.add_mapped(256);
+    world.frame += 1;
+    world.record(true);
+    let textures = world.renderer.settings_mut().textures_mut();
+    textures.sync(2, world.frame - 1);
+    // The frame of the other parity after the scene grew makes room for it too.
+    world.frame += 1;
+    world.record(false);
+    CountingAllocator::arm();
+    record_until(&mut world, 60, false);
+    let allocated = CountingAllocator::disarm();
+    assert!(
+        world
+            .renderer
+            .settings()
+            .textures()
+            .ready_layer(texture)
+            .is_some()
+    );
+    allocated
+}
+
+#[test]
+fn frames_that_upload_maps_in_bands_and_steady_mapped_frames_allocate_nothing() {
+    let _only = CountingAllocator::exclusive();
+    CountingAllocator::track_this_thread();
+    assert_eq!(map_upload_allocations(World::new()), 0, "WebGPU");
+    for multi_draw in [true, false] {
+        assert_eq!(
+            map_upload_allocations(webgl2_world(multi_draw)),
+            0,
+            "WebGL2, multi-draw {multi_draw}"
+        );
+    }
+}
+
 /// Records frames up to `last`, each with its structure changed or not.
 fn record_until<B: FrameBuilder>(world: &mut World<B>, last: u32, structure_changed: bool) {
     while world.frame < last {
@@ -193,7 +286,7 @@ fn only_the_frames_after_the_scene_grows_allocate() {
         .renderer
         .settings_mut()
         .meshes_mut()
-        .add(&sphere_geometry(0.5, 16, 12))
+        .add(&base_sphere(0.5, [16, 12]))
         .unwrap()
         + 1;
     let batch = world

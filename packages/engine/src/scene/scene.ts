@@ -1,16 +1,26 @@
 // The scene API: objects with transforms, cameras, lights and instance batches. Setters write
-// straight into engine memory; structural changes (create, destroy, reparent, visibility) go into
-// the command ring as 16-byte records, which the engine applies when the next frame starts.
+// straight into engine memory. Structural changes (create, destroy, reparent, visibility, layers)
+// go into the command ring as 16-byte records, which the engine applies when the next frame
+// starts.
 
-import { checkLive, checkNumber, checkVector, DEV, type Described } from '../errors/checks';
+import {
+	checkLayers,
+	checkLive,
+	checkNumber,
+	checkVector,
+	DEV,
+	type Described,
+} from '../errors/checks';
 import { EngineError } from '../errors/engine-error';
 import * as C from '../generated/core';
 import { fromEuler as quaternionFromEuler } from '../math/quat';
 import type { EulerOrder } from '../math/types';
+import { rowLimitWarning } from '../page/limits';
 import { type ColorInput, linearColor } from './color';
 import type { CoreMemory } from './memory';
 import type { Material, MeshGeometry } from './resources';
 import { quaternionLookAt } from './rotation';
+import { UnmarkedWrites } from './unmarked-writes';
 
 /**
  * A vector (x, y, z).
@@ -48,6 +58,11 @@ export interface NodeOptions {
 	 * cameras, updates only when it changes.
 	 */
 	dynamic?: boolean;
+	/**
+	 * The layers the node is on, as a 32-bit mask: bit n puts it on layer n. A camera draws the
+	 * objects that share a layer with it. The default, 1, is layer 0.
+	 */
+	layers?: number;
 }
 
 /**
@@ -90,6 +105,8 @@ export interface InstanceOptions {
 	dynamic?: boolean;
 	/** Adds a color per row (RGBA, linear). This version stores the colors but does not draw them yet. */
 	colors?: boolean;
+	/** The layers every row is on, as a 32-bit mask. The default, 1, is layer 0. */
+	layers?: number;
 }
 
 /**
@@ -281,15 +298,34 @@ export class Object3D implements Described {
 		this.scene.command(C.COMMAND_SET_VISIBLE, this.handle, visible ? 1 : 0, 0, 'setVisible');
 	}
 
+	/**
+	 * Puts the object on the layers of a 32-bit mask: bit n puts it on layer n, so `1 << 2` is
+	 * layer 2 and `0b101` is layers 0 and 2. A camera draws the object only when their masks share
+	 * a layer. The object's children keep their own layers. A new mask needs no rebuild.
+	 */
+	setLayers(mask: number): void {
+		if (DEV) {
+			checkLive('setLayers', this);
+			checkLayers('setLayers', mask, this);
+		}
+		this.scene.command(C.COMMAND_SET_LAYERS, this.handle, mask >>> 0, 0, 'setLayers');
+	}
+
 	/** Makes the object dynamic or static from the next frame. See `NodeOptions.dynamic`. */
 	setDynamic(dynamic: boolean): void {
-		if (DEV) checkLive('setDynamic', this);
+		if (DEV) {
+			checkLive('setDynamic', this);
+			this.scene.unmarkedWrites?.watch(this, !dynamic);
+		}
 		this.scene.command(C.COMMAND_SET_DYNAMIC, this.handle, dynamic ? 1 : 0, 0, 'setDynamic');
 	}
 
 	/** Removes the object at the next frame. Its children become roots. */
 	destroy(): void {
-		if (DEV) checkLive('destroy', this);
+		if (DEV) {
+			checkLive('destroy', this);
+			this.scene.unmarkedWrites?.watch(this, false);
+		}
 		this.scene.command(C.COMMAND_DESTROY, this.handle, 0, 0, 'destroy');
 		this.destroyedFrame = this.scene.frame;
 	}
@@ -326,9 +362,21 @@ export class Camera extends Object3D {
 	near = 0.1;
 	/** @internal */
 	far = 2000;
+	/** @internal The layers of the objects the camera draws. */
+	layers: number = C.LAYERS_DEFAULT;
 
 	protected override get looksDownMinusZ(): boolean {
 		return true;
+	}
+
+	/**
+	 * Sets the layers the camera draws, as a 32-bit mask: it draws the objects whose masks share a
+	 * layer with it. The default, 1, draws layer 0, where every object starts.
+	 */
+	override setLayers(mask: number): void {
+		super.setLayers(mask);
+		this.layers = mask >>> 0;
+		this.scene.lensChanged(this);
 	}
 
 	/** Sets the vertical field of view in degrees. */
@@ -526,6 +574,16 @@ export class InstanceBatch {
 		core.check(core.glue.setBatchActiveCount(this.id, count), 'setActiveCount', undefined, true);
 	}
 
+	/**
+	 * Puts every row on the layers of a 32-bit mask, as `Object3D.setLayers` does for one object. A
+	 * new mask needs no rebuild.
+	 */
+	setLayers(mask: number): void {
+		if (DEV) checkLayers('setLayers', mask);
+		const { core } = this.scene;
+		core.check(core.glue.setBatchLayers(this.id, mask >>> 0), 'setLayers', undefined, true);
+	}
+
 	/** Marks rows of a static batch to update and upload. */
 	markDirty(start = 0, count = this.count - start): void {
 		const { core } = this.scene;
@@ -562,11 +620,20 @@ export class Scene {
 	/** Rows of the live instance batches, which development builds count. */
 	private batchRows = 0;
 	private warnedPastPortable = false;
+	/**
+	 * @internal Development builds: finds static objects whose transform changed without a setter.
+	 * Declared without a value, so release builds hold no trace of it.
+	 */
+	declare readonly unmarkedWrites: UnmarkedWrites | undefined;
 
 	constructor(
 		/** @internal */ readonly core: CoreMemory,
 		private readonly time: { readonly frame: number },
-	) {}
+		/** True when the engine draws with WebGL2, whose devices draw fewer rows than WebGPU's. */
+		private readonly webgl2: boolean,
+	) {
+		if (DEV) this.unmarkedWrites = new UnmarkedWrites(this);
+	}
 
 	/** @internal */
 	get frame(): number {
@@ -619,29 +686,34 @@ export class Scene {
 
 	/**
 	 * @internal Counts the rows of batches as they are created and destroyed, and warns once when
-	 * the scene passes the limit that every WebGPU device draws. WebGL2 devices with small textures
-	 * draw fewer, and no warning covers them.
+	 * the scene passes the limit that every device of the engine's GPU path draws.
 	 */
 	countBatchRows(change: number): void {
 		this.batchRows += change;
 		if (this.warnedPastPortable) return;
 		// The core counts every scene slot, used or not, toward the limit.
 		const sources = this.core.glue.sceneCapacity() + 1 + this.batchRows;
-		if (sources <= C.LIMIT_PORTABLE_MAX_SOURCES) return;
+		const warning = rowLimitWarning(sources, this.webgl2);
+		if (warning === undefined) return;
 		this.warnedPastPortable = true;
-		const count = (n: number) => n.toLocaleString('en-US');
-		console.warn(
-			`null3D: this scene counts ${count(sources)} objects and instance rows toward the GPU's limit. This device draws them, but devices with WebGPU's default limits draw at most ${count(C.LIMIT_PORTABLE_MAX_SOURCES)} and fail with E1501. engine.capabilities.maxInstances gives the limit of each device.`,
-		);
+		console.warn(warning);
 	}
 
 	/** @internal */
 	lensChanged(camera: Camera): void {
 		if (camera === this.activeCamera)
-			this.core.glue.setCamera(camera.handle, camera.fov, camera.near, camera.far);
+			this.core.glue.setCamera(camera.handle, camera.fov, camera.near, camera.far, camera.layers);
 	}
 
-	private create(options: NodeOptions, mesh: number, radius: number, call: string): number {
+	private create<T extends Object3D>(
+		Kind: new (scene: Scene, handle: number, name: string) => T,
+		options: NodeOptions,
+		mesh: number,
+		radius: number,
+		call: string,
+	): T {
+		const { layers } = options;
+		if (DEV && layers !== undefined) checkLayers(call, layers);
 		const handle = this.core.check(this.core.glue.reserveObject(), call, options.name);
 		const slot = handle & SLOT_MASK;
 		const v = this.views;
@@ -651,25 +723,30 @@ export class Scene {
 		v.radii[slot] = radius;
 		const flags = C.FLAG_VISIBLE | (options.dynamic ? C.FLAG_DYNAMIC : 0);
 		this.command(C.COMMAND_CREATE | (flags << 8), handle, options.parent?.handle ?? 0, mesh, call);
-		return handle;
+		if (layers !== undefined && layers >>> 0 !== C.LAYERS_DEFAULT)
+			this.command(C.COMMAND_SET_LAYERS, handle, layers >>> 0, 0, call);
+		const object = new Kind(this, handle, options.name ?? '');
+		if (DEV) this.unmarkedWrites?.watch(object, !options.dynamic);
+		return object;
 	}
 
 	/** An empty node, for hierarchy. */
 	createGroup(options: NodeOptions = {}): Group {
-		const handle = this.create(options, C.CORE_NO_MESH, 0, 'createGroup');
-		return new Group(this, handle, options.name ?? '');
+		return this.create(Group, options, C.CORE_NO_MESH, 0, 'createGroup');
 	}
 
 	/** A drawn object. It is static unless `dynamic: true`. */
 	createMesh(options: MeshOptions): Mesh {
-		const handle = this.create(options, options.mesh.id, options.mesh.radius, 'createMesh');
-		this.command(C.COMMAND_SET_MATERIAL, handle, options.material.id, 0, 'createMesh');
-		return new Mesh(this, handle, options.name ?? '');
+		const mesh = this.create(Mesh, options, options.mesh.id, options.mesh.radius, 'createMesh');
+		this.command(C.COMMAND_SET_MATERIAL, mesh.handle, options.material.id, 0, 'createMesh');
+		return mesh;
 	}
 
 	/** Many copies of one mesh and material, with typed arrays of rows. */
 	createInstances(mesh: MeshGeometry, count: number, options: InstanceOptions): InstanceBatch {
 		const { core } = this;
+		const { layers } = options;
+		if (DEV && layers !== undefined) checkLayers('createInstances', layers);
 		const id = core.check(
 			core.glue.createBatch(
 				count,
@@ -684,18 +761,20 @@ export class Scene {
 		if (DEV) this.countBatchRows(count);
 		const batch = new InstanceBatch(this, id, count, options.colors ?? false);
 		batch.setActiveCount(count);
+		if (layers !== undefined) batch.setLayers(layers);
 		return batch;
 	}
 
 	/** A perspective camera; `fov` is vertical, in degrees. Cameras are dynamic by default. */
 	createPerspectiveCamera(options: CameraOptions = {}): Camera {
-		const handle = this.create(
+		const camera = this.create(
+			Camera,
 			{ dynamic: true, ...options },
 			C.CORE_NO_MESH,
 			0,
 			'createPerspectiveCamera',
 		);
-		const camera = new Camera(this, handle, options.name ?? '');
+		camera.layers = (options.layers ?? C.LAYERS_DEFAULT) >>> 0;
 		camera.fov = options.fov ?? 50;
 		camera.near = options.near ?? 0.1;
 		camera.far = options.far ?? 2000;

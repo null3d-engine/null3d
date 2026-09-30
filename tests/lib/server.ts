@@ -89,20 +89,22 @@ export function trackServer(child: ChildProcess): () => void {
 }
 
 /** The page a starting dev server answers first, below its address. */
-const probeOf = (selfUrl: string) => `${selfUrl}/tests/pages/index.html`;
+const DEV_PROBE = '/tests/pages/index.html';
 
 /**
- * Runs the dev server of the repository copy at `root` with `env` added, and waits until it answers
- * at `selfUrl`. Stopping the server ends its process, and so does a signal that stops this one.
+ * Runs Vite with `args` in the repository copy at `root`, with `env` added, and waits until the
+ * server answers at `selfUrl` followed by `probe`. Stopping the server ends its process, and so does
+ * a signal that stops this one.
  */
 async function spawnServer(
 	root: string,
+	args: readonly string[],
 	env: Record<string, string>,
 	url: string,
 	selfUrl: string,
+	probe = DEV_PROBE,
 ): Promise<DevServer> {
-	const probe = probeOf(selfUrl);
-	const child: ChildProcess = spawn('bunx', ['vite'], {
+	const child: ChildProcess = spawn('bunx', ['vite', ...args], {
 		cwd: root,
 		stdio: ['ignore', 'ignore', 'pipe'],
 		env: { ...process.env, ...env },
@@ -114,11 +116,23 @@ async function spawnServer(
 	});
 	const deadline = Date.now() + START_TIMEOUT_MS;
 	while (Date.now() < deadline) {
-		if (await answers(probe)) return { url, selfUrl, stop };
+		if (await answers(`${selfUrl}${probe}`)) return { url, selfUrl, stop };
 		await new Promise((resolve) => setTimeout(resolve, 250));
 	}
 	stop();
-	throw new Error(`the dev server did not answer at ${probe}\n${errors.trim()}`);
+	throw new Error(`the server did not answer at ${selfUrl}${probe}\n${errors.trim()}`);
+}
+
+/** Throws when any server answers at `url`: it could serve another copy's files or another build. */
+async function refuseTaken(url: string): Promise<void> {
+	const taken = await localFetch(url).then(
+		() => true,
+		() => false,
+	);
+	if (taken)
+		throw new Error(
+			`a server already answers at ${url}; stop it, or give this checkout other ports with NULL3D_PORT`,
+		);
 }
 
 /** Starts the dev server, or reuses one that already runs, and waits until it answers. */
@@ -127,8 +141,8 @@ export async function startServer(https = false): Promise<DevServer> {
 		? `https://${localHostName()}.local:${HTTPS_PORT}`
 		: `http://localhost:${HTTP_PORT}`;
 	const selfUrl = https ? `https://localhost:${HTTPS_PORT}` : url;
-	if (await answers(probeOf(selfUrl))) return { url, selfUrl, stop: () => {} };
-	return spawnServer(REPO_ROOT, { NULL3D_HTTPS: https ? '1' : '0' }, url, selfUrl);
+	if (await answers(`${selfUrl}${DEV_PROBE}`)) return { url, selfUrl, stop: () => {} };
+	return spawnServer(REPO_ROOT, [], { NULL3D_HTTPS: https ? '1' : '0' }, url, selfUrl);
 }
 
 /**
@@ -138,24 +152,22 @@ export async function startServer(https = false): Promise<DevServer> {
  */
 export async function startServerAt(root: string, port: number): Promise<DevServer> {
 	const url = `http://localhost:${port}`;
-	if (await answers(probeOf(url)))
-		throw new Error(
-			`a server already answers at ${url}; stop it, or give this checkout other ports with NULL3D_PORT`,
-		);
-	return spawnServer(root, { NULL3D_HTTPS: '0', NULL3D_PORT: String(port) }, url, url);
+	await refuseTaken(url);
+	return spawnServer(root, [], { NULL3D_HTTPS: '0', NULL3D_PORT: String(port) }, url, url);
 }
 
 /**
- * Chromium's flags for WebGPU and WebGL2 on SwiftShader, the software GPU that CI's Linux machines
- * draw with.
+ * Serves the production build in `outDir` with `vite preview` at `port`, as a developer checks a
+ * build before shipping it, and waits until it answers at `probe`, a path in the build. It never
+ * reuses a server, which could serve another build.
  */
-export const SWIFTSHADER_ARGS = [
-	'--enable-unsafe-webgpu',
-	'--enable-features=Vulkan',
-	'--use-angle=swiftshader',
-	'--use-vulkan=swiftshader',
-	'--enable-unsafe-swiftshader',
-	'--ignore-gpu-blocklist',
-	'--no-sandbox',
-	'--hide-scrollbars',
-];
+export async function startPreview(
+	outDir: string,
+	port: number,
+	probe: string,
+): Promise<DevServer> {
+	const url = `http://localhost:${port}`;
+	await refuseTaken(url);
+	const args = ['preview', '--outDir', outDir, '--port', String(port), '--strictPort'];
+	return spawnServer(REPO_ROOT, args, {}, url, url, probe);
+}

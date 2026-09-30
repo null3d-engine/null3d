@@ -18,13 +18,15 @@ Engine docs: `guides/testing`, `guides/debugging`, `errors/index`, `cli/null3d`.
 | Command | What it does |
 | --- | --- |
 | `bunx vite` | Dev server; the null3D Vite plugin adds the cross-origin isolation headers and shader hot reload |
-| `bunx @null3d/cli shot --out shot.png [--time 2.0] [--size 1280x720] [--gpu webgl2]` | Renders one frame headless and saves it, plus `shot.json` with frame stats and console errors |
+| `bunx @null3d/cli shot --out shot.png [--time 2.0] [--size 1280x720] [--gpu webgl2] [--page /other.html]` | Draws one held frame of the page headless and saves it, plus `shot.json` with the frame's time, number and GPU tier and the page's errors and warnings. When no frame is drawn, it says why and exits with 1 |
 | `bunx @null3d/cli test` | Type checks, lint, and all visual and behavior tests, headless |
 | `bunx @null3d/cli test --gpu webgpu,webgl2,compat` | Runs visual tests on each GPU tier |
 | `bunx @null3d/cli test --update-references` | Rewrites reference images; review the diff before committing |
 | `bunx @null3d/cli bench --scene <name>` | Benchmark: 5 runs of 30 seconds after warm-up; median and spread per phase |
 | `bunx @null3d/cli doctor` | Checks versions, headers, asset CORS, and the capabilities of the local browser |
 | `bunx @null3d/cli docs show <id>` / `bunx @null3d/cli docs search "<words>"` | Prints docs for the installed engine version |
+
+Of these commands, `shot` is built. The note on `cli/null3d` names the commands that are not built yet: do not run those.
 
 Every command prints short text results (pass or fail, reasons, file paths), so you can read them directly. Open the image files it names when a visual check fails.
 
@@ -44,7 +46,7 @@ const { width, height, pixels } = await engine.captureFrame(); // the held frame
 
 - The engine seeds `math.random` in the sketch's thread, makes `Math.random` draw from it, and runs the setup. It steps the sketch from time 0 to the held time in fixed steps of 1/60 second, with no frame loop. Then it draws that one frame and reads it back through the engine.
 - `createEngine` resolves once the frame is read back. `engine.mode.hold` holds the time, or `null` in a live engine. A bare `?hold` holds at the `hold` option's time, or at 0.
-- The engine publishes the result as `window.__null3dHold`: `{ ok: true, time, frame, tier, width, height, pixels }`, or `{ ok: false, code, error }` at the first failure. A test runner waits for it, so a page that failed never costs a timeout.
+- The engine publishes the result as `window.__null3dHold`: `{ ok: true, time, frame, tier, width, height, pixels, stats }`, or `{ ok: false, code, error }` at the first failure. `stats` holds the held frame's figures in the form that `engine.measure()` returns. A test runner waits for it, so a page that failed never costs a timeout.
 - The first error stops the hold: E1407 for a bad time, and E1408 for an error in `onUpdate` or the core. E1408 gives the sketch time of the error. A live engine would log that error and carry on.
 - Keep one reference image per GPU tier, and force the tier with `?gpu=`. Tiers, and software and real GPUs, can differ slightly at edges, so compare with a small tolerance, such as three.js's 0.1%.
 - Pixels come back through the engine, never through a canvas screenshot, because some browsers alter canvas reads for privacy.
@@ -132,7 +134,8 @@ Look up the full explanation with `bunx @null3d/cli docs show errors/E1203`. Rel
 | Blank canvas; console mentions `SharedArrayBuffer` or `crossOriginIsolated` | No isolation headers | The null3D Vite plugin, or set COOP `same-origin` and COEP `require-corp` on the host | `getting-started/hosting` |
 | Blank canvas; console shows CORS errors for models or textures | Assets from another origin without CORS or CORP headers | Serve them with `Access-Control-Allow-Origin` or `Cross-Origin-Resource-Policy` | `getting-started/hosting` |
 | Canvas works, nothing visible | No active camera, camera inside an object, or objects outside near and far | `scene.setActiveCamera`; check positions with `debug.axes`; widen near and far | `api/cameras` |
-| An object does not move | Static object written through an array | Setter, or `dynamic: true` | `concepts/static-dynamic` |
+| An object does not move, or a development build logs E1110 | A static object's values changed without a setter | The setter, or `dynamic: true` | `concepts/static-dynamic` |
+| A row of an instance batch does not move | A static batch's row written without `markDirty` | `markDirty(start, count)`, or `dynamic: true` on the batch | `concepts/static-dynamic` |
 | Error: stale handle | The object was destroyed earlier | Drop your reference when you destroy; check the frame number in the message | `concepts/handles` |
 | Colors too dark or washed out | Texture color space | `'srgb'` for color maps, `'linear'` for data maps | `concepts/color-management` |
 | Lighting much brighter or darker than expected | Light units (physical, like three.js r155+) or exposure | Retune intensities; check `post.set({ exposure })` | `concepts/lighting` |

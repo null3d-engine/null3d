@@ -45,7 +45,7 @@ In hold mode, the engine does this:
 4. It draws the last frame on the canvas, and reads its pixels back through its own GPU code.
 5. It publishes the frame, or the error that stopped it, as `window.__null3dHold`.
 
-`createEngine` resolves once the frame is read back, and `engine.captureFrame()` returns that frame. `engine.mode.hold` gives the held time, and it is `null` for a live engine. After the held frame, the engine draws nothing more: it runs no frame loop, so `engine.measure()` finds no frames.
+`createEngine` resolves once the frame is read back, and `engine.captureFrame()` returns that frame. `engine.mode.hold` gives the held time, and it is `null` for a live engine. After the held frame, the engine draws nothing more: it runs no frame loop, so `engine.measure()` finds no frames. The hold's result gives the held frame's own figures instead. The engine draws no frame before the held one, so the held frame creates every GPU object and uploads the whole scene.
 
 A hold at 1.5 seconds runs 91 frames: frame 1 at time 0, then 90 steps. In the last `onUpdate`, `time.now` is 1.5 and `time.frame` is 91.
 
@@ -63,6 +63,7 @@ A test runner opens the page with `?hold` and waits for `window.__null3dHold`. T
 | `time`, `frame` | The sketch time in seconds, and the frame's number | Absent |
 | `tier` | The GPU path that drew the frame | Absent |
 | `width`, `height`, `pixels` | The frame's size, and its pixels as RGBA8 rows in a `Uint8Array`, top row first | Absent |
+| `stats` | The frame's figures in the form that `engine.measure()` returns: CPU time by thread and phase, draw calls, uploads and pipelines | Absent |
 | `code`, `error` | Absent | The error's code, or `null` for an error without one, and its message |
 
 With Playwright, a test reads the result like this:
@@ -84,6 +85,16 @@ const pixels = Buffer.from(result.pixels, 'base64'); // compare with the referen
 ```
 
 The engine reads the pixels back with its own GPU code and takes no screenshot of the canvas. Some browsers change what a page reads from a canvas, to stop fingerprinting.
+
+## A held frame from the command line
+
+`bunx @null3d/cli shot` draws one held frame of your page, with no test code. It starts your project's own Vite dev server and opens the page with `?hold` in a headless browser. Then it saves the frame as a PNG file:
+
+```sh
+bunx @null3d/cli shot --out shot.png --time 1.5 --gpu webgl2
+```
+
+Beside the image, it saves `shot.json` with the frame's time, number, GPU tier and figures, and with what the page logged. When the hold fails, it prints the error and saves no image. [The `null3d` command](../cli/null3d.md) lists its options.
 
 ## When a hold fails
 

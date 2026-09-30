@@ -68,9 +68,16 @@ export type SketchWorkerInit = CoreHandoff & {
 	renderer?: RendererSetup;
 	/** Hold mode's sketch time in seconds, which the sketch worker steps the sketch to after setup. */
 	hold?: number;
+	/** The port that texture images go through to the thread that draws, when that is another. */
+	imagePort?: MessagePort;
 };
 
-export type RenderWorkerInit = CoreHandoff & RendererSetup & { type: 'init' };
+export type RenderWorkerInit = CoreHandoff &
+	RendererSetup & {
+		type: 'init';
+		/** The port that texture images come through from the sketch worker. */
+		imagePort: MessagePort;
+	};
 
 export type JobWorkerInit = CoreHandoff & { type: 'init'; index: number };
 

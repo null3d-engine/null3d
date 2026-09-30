@@ -8,6 +8,7 @@ import { type DrawModule, loadDrawModule } from '../render/load-draw';
 import type { Drawing } from '../render/recovery';
 import type { Renderer } from '../render/renderer';
 import { controlViews, Slot } from '../shared/control';
+import { ImageTable, sendThrough, sendToTable } from '../shared/images';
 import { loadSketch } from '../sketch/define-sketch';
 import { SketchRunner } from '../sketch/runner';
 import {
@@ -74,6 +75,11 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 			const started = await startWorkerCore(message, step);
 			const core = started.glue;
 			const memory = started.memory as WebAssembly.Memory;
+			// Texture images go to the thread that draws: another through a port, or this one.
+			const imageTable = new ImageTable();
+			const sendImage = message.imagePort
+				? sendThrough(message.imagePort)
+				: sendToTable(imageTable, control.slots);
 			runner = new SketchRunner(
 				(name, data, transfer) => replyToPage({ type: 'sketch-message', name, data }, transfer),
 				message.metrics,
@@ -84,6 +90,7 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 					keyCodes: message.keyCodes,
 					jobWorkers: message.jobWorkers,
 					device: message.device,
+					sendImage,
 				},
 				message.hold,
 			);
@@ -100,6 +107,7 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 					scene: { memory, control: message.control },
 					control: message.control,
 					sketch: runner,
+					imageTable,
 					fail: (reason) => replyToPage({ type: 'lost', role: 'sketch', reason }),
 				});
 			} else if (message.hold === undefined) {

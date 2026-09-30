@@ -5,11 +5,14 @@
 
 pub mod graph;
 
+use std::f64::consts::{PI, TAU};
+
 use null3d_core::handle::Handle;
 use null3d_core::instances::BatchTable;
 use null3d_core::jobs::JobSystem;
 use null3d_core::scene::{Command, SceneStorage, flags};
 use null3d_core::snapshot::FrameSnapshot;
+use null3d_gpu::drawlist::format;
 use null3d_gpu::drawlist::{Op, decode};
 use null3d_render::arrays::{MeshArrays, from_arrays};
 use null3d_render::camera::Perspective;
@@ -18,6 +21,7 @@ use null3d_render::geometry::{Geometry, box_geometry, sphere_geometry};
 use null3d_render::gpu_driven::{GpuDrivenRenderer, RendererConfig};
 use null3d_render::graph::ALL_LAYERS;
 use null3d_render::materials::Shading;
+use null3d_render::textures::{Sampling, TextureDesc};
 use null3d_render::view::{View, ViewId};
 
 pub const SCENE_CAPACITY: u32 = 31;
@@ -64,13 +68,15 @@ impl<B: FrameBuilder> World<B> {
         let box_mesh = renderer
             .settings_mut()
             .meshes_mut()
-            .add(&box_geometry(1.0, 1.0, 1.0, [1, 1, 1]))
+            .add(&base_format(
+                box_geometry(1.0, 1.0, 1.0, [1, 1, 1]).unwrap(),
+            ))
             .unwrap()
             + 1;
         let ball = renderer
             .settings_mut()
             .meshes_mut()
-            .add(&sphere_geometry(0.5, 8, 6))
+            .add(&base_sphere(0.5, [8, 6]))
             .unwrap()
             + 1;
         let lit = renderer
@@ -213,6 +219,32 @@ impl<B: FrameBuilder> World<B> {
         mesh
     }
 
+    /// Adds a texture of `size` texels on each side with an image on its way, a material that maps
+    /// it, and a grid object that draws with the material, in the current frame. Returns the
+    /// texture, and the engine ids of the mesh and the material.
+    pub fn add_mapped(&mut self, size: u32) -> (Handle, u32, u32) {
+        let settings = self.renderer.settings_mut();
+        let mesh = settings.meshes_mut().add(&grid(1, 1)).unwrap() + 1;
+        let texture = settings.textures_mut().create(map_desc(size)).unwrap();
+        settings
+            .textures_mut()
+            .set_image(texture, size, size)
+            .unwrap();
+        let material = settings
+            .materials_mut()
+            .create(Shading::UnlitMap, [1.0; 4])
+            .unwrap();
+        settings.materials_mut().set_map(material, texture).unwrap();
+        let object = self.scene.reserve().unwrap();
+        self.scene.set_local_radius(object, 1.0).unwrap();
+        let commands = [
+            Command::create(object, Handle::NONE, mesh, flags::VISIBLE),
+            Command::set_material(object, material + 1),
+        ];
+        self.scene.apply_commands(&commands, self.frame).unwrap();
+        (texture, mesh, material + 1)
+    }
+
     /// The operations of the frame's list with their operands.
     pub fn commands(&self) -> Vec<(Op, Vec<u32>)> {
         decode(self.renderer.list(self.frame).words())
@@ -249,6 +281,38 @@ pub fn grid(columns: u32, rows: u32) -> Geometry {
         ..MeshArrays::default()
     };
     from_arrays(&arrays, &JobSystem::new(0)).unwrap()
+}
+
+/// A color map of `size` texels on each side, with mip levels and three.js's sampling.
+pub fn map_desc(size: u32) -> TextureDesc {
+    TextureDesc {
+        width: size,
+        height: size,
+        format: format::RGBA8_UNORM_SRGB,
+        mipmaps: true,
+        sampling: Sampling::default(),
+    }
+}
+
+/// A generator's mesh in the base vertex format: its positions and normals, without its texture
+/// coordinates.
+pub fn base_format(g: Geometry) -> Geometry {
+    let floats = g.vertex_floats();
+    Geometry {
+        format: 0,
+        vertices: g
+            .vertices
+            .chunks(floats)
+            .flat_map(|v| &v[..6])
+            .copied()
+            .collect(),
+        indices: g.indices,
+    }
+}
+
+/// A whole sphere from the engine's generator, in the base vertex format.
+pub fn base_sphere(radius: f64, segments: [u32; 2]) -> Geometry {
+    base_format(sphere_geometry(radius, segments, (0.0, TAU), (0.0, PI)).unwrap())
 }
 
 pub fn count(commands: &[(Op, Vec<u32>)], op: Op) -> usize {
