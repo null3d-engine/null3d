@@ -400,7 +400,8 @@ function commitsOf(roots: Record<Build, string>): {
 function machineText(browser: Browser, name: BenchOptions['browser']): string {
 	const cores = cpus();
 	const engine = { chrome: 'Chrome', brave: 'Brave', chromium: 'Chromium on SwiftShader' }[name];
-	return `${engine} ${browser.version()} on ${platform()}, ${cores.length} cores of ${cores[0]?.model.trim() ?? 'an unknown processor'}`;
+	const system = { darwin: 'macOS', linux: 'Linux', win32: 'Windows' }[platform() as string];
+	return `${engine} ${browser.version()} on ${system ?? platform()}, ${cores.length} cores of ${cores[0]?.model.trim() ?? 'an unknown processor'}`;
 }
 
 /**
@@ -456,7 +457,7 @@ async function runComparison(
 		kinds: BENCH_PAGE_KINDS,
 	});
 	const selection = selectRuns(runs);
-	const comparison = compareBuilds(selection.kept, runs, trailers.changes);
+	const comparison = compareBuilds(selection, trailers.changes);
 	const verdict = judge(comparison);
 	const { warmup, measure } = runSeconds(options.seconds);
 	const report = compareReport(comparison, verdict, {

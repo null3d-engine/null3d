@@ -43,9 +43,15 @@ export interface DroppedRun {
 export interface RunSelection {
 	kept: BuildRun[];
 	dropped: DroppedRun[];
-	/** The display refresh rate that most runs measured, or null when no run measured one. */
-	refreshHz: number | null;
+	/**
+	 * For each page, by its scene and page kind, the display refresh rate that most of its runs
+	 * measured, or null when none measured one.
+	 */
+	refreshHz: Record<string, number | null>;
 }
+
+/** A page's name in reports and keys: its scene and page kind. */
+export const pageName = ({ scene, kind }: { scene: string; kind: string }) => `${scene} ${kind}`;
 
 /** The value that occurs most often, the larger one on a tie; null for an empty list. */
 function mostCommon(values: readonly number[]): number | null {
@@ -63,8 +69,9 @@ function mostCommon(values: readonly number[]): number | null {
 
 /**
  * Leaves out the runs that cannot be compared: a run that failed or measured no frames, and a run
- * whose engine measured another display refresh rate than most runs did. The CPU time per frame
- * changes with the refresh rate. A run that did not measure the rate stays.
+ * whose engine measured another display refresh rate than most runs of its page did. The CPU time
+ * per frame changes with the refresh rate. A run that did not measure the rate stays. The rate is
+ * found per page, because a software GPU slows the frame callbacks of some pages and not others.
  */
 export function selectRuns(runs: readonly BuildRun[]): RunSelection {
 	const dropped: DroppedRun[] = [];
@@ -78,14 +85,20 @@ export function selectRuns(runs: readonly BuildRun[]): RunSelection {
 		if (reason !== null) dropped.push({ run, reason });
 		return reason === null;
 	});
-	const rates = measured
-		.map((run) => run.result.stats?.refreshHz)
-		.filter((hz): hz is number => hz != null);
-	const refreshHz = mostCommon(rates);
+	const refreshHz: Record<string, number | null> = {};
+	for (const run of runs) refreshHz[pageName(run)] ??= null;
+	for (const page of Object.keys(refreshHz))
+		refreshHz[page] = mostCommon(
+			measured
+				.filter((run) => pageName(run) === page)
+				.map((run) => run.result.stats?.refreshHz)
+				.filter((hz): hz is number => hz != null),
+		);
 	const kept = measured.filter((run) => {
 		const hz = run.result.stats?.refreshHz;
-		if (hz == null || hz === refreshHz) return true;
-		dropped.push({ run, reason: `it measured a refresh rate of ${hz} Hz, not ${refreshHz} Hz` });
+		const most = refreshHz[pageName(run)];
+		if (hz == null || hz === most) return true;
+		dropped.push({ run, reason: `it measured a refresh rate of ${hz} Hz, not ${most} Hz` });
 		return false;
 	});
 	return { kept, dropped, refreshHz };
@@ -107,9 +120,9 @@ export type Measure = keyof typeof MEASURES;
 export const MEASURE_NAMES = Object.keys(MEASURES) as Measure[];
 
 /**
- * How much slower a median may get before the comparison fails: a share of the baseline's median,
- * and at least a fixed time. The browser's timer counts in steps of 5 microseconds, so a small
- * time can move by a whole step from run to run.
+ * How much slower the new build may get before the comparison fails: a share of the baseline's
+ * median, and at least a fixed time. The browser's timer counts in steps of 5 microseconds, so a
+ * small time can move by a whole step from run to run.
  */
 export interface Rule {
 	share: number;
@@ -119,7 +132,7 @@ export interface Rule {
 /** More than 3% slower, and more than two steps of the browser's timer. */
 export const RULE: Rule = { share: 0.03, floorMs: 0.01 };
 
-/** The most that a median of `baselineMs` may grow under the rule. */
+/** The most that the new build may add to a baseline median of `baselineMs` under the rule. */
 export function allowedMs(baselineMs: number, rule: Rule = RULE): number {
 	return Math.max(baselineMs * rule.share, rule.floorMs);
 }
@@ -146,11 +159,19 @@ export interface Comparison {
 	scene: string;
 	kind: string;
 	measure: Measure;
+	/** Each build's median over its kept runs, with the lowest and highest run. */
 	baseline: BuildValues;
 	new: BuildValues;
-	/** The new median less the baseline's, in milliseconds: above 0 is slower. */
+	/** Rounds in which both builds have a kept run. */
+	rounds: number;
+	/**
+	 * The change from the baseline to the new build: the median, over those rounds, of the new
+	 * build's value over the baseline's, less 1. Above 0 is slower.
+	 */
+	change: number;
+	/** The change in milliseconds: the change times the baseline's median. */
 	deltaMs: number;
-	/** The most the new median may exceed the baseline's under the rule. */
+	/** The most the change may add under the rule, in milliseconds. */
 	allowedMs: number;
 	/** Slower or faster by more than the rule allows, or the same within it. */
 	result: 'slower' | 'faster' | 'same';
@@ -158,18 +179,19 @@ export interface Comparison {
 	expected: ExpectedChange | null;
 }
 
-/** A page without enough good runs of one build to compare. */
+/** A page with too few rounds in which both builds have a kept run. */
 export interface MissingPage {
 	scene: string;
 	kind: string;
-	build: Build;
-	/** Good runs of the build, and the runs it had. */
-	good: number;
-	runs: number;
+	/** Kept runs of each build, and the runs each had. */
+	kept: Record<Build, number>;
+	runs: Record<Build, number>;
+	/** Rounds in which both builds have a kept run. */
+	rounds: number;
 }
 
-/** A median needs at least this many good runs of a page per build. */
-export const MIN_GOOD_RUNS = 2;
+/** A comparison needs at least this many rounds in which both builds have a kept run. */
+export const MIN_ROUNDS = 2;
 
 /** GPU time per frame of one page in each build, reported and never judged. */
 export interface GpuTime {
@@ -194,55 +216,62 @@ function gpuMedian(runs: readonly BuildRun[]): number | null {
 }
 
 /**
- * Compares the kept runs of the two builds, page by page and measure by measure. `all` holds every
- * run, dropped ones too, so a page that lost runs names how many it had.
+ * Compares the kept runs of the two builds, page by page and measure by measure. The builds ran in
+ * turns, so each round holds a run of each build measured moments apart, and the change is the
+ * median of the rounds' changes: a machine that changes speed between rounds changes both runs of
+ * a round alike. A page with too few rounds in which both builds have a kept run is named instead.
  */
 export function compareBuilds(
-	kept: readonly BuildRun[],
-	all: readonly BuildRun[],
+	{ kept, dropped }: Pick<RunSelection, 'kept' | 'dropped'>,
 	expected: readonly ExpectedChange[] = [],
 	rule: Rule = RULE,
 ): BuildComparison {
-	const pages = [...new Map(all.map((run) => [`${run.scene}\n${run.kind}`, run])).values()];
+	const all = [...kept, ...dropped.map(({ run }) => run)];
+	const pages = [...new Map(all.map((run) => [pageName(run), run])).values()];
 	const out: BuildComparison = { comparisons: [], missing: [], gpu: [] };
 	for (const { scene, kind } of pages) {
 		const of = (runs: readonly BuildRun[], build: Build) =>
 			runs.filter((r) => r.build === build && r.scene === scene && r.kind === kind);
 		const baseline = of(kept, 'baseline');
 		const next = of(kept, 'new');
-		const short = BUILDS.filter((build) => of(kept, build).length < MIN_GOOD_RUNS);
-		for (const build of short)
+		const pairs = baseline.flatMap((before) => {
+			const after = next.find((run) => run.round === before.round);
+			return after ? [[before.result, after.result] as const] : [];
+		});
+		if (pairs.length < MIN_ROUNDS) {
 			out.missing.push({
 				scene,
 				kind,
-				build,
-				good: of(kept, build).length,
-				runs: of(all, build).length,
+				kept: { baseline: baseline.length, new: next.length },
+				runs: { baseline: of(all, 'baseline').length, new: of(all, 'new').length },
+				rounds: pairs.length,
 			});
-		if (short.length > 0) continue;
+			continue;
+		}
 		out.gpu.push({ scene, kind, baselineMs: gpuMedian(baseline), newMs: gpuMedian(next) });
 		for (const measure of MEASURE_NAMES) {
-			const values = (runs: readonly BuildRun[]) =>
-				valuesOf(runs.map((run) => MEASURES[measure].of(run.result)));
-			const before = values(baseline);
-			const after = values(next);
-			const deltaMs = after.median - before.median;
+			const { of: value } = MEASURES[measure];
+			const before = valuesOf(baseline.map((run) => value(run.result)));
+			const after = valuesOf(next.map((run) => value(run.result)));
+			const ratios = pairs.filter(([b]) => value(b) > 0).map(([b, n]) => value(n) / value(b));
+			const change = ratios.length > 0 ? median(ratios) - 1 : 0;
+			const deltaMs = change * before.median;
 			const allowed = allowedMs(before.median, rule);
-			const result = deltaMs > allowed ? 'slower' : deltaMs < -allowed ? 'faster' : 'same';
-			const comparison: Comparison = {
+			const slower = deltaMs > allowed;
+			const named = (entry: ExpectedChange) => names(entry, { scene, kind, measure });
+			out.comparisons.push({
 				scene,
 				kind,
 				measure,
 				baseline: before,
 				new: after,
+				rounds: pairs.length,
+				change,
 				deltaMs,
 				allowedMs: allowed,
-				result,
-				expected: null,
-			};
-			comparison.expected =
-				result === 'slower' ? (expected.find((change) => names(change, comparison)) ?? null) : null;
-			out.comparisons.push(comparison);
+				result: slower ? 'slower' : deltaMs < -allowed ? 'faster' : 'same',
+				expected: slower ? (expected.find(named) ?? null) : null,
+			});
 		}
 	}
 	return out;
@@ -343,8 +372,11 @@ export function readExpectedChanges(
 	return out;
 }
 
-/** True when the trailer names the comparison's page and measure. */
-function names(change: ExpectedChange, { scene, kind, measure }: Comparison): boolean {
+/** True when the trailer names the page and the measure. */
+function names(
+	change: ExpectedChange,
+	{ scene, kind, measure }: Pick<Comparison, 'scene' | 'kind' | 'measure'>,
+): boolean {
 	return change.selectors.some(
 		(s) =>
 			(s.scene === null || s.scene === scene) &&
@@ -361,26 +393,28 @@ export interface Verdict {
 	failures: string[];
 }
 
-const pageName = ({ scene, kind }: { scene: string; kind: string }) => `${scene} ${kind}`;
+const runsText = (count: number) => `${count} ${count === 1 ? 'run' : 'runs'}`;
 
-const missingText = ({ build, good, runs }: MissingPage) =>
-	`the ${build === 'new' ? 'new build' : 'baseline'} has ${good} good ${good === 1 ? 'run' : 'runs'} of ${runs}, and a median needs ${MIN_GOOD_RUNS}`;
+/** Why a page was not compared: how many runs of each build it kept, and how many rounds pair up. */
+const missingText = ({ kept, runs, rounds }: MissingPage) =>
+	`the new build kept ${runsText(kept.new)} of ${runs.new} and the baseline ${runsText(kept.baseline)} of ${runs.baseline}, so ${rounds} ${rounds === 1 ? 'round has' : 'rounds have'} a run of each, and a comparison needs ${MIN_ROUNDS}`;
+
+/** True when the new build's own runs, not the baseline's, keep a page from its comparison. */
+const newBuildShort = (page: MissingPage) => page.kept.new < MIN_ROUNDS;
 
 /**
- * The new build fails when a median is slower than the rule allows and no trailer names it, and
- * when it has too few good runs of a page to compare. A baseline with too few good runs leaves its
- * page out without failing, so a commit that mends a broken page can pass.
+ * The new build fails when a page gets slower than the rule allows and no trailer names it, and
+ * when it kept too few runs of a page to compare. A page that the baseline's runs keep from its
+ * comparison is left out without failing, so a commit that mends a broken page can pass.
  */
 export function judge({ comparisons, missing }: BuildComparison): Verdict {
 	const failures = [
-		...missing
-			.filter((page) => page.build === 'new')
-			.map((page) => `${pageName(page)}: ${missingText(page)}`),
+		...missing.filter(newBuildShort).map((page) => `${pageName(page)}: ${missingText(page)}`),
 		...comparisons
 			.filter((c) => c.result === 'slower' && c.expected === null)
 			.map(
 				(c) =>
-					`${pageName(c)}, ${MEASURES[c.measure].name}: ${percentText(c)} slower (${ms3(c.baseline.median)} ms to ${ms3(c.new.median)} ms)`,
+					`${pageName(c)}, ${MEASURES[c.measure].name}: ${percentText(c)} slower (medians ${ms3(c.baseline.median)} ms and ${ms3(c.new.median)} ms)`,
 			),
 	];
 	return { pass: failures.length === 0, failures };
@@ -389,10 +423,9 @@ export function judge({ comparisons, missing }: BuildComparison): Verdict {
 /** Milliseconds with three decimals, as a comparison needs for the timer's 5-microsecond steps. */
 export const ms3 = (value: number | null) => (value === null ? 'n/a' : value.toFixed(3));
 
-/** The change between the medians as a signed percentage, or n/a when the baseline's is 0. */
-function percentText({ baseline, deltaMs }: Pick<Comparison, 'baseline' | 'deltaMs'>): string {
-	if (!(baseline.median > 0)) return 'n/a';
-	const percent = (deltaMs / baseline.median) * 100;
+/** The change as a signed percentage. */
+function percentText({ change }: Pick<Comparison, 'change'>): string {
+	const percent = change * 100;
 	return `${percent >= 0 ? '+' : ''}${percent.toFixed(1)}%`;
 }
 
@@ -432,10 +465,10 @@ export function compareReport(
 	const lines = [
 		'## Benchmark comparison',
 		'',
-		`The new build, ${context.new}, against the baseline, ${context.baseline}, in ${context.browser}. Each page ran ${context.runs} times per build, the builds taking turns, with ${context.warmupSeconds} s of warm-up and ${context.measureSeconds} s measured.`,
+		`The new build, ${context.new}, against the baseline, ${context.baseline}, in ${context.browser}. Each page ran ${context.runs} times per build, in rounds that run each page once in each build, with ${context.warmupSeconds} s of warm-up and ${context.measureSeconds} s measured.`,
 		'',
 		verdict.pass
-			? `**Passed**: no median is more than ${limit} slower without a ${EXPECTED_TRAILER} trailer that names it.`
+			? `**Passed**: no page is more than ${limit} slower without a ${EXPECTED_TRAILER} trailer that names it.`
 			: `**Failed**: ${verdict.failures.length === 1 ? 'one problem' : `${verdict.failures.length} problems`}.`,
 		...verdict.failures.map((failure) => `- ${failure}`),
 		'',
@@ -446,7 +479,7 @@ export function compareReport(
 				`| ${c.scene} | ${c.kind} | ${MEASURES[c.measure].name} | ${spread(c.baseline)} | ${spread(c.new)} | ${percentText(c)} | ${resultText(c)} |`,
 		),
 		'',
-		`A median fails when it is more than ${limit} slower than the baseline's. The two builds' medians of CPU time per frame are compared: the busiest thread's time, and the engine's own work on its busiest thread.`,
+		`The change is the median of the rounds' changes from the baseline's run to the new build's, and it fails when it is more than ${limit} slower. Each run gives the median CPU time per frame: the busiest thread's time, and the engine's own work on its busiest thread.`,
 	];
 	const gpu = result.gpu.filter((g) => g.baselineMs !== null || g.newMs !== null);
 	if (gpu.length > 0)
@@ -454,16 +487,23 @@ export function compareReport(
 			'',
 			`GPU time per frame, reported and not judged: ${gpu.map((g) => `${pageName(g)} ${ms3(g.baselineMs)} ms to ${ms3(g.newMs)} ms`).join('; ')}.`,
 		);
-	const baselineMissing = result.missing.filter((page) => page.build === 'baseline');
-	if (baselineMissing.length > 0)
+	const notCompared = result.missing.filter((page) => !newBuildShort(page));
+	if (notCompared.length > 0)
 		lines.push(
 			'',
-			`Not compared: ${baselineMissing.map((page) => `${pageName(page)}, as ${missingText(page)}`).join('; ')}.`,
+			`Not compared: ${notCompared.map((page) => `${pageName(page)}, as ${missingText(page)}`).join('; ')}.`,
 		);
 	const { refreshHz, dropped } = context.selection;
+	const rates = [...new Set(Object.values(refreshHz))];
+	const rateText =
+		rates.length === 1
+			? `${rates[0] === null ? 'not measured' : `${rates[0]} Hz`} on every page`
+			: Object.entries(refreshHz)
+					.map(([page, hz]) => `${page} ${hz === null ? 'not measured' : `${hz} Hz`}`)
+					.join('; ');
 	lines.push(
 		'',
-		`Refresh rate: ${refreshHz === null ? 'not measured' : `${refreshHz} Hz`}. ${dropped.length === 0 ? 'No run was dropped.' : `Dropped runs: ${dropped.map(({ run, reason }) => `${run.build} ${pageName(run)} round ${run.round} (${reason})`).join('; ')}.`}`,
+		`Refresh rate: ${rateText}. ${dropped.length === 0 ? 'No run was dropped.' : `Dropped runs: ${dropped.map(({ run, reason }) => `${run.build} ${pageName(run)} round ${run.round} (${reason})`).join('; ')}.`}`,
 	);
 	const { changes, problems } = context.trailers;
 	if (changes.length > 0)
