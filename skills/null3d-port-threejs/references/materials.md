@@ -2,7 +2,7 @@
 
 Engine docs: `porting/threejs-materials`, `api/materials`, `api/textures`, `concepts/color-management`, `shaders/surface-functions`.
 
-Versions: `materials.standard` takes `color`, `opacity`, `metalness`, `roughness`, `emissive` and `emissiveIntensity` now, and shades as three.js's `MeshStandardMaterial` does. `materials.unlit` takes `color` and `opacity`. Both take `doubleSided` and `vertexColors`, and the standard material takes `flatShading`. The engine stores `opacity` but draws every material opaque. The other options below come later in 0.1 unless a row gives another version, and so do `materials.shader` and surface functions. The texture options of `assets.loadTexture` in section 7 exist now, but no material can use a texture yet.
+Versions: `materials.standard` takes `color`, `opacity`, `metalness`, `roughness`, `emissive` and `emissiveIntensity` now, and shades as three.js's `MeshStandardMaterial` does. `materials.unlit` takes `color` and `opacity`. Both take `doubleSided`, `vertexColors`, `alphaMode`, `alphaCutoff`, `blending`, `depthWrite`, `depthTest` and `depthBias`, and the standard material takes `flatShading`. The other options below come later in 0.1 unless a row gives another version, and so do `materials.shader` and surface functions. The texture options of `assets.loadTexture` in section 7 exist now, but no material can use a texture yet.
 
 ## Contents
 
@@ -37,14 +37,14 @@ Versions: `materials.standard` takes `color`, `opacity`, `metalness`, `roughness
 | `bumpMap`, `bumpScale` | A normal map made offline: `bunx @null3d/cli assets normal-from-bump` (0.2) | |
 | `displacementMap`, `displacementScale`, `displacementBias` | A `vertexOffset` function (later in 0.1; section 8 of `references/shaders.md`) | Enlarge bounds with `setBounds` |
 | `alphaMap` | A surface function, or alpha packed into `map` offline (later in 0.1) | three.js reads the alpha map's G channel (recipe in section 8) |
-| `transparent: true`, `opacity` | `alphaMode: 'blend'` (later in 0.1), `opacity` | `opacity` is stored now, and draws once blending comes |
-| `alphaTest` | `alphaMode: 'mask'`, `alphaCutoff` (later in 0.1) | |
-| `alphaHash` | `alphaMode: 'mask'` (later in 0.1) | Hashed transparency is not supported |
+| `transparent: true`, `opacity` | `alphaMode: 'blend'`, `opacity` | Blended objects draw after the opaque ones, farthest first; an instance batch's rows sort one by one |
+| `alphaTest` | `alphaMode: 'mask'`, `alphaCutoff` | Pass the `alphaTest` value as `alphaCutoff`, whose default is 0.5, as in glTF |
+| `alphaHash` | `alphaMode: 'mask'` | Hashed transparency is not supported |
 | `side: DoubleSide` | `doubleSided: true` | Fixed when the material is created. A back face lights as if it faced the camera, as in three.js |
 | `side: BackSide` | Flip the geometry | Not a material option: in `geometry.fromArrays`, reverse each triangle's indices and negate the normals |
-| `depthWrite`, `depthTest` | Same names (later in 0.1) | |
-| `polygonOffset`, `polygonOffsetFactor`, `polygonOffsetUnits` | `depthBias: { constant, slopeScale }` (later in 0.1) | Keep the three.js intent; the engine converts signs for reversed depth |
-| `blending: NormalBlending / AdditiveBlending / MultiplyBlending` | `blending: 'normal' / 'additive' / 'multiply'` (later in 0.1) | Subtractive and custom blending are not supported |
+| `depthWrite`, `depthTest` | Same names | Fixed when the material is created. `depthTest: false` writes no depth either, as in three.js's WebGL renderer |
+| `polygonOffset`, `polygonOffsetFactor`, `polygonOffsetUnits` | `depthBias: { constant, slopeScale }` | Keep the three.js intent; the engine converts signs for reversed depth |
+| `blending: NormalBlending / AdditiveBlending / MultiplyBlending` | `blending: 'normal' / 'additive' / 'multiply'` with `alphaMode: 'blend'` | Subtractive and custom blending are not supported. three.js blends an opaque material with additive or multiply blending too; null3D needs `alphaMode: 'blend'` |
 | `vertexColors`, `flatShading` | Same names | Fixed when the material is created: make one material for each combination. `vertexColors` needs a mesh with colors |
 | `wireframe` | `debug.view('wireframe')` (later in 0.1), or `scene.createLines({ fromEdges })` (0.2) | |
 | `fog: false` | `fog: false` (later in 0.1) | |
@@ -71,7 +71,7 @@ Tell the user which of these a scene relies on before porting it. Glass and car-
 
 ## 3. MeshBasicMaterial
 
-`materials.unlit`: `color`, `opacity`, `vertexColors` and `doubleSided` now; `map`, `alphaMode`, `alphaCutoff` and `fog` later in 0.1. Its `envMap` and `reflectivity` (fake reflections) are not supported; use `materials.standard` with high metalness and low roughness for a reflective look.
+`materials.unlit`: `color`, `opacity`, `vertexColors`, `doubleSided`, `alphaMode`, `alphaCutoff`, `blending` and the depth options now; `map` and `fog` later in 0.1. Its `envMap` and `reflectivity` (fake reflections) are not supported; use `materials.standard` with high metalness and low roughness for a reflective look.
 
 ## 4. MeshLambertMaterial and MeshPhongMaterial
 

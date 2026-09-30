@@ -161,7 +161,7 @@ mesh.setFrustumCulled(false);        mesh.setBounds(center, radius);  // center 
 - Use a setter for static objects; direct array writes are for dynamic objects and batches.
 - A parent change with `keepWorld: true` works out the new local transform when the frame applies it, so set the object's transform first.
 - These calls rebuild the draw tables, so make them at setup: `setMaterial`, `setMesh`, `setParent`, `setDynamic`, `setBounds` and `setFrustumCulled`.
-- Every material draws opaque until transparency comes later in 0.1, so `setRenderOrder` has no effect yet.
+- Blended objects draw after the opaque ones, farthest first by the center of their bounds. `setRenderOrder` comes before depth, and an instance batch's rows sort one by one.
 
 ## 5. Instance batches (`concepts/instances`)
 
@@ -257,8 +257,12 @@ const paint = materials.standard({
   color: '#e8554e',                            // base color (sRGB), converted to linear once
   metalness: 0, roughness: 1,                  // glTF metallic-roughness, three.js's defaults
   emissive: '#000000', emissiveIntensity: 1,   // light the surface gives off itself
-  opacity: 1,                                  // stored; every material draws opaque for now
+  opacity: 1,                                  // part of the alpha that 'mask' tests and 'blend' blends
   doubleSided: false, vertexColors: false, flatShading: false,  // fixed at creation
+  alphaMode: 'opaque', alphaCutoff: 0.5,       // 'mask' cuts out below the cutoff; 'blend' shows through
+  blending: 'normal',                          // with 'blend': 'normal', 'additive' or 'multiply'
+  depthWrite: true, depthTest: true,           // fixed at creation
+  depthBias: { constant: 0, slopeScale: 0 },   // three.js's polygonOffset, for decals
 });
 const glow = materials.unlit({ color: '#ffcc00' });      // ignores lights, like three.js's MeshBasicMaterial
 paint.set({ roughness: 0.4 });  // changes only the options you pass; converting a color allocates
@@ -268,9 +272,10 @@ const stripes = materials.shader({ ...anyStandardOption, wgsl });  // later in 0
 
 - `materials.standard` shades as three.js's `MeshStandardMaterial` does, with its formulas and its table of specular terms.
 - Later in 0.1, `materials.shader` keeps the standard look and lighting, and a WGSL surface function changes the surface before the engine lights it. Every `materials.standard` option feeds `defaultSurface()`. `references/shaders.md` has the contract.
-- Later in 0.1: texture maps (`map`, `normalMap`, `metalnessRoughnessMap`, `aoMap`, `emissiveMap`, `lightMap`), `alphaMode`, `alphaCutoff`, `blending`, `depthWrite`, `depthTest`, `depthBias`, `uvTransform`, `fog: false`, and in `materials.shader` uniforms, textures, vertex offsets and full shaders.
+- `alphaMode: 'mask'` is three.js's `alphaTest`, and `alphaMode: 'blend'` is `transparent: true`. Blended objects cost culling and sorting in every frame, so use `'mask'` for cut-out shapes.
+- Later in 0.1: texture maps (`map`, `normalMap`, `metalnessRoughnessMap`, `aoMap`, `emissiveMap`, `lightMap`), `uvTransform`, `fog: false`, and in `materials.shader` uniforms, textures, vertex offsets and full shaders.
 - `envIntensity` (0.2) comes with environment lighting, and `materials.shadowCatcher` in 0.2.
-- `set()` changes values cheaply at any time. Options that change the shader or the pipeline are fixed when you create the material: `doubleSided`, `vertexColors`, `flatShading`, and later the texture maps. So create each variant before play, and switch with `setMaterial`.
+- `set()` changes values cheaply at any time. Options that change the shader or the pipeline are fixed when you create the material: `doubleSided`, `vertexColors`, `flatShading`, `alphaMode`, `blending`, `depthWrite`, `depthTest`, `depthBias`, and later the texture maps. So create each variant before play, and switch with `setMaterial`.
 
 ## 10. Textures (`api/textures`)
 
