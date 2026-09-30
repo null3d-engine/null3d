@@ -2,7 +2,8 @@ enable draw_index;
 #define_import_path null3d::mesh
 #import null3d::fog::{apply_fog, fog_factor}
 #import null3d::globals::{Frame, Material}
-#import null3d::vertex::{OUTSIDE_CLIP, Transform, to_clip, transform_normal, transform_point}
+#import null3d::vertex::{OUTSIDE_CLIP, Transform, to_clip, transform_direction}
+#import null3d::vertex::{transform_normal, transform_point}
 
 // What every template for meshes drawn by instance shares: the frame's bindings, where each
 // instance's world matrix and material come from, and positions in clip space. A template's vertex
@@ -228,4 +229,9 @@ fn relative_position(found: Instance, position: vec3f) -> vec3f {
 /// stays at right angles to its surface under uneven scale.
 fn world_normal(found: Instance, normal: vec3f) -> vec3f {
     return transform_normal(transform_of(found), normal);
+}
+
+/// A direction from the mesh into the world: the instance's world matrix without its translation.
+fn world_direction(found: Instance, direction: vec3f) -> vec3f {
+    return transform_direction(transform_of(found), direction);
 }

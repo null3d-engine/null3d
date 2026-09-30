@@ -1,6 +1,20 @@
 import { describe, expect, test } from 'bun:test';
-import { VERTEX_ALL, VERTEX_COLOR, VERTEX_TANGENT, VERTEX_UV0, VERTEX_UV1 } from '../generated/gpu';
-import { forEachVertexAttribute, vertexAttribute, vertexStride } from './vertex-format';
+import {
+	PERMUTATION_VERTEX_COLOR,
+	PERMUTATION_VERTEX_TANGENT,
+	VERTEX_ALL,
+	VERTEX_COLOR,
+	VERTEX_TANGENT,
+	VERTEX_UV0,
+	VERTEX_UV1,
+} from '../generated/gpu';
+import {
+	forEachFallbackAttribute,
+	forEachVertexAttribute,
+	variantLocations,
+	vertexAttribute,
+	vertexStride,
+} from './vertex-format';
 
 /** The shader locations of a format's attributes, in vertex order. */
 function locations(format: number): number[] {
@@ -10,6 +24,23 @@ function locations(format: number): number[] {
 }
 
 describe('vertex formats', () => {
+	test('a mesh with only the first texture coordinates offers them as the second set', () => {
+		expect(vertexAttribute(VERTEX_UV0, 3)).toEqual({ floats: 2, offset: 24 });
+		expect(vertexAttribute(VERTEX_UV0 | VERTEX_UV1, 3)).toEqual({ floats: 2, offset: 32 });
+		expect(vertexAttribute(0, 3)).toBeUndefined();
+		const offered: number[][] = [];
+		forEachFallbackAttribute(VERTEX_UV0 | VERTEX_COLOR, (...place) => offered.push(place));
+		expect(offered).toEqual([[3, 2, 24]]);
+		forEachFallbackAttribute(VERTEX_ALL, (...place) => offered.push(place));
+		expect(offered).toHaveLength(1);
+	});
+
+	test('variants read the colors and tangents that their bits ask for', () => {
+		expect(variantLocations([0, 1], 0)).toEqual([0, 1]);
+		const both = PERMUTATION_VERTEX_COLOR | PERMUTATION_VERTEX_TANGENT;
+		expect(variantLocations([0, 1, 2, 3], both)).toEqual([0, 1, 2, 3, 4, 5]);
+	});
+
 	test('the base format holds a position and a normal, three floats each', () => {
 		expect(vertexStride(0)).toBe(24);
 		expect(vertexAttribute(0, 0)).toEqual({ floats: 3, offset: 0 });
