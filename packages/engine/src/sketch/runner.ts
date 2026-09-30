@@ -2,8 +2,9 @@
 // the scene API, and steps it once per frame. A frame reads the input the page wrote, runs the
 // sketch's update, then the core's steps, and publishes the frame's draw list; each step's CPU time
 // is recorded, and so is the time each job worker spent on the frame's work. In hold mode it seeds
-// this thread's Math.random, steps the sketch to the held time in fixed steps after the setup, and
-// publishes the last frame alone. Hold mode reads no input, so the held frame never depends on it.
+// this thread's math.random and routes Math.random to it, steps the sketch to the held time in
+// fixed steps after the setup, and publishes the last frame alone. Hold mode reads no input, so the
+// held frame never depends on it.
 
 import { coreFailure } from '../errors/core-failure';
 import { EngineError } from '../errors/engine-error';
@@ -76,8 +77,8 @@ export class SketchRunner {
 
 	/**
 	 * Starts the engine on the core's thread. `holdSeconds` starts hold mode at that sketch time: it
-	 * seeds this thread's Math.random at once, so the runner must exist before the sketch module
-	 * loads, and `setup` then steps the sketch to that time.
+	 * seeds this thread's math.random, and routes Math.random to it, at once. So the runner must
+	 * exist before the sketch module loads, and `setup` then steps the sketch to that time.
 	 */
 	constructor(
 		post: PagePoster,

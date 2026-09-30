@@ -22,15 +22,15 @@ export interface ApiMember {
 /** One public export in the reference. */
 export interface ApiSymbol {
 	name: string;
-	kind: 'function' | 'class' | 'interface' | 'type' | 'const';
+	kind: 'function' | 'class' | 'interface' | 'namespace' | 'type' | 'const';
 	/** The docs page the export belongs on, from its `@category` tag. */
 	page: string;
-	/** The declaration for functions, types and constants; empty for classes and interfaces. */
+	/** The declaration for functions, types and constants; empty for the kinds that have members. */
 	signature: string;
 	summary: string;
 	/** The classes or interfaces it extends, whose members it also has. */
 	extends: string[];
-	/** Its own public members, for classes and interfaces. */
+	/** Its own public members, for classes and interfaces, and its functions, for a namespace. */
 	members: ApiMember[];
 }
 
@@ -95,8 +95,8 @@ function callables(declarations: readonly ts.Declaration[]): Callable[] {
 }
 
 /**
- * A function or method as the source declares it: its parameters and its result. The type nodes it
- * prints go into `used`, for the check of the types they name.
+ * A function or method as the source declares it: its type parameters, its parameters and its
+ * result. The type nodes it prints go into `used`, for the check of the types they name.
  */
 function callableOf(
 	declaration: Callable,
@@ -104,7 +104,9 @@ function callableOf(
 	checker: ts.TypeChecker,
 	used: ts.Node[],
 ): string {
-	used.push(...declaration.parameters);
+	const typeParameters = declaration.typeParameters ?? [];
+	used.push(...typeParameters, ...declaration.parameters);
+	const generic = typeParameters.length > 0 ? `<${typeParameters.map(line).join(', ')}>` : '';
 	let result = 'void';
 	if (declaration.type) {
 		used.push(declaration.type);
@@ -118,7 +120,7 @@ function callableOf(
 				FORMAT,
 			);
 	}
-	return `${name}(${declaration.parameters.map(line).join(', ')}): ${result}`;
+	return `${name}${generic}(${declaration.parameters.map(line).join(', ')}): ${result}`;
 }
 
 /** A property as the source declares it: whether it is read-only or optional, and its type. */
@@ -206,7 +208,10 @@ function unexportedTypes(
 		let symbol = name && checker.getSymbolAtLocation(name);
 		if (symbol && symbol.flags & ts.SymbolFlags.Alias) symbol = checker.getAliasedSymbol(symbol);
 		const file = symbol?.declarations?.[0]?.getSourceFile().fileName;
-		if (symbol && file?.startsWith(source) && !exported.has(symbol)) found.add(symbol.name);
+		// A type parameter is declared with the signature that names it, which shows it.
+		const shown = symbol && symbol.flags & ts.SymbolFlags.TypeParameter;
+		if (symbol && !shown && file?.startsWith(source) && !exported.has(symbol))
+			found.add(symbol.name);
 		ts.forEachChild(node, visit);
 	};
 	for (const node of nodes) visit(node);
@@ -241,6 +246,49 @@ function aliasOf(
 		: `${head}\n${parts.map((part) => `\t| ${part}`).join('\n')};`;
 }
 
+/**
+ * The summary and the `@category` page of a namespace export, such as `export * as vec3 from ...`,
+ * from the comment on its export statement. The compiler gives the namespace itself no comment.
+ */
+function namespaceDocs(alias: ts.Symbol): { summary: string; page: string | undefined } {
+	const statement = alias.declarations?.[0]?.parent;
+	const doc = statement
+		? ts.getJSDocCommentsAndTags(statement).filter(ts.isJSDoc).at(-1)
+		: undefined;
+	const category = doc?.tags?.find((t) => t.tagName.text === 'category');
+	return {
+		summary: flat(ts.getTextOfJSDocComment(doc?.comment) ?? ''),
+		page: category ? ts.getTextOfJSDocComment(category.comment)?.trim() : undefined,
+	};
+}
+
+/**
+ * The functions of a namespace export, in the order its module declares them, and the names of its
+ * exports that are not functions, which the reference cannot show.
+ */
+function namespaceMembers(
+	module: ts.Symbol,
+	checker: ts.TypeChecker,
+	used: ts.Node[],
+): { members: ApiMember[]; others: string[] } {
+	const members: ApiMember[] = [];
+	const others: string[] = [];
+	for (const exported of checker.getExportsOfModule(module)) {
+		const member =
+			exported.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(exported) : exported;
+		const functions = callables(member.declarations ?? []);
+		if (functions.length === 0) others.push(exported.name);
+		const summary = flat(ts.displayPartsToString(member.getDocumentationComment(checker)));
+		for (const declaration of functions)
+			members.push({
+				name: exported.name,
+				signature: callableOf(declaration, exported.name, checker, used),
+				summary,
+			});
+	}
+	return { members, others };
+}
+
 /** The engine's public exports, and the problems that keep some of them out of the reference. */
 export interface ApiReference {
 	symbols: ApiSymbol[];
@@ -265,17 +313,23 @@ export function readApi(root: string): ApiReference {
 
 	const exports = checker.getExportsOfModule(module).map((exported) => ({
 		name: exported.name,
+		alias: exported,
 		symbol: exported.flags & ts.SymbolFlags.Alias ? checker.getAliasedSymbol(exported) : exported,
 	}));
 	const exported = new Set(exports.map((e) => e.symbol));
 	const symbols: ApiSymbol[] = [];
 	const problems: string[] = [];
-	for (const { name, symbol } of exports) {
+	for (const { name, alias, symbol } of exports) {
 		const declaration = symbol.declarations?.[0];
 		if (!declaration) continue;
 		const where = `${name} (${relative(root, declaration.getSourceFile().fileName)})`;
-		const summary = flat(ts.displayPartsToString(symbol.getDocumentationComment(checker)));
-		const page = tag(symbol, checker, 'category');
+		const isNamespace = ts.isSourceFile(declaration);
+		const { summary, page } = isNamespace
+			? namespaceDocs(alias)
+			: {
+					summary: flat(ts.displayPartsToString(symbol.getDocumentationComment(checker))),
+					page: tag(symbol, checker, 'category'),
+				};
 		if (!summary) problems.push(`${where} has no TSDoc summary`);
 		if (!page?.startsWith('api/')) problems.push(`${where} has no @category api/<page> tag`);
 
@@ -284,7 +338,13 @@ export function readApi(root: string): ApiReference {
 		let signature = '';
 		let bases: string[] = [];
 		let members: ApiMember[] = [];
-		if (ts.isFunctionDeclaration(declaration)) {
+		if (isNamespace) {
+			kind = 'namespace';
+			const functions = namespaceMembers(symbol, checker, used);
+			members = functions.members;
+			for (const other of functions.others)
+				problems.push(`${where}: member ${other} is not a function, which a namespace must hold`);
+		} else if (ts.isFunctionDeclaration(declaration)) {
 			kind = 'function';
 			signature = callables(symbol.declarations ?? [])
 				.map((d) => `function ${callableOf(d, name, checker, used)}`)
@@ -319,13 +379,20 @@ export function readApi(root: string): ApiReference {
 /** Text for a Markdown table cell, with its pipes escaped. */
 export const tableCell = (text: string | undefined) => (text ?? '').replace(/\|/g, '\\|');
 
+/** The word that names each kind of export that the reference shows by its members. */
+const MEMBER_KINDS: Partial<Record<ApiSymbol['kind'], string>> = {
+	class: 'Class',
+	interface: 'Interface',
+	namespace: 'Namespace',
+};
+
 /** One export as Markdown: its declaration or members, and its summary. */
 export function renderSymbol(symbol: ApiSymbol): string {
 	const lines = [`### \`${symbol.name}\``, ''];
 	if (symbol.signature) lines.push('```ts', symbol.signature, '```', '');
 	else {
 		const base = symbol.extends.map((name) => `\`${name}\``).join(', ');
-		const what = symbol.kind === 'class' ? 'Class' : 'Interface';
+		const what = MEMBER_KINDS[symbol.kind];
 		lines.push(`${what} \`${symbol.name}\`${base ? `, which extends ${base}` : ''}.`, '');
 	}
 	if (symbol.summary) lines.push(symbol.summary, '');
