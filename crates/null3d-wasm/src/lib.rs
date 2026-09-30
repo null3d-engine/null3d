@@ -32,7 +32,7 @@ use null3d_render::gpu_driven::{
     BYTES_PER_SOURCE, GpuDrivenRenderer, MAX_USEFUL_BINDING_BYTES, RendererConfig,
 };
 use null3d_render::materials::{MaterialError, MaterialTable, Shading};
-use null3d_render::output::{Output, SceneColor, ToneMapping};
+use null3d_render::output::{Antialias, Output, SceneColor, ToneMapping};
 use null3d_render::view::ViewId;
 use wasm_bindgen::prelude::*;
 
@@ -223,11 +223,12 @@ pub fn last_error_detail(index: u32) -> u32 {
 
 /// Creates the engine on the sketch thread, and the job system that `job_workers` job workers
 /// serve, timing their work with the browser's clock. On WebGPU, `storage_binding_bytes` is the
-/// largest storage binding of the device the engine draws with. On WebGL2 (`webgl2`), the
-/// capability flags say whether the device has multi-draw, and `max_texture_size` is its largest
-/// texture. Scene passes draw into a target of format `scene_color`: a float format for HDR color,
-/// or the canvas's for the 8-bit path. `transparent` keeps the canvas clear where nothing draws.
-/// Every capacity is fixed from here on.
+/// largest storage binding of the device the engine draws with, and the capability flags say
+/// whether it has transient attachments. On WebGL2 (`webgl2`), the capability flags say whether
+/// the device has multi-draw, and `max_texture_size` is its largest texture. Scene passes draw
+/// into a target of format `scene_color`: a float format for HDR color, or the canvas's for the
+/// 8-bit path. `antialias` is the anti-aliasing mode's code; an unknown code takes MSAA.
+/// `transparent` keeps the canvas clear where nothing draws. Every capacity is fixed from here on.
 #[wasm_bindgen(js_name = initEngine)]
 #[allow(clippy::too_many_arguments)]
 pub fn init_engine(
@@ -240,6 +241,7 @@ pub fn init_engine(
     capabilities: u32,
     max_texture_size: u32,
     scene_color: u32,
+    antialias: u32,
     transparent: bool,
 ) -> u32 {
     // SAFETY: as in `with_engine`; no other call on the sketch thread runs while this one does.
@@ -265,15 +267,16 @@ pub fn init_engine(
     }
     let canvas = CanvasOutput {
         scene_color: SceneColor::from_format(scene_color),
+        antialias: Antialias::from_code(antialias).unwrap_or_default(),
         transparent,
     };
+    let capabilities = Capabilities::from_bits(u64::from(capabilities));
     *cell = Some(Engine {
         scene: SceneStorage::with_capacity(scene_capacity),
         ring: CommandRing::with_capacity(commands),
         batches: BatchTable::with_capacity(max_batches),
         snapshot: FrameSnapshot::with_capacity(UPLOAD_RANGES),
         renderer: if webgl2 {
-            let capabilities = Capabilities::from_bits(u64::from(capabilities));
             Box::new(CpuCulledRenderer::new(CpuCulledConfig {
                 canvas,
                 multi_draw: capabilities.contains(Capabilities::MULTI_DRAW),
@@ -283,6 +286,7 @@ pub fn init_engine(
         } else {
             Box::new(GpuDrivenRenderer::new(RendererConfig {
                 canvas,
+                transient_attachments: capabilities.contains(Capabilities::TRANSIENT_ATTACHMENTS),
                 storage_binding_bytes: storage_binding_bytes.clamp(
                     sizes::PORTABLE_STORAGE_BINDING_BYTES,
                     MAX_USEFUL_BINDING_BYTES,

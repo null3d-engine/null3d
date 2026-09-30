@@ -17,7 +17,7 @@ use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::frame::{CanvasOutput, FrameBuilder};
 use null3d_render::gpu_driven::RendererConfig;
 use null3d_render::materials::Shading;
-use null3d_render::output::{Output, SceneColor, ToneMapping};
+use null3d_render::output::{Antialias, Output, SceneColor, ToneMapping};
 use null3d_render::parallel_record::ParallelRecorder;
 use null3d_render::view::ViewId;
 
@@ -122,26 +122,30 @@ fn layer_change_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
 fn hdr_frames_whose_output_settings_change_allocate_nothing() {
     let _only = CountingAllocator::exclusive();
     CountingAllocator::track_this_thread();
-    let canvas = CanvasOutput {
-        scene_color: SceneColor::from_format(format::RGBA16_FLOAT),
-        transparent: false,
-    };
-    let webgpu = World::with_config(RendererConfig {
-        canvas,
-        ..RendererConfig::default()
-    });
-    assert_eq!(hdr_allocations(webgpu), 0, "WebGPU");
-    for multi_draw in [true, false] {
-        let webgl2 = World::build(CpuCulledRenderer::new(CpuCulledConfig {
+    for antialias in Antialias::ALL {
+        let canvas = CanvasOutput {
+            scene_color: SceneColor::from_format(format::RGBA16_FLOAT),
+            antialias,
+            transparent: false,
+        };
+        let webgpu = World::with_config(RendererConfig {
             canvas,
-            multi_draw,
-            ..CpuCulledConfig::default()
-        }));
-        assert_eq!(
-            hdr_allocations(webgl2),
-            0,
-            "WebGL2, multi-draw {multi_draw}"
-        );
+            transient_attachments: true,
+            ..RendererConfig::default()
+        });
+        assert_eq!(hdr_allocations(webgpu), 0, "WebGPU, {antialias:?}");
+        for multi_draw in [true, false] {
+            let webgl2 = World::build(CpuCulledRenderer::new(CpuCulledConfig {
+                canvas,
+                multi_draw,
+                ..CpuCulledConfig::default()
+            }));
+            assert_eq!(
+                hdr_allocations(webgl2),
+                0,
+                "WebGL2, multi-draw {multi_draw}, {antialias:?}"
+            );
+        }
     }
 }
 

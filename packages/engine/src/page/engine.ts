@@ -37,7 +37,7 @@ import {
 } from './frame-stats';
 import { holdFailure, holdSeconds, publishHold } from './hold';
 import { captureInput } from './input';
-import { coreDevice, maxInstances } from './limits';
+import { antialiasOption, coreDevice, maxInstances } from './limits';
 import { loadCore, memoryMaximumMiB } from './loader';
 import { MainThreadWatch } from './main-thread';
 import { watchPreferences } from './preferences';
@@ -71,6 +71,13 @@ export interface EngineOptions {
 	powerPreference?: 'high-performance' | 'low-power';
 	/** The latency mode. The default is `pipelined`. */
 	latency?: LatencyMode;
+	/**
+	 * How the engine smooths the edges of what it draws: `msaa`, the default, draws 4 samples per
+	 * pixel; `fxaa` smooths edges in the final pass, which costs less on phones; `none` leaves them
+	 * sharp. Each mode works on every GPU path. The mode is fixed while the engine runs. Another
+	 * value fails with E1213.
+	 */
+	antialias?: 'msaa' | 'fxaa' | 'none';
 	/**
 	 * True for a see-through canvas: the page shows through wherever no object draws, until the
 	 * sketch sets a background color. The canvas holds premultiplied alpha, as a browser composites
@@ -449,6 +456,7 @@ async function startEngine(
 	const { signal, onProgress } = options;
 	signal?.throwIfAborted();
 	const maximumMiB = memoryMaximumMiB(options.memory?.maximumMiB, switches.memoryMiB);
+	const antialias = antialiasOption(options.antialias);
 	// Checked before any download, so an old browser learns at once why the engine cannot run.
 	if (!WebAssembly.validate(SIMD_PROBE))
 		throw new EngineError('E1303', 'this browser runs WebAssembly without SIMD.');
@@ -521,6 +529,7 @@ async function startEngine(
 	let wasmMemory = core.memory;
 	const device = coreDevice(tier, report, {
 		...switches,
+		antialias,
 		transparent: options.transparent === true,
 	});
 	const handoff: CoreHandoff = {

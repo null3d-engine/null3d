@@ -1,18 +1,52 @@
 // What the engine core and the thread that draws need to know about the device and the canvas: on
 // WebGPU, the storage binding size the engine asks the GPU for; on WebGL2, multi-draw, the texture
 // size, whether WebGL reads shared memory and how depth is stored; on both, the target that scene
-// passes draw into and whether the canvas is transparent. They also set how many objects and
+// passes draw into, the anti-aliasing mode and whether the canvas is transparent. On WebGPU the
+// core also learns whether the device has transient attachments. They also set how many objects and
 // instance rows a scene can draw, and past how many development builds warn that other devices of
 // the same GPU path draw fewer.
 
+import { EngineError } from '../errors/engine-error';
 import * as C from '../generated/core';
 import { FORMAT_CANVAS, FORMAT_RG11B10_UFLOAT, FORMAT_RGBA16_FLOAT } from '../generated/gpu';
 import type { Tier } from '../render/renderer';
 import type { DepthMode, Switches } from './switches';
 
+/**
+ * How the engine smooths the edges of what it draws: `msaa` draws 4 samples per pixel, `fxaa`
+ * smooths edges in the final pass, and `none` leaves them.
+ */
+export type AntialiasMode = 'none' | 'fxaa' | 'msaa';
+
+/** Each anti-aliasing mode's code in the core. */
+const ANTIALIAS_CODES: Record<AntialiasMode, number> = {
+	none: C.ANTIALIAS_NONE,
+	fxaa: C.ANTIALIAS_FXAA,
+	msaa: C.ANTIALIAS_MSAA,
+};
+
+/**
+ * The anti-aliasing mode that `createEngine`'s option names, and MSAA where it names none. Throws
+ * E1213 for any other value.
+ */
+export function antialiasOption(value: unknown): AntialiasMode {
+	if (value === undefined) return 'msaa';
+	if (typeof value === 'string' && Object.hasOwn(ANTIALIAS_CODES, value))
+		return value as AntialiasMode;
+	const shown = typeof value === 'string' ? `"${value}"` : String(value);
+	throw new EngineError(
+		'E1213',
+		`createEngine() got the anti-aliasing mode ${shown}, which is not 'msaa', 'fxaa' or 'none'.`,
+	);
+}
+
 /** The parts of the capability report that decide how the engine uses the device. */
 export interface DeviceReport {
-	webgpu: { limits: Record<string, number | null>; features: string[] };
+	webgpu: {
+		limits: Record<string, number | null>;
+		features: string[];
+		transientAttachments: boolean;
+	};
 	webgl2: {
 		extensions: Record<string, boolean>;
 		maxTextureSize: number | null;
@@ -32,7 +66,7 @@ export interface CoreDevice {
 	webgl2: boolean;
 	/** WebGPU: the largest storage binding to request, which sizes the scene the core can draw. */
 	storageBindingBytes: number;
-	/** WebGL2: the core's capability flags, such as multi-draw. */
+	/** The core's capability flags: multi-draw on WebGL2, transient attachments on WebGPU. */
 	capabilities: number;
 	/** WebGL2: the largest texture width and height in texels. */
 	maxTextureSize: number;
@@ -48,15 +82,19 @@ export interface CoreDevice {
 	 * the final pass tone maps, or the canvas's format on the 8-bit path.
 	 */
 	sceneColor: number;
+	/** The anti-aliasing mode's code in the core. */
+	antialias: number;
 	/** True when the canvas keeps premultiplied alpha, and stays clear where nothing draws. */
 	transparent: boolean;
 }
 
 /**
- * How the page asks the engine to use the device: the test switches that force a route, and the
- * canvas's transparency.
+ * How the page asks the engine to use the device: the test switches that force a route, the
+ * anti-aliasing mode and the canvas's transparency.
  */
 export type DeviceOptions = Pick<Switches, 'copyUploads' | 'depth' | 'hdr'> & {
+	/** The anti-aliasing mode. */
+	antialias: AntialiasMode;
 	/** True for a transparent canvas. */
 	transparent: boolean;
 };
@@ -86,34 +124,37 @@ export function storageBindingBytes(limits: Record<string, number | null>): numb
 }
 
 /**
- * True when WebGL2 draws HDR color: RGBA16F targets are complete, keep values above 1, and take
- * the engine's MSAA.
+ * True when WebGL2 draws HDR color: RGBA16F targets are complete and keep values above 1. With
+ * MSAA they must also take the engine's samples.
  */
-export function webgl2DrawsHdr(report: DeviceReport['webgl2']): boolean {
+export function webgl2DrawsHdr(report: DeviceReport['webgl2'], antialias: AntialiasMode): boolean {
 	const test = report.floatRenderTargets?.rgba16f;
-	return test?.complete === true && test.readsBack && test.samples >= C.LIMIT_MSAA_SAMPLES;
+	return (
+		test?.complete === true &&
+		test.readsBack &&
+		(antialias !== 'msaa' || test.samples >= C.LIMIT_MSAA_SAMPLES)
+	);
 }
 
 /**
- * The format of the target that scene passes draw into. Core WebGPU draws HDR color, in
- * rg11b10ufloat, which takes half the bytes, where the device draws into it and the canvas needs
- * no alpha, and in rgba16float elsewhere. Compatibility mode cannot use MSAA on float targets, so it
- * takes the 8-bit path. WebGL2 takes it too, unless the device draws HDR color. `hdr` false
- * forces the 8-bit path.
+ * The format of the target that scene passes draw into. WebGPU draws HDR color, in rg11b10ufloat,
+ * which takes half the bytes, where the device draws into it and the canvas needs no alpha, and in
+ * rgba16float elsewhere. Compatibility mode cannot multisample float targets, so with MSAA it takes
+ * the 8-bit path. WebGL2 takes it too, unless the device draws HDR color in the anti-aliasing
+ * mode. `hdr` false forces the 8-bit path.
  */
 export function sceneColorFormat(
 	tier: Tier,
 	report: DeviceReport,
-	hdr: boolean,
-	transparent: boolean,
+	{ hdr, transparent, antialias }: Pick<DeviceOptions, 'hdr' | 'transparent' | 'antialias'>,
 ): number {
 	if (!hdr) return FORMAT_CANVAS;
-	if (tier === 'webgpu')
-		return !transparent && report.webgpu.features.includes('rg11b10ufloat-renderable')
-			? FORMAT_RG11B10_UFLOAT
-			: FORMAT_RGBA16_FLOAT;
-	if (tier === 'webgl2' && webgl2DrawsHdr(report.webgl2)) return FORMAT_RGBA16_FLOAT;
-	return FORMAT_CANVAS;
+	if (tier === 'webgl2')
+		return webgl2DrawsHdr(report.webgl2, antialias) ? FORMAT_RGBA16_FLOAT : FORMAT_CANVAS;
+	if (tier === 'webgpu-compat' && antialias === 'msaa') return FORMAT_CANVAS;
+	return !transparent && report.webgpu.features.includes('rg11b10ufloat-renderable')
+		? FORMAT_RG11B10_UFLOAT
+		: FORMAT_RGBA16_FLOAT;
 }
 
 /**
@@ -123,14 +164,15 @@ export function sceneColorFormat(
  */
 export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOptions): CoreDevice {
 	const canvas = {
-		sceneColor: sceneColorFormat(tier, report, options.hdr, options.transparent),
+		sceneColor: sceneColorFormat(tier, report, options),
+		antialias: ANTIALIAS_CODES[options.antialias],
 		transparent: options.transparent,
 	};
 	if (tier !== 'webgl2') {
 		return {
 			webgl2: false,
 			storageBindingBytes: storageBindingBytes(report.webgpu.limits),
-			capabilities: 0,
+			capabilities: report.webgpu.transientAttachments ? C.CAPABILITY_TRANSIENT_ATTACHMENTS : 0,
 			maxTextureSize: 0,
 			sharedUploads: true,
 			depth: 'reversed',

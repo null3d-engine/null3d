@@ -101,6 +101,7 @@ export const PERMUTATION_ALPHA_MASK = 16;
 export const PERMUTATION_RECEIVE_SHADOWS = 32;
 export const PERMUTATION_SKIN = 64;
 export const PERMUTATION_MORPH = 128;
+export const PERMUTATION_FXAA = 256;
 
 export const VERTEX_UV0 = 1;
 export const VERTEX_UV1 = 2;

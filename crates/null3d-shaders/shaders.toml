@@ -66,11 +66,12 @@ pipelines.main = { vertex = "vs", fragment = "fs" }
 variants.webgpu = { permutations = ["TONE_MAP"], targets = ["wgsl"] }
 variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP"], targets = ["glsl"] }
 
-# The final pass: one triangle over the canvas, which tone maps the HDR scene color into it.
+# The final pass: one triangle over the canvas, which tone maps the HDR scene color into it. The
+# FXAA builds smooth edges first, for the FXAA anti-aliasing mode.
 [shaders.final]
 file = "final.wgsl"
 pipelines.main = { vertex = "vs", fragment = "fs" }
-variants.main = { targets = ["wgsl", "glsl"] }
+variants.main = { permutations = ["FXAA"], targets = ["wgsl", "glsl"] }
 
 # GPU culling into buckets for indirect draws; its compute entry point is `main`. WebGPU only.
 [shaders.cull]

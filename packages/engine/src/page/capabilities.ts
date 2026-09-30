@@ -3,6 +3,7 @@
 // runners can store it and compare it across devices.
 
 import { messageOf } from '../errors/message';
+import { TEXTURE_USAGE_TRANSIENT_ATTACHMENT } from '../generated/gpu';
 import type { WorkerProbe } from '../workers/probe-worker';
 
 /** Limits the engine reads, from its portable WebGPU budget. */
@@ -93,6 +94,12 @@ export interface WebGPUReport {
 	wgslLanguageFeatures: string[];
 	/** The canvas texture format the browser prefers, or null without WebGPU. */
 	preferredCanvasFormat: string | null;
+	/**
+	 * True when the browser's WebGPU has the transient attachment texture usage (Chrome 146 and
+	 * later). A render target with it can stay in a tile-based GPU's own memory. The engine gives
+	 * it to the targets that live within one render pass, such as the multisampled color and depth.
+	 */
+	transientAttachments: boolean;
 	/** Reported for the record only; the engine never branches on it. */
 	adapterInfo: { vendor: string; architecture: string; device: string; description: string } | null;
 	/** Why the probe failed, when it did. */
@@ -180,6 +187,7 @@ async function probeWebGPU(powerPreference?: PowerPreference): Promise<WebGPURep
 		limits: {},
 		wgslLanguageFeatures: [],
 		preferredCanvasFormat: null,
+		transientAttachments: false,
 		adapterInfo: null,
 	};
 	const gpu = globalThis.navigator?.gpu;
@@ -202,6 +210,10 @@ async function probeWebGPU(powerPreference?: PowerPreference): Promise<WebGPURep
 			limits,
 			wgslLanguageFeatures: [...(gpu.wgslLanguageFeatures ?? [])].sort(),
 			preferredCanvasFormat: gpu.getPreferredCanvasFormat(),
+			// The engine passes its own usage bits to WebGPU, so the browser's must match them.
+			transientAttachments:
+				(globalThis.GPUTextureUsage as unknown as Record<string, number> | undefined)
+					?.TRANSIENT_ATTACHMENT === TEXTURE_USAGE_TRANSIENT_ATTACHMENT,
 			adapterInfo: info
 				? {
 						vendor: info.vendor,

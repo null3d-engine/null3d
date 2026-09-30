@@ -35,6 +35,7 @@ export interface CoreGlue extends CoreErrors {
 		capabilities: number,
 		maxTextureSize: number,
 		sceneColor: number,
+		antialias: number,
 		transparent: boolean,
 	): number;
 	jobWorkerLoop(index: number): void;

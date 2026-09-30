@@ -183,10 +183,11 @@ export class WebGPUBackend {
 				dimension,
 				usage: G.TEXTURE_USAGE_TEXTURE_BINDING,
 			});
+		// A view of a transient texture must keep all of the texture's usage.
 		if (usage & G.TEXTURE_USAGE_RENDER_ATTACHMENT && layers === 1 && mips === 1)
 			this.targetViews[id] = texture.createView({
 				dimension: '2d',
-				usage: G.TEXTURE_USAGE_RENDER_ATTACHMENT,
+				usage: usage & (G.TEXTURE_USAGE_RENDER_ATTACHMENT | G.TEXTURE_USAGE_TRANSIENT_ATTACHMENT),
 			});
 	}
 

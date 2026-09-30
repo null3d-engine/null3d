@@ -104,6 +104,7 @@ export class SketchRunner {
 			device.capabilities,
 			device.maxTextureSize,
 			device.sceneColor,
+			device.antialias,
 			device.transparent,
 		);
 		if (status !== 0) throw coreFailure(glue, 'createEngine');

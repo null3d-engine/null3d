@@ -1,29 +1,33 @@
-//! The final pass: one triangle over the canvas, which reads the HDR scene color, applies the
-//! exposure and the tone mapping, encodes sRGB and dithers (see [`crate::output`]). It runs only on
-//! the HDR path. Each frame builder owns one, with GPU object ids from its own ranges, and its
-//! pipeline comes from the builder's pipeline cache like every other.
+//! The final pass: one triangle over the canvas, which reads the scene color and writes the canvas
+//! (see [`crate::output`]). On the HDR path it applies the exposure and the tone mapping, encodes
+//! sRGB and dithers. In the FXAA mode it smooths edges first. On the 8-bit path the scene shaders
+//! did the output transform, and the pass runs only when the scene has one sample per pixel: it
+//! copies the scene color, or runs FXAA on it. Each frame builder owns one, with GPU object ids
+//! from its own ranges, and its pipeline comes from the builder's pipeline cache like every other.
 
 use null3d_gpu::drawlist::{
-    DrawList, Op, buffer_usage as usage, format, layout as bind_layout, resource_kind,
+    DrawList, Op, buffer_usage as usage, format, layout as bind_layout, permutation, resource_kind,
     sizes::OUTPUT_UNIFORM_BYTES, state_flags, template,
 };
 
 use crate::frame::{RecordError, UploadArena};
-use crate::output::OutputUniform;
+use crate::output::{Antialias, Output, OutputUniform, SceneColor};
 use crate::pipelines::{PipelineCache, PipelineKey};
 
 /// The final pass's pipeline: it draws into the canvas, with no depth and no antialiasing. The
 /// shader makes its triangle from the vertex index, so it reads no vertex buffer, and the triangle
-/// covers the canvas whichever way it winds.
-const PIPELINE: PipelineKey = PipelineKey {
-    template: template::FINAL,
-    permutation: 0,
-    vertex_format: 0,
-    color_format: format::CANVAS,
-    depth_format: format::NONE,
-    samples: 1,
-    state: state_flags::CULL_NONE,
-};
+/// covers the canvas whichever way it winds. The FXAA build smooths edges.
+const fn pipeline(fxaa: bool) -> PipelineKey {
+    PipelineKey {
+        template: template::FINAL,
+        permutation: if fxaa { permutation::FXAA } else { 0 },
+        vertex_format: 0,
+        color_format: format::CANVAS,
+        depth_format: format::NONE,
+        samples: 1,
+        state: state_flags::CULL_NONE,
+    }
+}
 
 /// The GPU objects of the final pass, which the frame builder's id ranges set.
 #[derive(Clone, Copy, Debug)]
@@ -38,6 +42,10 @@ pub(crate) struct FinalIds {
 #[derive(Debug)]
 pub(crate) struct FinalPass {
     ids: FinalIds,
+    /// True for the FXAA build of the pass.
+    fxaa: bool,
+    /// The flags of the pass's settings: whether the scene color holds display color.
+    flags: u32,
     /// The pipeline's id in the builder's cache, once the pass has asked for it.
     pipeline: Option<u32>,
     created: bool,
@@ -48,9 +56,16 @@ pub(crate) struct FinalPass {
 }
 
 impl FinalPass {
-    pub(crate) fn new(ids: FinalIds) -> Self {
+    /// The final pass of a builder whose scene draws into `scene_color` in the `antialias` mode.
+    pub(crate) fn new(ids: FinalIds, scene_color: SceneColor, antialias: Antialias) -> Self {
         Self {
             ids,
+            fxaa: antialias == Antialias::Fxaa,
+            flags: if scene_color.is_hdr() {
+                0
+            } else {
+                OutputUniform::DISPLAY_COLOR
+            },
             pipeline: None,
             created: false,
             uploaded: None,
@@ -62,21 +77,21 @@ impl FinalPass {
     pub(crate) const UPLOAD_BYTES: usize = OUTPUT_UNIFORM_BYTES as usize;
 
     /// Gives the pass its pipeline from `pipelines`, whose next creation makes it, makes the
-    /// settings buffer when the GPU lacks it, uploads the settings when they changed, and binds the
-    /// scene color texture `scene_color` when it is new. The frame's list made the plan's textures
-    /// again when `textures_made`, which leaves an older bind group reading a texture that is gone.
+    /// settings buffer when the GPU lacks it, uploads the settings for `output` when they changed, and binds the scene color texture `scene_color` when it is new. The
+    /// frame's list made the plan's textures again when `textures_made`, which leaves an older bind
+    /// group reading a texture that is gone.
     pub(crate) fn prepare(
         &mut self,
         list: &mut DrawList,
         arena: &mut UploadArena,
         pipelines: &mut PipelineCache,
-        settings: OutputUniform,
+        output: Output,
         scene_color: u32,
         textures_made: bool,
     ) -> Result<(), RecordError> {
         let ids = self.ids;
         if self.pipeline.is_none() {
-            self.pipeline = Some(pipelines.id(PIPELINE));
+            self.pipeline = Some(pipelines.id(pipeline(self.fxaa)));
         }
         if !self.created {
             list.push(
@@ -89,6 +104,10 @@ impl FinalPass {
             )?;
             self.created = true;
         }
+        let settings = OutputUniform {
+            flags: self.flags,
+            ..output.uniform()
+        };
         if self.uploaded != Some(settings) {
             let (at, bytes) = arena.push(settings.as_bytes())?;
             list.push(Op::WriteBuffer, &[ids.settings, 0, at, bytes])?;
@@ -135,5 +154,60 @@ impl FinalPass {
         self.created = false;
         self.uploaded = None;
         self.bound = None;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    const IDS: FinalIds = FinalIds {
+        settings: 1,
+        group: 2,
+    };
+
+    /// Prepares a final pass for a scene color in `format` in the `antialias` mode, and returns the
+    /// pipeline it asked for and the settings it uploaded.
+    fn prepared(format: u32, antialias: Antialias) -> (PipelineKey, OutputUniform) {
+        let mut pass = FinalPass::new(IDS, SceneColor::from_format(format), antialias);
+        let mut list = DrawList::with_capacity(256);
+        let mut arena = UploadArena::default();
+        arena.reset(FinalPass::UPLOAD_BYTES);
+        let mut pipelines = PipelineCache::default();
+        pass.prepare(
+            &mut list,
+            &mut arena,
+            &mut pipelines,
+            Output::default(),
+            4,
+            true,
+        )
+        .unwrap();
+        (pipelines.keys()[0], pass.uploaded.unwrap())
+    }
+
+    #[test]
+    fn fxaa_takes_its_build_and_the_8_bit_path_reads_display_color() {
+        let shader = include_str!("../../null3d-shaders/wgsl/final.wgsl");
+        let line = format!(
+            "const DISPLAY_COLOR: u32 = {}u;",
+            OutputUniform::DISPLAY_COLOR
+        );
+        assert!(shader.contains(&line), "final.wgsl lacks {line}");
+        for (scene, flags) in [
+            (format::RGBA16_FLOAT, 0),
+            (format::CANVAS, OutputUniform::DISPLAY_COLOR),
+        ] {
+            for (antialias, bits) in [
+                (Antialias::Fxaa, permutation::FXAA),
+                (Antialias::None, 0),
+                (Antialias::Msaa, 0),
+            ] {
+                let (key, settings) = prepared(scene, antialias);
+                assert_eq!(key.permutation, bits, "{antialias:?}");
+                assert_eq!(settings.flags, flags, "{scene}");
+                assert_eq!(settings.exposure, Output::default().exposure);
+            }
+        }
     }
 }

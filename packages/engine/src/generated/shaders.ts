@@ -213,6 +213,7 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
 /** The variants of the `final` shader, by variant name. */
 export const FINAL_SHADER: {
 	readonly main: ShaderVariant<'main'>;
+	readonly main_fxaa: ShaderVariant<'main'>;
 } = {
 	main: {
 		permutation: 0,
@@ -220,8 +221,8 @@ export const FINAL_SHADER: {
 			source: `struct Output {
     exposure: f32,
     tone_mapping: u32,
-    spare_a: u32,
-    spare_b: u32,
+    flags: u32,
+    spare: u32,
 }
 
 const AGX: u32 = 1u;
@@ -233,6 +234,7 @@ const NEUTRAL: u32 = 2u;
 const NONE: u32 = 3u;
 const ACES_INPUT: mat3x3<f32> = mat3x3<f32>(vec3<f32>(0.59719f, 0.076f, 0.0284f), vec3<f32>(0.35458f, 0.90834f, 0.13383f), vec3<f32>(0.04823f, 0.01566f, 0.83777f));
 const ACES_OUTPUT: mat3x3<f32> = mat3x3<f32>(vec3<f32>(1.60475f, -0.10208f, -0.00327f), vec3<f32>(-0.53108f, 1.10813f, -0.07276f), vec3<f32>(-0.07367f, -0.00605f, 1.07602f));
+const DISPLAY_COLOR: u32 = 1u;
 
 @group(0) @binding(0)
 var<uniform> settings_1: Output;
@@ -321,6 +323,30 @@ fn encode(c_5: vec3<f32>, pixel_1: vec2<f32>) -> vec3<f32> {
     return (_e7 + vec3(dither));
 }
 
+fn shown(texel: vec4<f32>) -> vec4<f32> {
+    var local: bool;
+
+    let _e2 = settings_1.flags;
+    if !(((_e2 & DISPLAY_COLOR) != 0u)) {
+        local = (texel.w <= 0f);
+    } else {
+        local = true;
+    }
+    let _e15 = local;
+    if _e15 {
+        return texel;
+    }
+    let _e21 = settings_1;
+    let _e22 = tone_map((texel.xyz / vec3(texel.w)), _e21);
+    return vec4<f32>((_e22 * texel.w), texel.w);
+}
+
+fn pixel_color(position_1: vec2<f32>) -> vec4<f32> {
+    let _e4 = textureLoad(scene_color, vec2<i32>(position_1), 0i);
+    let _e5 = shown(_e4);
+    return _e5;
+}
+
 @vertex
 fn vs(@builtin(vertex_index) vertex: u32) -> @builtin(position) vec4<f32> {
     let x_2 = ((f32(((vertex << 1u) & 2u)) * 2f) - 1f);
@@ -330,15 +356,17 @@ fn vs(@builtin(vertex_index) vertex: u32) -> @builtin(position) vec4<f32> {
 
 @fragment
 fn fs(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
-    let texel = textureLoad(scene_color, vec2<i32>(position.xy), 0i);
-    let coverage = texel.w;
+    let _e2 = pixel_color(position.xy);
+    let _e5 = settings_1.flags;
+    if ((_e5 & DISPLAY_COLOR) != 0u) {
+        return _e2;
+    }
+    let coverage = _e2.w;
     if (coverage <= 0f) {
         return vec4(0f);
     }
-    let _e15 = settings_1;
-    let _e16 = tone_map((texel.xyz / vec3(coverage)), _e15);
-    let _e18 = encode(_e16, position.xy);
-    let encoded = saturate(_e18);
+    let _e19 = encode((_e2.xyz / vec3(coverage)), position.xy);
+    let encoded = saturate(_e19);
     return vec4<f32>((encoded * coverage), coverage);
 }
 `,
@@ -361,8 +389,8 @@ precision highp int;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 const uint AGX = 1u;
 const mat3x3 LINEAR_SRGB_TO_LINEAR_REC2020_ = mat3x3(vec3(0.6274, 0.0691, 0.0164), vec3(0.3293, 0.9195, 0.088), vec3(0.0433, 0.0113, 0.8956));
@@ -373,6 +401,7 @@ const uint NEUTRAL = 2u;
 const uint NONE = 3u;
 const mat3x3 ACES_INPUT = mat3x3(vec3(0.59719, 0.076, 0.0284), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
 const mat3x3 ACES_OUTPUT = mat3x3(vec3(1.60475, -0.10208, -0.00327), vec3(-0.53108, 1.10813, -0.07276), vec3(-0.07367, -0.00605, 1.07602));
+const uint DISPLAY_COLOR = 1u;
 
 
 vec3 linear_to_srgb(vec3 c) {
@@ -478,8 +507,8 @@ precision highp int;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 const uint AGX = 1u;
 const mat3x3 LINEAR_SRGB_TO_LINEAR_REC2020_ = mat3x3(vec3(0.6274, 0.0691, 0.0164), vec3(0.3293, 0.9195, 0.088), vec3(0.0433, 0.0113, 0.8956));
@@ -490,6 +519,7 @@ const uint NEUTRAL = 2u;
 const uint NONE = 3u;
 const mat3x3 ACES_INPUT = mat3x3(vec3(0.59719, 0.076, 0.0284), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
 const mat3x3 ACES_OUTPUT = mat3x3(vec3(1.60475, -0.10208, -0.00327), vec3(-0.53108, 1.10813, -0.07276), vec3(-0.07367, -0.00605, 1.07602));
+const uint DISPLAY_COLOR = 1u;
 
 layout(std140) uniform Output_block_0Fragment { Output _group_0_binding_0_fs; };
 
@@ -579,18 +609,632 @@ vec3 encode(vec3 c_5, vec2 pixel_1) {
     return (_e7 + vec3(dither));
 }
 
+vec4 shown(vec4 texel) {
+    bool local = false;
+    uint _e2 = _group_0_binding_0_fs.flags;
+    if (!(((_e2 & DISPLAY_COLOR) != 0u))) {
+        local = (texel.w <= 0.0);
+    } else {
+        local = true;
+    }
+    bool _e15 = local;
+    if (_e15) {
+        return texel;
+    }
+    Output _e21 = _group_0_binding_0_fs;
+    vec3 _e22 = tone_map((texel.xyz / vec3(texel.w)), _e21);
+    return vec4((_e22 * texel.w), texel.w);
+}
+
+vec4 pixel_color(vec2 position_1) {
+    vec4 _e4 = texelFetch(_group_0_binding_1_fs, ivec2(position_1), 0);
+    vec4 _e5 = shown(_e4);
+    return _e5;
+}
+
 void main() {
     vec4 position = gl_FragCoord;
-    vec4 texel = texelFetch(_group_0_binding_1_fs, ivec2(position.xy), 0);
-    float coverage = texel.w;
+    vec4 _e2 = pixel_color(position.xy);
+    uint _e5 = _group_0_binding_0_fs.flags;
+    if (((_e5 & DISPLAY_COLOR) != 0u)) {
+        _fs2p_location0 = _e2;
+        return;
+    }
+    float coverage = _e2.w;
     if ((coverage <= 0.0)) {
         _fs2p_location0 = vec4(0.0);
         return;
     }
-    Output _e15 = _group_0_binding_0_fs;
-    vec3 _e16 = tone_map((texel.xyz / vec3(coverage)), _e15);
-    vec3 _e18 = encode(_e16, position.xy);
-    vec3 encoded = clamp(_e18, vec3(0.0), vec3(1.0));
+    vec3 _e19 = encode((_e2.xyz / vec3(coverage)), position.xy);
+    vec3 encoded = clamp(_e19, vec3(0.0), vec3(1.0));
+    _fs2p_location0 = vec4((encoded * coverage), coverage);
+    return;
+}
+`,
+					uniformBlocks: [
+						{
+							name: 'Output_block_0Fragment',
+							group: 0,
+							binding: 0,
+						},
+					],
+					textures: [
+						{
+							name: '_group_0_binding_1_fs',
+							group: 0,
+							binding: 1,
+							sampler: null,
+						},
+					],
+				},
+			},
+		},
+	},
+	main_fxaa: {
+		permutation: 256,
+		wgsl: {
+			source: `struct Output {
+    exposure: f32,
+    tone_mapping: u32,
+    flags: u32,
+    spare: u32,
+}
+
+const AGX: u32 = 1u;
+const LINEAR_SRGB_TO_LINEAR_REC2020_: mat3x3<f32> = mat3x3<f32>(vec3<f32>(0.6274f, 0.0691f, 0.0164f), vec3<f32>(0.3293f, 0.9195f, 0.088f), vec3<f32>(0.0433f, 0.0113f, 0.8956f));
+const AGX_INSET: mat3x3<f32> = mat3x3<f32>(vec3<f32>(0.85662717f, 0.13731897f, 0.11189821f), vec3<f32>(0.09512124f, 0.761242f, 0.076799415f), vec3<f32>(0.048251607f, 0.10143904f, 0.81130236f));
+const AGX_OUTSET: mat3x3<f32> = mat3x3<f32>(vec3<f32>(1.1271006f, -0.14132977f, -0.14132977f), vec3<f32>(-0.11060664f, 1.1578237f, -0.11060664f), vec3<f32>(-0.016493939f, -0.016493939f, 1.2519364f));
+const LINEAR_REC2020_TO_LINEAR_SRGB: mat3x3<f32> = mat3x3<f32>(vec3<f32>(1.6605f, -0.1246f, -0.0182f), vec3<f32>(-0.5876f, 1.1329f, -0.1006f), vec3<f32>(-0.0728f, -0.0083f, 1.1187f));
+const NEUTRAL: u32 = 2u;
+const NONE: u32 = 3u;
+const ACES_INPUT: mat3x3<f32> = mat3x3<f32>(vec3<f32>(0.59719f, 0.076f, 0.0284f), vec3<f32>(0.35458f, 0.90834f, 0.13383f), vec3<f32>(0.04823f, 0.01566f, 0.83777f));
+const ACES_OUTPUT: mat3x3<f32> = mat3x3<f32>(vec3<f32>(1.60475f, -0.10208f, -0.00327f), vec3<f32>(-0.53108f, 1.10813f, -0.07276f), vec3<f32>(-0.07367f, -0.00605f, 1.07602f));
+const DISPLAY_COLOR: u32 = 1u;
+const EDGE_THRESHOLD: f32 = 0.125f;
+const EDGE_THRESHOLD_MIN: f32 = 0.0625f;
+const REDUCE_MIN: f32 = 0.0078125f;
+const REDUCE_MUL: f32 = 0.125f;
+const SPAN_MAX: f32 = 8f;
+
+@group(0) @binding(0)
+var<uniform> settings_1: Output;
+@group(0) @binding(1)
+var scene_color: texture_2d<f32>;
+
+fn linear_to_srgb(c: vec3<f32>) -> vec3<f32> {
+    let low = (c * 12.92f);
+    let high = ((1.055f * pow(c, vec3(0.41666666f))) - vec3(0.055f));
+    return select(high, low, (c <= vec3(0.0031308f)));
+}
+
+fn agx_contrast(x: vec3<f32>) -> vec3<f32> {
+    let x2_ = (x * x);
+    let x4_ = (x2_ * x2_);
+    return ((((((((15.5f * x4_) * x2_) - ((40.14f * x4_) * x)) + (31.96f * x4_)) - ((6.868f * x2_) * x)) + (0.4298f * x2_)) + (0.1191f * x)) - vec3(0.00232f));
+}
+
+fn agx(c_1: vec3<f32>) -> vec3<f32> {
+    let inset = (AGX_INSET * (LINEAR_SRGB_TO_LINEAR_REC2020_ * c_1));
+    let logged = ((log2(max(inset, vec3(0.0000000001f))) - vec3(-12.47393f)) / vec3(16.5f));
+    let _e16 = agx_contrast(saturate(logged));
+    let curved = (AGX_OUTSET * _e16);
+    let rec2020_ = pow(max(curved, vec3(0f)), vec3(2.2f));
+    return saturate((LINEAR_REC2020_TO_LINEAR_SRGB * rec2020_));
+}
+
+fn neutral(c_2: vec3<f32>) -> vec3<f32> {
+    let x_1 = min(c_2.x, min(c_2.y, c_2.z));
+    let toe = select(0.04f, (x_1 - ((6.25f * x_1) * x_1)), (x_1 < 0.08f));
+    let shifted = (c_2 - vec3(toe));
+    let peak = max(shifted.x, max(shifted.y, shifted.z));
+    if (peak < 0.76f) {
+        return shifted;
+    }
+    let d = (1f - 0.76f);
+    let new_peak = (1f - ((d * d) / ((peak + d) - 0.76f)));
+    let g = (1f - (1f / ((0.15f * (peak - new_peak)) + 1f)));
+    return mix((shifted * (new_peak / peak)), vec3(new_peak), g);
+}
+
+fn rrt_and_odt_fit(v: vec3<f32>) -> vec3<f32> {
+    let a = ((v * (v + vec3(0.0245786f))) - vec3(0.000090537f));
+    let b = ((v * ((0.983729f * v) + vec3(0.432951f))) + vec3(0.238081f));
+    return (a / b);
+}
+
+fn aces(c_3: vec3<f32>) -> vec3<f32> {
+    let _e6 = rrt_and_odt_fit((ACES_INPUT * (c_3 / vec3(0.6f))));
+    return saturate((ACES_OUTPUT * _e6));
+}
+
+fn tone_map(c_4: vec3<f32>, settings: Output) -> vec3<f32> {
+    let exposed = (c_4 * settings.exposure);
+    if (settings.tone_mapping == AGX) {
+        let _e7 = agx(exposed);
+        return _e7;
+    }
+    if (settings.tone_mapping == NEUTRAL) {
+        let _e11 = neutral(exposed);
+        return _e11;
+    }
+    if (settings.tone_mapping == NONE) {
+        return saturate(exposed);
+    }
+    let _e16 = aces(exposed);
+    return _e16;
+}
+
+fn pcg(v_1: u32) -> u32 {
+    let state = ((v_1 * 747796405u) + 2891336453u);
+    let word = (((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u);
+    return ((word >> 22u) ^ word);
+}
+
+fn pixel_noise(pixel: vec2<f32>) -> f32 {
+    let _e5 = pcg(u32(pixel.y));
+    let _e7 = pcg((u32(pixel.x) + _e5));
+    return (f32((_e7 >> 8u)) / 16777216f);
+}
+
+fn encode(c_5: vec3<f32>, pixel_1: vec2<f32>) -> vec3<f32> {
+    let _e1 = pixel_noise(pixel_1);
+    let dither = ((_e1 - 0.5f) / 255f);
+    let _e7 = linear_to_srgb(c_5);
+    return (_e7 + vec3(dither));
+}
+
+fn shown(texel: vec4<f32>) -> vec4<f32> {
+    var local: bool;
+
+    let _e2 = settings_1.flags;
+    if !(((_e2 & DISPLAY_COLOR) != 0u)) {
+        local = (texel.w <= 0f);
+    } else {
+        local = true;
+    }
+    let _e15 = local;
+    if _e15 {
+        return texel;
+    }
+    let _e21 = settings_1;
+    let _e22 = tone_map((texel.xyz / vec3(texel.w)), _e21);
+    return vec4<f32>((_e22 * texel.w), texel.w);
+}
+
+fn texel_at(pixel_2: vec2<i32>, last: vec2<i32>) -> vec4<f32> {
+    let _e7 = textureLoad(scene_color, clamp(pixel_2, vec2(0i), last), 0i);
+    let _e8 = shown(_e7);
+    return _e8;
+}
+
+fn tap(point: vec2<f32>, last_1: vec2<i32>) -> vec4<f32> {
+    let corner = (point - vec2(0.5f));
+    let base = vec2<i32>(floor(corner));
+    let f = fract(corner);
+    let _e8 = texel_at(base, last_1);
+    let _e13 = texel_at((base + vec2<i32>(1i, 0i)), last_1);
+    let top = mix(_e8, _e13, f.x);
+    let _e20 = texel_at((base + vec2<i32>(0i, 1i)), last_1);
+    let _e25 = texel_at((base + vec2<i32>(1i, 1i)), last_1);
+    let bottom = mix(_e20, _e25, f.x);
+    return mix(top, bottom, f.y);
+}
+
+fn luma(c_6: vec4<f32>) -> f32 {
+    let y = dot(c_6.xyz, vec3<f32>(0.2126f, 0.7152f, 0.0722f));
+    let _e10 = settings_1.flags;
+    return select(sqrt(y), y, ((_e10 & DISPLAY_COLOR) != 0u));
+}
+
+fn pixel_color(position_1: vec2<f32>) -> vec4<f32> {
+    var local_1: bool;
+
+    let _e1 = textureDimensions(scene_color);
+    let last_2 = (vec2<i32>(_e1) - vec2(1i));
+    let pixel_3 = vec2<i32>(position_1);
+    let _e8 = texel_at(pixel_3, last_2);
+    let _e9 = luma(_e8);
+    let _e14 = texel_at((pixel_3 + vec2<i32>(-1i, -1i)), last_2);
+    let _e15 = luma(_e14);
+    let _e20 = texel_at((pixel_3 + vec2<i32>(1i, -1i)), last_2);
+    let _e21 = luma(_e20);
+    let _e26 = texel_at((pixel_3 + vec2<i32>(-1i, 1i)), last_2);
+    let _e27 = luma(_e26);
+    let _e32 = texel_at((pixel_3 + vec2<i32>(1i, 1i)), last_2);
+    let _e33 = luma(_e32);
+    let lowest = min(_e9, min(min(_e15, _e21), min(_e27, _e33)));
+    let highest = max(_e9, max(max(_e15, _e21), max(_e27, _e33)));
+    if ((highest - lowest) < max(EDGE_THRESHOLD_MIN, (highest * EDGE_THRESHOLD))) {
+        return _e8;
+    }
+    let along = vec2<f32>(((_e27 + _e33) - (_e15 + _e21)), ((_e15 + _e27) - (_e21 + _e33)));
+    let reduce = max(((((_e15 + _e21) + _e27) + _e33) * 0.03125f), REDUCE_MIN);
+    let scale = (1f / (min(abs(along.x), abs(along.y)) + reduce));
+    let span = clamp((along * scale), vec2(-8f), vec2(8f));
+    let _e80 = tap((position_1 - (span / vec2(6f))), last_2);
+    let _e85 = tap((position_1 + (span / vec2(6f))), last_2);
+    let inner = (0.5f * (_e80 + _e85));
+    let _e94 = tap((position_1 - (span * 0.5f)), last_2);
+    let _e98 = tap((position_1 + (span * 0.5f)), last_2);
+    let outer = ((0.5f * inner) + (0.25f * (_e94 + _e98)));
+    let _e103 = luma(outer);
+    if !((_e103 < lowest)) {
+        local_1 = (_e103 > highest);
+    } else {
+        local_1 = true;
+    }
+    let _e110 = local_1;
+    return select(outer, inner, _e110);
+}
+
+@vertex
+fn vs(@builtin(vertex_index) vertex: u32) -> @builtin(position) vec4<f32> {
+    let x_2 = ((f32(((vertex << 1u) & 2u)) * 2f) - 1f);
+    let y_1 = ((f32((vertex & 2u)) * 2f) - 1f);
+    return vec4<f32>(x_2, y_1, 0.5f, 1f);
+}
+
+@fragment
+fn fs(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
+    let _e2 = pixel_color(position.xy);
+    let _e5 = settings_1.flags;
+    if ((_e5 & DISPLAY_COLOR) != 0u) {
+        return _e2;
+    }
+    let coverage = _e2.w;
+    if (coverage <= 0f) {
+        return vec4(0f);
+    }
+    let _e19 = encode((_e2.xyz / vec3(coverage)), position.xy);
+    let encoded = saturate(_e19);
+    return vec4<f32>((encoded * coverage), coverage);
+}
+`,
+			pipelines: {
+				main: {
+					vertex: 'vs',
+					fragment: 'fs',
+				},
+			},
+		},
+		glsl: {
+			main: {
+				vertex: {
+					source: `#version 300 es
+uniform vec2 null3d_depth_mapping;
+
+precision highp float;
+precision highp int;
+
+struct Output {
+    float exposure;
+    uint tone_mapping;
+    uint flags;
+    uint spare;
+};
+const uint AGX = 1u;
+const mat3x3 LINEAR_SRGB_TO_LINEAR_REC2020_ = mat3x3(vec3(0.6274, 0.0691, 0.0164), vec3(0.3293, 0.9195, 0.088), vec3(0.0433, 0.0113, 0.8956));
+const mat3x3 AGX_INSET = mat3x3(vec3(0.85662717, 0.13731897, 0.11189821), vec3(0.09512124, 0.761242, 0.076799415), vec3(0.048251607, 0.10143904, 0.81130236));
+const mat3x3 AGX_OUTSET = mat3x3(vec3(1.1271006, -0.14132977, -0.14132977), vec3(-0.11060664, 1.1578237, -0.11060664), vec3(-0.016493939, -0.016493939, 1.2519364));
+const mat3x3 LINEAR_REC2020_TO_LINEAR_SRGB = mat3x3(vec3(1.6605, -0.1246, -0.0182), vec3(-0.5876, 1.1329, -0.1006), vec3(-0.0728, -0.0083, 1.1187));
+const uint NEUTRAL = 2u;
+const uint NONE = 3u;
+const mat3x3 ACES_INPUT = mat3x3(vec3(0.59719, 0.076, 0.0284), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
+const mat3x3 ACES_OUTPUT = mat3x3(vec3(1.60475, -0.10208, -0.00327), vec3(-0.53108, 1.10813, -0.07276), vec3(-0.07367, -0.00605, 1.07602));
+const uint DISPLAY_COLOR = 1u;
+const float EDGE_THRESHOLD = 0.125;
+const float EDGE_THRESHOLD_MIN = 0.0625;
+const float REDUCE_MIN = 0.0078125;
+const float REDUCE_MUL = 0.125;
+const float SPAN_MAX = 8.0;
+
+
+vec3 linear_to_srgb(vec3 c) {
+    vec3 low = (c * 12.92);
+    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
+    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
+}
+
+vec3 agx_contrast(vec3 x) {
+    vec3 x2_ = (x * x);
+    vec3 x4_ = (x2_ * x2_);
+    return ((((((((15.5 * x4_) * x2_) - ((40.14 * x4_) * x)) + (31.96 * x4_)) - ((6.868 * x2_) * x)) + (0.4298 * x2_)) + (0.1191 * x)) - vec3(0.00232));
+}
+
+vec3 agx(vec3 c_1) {
+    vec3 inset = (AGX_INSET * (LINEAR_SRGB_TO_LINEAR_REC2020_ * c_1));
+    vec3 logged = ((log2(max(inset, vec3(1e-10))) - vec3(-12.47393)) / vec3(16.5));
+    vec3 _e16 = agx_contrast(clamp(logged, vec3(0.0), vec3(1.0)));
+    vec3 curved = (AGX_OUTSET * _e16);
+    vec3 rec2020_ = pow(max(curved, vec3(0.0)), vec3(2.2));
+    return clamp((LINEAR_REC2020_TO_LINEAR_SRGB * rec2020_), vec3(0.0), vec3(1.0));
+}
+
+vec3 neutral(vec3 c_2) {
+    float x_1 = min(c_2.x, min(c_2.y, c_2.z));
+    float toe = ((x_1 < 0.08) ? (x_1 - ((6.25 * x_1) * x_1)) : 0.04);
+    vec3 shifted = (c_2 - vec3(toe));
+    float peak = max(shifted.x, max(shifted.y, shifted.z));
+    if ((peak < 0.76)) {
+        return shifted;
+    }
+    float d = (1.0 - 0.76);
+    float new_peak = (1.0 - ((d * d) / ((peak + d) - 0.76)));
+    float g = (1.0 - (1.0 / ((0.15 * (peak - new_peak)) + 1.0)));
+    return mix((shifted * (new_peak / peak)), vec3(new_peak), g);
+}
+
+vec3 rrt_and_odt_fit(vec3 v) {
+    vec3 a = ((v * (v + vec3(0.0245786))) - vec3(9.0537e-5));
+    vec3 b = ((v * ((0.983729 * v) + vec3(0.432951))) + vec3(0.238081));
+    return (a / b);
+}
+
+vec3 aces(vec3 c_3) {
+    vec3 _e6 = rrt_and_odt_fit((ACES_INPUT * (c_3 / vec3(0.6))));
+    return clamp((ACES_OUTPUT * _e6), vec3(0.0), vec3(1.0));
+}
+
+vec3 tone_map(vec3 c_4, Output settings) {
+    vec3 exposed = (c_4 * settings.exposure);
+    if ((settings.tone_mapping == AGX)) {
+        vec3 _e7 = agx(exposed);
+        return _e7;
+    }
+    if ((settings.tone_mapping == NEUTRAL)) {
+        vec3 _e11 = neutral(exposed);
+        return _e11;
+    }
+    if ((settings.tone_mapping == NONE)) {
+        return clamp(exposed, vec3(0.0), vec3(1.0));
+    }
+    vec3 _e16 = aces(exposed);
+    return _e16;
+}
+
+uint pcg(uint v_1) {
+    uint state = ((v_1 * 747796405u) + 2891336453u);
+    uint word = (((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u);
+    return ((word >> 22u) ^ word);
+}
+
+float pixel_noise(vec2 pixel) {
+    uint _e5 = pcg(uint(pixel.y));
+    uint _e7 = pcg((uint(pixel.x) + _e5));
+    return (float((_e7 >> 8u)) / 16777216.0);
+}
+
+vec3 encode(vec3 c_5, vec2 pixel_1) {
+    float _e1 = pixel_noise(pixel_1);
+    float dither = ((_e1 - 0.5) / 255.0);
+    vec3 _e7 = linear_to_srgb(c_5);
+    return (_e7 + vec3(dither));
+}
+
+void main() {
+    uint vertex = uint(gl_VertexID);
+    float x_2 = ((float(((vertex << 1u) & 2u)) * 2.0) - 1.0);
+    float y = ((float((vertex & 2u)) * 2.0) - 1.0);
+    gl_Position = vec4(x_2, y, 0.5, 1.0);
+    gl_Position.z = gl_Position.z * null3d_depth_mapping.x + gl_Position.w * null3d_depth_mapping.y;
+    return;
+}
+`,
+					uniformBlocks: [],
+					textures: [],
+				},
+				fragment: {
+					source: `#version 300 es
+
+precision highp float;
+precision highp int;
+
+struct Output {
+    float exposure;
+    uint tone_mapping;
+    uint flags;
+    uint spare;
+};
+const uint AGX = 1u;
+const mat3x3 LINEAR_SRGB_TO_LINEAR_REC2020_ = mat3x3(vec3(0.6274, 0.0691, 0.0164), vec3(0.3293, 0.9195, 0.088), vec3(0.0433, 0.0113, 0.8956));
+const mat3x3 AGX_INSET = mat3x3(vec3(0.85662717, 0.13731897, 0.11189821), vec3(0.09512124, 0.761242, 0.076799415), vec3(0.048251607, 0.10143904, 0.81130236));
+const mat3x3 AGX_OUTSET = mat3x3(vec3(1.1271006, -0.14132977, -0.14132977), vec3(-0.11060664, 1.1578237, -0.11060664), vec3(-0.016493939, -0.016493939, 1.2519364));
+const mat3x3 LINEAR_REC2020_TO_LINEAR_SRGB = mat3x3(vec3(1.6605, -0.1246, -0.0182), vec3(-0.5876, 1.1329, -0.1006), vec3(-0.0728, -0.0083, 1.1187));
+const uint NEUTRAL = 2u;
+const uint NONE = 3u;
+const mat3x3 ACES_INPUT = mat3x3(vec3(0.59719, 0.076, 0.0284), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
+const mat3x3 ACES_OUTPUT = mat3x3(vec3(1.60475, -0.10208, -0.00327), vec3(-0.53108, 1.10813, -0.07276), vec3(-0.07367, -0.00605, 1.07602));
+const uint DISPLAY_COLOR = 1u;
+const float EDGE_THRESHOLD = 0.125;
+const float EDGE_THRESHOLD_MIN = 0.0625;
+const float REDUCE_MIN = 0.0078125;
+const float REDUCE_MUL = 0.125;
+const float SPAN_MAX = 8.0;
+
+layout(std140) uniform Output_block_0Fragment { Output _group_0_binding_0_fs; };
+
+uniform highp sampler2D _group_0_binding_1_fs;
+
+layout(location = 0) out vec4 _fs2p_location0;
+
+vec3 linear_to_srgb(vec3 c) {
+    vec3 low = (c * 12.92);
+    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
+    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
+}
+
+vec3 agx_contrast(vec3 x) {
+    vec3 x2_ = (x * x);
+    vec3 x4_ = (x2_ * x2_);
+    return ((((((((15.5 * x4_) * x2_) - ((40.14 * x4_) * x)) + (31.96 * x4_)) - ((6.868 * x2_) * x)) + (0.4298 * x2_)) + (0.1191 * x)) - vec3(0.00232));
+}
+
+vec3 agx(vec3 c_1) {
+    vec3 inset = (AGX_INSET * (LINEAR_SRGB_TO_LINEAR_REC2020_ * c_1));
+    vec3 logged = ((log2(max(inset, vec3(1e-10))) - vec3(-12.47393)) / vec3(16.5));
+    vec3 _e16 = agx_contrast(clamp(logged, vec3(0.0), vec3(1.0)));
+    vec3 curved = (AGX_OUTSET * _e16);
+    vec3 rec2020_ = pow(max(curved, vec3(0.0)), vec3(2.2));
+    return clamp((LINEAR_REC2020_TO_LINEAR_SRGB * rec2020_), vec3(0.0), vec3(1.0));
+}
+
+vec3 neutral(vec3 c_2) {
+    float x_1 = min(c_2.x, min(c_2.y, c_2.z));
+    float toe = ((x_1 < 0.08) ? (x_1 - ((6.25 * x_1) * x_1)) : 0.04);
+    vec3 shifted = (c_2 - vec3(toe));
+    float peak = max(shifted.x, max(shifted.y, shifted.z));
+    if ((peak < 0.76)) {
+        return shifted;
+    }
+    float d = (1.0 - 0.76);
+    float new_peak = (1.0 - ((d * d) / ((peak + d) - 0.76)));
+    float g = (1.0 - (1.0 / ((0.15 * (peak - new_peak)) + 1.0)));
+    return mix((shifted * (new_peak / peak)), vec3(new_peak), g);
+}
+
+vec3 rrt_and_odt_fit(vec3 v) {
+    vec3 a = ((v * (v + vec3(0.0245786))) - vec3(9.0537e-5));
+    vec3 b = ((v * ((0.983729 * v) + vec3(0.432951))) + vec3(0.238081));
+    return (a / b);
+}
+
+vec3 aces(vec3 c_3) {
+    vec3 _e6 = rrt_and_odt_fit((ACES_INPUT * (c_3 / vec3(0.6))));
+    return clamp((ACES_OUTPUT * _e6), vec3(0.0), vec3(1.0));
+}
+
+vec3 tone_map(vec3 c_4, Output settings) {
+    vec3 exposed = (c_4 * settings.exposure);
+    if ((settings.tone_mapping == AGX)) {
+        vec3 _e7 = agx(exposed);
+        return _e7;
+    }
+    if ((settings.tone_mapping == NEUTRAL)) {
+        vec3 _e11 = neutral(exposed);
+        return _e11;
+    }
+    if ((settings.tone_mapping == NONE)) {
+        return clamp(exposed, vec3(0.0), vec3(1.0));
+    }
+    vec3 _e16 = aces(exposed);
+    return _e16;
+}
+
+uint pcg(uint v_1) {
+    uint state = ((v_1 * 747796405u) + 2891336453u);
+    uint word = (((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u);
+    return ((word >> 22u) ^ word);
+}
+
+float pixel_noise(vec2 pixel) {
+    uint _e5 = pcg(uint(pixel.y));
+    uint _e7 = pcg((uint(pixel.x) + _e5));
+    return (float((_e7 >> 8u)) / 16777216.0);
+}
+
+vec3 encode(vec3 c_5, vec2 pixel_1) {
+    float _e1 = pixel_noise(pixel_1);
+    float dither = ((_e1 - 0.5) / 255.0);
+    vec3 _e7 = linear_to_srgb(c_5);
+    return (_e7 + vec3(dither));
+}
+
+vec4 shown(vec4 texel) {
+    bool local = false;
+    uint _e2 = _group_0_binding_0_fs.flags;
+    if (!(((_e2 & DISPLAY_COLOR) != 0u))) {
+        local = (texel.w <= 0.0);
+    } else {
+        local = true;
+    }
+    bool _e15 = local;
+    if (_e15) {
+        return texel;
+    }
+    Output _e21 = _group_0_binding_0_fs;
+    vec3 _e22 = tone_map((texel.xyz / vec3(texel.w)), _e21);
+    return vec4((_e22 * texel.w), texel.w);
+}
+
+vec4 texel_at(ivec2 pixel_2, ivec2 last) {
+    vec4 _e7 = texelFetch(_group_0_binding_1_fs, min(max(pixel_2, ivec2(0)), last), 0);
+    vec4 _e8 = shown(_e7);
+    return _e8;
+}
+
+vec4 tap(vec2 point, ivec2 last_1) {
+    vec2 corner = (point - vec2(0.5));
+    ivec2 base = ivec2(floor(corner));
+    vec2 f = fract(corner);
+    vec4 _e8 = texel_at(base, last_1);
+    vec4 _e13 = texel_at((base + ivec2(1, 0)), last_1);
+    vec4 top = mix(_e8, _e13, f.x);
+    vec4 _e20 = texel_at((base + ivec2(0, 1)), last_1);
+    vec4 _e25 = texel_at((base + ivec2(1, 1)), last_1);
+    vec4 bottom = mix(_e20, _e25, f.x);
+    return mix(top, bottom, f.y);
+}
+
+float luma(vec4 c_6) {
+    float y = dot(c_6.xyz, vec3(0.2126, 0.7152, 0.0722));
+    uint _e10 = _group_0_binding_0_fs.flags;
+    return (((_e10 & DISPLAY_COLOR) != 0u) ? y : sqrt(y));
+}
+
+vec4 pixel_color(vec2 position_1) {
+    bool local_1 = false;
+    ivec2 last_2 = (ivec2(uvec2(textureSize(_group_0_binding_1_fs, 0).xy)) - ivec2(1));
+    ivec2 pixel_3 = ivec2(position_1);
+    vec4 _e8 = texel_at(pixel_3, last_2);
+    float _e9 = luma(_e8);
+    vec4 _e14 = texel_at((pixel_3 + ivec2(-1, -1)), last_2);
+    float _e15 = luma(_e14);
+    vec4 _e20 = texel_at((pixel_3 + ivec2(1, -1)), last_2);
+    float _e21 = luma(_e20);
+    vec4 _e26 = texel_at((pixel_3 + ivec2(-1, 1)), last_2);
+    float _e27 = luma(_e26);
+    vec4 _e32 = texel_at((pixel_3 + ivec2(1, 1)), last_2);
+    float _e33 = luma(_e32);
+    float lowest = min(_e9, min(min(_e15, _e21), min(_e27, _e33)));
+    float highest = max(_e9, max(max(_e15, _e21), max(_e27, _e33)));
+    if (((highest - lowest) < max(EDGE_THRESHOLD_MIN, (highest * EDGE_THRESHOLD)))) {
+        return _e8;
+    }
+    vec2 along = vec2(((_e27 + _e33) - (_e15 + _e21)), ((_e15 + _e27) - (_e21 + _e33)));
+    float reduce = max(((((_e15 + _e21) + _e27) + _e33) * 0.03125), REDUCE_MIN);
+    float scale = (1.0 / (min(abs(along.x), abs(along.y)) + reduce));
+    vec2 span = clamp((along * scale), vec2(-8.0), vec2(8.0));
+    vec4 _e80 = tap((position_1 - (span / vec2(6.0))), last_2);
+    vec4 _e85 = tap((position_1 + (span / vec2(6.0))), last_2);
+    vec4 inner = (0.5 * (_e80 + _e85));
+    vec4 _e94 = tap((position_1 - (span * 0.5)), last_2);
+    vec4 _e98 = tap((position_1 + (span * 0.5)), last_2);
+    vec4 outer = ((0.5 * inner) + (0.25 * (_e94 + _e98)));
+    float _e103 = luma(outer);
+    if (!((_e103 < lowest))) {
+        local_1 = (_e103 > highest);
+    } else {
+        local_1 = true;
+    }
+    bool _e110 = local_1;
+    return (_e110 ? inner : outer);
+}
+
+void main() {
+    vec4 position = gl_FragCoord;
+    vec4 _e2 = pixel_color(position.xy);
+    uint _e5 = _group_0_binding_0_fs.flags;
+    if (((_e5 & DISPLAY_COLOR) != 0u)) {
+        _fs2p_location0 = _e2;
+        return;
+    }
+    float coverage = _e2.w;
+    if ((coverage <= 0.0)) {
+        _fs2p_location0 = vec4(0.0);
+        return;
+    }
+    vec3 _e19 = encode((_e2.xyz / vec3(coverage)), position.xy);
+    vec3 encoded = clamp(_e19, vec3(0.0), vec3(1.0));
     _fs2p_location0 = vec4((encoded * coverage), coverage);
     return;
 }
@@ -642,8 +1286,8 @@ uniform uint naga_vs_first_instance;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Frame {
     mat4x4 view_proj;
@@ -855,8 +1499,8 @@ precision highp int;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Frame {
     mat4x4 view_proj;
@@ -986,8 +1630,8 @@ uniform uint naga_vs_first_instance;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Frame {
     mat4x4 view_proj;
@@ -1200,8 +1844,8 @@ precision highp int;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Frame {
     mat4x4 view_proj;
@@ -1332,8 +1976,8 @@ uniform uint naga_vs_first_instance;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Frame {
     mat4x4 view_proj;
@@ -1640,8 +2284,8 @@ precision highp int;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Frame {
     mat4x4 view_proj;
@@ -1865,8 +2509,8 @@ uniform uint naga_vs_first_instance;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Frame {
     mat4x4 view_proj;
@@ -2172,8 +2816,8 @@ precision highp int;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Frame {
     mat4x4 view_proj;
@@ -2385,8 +3029,8 @@ void main() {
 			source: `struct Output {
     exposure: f32,
     tone_mapping: u32,
-    spare_a: u32,
-    spare_b: u32,
+    flags: u32,
+    spare: u32,
 }
 
 struct Frame {
@@ -2506,8 +3150,8 @@ fn fs(in: VertexOut) -> @location(0) vec4<f32> {
 			source: `struct Output {
     exposure: f32,
     tone_mapping: u32,
-    spare_a: u32,
-    spare_b: u32,
+    flags: u32,
+    spare: u32,
 }
 
 struct Frame {
@@ -3666,8 +4310,8 @@ uniform uint naga_vs_first_instance;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Frame {
     mat4x4 view_proj;
@@ -3858,8 +4502,8 @@ precision highp int;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Frame {
     mat4x4 view_proj;
@@ -3936,8 +4580,8 @@ uniform uint naga_vs_first_instance;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Frame {
     mat4x4 view_proj;
@@ -4129,8 +4773,8 @@ precision highp int;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Frame {
     mat4x4 view_proj;
@@ -4208,8 +4852,8 @@ uniform uint naga_vs_first_instance;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Frame {
     mat4x4 view_proj;
@@ -4495,8 +5139,8 @@ precision highp int;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Frame {
     mat4x4 view_proj;
@@ -4684,8 +5328,8 @@ uniform uint naga_vs_first_instance;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Frame {
     mat4x4 view_proj;
@@ -4970,8 +5614,8 @@ precision highp int;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Frame {
     mat4x4 view_proj;
@@ -5147,8 +5791,8 @@ void main() {
 			source: `struct Output {
     exposure: f32,
     tone_mapping: u32,
-    spare_a: u32,
-    spare_b: u32,
+    flags: u32,
+    spare: u32,
 }
 
 struct Frame {
@@ -5238,8 +5882,8 @@ fn fs(in: VertexOut) -> @location(0) vec4<f32> {
 			source: `struct Output {
     exposure: f32,
     tone_mapping: u32,
-    spare_a: u32,
-    spare_b: u32,
+    flags: u32,
+    spare: u32,
 }
 
 struct Frame {
@@ -5464,8 +6108,8 @@ uniform uint naga_vs_first_instance;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Frame {
     mat4x4 view_proj;
@@ -5660,8 +6304,8 @@ precision highp int;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Frame {
     mat4x4 view_proj;
@@ -5757,8 +6401,8 @@ uniform uint naga_vs_first_instance;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Frame {
     mat4x4 view_proj;
@@ -5954,8 +6598,8 @@ precision highp int;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Frame {
     mat4x4 view_proj;
@@ -6052,8 +6696,8 @@ uniform uint naga_vs_first_instance;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Frame {
     mat4x4 view_proj;
@@ -6343,8 +6987,8 @@ precision highp int;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Frame {
     mat4x4 view_proj;
@@ -6550,8 +7194,8 @@ uniform uint naga_vs_first_instance;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Frame {
     mat4x4 view_proj;
@@ -6840,8 +7484,8 @@ precision highp int;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Frame {
     mat4x4 view_proj;
@@ -7035,8 +7679,8 @@ void main() {
 			source: `struct Output {
     exposure: f32,
     tone_mapping: u32,
-    spare_a: u32,
-    spare_b: u32,
+    flags: u32,
+    spare: u32,
 }
 
 struct Frame {
@@ -7137,8 +7781,8 @@ fn fs(in: VertexOut) -> @location(0) vec4<f32> {
 			source: `struct Output {
     exposure: f32,
     tone_mapping: u32,
-    spare_a: u32,
-    spare_b: u32,
+    flags: u32,
+    spare: u32,
 }
 
 struct Frame {
