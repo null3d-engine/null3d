@@ -6,6 +6,100 @@ import type { DeviceShaders } from './shaders';
 
 /** The GLSL builds of the shaders that load by device, with DRAW_INDEX. */
 export const SHADERS: DeviceShaders = {
+	background: {
+		webgl2: {
+			permutation: 0,
+			wgsl: null,
+			glsl: {
+				main: {
+					vertex: {
+						source: `#version 300 es
+uniform vec2 null3d_depth_mapping;
+
+precision highp float;
+precision highp int;
+
+struct VertexOut {
+    vec4 clip;
+    vec2 uv;
+    uint layer;
+};
+smooth out vec2 _vs2fs_location0;
+flat out uint _vs2fs_location1;
+
+vec3 linear_to_srgb(vec3 c) {
+    vec3 low = (c * 12.92);
+    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
+    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
+}
+
+void main() {
+    uint vertex = uint(gl_VertexID);
+    VertexOut out_ = VertexOut(vec4(0.0), vec2(0.0), 0u);
+    uint index = (vertex % 3u);
+    vec2 corner = vec2(float(((index << 1u) & 2u)), float((index & 2u)));
+    out_.clip = vec4(((corner * 2.0) - vec2(1.0)), 0.5, 1.0);
+    out_.uv = corner;
+    out_.layer = (vertex / 3u);
+    VertexOut _e26 = out_;
+    gl_Position = _e26.clip;
+    _vs2fs_location0 = _e26.uv;
+    _vs2fs_location1 = _e26.layer;
+    gl_Position.z = gl_Position.z * null3d_depth_mapping.x + gl_Position.w * null3d_depth_mapping.y;
+    return;
+}
+`,
+						uniformBlocks: [],
+						textures: [],
+					},
+					fragment: {
+						source: `#version 300 es
+
+precision highp float;
+precision highp int;
+
+struct VertexOut {
+    vec4 clip;
+    vec2 uv;
+    uint layer;
+};
+uniform highp sampler2DArray _group_1_binding_0_fs;
+
+smooth in vec2 _vs2fs_location0;
+flat in uint _vs2fs_location1;
+layout(location = 0) out vec4 _fs2p_location0;
+
+vec3 linear_to_srgb(vec3 c) {
+    vec3 low = (c * 12.92);
+    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
+    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
+}
+
+void main() {
+    VertexOut in_ = VertexOut(gl_FragCoord, _vs2fs_location0, _vs2fs_location1);
+    vec4 texel = texture(_group_1_binding_0_fs, vec3(in_.uv, in_.layer));
+    vec3 _e7 = linear_to_srgb(texel.xyz);
+    _fs2p_location0 = vec4(_e7, 1.0);
+    return;
+}
+`,
+						uniformBlocks: [],
+						textures: [
+							{
+								name: '_group_1_binding_0_fs',
+								group: 1,
+								binding: 0,
+								sampler: {
+									group: 1,
+									binding: 1,
+								},
+							},
+						],
+					},
+				},
+			},
+		},
+	},
 	cull: {},
 	lit: {
 		webgl2_draw_index: {

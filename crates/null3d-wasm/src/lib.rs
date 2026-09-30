@@ -1105,6 +1105,24 @@ pub fn set_texture_option(option: u32, value: u32) -> u32 {
     })
 }
 
+// Draws a texture behind every object in the camera's view, or only the background color when
+// `texture` is 0. Fails for a texture that is not live.
+/// Draws a texture behind every object, or none with 0.
+#[wasm_bindgen(js_name = setBackgroundTexture)]
+pub fn set_background_texture(texture: u32) -> u32 {
+    with_engine(|e| {
+        let settings = e.renderer.settings_mut();
+        let background = Handle::from_raw(texture);
+        if !background.is_none()
+            && let Err(error) = settings.textures().bytes(background)
+        {
+            return texture_failure(error);
+        }
+        settings.set_background_texture(background);
+        0
+    })
+}
+
 // --- Camera, lights and background ---
 
 /// Draws from this camera object with a perspective lens (vertical field of view in degrees), the

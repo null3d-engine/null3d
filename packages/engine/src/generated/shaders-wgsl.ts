@@ -6,6 +6,57 @@ import type { DeviceShaders } from './shaders';
 
 /** The WGSL builds of the shaders that load by device, without the bits that a device fixes. */
 export const SHADERS: DeviceShaders = {
+	background: {
+		webgpu: {
+			permutation: 0,
+			wgsl: {
+				source: `struct VertexOut {
+    @builtin(position) clip: vec4<f32>,
+    @location(0) uv: vec2<f32>,
+    @location(1) @interpolate(flat, either) layer: u32,
+}
+
+@group(1) @binding(0)
+var layers: texture_2d_array<f32>;
+@group(1) @binding(1)
+var layer_sampler: sampler;
+
+fn linear_to_srgb(c: vec3<f32>) -> vec3<f32> {
+    let low = (c * 12.92f);
+    let high = ((1.055f * pow(c, vec3(0.41666666f))) - vec3(0.055f));
+    return select(high, low, (c <= vec3(0.0031308f)));
+}
+
+@vertex
+fn vs(@builtin(vertex_index) vertex: u32) -> VertexOut {
+    var out: VertexOut;
+
+    let index = (vertex % 3u);
+    let corner = vec2<f32>(f32(((index << 1u) & 2u)), f32((index & 2u)));
+    out.clip = vec4<f32>(((corner * 2f) - vec2(1f)), 0.5f, 1f);
+    out.uv = corner;
+    out.layer = (vertex / 3u);
+    let _e26 = out;
+    return _e26;
+}
+
+@fragment
+fn fs(in: VertexOut) -> @location(0) vec4<f32> {
+    let texel = textureSample(layers, layer_sampler, in.uv, in.layer);
+    let _e7 = linear_to_srgb(texel.xyz);
+    return vec4<f32>(_e7, 1f);
+}
+`,
+				pipelines: {
+					main: {
+						vertex: 'vs',
+						fragment: 'fs',
+					},
+				},
+			},
+			glsl: null,
+		},
+	},
 	cull: {
 		webgpu: {
 			permutation: 0,

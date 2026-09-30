@@ -25,7 +25,7 @@ use null3d_core::cells::CellPosition;
 use null3d_gpu::drawlist::sizes::LINE_VERTEX_BYTES;
 use null3d_gpu::drawlist::{DrawList, Op, buffer_usage, state_flags, template};
 
-use crate::frame::{RecordError, UploadArena, grown_size};
+use crate::frame::{RecordError, UploadArena, bind_frame_group, grown_size};
 use crate::pipelines::{DrawKey, PassTargets, PipelineCache};
 
 /// Points that one frame draws as lines, two points per line: each point's position in world
@@ -259,13 +259,8 @@ impl LinesPass {
         if self.points == 0 {
             return Ok(());
         }
-        let mut bind = [0; 5];
-        let words = 3 + offsets.len();
-        bind[1] = frame_group;
-        bind[2] = offsets.len() as u32;
-        bind[3..words].copy_from_slice(offsets);
         list.push(Op::SetPipeline, &[self.pipeline])?;
-        list.push(Op::SetBindGroup, &bind[..words])?;
+        bind_frame_group(list, frame_group, offsets)?;
         list.push(
             Op::SetVertexBuffer,
             &[0, self.buffer, 0, self.points * LINE_VERTEX_BYTES],

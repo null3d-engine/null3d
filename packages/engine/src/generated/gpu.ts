@@ -112,12 +112,14 @@ export const VERTEX_INSTANCE_LOCATION = 8;
 
 export const STATE_CULL_NONE = 1;
 export const STATE_LINE_LIST = 2;
+export const STATE_NO_DEPTH_TEST = 16;
 
 export const TEMPLATE_INSTANCED_LIT = 1;
 export const TEMPLATE_INSTANCED_UNLIT = 2;
 export const TEMPLATE_INSTANCED_TEXCOORDS = 3;
 export const TEMPLATE_DEBUG_LINES = 4;
 export const TEMPLATE_INSTANCED_UNLIT_MAP = 5;
+export const TEMPLATE_BACKGROUND = 9;
 export const TEMPLATE_CULL = 16;
 
 export const BUFFER_USAGE_MAP_READ = 1;

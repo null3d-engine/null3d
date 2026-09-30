@@ -12,6 +12,8 @@ import {
 	SIZE_INSTANCE_STRIDE,
 	STATE_CULL_NONE,
 	STATE_LINE_LIST,
+	STATE_NO_DEPTH_TEST,
+	TEMPLATE_BACKGROUND,
 	TEMPLATE_CULL,
 	TEMPLATE_DEBUG_LINES,
 	TEMPLATE_INSTANCED_LIT,
@@ -180,6 +182,13 @@ export class Pipelines {
 				vertexBuffers: INSTANCE_BUFFERS,
 			});
 		}
+		this.defineTemplate(TEMPLATE_BACKGROUND, {
+			label: 'background',
+			shader: shaders.background,
+			pipeline: 'main',
+			layouts: [LAYOUT_FRAME, LAYOUT_TEXTURES],
+			vertexBuffers: [],
+		});
 		if (DEV)
 			this.defineTemplate(TEMPLATE_DEBUG_LINES, {
 				label: 'debug lines',
@@ -268,9 +277,12 @@ export class Pipelines {
 				cullMode: stateFlags & STATE_CULL_NONE ? 'none' : 'back',
 				frontFace: 'ccw',
 			},
-			// Reversed depth: 1 at the near plane, 0 at the far plane.
+			// Reversed depth: 1 at the near plane, 0 at the far plane. Without the depth test, every
+			// fragment passes and none writes depth.
 			depthStencil: depthFormat
-				? { format: depthFormat, depthWriteEnabled: true, depthCompare: 'greater' }
+				? stateFlags & STATE_NO_DEPTH_TEST
+					? { format: depthFormat, depthWriteEnabled: false, depthCompare: 'always' }
+					: { format: depthFormat, depthWriteEnabled: true, depthCompare: 'greater' }
 				: undefined,
 			multisample: { count: sampleCount },
 		};

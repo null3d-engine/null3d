@@ -109,6 +109,15 @@ pipelines.main = { vertex = "vs_main", fragment = "fs_main" }
 variants.webgpu = { targets = ["wgsl"] }
 variants.webgl2 = { targets = ["glsl"] }
 
+# A texture behind every object, drawn first in the camera's opaque pass as one triangle over the
+# whole view. It loads by device, with the mesh templates.
+[shaders.background]
+file = "background.wgsl"
+by_device = true
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgpu = { targets = ["wgsl"] }
+variants.webgl2 = { targets = ["glsl"] }
+
 # The GPU timer's start mark, one invocation that does nothing; its compute entry point is `main`.
 # WebGPU only. It stays in shaders.ts, where the GPU timer imports it.
 [shaders.timer_mark]

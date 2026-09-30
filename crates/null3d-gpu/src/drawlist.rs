@@ -507,8 +507,10 @@ pub mod state_flags {
     pub const CULL_NONE: u32 = 1;
     /// Draws each pair of vertices as a line one pixel wide, instead of each three as a triangle.
     pub const LINE_LIST: u32 = 2;
+    /// Draws every fragment whatever the depth target holds, and writes no depth.
+    pub const NO_DEPTH_TEST: u32 = 16;
     /// Every flag.
-    pub const ALL: u32 = CULL_NONE | LINE_LIST;
+    pub const ALL: u32 = CULL_NONE | LINE_LIST | NO_DEPTH_TEST;
 }
 
 /// Vertex formats. Every vertex has a position and a normal, three floats each. A format adds
@@ -680,6 +682,10 @@ pub mod template {
     /// Instanced meshes without lighting, whose base color is multiplied by a map that the first
     /// texture coordinates place.
     pub const INSTANCED_UNLIT_MAP: u32 = 5;
+    /// A texture behind every object: one triangle over the whole view, with no vertex buffer, that
+    /// samples a layer of a texture array. The bind group of index 0 is the frame's and that of
+    /// index 1 the texture's. The draw's first vertex is the layer times three.
+    pub const BACKGROUND: u32 = 9;
     /// The GPU culling compute shader.
     pub const CULL: u32 = 16;
 }
@@ -912,6 +918,7 @@ pub fn typescript_constants() -> String {
             &[
                 ("CULL_NONE", state_flags::CULL_NONE),
                 ("LINE_LIST", state_flags::LINE_LIST),
+                ("NO_DEPTH_TEST", state_flags::NO_DEPTH_TEST),
             ],
         ),
         (
@@ -922,6 +929,7 @@ pub fn typescript_constants() -> String {
                 ("INSTANCED_TEXCOORDS", template::INSTANCED_TEXCOORDS),
                 ("DEBUG_LINES", template::DEBUG_LINES),
                 ("INSTANCED_UNLIT_MAP", template::INSTANCED_UNLIT_MAP),
+                ("BACKGROUND", template::BACKGROUND),
                 ("CULL", template::CULL),
             ],
         ),
