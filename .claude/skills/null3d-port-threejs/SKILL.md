@@ -129,7 +129,9 @@ For `post-1.0` and `unsupported` rows:
 3. Never drop a feature silently. List every omission and workaround in the report.
 4. Do not layer a three.js canvas over the null3D canvas to keep one effect. Two GPU contexts double memory and break the frame pacing; use it only as a stopgap the user explicitly accepts.
 
-## 6. A small example
+## 6. A small example (later in 0.1)
+
+The null3D half needs three parts that come later in 0.1: orbit controls, hemisphere lights that light surfaces, and `post.set`.
 
 Before, in three.js:
 
