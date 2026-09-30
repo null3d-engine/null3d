@@ -68,7 +68,7 @@ describe('the render loop', () => {
 		Atomics.store(slots, Slot.FramesPublished, 2);
 		refresh(DISPLAY_HZ, 10);
 		expect(drawn).toEqual([1, 2]);
-		expect(Atomics.load(slots, Slot.FramesPresented)).toBe(2);
+		expect(Atomics.load(slots, Slot.FramePresented)).toBe(2);
 		expect(Atomics.load(slots, Slot.FramesTaken)).toBe(2);
 	});
 

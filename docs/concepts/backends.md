@@ -1,14 +1,12 @@
 ---
 id: concepts/backends
 title: GPU tiers and backends
-status: planned
+status: experimental
 since: "0.1"
-summary: "WebGPU core, compatibility mode and WebGL2; capability flags; the portable budget; never branching on GPU names."
+summary: "WebGPU core, compatibility mode and WebGL2; depth on each tier; capability flags; the portable budget; never branching on GPU names."
 ---
 
 # GPU tiers and backends
-
-> Planned for null3D 0.1. No release has these APIs yet, so coding agents must not use them.
 
 ```mermaid
 flowchart TD
@@ -38,13 +36,27 @@ On WebGL2 there are no compute shaders, so the job workers cull in parallel on t
 
 Every feature works on both paths, or its page describes its WebGL2 fallback.
 
+## Depth on each tier
+
+The engine draws reversed depth: the near plane stores 1 and the far plane stores 0. Floating-point numbers are most precise near 0, where reversed depth puts far surfaces. Standard depth stores 0 at the near plane instead. Far from the camera it runs out of precision, and two close surfaces flicker through each other (z-fighting).
+
+| Tier | Depth | Surfaces 1 cm apart stay apart |
+| --- | --- | --- |
+| WebGPU | Reversed, in a 32-bit float buffer | Out to 10 km |
+| WebGL2 with the `EXT_clip_control` extension | Reversed, in a 32-bit float buffer | Out to 10 km |
+| WebGL2 without it | Reversed, in WebGL2's range from -1 to 1 | Out to about 250 m |
+
+WebGL2 maps depth into a range from -1 to 1, which loses most of the precision that reversed depth gives. The `EXT_clip_control` extension sets the range from 0 to 1, as on WebGPU. In September 2026, Chrome, Safari and Brave had it on a MacBook Pro. So did Chrome on a Galaxy S24+, and Safari and Brave on an iPad Pro. Firefox on macOS did not. Without the extension, the engine keeps reversed depth in the range from -1 to 1. In every browser tested, that fought in fewer pixels than standard depth.
+
+The distances come from the engine's depth precision test on a MacBook Pro, with the camera's near plane at 0.1 m. The field `engine.capabilities.depth` says which depth the device draws: `reversed`, or `reversed-gl` on WebGL2 without the extension.
+
 ## Capability flags
 
 The engine reads what the device can do at startup and exposes it as `engine.capabilities`:
 
 ```ts
 engine.capabilities;
-// { tier: 'webgpu' | 'webgpu-compat' | 'webgl2', threaded, features, limits }
+// { tier: 'webgpu' | 'webgpu-compat' | 'webgl2', threaded, features, limits, maxInstances, depth }
 ```
 
 The features it tests include:
@@ -58,7 +70,7 @@ The features it tests include:
 - MSAA on 16-bit float targets
 - rendering into 16-bit and 32-bit float textures on WebGL2 (`engine.report.webgl2.floatRenderTargets`)
 
-Sketch code that uses an optional feature checks this object first.
+Code that uses an optional feature checks this object first. The sketch worker has no copy of its own, so the page sends the sketch what it needs: `engine.postToSketch('capabilities', engine.capabilities)`.
 
 ## The portable budget
 
@@ -88,7 +100,7 @@ A 2018 iPad Pro on iPadOS 26 reports almost exactly WebGPU's default limits, whi
 
 ## Never branch on GPU names
 
-Some browsers hide the GPU's name. Firefox on macOS reports every adapter detail as empty, and Brave can hide them by design. A name also does not tell you which features the engine turned on. Read `engine.capabilities` instead, on the page or in your sketch.
+Some browsers hide the GPU's name. Firefox on macOS reports every adapter detail as empty, and Brave can hide them by design. A name also does not tell you which features the engine turned on. Read `engine.capabilities` instead.
 
 ## Devices with two GPUs
 
@@ -99,6 +111,8 @@ Some laptops have a separate graphics chip next to the one built into the proces
 `createEngine({ gpu: 'webgl2' })` forces a tier, and so do the URL switches `?gpu=webgpu`, `?gpu=compat` and `?gpu=webgl2`. A device can then test every path it supports. Use them for testing only; in production, let the engine choose.
 
 On WebGL2, uploads read straight from the engine's shared memory. A browser that refuses to read shared memory gets a copy of each upload instead. The switch `?uploads=copy` makes the engine copy everywhere, so one device can test both routes.
+
+The switch `?depth=` forces a WebGL2 depth mode: `reversed`, `reversed-gl` or `standard`, which draws depth as three.js's WebGL renderer does by default. A browser without `EXT_clip_control` cannot draw `reversed`, so it draws its own mode instead.
 
 ## When the GPU goes away
 

@@ -1,186 +1,155 @@
-// The page side of input and resizing. Pointer, keyboard and wheel events go into the input ring in
-// the control block, where the sketch reads them at the start of its next frame. Canvas size changes
-// go into the control block too; the thread that owns the canvas applies them at frame start. When
-// the window loses focus, the page hides or a touch turns into a scroll, every held key and button
-// is released, so none stays down in the sketch.
+// The page side of input. Pointer, keyboard, wheel and gamepad events go into the input ring in the
+// control block, where the sketch reads them at the start of its next frame. The page writes input
+// only while the sketch runs. When the window loses focus, the page hides, a touch turns into a
+// scroll, or the engine stops listening, every held key and button is released, so none stays down
+// in the sketch.
 
 import {
-	controlViews,
-	INPUT_EVENT_INTS,
-	INPUT_RING_EVENTS,
-	InputEventType,
-	Slot,
+	EVENT_KEY_DOWN,
+	EVENT_KEY_UP,
+	EVENT_POINTER_DOWN,
+	EVENT_POINTER_MOVE,
+	EVENT_POINTER_UP,
+	EVENT_WHEEL,
+	FLAG_ALT,
+	FLAG_CONTROL,
+	FLAG_META,
+	FLAG_PEN,
+	FLAG_PRIMARY,
+	FLAG_SHIFT,
+	FLAG_TOUCH,
+	type InputEventType,
 } from '../shared/control';
+import { KEY_CODES } from '../shared/key-codes';
+import { GamepadWatch } from './gamepads';
 import { HeldInput, isEditableTarget } from './held-input';
+import { InputRing } from './input-ring';
 
 export interface InputCapture {
-	/** Stops listening and releases every held key and button, as when the canvas leaves the page. */
-	suspend(): void;
-	/** Listens again, and writes the canvas's current size. */
-	resume(): void;
-	stop(): void;
+	/** Starts or stops writing input. Stopping releases every held key and button first. */
+	listen(on: boolean): void;
 }
+
+/** Pixels per line and per page of a wheel that scrolls by lines or pages, as three.js's controls count them. */
+const WHEEL_LINE = 16;
+const WHEEL_PAGE = 100;
 
 function modifiers(event: KeyboardEvent | PointerEvent | WheelEvent): number {
 	return (
-		(event.shiftKey ? 1 : 0) |
-		(event.ctrlKey ? 2 : 0) |
-		(event.altKey ? 4 : 0) |
-		(event.metaKey ? 8 : 0)
+		(event.shiftKey ? FLAG_SHIFT : 0) |
+		(event.ctrlKey ? FLAG_CONTROL : 0) |
+		(event.altKey ? FLAG_ALT : 0) |
+		(event.metaKey ? FLAG_META : 0)
 	);
 }
 
-/** Watches the canvas and the window and writes their events into the control block. */
-export function captureInput(
-	canvas: HTMLCanvasElement,
-	control: ArrayBufferLike,
-	maxPixelRatio: number,
-): InputCapture {
-	const { slots, inputInts, inputFloats } = controlViews(control);
+/** The pointer's kind and the modifier keys held, as the input ring's flags. */
+function pointerFlags(event: PointerEvent): number {
+	const kind =
+		event.pointerType === 'touch' ? FLAG_TOUCH : event.pointerType === 'pen' ? FLAG_PEN : 0;
+	return modifiers(event) | kind | (event.isPrimary ? FLAG_PRIMARY : 0);
+}
 
-	const write = (
-		type: InputEventType,
-		x: number,
-		y: number,
-		buttons: number,
-		code: number,
-		mods: number,
-		id: number,
-	) => {
-		const index = Atomics.load(slots, Slot.InputWrite);
-		const base = (index % INPUT_RING_EVENTS) * INPUT_EVENT_INTS;
-		inputInts[base] = type;
-		inputInts[base + 1] = Math.round(performance.now());
-		inputFloats[base + 2] = x;
-		inputFloats[base + 3] = y;
-		inputInts[base + 4] = buttons;
-		inputInts[base + 5] = code;
-		inputInts[base + 6] = mods;
-		inputInts[base + 7] = id;
-		Atomics.store(slots, Slot.InputWrite, index + 1);
-	};
-
+/** Watches the canvas, the window and the gamepads, and writes their input into the control block. */
+export function captureInput(canvas: HTMLCanvasElement, control: ArrayBufferLike): InputCapture {
+	const ring = new InputRing(control);
 	const held = new HeldInput();
+	const gamepads = new GamepadWatch(ring);
+	const keys = new Map(KEY_CODES.map((code, key) => [code, key]));
+	const metaKeys = [keys.get('MetaLeft'), keys.get('MetaRight')];
+
 	const pointer = (type: InputEventType) => (event: PointerEvent) => {
 		const rect = canvas.getBoundingClientRect();
 		const x = event.clientX - rect.left;
 		const y = event.clientY - rect.top;
-		if (type === InputEventType.PointerDown) held.pointerDown(event.pointerId, x, y, event.button);
-		else if (type === InputEventType.PointerMove) held.pointerMove(event.pointerId, x, y);
+		const { pointerId: id } = event;
+		const flags = pointerFlags(event);
+		if (type === EVENT_POINTER_DOWN) {
+			held.pointerDown(id, x, y, event.button, flags);
+			// A drag that leaves the canvas keeps sending moves and ends with a release.
+			try {
+				canvas.setPointerCapture(id);
+			} catch {
+				// The pointer is no longer active.
+			}
+		} else if (type === EVENT_POINTER_MOVE) {
+			held.pointerMove(id, x, y);
+			if (ring.busy()) return;
+		}
 		// A release of a pointer the canvas never saw pressed belongs to the rest of the page.
-		else if (!held.pointerUp(event.pointerId)) return;
-		write(type, x, y, event.buttons, event.button, modifiers(event), event.pointerId);
+		else if (!held.pointerUp(id)) return;
+		ring.write(type, x, y, event.button, id, event.buttons, flags);
 	};
-	const onMove = pointer(InputEventType.PointerMove);
-	const onDown = pointer(InputEventType.PointerDown);
-	const onUp = pointer(InputEventType.PointerUp);
+	const onMove = pointer(EVENT_POINTER_MOVE);
+	const onDown = pointer(EVENT_POINTER_DOWN);
+	const onUp = pointer(EVENT_POINTER_UP);
+	const writeKeyUp = (key: number) => ring.write(EVENT_KEY_UP, 0, 0, key, 0, 0, 0);
 	const onKeyDown = (event: KeyboardEvent) => {
-		if (isEditableTarget(event.target)) return;
-		held.keyDown(event.keyCode);
-		write(InputEventType.KeyDown, 0, 0, 0, event.keyCode, modifiers(event), 0);
+		const key = keys.get(event.code);
+		if (key === undefined || isEditableTarget(event.target) || !held.keyDown(key)) return;
+		ring.write(EVENT_KEY_DOWN, 0, 0, key, 0, 0, modifiers(event));
 	};
 	const onKeyUp = (event: KeyboardEvent) => {
 		// A key pressed in the sketch still releases there when focus moved to a text field meanwhile.
-		if (!held.keyUp(event.keyCode) && isEditableTarget(event.target)) return;
-		write(InputEventType.KeyUp, 0, 0, 0, event.keyCode, modifiers(event), 0);
+		const key = keys.get(event.code);
+		if (key === undefined || !held.keyUp(key)) return;
+		ring.write(EVENT_KEY_UP, 0, 0, key, 0, 0, modifiers(event));
+		// On a Mac, the browser sends no release of a key pressed while Cmd is down.
+		if (metaKeys.includes(key)) held.releaseKeys(writeKeyUp);
 	};
-	const onWheel = (event: WheelEvent) =>
-		write(InputEventType.Wheel, event.deltaX, event.deltaY, 0, 0, modifiers(event), 0);
+	const onWheel = (event: WheelEvent) => {
+		if (ring.busy()) return;
+		const scale =
+			event.deltaMode === WheelEvent.DOM_DELTA_LINE
+				? WHEEL_LINE
+				: event.deltaMode === WheelEvent.DOM_DELTA_PAGE
+					? WHEEL_PAGE
+					: 1;
+		ring.write(EVENT_WHEEL, event.deltaX * scale, event.deltaY * scale, 0, 0, 0, modifiers(event));
+	};
+	// The right button reaches the sketch, so it opens no menu over the canvas.
+	const onContextMenu = (event: Event) => event.preventDefault();
 	const releaseAll = () =>
 		held.releaseAll(
-			(id, x, y, button) => write(InputEventType.PointerUp, x, y, 0, button, 0, id),
-			(code) => write(InputEventType.KeyUp, 0, 0, 0, code, 0, 0),
+			(id, x, y, button, flags) => ring.write(EVENT_POINTER_UP, x, y, button, id, 0, flags),
+			writeKeyUp,
 		);
 	const onVisibility = () => {
 		if (document.hidden) releaseAll();
-		else Atomics.add(slots, Slot.Resumes, 1);
 	};
 
-	const writeSize = (
-		cssWidth: number,
-		cssHeight: number,
-		devicePixels?: { width: number; height: number },
-	) => {
-		const ratio = Math.min(globalThis.devicePixelRatio ?? 1, maxPixelRatio);
-		const width =
-			devicePixels && ratio === globalThis.devicePixelRatio
-				? devicePixels.width
-				: Math.round(cssWidth * ratio);
-		const height =
-			devicePixels && ratio === globalThis.devicePixelRatio
-				? devicePixels.height
-				: Math.round(cssHeight * ratio);
-		Atomics.store(slots, Slot.CanvasWidth, Math.max(1, width));
-		Atomics.store(slots, Slot.CanvasHeight, Math.max(1, height));
-		Atomics.add(slots, Slot.ResizeSerial, 1);
-	};
-	const observer = new ResizeObserver((entries) => {
-		for (const entry of entries) {
-			const device = entry.devicePixelContentBoxSize?.[0];
-			writeSize(
-				entry.contentRect.width,
-				entry.contentRect.height,
-				device ? { width: device.inlineSize, height: device.blockSize } : undefined,
-			);
-		}
-	});
-	const writeCurrentSize = () => {
-		const current = canvas.getBoundingClientRect();
-		writeSize(current.width, current.height);
-	};
-	// Without the device-pixel box, a new pixel ratio with the same CSS size, as when the window
-	// moves to another screen, reaches no resize observer. A query for the current ratio notices it.
-	let ratioQuery: MediaQueryList | undefined;
-	const onRatioChange = () => {
-		watchRatio();
-		writeCurrentSize();
-	};
-	const watchRatio = () => {
-		ratioQuery?.removeEventListener('change', onRatioChange);
-		ratioQuery = matchMedia(`(resolution: ${globalThis.devicePixelRatio ?? 1}dppx)`);
-		ratioQuery.addEventListener('change', onRatioChange);
-	};
-	const listen = () => {
-		writeCurrentSize();
-		try {
-			observer.observe(canvas, { box: 'device-pixel-content-box' });
-		} catch {
-			observer.observe(canvas);
-			watchRatio();
-		}
-		canvas.addEventListener('pointermove', onMove);
-		canvas.addEventListener('pointerdown', onDown);
-		window.addEventListener('pointerup', onUp);
-		// The browser cancels a touch that becomes a page scroll or a system gesture: a release too.
-		window.addEventListener('pointercancel', onUp);
-		window.addEventListener('keydown', onKeyDown);
-		window.addEventListener('keyup', onKeyUp);
-		window.addEventListener('blur', releaseAll);
-		document.addEventListener('visibilitychange', onVisibility);
-		canvas.addEventListener('wheel', onWheel, { passive: true });
-	};
-	const unlisten = () => {
-		observer.disconnect();
-		ratioQuery?.removeEventListener('change', onRatioChange);
-		ratioQuery = undefined;
-		canvas.removeEventListener('pointermove', onMove);
-		canvas.removeEventListener('pointerdown', onDown);
-		window.removeEventListener('pointerup', onUp);
-		window.removeEventListener('pointercancel', onUp);
-		window.removeEventListener('keydown', onKeyDown);
-		window.removeEventListener('keyup', onKeyUp);
-		window.removeEventListener('blur', releaseAll);
-		document.removeEventListener('visibilitychange', onVisibility);
-		canvas.removeEventListener('wheel', onWheel);
-	};
-	listen();
-
+	let listening = false;
 	return {
-		suspend: () => {
+		listen(on) {
+			if (on === listening) return;
+			listening = on;
+			if (on) {
+				canvas.addEventListener('pointermove', onMove);
+				canvas.addEventListener('pointerdown', onDown);
+				window.addEventListener('pointerup', onUp);
+				// The browser cancels a touch that becomes a page scroll or a system gesture: a release too.
+				window.addEventListener('pointercancel', onUp);
+				window.addEventListener('keydown', onKeyDown);
+				window.addEventListener('keyup', onKeyUp);
+				window.addEventListener('blur', releaseAll);
+				document.addEventListener('visibilitychange', onVisibility);
+				canvas.addEventListener('wheel', onWheel, { passive: true });
+				canvas.addEventListener('contextmenu', onContextMenu);
+				gamepads.start();
+				return;
+			}
 			releaseAll();
-			unlisten();
+			gamepads.stop();
+			canvas.removeEventListener('pointermove', onMove);
+			canvas.removeEventListener('pointerdown', onDown);
+			window.removeEventListener('pointerup', onUp);
+			window.removeEventListener('pointercancel', onUp);
+			window.removeEventListener('keydown', onKeyDown);
+			window.removeEventListener('keyup', onKeyUp);
+			window.removeEventListener('blur', releaseAll);
+			document.removeEventListener('visibilitychange', onVisibility);
+			canvas.removeEventListener('wheel', onWheel);
+			canvas.removeEventListener('contextmenu', onContextMenu);
 		},
-		resume: listen,
-		stop: unlisten,
 	};
 }

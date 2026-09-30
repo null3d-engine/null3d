@@ -6,12 +6,17 @@
 
 import { messageOf } from '../errors/message';
 import { controlViews, Slot } from '../shared/control';
-import { type JobWorkerInit, replyToPage, startSteps, startWorkerCore } from './protocol';
+import {
+	type JobWorkerInit,
+	replyToPage,
+	startSteps,
+	startWorker,
+	startWorkerCore,
+} from './protocol';
 
 const step = startSteps('job');
-step('loaded');
 
-self.onmessage = async (event: MessageEvent<JobWorkerInit>) => {
+startWorker('job', step, async (event: MessageEvent<JobWorkerInit>) => {
 	const message = event.data;
 	try {
 		const { glue: core } = await startWorkerCore(message, step);
@@ -36,4 +41,4 @@ self.onmessage = async (event: MessageEvent<JobWorkerInit>) => {
 			message: messageOf(e),
 		});
 	}
-};
+});

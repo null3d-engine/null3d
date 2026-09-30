@@ -165,9 +165,11 @@ impl RenderGraph {
                 StoreOp::Store => ", store",
                 StoreOp::Discard => ", discard",
             };
-            if attachment.resolve.is_some() {
-                label += ", resolve";
-            }
+            label += match attachment.resolve {
+                Some(Surface::Canvas) => ", resolve into canvas",
+                Some(Surface::Texture(_)) => ", resolve",
+                None => "",
+            };
         }
         label
     }
@@ -208,6 +210,14 @@ impl RenderGraph {
             && let Some((index, usage)) = texture(plan.sampled_texture_of(resource))
         {
             label += &format!("\nresolves into texture {index}: {usage}");
+        }
+        let into_canvas = plan.steps().iter().any(|step| {
+            plan.attachments(step)
+                .iter()
+                .any(|a| a.resource == resource && a.resolve == Some(Surface::Canvas))
+        });
+        if into_canvas {
+            label += "\nresolves into canvas";
         }
         label
     }

@@ -80,7 +80,7 @@ const DOCS = {
 	E1109: {
 		title: 'Engine memory full',
 		cause:
-			'The engine could not grow its WebAssembly memory for the call. A page with worker threads gives the engine 1 GiB at most. Each instance row takes about 180 bytes, or about 230 with per-row colors. So about 5 million rows fill it, along with the rest of the scene. A browser can refuse memory sooner, as phones often do.',
+			"The engine could not create or grow its WebAssembly memory. A page with worker threads gives the engine 1 GiB at most. Each instance row takes about 180 bytes, or about 230 with per-row colors. So about 5 million rows fill it, along with the rest of the scene. A browser can refuse memory sooner, as phones often do. It can also refuse a new engine's memory while the memory of an engine that stopped a moment before is not free yet. The engine then tries again for about 3 seconds before it fails.",
 		example: 'E1109: createInstances() failed: the engine could not get 1282 MB more memory.',
 		since: '0.1',
 	},
@@ -96,6 +96,13 @@ const DOCS = {
 		cause:
 			'A call received a color that is not a hex string, a number from 0 to 0xffffff, or three numbers from 0 to 1.',
 		example: 'E1204: setBackground() got the color "blue-ish".',
+		since: '0.1',
+	},
+	E1205: {
+		title: 'Unknown input name',
+		cause:
+			'An input call received a name that no key, button or action has, or `input.actions.define()` received an action name that a key or button already has. Names are case-sensitive: `KeyW` is the W key, and `keyW` names nothing.',
+		example: 'E1205: isDown() got "keyW", which names no key, button or action.',
 		since: '0.1',
 	},
 	E1301: {
@@ -205,7 +212,7 @@ const DOCS = {
 	E1505: {
 		title: 'Pass targets do not match',
 		cause:
-			'A render pass draws into targets that one GPU render pass cannot hold together. A target can have another size than the pass, or the targets can have different sample counts. The pass can also draw into two depth targets, into a whole texture array instead of one layer, or into no target.',
+			"A render pass draws into targets that one GPU render pass cannot hold together. A target can have another size than the pass, or the targets can have different sample counts. The pass can also draw into two depth targets, into a whole texture array instead of one layer, or into no target. A resolve pass fails the same way when it cannot resolve its target into the canvas. That target must be multisampled, in the canvas's format and size, and read by no other running pass.",
 		example: 'E1505: the pass "Blur" draws at half size into "sceneColor", which is full size.',
 		since: '0.1',
 	},

@@ -1,12 +1,14 @@
 import null3d from '@null3d/vite-plugin';
 import { defineConfig, type Plugin, searchForWorkspaceRoot } from 'vite';
+import { loadServer } from './tests/lib/load-server.ts';
 import { reportCollector } from './tests/lib/report-collector.ts';
 import { HTTP_PORT, HTTPS_PORT } from './tests/lib/server.ts';
 
 // One dev server for every browser page in the repository: the test pages under tests/pages and the
 // benchmark pages under bench/pages, with the isolation headers. Plain HTTP stays on localhost,
 // which phones reach through adb. NULL3D_HTTPS=1 serves HTTPS on the local network instead, on
-// its own port, for tablets and phones that reach the Mac by its .local name.
+// its own port, for tablets and phones that reach the Mac by its .local name. The dev server and
+// `vite preview` also serve the startup build of the engine test page, one address prefix per load.
 
 const https = process.env.NULL3D_HTTPS === '1';
 
@@ -51,7 +53,12 @@ export default defineConfig({
 	root: import.meta.dirname,
 	// The HTTP and HTTPS servers can run at once, so each keeps its own prebundled dependencies.
 	cacheDir: https ? 'node_modules/.vite-https' : 'node_modules/.vite',
-	plugins: [null3d({ https, certDir: 'target/dev-cert' }), reportCollector(), indexRedirect],
+	plugins: [
+		null3d({ https, certDir: 'target/dev-cert' }),
+		reportCollector(),
+		loadServer(),
+		indexRedirect,
+	],
 	server: {
 		port: https ? HTTPS_PORT : HTTP_PORT,
 		strictPort: true,

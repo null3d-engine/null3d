@@ -1,8 +1,10 @@
 // Runs a sketch: starts the engine on this thread's core, calls the sketch's setup function once with
-// the scene API, and steps it once per frame. A frame runs the sketch's update, then the core's
-// steps, and publishes the frame's draw list; each step's CPU time is recorded, and so is the time
-// each job worker spent on the frame's work. In hold mode it seeds this thread's Math.random, steps
-// the sketch to the held time in fixed steps after the setup, and publishes the last frame alone.
+// the scene API, and steps it once per frame. A frame reads the input the page wrote, runs the
+// sketch's update, then the core's steps, and publishes the frame's draw list; each step's CPU time
+// is recorded, and so is the time each job worker spent on the frame's work. In hold mode it seeds
+// this thread's math.random and routes Math.random to it, steps the sketch to the held time in
+// fixed steps after the setup, and publishes the last frame alone. Hold mode reads no input, so the
+// held frame never depends on it.
 
 import { coreFailure } from '../errors/core-failure';
 import { EngineError } from '../errors/engine-error';
@@ -11,11 +13,12 @@ import type { CoreDevice } from '../page/limits';
 import { CoreMemory } from '../scene/memory';
 import { Geometry, Materials } from '../scene/resources';
 import { Scene } from '../scene/scene';
-import { Slot } from '../shared/control';
+import { type ControlViews, Slot } from '../shared/control';
 import type { CoreGlue } from '../shared/core';
 import { Counter, FrameRecorder, Phase, Role } from '../shared/metrics';
 import { FrameClock, holdSteps } from './clock';
 import type { SketchCallbacks, SketchContext, SketchDefinition } from './define-sketch';
+import { InputReader } from './input';
 import { HOLD_SEED, seedMathRandom } from './random';
 
 export type PagePoster = (type: string, data: unknown, transfer?: Transferable[]) => void;
@@ -28,8 +31,10 @@ const COMMAND_CAPACITY = 1 << 16;
 export interface SketchCore {
 	glue: CoreGlue;
 	memory: WebAssembly.Memory;
-	/** The control block's slots: the canvas size in, the published draw lists out. */
-	slots: Int32Array;
+	/** The control block: the canvas size and input in, the published draw lists out. */
+	control: ControlViews;
+	/** The key names, in the order of the numbers that the page gives keys in the input ring. */
+	keyCodes: readonly string[];
 	jobWorkers: number;
 	/** The device the engine draws with. */
 	device: CoreDevice;
@@ -67,12 +72,13 @@ export class SketchRunner {
 	private holding = false;
 	/** Gives the thread its own Math.random back, after hold mode seeded it. */
 	private restoreRandom: (() => void) | undefined;
+	private readonly input: InputReader;
 	readonly context: SketchContext;
 
 	/**
 	 * Starts the engine on the core's thread. `holdSeconds` starts hold mode at that sketch time: it
-	 * seeds this thread's Math.random at once, so the runner must exist before the sketch module
-	 * loads, and `setup` then steps the sketch to that time.
+	 * seeds this thread's math.random, and routes Math.random to it, at once. So the runner must
+	 * exist before the sketch module loads, and `setup` then steps the sketch to that time.
 	 */
 	constructor(
 		post: PagePoster,
@@ -85,7 +91,8 @@ export class SketchRunner {
 			{ length: sketch.jobWorkers },
 			(_, k) => new FrameRecorder(metrics, Role.Job + k),
 		);
-		const { glue, slots, device } = sketch;
+		const { glue, device } = sketch;
+		const { slots } = sketch.control;
 		const status = glue.initEngine(
 			sketch.jobWorkers,
 			SCENE_CAPACITY,
@@ -106,12 +113,14 @@ export class SketchRunner {
 		Atomics.store(slots, Slot.DrawListAddress0, glue.drawListAddress(0));
 		Atomics.store(slots, Slot.DrawListAddress1, glue.drawListAddress(1));
 		this.reducedMotion = Atomics.load(slots, Slot.ReducedMotion);
+		this.input = new InputReader(sketch.control, sketch.keyCodes);
 		const time = { now: 0, frame: 0 };
 		this.context = {
 			time,
 			scene: new Scene(this.core, time),
 			materials: new Materials(this.core),
 			geometry: new Geometry(this.core),
+			input: this.input,
 			preferences: {
 				get reducedMotion() {
 					return Atomics.load(slots, Slot.ReducedMotion) !== 0;
@@ -178,7 +187,7 @@ export class SketchRunner {
 	 * `timestamp` is the frame's time in milliseconds.
 	 */
 	step(timestamp: number): number {
-		this.clock.advance(timestamp, Atomics.load(this.sketch.slots, Slot.Resumes));
+		this.clock.advance(timestamp, Atomics.load(this.sketch.control.slots, Slot.Resumes));
 		return this.frame();
 	}
 
@@ -190,7 +199,7 @@ export class SketchRunner {
 	 */
 	private hold(seconds: number): void {
 		const steps = holdSteps(seconds);
-		const { slots } = this.sketch;
+		const { slots } = this.sketch.control;
 		let frame = 0;
 		this.holding = true;
 		try {
@@ -217,7 +226,8 @@ export class SketchRunner {
 	private frame(): number {
 		const start = performance.now();
 		const { time } = this.context;
-		const { glue, slots } = this.sketch;
+		const { glue } = this.sketch;
+		const { slots } = this.sketch.control;
 		const dt = this.clock.dt;
 		time.now = this.clock.now;
 		time.frame++;
@@ -225,6 +235,7 @@ export class SketchRunner {
 		this.record.begin(frame);
 		this.core.refresh();
 		this.phaseStart = start;
+		if (this.holdSeconds === undefined) this.input.beginFrame(frame);
 		const reducedMotion = Atomics.load(slots, Slot.ReducedMotion);
 		if (reducedMotion !== this.reducedMotion) {
 			this.reducedMotion = reducedMotion;

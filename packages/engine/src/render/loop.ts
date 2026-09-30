@@ -129,7 +129,7 @@ export class Presenter {
 		const start = performance.now();
 		this.record.begin(frame);
 		this.renderer.drawFrame(emptySceneInput(frame, this.input), this.record);
-		Atomics.add(this.slots, Slot.FramesPresented, 1);
+		Atomics.store(this.slots, Slot.FramePresented, frame);
 		if (this.lastPresented < 0) {
 			this.record.markFirstFrame();
 			// Once, so the page learns when the first frame is on screen.

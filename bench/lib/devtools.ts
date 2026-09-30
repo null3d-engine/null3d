@@ -1,7 +1,8 @@
-// A minimal client for Chrome's debugging protocol, for the tools that sample the engine's workers:
-// it connects to a browser, attaches to a page and to its workers, and evaluates expressions in the
-// page. The browser is a Chrome that Playwright started on this computer, or Chrome on a phone whose
-// debugging socket adb forwards to a local port.
+// A minimal client for Chrome's debugging protocol, for the tools that sample the engine's workers
+// and time its start: it connects to a browser, attaches to a page and to its workers, evaluates
+// expressions in the page and waits for the page's result. The browser is a Chrome that Playwright
+// started on this computer, or Chrome on a phone whose debugging socket adb forwards to a local port.
+import { forwardDevTools, startBrowser } from '../../tests/lib/adb.ts';
 
 export interface TargetInfo {
 	targetId: string;
@@ -86,13 +87,29 @@ export class DevTools {
 		);
 	}
 
-	on(method: string, listener: (params: unknown, sessionId?: string) => void): void {
+	/** Calls `listener` on each event of `method`, until the function it returns is called. */
+	on(method: string, listener: (params: unknown, sessionId?: string) => void): () => void {
 		this.listeners.set(method, [...(this.listeners.get(method) ?? []), listener]);
+		return () =>
+			this.listeners.set(
+				method,
+				(this.listeners.get(method) ?? []).filter((other) => other !== listener),
+			);
 	}
 
 	close(): void {
 		this.socket.close();
 	}
+}
+
+/**
+ * Connects to Chrome on the phone connected by USB, through its debugging socket, which adb forwards
+ * to `port` on this computer. Chrome has the socket only while it runs, so this starts Chrome first.
+ */
+export function connectPhoneChrome(port: number): Promise<DevTools> {
+	forwardDevTools(port);
+	startBrowser('chrome');
+	return DevTools.connect(port);
 }
 
 /**
@@ -128,6 +145,12 @@ export async function pagesAt(devtools: DevTools, url: string): Promise<TargetIn
 	const path = new URL(url).pathname;
 	const { targetInfos } = await devtools.send<{ targetInfos: TargetInfo[] }>('Target.getTargets');
 	return targetInfos.filter((t) => t.type === 'page' && t.url.includes(path));
+}
+
+/** Closes the pages whose address holds the path of `url`, such as pages an earlier run left open. */
+export async function closePagesAt(devtools: DevTools, url: string): Promise<void> {
+	for (const { targetId } of await pagesAt(devtools, url))
+		await devtools.send('Target.closeTarget', { targetId });
 }
 
 /**
@@ -187,6 +210,34 @@ export async function attachWorkers(
 	return { page, workers: found };
 }
 
+/**
+ * Makes a page's network limits cover its workers' own requests. Chrome refuses network limits on a
+ * worker, but applies the page's limits to it once the worker's network domain is on. So each worker
+ * waits at its start until the tool turns the domain on. Returns a function that stops watching.
+ */
+export async function limitWorkerNetworks(devtools: DevTools, page: string): Promise<() => void> {
+	const stop = devtools.on('Target.attachedToTarget', (params, parent) => {
+		const { sessionId, targetInfo, waitingForDebugger } = params as {
+			sessionId: string;
+			targetInfo: TargetInfo;
+			waitingForDebugger: boolean;
+		};
+		if (parent !== page || targetInfo.type !== 'worker') return;
+		const resume = () =>
+			waitingForDebugger
+				? devtools.send('Runtime.runIfWaitingForDebugger', {}, sessionId).catch(() => {})
+				: undefined;
+		// A worker that stops before the tool reaches it needs neither step.
+		devtools.send('Network.enable', {}, sessionId).then(resume, resume);
+	});
+	await devtools.send(
+		'Target.setAutoAttach',
+		{ autoAttach: true, waitForDebuggerOnStart: true, flatten: true },
+		page,
+	);
+	return stop;
+}
+
 /** Attaches to a page and to every one of its workers, of which `count` must appear. */
 export async function attachEveryWorker(
 	devtools: DevTools,
@@ -244,4 +295,27 @@ export async function evaluate<T>(
 	}>('Runtime.evaluate', { expression, returnByValue: true }, sessionId);
 	if (exceptionDetails) throw new Error(`${expression}: ${exceptionDetails.text}`);
 	return result.value as T;
+}
+
+/**
+ * Waits until the page in a debugging session publishes its result, checking every `pollMs`, and
+ * returns the result, which may report a failure. It throws when the time runs out.
+ */
+export async function pageResultOf<T>(
+	devtools: DevTools,
+	sessionId: string,
+	timeoutMs: number,
+	pollMs = 1000,
+): Promise<T> {
+	const deadline = Date.now() + timeoutMs;
+	while (Date.now() < deadline) {
+		const result = await evaluate<T | null>(
+			devtools,
+			sessionId,
+			'globalThis.__null3dResult ?? null',
+		);
+		if (result) return result;
+		await sleep(pollMs);
+	}
+	throw new Error('the page published no result in time');
 }
