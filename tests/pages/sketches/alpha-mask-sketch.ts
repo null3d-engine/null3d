@@ -14,7 +14,9 @@ import {
 	turnAboutX,
 } from '../../../bench/scenes/alpha-mask';
 
-export default defineSketch(({ scene, materials, geometry }) => {
+export default defineSketch(({ scene, materials, geometry, post }) => {
+	// The three.js twin draws with no tone mapping, three.js's default.
+	post.set({ toneMapping: 'none' });
 	scene.setBackground(BACKGROUND);
 	scene.createDirectionalLight({
 		direction: SUN.direction,

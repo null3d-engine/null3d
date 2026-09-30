@@ -8,7 +8,7 @@ summary: "WebGPU core, compatibility mode and WebGL2; color, anti-aliasing and d
 
 # GPU tiers and backends
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. High dynamic range color, tone mapping and the choice of anti-aliasing mode are not built yet, so every tier draws 8-bit color with MSAA.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. The choice of anti-aliasing mode is not built yet, so every tier draws with MSAA.
 
 ```mermaid
 flowchart TD
@@ -44,13 +44,17 @@ WebGL2 and WebGPU's compatibility mode run at most the Medium [quality preset](q
 
 ## Color and anti-aliasing on each tier
 
-In this version, every tier draws color and anti-aliasing the same way:
+Every tier draws the opaque pass with 4 samples per pixel (MSAA), into color and depth targets the size of the canvas. WebGL2 lets every device draw at least 4 samples. The color target differs from tier to tier:
 
-- The opaque pass draws with 4 samples per pixel (MSAA), into color and depth targets the size of the canvas. WebGL2 lets every device draw at least 4 samples.
-- The render pass resolves the samples straight into the canvas. Anti-aliasing then needs no pass or texture of its own.
-- Each shader lights in linear color, then encodes its result as sRGB into 8 bits per channel. [Color management](color-management.md) describes the conversions.
+| Tier | Scene color | How it reaches the canvas |
+| --- | --- | --- |
+| WebGPU core | `rg11b10ufloat` where the device can draw into it and the canvas is opaque; `rgba16float` elsewhere | The render pass resolves the samples into a texture. The final pass applies the exposure and the tone mapping, encodes sRGB and dithers, into the canvas. |
+| WebGPU compatibility mode | 8 bits per channel | Each shader tone maps and encodes its own result. The render pass resolves the samples straight into the canvas, with no pass of its own. |
+| WebGL2 | `RGBA16F` where the float target test passes; 8 bits per channel elsewhere | As on core WebGPU with the float target, and as in compatibility mode without it |
 
-An 8-bit channel holds no value above 1, so light brighter than white clips at white. High dynamic range color needs a float target that the GPU can draw into with MSAA. Compatibility mode allows no MSAA on 16-bit float targets, and some WebGL2 devices draw into no float target at all. On WebGL2, `engine.report.webgl2.floatRenderTargets` gives the result of the engine's test.
+High dynamic range (HDR) color keeps light brighter than white until the tone mapping. It needs a float target that the GPU can draw into with MSAA. Compatibility mode allows no MSAA on 16-bit float targets, and some WebGL2 devices draw into no float target at all. On WebGL2, `engine.report.webgl2.floatRenderTargets` gives the result of the engine's test. The target must be complete, keep values above 1 and take 4 samples.
+
+`engine.capabilities.hdr` says which path the engine took. Both paths show the same colors. Antialiased edges differ a little, because the 8-bit path averages the samples after the tone mapping. [Color management](color-management.md) describes the conversions and the tone mapping.
 
 ## Depth on each tier
 
@@ -72,7 +76,7 @@ The engine reads what the device can do at startup and exposes it as `engine.cap
 
 ```ts
 engine.capabilities;
-// { tier: 'webgpu' | 'webgpu-compat' | 'webgl2', threaded, features, limits, maxInstances, depth }
+// { tier: 'webgpu' | 'webgpu-compat' | 'webgl2', threaded, features, limits, hdr, maxInstances, depth }
 ```
 
 The features it tests include:
@@ -85,6 +89,8 @@ The features it tests include:
 - GPU timer queries
 - MSAA on 16-bit float targets
 - rendering into 16-bit and 32-bit float textures on WebGL2 (`engine.report.webgl2.floatRenderTargets`)
+
+Where float targets take antialiasing, the scene draws high dynamic range color, and the final pass tone maps it. That holds on core WebGPU, and on WebGL2 devices that pass the float target test. `hdr` says whether the engine took that path. [Color management](color-management.md) covers the 8-bit path of the other devices.
 
 Code that uses an optional feature checks this object first. A sketch reads the same values in its context, as `ctx.engine.capabilities`.
 
