@@ -90,11 +90,15 @@ export type {
 	ShaderOptions,
 	ShaderValues,
 	SphereOptions,
+	StandardBaseOptions,
+	StandardMaps,
 	StandardOptions,
 	StandardValues,
 	TorusOptions,
 	UniformValue,
 	UnlitOptions,
+	UnlitValues,
+	UvTransform,
 } from './scene/resources';
 export type {
 	AmbientLight,

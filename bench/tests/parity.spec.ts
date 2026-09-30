@@ -23,6 +23,7 @@ import { type PageReport, runPage } from './open-page';
 /** Each feature scene: the manifest's image test that draws it, and its three.js twin page. */
 const FEATURE_SCENES = [
 	{ test: 'ortho-camera', twin: '/bench/pages/threejs/ortho-camera.html' },
+	{ test: 'standard-maps', twin: '/bench/pages/threejs/material-maps.html' },
 	{ test: 'alpha-mask', twin: '/bench/pages/threejs/alpha-mask.html' },
 	{ test: 'fog-linear', twin: '/bench/pages/threejs/fog.html?fog=linear' },
 	{ test: 'fog-exp2', twin: '/bench/pages/threejs/fog.html?fog=exp2' },

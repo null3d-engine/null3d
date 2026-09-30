@@ -35,7 +35,7 @@ export default defineSketch(({ scene, geometry, materials }) => {
 
 ## Make a custom material
 
-`materials.shader(options)` makes a custom material. Its `wgsl` option holds the WGSL, and its other options are those of `materials.standard`. [Materials](../api/materials.md) lists them.
+`materials.shader(options)` makes a custom material. Its `wgsl` option holds the WGSL, and its other options are those of `materials.standard`, but the texture maps, which custom materials do not take yet. [Materials](../api/materials.md) lists them.
 
 - Write the WGSL in a template literal right after a `/* wgsl */` comment, or in a `.wgsl` file that your sketch imports. The plugin compiles it while Vite serves or builds the project. [Custom shaders](../guides/custom-shaders.md) says how.
 - The WGSL declares `fn surface(input: SurfaceInput) -> Surface`, `fn vertexOffset(input: VertexInput) -> vec3f` ([vertex offsets](#vertex-offsets)), or both, and no `@vertex` or `@fragment` entry point. WGSL with entry points is a whole shader, which custom materials do not take yet.
@@ -50,7 +50,7 @@ The engine fills a `SurfaceInput` for each pixel. Positions and directions are i
 | Field | Type | What it holds |
 | --- | --- | --- |
 | `relativePosition` | `vec3f` | The position of the point, relative to the camera |
-| `normal` | `vec3f` | The unit normal of the mesh. On the back face of a double-sided material, it faces the camera |
+| `normal` | `vec3f` | The unit normal of the mesh, or of the triangle's face with `flatShading`. On the back face of a double-sided material, it faces the camera |
 | `viewDirection` | `vec3f` | The unit direction from the point toward the camera |
 | `vertexColor` | `vec4f` | The mesh's vertex color when the material has `vertexColors` and the mesh has colors, else white |
 | `uv` | `vec2f` | The mesh's first texture coordinates |
@@ -68,9 +68,10 @@ A `Surface` holds the values that the engine lights. Colors are linear, as the e
 | `roughness` | `f32` | The perceptual roughness: 0 is a mirror, and 1 is fully matte |
 | `normal` | `vec3f` | The unit normal that lights the point, in world space |
 | `emissive` | `vec3f` | Light that the point gives off itself, added after lighting |
-| `occlusion` | `f32` | How much light from all directions reaches the point, from 0 to 1 |
+| `occlusion` | `f32` | How much of the ambient light and the irradiance reaches the point, from 0 to 1 |
+| `irradiance` | `vec3f` | Baked light that reaches the point, such as a light map's, added to the ambient light |
 
-`defaultSurface(input)` returns the surface that the material's own options make. The base color is `color` times the vertex color. `metalness`, `roughness` and the emissive light come from the options too. The normal is the mesh's normal, or the face's normal with `flatShading`. Start from it, and change only the fields that your look needs:
+`defaultSurface(input)` returns the surface that the material's own options make. The base color is `color` times the vertex color. `metalness`, `roughness` and the emissive light come from the options too. The normal is the input's normal, the occlusion is 1, and the irradiance is zero. Start from it, and change only the fields that your look needs:
 
 ```wgsl
 fn surface(input: SurfaceInput) -> Surface {
