@@ -5,7 +5,7 @@ This guide covers the checks and benchmarks on phones, tablets and the Mac's bro
 ## The runner
 
 - The device runner, `tests/real-browsers.ts`, runs a plan of test or benchmark pages in browsers that Playwright cannot drive. Each browser loads the runner page, which opens each page of the plan in a frame and posts its result.
-- The plans are `checks` (the default), `parity`, `bench`, `memory`, `depth`, `scale` and `startup`. `bun run devices` runs the checks on the phone and on the iPad.
+- The plans are `checks` (the default), `parity`, `bench`, `memory`, `depth`, `overload`, `scale` and `startup`. `bun run devices` runs the checks on the phone and on the iPad.
 - The runner page fills in its run and its own name where a plan item's address has `{run}` and `{runner}`. The startup, bench and scale plans use them, so each browser loads under addresses of its own.
 - Run one runner at a time. All runs share one file, `target/runs/current.json`, which tells waiting runner pages which run to start. A second runner can replace it before a waiting page reads it, and that page then waits forever.
 - A runner page that waits on the local network reloads itself before each run after its first. No run then inherits memory that an earlier run kept.
@@ -22,6 +22,7 @@ This guide covers the checks and benchmarks on phones, tablets and the Mac's bro
 - The shared memory test page starts and stops the engine again and again in each thread mode. Where the browser has room for few shared memories, as on an iPad, the page starts more engines than fit at once. The check fails when a start fails, or when the room for shared memory does not come back within 31 s after the engines stop. Safari frees memory late on a slow machine. So a start that Safari refuses waits and tries again, for 30 s in all per page, as [the implementation notes](implementation-notes.md#threads-and-shared-memory) explain.
 - With `?kinds=`, the shared memory page tests other ways a worker can hold a shared memory. These tests found that Safari never frees the memory of a thread it stops inside a blocking wait, not even after a reload.
 - The engine test page runs again on its production build, in each thread mode on WebGL2. The runner builds the page, and the dev server serves it as it serves the startup loads. A production build bundles the engine into shared files, so some faults show only there. These checks found that Safari runs a worker's file a second time when another file imports it.
+- The shader library page runs every function of the WGSL shader library on the GPU, on WebGPU and on WebGL2. Each value must match its TypeScript reference within a tolerance that allows for the GPU's rounding. A wrong value names the function, its expected values and the values the GPU gave.
 - The checks plan runs every test of the image test manifest, and compares each image with the real-GPU reference at the device tolerance. [Image tests](image-tests.md) covers the tolerance, device references and the review of new images.
 - The texture page, one of those tests, replays every texture command of the GPU layer on each tier. Every tier must draw one image.
 - The image tests read frames through the engine's capture, which does not use the canvas. A frame that never reaches the screen still passes them. After a change to how frames reach the canvas, look at a demo page, and on a phone check `adb logcat` for GL errors.
@@ -65,6 +66,16 @@ To collect the numbers, rest each device first and close its other tabs:
 - The fighting pixels past 40 m never fail a page. The page paints them as the nearer surface, so its image compares with the references as every manifest test's does. The manifest's expectations fail a page that drew another depth mode than it asked for, lost ties, or fought within 40 m. A browser without `EXT_clip_control` draws `?depth=reversed` as `reversed-gl`, which the summary notes.
 - The phone and the iPad run it from the main checkout: `bun tests/real-browsers.ts --plan depth --allow-no-webgpu --android chrome,brave --lan ipad-safari,ipad-brave --shields on`. The Mac's four browsers run it with `bun tests/real-browsers.ts --plan depth Safari Firefox "Google Chrome" "Brave Browser"`.
 - Each tile's count depends on how its surfaces' corner depths round, so a farther tile can fight less than a nearer one. Compare the modes by their counts over all distances.
+
+## The overload plan
+
+- The `overload` plan runs the GPU-bound page (`tests/pages/overload.html`) twice on each GPU path. The first run keeps the engine's limit of two frames waiting on the GPU. The second adds `?queue=off`, which leaves the queue to the browser.
+- The page draws layers of detailed spheres, about 16,000 triangles each, that never move, so the GPU does nearly all the work. It doubles the spheres at each step and measures each step for a second. At the first step where the lower of the presented and completed rates falls below half the display's rate, it measures 5 seconds and stops.
+- The run's summary gives each page's presented and completed rates at that step, and whether they parted by more than 10%. It also gives the time from submit to completion, the frames in flight that it makes, and the GPU time.
+- The display's rate comes from the lightest step. Without the engine's limit, Chrome slows the drawing worker's frame callbacks to the GPU's pace. The refresh meter then reads a rate far below the display's.
+- [D-11](decisions/D-11-frames-in-flight.md) holds the results. The phone and the iPad run it from the main checkout: `bun tests/real-browsers.ts --plan overload --allow-no-webgpu --android chrome,brave --lan ipad-safari,ipad-brave --shields on`. The Mac's four browsers run it with `bun tests/real-browsers.ts --plan overload Safari Firefox "Google Chrome" "Brave Browser"`.
+- Without the limit, a queue can hold seconds of frames. A page then takes a while to stop, so each page gets 2 minutes.
+- `?spheres=<n>` makes the page measure that many spheres alone. Use it to compare switches, such as `?queue=3`, at one load.
 
 ## Browser apps on the Mac
 

@@ -21,7 +21,7 @@ use null3d_gpu::drawlist::{DrawList, DrawListError, Op, buffer_usage};
 use crate::camera::Lens;
 use crate::frame_data::{FrameUniform, normalized_direction};
 use crate::graph::GraphError;
-use crate::materials::{MaterialTable, Shading};
+use crate::materials::{MATERIAL_FLOATS, MATERIAL_TEXELS, MapSlot, MaterialTable, Shading};
 use crate::meshes::{MAX_BUFFER_BYTES, MeshStorage, Page};
 use crate::pipelines::DrawKey;
 use crate::textures::TextureStore;
@@ -301,6 +301,15 @@ impl ParityLists {
     }
 }
 
+/// Where a frame builder keeps the material table on the GPU.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum MaterialStorage {
+    /// A storage buffer of rows, by buffer id: the WebGPU path.
+    Buffer(u32),
+    /// A data texture with one row of texels per material, by texture id: the WebGL2 path.
+    Texture(u32),
+}
+
 /// The lights and the background.
 #[derive(Clone, Copy, Debug)]
 struct Lighting {
@@ -364,25 +373,48 @@ impl SceneSettings {
         &mut self.textures
     }
 
-    /// Records the frame's texture work, then uploads the maps table into buffer `maps` when a
-    /// map changed, or a texture's layer became ready or stopped drawing. Returns true when a
-    /// map's bind group was made again, which render bundles that bind it must see.
-    pub(crate) fn record_textures(
+    /// Records the frame's texture work, writes each map's layer into its material's row when a
+    /// map changed, or a texture's layer became ready or stopped drawing, then uploads the rows
+    /// that changed into `table`. Returns true when a map's bind group was made again, which
+    /// render bundles that bind it must see.
+    pub(crate) fn record_materials(
         &mut self,
         list: &mut DrawList,
         arena: &mut UploadArena,
-        maps: u32,
+        table: MaterialStorage,
         frame: u32,
     ) -> Result<bool, RecordError> {
         let remade = self.textures.record(list, frame)?;
         let layers_changed = self.textures.take_layers_changed();
         let textures = &self.textures;
-        let words = self
-            .materials
-            .changed_map_words(layers_changed, |map| textures.ready_layer(map));
-        if let Some(words) = words {
-            let (at, bytes) = arena.push(words_as_bytes(words))?;
-            list.push(Op::WriteBuffer, &[maps, 0, at, bytes])?;
+        self.materials
+            .update_map_layers(layers_changed, |map| textures.ready_layer(map));
+        if let Some(ids) = self.materials.take_changed() {
+            let (at, bytes) = arena.push(floats_as_bytes(self.materials.rows(ids.clone())))?;
+            match table {
+                MaterialStorage::Buffer(buffer) => {
+                    let offset = ids.start * MATERIAL_FLOATS as u32 * 4;
+                    list.push(Op::WriteBuffer, &[buffer, offset, at, bytes])?;
+                }
+                MaterialStorage::Texture(texture) => {
+                    let rows = ids.end - ids.start;
+                    list.push(
+                        Op::WriteTexture,
+                        &[
+                            texture,
+                            0,
+                            0,
+                            ids.start,
+                            0,
+                            MATERIAL_TEXELS,
+                            rows,
+                            1,
+                            at,
+                            bytes,
+                        ],
+                    )?;
+                }
+            }
         }
         Ok(remade)
     }
@@ -393,7 +425,7 @@ impl SceneSettings {
         if pipeline.template != Shading::UnlitMap.template() {
             return 0;
         }
-        let map = self.materials.map(material - 1);
+        let map = self.materials.map(material - 1, MapSlot::BaseColor);
         self.textures.group_id(map).unwrap_or(0)
     }
 
@@ -462,7 +494,9 @@ impl SceneSettings {
         let needs = shading.attributes();
         if shading == Shading::UnlitMap
             && ((format & needs) != needs
-                || !self.textures.is_live(self.materials.map(material - 1)))
+                || !self
+                    .textures
+                    .is_live(self.materials.map(material - 1, MapSlot::BaseColor)))
         {
             shading = Shading::Unlit;
         }

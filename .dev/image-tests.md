@@ -7,6 +7,7 @@ This guide covers the image test manifest, its references, and the review that m
 - `tests/image/manifest.ts` lists every image test. One harness, `tests/lib/images.ts`, runs each test in Chrome through Playwright. The device runner's checks plan runs each test in the other browsers.
 - A sketch test names a sketch module and a hold time. The image page, `tests/pages/image.html`, draws the sketch in the engine's hold mode. The image is 320 x 180 pixels unless the test gives another size.
 - A page test names a test page that draws and publishes its image itself, such as the texture page or a benchmark page.
+- Each demo in `examples/demos.ts` is a sketch test named `demo-` and the demo's name, held at the demo's hold time. A new demo needs no entry of its own in the manifest. A unit test checks that `examples/demos.ts` lists every demo folder, and that each sketch stays under 150 lines.
 - A test draws on all three GPU tiers unless it lists fewer. A sketch draws in the pipelined thread mode unless it lists others.
 - Every thread mode of a test must draw the pixels of its first mode exactly. A thread mode changes only when the engine draws a frame, so the pixels must stay the same.
 - A test can borrow the references of another test: the same scene drawn another way, such as with `?uploads=copy`. A test can also require that every tier draws the image of its first tier.

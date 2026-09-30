@@ -1,7 +1,7 @@
 // Development builds only: finds writes to a static object's transform that skipped a setter. The
 // engine recomputes a static object only in a frame where a setter marked it dirty, so such a write
 // reaches the screen late or never. Before each transform update, the check hashes the position,
-// rotation, scale and bounding radius of every static object, and compares each hash with the one
+// rotation, scale and bounding sphere of every static object, and compares each hash with the one
 // from the update before. A hash that changed while the object's dirty bit is clear is a write that
 // skipped a setter. The check reads the values that sketch code writes, never the world matrices,
 // so the grid cell that holds an object does not change its hashes.
@@ -9,7 +9,7 @@
 import { EngineError } from '../errors/engine-error';
 
 /** The values the check hashes for each object, in the order that the error message names them. */
-const FIELDS = ['position', 'rotation', 'scale', 'bounding radius'] as const;
+const FIELDS = ['position', 'rotation', 'scale', 'bounding sphere'] as const;
 
 // Odd multipliers. Multiplying by an odd number maps 32-bit words one to one, so a hash that XORs
 // each word times its own multiplier changes whenever any single word changes. The products do
@@ -25,6 +25,7 @@ export interface TransformInputs {
 	readonly rotations: Float32Array;
 	readonly scales: Float32Array;
 	readonly radii: Float32Array;
+	readonly centers: Float32Array;
 	readonly dirty: Uint32Array;
 }
 
@@ -58,6 +59,7 @@ export class UnmarkedWrites {
 	private rotations: Int32Array = new Int32Array(0);
 	private scales: Int32Array = new Int32Array(0);
 	private radii: Int32Array = new Int32Array(0);
+	private centers: Int32Array = new Int32Array(0);
 
 	constructor(private readonly scene: { readonly views: TransformInputs }) {}
 
@@ -70,6 +72,7 @@ export class UnmarkedWrites {
 		this.rotations = wordsOf(views.rotations);
 		this.scales = wordsOf(views.scales);
 		this.radii = wordsOf(views.radii);
+		this.centers = wordsOf(views.centers);
 		const size = views.radii.length * FIELDS.length;
 		if (this.seen.length < size) {
 			const seen = new Int32Array(size);
@@ -87,7 +90,7 @@ export class UnmarkedWrites {
 		const position = hash3(this.positions, slot * 3);
 		const rotation = hash3(r, q) ^ Math.imul(r[q + 3] as number, K3);
 		const scale = hash3(this.scales, slot * 3);
-		const radius = this.radii[slot] as number;
+		const sphere = hash3(this.centers, slot * 3) ^ Math.imul(this.radii[slot] as number, K3);
 		const changed =
 			position !== seen[at]
 				? 0
@@ -95,14 +98,14 @@ export class UnmarkedWrites {
 					? 1
 					: scale !== seen[at + 2]
 						? 2
-						: radius !== seen[at + 3]
+						: sphere !== seen[at + 3]
 							? 3
 							: -1;
 		if (changed < 0) return -1;
 		seen[at] = position;
 		seen[at + 1] = rotation;
 		seen[at + 2] = scale;
-		seen[at + 3] = radius;
+		seen[at + 3] = sphere;
 		return changed;
 	}
 

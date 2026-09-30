@@ -71,7 +71,7 @@ Surface functions keep instancing, skinning, shadows, fog and both backends work
 | `position`, `normal`, `uv`, `uv1` (older: `uv2`), `color` attributes | `VertexInput.position`, `normal`, `uv`, `color` in `vertexOffset`; `SurfaceInput.uv`, `uv1`, `color` in surface functions |
 | `modelMatrix` | `object.worldMatrix` |
 | `viewMatrix`, `projectionMatrix` | `camera.view`, `camera.projection` |
-| `modelViewMatrix * vec4(position, 1.0)` | Nothing: the engine transforms vertices; in full shaders use `null3d::vertex::toClip` |
+| `modelViewMatrix * vec4(position, 1.0)` | Nothing: the engine transforms vertices; in full shaders use `null3d::vertex::to_clip` |
 | `normalMatrix` (view space in three.js) | `input.worldNormal` is already world space; for view space: `(camera.view * vec4f(n, 0.0)).xyz` |
 | `cameraPosition` | `camera.position` |
 | Varyings such as `vWorldPosition`, `vViewDir`, `vNormal` | `input.worldPosition`, `input.relativePosition`, `input.viewDirection`, `input.worldNormal` |
@@ -87,8 +87,8 @@ Surface functions keep instancing, skinning, shadows, fog and both backends work
 - Fragment coordinates: `input.fragCoord` has its origin at the top left with y pointing down; GLSL `gl_FragCoord` starts at the bottom left with y pointing up. For screen-space code ported from GLSL, use `frame.resolution.y - input.fragCoord.y` wherever the original used `gl_FragCoord.y`.
 - Screen UVs in post effects: `input.uv` is (0, 0) at the top left. three.js full-screen passes use a `vUv` that is (0, 0) at the bottom left. Replace `vUv.y` with `1.0 - input.uv.y` where direction matters (gradients, top-of-screen effects).
 - Texture UVs: textures loaded with `flipY: true` sample the same as three.js's `TextureLoader` default. glTF textures use `flipY: false` in both engines. Keep the original's setting, and the ported shader's UV math stays the same.
-- Depth: the engine uses reversed depth on both GPU paths, where near is 1 and far is 0. A vertex shader writes clip-space depth in WebGPU's range of 0 to 1, and the engine moves it where WebGL2 needs that. Do not port three.js depth formulas such as `perspectiveDepthToViewZ` or `readDepth`; use `null3d::depth::linearDepth(d)` and `null3d::depth::viewZ(d)`, which are correct on both backends.
-- Color output: engine surfaces are linear, and the final pass converts to the display once. A three.js `ShaderMaterial` without `<colorspace_fragment>` writes its values straight to the screen, so its colors were effectively sRGB. Convert such constants with `null3d::color::srgbToLinear`, or pass them as `'#rrggbb'` uniforms, which the engine converts.
+- Depth: the engine uses reversed depth on both GPU paths, where near is 1 and far is 0. A vertex shader writes clip-space depth in WebGPU's range of 0 to 1, and the engine moves it where WebGL2 needs that. Do not port three.js depth formulas such as `perspectiveDepthToViewZ` or `readDepth`; use `null3d::depth::linear_depth(d, near, far)` and `null3d::depth::perspective_depth_to_view_z(d, near, far)`, which are correct on both backends.
+- Color output: engine surfaces are linear, and the final pass converts to the display once. A three.js `ShaderMaterial` without `<colorspace_fragment>` writes its values straight to the screen, so its colors were effectively sRGB. Convert such constants with `null3d::color::srgb_to_linear`, or pass them as `'#rrggbb'` uniforms, which the engine converts.
 - Matrices are column-major in both, and `matrix * vector` keeps its order.
 
 ## 5. ShaderMaterial and RawShaderMaterial
@@ -132,7 +132,7 @@ Keep the original's standard options (color, maps, roughness) on the new materia
 | `screenUV` | `input.fragCoord.xy / frame.resolution` in surfaces, `input.uv` in effects |
 | `add`, `sub`, `mul`, `div`, `.add()` chains | `+`, `-`, `*`, `/` |
 | `oneMinus(x)`, `saturate(x)` | `1.0 - x`, `saturate(x)` |
-| `mx_noise_float(p)` and other MaterialX noise | `null3d::noise::simplex3(p)`, `fbm3` (values differ; tune) |
+| `mx_noise_float(p)` and other MaterialX noise | `null3d::noise::simplex3(p)`, `fbm3(p, octaves)` (values differ; tune) |
 | `Fn(() => { ... })`, `If`, `Loop`, `.toVar()` | `fn`, `if`, `for`, `var` |
 | `material.colorNode`, `opacityNode`, `roughnessNode`, `metalnessNode`, `normalNode`, `emissiveNode`, `aoNode` | `s.baseColor`, `s.alpha`, `s.roughness`, `s.metalness`, `s.normal`, `s.emissive`, `s.occlusion` |
 | `material.positionNode` | `vertexOffset` returning `newPosition - input.position` |

@@ -43,6 +43,12 @@ import {
 import { MEASURE_SECONDS, WARMUP_SECONDS } from '../../bench/scenes/spec.ts';
 import { IMAGE_RUNS } from '../image/manifest.ts';
 import { distanceLabel, PRECISION, type PrecisionFacts } from '../pages/lib/depth-precision.ts';
+import {
+	framesInFlight,
+	type OverloadResult,
+	type OverloadStep,
+	ratesParted,
+} from '../pages/lib/overload.ts';
 import { ROOM_KEPT } from '../pages/lib/room.ts';
 import {
 	ENGINE_MODES,
@@ -64,6 +70,7 @@ export type Check =
 	| { kind: 'isolation' }
 	| { kind: 'image'; run: ImageRun }
 	| { kind: 'shaders' }
+	| { kind: 'shader-library'; tier: Tier }
 	| { kind: 'engine'; tier: Tier; mode: EngineMode }
 	| { kind: 'restarts'; mode: EngineMode }
 	| { kind: 'memory'; maximumMiB: number }
@@ -72,6 +79,8 @@ export type Check =
 	| { kind: 'hold'; tier: Tier }
 	| { kind: 'parity'; tier: Tier; scene: ParityScene; pair: PagePair }
 	| { kind: 'bench'; tier: Tier; scene: ParityScene; page: BenchPageKind; jobs?: number }
+	/** The GPU-bound page, with the ?queue= setting it ran with, if any. */
+	| { kind: 'overload'; tier: Tier; queue?: string }
 	/** A load of the startup build; `first` marks the first warm load, which fills the cache. */
 	| { kind: 'startup'; mode: EngineMode; load: LoadKind; first?: true };
 
@@ -208,9 +217,9 @@ function imageItem(run: ImageRun): PlanItem<Check> {
 const PRODUCTION_BUILD: Load = { kind: 'warm', key: runnerKey('production') };
 
 /**
- * The browser checks: the capability report, isolation, every run of the image test manifest, the
- * engine in every mode on both GPU paths, and again on the production build, and the engine
- * started and stopped again and again in every mode. The capabilities page loads again last, so its
+ * The browser checks: the capability report, isolation, the shader library's values on both GPU
+ * paths, every run of the image test manifest, the engine in every mode on both GPU paths, and
+ * again on the production build, and the engine started and stopped again and again in every mode. The capabilities page loads again last, so its
  * extension answers can be compared across loads.
  */
 export function checksPlan(): PlanItem<Check>[] {
@@ -218,6 +227,14 @@ export function checksPlan(): PlanItem<Check>[] {
 		pageItem(CAPABILITIES, 'capabilities', { kind: 'capabilities' }),
 		pageItem('isolation', 'isolation', { kind: 'isolation' }),
 		pageItem('shaders', 'shaders', { kind: 'shaders' }),
+		...TIERS.map((tier) =>
+			pageItem(
+				`shader-library-${tier}`,
+				'shader-library',
+				{ kind: 'shader-library', tier },
+				{ switches: [`gpu=${tier}`] },
+			),
+		),
 		pageItem('uploads', 'uploads', { kind: 'uploads', tier: 'webgpu' }, { timeoutSeconds: 90 }),
 		...IMAGE_RUNS.map(imageItem),
 		...TIERS.flatMap((tier) =>
@@ -360,6 +377,36 @@ export function depthPlan(): PlanItem<Check>[] {
 	return IMAGE_RUNS.filter((run) => isDepthTest(run.test)).map(imageItem);
 }
 
+/** How long the GPU-bound page may take to raise its load step by step and measure the last step. */
+const OVERLOAD_TIMEOUT_SECONDS = 120;
+
+/**
+ * The ?queue= settings of the GPU-bound page: the engine's own limit on the frames that wait on the
+ * GPU, then no limit, which shows what the browser does on its own.
+ */
+const OVERLOAD_QUEUES = [undefined, 'off'] as const;
+
+/**
+ * The GPU-bound page on each GPU path, in the default thread mode, with each ?queue= setting. The
+ * run's summary gives, for each, the presented and completed rates at the load that overloaded the
+ * GPU, and the frames that waited on the GPU.
+ */
+export function overloadPlan(): PlanItem<Check>[] {
+	return TIERS.flatMap((tier) =>
+		OVERLOAD_QUEUES.map((queue) =>
+			pageItem(
+				`overload-${tier}${queue === undefined ? '' : `-queue-${queue}`}`,
+				'overload',
+				{ kind: 'overload', tier, ...(queue !== undefined && { queue }) },
+				{
+					switches: [`gpu=${tier}`, queue === undefined ? '' : `queue=${queue}`],
+					timeoutSeconds: OVERLOAD_TIMEOUT_SECONDS,
+				},
+			),
+		),
+	);
+}
+
 /** The shared memory maximums that the memory plan tries, in MiB, from low to high. */
 export const MEMORY_MAXIMUMS_MIB = [256, 512, 1024, 2048, 4096] as const;
 /** Loads of the engine page at each maximum in the memory plan. */
@@ -456,6 +503,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	memory: memoryPlan,
 	depth: depthPlan,
 	startup: startupPlan,
+	overload: overloadPlan,
 };
 
 /**
@@ -727,6 +775,18 @@ export function judge(
 			if (!result.webgpu && !missing.webgpu) problems.push('no WebGPU to compile the WGSL');
 			return problems;
 		}
+		case 'shader-library': {
+			const mismatches = (result.mismatches ?? []) as {
+				function: string;
+				expected: number[];
+				got: number[];
+			}[];
+			const problems = mismatches.map(
+				(m) => `${m.function}: expected ${m.expected.join(', ')}, got ${m.got.join(', ')}`,
+			);
+			if (!(Number(result.cases) > 0)) problems.push('the page ran no cases');
+			return problems;
+		}
 		case 'engine':
 			return engineProblems(result as unknown as EngineResult, check.mode, check.tier);
 		case 'restarts':
@@ -777,6 +837,14 @@ export function judge(
 			return parityProblems(check, result, context);
 		case 'startup':
 			return startupProblems(result as StartupResult, check.mode);
+		case 'overload': {
+			const { overloaded, steps } = result as ItemResult & OverloadResult;
+			if (!overloaded)
+				return [
+					`the GPU kept up with all ${steps.at(-1)?.count ?? 0} spheres, so no step overloaded it`,
+				];
+			return overloaded.completedFps ? [] : ['no frame completions were counted'];
+		}
 	}
 }
 
@@ -933,4 +1001,59 @@ export function depthSummary(
 		lines.push(`| ${where} | ${drawn} | ${facts.fighting ?? 'unknown'} | ${shares || empty} |`);
 	}
 	return lines.join('\n');
+}
+
+/** A rate in frames per second, to one decimal place, or a dash when there is none. */
+const fpsText = (fps: number | null) => (fps === null ? '-' : fps.toFixed(1));
+
+/**
+ * One row of the overload summary: a GPU path's step that overloaded the GPU with a ?queue= setting,
+ * or why none did.
+ */
+function overloadRow(
+	{ tier, queue = 'engine' }: { tier: Tier; queue?: string },
+	result: ItemResult | undefined,
+): string {
+	const where = `${tier} | ${queue}`;
+	if (!result?.ok)
+		return `| ${where} | ${result ? failureText(result) : NO_RESULT} | | | | | | | |`;
+	const { displayHz, overloaded } = result as ItemResult & OverloadResult;
+	if (!overloaded)
+		return `| ${where} | ${displayHz ?? '-'} Hz | no step overloaded the GPU | | | | | | |`;
+	const step: OverloadStep = overloaded;
+	const latency = step.gpuLatencyMs;
+	const inFlight = framesInFlight(step);
+	const cells = [
+		where,
+		`${displayHz ?? '-'} Hz`,
+		step.count,
+		fpsText(step.presentedFps),
+		fpsText(step.completedFps),
+		ratesParted(step) ? 'yes' : 'no',
+		latency ? `${latency.median.toFixed(1)} / ${latency.p95.toFixed(1)}` : '-',
+		inFlight === null ? '-' : inFlight.toFixed(1),
+		step.gpuMs === null ? '-' : step.gpuMs.toFixed(1),
+	];
+	return `| ${cells.join(' | ')} |`;
+}
+
+/**
+ * The GPU-bound page's results as a Markdown table: for each GPU path and ?queue= setting, the load
+ * that overloaded the GPU, the presented and completed rates there, whether they parted, the time
+ * from submit to completion, the frames in flight that it makes, and the GPU time. Undefined when
+ * the plan has no GPU-bound pages.
+ */
+export function overloadSummary(
+	items: readonly PlanItem<Check>[],
+	resultOf: (id: string) => ItemResult | undefined,
+): string | undefined {
+	const rows = items.flatMap(({ id, check }) =>
+		check.kind === 'overload' ? [overloadRow(check, resultOf(id))] : [],
+	);
+	if (rows.length === 0) return undefined;
+	return [
+		'| Path | Queue | Display | Spheres | Presented fps | Completed fps | Parted | Submit to completion, median / p95 ms | Frames in flight | GPU ms |',
+		'| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+		...rows,
+	].join('\n');
 }

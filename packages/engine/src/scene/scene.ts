@@ -1,13 +1,22 @@
 // The scene API: objects with transforms, cameras, lights and instance batches. Setters write
-// straight into engine memory. Structural changes (create, destroy, reparent, visibility, layers)
-// go into the command ring as 16-byte records, which the engine applies when the next frame
+// straight into engine memory. Structural changes (create, destroy, reparent, visibility, layers,
+// flags) go into the command ring as 16-byte records, which the engine applies when the next frame
 // starts.
 
-import { checkLayers, checkLive, checkVector, DEV, type Described } from '../errors/checks';
+import {
+	checkLayers,
+	checkLive,
+	checkNumber,
+	checkVector,
+	DEV,
+	type Described,
+} from '../errors/checks';
 import { EngineError } from '../errors/engine-error';
 import * as C from '../generated/core';
-import { fromEuler as quaternionFromEuler } from '../math/quat';
-import type { EulerOrder } from '../math/types';
+import { copy as copyMatrix, decompose } from '../math/mat4';
+import { fromEuler as quaternionFromEuler, rotateX, rotateY, rotateZ } from '../math/quat';
+import type { EulerOrder, Mat4Like, QuatLike, Vec3Like } from '../math/types';
+import { transformQuat } from '../math/vec3';
 import { rowLimitWarning } from '../page/limits';
 import type { CoreGlue } from '../shared/core';
 import { type ColorInput, linearColor } from './color';
@@ -43,14 +52,6 @@ export type Vec3 = readonly [number, number, number];
 export type Quat = readonly [number, number, number, number];
 
 const SLOT_MASK = (1 << C.HANDLE_SLOT_BITS) - 1;
-
-/** A class of scene object: built from the scene, a handle, a name and any further arguments. */
-type ObjectKind<T extends Object3D, A extends unknown[]> = new (
-	scene: Scene,
-	handle: number,
-	name: string,
-	...rest: A
-) => T;
 
 /**
  * Options every node takes when it is created.
@@ -90,7 +91,45 @@ export interface MeshOptions extends NodeOptions {
 	mesh: MeshGeometry;
 	/** How the surface looks, from `ctx.materials`. */
 	material: Material;
+	/**
+	 * True makes the mesh cast shadows, like `setCastShadows(true)`. The default is false. This
+	 * version stores the setting but draws no shadows yet.
+	 */
+	castShadows?: boolean;
+	/**
+	 * True makes the mesh receive shadows, like `setReceiveShadows(true)`. The default is false.
+	 * This version stores the setting but draws no shadows yet.
+	 */
+	receiveShadows?: boolean;
 }
+
+/**
+ * Options for `setParent`.
+ *
+ * @category api/objects
+ */
+export interface ParentOptions {
+	/**
+	 * True keeps the object's place, rotation and size in the world, as three.js's `attach` does:
+	 * the engine gives it the position, rotation and scale that do that under the new parent. The
+	 * default, false, keeps the values relative to the parent, as three.js's `add` does.
+	 */
+	keepWorld?: boolean;
+}
+
+/**
+ * An object class, which a scene creates with a handle, a name and any further arguments, such
+ * as a camera's lens.
+ */
+type ObjectClass<T extends Object3D, A extends unknown[] = []> = new (
+	scene: Scene,
+	handle: number,
+	name: string,
+	...rest: A
+) => T;
+
+/** A function from the quaternion helpers that turns a rotation about one of its own axes. */
+type Turn = (out: QuatLike, a: QuatLike, rad: number) => QuatLike;
 
 /**
  * Options that both kinds of camera take.
@@ -180,6 +219,8 @@ class SceneViews {
 	readonly rotations: Float32Array;
 	readonly scales: Float32Array;
 	readonly radii: Float32Array;
+	/** The centers of the local bounding spheres, 3 floats per slot. */
+	readonly centers: Float32Array;
 	readonly dirty: Uint32Array;
 	readonly records: Uint32Array;
 	readonly writeIndex: Uint32Array;
@@ -193,6 +234,7 @@ class SceneViews {
 		this.rotations = core.f32(glue.sceneArrays(C.SCENE_FIELD_ROTATIONS), rows * 4);
 		this.scales = core.f32(glue.sceneArrays(C.SCENE_FIELD_SCALES), rows * 3);
 		this.radii = core.f32(glue.sceneArrays(C.SCENE_FIELD_LOCAL_RADII), rows);
+		this.centers = core.f32(glue.sceneArrays(C.SCENE_FIELD_LOCAL_CENTERS), rows * 3);
 		this.dirty = core.u32(glue.sceneArrays(C.SCENE_FIELD_DIRTY_WORDS), Math.ceil(rows / 32));
 		this.ringCapacity = glue.commandRing(C.RING_FIELD_CAPACITY);
 		this.records = core.u32(
@@ -230,9 +272,14 @@ export class Object3D implements Described {
 		return false;
 	}
 
+	/** @internal The object's name in quotes, or "an object", as error messages show it. */
+	get label(): string {
+		return this.name ? `"${this.name}"` : 'an object';
+	}
+
 	/** The object's name and slot, as error messages show them. */
 	describe(): string {
-		return `${this.name ? `"${this.name}"` : 'an object'} (slot ${this.slot})`;
+		return `${this.label} (slot ${this.slot})`;
 	}
 
 	/** Sets the position relative to the parent. */
@@ -312,8 +359,63 @@ export class Object3D implements Described {
 		this.scene.markDirty(this.slot);
 	}
 
-	/** Copies the position into `out`. */
-	getPosition(out: { [index: number]: number }): void {
+	/** Turns the object by `angle` radians about its own X axis. */
+	rotateX(angle: number): void {
+		this.turn('rotateX', rotateX, angle);
+	}
+
+	/** Turns the object by `angle` radians about its own Y axis. */
+	rotateY(angle: number): void {
+		this.turn('rotateY', rotateY, angle);
+	}
+
+	/** Turns the object by `angle` radians about its own Z axis. */
+	rotateZ(angle: number): void {
+		this.turn('rotateZ', rotateZ, angle);
+	}
+
+	/** Turns the object's rotation with one of the quaternion helpers' turns about its own axes. */
+	private turn(call: string, by: Turn, angle: number): void {
+		if (DEV) {
+			checkLive(call, this);
+			checkNumber(call, 'angle', angle, this);
+		}
+		const q = this.scene.scratch;
+		this.scene.readRotation(this.slot, q);
+		by(q, q, angle);
+		this.scene.views.rotations.set(q, this.slot * 4);
+		this.scene.markDirty(this.slot);
+	}
+
+	/**
+	 * Moves the object by (x, y, z) along its own axes, as three.js's `translateX`, `translateY` and
+	 * `translateZ` do together. The object's rotation turns the vector, and its scale leaves it as
+	 * it is, so `translate(0, 0, -1)` moves a camera 1 m forward.
+	 */
+	translate(x: number, y: number, z: number): void {
+		if (DEV) {
+			checkLive('translate', this);
+			checkVector('translate', this, x, y, z);
+		}
+		const { scene } = this;
+		const q = scene.scratch;
+		scene.readRotation(this.slot, q);
+		const v = scene.eye;
+		v[0] = x;
+		v[1] = y;
+		v[2] = z;
+		transformQuat(v, v, q);
+		const p = scene.views.positions;
+		const i = this.slot * 3;
+		p[i] = (p[i] as number) + (v[0] as number);
+		p[i + 1] = (p[i + 1] as number) + (v[1] as number);
+		p[i + 2] = (p[i + 2] as number) + (v[2] as number);
+		scene.markDirty(this.slot);
+	}
+
+	/** Copies the position relative to the parent into `out`. */
+	getPosition(out: Vec3Like): void {
+		if (DEV) checkLive('getPosition', this);
 		const p = this.scene.views.positions;
 		const i = this.slot * 3;
 		out[0] = p[i] as number;
@@ -321,18 +423,63 @@ export class Object3D implements Described {
 		out[2] = p[i + 2] as number;
 	}
 
+	/** Copies the rotation relative to the parent into `out`, as a quaternion (x, y, z, w). */
+	getRotation(out: QuatLike): void {
+		if (DEV) checkLive('getRotation', this);
+		this.scene.readRotation(this.slot, out);
+	}
+
 	/** Copies the world position of the frame that last ran into `out`. */
-	getWorldPosition(out: { [index: number]: number }): void {
+	getWorldPosition(out: Vec3Like): void {
+		if (DEV) checkLive('getWorldPosition', this);
 		const m = this.scene.worldMatrix(this, 'getWorldPosition');
 		out[0] = m[3] as number;
 		out[1] = m[7] as number;
 		out[2] = m[11] as number;
 	}
 
-	/** Moves the object under another, or to the root with null. It keeps its local transform. */
-	setParent(parent: Object3D | null): void {
-		if (DEV) checkLive('setParent', this);
-		this.scene.command(C.COMMAND_SET_PARENT, this.handle, parent?.handle ?? 0, 0, 'setParent');
+	/**
+	 * Copies the world rotation of the frame that last ran into `out`, as a quaternion (x, y, z, w).
+	 * It is the rotation part of the world matrix, which `mat4.decompose` splits off.
+	 */
+	getWorldQuaternion(out: QuatLike): void {
+		if (DEV) checkLive('getWorldQuaternion', this);
+		const { scene } = this;
+		const m = scene.worldColumns(this, 'getWorldQuaternion');
+		decompose(scene.eye, out, scene.target, m);
+	}
+
+	/**
+	 * Copies the world matrix of the frame that last ran into `out`: 16 numbers, column by column,
+	 * as `mat4` and three.js's `matrixWorld` hold them. Its translation keeps full precision far
+	 * from the origin when `out` is a plain array or a `Float64Array`.
+	 */
+	getWorldMatrix(out: Mat4Like): void {
+		if (DEV) checkLive('getWorldMatrix', this);
+		copyMatrix(out, this.scene.worldColumns(this, 'getWorldMatrix'));
+	}
+
+	/**
+	 * Moves the object under another, or to the root with null, from the next frame. By default it
+	 * keeps its position, rotation and scale relative to the parent, so its place in the world
+	 * changes with the new parent. With `keepWorld: true` it keeps its place in the world instead.
+	 */
+	setParent(parent: Object3D | null, options?: ParentOptions): void {
+		if (DEV) {
+			checkLive('setParent', this);
+			if (parent) {
+				checkLive('setParent', parent, true);
+				if (parent.scene !== this.scene)
+					throw new EngineError(
+						'E1103',
+						`setParent() got ${parent.describe()}, which is not from this engine.`,
+					);
+				if (parent === this)
+					throw new EngineError('E1104', `setParent() would put ${this.describe()} under itself.`);
+			}
+		}
+		const keep = options?.keepWorld ? C.COMMAND_KEEP_WORLD : 0;
+		this.scene.command(C.COMMAND_SET_PARENT, this.handle, parent?.handle ?? 0, keep, 'setParent');
 	}
 
 	/** Hides or shows the object and everything under it. */
@@ -371,6 +518,13 @@ export class Object3D implements Described {
 		}
 		this.scene.command(C.COMMAND_DESTROY, this.handle, 0, 0, 'destroy');
 		this.destroyedFrame = this.scene.frame;
+		this.scene.forget(this);
+	}
+
+	/** @internal Sets or clears one of the object's flags from the next frame. */
+	protected setFlag(call: string, flag: number, on: boolean): void {
+		if (DEV) checkLive(call, this);
+		this.scene.command(C.COMMAND_SET_FLAGS, this.handle, flag, on ? flag : 0, call);
 	}
 }
 
@@ -389,8 +543,98 @@ export class Group extends Object3D {}
 export class Mesh extends Object3D {
 	/** Changes the material from the next frame. */
 	setMaterial(material: Material): void {
+		if (DEV) {
+			checkLive('setMaterial', this);
+			checkSameEngine('setMaterial', 'material', material.core, this.scene);
+		}
 		this.scene.command(C.COMMAND_SET_MATERIAL, this.handle, material.id, 0, 'setMaterial');
 	}
+
+	/**
+	 * Changes the shape from the next frame. The mesh's bounds replace the object's, so call
+	 * `setBounds` again after this when the object needs bounds of its own.
+	 */
+	setMesh(mesh: MeshGeometry): void {
+		if (DEV) {
+			checkLive('setMesh', this);
+			checkSameEngine('setMesh', 'mesh', mesh.core, this.scene);
+		}
+		this.scene.writeBounds(this.slot, 0, 0, 0, mesh.radius);
+		this.scene.command(C.COMMAND_SET_MESH, this.handle, mesh.id, 0, 'setMesh');
+	}
+
+	/**
+	 * Makes the mesh cast shadows, or stop. The default is false. This version stores the setting
+	 * but draws no shadows yet.
+	 */
+	setCastShadows(cast: boolean): void {
+		this.setFlag('setCastShadows', C.FLAG_CAST_SHADOWS, cast);
+	}
+
+	/**
+	 * Makes the mesh receive shadows, or stop. The default is false. This version stores the
+	 * setting but draws no shadows yet.
+	 */
+	setReceiveShadows(receive: boolean): void {
+		this.setFlag('setReceiveShadows', C.FLAG_RECEIVE_SHADOWS, receive);
+	}
+
+	/**
+	 * Sets the order in which the mesh draws among transparent objects, lower first, as three.js's
+	 * `renderOrder`. The default is 0. The engine orders opaque objects itself, and this version
+	 * draws every material opaque, so the order has no effect yet.
+	 */
+	setRenderOrder(order: number): void {
+		if (DEV) {
+			checkLive('setRenderOrder', this);
+			checkNumber('setRenderOrder', 'order', order, this);
+		}
+		const bits = this.scene.floatBits(order);
+		this.scene.command(C.COMMAND_SET_RENDER_ORDER, this.handle, bits, 0, 'setRenderOrder');
+	}
+
+	/**
+	 * With false, the engine draws the mesh even where its bounds are out of view, as three.js's
+	 * `frustumCulled = false` does. The default is true. For vertices that a shader moves, larger
+	 * bounds from `setBounds` cost less.
+	 */
+	setFrustumCulled(culled: boolean): void {
+		this.setFlag('setFrustumCulled', C.FLAG_UNCULLED, !culled);
+	}
+
+	/**
+	 * Replaces the mesh's bounding sphere, which culling tests, with a sphere of your own: `center`
+	 * relative to the object's origin, and `radius`, both before the object's scale. Use it when a
+	 * shader moves vertices outside the mesh's sphere. `setMesh` gives the mesh's sphere back.
+	 */
+	setBounds(center: Vec3Like, radius: number): void {
+		const x = center[0] as number;
+		const y = center[1] as number;
+		const z = center[2] as number;
+		if (DEV) {
+			checkLive('setBounds', this);
+			checkVector('setBounds', this, x, y, z);
+			checkNumber('setBounds', 'radius', radius, this);
+			if (radius < 0)
+				throw new EngineError(
+					'E1108',
+					`setBounds() got the radius ${radius} on ${this.describe()}, below 0.`,
+				);
+		}
+		this.scene.writeBounds(this.slot, x, y, z, radius);
+		this.setFlag('setBounds', C.FLAG_CUSTOM_BOUNDS, true);
+	}
+}
+
+/** Throws E1103 when a mesh or a material comes from another engine. Call it inside `if (DEV)`. */
+function checkSameEngine(
+	call: string,
+	kind: 'mesh' | 'material',
+	core: CoreMemory,
+	scene: Scene,
+): void {
+	if (core !== scene.core)
+		throw new EngineError('E1103', `${call}() got a ${kind} that is not from this engine.`);
 }
 
 /**
@@ -444,7 +688,10 @@ export abstract class Camera extends Object3D {
 
 	/** Sets the distances to the near and far clipping planes. */
 	setNearFar(near: number, far: number): void {
-		if (DEV) checkNearFar('setNearFar', near, far, !this.isOrthographic, this);
+		if (DEV) {
+			checkLive('setNearFar', this);
+			checkNearFar('setNearFar', near, far, !this.isOrthographic, this);
+		}
 		this.nearPlane = near;
 		this.farPlane = far;
 		this.scene.lensChanged(this);
@@ -485,7 +732,10 @@ export class PerspectiveCamera extends Camera {
 
 	/** Sets the vertical field of view in degrees. */
 	setFov(degrees: number): void {
-		if (DEV) checkFov('setFov', degrees, this);
+		if (DEV) {
+			checkLive('setFov', this);
+			checkFov('setFov', degrees, this);
+		}
 		this.verticalFov = degrees;
 		this.scene.lensChanged(this);
 	}
@@ -537,7 +787,10 @@ export class OrthographicCamera extends Camera {
 	 * `zoom` scales it.
 	 */
 	setOrthoHeight(height: number): void {
-		if (DEV) checkSize('setOrthoHeight', 'height', height, this);
+		if (DEV) {
+			checkLive('setOrthoHeight', this);
+			checkSize('setOrthoHeight', 'height', height, this);
+		}
 		setViewHeight(this.view, height);
 		this.scene.lensChanged(this);
 	}
@@ -777,6 +1030,16 @@ export class Scene {
 	readonly target = new Float64Array(3);
 	/** A world matrix, whose translation keeps 64-bit precision far from the origin. */
 	private readonly matrix = new Float64Array(C.CORE_MATRIX_FLOATS);
+	/** The same world matrix as 16 numbers, column by column. */
+	private readonly columns = new Float64Array(16);
+	/** A 32-bit float and its bits, for commands that carry a float. */
+	private readonly float = new Float32Array(1);
+	private readonly floatWord = new Uint32Array(this.float.buffer);
+	/**
+	 * The live objects with each name: the object itself, or the objects with a name that several
+	 * share, in the order of their creation.
+	 */
+	private readonly names = new Map<string, Object3D | Set<Object3D>>();
 	/** Rows of the live instance batches, which development builds count. */
 	private batchRows = 0;
 	private warnedPastPortable = false;
@@ -833,15 +1096,89 @@ export class Scene {
 		Atomics.store(v.writeIndex, 0, (write + 1) >>> 0);
 	}
 
-	/** @internal */
+	/** @internal The world matrix of the frame that last ran: 12 numbers, row by row. */
 	worldMatrix(object: Object3D, call: string): Float64Array {
+		// The core's error adds the slot to the object's name.
 		this.core.check(
 			this.core.glue.worldMatrix(object.handle, this.matrix),
 			call,
-			object.describe(),
+			object.label,
 			true,
 		);
 		return this.matrix;
+	}
+
+	/** @internal The world matrix of the frame that last ran: 16 numbers, column by column. */
+	worldColumns(object: Object3D, call: string): Float64Array {
+		const m = this.worldMatrix(object, call);
+		const out = this.columns;
+		for (let row = 0; row < 3; row++)
+			for (let column = 0; column < 4; column++)
+				out[column * 4 + row] = m[row * 4 + column] as number;
+		out[3] = 0;
+		out[7] = 0;
+		out[11] = 0;
+		out[15] = 1;
+		return out;
+	}
+
+	/** @internal Copies the rotation of the object in `slot` into `out`. */
+	readRotation(slot: number, out: QuatLike): void {
+		const r = this.views.rotations;
+		const i = slot * 4;
+		out[0] = r[i] as number;
+		out[1] = r[i + 1] as number;
+		out[2] = r[i + 2] as number;
+		out[3] = r[i + 3] as number;
+	}
+
+	/**
+	 * @internal Writes the local bounding sphere of the object in `slot`. The command that follows
+	 * makes the engine recompute the object.
+	 */
+	writeBounds(slot: number, x: number, y: number, z: number, radius: number): void {
+		const { centers, radii } = this.views;
+		centers[slot * 3] = x;
+		centers[slot * 3 + 1] = y;
+		centers[slot * 3 + 2] = z;
+		radii[slot] = radius;
+	}
+
+	/** @internal The bits of `value` as a 32-bit float, for a command's argument. */
+	floatBits(value: number): number {
+		this.float[0] = value;
+		return this.floatWord[0] as number;
+	}
+
+	/** Adds a new object to the index of names, after the live objects with the same name. */
+	private remember(object: Object3D): void {
+		const { name } = object;
+		if (!name) return;
+		const known = this.names.get(name);
+		if (known === undefined) this.names.set(name, object);
+		else if (known instanceof Set) known.add(object);
+		else this.names.set(name, new Set([known, object]));
+	}
+
+	/** @internal Takes a destroyed object out of the index of names. */
+	forget(object: Object3D): void {
+		const { name } = object;
+		const known = this.names.get(name);
+		if (known === object) this.names.delete(name);
+		else if (known instanceof Set) {
+			known.delete(object);
+			if (known.size === 0) this.names.delete(name);
+		}
+	}
+
+	/**
+	 * The first object created with `name` that is not destroyed, or undefined when no object has
+	 * the name. It looks the name up in an index, so its cost does not grow with the scene. Call it
+	 * at setup and keep the object it returns.
+	 */
+	find(name: string): Object3D | undefined {
+		const known = this.names.get(name);
+		return known instanceof Set ? known.values().next().value : known;
 	}
 
 	/**
@@ -865,19 +1202,24 @@ export class Scene {
 	}
 
 	/**
-	 * Reserves an object, writes its transform, queues its creation, and builds it as `Kind` with
-	 * any further constructor arguments.
+	 * Creates an object of class `kind` from the next frame: its slot with the transform of
+	 * `options`, its create command with `flags` besides visibility and `dynamic`, its layers, and
+	 * its wrapper, built with any further constructor arguments, which the index of names learns.
 	 */
 	private create<T extends Object3D, A extends unknown[]>(
-		Kind: ObjectKind<T, A>,
+		kind: ObjectClass<T, A>,
 		options: NodeOptions,
 		mesh: number,
 		radius: number,
+		flags: number,
 		call: string,
 		...extra: A
 	): T {
 		const { layers } = options;
-		if (DEV && layers !== undefined) checkLayers(call, layers);
+		if (DEV) {
+			if (options.parent) checkLive(call, options.parent, true);
+			if (layers !== undefined) checkLayers(call, layers);
+		}
 		const handle = this.core.check(this.core.glue.reserveObject(), call, options.name);
 		const slot = handle & SLOT_MASK;
 		const v = this.views;
@@ -885,25 +1227,34 @@ export class Scene {
 		v.rotations.set(options.rotation ?? [0, 0, 0, 1], slot * 4);
 		v.scales.set(options.scale ?? [1, 1, 1], slot * 3);
 		v.radii[slot] = radius;
-		const flags = C.FLAG_VISIBLE | (options.dynamic ? C.FLAG_DYNAMIC : 0);
-		this.command(C.COMMAND_CREATE | (flags << 8), handle, options.parent?.handle ?? 0, mesh, call);
+		const all = flags | C.FLAG_VISIBLE | (options.dynamic ? C.FLAG_DYNAMIC : 0);
+		this.command(C.COMMAND_CREATE | (all << 8), handle, options.parent?.handle ?? 0, mesh, call);
 		if (layers !== undefined && layers >>> 0 !== C.LAYERS_DEFAULT)
 			this.command(C.COMMAND_SET_LAYERS, handle, layers >>> 0, 0, call);
-		const object = new Kind(this, handle, options.name ?? '', ...extra);
+		const object = new kind(this, handle, options.name ?? '', ...extra);
+		this.remember(object);
 		if (DEV) this.unmarkedWrites?.watch(object, !options.dynamic);
 		return object;
 	}
 
 	/** An empty node, for hierarchy. */
 	createGroup(options: NodeOptions = {}): Group {
-		return this.create(Group, options, C.CORE_NO_MESH, 0, 'createGroup');
+		return this.create(Group, options, C.CORE_NO_MESH, 0, 0, 'createGroup');
 	}
 
 	/** A drawn object. It is static unless `dynamic: true`. */
 	createMesh(options: MeshOptions): Mesh {
-		const mesh = this.create(Mesh, options, options.mesh.id, options.mesh.radius, 'createMesh');
-		this.command(C.COMMAND_SET_MATERIAL, mesh.handle, options.material.id, 0, 'createMesh');
-		return mesh;
+		const { mesh, material } = options;
+		if (DEV) {
+			checkSameEngine('createMesh', 'mesh', mesh.core, this);
+			checkSameEngine('createMesh', 'material', material.core, this);
+		}
+		const flags =
+			(options.castShadows ? C.FLAG_CAST_SHADOWS : 0) |
+			(options.receiveShadows ? C.FLAG_RECEIVE_SHADOWS : 0);
+		const object = this.create(Mesh, options, mesh.id, mesh.radius, flags, 'createMesh');
+		this.command(C.COMMAND_SET_MATERIAL, object.handle, material.id, 0, 'createMesh');
+		return object;
 	}
 
 	/** Many copies of one mesh and material, with typed arrays of rows. */
@@ -963,13 +1314,13 @@ export class Scene {
 	 * otherwise, gives it the options' layers to draw, and turns it toward the options' target.
 	 */
 	private createCamera<T extends Camera, A extends unknown[]>(
-		Kind: ObjectKind<T, A>,
+		kind: ObjectClass<T, A>,
 		options: CameraOptions,
 		call: string,
 		...lens: A
 	): T {
 		const node = { dynamic: true, ...options };
-		const camera = this.create(Kind, node, C.CORE_NO_MESH, 0, call, ...lens);
+		const camera = this.create(kind, node, C.CORE_NO_MESH, 0, 0, call, ...lens);
 		camera.layers = (options.layers ?? C.LAYERS_DEFAULT) >>> 0;
 		if (options.target) camera.lookAt(...options.target);
 		return camera;

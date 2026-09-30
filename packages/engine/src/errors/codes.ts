@@ -74,7 +74,7 @@ const DOCS = {
 	E1108: {
 		title: 'Value out of range',
 		cause:
-			"A call received a value outside the range it takes. Counts and indices have limits, such as the capacity of an instance batch. Settings have ranges too: an opacity goes from 0 to 1, and a camera's far plane must lie beyond its near plane.",
+			"A call received a number outside the range it takes. Examples are a row past the capacity of an instance batch, an opacity above 1, a negative radius, and a camera's far plane that does not lie beyond its near plane.",
 		example: 'E1108: setActiveCount() got 1200, above the limit of 1000.',
 		since: '0.1',
 	},
@@ -88,7 +88,7 @@ const DOCS = {
 	E1110: {
 		title: 'Unmarked write to a static object',
 		cause:
-			"A static object's position, rotation, scale or bounding radius changed without a setter. The engine recomputes a static object only in a frame where a setter marks it or its parent moves. So such a change can show late, or never. Development builds check these values of every static object before each frame's transform update. Release builds leave the check out.",
+			"A static object's position, rotation, scale or bounding sphere changed without a setter. The engine recomputes a static object only in a frame where a setter marks it or its parent moves. So such a change can show late, or never. Development builds check these values of every static object before each frame's transform update. Release builds leave the check out.",
 		example: 'E1110: the position of "Crate" (slot 7) changed without a setter.',
 		since: '0.1',
 	},

@@ -93,6 +93,7 @@ export type {
 	Object3D,
 	OrthographicCamera,
 	OrthographicCameraOptions,
+	ParentOptions,
 	PerspectiveCamera,
 	PerspectiveCameraOptions,
 	Quat,

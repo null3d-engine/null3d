@@ -23,7 +23,7 @@ export const ERROR_FIXES = {
 		'Fix the call that created the object. When the frame applied that call, the engine logged why it failed, such as E1101 for a parent that was already destroyed.',
 	E1107: 'This is an engine bug. Report it with the code that created the object.',
 	E1108:
-		"Keep counts and indices within the capacity you created the batch with, or create a larger batch. Keep a setting within the range that the message and the call's docs page give.",
+		'Pass a value inside the range that the message gives. For an instance batch, keep counts and indices within the capacity you created it with, or create a larger batch.',
 	E1109:
 		'Use fewer instance rows. Size each batch for the rows it uses, and give a batch colors only when it needs them. Destroy the batches you no longer draw. A scene that needs more memory can ask for a larger maximum with the memory option of createEngine. When a new engine fails to start this way, destroy the engines you no longer use, or keep one engine and detach and attach it. A smaller maximum leaves room for more engines.',
 	E1110:
