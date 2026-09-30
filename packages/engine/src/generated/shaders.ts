@@ -323,28 +323,9 @@ fn encode(c_5: vec3<f32>, pixel_1: vec2<f32>) -> vec3<f32> {
     return (_e7 + vec3(dither));
 }
 
-fn shown(texel: vec4<f32>) -> vec4<f32> {
-    var local: bool;
-
-    let _e2 = settings_1.flags;
-    if !(((_e2 & DISPLAY_COLOR) != 0u)) {
-        local = (texel.w <= 0f);
-    } else {
-        local = true;
-    }
-    let _e15 = local;
-    if _e15 {
-        return texel;
-    }
-    let _e21 = settings_1;
-    let _e22 = tone_map((texel.xyz / vec3(texel.w)), _e21);
-    return vec4<f32>((_e22 * texel.w), texel.w);
-}
-
 fn pixel_color(position_1: vec2<f32>) -> vec4<f32> {
     let _e4 = textureLoad(scene_color, vec2<i32>(position_1), 0i);
-    let _e5 = shown(_e4);
-    return _e5;
+    return _e4;
 }
 
 @vertex
@@ -365,8 +346,10 @@ fn fs(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
     if (coverage <= 0f) {
         return vec4(0f);
     }
-    let _e19 = encode((_e2.xyz / vec3(coverage)), position.xy);
-    let encoded = saturate(_e19);
+    let _e19 = settings_1;
+    let _e20 = tone_map((_e2.xyz / vec3(coverage)), _e19);
+    let _e22 = encode(_e20, position.xy);
+    let encoded = saturate(_e22);
     return vec4<f32>((encoded * coverage), coverage);
 }
 `,
@@ -609,27 +592,9 @@ vec3 encode(vec3 c_5, vec2 pixel_1) {
     return (_e7 + vec3(dither));
 }
 
-vec4 shown(vec4 texel) {
-    bool local = false;
-    uint _e2 = _group_0_binding_0_fs.flags;
-    if (!(((_e2 & DISPLAY_COLOR) != 0u))) {
-        local = (texel.w <= 0.0);
-    } else {
-        local = true;
-    }
-    bool _e15 = local;
-    if (_e15) {
-        return texel;
-    }
-    Output _e21 = _group_0_binding_0_fs;
-    vec3 _e22 = tone_map((texel.xyz / vec3(texel.w)), _e21);
-    return vec4((_e22 * texel.w), texel.w);
-}
-
 vec4 pixel_color(vec2 position_1) {
     vec4 _e4 = texelFetch(_group_0_binding_1_fs, ivec2(position_1), 0);
-    vec4 _e5 = shown(_e4);
-    return _e5;
+    return _e4;
 }
 
 void main() {
@@ -645,8 +610,10 @@ void main() {
         _fs2p_location0 = vec4(0.0);
         return;
     }
-    vec3 _e19 = encode((_e2.xyz / vec3(coverage)), position.xy);
-    vec3 encoded = clamp(_e19, vec3(0.0), vec3(1.0));
+    Output _e19 = _group_0_binding_0_fs;
+    vec3 _e20 = tone_map((_e2.xyz / vec3(coverage)), _e19);
+    vec3 _e22 = encode(_e20, position.xy);
+    vec3 encoded = clamp(_e22, vec3(0.0), vec3(1.0));
     _fs2p_location0 = vec4((encoded * coverage), coverage);
     return;
 }
@@ -695,6 +662,7 @@ const EDGE_THRESHOLD_MIN: f32 = 0.0625f;
 const REDUCE_MIN: f32 = 0.0078125f;
 const REDUCE_MUL: f32 = 0.125f;
 const SPAN_MAX: f32 = 8f;
+const LUMINANCE: vec3<f32> = vec3<f32>(0.2126f, 0.7152f, 0.0722f);
 
 @group(0) @binding(0)
 var<uniform> settings_1: Output;
@@ -783,27 +751,33 @@ fn encode(c_5: vec3<f32>, pixel_1: vec2<f32>) -> vec3<f32> {
     return (_e7 + vec3(dither));
 }
 
-fn shown(texel: vec4<f32>) -> vec4<f32> {
-    var local: bool;
-
+fn display_color() -> bool {
     let _e2 = settings_1.flags;
-    if !(((_e2 & DISPLAY_COLOR) != 0u)) {
-        local = (texel.w <= 0f);
-    } else {
-        local = true;
-    }
-    let _e15 = local;
-    if _e15 {
+    return ((_e2 & DISPLAY_COLOR) != 0u);
+}
+
+fn squeeze(texel: vec4<f32>) -> vec4<f32> {
+    let _e0 = display_color();
+    if _e0 {
         return texel;
     }
-    let _e21 = settings_1;
-    let _e22 = tone_map((texel.xyz / vec3(texel.w)), _e21);
-    return vec4<f32>((_e22 * texel.w), texel.w);
+    let _e5 = settings_1.exposure;
+    return vec4<f32>((texel.xyz / vec3((1f + (_e5 * dot(texel.xyz, LUMINANCE))))), texel.w);
+}
+
+fn unsqueeze(c_6: vec4<f32>) -> vec4<f32> {
+    let _e0 = display_color();
+    if _e0 {
+        return c_6;
+    }
+    let _e4 = settings_1.exposure;
+    let squeezed = min((_e4 * dot(c_6.xyz, LUMINANCE)), 0.999f);
+    return vec4<f32>((c_6.xyz / vec3((1f - squeezed))), c_6.w);
 }
 
 fn texel_at(pixel_2: vec2<i32>, last: vec2<i32>) -> vec4<f32> {
     let _e7 = textureLoad(scene_color, clamp(pixel_2, vec2(0i), last), 0i);
-    let _e8 = shown(_e7);
+    let _e8 = squeeze(_e7);
     return _e8;
 }
 
@@ -820,51 +794,54 @@ fn tap(point: vec2<f32>, last_1: vec2<i32>) -> vec4<f32> {
     return mix(top, bottom, f.y);
 }
 
-fn luma(c_6: vec4<f32>) -> f32 {
-    let y = dot(c_6.xyz, vec3<f32>(0.2126f, 0.7152f, 0.0722f));
-    let _e10 = settings_1.flags;
-    return select(sqrt(y), y, ((_e10 & DISPLAY_COLOR) != 0u));
+fn luma(c_7: vec4<f32>) -> f32 {
+    let y = dot(c_7.xyz, LUMINANCE);
+    let _e6 = settings_1.exposure;
+    let _e9 = display_color();
+    return select(sqrt((_e6 * y)), y, _e9);
 }
 
 fn pixel_color(position_1: vec2<f32>) -> vec4<f32> {
-    var local_1: bool;
+    var local: bool;
 
     let _e1 = textureDimensions(scene_color);
     let last_2 = (vec2<i32>(_e1) - vec2(1i));
     let pixel_3 = vec2<i32>(position_1);
-    let _e8 = texel_at(pixel_3, last_2);
-    let _e9 = luma(_e8);
-    let _e14 = texel_at((pixel_3 + vec2<i32>(-1i, -1i)), last_2);
-    let _e15 = luma(_e14);
-    let _e20 = texel_at((pixel_3 + vec2<i32>(1i, -1i)), last_2);
-    let _e21 = luma(_e20);
-    let _e26 = texel_at((pixel_3 + vec2<i32>(-1i, 1i)), last_2);
-    let _e27 = luma(_e26);
-    let _e32 = texel_at((pixel_3 + vec2<i32>(1i, 1i)), last_2);
-    let _e33 = luma(_e32);
-    let lowest = min(_e9, min(min(_e15, _e21), min(_e27, _e33)));
-    let highest = max(_e9, max(max(_e15, _e21), max(_e27, _e33)));
+    let texel_1 = textureLoad(scene_color, pixel_3, 0i);
+    let _e11 = squeeze(texel_1);
+    let _e12 = luma(_e11);
+    let _e17 = texel_at((pixel_3 + vec2<i32>(-1i, -1i)), last_2);
+    let _e18 = luma(_e17);
+    let _e23 = texel_at((pixel_3 + vec2<i32>(1i, -1i)), last_2);
+    let _e24 = luma(_e23);
+    let _e29 = texel_at((pixel_3 + vec2<i32>(-1i, 1i)), last_2);
+    let _e30 = luma(_e29);
+    let _e35 = texel_at((pixel_3 + vec2<i32>(1i, 1i)), last_2);
+    let _e36 = luma(_e35);
+    let lowest = min(_e12, min(min(_e18, _e24), min(_e30, _e36)));
+    let highest = max(_e12, max(max(_e18, _e24), max(_e30, _e36)));
     if ((highest - lowest) < max(EDGE_THRESHOLD_MIN, (highest * EDGE_THRESHOLD))) {
-        return _e8;
+        return texel_1;
     }
-    let along = vec2<f32>(((_e27 + _e33) - (_e15 + _e21)), ((_e15 + _e27) - (_e21 + _e33)));
-    let reduce = max(((((_e15 + _e21) + _e27) + _e33) * 0.03125f), REDUCE_MIN);
+    let along = vec2<f32>(((_e30 + _e36) - (_e18 + _e24)), ((_e18 + _e30) - (_e24 + _e36)));
+    let reduce = max(((((_e18 + _e24) + _e30) + _e36) * 0.03125f), REDUCE_MIN);
     let scale = (1f / (min(abs(along.x), abs(along.y)) + reduce));
     let span = clamp((along * scale), vec2(-8f), vec2(8f));
-    let _e80 = tap((position_1 - (span / vec2(6f))), last_2);
-    let _e85 = tap((position_1 + (span / vec2(6f))), last_2);
-    let inner = (0.5f * (_e80 + _e85));
-    let _e94 = tap((position_1 - (span * 0.5f)), last_2);
-    let _e98 = tap((position_1 + (span * 0.5f)), last_2);
-    let outer = ((0.5f * inner) + (0.25f * (_e94 + _e98)));
-    let _e103 = luma(outer);
-    if !((_e103 < lowest)) {
-        local_1 = (_e103 > highest);
+    let _e83 = tap((position_1 - (span / vec2(6f))), last_2);
+    let _e88 = tap((position_1 + (span / vec2(6f))), last_2);
+    let inner = (0.5f * (_e83 + _e88));
+    let _e97 = tap((position_1 - (span * 0.5f)), last_2);
+    let _e101 = tap((position_1 + (span * 0.5f)), last_2);
+    let outer = ((0.5f * inner) + (0.25f * (_e97 + _e101)));
+    let _e106 = luma(outer);
+    if !((_e106 < lowest)) {
+        local = (_e106 > highest);
     } else {
-        local_1 = true;
+        local = true;
     }
-    let _e110 = local_1;
-    return select(outer, inner, _e110);
+    let _e113 = local;
+    let _e115 = unsqueeze(select(outer, inner, _e113));
+    return _e115;
 }
 
 @vertex
@@ -885,8 +862,10 @@ fn fs(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
     if (coverage <= 0f) {
         return vec4(0f);
     }
-    let _e19 = encode((_e2.xyz / vec3(coverage)), position.xy);
-    let encoded = saturate(_e19);
+    let _e19 = settings_1;
+    let _e20 = tone_map((_e2.xyz / vec3(coverage)), _e19);
+    let _e22 = encode(_e20, position.xy);
+    let encoded = saturate(_e22);
     return vec4<f32>((encoded * coverage), coverage);
 }
 `,
@@ -927,6 +906,7 @@ const float EDGE_THRESHOLD_MIN = 0.0625;
 const float REDUCE_MIN = 0.0078125;
 const float REDUCE_MUL = 0.125;
 const float SPAN_MAX = 8.0;
+const vec3 LUMINANCE = vec3(0.2126, 0.7152, 0.0722);
 
 
 vec3 linear_to_srgb(vec3 c) {
@@ -1050,6 +1030,7 @@ const float EDGE_THRESHOLD_MIN = 0.0625;
 const float REDUCE_MIN = 0.0078125;
 const float REDUCE_MUL = 0.125;
 const float SPAN_MAX = 8.0;
+const vec3 LUMINANCE = vec3(0.2126, 0.7152, 0.0722);
 
 layout(std140) uniform Output_block_0Fragment { Output _group_0_binding_0_fs; };
 
@@ -1139,26 +1120,33 @@ vec3 encode(vec3 c_5, vec2 pixel_1) {
     return (_e7 + vec3(dither));
 }
 
-vec4 shown(vec4 texel) {
-    bool local = false;
+bool display_color() {
     uint _e2 = _group_0_binding_0_fs.flags;
-    if (!(((_e2 & DISPLAY_COLOR) != 0u))) {
-        local = (texel.w <= 0.0);
-    } else {
-        local = true;
-    }
-    bool _e15 = local;
-    if (_e15) {
+    return ((_e2 & DISPLAY_COLOR) != 0u);
+}
+
+vec4 squeeze(vec4 texel) {
+    bool _e0 = display_color();
+    if (_e0) {
         return texel;
     }
-    Output _e21 = _group_0_binding_0_fs;
-    vec3 _e22 = tone_map((texel.xyz / vec3(texel.w)), _e21);
-    return vec4((_e22 * texel.w), texel.w);
+    float _e5 = _group_0_binding_0_fs.exposure;
+    return vec4((texel.xyz / vec3((1.0 + (_e5 * dot(texel.xyz, LUMINANCE))))), texel.w);
+}
+
+vec4 unsqueeze(vec4 c_6) {
+    bool _e0 = display_color();
+    if (_e0) {
+        return c_6;
+    }
+    float _e4 = _group_0_binding_0_fs.exposure;
+    float squeezed = min((_e4 * dot(c_6.xyz, LUMINANCE)), 0.999);
+    return vec4((c_6.xyz / vec3((1.0 - squeezed))), c_6.w);
 }
 
 vec4 texel_at(ivec2 pixel_2, ivec2 last) {
     vec4 _e7 = texelFetch(_group_0_binding_1_fs, min(max(pixel_2, ivec2(0)), last), 0);
-    vec4 _e8 = shown(_e7);
+    vec4 _e8 = squeeze(_e7);
     return _e8;
 }
 
@@ -1175,49 +1163,52 @@ vec4 tap(vec2 point, ivec2 last_1) {
     return mix(top, bottom, f.y);
 }
 
-float luma(vec4 c_6) {
-    float y = dot(c_6.xyz, vec3(0.2126, 0.7152, 0.0722));
-    uint _e10 = _group_0_binding_0_fs.flags;
-    return (((_e10 & DISPLAY_COLOR) != 0u) ? y : sqrt(y));
+float luma(vec4 c_7) {
+    float y = dot(c_7.xyz, LUMINANCE);
+    float _e6 = _group_0_binding_0_fs.exposure;
+    bool _e9 = display_color();
+    return (_e9 ? y : sqrt((_e6 * y)));
 }
 
 vec4 pixel_color(vec2 position_1) {
-    bool local_1 = false;
+    bool local = false;
     ivec2 last_2 = (ivec2(uvec2(textureSize(_group_0_binding_1_fs, 0).xy)) - ivec2(1));
     ivec2 pixel_3 = ivec2(position_1);
-    vec4 _e8 = texel_at(pixel_3, last_2);
-    float _e9 = luma(_e8);
-    vec4 _e14 = texel_at((pixel_3 + ivec2(-1, -1)), last_2);
-    float _e15 = luma(_e14);
-    vec4 _e20 = texel_at((pixel_3 + ivec2(1, -1)), last_2);
-    float _e21 = luma(_e20);
-    vec4 _e26 = texel_at((pixel_3 + ivec2(-1, 1)), last_2);
-    float _e27 = luma(_e26);
-    vec4 _e32 = texel_at((pixel_3 + ivec2(1, 1)), last_2);
-    float _e33 = luma(_e32);
-    float lowest = min(_e9, min(min(_e15, _e21), min(_e27, _e33)));
-    float highest = max(_e9, max(max(_e15, _e21), max(_e27, _e33)));
+    vec4 texel_1 = texelFetch(_group_0_binding_1_fs, pixel_3, 0);
+    vec4 _e11 = squeeze(texel_1);
+    float _e12 = luma(_e11);
+    vec4 _e17 = texel_at((pixel_3 + ivec2(-1, -1)), last_2);
+    float _e18 = luma(_e17);
+    vec4 _e23 = texel_at((pixel_3 + ivec2(1, -1)), last_2);
+    float _e24 = luma(_e23);
+    vec4 _e29 = texel_at((pixel_3 + ivec2(-1, 1)), last_2);
+    float _e30 = luma(_e29);
+    vec4 _e35 = texel_at((pixel_3 + ivec2(1, 1)), last_2);
+    float _e36 = luma(_e35);
+    float lowest = min(_e12, min(min(_e18, _e24), min(_e30, _e36)));
+    float highest = max(_e12, max(max(_e18, _e24), max(_e30, _e36)));
     if (((highest - lowest) < max(EDGE_THRESHOLD_MIN, (highest * EDGE_THRESHOLD)))) {
-        return _e8;
+        return texel_1;
     }
-    vec2 along = vec2(((_e27 + _e33) - (_e15 + _e21)), ((_e15 + _e27) - (_e21 + _e33)));
-    float reduce = max(((((_e15 + _e21) + _e27) + _e33) * 0.03125), REDUCE_MIN);
+    vec2 along = vec2(((_e30 + _e36) - (_e18 + _e24)), ((_e18 + _e30) - (_e24 + _e36)));
+    float reduce = max(((((_e18 + _e24) + _e30) + _e36) * 0.03125), REDUCE_MIN);
     float scale = (1.0 / (min(abs(along.x), abs(along.y)) + reduce));
     vec2 span = clamp((along * scale), vec2(-8.0), vec2(8.0));
-    vec4 _e80 = tap((position_1 - (span / vec2(6.0))), last_2);
-    vec4 _e85 = tap((position_1 + (span / vec2(6.0))), last_2);
-    vec4 inner = (0.5 * (_e80 + _e85));
-    vec4 _e94 = tap((position_1 - (span * 0.5)), last_2);
-    vec4 _e98 = tap((position_1 + (span * 0.5)), last_2);
-    vec4 outer = ((0.5 * inner) + (0.25 * (_e94 + _e98)));
-    float _e103 = luma(outer);
-    if (!((_e103 < lowest))) {
-        local_1 = (_e103 > highest);
+    vec4 _e83 = tap((position_1 - (span / vec2(6.0))), last_2);
+    vec4 _e88 = tap((position_1 + (span / vec2(6.0))), last_2);
+    vec4 inner = (0.5 * (_e83 + _e88));
+    vec4 _e97 = tap((position_1 - (span * 0.5)), last_2);
+    vec4 _e101 = tap((position_1 + (span * 0.5)), last_2);
+    vec4 outer = ((0.5 * inner) + (0.25 * (_e97 + _e101)));
+    float _e106 = luma(outer);
+    if (!((_e106 < lowest))) {
+        local = (_e106 > highest);
     } else {
-        local_1 = true;
+        local = true;
     }
-    bool _e110 = local_1;
-    return (_e110 ? inner : outer);
+    bool _e113 = local;
+    vec4 _e115 = unsqueeze((_e113 ? inner : outer));
+    return _e115;
 }
 
 void main() {
@@ -1233,8 +1224,10 @@ void main() {
         _fs2p_location0 = vec4(0.0);
         return;
     }
-    vec3 _e19 = encode((_e2.xyz / vec3(coverage)), position.xy);
-    vec3 encoded = clamp(_e19, vec3(0.0), vec3(1.0));
+    Output _e19 = _group_0_binding_0_fs;
+    vec3 _e20 = tone_map((_e2.xyz / vec3(coverage)), _e19);
+    vec3 _e22 = encode(_e20, position.xy);
+    vec3 encoded = clamp(_e22, vec3(0.0), vec3(1.0));
     _fs2p_location0 = vec4((encoded * coverage), coverage);
     return;
 }

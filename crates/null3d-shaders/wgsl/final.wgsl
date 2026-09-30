@@ -1,7 +1,7 @@
 // The final pass: one triangle over the whole canvas. Each pixel reads the scene color under it,
 // applies the exposure and the tone mapping, encodes sRGB and dithers. The FXAA build smooths
-// edges on the way. On the 8-bit path the scene shaders did the output transform already, so the
-// scene color holds display color, and the pass keeps the color as it reads it.
+// edges first. On the 8-bit path the scene shaders did the output transform already, so the scene
+// color holds display color, and the pass keeps the color as it reads it.
 //
 // The scene color holds color multiplied by its coverage. Where it is only partly covered, as over
 // a transparent canvas's background, the pass maps the color that covers it and keeps the coverage
@@ -25,22 +25,14 @@ fn vs(@builtin(vertex_index) vertex: u32) -> @builtin(position) vec4f {
     return vec4f(x, y, 0.5, 1.0);
 }
 
-/// A texel as the display shows it: the color after the exposure and the tone mapping, linear from
-/// 0 to 1 and multiplied by its coverage. Display color stays as it is.
-fn shown(texel: vec4f) -> vec4f {
-    if (settings.flags & DISPLAY_COLOR) != 0u || texel.a <= 0.0 {
-        return texel;
-    }
-    let mapped = null3d::tonemap::tone_map(texel.rgb / texel.a, settings);
-    return vec4f(mapped * texel.a, texel.a);
-}
-
 #ifdef FXAA
 // FXAA after Timothy Lottes's fast version: four diagonal taps find the edge's direction, and two
 // or four taps along it blend the pixel with its neighbors. The thresholds are FXAA 3.11's high
-// quality values. FXAA compares and blends display colors, as it would after a pass of its own:
-// blended HDR color keeps the look of its brightest part, which would leave bright edges jagged.
-// So the taps between texels filter the display colors of their four texels.
+// quality values.
+//
+// Blended HDR color keeps the look of its brightest part, which would leave bright edges jagged.
+// So FXAA compares and blends HDR color squeezed below 1 by a curve that it undoes afterwards, as
+// tone mapping would squeeze it. The taps between texels filter four squeezed texels by hand.
 
 /// Contrast below this share of the brightest tap is no edge.
 const EDGE_THRESHOLD: f32 = 0.125;
@@ -51,14 +43,37 @@ const REDUCE_MIN: f32 = 1.0 / 128.0;
 const REDUCE_MUL: f32 = 1.0 / 8.0;
 /// The longest blend along an edge, in pixels.
 const SPAN_MAX: f32 = 8.0;
+const LUMINANCE = vec3f(0.2126, 0.7152, 0.0722);
 
-/// The display color of the texel at `pixel`, clamped inside the scene color, whose last texel is
-/// `last`.
-fn texel_at(pixel: vec2i, last: vec2i) -> vec4f {
-    return shown(textureLoad(scene_color, clamp(pixel, vec2i(0), last), 0));
+/// True when the scene color holds display color, which FXAA blends as it is.
+fn display_color() -> bool {
+    return (settings.flags & DISPLAY_COLOR) != 0u;
 }
 
-/// The display color at a point in pixels, filtered between its four nearest texels.
+/// HDR color squeezed below 1: exposed luminance l becomes l / (1 + l). Display color stays as it
+/// is.
+fn squeeze(texel: vec4f) -> vec4f {
+    if display_color() {
+        return texel;
+    }
+    return vec4f(texel.rgb / (1.0 + settings.exposure * dot(texel.rgb, LUMINANCE)), texel.a);
+}
+
+/// Undoes `squeeze`.
+fn unsqueeze(c: vec4f) -> vec4f {
+    if display_color() {
+        return c;
+    }
+    let squeezed = min(settings.exposure * dot(c.rgb, LUMINANCE), 0.999);
+    return vec4f(c.rgb / (1.0 - squeezed), c.a);
+}
+
+/// The squeezed texel at `pixel`, clamped inside the scene color, whose last texel is `last`.
+fn texel_at(pixel: vec2i, last: vec2i) -> vec4f {
+    return squeeze(textureLoad(scene_color, clamp(pixel, vec2i(0), last), 0));
+}
+
+/// The squeezed color at a point in pixels, filtered between its four nearest texels.
 fn tap(point: vec2f, last: vec2i) -> vec4f {
     let corner = point - 0.5;
     let base = vec2i(floor(corner));
@@ -68,19 +83,19 @@ fn tap(point: vec2f, last: vec2i) -> vec4f {
     return mix(top, bottom, f.y);
 }
 
-/// The brightness that FXAA compares, from 0 to 1 as the eye sees it. Linear display color takes
-/// a square root, near the sRGB curve.
+/// The brightness that FXAA compares, from 0 to 1 as the eye sees it. Squeezed HDR color takes
+/// the exposure and a square root, near the sRGB curve.
 fn luma(c: vec4f) -> f32 {
-    let y = dot(c.rgb, vec3f(0.2126, 0.7152, 0.0722));
-    return select(sqrt(y), y, (settings.flags & DISPLAY_COLOR) != 0u);
+    let y = dot(c.rgb, LUMINANCE);
+    return select(sqrt(settings.exposure * y), y, display_color());
 }
 
-/// The display color of the pixel at `position`, smoothed along the edge that crosses it.
+/// The scene color of the pixel at `position`, smoothed along the edge that crosses it.
 fn pixel_color(position: vec2f) -> vec4f {
     let last = vec2i(textureDimensions(scene_color)) - 1;
     let pixel = vec2i(position);
-    let center = texel_at(pixel, last);
-    let m = luma(center);
+    let texel = textureLoad(scene_color, pixel, 0);
+    let m = luma(squeeze(texel));
     let nw = luma(texel_at(pixel + vec2i(-1, -1), last));
     let ne = luma(texel_at(pixel + vec2i(1, -1), last));
     let sw = luma(texel_at(pixel + vec2i(-1, 1), last));
@@ -88,7 +103,7 @@ fn pixel_color(position: vec2f) -> vec4f {
     let lowest = min(m, min(min(nw, ne), min(sw, se)));
     let highest = max(m, max(max(nw, ne), max(sw, se)));
     if highest - lowest < max(EDGE_THRESHOLD_MIN, highest * EDGE_THRESHOLD) {
-        return center;
+        return texel;
     }
     // Across the brightness gradient, which runs along the edge.
     let along = vec2f((sw + se) - (nw + ne), (nw + sw) - (ne + se));
@@ -100,25 +115,26 @@ fn pixel_color(position: vec2f) -> vec4f {
         + 0.25 * (tap(position - span * 0.5, last) + tap(position + span * 0.5, last));
     // The wider blend crossed another edge where it leaves the taps' brightness range.
     let outer_luma = luma(outer);
-    return select(outer, inner, outer_luma < lowest || outer_luma > highest);
+    return unsqueeze(select(outer, inner, outer_luma < lowest || outer_luma > highest));
 }
 #else
-/// The display color of the pixel at `position`.
+/// The scene color of the pixel at `position`.
 fn pixel_color(position: vec2f) -> vec4f {
-    return shown(textureLoad(scene_color, vec2i(position), 0));
+    return textureLoad(scene_color, vec2i(position), 0);
 }
 #endif
 
 @fragment
 fn fs(@builtin(position) position: vec4f) -> @location(0) vec4f {
-    let color = pixel_color(position.xy);
+    let texel = pixel_color(position.xy);
     if (settings.flags & DISPLAY_COLOR) != 0u {
-        return color;
+        return texel;
     }
-    let coverage = color.a;
+    let coverage = texel.a;
     if coverage <= 0.0 {
         return vec4f(0.0);
     }
-    let encoded = saturate(null3d::tonemap::encode(color.rgb / coverage, position.xy));
+    let mapped = null3d::tonemap::tone_map(texel.rgb / coverage, settings);
+    let encoded = saturate(null3d::tonemap::encode(mapped, position.xy));
     return vec4f(encoded * coverage, coverage);
 }
