@@ -25,6 +25,8 @@ interface ErrorsResult {
 	missingSketch: string;
 	failedStarts: Raised[];
 	inSketch: Raised[];
+	/** A start beside a running engine: an error, or a note that it started. */
+	beside: Raised;
 	framesAfterRestart: number;
 }
 
@@ -72,6 +74,15 @@ for (const mode of ENGINE_MODES) {
 			engineError('E1206', 'geometry.fromArrays() got NaN at uvs[4].'),
 			engineError('E1108', 'the sketch asked for row 11 of 10.'),
 		]);
+		// The page's thread runs one engine's sketch at a time; workers run any number.
+		expect(result.beside).toEqual(
+			mode.sketchThread === 'main'
+				? engineError(
+						'E1415',
+						'createEngine() found another engine that runs its sketch on this page, which has not stopped.',
+					)
+				: { code: 'none', message: 'the engine started', name: '', engineError: false },
+		);
 		expect(result.framesAfterRestart).toBeGreaterThan(0);
 	});
 }

@@ -8,7 +8,7 @@ summary: "Main thread, sketch worker, render worker, job workers; where the sket
 
 # Architecture: threads and the frame
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. The `sketchThread` option of `createEngine` is not built yet: sketch code runs on the page's main thread only in the single-threaded build.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart LR
@@ -115,10 +115,14 @@ The engine puts the sketch, the drawing and the parallel work on threads by the 
 | Low latency | The sketch worker | The sketch worker | The job workers and the sketch worker |
 | Pipelined, where a worker cannot draw | The sketch worker | The page's main thread | The job workers and the sketch worker |
 | Single-threaded | The page's main thread | The page's main thread | The page's main thread |
+| Pipelined, with `sketchThread: 'main'` | The page's main thread | The render worker | The job workers and the page's main thread |
+| Low latency, with `sketchThread: 'main'` | The page's main thread | The page's main thread | The job workers and the page's main thread |
 
-A worker can draw only where the browser gives it a WebGPU or WebGL2 context for a canvas that the page hands over. The engine tests this at startup. Where a worker cannot draw, the page draws, and the sketch still runs in its worker. Read `engine.mode` for the build, the latency mode, the thread that draws and the number of job workers.
+A worker can draw only where the browser gives it a WebGPU or WebGL2 context for a canvas that the page hands over. The engine tests this at startup. Where a worker cannot draw, the page draws, and the sketch still runs in its worker. Read `engine.mode` for the build, the latency mode, the thread that runs the sketch, the thread that draws and the number of job workers.
 
-Worker threads need shared memory, and browsers allow shared memory only on cross-origin isolated pages. On any other page, the engine loads its single-threaded build, which runs the same code on one thread. [Hosting and cross-origin isolation](../getting-started/hosting.md) shows how to send the two headers that turn isolation on. The page switches `?threads=off` and `?render=main` force the other modes on one device, for tests ([Testing your sketch](../guides/testing.md)).
+`createEngine({ sketchThread: 'main' })` runs your sketch code and the engine core on the page's main thread, in the threaded build. Your sketch can then reach the DOM. Use it for apps that work mostly with the DOM, for a three.js port whose scene code still uses the DOM, and for debugging. The API stays the same. Your sketch's frames share the main thread with the page. Layout work and page scripts can delay a frame, and a slow frame delays the page's input. With the `?render=main` switch, the page draws too, as in low-latency mode, and `engine.mode.latency` is `low`. The page runs the sketch of one engine at a time. A second engine that asks for the main thread before the first has stopped fails with [E1415](../errors/E1415.md).
+
+Worker threads need shared memory, and browsers allow shared memory only on cross-origin isolated pages. On any other page, the engine loads its single-threaded build, which runs the same code on one thread. [Hosting and cross-origin isolation](../getting-started/hosting.md) shows how to send the two headers that turn isolation on. The page switches `?threads=off`, `?render=main` and `?sketch-thread=main` force the other modes on one device, for tests ([Testing your sketch](../guides/testing.md)).
 
 ## Rules the engine keeps
 

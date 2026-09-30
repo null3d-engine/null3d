@@ -172,6 +172,7 @@ describe('the checks plan', () => {
 			'engine-production-low-latency',
 			'engine-production-single-threaded',
 			'engine-production-drawing-on-the-main-thread',
+			'engine-production-sketch-on-the-main-thread',
 		]);
 		expect(production[1]).toEqual({
 			id: 'engine-production-low-latency',
@@ -350,6 +351,7 @@ describe('the checks plan', () => {
 			mode: {
 				build: mode.build,
 				latency: mode.latency,
+				sketchThread: mode.sketchThread,
 				renderThread: mode.renderThread,
 				hold: 1.5,
 			},
@@ -521,6 +523,7 @@ describe('the checks plan', () => {
 			'/tests/pages/shared-memory.html?latency=low',
 			'/tests/pages/shared-memory.html?threads=off',
 			'/tests/pages/shared-memory.html?render=main',
+			'/tests/pages/shared-memory.html?sketch-thread=main',
 		]);
 	});
 
@@ -1010,7 +1013,13 @@ describe('the startup plan', () => {
 	const loaded = (frameDoneMs: number, build = 'threaded'): ItemResult => ({
 		ok: true,
 		createEngineAtMs: 40,
-		mode: { build, latency: 'pipelined', renderThread: 'render-worker', jobWorkers: 8 },
+		mode: {
+			build,
+			latency: 'pipelined',
+			sketchThread: 'worker',
+			renderThread: 'render-worker',
+			jobWorkers: 8,
+		},
 		capabilities: { tier: 'webgpu' },
 		stats: {
 			load: {
@@ -1027,14 +1036,16 @@ describe('the startup plan', () => {
 	it('fills the cache in each mode first, then loads every mode cold and warm in each run', () => {
 		const items = startupPlan();
 		expect(PLANS.startup).toBe(startupPlan);
+		const modes = ENGINE_MODES.length;
 		expect(STARTUP_RUNS).toBe(5);
-		expect(items).toHaveLength(4 + 5 * 4 * 2);
+		expect(items).toHaveLength(modes + 5 * modes * 2);
 		expect(new Set(items.map(({ id }) => id)).size).toBe(items.length);
-		expect(items.slice(0, 4).map(({ id }) => id)).toEqual([
+		expect(items.slice(0, modes).map(({ id }) => id)).toEqual([
 			'startup-pipelined-warm-first',
 			'startup-low-latency-warm-first',
 			'startup-single-threaded-warm-first',
 			'startup-drawing-on-the-main-thread-warm-first',
+			'startup-sketch-on-the-main-thread-warm-first',
 		]);
 		expect(items[0]).toEqual({
 			id: 'startup-pipelined-warm-first',
@@ -1042,27 +1053,27 @@ describe('the startup plan', () => {
 			timeoutSeconds: 60,
 			check: { kind: 'startup', mode: PIPELINED, load: 'warm', first: true },
 		});
-		expect(items[4]).toEqual({
+		expect(items[modes]).toEqual({
 			id: 'startup-pipelined-cold-1',
 			path: '/__null3d/load/cold/{run}.{runner}.pipelined-cold-1/tests/pages/engine.html?seconds=0.2',
 			timeoutSeconds: 60,
 			check: { kind: 'startup', mode: PIPELINED, load: 'cold' },
 		});
-		expect(items[5]?.path).toBe(items[0]?.path.replace('-first', ''));
-		expect(items[7]?.path).toBe(
+		expect(items[modes + 1]?.path).toBe(items[0]?.path.replace('-first', ''));
+		expect(items[modes + 3]?.path).toBe(
 			'/__null3d/load/warm/{run}.{runner}.low-latency-warm/tests/pages/engine.html?seconds=0.2&latency=low',
 		);
-		expect(items.at(-1)?.id).toBe('startup-drawing-on-the-main-thread-warm-5');
-		expect(startupPlan({ runs: 1 })).toHaveLength(4 + 4 * 2);
+		expect(items.at(-1)?.id).toBe('startup-sketch-on-the-main-thread-warm-5');
+		expect(startupPlan({ runs: 1 })).toHaveLength(modes + modes * 2);
 		// A later warm load needs its mode's first warm load, which fills the cache.
 		const needed = (index: number) => itemsNeeded((items[index] as (typeof items)[number]).check);
-		expect(needed(5)).toEqual(['startup-pipelined-warm-first']);
+		expect(needed(modes + 1)).toEqual(['startup-pipelined-warm-first']);
 		expect(needed(0)).toEqual([]);
-		expect(needed(4)).toEqual([]);
+		expect(needed(modes)).toEqual([]);
 	});
 
 	it('passes a load in its mode with its times and downloads', () => {
-		const item = startupPlan({ runs: 1 })[4];
+		const item = startupPlan({ runs: 1 })[ENGINE_MODES.length];
 		if (!item) throw new Error('the plan has no cold load');
 		expect(judge(item.check, loaded(500), NONE_MISSING)).toEqual([]);
 		expect(judge(item.check, loaded(500, 'single'), NONE_MISSING)).toEqual([
