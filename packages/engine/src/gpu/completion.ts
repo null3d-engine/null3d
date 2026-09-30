@@ -1,18 +1,21 @@
 // Frames the GPU finished, and the time from each frame's submit to its completion. A frame counter
 // built on frame callbacks keeps counting at the display rate while the GPU falls behind, so the
 // engine also counts completions. WebGPU reports them through the queue. WebGL2 reports them
-// through a fence, which the renderer checks at the start of its next frame and never waits on, so
-// a fence's time rounds up to that frame. Tracking runs only while the page measures, on one
-// submitted frame in every SAMPLED_EVERY: the GPU finishes frames in order, so a tracked frame's
-// completion also completes the frames submitted before it.
+// through a fence, which the thread that draws checks at the start of a frame callback and never
+// waits on, so a fence's time rounds up to that callback. Tracking runs on every frame, all the
+// time: the thread that draws holds back new frames while too many are unfinished, and the quality
+// governor and the warm-up benchmark read the records during play. Each frame costs one browser
+// object: the queue's promise on WebGPU, or the fence on WebGL2.
 
-import { FrameRecorder, Role, SAMPLED_EVERY } from '../shared/metrics';
-
-/** How a renderer learns that the GPU finished a frame. */
-export type CompletionSignal = 'queue' | 'fence';
+import { FrameRecorder, Role } from '../shared/metrics';
 
 /** Frames whose completion can be awaited at once; a frame that finds none free goes untracked. */
 const SLOTS = 8;
+/**
+ * How long a frame may stay unfinished and still count as in flight, in ms. A completion that the
+ * browser never reports then slows the drawing without stopping it.
+ */
+const STALLED_MS = 1000;
 
 /** Submit times and frame numbers of the tracked frames in flight, in submit order, and their records. */
 class InFlight {
@@ -28,20 +31,10 @@ class InFlight {
 
 	constructor(private readonly recorder: FrameRecorder) {}
 
-	get measuring(): boolean {
-		return this.recorder.measuring;
-	}
-
-	get count(): number {
-		return this.head - this.tail;
-	}
-
-	/**
-	 * Counts a submitted frame and remembers it when it is a sampled one; false when it is not
-	 * sampled or every slot is taken.
-	 */
+	/** Counts a submitted frame and remembers it; false when every slot is taken. */
 	push(frame: number): boolean {
-		if (this.submitCount++ % SAMPLED_EVERY !== 0 || this.count >= SLOTS) return false;
+		this.submitCount++;
+		if (this.head - this.tail >= SLOTS) return false;
 		const slot = this.head % SLOTS;
 		this.submitted[slot] = performance.now();
 		this.frames[slot] = frame;
@@ -50,30 +43,45 @@ class InFlight {
 		return true;
 	}
 
+	/** Tracked frames that the GPU has not finished, apart from any stalled for too long. */
+	unfinished(): number {
+		if (this.head === this.tail) return 0;
+		const stalledBefore = performance.now() - STALLED_MS;
+		let oldest = this.tail;
+		while (oldest < this.head && (this.submitted[oldest % SLOTS] as number) < stalledBefore)
+			oldest++;
+		return this.head - oldest;
+	}
+
 	/**
-	 * Records the oldest tracked frame as finished now. The time since the previous completion
-	 * covers every frame submitted in between, so each frame's share of it is its interval.
+	 * Records the `count` oldest tracked frames as finished now. The time since the previous
+	 * completion covers every frame submitted in between, so each frame's share of it is its
+	 * interval. The first frames to finish have no earlier completion to measure from, so they
+	 * start the count and leave no record.
 	 */
-	finish(): void {
-		if (this.count === 0) return;
-		const slot = this.tail % SLOTS;
+	finish(count: number): void {
+		const done = Math.min(count, this.head - this.tail);
+		if (done === 0) return;
 		const now = performance.now();
-		const submits = this.submits[slot] as number;
-		this.recorder.begin(this.frames[slot] as number);
-		if (this.lastDone >= 0)
-			this.recorder.interval((now - this.lastDone) / (submits - this.lastSubmits));
-		this.recorder.commit(now - (this.submitted[slot] as number));
+		const submits = this.submits[(this.tail + done - 1) % SLOTS] as number;
+		const interval = (now - this.lastDone) / (submits - this.lastSubmits);
+		const recorded = this.lastDone >= 0;
+		for (let k = 0; k < done; k++, this.tail++) {
+			if (!recorded) continue;
+			const slot = this.tail % SLOTS;
+			this.recorder.begin(this.frames[slot] as number);
+			this.recorder.interval(interval);
+			this.recorder.commit(now - (this.submitted[slot] as number));
+		}
 		this.lastDone = now;
 		this.lastSubmits = submits;
-		this.tail++;
 	}
 }
 
-/** WebGPU: the queue resolves one promise per tracked frame, in submit order. */
+/** WebGPU: the queue resolves one promise per frame, in submit order. */
 export class QueueCompletion {
-	readonly signal: CompletionSignal = 'queue';
 	private readonly frames: InFlight;
-	private readonly onDone = () => this.frames.finish();
+	private readonly onDone = () => this.frames.finish(1);
 
 	constructor(
 		private readonly queue: GPUQueue,
@@ -82,18 +90,19 @@ export class QueueCompletion {
 		this.frames = new InFlight(new FrameRecorder(metrics, Role.Completion));
 	}
 
-	/** Tracks the frame just submitted, while the page measures, when it is a sampled frame. */
+	/** Tracks the frame just submitted. */
 	afterSubmit(frame: number): void {
-		if (!this.frames.measuring || !this.frames.push(frame)) return;
-		this.queue.onSubmittedWorkDone().then(this.onDone, this.onDone);
+		if (this.frames.push(frame)) this.queue.onSubmittedWorkDone().then(this.onDone, this.onDone);
 	}
 
-	poll(): void {}
+	/** Frames submitted that the GPU has not finished. */
+	unfinished(): number {
+		return this.frames.unfinished();
+	}
 }
 
-/** WebGL2: a fence after each tracked frame, checked without waiting at the start of the next. */
+/** WebGL2: a fence after each frame, checked without waiting before the next frame is drawn. */
 export class FenceCompletion {
-	readonly signal: CompletionSignal = 'fence';
 	private readonly frames: InFlight;
 	private readonly fences: (WebGLSync | null)[] = new Array(SLOTS).fill(null);
 	private head = 0;
@@ -106,27 +115,34 @@ export class FenceCompletion {
 		this.frames = new InFlight(new FrameRecorder(metrics, Role.Completion));
 	}
 
-	/** Places a fence after the frame just submitted, while the page measures, when it is a sampled frame. */
+	/** Places a fence after the frame just submitted. */
 	afterSubmit(frame: number): void {
-		if (!this.frames.measuring || !this.frames.push(frame)) return;
+		if (!this.frames.push(frame)) return;
 		this.fences[this.head++ % SLOTS] = this.gl.fenceSync(this.gl.SYNC_GPU_COMMANDS_COMPLETE, 0);
 		this.gl.flush();
 	}
 
-	/** Records every fence that has signaled, oldest first. */
-	poll(): void {
+	/**
+	 * Records the frames whose fences have signaled, oldest first, and returns the frames still
+	 * unfinished. The frames it finds finished together share the time since the last completion.
+	 */
+	unfinished(): number {
 		const { gl } = this;
+		let done = 0;
 		while (this.tail < this.head) {
 			const slot = this.tail % SLOTS;
 			const fence = this.fences[slot] ?? null;
 			// A fence the browser could not make counts as finished, so the count cannot stick.
-			if (fence && gl.getSyncParameter(fence, gl.SYNC_STATUS) !== gl.SIGNALED) return;
+			if (fence && gl.getSyncParameter(fence, gl.SYNC_STATUS) !== gl.SIGNALED) break;
 			if (fence) gl.deleteSync(fence);
 			this.fences[slot] = null;
-			this.frames.finish();
 			this.tail++;
+			done++;
 		}
+		this.frames.finish(done);
+		return this.frames.unfinished();
 	}
 }
 
+/** A renderer's completion tracker. */
 export type Completion = QueueCompletion | FenceCompletion;

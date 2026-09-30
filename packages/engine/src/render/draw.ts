@@ -17,6 +17,8 @@ export interface DrawingSetup extends RendererOptions {
 	control: ArrayBufferLike;
 	/** The frame rate that ?fps= holds, or undefined to draw at the display's rate. */
 	fps?: number;
+	/** The most frames that ?queue= lets wait on the GPU, or undefined for the engine's limit. */
+	queue?: number;
 	/**
 	 * The sketch that this thread runs, which it steps before each draw. Without one, the thread
 	 * draws the frames that the sketch worker publishes.
@@ -33,15 +35,15 @@ export interface DrawingSetup extends RendererOptions {
 
 /** Starts drawing on this thread's canvas, with a new renderer after each GPU loss. */
 export async function startDrawing(setup: DrawingSetup): Promise<Drawing<Renderer>> {
-	const { canvas, control, metrics, fps, sketch, hold = false } = setup;
+	const { canvas, control, metrics, fps, queue, sketch, hold = false } = setup;
 	const { slots } = controlViews(control);
 	const create = () => createRenderer(canvas, setup);
 	const run = (renderer: Renderer) =>
 		hold
 			? new HoldLoop(slots, renderer, metrics)
 			: sketch
-				? runDirectLoop(sketch, renderer, control, metrics, fps)
-				: runRenderLoop(renderer, control, metrics, fps);
+				? runDirectLoop(sketch, renderer, control, metrics, fps, queue)
+				: runRenderLoop(renderer, control, metrics, fps, queue);
 	return new Drawing(await create(), create, run, slots, setup.fail, !hold);
 }
 

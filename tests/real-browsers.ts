@@ -13,14 +13,17 @@
 //   bun tests/real-browsers.ts --plan memory --android chrome --lan ipad-safari
 //   bun tests/real-browsers.ts --plan startup --android brave --lan ipad-safari,ipad-brave
 //   bun tests/real-browsers.ts --plan depth --allow-no-webgpu --android chrome,brave --lan ipad-safari,ipad-brave
+//   bun tests/real-browsers.ts --plan overload --allow-no-webgpu --android chrome,brave --lan ipad-safari,ipad-brave
 // Options:
 //   --plan <name>       the plan to run: checks (the default), parity, bench, memory, which loads
 //                       the engine page 20 times at each shared memory maximum from 256 to 4096 MiB,
 //                       startup, which times cold and warm loads of the engine page's production
 //                       build in each thread mode, depth, which runs the image test manifest's depth
 //                       precision tests and counts the fighting pixels of surfaces 1 cm apart from
-//                       1 m to 10 km in each depth mode, or scale, which finds the largest S1 count
-//                       at which three.js holds 30 frames per second
+//                       1 m to 10 km in each depth mode, overload, which raises the GPU work of a
+//                       scene until the GPU falls behind and compares the presented and completed
+//                       rates on each GPU path, or scale, which finds the largest S1 count at which
+//                       three.js holds 30 frames per second
 //   --allow-no-webgpu   a browser without WebGPU skips the WebGPU pages instead of failing them
 //   --allow-no-webgl2   a browser without WebGL2 skips the WebGL2 pages instead of failing them
 //   --n <count>         the instance count of the bench plan's pages
@@ -74,6 +77,7 @@ import {
 	NO_RESULT,
 	NONE_MISSING,
 	neededPath,
+	overloadSummary,
 	PLANS,
 	startupSummary,
 } from './lib/plans.ts';
@@ -533,8 +537,8 @@ async function runPlan(
 	writeFileSync(join(RUNS_DIR, run, 'summary.json'), JSON.stringify(summary, null, '\t'));
 	for (const { name } of runners) {
 		const resultOf = (id: string) => readResult(run, name, id);
-		const tables = [benchSummary, memorySummary, startupSummary, depthSummary].map((summary) =>
-			summary(plan.items, resultOf),
+		const tables = [benchSummary, memorySummary, startupSummary, depthSummary, overloadSummary].map(
+			(summary) => summary(plan.items, resultOf),
 		);
 		for (const table of tables) if (table) console.log(`\n${name}\n${table}\n`);
 		const heat = wholeHeatText(heatReadings.get(name) ?? []);
