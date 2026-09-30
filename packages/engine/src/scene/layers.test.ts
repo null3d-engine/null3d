@@ -40,7 +40,7 @@ function fakeCore() {
 		lastErrorDetail: () => 0,
 	};
 	const core = new CoreMemory(glue as unknown as CoreGlue, memory);
-	const scene = new Scene(core, { frame: 1 });
+	const scene = new Scene(core, { frame: 1 }, false);
 	/** The command records the scene queued, as [operation, handle, a, b]. */
 	const commands = () => {
 		const words = new Uint32Array(memory.buffer, AT.records, RING * C.COMMAND_WORDS);
