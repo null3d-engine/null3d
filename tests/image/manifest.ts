@@ -12,6 +12,7 @@
 // the reference with bun run images:review --accept. Then do the same with CI=1 for the SwiftShader
 // reference: on the Mac, Playwright's Chromium draws CI's SwiftShader images byte for byte.
 import { PARITY_SCENES } from '../../bench/lib/parity.ts';
+import { MASK_IMAGE } from '../../bench/scenes/alpha-mask.ts';
 import { ORTHO_IMAGE } from '../../bench/scenes/ortho-camera.ts';
 import { HOLD_TIME, PARITY_CANVAS } from '../../bench/scenes/spec.ts';
 import { DEMOS } from '../../examples/demos.ts';
@@ -259,6 +260,34 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 		size: [480, 270],
 		modes: ALL_MODES,
 	},
+	// Masked materials under MSAA: cards cut by vertex alpha at three cutoffs, with the standard and
+	// the unlit material, crossing each other, and a batch of tilted cards. The parity test compares
+	// it with three.js's alphaTest.
+	{
+		name: 'alpha-mask',
+		sketch: 'tests/pages/sketches/alpha-mask-sketch.ts',
+		hold: 0,
+		size: [MASK_IMAGE.width, MASK_IMAGE.height],
+	},
+	// Decals on a wall and on the floor, whose depth bias makes them win the depth test everywhere.
+	// WebGL2's other depth modes store depth another way round, and must draw the same image.
+	{
+		name: 'depth-bias',
+		sketch: 'tests/pages/sketches/depth-bias-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+	},
+	...(['standard', 'reversed-gl'] as const).map(
+		(depth): ImageTest => ({
+			name: `depth-bias-${depth}`,
+			sketch: 'tests/pages/sketches/depth-bias-sketch.ts',
+			hold: 0,
+			size: [480, 270],
+			tiers: ['webgl2'],
+			switches: [`depth=${depth}`],
+			reference: 'depth-bias',
+		}),
+	),
 	// Orbit controls after the controls test's drags, made through the controls' own calls. The
 	// controls test must draw this image after it makes the drags with Playwright.
 	{ name: 'controls', sketch: 'tests/pages/sketches/controls-sketch.ts?moved', hold: 0 },

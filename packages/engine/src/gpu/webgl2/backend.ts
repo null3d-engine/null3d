@@ -17,6 +17,7 @@ import * as G from '../../generated/gpu';
 import type { DeviceShaders } from '../../generated/shaders';
 import type { DepthMode } from '../../page/switches';
 import { ImageTable } from '../../shared/images';
+import { floatOfBits } from '../float-bits';
 import { forEachVertexAttribute, vertexStride } from '../vertex-format';
 import { type DepthSetup, setDepthMode } from './depth';
 import {
@@ -279,6 +280,9 @@ export class WebGL2Backend {
 	private cullFace = false;
 	private depthTest = false;
 	private depthMask = true;
+	private depthAlways = false;
+	private offsetFactor = 0;
+	private offsetUnits = 0;
 	// Fractions passed to WebGL become new number objects, so the clear values and the depth range
 	// are set only when they change. The depth values are the draw list's, before any turn.
 	private readonly clearColor = [0, 0, 0, 0];
@@ -444,14 +448,23 @@ export class WebGL2Backend {
 		const template = words[a + 1] as number;
 		const flags = words[a + 6] as number;
 		if (!this.templateReady(template)) {
-			this.parked.set(words[a] as number, words.slice(a, a + 8));
+			// The command's header, before its operands, gives its length in words.
+			this.parked.set(words[a] as number, words.slice(a, a - 1 + ((words[a - 1] as number) >>> 8)));
 			this.counts.pipelines++;
 			return;
 		}
+		const depth = words[a + 4] !== G.FORMAT_NONE;
+		// The list's bias is in reversed depth. Standard depth stores the near plane as 0, so a bias
+		// toward the camera turns negative there.
+		const sign = this.depth.standard ? -1 : 1;
 		this.pipelines[words[a] as number] = {
 			program: this.programOf(template, words[a + 2] as number, background),
 			cullNone: (flags & G.STATE_CULL_NONE) !== 0,
-			depth: words[a + 4] !== G.FORMAT_NONE,
+			depth,
+			depthWrite: depth && (flags & (G.STATE_NO_DEPTH_WRITE | G.STATE_NO_DEPTH_TEST)) === 0,
+			depthAlways: (flags & G.STATE_NO_DEPTH_TEST) !== 0,
+			offsetUnits: sign * ((words[a + 8] as number) | 0),
+			offsetFactor: sign * floatOfBits(words[a + 9] as number),
 			vertexFormat: words[a + 7] as number,
 			mode: flags & G.STATE_LINE_LIST ? this.gl.LINES : this.gl.TRIANGLES,
 			vertices: this.need(this.templates, template, 'render pipeline template').vertices,
@@ -1380,10 +1393,32 @@ export class WebGL2Backend {
 		this.current = p;
 		this.setCullFace(!p.cullNone);
 		this.setDepthTest(p.depth);
-		if (p.depth && !this.depthMask) {
-			this.gl.depthMask(true);
-			this.depthMask = true;
+		if (p.depthWrite !== this.depthMask) {
+			this.gl.depthMask(p.depthWrite);
+			this.depthMask = p.depthWrite;
 		}
+		// A pass without the depth test still keeps GL's test on, with a function that passes every
+		// fragment: GL writes no depth while its test is off, and the pass writes none either way.
+		if (p.depthAlways !== this.depthAlways) {
+			const gl = this.gl;
+			gl.depthFunc(p.depthAlways ? gl.ALWAYS : this.depth.standard ? gl.LESS : gl.GREATER);
+			this.depthAlways = p.depthAlways;
+		}
+		this.setPolygonOffset(p.offsetFactor, p.offsetUnits);
+	}
+
+	/** Sets GL's polygon offset, switched on only while it moves depth. */
+	private setPolygonOffset(factor: number, units: number): void {
+		if (this.offsetFactor === factor && this.offsetUnits === units) return;
+		const gl = this.gl;
+		const on = factor !== 0 || units !== 0;
+		if (on !== (this.offsetFactor !== 0 || this.offsetUnits !== 0)) {
+			if (on) gl.enable(gl.POLYGON_OFFSET_FILL);
+			else gl.disable(gl.POLYGON_OFFSET_FILL);
+		}
+		if (on) gl.polygonOffset(factor, units);
+		this.offsetFactor = factor;
+		this.offsetUnits = units;
 	}
 
 	private setBindGroup(words: Uint32Array, a: number): void {

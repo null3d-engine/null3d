@@ -2,13 +2,15 @@ enable draw_index;
 
 // Meshes drawn by instance with the standard material: glTF's metallic-roughness model, shaded
 // with the formulas of three.js's MeshStandardMaterial. null3d::mesh finds each instance on both
-// GPU paths, and null3d::lighting holds the formulas.
+// GPU paths, and null3d::lighting holds the formulas. `light_surface` gathers the scene's lights,
+// so the rest of the shader does not change with where the lights come from.
 //
 // The fragment shader works in two steps. First a surface function fills a `Surface` from a
 // `SurfaceInput`: `defaultSurface` reads the material's own values, and a custom material's
 // surface function starts from it. Then `shade` lights the surface with the scene's lights. Code
 // that reads the material's options belongs in `defaultSurface`, and code that lights, shadows,
-// fogs or blends the surface belongs in `shade`, so custom materials get both.
+// fogs or blends the surface belongs in `shade`, so custom materials get both. The ALPHA_MASK
+// builds draw nothing where the surface's alpha falls below the material's cutoff.
 //
 // Custom materials build this template with their WGSL added after its last line, and with the
 // shader def CUSTOM_SURFACE when that WGSL declares `fn surface`. Their WGSL shares this file's
@@ -158,6 +160,12 @@ fn shade(s: Surface, input: SurfaceInput) -> vec4f {
     let n_dot_v = saturate(dot(normal, input.viewDirection));
     let dfg = dfg_lut(n_dot_v, pbr.roughness);
     let outgoing = light_surface(pbr, normal, input.viewDirection, dfg) + s.emissive;
+    // The test comes last, after every derivative, which a discarded fragment still helps compute.
+#ifdef ALPHA_MASK
+    if s.alpha < material_row.emissive.w {
+        discard;
+    }
+#endif
     return vec4f(linear_to_srgb(outgoing), 1.0);
 }
 
