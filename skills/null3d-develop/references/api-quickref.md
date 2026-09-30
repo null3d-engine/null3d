@@ -359,16 +359,19 @@ input.actions.define({ jump: ['Space', 'GamepadA'], fire: ['Mouse0', 'GamepadRT'
 input.isDown('jump');   // actions work in every input call; an unknown name throws E1205
 input.touches;          // fingers on the canvas, oldest first: { id, x, y, dx, dy }; changes in place
 
-import { createOrbitControls } from '@null3d/controls';
-const controls = createOrbitControls(ctx, camera, {
+import { createMapControls, createOrbitControls } from '@null3d/controls';
+const controls = createOrbitControls(ctx, camera, {   // three.js's OrbitControls names and defaults
   target: [0, 1, 0], enableDamping: true, dampingFactor: 0.08,
   minDistance: 2, maxDistance: 30, maxPolarAngle: Math.PI * 0.49, enablePan: true,
 });
-// in onUpdate: controls.update(dt)
-// also createMapControls; createFlyControls and createFirstPersonControls (0.2)
+controls.update(dt);                    // every frame in onUpdate; true when the camera moved
+vec3.set(controls.target, 0, 2, 0);     // change the target in place; set any property at any time
+controls.rotateLeft(a); controls.pan(dx, dy); controls.dollyIn(0.9);   // from code: keys, a gamepad
+createMapControls(ctx, camera);         // pans over the ground; fly and first-person controls (0.2)
+// either camera kind: an orthographic camera zooms by its view height, within minZoom and maxZoom
 ```
 
-Input changes once per frame, before `onUpdate`. Give a canvas that takes touch gestures `touch-action: none` in its CSS, or the browser scrolls the page and cancels the touches.
+Input changes once per frame, before `onUpdate`. Give a canvas that takes touch gestures `touch-action: none` in its CSS, or the browser scrolls the page and cancels the touches. When the wheel or a pinch zooms the camera, stop the page from scrolling and zooming with `canvas.addEventListener('wheel', (e) => e.preventDefault(), { passive: false })` on the page.
 
 ## 15. Post-processing (`api/post`)
 
