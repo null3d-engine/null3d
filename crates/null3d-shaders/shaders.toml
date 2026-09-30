@@ -58,6 +58,13 @@ pipelines.main = { vertex = "vs", fragment = "fs" }
 variants.webgpu = { targets = ["wgsl"] }
 variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX"], targets = ["glsl"] }
 
+# The material's color times its map, like three.js's MeshBasicMaterial with a map.
+[shaders.unlit_map]
+file = "unlit_map.wgsl"
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgpu = { targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX"], targets = ["glsl"] }
+
 # Colored by the first texture coordinates, for the engine's own tests of vertex formats.
 [shaders.texcoords]
 file = "texcoords.wgsl"
@@ -78,14 +85,21 @@ variants.webgl2 = { targets = ["glsl"] }
 file = "cull.wgsl"
 variants.webgpu = { targets = ["wgsl"] }
 
-# A test shader for the GPU layer's texture commands, which the texture replay test page draws
-# with. The engine does not import it, so its download does not hold it.
+# The mip levels of a layer of a texture array, one render pass per level.
+[shaders.mipmap]
+file = "mipmap.wgsl"
+pipelines.main = { vertex = "vs_main", fragment = "fs_main" }
+variants.webgpu = { targets = ["wgsl"] }
+variants.webgl2 = { targets = ["glsl"] }
+
 # The GPU timer's start mark, one invocation that does nothing; its compute entry point is `main`.
 # WebGPU only.
 [shaders.timer_mark]
 file = "timer_mark.wgsl"
 variants.webgpu = { targets = ["wgsl"] }
 
+# A test shader for the GPU layer's texture commands, which the texture replay test page draws
+# with. The engine does not import it, so its download does not hold it.
 [shaders.test_textures]
 file = "test_textures.wgsl"
 pipelines.sample = { vertex = "vs_main", fragment = "fs_sample" }

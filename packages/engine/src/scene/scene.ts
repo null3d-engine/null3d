@@ -20,6 +20,7 @@ import { type ColorInput, linearColor } from './color';
 import type { CoreMemory } from './memory';
 import type { Material, MeshGeometry } from './resources';
 import { quaternionLookAt } from './rotation';
+import { UnmarkedWrites } from './unmarked-writes';
 
 /**
  * A vector (x, y, z).
@@ -312,13 +313,19 @@ export class Object3D implements Described {
 
 	/** Makes the object dynamic or static from the next frame. See `NodeOptions.dynamic`. */
 	setDynamic(dynamic: boolean): void {
-		if (DEV) checkLive('setDynamic', this);
+		if (DEV) {
+			checkLive('setDynamic', this);
+			this.scene.unmarkedWrites?.watch(this, !dynamic);
+		}
 		this.scene.command(C.COMMAND_SET_DYNAMIC, this.handle, dynamic ? 1 : 0, 0, 'setDynamic');
 	}
 
 	/** Removes the object at the next frame. Its children become roots. */
 	destroy(): void {
-		if (DEV) checkLive('destroy', this);
+		if (DEV) {
+			checkLive('destroy', this);
+			this.scene.unmarkedWrites?.watch(this, false);
+		}
 		this.scene.command(C.COMMAND_DESTROY, this.handle, 0, 0, 'destroy');
 		this.destroyedFrame = this.scene.frame;
 	}
@@ -614,13 +621,20 @@ export class Scene {
 	/** Rows of the live instance batches, which development builds count. */
 	private batchRows = 0;
 	private warnedPastPortable = false;
+	/**
+	 * @internal Development builds: finds static objects whose transform changed without a setter.
+	 * Declared without a value, so release builds hold no trace of it.
+	 */
+	declare readonly unmarkedWrites: UnmarkedWrites | undefined;
 
 	constructor(
 		/** @internal */ readonly core: CoreMemory,
 		private readonly time: { readonly frame: number },
 		/** True when the engine draws with WebGL2, whose devices draw fewer rows than WebGPU's. */
 		private readonly webgl2: boolean,
-	) {}
+	) {
+		if (DEV) this.unmarkedWrites = new UnmarkedWrites(this);
+	}
 
 	/** @internal */
 	get frame(): number {
@@ -692,7 +706,13 @@ export class Scene {
 			this.core.glue.setCamera(camera.handle, camera.fov, camera.near, camera.far, camera.layers);
 	}
 
-	private create(options: NodeOptions, mesh: number, radius: number, call: string): number {
+	private create<T extends Object3D>(
+		Kind: new (scene: Scene, handle: number, name: string) => T,
+		options: NodeOptions,
+		mesh: number,
+		radius: number,
+		call: string,
+	): T {
 		const { layers } = options;
 		if (DEV && layers !== undefined) checkLayers(call, layers);
 		const handle = this.core.check(this.core.glue.reserveObject(), call, options.name);
@@ -706,20 +726,21 @@ export class Scene {
 		this.command(C.COMMAND_CREATE | (flags << 8), handle, options.parent?.handle ?? 0, mesh, call);
 		if (layers !== undefined && layers >>> 0 !== C.LAYERS_DEFAULT)
 			this.command(C.COMMAND_SET_LAYERS, handle, layers >>> 0, 0, call);
-		return handle;
+		const object = new Kind(this, handle, options.name ?? '');
+		if (DEV) this.unmarkedWrites?.watch(object, !options.dynamic);
+		return object;
 	}
 
 	/** An empty node, for hierarchy. */
 	createGroup(options: NodeOptions = {}): Group {
-		const handle = this.create(options, C.CORE_NO_MESH, 0, 'createGroup');
-		return new Group(this, handle, options.name ?? '');
+		return this.create(Group, options, C.CORE_NO_MESH, 0, 'createGroup');
 	}
 
 	/** A drawn object. It is static unless `dynamic: true`. */
 	createMesh(options: MeshOptions): Mesh {
-		const handle = this.create(options, options.mesh.id, options.mesh.radius, 'createMesh');
-		this.command(C.COMMAND_SET_MATERIAL, handle, options.material.id, 0, 'createMesh');
-		return new Mesh(this, handle, options.name ?? '');
+		const mesh = this.create(Mesh, options, options.mesh.id, options.mesh.radius, 'createMesh');
+		this.command(C.COMMAND_SET_MATERIAL, mesh.handle, options.material.id, 0, 'createMesh');
+		return mesh;
 	}
 
 	/** Many copies of one mesh and material, with typed arrays of rows. */
@@ -747,13 +768,13 @@ export class Scene {
 
 	/** A perspective camera; `fov` is vertical, in degrees. Cameras are dynamic by default. */
 	createPerspectiveCamera(options: CameraOptions = {}): Camera {
-		const handle = this.create(
+		const camera = this.create(
+			Camera,
 			{ dynamic: true, ...options },
 			C.CORE_NO_MESH,
 			0,
 			'createPerspectiveCamera',
 		);
-		const camera = new Camera(this, handle, options.name ?? '');
 		camera.layers = (options.layers ?? C.LAYERS_DEFAULT) >>> 0;
 		camera.fov = options.fov ?? 50;
 		camera.near = options.near ?? 0.1;
