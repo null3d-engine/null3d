@@ -1,7 +1,8 @@
 // The size report's measuring: raw and Brotli sizes, and the parts of the engine's JavaScript in a
 // production build. Vite names each built file after a module and adds a content hash, so the report
-// names each part by the engine module that its file holds, and a file loaded on demand by the part
-// that loads it. tools/lib/size-check.ts judges how the sizes changed against a base build. The
+// names each part by the engine module that its file holds, a file loaded on demand by the part
+// that loads it, and a shader file by the device module of the shader build that it holds.
+// tools/lib/size-check.ts judges how the sizes changed against a base build. The
 // functions here do no file or process work: tools/build-wasm.ts builds, reads and prints.
 import { brotliCompressSync, constants } from 'node:zlib';
 
@@ -62,10 +63,23 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	{ name: 'probe-worker.js', module: 'workers/probe-worker.ts' },
 ];
 
+/**
+ * The shader build's device modules, by part name: one file for each target and each value of the
+ * permutation bits that a device fixes, named after its module. The part that draws loads its
+ * device's one on demand. Each build that draws holds a copy of each file, and the report measures
+ * the largest copy.
+ */
+export const SHADER_PARTS: readonly string[] = [
+	'shaders-wgsl.js',
+	'shaders-glsl.js',
+	'shaders-glsl-draw-index.js',
+];
+
 /** Every file that the size report measures, by the name that the report prints. */
 export const REPORTED_FILES: readonly string[] = [
 	...CORE_BUILDS.flatMap((build) => CORE_FILES.map((file) => `${build}/${file}`)),
 	...ENGINE_PARTS.map(({ name }) => `js/${name}`),
+	...SHADER_PARTS.map((name) => `js/${name}`),
 ];
 
 export interface Download {
@@ -73,16 +87,23 @@ export interface Download {
 	mode: string;
 	/** The parts that a page loads in this mode. */
 	parts: readonly string[];
+	/**
+	 * The start of the names of the shader parts that a page in this mode may load, one of them: the
+	 * mode's download counts the largest.
+	 */
+	shaders: string;
 }
 
 /** The parts that a page downloads in each thread mode of the engine. */
 export const DOWNLOADS: readonly Download[] = [
 	{
 		mode: 'pipelined',
+		shaders: 'shaders-',
 		parts: ['page.js', 'probe-worker.js', 'sketch-worker.js', 'render-worker.js', 'job-worker.js'],
 	},
 	{
 		mode: 'low latency',
+		shaders: 'shaders-',
 		parts: [
 			'page.js',
 			'probe-worker.js',
@@ -93,14 +114,17 @@ export const DOWNLOADS: readonly Download[] = [
 	},
 	{
 		mode: 'drawing on the main thread',
+		shaders: 'shaders-',
 		parts: ['page.js', 'page-renderer.js', 'probe-worker.js', 'sketch-worker.js', 'job-worker.js'],
 	},
 	{
 		mode: 'single-threaded',
+		shaders: 'shaders-',
 		parts: ['page.js', 'page-sketch-runner.js', 'page-renderer.js', 'probe-worker.js'],
 	},
 	{
 		mode: 'sketch on the main thread',
+		shaders: 'shaders-',
 		parts: [
 			'page.js',
 			'page-sketch-runner.js',
@@ -114,15 +138,25 @@ export const DOWNLOADS: readonly Download[] = [
 /** True for a source file of a page that uses the engine, such as a test page. */
 const isPageSource = (source: string) => /^(tests|bench|examples|templates)\//.test(source);
 
+/** The part name of the shader build's device module that a file holds alone, or undefined. */
+function shaderPartOf(file: BuiltFile): string | undefined {
+	const engine = file.sources.filter((source) => source.startsWith(ENGINE_SOURCE));
+	const module = engine.length === 1 ? engine[0]!.slice(ENGINE_SOURCE.length) : '';
+	const match = /^generated\/(shaders-[a-z-]+)\.ts$/.exec(module);
+	return match ? `${match[1]}.js` : undefined;
+}
+
 /**
- * The built file of each part of the engine, by the part's name, in the parts' order. A part that
- * loads on demand is absent when the build bundles its code into the part that loads it. It throws
- * when a part has no file or several, when a file holds engine code that no part names, and when a
- * part's file also holds a page's own code, whose bytes the report would count as the engine's.
+ * The built file of each part of the engine, by the part's name, in the parts' order, then the
+ * largest copy of each shader part. A part that loads on demand is absent when the build bundles
+ * its code into the part that loads it. It throws when a part has no file or several, when a file
+ * holds engine code that no part names, and when a part's file also holds a page's own code, whose
+ * bytes the report would count as the engine's.
  */
 export function findEngineParts(
 	files: readonly BuiltFile[],
 	parts: readonly EnginePart[] = ENGINE_PARTS,
+	shaderParts: readonly string[] = SHADER_PARTS,
 ): Map<string, BuiltFile> {
 	const found = new Map<string, BuiltFile>();
 	const holds = (file: BuiltFile, module: string) => file.sources.includes(ENGINE_SOURCE + module);
@@ -145,6 +179,22 @@ export function findEngineParts(
 		if (file) found.set(part.name, file);
 	}
 	const claimed = new Set(found.values());
+	const shaders = new Map<string, BuiltFile>();
+	for (const file of files) {
+		const part = claimed.has(file) ? undefined : shaderPartOf(file);
+		if (!part) continue;
+		if (!shaderParts.includes(part))
+			throw new Error(
+				`${file.file} holds the shader build's device module of ${part}, which the size report does not name: add it to SHADER_PARTS in tools/lib/size-report.ts`,
+			);
+		claimed.add(file);
+		const copy = shaders.get(part);
+		if (!copy || file.text.length > copy.text.length) shaders.set(part, file);
+	}
+	for (const part of shaderParts) {
+		const file = shaders.get(part);
+		if (file) found.set(part, file);
+	}
 	for (const file of files) {
 		if (claimed.has(file) || !file.sources.some((s) => s.startsWith(ENGINE_SOURCE))) continue;
 		throw new Error(
@@ -158,7 +208,8 @@ export function findEngineParts(
 				`${name} (${file.file}) also holds a page's own code (${pageCode.join(', ')}), so its size is not the engine's`,
 			);
 	}
-	return new Map(parts.flatMap(({ name }) => (found.has(name) ? [[name, found.get(name)!]] : [])));
+	const names = [...parts.map(({ name }) => name), ...shaderParts];
+	return new Map(names.flatMap((name) => (found.has(name) ? [[name, found.get(name)!]] : [])));
 }
 
 /** The sum of the sizes of files that a server sends one by one, each compressed on its own. */
@@ -172,15 +223,22 @@ export function totalSize(sizes: Iterable<SizeEntry>): SizeEntry {
 }
 
 /**
- * What a page downloads in each thread mode: the total size of the parts it loads. A part that the
- * build lacks adds nothing.
+ * What a page downloads in each thread mode: the total size of the parts it loads, and of the
+ * largest shader part that it may load. A part that the build lacks adds nothing.
  */
 export function downloadSizes(
 	sizes: ReadonlyMap<string, SizeEntry>,
 	downloads: readonly Download[] = DOWNLOADS,
 ): { mode: string; size: SizeEntry }[] {
-	return downloads.map(({ mode, parts }) => ({
-		mode,
-		size: totalSize(parts.flatMap((part) => sizes.get(part) ?? [])),
-	}));
+	return downloads.map(({ mode, parts, shaders }) => {
+		const largest = [...sizes]
+			.filter(([part]) => part.startsWith(shaders))
+			.map(([, size]) => size)
+			.sort((a, b) => b.brotli - a.brotli)
+			.slice(0, 1);
+		return {
+			mode,
+			size: totalSize([...parts.flatMap((part) => sizes.get(part) ?? []), ...largest]),
+		};
+	});
 }

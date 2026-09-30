@@ -3,7 +3,7 @@ id: api/engine
 title: "Page API: createEngine"
 status: experimental
 since: "0.1"
-summary: "createEngine options; engine.postToSketch, capture, labels, requestPointerLock, capabilities, destroy."
+summary: "createEngine options and start errors; memory; capabilities and mode; pausing, detaching, failures, measuring, captureFrame, messages and destroy."
 ---
 
 # Page API: createEngine
@@ -40,16 +40,20 @@ try {
 
 | Code | Cause |
 | --- | --- |
+| [E1407](../errors/E1407.md) | The `hold` option or the `?hold=` switch gives a time that is not a number of seconds from 0 to 600. |
 | [E1415](../errors/E1415.md) | The sketch would run on the page's main thread, where another engine still runs its sketch. |
 | [E1213](../errors/E1213.md) | The `preset` option names no preset, or `maxPixelRatio` is not a number from 0.5 up. |
 | [E1409](../errors/E1409.md) | The `memory` option asks for a maximum that is not a whole number of MiB from 256 to 4096. |
 | [E1303](../errors/E1303.md) | The browser runs WebAssembly without SIMD. |
 | [E1301](../errors/E1301.md) | The browser has no usable GPU path, or no path that `gpu` or `?gpu=` asks for. |
 | [E1406](../errors/E1406.md) | A file of the engine core did not download. |
+| [E1402](../errors/E1402.md) | Development builds only: the engine core's file comes from another build than the engine's JavaScript. |
 | [E1109](../errors/E1109.md) | The browser refused the engine's memory, even after about 3 seconds of tries. |
 | [E1410](../errors/E1410.md) | The sketch module did not load: it did not download, or its code threw an error while it loaded. |
 | [E1401](../errors/E1401.md) | The sketch module's default export is not `defineSketch(...)`. |
+| [E1214](../errors/E1214.md) | An option of `defineSketch` is out of its range. |
 | [E1405](../errors/E1405.md) | An engine thread did not start. |
+| [E1408](../errors/E1408.md) | In hold mode, the sketch or the engine failed before the engine read the held frame back. |
 
 An error that the sketch's setup throws also rejects the start ([Sketch API](sketch.md#the-setup-function)).
 
@@ -63,8 +67,8 @@ An error that the sketch's setup throws also rejects the start ([Sketch API](ske
 | `maxPixelRatio` | The preset's cap | Caps the screen's pixel ratio that the engine draws at, in place of the preset's cap |
 | `gpu` | `'auto'` | Forces a GPU path, for tests only. The `?gpu=` switch in the page's address wins over it. |
 | `powerPreference` | `'high-performance'` | Picks the GPU on a device that has two. `'low-power'` saves battery. |
-| `latency` | `'pipelined'` | The latency mode, `'pipelined'` or `'low'`: [Architecture](../concepts/architecture.md) |
-| `sketchThread` | `'worker'` | The thread that runs the sketch. `'main'` runs it on the page's main thread, where it can reach the DOM: [Where the sketch runs](../concepts/architecture.md#where-the-sketch-runs) |
+| `latency` | `'pipelined'` | The latency mode, `'pipelined'` or `'low'`: [Architecture](../concepts/architecture.md#latency-modes). The `?latency=` switch wins over it, and the single-threaded build ignores it. |
+| `sketchThread` | `'worker'` | The thread that runs the sketch. `'main'` runs it on the page's main thread, where it can reach the DOM: [Where the sketch runs](../concepts/architecture.md#where-the-sketch-runs). The `?sketch-thread=` switch wins over it, and the single-threaded build always runs the sketch on the main thread. |
 | `memory` | `{ maximumMiB: 1024 }` | The most memory that the engine's threads share: [Memory](#memory) |
 | `onProgress` | None | Reports each stage of the start |
 | `onSketchMessage` | None | Receives the sketch's messages from the start of its setup: [Messages](page.md) |

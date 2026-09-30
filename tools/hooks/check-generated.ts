@@ -1,5 +1,5 @@
 // Pre-commit guard: every generated file (docs placeholders, the API reference, the page list, the
-// error pages, the three.js mapping page and copies, the .claude/skills copy, and the shader module)
+// error pages, the three.js mapping page and copies, the .claude/skills copy, and the shader modules)
 // must match what its generator makes now, and must be staged. Every public export of the engine
 // must also have the doc comments the API reference needs. Generated files then never lag the code
 // and data they come from.
@@ -9,14 +9,17 @@ import { generateDocs, referenceProblems, staleFiles } from '../lib/docs';
 import { expectedSkillCopies, skillCopyProblems } from '../lib/skills';
 import { stagedFiles } from './commit-ack';
 
-const SHADER_MODULE = 'packages/engine/src/generated/shaders.ts';
-
-/** True when a commit stages shader sources, the shader tool, or the module it generates. */
-export function touchesShaders(files: string[]): boolean {
-	return files.some((f) => f.startsWith('crates/null3d-shaders/') || f === SHADER_MODULE);
+/** True for a module of the shader build: the main module or a device module beside it. */
+export function isShaderModule(file: string): boolean {
+	return /^packages\/engine\/src\/generated\/shaders(-[a-z-]+)?\.ts$/.test(file);
 }
 
-/** Problems with the shader module: the tool rebuilds it in memory and compares. */
+/** True when a commit stages shader sources, the shader tool, or the modules it generates. */
+export function touchesShaders(files: string[]): boolean {
+	return files.some((f) => f.startsWith('crates/null3d-shaders/') || isShaderModule(f));
+}
+
+/** Problems with the shader modules: the tool rebuilds them in memory and compares. */
 function shaderProblems(): string[] {
 	if (!touchesShaders(stagedFiles())) return [];
 	try {
@@ -29,7 +32,7 @@ function shaderProblems(): string[] {
 		);
 		return [];
 	} catch {
-		return [`${SHADER_MODULE} is out of date or a shader does not build; run \`bun run shaders\``];
+		return ['a shader module is out of date or a shader does not build; run `bun run shaders`'];
 	}
 }
 
@@ -51,10 +54,11 @@ function main(): void {
 		...skillCopyProblems(root),
 		...shaderProblems(),
 	];
-	const generated = new Set([...docs.keys(), ...expectedSkillCopies(root).keys(), SHADER_MODULE]);
+	const generated = new Set([...docs.keys(), ...expectedSkillCopies(root).keys()]);
 	const porcelain = execSync('git status --porcelain --untracked-files=all', { encoding: 'utf8' });
 	for (const path of unstagedPaths(porcelain)) {
-		if (generated.has(path)) problems.push(`${path} has changes that are not staged`);
+		if (generated.has(path) || isShaderModule(path))
+			problems.push(`${path} has changes that are not staged`);
 	}
 	if (problems.length === 0) return;
 	console.error('\ncommit rejected: generated files are out of date or not staged:\n');

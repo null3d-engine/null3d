@@ -13,6 +13,9 @@ The engine's hot paths stay allocation-free with these habits (hard rule 1):
 - Do not wrap browser promises in `async` functions, and use `Math.sqrt` rather than `Math.hypot`.
 - Keep closures out of functions that run every frame, even in a branch that rarely runs. Until the browser optimizes such a function, it allocates the variables a closure captures on every call.
 - Shrink a reused list with `pop`, never by setting its length to 0. In Chrome, a length of 0 frees the list's storage, and the next `push` allocates it again. The sketch's list of touches works this way.
+- Keep numbers that change every frame in typed arrays, not in an object's properties. Playwright's headless Chromium 153, which CI tests with, makes a new object for each fraction stored in a property, while Chrome 154 does not. Six such stores in the camera controls' update made 144 bytes of garbage a frame there. The controls keep those numbers in one `Float64Array`.
+- Pass fractions to a per-frame helper in a typed array, not as arguments. A call that the browser does not inline puts each fraction it passes in an object of its own.
+- The allocation checks of the math helpers and the camera controls sample a loop in a test page (`tests/lib/allocations.ts`). Give such a loop fractions, as real input has: whole numbers never allocate, so they hide these faults.
 
 ## Allocation in Rust
 
@@ -120,6 +123,8 @@ The shader compiler is the shader crate built as a WebAssembly module. Build too
 - Without `KHR_parallel_shader_compile`, a WebGL2 program never counts as building, and its first draw waits for its compile. The switch `?compile=wait` gives that path in a browser that has the extension.
 - A warm-up in the setup records a frame itself, since no frame loop runs yet. So the renderer must exist before the setup: low-latency and single-threaded modes start it first.
 - Sketch code that runs between frames, such as a message handler or the code after a warm-up, gets fresh views of engine memory first. The single-threaded build's memory detaches every view when it grows, which a frame may have done.
+- The engine's shaders ship in one module for each GPU path and each value of the permutation bits that a device fixes ([D-13](decisions/D-13-shader-variants.md)). The thread that draws starts to load its module while it waits for the WebGPU device or the WebGL2 context. The renderer starts once both are ready.
+- A device module holds the builds of each shader that a device with its bits asks for. So the culling shader, which has no bits, is in every WGSL module. A device whose bits have no module fails to start its renderer, with an error that names the bits.
 
 ## Depth on WebGL2
 

@@ -46,6 +46,11 @@ pub struct Shader {
     pub pipelines: BTreeMap<String, Pipeline>,
     /// Builds of the shader by name.
     pub variants: BTreeMap<String, Variant>,
+    /// True for a shader that loads by device: its builds go into the device modules, one for each
+    /// target and each value of the permutation bits that a device fixes, and not into the main
+    /// module. Each of its variants has one target.
+    #[serde(default)]
+    pub by_device: bool,
 }
 
 /// The entry points of one render pipeline.
@@ -144,6 +149,9 @@ impl Manifest {
             check_name(&mut errors, &key, name);
             check_file(&mut errors, &key, &shader.file);
             errors.extend(check_builds(&key, &shader.pipelines, &shader.variants));
+            if shader.by_device {
+                check_by_device(&mut errors, &key, &shader.variants);
+            }
         }
         if !errors.is_empty() {
             return Err(errors);
@@ -261,6 +269,18 @@ fn check_variant(errors: &mut Vec<String>, key: &str, variant: &Variant) -> bool
         }
     }
     known
+}
+
+/// Checks that each variant of a shader that loads by device has one target, since a device
+/// module holds the builds of one target.
+fn check_by_device(errors: &mut Vec<String>, key: &str, variants: &BTreeMap<String, Variant>) {
+    for (name, variant) in variants {
+        if variant.targets.len() > 1 {
+            errors.push(format!(
+                "{key}.variants.{name} targets both \"wgsl\" and \"glsl\", but {key} loads by device, and a device module holds one target's builds. Give the variant one target, and add a variant for the other."
+            ));
+        }
+    }
 }
 
 fn check_name(errors: &mut Vec<String>, key: &str, name: &str) {
@@ -440,6 +460,19 @@ variants.a_tone_map = { targets = ["wgsl"] }
             errors[0].contains("variants.a_tone_map and variant `a` both build `a_tone_map`"),
             "{errors:?}"
         );
+    }
+
+    #[test]
+    fn each_variant_of_a_shader_that_loads_by_device_has_one_target() {
+        let text = format!("{VALID}by_device = true\n");
+        let errors = Manifest::parse(&text).unwrap_err();
+        assert_eq!(errors.len(), 1, "{errors:?}");
+        assert!(
+            errors[0].contains("shaders.mesh.variants.plain targets both"),
+            "{errors:?}"
+        );
+        let one_target = text.replace("[\"glsl\", \"wgsl\"]", "[\"glsl\"]");
+        assert!(Manifest::parse(&one_target).unwrap().shaders["mesh"].by_device);
     }
 
     #[test]
