@@ -103,7 +103,7 @@ The benchmarks compare null3D with three.js in the same browser. [Benchmarks](.d
 - A report gives each engine's whole frame and its own work on the busiest thread. The desktop target uses own work, because both engines run the same scene code.
 - Do not edit engine or benchmark page files, or the dev server's config, during a browser run. The dev server reloads the pages being measured, and restarts when its config changes.
 - Every tool finds the dev server on port 5173, and uses the one that already answers there. A second copy of the repository, such as a git worktree, would test the first copy's code. Give each copy its own ports with `NULL3D_PORT`, for example `NULL3D_PORT=6173 bun run test:browser`. Its dev server takes that port, the HTTPS server the next one, and the production preview the one after. Tools that drive Chrome through its debugging protocol take the one after that.
-- The benchmark job in CI compares every push to main with the commit before it. With the `benchmark` label, it compares a pull request with its merge base. It fails when a page gets slower than its rule allows. [Benchmarks](.dev/benchmarks.md#the-benchmark-job-in-ci) says how to read it.
+- The benchmark job in CI compares main with the last commit on main that it passed, one job at a time. With the `benchmark` label, it compares a pull request with its merge base. It fails when a page gets slower than its rule allows. [Benchmarks](.dev/benchmarks.md#the-benchmark-job-in-ci) says how to read it.
 - Run one device runner at a time. Runs share one file that tells waiting runner pages which run to start.
 - Keep hot paths free of allocation with the habits in the implementation notes, and check them with `bun run bench:allocation`.
 

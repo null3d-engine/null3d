@@ -11,6 +11,7 @@ import {
 	EVENT_POINTER_MOVE,
 	EVENT_POINTER_UP,
 	EVENT_WHEEL,
+	FLAG_CONTROL,
 	FLAG_PRIMARY,
 	FLAG_TOUCH,
 	INPUT_RING_EVENTS,
@@ -193,14 +194,44 @@ describe('input: the pointer', () => {
 		expect(edges(input, 'Mouse1')).toEqual({ down: true, pressed: true, released: false });
 	});
 
-	it('sums the wheel of a frame', () => {
-		const { ring, input, next } = setup();
-		ring.write(EVENT_WHEEL, 0, 100, 0, 0, 0, 0);
-		ring.write(EVENT_WHEEL, 0, -30, 0, 0, 0, 0);
+	it('counts the movement made while a button is held as a drag, from the press to the release', () => {
+		const { input, next, pointer } = setup();
+		pointer(EVENT_POINTER_MOVE, 10, 10);
+		pointer(EVENT_POINTER_MOVE, 20, 10);
+		pointer(EVENT_POINTER_DOWN, 25, 10, 1);
+		pointer(EVENT_POINTER_MOVE, 40, 20, 1);
+		pointer(EVENT_POINTER_UP, 45, 20, 0);
+		pointer(EVENT_POINTER_MOVE, 60, 30);
 		next();
-		expect(input.pointer.wheel).toBe(70);
+		expect(input.pointer).toMatchObject({ dx: 50, dy: 20, dragDx: 20, dragDy: 10 });
+		pointer(EVENT_POINTER_DOWN, 60, 30, 2);
+		pointer(EVENT_POINTER_MOVE, 70, 25, 2);
 		next();
-		expect(input.pointer.wheel).toBe(0);
+		expect(input.pointer).toMatchObject({ dx: 10, dy: -5, dragDx: 10, dragDy: -5 });
+		next();
+		expect(input.pointer).toMatchObject({ dragDx: 0, dragDy: 0 });
+	});
+
+	it('sums the wheel of a frame, and tells the scroll of a trackpad pinch from a wheel', () => {
+		const { ring, input, next, key } = setup();
+		const wheel = (scroll: number, flags = 0) => ring.write(EVENT_WHEEL, 0, scroll, 0, 0, 0, flags);
+		wheel(100);
+		wheel(-30);
+		next();
+		expect(input.pointer).toMatchObject({ wheel: 70, pinch: 0 });
+		// A pinch comes as scroll with the Control key's flag; a held Control key makes it a wheel's.
+		wheel(-4, FLAG_CONTROL);
+		wheel(10);
+		key(EVENT_KEY_DOWN, 'ControlRight');
+		wheel(3, FLAG_CONTROL);
+		next();
+		expect(input.pointer).toMatchObject({ wheel: 9, pinch: -4 });
+		key(EVENT_KEY_UP, 'ControlRight');
+		wheel(2, FLAG_CONTROL);
+		next();
+		expect(input.pointer).toMatchObject({ wheel: 2, pinch: 2 });
+		next();
+		expect(input.pointer).toMatchObject({ wheel: 0, pinch: 0 });
 	});
 
 	it('follows the first finger as the main button, and moves to it without movement', () => {
