@@ -44,25 +44,26 @@ fn step<B: FrameBuilder>(
     commands
 }
 
-/// The buffer that a list's frame groups bind as the maps table: their last entry, at `binding`.
-fn maps_buffer(commands: &[(Op, Vec<u32>)], binding: u32) -> u32 {
+/// The material table, whose rows hold the layer of each map: the resource that a list's frame
+/// groups bind at binding 1, a buffer on WebGPU and a texture on WebGL2.
+fn material_table(commands: &[(Op, Vec<u32>)]) -> u32 {
     let (_, frame_group) = commands
         .iter()
         .find(|(op, o)| *op == Op::CreateBindGroup && o[1] == layout::FRAME)
         .expect("the first frame makes the frame group");
-    let last = 3 + (frame_group[2] as usize - 1) * 5;
-    assert_eq!(
-        frame_group[last], binding,
-        "the maps table is binding {binding}"
-    );
-    frame_group[last + 2]
+    let entry = frame_group[3..]
+        .chunks(5)
+        .find(|entry| entry[0] == 1)
+        .expect("the material table is binding 1");
+    entry[2]
 }
 
-/// The writes of the maps table in a frame's list.
-fn map_writes(commands: &[(Op, Vec<u32>)], maps: u32) -> usize {
+/// The writes of the material table in a frame's list, by `op`: `WriteBuffer` on WebGPU,
+/// `WriteTexture` on WebGL2.
+fn table_writes(commands: &[(Op, Vec<u32>)], op: Op, table: u32) -> usize {
     commands
         .iter()
-        .filter(|(op, o)| *op == Op::WriteBuffer && o[0] == maps)
+        .filter(|(o, words)| *o == op && words[0] == table)
         .count()
 }
 
@@ -82,8 +83,12 @@ fn a_mapped_material_draws_its_layer_once_the_image_is_on_the_gpu_on_webgpu() {
     let (first, _, _) = world.add_mapped(SIZE);
     let (second, _, _) = world.add_mapped(SIZE);
     let commands = step(&mut world, &mut mock, true);
-    let maps = maps_buffer(&commands, 2);
-    assert_eq!(map_writes(&commands, maps), 1, "no map is ready");
+    let maps = material_table(&commands);
+    assert_eq!(
+        table_writes(&commands, Op::WriteBuffer, maps),
+        1,
+        "no map is ready"
+    );
     assert_eq!(
         commands
             .iter()
@@ -107,9 +112,9 @@ fn a_mapped_material_draws_its_layer_once_the_image_is_on_the_gpu_on_webgpu() {
     assert_eq!(count(&commands, Op::UploadImage), 2);
     assert_eq!(count(&commands, Op::GenerateMipmaps), 2);
     assert_eq!(
-        map_writes(&commands, maps),
+        table_writes(&commands, Op::WriteBuffer, maps),
         1,
-        "the maps table names both layers"
+        "the material table names both layers"
     );
     let store = world.renderer.settings().textures();
     assert_eq!(store.ready_layer(first), Some(0));
@@ -122,7 +127,7 @@ fn a_mapped_material_draws_its_layer_once_the_image_is_on_the_gpu_on_webgpu() {
     let commands = step(&mut world, &mut mock, false);
     assert_eq!(count(&commands, Op::UploadImage), 0);
     assert_eq!(
-        map_writes(&commands, maps),
+        table_writes(&commands, Op::WriteBuffer, maps),
         0,
         "a steady frame writes no maps"
     );
@@ -183,7 +188,7 @@ fn webgl2_draws_bind_each_maps_group_once_per_run_on_both_draw_paths() {
         let (large, _, _) = world.add_mapped(2 * SIZE);
         let (other_small, _, _) = world.add_mapped(SIZE);
         let commands = step(&mut world, &mut mock, true);
-        let maps = maps_buffer(&commands, 3);
+        let maps = material_table(&commands);
         let store = world.renderer.settings().textures();
         let (a, b) = (
             store.group_id(small).unwrap(),
@@ -202,7 +207,7 @@ fn webgl2_draws_bind_each_maps_group_once_per_run_on_both_draw_paths() {
         world.renderer.settings_mut().textures_mut().sync(3, taken);
         let commands = step(&mut world, &mut mock, false);
         assert_eq!(count(&commands, Op::UploadImage), 3);
-        assert_eq!(map_writes(&commands, maps), 1);
+        assert_eq!(table_writes(&commands, Op::WriteTexture, maps), 1);
     }
 }
 

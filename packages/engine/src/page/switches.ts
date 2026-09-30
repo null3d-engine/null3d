@@ -1,7 +1,8 @@
 // URL switches that let one device exercise every engine path: ?gpu=, ?threads=off, ?render=main,
-// ?latency=, ?uploads=copy and ?depth=. Three more set what the benchmarks vary: ?fps= for a fixed
-// frame rate, ?jobs= for the job worker count and ?memory= for the shared memory's maximum. ?hold
-// starts hold mode for image tests, and ?bench publishes the running engine for benchmark tools.
+// ?latency=, ?uploads=copy and ?depth=. Four more set what the benchmarks vary: ?fps= for a fixed
+// frame rate, ?jobs= for the job worker count, ?memory= for the shared memory's maximum and ?queue=
+// for the frames that may wait on the GPU. ?hold starts hold mode for image tests, and ?bench
+// publishes the running engine for benchmark tools.
 
 export type GpuSwitch = 'auto' | 'webgpu' | 'compat' | 'webgl2';
 /**
@@ -46,6 +47,11 @@ export interface Switches {
 	fps: number | undefined;
 	/** The job workers that ?jobs= asks for, or undefined for the count from the device's cores. */
 	jobs: number | undefined;
+	/**
+	 * The most frames that ?queue= lets wait unfinished on the GPU: a whole number, or infinity
+	 * for ?queue=off, which leaves the queue to the browser. Undefined for the engine's own limit.
+	 */
+	queue: number | undefined;
 	/**
 	 * The shared memory's declared maximum in MiB from ?memory=, which wins over the page's option,
 	 * or undefined to use the option or the default.
@@ -92,6 +98,7 @@ export function parseSwitches(search: string): Switches {
 		depth: oneOf(params.get('depth'), ['reversed', 'reversed-gl', 'standard'] as const),
 		fps: positive(params.get('fps')),
 		jobs: whole(params.get('jobs'), MAX_JOB_WORKERS),
+		queue: params.get('queue') === 'off' ? Number.POSITIVE_INFINITY : whole(params.get('queue')),
 		memoryMiB: whole(params.get('memory')),
 		hold: params.get('hold') ?? undefined,
 		bench: params.has('bench'),
