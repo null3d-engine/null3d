@@ -21,6 +21,7 @@ import { messageOf } from '../errors/message';
 import { TEXTURE_OPTION_UPLOAD_ALL, TEXTURE_STAT_IMAGES_SENT } from '../generated/core';
 import type { EngineCapabilities } from '../page/engine';
 import type { CoreDevice } from '../page/limits';
+import type { QualitySettings } from '../quality/presets';
 import { Assets } from '../scene/assets';
 import { CoreMemory } from '../scene/memory';
 import { Post } from '../scene/post';
@@ -34,6 +35,7 @@ import { Counter, FrameRecorder, Phase, Role } from '../shared/metrics';
 import { FixedClock, FrameClock, holdSteps } from './clock';
 import type { SketchCallbacks, SketchContext, SketchDefinition } from './define-sketch';
 import { InputReader } from './input';
+import { type QualityStart, SketchQuality } from './quality';
 import { HOLD_SEED, seedMathRandom } from './random';
 
 export type PagePoster = (type: string, data: unknown, transfer?: Transferable[]) => void;
@@ -53,6 +55,10 @@ export interface SketchCore {
 	jobWorkers: number;
 	/** The device the engine draws with. */
 	device: CoreDevice;
+	/** The quality preset and settings that the page chose. */
+	quality: QualityStart;
+	/** Gives the page the quality settings after the sketch changes them. */
+	applyQuality(settings: QualitySettings): void;
 	/** The GPU path the engine chose, and what it offers, as the page reports it. */
 	capabilities: EngineCapabilities;
 	/** Sends texture images to the thread that draws. */
@@ -126,6 +132,7 @@ export class SketchRunner {
 	/** Gives the thread its own Math.random back, after hold mode seeded it. */
 	private restoreRandom: (() => void) | undefined;
 	private readonly input: InputReader;
+	private readonly quality: SketchQuality;
 	/** The sketch's debug drawing, in development builds only. */
 	private readonly debugDraw: DebugDraw | undefined;
 	readonly context: SketchContext;
@@ -171,6 +178,7 @@ export class SketchRunner {
 		Atomics.store(slots, Slot.DrawListAddress1, glue.drawListAddress(1));
 		this.reducedMotion = Atomics.load(slots, Slot.ReducedMotion);
 		this.input = new InputReader(sketch.control, sketch.keyCodes);
+		this.quality = new SketchQuality(sketch.quality, (settings) => sketch.applyQuality(settings));
 		this.readViewport();
 		this.debugDraw = DEV ? new DebugDraw(this.core) : undefined;
 		const debug: Debug = this.debugDraw ?? RELEASE_DEBUG;
@@ -185,6 +193,7 @@ export class SketchRunner {
 			assets: new Assets(textures, sketch.pageUrl),
 			input: this.input,
 			post: new Post(this.core),
+			quality: this.quality,
 			preferences: {
 				get reducedMotion() {
 					return Atomics.load(slots, Slot.ReducedMotion) !== 0;
@@ -306,6 +315,17 @@ export class SketchRunner {
 		if (this.holding) throw error;
 	}
 
+	/** Calls each of the sketch's handlers with `value`, and reports each error that one throws. */
+	private notify<T>(handlers: Iterable<(value: T) => void>, value: T): void {
+		for (const handler of handlers) {
+			try {
+				handler(value);
+			} catch (error) {
+				this.report(error);
+			}
+		}
+	}
+
 	/**
 	 * Advances the sketch by one frame and returns the new frame number, counting from 1.
 	 * `timestamp` is the frame's time in milliseconds.
@@ -396,14 +416,9 @@ export class SketchRunner {
 			const reducedMotion = Atomics.load(slots, Slot.ReducedMotion);
 			if (reducedMotion !== this.reducedMotion) {
 				this.reducedMotion = reducedMotion;
-				for (const handler of this.preferenceHandlers) {
-					try {
-						handler();
-					} catch (error) {
-						this.report(error);
-					}
-				}
+				this.notify(this.preferenceHandlers, undefined);
 			}
+			if (this.quality.takeChange()) this.notify(this.quality.handlers, this.quality);
 			// Steps that fall due count even when the sketch has no fixed update, so none pile up.
 			const steps = this.fixed.stepsAt(time.now);
 			if (callbacks.onFixedUpdate) {

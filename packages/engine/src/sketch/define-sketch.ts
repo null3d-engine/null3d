@@ -15,6 +15,7 @@ import type { Geometry, Materials } from '../scene/resources';
 import type { Scene } from '../scene/scene';
 import type { Textures } from '../scene/textures';
 import type { Input } from './input';
+import type { Quality } from './quality';
 
 /**
  * Callbacks a sketch returns from its setup function. In each frame the engine calls
@@ -78,8 +79,8 @@ export interface SketchViewport {
 	/** The canvas height in CSS pixels. */
 	readonly height: number;
 	/**
-	 * Device pixels per CSS pixel that the engine draws with: the display's ratio, capped by
-	 * `createEngine`'s `maxPixelRatio`.
+	 * Device pixels per CSS pixel that the engine draws with: the display's ratio, capped by the
+	 * `maxPixelRatio` quality setting.
 	 */
 	readonly pixelRatio: number;
 }
@@ -136,6 +137,8 @@ export interface SketchContext {
 	input: Input;
 	/** Post-processing: the tone mapping and the exposure of the scene's color. */
 	post: Post;
+	/** The quality preset that the engine runs, its settings, and a notice when they change. */
+	quality: Quality;
 	/** Sketch time, the frame's step and the frame number. */
 	time: SketchTime;
 	/** The canvas's size, and what the device can do. */

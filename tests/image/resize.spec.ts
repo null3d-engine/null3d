@@ -1,7 +1,8 @@
 // Resizing the window, on the high-density screen that the Playwright project gives the browser. The
 // thread that draws sizes the canvas's drawing buffer to the canvas's CSS size times the device pixel
 // ratio, so the image stays sharp, or times `maxPixelRatio` when that is lower. Each thread mode
-// resizes another canvas: the page's own, or the one a worker took over.
+// resizes another canvas: the page's own, or the one a worker took over. A sketch that changes the
+// cap during play resizes the buffer too.
 import { expect, type Page, test } from '@playwright/test';
 import { ENGINE_MODES } from '../lib/engine-checks.ts';
 import { pageResult } from '../lib/page-result.ts';
@@ -20,6 +21,10 @@ const WINDOW_SIZES = [
 
 /** Runs in the page: the canvas's CSS size and the size of its drawing buffer. */
 const canvasSize = () => (globalThis as { canvasSize?: () => Promise<unknown> }).canvasSize?.();
+
+/** Runs in the page: the sketch changes its pixel ratio cap, and the page waits until it has. */
+const setMaxPixelRatio = (ratio: number) =>
+	(globalThis as { setMaxPixelRatio?: (ratio: number) => Promise<void> }).setMaxPixelRatio?.(ratio);
 
 /** Opens the resize page with these switches, and returns the screen's device pixel ratio. */
 async function openPage(page: Page, query: string): Promise<number> {
@@ -65,4 +70,16 @@ for (const gpu of ['webgpu', 'webgl2'] as const) {
 		await openPage(page, `gpu=${gpu}&maxPixelRatio=${CAPPED_RATIO}`);
 		await expectBuffers(page, CAPPED_RATIO);
 	});
+
+	for (const mode of ENGINE_MODES) {
+		test(`a sketch changes the pixel ratio cap during play on ${gpu}, ${mode.name}`, async ({
+			page,
+		}) => {
+			const ratio = await openPage(page, `gpu=${gpu}&${mode.query}`);
+			await page.evaluate(setMaxPixelRatio, CAPPED_RATIO);
+			await expectBuffers(page, CAPPED_RATIO);
+			await page.evaluate(setMaxPixelRatio, Number.POSITIVE_INFINITY);
+			await expectBuffers(page, ratio);
+		});
+	}
 }
