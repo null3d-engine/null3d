@@ -113,6 +113,13 @@ const DOCS = {
 		example: 'E1206: geometry.fromArrays() got 9 numbers in normals for 4 vertices, not 12.',
 		since: '0.1',
 	},
+	E1207: {
+		title: 'Invalid layer mask',
+		cause:
+			'A call that sets layers received a number that is not a 32-bit layer mask: a fraction, NaN, or a number past 32 bits.',
+		example: 'E1207: setLayers() got 2.5 on "Player" (slot 12), which is not a 32-bit layer mask.',
+		since: '0.1',
+	},
 	E1301: {
 		title: 'No usable GPU path',
 		cause: 'The browser offers neither WebGPU nor WebGL2 for the way the engine was asked to draw.',
@@ -194,6 +201,14 @@ const DOCS = {
 			'The memory option of createEngine asked for a maximum that is not a whole number of MiB from 256 to 4096.',
 		example:
 			'E1409: the memory.maximumMiB option 8192 is not a whole number of MiB from 256 to 4096.',
+		since: '0.1',
+	},
+	E1410: {
+		title: 'Sketch module not loaded',
+		cause:
+			'The sketch module that createEngine got did not load. It did not download, or its code threw an error while the module loaded.',
+		example:
+			'E1410: the sketch module https://example.com/assets/sketch-3f9c1a2b.js did not load: Failed to fetch dynamically imported module: https://example.com/assets/sketch-3f9c1a2b.js.',
 		since: '0.1',
 	},
 	E1501: {

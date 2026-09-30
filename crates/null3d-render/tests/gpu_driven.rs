@@ -6,22 +6,26 @@ mod common;
 use std::collections::HashMap;
 
 use common::{BATCH_ROWS, SCENE_CAPACITY, World, count, far_out};
+use null3d_core::layers::DEFAULT_LAYERS;
+use null3d_core::scene::Command;
 use null3d_gpu::drawlist::{NO_TARGET, Op, layout};
 use null3d_gpu::mock::MockBackend;
 use null3d_render::frame::FrameBuilder;
 use null3d_render::view::ViewId;
 
 const MATRIX_BYTES: u32 = 48;
-/// The builder's buffers of world matrices and of the bucket of every source.
+/// The builder's buffers of world matrices, of the bucket of every source, and of the layer
+/// mask of every source.
 const MATRICES: u32 = 2;
 const INSTANCE_BUCKETS: u32 = 3;
+const SOURCE_LAYERS: u32 = 5;
 
 /// A view's part of a frame's list, found by following what its commands name.
 #[derive(Debug)]
 struct ViewCommands {
     /// The buffers its culling group binds, by binding: its parameters, the matrices, the bucket
-    /// table, the bucket records, its compacted instances and its indirect draws.
-    culling: [u32; 6],
+    /// table, the bucket records, its compacted instances, its indirect draws and the layer table.
+    culling: [u32; 7],
     /// The operands of the render pass that executes its bundle.
     pass: Vec<u32>,
     /// The buffers its bundle draws from: compacted instances and indirect draws.
@@ -31,7 +35,7 @@ struct ViewCommands {
 
 /// Each view's commands in a frame that culls and draws every view, in the order they run.
 fn views_of(commands: &[(Op, Vec<u32>)]) -> Vec<ViewCommands> {
-    let groups: HashMap<u32, [u32; 6]> = commands
+    let groups: HashMap<u32, [u32; 7]> = commands
         .iter()
         .filter(|(op, o)| *op == Op::CreateBindGroup && o[1] == layout::CULL)
         .map(|(_, o)| (o[0], std::array::from_fn(|binding| o[5 + 5 * binding])))
@@ -455,7 +459,7 @@ fn the_source_limit_follows_the_device_storage_binding() {
     use null3d_render::frame::grown_size;
     use null3d_render::gpu_driven::{MAX_USEFUL_BINDING_BYTES, PORTABLE_MAX_SOURCES, max_sources};
 
-    // Every device: WebGPU's default binding holds the instances of 2,097,152 sources.
+    // Every WebGPU device: the default binding holds the instances of 2,097,152 sources.
     let portable = sizes::PORTABLE_STORAGE_BINDING_BYTES;
     assert_eq!(PORTABLE_MAX_SOURCES, 2_097_152);
     assert_eq!(PORTABLE_MAX_SOURCES * sizes::INSTANCE_STRIDE, portable);
@@ -644,4 +648,95 @@ fn an_object_that_moves_into_another_cell_rewrites_its_entry() {
         cull_params_writes(&commands, buffer),
         vec![(0, 112 + 2 * 16)]
     );
+}
+
+/// Writes to the layer table in a frame's commands: offset and byte count.
+fn layer_table_writes(commands: &[(Op, Vec<u32>)]) -> Vec<(u32, u32)> {
+    commands
+        .iter()
+        .filter(|(op, o)| *op == Op::WriteBuffer && o[0] == SOURCE_LAYERS)
+        .map(|(_, o)| (o[1], o[3]))
+        .collect()
+}
+
+#[test]
+fn new_layers_rewrite_the_layer_table_without_a_rebuild() {
+    let mut world = World::new();
+    let mut mock = MockBackend::default();
+    world.record(true);
+    mock.replay(world.renderer.list(1).words()).unwrap();
+    assert!(world.scene.take_structure_changed());
+    // The first frame writes the mask of every source: the scene's slots, then the batch's rows.
+    let sources = SCENE_CAPACITY + 1 + BATCH_ROWS;
+    assert_eq!(
+        layer_table_writes(&world.commands()),
+        vec![(0, sources * 4)]
+    );
+    // The culling tests the camera's view against the mask of a new camera: layer 0.
+    let view_layers = |world: &World| world.renderer.view_frame(ViewId::CAMERA).unwrap().layers;
+    assert_eq!(view_layers(&world), DEFAULT_LAYERS);
+
+    // An object moves to layer 1, and the camera draws layers 0 and 1. Only the object's mask
+    // uploads, and the view's culling and its pass in the render graph take the new mask.
+    world.frame = 2;
+    let object = world.objects[1];
+    world
+        .scene
+        .apply_commands(&[Command::set_layers(object, 0b10)], 2)
+        .unwrap();
+    assert!(!world.scene.take_structure_changed());
+    world
+        .renderer
+        .settings_mut()
+        .set_layers(ViewId::CAMERA, 0b11);
+    assert!(!world.record(false));
+    mock.replay(world.renderer.list(2).words()).unwrap();
+    let commands = world.commands();
+    assert_eq!(count(&commands, Op::BeginBundle), 0);
+    assert_eq!(count(&commands, Op::CreateBuffer), 0);
+    let slot = world.scene.resolve(object).unwrap();
+    assert_eq!(layer_table_writes(&commands), vec![(slot * 4, 4)]);
+    assert!(bucket_table_writes(&commands).is_empty());
+    assert_eq!(view_layers(&world), 0b11);
+    let graph = world.renderer.render_graph();
+    assert_eq!(graph.pass_layers(graph.find_pass("Opaque").unwrap()), 0b11);
+
+    // The batch moves to layer 2: every one of its rows takes the mask, active or not.
+    world.frame = 3;
+    world
+        .batches
+        .get_mut(world.batch)
+        .unwrap()
+        .set_layers(0b100);
+    assert!(!world.record(false));
+    mock.replay(world.renderer.list(3).words()).unwrap();
+    let base = SCENE_CAPACITY + 1;
+    assert_eq!(
+        layer_table_writes(&world.commands()),
+        vec![(base * 4, BATCH_ROWS * 4)]
+    );
+
+    // A frame that changes no mask writes none.
+    world.frame = 4;
+    world.record(false);
+    mock.replay(world.renderer.list(4).words()).unwrap();
+    assert!(layer_table_writes(&world.commands()).is_empty());
+}
+
+#[test]
+fn each_view_culls_with_its_own_layers() {
+    let mut world = World::new();
+    let side = world.add_view([5.0, 0.0, 6.0]);
+    world.renderer.settings_mut().set_layers(side, 0b1010);
+    world.record(true);
+    MockBackend::default()
+        .replay(world.renderer.list(1).words())
+        .unwrap();
+    // Both views cull the same layer table, each with its own mask.
+    let views = views_of(&world.commands());
+    assert_eq!(views[0].culling[6], SOURCE_LAYERS);
+    assert_eq!(views[1].culling[6], SOURCE_LAYERS);
+    let layers = |view| world.renderer.view_frame(view).unwrap().layers;
+    assert_eq!(layers(ViewId::CAMERA), DEFAULT_LAYERS);
+    assert_eq!(layers(side), 0b1010);
 }

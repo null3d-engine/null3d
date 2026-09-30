@@ -1,15 +1,109 @@
 ---
 id: guides/custom-shaders
 title: Custom shaders
-status: planned
+status: experimental
 since: "0.1"
-summary: "Surface functions; full shaders; uniforms and typed materials; hot reload."
+summary: "WGSL in sketch code; shader errors; surface functions; full shaders; uniforms and typed materials; hot reload."
 ---
-
-<!-- null3d:placeholder -->
 
 # Custom shaders
 
-> Planned for null3D 0.1. This page is a placeholder. No release has this feature yet, so the APIs it names do not exist. Coding agents must not use them.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. The Vite plugin compiles WGSL in sketch code, but the engine cannot draw with it yet. Custom materials are not built, so `materials.shader`, surface functions, full shaders and uniforms do not exist. Coding agents must not write custom shaders. Hot reload that keeps the page running comes in 0.2.
 
-This page will cover: Surface functions; full shaders; uniforms and typed materials; hot reload.
+```mermaid
+flowchart LR
+    file["A .wgsl file<br/>that a module imports"] --> plugin["The null3D Vite plugin<br/>in vite and vite build"]
+    literal["A template literal<br/>tagged as WGSL"] --> plugin
+    plugin --> wgsl["WGSL for WebGPU"]
+    plugin --> glsl["GLSL ES 3.00 for WebGL2"]
+    plugin -. "a problem" .-> error["An error at the file,<br/>line and column"]
+```
+
+You write each null3D shader once, in WGSL. The null3D Vite plugin compiles the WGSL in your code while Vite serves or builds the project. Each shader becomes WGSL for WebGPU and GLSL ES 3.00 for WebGL2, so the page never downloads a shader translator.
+
+## WGSL in sketch code
+
+The plugin compiles WGSL in two forms. The first is a `.wgsl` file that a module imports:
+
+```ts
+// sketch.ts
+import glow from './shaders/glow.wgsl';
+```
+
+The import gives the compiled shader. To import the file's text instead, add `?raw` to the path, as Vite allows for any file.
+
+The second form is a template literal after a `/* wgsl */` comment:
+
+```ts
+// sketch.ts
+const glow = /* wgsl */ `
+#import null3d::color
+
+@vertex
+fn vs_main(@builtin(vertex_index) index: u32) -> @builtin(position) vec4f {
+    let corner = vec2f(f32((index << 1u) & 2u), f32(index & 2u));
+    return vec4f(corner * 2.0 - 1.0, 0.0, 1.0);
+}
+
+@fragment
+fn fs_main() -> @location(0) vec4f {
+    return vec4f(null3d::color::linear_to_srgb(vec3f(0.5)), 1.0);
+}
+`;
+```
+
+The plugin puts the compiled shader where the literal was. Your code therefore receives a compiled shader, although TypeScript still sees a string. The tag follows these rules:
+
+- The comment comes directly before the literal. Spaces and line breaks may come between them.
+- The literal cannot hold `${...}`. The plugin compiles the WGSL before any of your code runs, so write each value in the WGSL itself.
+- The plugin compiles every tagged literal in your own files, and leaves the packages in `node_modules` alone. Remove the tag from WGSL that null3D does not draw, such as WGSL for another library.
+
+## What the plugin compiles
+
+The plugin compiles whole shaders. A shader has one `@vertex` entry point and one or more `@fragment` entry points. Each `@fragment` entry point makes one render pipeline, named after it, with the `@vertex` entry point. A shader with only `@compute` entry points builds for WebGPU alone, because WebGL2 has no compute shaders.
+
+A shader can import the engine's library modules, such as `#import null3d::math`. The plugin resolves each import. [Shader library and imports](../shaders/library.md) lists the modules.
+
+Each shader builds twice. The WebGPU build is WGSL. The WebGL2 build holds one GLSL ES 3.00 program for each render pipeline, and it sets the shader def `WEBGL2`:
+
+```wgsl
+#ifdef WEBGL2
+    // Code for WebGL2 alone.
+#else
+    // Code for WebGPU alone.
+#endif
+```
+
+Both builds follow the [WGSL rules for portable shaders](../shaders/wgsl-rules.md). The rules page says what the build rejects, and what you must test on each path yourself.
+
+## Shader errors
+
+When WGSL does not compile, the plugin stops with the file, line and column of each problem. It shows the code around the first problem, and a fix where the rules give one. For a tagged literal, the place is its line and column in your script file:
+
+```text
+null3D could not compile the WGSL:
+src/sketch.ts:14:23: expected `;`, found "2.0"
+```
+
+- On the dev server, the error shows in Vite's overlay on the page and in the terminal. The engine's start fails too, with [E1410](../errors/E1410.md), because the sketch module did not load.
+- In `vite build`, the build fails with the same message.
+
+Editing a shader on the dev server reloads the page.
+
+## TypeScript
+
+The plugin's client types tell TypeScript what a `.wgsl` import gives. Add them to the `types` of your `tsconfig.json`:
+
+```json
+{
+  "compilerOptions": {
+    "types": ["@null3d/vite-plugin/client"]
+  }
+}
+```
+
+## Related pages
+
+- [WGSL rules for portable shaders](../shaders/wgsl-rules.md): what the build rejects, and what it cannot check.
+- [Shader library and imports](../shaders/library.md): the engine's modules that a shader can import.
+- [Install null3D](../getting-started/install.md): the Vite plugin and its other jobs.

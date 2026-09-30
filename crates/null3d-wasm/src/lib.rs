@@ -27,11 +27,12 @@ use null3d_render::arrays::{ArrayName, ArraysError, MeshArrays, from_arrays};
 use null3d_render::camera::Perspective;
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::frame::{FrameBuilder, FrameInput, RecordError};
-use null3d_render::geometry::{Geometry, box_geometry, sphere_geometry};
+use null3d_render::geometry::{Geometry, OutOfMemory, Shape, generate};
 use null3d_render::gpu_driven::{
     BYTES_PER_SOURCE, GpuDrivenRenderer, MAX_USEFUL_BINDING_BYTES, RendererConfig,
 };
 use null3d_render::materials::{MaterialError, MaterialTable, Shading};
+use null3d_render::view::ViewId;
 use wasm_bindgen::prelude::*;
 
 pub mod constants;
@@ -600,6 +601,19 @@ pub fn set_batch_active_count(batch: u32, count: u32) -> u32 {
     })
 }
 
+/// Sets the layer mask of every row of a batch. Like a new active count, a new mask needs no
+/// rebuild of the renderer's tables.
+#[wasm_bindgen(js_name = setBatchLayers)]
+pub fn set_batch_layers(batch: u32, mask: u32) -> u32 {
+    with_engine(|e| match e.batches.get_mut(Handle::from_raw(batch)) {
+        Ok(batch) => {
+            batch.set_layers(mask);
+            0
+        }
+        Err(error) => core_failure(error),
+    })
+}
+
 /// Marks rows of a static batch for update and upload.
 #[wasm_bindgen(js_name = markBatchDirty)]
 pub fn mark_batch_dirty(batch: u32, start: u32, count: u32) -> u32 {
@@ -634,41 +648,31 @@ fn add_mesh(e: &mut Engine, geometry: &Geometry) -> Result<u32, u32> {
     Ok(id + 1)
 }
 
-/// A box mesh with three.js's `BoxGeometry` parameters; returns its mesh id.
-#[wasm_bindgen(js_name = createBoxMesh)]
-pub fn create_box_mesh(
-    width: f32,
-    height: f32,
-    depth: f32,
-    width_segments: u32,
-    height_segments: u32,
-    depth_segments: u32,
+/// A mesh from a geometry generator: `shape` is a `Shape` code, and the numbers after it are the
+/// arguments of the three.js class's constructor, in their order. Returns the mesh id.
+#[wasm_bindgen(js_name = createShapeMesh)]
+#[allow(clippy::too_many_arguments)]
+pub fn create_shape_mesh(
+    shape: u32,
+    a: f64,
+    b: f64,
+    c: f64,
+    d: f64,
+    e: f64,
+    f: f64,
+    g: f64,
+    h: f64,
 ) -> u32 {
-    value_with_engine(|e| {
-        add_mesh(
-            e,
-            &box_geometry(
-                width,
-                height,
-                depth,
-                [
-                    width_segments.max(1),
-                    height_segments.max(1),
-                    depth_segments.max(1),
-                ],
-            ),
-        )
-    })
-}
-
-/// A sphere mesh with three.js's `SphereGeometry` parameters; returns its mesh id.
-#[wasm_bindgen(js_name = createSphereMesh)]
-pub fn create_sphere_mesh(radius: f32, width_segments: u32, height_segments: u32) -> u32 {
-    value_with_engine(|e| {
-        add_mesh(
-            e,
-            &sphere_geometry(radius, width_segments.max(3), height_segments.max(2)),
-        )
+    value_with_engine(|engine| {
+        let kind = Shape::from_code(shape)
+            .ok_or_else(|| core_failure(CoreError::UnknownCommand { op: shape }))?;
+        let geometry =
+            generate(kind, [a, b, c, d, e, f, g, h]).map_err(|OutOfMemory { bytes }| {
+                core_failure(CoreError::OutOfMemory {
+                    bytes: u32::try_from(bytes).unwrap_or(u32::MAX),
+                })
+            })?;
+        add_mesh(engine, &geometry)
     })
 }
 
@@ -829,11 +833,13 @@ fn change_material(
 
 // --- Camera, lights and background ---
 
-/// Draws from this camera object with a perspective lens (vertical field of view in degrees).
+/// Draws from this camera object with a perspective lens (vertical field of view in degrees), the
+/// objects whose layer masks share a bit with `layers`.
 #[wasm_bindgen(js_name = setCamera)]
-pub fn set_camera(camera: u32, fov_degrees: f32, near: f32, far: f32) -> u32 {
+pub fn set_camera(camera: u32, fov_degrees: f32, near: f32, far: f32, layers: u32) -> u32 {
     with_engine(|e| {
-        e.renderer.settings_mut().set_camera(
+        let settings = e.renderer.settings_mut();
+        settings.set_camera(
             Handle::from_raw(camera),
             Perspective {
                 fov_degrees,
@@ -841,6 +847,7 @@ pub fn set_camera(camera: u32, fov_degrees: f32, near: f32, far: f32) -> u32 {
                 far,
             },
         );
+        settings.set_layers(ViewId::CAMERA, layers);
         0
     })
 }

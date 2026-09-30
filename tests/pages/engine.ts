@@ -6,7 +6,8 @@
 // It also reports when it called createEngine, from navigation start, which places the engine's
 // own start times on the page's timeline. With ?memory-option=<MiB>, it passes that maximum in the
 // memory option of createEngine, and reports the maximum of each shared memory that the engine
-// asked the browser for.
+// asked the browser for. With ?downloads, it reports when the page asked for each file and when the
+// file arrived, from the browser's resource timing.
 import { createEngine, type Engine, type FrameMetrics } from '@null3d/engine';
 import type { FrameCounts } from '../lib/engine-checks';
 import { progress, run, toBase64 } from './lib/result';
@@ -105,6 +106,11 @@ run('engine', async () => {
 		pause,
 		stopMs,
 		sharedMemoryMiB,
+		downloads: params.has('downloads')
+			? (performance.getEntriesByType('resource') as PerformanceResourceTiming[]).map(
+					({ name, startTime, responseEnd }) => ({ name, startTime, responseEnd }),
+				)
+			: undefined,
 		trail: window.__null3dProgress,
 		capture: capture && {
 			width: capture.width,
