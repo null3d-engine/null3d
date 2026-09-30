@@ -15,10 +15,12 @@
 //! # Custom values
 //!
 //! Each material also has a row of [`MATERIAL_FLOATS`] custom values: the uniforms of a custom
-//! material's WGSL, as the shader compiler packs them. The GPU table holds them after every
-//! material's row, so the table has twice [`MaterialTable::capacity`] rows, and the custom values
-//! of material `id` sit in row `capacity + id`. They start at zero, as a new GPU table does, and
-//! change and upload as the rows do.
+//! material's WGSL, as the shader compiler packs them. Vertex shaders read them too, so on WebGPU,
+//! where vertex shaders read no storage buffers, they live in a data texture of their own, one row
+//! of texels per material. On WebGL2 the table's data texture holds them after every material's
+//! row: it has twice [`MaterialTable::capacity`] rows, and the custom values of material `id` sit
+//! in row `capacity + id`. They start at zero, as a new GPU texture does, and change and upload as
+//! the rows do.
 
 use std::ops::Range;
 

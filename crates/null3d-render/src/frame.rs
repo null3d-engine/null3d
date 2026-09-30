@@ -164,7 +164,7 @@ fn write_table_rows(
 ) -> Result<(), RecordError> {
     let (at, bytes) = arena.push(floats_as_bytes(floats))?;
     match table {
-        MaterialStorage::Buffer(buffer) => {
+        MaterialStorage::Buffer { table: buffer, .. } => {
             let offset = first * MATERIAL_FLOATS as u32 * 4;
             list.push(Op::WriteBuffer, &[buffer, offset, at, bytes])?;
         }
@@ -337,9 +337,11 @@ impl ParityLists {
 /// Where a frame builder keeps the material table on the GPU.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum MaterialStorage {
-    /// A storage buffer of rows, by buffer id: the WebGPU path.
-    Buffer(u32),
-    /// A data texture with one row of texels per material, by texture id: the WebGL2 path.
+    /// A storage buffer of rows, and a data texture of the custom values with one row of texels
+    /// per material, by their ids: the WebGPU path.
+    Buffer { table: u32, values: u32 },
+    /// A data texture with one row of texels per material, then one per material's custom
+    /// values, by texture id: the WebGL2 path.
     Texture(u32),
 }
 
@@ -428,8 +430,19 @@ impl SceneSettings {
         }
         if let Some(ids) = self.materials.take_values_changed() {
             let values = self.materials.values(ids.clone());
-            let first = self.materials.capacity() + ids.start;
-            write_table_rows(list, arena, table, first, values)?;
+            let (texture, first) = match table {
+                MaterialStorage::Buffer { values, .. } => (values, ids.start),
+                MaterialStorage::Texture(texture) => {
+                    (texture, self.materials.capacity() + ids.start)
+                }
+            };
+            write_table_rows(
+                list,
+                arena,
+                MaterialStorage::Texture(texture),
+                first,
+                values,
+            )?;
         }
         Ok(remade)
     }

@@ -143,6 +143,11 @@ export class Pipelines {
 				buffer: { type: 'uniform' },
 			},
 			{ binding: 1, visibility: fragment, buffer: { type: 'read-only-storage' } },
+			{
+				binding: 2,
+				visibility: GPUShaderStage.VERTEX | fragment,
+				texture: { sampleType: 'unfilterable-float' },
+			},
 			{ binding: 3, visibility: fragment, texture: { sampleType: 'unfilterable-float' } },
 		]);
 		this.defineLayout(LAYOUT_TEXTURES, 'textures', [
