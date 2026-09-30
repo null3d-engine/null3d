@@ -16,6 +16,7 @@ This repository holds the null3D engine, its tools, its documentation and its ag
 | `tools/` | The WebAssembly build, the docs generator, the skills check and the commit hooks |
 | `examples/`, `bench/`, `templates/`, `porting-corpus/` | Demos, benchmarks, starter projects and the three.js porting corpus, as the milestones add them |
 | `.dev/` | Maintainer guides: [benchmarks](.dev/benchmarks.md), [device sessions](.dev/devices.md), [image tests](.dev/image-tests.md), [implementation notes](.dev/implementation-notes.md) and [releases](.dev/releases.md) |
+| `.dev/decisions/` | [Decision records](.dev/decisions/README.md): the data behind measured design choices. Read the record before you change a choice it settled |
 
 ## Commands
 
