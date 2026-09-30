@@ -273,6 +273,7 @@ export async function createRenderer(
 			contextRestored(gl),
 			scene && loadGlslShaders(device.shaderBits),
 		]);
+		const modules = { first: device.shaderBits, load: loadGlslShaders };
 		if (scene && shaders)
 			return new WebGL2SceneRenderer(
 				canvas,
@@ -283,6 +284,7 @@ export async function createRenderer(
 				device,
 				options.imageTable,
 				shaders,
+				modules,
 			);
 		return new WebGL2Renderer(canvas, gl, metrics);
 	}
@@ -300,6 +302,7 @@ export async function createRenderer(
 			metrics,
 			options.imageTable,
 			shaders,
+			{ first: device.shaderBits, load: loadWgslShaders },
 			device.transparent,
 		);
 	return new WebGPURenderer(gpu.tier, gpu.device, canvas, metrics);

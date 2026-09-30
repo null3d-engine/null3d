@@ -18,6 +18,7 @@ import type { DeviceShaders } from '../../generated/shaders';
 import type { DepthMode } from '../../page/switches';
 import { ImageTable } from '../../shared/images';
 import { floatOfBits } from '../float-bits';
+import { addDeviceShaders, variantFor } from '../variants';
 import { forEachVertexAttribute, vertexStride } from '../vertex-format';
 import { type DepthSetup, setDepthMode } from './depth';
 import {
@@ -372,6 +373,17 @@ export class WebGL2Backend {
 	defineTemplate(id: number, template: GlslTemplate): void {
 		if (this.templates[id]) throw new Error(`render pipeline template ${id} already exists`);
 		this.templates[id] = template;
+	}
+
+	/** Adds the builds of another device module, whose permutation bits new pipelines can take. */
+	addShaders(shaders: DeviceShaders): void {
+		addDeviceShaders(this.templates, shaders);
+	}
+
+	/** True when a template has the GLSL build of a permutation. */
+	hasShader(template: number, permutation: number): boolean {
+		const t = this.templates[template];
+		return t !== undefined && variantFor(t.shader, permutation, 'glsl')?.glsl != null;
 	}
 
 	/** Hands the backend an image for `UploadImage` commands to copy from, under the draw list's id. */

@@ -5857,6 +5857,9 @@ export const SHADERS = {
 /** Loaders of device modules, by the permutation bits that a device fixes. */
 type DeviceModules = Readonly<Record<number, () => Promise<{ SHADERS: DeviceShaders }>>>;
 
+/** The permutation bits that a device fixes: a pipeline's bits of them pick its module. */
+export const DEVICE_BITS = 3;
+
 /** The WGSL device modules' loaders, by the permutation bits that a device fixes. */
 const WGSL_MODULES: DeviceModules = {
 	0: () => import('./shaders-wgsl'),

@@ -344,6 +344,14 @@ fn main_module(output: &Output, devices: &BTreeMap<DeviceModule, Builds<'_>>) ->
         ts.close("} as const;");
     }
     ts.out.push_str(LOADER_TYPE);
+    ts.line("");
+    ts.line(
+        "/** The permutation bits that a device fixes: a pipeline's bits of them pick its module. */",
+    );
+    ts.line(&format!(
+        "export const DEVICE_BITS = {};",
+        permutation::DEVICE
+    ));
     for target in [Target::Wgsl, Target::Glsl] {
         let name = target.name().to_ascii_uppercase();
         let modules: Vec<DeviceModule> = devices

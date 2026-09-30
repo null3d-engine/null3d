@@ -33,7 +33,7 @@ import {
 } from '../../generated/shaders';
 import { DEV } from '../dev';
 import { LINE_VERTICES } from '../line-vertices';
-import { variantFor } from '../variants';
+import { addDeviceShaders, type DeviceTemplate, variantFor } from '../variants';
 import { locationOfAttribute, vertexAttribute, vertexStride } from '../vertex-format';
 
 /** The WebGPU build of a shader variant. */
@@ -45,7 +45,7 @@ export function wgslOf<Pipeline extends string>(variant: {
 }
 
 /** How the backend builds the render pipelines of one template. */
-export interface RenderTemplate {
+export interface RenderTemplate extends DeviceTemplate {
 	/** A name for the browser's messages. */
 	readonly label: string;
 	/**
@@ -172,21 +172,22 @@ export class Pipelines {
 				texture: { sampleType: 'unfilterable-float', viewDimension: '2d' },
 			},
 		]);
-		for (const [id, label, shader, meshLocations, layouts] of [
-			[TEMPLATE_INSTANCED_LIT, 'lit', shaders.lit, [0, 1], [LAYOUT_FRAME]],
-			[TEMPLATE_INSTANCED_UNLIT, 'unlit', shaders.unlit, [0], [LAYOUT_FRAME]],
-			[TEMPLATE_INSTANCED_TEXCOORDS, 'texcoords', shaders.texcoords, [0, 2], [LAYOUT_FRAME]],
+		for (const [id, label, source, meshLocations, layouts] of [
+			[TEMPLATE_INSTANCED_LIT, 'lit', 'lit', [0, 1], [LAYOUT_FRAME]],
+			[TEMPLATE_INSTANCED_UNLIT, 'unlit', 'unlit', [0], [LAYOUT_FRAME]],
+			[TEMPLATE_INSTANCED_TEXCOORDS, 'texcoords', 'texcoords', [0, 2], [LAYOUT_FRAME]],
 			[
 				TEMPLATE_INSTANCED_UNLIT_MAP,
 				'unlit map',
-				shaders.unlit_map,
+				'unlit_map',
 				[0, 2],
 				[LAYOUT_FRAME, LAYOUT_TEXTURES],
 			],
 		] as const) {
 			this.defineTemplate(id, {
 				label: `mesh ${label}`,
-				shader,
+				shader: shaders[source],
+				source,
 				pipeline: 'main',
 				layouts,
 				meshLocations,
@@ -196,6 +197,7 @@ export class Pipelines {
 		this.defineTemplate(TEMPLATE_FINAL, {
 			label: 'final',
 			shader: shaders.final,
+			source: 'final',
 			pipeline: 'main',
 			layouts: [LAYOUT_FINAL],
 			vertexBuffers: [],
@@ -226,6 +228,17 @@ export class Pipelines {
 		if (!variants.some((variant) => variant.wgsl?.pipelines[template.pipeline]))
 			throw new Error(`the shader of template ${id} has no pipeline ${template.pipeline}`);
 		this.templates[id] = template;
+	}
+
+	/** Adds the builds of another device module, whose permutation bits new pipelines can take. */
+	addShaders(shaders: DeviceShaders): void {
+		addDeviceShaders(this.templates, shaders);
+	}
+
+	/** True when a template has the WGSL build of a permutation. */
+	hasShader(template: number, permutation: number): boolean {
+		const t = this.templates[template];
+		return t !== undefined && variantFor(t.shader, permutation, 'wgsl')?.wgsl != null;
 	}
 
 	layout(id: number): GPUBindGroupLayout {

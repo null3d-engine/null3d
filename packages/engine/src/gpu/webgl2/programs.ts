@@ -23,7 +23,7 @@ import {
 } from '../../generated/shaders';
 import { DEV } from '../dev';
 import { LINE_VERTICES } from '../line-vertices';
-import { variantFor } from '../variants';
+import { type DeviceTemplate, variantFor } from '../variants';
 import type { DepthSetup } from './depth';
 
 /**
@@ -56,7 +56,7 @@ export const NO_SAMPLER = -1;
  * which a pipeline's permutation word picks one, and the render pipeline that the template draws
  * with.
  */
-export interface GlslTemplate {
+export interface GlslTemplate extends DeviceTemplate {
 	readonly shader: ShaderVariants;
 	readonly pipeline: string;
 	/**
@@ -115,11 +115,14 @@ export interface Pipeline {
 /** The engine's render pipeline templates, by template id, from the shaders the device loaded. */
 export function engineTemplates(shaders: DeviceShaders): (GlslTemplate | undefined)[] {
 	const templates: (GlslTemplate | undefined)[] = [];
-	templates[TEMPLATE_INSTANCED_LIT] = { shader: shaders.lit, pipeline: 'main' };
-	templates[TEMPLATE_INSTANCED_UNLIT] = { shader: shaders.unlit, pipeline: 'main' };
-	templates[TEMPLATE_INSTANCED_TEXCOORDS] = { shader: shaders.texcoords, pipeline: 'main' };
-	templates[TEMPLATE_INSTANCED_UNLIT_MAP] = { shader: shaders.unlit_map, pipeline: 'main' };
-	templates[TEMPLATE_FINAL] = { shader: shaders.final, pipeline: 'main' };
+	for (const [id, source] of [
+		[TEMPLATE_INSTANCED_LIT, 'lit'],
+		[TEMPLATE_INSTANCED_UNLIT, 'unlit'],
+		[TEMPLATE_INSTANCED_TEXCOORDS, 'texcoords'],
+		[TEMPLATE_INSTANCED_UNLIT_MAP, 'unlit_map'],
+		[TEMPLATE_FINAL, 'final'],
+	] as const)
+		templates[id] = { shader: shaders[source], source, pipeline: 'main' };
 	if (DEV)
 		templates[TEMPLATE_DEBUG_LINES] = {
 			shader: DEBUG_LINES_SHADER,

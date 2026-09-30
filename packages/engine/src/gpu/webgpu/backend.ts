@@ -357,6 +357,16 @@ export class WebGPUBackend {
 		return i;
 	}
 
+	/** Adds the builds of another device module, whose permutation bits new pipelines can take. */
+	addShaders(shaders: DeviceShaders): void {
+		this.pipelines.addShaders(shaders);
+	}
+
+	/** True when a template has the WGSL build of a permutation. */
+	hasShader(template: number, permutation: number): boolean {
+		return this.pipelines.hasShader(template, permutation);
+	}
+
 	/** True while a pipeline is building. */
 	get building(): boolean {
 		return this.builds > 0;
