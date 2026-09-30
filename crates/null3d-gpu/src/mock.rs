@@ -4,8 +4,8 @@
 
 use crate::caps::{BUDGET, Capabilities, Limit, OFFSET_ALIGNMENT};
 use crate::drawlist::{
-    Command, NO_TARGET, Op, address, compare, decode, filter, format, resource_kind, texture_usage,
-    upload_flags, vertex, view,
+    Command, NO_TARGET, Op, address, compare, decode, filter, format, permutation, resource_kind,
+    texture_usage, upload_flags, vertex, view,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -790,6 +790,11 @@ impl MockBackend {
                     o.len() == 8 && o[7] & !vertex::ALL == 0,
                     op,
                     "a render pipeline names a vertex format of known attributes",
+                )?;
+                check(
+                    o[2] & !permutation::ALL == 0,
+                    op,
+                    "a render pipeline's permutation word holds known bits only",
                 )?;
                 check(
                     o[3] == format::NONE || !format::is_depth(o[3]),

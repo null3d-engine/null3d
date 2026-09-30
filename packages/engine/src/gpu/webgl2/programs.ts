@@ -5,7 +5,6 @@
 // it is first drawn with, so the driver can compile a frame's programs in parallel.
 
 import {
-	PERMUTATION_DRAW_INDEX,
 	TEMPLATE_INSTANCED_LIT,
 	TEMPLATE_INSTANCED_TEXCOORDS,
 	TEMPLATE_INSTANCED_UNLIT,
@@ -15,9 +14,13 @@ import {
 	DEPTH_MAPPING_UNIFORM,
 	type GlslProgram,
 	type GlslStage,
-	MESH_SHADER,
+	LIT_SHADER,
 	MIPMAP_SHADER,
+	TEXCOORDS_SHADER,
+	UNLIT_MAP_SHADER,
+	UNLIT_SHADER,
 } from '../../generated/shaders';
+import { type ShaderVariants, variantFor } from '../variants';
 import type { DepthSetup } from './depth';
 
 /** Texture units and uniform block binding points of each bind group: one per binding. */
@@ -26,12 +29,13 @@ export const SLOTS_PER_GROUP = 4;
 export const NO_SAMPLER = -1;
 
 /**
- * The GLSL programs of a render pipeline template: the plain one, and the one that reads the draw
- * index of `WEBGL_multi_draw` where the template has it.
+ * How the backend builds the programs of one render pipeline template: the shader's variants, of
+ * which a pipeline's permutation word picks one, and the render pipeline that the template draws
+ * with.
  */
 export interface GlslTemplate {
-	readonly plain: GlslProgram;
-	readonly multiDraw?: GlslProgram;
+	readonly shader: ShaderVariants;
+	readonly pipeline: string;
 }
 
 /** A linked, or linking, program, which every pipeline of its template and permutation shares. */
@@ -61,30 +65,18 @@ export interface Pipeline {
 	readonly vertexFormat: number;
 }
 
-/** The mesh template of one pipeline of the mesh shader, plain and for multi-draw. */
-function meshTemplate(pipeline: 'lit' | 'unlit' | 'unlit_map' | 'texcoords'): GlslTemplate {
-	const plain = MESH_SHADER.webgl2.glsl;
-	const multiDraw = MESH_SHADER.webgl2_multi_draw.glsl;
-	if (!plain || !multiDraw) throw new Error('the mesh shader has no WebGL2 build');
-	return { plain: plain[pipeline], multiDraw: multiDraw[pipeline] };
-}
-
 /** The engine's render pipeline templates, by template id. */
 export function engineTemplates(): (GlslTemplate | undefined)[] {
 	const templates: (GlslTemplate | undefined)[] = [];
-	templates[TEMPLATE_INSTANCED_LIT] = meshTemplate('lit');
-	templates[TEMPLATE_INSTANCED_UNLIT] = meshTemplate('unlit');
-	templates[TEMPLATE_INSTANCED_TEXCOORDS] = meshTemplate('texcoords');
-	templates[TEMPLATE_INSTANCED_UNLIT_MAP] = meshTemplate('unlit_map');
+	templates[TEMPLATE_INSTANCED_LIT] = { shader: LIT_SHADER, pipeline: 'main' };
+	templates[TEMPLATE_INSTANCED_UNLIT] = { shader: UNLIT_SHADER, pipeline: 'main' };
+	templates[TEMPLATE_INSTANCED_TEXCOORDS] = { shader: TEXCOORDS_SHADER, pipeline: 'main' };
+	templates[TEMPLATE_INSTANCED_UNLIT_MAP] = { shader: UNLIT_MAP_SHADER, pipeline: 'main' };
 	return templates;
 }
 
 /** The program that draws a mip level of a texture array's layer from the level before it. */
-export function mipmapTemplate(): GlslTemplate {
-	const glsl = MIPMAP_SHADER.webgl2.glsl;
-	if (!glsl) throw new Error('the mip level shader has no WebGL2 build');
-	return { plain: glsl.main };
-}
+export const MIPMAP_TEMPLATE: GlslTemplate = { shader: MIPMAP_SHADER, pipeline: 'main' };
 
 function compile(gl: WebGL2RenderingContext, type: number, stage: GlslStage): WebGLShader {
 	const shader = gl.createShader(type);
@@ -94,14 +86,18 @@ function compile(gl: WebGL2RenderingContext, type: number, stage: GlslStage): We
 	return shader;
 }
 
-/** Starts compiling and linking a template's program, without waiting for the result. */
+/**
+ * Starts compiling and linking a template's program, in the shader variant that the permutation
+ * bits pick, without waiting for the result.
+ */
 export function createProgram(
 	gl: WebGL2RenderingContext,
 	template: GlslTemplate,
 	permutation: number,
 ): Program {
-	const source = permutation & PERMUTATION_DRAW_INDEX ? template.multiDraw : template.plain;
-	if (!source) throw new Error('this render pipeline template has no multi-draw variant');
+	const source = variantFor(template.shader, permutation, 'glsl')?.glsl?.[template.pipeline];
+	if (!source)
+		throw new Error(`this render pipeline template has no variant for permutation ${permutation}`);
 	const program = gl.createProgram();
 	if (!program) throw new Error('WebGL2 could not create a program');
 	const shaders = [

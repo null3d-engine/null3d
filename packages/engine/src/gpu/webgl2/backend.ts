@@ -22,7 +22,7 @@ import {
 	createProgram,
 	engineTemplates,
 	type GlslTemplate,
-	mipmapTemplate,
+	MIPMAP_TEMPLATE,
 	type Pipeline,
 	type Program,
 	prepareProgram,
@@ -514,7 +514,7 @@ export class WebGL2Backend {
 	private mipmapProgram(): Program {
 		let program = this.programs.get(MIP_PROGRAM);
 		if (!program) {
-			program = createProgram(this.gl, mipmapTemplate(), 0);
+			program = createProgram(this.gl, MIPMAP_TEMPLATE, 0);
 			this.programs.set(MIP_PROGRAM, program);
 		}
 		this.useProgram(program);

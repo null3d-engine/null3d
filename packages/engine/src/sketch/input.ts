@@ -25,6 +25,7 @@ import {
 	FIELD_TYPE,
 	FIELD_X,
 	FIELD_Y,
+	FLAG_CONTROL,
 	FLAG_PRIMARY,
 	FLAG_TOUCH,
 	GAMEPAD_AXES,
@@ -60,11 +61,24 @@ export interface InputPointer {
 	/** Movement down since the previous frame, in CSS pixels. */
 	readonly dy: number;
 	/**
+	 * The part of `dx` made while a button was held: a drag. Movement before a press or after a
+	 * release in the same frame does not count.
+	 */
+	readonly dragDx: number;
+	/** The part of `dy` made while a button was held: a drag. */
+	readonly dragDy: number;
+	/**
 	 * The wheel's scroll since the previous frame, in pixels: positive where a page would scroll down.
 	 * A wheel that scrolls by lines counts 16 pixels a line, and one that scrolls by pages counts 100
 	 * a page, as three.js's controls count them.
 	 */
 	readonly wheel: number;
+	/**
+	 * The part of `wheel` that came from a pinch on a trackpad: positive as the fingers close.
+	 * Browsers send a pinch as wheel scroll that holds the Control key's flag while no Control key is
+	 * down.
+	 */
+	readonly pinch: number;
 	/** True when the pointer is a finger on a touch screen. */
 	readonly isTouch: boolean;
 }
@@ -187,7 +201,10 @@ class PointerState implements InputPointer {
 	buttons = 0;
 	dx = 0;
 	dy = 0;
+	dragDx = 0;
+	dragDy = 0;
 	wheel = 0;
+	pinch = 0;
 	isTouch = false;
 	/** The pointer id of the last event, or -1 before the first. */
 	id = -1;
@@ -229,6 +246,8 @@ export class InputReader implements Input {
 	private readonly padValues = new Float32Array(GAMEPADS * GAMEPAD_BUTTONS);
 	private readonly padAxes = new Float32Array(GAMEPADS * GAMEPAD_AXES);
 	private readonly pool: TouchState[] = Array.from({ length: MAX_TOUCHES }, () => new TouchState());
+	/** The control numbers of the two Control keys, whose state tells a trackpad's pinch from a wheel. */
+	private readonly controlKeys: readonly [number, number];
 	/** The mouse buttons held, as `PointerEvent.buttons` bits. */
 	private mouseButtons = 0;
 	/** The frame the state belongs to, or -1 before the first, so nothing counts as just pressed. */
@@ -259,6 +278,7 @@ export class InputReader implements Input {
 		for (const stick of STICKS)
 			for (const way of STICK_DIRECTIONS) add(`Gamepad${stick}${way}`, direction++);
 		for (const [key, code] of keyCodes.entries()) add(code, KEYS + key);
+		this.controlKeys = [this.names.get('ControlLeft') ?? -1, this.names.get('ControlRight') ?? -1];
 	}
 
 	/**
@@ -270,7 +290,10 @@ export class InputReader implements Input {
 		const { pointer, touches } = this;
 		pointer.dx = 0;
 		pointer.dy = 0;
+		pointer.dragDx = 0;
+		pointer.dragDy = 0;
 		pointer.wheel = 0;
+		pointer.pinch = 0;
 		for (let k = 0; k < touches.length; k++) {
 			const touch = touches[k] as TouchState;
 			touch.dx = 0;
@@ -398,7 +421,7 @@ export class InputReader implements Input {
 					this.setDown(KEYS + code, type === EVENT_KEY_DOWN);
 				break;
 			case EVENT_WHEEL:
-				this.pointer.wheel += floats[base + FIELD_Y] as number;
+				this.onWheel(floats[base + FIELD_Y] as number, ints[base + FIELD_FLAGS] as number);
 				break;
 			case EVENT_GAMEPAD_BUTTON:
 				this.onPadButton(base);
@@ -436,10 +459,18 @@ export class InputReader implements Input {
 		if ((flags & FLAG_TOUCH) !== 0) this.onTouch(type, id, x, y);
 		if ((flags & FLAG_PRIMARY) === 0) return;
 		const { pointer } = this;
-		// A new pointer, such as a finger after the mouse, moves the pointer without movement.
+		// A new pointer, such as a finger after the mouse, moves the pointer without movement. The
+		// buttons are still those of the previous event, so a press starts a drag and a release ends
+		// one at the event's own position.
 		if (id === pointer.id) {
-			pointer.dx += x - pointer.x;
-			pointer.dy += y - pointer.y;
+			const dx = x - pointer.x;
+			const dy = y - pointer.y;
+			pointer.dx += dx;
+			pointer.dy += dy;
+			if (pointer.buttons !== 0) {
+				pointer.dragDx += dx;
+				pointer.dragDy += dy;
+			}
 		}
 		pointer.id = id;
 		pointer.x = x;
@@ -454,6 +485,18 @@ export class InputReader implements Input {
 		for (let bit = 0; bit < MOUSE_BUTTONS; bit++)
 			if ((changed & (1 << bit)) !== 0)
 				this.setDown(BUTTON_OF_BIT[bit] as number, (buttons & (1 << bit)) !== 0);
+	}
+
+	/**
+	 * Adds a wheel's scroll. Scroll with the Control key's flag while no Control key is down comes
+	 * from a pinch on a trackpad.
+	 */
+	private onWheel(scroll: number, flags: number): void {
+		const { pointer, down } = this;
+		pointer.wheel += scroll;
+		const [left, right] = this.controlKeys;
+		if ((flags & FLAG_CONTROL) !== 0 && down[left] !== 1 && down[right] !== 1)
+			pointer.pinch += scroll;
 	}
 
 	private onTouch(type: InputEventType, id: number, x: number, y: number): void {

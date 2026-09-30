@@ -216,16 +216,16 @@ fn a_material_whose_map_is_destroyed_draws_with_its_color_after_the_rebuild() {
     step(&mut world, &mut mock, false);
     let settings = world.renderer.settings_mut();
     assert_eq!(
-        settings.pipeline_of(mesh, material).unwrap().shading,
-        Shading::UnlitMap
+        settings.pipeline_of(mesh, material).unwrap().template,
+        Shading::UnlitMap.template()
     );
     settings
         .textures_mut()
         .destroy(texture, world.frame)
         .unwrap();
     assert_eq!(
-        settings.pipeline_of(mesh, material).unwrap().shading,
-        Shading::Unlit
+        settings.pipeline_of(mesh, material).unwrap().template,
+        Shading::Unlit.template()
     );
     let commands = step(&mut world, &mut mock, true);
     assert!(binds(&commands, 1).is_empty(), "no pipeline samples a map");
