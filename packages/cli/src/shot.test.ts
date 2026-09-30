@@ -59,7 +59,7 @@ describe('parseShotArgs', () => {
 		expect(mistake(['--time', '1s'])).toContain('--time takes a number of seconds from 0');
 		expect(mistake(['--timeout', '0'])).toContain('--timeout takes a number of seconds above 0');
 		expect(mistake(['--page', 'https://example.com/'])).toContain(
-			"--page takes a path on the project's dev server",
+			"--page takes a path on the project's server",
 		);
 		for (const size of ['1280', '12x', '0x10', '1.5x10', '8193x10', '10x10x10'])
 			expect(mistake(['--size', size])).toBe(

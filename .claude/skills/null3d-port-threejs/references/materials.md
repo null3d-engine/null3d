@@ -121,12 +121,11 @@ Toon shading with three bands:
 
 ```ts
 const toon = materials.shader({
-  uniforms: { bands: 3, shadowColor: '#303050' },
+  uniforms: { bands: 3, shadowColor: '#303050', lightDirection: [-0.5, -1, -0.3] },
   surface: /* wgsl */ `
-    #import null3d::lighting::{mainLightDirection}
     fn surface(input: SurfaceInput) -> Surface {
       var s = defaultSurface(input);
-      let ndl = max(dot(input.worldNormal, -mainLightDirection()), 0.0);
+      let ndl = max(dot(input.worldNormal, -normalize(material.lightDirection)), 0.0);
       let band = floor(ndl * material.bands) / max(material.bands - 1.0, 1.0);
       s.emissive = mix(material.shadowColor, s.baseColor, band);
       s.baseColor = vec3f(0.0);      // lighting off; emissive carries the look

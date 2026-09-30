@@ -77,18 +77,20 @@ The engine keeps each scene's draw tables and every object's matrix on the GPU, 
 
 | Call | Cost in the frame it takes effect |
 | --- | --- |
-| `setPosition`, `setRotation`, `setScale`, and writes to a batch's arrays | The changed matrices |
+| `setPosition`, `setRotation`, `setScale`, the other transform setters, and writes to a batch's arrays | The changed matrices |
 | `setVisible` | The matrix and 4-byte draw entry of the object and of each object under it |
 | `setActiveCount` | The 4-byte draw entry of each row that starts or stops drawing |
+| `setCastShadows`, `setReceiveShadows` and `setRenderOrder` | Nothing |
 | Creating or destroying an object or an instance batch | A rebuild, and engine memory can grow in the next frame |
-| `setMaterial`, `setParent` and `setDynamic` | A rebuild |
+| `setMaterial`, `setMesh`, `setParent`, `setDynamic`, `setBounds` and `setFrustumCulled` | A rebuild |
 
 These habits keep play free of rebuilds:
 
 - Create every object, batch, mesh and material a level needs during setup or behind a loading screen. The engine sizes its memory for the scene it holds, so one created during play makes engine memory grow in the next frame.
 - Hide and show objects with `setVisible` instead of destroying and creating them.
 - Pool short-lived things, such as bullets and particles, in an instance batch sized for the most rows it will ever need. Show fewer with `setActiveCount`, and keep the live rows at the front of the arrays.
-- For a look that changes often, such as a highlight, keep two objects and swap their visibility. Keep `setMaterial` for rare changes.
+- For a look that changes often, such as a highlight, keep two objects and swap their visibility. Keep `setMaterial` and `setMesh` for rare changes.
+- Give bounds of your own with `setBounds` to few objects. On WebGPU, each object with bounds of its own takes a draw of its own. Objects that share a mesh and a material share one draw.
 - Every row of a batch counts toward the scene's limit of objects and instance rows, active or not. On WebGPU every device draws 2,097,152. On WebGL2 the limit follows the largest texture the device allows. It is 1,048,576 at 2,048 pixels, the least that WebGL2 allows. For the device the page runs on, `engine.capabilities.maxInstances` gives the limit (E1501). Engine memory holds about 5 million rows (E1109). So size each batch for the rows it uses.
 - Check with `measure`. A `rebuilds` count above zero during play points to one of the calls in the lower rows of the table.
 
@@ -148,6 +150,8 @@ The render worker picks how each upload travels, so you do not need to. Uploads 
 | `memory` | The engine's WebAssembly memory and the JavaScript heap |
 
 The sketch worker's steps are `update`, `commands`, `transforms`, `batches`, `cull` and `record`, and the render worker's is `replay`. A thread's time less its `update` step is the engine's own work on that thread.
+
+To measure your page with no code, run `bunx @null3d/cli bench` in your project's folder. It builds the project for production and opens the page in a headless browser with the `?bench` switch. That switch publishes the running engine as `window.__null3dEngine`. Then `bench` takes 5 fresh runs of 30 seconds, each after 5 seconds of warm-up. It prints the median and the spread of the figures above ([The `null3d` command](../cli/null3d.md#bench)).
 
 A frame callback keeps firing at the display rate while the GPU falls behind. So a count of callbacks can report a healthy rate while the screen shows fewer frames. Compare `completedFps` with `presentedFps`. When the GPU finishes fewer frames than the renderer presents, frames queue on the GPU. Then `gpuLatencyMs` grows, and users feel it as input lag. The engine checks a WebGL2 fence at its next frame callback, so there `gpuLatencyMs` rounds up to a frame interval. The `gpuMs` figure is the GPU's working time within a frame, not the time from submit to screen. The engine measures GPU time and completion on one frame in eight. Measuring every frame would cost the drawing thread about as much as drawing a small scene.
 

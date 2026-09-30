@@ -249,13 +249,13 @@
     {
       "id": "position",
       "category": "Scene graph",
-      "three": "object.position.set / .x = / .copy",
+      "three": "object.position.set / .x = / .copy / translateX/Y/Z",
       "status": "changed",
       "since": "0.1",
-      "target": "obj.setPosition(x, y, z)",
-      "notes": "For many moving objects, write instance-batch or dynamic arrays directly instead of calling setters.",
+      "target": "obj.setPosition(x, y, z); obj.translate(x, y, z) for translateX/Y/Z",
+      "notes": "translate moves along the object's own axes, as translateX, translateY and translateZ do together. For many moving objects, write instance-batch or dynamic arrays directly instead of calling setters.",
       "docs": "api/objects",
-      "detect": "\\.position\\.(set|copy|add|sub|lerp|addScaledVector|x|y|z)\\b|\\.position\\s*="
+      "detect": "\\.position\\.(set|copy|add|sub|lerp|addScaledVector|x|y|z)\\b|\\.position\\s*=|\\.translate[XYZ]\\s*\\("
     },
     {
       "id": "rotation",
@@ -264,7 +264,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "obj.setRotationEuler(x, y, z, 'XYZ'), obj.rotateX/Y/Z(angle), or obj.setRotation(qx, qy, qz, qw)",
-      "notes": "Euler order strings match three.js.",
+      "notes": "Euler order strings match three.js. rotateX, rotateY and rotateZ turn the object about its own axes, as in three.js. For rotateOnAxis, multiply the quaternion from obj.getRotation by one from quat.setAxisAngle, and pass the product to setRotation.",
       "docs": "api/objects",
       "detect": "\\.rotation\\.(set|copy|x|y|z)\\b|\\.rotate[XYZ]\\s*\\(|\\.rotateOnAxis\\s*\\("
     },
@@ -302,6 +302,17 @@
       "detect": "\\.lookAt\\s*\\("
     },
     {
+      "id": "world-transform",
+      "category": "Scene graph",
+      "three": "object.getWorldPosition / getWorldQuaternion / matrixWorld",
+      "status": "changed",
+      "since": "0.1",
+      "target": "obj.getWorldPosition(out), obj.getWorldQuaternion(out), obj.getWorldMatrix(out)",
+      "notes": "Each getter copies into an array that you make once, with vec3.create(), quat.create() or mat4.create(). They read the last frame that the engine processed, so a change made in onUpdate shows from the next onUpdate on. getWorldMatrix gives 16 numbers, column by column, like matrixWorld.elements.",
+      "docs": "api/objects",
+      "detect": "\\.getWorld(Position|Quaternion)\\s*\\(|\\.matrixWorld\\b"
+    },
+    {
       "id": "matrix-update",
       "category": "Scene graph",
       "three": "matrixAutoUpdate = false / updateMatrix / updateMatrixWorld / matrixWorldNeedsUpdate",
@@ -318,8 +329,8 @@
       "three": "object.traverse / getObjectByName / children",
       "status": "changed",
       "since": "0.1",
-      "target": "prefab.find(name), scene.find(name), group.forEachChild(fn)",
-      "notes": "Avoid traversals in onUpdate: keep the handles you need in arrays at setup time.",
+      "target": "scene.find(name) for getObjectByName; your own arrays of objects instead of traverse and children",
+      "notes": "scene.find returns the first object created with the name, from an index. No call walks an object's children, so keep the objects you need in arrays at setup time.",
       "docs": "api/objects",
       "detect": "\\.traverse(Visible|Ancestors)?\\s*\\(|getObjectBy(Name|Id|Property)\\s*\\("
     },
@@ -340,9 +351,9 @@
       "three": "object.castShadow / receiveShadow",
       "status": "direct",
       "since": "0.1",
-      "target": "obj.setCastShadows(true) / setReceiveShadows(true), or options in createMesh",
-      "notes": "",
-      "docs": "concepts/shadows",
+      "target": "mesh.setCastShadows(true) / setReceiveShadows(true), or the castShadows and receiveShadows options of createMesh",
+      "notes": "Both are false by default, as in three.js. This version stores them but draws no shadows yet.",
+      "docs": "api/objects",
       "detect": "\\.(castShadow|receiveShadow)\\s*="
     },
     {
@@ -362,8 +373,8 @@
       "three": "object.renderOrder",
       "status": "direct",
       "since": "0.1",
-      "target": "obj.setRenderOrder(n)",
-      "notes": "Affects the order of transparent objects. The engine orders opaque objects itself for speed.",
+      "target": "mesh.setRenderOrder(n)",
+      "notes": "Affects the order of transparent objects. The engine orders opaque objects itself for speed. This version draws every material opaque, so the order has no effect yet.",
       "docs": "api/objects",
       "detect": "\\.renderOrder\\s*="
     },
@@ -373,8 +384,8 @@
       "three": "object.frustumCulled = false",
       "status": "direct",
       "since": "0.1",
-      "target": "obj.setFrustumCulled(false)",
-      "notes": "Usually needed only for shader-displaced geometry; prefer obj.setBounds(center, radius) with larger bounds.",
+      "target": "mesh.setFrustumCulled(false)",
+      "notes": "Usually needed only for shader-displaced geometry; prefer mesh.setBounds(center, radius) with larger bounds, which keeps culling at work.",
       "docs": "api/objects",
       "detect": "\\.frustumCulled\\s*="
     },
@@ -384,8 +395,8 @@
       "three": "object.userData",
       "status": "manual",
       "since": "0.1",
-      "target": "Your own arrays, or a Map keyed by handle",
-      "notes": "Engine objects are not extensible.",
+      "target": "Your own arrays, or a Map keyed by the object",
+      "notes": "Engine objects are not extensible. A Map from each object to its data keeps the data beside the object, and arrays indexed the way your sketch counts objects stay fastest in per-frame loops.",
       "docs": "concepts/handles",
       "detect": "\\.userData\\b"
     },

@@ -20,6 +20,9 @@ pub const COLOR_FLOATS: usize = 4;
 /// The world radius of a row that culling must always reject: a row with no live object, or an
 /// object hidden by its own flag or an ancestor's.
 pub const HIDDEN_RADIUS: f32 = f32::NEG_INFINITY;
+/// The world radius of an object that culling must never reject: a sphere wider than any scene.
+/// It is finite, so sums of spheres and GPU shaders, which need not keep infinities, stay exact.
+pub const UNBOUNDED_RADIUS: f32 = 1.0e30;
 
 /// Four parallel arrays of sphere centres and radii, all of the same length.
 #[derive(Clone, Copy, Debug)]

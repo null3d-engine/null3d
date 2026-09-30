@@ -55,7 +55,7 @@ const SLOT_POLL_MS = 4;
  * Resolves once a control slot holds `target` or more, or once the engine stops. It waits without
  * blocking the thread, and checks the slot on a timer where the control block is not shared memory.
  */
-async function reached(slots: Int32Array, slot: Slot, target: number): Promise<void> {
+async function reached(slots: Int32Array, slot: number, target: number): Promise<void> {
 	const shared =
 		typeof SharedArrayBuffer !== 'undefined' && slots.buffer instanceof SharedArrayBuffer;
 	for (;;) {
@@ -241,7 +241,7 @@ export class SketchRunner {
 	}
 
 	/** Records the time since the previous phase ended as a phase of the frame. */
-	private endPhase(phase: Phase): void {
+	private endPhase(phase: number): void {
 		const now = performance.now();
 		this.record.addPhase(phase, now - this.phaseStart);
 		this.phaseStart = now;

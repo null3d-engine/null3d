@@ -24,7 +24,6 @@
 //   --network <list>    slow-4g, full: slow-4g on this computer, both on a phone
 //   --switches <query>  more page switches for every load, such as jobs=4
 //   --android           Chrome on the Android phone connected by USB
-import { spawn } from 'node:child_process';
 import { chromium } from '@playwright/test';
 import { forwardPort, phoneModel } from '../tests/lib/adb.ts';
 import { ENGINE_MODES, type EngineMode } from '../tests/lib/engine-checks.ts';
@@ -36,9 +35,9 @@ import {
 	loadPath,
 	takeDownloads,
 } from '../tests/lib/load-routes.ts';
-import { buildStartupPages, prepareLoads } from '../tests/lib/load-server.ts';
+import { buildStartupPages, prepareLoads, STARTUP_PAGES_DIR } from '../tests/lib/load-server.ts';
 import { slug } from '../tests/lib/runs.ts';
-import { DEBUG_PORT, PREVIEW_PORT, REPO_ROOT, trackServer } from '../tests/lib/server.ts';
+import { DEBUG_PORT, PREVIEW_PORT, startPreview } from '../tests/lib/server.ts';
 import {
 	closePagesAt,
 	connectPhoneChrome,
@@ -201,27 +200,6 @@ export function stepUrl(base: string, step: LoadStep, options: Options, session:
 /** A step as a report's labels: its thread mode, kind and network. */
 const stepLabels = (step: LoadStep) => [step.mode.name, step.kind, NETWORKS[step.network].label];
 
-/** Starts `vite preview` on the preview port, and resolves with the function that stops it. */
-function startPreview(): Promise<() => void> {
-	const child = spawn('bunx', ['vite', 'preview', '--port', String(PREVIEW_PORT), '--strictPort'], {
-		cwd: REPO_ROOT,
-		stdio: ['ignore', 'pipe', 'pipe'],
-	});
-	const stop = trackServer(child);
-	return new Promise((resolve, reject) => {
-		const deadline = setTimeout(() => {
-			stop();
-			reject(new Error('vite preview did not start'));
-		}, 30_000);
-		child.stdout?.on('data', (chunk: Buffer) => {
-			if (chunk.toString().includes(String(PREVIEW_PORT))) {
-				clearTimeout(deadline);
-				resolve(stop);
-			}
-		});
-	});
-}
-
 /** A browser that the tool drives, and how to let go of it. */
 interface Driven {
 	devtools: DevTools;
@@ -298,13 +276,13 @@ function loadLine(
 async function main(): Promise<void> {
 	const options = parseArgs(process.argv.slice(2));
 	buildStartupPages();
-	const stopPreview = await startPreview();
-	const base = `http://localhost:${PREVIEW_PORT}`;
+	const preview = await startPreview(STARTUP_PAGES_DIR, PREVIEW_PORT, '/tests/pages/engine.html');
+	const base = preview.url;
 	// On a phone, every load runs in the phone's own Chrome. On this computer, the warm loads share
 	// one Chrome, and each cold load gets a fresh one.
 	let shared: Driven | undefined;
 	try {
-		await prepareLoads(base);
+		await prepareLoads(base, ['startup']);
 		let device = 'this computer';
 		if (options.android) {
 			device = phoneModel();
@@ -350,7 +328,7 @@ async function main(): Promise<void> {
 		}
 	} finally {
 		await shared?.close();
-		stopPreview();
+		preview.stop();
 	}
 }
 
