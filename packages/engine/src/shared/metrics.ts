@@ -87,7 +87,13 @@ const FIRST_FRAME = 2;
 const REFRESH_HZ = 3;
 /** Float64 index of the epoch time, in ms, at which the GPU finished the first frame. */
 const FIRST_FRAME_DONE = 4;
-const HEADER_WORDS = 12;
+/** Float64 index of the epoch time, in ms, at which the first frame's pipelines started to build. */
+const WARM_UP_START = 5;
+/** Float64 index of the epoch time, in ms, at which the first frame's pipelines were all built. */
+const WARM_UP_END = 6;
+/** Float64 index of the number of pipelines that the first frame built. */
+const FIRST_FRAME_PIPELINES = 7;
+const HEADER_WORDS = 16;
 const WRITTEN = HEADER_WORDS;
 
 function recordsStart(rings: number): number {
@@ -220,10 +226,27 @@ export class FrameRecorder {
 		this.views.times[REFRESH_HZ] = hz;
 	}
 
-	/** Records when the first frame reached the screen, as epoch milliseconds, once per engine. */
+	/**
+	 * Records when the first frame reached the screen, as epoch milliseconds, once per engine, with
+	 * the pipelines it built: the pipeline count of the record that `commit` has not closed yet.
+	 */
 	markFirstFrame(): void {
+		const { times, words } = this.views;
+		if (times[FIRST_FRAME] !== 0) return;
+		times[FIRST_FRAME] = performance.timeOrigin + performance.now();
+		times[FIRST_FRAME_PIPELINES] = words[this.at + COUNTERS + Counter.Pipelines] as number;
+	}
+
+	/**
+	 * Records, once per engine, when the first frame's pipelines started to build and when none was
+	 * building any longer, as epoch milliseconds. The thread that draws calls it each time it
+	 * checks the first frame, until that frame draws.
+	 */
+	markWarmUp(building: boolean): void {
 		const { times } = this.views;
-		if (times[FIRST_FRAME] === 0) times[FIRST_FRAME] = performance.timeOrigin + performance.now();
+		const now = performance.timeOrigin + performance.now();
+		if (times[WARM_UP_START] === 0) times[WARM_UP_START] = now;
+		if (!building && times[WARM_UP_END] === 0) times[WARM_UP_END] = now;
 	}
 }
 
@@ -271,6 +294,22 @@ export class MetricsReader {
 	/** Epoch milliseconds at which the GPU finished the first frame, or 0 before that. */
 	get firstFrameDoneTime(): number {
 		return this.views.times[FIRST_FRAME_DONE] as number;
+	}
+
+	/**
+	 * Milliseconds from the start of the first frame's pipeline builds until none was building, or
+	 * null before then.
+	 */
+	get warmUpMs(): number | null {
+		const { times } = this.views;
+		const end = times[WARM_UP_END] as number;
+		return end > 0 ? end - (times[WARM_UP_START] as number) : null;
+	}
+
+	/** Pipelines that the first frame built, or null before the first frame. */
+	get firstFramePipelines(): number | null {
+		const { times } = this.views;
+		return (times[FIRST_FRAME] as number) > 0 ? (times[FIRST_FRAME_PIPELINES] as number) : null;
 	}
 
 	/** The display's refresh rate in hertz, or 0 before the thread that draws has measured it. */

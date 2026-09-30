@@ -101,7 +101,7 @@ Performance advice written for other engines often assumes things that do not ho
 | Question | null3D's answer |
 | --- | --- |
 | What makes the GPU build a pipeline? | A shading model, lit or unlit, and the vertex format of the meshes it draws, with the canvas's color format, the depth format and the sample count. A material never does: materials are rows in one shared table, so a thousand lit materials share one lit pipeline for each vertex format. |
-| When are pipelines built? | In the first frame that draws a shading model with a vertex format, and again after the browser replaces the GPU. Sketch code never compiles one. `measure` counts builds in `pipelines`. |
+| When are pipelines built? | In the background, from the first frame that draws a shading model with a vertex format, and again after the browser replaces the GPU. The first frame waits for its pipelines. After that, an object whose pipeline is still building draws nothing until it is built. `scene.warmUp()` resolves once every pipeline is built, and `measure` counts builds in `pipelines`. |
 | What does the engine batch by itself? | Every object and instance row with the same shading model, mesh and material goes into one bucket, which one indirect draw call draws. A mesh over 65,535 vertices takes one draw per part. Separate objects from `createMesh` batch the same way as the rows of an instance batch. |
 | Which passes walk the scene? | On WebGPU, two: a culling pass on the GPU, which tests every object and row against the view, and the main pass, which replays a draw bundle. The engine records the bundle again only when the scene's structure changes. On WebGL2 the job workers cull on the CPU, and the main pass draws the objects in view. |
 | Does the engine know when the GPU finished a frame? | Yes, for every frame. It listens to the WebGPU queue, or checks a WebGL2 fence, and blocks no thread. `measure` reports `completedFps` and `gpuLatencyMs`. Sketch code never waits for the GPU. |
@@ -112,7 +112,7 @@ So some common advice does not apply:
 
 - **Merge meshes to cut draw calls.** Objects that share a mesh and a material already share one draw. Merging different small static meshes still cuts the number of buckets.
 - **Share materials so objects share a shader.** Every material already shares its pipeline for each vertex format. Share materials anyway, because each mesh and material pair is its own bucket and draw.
-- **Compile or warm up after each loading stage.** The engine builds each pipeline in the first frame that draws with it. Wait for `engine.firstFrame` before you remove the first loading screen.
+- **Compile shaders before the first frame.** The first frame waits for its pipelines. Wait for `engine.firstFrame` before you remove the first loading screen. A later loading stage does need a warm-up, as [Loading screens and warm-up](loading-screens.md) shows.
 - **Turn off matrix updates for objects that do not move.** Objects are static by default, and a static object costs nothing per frame.
 - **Mark a changed object for update.** Setters mark the change themselves.
 - **Track GPU completion in your own code.** `measure` reports it.

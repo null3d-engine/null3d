@@ -8,7 +8,7 @@ summary: "Creating objects; find; background, environment, fog, sky; warmUp."
 
 # Scene
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Fog, sky, environments, texture backgrounds and `scene.warmUp` are not built yet, so coding agents must not use them.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Fog, sky, environments and texture backgrounds are not built yet, so coding agents must not use them.
 
 The scene holds everything the engine draws: the objects, the camera that the canvas shows, the lights and the background. A sketch gets it as `scene` in its setup function, and creates everything through it.
 
@@ -85,6 +85,10 @@ Values that the engine computes, such as the result of `getWorldPosition`, come 
 
 When the engine cannot apply a change, such as a parent loop (E1104), it skips that change and logs the error to the console. The rest of the queue still applies.
 
+## Warm-up
+
+The GPU draws each kind of object with a pipeline, which takes time to build. The first frame waits until its pipelines are built. After that, an object whose pipeline is still building draws nothing until it is built. A warm-up, `await scene.warmUp()`, resolves once every pipeline that the scene needs is built, hidden objects included. So create a later loading stage hidden, warm up, then show it. [Loading screens and warm-up](../guides/loading-screens.md) shows the pattern.
+
 ## Instance batches
 
 An instance batch is one object that draws many copies of one mesh with one material. Its rows live in typed arrays that sketch code writes directly, with no call per row. A static batch, the default, uploads the rows you mark with `markDirty`. A batch created with `dynamic: true` uploads every row in every frame. Every row of a batch shares the batch's layers, which the `layers` option and `setLayers(mask)` set, as [Render layers](../concepts/render-layers.md) explains. [Instances and batching](../concepts/instances.md) explains batches in full.
@@ -101,6 +105,7 @@ An instance batch is one object that draws many copies of one mesh with one mate
 - [Handles and objects](../concepts/handles.md): how objects keep their data in the engine's memory.
 - [Static and dynamic objects](../concepts/static-dynamic.md): what the `dynamic` option changes.
 - [Materials](materials.md) and [Geometry](geometry.md): what a mesh draws.
+- [Loading screens and warm-up](../guides/loading-screens.md): waiting for the scene's pipelines.
 
 ## API reference
 
@@ -187,5 +192,6 @@ The scene: every object, the active camera, the lights and the background.
 | `createHemisphereLight(options: HemisphereLightOptions = {}): HemisphereLight` | Light from the sky above and the ground below. |
 | `createAmbientLight(options: LightOptions = {}): AmbientLight` | Light on every surface, from no direction. |
 | `setBackground(color: ColorInput): void` | The color behind every object. |
+| `warmUp(): Promise<void>` | Builds every GPU pipeline that the scene needs as it stands, and resolves once they are all built. Hidden objects count too. After the first frame, an object whose pipeline is still building draws nothing, so create a loading stage's objects hidden, warm up, then show them. The first frame waits for its pipelines anyway. In the setup, a warm-up draws that frame once they are built, before the setup goes on. |
 
 <!-- null3d:api:end -->
