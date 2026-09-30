@@ -19,7 +19,7 @@
 //   bun run bench:run -- --compare ../baseline,. --runs 3 --seconds 10
 //   bun run bench:run -- --dev --scenes s2 --pages null3d-webgpu
 // Options:
-//   --scenes <list>   s1, s1-static, s1-cells, s2, s3; the default is s1, and every scene with
+//   --scenes <list>   s1, s1-static, s1-cells, s2, s3, s4; the default is s1, and every scene with
 //                     --sweep or --compare
 //   --pages <list>    page kinds; the default is null3d-webgpu, threejs-webgpu, threejs-webgl and
 //                     scene-code. With --jobs or --compare it is null3d-webgpu and null3d-webgl2,
@@ -87,6 +87,7 @@ import {
 } from './lib/report';
 import { DEV_OPTION, pagesText, serveBenchPages } from './lib/serve';
 import {
+	createS4,
 	MEASURE_SECONDS,
 	S2_NODES_PER_TREE,
 	S2_ROOTS,
@@ -106,6 +107,8 @@ const SWEEP_COUNTS: Record<BenchScene, readonly number[]> = {
 	s2: [1, 3, S2_ROOTS, 3 * S2_ROOTS].map((trees) => trees * S2_NODES_PER_TREE),
 	// S3's counts are boxes; every count has the same 256 point lights.
 	s3: [1, 100, 1_000, 5_000, S3_DEFAULT_COUNT, 4 * S3_DEFAULT_COUNT],
+	// S4 is one town, which ignores the count.
+	s4: [createS4().count],
 };
 const DEFAULT_PAGES: BenchPageKind[] = [
 	'null3d-webgpu',

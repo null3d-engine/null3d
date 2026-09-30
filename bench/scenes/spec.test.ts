@@ -5,6 +5,7 @@ import {
 	createS1,
 	createS2,
 	createS3,
+	createS4,
 	HOLD_TIME,
 	mulberry32,
 	S1_BOB_HEIGHT,
@@ -26,6 +27,18 @@ import {
 	S3_LIGHT_COUNT,
 	S3_LIGHT_SEED,
 	S3_PATHS,
+	S4_CAMERA_PATH,
+	S4_EXTENT,
+	S4_FIRST_VEHICLE_KIND,
+	S4_KINDS,
+	S4_MATERIALS,
+	S4_MESHES,
+	S4_STREET_LIGHT,
+	S4_TEXTURE_SIZE,
+	S4_TEXTURES,
+	S4_TOWN,
+	S4_VEHICLES,
+	type S4MeshSpec,
 	s1Camera,
 	s1CellsCamera,
 	s1CellsInstanceAt,
@@ -40,6 +53,13 @@ import {
 	s3Grid,
 	s3LightAt,
 	s3LightColor,
+	s4BlockCenter,
+	s4Camera,
+	s4KindOf,
+	s4ObjectAt,
+	s4Texture,
+	s4VehicleAt,
+	s4VehicleScale,
 } from './spec';
 
 const TAU = 2 * Math.PI;
@@ -520,5 +540,165 @@ describe('S3', () => {
 		expectClose(start.position, [120, 50, 0]);
 		expectClose(start.target, [0, 0, 0]);
 		expectClose(cameraAt(s3Camera, 15).position, [0, 50, -120]);
+	});
+});
+
+describe('S4', () => {
+	const data = createS4();
+	const kinds = (indexes: ArrayLike<number>) => Array.from(indexes, (kind) => s4KindOf(kind));
+	const bucket = ({ mesh, material }: { mesh: string; material: string }) => `${mesh}/${material}`;
+
+	test('is the same for the same seed, and differs for another', () => {
+		expect(createS4()).toEqual(data);
+		expect(createS4(5).kind).not.toEqual(data.kind);
+	});
+
+	test('has about 5,000 still objects in about 50 buckets, 200 vehicles and 16 street lights', () => {
+		expect(data.count).toBe(5_000);
+		const still = new Set(kinds(data.kind).map(bucket));
+		const moving = new Set(kinds(data.vehicleKind).map(bucket));
+		expect(still.size).toBe(48);
+		expect(moving.size).toBe(4);
+		expect(data.vehicles).toBe(S4_VEHICLES.count);
+		expect(data.lights).toHaveLength(16 * 3);
+		for (const kind of data.vehicleKind) expect(kind).toBeGreaterThanOrEqual(S4_FIRST_VEHICLE_KIND);
+		for (const kind of data.kind) expect(kind).toBeLessThan(S4_FIRST_VEHICLE_KIND);
+		expect(() => s4KindOf(S4_KINDS.length)).toThrow('S4 has no object kind');
+	});
+
+	test('uses only the meshes and materials it defines, and one texture per material', () => {
+		for (const { mesh, material } of S4_KINDS) {
+			expect(S4_MESHES[mesh]).toBeDefined();
+			expect(S4_MATERIALS[material]).toBeDefined();
+		}
+		for (const { texture } of Object.values(S4_MATERIALS)) expect(S4_TEXTURES).toContain(texture);
+	});
+
+	test('keeps every building inside its block, on the slab, below the camera', () => {
+		const half = S4_TOWN.blockSize / 2;
+		const blockOf = (v: number) =>
+			Array.from({ length: S4_TOWN.blocks }, (_, i) => s4BlockCenter(i)).find(
+				(center) => Math.abs(v - center) < half,
+			);
+		let buildings = 0;
+		for (let i = 0; i < data.count; i++) {
+			const { mesh, size } = s4KindOf(data.kind[i]!);
+			if (size || mesh === 'tile') continue;
+			const [x, y, z] = [
+				data.position[i * 3]!,
+				data.position[i * 3 + 1]!,
+				data.position[i * 3 + 2]!,
+			];
+			const [width, height, depth] = [
+				data.size[i * 3]!,
+				data.size[i * 3 + 1]!,
+				data.size[i * 3 + 2]!,
+			];
+			if (width === S4_TOWN.blockSize) continue;
+			buildings++;
+			const [cx, cz] = [blockOf(x), blockOf(z)];
+			expect(cx).toBeDefined();
+			expect(cz).toBeDefined();
+			expect(Math.abs(x - cx!) + width / 2).toBeLessThanOrEqual(half);
+			expect(Math.abs(z - cz!) + depth / 2).toBeLessThanOrEqual(half);
+			expect(y - height / 2).toBeCloseTo(S4_TOWN.slabHeight, 5);
+			expect(y + height / 2).toBeLessThan(S4_CAMERA_PATH.height);
+		}
+		expect(buildings).toBe(S4_TOWN.blocks ** 2 * S4_TOWN.lots ** 2);
+	});
+
+	test('stands each object on what is under it, and lays flat meshes face up just above it', () => {
+		const position = [0, 0, 0];
+		const quaternion = [0, 0, 0, 0];
+		const scale = [0, 0, 0];
+		for (let i = 0; i < data.count; i++) {
+			const { mesh } = s4KindOf(data.kind[i]!);
+			const spec: S4MeshSpec = S4_MESHES[mesh];
+			s4ObjectAt(data, i, position, quaternion, scale);
+			const q = new Quaternion(...(quaternion as [number, number, number, number]));
+			const up = new Vector3(0, 0, 1).applyQuaternion(q);
+			if (spec.flat) {
+				expectClose(up.toArray(), [0, 1, 0], 6);
+				expect(scale[2]).toBe(1);
+			} else expect(new Vector3(0, 1, 0).applyQuaternion(q).y).toBeCloseTo(1, 6);
+			// Scaled by the object's size over the mesh's unit, the mesh has the object's size.
+			const size = [data.size[i * 3]!, data.size[i * 3 + 1]!, data.size[i * 3 + 2]!];
+			expect(scale[0]! * spec.unit[0]).toBeCloseTo(size[0]!, 5);
+			if (spec.flat) expect(scale[1]! * spec.unit[1]).toBeCloseTo(size[2]!, 5);
+			else expect(scale[1]! * spec.unit[1]).toBeCloseTo(size[1]!, 5);
+			const base = position[1]! - (spec.flat || mesh === 'hoop' ? 0 : size[1]! / 2);
+			expect(base).toBeGreaterThanOrEqual(0);
+		}
+	});
+
+	test('drives each vehicle along its lane, pointed the way it drives, and back in at the edge', () => {
+		const position = [0, 0, 0];
+		const later = [0, 0, 0];
+		const quaternion = [0, 0, 0, 0];
+		const scale = [0, 0, 0];
+		for (let i = 0; i < data.vehicles; i++) {
+			s4VehicleAt(data, i, 3, position, quaternion);
+			s4VehicleAt(data, i, 3.1, later, quaternion);
+			s4VehicleScale(data, i, scale);
+			const along = data.vehicleAxis[i] === 0 ? 0 : 2;
+			expect(position[2 - along]).toBeCloseTo(data.vehicleLane[i]!, 5);
+			expect(position[1]).toBeCloseTo(scale[1]! / 2, 9);
+			expect(Math.abs(position[along]!)).toBeLessThanOrEqual(S4_EXTENT);
+			const moved = later[along]! - position[along]!;
+			// Unless it came back in at the other edge, it moved 0.1 s at its speed, the way it faces.
+			if (Math.abs(moved) < S4_EXTENT) {
+				expect(moved).toBeCloseTo(data.vehicleDirection[i]! * data.vehicleSpeed[i]! * 0.1, 3);
+				const q = new Quaternion(...(quaternion as [number, number, number, number]));
+				const forward = new Vector3(1, 0, 0).applyQuaternion(q).toArray();
+				expect(forward[along]).toBeCloseTo(Math.sign(moved), 6);
+			}
+			const loop = (2 * S4_EXTENT) / data.vehicleSpeed[i]!;
+			s4VehicleAt(data, i, 3 + loop, later, quaternion);
+			expectClose(later, position, 3);
+		}
+	});
+
+	test('puts a street light over the town-side corner of each block', () => {
+		const inset = S4_TOWN.blockSize / 2 - S4_STREET_LIGHT.cornerInset;
+		const corners = [0, 1, 2, 3].map((b) => s4BlockCenter(b) - Math.sign(s4BlockCenter(b)) * inset);
+		const onCorner = (v: number) => corners.some((corner) => Math.abs(corner - v) < 1e-4);
+		const places = new Set<string>();
+		for (let i = 0; i < 16; i++) {
+			const [x, y, z] = [data.lights[i * 3]!, data.lights[i * 3 + 1]!, data.lights[i * 3 + 2]!];
+			expect(y).toBe(S4_STREET_LIGHT.height);
+			expect(onCorner(x) && onCorner(z)).toBe(true);
+			places.add(`${x},${z}`);
+		}
+		expect(places.size).toBe(16);
+	});
+
+	test('circles the camera above the town, looking ahead and down', () => {
+		const { radius, height, lookRadius, lookAhead } = S4_CAMERA_PATH;
+		const start = cameraAt(s4Camera, 0);
+		expectClose(start.position, [radius, height, 0]);
+		expectClose(start.target, [
+			lookRadius * Math.cos(lookAhead),
+			0,
+			-lookRadius * Math.sin(lookAhead),
+		]);
+		expectClose(cameraAt(s4Camera, S4_CAMERA_PATH.seconds / 4).position, [0, height, -radius]);
+	});
+
+	test('makes each texture opaque, gray and the same every time', () => {
+		for (const name of S4_TEXTURES) {
+			const texels = s4Texture(name);
+			expect(texels).toHaveLength(S4_TEXTURE_SIZE * S4_TEXTURE_SIZE * 4);
+			expect(s4Texture(name)).toEqual(texels);
+			for (let i = 0; i < texels.length; i += 4) {
+				expect(texels[i + 3]).toBe(255);
+				expect(texels[i + 1]).toBe(texels[i]);
+				expect(texels[i + 2]).toBe(texels[i]);
+			}
+		}
+		// A window is dark, and the wall between windows is light.
+		const windows = s4Texture('windows');
+		const at = (x: number, y: number) => windows[(y * S4_TEXTURE_SIZE + x) * 4]!;
+		expect(at(4, 4)).toBeLessThan(110);
+		expect(at(0, 0)).toBeGreaterThan(220);
 	});
 });

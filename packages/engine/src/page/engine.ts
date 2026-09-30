@@ -48,6 +48,7 @@ import { watchDisplay } from './display';
 import {
 	type FrameMetrics,
 	HeapSampler,
+	secondRates,
 	summarizeFrames,
 	threadRoles,
 	wasmDownloadBytes,
@@ -1041,6 +1042,7 @@ async function startEngine(
 				completionSignal: tier === 'webgl2' ? 'fence' : 'queue',
 				refreshHz: reader.refreshHz > 0 ? reader.refreshHz : null,
 				mainThread: mainThread.stop(),
+				perSecond: secondRates(reader.records),
 			};
 		},
 		async capture() {

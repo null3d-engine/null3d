@@ -170,6 +170,7 @@ What `engine.measure` returns: the per-frame figures, memory, load time and down
 | `completionSignal: 'queue' \| 'fence'` | How the renderer learned that the GPU finished a frame: its queue (WebGPU) or a fence (WebGL2). |
 | `refreshHz: number \| null` | The display's refresh rate in hertz, as the thread that draws measured it, or null before then. |
 | `mainThread: MainThreadStats \| null` | The page's own thread during the measurement, where the browser reports it, or null. |
+| `perSecond: SecondRates[]` | The frame rates of each whole second of the measurement, in order. A long measurement shows here when and for how long the rate fell, which the rates of the whole measurement hide. |
 
 ### `FrameSummary`
 
@@ -261,6 +262,17 @@ type PhaseName =
 ```
 
 A step of a frame that `engine.measure` times. The `update` step is the sketch's own code, in all of its callbacks, and the other steps are the engine's.
+
+### `SecondRates`
+
+Interface `SecondRates`.
+
+The frame rates of one second of a measurement, in `FrameMetrics.perSecond`.
+
+| Member | Description |
+| --- | --- |
+| `presentedFps: number` | Frames that the renderer presented in the second. |
+| `completedFps: number \| null` | Frames that the GPU finished in the second, or null when no completion arrived at all. |
 
 ### `ThreadStats`
 

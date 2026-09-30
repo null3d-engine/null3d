@@ -6,7 +6,14 @@ import { expect, test } from '@playwright/test';
 import { defaultEnvironment } from '../../packages/cli/src/browser.js';
 import { writePng } from '../../packages/cli/src/png.js';
 import { BENCH_SCENES, isNull3dPage, type PageKind, pagePath, SCENE_CODE } from '../lib/parity';
-import { BACKGROUND, PARITY_CANVAS, S2_NODES_PER_TREE, s2Trees } from '../scenes/spec';
+import {
+	BACKGROUND,
+	createS4,
+	PARITY_CANVAS,
+	S2_NODES_PER_TREE,
+	S4_FOG,
+	s2Trees,
+} from '../scenes/spec';
 import { openPage, type PageReport, runPage } from './open-page';
 
 const SCENES = BENCH_SCENES;
@@ -36,6 +43,16 @@ const MIN_DRAWN_SHARE: Record<(typeof SCENES)[number], number> = {
 	's1-cells': 0.002,
 	s2: 0.005,
 	s3: 0.1,
+	s4: 0.5,
+};
+/** Each scene's background color. S4's is its fog's color. */
+const BACKGROUNDS: Record<(typeof SCENES)[number], string> = {
+	s1: BACKGROUND,
+	's1-static': BACKGROUND,
+	's1-cells': BACKGROUND,
+	s2: BACKGROUND,
+	s3: BACKGROUND,
+	s4: S4_FOG.color,
 };
 /**
  * Pages whose renderer cannot draw their scene on the GPU that the tests draw with. WebGLRenderer's
@@ -53,8 +70,16 @@ const SHORT_RUN_COUNT = 1000;
  * of S3's three.js twin on WebGPU take seconds, so its run needs longer to measure a frame.
  */
 const shortRunSeconds = (page: string): number => (page === 's3 on threejs-webgpu' ? 5 : 2);
-/** S2 draws whole trees, so it rounds the short runs' count up to them. */
-const S2_SHORT_RUN_COUNT = s2Trees(SHORT_RUN_COUNT) * S2_NODES_PER_TREE;
+/**
+ * The object count that a scene's short runs report: S2 rounds the count up to whole trees, and S4
+ * has one town, whose count is fixed.
+ */
+const shortRunCount = (scene: (typeof SCENES)[number]): number =>
+	scene === 's2'
+		? s2Trees(SHORT_RUN_COUNT) * S2_NODES_PER_TREE
+		: scene === 's4'
+			? createS4().count
+			: SHORT_RUN_COUNT;
 
 interface Report extends PageReport {
 	scene: string;
@@ -76,8 +101,8 @@ interface BenchReport extends Report {
 }
 
 /** How many pixels of an RGBA8 image have the background color, within the tolerance. */
-function countBackground(pixels: Uint8Array): number {
-	const value = Number.parseInt(BACKGROUND.slice(1), 16);
+function countBackground(pixels: Uint8Array, background: string): number {
+	const value = Number.parseInt(background.slice(1), 16);
 	const rgb = [(value >> 16) & 255, (value >> 8) & 255, value & 255];
 	let count = 0;
 	for (let i = 0; i < pixels.length; i += 4) {
@@ -124,7 +149,7 @@ for (const scene of SCENES) {
 				writePng(join(IMAGE_DIR, `${scene}-${kind}.png`), { width, height, data: pixels });
 
 				const total = width * height;
-				const background = countBackground(pixels);
+				const background = countBackground(pixels, BACKGROUNDS[scene]);
 				// The background must read back as its own color: with wrong color handling, every pixel
 				// would differ from it and the blank check below would pass on any image.
 				expect(background).toBeGreaterThan(0);
@@ -151,7 +176,7 @@ for (const scene of SCENES) {
 				),
 			);
 			expect([result.scene, result.renderer]).toEqual([scene, renderer]);
-			expect(result.n).toBe(scene === 's2' ? S2_SHORT_RUN_COUNT : SHORT_RUN_COUNT);
+			expect(result.n).toBe(shortRunCount(scene));
 			expect(result.frames).toBeGreaterThan(0);
 			expect(result.cpuMs.median).toBeGreaterThan(0);
 			expect(result.intervalMs.median).toBeGreaterThan(0);
@@ -167,7 +192,7 @@ for (const scene of SCENES) {
 			pagePath(scene, SCENE_CODE, `seconds=1&n=${SHORT_RUN_COUNT}`),
 		);
 		expect([result.scene, result.renderer]).toEqual([scene, SCENE_CODE]);
-		expect(result.n).toBe(scene === 's2' ? S2_SHORT_RUN_COUNT : SHORT_RUN_COUNT);
+		expect(result.n).toBe(shortRunCount(scene));
 		expect(result.frames).toBeGreaterThan(0);
 		// S1 moves every instance; the other scenes' code is a camera path and a few turns, which can
 		// take less time than the browser's clock resolves.
