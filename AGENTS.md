@@ -49,8 +49,8 @@ This repository holds the null3D engine, its tools, its documentation and its ag
 | `bun run docs:style` | Check the writing rules in all published Markdown |
 | `bun run skills` | Sync `.claude/skills/` from `skills/`, then check the skills |
 | `bun run skills:check` | Check the skills without syncing |
-| `bun run shaders` | Build every shader variant in the shader manifest and write the generated TypeScript module |
-| `bun run shaders:check` | Fail when the committed shader module is out of date |
+| `bun run shaders` | Build every shader variant in the shader manifest and write the generated TypeScript modules: the main module, and the engine's shaders in one module for each GPU path and each value of the bits a device fixes |
+| `bun run shaders:check` | Fail when a committed shader module is out of date |
 | `bun run check` | Lint and format check (Biome) |
 | `bun run check:fix` | Lint and format, fixing what Biome can |
 | `bun run typecheck` | TypeScript check |
@@ -116,6 +116,7 @@ The benchmarks compare null3D with three.js in the same browser. [Benchmarks](.d
 3. A placeholder page carries a marker comment, and `bun run docs` rewrites it. When you write the real page, remove the marker. The generator then leaves the page alone, apart from its API reference (rule 5).
 4. Every docs page has front matter: `id`, `title`, `status` (`planned`, `experimental`, `stable` or `generated`), `since` and `summary`.
 5. The API reference on the `api/` pages comes from the TSDoc comments on the engine's public exports. Each export needs a summary and a `@category api/<page>` tag that names its page. Each public member needs a summary too. A public declaration may name only types that the engine exports. On a written API page, the reference goes between the `<!-- null3d:api:start -->` and `<!-- null3d:api:end -->` markers.
+6. The skills give each call the first version that has it, such as (0.2) or (after 1.0). A part of the current version that is not built yet says "later in 0.1". A TypeScript code block in a skill that exports `defineSketch(...)` is a complete sketch. The unit tests (`bun run test`) type check each one against the engine. The browser tests (`bun run test:browser`) draw each one in hold mode on every GPU tier. The tests leave out a sketch under a heading that names a later version. Remove the version from the heading when the feature merges.
 
 ## Writing docs
 

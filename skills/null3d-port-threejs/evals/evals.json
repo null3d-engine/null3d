@@ -1,5 +1,6 @@
 {
   "skill_name": "null3d-port-threejs",
+  "engine_version": "0.1",
   "evals": [
     {
       "id": 1,
@@ -13,11 +14,11 @@
         "The requestAnimationFrame loop becomes onUpdate, and the resize handler and setPixelRatio call are removed",
         "InstancedMesh with setMatrixAt and a dummy Object3D becomes scene.createInstances with direct writes to positions",
         "The per-frame new THREE.Vector3 allocation is removed",
-        "EffectComposer with UnrealBloomPass becomes post.set with bloom, and ACESFilmicToneMapping becomes toneMapping 'aces'",
+        "ACESFilmicToneMapping becomes toneMapping 'aces' in post.set, and UnrealBloomPass becomes post.set with bloom, marked as 0.2",
         "The water ShaderMaterial becomes a WGSL surface function, not GLSL",
-        "Raycasting uses camera.screenToRay with scene.raycast, or object click events",
-        "CSS2DRenderer becomes ui.trackLabel with engine.labels.bind",
-        "DRACOLoader is replaced by converting the model with null3d assets optimize",
+        "Raycasting uses camera.screenToRay with scene.raycast, or object click events, marked as 0.2",
+        "CSS2DRenderer becomes ui.trackLabel with engine.labels.bind, marked as 0.2",
+        "DRACOLoader is replaced by converting the model with bunx @null3d/cli assets optimize, marked as 0.2",
         "Includes a parity and performance verification plan"
       ]
     },
@@ -30,7 +31,7 @@
         "Provides a React component wrapping createEngine that creates its canvas inside the effect and calls destroy in cleanup",
         "Explains why a canvas cannot be reused (handed to a worker once; StrictMode mounts twice)",
         "sketch.ts loads the model with assets.loadGltf and scene.instantiate",
-        "The drei Environment preset studio becomes assets.builtinEnvironment('studio') with scene.setEnvironment",
+        "The drei Environment preset studio becomes assets.builtinEnvironment('studio') with scene.setEnvironment, marked as 0.2",
         "useFrame rotation becomes onUpdate on a dynamic object",
         "drei OrbitControls becomes createOrbitControls from @null3d/controls",
         "No React state is updated every frame",

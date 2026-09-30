@@ -8,7 +8,7 @@
 // looks a template up in the table when a draw list first names it. A pipeline whose shader has
 // not arrived yet builds once it has.
 
-import type { ShaderVariants } from '../gpu/variants';
+import type { ShaderVariants } from '../generated/shaders';
 import { Slot } from './control';
 
 /** The images and custom materials' shaders that the thread that draws holds. */

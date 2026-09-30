@@ -26,7 +26,7 @@ import {
 	SHAPE_SPHERE,
 	SHAPE_TORUS,
 } from '../generated/core';
-import type { ShaderVariants } from '../gpu/variants';
+import type { ShaderVariants } from '../generated/shaders';
 import type { ShaderSender } from '../shared/images';
 import { type ColorInput, linearColor } from './color';
 import type { CoreMemory } from './memory';

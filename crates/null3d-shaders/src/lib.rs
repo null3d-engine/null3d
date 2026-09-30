@@ -1,15 +1,17 @@
 //! The WGSL shader library, import resolution, GLSL translation and reflection.
 //!
 //! The shader build reads the manifest, composes each variant of each entry shader with the
-//! library modules it imports, checks and validates the result, and writes one TypeScript module
-//! that holds WGSL for WebGPU and GLSL ES 3.00 with reflection for WebGL2. Browsers then need no
+//! library modules it imports, checks and validates the result, and writes TypeScript modules
+//! that hold WGSL for WebGPU and GLSL ES 3.00 with reflection for WebGL2. Browsers then need no
 //! shader translator. Build tools compile other shaders the same way with a [`Compiler`]. Paths
 //! below are relative to the repository root:
 //!
 //! - [`MANIFEST_PATH`] lists the entry shaders, their render pipelines and their variants.
 //! - [`SHADER_DIR`] holds the entry shaders, and its `lib` folder holds the library modules, which
 //!   shaders import as `null3d::<file name>`.
-//! - [`OUTPUT_PATH`] is the generated module.
+//! - [`OUTPUT_PATH`] is the main generated module. The device modules sit beside it in
+//!   [`OUTPUT_DIR`], one for each target and each value of the permutation bits that a device
+//!   fixes, with the builds of the shaders that load by device.
 
 mod composition;
 mod features;
@@ -52,7 +54,9 @@ use manifest::{Build, Manifest};
 pub const MANIFEST_PATH: &str = "crates/null3d-shaders/shaders.toml";
 /// The folder of entry shaders, with the library modules in its `lib` folder.
 pub const SHADER_DIR: &str = "crates/null3d-shaders/wgsl";
-/// The generated TypeScript module.
+/// The folder of the generated TypeScript modules.
+pub const OUTPUT_DIR: &str = "packages/engine/src/generated";
+/// The main generated TypeScript module.
 pub const OUTPUT_PATH: &str = "packages/engine/src/generated/shaders.ts";
 /// The command that regenerates the output, as error messages name it.
 pub const COMMAND: &str = "bun run shaders";
@@ -147,6 +151,9 @@ pub fn build(inputs: &Inputs) -> Result<Output, BuildError> {
         output.shaders.insert(shader_name.clone(), variants);
         let pipelines = shader.pipelines.keys().cloned().collect();
         output.pipelines.insert(shader_name.clone(), pipelines);
+        if shader.by_device {
+            output.by_device.insert(shader_name.clone());
+        }
     }
     errors.or(output)
 }
@@ -413,56 +420,98 @@ fn finish_source(source: &str) -> String {
     text
 }
 
-/// Renders built output as the TypeScript module.
-pub fn typescript(output: &Output) -> String {
-    typescript::module(output)
+/// Renders built output as TypeScript modules, by path: the main module at [`OUTPUT_PATH`] and
+/// each device module beside it.
+pub fn typescript(output: &Output) -> BTreeMap<String, String> {
+    typescript::modules(output)
+        .into_iter()
+        .map(|(stem, text)| (format!("{OUTPUT_DIR}/{stem}.ts"), text))
+        .collect()
 }
 
-/// Builds the manifest in `root` and returns the TypeScript module.
-pub fn generate(root: &Path) -> Result<String, BuildError> {
+/// Builds the manifest in `root` and returns the TypeScript modules by path.
+pub fn generate(root: &Path) -> Result<BTreeMap<String, String>, BuildError> {
     Ok(typescript(&build(&Inputs::read(root)?)?))
 }
 
-/// Whether [`write`] changed the file.
+/// Whether [`write`] changed any file.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Written {
-    /// The file was missing or different, and now holds the new output.
+    /// A module was missing or different and now holds the new output, or a device module that
+    /// the build no longer makes was deleted.
     Updated,
-    /// The file already held the output.
+    /// Every module already held the output.
     Unchanged,
 }
 
-/// Builds and writes the TypeScript module, when it changed.
-pub fn write(root: &Path) -> Result<Written, BuildError> {
-    let module = generate(root)?;
-    let path = root.join(OUTPUT_PATH);
-    if fs::read_to_string(&path).is_ok_and(|current| current == module) {
-        return Ok(Written::Unchanged);
-    }
-    path.parent()
-        .map_or(Ok(()), fs::create_dir_all)
-        .and_then(|()| fs::write(&path, module))
-        .map_err(|e| Problem::in_file(OUTPUT_PATH, format!("cannot write the file: {e}")))?;
-    Ok(Written::Updated)
+/// Device modules in the output folder that the build did not make, by path.
+fn stale_modules(root: &Path, modules: &BTreeMap<String, String>) -> Vec<String> {
+    let Ok(entries) = fs::read_dir(root.join(OUTPUT_DIR)) else {
+        return Vec::new();
+    };
+    let mut stale: Vec<String> = entries
+        .filter_map(Result::ok)
+        .map(|entry| entry.file_name().to_string_lossy().into_owned())
+        .filter(|name| name.starts_with(typescript::DEVICE_MODULE_PREFIX) && name.ends_with(".ts"))
+        .map(|name| format!("{OUTPUT_DIR}/{name}"))
+        .filter(|path| !modules.contains_key(path))
+        .collect();
+    stale.sort();
+    stale
 }
 
-/// Builds the TypeScript module in memory and fails when the file on disk differs from it.
-pub fn check(root: &Path) -> Result<(), BuildError> {
-    let module = generate(root)?;
-    let message = match fs::read_to_string(root.join(OUTPUT_PATH)) {
-        Ok(current) if current == module => return Ok(()),
-        Ok(current) => {
-            let line = current
-                .lines()
-                .zip(module.lines())
-                .position(|(a, b)| a != b)
-                .unwrap_or_else(|| current.lines().count().min(module.lines().count()))
-                + 1;
-            format!(
-                "the file differs from a fresh build, first at line {line}. Run `{COMMAND}` and commit the result; never edit the file by hand."
-            )
+/// Builds and writes the TypeScript modules that changed, and deletes device modules that the
+/// build no longer makes.
+pub fn write(root: &Path) -> Result<Written, BuildError> {
+    let modules = generate(root)?;
+    let mut written = Written::Unchanged;
+    for path in stale_modules(root, &modules) {
+        fs::remove_file(root.join(&path))
+            .map_err(|e| Problem::in_file(&path, format!("cannot delete the file: {e}")))?;
+        written = Written::Updated;
+    }
+    for (path, module) in &modules {
+        let file = root.join(path);
+        if fs::read_to_string(&file).is_ok_and(|current| current == *module) {
+            continue;
         }
-        Err(e) => format!("cannot read the file ({e}). Run `{COMMAND}` to create it."),
-    };
-    Err(Problem::in_file(OUTPUT_PATH, message).into())
+        file.parent()
+            .map_or(Ok(()), fs::create_dir_all)
+            .and_then(|()| fs::write(&file, module))
+            .map_err(|e| Problem::in_file(path, format!("cannot write the file: {e}")))?;
+        written = Written::Updated;
+    }
+    Ok(written)
+}
+
+/// Builds the TypeScript modules in memory and fails when a file on disk differs from them, or
+/// when a device module that the build no longer makes remains.
+pub fn check(root: &Path) -> Result<(), BuildError> {
+    let modules = generate(root)?;
+    let mut errors = BuildError::default();
+    for (path, module) in &modules {
+        let message = match fs::read_to_string(root.join(path)) {
+            Ok(current) if current == *module => continue,
+            Ok(current) => {
+                let line = current
+                    .lines()
+                    .zip(module.lines())
+                    .position(|(a, b)| a != b)
+                    .unwrap_or_else(|| current.lines().count().min(module.lines().count()))
+                    + 1;
+                format!(
+                    "the file differs from a fresh build, first at line {line}. Run `{COMMAND}` and commit the result; never edit the file by hand."
+                )
+            }
+            Err(e) => format!("cannot read the file ({e}). Run `{COMMAND}` to create it."),
+        };
+        errors.add([Problem::in_file(path, message)], None);
+    }
+    for path in stale_modules(root, &modules) {
+        let message = format!(
+            "the shader build no longer makes this device module. Run `{COMMAND}`, which deletes it."
+        );
+        errors.add([Problem::in_file(&path, message)], None);
+    }
+    errors.or(())
 }

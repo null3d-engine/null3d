@@ -1,8 +1,10 @@
 # Porting shaders: GLSL, onBeforeCompile and TSL
 
-null3D shaders are WGSL. The build translates them to GLSL for the WebGL2 path, so you write each shader once. The null3d-develop skill's `references/shaders.md` defines the surface-function contract used below. Engine docs: `porting/threejs-shaders`, `shaders/surface-functions`, `shaders/builtins`, `shaders/wgsl-rules`.
+null3D shaders are WGSL. The build translates them to GLSL for the WebGL2 path, so you write each shader once. The null3d-develop skill's `references/shaders.md` defines the surface-function contract used below. Engine docs: `porting/threejs-shaders`, `shaders/surface-functions`, `shaders/builtins`, `shaders/wgsl-rules`, `shaders/library`, `guides/custom-shaders`.
 
-A custom material takes its WGSL in one `wgsl` option: a template literal tagged `/* wgsl */`, or a `.wgsl` import. That WGSL holds `fn surface`, `fn vertexOffset`, or both. It declares its uniforms once, as `struct Uniforms`, and reads them from `material`. Built so far: `materials.shader({ wgsl, uniforms })` with `fn surface` and `struct Uniforms`. Textures, vertex offsets, full shaders and the built-in values (`frame`, `camera`, `object`) are not built yet, so a port that needs them waits, or keeps its values in the standard options.
+A custom material takes its WGSL in one `wgsl` option: a template literal tagged `/* wgsl */`, or a `.wgsl` import. That WGSL holds `fn surface`, `fn vertexOffset`, or both. It declares its uniforms once, as `struct Uniforms`, and reads them from `material`.
+
+Versions: `materials.shader({ wgsl, uniforms })` with a surface function and `struct Uniforms` is built, and so is the built-in value `material`. Textures, `vertexOffset`, full shaders and the built-in values `frame`, `camera` and `object` come later in 0.1, and post effects in 0.2. The GLSL to WGSL table, the conventions in section 4 and the `null3d::` library modules apply now. A port that needs the later parts waits for them, or keeps its values in the standard options.
 
 ## Contents
 
@@ -10,11 +12,11 @@ A custom material takes its WGSL in one `wgsl` option: a template literal tagged
 2. GLSL to WGSL
 3. three.js built-ins and their null3D equivalents
 4. Coordinate, depth and color conventions
-5. ShaderMaterial and RawShaderMaterial
-6. onBeforeCompile patterns
-7. TSL and node materials
-8. Vertex displacement and displacement maps
-9. Worked examples
+5. ShaderMaterial and RawShaderMaterial (later in 0.1)
+6. onBeforeCompile patterns (later in 0.1)
+7. TSL and node materials (later in 0.1)
+8. Vertex displacement and displacement maps (later in 0.1)
+9. Worked examples (later in 0.1)
 10. Pitfalls checklist
 
 ## 1. Choose the target form
@@ -23,12 +25,12 @@ Read what the original shader does, then pick the smallest null3D form that can 
 
 | The original shader... | Port it as |
 | --- | --- |
-| Changes color, roughness, emission or alpha of a lit surface | Surface function |
-| Moves vertices | `vertexOffset`, plus a surface function if needed |
+| Changes color, roughness, emission or alpha of a lit surface | Surface function (alpha later in 0.1) |
+| Moves vertices | `vertexOffset` (later in 0.1), plus a surface function if needed |
 | Ignores lighting (unlit effects, holograms, fresnel glows) | Surface function that writes `emissive` and sets `baseColor` to zero |
-| Replaces three.js lighting | Full shader with `null3d::lighting` helpers; rare, so confirm it is needed |
-| Is a full-screen pass | `post.addEffect` (`references/post-processing.md`) |
-| Renders to a texture for another material | Custom pass (`render.addPass`) |
+| Replaces three.js lighting | Full shader (later in 0.1) with `null3d::lighting` helpers; rare, so confirm it is needed |
+| Is a full-screen pass | `post.addEffect` (0.2, `references/post-processing.md`) |
+| Renders to a texture for another material | Custom pass (`render.addPass`, 0.2) |
 
 Surface functions keep instancing, skinning, shadows, fog and both backends working, which full shaders do not.
 
@@ -68,6 +70,8 @@ Surface functions keep instancing, skinning, shadows, fog and both backends work
 
 ## 3. three.js built-ins and their null3D equivalents
 
+The inputs and built-in values in this table come with custom materials, later in 0.1. The `null3d::` library modules exist now.
+
 | three.js (ShaderMaterial adds these) | null3D |
 | --- | --- |
 | `position`, `normal`, `uv`, `uv1` (older: `uv2`), `color` attributes | `VertexInput.position`, `normal`, `uv` in `vertexOffset`; `SurfaceInput.uv`, `uv1`, `vertexColor` in surface functions |
@@ -87,23 +91,23 @@ Surface functions keep instancing, skinning, shadows, fog and both backends work
 ## 4. Coordinate, depth and color conventions
 
 - Fragment coordinates: `input.fragCoord` has its origin at the top left with y pointing down; GLSL `gl_FragCoord` starts at the bottom left with y pointing up. For screen-space code ported from GLSL, use `frame.resolution.y - input.fragCoord.y` wherever the original used `gl_FragCoord.y`.
-- Screen UVs in post effects: `input.uv` is (0, 0) at the top left. three.js full-screen passes use a `vUv` that is (0, 0) at the bottom left. Replace `vUv.y` with `1.0 - input.uv.y` where direction matters (gradients, top-of-screen effects).
+- Screen UVs in post effects (0.2): `input.uv` is (0, 0) at the top left. three.js full-screen passes use a `vUv` that is (0, 0) at the bottom left. Replace `vUv.y` with `1.0 - input.uv.y` where direction matters (gradients, top-of-screen effects).
 - Texture UVs: textures loaded with `flipY: true` sample the same as three.js's `TextureLoader` default. glTF textures use `flipY: false` in both engines. Keep the original's setting, and the ported shader's UV math stays the same.
 - Depth: the engine uses reversed depth on both GPU paths, where near is 1 and far is 0. A vertex shader writes clip-space depth in WebGPU's range of 0 to 1, and the engine moves it where WebGL2 needs that. Do not port three.js depth formulas such as `perspectiveDepthToViewZ` or `readDepth`; use `null3d::depth::linear_depth(d, near, far)` and `null3d::depth::perspective_depth_to_view_z(d, near, far)`, which are correct on both backends.
-- Color output: engine surfaces are linear, and the final pass converts to the display once. A three.js `ShaderMaterial` without `<colorspace_fragment>` writes its values straight to the screen, so its colors were effectively sRGB. Convert such constants with `null3d::color::srgb_to_linear`, or pass them as `'#rrggbb'` uniforms, which the engine converts.
+- Color output: engine surfaces are linear, and the engine encodes them as sRGB for the canvas once. A three.js `ShaderMaterial` without `<colorspace_fragment>` writes its values straight to the screen, so its colors were effectively sRGB. Convert such constants with `null3d::color::srgb_to_linear`, or pass them as `'#rrggbb'` uniforms, which the engine converts.
 - Matrices are column-major in both, and `matrix * vector` keeps its order.
 
-## 5. ShaderMaterial and RawShaderMaterial
+## 5. ShaderMaterial and RawShaderMaterial (later in 0.1)
 
 1. List the uniforms. Each becomes a field of `struct Uniforms` in the WGSL, with its first value in `uniforms` (numbers, `'#rrggbb'` colors, arrays), or an entry in `textures`. Updates such as `material.uniforms.uSpeed.value = 2` become `material.set({ speed: 2 })`.
 2. Read the vertex shader. If it only applies `projectionMatrix * modelViewMatrix * vec4(position, 1.0)` and passes varyings along, drop it: the engine does both. If it moves vertices, port that part as `vertexOffset`.
-3. Read the fragment shader. Map its varyings to `SurfaceInput` fields and its output to `Surface` fields: lit look to `baseColor`, `roughness` and `metalness`; unlit look to `emissive` with `baseColor` set to zero; transparency to `alpha` plus the right `alphaMode`.
+3. Read the fragment shader, and map its varyings to `SurfaceInput` fields. Map its output to `Surface` fields: lit look to `baseColor`, `roughness` and `metalness`; unlit look to `emissive` with `baseColor` set to zero; transparency to `alpha` plus the right `alphaMode`.
 4. Set the material options that were ShaderMaterial flags: `transparent` becomes `alphaMode: 'blend'`, `side: DoubleSide` becomes `doubleSided: true`, `blending: AdditiveBlending` becomes `blending: 'additive'`, `depthWrite: false` stays `depthWrite: false`.
 5. Compare parity images on WebGPU and WebGL2.
 
 A `RawShaderMaterial` adds nothing automatically, so all its matrices and attributes are explicit; the same steps apply.
 
-## 6. onBeforeCompile patterns
+## 6. onBeforeCompile patterns (later in 0.1)
 
 | What the patch does | null3D form |
 | --- | --- |
@@ -118,7 +122,7 @@ A `RawShaderMaterial` adds nothing automatically, so all its matrices and attrib
 
 Keep the original's standard options (color, maps, roughness) on the new material: `materials.shader` accepts every `materials.standard` option and feeds them to `defaultSurface()`.
 
-## 7. TSL and node materials
+## 7. TSL and node materials (later in 0.1)
 
 | TSL | WGSL surface function |
 | --- | --- |
@@ -131,18 +135,18 @@ Keep the original's standard options (color, maps, roughness) on the new materia
 | `normalView` | `(camera.view * vec4f(input.normal, 0.0)).xyz` |
 | `cameraPosition`, `time` | `camera.position`, `frame.time` |
 | `vertexColor()`, `instanceIndex` | `input.vertexColor`, `input.instance` |
-| `screenUV` | `input.fragCoord.xy / frame.resolution` in surfaces, `input.uv` in effects |
+| `screenUV` | `input.fragCoord.xy / frame.resolution` in surfaces, `input.uv` in effects (0.2) |
 | `add`, `sub`, `mul`, `div`, `.add()` chains | `+`, `-`, `*`, `/` |
 | `oneMinus(x)`, `saturate(x)` | `1.0 - x`, `saturate(x)` |
 | `mx_noise_float(p)` and other MaterialX noise | `null3d::noise::simplex3(p)`, `fbm3(p, octaves)` (values differ; tune) |
 | `Fn(() => { ... })`, `If`, `Loop`, `.toVar()` | `fn`, `if`, `for`, `var` |
 | `material.colorNode`, `opacityNode`, `roughnessNode`, `metalnessNode`, `normalNode`, `emissiveNode`, `aoNode` | `s.baseColor`, `s.alpha`, `s.roughness`, `s.metalness`, `s.normal`, `s.emissive`, `s.occlusion` |
 | `material.positionNode` | `vertexOffset` returning `newPosition - input.position` |
-| `material.fragmentNode`, `outputNode`, `mrtNode` | Full shader or post effect; `mrtNode` has no equivalent |
+| `material.fragmentNode`, `outputNode`, `mrtNode` | Full shader, or a post effect (0.2); `mrtNode` has no equivalent |
 
 On an `InstancedMesh`, three.js r186 applies the instance matrix before `positionNode` runs, so `positionLocal` there already holds the instanced vertex. In null3D, `input.position` is always the mesh's own vertex, and the engine applies the instance transform after `vertexOffset`. A displacement that three.js scaled by that `positionLocal` changes size after the port. Write it from `input.position` and the instance's own data, and check the project's three.js version before you port a `positionNode`.
 
-## 8. Vertex displacement and displacement maps
+## 8. Vertex displacement and displacement maps (later in 0.1)
 
 ```ts
 const terrain = materials.shader({
@@ -162,7 +166,7 @@ terrainMesh.setBounds([0, 1, 0], 60);  // include the highest displaced point
 
 Vertex shaders must use `textureSampleLevel`: implicit mip selection does not exist in the vertex stage. Normals are not recomputed after displacement, so keep the original's normal map, or compute a normal from neighboring height samples in the surface function.
 
-## 9. Worked examples
+## 9. Worked examples (later in 0.1)
 
 Fresnel glow, from ShaderMaterial:
 
@@ -258,3 +262,4 @@ The null3D version is the dissolve example in the null3d-develop skill's `refere
 - Uniforms take `f32`, `i32`, `u32`, `vec2f`, `vec3f` and `vec4f`, 32 numbers in all. Pass a matrix as `vec4f` rows, and rename a uniform called `color`, `roughness` or another standard value.
 - Use only the three WGSL language features every browser shares, and `@interpolate(flat, either)` for flat values (null3d-develop `references/shaders.md`, section 8).
 - Test on WebGL2 (`?gpu=webgl2`): the translated GLSL can hit limits the WGSL did not.
+- Until custom materials come later in 0.1, the build checks a ported shader, but no material can draw it.

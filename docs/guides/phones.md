@@ -46,11 +46,19 @@ A phone closes a tab that uses too much memory, with no warning. On a page with 
 
 To use less memory, share meshes and materials, draw many copies with instance batches, and create objects during setup. `engine.measure` reports the WebAssembly memory in use.
 
+Textures take GPU memory too. A texture of 1024 x 1024 texels takes about 5.3 MiB with its mip levels. The sketch reads the GPU memory of every texture in `textures.memoryBytes`, and frees a texture that it no longer needs with `texture.destroy()`. The engine keeps no copy of an image once its upload is done. [Textures](../api/textures.md#gpu-memory) gives the sizes.
+
+A page that starts a second engine, for example in a single-page app, waits for the first engine's `destroy()` promise. The browser frees the first engine's memory only then.
+
 When the tab crashes during a start, the next start of the sketch runs one preset lower. A second crash in a row starts it at Low. [Quality presets](../concepts/quality-presets.md#starts-that-crashed-the-tab) explains the note that the engine keeps for this. The page reads the count in `engine.mode.crashedStarts`.
 
 ## Heat
 
-A phone lowers its clock speeds when it heats up, often after a few minutes of play. Leave room for it: aim for about 70% of the frame budget, and test runs of 10 minutes. The [Performance guide](performance.md) shows how to measure the frame.
+A phone lowers its clock speeds when it heats up, often after a few minutes of play. Leave room for it: aim for about 70% of the frame budget, and test runs of 10 minutes. In the engine's benchmarks, a warm Galaxy S24+ took about 70% longer per frame than a cool one ([Performance guide](performance.md#phones-and-tablets)). The [Performance guide](performance.md) also shows how to measure the frame.
+
+## Touch input
+
+The engine reads touches as it reads the mouse: the first finger presses `Mouse0`, and `input.touches` lists every finger on the canvas. A canvas that takes touch gestures needs `touch-action: none` in its CSS. Without it, the browser scrolls or zooms the page, and it cancels the touch. [Input](../api/input.md#touches) explains touches and pinches.
 
 ## Testing on real devices
 
@@ -61,6 +69,7 @@ Desktop browsers that emulate a phone show neither its GPU nor its heat, so test
 - Add `?preset=low`, `?preset=medium`, `?preset=high` or `?preset=ultra` to the page's address to test each preset on one device. The GPU path still caps the preset.
 - Add `?gpu=webgl2` to test the WebGL2 path, which many phones use.
 - Start with a cool, charged device, with its battery saver off and its display at a fixed refresh rate.
+- Debug the page on the device from your computer. For Chrome on Android, turn on USB debugging on the phone, and open `chrome://inspect` in Chrome on the computer. For Safari on an iPhone or iPad, turn on Web Inspector in Safari's advanced settings on the device. Then open the device from the Develop menu of Safari on a Mac. [Debugging](debugging.md) covers the console and the engine's errors.
 
 ## Related pages
 
