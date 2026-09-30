@@ -115,7 +115,7 @@ Both become surface-function recipes (section 8), later in 0.1. Toon shading nee
 | `premultiplyAlpha` | `premultipliedAlpha` |
 | `needsUpdate = true` after changing pixels | `texture.update(bitmap)`, or `texture.update(data)` for a texture from `textures.fromData` |
 
-Texture formats: `loadTexture` decodes PNG, JPEG and WebP files, and AVIF files where the browser supports them. KTX2 files load later in 0.1. Convert PNG and JPEG textures to KTX2 with `bunx @null3d/cli assets optimize` (0.2). Use UASTC for normal maps and important color maps, and ETC1S where download size matters most. HDR environment files become prefiltered KTX2 with `bunx @null3d/cli assets env` (0.2).
+Texture formats: `loadTexture` decodes PNG, JPEG and WebP files, and AVIF files where the browser supports them. It also loads KTX2 files of ETC1S or UASTC data, in the device's compressed format. Convert PNG and JPEG textures to KTX2 with `basisu -mipmap`, or with `bunx @null3d/cli assets optimize` (0.2). Use UASTC for normal maps and important color maps, and ETC1S where download size matters most. HDR environment files become prefiltered KTX2 with `bunx @null3d/cli assets env` (0.2).
 
 ## 8. Recipes (later in 0.1)
 
