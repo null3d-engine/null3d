@@ -3,7 +3,7 @@ id: guides/performance
 title: Performance guide
 status: experimental
 since: "0.1"
-summary: "Measuring; the frame budget; common causes of slow frames and their fixes."
+summary: "Measuring; the frame budget on computers, phones and tablets; common causes of slow frames and their fixes."
 ---
 
 # Performance guide
@@ -45,16 +45,35 @@ This is how one frame of the S1 benchmark splits. S1 has 100,000 boxes, and its 
 | --- | --- |
 | Sketch worker: the sketch's update | 2.18 ms |
 | Sketch worker: the engine's steps | 0.14 ms |
-| Render worker | 0.15 ms |
-| 16 job workers, all together | 0.45 ms, at most 0.09 ms on one worker |
+| Render worker | 0.16 ms |
+| 16 job workers, all together | 0.45 ms |
 
 The update calls `Math.sin` or `Math.cos` three times per box, about 20 nanoseconds per box. Make your own loops tight before you look at the engine.
+
+`bunx @null3d/cli bench` measures a production build, which leaves out the development checks. In such a build on the same Mac, S1's busiest thread took 1.90 ms per frame with WebGPU and 2.03 ms with WebGL2. The engine's own work on that thread was 0.16 ms and 0.23 ms.
 
 ## The frame budget
 
 At 60 frames per second a frame has 16.7 ms, and at 120 frames per second it has 8.3 ms. The busiest thread must finish its work inside that time. Phones slow down as they heat up, so plan to use at most about 70% of the budget there.
 
 S1 used 2.3 ms of the busiest thread's time for 100,000 moving boxes. That leaves most of a 120 Hz frame for more sketch code.
+
+### Phones and tablets
+
+The benchmarks run S1 with 240,000 boxes on phones and tablets. These runs show how heat and the GPU change the frame rate:
+
+| Device, browser and GPU path | CPU time per frame, busiest thread | Frames per second |
+| --- | --- | --- |
+| Galaxy S24+, Chrome, WebGL2, cool | 13.3 ms | 57 |
+| Galaxy S24+, Chrome, WebGL2, warm | 22.1 to 22.8 ms | 30 |
+| iPad Pro, Safari, WebGPU | 15.5 ms | 28 |
+| iPad Pro, Safari, WebGL2 | 15.6 ms | 29 |
+
+On the Galaxy S24+, the same frame took about 70% longer once the phone was warm. The sketch's own update took most of each frame.
+
+The warm phone showed 30 frames per second, half the display's rate. In pipelined mode, a frame that takes a little longer than one refresh waits for the next one, as [Latency modes](../concepts/architecture.md#latency-modes) explains. Low-latency mode draws each frame in the sketch worker, right after its update. In another run on the warm phone, each frame took about 21 ms of CPU time. There low latency showed 40.4 frames per second, and pipelined mode 32.5.
+
+On the iPad the GPU sets the rate: it took about 28 ms per frame, longer than the CPU's 15.5 ms. [The presented rate, the completed rate and GPU time](#the-presented-rate-the-completed-rate-and-gpu-time) shows how to find the busier side.
 
 ## Write per-frame code that allocates nothing
 
@@ -80,6 +99,7 @@ The engine keeps each scene's draw tables and every object's matrix on the GPU, 
 | `setPosition`, `setRotation`, `setScale`, the other transform setters, and writes to a batch's arrays | The changed matrices |
 | `setVisible` | The matrix and 4-byte draw entry of the object and of each object under it |
 | `setActiveCount` | The 4-byte draw entry of each row that starts or stops drawing |
+| `setLayers` | No rebuild: each view tests the new mask from the next frame |
 | `setCastShadows`, `setReceiveShadows` and `setRenderOrder` | Nothing |
 | Creating or destroying an object or an instance batch | A rebuild, and engine memory can grow in the next frame |
 | `setMaterial`, `setMesh`, `setParent`, `setDynamic`, `setBounds` and `setFrustumCulled` | A rebuild |
@@ -121,7 +141,7 @@ So some common advice does not apply:
 
 ## Moving objects cost uploads
 
-Each dynamic instance uploads its 48-byte world matrix in every frame, so 100,000 moving boxes upload 4.8 MB per frame. A static batch uploads its matrices once and then nothing. The S1-static benchmark draws the same 100,000 boxes standing still. It uploads no matrices per frame and takes 0.08 ms of CPU time.
+Each dynamic instance uploads its 48-byte world matrix in every frame, so 100,000 moving boxes upload 4.8 MB per frame. A static batch uploads its matrices once and then nothing. The S1-static benchmark draws the same 100,000 boxes standing still. It uploads no matrices per frame. In a production build in Chrome on a MacBook Pro, its busiest thread took 0.07 ms per frame with WebGPU and 0.05 ms with WebGL2.
 
 On WebGL2 the job workers cull, so a frame whose view changed also uploads its list of visible objects, at 4 bytes per entry. Each visible object or instance row is one entry, and so is each visible group of 64 rows in a static batch. The `visibleEntries` figure of `measure` counts them. Divide `uploadBytes` by it: when only the camera moves, the result is about 4 bytes.
 
@@ -151,6 +171,7 @@ The render worker picks how each upload travels, so you do not need to. Uploads 
 | `rebuilds` | Frames whose structure change rebuilt the draw tables |
 | `pipelines` | GPU pipelines built, which can stall the frame they happen in |
 | `memory` | The engine's WebAssembly memory and the JavaScript heap |
+| `load` | The start's times in milliseconds: the GPU probe, the core's download and compile, `createEngine`, and the first frame's submit and finish |
 
 The sketch worker's steps are `update`, `commands`, `transforms`, `batches`, `cull` and `record`, and the render worker's is `replay`. A thread's time less its `update` step is the engine's own work on that thread.
 
@@ -174,6 +195,7 @@ The engine checks a WebGL2 fence at its next frame callback, so there `gpuLatenc
 
 ## Measure fairly
 
+- Measure a production build, as your users get it. Development builds check each call's arguments, and check every static object in each frame. In the S2 benchmark on a MacBook Pro, that check cost about 0.06 ms per frame on WebGPU, and 0.03 ms on WebGL2. The other checks cost less than the benchmarks can measure.
 - Let the sketch run for several seconds before you measure, so that the browser has optimized your per-frame code.
 - Keep the page visible, the screen unlocked and the display awake. Safari stops running a page while the Mac is locked.
 - Compare runs at the same display refresh rate. `refreshHz` records it with each measurement. Runs at 120 and at 144 frames per second differed by about 10% for both engines.
@@ -185,6 +207,10 @@ The engine checks a WebGL2 fence at its next frame callback, so there `gpuLatenc
 
 ## Browsers differ
 
-The same S1 update code took 1.7 ms in Safari, 2.2 to 2.6 ms in Chrome and 4.2 ms in Firefox on the same Mac. Test your sketch in each browser that your audience uses.
+S1's busiest thread took 1.74 ms per frame in Safari, 2.32 ms in Chrome and 4.42 ms in Firefox on the same Mac. Most of that time was the same update code. Test your sketch in each browser that your audience uses.
 
-Safari reports at most 8 logical cores, so the engine starts 6 job workers there. Chrome and Firefox report every core.
+The engine starts one job worker for each logical core that the browser reports, less 2, and at least 1. Browsers report different numbers on the same device:
+
+- Chrome and Firefox report every core: 18 on a MacBook Pro, so the engine starts 16 job workers there.
+- Safari reports at most 8 logical cores, so the engine starts 6 job workers there.
+- Brave can report fewer. With Shields on, it reported 3 cores on an iPad Pro, so the engine started 1 job worker.
