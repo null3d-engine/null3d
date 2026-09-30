@@ -8,7 +8,7 @@ import { join } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { stripVTControlCharacters } from 'node:util';
 
-/** @import { Logger } from 'vite' */
+/** @import { Logger, PluginOption } from 'vite' */
 
 /**
  * @typedef {object} DevServer
@@ -68,10 +68,12 @@ function collectingLogger(errors) {
 
 /**
  * Starts the Vite dev server of the project in the current folder, and waits until it listens.
+ * `plugins` run after the plugins of the project's own config.
  *
+ * @param {{ plugins?: PluginOption[] }} [options]
  * @returns {Promise<DevServer>}
  */
-export async function startDevServer() {
+export async function startDevServer({ plugins = [] } = {}) {
 	const vite = await projectVite(process.cwd());
 	/** @type {string[]} */
 	const errors = [];
@@ -79,6 +81,7 @@ export async function startDevServer() {
 	const server = await vite.createServer({
 		clearScreen: false,
 		customLogger: collectingLogger(errors),
+		plugins,
 		server: { port: 0, strictPort: true, open: false, forwardConsole: false },
 	});
 	try {

@@ -95,6 +95,27 @@ bunx @null3d/cli shot --out shot.png --time 1.5 --gpu webgl2
 
 Beside the image, it saves `shot.json` with the frame's time, number and GPU tier, and with what the page logged. When the hold fails, it prints the error and saves no image. [The `null3d` command](../cli/null3d.md) lists its options.
 
+## Image tests from the command line
+
+`bunx @null3d/cli test` runs your image tests with no test code. List them in `null3d.json` in your project's folder:
+
+```json
+{
+  "tests": [
+    { "name": "start", "sketch": "sketch.ts", "hold": 1.5 },
+    { "name": "harbor", "sketch": "sketch.ts?view=harbor", "hold": 4, "tiers": ["webgpu", "webgl2"] }
+  ]
+}
+```
+
+`test` type checks the project and runs its lint script. Then it holds each sketch at its time on each of its GPU tiers, 320 x 180 pixels unless the test gives a `size`. It compares each image with its reference in `tests/references/`, and prints one line per result, with the image files:
+
+```text
+PASS  start on webgl2: it matches the reference (image test-results/null3d/chrome-real-gpu/webgl2/start.png)
+```
+
+The first run of a new test fails, because the test has no reference yet. Open its image, and when it is right, keep it with `bunx @null3d/cli test --update-references`. [The `null3d` command](../cli/null3d.md#test) gives the settings of a test, where the files go, and what each line says.
+
 ## When a hold fails
 
 Hold mode stops at the first error and publishes it with `ok: false`:

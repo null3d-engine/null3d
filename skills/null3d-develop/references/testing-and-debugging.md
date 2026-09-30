@@ -19,14 +19,14 @@ Engine docs: `guides/testing`, `guides/debugging`, `errors/index`, `cli/null3d`.
 | --- | --- |
 | `bunx vite` | Dev server; the null3D Vite plugin adds the cross-origin isolation headers and shader hot reload |
 | `bunx @null3d/cli shot --out shot.png [--time 2.0] [--size 1280x720] [--gpu webgl2] [--page /other.html]` | Draws one held frame of the page headless and saves it, plus `shot.json` with the frame's time, number and GPU tier and the page's errors and warnings. When no frame is drawn, it says why and exits with 1 |
-| `bunx @null3d/cli test` | Type checks, lint, and all visual and behavior tests, headless |
-| `bunx @null3d/cli test --gpu webgpu,webgl2,compat` | Runs visual tests on each GPU tier |
-| `bunx @null3d/cli test --update-references` | Rewrites reference images; review the diff before committing |
+| `bunx @null3d/cli test` | Type checks with the project's TypeScript, runs its `lint` script, and draws each image test in `null3d.json` headless on each of its tiers, against its reference. Prints one line per result with the image files, and exits with 1 when one fails |
+| `bunx @null3d/cli test --gpu webgpu,webgl2` | Draws the image tests on these GPU tiers only |
+| `bunx @null3d/cli test --update-references` | Keeps each new or changed image as its reference; check the images before committing them |
 | `bunx @null3d/cli bench --scene <name>` | Benchmark: 5 runs of 30 seconds after warm-up; median and spread per phase |
 | `bunx @null3d/cli doctor` | Checks versions, headers, asset CORS, and the capabilities of the local browser |
 | `bunx @null3d/cli docs show <id>` / `bunx @null3d/cli docs search "<words>"` | Prints docs for the installed engine version |
 
-Of these commands, `shot` is built. The note on `cli/null3d` names the commands that are not built yet: do not run those.
+Of these commands, `shot` and `test` are built, and `test` runs image tests only. The note on `cli/null3d` names the commands that are not built yet: do not run those.
 
 Every command prints short text results (pass or fail, reasons, file paths), so you can read them directly. Open the image files it names when a visual check fails.
 
@@ -58,6 +58,21 @@ Keep held frames the same on every run:
 - Draw random numbers from `math.random` or `Math.random`, which hold mode seeds; `crypto.getRandomValues` is not seeded.
 - Await every asset in the setup, because the hold starts when the setup resolves.
 - Pass test settings in the sketch module's address, such as `new URL('./sketch.ts?view=harbor', import.meta.url)`, and read them from `import.meta.url` in the sketch. Page messages reach the sketch only after the hold.
+
+List the image tests that `bunx @null3d/cli test` runs in `null3d.json` in the project's folder (engine docs `cli/null3d`):
+
+```json
+{
+  "tests": [
+    { "name": "start", "sketch": "sketch.ts", "hold": 1.5 },
+    { "name": "harbor", "sketch": "sketch.ts?view=harbor", "hold": 4, "size": "640x360", "tiers": ["webgpu", "webgl2"] }
+  ]
+}
+```
+
+- A test gives a `sketch` module, or a `page` to open when the page's `createEngine` options change the image. The size is 320 x 180 pixels, and the tiers are all three, unless the test gives others.
+- References live in `tests/references/<environment>/<tier>/<name>.png`. Commit them. Each run saves its images, and a diff for each failure, in `test-results/null3d/`.
+- A new test fails until it has a reference. Open its image, and keep it with `--update-references` only when it shows what you meant to draw.
 
 ## 3. Behavior tests
 

@@ -3,19 +3,17 @@
 // and what the page and the dev server logged. It prints a short summary for agents, and fails when
 // the engine drew no frame.
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
-import { basename, dirname, isAbsolute, relative, resolve } from 'node:path';
-import { readOptions, readSeconds, UsageError } from './args.js';
+import { basename, dirname, resolve } from 'node:path';
+import { parseSize, readOptions, readSeconds, sizeRule, UsageError } from './args.js';
 import { TIERS } from './page.js';
 import { writePng } from './png.js';
 import { holdPage, startRunner } from './runner.js';
+import { listed, shownPath } from './text.js';
 
 /** @import { Environment } from './browser.js' */
 /** @import { Tier } from './page.js' */
 /** @import { RgbaImage } from './png.js' */
 /** @import { HeldPage } from './runner.js' */
-
-/** The largest side of a shot: WebGPU's default limit on a texture's size. */
-const MAX_SIDE = 8192;
 
 const OPTIONS = /** @type {const} */ ({
 	out: { type: 'string', default: 'shot.png' },
@@ -58,20 +56,14 @@ Playwright's Chromium on SwiftShader, the software GPU of machines without a GPU
  */
 
 /**
- * A size such as `1280x720`, in whole pixels from 1 to the largest side.
+ * The size that `--size` gives, such as `1280x720`.
  *
  * @param {string} text
- * @returns {readonly [number, number]}
  */
 function readSize(text) {
-	const [width, height, extra] = text.split('x').map(Number);
-	const side = (/** @type {number | undefined} */ n) =>
-		n !== undefined && Number.isSafeInteger(n) && n >= 1 && n <= MAX_SIDE;
-	if (extra === undefined && side(width) && side(height))
-		return [/** @type {number} */ (width), /** @type {number} */ (height)];
-	throw new UsageError(
-		`--size takes a width and a height in pixels from 1 to ${MAX_SIDE}, such as 1280x720, not "${text}"`,
-	);
+	const size = parseSize(text);
+	if (size) return size;
+	throw new UsageError(sizeRule('--size', text));
 }
 
 /**
@@ -153,30 +145,6 @@ export function shotReport(
 	};
 }
 
-/** The lines of each logged entry that the summary shows. The JSON file keeps all of them. */
-const SHOWN_LINES = 3;
-
-/**
- * Lines that list what the page logged, such as `2 errors:`, then each entry indented, cut to its
- * first lines.
- *
- * @param {readonly string[]} entries
- * @param {string} kind
- */
-function listed(entries, kind) {
-	if (entries.length === 0) return [];
-	const noun = entries.length === 1 ? kind : `${kind}s`;
-	return [
-		`${entries.length} ${noun}:`,
-		...entries.flatMap((entry) => {
-			const lines = entry.split('\n');
-			const shown = lines.slice(0, SHOWN_LINES);
-			if (lines.length > SHOWN_LINES) shown.push('    ...');
-			return shown.map((line) => `  ${line}`);
-		}),
-	];
-}
-
 /**
  * The summary that the command prints: what it drew or why it drew nothing, where it saved the
  * files, and what the page logged.
@@ -239,10 +207,9 @@ export async function run(args) {
 	try {
 		runner = await startRunner();
 		const held = await holdPage(runner, { ...options, path: options.page });
-		const { environment, browser } = runner;
 		const facts = {
-			environment,
-			browser: `${environment === 'chrome-real-gpu' ? 'Chrome' : 'Chromium'} ${browser.version()}`,
+			environment: runner.environment,
+			browser: runner.browserName,
 			image: basename(png),
 		};
 		const made = shotReport(held, facts);
@@ -264,15 +231,4 @@ export async function run(args) {
 	writeJson(json, report);
 	console.log(shotSummary(report, { ...options, png: shownPath(png), json: shownPath(json) }));
 	return report.ok ? 0 : 1;
-}
-
-/**
- * A file as the summary names it: from the current folder when the file is inside it, and in full
- * elsewhere.
- *
- * @param {string} file
- */
-export function shownPath(file, cwd = process.cwd()) {
-	const path = relative(cwd, file);
-	return path === '' || path.startsWith('..') || isAbsolute(path) ? file : path;
 }

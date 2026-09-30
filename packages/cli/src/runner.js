@@ -10,6 +10,7 @@ import { startDevServer } from './server.js';
 /** @import { Browser, Page } from 'playwright-core' */
 /** @import { Environment } from './browser.js' */
 /** @import { HoldFailure, HoldReport, Tier } from './page.js' */
+/** @import { PluginOption } from 'vite' */
 /** @import { DevServer } from './server.js' */
 
 /**
@@ -17,6 +18,7 @@ import { startDevServer } from './server.js';
  * @property {DevServer} server The project's dev server.
  * @property {Browser} browser
  * @property {Environment} environment Where the browser draws.
+ * @property {string} browserName The browser's name and version, such as `Chrome 141.0.7390.54`.
  * @property {() => Promise<void>} close Stops the browser and the server.
  */
 
@@ -45,19 +47,21 @@ import { startDevServer } from './server.js';
 const POLL_MS = 100;
 
 /**
- * Starts the Vite dev server of the project in the current folder, and a headless browser.
+ * Starts the Vite dev server of the project in the current folder, with any `plugins` besides the
+ * project's own, and a headless browser.
  *
- * @param {{ environment?: Environment }} [options]
+ * @param {{ environment?: Environment, plugins?: PluginOption[] }} [options]
  * @returns {Promise<Runner>}
  */
-export async function startRunner({ environment = defaultEnvironment() } = {}) {
-	const server = await startDevServer();
+export async function startRunner({ environment = defaultEnvironment(), plugins } = {}) {
+	const server = await startDevServer({ plugins });
 	try {
 		const browser = await launchBrowser(environment);
 		return {
 			server,
 			browser,
 			environment,
+			browserName: `${environment === 'chrome-real-gpu' ? 'Chrome' : 'Chromium'} ${browser.version()}`,
 			async close() {
 				await browser.close();
 				await server.close();

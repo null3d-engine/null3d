@@ -1,14 +1,14 @@
-// The command-line tool, run as a developer runs it: in a project's folder, where it starts the
+// The shot command, run as a developer runs it: in a project's folder, where it starts the
 // project's own Vite dev server and a headless browser in the environment of this Playwright
 // project. On each GPU tier, the shot command's image must match the image test manifest's
 // references of the project's sketch. A page that fails must say why at once, and leave no image.
-import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import { TIERS } from '../../packages/cli/src/page.js';
 import { readPng } from '../../packages/cli/src/png.js';
 import type { ShotReport } from '../../packages/cli/src/shot.js';
+import { runCli } from '../lib/cli.ts';
 import {
 	borrowedRun,
 	clearCandidate,
@@ -20,34 +20,20 @@ import { REPO_ROOT } from '../lib/server.ts';
 import { manifestRun } from './manifest.ts';
 
 const PROJECT = join(REPO_ROOT, 'tests/fixtures/project');
-const COMMAND = join(REPO_ROOT, 'packages/cli/bin/null3d.js');
 /** A page that fails must say so long before the command's own 60 seconds run out. */
 const FAST_FAILURE_MS = 30_000;
 
 /**
- * Runs the command-line tool in the project with Node, as its bin file asks, and returns its exit
- * code, what it printed, and the report it saved beside the image.
+ * Runs the shot command in the project, and returns its exit code, what it printed, and the report
+ * it saved beside the image.
  */
-function null3d(
+async function null3d(
 	args: string[],
 ): Promise<{ code: number | null; output: string; report: ShotReport }> {
 	const out = test.info().outputPath('shot.png');
-	return new Promise((resolve, reject) => {
-		const child = spawn(process.execPath, [COMMAND, 'shot', '--out', out, ...args], {
-			cwd: PROJECT,
-		});
-		let output = '';
-		const collect = (chunk: Buffer) => {
-			output += chunk.toString();
-		};
-		child.stdout.on('data', collect);
-		child.stderr.on('data', collect);
-		child.on('error', reject);
-		child.on('close', (code) => {
-			const report = JSON.parse(readFileSync(out.replace(/\.png$/, '.json'), 'utf8'));
-			resolve({ code, output, report });
-		});
-	});
+	const { code, output } = await runCli(PROJECT, ['shot', '--out', out, ...args]);
+	const report = JSON.parse(readFileSync(out.replace(/\.png$/, '.json'), 'utf8'));
+	return { code, output, report };
 }
 
 for (const tier of TIERS)

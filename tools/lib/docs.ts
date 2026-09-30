@@ -106,7 +106,7 @@ export const PAGES: readonly PageEntry[] = [
 	{ id: 'guides/testing', title: 'Testing your sketch', since: '0.1', summary: 'Hold mode; image tests; reading results; frames that stay the same on every run.' },
 	{ id: 'guides/debugging', title: 'Debugging', since: '0.1', summary: 'Error codes; the inspector; the MCP server; the render-graph dump; common failures.' },
 	{ id: 'guides/deploying', title: 'Deploying', since: '0.3', summary: 'Headers on common hosts; asset caching; size budgets.' },
-	{ id: 'guides/agents', title: 'Working with AI agents', since: '0.1', summary: 'Installing the null3D skills in Claude Code, claude.ai and other agent tools; docs by ID; the MCP server and AGENTS.md in templates (0.3).' },
+	{ id: 'guides/agents', title: 'Working with AI agents', since: '0.1', summary: 'Installing the null3D skills in Claude Code, claude.ai and other agent tools; docs by ID; the test loop; the MCP server and AGENTS.md in templates (0.3).' },
 
 	{ id: 'shaders/wgsl-rules', title: 'WGSL rules for portable shaders', since: '0.1', summary: 'The three shared language features; optional features; flat interpolation; limits budget; rules the build cannot check.' },
 	{ id: 'shaders/surface-functions', title: 'Surface functions', since: '0.1', summary: 'The surface record; vertex-offset functions; per-instance attributes.' },
