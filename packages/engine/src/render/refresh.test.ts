@@ -42,6 +42,17 @@ describe('RefreshMeter', () => {
 		expect(snapMeanInterval(4 * 16_683, 4)).toBe(60);
 	});
 
+	it('says whether the callbacks came at a display rate or from a timer', () => {
+		const meter = new RefreshMeter();
+		expect(meter.onDisplayRate).toBe(true);
+		expect(feed(meter, Array(32).fill(1000 / 60))).toBe(60);
+		expect(meter.onDisplayRate).toBe(true);
+		// Safari runs a worker's frame callbacks from a timer, every 15 ms.
+		const timer = new RefreshMeter();
+		expect(feed(timer, Array(32).fill(15))).toBe(67);
+		expect(timer.onDisplayRate).toBe(false);
+	});
+
 	it('keeps a long pause from swamping the samples', () => {
 		const intervals = Array.from({ length: 32 }, (_, i) => (i === 5 ? 3_600_000 : 1000 / 120));
 		expect(feed(new RefreshMeter(), intervals)).toBe(120);

@@ -2,8 +2,8 @@
 // pipelined mode, or the page's main thread with ?render=main. Inside its own frame callback it takes
 // the newest published frame, applies a pending resize, draws, and tells the sketch worker it may
 // compute the next frame. A callback that finds no new frame, or that comes before the frame's turn
-// under ?fps=, draws nothing. In a worker, each callback also sets a timer that wakes the thread
-// shortly before the next callback is due.
+// under ?fps= or the display's rate, draws nothing. In a worker, each callback also sets a timer
+// that wakes the thread shortly before the next callback is due.
 
 import { controlViews, Slot } from '../shared/control';
 import { FrameRecorder, Role } from '../shared/metrics';
@@ -26,6 +26,7 @@ const WAKE_AHEAD_MS = 4;
 /** The display rate that the wake-up assumes until the refresh meter has measured the callbacks. */
 const ASSUMED_DISPLAY_HZ = 60;
 const MS_PER_SECOND = 1000;
+const MICROSECONDS_PER_MS = 1000;
 
 /**
  * The delay, in whole milliseconds, from the start of a frame callback to the wake-up before the
@@ -66,6 +67,8 @@ export class Presenter {
 	private wakeDelay = wakeDelayMs(ASSUMED_DISPLAY_HZ);
 	/** A worker's frame callbacks can run from a timer; a page's always follow the display. */
 	private readonly inWorker = typeof document === 'undefined';
+	/** The display's refresh period in microseconds that the pacer holds to, or 0 for none. */
+	private displayInterval = 0;
 	readonly record: FrameRecorder;
 
 	/** `fps` is the frame rate that ?fps= holds, or undefined to draw at the display's rate. */
@@ -81,13 +84,23 @@ export class Presenter {
 
 	/**
 	 * Counts a frame callback, from whose times the display's refresh rate follows. Every callback
-	 * counts, including those that draw nothing.
+	 * counts, including those that draw nothing. When a worker's callbacks come at a rate that no
+	 * display runs at, a timer runs them, and the frames hold to the display's rate that the page
+	 * measured.
 	 */
 	tick(timestamp: number): void {
 		const hz = this.refresh.tick(timestamp);
-		if (hz === undefined) return;
-		this.record.setRefreshHz(hz);
-		this.wakeDelay = wakeDelayMs(hz);
+		if (hz !== undefined) {
+			this.record.setRefreshHz(hz);
+			this.wakeDelay = wakeDelayMs(hz);
+		}
+		const interval =
+			this.inWorker && !this.refresh.onDisplayRate
+				? Atomics.load(this.slots, Slot.DisplayInterval)
+				: 0;
+		if (interval === this.displayInterval) return;
+		this.displayInterval = interval;
+		this.pacer.holdToDisplay(interval / MICROSECONDS_PER_MS);
 	}
 
 	/**
@@ -100,8 +113,8 @@ export class Presenter {
 	}
 
 	/**
-	 * True when the callback at `timestamp` may draw a frame, under the frame rate that ?fps= holds.
-	 * A true answer uses up the frame's turn, so ask only when a frame is ready to draw.
+	 * True when the callback at `timestamp` may draw a frame, under the frame rate that ?fps= or the
+	 * display holds. A true answer uses up the frame's turn, so ask only when a frame is ready to draw.
 	 */
 	due(timestamp: number): boolean {
 		return this.pacer.take(timestamp);

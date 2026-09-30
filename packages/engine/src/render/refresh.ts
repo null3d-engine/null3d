@@ -2,7 +2,8 @@
 // per refresh, so most intervals are the refresh period, jittering around it; the rare longer ones
 // come from a busy thread. The meter averages the intervals near the median. It keeps intervals in
 // whole microseconds, so the work it does once per sample set, too rarely for the browser to
-// optimize, makes no number objects.
+// optimize, makes no number objects. Safari runs a worker's frame callbacks from a timer instead,
+// whose rate matches no display's, and the meter says when that is so.
 
 /** Callback intervals the meter keeps. */
 const SAMPLES = 32;
@@ -24,16 +25,24 @@ const SNAP_LONGEST = Int32Array.from(DISPLAY_RATES, (rate) =>
 
 /**
  * The display rate within a few percent of the rate that `count` intervals of `sum` microseconds in
- * all measure, or that rate rounded. The comparisons use whole numbers only.
+ * all measure, or 0 when no display runs near that rate. The comparisons use whole numbers only.
  */
-export function snapMeanInterval(sum: number, count: number): number {
+function displayRateNear(sum: number, count: number): number {
 	// Index loops, as in `tick`: an iterator would allocate on every call.
 	for (let k = 0; k < DISPLAY_RATES.length; k++) {
 		const shortest = (SNAP_SHORTEST[k] as number) * count;
 		const longest = (SNAP_LONGEST[k] as number) * count;
 		if (sum >= shortest && sum <= longest) return DISPLAY_RATES[k] as number;
 	}
-	return Math.round((MICROSECONDS_PER_SECOND * count) / sum);
+	return 0;
+}
+
+/**
+ * The display rate within a few percent of the rate that `count` intervals of `sum` microseconds in
+ * all measure, or that rate rounded.
+ */
+export function snapMeanInterval(sum: number, count: number): number {
+	return displayRateNear(sum, count) || Math.round((MICROSECONDS_PER_SECOND * count) / sum);
 }
 
 export class RefreshMeter {
@@ -42,6 +51,11 @@ export class RefreshMeter {
 	private readonly sorted = new Int32Array(SAMPLES);
 	private count = 0;
 	private last = -1;
+	/**
+	 * False when the last measurement matched no display's rate, as the callbacks of a timer do;
+	 * true before the first measurement.
+	 */
+	onDisplayRate = true;
 
 	/** Adds a frame callback's timestamp; returns the refresh rate each time the samples fill up. */
 	tick(timestamp: number): number | undefined {
@@ -62,6 +76,9 @@ export class RefreshMeter {
 			sum += interval;
 			near++;
 		}
-		return near > 0 && sum > 0 ? snapMeanInterval(sum, near) : undefined;
+		if (near === 0 || sum === 0) return undefined;
+		const display = displayRateNear(sum, near);
+		this.onDisplayRate = display !== 0;
+		return display || Math.round((MICROSECONDS_PER_SECOND * near) / sum);
 	}
 }

@@ -26,6 +26,7 @@ import type {
 import { abortable } from './abortable';
 import { watchCanvas } from './canvas-watch';
 import { type CapabilityReport, type PowerPreference, probeCapabilities } from './capabilities';
+import { watchDisplay } from './display';
 import {
 	type FrameMetrics,
 	HeapSampler,
@@ -510,6 +511,9 @@ async function startEngine(
 	const input = captureInput(options.canvas, control);
 	input.listen(takesInput);
 	const stopPreferences = watchPreferences(slots);
+	// A worker that draws holds its frames to the display's rate, which only the page can measure.
+	const stopDisplay =
+		renderThread !== 'main' && hold === undefined ? watchDisplay(slots) : undefined;
 
 	const messageHandlers = new Set<(name: string, data: unknown) => void>();
 	if (options.onSketchMessage) messageHandlers.add(options.onSketchMessage);
@@ -581,6 +585,7 @@ async function startEngine(
 		input.listen(false);
 		canvasWatch.listen(false);
 		stopPreferences();
+		stopDisplay?.();
 		return stopWorkers(workers, jobs);
 	};
 

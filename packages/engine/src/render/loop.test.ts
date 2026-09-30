@@ -163,3 +163,63 @@ describe('the wake-up before the next frame', () => {
 		}
 	});
 });
+
+describe('the hold to the display rate', () => {
+	let loop: RenderLoop | undefined;
+	afterEach(() => loop?.stop());
+
+	/** Safari runs a worker's frame callbacks from a timer, every 15 ms. */
+	const TIMER_HZ = 1000 / 15;
+	const CALLS = 640;
+	/** Callbacks before the refresh meter's first measurement, which draw at the callbacks' rate. */
+	const UNMEASURED = 40;
+
+	/** Frames per second drawn after the refresh meter's first measurement. */
+	function heldRate(drawn: number[], callbackHz: number): number {
+		const held = drawn.filter((frame) => frame > UNMEASURED).length;
+		return (held * callbackHz) / (CALLS - UNMEASURED);
+	}
+
+	/** Runs the render loop with a sketch that publishes a frame before every callback. */
+	function runTimed(displayHz: number, callbackHz: number): number[] {
+		const { control, metrics, slots, drawn, renderer } = setup();
+		Atomics.store(slots, Slot.DisplayInterval, Math.round(1_000_000 / displayHz));
+		loop = runRenderLoop(renderer, control, metrics, undefined);
+		refresh(callbackHz, CALLS, (call) => Atomics.store(slots, Slot.FramesPublished, call + 1));
+		return drawn;
+	}
+
+	it('holds a worker whose callbacks come from a timer to the display rate that the page measured', () => {
+		const drawn = runTimed(60, TIMER_HZ);
+		expect(heldRate(drawn, TIMER_HZ)).toBeCloseTo(60, 0);
+		// Until the meter has measured, every callback draws.
+		expect(drawn.filter((frame) => frame <= 32)).toHaveLength(32);
+	});
+
+	it('draws at every timer callback when the display is faster than the timer', () => {
+		expect(runTimed(72, TIMER_HZ)).toHaveLength(CALLS);
+	});
+
+	it('leaves a worker whose callbacks follow the display alone, whatever rate the page measured', () => {
+		// A busy page thread can measure a slower rate than the display runs at.
+		expect(runTimed(30, 60)).toHaveLength(CALLS);
+	});
+
+	it('holds the direct loop to the display rate too', () => {
+		const { control, metrics, slots, drawn, renderer } = setup();
+		Atomics.store(slots, Slot.DisplayInterval, Math.round(1_000_000 / 60));
+		loop = runDirectLoop(countingSketch(), renderer, control, metrics, undefined);
+		refresh(TIMER_HZ, CALLS);
+		expect(heldRate(drawn, TIMER_HZ)).toBeCloseTo(60, 0);
+	});
+
+	it('does not hold the frames of the page, whose callbacks follow the display', () => {
+		const scope = globalThis as { document?: unknown };
+		scope.document = {};
+		try {
+			expect(runTimed(60, TIMER_HZ)).toHaveLength(CALLS);
+		} finally {
+			delete scope.document;
+		}
+	});
+});
