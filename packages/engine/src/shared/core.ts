@@ -109,12 +109,23 @@ export interface CoreGlue extends CoreErrors {
 	 */
 	createMeshFromArrays(vertices: number, indices: number, layout: number): number;
 	meshRadius(mesh: number): number;
-	/** A material with a linear color; `shading` is one of the `SHADING_*` codes. */
-	createMaterial(shading: number, r: number, g: number, b: number, a: number): number;
-	/** Changes a material's linear color and keeps its opacity. */
-	setMaterialColor(material: number, r: number, g: number, b: number): number;
-	/** Changes a material's opacity and keeps its color. */
-	setMaterialOpacity(material: number, opacity: number): number;
+	/**
+	 * A material with a linear color and opacity. `shading` is one of the `SHADING_*` codes, and
+	 * `features` holds `MATERIAL_FEATURE_*` bits, fixed from then on.
+	 */
+	createMaterial(
+		shading: number,
+		features: number,
+		r: number,
+		g: number,
+		b: number,
+		a: number,
+	): number;
+	/**
+	 * Changes one value of a material, `param` (a `MATERIAL_PARAM_*` code), and keeps the others.
+	 * The value takes as many of `x`, `y` and `z` as it has numbers. Colors are linear.
+	 */
+	setMaterialValue(material: number, param: number, x: number, y: number, z: number): number;
 	/** Gives a material a map, a texture's handle, or none with 0. */
 	setMaterialMap(material: number, texture: number): number;
 	/**
@@ -188,8 +199,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'createMeshFromArrays',
 	'meshRadius',
 	'createMaterial',
-	'setMaterialColor',
-	'setMaterialOpacity',
+	'setMaterialValue',
 	'setMaterialMap',
 	'createTexture',
 	'setTextureImage',

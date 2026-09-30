@@ -171,8 +171,8 @@ impl Opaque {
     }
 
     /// Creates the ring of frame uniforms of each view from the first one without it up to
-    /// `views`, with the group that binds its uniform block, its cell offsets and the material
-    /// table's texture.
+    /// `views`, with the group that binds its uniform block, its cell offsets, the material
+    /// table's texture and three.js's table of the split-sum terms of specular light.
     pub(super) fn add_views(
         &mut self,
         list: &mut DrawList,
@@ -195,7 +195,7 @@ impl Opaque {
                 &[
                     ids::frame_group(view),
                     bind_layout::FRAME,
-                    3,
+                    4,
                     0,
                     resource_kind::BUFFER,
                     ids::frame(view),
@@ -209,6 +209,11 @@ impl Opaque {
                     1,
                     resource_kind::TEXTURE,
                     ids::MATERIALS,
+                    0,
+                    0,
+                    3,
+                    resource_kind::TEXTURE,
+                    ids::DFG,
                     0,
                     0,
                 ],

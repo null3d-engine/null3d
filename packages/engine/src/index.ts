@@ -68,6 +68,7 @@ export type {
 	CylinderOptions,
 	Geometry,
 	Material,
+	MaterialFeatures,
 	MaterialOptions,
 	Materials,
 	MeshArrays,
@@ -75,7 +76,10 @@ export type {
 	PlaneOptions,
 	RingOptions,
 	SphereOptions,
+	StandardOptions,
+	StandardValues,
 	TorusOptions,
+	UnlitOptions,
 } from './scene/resources';
 export type {
 	AmbientLight,

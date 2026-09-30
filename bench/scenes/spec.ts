@@ -126,7 +126,7 @@ export function boxGeometry(width: number, height: number, depth: number): MeshD
 export const S1_DEFAULT_COUNT = 100_000;
 /** The width, height and depth of the box. */
 export const S1_BOX_SIZE = 0.6;
-/** The color of the one Lambert material. */
+/** The color of the one standard material. */
 export const S1_COLOR = '#4a8cff';
 /** Half the side of the cube that holds the instances' base positions. */
 export const S1_EXTENT = 60;
@@ -239,7 +239,7 @@ export const S2_NODES_PER_TREE = (S2_BRANCHING ** S2_DEPTH - 1) / (S2_BRANCHING 
 export const S2_NODE_COUNT = S2_ROOTS * S2_NODES_PER_TREE;
 /** Box meshes that the nodes share. */
 export const S2_MESH_COUNT = 20;
-/** Lambert materials that the nodes share, one per color. */
+/** Standard materials that the nodes share, one per color. */
 export const S2_MATERIAL_COUNT = 5;
 /** The material colors. */
 export const S2_COLORS = ['#e8554e', '#f2c14e', '#5bc27a', '#4a8cff', '#b06ce0'] as const;

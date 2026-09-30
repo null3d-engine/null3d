@@ -21,6 +21,7 @@
 pub mod arrays;
 pub mod camera;
 pub mod cpu_culled;
+pub mod dfg;
 pub mod frame;
 pub mod frame_data;
 pub mod frame_graph;

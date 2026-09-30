@@ -119,7 +119,8 @@ fn two_views_cull_into_buffers_of_their_own_and_draw_their_own_bundles() {
     // its own, which share the camera's textures, as the two render passes do not overlap.
     assert_eq!(camera.pass[1], 0);
     assert_eq!(other.pass[1], NO_TARGET);
-    assert_eq!(count(&commands, Op::CreateTexture), 2);
+    // The targets, and the table of specular terms.
+    assert_eq!(count(&commands, Op::CreateTexture), 3);
 
     // Each view's culling tests its own frustum: the side view's leaves out the object at
     // x = -3, which the camera sees. A frustum is relative to its view's camera, so each sphere
@@ -226,7 +227,8 @@ fn the_first_frame_creates_everything_and_a_valid_frame_replays() {
     assert_eq!(count(&commands, Op::CreateRenderPipeline), 2);
     assert_eq!(count(&commands, Op::CreateComputePipeline), 1);
     assert_eq!(count(&commands, Op::ResizeCanvas), 1);
-    assert_eq!(count(&commands, Op::CreateTexture), 2);
+    // The color and depth targets, and the table of specular terms.
+    assert_eq!(count(&commands, Op::CreateTexture), 3);
     // Buckets: box lit (one object and the batch), box unlit, ball lit; the hidden ball draws
     // nowhere.
     assert_eq!(count(&commands, Op::DrawIndexedIndirect), 3);
@@ -523,7 +525,7 @@ fn pipelines_follow_the_shading_model_and_objects_sharing_a_mesh_and_material_sh
             .renderer
             .settings_mut()
             .materials_mut()
-            .create(Shading::Lit, [shade, 0.5, 0.5, 1.0])
+            .create(Shading::Lit, 0, [shade, 0.5, 0.5, 1.0])
             .unwrap()
             + 1
     };

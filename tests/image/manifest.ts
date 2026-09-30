@@ -148,6 +148,21 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 		size: [480, 270],
 		sameOnEveryTier: true,
 	},
+	// The standard material's spheres over metalness and roughness, and each option that a
+	// material fixes when it is created: emissive color, flat shading, double-sided faces, and
+	// vertex colors with the standard and the unlit material.
+	{
+		name: 'standard-grid',
+		sketch: 'tests/pages/sketches/standard-sketch.ts?scene=grid',
+		hold: 0,
+		size: [480, 270],
+	},
+	{
+		name: 'standard-features',
+		sketch: 'tests/pages/sketches/standard-sketch.ts?scene=features',
+		hold: 0,
+		size: [480, 270],
+	},
 	// Two surfaces 1 cm apart at each distance from 1 m to 10 km, in each GPU path's own depth mode.
 	// The page paints each pixel where the farther surface shows through as the nearer one, and
 	// publishes their count. The engine must draw the depth it chose, no mode may fight up to 40 m,

@@ -18,7 +18,7 @@ export function createSwarm(three: Three, count: number, moving: boolean): Swarm
 	const data = createS1(count);
 	const mesh = new three.InstancedMesh(
 		new three.BoxGeometry(S1_BOX_SIZE, S1_BOX_SIZE, S1_BOX_SIZE),
-		new three.MeshLambertMaterial({ color: S1_COLOR }),
+		new three.MeshStandardMaterial({ color: S1_COLOR }),
 		count,
 	);
 	if (moving) mesh.instanceMatrix.setUsage(three.DynamicDrawUsage);

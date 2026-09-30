@@ -7,6 +7,7 @@ import {
 	LAYOUT_CULL,
 	LAYOUT_FRAME,
 	LAYOUT_TEXTURES,
+	PERMUTATION_VERTEX_COLOR,
 	SIZE_INSTANCE_STRIDE,
 	STATE_CULL_NONE,
 	TEMPLATE_CULL,
@@ -14,6 +15,7 @@ import {
 	TEMPLATE_INSTANCED_TEXCOORDS,
 	TEMPLATE_INSTANCED_UNLIT,
 	TEMPLATE_INSTANCED_UNLIT_MAP,
+	VERTEX_COLOR,
 	VERTEX_INSTANCE_LOCATION,
 } from '../../generated/gpu';
 import {
@@ -26,7 +28,7 @@ import {
 	type WgslShader,
 } from '../../generated/shaders';
 import { type ShaderVariants, variantFor } from '../variants';
-import { vertexAttribute, vertexStride } from '../vertex-format';
+import { locationOfAttribute, vertexAttribute, vertexStride } from '../vertex-format';
 
 /** The WebGPU build of a shader variant. */
 export function wgslOf<Pipeline extends string>(variant: {
@@ -88,11 +90,20 @@ const FLOAT_FORMATS: (GPUVertexFormat | undefined)[] = [
 
 /**
  * The vertex buffers of a template's pipeline: a mesh's vertices first, for a template that draws
- * meshes, with each location it reads where the vertex format places it.
+ * meshes, with each location it reads where the vertex format places it. The variants with vertex
+ * colors read the mesh's colors too.
  */
-function vertexBuffers(t: RenderTemplate, vertexFormat: number): GPUVertexBufferLayout[] {
+function vertexBuffers(
+	t: RenderTemplate,
+	vertexFormat: number,
+	permutation: number,
+): GPUVertexBufferLayout[] {
 	if (!t.meshLocations) return t.vertexBuffers;
-	const attributes = t.meshLocations.map((shaderLocation): GPUVertexAttribute => {
+	const locations =
+		permutation & PERMUTATION_VERTEX_COLOR
+			? [...t.meshLocations, locationOfAttribute(VERTEX_COLOR)]
+			: t.meshLocations;
+	const attributes = locations.map((shaderLocation): GPUVertexAttribute => {
 		const attribute = vertexAttribute(vertexFormat, shaderLocation);
 		if (!attribute)
 			throw new Error(`vertex format ${vertexFormat} has no attribute at ${shaderLocation}`);
@@ -126,6 +137,7 @@ export class Pipelines {
 				buffer: { type: 'uniform' },
 			},
 			{ binding: 1, visibility: fragment, buffer: { type: 'read-only-storage' } },
+			{ binding: 3, visibility: fragment, texture: { sampleType: 'unfilterable-float' } },
 		]);
 		this.defineLayout(LAYOUT_TEXTURES, 'textures', [
 			{ binding: 0, visibility: fragment, texture: { viewDimension: '2d-array' } },
@@ -228,7 +240,7 @@ export class Pipelines {
 			vertex: {
 				module,
 				entryPoint: entryPoints?.vertex,
-				buffers: vertexBuffers(t, vertexFormat),
+				buffers: vertexBuffers(t, vertexFormat, permutation),
 			},
 			fragment: colorFormat
 				? { module, entryPoint: entryPoints?.fragment, targets: [{ format: colorFormat }] }

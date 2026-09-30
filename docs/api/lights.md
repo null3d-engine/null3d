@@ -43,7 +43,7 @@ An ambient light adds the same light to every surface, whatever way the surface 
 
 Both lights take `color` and `intensity`. The color is a hex string, a number, or three sRGB components from 0 to 1, and the default is white. The intensity scales the color, and the default is 1.
 
-The standard material uses the lighting formula of three.js's `MeshLambertMaterial`, so the same colors and intensities give the same result in both engines. With no ambient light, a white directional light with an intensity of π, about 3.14, shows a surface that faces it in its full color.
+The standard material uses the lighting formulas of three.js's `MeshStandardMaterial`, so the same colors and intensities give the same result in both engines. Take a white directional light with an intensity of π, about 3.14, and no ambient light. A rough surface that faces it shows nearly its full color.
 
 `setIntensity` and `setDirection` allocate nothing, so `onUpdate` can call them in every frame. `setColor` converts the color and allocates, so animate the intensity instead.
 

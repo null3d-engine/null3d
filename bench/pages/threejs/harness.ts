@@ -33,7 +33,7 @@ export type Three = Pick<
 	| 'InstancedMesh'
 	| 'Matrix4'
 	| 'Mesh'
-	| 'MeshLambertMaterial'
+	| 'MeshStandardMaterial'
 	| 'PerspectiveCamera'
 	| 'Quaternion'
 	| 'Scene'

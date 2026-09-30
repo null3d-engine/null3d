@@ -1,7 +1,7 @@
 enable draw_index;
 #define_import_path null3d::mesh
 #import null3d::globals::{Frame, Material}
-#import null3d::vertex::{OUTSIDE_CLIP, Transform, to_clip, transform_direction, transform_point}
+#import null3d::vertex::{OUTSIDE_CLIP, Transform, to_clip, transform_normal, transform_point}
 
 // What every template for meshes drawn by instance shares: the frame's bindings, where each
 // instance's world matrix and material come from, and positions in clip space. A template's vertex
@@ -196,13 +196,25 @@ fn transform_of(found: Instance) -> Transform {
 /// A position in clip space: the instance's world matrix, then the camera. An instance that draws
 /// nothing lands outside the clip volume on every axis, so the whole triangle is clipped away.
 fn clip_position(found: Instance, position: vec3f) -> vec4f {
+    return clip_of(found, relative_position(found, position));
+}
+
+/// A position relative to the camera in clip space, for the instance that it belongs to, as
+/// `clip_position` gives it.
+fn clip_of(found: Instance, relative: vec3f) -> vec4f {
     if !found.drawn {
         return OUTSIDE_CLIP;
     }
-    return to_clip(frame.view_proj, transform_point(transform_of(found), position));
+    return to_clip(frame.view_proj, relative);
 }
 
-/// A direction from the mesh into the world: the instance's world matrix without its translation.
-fn world_direction(found: Instance, direction: vec3f) -> vec3f {
-    return transform_direction(transform_of(found), direction);
+/// A position from the mesh into the world, relative to the camera.
+fn relative_position(found: Instance, position: vec3f) -> vec3f {
+    return transform_point(transform_of(found), position);
+}
+
+/// A unit normal from the mesh into the world, turned as three.js's normal matrix turns it, so it
+/// stays at right angles to its surface under uneven scale.
+fn world_normal(found: Instance, normal: vec3f) -> vec3f {
+    return transform_normal(transform_of(found), normal);
 }

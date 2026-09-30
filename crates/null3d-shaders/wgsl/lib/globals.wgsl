@@ -19,11 +19,12 @@ struct Frame {
 struct Material {
     /// The base color and the opacity.
     color: vec4f,
-    /// The emissive color times its intensity, and the alpha cutoff.
+    /// The emissive color, and the alpha cutoff.
     emissive: vec4f,
     /// The metalness, the roughness, and the normal map's scale along u and v.
     surface: vec4f,
-    /// The occlusion map's strength, the light map's intensity, the shading flags, and a spare.
+    /// The occlusion map's strength, the light map's intensity, the shading flags, and the
+    /// emissive color's intensity.
     strengths: vec4f,
     /// The row of the texture coordinate transform that gives u, and a spare.
     uv_u: vec4f,
