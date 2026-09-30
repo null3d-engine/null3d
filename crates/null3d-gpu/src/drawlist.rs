@@ -293,6 +293,9 @@ pub mod format {
     /// 8-bit color stored with the sRGB curve: sampling decodes it to linear values, and drawing
     /// encodes linear values. WebGL2 calls it `SRGB8_ALPHA8`.
     pub const RGBA8_UNORM_SRGB: u32 = 9;
+    /// Three small unsigned floats in 32 bits, with no alpha: high dynamic range color in half the
+    /// bytes of `RGBA16_FLOAT`. WebGPU draws into it only with `Capabilities::RG11B10_RENDERABLE`.
+    pub const RG11B10_UFLOAT: u32 = 10;
     /// ASTC in blocks of 4 x 4 texels, 16 bytes each (`Capabilities::TEXTURE_ASTC`).
     pub const ASTC_4X4_UNORM: u32 = 11;
     pub const ASTC_4X4_UNORM_SRGB: u32 = 12;
@@ -307,7 +310,7 @@ pub mod format {
     pub const ETC2_RGBA8_UNORM_SRGB: u32 = 18;
 
     /// Every format.
-    pub const ALL: [u32; 18] = [
+    pub const ALL: [u32; 19] = [
         NONE,
         CANVAS,
         RGBA8_UNORM,
@@ -318,6 +321,7 @@ pub mod format {
         RGBA32_FLOAT,
         R32_UINT,
         RGBA8_UNORM_SRGB,
+        RG11B10_UFLOAT,
         ASTC_4X4_UNORM,
         ASTC_4X4_UNORM_SRGB,
         BC7_RGBA_UNORM,
@@ -388,7 +392,8 @@ pub mod format {
     /// and for `DEPTH24_PLUS`, whose texels have no layout that writes and copies can use.
     pub const fn block_bytes(format: u32) -> u32 {
         match format {
-            CANVAS | RGBA8_UNORM | BGRA8_UNORM | DEPTH32_FLOAT | R32_UINT | RGBA8_UNORM_SRGB => 4,
+            CANVAS | RGBA8_UNORM | BGRA8_UNORM | DEPTH32_FLOAT | R32_UINT | RGBA8_UNORM_SRGB
+            | RG11B10_UFLOAT => 4,
             RGBA16_FLOAT | ETC2_RGB8_UNORM | ETC2_RGB8_UNORM_SRGB => 8,
             RGBA32_FLOAT
             | ASTC_4X4_UNORM
@@ -538,6 +543,8 @@ pub mod layout {
     pub const DRAWS: u32 = 2;
     /// Group 2 of render pipelines that read instances from data textures: the textures.
     pub const INSTANCES: u32 = 3;
+    /// Group 0 of the final pass: the output settings, and the scene color it reads.
+    pub const FINAL: u32 = 4;
     /// The maps of render pipelines that sample them: a 2D array texture, then its sampler. It is
     /// group 1 on WebGPU, and group 3 on WebGL2, after the groups of the data textures.
     pub const TEXTURES: u32 = 5;
@@ -555,7 +562,9 @@ pub mod layout {
 pub mod permutation {
     /// The vertex shader reads its draw's index, from `WEBGL_multi_draw`.
     pub const DRAW_INDEX: u32 = 1;
-    /// The fragment shader applies the exposure and the tone mapping, and encodes sRGB, itself.
+    /// The fragment shader applies the exposure and the tone mapping and encodes sRGB itself, for
+    /// an 8-bit target that resolves straight into the canvas. Without it, the shader writes
+    /// linear color for the final pass.
     pub const TONE_MAP: u32 = 2;
     /// The mesh's vertex colors multiply the material's base color.
     pub const VERTEX_COLOR: u32 = 4;
@@ -735,9 +744,11 @@ pub mod vertex {
 pub mod sizes {
     /// Bytes per compacted instance: three rows of the world matrix, then a vector of ids.
     pub const INSTANCE_STRIDE: u32 = 64;
-    /// Bytes of the per-frame uniform block: the view-projection matrix, four vectors, and the
-    /// fog's 48 bytes.
-    pub const FRAME_UNIFORM_BYTES: u32 = 176;
+    /// Bytes of the per-frame uniform block: the view-projection matrix, four vectors, the output
+    /// settings and the fog's 48 bytes.
+    pub const FRAME_UNIFORM_BYTES: u32 = 192;
+    /// Bytes of the output settings: the exposure, the tone mapping and two spare words.
+    pub const OUTPUT_UNIFORM_BYTES: u32 = 16;
     /// Threads per workgroup of the culling shader.
     pub const CULL_WORKGROUP_SIZE: u32 = 128;
     /// 32-bit words per indexed indirect draw.
@@ -796,6 +807,8 @@ pub mod template {
     /// Instanced meshes with the standard material and its texture maps, which the first texture
     /// coordinates place, or the second for a map on the second set.
     pub const INSTANCED_STANDARD_MAPS: u32 = 6;
+    /// The final pass: one triangle over the canvas, which tone maps the scene color into it.
+    pub const FINAL: u32 = 7;
     /// The GPU culling compute shader.
     pub const CULL: u32 = 16;
 }
@@ -941,6 +954,7 @@ pub fn typescript_constants() -> String {
                 ("RGBA32_FLOAT", format::RGBA32_FLOAT),
                 ("R32_UINT", format::R32_UINT),
                 ("RGBA8_UNORM_SRGB", format::RGBA8_UNORM_SRGB),
+                ("RG11B10_UFLOAT", format::RG11B10_UFLOAT),
                 ("ASTC_4X4_UNORM", format::ASTC_4X4_UNORM),
                 ("ASTC_4X4_UNORM_SRGB", format::ASTC_4X4_UNORM_SRGB),
                 ("BC7_RGBA_UNORM", format::BC7_RGBA_UNORM),
@@ -1016,6 +1030,7 @@ pub fn typescript_constants() -> String {
                 ("CULL", layout::CULL),
                 ("DRAWS", layout::DRAWS),
                 ("INSTANCES", layout::INSTANCES),
+                ("FINAL", layout::FINAL),
                 ("TEXTURES", layout::TEXTURES),
                 ("MATERIAL_MAPS", layout::MATERIAL_MAPS),
             ],
@@ -1050,6 +1065,7 @@ pub fn typescript_constants() -> String {
                 ("DEBUG_LINES", template::DEBUG_LINES),
                 ("INSTANCED_UNLIT_MAP", template::INSTANCED_UNLIT_MAP),
                 ("INSTANCED_STANDARD_MAPS", template::INSTANCED_STANDARD_MAPS),
+                ("FINAL", template::FINAL),
                 ("CULL", template::CULL),
             ],
         ),
@@ -1082,6 +1098,7 @@ pub fn typescript_constants() -> String {
             &[
                 ("INSTANCE_STRIDE", sizes::INSTANCE_STRIDE),
                 ("FRAME_UNIFORM_BYTES", sizes::FRAME_UNIFORM_BYTES),
+                ("OUTPUT_UNIFORM_BYTES", sizes::OUTPUT_UNIFORM_BYTES),
                 ("CULL_WORKGROUP_SIZE", sizes::CULL_WORKGROUP_SIZE),
                 ("INDIRECT_WORDS", sizes::INDIRECT_WORDS),
                 ("MATRIX_TEXELS", sizes::MATRIX_TEXELS),
@@ -1376,6 +1393,7 @@ mod tests {
         }
         assert!(!format::is_known(format::CODES));
         assert_eq!(format::texel_bytes(format::RGBA8_UNORM_SRGB), 4);
+        assert_eq!(format::texel_bytes(format::RG11B10_UFLOAT), 4);
         assert_eq!(format::texel_bytes(format::RGBA32_FLOAT), 16);
         assert_eq!(format::texel_bytes(format::DEPTH24_PLUS), 0);
         assert_eq!(format::texel_bytes(99), 0);

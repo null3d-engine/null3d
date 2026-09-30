@@ -2,7 +2,9 @@
 // options, the sketch passes them to the material's set call, then answers.
 import { defineSketch, type MaterialOptions } from '@null3d/engine';
 
-export default defineSketch(({ scene, materials, geometry, page }) => {
+export default defineSketch(({ scene, materials, geometry, page, post }) => {
+	// The page reads each unlit color as it is, so no tone mapping curve may change it.
+	post.set({ toneMapping: 'none' });
 	const camera = scene.createPerspectiveCamera({ position: [0, 0, 3], target: [0, 0, 0] });
 	scene.setActiveCamera(camera);
 	const paint = materials.unlit({ color: '#ff0000' });

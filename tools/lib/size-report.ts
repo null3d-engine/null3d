@@ -74,8 +74,11 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
  */
 export const SHADER_PARTS: readonly string[] = [
 	'shaders-wgsl.js',
+	'shaders-wgsl-tone-map.js',
 	'shaders-glsl.js',
+	'shaders-glsl-tone-map.js',
 	'shaders-glsl-draw-index.js',
+	'shaders-glsl-draw-index-tone-map.js',
 ];
 
 /**

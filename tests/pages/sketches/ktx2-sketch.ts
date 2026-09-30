@@ -25,7 +25,9 @@ const LARGE = 1;
 const SMALLER = 0.4;
 const TINY = 0.12;
 
-export default defineSketch(async ({ scene, materials, geometry, assets }) => {
+export default defineSketch(async ({ scene, materials, geometry, assets, post }) => {
+	// Each square shows its texels as the file holds them, so no tone mapping curve may change them.
+	post.set({ toneMapping: 'none' });
 	scene.setBackground('#20242a');
 	const camera = scene.createPerspectiveCamera({
 		fov: 45,

@@ -1,13 +1,21 @@
-// What the engine core and the thread that draws need to know about the device: on WebGPU, the
-// storage binding size the engine asks the GPU for; on WebGL2, multi-draw, the texture size,
-// whether WebGL reads shared memory and how depth is stored; on both, the compressed texture
-// formats that KTX2 files can become. The permutation bits that the device fixes pick the shader
-// module that the thread that draws loads. They also set how many objects and
+// What the engine core and the thread that draws need to know about the device and the canvas: on
+// WebGPU, the storage binding size the engine asks the GPU for; on WebGL2, multi-draw, the texture
+// size, whether WebGL reads shared memory and how depth is stored; on both, the compressed texture
+// formats that KTX2 files can become, the target that scene passes draw into and whether the
+// canvas is transparent. The permutation bits that the device fixes pick the shader module that the
+// thread that draws loads. They also set how many objects and
 // instance rows a scene can draw, and past how many development builds warn that other devices of
 // the same GPU path draw fewer.
 
 import * as C from '../generated/core';
-import { PERMUTATION_DRAW_INDEX } from '../generated/gpu';
+import {
+	FORMAT_CANVAS,
+	FORMAT_RG11B10_UFLOAT,
+	FORMAT_RGBA16_FLOAT,
+	PERMUTATION_DRAW_INDEX,
+	PERMUTATION_TONE_MAP,
+} from '../generated/gpu';
+import type { Tier } from '../render/renderer';
 import type { CompressionFamily, DepthMode, Switches } from './switches';
 
 /** The parts of the capability report that decide how the engine uses the device. */
@@ -20,10 +28,13 @@ export interface DeviceReport {
 			bufferSubData: boolean;
 			texSubImage2D: boolean;
 		} | null;
+		floatRenderTargets: {
+			rgba16f: { complete: boolean; readsBack: boolean; samples: number };
+		} | null;
 	};
 }
 
-/** What the engine core and the thread that draws need to know about the device. */
+/** What the engine core and the thread that draws need to know about the device and the canvas. */
 export interface CoreDevice {
 	/** True on the WebGL2 path, false on WebGPU. */
 	webgl2: boolean;
@@ -49,8 +60,16 @@ export interface CoreDevice {
 	 */
 	parallelCompile: boolean;
 	/**
+	 * The format code of the target that scene passes draw into: a float format for HDR color, which
+	 * the final pass tone maps, or the canvas's format on the 8-bit path.
+	 */
+	sceneColor: number;
+	/** True when the canvas keeps premultiplied alpha, and stays clear where nothing draws. */
+	transparent: boolean;
+	/**
 	 * The permutation bits that the device fixes, in every pipeline it builds: the draw index where
-	 * WebGL2 has multi-draw. They pick the module of shader builds that the thread that draws loads.
+	 * WebGL2 has multi-draw, and tone mapping in the shader on the 8-bit path. They pick the module
+	 * of shader builds that the thread that draws loads.
 	 */
 	shaderBits: number;
 	/** False when the core culls every object and instance row, with no grid cells skipped first. */
@@ -87,6 +106,19 @@ function compression(
 	return flags;
 }
 
+/**
+ * How the page asks the engine to use the device: the test switches that force a route, limit the
+ * compressed texture families or turn cell culling off for benchmarks, and the canvas's
+ * transparency.
+ */
+export type DeviceOptions = Pick<
+	Switches,
+	'copyUploads' | 'depth' | 'hdr' | 'parallelCompile' | 'compression' | 'cells'
+> & {
+	/** True for a transparent canvas. */
+	transparent: boolean;
+};
+
 /** The depth mode of a WebGL2 device without `EXT_clip_control`. */
 export const DEPTH_WITHOUT_CLIP_CONTROL: DepthMode = 'reversed-gl';
 
@@ -112,52 +144,82 @@ export function storageBindingBytes(limits: Record<string, number | null>): numb
 }
 
 /**
- * The device as the engine uses it on WebGL2 or WebGPU, from the capability report and the test
- * switches. `copyUploads` makes the WebGL2 path copy uploads out of shared memory even where
- * WebGL reads it, `depth` forces a WebGL2 depth mode, `parallelCompile` off makes WebGL2 wait for
- * each program's compile, and `compression` limits the compressed texture families, so tests reach
- * every route. `cells` off makes the core cull without grid cells, for benchmarks.
+ * True when WebGL2 draws HDR color: RGBA16F targets are complete, keep values above 1, and take
+ * the engine's MSAA.
  */
-export function coreDevice(
-	webgl2: boolean,
+export function webgl2DrawsHdr(report: DeviceReport['webgl2']): boolean {
+	const test = report.floatRenderTargets?.rgba16f;
+	return test?.complete === true && test.readsBack && test.samples >= C.LIMIT_MSAA_SAMPLES;
+}
+
+/**
+ * The format of the target that scene passes draw into. Core WebGPU draws HDR color, in
+ * rg11b10ufloat, which takes half the bytes, where the device draws into it and the canvas needs
+ * no alpha, and in rgba16float elsewhere. Compatibility mode cannot use MSAA on float targets, so it
+ * takes the 8-bit path. WebGL2 takes it too, unless the device draws HDR color. `hdr` false
+ * forces the 8-bit path.
+ */
+export function sceneColorFormat(
+	tier: Tier,
 	report: DeviceReport,
-	{
-		copyUploads,
-		depth,
-		parallelCompile,
-		compression: allowed,
-		cells,
-	}: Pick<Switches, 'copyUploads' | 'depth' | 'parallelCompile' | 'compression' | 'cells'>,
-): CoreDevice {
-	if (!webgl2) {
-		const features = new Set(report.webgpu.features);
+	hdr: boolean,
+	transparent: boolean,
+): number {
+	if (!hdr) return FORMAT_CANVAS;
+	if (tier === 'webgpu')
+		return !transparent && report.webgpu.features.includes('rg11b10ufloat-renderable')
+			? FORMAT_RG11B10_UFLOAT
+			: FORMAT_RGBA16_FLOAT;
+	if (tier === 'webgl2' && webgl2DrawsHdr(report.webgl2)) return FORMAT_RGBA16_FLOAT;
+	return FORMAT_CANVAS;
+}
+
+/**
+ * The device and the canvas as the engine uses them on a tier, from the capability report and the
+ * options. The test switches make the WebGL2 path copy uploads out of shared memory even where
+ * WebGL reads it, force a WebGL2 depth mode, make WebGL2 wait for each program's compile, or force
+ * the 8-bit path, so tests reach every route. `compression` limits the compressed texture families,
+ * as on a device with fewer. `cells` off makes the core cull without grid cells, for benchmarks.
+ */
+export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOptions): CoreDevice {
+	const sceneColor = sceneColorFormat(tier, report, options.hdr, options.transparent);
+	const toneMap = sceneColor === FORMAT_CANVAS ? PERMUTATION_TONE_MAP : 0;
+	const common = {
+		parallelCompile: options.parallelCompile,
+		sceneColor,
+		transparent: options.transparent,
+		cellCulling: options.cells,
+	};
+	if (tier !== 'webgl2') {
 		return {
-			webgl2,
+			webgl2: false,
 			storageBindingBytes: storageBindingBytes(report.webgpu.limits),
-			capabilities: compression((feature) => features.has(feature), allowed),
+			capabilities: compression(
+				(feature) => report.webgpu.features.includes(feature),
+				options.compression,
+			),
 			maxTextureSize: 0,
 			sharedUploads: true,
 			depth: 'reversed',
-			parallelCompile,
-			shaderBits: 0,
-			cellCulling: cells,
+			shaderBits: toneMap,
+			...common,
 		};
 	}
 	const gl = report.webgl2;
 	const multiDraw = gl.extensions.WEBGL_multi_draw === true;
-	const shared = gl.sharedMemoryUploads;
+	const uploads = gl.sharedMemoryUploads;
 	return {
-		webgl2,
+		webgl2: true,
 		storageBindingBytes: C.LIMIT_PORTABLE_STORAGE_BINDING_BYTES,
 		capabilities:
 			(multiDraw ? C.CAPABILITY_MULTI_DRAW : 0) |
-			compression((_, extension) => gl.extensions[extension] === true, allowed),
+			compression((_, extension) => gl.extensions[extension] === true, options.compression),
 		maxTextureSize: Math.max(C.LIMIT_WEBGL2_MIN_TEXTURE_SIZE, gl.maxTextureSize ?? 0),
-		sharedUploads: !copyUploads && shared !== null && shared.bufferSubData && shared.texSubImage2D,
-		depth: webgl2Depth(gl.extensions.EXT_clip_control === true, depth),
-		parallelCompile,
-		shaderBits: multiDraw ? PERMUTATION_DRAW_INDEX : 0,
-		cellCulling: cells,
+		sharedUploads:
+			!options.copyUploads && uploads !== null && uploads.bufferSubData && uploads.texSubImage2D,
+		depth: webgl2Depth(gl.extensions.EXT_clip_control === true, options.depth),
+		shaderBits: (multiDraw ? PERMUTATION_DRAW_INDEX : 0) | toneMap,
+		...common,
 	};
 }
 
