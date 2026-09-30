@@ -5,6 +5,7 @@
 // downloaded wait in memory until a load takes them, and loads of one address at the same time
 // share one download; the HTTP cache keeps everything else.
 
+import { DEV } from '../errors/checks';
 import { EngineError } from '../errors/engine-error';
 import { messageOf } from '../errors/message';
 import type { Texture, TextureColorSpace, TextureOptions, Textures } from './textures';
@@ -262,7 +263,8 @@ async function isKtx2(blob: Blob): Promise<boolean> {
 
 /**
  * Makes a texture from a KTX2 file with the KTX2 loader, which this imports the first time, so a
- * page without KTX2 files never downloads it. Throws E1406 when the loader does not download.
+ * page without KTX2 files never downloads it. Throws E1406 when the loader does not download, and
+ * E1208 for options that a KTX2 file cannot take.
  */
 async function loadKtx2(
 	textures: Textures,
@@ -271,6 +273,20 @@ async function loadKtx2(
 	options: LoadTextureOptions,
 	call: string,
 ): Promise<Texture> {
+	if (DEV) {
+		const refuse = (option: string, why: string) =>
+			new EngineError('E1208', `${call}() got ${option}: true for ${address}, a KTX2 file. ${why}`);
+		if (options.flipY === true)
+			throw refuse(
+				'flipY',
+				'Its compressed rows cannot turn over: encode the file flipped, as basisu -y_flip does.',
+			);
+		if (options.premultipliedAlpha === true)
+			throw refuse(
+				'premultipliedAlpha',
+				'Its compressed colors cannot change: encode the file from colors multiplied by alpha.',
+			);
+	}
 	let ktx2: typeof import('./ktx2');
 	try {
 		ktx2 = await import('./ktx2');
@@ -280,7 +296,14 @@ async function loadKtx2(
 			`the KTX2 loader did not download for ${call}() of ${address}: ${reason(error)}.`,
 		);
 	}
-	return ktx2.loadKtx2(textures, await blob.arrayBuffer(), address, options, call);
+	return ktx2.loadKtx2(
+		textures,
+		await blob.arrayBuffer(),
+		address,
+		options,
+		call,
+		(code, message) => new EngineError(code, message),
+	);
 }
 
 /** Decodes an image file as `options` ask, or throws E1412. */
