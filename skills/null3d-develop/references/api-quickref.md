@@ -33,8 +33,8 @@ import { createEngine } from '@null3d/engine';
 const engine = await createEngine({
   canvas,                                        // HTMLCanvasElement, sized by CSS
   sketch: new URL('./sketch.ts', import.meta.url),   // the sketch module
-  preset: 'auto',        // 'auto' | 'low' | 'medium' | 'high' | 'ultra'
-  maxPixelRatio: 2,      // cap for devicePixelRatio; presets cap it too
+  preset: 'auto',        // 'auto' | 'low' | 'medium' | 'high' | 'ultra'; WebGL2 runs at most 'medium'
+  maxPixelRatio: 2,      // cap for devicePixelRatio in place of the preset's cap
   gpu: 'auto',           // 'auto' | 'webgpu' | 'webgl2' (testing only)
   powerPreference: 'high-performance',   // the default; 'low-power' saves battery on devices with two GPUs
   latency: 'pipelined',  // or 'low'; 'pipelined' is the default
@@ -369,13 +369,17 @@ Passes are declarations: the engine checks them, orders them, and shares memory 
 ## 17. Quality (`api/quality`)
 
 ```ts
-quality.preset;                         // 'low' | 'medium' | 'high' | 'ultra'
-quality.set({ shadows: { cascades: 2 }, ao: false, maxPixelRatio: 1.5, antialias: 'msaa' });  // antialias: 'msaa' | 'fxaa' | 'none'
-quality.onChange((q) => { particles.setActiveCount(q.preset === 'low' ? 500 : 2000); });
-quality.setBudget({ name: 'ai', ms: 2, onScale: (scale) => { aiRate = scale; } });
+quality.preset;                         // 'low' | 'medium' | 'high' | 'ultra': the preset the engine runs
+quality.settings.maxPixelRatio;         // the settings in use
+quality.set({ maxPixelRatio: 1.5 });    // from the next frame; E1213 for another setting or value
+quality.set({ antialias: 'fxaa', shadowCascades: 2 });  // planned: the preset table gives each setting's status
+const PARTICLES = { low: 500, medium: 2000, high: 5000, ultra: 10000 };  // your values per preset, in one table
+quality.onChange(() => { particles.setActiveCount(PARTICLES[quality.preset]); });
+quality.setBudget({ name: 'ai', ms: 2, onScale: (scale) => { aiRate = scale; } });  // (0.2)
+engine.mode.preset;                     // on the page: the preset, crashedStarts and memoryMaximumMiB
 ```
 
-The frame-budget governor lowers settings in a fixed order when frames run long, and raises them again after a stable period.
+The page's `?preset=low` switch fixes the preset for tests. After a start that crashed the tab, the engine starts one preset lower. The frame-budget governor lowers settings in a fixed order when frames run long, and raises them again after a stable period.
 
 ## 18. Messages and UI (`api/page`, `api/ui`)
 

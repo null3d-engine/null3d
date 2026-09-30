@@ -1,11 +1,25 @@
 // The documentation inventory and every file generated from a single source: placeholder pages for
 // planned pages, the API reference on the api/ pages, the page list in docs/index.md, the error
-// pages, and the three.js mapping page with the porting skill's copies of the mapping. Generation
-// is computed in memory first, so the same code writes the files and checks that the committed
-// files are current.
+// pages, the tables of the quality presets page, and the three.js mapping page with the porting
+// skill's copies of the mapping. Generation is computed in memory first, so the same code writes
+// the files and checks that the committed files are current.
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { ERRORS, type ErrorEntry } from '../../packages/engine/src/errors/codes.ts';
+import {
+	DEVICE_PRESETS,
+	type DeviceKind,
+	LOW_MEMORY_GB,
+	TIER_CEILINGS,
+} from '../../packages/engine/src/quality/chooser.ts';
+import {
+	CHANGE_DOCS,
+	DEVICE_DOCS,
+	settingRows,
+	TIER_DOCS,
+} from '../../packages/engine/src/quality/preset-docs.ts';
+import { QUALITY_PRESETS } from '../../packages/engine/src/quality/presets.ts';
+import type { Tier } from '../../packages/engine/src/shared/tier.ts';
 import { type ApiReference, readApi, renderReference, tableCell } from './api-docs';
 import { docsFiles, readIfExists } from './files';
 import { parseFrontMatter, renderFrontMatter } from './frontmatter';
@@ -133,6 +147,63 @@ const PAGE_LIST_END = '<!-- null3d:page-list:end -->';
 /** Written API pages hold their generated reference between these markers. */
 export const API_START = '<!-- null3d:api:start -->';
 export const API_END = '<!-- null3d:api:end -->';
+
+/** The markers around a generated table on a written page. */
+export function tableMarkers(name: string): readonly [start: string, end: string] {
+	return [`<!-- null3d:${name}:start -->`, `<!-- null3d:${name}:end -->`];
+}
+
+/** A preset's name as a table prints it: "Low". */
+const presetTitle = (preset: string) => preset.charAt(0).toUpperCase() + preset.slice(1);
+
+/** A Markdown table from its header and its rows of cells. */
+function markdownTable(header: readonly string[], rows: readonly (readonly string[])[]): string {
+	const line = (cells: readonly string[]) => `| ${cells.join(' | ')} |`;
+	return [line(header), line(header.map(() => '---')), ...rows.map(line)].join('\n');
+}
+
+/** The preset that each kind of device starts at, from the chooser's constants. */
+export function presetDeviceTable(): string {
+	const rows = (Object.keys(DEVICE_PRESETS) as DeviceKind[]).map((kind) => {
+		const { name, pointer, screen } = DEVICE_DOCS[kind];
+		return [name, pointer, screen, presetTitle(DEVICE_PRESETS[kind])];
+	});
+	return `${markdownTable(['Device', 'Main pointer', 'Smaller screen edge', 'Starting preset'], rows)}
+
+A memory reading under ${LOW_MEMORY_GB} GB lowers the starting preset by one.`;
+}
+
+/** The highest preset of each GPU path, from the chooser's constants. */
+export function presetCeilingTable(): string {
+	const rows = (Object.keys(TIER_CEILINGS) as Tier[]).map((tier) => [
+		TIER_DOCS[tier],
+		presetTitle(TIER_CEILINGS[tier]),
+	]);
+	return markdownTable(['GPU path', 'Highest preset'], rows);
+}
+
+/** Every quality setting with its value on each preset, from the preset table. */
+export function presetSettingsTable(): string {
+	const rows = settingRows().map((row) => [
+		`${row.label} (\`${row.name}\`)`,
+		...row.values.map(tableCell),
+		CHANGE_DOCS[row.changes],
+		row.built ? 'built' : 'planned',
+	]);
+	return markdownTable(['Setting', ...QUALITY_PRESETS.map(presetTitle), 'Changes', 'Status'], rows);
+}
+
+/**
+ * The tables that the generator writes into written pages, each between its markers. A page
+ * named here must hold the markers of each of its tables.
+ */
+export const PAGE_TABLES: Readonly<Record<string, readonly (readonly [string, () => string])[]>> = {
+	'concepts/quality-presets': [
+		['preset-devices', presetDeviceTable],
+		['preset-ceilings', presetCeilingTable],
+		['preset-settings', presetSettingsTable],
+	],
+};
 
 /**
  * The single source of the three.js mapping. The mapping page and the porting skill's copies come
@@ -385,13 +456,18 @@ export function generateDocs(root: string, api: ApiReference = readApi(root)): M
 		const current = readIfExists(root, path);
 		const symbols = byPage.get(page.id);
 		const reference = symbols ? renderReference(symbols) : '';
-		if (current === null || current.includes(PLACEHOLDER_MARKER))
+		if (current === null || current.includes(PLACEHOLDER_MARKER)) {
 			out.set(path, placeholderPage(page, reference));
-		else if (reference || current.includes(API_START))
-			out.set(
-				path,
-				replaceBetween(current, [API_START, API_END], reference, path, 'API reference'),
-			);
+			continue;
+		}
+		const tables = PAGE_TABLES[page.id] ?? [];
+		if (!reference && !current.includes(API_START) && tables.length === 0) continue;
+		let text = current;
+		if (reference || current.includes(API_START))
+			text = replaceBetween(text, [API_START, API_END], reference, path, 'API reference');
+		for (const [name, render] of tables)
+			text = replaceBetween(text, tableMarkers(name), render(), path, `table ${name}`);
+		out.set(path, text);
 	}
 
 	const mappingText = readIfExists(root, MAPPING_SOURCE);

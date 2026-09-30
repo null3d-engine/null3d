@@ -62,7 +62,7 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 | [Static and dynamic objects](concepts/static-dynamic.md) | When to mark objects static; setters versus direct array writes; dirty ranges. | experimental | 0.1 |
 | [Instances and batching](concepts/instances.md) | createInstances; typed-array views; markDirty; automatic batching; per-instance attributes. | experimental | 0.1 |
 | [GPU tiers and backends](concepts/backends.md) | WebGPU core, compatibility mode and WebGL2; depth on each tier; capability flags; the portable budget; never branching on GPU names. | experimental | 0.1 |
-| [Quality presets, dynamic resolution and frame budgets](concepts/quality-presets.md) | Low to Ultra; pixel-ratio caps; the frame-budget governor; quality events for sketch code. | planned | 0.1 |
+| [Quality presets, dynamic resolution and frame budgets](concepts/quality-presets.md) | Low to Ultra; pixel-ratio caps; the frame-budget governor; quality events for sketch code. | experimental | 0.1 |
 | [Color management](concepts/color-management.md) | Linear working space; sRGB hex colors; texture color spaces; parity with three.js. | planned | 0.1 |
 | [Materials and pipelines](concepts/materials.md) | Built-in materials; permutations; pipeline warm-up; why changing shader features can stall a frame. | planned | 0.1 |
 | [Lighting and environment](concepts/lighting.md) | Light types and units; clustered lighting; environment maps and spherical harmonics. | planned | 0.1 |
@@ -95,7 +95,7 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 | [Camera controls (@null3d/controls)](api/controls.md) | Orbit and map controls (0.1); fly and first-person controls (0.2). | planned | 0.1 |
 | [Post-processing API](api/post.md) | post.set options; post.addEffect for custom WGSL effects. | planned | 0.2 |
 | [Render graph API](api/render.md) | render.addPass declarations; enabling and disabling passes; dumpGraph. | planned | 0.2 |
-| [Quality API](api/quality.md) | quality.preset, quality.set, frame budgets, quality events. | planned | 0.1 |
+| [Quality API](api/quality.md) | quality.preset, quality.set, frame budgets, quality events. | experimental | 0.1 |
 | [Debug drawing and stats](api/debug.md) | debug.line, box, axes, grid, frustum; debug.view; debug.stats. | planned | 0.1 |
 | [Math helpers](api/math.md) | vec3, quat, mat4 and color on plain arrays; math.clamp, lerp, damp and a random generator that hold mode seeds. | experimental | 0.1 |
 | [Time](api/time.md) | dt, time.now, fixed steps. | experimental | 0.1 |
@@ -110,7 +110,7 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 | Page | What it covers | Status | Version |
 | --- | --- | --- | --- |
 | [Performance guide](guides/performance.md) | Measuring; the frame budget; common causes of slow frames and their fixes. | planned | 0.1 |
-| [Phones and tablets](guides/phones.md) | Pixel-ratio caps; memory budgets; heat; testing on real devices. | planned | 0.1 |
+| [Phones and tablets](guides/phones.md) | Pixel-ratio caps; memory budgets; heat; testing on real devices. | experimental | 0.1 |
 | [Custom shaders](guides/custom-shaders.md) | Surface functions; full shaders; uniforms and typed materials; hot reload. | planned | 0.1 |
 | [Custom passes and render targets](guides/custom-passes.md) | Declaring passes; reading and writing named textures; layer masks. | planned | 0.2 |
 | [Loading screens and warm-up](guides/loading-screens.md) | preload; onProgress; scene.warmUp; upload budgets. | planned | 0.1 |
@@ -173,6 +173,7 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 | [E1204: Invalid color](errors/E1204.md) | A call received a color that is not a hex string, a number from 0 to 0xffffff, or three numbers from 0 to 1. | generated | 0.1 |
 | [E1205: Unknown input name](errors/E1205.md) | An input call received a name that no key, button or action has, or `input.actions.define()` received an action name that a key or button already has. Names are case-sensitive: `KeyW` is the W key, and `keyW` names nothing. | generated | 0.1 |
 | [E1206: Invalid mesh arrays](errors/E1206.md) | geometry.fromArrays() received arrays that make no mesh. An array can have the wrong length for the vertex count, an index can name no vertex, or a value can be NaN or Infinity. Normals can also be missing, or both given and computed. | generated | 0.1 |
+| [E1213: Invalid setting](errors/E1213.md) | A call received a setting that it does not have, or a value that the setting does not take. Examples are a tone mapping that the engine does not know, and a negative exposure. | generated | 0.1 |
 | [E1301: No usable GPU path](errors/E1301.md) | The browser offers neither WebGPU nor WebGL2 for the way the engine was asked to draw. | generated | 0.1 |
 | [E1302: GPU lost](errors/E1302.md) | The browser took the GPU away while the engine drew, for example after a driver reset or a GPU crash, and the engine could not carry on. No new GPU device started, or the GPU was lost more than twice within a minute. The engine stopped drawing. | generated | 0.1 |
 | [E1303: WebAssembly SIMD missing](errors/E1303.md) | The browser runs WebAssembly without SIMD, which the engine's core needs. | generated | 0.1 |

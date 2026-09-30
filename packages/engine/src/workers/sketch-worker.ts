@@ -78,6 +78,8 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 					keyCodes: message.keyCodes,
 					jobWorkers: message.jobWorkers,
 					device: message.device,
+					quality: message.quality,
+					applyQuality: (settings) => replyToPage({ type: 'quality', settings }),
 				},
 				message.hold,
 			);

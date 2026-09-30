@@ -37,8 +37,16 @@ The engine's hot paths stay allocation-free with these habits (hard rule 1):
 - Keep `loadSketch` in `sketch/define-sketch.ts`, where the page imports it. That import keeps `defineSketch` in the page's file, which the sketch worker finds in the browser's cache. In a file of its own, `defineSketch` costs the sketch worker one more request before the sketch runs. On Slow 4G, that request adds a round trip of 562 ms.
 - Only the page imports the error fixes (`errors/fixes.ts`). It sets them in `createEngine` and sends them to each worker in its handoff, and `startWorkerCore` sets them in the worker before the core starts. A worker module that imports the fixes adds their text to its file.
 - `errors/codes.ts` holds each code's docs text for the docs generator and the tests. Runtime code must not import it: a value import bundles every code's docs text into the engine's files.
+- `quality/preset-docs.ts` holds the preset table's docs text in the same way. The compiler asks for an entry there for each setting in `quality/presets.ts`, and runtime code must not import it.
 - The page hands the key names (`shared/key-codes.ts`) to the sketch worker when it starts it, as it does the error fixes. The sketch worker's file then holds no copy of the list.
 - The input ring's record format is plain constants, not enums. The bundler writes a constant into the code as a number, while a TypeScript enum ships as an object that holds each member's name. A `const enum` ships the same object.
+
+## Quality presets
+
+- One table in `quality/presets.ts` holds every setting with its value on each preset. A feature adds its setting there as planned, then marks it applied where it reads the value. An applied setting that a sketch can change is also a member of `QualitySettings`, and a unit test keeps the two lists equal. The docs generator writes the preset tables on `concepts/quality-presets` from the table and the chooser's constants.
+- The docs generator and the device runner import the chooser and the table, and the tools' type check has no browser types. So `quality/presets.ts`, `quality/chooser.ts`, `quality/preset-docs.ts` and `shared/tier.ts` import no module that names a browser type, not even for types.
+- The page chooses the preset: workers have no media queries and no screen. The memory maximum follows the device hints and the crash marker alone, which the page has at once, so the core's download and the shared memory never wait for the GPU probe.
+- Hold mode and `?preset=` neither read nor write the crash marker, so a test that crashes can never lower the next test's preset.
 
 ## Textures on both GPU paths
 

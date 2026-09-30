@@ -9,6 +9,7 @@ import { EngineError } from '../errors/engine-error';
 import type { Geometry, Materials } from '../scene/resources';
 import type { Scene } from '../scene/scene';
 import type { Input } from './input';
+import type { Quality } from './quality';
 
 /**
  * Callbacks a sketch returns from its setup function.
@@ -59,6 +60,8 @@ export interface SketchContext {
 	geometry: Geometry;
 	/** Pointer, touch, keyboard and gamepad input, which the page forwards to the sketch. */
 	input: Input;
+	/** The quality preset that the engine runs, its settings, and a notice when they change. */
+	quality: Quality;
 	/**
 	 * Sketch time in seconds, which is the sum of every step that `onUpdate` received, so paused and
 	 * hidden time do not count. Also the current frame number. In hold mode, the last frame's time is

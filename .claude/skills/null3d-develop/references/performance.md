@@ -76,6 +76,8 @@ These numbers are starting points. The engine docs page `guides/performance` hol
 - Many phones run the WebGL2 path (for example Samsung Exynos phones in Chrome 154). Budget for it.
 - On the WebGL2 path (0.2), job workers hide objects that sit behind blocker meshes, which the asset tool makes from large static meshes. See-through meshes such as glass and fences must not be blockers: call `setOccluder(false)` on them if the tool picked them.
 - Pixel ratio is the largest GPU lever: a ratio of 3 draws 2.25 times the pixels of a ratio of 2. Presets cap it; do not raise the cap on phones.
+- The engine starts phones and tablets on lighter presets than desktops, and WebGL2 runs at most Medium. The page reads the preset in `engine.mode.preset`, and `?preset=low` fixes one for a test (`concepts/quality-presets`).
+- After a start that crashed the tab, the engine starts one preset lower, and at Low after two. A phone that ran out of memory shows it in `engine.mode.crashedStarts`.
 - Shadows: one cascade on Low, two on Medium. Each shadowed point light draws the scene six times; avoid them on phones.
 - Transparent and additive effects covering the screen (smoke, glass) cost the most on phone GPUs.
 - Memory is tight: a 4 GB iPad reports a 256 MB largest buffer and closes tabs that use too much. Use KTX2 textures, share materials, and free unused prefabs with `destroy()`.
@@ -98,11 +100,12 @@ Every device draws 2,097,152 objects and instance rows in one scene. A device wi
 
 ## 7. The quality governor and your own systems
 
-The engine lowers settings in a fixed order when frames run over budget: render scale first, then shadow updates, then effects, then the preset. It raises them again after a stable period, so quality does not flicker. Your systems can join in:
+The engine lowers settings in a fixed order when frames run over budget: render scale first, then shadow updates, then effects. It never changes the preset during play. It raises the settings again after a stable period, so quality does not flicker. Your systems can join in:
 
 ```ts
-quality.setBudget({ name: 'ai', ms: 2, onScale: (s) => { aiUpdateEvery = s < 0.5 ? 4 : s < 0.8 ? 2 : 1; } });
-quality.onChange((q) => { rain.setActiveCount(q.preset === 'low' ? 2000 : 10000); });
+quality.setBudget({ name: 'ai', ms: 2, onScale: (s) => { aiUpdateEvery = s < 0.5 ? 4 : s < 0.8 ? 2 : 1; } });  // (0.2)
+const RAIN = { low: 2000, medium: 5000, high: 10000, ultra: 10000 };  // one table, keyed by preset
+quality.onChange(() => { rain.setActiveCount(RAIN[quality.preset]); });
 ```
 
 `onScale` receives a value from 0 to 1: 1 means full quality. Keep the callbacks cheap; they run when quality changes, not every frame.

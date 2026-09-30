@@ -14,16 +14,11 @@ import { RenderPassSetup, submitOne } from '../gpu/webgpu/reusable';
 import type { PowerPreference } from '../page/capabilities';
 import type { CoreDevice } from '../page/limits';
 import { type FrameRecorder, Phase } from '../shared/metrics';
+import type { Tier } from '../shared/tier';
 import { contextLoss, contextRestored, deviceLoss } from './loss';
 import { WebGL2SceneRenderer, WebGPUSceneRenderer } from './scene-renderer';
 
-/**
- * The GPU path the engine draws with: core WebGPU, WebGPU in compatibility mode on devices that
- * cannot run core WebGPU, or WebGL2.
- *
- * @category api/engine
- */
-export type Tier = 'webgpu' | 'webgpu-compat' | 'webgl2';
+export type { Tier } from '../shared/tier';
 
 export type RenderCanvas = OffscreenCanvas | HTMLCanvasElement;
 

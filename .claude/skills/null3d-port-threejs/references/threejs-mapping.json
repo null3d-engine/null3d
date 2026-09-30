@@ -32,8 +32,8 @@
       "three": "renderer.setPixelRatio(devicePixelRatio)",
       "status": "changed",
       "since": "0.1",
-      "target": "createEngine({ maxPixelRatio }) and the quality presets",
-      "notes": "Presets cap the pixel ratio (1.5 on Low, 2 on Medium and High). Dynamic resolution then adjusts the render scale.",
+      "target": "createEngine({ maxPixelRatio }) and the quality presets; quality.set({ maxPixelRatio }) in the sketch",
+      "notes": "The engine sizes the canvas to its CSS size times the screen's pixel ratio, up to the quality preset's cap. The option replaces the cap, and quality.set changes it during play.",
       "docs": "concepts/quality-presets",
       "detect": "\\.setPixelRatio\\s*\\("
     },

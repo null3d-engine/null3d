@@ -1,7 +1,9 @@
 // URL switches that let one device exercise every engine path: ?gpu=, ?threads=off, ?render=main,
 // ?latency=, ?uploads=copy and ?depth=. Three more set what the benchmarks vary: ?fps= for a fixed
 // frame rate, ?jobs= for the job worker count and ?memory= for the shared memory's maximum. ?hold
-// starts hold mode for image tests.
+// starts hold mode for image tests, and ?preset= fixes the quality preset.
+
+import { QUALITY_PRESETS, type QualityPreset } from '../quality/presets';
 
 export type GpuSwitch = 'auto' | 'webgpu' | 'compat' | 'webgl2';
 /**
@@ -52,6 +54,11 @@ export interface Switches {
 	 */
 	memoryMiB: number | undefined;
 	/**
+	 * The quality preset that ?preset= fixes, which wins over the page's option and over the
+	 * crash marker, or undefined without the switch or with a name that is no preset.
+	 */
+	preset: QualityPreset | undefined;
+	/**
 	 * The text of ?hold=, an empty text for a bare ?hold, or undefined without the switch. The
 	 * engine checks it when it starts, so a bad time fails at once instead of starting a live engine.
 	 */
@@ -91,6 +98,7 @@ export function parseSwitches(search: string): Switches {
 		fps: positive(params.get('fps')),
 		jobs: whole(params.get('jobs'), MAX_JOB_WORKERS),
 		memoryMiB: whole(params.get('memory')),
+		preset: oneOf(params.get('preset'), QUALITY_PRESETS),
 		hold: params.get('hold') ?? undefined,
 	};
 }

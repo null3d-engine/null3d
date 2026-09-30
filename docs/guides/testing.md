@@ -119,3 +119,4 @@ A live engine logs an error in `onUpdate` and carries on. Hold mode stops instea
 | `?threads=off` | The single-threaded build |
 | `?render=main` | Draw on the page's main thread |
 | `?latency=pipelined`, `?latency=low` | Pick the latency mode |
+| `?preset=low`, `?preset=medium`, `?preset=high`, `?preset=ultra` | Fix the quality preset, within the GPU path's highest; the engine then ignores starts that crashed before |

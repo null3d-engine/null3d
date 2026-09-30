@@ -113,6 +113,13 @@ const DOCS = {
 		example: 'E1206: geometry.fromArrays() got 9 numbers in normals for 4 vertices, not 12.',
 		since: '0.1',
 	},
+	E1213: {
+		title: 'Invalid setting',
+		cause:
+			'A call received a setting that it does not have, or a value that the setting does not take. Examples are a tone mapping that the engine does not know, and a negative exposure.',
+		example: `E1213: post.set() got the tone mapping "filmic", which is not 'aces', 'agx', 'neutral' or 'none'.`,
+		since: '0.1',
+	},
 	E1301: {
 		title: 'No usable GPU path',
 		cause: 'The browser offers neither WebGPU nor WebGL2 for the way the engine was asked to draw.',

@@ -8,7 +8,7 @@ summary: "The context object: scene, assets, materials, geometry, textures, inpu
 
 # Sketch API: defineSketch and the context
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. The context fields `assets`, `textures`, `quality`, `post`, `render`, `ui`, `debug` and `engine`, and the callbacks `onFixedUpdate` and `onLateUpdate`, are not built yet, so coding agents must not use them.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. The context fields `assets`, `textures`, `post`, `render`, `ui`, `debug` and `engine`, and the callbacks `onFixedUpdate` and `onLateUpdate`, are not built yet, so coding agents must not use them.
 
 In null3D, a 3D scene is called a sketch. A sketch module builds the scene and updates it every frame, and its default export is `defineSketch(setup)`. The engine loads the module, calls `setup` once with the sketch's context, and then calls the callbacks that `setup` returns.
 
@@ -58,6 +58,7 @@ An error that `setup` throws ends the start: `createEngine` rejects with it. An 
 | `geometry` | Mesh generators, such as `geometry.box` and `geometry.sphere` |
 | `materials` | Material factories: [Materials](materials.md) |
 | `input` | Pointer, touch, keyboard and gamepad input, and action maps: [Input](input.md) |
+| `quality` | The quality preset that the engine runs, and its settings: [Quality API](quality.md) |
 | `time` | Sketch time in seconds and the frame number: [Time](time.md) |
 | `preferences` | What the user's system asks of every page, such as less motion: [Accessibility](../guides/accessibility.md) |
 | `page` | Messages to and from the page: [Messages between sketch and page](page.md) |
@@ -110,6 +111,7 @@ What the engine passes to a sketch's setup function.
 | `materials: Materials` | Material factories. |
 | `geometry: Geometry` | Mesh generators. |
 | `input: Input` | Pointer, touch, keyboard and gamepad input, which the page forwards to the sketch. |
+| `quality: Quality` | The quality preset that the engine runs, its settings, and a notice when they change. |
 | `time: { now: number; frame: number; }` | Sketch time in seconds, which is the sum of every step that `onUpdate` received, so paused and hidden time do not count. Also the current frame number. In hold mode, the last frame's time is the held time exactly. |
 | `preferences: SketchPreferences` | What the user's system asks of every page, and a notice when that changes. |
 | `page: { post(type: string, data?: unknown, transfer?: Transferable[]): void; onMessage(handler: (type: string, data: unknown) => void): () => void; }` | Messages between the sketch and the page. `onMessage` returns a function that removes the handler. |
