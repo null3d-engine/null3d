@@ -15,6 +15,7 @@ import { EngineError } from '../errors/engine-error';
 import * as C from '../generated/core';
 import { fromEuler as quaternionFromEuler } from '../math/quat';
 import type { EulerOrder } from '../math/types';
+import { rowLimitWarning } from '../page/limits';
 import { type ColorInput, linearColor } from './color';
 import type { CoreMemory } from './memory';
 import type { Material, MeshGeometry } from './resources';
@@ -616,6 +617,8 @@ export class Scene {
 	constructor(
 		/** @internal */ readonly core: CoreMemory,
 		private readonly time: { readonly frame: number },
+		/** True when the engine draws with WebGL2, whose devices draw fewer rows than WebGPU's. */
+		private readonly webgl2: boolean,
 		private readonly warmUpScene: () => Promise<void> = () => Promise.resolve(),
 	) {}
 
@@ -670,20 +673,17 @@ export class Scene {
 
 	/**
 	 * @internal Counts the rows of batches as they are created and destroyed, and warns once when
-	 * the scene passes the limit that every WebGPU device draws. WebGL2 devices with small textures
-	 * draw fewer, and no warning covers them.
+	 * the scene passes the limit that every device of the engine's GPU path draws.
 	 */
 	countBatchRows(change: number): void {
 		this.batchRows += change;
 		if (this.warnedPastPortable) return;
 		// The core counts every scene slot, used or not, toward the limit.
 		const sources = this.core.glue.sceneCapacity() + 1 + this.batchRows;
-		if (sources <= C.LIMIT_PORTABLE_MAX_SOURCES) return;
+		const warning = rowLimitWarning(sources, this.webgl2);
+		if (warning === undefined) return;
 		this.warnedPastPortable = true;
-		const count = (n: number) => n.toLocaleString('en-US');
-		console.warn(
-			`null3D: this scene counts ${count(sources)} objects and instance rows toward the GPU's limit. This device draws them, but devices with WebGPU's default limits draw at most ${count(C.LIMIT_PORTABLE_MAX_SOURCES)} and fail with E1501. engine.capabilities.maxInstances gives the limit of each device.`,
-		);
+		console.warn(warning);
 	}
 
 	/** @internal */

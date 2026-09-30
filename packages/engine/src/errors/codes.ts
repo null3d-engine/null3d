@@ -149,7 +149,7 @@ const DOCS = {
 	E1402: {
 		title: 'Engine core out of date',
 		cause:
-			'The engine core WebAssembly file lacks functions that the TypeScript side calls, so the two come from different builds.',
+			'The engine core WebAssembly file lacks functions that the TypeScript side calls, so the two come from different builds. Development builds check this when the core loads.',
 		example: 'E1402: the threaded engine core lacks isThreadedBuild.',
 		since: '0.1',
 	},
