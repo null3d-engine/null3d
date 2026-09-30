@@ -85,7 +85,7 @@ null3D could not compile the WGSL:
 src/sketch.ts:14:23: expected `;`, found "2.0"
 ```
 
-- On the dev server, the error shows in Vite's overlay on the page and in the terminal. The engine's start fails too, because the sketch module did not load.
+- On the dev server, the error shows in Vite's overlay on the page and in the terminal. The engine's start fails too, with [E1410](../errors/E1410.md), because the sketch module did not load.
 - In `vite build`, the build fails with the same message.
 
 Editing a shader on the dev server reloads the page.

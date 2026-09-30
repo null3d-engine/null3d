@@ -44,7 +44,7 @@ test("a WGSL error in a sketch shows in Vite's overlay at the file, line and col
 		await page.goto(`${address}tests/pages/shader-error.html`);
 		const result = await pageResult<ShaderErrorResult>(page, 30_000);
 		expect(result.error).toBeUndefined();
-		expect(result.start.code).toBe('E1405');
+		expect(result.start.code).toBe('E1410');
 
 		const overlay = page.locator('vite-error-overlay');
 		await expect(overlay).toBeAttached({ timeout: 10_000 });
