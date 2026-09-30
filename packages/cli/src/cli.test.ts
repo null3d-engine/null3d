@@ -21,12 +21,13 @@ describe('main', () => {
 		expect(log).toHaveBeenLastCalledWith(VERSION);
 		expect(await main([])).toBe(0);
 		expect(log.mock.lastCall?.[0]).toContain("shot    Draws one frame of the project's page");
+		expect(log.mock.lastCall?.[0]).toContain('test    Type checks and lints the project');
 	});
 
 	it('fails on a command it does not have, and names its commands', async () => {
 		expect(await main(['create'])).toBe(1);
 		expect(error.mock.lastCall?.[0]).toBe(
-			'null3d has no "create" command. Its commands: bench, shot. Run bunx @null3d/cli --help for more.',
+			'null3d has no "create" command. Its commands: bench, shot, test. Run bunx @null3d/cli --help for more.',
 		);
 		expect(await main(['toString'])).toBe(1);
 	});

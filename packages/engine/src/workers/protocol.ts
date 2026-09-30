@@ -60,6 +60,8 @@ export interface RendererSetup {
 export type SketchWorkerInit = CoreHandoff & {
 	type: 'init';
 	sketchUrl: string;
+	/** The page's address, which the sketch's relative asset addresses resolve against. */
+	pageUrl: string;
 	/**
 	 * The key names, in the order of the numbers that the page gives keys in the input ring. The
 	 * page hands them over, so the sketch worker's file needs no copy.

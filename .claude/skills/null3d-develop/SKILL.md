@@ -87,7 +87,7 @@ export default defineSketch(async ({ scene, geometry, materials }) => {
 3. Make the change in small steps. Scene logic goes in `sketch.ts`; DOM, HTML UI and audio go in `page.ts`.
 4. Look at the result. `bunx vite` serves the project, and the null3D Vite plugin adds the right headers. `bunx @null3d/cli shot --out shot.png` renders one frame headless and saves it. Open the image and check it: code that compiles can still draw nothing.
 5. Check the cost with `bunx @null3d/cli bench`, or with `debug.stats(true)` while running. Compare the frame phases with the preset's budget (`references/performance.md`).
-6. Add or update a test. Anything visual gets a hold-mode image test (`references/testing-and-debugging.md`). Run `bunx @null3d/cli test`.
+6. Add or update a test. Anything visual gets a hold-mode image test, listed in `null3d.json` (`references/testing-and-debugging.md`). Run `bunx @null3d/cli test`, and open the images of each test that fails.
 7. If the change touches rendering, check the WebGL2 path: add `?gpu=webgl2` to the dev URL, or run `bunx @null3d/cli test --gpu webgl2`.
 8. Summarize what changed, how you verified it (images, numbers), and any limits: planned APIs you avoided, device classes you could not test.
 

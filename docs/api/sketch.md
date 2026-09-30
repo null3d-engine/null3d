@@ -112,6 +112,8 @@ What the engine passes to a sketch's setup function.
 | `scene: Scene` | Objects, cameras, lights and instance batches. |
 | `materials: Materials` | Material factories. |
 | `geometry: Geometry` | Mesh generators. |
+| `textures: Textures` | Textures from decoded images and from data. |
+| `assets: Assets` | Loading of textures and files, with a count of downloads for loading screens. |
 | `input: Input` | Pointer, touch, keyboard and gamepad input, which the page forwards to the sketch. |
 | `quality: Quality` | The quality preset that the engine runs, its settings, and a notice when they change. |
 | `time: { now: number; frame: number; }` | Sketch time in seconds, which is the sum of every step that `onUpdate` received, so paused and hidden time do not count. Also the current frame number. In hold mode, the last frame's time is the held time exactly. |

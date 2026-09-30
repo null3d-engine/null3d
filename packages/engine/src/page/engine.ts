@@ -489,7 +489,8 @@ async function startEngine(
 	const startedAt = performance.now();
 	const { signal, onProgress } = options;
 	signal?.throwIfAborted();
-	const sketchUrl = new URL(options.sketch, globalThis.location?.href).href;
+	const pageUrl = globalThis.location?.href;
+	const sketchUrl = new URL(options.sketch, pageUrl).href;
 	// The quality preset follows the device hints and the crash marker, which the page has at once,
 	// so its memory maximum is known before the core loads. Hold mode and the ?preset= switch fix
 	// the preset for tests, so they neither read nor write the marker.
@@ -718,6 +719,7 @@ async function startEngine(
 					quality,
 					applyQuality: events.quality,
 					sendImage: sendToTable(imageTable, slots),
+					pageUrl: pageUrl ?? sketchUrl,
 				},
 				hold,
 			);
@@ -737,6 +739,7 @@ async function startEngine(
 				type: 'init',
 				...handoff,
 				sketchUrl,
+				pageUrl: pageUrl ?? sketchUrl,
 				keyCodes: KEY_CODES,
 				jobWorkers,
 				hold,

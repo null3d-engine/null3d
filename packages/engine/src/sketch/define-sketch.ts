@@ -7,8 +7,10 @@
 
 import { EngineError } from '../errors/engine-error';
 import { messageOf } from '../errors/message';
+import type { Assets } from '../scene/assets';
 import type { Geometry, Materials } from '../scene/resources';
 import type { Scene } from '../scene/scene';
+import type { Textures } from '../scene/textures';
 import type { Input } from './input';
 import type { Quality } from './quality';
 
@@ -59,6 +61,10 @@ export interface SketchContext {
 	materials: Materials;
 	/** Mesh generators. */
 	geometry: Geometry;
+	/** Textures from decoded images and from data. */
+	textures: Textures;
+	/** Loading of textures and files, with a count of downloads for loading screens. */
+	assets: Assets;
 	/** Pointer, touch, keyboard and gamepad input, which the page forwards to the sketch. */
 	input: Input;
 	/** The quality preset that the engine runs, its settings, and a notice when they change. */

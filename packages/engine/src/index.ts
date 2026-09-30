@@ -60,6 +60,12 @@ export type { HeldFrame, HoldFailure, HoldResult } from './page/hold';
 export type { DepthMode, LatencyMode } from './page/switches';
 export type { DeviceHints } from './quality/chooser';
 export type { QualityPreset, QualitySettings } from './quality/presets';
+export type {
+	Assets,
+	LoadImageOptions,
+	LoadTextureOptions,
+	ProgressHandler,
+} from './scene/assets';
 export type { ColorInput } from './scene/color';
 export type {
 	BoxOptions,
@@ -97,6 +103,17 @@ export type {
 	Scene,
 	Vec3,
 } from './scene/scene';
+export type {
+	Texture,
+	TextureColorSpace,
+	TextureData,
+	TextureDataArray,
+	TextureFilter,
+	TextureFormat,
+	TextureOptions,
+	Textures,
+	TextureWrap,
+} from './scene/textures';
 export type { PhaseName } from './shared/metrics';
 export type { Percentiles } from './shared/stats';
 export type { Tier } from './shared/tier';
