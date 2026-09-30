@@ -1,20 +1,25 @@
 // Runs a sketch: starts the engine on this thread's core, calls the sketch's setup function once with
 // the scene API, and steps it once per frame. A frame reads the input the page wrote, runs the
 // sketch's update, then the core's steps, and publishes the frame's draw list; each step's CPU time
-// is recorded, and so is the time each job worker spent on the frame's work. In hold mode it seeds
-// this thread's math.random and routes Math.random to it, steps the sketch to the held time in
-// fixed steps after the setup, and publishes the last frame alone. Hold mode reads no input, so the
-// held frame never depends on it.
+// is recorded, and so is the time each job worker spent on the frame's work. Development builds
+// report static objects whose transform changed without a setter, before the transform update. In
+// hold mode it seeds this thread's math.random and routes Math.random to it, steps the sketch to the
+// held time in fixed steps after the setup, and publishes the last frame alone. Hold mode reads no
+// input, so the held frame never depends on it.
 
+import { DEV } from '../errors/checks';
 import { coreFailure, QUEUED_CHANGE } from '../errors/core-failure';
 import { EngineError } from '../errors/engine-error';
 import { messageOf } from '../errors/message';
+import { TEXTURE_OPTION_UPLOAD_ALL, TEXTURE_STAT_IMAGES_SENT } from '../generated/core';
 import type { CoreDevice } from '../page/limits';
 import { CoreMemory } from '../scene/memory';
 import { Geometry, Materials } from '../scene/resources';
 import { Scene } from '../scene/scene';
+import { attachTextures, Textures } from '../scene/textures';
 import { type ControlViews, Slot } from '../shared/control';
 import type { CoreGlue } from '../shared/core';
+import { type ImageSender, imagesArrived } from '../shared/images';
 import { Counter, FrameRecorder, Phase, Role } from '../shared/metrics';
 import { FrameClock, holdSteps } from './clock';
 import type { SketchCallbacks, SketchContext, SketchDefinition } from './define-sketch';
@@ -38,6 +43,8 @@ export interface SketchCore {
 	jobWorkers: number;
 	/** The device the engine draws with. */
 	device: CoreDevice;
+	/** Sends texture images to the thread that draws. */
+	sendImage: ImageSender;
 }
 
 /**
@@ -138,6 +145,7 @@ export class SketchRunner {
 				},
 			},
 		};
+		attachTextures(this.context, new Textures(this.core, sketch.sendImage, time));
 		// Last, so a constructor that fails leaves the thread's own Math.random in place.
 		if (holdSeconds !== undefined) this.restoreRandom = seedMathRandom(HOLD_SEED);
 	}
@@ -148,7 +156,7 @@ export class SketchRunner {
 	 */
 	async setup(sketch: SketchDefinition): Promise<void> {
 		this.callbacks = (await sketch.setup(this.context)) ?? {};
-		if (this.holdSeconds !== undefined) this.hold(this.holdSeconds);
+		if (this.holdSeconds !== undefined) await this.hold(this.holdSeconds);
 	}
 
 	/** Gives the thread its own Math.random back, where hold mode seeded it. */
@@ -195,19 +203,26 @@ export class SketchRunner {
 	 * Hold mode: steps the sketch from time 0 to `seconds` in fixed steps, with no frame loop, and
 	 * publishes the last frame for the thread that draws. That thread draws none of the earlier
 	 * frames, so the last one creates every GPU object and uploads the whole scene, as after a GPU
-	 * loss. The first failure in the sketch or the core stops the hold with E1408.
+	 * loss, textures included. It waits for every texture image to reach that thread first. The
+	 * first failure in the sketch or the core stops the hold with E1408.
 	 */
-	private hold(seconds: number): void {
+	private async hold(seconds: number): Promise<void> {
 		const steps = holdSteps(seconds);
 		const { slots } = this.sketch.control;
+		const { glue } = this.sketch;
 		let frame = 0;
 		this.holding = true;
 		try {
 			for (let step = 0; step <= steps; step++) {
 				this.clock.holdStep(step, steps, seconds);
-				// Like a new GPU device, the thread that draws has none of the objects that the earlier
-				// frames' lists created, so the last frame records as it does after a GPU loss.
-				if (step === steps) this.gpuEpoch = -1;
+				if (step === steps) {
+					await imagesArrived(slots, glue.textureStat(TEXTURE_STAT_IMAGES_SENT, 0));
+					glue.setTextureOption(TEXTURE_OPTION_UPLOAD_ALL, 1);
+					// Like a new GPU device, the thread that draws has none of the objects that the
+					// earlier frames' lists created, so the last frame records as it does after a GPU
+					// loss.
+					this.gpuEpoch = -1;
+				}
 				frame = this.frame();
 			}
 		} catch (error) {
@@ -258,6 +273,11 @@ export class SketchRunner {
 		glue.prepareJobs();
 		if (glue.beginFrame(frame) !== 0) this.report(coreFailure(glue, QUEUED_CHANGE));
 		this.endPhase(Phase.Commands);
+		if (DEV) {
+			// Before the update clears the marks that setters leave on static objects.
+			const unmarked = this.context.scene.unmarkedWrites?.check();
+			if (unmarked) this.report(unmarked);
+		}
 		glue.updateTransforms();
 		this.endPhase(Phase.Transforms);
 		glue.updateBatches(frame);
@@ -265,6 +285,13 @@ export class SketchRunner {
 		const width = Math.max(1, Atomics.load(slots, Slot.CanvasWidth));
 		const height = Math.max(1, Atomics.load(slots, Slot.CanvasHeight));
 		const epoch = Atomics.load(slots, Slot.GpuEpoch);
+		// Read after the epoch and before a GPU reset, which needs it. The count then covers every
+		// frame that an old device replayed, as the thread that draws skips the old device's frames
+		// that it takes later, with their releases of images.
+		glue.syncTextures(
+			Atomics.load(slots, Slot.ImagesArrived),
+			Atomics.load(slots, Slot.FramesTaken),
+		);
 		if (epoch !== this.gpuEpoch) {
 			// A new GPU device has none of the old one's objects: this frame creates them all again.
 			if (glue.resetGpu() !== 0) this.report(coreFailure(glue, 'the GPU reset'));

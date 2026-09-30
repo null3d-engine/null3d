@@ -58,3 +58,8 @@ export const CanvasCssHeight = 21;
  * callbacks, or 0 before the first measurement. A worker that draws holds its frames to it.
  */
 export const DisplayInterval = 22;
+/**
+ * The images that the thread that draws received for texture uploads. The sketch thread sends
+ * them in the order of their ids, which count from 1, so every id up to this count arrived.
+ */
+export const ImagesArrived = 23;
