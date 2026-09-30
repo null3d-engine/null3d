@@ -1,7 +1,7 @@
 // Startup measurements: one load of the engine test page as points on the page's timeline, from
 // navigation start to the first frame, and the medians of repeated loads as a table. Everything here
 // is pure, so bench:startup and the device runner share it.
-import { type EngineMode, modeProblems } from '../../tests/lib/engine-checks.ts';
+import { type EngineMode, modeProblems, type ReportedMode } from '../../tests/lib/engine-checks.ts';
 import type { Downloads } from '../../tests/lib/load-routes.ts';
 import { median } from './report.ts';
 
@@ -11,7 +11,7 @@ export interface StartupResult {
 	error?: string;
 	/** When the page called createEngine, in milliseconds from navigation start. */
 	createEngineAtMs?: number;
-	mode?: { build: string; latency: string; renderThread: string; jobWorkers: number };
+	mode?: ReportedMode & { jobWorkers: number };
 	capabilities?: { tier: string };
 	stats?: {
 		load: {

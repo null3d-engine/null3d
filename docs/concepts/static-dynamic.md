@@ -28,7 +28,7 @@ Every scene object is static or dynamic. The engine recomputes a static object o
 | --- | --- | --- |
 | Recomputed | Only in a frame where a setter marked it dirty, or where its parent moved | Every frame |
 | GPU data | Uploaded once, then left alone | Uploaded every frame |
-| Culling in a scene over several grid cells | Skipped with its whole cell when the cell is out of view, unless a parent is dynamic | Tested in every view, every frame |
+| Culling in a scene over several [grid cells](culling.md#grid-cells) | Skipped with its whole cell when the cell is out of view, unless a parent above it is dynamic | Tested in every view, every frame |
 | Best for | Scenery, buildings, a door that opens now and then | Characters, projectiles, anything that moves most frames |
 
 Objects are static unless you create them with `dynamic: true`. Cameras are the exception: they are dynamic unless you pass `dynamic: false`. `setDynamic` changes the kind from the next frame:
@@ -43,6 +43,11 @@ rock.setDynamic(true); // it starts rolling
 ```
 
 The loop over dynamic objects has no dirty checks and no branches, which suits objects that change in most frames. In a frame where a static object does not change, the engine neither recomputes nor uploads it.
+
+Grid cells are 1,024 m wide, so a scene within 512 m of the origin fits in one cell, and culling skips no cell ([Culling](culling.md#skipping-cells-out-of-view)). In a larger scene, two things keep a cell from being skipped:
+
+- A static object that is never culled, after `setFrustumCulled(false)`, keeps its whole cell in view.
+- A static object that a setter moves grows its cell's box. The box shrinks again only when an object changes cells or the draw tables rebuild.
 
 ## Setters and direct writes
 
@@ -74,7 +79,7 @@ trees.positions[42 * 3 + 1] = 3; // move row 42
 trees.markDirty(42, 1); // upload one row, starting at row 42
 ```
 
-Each row has its own bounds, so culling works per instance.
+Each row has its own bounds, so culling works per instance. On WebGL2 the job workers test a static batch at rest in groups of 64 nearby rows. In a frame where you mark rows, and in the frame after it, they test the batch row by row, with no grid cell skipped. So a batch whose rows you mark in most frames gets neither saving.
 
 On WebGPU, each moving row uploads its 48-byte world matrix in every frame, so 100,000 moving boxes upload 4.8 MB per frame. The same boxes standing still in a static batch upload no matrices after the first frame.
 

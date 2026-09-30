@@ -3,12 +3,13 @@
 // with their references, and the parity command compares them with three.js's.
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
+import { defaultEnvironment } from '../../packages/cli/src/browser.js';
 import { writePng } from '../../packages/cli/src/png.js';
-import { isNull3dPage, PARITY_SCENES, type PageKind, pagePath, SCENE_CODE } from '../lib/parity';
+import { BENCH_SCENES, isNull3dPage, type PageKind, pagePath, SCENE_CODE } from '../lib/parity';
 import { BACKGROUND, PARITY_CANVAS, S2_NODES_PER_TREE, s2Trees } from '../scenes/spec';
 import { openPage, type PageReport, runPage } from './open-page';
 
-const SCENES = PARITY_SCENES;
+const SCENES = BENCH_SCENES;
 /** The pages each scene is tested on, with the renderer each one reports. */
 const PAGES: { kind: PageKind; renderer: string }[] = [
 	{ kind: 'threejs-webgl', renderer: 'webgl' },
@@ -26,16 +27,32 @@ const IMAGE_DIR = join(import.meta.dirname, '../../test-results/bench');
 const BACKGROUND_TOLERANCE = 2;
 /**
  * An image counts as blank unless more than this share of its pixels differs from the background.
- * S2's small trees cover less than 1% of its hold frame, so its bar is lower.
+ * S2's small trees cover less than 1% of its hold frame, so its bar is lower. S3's floor covers
+ * most of its frame, so its bar is higher.
  */
 const MIN_DRAWN_SHARE: Record<(typeof SCENES)[number], number> = {
 	s1: 0.01,
 	's1-static': 0.01,
 	's1-cells': 0.002,
 	s2: 0.005,
+	s3: 0.1,
 };
+/**
+ * Pages whose renderer cannot draw their scene on the GPU that the tests draw with. WebGLRenderer's
+ * shader for S3's 256 point lights needs more than the 1,024 uniform vectors that the Mac's GPU
+ * gives a fragment shader, so the shader fails to build there, and the page must say so.
+ * SwiftShader gives 4,096, and the shader builds, but only after minutes, so the tests leave the
+ * page out on SwiftShader.
+ */
+const CANNOT_DRAW: readonly string[] = ['s3 on threejs-webgl'];
+const SWIFTSHADER = defaultEnvironment() === 'chromium-swiftshader';
 /** The instance count of the short benchmark runs. */
 const SHORT_RUN_COUNT = 1000;
+/**
+ * The warm-up and measured seconds of a page's short benchmark run. On SwiftShader, the first frames
+ * of S3's three.js twin on WebGPU take seconds, so its run needs longer to measure a frame.
+ */
+const shortRunSeconds = (page: string): number => (page === 's3 on threejs-webgpu' ? 5 : 2);
 /** S2 draws whole trees, so it rounds the short runs' count up to them. */
 const S2_SHORT_RUN_COUNT = s2Trees(SHORT_RUN_COUNT) * S2_NODES_PER_TREE;
 
@@ -82,6 +99,19 @@ function meanBrightness(pixels: Uint8Array, width: number, fromRow: number, toRo
 
 for (const scene of SCENES) {
 	for (const { kind, renderer } of PAGES) {
+		if (CANNOT_DRAW.includes(`${scene} on ${kind}`)) {
+			test(`${scene} on ${kind} reports that its shader is past the GPU's limits`, async ({
+				page,
+			}) => {
+				test.skip(SWIFTSHADER, 'SwiftShader builds the shader, but takes minutes');
+				for (const switches of ['hold', `seconds=1&n=${SHORT_RUN_COUNT}`]) {
+					const { result } = await openPage<Report>(page, pagePath(scene, kind, switches));
+					expect(result.ok).toBe(false);
+					expect(result.error).toContain('could not build a shader of this scene on this GPU');
+				}
+			});
+			continue;
+		}
 		if (!isNull3dPage(kind))
 			test(`${scene} on ${kind} renders a hold frame that is not blank`, async ({ page }) => {
 				const result = await runPage<HoldReport>(page, pagePath(scene, kind, 'hold'));
@@ -114,7 +144,11 @@ for (const scene of SCENES) {
 		test(`${scene} on ${kind} runs a short benchmark`, async ({ page }) => {
 			const result = await runPage<BenchReport>(
 				page,
-				pagePath(scene, kind, `seconds=2&n=${SHORT_RUN_COUNT}`),
+				pagePath(
+					scene,
+					kind,
+					`seconds=${shortRunSeconds(`${scene} on ${kind}`)}&n=${SHORT_RUN_COUNT}`,
+				),
 			);
 			expect([result.scene, result.renderer]).toEqual([scene, renderer]);
 			expect(result.n).toBe(scene === 's2' ? S2_SHORT_RUN_COUNT : SHORT_RUN_COUNT);
