@@ -44,7 +44,7 @@ These numbers are starting points. The engine docs page `guides/performance` hol
 ## 3. How to measure
 
 1. Turn on the overlay: `debug.stats(true)`. It shows CPU time per thread and phase (update, transforms, animation, culling, recording, upload, replay), GPU time where the device has timers, frame intervals, draw buckets, uploaded bytes, the GPU tier and the preset.
-2. Run the repeatable benchmark: `bunx @null3d/cli bench --scene <name>`. It runs 5 times 30 seconds after warm-up and prints the median and spread per phase. Use it before and after a change.
+2. Run the repeatable benchmark: `bunx @null3d/cli bench --gpu webgpu,webgl2`. It builds the project for production and runs the page 5 times for 30 seconds, each after a warm-up. It prints the median and the spread of CPU time per frame by thread, GPU time and frame rates, and saves each run's phases in `bench.json`. Use it before and after a change, on the same computer.
 3. Read numbers in code or tests: `debug.frameStats()` returns the same values.
 4. Profile JavaScript in the browser's performance panel. Sketch code runs in the worker named `null3d-sketch`; look there, not on the main thread.
 5. Check the WebGL2 path: add `?gpu=webgl2` to the URL. Phones without WebGPU use this path, and it does more CPU work (culling on job workers).

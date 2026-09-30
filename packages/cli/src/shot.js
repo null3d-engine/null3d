@@ -60,10 +60,20 @@ Playwright's Chromium on SwiftShader, the software GPU of machines without a GPU
  *
  * @param {string} text
  */
-function readSize(text) {
+export function readSize(text) {
 	const size = parseSize(text);
 	if (size) return size;
 	throw new UsageError(sizeRule('--size', text));
+}
+
+/**
+ * Checks that `--page` gives a path on the project's server, not a full address.
+ *
+ * @param {string} page
+ */
+export function readPage(page) {
+	if (/^[a-z][a-z0-9+.-]*:/i.test(page))
+		throw new UsageError(`--page takes a path on the project's server, such as /, not "${page}"`);
 }
 
 /**
@@ -79,10 +89,7 @@ export function parseShotArgs(args) {
 	const gpu = /** @type {Tier | undefined} */ (values.gpu);
 	if (gpu !== undefined && !TIERS.includes(gpu))
 		throw new UsageError(`--gpu takes ${TIERS.join(', ')}, not "${gpu}"`);
-	if (/^[a-z][a-z0-9+.-]*:/i.test(page))
-		throw new UsageError(
-			`--page takes a path on the project's dev server, such as /, not "${page}"`,
-		);
+	readPage(page);
 	return {
 		out,
 		...(values.time !== undefined && { time: readSeconds('--time', values.time) }),
@@ -211,7 +218,7 @@ export function shotSummary(report, { page, size, png, json }) {
  * @param {string} path
  * @param {unknown} value
  */
-function writeJson(path, value) {
+export function writeJson(path, value) {
 	mkdirSync(dirname(path), { recursive: true });
 	writeFileSync(path, `${JSON.stringify(value, null, '\t')}\n`);
 }
