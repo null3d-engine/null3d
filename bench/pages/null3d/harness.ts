@@ -5,12 +5,11 @@
 // warms up, measures the engine, and publishes the frame metrics. The engine's own switches, such
 // as `?gpu=webgpu` or `?latency=low`, pick the GPU path and the thread mode.
 import { createEngine, type Engine } from '@null3d/engine';
+import { timedRun } from '../../../packages/cli/src/protocol.js';
 import { run, toBase64 } from '../../../tests/pages/lib/result';
 import { CANVAS, MEASURE_SECONDS, PARITY_CANVAS, WARMUP_SECONDS } from '../../scenes/spec';
 import { fitToWindow, showPageName } from '../lib/fit';
 import { pageReport, readRunOptions } from '../lib/options';
-
-const sleep = (seconds: number) => new Promise((resolve) => setTimeout(resolve, seconds * 1000));
 
 /**
  * Runs `sketch`, a sketch module next to the page, as the scene `sceneName` with `defaultCount`
@@ -64,16 +63,12 @@ export function runNull3dPage(
 				const { width, height, pixels } = await engine.captureFrame();
 				return { ...report, width, height, pixels: toBase64(pixels) };
 			}
-			await sleep(options.seconds ?? WARMUP_SECONDS);
-			const stats = await engine.measure(options.seconds ?? MEASURE_SECONDS);
-			return {
-				...report,
-				frames: stats.frames,
-				cpuMs: stats.cpuMs,
-				intervalMs: stats.intervalMs,
-				stats,
-				userAgent: navigator.userAgent,
-			};
+			const timed = await timedRun({
+				engine,
+				warmupSeconds: options.seconds ?? WARMUP_SECONDS,
+				measureSeconds: options.seconds ?? MEASURE_SECONDS,
+			});
+			return { ...report, ...timed, userAgent: navigator.userAgent };
 		} finally {
 			await engine.destroy();
 		}

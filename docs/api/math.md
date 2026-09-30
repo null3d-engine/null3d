@@ -64,6 +64,8 @@ export default defineSketch(({ scene, geometry, materials, time }) => {
 });
 ```
 
+The [math helpers demo](https://github.com/null3d-engine/null3d/tree/main/examples/math) moves 300 drones this way, as the rows of one instance batch.
+
 ## Conventions
 
 - Units are meters and radians. Convert degrees with `math.degToRad`.

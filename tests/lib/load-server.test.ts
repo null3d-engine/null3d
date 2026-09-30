@@ -6,7 +6,15 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { brotliDecompressSync, gunzipSync } from 'node:zlib';
 import type { Downloads } from './load-routes.ts';
-import { acceptedEncoding, loadMiddleware, MARK_SECTION, markCore } from './load-server.ts';
+import {
+	acceptedEncoding,
+	buildsForLoads,
+	LOAD_BUILDS,
+	type LoadBuild,
+	loadMiddleware,
+	MARK_SECTION,
+	markCore,
+} from './load-server.ts';
 
 /** A module with one exported function, `one`, which returns 1. */
 const MODULE = Uint8Array.from([
@@ -57,9 +65,28 @@ interface Reply {
 	body: Buffer;
 }
 
+describe('buildsForLoads', () => {
+	it('names the build each load address needs, once, and none for other addresses', () => {
+		const names = (paths: string[]) => buildsForLoads(paths).map(({ name }) => name);
+		const startup = '/__null3d/load/cold/{run}.{runner}.engine-1/tests/pages/engine.html?seconds=2';
+		const bench = '/__null3d/load/warm/{run}.{runner}.bench/bench/pages/null3d/s1.html?gpu=webgl2';
+		expect(names([startup, startup])).toEqual(['startup']);
+		expect(names([bench, startup])).toEqual(['benchmark pages', 'startup']);
+		expect(names(['/bench/pages/null3d/s1.html?hold', '/tests/pages/engine.html'])).toEqual([]);
+		expect(LOAD_BUILDS.map(({ prefix }) => prefix)).toEqual(['bench/', '']);
+	});
+});
+
 describe('the load routes', () => {
 	const build = mkdtempSync(join(tmpdir(), 'null3d-loads-'));
+	const benchBuild = mkdtempSync(join(tmpdir(), 'null3d-bench-loads-'));
+	const builds: LoadBuild[] = [
+		{ name: 'benchmark pages', prefix: 'bench/', dir: benchBuild },
+		{ name: 'startup', prefix: '', dir: build },
+	];
 	const html = `<!doctype html><script type="module" src="../../assets/engine-AbCd1234.js"></script>${' '.repeat(2000)}`;
+	const benchHtml =
+		'<!doctype html><script type="module" src="../../assets/s1-AbCd1234.js"></script>';
 	const script = `export const engine = '${'x'.repeat(4000)}';`;
 	let server: Server;
 	let port = 0;
@@ -90,7 +117,14 @@ describe('the load routes', () => {
 		writeFileSync(join(build, 'tests/pages/engine.html'), html);
 		writeFileSync(join(build, 'assets/engine-AbCd1234.js'), script);
 		writeFileSync(join(build, 'assets/null3d_bg-Bt249kqm.wasm'), MODULE);
-		const middleware = loadMiddleware(build);
+		// A file under bench/ in the startup build's folder belongs to no build, so no load gets it.
+		mkdirSync(join(build, 'bench'));
+		writeFileSync(join(build, 'bench/stray.html'), html);
+		mkdirSync(join(benchBuild, 'bench/pages/null3d'), { recursive: true });
+		mkdirSync(join(benchBuild, 'bench/assets'));
+		writeFileSync(join(benchBuild, 'bench/pages/null3d/s1.html'), benchHtml);
+		writeFileSync(join(benchBuild, 'bench/assets/s1-AbCd1234.js'), script);
+		const middleware = loadMiddleware(builds);
 		server = createServer((req, res) =>
 			middleware(req, res, () => {
 				res.statusCode = 418;
@@ -103,7 +137,7 @@ describe('the load routes', () => {
 
 	afterAll(() => {
 		server.close();
-		rmSync(build, { recursive: true, force: true });
+		for (const dir of [build, benchBuild]) rmSync(dir, { recursive: true, force: true });
 	});
 
 	it('serves the page with the isolation headers, checked again on each visit', async () => {
@@ -122,6 +156,17 @@ describe('the load routes', () => {
 		});
 		expect(again.status).toBe(304);
 		expect(again.body.length).toBe(0);
+	});
+
+	it("serves each build's files from its own folder, by the start of their paths", async () => {
+		const page = await get('/__null3d/load/warm/b/bench/pages/null3d/s1.html?gpu=webgl2');
+		expect(page.status).toBe(200);
+		expect(page.body.toString()).toBe(benchHtml);
+		expect(page.headers['cross-origin-embedder-policy']).toBe('require-corp');
+		const module = await get('/__null3d/load/warm/b/bench/assets/s1-AbCd1234.js');
+		expect(module.body.toString()).toBe(script);
+		expect((await get('/__null3d/load/warm/b/bench/stray.html')).status).toBe(404);
+		expect((await get('/__null3d/load/warm/b/tests/pages/engine.html')).status).toBe(200);
 	});
 
 	it('lets the browser keep hashed files, and compresses them as the browser allows', async () => {
@@ -184,11 +229,14 @@ describe('the load routes', () => {
 		expect((await get('/tests/pages/engine.html')).status).toBe(418);
 	});
 
-	it('prepares the build before the first load, and says when it has none', async () => {
+	it('prepares the builds before the first load, and says when it has none', async () => {
 		const ready = await get('/__null3d/load-ready');
 		expect(ready.status).toBe(200);
-		expect(JSON.parse(ready.body.toString())).toEqual({ files: 3 });
-		const empty = loadMiddleware(join(build, 'missing'));
+		expect(JSON.parse(ready.body.toString())).toEqual({
+			files: 5,
+			builds: ['benchmark pages', 'startup'],
+		});
+		const empty = loadMiddleware([{ name: 'startup', prefix: '', dir: join(build, 'missing') }]);
 		const status = await new Promise<number>((resolve) => {
 			const res = {
 				statusCode: 0,

@@ -1,8 +1,8 @@
 // The documentation inventory and every file generated from a single source: placeholder pages for
 // planned pages, the API reference on the api/ pages, the page list in docs/index.md, the error
-// pages, the tables of the quality presets page, and the three.js mapping page with the porting
-// skill's copies of the mapping. Generation is computed in memory first, so the same code writes
-// the files and checks that the committed files are current.
+// pages, the tables of the quality presets page, the shader library's page, and the three.js
+// mapping page with the porting skill's copies of the mapping. Generation is computed in memory
+// first, so the same code writes the files and checks that the committed files are current.
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { ERRORS, type ErrorEntry } from '../../packages/engine/src/errors/codes.ts';
@@ -24,6 +24,7 @@ import { type ApiReference, readApi, renderReference, tableCell } from './api-do
 import { docsFiles, readIfExists } from './files';
 import { parseFrontMatter, renderFrontMatter } from './frontmatter';
 import { checkLinkTree, linkedFiles } from './links';
+import { LIBRARY_PAGE_ID, libraryPage, readLibrary } from './shader-library';
 
 export interface PageEntry {
 	/** Path under docs/ without the .md extension. */
@@ -125,7 +126,7 @@ export const PAGES: readonly PageEntry[] = [
 	{ id: 'shaders/wgsl-rules', title: 'WGSL rules for portable shaders', since: '0.1', summary: 'The three shared language features; optional features; flat interpolation; limits budget; rules the build cannot check.' },
 	{ id: 'shaders/surface-functions', title: 'Surface functions', since: '0.1', summary: 'The surface record; vertex-offset functions; per-instance attributes.' },
 	{ id: 'shaders/builtins', title: 'Built-in shader inputs', since: '0.1', summary: 'Camera, time, object, instance and light values available to custom shaders.' },
-	{ id: 'shaders/library', title: 'Shader library and imports', since: '0.1', summary: 'Importing engine shader modules (math, noise, lighting helpers).' },
+	{ id: 'shaders/library', title: 'Shader library and imports', since: '0.1', summary: 'The WGSL modules that ship with the engine: math, noise, color, lighting, fog, vertex, depth and signed distance helpers, and how to import them.' },
 
 	{ id: 'porting/threejs-overview', title: 'Porting from three.js', since: '0.3', summary: 'The porting workflow; what gets faster; what needs rewriting.' },
 	{ id: 'porting/threejs-materials', title: 'Porting materials and textures', since: '0.3', summary: 'Parameter-by-parameter conversion; color spaces; approximations.' },
@@ -246,6 +247,11 @@ ${PLACEHOLDER_MARKER}
 
 This page will cover: ${page.summary}
 ${reference ? `\n## API reference\n\n${reference}\n` : ''}`;
+}
+
+/** Problems with the shader library's modules that keep its page from being right. */
+export function libraryProblems(root: string): string[] {
+	return readLibrary(root).problems.map((problem) => `Shader library: ${problem}`);
 }
 
 /** Problems that keep an export out of the reference, including a page tag that names no page. */
@@ -451,7 +457,7 @@ export function generateDocs(root: string, api: ApiReference = readApi(root)): M
 
 	const byPage = Map.groupBy(api.symbols, (s) => s.page);
 	for (const page of PAGES) {
-		if (page.id === 'index') continue;
+		if (page.id === 'index' || page.id === LIBRARY_PAGE_ID) continue;
 		const path = pagePath(page.id);
 		const current = readIfExists(root, path);
 		const symbols = byPage.get(page.id);
@@ -469,6 +475,13 @@ export function generateDocs(root: string, api: ApiReference = readApi(root)): M
 			text = replaceBetween(text, tableMarkers(name), render(), path, `table ${name}`);
 		out.set(path, text);
 	}
+
+	const library = PAGES.find((page) => page.id === LIBRARY_PAGE_ID);
+	if (library)
+		out.set(
+			pagePath(LIBRARY_PAGE_ID),
+			libraryPage(readLibrary(root).modules, library.title, library.summary),
+		);
 
 	const mappingText = readIfExists(root, MAPPING_SOURCE);
 	if (mappingText === null) throw new Error(`${MAPPING_SOURCE} is missing`);
@@ -550,15 +563,15 @@ export function frontMatterProblems(path: string, text: string, inventory: Set<s
 }
 
 /**
- * Every problem with the docs: exports the API reference cannot show, stale generated files,
- * missing pages, bad front matter and broken links.
+ * Every problem with the docs: exports the API reference cannot show, library items without doc
+ * comments, stale generated files, missing pages, bad front matter and broken links.
  */
 export function checkDocs(root: string): string[] {
 	const problems: string[] = [];
 	let generated = new Map<string, string>();
 	try {
 		const api = readApi(root);
-		problems.push(...referenceProblems(api));
+		problems.push(...referenceProblems(api), ...libraryProblems(root));
 		generated = generateDocs(root, api);
 		for (const path of staleFiles(root, generated))
 			problems.push(`${path} is out of date: run bun run docs`);

@@ -1,7 +1,8 @@
 // URL switches that let one device exercise every engine path: ?gpu=, ?threads=off, ?render=main,
 // ?latency=, ?uploads=copy and ?depth=. Three more set what the benchmarks vary: ?fps= for a fixed
 // frame rate, ?jobs= for the job worker count and ?memory= for the shared memory's maximum. ?hold
-// starts hold mode for image tests, and ?preset= fixes the quality preset.
+// starts hold mode for image tests, ?preset= fixes the quality preset, and ?bench publishes the
+// running engine for benchmark tools.
 
 import { QUALITY_PRESETS, type QualityPreset } from '../quality/presets';
 
@@ -63,6 +64,8 @@ export interface Switches {
 	 * engine checks it when it starts, so a bad time fails at once instead of starting a live engine.
 	 */
 	hold: string | undefined;
+	/** True when ?bench asks the engine to publish itself on the page for a benchmark tool. */
+	bench: boolean;
 }
 
 /** The most job workers the engine core runs. */
@@ -100,5 +103,6 @@ export function parseSwitches(search: string): Switches {
 		memoryMiB: whole(params.get('memory')),
 		preset: oneOf(params.get('preset'), QUALITY_PRESETS),
 		hold: params.get('hold') ?? undefined,
+		bench: params.has('bench'),
 	};
 }

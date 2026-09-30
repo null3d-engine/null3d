@@ -30,6 +30,13 @@
         "vite": "8.3.1",
       },
     },
+    "examples": {
+      "name": "@null3d/examples",
+      "devDependencies": {
+        "@null3d/engine": "workspace:*",
+        "@webgpu/types": "0.1.74",
+      },
+    },
     "packages/cli": {
       "name": "@null3d/cli",
       "version": "0.0.0",
@@ -148,6 +155,8 @@
     "@null3d/cli": ["@null3d/cli@workspace:packages/cli"],
 
     "@null3d/engine": ["@null3d/engine@workspace:packages/engine"],
+
+    "@null3d/examples": ["@null3d/examples@workspace:examples"],
 
     "@null3d/tests": ["@null3d/tests@workspace:tests"],
 
