@@ -160,7 +160,7 @@ Chrome measures the heap of the page and its workers only when every worker answ
 - Compare runs at the same display refresh rate. `refreshHz` records it with each measurement. Runs at 120 and at 144 frames per second differed by about 10% for both engines.
 - To compare displays with different refresh rates, add `?fps=60` to the page's address. The engine then draws 60 frames per second on any display of 60 Hz or more.
 - Chrome rounds GPU times to 65.5 microseconds unless you start it with `--enable-webgpu-developer-features`.
-- In Safari, a worker's frame callbacks run from a timer of about 15 ms, not from the display. So there `presentedFps` and `refreshHz` can differ from the display's rate.
+- In Safari, a worker's frame callbacks run from a timer of about 15 ms, not from the display. The engine holds its frames to the display's rate, which the page measures, but `refreshHz` there reports the timer's rate.
 - Compare engines in the same browser, one run after another.
 
 ## Browsers differ
