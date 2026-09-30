@@ -411,9 +411,7 @@ pub fn circle_geometry(
     b.vertex([0.0; 3], [0.0, 0.0, 1.0], [0.5, 0.5]);
     for s in 0..=segments {
         let angle = theta_start + f64::from(s) / f64::from(segments) * theta_length;
-        let (x, y) = (radius * angle.cos(), radius * angle.sin());
-        let uv = [(x / radius + 1.0) / 2.0, (y / radius + 1.0) / 2.0];
-        b.vertex([x, y, 0.0], [0.0, 0.0, 1.0], uv);
+        b.flat(radius, angle, radius);
     }
     for i in 1..=segments {
         b.triangle(i, i + 1, 0);
@@ -440,23 +438,11 @@ pub fn ring_geometry(
     for _ in 0..=across {
         for i in 0..=around {
             let angle = theta_start + f64::from(i) / f64::from(around) * theta_length;
-            let (x, y) = (radius * angle.cos(), radius * angle.sin());
-            let uv = [
-                (x / outer_radius + 1.0) / 2.0,
-                (y / outer_radius + 1.0) / 2.0,
-            ];
-            b.vertex([x, y, 0.0], [0.0, 0.0, 1.0], uv);
+            b.flat(radius, angle, outer_radius);
         }
         radius += step;
     }
-    let row = around + 1;
-    for j in 0..across {
-        for i in 0..around {
-            let a = j * row + i;
-            b.triangle(a, a + row, a + 1);
-            b.triangle(a + row, a + row + 1, a + 1);
-        }
-    }
+    b.quads(0, around, across);
     Ok(b.finish())
 }
 
@@ -581,15 +567,29 @@ impl Builder {
                 self.vertex(position, n, uv);
             }
         }
-        let row = grid_x + 1;
-        for iy in 0..grid_y {
-            for ix in 0..grid_x {
-                let (a, b) = (first + ix + row * iy, first + ix + row * (iy + 1));
-                let (c, d) = (first + ix + 1 + row * (iy + 1), first + ix + 1 + row * iy);
-                self.triangle(a, b, d);
-                self.triangle(b, c, d);
+        self.quads(first, grid_x, grid_y);
+    }
+
+    /// Two triangles for each quad of a grid of `columns` by `rows` quads whose vertices start at
+    /// `first`, row by row, in the order and winding of three.js's `BoxGeometry` and
+    /// `RingGeometry`.
+    fn quads(&mut self, first: u32, columns: u32, rows: u32) {
+        let row = columns + 1;
+        for iy in 0..rows {
+            for ix in 0..columns {
+                let a = first + row * iy + ix;
+                self.triangle(a, a + row, a + 1);
+                self.triangle(a + row, a + row + 1, a + 1);
             }
         }
+    }
+
+    /// A vertex of a circle or a ring in the XY plane, facing +z: at `radius` from the center and
+    /// at `angle` radians from +x. Its texture coordinates map a disc of radius `span` onto 0 to 1.
+    fn flat(&mut self, radius: f64, angle: f64, span: f64) {
+        let (x, y) = (radius * angle.cos(), radius * angle.sin());
+        let uv = [(x / span + 1.0) / 2.0, (y / span + 1.0) / 2.0];
+        self.vertex([x, y, 0.0], [0.0, 0.0, 1.0], uv);
     }
 
     /// A cylinder's cap, as three.js builds it: one center vertex per segment, so each triangle has
