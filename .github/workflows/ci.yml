@@ -178,24 +178,20 @@ jobs:
           retention-days: 1
 
   real-browsers:
-    # Safari and Firefox on GitHub's macOS machines, through the same test pages, with each
-    # browser's checks split into shards that run at once. A missing WebGPU adapter or WebGL2
-    # context is reported as a skip, because these virtual machines may not give a browser one:
-    # Safari gets no WebGPU there, and Firefox no WebGL2.
-    name: real-browsers (${{ matrix.browser }} ${{ matrix.shard }}/${{ matrix.shards }})
+    # Safari and Firefox on GitHub's macOS machines, through the same test pages, each browser in a
+    # job of its own. A missing WebGPU adapter or WebGL2 context is reported as a skip, because these
+    # virtual machines may not give a browser one: Safari gets no WebGPU there, and Firefox no WebGL2.
+    # One shard per browser keeps the fewest macOS machines busy; .dev/devices.md says when to add
+    # one, by listing it in the matrix and raising the count in the name and the command.
+    name: real-browsers (${{ matrix.browser }} ${{ matrix.shard }}/1)
     needs: real-browsers-build
     runs-on: macos-15
-    timeout-minutes: 20
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - { browser: Safari, shard: 1, shards: 1 }
-          - { browser: Firefox, shard: 1, shards: 1 }
-          - { browser: Safari, shard: 1, shards: 2 }
-          - { browser: Safari, shard: 2, shards: 2 }
-          - { browser: Firefox, shard: 1, shards: 2 }
-          - { browser: Firefox, shard: 2, shards: 2 }
+        browser: [Safari, Firefox]
+        shard: [1]
     env:
       HUSKY: "0"
     steps:
@@ -212,12 +208,12 @@ jobs:
       - name: Let Firefox open without the first-launch prompt
         if: matrix.browser == 'Firefox'
         run: xattr -dr com.apple.quarantine /Applications/Firefox.app || true
-      - name: ${{ matrix.browser }}, shard ${{ matrix.shard }} of ${{ matrix.shards }}
-        run: bun tests/real-browsers.ts --allow-no-webgpu --allow-no-webgl2 --shard ${{ matrix.shard }}/${{ matrix.shards }} ${{ matrix.browser }}
+      - name: ${{ matrix.browser }}, shard ${{ matrix.shard }} of 1
+        run: bun tests/real-browsers.ts --allow-no-webgpu --allow-no-webgl2 --shard ${{ matrix.shard }}/1 ${{ matrix.browser }}
       - uses: actions/upload-artifact@v4
-        if: always()
+        if: failure() || cancelled()
         with:
-          name: real-browser-runs-${{ matrix.browser }}-${{ matrix.shard }}-of-${{ matrix.shards }}
+          name: real-browser-runs-${{ matrix.browser }}-${{ matrix.shard }}
           path: |
             target/runs/
             test-results/images/
