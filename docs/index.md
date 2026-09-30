@@ -57,11 +57,11 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 
 | Page | What it covers | Status | Version |
 | --- | --- | --- | --- |
-| [Architecture: threads and the frame](concepts/architecture.md) | Main thread, sketch worker, render worker, job workers; the pipelined frame; latency modes. | experimental | 0.1 |
+| [Architecture: threads and the frame](concepts/architecture.md) | Main thread, sketch worker, render worker, job workers; where the sketch runs; the pipelined frame and its passes; grid cells; latency modes. | experimental | 0.1 |
 | [Handles and objects](concepts/handles.md) | 30-bit handles; wrapper objects; stale-handle errors; keeping per-object data in your own arrays. | experimental | 0.1 |
 | [Static and dynamic objects](concepts/static-dynamic.md) | When to mark objects static; setters versus direct array writes; dirty ranges. | experimental | 0.1 |
 | [Instances and batching](concepts/instances.md) | createInstances; typed-array views; markDirty; automatic batching; per-instance attributes. | experimental | 0.1 |
-| [GPU tiers and backends](concepts/backends.md) | WebGPU core, compatibility mode and WebGL2; depth on each tier; capability flags; the portable budget; never branching on GPU names. | experimental | 0.1 |
+| [GPU tiers and backends](concepts/backends.md) | WebGPU core, compatibility mode and WebGL2; color, anti-aliasing and depth on each tier; capability flags; the portable budget; never branching on GPU names. | experimental | 0.1 |
 | [Quality presets, dynamic resolution and frame budgets](concepts/quality-presets.md) | Low to Ultra; pixel-ratio caps; the frame-budget governor; quality events for sketch code. | experimental | 0.1 |
 | [Color management](concepts/color-management.md) | Linear working space; sRGB hex colors; texture color spaces; parity with three.js. | experimental | 0.1 |
 | [Materials and pipelines](concepts/materials.md) | Built-in materials; permutations; pipeline warm-up; why changing shader features can stall a frame. | planned | 0.1 |
@@ -109,7 +109,7 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 
 | Page | What it covers | Status | Version |
 | --- | --- | --- | --- |
-| [Performance guide](guides/performance.md) | Measuring; the frame budget; common causes of slow frames and their fixes. | experimental | 0.1 |
+| [Performance guide](guides/performance.md) | Measuring; the frame budget on computers, phones and tablets; common causes of slow frames and their fixes. | experimental | 0.1 |
 | [Phones and tablets](guides/phones.md) | Pixel-ratio caps; memory budgets; heat; testing on real devices. | experimental | 0.1 |
 | [Custom shaders](guides/custom-shaders.md) | WGSL in sketch code; shader errors; surface functions; full shaders; uniforms and typed materials; hot reload. | experimental | 0.1 |
 | [Custom passes and render targets](guides/custom-passes.md) | Declaring passes; reading and writing named textures; layer masks. | planned | 0.2 |
