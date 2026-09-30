@@ -19,7 +19,7 @@ use null3d_core::scene::SceneStorage;
 
 use null3d_core::layers::DEFAULT_LAYERS;
 
-use crate::camera::{Affine, Lens, Mat4, ViewDepth};
+use crate::camera::{Affine, Lens, Mat4, ViewDepth, view_direction};
 use crate::frame_data::FrameUniform;
 use crate::shadows::MAX_CASCADES;
 
@@ -108,26 +108,39 @@ impl View {
         self.layers = mask;
     }
 
-    /// The view-projection matrix for positions relative to the camera, for a target of `aspect`,
-    /// the camera's place for those positions as [`Lens::eye`] gives it, the camera's cell and
-    /// position in it, and how far positions lie along the view. `None` when the view has no
-    /// camera, or its camera object is gone.
+    /// Where the view's camera stands and how it sees, for a target of `aspect`. `None` when the
+    /// view has no camera, or its camera object is gone.
     pub(crate) fn transform(
         &self,
         scene: &SceneStorage,
         parity: usize,
         aspect: f32,
-    ) -> Option<(Mat4, [f32; 4], CellPosition, ViewDepth)> {
+    ) -> Option<CameraTransform> {
         let (camera, lens) = self.camera?;
         let slot = scene.resolve(camera).ok()?;
         let world: Affine = *scene.world(parity).matrix(slot as usize);
-        Some((
-            lens.relative_view_projection(&world, aspect),
-            lens.eye(&world),
-            scene.cell_position(slot, parity),
-            lens.depth(&world),
-        ))
+        Some(CameraTransform {
+            view_proj: lens.relative_view_projection(&world, aspect),
+            eye: lens.eye(&world),
+            forward: view_direction(&world),
+            cell: scene.cell_position(slot, parity),
+            depth: lens.depth(&world),
+        })
     }
+}
+
+/// A view's camera in one frame, as [`View::transform`] gives it.
+pub(crate) struct CameraTransform {
+    /// The view-projection matrix for positions relative to the camera.
+    pub view_proj: Mat4,
+    /// The camera's place for those positions, as [`Lens::eye`] gives it.
+    pub eye: [f32; 4],
+    /// The direction the camera looks along.
+    pub forward: [f32; 3],
+    /// The camera's cell, and its position in the cell.
+    pub cell: CellPosition,
+    /// How far positions relative to the camera lie along the view.
+    pub depth: ViewDepth,
 }
 
 /// A view's values for one frame: the uniform block its passes read, the frustum its culling
