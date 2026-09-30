@@ -64,6 +64,18 @@ pub mod shading {
     pub const UNLIT_MAP: u32 = 3;
 }
 
+/// The map slots that `setMaterialMap` takes, in the order of a material's row.
+pub mod map_slot {
+    use null3d_render::materials::MapSlot;
+
+    pub const BASE_COLOR: u32 = MapSlot::BaseColor as u32;
+    pub const METAL_ROUGH: u32 = MapSlot::MetalRough as u32;
+    pub const NORMAL: u32 = MapSlot::Normal as u32;
+    pub const OCCLUSION: u32 = MapSlot::Occlusion as u32;
+    pub const EMISSIVE: u32 = MapSlot::Emissive as u32;
+    pub const LIGHT: u32 = MapSlot::Light as u32;
+}
+
 /// The numbers that `textureStat` reads from the texture store.
 pub mod texture_stat {
     /// The GPU bytes that every texture array holds, free layers included.
@@ -301,6 +313,17 @@ pub fn typescript() -> String {
                 ("NONE", fog::kind::NONE),
                 ("LINEAR", fog::kind::LINEAR),
                 ("EXP2", fog::kind::EXP2),
+            ],
+        ),
+        (
+            "MAP_SLOT",
+            &[
+                ("BASE_COLOR", map_slot::BASE_COLOR),
+                ("METAL_ROUGH", map_slot::METAL_ROUGH),
+                ("NORMAL", map_slot::NORMAL),
+                ("OCCLUSION", map_slot::OCCLUSION),
+                ("EMISSIVE", map_slot::EMISSIVE),
+                ("LIGHT", map_slot::LIGHT),
             ],
         ),
         // The values that `setMaterialValue` changes, by the float where each starts in a row.

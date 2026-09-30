@@ -8,7 +8,6 @@
 // see-through quarters, stored with its colors multiplied by alpha, which darkens them, and
 // without. Linear data draws brighter than the same bytes in sRGB.
 import { defineSketch, type MeshArrays, type Texture } from '@null3d/engine';
-import { unlitMapMaterial } from '@null3d/engine/internal';
 
 /** A square of side 1.6 facing the camera, with texture coordinates from 0 to 1. */
 const SQUARE: MeshArrays = {
@@ -55,7 +54,7 @@ export default defineSketch(async ({ scene, materials, geometry, textures, asset
 	const show = (map: Texture, column: number, row: number, color = '#ffffff') =>
 		scene.createMesh({
 			mesh: square,
-			material: unlitMapMaterial(materials, map, { color }),
+			material: materials.unlit({ map, color }),
 			position: [-5 + column * 2, row === 0 ? 1 : -1, 0],
 		});
 

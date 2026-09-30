@@ -8,7 +8,7 @@ summary: "loadTexture options; KTX2 files; fromData; fromImageBitmap; fromPass; 
 
 # Textures
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Maps on materials, texture backgrounds, `textures.fromPass` and cube maps are not built yet, so coding agents must not use them.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Texture backgrounds, `textures.fromPass` and cube maps are not built yet, so coding agents must not use them.
 
 ```mermaid
 flowchart LR

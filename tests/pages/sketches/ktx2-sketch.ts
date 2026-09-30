@@ -9,7 +9,6 @@
 // show. The bottom row shows the UASTC file large and tiny, then read as linear, which brightens
 // it, and a linear ramp of 30 x 20 texels, which no compressed format takes, large and tiny.
 import { defineSketch, type MeshArrays, type Texture } from '@null3d/engine';
-import { unlitMapMaterial } from '@null3d/engine/internal';
 
 /** A square of side 1.6 facing the camera, with texture coordinates from 0 to 1. */
 const SQUARE: MeshArrays = {
@@ -40,7 +39,7 @@ export default defineSketch(async ({ scene, materials, geometry, assets }) => {
 	const show = (map: Texture, column: number, row: number, scale: number) =>
 		scene.createMesh({
 			mesh: square,
-			material: unlitMapMaterial(materials, map),
+			material: materials.unlit({ map }),
 			position: [-4 + column * 2, row === 0 ? 1 : -1, 0],
 			scale: [scale, scale, scale],
 		});

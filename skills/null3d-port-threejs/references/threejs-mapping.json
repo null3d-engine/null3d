@@ -726,7 +726,7 @@
       "status": "direct",
       "since": "0.1",
       "target": "materials.standard({ color, map, metalness, roughness, normalMap, aoMap, emissive, ... })",
-      "notes": "Both follow glTF's metallic-roughness model with the same formulas, so color, metalness, roughness and emissive values carry over. Texture maps are not built yet.",
+      "notes": "Both follow glTF's metallic-roughness model with the same formulas, so color, metalness, roughness and emissive values carry over. roughnessMap and metalnessMap become one metalnessRoughnessMap, and a texture's repeat, offset and rotation become the material's uvTransform.",
       "docs": "api/materials",
       "detect": "\\bMeshStandardMaterial\\b"
     },
@@ -748,7 +748,7 @@
       "status": "direct",
       "since": "0.1",
       "target": "materials.unlit({ color, map, opacity, alphaMode, vertexColors })",
-      "notes": "Texture maps and alpha modes are not built yet.",
+      "notes": "Alpha modes are not built yet.",
       "docs": "api/materials",
       "detect": "\\bMeshBasicMaterial\\b"
     },
@@ -858,7 +858,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "Nothing to do",
-      "notes": "Options that change the shader or the pipeline, such as vertexColors, doubleSided and flatShading, are fixed when a material is created. Create each variant during loading: a new one compiles a pipeline, which can make a frame late.",
+      "notes": "Options that change the shader or the pipeline, such as texture maps, vertexColors, doubleSided and flatShading, are fixed when a material is created. Create each variant during loading: a new one compiles a pipeline, which can make a frame late.",
       "docs": "concepts/materials",
       "detect": "\\bmaterial\\w*\\.needsUpdate\\b"
     },
@@ -990,7 +990,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "wrap: 'repeat' | 'clamp' | 'mirror' in the texture options; repeat, offset and rotation go in the material's uvTransform",
-      "notes": "uvTransform follows glTF's KHR_texture_transform.",
+      "notes": "uvTransform takes three.js's repeat, offset and rotation with the default center, and every map of the material shares it. three.js keeps one transform per texture.",
       "docs": "api/textures",
       "detect": "\\.(wrapS|wrapT)\\s*=|\\.repeat\\.set\\s*\\(|\\.offset\\.set\\s*\\(|\\b(Repeat|ClampToEdge|MirroredRepeat)Wrapping\\b"
     },
@@ -1088,8 +1088,8 @@
       "three": "texture.channel (which UV set a map uses)",
       "status": "direct",
       "since": "0.1",
-      "target": "uvSet: 0 or 1 in loadTexture options, or per map in the material",
-      "notes": "glTF files carry this per texture, so loaded models need nothing.",
+      "target": "uvSet: 0 or 1 in the texture's options",
+      "notes": "Each map of a material reads the set that its texture names. glTF files carry this per texture, so loaded models need nothing.",
       "docs": "api/textures",
       "detect": "\\.channel\\s*="
     },
