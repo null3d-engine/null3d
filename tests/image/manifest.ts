@@ -133,6 +133,16 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		size: [480, 270],
 	},
+	// The texture calls of a sketch: loadTexture with and without the flip, loadImageBitmap with
+	// fromImageBitmap, data in bytes, half floats and layers, updates that bring new texels and a new
+	// size, a destroyed map, and colors multiplied by alpha. Every thread mode must draw one image.
+	{
+		name: 'texture-api',
+		sketch: 'tests/pages/sketches/texture-api-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+		modes: ALL_MODES,
+	},
 	// Fifty textures that load in waves in a live engine, a band of rows per frame under a small
 	// upload budget, while their array grows twice, to 64 layers. No frame may upload more than the
 	// budget, and the GPU memory count must match the array.

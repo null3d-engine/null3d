@@ -11,9 +11,15 @@
 import { copyFileSync, existsSync, rmSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
-import pixelmatch from 'pixelmatch';
-import { percent, type RgbaImage, TIERS, type Tier } from '../../bench/lib/parity.ts';
+import { type RgbaImage, TIERS, type Tier } from '../../bench/lib/parity.ts';
 import { ENVIRONMENTS, type Environment } from '../../packages/cli/src/browser.js';
+import {
+	compareImages,
+	percent,
+	TOLERANCE,
+	type Tolerance,
+} from '../../packages/cli/src/compare.js';
+import { REPORTED_TIERS } from '../../packages/cli/src/page.js';
 import { readPng, writePng } from '../../packages/cli/src/png.js';
 import {
 	ENGINE_MODES,
@@ -28,24 +34,22 @@ import { REPO_ROOT } from './server.ts';
 // Each environment keeps a full set of references, one folder each: Chromium on SwiftShader, the
 // software GPU that CI draws with, and Chrome on the real GPU of the Mac that makes the references.
 // The two differ at object edges.
-export { ENVIRONMENTS, type Environment, readPng, TIERS, type Tier, writePng };
+// The tolerance against the references of the place that drew an image is the command-line
+// tool's, so a project's image tests judge images as the engine's own do.
+export {
+	ENVIRONMENTS,
+	type Environment,
+	REPORTED_TIERS,
+	readPng,
+	TIERS,
+	type Tier,
+	TOLERANCE,
+	type Tolerance,
+	writePng,
+};
 
 /** The environment whose references other browsers and devices compare with. */
 export const REAL_GPU: Environment = 'chrome-real-gpu';
-
-/** How far an image may stray from its reference. */
-export interface Tolerance {
-	/**
-	 * How far a pixel's color may move before the pixel counts as different, from 0 to 1, by
-	 * pixelmatch's measure of color distance. Pixels on anti-aliased edges never count.
-	 */
-	threshold: number;
-	/** The share of pixels that may differ, from 0 to 1. */
-	maxDiffRatio: number;
-}
-
-/** The tolerance against the references of the place that drew the image. */
-export const TOLERANCE: Tolerance = { threshold: 0.1, maxDiffRatio: 0.001 };
 
 /**
  * The tolerance of other browsers and devices against the real-GPU references, for GPUs that
@@ -143,13 +147,6 @@ export interface ImageRun {
 	/** The run of the test's first mode on the same tier, whose pixels every other mode must match. */
 	sameAs?: string;
 }
-
-/** The tier the engine reports for each value of the ?gpu= switch. */
-export const REPORTED_TIERS: Readonly<Record<Tier, string>> = {
-	webgpu: 'webgpu',
-	compat: 'webgpu-compat',
-	webgl2: 'webgl2',
-};
 
 /** The tiers a test draws on. */
 export const tiersOf = (test: ImageTest): readonly Tier[] => test.tiers ?? TIERS;
@@ -427,13 +424,9 @@ export function compareWithReference(
 			`the image is ${image.width} x ${image.height}, and the reference ${reference.file} is ${expected.width} x ${expected.height}. The new image is ${shown}`,
 		];
 	}
-	const diff = new Uint8Array(image.data.length);
-	const differing = pixelmatch(expected.data, image.data, diff, image.width, image.height, {
-		threshold: reference.tolerance.threshold,
-	});
-	const share = differing / (image.width * image.height);
+	const { share, diff } = compareImages(expected, image, reference.tolerance.threshold);
 	if (share <= reference.tolerance.maxDiffRatio) return [];
-	save({ status: 'changed', share }, { width: image.width, height: image.height, data: diff });
+	save({ status: 'changed', share }, diff);
 	return [
 		`${percent(share)} of pixels differ from the reference ${reference.file}, and at most ${percent(reference.tolerance.maxDiffRatio)} may. The new image is ${shown}, and the diff ${relative(REPO_ROOT, `${base}${CANDIDATE_FILES.diff}`)}`,
 	];

@@ -228,7 +228,7 @@ impl<B: FrameBuilder> World<B> {
         let texture = settings.textures_mut().create(map_desc(size)).unwrap();
         settings
             .textures_mut()
-            .set_image(texture, size, size)
+            .set_image(texture, size, size, 0)
             .unwrap();
         let material = settings
             .materials_mut()
@@ -291,6 +291,7 @@ pub fn map_desc(size: u32) -> TextureDesc {
     TextureDesc {
         width: size,
         height: size,
+        depth: 1,
         format: format::RGBA8_UNORM_SRGB,
         mipmaps: true,
         sampling: Sampling::default(),

@@ -8,7 +8,7 @@ summary: "Linear working space; sRGB hex colors and linear arrays; texture color
 
 # Color management
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. The calls that load textures and choose their color space are not built yet, so coding agents must not use them.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Maps on materials are not built yet, so coding agents must not use them.
 
 ```mermaid
 flowchart LR
@@ -51,7 +51,7 @@ A texture stores its image in one of two ways:
 | Color | Base color, emissive color | The texture has an sRGB format, so the GPU decodes each texel to linear values as it samples it. Filtering and mip levels average in linear color too. |
 | Data | Normals, roughness, metalness, occlusion | The texture has a linear format, so the GPU reads each texel as it is. |
 
-A data map stored as a color map comes out wrong: its values shrink toward 0. A color map stored as data comes out too bright and washed out. [Textures](../api/textures.md) covers how the engine keeps textures on the GPU.
+The `colorSpace` option of the texture calls chooses: `'srgb'`, the default for images, or `'linear'`, the default for data. A data map stored as a color map comes out wrong: its values shrink toward 0. A color map stored as data comes out too bright and washed out. [Textures](../api/textures.md) covers how the engine keeps textures on the GPU.
 
 ## HDR color and the final pass
 

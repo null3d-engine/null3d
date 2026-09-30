@@ -472,7 +472,8 @@ async function startEngine(
 			return loaded;
 		}),
 	);
-	const sketchUrl = new URL(options.sketch, globalThis.location?.href).href;
+	const pageUrl = globalThis.location?.href;
+	const sketchUrl = new URL(options.sketch, pageUrl).href;
 	// The page runs the sketch itself only in single-threaded mode. It needs the sketch runner and
 	// the sketch module right after the core, so both download while the core does: a later start
 	// delays the first frame on a slow network. The sketch module's top-level code then runs when the
@@ -652,6 +653,7 @@ async function startEngine(
 					jobWorkers: 0,
 					device,
 					sendImage: sendToTable(imageTable, slots),
+					pageUrl: pageUrl ?? sketchUrl,
 				},
 				hold,
 			);
@@ -672,6 +674,7 @@ async function startEngine(
 				type: 'init',
 				...handoff,
 				sketchUrl,
+				pageUrl: pageUrl ?? sketchUrl,
 				keyCodes: KEY_CODES,
 				jobWorkers,
 				hold,

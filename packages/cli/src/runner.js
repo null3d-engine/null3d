@@ -11,6 +11,7 @@ import { startBuildServer, startDevServer } from './server.js';
 /** @import { Browser, Page } from 'playwright-core' */
 /** @import { Environment } from './browser.js' */
 /** @import { HoldFailure, HoldReport, Tier } from './page.js' */
+/** @import { PluginOption } from 'vite' */
 /** @import { DevServer } from './server.js' */
 
 /**
@@ -18,6 +19,7 @@ import { startBuildServer, startDevServer } from './server.js';
  * @property {DevServer} server The project's server: its dev server, or a server of its build.
  * @property {Browser} browser
  * @property {Environment} environment Where the browser draws.
+ * @property {string} browserName The browser's name and version, such as `Chrome 141.0.7390.54`.
  * @property {() => Promise<void>} close Stops the browser and the server.
  */
 
@@ -54,24 +56,26 @@ const POLL_MS = 100;
 
 /**
  * Starts a server of the project in the current folder and a headless browser. The server is the
- * project's Vite dev server, or with `production`, a server of a production build of the project.
- * `browserArgs` adds flags to the browser's own.
+ * project's Vite dev server, with any `plugins` besides the project's own, or with `production`, a
+ * server of a production build of the project. `browserArgs` adds flags to the browser's own.
  *
- * @param {{ environment?: Environment, production?: boolean, browserArgs?: readonly string[] }} [options]
+ * @param {{ environment?: Environment, production?: boolean, plugins?: PluginOption[], browserArgs?: readonly string[] }} [options]
  * @returns {Promise<Runner>}
  */
 export async function startRunner({
 	environment = defaultEnvironment(),
 	production = false,
+	plugins,
 	browserArgs = [],
 } = {}) {
-	const server = await (production ? startBuildServer() : startDevServer());
+	const server = await (production ? startBuildServer() : startDevServer({ plugins }));
 	try {
 		const browser = await launchBrowser(environment, browserArgs);
 		return {
 			server,
 			browser,
 			environment,
+			browserName: `${environment === 'chrome-real-gpu' ? 'Chrome' : 'Chromium'} ${browser.version()}`,
 			async close() {
 				await browser.close();
 				await server.close();
