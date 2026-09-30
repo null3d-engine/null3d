@@ -9,6 +9,7 @@ import { EngineError } from '../errors/engine-error';
 import type { Post } from '../scene/post';
 import type { Geometry, Materials } from '../scene/resources';
 import type { Scene } from '../scene/scene';
+import type { Input } from './input';
 
 /**
  * Callbacks a sketch returns from its setup function.
@@ -57,6 +58,8 @@ export interface SketchContext {
 	materials: Materials;
 	/** Mesh generators. */
 	geometry: Geometry;
+	/** Pointer, touch, keyboard and gamepad input, which the page forwards to the sketch. */
+	input: Input;
 	/** Post-processing: the tone mapping and the exposure of the scene's color. */
 	post: Post;
 	/**

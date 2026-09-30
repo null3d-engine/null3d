@@ -157,8 +157,8 @@ export class WebGL2SceneRenderer implements Renderer {
 
 	/**
 	 * `gl` is the canvas's context, made with the engine's settings. Where WebGL refuses views on
-	 * shared memory, `device.sharedUploads` is false, so the backend copies uploads out of engine
-	 * memory first. A transparent canvas has alpha.
+	 * shared memory, the device says so, and the backend copies uploads out of engine memory first.
+	 * The device also gives the depth mode, and whether the canvas is transparent, with alpha.
 	 */
 	constructor(
 		private readonly canvas: RenderCanvas,
@@ -169,7 +169,13 @@ export class WebGL2SceneRenderer implements Renderer {
 		device: CoreDevice,
 	) {
 		this.lost = contextLoss(canvas, this.release.signal);
-		this.backend = new WebGL2Backend(gl, canvas, device.sharedUploads, device.transparent);
+		this.backend = new WebGL2Backend(
+			gl,
+			canvas,
+			device.sharedUploads,
+			device.depth,
+			device.transparent,
+		);
 		this.canvasFormat = device.transparent ? gl.RGBA8 : gl.RGB8;
 		this.completions = metrics && new FenceCompletion(gl, metrics);
 		this.lists = new DrawLists(memory, control);

@@ -8,9 +8,9 @@ summary: "post.set for tone mapping and exposure; the effects and post.addEffect
 
 # Post-processing API
 
-`ctx.post` holds the settings that the engine applies to the scene's color on its way to the canvas. In null3D 0.1 these are the tone mapping and the exposure. [Color management](../concepts/color-management.md) explains how they fit into the frame.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Bloom, ambient occlusion, color grading, the other `post.set` effects and `post.addEffect` come in null3D 0.2, so coding agents must not use them.
 
-> Bloom, ambient occlusion, color grading, the other `post.set` effects and `post.addEffect` come in null3D 0.2. No release has them yet, so coding agents must not use them.
+`ctx.post` holds the settings that the engine applies to the scene's color on its way to the canvas. In null3D 0.1 these are the tone mapping and the exposure. [Color management](../concepts/color-management.md) explains how they fit into the frame.
 
 ## Tone mapping and exposure
 

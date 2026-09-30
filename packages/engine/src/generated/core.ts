@@ -52,3 +52,33 @@ export const TONE_MAPPING_ACES = 0;
 export const TONE_MAPPING_AGX = 1;
 export const TONE_MAPPING_NEUTRAL = 2;
 export const TONE_MAPPING_NONE = 3;
+
+export const SHADING_LIT = 0;
+export const SHADING_UNLIT = 1;
+export const SHADING_TEXCOORDS = 2;
+
+export const MESH_ARRAYS_NORMALS = 1;
+export const MESH_ARRAYS_UVS = 2;
+export const MESH_ARRAYS_UVS1 = 4;
+export const MESH_ARRAYS_COLORS = 8;
+export const MESH_ARRAYS_COLORS_ALPHA = 16;
+export const MESH_ARRAYS_TANGENTS = 32;
+export const MESH_ARRAYS_INDICES = 64;
+export const MESH_ARRAYS_COMPUTE_NORMALS = 128;
+export const MESH_ARRAYS_COMPUTE_TANGENTS = 256;
+
+export const ARRAY_POSITIONS = 0;
+export const ARRAY_NORMALS = 1;
+export const ARRAY_UVS = 2;
+export const ARRAY_UVS1 = 3;
+export const ARRAY_COLORS = 4;
+export const ARRAY_TANGENTS = 5;
+export const ARRAY_INDICES = 6;
+
+export const ARRAYS_PROBLEM_NO_VERTICES = 1;
+export const ARRAYS_PROBLEM_LENGTH = 2;
+export const ARRAYS_PROBLEM_NOT_TRIANGLES = 3;
+export const ARRAYS_PROBLEM_TWICE = 4;
+export const ARRAYS_PROBLEM_MISSING = 5;
+export const ARRAYS_PROBLEM_INDEX_OUT_OF_RANGE = 6;
+export const ARRAYS_PROBLEM_NOT_FINITE = 16;

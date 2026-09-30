@@ -7,8 +7,8 @@
 
 mod common;
 
-use common::World;
 use common::graph::{CASCADES, engine_passes};
+use common::{World, grid};
 use null3d_core::jobs::JobSystem;
 use null3d_core::testing::CountingAllocator;
 use null3d_gpu::drawlist::{DrawList, Op, format};
@@ -16,6 +16,7 @@ use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::frame::{CanvasOutput, FrameBuilder};
 use null3d_render::geometry::sphere_geometry;
 use null3d_render::gpu_driven::RendererConfig;
+use null3d_render::materials::Shading;
 use null3d_render::output::{Output, SceneColor, ToneMapping};
 use null3d_render::parallel_record::ParallelRecorder;
 
@@ -198,6 +199,31 @@ fn structure_changes_after_warm_up_allocate_nothing() {
     CountingAllocator::arm();
     record_until(&mut world, 40, true);
     assert_eq!(CountingAllocator::disarm(), 0);
+}
+
+#[test]
+fn rebuilds_with_meshes_of_several_formats_and_parts_allocate_nothing_after_warm_up() {
+    let _only = CountingAllocator::exclusive();
+    CountingAllocator::track_this_thread();
+    // A grid of 90,601 vertices splits into two parts, of another vertex format than the world's
+    // meshes, and draws with a pipeline of its own.
+    let large = grid(300, 300);
+    let mut webgpu = World::new();
+    webgpu.add_object(&large, Shading::TexCoords);
+    webgpu.record(true);
+    record_until(&mut webgpu, 4, false);
+    CountingAllocator::arm();
+    record_until(&mut webgpu, 40, true);
+    assert_eq!(CountingAllocator::disarm(), 0, "WebGPU");
+    for multi_draw in [true, false] {
+        let mut world = webgl2_world(multi_draw);
+        world.add_object(&large, Shading::TexCoords);
+        world.record(true);
+        record_until(&mut world, 6, false);
+        CountingAllocator::arm();
+        record_until(&mut world, 40, true);
+        assert_eq!(CountingAllocator::disarm(), 0, "multi-draw {multi_draw}");
+    }
 }
 
 #[test]

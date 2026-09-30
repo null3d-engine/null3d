@@ -63,7 +63,8 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 		try {
 			// The renderer loads while the core and the sketch start.
 			const drawModule = message.renderer && loadDrawModule();
-			controlSlots = controlViews(message.control).slots;
+			const control = controlViews(message.control);
+			controlSlots = control.slots;
 			const started = await startWorkerCore(message, step);
 			const core = started.glue;
 			const memory = started.memory as WebAssembly.Memory;
@@ -73,7 +74,8 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 				{
 					glue: core,
 					memory,
-					slots: controlSlots,
+					control,
+					keyCodes: message.keyCodes,
 					jobWorkers: message.jobWorkers,
 					device: message.device,
 				},

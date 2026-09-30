@@ -9,14 +9,16 @@ import {
 	LAYOUT_FRAME,
 	PERMUTATION_TONE_MAP,
 	SIZE_INSTANCE_STRIDE,
-	SIZE_VERTEX_STRIDE,
 	STATE_CULL_NONE,
 	TEMPLATE_CULL,
 	TEMPLATE_FINAL,
 	TEMPLATE_INSTANCED_LIT,
+	TEMPLATE_INSTANCED_TEXCOORDS,
 	TEMPLATE_INSTANCED_UNLIT,
+	VERTEX_INSTANCE_LOCATION,
 } from '../../generated/gpu';
 import { CULL_SHADER, FINAL_SHADER, MESH_SHADER, type WgslShader } from '../../generated/shaders';
+import { vertexAttribute, vertexStride } from '../vertex-format';
 
 /** The WebGPU build of a shader variant. */
 export function wgslOf<Pipeline extends string>(variant: {
@@ -41,7 +43,12 @@ export interface RenderTemplate {
 	readonly pipeline: string;
 	/** The bind group layout of each group, by layout id, from group 0 on. */
 	readonly layouts: readonly number[];
-	/** The vertex buffers that the vertex stage reads, by slot. */
+	/**
+	 * For a template that draws meshes: the vertex shader locations that it reads from a mesh's
+	 * vertices, in slot 0, where each pipeline's vertex format places them.
+	 */
+	readonly meshLocations?: readonly number[];
+	/** The other vertex buffers that the vertex stage reads, by slot, after the mesh's vertices. */
 	readonly vertexBuffers: GPUVertexBufferLayout[];
 }
 
@@ -52,27 +59,49 @@ const CULL = wgslOf(CULL_SHADER.webgpu);
 /** The culling shader's compute entry point. */
 const CULL_ENTRY_POINT = 'main';
 
-/** A mesh vertex, then the compacted instance that the draw's instances read. */
-const MESH_BUFFERS: GPUVertexBufferLayout[] = [
-	{
-		arrayStride: SIZE_VERTEX_STRIDE,
-		stepMode: 'vertex',
-		attributes: [
-			{ shaderLocation: 0, offset: 0, format: 'float32x3' },
-			{ shaderLocation: 1, offset: 12, format: 'float32x3' },
-		],
-	},
+/** The compacted instance that a mesh draw's instances read: its matrix rows, then its ids. */
+const INSTANCE_BUFFERS: GPUVertexBufferLayout[] = [
 	{
 		arrayStride: SIZE_INSTANCE_STRIDE,
 		stepMode: 'instance',
 		attributes: [
-			{ shaderLocation: 2, offset: 0, format: 'float32x4' },
-			{ shaderLocation: 3, offset: 16, format: 'float32x4' },
-			{ shaderLocation: 4, offset: 32, format: 'float32x4' },
-			{ shaderLocation: 5, offset: 48, format: 'uint32x4' },
+			{ shaderLocation: VERTEX_INSTANCE_LOCATION, offset: 0, format: 'float32x4' },
+			{ shaderLocation: VERTEX_INSTANCE_LOCATION + 1, offset: 16, format: 'float32x4' },
+			{ shaderLocation: VERTEX_INSTANCE_LOCATION + 2, offset: 32, format: 'float32x4' },
+			{ shaderLocation: VERTEX_INSTANCE_LOCATION + 3, offset: 48, format: 'uint32x4' },
 		],
 	},
 ];
+
+/** WebGPU's vertex formats of 32-bit floats, by float count. */
+const FLOAT_FORMATS: (GPUVertexFormat | undefined)[] = [
+	undefined,
+	'float32',
+	'float32x2',
+	'float32x3',
+	'float32x4',
+];
+
+/**
+ * The vertex buffers of a template's pipeline: a mesh's vertices first, for a template that draws
+ * meshes, with each location it reads where the vertex format places it.
+ */
+function vertexBuffers(t: RenderTemplate, vertexFormat: number): GPUVertexBufferLayout[] {
+	if (!t.meshLocations) return t.vertexBuffers;
+	const attributes = t.meshLocations.map((shaderLocation): GPUVertexAttribute => {
+		const attribute = vertexAttribute(vertexFormat, shaderLocation);
+		if (!attribute)
+			throw new Error(`vertex format ${vertexFormat} has no attribute at ${shaderLocation}`);
+		const format = FLOAT_FORMATS[attribute.floats] as GPUVertexFormat;
+		return { shaderLocation, offset: attribute.offset, format };
+	});
+	const mesh: GPUVertexBufferLayout = {
+		arrayStride: vertexStride(vertexFormat),
+		stepMode: 'vertex',
+		attributes,
+	};
+	return [mesh, ...t.vertexBuffers];
+}
 
 export class Pipelines {
 	private readonly layouts: (GPUBindGroupLayout | undefined)[] = [];
@@ -108,9 +137,10 @@ export class Pipelines {
 				texture: { sampleType: 'unfilterable-float', viewDimension: '2d' },
 			},
 		]);
-		for (const [id, pipeline] of [
-			[TEMPLATE_INSTANCED_LIT, 'lit'],
-			[TEMPLATE_INSTANCED_UNLIT, 'unlit'],
+		for (const [id, pipeline, meshLocations] of [
+			[TEMPLATE_INSTANCED_LIT, 'lit', [0, 1]],
+			[TEMPLATE_INSTANCED_UNLIT, 'unlit', [0, 1]],
+			[TEMPLATE_INSTANCED_TEXCOORDS, 'texcoords', [0, 2]],
 		] as const) {
 			this.defineTemplate(id, {
 				label: `mesh ${pipeline}`,
@@ -118,7 +148,8 @@ export class Pipelines {
 				toneMapShader: MESH_TONE_MAP,
 				pipeline,
 				layouts: [LAYOUT_FRAME],
-				vertexBuffers: MESH_BUFFERS,
+				meshLocations,
+				vertexBuffers: INSTANCE_BUFFERS,
 			});
 		}
 		this.defineTemplate(TEMPLATE_FINAL, {
@@ -161,8 +192,9 @@ export class Pipelines {
 	}
 
 	/**
-	 * A render pipeline of a template, in the shader variant that its permutation bits pick.
-	 * Without a color format it draws depth only.
+	 * A render pipeline of a template, in the shader variant that its permutation bits pick, for
+	 * meshes of a vertex format where the template draws meshes. Without a color format it draws
+	 * depth only.
 	 */
 	render(
 		template: number,
@@ -171,6 +203,7 @@ export class Pipelines {
 		depthFormat: GPUTextureFormat | undefined,
 		sampleCount: number,
 		stateFlags: number,
+		vertexFormat: number,
 	): GPURenderPipeline {
 		const t = this.templates[template];
 		if (!t) throw new Error(`unknown render template ${template}`);
@@ -189,7 +222,11 @@ export class Pipelines {
 		return this.device.createRenderPipeline({
 			label: t.label,
 			layout,
-			vertex: { module, entryPoint: entryPoints?.vertex, buffers: t.vertexBuffers },
+			vertex: {
+				module,
+				entryPoint: entryPoints?.vertex,
+				buffers: vertexBuffers(t, vertexFormat),
+			},
 			fragment: colorFormat
 				? { module, entryPoint: entryPoints?.fragment, targets: [{ format: colorFormat }] }
 				: undefined,

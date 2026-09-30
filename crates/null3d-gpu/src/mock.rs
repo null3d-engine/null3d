@@ -5,7 +5,7 @@
 use crate::caps::{BUDGET, Capabilities, Limit, OFFSET_ALIGNMENT};
 use crate::drawlist::{
     Command, NO_TARGET, Op, address, compare, decode, filter, format, resource_kind, texture_usage,
-    upload_flags, view,
+    upload_flags, vertex, view,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -773,6 +773,11 @@ impl MockBackend {
             }
             Op::CreateRenderPipeline => {
                 check(
+                    o.len() == 8 && o[7] & !vertex::ALL == 0,
+                    op,
+                    "a render pipeline names a vertex format of known attributes",
+                )?;
+                check(
                     o[3] == format::NONE || !format::is_depth(o[3]),
                     op,
                     "the color format is a color format or NONE",
@@ -1046,7 +1051,7 @@ mod tests {
         .unwrap();
         list.push(
             Op::CreateRenderPipeline,
-            &[1, 1, 0, format::CANVAS, format::DEPTH32_FLOAT, 4, 0],
+            &[1, 1, 0, format::CANVAS, format::DEPTH32_FLOAT, 4, 0, 0],
         )
         .unwrap();
         list.push(Op::CreateBindGroup, &[1, layout::FRAME, 1, 0, 0, 3, 0, 256])
@@ -1390,17 +1395,17 @@ mod tests {
         .unwrap();
         list.push(
             Op::CreateRenderPipeline,
-            &[2, 20, 0, format::NONE, format::DEPTH32_FLOAT, 1, 0],
+            &[2, 20, 0, format::NONE, format::DEPTH32_FLOAT, 1, 0, 0],
         )
         .unwrap();
         list.push(
             Op::CreateRenderPipeline,
-            &[3, 20, 0, format::RGBA8_UNORM, format::NONE, 1, 0],
+            &[3, 20, 0, format::RGBA8_UNORM, format::NONE, 1, 0, 0],
         )
         .unwrap();
         list.push(
             Op::CreateRenderPipeline,
-            &[4, 20, 0, format::CANVAS, format::NONE, 1, 0],
+            &[4, 20, 0, format::CANVAS, format::NONE, 1, 0, 0],
         )
         .unwrap();
     }

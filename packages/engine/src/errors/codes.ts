@@ -98,6 +98,20 @@ const DOCS = {
 		example: 'E1204: setBackground() got the color "blue-ish".',
 		since: '0.1',
 	},
+	E1205: {
+		title: 'Unknown input name',
+		cause:
+			'An input call received a name that no key, button or action has, or `input.actions.define()` received an action name that a key or button already has. Names are case-sensitive: `KeyW` is the W key, and `keyW` names nothing.',
+		example: 'E1205: isDown() got "keyW", which names no key, button or action.',
+		since: '0.1',
+	},
+	E1206: {
+		title: 'Invalid mesh arrays',
+		cause:
+			'geometry.fromArrays() received arrays that make no mesh. An array can have the wrong length for the vertex count, an index can name no vertex, or a value can be NaN or Infinity. Normals can also be missing, or both given and computed.',
+		example: 'E1206: geometry.fromArrays() got 9 numbers in normals for 4 vertices, not 12.',
+		since: '0.1',
+	},
 	E1207: {
 		title: 'Invalid setting',
 		cause:
@@ -183,7 +197,7 @@ const DOCS = {
 	E1501: {
 		title: 'Render space full',
 		cause:
-			'The scene needs more room than the renderer set aside. The full part is the draw list, the mesh buffers, the material table, the upload space or the culling pass. On WebGPU the culling pass covers 2,097,152 objects and instance rows on every device, and more on devices with larger GPU buffers. On WebGL2 the number follows the largest texture the device allows. The number for the device is in engine.capabilities.maxInstances.',
+			'The scene needs more room than the renderer set aside. The full part is the draw list, the material table, the upload space or the culling pass. On WebGPU the culling pass covers 2,097,152 objects and instance rows on every device, and more on devices with larger GPU buffers. On WebGL2 the number follows the largest texture the device allows. The number for the device is in engine.capabilities.maxInstances.',
 		example: 'E1501: materials.standard() failed: the material table is full.',
 		since: '0.1',
 	},

@@ -96,11 +96,19 @@ export const LAYOUT_FINAL = 4;
 export const PERMUTATION_DRAW_INDEX = 1;
 export const PERMUTATION_TONE_MAP = 2;
 
+export const VERTEX_UV0 = 1;
+export const VERTEX_UV1 = 2;
+export const VERTEX_TANGENT = 4;
+export const VERTEX_COLOR = 8;
+export const VERTEX_ALL = 15;
+export const VERTEX_INSTANCE_LOCATION = 8;
+
 export const STATE_CULL_NONE = 1;
 
 export const TEMPLATE_INSTANCED_LIT = 1;
 export const TEMPLATE_INSTANCED_UNLIT = 2;
-export const TEMPLATE_FINAL = 3;
+export const TEMPLATE_INSTANCED_TEXCOORDS = 3;
+export const TEMPLATE_FINAL = 4;
 export const TEMPLATE_CULL = 16;
 
 export const BUFFER_USAGE_MAP_READ = 1;
@@ -119,7 +127,6 @@ export const TEXTURE_USAGE_STORAGE_BINDING = 8;
 export const TEXTURE_USAGE_RENDER_ATTACHMENT = 16;
 export const TEXTURE_USAGE_TRANSIENT_ATTACHMENT = 32;
 
-export const SIZE_VERTEX_STRIDE = 24;
 export const SIZE_INSTANCE_STRIDE = 64;
 export const SIZE_FRAME_UNIFORM_BYTES = 144;
 export const SIZE_OUTPUT_UNIFORM_BYTES = 16;
@@ -134,3 +141,5 @@ export const SIZE_MAX_MATERIALS = 1024;
 
 /** Bytes per texel of each format, by format code. */
 export const FORMAT_TEXEL_BYTES: readonly number[] = [0, 4, 4, 4, 8, 0, 4, 16, 4, 4, 4];
+/** Each vertex attribute in vertex order: its format bit (0 for one every format has), its floats and its shader location. */
+export const VERTEX_ATTRIBUTES: readonly (readonly [bit: number, floats: number, location: number])[] = [[0, 3, 0], [0, 3, 1], [1, 2, 2], [2, 2, 3], [4, 4, 4], [8, 4, 5]];

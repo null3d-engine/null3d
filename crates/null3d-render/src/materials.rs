@@ -1,6 +1,8 @@
 //! The material table: each material's parameters in the layout the shaders read by material id,
 //! and the pipeline it draws with.
 
+use null3d_gpu::drawlist::{template, vertex};
+
 /// How a material shades.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Shading {
@@ -8,6 +10,29 @@ pub enum Shading {
     Lit,
     /// The base color only, as three.js's `MeshBasicMaterial`.
     Unlit,
+    /// The first texture coordinates as red and green, for the engine's own tests of vertex
+    /// formats. Only meshes with those coordinates draw with it.
+    TexCoords,
+}
+
+impl Shading {
+    /// The render pipeline template that draws with this shading.
+    pub const fn template(self) -> u32 {
+        match self {
+            Shading::Lit => template::INSTANCED_LIT,
+            Shading::Unlit => template::INSTANCED_UNLIT,
+            Shading::TexCoords => template::INSTANCED_TEXCOORDS,
+        }
+    }
+
+    /// The optional vertex attributes (`vertex::*` bits) that its pipeline reads, which a mesh
+    /// needs to draw with it.
+    pub const fn attributes(self) -> u32 {
+        match self {
+            Shading::Lit | Shading::Unlit => 0,
+            Shading::TexCoords => vertex::UV0,
+        }
+    }
 }
 
 /// Material parameters in the GPU layout: a linear base color and opacity.

@@ -1,14 +1,14 @@
 ---
 id: guides/agents
 title: Working with AI agents
-status: planned
+status: experimental
 since: "0.1"
 summary: "Installing the null3D skills in Claude Code, claude.ai and other agent tools; docs by ID; the MCP server and AGENTS.md in templates (0.3)."
 ---
 
 # Working with AI agents
 
-> Planned for null3D 0.1. No release has these APIs yet, so coding agents must not use them.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions.
 
 null3D comes with two agent skills. A skill is a folder of instructions that a coding agent loads when a task needs it.
 
@@ -47,7 +47,7 @@ To install by hand, copy each skill's folder from `.claude/skills/` in the relea
 
 ## Docs by ID
 
-Every docs page has an ID, such as `concepts/architecture`: its path under `docs/` without `.md`. The skills name pages by ID, and each page's status says whether its API exists yet. Agents never use an API whose page is `planned`.
+Every docs page has an ID, such as `concepts/architecture`: its path under `docs/` without `.md`. The skills name pages by ID, and each page's status says whether its API exists yet. Agents never use an API whose page is `planned`, or a part that the note on an experimental page says is not built yet.
 
 ## Coming later
 

@@ -5,6 +5,7 @@
 //! Each shader is an export of its own, so a bundle keeps only the shaders that its code imports:
 //! the engine's download holds none of the test shaders.
 
+use crate::glsl::DEPTH_MAPPING_UNIFORM;
 use crate::{GlslStage, Output, VariantOutput};
 
 /// The formatter's line width, and the width it counts for one tab.
@@ -50,12 +51,12 @@ export interface GlslStage {
 }
 
 /**
- * The shaders of one render pipeline, to link into one WebGL2 program. The vertex shader moves
- * depth into GL's clip range and keeps GL's row order: the canvas shows the image the right way
- * up, a pixel read returns the bottom row first, and front faces wind counter-clockwise, as on
- * WebGPU. A vertex shader that reads the instance or draw index also declares the
- * uniform `naga_vs_first_instance`, which the backend leaves unset because WebGL2 draws have no
- * first instance.
+ * The shaders of one render pipeline, to link into one WebGL2 program. The vertex shader maps
+ * depth through the uniform that `DEPTH_MAPPING_UNIFORM` names, and keeps GL's row order: the
+ * canvas shows the image the right way up, a pixel read returns the bottom row first, and front
+ * faces wind counter-clockwise, as on WebGPU. A vertex shader that reads the instance or draw
+ * index also declares the uniform `naga_vs_first_instance`, which the backend leaves unset
+ * because WebGL2 draws have no first instance.
  */
 export interface GlslProgram {
 	readonly vertex: GlslStage;
@@ -87,6 +88,18 @@ export interface ShaderVariant<Pipeline extends string = string> {
 pub(crate) fn module(output: &Output) -> String {
     let mut ts = Writer::default();
     ts.out.push_str(PREAMBLE);
+    ts.line("");
+    ts.line("/**");
+    ts.line(
+        " * The uniform through which each GLSL vertex shader maps WebGPU's clip depth: the shader",
+    );
+    ts.line(" * writes `z * mapping.x + w * mapping.y` as its clip depth, where `mapping` is this vec2.");
+    ts.line(" * The WebGL2 backend sets it once per program, for the depth mode it draws with.");
+    ts.line(" */");
+    ts.line(&format!(
+        "export const DEPTH_MAPPING_UNIFORM = {};",
+        quote(DEPTH_MAPPING_UNIFORM)
+    ));
     for (shader, variants) in &output.shaders {
         let pipelines = output.pipelines.get(shader).map_or(&[][..], Vec::as_slice);
         ts.line("");

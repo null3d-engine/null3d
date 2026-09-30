@@ -202,7 +202,7 @@ These rules come from the capabilities browsers report; `shaders/wgsl-rules` lis
 #import null3d::color::{srgbToLinear}
 ```
 
-The build resolves imports before translating, and includes only the functions you import. Library modules: `null3d::math`, `null3d::noise`, `null3d::color`, `null3d::lighting` (including `mainLightDirection()`, the main directional light's direction of travel), `null3d::fog`, `null3d::vertex`, `null3d::depth` (`linearDepth`, `viewZ`: correct for reversed depth on WebGPU and standard depth on WebGL2), `null3d::sdf`. Their contents are listed in `shaders/library`.
+The build resolves imports before translating, and includes only the functions you import. Library modules: `null3d::math`, `null3d::noise`, `null3d::color`, `null3d::lighting` (including `mainLightDirection()`, the main directional light's direction of travel), `null3d::fog`, `null3d::vertex`, `null3d::depth` (`linearDepth`, `viewZ`: correct for the depth each GPU path stores), `null3d::sdf`. Their contents are listed in `shaders/library`.
 
 ## 10. Debugging shaders
 

@@ -1,7 +1,7 @@
 // URL switches that let one device exercise every engine path: ?gpu=, ?threads=off, ?render=main,
-// ?latency=, ?uploads=copy and ?hdr=off. Three more set what the benchmarks vary: ?fps= for a fixed
-// frame rate, ?jobs= for the job worker count and ?memory= for the shared memory's maximum. ?hold
-// starts hold mode for image tests.
+// ?latency=, ?uploads=copy, ?depth= and ?hdr=off. Three more set what the benchmarks vary: ?fps=
+// for a fixed frame rate, ?jobs= for the job worker count and ?memory= for the shared memory's
+// maximum. ?hold starts hold mode for image tests.
 
 export type GpuSwitch = 'auto' | 'webgpu' | 'compat' | 'webgl2';
 /**
@@ -13,6 +13,18 @@ export type GpuSwitch = 'auto' | 'webgpu' | 'compat' | 'webgl2';
  */
 export type LatencyMode = 'pipelined' | 'low';
 
+/**
+ * How the GPU path stores depth. In `reversed` depth, the near plane stores 1 and the far plane 0,
+ * in a 32-bit float depth buffer. That keeps depth precise far from the camera. WebGPU always
+ * draws it. WebGL2 draws it where the browser has the `EXT_clip_control` extension, which gives
+ * WebGL2 the depth range from 0 to 1 that WebGPU has. The `reversed-gl` mode keeps the same
+ * order, but in WebGL2's own depth range from -1 to 1, which loses most of the precision. In
+ * `standard` depth, the near plane stores 0, as in three.js's WebGL renderer.
+ *
+ * @category api/engine
+ */
+export type DepthMode = 'reversed' | 'reversed-gl' | 'standard';
+
 export interface Switches {
 	gpu: GpuSwitch;
 	/** False when ?threads=off asks for the single-threaded build. */
@@ -22,6 +34,11 @@ export interface Switches {
 	latency: LatencyMode | undefined;
 	/** True when ?uploads=copy makes the WebGL2 path copy uploads out of shared memory first. */
 	copyUploads: boolean;
+	/**
+	 * The depth mode that ?depth= asks the WebGL2 path to draw with, or undefined for the device's
+	 * own. A device without `EXT_clip_control` cannot draw `reversed`, and draws its own instead.
+	 */
+	depth: DepthMode | undefined;
 	/**
 	 * False when ?hdr=off makes the engine take the 8-bit path, where the scene shaders tone map
 	 * themselves, on a device that draws HDR color.
@@ -72,6 +89,7 @@ export function parseSwitches(search: string): Switches {
 		renderOnMain: params.get('render') === 'main',
 		latency: oneOf(params.get('latency'), ['pipelined', 'low'] as const),
 		copyUploads: params.get('uploads') === 'copy',
+		depth: oneOf(params.get('depth'), ['reversed', 'reversed-gl', 'standard'] as const),
 		hdr: params.get('hdr') !== 'off',
 		fps: positive(params.get('fps')),
 		jobs: whole(params.get('jobs'), MAX_JOB_WORKERS),

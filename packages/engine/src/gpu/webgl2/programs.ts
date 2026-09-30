@@ -1,22 +1,25 @@
-// Programs of the WebGL2 backend. Each render pipeline is a GLSL program that the shader build
-// translated from WGSL. A program compiles when its pipeline is created, and its link result is
-// read only when it is first drawn with, so the driver can compile a frame's programs in parallel.
+// Programs of the WebGL2 backend. Each render pipeline draws with a GLSL program that the shader
+// build translated from WGSL. A program compiles when the first pipeline of its template and
+// permutation is created, and pipelines for other vertex formats share it, because WebGL2 keeps a
+// mesh's vertex layout in its vertex array, not in the program. Its link result is read only when
+// it is first drawn with, so the driver can compile a frame's programs in parallel.
 
 import {
-	FORMAT_NONE,
 	PERMUTATION_DRAW_INDEX,
 	PERMUTATION_TONE_MAP,
-	STATE_CULL_NONE,
 	TEMPLATE_FINAL,
 	TEMPLATE_INSTANCED_LIT,
+	TEMPLATE_INSTANCED_TEXCOORDS,
 	TEMPLATE_INSTANCED_UNLIT,
 } from '../../generated/gpu';
 import {
+	DEPTH_MAPPING_UNIFORM,
 	FINAL_SHADER,
 	type GlslProgram,
 	type GlslStage,
 	MESH_SHADER,
 } from '../../generated/shaders';
+import type { DepthSetup } from './depth';
 
 /** Texture units and uniform block binding points of each bind group: one per binding. */
 export const SLOTS_PER_GROUP = 4;
@@ -43,13 +46,11 @@ function programOf(template: GlslTemplate, permutation: number): GlslProgram | u
 	return multiDraw ? template.multiDraw : template.plain;
 }
 
-/** A linked, or linking, program and the fixed-function state its pipeline asks for. */
+/** A linked, or linking, program, which every pipeline of its template and permutation shares. */
 export interface Program {
 	readonly program: WebGLProgram;
 	readonly source: GlslProgram;
 	readonly shaders: readonly WebGLShader[];
-	readonly cullNone: boolean;
-	readonly depth: boolean;
 	/** The location of naga's first-instance uniform, when the vertex shader has one. */
 	firstInstance: WebGLUniformLocation | null;
 	firstInstanceValue: number;
@@ -63,16 +64,25 @@ export interface Program {
 	ready: boolean;
 }
 
+/** A render pipeline: its program, and the fixed-function state and vertex format it asks for. */
+export interface Pipeline {
+	readonly program: Program;
+	readonly cullNone: boolean;
+	readonly depth: boolean;
+	/** The vertex format of the meshes it draws, which places their attributes in vertex arrays. */
+	readonly vertexFormat: number;
+}
+
 /** The WebGL2 build of a shader variant. */
-function glslOf<Pipeline extends string>(variant: {
-	glsl: Readonly<Record<Pipeline, GlslProgram>> | null;
-}): Readonly<Record<Pipeline, GlslProgram>> {
+function glslOf<Name extends string>(variant: {
+	glsl: Readonly<Record<Name, GlslProgram>> | null;
+}): Readonly<Record<Name, GlslProgram>> {
 	if (!variant.glsl) throw new Error('a shader variant has no WebGL2 build');
 	return variant.glsl;
 }
 
 /** The mesh template of one pipeline of the mesh shader, in each of its WebGL2 variants. */
-function meshTemplate(pipeline: 'lit' | 'unlit'): GlslTemplate {
+function meshTemplate(pipeline: 'lit' | 'unlit' | 'texcoords'): GlslTemplate {
 	return {
 		plain: glslOf(MESH_SHADER.webgl2)[pipeline],
 		multiDraw: glslOf(MESH_SHADER.webgl2_multi_draw)[pipeline],
@@ -86,6 +96,7 @@ export function engineTemplates(): (GlslTemplate | undefined)[] {
 	const templates: (GlslTemplate | undefined)[] = [];
 	templates[TEMPLATE_INSTANCED_LIT] = meshTemplate('lit');
 	templates[TEMPLATE_INSTANCED_UNLIT] = meshTemplate('unlit');
+	templates[TEMPLATE_INSTANCED_TEXCOORDS] = meshTemplate('texcoords');
 	templates[TEMPLATE_FINAL] = { plain: glslOf(FINAL_SHADER.main).main };
 	return templates;
 }
@@ -98,13 +109,11 @@ function compile(gl: WebGL2RenderingContext, type: number, stage: GlslStage): We
 	return shader;
 }
 
-/** Starts compiling and linking the program of a pipeline, without waiting for the result. */
+/** Starts compiling and linking a template's program, without waiting for the result. */
 export function createProgram(
 	gl: WebGL2RenderingContext,
 	template: GlslTemplate,
 	permutation: number,
-	depthFormat: number,
-	stateFlags: number,
 ): Program {
 	const source = programOf(template, permutation);
 	if (!source)
@@ -121,8 +130,6 @@ export function createProgram(
 		program,
 		source,
 		shaders,
-		cullNone: (stateFlags & STATE_CULL_NONE) !== 0,
-		depth: depthFormat !== FORMAT_NONE,
 		firstInstance: null,
 		firstInstanceValue: 0,
 		samplerUnits: [],
@@ -131,10 +138,11 @@ export function createProgram(
 }
 
 /**
- * Checks the program's link result and binds its uniform blocks and textures to the slots of their
- * WGSL groups and bindings, once, at its first use. The program is in use afterwards.
+ * Checks the program's link result, binds its uniform blocks and textures to the slots of their
+ * WGSL groups and bindings, and sets its vertex shader's depth mapping for the backend's depth mode,
+ * once, at its first use. The program is in use afterwards.
  */
-export function prepareProgram(gl: WebGL2RenderingContext, p: Program): void {
+export function prepareProgram(gl: WebGL2RenderingContext, p: Program, depth: DepthSetup): void {
 	if (!gl.getProgramParameter(p.program, gl.LINK_STATUS)) {
 		const logs = p.shaders
 			.map((shader) => gl.getShaderInfoLog(shader))
@@ -171,5 +179,7 @@ export function prepareProgram(gl: WebGL2RenderingContext, p: Program): void {
 	}
 	p.samplerUnits = samplerUnits;
 	p.firstInstance = gl.getUniformLocation(p.program, 'naga_vs_first_instance');
+	const mapping = gl.getUniformLocation(p.program, DEPTH_MAPPING_UNIFORM);
+	if (mapping) gl.uniform2f(mapping, depth.scale, depth.offset);
 	p.ready = true;
 }

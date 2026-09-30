@@ -58,6 +58,8 @@ impl FinalPass {
     ) -> Result<(), RecordError> {
         let ids = self.ids;
         if !self.created {
+            // The shader makes its triangle from the vertex index, so it reads no vertex buffer
+            // and the vertex format is the plain one.
             list.push(
                 Op::CreateRenderPipeline,
                 &[
@@ -68,6 +70,7 @@ impl FinalPass {
                     format::NONE,
                     1,
                     state_flags::CULL_NONE,
+                    0,
                 ],
             )?;
             list.push(

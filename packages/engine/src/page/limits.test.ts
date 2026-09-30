@@ -4,11 +4,13 @@ import { FORMAT_CANVAS, FORMAT_RG11B10_UFLOAT, FORMAT_RGBA16_FLOAT } from '../ge
 import {
 	type CoreDevice,
 	coreDevice,
+	DEPTH_WITHOUT_CLIP_CONTROL,
 	type DeviceOptions,
 	type DeviceReport,
 	maxInstances,
 	sceneColorFormat,
 	storageBindingBytes,
+	webgl2Depth,
 } from './limits';
 
 const MIB = 1024 * 1024;
@@ -20,6 +22,7 @@ const webgpu = (storageBindingBytes: number): CoreDevice => ({
 	capabilities: 0,
 	maxTextureSize: 0,
 	sharedUploads: true,
+	depth: 'reversed',
 	sceneColor: FORMAT_RGBA16_FLOAT,
 	transparent: false,
 });
@@ -44,7 +47,12 @@ function report(webgl2: Partial<DeviceReport['webgl2']>, features: string[] = []
 }
 
 /** The options of a page that asks for nothing special. */
-const PLAIN: DeviceOptions = { copyUploads: false, hdr: true, transparent: false };
+const PLAIN: DeviceOptions = {
+	copyUploads: false,
+	depth: undefined,
+	hdr: true,
+	transparent: false,
+};
 
 describe('sceneColorFormat', () => {
 	const small = ['rg11b10ufloat-renderable'];
@@ -133,6 +141,27 @@ describe('coreDevice on WebGL2', () => {
 		expect(coreDevice('webgl2', noTextures, PLAIN).sharedUploads).toBe(false);
 		expect(coreDevice('webgl2', report({ sharedMemoryUploads: null }), PLAIN).sharedUploads).toBe(
 			false,
+		);
+	});
+});
+
+describe('the depth mode', () => {
+	const clipControl = report({ extensions: { EXT_clip_control: true } });
+
+	it('is reversed on WebGPU, and on WebGL2 where the browser has EXT_clip_control', () => {
+		expect(coreDevice('webgpu', report({}), PLAIN).depth).toBe('reversed');
+		expect(coreDevice('webgl2', clipControl, PLAIN).depth).toBe('reversed');
+		expect(coreDevice('webgl2', report({}), PLAIN).depth).toBe(DEPTH_WITHOUT_CLIP_CONTROL);
+	});
+
+	it('follows ?depth= on WebGL2, but never to reversed depth without EXT_clip_control', () => {
+		for (const wanted of ['reversed', 'reversed-gl', 'standard'] as const)
+			expect(coreDevice('webgl2', clipControl, { ...PLAIN, depth: wanted }).depth).toBe(wanted);
+		expect(webgl2Depth(false, 'standard')).toBe('standard');
+		expect(webgl2Depth(false, 'reversed-gl')).toBe('reversed-gl');
+		expect(webgl2Depth(false, 'reversed')).toBe(DEPTH_WITHOUT_CLIP_CONTROL);
+		expect(coreDevice('webgpu', report({}), { ...PLAIN, depth: 'standard' }).depth).toBe(
+			'reversed',
 		);
 	});
 });

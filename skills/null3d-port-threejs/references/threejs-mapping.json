@@ -175,7 +175,7 @@
       "three": "renderer.capabilities / renderer.extensions",
       "status": "changed",
       "since": "0.1",
-      "target": "engine.capabilities (page) or ctx.engine.capabilities (sketch)",
+      "target": "engine.capabilities on the page, which sends the sketch what it needs with engine.postToSketch",
       "notes": "Reports GPU tier, limits and features. Never branch on GPU names: some browsers hide them.",
       "docs": "concepts/backends",
       "detect": "\\.capabilities\\b|\\.extensions\\.(get|has)\\s*\\("
@@ -187,8 +187,8 @@
       "status": "direct",
       "since": "0.1",
       "target": "Nothing to do; createEngine({ largeWorld: true }) for planet-scale scenes",
-      "notes": "WebGPU uses reversed depth by default, and the engine renders relative to the camera through per-cell offsets.",
-      "docs": "concepts/large-worlds",
+      "notes": "The engine draws reversed depth in a 32-bit float buffer on WebGPU, and on WebGL2 where the browser has EXT_clip_control. engine.capabilities.depth says which depth the device draws. The engine also renders relative to the camera through per-cell offsets.",
+      "docs": "concepts/backends",
       "detect": "logarithmicDepthBuffer|reverseDepthBuffer"
     },
     {
@@ -274,8 +274,8 @@
       "three": "object.quaternion.set / slerp / setFromAxisAngle",
       "status": "changed",
       "since": "0.1",
-      "target": "obj.setRotation(x, y, z, w); quat.* helpers write into arrays",
-      "notes": "",
+      "target": "obj.setRotation(x, y, z, w), with the quaternion from quat.setAxisAngle, quat.fromEuler, quat.multiply or quat.slerp",
+      "notes": "The quat helpers write into an array that you create once with quat.create(). Pass its four numbers to setRotation. The rotations array of an instance batch takes the same order.",
       "docs": "api/math",
       "detect": "\\.quaternion\\.(set|copy|slerp|multiply|premultiply|setFromEuler|setFromAxisAngle|setFromUnitVectors)\\b"
     },
@@ -637,8 +637,8 @@
       "three": "BufferGeometry + setAttribute / setIndex / BufferAttribute",
       "status": "changed",
       "since": "0.1",
-      "target": "geometry.fromArrays({ positions, normals, uvs, indices, colors, tangents })",
-      "notes": "Returns a mesh asset that createMesh and createInstances accept.",
+      "target": "geometry.fromArrays({ positions, normals, uvs, uvs1, colors, tangents, indices })",
+      "notes": "Returns a mesh that createMesh and createInstances accept. The attributes position, normal, uv, uv1, color and tangent each become one array, and setIndex becomes indices, 16-bit or 32-bit. The engine copies the arrays.",
       "docs": "api/geometry",
       "detect": "\\bBufferGeometry\\b|\\.setAttribute\\s*\\(|\\.setIndex\\s*\\(|\\b(Float32|Uint16|Uint32)?BufferAttribute\\b"
     },
@@ -660,7 +660,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "geometry.fromArrays({ ..., computeNormals: true, computeTangents: true })",
-      "notes": "Bounds are always automatic. Prefer computing normals and tangents offline with `bunx @null3d/cli assets`.",
+      "notes": "The results match three.js's bit for bit. computeTangents needs uvs, and works without indices too. Bounds are always automatic, so computeBoundingSphere and computeBoundingBox need no call.",
       "docs": "api/geometry",
       "detect": "\\.compute(VertexNormals|Tangents|BoundingSphere|BoundingBox)\\s*\\("
     },
@@ -1253,8 +1253,8 @@
       "three": "DOM pointer, mouse, touch and keyboard listeners",
       "status": "changed",
       "since": "0.1",
-      "target": "input.pointer, input.isDown('KeyW'), input.actions; obj.on('pointerenter' | 'pointerleave' | 'click', fn) (0.2)",
-      "notes": "Input reaches the sketch worker through shared memory; the sketch never adds DOM listeners.",
+      "target": "input.pointer, input.isDown('KeyW'), input.wasPressed('Mouse0'), input.touches, input.actions.define(); obj.on('pointerenter' | 'pointerleave' | 'click', fn) (0.2)",
+      "notes": "The page forwards pointer, touch, keyboard and gamepad input to the sketch, which reads it once per frame and adds no DOM listeners. Keys take KeyboardEvent.code names, and the main mouse button or a tap is Mouse0. A canvas that takes touch gestures needs touch-action: none in its CSS.",
       "docs": "api/input",
       "detect": "addEventListener\\s*\\(\\s*['\"](pointer\\w*|mouse\\w*|click|dblclick|touch\\w*|keydown|keyup|wheel|contextmenu)['\"]"
     },
@@ -1308,8 +1308,8 @@
       "three": "new Vector3 / Quaternion / Matrix4 / Euler / Color / Box3 / Sphere / Ray / Plane",
       "status": "changed",
       "since": "0.1",
-      "target": "Array math from @null3d/engine: vec3.add(out, a, b), quat.slerp(out, a, b, t)",
-      "notes": "Create scratch arrays once, outside onUpdate. three.js math classes may stay in setup code during a port, but not in per-frame code.",
+      "target": "Plain arrays and the vec3, quat, mat4 and color helpers from @null3d/engine, such as vec3.add(out, a, b) and quat.slerp(out, a, b, t)",
+      "notes": "Create scratch arrays once with vec3.create(), quat.create() or mat4.create(), outside onUpdate. Most names match three.js. applyQuaternion is vec3.transformQuat, applyMatrix4 is vec3.transformMat4, multiplyScalar is vec3.scale and addScaledVector is vec3.scaleAndAdd. setFromUnitVectors is quat.rotationTo, and setFromEuler is quat.fromEuler, in radians. There are no helpers for Box3, Sphere, Ray or Plane. three.js math classes may stay in setup code during a port, but not in per-frame code.",
       "docs": "api/math",
       "detect": "new\\s+(THREE\\.)?(Vector[234]|Quaternion|Matrix[34]|Euler|Color|Box[23]|Sphere|Ray|Plane|Frustum|Spherical|Cylindrical)\\s*\\("
     },
@@ -1327,11 +1327,11 @@
     {
       "id": "mathutils",
       "category": "Math",
-      "three": "MathUtils (degToRad, clamp, lerp, damp, randFloat)",
+      "three": "MathUtils (degToRad, clamp, lerp, damp, randFloat, seededRandom)",
       "status": "direct",
       "since": "0.1",
-      "target": "math.degToRad, math.clamp, math.lerp, math.damp, math.randFloat",
-      "notes": "Same names.",
+      "target": "math.degToRad, math.clamp, math.lerp, math.damp, math.randFloat and the other MathUtils names; math.seed and math.random",
+      "notes": "Same names and arithmetic. The random helpers draw from math.random, which hold mode seeds. MathUtils.seededRandom(s) becomes math.seed(s) once, then math.random().",
       "docs": "api/math",
       "detect": "\\bMathUtils\\.\\w+"
     },
@@ -1341,8 +1341,8 @@
       "three": "Color.set / setHex / setHSL / setRGB / lerp",
       "status": "changed",
       "since": "0.1",
-      "target": "'#rrggbb' strings, 0xrrggbb numbers, or [r, g, b] linear arrays; color.* helpers convert",
-      "notes": "Hex values are sRGB, as setHex and setStyle read them, and [r, g, b] arrays are linear, as setRGB reads them.",
+      "target": "'#rrggbb' or '#rgb' strings, 0xrrggbb numbers, or [r, g, b] linear arrays from 0 to 1; color.fromHex, color.fromSrgb and color.fromHsl give linear RGB",
+      "notes": "Hex values are sRGB, as setHex and setStyle read them, and the engine converts them to linear. [r, g, b] arrays are linear, as setRGB reads them, so the color helpers' results go straight into color options and instance colors. color.fromSrgb converts sRGB components, color.fromHsl gives what setHSL gives, and vec3.lerp blends two colors.",
       "docs": "concepts/color-management",
       "detect": "\\.set(Hex|HSL|RGB|Style)\\s*\\("
     },

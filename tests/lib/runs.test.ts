@@ -3,6 +3,7 @@ import { mkdtempSync, readdirSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { IMAGE_RUNS } from '../image/manifest.ts';
+import { PRECISION } from '../pages/lib/depth-precision.ts';
 import {
 	braveShieldsOf,
 	deviceChecklist,
@@ -17,6 +18,8 @@ import {
 	benchPlan,
 	benchSummary,
 	checksPlan,
+	depthPlan,
+	depthSummary,
 	judge,
 	MEMORY_MAXIMUMS_MIB,
 	memoryPlan,
@@ -998,6 +1001,63 @@ describe('the device protocol', () => {
 		);
 		expect(summaryLine('ipad-brave', { ...counts, braveShields: null })).toBe(
 			'ipad-brave: 16 passed, 0 skipped, 1 failed; Brave Shields not recorded',
+		);
+	});
+});
+
+describe('the depth plan', () => {
+	const items = depthPlan();
+
+	it("runs the manifest's depth precision tests on each tier and in each forced mode", () => {
+		expect(PLANS.depth).toBe(depthPlan);
+		expect(items.map((item) => item.id)).toEqual([
+			'image-depth-precision-webgpu',
+			'image-depth-precision-compat',
+			'image-depth-precision-webgl2',
+			'image-depth-precision-standard-webgl2',
+			'image-depth-precision-reversed-gl-webgl2',
+			'image-depth-precision-reversed-webgl2',
+		]);
+		expect(items.find((item) => item.id.endsWith('reversed-gl-webgl2'))?.path).toBe(
+			'/tests/pages/depth-precision.html?gpu=webgl2&hold=0&depth=reversed-gl',
+		);
+		expect(items.every((item) => item.check.kind === 'image')).toBe(true);
+	});
+
+	it('sums the fighting pixels by distance, and notes a browser without EXT_clip_control', () => {
+		const tiles = PRECISION.distances.map((distance, k) => ({
+			distance,
+			pixels: 1000,
+			fighting: k === 10 ? 250 : 0,
+		}));
+		const calm = tiles.map((tile) => ({ ...tile, fighting: 0 }));
+		const results: Record<string, ItemResult> = {
+			'image-depth-precision-webgpu': { ok: false, error: 'no WebGPU adapter' },
+			'image-depth-precision-standard-webgl2': {
+				ok: true,
+				depth: 'standard',
+				clipControl: true,
+				fighting: 250,
+				tiles,
+			},
+			'image-depth-precision-reversed-webgl2': {
+				ok: true,
+				depth: 'reversed-gl',
+				clipControl: false,
+				fighting: 0,
+				tiles: calm,
+			},
+		};
+		const lines = depthSummary(items, (id) => results[id])?.split('\n') ?? [];
+		expect(lines[0]).toStartWith('| Test | Tier | Depth drawn | Fighting pixels | 1 m | 2.5 m |');
+		expect(lines[0]).toEndWith('| 1.6 km | 4 km | 10 km |');
+		expect(lines[2]).toStartWith('| depth-precision | webgpu | no WebGPU adapter |');
+		expect(lines[3]).toStartWith(`| depth-precision | compat | ${NO_RESULT}`);
+		expect(lines[5]).toBe(
+			`| depth-precision-standard | webgl2 | standard | 250 | ${'0 | '.repeat(10)}25.0% |`,
+		);
+		expect(lines[7]).toBe(
+			`| depth-precision-reversed | webgl2 | reversed-gl (no EXT_clip_control) | 0 | ${'0 | '.repeat(11).trimEnd()}`,
 		);
 	});
 });

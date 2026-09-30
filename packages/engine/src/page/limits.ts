@@ -1,12 +1,13 @@
 // What the engine core and the thread that draws need to know about the device and the canvas: on
 // WebGPU, the storage binding size the engine asks the GPU for; on WebGL2, multi-draw, the texture
-// size and whether WebGL reads shared memory; on both, the target that scene passes draw into and
-// whether the canvas is transparent. They also set how many objects and instance rows a scene can
-// draw.
+// size, whether WebGL reads shared memory and how depth is stored; on both, the target that scene
+// passes draw into and whether the canvas is transparent. They also set how many objects and
+// instance rows a scene can draw.
 
 import * as C from '../generated/core';
 import { FORMAT_CANVAS, FORMAT_RG11B10_UFLOAT, FORMAT_RGBA16_FLOAT } from '../generated/gpu';
 import type { Tier } from '../render/renderer';
+import type { DepthMode, Switches } from './switches';
 
 /** The parts of the capability report that decide how the engine uses the device. */
 export interface DeviceReport {
@@ -39,6 +40,8 @@ export interface CoreDevice {
 	 * thread that draws copies the data out first.
 	 */
 	sharedUploads: boolean;
+	/** How the GPU path stores depth: always `reversed` on WebGPU. */
+	depth: DepthMode;
 	/**
 	 * The format code of the target that scene passes draw into: a float format for HDR color, which
 	 * the final pass tone maps, or the canvas's format on the 8-bit path.
@@ -48,14 +51,26 @@ export interface CoreDevice {
 	transparent: boolean;
 }
 
-/** How the page asks the engine to use the device. */
-export interface DeviceOptions {
-	/** Copies WebGL2 uploads out of shared memory even where WebGL reads it, so tests reach both routes. */
-	copyUploads: boolean;
-	/** False forces the 8-bit path, so tests reach it on devices that draw HDR color. */
-	hdr: boolean;
+/**
+ * How the page asks the engine to use the device: the test switches that force a route, and the
+ * canvas's transparency.
+ */
+export type DeviceOptions = Pick<Switches, 'copyUploads' | 'depth' | 'hdr'> & {
 	/** True for a transparent canvas. */
 	transparent: boolean;
+};
+
+/** The depth mode of a WebGL2 device without `EXT_clip_control`. */
+export const DEPTH_WITHOUT_CLIP_CONTROL: DepthMode = 'reversed-gl';
+
+/**
+ * The depth mode a WebGL2 device draws with: `reversed` where it has `EXT_clip_control`, and
+ * `DEPTH_WITHOUT_CLIP_CONTROL` elsewhere. `wanted`, from the ?depth= switch, overrides that
+ * where the device can draw it.
+ */
+export function webgl2Depth(clipControl: boolean, wanted: DepthMode | undefined): DepthMode {
+	if (wanted && (wanted !== 'reversed' || clipControl)) return wanted;
+	return clipControl ? 'reversed' : DEPTH_WITHOUT_CLIP_CONTROL;
 }
 
 /**
@@ -100,7 +115,11 @@ export function sceneColorFormat(
 	return FORMAT_CANVAS;
 }
 
-/** The device and the canvas as the engine uses them on a tier, from the capability report. */
+/**
+ * The device and the canvas as the engine uses them on a tier, from the capability report and the
+ * options. The test switches make the WebGL2 path copy uploads out of shared memory even where
+ * WebGL reads it, force a WebGL2 depth mode, or force the 8-bit path, so tests reach every route.
+ */
 export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOptions): CoreDevice {
 	const canvas = {
 		sceneColor: sceneColorFormat(tier, report, options.hdr, options.transparent),
@@ -113,6 +132,7 @@ export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOpti
 			capabilities: 0,
 			maxTextureSize: 0,
 			sharedUploads: true,
+			depth: 'reversed',
 			...canvas,
 		};
 	}
@@ -126,6 +146,7 @@ export function coreDevice(tier: Tier, report: DeviceReport, options: DeviceOpti
 		maxTextureSize: Math.max(C.LIMIT_WEBGL2_MIN_TEXTURE_SIZE, gl.maxTextureSize ?? 0),
 		sharedUploads:
 			!options.copyUploads && shared !== null && shared.bufferSubData && shared.texSubImage2D,
+		depth: webgl2Depth(gl.extensions.EXT_clip_control === true, options.depth),
 		...canvas,
 	};
 }

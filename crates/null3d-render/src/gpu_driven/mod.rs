@@ -9,10 +9,13 @@
 //! matrix buffer, at `base + row`, where scene slots come first and each batch follows at its
 //! base. A bucket is one pipeline, mesh and material. Each drawable source belongs to one bucket;
 //! the rest are hidden. A bucket owns a slice of each view's compacted instance buffer, as large as
-//! the number of sources it has, and one indexed indirect draw of each view. A view's culling
-//! shader appends each visible source to its bucket's slice and counts it in the bucket's draw,
-//! and the view's bundle draws every bucket with its slice bound at vertex slot 1, so the draws'
-//! first instance stays 0.
+//! the number of sources it has, and in each view one indexed indirect draw per part of its mesh.
+//! A view's culling shader appends each visible source to its bucket's slice and counts it in each
+//! of the bucket's draws, and the view's bundle draws every bucket with its slice bound at vertex
+//! slot 1, so the draws' first instance stays 0.
+//!
+//! A pipeline is one shading and one vertex format, and the meshes of one vertex format share
+//! mesh pages, so buckets sorted by pipeline and page draw with few changes of state.
 //!
 //! Buckets change only with the scene's structure: objects created or destroyed, meshes or
 //! materials changed, batches created or destroyed. The caller says when that happened; the
@@ -47,8 +50,8 @@ use null3d_gpu::drawlist::{DrawList, Op, buffer_usage as usage, sizes};
 
 use crate::final_pass::FinalIds;
 use crate::frame::{
-    CanvasOutput, FrameBuilder, FrameInput, PageUploads, ParityLists, RecordError, SceneSettings,
-    UploadArena, floats_as_bytes,
+    CanvasOutput, FrameBuilder, FrameInput, MeshBuffers, ParityLists, PipelineTable, RecordError,
+    SceneSettings, UploadArena, floats_as_bytes,
 };
 use crate::frame_graph::{FrameGraph, GraphIds, Role};
 use crate::graph::RenderGraph;
@@ -92,13 +95,9 @@ mod ids {
     pub const MATRICES: u32 = 2;
     pub const INSTANCE_BUCKETS: u32 = 3;
     pub const BUCKETS: u32 = 4;
-    pub const VERTICES: u32 = 5;
-    pub const INDICES: u32 = 6;
-    /// The final pass's output settings.
-    pub const FINAL_SETTINGS: u32 = 7;
     /// Each view's buffers: its frame uniform, culling parameters, compacted instances and
     /// indirect draws, four ids from `VIEW_BUFFERS + 4 * view`.
-    const VIEW_BUFFERS: u32 = 8;
+    const VIEW_BUFFERS: u32 = 5;
 
     pub const fn frame(view: ViewId) -> u32 {
         VIEW_BUFFERS + 4 * view.index() as u32
@@ -113,12 +112,19 @@ mod ids {
         frame(view) + 3
     }
 
+    /// The final pass's output settings, after every view's buffers.
+    pub const FINAL_SETTINGS: u32 = VIEW_BUFFERS + 4 * MAX_VIEWS as u32;
+
+    /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
+    pub const PAGES: u32 = FINAL_SETTINGS + 1;
+
     /// The render graph's textures, from this id on.
     pub const TARGETS: u32 = 1;
 
-    pub const LIT: u32 = 1;
-    pub const UNLIT: u32 = 2;
-    pub const FINAL: u32 = 3;
+    /// The final pass's render pipeline. The scene's render pipelines take ids after it.
+    pub const FINAL: u32 = 1;
+    pub const SCENE_PIPELINES: u32 = 2;
+
     pub const CULL: u32 = 1;
 
     /// Each view's bind groups: the frame group of its render pipelines, then its culling group.
@@ -144,9 +150,6 @@ pub struct RendererConfig {
     /// The scene color's target and the canvas's transparency.
     pub canvas: CanvasOutput,
     pub max_materials: u32,
-    /// Bytes of the shared vertex buffer and of the shared index buffer.
-    pub vertex_bytes: u32,
-    pub index_bytes: u32,
     /// Words of each frame's draw list.
     pub draw_list_words: usize,
     /// The device's largest storage binding, at most [`MAX_USEFUL_BINDING_BYTES`]. It caps the
@@ -160,8 +163,6 @@ impl Default for RendererConfig {
             samples: 4,
             canvas: CanvasOutput::default(),
             max_materials: sizes::MAX_MATERIALS,
-            vertex_bytes: 16 * 1024 * 1024,
-            index_bytes: 4 * 1024 * 1024,
             draw_list_words: 16 * 1024,
             storage_binding_bytes: sizes::PORTABLE_STORAGE_BINDING_BYTES,
         }
@@ -172,8 +173,9 @@ impl Default for RendererConfig {
 pub struct GpuDrivenRenderer {
     config: RendererConfig,
     settings: SceneSettings,
-    /// How much of the one mesh page the shared buffers hold.
-    uploaded: PageUploads,
+    /// The mesh pages' vertex and index buffers.
+    meshes: MeshBuffers,
+    pipelines: PipelineTable,
     lists: ParityLists,
     graph: FrameGraph,
     layout: Layout,
@@ -188,14 +190,12 @@ impl GpuDrivenRenderer {
         Self {
             config,
             settings: SceneSettings::new(
-                MeshStorage::with_page_limit(
-                    Packing::SharedBuffers,
-                    u64::from(config.vertex_bytes.min(config.index_bytes)),
-                ),
+                MeshStorage::new(Packing::SharedBuffers),
                 config.max_materials,
                 config.canvas,
             ),
-            uploaded: PageUploads::default(),
+            meshes: MeshBuffers::new(ids::PAGES),
+            pipelines: PipelineTable::new(ids::SCENE_PIPELINES),
             lists: ParityLists::new(config.draw_list_words),
             graph: FrameGraph::new(
                 config.samples,
@@ -252,12 +252,22 @@ impl GpuDrivenRenderer {
         let upload_everything = input.structure_changed || !self.layout.built;
         if upload_everything {
             let limit = max_sources(self.config.storage_binding_bytes);
-            self.layout
-                .rebuild(&self.settings, input.scene, input.batches, parity, limit)?;
+            self.layout.rebuild(
+                &self.settings,
+                &mut self.pipelines,
+                input.scene,
+                input.batches,
+                parity,
+                limit,
+            )?;
         }
         arena.reset(self.upload_bound());
         self.graph.upload(list, arena, self.settings.output())?;
-        self.upload_meshes(list, arena)?;
+        let pages_remade = self
+            .meshes
+            .upload(list, arena, self.settings.meshes().pages())?;
+        let targets = self.graph.scene_targets();
+        self.pipelines.create_new(list, targets, 0)?;
         if self.settings.materials_mut().take_changed() {
             let parameters = self.settings.materials().parameters();
             let (at, bytes) = arena.push(floats_as_bytes(parameters))?;
@@ -271,14 +281,17 @@ impl GpuDrivenRenderer {
             false
         };
         // A view's bundle names the buffers and the layout it draws, so each new view, and every
-        // view after a new layout, records its bundle.
-        let first_to_apply = if upload_everything { 0 } else { first_new };
-        let targets = self.graph.scene_targets();
+        // view after a new layout or new mesh buffers, records its bundle.
+        let first_to_apply = if upload_everything || pages_remade {
+            0
+        } else {
+            first_new
+        };
         for index in first_to_apply..views {
             let view = ViewId::from_index(index);
             self.culling
                 .apply(list, view, &self.layout, shared_recreated, binding_bytes)?;
-            opaque::record_bundle(list, view, &self.layout, targets)?;
+            opaque::record_bundle(list, view, &self.layout, &self.meshes, targets)?;
         }
         self.layout
             .upload_matrices(list, input, parity, upload_everything)?;
@@ -307,69 +320,30 @@ impl GpuDrivenRenderer {
         Ok(upload_everything)
     }
 
-    /// Records the creation of the pipelines and of the buffers whose size never changes.
+    /// Records the creation of the culling pipeline and of the material table, whose size never
+    /// changes.
     fn create_fixed(&mut self, list: &mut DrawList) -> Result<(), RecordError> {
-        opaque::create_pipelines(list, self.graph.scene_targets())?;
         cull::create_pipeline(list)?;
-        let fixed = [
-            (
+        list.push(
+            Op::CreateBuffer,
+            &[
                 ids::MATERIALS,
                 self.config.max_materials.max(1) * 16,
                 usage::STORAGE | usage::COPY_DST,
-            ),
-            (
-                ids::VERTICES,
-                self.config.vertex_bytes,
-                usage::VERTEX | usage::COPY_DST,
-            ),
-            (
-                ids::INDICES,
-                self.config.index_bytes,
-                usage::INDEX | usage::COPY_DST,
-            ),
-        ];
-        for (id, size, flags) in fixed {
-            list.push(Op::CreateBuffer, &[id, size, flags])?;
-        }
+            ],
+        )?;
         self.created = true;
         Ok(())
-    }
-
-    /// Uploads mesh data added since the last upload, from copies in the frame's arena.
-    fn upload_meshes(
-        &mut self,
-        list: &mut DrawList,
-        arena: &mut UploadArena,
-    ) -> Result<(), RecordError> {
-        let pages = self.settings.meshes().pages();
-        let Some(page) = pages.first() else {
-            return Ok(());
-        };
-        if pages.len() > 1 {
-            return Err(RecordError::MeshBuffersFull);
-        }
-        self.uploaded.upload(
-            list,
-            arena,
-            page,
-            [ids::VERTICES, ids::INDICES],
-            [self.config.vertex_bytes, self.config.index_bytes],
-        )
     }
 
     /// The most that one frame can copy into its arena for the scene as it stands: mesh data not
     /// uploaded yet, the whole material table, the layout's tables, each view's frame uniform,
     /// culling parameters and indirect draws, and the final pass's settings.
     fn upload_bound(&self) -> usize {
-        let meshes = self
-            .settings
-            .meshes()
-            .pages()
-            .first()
-            .map_or(0, |page| self.uploaded.pending_bytes(page));
+        let meshes = self.meshes.pending_bytes(self.settings.meshes().pages());
         let materials = self.settings.materials().capacity() as usize * MATERIAL_FLOATS * 4;
         let per_view = (sizes::FRAME_UNIFORM_BYTES + CULL_PARAMS_BYTES) as usize
-            + self.layout.buckets.len() * INDIRECT_BYTES as usize;
+            + self.layout.draws.len() * INDIRECT_BYTES as usize;
         meshes
             + materials
             + self.layout.upload_bound()
@@ -412,7 +386,8 @@ impl FrameBuilder for GpuDrivenRenderer {
         self.graph.reset_gpu();
         self.layout.forget_gpu();
         self.culling.forget_gpu();
-        self.uploaded = PageUploads::default();
+        self.meshes.forget();
+        self.pipelines.forget();
         self.settings.materials_mut().mark_changed();
     }
 

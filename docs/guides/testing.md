@@ -1,18 +1,18 @@
 ---
 id: guides/testing
 title: Testing your sketch
-status: planned
+status: experimental
 since: "0.1"
 summary: "Hold mode; image tests; reading results; frames that stay the same on every run."
 ---
 
 # Testing your sketch
 
-> Planned for null3D 0.1. No release has these APIs yet, so coding agents must not use them.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart LR
-    start["Page with ?hold=1.5"] --> setup["Sketch setup,<br/>Math.random seeded"]
+    start["Page with ?hold=1.5"] --> setup["Sketch setup,<br/>random numbers seeded"]
     setup --> steps["Fixed steps of 1/60 s<br/>from 0 to 1.5 s"]
     steps --> draw["One frame drawn"]
     draw --> read["Pixels read back<br/>through the engine"]
@@ -39,7 +39,7 @@ const { width, height, pixels } = await engine.captureFrame(); // RGBA8 rows, to
 
 In hold mode, the engine does this:
 
-1. It replaces `Math.random` in the sketch's thread with a generator that has a fixed seed, before the sketch module loads.
+1. It seeds the engine's random generator, [`math.random`](../api/math.md#random-numbers), in the sketch's thread, and makes `Math.random` draw from it too. This happens before the sketch module loads.
 2. It runs the sketch's setup.
 3. It steps the sketch from time 0 to the held time. The first frame is at time 0 and its `onUpdate` gets a step of 0. Each later frame adds a fixed step of 1/60 second, and the last one lands on the held time exactly.
 4. It draws the last frame on the canvas, and reads its pixels back through its own GPU code.
@@ -51,7 +51,7 @@ A hold at 1.5 seconds runs 91 frames: frame 1 at time 0, then 90 steps. In the l
 
 The switch wins over the option. A bare `?hold` holds at the time of the `hold` option, or at 0 without one. The time must be from 0 to 600 seconds, or the start fails with [E1407](../errors/E1407.md).
 
-Hold mode works in every thread mode and on every GPU tier. The single-threaded build runs the sketch on the page's thread, so there the page's `Math.random` is seeded too, until the engine stops.
+Hold mode works in every thread mode and on every GPU tier. The single-threaded build runs the sketch on the page's thread, so there the page's `math.random` is seeded too. The page's `Math.random` draws from it until the engine stops.
 
 ## Reading the result in a test
 
@@ -102,7 +102,8 @@ A live engine logs an error in `onUpdate` and carries on. Hold mode stops instea
 ## Frames that stay the same on every run
 
 - Move things with `time.now` and the `dt` that `onUpdate` receives. `Date.now()` and `performance.now()` change from run to run.
-- Use `Math.random`: hold mode seeds it. Random numbers from another source, such as `crypto.getRandomValues`, are not seeded.
+- Use `math.random` or `Math.random`: hold mode seeds both. Random numbers from another source, such as `crypto.getRandomValues`, are not seeded.
+- Expect no input. In hold mode, the sketch gets none: every key and button stays up, and the pointer stays at the canvas's top-left corner.
 - Finish loading in the setup. Await every asset there, because the hold starts when the setup's promise resolves.
 - Pass test settings in the sketch module's address, such as `new URL('./sketch.ts?view=harbor', import.meta.url)`, and read them in the sketch with `new URL(import.meta.url).searchParams`. The page's messages reach the sketch only after the hold, because `createEngine` resolves after it.
 - Keep a reference image per GPU tier, and force the tier with `?gpu=webgpu`, `?gpu=compat` or `?gpu=webgl2`. The tiers can differ slightly at edges.
@@ -114,6 +115,7 @@ A live engine logs an error in `onUpdate` and carries on. Hold mode stops instea
 | --- | --- |
 | `?hold=1.5` | Hold mode at 1.5 seconds of sketch time; a bare `?hold` holds at the `hold` option's time, or at 0 |
 | `?gpu=webgpu`, `?gpu=compat`, `?gpu=webgl2` | Force a GPU tier, where the device has it |
+| `?depth=reversed`, `?depth=reversed-gl`, `?depth=standard` | Force a WebGL2 depth mode. `reversed-gl` draws as browsers without the `EXT_clip_control` extension do, such as Firefox |
 | `?threads=off` | The single-threaded build |
 | `?render=main` | Draw on the page's main thread |
 | `?latency=pipelined`, `?latency=low` | Pick the latency mode |

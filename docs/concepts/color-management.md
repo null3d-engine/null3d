@@ -8,6 +8,8 @@ summary: "Linear working space; sRGB hex colors and linear arrays; HDR color; ex
 
 # Color management
 
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Textures, and the color space that says how to read a texture's data, are not built yet, so coding agents must not use them.
+
 ```mermaid
 flowchart LR
     hex["'#4a8cff' or 0x4a8cff<br/>sRGB"] --> linear
@@ -36,7 +38,7 @@ const same = materials.standard({ color: [0.07, 0.26, 1] }); // the same color, 
 scene.createDirectionalLight({ color: '#fff4e0', intensity: 3 });
 ```
 
-Three numbers are linear, as three.js's `Color.setRGB` reads them. A light's intensity multiplies its linear color. A color in any other form throws [E1204](../errors/E1204.md).
+Three numbers are linear, as three.js's `Color.setRGB` reads them. The color helpers give linear numbers too: `color.fromSrgb` converts sRGB components, and `color.fromHsl` gives what three.js's `setHSL` gives ([Math helpers](../api/math.md#colors)). A light's intensity multiplies its linear color. A color in any other form throws [E1204](../errors/E1204.md).
 
 ## HDR color and the final pass
 
@@ -104,4 +106,5 @@ const engine = await createEngine({
 - [Page API: createEngine](../api/engine.md): the `transparent` option, and `engine.capabilities.hdr`.
 - [The render graph](render-graph.md): the final pass, and the resolve pass that takes its place on the 8-bit path.
 - [GPU tiers and backends](backends.md): which devices draw HDR color.
+- [Math helpers](../api/math.md#colors): the color helpers, which give linear RGB.
 - [three.js to null3D mapping](../porting/threejs-mapping.md): tone mapping, color output and background entries.

@@ -5,10 +5,12 @@
 import { checkLive, checkNumber, checkVector, DEV, type Described } from '../errors/checks';
 import { EngineError } from '../errors/engine-error';
 import * as C from '../generated/core';
+import { fromEuler as quaternionFromEuler } from '../math/quat';
+import type { EulerOrder } from '../math/types';
 import { type ColorInput, linearColor } from './color';
 import type { CoreMemory } from './memory';
 import type { Material, MeshGeometry } from './resources';
-import { type EulerOrder, quaternionFromEuler, quaternionLookAt } from './rotation';
+import { quaternionLookAt } from './rotation';
 
 /**
  * A vector (x, y, z).
@@ -86,7 +88,7 @@ export interface InstanceOptions {
 	material: Material;
 	/** Every row updates and uploads every frame; a static batch updates rows marked dirty only. */
 	dynamic?: boolean;
-	/** Adds a color per row (RGBA, linear). */
+	/** Adds a color per row (RGBA, linear). This version stores the colors but does not draw them yet. */
 	colors?: boolean;
 }
 
@@ -510,7 +512,10 @@ export class InstanceBatch {
 		return this.views().scales;
 	}
 
-	/** Linear RGBA colors, 4 floats per row, when the batch was created with colors. */
+	/**
+	 * Linear RGBA colors, 4 floats per row, when the batch was created with colors. This version
+	 * stores them but does not draw them yet.
+	 */
 	get colors(): Float32Array | undefined {
 		return this.views().colors;
 	}

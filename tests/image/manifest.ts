@@ -13,9 +13,11 @@
 // reference: on the Mac, Playwright's Chromium draws CI's SwiftShader images byte for byte.
 import { PARITY_SCENES } from '../../bench/lib/parity.ts';
 import { HOLD_TIME, PARITY_CANVAS } from '../../bench/scenes/spec.ts';
+import type { DepthMode } from '../../packages/engine/src/page/switches.ts';
 import type { EngineModeName } from '../lib/engine-checks.ts';
 import { ALL_MODES, type ImageRun, type ImageTest, imageRuns, type Tier } from '../lib/images.ts';
 import { STOPS, TONE_MAPPINGS } from '../pages/lib/bright-scene.ts';
+import { PRECISION } from '../pages/lib/depth-precision.ts';
 
 /** The sketch of the tone mapping tests: tiles whose linear colors run from about 0.2 to 16. */
 export const BRIGHT_SKETCH = 'tests/pages/sketches/bright-sketch.ts';
@@ -61,6 +63,20 @@ function toneMappingTests(): ImageTest[] {
 		},
 	]);
 }
+
+/** The vertex formats sketch, and how its tests draw it. */
+const VERTEX_FORMATS = {
+	sketch: 'tests/pages/sketches/vertex-formats-sketch.ts',
+	hold: 0,
+	size: [400, 300],
+	modes: ['pipelined', 'single-threaded'],
+} as const;
+
+/** The page of the depth precision tests, and its image's size. */
+const DEPTH_PAGE = { page: 'tests/pages/depth-precision.html', size: PRECISION.size, hold: 0 };
+
+/** The WebGL2 depth modes that ?depth= forces. */
+const DEPTH_MODES: readonly DepthMode[] = ['standard', 'reversed-gl', 'reversed'];
 
 export const IMAGE_TESTS: readonly ImageTest[] = [
 	// A clear color, read back through the engine's readback on each GPU interface.
@@ -108,6 +124,49 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		switches: ['transparent'],
 	},
+	// Meshes from arrays in every vertex format, a mesh too big for 16-bit indices that splits into
+	// parts, and normals and tangents that the engine computes: on job workers in the threaded build,
+	// and on the page in the single-threaded build, which must compute the same values. WebGL2 lays
+	// out each vertex format in its own code, and must draw the WebGPU image. Dithering keeps
+	// pixelmatch from passing over antialiased edges, where the two differ in 0.14% of the pixels on
+	// the Mac and in 0.34% with SwiftShader. A quad drawn wrong changes over 1%.
+	{
+		name: 'vertex-formats',
+		...VERTEX_FORMATS,
+		tiers: ['webgpu', 'webgl2'],
+		sameOnEveryTier: true,
+		tolerance: { maxDiffRatio: 0.005 },
+	},
+	// Compatibility mode takes the 8-bit path, which averages the samples of antialiased edges after
+	// the tone mapping, so its edges differ from the HDR path's and it keeps references of its own.
+	{ name: 'vertex-formats-compat', ...VERTEX_FORMATS, tiers: ['compat'], expect: { hdr: false } },
+	// Two surfaces 1 cm apart at each distance from 1 m to 10 km, in each GPU path's own depth mode.
+	// The page paints each pixel where the farther surface shows through as the nearer one, and
+	// publishes their count. The engine must draw the depth it chose, no mode may fight up to 40 m,
+	// and the farther surface must win the ties of the tie tile.
+	{
+		name: 'depth-precision',
+		...DEPTH_PAGE,
+		expect: { drewAsked: true, tiesWon: true, apartNear: true },
+	},
+	// The same scene in each depth mode that ?depth= forces on WebGL2, which paints to the same image.
+	// A browser without EXT_clip_control draws reversed depth in WebGL2's range. Standard depth and
+	// reversed depth in that range lose the surfaces somewhere farther than 40 m on every GPU.
+	...DEPTH_MODES.map(
+		(depth): ImageTest => ({
+			name: `depth-precision-${depth}`,
+			...DEPTH_PAGE,
+			tiers: ['webgl2'],
+			switches: [`depth=${depth}`],
+			reference: 'depth-precision',
+			expect: {
+				drewAsked: true,
+				tiesWon: true,
+				apartNear: true,
+				...(depth !== 'reversed' && { fights: true }),
+			},
+		}),
+	),
 	// The benchmark scenes' hold frames, which the parity command also compares with three.js.
 	// S2's trees cover under 1% of its frame, so other devices may differ in fewer of its pixels.
 	...PARITY_SCENES.map(

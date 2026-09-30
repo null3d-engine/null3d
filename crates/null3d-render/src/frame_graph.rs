@@ -42,13 +42,13 @@ use crate::view::{View, ViewId};
 pub(crate) const DEPTH_FORMAT: u32 = format::DEPTH32_FLOAT;
 
 /// What the scene's render pipelines and bundles draw into: the scene color's format, the depth
-/// format and the sample count. The scene color also sets the pipelines' permutation bits.
+/// format and the sample count, and the permutation bits that the scene color sets.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct SceneTargets {
     pub(crate) color: u32,
     pub(crate) depth: u32,
     pub(crate) samples: u32,
-    permutation: u32,
+    pub(crate) permutation: u32,
 }
 
 impl SceneTargets {
@@ -59,30 +59,6 @@ impl SceneTargets {
             samples,
             permutation: scene_color.permutation(),
         }
-    }
-
-    /// Records the creation of render pipeline `id` from `template`, with the scene color's
-    /// permutation bits and `bits` besides, drawing into these targets.
-    pub(crate) fn create_pipeline(
-        self,
-        list: &mut DrawList,
-        id: u32,
-        template: u32,
-        bits: u32,
-    ) -> Result<(), RecordError> {
-        list.push(
-            Op::CreateRenderPipeline,
-            &[
-                id,
-                template,
-                self.permutation | bits,
-                self.color,
-                self.depth,
-                self.samples,
-                0,
-            ],
-        )?;
-        Ok(())
     }
 }
 

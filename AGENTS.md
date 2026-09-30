@@ -16,6 +16,7 @@ This repository holds the null3D engine, its tools, its documentation and its ag
 | `tools/` | The WebAssembly build, the docs generator, the skills check and the commit hooks |
 | `examples/`, `bench/`, `templates/`, `porting-corpus/` | Demos, benchmarks, starter projects and the three.js porting corpus, as the milestones add them |
 | `.dev/` | Maintainer guides: [benchmarks](.dev/benchmarks.md), [device sessions](.dev/devices.md), [image tests](.dev/image-tests.md), [implementation notes](.dev/implementation-notes.md) and [releases](.dev/releases.md) |
+| `.dev/decisions/` | [Decision records](.dev/decisions/README.md): the data behind measured design choices. Read the record before you change a choice it settled |
 
 ## Commands
 
@@ -122,7 +123,7 @@ Published Markdown (every page under `docs/`, the skills, the README, the packag
 - Use no dashes as connectors. Use a comma, a colon, parentheses or a new sentence.
 - Use straight quotes and apostrophes.
 - A concept page opens with a Mermaid diagram and a plain explanation, followed by examples.
-- A page describes what exists now. Its status label says whether the feature is built.
+- A page describes what exists now. Its status label says whether the feature is built. When only part of a page's feature is built, the page is `experimental`. The note under its title then names the parts that are not built yet.
 - Write for developers who use the engine. Never mention the maintainers' milestones, checkpoints, task IDs, proposals or internal plans, and never explain where a fact came from in those terms. Give the reason when it helps the reader, such as a browser or GPU limit. Name the engine's benchmarks when you cite a figure. Notes for maintainers belong in code comments, in this file or in the guides in `.dev/`. Those files are for contributors, so this rule does not apply to them, but public docs never link to them.
 - Commit subjects and pull request titles become lines in the public changelog, so they follow these rules too.
 - Show commands with Bun: `bun add`, `bun install`, `bun run` and `bunx`, never the npm or npx forms. Run the command line tool as `bunx @null3d/cli <command>`, with the scope. Both rules cover code blocks too.

@@ -1,9 +1,9 @@
 //! The opaque passes: one scene pass per view, which draws every bucket with visible instances
-//! from the view's index list. Each draw has a record in a uniform block: the start of its slice of
-//! the index list, its material and its data texture. The buckets of one pipeline and one vertex
-//! page sit next to each other, so one multi-draw call draws a whole run of them where the device
-//! has `WEBGL_multi_draw`, and the shader reads the record of `gl_DrawID`. Without the extension,
-//! each bucket has a draw that binds its own record.
+//! from the view's index list, with one draw per part of the bucket's mesh. Each draw has a record
+//! in a uniform block: the start of its bucket's slice of the index list, its material and its
+//! data texture. The draws of one pipeline and one vertex page sit next to each other, so one
+//! multi-draw call draws a whole run of them where the device has `WEBGL_multi_draw`, and the
+//! shader reads the record of `gl_DrawID`. Without the extension, each draw binds its own record.
 //!
 //! Each view has a ring of frame uniforms and a ring of draw records, whose slots move on only
 //! when the frame writes new data, as the index list textures' slots do.
@@ -11,16 +11,15 @@
 use null3d_gpu::caps::OFFSET_ALIGNMENT;
 use null3d_gpu::drawlist::{
     DrawList, Op, buffer_usage as usage, index_format, layout as bind_layout, permutation,
-    resource_kind, sizes, template,
+    resource_kind, sizes,
 };
 
 use super::data::{RING, RingSlot};
 use super::ids;
-use super::layout::{Bucket, Layout, MULTI_DRAW_BLOCK_BYTES, run_end};
-use crate::frame::{RecordError, UploadArena, grown_size, put_u32};
+use super::layout::{Draw, Layout, MULTI_DRAW_BLOCK_BYTES, run_end};
+use crate::frame::{MeshBuffers, PipelineTable, RecordError, UploadArena, grown_size, put_u32};
 use crate::frame_data::FrameUniform;
 use crate::frame_graph::SceneTargets;
-use crate::materials::Shading;
 use crate::view::{ViewFrame, ViewId};
 
 /// Bytes of one frame's slot in a view's ring of frame uniforms: the uniform block, aligned for
@@ -72,7 +71,7 @@ pub(super) struct ViewUpload<'a> {
     pub(super) starts: &'a [u32],
 }
 
-/// One draw call of a frame: buckets `from..to` of the run that starts at bucket `run`, `drawn` of
+/// One draw call of a frame: draws `from..to` of the run that starts at draw `run`, `drawn` of
 /// them with visible instances.
 #[derive(Clone, Copy, Debug)]
 struct Call {
@@ -82,11 +81,11 @@ struct Call {
     drawn: u32,
 }
 
-/// Calls `f` with each draw call of a frame and its number, in draw order: per run of buckets that
-/// share a pipeline and a vertex page, one multi-draw call per block of drawn buckets, or one
-/// draw per drawn bucket. Buckets with no visible instances draw nothing.
+/// Calls `f` with each draw call of a frame and its number, in draw order: per run of draws that
+/// share a pipeline and a vertex page, one multi-draw call per block of drawn draws, or one call
+/// per drawn draw. Draws with no visible instances draw nothing.
 fn for_each_call(
-    buckets: &[Bucket],
+    draws: &[Draw],
     visible: &dyn Fn(usize) -> u32,
     multi: bool,
     mut f: impl FnMut(u32, Call) -> Result<(), RecordError>,
@@ -94,8 +93,8 @@ fn for_each_call(
     let per_call = if multi { sizes::MULTI_DRAW_RECORDS } else { 1 };
     let mut index = 0;
     let mut start = 0;
-    while start < buckets.len() {
-        let end = run_end(buckets, start);
+    while start < draws.len() {
+        let end = run_end(draws, start);
         let mut b = start;
         while b < end {
             if visible(b) == 0 {
@@ -124,6 +123,15 @@ fn for_each_call(
     Ok(())
 }
 
+/// The visible instances of each draw, by its place in `draws`: the entries of its bucket's slice
+/// of the index list, where the slice of bucket `b` starts at `starts[b]`.
+fn visible_in<'a>(draws: &'a [Draw], starts: &'a [u32]) -> impl Fn(usize) -> u32 + 'a {
+    move |d| {
+        let b = draws[d].bucket as usize;
+        starts[b + 1] - starts[b]
+    }
+}
+
 /// Bytes that one call's records take in the ring slot: a block for a multi-draw call, one aligned
 /// record for a single draw.
 fn record_stride(multi_draw: bool) -> u32 {
@@ -143,12 +151,13 @@ impl Opaque {
         }
     }
 
-    /// Records the creation of the render pipelines, which draw into the scene's color and depth
-    /// targets, in the shader variant that reads the draw's index where the device has
-    /// multi-draw.
+    /// Records the creation of every render pipeline of `pipelines` that the GPU lacks, which
+    /// draw into the scene's targets, in the shader variant that reads the draw's index where the
+    /// device has multi-draw.
     pub(super) fn create_pipelines(
         &self,
         list: &mut DrawList,
+        pipelines: &mut PipelineTable,
         targets: SceneTargets,
     ) -> Result<(), RecordError> {
         let bits = if self.multi_draw {
@@ -156,8 +165,7 @@ impl Opaque {
         } else {
             0
         };
-        targets.create_pipeline(list, ids::LIT, template::INSTANCED_LIT, bits)?;
-        targets.create_pipeline(list, ids::UNLIT, template::INSTANCED_UNLIT, bits)
+        pipelines.create_new(list, targets, bits)
     }
 
     /// The number of views whose rings exist.
@@ -285,8 +293,8 @@ impl Opaque {
     }
 
     /// Takes a view's ring slots for the frame. Writes its frame uniform into the next slot when
-    /// it changed, and its draw records when its index list is new: each drawn bucket's slice of
-    /// the list.
+    /// it changed, and its draw records when its index list is new: for each drawn draw, its
+    /// bucket's slice of the list.
     pub(super) fn upload(
         &mut self,
         list: &mut DrawList,
@@ -312,11 +320,12 @@ impl Opaque {
         if !frame.new_list {
             return Ok(());
         }
-        let (buckets, starts, multi_draw) = (&layout.buckets, frame.starts, self.multi_draw);
-        let visible = |b: usize| starts[b + 1] - starts[b];
+        let (buckets, draws) = (&layout.buckets, &layout.draws);
+        let (starts, multi_draw) = (frame.starts, self.multi_draw);
+        let visible = visible_in(draws, starts);
         let stride = record_stride(multi_draw);
         let mut calls = 0;
-        for_each_call(buckets, &visible, multi_draw, |_, _| {
+        for_each_call(draws, &visible, multi_draw, |_, _| {
             calls += 1;
             Ok(())
         })?;
@@ -324,9 +333,10 @@ impl Opaque {
             return Ok(());
         }
         let (at, records) = arena.push_zeroed((calls * stride) as usize)?;
-        for_each_call(buckets, &visible, multi_draw, |index, call| {
-            let drawn = (call.from..call.to).filter(|&b| visible(b) > 0);
-            for (r, b) in drawn.enumerate() {
+        for_each_call(draws, &visible, multi_draw, |index, call| {
+            let drawn = (call.from..call.to).filter(|&d| visible(d) > 0);
+            for (r, d) in drawn.enumerate() {
+                let b = draws[d].bucket as usize;
                 let word = (index * stride / 4) as usize + r * 4;
                 put_u32(records, word, starts[b]);
                 put_u32(records, word + 1, buckets[b].material - 1);
@@ -344,8 +354,9 @@ impl Opaque {
     }
 
     /// Records a view's opaque pass inside the render pass that the render graph began: every
-    /// bucket with visible instances, where the index list of bucket `b` starts at `starts[b]`,
-    /// from the ring slots that [`Opaque::upload`] took.
+    /// draw whose bucket has visible instances, where the index list of bucket `b` starts at
+    /// `starts[b]`, from its mesh page's buffers in `meshes` and the ring slots that
+    /// [`Opaque::upload`] took.
     pub(super) fn record(
         &self,
         list: &mut DrawList,
@@ -353,10 +364,12 @@ impl Opaque {
         view: ViewId,
         starts: &[u32],
         layout: &Layout,
+        meshes: &MeshBuffers,
     ) -> Result<(), RecordError> {
         let slots = self.views[view.index()].slots;
-        let (buckets, multi_draw) = (&layout.buckets, self.multi_draw);
-        let visible = |b: usize| starts[b + 1] - starts[b];
+        let (buckets, draws, multi_draw) = (&layout.buckets, &layout.draws, self.multi_draw);
+        let visible = visible_in(draws, starts);
+        let shift = |d: usize| buckets[draws[d].bucket as usize].shift;
         let stride = record_stride(multi_draw);
         let slot = slots.listed * layout.draws_slot_bytes;
         list.push(
@@ -372,19 +385,15 @@ impl Opaque {
         list.push(Op::SetBindGroup, &[2, instances, 0])?;
         let mut pipeline = None;
         let mut run = usize::MAX;
-        for_each_call(buckets, &visible, multi_draw, |index, call| {
+        for_each_call(draws, &visible, multi_draw, |index, call| {
             if call.run != run {
                 run = call.run;
-                let first = buckets[run];
-                let wanted = match first.shading {
-                    Shading::Lit => ids::LIT,
-                    Shading::Unlit => ids::UNLIT,
-                };
-                if pipeline != Some(wanted) {
-                    list.push(Op::SetPipeline, &[wanted])?;
-                    pipeline = Some(wanted);
+                let first = draws[run];
+                if pipeline != Some(first.pipeline) {
+                    list.push(Op::SetPipeline, &[first.pipeline])?;
+                    pipeline = Some(first.pipeline);
                 }
-                let (vertices, indices) = ids::page(first.page);
+                let (vertices, indices) = meshes.ids(first.page);
                 list.push(Op::SetVertexBuffer, &[0, vertices, 0, 0])?;
                 list.push(Op::SetIndexBuffer, &[indices, index_format::UINT16, 0, 0])?;
             }
@@ -392,32 +401,32 @@ impl Opaque {
                 Op::SetBindGroup,
                 &[1, ids::draws_group(view), 1, slot + index * stride],
             )?;
-            let drawn = (call.from..call.to).filter(|&b| visible(b) > 0);
+            let drawn = (call.from..call.to).filter(|&d| visible(d) > 0);
             if multi_draw {
                 let n = call.drawn as usize;
                 let (counts_at, counts) = arena.push_zeroed(n * 4)?;
-                for (k, b) in drawn.clone().enumerate() {
-                    put_u32(counts, k, buckets[b].index_count);
+                for (k, d) in drawn.clone().enumerate() {
+                    put_u32(counts, k, draws[d].index_count);
                 }
                 let (offsets_at, offsets) = arena.push_zeroed(n * 4)?;
-                for (k, b) in drawn.clone().enumerate() {
-                    put_u32(offsets, k, buckets[b].first_index * 2);
+                for (k, d) in drawn.clone().enumerate() {
+                    put_u32(offsets, k, draws[d].first_index * 2);
                 }
                 let (instances_at, instances) = arena.push_zeroed(n * 4)?;
-                for (k, b) in drawn.enumerate() {
-                    put_u32(instances, k, visible(b) << buckets[b].shift);
+                for (k, d) in drawn.enumerate() {
+                    put_u32(instances, k, visible(d) << shift(d));
                 }
                 list.push(
                     Op::MultiDrawIndexed,
                     &[call.drawn, counts_at, offsets_at, instances_at],
                 )?;
             } else {
-                for b in drawn {
-                    let bucket = buckets[b];
-                    let instances = visible(b) << bucket.shift;
+                for d in drawn {
+                    let draw = draws[d];
+                    let instances = visible(d) << shift(d);
                     list.push(
                         Op::DrawIndexed,
-                        &[bucket.index_count, instances, bucket.first_index, 0, 0],
+                        &[draw.index_count, instances, draw.first_index, 0, 0],
                     )?;
                 }
             }
@@ -435,27 +444,21 @@ impl Opaque {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::cpu_culled::layout::RESIDENT;
 
-    fn bucket(shading: Shading, page: u32) -> Bucket {
-        Bucket {
-            shading,
+    /// A draw of pipeline `pipeline` from vertex page `page`.
+    fn draw(pipeline: u32, page: u32) -> Draw {
+        Draw {
+            pipeline,
             page,
-            material: 1,
-            group: RESIDENT,
+            bucket: 0,
             index_count: 36,
             first_index: 0,
-            shift: 0,
         }
     }
 
-    fn calls(
-        buckets: &[Bucket],
-        visible: &[u32],
-        multi: bool,
-    ) -> Vec<(u32, usize, usize, usize, u32)> {
+    fn calls(draws: &[Draw], visible: &[u32], multi: bool) -> Vec<(u32, usize, usize, usize, u32)> {
         let mut out = Vec::new();
-        for_each_call(buckets, &|b| visible[b], multi, |index, call| {
+        for_each_call(draws, &|d| visible[d], multi, |index, call| {
             out.push((index, call.run, call.from, call.to, call.drawn));
             Ok(())
         })
@@ -464,34 +467,28 @@ mod tests {
     }
 
     #[test]
-    fn calls_follow_runs_of_pipeline_and_page_and_skip_empty_buckets() {
-        let buckets = [
-            bucket(Shading::Lit, 0),
-            bucket(Shading::Lit, 0),
-            bucket(Shading::Lit, 1),
-            bucket(Shading::Unlit, 1),
-            bucket(Shading::Unlit, 1),
-        ];
+    fn calls_follow_runs_of_pipeline_and_page_and_skip_empty_draws() {
+        let draws = [draw(1, 0), draw(1, 0), draw(1, 1), draw(2, 1), draw(2, 1)];
         let visible = [4, 0, 2, 0, 7];
-        // One multi-draw call per run with drawn buckets; the empty run draws nothing.
+        // One multi-draw call per run with drawn draws; the empty run draws nothing.
         assert_eq!(
-            calls(&buckets, &visible, true),
+            calls(&draws, &visible, true),
             vec![(0, 0, 0, 2, 1), (1, 2, 2, 3, 1), (2, 3, 4, 5, 1)]
         );
-        // One draw per drawn bucket.
+        // One call per drawn draw.
         assert_eq!(
-            calls(&buckets, &visible, false),
+            calls(&draws, &visible, false),
             vec![(0, 0, 0, 1, 1), (1, 2, 2, 3, 1), (2, 3, 4, 5, 1)]
         );
-        assert!(calls(&buckets, &[0; 5], true).is_empty());
+        assert!(calls(&draws, &[0; 5], true).is_empty());
     }
 
     #[test]
     fn a_run_longer_than_one_block_splits_into_calls() {
         let per_call = sizes::MULTI_DRAW_RECORDS as usize;
-        let buckets = vec![bucket(Shading::Lit, 0); per_call + 3];
+        let draws = vec![draw(1, 0); per_call + 3];
         let visible = vec![1; per_call + 3];
-        let found = calls(&buckets, &visible, true);
+        let found = calls(&draws, &visible, true);
         assert_eq!(found.len(), 2);
         assert_eq!(found[0], (0, 0, 0, per_call, per_call as u32));
         assert_eq!(found[1], (1, 0, per_call, per_call + 3, 3));

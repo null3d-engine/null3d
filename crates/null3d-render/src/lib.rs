@@ -1,5 +1,6 @@
 //! The render graph, passes, materials and the post-processing chain.
 //!
+//! - `arrays`: meshes from arrays, with normals and tangents computed as three.js computes them
 //! - `camera`: perspective projection with reversed depth, and view matrices
 //! - `cpu_culled`: the WebGL2 frame builder, with culling on the job workers and an index list per
 //!   view
@@ -17,6 +18,7 @@
 //! - `parallel_record`: draw lists recorded in chunks on the job workers, joined in chunk order
 //! - `view`: views, each a camera, a layer mask and a target, culled on its own
 
+pub mod arrays;
 pub mod camera;
 pub mod cpu_culled;
 mod final_pass;

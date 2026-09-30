@@ -3,8 +3,10 @@
 
 import { DEV } from '../errors/checks';
 import { EngineError } from '../errors/engine-error';
+import { SHADING_LIT, SHADING_TEXCOORDS, SHADING_UNLIT } from '../generated/core';
 import { type ColorInput, linearColor } from './color';
 import type { CoreMemory } from './memory';
+import { arraysProblem, meshFromArrays } from './mesh-arrays';
 
 /**
  * A mesh the engine can draw: its id in the engine core, and its bounding radius.
@@ -55,7 +57,58 @@ export interface SphereOptions {
 }
 
 /**
- * Mesh generators with the parameters and defaults of three.js's geometry classes.
+ * The arrays of a mesh for `geometry.fromArrays`. Each array holds its values for vertex 0, then
+ * vertex 1, and so on, as three.js's `BufferGeometry` keeps its attributes. Typed arrays and plain
+ * arrays of numbers both work, and the engine copies them.
+ *
+ * @category api/geometry
+ */
+export interface MeshArrays {
+	/** Three numbers per vertex: x, y and z. Like three.js's `position` attribute. */
+	positions: Float32Array | readonly number[];
+	/**
+	 * Three numbers per vertex: a direction of length 1 away from the surface. Like three.js's
+	 * `normal` attribute. Pass normals, or set `computeNormals` instead.
+	 */
+	normals?: Float32Array | readonly number[];
+	/** Texture coordinates: two numbers per vertex, u and v. Like three.js's `uv` attribute. */
+	uvs?: Float32Array | readonly number[];
+	/**
+	 * A second set of texture coordinates, two numbers per vertex, such as those of a light map.
+	 * Like three.js's `uv1` attribute.
+	 */
+	uvs1?: Float32Array | readonly number[];
+	/**
+	 * Linear colors, three numbers per vertex from 0 to 1, or four with alpha. Like three.js's
+	 * `color` attribute.
+	 */
+	colors?: Float32Array | readonly number[];
+	/**
+	 * Four numbers per vertex: the direction in which u grows along the surface, then 1 or -1 for
+	 * the direction in which v grows. Like three.js's `tangent` attribute.
+	 */
+	tangents?: Float32Array | readonly number[];
+	/**
+	 * Three vertex indices per triangle, counter-clockwise when you look at its front. 16-bit and
+	 * 32-bit indices both work. Without indices, each three vertices in a row make a triangle.
+	 * Like three.js's `setIndex`.
+	 */
+	indices?: Uint16Array | Uint32Array | readonly number[];
+	/**
+	 * Computes the normals from the triangles, as three.js's `computeVertexNormals` does: each
+	 * vertex gets the average of its triangles' normals, weighted by their areas.
+	 */
+	computeNormals?: boolean;
+	/**
+	 * Computes the tangents from the positions, the normals and `uvs`, as three.js's
+	 * `computeTangents` does, on the job workers.
+	 */
+	computeTangents?: boolean;
+}
+
+/**
+ * Mesh generators with the parameters and defaults of three.js's geometry classes, and meshes
+ * from arrays.
  *
  * @category api/geometry
  */
@@ -92,6 +145,20 @@ export class Geometry {
 			this.core.glue.createSphereMesh(radius, widthSegments, heightSegments),
 			'geometry.sphere',
 		);
+	}
+
+	/**
+	 * A mesh from arrays of vertex attributes and triangle indices, like three.js's
+	 * `BufferGeometry` with `setAttribute` and `setIndex`. The mesh keeps the attributes it gets,
+	 * and meshes with the same attributes share GPU buffers. A mesh can have any number of
+	 * vertices. Throws E1206 when an array's length does not fit the vertex count or an index names
+	 * no vertex, and for a value that is not a finite number.
+	 */
+	fromArrays(arrays: MeshArrays): MeshGeometry {
+		const call = 'geometry.fromArrays';
+		const problem = arraysProblem(arrays);
+		if (problem) throw new EngineError('E1206', `${call}() ${problem}`);
+		return this.mesh(meshFromArrays(this.core, arrays, call), call);
 	}
 }
 
@@ -143,18 +210,19 @@ export class Material {
 export class Materials {
 	constructor(private readonly core: CoreMemory) {}
 
-	private create(unlit: boolean, options: MaterialOptions, call: string): Material {
+	/** @internal Creates a material that shades as the engine core's shading code says. */
+	create(shading: number, options: MaterialOptions, call: string): Material {
 		const [r, g, b] = linearColor(options.color ?? '#ffffff', call);
 		const opacity = options.opacity ?? 1;
 		if (DEV && !(opacity >= 0 && opacity <= 1))
 			throw new EngineError('E1108', `${call}() got the opacity ${opacity}, outside 0 to 1.`);
-		const id = this.core.check(this.core.glue.createMaterial(unlit, r, g, b, opacity), call);
+		const id = this.core.check(this.core.glue.createMaterial(shading, r, g, b, opacity), call);
 		return new Material(id, this.core, call);
 	}
 
 	/** A lit material. */
 	standard(options: MaterialOptions = {}): Material {
-		return this.create(false, options, 'materials.standard');
+		return this.create(SHADING_LIT, options, 'materials.standard');
 	}
 
 	/**
@@ -163,6 +231,15 @@ export class Materials {
 	 * them to that material.
 	 */
 	unlit(options: MaterialOptions = {}): Material {
-		return this.create(true, options, 'materials.unlit');
+		return this.create(SHADING_UNLIT, options, 'materials.unlit');
 	}
+}
+
+/**
+ * A material that shows a mesh's first texture coordinates as colors: u in red and v in green,
+ * with no color encoding. Only meshes with texture coordinates draw with it. The engine's own
+ * tests use it to check vertex formats.
+ */
+export function texCoordsMaterial(materials: Materials): Material {
+	return materials.create(SHADING_TEXCOORDS, {}, 'texCoordsMaterial');
 }

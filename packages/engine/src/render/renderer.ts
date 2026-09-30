@@ -63,7 +63,7 @@ export interface RendererOptions {
 	metrics?: ArrayBufferLike;
 	/**
 	 * The device and the canvas as the engine uses them: the storage binding to request, how WebGL2
-	 * uploads, the scene color's format and whether the canvas is transparent.
+	 * uploads and stores depth, the scene color's format and whether the canvas is transparent.
 	 */
 	device: CoreDevice;
 	/** Which GPU to draw with on a device with two; the browser chooses without it. */

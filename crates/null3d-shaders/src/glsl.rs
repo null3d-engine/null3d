@@ -12,6 +12,11 @@ use crate::{Binding, GlslProgram, GlslStage, GlslTexture, GlslUniformBlock, Pipe
 /// The extension a vertex shader enables to read `gl_DrawID` under `WEBGL_multi_draw`.
 pub(crate) const MULTI_DRAW_EXTENSION: &str = "#extension GL_ANGLE_multi_draw : require";
 
+/// The uniform through which a vertex shader maps WebGPU's clip depth into the WebGL2 backend's
+/// depth mode: it writes `z * mapping.x + w * mapping.y` as the clip depth. One program then
+/// serves every depth mode, and the backend sets the uniform once per program.
+pub(crate) const DEPTH_MAPPING_UNIFORM: &str = "null3d_depth_mapping";
+
 /// Writes the vertex and fragment shaders of one render pipeline.
 pub(crate) fn write_program(
     module: &Module,
@@ -41,7 +46,8 @@ fn write_stage(
             version: 300,
             is_webgl: true,
         },
-        // Moves depth into GL's clip range. The flag also flips Y, which the writer undoes below.
+        // Moves depth into GL's clip range and flips Y. The writer below keeps a depth step alone,
+        // which maps depth through the depth mapping uniform.
         writer_flags: WriterFlags::ADJUST_COORDINATE_SPACE,
         ..Options::default()
     };
@@ -147,32 +153,47 @@ fn reads_draw_index(module: &Module, entry: &EntryPoint) -> bool {
 /// depth moved into GL's clip range.
 const NAGA_ADJUSTMENT: &str =
     "gl_Position.yz = vec2(-gl_Position.y, gl_Position.z * 2.0 - gl_Position.w);";
-/// The depth move alone.
-const DEPTH_ONLY: &str = "gl_Position.z = gl_Position.z * 2.0 - gl_Position.w;";
 
-/// Keeps GL's row order: replaces naga's coordinate adjustment with the depth move alone. The
-/// canvas then shows the image the right way up, and front faces wind counter-clockwise as they
-/// do on WebGPU. The flip would turn the image upside down in the canvas, and a multisampled
-/// resolve into the canvas cannot flip it back, so each frame would need a second copy. Fails
-/// when naga writes the adjustment differently, so a naga update cannot flip images unnoticed.
+/// The depth step alone, through the depth mapping uniform.
+fn depth_step() -> String {
+    format!(
+        "gl_Position.z = gl_Position.z * {DEPTH_MAPPING_UNIFORM}.x + gl_Position.w * {DEPTH_MAPPING_UNIFORM}.y;"
+    )
+}
+
+/// Inserts a line right after the `#version` line, where declarations and extensions may go.
+fn after_version(source: &str, line: &str) -> String {
+    let (version, rest) = source.split_once('\n').unwrap_or((source, ""));
+    format!("{version}\n{line}\n{rest}")
+}
+
+/// Keeps GL's row order: replaces naga's coordinate adjustment with a depth step alone, which
+/// maps WebGPU's clip depth through the depth mapping uniform. The canvas then shows the image
+/// the right way up, and front faces wind counter-clockwise as they do on WebGPU. The flip would
+/// turn the image upside down in the canvas, and a multisampled resolve into the canvas cannot
+/// flip it back, so each frame would need a second copy. Fails when naga writes the adjustment
+/// differently, so a naga update cannot flip images unnoticed.
 pub(crate) fn keep_gl_row_order(source: &str) -> Result<String, String> {
     if !source.contains(NAGA_ADJUSTMENT) {
         return Err(format!(
             "naga no longer writes `{NAGA_ADJUSTMENT}`, which the build replaces to keep GL's row order. Update `keep_gl_row_order` in crates/null3d-shaders/src/glsl.rs."
         ));
     }
-    Ok(source.replace(NAGA_ADJUSTMENT, DEPTH_ONLY))
+    let stepped = source.replace(NAGA_ADJUSTMENT, &depth_step());
+    Ok(after_version(
+        &stepped,
+        &format!("uniform vec2 {DEPTH_MAPPING_UNIFORM};"),
+    ))
 }
 
 /// Enables `WEBGL_multi_draw` in a vertex shader. The extension goes right after the `#version`
 /// line. naga reads the draw index as `gl_DrawID`, a signed integer, into WGSL's unsigned value,
 /// and GLSL ES 3.00 has no implicit conversions, so each read converts it.
 pub(crate) fn enable_multi_draw(source: &str) -> String {
-    let (version, rest) = source.split_once('\n').unwrap_or((source, ""));
-    let rest = rest
+    let converted = source
         .replace("uint(gl_DrawID)", "gl_DrawID")
         .replace("gl_DrawID", "uint(gl_DrawID)");
-    format!("{version}\n{MULTI_DRAW_EXTENSION}\n{rest}")
+    after_version(&converted, MULTI_DRAW_EXTENSION)
 }
 
 #[cfg(test)]
@@ -180,11 +201,19 @@ mod tests {
     use super::*;
 
     #[test]
-    fn the_row_order_step_keeps_the_depth_move_and_drops_the_flip() {
-        let source = format!("void main() {{\n    {NAGA_ADJUSTMENT}\n    return;\n}}\n");
+    fn the_row_order_step_maps_depth_through_the_uniform_and_drops_the_flip() {
+        let source = format!(
+            "#version 300 es\n\nvoid main() {{\n    {NAGA_ADJUSTMENT}\n    return;\n    {NAGA_ADJUSTMENT}\n}}\n"
+        );
         let kept = keep_gl_row_order(&source).unwrap();
-        assert!(kept.contains(DEPTH_ONLY));
+        let lines: Vec<_> = kept.lines().collect();
+        assert_eq!(
+            lines[..2],
+            ["#version 300 es", "uniform vec2 null3d_depth_mapping;"]
+        );
+        assert_eq!(kept.matches(&depth_step()).count(), 2, "{kept}");
         assert!(!kept.contains("-gl_Position.y"));
+        assert!(!kept.contains("* 2.0"));
         assert!(keep_gl_row_order("void main() {}\n").is_err());
     }
 

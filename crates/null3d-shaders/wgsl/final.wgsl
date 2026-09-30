@@ -13,10 +13,11 @@
 
 @vertex
 fn vs(@builtin(vertex_index) vertex: u32) -> @builtin(position) vec4f {
-    // A triangle past the corners of clip space: (-1, -1), (3, -1) and (-1, 3).
+    // A triangle past the corners of clip space: (-1, -1), (3, -1) and (-1, 3). Its depth sits
+    // halfway, so no depth mode of the WebGL2 path moves it to the edge of the clip range.
     let x = f32((vertex << 1u) & 2u) * 2.0 - 1.0;
     let y = f32(vertex & 2u) * 2.0 - 1.0;
-    return vec4f(x, y, 0.0, 1.0);
+    return vec4f(x, y, 0.5, 1.0);
 }
 
 @fragment

@@ -14,7 +14,7 @@ A good port looks like the original, runs faster, and reads like null3D code. Tr
 ## 1. Before you start
 
 1. If the null3d-develop skill is available, read its sections 1, 2 and 4: the docs system, the thread model and the performance rules. They apply to every port. Without it, read the engine docs pages `concepts/architecture` and `guides/performance`.
-2. Find the engine version in the target project, and read docs pages by ID: `node_modules/@null3d/engine/docs/<id>.md`, `docs/<id>.md` inside the null3D repository, or `bunx @null3d/cli docs show <id>`. A page with `status: planned` describes an API that does not exist in that version yet.
+2. Find the engine version in the target project, and read docs pages by ID: `node_modules/@null3d/engine/docs/<id>.md`, `docs/<id>.md` inside the null3D repository, or `bunx @null3d/cli docs show <id>`. A page with `status: planned` describes an API that does not exist in that version yet. The note under an experimental page's title can name parts that are not built yet: treat those parts as planned too.
 3. Look up three.js APIs in `references/api-mapping.md`. For 147 three.js APIs it gives the null3D equivalent, a status, the first engine version with it, and a doc ID. The statuses:
    - `direct`: same concept, new name.
    - `changed`: supported with a different API or pattern; follow the note.
