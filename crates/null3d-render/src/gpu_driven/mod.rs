@@ -90,7 +90,7 @@ use crate::graph::RenderGraph;
 use crate::materials::MATERIAL_FLOATS;
 use crate::meshes::{MeshStorage, Packing};
 use crate::pipelines::PipelineCache;
-use crate::shadows::MAX_CASCADES;
+use crate::shadows::{self, MAX_CASCADES};
 use crate::textures::{TextureIds, TextureStore};
 use crate::view::{ViewFrame, ViewId};
 use cull::{CULL_PARAMS_BYTES, Culling, INDIRECT_BYTES};
@@ -330,7 +330,7 @@ impl GpuDrivenRenderer {
                 self.casters.rebuild(
                     &self.settings,
                     &mut self.pipelines,
-                    shadow::TARGETS,
+                    shadows::TARGETS,
                     input.scene,
                     input.batches,
                     parity,
@@ -437,7 +437,7 @@ impl GpuDrivenRenderer {
             let recreated = shared_recreated || casters_recreated;
             self.culling
                 .apply(list, view, &self.casters, recreated, binding_bytes)?;
-            opaque::record_bundle(list, view, &self.casters, &self.meshes, shadow::TARGETS)?;
+            opaque::record_bundle(list, view, &self.casters, &self.meshes, shadows::TARGETS)?;
         }
         self.layout
             .upload_matrices(list, input, parity, upload_everything)?;
@@ -457,7 +457,7 @@ impl GpuDrivenRenderer {
         }
         self.cascade_frames = [None; MAX_CASCADES];
         if let Some(shadow) = &shadow {
-            shadow::upload(list, arena, shadow)?;
+            shadows::upload(list, arena, ids::SHADOWS, shadow)?;
             for cascade in 0..cascades {
                 let view = ViewId::cascade(cascade);
                 let frame = shadow.view_frame(cascade);
@@ -496,7 +496,7 @@ impl GpuDrivenRenderer {
     /// Records the creation of the material table, whose size never changes, and of the shadows'
     /// uniform block and sampler.
     fn create_fixed(&mut self, list: &mut DrawList) -> Result<(), RecordError> {
-        shadow::create_fixed(list)?;
+        shadows::create_objects(list, ids::SHADOWS, ids::SHADOW_SAMPLER)?;
         let materials = self.config.max_materials.max(1);
         list.push(
             Op::CreateBuffer,

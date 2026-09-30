@@ -32,11 +32,13 @@
 
 use null3d_core::cells::CellPosition;
 use null3d_core::culling::Frustum;
-
 use null3d_gpu::drawlist::sizes::SHADOW_UNIFORM_BYTES;
+use null3d_gpu::drawlist::{DrawList, Op, address, buffer_usage, compare, filter, format};
 
 use crate::camera::{Affine, Lens, Mat4};
+use crate::frame::{RecordError, UploadArena};
 use crate::frame_data::FrameUniform;
+use crate::pipelines::PassTargets;
 use crate::view::ViewFrame;
 
 /// The most cascades a directional light's shadow map has.
@@ -338,6 +340,63 @@ impl ShadowFrame {
     pub fn uniform(&self) -> ShadowUniform {
         ShadowUniform::new(&self.cascades, &self.settings)
     }
+}
+
+/// What the shadow passes draw into: a depth texture of one sample, with no color.
+pub const TARGETS: PassTargets = PassTargets {
+    color_format: format::NONE,
+    depth_format: format::DEPTH32_FLOAT,
+    samples: 1,
+    permutation: 0,
+};
+
+/// Records the creation of the cascades' uniform block under `uniform`, and of the comparison
+/// sampler that reads the shadow map under `sampler`. Every scene view's frame group binds both.
+pub(crate) fn create_objects(
+    list: &mut DrawList,
+    uniform: u32,
+    sampler: u32,
+) -> Result<(), RecordError> {
+    list.push(
+        Op::CreateBuffer,
+        &[
+            uniform,
+            SHADOW_UNIFORM_BYTES,
+            buffer_usage::UNIFORM | buffer_usage::COPY_DST,
+        ],
+    )?;
+    // Reversed depth: a point is lit where its depth is at least the caster's, nearer the light.
+    // The linear filters blend the comparisons of the four nearest texels.
+    let clamp = address::CLAMP_TO_EDGE;
+    list.push(
+        Op::CreateSampler,
+        &[
+            sampler,
+            clamp,
+            clamp,
+            clamp,
+            filter::LINEAR,
+            filter::LINEAR,
+            filter::NEAREST,
+            0f32.to_bits(),
+            0f32.to_bits(),
+            compare::GREATER_EQUAL,
+            1,
+        ],
+    )?;
+    Ok(())
+}
+
+/// Uploads a frame's cascades into the uniform block `uniform`.
+pub(crate) fn upload(
+    list: &mut DrawList,
+    arena: &mut UploadArena,
+    uniform: u32,
+    shadow: &ShadowFrame,
+) -> Result<(), RecordError> {
+    let (at, bytes) = arena.push(shadow.uniform().as_bytes())?;
+    list.push(Op::WriteBuffer, &[uniform, 0, at, bytes])?;
+    Ok(())
 }
 
 /// The share of the shadow distance over which shadows fade out.
