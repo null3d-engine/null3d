@@ -46,6 +46,9 @@ const AXIS_COLORS = [0xff0000ff, 0xff00ff00, 0xffff0000] as const;
 /** The kinds of shape that follow an object. */
 const AXES = 0;
 const FRUSTUM = 1;
+/** A directional light, drawn where the light is, or at a place that the call gave. */
+const LIGHT = 2;
+const LIGHT_AT = 3;
 
 /** Cosines and sines around a circle, one pair per segment boundary, the first one repeated last. */
 const CIRCLE = new Float64Array(2 * (CIRCLE_SEGMENTS + 1));
@@ -99,8 +102,10 @@ export class DebugDraw implements Debug {
 	private followedCount = 0;
 	private readonly followed: (Object3D | undefined)[] = [];
 	private readonly followedKinds: number[] = [];
-	/** An axes shape's size, or a frustum's color. */
+	/** An axes shape's size, or a frustum's or a light's color. */
 	private readonly followedValues: number[] = [];
+	/** A light's size, and the place that its call gave: 4 numbers per shape. */
+	private readonly followedLights: number[] = [];
 	/** An object's world matrix: rows of a 3 x 4 matrix, with the translation in 64 bits. */
 	private readonly matrix = new Float64Array(C.CORE_MATRIX_FLOATS);
 	/**
@@ -110,6 +115,8 @@ export class DebugDraw implements Debug {
 	private readonly corners = new Float64Array(24);
 	/** Two unit vectors at right angles to a direction and to each other, from `across`. */
 	private readonly sides = new Float64Array(6);
+	/** The direction a drawn light's light travels. */
+	private readonly direction = new Float64Array(3);
 
 	constructor(private readonly core: CoreMemory) {}
 
@@ -223,32 +230,14 @@ export class DebugDraw implements Debug {
 	light(light: DirectionalLight, options?: DebugLightOptions): void {
 		const color = options?.color;
 		const c = color === undefined ? lightColor(light) : packedColor(color, 'debug.light');
-		const size = options?.size ?? 1;
 		const position = options?.position;
-		const x = position ? (position[0] as number) : 0;
-		const y = position ? (position[1] as number) : 0;
-		const z = position ? (position[2] as number) : 0;
-		const d = light.direction;
-		const dx = d[0] as number;
-		const dy = d[1] as number;
-		const dz = d[2] as number;
-		const n = Math.sqrt(dx * dx + dy * dy + dz * dz);
-		if (!(n > 0) || !this.room(8)) return;
-		// A square that faces the light, as three.js's DirectionalLightHelper draws one.
-		const q = this.sides;
-		across(q, dx / n, dy / n, dz / n);
-		const corners = this.corners;
-		const h = size / 2;
-		for (let k = 0; k < 4; k++) {
-			const a = k === 0 || k === 3 ? -h : h;
-			const b = k < 2 ? -h : h;
-			for (let axis = 0; axis < 3; axis++) {
-				const base = axis === 0 ? x : axis === 1 ? y : z;
-				corners[k * 3 + axis] = base + (q[axis] as number) * a + (q[3 + axis] as number) * b;
-			}
-		}
-		for (let k = 0; k < 4; k++) this.cornerSegment(k, (k + 1) & 3, c);
-		this.arrowFrom(x, y, z, d, size, c);
+		const at = this.followedCount * 4;
+		this.follow(position ? LIGHT_AT : LIGHT, light, c);
+		const place = this.followedLights;
+		place[at] = options?.size ?? 1;
+		place[at + 1] = position ? (position[0] as number) : 0;
+		place[at + 2] = position ? (position[1] as number) : 0;
+		place[at + 3] = position ? (position[2] as number) : 0;
 	}
 
 	/**
@@ -264,9 +253,11 @@ export class DebugDraw implements Debug {
 			if (object.destroyedFrame >= 0) continue;
 			if (this.core.glue.worldMatrix(object.handle, this.matrix) !== 0) continue;
 			const value = this.followedValues[k] as number;
-			if (this.followedKinds[k] === FRUSTUM)
+			const kind = this.followedKinds[k];
+			if (kind === FRUSTUM)
 				this.drawFrustum(object as PerspectiveCamera | OrthographicCamera, width / height, value);
-			else this.drawAxes(value);
+			else if (kind === AXES) this.drawAxes(value);
+			else this.drawLight(k, kind === LIGHT_AT, value);
 		}
 		this.followedCount = 0;
 		if (this.points === 0) return;
@@ -372,6 +363,40 @@ export class DebugDraw implements Debug {
 	}
 
 	/** An arrow from a point in `direction`, `length` meters long, with a head of four lines. */
+	/**
+	 * Draws the light of followed shape `k` from its world matrix: a square that faces the light,
+	 * as three.js's `DirectionalLightHelper` draws one, and an arrow along its -Z axis, the way its
+	 * light travels. It stands at the light's place, or at the place its call gave with `given`.
+	 */
+	private drawLight(k: number, given: boolean, color: number): void {
+		const m = this.matrix;
+		const place = this.followedLights;
+		const size = place[k * 4] as number;
+		const x = given ? (place[k * 4 + 1] as number) : (m[3] as number);
+		const y = given ? (place[k * 4 + 2] as number) : (m[7] as number);
+		const z = given ? (place[k * 4 + 3] as number) : (m[11] as number);
+		const d = this.direction;
+		d[0] = -(m[2] as number);
+		d[1] = -(m[6] as number);
+		d[2] = -(m[10] as number);
+		const n = Math.sqrt((d[0] as number) ** 2 + (d[1] as number) ** 2 + (d[2] as number) ** 2);
+		if (!(n > 0) || !this.room(8)) return;
+		const q = this.sides;
+		across(q, (d[0] as number) / n, (d[1] as number) / n, (d[2] as number) / n);
+		const corners = this.corners;
+		const h = size / 2;
+		for (let c = 0; c < 4; c++) {
+			const a = c === 0 || c === 3 ? -h : h;
+			const b = c < 2 ? -h : h;
+			for (let axis = 0; axis < 3; axis++) {
+				const base = axis === 0 ? x : axis === 1 ? y : z;
+				corners[c * 3 + axis] = base + (q[axis] as number) * a + (q[3 + axis] as number) * b;
+			}
+		}
+		for (let c = 0; c < 4; c++) this.cornerSegment(c, (c + 1) & 3, color);
+		this.arrowFrom(x, y, z, d, size, color);
+	}
+
 	private arrowFrom(
 		x: number,
 		y: number,

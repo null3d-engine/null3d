@@ -335,15 +335,19 @@ describe('debug drawing', () => {
 	});
 
 	test('a directional light draws a square that faces it and an arrow in its direction', () => {
-		const { draw, frames } = fakeCore();
-		const scene = { core: { glue: { setSun: () => 0 } } } as unknown as Scene;
-		const sun = new DirectionalLight(scene, [0, -3, 0], '#ff8800', 2);
+		const { draw, frames, matrices } = fakeCore();
+		const scene = { core: { glue: { setLightColor: () => 0 } } } as unknown as Scene;
+		const sun = new DirectionalLight(scene, 7, 'sun');
+		sun.paint('setColor', C.LIGHT_COLOR_MAIN, '#ff8800');
+		// Turned a quarter back about X, so its -Z axis points down, and scaled by 3.
+		matrices.set(sun.handle, [3, 0, 0, 5, 0, 0, 3, 6, 0, -3, 0, 7]);
 		draw.light(sun, { position: [0, 10, 0], size: 2 });
+		draw.light(sun, { color: '#0000ff' });
 		draw.flush(1, 1);
 		const drawn = lines(frames[0] as Point[]);
-		// Four sides, then the arrow: its shaft and four lines of its head.
-		expect(drawn.length).toBe(9);
-		expect(drawn.every(([a]) => a.color === 0xff0088ff)).toBe(true);
+		// Four sides, then the arrow: its shaft and four lines of its head, for each drawing.
+		expect(drawn.length).toBe(18);
+		expect(drawn.slice(0, 9).every(([a]) => a.color === 0xff0088ff)).toBe(true);
 		for (const [a, b] of drawn.slice(0, 4)) {
 			expect([a.position[1], b.position[1]]).toEqual([10, 10]);
 			expect(length(a, b)).toBeCloseTo(2, 9);
@@ -352,6 +356,13 @@ describe('debug drawing', () => {
 		expect(rounded([start, tip]).map((p) => p.position)).toEqual([
 			[0, 10, 0],
 			[0, 8, 0],
+		]);
+		// Without a position, the light draws where it is, with a size of 1.
+		const [from, to] = drawn[13] as [Point, Point];
+		expect(from.color).toBe(0xffff0000);
+		expect(rounded([from, to]).map((p) => p.position)).toEqual([
+			[5, 6, 7],
+			[5, 5, 7],
 		]);
 	});
 
