@@ -1,10 +1,9 @@
 // URL switches that let one device exercise every engine path: ?gpu=, ?threads=off, ?render=main,
-// ?sketch-thread=main, ?latency=, ?uploads=copy, ?depth= and ?compile=wait. Five more set what the
-// benchmarks vary:
-// ?fps= for a fixed frame rate, ?jobs= for the job worker count, ?memory= for the shared memory's
-// maximum, ?queue= for the frames that may wait on the GPU and ?cells=off for culling without grid
-// cells. ?hold starts hold mode for image tests, ?preset= fixes the quality preset, and ?bench
-// publishes the running engine for benchmark tools.
+// ?sketch-thread=main, ?latency=, ?uploads=copy, ?depth=, ?compile=wait and ?wake=message. Five
+// more set what the benchmarks vary: ?fps= for a fixed frame rate, ?jobs= for the job worker count,
+// ?memory= for the shared memory's maximum, ?queue= for the frames that may wait on the GPU and
+// ?cells=off for culling without grid cells. ?hold starts hold mode for image tests, ?preset= fixes
+// the quality preset, and ?bench publishes the running engine for benchmark tools.
 
 import { QUALITY_PRESETS, type QualityPreset } from '../quality/presets';
 
@@ -61,6 +60,11 @@ export interface Switches {
 	 * draw, as it does in a browser without `KHR_parallel_shader_compile`.
 	 */
 	parallelCompile: boolean;
+	/**
+	 * True when ?wake=message makes the engine's threads wake each other with messages, as they do
+	 * in a browser without `Atomics.waitAsync`.
+	 */
+	wakeByMessage: boolean;
 	/**
 	 * False when ?cells=off makes the core cull every object and instance row, with no whole grid
 	 * cells skipped first, for benchmarks that measure what cell culling saves.
@@ -129,6 +133,7 @@ export function parseSwitches(search: string): Switches {
 		copyUploads: params.get('uploads') === 'copy',
 		depth: oneOf(params.get('depth'), ['reversed', 'reversed-gl', 'standard'] as const),
 		parallelCompile: params.get('compile') !== 'wait',
+		wakeByMessage: params.get('wake') === 'message',
 		cells: params.get('cells') !== 'off',
 		fps: positive(params.get('fps')),
 		jobs: whole(params.get('jobs'), MAX_JOB_WORKERS),

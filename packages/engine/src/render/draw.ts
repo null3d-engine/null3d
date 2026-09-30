@@ -32,7 +32,10 @@ export interface DrawingSetup extends RendererOptions {
 	hold?: boolean;
 	/** Hears the reason when the engine stops drawing after GPU losses. */
 	fail: (reason: string) => void;
-	/** The port through which the sketch thread sends texture images, when another thread runs it. */
+	/**
+	 * The port through which the sketch thread sends texture images, when another thread runs it.
+	 * Wake messages go back to the sketch thread through it.
+	 */
 	imagePort?: MessagePort;
 }
 
@@ -53,7 +56,7 @@ export async function startDrawing(setup: DrawingSetup): Promise<Drawing<Rendere
 			? new HoldLoop(slots, renderer, metrics)
 			: sketch
 				? runDirectLoop(sketch, renderer, control, metrics, fps, queue)
-				: runRenderLoop(renderer, control, metrics, fps, queue);
+				: runRenderLoop(renderer, control, metrics, fps, queue, setup.imagePort);
 	return new Drawing(await create(), create, run, slots, setup.fail, !hold, () =>
 		imageTable.clear(),
 	);

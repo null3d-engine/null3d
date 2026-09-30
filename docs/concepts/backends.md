@@ -142,9 +142,9 @@ A WebGPU device can be lost, for example after a driver reset, and so can a WebG
 | --- | --- |
 | Safari on macOS and iOS | 16.4 |
 | Chrome and Edge | 91 |
-| Firefox | 89, or 145 on a cross-origin isolated page |
+| Firefox | 89 |
 
-WebAssembly SIMD sets these minimums. An older browser gets a clear "browser not supported" message instead of a slow path. On a cross-origin isolated page, the engine runs worker threads, which wait with `Atomics.waitAsync`. Firefox has it from version 145, so an older Firefox cannot start the engine on such a page.
+WebAssembly SIMD sets these minimums. An older browser gets a clear "browser not supported" message instead of a slow path. On a cross-origin isolated page, the engine runs worker threads, which wait for each other with `Atomics.waitAsync`. Firefox has it from version 145. In older versions, the threads wake each other with messages instead. The switch `?wake=message` does the same in any browser, for tests.
 
 ## Related pages
 
