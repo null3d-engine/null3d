@@ -1,5 +1,6 @@
 enable draw_index;
 #define_import_path null3d::mesh
+#import null3d::fog::{apply_fog, fog_factor}
 #import null3d::globals::{Frame, Material}
 #import null3d::vertex::{OUTSIDE_CLIP, Transform, to_clip, transform_direction}
 #import null3d::vertex::{transform_normal, transform_point}
@@ -125,6 +126,16 @@ fn material_of(id: u32) -> Material {
 #else
     return materials[id];
 #endif
+}
+
+/// The bit of a material's flags that keeps the scene's fog off its color.
+const NO_FOG: u32 = 4u;
+
+/// Linear color `c` of a fragment at `relative`, its position relative to the camera, seen through
+/// the scene's fog. A material with fog off keeps its color.
+fn fogged(c: vec3f, relative: vec3f, m: Material) -> vec3f {
+    let fog_on = (u32(m.strengths.z) & NO_FOG) == 0u;
+    return apply_fog(c, frame.fog.color, select(0.0, fog_factor(frame.fog, relative), fog_on));
 }
 
 /// True when a map's layer, as a material's row holds it, draws: its image is on the GPU.

@@ -34,6 +34,8 @@ export type Three = Pick<
 	| 'DirectionalLight'
 	| 'DynamicDrawUsage'
 	| 'Float32BufferAttribute'
+	| 'Fog'
+	| 'FogExp2'
 	| 'InstancedMesh'
 	| 'LinearFilter'
 	| 'LinearMipmapLinearFilter'

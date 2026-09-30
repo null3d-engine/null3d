@@ -25,6 +25,8 @@ const FEATURE_SCENES = [
 	{ test: 'ortho-camera', twin: '/bench/pages/threejs/ortho-camera.html' },
 	{ test: 'standard-maps', twin: '/bench/pages/threejs/material-maps.html' },
 	{ test: 'alpha-mask', twin: '/bench/pages/threejs/alpha-mask.html' },
+	{ test: 'fog-linear', twin: '/bench/pages/threejs/fog.html?fog=linear' },
+	{ test: 'fog-exp2', twin: '/bench/pages/threejs/fog.html?fog=exp2' },
 ] as const;
 
 const OUTPUT_DIR = join(import.meta.dirname, '../../test-results/parity');
@@ -55,7 +57,8 @@ for (const { test: name, twin } of FEATURE_SCENES) {
 		test.beforeAll(async ({ browser }) => {
 			for (const renderer of ['webgl', 'webgpu'] as const) {
 				const page = await browser.newPage();
-				threeImages.set(renderer, await imageOf(page, `${twin}?renderer=${renderer}`));
+				const join = twin.includes('?') ? '&' : '?';
+				threeImages.set(renderer, await imageOf(page, `${twin}${join}renderer=${renderer}`));
 				await page.close();
 			}
 			const [webgl, webgpu] = [threeImages.get('webgl'), threeImages.get('webgpu')];

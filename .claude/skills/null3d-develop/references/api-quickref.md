@@ -117,7 +117,7 @@ export default defineSketch(async (ctx) => {
 | `scene.setBackground({ sky: { turbidity, rayleigh, sunDirection } })` (0.2) | | Sky backgrounds |
 | `scene.setEnvironment(env, { intensity, rotation })` (0.2) | | env from `assets.loadEnvironment` |
 | `scene.setBackground(env, { blur, intensity, rotation })` (0.2) | | Blurred environment backgrounds |
-| `scene.setFog({ type: 'linear', color, near, far })`, `{ type: 'exp2', color, density }` or `null` | | Later in 0.1 |
+| `scene.setFog({ type: 'linear', color, near, far })`, `{ type: 'exp2', color, density }` or `null` | | three.js's formulas and defaults. The background takes no fog, so give it the fog's color. Materials opt out with `fog: false` |
 | `scene.createSprites`, `createPoints`, `createLines`, `createLod` (0.2) | | Docs `api/sprites`, `api/points`, `api/lines`, `concepts/lod` |
 | `scene.createView({ camera, rect })` (after 1.0) | View | Split screens; until then, minimaps use a render-to-texture pass (`guides/multiple-views`) |
 | `scene.animateProperty(target, path, keyframes)` (after 1.0) | Animation | Until then, animate values in `onUpdate` |
@@ -278,12 +278,13 @@ const stripes = materials.shader({ ...anyStandardOption, wgsl });  // later in 0
 ```
 
 - `materials.standard` shades as three.js's `MeshStandardMaterial` does, with its formulas and its table of specular terms.
+- `fog: false` keeps a material's color out of the scene's fog (`scene.setFog`).
 - Later in 0.1, `materials.shader` keeps the standard look and lighting, and a WGSL surface function changes the surface before the engine lights it. Every `materials.standard` option feeds `defaultSurface()`. `references/shaders.md` has the contract.
 - A map reads the texture coordinates that its texture's `uvSet` names, and a mesh without a second set gives its first. A mesh without texture coordinates draws the material without its maps. A normal map takes its frame from the mesh's tangents (`computeTangents: true`) where the mesh has them, and otherwise from the pixels around it, as three.js does.
 - `alphaMode: 'mask'` with `alphaCutoff` draws nothing where the alpha falls below the cutoff, as three.js's `alphaTest`. `depthWrite`, `depthTest` and `depthBias: { constant, slopeScale }` set the depth state.
-- Later in 0.1: the `blend` alpha mode, `blending`, `fog: false`, and in `materials.shader` uniforms, textures, vertex offsets and full shaders.
+- Later in 0.1: the `blend` alpha mode, `blending`, and in `materials.shader` uniforms, textures, vertex offsets and full shaders.
 - `envIntensity` (0.2) comes with environment lighting, and `materials.shadowCatcher` in 0.2.
-- `set()` changes values cheaply at any time. Options that change the shader or the pipeline are fixed when you create the material: the texture maps, `doubleSided`, `vertexColors`, `flatShading`, `alphaMode` and the depth options. So create each variant before play, and switch with `setMaterial`.
+- `set()` changes values cheaply at any time. Options that change the shader or the pipeline are fixed when you create the material: the texture maps, `doubleSided`, `vertexColors`, `flatShading`, `alphaMode`, `fog` and the depth options. So create each variant before play, and switch with `setMaterial`.
 
 ## 10. Textures (`api/textures`)
 

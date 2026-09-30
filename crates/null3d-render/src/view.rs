@@ -19,7 +19,7 @@ use null3d_core::scene::SceneStorage;
 
 use null3d_core::layers::DEFAULT_LAYERS;
 
-use crate::camera::{Affine, Lens, Mat4};
+use crate::camera::{Affine, Lens, Mat4, view_direction};
 use crate::frame_data::FrameUniform;
 use crate::shadows::MAX_CASCADES;
 
@@ -109,20 +109,22 @@ impl View {
     }
 
     /// The view-projection matrix for positions relative to the camera, for a target of `aspect`,
-    /// the camera's place for those positions as [`Lens::eye`] gives it, and the camera's cell
-    /// and position in it. `None` when the view has no camera, or its camera object is gone.
+    /// the camera's place for those positions as [`Lens::eye`] gives it, the direction it looks
+    /// along, and the camera's cell and position in it. `None` when the view has no camera, or its
+    /// camera object is gone.
     pub(crate) fn transform(
         &self,
         scene: &SceneStorage,
         parity: usize,
         aspect: f32,
-    ) -> Option<(Mat4, [f32; 4], CellPosition)> {
+    ) -> Option<(Mat4, [f32; 4], [f32; 3], CellPosition)> {
         let (camera, lens) = self.camera?;
         let slot = scene.resolve(camera).ok()?;
         let world: Affine = *scene.world(parity).matrix(slot as usize);
         Some((
             lens.relative_view_projection(&world, aspect),
             lens.eye(&world),
+            view_direction(&world),
             scene.cell_position(slot, parity),
         ))
     }

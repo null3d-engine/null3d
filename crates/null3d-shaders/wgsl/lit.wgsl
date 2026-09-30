@@ -15,7 +15,7 @@ enable draw_index;
 // change between pixels, as three.js's getTangentFrame makes it.
 #import null3d::color
 #import null3d::lighting
-#import null3d::mesh::{InstanceIn, clip_of, find_instance, frame, material_of}
+#import null3d::mesh::{InstanceIn, clip_of, find_instance, fogged, frame, material_of}
 #import null3d::mesh::{map_layer, map_ready, relative_position, world_direction, world_normal}
 
 /// The bit of a material's flags that lights each triangle with its face's normal.
@@ -280,5 +280,5 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
         discard;
     }
 #endif
-    return vec4f(null3d::color::linear_to_srgb(outgoing), 1.0);
+    return vec4f(null3d::color::linear_to_srgb(fogged(outgoing, in.relative, m)), 1.0);
 }
