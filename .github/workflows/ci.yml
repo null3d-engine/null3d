@@ -191,9 +191,12 @@ jobs:
     # virtual machines may not give a browser one: Safari gets no WebGPU there, and Firefox no WebGL2.
     # One shard per browser keeps the fewest macOS machines busy; .dev/devices.md says when to add
     # one, by listing it in the matrix and raising the count in the name and the command.
+    # Until 1.0, the browsers run only in the merge queue, once for each pull request before it
+    # merges, because GitHub gives few macOS machines at once. Elsewhere the job passes at once on
+    # Linux, so a pull request still reports the check that the merge queue requires.
     name: real-browsers (${{ matrix.browser }} ${{ matrix.shard }}/1)
     needs: real-browsers-build
-    runs-on: macos-15
+    runs-on: ${{ github.event_name == 'merge_group' && 'macos-15' || 'ubuntu-latest' }}
     timeout-minutes: 15
     strategy:
       fail-fast: false
@@ -202,24 +205,33 @@ jobs:
         shard: [1]
     env:
       HUSKY: "0"
+      IN_QUEUE: ${{ github.event_name == 'merge_group' }}
     steps:
+      - name: ${{ matrix.browser }} runs in the merge queue
+        if: env.IN_QUEUE != 'true'
+        run: echo "${{ matrix.browser }} runs when this pull request is in the merge queue."
       - uses: actions/checkout@v5
+        if: env.IN_QUEUE == 'true'
       - uses: oven-sh/setup-bun@v2
+        if: env.IN_QUEUE == 'true'
         with:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
+        if: env.IN_QUEUE == 'true'
       - uses: actions/download-artifact@v4
+        if: env.IN_QUEUE == 'true'
         with:
           name: engine-core
           path: packages/engine/dist/
       # An app with the downloaded-file flag asks before its first launch, and nobody can answer.
       - name: Let Firefox open without the first-launch prompt
-        if: matrix.browser == 'Firefox'
+        if: env.IN_QUEUE == 'true' && matrix.browser == 'Firefox'
         run: xattr -dr com.apple.quarantine /Applications/Firefox.app || true
       - name: ${{ matrix.browser }}, shard ${{ matrix.shard }} of 1
+        if: env.IN_QUEUE == 'true'
         run: bun tests/real-browsers.ts --allow-no-webgpu --allow-no-webgl2 --shard ${{ matrix.shard }}/1 ${{ matrix.browser }}
       - uses: actions/upload-artifact@v4
-        if: failure() || cancelled()
+        if: env.IN_QUEUE == 'true' && (failure() || cancelled())
         with:
           name: real-browser-runs-${{ matrix.browser }}-${{ matrix.shard }}
           path: |
