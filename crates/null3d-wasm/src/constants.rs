@@ -293,6 +293,9 @@ pub fn typescript() -> String {
                 ("DOUBLE_SIDED", feature::DOUBLE_SIDED),
                 ("VERTEX_COLORS", feature::VERTEX_COLORS),
                 ("FLAT_SHADING", feature::FLAT_SHADING),
+                ("ALPHA_MASK", feature::ALPHA_MASK),
+                ("NO_DEPTH_WRITE", feature::NO_DEPTH_WRITE),
+                ("NO_DEPTH_TEST", feature::NO_DEPTH_TEST),
             ],
         ),
         // The values that `setMaterialValue` changes, by the float where each starts in a row.

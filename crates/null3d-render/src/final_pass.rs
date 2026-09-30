@@ -10,7 +10,7 @@ use null3d_gpu::drawlist::{
 
 use crate::frame::{RecordError, UploadArena};
 use crate::output::OutputUniform;
-use crate::pipelines::{PipelineCache, PipelineKey};
+use crate::pipelines::{DepthBias, PipelineCache, PipelineKey};
 
 /// The final pass's pipeline: it draws into the canvas, with no depth and no antialiasing. The
 /// shader makes its triangle from the vertex index, so it reads no vertex buffer, and the triangle
@@ -23,6 +23,7 @@ const PIPELINE: PipelineKey = PipelineKey {
     depth_format: format::NONE,
     samples: 1,
     state: state_flags::CULL_NONE,
+    bias: DepthBias::NONE,
 };
 
 /// The GPU objects of the final pass, which the frame builder's id ranges set.

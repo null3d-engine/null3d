@@ -3,7 +3,8 @@ enable draw_index;
 // Meshes drawn by instance with the standard material: glTF's metallic-roughness model, shaded
 // with the formulas of three.js's MeshStandardMaterial. null3d::mesh finds each instance on both
 // GPU paths, and null3d::lighting holds the formulas. `light_surface` gathers the scene's lights,
-// so the rest of the shader does not change with where the lights come from.
+// so the rest of the shader does not change with where the lights come from. The ALPHA_MASK builds
+// draw nothing where the surface's alpha falls below the material's cutoff.
 #import null3d::lighting
 #import null3d::mesh::{InstanceIn, clip_of, find_instance, finish, frame, material_of}
 #import null3d::mesh::{relative_position, world_normal}
@@ -71,8 +72,10 @@ fn light_surface(
 fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
     let m = material_of(in.material);
     var base = m.color.rgb;
+    var alpha = m.color.a;
 #ifdef VERTEX_COLOR
     base *= in.vertex_color.rgb;
+    alpha *= in.vertex_color.a;
 #endif
     // Toward the camera: from the point for a perspective camera, and one direction for an
     // orthographic camera, whose view rays are parallel.
@@ -94,5 +97,11 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
     let dfg = null3d::lighting::dfg_lut(n_dot_v, pbr.roughness);
     let emitted = m.emissive.rgb * m.strengths.w;
     let outgoing = light_surface(pbr, normal, to_view, dfg) + emitted;
+    // The test comes last, after every derivative, which a discarded fragment still helps compute.
+#ifdef ALPHA_MASK
+    if alpha < m.emissive.w {
+        discard;
+    }
+#endif
     return finish(outgoing, in.clip.xy);
 }
