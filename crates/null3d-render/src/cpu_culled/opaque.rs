@@ -23,7 +23,6 @@ use crate::frame::{
     CELL_OFFSET_BYTES, CellOffsets, MeshBuffers, RecordError, UploadArena, grown_size, put_u32,
 };
 use crate::frame_data::FrameUniform;
-use crate::materials::{MAP_WORDS, MATERIAL_FLOATS};
 use crate::view::{ViewFrame, ViewId};
 
 /// Where a frame's slot in a view's ring of frame uniforms holds the offset from the camera to
@@ -172,14 +171,13 @@ impl Opaque {
     }
 
     /// Creates the ring of frame uniforms of each view from the first one without it up to
-    /// `views`, with the group that binds its uniform block, its cell offsets, the material table
-    /// and the maps table.
+    /// `views`, with the group that binds its uniform block, its cell offsets and the material
+    /// table's texture.
     pub(super) fn add_views(
         &mut self,
         list: &mut DrawList,
         views: usize,
     ) -> Result<(), RecordError> {
-        let table_bytes = |words: usize| sizes::MAX_MATERIALS * words as u32 * 4;
         while self.views.len() < views {
             let view = ViewId::from_index(self.views.len());
             list.push(
@@ -197,7 +195,7 @@ impl Opaque {
                 &[
                     ids::frame_group(view),
                     bind_layout::FRAME,
-                    4,
+                    3,
                     0,
                     resource_kind::BUFFER,
                     ids::frame(view),
@@ -209,15 +207,10 @@ impl Opaque {
                     OFFSETS_AT,
                     OFFSETS_BYTES,
                     1,
-                    resource_kind::BUFFER,
+                    resource_kind::TEXTURE,
                     ids::MATERIALS,
                     0,
-                    table_bytes(MATERIAL_FLOATS),
-                    3,
-                    resource_kind::BUFFER,
-                    ids::MAPS,
                     0,
-                    table_bytes(MAP_WORDS),
                 ],
             )?;
             self.views.push(ViewDraws::default());
