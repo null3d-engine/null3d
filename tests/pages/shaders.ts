@@ -1,4 +1,4 @@
-// Compiles every shader in the generated shader module in this browser. Each GLSL program must
+// Compiles every variant of the generated shader modules in this browser. Each GLSL program must
 // compile and link in WebGL2, and every uniform block and texture that the reflection names must
 // exist in the linked program. Each WGSL module must compile in WebGPU when the browser has it.
 // Failures carry the browser's info logs.
