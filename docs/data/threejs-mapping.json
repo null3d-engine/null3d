@@ -220,7 +220,7 @@
       "status": "direct",
       "since": "0.1",
       "target": "scene.setFog({ type: 'linear', color, near, far }) or { type: 'exp2', color, density }",
-      "notes": "Materials opt out with fog: false.",
+      "notes": "Same formulas and defaults. Materials opt out with fog: false. null3D mixes the fog in linear color, as WebGPURenderer does. WebGLRenderer mixes it after the sRGB encoding when it draws to the canvas, so there the same fog looks a little darker at middle distances.",
       "docs": "api/scene",
       "detect": "\\bFog(Exp2)?\\b"
     },

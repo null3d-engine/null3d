@@ -230,16 +230,29 @@ impl Lens {
         match self {
             Lens::Perspective(_) => [0.0, 0.0, 0.0, 1.0],
             Lens::Orthographic(_) => {
-                let back = [world[2], world[6], world[10]];
-                let length = back.iter().map(|v| v * v).sum::<f32>().sqrt();
-                if length > 0.0 {
-                    [back[0] / length, back[1] / length, back[2] / length, 0.0]
-                } else {
-                    [0.0, 0.0, 1.0, 0.0]
-                }
+                let [x, y, z] = back_axis(world);
+                [x, y, z, 0.0]
             }
         }
     }
+}
+
+/// The unit direction of a camera's +Z axis, from the scene toward the camera, or +Z when the axis
+/// has no length.
+fn back_axis(world: &Affine) -> [f32; 3] {
+    let back = [world[2], world[6], world[10]];
+    let length = back.iter().map(|v| v * v).sum::<f32>().sqrt();
+    if length > 0.0 {
+        back.map(|v| v / length)
+    } else {
+        [0.0, 0.0, 1.0]
+    }
+}
+
+/// The unit direction a camera looks along, its -Z axis, for either lens. A point's depth in the
+/// view is its offset from the camera along it, as three.js's fog measures depth.
+pub fn view_direction(world: &Affine) -> [f32; 3] {
+    back_axis(world).map(|v| -v)
 }
 
 #[cfg(test)]
