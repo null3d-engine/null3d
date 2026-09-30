@@ -128,7 +128,7 @@ fn run(function: u32, u: array<vec4u, 8>, f: array<vec4f, 8>) -> Results {
         case 46u: {
             return triple(null3d::lighting::brdf_ggx(f[0].xyz, f[1].xyz, f[2].xyz, f[3].xyz, f[3].w, f[4].x));
         }
-        case 47u: { return pair(null3d::lighting::dfg_approx(f[0].x, f[0].y)); }
+        case 47u: { return pair(null3d::lighting::dfg_lut(f[0].x, f[0].y)); }
         case 48u: { return triple(null3d::lighting::environment_brdf(f[0].xyz, f[0].w, f[1].xy)); }
         case 49u: {
             let s = null3d::lighting::multiscattering(f[0].xyz, f[0].w, f[1].xy);
@@ -212,6 +212,10 @@ fn run(function: u32, u: array<vec4u, 8>, f: array<vec4f, 8>) -> Results {
         case 91u: { return scalar(null3d::sdf::smooth_intersect(f[0].x, f[0].y, f[0].z)); }
         case 92u: { return scalar(null3d::sdf::rounded(f[0].x, f[0].y)); }
         case 93u: { return scalar(null3d::sdf::onion(f[0].x, f[0].y)); }
+        case 94u: {
+            let scene_fog = null3d::fog::Fog(f[0].xyz, u[1].x, f[2].xyz, f[2].w, f[3].x, f[3].y);
+            return scalar(null3d::fog::fog_factor(scene_fog, f[4].xyz));
+        }
         default: { return whole(vec4u(0xffffffffu)); }
     }
 }

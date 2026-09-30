@@ -1,13 +1,15 @@
 import { describe, expect, test } from 'bun:test';
-import { BoxGeometry } from 'three';
+import { BoxGeometry, Quaternion, Vector3 } from 'three';
 import {
 	boxGeometry,
 	createS1,
 	createS2,
+	createS3,
 	HOLD_TIME,
 	mulberry32,
 	S1_BOB_HEIGHT,
 	S1_BOX_SIZE,
+	S1_CELLS_SQUARE,
 	S1_EXTENT,
 	S2_BRANCHING,
 	S2_DEPTH,
@@ -16,13 +18,28 @@ import {
 	S2_NODE_COUNT,
 	S2_NODES_PER_TREE,
 	S2_ROOTS,
+	S3_BOX,
+	S3_DEFAULT_COUNT,
+	S3_EXTENT,
+	S3_FLOOR,
+	S3_LIGHT_COLORS,
+	S3_LIGHT_COUNT,
+	S3_LIGHT_SEED,
+	S3_PATHS,
 	s1Camera,
+	s1CellsCamera,
+	s1CellsInstanceAt,
 	s1InstanceAt,
 	s1StaticCamera,
 	s2Camera,
 	s2MeshSize,
 	s2RootRotation,
 	s2Trees,
+	s3BoxAt,
+	s3Camera,
+	s3Grid,
+	s3LightAt,
+	s3LightColor,
 } from './spec';
 
 const TAU = 2 * Math.PI;
@@ -220,6 +237,43 @@ describe('S1-static', () => {
 	});
 });
 
+describe('S1-cells', () => {
+	test("spreads S1's boxes over 8 x 8 grid cells and keeps each box's height and turn", () => {
+		const data = createS1(20_000);
+		const cells = new Set<string>();
+		const position = [0, 0, 0];
+		const rotation = [0, 0, 0, 0];
+		const still = [0, 0, 0];
+		const turn = [0, 0, 0, 0];
+		// The engine's cell of a coordinate: the whole number of cells nearest to it.
+		const cellOf = (v: number) => Math.floor(v / S1_CELLS_SQUARE.cellSize + 0.5);
+		for (let i = 0; i < data.count; i++) {
+			s1CellsInstanceAt(data, i, 7, position, rotation);
+			s1InstanceAt(data, i, 0, still, turn);
+			expect(position[1]).toBe(still[1] as number);
+			expect(rotation).toEqual(turn);
+			const [x, , z] = position as [number, number, number];
+			expect(cellOf(position[1] as number)).toBe(0);
+			cells.add(`${cellOf(x)},${cellOf(z)}`);
+		}
+		expect(cells.size).toBe(64);
+		for (const cell of cells)
+			for (const c of cell.split(',').map(Number)) {
+				expect(c).toBeGreaterThanOrEqual(-4);
+				expect(c).toBeLessThanOrEqual(3);
+			}
+	});
+
+	test('flies the camera low along -Z over 7 km every 35 s, looking ahead', () => {
+		const start = cameraAt(s1CellsCamera, 0);
+		expectClose(start.position, [300, 5, 3000]);
+		expectClose(start.target, [300, 5, 2999]);
+		expectClose(cameraAt(s1CellsCamera, 17.5).position, [300, 5, -500]);
+		expectClose(cameraAt(s1CellsCamera, 35).position, [300, 5, 3000]);
+		expectClose(cameraAt(s1CellsCamera, HOLD_TIME).position, [300, 5, 2600]);
+	});
+});
+
 describe('S2', () => {
 	const data = createS2();
 
@@ -325,5 +379,146 @@ describe('S2', () => {
 		const quarter = cameraAt(s2Camera, 15);
 		expectClose(quarter.position, [0, 60, -110]);
 		expectClose(quarter.target, [0, 0, 0]);
+	});
+});
+
+describe('S3', () => {
+	const n = 1000;
+	const data = createS3(n);
+
+	test('is the same for the same seed, and has the same lights for every box count', () => {
+		expect(createS3(n)).toEqual(data);
+		const other = createS3(10, 4);
+		expect(other.base).not.toEqual(data.base.subarray(0, 20));
+		expect(other.lightCenter).toEqual(data.lightCenter);
+		expect(other.lightSpeed).toEqual(data.lightSpeed);
+		expect(createS3(0).lightPhase).toEqual(data.lightPhase);
+	});
+
+	test('has one entry per box, two for positions, and one per light, two for centers', () => {
+		expect(data.count).toBe(n);
+		expect(data.base).toHaveLength(n * 2);
+		expect(data.height).toHaveLength(n);
+		expect(data.yaw).toHaveLength(n);
+		expect(data.lightCenter).toHaveLength(S3_LIGHT_COUNT * 2);
+		for (const values of [data.lightRadius, data.lightHeight, data.lightSpeed, data.lightPhase])
+			expect(values).toHaveLength(256);
+		expect(() => createS3(-1)).toThrow('S3 needs a whole number of instances');
+	});
+
+	test('draws offsets, height and turn box by box, and each light from a generator of its own', () => {
+		const random = mulberry32(3);
+		const { side, spacing, jitter } = s3Grid(n);
+		expect([side, spacing]).toEqual([32, 6.25]);
+		for (const i of [0, 1, 33]) {
+			const [x, z, height, yaw] = draws(random, i === 33 ? 4 * 31 + 4 : 4).slice(-4) as [
+				number,
+				number,
+				number,
+				number,
+			];
+			const [column, row] = [i % side, Math.floor(i / side)];
+			expect([data.base[i * 2], data.base[i * 2 + 1]]).toEqual([
+				Math.fround(-S3_EXTENT + (column + 0.5) * spacing - jitter + 2 * jitter * x),
+				Math.fround(-S3_EXTENT + (row + 0.5) * spacing - jitter + 2 * jitter * z),
+			]);
+			const { minHeight, maxHeight } = S3_BOX;
+			expect(data.height[i]).toBe(Math.fround(minHeight + (maxHeight - minHeight) * height));
+			expect(data.yaw[i]).toBe(Math.fround(yaw * TAU));
+		}
+		const lights = mulberry32(S3_LIGHT_SEED);
+		const [x, z, radius, height, speed, direction, phase] = draws(lights, 7) as number[];
+		const { minRadius, maxRadius, minHeight, maxHeight, minSpeed, maxSpeed } = S3_PATHS;
+		expect([...data.lightCenter.subarray(0, 2)]).toEqual(
+			[x, z].map((v) => Math.fround(-S3_EXTENT + 2 * S3_EXTENT * (v as number))),
+		);
+		expect(data.lightRadius[0]).toBe(Math.fround(minRadius + (maxRadius - minRadius) * radius!));
+		expect(data.lightHeight[0]).toBe(Math.fround(minHeight + (maxHeight - minHeight) * height!));
+		const rate = Math.fround(minSpeed + (maxSpeed - minSpeed) * speed!);
+		expect(data.lightSpeed[0]).toBe(direction! < 0.5 ? -rate : rate);
+		expect(data.lightPhase[0]).toBe(Math.fround(phase! * TAU));
+	});
+
+	test('keeps the boxes of the default count apart, each inside its own grid cell', () => {
+		const boxes = createS3(S3_DEFAULT_COUNT);
+		const { side, spacing, jitter } = s3Grid(S3_DEFAULT_COUNT);
+		expect(side).toBe(142);
+		expect(jitter).toBeGreaterThan(0.05);
+		const reach = S3_BOX.width * Math.SQRT1_2;
+		for (let i = 0; i < boxes.count; i++) {
+			const [column, row] = [i % side, Math.floor(i / side)];
+			const x = boxes.base[i * 2]! + S3_EXTENT - column * spacing;
+			const z = boxes.base[i * 2 + 1]! + S3_EXTENT - row * spacing;
+			if (x - reach <= 0 || x + reach >= spacing || z - reach <= 0 || z + reach >= spacing)
+				throw new Error(`box ${i} reaches out of its cell`);
+		}
+	});
+
+	test('keeps every value in its range, and turns about half the lights each way', () => {
+		const big = createS3(100_000);
+		const { minHeight, maxHeight } = S3_BOX;
+		expect(everyValue(big.base, (v) => v >= -S3_EXTENT && v <= S3_EXTENT)).toBe(true);
+		expect(everyValue(big.height, (v) => v >= minHeight && v <= maxHeight)).toBe(true);
+		expect(everyValue(big.yaw, (v) => v >= 0 && v <= Math.fround(TAU))).toBe(true);
+		const { minRadius, maxRadius, minSpeed, maxSpeed } = S3_PATHS;
+		expect(everyValue(big.lightRadius, (v) => v >= minRadius && v <= maxRadius)).toBe(true);
+		expect(
+			everyValue(big.lightSpeed, (v) => Math.abs(v) >= minSpeed && Math.abs(v) <= maxSpeed),
+		).toBe(true);
+		const clockwise = [...big.lightSpeed].filter((v) => v < 0).length;
+		expect(clockwise).toBeGreaterThan(96);
+		expect(clockwise).toBeLessThan(160);
+	});
+
+	test('stands each box on the floor, turned about +Y and scaled to its width and height', () => {
+		const position = [0, 0, 0];
+		const quaternion = [0, 0, 0, 0];
+		const scale = [0, 0, 0];
+		for (let i = 0; i < 20; i++) {
+			s3BoxAt(data, i, position, quaternion, scale);
+			const height = data.height[i]!;
+			expectClose(position, [data.base[i * 2]!, height / 2, data.base[i * 2 + 1]!]);
+			const half = data.yaw[i]! / 2;
+			expectClose(quaternion, [0, Math.sin(half), 0, Math.cos(half)]);
+			expectClose(scale, [S3_BOX.width, height, S3_BOX.width]);
+		}
+	});
+
+	test('turns the floor to face +Y, wide enough for every light path', () => {
+		const normal = new Vector3(0, 0, 1).applyQuaternion(new Quaternion(...S3_FLOOR.rotation));
+		expectClose(normal.toArray(), [0, 1, 0]);
+		expect(S3_FLOOR.size / 2).toBeGreaterThanOrEqual(S3_EXTENT + S3_PATHS.maxRadius);
+	});
+
+	test('moves each light around its circle at its own rate and height', () => {
+		const position = [0, 0, 0];
+		for (let i = 0; i < S3_LIGHT_COUNT; i += 37) {
+			const [cx, cz] = [data.lightCenter[i * 2]!, data.lightCenter[i * 2 + 1]!];
+			for (const t of [0, 1, HOLD_TIME, 60]) {
+				s3LightAt(data, i, t, position);
+				const angle = data.lightSpeed[i]! * t + data.lightPhase[i]!;
+				const r = data.lightRadius[i]!;
+				expectClose(position, [
+					cx + r * Math.cos(angle),
+					data.lightHeight[i]!,
+					cz + r * Math.sin(angle),
+				]);
+			}
+		}
+	});
+
+	test('colors the lights from the palette in turn', () => {
+		expect(s3LightColor(0)).toBe(S3_LIGHT_COLORS[0]);
+		expect(s3LightColor(9)).toBe(S3_LIGHT_COLORS[1]);
+		expect(new Set(Array.from({ length: S3_LIGHT_COUNT }, (_, i) => s3LightColor(i))).size).toBe(
+			S3_LIGHT_COLORS.length,
+		);
+	});
+
+	test('orbits the camera at radius 120 and height 50', () => {
+		const start = cameraAt(s3Camera, 0);
+		expectClose(start.position, [120, 50, 0]);
+		expectClose(start.target, [0, 0, 0]);
+		expectClose(cameraAt(s3Camera, 15).position, [0, 50, -120]);
 	});
 });

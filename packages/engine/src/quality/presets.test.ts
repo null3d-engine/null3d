@@ -7,6 +7,7 @@ import {
 	checkSettings,
 	describeValues,
 	LIVE_SETTINGS,
+	MIB,
 	presetOption,
 	presetSettings,
 	presetValue,
@@ -80,7 +81,7 @@ describe('the preset table', () => {
 		// A texture array holds the cascades, and every device allows 256 layers.
 		expect(PLANNED_SETTINGS.shadowCascades.values.max).toBeLessThanOrEqual(256);
 		// WebGPU samplers take an anisotropy of at most 16.
-		expect(PLANNED_SETTINGS.maxAnisotropy.values.max).toBe(16);
+		expect(QUALITY_SETTINGS.maxAnisotropy.values.max).toBe(16);
 		// The render scale draws into a corner of targets made at the full size, never past it.
 		expect(PLANNED_SETTINGS.minRenderScale.values.max).toBe(1);
 	});
@@ -90,6 +91,8 @@ describe('the preset table', () => {
 		expect(ROWS.filter((row) => row.built).map((row) => row.name)).toEqual([
 			'maxPixelRatio',
 			'antialias',
+			'maxAnisotropy',
+			'uploadBytesPerFrame',
 			'memoryMaximumMiB',
 		]);
 	});
@@ -106,8 +109,13 @@ describe('the preset table', () => {
 
 	it('lets a sketch read the settings that are fixed after the load, and change the live ones', () => {
 		expect(sameNames).toBe(true);
-		expect(SKETCH_SETTINGS).toEqual(['maxPixelRatio', 'antialias']);
-		expect(LIVE_SETTINGS).toEqual(['maxPixelRatio']);
+		expect(SKETCH_SETTINGS).toEqual([
+			'maxPixelRatio',
+			'maxAnisotropy',
+			'uploadBytesPerFrame',
+			'antialias',
+		]);
+		expect(LIVE_SETTINGS).toEqual(['maxPixelRatio', 'maxAnisotropy', 'uploadBytesPerFrame']);
 	});
 
 	it('takes FXAA on Low, which phones draw, and MSAA from Medium up', () => {
@@ -129,27 +137,41 @@ describe('the preset table', () => {
 
 describe('presetSettings', () => {
 	it("gives a sketch each preset's values", () => {
-		expect(presetSettings('low')).toEqual({ maxPixelRatio: 1.5, antialias: 'fxaa' });
-		expect(presetSettings('medium')).toEqual({ maxPixelRatio: 2, antialias: 'msaa' });
+		expect(presetSettings('low')).toEqual({
+			maxPixelRatio: 1.5,
+			maxAnisotropy: 2,
+			uploadBytesPerFrame: 2 * MIB,
+			antialias: 'fxaa',
+		});
+		expect(presetSettings('medium')).toEqual({
+			maxPixelRatio: 2,
+			maxAnisotropy: 4,
+			uploadBytesPerFrame: 4 * MIB,
+			antialias: 'msaa',
+		});
+		expect(presetSettings('high')).toEqual({
+			maxPixelRatio: 2,
+			maxAnisotropy: 8,
+			uploadBytesPerFrame: 8 * MIB,
+			antialias: 'msaa',
+		});
 		expect(presetSettings('ultra')).toEqual({
 			maxPixelRatio: Number.POSITIVE_INFINITY,
+			maxAnisotropy: 16,
+			uploadBytesPerFrame: 16 * MIB,
 			antialias: 'msaa',
 		});
 	});
 
 	it("takes the page's option over the preset's value", () => {
-		expect(presetSettings('low', { maxPixelRatio: 3 })).toEqual({
-			maxPixelRatio: 3,
-			antialias: 'fxaa',
-		});
-		expect(presetSettings('high', { maxPixelRatio: undefined, antialias: 'none' })).toEqual({
-			maxPixelRatio: 2,
-			antialias: 'none',
-		});
+		expect(presetSettings('low', { maxPixelRatio: 3 }).maxPixelRatio).toBe(3);
+		expect(presetSettings('high', { maxPixelRatio: undefined }).maxPixelRatio).toBe(2);
+		expect(presetSettings('high', { antialias: 'none' }).antialias).toBe('none');
 	});
 
 	it("reads one setting's value on a preset", () => {
 		expect(presetValue('maxPixelRatio', 'low')).toBe(1.5);
+		expect(presetValue('maxAnisotropy', 'ultra')).toBe(16);
 		expect(presetValue('memoryMaximumMiB', 'high')).toBe(1024);
 	});
 });
@@ -158,6 +180,10 @@ describe('checkSettings', () => {
 	it('takes the settings that a sketch can change, with values that they take', () => {
 		for (const maxPixelRatio of [0.5, 1, 2.75, 3, Number.POSITIVE_INFINITY])
 			expect(() => checkSettings('quality.set()', { maxPixelRatio })).not.toThrow();
+		for (const maxAnisotropy of [1, 3, 16])
+			expect(() => checkSettings('quality.set()', { maxAnisotropy })).not.toThrow();
+		for (const uploadBytesPerFrame of [64 * 1024, 5_000_000, 64 * MIB])
+			expect(() => checkSettings('quality.set()', { uploadBytesPerFrame })).not.toThrow();
 		expect(() => checkSettings('quality.set()', {})).not.toThrow();
 		expect(() => checkSettings('quality.set()', { maxPixelRatio: undefined })).not.toThrow();
 	});
@@ -172,13 +198,23 @@ describe('checkSettings', () => {
 		expect(() => checkSettings('quality.set()', { maxPixelRatio: '2' })).toThrow(
 			'E1213: quality.set() got maxPixelRatio "2", which is not a number from 0.5 up.',
 		);
+		for (const bad of [0, 1.5, 17]) {
+			expect(() => checkSettings('quality.set()', { maxAnisotropy: bad })).toThrow(
+				`E1213: quality.set() got maxAnisotropy ${bad}, which is not a whole number from 1 to 16.`,
+			);
+		}
+		for (const bad of [1024, 64 * MIB + 1, 100_000.5]) {
+			expect(() => checkSettings('quality.set()', { uploadBytesPerFrame: bad })).toThrow(
+				`E1213: quality.set() got uploadBytesPerFrame ${bad}, which is not a whole number from 65536 to 67108864.`,
+			);
+		}
 	});
 
 	it('refuses a setting that the call does not take, with E1213, and names those it takes', () => {
 		expect(() =>
 			checkSettings('quality.set()', { shadows: { cascades: 2 } }, LIVE_SETTINGS),
 		).toThrow(
-			'E1213: quality.set() got "shadows", which is not a setting it takes. It takes maxPixelRatio.',
+			'E1213: quality.set() got "shadows", which is not a setting it takes. It takes maxPixelRatio, maxAnisotropy or uploadBytesPerFrame.',
 		);
 		// A setting whose feature is not built yet, and one that is fixed before the engine loads.
 		expect(() => checkSettings('quality.set()', { shadowCascades: 2 }, LIVE_SETTINGS)).toThrow(

@@ -17,10 +17,13 @@ use std::ops::Range;
 use null3d_core::handle::Handle;
 use null3d_gpu::drawlist::{sizes, template, vertex};
 
+use crate::pipelines::DepthBias;
+
 /// How a material shades.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub enum Shading {
-    /// Lambert lighting from the sun and ambient light, as three.js's `MeshLambertMaterial`.
+    /// The standard material: glTF's metallic-roughness model, lit as three.js's
+    /// `MeshStandardMaterial` is lit.
     Lit,
     /// The base color only, as three.js's `MeshBasicMaterial`.
     Unlit,
@@ -52,6 +55,58 @@ impl Shading {
             Shading::TexCoords | Shading::UnlitMap => vertex::UV0,
         }
     }
+
+    /// True when its shader reads the material's base color and opacity, which vertex colors
+    /// multiply and a mask compares with the material's alpha cutoff.
+    pub const fn reads_base_color(self) -> bool {
+        !matches!(self, Shading::TexCoords)
+    }
+}
+
+/// Options fixed when a material is created, which choose its pipeline or its shader's code.
+pub mod feature {
+    /// Both faces of each triangle draw, and back faces light as if they faced the camera.
+    pub const DOUBLE_SIDED: u32 = 1;
+    /// The mesh's vertex colors multiply the base color, on meshes that have them.
+    pub const VERTEX_COLORS: u32 = 2;
+    /// Each triangle lights with one normal, the normal of its face.
+    pub const FLAT_SHADING: u32 = 4;
+    /// Fragments whose alpha is below the material's cutoff draw nothing: glTF's alpha mode `MASK`.
+    pub const ALPHA_MASK: u32 = 8;
+    /// The surface writes no depth.
+    pub const NO_DEPTH_WRITE: u32 = 32;
+    /// The surface draws whatever the depth target holds, and writes no depth.
+    pub const NO_DEPTH_TEST: u32 = 64;
+    /// The scene's fog leaves the material's color as it is.
+    pub const NO_FOG: u32 = 1024;
+    /// Every feature.
+    pub const ALL: u32 = DOUBLE_SIDED
+        | VERTEX_COLORS
+        | FLAT_SHADING
+        | ALPHA_MASK
+        | NO_DEPTH_WRITE
+        | NO_DEPTH_TEST
+        | NO_FOG;
+}
+
+/// Bits of a row's flags, which shaders test with no cost worth a shader variant.
+pub mod flag {
+    /// The shader lights each triangle with its face's normal.
+    pub const FLAT_SHADING: u32 = 1;
+    /// The shader skips the scene's fog.
+    pub const NO_FOG: u32 = 4;
+}
+
+/// The row flags (`flag::*` bits) of a material with `features` (`feature::*` bits).
+const fn row_flags(features: u32) -> u32 {
+    let mut flags = 0;
+    if features & feature::FLAT_SHADING != 0 {
+        flags |= flag::FLAT_SHADING;
+    }
+    if features & feature::NO_FOG != 0 {
+        flags |= flag::NO_FOG;
+    }
+    flags
 }
 
 /// Floats in each material's row: eight `vec4f`s.
@@ -65,7 +120,7 @@ pub mod param {
     pub const COLOR: usize = 0;
     /// The opacity, from 0 to 1.
     pub const OPACITY: usize = 3;
-    /// The emissive color times its intensity: 3 floats.
+    /// The emissive color: 3 floats, which the shaders multiply by [`EMISSIVE_INTENSITY`].
     pub const EMISSIVE: usize = 4;
     /// The alpha below which a masked material draws nothing.
     pub const ALPHA_CUTOFF: usize = 7;
@@ -79,8 +134,10 @@ pub mod param {
     pub const OCCLUSION_STRENGTH: usize = 12;
     /// The factor of the light map's light.
     pub const LIGHT_MAP_INTENSITY: usize = 13;
-    /// Shading switches that cost nothing to test, as a float.
+    /// Shading switches (`flag::*` bits) as a float, fixed when the material is created.
     pub const FLAGS: usize = 14;
+    /// The factor of the emissive color.
+    pub const EMISSIVE_INTENSITY: usize = 15;
     /// The transform of the first texture coordinates as two rows of a 2 x 3 matrix. The row that
     /// gives u is 3 floats here, and the row that gives v is 3 floats at [`UV_V`].
     pub const UV_U: usize = 16;
@@ -88,6 +145,18 @@ pub mod param {
     pub const UV_V: usize = 20;
     /// The texture array layer of each map, in [`super::MapSlot`] order: one float per slot.
     pub const MAP_LAYERS: usize = 24;
+
+    /// The floats of the value that starts at `at`, for a value that sketches set, or `None` for
+    /// the flags, the map layers, a spare float or a float inside a value.
+    pub const fn width(at: usize) -> Option<usize> {
+        match at {
+            COLOR | EMISSIVE | UV_U | UV_V => Some(3),
+            NORMAL_SCALE => Some(2),
+            OPACITY | ALPHA_CUTOFF | METALNESS | ROUGHNESS | OCCLUSION_STRENGTH
+            | LIGHT_MAP_INTENSITY | EMISSIVE_INTENSITY => Some(1),
+            _ => None,
+        }
+    }
 }
 
 /// A map layer in a row for a map that draws nothing: none is set, or its image is not on the
@@ -130,6 +199,7 @@ const DEFAULT_ROW: [f32; MATERIAL_FLOATS] = {
     row[param::NORMAL_SCALE + 1] = 1.0;
     row[param::OCCLUSION_STRENGTH] = 1.0;
     row[param::LIGHT_MAP_INTENSITY] = 1.0;
+    row[param::EMISSIVE_INTENSITY] = 1.0;
     row[param::UV_U] = 1.0;
     row[param::UV_V + 1] = 1.0;
     let mut slot = 0;
@@ -146,8 +216,12 @@ pub struct MaterialTable {
     /// Each material's row, in id order.
     rows: Vec<f32>,
     shading: Vec<Shading>,
+    /// Each material's features (`feature::*` bits).
+    features: Vec<u32>,
     /// Each material's maps by slot, `Handle::NONE` where it has none.
     maps: Vec<[Handle; MAP_SLOTS]>,
+    /// Each material's depth bias.
+    biases: Vec<DepthBias>,
     capacity: u32,
     /// The ids whose rows changed since the last upload; empty when none did.
     changed: Range<u32>,
@@ -162,6 +236,8 @@ pub enum MaterialError {
     Full,
     /// No material has this id.
     Unknown(u32),
+    /// No value that sketches set starts at this float of a row, or the value has another width.
+    Value(u32),
 }
 
 impl MaterialTable {
@@ -169,40 +245,65 @@ impl MaterialTable {
         Self {
             rows: Vec::with_capacity(capacity as usize * MATERIAL_FLOATS),
             shading: Vec::with_capacity(capacity as usize),
+            features: Vec::with_capacity(capacity as usize),
             maps: Vec::with_capacity(capacity as usize),
+            biases: Vec::with_capacity(capacity as usize),
             capacity,
             changed: 0..0,
             maps_changed: false,
         }
     }
 
-    /// Adds a material with a linear color and opacity, and the default values of the rest of its
-    /// row, and returns its id, counting from 0.
-    pub fn create(&mut self, shading: Shading, color: [f32; 4]) -> Result<u32, MaterialError> {
+    /// Adds a material with its features (`feature::*` bits, fixed from now on), a linear color
+    /// and opacity, and the default values of the rest of its row. Returns its id, counting from 0.
+    pub fn create(
+        &mut self,
+        shading: Shading,
+        features: u32,
+        color: [f32; 4],
+    ) -> Result<u32, MaterialError> {
         let id = self.len();
         if id >= self.capacity {
             return Err(MaterialError::Full);
         }
+        let features = features & feature::ALL;
         self.rows.extend_from_slice(&DEFAULT_ROW);
-        self.rows[id as usize * MATERIAL_FLOATS..][..4].copy_from_slice(&color);
+        let row = &mut self.rows[id as usize * MATERIAL_FLOATS..];
+        row[..4].copy_from_slice(&color);
+        row[param::FLAGS] = row_flags(features) as f32;
         self.shading.push(shading);
+        self.features.push(features);
         self.maps.push([Handle::NONE; MAP_SLOTS]);
+        self.biases.push(DepthBias::NONE);
         self.mark_row(id);
         Ok(id)
     }
 
-    /// Changes a material's linear color and keeps its opacity.
-    pub fn set_color(&mut self, id: u32, color: [f32; 3]) -> Result<(), MaterialError> {
-        self.write(id, param::COLOR, &color)
+    /// Gives a material a depth bias. It is part of the material's pipeline, so it is set once,
+    /// right after [`MaterialTable::create`].
+    pub fn set_depth_bias(&mut self, id: u32, bias: DepthBias) -> Result<(), MaterialError> {
+        let slot = self
+            .biases
+            .get_mut(id as usize)
+            .ok_or(MaterialError::Unknown(id))?;
+        *slot = bias;
+        Ok(())
     }
 
-    /// Changes a material's opacity and keeps its color.
-    pub fn set_opacity(&mut self, id: u32, opacity: f32) -> Result<(), MaterialError> {
-        self.write(id, param::OPACITY, &[opacity])
+    /// A material's depth bias, or none for an id that names no material.
+    pub fn depth_bias(&self, id: u32) -> DepthBias {
+        self.biases
+            .get(id as usize)
+            .copied()
+            .unwrap_or(DepthBias::NONE)
     }
 
-    /// Writes `values` into a material's row from float `at` on, for the next frame to upload.
-    fn write(&mut self, id: u32, at: usize, values: &[f32]) -> Result<(), MaterialError> {
+    /// Changes the value that starts at float `at` of a material's row (`param::*`) and keeps the
+    /// others. `values` holds as many floats as the value has.
+    pub fn set(&mut self, id: u32, at: usize, values: &[f32]) -> Result<(), MaterialError> {
+        if param::width(at) != Some(values.len()) {
+            return Err(MaterialError::Value(at as u32));
+        }
         let start = id as usize * MATERIAL_FLOATS + at;
         let row = self.rows.get_mut(start..start + values.len());
         row.ok_or(MaterialError::Unknown(id))?
@@ -241,6 +342,11 @@ impl MaterialTable {
         self.maps
             .get(id as usize)
             .map_or(Handle::NONE, |maps| maps[slot as usize])
+    }
+
+    /// A material's features (`feature::*` bits), or none for an id that names no material.
+    pub fn features(&self, id: u32) -> u32 {
+        self.features.get(id as usize).copied().unwrap_or(0)
     }
 
     pub fn shading(&self, id: u32) -> Result<Shading, MaterialError> {
@@ -325,25 +431,28 @@ mod tests {
     #[test]
     fn materials_get_ids_in_order_and_report_changes_once() {
         let mut table = MaterialTable::with_capacity(2);
-        assert_eq!(table.create(Shading::Lit, [1.0, 0.0, 0.0, 1.0]), Ok(0));
-        assert_eq!(table.create(Shading::Unlit, [0.0, 1.0, 0.0, 1.0]), Ok(1));
+        assert_eq!(table.create(Shading::Lit, 0, [1.0, 0.0, 0.0, 1.0]), Ok(0));
+        assert_eq!(table.create(Shading::Unlit, 0, [0.0, 1.0, 0.0, 1.0]), Ok(1));
         assert_eq!(
-            table.create(Shading::Lit, [0.0; 4]),
+            table.create(Shading::Lit, 0, [0.0; 4]),
             Err(MaterialError::Full)
         );
         assert_eq!(table.take_changed(), Some(0..2));
         assert_eq!(table.take_changed(), None);
-        table.set_color(1, [0.5, 0.5, 0.5]).unwrap();
+        table.set(1, param::COLOR, &[0.5, 0.5, 0.5]).unwrap();
         assert_eq!(table.take_changed(), Some(1..2));
         assert_eq!(&row(&table, 1)[..4], &[0.5, 0.5, 0.5, 1.0]);
         assert_eq!(table.shading(1), Ok(Shading::Unlit));
-        assert_eq!(table.set_color(2, [0.0; 3]), Err(MaterialError::Unknown(2)));
+        assert_eq!(
+            table.set(2, param::COLOR, &[0.0; 3]),
+            Err(MaterialError::Unknown(2))
+        );
     }
 
     #[test]
     fn a_new_row_holds_the_default_values_where_the_shaders_read_them() {
         let mut table = MaterialTable::with_capacity(1);
-        table.create(Shading::Lit, [0.2, 0.3, 0.4, 0.5]).unwrap();
+        table.create(Shading::Lit, 0, [0.2, 0.3, 0.4, 0.5]).unwrap();
         let row = row(&table, 0);
         assert_eq!(row.len(), MATERIAL_FLOATS);
         assert_eq!(&row[param::COLOR..param::COLOR + 3], &[0.2, 0.3, 0.4]);
@@ -358,6 +467,7 @@ mod tests {
         assert_eq!(row[param::OCCLUSION_STRENGTH], 1.0);
         assert_eq!(row[param::LIGHT_MAP_INTENSITY], 1.0);
         assert_eq!(row[param::FLAGS], 0.0);
+        assert_eq!(row[param::EMISSIVE_INTENSITY], 1.0);
         assert_eq!(&row[param::UV_U..param::UV_U + 3], &[1.0, 0.0, 0.0]);
         assert_eq!(&row[param::UV_V..param::UV_V + 3], &[0.0, 1.0, 0.0]);
         assert_eq!(
@@ -379,6 +489,7 @@ mod tests {
             (param::OCCLUSION_STRENGTH, 1),
             (param::LIGHT_MAP_INTENSITY, 1),
             (param::FLAGS, 1),
+            (param::EMISSIVE_INTENSITY, 1),
             (param::UV_U, 3),
             (param::UV_V, 3),
             (param::MAP_LAYERS, MAP_SLOTS),
@@ -402,28 +513,114 @@ mod tests {
     #[test]
     fn color_and_opacity_change_apart() {
         let mut table = MaterialTable::with_capacity(2);
-        table.create(Shading::Lit, [1.0, 0.0, 0.0, 1.0]).unwrap();
-        table.create(Shading::Unlit, [0.0, 1.0, 0.0, 1.0]).unwrap();
+        table.create(Shading::Lit, 0, [1.0, 0.0, 0.0, 1.0]).unwrap();
+        table
+            .create(Shading::Unlit, 0, [0.0, 1.0, 0.0, 1.0])
+            .unwrap();
         table.take_changed();
-        table.set_opacity(0, 0.25).unwrap();
+        table.set(0, param::OPACITY, &[0.25]).unwrap();
         assert_eq!(table.take_changed(), Some(0..1));
-        table.set_color(0, [0.0, 0.0, 1.0]).unwrap();
+        table.set(0, param::COLOR, &[0.0, 0.0, 1.0]).unwrap();
         assert_eq!(table.take_changed(), Some(0..1));
         assert_eq!(&row(&table, 0)[..4], &[0.0, 0.0, 1.0, 0.25]);
         assert_eq!(&row(&table, 1)[..4], &[0.0, 1.0, 0.0, 1.0]);
-        assert_eq!(table.set_opacity(2, 0.5), Err(MaterialError::Unknown(2)));
+        assert_eq!(
+            table.set(2, param::OPACITY, &[0.5]),
+            Err(MaterialError::Unknown(2))
+        );
         assert_eq!(table.take_changed(), None);
+    }
+
+    #[test]
+    fn sketches_set_whole_values_only() {
+        let mut table = MaterialTable::with_capacity(1);
+        table.create(Shading::Lit, 0, [1.0; 4]).unwrap();
+        table.take_changed();
+        table.set(0, param::METALNESS, &[0.75]).unwrap();
+        table.set(0, param::ROUGHNESS, &[0.25]).unwrap();
+        table.set(0, param::EMISSIVE, &[1.0, 0.5, 0.0]).unwrap();
+        table.set(0, param::EMISSIVE_INTENSITY, &[2.0]).unwrap();
+        table.set(0, param::NORMAL_SCALE, &[0.5, -0.5]).unwrap();
+        table.set(0, param::UV_V, &[0.0, 2.0, 0.25]).unwrap();
+        let row = row(&table, 0);
+        assert_eq!([row[param::METALNESS], row[param::ROUGHNESS]], [0.75, 0.25]);
+        assert_eq!(&row[param::EMISSIVE..param::EMISSIVE + 3], &[1.0, 0.5, 0.0]);
+        assert_eq!(row[param::EMISSIVE_INTENSITY], 2.0);
+        assert_eq!(&row[param::NORMAL_SCALE..][..2], &[0.5, -0.5]);
+        assert_eq!(&row[param::UV_V..][..3], &[0.0, 2.0, 0.25]);
+        for (at, values) in [
+            (param::FLAGS, &[1.0][..]),
+            (param::MAP_LAYERS, &[3.0][..]),
+            (param::COLOR + 1, &[0.0][..]),
+            (param::METALNESS, &[0.0, 0.0][..]),
+            (param::COLOR, &[0.0][..]),
+        ] {
+            assert_eq!(
+                table.set(0, at, values),
+                Err(MaterialError::Value(at as u32))
+            );
+        }
+    }
+
+    #[test]
+    fn features_are_kept_and_flat_shading_and_no_fog_are_flags_in_the_row() {
+        let mut table = MaterialTable::with_capacity(4);
+        let flat = feature::FLAT_SHADING | feature::DOUBLE_SIDED;
+        table
+            .create(Shading::Lit, flat | 1 << 30, [1.0; 4])
+            .unwrap();
+        table
+            .create(Shading::Unlit, feature::VERTEX_COLORS, [1.0; 4])
+            .unwrap();
+        table
+            .create(Shading::Unlit, feature::NO_FOG, [1.0; 4])
+            .unwrap();
+        table
+            .create(
+                Shading::Lit,
+                feature::NO_FOG | feature::FLAT_SHADING,
+                [1.0; 4],
+            )
+            .unwrap();
+        assert_eq!(table.features(0), flat, "unknown bits are dropped");
+        assert_eq!(table.features(1), feature::VERTEX_COLORS);
+        assert_eq!(table.features(2), feature::NO_FOG);
+        assert_eq!(table.features(9), 0);
+        assert_eq!(row(&table, 0)[param::FLAGS], flag::FLAT_SHADING as f32);
+        assert_eq!(row(&table, 1)[param::FLAGS], 0.0);
+        assert_eq!(row(&table, 2)[param::FLAGS], flag::NO_FOG as f32);
+        let both = flag::FLAT_SHADING | flag::NO_FOG;
+        assert_eq!(row(&table, 3)[param::FLAGS], both as f32);
+    }
+
+    #[test]
+    fn each_material_keeps_its_depth_bias_and_none_is_the_default() {
+        let mut table = MaterialTable::with_capacity(2);
+        let plain = table.create(Shading::Lit, 0, [1.0; 4]).unwrap();
+        let decal = table
+            .create(Shading::Unlit, feature::NO_DEPTH_WRITE, [1.0; 4])
+            .unwrap();
+        let bias = DepthBias::from_polygon_offset(-2.0, -1.0);
+        table.set_depth_bias(decal, bias).unwrap();
+        assert_eq!(table.depth_bias(plain), DepthBias::NONE);
+        assert_eq!(table.depth_bias(decal), bias);
+        assert_eq!(table.features(decal), feature::NO_DEPTH_WRITE);
+        assert_eq!(
+            table.set_depth_bias(2, bias),
+            Err(MaterialError::Unknown(2))
+        );
+        assert_eq!(table.depth_bias(2), DepthBias::NONE);
     }
 
     #[test]
     fn changes_upload_the_rows_from_the_first_changed_to_the_last() {
         let mut table = MaterialTable::with_capacity(5);
         for _ in 0..5 {
-            table.create(Shading::Lit, [1.0; 4]).unwrap();
+            table.create(Shading::Lit, 0, [1.0; 4]).unwrap();
         }
         table.take_changed();
-        table.set_color(3, [0.0; 3]).unwrap();
-        table.set_opacity(1, 0.5).unwrap();
+        table.set(3, param::COLOR, &[0.0; 3]).unwrap();
+        table.set(1, param::OPACITY, &[0.5]).unwrap();
         assert_eq!(table.take_changed(), Some(1..4));
         table.mark_changed();
         assert_eq!(table.take_changed(), Some(0..5));
@@ -432,9 +629,9 @@ mod tests {
     #[test]
     fn rows_hold_the_layer_of_each_map_that_is_ready() {
         let mut table = MaterialTable::with_capacity(3);
-        let plain = table.create(Shading::Unlit, [1.0; 4]).unwrap();
-        let mapped = table.create(Shading::UnlitMap, [1.0; 4]).unwrap();
-        let waiting = table.create(Shading::UnlitMap, [1.0; 4]).unwrap();
+        let plain = table.create(Shading::Unlit, 0, [1.0; 4]).unwrap();
+        let mapped = table.create(Shading::UnlitMap, 0, [1.0; 4]).unwrap();
+        let waiting = table.create(Shading::UnlitMap, 0, [1.0; 4]).unwrap();
         table.take_changed();
         let (ready, on_its_way) = (Handle::new(1, 0), Handle::new(2, 0));
         table.set_map(mapped, MapSlot::BaseColor, ready).unwrap();

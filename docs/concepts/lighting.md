@@ -3,7 +3,7 @@ id: concepts/lighting
 title: Lighting and environment
 status: experimental
 since: "0.1"
-summary: "Light types and units; clustered lighting; environment maps and spherical harmonics."
+summary: "Light types and units; clustered lighting; fog; environment maps and spherical harmonics."
 ---
 
 # Lighting and environment
@@ -41,7 +41,7 @@ Units follow three.js since r155, which dropped its legacy light mode. A scene t
 | Hemisphere | Sky and ground: light that fades from one color to the other with the way a surface faces | A factor on both colors |
 | Ambient | Light that bounces everywhere, from no direction | A factor on its color |
 
-A standard material reflects light with three.js's `MeshLambertMaterial` formula: the surface color divided by π, times the light that reaches it. A white directional light with an intensity of π therefore shows a white surface that faces it as white.
+A standard material reflects light with the formulas of three.js's `MeshStandardMaterial`. A rough surface that is not a metal reflects close to its color divided by π, times the light that reaches it. A white directional light with an intensity of π therefore shows a white, rough surface that faces it as nearly white.
 
 Point and spot lights fade with distance by their `decay`. A decay of 2, the default, fades light with the square of the distance, as real light fades. Each also ends at its `range`, because the engine finds the lights near each surface by their ranges. three.js's `distance` of 0, a light with no end, has no equivalent.
 
@@ -66,9 +66,16 @@ Point and spot lights that move in most frames should be dynamic, with `dynamic:
 
 The engine keeps each object's position relative to a grid cell, a cube of space about 1 km wide. Scenes far from the origin then stay precise. Lights take part too. Each frame the engine finds every point and spot light's position relative to the camera, with the offset between their cells in 64-bit floats. A lamp 1,000 km from the origin is then as precise, next to the camera, as a lamp at the origin.
 
+## Fog
+
+Fog fades objects toward one color with their distance from the camera, as air does over a landscape. A sketch sets it with `scene.setFog`: linear fog or exponential squared fog, with three.js's formulas and defaults. [Scene](../api/scene.md#fog) lists the options. The distance is the depth along the camera's view direction, for both kinds of camera, so objects at the same depth take the same fog.
+
+The engine mixes the fog into each pixel's color as it shades the pixel, after lighting and before it encodes the color for the screen. Fog therefore needs no pass and no texture, and adds almost no work. The mix happens in linear color, as in three.js's WebGPURenderer. The background takes no fog, so scenes with fog usually give the background the fog's color. A material created with `fog: false` keeps its color at every distance.
+
 ## Related pages
 
 - [Lights](../api/lights.md): the calls and options of each kind of light.
+- [Scene](../api/scene.md#fog): the fog's options.
 - [Objects and transforms](../api/objects.md): the calls that lights share with every object.
 - [Render layers](render-layers.md): which cameras a light lights.
 - [Materials](../api/materials.md): the standard material, which lights shade.

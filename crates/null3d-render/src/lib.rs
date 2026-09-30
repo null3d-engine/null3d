@@ -2,10 +2,13 @@
 //!
 //! - `arrays`: meshes from arrays, with normals and tangents computed as three.js computes them
 //! - `camera`: perspective and orthographic lenses with reversed depth, and view matrices
+//! - `cells`: grid-cell culling, which both frame builders share: still objects in cell order, a
+//!   box per cell, and the cells each view can see
 //! - `cpu_culled`: the WebGL2 frame builder, with culling on the job workers and an index list per
 //!   view
 //! - `debug_lines`: the lines that a sketch draws for one frame, and the pass that draws them
 //! - `final_pass`: the pass that tone maps the HDR scene color into the canvas
+//! - `fog`: the scene's fog, with three.js's formulas, and its part of each frame's uniform block
 //! - `frame`: what every frame builder shares: its input, the scene settings, the per-parity lists
 //! - `frame_data`: the per-frame uniform block the shaders read
 //! - `frame_graph`: the engine's passes on the render graph, and the recording of its plan
@@ -13,6 +16,7 @@
 //! - `gpu_driven`: the WebGPU frame builder, with GPU culling and a prerecorded bundle per view
 //! - `graph`: the render graph, which orders declared passes and plans their render passes and
 //!   textures
+//! - `light_grid`: the clusters of a view, and the point and spot lights that reach each one
 //! - `materials`: the material table
 //! - `meshes`: mesh storage for both GPU paths
 //! - `output`: the output transform: the scene color's target, exposure and tone mapping
@@ -24,15 +28,19 @@
 
 pub mod arrays;
 pub mod camera;
+mod cells;
 pub mod cpu_culled;
 pub mod debug_lines;
+pub mod dfg;
 mod final_pass;
+pub mod fog;
 pub mod frame;
 pub mod frame_data;
 pub mod frame_graph;
 pub mod geometry;
 pub mod gpu_driven;
 pub mod graph;
+pub mod light_grid;
 pub mod materials;
 pub mod meshes;
 pub mod output;

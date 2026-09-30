@@ -7,10 +7,16 @@
 // computes in 32-bit floats, and its built-in functions such as `pow` and `sin` may differ from
 // exact results by a few units, so float results must agree within a tolerance. Hashes are
 // whole numbers and must agree bit for bit.
+import {
+	FOG_KIND_EXP2,
+	FOG_KIND_LINEAR,
+	FOG_KIND_NONE,
+} from '../../../packages/engine/src/generated/core.ts';
 import { linearToSrgb, srgbToLinear } from '../../../packages/engine/src/math/color.ts';
 import { inverseLerp, mapLinear, smoothstep } from '../../../packages/engine/src/math/math.ts';
 import { setAxisAngle } from '../../../packages/engine/src/math/quat.ts';
 import { transformQuat } from '../../../packages/engine/src/math/vec3.ts';
+import { dfgLut } from './dfg-table.ts';
 
 type V2 = [number, number];
 type V3 = [number, number, number];
@@ -420,13 +426,6 @@ function brdfGgx(toLight: V3, toView: V3, normal: V3, f0: V3, f90: number, rough
 	const nDotH = saturate(dot(normal, half));
 	const vDotH = saturate(dot(toView, half));
 	return scale(fSchlick(f0, f90, vDotH), vGgx(alpha, nDotL, nDotV) * dGgx(alpha, nDotH));
-}
-function dfgApprox(nDotV: number, roughness: number): V2 {
-	const r = [-1, -0.0275, -0.572, 0.022].map(
-		(c0, k) => roughness * c0 + [1, 0.0425, 1.04, -0.04][k]!,
-	);
-	const a004 = Math.min(r[0]! * r[0]!, 2 ** (-9.28 * nDotV)) * r[0]! + r[1]!;
-	return [-1.04 * a004 + r[2]!, 1.04 * a004 + r[3]!];
 }
 function multiscattering(f0: V3, f90: number, dfg: V2): [V3, V3] {
 	const single = map3(f0, (f) => f * dfg[0] + f90 * dfg[1]);
@@ -844,9 +843,17 @@ export const FUNCTIONS: readonly LibraryFunction[] = [
 			floats(brdfGgx(xyz(i.f(0)), xyz(i.f(1)), xyz(i.f(2)), xyz(i.f(3)), i.f(3)[3], i.f(4)[0])),
 	},
 	{
-		name: 'lighting::dfg_approx',
-		cases: uniform(2, 0, 1),
-		expected: (i) => floats(dfgApprox(i.f(0)[0], i.f(0)[1])),
+		// three.js's table, which the page binds as the engine does: at entry centers, between
+		// entries, past the edges, and at random.
+		name: 'lighting::dfg_lut',
+		cases: (random) => [
+			new Inputs().setF(0, [0.53125, 0.21875]),
+			new Inputs().setF(0, [0.5, 0.5]),
+			new Inputs().setF(0, [0, 0]),
+			new Inputs().setF(0, [1, 1]),
+			...uniform(2, 0, 1)(random),
+		],
+		expected: (i) => floats(dfgLut(i.f(0)[0], i.f(0)[1])),
 	},
 	{
 		name: 'lighting::environment_brdf',
@@ -863,7 +870,7 @@ export const FUNCTIONS: readonly LibraryFunction[] = [
 		cases: samples((random) =>
 			new Inputs()
 				.setF(0, [...values(random, 3, 0, 1), 1])
-				.setF(1, dfgApprox(between(random, 0, 1), between(random, 0, 1))),
+				.setF(1, dfgLut(between(random, 0, 1), between(random, 0, 1))),
 		),
 		expected: (i) => floats(...multiscattering(xyz(i.f(0)), i.f(0)[3], xy(i.f(1)))),
 	},
@@ -872,7 +879,7 @@ export const FUNCTIONS: readonly LibraryFunction[] = [
 		cases: samples((random) =>
 			new Inputs()
 				.setF(0, values(random, 3, 0, 1))
-				.setF(1, dfgApprox(between(random, 0, 1), between(random, 0, 1))),
+				.setF(1, dfgLut(between(random, 0, 1), between(random, 0, 1))),
 		),
 		expected: (i) => {
 			const [a, b] = i.f(1);
@@ -995,7 +1002,7 @@ export const FUNCTIONS: readonly LibraryFunction[] = [
 		cases: materialCase((random, i) => {
 			i.setF(2, values(random, 3, 0, 2)).setF(
 				3,
-				dfgApprox(between(random, 0, 1), between(random, 0, 1)),
+				dfgLut(between(random, 0, 1), between(random, 0, 1)),
 			);
 		}),
 		expected: (i) => {
@@ -1010,7 +1017,7 @@ export const FUNCTIONS: readonly LibraryFunction[] = [
 		cases: materialCase((random, i) => {
 			i.setF(2, values(random, 3, 0, 2))
 				.setF(3, values(random, 3, 0, 2))
-				.setF(4, dfgApprox(between(random, 0, 1), between(random, 0, 1)));
+				.setF(4, dfgLut(between(random, 0, 1), between(random, 0, 1)));
 		}),
 		expected: (i) => {
 			const m = materialOf(i);
@@ -1348,6 +1355,30 @@ export const FUNCTIONS: readonly LibraryFunction[] = [
 		name: 'sdf::onion',
 		cases: uniform(2, -2, 2),
 		expected: (i) => scalar(Math.abs(i.f(0)[0]) - i.f(0)[1]),
+	},
+	// null3d::fog's scene fog, numbered after the other modules' functions. Each kind of fog, by the
+	// engine's codes, at points in front of and behind the camera.
+	{
+		name: 'fog::fog_factor',
+		cases: (random) =>
+			[FOG_KIND_NONE, FOG_KIND_LINEAR, FOG_KIND_EXP2].flatMap((kind) =>
+				samples((r) =>
+					new Inputs()
+						.setF(0, values(r, 3, 0, 1))
+						.setU(1, [kind])
+						.setF(2, [...unit(r), between(r, 0, 0.05)])
+						.setF(3, [between(r, 0, 20), between(r, 30, 100)])
+						.setF(4, values(r, 3, -80, 80)),
+				)(random),
+			),
+		expected: (i) => {
+			const kind = i.u(1)[0];
+			const [density, near, far] = [i.f(2)[3], i.f(3)[0], i.f(3)[1]];
+			const depth = dot(xyz(i.f(4)), xyz(i.f(2)));
+			if (kind === FOG_KIND_LINEAR) return scalar(smooth(near, far, depth));
+			if (kind === FOG_KIND_EXP2) return scalar(1 - Math.exp(-density * density * depth * depth));
+			return scalar(0);
+		},
 	},
 ];
 

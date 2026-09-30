@@ -11,7 +11,9 @@
 // reference, so it saves its image as a candidate. Look at it with bun run images:review, and make it
 // the reference with bun run images:review --accept. Then do the same with CI=1 for the SwiftShader
 // reference: on the Mac, Playwright's Chromium draws CI's SwiftShader images byte for byte.
-import { PARITY_SCENES } from '../../bench/lib/parity.ts';
+import { BENCH_SCENES } from '../../bench/lib/parity.ts';
+import { MASK_IMAGE } from '../../bench/scenes/alpha-mask.ts';
+import { FOG_IMAGE } from '../../bench/scenes/fog.ts';
 import { ORTHO_IMAGE } from '../../bench/scenes/ortho-camera.ts';
 import { HOLD_TIME, PARITY_CANVAS } from '../../bench/scenes/spec.ts';
 import { DEMOS } from '../../examples/demos.ts';
@@ -128,6 +130,12 @@ const ORTHO = {
 
 /** The page of the depth precision tests, and its image's size. */
 const DEPTH_PAGE = { page: 'tests/pages/depth-precision.html', size: PRECISION.size, hold: 0 };
+
+/**
+ * S1-cells' tolerance on other devices: about half the share of its frame that its boxes cover, so a
+ * frame that lost most of the scene fails.
+ */
+const S1_CELLS_DEVICE_TOLERANCE = { maxDiffRatio: 0.003 };
 
 /** The WebGL2 depth modes that ?depth= forces. */
 const DEPTH_MODES: readonly DepthMode[] = ['standard', 'reversed-gl', 'reversed'];
@@ -345,6 +353,60 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 	// Compatibility mode's 8-bit path averages antialiased edges after the tone mapping, so it keeps
 	// references of its own.
 	{ name: 'generators-compat', ...GENERATORS, tiers: ['compat'], expect: { hdr: false } },
+	// Towers on a floor that runs into linear fog and exponential squared fog, lit and unlit, and two
+	// towers whose materials turn fog off. The parity test compares each image with three.js's `Fog`
+	// and `FogExp2`.
+	...(['linear', 'exp2'] as const).map(
+		(fog): ImageTest => ({
+			name: `fog-${fog}`,
+			sketch: `tests/pages/sketches/fog-sketch.ts?fog=${fog}`,
+			hold: 0,
+			size: [FOG_IMAGE.width, FOG_IMAGE.height],
+		}),
+	),
+	// The standard material's spheres over metalness and roughness, and each option that a
+	// material fixes when it is created: emissive color, flat shading, double-sided faces, and
+	// vertex colors with the standard and the unlit material.
+	{
+		name: 'standard-grid',
+		sketch: 'tests/pages/sketches/standard-sketch.ts?scene=grid',
+		hold: 0,
+		size: [480, 270],
+	},
+	{
+		name: 'standard-features',
+		sketch: 'tests/pages/sketches/standard-sketch.ts?scene=features',
+		hold: 0,
+		size: [480, 270],
+	},
+	// Masked materials under MSAA: cards cut by vertex alpha at three cutoffs, with the standard and
+	// the unlit material, crossing each other, and a batch of tilted cards. The parity test compares
+	// it with three.js's alphaTest.
+	{
+		name: 'alpha-mask',
+		sketch: 'tests/pages/sketches/alpha-mask-sketch.ts',
+		hold: 0,
+		size: [MASK_IMAGE.width, MASK_IMAGE.height],
+	},
+	// Decals on a wall and on the floor, whose depth bias makes them win the depth test everywhere.
+	// WebGL2's other depth modes store depth another way round, and must draw the same image.
+	{
+		name: 'depth-bias',
+		sketch: 'tests/pages/sketches/depth-bias-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+	},
+	...(['standard', 'reversed-gl'] as const).map(
+		(depth): ImageTest => ({
+			name: `depth-bias-${depth}`,
+			sketch: 'tests/pages/sketches/depth-bias-sketch.ts',
+			hold: 0,
+			size: [480, 270],
+			tiers: ['webgl2'],
+			switches: [`depth=${depth}`],
+			reference: 'depth-bias',
+		}),
+	),
 	// Orbit controls after the controls test's drags, made through the controls' own calls. The
 	// controls test must draw this image after it makes the drags with Playwright.
 	{ name: 'controls', sketch: 'tests/pages/sketches/controls-sketch.ts?moved', hold: 0 },
@@ -383,9 +445,10 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 			hold: demo.hold,
 		}),
 	),
-	// The benchmark scenes' hold frames, which the parity command also compares with three.js.
-	// S2's trees cover under 1% of its frame, so other devices may differ in fewer of its pixels.
-	...PARITY_SCENES.map(
+	// The benchmark scenes' hold frames, which the parity command also compares with three.js once
+	// null3D draws every feature of the scene. S2's trees and S1-cells' boxes each cover under 1% of
+	// their frame, so other devices may differ in fewer of their pixels.
+	...BENCH_SCENES.map(
 		(scene): ImageTest => ({
 			name: scene,
 			page: `bench/pages/null3d/${scene}.html`,
@@ -394,8 +457,20 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 			modes: ['pipelined', 'low latency'],
 			timeoutSeconds: 90,
 			...(scene === 's2' && { deviceTolerance: { maxDiffRatio: 0.002 } }),
+			...(scene === 's1-cells' && { deviceTolerance: S1_CELLS_DEVICE_TOLERANCE }),
 		}),
 	),
+	// S1-cells culled without grid cells, which must draw what skipping whole cells draws.
+	{
+		name: 's1-cells-off',
+		deviceTolerance: S1_CELLS_DEVICE_TOLERANCE,
+		page: 'bench/pages/null3d/s1-cells.html',
+		size: [PARITY_CANVAS.width, PARITY_CANVAS.height],
+		hold: HOLD_TIME,
+		switches: ['cells=off'],
+		reference: 's1-cells',
+		timeoutSeconds: 90,
+	},
 ];
 
 /** Every run of the manifest's tests: each test on each of its tiers, in each of its thread modes. */

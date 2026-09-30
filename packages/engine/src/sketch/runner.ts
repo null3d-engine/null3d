@@ -21,14 +21,14 @@ import { messageOf } from '../errors/message';
 import { TEXTURE_OPTION_UPLOAD_ALL, TEXTURE_STAT_IMAGES_SENT } from '../generated/core';
 import type { EngineCapabilities } from '../page/engine';
 import { ANTIALIAS_CODES, type AntialiasMode, type CoreDevice, drawsHdr } from '../page/limits';
-import type { QualitySettings } from '../quality/presets';
+import { type QualitySettings, SKETCH_SETTINGS } from '../quality/presets';
 import { Assets } from '../scene/assets';
 import { CoreMemory } from '../scene/memory';
 import { Post } from '../scene/post';
 import { Geometry, Materials } from '../scene/resources';
 import { Scene } from '../scene/scene';
 import { Textures } from '../scene/textures';
-import { type ControlViews, Slot } from '../shared/control';
+import { type ControlViews, controlViews, Slot } from '../shared/control';
 import type { CoreGlue } from '../shared/core';
 import { type ImageSender, imagesArrived } from '../shared/images';
 import { Counter, FrameRecorder, Phase, Role } from '../shared/metrics';
@@ -100,6 +100,44 @@ async function shutDownJobsOnStop(glue: CoreGlue, slots: Int32Array): Promise<vo
 	glue.shutdownJobs();
 }
 
+/**
+ * A promise that settles when the slot no longer holds `value`, or undefined when it already
+ * holds another value. A plain function, so a wait makes no promise beyond the browser's own.
+ */
+function changeOf(slots: Int32Array, slot: number, value: number): Promise<unknown> | undefined {
+	const wait = Atomics.waitAsync(slots, slot, value);
+	return wait.async ? wait.value : undefined;
+}
+
+/**
+ * The pipelined frame loop of a thread that runs the sketch while another thread draws: the sketch
+ * worker, or the page with sketchThread: 'main'. It steps the sketch once the thread that draws has
+ * taken the frame before, and waits for that with Atomics.waitAsync, so the thread's event loop
+ * stays free for promises, messages and the page's events. It ends when the engine stops.
+ */
+export async function runPipelined(sketch: SketchRunner, control: ArrayBufferLike): Promise<void> {
+	const { slots } = controlViews(control);
+	// A warm-up during the setup may have published a frame that the render worker has not taken.
+	let published = Atomics.load(slots, Slot.FramesPublished);
+	while (Atomics.load(slots, Slot.Running) !== 0) {
+		const paused = Atomics.load(slots, Slot.Paused);
+		if (paused !== 0) {
+			const change = changeOf(slots, Slot.Paused, paused);
+			if (change) await change;
+			continue;
+		}
+		const taken = Atomics.load(slots, Slot.FramesTaken);
+		if (taken < published) {
+			const change = changeOf(slots, Slot.FramesTaken, taken);
+			if (change) await change;
+			continue;
+		}
+		published = sketch.step(performance.now());
+		Atomics.store(slots, Slot.FramesPublished, published);
+		Atomics.notify(slots, Slot.FramesPublished);
+	}
+}
+
 export class SketchRunner {
 	private readonly messageHandlers = new Set<(type: string, data: unknown) => void>();
 	private readonly preferenceHandlers = new Set<() => void>();
@@ -133,8 +171,6 @@ export class SketchRunner {
 	private restoreRandom: (() => void) | undefined;
 	private readonly input: InputReader;
 	private readonly quality: SketchQuality;
-	/** The anti-aliasing mode that the core draws in. */
-	private antialias: AntialiasMode;
 	/** The sketch's debug drawing, in development builds only. */
 	private readonly debugDraw: DebugDraw | undefined;
 	readonly context: SketchContext;
@@ -158,7 +194,6 @@ export class SketchRunner {
 		const { glue, device } = sketch;
 		const { slots } = sketch.control;
 		const { antialias } = sketch.quality.settings;
-		this.antialias = antialias;
 		const status = glue.initEngine(
 			sketch.jobWorkers,
 			SCENE_CAPACITY,
@@ -171,6 +206,7 @@ export class SketchRunner {
 			device.sceneColors[antialias],
 			ANTIALIAS_CODES[antialias],
 			device.transparent,
+			device.cellCulling,
 		);
 		if (status !== 0) throw coreFailure(glue, 'createEngine');
 		if (sketch.jobWorkers > 0) {
@@ -183,14 +219,18 @@ export class SketchRunner {
 		Atomics.store(slots, Slot.DrawListAddress1, glue.drawListAddress(1));
 		this.reducedMotion = Atomics.load(slots, Slot.ReducedMotion);
 		this.input = new InputReader(sketch.control, sketch.keyCodes);
-		this.quality = new SketchQuality(sketch.quality, (settings) => {
-			if (settings.antialias !== this.antialias) this.setAntialias(settings.antialias);
+		const textures = new Textures(this.core, sketch.sendImage, this.time);
+		// The core takes every texture setting of the preset before the setup runs, so a sketch's own
+		// budget wins until the setting changes. The page applies the settings it owns.
+		textures.applyQuality(sketch.quality.settings, SKETCH_SETTINGS);
+		this.quality = new SketchQuality(sketch.quality, (settings, changed) => {
+			textures.applyQuality(settings, changed);
+			if (changed.includes('antialias')) this.setAntialias(settings.antialias);
 			sketch.applyQuality(settings);
 		});
 		this.readViewport();
 		this.debugDraw = DEV ? new DebugDraw(this.core) : undefined;
 		const debug: Debug = this.debugDraw ?? RELEASE_DEBUG;
-		const textures = new Textures(this.core, sketch.sendImage, this.time);
 		this.context = {
 			time: this.time,
 			engine: { viewport: this.viewport, capabilities: sketch.capabilities },
@@ -245,7 +285,6 @@ export class SketchRunner {
 		const { glue, device, capabilities } = this.sketch;
 		if (glue.setAntialias(ANTIALIAS_CODES[mode], device.sceneColors[mode]) !== 0)
 			throw coreFailure(glue, 'quality.set');
-		this.antialias = mode;
 		capabilities.hdr = drawsHdr(device, mode);
 	}
 

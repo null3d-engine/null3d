@@ -4,6 +4,7 @@
 // with the pipelines it creates, which begin to build, without blocking, when the frame is first
 // prepared.
 
+import type { DeviceShaders } from '../generated/shaders';
 import { FenceCompletion, QueueCompletion } from '../gpu/completion';
 import { readbackWebGL2, readbackWebGPU } from '../gpu/readback';
 import { WebGL2Backend } from '../gpu/webgl2/backend';
@@ -119,7 +120,8 @@ export class WebGPUSceneRenderer implements Renderer {
 		control: ArrayBufferLike,
 		metrics: ArrayBufferLike | undefined,
 		images: ImageTable | undefined,
-		transparent: boolean,
+		shaders: DeviceShaders,
+		readonly transparent: boolean,
 	) {
 		this.lost = deviceLoss(device, () => this.simulated);
 		const context = canvas.getContext('webgpu') as GPUCanvasContext | null;
@@ -131,7 +133,7 @@ export class WebGPUSceneRenderer implements Renderer {
 			format: this.format,
 			alphaMode: transparent ? 'premultiplied' : 'opaque',
 		});
-		this.backend = new WebGPUBackend(device, context, this.format, undefined, images);
+		this.backend = new WebGPUBackend(device, context, this.format, shaders, undefined, images);
 		this.backend.timer = metrics && GpuTimer.create(device, metrics);
 		this.completions = metrics && new QueueCompletion(device.queue, metrics);
 		this.frames = new FrameReplay(this.backend, memory, control);
@@ -209,6 +211,7 @@ export class WebGPUSceneRenderer implements Renderer {
 
 export class WebGL2SceneRenderer implements Renderer {
 	readonly tier: Tier = 'webgl2';
+	readonly transparent: boolean;
 	readonly lost: Promise<string>;
 	readonly completions: FenceCompletion | undefined;
 	private readonly backend: WebGL2Backend;
@@ -222,7 +225,8 @@ export class WebGL2SceneRenderer implements Renderer {
 	 * `gl` is the canvas's context, made with the engine's settings. Where WebGL refuses views on
 	 * shared memory, the device says so, and the backend copies uploads out of engine memory first.
 	 * The device also gives the depth mode, and whether the canvas is transparent, with alpha.
-	 * `images` holds the images that texture uploads read.
+	 * `images` holds the images that texture uploads read. `shaders` are the GLSL builds that the
+	 * device loaded.
 	 */
 	constructor(
 		private readonly canvas: RenderCanvas,
@@ -232,17 +236,20 @@ export class WebGL2SceneRenderer implements Renderer {
 		metrics: ArrayBufferLike | undefined,
 		device: CoreDevice,
 		images: ImageTable | undefined,
+		shaders: DeviceShaders,
 	) {
 		this.lost = contextLoss(canvas, this.release.signal);
 		this.backend = new WebGL2Backend(
 			gl,
 			canvas,
+			shaders,
 			device.sharedUploads,
 			device.depth,
 			images,
 			device.parallelCompile,
 			device.transparent,
 		);
+		this.transparent = device.transparent;
 		this.canvasFormat = device.transparent ? gl.RGBA8 : gl.RGB8;
 		this.completions = metrics && new FenceCompletion(gl, metrics);
 		this.frames = new FrameReplay(this.backend, memory, control);

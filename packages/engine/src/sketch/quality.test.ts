@@ -1,47 +1,68 @@
 import { beforeEach, describe, expect, it } from 'bun:test';
 import { setErrorFixes } from '../errors/engine-error';
 import { ERROR_FIXES } from '../errors/fixes';
-import type { QualitySettings } from '../quality/presets';
+import { presetSettings, type QualitySettingName, type QualitySettings } from '../quality/presets';
 import { SketchQuality } from './quality';
 
 // The page sets the table of fixes that ends each error's message before it can raise an error.
 beforeEach(() => setErrorFixes(ERROR_FIXES));
 
-/** A sketch's quality API on Medium, and the settings that it gave the page. */
+/** Medium's settings. */
+const MEDIUM = presetSettings('medium');
+
+/** A sketch's quality API on Medium, the settings that it applied, and the names that changed. */
 function medium() {
 	const applied: QualitySettings[] = [];
-	const quality = new SketchQuality(
-		{ preset: 'medium', settings: { maxPixelRatio: 2, antialias: 'msaa' } },
-		(settings) => applied.push(settings),
-	);
-	return { quality, applied };
+	const changes: (readonly QualitySettingName[])[] = [];
+	const quality = new SketchQuality({ preset: 'medium', settings: MEDIUM }, (settings, changed) => {
+		applied.push(settings);
+		changes.push(changed);
+	});
+	return { quality, applied, changes };
 }
 
 describe('SketchQuality', () => {
 	it('starts with the preset and the settings that the page chose', () => {
 		const { quality, applied } = medium();
 		expect(quality.preset).toBe('medium');
-		expect(quality.settings).toEqual({ maxPixelRatio: 2, antialias: 'msaa' });
+		expect(quality.settings).toEqual(MEDIUM);
+		expect(quality.settings).not.toBe(MEDIUM);
 		expect(quality.takeChange()).toBe(false);
 		expect(applied).toEqual([]);
 	});
 
-	it('changes a setting, gives the page the new settings, and notes one change for the next frame', () => {
-		const { quality, applied } = medium();
+	it('changes a setting, applies the new settings, and notes one change for the next frame', () => {
+		const { quality, applied, changes } = medium();
 		quality.set({ maxPixelRatio: 1.25 });
 		expect(quality.settings.maxPixelRatio).toBe(1.25);
-		expect(applied).toEqual([{ maxPixelRatio: 1.25, antialias: 'msaa' }]);
+		expect(applied).toEqual([{ ...MEDIUM, maxPixelRatio: 1.25 }]);
+		expect(changes).toEqual([['maxPixelRatio']]);
 		expect(quality.takeChange()).toBe(true);
 		expect(quality.takeChange()).toBe(false);
 	});
 
-	it('gives the page a copy, which later changes leave alone', () => {
+	it('names only the settings that took new values', () => {
+		const { quality, changes } = medium();
+		quality.set({
+			maxPixelRatio: MEDIUM.maxPixelRatio,
+			maxAnisotropy: 2,
+			uploadBytesPerFrame: 1_048_576,
+		});
+		expect(changes).toEqual([['maxAnisotropy', 'uploadBytesPerFrame']]);
+		expect(quality.settings).toEqual({
+			...MEDIUM,
+			maxAnisotropy: 2,
+			uploadBytesPerFrame: 1_048_576,
+		});
+	});
+
+	it('applies a copy, which later changes leave alone', () => {
 		const { quality, applied } = medium();
 		quality.set({ maxPixelRatio: 1 });
 		quality.set({ maxPixelRatio: Number.POSITIVE_INFINITY });
-		expect(applied).toEqual([
-			{ maxPixelRatio: 1, antialias: 'msaa' },
-			{ maxPixelRatio: Number.POSITIVE_INFINITY, antialias: 'msaa' },
+		expect(applied.map((settings) => settings.maxPixelRatio)).toEqual([
+			1,
+			Number.POSITIVE_INFINITY,
 		]);
 	});
 
@@ -57,9 +78,11 @@ describe('SketchQuality', () => {
 	it('refuses a setting or a value that it does not take with E1213, and changes nothing', () => {
 		const { quality, applied } = medium();
 		expect(() => quality.set({ maxPixelRatio: 0 })).toThrow('E1213');
+		expect(() => quality.set({ maxAnisotropy: 32 })).toThrow('E1213');
+		expect(() => quality.set({ maxPixelRatio: 1, uploadBytesPerFrame: 1024 })).toThrow('E1213');
 		// The anti-aliasing mode is fixed when the engine starts.
 		expect(() => quality.set({ antialias: 'fxaa' })).toThrow('fixed when the engine starts');
-		expect(quality.settings).toEqual({ maxPixelRatio: 2, antialias: 'msaa' });
+		expect(quality.settings).toEqual(MEDIUM);
 		expect(applied).toEqual([]);
 		expect(quality.takeChange()).toBe(false);
 	});

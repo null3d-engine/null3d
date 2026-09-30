@@ -9,10 +9,12 @@ export interface Swarm {
 	pose(t: number): void;
 }
 
+/** Makes S1's instances as one batch, each placed at a time by `instanceAt`: S1's own by default. */
 export function createSwarm(
 	{ scene, materials, geometry }: SketchContext,
 	count: number,
 	dynamic: boolean,
+	instanceAt = s1InstanceAt,
 ): Swarm {
 	const data = createS1(count);
 	const batch = scene.createInstances(
@@ -26,7 +28,7 @@ export function createSwarm(
 		const positions = batch.positions;
 		const rotations = batch.rotations;
 		for (let i = 0; i < count; i++) {
-			s1InstanceAt(data, i, t, position, rotation);
+			instanceAt(data, i, t, position, rotation);
 			positions[i * 3] = position[0] as number;
 			positions[i * 3 + 1] = position[1] as number;
 			positions[i * 3 + 2] = position[2] as number;

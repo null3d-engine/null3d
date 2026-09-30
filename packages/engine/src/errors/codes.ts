@@ -81,7 +81,7 @@ const DOCS = {
 	E1109: {
 		title: 'Engine memory full',
 		cause:
-			"The engine could not create or grow its WebAssembly memory. A page with worker threads gives the engine 1 GiB by default, and up to 4 GiB through the memory option of createEngine. Each instance row takes about 180 bytes, or about 230 with per-row colors. So about 5 million rows fill 1 GiB, along with the rest of the scene. A browser can refuse memory sooner, as phones often do. It can also refuse a new engine's memory while the memory of an engine that stopped a moment before is not free yet. The engine then tries again for about 3 seconds before it fails.",
+			"The engine could not create or grow its WebAssembly memory. A page with worker threads gives the engine 1 GiB by default, and up to 4 GiB through the memory option of createEngine. Each instance row takes about 210 bytes, or about 260 with per-row colors. So about 5 million rows fill 1 GiB, along with the rest of the scene. A browser can refuse memory sooner, as phones often do. It can also refuse a new engine's memory while the memory of an engine that stopped a moment before is not free yet. The engine then tries again for about 3 seconds before it fails.",
 		example: 'E1109: createInstances() failed: the engine could not get 1282 MB more memory.',
 		since: '0.1',
 	},
@@ -149,6 +149,13 @@ const DOCS = {
 		example: 'E1214: defineSketch() got 0 for fixedRate.',
 		since: '0.1',
 	},
+	E1217: {
+		title: 'Invalid material option',
+		cause:
+			'A material factory received a value that one of its options does not take, such as an alpha mode that the engine does not know.',
+		example: `E1217: materials.standard() got the alpha mode "cutout"; it takes 'opaque' or 'mask'.`,
+		since: '0.1',
+	},
 	E1301: {
 		title: 'No usable GPU path',
 		cause: 'The browser offers neither WebGPU nor WebGL2 for the way the engine was asked to draw.',
@@ -198,7 +205,8 @@ const DOCS = {
 	},
 	E1405: {
 		title: 'Engine thread did not start',
-		cause: 'An engine thread failed while the engine started, before the sketch ran.',
+		cause:
+			"An engine worker failed while the engine started. The worker's script, the engine core or the renderer did not start there, or the sketch's setup function threw an error without an engine code.",
 		example: 'E1405: the render worker did not start: no WebGPU adapter.',
 		since: '0.1',
 	},
@@ -262,6 +270,21 @@ const DOCS = {
 			"A loading call could not read a file from another origin. The browser reads such a file only when its server allows the page's origin with an Access-Control-Allow-Origin header. The browser gives no reason, so the server may also have been unreachable.",
 		example:
 			'E1413: assets.loadTexture() could not read https://cdn.example.com/brick.png: its server did not allow this page to read it, or could not be reached (Failed to fetch).',
+		since: '0.1',
+	},
+	E1414: {
+		title: 'Frame not captured',
+		cause:
+			'engine.capture() could not give an image of a frame. The engine had stopped, or the thread that draws could not read the frame back from the GPU or encode it.',
+		example: 'E1414: engine.capture() failed: the engine has stopped.',
+		since: '0.1',
+	},
+	E1415: {
+		title: 'Page thread already runs a sketch',
+		cause:
+			"createEngine() was asked to run a sketch on the page's thread while another engine still runs its sketch there. The page's copy of the engine core serves one engine at a time. This happens with sketchThread: 'main', and in the single-threaded build, which runs every sketch on the page's thread.",
+		example:
+			'E1415: createEngine() found another engine that runs its sketch on this page, which has not stopped.',
 		since: '0.1',
 	},
 	E1501: {

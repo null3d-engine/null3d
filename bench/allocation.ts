@@ -6,12 +6,14 @@
 // prints the bytes per frame of every place that allocated. From the page's start to the end of
 // the sample, it moves the mouse over the canvas and presses a key and the mouse button, so the
 // sample covers the sketch's reading of input. It draws with WebGPU, or with WebGL2 when
-// `--gpu webgl2` asks for it. It samples the production build of the benchmark pages, as a
+// `--gpu webgl2` asks for it, and runs S1-cells, whose views skip whole grid cells, when
+// `--scene s1-cells` asks for it. It samples the production build of the benchmark pages, as a
 // developer ships the engine, and names the build's functions through its source maps; `--dev`
 // samples the dev server's pages, with the engine's development checks. From the repository root:
 //   bun run bench:allocation
 //   bun run bench:allocation --n 30000 --seconds 5 --warmup 30
 //   bun run bench:allocation --gpu webgl2
+//   bun run bench:allocation --scene s1-cells --gpu webgl2
 // At 30,000 instances a frame's upload goes through the staging ring; at 100,000 it does not.
 import { chromium, type Page } from '@playwright/test';
 import { DEBUG_PORT } from '../tests/lib/server.ts';
@@ -59,8 +61,8 @@ const WORKERS = ['sketch-worker', 'render-worker'] as const;
 const BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = {
 	'sketch-worker': {
 		'frame sketch/runner.ts': 240,
-		'runPipelined workers/sketch-worker.ts': 128,
-		'changeOf workers/sketch-worker.ts': 16,
+		'runPipelined sketch/runner.ts': 128,
+		'changeOf sketch/runner.ts': 16,
 		'(IDLE)': 96,
 		'(anonymous) null3d/sketch-common.ts': 48,
 		'views scene/scene.ts': 16,
@@ -167,6 +169,9 @@ async function main(): Promise<void> {
 	const gpu = args.includes('--gpu') ? args[args.indexOf('--gpu') + 1] : 'webgpu';
 	if (gpu !== 'webgpu' && gpu !== 'webgl2')
 		throw new Error(`--gpu takes webgpu or webgl2, not ${gpu}`);
+	const scene = args.includes('--scene') ? args[args.indexOf('--scene') + 1] : 's1';
+	if (scene !== 's1' && scene !== 's1-cells')
+		throw new Error(`--scene takes s1 or s1-cells, not ${scene}`);
 	// The browser optimizes code that runs once per frame only after many frames; until then,
 	// numbers that such code computes are allocated.
 	const warmup = option('--warmup', WARMUP_SECONDS);
@@ -182,7 +187,7 @@ async function main(): Promise<void> {
 		// The page's own measurement starts after the sampling ends, so its timers stay off.
 		const pageSeconds = warmup + seconds + 60;
 		const kind = gpu === 'webgl2' ? 'null3d-webgl2' : 'null3d-webgpu';
-		const url = `${server.url}${pagePath('s1', kind, `seconds=${pageSeconds}&n=${n}`)}`;
+		const url = `${server.url}${pagePath(scene, kind, `seconds=${pageSeconds}&n=${n}`)}`;
 		await page.goto(url);
 		// Counts the display's frames on the page, which the render worker draws at the same rate.
 		await page.evaluate(() => {

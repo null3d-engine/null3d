@@ -119,6 +119,8 @@ fn check<B: FrameBuilder>(mut world: World<B>, name: &str) {
             format::DEPTH32_FLOAT,
             4,
             state_flags::LINE_LIST,
+            0,
+            0,
             0
         ],
         "{name}"

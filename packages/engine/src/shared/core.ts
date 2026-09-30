@@ -38,6 +38,7 @@ export interface CoreGlue extends CoreErrors {
 		sceneColor: number,
 		antialias: number,
 		transparent: boolean,
+		cellCulling: boolean,
 	): number;
 	jobWorkerLoop(index: number): void;
 	/** Milliseconds a job worker spent on work since the last call for it; resets its total. */
@@ -45,6 +46,12 @@ export interface CoreGlue extends CoreErrors {
 	shutdownJobs(): void;
 	/** Drops the engine, so this instance can create another; the page's own instance needs it. */
 	destroyEngine(): void;
+	/**
+	 * Drops the instance that the threaded build's glue keeps for this thread, so the browser can
+	 * free its memory, and the next start makes a new instance. The single-threaded build lacks it:
+	 * the page keeps that instance for the next engine.
+	 */
+	releaseInstance?(): void;
 	sceneCapacity(): number;
 	sceneArrays(field: number): number;
 	reserveObject(): number;
@@ -126,12 +133,26 @@ export interface CoreGlue extends CoreErrors {
 	 */
 	createMeshFromArrays(vertices: number, indices: number, layout: number): number;
 	meshRadius(mesh: number): number;
-	/** A material with a linear color; `shading` is one of the `SHADING_*` codes. */
-	createMaterial(shading: number, r: number, g: number, b: number, a: number): number;
-	/** Changes a material's linear color and keeps its opacity. */
-	setMaterialColor(material: number, r: number, g: number, b: number): number;
-	/** Changes a material's opacity and keeps its color. */
-	setMaterialOpacity(material: number, opacity: number): number;
+	/**
+	 * A material with a linear color and opacity. `shading` is one of the `SHADING_*` codes, and
+	 * `features` holds `MATERIAL_FEATURE_*` bits, fixed from then on, as is the depth bias: three.js's
+	 * polygon offset units and factor.
+	 */
+	createMaterial(
+		shading: number,
+		features: number,
+		r: number,
+		g: number,
+		b: number,
+		a: number,
+		biasConstant: number,
+		biasSlope: number,
+	): number;
+	/**
+	 * Changes one value of a material, `param` (a `MATERIAL_PARAM_*` code), and keeps the others.
+	 * The value takes as many of `x`, `y` and `z` as it has numbers. Colors are linear.
+	 */
+	setMaterialValue(material: number, param: number, x: number, y: number, z: number): number;
 	/** Gives a material a map, a texture's handle, or none with 0. */
 	setMaterialMap(material: number, texture: number): number;
 	/**
@@ -208,6 +229,19 @@ export interface CoreGlue extends CoreErrors {
 	/** The tone mapping, by code, and the exposure, from the next frame on. */
 	setOutput(toneMapping: number, exposure: number): number;
 	/**
+	 * The scene's fog: its kind (`FOG_KIND_*`), its linear color, the near and far distances of
+	 * linear fog, and the density of exponential squared fog.
+	 */
+	setFog(
+		kind: number,
+		r: number,
+		g: number,
+		b: number,
+		near: number,
+		far: number,
+		density: number,
+	): number;
+	/**
 	 * The anti-aliasing mode, by code, and the format of the target that scene passes draw into, from
 	 * the next frame on. That frame makes the scene's targets again.
 	 */
@@ -257,8 +291,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'createMeshFromArrays',
 	'meshRadius',
 	'createMaterial',
-	'setMaterialColor',
-	'setMaterialOpacity',
+	'setMaterialValue',
 	'setMaterialMap',
 	'createTexture',
 	'setTextureImage',
@@ -275,6 +308,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setLightValue',
 	'setBackground',
 	'setOutput',
+	'setFog',
 	'setAntialias',
 ];
 

@@ -1,7 +1,7 @@
 // createEngine: the page side of the engine. It probes the device, picks the build, the GPU tier
 // and the quality preset, starts the workers, and hands the canvas to the thread that draws. The
 // page loads the renderer only when it draws itself, and the sketch runner and the scene API only
-// when it runs the sketch itself.
+// when it runs the sketch itself: in the single-threaded build, and with sketchThread: 'main'.
 
 import { EngineError, isErrorCode, setErrorFixes } from '../errors/engine-error';
 import { ERROR_FIXES } from '../errors/fixes';
@@ -22,7 +22,7 @@ import type { Renderer, Tier } from '../render/renderer';
 import { awaitLater } from '../shared/await-later';
 import { controlViews, createControlBuffer, Slot } from '../shared/control';
 import { type Build, type CoreGlue, loadGlue, startCore } from '../shared/core';
-import { ImageTable, sendToTable } from '../shared/images';
+import { ImageTable, sendThrough, sendToTable } from '../shared/images';
 import { KEY_CODES } from '../shared/key-codes';
 import { createMetricsBuffer, MetricsReader } from '../shared/metrics';
 import { loadSketch } from '../sketch/define-sketch';
@@ -31,6 +31,7 @@ import type { SketchRunner } from '../sketch/runner';
 import type {
 	CapturedFrame,
 	CoreHandoff,
+	RendererRequest,
 	RendererSetup,
 	SketchWorkerInit,
 	WorkerReply,
@@ -63,6 +64,7 @@ import {
 	type GpuSwitch,
 	type LatencyMode,
 	parseSwitches,
+	type SketchThread,
 	type Switches,
 } from './switches';
 
@@ -111,6 +113,15 @@ export interface EngineOptions {
 	 * it. The default is false, an opaque canvas.
 	 */
 	transparent?: boolean;
+	/**
+	 * The thread that runs the sketch's code and the engine core: `worker`, the default, or `main`
+	 * for the page's main thread, where the sketch can reach the DOM. Use `main` for apps that work
+	 * mostly with the DOM, and for debugging. The render worker still draws in pipelined mode, and
+	 * the page draws in low-latency mode. The sketch's frames then share the page's thread with the
+	 * page's own work, so each can slow the other. The single-threaded build always runs the sketch
+	 * on the page's thread. The `?sketch-thread=` switch wins over this option.
+	 */
+	sketchThread?: SketchThread;
 	/**
 	 * The engine's memory. `maximumMiB` sets the most memory that the engine's threads share, in
 	 * MiB: a whole number from 256 to 4096, 1024 by default. Another value fails with E1409. The
@@ -204,8 +215,13 @@ export interface EngineMode {
 	 * `single`, everything runs on the page's thread, for pages without shared memory.
 	 */
 	build: 'threaded' | 'single';
-	/** The latency mode in use, or `single` for the single-thread build. */
+	/**
+	 * The latency mode in use, or `single` for the single-thread build. A page that runs the sketch
+	 * and draws steps the sketch right before each draw, which is `low`.
+	 */
 	latency: LatencyMode | 'single';
+	/** The thread that runs the sketch and the engine core. */
+	sketchThread: SketchThread;
 	/** The thread that owns the canvas and draws. */
 	renderThread: 'render-worker' | 'sketch-worker' | 'main';
 	/** The job workers that share the engine's parallel work. */
@@ -281,8 +297,16 @@ export interface Engine {
 	 */
 	measure(seconds: number): Promise<FrameMetrics>;
 	/**
-	 * Draws one frame offscreen and returns its pixels as RGBA8 rows, top row first. In hold mode,
-	 * it returns the held frame.
+	 * Resolves with an image of the next frame that the engine draws, as a PNG file. The thread
+	 * that draws reads the frame back and encodes it, so the page's thread does no work for it when
+	 * a worker draws. In hold mode, and while the engine is paused, the image shows the frame on the
+	 * canvas. A hidden page draws no frames, so its image comes once the page shows again. Fails
+	 * with E1414 once the engine has stopped.
+	 */
+	capture(): Promise<Blob>;
+	/**
+	 * Draws one frame offscreen and returns its pixels as RGBA8 rows, top row first, for tests. In
+	 * hold mode, it returns the held frame.
 	 */
 	captureFrame(): Promise<{ width: number; height: number; pixels: Uint8Array }>;
 	/**
@@ -358,6 +382,9 @@ export function startError(role: string, message: string): EngineError {
 }
 
 type RunnerModule = typeof import('../sketch/runner');
+
+/** True while an engine runs its sketch on this page, where the page's copy of the core serves it. */
+let pageRunsSketch = false;
 
 /**
  * Starts loading the sketch runner and the scene API, which the page needs only when it runs the
@@ -449,7 +476,13 @@ class EngineWorker {
 		return this.stoppedPromise;
 	}
 
-	request(message: { type: 'capture' }): Promise<WorkerReply> {
+	/** Stops the worker, and fails each request that still waits for its answer. */
+	terminate(): void {
+		this.worker.terminate();
+		for (const pending of this.waiting.splice(0)) pending.reject(new Error('the engine stopped'));
+	}
+
+	request(message: RendererRequest): Promise<WorkerReply> {
 		return new Promise((resolve, reject) => {
 			this.waiting.push({ resolve, reject });
 			this.worker.postMessage(message);
@@ -471,12 +504,13 @@ async function stopWorkers(workers: readonly EngineWorker[], jobs: readonly Engi
 		}),
 	]);
 	clearTimeout(timer);
-	for (const w of workers) w.worker.terminate();
+	for (const w of workers) w.terminate();
 }
 
 /** The engine's workers, which the page starts before the core has compiled. */
 interface EngineWorkers {
-	sketch: EngineWorker;
+	/** The sketch worker, unless the page runs the sketch. */
+	sketch: EngineWorker | undefined;
 	/** The render worker, in the mode where it draws. */
 	render: EngineWorker | undefined;
 	jobs: EngineWorker[];
@@ -485,30 +519,33 @@ interface EngineWorkers {
 /** Every worker of a set, in the order the page stops them. */
 function allWorkers(workers: EngineWorkers | undefined): EngineWorker[] {
 	if (!workers) return [];
-	return [workers.sketch, ...(workers.render ? [workers.render] : []), ...workers.jobs];
+	return [workers.sketch, workers.render, ...workers.jobs].filter((w) => w !== undefined);
 }
 
 /**
- * Starts the engine's workers: the sketch worker, the render worker when it draws, and the job
- * workers. The page starts them before the core has compiled, so their scripts and the core's loader
- * download while the core does. Each worker waits for its start message, which carries the core. A
- * job worker that fails to start is reported as a failure of the running engine, and never holds up
- * the start.
+ * Starts the engine's workers: the sketch worker unless the page runs the sketch, the render worker
+ * when it draws, and the job workers. The page starts them before the core has compiled, so their
+ * scripts and the core's loader download while the core does. Each worker waits for its start
+ * message, which carries the core. A job worker that fails to start is reported as a failure of the
+ * running engine, and never holds up the start.
  */
 function startWorkers(
+	sketchWorker: boolean,
 	renderWorker: boolean,
 	jobWorkers: number,
 	slots: Int32Array,
 	events: WorkerEvents,
 ): EngineWorkers {
-	const sketch = new EngineWorker(
-		new Worker(new URL('../workers/sketch-worker.ts', import.meta.url), {
-			type: 'module',
-			name: 'null3d-sketch',
-		}),
-		'sketch',
-		events,
-	);
+	const sketch = sketchWorker
+		? new EngineWorker(
+				new Worker(new URL('../workers/sketch-worker.ts', import.meta.url), {
+					type: 'module',
+					name: 'null3d-sketch',
+				}),
+				'sketch',
+				events,
+			)
+		: undefined;
 	const render = renderWorker
 		? new EngineWorker(
 				new Worker(new URL('../workers/render-worker.ts', import.meta.url), {
@@ -567,14 +604,46 @@ export async function createEngine(options: EngineOptions): Promise<Engine> {
 	setErrorFixes(ERROR_FIXES);
 	const switches = parseSwitches(globalThis.location?.search ?? '');
 	const holding = options.hold !== undefined || switches.hold !== undefined;
+	const place = placement(options, switches);
+	/** True once this start holds the page's copy of the core, which serves one engine at a time. */
+	let claimed = false;
 	try {
 		const hold = holdSeconds(options.hold, switches.hold);
 		if (holding) publishHold(undefined);
-		return await startEngine(options, switches, hold);
+		if (place.sketchThread === 'main') {
+			if (pageRunsSketch)
+				throw new EngineError(
+					'E1415',
+					'createEngine() found another engine that runs its sketch on this page, which has not stopped.',
+				);
+			pageRunsSketch = claimed = true;
+		}
+		return await startEngine(options, switches, hold, place);
 	} catch (error) {
+		if (claimed) pageRunsSketch = false;
 		if (holding) publishHold(holdFailure(error));
 		throw error;
 	}
+}
+
+/** Where the engine runs: its build, and the thread that runs the sketch and the core. */
+interface Placement {
+	threaded: boolean;
+	sketchThread: SketchThread;
+}
+
+/**
+ * Picks the build and the sketch's thread from facts the page has at once, so the core downloads
+ * and compiles while the probe tests the GPU paths. The threaded build needs shared memory, and the
+ * single-threaded build runs the sketch on the page's thread.
+ */
+function placement(options: EngineOptions, switches: Switches): Placement {
+	const threaded =
+		globalThis.crossOriginIsolated === true &&
+		typeof SharedArrayBuffer === 'function' &&
+		switches.threads;
+	const main = !threaded || (switches.sketchThread ?? options.sketchThread) === 'main';
+	return { threaded, sketchThread: main ? 'main' : 'worker' };
 }
 
 /**
@@ -585,6 +654,7 @@ async function startEngine(
 	options: EngineOptions,
 	switches: Switches,
 	hold: number | undefined,
+	{ threaded, sketchThread }: Placement,
 ): Promise<Engine> {
 	const startedAt = performance.now();
 	const { signal, onProgress } = options;
@@ -613,14 +683,9 @@ async function startEngine(
 	// Checked before any download, so an old browser learns at once why the engine cannot run.
 	if (!WebAssembly.validate(SIMD_PROBE))
 		throw new EngineError('E1303', 'this browser runs WebAssembly without SIMD.');
-	// The build follows from facts the page has at once, so the core downloads and compiles while
-	// the probe tests the GPU paths.
-	const threaded =
-		globalThis.crossOriginIsolated === true &&
-		typeof SharedArrayBuffer === 'function' &&
-		switches.threads;
 	const build: Build = threaded ? 'threaded' : 'single';
 	const latency = threaded ? (switches.latency ?? options.latency ?? 'pipelined') : 'single';
+	const sketchOnPage = sketchThread === 'main';
 	let coreMs = 0;
 	const coreLoad = awaitLater(
 		loadCore(build, maximumMiB).then((loaded) => {
@@ -628,15 +693,15 @@ async function startEngine(
 			return loaded;
 		}),
 	);
-	// The page runs the sketch itself only in single-threaded mode. It needs the core's loader, the
-	// sketch runner and the sketch module right after the core, so they download while the core does:
-	// each later start delays the first frame by a round trip on a slow network. The sketch module's
-	// top-level code then runs when the module arrives. Hold mode loads the module once the runner
-	// has seeded the thread's random numbers, so that code draws the same numbers on every run.
-	if (latency === 'single') void awaitLater(loadGlue('single'));
-	const runnerModule = latency === 'single' ? loadRunnerModule() : undefined;
+	// A page that runs the sketch itself needs the core's loader, the sketch runner and the sketch
+	// module right after the core, so they download while the core does: each later start delays the
+	// first frame by a round trip on a slow network. The sketch module's top-level code then runs when
+	// the module arrives. Hold mode loads the module once the runner has seeded the thread's random
+	// numbers, so that code draws the same numbers on every run.
+	if (sketchOnPage) void awaitLater(loadGlue(build));
+	const runnerModule = sketchOnPage ? loadRunnerModule() : undefined;
 	const sketchModule =
-		latency === 'single' && hold === undefined ? awaitLater(loadSketch(sketchUrl)) : undefined;
+		sketchOnPage && hold === undefined ? awaitLater(loadSketch(sketchUrl)) : undefined;
 	const powerPreference = options.powerPreference ?? DEFAULT_POWER_PREFERENCE;
 
 	const messageHandlers = new Set<(name: string, data: unknown) => void>();
@@ -678,22 +743,27 @@ async function startEngine(
 	const views = controlViews(control);
 	const { slots } = views;
 	Atomics.store(slots, Slot.Running, 1);
-	/** The thread that draws, unless the probe finds that a worker cannot draw here. */
+	/**
+	 * The thread that draws, unless the probe finds that a worker cannot draw here. In low-latency
+	 * mode the thread that runs the sketch draws too.
+	 */
 	let renderThread: EngineMode['renderThread'] =
 		latency === 'single' || switches.renderOnMain
 			? 'main'
 			: latency === 'low'
-				? 'sketch-worker'
+				? sketchOnPage
+					? 'main'
+					: 'sketch-worker'
 				: 'render-worker';
 	// A page that draws loads the renderer while the core downloads too. When the probe finds that a
 	// worker cannot draw here, the page loads it later, once it knows.
 	const drawModule = renderThread === 'main' ? loadDrawModule() : undefined;
-	// With worker threads the page starts the workers now, and downloads the sketch module into the
-	// browser's cache. The sketch worker still runs the module only after it has started the core.
+	// With worker threads the page starts the workers now. A sketch worker gets the sketch module
+	// into the browser's cache, and still runs the module only after it has started the core.
 	const threads = threaded
-		? startWorkers(renderThread === 'render-worker', jobWorkers, slots, events)
+		? startWorkers(!sketchOnPage, renderThread === 'render-worker', jobWorkers, slots, events)
 		: undefined;
-	if (threads) {
+	if (threads?.sketch) {
 		prefetch(sketchUrl);
 		// In low-latency mode the sketch worker draws, so it loads the renderer now too.
 		if (renderThread === 'sketch-worker')
@@ -704,7 +774,7 @@ async function startEngine(
 	 * yet, so they stop at once.
 	 */
 	const failEarly = (error: unknown) => {
-		for (const worker of allWorkers(threads)) worker.worker.terminate();
+		for (const worker of allWorkers(threads)) worker.terminate();
 		return error;
 	};
 	const report = await abortable(
@@ -722,10 +792,10 @@ async function startEngine(
 
 	let choice = pickTier(renderThread !== 'main');
 	if (!choice && renderThread === 'render-worker') {
-		// Worker rendering is unavailable here, so the page draws while the sketch worker computes.
+		// Worker rendering is unavailable here, so the page draws while the sketch thread computes.
 		renderThread = 'main';
 		choice = pickTier(false);
-		threads?.render?.worker.terminate();
+		threads?.render?.terminate();
 		if (threads) threads.render = undefined;
 	}
 	if (!choice)
@@ -755,6 +825,7 @@ async function startEngine(
 	let wasmMemory = core.memory;
 	const device = coreDevice(tier, report, {
 		...switches,
+		antialias: quality.settings.antialias,
 		transparent: options.transparent === true,
 	});
 	const capabilities: EngineCapabilities = {
@@ -829,40 +900,85 @@ async function startEngine(
 	let rendererHost: EngineWorker | undefined;
 	let localDrawing: Drawing<Renderer> | undefined;
 	let localRunner: SketchRunner | undefined;
-	/** The single-threaded build's core, which the page keeps for the next engine it starts. */
+	/**
+	 * The page's core, when the page runs the sketch. The page keeps the single-threaded build's core
+	 * for the next engine it starts. The threaded build's core lives in the engine's own shared
+	 * memory, so each engine starts a core of its own.
+	 */
 	let localCore: CoreGlue | undefined;
-	/** Stops every loop and then the workers, and wakes each thread that waits, so it sees the stop. */
+	let stopping: Promise<void> | undefined;
+	/**
+	 * Stops every loop and then the workers, and wakes each thread that waits, so it sees the stop.
+	 * Then it lets go of the page's threaded core. A second call returns the first call's promise.
+	 */
 	const stop = () => {
-		Atomics.store(slots, Slot.Running, 0);
-		for (const slot of [
-			Slot.Running,
-			Slot.FramesTaken,
-			Slot.Paused,
-			Slot.JobsReady,
-			Slot.PipelinesBuilt,
-		])
-			Atomics.notify(slots, slot);
-		localDrawing?.stop();
-		localRunner?.dispose();
-		localCore?.destroyEngine();
-		input.listen(false);
-		canvasWatch.listen(false);
-		stopPreferences();
-		stopDisplay?.();
-		// A start that fails or stops has not crashed the tab.
-		marker?.end();
-		return stopWorkers(allWorkers(threads), threads?.jobs ?? []);
+		stopping ??= (async () => {
+			Atomics.store(slots, Slot.Running, 0);
+			for (const slot of [
+				Slot.Running,
+				Slot.FramesTaken,
+				Slot.Paused,
+				Slot.JobsReady,
+				Slot.PipelinesBuilt,
+			])
+				Atomics.notify(slots, slot);
+			localDrawing?.stop();
+			localRunner?.dispose();
+			localCore?.destroyEngine();
+			input.listen(false);
+			canvasWatch.listen(false);
+			stopPreferences();
+			stopDisplay?.();
+			// A start that fails or stops has not crashed the tab.
+			marker?.end();
+			await stopWorkers(allWorkers(threads), threads?.jobs ?? []);
+			// The job workers have left the job system, so the page's threaded core has no more work,
+			// and the browser can free the engine's memory once the page lets go of the core.
+			localCore?.releaseInstance?.();
+			if (sketchOnPage) pageRunsSketch = false;
+		})();
+		return stopping;
+	};
+
+	/**
+	 * Hands the core to the job workers. A stop waits until each job worker reports that it left the
+	 * job system, which one without the core never does.
+	 */
+	const startJobs = (jobs: readonly EngineWorker[]) => {
+		for (const [index, job] of jobs.entries())
+			job.worker.postMessage({ type: 'init', ...handoff, index });
+	};
+	/** Hands the canvas and the core to the render worker, with the port that images come through. */
+	const startRenderWorker = (render: EngineWorker, imagePort: MessagePort) => {
+		const canvas = options.canvas.transferControlToOffscreen();
+		render.worker.postMessage({ type: 'init', ...handoff, canvas, ...rendererSetup, imagePort }, [
+			canvas,
+			imagePort,
+		]);
+		rendererHost = render;
 	};
 
 	marker?.begin(history, tier);
 	try {
-		if (latency === 'single') {
-			const started = await startCore('single', core.module);
+		if (sketchOnPage) {
+			// The page starts its core before the workers get theirs. The first core in a new shared
+			// memory fills it with the core's data, and a core that starts while another fills it
+			// waits, which the page's thread must never do.
+			const started = await startCore(build, core.module, core.memory);
 			localCore = started.glue;
 			const memory = started.memory as WebAssembly.Memory;
 			wasmMemory = memory;
-			const { SketchRunner } = await (runnerModule ?? loadRunnerModule());
 			const imageTable = new ImageTable();
+			let sendImage = sendToTable(imageTable, slots);
+			const render = threads?.render;
+			if (threads) startJobs(threads.jobs);
+			if (render) {
+				// Texture images go from the page straight to the render worker.
+				const images = new MessageChannel();
+				sendImage = sendThrough(images.port1);
+				startRenderWorker(render, images.port2);
+			}
+			const { SketchRunner, runPipelined } = await (runnerModule ?? loadRunnerModule());
 			localRunner = new SketchRunner(
 				(name, data) => onSketchMessage(name, data),
 				metrics,
@@ -871,12 +987,12 @@ async function startEngine(
 					memory,
 					control: views,
 					keyCodes: KEY_CODES,
-					jobWorkers: 0,
+					jobWorkers,
 					device,
 					quality,
 					applyQuality: events.quality,
 					capabilities,
-					sendImage: sendToTable(imageTable, slots),
+					sendImage,
 					pageUrl: pageUrl ?? sketchUrl,
 				},
 				hold,
@@ -885,14 +1001,15 @@ async function startEngine(
 			// numbers. The renderer starts before the setup, so a warm-up in the setup has a renderer
 			// to build its pipelines.
 			const sketchLoad = sketchModule ?? awaitLater(loadSketch(sketchUrl));
-			localDrawing = await drawOnPage(memory, { imageTable }, localRunner);
+			if (!render) localDrawing = await drawOnPage(memory, { imageTable }, localRunner);
 			await localRunner.setup(await sketchLoad);
-		} else if (threads) {
+			if (render) {
+				await abortable(render.ready(), signal);
+				if (hold === undefined) void runPipelined(localRunner, control);
+			}
+		} else if (threads?.sketch) {
 			const { sketch, render, jobs } = threads;
-			// The job workers get the core first. A stop waits until each job worker reports that it left
-			// the job system, which one without the core never does.
-			for (const [index, job] of jobs.entries())
-				job.worker.postMessage({ type: 'init', ...handoff, index });
+			startJobs(jobs);
 			const init: SketchWorkerInit = {
 				type: 'init',
 				...handoff,
@@ -912,17 +1029,8 @@ async function startEngine(
 				// Texture images go from the sketch worker straight to the thread that draws.
 				const images = new MessageChannel();
 				sketch.worker.postMessage({ ...init, imagePort: images.port1 }, [images.port1]);
-				if (render) {
-					const canvas = options.canvas.transferControlToOffscreen();
-					const imagePort = images.port2;
-					render.worker.postMessage(
-						{ type: 'init', ...handoff, canvas, ...rendererSetup, imagePort },
-						[canvas, imagePort],
-					);
-					rendererHost = render;
-				} else {
-					localDrawing = await drawOnPage(core.memory, { imagePort: images.port2 });
-				}
+				if (render) startRenderWorker(render, images.port2);
+				else localDrawing = await drawOnPage(core.memory, { imagePort: images.port2 });
 			}
 			// The engine is ready once the sketch worker and the render worker are.
 			const essential = render ? [sketch, render] : [sketch];
@@ -937,7 +1045,8 @@ async function startEngine(
 	const engineStartMs = performance.now() - startedAt;
 	const mode: EngineMode = {
 		build,
-		latency,
+		latency: latency === 'pipelined' && sketchOnPage && renderThread === 'main' ? 'low' : latency,
+		sketchThread,
 		renderThread,
 		jobWorkers,
 		hold: hold ?? null,
@@ -964,15 +1073,27 @@ async function startEngine(
 	marker?.endAfter(firstFrame);
 	/** Hold mode's frame, read back once. */
 	let held: CapturedFrame | undefined;
+	/** The error of a thread that draws when it could not capture a frame. */
+	const captureFailure = (reply: WorkerReply | undefined) =>
+		new Error(
+			`the frame could not be captured${reply?.type === 'capture-failed' ? `: ${reply.message}` : ''}`,
+		);
 	/** Draws a frame offscreen on the thread that draws, and reads it back. */
 	const capture = async (): Promise<CapturedFrame> => {
 		if (localDrawing && draw) return draw.captureFrame(localDrawing, slots);
 		const reply = await rendererHost?.request({ type: 'capture' });
 		if (reply?.type === 'captured')
 			return { width: reply.width, height: reply.height, pixels: reply.pixels };
-		const reason = reply?.type === 'capture-failed' ? `: ${reply.message}` : '';
-		throw new Error(`the frame could not be captured${reason}`);
+		throw captureFailure(reply);
 	};
+	/** Draws a frame offscreen on the thread that draws, which encodes it as a PNG file. */
+	const captureImage = async (): Promise<Blob> => {
+		if (localDrawing && draw) return draw.captureImage(localDrawing, slots);
+		const reply = await rendererHost?.request({ type: 'capture', image: true });
+		if (reply?.type === 'captured-image') return reply.image;
+		throw captureFailure(reply);
+	};
+	const stopped = () => Atomics.load(slots, Slot.Running) === 0;
 
 	const engine: Engine = {
 		capabilities,
@@ -981,7 +1102,7 @@ async function startEngine(
 		firstFrame,
 		postToSketch(name, data, transfer = []) {
 			if (localRunner) localRunner.receive(name, data);
-			else threads?.sketch.worker.postMessage({ type: 'post', name, data }, transfer);
+			else threads?.sketch?.worker.postMessage({ type: 'post', name, data }, transfer);
 		},
 		onSketchMessage(handler) {
 			messageHandlers.add(handler);
@@ -1047,6 +1168,15 @@ async function startEngine(
 				mainThread: mainThread.stop(),
 			};
 		},
+		async capture() {
+			try {
+				if (!stopped()) await nextFrame(slots, hold !== undefined);
+				if (stopped()) throw new Error('the engine has stopped');
+				return await captureImage();
+			} catch (error) {
+				throw new EngineError('E1414', `engine.capture() failed: ${messageOf(error)}.`);
+			}
+		},
 		async captureFrame() {
 			return held ? { ...held, pixels: held.pixels.slice() } : capture();
 		},
@@ -1077,6 +1207,27 @@ async function startEngine(
 		stats: summarizeFrames(new MetricsReader(metrics).readWritten(), threadRoles(mode)),
 	});
 	return engine;
+}
+
+/**
+ * Resolves once the thread that draws has taken a frame after this call. It resolves at once when
+ * no new frame comes: in hold mode, and while the engine is paused or stopped.
+ */
+function nextFrame(slots: Int32Array, holding: boolean): Promise<void> {
+	const taken = Atomics.load(slots, Slot.FramesTaken);
+	return new Promise((resolve) => {
+		const check = () => {
+			if (
+				holding ||
+				Atomics.load(slots, Slot.Paused) !== 0 ||
+				Atomics.load(slots, Slot.Running) === 0 ||
+				Atomics.load(slots, Slot.FramesTaken) !== taken
+			)
+				resolve();
+			else requestAnimationFrame(check);
+		};
+		check();
+	});
 }
 
 /**
