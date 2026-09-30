@@ -14,7 +14,13 @@ describe('parseSwitches', () => {
 			jobs: undefined,
 			memoryMiB: undefined,
 			hold: undefined,
+			bench: false,
 		});
+	});
+
+	it('reads ?bench with or without a value', () => {
+		expect(parseSwitches('?bench').bench).toBe(true);
+		expect(parseSwitches('?gpu=webgl2&bench=1').bench).toBe(true);
 	});
 
 	it('keeps the text of ?hold for the engine to check, and an empty text for a bare ?hold', () => {

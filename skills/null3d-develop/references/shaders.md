@@ -141,7 +141,7 @@ materials.shader({ vertexOffset, surface });
 
 Vertices that move outside the object's bounds can be culled wrongly; enlarge the bounds with `obj.setBounds(center, radius)`.
 
-A full shader supplies `vertex` and `fragment` functions. Use the engine's vertex input and output structs from the shader library (`#import null3d::vertex`), so instancing and camera-relative positions still work. Full shaders do not receive lighting, shadows or fog unless you import the helpers (`null3d::lighting`, `null3d::fog`).
+A full shader supplies `vertex` and `fragment` functions. The shader library's `null3d::vertex` module helps it keep instancing and camera-relative positions working. Full shaders do not receive lighting, shadows or fog unless you import the helpers (`null3d::lighting`, `null3d::fog`).
 
 ## 6. Custom post effects (0.2)
 
@@ -199,10 +199,21 @@ These rules come from the capabilities browsers report; `shaders/wgsl-rules` lis
 
 ```wgsl
 #import null3d::noise::{simplex3, fbm3}
-#import null3d::color::{srgbToLinear}
+#import null3d::color::{srgb_to_linear}
 ```
 
-The build resolves imports before translating, and includes only the functions you import. Library modules: `null3d::math`, `null3d::noise`, `null3d::color`, `null3d::lighting` (including `mainLightDirection()`, the main directional light's direction of travel), `null3d::fog`, `null3d::vertex`, `null3d::depth` (`linearDepth`, `viewZ`: correct for the depth each GPU path stores), `null3d::sdf`. Their contents are listed in `shaders/library`.
+The build resolves imports before translating, and adds only the functions the shader calls. Names are snake_case, as in WGSL. `shaders/library` lists every function with its signature. The modules:
+
+- `null3d::math`: constants such as `PI`, `modulo` with GLSL's sign rule, `remap` and rotations.
+- `null3d::noise`: integer hashes, `random`, and value, Perlin, simplex, Worley and fractal noise. Each noise has a 2D and a 3D form, such as `simplex2` and `fbm3(p, octaves)`. The hashes give the same bits on every GPU, so a pattern looks the same everywhere.
+- `null3d::color`: `srgb_to_linear`, `linear_to_srgb`, `luminance`, HSV, and the tone mapping curves `tone_map_aces`, `tone_map_agx` and `tone_map_neutral`.
+- `null3d::lighting`: `lambert`, and three.js's physically based functions, such as `brdf_ggx`, `pbr_material` and `direct_light`.
+- `null3d::fog`: `fog_linear` and `fog_exp2`, with three.js's formulas.
+- `null3d::vertex`: instance transforms, `transform_normal` for uneven scale, and `to_clip`.
+- `null3d::depth`: `linear_depth` and the view-z conversions for the engine's reversed depth, which hold on both GPU paths.
+- `null3d::sdf`: signed distances of shapes, and ways to combine them.
+
+Importing a module whole reserves its name. After `#import null3d::color`, no variable, parameter or field can be called `color`. Import items by name, as above, to keep the name free.
 
 ## 10. Debugging shaders
 
