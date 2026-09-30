@@ -21,9 +21,14 @@ use null3d_core::layers::DEFAULT_LAYERS;
 
 use crate::camera::{Affine, Lens, Mat4};
 use crate::frame_data::FrameUniform;
+use crate::shadows::MAX_CASCADES;
 
 /// The most views a builder draws. Each view has a fixed range of GPU object ids.
 pub const MAX_VIEWS: usize = 32;
+
+/// The most views of every kind: the views of cameras, then the cascades of the directional
+/// light's shadows, which cull and draw as views do.
+pub const MAX_VIEW_IDS: usize = MAX_VIEWS + MAX_CASCADES;
 
 /// A view, by its place in the scene settings' list of views.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -40,6 +45,21 @@ impl ViewId {
 
     pub(crate) const fn from_index(index: usize) -> Self {
         Self(index as u16)
+    }
+
+    /// The view of a shadow cascade, from 0 for the nearest, after every view of a camera.
+    pub const fn cascade(cascade: usize) -> Self {
+        Self((MAX_VIEWS + cascade) as u16)
+    }
+
+    /// The cascade of a shadow cascade's view, or `None` for a camera's view.
+    pub const fn cascade_index(self) -> Option<usize> {
+        let index = self.0 as usize;
+        if index >= MAX_VIEWS {
+            Some(index - MAX_VIEWS)
+        } else {
+            None
+        }
     }
 }
 

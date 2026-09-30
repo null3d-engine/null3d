@@ -3,6 +3,7 @@
 
 use null3d_core::handle::{GENERATION_BITS, SLOT_BITS};
 use null3d_core::layers::DEFAULT_LAYERS;
+use null3d_core::lights::{color as light_color, kind as light_kind, value as light_value};
 use null3d_core::scene::{NO_PARENT, flags, op};
 use null3d_core::world::MATRIX_FLOATS;
 use null3d_gpu::caps::Capabilities;
@@ -162,6 +163,30 @@ pub fn typescript() -> String {
             ],
         ),
         ("LAYERS", &[("DEFAULT", DEFAULT_LAYERS)]),
+        (
+            "LIGHT_KIND",
+            &[
+                ("DIRECTIONAL", light_kind::DIRECTIONAL),
+                ("POINT", light_kind::POINT),
+                ("SPOT", light_kind::SPOT),
+                ("HEMISPHERE", light_kind::HEMISPHERE),
+                ("AMBIENT", light_kind::AMBIENT),
+            ],
+        ),
+        (
+            "LIGHT_COLOR",
+            &[("MAIN", light_color::MAIN), ("GROUND", light_color::GROUND)],
+        ),
+        (
+            "LIGHT_VALUE",
+            &[
+                ("INTENSITY", light_value::INTENSITY),
+                ("RANGE", light_value::RANGE),
+                ("DECAY", light_value::DECAY),
+                ("ANGLE", light_value::ANGLE),
+                ("PENUMBRA", light_value::PENUMBRA),
+            ],
+        ),
         (
             "SCENE_FIELD",
             &[
