@@ -65,6 +65,7 @@ export type {
 	Material,
 	MaterialOptions,
 	Materials,
+	MeshArrays,
 	MeshGeometry,
 	SphereOptions,
 } from './scene/resources';
