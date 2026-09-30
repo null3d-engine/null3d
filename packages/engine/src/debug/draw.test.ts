@@ -357,7 +357,7 @@ describe('debug drawing', () => {
 		expect(frames[0]?.length).toBe(MAX_POINTS);
 		expect(frames[1]?.length).toBe(24);
 		expect(warnings.length).toBe(1);
-		expect(String(warnings[0])).toContain('131,072 lines a frame');
+		expect(String(warnings[0])).toContain('at most 131,072 debug lines');
 	});
 });
 

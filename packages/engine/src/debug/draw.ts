@@ -417,7 +417,7 @@ export class DebugDraw implements Debug {
 				this.warned = true;
 				const most = (MAX_POINTS / 2).toLocaleString('en-US');
 				console.warn(
-					`null3D: debug drawing draws at most ${most} lines a frame. This frame left out the lines after the first ${most}.`,
+					`null3D: a frame draws at most ${most} debug lines. This frame left out the lines after the first ${most}.`,
 				);
 			}
 			return false;

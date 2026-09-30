@@ -81,7 +81,7 @@ export const PAGES: readonly PageEntry[] = [
 	{ id: 'api/post', title: 'Post-processing API', since: '0.2', summary: 'post.set options; post.addEffect for custom WGSL effects.' },
 	{ id: 'api/render', title: 'Render graph API', since: '0.2', summary: 'render.addPass declarations; enabling and disabling passes; dumpGraph.' },
 	{ id: 'api/quality', title: 'Quality API', since: '0.1', summary: 'quality.preset, quality.set, frame budgets, quality events.' },
-	{ id: 'api/debug', title: 'Debug drawing and stats', since: '0.1', summary: 'engine.measure and its figures; debug.line, box, axes, grid, frustum; debug.view; debug.stats.' },
+	{ id: 'api/debug', title: 'Debug drawing and stats', since: '0.1', summary: 'debug.line, box, sphere, arrow, axes, grid, frustum and light; engine.measure and its figures; debug.view; debug.stats.' },
 	{ id: 'api/math', title: 'Math helpers', since: '0.1', summary: 'vec3, quat, mat4 and color on plain arrays; math.clamp, lerp, damp and a random generator that hold mode seeds.' },
 	{ id: 'api/time', title: 'Time', since: '0.1', summary: 'dt, time.now, fixed steps.' },
 	{ id: 'api/sprites', title: 'Sprites', since: '0.2', summary: 'createSprites; world and screen size modes; atlases.' },

@@ -1297,8 +1297,8 @@
       "three": "AxesHelper / GridHelper / BoxHelper / Box3Helper / ArrowHelper / CameraHelper / light helpers / SkeletonHelper / PlaneHelper",
       "status": "changed",
       "since": "0.1",
-      "target": "debug.axes, debug.grid, debug.box, debug.arrow, debug.frustum, debug.light, debug.skeleton",
-      "notes": "Debug drawing exists in development builds only.",
+      "target": "debug.axes, debug.grid, debug.box, debug.sphere, debug.arrow, debug.frustum, debug.light, debug.skeleton",
+      "notes": "Call them in onUpdate: each call draws for one frame. Debug drawing exists in development builds only. debug.grid takes GridHelper's size and divisions. debug.skeleton comes with animation in 0.2.",
       "docs": "api/debug",
       "detect": "\\b(Axes|Grid|PolarGrid|Box|Box3|Arrow|Camera|DirectionalLight|PointLight|SpotLight|HemisphereLight|Skeleton|Plane)Helper\\b"
     },

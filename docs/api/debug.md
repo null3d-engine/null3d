@@ -3,18 +3,82 @@ id: api/debug
 title: Debug drawing and stats
 status: experimental
 since: "0.1"
-summary: "engine.measure and its figures; debug.line, box, axes, grid, frustum; debug.view; debug.stats."
+summary: "debug.line, box, sphere, arrow, axes, grid, frustum and light; engine.measure and its figures; debug.view; debug.stats."
 ---
 
 # Debug drawing and stats
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. The sketch's `debug` object, with the drawing calls `line`, `box`, `axes`, `grid` and `frustum`, `debug.view` and the stats overlay `debug.stats`, is not built yet, so coding agents must not use it.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. The calls `debug.view`, `debug.frameStats` and `debug.stats`, which shows a stats overlay, are not built yet, so coding agents must not use them. Skeleton drawing, `debug.skeleton`, comes with animation in null3D 0.2.
+
+Debug drawing shows where things are in the scene: lines, boxes, spheres, arrows, axes, grids, camera frustums and lights. `engine.measure` measures the running engine.
+
+## Debug drawing
+
+```mermaid
+flowchart LR
+    calls["ctx.debug calls<br/>in onUpdate"] --> points["The frame's points:<br/>64-bit positions and colors"]
+    points --> relative["The core moves each point<br/>relative to the camera"]
+    relative --> pass["One draw of every line,<br/>after the opaque objects"]
+```
+
+`ctx.debug` draws lines over the scene for one frame. Call it in `onUpdate` in every frame that needs the drawing. Each call adds the lines of its shape. When the frame draws, the engine moves each point relative to the camera in 64-bit floats. Then it draws every line in one call, after the opaque objects. So lines stay precise far from the origin, as objects do, and objects in front of a line hide it.
+
+```ts
+export default defineSketch(({ scene, materials, geometry, debug }) => {
+  const sun = scene.createDirectionalLight({ direction: [-1, -2, -1] });
+  const crate = scene.createMesh({
+    mesh: geometry.box(),
+    material: materials.standard({ color: '#e8554e' }),
+    dynamic: true,
+  });
+  const lookout = scene.createPerspectiveCamera({ position: [6, 2, 0], target: [0, 0, 0], far: 20 });
+  return {
+    onUpdate() {
+      debug.grid(10, 10);
+      debug.axes(crate);                                   // follows the crate as it moves and turns
+      debug.box([-0.6, -0.6, -0.6], [0.6, 0.6, 0.6], '#ff0000');
+      debug.arrow([0, 2, 0], [1, 0, 0], 1.5);
+      debug.frustum(lookout);
+      debug.light(sun, { position: [0, 3, 0] });
+    },
+  };
+});
+```
+
+| Call | What it draws | Default color |
+| --- | --- | --- |
+| `line(from, to, color)` | A line between two points | Yellow |
+| `box(min, max, color)` | The 12 edges of a box that lines up with the world's axes | Yellow |
+| `sphere(center, radius, color)` | Three circles around the center, one in each plane of the world's axes | Yellow |
+| `arrow(origin, direction, length, color)` | A line from `origin` with a head at its tip, 1 meter long unless `length` says otherwise | Yellow |
+| `axes(target, size)` | The x, y and z axes, `size` meters long, at a position or on an object | Red, green and blue |
+| `grid(size, divisions, options)` | A square grid on the horizontal plane, as three.js's `GridHelper` draws it | Gray, darker through the center |
+| `frustum(camera, color)` | The near and far planes of a camera's view, and the edges between them | Orange |
+| `light(light, options)` | A directional light: a square that faces the light, and an arrow in the direction its light travels | The light's color |
+
+Colors take the same forms as material colors: a hex string such as `'#ff0000'`, a number such as `0xff0000`, or three sRGB components from 0 to 1. Positions are in world space, in arrays such as `[x, y, z]` or typed arrays.
+
+### Objects and cameras
+
+`debug.axes(object)` and `debug.frustum(camera)` draw at the object's place in the frame that draws them. They wait until the engine has updated the frame's transforms, so they never trail a moving object by one frame. A camera's frustum takes the shape of the canvas, as its view does.
+
+### Release builds
+
+Debug drawing works in development builds only. In a production build, every `debug` call does nothing, and the build holds neither the drawing code nor the shader of the lines. The calls themselves still run. So work that only feeds debug drawing still costs time: wrap it in `if (import.meta.env.DEV)`, which Vite sets to false in production builds.
+
+### Limits
+
+- Lines are one pixel wide on every GPU, because WebGPU draws lines no wider. Wide lines come with [lines](lines.md) in null3D 0.2.
+- A frame draws at most 131,072 lines. The engine leaves out the lines after that, and warns once in the console.
+- A frame without debug drawing runs no debug pass, uploads nothing and allocates nothing.
+
+## Frame measurement
 
 `engine.measure(seconds)` on the page measures the running engine for that many seconds. It returns a `FrameMetrics` object. That holds CPU time per frame by thread and step, GPU time per frame and per pass, frame rates, uploads and draw calls. It also holds memory and load times. Each figure that varies from frame to frame comes as `Percentiles`: the median, the 95th and 99th percentiles, the mean and the number of frames.
 
 Each thread writes a few numbers per frame into a buffer that the page reads, so a measurement costs the frame almost nothing. GPU timing and the tracking of finished frames run only while the page measures, and only on one frame in eight. [Performance guide](../guides/performance.md#measure) explains each figure and how to measure fairly.
 
-## Example: measure a running scene
+### Example: measure a running scene
 
 ```ts
 import { createEngine } from '@null3d/engine';
@@ -32,7 +96,7 @@ for (const part of stats.gpuPassMs ?? []) {
 }
 ```
 
-## GPU time
+### GPU time
 
 `gpuMs` and `gpuPassMs` need timestamp queries, which some WebGPU devices offer and WebGL2 never does. Without them both are null. `gpuPassMs` splits `gpuMs` into the parts of the frame, in the order the GPU runs them:
 
