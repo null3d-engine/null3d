@@ -87,6 +87,7 @@ export const CULL_SHADER: {
     pad0_: u32,
     pad1_: u32,
     pad2_: u32,
+    cell_offsets: array<vec4<f32>, 512>,
 }
 
 struct Bucket {
@@ -100,6 +101,8 @@ struct Bucket {
     pad2_: u32,
 }
 
+const CELL_SHIFT: u32 = 23u;
+const MAX_CELLS: u32 = 512u;
 const HIDDEN: u32 = 4294967295u;
 const INDIRECT_WORDS: u32 = 5u;
 
@@ -126,52 +129,57 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     if (i >= _e6) {
         return;
     }
-    let b = instance_buckets[i];
-    if (b == HIDDEN) {
+    let entry = instance_buckets[i];
+    if (entry == HIDDEN) {
         return;
     }
-    let r0_ = matrices[(i * 3u)];
-    let r1_ = matrices[((i * 3u) + 1u)];
-    let r2_ = matrices[((i * 3u) + 2u)];
+    let b = (entry & 8388607u);
+    let offset = params.cell_offsets[(entry >> CELL_SHIFT)];
+    let _e25 = matrices[(i * 3u)];
+    let r0_ = (_e25 + vec4<f32>(0f, 0f, 0f, offset.x));
+    let _e38 = matrices[((i * 3u) + 1u)];
+    let r1_ = (_e38 + vec4<f32>(0f, 0f, 0f, offset.y));
+    let _e51 = matrices[((i * 3u) + 2u)];
+    let r2_ = (_e51 + vec4<f32>(0f, 0f, 0f, offset.z));
     let center = vec3<f32>(r0_.w, r1_.w, r2_.w);
     let scale = max(length(vec3<f32>(r0_.x, r1_.x, r2_.x)), max(length(vec3<f32>(r0_.y, r1_.y, r2_.y)), length(vec3<f32>(r0_.z, r1_.z, r2_.z))));
     let bucket = buckets[b];
     let radius = (bucket.radius * scale);
     loop {
-        let _e59 = p;
-        if (_e59 < 6u) {
+        let _e85 = p;
+        if (_e85 < 6u) {
         } else {
             break;
         }
         {
-            let _e64 = p;
-            let plane = params.planes[_e64];
+            let _e90 = p;
+            let plane = params.planes[_e90];
             if ((dot(plane.xyz, center) + plane.w) < -(radius)) {
                 return;
             }
         }
         continuing {
-            let _e74 = p;
-            p = (_e74 + 1u);
+            let _e100 = p;
+            p = (_e100 + 1u);
         }
     }
-    let _e84 = atomicAdd((&indirect[((bucket.first_draw * INDIRECT_WORDS) + 1u)]), 1u);
+    let _e110 = atomicAdd((&indirect[((bucket.first_draw * INDIRECT_WORDS) + 1u)]), 1u);
     loop {
-        let _e86 = d;
-        if (_e86 < bucket.draws) {
+        let _e112 = d;
+        if (_e112 < bucket.draws) {
         } else {
             break;
         }
         {
-            let _e90 = d;
-            let _e99 = atomicAdd((&indirect[(((bucket.first_draw + _e90) * INDIRECT_WORDS) + 1u)]), 1u);
+            let _e116 = d;
+            let _e125 = atomicAdd((&indirect[(((bucket.first_draw + _e116) * INDIRECT_WORDS) + 1u)]), 1u);
         }
         continuing {
-            let _e101 = d;
-            d = (_e101 + 1u);
+            let _e127 = d;
+            d = (_e127 + 1u);
         }
     }
-    let dst = ((bucket.base + _e84) * 4u);
+    let dst = ((bucket.base + _e110) * 4u);
     visible[dst] = r0_;
     visible[(dst + 1u)] = r1_;
     visible[(dst + 2u)] = r2_;
@@ -220,6 +228,9 @@ struct MaterialTable {
 struct DrawTable {
     uvec4 items[1];
 };
+struct CellOffsets {
+    vec4 items[512];
+};
 struct VertexIn {
     vec3 position;
     vec3 normal;
@@ -248,11 +259,15 @@ const uint MAX_MATERIALS = 1024u;
 const uint MATRIX_ROW_SHIFT = 9u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
+const uint CELL_SHIFT = 23u;
+const uint MAX_CELLS = 512u;
 const uint DRAW_RECORDS = 1u;
 
 layout(std140) uniform Frame_block_0Vertex { Frame _group_0_binding_0_vs; };
 
-layout(std140) uniform DrawTable_block_1Vertex { DrawTable _group_1_binding_0_vs; };
+layout(std140) uniform CellOffsets_block_1Vertex { CellOffsets _group_0_binding_2_vs; };
+
+layout(std140) uniform DrawTable_block_2Vertex { DrawTable _group_1_binding_0_vs; };
 
 uniform highp sampler2D _group_2_binding_0_vs;
 
@@ -284,37 +299,45 @@ Instance instance_of(uvec4 record, uint instance_2) {
     uint shift = record.w;
     uint slot = (record.x + (instance_2 >> shift));
     uvec4 _e13 = texelFetch(_group_2_binding_2_vs, ivec2(uvec2((slot & 2047u), (slot >> INDEX_ROW_SHIFT))), 0);
-    source = _e13.x;
+    uint entry = _e13.x;
+    source = (entry & 8388607u);
     if ((shift != 0u)) {
-        uint _e18 = source;
-        uint place = ((_e18 << shift) | (instance_2 & ((1u << shift) - 1u)));
-        uvec4 _e32 = texelFetch(_group_2_binding_3_vs, ivec2(uvec2((place & 2047u), (place >> INDEX_ROW_SHIFT))), 0);
-        source = _e32.x;
+        uint _e20 = source;
+        uint place = ((_e20 << shift) | (instance_2 & ((1u << shift) - 1u)));
+        uvec4 _e34 = texelFetch(_group_2_binding_3_vs, ivec2(uvec2((place & 2047u), (place >> INDEX_ROW_SHIFT))), 0);
+        source = _e34.x;
     }
-    uint _e36 = source;
-    out_2.drawn = (_e36 != NO_ROW);
-    uint _e40 = source;
-    bool _e42 = out_2.drawn;
-    uint row = (_e42 ? _e40 : 0u);
+    uint _e38 = source;
+    out_2.drawn = (_e38 != NO_ROW);
+    uint _e42 = source;
+    bool _e44 = out_2.drawn;
+    uint row = (_e44 ? _e42 : 0u);
     uvec2 at = uvec2(((row & 511u) * 3u), (row >> MATRIX_ROW_SHIFT));
     if ((record.z == 0u)) {
-        vec4 _e57 = texelFetch(_group_2_binding_0_vs, ivec2(at), 0);
-        out_2.row0_ = _e57;
-        vec4 _e65 = texelFetch(_group_2_binding_0_vs, ivec2((at + uvec2(1u, 0u))), 0);
-        out_2.row1_ = _e65;
-        vec4 _e73 = texelFetch(_group_2_binding_0_vs, ivec2((at + uvec2(2u, 0u))), 0);
-        out_2.row2_ = _e73;
+        vec4 _e59 = texelFetch(_group_2_binding_0_vs, ivec2(at), 0);
+        out_2.row0_ = _e59;
+        vec4 _e67 = texelFetch(_group_2_binding_0_vs, ivec2((at + uvec2(1u, 0u))), 0);
+        out_2.row1_ = _e67;
+        vec4 _e75 = texelFetch(_group_2_binding_0_vs, ivec2((at + uvec2(2u, 0u))), 0);
+        out_2.row2_ = _e75;
     } else {
-        vec4 _e77 = texelFetch(_group_2_binding_1_vs, ivec2(at), 0);
-        out_2.row0_ = _e77;
-        vec4 _e85 = texelFetch(_group_2_binding_1_vs, ivec2((at + uvec2(1u, 0u))), 0);
-        out_2.row1_ = _e85;
-        vec4 _e93 = texelFetch(_group_2_binding_1_vs, ivec2((at + uvec2(2u, 0u))), 0);
-        out_2.row2_ = _e93;
+        vec4 _e79 = texelFetch(_group_2_binding_1_vs, ivec2(at), 0);
+        out_2.row0_ = _e79;
+        vec4 _e87 = texelFetch(_group_2_binding_1_vs, ivec2((at + uvec2(1u, 0u))), 0);
+        out_2.row1_ = _e87;
+        vec4 _e95 = texelFetch(_group_2_binding_1_vs, ivec2((at + uvec2(2u, 0u))), 0);
+        out_2.row2_ = _e95;
     }
+    vec4 offset = _group_0_binding_2_vs.items[(entry >> CELL_SHIFT)];
+    float _e104 = out_2.row0_.w;
+    out_2.row0_.w = (_e104 + offset.x);
+    float _e109 = out_2.row1_.w;
+    out_2.row1_.w = (_e109 + offset.y);
+    float _e114 = out_2.row2_.w;
+    out_2.row2_.w = (_e114 + offset.z);
     out_2.material = record.y;
-    Instance _e96 = out_2;
-    return _e96;
+    Instance _e119 = out_2;
+    return _e119;
 }
 
 Instance find_instance(uint instance_3) {
@@ -357,7 +380,12 @@ void main() {
 							binding: 0,
 						},
 						{
-							name: 'DrawTable_block_1Vertex',
+							name: 'CellOffsets_block_1Vertex',
+							group: 0,
+							binding: 2,
+						},
+						{
+							name: 'DrawTable_block_2Vertex',
 							group: 1,
 							binding: 0,
 						},
@@ -411,6 +439,9 @@ struct MaterialTable {
 struct DrawTable {
     uvec4 items[1];
 };
+struct CellOffsets {
+    vec4 items[512];
+};
 struct VertexIn {
     vec3 position;
     vec3 normal;
@@ -439,6 +470,8 @@ const uint MAX_MATERIALS = 1024u;
 const uint MATRIX_ROW_SHIFT = 9u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
+const uint CELL_SHIFT = 23u;
+const uint MAX_CELLS = 512u;
 const uint DRAW_RECORDS = 1u;
 
 layout(std140) uniform Frame_block_0Fragment { Frame _group_0_binding_0_fs; };
@@ -528,6 +561,9 @@ struct MaterialTable {
 struct DrawTable {
     uvec4 items[1];
 };
+struct CellOffsets {
+    vec4 items[512];
+};
 struct VertexIn {
     vec3 position;
     vec3 normal;
@@ -556,11 +592,15 @@ const uint MAX_MATERIALS = 1024u;
 const uint MATRIX_ROW_SHIFT = 9u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
+const uint CELL_SHIFT = 23u;
+const uint MAX_CELLS = 512u;
 const uint DRAW_RECORDS = 1u;
 
 layout(std140) uniform Frame_block_0Vertex { Frame _group_0_binding_0_vs; };
 
-layout(std140) uniform DrawTable_block_1Vertex { DrawTable _group_1_binding_0_vs; };
+layout(std140) uniform CellOffsets_block_1Vertex { CellOffsets _group_0_binding_2_vs; };
+
+layout(std140) uniform DrawTable_block_2Vertex { DrawTable _group_1_binding_0_vs; };
 
 uniform highp sampler2D _group_2_binding_0_vs;
 
@@ -591,37 +631,45 @@ Instance instance_of(uvec4 record, uint instance_2) {
     uint shift = record.w;
     uint slot = (record.x + (instance_2 >> shift));
     uvec4 _e13 = texelFetch(_group_2_binding_2_vs, ivec2(uvec2((slot & 2047u), (slot >> INDEX_ROW_SHIFT))), 0);
-    source = _e13.x;
+    uint entry = _e13.x;
+    source = (entry & 8388607u);
     if ((shift != 0u)) {
-        uint _e18 = source;
-        uint place = ((_e18 << shift) | (instance_2 & ((1u << shift) - 1u)));
-        uvec4 _e32 = texelFetch(_group_2_binding_3_vs, ivec2(uvec2((place & 2047u), (place >> INDEX_ROW_SHIFT))), 0);
-        source = _e32.x;
+        uint _e20 = source;
+        uint place = ((_e20 << shift) | (instance_2 & ((1u << shift) - 1u)));
+        uvec4 _e34 = texelFetch(_group_2_binding_3_vs, ivec2(uvec2((place & 2047u), (place >> INDEX_ROW_SHIFT))), 0);
+        source = _e34.x;
     }
-    uint _e36 = source;
-    out_2.drawn = (_e36 != NO_ROW);
-    uint _e40 = source;
-    bool _e42 = out_2.drawn;
-    uint row = (_e42 ? _e40 : 0u);
+    uint _e38 = source;
+    out_2.drawn = (_e38 != NO_ROW);
+    uint _e42 = source;
+    bool _e44 = out_2.drawn;
+    uint row = (_e44 ? _e42 : 0u);
     uvec2 at = uvec2(((row & 511u) * 3u), (row >> MATRIX_ROW_SHIFT));
     if ((record.z == 0u)) {
-        vec4 _e57 = texelFetch(_group_2_binding_0_vs, ivec2(at), 0);
-        out_2.row0_ = _e57;
-        vec4 _e65 = texelFetch(_group_2_binding_0_vs, ivec2((at + uvec2(1u, 0u))), 0);
-        out_2.row1_ = _e65;
-        vec4 _e73 = texelFetch(_group_2_binding_0_vs, ivec2((at + uvec2(2u, 0u))), 0);
-        out_2.row2_ = _e73;
+        vec4 _e59 = texelFetch(_group_2_binding_0_vs, ivec2(at), 0);
+        out_2.row0_ = _e59;
+        vec4 _e67 = texelFetch(_group_2_binding_0_vs, ivec2((at + uvec2(1u, 0u))), 0);
+        out_2.row1_ = _e67;
+        vec4 _e75 = texelFetch(_group_2_binding_0_vs, ivec2((at + uvec2(2u, 0u))), 0);
+        out_2.row2_ = _e75;
     } else {
-        vec4 _e77 = texelFetch(_group_2_binding_1_vs, ivec2(at), 0);
-        out_2.row0_ = _e77;
-        vec4 _e85 = texelFetch(_group_2_binding_1_vs, ivec2((at + uvec2(1u, 0u))), 0);
-        out_2.row1_ = _e85;
-        vec4 _e93 = texelFetch(_group_2_binding_1_vs, ivec2((at + uvec2(2u, 0u))), 0);
-        out_2.row2_ = _e93;
+        vec4 _e79 = texelFetch(_group_2_binding_1_vs, ivec2(at), 0);
+        out_2.row0_ = _e79;
+        vec4 _e87 = texelFetch(_group_2_binding_1_vs, ivec2((at + uvec2(1u, 0u))), 0);
+        out_2.row1_ = _e87;
+        vec4 _e95 = texelFetch(_group_2_binding_1_vs, ivec2((at + uvec2(2u, 0u))), 0);
+        out_2.row2_ = _e95;
     }
+    vec4 offset = _group_0_binding_2_vs.items[(entry >> CELL_SHIFT)];
+    float _e104 = out_2.row0_.w;
+    out_2.row0_.w = (_e104 + offset.x);
+    float _e109 = out_2.row1_.w;
+    out_2.row1_.w = (_e109 + offset.y);
+    float _e114 = out_2.row2_.w;
+    out_2.row2_.w = (_e114 + offset.z);
     out_2.material = record.y;
-    Instance _e96 = out_2;
-    return _e96;
+    Instance _e119 = out_2;
+    return _e119;
 }
 
 Instance find_instance(uint instance_3) {
@@ -661,7 +709,12 @@ void main() {
 							binding: 0,
 						},
 						{
-							name: 'DrawTable_block_1Vertex',
+							name: 'CellOffsets_block_1Vertex',
+							group: 0,
+							binding: 2,
+						},
+						{
+							name: 'DrawTable_block_2Vertex',
 							group: 1,
 							binding: 0,
 						},
@@ -715,6 +768,9 @@ struct MaterialTable {
 struct DrawTable {
     uvec4 items[1];
 };
+struct CellOffsets {
+    vec4 items[512];
+};
 struct VertexIn {
     vec3 position;
     vec3 normal;
@@ -743,6 +799,8 @@ const uint MAX_MATERIALS = 1024u;
 const uint MATRIX_ROW_SHIFT = 9u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
+const uint CELL_SHIFT = 23u;
+const uint MAX_CELLS = 512u;
 const uint DRAW_RECORDS = 1u;
 
 smooth in vec2 _vs2fs_location0;
@@ -795,6 +853,9 @@ struct MaterialTable {
 struct DrawTable {
     uvec4 items[1];
 };
+struct CellOffsets {
+    vec4 items[512];
+};
 struct VertexIn {
     vec3 position;
     vec3 normal;
@@ -823,11 +884,15 @@ const uint MAX_MATERIALS = 1024u;
 const uint MATRIX_ROW_SHIFT = 9u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
+const uint CELL_SHIFT = 23u;
+const uint MAX_CELLS = 512u;
 const uint DRAW_RECORDS = 1u;
 
 layout(std140) uniform Frame_block_0Vertex { Frame _group_0_binding_0_vs; };
 
-layout(std140) uniform DrawTable_block_1Vertex { DrawTable _group_1_binding_0_vs; };
+layout(std140) uniform CellOffsets_block_1Vertex { CellOffsets _group_0_binding_2_vs; };
+
+layout(std140) uniform DrawTable_block_2Vertex { DrawTable _group_1_binding_0_vs; };
 
 uniform highp sampler2D _group_2_binding_0_vs;
 
@@ -859,37 +924,45 @@ Instance instance_of(uvec4 record, uint instance_2) {
     uint shift = record.w;
     uint slot = (record.x + (instance_2 >> shift));
     uvec4 _e13 = texelFetch(_group_2_binding_2_vs, ivec2(uvec2((slot & 2047u), (slot >> INDEX_ROW_SHIFT))), 0);
-    source = _e13.x;
+    uint entry = _e13.x;
+    source = (entry & 8388607u);
     if ((shift != 0u)) {
-        uint _e18 = source;
-        uint place = ((_e18 << shift) | (instance_2 & ((1u << shift) - 1u)));
-        uvec4 _e32 = texelFetch(_group_2_binding_3_vs, ivec2(uvec2((place & 2047u), (place >> INDEX_ROW_SHIFT))), 0);
-        source = _e32.x;
+        uint _e20 = source;
+        uint place = ((_e20 << shift) | (instance_2 & ((1u << shift) - 1u)));
+        uvec4 _e34 = texelFetch(_group_2_binding_3_vs, ivec2(uvec2((place & 2047u), (place >> INDEX_ROW_SHIFT))), 0);
+        source = _e34.x;
     }
-    uint _e36 = source;
-    out_2.drawn = (_e36 != NO_ROW);
-    uint _e40 = source;
-    bool _e42 = out_2.drawn;
-    uint row = (_e42 ? _e40 : 0u);
+    uint _e38 = source;
+    out_2.drawn = (_e38 != NO_ROW);
+    uint _e42 = source;
+    bool _e44 = out_2.drawn;
+    uint row = (_e44 ? _e42 : 0u);
     uvec2 at = uvec2(((row & 511u) * 3u), (row >> MATRIX_ROW_SHIFT));
     if ((record.z == 0u)) {
-        vec4 _e57 = texelFetch(_group_2_binding_0_vs, ivec2(at), 0);
-        out_2.row0_ = _e57;
-        vec4 _e65 = texelFetch(_group_2_binding_0_vs, ivec2((at + uvec2(1u, 0u))), 0);
-        out_2.row1_ = _e65;
-        vec4 _e73 = texelFetch(_group_2_binding_0_vs, ivec2((at + uvec2(2u, 0u))), 0);
-        out_2.row2_ = _e73;
+        vec4 _e59 = texelFetch(_group_2_binding_0_vs, ivec2(at), 0);
+        out_2.row0_ = _e59;
+        vec4 _e67 = texelFetch(_group_2_binding_0_vs, ivec2((at + uvec2(1u, 0u))), 0);
+        out_2.row1_ = _e67;
+        vec4 _e75 = texelFetch(_group_2_binding_0_vs, ivec2((at + uvec2(2u, 0u))), 0);
+        out_2.row2_ = _e75;
     } else {
-        vec4 _e77 = texelFetch(_group_2_binding_1_vs, ivec2(at), 0);
-        out_2.row0_ = _e77;
-        vec4 _e85 = texelFetch(_group_2_binding_1_vs, ivec2((at + uvec2(1u, 0u))), 0);
-        out_2.row1_ = _e85;
-        vec4 _e93 = texelFetch(_group_2_binding_1_vs, ivec2((at + uvec2(2u, 0u))), 0);
-        out_2.row2_ = _e93;
+        vec4 _e79 = texelFetch(_group_2_binding_1_vs, ivec2(at), 0);
+        out_2.row0_ = _e79;
+        vec4 _e87 = texelFetch(_group_2_binding_1_vs, ivec2((at + uvec2(1u, 0u))), 0);
+        out_2.row1_ = _e87;
+        vec4 _e95 = texelFetch(_group_2_binding_1_vs, ivec2((at + uvec2(2u, 0u))), 0);
+        out_2.row2_ = _e95;
     }
+    vec4 offset = _group_0_binding_2_vs.items[(entry >> CELL_SHIFT)];
+    float _e104 = out_2.row0_.w;
+    out_2.row0_.w = (_e104 + offset.x);
+    float _e109 = out_2.row1_.w;
+    out_2.row1_.w = (_e109 + offset.y);
+    float _e114 = out_2.row2_.w;
+    out_2.row2_.w = (_e114 + offset.z);
     out_2.material = record.y;
-    Instance _e96 = out_2;
-    return _e96;
+    Instance _e119 = out_2;
+    return _e119;
 }
 
 Instance find_instance(uint instance_3) {
@@ -932,7 +1005,12 @@ void main() {
 							binding: 0,
 						},
 						{
-							name: 'DrawTable_block_1Vertex',
+							name: 'CellOffsets_block_1Vertex',
+							group: 0,
+							binding: 2,
+						},
+						{
+							name: 'DrawTable_block_2Vertex',
 							group: 1,
 							binding: 0,
 						},
@@ -986,6 +1064,9 @@ struct MaterialTable {
 struct DrawTable {
     uvec4 items[1];
 };
+struct CellOffsets {
+    vec4 items[512];
+};
 struct VertexIn {
     vec3 position;
     vec3 normal;
@@ -1014,6 +1095,8 @@ const uint MAX_MATERIALS = 1024u;
 const uint MATRIX_ROW_SHIFT = 9u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
+const uint CELL_SHIFT = 23u;
+const uint MAX_CELLS = 512u;
 const uint DRAW_RECORDS = 1u;
 
 layout(std140) uniform MaterialTable_block_0Fragment { MaterialTable _group_0_binding_1_fs; };
@@ -1088,6 +1171,9 @@ struct MaterialTable {
 struct DrawTable {
     uvec4 items[256];
 };
+struct CellOffsets {
+    vec4 items[512];
+};
 struct VertexIn {
     vec3 position;
     vec3 normal;
@@ -1116,11 +1202,15 @@ const uint MAX_MATERIALS = 1024u;
 const uint MATRIX_ROW_SHIFT = 9u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
+const uint CELL_SHIFT = 23u;
+const uint MAX_CELLS = 512u;
 const uint DRAW_RECORDS = 256u;
 
 layout(std140) uniform Frame_block_0Vertex { Frame _group_0_binding_0_vs; };
 
-layout(std140) uniform DrawTable_block_1Vertex { DrawTable _group_1_binding_0_vs; };
+layout(std140) uniform CellOffsets_block_1Vertex { CellOffsets _group_0_binding_2_vs; };
+
+layout(std140) uniform DrawTable_block_2Vertex { DrawTable _group_1_binding_0_vs; };
 
 uniform highp sampler2D _group_2_binding_0_vs;
 
@@ -1152,37 +1242,45 @@ Instance instance_of(uvec4 record, uint instance_2) {
     uint shift = record.w;
     uint slot = (record.x + (instance_2 >> shift));
     uvec4 _e13 = texelFetch(_group_2_binding_2_vs, ivec2(uvec2((slot & 2047u), (slot >> INDEX_ROW_SHIFT))), 0);
-    source = _e13.x;
+    uint entry = _e13.x;
+    source = (entry & 8388607u);
     if ((shift != 0u)) {
-        uint _e18 = source;
-        uint place = ((_e18 << shift) | (instance_2 & ((1u << shift) - 1u)));
-        uvec4 _e32 = texelFetch(_group_2_binding_3_vs, ivec2(uvec2((place & 2047u), (place >> INDEX_ROW_SHIFT))), 0);
-        source = _e32.x;
+        uint _e20 = source;
+        uint place = ((_e20 << shift) | (instance_2 & ((1u << shift) - 1u)));
+        uvec4 _e34 = texelFetch(_group_2_binding_3_vs, ivec2(uvec2((place & 2047u), (place >> INDEX_ROW_SHIFT))), 0);
+        source = _e34.x;
     }
-    uint _e36 = source;
-    out_2.drawn = (_e36 != NO_ROW);
-    uint _e40 = source;
-    bool _e42 = out_2.drawn;
-    uint row = (_e42 ? _e40 : 0u);
+    uint _e38 = source;
+    out_2.drawn = (_e38 != NO_ROW);
+    uint _e42 = source;
+    bool _e44 = out_2.drawn;
+    uint row = (_e44 ? _e42 : 0u);
     uvec2 at = uvec2(((row & 511u) * 3u), (row >> MATRIX_ROW_SHIFT));
     if ((record.z == 0u)) {
-        vec4 _e57 = texelFetch(_group_2_binding_0_vs, ivec2(at), 0);
-        out_2.row0_ = _e57;
-        vec4 _e65 = texelFetch(_group_2_binding_0_vs, ivec2((at + uvec2(1u, 0u))), 0);
-        out_2.row1_ = _e65;
-        vec4 _e73 = texelFetch(_group_2_binding_0_vs, ivec2((at + uvec2(2u, 0u))), 0);
-        out_2.row2_ = _e73;
+        vec4 _e59 = texelFetch(_group_2_binding_0_vs, ivec2(at), 0);
+        out_2.row0_ = _e59;
+        vec4 _e67 = texelFetch(_group_2_binding_0_vs, ivec2((at + uvec2(1u, 0u))), 0);
+        out_2.row1_ = _e67;
+        vec4 _e75 = texelFetch(_group_2_binding_0_vs, ivec2((at + uvec2(2u, 0u))), 0);
+        out_2.row2_ = _e75;
     } else {
-        vec4 _e77 = texelFetch(_group_2_binding_1_vs, ivec2(at), 0);
-        out_2.row0_ = _e77;
-        vec4 _e85 = texelFetch(_group_2_binding_1_vs, ivec2((at + uvec2(1u, 0u))), 0);
-        out_2.row1_ = _e85;
-        vec4 _e93 = texelFetch(_group_2_binding_1_vs, ivec2((at + uvec2(2u, 0u))), 0);
-        out_2.row2_ = _e93;
+        vec4 _e79 = texelFetch(_group_2_binding_1_vs, ivec2(at), 0);
+        out_2.row0_ = _e79;
+        vec4 _e87 = texelFetch(_group_2_binding_1_vs, ivec2((at + uvec2(1u, 0u))), 0);
+        out_2.row1_ = _e87;
+        vec4 _e95 = texelFetch(_group_2_binding_1_vs, ivec2((at + uvec2(2u, 0u))), 0);
+        out_2.row2_ = _e95;
     }
+    vec4 offset = _group_0_binding_2_vs.items[(entry >> CELL_SHIFT)];
+    float _e104 = out_2.row0_.w;
+    out_2.row0_.w = (_e104 + offset.x);
+    float _e109 = out_2.row1_.w;
+    out_2.row1_.w = (_e109 + offset.y);
+    float _e114 = out_2.row2_.w;
+    out_2.row2_.w = (_e114 + offset.z);
     out_2.material = record.y;
-    Instance _e96 = out_2;
-    return _e96;
+    Instance _e119 = out_2;
+    return _e119;
 }
 
 Instance find_instance(uint instance_3, uint draw_2) {
@@ -1226,7 +1324,12 @@ void main() {
 							binding: 0,
 						},
 						{
-							name: 'DrawTable_block_1Vertex',
+							name: 'CellOffsets_block_1Vertex',
+							group: 0,
+							binding: 2,
+						},
+						{
+							name: 'DrawTable_block_2Vertex',
 							group: 1,
 							binding: 0,
 						},
@@ -1280,6 +1383,9 @@ struct MaterialTable {
 struct DrawTable {
     uvec4 items[256];
 };
+struct CellOffsets {
+    vec4 items[512];
+};
 struct VertexIn {
     vec3 position;
     vec3 normal;
@@ -1308,6 +1414,8 @@ const uint MAX_MATERIALS = 1024u;
 const uint MATRIX_ROW_SHIFT = 9u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
+const uint CELL_SHIFT = 23u;
+const uint MAX_CELLS = 512u;
 const uint DRAW_RECORDS = 256u;
 
 layout(std140) uniform Frame_block_0Fragment { Frame _group_0_binding_0_fs; };
@@ -1398,6 +1506,9 @@ struct MaterialTable {
 struct DrawTable {
     uvec4 items[256];
 };
+struct CellOffsets {
+    vec4 items[512];
+};
 struct VertexIn {
     vec3 position;
     vec3 normal;
@@ -1426,11 +1537,15 @@ const uint MAX_MATERIALS = 1024u;
 const uint MATRIX_ROW_SHIFT = 9u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
+const uint CELL_SHIFT = 23u;
+const uint MAX_CELLS = 512u;
 const uint DRAW_RECORDS = 256u;
 
 layout(std140) uniform Frame_block_0Vertex { Frame _group_0_binding_0_vs; };
 
-layout(std140) uniform DrawTable_block_1Vertex { DrawTable _group_1_binding_0_vs; };
+layout(std140) uniform CellOffsets_block_1Vertex { CellOffsets _group_0_binding_2_vs; };
+
+layout(std140) uniform DrawTable_block_2Vertex { DrawTable _group_1_binding_0_vs; };
 
 uniform highp sampler2D _group_2_binding_0_vs;
 
@@ -1461,37 +1576,45 @@ Instance instance_of(uvec4 record, uint instance_2) {
     uint shift = record.w;
     uint slot = (record.x + (instance_2 >> shift));
     uvec4 _e13 = texelFetch(_group_2_binding_2_vs, ivec2(uvec2((slot & 2047u), (slot >> INDEX_ROW_SHIFT))), 0);
-    source = _e13.x;
+    uint entry = _e13.x;
+    source = (entry & 8388607u);
     if ((shift != 0u)) {
-        uint _e18 = source;
-        uint place = ((_e18 << shift) | (instance_2 & ((1u << shift) - 1u)));
-        uvec4 _e32 = texelFetch(_group_2_binding_3_vs, ivec2(uvec2((place & 2047u), (place >> INDEX_ROW_SHIFT))), 0);
-        source = _e32.x;
+        uint _e20 = source;
+        uint place = ((_e20 << shift) | (instance_2 & ((1u << shift) - 1u)));
+        uvec4 _e34 = texelFetch(_group_2_binding_3_vs, ivec2(uvec2((place & 2047u), (place >> INDEX_ROW_SHIFT))), 0);
+        source = _e34.x;
     }
-    uint _e36 = source;
-    out_2.drawn = (_e36 != NO_ROW);
-    uint _e40 = source;
-    bool _e42 = out_2.drawn;
-    uint row = (_e42 ? _e40 : 0u);
+    uint _e38 = source;
+    out_2.drawn = (_e38 != NO_ROW);
+    uint _e42 = source;
+    bool _e44 = out_2.drawn;
+    uint row = (_e44 ? _e42 : 0u);
     uvec2 at = uvec2(((row & 511u) * 3u), (row >> MATRIX_ROW_SHIFT));
     if ((record.z == 0u)) {
-        vec4 _e57 = texelFetch(_group_2_binding_0_vs, ivec2(at), 0);
-        out_2.row0_ = _e57;
-        vec4 _e65 = texelFetch(_group_2_binding_0_vs, ivec2((at + uvec2(1u, 0u))), 0);
-        out_2.row1_ = _e65;
-        vec4 _e73 = texelFetch(_group_2_binding_0_vs, ivec2((at + uvec2(2u, 0u))), 0);
-        out_2.row2_ = _e73;
+        vec4 _e59 = texelFetch(_group_2_binding_0_vs, ivec2(at), 0);
+        out_2.row0_ = _e59;
+        vec4 _e67 = texelFetch(_group_2_binding_0_vs, ivec2((at + uvec2(1u, 0u))), 0);
+        out_2.row1_ = _e67;
+        vec4 _e75 = texelFetch(_group_2_binding_0_vs, ivec2((at + uvec2(2u, 0u))), 0);
+        out_2.row2_ = _e75;
     } else {
-        vec4 _e77 = texelFetch(_group_2_binding_1_vs, ivec2(at), 0);
-        out_2.row0_ = _e77;
-        vec4 _e85 = texelFetch(_group_2_binding_1_vs, ivec2((at + uvec2(1u, 0u))), 0);
-        out_2.row1_ = _e85;
-        vec4 _e93 = texelFetch(_group_2_binding_1_vs, ivec2((at + uvec2(2u, 0u))), 0);
-        out_2.row2_ = _e93;
+        vec4 _e79 = texelFetch(_group_2_binding_1_vs, ivec2(at), 0);
+        out_2.row0_ = _e79;
+        vec4 _e87 = texelFetch(_group_2_binding_1_vs, ivec2((at + uvec2(1u, 0u))), 0);
+        out_2.row1_ = _e87;
+        vec4 _e95 = texelFetch(_group_2_binding_1_vs, ivec2((at + uvec2(2u, 0u))), 0);
+        out_2.row2_ = _e95;
     }
+    vec4 offset = _group_0_binding_2_vs.items[(entry >> CELL_SHIFT)];
+    float _e104 = out_2.row0_.w;
+    out_2.row0_.w = (_e104 + offset.x);
+    float _e109 = out_2.row1_.w;
+    out_2.row1_.w = (_e109 + offset.y);
+    float _e114 = out_2.row2_.w;
+    out_2.row2_.w = (_e114 + offset.z);
     out_2.material = record.y;
-    Instance _e96 = out_2;
-    return _e96;
+    Instance _e119 = out_2;
+    return _e119;
 }
 
 Instance find_instance(uint instance_3, uint draw_2) {
@@ -1532,7 +1655,12 @@ void main() {
 							binding: 0,
 						},
 						{
-							name: 'DrawTable_block_1Vertex',
+							name: 'CellOffsets_block_1Vertex',
+							group: 0,
+							binding: 2,
+						},
+						{
+							name: 'DrawTable_block_2Vertex',
 							group: 1,
 							binding: 0,
 						},
@@ -1586,6 +1714,9 @@ struct MaterialTable {
 struct DrawTable {
     uvec4 items[256];
 };
+struct CellOffsets {
+    vec4 items[512];
+};
 struct VertexIn {
     vec3 position;
     vec3 normal;
@@ -1614,6 +1745,8 @@ const uint MAX_MATERIALS = 1024u;
 const uint MATRIX_ROW_SHIFT = 9u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
+const uint CELL_SHIFT = 23u;
+const uint MAX_CELLS = 512u;
 const uint DRAW_RECORDS = 256u;
 
 smooth in vec2 _vs2fs_location0;
@@ -1667,6 +1800,9 @@ struct MaterialTable {
 struct DrawTable {
     uvec4 items[256];
 };
+struct CellOffsets {
+    vec4 items[512];
+};
 struct VertexIn {
     vec3 position;
     vec3 normal;
@@ -1695,11 +1831,15 @@ const uint MAX_MATERIALS = 1024u;
 const uint MATRIX_ROW_SHIFT = 9u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
+const uint CELL_SHIFT = 23u;
+const uint MAX_CELLS = 512u;
 const uint DRAW_RECORDS = 256u;
 
 layout(std140) uniform Frame_block_0Vertex { Frame _group_0_binding_0_vs; };
 
-layout(std140) uniform DrawTable_block_1Vertex { DrawTable _group_1_binding_0_vs; };
+layout(std140) uniform CellOffsets_block_1Vertex { CellOffsets _group_0_binding_2_vs; };
+
+layout(std140) uniform DrawTable_block_2Vertex { DrawTable _group_1_binding_0_vs; };
 
 uniform highp sampler2D _group_2_binding_0_vs;
 
@@ -1731,37 +1871,45 @@ Instance instance_of(uvec4 record, uint instance_2) {
     uint shift = record.w;
     uint slot = (record.x + (instance_2 >> shift));
     uvec4 _e13 = texelFetch(_group_2_binding_2_vs, ivec2(uvec2((slot & 2047u), (slot >> INDEX_ROW_SHIFT))), 0);
-    source = _e13.x;
+    uint entry = _e13.x;
+    source = (entry & 8388607u);
     if ((shift != 0u)) {
-        uint _e18 = source;
-        uint place = ((_e18 << shift) | (instance_2 & ((1u << shift) - 1u)));
-        uvec4 _e32 = texelFetch(_group_2_binding_3_vs, ivec2(uvec2((place & 2047u), (place >> INDEX_ROW_SHIFT))), 0);
-        source = _e32.x;
+        uint _e20 = source;
+        uint place = ((_e20 << shift) | (instance_2 & ((1u << shift) - 1u)));
+        uvec4 _e34 = texelFetch(_group_2_binding_3_vs, ivec2(uvec2((place & 2047u), (place >> INDEX_ROW_SHIFT))), 0);
+        source = _e34.x;
     }
-    uint _e36 = source;
-    out_2.drawn = (_e36 != NO_ROW);
-    uint _e40 = source;
-    bool _e42 = out_2.drawn;
-    uint row = (_e42 ? _e40 : 0u);
+    uint _e38 = source;
+    out_2.drawn = (_e38 != NO_ROW);
+    uint _e42 = source;
+    bool _e44 = out_2.drawn;
+    uint row = (_e44 ? _e42 : 0u);
     uvec2 at = uvec2(((row & 511u) * 3u), (row >> MATRIX_ROW_SHIFT));
     if ((record.z == 0u)) {
-        vec4 _e57 = texelFetch(_group_2_binding_0_vs, ivec2(at), 0);
-        out_2.row0_ = _e57;
-        vec4 _e65 = texelFetch(_group_2_binding_0_vs, ivec2((at + uvec2(1u, 0u))), 0);
-        out_2.row1_ = _e65;
-        vec4 _e73 = texelFetch(_group_2_binding_0_vs, ivec2((at + uvec2(2u, 0u))), 0);
-        out_2.row2_ = _e73;
+        vec4 _e59 = texelFetch(_group_2_binding_0_vs, ivec2(at), 0);
+        out_2.row0_ = _e59;
+        vec4 _e67 = texelFetch(_group_2_binding_0_vs, ivec2((at + uvec2(1u, 0u))), 0);
+        out_2.row1_ = _e67;
+        vec4 _e75 = texelFetch(_group_2_binding_0_vs, ivec2((at + uvec2(2u, 0u))), 0);
+        out_2.row2_ = _e75;
     } else {
-        vec4 _e77 = texelFetch(_group_2_binding_1_vs, ivec2(at), 0);
-        out_2.row0_ = _e77;
-        vec4 _e85 = texelFetch(_group_2_binding_1_vs, ivec2((at + uvec2(1u, 0u))), 0);
-        out_2.row1_ = _e85;
-        vec4 _e93 = texelFetch(_group_2_binding_1_vs, ivec2((at + uvec2(2u, 0u))), 0);
-        out_2.row2_ = _e93;
+        vec4 _e79 = texelFetch(_group_2_binding_1_vs, ivec2(at), 0);
+        out_2.row0_ = _e79;
+        vec4 _e87 = texelFetch(_group_2_binding_1_vs, ivec2((at + uvec2(1u, 0u))), 0);
+        out_2.row1_ = _e87;
+        vec4 _e95 = texelFetch(_group_2_binding_1_vs, ivec2((at + uvec2(2u, 0u))), 0);
+        out_2.row2_ = _e95;
     }
+    vec4 offset = _group_0_binding_2_vs.items[(entry >> CELL_SHIFT)];
+    float _e104 = out_2.row0_.w;
+    out_2.row0_.w = (_e104 + offset.x);
+    float _e109 = out_2.row1_.w;
+    out_2.row1_.w = (_e109 + offset.y);
+    float _e114 = out_2.row2_.w;
+    out_2.row2_.w = (_e114 + offset.z);
     out_2.material = record.y;
-    Instance _e96 = out_2;
-    return _e96;
+    Instance _e119 = out_2;
+    return _e119;
 }
 
 Instance find_instance(uint instance_3, uint draw_2) {
@@ -1805,7 +1953,12 @@ void main() {
 							binding: 0,
 						},
 						{
-							name: 'DrawTable_block_1Vertex',
+							name: 'CellOffsets_block_1Vertex',
+							group: 0,
+							binding: 2,
+						},
+						{
+							name: 'DrawTable_block_2Vertex',
 							group: 1,
 							binding: 0,
 						},
@@ -1859,6 +2012,9 @@ struct MaterialTable {
 struct DrawTable {
     uvec4 items[256];
 };
+struct CellOffsets {
+    vec4 items[512];
+};
 struct VertexIn {
     vec3 position;
     vec3 normal;
@@ -1887,6 +2043,8 @@ const uint MAX_MATERIALS = 1024u;
 const uint MATRIX_ROW_SHIFT = 9u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
+const uint CELL_SHIFT = 23u;
+const uint MAX_CELLS = 512u;
 const uint DRAW_RECORDS = 256u;
 
 layout(std140) uniform MaterialTable_block_0Fragment { MaterialTable _group_0_binding_1_fs; };

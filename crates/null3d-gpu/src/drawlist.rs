@@ -535,6 +535,12 @@ pub mod sizes {
     /// Materials in the material table; as a uniform block this is 16 KiB, the largest block
     /// every WebGL2 device allows.
     pub const MAX_MATERIALS: u32 = 1024;
+    /// Grid cells in use at most, which the shaders' tables of offsets from the camera to each
+    /// cell hold, one `vec4f` each.
+    pub const MAX_CELLS: u32 = 512;
+    /// Where a cell index starts in a word that packs it above a bucket or a row: a bucket table
+    /// entry of the culling shader, or an index list entry.
+    pub const CELL_SHIFT: u32 = 23;
 }
 
 /// Shader templates for `CreateRenderPipeline` and `CreateComputePipeline`.
@@ -819,6 +825,8 @@ pub fn typescript_constants() -> String {
                 ("DRAW_RECORD_BYTES", sizes::DRAW_RECORD_BYTES),
                 ("MULTI_DRAW_RECORDS", sizes::MULTI_DRAW_RECORDS),
                 ("MAX_MATERIALS", sizes::MAX_MATERIALS),
+                ("MAX_CELLS", sizes::MAX_CELLS),
+                ("CELL_SHIFT", sizes::CELL_SHIFT),
             ],
         ),
     ];
@@ -852,9 +860,19 @@ mod tests {
     fn the_culling_shader_declares_the_same_sizes() {
         let cull = include_str!("../../null3d-shaders/wgsl/cull.wgsl");
         let workgroup = format!("@workgroup_size({})", sizes::CULL_WORKGROUP_SIZE);
-        let words = format!("const INDIRECT_WORDS: u32 = {}u;", sizes::INDIRECT_WORDS);
         assert!(cull.contains(&workgroup), "cull.wgsl lacks {workgroup}");
-        assert!(cull.contains(&words), "cull.wgsl lacks {words}");
+        for line in [
+            format!("const INDIRECT_WORDS: u32 = {}u;", sizes::INDIRECT_WORDS),
+            format!("const CELL_SHIFT: u32 = {}u;", sizes::CELL_SHIFT),
+            format!("const MAX_CELLS: u32 = {}u;", sizes::MAX_CELLS),
+        ] {
+            assert!(cull.contains(&line), "cull.wgsl lacks {line}");
+        }
+    }
+
+    #[test]
+    fn a_cell_index_fits_above_its_shift() {
+        assert_eq!(sizes::MAX_CELLS, 1 << (32 - sizes::CELL_SHIFT));
     }
 
     #[test]
@@ -879,6 +897,8 @@ mod tests {
             ),
             format!("const DRAW_RECORDS: u32 = {}u;", sizes::MULTI_DRAW_RECORDS),
             format!("const MAX_MATERIALS: u32 = {}u;", sizes::MAX_MATERIALS),
+            format!("const CELL_SHIFT: u32 = {}u;", sizes::CELL_SHIFT),
+            format!("const MAX_CELLS: u32 = {}u;", sizes::MAX_CELLS),
         ] {
             assert!(mesh.contains(&line), "mesh.wgsl lacks {line}");
         }
