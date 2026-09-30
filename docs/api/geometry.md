@@ -1,14 +1,14 @@
 ---
 id: api/geometry
 title: Geometry
-status: planned
+status: experimental
 since: "0.1"
 summary: "Generators with three.js parameters; meshes from arrays; vertex formats; large meshes."
 ---
 
 # Geometry
 
-> Planned for null3D 0.1. No release has these APIs yet, so coding agents must not use them.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. The generators `plane`, `cylinder`, `cone`, `torus`, `capsule`, `circle` and `ring`, and `destroy` on a mesh, are not built yet, so coding agents must not use them.
 
 ```mermaid
 flowchart LR
