@@ -39,9 +39,10 @@ A CI run that finds a missing or changed image saves it too. `bun run images:rev
 ## References
 
 - References live in `tests/image/references/<set>/<tier>/<test>.png`. Each environment has a full set. `chromium-swiftshader` is Chromium on SwiftShader, the software GPU that CI draws with. `chrome-real-gpu` is Chrome on the Mac's GPU.
-- SwiftShader and the Mac's GPU differ at object edges, in up to 0.33% of S1's pixels.
+- SwiftShader and the Mac's GPU differ at object edges, in up to 0.35% of S1's pixels.
 - Playwright's runs use the SwiftShader set in CI, and the real-GPU set elsewhere. With `CI=1`, a run on the Mac uses CI's SwiftShader setup and draws CI's images.
-- A comparison passes when at most 0.1% of the pixels differ by more than pixelmatch's threshold of 0.1. Pixels on anti-aliased edges never count. A test can set its own tolerance.
+- A comparison passes when at most 0.1% of the pixels differ by more than pixelmatch's threshold of 0.1. A test can set its own tolerance.
+- pixelmatch skips a pixel that it finds on an anti-aliased edge, from neighbors of exactly one color. The engine dithers its output, which leaves few such neighbors, so most edge pixels count.
 - An image without a reference, or one that differs from its reference, fails its test. The harness saves it as a candidate in `test-results/images/<place>/<tier>/`, with the reference, the diff and the facts of the comparison.
 - Only `bun run images:review --accept` turns a candidate into a reference. The review lists each candidate in the terminal, and writes a page that shows it beside its reference and its diff.
 - A candidate of a test that borrows another test's references cannot become a reference. Neither can a candidate of a tier that must draw the first tier's image. The review says why: fix the drawing, or change the other test's reference.
@@ -52,7 +53,7 @@ A CI run that finds a missing or changed image saves it too. `bun run images:rev
 - A test whose scene covers little of its frame records a tighter device tolerance, so a frame that lost its scene still fails. S2's trees cover under 1% of its frame, and its device tolerance is 0.2%.
 - Where a device's GPU draws a test another way, add the device to the test's `devices`, such as `ipad` or `sm-s926b`. That device then compares with its own references in `tests/image/references/<device>/`, at the test's own tolerance. Its next run saves the images to accept.
 - Each browser saves its candidates under its runner's name, such as `test-results/images/ipad-safari/`. `bun run images:review` shows them with the others.
-- On 30 September 2026, Safari and Firefox on the Mac drew Chrome's images. At most 0.006% of the pixels differed, and only by a unit or two of one color channel.
+- On 30 September 2026, Safari and Firefox on the Mac drew Chrome's images. With HDR color, at most 0.09% of the pixels differed, all at the edges of objects.
 - Safari and Firefox have no compatibility mode, so a request for it gives a device with core features. The engine keeps to compatibility mode's limits there all the same, and its images match Chrome's.
 
 ## CI

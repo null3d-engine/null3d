@@ -26,13 +26,15 @@ export function readShadows(moduleUrl: string): number {
 
 /**
  * Sets the background, the sun and the ambient light, and makes the active camera. With
- * `cascades` above 0 the sun casts shadows in that many cascades.
+ * `cascades` above 0 the sun casts shadows in that many cascades. The three.js twins draw with no
+ * tone mapping, three.js's default, so the null3D pages turn off the engine's default of ACES.
  */
 export function setUpView(
-	{ scene }: SketchContext,
+	{ scene, post }: SketchContext,
 	{ sun, ambient }: SceneLights = VIEW_LIGHTS,
 	cascades = 0,
 ): Camera {
+	post.set({ toneMapping: 'none' });
 	scene.setBackground(BACKGROUND);
 	const { mapSize, distance } = SHADOWS;
 	scene.createDirectionalLight({

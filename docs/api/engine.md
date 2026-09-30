@@ -8,7 +8,7 @@ summary: "createEngine options and start errors; memory; capabilities and mode; 
 
 # Page API: createEngine
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. The `createEngine` option `transparent` is not built yet, so coding agents must not use it.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions.
 
 `createEngine` starts the engine on a canvas and runs a sketch. It returns an `Engine`, the page's handle on the running engine. The page keeps the HTML, and the sketch builds the scene in a worker of its own.
 
@@ -68,12 +68,27 @@ An error that the sketch's setup throws also rejects the start ([Sketch API](ske
 | `gpu` | `'auto'` | Forces a GPU path, for tests only. The `?gpu=` switch in the page's address wins over it. |
 | `powerPreference` | `'high-performance'` | Picks the GPU on a device that has two. `'low-power'` saves battery. |
 | `latency` | `'pipelined'` | The latency mode, `'pipelined'` or `'low'`: [Architecture](../concepts/architecture.md#latency-modes). The `?latency=` switch wins over it, and the single-threaded build ignores it. |
+| `transparent` | false | Makes a see-through canvas: [A transparent canvas](#a-transparent-canvas) |
 | `sketchThread` | `'worker'` | The thread that runs the sketch. `'main'` runs it on the page's main thread, where it can reach the DOM: [Where the sketch runs](../concepts/architecture.md#where-the-sketch-runs). The `?sketch-thread=` switch wins over it, and the single-threaded build always runs the sketch on the main thread. |
 | `memory` | `{ maximumMiB: 1024 }` | The most memory that the engine's threads share: [Memory](#memory) |
 | `onProgress` | None | Reports each stage of the start |
 | `onSketchMessage` | None | Receives the sketch's messages from the start of its setup: [Messages](page.md) |
 | `signal` | None | Cancels the start |
 | `hold` | None | Holds the sketch at a time for image tests: [Testing your sketch](../guides/testing.md) |
+
+## A transparent canvas
+
+With `transparent: true`, the page shows through wherever no object draws. The canvas holds premultiplied alpha, the form that browsers composite. The sketch can still set a background with `scene.setBackground`, which makes the canvas opaque again.
+
+```ts
+const engine = await createEngine({
+  canvas,
+  sketch: new URL('./sketch.ts', import.meta.url),
+  transparent: true,
+});
+```
+
+Use it to put a model over the page's own background, such as a product on a marketing page. [Color management](../concepts/color-management.md#transparent-canvases) covers how the edges of objects blend with the page.
 
 ## Memory
 
@@ -91,7 +106,7 @@ The single-threaded build's memory is not shared. It grows as the scene needs, s
 
 ## What the engine reports
 
-- `engine.capabilities` gives the GPU path (`tier`), whether the engine runs threaded, and the optional features and limits of the GPU path. It also gives the depth mode, and the most objects and instance rows that the device draws (`maxInstances`). [GPU tiers and backends](../concepts/backends.md) explains each.
+- `engine.capabilities` gives the GPU path (`tier`), whether the engine runs threaded, and the optional features and limits of the GPU path. It also gives whether the scene draws HDR color (`hdr`), the depth mode, and the most objects and instance rows that the device draws (`maxInstances`). [GPU tiers and backends](../concepts/backends.md) explains each.
 - `engine.mode` gives the build, the latency mode, the thread that runs the sketch and the thread that draws. It also gives the number of job workers and the held time in hold mode. It gives the quality preset, the starts that crashed the tab before this one, and the memory maximum too.
 - `engine.report` holds every result of the start's tests, as plain JSON.
 
@@ -103,7 +118,7 @@ The single-threaded build's memory is not shared. It grows as the scene needs, s
 - `simulateGpuLoss()` acts out a loss of the GPU, so you can test how the page handles one. The engine starts a new GPU device and draws the whole scene again.
 - `measure(seconds)` measures the running engine: CPU time per frame by thread, GPU time, frame intervals, uploads, draw calls, memory and load time. [Performance guide](../guides/performance.md) explains the numbers.
 - `capture()` resolves with a PNG image of the next frame that the engine draws: [Screenshots](#screenshots).
-- `captureFrame()` draws one frame offscreen and returns its pixels as RGBA8 rows, top row first. Tests use it: [Testing your sketch](../guides/testing.md).
+- `captureFrame()` draws one frame offscreen and returns its pixels as RGBA8 rows, top row first. On a transparent canvas the pixels keep their premultiplied alpha. Tests use it: [Testing your sketch](../guides/testing.md).
 - `postToSketch` and `onSketchMessage` send and receive [messages](page.md).
 - `destroy()` stops the engine and its threads, and the engine cannot start again. Wait for its promise before you start another engine on the same page, because the browser frees the engine's memory only then.
 
@@ -124,7 +139,7 @@ shotButton.onclick = async () => {
 };
 ```
 
-The thread that draws reads the frame back from the GPU and encodes the image. When a worker draws, the page's thread does no work for it. The image has the size that the engine draws at, in pixels, and it is opaque, as the canvas is.
+The thread that draws reads the frame back from the GPU and encodes the image. When a worker draws, the page's thread does no work for it. The image has the size that the engine draws at, in pixels. It is opaque, as the canvas is, unless the engine draws on a [transparent canvas](#a-transparent-canvas): then the image keeps the frame's alpha.
 
 - While the engine is paused, and in hold mode, the image shows the frame on the canvas.
 - A page in a hidden tab draws no frames, so its image comes when the tab shows again.
@@ -136,6 +151,7 @@ The thread that draws reads the frame back from the GPU and encodes the image. W
 - [Sketch API: defineSketch and the context](sketch.md): the sketch's side of the engine.
 - [Hosting and cross-origin isolation](../getting-started/hosting.md): the headers that let the engine run threaded.
 - [3D scenes on content pages](../guides/content-pages.md): fallbacks, load deadlines and pausing on product pages.
+- [Color management](../concepts/color-management.md): HDR color, tone mapping and transparent canvases.
 
 ## API reference
 
@@ -212,6 +228,7 @@ The GPU path the engine chose, and what it offers.
 | `threaded: boolean` | True when the engine runs the threaded build. |
 | `features: string[]` | The optional features of the GPU path: WebGPU features, or the WebGL2 extensions present. |
 | `limits: Record<string, number \| null>` | The WebGPU limits, or an empty object on WebGL2. |
+| `hdr: boolean` | True when the scene draws high dynamic range color, which the final pass tone maps into the canvas. False on the 8-bit path, where each shader tone maps its own output: in WebGPU's compatibility mode, and on WebGL2 devices that cannot draw float targets with antialiasing. Both paths show the same colors. Antialiased edges differ a little, because the 8-bit path averages them after the tone mapping. |
 | `maxInstances: number` | The most objects and instance rows, counted together, that a scene can draw on this device. On WebGPU every device draws at least 2,097,152, and a device with larger GPU buffers draws more, up to 8,388,480. On WebGL2 the number follows the largest texture the device allows: 2,097,152 at 4,096 pixels, and 1,048,576 at the 2,048 that every WebGL2 device allows. Engine memory can run out first: see E1109. |
 | `depth: DepthMode` | How the GPU path stores depth. WebGPU, and WebGL2 in browsers with `EXT_clip_control`, draw `reversed` depth, which stays precise far from the camera. |
 
@@ -259,6 +276,7 @@ Options for `createEngine`.
 | `gpu?: 'auto' \| 'webgpu' \| 'webgl2'` | Forces a GPU tier, for testing only. |
 | `powerPreference?: 'high-performance' \| 'low-power'` | Which GPU to draw with on a device that has two, such as a laptop with a separate graphics chip: `high-performance`, the default, for the faster one, or `low-power` to save battery. The browser treats it as a request. A device with one GPU ignores it. |
 | `latency?: LatencyMode` | The latency mode. The default is `pipelined`. |
+| `transparent?: boolean` | True for a see-through canvas: the page shows through wherever no object draws, until the sketch sets a background color. The canvas holds premultiplied alpha, as a browser composites it. The default is false, an opaque canvas. |
 | `sketchThread?: SketchThread` | The thread that runs the sketch's code and the engine core: `worker`, the default, or `main` for the page's main thread, where the sketch can reach the DOM. Use `main` for apps that work mostly with the DOM, and for debugging. The render worker still draws in pipelined mode, and the page draws in low-latency mode. The sketch's frames then share the page's thread with the page's own work, so each can slow the other. The single-threaded build always runs the sketch on the page's thread. The `?sketch-thread=` switch wins over this option. |
 | `memory?: { maximumMiB: number; }` | The engine's memory. `maximumMiB` sets the most memory that the engine's threads share, in MiB: a whole number from 256 to 4096, 1024 by default. Another value fails with E1409. The browser reserves address space for the whole maximum when the engine starts. So a larger maximum leaves less room for other engines and WebAssembly modules on the page. Ask for more only when a scene needs it. The single-threaded build's memory is not shared, so this option does not change it. The `?memory=<MiB>` switch wins over it. |
 | `onProgress?: (stage: StartupStage) => void` | Called as the start reaches each stage, in this order: `core` once the engine core is compiled and the GPU paths are tested, `sketch` once the sketch's setup has run, and `first-frame` once the GPU has finished the first frame. |
@@ -408,7 +426,7 @@ What the browser's WebGL2 offers, in `CapabilityReport.webgl2`.
 | `maxTextureSize: number \| null` | The largest texture width and height in pixels, or null without WebGL2. |
 | `maxUniformBlockSize: number \| null` | The largest uniform block in bytes, or null without WebGL2. |
 | `sharedMemoryUploads: { bufferSubData: boolean; texSubImage2D: boolean; } \| null` | Whether WebGL accepts views on shared memory for buffer and texture uploads. Null without shared memory. |
-| `floatRenderTargets: { rgba16f: { complete: boolean; readsBack: boolean; }; rgba32f: { complete: boolean; readsBack: boolean; }; } \| null` | Whether the device renders into float textures, which high dynamic range color needs. The engine tests a 16-bit and a 32-bit float RGBA texture. `complete` says whether a framebuffer with the texture is complete. `readsBack` says whether a clear to a known color, with a value above 1, reads back as floats. WebGL2 renders into both formats with `EXT_color_buffer_float`, and into the 16-bit one with `EXT_color_buffer_half_float`. Null without WebGL2. |
+| `floatRenderTargets: { rgba16f: { complete: boolean; readsBack: boolean; samples: number; }; rgba32f: { complete: boolean; readsBack: boolean; samples: number; }; } \| null` | Whether the device renders into float textures, which high dynamic range color needs. The engine tests a 16-bit and a 32-bit float RGBA texture. `complete` says whether a framebuffer with the texture is complete. `readsBack` says whether a clear to a known color, with a value above 1, reads back as floats. `samples` is the most samples per pixel for antialiasing that the format takes, or 0 where the device does not render into it. WebGL2 renders into both formats with `EXT_color_buffer_float`, and into the 16-bit one with `EXT_color_buffer_half_float`. The engine draws high dynamic range color where the 16-bit format passes both tests and takes 4 samples. Null without WebGL2. |
 | `renderer: string \| null` | Reported for the record only; the engine never branches on it. |
 | `error?: string` | Why the probe failed, when it did. |
 

@@ -17,7 +17,9 @@ const params = new URL(import.meta.url).searchParams;
 /** The cascade count, from the sketch module's ?cascades switch. */
 const CASCADES = Number(params.get('cascades') ?? 3);
 
-export default defineSketch(({ scene, materials, geometry }) => {
+export default defineSketch(({ scene, materials, geometry, post }) => {
+	// three.js's twin draws with no tone mapping, three.js's default.
+	post.set({ toneMapping: 'none' });
 	scene.setBackground(BACKGROUND);
 	const { fov, position, target, near, far } = SHADOW_CAMERA;
 	scene.setActiveCamera(scene.createPerspectiveCamera({ fov, position, target, near, far }));

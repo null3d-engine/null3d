@@ -4,6 +4,7 @@ import { pageResult } from '../lib/page-result.ts';
 interface FloatTargetTest {
 	complete: boolean;
 	readsBack: boolean;
+	samples: number;
 }
 
 interface CapabilitiesResult {
@@ -24,9 +25,10 @@ test('the capability report says which float textures WebGL2 renders into', asyn
 	const { webgl2 } = result.report;
 	expect(webgl2.available).toBe(true);
 	// WebGL2 renders into both formats with the full extension, into 16-bit floats with the half
-	// one, and into neither without them.
-	const works = { complete: true, readsBack: true };
-	const refused = { complete: false, readsBack: false };
+	// one, and into neither without them. The sample count of a format it renders into depends on
+	// the device.
+	const works = { complete: true, readsBack: true, samples: expect.any(Number) };
+	const refused = { complete: false, readsBack: false, samples: 0 };
 	const full = webgl2.extensions.EXT_color_buffer_float === true;
 	const half = full || webgl2.extensions.EXT_color_buffer_half_float === true;
 	expect(webgl2.floatRenderTargets).toEqual({
