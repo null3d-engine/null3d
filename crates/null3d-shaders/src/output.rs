@@ -1,7 +1,7 @@
 //! What the build makes: for each variant, WGSL for WebGPU and GLSL ES 3.00 with reflection for
 //! WebGL2. The records serialize with the field names of the generated TypeScript module's types.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 use serde::Serialize;
 
@@ -35,6 +35,9 @@ pub struct Output {
     pub shaders: BTreeMap<String, BTreeMap<String, VariantOutput>>,
     /// Pipeline names by shader name, sorted.
     pub pipelines: BTreeMap<String, Vec<String>>,
+    /// The shaders that load by device, whose builds go into the device modules.
+    #[serde(skip)]
+    pub by_device: BTreeSet<String>,
 }
 
 /// One built variant.

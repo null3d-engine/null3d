@@ -27,6 +27,7 @@ describe('REPORTED_FILES', () => {
 		]);
 		expect(REPORTED_FILES).toContain('js/page.js');
 		expect(REPORTED_FILES).toContain('js/render-worker.js');
+		expect(REPORTED_FILES).toContain('js/shaders-glsl-draw-index.js');
 		expect(REPORTED_FILES.slice(-3)).toEqual([
 			'ktx2/transcoder-worker.js',
 			'ktx2/basis_transcoder.js',
@@ -106,6 +107,23 @@ describe('findEngineParts', () => {
 		);
 	});
 
+	it("names each file of the shader build's device modules after its module, by its largest copy", () => {
+		const shaders = ['shaders-wgsl.js', 'shaders-glsl.js'];
+		const wgsl = built('shaders-wgsl-P1.js', ['generated/shaders-wgsl.ts'], 'wgsl');
+		const wgslCopy = built('shaders-wgsl-W1.js', ['generated/shaders-wgsl.ts'], 'wgsl, longer');
+		const glsl = built('shaders-glsl-W2.js', ['generated/shaders-glsl.ts'], 'glsl');
+		const files = [page, pageRenderer, worker, workerRenderer, wgsl, glsl, wgslCopy];
+		const found = findEngineParts(files, parts, shaders);
+		expect([...found].slice(4).map(([name, file]) => [name, file.file])).toEqual([
+			['shaders-wgsl.js', 'shaders-wgsl-W1.js'],
+			['shaders-glsl.js', 'shaders-glsl-W2.js'],
+		]);
+		const skin = built('shaders-glsl-skin-W3.js', ['generated/shaders-glsl-skin.ts']);
+		expect(() => findEngineParts([...files, skin], parts, shaders)).toThrow(
+			"shaders-glsl-skin-W3.js holds the shader build's device module of shaders-glsl-skin.js, which the size report does not name",
+		);
+	});
+
 	it("fails when a part's file also holds a page's own code", () => {
 		const mixed = built('engine-T1.js', ['page/engine.ts'], '', ['tests/pages/engine.ts']);
 		expect(() => findEngineParts([mixed, worker], parts)).toThrow(
@@ -121,12 +139,29 @@ describe('downloadSizes', () => {
 			['worker.js', { raw: 50, brotli: 20 }],
 		]);
 		const downloads = [
-			{ mode: 'both', parts: ['page.js', 'worker.js'] },
-			{ mode: 'page only', parts: ['page.js', 'page-renderer.js'] },
+			{ mode: 'both', parts: ['page.js', 'worker.js'], shaders: 'shaders-' },
+			{ mode: 'page only', parts: ['page.js', 'page-renderer.js'], shaders: 'shaders-' },
 		];
 		expect(downloadSizes(sizes, downloads)).toEqual([
 			{ mode: 'both', size: { raw: 150, brotli: 60 } },
 			{ mode: 'page only', size: { raw: 100, brotli: 40 } },
+		]);
+	});
+
+	it('adds the largest of the shader parts that a mode may load', () => {
+		const sizes = new Map([
+			['page.js', { raw: 100, brotli: 40 }],
+			['shaders-wgsl.js', { raw: 30, brotli: 5 }],
+			['shaders-glsl.js', { raw: 60, brotli: 9 }],
+			['shaders-glsl-draw-index.js', { raw: 61, brotli: 10 }],
+		]);
+		const downloads = [
+			{ mode: 'WebGPU', parts: ['page.js'], shaders: 'shaders-wgsl' },
+			{ mode: 'WebGL2', parts: ['page.js'], shaders: 'shaders-glsl' },
+		];
+		expect(downloadSizes(sizes, downloads)).toEqual([
+			{ mode: 'WebGPU', size: { raw: 130, brotli: 45 } },
+			{ mode: 'WebGL2', size: { raw: 161, brotli: 50 } },
 		]);
 	});
 });

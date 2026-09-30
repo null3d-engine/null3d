@@ -14,6 +14,7 @@
 // turns clear values and viewport depth ranges around for standard depth.
 
 import * as G from '../../generated/gpu';
+import type { DeviceShaders } from '../../generated/shaders';
 import type { DepthMode } from '../../page/switches';
 import { ImageTable } from '../../shared/images';
 import { forEachVertexAttribute, vertexStride } from '../vertex-format';
@@ -22,7 +23,7 @@ import {
 	createProgram,
 	engineTemplates,
 	type GlslTemplate,
-	MIPMAP_TEMPLATE,
+	mipmapTemplate,
 	type Pipeline,
 	type Program,
 	prepareProgram,
@@ -234,7 +235,9 @@ export class WebGL2Backend {
 	private readonly pipelines: (Pipeline | undefined)[] = [];
 	/** The programs of the templates and permutations in use, which their pipelines share. */
 	private readonly programs = new Map<string, Program>();
-	private readonly templates: (GlslTemplate | undefined)[] = engineTemplates();
+	private readonly templates: (GlslTemplate | undefined)[];
+	/** The template of the program that draws mip levels. */
+	private readonly mipTemplate: GlslTemplate;
 	private readonly bindGroups: (BindEntry[] | undefined)[] = [];
 	private readonly vertexArrays: (VertexArray | undefined)[] = [];
 	/** Vertex arrays of the buffers that templates with their own vertex layout draw from, by id. */
@@ -327,20 +330,24 @@ export class WebGL2Backend {
 	private passToCanvas = false;
 
 	/**
-	 * `sharedUploads` is false where WebGL refuses views on shared memory, so uploads and multi-draw
-	 * arrays go through copies. `depthMode` is how the backend stores depth. `images` holds the
-	 * images that uploads read, which the thread that draws keeps across GPU devices; by default
-	 * the backend has its own. `parallelCompile` lets programs compile in the background where the
-	 * context has `KHR_parallel_shader_compile`.
+	 * `shaders` are the GLSL builds that the device loaded (`loadGlslShaders`), with the bits
+	 * that it fixes. `sharedUploads` is false where WebGL refuses views on shared memory, so uploads
+	 * and multi-draw arrays go through copies. `depthMode` is how the backend stores depth.
+	 * `images` holds the images that uploads read, which the thread that draws keeps across GPU
+	 * devices; by default the backend has its own. `parallelCompile` lets programs compile in the
+	 * background where the context has `KHR_parallel_shader_compile`.
 	 */
 	constructor(
 		private readonly gl: WebGL2RenderingContext,
 		private readonly canvas: OffscreenCanvas | HTMLCanvasElement,
+		shaders: DeviceShaders,
 		private readonly sharedUploads: boolean,
 		depthMode: DepthMode,
 		images?: ImageTable,
 		parallelCompile = true,
 	) {
+		this.templates = engineTemplates(shaders);
+		this.mipTemplate = mipmapTemplate(shaders);
 		this.images = images ?? new ImageTable();
 		this.ownsImages = !images;
 		this.multiDraw = gl.getExtension('WEBGL_multi_draw');
@@ -643,7 +650,7 @@ export class WebGL2Backend {
 	private mipmapProgram(): Program {
 		let program = this.programs.get(MIP_PROGRAM);
 		if (!program) {
-			program = createProgram(this.gl, MIPMAP_TEMPLATE, 0);
+			program = createProgram(this.gl, this.mipTemplate, 0);
 			this.programs.set(MIP_PROGRAM, program);
 		}
 		this.useProgram(program);
