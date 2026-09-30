@@ -2,7 +2,7 @@
 
 Engine docs: `porting/threejs-materials`, `api/materials`, `api/textures`, `concepts/color-management`, `shaders/surface-functions`.
 
-Versions: for now, `materials.standard` and `materials.unlit` take `color` and `opacity`. The engine stores `opacity` but draws every material opaque. `materials.standard` shades diffuse light only, as three.js's `MeshLambertMaterial` does. The other options below come later in 0.1 unless a row gives another version, and so do `materials.shader` and surface functions. The texture options of `assets.loadTexture` in section 7 exist now, but no material can use a texture yet.
+Versions: for now, `materials.standard` and `materials.unlit` take `color`, `opacity` and `fog`. The engine stores `opacity` but draws every material opaque. `materials.standard` shades diffuse light only, as three.js's `MeshLambertMaterial` does. The other options below come later in 0.1 unless a row gives another version, and so do `materials.shader` and surface functions. The texture options of `assets.loadTexture` in section 7 exist now, but no material can use a texture yet.
 
 ## Contents
 
