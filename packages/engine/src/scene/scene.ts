@@ -357,13 +357,21 @@ class SceneViews {
 export class Object3D implements Described {
 	/** @internal */
 	destroyedFrame = -1;
+	/**
+	 * @internal The row of the scene arrays that the object's calls read and write: its slot, or,
+	 * once it is destroyed, row 0, which no object has. So a call on a destroyed object never
+	 * reaches the object that takes its slot, in any build, and costs nothing more.
+	 */
+	row: number;
 
 	constructor(
 		/** @internal */ protected readonly scene: Scene,
 		/** @internal */ readonly handle: number,
 		/** The name from the create options, or an empty string. */
 		readonly name: string,
-	) {}
+	) {
+		this.row = handle & SLOT_MASK;
+	}
 
 	/** @internal */
 	get slot(): number {
@@ -392,11 +400,11 @@ export class Object3D implements Described {
 			checkVector('setPosition', this, x, y, z);
 		}
 		const p = this.scene.views.positions;
-		const i = this.slot * 3;
+		const i = this.row * 3;
 		p[i] = x;
 		p[i + 1] = y;
 		p[i + 2] = z;
-		this.scene.markDirty(this.slot);
+		this.scene.markDirty(this.row);
 	}
 
 	/** Sets the rotation as a quaternion (x, y, z, w). */
@@ -406,12 +414,12 @@ export class Object3D implements Described {
 			checkVector('setRotation', this, x, y, z, w);
 		}
 		const r = this.scene.views.rotations;
-		const i = this.slot * 4;
+		const i = this.row * 4;
 		r[i] = x;
 		r[i + 1] = y;
 		r[i + 2] = z;
 		r[i + 3] = w;
-		this.scene.markDirty(this.slot);
+		this.scene.markDirty(this.row);
 	}
 
 	/** Sets the rotation from Euler angles in radians, with three.js's axis order names. */
@@ -421,10 +429,10 @@ export class Object3D implements Described {
 			checkVector('setRotationEuler', this, x, y, z);
 		}
 		const r = this.scene.views.rotations;
-		const i = this.slot * 4;
+		const i = this.row * 4;
 		quaternionFromEuler(this.scene.scratch, x, y, z, order);
 		r.set(this.scene.scratch, i);
-		this.scene.markDirty(this.slot);
+		this.scene.markDirty(this.row);
 	}
 
 	/** Sets the scale on each axis. */
@@ -434,11 +442,11 @@ export class Object3D implements Described {
 			checkVector('setScale', this, x, y, z);
 		}
 		const s = this.scene.views.scales;
-		const i = this.slot * 3;
+		const i = this.row * 3;
 		s[i] = x;
 		s[i + 1] = y;
 		s[i + 2] = z;
-		this.scene.markDirty(this.slot);
+		this.scene.markDirty(this.row);
 	}
 
 	/** Turns the object toward a point. It assumes the object's parents are not rotated. */
@@ -448,7 +456,7 @@ export class Object3D implements Described {
 			checkVector('lookAt', this, x, y, z);
 		}
 		const { positions, rotations } = this.scene.views;
-		const i = this.slot * 3;
+		const i = this.row * 3;
 		const eye = this.scene.eye;
 		eye[0] = positions[i] as number;
 		eye[1] = positions[i + 1] as number;
@@ -458,8 +466,8 @@ export class Object3D implements Described {
 		target[1] = y;
 		target[2] = z;
 		quaternionLookAt(this.scene.scratch, eye, target, this.looksDownMinusZ);
-		rotations.set(this.scene.scratch, this.slot * 4);
-		this.scene.markDirty(this.slot);
+		rotations.set(this.scene.scratch, this.row * 4);
+		this.scene.markDirty(this.row);
 	}
 
 	/** Turns the object by `angle` radians about its own X axis. */
@@ -484,10 +492,10 @@ export class Object3D implements Described {
 			checkNumber(call, 'angle', angle, this);
 		}
 		const q = this.scene.scratch;
-		this.scene.readRotation(this.slot, q);
+		this.scene.readRotation(this.row, q);
 		by(q, q, angle);
-		this.scene.views.rotations.set(q, this.slot * 4);
-		this.scene.markDirty(this.slot);
+		this.scene.views.rotations.set(q, this.row * 4);
+		this.scene.markDirty(this.row);
 	}
 
 	/**
@@ -502,25 +510,25 @@ export class Object3D implements Described {
 		}
 		const { scene } = this;
 		const q = scene.scratch;
-		scene.readRotation(this.slot, q);
+		scene.readRotation(this.row, q);
 		const v = scene.eye;
 		v[0] = x;
 		v[1] = y;
 		v[2] = z;
 		transformQuat(v, v, q);
 		const p = scene.views.positions;
-		const i = this.slot * 3;
+		const i = this.row * 3;
 		p[i] = (p[i] as number) + (v[0] as number);
 		p[i + 1] = (p[i + 1] as number) + (v[1] as number);
 		p[i + 2] = (p[i + 2] as number) + (v[2] as number);
-		scene.markDirty(this.slot);
+		scene.markDirty(this.row);
 	}
 
 	/** Copies the position relative to the parent into `out`. */
 	getPosition(out: Vec3Like): void {
 		if (DEV) checkLive('getPosition', this);
 		const p = this.scene.views.positions;
-		const i = this.slot * 3;
+		const i = this.row * 3;
 		out[0] = p[i] as number;
 		out[1] = p[i + 1] as number;
 		out[2] = p[i + 2] as number;
@@ -529,7 +537,7 @@ export class Object3D implements Described {
 	/** Copies the rotation relative to the parent into `out`, as a quaternion (x, y, z, w). */
 	getRotation(out: QuatLike): void {
 		if (DEV) checkLive('getRotation', this);
-		this.scene.readRotation(this.slot, out);
+		this.scene.readRotation(this.row, out);
 	}
 
 	/** Copies the world position of the frame that last ran into `out`. */
@@ -619,8 +627,10 @@ export class Object3D implements Described {
 			checkLive('destroy', this);
 			this.scene.unmarkedWrites?.watch(this, false);
 		}
+		// The core checks the handle's generation, so a second destroy frees no other object.
 		this.scene.command(C.COMMAND_DESTROY, this.handle, 0, 0, 'destroy');
 		this.destroyedFrame = this.scene.frame;
+		this.row = 0;
 		this.scene.forget(this);
 	}
 
@@ -662,7 +672,7 @@ export class Mesh extends Object3D {
 			checkLive('setMesh', this);
 			checkSameEngine('setMesh', 'mesh', mesh.core, this.scene);
 		}
-		this.scene.writeBounds(this.slot, 0, 0, 0, mesh.radius);
+		this.scene.writeBounds(this.row, 0, 0, 0, mesh.radius);
 		if (DEV) this.scene.unmarkedWrites?.boundsWritten(this);
 		this.scene.command(C.COMMAND_SET_MESH, this.handle, mesh.id, 0, 'setMesh');
 	}
@@ -725,7 +735,7 @@ export class Mesh extends Object3D {
 					`setBounds() got the radius ${radius} on ${this.describe()}, below 0.`,
 				);
 		}
-		this.scene.writeBounds(this.slot, x, y, z, radius);
+		this.scene.writeBounds(this.row, x, y, z, radius);
 		if (DEV) this.scene.unmarkedWrites?.boundsWritten(this);
 		this.setFlag('setBounds', C.FLAG_CUSTOM_BOUNDS, true);
 	}
@@ -924,7 +934,11 @@ export class OrthographicCamera extends Camera {
  * @category api/lights
  */
 export class Light extends Object3D {
-	/** @internal The light's row in the engine's light table. */
+	/**
+	 * @internal The light's row in the engine's light table, or 0, which holds no light, once the
+	 * light is destroyed. The core then refuses its calls, so they never reach the light that
+	 * takes the row.
+	 */
 	id = 0;
 	/** @internal The light's color in linear RGB, before the intensity scales it. */
 	readonly linear = new Float64Array([1, 1, 1]);
@@ -945,9 +959,12 @@ export class Light extends Object3D {
 
 	/** Removes the light at the next frame. Its children become roots. */
 	override destroy(): void {
+		const { id } = this;
 		super.destroy();
+		if (id === 0) return;
+		this.id = 0;
 		const { core } = this.scene;
-		core.check(core.glue.destroyLight(this.id), 'destroy', this.label, true);
+		core.check(core.glue.destroyLight(id), 'destroy', this.label, true);
 	}
 
 	/** @internal Sets one of the light's colors, by its code in the light table. */
@@ -993,8 +1010,8 @@ export class Light extends Object3D {
 		d[1] = y * k;
 		d[2] = z * k;
 		rotationTo(scene.scratch, LIGHT_AXIS, d);
-		scene.views.rotations.set(scene.scratch, this.slot * 4);
-		scene.markDirty(this.slot);
+		scene.views.rotations.set(scene.scratch, this.row * 4);
+		scene.markDirty(this.row);
 	}
 }
 
@@ -1143,7 +1160,7 @@ export class InstanceBatch {
 	private makeViews(): void {
 		const { core } = this.scene;
 		const address = (field: number) =>
-			core.check(core.glue.batchArrays(this.id, field), 'instance arrays');
+			core.check(core.glue.batchArrays(this.id, field), 'instance arrays', 'an instance batch');
 		this.rows = {
 			positions: core.f32(address(C.BATCH_FIELD_POSITIONS), this.count * 3),
 			rotations: core.f32(address(C.BATCH_FIELD_ROTATIONS), this.count * 4),
@@ -1198,13 +1215,19 @@ export class InstanceBatch {
 		core.check(core.glue.markBatchDirty(this.id, start, count), 'markDirty', undefined, true);
 	}
 
-	/** Removes the batch and frees its rows. Its typed arrays are not valid after this. */
+	/**
+	 * Removes the batch and frees its rows. Its typed arrays are not valid after this: another
+	 * batch can take their memory.
+	 */
 	destroy(): void {
 		const { core } = this.scene;
 		core.check(core.glue.destroyBatch(this.id, this.scene.frame), 'destroy', undefined, true);
 		if (DEV) this.scene.countBatchRows(-this.count);
 		this.destroyedFrame = this.scene.frame;
-		this.scene.core.refresh();
+		// The next read of the arrays asks the core for them again, and the core refuses a
+		// destroyed batch.
+		this.generation = -1;
+		core.refresh();
 	}
 }
 
@@ -1595,7 +1618,10 @@ export class Scene {
 		return this.createLight(AmbientLight, C.LIGHT_KIND_AMBIENT, options, 'createAmbientLight');
 	}
 
-	/** The color behind every object. */
+	/**
+	 * The color behind every object. Exposure and tone mapping change it with the rest of the scene.
+	 * Without a background, the canvas shows black, or the page behind it on a transparent canvas.
+	 */
 	setBackground(color: ColorInput): void {
 		const [r, g, b] = linearColor(color, 'setBackground');
 		this.core.glue.setBackground(r, g, b);

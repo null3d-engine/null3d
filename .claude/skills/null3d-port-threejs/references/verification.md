@@ -36,7 +36,7 @@ Make the original deterministic first:
 - Set animation mixers to the view's time with `mixer.setTime(view.time)`, and set any time uniforms to the same value.
 - Replace `Math.random` with a seeded generator during capture, if the scene uses randomness.
 - Keep anti-aliasing on (`antialias: true`). null3D draws with 4 samples per pixel (MSAA) on every GPU tier, and `quality.set({ antialias })` comes later in 0.1.
-- Keep tone mapping off (`NoToneMapping`). null3D has none until `post.set({ toneMapping })` comes later in 0.1.
+- Match the tone mapping. null3D defaults to ACES, so an original with `NoToneMapping` needs `post.set({ toneMapping: 'none' })`. Any other curve needs the same curve and exposure in both.
 
 Then add this temporary helper to the original app:
 

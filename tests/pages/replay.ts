@@ -1,7 +1,9 @@
 // Replays a hand-built draw list through the engine's WebGPU backend: GPU culling in a compute pass,
 // then indirect draws from a render bundle with 4x MSAA and reversed depth. It checks the GPU side of
-// the WebGPU render path before the core records these lists itself.
+// the WebGPU render path before the core records these lists itself. It draws the 8-bit path, whose
+// shaders encode their colors for the 8-bit target themselves.
 import { loadWgslShaders, readbackWebGPU, WebGPUBackend } from '@null3d/engine/internal';
+import * as C from '../../packages/engine/src/generated/core';
 import * as G from '../../packages/engine/src/generated/gpu';
 import {
 	boxMesh,
@@ -27,7 +29,7 @@ run('replay', async () => {
 		format: 'rgba8unorm',
 		usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
 	});
-	const shaders = await loadWgslShaders(0);
+	const shaders = await loadWgslShaders(G.PERMUTATION_TONE_MAP);
 	const backend = new WebGPUBackend(device, undefined, 'rgba8unorm', shaders);
 	backend.canvasTarget = target;
 
@@ -69,6 +71,10 @@ run('replay', async () => {
 	frame.set([sun[0]! / length, sun[1]! / length, sun[2]! / length, 0], 20);
 	frame.set([3, 3, 3, 0], 24);
 	frame.set([0.4, 0.4, 0.4, 0], 28);
+	// The output settings: an exposure of 1 and no tone mapping, so the 8-bit target holds the lit
+	// colors encoded as sRGB.
+	frame[32] = 1;
+	new Uint32Array(frame.buffer)[33] = C.TONE_MAPPING_NONE;
 	// Two rows of the material table, each starting with its color and opacity. The shader reads
 	// nothing else of them.
 	const materials = new Float32Array((2 * G.SIZE_MATERIAL_BYTES) / 4);
@@ -167,7 +173,7 @@ run('replay', async () => {
 		G.OP_CREATE_RENDER_PIPELINE,
 		1,
 		G.TEMPLATE_INSTANCED_LIT,
-		0,
+		G.PERMUTATION_TONE_MAP,
 		G.FORMAT_CANVAS,
 		G.FORMAT_DEPTH32_FLOAT,
 		SAMPLES,

@@ -70,7 +70,9 @@ crate.destroy();
 crate.setPosition(0, 0, 0); // development build: throws E1101
 ```
 
-In development builds, every call on an object apart from `describe` checks that the object still lives. A call on a destroyed object throws an `EngineError` with the code [E1101](../errors/E1101.md), which names the object and the frame it was destroyed in. Release builds leave this check out, so a transform setter costs only its memory writes. There, a call on a destroyed object is a bug that the engine does not catch: it can change the object that took the slot.
+In development builds, every call on an object apart from `describe` checks that the object still lives. A call on a destroyed object throws an `EngineError` with the code [E1101](../errors/E1101.md), which names the object and the frame it was destroyed in. Release builds leave this check out, so a transform setter costs only its memory writes.
+
+A call on a destroyed object never changes the object that takes its slot, in any build. When you destroy an object, its wrapper stops pointing at the slot. In a release build, its setters then write to a row that no object uses, and its light setters reach no light. A second `destroy()` frees nothing. The engine core checks the generation of each change that waits for the next frame. It logs E1101 for a change to a destroyed object. The world getters and an instance batch's arrays throw E1101 in every build once the object or batch is gone. The call is still a bug in your sketch, so find it in a development build.
 
 ## Keep per-object data in your own arrays
 
