@@ -54,7 +54,7 @@ const off = engine.onSketchMessage((type, data) => { /* ... */ }); // the first 
 off();                                   // every on... call returns a function that removes its handler
 engine.detach();                         // single-page apps: canvas off the page, engine paused, scene kept
 engine.attach(container);                // canvas back on the page; the engine resumes with no new start
-const image = await engine.capture();             // Blob of the next complete frame
+const image = await engine.capture();             // PNG Blob of the next frame; E1414 after destroy()
 // engine.registerVideo and textures.fromVideo come after 1.0; recipe 14 shows the workaround
 engine.labels.bind('hp-12', element);             // (0.2) HTML label that follows an object
 await engine.requestPointerLock();                // (0.2) for first-person controls
