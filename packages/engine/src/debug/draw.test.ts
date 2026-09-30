@@ -133,7 +133,7 @@ describe('debug drawing', () => {
 		const { draw, frames } = fakeCore();
 		draw.line([0, 1, 2], [3, 4, 5], '#ff0000');
 		draw.line([-1, 0, 0], [1, 0, 0]);
-		draw.flush(1);
+		draw.flush(1, 1);
 		expect(rounded(frames[0] as Point[])).toEqual([
 			{ position: [0, 1, 2], color: 0xff0000ff },
 			{ position: [3, 4, 5], color: 0xff0000ff },
@@ -141,17 +141,17 @@ describe('debug drawing', () => {
 			{ position: [1, 0, 0], color: 0xff00ffff },
 		]);
 		// A frame without calls hands nothing to the core, and the core draws no lines.
-		draw.flush(1);
+		draw.flush(1, 1);
 		expect(frames.length).toBe(1);
 		draw.line([0, 0, 0], [0, 0, 1]);
-		draw.flush(1);
+		draw.flush(1, 1);
 		expect(frames[1]?.length).toBe(2);
 	});
 
 	test('keeps 64-bit positions far from the origin', () => {
 		const { draw, frames } = fakeCore();
 		draw.line([100_000.0125, 1e6 + 0.001, -2], [100_000.0375, 1e6, -2]);
-		draw.flush(1);
+		draw.flush(1, 1);
 		const [from, to] = frames[0] as Point[];
 		expect(from?.position).toEqual([100_000.0125, 1e6 + 0.001, -2]);
 		expect(to?.position).toEqual([100_000.0375, 1e6, -2]);
@@ -160,7 +160,7 @@ describe('debug drawing', () => {
 	test('a box draws its twelve edges between its corners', () => {
 		const { draw, frames } = fakeCore();
 		draw.box([-1, 0, 2], [3, 1, 4], 0x00ff00);
-		draw.flush(1);
+		draw.flush(1, 1);
 		const edges = lines(frames[0] as Point[]);
 		expect(edges.length).toBe(12);
 		const corners = new Set<string>();
@@ -181,7 +181,7 @@ describe('debug drawing', () => {
 	test('a sphere draws three circles whose points lie on it', () => {
 		const { draw, frames } = fakeCore();
 		draw.sphere([5, -2, 1], 2);
-		draw.flush(1);
+		draw.flush(1, 1);
 		const points = frames[0] as Point[];
 		expect(points.length).toBe(3 * 32 * 2);
 		for (const { position } of points) {
@@ -194,7 +194,7 @@ describe('debug drawing', () => {
 		const { draw, frames } = fakeCore();
 		draw.arrow([1, 1, 1], [0, 0, -3], 2, '#ffffff');
 		draw.arrow([0, 0, 0], [0, 0, 0]);
-		draw.flush(1);
+		draw.flush(1, 1);
 		const [shaft, ...head] = lines(frames[0] as Point[]);
 		expect(head.length).toBe(4);
 		expect(rounded(shaft as Point[]).map((p) => p.position)).toEqual([
@@ -212,7 +212,7 @@ describe('debug drawing', () => {
 	test('axes at a position draw red, green and blue lines along the world axes', () => {
 		const { draw, frames } = fakeCore();
 		draw.axes([1, 2, 3], 2);
-		draw.flush(1);
+		draw.flush(1, 1);
 		expect(rounded(frames[0] as Point[])).toEqual([
 			{ position: [1, 2, 3], color: 0xff0000ff },
 			{ position: [3, 2, 3], color: 0xff0000ff },
@@ -231,7 +231,7 @@ describe('debug drawing', () => {
 		// The frame moves the object and turns it 90 degrees about y, and doubles its size, before
 		// its transform update; the axes follow and keep their size.
 		matrices.set(7, [0, 0, 2, 100_000, 0, 2, 0, 5, -2, 0, 0, 0]);
-		draw.flush(1);
+		draw.flush(1, 1);
 		expect(rounded(frames[0] as Point[]).map((p) => p.position)).toEqual([
 			[100_000, 5, 0],
 			[100_000, 5, -1],
@@ -243,14 +243,14 @@ describe('debug drawing', () => {
 		// A destroyed object draws nothing.
 		draw.axes(box);
 		box.destroyedFrame = 3;
-		draw.flush(1);
+		draw.flush(1, 1);
 		expect(frames.length).toBe(1);
 	});
 
 	test('a grid draws its lines as three.js does, with the center lines in their own color', () => {
 		const { draw, frames } = fakeCore();
 		draw.grid(4, 4, { center: [0, -1, 10], color: '#ffffff', centerColor: '#000000' });
-		draw.flush(1);
+		draw.flush(1, 1);
 		const grid = lines(frames[0] as Point[]);
 		expect(grid.length).toBe(10);
 		const centered = grid.filter(([a]) => a.color === 0xff000000);
@@ -266,7 +266,7 @@ describe('debug drawing', () => {
 		// An odd number of cells has no center line, and no cell draws nothing.
 		draw.grid(3, 3);
 		draw.grid(3, 0);
-		draw.flush(1);
+		draw.flush(1, 1);
 		const odd = lines(frames[1] as Point[]);
 		expect(odd.length).toBe(8);
 		expect(odd.every(([a]) => a.color === 0xff888888)).toBe(true);
@@ -280,7 +280,7 @@ describe('debug drawing', () => {
 		camera.far = 10;
 		matrices.set(9, [1, 0, 0, 50, 0, 1, 0, 0, 0, 0, 1, 0]);
 		draw.frustum(camera);
-		draw.flush(2);
+		draw.flush(2, 1);
 		const edges = lines(frames[0] as Point[]);
 		expect(edges.length).toBe(12);
 		expect(edges.every(([a]) => a.color === 0xff00aaff)).toBe(true);
@@ -304,7 +304,7 @@ describe('debug drawing', () => {
 		const scene = { core: { glue: { setSun: () => 0 } } } as unknown as Scene;
 		const sun = new DirectionalLight(scene, [0, -3, 0], '#ff8800', 2);
 		draw.light(sun, { position: [0, 10, 0], size: 2 });
-		draw.flush(1);
+		draw.flush(1, 1);
 		const drawn = lines(frames[0] as Point[]);
 		// Four sides, then the arrow: its shaft and four lines of its head.
 		expect(drawn.length).toBe(9);
@@ -323,7 +323,7 @@ describe('debug drawing', () => {
 	test('the arrays grow by doubling and keep the points of the frame', () => {
 		const { draw, frames, reserves } = fakeCore();
 		for (let k = 0; k < 3000; k++) draw.line([k, 0, 0], [k, 1, 0]);
-		draw.flush(1);
+		draw.flush(1, 1);
 		expect(reserves).toEqual([4096, 8192]);
 		const points = frames[0] as Point[];
 		expect(points.length).toBe(6000);
@@ -337,7 +337,7 @@ describe('debug drawing', () => {
 		memory.grow(1);
 		core.refresh();
 		draw.line([7, 8, 9], [10, 11, 12]);
-		draw.flush(1);
+		draw.flush(1, 1);
 		expect((frames[0] as Point[]).map((p) => p.position[0])).toEqual([1, 4, 7, 10]);
 	});
 
@@ -348,9 +348,9 @@ describe('debug drawing', () => {
 		console.warn = (message: unknown) => warnings.push(message);
 		try {
 			for (let k = 0; k < MAX_POINTS / 2 + 10; k++) draw.line([k, 0, 0], [k, 0, 1]);
-			draw.flush(1);
+			draw.flush(1, 1);
 			draw.box([0, 0, 0], [1, 1, 1]);
-			draw.flush(1);
+			draw.flush(1, 1);
 		} finally {
 			console.warn = warn;
 		}

@@ -13,7 +13,7 @@ import * as C from '../generated/core';
 import { linearToSrgb } from '../math/color';
 import { hexValue, invalidColor } from '../math/hex';
 import type { Vec3Like } from '../math/types';
-import type { ColorInput } from '../scene/color';
+import { type ColorInput, isComponent } from '../scene/color';
 import type { CoreMemory } from '../scene/memory';
 import { type Camera, type DirectionalLight, Object3D } from '../scene/scene';
 import type { Debug, DebugGridOptions, DebugLightOptions } from './debug';
@@ -48,8 +48,6 @@ for (let s = 0; s <= CIRCLE_SEGMENTS; s++) {
 	CIRCLE[2 * s] = Math.cos(angle);
 	CIRCLE[2 * s + 1] = Math.sin(angle);
 }
-
-const isComponent = (c: number) => Number.isFinite(c) && c >= 0 && c <= 1;
 
 /** One sRGB component from 0 to 1 as a byte. */
 const toByte = (c: number) => Math.round(Math.min(1, Math.max(0, c)) * 255);
@@ -169,13 +167,16 @@ export class DebugDraw implements Debug {
 			this.follow(AXES, target, size);
 			return;
 		}
-		if (!this.room(6)) return;
-		const x = target[0] as number;
-		const y = target[1] as number;
-		const z = target[2] as number;
-		this.segment(x, y, z, x + size, y, z, AXIS_COLORS[0]);
-		this.segment(x, y, z, x, y + size, z, AXIS_COLORS[1]);
-		this.segment(x, y, z, x, y, z + size, AXIS_COLORS[2]);
+		// The world's own axes: a matrix with no rotation, at the position.
+		const m = this.matrix;
+		m.fill(0);
+		m[0] = 1;
+		m[5] = 1;
+		m[10] = 1;
+		m[3] = target[0] as number;
+		m[7] = target[1] as number;
+		m[11] = target[2] as number;
+		this.drawAxes(size);
 	}
 
 	grid(size = 10, divisions = 10, options?: DebugGridOptions): void {
@@ -239,10 +240,10 @@ export class DebugDraw implements Debug {
 
 	/**
 	 * Draws the shapes that follow objects, from their places in this frame, then hands the frame's
-	 * points to the core for the frame that records next. `aspect` is the canvas's width over its
-	 * height, whose shape a camera's frustum takes.
+	 * points to the core for the frame that records next. `width` and `height` give the canvas,
+	 * whose shape a camera's frustum takes.
 	 */
-	flush(aspect: number): void {
+	flush(width: number, height: number): void {
 		for (let k = 0; k < this.followedCount; k++) {
 			const object = this.followed[k] as Object3D;
 			this.followed[k] = undefined;
@@ -250,7 +251,8 @@ export class DebugDraw implements Debug {
 			if (object.destroyedFrame >= 0) continue;
 			if (this.core.glue.worldMatrix(object.handle, this.matrix) !== 0) continue;
 			const value = this.followedValues[k] as number;
-			if (this.followedKinds[k] === FRUSTUM) this.drawFrustum(object as Camera, aspect, value);
+			if (this.followedKinds[k] === FRUSTUM)
+				this.drawFrustum(object as Camera, width / height, value);
 			else this.drawAxes(value);
 		}
 		this.followedCount = 0;
@@ -268,7 +270,7 @@ export class DebugDraw implements Debug {
 		this.followedValues[k] = value;
 	}
 
-	/** The axes of the object whose world matrix the flush just read. */
+	/** Axes along the columns of the world matrix that `matrix` holds, from its translation. */
 	private drawAxes(size: number): void {
 		if (!this.room(6)) return;
 		const m = this.matrix;

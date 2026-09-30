@@ -283,7 +283,7 @@ export class SketchRunner {
 		this.endPhase(Phase.Cull);
 		if (DEV && this.debugDraw) {
 			try {
-				this.debugDraw.flush(width / height);
+				this.debugDraw.flush(width, height);
 			} catch (error) {
 				this.report(error);
 			}
