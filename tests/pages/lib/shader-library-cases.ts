@@ -7,6 +7,11 @@
 // computes in 32-bit floats, and its built-in functions such as `pow` and `sin` may differ from
 // exact results by a few units, so float results must agree within a tolerance. Hashes are
 // whole numbers and must agree bit for bit.
+import {
+	FOG_KIND_EXP2,
+	FOG_KIND_LINEAR,
+	FOG_KIND_NONE,
+} from '../../../packages/engine/src/generated/core.ts';
 import { linearToSrgb, srgbToLinear } from '../../../packages/engine/src/math/color.ts';
 import { inverseLerp, mapLinear, smoothstep } from '../../../packages/engine/src/math/math.ts';
 import { setAxisAngle } from '../../../packages/engine/src/math/quat.ts';
@@ -1350,6 +1355,30 @@ export const FUNCTIONS: readonly LibraryFunction[] = [
 		name: 'sdf::onion',
 		cases: uniform(2, -2, 2),
 		expected: (i) => scalar(Math.abs(i.f(0)[0]) - i.f(0)[1]),
+	},
+	// null3d::fog's scene fog, numbered after the other modules' functions. Each kind of fog, by the
+	// engine's codes, at points in front of and behind the camera.
+	{
+		name: 'fog::fog_factor',
+		cases: (random) =>
+			[FOG_KIND_NONE, FOG_KIND_LINEAR, FOG_KIND_EXP2].flatMap((kind) =>
+				samples((r) =>
+					new Inputs()
+						.setF(0, values(r, 3, 0, 1))
+						.setU(1, [kind])
+						.setF(2, [...unit(r), between(r, 0, 0.05)])
+						.setF(3, [between(r, 0, 20), between(r, 30, 100)])
+						.setF(4, values(r, 3, -80, 80)),
+				)(random),
+			),
+		expected: (i) => {
+			const kind = i.u(1)[0];
+			const [density, near, far] = [i.f(2)[3], i.f(3)[0], i.f(3)[1]];
+			const depth = dot(xyz(i.f(4)), xyz(i.f(2)));
+			if (kind === FOG_KIND_LINEAR) return scalar(smooth(near, far, depth));
+			if (kind === FOG_KIND_EXP2) return scalar(1 - Math.exp(-density * density * depth * depth));
+			return scalar(0);
+		},
 	},
 ];
 

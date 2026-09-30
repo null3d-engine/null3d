@@ -630,8 +630,9 @@ pub mod vertex {
 pub mod sizes {
     /// Bytes per compacted instance: three rows of the world matrix, then a vector of ids.
     pub const INSTANCE_STRIDE: u32 = 64;
-    /// Bytes of the per-frame uniform block: the view-projection matrix and four vectors.
-    pub const FRAME_UNIFORM_BYTES: u32 = 128;
+    /// Bytes of the per-frame uniform block: the view-projection matrix, four vectors, and the
+    /// fog's 48 bytes.
+    pub const FRAME_UNIFORM_BYTES: u32 = 176;
     /// Threads per workgroup of the culling shader.
     pub const CULL_WORKGROUP_SIZE: u32 = 128;
     /// 32-bit words per indexed indirect draw.

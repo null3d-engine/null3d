@@ -8,10 +8,10 @@ import { type DrawModule, loadDrawModule } from '../render/load-draw';
 import type { Drawing } from '../render/recovery';
 import type { Renderer } from '../render/renderer';
 import { awaitLater } from '../shared/await-later';
-import { controlViews, Slot } from '../shared/control';
+import { controlViews } from '../shared/control';
 import { ImageTable, sendThrough, sendToTable } from '../shared/images';
 import { loadSketch } from '../sketch/define-sketch';
-import { SketchRunner } from '../sketch/runner';
+import { runPipelined, SketchRunner } from '../sketch/runner';
 import {
 	replyToPage,
 	replyWithCapture,
@@ -27,38 +27,6 @@ let drawLoad: Promise<DrawModule> | undefined;
 let draw: DrawModule | undefined;
 let drawing: Drawing<Renderer> | undefined;
 let controlSlots: Int32Array | undefined;
-
-/**
- * A promise that settles when the slot no longer holds `value`, or undefined when it already
- * holds another value. A plain function, so a wait makes no promise beyond the browser's own.
- */
-function changeOf(slots: Int32Array, slot: number, value: number): Promise<unknown> | undefined {
-	const wait = Atomics.waitAsync(slots, slot, value);
-	return wait.async ? wait.value : undefined;
-}
-
-async function runPipelined(sketch: SketchRunner, control: ArrayBufferLike): Promise<void> {
-	const { slots } = controlViews(control);
-	// A warm-up during the setup may have published a frame that the render worker has not taken.
-	let published = Atomics.load(slots, Slot.FramesPublished);
-	while (Atomics.load(slots, Slot.Running) !== 0) {
-		const paused = Atomics.load(slots, Slot.Paused);
-		if (paused !== 0) {
-			const change = changeOf(slots, Slot.Paused, paused);
-			if (change) await change;
-			continue;
-		}
-		const taken = Atomics.load(slots, Slot.FramesTaken);
-		if (taken < published) {
-			const change = changeOf(slots, Slot.FramesTaken, taken);
-			if (change) await change;
-			continue;
-		}
-		published = sketch.step(performance.now());
-		Atomics.store(slots, Slot.FramesPublished, published);
-		Atomics.notify(slots, Slot.FramesPublished);
-	}
-}
 
 const step = startSteps('sketch');
 

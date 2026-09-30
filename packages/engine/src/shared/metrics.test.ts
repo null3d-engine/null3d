@@ -165,8 +165,8 @@ describe('frame records', () => {
 
 describe('threadRoles', () => {
 	it('places the sketch and render roles on the threads of each mode', () => {
-		const roles = (latency: string, renderThread: string, jobWorkers = 0) =>
-			Object.fromEntries(threadRoles({ latency, renderThread, jobWorkers }));
+		const roles = (latency: string, renderThread: string, jobWorkers = 0, sketchThread?: string) =>
+			Object.fromEntries(threadRoles({ latency, renderThread, jobWorkers, sketchThread }));
 		expect(roles('pipelined', 'render-worker', 2)).toEqual({
 			'sketch-worker': [Role.Sketch],
 			'render-worker': [Role.Render],
@@ -179,6 +179,19 @@ describe('threadRoles', () => {
 		});
 		expect(roles('low', 'sketch-worker')).toEqual({ 'sketch-worker': [Role.Sketch, Role.Render] });
 		expect(roles('single', 'main')).toEqual({ main: [Role.Sketch, Role.Render] });
+	});
+
+	it('places the sketch on the page when the mode runs it there', () => {
+		const roles = (latency: string, renderThread: string) =>
+			Object.fromEntries(
+				threadRoles({ latency, renderThread, jobWorkers: 1, sketchThread: 'main' }),
+			);
+		expect(roles('pipelined', 'render-worker')).toEqual({
+			main: [Role.Sketch],
+			'render-worker': [Role.Render],
+			'job-0': [Role.Job],
+		});
+		expect(roles('low', 'main')).toEqual({ main: [Role.Sketch, Role.Render], 'job-0': [Role.Job] });
 	});
 });
 
