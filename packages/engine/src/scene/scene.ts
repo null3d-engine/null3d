@@ -1199,10 +1199,9 @@ export class InstanceBatch {
 	/** Removes the batch and frees its rows. Its typed arrays are not valid after this. */
 	destroy(): void {
 		const { core } = this.scene;
-		core.check(core.glue.destroyBatch(this.id, this.scene.frame), 'destroy', undefined, true);
+		core.checkGrowth(core.glue.destroyBatch(this.id, this.scene.frame), 'destroy', undefined, true);
 		if (DEV) this.scene.countBatchRows(-this.count);
 		this.destroyedFrame = this.scene.frame;
-		this.scene.core.refresh();
 	}
 }
 
@@ -1456,7 +1455,7 @@ export class Scene {
 		const { core } = this;
 		const { layers } = options;
 		if (DEV && layers !== undefined) checkLayers('createInstances', layers);
-		const id = core.check(
+		const id = core.checkGrowth(
 			core.glue.createBatch(
 				count,
 				options.dynamic ?? false,
@@ -1466,7 +1465,6 @@ export class Scene {
 			),
 			'createInstances',
 		);
-		core.refresh();
 		if (DEV) this.countBatchRows(count);
 		const batch = new InstanceBatch(this, id, count, options.colors ?? false);
 		batch.setActiveCount(count);
@@ -1538,7 +1536,8 @@ export class Scene {
 	): T {
 		const flags = options.castShadows ? C.FLAG_CAST_SHADOWS : 0;
 		const light = this.create(kind, options, C.CORE_NO_MESH, 0, flags, call);
-		light.id = this.core.check(this.core.glue.createLight(light.handle, type), call, options.name);
+		const { core } = this;
+		light.id = core.checkGrowth(core.glue.createLight(light.handle, type), call, options.name);
 		if (options.color !== undefined) light.paint(call, C.LIGHT_COLOR_MAIN, options.color);
 		const ranged = type === C.LIGHT_KIND_POINT || type === C.LIGHT_KIND_SPOT;
 		for (const [key, which] of LIGHT_NUMBERS) {

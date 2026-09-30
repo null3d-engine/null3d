@@ -10,7 +10,9 @@
 // Math.random to it, steps the sketch to the held time in fixed steps after the setup, and publishes
 // the last frame alone. Hold mode reads no input, so the held frame never depends on it. In
 // development builds, the frame's debug drawing reaches the core just before the frame records;
-// release builds give the sketch calls that do nothing.
+// release builds give the sketch calls that do nothing. Each core step of the frame can grow the
+// engine's memory, so the views of it are made again after each step that sketch code or a
+// development check follows, and at the end of the frame, for code that runs between frames.
 
 import { type Debug, RELEASE_DEBUG } from '../debug/debug';
 import { DebugDraw } from '../debug/draw';
@@ -290,9 +292,6 @@ export class SketchRunner {
 			target = await this.setupFrames;
 		}
 		await reached(slots, Slot.PipelinesBuilt, target);
-		// The sketch's code carries on between frames, after frames that may have grown engine
-		// memory, so its views of that memory are made again first.
-		this.core.refresh();
 	}
 
 	/**
@@ -315,12 +314,8 @@ export class SketchRunner {
 		this.restoreRandom = undefined;
 	}
 
-	/**
-	 * Delivers a message the page sent with engine.postToSketch. It arrives between frames, after
-	 * any frame that grew engine memory, so the sketch's views of that memory are made again first.
-	 */
+	/** Delivers a message the page sent with engine.postToSketch. It arrives between frames. */
 	receive(type: string, data: unknown): void {
-		this.core.refresh();
 		for (const handler of this.messageHandlers) handler(type, data);
 	}
 
@@ -428,6 +423,7 @@ export class SketchRunner {
 		const { glue } = this.sketch;
 		if (late) glue.updateLateTransforms();
 		else glue.updateTransforms();
+		this.core.refresh();
 		this.endPhase(Phase.Transforms);
 	}
 
@@ -446,7 +442,6 @@ export class SketchRunner {
 		time.frame++;
 		const frame = time.frame;
 		this.record.begin(frame);
-		this.core.refresh();
 		this.phaseStart = start;
 		this.readViewport();
 		// The sketch's part of the frame: the input the page wrote, preference changes, the fixed
@@ -482,6 +477,7 @@ export class SketchRunner {
 		// the sketch's update, they would spin through it and sleep again.
 		glue.prepareJobs();
 		if (glue.beginFrame(frame) !== 0) this.report(coreFailure(glue, QUEUED_CHANGE));
+		this.core.refresh();
 		this.endPhase(Phase.Commands);
 		this.updateTransforms(false);
 		if (play && callbacks.onLateUpdate) {
@@ -513,6 +509,7 @@ export class SketchRunner {
 		if (glue.cullFrame(frame, width, height) !== 0) this.report(coreFailure(glue, 'the frame'));
 		this.endPhase(Phase.Cull);
 		if (DEV && this.debugDraw) {
+			this.core.refresh();
 			try {
 				this.debugDraw.flush(width, height);
 			} catch (error) {
@@ -524,6 +521,7 @@ export class SketchRunner {
 		this.record.count(Counter.VisibleEntries, glue.visibleEntries(frame));
 		Atomics.store(slots, Slot.DrawListWords0 + (frame & 1), glue.drawListWords(frame));
 		Atomics.store(slots, Slot.FrameEpoch0 + (frame & 1), epoch);
+		this.core.refresh();
 		this.endPhase(Phase.Record);
 		this.record.commit(performance.now() - start);
 		for (let k = 0; k < this.jobRecords.length; k++) {

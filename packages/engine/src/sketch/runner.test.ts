@@ -41,9 +41,10 @@ const textureOption = (option: number, value: number) => `setTextureOption ${opt
 /**
  * A core that keeps the scene arrays and the command ring in memory, hands out slots, and logs each
  * frame step it takes and each texture setting it gets. Its transform updates clear the dirty bits,
- * as the core's do. Its other calls do nothing.
+ * as the core's do. With `grows`, each frame step grows the memory, which detaches the views of a
+ * memory that is not shared, as the single-threaded build's is. Its other calls do nothing.
  */
-function fakeGlue(log: string[], memory: WebAssembly.Memory): CoreGlue {
+function fakeGlue(log: string[], memory: WebAssembly.Memory, grows = false): CoreGlue {
 	// Each scene field, then each ring field, in its own 4 KB block.
 	const block = (index: number) => 4096 * (index + 1);
 	let slots = 0;
@@ -64,6 +65,7 @@ function fakeGlue(log: string[], memory: WebAssembly.Memory): CoreGlue {
 			kept[name as keyof CoreGlue] ??
 			((...args: number[]) => {
 				if (FRAME_STEPS.has(name)) log.push(name);
+				if (grows && FRAME_STEPS.has(name)) memory.grow(1);
 				if (name === 'setTextureOption') log.push(textureOption(args[0] ?? -1, args[1] ?? -1));
 				if (name === 'updateTransforms' || name === 'updateLateTransforms') clearDirty();
 				return name === 'drawTablesRebuilt' ? false : 0;
@@ -78,6 +80,7 @@ function fakeGlue(log: string[], memory: WebAssembly.Memory): CoreGlue {
 async function start(
 	callbacks: (context: SketchContext, log: string[]) => object,
 	options?: SketchOptions,
+	grows = false,
 ) {
 	const log: string[] = [];
 	const control = controlViews(createControlBuffer(false));
@@ -86,7 +89,7 @@ async function start(
 	control.slotFloats[Slot.PixelRatio] = 2;
 	const memory = new WebAssembly.Memory({ initial: 2 });
 	const runner = new SketchRunner(() => {}, createMetricsBuffer(false, 0), {
-		glue: fakeGlue(log, memory),
+		glue: fakeGlue(log, memory, grows),
 		memory,
 		control,
 		keyCodes: [],
@@ -151,6 +154,30 @@ describe('SketchRunner', () => {
 		runner.step(16);
 		expect(log).not.toContain('updateLateTransforms');
 		expect(log.filter((entry) => entry === 'update')).toHaveLength(2);
+	});
+
+	it('writes through views of the current memory after frame steps that grow it', async () => {
+		const { runner, context } = await start(
+			({ scene }) => {
+				const box = scene.createGroup();
+				return {
+					onUpdate: () => box.setPosition(1, 2, 3),
+					onLateUpdate: () => box.translate(1, 0, 0),
+				};
+			},
+			undefined,
+			true,
+		);
+		const position = (slot: number) => [
+			...context.scene.views.positions.subarray(slot * 3, slot * 3 + 3),
+		];
+		runner.step(0);
+		// The late update runs after the commands and the transform update grew the memory.
+		expect(position(1)).toEqual([2, 2, 3]);
+		// Code between frames runs after the frame's last steps grew it.
+		const other = context.scene.createGroup();
+		other.setPosition(5, 6, 7);
+		expect(position(other.slot)).toEqual([5, 6, 7]);
 	});
 
 	it("gives time.dt the frame's step, which the update and the late update also get", async () => {
