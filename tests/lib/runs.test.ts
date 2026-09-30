@@ -173,6 +173,10 @@ describe('the checks plan', () => {
 		expect(
 			planItems(parseArgs(['--plan', 'parity', 'Safari']))?.some((item) => isLoadPath(item.path)),
 		).toBe(false);
+		// Every timed run of a benchmark page loads the production build, as a developer ships it.
+		expect(
+			planItems(parseArgs(['--plan', 'bench', 'Safari']))?.every((item) => isLoadPath(item.path)),
+		).toBe(true);
 		expect(planItems(parseArgs(['--plan', 'scale', 'Safari']))).toBeUndefined();
 	});
 
@@ -421,7 +425,7 @@ describe('the checks plan', () => {
 	it('fails restarts that fail, or whose memory the browser does not get back', () => {
 		const [restart] = items.filter((item) => item.check.kind === 'restarts');
 		if (!restart) throw new Error('the plan lacks the restart pages');
-		const engine = { cycles: 10, roomLater: 5 };
+		const engine = { cycles: 10, roomLater: 5, roomWaitMs: 31_000 };
 		const result = (fields: object) => ({
 			ok: true,
 			room: 6,
@@ -437,7 +441,7 @@ describe('the checks plan', () => {
 				NONE_MISSING,
 			),
 		).toEqual([
-			'the browser did not get back the memory of stopped engines: it had room for 6 shared memories before 10 starts and stops, and for 2 after',
+			'the browser did not get back the memory of stopped engines within 31 s: it had room for 6 shared memories before 10 starts and stops, and for 2 after',
 		]);
 		const failed = {
 			cycles: 2,
@@ -648,7 +652,7 @@ describe('the bench plan', () => {
 		// Both latency modes run, so a device's results compare them.
 		expect(items[2]).toEqual({
 			id: 'bench-s1-null3d-webgpu-low-1',
-			path: '/bench/pages/null3d/s1.html?gpu=webgpu&latency=low',
+			path: '/__null3d/load/warm/{run}.{runner}.bench/bench/pages/null3d/s1.html?gpu=webgpu&latency=low',
 			timeoutSeconds: 95,
 			check: { kind: 'bench', tier: 'webgpu', scene: 's1', page: 'null3d-webgpu-low' },
 		});
@@ -686,7 +690,7 @@ describe('the bench plan', () => {
 		]);
 		expect(items[3]).toEqual({
 			id: 'bench-s1-null3d-webgl2-jobs4-1',
-			path: '/bench/pages/null3d/s1.html?gpu=webgl2&n=300000&jobs=4',
+			path: '/__null3d/load/warm/{run}.{runner}.bench/bench/pages/null3d/s1.html?gpu=webgl2&n=300000&jobs=4',
 			timeoutSeconds: 95,
 			check: { kind: 'bench', tier: 'webgl2', scene: 's1', page: 'null3d-webgl2', jobs: 4 },
 		});
@@ -704,7 +708,9 @@ describe('the bench plan', () => {
 			'bench-s2-null3d-webgl2-1',
 			'bench-s2-null3d-webgl2-low-1',
 		]);
-		expect(items[1]?.path).toBe('/bench/pages/null3d/s1-static.html?gpu=webgl2&latency=low');
+		expect(items[1]?.path).toBe(
+			'/__null3d/load/warm/{run}.{runner}.bench/bench/pages/null3d/s1-static.html?gpu=webgl2&latency=low',
+		);
 		expect(items[1]?.check).toEqual({
 			kind: 'bench',
 			tier: 'webgl2',
@@ -819,7 +825,7 @@ describe('the memory plan', () => {
 		expect(items[0]).toEqual({
 			id: 'room-256',
 			path: '/tests/pages/shared-memory.html?kinds=dropped&cycles=1&maximum=4096',
-			timeoutSeconds: 60,
+			timeoutSeconds: 90,
 			check: { kind: 'room', maximumMiB: 256 },
 		});
 		expect(items[1]).toEqual({
