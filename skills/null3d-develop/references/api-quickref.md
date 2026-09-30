@@ -114,7 +114,7 @@ export default defineSketch(async (ctx) => {
 
 ## 4. Objects and transforms (`api/objects`)
 
-Every node (group, mesh, camera, instantiated model) has these calls. Lights become nodes with the same calls later in 0.1; until then they have only the calls in section 7.
+Every node (group, mesh, camera, light, instantiated model) has these calls.
 
 ```ts
 obj.setPosition(x, y, z);            obj.getPosition(out);         // out: number[3] or Float32Array
@@ -122,7 +122,7 @@ obj.setRotation(qx, qy, qz, qw);     obj.getRotation(out);         // quaternion
 obj.setRotationEuler(x, y, z, 'XYZ');                               // radians, three.js order names
 obj.rotateX(a); obj.rotateY(a); obj.rotateZ(a);                     // about the object's own axes
 obj.setScale(x, y, z);               obj.translate(x, y, z);       // along the object's own axes, scale ignored
-obj.lookAt(x, y, z);                                                // cameras look down -Z, and so will lights
+obj.lookAt(x, y, z);                                                // cameras and lights look down -Z
 obj.getWorldPosition(out); obj.getWorldQuaternion(out); obj.getWorldMatrix(out);  // last frame; matrix column by column
 obj.setParent(parent);               obj.setParent(parent, { keepWorld: true }); obj.setParent(null);
 obj.setVisible(false);               obj.setDynamic(true);
@@ -186,17 +186,23 @@ camera.worldToScreen(p, out);     // out = [x, y, depth]; depth < 0 means behind
 
 ```ts
 scene.createDirectionalLight({ direction, color, intensity, castShadows,
-  shadow: { cascades, mapSize, bias, normalBias } });
+  shadow: { cascades, mapSize, bias, normalBias } });                       // shadow: later in 0.1
 scene.createPointLight({ position, color, intensity, range, decay, castShadows });  // range is required
 scene.createSpotLight({ position, direction, target, angle, penumbra, range, decay, intensity, castShadows });
 scene.createHemisphereLight({ skyColor, groundColor, intensity });
 scene.createAmbientLight({ color, intensity });
 
-light.setIntensity(v); light.setColor(c); light.setRange(r); light.setDirection(x, y, z);
-light.setCastShadows(true);
+light.setIntensity(v); light.setColor(c);   // every light; only setColor allocates
+light.setDirection(x, y, z);                 // directional and spot lights
+light.setRange(r); light.setDecay(d);        // point and spot lights
+light.setAngle(a); light.setPenumbra(p);     // spot lights
+light.setGroundColor(c);                     // hemisphere lights; setColor sets the sky
+light.setCastShadows(true);                  // directional, point and spot lights
 ```
 
-Units match three.js r155 and later: directional intensity in lux-like units, point and spot intensity in candela. Shadow cascades fit the view by themselves.
+Lights are nodes: they take the node options (`name`, `position`, `parent`, `dynamic`, `layers` and the rest) and have the calls in section 4. Directional and spot lights shine along their -Z axis, so `lookAt` aims them; a hemisphere light's sky is its +Y axis. A light lights a camera's view when their layer masks share a bit. Units match three.js r155 and later: directional intensity in lux-like units, point and spot intensity in candela. Shadow cascades fit the view by themselves.
+
+Later in 0.1: point, spot and hemisphere lights light surfaces (clustered lighting), and shadows draw. Until then, surfaces show the first directional light created and the ambient lights, and `castShadows` is stored.
 
 ## 8. Geometry (`api/geometry`)
 

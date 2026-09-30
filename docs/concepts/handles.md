@@ -35,7 +35,7 @@ Handles are 30 bits because Chrome's JavaScript engine stores integers of up to 
 
 ## Wrapper objects
 
-`Mesh`, `Camera` and `Group` are small classes that hold the scene and a handle. The engine creates one wrapper per object, at the moment you create the object, so frames allocate no wrappers. The directional light and the ambient light have no handle: each one sets a light for the whole scene.
+`Mesh`, `Camera`, `Group` and the light classes are small classes that hold the scene and a handle. The engine creates one wrapper per object, at the moment you create the object, so frames allocate no wrappers.
 
 ```ts
 const crate = scene.createMesh({

@@ -144,8 +144,16 @@ export interface CoreGlue extends CoreErrors {
 	setTextureOption(option: number, value: number): number;
 	/** Draws from a camera object: its lens, and the layers of the objects it draws. */
 	setCamera(camera: number, fovDegrees: number, near: number, far: number, layers: number): number;
-	setSun(dx: number, dy: number, dz: number, r: number, g: number, b: number): number;
-	setAmbient(r: number, g: number, b: number): number;
+	/**
+	 * Adds a row to the light table for the object `handle`; `kind` is one of the `LIGHT_KIND_*`
+	 * codes. Returns the light's id.
+	 */
+	createLight(handle: number, kind: number): number;
+	destroyLight(light: number): number;
+	/** Sets one of a light's linear colors: `which` is one of the `LIGHT_COLOR_*` codes. */
+	setLightColor(light: number, which: number, r: number, g: number, b: number): number;
+	/** Sets one of a light's numbers: `which` is one of the `LIGHT_VALUE_*` codes. */
+	setLightValue(light: number, which: number, value: number): number;
 	setBackground(r: number, g: number, b: number): number;
 }
 
@@ -198,8 +206,10 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'textureStat',
 	'setTextureOption',
 	'setCamera',
-	'setSun',
-	'setAmbient',
+	'createLight',
+	'destroyLight',
+	'setLightColor',
+	'setLightValue',
 	'setBackground',
 ];
 

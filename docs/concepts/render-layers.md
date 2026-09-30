@@ -59,7 +59,7 @@ export default defineSketch(({ scene, geometry, materials, input }) => {
 });
 ```
 
-- The `layers` option sets the mask when you create an object, a batch or a camera. `createMesh`, `createGroup`, `createPerspectiveCamera` and `createInstances` all take it.
+- The `layers` option sets the mask when you create an object, a batch or a camera. `createMesh`, `createGroup`, `createPerspectiveCamera`, `createInstances` and the calls that create lights all take it.
 - `obj.setLayers(mask)` changes an object's layers, and `batch.setLayers(mask)` changes the layers of every row of a batch.
 - `camera.setLayers(mask)` changes the layers that the camera draws.
 - A mask of 0 puts an object on no layer, so no camera draws it.
@@ -90,7 +90,7 @@ A new mask rebuilds none of the engine's tables of what it draws. On WebGPU it r
 | `camera.layers.set(n)` | `camera.setLayers(1 << n)` |
 | `instancedMesh.layers` | `batch.setLayers(mask)`, for every row |
 
-The rule is the same as three.js's: an object draws when its mask and the camera's share a bit. In this version lights have no layers, and every light lights every object.
+The rule is the same as three.js's: an object draws when its mask and the camera's share a bit. Lights follow the rule too: a light lights the camera's view only when its mask and the camera's share a bit.
 
 ## Related pages
 

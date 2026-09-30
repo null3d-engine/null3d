@@ -1,7 +1,7 @@
 //! Frame code allocates nothing: a counting global allocator watches the test thread and every
 //! job worker while whole frames run (structural commands, transforms, batch updates, culling,
-//! cluster builds, parallel loops with arena scratch memory, background tasks, and the frame
-//! handoff).
+//! cluster builds, the frame's lights, parallel loops with arena scratch memory, background
+//! tasks, and the frame handoff).
 #![allow(clippy::disallowed_methods)] // The self-check reads the clock.
 
 mod common;
@@ -20,6 +20,7 @@ use null3d_core::culling::{
 use null3d_core::handle::Handle;
 use null3d_core::instances::BatchTable;
 use null3d_core::jobs::{BackgroundTask, JobConfig, JobSystem, WorkerId};
+use null3d_core::lights::{LightTable, LightView, kind, value};
 use null3d_core::scene::{Command, CommandRing, SceneStorage, flags};
 use null3d_core::snapshot::FrameHandoff;
 use null3d_core::testing::CountingAllocator;
@@ -71,6 +72,8 @@ struct World {
     cluster_scratch: ClusterScratch,
     arenas: ArenaPool,
     handoff: FrameHandoff,
+    /// Lights on the roots, which move with them and hide with them.
+    lights: LightTable,
 }
 
 /// The S2 hierarchy: 14 roots with 3 children each, 6 levels deep.
@@ -101,6 +104,16 @@ fn build() -> World {
         if depth == 0 {
             roots.clone_from(&level);
         }
+    }
+    let mut lights = LightTable::new();
+    for (k, &root) in roots.iter().enumerate() {
+        let light = scene.reserve().unwrap();
+        scene.set_position(light, [0.0, 2.0, 0.0]).unwrap();
+        ring.push(Command::create(light, root, 0, flags::VISIBLE))
+            .unwrap();
+        let light_kind = [kind::POINT, kind::SPOT, kind::DIRECTIONAL, kind::AMBIENT][k % 4];
+        let row = lights.create(light, light_kind).unwrap();
+        lights.set_value(row, value::RANGE, 5.0).unwrap();
     }
     let mut table = BatchTable::with_capacity(4);
     let moving = table.create(20_000, true, true, 2, 2, 0.5).unwrap();
@@ -136,6 +149,7 @@ fn build() -> World {
         },
         arenas: ArenaPool::new(5, FRAME_SCRATCH, CHUNK_SCRATCH),
         handoff: FrameHandoff::new(4096),
+        lights,
     }
 }
 
@@ -262,6 +276,13 @@ fn frame(world: &mut World, jobs: &JobSystem, frame: u32, rng: &mut Rng) {
         .scene
         .cell_table()
         .write_offsets(&camera_at, &mut world.offsets);
+    let light_view = LightView {
+        camera: camera_at,
+        frustum,
+        layers: 0x5555_5555,
+    };
+    world.lights.gather(&world.scene, parity, Some(&light_view));
+    assert!(!world.lights.visible().is_empty());
     let (scene, clusters) = (&world.scene, &world.clusters);
     // The scene's rows have layer masks of their own; the batches' rows share their batch's.
     let sets = |set: u32| match set {
