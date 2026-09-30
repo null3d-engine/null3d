@@ -6,7 +6,7 @@ This guide covers the checks and benchmarks on phones, tablets and the Mac's bro
 
 - The device runner, `tests/real-browsers.ts`, runs a plan of test or benchmark pages in browsers that Playwright cannot drive. Each browser loads the runner page, which opens each page of the plan in a frame and posts its result.
 - The plans are `checks` (the default), `parity`, `bench`, `memory`, `depth`, `scale` and `startup`. `bun run devices` runs the checks on the phone and on the iPad.
-- The runner page fills in its run and its own name where a plan item's address has `{run}` and `{runner}`. The startup plan uses them, so each browser loads under addresses of its own.
+- The runner page fills in its run and its own name where a plan item's address has `{run}` and `{runner}`. The startup, bench and scale plans use them, so each browser loads under addresses of its own.
 - Run one runner at a time. All runs share one file, `target/runs/current.json`, which tells waiting runner pages which run to start. A second runner can replace it before a waiting page reads it, and that page then waits forever.
 - A runner page that waits on the local network reloads itself before each run after its first. No run then inherits memory that an earlier run kept.
 - The runner reports a page that gives no result in time with its last steps. The steps are each worker it started, each step of each worker's start, and the errors it logged. A page that fails reports its steps too.
@@ -26,6 +26,13 @@ This guide covers the checks and benchmarks on phones, tablets and the Mac's bro
 - The texture page, one of those tests, replays every texture command of the GPU layer on each tier. Every tier must draw one image.
 - The image tests read frames through the engine's capture, which does not use the canvas. A frame that never reaches the screen still passes them. After a change to how frames reach the canvas, look at a demo page, and on a phone check `adb logcat` for GL errors.
 - The parity plan's null3D pages use the engine's hold mode, which steps each scene to its hold time before it draws. On a slow device, that adds the update time of 121 frames to each hold page. A page whose sketch fails reports the error at once, with the sketch time where it happened.
+
+## Benchmark runs
+
+- The bench and scale plans load the production build of the benchmark pages, as the benchmark tools on the Mac do. [Benchmarks](benchmarks.md#production-builds) says why.
+- The runner builds the pages into `target/bench-pages` before the run. The dev server serves the build under the load routes, as it serves the startup loads, with one address prefix for each run and runner.
+- The phone over USB and the tablet over the local network both reach the main checkout's dev server, so both load the same build.
+- A dev server that started before the load routes served the benchmark pages cannot serve these plans. The runner then stops and asks you to restart that server.
 
 ## Startup times
 

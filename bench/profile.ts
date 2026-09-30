@@ -5,6 +5,8 @@
 // a JavaScript import, so the engine's own share bounds how much faster such a loop could be. With
 // `--thread sketch` it samples the sketch worker's frame step, whose time splits further by phase.
 // Build the core with `bun tools/build-wasm.ts --names` first, so the core's functions have names.
+// It profiles the production build of the benchmark pages, and names the build's functions through
+// its source maps; `--dev` profiles the dev server's pages, with the engine's development checks.
 // It runs in Chrome on this computer, or with `--android` in Chrome on a phone connected by USB.
 // From the repository root:
 //   bun run bench:profile
@@ -12,7 +14,7 @@
 //   bun run bench:profile --android --n 300000 --thread sketch
 import { chromium } from '@playwright/test';
 import { forwardPort, phoneModel } from '../tests/lib/adb.ts';
-import { DEBUG_PORT, HTTP_PORT, startServer } from '../tests/lib/server.ts';
+import { DEBUG_PORT } from '../tests/lib/server.ts';
 import {
 	attachWorkers,
 	type CallFrame,
@@ -24,8 +26,10 @@ import {
 } from './lib/devtools';
 import { PARITY_SCENES, type ParityScene, pagePath } from './lib/parity';
 import { type CpuProfile, type EntrySplit, splitEntry } from './lib/profile';
+import { DEV_OPTION, pagesText, serveBenchPages } from './lib/serve';
+import type { BuildNames } from './lib/source-names';
 
-/** The engine's source files, as the dev server serves them. */
+/** The engine's source files, as the dev server serves them and as the build's maps name them. */
 const ENGINE_URL = '/packages/engine/src/';
 /** The worker whose time the tool splits, by a part of its script's address. */
 const RENDER_WORKER = 'render-worker';
@@ -68,6 +72,7 @@ interface Options {
 	seconds: number;
 	warmup: number;
 	android: boolean;
+	dev: boolean;
 }
 
 function parseArgs(args: string[]): Options {
@@ -99,6 +104,7 @@ function parseArgs(args: string[]): Options {
 		seconds: number('--seconds', PROFILE_SECONDS),
 		warmup: number('--warmup', WARMUP_SECONDS),
 		android: args.includes('--android'),
+		dev: args.includes(DEV_OPTION),
 	};
 }
 
@@ -138,6 +144,7 @@ async function profileScene(
 	serverUrl: string,
 	scene: ParityScene,
 	options: Options,
+	names: BuildNames | undefined,
 ): Promise<SceneProfile> {
 	const pageSeconds = Math.max(options.warmup, options.seconds + 2 * MARGIN_SECONDS);
 	const switches = `seconds=${pageSeconds}${options.n === null ? '' : `&n=${options.n}`}`;
@@ -153,6 +160,7 @@ async function profileScene(
 		await devtools.send('Profiler.start', {}, worker);
 		await sleep(options.seconds * 1000);
 		const { profile } = await devtools.send<{ profile: CpuProfile }>('Profiler.stop', {}, worker);
+		if (names) for (const node of profile.nodes) node.callFrame = names.name(node.callFrame);
 		const result = await waitForResult(devtools, page, pageSeconds * 1000 + RESULT_TIMEOUT_MS);
 		return { scene, result, split: splitEntry(profile, thread.isEntry, ENGINE_URL) };
 	} finally {
@@ -194,14 +202,14 @@ function report({ scene, result, split }: SceneProfile, name: ThreadName): strin
 
 async function main(): Promise<void> {
 	const options = parseArgs(process.argv.slice(2));
-	const server = await startServer();
+	const server = await serveBenchPages({ dev: options.dev });
 	const stops: (() => Promise<void> | void)[] = [() => server.stop()];
 	try {
 		let device = 'this computer, Chrome';
 		let devtools: DevTools;
 		if (options.android) {
 			device = `${phoneModel()}, Chrome`;
-			forwardPort(HTTP_PORT);
+			forwardPort(Number(new URL(server.url).port));
 			devtools = await connectPhoneChrome(DEBUG_PORT);
 		} else {
 			const browser = await chromium.launch({
@@ -216,10 +224,10 @@ async function main(): Promise<void> {
 		// A benchmark page left open by an earlier run would draw beside the profiled one.
 		await closePagesAt(devtools, `${server.url}/bench/pages/`);
 		console.log(
-			`Profiling the ${THREADS[options.thread].worker.replace('-', ' ')} on ${device}, ${options.gpu}: ${options.seconds} s per scene after at least ${options.warmup} s`,
+			`Profiling the ${THREADS[options.thread].worker.replace('-', ' ')} on ${device}, ${options.gpu}, ${pagesText(options.dev)}: ${options.seconds} s per scene after at least ${options.warmup} s`,
 		);
 		for (const scene of options.scenes) {
-			const profiled = await profileScene(devtools, server.url, scene, options);
+			const profiled = await profileScene(devtools, server.url, scene, options, server.names);
 			console.log(report(profiled, options.thread).join('\n'));
 		}
 	} finally {

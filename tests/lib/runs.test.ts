@@ -173,6 +173,10 @@ describe('the checks plan', () => {
 		expect(
 			planItems(parseArgs(['--plan', 'parity', 'Safari']))?.some((item) => isLoadPath(item.path)),
 		).toBe(false);
+		// Every timed run of a benchmark page loads the production build, as a developer ships it.
+		expect(
+			planItems(parseArgs(['--plan', 'bench', 'Safari']))?.every((item) => isLoadPath(item.path)),
+		).toBe(true);
 		expect(planItems(parseArgs(['--plan', 'scale', 'Safari']))).toBeUndefined();
 	});
 
@@ -647,7 +651,7 @@ describe('the bench plan', () => {
 		// Both latency modes run, so a device's results compare them.
 		expect(items[2]).toEqual({
 			id: 'bench-s1-null3d-webgpu-low-1',
-			path: '/bench/pages/null3d/s1.html?gpu=webgpu&latency=low',
+			path: '/__null3d/load/warm/{run}.{runner}.bench/bench/pages/null3d/s1.html?gpu=webgpu&latency=low',
 			timeoutSeconds: 95,
 			check: { kind: 'bench', tier: 'webgpu', scene: 's1', page: 'null3d-webgpu-low' },
 		});
@@ -685,7 +689,7 @@ describe('the bench plan', () => {
 		]);
 		expect(items[3]).toEqual({
 			id: 'bench-s1-null3d-webgl2-jobs4-1',
-			path: '/bench/pages/null3d/s1.html?gpu=webgl2&n=300000&jobs=4',
+			path: '/__null3d/load/warm/{run}.{runner}.bench/bench/pages/null3d/s1.html?gpu=webgl2&n=300000&jobs=4',
 			timeoutSeconds: 95,
 			check: { kind: 'bench', tier: 'webgl2', scene: 's1', page: 'null3d-webgl2', jobs: 4 },
 		});
@@ -703,7 +707,9 @@ describe('the bench plan', () => {
 			'bench-s2-null3d-webgl2-1',
 			'bench-s2-null3d-webgl2-low-1',
 		]);
-		expect(items[1]?.path).toBe('/bench/pages/null3d/s1-static.html?gpu=webgl2&latency=low');
+		expect(items[1]?.path).toBe(
+			'/__null3d/load/warm/{run}.{runner}.bench/bench/pages/null3d/s1-static.html?gpu=webgl2&latency=low',
+		);
 		expect(items[1]?.check).toEqual({
 			kind: 'bench',
 			tier: 'webgl2',

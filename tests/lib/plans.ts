@@ -152,8 +152,15 @@ export interface BenchSwitches {
 }
 
 /**
- * The runner page's item for a timed run of one benchmark page, S1 unless `scene` names another.
- * The item needs the GPU interface the page draws with, so a device that lacks it skips the page.
+ * The benchmark pages' production build, which timed runs load under one address prefix of the
+ * runner's own, so they measure the engine as a developer ships it: without development checks.
+ */
+const BENCH_BUILD: Load = { kind: 'warm', key: runnerKey('bench') };
+
+/**
+ * The runner page's item for a timed run of one benchmark page, S1 unless `scene` names another,
+ * from the production build. The item needs the GPU interface the page draws with, so a device
+ * that lacks it skips the page.
  */
 export function benchItem(
 	id: string,
@@ -167,7 +174,7 @@ export function benchItem(
 	const tier = gpuApiOfPage(page);
 	return {
 		id,
-		path: pagePath(scene, page, switches.join('&')),
+		path: loadPath(BENCH_BUILD, pagePath(scene, page, switches.join('&')).slice(1)),
 		timeoutSeconds: (seconds === undefined ? WARMUP_SECONDS + MEASURE_SECONDS : 2 * seconds) + 60,
 		check: { kind: 'bench', tier, scene, page, ...(jobs !== undefined && { jobs }) },
 	};
