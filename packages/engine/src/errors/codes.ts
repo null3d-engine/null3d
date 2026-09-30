@@ -264,6 +264,13 @@ const DOCS = {
 			'E1413: assets.loadTexture() could not read https://cdn.example.com/brick.png: its server did not allow this page to read it, or could not be reached (Failed to fetch).',
 		since: '0.1',
 	},
+	E1414: {
+		title: 'Frame not captured',
+		cause:
+			'engine.capture() could not give an image of a frame. The engine had stopped, or the thread that draws could not read the frame back from the GPU or encode it.',
+		example: 'E1414: engine.capture() failed: the engine has stopped.',
+		since: '0.1',
+	},
 	E1501: {
 		title: 'Render space full',
 		cause:

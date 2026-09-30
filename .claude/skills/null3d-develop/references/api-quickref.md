@@ -64,7 +64,7 @@ engine.onFailure((error) => { /* error.code: E1302 GPU lost for good, E1404 engi
 engine.simulateGpuLoss();                         // acts out a driver reset; the engine recovers
 await engine.destroy();                 // workers stop; wait before this page starts another engine
 
-const image = await engine.capture();             // later in 0.1: a Blob of the next complete frame
+const image = await engine.capture();             // PNG Blob of the next frame; E1414 after destroy()
 engine.labels.bind('hp-12', element);             // (0.2) HTML label that follows an object
 await engine.requestPointerLock();                // (0.2) for first-person controls
 // engine.registerVideo and textures.fromVideo come after 1.0; recipe 14 shows the workaround

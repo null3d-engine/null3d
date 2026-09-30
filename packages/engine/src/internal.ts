@@ -1,7 +1,12 @@
 // Engine internals that the repository's own tests and tools use. Not part of the public API.
 
-export type { GlslProgram, ShaderVariant } from './generated/shaders';
-export { SHADERS } from './generated/shaders';
+export type {
+	DeviceShaders,
+	GlslProgram,
+	ShaderVariant,
+	ShaderVariants,
+} from './generated/shaders';
+export { everyShader, loadGlslShaders, loadWgslShaders, SHADERS } from './generated/shaders';
 export { readbackWebGL2, readbackWebGPU } from './gpu/readback';
 export { WebGL2Backend } from './gpu/webgl2/backend';
 export type { GlslTemplate } from './gpu/webgl2/programs';
