@@ -138,7 +138,7 @@ export interface WebGL2Report {
 	 * the format takes, or 0 where the device does not render into it. WebGL2 renders into both
 	 * formats with `EXT_color_buffer_float`, and into the 16-bit one with
 	 * `EXT_color_buffer_half_float`. The engine draws high dynamic range color where the 16-bit
-	 * format passes both tests and takes 4 samples. Null without WebGL2.
+	 * format passes both tests, and with MSAA takes 4 samples. Null without WebGL2.
 	 */
 	floatRenderTargets: {
 		rgba16f: { complete: boolean; readsBack: boolean; samples: number };

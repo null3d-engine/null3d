@@ -40,7 +40,7 @@ try {
 
 | Code | Cause |
 | --- | --- |
-| [E1213](../errors/E1213.md) | The `preset` option names no preset, or `maxPixelRatio` is not a number from 0.5 up. |
+| [E1213](../errors/E1213.md) | The `preset` option names no preset, `maxPixelRatio` is not a number from 0.5 up, or `antialias` is not `'msaa'`, `'fxaa'` or `'none'`. |
 | [E1409](../errors/E1409.md) | The `memory` option asks for a maximum that is not a whole number of MiB from 256 to 4096. |
 | [E1303](../errors/E1303.md) | The browser runs WebAssembly without SIMD. |
 | [E1301](../errors/E1301.md) | The browser has no usable GPU path, or no path that `gpu` or `?gpu=` asks for. |
@@ -60,6 +60,7 @@ An error that the sketch's setup throws also rejects the start ([Sketch API](ske
 | --- | --- | --- |
 | `preset` | `'auto'` | The quality preset, which the engine chooses for the device unless the page names one: [Quality presets](../concepts/quality-presets.md) |
 | `maxPixelRatio` | The preset's cap | Caps the screen's pixel ratio that the engine draws at, in place of the preset's cap |
+| `antialias` | The preset's mode | `'msaa'`, `'fxaa'` or `'none'`, in place of the preset's anti-aliasing mode: [GPU tiers and backends](../concepts/backends.md#color-and-anti-aliasing-on-each-tier) |
 | `gpu` | `'auto'` | Forces a GPU path, for tests only. The `?gpu=` switch in the page's address wins over it. |
 | `powerPreference` | `'high-performance'` | Picks the GPU on a device that has two. `'low-power'` saves battery. |
 | `latency` | `'pipelined'` | The latency mode, `'pipelined'` or `'low'`: [Architecture](../concepts/architecture.md) |
@@ -199,7 +200,7 @@ The GPU path the engine chose, and what it offers.
 | `threaded: boolean` | True when the engine runs the threaded build. |
 | `features: string[]` | The optional features of the GPU path: WebGPU features, or the WebGL2 extensions present. |
 | `limits: Record<string, number \| null>` | The WebGPU limits, or an empty object on WebGL2. |
-| `hdr: boolean` | True when the scene draws high dynamic range color, which the final pass tone maps into the canvas. False on the 8-bit path, where each shader tone maps its own output: in WebGPU's compatibility mode, and on WebGL2 devices that cannot draw float targets with antialiasing. Both paths show the same colors. Antialiased edges differ a little, because the 8-bit path averages them after the tone mapping. |
+| `hdr: boolean` | True when the scene draws high dynamic range color, which the final pass tone maps into the canvas. False on the 8-bit path, where each shader tone maps its own output: in WebGPU's compatibility mode with MSAA, and on WebGL2 devices whose float targets fail the engine's test. Both paths show the same colors. Edges differ a little with MSAA, because the 8-bit path averages the samples after the tone mapping. |
 | `maxInstances: number` | The most objects and instance rows, counted together, that a scene can draw on this device. On WebGPU every device draws at least 2,097,152, and a device with larger GPU buffers draws more, up to 8,388,480. On WebGL2 the number follows the largest texture the device allows: 2,097,152 at 4,096 pixels, and 1,048,576 at the 2,048 that every WebGL2 device allows. Engine memory can run out first: see E1109. |
 | `depth: DepthMode` | How the GPU path stores depth. WebGPU, and WebGL2 in browsers with `EXT_clip_control`, draw `reversed` depth, which stays precise far from the camera. |
 
@@ -246,7 +247,7 @@ Options for `createEngine`.
 | `gpu?: 'auto' \| 'webgpu' \| 'webgl2'` | Forces a GPU tier, for testing only. |
 | `powerPreference?: 'high-performance' \| 'low-power'` | Which GPU to draw with on a device that has two, such as a laptop with a separate graphics chip: `high-performance`, the default, for the faster one, or `low-power` to save battery. The browser treats it as a request. A device with one GPU ignores it. |
 | `latency?: LatencyMode` | The latency mode. The default is `pipelined`. |
-| `antialias?: 'msaa' \| 'fxaa' \| 'none'` | How the engine smooths the edges of what it draws: `msaa`, the default, draws 4 samples per pixel; `fxaa` smooths edges in the final pass, which costs less on phones; `none` leaves them sharp. Each mode works on every GPU path. The mode is fixed while the engine runs. Another value fails with E1213. |
+| `antialias?: 'msaa' \| 'fxaa' \| 'none'` | How the engine smooths the edges of what it draws: `msaa` draws 4 samples per pixel, `fxaa` smooths edges in the final pass, and `none` leaves them sharp. Without it, the quality preset sets the mode: FXAA on Low, MSAA from Medium up. Each mode works on every GPU path, and the mode stays fixed while the engine runs. Another value fails with E1213. |
 | `transparent?: boolean` | True for a see-through canvas: the page shows through wherever no object draws, until the sketch sets a background color. The canvas holds premultiplied alpha, as a browser composites it. The default is false, an opaque canvas. |
 | `memory?: { maximumMiB: number; }` | The engine's memory. `maximumMiB` sets the most memory that the engine's threads share, in MiB: a whole number from 256 to 4096, 1024 by default. Another value fails with E1409. The browser reserves address space for the whole maximum when the engine starts. So a larger maximum leaves less room for other engines and WebAssembly modules on the page. Ask for more only when a scene needs it. The single-threaded build's memory is not shared, so this option does not change it. The `?memory=<MiB>` switch wins over it. |
 | `onProgress?: (stage: StartupStage) => void` | Called as the start reaches each stage, in this order: `core` once the engine core is compiled and the GPU paths are tested, `sketch` once the sketch's setup has run, and `first-frame` once the GPU has finished the first frame. |
@@ -385,7 +386,7 @@ What the browser's WebGL2 offers, in `CapabilityReport.webgl2`.
 | `maxTextureSize: number \| null` | The largest texture width and height in pixels, or null without WebGL2. |
 | `maxUniformBlockSize: number \| null` | The largest uniform block in bytes, or null without WebGL2. |
 | `sharedMemoryUploads: { bufferSubData: boolean; texSubImage2D: boolean; } \| null` | Whether WebGL accepts views on shared memory for buffer and texture uploads. Null without shared memory. |
-| `floatRenderTargets: { rgba16f: { complete: boolean; readsBack: boolean; samples: number; }; rgba32f: { complete: boolean; readsBack: boolean; samples: number; }; } \| null` | Whether the device renders into float textures, which high dynamic range color needs. The engine tests a 16-bit and a 32-bit float RGBA texture. `complete` says whether a framebuffer with the texture is complete. `readsBack` says whether a clear to a known color, with a value above 1, reads back as floats. `samples` is the most samples per pixel for antialiasing that the format takes, or 0 where the device does not render into it. WebGL2 renders into both formats with `EXT_color_buffer_float`, and into the 16-bit one with `EXT_color_buffer_half_float`. The engine draws high dynamic range color where the 16-bit format passes both tests and takes 4 samples. Null without WebGL2. |
+| `floatRenderTargets: { rgba16f: { complete: boolean; readsBack: boolean; samples: number; }; rgba32f: { complete: boolean; readsBack: boolean; samples: number; }; } \| null` | Whether the device renders into float textures, which high dynamic range color needs. The engine tests a 16-bit and a 32-bit float RGBA texture. `complete` says whether a framebuffer with the texture is complete. `readsBack` says whether a clear to a known color, with a value above 1, reads back as floats. `samples` is the most samples per pixel for antialiasing that the format takes, or 0 where the device does not render into it. WebGL2 renders into both formats with `EXT_color_buffer_float`, and into the 16-bit one with `EXT_color_buffer_half_float`. The engine draws high dynamic range color where the 16-bit format passes both tests, and with MSAA takes 4 samples. Null without WebGL2. |
 | `renderer: string \| null` | Reported for the record only; the engine never branches on it. |
 | `error?: string` | Why the probe failed, when it did. |
 

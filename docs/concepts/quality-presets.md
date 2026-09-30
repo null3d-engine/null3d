@@ -8,7 +8,7 @@ summary: "Low to Ultra; pixel-ratio caps; the frame-budget governor; quality eve
 
 # Quality presets, dynamic resolution and frame budgets
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. The engine chooses a preset, applies its pixel ratio cap and its memory maximum, and reports it. The settings that the table below marks as planned are not built yet. Neither are dynamic resolution, the frame-budget governor, the warm-up check that lowers a preset on a slow GPU, or `quality.setPreset`. Coding agents must not use them.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. The engine chooses a preset, applies its pixel ratio cap, its anti-aliasing mode and its memory maximum, and reports it. The settings that the table below marks as planned are not built yet. Neither are dynamic resolution, the frame-budget governor, the warm-up check that lowers a preset on a slow GPU, or `quality.setPreset`. Coding agents must not use them.
 
 ```mermaid
 flowchart TD
@@ -105,7 +105,7 @@ Each value is a starting point, which measurements on phones, tablets and deskto
 | --- | --- | --- | --- | --- | --- | --- |
 | Pixel ratio cap (`maxPixelRatio`) | 1.5 | 2 | 2 | none | during play | built |
 | Lowest render scale (`minRenderScale`) | 0.5 | 0.6 | 0.75 | 1 | during play | planned |
-| Anti-aliasing (`antialias`) | FXAA | MSAA 4x | MSAA 4x | MSAA 4x | at the start | planned |
+| Anti-aliasing (`antialias`) | FXAA | MSAA 4x | MSAA 4x | MSAA 4x | at the start | built |
 | Shadow cascades (`shadowCascades`) | 1 | 2 | 3 | 4 | at the start | planned |
 | Shadow map size in texels (`shadowMapSize`) | 1024 | 2048 | 2048 | 4096 | at the start | planned |
 | Shadow filter (`shadowFilter`) | 3 x 3 taps | 3 x 3 taps | 5 x 5 taps | 5 x 5 taps | at the start | planned |
@@ -122,6 +122,8 @@ Each value is a starting point, which measurements on phones, tablets and deskto
 <!-- null3d:preset-settings:end -->
 
 The pixel ratio cap is the cheapest large saving on phones. The GPU fills each device pixel, and a screen's device pixels grow with the square of its ratio. So a ratio of 3 fills 2.25 times the pixels of a ratio of 2. The `maxPixelRatio` option of `createEngine` replaces the preset's cap, and `quality.set({ maxPixelRatio })` changes it during play.
+
+Low smooths edges with FXAA, and the other presets with MSAA. MSAA draws 4 samples per pixel, which costs a phone's GPU memory and bandwidth. FXAA draws one sample and smooths edges in the final pass, at a small cost in sharpness. The `antialias` option of `createEngine` replaces the preset's mode. The mode then stays fixed while the engine runs, because the scene's targets and pipelines depend on it. [GPU tiers and backends](backends.md#color-and-anti-aliasing-on-each-tier) compares the modes.
 
 The engine makes its memory while it tests the GPU paths. So the memory maximum follows the starting preset and the crashed starts, and the GPU path does not cap it. The `memory` option of `createEngine` replaces it: [Page API](../api/engine.md#memory).
 

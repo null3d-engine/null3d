@@ -31,8 +31,8 @@ Versions: the HDR scene buffer, the final pass and `post.set({ toneMapping, expo
 | `UnrealBloomPass(resolution, strength, radius, threshold)` | `bloom: { strength, radius, threshold }` (0.2) | `resolution` is not needed: bloom runs at half resolution |
 | `SSAOPass` (`kernelRadius`, `minDistance`, `maxDistance`) | `ao: { radius, intensity }` (0.2) | GTAO on High and Ultra presets; start with radius in world units about the original kernel radius |
 | `SAOPass`, `GTAOPass`, N8AO | `ao: { radius, intensity }` (0.2) | Same |
-| `FXAAPass`, `ShaderPass(FXAAShader)` | `fxaa: true` (0.2) | Every tier draws with MSAA now; the preset picks the mode later in 0.1 |
-| `SMAAPass`, `SSAARenderPass` | MSAA, which every tier draws now, or `fxaa: true` (0.2) | No SMAA or SSAA |
+| `FXAAPass`, `ShaderPass(FXAAShader)` | `createEngine({ antialias: 'fxaa' })` on the page | FXAA runs inside the final pass; the Low preset uses it |
+| `SMAAPass`, `SSAARenderPass` | MSAA, which the presets from Medium use, or `createEngine({ antialias: 'fxaa' })` | No SMAA or SSAA |
 | `TAARenderPass` | Not in 1.0 | MSAA meanwhile |
 | `OutlinePass` (`edgeStrength`, `edgeThickness`, `visibleEdgeColor`, `hiddenEdgeColor`, `pulsePeriod`, `selectedObjects`) | `outline: { color, thickness }` and `obj.setOutlined(true)` (0.2) | Hidden-edge color and pulsing: custom effect or after 1.0 |
 | `LUTPass` with `LUTCubeLoader` or `LUT3dlLoader` | `lut: await assets.loadLut(url)` (0.2) | |
@@ -49,7 +49,7 @@ Versions: the HDR scene buffer, the final pass and `post.set({ toneMapping, expo
 | `EffectComposer`, `RenderPass`, `EffectPass` | Nothing: settings go in `post.set` (later in 0.1 for tone mapping, 0.2 for effects) |
 | `BloomEffect` (`intensity`, `luminanceThreshold`, `luminanceSmoothing`, `mipmapBlur`) | `bloom: { strength: intensity, threshold: luminanceThreshold }` (0.2); smoothing and mip blur are built in |
 | `ToneMappingEffect` (`mode`) | `toneMapping` (later in 0.1) |
-| `SMAAEffect`, `FXAAEffect` | MSAA, which every tier draws now, or `fxaa: true` (0.2) |
+| `SMAAEffect`, `FXAAEffect` | MSAA, which the presets from Medium use, or `createEngine({ antialias: 'fxaa' })` |
 | `VignetteEffect` (`offset`, `darkness`) | `vignette: { amount }` (0.2); tune until it matches |
 | `SSAOEffect`, N8AO | `ao` (0.2) |
 | `LUT3DEffect` | `lut` (0.2) |
@@ -63,7 +63,7 @@ Versions: the HDR scene buffer, the final pass and `post.set({ toneMapping, expo
 | --- | --- |
 | `new PostProcessing(renderer)`, `pass(scene, camera)`, `postProcessing.outputNode = ...` | `post.set` (later in 0.1 for tone mapping, 0.2 for effects) |
 | `bloom(node, strength, radius, threshold)` | `bloom: { strength, radius, threshold }` (0.2) |
-| `fxaa(node)`, `smaa(node)` | `fxaa: true` (0.2), or MSAA, which every tier draws now |
+| `fxaa(node)`, `smaa(node)` | `createEngine({ antialias: 'fxaa' })`, or MSAA, which the presets from Medium use |
 | `ao(...)`, `gtao(...)` | `ao` (0.2) |
 | `dof(...)`, `ssr(...)` | Not in 1.0 |
 | Custom node graphs on the scene color | `post.addEffect` in WGSL (0.2) |

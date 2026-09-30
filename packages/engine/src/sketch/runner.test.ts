@@ -98,7 +98,7 @@ async function start(
 			transparent: false,
 		},
 		capabilities: CAPABILITIES,
-		quality: { preset: 'medium', settings: { maxPixelRatio: 2 } },
+		quality: { preset: 'medium', settings: { maxPixelRatio: 2, antialias: 'msaa' } },
 		applyQuality: () => {},
 		sendImage: () => {},
 		pageUrl: 'http://localhost/',

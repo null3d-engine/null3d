@@ -4,7 +4,6 @@ import { FORMAT_CANVAS, FORMAT_RG11B10_UFLOAT, FORMAT_RGBA16_FLOAT } from '../ge
 import type { Tier } from '../render/renderer';
 import {
 	type AntialiasMode,
-	antialiasOption,
 	type CoreDevice,
 	coreDevice,
 	DEPTH_WITHOUT_CLIP_CONTROL,
@@ -134,21 +133,6 @@ describe('sceneColorFormat', () => {
 			C.CAPABILITY_TRANSIENT_ATTACHMENTS,
 		);
 		expect(coreDevice('webgpu', report({}), PLAIN).capabilities).toBe(0);
-	});
-});
-
-describe('antialiasOption', () => {
-	it('takes each mode, and MSAA where the page names none', () => {
-		expect(antialiasOption(undefined)).toBe('msaa');
-		for (const mode of ['msaa', 'fxaa', 'none'] as const) expect(antialiasOption(mode)).toBe(mode);
-	});
-
-	it('refuses any other value with E1213', () => {
-		for (const value of ['smaa', 'MSAA', 4, true, null, 'toString'])
-			expect(() => antialiasOption(value)).toThrow('E1213');
-		expect(() => antialiasOption('taa')).toThrow(
-			`createEngine() got the anti-aliasing mode "taa", which is not 'msaa', 'fxaa' or 'none'.`,
-		);
 	});
 });
 

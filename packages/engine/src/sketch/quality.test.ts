@@ -11,7 +11,7 @@ beforeEach(() => setErrorFixes(ERROR_FIXES));
 function medium() {
 	const applied: QualitySettings[] = [];
 	const quality = new SketchQuality(
-		{ preset: 'medium', settings: { maxPixelRatio: 2 } },
+		{ preset: 'medium', settings: { maxPixelRatio: 2, antialias: 'msaa' } },
 		(settings) => applied.push(settings),
 	);
 	return { quality, applied };
@@ -21,7 +21,7 @@ describe('SketchQuality', () => {
 	it('starts with the preset and the settings that the page chose', () => {
 		const { quality, applied } = medium();
 		expect(quality.preset).toBe('medium');
-		expect(quality.settings).toEqual({ maxPixelRatio: 2 });
+		expect(quality.settings).toEqual({ maxPixelRatio: 2, antialias: 'msaa' });
 		expect(quality.takeChange()).toBe(false);
 		expect(applied).toEqual([]);
 	});
@@ -30,7 +30,7 @@ describe('SketchQuality', () => {
 		const { quality, applied } = medium();
 		quality.set({ maxPixelRatio: 1.25 });
 		expect(quality.settings.maxPixelRatio).toBe(1.25);
-		expect(applied).toEqual([{ maxPixelRatio: 1.25 }]);
+		expect(applied).toEqual([{ maxPixelRatio: 1.25, antialias: 'msaa' }]);
 		expect(quality.takeChange()).toBe(true);
 		expect(quality.takeChange()).toBe(false);
 	});
@@ -39,7 +39,10 @@ describe('SketchQuality', () => {
 		const { quality, applied } = medium();
 		quality.set({ maxPixelRatio: 1 });
 		quality.set({ maxPixelRatio: Number.POSITIVE_INFINITY });
-		expect(applied).toEqual([{ maxPixelRatio: 1 }, { maxPixelRatio: Number.POSITIVE_INFINITY }]);
+		expect(applied).toEqual([
+			{ maxPixelRatio: 1, antialias: 'msaa' },
+			{ maxPixelRatio: Number.POSITIVE_INFINITY, antialias: 'msaa' },
+		]);
 	});
 
 	it('notes no change when a setting keeps its value', () => {
@@ -54,8 +57,9 @@ describe('SketchQuality', () => {
 	it('refuses a setting or a value that it does not take with E1213, and changes nothing', () => {
 		const { quality, applied } = medium();
 		expect(() => quality.set({ maxPixelRatio: 0 })).toThrow('E1213');
-		expect(() => quality.set({ antialias: 'fxaa' } as Partial<QualitySettings>)).toThrow('E1213');
-		expect(quality.settings).toEqual({ maxPixelRatio: 2 });
+		// The anti-aliasing mode is fixed when the engine starts.
+		expect(() => quality.set({ antialias: 'fxaa' })).toThrow('fixed when the engine starts');
+		expect(quality.settings).toEqual({ maxPixelRatio: 2, antialias: 'msaa' });
 		expect(applied).toEqual([]);
 		expect(quality.takeChange()).toBe(false);
 	});

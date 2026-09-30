@@ -12,8 +12,8 @@ interface QualityResult {
 	mode: { preset: string; crashedStarts: number; memoryMaximumMiB: number | null };
 	tier: string;
 	hints: { coarsePointer: boolean; screenMinEdge: number; deviceMemoryGB: number | null };
-	sketch: { preset: string; settings: { maxPixelRatio: number | null } };
-	changed?: { maxPixelRatio: number };
+	sketch: { preset: string; settings: { maxPixelRatio: number | null; antialias: string } };
+	changed?: { maxPixelRatio: number; antialias: string };
 	refused?: string;
 	notesAtFirstFrame: string[] | null;
 	notesAfterWait?: string[] | null;
@@ -59,6 +59,7 @@ for (const gpu of ['webgpu', 'compat', 'webgl2'] as const) {
 			expect(result.sketch.settings.maxPixelRatio ?? Number.POSITIVE_INFINITY).toBe(
 				PIXEL_RATIO_CAPS[expected] as number,
 			);
+			expect(result.sketch.settings.antialias).toBe(expected === 'low' ? 'fxaa' : 'msaa');
 			expect(result.mode.memoryMaximumMiB).toBe(1024);
 			// The switch fixes the preset for tests, so the start keeps no crash note.
 			expect(result.mode.crashedStarts).toBe(0);
@@ -165,14 +166,28 @@ test('a sketch changes its pixel ratio cap, and hears of the change', async ({ p
 		page,
 		`gpu=webgpu&set=${JSON.stringify({ maxPixelRatio: 1.25 })}`,
 	);
-	expect(result.changed).toEqual({ maxPixelRatio: 1.25 });
+	expect(result.changed).toEqual({ maxPixelRatio: 1.25, antialias: 'msaa' });
 	expect(result.refused).toBeUndefined();
 });
 
 test('a sketch that changes a setting the engine does not take gets E1213', async ({ page }) => {
-	const result = await openQuality(page, `gpu=webgpu&set=${JSON.stringify({ antialias: 'fxaa' })}`);
+	const result = await openQuality(page, `gpu=webgpu&set=${JSON.stringify({ shadows: 2 })}`);
 	expect(result.changed).toBeUndefined();
 	expect(result.refused).toContain(
-		'E1213: quality.set() got "antialias", which is not a setting it takes. It takes maxPixelRatio.',
+		'E1213: quality.set() got "shadows", which is not a setting it takes. It takes maxPixelRatio.',
+	);
+});
+
+test("the page's antialias option replaces the preset's mode, which a sketch cannot change", async ({
+	page,
+}) => {
+	const result = await openQuality(
+		page,
+		`gpu=webgpu&preset=low&antialias=msaa&set=${JSON.stringify({ antialias: 'fxaa' })}`,
+	);
+	expect([result.mode.preset, result.sketch.settings.antialias]).toEqual(['low', 'msaa']);
+	expect(result.changed).toBeUndefined();
+	expect(result.refused).toContain(
+		'E1213: quality.set() got antialias, which is fixed when the engine starts. Set it with the antialias option of createEngine().',
 	);
 });

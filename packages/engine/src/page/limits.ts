@@ -6,7 +6,6 @@
 // instance rows a scene can draw, and past how many development builds warn that other devices of
 // the same GPU path draw fewer.
 
-import { EngineError } from '../errors/engine-error';
 import * as C from '../generated/core';
 import { FORMAT_CANVAS, FORMAT_RG11B10_UFLOAT, FORMAT_RGBA16_FLOAT } from '../generated/gpu';
 import type { Tier } from '../render/renderer';
@@ -24,21 +23,6 @@ const ANTIALIAS_CODES: Record<AntialiasMode, number> = {
 	fxaa: C.ANTIALIAS_FXAA,
 	msaa: C.ANTIALIAS_MSAA,
 };
-
-/**
- * The anti-aliasing mode that `createEngine`'s option names, and MSAA where it names none. Throws
- * E1213 for any other value.
- */
-export function antialiasOption(value: unknown): AntialiasMode {
-	if (value === undefined) return 'msaa';
-	if (typeof value === 'string' && Object.hasOwn(ANTIALIAS_CODES, value))
-		return value as AntialiasMode;
-	const shown = typeof value === 'string' ? `"${value}"` : String(value);
-	throw new EngineError(
-		'E1213',
-		`createEngine() got the anti-aliasing mode ${shown}, which is not 'msaa', 'fxaa' or 'none'.`,
-	);
-}
 
 /** The parts of the capability report that decide how the engine uses the device. */
 export interface DeviceReport {

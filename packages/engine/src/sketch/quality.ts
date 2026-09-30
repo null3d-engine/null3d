@@ -3,7 +3,12 @@
 // settings their first values. A sketch changes the settings that can change during play, and the
 // engine applies each change from the next frame on.
 
-import { checkSettings, type QualityPreset, type QualitySettings } from '../quality/presets';
+import {
+	checkSettings,
+	LIVE_SETTINGS,
+	type QualityPreset,
+	type QualitySettings,
+} from '../quality/presets';
 
 /** The preset and the settings that the page starts a sketch with. */
 export interface QualityStart {
@@ -53,7 +58,7 @@ export class SketchQuality implements Quality {
 	}
 
 	set(settings: Partial<QualitySettings>): void {
-		checkSettings('quality.set()', settings);
+		checkSettings('quality.set()', settings, LIVE_SETTINGS);
 		const current = this.settings as unknown as Record<string, unknown>;
 		let changed = false;
 		for (const [name, value] of Object.entries(settings)) {

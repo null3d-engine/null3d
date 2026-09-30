@@ -20,11 +20,6 @@ export const PLANNED_SETTINGS = {
 		changes: 'live',
 		values: { min: 0.25, max: 1 },
 	},
-	antialias: {
-		presets: ['fxaa', 'msaa', 'msaa', 'msaa'],
-		changes: 'start',
-		values: ['none', 'fxaa', 'msaa'],
-	},
 	shadowCascades: {
 		presets: [1, 2, 3, 4],
 		changes: 'start',
