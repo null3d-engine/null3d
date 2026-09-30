@@ -6,8 +6,11 @@
 //! shader reads the record of `gl_DrawID`. Without the extension, each draw binds its own record.
 //!
 //! Each view has a ring of frame uniforms and a ring of draw records, whose slots move on only
-//! when the frame writes new data, as the index list textures' slots do.
+//! when the frame writes new data, as the index list textures' slots do. A frame uniform's slot
+//! also holds the offset from the view's camera to each cell in use, which the vertex shader adds
+//! to an instance's matrix, so it draws positions relative to the camera.
 
+use null3d_core::cells::MAX_CELLS;
 use null3d_gpu::caps::OFFSET_ALIGNMENT;
 use null3d_gpu::drawlist::{
     DrawList, Op, buffer_usage as usage, index_format, layout as bind_layout, permutation,
@@ -17,14 +20,22 @@ use null3d_gpu::drawlist::{
 use super::data::{RING, RingSlot};
 use super::ids;
 use super::layout::{Draw, Layout, MULTI_DRAW_BLOCK_BYTES, run_end};
-use crate::frame::{MeshBuffers, PipelineTable, RecordError, UploadArena, grown_size, put_u32};
+use crate::frame::{
+    CELL_OFFSET_BYTES, CellOffsets, MeshBuffers, PipelineTable, RecordError, UploadArena,
+    grown_size, put_u32,
+};
 use crate::frame_data::FrameUniform;
 use crate::frame_graph::SceneTargets;
 use crate::view::{ViewFrame, ViewId};
 
-/// Bytes of one frame's slot in a view's ring of frame uniforms: the uniform block, aligned for
-/// binding.
-const FRAME_SLOT_BYTES: u32 = OFFSET_ALIGNMENT;
+/// Where a frame's slot in a view's ring of frame uniforms holds the offset from the camera to
+/// each cell: after the uniform block, aligned for binding.
+const OFFSETS_AT: u32 = OFFSET_ALIGNMENT;
+/// Bytes of the offsets from the camera to the cells, as the vertex shader's block holds them.
+pub(super) const OFFSETS_BYTES: u32 = MAX_CELLS * CELL_OFFSET_BYTES;
+/// Bytes of one frame's slot in a view's ring of frame uniforms: the uniform block, then the
+/// offsets.
+const FRAME_SLOT_BYTES: u32 = OFFSETS_AT + OFFSETS_BYTES;
 
 /// The ring slots a view's frame draws from.
 #[derive(Clone, Copy, Debug, Default)]
@@ -38,11 +49,12 @@ struct FrameSlots {
 }
 
 /// A view's ring of frame uniforms and its draw record buffer.
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Debug, Default)]
 struct ViewDraws {
-    /// The frame uniform's slot, and the block the ring last received.
+    /// The frame uniform's slot, and the block and the cell offsets the ring last received.
     uniform: RingSlot,
     uploaded: FrameUniform,
+    offsets_uploaded: CellOffsets,
     /// Bytes of the draw record buffer, 0 before it exists.
     draws_bytes: u32,
     /// The slots of the frame being recorded.
@@ -57,12 +69,14 @@ pub(super) struct Opaque {
     multi_draw: bool,
 }
 
-/// What a view's frame draws from: the view's values, the slots that the streamed ring and the
-/// view's index list took, and where each bucket's slice of the view's index list starts.
+/// What a view's frame draws from: the view's values and cell offsets, the slots that the
+/// streamed ring and the view's index list took, and where each bucket's slice of the view's index
+/// list starts.
 #[derive(Clone, Copy, Debug)]
 pub(super) struct ViewUpload<'a> {
     pub(super) frame: u32,
     pub(super) values: &'a ViewFrame,
+    pub(super) offsets: &'a CellOffsets,
     pub(super) streamed: u32,
     pub(super) listed: u32,
     /// True when the index list differs from the one the slot held, so the draw records do too.
@@ -174,7 +188,8 @@ impl Opaque {
     }
 
     /// Creates the ring of frame uniforms of each view from the first one without it up to
-    /// `views`, with the group that binds it and the material table.
+    /// `views`, with the group that binds its uniform block, its cell offsets and the material
+    /// table.
     pub(super) fn add_views(
         &mut self,
         list: &mut DrawList,
@@ -191,17 +206,24 @@ impl Opaque {
                     usage::UNIFORM | usage::COPY_DST,
                 ],
             )?;
+            // The frame's slot offset moves the uniform block and the cell offsets together, and
+            // the backend gives dynamic offsets to a group's buffers in their order here.
             list.push(
                 Op::CreateBindGroup,
                 &[
                     ids::frame_group(view),
                     bind_layout::FRAME,
-                    2,
+                    3,
                     0,
                     resource_kind::BUFFER,
                     ids::frame(view),
                     0,
                     sizes::FRAME_UNIFORM_BYTES,
+                    2,
+                    resource_kind::BUFFER,
+                    ids::frame(view),
+                    OFFSETS_AT,
+                    OFFSETS_BYTES,
                     1,
                     resource_kind::BUFFER,
                     ids::MATERIALS,
@@ -292,9 +314,9 @@ impl Opaque {
         Ok(())
     }
 
-    /// Takes a view's ring slots for the frame. Writes its frame uniform into the next slot when
-    /// it changed, and its draw records when its index list is new: for each drawn draw, its
-    /// bucket's slice of the list.
+    /// Takes a view's ring slots for the frame. Writes its frame uniform and cell offsets into the
+    /// next slot when either changed, and its draw records when its index list is new: for each
+    /// drawn draw, its bucket's slice of the list.
     pub(super) fn upload(
         &mut self,
         list: &mut DrawList,
@@ -305,17 +327,25 @@ impl Opaque {
     ) -> Result<(), RecordError> {
         let state = &mut self.views[view.index()];
         let uniform = frame.values.uniform;
-        let new_uniform = !state.uniform.holds_any() || uniform != state.uploaded;
+        let new_uniform = !state.uniform.holds_any()
+            || uniform != state.uploaded
+            || frame.offsets.as_slice() != state.offsets_uploaded.as_slice();
         state.slots = FrameSlots {
             uniform: state.uniform.take(frame.frame, new_uniform),
             streamed: frame.streamed,
             listed: frame.listed,
         };
         if new_uniform {
+            let slot = state.slots.uniform * FRAME_SLOT_BYTES;
             let (at, bytes) = arena.push(uniform.as_bytes())?;
-            let offset = state.slots.uniform * FRAME_SLOT_BYTES;
-            list.push(Op::WriteBuffer, &[ids::frame(view), offset, at, bytes])?;
+            list.push(Op::WriteBuffer, &[ids::frame(view), slot, at, bytes])?;
+            let (at, bytes) = arena.push(frame.offsets.as_bytes())?;
+            list.push(
+                Op::WriteBuffer,
+                &[ids::frame(view), slot + OFFSETS_AT, at, bytes],
+            )?;
             state.uploaded = uniform;
+            state.offsets_uploaded.copy_from(frame.offsets);
         }
         if !frame.new_list {
             return Ok(());
@@ -372,14 +402,10 @@ impl Opaque {
         let shift = |d: usize| buckets[draws[d].bucket as usize].shift;
         let stride = record_stride(multi_draw);
         let slot = slots.listed * layout.draws_slot_bytes;
+        let frame_slot = slots.uniform * FRAME_SLOT_BYTES;
         list.push(
             Op::SetBindGroup,
-            &[
-                0,
-                ids::frame_group(view),
-                1,
-                slots.uniform * FRAME_SLOT_BYTES,
-            ],
+            &[0, ids::frame_group(view), 2, frame_slot, frame_slot],
         )?;
         let instances = ids::instances_group(view) + slots.streamed * RING + slots.listed;
         list.push(Op::SetBindGroup, &[2, instances, 0])?;

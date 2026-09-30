@@ -68,7 +68,7 @@ The "Since" column gives the first engine version with the feature:
 | object.rotation (Euler) / rotateX/Y/Z / rotateOnAxis | obj.setRotationEuler(x, y, z, 'XYZ'), obj.rotateX/Y/Z(angle), or obj.setRotation(qx, qy, qz, qw) | changed | 0.1 | Euler order strings match three.js. | `api/objects` |
 | object.quaternion.set / slerp / setFromAxisAngle | obj.setRotation(x, y, z, w), with the quaternion from quat.setAxisAngle, quat.fromEuler, quat.multiply or quat.slerp | changed | 0.1 | The quat helpers write into an array that you create once with quat.create(). Pass its four numbers to setRotation. The rotations array of an instance batch takes the same order. | `api/math` |
 | object.scale.set / setScalar | obj.setScale(x, y, z) | changed | 0.1 |  | `api/objects` |
-| object.lookAt(target) | obj.lookAt(x, y, z) | direct | 0.1 | Cameras and lights look down -Z, as in three.js. | `api/objects` |
+| object.lookAt(target) | obj.lookAt(x, y, z) | direct | 0.1 | Cameras look down -Z, as in three.js, and lights will too when they become objects later in 0.1. | `api/objects` |
 | matrixAutoUpdate = false / updateMatrix / updateMatrixWorld / matrixWorldNeedsUpdate | Nothing to do: objects are static by default and update when a setter changes them; create objects that move every frame with dynamic: true | changed | 0.1 | Remove manual matrix calls. Only dynamic objects and instance batches may be written through typed arrays. | `concepts/static-dynamic` |
 | object.traverse / getObjectByName / children | prefab.find(name), scene.find(name), group.forEachChild(fn) | changed | 0.1 | Avoid traversals in onUpdate: keep the handles you need in arrays at setup time. | `api/objects` |
 | object.visible = false | obj.setVisible(false) | direct | 0.1 | Cheap: it uploads the object's matrix and draw entry and never rebuilds the draw tables, so use it instead of removing and adding objects during play. | `api/objects` |
@@ -137,7 +137,7 @@ The "Since" column gives the first engine version with the feature:
 | transparent / opacity / alphaTest / side / depthWrite / depthTest / blending / vertexColors / flatShading | alphaMode: 'blend' \| 'mask' (with alphaCutoff), doubleSided, depthWrite, depthTest, blending: 'normal' \| 'additive' \| 'multiply', vertexColors, flatShading | changed | 0.1 | transparent: true becomes alphaMode: 'blend'; alphaTest becomes alphaMode: 'mask' with alphaCutoff; side: DoubleSide becomes doubleSided: true. BackSide has no equivalent: flip the geometry. | `porting/threejs-materials` |
 | material.wireframe = true | debug.view('wireframe') for debugging; scene.createLines({ fromEdges }) for production wireframes | changed | 0.2 | WebGPU has no line-polygon mode, so wireframe is not a material flag. | `api/lines` |
 | material.envMap / envMapIntensity | The scene environment; per-material envIntensity | changed | 0.2 |  | `concepts/lighting` |
-| material.needsUpdate = true | Nothing to do | changed | 0.1 | Adding a shader feature to a material (for example a normal map) compiles a new pipeline, which can stall a frame. Set materials up during loading. | `concepts/materials` |
+| material.needsUpdate = true | Nothing to do | changed | 0.1 | Options that change the shader, such as a normal map, are fixed when a material is created. Create each variant during loading: a new one compiles a pipeline, which can stall a frame. | `concepts/materials` |
 | ShadowMaterial (shadow-catcher planes) | materials.shadowCatcher({ opacity }) | direct | 0.2 |  | `api/materials` |
 | material fog: false | fog: false in the material options | direct | 0.1 |  | `api/materials` |
 | material.bumpMap / bumpScale | A normal map converted offline: `bunx @null3d/cli assets normal-from-bump` | changed | 0.2 | Normal maps are cheaper at run time and look the same or better. | `guides/assets-pipeline` |
@@ -181,9 +181,9 @@ The "Since" column gives the first engine version with the feature:
 
 | three.js | null3D | Status | Since | Notes | Docs |
 | --- | --- | --- | --- | --- | --- |
-| InstancedMesh + setMatrixAt / setColorAt / instanceMatrix.needsUpdate | scene.createInstances(meshOrPrefab, count, { dynamic }); write batch.positions / rotations / scales / colors | changed | 0.1 | Static batches call markDirty(start, count) after writes; dynamic batches upload every frame without it. | `concepts/instances` |
+| InstancedMesh + setMatrixAt / setColorAt / instanceMatrix.needsUpdate | scene.createInstances(meshOrPrefab, count, { material, dynamic }); write batch.positions / rotations / scales / colors | changed | 0.1 | Static batches call markDirty(start, count) after writes; dynamic batches upload every frame without it. | `concepts/instances` |
 | BatchedMesh | Nothing special: the engine batches objects that share a mesh and material | changed | 0.1 | Use createInstances for many copies of one mesh, and separate meshes for varied geometry. | `concepts/instances` |
-| InstancedBufferGeometry / InstancedBufferAttribute (custom per-instance data) | createInstances(..., { attributes: { tint: 4 } }) adds per-instance arrays that surface functions can read | changed | 0.2 |  | `concepts/instances` |
+| InstancedBufferGeometry / InstancedBufferAttribute (custom per-instance data) | createInstances(mesh, count, { material, attributes: { tint: 4 } }) adds per-instance arrays that surface functions can read | changed | 0.2 |  | `concepts/instances` |
 | LOD (addLevel) | scene.createLod({ levels: [{ mesh, distance }] }), or LODs generated by `bunx @null3d/cli assets optimize --lod` | changed | 0.2 | The engine picks levels on job workers or on the GPU, per instance. | `concepts/lod` |
 
 ## Animation

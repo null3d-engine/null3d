@@ -44,13 +44,13 @@ Without lights, a standard material draws black. [Lights](lights.md) explains ho
 
 ## Changing a material
 
-`set(options)` changes a material at any time, and every object that uses the material changes with it. It converts the color and allocates a little, as a light's `setColor` does, so do not call it in every frame. To change one object alone, give it another material with `mesh.setMaterial(material)`.
+`set(options)` changes a material at any time, and every object that uses the material changes with it. It takes the options of the factory, and it changes only the options that you pass. The others keep their values, so `set({ opacity: 0.5 })` keeps the color.
 
-`set` takes the same options as the factory, and an option that you leave out goes back to its default. For example, `set({ opacity: 0.5 })` also makes the color white. Pass every value that you want to keep.
+Converting a new color allocates a little, as a light's `setColor` does, so do not change the color in every frame. The kind of material, standard or unlit, is fixed when you create it. To change one object alone, give it another material with `mesh.setMaterial(material)`.
 
 ## Opacity
 
-`opacity` goes from 0 to 1, and the default is 1. When a factory gets a value outside that range, development builds throw E1108. This version stores the opacity, but it draws every material opaque.
+`opacity` goes from 0 to 1, and the default is 1. When a factory or `set` gets a value outside that range, development builds throw E1108. This version stores the opacity, but it draws every material opaque.
 
 ## Limits
 
@@ -83,7 +83,7 @@ A material: how the surfaces of the objects that use it look.
 
 | Member | Description |
 | --- | --- |
-| `set(options: MaterialOptions): void` | Changes the material's values; cheap at any time. |
+| `set(options: MaterialOptions): void` | Changes the options that it gets and keeps the values of the others. Every object that uses the material changes with it. Converting a new color allocates. |
 
 ### `MaterialOptions`
 

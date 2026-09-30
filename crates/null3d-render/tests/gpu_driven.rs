@@ -5,7 +5,7 @@ mod common;
 
 use std::collections::HashMap;
 
-use common::{BATCH_ROWS, SCENE_CAPACITY, World, count};
+use common::{BATCH_ROWS, SCENE_CAPACITY, World, count, far_out};
 use null3d_gpu::drawlist::{NO_TARGET, Op, layout};
 use null3d_gpu::mock::MockBackend;
 use null3d_render::frame::FrameBuilder;
@@ -118,15 +118,18 @@ fn two_views_cull_into_buffers_of_their_own_and_draw_their_own_bundles() {
     assert_eq!(count(&commands, Op::CreateTexture), 2);
 
     // Each view's culling tests its own frustum: the side view's leaves out the object at
-    // x = -3, which the camera sees.
+    // x = -3, which the camera sees. A frustum is relative to its view's camera, so each sphere
+    // moves by the offset from that camera to the sphere's cell.
     let spheres = world.scene.world(1).spheres();
     let sees = |view: ViewId, object: usize| {
         let slot = world.scene.resolve(world.objects[object]).unwrap() as usize;
-        let frustum = world.renderer.view_frame(view).unwrap().frustum;
-        frustum.contains_sphere(
-            spheres.xs[slot],
-            spheres.ys[slot],
-            spheres.zs[slot],
+        let frame = world.renderer.view_frame(view).unwrap();
+        let cell = world.scene.cell_table().coords(world.scene.cells()[slot]);
+        let [x, y, z] = frame.camera.offset_to(cell);
+        frame.frustum.contains_sphere(
+            spheres.xs[slot] + x,
+            spheres.ys[slot] + y,
+            spheres.zs[slot] + z,
             spheres.radii[slot],
         )
     };
@@ -551,4 +554,94 @@ fn pipelines_follow_the_shading_model_and_objects_sharing_a_mesh_and_material_sh
     let second = world.commands();
     assert_eq!(count(&second, Op::CreateRenderPipeline), 0);
     assert_eq!(count(&second, Op::DrawIndexedIndirect), 3 + 1 + 10 + 1);
+}
+
+/// Writes of a frame into a view's culling parameters, the buffer `params`: offset and byte count.
+fn cull_params_writes(commands: &[(Op, Vec<u32>)], params: u32) -> Vec<(u32, u32)> {
+    commands
+        .iter()
+        .filter(|(op, o)| *op == Op::WriteBuffer && o[0] == params)
+        .map(|(_, o)| (o[1], o[3]))
+        .collect()
+}
+
+#[test]
+fn far_from_the_origin_only_the_camera_offsets_upload_when_the_camera_moves() {
+    let mut world = World::new();
+    let mut mock = MockBackend::default();
+    // The objects and the camera 1,000 km out; the batch's rows stay at the origin.
+    world.move_far_out();
+    let camera = world.camera;
+    world.record(true);
+    mock.replay(world.renderer.list(1).words()).unwrap();
+    let far = world.far_cell();
+    for &object in &world.objects {
+        let slot = world.scene.resolve(object).unwrap() as usize;
+        assert_eq!(world.scene.cells()[slot], far);
+    }
+    // One write: the planes, then the offsets from the camera to the two cells in use.
+    let params = vec![(0, 112 + 2 * 16)];
+    let buffer = views_of(&world.commands())[0].culling[0];
+    assert_eq!(cull_params_writes(&world.commands(), buffer), params);
+
+    for frame in 2..=5 {
+        world.frame = frame;
+        world.scene.begin_frame(frame);
+        let x = frame as f32 * 0.25;
+        world
+            .scene
+            .set_position(camera, far_out(x, 0.5, 20.0))
+            .unwrap();
+        world.record(false);
+        mock.replay(world.renderer.list(frame).words()).unwrap();
+        let commands = world.commands();
+        // The static objects keep their matrices on the GPU, and the camera draws nothing: only the
+        // batch's rows, after every scene slot, upload.
+        let scene_writes = commands
+            .iter()
+            .filter(|(op, o)| *op == Op::WriteBuffer && o[0] == MATRICES)
+            .filter(|(_, o)| o[1] < (SCENE_CAPACITY + 1) * MATRIX_BYTES)
+            .count();
+        assert_eq!(scene_writes, 0, "frame {frame}");
+        assert!(bucket_table_writes(&commands).is_empty(), "frame {frame}");
+        assert_eq!(
+            cull_params_writes(&commands, buffer),
+            params,
+            "frame {frame}"
+        );
+    }
+}
+
+#[test]
+fn an_object_that_moves_into_another_cell_rewrites_its_entry() {
+    let mut world = World::new();
+    let mut mock = MockBackend::default();
+    world.record(true);
+    mock.replay(world.renderer.list(1).words()).unwrap();
+    let buffer = views_of(&world.commands())[0].culling[0];
+    assert_eq!(
+        cull_params_writes(&world.commands(), buffer),
+        vec![(0, 112 + 16)]
+    );
+
+    world.frame = 2;
+    world.scene.begin_frame(2);
+    let object = world.objects[0];
+    world
+        .scene
+        .set_position(object, [0.0, 0.0, -2_000.0])
+        .unwrap();
+    world.record(false);
+    mock.replay(world.renderer.list(2).words()).unwrap();
+    let slot = world.scene.resolve(object).unwrap();
+    let commands = world.commands();
+    // Its matrix, now relative to its new cell, and its entry, which names that cell, upload.
+    assert_eq!(bucket_table_writes(&commands), vec![(slot * 4, 4)]);
+    assert!(commands.iter().any(|(op, o)| {
+        *op == Op::WriteBuffer && o[0] == MATRICES && o[1] == slot * MATRIX_BYTES
+    }));
+    assert_eq!(
+        cull_params_writes(&commands, buffer),
+        vec![(0, 112 + 2 * 16)]
+    );
 }

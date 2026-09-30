@@ -25,6 +25,17 @@
 //! count, only rewrites those sources' entries in the bucket table, where `HIDDEN` makes the
 //! culling shader skip them.
 //!
+//! # Cells
+//!
+//! World matrices are relative to their grid cells' centers (see [`null3d_core::cells`]). A
+//! source's entry in the bucket table holds its cell index above its bucket, so a source that
+//! changes cells rewrites its entry, as a hidden one does. Each frame uploads, for each view, the
+//! offset from the view's camera to each cell in use beside the view's culling planes, which are
+//! relative to its camera. The culling shader adds a source's offset to its matrix as it copies
+//! the matrix into the compacted instance buffer, so the vertex shader draws positions relative to
+//! the camera. When only the cameras move, static matrices stay on the GPU and only the offsets
+//! upload.
+//!
 //! # Views and passes
 //!
 //! Every view (see [`crate::view`]) culls the same sources and bucket tables, into buffers of its
@@ -304,7 +315,8 @@ impl GpuDrivenRenderer {
                 .view_frame(view, input.scene, parity, input.canvas);
             if let Some(frame) = &frame {
                 opaque::upload(list, arena, view, frame)?;
-                Culling::upload(list, arena, view, frame, &self.layout)?;
+                self.culling
+                    .upload(list, arena, view, frame, &self.layout, input.scene)?;
             }
             self.frames.push(frame);
         }

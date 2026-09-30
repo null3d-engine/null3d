@@ -94,7 +94,7 @@ The storage binding is the one limit the engine raises past this budget. When a 
 
 Development builds warn once when a scene passes 2,097,152, because a device with the default limits refuses that scene.
 
-On WebGL2 the limit follows the largest texture the device allows. Each object's matrix takes 3 texels of a data texture, 512 matrices to a texel row. That is 2,097,152 objects and instance rows at 4,096 pixels, and 8,388,608 at 16,384. WebGL2 promises at least 2,048 pixels, which holds 1,048,576. `engine.capabilities.maxInstances` gives the number on WebGL2 too.
+On WebGL2 the limit follows the largest texture the device allows. Each object's matrix takes 3 texels of a data texture, 512 matrices to a texel row. That is 2,097,152 objects and instance rows at 4,096 pixels, and 8,388,608 at 16,384. Larger textures hold no more, because the list of visible objects can name at most 8,388,608. WebGL2 promises at least 2,048 pixels, which holds 1,048,576. `engine.capabilities.maxInstances` gives the number on WebGL2 too.
 
 Engine memory holds the rows too. A page with worker threads gives the engine at most 1 GiB, which holds about 5 million instance rows. A call that needs more memory than the engine can get fails with E1109.
 

@@ -81,14 +81,14 @@ The engine keeps each scene's draw tables, its draw bundle and every object's ma
 | `setVisible` | The matrix and 4-byte draw entry of the object and of each object under it |
 | `setActiveCount` | The 4-byte draw entry of each row that starts or stops drawing |
 | Creating or destroying an object or an instance batch | A rebuild, and engine memory can grow in the next frame |
-| `setMesh`, `setMaterial`, `setParent` and `setDynamic` | A rebuild |
+| `setMaterial`, `setParent` and `setDynamic` | A rebuild |
 
 These habits keep play free of rebuilds:
 
 - Create every object, batch, mesh and material a level needs during setup or behind a loading screen. The engine sizes its memory for the scene it holds, so one created during play makes engine memory grow in the next frame.
 - Hide and show objects with `setVisible` instead of destroying and creating them.
 - Pool short-lived things, such as bullets and particles, in an instance batch sized for the most rows it will ever need. Show fewer with `setActiveCount`, and keep the live rows at the front of the arrays.
-- For a look that changes often, such as a highlight, keep two objects and swap their visibility. Keep `setMaterial` and `setMesh` for rare changes.
+- For a look that changes often, such as a highlight, keep two objects and swap their visibility. Keep `setMaterial` for rare changes.
 - Every row of a batch counts toward the scene's limit of objects and instance rows, active or not. Every device draws 2,097,152, and `engine.capabilities.maxInstances` gives the limit of the device the page runs on (E1501). Engine memory holds about 5 million rows (E1109). So size each batch for the rows it uses.
 - Check with `measure`. A `rebuilds` count above zero during play points to one of the calls in the lower rows of the table.
 

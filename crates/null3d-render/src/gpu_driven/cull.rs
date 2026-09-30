@@ -3,18 +3,29 @@
 //! compacted instance buffer, and counts it in each of the bucket's indirect draws, which the
 //! view's bundle then draws. Every view reads the same sources and bucket tables, and writes
 //! buffers of its own.
+//!
+//! A view's planes are relative to its camera, and its parameters also hold the offset from its
+//! camera to each cell in use. The shader adds a source's offset to its matrix before it tests the
+//! source, and copies the moved matrix into the compacted instance buffer, so the vertex shader
+//! draws positions relative to the view's camera.
 
+use null3d_core::cells::MAX_CELLS;
+use null3d_core::scene::SceneStorage;
 use null3d_gpu::drawlist::{
     DrawList, Op, buffer_usage as usage, layout as bind_layout, resource_kind, sizes, template,
 };
 
 use super::ids;
 use super::layout::Layout;
-use crate::frame::{RecordError, UploadArena, grown_size, words_as_bytes};
+use crate::frame::{
+    CELL_OFFSET_BYTES, CellOffsets, RecordError, UploadArena, grown_size, words_as_bytes,
+};
 use crate::view::{ViewFrame, ViewId};
 
-/// Bytes of the culling parameters: six planes, the source count and padding.
-pub(super) const CULL_PARAMS_BYTES: u32 = 112;
+/// Bytes of the culling planes: six planes, the source count and padding.
+const CULL_PLANES_BYTES: u32 = 112;
+/// Bytes of the culling parameters: the planes, then the offset from the camera to each cell.
+pub(super) const CULL_PARAMS_BYTES: u32 = CULL_PLANES_BYTES + MAX_CELLS * CELL_OFFSET_BYTES;
 /// Bytes of one indexed indirect draw.
 pub(super) const INDIRECT_BYTES: u32 = sizes::INDIRECT_WORDS * 4;
 /// Words of the culling pass's bind group entries: three for the group, five per buffer.
@@ -31,6 +42,8 @@ struct ViewBuffers {
 #[derive(Debug, Default)]
 pub(super) struct Culling {
     views: Vec<ViewBuffers>,
+    /// The offsets from the camera of the view being uploaded to each cell in use.
+    offsets: CellOffsets,
 }
 
 /// Records the creation of the culling pipeline.
@@ -129,24 +142,34 @@ impl Culling {
         Ok(())
     }
 
-    /// Uploads a view's culling parameters, its frustum's planes and the source count, and
-    /// resets its indirect draws' instance counts to zero.
+    /// Uploads a view's culling parameters: its frustum's planes, the source count, and the offset
+    /// from its camera to each cell in use in `scene`. Resets its indirect draws' instance counts
+    /// to zero.
     pub(super) fn upload(
+        &mut self,
         list: &mut DrawList,
         arena: &mut UploadArena,
         view: ViewId,
         frame: &ViewFrame,
         layout: &Layout,
+        scene: &SceneStorage,
     ) -> Result<(), RecordError> {
-        let mut params = [0u32; (CULL_PARAMS_BYTES / 4) as usize];
+        let mut params = [0u32; (CULL_PLANES_BYTES / 4) as usize];
         for (plane, out) in frame.frustum.planes().iter().zip(params.chunks_mut(4)) {
             for (value, word) in plane.iter().zip(out) {
                 *word = value.to_bits();
             }
         }
         params[24] = layout.sources;
-        let (at, bytes) = arena.push(words_as_bytes(&params))?;
-        list.push(Op::WriteBuffer, &[ids::cull_params(view), 0, at, bytes])?;
+        self.offsets.update(scene, &frame.camera);
+        // The planes fill whole words, so the arena lays the offsets right after them, as the
+        // parameters hold them, and one write carries both.
+        let (at, planes) = arena.push(words_as_bytes(&params))?;
+        let (_, offsets) = arena.push(self.offsets.as_bytes())?;
+        list.push(
+            Op::WriteBuffer,
+            &[ids::cull_params(view), 0, at, planes + offsets],
+        )?;
         if !layout.draws.is_empty() {
             let (at, bytes) = arena.push(words_as_bytes(&layout.indirect_template))?;
             list.push(Op::WriteBuffer, &[ids::indirect(view), 0, at, bytes])?;

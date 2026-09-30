@@ -15,14 +15,23 @@
 //! and updates every batch in one parallel loop. Creating or destroying a batch allocates or
 //! frees its arrays, so do it outside the frame loop's steady state, and call
 //! [`BatchTable::note_memory_grew`] when WebAssembly memory grew so TypeScript rebuilds its views.
+//!
+//! # Cells
+//!
+//! Each row takes the grid cell that holds its position (see [`crate::cells`]), and its world
+//! matrix and sphere are relative to that cell's center. While every active row shares one cell,
+//! the batch's common cell, the update only checks that each row stays inside it, four rows at a
+//! time. A row that leaves its cell is marked in the loop, and moved in the cell table after it,
+//! on one thread. [`InstanceBatch::cell_changes`] then covers the rows whose cell changed.
 
 use std::collections::TryReserveError;
 use std::ops::Range;
-use std::simd::f32x4;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::simd::prelude::*;
+use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 
 use crate::alloc::filled;
 use crate::bitset::Bitset;
+use crate::cells::{self, CellCoords, CellTable, HALF_CELL, ORIGIN_CELL};
 use crate::error::{CoreError, Resource};
 use crate::handle::{Handle, SlotAllocator};
 use crate::jobs::JobSystem;
@@ -67,6 +76,18 @@ pub struct InstanceBatch {
     ranges: Vec<RowRange>,
     frame: u32,
     frame_active: [u32; 2],
+    /// Each row's cell, as an index into the scene's cell table.
+    cells: Vec<u32>,
+    /// The cell of every active row while `mixed` is false.
+    common: u32,
+    /// True when active rows may lie in different cells.
+    mixed: bool,
+    /// True when the next update ends by checking whether the active rows share one cell.
+    check_common: bool,
+    /// Rows the update found in a new cell, which its end moves in the cell table.
+    moved: Bitset,
+    moved_any: AtomicBool,
+    cell_changes: RowRange,
 }
 
 impl InstanceBatch {
@@ -126,6 +147,13 @@ impl InstanceBatch {
             ranges: Vec::with_capacity(MAX_ROW_RANGES),
             frame: 0,
             frame_active: [0; 2],
+            cells: filled(rows, ORIGIN_CELL)?,
+            common: ORIGIN_CELL,
+            mixed: false,
+            check_common: false,
+            moved: Bitset::try_new(capacity)?,
+            moved_any: AtomicBool::new(false),
+            cell_changes: RowRange::default(),
         })
     }
 
@@ -134,12 +162,13 @@ impl InstanceBatch {
         self.capacity
     }
 
-    /// Engine memory that one row takes: its input arrays, and the world arrays of both frames.
+    /// Engine memory that one row takes: its input arrays, its cell, and the world arrays of both
+    /// frames.
     pub const fn row_bytes(with_colors: bool) -> u64 {
         let colors = if with_colors { COLOR_FLOATS } else { 0 };
         let inputs = 3 + 4 + 3 + colors;
         let world = MATRIX_FLOATS + 4 + colors;
-        ((inputs + 2 * world) * 4) as u64
+        ((inputs + 1 + 2 * world) * 4) as u64
     }
 
     /// True for a batch that recomputes every active row every frame.
@@ -184,6 +213,16 @@ impl InstanceBatch {
         if count > self.active {
             self.dirty.set_range(self.active, count - self.active);
             self.dirty_any = true;
+            // Rows that come back keep the cell they had; one outside the common cell makes the
+            // next update check each row's own cell.
+            let returning = &self.cells[self.active as usize..count as usize];
+            if !self.mixed && returning.iter().any(|&cell| cell != self.common) {
+                self.mixed = true;
+                self.check_common = true;
+            }
+        } else if self.mixed {
+            // Fewer rows may share one cell.
+            self.check_common = true;
         }
         self.active = count;
         Ok(())
@@ -274,24 +313,50 @@ impl InstanceBatch {
         &self.ranges
     }
 
+    /// Each row's cell, as an index into the scene's cell table. Valid after an update.
+    pub fn cells(&self) -> &[u32] {
+        &self.cells
+    }
+
+    /// The cell every active row lies in, or `None` when they may lie in different cells.
+    pub fn common_cell(&self) -> Option<u32> {
+        (!self.mixed).then_some(self.common)
+    }
+
+    /// One range that covers every row whose cell the last update changed; empty when none did.
+    pub fn cell_changes(&self) -> RowRange {
+        self.cell_changes
+    }
+
     /// Recomputes the rows that need it for frame `frame`, in parallel chunks, and records the
-    /// changed ranges. Allocates nothing.
+    /// changed ranges. Rows that change cells move in `cells`, the scene's cell table. Allocates
+    /// nothing.
     ///
     /// # Panics
     /// When `frame` is 0: frames start at 1.
-    pub fn update(&mut self, jobs: &JobSystem, frame: u32) {
-        if let Some(kernel) = self.prepare(frame) {
+    pub fn update(&mut self, jobs: &JobSystem, frame: u32, cells: &mut CellTable) {
+        if let Some(kernel) = self.prepare(frame, cells) {
             let words = kernel.words();
             jobs.parallel_for(words, WORDS_PER_CHUNK, &|range, _| {
                 // SAFETY: chunks cover disjoint word ranges, hence disjoint rows.
                 unsafe { kernel.run(range) };
             });
         }
-        self.finish();
+        self.finish(cells);
+    }
+
+    /// Gives back every row's place in `cells`, the scene's cell table, before the batch goes.
+    pub fn release_cells(&mut self, cells: &mut CellTable) {
+        for run in self.cells.chunk_by(|a, b| a == b) {
+            cells.release_many(run[0], run.len() as u32);
+        }
+        self.cells.fill(ORIGIN_CELL);
+        self.common = ORIGIN_CELL;
+        self.mixed = false;
     }
 
     /// Starts frame `frame` and returns the kernel for the rows that need work, if any.
-    fn prepare(&mut self, frame: u32) -> Option<RowKernel> {
+    fn prepare(&mut self, frame: u32, cells: &CellTable) -> Option<RowKernel> {
         assert!(frame != 0, "frames start at 1");
         let parity = (frame & 1) as usize;
         if frame != self.frame {
@@ -320,7 +385,15 @@ impl InstanceBatch {
             let (a, b) = self.changed.split_at_mut(1);
             (a[0].words().as_ptr(), b[0].words_mut().as_mut_ptr())
         };
+        let common = cells.coords(self.common);
         Some(RowKernel {
+            cells: self.cells.as_ptr(),
+            cell_coords: cells.all_coords().as_ptr(),
+            common,
+            common_center: cells::cell_center(common),
+            mixed: self.mixed,
+            moved: self.moved.words_mut().as_mut_ptr(),
+            moved_any: &self.moved_any,
             positions: self.positions.as_ptr(),
             rotations: self.rotations.as_ptr(),
             scales: self.scales.as_ptr(),
@@ -341,9 +414,11 @@ impl InstanceBatch {
         })
     }
 
-    /// Ends the frame's update: clears the dirty rows and records the changed ranges.
-    fn finish(&mut self) {
+    /// Ends the frame's update: moves the rows found in a new cell, clears the dirty rows and
+    /// records the changed ranges.
+    fn finish(&mut self, cells: &mut CellTable) {
         let parity = (self.frame & 1) as usize;
+        self.move_cells(cells, parity);
         self.ranges.clear();
         if self.dynamic {
             if self.active > 0 {
@@ -364,6 +439,42 @@ impl InstanceBatch {
         self.changed_any[parity] = !self.ranges.is_empty() && !self.dynamic;
         self.frame_active[parity] = self.active;
     }
+
+    /// Moves each row that the update found in a new cell into the cell that holds its position,
+    /// or into the origin cell when the table has no room (see [`cells::enter_cell`]), and records
+    /// the range of rows that moved. Then, when rows moved or came back, checks whether the active
+    /// rows share a cell.
+    fn move_cells(&mut self, cells: &mut CellTable, parity: usize) {
+        self.cell_changes = RowRange::default();
+        if std::mem::take(self.moved_any.get_mut()) {
+            let (mut first, mut end) = (u32::MAX, 0);
+            for row in self.moved.iter_ones() {
+                let r = row as usize;
+                let position = [
+                    self.positions[r * 3],
+                    self.positions[r * 3 + 1],
+                    self.positions[r * 3 + 2],
+                ];
+                let world = &mut self.world[parity];
+                self.cells[r] = cells::enter_cell(cells, world, r, position, self.cells[r]);
+                (first, end) = (first.min(row), end.max(row + 1));
+            }
+            self.moved.clear_all();
+            self.cell_changes = RowRange {
+                start: first,
+                count: end - first,
+            };
+            self.check_common = true;
+        }
+        if std::mem::take(&mut self.check_common) {
+            let active = &self.cells[..self.active as usize];
+            match active.first() {
+                Some(&first) if active.iter().any(|&cell| cell != first) => self.mixed = true,
+                Some(&first) => (self.common, self.mixed) = (first, false),
+                None => self.mixed = false,
+            }
+        }
+    }
 }
 
 /// Appends a range, growing the last one to cover the rest once the list is full.
@@ -376,9 +487,17 @@ fn push_range(ranges: &mut Vec<RowRange>, start: u32, count: u32) {
 }
 
 /// Raw pointers into one batch, for the chunks of a parallel update. Chunks own disjoint
-/// 64-row words, so they write disjoint rows and disjoint changed-bitset words.
+/// 64-row words, so they write disjoint rows and disjoint changed-bitset and moved-bitset words.
+/// The cell table does not change while the chunks read it.
 #[derive(Clone, Copy)]
 struct RowKernel {
+    cells: *const u32,
+    cell_coords: *const CellCoords,
+    common: CellCoords,
+    common_center: [f32; 3],
+    mixed: bool,
+    moved: *mut u64,
+    moved_any: *const AtomicBool,
     positions: *const f32,
     rotations: *const f32,
     scales: *const f32,
@@ -482,7 +601,8 @@ impl RowKernel {
         // only this chunk writes the rows.
         unsafe {
             let p = self.positions.add(row * 3);
-            let position = deinterleave3(load(p), load(p.add(4)), load(p.add(8)));
+            let position =
+                self.localize4(row, deinterleave3(load(p), load(p.add(4)), load(p.add(8))));
             let s = self.scales.add(row * 3);
             let scale = deinterleave3(load(s), load(s.add(4)), load(s.add(8)));
             let q = self.rotations.add(row * 4);
@@ -505,11 +625,13 @@ impl RowKernel {
         // SAFETY: the row is below the active count, so every input read is in bounds, and only
         // this chunk writes the row.
         unsafe {
-            let p = self
-                .positions
-                .add(row * 3)
-                .cast::<[f32; 3]>()
-                .read_unaligned();
+            let p = self.localize(
+                row,
+                self.positions
+                    .add(row * 3)
+                    .cast::<[f32; 3]>()
+                    .read_unaligned(),
+            );
             let q = self
                 .rotations
                 .add(row * 4)
@@ -522,6 +644,137 @@ impl RowKernel {
             if !self.colors.is_null() {
                 let color = self.colors.add(row * 4).cast::<[f32; 4]>().read_unaligned();
                 self.out.write_color(row, color);
+            }
+        }
+    }
+
+    /// The positions of rows `row..row + 4` relative to their cells' centers, one row per lane,
+    /// with rows that left their cell marked as moved. While the rows share a common cell, rows
+    /// inside it keep it with one test; any other row takes the rare path of
+    /// [`RowKernel::relocate4`]. The results match [`RowKernel::localize`] bit for bit.
+    ///
+    /// # Safety
+    /// As for [`RowKernel::compute4`].
+    #[inline(always)]
+    unsafe fn localize4(&self, row: usize, position: [f32x4; 3]) -> [f32x4; 3] {
+        if !self.mixed {
+            let (local, kept) = self.in_common4(position);
+            if kept.all() {
+                return local;
+            }
+        }
+        // SAFETY: as the caller guarantees.
+        unsafe { self.relocate4(row, position) }
+    }
+
+    /// Rows `row..row + 4` relative to the common cell's center, and which of them lie inside it:
+    /// less than half a cell from the center along every axis.
+    #[inline(always)]
+    fn in_common4(&self, position: [f32x4; 3]) -> ([f32x4; 3], mask32x4) {
+        let center = self.common_center.map(f32x4::splat);
+        let local = [
+            position[0] - center[0],
+            position[1] - center[1],
+            position[2] - center[2],
+        ];
+        let reach = local[0]
+            .abs()
+            .simd_max(local[1].abs())
+            .simd_max(local[2].abs());
+        (local, reach.simd_lt(f32x4::splat(HALF_CELL)))
+    }
+
+    /// [`RowKernel::localize4`] for rows that may lie in different cells: each row that is not
+    /// inside the common cell takes the cell that holds it, and is marked as moved when that is
+    /// not its cell now.
+    ///
+    /// # Safety
+    /// As for [`RowKernel::compute4`].
+    #[inline(never)]
+    unsafe fn relocate4(&self, row: usize, position: [f32x4; 3]) -> [f32x4; 3] {
+        let (in_common, kept) = if self.mixed {
+            ([f32x4::splat(0.0); 3], mask32x4::splat(false))
+        } else {
+            self.in_common4(position)
+        };
+        let (cells, local) = cells::split4(position);
+        let mut moved = 0;
+        for lane in 0..4 {
+            let cell = [
+                cells[0].to_array()[lane],
+                cells[1].to_array()[lane],
+                cells[2].to_array()[lane],
+            ];
+            // SAFETY: the row is active, as the caller guarantees.
+            if !kept.test(lane) && cell != unsafe { self.current_cell(row + lane) } {
+                moved |= 1 << lane;
+            }
+        }
+        // SAFETY: as the caller guarantees.
+        unsafe { self.mark_moved(row, moved) };
+        [0, 1, 2].map(|k| kept.select(in_common[k], local[k]))
+    }
+
+    /// The position of `row` relative to its cell's center, with the row marked as moved when it
+    /// left its cell. While the rows share a common cell, a row within half a cell of its center,
+    /// on every axis, stays in it.
+    ///
+    /// # Safety
+    /// As for [`RowKernel::compute`].
+    #[inline(always)]
+    unsafe fn localize(&self, row: usize, position: [f32; 3]) -> [f32; 3] {
+        if !self.mixed {
+            let c = self.common_center;
+            let local = [position[0] - c[0], position[1] - c[1], position[2] - c[2]];
+            if local[0].abs().max(local[1].abs()).max(local[2].abs()) < HALF_CELL {
+                return local;
+            }
+        }
+        // SAFETY: as the caller guarantees.
+        unsafe { self.relocate(row, position) }
+    }
+
+    /// [`RowKernel::localize`] for a row outside the common cell, or in a batch without one.
+    ///
+    /// # Safety
+    /// As for [`RowKernel::compute`].
+    #[inline(never)]
+    unsafe fn relocate(&self, row: usize, position: [f32; 3]) -> [f32; 3] {
+        let (cell, local) = cells::split(position);
+        // SAFETY: as the caller guarantees.
+        unsafe {
+            if cell != self.current_cell(row) {
+                self.mark_moved(row, 1);
+            }
+        }
+        local
+    }
+
+    /// The coordinates of the cell `row` lies in now.
+    ///
+    /// # Safety
+    /// The row is inside the batch, and the cell table does not change during the call.
+    #[inline(always)]
+    unsafe fn current_cell(&self, row: usize) -> CellCoords {
+        if self.mixed {
+            // SAFETY: as the caller guarantees; a row's cell is always an index in the table.
+            unsafe { *self.cell_coords.add(*self.cells.add(row) as usize) }
+        } else {
+            self.common
+        }
+    }
+
+    /// Marks the rows `row + k` for each bit `k` of `lanes` as moved.
+    ///
+    /// # Safety
+    /// The rows lie in one 64-row word that belongs to the calling chunk.
+    #[inline(always)]
+    unsafe fn mark_moved(&self, row: usize, lanes: u64) {
+        if lanes != 0 {
+            // SAFETY: as the caller guarantees.
+            unsafe {
+                *self.moved.add(row / 64) |= lanes << (row % 64);
+                (*self.moved_any).store(true, Ordering::Relaxed);
             }
         }
     }
@@ -609,10 +862,17 @@ impl BatchTable {
         Ok(id)
     }
 
-    /// Destroys a batch and frees its arrays. `frame` is recorded for stale-id errors.
-    pub fn destroy(&mut self, id: Handle, frame: u32) -> Result<(), CoreError> {
+    /// Destroys a batch, gives its rows' places back to `cells`, the scene's cell table, and frees
+    /// its arrays. `frame` is recorded for stale-id errors.
+    pub fn destroy(
+        &mut self,
+        id: Handle,
+        frame: u32,
+        cells: &mut CellTable,
+    ) -> Result<(), CoreError> {
         self.ids.release(id, frame)?;
-        if let Some(batch) = self.batches[id.slot() as usize].take() {
+        if let Some(mut batch) = self.batches[id.slot() as usize].take() {
+            batch.release_cells(cells);
             self.work_needed -= batch.capacity().div_ceil(ROW_CHUNK) as usize;
         }
         Ok(())
@@ -642,13 +902,13 @@ impl BatchTable {
         })
     }
 
-    /// Updates every batch for frame `frame` in one parallel loop over chunks of all batches.
-    /// Allocates nothing.
-    pub fn update(&mut self, jobs: &JobSystem, frame: u32) {
+    /// Updates every batch for frame `frame` in one parallel loop over chunks of all batches. Rows
+    /// that change cells move in `cells`, the scene's cell table. Allocates nothing.
+    pub fn update(&mut self, jobs: &JobSystem, frame: u32, cells: &mut CellTable) {
         self.work.clear();
         for slot in self.ids.live().iter_ones() {
             let batch = self.batches[slot as usize].as_mut().expect("live");
-            let kernel = batch.prepare(frame);
+            let kernel = batch.prepare(frame, cells);
             if let Some(k) = &kernel {
                 let words = k.words();
                 let mut w = 0;
@@ -673,7 +933,10 @@ impl BatchTable {
         });
         for slot in self.ids.live().iter_ones() {
             self.kernels[slot as usize] = None;
-            self.batches[slot as usize].as_mut().expect("live").finish();
+            self.batches[slot as usize]
+                .as_mut()
+                .expect("live")
+                .finish(cells);
         }
     }
 
@@ -710,11 +973,12 @@ mod tests {
     #[test]
     fn rows_compose_like_the_math_module() {
         let jobs = JobSystem::new(0);
+        let mut cells = CellTable::new();
         let mut batch = InstanceBatch::new(5, false, true, 3, 4, 0.5);
         batch.positions_mut()[3..6].copy_from_slice(&[1.0, 2.0, 3.0]);
         batch.scales_mut()[3..6].copy_from_slice(&[2.0, 4.0, 1.0]);
         batch.colors_mut()[4..8].copy_from_slice(&[0.1, 0.2, 0.3, 0.4]);
-        batch.update(&jobs, 1);
+        batch.update(&jobs, 1, &mut cells);
         let m = math::compose([1.0, 2.0, 3.0], IDENTITY_ROTATION, [2.0, 4.0, 1.0]);
         assert_eq!(batch.world(1).matrix(1), &m);
         assert_eq!(batch.world(1).sphere(1), [1.0, 2.0, 3.0, 2.0]);
@@ -726,8 +990,9 @@ mod tests {
     #[test]
     fn dirty_ranges_are_exactly_the_marked_rows_coalesced() {
         let jobs = JobSystem::new(0);
+        let mut cells = CellTable::new();
         let mut batch = InstanceBatch::new(300, false, false, 0, 0, 1.0);
-        batch.update(&jobs, 1);
+        batch.update(&jobs, 1, &mut cells);
         for row in 0..300 {
             write_row(&mut batch, row, 7.0);
         }
@@ -737,7 +1002,7 @@ mod tests {
         batch.mark_dirty(0, 2).unwrap();
         batch.mark_dirty(63, 2).unwrap();
         batch.mark_dirty(299, 1).unwrap();
-        batch.update(&jobs, 2);
+        batch.update(&jobs, 2, &mut cells);
         let expected = [(0, 2), (10, 8), (63, 2), (100, 1), (299, 1)]
             .map(|(start, count)| RowRange { start, count });
         assert_eq!(batch.changed_ranges(), &expected);
@@ -753,25 +1018,26 @@ mod tests {
             );
         }
         // The next frame copies the marked rows into the other buffer and uploads nothing.
-        batch.update(&jobs, 3);
+        batch.update(&jobs, 3, &mut cells);
         assert!(batch.changed_ranges().is_empty());
         for row in 0..300 {
             assert_eq!(x_of(&batch, 1, row), x_of(&batch, 0, row), "row {row}");
         }
         // A batch at rest does no work.
-        batch.update(&jobs, 4);
+        batch.update(&jobs, 4, &mut cells);
         assert!(batch.changed_ranges().is_empty());
     }
 
     #[test]
     fn a_dynamic_batch_updates_everything() {
         let jobs = JobSystem::new(0);
+        let mut cells = CellTable::new();
         let mut batch = InstanceBatch::new(130, true, false, 0, 0, 1.0);
         for frame in 1..4 {
             for row in 0..130 {
                 write_row(&mut batch, row, frame as f32);
             }
-            batch.update(&jobs, frame);
+            batch.update(&jobs, frame, &mut cells);
             let parity = (frame & 1) as usize;
             assert!((0..130).all(|row| x_of(&batch, parity, row) == frame as f32));
             assert_eq!(
@@ -787,9 +1053,10 @@ mod tests {
     #[test]
     fn active_count_limits_the_rows() {
         let jobs = JobSystem::new(0);
+        let mut cells = CellTable::new();
         let mut batch = InstanceBatch::new(100, false, false, 0, 0, 1.0);
         batch.set_active_count(10).unwrap();
-        batch.update(&jobs, 1);
+        batch.update(&jobs, 1, &mut cells);
         assert_eq!(
             batch.changed_ranges(),
             &[RowRange {
@@ -800,7 +1067,7 @@ mod tests {
         assert_eq!(batch.world(1).radii()[50], HIDDEN_RADIUS);
         // Growing marks the new rows dirty.
         batch.set_active_count(40).unwrap();
-        batch.update(&jobs, 2);
+        batch.update(&jobs, 2, &mut cells);
         assert_eq!(
             batch.changed_ranges(),
             &[RowRange {
@@ -830,13 +1097,14 @@ mod tests {
     #[test]
     fn too_many_ranges_grow_the_last_one() {
         let jobs = JobSystem::new(0);
+        let mut cells = CellTable::new();
         let rows = (MAX_ROW_RANGES as u32 + 10) * 2;
         let mut batch = InstanceBatch::new(rows, false, false, 0, 0, 1.0);
-        batch.update(&jobs, 1);
+        batch.update(&jobs, 1, &mut cells);
         for row in (0..rows).step_by(2) {
             batch.mark_dirty(row, 1).unwrap();
         }
-        batch.update(&jobs, 2);
+        batch.update(&jobs, 2, &mut cells);
         let ranges = batch.changed_ranges();
         assert_eq!(ranges.len(), MAX_ROW_RANGES);
         let last = ranges[MAX_ROW_RANGES - 1];
@@ -846,6 +1114,7 @@ mod tests {
     #[test]
     fn the_table_gives_stable_ids_and_updates_every_batch() {
         let jobs = JobSystem::new(0);
+        let mut cells = CellTable::new();
         let mut table = BatchTable::with_capacity(2);
         let a = table.create(10, true, false, 1, 2, 1.0).unwrap();
         let b = table.create(2000, false, true, 3, 4, 1.0).unwrap();
@@ -858,13 +1127,13 @@ mod tests {
         );
         assert_eq!(table.len(), 2);
         table.get_mut(b).unwrap().positions_mut()[1500 * 3] = 9.0;
-        table.update(&jobs, 1);
+        table.update(&jobs, 1, &mut cells);
         assert_eq!(table.get(b).unwrap().world(1).matrix(1500)[3], 9.0);
         assert_eq!(table.get(a).unwrap().changed_ranges().len(), 1);
         let ids: Vec<Handle> = table.iter().map(|(id, _)| id).collect();
         assert_eq!(ids, [a, b]);
 
-        table.destroy(a, 5).unwrap();
+        table.destroy(a, 5, &mut cells).unwrap();
         assert_eq!(
             table.get(a).err(),
             Some(CoreError::StaleHandle {
@@ -874,7 +1143,7 @@ mod tests {
         );
         let c = table.create(4, false, false, 0, 0, 1.0).unwrap();
         assert_ne!(c, a);
-        table.update(&jobs, 2);
+        table.update(&jobs, 2, &mut cells);
         assert_eq!(
             table.get(c).unwrap().changed_ranges(),
             &[RowRange { start: 0, count: 4 }]
@@ -889,5 +1158,77 @@ mod tests {
         table.note_memory_grew();
         assert_eq!(table.memory_epoch(), 2);
         assert_eq!(table.memory_epoch_word().load(Ordering::Relaxed), 2);
+    }
+
+    #[test]
+    fn rows_take_the_cell_of_their_position() {
+        let jobs = JobSystem::new(0);
+        let mut cells = CellTable::new();
+        // Nine rows: two blocks of four, which update four at a time, and one more.
+        for dynamic in [false, true] {
+            let mut batch = InstanceBatch::new(9, dynamic, false, 0, 0, 1.0);
+            batch.update(&jobs, 1, &mut cells);
+            assert_eq!(batch.common_cell(), Some(ORIGIN_CELL));
+            assert_eq!(batch.cell_changes().count, 0);
+
+            // Rows 2 and 8 move 100 km out; the others stay near the origin.
+            for row in [2, 8] {
+                write_row(&mut batch, row, 100_000.5);
+            }
+            batch.mark_dirty(0, 9).unwrap();
+            batch.update(&jobs, 2, &mut cells);
+            let far = cells.find([98, 0, 0]).unwrap();
+            assert_eq!(batch.cells()[..9], [0, 0, far, 0, 0, 0, 0, 0, far]);
+            assert_eq!(batch.cell_changes(), RowRange { start: 2, count: 7 });
+            assert_eq!(batch.common_cell(), None);
+            assert_eq!(cells.count(far), 2);
+            // Matrices are relative to their cell's center: 100,000.5 m less 98 cells.
+            assert_eq!(x_of(&batch, 0, 2), -351.5);
+            assert_eq!(x_of(&batch, 0, 3), 0.0);
+
+            // Nothing moves, so no row changes cells.
+            batch.mark_dirty(0, 9).unwrap();
+            batch.update(&jobs, 3, &mut cells);
+            assert_eq!(batch.cell_changes().count, 0);
+
+            // With every row out there, the batch has a common cell again.
+            for row in 0..9 {
+                write_row(&mut batch, row, 100_000.5);
+            }
+            batch.mark_dirty(0, 9).unwrap();
+            batch.update(&jobs, 4, &mut cells);
+            assert_eq!(batch.common_cell(), Some(far));
+            assert_eq!(cells.count(far), 9);
+            assert_eq!(x_of(&batch, 0, 0), -351.5);
+            batch.release_cells(&mut cells);
+            assert!(cells.origin_only());
+        }
+    }
+
+    #[test]
+    fn rows_that_come_back_are_checked_against_the_common_cell() {
+        let jobs = JobSystem::new(0);
+        let mut cells = CellTable::new();
+        let mut batch = InstanceBatch::new(8, false, false, 0, 0, 1.0);
+        batch.update(&jobs, 1, &mut cells);
+        // Row 7 goes far out, then leaves the drawn rows.
+        write_row(&mut batch, 7, -5_000.0);
+        batch.mark_dirty(7, 1).unwrap();
+        batch.update(&jobs, 2, &mut cells);
+        batch.set_active_count(4).unwrap();
+        batch.update(&jobs, 3, &mut cells);
+        assert_eq!(batch.common_cell(), Some(ORIGIN_CELL));
+        // It comes back where it was, in its own cell, so the rows share no cell.
+        batch.set_active_count(8).unwrap();
+        assert_eq!(batch.common_cell(), None);
+        batch.update(&jobs, 4, &mut cells);
+        assert_eq!(batch.common_cell(), None);
+        assert_eq!(cells.coords(batch.cells()[7]), [-5, 0, 0]);
+        // Back at the origin, the rows share the origin cell again.
+        write_row(&mut batch, 7, 0.0);
+        batch.mark_dirty(7, 1).unwrap();
+        batch.update(&jobs, 5, &mut cells);
+        assert_eq!(batch.common_cell(), Some(ORIGIN_CELL));
+        assert!(cells.origin_only());
     }
 }

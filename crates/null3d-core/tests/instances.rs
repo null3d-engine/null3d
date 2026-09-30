@@ -5,6 +5,7 @@ mod common;
 
 use common::{Rng, Workers, compose64, max_axis_scale64};
 use null3d_core::bitset::Bitset;
+use null3d_core::cells::CellTable;
 use null3d_core::handle::Handle;
 use null3d_core::instances::{BatchTable, RowRange};
 use null3d_core::jobs::JobSystem;
@@ -69,6 +70,7 @@ fn check_rows(table: &BatchTable, id: Handle, frame: u32) {
 
 struct Setup {
     table: BatchTable,
+    cells: CellTable,
     dynamic: Handle,
     statics: Vec<Handle>,
 }
@@ -89,6 +91,7 @@ fn setup(rng: &mut Rng) -> Setup {
     }
     Setup {
         table,
+        cells: CellTable::new(),
         dynamic,
         statics,
     }
@@ -131,7 +134,7 @@ fn batches_match_the_reference_with_and_without_workers() {
                         .unwrap();
                 }
             }
-            run.table.update(jobs, frame);
+            run.table.update(jobs, frame, &mut run.cells);
         }
 
         let (a, b) = (&runs[0].table, &runs[1].table);

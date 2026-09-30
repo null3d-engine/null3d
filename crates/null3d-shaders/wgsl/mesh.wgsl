@@ -9,13 +9,18 @@ enable draw_index;
 // pipeline reads only the attributes its entry point declares, wherever the mesh's format puts
 // them.
 //
+// Positions are relative to the camera: the frame's view-projection matrix puts the camera at the
+// origin, and each instance's world matrix is moved by the offset from the camera to its grid cell.
+//
 // On WebGPU each instance brings three rows of its world matrix and its material id as
 // instance-rate vertex attributes, after the vertex attributes' locations, never through a storage
-// buffer, so the same vertex stage runs in WebGPU's compatibility mode. On WebGL2 (the WEBGL2
-// variants) the vertex shader finds its instance in the frame's index list, directly or through a
-// cluster of rows, reads the matrix rows from a data texture, and takes the material from its
-// draw's record. The DRAW_INDEX variant draws many buckets in one multi-draw call and reads each
-// draw's record by `gl_DrawID`; the other variant gets one record per draw.
+// buffer, so the same vertex stage runs in WebGPU's compatibility mode. The culling shader has
+// already moved each matrix by its cell's offset. On WebGL2 (the WEBGL2 variants) the vertex shader
+// finds its instance in the frame's index list, directly or through a cluster of rows, reads the
+// matrix rows from a data texture, and adds the offset of the cell that the list entry names. It
+// takes the material from its draw's record. The DRAW_INDEX variant draws many buckets in one
+// multi-draw call and reads each draw's record by `gl_DrawID`; the other variant gets one record
+// per draw.
 //
 // The fragment shaders write linear color into the HDR scene color, which the final pass tone maps.
 // On the 8-bit path (the TONE_MAP variants) they apply the frame's exposure and tone mapping, and
@@ -35,6 +40,11 @@ const MATRIX_ROW_SHIFT: u32 = 9u;
 const INDEX_ROW_SHIFT: u32 = 11u;
 /// A cluster texture entry that names no row: a place past the end of a batch's last cluster.
 const NO_ROW: u32 = 0xffffffffu;
+/// An index list entry holds its row, or its cluster, in the bits below CELL_SHIFT, and the index
+/// of the row's grid cell above them.
+const CELL_SHIFT: u32 = 23u;
+/// Grid cells in use at most: the length of the table of offsets from the camera to each cell.
+const MAX_CELLS: u32 = 512u;
 #ifdef DRAW_INDEX
 /// Draw records one multi-draw call reads.
 const DRAW_RECORDS: u32 = 256u;
@@ -54,7 +64,13 @@ struct DrawTable {
     items: array<vec4u, DRAW_RECORDS>,
 }
 
+/// The offset from the camera to the center of each grid cell, by cell index.
+struct CellOffsets {
+    items: array<vec4f, MAX_CELLS>,
+}
+
 @group(0) @binding(1) var<uniform> materials: MaterialTable;
+@group(0) @binding(2) var<uniform> cell_offsets: CellOffsets;
 @group(1) @binding(0) var<uniform> draws: DrawTable;
 @group(2) @binding(0) var resident_rows: texture_2d<f32>;
 @group(2) @binding(1) var streamed_rows: texture_2d<f32>;
@@ -114,13 +130,15 @@ fn material(id: u32) -> Material {
 
 #ifdef WEBGL2
 /// The instance a draw with this record draws as its `instance`-th: the index list gives its
-/// source, or the cluster whose rows the cluster texture lists, and the draw's data texture holds
-/// the source's matrix rows. The places past the end of a batch's last cluster draw nothing.
+/// source, or the cluster whose rows the cluster texture lists, and its cell. The draw's data
+/// texture holds the source's matrix rows, relative to the cell's center, which the cell's offset
+/// moves to the camera. The places past the end of a batch's last cluster draw nothing.
 fn instance_of(record: vec4u, instance: u32) -> Instance {
     let index_row = (1u << INDEX_ROW_SHIFT) - 1u;
     let shift = record.w;
     let slot = record.x + (instance >> shift);
-    var source = textureLoad(visible, vec2u(slot & index_row, slot >> INDEX_ROW_SHIFT), 0).x;
+    let entry = textureLoad(visible, vec2u(slot & index_row, slot >> INDEX_ROW_SHIFT), 0).x;
+    var source = entry & ((1u << CELL_SHIFT) - 1u);
     if shift != 0u {
         let place = (source << shift) | (instance & ((1u << shift) - 1u));
         source = textureLoad(cluster_rows, vec2u(place & index_row, place >> INDEX_ROW_SHIFT), 0).x;
@@ -139,6 +157,10 @@ fn instance_of(record: vec4u, instance: u32) -> Instance {
         out.row1 = textureLoad(streamed_rows, at + vec2u(1u, 0u), 0);
         out.row2 = textureLoad(streamed_rows, at + vec2u(2u, 0u), 0);
     }
+    let offset = cell_offsets.items[entry >> CELL_SHIFT];
+    out.row0.w += offset.x;
+    out.row1.w += offset.y;
+    out.row2.w += offset.z;
     out.material = record.y;
     return out;
 }
