@@ -174,3 +174,48 @@ fn custom_materials_draw_with_their_own_templates_on_webgl2() {
         CpuCulledConfig::default(),
     )));
 }
+
+/// A change of custom values uploads their row alone, after every material's row: `row_of` finds
+/// the first row that a command writes, or `None` for another command.
+fn check_custom_values<B: FrameBuilder>(
+    mut world: World<B>,
+    row_of: impl Fn(&(Op, Vec<u32>)) -> Option<u32>,
+) {
+    add(
+        &mut world,
+        &mapped_triangle(),
+        Shading::Custom(template::CUSTOM_FIRST),
+        0,
+    );
+    add(
+        &mut world,
+        &mapped_triangle(),
+        Shading::Custom(template::CUSTOM_FIRST),
+        0,
+    );
+    world.record(true);
+    let capacity = world.renderer.settings().materials().capacity();
+    let materials = world.renderer.settings_mut().materials_mut();
+    materials.set_values(1, 4, &[0.5, 0.25, 0.125]).unwrap();
+    world.record(false);
+    MockBackend::default()
+        .replay(world.renderer.list(0).words())
+        .unwrap();
+    let rows: Vec<u32> = world.commands().iter().filter_map(row_of).collect();
+    assert_eq!(rows, vec![capacity + 1]);
+}
+
+#[test]
+fn custom_values_upload_after_the_rows_on_webgpu() {
+    check_custom_values(World::new(), |(op, o)| {
+        (*op == Op::WriteBuffer && o[0] == 1).then(|| o[1] / 128)
+    });
+}
+
+#[test]
+fn custom_values_upload_after_the_rows_on_webgl2() {
+    let world = World::build(CpuCulledRenderer::new(CpuCulledConfig::default()));
+    check_custom_values(world, |(op, o)| {
+        (*op == Op::WriteTexture && o[5] == 8).then(|| o[3])
+    });
+}

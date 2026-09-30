@@ -157,6 +157,14 @@ const DOCS = {
 			'E1215: materials.shader() got WGSL as text, which the null3D Vite plugin did not compile.',
 		since: '0.1',
 	},
+	E1216: {
+		title: 'Invalid uniform',
+		cause:
+			"A custom material's uniforms did not match its WGSL. The uniforms option and set() take the names of the fields of struct Uniforms in the WGSL, each with a value of its type. A field cannot have the name of a standard value, such as color or roughness, because set() takes those too.",
+		example:
+			"E1216: materials.shader.set() got speeed, which is not a uniform of the material's WGSL.",
+		since: '0.1',
+	},
 	E1301: {
 		title: 'No usable GPU path',
 		cause: 'The browser offers neither WebGPU nor WebGL2 for the way the engine was asked to draw.',

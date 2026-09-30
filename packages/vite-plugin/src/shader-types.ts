@@ -92,6 +92,16 @@ export interface CompiledMaterial {
 	readonly kind: 'material';
 	/** The functions that the WGSL declares for the engine to call, such as `surface`. */
 	readonly functions: readonly string[];
+	/**
+	 * The fields of the WGSL's `struct Uniforms`: each one's name, its type (`f32`, `i32`, `u32`,
+	 * `vec2f`, `vec3f` or `vec4f`), and the float of the material's row of custom values where it
+	 * starts.
+	 */
+	readonly uniforms: readonly {
+		readonly name: string;
+		readonly type: 'f32' | 'i32' | 'u32' | 'vec2f' | 'vec3f' | 'vec4f';
+		readonly offset: number;
+	}[];
 	/** The standard material's variants with the WGSL's functions, by name. */
 	readonly variants: Readonly<Record<string, ShaderVariant>>;
 }

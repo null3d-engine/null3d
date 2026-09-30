@@ -253,6 +253,14 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 		size: [480, 270],
 		modes: ALL_MODES,
 	},
+	// Custom materials with uniforms: one WGSL whose uniforms take their first values, or change
+	// through set() after creation, with a standard value beside them.
+	{
+		name: 'custom-uniforms',
+		sketch: 'tests/pages/sketches/custom-uniforms-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+	},
 	// Orbit controls after the controls test's drags, made through the controls' own calls. The
 	// controls test must draw this image after it makes the drags with Playwright.
 	{ name: 'controls', sketch: 'tests/pages/sketches/controls-sketch.ts?moved', hold: 0 },

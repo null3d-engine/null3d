@@ -270,6 +270,19 @@ describe.skipIf(!ENABLED)('compileWgsl', () => {
 		expect(built.variants.webgl2?.glsl?.main?.fragment.source).toContain('#version 300 es');
 	});
 
+	it('gives the place of each uniform that struct Uniforms declares', () => {
+		const tinted = `struct Uniforms { strength: f32, tint: vec3f }\n\n${SURFACE.replace(
+			'return s;',
+			's.baseColor = material.tint * material.strength;\n    return s;',
+		)}`;
+		const built = material(compileWgsl('src/tinted.wgsl', tinted, HINT));
+		expect(built.uniforms).toEqual([
+			{ name: 'strength', type: 'f32', offset: 0 },
+			{ name: 'tint', type: 'vec3f', offset: 4 },
+		]);
+		expect(material(compileWgsl('src/stripes.wgsl', SURFACE, HINT)).uniforms).toEqual([]);
+	});
+
 	it('places problems of a surface function in its own lines', () => {
 		const broken = SURFACE.replace('4.0));', '4.0)) 2.0;');
 		const syntax = failure(compileWgsl('src/stripes.wgsl', broken, HINT));

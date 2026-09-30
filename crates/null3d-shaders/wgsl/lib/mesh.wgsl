@@ -126,6 +126,21 @@ fn material_of(id: u32) -> Material {
 #endif
 }
 
+/// Value `k` of a material's custom values: the `k`-th `vec4f` of its row of custom values, which
+/// holds a custom material's uniforms. The material table holds a row of custom values for each
+/// material after every material's row, so it has twice as many rows as materials.
+fn custom_value(id: u32, k: u32) -> vec4f {
+#ifdef WEBGL2
+    return textureLoad(materials, vec2u(k, textureDimensions(materials).y / 2u + id), 0);
+#else
+    let m = materials[arrayLength(&materials) / 2u + id];
+    var parts = array<vec4f, 8>(
+        m.color, m.emissive, m.surface, m.strengths, m.uv_u, m.uv_v, m.maps, m.more_maps,
+    );
+    return parts[k];
+#endif
+}
+
 /// True when a map's layer, as a material's row holds it, draws: its image is on the GPU.
 fn map_ready(layer: f32) -> bool {
     return layer >= 0.0;

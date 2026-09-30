@@ -11,21 +11,28 @@ enable draw_index;
 // fogs or blends the surface belongs in `shade`, so custom materials get both.
 //
 // Custom materials build this template with their WGSL added after its last line, and with the
-// shader def CUSTOM_SURFACE when that WGSL declares `fn surface`. Their WGSL shares this file's
-// names, so the template imports library items by name and keeps its own names few. It never
-// imports a module whole, which would reserve the module's name in their WGSL too.
+// shader def CUSTOM_SURFACE when that WGSL declares `fn surface`. When it declares
+// `struct Uniforms`, the build adds `load_material_uniforms` after it, and CUSTOM_UNIFORMS makes the
+// template fill `material` with the uniforms. Their WGSL shares this file's names, so the template
+// imports library items by name and keeps its own names few. It never imports a module whole,
+// which would reserve the module's name in their WGSL too.
 #import null3d::color::{linear_to_srgb}
 #import null3d::lighting::{PbrMaterial, dfg_lut, direct_light, indirect_diffuse}
 #import null3d::lighting::{multiscatter_compensation, pbr_material}
 #import null3d::globals::{Material}
 #import null3d::mesh::{InstanceIn, clip_of, find_instance, frame, material_of}
-#import null3d::mesh::{relative_position, world_normal}
+#import null3d::mesh::{custom_value, relative_position, world_normal}
 
 /// The bit of a material's flags that lights each triangle with its face's normal.
 const FLAT_SHADING: u32 = 1u;
 
 /// The row of the material that the pixel shows, which the fragment shader reads once.
 var<private> material_row: Material;
+
+#ifdef CUSTOM_UNIFORMS
+/// The custom material's uniforms, which the fragment shader reads once.
+var<private> material: Uniforms;
+#endif
 
 /// The vertex attributes that the template reads.
 struct VertexIn {
@@ -164,6 +171,9 @@ fn shade(s: Surface, input: SurfaceInput) -> vec4f {
 @fragment
 fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
     material_row = material_of(in.material);
+#ifdef CUSTOM_UNIFORMS
+    material = load_material_uniforms(in.material);
+#endif
     var input: SurfaceInput;
     input.relativePosition = in.relative;
     // Back faces draw only for double-sided materials, and light as front faces do.

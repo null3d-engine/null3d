@@ -370,10 +370,10 @@ impl GpuDrivenRenderer {
         Ok(upload_everything)
     }
 
-    /// Records the creation of the material table and three.js's table of specular terms, whose
-    /// sizes never change.
+    /// Records the creation of the material table, with a row of custom values after each
+    /// material's row, and of three.js's table of specular terms, whose sizes never change.
     fn create_fixed(&mut self, list: &mut DrawList) -> Result<(), RecordError> {
-        let materials = self.config.max_materials.max(1);
+        let materials = self.config.max_materials.max(1) * 2;
         list.push(
             Op::CreateBuffer,
             &[
@@ -394,7 +394,7 @@ impl GpuDrivenRenderer {
     fn upload_bound(&self) -> usize {
         let meshes = self.meshes.pending_bytes(self.settings.meshes().pages());
         let materials =
-            self.settings.materials().capacity() as usize * MATERIAL_FLOATS * 4 + dfg::BYTES;
+            self.settings.materials().capacity() as usize * MATERIAL_FLOATS * 4 * 2 + dfg::BYTES;
         let per_view = (sizes::FRAME_UNIFORM_BYTES + CULL_PARAMS_BYTES) as usize
             + self.layout.draws.len() * INDIRECT_BYTES as usize;
         meshes + materials + self.layout.upload_bound() + self.settings.views().len() * per_view

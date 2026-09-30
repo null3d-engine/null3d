@@ -255,7 +255,8 @@ materials.shadowCatcher({ opacity: 0.5 });     // (0.2)
 materials.shader({ ...anyStandardOption, wgsl, uniforms, textures });
 // wgsl: one tagged /* wgsl */ literal or .wgsl import with fn surface (and later fn vertexOffset, or entry points)
 // every materials.standard option feeds defaultSurface(), so a surface function can adjust a standard look
-// built so far: wgsl with fn surface; uniforms, textures, vertex offsets and full shaders are not built yet
+// built so far: wgsl with fn surface and struct Uniforms; textures, vertex offsets and full shaders are not built yet
+// m.set({ speed: 2, roughness: 0.3 }) changes uniforms and standard values alike
 ```
 
 `set()` changes values, such as colors and numbers, cheaply at any time. Options that change the shader, such as `alphaMode`, `vertexColors` or a texture that the material did not have, are fixed when you create the material. Create each variant before play, and switch with `setMaterial`. Custom shaders: `references/shaders.md`.

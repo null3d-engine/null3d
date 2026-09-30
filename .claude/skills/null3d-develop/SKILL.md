@@ -177,7 +177,7 @@ const rings = materials.shader({
 rings.set({ roughness: 0.2 }); // the standard values, which defaultSurface reads
 ```
 
-`references/shaders.md` has the full contract: every field of `SurfaceInput` and `Surface`, the names to avoid, and the WGSL rules. Uniforms (`struct Uniforms` in the WGSL), textures, the built-in values (`frame`, `camera`, `object`), vertex offsets and full shaders are not built yet.
+`references/shaders.md` has the full contract: every field of `SurfaceInput` and `Surface`, uniforms (`struct Uniforms` in the WGSL, read from `material`), the names to avoid, and the WGSL rules. Textures, the built-in values (`frame`, `camera`, `object`), vertex offsets and full shaders are not built yet.
 
 ## 7. When something goes wrong
 

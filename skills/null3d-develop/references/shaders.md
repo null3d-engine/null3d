@@ -88,7 +88,7 @@ Materials from the same WGSL share one shader and its pipelines. Make one WGSL p
 
 Planned additions, not built yet: `worldPosition`, `uv1`, `fragCoord` and `instance` in `SurfaceInput`, and alpha modes that use `s.alpha`.
 
-Names: your WGSL shares a file with the engine's standard material. Do not declare `SurfaceInput`, `Surface`, `defaultSurface`, `shade`, `light_surface`, `material_row`, `VertexIn`, `VertexOut`, `vs` or `fs`. Import library items by name (`#import null3d::noise::{fbm2}`), because a whole-module import reserves the module's name. No `enable` directives.
+Names: your WGSL shares a file with the engine's standard material. Do not declare `SurfaceInput`, `Surface`, `defaultSurface`, `shade`, `light_surface`, `material`, `material_row`, `load_material_uniforms`, `custom_value`, `VertexIn`, `VertexOut`, `vs` or `fs`. Import library items by name (`#import null3d::noise::{fbm2}`), because a whole-module import reserves the module's name. No `enable` directives.
 
 ## 3. Built-in values (not built yet)
 
@@ -97,13 +97,13 @@ Names: your WGSL shares a file with the engine's standard material. Do not decla
 | `frame` | `time`, `deltaTime`, `frameIndex` (u32), `resolution` (vec2f, render-target pixels) | Same values for every draw in a frame |
 | `camera` | `position` (absolute world position), `view`, `projection`, `viewProjection`, `near`, `far` | Matrices are `mat4x4f` |
 | `object` | `worldMatrix`, `normalMatrix`, `id` (u32) | For instances, the instance's values |
-| `material` | Your uniforms, as `struct Uniforms` declares them | See section 4 |
+| `material` | Your uniforms, as `struct Uniforms` declares them (built) | See section 4 |
 
 The engine renders relative to the camera. `input.relativePosition` is therefore exact near the camera, even in very large worlds. Use it for distances, fades and view-dependent effects. Until `worldPosition` exists, use `input.uv` for a pattern that must stay on the surface as the camera moves.
 
-## 4. Uniforms, textures and per-instance data (not built yet)
+## 4. Uniforms, textures and per-instance data
 
-The WGSL declares the uniforms once, as `struct Uniforms`, and reads them from `material`. The `uniforms` option gives their first values by field name:
+Uniforms are built; textures and per-instance data are not built yet. The WGSL declares the uniforms once, as `struct Uniforms`, and reads them from `material`. The `uniforms` option gives their first values by field name, and a uniform without one starts at 0:
 
 ```ts
 materials.shader({
@@ -146,8 +146,10 @@ const dissolve = materials.shader({
 // later: dissolve.set({ progress: 0.6 });
 ```
 
-- `set()` changes only the uniforms you pass, cheaply at any time, and the others keep their values. A typed `set()` generated from the struct comes in 0.2.
-- Color strings and hex numbers are sRGB and are converted to linear. Arrays are used as given.
+- `set()` changes only the uniforms you pass, cheaply at any time, and the others keep their values. It takes standard values in the same call. A typed `set()` generated from the struct comes in 0.2.
+- Field types: `f32`, `i32`, `u32` (numbers; whole numbers for the integers), `vec2f`, `vec3f`, `vec4f` (arrays). A `vec3f` also takes a color string or hex number, converted from sRGB to linear. Arrays are used as given.
+- The fields fit in 32 numbers; each `vec3f` and `vec4f` starts a group of four. The build rejects other types and fields past the limit.
+- No field may be named as a standard value (`color`, `opacity`, `metalness`, `roughness`, `emissive`, `emissiveIntensity`). A wrong name or value in `uniforms` or `set()` throws E1216.
 - Textures come with a `textures` option; their WGSL form is not settled yet.
 - Per-instance data: `createInstances(mesh, count, { material, attributes: { tint: 4 } })` (0.2).
 

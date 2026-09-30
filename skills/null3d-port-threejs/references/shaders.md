@@ -2,7 +2,7 @@
 
 null3D shaders are WGSL. The build translates them to GLSL for the WebGL2 path, so you write each shader once. The null3d-develop skill's `references/shaders.md` defines the surface-function contract used below. Engine docs: `porting/threejs-shaders`, `shaders/surface-functions`, `shaders/builtins`, `shaders/wgsl-rules`.
 
-A custom material takes its WGSL in one `wgsl` option: a template literal tagged `/* wgsl */`, or a `.wgsl` import. That WGSL holds `fn surface`, `fn vertexOffset`, or both. It declares its uniforms once, as `struct Uniforms`, and reads them from `material`. Built so far: `materials.shader({ wgsl })` with `fn surface`. Uniforms, textures, vertex offsets, full shaders and the built-in values (`frame`, `camera`, `object`) are not built yet, so a port that needs them waits, or keeps its values in the standard options.
+A custom material takes its WGSL in one `wgsl` option: a template literal tagged `/* wgsl */`, or a `.wgsl` import. That WGSL holds `fn surface`, `fn vertexOffset`, or both. It declares its uniforms once, as `struct Uniforms`, and reads them from `material`. Built so far: `materials.shader({ wgsl, uniforms })` with `fn surface` and `struct Uniforms`. Textures, vertex offsets, full shaders and the built-in values (`frame`, `camera`, `object`) are not built yet, so a port that needs them waits, or keeps its values in the standard options.
 
 ## Contents
 
@@ -188,15 +188,15 @@ void main() {
 // null3d
 const glow = materials.shader({
   alphaMode: 'blend', blending: 'additive', depthWrite: false,
-  uniforms: { color: '#44aaff', power: 3 },
+  uniforms: { glowColor: '#44aaff', power: 3 },
   wgsl: /* wgsl */ `
-    struct Uniforms { color: vec3f, power: f32 }
+    struct Uniforms { glowColor: vec3f, power: f32 }
 
     fn surface(input: SurfaceInput) -> Surface {
       var s = defaultSurface(input);
       let f = pow(1.0 - max(dot(input.normal, input.viewDirection), 0.0), material.power);
       s.baseColor = vec3f(0.0);
-      s.emissive = material.color * f;
+      s.emissive = material.glowColor * f;
       s.alpha = f;
       return s;
     }`,
@@ -255,6 +255,6 @@ The null3D version is the dissolve example in the null3d-develop skill's `refere
 - Convert raw sRGB color constants from ShaderMaterials (section 4).
 - three.js `normalMatrix` is view space; null3D normals are world space.
 - WGSL does not mix `f32` and `i32` in arithmetic: cast explicitly.
-- Avoid `mat3x3f` uniforms: their layout pads each column. Pass three `vec3f` values or a `mat4x4f`.
+- Uniforms take `f32`, `i32`, `u32`, `vec2f`, `vec3f` and `vec4f`, 32 numbers in all. Pass a matrix as `vec4f` rows, and rename a uniform called `color`, `roughness` or another standard value.
 - Use only the three WGSL language features every browser shares, and `@interpolate(flat, either)` for flat values (null3d-develop `references/shaders.md`, section 8).
 - Test on WebGL2 (`?gpu=webgl2`): the translated GLSL can hit limits the WGSL did not.

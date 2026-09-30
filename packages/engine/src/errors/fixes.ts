@@ -46,6 +46,8 @@ export const ERROR_FIXES = {
 		'Give fixedRate the fixed steps per second, a number above 0 such as 60 or 120. Give maxFixedSteps a whole number of 1 or more, such as 8.',
 	E1215:
 		'Add the null3D Vite plugin to vite.config.ts. Write the WGSL in a template literal right after a /* wgsl */ comment, or import it from a .wgsl file. Declare fn surface(input: SurfaceInput) -> Surface in it, with no @vertex or @fragment entry point.',
+	E1216:
+		'Use the names of the fields of struct Uniforms in the WGSL. Give an f32 a number, and an i32 or a u32 a whole number. Give a vec2f, vec3f or vec4f an array of 2, 3 or 4 numbers. A vec3f also takes a color. Rename a field that has the name of a standard value, such as color.',
 	E1301:
 		'Remove a ?gpu= switch or createEngine gpu option that forces a path this browser lacks. Update the browser, or turn on hardware acceleration in its settings.',
 	E1302:

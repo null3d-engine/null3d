@@ -85,10 +85,12 @@ export type {
 	PlaneOptions,
 	RingOptions,
 	ShaderOptions,
+	ShaderValues,
 	SphereOptions,
 	StandardOptions,
 	StandardValues,
 	TorusOptions,
+	UniformValue,
 	UnlitOptions,
 } from './scene/resources';
 export type {
