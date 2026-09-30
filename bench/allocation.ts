@@ -6,14 +6,15 @@
 // prints the bytes per frame of every place that allocated. From the page's start to the end of
 // the sample, it moves the mouse over the canvas and presses a key and the mouse button, so the
 // sample covers the sketch's reading of input. It draws with WebGPU, or with WebGL2 when
-// `--gpu webgl2` asks for it, and runs S1-cells, whose views skip whole grid cells, when
-// `--scene s1-cells` asks for it. It samples the production build of the benchmark pages, as a
+// `--gpu webgl2` asks for it. `--scene s1-cells` runs S1-cells, whose views skip whole grid cells,
+// and `--scene s3` runs S3, whose 256 point lights move every frame. It samples the production build of the benchmark pages, as a
 // developer ships the engine, and names the build's functions through its source maps; `--dev`
 // samples the dev server's pages, with the engine's development checks. From the repository root:
 //   bun run bench:allocation
 //   bun run bench:allocation --n 30000 --seconds 5 --warmup 30
 //   bun run bench:allocation --gpu webgl2
 //   bun run bench:allocation --scene s1-cells --gpu webgl2
+//   bun run bench:allocation --scene s3
 // At 30,000 instances a frame's upload goes through the staging ring; at 100,000 it does not.
 import { chromium, type Page } from '@playwright/test';
 import { DEBUG_PORT } from '../tests/lib/server.ts';
@@ -21,6 +22,7 @@ import { attachWorkers, type CallFrame, DevTools, pagesAt, placeName, sleep } fr
 import { pagePath } from './lib/parity';
 import { DEV_OPTION, pagesText, serveBenchPages } from './lib/serve';
 import type { BuildNames } from './lib/source-names';
+import { S3_DEFAULT_COUNT } from './scenes/spec';
 
 /** Bytes between allocation samples: small, so a few bytes per frame still show. */
 const SAMPLING_INTERVAL = 128;
@@ -164,14 +166,14 @@ async function main(): Promise<void> {
 		const at = args.indexOf(name);
 		return at >= 0 ? Number(args[at + 1]) : fallback;
 	};
-	const n = option('--n', 100_000);
+	const scene = args.includes('--scene') ? args[args.indexOf('--scene') + 1] : 's1';
+	if (scene !== 's1' && scene !== 's1-cells' && scene !== 's3')
+		throw new Error(`--scene takes s1, s1-cells or s3, not ${scene}`);
+	const n = option('--n', scene === 's3' ? S3_DEFAULT_COUNT : 100_000);
 	const seconds = option('--seconds', 5);
 	const gpu = args.includes('--gpu') ? args[args.indexOf('--gpu') + 1] : 'webgpu';
 	if (gpu !== 'webgpu' && gpu !== 'webgl2')
 		throw new Error(`--gpu takes webgpu or webgl2, not ${gpu}`);
-	const scene = args.includes('--scene') ? args[args.indexOf('--scene') + 1] : 's1';
-	if (scene !== 's1' && scene !== 's1-cells')
-		throw new Error(`--scene takes s1 or s1-cells, not ${scene}`);
 	// The browser optimizes code that runs once per frame only after many frames; until then,
 	// numbers that such code computes are allocated.
 	const warmup = option('--warmup', WARMUP_SECONDS);
@@ -250,7 +252,7 @@ async function main(): Promise<void> {
 		await input;
 		devtools.close();
 		console.log(
-			`S1 on ${gpu} with ${n} instances, ${pagesText(dev)}, sampled for ${seconds} s after ${warmup} s: ${frames} frames`,
+			`${scene.toUpperCase()} on ${gpu} with ${n} instances, ${pagesText(dev)}, sampled for ${seconds} s after ${warmup} s: ${frames} frames`,
 		);
 		const over: string[] = [];
 		for (const [worker, head] of profiles) {
