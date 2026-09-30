@@ -881,8 +881,15 @@ export const S4_PROPS = { perSide: 67, inset: 0.8 } as const;
 export const S4_MARKINGS = { dashSpacing: 6, manholeSpacing: 21, lane: 3.5 } as const;
 /** How high the flat marks lie above what they lie on, so that the GPU draws them over it. */
 const MARK_LIFT = 0.02;
-/** The vehicles: how many, and their least and most speed in meters per second. */
+/**
+ * The vehicles: how many, and each lane's least and most speed in meters per second. They drive
+ * along X, in two lanes of each street, one each way, with as many vehicles in every lane. The
+ * vehicles of a lane keep one speed and their spacing, and no lane crosses another, so no two
+ * vehicles ever overlap. Surfaces that overlap at equal depth draw in either order on the GPU.
+ */
 export const S4_VEHICLES = { count: 200, minSpeed: 6, maxSpeed: 14 } as const;
+/** The lanes: two in each street along X. */
+export const S4_LANES = 2 * (S4_TOWN.blocks + 1);
 /** How often each kind of vehicle drives, in the order of the vehicle kinds. */
 const VEHICLE_WEIGHTS = [0.6, 0.2, 0.12, 0.08] as const;
 
@@ -936,15 +943,13 @@ export interface S4Data {
 	vehicles: number;
 	/** Each vehicle's index in `S4_KINDS`. */
 	vehicleKind: Uint8Array;
-	/** 0 for a vehicle that drives along X, 1 for one that drives along Z. */
-	vehicleAxis: Uint8Array;
-	/** The coordinate of the vehicle's lane across the way it drives. */
+	/** The z of the vehicle's lane. */
 	vehicleLane: Float32Array;
-	/** 1 for a vehicle that drives toward +X or +Z, -1 for one that drives the other way. */
+	/** 1 for a vehicle that drives toward +X, -1 for one that drives toward -X. */
 	vehicleDirection: Int8Array;
-	/** Speeds, in meters per second. */
+	/** Speeds, in meters per second: the speed of the vehicle's lane. */
 	vehicleSpeed: Float32Array;
-	/** Where each vehicle is at time 0, as a share of the town's length from its -X or -Z edge. */
+	/** Where each vehicle is at time 0, as a share of the town's length from its -X edge. */
 	vehiclePhase: Float32Array;
 	/** Each vehicle's height, from its kind's size. */
 	vehicleHeight: Float32Array;
@@ -990,8 +995,8 @@ function inCrossing(u: number, margin: number): boolean {
  * lot, whether its building is a round tower, the building's kind, width, depth (boxes only),
  * height and offset in x and z, whether it carries a roof object and that object's kind; then for
  * each spot along the block's four sides, the furniture's kind and turn. The road markings and the
- * street lights need no random numbers. Then for each vehicle: its axis, street, direction, kind,
- * speed and phase.
+ * street lights need no random numbers. Then for each lane, in the order of the streets and
+ * then -X before +X: its speed, the phase of its first vehicle, and each of its vehicles' kinds.
  */
 export function createS4(seed = 4): S4Data {
 	const random = mulberry32(seed);
@@ -1089,7 +1094,6 @@ export function createS4(seed = 4): S4Data {
 		size: Float32Array.from(objects.size),
 		vehicles,
 		vehicleKind: new Uint8Array(vehicles),
-		vehicleAxis: new Uint8Array(vehicles),
 		vehicleLane: new Float32Array(vehicles),
 		vehicleDirection: new Int8Array(vehicles),
 		vehicleSpeed: new Float32Array(vehicles),
@@ -1097,21 +1101,25 @@ export function createS4(seed = 4): S4Data {
 		vehicleHeight: new Float32Array(vehicles),
 		lights: Float32Array.from(lights),
 	};
-	for (let i = 0; i < vehicles; i++) {
-		const axis = random() < 0.5 ? 0 : 1;
-		const line = s4StreetCenter(pick(blocks + 1));
-		const direction = random() < 0.5 ? -1 : 1;
-		let weight = random();
-		let kind = 0;
-		while (kind < VEHICLE_WEIGHTS.length - 1 && weight >= (VEHICLE_WEIGHTS[kind] as number))
-			weight -= VEHICLE_WEIGHTS[kind++] as number;
-		data.vehicleKind[i] = S4_FIRST_VEHICLE_KIND + kind;
-		data.vehicleAxis[i] = axis;
-		data.vehicleLane[i] = line + direction * lane;
-		data.vehicleDirection[i] = direction;
-		data.vehicleSpeed[i] = between(S4_VEHICLES.minSpeed, S4_VEHICLES.maxSpeed, random());
-		data.vehiclePhase[i] = random();
-		data.vehicleHeight[i] = s4KindOf(S4_FIRST_VEHICLE_KIND + kind).size?.[1] ?? 1;
+	const perLane = vehicles / S4_LANES;
+	for (let laneIndex = 0; laneIndex < S4_LANES; laneIndex++) {
+		const direction = laneIndex % 2 === 0 ? -1 : 1;
+		const z = s4StreetCenter(laneIndex >> 1) + direction * lane;
+		const speed = between(S4_VEHICLES.minSpeed, S4_VEHICLES.maxSpeed, random());
+		const firstPhase = random();
+		for (let k = 0; k < perLane; k++) {
+			const i = laneIndex * perLane + k;
+			let weight = random();
+			let kind = 0;
+			while (kind < VEHICLE_WEIGHTS.length - 1 && weight >= (VEHICLE_WEIGHTS[kind] as number))
+				weight -= VEHICLE_WEIGHTS[kind++] as number;
+			data.vehicleKind[i] = S4_FIRST_VEHICLE_KIND + kind;
+			data.vehicleLane[i] = z;
+			data.vehicleDirection[i] = direction;
+			data.vehicleSpeed[i] = speed;
+			data.vehiclePhase[i] = (firstPhase + k / perLane) % 1;
+			data.vehicleHeight[i] = s4KindOf(S4_FIRST_VEHICLE_KIND + kind).size?.[1] ?? 1;
+		}
 	}
 	return data;
 }
@@ -1165,12 +1173,10 @@ export function s4VehicleScale(data: S4Data, i: number, outScale: OutArray): voi
 
 /**
  * Writes vehicle i's rotation, which never changes, as a quaternion in x, y, z, w order. The box's
- * length lies along its own +X, and the vehicle faces the way it drives: a quarter turn clockwise,
- * seen from above, points the box along +Z.
+ * length lies along its own +X, and the vehicle faces the way it drives.
  */
 export function s4VehicleRotation(data: S4Data, i: number, outQuaternion: OutArray): void {
-	const forward = (data.vehicleDirection[i] as number) > 0 ? 0 : Math.PI;
-	s4Rotation(data.vehicleAxis[i] === 0 ? forward : forward - Math.PI / 2, false, outQuaternion);
+	s4Rotation((data.vehicleDirection[i] as number) > 0 ? 0 : Math.PI, false, outQuaternion);
 }
 
 /**
@@ -1181,18 +1187,15 @@ export function s4VehicleRotation(data: S4Data, i: number, outQuaternion: OutArr
 export function s4VehiclesAt(data: S4Data, clock: SceneClock, outPositions: OutArray): void {
 	const t = clock[0] as number;
 	const length = 2 * S4_EXTENT;
-	const { vehicleDirection, vehicleSpeed, vehiclePhase, vehicleLane, vehicleAxis, vehicleHeight } =
-		data;
+	const { vehicleDirection, vehicleSpeed, vehiclePhase, vehicleLane, vehicleHeight } = data;
 	for (let i = 0; i < data.vehicles; i++) {
 		const travelled =
 			(vehiclePhase[i] as number) * length +
 			(vehicleDirection[i] as number) * (vehicleSpeed[i] as number) * t;
 		const u = -S4_EXTENT + travelled - length * Math.floor(travelled / length);
-		const lane = vehicleLane[i] as number;
-		const alongX = vehicleAxis[i] === 0;
-		outPositions[i * 3] = alongX ? u : lane;
+		outPositions[i * 3] = u;
 		outPositions[i * 3 + 1] = (vehicleHeight[i] as number) / 2;
-		outPositions[i * 3 + 2] = alongX ? lane : u;
+		outPositions[i * 3 + 2] = vehicleLane[i] as number;
 	}
 }
 

@@ -31,6 +31,8 @@ import {
 	S4_EXTENT,
 	S4_FIRST_VEHICLE_KIND,
 	S4_KINDS,
+	S4_LANES,
+	S4_MARKINGS,
 	S4_MATERIALS,
 	S4_MESHES,
 	S4_STREET_LIGHT,
@@ -57,6 +59,7 @@ import {
 	s4Camera,
 	s4KindOf,
 	s4ObjectAt,
+	s4StreetCenter,
 	s4Texture,
 	s4VehicleRotation,
 	s4VehicleScale,
@@ -645,20 +648,53 @@ describe('S4', () => {
 			const quaternion = [0, 0, 0, 0];
 			s4VehicleRotation(data, i, quaternion);
 			s4VehicleScale(data, i, scale);
-			const along = data.vehicleAxis[i] === 0 ? 0 : 2;
-			expect(position[2 - along]).toBeCloseTo(data.vehicleLane[i]!, 5);
+			expect(position[2]).toBeCloseTo(data.vehicleLane[i]!, 5);
 			expect(position[1]).toBeCloseTo(scale[1]! / 2, 5);
-			expect(Math.abs(position[along]!)).toBeLessThanOrEqual(S4_EXTENT);
-			const moved = later[along]! - position[along]!;
+			expect(Math.abs(position[0]!)).toBeLessThanOrEqual(S4_EXTENT);
+			const moved = later[0]! - position[0]!;
 			// Unless it came back in at the other edge, it moved 0.1 s at its speed, the way it faces.
 			if (Math.abs(moved) < S4_EXTENT) {
 				expect(moved).toBeCloseTo(data.vehicleDirection[i]! * data.vehicleSpeed[i]! * 0.1, 3);
 				const q = new Quaternion(...(quaternion as [number, number, number, number]));
 				const forward = new Vector3(1, 0, 0).applyQuaternion(q).toArray();
-				expect(forward[along]).toBeCloseTo(Math.sign(moved), 6);
+				expect(forward[0]).toBeCloseTo(Math.sign(moved), 6);
 			}
 			const loop = (2 * S4_EXTENT) / data.vehicleSpeed[i]!;
 			expectClose([...at(3 + loop).positions.subarray(i * 3, i * 3 + 3)], position, 3);
+		}
+	});
+
+	test('keeps every vehicle clear of the others: apart in its lane, and in a lane of its own way', () => {
+		const lanes = new Map<number, number[]>();
+		for (let i = 0; i < data.vehicles; i++)
+			lanes.set(data.vehicleLane[i]!, [...(lanes.get(data.vehicleLane[i]!) ?? []), i]);
+		expect(lanes.size).toBe(S4_LANES);
+		const length = 2 * S4_EXTENT;
+		const scale = [0, 0, 0];
+		const lengthOf = (i: number) => {
+			s4VehicleScale(data, i, scale);
+			return scale[0]!;
+		};
+		for (const [z, members] of lanes) {
+			// Each street has a lane each way, far enough apart for the widest vehicle.
+			const fromCenter = Math.min(
+				...Array.from({ length: S4_TOWN.blocks + 1 }, (_, j) => Math.abs(z - s4StreetCenter(j))),
+			);
+			expect(fromCenter).toBeCloseTo(S4_MARKINGS.lane, 4);
+			const speeds = new Set(members.map((i) => data.vehicleSpeed[i]));
+			expect(speeds.size).toBe(1);
+			expect(new Set(members.map((i) => data.vehicleDirection[i])).size).toBe(1);
+			// A lane's vehicles keep one speed, so the gaps along the lane never change.
+			const order = [...members].sort((a, b) => data.vehiclePhase[a]! - data.vehiclePhase[b]!);
+			for (const [k, i] of order.entries()) {
+				const next = order[(k + 1) % order.length]!;
+				const gap = (((data.vehiclePhase[next]! - data.vehiclePhase[i]!) % 1) + 1) % 1;
+				expect(gap * length).toBeGreaterThan((lengthOf(i) + lengthOf(next)) / 2 + 1);
+			}
+		}
+		for (let i = 0; i < data.vehicles; i++) {
+			s4VehicleScale(data, i, scale);
+			expect(2 * scale[2]!).toBeLessThan(2 * S4_MARKINGS.lane);
 		}
 	});
 
