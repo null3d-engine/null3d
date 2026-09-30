@@ -131,7 +131,7 @@ For `post-1.0` and `unsupported` rows:
 
 ## 6. A small example (later in 0.1)
 
-The null3D half needs three parts that come later in 0.1: orbit controls, hemisphere lights that light surfaces, and `post.set`.
+The null3D half needs two parts that come later in 0.1: hemisphere lights that light surfaces, and `post.set`.
 
 Before, in three.js:
 

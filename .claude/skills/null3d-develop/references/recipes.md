@@ -5,7 +5,7 @@ Each recipe states the goal, gives the code, explains why it is written that way
 ## Contents
 
 1. Start a new project
-2. Orbit camera around a model (later in 0.1)
+2. Orbit camera around a model
 3. Load a glTF model and play its animations (0.2)
 4. Thousands of moving objects
 5. Pool short-lived objects such as bullets
@@ -41,7 +41,7 @@ export default defineConfig({ plugins: [null3d()] });
 
 Add `index.html` with a canvas that CSS sizes and a module script for `page.ts`. Then write `page.ts` and `sketch.ts` as SKILL.md section 2 shows. Run `bunx vite`, and open the address it prints. The Vite plugin sends the cross-origin isolation headers, so the threaded build runs. It also compiles the sketch for its worker and the WGSL in your code. Templates from `bunx @null3d/cli create` come in 0.3. Docs: `getting-started/install`, `getting-started/first-scene`, `getting-started/hosting`.
 
-## 2. Orbit camera around a model (later in 0.1)
+## 2. Orbit camera around a model
 
 ```ts
 import { defineSketch } from '@null3d/engine';
