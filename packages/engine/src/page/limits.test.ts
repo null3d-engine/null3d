@@ -21,13 +21,16 @@ const webgpu = (storageBindingBytes: number) => ({
 	maxTextureSize: 0,
 	sharedUploads: true,
 	depth: 'reversed' as const,
+	parallelCompile: true,
 	cellCulling: true,
 });
 
 /** No test switch. */
-const NO_SWITCHES = { copyUploads: false, depth: undefined, cells: true };
+const NO_SWITCHES = { copyUploads: false, depth: undefined, parallelCompile: true, cells: true };
 /** ?uploads=copy. */
-const COPY_UPLOADS = { copyUploads: true, depth: undefined, cells: true };
+const COPY_UPLOADS = { ...NO_SWITCHES, copyUploads: true };
+/** ?compile=wait. */
+const COMPILE_WAIT = { ...NO_SWITCHES, parallelCompile: false };
 
 /** A report whose WebGL2 part has these fields. */
 function report(webgl2: Partial<DeviceReport['webgl2']>): DeviceReport {
@@ -162,5 +165,12 @@ describe('the depth mode', () => {
 		expect(coreDevice(false, report({}), { ...NO_SWITCHES, depth: 'standard' }).depth).toBe(
 			'reversed',
 		);
+	});
+});
+
+describe('background compiles', () => {
+	it('stay on unless ?compile=wait turns them off', () => {
+		expect(coreDevice(true, report({}), NO_SWITCHES).parallelCompile).toBe(true);
+		expect(coreDevice(true, report({}), COMPILE_WAIT).parallelCompile).toBe(false);
 	});
 });

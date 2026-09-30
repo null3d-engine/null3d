@@ -209,9 +209,9 @@ export class Pipelines {
 	}
 
 	/**
-	 * A render pipeline of a template, in the shader variant that its permutation bits pick, for
-	 * meshes of a vertex format where the template draws meshes. Without a color format it draws
-	 * depth only.
+	 * How to build a render pipeline of a template, in the shader variant that its permutation bits
+	 * pick, for meshes of a vertex format where the template draws meshes. Without a color format it
+	 * draws depth only.
 	 */
 	render(
 		template: number,
@@ -221,7 +221,7 @@ export class Pipelines {
 		sampleCount: number,
 		stateFlags: number,
 		vertexFormat: number,
-	): GPURenderPipeline {
+	): GPURenderPipelineDescriptor {
 		const t = this.templates[template];
 		if (!t) throw new Error(`unknown render template ${template}`);
 		const shader = variantFor(t.shader, permutation, 'wgsl')?.wgsl;
@@ -237,7 +237,7 @@ export class Pipelines {
 			});
 			this.pipelineLayouts[template] = layout;
 		}
-		return this.device.createRenderPipeline({
+		return {
 			label: t.label,
 			layout,
 			vertex: {
@@ -258,7 +258,7 @@ export class Pipelines {
 				? { format: depthFormat, depthWriteEnabled: true, depthCompare: 'greater' }
 				: undefined,
 			multisample: { count: sampleCount },
-		});
+		};
 	}
 
 	/** The pipeline that makes mip levels of textures of `format`, made at its first use. */
@@ -278,12 +278,13 @@ export class Pipelines {
 		return pipeline;
 	}
 
-	compute(template: number): GPUComputePipeline {
+	/** How to build a compute pipeline of a template. */
+	compute(template: number): GPUComputePipelineDescriptor {
 		if (template !== TEMPLATE_CULL) throw new Error(`unknown compute template ${template}`);
-		return this.device.createComputePipeline({
+		return {
 			label: 'cull',
 			layout: this.cullLayout,
 			compute: { module: this.module('cull', CULL), entryPoint: CULL_ENTRY_POINT },
-		});
+		};
 	}
 }

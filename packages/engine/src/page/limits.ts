@@ -37,6 +37,11 @@ export interface CoreDevice {
 	sharedUploads: boolean;
 	/** How the GPU path stores depth: always `reversed` on WebGPU. */
 	depth: DepthMode;
+	/**
+	 * WebGL2: true to compile programs in the background where the context has
+	 * `KHR_parallel_shader_compile`, false to wait for each program's compile at its first draw.
+	 */
+	parallelCompile: boolean;
 	/** False when the core culls every object and instance row, with no grid cells skipped first. */
 	cellCulling: boolean;
 }
@@ -68,13 +73,19 @@ export function storageBindingBytes(limits: Record<string, number | null>): numb
 /**
  * The device as the engine uses it on WebGL2 or WebGPU, from the capability report and the test
  * switches. `copyUploads` makes the WebGL2 path copy uploads out of shared memory even where
- * WebGL reads it, and `depth` forces a WebGL2 depth mode, so tests reach every route. `cells` off
- * makes the core cull without grid cells, for benchmarks.
+ * WebGL reads it, `depth` forces a WebGL2 depth mode, and `parallelCompile` off makes WebGL2 wait
+ * for each program's compile, so tests reach every route. `cells` off makes the core cull without
+ * grid cells, for benchmarks.
  */
 export function coreDevice(
 	webgl2: boolean,
 	report: DeviceReport,
-	{ copyUploads, depth, cells }: Pick<Switches, 'copyUploads' | 'depth' | 'cells'>,
+	{
+		copyUploads,
+		depth,
+		parallelCompile,
+		cells,
+	}: Pick<Switches, 'copyUploads' | 'depth' | 'parallelCompile' | 'cells'>,
 ): CoreDevice {
 	if (!webgl2) {
 		return {
@@ -84,6 +95,7 @@ export function coreDevice(
 			maxTextureSize: 0,
 			sharedUploads: true,
 			depth: 'reversed',
+			parallelCompile,
 			cellCulling: cells,
 		};
 	}
@@ -97,6 +109,7 @@ export function coreDevice(
 		maxTextureSize: Math.max(C.LIMIT_WEBGL2_MIN_TEXTURE_SIZE, gl.maxTextureSize ?? 0),
 		sharedUploads: !copyUploads && shared !== null && shared.bufferSubData && shared.texSubImage2D,
 		depth: webgl2Depth(gl.extensions.EXT_clip_control === true, depth),
+		parallelCompile,
 		cellCulling: cells,
 	};
 }

@@ -90,6 +90,7 @@ async function start(
 			maxTextureSize: 4096,
 			sharedUploads: false,
 			depth: 'reversed',
+			parallelCompile: true,
 			cellCulling: true,
 		},
 		capabilities: CAPABILITIES,
