@@ -33,7 +33,7 @@ use null3d_render::geometry::{Geometry, OutOfMemory, Shape, generate};
 use null3d_render::gpu_driven::{
     BYTES_PER_SOURCE, GpuDrivenRenderer, MAX_USEFUL_BINDING_BYTES, RendererConfig,
 };
-use null3d_render::materials::{self, MapSlot, MaterialError, Shading};
+use null3d_render::materials::{self, CustomShading, MapSlot, MaterialError, Shading};
 use null3d_render::textures::{MAX_TEXTURES, Sampling, TextureDesc, TextureError};
 use null3d_render::view::ViewId;
 use wasm_bindgen::prelude::*;
@@ -889,14 +889,19 @@ pub fn mesh_radius(mesh: u32) -> f32 {
 /// shading (`constants::shading`) is the standard material, like three.js's
 /// `MeshStandardMaterial`, unlit, like its `MeshBasicMaterial`, or the first texture coordinates as
 /// colors, for the engine's own tests. A shading from `shading::CUSTOM_FIRST` up is a custom
-/// material's template. Its features (`constants::material_feature`) are fixed from now on.
+/// material's: its template in the low 16 bits, the vertex attributes that its shader reads from
+/// `shading::CUSTOM_ATTRIBUTE_SHIFT`, and `shading::CUSTOM_VERTEX_COLORS`. Its features (`constants::material_feature`) are fixed from now on.
 #[wasm_bindgen(js_name = createMaterial)]
 pub fn create_material(shading: u32, features: u32, r: f32, g: f32, b: f32, a: f32) -> u32 {
     let shading = match shading {
         shading::UNLIT => Shading::Unlit,
         shading::TEXCOORDS => Shading::TexCoords,
         shading::UNLIT_MAP => Shading::UnlitMap,
-        custom if custom >= shading::CUSTOM_FIRST => Shading::Custom(custom),
+        custom if custom >= shading::CUSTOM_FIRST => Shading::Custom(CustomShading {
+            template: custom & 0xffff,
+            attributes: (custom >> shading::CUSTOM_ATTRIBUTE_SHIFT) & 0xff,
+            vertex_colors: custom & shading::CUSTOM_VERTEX_COLORS != 0,
+        }),
         _ => Shading::Lit,
     };
     value_with_engine(|e| {

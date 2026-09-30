@@ -158,6 +158,12 @@ vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
     return (view_proj * vec4(relative_position, 1.0));
 }
 
+vec3 linear_to_srgb(vec3 c) {
+    vec3 low = (c * 12.92);
+    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
+    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
+}
+
 Instance instance_of(uvec4 record, uint instance) {
     uint source = 0u;
     Instance out_1 = Instance(vec4(0.0), vec4(0.0), vec4(0.0), 0u, false);
@@ -311,12 +317,6 @@ vec3 indirect_diffuse(PbrMaterial m_3, vec3 irradiance, vec2 dfg_2) {
     Scattering _e4 = multiscattering(m_3.specular, m_3.specular_grazing, dfg_2);
     vec3 _e6 = brdf_lambert(m_3.diffuse);
     return ((irradiance * _e6) * ((vec3(1.0) - _e4.single) - _e4.multi));
-}
-
-vec3 linear_to_srgb(vec3 c) {
-    vec3 low = (c * 12.92);
-    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
-    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
 }
 
 vec3 light_surface(PbrMaterial m_4, vec3 normal_3, vec3 to_view_2, vec2 dfg_3) {
@@ -529,6 +529,12 @@ vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
     return (view_proj * vec4(relative_position, 1.0));
 }
 
+vec3 linear_to_srgb(vec3 c) {
+    vec3 low = (c * 12.92);
+    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
+    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
+}
+
 Material material_of(uint id) {
     Material m = Material(vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0));
     vec4 _e7 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(0u, id)), 0);
@@ -579,16 +585,16 @@ vec3 world_normal(Instance found_3, vec3 normal) {
 vec2 dfg_lut(float n_dot_v, float roughness) {
     vec2 size = vec2(uvec2(textureSize(_group_0_binding_3_fs, 0).xy));
     vec2 at = clamp(((vec2(roughness, n_dot_v) * size) - vec2(0.5)), vec2(0.0), (size - vec2(1.0)));
-    uvec2 low = uvec2(floor(at));
-    uvec2 high = min((low + uvec2(1u)), (uvec2(size) - uvec2(1u)));
+    uvec2 low_1 = uvec2(floor(at));
+    uvec2 high_1 = min((low_1 + uvec2(1u)), (uvec2(size) - uvec2(1u)));
     vec2 t_2 = fract(at);
-    vec4 _e29 = texelFetch(_group_0_binding_3_fs, ivec2(low), 0);
+    vec4 _e29 = texelFetch(_group_0_binding_3_fs, ivec2(low_1), 0);
     vec2 a_1 = _e29.xy;
-    vec4 _e36 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(high.x, low.y)), 0);
+    vec4 _e36 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(high_1.x, low_1.y)), 0);
     vec2 b_1 = _e36.xy;
-    vec4 _e43 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(low.x, high.y)), 0);
+    vec4 _e43 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(low_1.x, high_1.y)), 0);
     vec2 c_2 = _e43.xy;
-    vec4 _e47 = texelFetch(_group_0_binding_3_fs, ivec2(high), 0);
+    vec4 _e47 = texelFetch(_group_0_binding_3_fs, ivec2(high_1), 0);
     vec2 d = _e47.xy;
     return mix(mix(a_1, b_1, t_2.x), mix(c_2, d, t_2.x), t_2.y);
 }
@@ -668,12 +674,6 @@ vec3 indirect_diffuse(PbrMaterial m_3, vec3 irradiance, vec2 dfg_2) {
     Scattering _e4 = multiscattering(m_3.specular, m_3.specular_grazing, dfg_2);
     vec3 _e6 = brdf_lambert(m_3.diffuse);
     return ((irradiance * _e6) * ((vec3(1.0) - _e4.single) - _e4.multi));
-}
-
-vec3 linear_to_srgb(vec3 c) {
-    vec3 low_1 = (c * 12.92);
-    vec3 high_1 = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
-    return mix(high_1, low_1, lessThanEqual(c, vec3(0.0031308)));
 }
 
 Surface defaultSurface(SurfaceInput input_1) {
@@ -919,6 +919,12 @@ vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
     return (view_proj * vec4(relative_position, 1.0));
 }
 
+vec3 linear_to_srgb(vec3 c) {
+    vec3 low = (c * 12.92);
+    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
+    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
+}
+
 Instance instance_of(uvec4 record, uint instance) {
     uint source = 0u;
     Instance out_1 = Instance(vec4(0.0), vec4(0.0), vec4(0.0), 0u, false);
@@ -1072,12 +1078,6 @@ vec3 indirect_diffuse(PbrMaterial m_3, vec3 irradiance, vec2 dfg_2) {
     Scattering _e4 = multiscattering(m_3.specular, m_3.specular_grazing, dfg_2);
     vec3 _e6 = brdf_lambert(m_3.diffuse);
     return ((irradiance * _e6) * ((vec3(1.0) - _e4.single) - _e4.multi));
-}
-
-vec3 linear_to_srgb(vec3 c) {
-    vec3 low = (c * 12.92);
-    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
-    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
 }
 
 vec3 light_surface(PbrMaterial m_4, vec3 normal_3, vec3 to_view_2, vec2 dfg_3) {
@@ -1295,6 +1295,12 @@ vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
     return (view_proj * vec4(relative_position, 1.0));
 }
 
+vec3 linear_to_srgb(vec3 c) {
+    vec3 low = (c * 12.92);
+    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
+    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
+}
+
 Material material_of(uint id) {
     Material m = Material(vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0));
     vec4 _e7 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(0u, id)), 0);
@@ -1345,16 +1351,16 @@ vec3 world_normal(Instance found_3, vec3 normal) {
 vec2 dfg_lut(float n_dot_v, float roughness) {
     vec2 size = vec2(uvec2(textureSize(_group_0_binding_3_fs, 0).xy));
     vec2 at = clamp(((vec2(roughness, n_dot_v) * size) - vec2(0.5)), vec2(0.0), (size - vec2(1.0)));
-    uvec2 low = uvec2(floor(at));
-    uvec2 high = min((low + uvec2(1u)), (uvec2(size) - uvec2(1u)));
+    uvec2 low_1 = uvec2(floor(at));
+    uvec2 high_1 = min((low_1 + uvec2(1u)), (uvec2(size) - uvec2(1u)));
     vec2 t_2 = fract(at);
-    vec4 _e29 = texelFetch(_group_0_binding_3_fs, ivec2(low), 0);
+    vec4 _e29 = texelFetch(_group_0_binding_3_fs, ivec2(low_1), 0);
     vec2 a_1 = _e29.xy;
-    vec4 _e36 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(high.x, low.y)), 0);
+    vec4 _e36 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(high_1.x, low_1.y)), 0);
     vec2 b_1 = _e36.xy;
-    vec4 _e43 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(low.x, high.y)), 0);
+    vec4 _e43 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(low_1.x, high_1.y)), 0);
     vec2 c_2 = _e43.xy;
-    vec4 _e47 = texelFetch(_group_0_binding_3_fs, ivec2(high), 0);
+    vec4 _e47 = texelFetch(_group_0_binding_3_fs, ivec2(high_1), 0);
     vec2 d = _e47.xy;
     return mix(mix(a_1, b_1, t_2.x), mix(c_2, d, t_2.x), t_2.y);
 }
@@ -1434,12 +1440,6 @@ vec3 indirect_diffuse(PbrMaterial m_3, vec3 irradiance, vec2 dfg_2) {
     Scattering _e4 = multiscattering(m_3.specular, m_3.specular_grazing, dfg_2);
     vec3 _e6 = brdf_lambert(m_3.diffuse);
     return ((irradiance * _e6) * ((vec3(1.0) - _e4.single) - _e4.multi));
-}
-
-vec3 linear_to_srgb(vec3 c) {
-    vec3 low_1 = (c * 12.92);
-    vec3 high_1 = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
-    return mix(high_1, low_1, lessThanEqual(c, vec3(0.0031308)));
 }
 
 Surface defaultSurface(SurfaceInput input_1) {
@@ -2022,6 +2022,12 @@ vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
     return (view_proj * vec4(relative_position, 1.0));
 }
 
+vec3 linear_to_srgb(vec3 c) {
+    vec3 low = (c * 12.92);
+    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
+    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
+}
+
 Instance instance_of(uvec4 record, uint instance) {
     uint source = 0u;
     Instance out_1 = Instance(vec4(0.0), vec4(0.0), vec4(0.0), 0u, false);
@@ -2098,12 +2104,6 @@ vec4 clip_position(Instance found_3, vec3 position_1) {
     vec3 _e2 = relative_position_1(found_3, position_1);
     vec4 _e3 = clip_of(found_3, _e2);
     return _e3;
-}
-
-vec3 linear_to_srgb(vec3 c) {
-    vec3 low = (c * 12.92);
-    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
-    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
 }
 
 void main() {
@@ -2240,6 +2240,12 @@ vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
     return (view_proj * vec4(relative_position, 1.0));
 }
 
+vec3 linear_to_srgb(vec3 c) {
+    vec3 low = (c * 12.92);
+    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
+    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
+}
+
 Material material_of(uint id) {
     Material m = Material(vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0));
     vec4 _e7 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(0u, id)), 0);
@@ -2270,12 +2276,6 @@ vec3 relative_position_1(Instance found_1, vec3 position) {
     Transform _e1 = transform_of(found_1);
     vec3 _e3 = transform_point(_e1, position);
     return _e3;
-}
-
-vec3 linear_to_srgb(vec3 c) {
-    vec3 low = (c * 12.92);
-    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
-    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
 }
 
 void main() {
@@ -2402,6 +2402,12 @@ vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
     return (view_proj * vec4(relative_position, 1.0));
 }
 
+vec3 linear_to_srgb(vec3 c) {
+    vec3 low = (c * 12.92);
+    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
+    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
+}
+
 Instance instance_of(uvec4 record, uint instance) {
     uint source = 0u;
     Instance out_1 = Instance(vec4(0.0), vec4(0.0), vec4(0.0), 0u, false);
@@ -2478,12 +2484,6 @@ vec4 clip_position(Instance found_3, vec3 position_1) {
     vec3 _e2 = relative_position_1(found_3, position_1);
     vec4 _e3 = clip_of(found_3, _e2);
     return _e3;
-}
-
-vec3 linear_to_srgb(vec3 c) {
-    vec3 low = (c * 12.92);
-    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
-    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
 }
 
 void main() {
@@ -2625,6 +2625,12 @@ vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
     return (view_proj * vec4(relative_position, 1.0));
 }
 
+vec3 linear_to_srgb(vec3 c) {
+    vec3 low = (c * 12.92);
+    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
+    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
+}
+
 Material material_of(uint id) {
     Material m = Material(vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0));
     vec4 _e7 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(0u, id)), 0);
@@ -2655,12 +2661,6 @@ vec3 relative_position_1(Instance found_1, vec3 position) {
     Transform _e1 = transform_of(found_1);
     vec3 _e3 = transform_point(_e1, position);
     return _e3;
-}
-
-vec3 linear_to_srgb(vec3 c) {
-    vec3 low = (c * 12.92);
-    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
-    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
 }
 
 void main() {
@@ -2791,6 +2791,12 @@ vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
     return (view_proj * vec4(relative_position, 1.0));
 }
 
+vec3 linear_to_srgb(vec3 c) {
+    vec3 low = (c * 12.92);
+    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
+    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
+}
+
 bool map_ready(float layer) {
     return (layer >= 0.0);
 }
@@ -2875,12 +2881,6 @@ vec4 clip_position(Instance found_3, vec3 position_1) {
     vec3 _e2 = relative_position_1(found_3, position_1);
     vec4 _e3 = clip_of(found_3, _e2);
     return _e3;
-}
-
-vec3 linear_to_srgb(vec3 c) {
-    vec3 low = (c * 12.92);
-    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
-    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
 }
 
 void main() {
@@ -3024,6 +3024,12 @@ vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
     return (view_proj * vec4(relative_position, 1.0));
 }
 
+vec3 linear_to_srgb(vec3 c) {
+    vec3 low = (c * 12.92);
+    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
+    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
+}
+
 Material material_of(uint id) {
     Material m = Material(vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0));
     vec4 _e7 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(0u, id)), 0);
@@ -3062,12 +3068,6 @@ vec3 relative_position_1(Instance found_1, vec3 position) {
     Transform _e1 = transform_of(found_1);
     vec3 _e3 = transform_point(_e1, position);
     return _e3;
-}
-
-vec3 linear_to_srgb(vec3 c) {
-    vec3 low = (c * 12.92);
-    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
-    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
 }
 
 void main() {
@@ -3211,6 +3211,12 @@ vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
     return (view_proj * vec4(relative_position, 1.0));
 }
 
+vec3 linear_to_srgb(vec3 c) {
+    vec3 low = (c * 12.92);
+    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
+    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
+}
+
 bool map_ready(float layer) {
     return (layer >= 0.0);
 }
@@ -3295,12 +3301,6 @@ vec4 clip_position(Instance found_3, vec3 position_1) {
     vec3 _e2 = relative_position_1(found_3, position_1);
     vec4 _e3 = clip_of(found_3, _e2);
     return _e3;
-}
-
-vec3 linear_to_srgb(vec3 c) {
-    vec3 low = (c * 12.92);
-    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
-    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
 }
 
 void main() {
@@ -3449,6 +3449,12 @@ vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
     return (view_proj * vec4(relative_position, 1.0));
 }
 
+vec3 linear_to_srgb(vec3 c) {
+    vec3 low = (c * 12.92);
+    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
+    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
+}
+
 Material material_of(uint id) {
     Material m = Material(vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0));
     vec4 _e7 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(0u, id)), 0);
@@ -3487,12 +3493,6 @@ vec3 relative_position_1(Instance found_1, vec3 position) {
     Transform _e1 = transform_of(found_1);
     vec3 _e3 = transform_point(_e1, position);
     return _e3;
-}
-
-vec3 linear_to_srgb(vec3 c) {
-    vec3 low = (c * 12.92);
-    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
-    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
 }
 
 void main() {

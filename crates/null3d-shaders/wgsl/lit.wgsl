@@ -13,8 +13,9 @@ enable draw_index;
 // Custom materials build this template with their WGSL added after its last line, and with the
 // shader defs CUSTOM and UV0, which reads the first texture coordinates. CUSTOM_SURFACE makes the fragment
 // shader call their `fn surface`, and CUSTOM_VERTEX_OFFSET makes the vertex shader move each vertex
-// by their `fn vertexOffset`. Their WGSL reads the built-in values `frame`, `camera` and `object`,
-// which each stage fills under CUSTOM; the frame's uniform block is `engine_frame` here. When their
+// by their `fn vertexOffset`. Their WGSL reads the built-in values `frame`, `camera` and `object`
+// of null3d::builtins, which each stage fills under CUSTOM; the frame's uniform block is
+// `engine_frame` here. When their
 // WGSL declares `struct Uniforms`, the build adds `load_material_uniforms` after it, and
 // CUSTOM_UNIFORMS makes each stage fill `material` with the uniforms. Their WGSL shares this file's names, so the template imports library items by name and
 // keeps its own names few. It never imports a module whole, which would reserve the module's name
@@ -22,6 +23,7 @@ enable draw_index;
 #import null3d::color::{linear_to_srgb}
 #import null3d::lighting::{PbrMaterial, dfg_lut, direct_light, indirect_diffuse}
 #import null3d::lighting::{multiscatter_compensation, pbr_material}
+#import null3d::builtins::{camera, fill_builtins, frame, object}
 #import null3d::globals::{Material}
 #import null3d::mesh::{InstanceIn, clip_of, find_instance, frame as engine_frame, material_of}
 #import null3d::mesh::{custom_value, relative_position, world_normal}
@@ -37,48 +39,6 @@ var<private> material_row: Material;
 var<private> material: Uniforms;
 #endif
 
-#ifdef CUSTOM
-/// The frame's values that a custom material reads as `frame`.
-struct FrameValues {
-    /// The sketch time in seconds, as `time.now` gives it to the sketch.
-    time: f32,
-    /// The seconds since the frame before, as `time.dt` gives them.
-    deltaTime: f32,
-    /// The frame's number, counting from 1, as `time.frame` gives it.
-    index: u32,
-    /// The size of the render target in pixels.
-    resolution: vec2f,
-}
-
-/// The camera's values that a custom material reads as `camera`.
-struct CameraValues {
-    /// The camera's position in the world. Far from the world's origin, it holds fewer digits than
-    /// positions relative to the camera.
-    position: vec3f,
-    /// The matrix from positions relative to the camera to clip space.
-    viewProjection: mat4x4f,
-}
-
-/// The values of the object, or of the instance, that a custom material reads as `object`.
-struct ObjectValues {
-    /// The position of the object's origin in the world.
-    position: vec3f,
-}
-
-var<private> frame: FrameValues;
-var<private> camera: CameraValues;
-var<private> object: ObjectValues;
-
-/// Fills the built-in values from the frame's uniform block and the object's origin, relative to
-/// the camera.
-fn fill_builtins(origin: vec3f) {
-    let clock = engine_frame.clock;
-    let world = engine_frame.camera_world.xyz;
-    frame = FrameValues(clock.x, clock.y, bitcast<u32>(clock.z), engine_frame.target_size.xy);
-    camera = CameraValues(world, engine_frame.view_proj);
-    object = ObjectValues(world + origin);
-}
-#endif
 
 /// The vertex attributes that the template reads.
 struct VertexIn {

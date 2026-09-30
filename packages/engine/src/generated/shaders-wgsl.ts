@@ -264,6 +264,12 @@ fn to_clip(view_proj: mat4x4<f32>, relative_position: vec3<f32>) -> vec4<f32> {
     return (view_proj * vec4<f32>(relative_position, 1f));
 }
 
+fn linear_to_srgb(c: vec3<f32>) -> vec3<f32> {
+    let low = (c * 12.92f);
+    let high = ((1.055f * pow(c, vec3(0.41666666f))) - vec3(0.055f));
+    return select(high, low, (c <= vec3(0.0031308f)));
+}
+
 fn material_of(id: u32) -> Material {
     let _e3 = materials[id];
     return _e3;
@@ -302,16 +308,16 @@ fn dfg_lut(n_dot_v: f32, roughness: f32) -> vec2<f32> {
     let _e1 = textureDimensions(dfg_table);
     let size = vec2<f32>(_e1);
     let at = clamp(((vec2<f32>(roughness, n_dot_v) * size) - vec2(0.5f)), vec2(0f), (size - vec2(1f)));
-    let low = vec2<u32>(floor(at));
-    let high = min((low + vec2(1u)), (vec2<u32>(size) - vec2(1u)));
+    let low_1 = vec2<u32>(floor(at));
+    let high_1 = min((low_1 + vec2(1u)), (vec2<u32>(size) - vec2(1u)));
     let t_2 = fract(at);
-    let _e29 = textureLoad(dfg_table, low, 0i);
+    let _e29 = textureLoad(dfg_table, low_1, 0i);
     let a_1 = _e29.xy;
-    let _e36 = textureLoad(dfg_table, vec2<u32>(high.x, low.y), 0i);
+    let _e36 = textureLoad(dfg_table, vec2<u32>(high_1.x, low_1.y), 0i);
     let b_1 = _e36.xy;
-    let _e43 = textureLoad(dfg_table, vec2<u32>(low.x, high.y), 0i);
+    let _e43 = textureLoad(dfg_table, vec2<u32>(low_1.x, high_1.y), 0i);
     let c_2 = _e43.xy;
-    let _e47 = textureLoad(dfg_table, high, 0i);
+    let _e47 = textureLoad(dfg_table, high_1, 0i);
     let d = _e47.xy;
     return mix(mix(a_1, b_1, t_2.x), mix(c_2, d, t_2.x), t_2.y);
 }
@@ -392,12 +398,6 @@ fn indirect_diffuse(m_2: PbrMaterial, irradiance: vec3<f32>, dfg_2: vec2<f32>) -
     let _e4 = multiscattering(m_2.specular, m_2.specular_grazing, dfg_2);
     let _e6 = brdf_lambert(m_2.diffuse);
     return ((irradiance * _e6) * ((vec3(1f) - _e4.single) - _e4.multi));
-}
-
-fn linear_to_srgb(c: vec3<f32>) -> vec3<f32> {
-    let low_1 = (c * 12.92f);
-    let high_1 = ((1.055f * pow(c, vec3(0.41666666f))) - vec3(0.055f));
-    return select(high_1, low_1, (c <= vec3(0.0031308f)));
 }
 
 fn defaultSurface(input_1: SurfaceInput) -> Surface {
@@ -622,6 +622,12 @@ fn to_clip(view_proj: mat4x4<f32>, relative_position: vec3<f32>) -> vec4<f32> {
     return (view_proj * vec4<f32>(relative_position, 1f));
 }
 
+fn linear_to_srgb(c: vec3<f32>) -> vec3<f32> {
+    let low = (c * 12.92f);
+    let high = ((1.055f * pow(c, vec3(0.41666666f))) - vec3(0.055f));
+    return select(high, low, (c <= vec3(0.0031308f)));
+}
+
 fn material_of(id: u32) -> Material {
     let _e3 = materials[id];
     return _e3;
@@ -660,16 +666,16 @@ fn dfg_lut(n_dot_v: f32, roughness: f32) -> vec2<f32> {
     let _e1 = textureDimensions(dfg_table);
     let size = vec2<f32>(_e1);
     let at = clamp(((vec2<f32>(roughness, n_dot_v) * size) - vec2(0.5f)), vec2(0f), (size - vec2(1f)));
-    let low = vec2<u32>(floor(at));
-    let high = min((low + vec2(1u)), (vec2<u32>(size) - vec2(1u)));
+    let low_1 = vec2<u32>(floor(at));
+    let high_1 = min((low_1 + vec2(1u)), (vec2<u32>(size) - vec2(1u)));
     let t_2 = fract(at);
-    let _e29 = textureLoad(dfg_table, low, 0i);
+    let _e29 = textureLoad(dfg_table, low_1, 0i);
     let a_1 = _e29.xy;
-    let _e36 = textureLoad(dfg_table, vec2<u32>(high.x, low.y), 0i);
+    let _e36 = textureLoad(dfg_table, vec2<u32>(high_1.x, low_1.y), 0i);
     let b_1 = _e36.xy;
-    let _e43 = textureLoad(dfg_table, vec2<u32>(low.x, high.y), 0i);
+    let _e43 = textureLoad(dfg_table, vec2<u32>(low_1.x, high_1.y), 0i);
     let c_2 = _e43.xy;
-    let _e47 = textureLoad(dfg_table, high, 0i);
+    let _e47 = textureLoad(dfg_table, high_1, 0i);
     let d = _e47.xy;
     return mix(mix(a_1, b_1, t_2.x), mix(c_2, d, t_2.x), t_2.y);
 }
@@ -750,12 +756,6 @@ fn indirect_diffuse(m_2: PbrMaterial, irradiance: vec3<f32>, dfg_2: vec2<f32>) -
     let _e4 = multiscattering(m_2.specular, m_2.specular_grazing, dfg_2);
     let _e6 = brdf_lambert(m_2.diffuse);
     return ((irradiance * _e6) * ((vec3(1f) - _e4.single) - _e4.multi));
-}
-
-fn linear_to_srgb(c: vec3<f32>) -> vec3<f32> {
-    let low_1 = (c * 12.92f);
-    let high_1 = ((1.055f * pow(c, vec3(0.41666666f))) - vec3(0.055f));
-    return select(high_1, low_1, (c <= vec3(0.0031308f)));
 }
 
 fn defaultSurface(input_1: SurfaceInput) -> Surface {
@@ -1083,6 +1083,12 @@ fn to_clip(view_proj: mat4x4<f32>, relative_position: vec3<f32>) -> vec4<f32> {
     return (view_proj * vec4<f32>(relative_position, 1f));
 }
 
+fn linear_to_srgb(c: vec3<f32>) -> vec3<f32> {
+    let low = (c * 12.92f);
+    let high = ((1.055f * pow(c, vec3(0.41666666f))) - vec3(0.055f));
+    return select(high, low, (c <= vec3(0.0031308f)));
+}
+
 fn material_of(id: u32) -> Material {
     let _e3 = materials[id];
     return _e3;
@@ -1115,12 +1121,6 @@ fn clip_position(found_3: Instance, position_1: vec3<f32>) -> vec4<f32> {
     let _e2 = relative_position_1(found_3, position_1);
     let _e3 = clip_of(found_3, _e2);
     return _e3;
-}
-
-fn linear_to_srgb(c: vec3<f32>) -> vec3<f32> {
-    let low = (c * 12.92f);
-    let high = ((1.055f * pow(c, vec3(0.41666666f))) - vec3(0.055f));
-    return select(high, low, (c <= vec3(0.0031308f)));
 }
 
 @vertex
@@ -1228,6 +1228,12 @@ fn to_clip(view_proj: mat4x4<f32>, relative_position: vec3<f32>) -> vec4<f32> {
     return (view_proj * vec4<f32>(relative_position, 1f));
 }
 
+fn linear_to_srgb(c: vec3<f32>) -> vec3<f32> {
+    let low = (c * 12.92f);
+    let high = ((1.055f * pow(c, vec3(0.41666666f))) - vec3(0.055f));
+    return select(high, low, (c <= vec3(0.0031308f)));
+}
+
 fn material_of(id: u32) -> Material {
     let _e3 = materials[id];
     return _e3;
@@ -1260,12 +1266,6 @@ fn clip_position(found_3: Instance, position_1: vec3<f32>) -> vec4<f32> {
     let _e2 = relative_position_1(found_3, position_1);
     let _e3 = clip_of(found_3, _e2);
     return _e3;
-}
-
-fn linear_to_srgb(c: vec3<f32>) -> vec3<f32> {
-    let low = (c * 12.92f);
-    let high = ((1.055f * pow(c, vec3(0.41666666f))) - vec3(0.055f));
-    return select(high, low, (c <= vec3(0.0031308f)));
 }
 
 @vertex
@@ -1382,6 +1382,12 @@ fn to_clip(view_proj: mat4x4<f32>, relative_position: vec3<f32>) -> vec4<f32> {
     return (view_proj * vec4<f32>(relative_position, 1f));
 }
 
+fn linear_to_srgb(c: vec3<f32>) -> vec3<f32> {
+    let low = (c * 12.92f);
+    let high = ((1.055f * pow(c, vec3(0.41666666f))) - vec3(0.055f));
+    return select(high, low, (c <= vec3(0.0031308f)));
+}
+
 fn material_of(id: u32) -> Material {
     let _e3 = materials[id];
     return _e3;
@@ -1422,12 +1428,6 @@ fn clip_position(found_3: Instance, position_1: vec3<f32>) -> vec4<f32> {
     let _e2 = relative_position_1(found_3, position_1);
     let _e3 = clip_of(found_3, _e2);
     return _e3;
-}
-
-fn linear_to_srgb(c: vec3<f32>) -> vec3<f32> {
-    let low = (c * 12.92f);
-    let high = ((1.055f * pow(c, vec3(0.41666666f))) - vec3(0.055f));
-    return select(high, low, (c <= vec3(0.0031308f)));
 }
 
 @vertex
@@ -1546,6 +1546,12 @@ fn to_clip(view_proj: mat4x4<f32>, relative_position: vec3<f32>) -> vec4<f32> {
     return (view_proj * vec4<f32>(relative_position, 1f));
 }
 
+fn linear_to_srgb(c: vec3<f32>) -> vec3<f32> {
+    let low = (c * 12.92f);
+    let high = ((1.055f * pow(c, vec3(0.41666666f))) - vec3(0.055f));
+    return select(high, low, (c <= vec3(0.0031308f)));
+}
+
 fn material_of(id: u32) -> Material {
     let _e3 = materials[id];
     return _e3;
@@ -1586,12 +1592,6 @@ fn clip_position(found_3: Instance, position_1: vec3<f32>) -> vec4<f32> {
     let _e2 = relative_position_1(found_3, position_1);
     let _e3 = clip_of(found_3, _e2);
     return _e3;
-}
-
-fn linear_to_srgb(c: vec3<f32>) -> vec3<f32> {
-    let low = (c * 12.92f);
-    let high = ((1.055f * pow(c, vec3(0.41666666f))) - vec3(0.055f));
-    return select(high, low, (c <= vec3(0.0031308f)));
 }
 
 @vertex

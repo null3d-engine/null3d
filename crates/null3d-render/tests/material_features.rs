@@ -14,7 +14,7 @@ use null3d_render::arrays::{MeshArrays, from_arrays};
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::frame::FrameBuilder;
 use null3d_render::geometry::Geometry;
-use null3d_render::materials::{Shading, feature};
+use null3d_render::materials::{CustomShading, Shading, feature};
 
 /// One triangle, with a color at each vertex when `colored`.
 fn triangle(colored: bool) -> Geometry {
@@ -139,15 +139,20 @@ fn mapped_triangle() -> Geometry {
 fn check_custom<B: FrameBuilder>(mut world: World<B>) {
     let first = template::CUSTOM_FIRST;
     let mapped = mapped_triangle();
-    add(&mut world, &mapped, Shading::Custom(first), 0);
-    add(&mut world, &mapped, Shading::Custom(first), 0);
+    add(&mut world, &mapped, CustomShading::standard(first), 0);
+    add(&mut world, &mapped, CustomShading::standard(first), 0);
     add(
         &mut world,
         &mapped,
-        Shading::Custom(first + 1),
+        CustomShading::standard(first + 1),
         feature::DOUBLE_SIDED,
     );
-    add(&mut world, &triangle(false), Shading::Custom(first + 2), 0);
+    add(
+        &mut world,
+        &triangle(false),
+        CustomShading::standard(first + 2),
+        0,
+    );
     world.record(true);
     MockBackend::default()
         .replay(world.renderer.list(1).words())
@@ -184,7 +189,7 @@ fn check_custom_values<B: FrameBuilder>(
     row: impl Fn(u32) -> u32,
 ) {
     for _ in 0..2 {
-        let custom = Shading::Custom(template::CUSTOM_FIRST);
+        let custom = CustomShading::standard(template::CUSTOM_FIRST);
         add(&mut world, &mapped_triangle(), custom, 0);
     }
     world.record(true);

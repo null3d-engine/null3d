@@ -4,7 +4,7 @@ null3D shaders are WGSL. The build translates them to GLSL for the WebGL2 path, 
 
 A custom material takes its WGSL in one `wgsl` option: a template literal tagged `/* wgsl */`, or a `.wgsl` import. That WGSL holds `fn surface`, `fn vertexOffset`, or both. It declares its uniforms once, as `struct Uniforms`, and reads them from `material`.
 
-Versions: `materials.shader({ wgsl, uniforms })` with a surface function, `vertexOffset` and `struct Uniforms` is built, and so are `frame.time`, `frame.deltaTime`, `frame.index`, `frame.resolution`, `camera.position`, `camera.viewProjection`, `object.position` and `material`. Textures, full shaders and the other built-in values in the tables below come later in 0.1, and post effects in 0.2. The GLSL to WGSL table, the conventions in section 4 and the `null3d::` library modules apply now. A port that needs the later parts waits for them, or keeps its values in the standard options.
+Versions: `materials.shader({ wgsl, uniforms })` with a surface function, `vertexOffset` and `struct Uniforms` is built, and so are `frame.time`, `frame.deltaTime`, `frame.index`, `frame.resolution`, `camera.position`, `camera.viewProjection`, `object.position` and `material`. Full shaders are built too. Textures and the other built-in values in the tables below come later in 0.1, and post effects in 0.2. The GLSL to WGSL table, the conventions in section 4 and the `null3d::` library modules apply now. A port that needs the later parts waits for them, or keeps its values in the standard options.
 
 ## Contents
 
@@ -28,7 +28,7 @@ Read what the original shader does, then pick the smallest null3D form that can 
 | Changes color, roughness, emission or alpha of a lit surface | Surface function (alpha later in 0.1) |
 | Moves vertices | `vertexOffset`, plus a surface function if needed |
 | Ignores lighting (unlit effects, holograms, fresnel glows) | Surface function that writes `emissive` and sets `baseColor` to zero |
-| Replaces three.js lighting | Full shader (later in 0.1) with `null3d::lighting` helpers; rare, so confirm it is needed |
+| Replaces three.js lighting | Full shader with `null3d::lighting` helpers; rare, so confirm it is needed |
 | Is a full-screen pass | `post.addEffect` (0.2, `references/post-processing.md`) |
 | Renders to a texture for another material | Custom pass (`render.addPass`, 0.2) |
 

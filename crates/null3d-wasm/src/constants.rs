@@ -61,9 +61,14 @@ pub mod shading {
     pub const TEXCOORDS: u32 = 2;
     /// The base color times the material's map, as three.js's `MeshBasicMaterial` with a `map`.
     pub const UNLIT_MAP: u32 = 3;
-    /// The first custom material: a shading from here up is the render pipeline template of a
-    /// custom material's compiled WGSL.
+    /// The first custom material: a shading from here up is a custom material's. Its low 16 bits
+    /// are the render pipeline template of the material's compiled WGSL.
     pub const CUSTOM_FIRST: u32 = null3d_gpu::drawlist::template::CUSTOM_FIRST;
+    /// Where a custom shading holds the optional vertex attributes (`vertex::*` bits) that its
+    /// vertex stage reads.
+    pub const CUSTOM_ATTRIBUTE_SHIFT: u32 = 16;
+    /// The bit of a custom shading whose shader takes vertex colors, as the standard template does.
+    pub const CUSTOM_VERTEX_COLORS: u32 = 1 << 24;
 }
 
 /// The numbers that `textureStat` reads from the texture store.
@@ -273,6 +278,8 @@ pub fn typescript() -> String {
                 ("TEXCOORDS", shading::TEXCOORDS),
                 ("UNLIT_MAP", shading::UNLIT_MAP),
                 ("CUSTOM_FIRST", shading::CUSTOM_FIRST),
+                ("CUSTOM_ATTRIBUTE_SHIFT", shading::CUSTOM_ATTRIBUTE_SHIFT),
+                ("CUSTOM_VERTEX_COLORS", shading::CUSTOM_VERTEX_COLORS),
             ],
         ),
         // The features that `createMaterial` takes, fixed from then on.

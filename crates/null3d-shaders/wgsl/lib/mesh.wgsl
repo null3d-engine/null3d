@@ -1,5 +1,6 @@
 enable draw_index;
 #define_import_path null3d::mesh
+#import null3d::color::{linear_to_srgb}
 #import null3d::globals::{Frame, Material}
 #import null3d::vertex::{OUTSIDE_CLIP, Transform, to_clip, transform_normal, transform_point}
 
@@ -232,4 +233,10 @@ fn relative_position(found: Instance, position: vec3f) -> vec3f {
 /// stays at right angles to its surface under uneven scale.
 fn world_normal(found: Instance, normal: vec3f) -> vec3f {
     return transform_normal(transform_of(found), normal);
+}
+
+/// The color that a fragment of a mesh writes for the linear color `c` at framebuffer position
+/// `pixel`: `c` encoded as sRGB for the canvas, opaque.
+fn finish(c: vec3f, pixel: vec2f) -> vec4f {
+    return vec4f(linear_to_srgb(c), 1.0);
 }

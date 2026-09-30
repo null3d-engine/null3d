@@ -94,8 +94,14 @@ export interface MaterialBuild {
 	readonly functions: readonly string[];
 	/** The fields of the WGSL's `struct Uniforms`, where the engine writes each. */
 	readonly uniforms: readonly MaterialUniform[];
-	/** The standard material's variants with the WGSL's functions, by name. */
+	/** The standard material's variants with the WGSL's functions, or a full shader's, by name. */
 	readonly variants: Readonly<Record<string, ShaderVariant>>;
+	/** The vertex shader locations that the vertex stage reads from a mesh's vertices. */
+	readonly locations: readonly number[];
+	/** The optional vertex attributes that those locations read, as the engine's format bits. */
+	readonly attributes: number;
+	/** True when the shader multiplies the base color by the mesh's vertex colors, as needed. */
+	readonly vertexColors: boolean;
 }
 
 /** A uniform of a custom material, and where the engine writes its value. */

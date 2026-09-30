@@ -4,12 +4,19 @@
 //! functions then share the template's lighting, and every GPU path, with the standard material.
 //! A `struct Uniforms` in the WGSL declares the material's uniforms: the build then adds the
 //! function that loads them after the WGSL, and builds with the shader def CUSTOM_UNIFORMS.
+//!
+//! WGSL with a `@vertex` and a `@fragment` entry point is a full shader instead: the build makes
+//! the variants that the engine's mesh templates need of it on its own, for WebGPU and for WebGL2
+//! with and without the draw index. Either way, the output says which vertex attributes the
+//! vertex stage reads, which a mesh needs to draw with the material.
 
 use std::collections::BTreeMap;
 
 use serde::{Deserialize, Serialize};
 
-use crate::manifest::{Manifest, Pipeline, Variant};
+use null3d_gpu::drawlist::vertex;
+
+use crate::manifest::{Manifest, Pipeline, Target, Variant};
 use crate::position::locate;
 use crate::scan::{Token, find_function, tokenize};
 use crate::uniforms::{self, Uniform};
@@ -143,17 +150,96 @@ pub struct MaterialSource {
     pub source: String,
 }
 
-/// A custom material, built into every variant of the template.
+/// A custom material, built into every variant of the template, or a full shader.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
+#[serde(rename_all = "camelCase")]
 pub struct MaterialOutput {
     /// The functions that the WGSL declares for the template to call, such as `surface`.
     pub functions: Vec<String>,
     /// The fields of the WGSL's `struct Uniforms`, where the engine writes each: none without
     /// the struct.
     pub uniforms: Vec<Uniform>,
-    /// The template's variants with the WGSL, by name.
+    /// The template's variants with the WGSL, or the full shader's, by name.
     pub variants: BTreeMap<String, VariantOutput>,
+    /// The vertex shader locations that the vertex stage reads from a mesh's vertices, in order.
+    pub locations: Vec<u32>,
+    /// The optional vertex attributes (`vertex::*` bits) that those locations read, which a mesh
+    /// needs to draw with the material.
+    pub attributes: u32,
+    /// True when the shader multiplies the base color by the mesh's vertex colors in its
+    /// `VERTEX_COLOR` builds: the template does, and a full shader reads colors itself.
+    pub vertex_colors: bool,
 }
+
+/// The entry points of a full shader: its `@vertex` function's name and the `@fragment` ones'.
+fn entry_points<'a>(tokens: &[Token<'a>]) -> (Vec<&'a str>, Vec<&'a str>) {
+    let (mut vertex, mut fragment) = (Vec::new(), Vec::new());
+    for (index, token) in tokens.iter().enumerate() {
+        if token.text != "@" {
+            continue;
+        }
+        let Some(stage) = tokens.get(index + 1) else {
+            continue;
+        };
+        let list = match stage.text {
+            "vertex" => &mut vertex,
+            "fragment" => &mut fragment,
+            _ => continue,
+        };
+        let name = tokens[index..]
+            .windows(2)
+            .find(|pair| pair[0].text == "fn")
+            .map(|pair| pair[1].text);
+        list.extend(name);
+    }
+    (vertex, fragment)
+}
+
+/// The mesh locations that the vertex entry point `entry` of a module's WGSL reads, below the
+/// per-instance locations, with the optional attributes that they read.
+fn mesh_inputs(wgsl: &str, entry: &str) -> (Vec<u32>, u32) {
+    let Ok(module) = naga::front::wgsl::parse_str(wgsl) else {
+        return (Vec::new(), 0);
+    };
+    let mut locations = Vec::new();
+    let mut add = |binding: &Option<naga::Binding>| {
+        if let Some(naga::Binding::Location { location, .. }) = binding
+            && *location < vertex::INSTANCE_LOCATION
+        {
+            locations.push(*location);
+        }
+    };
+    let found = module
+        .entry_points
+        .iter()
+        .find(|point| point.stage == naga::ShaderStage::Vertex && point.name == entry);
+    for argument in found.iter().flat_map(|point| &point.function.arguments) {
+        add(&argument.binding);
+        if let naga::TypeInner::Struct { members, .. } = &module.types[argument.ty].inner {
+            members.iter().for_each(|member| add(&member.binding));
+        }
+    }
+    locations.sort_unstable();
+    locations.dedup();
+    let attributes = vertex::ATTRIBUTES
+        .iter()
+        .filter(|attribute| locations.contains(&attribute.location))
+        .fold(0, |bits, attribute| bits | attribute.bit);
+    (locations, attributes)
+}
+
+/// The mesh inputs of the base WebGPU build among `built`, whose vertex entry point is `entry`.
+fn built_inputs(built: &BTreeMap<String, VariantOutput>, entry: &str) -> (Vec<u32>, u32) {
+    built
+        .values()
+        .filter(|variant| variant.permutation == 0)
+        .find_map(|variant| variant.wgsl.as_ref())
+        .map_or((Vec::new(), 0), |wgsl| mesh_inputs(&wgsl.source, entry))
+}
+
+/// The first line of a full shader, which the build adds: WebGL2's multi-draw builds read the
+/// draw index in `null3d::mesh`, and the directive goes at the top of the file.
+const FULL_SHADER_HEADER: &str = "enable draw_index;\n";
 
 impl Compiler {
     /// Builds a custom material's WGSL into every variant of the template. Problems in the WGSL
@@ -165,6 +251,10 @@ impl Compiler {
     ) -> Result<MaterialOutput, BuildError> {
         let path = material.path.as_str();
         let tokens = tokenize(&material.source);
+        let (vertex_entries, fragment_entries) = entry_points(&tokens);
+        if !vertex_entries.is_empty() || !fragment_entries.is_empty() {
+            return self.compile_full_shader(material, &vertex_entries, &fragment_entries);
+        }
         let declared: Vec<&Hook> = HOOKS
             .iter()
             .filter(|hook| find_function(&tokens, hook.name).is_some())
@@ -183,16 +273,7 @@ impl Compiler {
                 Some(Problem::at(path, Some(position), message))
             })
             .collect();
-        problems.extend(features::directive_lines(&material.source)
-            .into_iter()
-            .map(|line| {
-                let position = Position { line, column: 1 };
-                Problem::at(
-                    path,
-                    Some(position),
-                    "a custom material's WGSL cannot hold directives such as `enable`, because the engine adds it after the lines of its own shader. Remove the line: custom materials use no optional WGSL features.",
-                )
-            }));
+        problems.extend(directive_problems(material));
         let uniforms = uniforms::read(&tokens, &material.source, path).unwrap_or_else(|found| {
             problems.extend(found);
             None
@@ -258,10 +339,105 @@ impl Compiler {
                 }
             }
         }
+        let vertex_entry = template.pipelines.values().next().map(|p| p.vertex.clone());
+        let (locations, attributes) = built_inputs(&built, &vertex_entry.unwrap_or_default());
         errors.or(MaterialOutput {
             functions: declared.iter().map(|hook| hook.name.to_owned()).collect(),
             uniforms: uniforms.map_or_else(Vec::new, |found| found.fields),
             variants: built,
+            locations,
+            attributes,
+            vertex_colors: true,
         })
     }
+
+    /// Builds a full shader, a `@vertex` and a `@fragment` entry point, into the variants of the
+    /// engine's mesh templates: for WebGPU, and for WebGL2 with and without the draw index of
+    /// `WEBGL_multi_draw`. Problems name the lines of the WGSL.
+    fn compile_full_shader(
+        &mut self,
+        material: &MaterialSource,
+        vertex_entries: &[&str],
+        fragment_entries: &[&str],
+    ) -> Result<MaterialOutput, BuildError> {
+        let path = material.path.as_str();
+        let mut problems = directive_problems(material);
+        let (&[vertex_entry], &[fragment_entry]) = (vertex_entries, fragment_entries) else {
+            problems.push(Problem::at(
+                path,
+                Some(Position { line: 1, column: 1 }),
+                "a full shader for `materials.shader` has one `@vertex` and one `@fragment` entry point. Split the others into shaders of their own.",
+            ));
+            return Err(problems.into_iter().collect());
+        };
+        if !problems.is_empty() {
+            return Err(problems.into_iter().collect());
+        }
+        let pipelines = BTreeMap::from([(
+            FULL_SHADER_PIPELINE.to_owned(),
+            Pipeline {
+                vertex: vertex_entry.to_owned(),
+                fragment: fragment_entry.to_owned(),
+            },
+        )]);
+        let variants = BTreeMap::from([
+            (
+                "webgpu".to_owned(),
+                Variant {
+                    defs: Vec::new(),
+                    permutations: Vec::new(),
+                    targets: vec![Target::Wgsl],
+                },
+            ),
+            (
+                "webgl2".to_owned(),
+                Variant {
+                    defs: vec!["WEBGL2".to_owned()],
+                    permutations: vec!["DRAW_INDEX".to_owned()],
+                    targets: vec![Target::Glsl],
+                },
+            ),
+        ]);
+        let source = format!("{FULL_SHADER_HEADER}{}", material.source);
+        let mut errors = BuildError::default();
+        let built = self.variants(
+            path,
+            &source,
+            &pipelines,
+            &variants,
+            &str::to_owned,
+            &mut errors,
+        );
+        for problem in &mut errors.problems {
+            if problem.file.as_deref() == Some(path) {
+                problem.line = problem.line.map(|line| line.saturating_sub(1).max(1));
+            }
+        }
+        let (locations, attributes) = built_inputs(&built, vertex_entry);
+        errors.or(MaterialOutput {
+            functions: Vec::new(),
+            uniforms: Vec::new(),
+            variants: built,
+            locations,
+            attributes,
+            vertex_colors: false,
+        })
+    }
+}
+
+/// The render pipeline that a full shader draws with.
+const FULL_SHADER_PIPELINE: &str = "main";
+
+/// A problem for each directive in a custom material's WGSL, such as `enable`.
+fn directive_problems(material: &MaterialSource) -> Vec<Problem> {
+    features::directive_lines(&material.source)
+        .into_iter()
+        .map(|line| {
+            Problem::at(
+                &material.path,
+                Some(Position { line, column: 1 }),
+                "a custom material's WGSL cannot hold directives such as `enable`, because the engine adds its own lines before or around it. Remove the line: custom materials use no optional WGSL features.",
+            )
+        })
+        .collect()
 }

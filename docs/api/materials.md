@@ -8,7 +8,7 @@ summary: "standard, unlit, shader, shadowCatcher; every option."
 
 # Materials
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Texture maps, transparency and `materials.shadowCatcher` are not built yet, and `materials.shader` takes only a surface function, a vertex offset and their uniforms. Coding agents must not use the parts that are not built.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Texture maps, transparency and `materials.shadowCatcher` are not built yet, and `materials.shader` takes no textures yet. Coding agents must not use the parts that are not built.
 
 A material sets how the surfaces of the objects that use it look. `materials.standard` makes a lit material, and `materials.unlit` makes one that ignores lights. Create materials in the setup, and share each one between the objects that look alike.
 
@@ -108,7 +108,7 @@ const paint = materials.shader({ wgsl: tinted, uniforms: { tint: '#ff6a00', stre
 paint.set({ strength: 0.8, roughness: 0.3 });
 ```
 
-Materials made from the same WGSL share one shader, and each has its own uniforms. A mesh needs texture coordinates to draw with a custom material. WGSL as plain text, which the plugin did not compile, throws E1215, and so does a whole shader with entry points. A uniform that the WGSL does not declare, or a value of the wrong kind, throws E1216. The WGSL can also move the mesh's vertices with a vertex offset. [Surface functions](../shaders/surface-functions.md) describes the WGSL.
+Materials made from the same WGSL share one shader, and each has its own uniforms. A mesh needs texture coordinates to draw with a custom material. WGSL as plain text, which the plugin did not compile, throws E1215. So does a whole shader that is not a [full shader](../guides/custom-shaders.md#full-shaders) of a material. A uniform that the WGSL does not declare, or a value of the wrong kind, throws E1216. The WGSL can also move the mesh's vertices with a vertex offset. [Surface functions](../shaders/surface-functions.md) describes the WGSL.
 
 ## Ranges
 
@@ -190,7 +190,7 @@ Material factories. The standard material follows glTF's metallic-roughness mode
 | --- | --- |
 | `standard(options: StandardOptions = {}): Material<StandardValues>` | A lit material with glTF's metallic-roughness model, like three.js's `MeshStandardMaterial`. |
 | `unlit(options: UnlitOptions = {}): Material` | A material that ignores lights and shows its color as it is, like three.js's `MeshBasicMaterial`. |
-| `shader(options: ShaderOptions): Material<ShaderValues>` | A custom material: the standard material with a surface function in WGSL, which changes how each pixel of the surface looks before the engine lights it. It takes every option of `materials.standard`, and the first values of the uniforms that its WGSL declares. `set` changes the standard values and the uniforms. Meshes need texture coordinates to draw with it. Throws E1215 for WGSL that the null3D Vite plugin did not compile, and for a whole shader with entry points. Throws E1216 for a uniform that the WGSL does not declare, for a value of the wrong kind, and for a uniform named as a standard value, such as `color`. |
+| `shader(options: ShaderOptions): Material<ShaderValues>` | A custom material: the standard material with a surface function in WGSL, which changes how each pixel of the surface looks before the engine lights it, or a full shader of your own. It takes every option of `materials.standard`, and the first values of the uniforms that its WGSL declares. `set` changes the standard values and the uniforms. Meshes need texture coordinates to draw with a surface function, and the attributes that a full shader reads. Throws E1215 for WGSL that the null3D Vite plugin did not compile, and for a whole shader whose `@vertex` entry point takes no `InstanceIn`. Throws E1216 for a uniform that the WGSL does not declare, for a value of the wrong kind, and for a uniform named as a standard value, such as `color`. |
 
 ### `ShaderOptions`
 
@@ -200,7 +200,7 @@ Options of `materials.shader`: the material's WGSL, the first values of its unif
 
 | Member | Description |
 | --- | --- |
-| `wgsl: string \| CompiledWgsl` | The material's WGSL, compiled by the null3D Vite plugin. It declares `fn surface(input: SurfaceInput) -> Surface`, which the engine calls for each pixel, and which can start from `defaultSurface(input)`. The engine lights the surface that it returns. It can declare `struct Uniforms`, whose fields the surface function reads from `material`. Materials made from the same WGSL share their shader. |
+| `wgsl: string \| CompiledWgsl` | The material's WGSL, compiled by the null3D Vite plugin. It declares `fn surface(input: SurfaceInput) -> Surface`, which the engine calls for each pixel, and which can start from `defaultSurface(input)`. The engine lights the surface that it returns. It can declare `struct Uniforms`, whose fields the surface function reads from `material`, and `fn vertexOffset`, which moves the mesh's vertices. A full shader has a `@vertex` entry point that takes an `InstanceIn`, and a `@fragment` one, instead. Materials made from the same WGSL share their shader. |
 | `uniforms?: Readonly<Record<string, UniformValue \| undefined>>` | The first value of each uniform, by name. A uniform without one starts at 0. |
 
 ### `ShaderValues`

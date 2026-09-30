@@ -408,7 +408,7 @@ export class WebGL2Backend {
 	private templateReady(template: number): boolean {
 		if (this.templates[template]) return true;
 		const shader = this.images.shaders.get(template);
-		if (shader) this.templates[template] = { shader, pipeline: 'main' };
+		if (shader) this.templates[template] = { shader: shader.variants, pipeline: 'main' };
 		return shader !== undefined;
 	}
 

@@ -11,12 +11,15 @@ import {
 	MATERIAL_PARAM_METALNESS,
 	MATERIAL_PARAM_OPACITY,
 	MATERIAL_PARAM_ROUGHNESS,
+	SHADING_CUSTOM_ATTRIBUTE_SHIFT,
 	SHADING_CUSTOM_FIRST,
+	SHADING_CUSTOM_VERTEX_COLORS,
 	SHADING_LIT,
 } from '../generated/core';
-import type { ShaderVariants } from '../generated/shaders';
+import { VERTEX_COLOR, VERTEX_UV0 } from '../generated/gpu';
 import { fromHex } from '../math/color';
 import type { CoreGlue } from '../shared/core';
+import type { CustomShader } from '../shared/images';
 import { CoreMemory } from './memory';
 import { Materials } from './resources';
 
@@ -43,7 +46,7 @@ function fakeCore() {
 	const table: number[][] = [];
 	const features: number[] = [];
 	const shadings: number[] = [];
-	const sent: [number, ShaderVariants][] = [];
+	const sent: [number, CustomShader][] = [];
 	/** Each material's row of custom values. */
 	const custom: number[][] = [];
 	let failure = { code: 0, details: [0, 0] };
@@ -91,8 +94,20 @@ function fakeCore() {
 
 /** A custom material's WGSL as the Vite plugin compiles it, with a stand-in for its variants. */
 function compiledMaterial(uniforms: { name: string; type: string; offset: number }[] = []) {
-	return { kind: 'material', functions: ['surface'], variants: {}, uniforms } as const;
+	return {
+		kind: 'material',
+		functions: ['surface'],
+		variants: {},
+		uniforms,
+		locations: [0, 1, 2],
+		attributes: VERTEX_UV0,
+		vertexColors: true,
+	} as const;
 }
+
+/** The shading code of a custom material of the standard template, from its template. */
+const standardCustom = (template: number) =>
+	template | (VERTEX_UV0 << SHADING_CUSTOM_ATTRIBUTE_SHIFT) | SHADING_CUSTOM_VERTEX_COLORS;
 
 /** The uniforms of a WGSL `struct Uniforms { speed: f32, tint: vec3f, scale: vec2f, count: u32 }`. */
 const UNIFORMS = [
@@ -227,14 +242,30 @@ describe('materials.shader', () => {
 		materials.shader({ wgsl: stripes, color: '#0000ff' });
 		expect(shadings).toEqual([
 			SHADING_LIT,
-			SHADING_CUSTOM_FIRST,
-			SHADING_CUSTOM_FIRST + 1,
-			SHADING_CUSTOM_FIRST,
+			standardCustom(SHADING_CUSTOM_FIRST),
+			standardCustom(SHADING_CUSTOM_FIRST + 1),
+			standardCustom(SHADING_CUSTOM_FIRST),
 		]);
 		expect(sent).toEqual([
-			[SHADING_CUSTOM_FIRST, stripes.variants],
-			[SHADING_CUSTOM_FIRST + 1, rings.variants],
+			[SHADING_CUSTOM_FIRST, { variants: stripes.variants, locations: [0, 1, 2] }],
+			[SHADING_CUSTOM_FIRST + 1, { variants: rings.variants, locations: [0, 1, 2] }],
 		]);
+	});
+
+	test('passes a full shader the vertex attributes it reads, without vertex colors', () => {
+		const { shadings, sent, materials } = fakeCore();
+		const full = {
+			...compiledMaterial(),
+			functions: [],
+			locations: [0, 1, 5],
+			attributes: VERTEX_COLOR,
+			vertexColors: false,
+		};
+		materials.shader({ wgsl: full, vertexColors: true });
+		expect(shadings).toEqual([
+			SHADING_CUSTOM_FIRST | (VERTEX_COLOR << SHADING_CUSTOM_ATTRIBUTE_SHIFT),
+		]);
+		expect(sent).toEqual([[SHADING_CUSTOM_FIRST, { variants: {}, locations: [0, 1, 5] }]]);
 	});
 
 	test('takes every standard option, and set changes the standard values', () => {
@@ -266,7 +297,7 @@ describe('materials.shader', () => {
 		);
 		const whole = thrown(() => materials.shader({ wgsl: { kind: 'shader' } }));
 		expect(whole.message).toStartWith(
-			'E1215: materials.shader() got a whole shader with entry points.',
+			'E1215: materials.shader() got a whole shader whose @vertex entry point takes no InstanceIn.',
 		);
 		const missing = thrown(() =>
 			materials.shader({} as unknown as Parameters<typeof materials.shader>[0]),

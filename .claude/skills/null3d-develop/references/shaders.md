@@ -2,7 +2,7 @@
 
 All engine shaders are WGSL. The build translates them to GLSL for the WebGL2 path, so one source serves both backends. The null3D Vite plugin compiles the WGSL in your code: `.wgsl` files that you import, and template literals tagged `/* wgsl */`. The WebGL2 build sets the shader def `WEBGL2`. Engine docs: `guides/custom-shaders`, `shaders/surface-functions`, `shaders/builtins`, `shaders/wgsl-rules`, `shaders/library`.
 
-Custom materials with surface functions, uniforms, vertex offsets and the built-in values are built. Sections 1 to 3, 4 (uniforms), 5 (vertex offsets) and 8 to 10 apply now. The rest of sections 3 to 5 describes parts that come later in 0.1: do not ship code that uses them until their docs pages say they are built.
+Custom materials with surface functions, uniforms, vertex offsets, the built-in values and full shaders are built. Sections 1 to 5 and 8 to 10 apply now, apart from the parts that say later in 0.1. Do not ship code that uses those until their docs pages say they are built.
 
 ## Contents
 
@@ -23,7 +23,7 @@ Custom materials with surface functions, uniforms, vertex offsets and the built-
 | --- | --- | --- |
 | Change how a surface looks (color, roughness, patterns, dissolve, water) | Surface function | Yes |
 | Move vertices (waves, wind, swelling) | Vertex offset, alone or with a surface function | Yes (shadows use the unmoved vertices) |
-| Something the lighting model cannot express (holograms, custom lighting) | Full shader (later in 0.1) | No: you write everything |
+| Something the lighting model cannot express (holograms, custom lighting) | Full shader | No: you write everything |
 | A full-screen image effect | Post effect (section 6) | Not applicable |
 | An extra render or compute step | Custom pass (section 7) | Not applicable |
 
@@ -162,7 +162,7 @@ const dissolve = materials.shader({
 
 ## 5. Vertex offsets and full shaders
 
-Vertex offsets are built; full shaders come later in 0.1. A vertex offset moves vertices in the mesh's own space before the engine applies transforms and instancing. It goes in the same WGSL as the surface function, and reads the same uniforms:
+Vertex offsets and full shaders are built. A vertex offset moves vertices in the mesh's own space before the engine applies transforms and instancing. It goes in the same WGSL as the surface function, and reads the same uniforms:
 
 ```wgsl
 struct Uniforms { height: f32 }
@@ -179,7 +179,31 @@ fn vertexOffset(input: VertexInput) -> vec3f {
 - Shadows use the unmoved vertices.
 - Vertices that move outside the mesh's bounding sphere can be culled wrongly. Give the object a sphere that holds them with `mesh.setBounds(center, radius)`, at setup, because the call rebuilds the draw tables.
 
-A full shader is WGSL with `@vertex` and `@fragment` entry points. The shader library's `null3d::vertex` module helps it keep instancing and camera-relative positions working. Full shaders do not receive lighting, shadows or fog unless you import the helpers (`null3d::lighting`, `null3d::fog`).
+A full shader is WGSL with one `@vertex` entry point that takes an `InstanceIn`, and one `@fragment` entry point:
+
+```wgsl
+#import null3d::builtins::{fill_builtins, frame}
+#import null3d::mesh::{InstanceIn, clip_position, find_instance, finish, world_normal}
+
+struct Varyings { @builtin(position) clip: vec4f, @location(0) normal: vec3f }
+
+@vertex
+fn vs(@location(0) position: vec3f, @location(1) normal: vec3f, i: InstanceIn) -> Varyings {
+  let found = find_instance(i);   // works on both GPU paths, for objects and instances
+  return Varyings(clip_position(found, position), world_normal(found, normal));
+}
+
+@fragment
+fn fs(in: Varyings) -> @location(0) vec4f {
+  fill_builtins(vec3f(0.0));      // fills frame, camera and object for this stage
+  let pulse = 0.5 + 0.5 * sin(frame.time);
+  return finish(abs(normalize(in.normal)) * pulse, in.clip.xy);  // linear color in, output out
+}
+```
+
+- Mesh locations: 0 position, 1 normal, 2 uv, 3 uv1, 4 tangent, 5 color. A mesh draws only with every attribute the shader reads.
+- `null3d::mesh` gives `find_instance`, `clip_position`, `relative_position`, `world_normal` and `finish`; positions are relative to the camera.
+- Full shaders get no lighting, shadows or fog, no standard values and no uniforms. Import `null3d::lighting` or `null3d::fog` helpers for your own.
 
 ## 6. Custom post effects (0.2)
 

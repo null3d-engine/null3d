@@ -13,7 +13,9 @@ import {
 	MATERIAL_PARAM_METALNESS,
 	MATERIAL_PARAM_OPACITY,
 	MATERIAL_PARAM_ROUGHNESS,
+	SHADING_CUSTOM_ATTRIBUTE_SHIFT,
 	SHADING_CUSTOM_FIRST,
+	SHADING_CUSTOM_VERTEX_COLORS,
 	SHADING_LIT,
 	SHADING_TEXCOORDS,
 	SHADING_UNLIT,
@@ -569,8 +571,10 @@ export interface ShaderOptions extends StandardOptions {
 	 * The material's WGSL, compiled by the null3D Vite plugin. It declares
 	 * `fn surface(input: SurfaceInput) -> Surface`, which the engine calls for each pixel, and
 	 * which can start from `defaultSurface(input)`. The engine lights the surface that it returns.
-	 * It can declare `struct Uniforms`, whose fields the surface function reads from `material`.
-	 * Materials made from the same WGSL share their shader.
+	 * It can declare `struct Uniforms`, whose fields the surface function reads from `material`,
+	 * and `fn vertexOffset`, which moves the mesh's vertices. A full shader has a `@vertex` entry
+	 * point that takes an `InstanceIn`, and a `@fragment` one, instead. Materials made from the
+	 * same WGSL share their shader.
 	 */
 	wgsl: string | CompiledWgsl;
 	/** The first value of each uniform, by name. A uniform without one starts at 0. */
@@ -584,10 +588,18 @@ interface CompiledUniform {
 	readonly offset: number;
 }
 
-/** A custom material's WGSL as the plugin compiles it: the standard material's variants with it. */
+/**
+ * A custom material's WGSL as the plugin compiles it: the standard material's variants with it, or
+ * a full shader's, with the vertex attributes that its vertex stage reads.
+ */
 interface CompiledMaterial extends CompiledWgsl {
 	readonly kind: 'material';
 	readonly variants: ShaderVariants;
+	readonly locations: readonly number[];
+	/** The optional vertex attributes (`VERTEX_*` bits) that the vertex stage reads. */
+	readonly attributes: number;
+	/** True when the shader multiplies the base color by the mesh's vertex colors, as needed. */
+	readonly vertexColors: boolean;
 	readonly uniforms: readonly CompiledUniform[];
 }
 
@@ -873,11 +885,12 @@ export class Materials {
 
 	/**
 	 * A custom material: the standard material with a surface function in WGSL, which changes how
-	 * each pixel of the surface looks before the engine lights it. It takes every option of
-	 * `materials.standard`, and the first values of the uniforms that its WGSL declares. `set`
-	 * changes the standard values and the uniforms. Meshes need texture coordinates to draw with
-	 * it. Throws E1215 for WGSL that the null3D Vite plugin did not compile, and for a whole shader
-	 * with entry points. Throws E1216 for a uniform that the WGSL does not declare, for a value of
+	 * each pixel of the surface looks before the engine lights it, or a full shader of your own. It
+	 * takes every option of `materials.standard`, and the first values of the uniforms that its WGSL
+	 * declares. `set` changes the standard values and the uniforms. Meshes need texture
+	 * coordinates to draw with a surface function, and the attributes that a full shader reads.
+	 * Throws E1215 for WGSL that the null3D Vite plugin did not compile, and for a whole shader
+	 * whose `@vertex` entry point takes no `InstanceIn`. Throws E1216 for a uniform that the WGSL does not declare, for a value of
 	 * the wrong kind, and for a uniform named as a standard value, such as `color`.
 	 */
 	shader(options: ShaderOptions): Material<ShaderValues> {
@@ -891,7 +904,11 @@ export class Materials {
 					`${call}() got WGSL whose uniform ${name} has the name of a standard value. Rename the field of struct Uniforms.`,
 				);
 		const writes = uniformWrites(uniforms, options.uniforms ?? {}, call);
-		const id = this.createId(this.templateOf(compiled), options, call);
+		const shading =
+			this.templateOf(compiled) |
+			(compiled.attributes << SHADING_CUSTOM_ATTRIBUTE_SHIFT) |
+			(compiled.vertexColors ? SHADING_CUSTOM_VERTEX_COLORS : 0);
+		const id = this.createId(shading, options, call);
 		const material = new ShaderMaterial(id, this.core, `${call}.set`, uniforms);
 		material.write(writes);
 		return material;
@@ -906,7 +923,7 @@ export class Materials {
 			throw new EngineError(
 				'E1215',
 				typeof wgsl === 'object' && wgsl?.kind === 'shader'
-					? `${call}() got a whole shader with entry points. Custom materials take a surface function, without entry points.`
+					? `${call}() got a whole shader whose @vertex entry point takes no InstanceIn. A full shader of a custom material finds each instance with InstanceIn and find_instance from null3d::mesh.`
 					: `${call}() got WGSL as ${typeof wgsl === 'string' ? 'text' : String(wgsl)}, which the null3D Vite plugin did not compile.`,
 			);
 		}
@@ -919,7 +936,7 @@ export class Materials {
 		if (template === undefined) {
 			template = this.nextTemplate++;
 			this.templates.set(compiled, template);
-			this.sendShader(template, compiled.variants);
+			this.sendShader(template, { variants: compiled.variants, locations: compiled.locations });
 		}
 		return template;
 	}

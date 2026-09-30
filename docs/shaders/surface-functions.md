@@ -38,7 +38,7 @@ export default defineSketch(({ scene, geometry, materials }) => {
 `materials.shader(options)` makes a custom material. Its `wgsl` option holds the WGSL, and its other options are those of `materials.standard`. [Materials](../api/materials.md) lists them.
 
 - Write the WGSL in a template literal right after a `/* wgsl */` comment, or in a `.wgsl` file that your sketch imports. The plugin compiles it while Vite serves or builds the project. [Custom shaders](../guides/custom-shaders.md) says how.
-- The WGSL declares `fn surface(input: SurfaceInput) -> Surface`, `fn vertexOffset(input: VertexInput) -> vec3f` ([vertex offsets](#vertex-offsets)), or both, and no `@vertex` or `@fragment` entry point. WGSL with entry points is a whole shader, which custom materials do not take yet.
+- The WGSL declares `fn surface(input: SurfaceInput) -> Surface`, `fn vertexOffset(input: VertexInput) -> vec3f` ([vertex offsets](#vertex-offsets)), or both, and no `@vertex` or `@fragment` entry point. For a look that the engine's lighting cannot give, write a [full shader](../guides/custom-shaders.md#full-shaders) instead.
 - `set()` changes the standard values, such as `color` and `roughness`, as it does for a standard material. The surface function sees them through `defaultSurface`.
 - Materials made from the same WGSL share one shader. Make one material for each look, as you do for standard materials.
 - A mesh needs texture coordinates to draw with a custom material. The geometry generators give every mesh texture coordinates. For a mesh from `geometry.fromArrays`, pass `uvs`.

@@ -8,7 +8,7 @@ summary: "Built-in materials; permutations; pipeline warm-up; why changing shade
 
 # Materials and pipelines
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Texture maps, alpha modes and `scene.warmUp()` are not built yet, and custom materials take only a surface function, a vertex offset and their uniforms. Coding agents must not use the parts that are not built.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Texture maps, alpha modes and `scene.warmUp()` are not built yet, and custom materials take no textures yet. Coding agents must not use the parts that are not built.
 
 ```mermaid
 flowchart LR

@@ -27,6 +27,7 @@ import {
 	type ShaderVariants,
 	type WgslShader,
 } from '../../generated/shaders';
+import type { CustomShader } from '../../shared/images';
 import { DEV } from '../dev';
 import { LINE_VERTICES } from '../line-vertices';
 import { variantFor } from '../variants';
@@ -207,13 +208,13 @@ export class Pipelines {
 	 * Adds a custom material's template: the standard material's template with the material's WGSL,
 	 * in the shader variants that the plugin built, which also read the first texture coordinates.
 	 */
-	defineCustom(id: number, shader: ShaderVariants): void {
+	defineCustom(id: number, shader: CustomShader): void {
 		this.defineTemplate(id, {
 			label: `custom material ${id}`,
-			shader,
+			shader: shader.variants,
 			pipeline: 'main',
 			layouts: [LAYOUT_FRAME],
-			meshLocations: [0, 1, 2],
+			meshLocations: shader.locations,
 			vertexBuffers: INSTANCE_BUFFERS,
 		});
 	}

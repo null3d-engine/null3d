@@ -84,8 +84,9 @@ export interface CompiledShader {
 }
 
 /**
- * The functions of a custom material from a project's modules, such as `fn surface`, built into
- * every variant of the engine's standard material. `materials.shader` draws with it.
+ * A custom material from a project's modules, which `materials.shader` draws with: functions such
+ * as `fn surface`, built into every variant of the engine's standard material, or a full shader,
+ * whose `@vertex` entry point takes an `InstanceIn` from `null3d::mesh`.
  */
 export interface CompiledMaterial {
 	/** Marks the WGSL of a custom material. */
@@ -102,6 +103,12 @@ export interface CompiledMaterial {
 		readonly type: 'f32' | 'i32' | 'u32' | 'vec2f' | 'vec3f' | 'vec4f';
 		readonly offset: number;
 	}[];
-	/** The standard material's variants with the WGSL's functions, by name. */
+	/** The standard material's variants with the WGSL's functions, or a full shader's, by name. */
 	readonly variants: Readonly<Record<string, ShaderVariant>>;
+	/** The vertex shader locations that the vertex stage reads from a mesh's vertices. */
+	readonly locations: readonly number[];
+	/** The optional vertex attributes that those locations read, as the engine's format bits. */
+	readonly attributes: number;
+	/** True when the shader multiplies the base color by the mesh's vertex colors, as needed. */
+	readonly vertexColors: boolean;
 }

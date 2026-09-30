@@ -42,10 +42,33 @@ pub enum Shading {
     /// A material without a live map, or on a mesh without texture coordinates, draws as
     /// [`Shading::Unlit`].
     UnlitMap,
-    /// A custom material: the standard material's template with the sketch's own WGSL, under its
-    /// own template id, from [`template::CUSTOM_FIRST`] up. Its surface function reads the first
-    /// texture coordinates.
-    Custom(u32),
+    /// A custom material: the standard material's template with the sketch's own WGSL, or a full
+    /// shader of the sketch's, under its own template id, from [`template::CUSTOM_FIRST`] up.
+    Custom(CustomShading),
+}
+
+/// How a custom material's shader draws.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct CustomShading {
+    /// Its render pipeline template.
+    pub template: u32,
+    /// The optional vertex attributes (`vertex::*` bits) that its vertex stage reads.
+    pub attributes: u32,
+    /// True when its shader multiplies the base color by the mesh's vertex colors in its
+    /// `VERTEX_COLOR` builds, as the standard material's template does.
+    pub vertex_colors: bool,
+}
+
+impl CustomShading {
+    /// A custom material from the standard material's template, which reads the first texture
+    /// coordinates and takes vertex colors.
+    pub const fn standard(template: u32) -> Shading {
+        Shading::Custom(Self {
+            template,
+            attributes: vertex::UV0,
+            vertex_colors: true,
+        })
+    }
 }
 
 impl Shading {
@@ -56,7 +79,7 @@ impl Shading {
             Shading::Unlit => template::INSTANCED_UNLIT,
             Shading::TexCoords => template::INSTANCED_TEXCOORDS,
             Shading::UnlitMap => template::INSTANCED_UNLIT_MAP,
-            Shading::Custom(template) => template,
+            Shading::Custom(custom) => custom.template,
         }
     }
 
@@ -65,13 +88,18 @@ impl Shading {
     pub const fn attributes(self) -> u32 {
         match self {
             Shading::Lit | Shading::Unlit => 0,
-            Shading::TexCoords | Shading::UnlitMap | Shading::Custom(_) => vertex::UV0,
+            Shading::TexCoords | Shading::UnlitMap => vertex::UV0,
+            Shading::Custom(custom) => custom.attributes,
         }
     }
 
     /// True when its shader can multiply the base color by the mesh's vertex colors.
     pub const fn takes_vertex_colors(self) -> bool {
-        !matches!(self, Shading::TexCoords)
+        match self {
+            Shading::TexCoords => false,
+            Shading::Custom(custom) => custom.vertex_colors,
+            _ => true,
+        }
     }
 }
 
@@ -433,7 +461,9 @@ mod tests {
     fn custom_values_start_at_zero_and_change_apart_from_the_rows() {
         let mut table = MaterialTable::with_capacity(3);
         for _ in 0..3 {
-            table.create(Shading::Custom(64), 0, [1.0; 4]).unwrap();
+            table
+                .create(CustomShading::standard(64), 0, [1.0; 4])
+                .unwrap();
         }
         assert_eq!(
             table.take_values_changed(),
