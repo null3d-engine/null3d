@@ -80,7 +80,7 @@ const brick = materials.standard({
 
 | Option | Material | Channels | What it does |
 | --- | --- | --- | --- |
-| `map` | Both | RGB, sRGB | Multiplies `color` |
+| `map` | Both | RGBA, sRGB | Multiplies `color`, and its alpha multiplies `opacity` |
 | `metalnessRoughnessMap` | Standard | G and B, linear | Green multiplies `roughness`, and blue multiplies `metalness`, as glTF packs them |
 | `normalMap` | Standard | RGB, linear | Bends normals in tangent space, scaled by `normalScale` |
 | `aoMap` | Standard | R, linear | Darkens ambient light, by `aoMapIntensity` |
