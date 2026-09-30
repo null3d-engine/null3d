@@ -249,6 +249,15 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		size: [480, 270],
 	},
+	// Each texture map of the standard material, made in code: base color, metal-rough, normal maps
+	// on quads with and without tangents, occlusion, emissive, a light map on the second texture
+	// coordinates, and base color maps through a texture coordinate transform, standard and unlit.
+	{
+		name: 'standard-maps',
+		sketch: 'tests/pages/sketches/standard-maps-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+	},
 	// Orbit controls after the controls test's drags, made through the controls' own calls. The
 	// controls test must draw this image after it makes the drags with Playwright.
 	{ name: 'controls', sketch: 'tests/pages/sketches/controls-sketch.ts?moved', hold: 0 },

@@ -32,6 +32,9 @@ pub enum Shading {
     /// A material without a live map, or on a mesh without texture coordinates, draws as
     /// [`Shading::Unlit`].
     UnlitMap,
+    /// The standard material with its texture maps. A standard material draws with it when it
+    /// has a live map and its mesh has texture coordinates; nothing creates it.
+    StandardMaps,
 }
 
 impl Shading {
@@ -42,6 +45,7 @@ impl Shading {
             Shading::Unlit => template::INSTANCED_UNLIT,
             Shading::TexCoords => template::INSTANCED_TEXCOORDS,
             Shading::UnlitMap => template::INSTANCED_UNLIT_MAP,
+            Shading::StandardMaps => template::INSTANCED_STANDARD_MAPS,
         }
     }
 
@@ -50,7 +54,7 @@ impl Shading {
     pub const fn attributes(self) -> u32 {
         match self {
             Shading::Lit | Shading::Unlit => 0,
-            Shading::TexCoords | Shading::UnlitMap => vertex::UV0,
+            Shading::TexCoords | Shading::UnlitMap | Shading::StandardMaps => vertex::UV0,
         }
     }
 
@@ -76,6 +80,8 @@ pub mod feature {
 pub mod flag {
     /// The shader lights each triangle with its face's normal.
     pub const FLAT_SHADING: u32 = 1;
+    /// The map of slot `s` reads the second texture coordinates when bit `SECOND_UV << s` is set.
+    pub const SECOND_UV: u32 = 2;
 }
 
 /// Floats in each material's row: eight `vec4f`s.
@@ -151,6 +157,18 @@ pub enum MapSlot {
 
 /// The number of map slots in a row.
 pub const MAP_SLOTS: usize = 6;
+
+impl MapSlot {
+    /// Every slot, in the order of a row's maps, so a slot's number indexes it.
+    pub const ALL: [MapSlot; MAP_SLOTS] = [
+        MapSlot::BaseColor,
+        MapSlot::MetalRough,
+        MapSlot::Normal,
+        MapSlot::Occlusion,
+        MapSlot::Emissive,
+        MapSlot::Light,
+    ];
+}
 
 /// A row's values before the sketch changes any: white, opaque, not metal, fully rough, the
 /// identity texture coordinate transform, and no maps. The metalness and roughness are three.js's
@@ -269,20 +287,35 @@ impl MaterialTable {
         };
     }
 
-    /// Gives a material a map in `slot`: a texture, or none with `Handle::NONE`.
+    /// Gives a material a map in `slot`: a texture, or none with `Handle::NONE`, which the
+    /// shader reads at the second texture coordinates when `second_uv` is true.
     pub fn set_map(
         &mut self,
         id: u32,
         slot: MapSlot,
         texture: Handle,
+        second_uv: bool,
     ) -> Result<(), MaterialError> {
         let maps = self
             .maps
             .get_mut(id as usize)
             .ok_or(MaterialError::Unknown(id))?;
         maps[slot as usize] = texture;
+        let flags = &mut self.rows[id as usize * MATERIAL_FLOATS + param::FLAGS];
+        let bit = flag::SECOND_UV << slot as u32;
+        let bits = *flags as u32 & !bit | if second_uv { bit } else { 0 };
+        *flags = bits as f32;
+        self.mark_row(id);
         self.maps_changed = true;
         Ok(())
+    }
+
+    /// A material's maps by slot, `Handle::NONE` where it has none.
+    pub fn maps(&self, id: u32) -> [Handle; MAP_SLOTS] {
+        self.maps
+            .get(id as usize)
+            .copied()
+            .unwrap_or([Handle::NONE; MAP_SLOTS])
     }
 
     /// A material's map in `slot`, or `Handle::NONE`.
@@ -549,14 +582,23 @@ mod tests {
         let waiting = table.create(Shading::UnlitMap, 0, [1.0; 4]).unwrap();
         table.take_changed();
         let (ready, on_its_way) = (Handle::new(1, 0), Handle::new(2, 0));
-        table.set_map(mapped, MapSlot::BaseColor, ready).unwrap();
         table
-            .set_map(waiting, MapSlot::Emissive, on_its_way)
+            .set_map(mapped, MapSlot::BaseColor, ready, false)
+            .unwrap();
+        table
+            .set_map(waiting, MapSlot::Emissive, on_its_way, true)
             .unwrap();
         assert_eq!(table.map(mapped, MapSlot::BaseColor), ready);
         assert_eq!(table.map(mapped, MapSlot::Emissive), Handle::NONE);
         assert_eq!(table.map(plain, MapSlot::BaseColor), Handle::NONE);
         let layer = |texture: Handle| (texture == ready).then_some(7);
+        assert_eq!(
+            row(&table, waiting)[param::FLAGS],
+            (flag::SECOND_UV << MapSlot::Emissive as u32) as f32,
+            "the emissive map reads the second texture coordinates"
+        );
+        assert_eq!(table.maps(waiting)[MapSlot::Emissive as usize], on_its_way);
+        table.take_changed();
         table.update_map_layers(false, layer);
         assert_eq!(
             table.take_changed(),
@@ -573,7 +615,7 @@ mod tests {
         assert_eq!(table.take_changed(), Some(mapped..waiting + 1));
         assert_eq!(layers(&table, waiting)[MapSlot::Emissive as usize], 3.0);
         assert_eq!(
-            table.set_map(9, MapSlot::BaseColor, ready),
+            table.set_map(9, MapSlot::BaseColor, ready, false),
             Err(MaterialError::Unknown(9))
         );
     }

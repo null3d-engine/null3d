@@ -17,7 +17,7 @@ import * as G from '../../generated/gpu';
 import type { DeviceShaders } from '../../generated/shaders';
 import type { DepthMode } from '../../page/switches';
 import { ImageTable } from '../../shared/images';
-import { forEachVertexAttribute, vertexStride } from '../vertex-format';
+import { forEachFallbackAttribute, forEachVertexAttribute, vertexStride } from '../vertex-format';
 import { type DepthSetup, setDepthMode } from './depth';
 import {
 	createProgram,
@@ -1485,10 +1485,12 @@ export class WebGL2Backend {
 		this.useVertexArray(vao);
 		gl.bindBuffer(gl.ARRAY_BUFFER, vertices);
 		const stride = vertexStride(format);
-		forEachVertexAttribute(format, (location, floats, offset) => {
+		const point = (location: number, floats: number, offset: number) => {
 			gl.enableVertexAttribArray(location);
 			gl.vertexAttribPointer(location, floats, gl.FLOAT, false, stride, offset);
-		});
+		};
+		forEachVertexAttribute(format, point);
+		forEachFallbackAttribute(format, point);
 		gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indices);
 		this.vertexArrays[this.vertexBuffer] = { vao, vertices, indices, format };
 	}

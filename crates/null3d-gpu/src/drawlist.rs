@@ -441,6 +441,10 @@ pub mod layout {
     /// The maps of render pipelines that sample them: a 2D array texture, then its sampler. It is
     /// group 1 on WebGPU, and group 3 on WebGL2, after the groups of the data textures.
     pub const TEXTURES: u32 = 5;
+    /// The maps of the standard material, in the order of a material's map slots: a 2D array
+    /// texture at each binding from 0, then each one's sampler at the bindings after every
+    /// texture. It sits where [`TEXTURES`] sits.
+    pub const MATERIAL_MAPS: u32 = 6;
 }
 
 /// Bits of a render pipeline's permutation word, which pick a shader variant. A feature that
@@ -465,9 +469,12 @@ pub mod permutation {
     pub const SKIN: u32 = 64;
     /// Morph targets move the mesh's vertices.
     pub const MORPH: u32 = 128;
+    /// The normal map's frame comes from the mesh's tangents, not from how the texture
+    /// coordinates change between pixels.
+    pub const VERTEX_TANGENT: u32 = 512;
 
     /// Every bit with its name: the shader def that turns its code on, in bit order.
-    pub const NAMES: [(&str, u32); 8] = [
+    pub const NAMES: [(&str, u32); 9] = [
         ("DRAW_INDEX", DRAW_INDEX),
         ("TONE_MAP", TONE_MAP),
         ("VERTEX_COLOR", VERTEX_COLOR),
@@ -476,6 +483,7 @@ pub mod permutation {
         ("RECEIVE_SHADOWS", RECEIVE_SHADOWS),
         ("SKIN", SKIN),
         ("MORPH", MORPH),
+        ("VERTEX_TANGENT", VERTEX_TANGENT),
     ];
 
     /// The bits that a device fixes when the engine starts, the same in every pipeline it builds:
@@ -666,7 +674,7 @@ pub mod sizes {
 
 /// Shader templates for `CreateRenderPipeline` and `CreateComputePipeline`.
 pub mod template {
-    /// Instanced meshes with Lambert lighting.
+    /// Instanced meshes with the standard material.
     pub const INSTANCED_LIT: u32 = 1;
     /// Instanced meshes without lighting.
     pub const INSTANCED_UNLIT: u32 = 2;
@@ -680,6 +688,9 @@ pub mod template {
     /// Instanced meshes without lighting, whose base color is multiplied by a map that the first
     /// texture coordinates place.
     pub const INSTANCED_UNLIT_MAP: u32 = 5;
+    /// Instanced meshes with the standard material and its texture maps, which the first texture
+    /// coordinates place, or the second for a map on the second set.
+    pub const INSTANCED_STANDARD_MAPS: u32 = 6;
     /// The GPU culling compute shader.
     pub const CULL: u32 = 16;
 }
@@ -893,6 +904,7 @@ pub fn typescript_constants() -> String {
                 ("DRAWS", layout::DRAWS),
                 ("INSTANCES", layout::INSTANCES),
                 ("TEXTURES", layout::TEXTURES),
+                ("MATERIAL_MAPS", layout::MATERIAL_MAPS),
             ],
         ),
         ("PERMUTATION", &permutation::NAMES),
@@ -922,6 +934,7 @@ pub fn typescript_constants() -> String {
                 ("INSTANCED_TEXCOORDS", template::INSTANCED_TEXCOORDS),
                 ("DEBUG_LINES", template::DEBUG_LINES),
                 ("INSTANCED_UNLIT_MAP", template::INSTANCED_UNLIT_MAP),
+                ("INSTANCED_STANDARD_MAPS", template::INSTANCED_STANDARD_MAPS),
                 ("CULL", template::CULL),
             ],
         ),

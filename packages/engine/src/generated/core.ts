@@ -86,6 +86,13 @@ export const MATERIAL_FEATURE_DOUBLE_SIDED = 1;
 export const MATERIAL_FEATURE_VERTEX_COLORS = 2;
 export const MATERIAL_FEATURE_FLAT_SHADING = 4;
 
+export const MAP_SLOT_BASE_COLOR = 0;
+export const MAP_SLOT_METAL_ROUGH = 1;
+export const MAP_SLOT_NORMAL = 2;
+export const MAP_SLOT_OCCLUSION = 3;
+export const MAP_SLOT_EMISSIVE = 4;
+export const MAP_SLOT_LIGHT = 5;
+
 export const MATERIAL_PARAM_COLOR = 0;
 export const MATERIAL_PARAM_OPACITY = 3;
 export const MATERIAL_PARAM_EMISSIVE = 4;

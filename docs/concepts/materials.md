@@ -8,7 +8,7 @@ summary: "Built-in materials; permutations; pipeline warm-up; why changing shade
 
 # Materials and pipelines
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Texture maps, alpha modes, custom materials and `scene.warmUp()` are not built yet, so coding agents must not use them.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Alpha modes and custom materials are not built yet, so coding agents must not use them.
 
 ```mermaid
 flowchart LR
@@ -49,6 +49,7 @@ A feature that changes what a shader costs is a variant of the shader, which the
 | Option | Where it goes |
 | --- | --- |
 | The kind: standard or unlit | The shader |
+| Texture maps | A shader variant that samples maps, and another for a normal map on a mesh with tangents |
 | `vertexColors` | A shader variant that reads the mesh's colors, on meshes that have them |
 | `doubleSided` | The pipeline's state: it culls no faces |
 | `flatShading` | The material's row: every standard shader can light with face normals |
