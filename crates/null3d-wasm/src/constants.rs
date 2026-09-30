@@ -13,7 +13,7 @@ use null3d_render::cpu_culled::{CpuCulledConfig, MAX_SOURCE_BITS};
 use null3d_render::frame::{NO_MATERIAL, NO_MESH};
 use null3d_render::geometry::Shape;
 use null3d_render::gpu_driven::{MAX_USEFUL_BINDING_BYTES, PORTABLE_MAX_SOURCES};
-use null3d_render::textures::MAX_LAYERS;
+use null3d_render::textures::{DEFAULT_MAX_ANISOTROPY, DEFAULT_UPLOAD_BUDGET, MAX_LAYERS};
 
 /// Fields of `sceneArrays`.
 pub mod scene_field {
@@ -311,6 +311,8 @@ pub fn typescript() -> String {
                 ("UPLOAD_BUDGET", texture_option::UPLOAD_BUDGET),
                 ("MAX_ANISOTROPY", texture_option::MAX_ANISOTROPY),
                 ("UPLOAD_ALL", texture_option::UPLOAD_ALL),
+                ("DEFAULT_UPLOAD_BUDGET", DEFAULT_UPLOAD_BUDGET),
+                ("DEFAULT_MAX_ANISOTROPY", DEFAULT_MAX_ANISOTROPY),
             ],
         ),
         (
