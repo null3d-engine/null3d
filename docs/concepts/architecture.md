@@ -58,15 +58,17 @@ In the default mode the two workers overlap. The render worker draws frame N whi
 The sketch worker, computing frame N+1:
 
 1. Wakes when the render worker signals a new frame, and reads the new input from shared memory.
-2. Runs your `onUpdate`. Your code writes transforms straight into the shared arrays and queues structural changes, such as creating, destroying and reparenting objects.
+2. Runs your `onFixedUpdate` once for each fixed step that fell due, then your `onUpdate`. Your code writes transforms straight into the shared arrays and queues structural changes, such as creating, destroying and reparenting objects.
 3. Applies the structural changes in one batch.
-4. Runs parallel jobs: transforms by hierarchy depth with their bounds, then the instance batches. On the WebGL2 path the jobs also cull each view, such as the camera's.
-5. Records the frame's draw lists: the new GPU objects and the uploads first, then each pass in the order that the [render graph](render-graph.md) sets.
-6. Publishes the finished frame: it stores the frame's number in one shared slot, which the render worker reads in its next frame callback.
+4. Runs parallel jobs: transforms by hierarchy depth, with their bounds.
+5. Runs your `onLateUpdate`, then updates the objects that it moved and the objects below them.
+6. Runs more parallel jobs: the instance batches. On the WebGL2 path the jobs also cull each view, such as the camera's.
+7. Records the frame's draw lists: the new GPU objects and the uploads first, then each pass in the order that the [render graph](render-graph.md) sets.
+8. Publishes the finished frame: it stores the frame's number in one shared slot, which the render worker reads in its next frame callback.
 
 The render worker, drawing frame N inside its own `requestAnimationFrame` callback:
 
-1. Takes the next complete frame. The sketch worker runs at most one frame ahead, so no frame is skipped. If none is ready, it draws nothing, and the browser keeps showing the last frame.
+1. Takes the next complete frame. The sketch worker runs at most one frame ahead, so no frame is skipped. If none is ready, it draws nothing, and the browser keeps showing the last frame. It also draws nothing while two frames are unfinished on the GPU. The sketch worker then waits too, so at most two frames wait on a GPU that falls behind.
 2. Applies a canvas resize that arrives with the frame. The frame was built for that size, so the canvas and the frame's render targets always agree. A new pixel ratio, as when the window moves to another screen, resizes the canvas too.
 3. Uploads the changed byte ranges to GPU buffers, and on WebGL2 to data textures. On WebGPU, uploads from 64 KiB up to 4 MiB have two routes: the direct write call, and staging buffers that the browser keeps mapped. The render worker times both on the device and takes the faster one. Chrome favors the staging buffers, and Safari the direct call. On WebGL2, uploads read straight from shared memory, or from a copy in a browser that refuses to read it.
 4. Replays the draw lists into WebGPU or WebGL2 calls and submits them. The browser shows the frame when the callback returns.

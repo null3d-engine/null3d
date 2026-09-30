@@ -19,4 +19,5 @@ export {
 } from './gpu/webgpu/upload-routes';
 export { probeCapabilities } from './page/capabilities';
 export { texCoordsMaterial } from './scene/resources';
+export { type TextureUploads, unlitMapMaterial } from './scene/textures';
 export { coreUrls, startCore } from './shared/core';

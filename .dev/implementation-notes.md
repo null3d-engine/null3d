@@ -31,15 +31,38 @@ The engine's hot paths stay allocation-free with these habits (hard rule 1):
 
 - The page and the sketch worker load the renderer and the GPU layer (`render/draw.ts`) with a dynamic import, only in the modes where they draw. A pipelined page then downloads the GPU layer once, in the render worker.
 - In their other modules, import only types from the renderer and the GPU layer: a value import bundles the GPU layer into their files again.
-- The sketch worker starts the import with its other startup work. The page starts it once the core has downloaded. An earlier start slowed the core's download on Slow 4G and delayed the first frame by 22 to 37 ms.
+- The page and the sketch worker start that import while the core downloads, as "Start order" says. It once started after the core, because an earlier start slowed the core's download and delayed the first frame by 22 to 37 ms. Now that the other downloads start early too, the renderer is the last download to arrive unless it starts early.
 - The page loads the sketch runner and the scene API (`sketch/runner.ts`) with a dynamic import, only in single-threaded mode, where it runs the sketch itself. Other page modules import only types from them.
 - The page starts that import as soon as it knows the mode, while the core downloads, because it needs the runner right after the core. In `bun run bench:startup --switches threads=off`, the first frame came at a median of 4,131 ms over 14 runs. With the runner in the page's file, it came at 4,131 ms too. A start after the core's download gave 4,135 ms.
-- In single-threaded mode the page imports the sketch module while the core downloads too. Before, it asked for the module only after the core's loader, one round trip later. A cold start on Slow 4G then reached its first frame at 3,110 ms instead of 3,580 ms. Those are medians of 10 loads each, with the old and new code in turns, in Chrome 154 on a MacBook Pro. The module's top-level code runs when the module arrives. Hold mode imports it after the sketch runner has seeded the thread's random numbers, so that code draws the same numbers on every run.
+- In single-threaded mode the page imports the sketch module while the core downloads too. The module's top-level code runs when the module arrives. Hold mode imports it after the sketch runner has seeded the thread's random numbers, so that code draws the same numbers on every run.
 - Keep `loadSketch` in `sketch/define-sketch.ts`, where the page imports it. That import keeps `defineSketch` in the page's file, which the sketch worker finds in the browser's cache. In a file of its own, `defineSketch` costs the sketch worker one more request before the sketch runs. On Slow 4G, that request adds a round trip of 562 ms.
 - Only the page imports the error fixes (`errors/fixes.ts`). It sets them in `createEngine` and sends them to each worker in its handoff, and `startWorkerCore` sets them in the worker before the core starts. A worker module that imports the fixes adds their text to its file.
 - `errors/codes.ts` holds each code's docs text for the docs generator and the tests. Runtime code must not import it: a value import bundles every code's docs text into the engine's files.
 - The page hands the key names (`shared/key-codes.ts`) to the sketch worker when it starts it, as it does the error fixes. The sketch worker's file then holds no copy of the list.
 - The input ring's record format is plain constants, not enums. The bundler writes a constant into the code as a number, while a TypeScript enum ships as an object that holds each member's name. A `const enum` ships the same object.
+
+## Start order
+
+The page starts every download that the start needs while the core downloads. On Slow 4G each download that waits for the core adds a round trip of at least 562 ms.
+
+- With worker threads the page starts the sketch worker, the render worker and the job workers before it probes the GPU paths. Each worker imports the core's loader as soon as it runs (`startWorker` in `workers/protocol.ts`). It then waits for its start message, which carries the core.
+- The page fetches the sketch module into the HTTP cache (`prefetch` in `page/engine.ts`). The sketch worker imports it only after it has started the core, so the module's code runs no earlier than before. When the host serves build files as immutable, as the startup server does, the worker's import makes no request.
+- In low-latency mode the page sends the sketch worker `load-renderer` as soon as it starts it, so the worker loads the renderer at once.
+- Where the page draws, it imports the renderer while the core downloads. In single-threaded mode it imports the core's loader then too. Each of the two was the last download to arrive once the other started early.
+- The page starts the render worker before the probe says whether a worker can draw. When one cannot, the page stops the render worker and draws itself.
+- A start that fails before the workers have the core stops them at once, because none waits in the job system yet. After that, a stop waits until each job worker leaves the job system. So the page sends the job workers the core before anything else that can fail, such as the canvas's transfer.
+- The core now arrives last on Slow 4G. Its download shares the link with the workers' scripts. In the pipelined mode it is ready about 300 ms later than before, and the engine about 10 ms after it. In low-latency mode the engine is ready about 270 ms after the core. There the sketch worker asks for the renderer only once its own script has arrived.
+
+`bun run bench:startup --modes all --loads cold,warm --network slow-4g,full` in Chrome 154 on a MacBook Pro, 30 September 2026. The old and new code ran in turns while other work loaded the machine. The table gives the first frame of a cold load on Slow 4G, in ms. Each value is a median of 15 loads of the old code or 10 of the new.
+
+| Thread mode | Start after the core | Start with the core |
+| --- | --- | --- |
+| Pipelined | 4,183 | 2,674 |
+| Low latency | 4,169 | 2,752 |
+| Single-threaded, with the sketch module early | 3,166 | 2,607 |
+| Drawing on the main thread | 4,298 | 2,661 |
+
+Warm loads and loads at full speed stayed within the spread between runs. The first row of the single-threaded mode already downloaded the sketch module with the core. Before that, the first frame came at 3,580 ms. In single-threaded mode, starting only the renderer early gave 3,194 ms, because the core's loader was then last. Starting both gave 2,624 ms.
 
 ## Textures on both GPU paths
 
@@ -47,6 +70,18 @@ The engine's hot paths stay allocation-free with these habits (hard rule 1):
 - Draw lists give viewport and scissor rectangles from the top-left corner. The WebGL2 backend flips them, so each covers the same part of the image on both paths.
 - A shader that samples a target that a pass drew flips its v coordinate in its WebGL2 variant. The texture test shader (`test_textures.wgsl`) shows the pattern.
 - Writes and uploads land when the GPU queue gets them. On WebGPU that is before the commands recorded since the last submit. A draw list therefore writes a resource before any command in the same submit that uses it. The mock backend rejects a write after such a use.
+
+## Texture uploads
+
+- The texture store (`crates/null3d-render/src/textures.rs`) keeps every texture in a layer of a 2D array of its size, format and mip count. A frame's texture work comes before its passes. Arrays are made or grown first, then a submit follows when an array grew. Releases, uploads and mip levels come after it. A grown array's copies must land before the uploads, and WebGPU would run the uploads first within one submit.
+- A capture replays the frame's list a second time. So a list never releases what it uses itself. The next frame's list releases images and outgrown array textures. A release of an image that the backend no longer holds does nothing. The store's tests replay every list twice.
+- The engine core gives each image an id in the order the sketch thread sends them. The thread that draws counts the images it received in the control block (`Slot.ImagesArrived`), so every id up to the count arrived. One `MessagePort` carries them, so they arrive in order. Where one thread runs the sketch and draws, the images go straight into its table.
+- The image table lives outside the renderer, so a new GPU device uploads the images that the thread still holds. The store learns which were released from the frames that the thread took.
+- Hold mode draws one frame, which records as after a GPU loss. The sketch thread waits for every image to arrive first, and that frame uploads them all, whatever the budget.
+- Both backends draw each mip level of one layer with the mip shader (`mipmap.wgsl`), which samples the level before. On WebGPU the shader reads that level through a view of every layer, as compatibility mode binds whole arrays only. On WebGL2 the texture's base and highest levels are that level while the shader draws. The draw then reads no level that it writes.
+- WebGL2 has two shorter ways to make mip levels, and neither works here. `generateMipmap` on a 2D array texture remakes the levels of every layer. Each upload would then cost the whole array. In Firefox on macOS, a blit from one level to the next averages the stored bytes of sRGB texels, not their linear values. The levels then come out too dark.
+- An upload of a band of rows reads the image from a row inside it: `copyExternalImageToTexture` takes an origin, and WebGL2 applies `UNPACK_SKIP_PIXELS` and `UNPACK_SKIP_ROWS` to image bitmaps.
+- The sketch thread reads the texture constants from the core's generated module, not the GPU layer's. A value import of the GPU layer's constants would put them in a file of their own, which the size report refuses.
 
 ## The shader compiler
 
@@ -94,9 +129,24 @@ The shader compiler is the shader crate built as a WebAssembly module. Build too
 - A job worker without work blocks its thread in a wait (hard rule 5). When Safari stops a thread inside such a wait, it keeps the thread's shared memory until the tab closes, even across reloads. The engine therefore ends the job workers' loops before it stops them, and `destroy()` resolves once they have stopped.
 - The single-threaded build's core runs on the page. The page keeps it for the next engine, and `destroyEngine` empties it when an engine stops.
 - Safari reserves each shared memory's whole maximum in one address range, which the page and its workers share. It also counts the memories' pages against a budget. A stopped engine's memory counts until the engine's workers have finished, which Safari does a moment after `destroy()`. On a slow machine the next engine can ask for its memory before that. Safari tries one collection and then refuses with "Out of memory", as the restart checks saw in CI. So `createSharedMemory` in `page/loader.ts` waits and tries again, for about 3 seconds in all, before it fails with E1109.
+- Safari gives a shared memory back only after a full collection finds each object that refers to it unused. Its sweeper must then reach those objects. A refused memory runs a full collection but no sweep, so Safari's second try fails too. The sweeper then works in short slices, and each new collection starts it again.
+- With `?render=main`, the page holds views of the engine's memory, so the memory also waits for the page's sweep. On CI's Mac that took seconds. Safari refused a start for more than 3 seconds, and 6 seconds after the last stop the room was still missing. The page reached none of the stopped engines' memories, and the room came back later. The engine kept nothing alive: Safari freed the memory late.
+- The restart checks therefore wait before they judge. A start that Safari refuses waits and tries again, for 30 s in all on one page. After the last stop, the page counts the room again after longer and longer pauses until it comes back, for 31 s in all.
+- Each count of the room ends with one more memory, which Safari refuses because the count filled the room. The collection that the refusal runs finds the counted memories unused, and Safari frees them before the next count. Without it, one count's memories took the room of the next count. That failed the single-threaded check, although that mode gives no worker a shared memory.
 - A production build can load an engine module twice in one thread. The sketch worker's file holds one copy, and the page's file that a sketch imports holds another. Module state that the thread sets reaches one copy only, and each copy has its own classes. Keep state that every copy needs on `globalThis` under a `Symbol.for` key. For `instanceof`, mark a class's objects under such a key and check the mark in a static `Symbol.hasInstance`, as `errors/engine-error.ts` does.
 - Safari runs a module worker's entry file again when another file imports it (WebKit bug 324459). Chrome and Firefox reuse the running module. A production build puts the code that a worker shares with its later files into the worker's own file. Those files then import it from there. In low-latency mode, the sketch worker loads the renderer's file, which imports the sketch worker's file.
 - A second run of a worker's file replaced its message handler with one that had no state. The page's messages to the sketch then went nowhere. Each worker therefore starts through `startWorker` in `workers/protocol.ts`, which starts it on the first run only. Apart from that call, a worker's file must have no effect when it runs.
+
+## Frames in flight
+
+- When the GPU falls behind, every browser but Safari on WebGPU lets frames queue on it. On the GPU-bound page, Chrome and Brave slowed the drawing worker's frame callbacks to the GPU's pace, yet kept 5 to 8 frames queued. Safari's WebGL2 path kept about 4. Firefox kept presenting at the display's rate and queued up to 89 frames, seconds of input lag. [D-11](decisions/D-11-frames-in-flight.md) has the figures.
+- So the completion tracker (`gpu/completion.ts`) tracks every frame, and the thread that draws takes no new frame while two are unfinished (`Presenter.due` in `render/loop.ts`). In the render worker, the sketch worker then waits on the frame-taken counter, so the hold needs no message.
+- Each tracked frame costs one browser object, the queue's promise or the fence, and two clock readings. `bun run bench:allocation` budgets them.
+- The tracker learns of a WebGL2 fence only when it checks, at a frame callback. Frames that it finds finished together share the time since the last completion. Firefox can settle several WebGPU promises in one task, at one clock reading, which gives a frame an interval of 0. Such an interval still counts toward the completed rate.
+- A frame whose completion never arrives stops counting as in flight after a second, so a lost signal slows the drawing without stopping it.
+- Firefox settles WebGPU's `onSubmittedWorkDone` about a frame after the GPU finishes, so the limit holds back frames that are already done. That costs Firefox's WebGPU path frame rate when the GPU is busy. Its WebGL2 path loses none.
+- Without the limit, Chrome's slower frame callbacks also slowed the refresh meter of the thread that draws. It read 36 Hz on a 144 Hz display. With the limit, the callbacks keep the display's rate, and so does the meter.
+- Apple's GPUs work on two frames at once. A frame's GPU time from timestamps can then exceed the time between completed frames.
 
 ## Browser faults
 

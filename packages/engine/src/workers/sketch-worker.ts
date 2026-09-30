@@ -9,6 +9,7 @@ import type { Drawing } from '../render/recovery';
 import type { Renderer } from '../render/renderer';
 import { awaitLater } from '../shared/await-later';
 import { controlViews, Slot } from '../shared/control';
+import { ImageTable, sendThrough, sendToTable } from '../shared/images';
 import { loadSketch } from '../sketch/define-sketch';
 import { SketchRunner } from '../sketch/runner';
 import {
@@ -21,6 +22,8 @@ import {
 } from './protocol';
 
 let runner: SketchRunner | undefined;
+/** The renderer, which this worker loads only in low-latency mode, where it draws. */
+let drawLoad: Promise<DrawModule> | undefined;
 let draw: DrawModule | undefined;
 let drawing: Drawing<Renderer> | undefined;
 let controlSlots: Int32Array | undefined;
@@ -29,7 +32,7 @@ let controlSlots: Int32Array | undefined;
  * A promise that settles when the slot no longer holds `value`, or undefined when it already
  * holds another value. A plain function, so a wait makes no promise beyond the browser's own.
  */
-function changeOf(slots: Int32Array, slot: Slot, value: number): Promise<unknown> | undefined {
+function changeOf(slots: Int32Array, slot: number, value: number): Promise<unknown> | undefined {
 	const wait = Atomics.waitAsync(slots, slot, value);
 	return wait.async ? wait.value : undefined;
 }
@@ -61,15 +64,24 @@ const step = startSteps('sketch');
 
 startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => {
 	const message = event.data;
-	if (message.type === 'init') {
+	if (message.type === 'load-renderer') {
+		drawLoad ??= loadDrawModule();
+	} else if (message.type === 'init') {
 		try {
-			// The renderer loads while the core and the sketch start.
-			const drawModule = message.renderer && loadDrawModule();
+			// The renderer loads while the core and the sketch start, if the page did not ask for it
+			// sooner.
+			if (message.renderer) drawLoad ??= loadDrawModule();
+			const drawModule = message.renderer && drawLoad;
 			const control = controlViews(message.control);
 			controlSlots = control.slots;
 			const started = await startWorkerCore(message, step);
 			const core = started.glue;
 			const memory = started.memory as WebAssembly.Memory;
+			// Texture images go to the thread that draws: another through a port, or this one.
+			const imageTable = new ImageTable();
+			const sendImage = message.imagePort
+				? sendThrough(message.imagePort)
+				: sendToTable(imageTable, control.slots);
 			runner = new SketchRunner(
 				(name, data, transfer) => replyToPage({ type: 'sketch-message', name, data }, transfer),
 				message.metrics,
@@ -80,6 +92,9 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 					keyCodes: message.keyCodes,
 					jobWorkers: message.jobWorkers,
 					device: message.device,
+					capabilities: message.capabilities,
+					sendImage,
+					pageUrl: message.pageUrl,
 				},
 				message.hold,
 			);
@@ -97,6 +112,7 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 					scene: { memory, control: message.control },
 					control: message.control,
 					sketch: runner,
+					imageTable,
 					fail: (reason) => replyToPage({ type: 'lost', role: 'sketch', reason }),
 				});
 			}

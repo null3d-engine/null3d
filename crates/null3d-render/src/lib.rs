@@ -4,6 +4,7 @@
 //! - `camera`: perspective projection with reversed depth, and view matrices
 //! - `cpu_culled`: the WebGL2 frame builder, with culling on the job workers and an index list per
 //!   view
+//! - `debug_lines`: the lines that a sketch draws for one frame, and the pass that draws them
 //! - `frame`: what every frame builder shares: its input, the scene settings, the per-parity lists
 //! - `frame_data`: the per-frame uniform block the shaders read
 //! - `frame_graph`: the engine's passes on the render graph, and the recording of its plan
@@ -15,11 +16,13 @@
 //! - `meshes`: mesh storage for both GPU paths
 //! - `parallel_record`: draw lists recorded in chunks on the job workers, joined in chunk order
 //! - `pipelines`: the render pipeline cache, by the key of everything that sets a pipeline apart
+//! - `textures`: texture arrays, their samplers and bind groups, and uploads under a byte budget
 //! - `view`: views, each a camera, a layer mask and a target, culled on its own
 
 pub mod arrays;
 pub mod camera;
 pub mod cpu_culled;
+pub mod debug_lines;
 pub mod frame;
 pub mod frame_data;
 pub mod frame_graph;
@@ -30,4 +33,5 @@ pub mod materials;
 pub mod meshes;
 pub mod parallel_record;
 pub mod pipelines;
+pub mod textures;
 pub mod view;

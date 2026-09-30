@@ -5,7 +5,7 @@
 // prepared.
 
 import type { DeviceShaders } from '../generated/shaders';
-import { type CompletionSignal, FenceCompletion, QueueCompletion } from '../gpu/completion';
+import { FenceCompletion, QueueCompletion } from '../gpu/completion';
 import { readbackWebGL2, readbackWebGPU } from '../gpu/readback';
 import { WebGL2Backend } from '../gpu/webgl2/backend';
 import { contextFinished, releaseContext, simulateContextLoss } from '../gpu/webgl2/context';
@@ -13,6 +13,7 @@ import { WebGPUBackend } from '../gpu/webgpu/backend';
 import { GpuTimer } from '../gpu/webgpu/gpu-timer';
 import type { CoreDevice } from '../page/limits';
 import { controlViews, Slot } from '../shared/control';
+import type { ImageTable } from '../shared/images';
 import { Counter, type FrameRecorder, Phase } from '../shared/metrics';
 import { contextLoss, deviceLoss } from './loss';
 import type { FrameInput, RenderCanvas, Renderer, Tier } from './renderer';
@@ -106,9 +107,8 @@ export class WebGPUSceneRenderer implements Renderer {
 	private readonly context: GPUCanvasContext;
 	private readonly format: GPUTextureFormat;
 	private readonly frames: FrameReplay;
-	private readonly completions: QueueCompletion | undefined;
+	readonly completions: QueueCompletion | undefined;
 	private simulated = false;
-	readonly completion: CompletionSignal = 'queue';
 	readonly lost: Promise<string>;
 
 	constructor(
@@ -118,6 +118,7 @@ export class WebGPUSceneRenderer implements Renderer {
 		memory: WebAssembly.Memory,
 		control: ArrayBufferLike,
 		metrics: ArrayBufferLike | undefined,
+		images: ImageTable | undefined,
 		shaders: DeviceShaders,
 	) {
 		this.lost = deviceLoss(device, () => this.simulated);
@@ -126,7 +127,7 @@ export class WebGPUSceneRenderer implements Renderer {
 		this.context = context;
 		this.format = navigator.gpu.getPreferredCanvasFormat();
 		context.configure({ device, format: this.format, alphaMode: 'opaque' });
-		this.backend = new WebGPUBackend(device, context, this.format, shaders);
+		this.backend = new WebGPUBackend(device, context, this.format, shaders, undefined, images);
 		this.backend.timer = metrics && GpuTimer.create(device, metrics);
 		this.completions = metrics && new QueueCompletion(device.queue, metrics);
 		this.frames = new FrameReplay(this.backend, memory, control);
@@ -204,17 +205,17 @@ export class WebGPUSceneRenderer implements Renderer {
 
 export class WebGL2SceneRenderer implements Renderer {
 	readonly tier: Tier = 'webgl2';
-	readonly completion: CompletionSignal = 'fence';
 	readonly lost: Promise<string>;
+	readonly completions: FenceCompletion | undefined;
 	private readonly backend: WebGL2Backend;
 	private readonly frames: FrameReplay;
-	private readonly completions: FenceCompletion | undefined;
 	private readonly release = new AbortController();
 
 	/**
 	 * `gl` is the canvas's context, made with the engine's settings. Where WebGL refuses views on
 	 * shared memory, the device says so, and the backend copies uploads out of engine memory first.
-	 * The device also gives the depth mode. `shaders` are the GLSL builds that the device loaded.
+	 * The device also gives the depth mode. `images` holds the images that texture uploads read.
+	 * `shaders` are the GLSL builds that the device loaded.
 	 */
 	constructor(
 		private readonly canvas: RenderCanvas,
@@ -223,6 +224,7 @@ export class WebGL2SceneRenderer implements Renderer {
 		control: ArrayBufferLike,
 		metrics: ArrayBufferLike | undefined,
 		device: CoreDevice,
+		images: ImageTable | undefined,
 		shaders: DeviceShaders,
 	) {
 		this.lost = contextLoss(canvas, this.release.signal);
@@ -232,6 +234,7 @@ export class WebGL2SceneRenderer implements Renderer {
 			shaders,
 			device.sharedUploads,
 			device.depth,
+			images,
 			device.parallelCompile,
 		);
 		this.completions = metrics && new FenceCompletion(gl, metrics);
@@ -256,7 +259,6 @@ export class WebGL2SceneRenderer implements Renderer {
 	drawFrame(input: FrameInput, record: FrameRecorder): void {
 		const start = performance.now();
 		const { backend } = this;
-		this.completions?.poll();
 		this.frames.replay(input.frame);
 		this.completions?.afterSubmit(input.frame);
 		record.addPhase(Phase.Replay, performance.now() - start);

@@ -33,6 +33,9 @@ pub(super) const OFFSETS_BYTES: u32 = MAX_CELLS * CELL_OFFSET_BYTES;
 /// Bytes of one frame's slot in a view's ring of frame uniforms: the uniform block, then the
 /// offsets.
 const FRAME_SLOT_BYTES: u32 = OFFSETS_AT + OFFSETS_BYTES;
+/// The group index of the maps' bind group in the mesh pipelines that sample a map, after the
+/// groups of the draw records and the data textures.
+const TEXTURES_GROUP: u32 = 3;
 
 /// The ring slots a view's frame draws from.
 #[derive(Clone, Copy, Debug, Default)]
@@ -167,15 +170,20 @@ impl Opaque {
         self.views.len()
     }
 
+    /// Where a view's frame group reads the frame uniform and the cell offsets of the frame being
+    /// recorded: the dynamic offset of the ring slot that [`Opaque::upload`] took for them.
+    pub(super) fn frame_slot(&self, view: ViewId) -> u32 {
+        self.views[view.index()].slots.uniform * FRAME_SLOT_BYTES
+    }
+
     /// Creates the ring of frame uniforms of each view from the first one without it up to
     /// `views`, with the group that binds its uniform block, its cell offsets and the material
-    /// table.
+    /// table's texture.
     pub(super) fn add_views(
         &mut self,
         list: &mut DrawList,
         views: usize,
     ) -> Result<(), RecordError> {
-        let material_bytes = sizes::MAX_MATERIALS * crate::materials::MATERIAL_FLOATS as u32 * 4;
         while self.views.len() < views {
             let view = ViewId::from_index(self.views.len());
             list.push(
@@ -205,10 +213,10 @@ impl Opaque {
                     OFFSETS_AT,
                     OFFSETS_BYTES,
                     1,
-                    resource_kind::BUFFER,
+                    resource_kind::TEXTURE,
                     ids::MATERIALS,
                     0,
-                    material_bytes,
+                    0,
                 ],
             )?;
             self.views.push(ViewDraws::default());
@@ -382,7 +390,7 @@ impl Opaque {
         let shift = |d: usize| buckets[draws[d].bucket as usize].shift;
         let stride = record_stride(multi_draw);
         let slot = slots.listed * layout.draws_slot_bytes;
-        let frame_slot = slots.uniform * FRAME_SLOT_BYTES;
+        let frame_slot = self.frame_slot(view);
         list.push(
             Op::SetBindGroup,
             &[0, ids::frame_group(view), 2, frame_slot, frame_slot],
@@ -390,6 +398,7 @@ impl Opaque {
         let instances = ids::instances_group(view) + slots.streamed * RING + slots.listed;
         list.push(Op::SetBindGroup, &[2, instances, 0])?;
         let mut pipeline = None;
+        let mut textures = 0;
         let mut run = usize::MAX;
         for_each_call(draws, &visible, multi_draw, |index, call| {
             if call.run != run {
@@ -398,6 +407,10 @@ impl Opaque {
                 if pipeline != Some(first.pipeline) {
                     list.push(Op::SetPipeline, &[first.pipeline])?;
                     pipeline = Some(first.pipeline);
+                }
+                if first.textures != 0 && first.textures != textures {
+                    list.push(Op::SetBindGroup, &[TEXTURES_GROUP, first.textures, 0])?;
+                    textures = first.textures;
                 }
                 let (vertices, indices) = meshes.ids(first.page);
                 list.push(Op::SetVertexBuffer, &[0, vertices, 0, 0])?;
@@ -455,6 +468,7 @@ mod tests {
     fn draw(pipeline: u32, page: u32) -> Draw {
         Draw {
             pipeline,
+            textures: 0,
             page,
             bucket: 0,
             index_count: 36,

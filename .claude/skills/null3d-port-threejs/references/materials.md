@@ -48,7 +48,7 @@ Engine docs: `porting/threejs-materials`, `api/materials`, `api/textures`, `conc
 | `toneMapped: false` | Not in 1.0 | Draw the objects in a declared pass after post-processing (0.2) |
 | `dithering` | Always on in the final pass | |
 | `clippingPlanes`, `clipShadows` | A surface function (section 8) | |
-| `shadowSide`, `precision`, `premultipliedAlpha` | Not needed | Textures stored premultiplied: `loadTexture(url, { premultipliedAlpha: true })` |
+| `shadowSide`, `precision`, `premultipliedAlpha` | Not needed | To store a texture's colors multiplied by alpha: `loadTexture(url, { premultipliedAlpha: true })` |
 
 ## 2. MeshPhysicalMaterial
 
@@ -121,12 +121,11 @@ Toon shading with three bands:
 
 ```ts
 const toon = materials.shader({
-  uniforms: { bands: 3, shadowColor: '#303050' },
+  uniforms: { bands: 3, shadowColor: '#303050', lightDirection: [-0.5, -1, -0.3] },
   surface: /* wgsl */ `
-    #import null3d::lighting::{mainLightDirection}
     fn surface(input: SurfaceInput) -> Surface {
       var s = defaultSurface(input);
-      let ndl = max(dot(input.worldNormal, -mainLightDirection()), 0.0);
+      let ndl = max(dot(input.worldNormal, -normalize(material.lightDirection)), 0.0);
       let band = floor(ndl * material.bands) / max(material.bands - 1.0, 1.0);
       s.emissive = mix(material.shadowColor, s.baseColor, band);
       s.baseColor = vec3f(0.0);      // lighting off; emissive carries the look

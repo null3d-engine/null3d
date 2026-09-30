@@ -2,9 +2,9 @@
 // pipelined mode, or the page's main thread with ?render=main. Inside its own frame callback it takes
 // the newest published frame, applies a pending resize, draws, and tells the sketch worker it may
 // compute the next frame. A callback that finds no new frame, a frame that waits for its pipelines,
-// or that comes before the frame's turn under ?fps= or the display's rate, draws nothing. In a
-// worker, each callback also sets a timer that wakes the thread shortly before the next callback is
-// due.
+// too many frames unfinished on the GPU, or that comes before the frame's turn under ?fps= or the
+// display's rate, draws nothing. In a worker, each callback also sets a timer that wakes the thread
+// shortly before the next callback is due.
 
 import { controlViews, Slot } from '../shared/control';
 import { FrameRecorder, Role } from '../shared/metrics';
@@ -28,6 +28,13 @@ const WAKE_AHEAD_MS = 4;
 const ASSUMED_DISPLAY_HZ = 60;
 const MS_PER_SECOND = 1000;
 const MICROSECONDS_PER_MS = 1000;
+/**
+ * The most frames that may be unfinished on the GPU once a frame is submitted. Browsers let many
+ * more queue when the GPU falls behind, and each frame in the queue adds a frame of delay between
+ * input and the screen. With two, the GPU has the next frame ready as it finishes one, so it never
+ * waits for work.
+ */
+const MAX_FRAMES_IN_FLIGHT = 2;
 
 /**
  * The delay, in whole milliseconds, from the start of a frame callback to the wake-up before the
@@ -74,12 +81,16 @@ export class Presenter {
 	private displayInterval = 0;
 	readonly record: FrameRecorder;
 
-	/** `fps` is the frame rate that ?fps= holds, or undefined to draw at the display's rate. */
+	/**
+	 * `fps` is the frame rate that ?fps= holds, or undefined to draw at the display's rate. `queue`
+	 * is the most frames that may wait unfinished on the GPU.
+	 */
 	constructor(
 		private readonly slots: Int32Array,
 		private readonly renderer: Renderer,
 		metrics: ArrayBufferLike,
 		fps: number | undefined,
+		private readonly queue = MAX_FRAMES_IN_FLIGHT,
 	) {
 		this.record = new FrameRecorder(metrics, Role.Render);
 		this.pacer = new FramePacer(fps);
@@ -116,11 +127,13 @@ export class Presenter {
 	}
 
 	/**
-	 * True when the callback at `timestamp` may draw a frame, under the frame rate that ?fps= or the
-	 * display holds. A true answer uses up the frame's turn, so ask only when a frame is ready to draw.
+	 * True when the callback at `timestamp` may draw a frame: the GPU has room for one more, and the
+	 * frame rate that ?fps= or the display holds gives the frame its turn. A true answer uses up the
+	 * turn, so ask only when a frame is ready to draw.
 	 */
 	due(timestamp: number): boolean {
-		return this.pacer.take(timestamp);
+		const unfinished = this.renderer.completions?.unfinished() ?? 0;
+		return unfinished < this.queue && this.pacer.take(timestamp);
 	}
 
 	/** Applies the canvas size the page wrote last, if it changed. */
@@ -232,9 +245,10 @@ export function runRenderLoop(
 	control: ArrayBufferLike,
 	metrics: ArrayBufferLike,
 	fps: number | undefined,
+	queue?: number,
 ): RenderLoop {
 	const { slots } = controlViews(control);
-	const presenter = new Presenter(slots, renderer, metrics, fps);
+	const presenter = new Presenter(slots, renderer, metrics, fps, queue);
 	let taken = 0;
 	let stopped = false;
 

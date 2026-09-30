@@ -12,14 +12,17 @@ use null3d_core::instances::BatchTable;
 use null3d_core::jobs::JobSystem;
 use null3d_core::scene::{Command, SceneStorage, flags};
 use null3d_core::snapshot::FrameSnapshot;
+use null3d_gpu::drawlist::format;
 use null3d_gpu::drawlist::{Op, decode};
 use null3d_render::arrays::{MeshArrays, from_arrays};
 use null3d_render::camera::Perspective;
+use null3d_render::debug_lines::LineStore;
 use null3d_render::frame::{FrameBuilder, FrameInput, NO_MESH, RecordError};
 use null3d_render::geometry::{Geometry, box_geometry, sphere_geometry};
 use null3d_render::gpu_driven::{GpuDrivenRenderer, RendererConfig};
 use null3d_render::graph::ALL_LAYERS;
-use null3d_render::materials::Shading;
+use null3d_render::materials::{MapSlot, Shading};
+use null3d_render::textures::{Sampling, TextureDesc};
 use null3d_render::view::{View, ViewId};
 
 pub const SCENE_CAPACITY: u32 = 31;
@@ -42,6 +45,8 @@ pub struct World<B: FrameBuilder = GpuDrivenRenderer> {
     pub objects: Vec<Handle>,
     pub frame: u32,
     pub canvas: (u32, u32),
+    /// The debug lines of the frame that records next, which it then forgets, as the engine does.
+    pub lines: LineStore,
 }
 
 impl World {
@@ -142,6 +147,7 @@ impl<B: FrameBuilder> World<B> {
             objects,
             frame: 1,
             canvas: (640, 360),
+            lines: LineStore::default(),
         }
     }
 
@@ -192,9 +198,14 @@ impl<B: FrameBuilder> World<B> {
             canvas: self.canvas,
             structure_changed,
             jobs: &self.jobs,
+            lines: self.lines.lines(),
         };
-        self.renderer.cull(&input)?;
-        let rebuilt = self.renderer.record(&input)?;
+        let recorded = self
+            .renderer
+            .cull(&input)
+            .and_then(|()| self.renderer.record(&input));
+        self.lines.clear();
+        let rebuilt = recorded?;
         self.check_pipelines_first();
         Ok(rebuilt)
     }
@@ -215,6 +226,11 @@ impl<B: FrameBuilder> World<B> {
         }
     }
 
+    /// Draws debug lines in the frame that records next: each pair of points is a line.
+    pub fn draw_lines(&mut self, points: &[([f64; 3], u32)]) {
+        self.lines.draw(points).unwrap();
+    }
+
     /// Adds a mesh and a material to the builder, and an object that draws with them, in the
     /// current frame. Returns the engine mesh id.
     pub fn add_object(&mut self, mesh: &Geometry, shading: Shading) -> u32 {
@@ -233,6 +249,35 @@ impl<B: FrameBuilder> World<B> {
         ];
         self.scene.apply_commands(&commands, self.frame).unwrap();
         mesh
+    }
+
+    /// Adds a texture of `size` texels on each side with an image on its way, a material that maps
+    /// it, and a grid object that draws with the material, in the current frame. Returns the
+    /// texture, and the engine ids of the mesh and the material.
+    pub fn add_mapped(&mut self, size: u32) -> (Handle, u32, u32) {
+        let settings = self.renderer.settings_mut();
+        let mesh = settings.meshes_mut().add(&grid(1, 1)).unwrap() + 1;
+        let texture = settings.textures_mut().create(map_desc(size)).unwrap();
+        settings
+            .textures_mut()
+            .set_image(texture, size, size, 0)
+            .unwrap();
+        let material = settings
+            .materials_mut()
+            .create(Shading::UnlitMap, [1.0; 4])
+            .unwrap();
+        settings
+            .materials_mut()
+            .set_map(material, MapSlot::BaseColor, texture)
+            .unwrap();
+        let object = self.scene.reserve().unwrap();
+        self.scene.set_local_radius(object, 1.0).unwrap();
+        let commands = [
+            Command::create(object, Handle::NONE, mesh, flags::VISIBLE),
+            Command::set_material(object, material + 1),
+        ];
+        self.scene.apply_commands(&commands, self.frame).unwrap();
+        (texture, mesh, material + 1)
     }
 
     /// The operations of the frame's list with their operands.
@@ -271,6 +316,18 @@ pub fn grid(columns: u32, rows: u32) -> Geometry {
         ..MeshArrays::default()
     };
     from_arrays(&arrays, &JobSystem::new(0)).unwrap()
+}
+
+/// A color map of `size` texels on each side, with mip levels and three.js's sampling.
+pub fn map_desc(size: u32) -> TextureDesc {
+    TextureDesc {
+        width: size,
+        height: size,
+        depth: 1,
+        format: format::RGBA8_UNORM_SRGB,
+        mipmaps: true,
+        sampling: Sampling::default(),
+    }
 }
 
 /// A generator's mesh in the base vertex format: its positions and normals, without its texture

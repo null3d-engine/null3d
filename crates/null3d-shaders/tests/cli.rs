@@ -118,7 +118,9 @@ fn the_build_writes_a_module_for_each_target_and_value_of_the_bits_a_device_fixe
     assert!(wgsl.contains("\tlit: {\n\t\twebgpu: {") && !wgsl.contains("#version"));
     let glsl = fs::read_to_string(folder.join("shaders-glsl-draw-index.ts")).unwrap();
     assert!(glsl.contains("\tlit: {\n\t\twebgl2_draw_index: {"));
-    assert!(glsl.contains("\tcull: {},") && !glsl.contains("\t\twebgl2: {"));
+    assert!(glsl.contains("\tcull: {},") && !glsl.contains("\tlit: {\n\t\twebgl2: {"));
+    // A shader without permutation bits is in every module of its target.
+    assert!(glsl.contains("\tmipmap: {\n\t\twebgl2: {"));
     let main = fs::read_to_string(scratch.0.join(OUTPUT_PATH)).unwrap();
     assert!(main.contains("\t1: () => import('./shaders-glsl-draw-index'),"));
     assert!(!main.contains("LIT_SHADER") && main.contains("TEST_MESH_SHADER"));

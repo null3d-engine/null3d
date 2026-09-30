@@ -41,11 +41,11 @@ In hold mode, the engine does this:
 
 1. It seeds the engine's random generator, [`math.random`](../api/math.md#random-numbers), in the sketch's thread, and makes `Math.random` draw from it too. This happens before the sketch module loads.
 2. It runs the sketch's setup.
-3. It steps the sketch from time 0 to the held time. The first frame is at time 0 and its `onUpdate` gets a step of 0. Each later frame adds a fixed step of 1/60 second, and the last one lands on the held time exactly.
+3. It steps the sketch from time 0 to the held time. The first frame is at time 0 and its `onUpdate` gets a step of 0. Each later frame adds a fixed step of 1/60 second, and the last one lands on the held time exactly. The sketch's own fixed steps fall due from the sketch time, so every hold runs the same ones. At the default rate, each frame after the first runs one.
 4. It draws the last frame on the canvas, and reads its pixels back through its own GPU code.
 5. It publishes the frame, or the error that stopped it, as `window.__null3dHold`.
 
-`createEngine` resolves once the frame is read back, and `engine.captureFrame()` returns that frame. `engine.mode.hold` gives the held time, and it is `null` for a live engine. After the held frame, the engine draws nothing more: it runs no frame loop, so `engine.measure()` finds no frames.
+`createEngine` resolves once the frame is read back, and `engine.captureFrame()` returns that frame. `engine.mode.hold` gives the held time, and it is `null` for a live engine. After the held frame, the engine draws nothing more: it runs no frame loop, so `engine.measure()` finds no frames. The hold's result gives the held frame's own figures instead. The engine draws no frame before the held one, so the held frame creates every GPU object and uploads the whole scene.
 
 A hold at 1.5 seconds runs 91 frames: frame 1 at time 0, then 90 steps. In the last `onUpdate`, `time.now` is 1.5 and `time.frame` is 91.
 
@@ -63,6 +63,7 @@ A test runner opens the page with `?hold` and waits for `window.__null3dHold`. T
 | `time`, `frame` | The sketch time in seconds, and the frame's number | Absent |
 | `tier` | The GPU path that drew the frame | Absent |
 | `width`, `height`, `pixels` | The frame's size, and its pixels as RGBA8 rows in a `Uint8Array`, top row first | Absent |
+| `stats` | The frame's figures in the form that `engine.measure()` returns: CPU time by thread and phase, draw calls, uploads and pipelines | Absent |
 | `code`, `error` | Absent | The error's code, or `null` for an error without one, and its message |
 
 With Playwright, a test reads the result like this:
@@ -93,7 +94,28 @@ The engine reads the pixels back with its own GPU code and takes no screenshot o
 bunx @null3d/cli shot --out shot.png --time 1.5 --gpu webgl2
 ```
 
-Beside the image, it saves `shot.json` with the frame's time, number and GPU tier, and with what the page logged. When the hold fails, it prints the error and saves no image. [The `null3d` command](../cli/null3d.md) lists its options.
+Beside the image, it saves `shot.json` with the frame's time, number, GPU tier and figures, and with what the page logged. When the hold fails, it prints the error and saves no image. [The `null3d` command](../cli/null3d.md) lists its options.
+
+## Image tests from the command line
+
+`bunx @null3d/cli test` runs your image tests with no test code. List them in `null3d.json` in your project's folder:
+
+```json
+{
+  "tests": [
+    { "name": "start", "sketch": "sketch.ts", "hold": 1.5 },
+    { "name": "harbor", "sketch": "sketch.ts?view=harbor", "hold": 4, "tiers": ["webgpu", "webgl2"] }
+  ]
+}
+```
+
+`test` type checks the project and runs its lint script. Then it holds each sketch at its time on each of its GPU tiers, 320 x 180 pixels unless the test gives a `size`. It compares each image with its reference in `tests/references/`, and prints one line per result, with the image files:
+
+```text
+PASS  start on webgl2: it matches the reference (image test-results/null3d/chrome-real-gpu/webgl2/start.png)
+```
+
+The first run of a new test fails, because the test has no reference yet. Open its image, and when it is right, keep it with `bunx @null3d/cli test --update-references`. [The `null3d` command](../cli/null3d.md#test) gives the settings of a test, where the files go, and what each line says.
 
 ## When a hold fails
 
@@ -111,13 +133,15 @@ A live engine logs an error in `onUpdate` and carries on. Hold mode stops instea
 
 ## Frames that stay the same on every run
 
-- Move things with `time.now` and the `dt` that `onUpdate` receives. `Date.now()` and `performance.now()` change from run to run.
+- Move things with `time.now`, the frame's step (`dt` or `time.dt`), or in `onFixedUpdate`. `Date.now()` and `performance.now()` change from run to run.
 - Use `math.random` or `Math.random`: hold mode seeds both. Random numbers from another source, such as `crypto.getRandomValues`, are not seeded.
 - Expect no input. In hold mode, the sketch gets none: every key and button stays up, and the pointer stays at the canvas's top-left corner.
 - Finish loading in the setup. Await every asset there, because the hold starts when the setup's promise resolves.
 - Pass test settings in the sketch module's address, such as `new URL('./sketch.ts?view=harbor', import.meta.url)`, and read them in the sketch with `new URL(import.meta.url).searchParams`. The page's messages reach the sketch only after the hold, because `createEngine` resolves after it.
 - Keep a reference image per GPU tier, and force the tier with `?gpu=webgpu`, `?gpu=compat` or `?gpu=webgl2`. The tiers can differ slightly at edges.
 - Compare with a small tolerance. A software GPU in CI and a real GPU differ at object edges. three.js's own rule counts a pixel as different past 10% of the color range. It fails an image when 0.1% or more of its pixels differ.
+
+The [hold mode demo](https://github.com/null3d-engine/null3d/tree/main/examples/hold-mode) drops 400 balls from random places, and moves them by each frame's step. Every live run differs. With `?hold=3`, every run draws the same frame.
 
 ## Switches for tests
 

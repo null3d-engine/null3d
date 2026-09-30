@@ -14,6 +14,9 @@ use crate::frame::{MeshBuffers, RecordError, UploadArena};
 use crate::frame_graph::{COLOR_FORMAT, DEPTH_FORMAT};
 use crate::view::{ViewFrame, ViewId};
 
+/// The group index of the maps' bind group in the mesh pipelines that sample a map.
+const TEXTURES_GROUP: u32 = 1;
+
 /// Records the creation of a view's frame uniform buffer, and of the group that binds it with the
 /// material table.
 pub(super) fn create_view(list: &mut DrawList, view: ViewId) -> Result<(), RecordError> {
@@ -59,8 +62,8 @@ pub(super) fn upload(
 }
 
 /// Records a view's bundle: each draw of every bucket of the layout, with the bucket's slice of
-/// the view's compacted instances, from its mesh page's buffers in `meshes`, into targets with
-/// `samples` samples.
+/// the view's compacted instances and the bind group of its material's map, from its mesh page's
+/// buffers in `meshes`, into targets with `samples` samples.
 pub(super) fn record_bundle(
     list: &mut DrawList,
     view: ViewId,
@@ -73,11 +76,15 @@ pub(super) fn record_bundle(
         &[ids::bundle(view), COLOR_FORMAT, DEPTH_FORMAT, samples],
     )?;
     list.push(Op::SetBindGroup, &[0, ids::frame_group(view), 0])?;
-    let (mut pipeline, mut page) = (None, None);
+    let (mut pipeline, mut page, mut group) = (None, None, 0);
     for bucket in &layout.buckets {
         if pipeline != Some(bucket.pipeline) {
             list.push(Op::SetPipeline, &[bucket.pipeline])?;
             pipeline = Some(bucket.pipeline);
+        }
+        if bucket.group != 0 && bucket.group != group {
+            list.push(Op::SetBindGroup, &[TEXTURES_GROUP, bucket.group, 0])?;
+            group = bucket.group;
         }
         list.push(
             Op::SetVertexBuffer,

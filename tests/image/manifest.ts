@@ -13,6 +13,7 @@
 // reference: on the Mac, Playwright's Chromium draws CI's SwiftShader images byte for byte.
 import { PARITY_SCENES } from '../../bench/lib/parity.ts';
 import { HOLD_TIME, PARITY_CANVAS } from '../../bench/scenes/spec.ts';
+import { DEMOS } from '../../examples/demos.ts';
 import type { DepthMode } from '../../packages/engine/src/page/switches.ts';
 import type { EngineModeName } from '../lib/engine-checks.ts';
 import { ALL_MODES, type ImageRun, type ImageTest, imageRuns, type Tier } from '../lib/images.ts';
@@ -27,12 +28,14 @@ const DEPTH_MODES: readonly DepthMode[] = ['standard', 'reversed-gl', 'reversed'
 export const IMAGE_TESTS: readonly ImageTest[] = [
 	// A clear color, read back through the engine's readback on each GPU interface.
 	{ name: 'clear', page: 'tests/pages/clear.html', size: [64, 64], tiers: ['webgpu', 'webgl2'] },
-	// Every texture command of the GPU layer, replayed on each path, which must all draw one image.
+	// Every texture command of the GPU layer, replayed on each path, which must all draw one image,
+	// and release every image they had.
 	{
 		name: 'replay-textures',
 		page: 'tests/pages/replay-textures.html',
-		size: [256, 256],
+		size: [320, 256],
 		sameOnEveryTier: true,
+		expect: { released: true },
 	},
 	// A hand-built draw list: GPU culling, then indirect draws from a render bundle with MSAA.
 	{
@@ -51,8 +54,54 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 		hold: 1.5,
 		modes: ALL_MODES,
 	},
+	// Textures from PNG, JPEG, WebP and AVIF files, sRGB and linear textures, each wrap mode, and
+	// magnified texels with each filter. Every thread mode sends the images to the thread that draws
+	// its own way, and must draw the same image.
+	{
+		name: 'textures',
+		sketch: 'tests/pages/sketches/textures-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+		modes: ALL_MODES,
+	},
+	// Mip levels that the GPU makes: a checkerboard that shrinks and a floor that recedes, with and
+	// without mip levels, and with anisotropic filtering.
+	{
+		name: 'texture-mipmaps',
+		sketch: 'tests/pages/sketches/texture-mipmaps-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+	},
+	// The texture calls of a sketch: loadTexture with and without the flip, loadImageBitmap with
+	// fromImageBitmap, data in bytes, half floats and layers, updates that bring new texels and a new
+	// size, a destroyed map, and colors multiplied by alpha. Every thread mode must draw one image.
+	{
+		name: 'texture-api',
+		sketch: 'tests/pages/sketches/texture-api-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+		modes: ALL_MODES,
+	},
+	// Fifty textures that load in waves in a live engine, a band of rows per frame under a small
+	// upload budget, while their array grows twice, to 64 layers. No frame may upload more than the
+	// budget, and the GPU memory count must match the array.
+	{
+		name: 'texture-arrays',
+		page: 'tests/pages/texture-arrays.html',
+		size: [400, 240],
+		modes: ALL_MODES,
+		expect: { withinBudget: true, memoryCounted: true },
+	},
 	// A small static scene: lit and unlit meshes, a hierarchy and an instance batch.
 	{ name: 'scene', sketch: 'tests/pages/sketches/boxes-sketch.ts', hold: 0, modes: ALL_MODES },
+	// A box that fixed steps move at 50 steps per second, and a camera that follows it from the late
+	// update, held at 1.5 seconds: the box stays at the center, and every mode runs the same steps.
+	{
+		name: 'follow',
+		sketch: 'tests/pages/sketches/follow-sketch.ts',
+		hold: 1.5,
+		modes: ALL_MODES,
+	},
 	// The sketch of the project that the command-line tool's tests run in, held at 1.5 seconds. The
 	// shot command draws the project's own page, and its images must match these references.
 	{ name: 'project', sketch: 'tests/fixtures/project/sketch.ts', hold: 1.5 },
@@ -65,6 +114,10 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 		switches: ['uploads=copy'],
 		reference: 'scene',
 	},
+	// Object calls: turns about an object's own axes, a move along them, a hand moved under a turned
+	// and scaled arm with keepWorld, which then swings with the arm, and bounds that culling tests:
+	// one box that its bounds hide, and one that is never culled.
+	{ name: 'objects', sketch: 'tests/pages/sketches/objects-sketch.ts', hold: 1 },
 	// A scene that spans grid cells, with a turned tree and a camera on a turned rig.
 	{ name: 'cells', sketch: 'tests/pages/sketches/cells-sketch.ts', hold: 1 },
 	// The same scene 100 km out, away from a cell's center, and about 1,000 km out at the center of a
@@ -86,6 +139,28 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 		sketch: `tests/pages/sketches/cells-sketch.ts?x=${977 * 1024}`,
 		hold: 1,
 		reference: 'cells',
+		tolerance: { threshold: 0, maxDiffRatio: 0 },
+	},
+	// Debug drawing: every shape of ctx.debug over a small scene, the axes of a spinning box and the
+	// frustum of a second camera. The single-threaded mode runs the sketch on the page, which draws
+	// the same lines.
+	{
+		name: 'debug',
+		sketch: 'tests/pages/sketches/debug-sketch.ts',
+		hold: 1,
+		size: [400, 225],
+		modes: ['pipelined', 'single-threaded'],
+		tolerance: { threshold: 0, maxDiffRatio: 0 },
+	},
+	// The same scene about 1,000 km out, at the center of a cell: the lines keep 64-bit positions,
+	// which the engine draws relative to the camera, so the frame must match. In 32-bit floats from
+	// the origin, the lines would move in steps of 6 cm there.
+	{
+		name: 'debug-1000km',
+		sketch: `tests/pages/sketches/debug-sketch.ts?x=${977 * 1024}`,
+		hold: 1,
+		size: [400, 225],
+		reference: 'debug',
 		tolerance: { threshold: 0, maxDiffRatio: 0 },
 	},
 	// Objects, a parent and its child, and instance batches on three layers, some of them moved to
@@ -138,6 +213,14 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 				apartNear: true,
 				...(depth !== 'reversed' && { fights: true }),
 			},
+		}),
+	),
+	// Each feature demo in examples/, held at the demo's time.
+	...DEMOS.map(
+		(demo): ImageTest => ({
+			name: `demo-${demo.name}`,
+			sketch: `examples/${demo.name}/sketch.ts`,
+			hold: demo.hold,
 		}),
 	),
 	// The benchmark scenes' hold frames, which the parity command also compares with three.js.

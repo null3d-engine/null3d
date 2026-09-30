@@ -74,7 +74,7 @@ const DOCS = {
 	E1108: {
 		title: 'Value out of range',
 		cause:
-			'A call received a count or an index past its limit, such as a row past the capacity of an instance batch.',
+			'A call received a number outside the range it takes. Examples are a row past the capacity of an instance batch, an opacity above 1, and a negative radius.',
 		example: 'E1108: setActiveCount() got 1200, above the limit of 1000.',
 		since: '0.1',
 	},
@@ -83,6 +83,13 @@ const DOCS = {
 		cause:
 			"The engine could not create or grow its WebAssembly memory. A page with worker threads gives the engine 1 GiB by default, and up to 4 GiB through the memory option of createEngine. Each instance row takes about 180 bytes, or about 230 with per-row colors. So about 5 million rows fill 1 GiB, along with the rest of the scene. A browser can refuse memory sooner, as phones often do. It can also refuse a new engine's memory while the memory of an engine that stopped a moment before is not free yet. The engine then tries again for about 3 seconds before it fails.",
 		example: 'E1109: createInstances() failed: the engine could not get 1282 MB more memory.',
+		since: '0.1',
+	},
+	E1110: {
+		title: 'Unmarked write to a static object',
+		cause:
+			"A static object's position, rotation, scale or bounding sphere changed without a setter. The engine recomputes a static object only in a frame where a setter marks it or its parent moves. So such a change can show late, or never. Development builds check these values of every static object before each transform update. Each frame has one transform update, and a sketch with onLateUpdate gets a second one after that callback. Release builds leave the check out.",
+		example: 'E1110: the position of "Crate" (slot 7) changed without a setter.',
 		since: '0.1',
 	},
 	E1203: {
@@ -118,6 +125,21 @@ const DOCS = {
 		cause:
 			'A call that sets layers received a number that is not a 32-bit layer mask: a fraction, NaN, or a number past 32 bits.',
 		example: 'E1207: setLayers() got 2.5 on "Player" (slot 12), which is not a 32-bit layer mask.',
+		since: '0.1',
+	},
+	E1208: {
+		title: 'Invalid texture',
+		cause:
+			"A call that makes or updates a texture received something it cannot use. It can be an option the engine does not know, or an image without pixels or larger than the device takes. It can also be data that does not fit the texture's size and format.",
+		example:
+			'E1208: textures.fromData() got 12 numbers for 2 x 2 x 1 texels, not 16: give four per texel.',
+		since: '0.1',
+	},
+	E1214: {
+		title: 'Invalid sketch option',
+		cause:
+			'defineSketch() received an option out of its range. fixedRate must be a number above 0, and maxFixedSteps a whole number of 1 or more. The engine checks the options before it runs the setup function.',
+		example: 'E1214: defineSketch() got 0 for fixedRate.',
 		since: '0.1',
 	},
 	E1301: {
@@ -209,6 +231,30 @@ const DOCS = {
 			'The sketch module that createEngine got did not load. It did not download, or its code threw an error while the module loaded.',
 		example:
 			'E1410: the sketch module https://example.com/assets/sketch-3f9c1a2b.js did not load: Failed to fetch dynamically imported module: https://example.com/assets/sketch-3f9c1a2b.js.',
+		since: '0.1',
+	},
+	E1411: {
+		title: 'Asset not downloaded',
+		cause:
+			'A loading call could not download its file. The server answered with an error, such as 404 for a missing file, or the network failed.',
+		example:
+			'E1411: assets.loadTexture() could not download https://example.com/tex/brick.png: HTTP 404.',
+		since: '0.1',
+	},
+	E1412: {
+		title: 'Asset not decoded',
+		cause:
+			'A loading call downloaded its file but could not read it. The browser could not decode the image, as with a format it does not support, or the file was not valid JSON.',
+		example:
+			'E1412: assets.loadTexture() could not decode https://example.com/tex/brick.tga as an image: The source image could not be decoded.',
+		since: '0.1',
+	},
+	E1413: {
+		title: 'Asset from another origin blocked',
+		cause:
+			"A loading call could not read a file from another origin. The browser reads such a file only when its server allows the page's origin with an Access-Control-Allow-Origin header. The browser gives no reason, so the server may also have been unreachable.",
+		example:
+			'E1413: assets.loadTexture() could not read https://cdn.example.com/brick.png: its server did not allow this page to read it, or could not be reached (Failed to fetch).',
 		since: '0.1',
 	},
 	E1501: {

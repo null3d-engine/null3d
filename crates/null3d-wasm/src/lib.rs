@@ -26,18 +26,23 @@ use null3d_gpu::drawlist::sizes;
 use null3d_render::arrays::{ArrayName, ArraysError, MeshArrays, from_arrays};
 use null3d_render::camera::Perspective;
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
+use null3d_render::debug_lines::LineStore;
 use null3d_render::frame::{FrameBuilder, FrameInput, RecordError};
 use null3d_render::geometry::{Geometry, OutOfMemory, Shape, generate};
 use null3d_render::gpu_driven::{
     BYTES_PER_SOURCE, GpuDrivenRenderer, MAX_USEFUL_BINDING_BYTES, RendererConfig,
 };
-use null3d_render::materials::{MaterialError, MaterialTable, Shading};
+use null3d_render::materials::{MapSlot, MaterialError, MaterialTable, Shading};
+use null3d_render::textures::{MAX_TEXTURES, Sampling, TextureDesc, TextureError};
 use null3d_render::view::ViewId;
 use wasm_bindgen::prelude::*;
 
 pub mod constants;
 
-use constants::{arrays_problem, batch_field, mesh_arrays, ring_field, scene_field, shading};
+use constants::{
+    arrays_problem, batch_field, debug_line_field, mesh_arrays, ring_field, scene_field, shading,
+    texture_option, texture_stat,
+};
 
 /// The engine version, as the loader reports it.
 #[wasm_bindgen(js_name = engineVersion)]
@@ -80,6 +85,11 @@ mod render_detail {
     pub const UNKNOWN_MESH: u32 = 6;
     pub const BAD_MESH: u32 = 7;
     pub const UPLOADS_FULL: u32 = 8;
+    /// The second detail is the largest texture size the device allows.
+    pub const TEXTURE_TOO_LARGE: u32 = 9;
+    /// The second detail is the most textures that live at once.
+    pub const TEXTURES_FULL: u32 = 10;
+    pub const BAD_TEXTURE: u32 = 11;
 }
 
 struct Engine {
@@ -93,6 +103,8 @@ struct Engine {
     rebuilt: bool,
     /// The words that TypeScript writes a mesh's arrays into, for `createMeshFromArrays`.
     staging: Vec<u32>,
+    /// The debug lines of the next frame, which only development builds of the engine write.
+    lines: LineStore,
 }
 
 impl Engine {
@@ -115,6 +127,7 @@ impl Engine {
             canvas,
             structure_changed: self.structure_changed,
             jobs,
+            lines: self.lines.lines(),
         };
         (self.renderer.as_mut(), input)
     }
@@ -171,6 +184,15 @@ fn arrays_failure(error: ArraysError) -> u32 {
         ArraysError::NotFinite { array, at } => (arrays_problem::NOT_FINITE + array as u32, at),
     };
     fail(codes::BAD_ARRAYS, [problem, value])
+}
+
+fn texture_failure(error: TextureError) -> u32 {
+    match error {
+        TextureError::Core(error) => core_failure(error),
+        TextureError::TooLarge { limit } => render_failure(render_detail::TEXTURE_TOO_LARGE, limit),
+        TextureError::Full => render_failure(render_detail::TEXTURES_FULL, MAX_TEXTURES),
+        TextureError::Unsupported => render_failure(render_detail::BAD_TEXTURE, 0),
+    }
 }
 
 fn material_failure(error: MaterialError) -> u32 {
@@ -282,6 +304,7 @@ pub fn init_engine(
         structure_changed: true,
         rebuilt: false,
         staging: Vec::new(),
+        lines: LineStore::default(),
     });
     0
 }
@@ -327,8 +350,8 @@ pub fn scene_capacity() -> u32 {
 }
 
 /// The address of one of the per-slot arrays TypeScript writes (see `constants::scene_field`):
-/// positions (3 floats), rotations (4), scales (3), local bounding radii (1), or the dirty
-/// bitset's words, which TypeScript views as 32-bit words.
+/// positions (3 floats), rotations (4), scales (3), local bounding radii (1), local bounding
+/// sphere centres (3), or the dirty bitset's words, which TypeScript views as 32-bit words.
 #[wasm_bindgen(js_name = sceneArrays)]
 pub fn scene_arrays(field: u32) -> u32 {
     value_with_engine(|e| {
@@ -337,6 +360,7 @@ pub fn scene_arrays(field: u32) -> u32 {
             scene_field::ROTATIONS => address(e.scene.rotations()),
             scene_field::SCALES => address(e.scene.scales()),
             scene_field::LOCAL_RADII => address(e.scene.local_radii()),
+            scene_field::LOCAL_CENTERS => address(e.scene.local_centers()),
             _ => address(e.scene.dirty().words()),
         })
     })
@@ -419,6 +443,16 @@ pub fn update_transforms() -> u32 {
     })
 }
 
+/// Updates the world matrices and bounding spheres of the objects that the sketch moved after
+/// `updateTransforms`, and of the objects below them. Call it before `cullFrame`.
+#[wasm_bindgen(js_name = updateLateTransforms)]
+pub fn update_late_transforms() -> u32 {
+    with_engine(|e| {
+        e.scene.update_late_transforms();
+        0
+    })
+}
+
 /// Updates the rows of every instance batch that need it.
 #[wasm_bindgen(js_name = updateBatches)]
 pub fn update_batches(frame: u32) -> u32 {
@@ -447,6 +481,7 @@ pub fn cull_frame(frame: u32, width: u32, height: u32) -> u32 {
     })
 }
 
+// The frame draws the debug lines that `drawDebugLines` gave it, and then forgets them.
 /// Records the frame's upload list and its draw list for a canvas of this size in device pixels.
 #[wasm_bindgen(js_name = recordFrame)]
 pub fn record_frame(frame: u32, width: u32, height: u32) -> u32 {
@@ -455,7 +490,9 @@ pub fn record_frame(frame: u32, width: u32, height: u32) -> u32 {
     };
     with_engine(|e| {
         let (renderer, input) = e.frame(frame, (width, height), jobs);
-        match renderer.record(&input) {
+        let recorded = renderer.record(&input);
+        e.lines.clear();
+        match recorded {
             Ok(rebuilt) => {
                 e.structure_changed = false;
                 e.rebuilt = rebuilt;
@@ -508,6 +545,53 @@ pub fn draw_list_address(parity: u32) -> u32 {
 #[wasm_bindgen(js_name = drawListWords)]
 pub fn draw_list_words(frame: u32) -> u32 {
     value_with_engine(|e| Ok(e.renderer.list(frame).len() as u32))
+}
+
+// --- Debug lines, which only development builds of the engine draw ---
+//
+// TypeScript writes each frame's points into the arrays whose addresses `debugLineArrays` gives,
+// after `reserveDebugLines` makes room for them, and `drawDebugLines` has the next recorded frame
+// draw them. Making room keeps the points written since the last recorded frame, but can move
+// the arrays, so TypeScript then reads their addresses again. The arrays hold each point's
+// position, three 64-bit floats, and its sRGB color, one 32-bit word (`constants::debug_line_field`).
+// The doc comments stay short: wasm-bindgen copies them into the glue that every page downloads.
+
+/// Makes room for debug line points.
+#[wasm_bindgen(js_name = reserveDebugLines)]
+pub fn reserve_debug_lines(points: u32) -> u32 {
+    with_engine(|e| match e.lines.reserve(points) {
+        Ok(()) => 0,
+        Err(_) => core_failure(CoreError::OutOfMemory {
+            bytes: points.saturating_mul(28),
+        }),
+    })
+}
+
+/// The address of a debug line array.
+#[wasm_bindgen(js_name = debugLineArrays)]
+pub fn debug_line_arrays(field: u32) -> u32 {
+    value_with_engine(|e| {
+        Ok(match field {
+            debug_line_field::POSITIONS => address(e.lines.positions()),
+            _ => address(e.lines.colors()),
+        })
+    })
+}
+
+// Fails when the arrays have room for fewer points.
+/// Draws debug line points in the next frame.
+#[wasm_bindgen(js_name = drawDebugLines)]
+pub fn draw_debug_lines(points: u32) -> u32 {
+    with_engine(|e| {
+        if e.lines.set_points(points) {
+            0
+        } else {
+            core_failure(CoreError::OutOfRange {
+                value: points,
+                limit: e.lines.capacity(),
+            })
+        }
+    })
 }
 
 // --- Instance batches ---
@@ -793,6 +877,7 @@ pub fn create_material(shading: u32, r: f32, g: f32, b: f32, a: f32) -> u32 {
     let shading = match shading {
         shading::UNLIT => Shading::Unlit,
         shading::TEXCOORDS => Shading::TexCoords,
+        shading::UNLIT_MAP => Shading::UnlitMap,
         _ => Shading::Lit,
     };
     value_with_engine(|e| {
@@ -828,6 +913,185 @@ fn change_material(
             Ok(()) => 0,
             Err(error) => material_failure(error),
         }
+    })
+}
+
+// Gives a material a map, a texture's handle, or none with 0. Which objects draw with a map
+// changes the draw tables, as a new material does.
+/// Gives a material a map.
+#[wasm_bindgen(js_name = setMaterialMap)]
+pub fn set_material_map(material: u32, texture: u32) -> u32 {
+    with_engine(|e| {
+        let settings = e.renderer.settings_mut();
+        let map = Handle::from_raw(texture);
+        if !map.is_none()
+            && let Err(error) = settings.textures().bytes(map)
+        {
+            return texture_failure(error);
+        }
+        match settings
+            .materials_mut()
+            .set_map(material.wrapping_sub(1), MapSlot::BaseColor, map)
+        {
+            Ok(()) => {
+                e.structure_changed = true;
+                0
+            }
+            Err(error) => material_failure(error),
+        }
+    })
+}
+
+// --- Textures ---
+
+// Creates a texture of `width` x `height` texels in `depth` layers, with no texels yet, in a
+// texture array, and returns its handle. `format` is the engine's format code: sRGB for colors,
+// linear for data, or half floats. `mipmaps` asks for a whole chain of mip levels, which the GPU
+// makes from each upload. The rest set its sampler: the address modes along u and v, the filters
+// of magnified and minified texels and between mip levels, and the anisotropy.
+/// Creates a texture and returns its handle.
+#[wasm_bindgen(js_name = createTexture)]
+#[allow(clippy::too_many_arguments)]
+pub fn create_texture(
+    width: u32,
+    height: u32,
+    depth: u32,
+    format: u32,
+    mipmaps: bool,
+    wrap_u: u32,
+    wrap_v: u32,
+    mag_filter: u32,
+    min_filter: u32,
+    mip_filter: u32,
+    anisotropy: u32,
+) -> u32 {
+    value_with_engine(|e| {
+        let desc = TextureDesc {
+            width,
+            height,
+            depth,
+            format,
+            mipmaps,
+            sampling: Sampling {
+                wrap: [wrap_u, wrap_v],
+                mag_filter,
+                min_filter,
+                mip_filter,
+                anisotropy,
+            },
+        };
+        let textures = e.renderer.settings_mut().textures_mut();
+        textures
+            .create(desc)
+            .map(Handle::raw)
+            .map_err(texture_failure)
+    })
+}
+
+// Gives a texture an image of `width` x `height` pixels, uploaded with the `upload_flags` in
+// `flags`, and returns the image's id. TypeScript sends the image to the thread that draws under
+// that id, in id order, and the image uploads once the thread has it. An image of another size
+// moves the texture to another array, which changes the draw tables.
+/// Gives a texture an image and returns the image's id.
+#[wasm_bindgen(js_name = setTextureImage)]
+pub fn set_texture_image(texture: u32, width: u32, height: u32, flags: u32) -> u32 {
+    value_with_engine(|e| {
+        let textures = e.renderer.settings_mut().textures_mut();
+        let (image, moved) = textures
+            .set_image(Handle::from_raw(texture), width, height, flags)
+            .map_err(texture_failure)?;
+        e.structure_changed |= moved;
+        Ok(image)
+    })
+}
+
+// Gives a texture new texels of `width` x `height` in each of its layers, and returns the address
+// of the memory that TypeScript fills with them at once: tightly packed rows, layer after layer.
+// The texels upload in the texture's turn, and the store frees the memory once no list reads it.
+// Texels of another size move the texture to another array, which changes the draw tables.
+/// Gives a texture new texels and returns the address to write them at.
+#[wasm_bindgen(js_name = setTextureData)]
+pub fn set_texture_data(texture: u32, width: u32, height: u32) -> u32 {
+    value_with_engine(|e| {
+        let textures = e.renderer.settings_mut().textures_mut();
+        let (words, moved) = textures
+            .set_data(Handle::from_raw(texture), width, height)
+            .map_err(texture_failure)?;
+        let at = address(words);
+        e.structure_changed |= moved;
+        Ok(at)
+    })
+}
+
+// Destroys a texture. Materials that map it draw with their colors alone, which changes the draw
+// tables.
+/// Destroys a texture.
+#[wasm_bindgen(js_name = destroyTexture)]
+pub fn destroy_texture(texture: u32, frame: u32) -> u32 {
+    with_engine(|e| {
+        let textures = e.renderer.settings_mut().textures_mut();
+        match textures.destroy(Handle::from_raw(texture), frame) {
+            Ok(()) => {
+                e.structure_changed = true;
+                0
+            }
+            Err(error) => texture_failure(error),
+        }
+    })
+}
+
+// Tells the texture store what the thread that draws has: the images it received, in id order,
+// and the newest frame it took. The sketch thread calls it before it records each frame.
+/// Tells the texture store what the thread that draws has.
+#[wasm_bindgen(js_name = syncTextures)]
+pub fn sync_textures(images_arrived: u32, frames_taken: u32) {
+    with_engine(|e| {
+        let textures = e.renderer.settings_mut().textures_mut();
+        textures.sync(images_arrived, frames_taken);
+        0
+    });
+}
+
+// One of the texture store's numbers (`constants::texture_stat`). `texture` names the texture of
+// the numbers about one texture. Fails with 0 for a texture that is not live.
+/// Reads one of the texture store's numbers.
+#[wasm_bindgen(js_name = textureStat)]
+pub fn texture_stat(field: u32, texture: u32) -> f64 {
+    let mut value = 0.0;
+    with_engine(|e| {
+        let textures = e.renderer.settings().textures();
+        let stats = textures.stats();
+        let bytes = |b: u64| b as f64;
+        value = match field {
+            texture_stat::MEMORY_BYTES => bytes(textures.memory_bytes()),
+            texture_stat::TEXTURE_BYTES => match textures.bytes(Handle::from_raw(texture)) {
+                Ok(b) => bytes(b),
+                Err(error) => return texture_failure(error),
+            },
+            texture_stat::LAST_FRAME_BYTES => f64::from(stats.last_frame_bytes),
+            texture_stat::LARGEST_FRAME_BYTES => f64::from(stats.largest_frame_bytes),
+            texture_stat::WAITING => f64::from(stats.waiting),
+            texture_stat::IMAGES_SENT => f64::from(textures.images_sent()),
+            _ => f64::from(textures.max_size()),
+        };
+        0
+    });
+    value
+}
+
+// Changes one of the texture store's settings (`constants::texture_option`): the bytes one frame
+// may upload, the largest anisotropy, or an upload of every waiting image in the next frame.
+/// Changes one of the texture store's settings.
+#[wasm_bindgen(js_name = setTextureOption)]
+pub fn set_texture_option(option: u32, value: u32) -> u32 {
+    with_engine(|e| {
+        let textures = e.renderer.settings_mut().textures_mut();
+        match option {
+            texture_option::UPLOAD_BUDGET => textures.set_budget(value),
+            texture_option::MAX_ANISOTROPY => textures.set_max_anisotropy(value),
+            _ => textures.upload_all_next_frame(),
+        }
+        0
     })
 }
 

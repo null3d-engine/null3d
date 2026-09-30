@@ -55,6 +55,11 @@ export interface CoreGlue extends CoreErrors {
 	prepareJobs(): void;
 	beginFrame(frame: number): number;
 	updateTransforms(): number;
+	/**
+	 * Updates the objects that the sketch moved after `updateTransforms`, and the objects below
+	 * them, so culling and drawing see the moves in the same frame.
+	 */
+	updateLateTransforms(): number;
 	updateBatches(frame: number): number;
 	/** Finds the frame's visible objects on the job workers, where the path culls on the CPU. */
 	cullFrame(frame: number, width: number, height: number): number;
@@ -69,6 +74,15 @@ export interface CoreGlue extends CoreErrors {
 	resetGpu(): number;
 	drawListAddress(parity: number): number;
 	drawListWords(frame: number): number;
+	/**
+	 * Makes room for `points` points of debug lines, keeping those written since the last recorded
+	 * frame. The arrays can move, so their addresses must be read again.
+	 */
+	reserveDebugLines(points: number): number;
+	/** The address of a debug line array: `DEBUG_LINE_FIELD_POSITIONS` or `..._COLORS`. */
+	debugLineArrays(field: number): number;
+	/** Draws the first `points` points of the debug line arrays in the next recorded frame. */
+	drawDebugLines(points: number): number;
 	createBatch(
 		capacity: number,
 		dynamic: boolean,
@@ -115,6 +129,42 @@ export interface CoreGlue extends CoreErrors {
 	setMaterialColor(material: number, r: number, g: number, b: number): number;
 	/** Changes a material's opacity and keeps its color. */
 	setMaterialOpacity(material: number, opacity: number): number;
+	/** Gives a material a map, a texture's handle, or none with 0. */
+	setMaterialMap(material: number, texture: number): number;
+	/**
+	 * A texture with no texels yet, in `depth` layers of a texture array. `format` is a `FORMAT_*` code;
+	 * the rest set its sampler with `ADDRESS_*` and `FILTER_*` codes. Returns its handle.
+	 */
+	createTexture(
+		width: number,
+		height: number,
+		depth: number,
+		format: number,
+		mipmaps: boolean,
+		wrapU: number,
+		wrapV: number,
+		magFilter: number,
+		minFilter: number,
+		mipFilter: number,
+		anisotropy: number,
+	): number;
+	/**
+	 * Gives a texture an image, uploaded with the `TEXTURE_PREMULTIPLIED_ALPHA` flag or 0, and
+	 * returns the image's id for the thread that draws. An image of another size resizes it.
+	 */
+	setTextureImage(texture: number, width: number, height: number, flags: number): number;
+	/**
+	 * Gives a texture texels of `width` x `height` in each layer, and returns the address that
+	 * TypeScript writes them at, as tightly packed rows, layer after layer.
+	 */
+	setTextureData(texture: number, width: number, height: number): number;
+	destroyTexture(texture: number, frame: number): number;
+	/** Tells the texture store what the thread that draws has: images received, and frames taken. */
+	syncTextures(imagesArrived: number, framesTaken: number): void;
+	/** One of the texture store's numbers, by `TEXTURE_STAT_*` code; `texture` names one texture. */
+	textureStat(field: number, texture: number): number;
+	/** Changes one of the texture store's settings, by `TEXTURE_OPTION_*` code. */
+	setTextureOption(option: number, value: number): number;
 	/** Draws from a camera object: its lens, and the layers of the objects it draws. */
 	setCamera(camera: number, fovDegrees: number, near: number, far: number, layers: number): number;
 	setSun(dx: number, dy: number, dz: number, r: number, g: number, b: number): number;
@@ -141,6 +191,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'prepareJobs',
 	'beginFrame',
 	'updateTransforms',
+	'updateLateTransforms',
 	'updateBatches',
 	'cullFrame',
 	'recordFrame',
@@ -149,6 +200,9 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'resetGpu',
 	'drawListAddress',
 	'drawListWords',
+	'reserveDebugLines',
+	'debugLineArrays',
+	'drawDebugLines',
 	'createBatch',
 	'destroyBatch',
 	'batchArrays',
@@ -163,6 +217,14 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'createMaterial',
 	'setMaterialColor',
 	'setMaterialOpacity',
+	'setMaterialMap',
+	'createTexture',
+	'setTextureImage',
+	'setTextureData',
+	'destroyTexture',
+	'syncTextures',
+	'textureStat',
+	'setTextureOption',
 	'setCamera',
 	'setSun',
 	'setAmbient',

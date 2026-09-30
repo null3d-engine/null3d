@@ -1,8 +1,8 @@
 // The documentation inventory and every file generated from a single source: placeholder pages for
 // planned pages, the API reference on the api/ pages, the page list in docs/index.md, the error
-// pages, and the three.js mapping page with the porting skill's copies of the mapping. Generation
-// is computed in memory first, so the same code writes the files and checks that the committed
-// files are current.
+// pages, the shader library's page, and the three.js mapping page with the porting skill's copies
+// of the mapping. Generation is computed in memory first, so the same code writes the files and
+// checks that the committed files are current.
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { ERRORS, type ErrorEntry } from '../../packages/engine/src/errors/codes.ts';
@@ -10,6 +10,7 @@ import { type ApiReference, readApi, renderReference, tableCell } from './api-do
 import { docsFiles, readIfExists } from './files';
 import { parseFrontMatter, renderFrontMatter } from './frontmatter';
 import { checkLinkTree, linkedFiles } from './links';
+import { LIBRARY_PAGE_ID, libraryPage, readLibrary } from './shader-library';
 
 export interface PageEntry {
 	/** Path under docs/ without the .md extension. */
@@ -65,7 +66,7 @@ export const PAGES: readonly PageEntry[] = [
 	{ id: 'concepts/post-processing', title: 'The post-processing chain', since: '0.2', summary: 'HDR target; bloom; ambient occlusion; the single final pass; custom effects.' },
 
 	{ id: 'api/engine', title: 'Page API: createEngine', since: '0.1', summary: 'createEngine options; engine.postToSketch, capture, labels, requestPointerLock, capabilities, destroy.' },
-	{ id: 'api/sketch', title: 'Sketch API: defineSketch and the context', since: '0.1', summary: 'The context object: scene, assets, materials, geometry, textures, input, time, quality, post, render, page, ui, debug; the callbacks.' },
+	{ id: 'api/sketch', title: 'Sketch API: defineSketch and the context', since: '0.1', summary: 'The context object: scene, assets, materials, geometry, textures, input, time, engine, quality, post, render, page, ui, debug; the callbacks.' },
 	{ id: 'api/scene', title: 'Scene', since: '0.1', summary: 'Creating objects; find; background, environment, fog, sky; warmUp.' },
 	{ id: 'api/objects', title: 'Objects and transforms', since: '0.1', summary: 'Setters and getters; parents; flags; destroy.' },
 	{ id: 'api/cameras', title: 'Cameras', since: '0.1', summary: 'Perspective and orthographic cameras; screenToRay; worldToScreen; layers.' },
@@ -73,7 +74,7 @@ export const PAGES: readonly PageEntry[] = [
 	{ id: 'api/geometry', title: 'Geometry', since: '0.1', summary: 'Generators with three.js parameters; meshes from arrays; vertex formats; large meshes.' },
 	{ id: 'api/materials', title: 'Materials', since: '0.1', summary: 'standard, unlit, shader, shadowCatcher; every option.' },
 	{ id: 'api/textures', title: 'Textures', since: '0.1', summary: 'loadTexture options; fromData; fromImageBitmap; fromPass; cube maps.' },
-	{ id: 'api/assets', title: 'Assets', since: '0.2', summary: 'loadGltf, loadTexture, loadEnvironment, preload, onProgress, destroy.' },
+	{ id: 'api/assets', title: 'Assets', since: '0.1', summary: 'loadTexture, loadImageBitmap, loadJson, loadBinary, preload, onProgress; glTF models and environments.' },
 	{ id: 'api/animation', title: 'Animation', since: '0.2', summary: 'The animator; play, crossFade, layers, events; morph weights.' },
 	{ id: 'api/raycast', title: 'Raycasting and spatial queries', since: '0.2', summary: 'raycast, raycastAny, raycastAll, raycastBatch, overlap queries, pointer events on objects.' },
 	{ id: 'api/input', title: 'Input', since: '0.1', summary: 'Pointer, keyboard, touch and gamepad; action maps.' },
@@ -81,7 +82,7 @@ export const PAGES: readonly PageEntry[] = [
 	{ id: 'api/post', title: 'Post-processing API', since: '0.2', summary: 'post.set options; post.addEffect for custom WGSL effects.' },
 	{ id: 'api/render', title: 'Render graph API', since: '0.2', summary: 'render.addPass declarations; enabling and disabling passes; dumpGraph.' },
 	{ id: 'api/quality', title: 'Quality API', since: '0.1', summary: 'quality.preset, quality.set, frame budgets, quality events.' },
-	{ id: 'api/debug', title: 'Debug drawing and stats', since: '0.1', summary: 'engine.measure and its figures; debug.line, box, axes, grid, frustum; debug.view; debug.stats.' },
+	{ id: 'api/debug', title: 'Debug drawing and stats', since: '0.1', summary: 'debug.line, box, sphere, arrow, axes, grid, frustum and light; engine.measure and its figures; debug.view; debug.stats.' },
 	{ id: 'api/math', title: 'Math helpers', since: '0.1', summary: 'vec3, quat, mat4 and color on plain arrays; math.clamp, lerp, damp and a random generator that hold mode seeds.' },
 	{ id: 'api/time', title: 'Time', since: '0.1', summary: 'dt, time.now, fixed steps.' },
 	{ id: 'api/sprites', title: 'Sprites', since: '0.2', summary: 'createSprites; world and screen size modes; atlases.' },
@@ -106,12 +107,12 @@ export const PAGES: readonly PageEntry[] = [
 	{ id: 'guides/testing', title: 'Testing your sketch', since: '0.1', summary: 'Hold mode; image tests; reading results; frames that stay the same on every run.' },
 	{ id: 'guides/debugging', title: 'Debugging', since: '0.1', summary: 'Error codes; the inspector; the MCP server; the render-graph dump; common failures.' },
 	{ id: 'guides/deploying', title: 'Deploying', since: '0.3', summary: 'Headers on common hosts; asset caching; size budgets.' },
-	{ id: 'guides/agents', title: 'Working with AI agents', since: '0.1', summary: 'Installing the null3D skills in Claude Code, claude.ai and other agent tools; docs by ID; the MCP server and AGENTS.md in templates (0.3).' },
+	{ id: 'guides/agents', title: 'Working with AI agents', since: '0.1', summary: 'Installing the null3D skills in Claude Code, claude.ai and other agent tools; docs by ID; the test loop; the MCP server and AGENTS.md in templates (0.3).' },
 
 	{ id: 'shaders/wgsl-rules', title: 'WGSL rules for portable shaders', since: '0.1', summary: 'The three shared language features; optional features; flat interpolation; limits budget; rules the build cannot check.' },
 	{ id: 'shaders/surface-functions', title: 'Surface functions', since: '0.1', summary: 'The surface record; vertex-offset functions; per-instance attributes.' },
 	{ id: 'shaders/builtins', title: 'Built-in shader inputs', since: '0.1', summary: 'Camera, time, object, instance and light values available to custom shaders.' },
-	{ id: 'shaders/library', title: 'Shader library and imports', since: '0.1', summary: 'Importing engine shader modules (math, noise, lighting helpers).' },
+	{ id: 'shaders/library', title: 'Shader library and imports', since: '0.1', summary: 'The WGSL modules that ship with the engine: math, noise, color, lighting, fog, vertex, depth and signed distance helpers, and how to import them.' },
 
 	{ id: 'porting/threejs-overview', title: 'Porting from three.js', since: '0.3', summary: 'The porting workflow; what gets faster; what needs rewriting.' },
 	{ id: 'porting/threejs-materials', title: 'Porting materials and textures', since: '0.3', summary: 'Parameter-by-parameter conversion; color spaces; approximations.' },
@@ -175,6 +176,11 @@ ${PLACEHOLDER_MARKER}
 
 This page will cover: ${page.summary}
 ${reference ? `\n## API reference\n\n${reference}\n` : ''}`;
+}
+
+/** Problems with the shader library's modules that keep its page from being right. */
+export function libraryProblems(root: string): string[] {
+	return readLibrary(root).problems.map((problem) => `Shader library: ${problem}`);
 }
 
 /** Problems that keep an export out of the reference, including a page tag that names no page. */
@@ -380,7 +386,7 @@ export function generateDocs(root: string, api: ApiReference = readApi(root)): M
 
 	const byPage = Map.groupBy(api.symbols, (s) => s.page);
 	for (const page of PAGES) {
-		if (page.id === 'index') continue;
+		if (page.id === 'index' || page.id === LIBRARY_PAGE_ID) continue;
 		const path = pagePath(page.id);
 		const current = readIfExists(root, path);
 		const symbols = byPage.get(page.id);
@@ -393,6 +399,13 @@ export function generateDocs(root: string, api: ApiReference = readApi(root)): M
 				replaceBetween(current, [API_START, API_END], reference, path, 'API reference'),
 			);
 	}
+
+	const library = PAGES.find((page) => page.id === LIBRARY_PAGE_ID);
+	if (library)
+		out.set(
+			pagePath(LIBRARY_PAGE_ID),
+			libraryPage(readLibrary(root).modules, library.title, library.summary),
+		);
 
 	const mappingText = readIfExists(root, MAPPING_SOURCE);
 	if (mappingText === null) throw new Error(`${MAPPING_SOURCE} is missing`);
@@ -474,15 +487,15 @@ export function frontMatterProblems(path: string, text: string, inventory: Set<s
 }
 
 /**
- * Every problem with the docs: exports the API reference cannot show, stale generated files,
- * missing pages, bad front matter and broken links.
+ * Every problem with the docs: exports the API reference cannot show, library items without doc
+ * comments, stale generated files, missing pages, bad front matter and broken links.
  */
 export function checkDocs(root: string): string[] {
 	const problems: string[] = [];
 	let generated = new Map<string, string>();
 	try {
 		const api = readApi(root);
-		problems.push(...referenceProblems(api));
+		problems.push(...referenceProblems(api), ...libraryProblems(root));
 		generated = generateDocs(root, api);
 		for (const path of staleFiles(root, generated))
 			problems.push(`${path} is out of date: run bun run docs`);

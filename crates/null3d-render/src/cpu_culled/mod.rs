@@ -24,8 +24,8 @@
 //!
 //! Each part has a module: `layout` keeps the sources, buckets and clusters, `data` the data
 //! textures and their rings, `cull` culls each view on the job workers, and `opaque` records the
-//! opaque passes. The render graph ([`crate::frame_graph`]) orders the passes and begins their
-//! render passes.
+//! opaque passes. The debug lines pass, which both builders share, is [`crate::debug_lines`]. The
+//! render graph ([`crate::frame_graph`]) orders the passes and begins their render passes.
 //!
 //! # Cells
 //!
@@ -54,17 +54,20 @@ use std::collections::TryReserveError;
 use null3d_core::cells::CELL_SHIFT;
 use null3d_core::culling::BucketedCull;
 use null3d_core::snapshot::SCENE_TARGET;
-use null3d_gpu::drawlist::{DrawList, Op, buffer_usage as usage, permutation, sizes};
+use null3d_gpu::caps::{BUDGET, Limit};
+use null3d_gpu::drawlist::{DrawList, Op, format, permutation, sizes, texture_usage, view};
 
+use crate::debug_lines::LinesPass;
 use crate::frame::{
-    FrameBuilder, FrameInput, MeshBuffers, ParityLists, RecordError, SceneSettings, UploadArena,
-    drawn_rows, floats_as_bytes,
+    FrameBuilder, FrameInput, MaterialStorage, MeshBuffers, ParityLists, RecordError,
+    SceneSettings, UploadArena, drawn_rows,
 };
 use crate::frame_graph::{FrameGraph, Role};
 use crate::graph::RenderGraph;
-use crate::materials::MATERIAL_FLOATS;
+use crate::materials::{MATERIAL_FLOATS, MATERIAL_TEXELS};
 use crate::meshes::{MeshStorage, Packing};
 use crate::pipelines::{PassTargets, PipelineCache};
+use crate::textures::{TextureIds, TextureStore};
 use crate::view::{ViewFrame, ViewId};
 use cull::Culling;
 use data::{RingSlot, SharedTextures, matrices_of, write_matrices};
@@ -76,10 +79,9 @@ mod ids {
     use super::data::RING;
     use crate::view::{MAX_VIEWS, ViewId};
 
-    pub const MATERIALS: u32 = 1;
     /// Each view's buffers: its ring of frame uniforms, then its draw records, from
     /// `VIEW_BUFFERS + 2 * view`.
-    const VIEW_BUFFERS: u32 = 2;
+    const VIEW_BUFFERS: u32 = 1;
 
     pub const fn frame(view: ViewId) -> u32 {
         VIEW_BUFFERS + 2 * view.index() as u32
@@ -88,8 +90,10 @@ mod ids {
         frame(view) + 1
     }
 
+    /// The vertices of the debug lines.
+    pub const LINES: u32 = VIEW_BUFFERS + 2 * MAX_VIEWS as u32;
     /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
-    pub const PAGES: u32 = VIEW_BUFFERS + 2 * MAX_VIEWS as u32;
+    pub const PAGES: u32 = LINES + 1;
 
     pub const RESIDENT: u32 = 1;
     /// The ring of streamed textures, one per ring slot.
@@ -104,8 +108,14 @@ mod ids {
         VIEW_TEXTURES + RING * view.index() as u32
     }
 
+    /// The material table: one row of texels per material.
+    pub const MATERIALS: u32 = VIEW_TEXTURES + RING * MAX_VIEWS as u32;
     /// The render graph's textures, from this id on.
-    pub const TARGETS: u32 = VIEW_TEXTURES + RING * MAX_VIEWS as u32;
+    pub const TARGETS: u32 = MATERIALS + 1;
+    /// The texture arrays of materials' maps, after every id the render graph can take.
+    pub const TEXTURE_ARRAYS: u32 = TARGETS + 256;
+    /// The samplers of materials' maps, the only samplers the builder makes.
+    pub const SAMPLERS: u32 = 1;
 
     /// Each view's bind groups: the frame group, the draw record group, then the groups of its
     /// instance textures, one per pair of ring slots.
@@ -122,6 +132,8 @@ mod ids {
     pub const fn instances_group(view: ViewId) -> u32 {
         frame_group(view) + 2
     }
+    /// The bind groups of materials' maps, after every view's groups.
+    pub const TEXTURE_GROUPS: u32 = 1 + GROUPS_PER_VIEW * MAX_VIEWS as u32;
 }
 
 /// Sizes the builder allocates once, and what the device offers.
@@ -176,6 +188,7 @@ pub struct CpuCulledRenderer {
     clusters: Clusters,
     culling: Culling,
     opaque: Opaque,
+    lines: LinesPass,
     /// The vertex pages' vertex and index buffers.
     meshes: MeshBuffers,
     pipelines: PipelineCache,
@@ -189,18 +202,33 @@ impl CpuCulledRenderer {
     pub fn new(config: CpuCulledConfig) -> Self {
         assert!(
             config.max_materials <= sizes::MAX_MATERIALS,
-            "the material block holds {} materials",
+            "the material texture holds {} materials",
             sizes::MAX_MATERIALS
+        );
+        let textures = TextureStore::new(
+            TextureIds {
+                first_texture: ids::TEXTURE_ARRAYS,
+                first_sampler: ids::SAMPLERS,
+                first_group: ids::TEXTURE_GROUPS,
+            },
+            config
+                .max_texture_size
+                .min(BUDGET[Limit::TextureDimension2D as usize]),
         );
         Self {
             config,
-            settings: SceneSettings::new(MeshStorage::new(Packing::Pages), config.max_materials),
+            settings: SceneSettings::new(
+                MeshStorage::new(Packing::Pages),
+                config.max_materials,
+                textures,
+            ),
             lists: ParityLists::new(config.draw_list_words),
             graph: FrameGraph::new(config.samples, false, ids::TARGETS),
             layout: Layout::default(),
             clusters: Clusters::default(),
             culling: Culling::default(),
             opaque: Opaque::new(config.multi_draw),
+            lines: LinesPass::new(ids::LINES),
             meshes: MeshBuffers::new(ids::PAGES),
             pipelines: PipelineCache::default(),
             textures: SharedTextures::default(),
@@ -288,8 +316,8 @@ impl CpuCulledRenderer {
     }
 
     /// The most that one frame can copy into its arena for the scene as it stands: mesh data not
-    /// uploaded yet, the material table, each view's frame uniform, draw records and multi-draw
-    /// arrays, and the cluster orders not uploaded yet.
+    /// uploaded yet, the material table, each view's frame uniform, draw records and
+    /// multi-draw arrays, and the cluster orders not uploaded yet.
     fn upload_bound(&self) -> usize {
         self.upload_bound_without_clusters() + self.clusters.pending_bytes(&self.layout)
     }
@@ -304,14 +332,21 @@ impl CpuCulledRenderer {
         meshes + materials + self.settings.views().len() * per_view
     }
 
+    /// Records the creation of the material table, a data texture with one row of texels for each
+    /// material it holds.
     fn create_fixed(&mut self, list: &mut DrawList) -> Result<(), RecordError> {
-        let material_bytes = sizes::MAX_MATERIALS * MATERIAL_FLOATS as u32 * 4;
         list.push(
-            Op::CreateBuffer,
+            Op::CreateTexture,
             &[
                 ids::MATERIALS,
-                material_bytes,
-                usage::UNIFORM | usage::COPY_DST,
+                MATERIAL_TEXELS,
+                self.config.max_materials.max(1),
+                1,
+                format::RGBA32_FLOAT,
+                texture_usage::TEXTURE_BINDING | texture_usage::COPY_DST,
+                1,
+                1,
+                view::D2,
             ],
         )?;
         self.created = true;
@@ -457,24 +492,29 @@ impl CpuCulledRenderer {
         self.add_culled_views()?;
         // The list starts with the pipelines it creates, so the thread that draws can start to
         // build them before it replays the rest (see `null3d_gpu::drawlist`).
+        self.lines.request_pipeline(
+            &input.lines,
+            &mut self.pipelines,
+            self.graph.scene_targets(),
+        );
         self.pipelines.create_new(list)?;
         if !self.created {
             self.create_fixed(list)?;
         }
         self.graph.sync_views(self.settings.views());
+        self.graph.set_debug_lines(!input.lines.is_empty());
         self.graph.prepare(list, input.canvas)?;
         let views = self.settings.views().len();
         let first_new = self.opaque.views();
         self.opaque.add_views(list, views)?;
         let rebuilt = self.layout.built_in == input.frame;
-        arena.reset(self.upload_bound());
+        arena.reset(self.upload_bound() + LinesPass::upload_bytes(&input.lines));
         self.meshes
             .upload(list, arena, self.settings.meshes().pages())?;
-        if self.settings.materials_mut().take_changed() {
-            let parameters = self.settings.materials().parameters();
-            let (at, bytes) = arena.push(floats_as_bytes(parameters))?;
-            list.push(Op::WriteBuffer, &[ids::MATERIALS, 0, at, bytes])?;
-        }
+        // Draws bind the maps' groups by id as they run, so a group made again needs nothing more.
+        let table = MaterialStorage::Texture(ids::MATERIALS);
+        self.settings
+            .record_materials(list, arena, table, input.frame)?;
         let new_texture = if rebuilt || first_new < views {
             self.size_resources(list, first_new, rebuilt)?
         } else {
@@ -513,14 +553,25 @@ impl CpuCulledRenderer {
                     .upload(list, arena, view, upload, &self.layout)?;
             }
         }
+        let camera = self.culling.frame(ViewId::CAMERA);
+        self.lines.upload(
+            list,
+            arena,
+            &input.lines,
+            camera.map(|values| &values.camera),
+        )?;
 
-        let (culling, opaque) = (&self.culling, &self.opaque);
+        let (culling, opaque, lines) = (&self.culling, &self.opaque, &self.lines);
         let (layout, meshes) = (&self.layout, &self.meshes);
         self.graph
             .record(list, self.settings.clear_color(), |list, role| match role {
                 Role::Opaque(view) if culling.frame(view).is_some() => {
                     let starts = culling.culled(frame, view).bucket_starts();
                     opaque.record(list, arena, view, starts, layout, meshes)
+                }
+                Role::DebugLines => {
+                    let slot = opaque.frame_slot(ViewId::CAMERA);
+                    lines.record(list, ids::frame_group(ViewId::CAMERA), &[slot, slot])
                 }
                 _ => Ok(()),
             })?;
@@ -575,8 +626,10 @@ impl FrameBuilder for CpuCulledRenderer {
         self.textures.forget_gpu();
         self.culling.forget_gpu();
         self.opaque.forget_gpu();
+        self.lines.forget_gpu();
         self.streamed_slot.forget();
         self.settings.materials_mut().mark_changed();
+        self.settings.textures_mut().reset_gpu();
     }
 
     fn list(&self, frame: u32) -> &DrawList {

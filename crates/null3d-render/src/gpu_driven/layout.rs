@@ -8,9 +8,9 @@ use std::ops::Range;
 use null3d_core::cells::CELL_SHIFT;
 use null3d_core::handle::Handle;
 use null3d_core::instances::{BatchTable, InstanceBatch};
-use null3d_core::scene::SceneStorage;
+use null3d_core::scene::{SceneStorage, flags};
 use null3d_core::snapshot::SCENE_TARGET;
-use null3d_core::world::MATRIX_FLOATS;
+use null3d_core::world::{MATRIX_FLOATS, UNBOUNDED_RADIUS};
 use null3d_gpu::drawlist::{DrawList, Op, buffer_usage as usage, sizes};
 
 use super::ids;
@@ -21,26 +21,66 @@ use crate::frame::{
 use crate::pipelines::{DrawKey, PassTargets, PipelineCache};
 
 /// Bytes of one bucket record in the culling shader: base, material, radius, first draw, draw
-/// count, padding.
+/// count, and the centre of the local sphere that culls the bucket's sources.
 const BUCKET_BYTES: u32 = 32;
 /// Bytes of one world matrix: three rows of four floats.
 const MATRIX_BYTES: u32 = (MATRIX_FLOATS * 4) as u32;
 
-/// What makes a bucket, in draw order: what its mesh and material ask of their pipeline, the mesh
-/// page of its mesh's first part, and its engine mesh and material ids.
-type BucketKey = (DrawKey, u32, u32, u32);
+/// What makes a bucket, in draw order: what its mesh and material ask of their pipeline, the bind
+/// group of its material's map, the mesh page of its mesh's first part, its engine mesh and
+/// material ids, and the bounds that cull its sources (see [`bounds_of`]). The WebGL2 builder's
+/// keys have the same type, so both share one sort.
+type BucketKey = (DrawKey, u32, u32, u32, u32, u32);
+
+/// The bounds of sources culled with their mesh's sphere, centred on their origin.
+const MESH_BOUNDS: u32 = 0;
+/// The bounds of sources that culling keeps wherever they are.
+const UNCULLED_BOUNDS: u32 = 1;
+/// The bounds of a scene object with a sphere of its own: this plus its slot.
+const OWN_BOUNDS: u32 = 2;
+
+/// The bounds part of a scene object's bucket key. The culling shader reads one local sphere per
+/// bucket, so each object with a sphere of its own draws from a bucket of its own.
+fn bounds_of(scene: &SceneStorage, slot: usize) -> u32 {
+    let object_flags = scene.flags()[slot];
+    if object_flags & flags::UNCULLED != 0 {
+        UNCULLED_BOUNDS
+    } else if object_flags & flags::CUSTOM_BOUNDS != 0 {
+        OWN_BOUNDS + slot as u32
+    } else {
+        MESH_BOUNDS
+    }
+}
+
+/// The centre and radius of the local sphere that culls a bucket with `bounds`, whose mesh's
+/// sphere has `mesh_radius`.
+fn local_sphere(scene: &SceneStorage, bounds: u32, mesh_radius: f32) -> ([f32; 3], f32) {
+    match bounds {
+        MESH_BOUNDS => ([0.0; 3], mesh_radius),
+        UNCULLED_BOUNDS => ([0.0; 3], UNBOUNDED_RADIUS),
+        own => {
+            let slot = (own - OWN_BOUNDS) as usize;
+            let center = &scene.local_centers()[slot * 3..slot * 3 + 3];
+            ([center[0], center[1], center[2]], scene.local_radii()[slot])
+        }
+    }
+}
 
 /// One bucket: its pipeline, its slice of each view's compacted instance buffer, and its draws.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) struct Bucket {
     /// The id of its render pipeline.
     pub(super) pipeline: u32,
+    /// The bind group of its material's map, or 0 for a pipeline that reads none.
+    pub(super) group: u32,
     pub(super) material: u32,
     pub(super) base: u32,
     pub(super) capacity: u32,
     /// Its draws, one per part of its mesh: `draws` of the layout's draws from `first_draw` on.
     pub(super) first_draw: u32,
     pub(super) draws: u32,
+    /// The local sphere that culls its sources.
+    pub(super) center: [f32; 3],
     pub(super) radius: f32,
 }
 
@@ -227,36 +267,44 @@ impl Layout {
         self.sources = sources;
 
         let meshes = settings.meshes();
-        let key_of = |mesh: u32, material: u32| -> Option<BucketKey> {
+        let key_of = |mesh: u32, material: u32, bounds: u32| -> Option<BucketKey> {
             let pipeline = settings.pipeline_of(mesh, material)?;
+            let group = settings.texture_group(material, pipeline);
             let page = meshes.parts(meshes.mesh(mesh - 1)?).first()?.page;
-            Some((pipeline, page, mesh, material))
+            Some((pipeline, group, page, mesh, material, bounds))
         };
         let world = scene.world(parity);
-        let scene_key = |slot: usize| key_of(scene.meshes()[slot], scene.materials()[slot]);
+        let scene_key = |slot: usize| {
+            let bounds = bounds_of(scene, slot);
+            key_of(scene.meshes()[slot], scene.materials()[slot], bounds)
+        };
+        let batch_key = |batch: &InstanceBatch| key_of(batch.mesh(), batch.material(), MESH_BOUNDS);
 
         collect_bucket_keys(
             &mut self.key_counts,
             scene,
             batches,
             scene_key,
-            |_, batch| key_of(batch.mesh(), batch.material()),
+            |_, batch| batch_key(batch),
         );
 
         self.buckets.clear();
         self.draws.clear();
         let mut base = 0;
-        for &((pipeline, _, mesh, material), count) in &self.key_counts {
+        for &((pipeline, group, _, mesh, material, bounds), count) in &self.key_counts {
             let slot = meshes.mesh(mesh - 1).expect("keys name known meshes");
             let parts = meshes.parts(slot);
+            let (center, radius) = local_sphere(scene, bounds, slot.radius);
             self.buckets.push(Bucket {
                 pipeline: pipelines.id(pipeline.in_pass(targets)),
+                group,
                 material,
                 base,
                 capacity: count,
                 first_draw: self.draws.len() as u32,
                 draws: parts.len() as u32,
-                radius: slot.radius,
+                center,
+                radius,
             });
             self.draws.extend(parts.iter().map(|part| Draw {
                 page: part.page,
@@ -283,7 +331,7 @@ impl Layout {
         self.scene_layers_default = scene.common_layers().is_some();
         self.batch_rows.clear();
         for (_, batch) in batches.iter() {
-            let bucket = bucket_of(key_of(batch.mesh(), batch.material()));
+            let bucket = bucket_of(batch_key(batch));
             let (active, layers) = (batch.frame_active_count(parity), batch.layers());
             self.batch_rows.push(BatchRows {
                 bucket,
@@ -314,9 +362,9 @@ impl Layout {
                 bucket.radius.to_bits(),
                 bucket.first_draw,
                 bucket.draws,
-                0,
-                0,
-                0,
+                bucket.center[0].to_bits(),
+                bucket.center[1].to_bits(),
+                bucket.center[2].to_bits(),
             ]);
         }
         self.built = true;
@@ -515,5 +563,84 @@ impl Layout {
             )?;
         }
         Ok(())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use null3d_core::jobs::JobSystem;
+    use null3d_core::scene::Command;
+    use null3d_gpu::drawlist::format;
+
+    use super::*;
+    use crate::geometry::box_geometry;
+    use crate::gpu_driven::scene_settings;
+    use crate::materials::Shading;
+
+    #[test]
+    fn objects_with_bounds_of_their_own_or_none_cull_in_buckets_of_their_own() {
+        let mut settings = scene_settings(4);
+        let box_mesh = box_geometry(1.0, 1.0, 1.0, [1, 1, 1]).unwrap();
+        let mesh = settings.meshes_mut().add(&box_mesh).unwrap() + 1;
+        let material = settings.materials_mut().create(Shading::Lit, [1.0; 4]);
+        let material = material.unwrap() + 1;
+        let mut scene = SceneStorage::with_capacity(8);
+        let mut commands = Vec::new();
+        let mut slots = Vec::new();
+        for _ in 0..4 {
+            let object = scene.reserve().unwrap();
+            commands.push(Command::create(object, Handle::NONE, mesh, flags::VISIBLE));
+            commands.push(Command::set_material(object, material));
+            slots.push((object, scene.resolve(object).unwrap() as usize));
+        }
+        // Two objects keep the mesh's bounds, one has bounds of its own, and one is never culled.
+        let (own, own_slot) = slots[2];
+        scene.local_centers_mut()[own_slot * 3 + 1] = 1.5;
+        scene.local_radii_mut()[own_slot] = 4.0;
+        let own_bounds = flags::CUSTOM_BOUNDS;
+        commands.push(Command::set_flags(own, own_bounds, own_bounds));
+        let unculled = flags::UNCULLED;
+        commands.push(Command::set_flags(slots[3].0, unculled, unculled));
+        scene.apply_commands(&commands, 1).unwrap();
+        scene.update_transforms(&JobSystem::new(0));
+
+        let mut layout = Layout::default();
+        let batches = BatchTable::with_capacity(1);
+        let parity = scene.parity();
+        let mut pipelines = PipelineCache::default();
+        let targets = PassTargets {
+            color_format: format::CANVAS,
+            depth_format: format::DEPTH32_FLOAT,
+            samples: 4,
+            permutation: 0,
+        };
+        layout
+            .rebuild(
+                &settings,
+                &mut pipelines,
+                targets,
+                &scene,
+                &batches,
+                parity,
+                u32::MAX,
+            )
+            .unwrap();
+        let mesh_radius = settings.meshes().mesh(mesh - 1).unwrap().radius;
+        let spheres: Vec<_> = layout
+            .buckets
+            .iter()
+            .map(|b| (b.capacity, b.center, b.radius))
+            .collect();
+        assert_eq!(
+            spheres,
+            [
+                (2, [0.0; 3], mesh_radius),
+                (1, [0.0; 3], UNBOUNDED_RADIUS),
+                (1, [0.0, 1.5, 0.0], 4.0),
+            ]
+        );
+        // Each record ends with its sphere's centre, where the culling shader reads it.
+        let centre = &layout.bucket_records[2 * 8 + 5..3 * 8];
+        assert_eq!(centre, [0.0f32, 1.5, 0.0].map(f32::to_bits));
     }
 }

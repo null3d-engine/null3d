@@ -1,11 +1,12 @@
 // Replays one hand-written draw list that uses every texture command of the GPU layer, through the
 // engine's backend for the GPU path that ?gpu= names: core WebGPU (webgpu), WebGPU in
 // compatibility mode (compat) or WebGL2 (webgl2). The list fills textures by writes, an image
-// upload and a copy. It draws into single layers and mip levels through views, into depth alone,
-// into an sRGB texture, and through a multisampled resolve. It then draws a 4 x 4 grid into the
-// canvas's stand-in, where each cell shows the effect of one command through a sampler, a
-// viewport or a scissor. Every path must draw the same image. The page reports its tier in the
-// engine's names, as the tier it asked for, and whether the WebGPU device has core features.
+// upload in two bands and a copy, and makes the mip levels of an sRGB array's layer. It draws into
+// single layers and mip levels through views, into depth alone, into an sRGB texture, and through
+// a multisampled resolve. It then draws a grid of 5 x 4 cells into the canvas's stand-in, where
+// each cell shows the effect of one command through a sampler, a viewport or a scissor. Every
+// path must draw the same image. The page reports its tier in the engine's names, as the tier it
+// asked for, and whether the WebGPU device has core features.
 import {
 	type GlslTemplate,
 	loadGlslShaders,
@@ -21,8 +22,11 @@ import * as G from '../../packages/engine/src/generated/gpu';
 import { TestMemory } from './lib/drawlist';
 import { run, toBase64 } from './lib/result';
 
-const SIZE = 256;
 const CELL = 64;
+/** The grid's cells: four columns of every other command, then one of the made mip levels. */
+const COLUMNS = 5;
+const WIDTH = COLUMNS * CELL;
+const HEIGHT = 4 * CELL;
 /** Bytes from one draw's parameters to the next: the dynamic offset alignment. */
 const PARAMS_STRIDE = 256;
 /** Bytes of one draw's parameters, the test shader's `Params`. */
@@ -53,6 +57,7 @@ const TEXTURE = {
 	srgbDrawn: 7,
 	msaa: 8,
 	resolved: 9,
+	mipped: 10,
 	// Views of one layer or one mip level, to draw into.
 	depthLayer0: 20,
 	depthLayer1: 21,
@@ -72,9 +77,12 @@ const GROUP = {
 	drawn: 9,
 	resolved: 10,
 	depths: 11,
+	mipped: 12,
 } as const;
 const PIPELINE = { depth: 1, rgba: 2, srgb: 3, msaa: 4, outSolid: 5, outSample: 6 } as const;
 const IMAGE = 1;
+/** An image that the list releases without an upload. */
+const UNUSED_IMAGE = 2;
 
 type Color = readonly [number, number, number, number];
 
@@ -196,6 +204,8 @@ function drawList(): TestMemory {
 	];
 	const red = quads.add({ color: [0.9, 0.1, 0.1, 1] });
 	const green = quads.add({ color: [0.1, 0.8, 0.2, 1] });
+	// The last column: mip levels 1 to 4 of the second layer of the sRGB array, which the GPU made.
+	const levels = [1, 2, 3, 4].map((level) => quads.add({ show: SHOW.level, layer: 1, level }));
 
 	const pattern = memory.put(
 		texels(8, 8, 2, (x, y, l) =>
@@ -217,6 +227,11 @@ function drawList(): TestMemory {
 			];
 			return colors[(y < 4 ? 0 : 2) + (x < 4 ? 0 : 1)] as Color;
 		}),
+	);
+	// Blocks of 4 x 4 texels, red and blue: levels 1 and 2 keep them apart, and levels 3 and 4
+	// average them in linear color, which sRGB stores as 188 in red and blue.
+	const blocks = memory.put(
+		texels(16, 16, 1, (x, y) => (((x >> 2) ^ (y >> 2)) & 1 ? [0, 0, 255, 255] : [255, 0, 0, 255])),
 	);
 	// sRGB bytes: 188 decodes to about 0.5, and 128 to about 0.22; the top row is red.
 	const srgb = memory.put(
@@ -260,6 +275,13 @@ function drawList(): TestMemory {
 	texture(TEXTURE.srgbDrawn, [CELL, CELL, 1, 1], G.FORMAT_RGBA8_UNORM_SRGB, BIND | DRAW, G.VIEW_2D);
 	texture(TEXTURE.msaa, [CELL, CELL, 1, 1], G.FORMAT_RGBA8_UNORM, DRAW, G.VIEW_2D, 4);
 	texture(TEXTURE.resolved, [CELL, CELL, 1, 1], G.FORMAT_RGBA8_UNORM, BIND | DRAW, G.VIEW_2D);
+	texture(
+		TEXTURE.mipped,
+		[16, 16, 2, 5],
+		G.FORMAT_RGBA8_UNORM_SRGB,
+		BIND | U | DRAW,
+		G.VIEW_2D_ARRAY,
+	);
 	memory.push(G.OP_CREATE_TEXTURE_VIEW, TEXTURE.depthLayer0, TEXTURE.depths, 0, 0);
 	memory.push(G.OP_CREATE_TEXTURE_VIEW, TEXTURE.depthLayer1, TEXTURE.depths, 0, 1);
 	memory.push(G.OP_CREATE_TEXTURE_VIEW, TEXTURE.drawnLayer1, TEXTURE.drawn, 0, 1);
@@ -322,6 +344,7 @@ function drawList(): TestMemory {
 	textures(GROUP.images, TEXTURE.images, TEXTURE.srgbData, SAMPLER.clamp);
 	textures(GROUP.drawn, TEXTURE.drawn, TEXTURE.srgbDrawn, SAMPLER.clamp);
 	textures(GROUP.resolved, TEXTURE.pattern, TEXTURE.resolved, SAMPLER.clamp);
+	textures(GROUP.mipped, TEXTURE.mipped, TEXTURE.srgbData, SAMPLER.clamp);
 	memory.push(
 		G.OP_CREATE_BIND_GROUP,
 		GROUP.depths,
@@ -356,7 +379,15 @@ function drawList(): TestMemory {
 	memory.push(G.OP_WRITE_TEXTURE, TEXTURE.mips, 0, 0, 0, 0, 16, 16, 1, checker, 16 * 16 * 4);
 	memory.push(G.OP_WRITE_TEXTURE, TEXTURE.mips, 1, 0, 0, 0, 8, 8, 1, quadrants, 8 * 8 * 4);
 	memory.push(G.OP_WRITE_TEXTURE, TEXTURE.srgbData, 0, 0, 0, 0, 4, 4, 1, srgb, 4 * 4 * 4);
-	memory.push(G.OP_UPLOAD_IMAGE, TEXTURE.images, 0, 16, 8, 0, 32, 32, IMAGE, G.UPLOAD_RELEASE);
+	// The image in two bands of 16 rows: the second starts at the image's row 16, and releases it.
+	memory.push(G.OP_UPLOAD_IMAGE, TEXTURE.images, 0, 16, 8, 0, 32, 16, IMAGE, 0, 0, 0);
+	memory.push(
+		G.OP_UPLOAD_IMAGE,
+		...[TEXTURE.images, 0, 16, 24, 0],
+		...[32, 16, IMAGE, G.UPLOAD_RELEASE, 0, 16],
+	);
+	memory.push(G.OP_RELEASE_IMAGE, UNUSED_IMAGE);
+	memory.push(G.OP_WRITE_TEXTURE, TEXTURE.mipped, 0, 0, 0, 1, 16, 16, 1, blocks, 16 * 16 * 4);
 	// The top half of the image, red and green, into the second layer's lower left.
 	memory.push(
 		G.OP_COPY_TEXTURE_TO_TEXTURE,
@@ -385,6 +416,9 @@ function drawList(): TestMemory {
 	const NONE = G.NO_TARGET;
 	const depthOnly = G.PASS_CLEAR_DEPTH | G.PASS_STORE_DEPTH;
 	const colorKept = G.PASS_CLEAR_COLOR | G.PASS_STORE_COLOR;
+
+	// The mip levels of the blocks' layer, after every write in the list.
+	memory.push(G.OP_GENERATE_MIPMAPS, TEXTURE.mipped, 1);
 
 	// Depth alone, into one layer each: the top half of layer 0, and a square in layer 1.
 	pass(NONE, NONE, TEXTURE.depthLayer0, [0, 0, 0, 0], depthOnly);
@@ -447,9 +481,15 @@ function drawList(): TestMemory {
 	viewport(x, y, CELL, CELL);
 	scissor(x, y, 32, 16);
 	quad(red);
-	scissor(0, 0, SIZE, SIZE);
+	scissor(0, 0, WIDTH, HEIGHT);
 	viewport(x + 40, y + 24, 16, 32);
 	quad(green);
+	memory.push(G.OP_SET_PIPELINE, PIPELINE.outSample);
+	memory.push(G.OP_SET_BIND_GROUP, 1, GROUP.mipped, 0);
+	for (const [row, params] of levels.entries()) {
+		viewport((COLUMNS - 1) * CELL, row * CELL, CELL, CELL);
+		quad(params);
+	}
 	memory.push(G.OP_END_RENDER_PASS);
 	memory.push(G.OP_SUBMIT);
 	return memory;
@@ -462,7 +502,7 @@ interface Drawn {
 	core?: boolean;
 }
 
-async function drawWebGPU(memory: TestMemory, image: ImageBitmap): Promise<Drawn> {
+async function drawWebGPU(memory: TestMemory, images: ImageBitmap[]): Promise<Drawn> {
 	const adapter = await navigator.gpu?.requestAdapter({ featureLevel: 'compatibility' });
 	if (!adapter) throw new Error('no WebGPU adapter');
 	const coreFeatures = 'core-features-and-limits' as GPUFeatureName;
@@ -473,7 +513,7 @@ async function drawWebGPU(memory: TestMemory, image: ImageBitmap): Promise<Drawn
 		errors.push((event as GPUUncapturedErrorEvent).error.message);
 	});
 	const target = device.createTexture({
-		size: [SIZE, SIZE],
+		size: [WIDTH, HEIGHT],
 		format: 'rgba8unorm',
 		usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
 	});
@@ -521,7 +561,7 @@ async function drawWebGPU(memory: TestMemory, image: ImageBitmap): Promise<Drawn
 		],
 	];
 	for (const [id, template] of templates) backend.defineTemplate(id, template);
-	backend.setImage(IMAGE, image);
+	for (const [index, image] of images.entries()) backend.setImage(index + 1, image);
 	device.pushErrorScope('validation');
 	backend.replay(memory.words, memory.floats, 0, memory.listLength, memory.buffer);
 	const validation = await device.popErrorScope();
@@ -533,8 +573,8 @@ async function drawWebGPU(memory: TestMemory, image: ImageBitmap): Promise<Drawn
 	return { pixels, errors, core };
 }
 
-async function drawWebGL2(memory: TestMemory, image: ImageBitmap): Promise<Drawn> {
-	const canvas = new OffscreenCanvas(SIZE, SIZE);
+async function drawWebGL2(memory: TestMemory, images: ImageBitmap[]): Promise<Drawn> {
+	const canvas = new OffscreenCanvas(WIDTH, HEIGHT);
 	const gl = canvas.getContext('webgl2', {
 		antialias: false,
 		alpha: false,
@@ -546,23 +586,23 @@ async function drawWebGL2(memory: TestMemory, image: ImageBitmap): Promise<Drawn
 	const framebuffer = gl.createFramebuffer();
 	const color = gl.createRenderbuffer();
 	gl.bindRenderbuffer(gl.RENDERBUFFER, color);
-	gl.renderbufferStorage(gl.RENDERBUFFER, gl.RGBA8, SIZE, SIZE);
+	gl.renderbufferStorage(gl.RENDERBUFFER, gl.RGBA8, WIDTH, HEIGHT);
 	gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
 	gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.RENDERBUFFER, color);
 	// Reversed depth, as on WebGPU, so every path draws the same reference image.
 	const shaders = await loadGlslShaders(0);
 	const backend = new WebGL2Backend(gl, canvas, shaders, true, 'reversed');
-	backend.canvasTarget = { framebuffer, width: SIZE, height: SIZE };
+	backend.canvasTarget = { framebuffer, width: WIDTH, height: HEIGHT };
 	const shader = SHADERS.test_textures;
 	const templates: [number, GlslTemplate][] = [
 		[TEMPLATE_SAMPLE, { shader, pipeline: 'sample' }],
 		[TEMPLATE_SOLID, { shader, pipeline: 'solid' }],
 	];
 	for (const [id, template] of templates) backend.defineTemplate(id, template);
-	backend.setImage(IMAGE, image);
+	for (const [index, image] of images.entries()) backend.setImage(index + 1, image);
 	backend.replay(memory.words, memory.floats, 0, memory.listLength, memory.buffer);
 	gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
-	const pixels = readbackWebGL2(gl, SIZE, SIZE);
+	const pixels = readbackWebGL2(gl, WIDTH, HEIGHT);
 	const errors: string[] = [];
 	for (let error = gl.getError(); error !== gl.NO_ERROR && errors.length < 8; error = gl.getError())
 		errors.push(`WebGL error 0x${error.toString(16)}`);
@@ -572,18 +612,21 @@ async function drawWebGL2(memory: TestMemory, image: ImageBitmap): Promise<Drawn
 
 run('replay-textures', async () => {
 	const memory = drawList();
-	const image = await createImageBitmap(imagePixels(), {
-		premultiplyAlpha: 'none',
-		colorSpaceConversion: 'none',
-	});
+	const decode = { premultiplyAlpha: 'none', colorSpaceConversion: 'none' } as const;
+	const images = [
+		await createImageBitmap(imagePixels(), decode),
+		await createImageBitmap(imagePixels(), decode),
+	];
 	const { pixels, errors, core } =
-		tier === 'webgl2' ? await drawWebGL2(memory, image) : await drawWebGPU(memory, image);
+		tier === 'webgl2' ? await drawWebGL2(memory, images) : await drawWebGPU(memory, images);
 	return {
 		tier: tier === 'compat' ? 'webgpu-compat' : tier,
 		core,
 		errors,
-		width: SIZE,
-		height: SIZE,
+		// Images that the list released: every one it had.
+		released: images.every((image) => image.width === 0),
+		width: WIDTH,
+		height: HEIGHT,
 		pixels: toBase64(pixels),
 	};
 });

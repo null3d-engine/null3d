@@ -2,7 +2,7 @@
 // worker (low-latency mode) or on the page's main thread (single-threaded mode and ?render=main).
 
 import { loadGlslShaders, loadWgslShaders } from '../generated/shaders';
-import { type CompletionSignal, FenceCompletion, QueueCompletion } from '../gpu/completion';
+import { type Completion, FenceCompletion, QueueCompletion } from '../gpu/completion';
 import { readbackWebGL2, readbackWebGPU } from '../gpu/readback';
 import {
 	contextFinished,
@@ -14,6 +14,7 @@ import { GpuTimer } from '../gpu/webgpu/gpu-timer';
 import { RenderPassSetup, submitOne } from '../gpu/webgpu/reusable';
 import type { PowerPreference } from '../page/capabilities';
 import type { CoreDevice } from '../page/limits';
+import type { ImageTable } from '../shared/images';
 import { type FrameRecorder, Phase } from '../shared/metrics';
 import { contextLoss, contextRestored, deviceLoss } from './loss';
 import { WebGL2SceneRenderer, WebGPUSceneRenderer } from './scene-renderer';
@@ -38,8 +39,11 @@ export interface FrameInput {
 
 export interface Renderer {
 	readonly tier: Tier;
-	/** How the renderer learns that the GPU finished a frame, which it counts while the page measures. */
-	readonly completion: CompletionSignal;
+	/**
+	 * Counts the frames that the GPU finished, and says how many it has not; undefined without a
+	 * metrics buffer.
+	 */
+	readonly completions: Completion | undefined;
 	/** Resizes the drawing buffer, in device pixels. Only the thread that owns the canvas calls this. */
 	resize(width: number, height: number): void;
 	/**
@@ -82,6 +86,8 @@ export interface RendererOptions {
 	 * lists the sketch thread records; without them it clears to the frame's background.
 	 */
 	scene?: { memory: WebAssembly.Memory; control: ArrayBufferLike };
+	/** The images that texture uploads read, which the thread keeps across GPU devices. */
+	imageTable?: ImageTable;
 }
 
 /** WebGPU's default `maxBufferSize`, which every device offers. */
@@ -97,9 +103,8 @@ class WebGPURenderer implements Renderer {
 	private readonly format: GPUTextureFormat;
 	private readonly timer: GpuTimer | undefined;
 	private readonly pass = new RenderPassSetup();
-	private readonly completions: QueueCompletion | undefined;
+	readonly completions: QueueCompletion | undefined;
 	private simulated = false;
-	readonly completion: CompletionSignal = 'queue';
 	readonly lost: Promise<string>;
 
 	constructor(
@@ -189,8 +194,7 @@ class WebGPURenderer implements Renderer {
 
 class WebGL2Renderer implements Renderer {
 	readonly tier: Tier = 'webgl2';
-	readonly completion: CompletionSignal = 'fence';
-	private readonly completions: FenceCompletion | undefined;
+	readonly completions: FenceCompletion | undefined;
 	private readonly release = new AbortController();
 	readonly lost: Promise<string>;
 
@@ -228,7 +232,6 @@ class WebGL2Renderer implements Renderer {
 
 	drawFrame(input: FrameInput, record: FrameRecorder): void {
 		const start = performance.now();
-		this.completions?.poll();
 		this.clear(input.background);
 		this.completions?.afterSubmit(input.frame);
 		record.addPhase(Phase.Replay, performance.now() - start);
@@ -278,6 +281,7 @@ export async function createRenderer(
 				scene.control,
 				metrics,
 				device,
+				options.imageTable,
 				shaders,
 			);
 		return new WebGL2Renderer(canvas, gl, metrics);
@@ -294,6 +298,7 @@ export async function createRenderer(
 			scene.memory,
 			scene.control,
 			metrics,
+			options.imageTable,
 			shaders,
 		);
 	return new WebGPURenderer(gpu.tier, gpu.device, canvas, metrics);

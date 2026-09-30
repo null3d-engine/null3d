@@ -4,6 +4,7 @@
 
 import * as G from '../../generated/gpu';
 import type { DeviceShaders } from '../../generated/shaders';
+import { ImageTable } from '../../shared/images';
 import type { GpuTimer } from './gpu-timer';
 import { Pipelines, type RenderTemplate } from './pipelines';
 import { RenderPassSetup, submitOne, TexelCopySetup } from './reusable';
@@ -61,8 +62,11 @@ export class WebGPUBackend {
 	/** Each render target's view: a texture of one layer and one mip level, or a view of one. */
 	private readonly targetViews: (GPUTextureView | undefined)[] = [];
 	private readonly samplers: (GPUSampler | undefined)[] = [];
-	/** Images the page handed over for uploads, by id. */
-	private readonly images: (ImageBitmap | undefined)[] = [];
+	/** Images for uploads, by id, which outlive the backend when the drawing thread owns them. */
+	private readonly images: ImageTable;
+	private readonly ownsImages: boolean;
+	/** The sampler that mip levels read the level before them with. */
+	private mipSampler: GPUSampler | undefined;
 	/** Pipelines by id: null while one builds, and undefined for an id that names none. */
 	private readonly renderPipelines: (GPURenderPipeline | null | undefined)[] = [];
 	private readonly computePipelines: (GPUComputePipeline | null | undefined)[] = [];
@@ -104,7 +108,8 @@ export class WebGPUBackend {
 	/**
 	 * `shaders` are the WGSL builds that the device loaded (`loadWgslShaders`). `routes` chooses
 	 * between writeBuffer and the staging ring for mid-size uploads; by default it times both routes
-	 * and takes the faster one.
+	 * and takes the faster one. `images` holds the images that uploads read, which the thread that
+	 * draws keeps across GPU devices; by default the backend has its own.
 	 */
 	constructor(
 		readonly device: GPUDevice,
@@ -112,10 +117,13 @@ export class WebGPUBackend {
 		canvasFormat: GPUTextureFormat,
 		shaders: DeviceShaders,
 		private readonly routes = new UploadRoutes(),
+		images?: ImageTable,
 	) {
 		this.canvasFormat = canvasFormat;
 		this.pipelines = new Pipelines(device, shaders);
 		this.staging = new StagingRing(device);
+		this.images = images ?? new ImageTable();
+		this.ownsImages = !images;
 	}
 
 	private format(code: number): GPUTextureFormat | undefined {
@@ -150,8 +158,7 @@ export class WebGPUBackend {
 
 	/** Hands the backend an image for `UploadImage` commands to copy from, under the draw list's id. */
 	setImage(id: number, image: ImageBitmap): void {
-		this.images[id]?.close();
-		this.images[id] = image;
+		this.images.set(id, image);
 	}
 
 	/** The texture the canvas shows this frame, or an offscreen target standing in for it. */
@@ -226,6 +233,48 @@ export class WebGPUBackend {
 	/** Bytes per texel of a texture. */
 	private texelBytes(id: number): number {
 		return G.FORMAT_TEXEL_BYTES[this.formats[id] as number] ?? 0;
+	}
+
+	/**
+	 * Makes mip levels 1 and up of one layer of a texture array, a render pass per level. Each pass
+	 * draws into its level of the layer, and reads the level before it through a view of every
+	 * layer, as compatibility mode binds whole arrays only.
+	 */
+	private generateMipmaps(id: number, layer: number): void {
+		const texture = this.need(this.textures, id, 'texture');
+		const pipeline = this.pipelines.mipmaps(texture.format);
+		this.mipSampler ??= this.device.createSampler({ magFilter: 'linear', minFilter: 'linear' });
+		const encoder = this.commandEncoder();
+		for (let level = 1; level < texture.mipLevelCount; level++) {
+			const source = texture.createView({
+				dimension: '2d-array',
+				baseMipLevel: level - 1,
+				mipLevelCount: 1,
+				usage: G.TEXTURE_USAGE_TEXTURE_BINDING,
+			});
+			const group = this.device.createBindGroup({
+				layout: pipeline.getBindGroupLayout(0),
+				entries: [
+					{ binding: 0, resource: source },
+					{ binding: 1, resource: this.mipSampler },
+				],
+			});
+			const target = texture.createView({
+				dimension: '2d',
+				baseMipLevel: level,
+				mipLevelCount: 1,
+				baseArrayLayer: layer,
+				arrayLayerCount: 1,
+				usage: G.TEXTURE_USAGE_RENDER_ATTACHMENT,
+			});
+			const pass = encoder.beginRenderPass({
+				colorAttachments: [{ view: target, loadOp: 'clear', storeOp: 'store' }],
+			});
+			pass.setPipeline(pipeline);
+			pass.setBindGroup(0, group);
+			pass.draw(3, 1, 0, layer);
+			pass.end();
+		}
 	}
 
 	private createSampler(words: Uint32Array, floats: Float32Array, a: number): void {
@@ -450,21 +499,24 @@ export class WebGPUBackend {
 					const id = words[a] as number;
 					const imageId = words[a + 7] as number;
 					const flags = words[a + 8] as number;
-					const image = this.need(this.images, imageId, 'image');
+					const image = this.images.need(imageId);
 					const width = words[a + 5] as number;
 					const height = words[a + 6] as number;
 					copy.setDestination(this.need(this.textures, id, 'texture'), words, a);
 					copy.destination.premultipliedAlpha = (flags & G.UPLOAD_PREMULTIPLIED_ALPHA) !== 0;
-					copy.image.source = image;
+					copy.setImage(image, words[a + 9] as number, words[a + 10] as number);
 					copy.setSize(width, height, 1);
 					device.queue.copyExternalImageToTexture(copy.image, copy.destination, copy.size);
 					this.counts.uploadBytes += width * height * this.texelBytes(id);
-					if (flags & G.UPLOAD_RELEASE) {
-						image.close();
-						this.images[imageId] = undefined;
-					}
+					if (flags & G.UPLOAD_RELEASE) this.images.release(imageId);
 					break;
 				}
+				case G.OP_RELEASE_IMAGE:
+					this.images.release(words[a] as number);
+					break;
+				case G.OP_GENERATE_MIPMAPS:
+					this.generateMipmaps(words[a] as number, words[a + 1] as number);
+					break;
 				case G.OP_COPY_TEXTURE_TO_TEXTURE: {
 					const copy = this.copy;
 					copy.setSource(this.need(this.textures, words[a] as number, 'texture'), words, a);
@@ -752,7 +804,7 @@ export class WebGPUBackend {
 	destroy(): void {
 		for (const buffer of this.buffers) buffer?.destroy();
 		for (const texture of this.textures) texture?.destroy();
-		for (const image of this.images) image?.close();
+		if (this.ownsImages) this.images.clear();
 		this.staging.destroy();
 	}
 }

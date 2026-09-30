@@ -2,6 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import {
 	downloadsPath,
 	fillRunner,
+	loadedFile,
 	loadOf,
 	loadPath,
 	parseDownloadsPath,
@@ -67,6 +68,13 @@ describe('load addresses', () => {
 		expect(fillRunner('/tests/pages/engine.html?seconds=2', 'r', 'n')).toBe(
 			'/tests/pages/engine.html?seconds=2',
 		);
+	});
+
+	it('reads the build file of a load address, even before the runner fills in its key', () => {
+		const template = loadPath({ kind: 'warm', key: runnerKey('bench') }, 'bench/pages/a.html?n=2');
+		expect(loadedFile(template)).toBe('bench/pages/a.html');
+		expect(loadedFile(fillRunner(template, 'r', 'n'))).toBe('bench/pages/a.html');
+		expect(loadedFile('/bench/pages/a.html?n=2')).toBeUndefined();
 	});
 
 	it("asks the server for a load's downloads, and fails when the server cannot tell", async () => {

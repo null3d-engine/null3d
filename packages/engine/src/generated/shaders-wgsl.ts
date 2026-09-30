@@ -25,9 +25,9 @@ struct Bucket {
     radius: f32,
     first_draw: u32,
     draws: u32,
-    pad0_: u32,
-    pad1_: u32,
-    pad2_: u32,
+    center_x: f32,
+    center_y: f32,
+    center_z: f32,
 }
 
 const CELL_SHIFT: u32 = 23u;
@@ -81,45 +81,46 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     let r1_ = (_e52 + vec4<f32>(0f, 0f, 0f, offset.y));
     let _e65 = matrices[((i * 3u) + 2u)];
     let r2_ = (_e65 + vec4<f32>(0f, 0f, 0f, offset.z));
-    let center = vec3<f32>(r0_.w, r1_.w, r2_.w);
-    let scale = max(length(vec3<f32>(r0_.x, r1_.x, r2_.x)), max(length(vec3<f32>(r0_.y, r1_.y, r2_.y)), length(vec3<f32>(r0_.z, r1_.z, r2_.z))));
     let bucket = buckets[b];
+    let local_center = vec4<f32>(bucket.center_x, bucket.center_y, bucket.center_z, 1f);
+    let center = vec3<f32>(dot(r0_, local_center), dot(r1_, local_center), dot(r2_, local_center));
+    let scale = max(length(vec3<f32>(r0_.x, r1_.x, r2_.x)), max(length(vec3<f32>(r0_.y, r1_.y, r2_.y)), length(vec3<f32>(r0_.z, r1_.z, r2_.z))));
     let radius = (bucket.radius * scale);
     loop {
-        let _e99 = p;
-        if (_e99 < 6u) {
+        let _e104 = p;
+        if (_e104 < 6u) {
         } else {
             break;
         }
         {
-            let _e104 = p;
-            let plane = params.planes[_e104];
+            let _e109 = p;
+            let plane = params.planes[_e109];
             if ((dot(plane.xyz, center) + plane.w) < -(radius)) {
                 return;
             }
         }
         continuing {
-            let _e114 = p;
-            p = (_e114 + 1u);
+            let _e119 = p;
+            p = (_e119 + 1u);
         }
     }
-    let _e124 = atomicAdd((&indirect[((bucket.first_draw * INDIRECT_WORDS) + 1u)]), 1u);
+    let _e129 = atomicAdd((&indirect[((bucket.first_draw * INDIRECT_WORDS) + 1u)]), 1u);
     loop {
-        let _e126 = d;
-        if (_e126 < bucket.draws) {
+        let _e131 = d;
+        if (_e131 < bucket.draws) {
         } else {
             break;
         }
         {
-            let _e130 = d;
-            let _e139 = atomicAdd((&indirect[(((bucket.first_draw + _e130) * INDIRECT_WORDS) + 1u)]), 1u);
+            let _e135 = d;
+            let _e144 = atomicAdd((&indirect[(((bucket.first_draw + _e135) * INDIRECT_WORDS) + 1u)]), 1u);
         }
         continuing {
-            let _e141 = d;
-            d = (_e141 + 1u);
+            let _e146 = d;
+            d = (_e146 + 1u);
         }
     }
-    let dst = ((bucket.base + _e124) * 4u);
+    let dst = ((bucket.base + _e129) * 4u);
     visible[dst] = r0_;
     visible[(dst + 1u)] = r1_;
     visible[(dst + 2u)] = r2_;
@@ -146,6 +147,19 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
 
 struct Material {
     color: vec4<f32>,
+    emissive: vec4<f32>,
+    surface: vec4<f32>,
+    strengths: vec4<f32>,
+    uv_u: vec4<f32>,
+    uv_v: vec4<f32>,
+    maps: vec4<f32>,
+    more_maps: vec4<f32>,
+}
+
+struct Transform {
+    x: vec4<f32>,
+    y: vec4<f32>,
+    z: vec4<f32>,
 }
 
 struct InstanceIn {
@@ -174,10 +188,29 @@ struct VertexOut {
     @location(1) @interpolate(flat, either) material: u32,
 }
 
+const OUTSIDE_CLIP: vec4<f32> = vec4<f32>(2f, 2f, 2f, 1f);
+const PI: f32 = 3.1415927f;
+const INV_PI: f32 = 0.31830987f;
+const EPSILON: f32 = 0.000001f;
+
 @group(0) @binding(0)
 var<uniform> frame: Frame;
 @group(0) @binding(1)
 var<storage> materials: array<Material>;
+
+fn transform_point(t: Transform, p: vec3<f32>) -> vec3<f32> {
+    let q = vec4<f32>(p, 1f);
+    return vec3<f32>(dot(t.x, q), dot(t.y, q), dot(t.z, q));
+}
+
+fn transform_direction(t_1: Transform, d: vec3<f32>) -> vec3<f32> {
+    let q_1 = vec4<f32>(d, 0f);
+    return vec3<f32>(dot(t_1.x, q_1), dot(t_1.y, q_1), dot(t_1.z, q_1));
+}
+
+fn to_clip(view_proj: mat4x4<f32>, relative_position: vec3<f32>) -> vec4<f32> {
+    return (view_proj * vec4<f32>(relative_position, 1f));
+}
 
 fn material_of(id: u32) -> Material {
     let _e3 = materials[id];
@@ -188,18 +221,25 @@ fn find_instance(i_1: InstanceIn) -> Instance {
     return Instance(i_1.row_x, i_1.row_y, i_1.row_z, i_1.ids.x, true);
 }
 
-fn clip_position(found: Instance, position: vec3<f32>) -> vec4<f32> {
-    let p = vec4<f32>(position, 1f);
-    if !(found.drawn) {
-        return vec4<f32>(2f, 2f, 2f, 1f);
-    }
-    let _e13 = frame.view_proj;
-    return (_e13 * vec4<f32>(dot(found.row_x, p), dot(found.row_y, p), dot(found.row_z, p), 1f));
+fn transform_of(found: Instance) -> Transform {
+    return Transform(found.row_x, found.row_y, found.row_z);
 }
 
-fn world_direction(found_1: Instance, direction: vec3<f32>) -> vec3<f32> {
-    let d = vec4<f32>(direction, 0f);
-    return vec3<f32>(dot(found_1.row_x, d), dot(found_1.row_y, d), dot(found_1.row_z, d));
+fn clip_position(found_1: Instance, position: vec3<f32>) -> vec4<f32> {
+    if !(found_1.drawn) {
+        return OUTSIDE_CLIP;
+    }
+    let _e6 = frame.view_proj;
+    let _e7 = transform_of(found_1);
+    let _e9 = transform_point(_e7, position);
+    let _e10 = to_clip(_e6, _e9);
+    return _e10;
+}
+
+fn world_direction(found_2: Instance, direction: vec3<f32>) -> vec3<f32> {
+    let _e1 = transform_of(found_2);
+    let _e3 = transform_direction(_e1, direction);
+    return _e3;
 }
 
 fn lambert(albedo: vec3<f32>, normal: vec3<f32>, to_light: vec3<f32>, light: vec3<f32>, ambient: vec3<f32>) -> vec3<f32> {
@@ -249,6 +289,50 @@ fn fs(in: VertexOut) -> @location(0) vec4<f32> {
 			glsl: null,
 		},
 	},
+	mipmap: {
+		webgpu: {
+			permutation: 0,
+			wgsl: {
+				source: `struct VertexOut {
+    @builtin(position) clip: vec4<f32>,
+    @location(0) @interpolate(flat, either) layer: u32,
+}
+
+@group(0) @binding(0)
+var source: texture_2d_array<f32>;
+@group(0) @binding(1)
+var source_sampler: sampler;
+
+@vertex
+fn vs_main(@builtin(vertex_index) vertex: u32, @builtin(instance_index) layer: u32) -> VertexOut {
+    var out: VertexOut;
+
+    let corner = vec2<f32>(f32(((vertex << 1u) & 2u)), f32((vertex & 2u)));
+    out.clip = vec4<f32>(((corner * 2f) - vec2(1f)), 0.5f, 1f);
+    out.layer = layer;
+    let _e22 = out;
+    return _e22;
+}
+
+@fragment
+fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
+    let _e1 = textureDimensions(source);
+    let size = vec2<f32>(_e1);
+    let level = max(floor((size * 0.5f)), vec2(1f));
+    let _e17 = textureSampleLevel(source, source_sampler, (in.clip.xy / level), in.layer, 0f);
+    return _e17;
+}
+`,
+				pipelines: {
+					main: {
+						vertex: 'vs_main',
+						fragment: 'fs_main',
+					},
+				},
+			},
+			glsl: null,
+		},
+	},
 	texcoords: {
 		webgpu: {
 			permutation: 0,
@@ -259,6 +343,12 @@ fn fs(in: VertexOut) -> @location(0) vec4<f32> {
     sun_direction: vec4<f32>,
     sun_color: vec4<f32>,
     ambient: vec4<f32>,
+}
+
+struct Transform {
+    x: vec4<f32>,
+    y: vec4<f32>,
+    z: vec4<f32>,
 }
 
 struct InstanceIn {
@@ -286,20 +376,37 @@ struct VertexOut {
     @location(0) uv0_: vec2<f32>,
 }
 
+const OUTSIDE_CLIP: vec4<f32> = vec4<f32>(2f, 2f, 2f, 1f);
+
 @group(0) @binding(0)
 var<uniform> frame: Frame;
+
+fn transform_point(t: Transform, p: vec3<f32>) -> vec3<f32> {
+    let q = vec4<f32>(p, 1f);
+    return vec3<f32>(dot(t.x, q), dot(t.y, q), dot(t.z, q));
+}
+
+fn to_clip(view_proj: mat4x4<f32>, relative_position: vec3<f32>) -> vec4<f32> {
+    return (view_proj * vec4<f32>(relative_position, 1f));
+}
 
 fn find_instance(i_1: InstanceIn) -> Instance {
     return Instance(i_1.row_x, i_1.row_y, i_1.row_z, i_1.ids.x, true);
 }
 
-fn clip_position(found: Instance, position: vec3<f32>) -> vec4<f32> {
-    let p = vec4<f32>(position, 1f);
-    if !(found.drawn) {
-        return vec4<f32>(2f, 2f, 2f, 1f);
+fn transform_of(found: Instance) -> Transform {
+    return Transform(found.row_x, found.row_y, found.row_z);
+}
+
+fn clip_position(found_1: Instance, position: vec3<f32>) -> vec4<f32> {
+    if !(found_1.drawn) {
+        return OUTSIDE_CLIP;
     }
-    let _e13 = frame.view_proj;
-    return (_e13 * vec4<f32>(dot(found.row_x, p), dot(found.row_y, p), dot(found.row_z, p), 1f));
+    let _e6 = frame.view_proj;
+    let _e7 = transform_of(found_1);
+    let _e9 = transform_point(_e7, position);
+    let _e10 = to_clip(_e6, _e9);
+    return _e10;
 }
 
 @vertex
@@ -343,6 +450,19 @@ fn fs(in: VertexOut) -> @location(0) vec4<f32> {
 
 struct Material {
     color: vec4<f32>,
+    emissive: vec4<f32>,
+    surface: vec4<f32>,
+    strengths: vec4<f32>,
+    uv_u: vec4<f32>,
+    uv_v: vec4<f32>,
+    maps: vec4<f32>,
+    more_maps: vec4<f32>,
+}
+
+struct Transform {
+    x: vec4<f32>,
+    y: vec4<f32>,
+    z: vec4<f32>,
 }
 
 struct InstanceIn {
@@ -369,10 +489,21 @@ struct VertexOut {
     @location(0) @interpolate(flat, either) material: u32,
 }
 
+const OUTSIDE_CLIP: vec4<f32> = vec4<f32>(2f, 2f, 2f, 1f);
+
 @group(0) @binding(1)
 var<storage> materials: array<Material>;
 @group(0) @binding(0)
 var<uniform> frame: Frame;
+
+fn transform_point(t: Transform, p: vec3<f32>) -> vec3<f32> {
+    let q = vec4<f32>(p, 1f);
+    return vec3<f32>(dot(t.x, q), dot(t.y, q), dot(t.z, q));
+}
+
+fn to_clip(view_proj: mat4x4<f32>, relative_position: vec3<f32>) -> vec4<f32> {
+    return (view_proj * vec4<f32>(relative_position, 1f));
+}
 
 fn material_of(id: u32) -> Material {
     let _e3 = materials[id];
@@ -383,13 +514,19 @@ fn find_instance(i_1: InstanceIn) -> Instance {
     return Instance(i_1.row_x, i_1.row_y, i_1.row_z, i_1.ids.x, true);
 }
 
-fn clip_position(found: Instance, position: vec3<f32>) -> vec4<f32> {
-    let p = vec4<f32>(position, 1f);
-    if !(found.drawn) {
-        return vec4<f32>(2f, 2f, 2f, 1f);
+fn transform_of(found: Instance) -> Transform {
+    return Transform(found.row_x, found.row_y, found.row_z);
+}
+
+fn clip_position(found_1: Instance, position: vec3<f32>) -> vec4<f32> {
+    if !(found_1.drawn) {
+        return OUTSIDE_CLIP;
     }
-    let _e13 = frame.view_proj;
-    return (_e13 * vec4<f32>(dot(found.row_x, p), dot(found.row_y, p), dot(found.row_z, p), 1f));
+    let _e6 = frame.view_proj;
+    let _e7 = transform_of(found_1);
+    let _e9 = transform_point(_e7, position);
+    let _e10 = to_clip(_e6, _e9);
+    return _e10;
 }
 
 fn linear_to_srgb(c: vec3<f32>) -> vec3<f32> {
@@ -415,6 +552,154 @@ fn fs(in: VertexOut) -> @location(0) vec4<f32> {
     let _e2 = material_of(in.material);
     let _e5 = linear_to_srgb(_e2.color.xyz);
     return vec4<f32>(_e5, 1f);
+}
+`,
+				pipelines: {
+					main: {
+						vertex: 'vs',
+						fragment: 'fs',
+					},
+				},
+			},
+			glsl: null,
+		},
+	},
+	unlit_map: {
+		webgpu: {
+			permutation: 0,
+			wgsl: {
+				source: `struct Frame {
+    view_proj: mat4x4<f32>,
+    camera_position: vec4<f32>,
+    sun_direction: vec4<f32>,
+    sun_color: vec4<f32>,
+    ambient: vec4<f32>,
+}
+
+struct Material {
+    color: vec4<f32>,
+    emissive: vec4<f32>,
+    surface: vec4<f32>,
+    strengths: vec4<f32>,
+    uv_u: vec4<f32>,
+    uv_v: vec4<f32>,
+    maps: vec4<f32>,
+    more_maps: vec4<f32>,
+}
+
+struct Transform {
+    x: vec4<f32>,
+    y: vec4<f32>,
+    z: vec4<f32>,
+}
+
+struct InstanceIn {
+    @location(8) row_x: vec4<f32>,
+    @location(9) row_y: vec4<f32>,
+    @location(10) row_z: vec4<f32>,
+    @location(11) ids: vec4<u32>,
+}
+
+struct Instance {
+    row_x: vec4<f32>,
+    row_y: vec4<f32>,
+    row_z: vec4<f32>,
+    material: u32,
+    drawn: bool,
+}
+
+struct VertexIn {
+    @location(0) position: vec3<f32>,
+    @location(2) uv0_: vec2<f32>,
+}
+
+struct VertexOut {
+    @builtin(position) clip: vec4<f32>,
+    @location(0) uv0_: vec2<f32>,
+    @location(1) @interpolate(flat, either) material: u32,
+}
+
+const OUTSIDE_CLIP: vec4<f32> = vec4<f32>(2f, 2f, 2f, 1f);
+
+@group(0) @binding(1)
+var<storage> materials: array<Material>;
+@group(0) @binding(0)
+var<uniform> frame: Frame;
+@group(1) @binding(0)
+var map_layers: texture_2d_array<f32>;
+@group(1) @binding(1)
+var map_sampler: sampler;
+
+fn transform_point(t: Transform, p: vec3<f32>) -> vec3<f32> {
+    let q = vec4<f32>(p, 1f);
+    return vec3<f32>(dot(t.x, q), dot(t.y, q), dot(t.z, q));
+}
+
+fn to_clip(view_proj: mat4x4<f32>, relative_position: vec3<f32>) -> vec4<f32> {
+    return (view_proj * vec4<f32>(relative_position, 1f));
+}
+
+fn material_of(id: u32) -> Material {
+    let _e3 = materials[id];
+    return _e3;
+}
+
+fn map_ready(layer: f32) -> bool {
+    return (layer >= 0f);
+}
+
+fn map_layer(layer_1: f32) -> u32 {
+    return u32(max(layer_1, 0f));
+}
+
+fn find_instance(i_1: InstanceIn) -> Instance {
+    return Instance(i_1.row_x, i_1.row_y, i_1.row_z, i_1.ids.x, true);
+}
+
+fn transform_of(found: Instance) -> Transform {
+    return Transform(found.row_x, found.row_y, found.row_z);
+}
+
+fn clip_position(found_1: Instance, position: vec3<f32>) -> vec4<f32> {
+    if !(found_1.drawn) {
+        return OUTSIDE_CLIP;
+    }
+    let _e6 = frame.view_proj;
+    let _e7 = transform_of(found_1);
+    let _e9 = transform_point(_e7, position);
+    let _e10 = to_clip(_e6, _e9);
+    return _e10;
+}
+
+fn linear_to_srgb(c: vec3<f32>) -> vec3<f32> {
+    let low = (c * 12.92f);
+    let high = ((1.055f * pow(c, vec3(0.41666666f))) - vec3(0.055f));
+    return select(high, low, (c <= vec3(0.0031308f)));
+}
+
+@vertex
+fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
+    var out: VertexOut;
+
+    let _e1 = find_instance(i);
+    let _e6 = clip_position(_e1, v.position);
+    out.clip = _e6;
+    out.uv0_ = v.uv0_;
+    out.material = _e1.material;
+    let _e11 = out;
+    return _e11;
+}
+
+@fragment
+fn fs(in: VertexOut) -> @location(0) vec4<f32> {
+    let _e2 = material_of(in.material);
+    let _e6 = map_layer(_e2.maps.x);
+    let texel = textureSample(map_layers, map_sampler, in.uv0_, _e6);
+    let _e14 = map_ready(_e2.maps.x);
+    let map = select(vec4(1f), texel, _e14);
+    let base = (_e2.color.xyz * map.xyz);
+    let _e20 = linear_to_srgb(base);
+    return vec4<f32>(_e20, 1f);
 }
 `,
 				pipelines: {

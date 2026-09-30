@@ -9,7 +9,12 @@ import {
 	MetricsReader,
 	Phase,
 	type RingRecords,
+	RingSums,
 	Role,
+	SUM_BUSY_MS,
+	SUM_INTERVAL_MS,
+	SUM_LONGEST_BUSY_MS,
+	SUM_RECORDS,
 	UNTIMED,
 } from './metrics';
 import { ratePerSecond } from './stats';
@@ -92,6 +97,29 @@ describe('frame records', () => {
 		expect(gpu.measuring).toBe(false);
 	});
 
+	it('reach the page after a hold, which steps every frame before the page reads any', () => {
+		const buffer = createMetricsBuffer(true, 0, 4);
+		const sketch = new FrameRecorder(buffer, Role.Sketch);
+		const render = new FrameRecorder(buffer, Role.Render);
+		for (let frame = 1; frame <= 6; frame++) record(sketch, frame, frame);
+		record(render, 6, 2);
+		const reader = new MetricsReader(buffer);
+		const records = reader.readWritten();
+		expect(records[Role.Sketch]?.frames).toEqual([3, 4, 5, 6]);
+		expect(records[Role.Render]?.frames).toEqual([6]);
+		expect(reader.lost).toBe(2);
+		expect(render.measuring).toBe(false);
+		const threads = threadRoles({
+			latency: 'pipelined',
+			renderThread: 'render-worker',
+			jobWorkers: 0,
+		});
+		const held = summarizeFrames(records, threads);
+		expect([held.frames, held.cpuMs.median, held.threads['render-worker']?.busyMs.median]).toEqual([
+			1, 6, 2,
+		]);
+	});
+
 	it('keep the time of the first frame only', () => {
 		const buffer = createMetricsBuffer(true, 0);
 		const render = new FrameRecorder(buffer, Role.Render);
@@ -102,6 +130,32 @@ describe('frame records', () => {
 		render.markFirstFrame();
 		expect(first).toBeGreaterThan(0);
 		expect(reader.firstFrameTime).toBe(first);
+	});
+
+	it('sum the records of a window without turning costly timing on', () => {
+		const buffer = createMetricsBuffer(true, 0, 4);
+		const completion = new FrameRecorder(buffer, Role.Completion);
+		record(completion, 1, 3);
+		const sums = new RingSums(buffer, Role.Completion);
+		for (let frame = 2; frame <= 3; frame++) {
+			completion.begin(frame);
+			completion.interval(frame * 10);
+			completion.commit(frame);
+		}
+		sums.add();
+		// The record written before the sums started stays out.
+		expect([...sums.sums]).toEqual([2, 5, 3, 50]);
+		expect(completion.measuring).toBe(false);
+		sums.clear();
+		sums.add();
+		expect(sums.sums[SUM_RECORDS]).toBe(0);
+		// Of the six records written before the next read, the ring still holds the last four.
+		for (let frame = 4; frame <= 9; frame++) record(completion, frame, 1);
+		sums.add();
+		expect(sums.sums[SUM_RECORDS]).toBe(4);
+		expect(sums.sums[SUM_BUSY_MS]).toBe(4);
+		expect(sums.sums[SUM_LONGEST_BUSY_MS]).toBe(1);
+		expect(sums.sums[SUM_INTERVAL_MS]).toBe(0);
 	});
 
 	it('refuse a ring the buffer does not have', () => {
@@ -164,8 +218,9 @@ describe('summarizeFrames', () => {
 			render.commit(2);
 			record(gpu, frame, 0.1 * frame);
 			// The GPU finishes each frame 4 ms after its submit, 32 ms apart: half the presented rate.
+			// Every completion record has an interval, since the first completion leaves none.
 			completion.begin(frame);
-			completion.interval(frame === 1 ? 0 : 32);
+			completion.interval(32);
 			completion.commit(4);
 		}
 		reader.end();

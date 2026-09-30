@@ -136,7 +136,7 @@ What the browser and device can do, as plain JSON. The engine picks its build an
 function createEngine(options: EngineOptions): Promise<Engine>
 ```
 
-Starts the engine on the page. It tests the device, picks the build and the GPU path, starts the workers, and runs the sketch module. In hold mode it also steps the sketch to the held time, then draws that frame and reads it back. It publishes the frame, or the error that stopped it, as `window.__null3dHold` for test tools.
+Starts the engine on the page. It tests the device, picks the build and the GPU path, starts the workers, and runs the sketch module. In hold mode it also steps the sketch to the held time, then draws that frame and reads it back. It publishes the frame, or the error that stopped it, as `window.__null3dHold` for test tools. With the `?bench` switch, it publishes the running engine as `window.__null3dEngine`, where a benchmark tool calls `measure`.
 
 ### `DepthMode`
 
@@ -242,11 +242,14 @@ type ErrorCode =
 	| 'E1107'
 	| 'E1108'
 	| 'E1109'
+	| 'E1110'
 	| 'E1203'
 	| 'E1204'
 	| 'E1205'
 	| 'E1206'
 	| 'E1207'
+	| 'E1208'
+	| 'E1214'
 	| 'E1301'
 	| 'E1302'
 	| 'E1303'
@@ -260,6 +263,9 @@ type ErrorCode =
 	| 'E1408'
 	| 'E1409'
 	| 'E1410'
+	| 'E1411'
+	| 'E1412'
+	| 'E1413'
 	| 'E1501'
 	| 'E1502'
 	| 'E1503'
@@ -284,6 +290,7 @@ The frame that hold mode drew and read back, as `window.__null3dHold` holds it.
 | `width: number` | The frame's width in pixels. |
 | `height: number` | The frame's height in pixels. |
 | `pixels: Uint8Array` | The frame's pixels as RGBA8 rows, top row first. |
+| `stats: FrameSummary` | The held frame's figures, in the form that `engine.measure` returns: CPU time by thread and phase, draw calls, uploads and pipelines, for the held frame alone. The engine draws no frame before the held one, so the held frame creates every GPU object and uploads the whole scene. `rebuilds` and `visibleEntries` cover every step of the hold. GPU time is null, because the engine times the GPU only while `engine.measure` runs. |
 
 ### `HoldFailure`
 
