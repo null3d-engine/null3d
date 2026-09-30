@@ -35,14 +35,6 @@ import {
 } from '../../scenes/spec';
 import { followPath, setUpView, watchQuality } from './sketch-common';
 
-/** Linear fog, as three.js's `Fog`. */
-interface LinearFog {
-	type: 'linear';
-	color: string;
-	near: number;
-	far: number;
-}
-
 export default defineSketch((context) => {
 	const { scene, materials, geometry, textures, time } = context;
 	// Feature: shadows. The sun, the still objects that stand up and the vehicles cast shadows, and
@@ -51,9 +43,7 @@ export default defineSketch((context) => {
 	const moveCamera = followPath(setUpView(context, S4_VIEW_LIGHTS, S4_FOG.color), s4Camera);
 	const reportQuality = watchQuality(context);
 
-	// Feature: fog. The scene gets `setFog` with the engine's fog; until then S4 draws without it.
-	const foggy = scene as typeof scene & { setFog?(fog: LinearFog): void };
-	foggy.setFog?.({ type: 'linear', color: S4_FOG.color, near: S4_FOG.near, far: S4_FOG.far });
+	scene.setFog({ type: 'linear', color: S4_FOG.color, near: S4_FOG.near, far: S4_FOG.far });
 
 	const generators: Record<S4Generator, (options: object) => MeshGeometry> = {
 		box: (options) => geometry.box(options),

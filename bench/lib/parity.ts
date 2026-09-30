@@ -65,7 +65,6 @@ export const FEATURES_TO_COME: Readonly<Record<BenchScene, readonly string[]>> =
 		'point lights that light surfaces (clustered lighting)',
 		'texture maps on standard materials',
 		'shadows of the sun, in cascades on both GPU paths',
-		'fog',
 	],
 };
 

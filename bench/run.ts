@@ -83,6 +83,7 @@ import {
 	type SummaryRow,
 	type SweepPoint,
 	summarizeRuns,
+	summaryRow,
 	sweepReport,
 } from './lib/report';
 import { DEV_OPTION, pagesText, serveBenchPages } from './lib/serve';
@@ -276,7 +277,7 @@ async function runProtocol(
 						`${name} run ${run}: ${problem === undefined ? `${ms(result.cpuMs.median)} ms` : `failed: ${problem}`}`,
 					);
 				}
-				if (results.length > 0) rows.push({ scene, kind, jobs, summary: summarizeRuns(results) });
+				if (results.length > 0) rows.push(summaryRow({ scene, kind, jobs }, results));
 			}
 		}
 	}

@@ -1,7 +1,13 @@
 // The trace of each measured second of a benchmark run: the presented and completed frame rates,
 // the render scale and the quality steps. The phone scene records it, so a long run on a device
-// shows when the frame rate fell and how the engine's quality settings answered.
-import type { SecondRates } from '@null3d/engine';
+// shows when the frame rate fell and how the engine's quality settings answered. The file imports
+// nothing from the engine, so the tools that sum up traces run it without browser types.
+
+/** One second's frame rates from the engine's measurement, as `FrameMetrics.perSecond` holds them. */
+interface SecondRates {
+	presentedFps: number;
+	completedFps: number | null;
+}
 
 /** One second of a trace. */
 export interface TraceSecond {
