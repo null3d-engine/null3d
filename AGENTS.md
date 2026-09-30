@@ -56,7 +56,7 @@ This repository holds the null3D engine, its tools, its documentation and its ag
 | `bun run typecheck` | TypeScript check |
 | `bun run release` | Print the next version and its changelog. `--apply` writes them, as the Release workflow does, and `--notes <version>` prints one release's notes |
 
-A file that grows more than 2% after Brotli against main's build needs a reason: a `Size-Growth:` trailer, as "Commit gates" says. A file over its budget fails every build. The budgets are 600 KB after Brotli for each WebAssembly file, and 60 KB for the engine's JavaScript that a page downloads. [Benchmarks](.dev/benchmarks.md#download-size) says how the check builds main.
+A file that grows more than 2% after Brotli against main's build needs a reason: a `Size-Growth:` trailer, as "Commit gates" says. A file over its budget fails every build. The budgets are 600 KB after Brotli for each WebAssembly file, and 70 KB for the engine's JavaScript that a page downloads. Only the owner raises a budget, in writing. [Benchmarks](.dev/benchmarks.md#download-size) says how the check builds main.
 
 ## Design principles
 
