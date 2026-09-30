@@ -1056,27 +1056,29 @@ void main() {
     Material _e2 = material_of(in_.material);
     base = _e2.color.xyz;
     alpha = _e2.color.w;
-    vec3 to_view_3 = normalize(-(in_.relative));
-    vec3 _e13 = dFdx(in_.relative);
-    vec3 _e15 = dFdy(in_.relative);
-    vec3 face = normalize(cross(_e13, _e15));
+    vec4 _e11 = _group_0_binding_0_fs.camera_position;
+    float _e17 = _group_0_binding_0_fs.camera_position.w;
+    vec3 to_view_3 = normalize((_e11.xyz - (in_.relative * _e17)));
+    vec3 _e22 = dFdx(in_.relative);
+    vec3 _e24 = dFdy(in_.relative);
+    vec3 face = normalize(cross(_e22, _e24));
     vec3 face_normal = ((dot(face, to_view_3) >= 0.0) ? face : -(face));
     vec3 smooth_normal = (normalize(in_.normal) * (front ? 1.0 : -1.0));
     bool use_face = ((uint(_e2.strengths.z) & FLAT_SHADING) != 0u);
     vec3 normal_4 = (use_face ? face_normal : smooth_normal);
-    vec3 _e38 = dFdx(normal_4);
-    vec3 _e40 = dFdy(normal_4);
-    vec3 change = max(abs(_e38), abs(_e40));
+    vec3 _e47 = dFdx(normal_4);
+    vec3 _e49 = dFdy(normal_4);
+    vec3 change = max(abs(_e47), abs(_e49));
     float geometry_roughness_1 = max(max(change.x, change.y), change.z);
-    vec3 _e48 = base;
-    PbrMaterial _e53 = pbr_material(_e48, _e2.surface.x, _e2.surface.y, geometry_roughness_1);
+    vec3 _e57 = base;
+    PbrMaterial _e62 = pbr_material(_e57, _e2.surface.x, _e2.surface.y, geometry_roughness_1);
     float n_dot_v_3 = clamp(dot(normal_4, to_view_3), 0.0, 1.0);
-    vec2 _e57 = dfg_lut(n_dot_v_3, _e53.roughness);
+    vec2 _e66 = dfg_lut(n_dot_v_3, _e62.roughness);
     vec3 emitted = (_e2.emissive.xyz * _e2.strengths.w);
-    vec3 _e63 = light_surface(_e53, normal_4, to_view_3, _e57);
-    vec3 outgoing = (_e63 + emitted);
-    vec3 _e65 = linear_to_srgb(outgoing);
-    _fs2p_location0 = vec4(_e65, 1.0);
+    vec3 _e72 = light_surface(_e62, normal_4, to_view_3, _e66);
+    vec3 outgoing = (_e72 + emitted);
+    vec3 _e74 = linear_to_srgb(outgoing);
+    _fs2p_location0 = vec4(_e74, 1.0);
     return;
 }
 `,
@@ -1748,31 +1750,33 @@ void main() {
     Material _e2 = material_of(in_.material);
     base = _e2.color.xyz;
     alpha = _e2.color.w;
-    vec3 to_view_3 = normalize(-(in_.relative));
-    vec3 _e13 = dFdx(in_.relative);
-    vec3 _e15 = dFdy(in_.relative);
-    vec3 face = normalize(cross(_e13, _e15));
+    vec4 _e11 = _group_0_binding_0_fs.camera_position;
+    float _e17 = _group_0_binding_0_fs.camera_position.w;
+    vec3 to_view_3 = normalize((_e11.xyz - (in_.relative * _e17)));
+    vec3 _e22 = dFdx(in_.relative);
+    vec3 _e24 = dFdy(in_.relative);
+    vec3 face = normalize(cross(_e22, _e24));
     vec3 face_normal = ((dot(face, to_view_3) >= 0.0) ? face : -(face));
     vec3 smooth_normal = (normalize(in_.normal) * (front ? 1.0 : -1.0));
     bool use_face = ((uint(_e2.strengths.z) & FLAT_SHADING) != 0u);
     vec3 normal_4 = (use_face ? face_normal : smooth_normal);
-    vec3 _e38 = dFdx(normal_4);
-    vec3 _e40 = dFdy(normal_4);
-    vec3 change = max(abs(_e38), abs(_e40));
+    vec3 _e47 = dFdx(normal_4);
+    vec3 _e49 = dFdy(normal_4);
+    vec3 change = max(abs(_e47), abs(_e49));
     float geometry_roughness_1 = max(max(change.x, change.y), change.z);
-    vec3 _e48 = base;
-    PbrMaterial _e53 = pbr_material(_e48, _e2.surface.x, _e2.surface.y, geometry_roughness_1);
+    vec3 _e57 = base;
+    PbrMaterial _e62 = pbr_material(_e57, _e2.surface.x, _e2.surface.y, geometry_roughness_1);
     float n_dot_v_3 = clamp(dot(normal_4, to_view_3), 0.0, 1.0);
-    vec2 _e57 = dfg_lut(n_dot_v_3, _e53.roughness);
+    vec2 _e66 = dfg_lut(n_dot_v_3, _e62.roughness);
     vec3 emitted = (_e2.emissive.xyz * _e2.strengths.w);
-    vec3 _e63 = light_surface(_e53, normal_4, to_view_3, _e57);
-    vec3 outgoing = (_e63 + emitted);
-    float _e65 = alpha;
-    if ((_e65 < _e2.emissive.w)) {
+    vec3 _e72 = light_surface(_e62, normal_4, to_view_3, _e66);
+    vec3 outgoing = (_e72 + emitted);
+    float _e74 = alpha;
+    if ((_e74 < _e2.emissive.w)) {
         discard;
     }
-    vec3 _e69 = linear_to_srgb(outgoing);
-    _fs2p_location0 = vec4(_e69, 1.0);
+    vec3 _e78 = linear_to_srgb(outgoing);
+    _fs2p_location0 = vec4(_e78, 1.0);
     return;
 }
 `,
@@ -2447,27 +2451,29 @@ void main() {
     Material _e2 = material_of(in_.material);
     base = _e2.color.xyz;
     alpha = _e2.color.w;
-    vec3 to_view_3 = normalize(-(in_.relative));
-    vec3 _e13 = dFdx(in_.relative);
-    vec3 _e15 = dFdy(in_.relative);
-    vec3 face = normalize(cross(_e13, _e15));
+    vec4 _e11 = _group_0_binding_0_fs.camera_position;
+    float _e17 = _group_0_binding_0_fs.camera_position.w;
+    vec3 to_view_3 = normalize((_e11.xyz - (in_.relative * _e17)));
+    vec3 _e22 = dFdx(in_.relative);
+    vec3 _e24 = dFdy(in_.relative);
+    vec3 face = normalize(cross(_e22, _e24));
     vec3 face_normal = ((dot(face, to_view_3) >= 0.0) ? face : -(face));
     vec3 smooth_normal = (normalize(in_.normal) * (front ? 1.0 : -1.0));
     bool use_face = ((uint(_e2.strengths.z) & FLAT_SHADING) != 0u);
     vec3 normal_4 = (use_face ? face_normal : smooth_normal);
-    vec3 _e38 = dFdx(normal_4);
-    vec3 _e40 = dFdy(normal_4);
-    vec3 change = max(abs(_e38), abs(_e40));
+    vec3 _e47 = dFdx(normal_4);
+    vec3 _e49 = dFdy(normal_4);
+    vec3 change = max(abs(_e47), abs(_e49));
     float geometry_roughness_1 = max(max(change.x, change.y), change.z);
-    vec3 _e48 = base;
-    PbrMaterial _e53 = pbr_material(_e48, _e2.surface.x, _e2.surface.y, geometry_roughness_1);
+    vec3 _e57 = base;
+    PbrMaterial _e62 = pbr_material(_e57, _e2.surface.x, _e2.surface.y, geometry_roughness_1);
     float n_dot_v_3 = clamp(dot(normal_4, to_view_3), 0.0, 1.0);
-    vec2 _e57 = dfg_lut(n_dot_v_3, _e53.roughness);
+    vec2 _e66 = dfg_lut(n_dot_v_3, _e62.roughness);
     vec3 emitted = (_e2.emissive.xyz * _e2.strengths.w);
-    vec3 _e63 = light_surface(_e53, normal_4, to_view_3, _e57);
-    vec3 outgoing = (_e63 + emitted);
-    vec3 _e65 = linear_to_srgb(outgoing);
-    _fs2p_location0 = vec4(_e65, 1.0);
+    vec3 _e72 = light_surface(_e62, normal_4, to_view_3, _e66);
+    vec3 outgoing = (_e72 + emitted);
+    vec3 _e74 = linear_to_srgb(outgoing);
+    _fs2p_location0 = vec4(_e74, 1.0);
     return;
 }
 `,
@@ -3142,31 +3148,33 @@ void main() {
     Material _e2 = material_of(in_.material);
     base = _e2.color.xyz;
     alpha = _e2.color.w;
-    vec3 to_view_3 = normalize(-(in_.relative));
-    vec3 _e13 = dFdx(in_.relative);
-    vec3 _e15 = dFdy(in_.relative);
-    vec3 face = normalize(cross(_e13, _e15));
+    vec4 _e11 = _group_0_binding_0_fs.camera_position;
+    float _e17 = _group_0_binding_0_fs.camera_position.w;
+    vec3 to_view_3 = normalize((_e11.xyz - (in_.relative * _e17)));
+    vec3 _e22 = dFdx(in_.relative);
+    vec3 _e24 = dFdy(in_.relative);
+    vec3 face = normalize(cross(_e22, _e24));
     vec3 face_normal = ((dot(face, to_view_3) >= 0.0) ? face : -(face));
     vec3 smooth_normal = (normalize(in_.normal) * (front ? 1.0 : -1.0));
     bool use_face = ((uint(_e2.strengths.z) & FLAT_SHADING) != 0u);
     vec3 normal_4 = (use_face ? face_normal : smooth_normal);
-    vec3 _e38 = dFdx(normal_4);
-    vec3 _e40 = dFdy(normal_4);
-    vec3 change = max(abs(_e38), abs(_e40));
+    vec3 _e47 = dFdx(normal_4);
+    vec3 _e49 = dFdy(normal_4);
+    vec3 change = max(abs(_e47), abs(_e49));
     float geometry_roughness_1 = max(max(change.x, change.y), change.z);
-    vec3 _e48 = base;
-    PbrMaterial _e53 = pbr_material(_e48, _e2.surface.x, _e2.surface.y, geometry_roughness_1);
+    vec3 _e57 = base;
+    PbrMaterial _e62 = pbr_material(_e57, _e2.surface.x, _e2.surface.y, geometry_roughness_1);
     float n_dot_v_3 = clamp(dot(normal_4, to_view_3), 0.0, 1.0);
-    vec2 _e57 = dfg_lut(n_dot_v_3, _e53.roughness);
+    vec2 _e66 = dfg_lut(n_dot_v_3, _e62.roughness);
     vec3 emitted = (_e2.emissive.xyz * _e2.strengths.w);
-    vec3 _e63 = light_surface(_e53, normal_4, to_view_3, _e57);
-    vec3 outgoing = (_e63 + emitted);
-    float _e65 = alpha;
-    if ((_e65 < _e2.emissive.w)) {
+    vec3 _e72 = light_surface(_e62, normal_4, to_view_3, _e66);
+    vec3 outgoing = (_e72 + emitted);
+    float _e74 = alpha;
+    if ((_e74 < _e2.emissive.w)) {
         discard;
     }
-    vec3 _e69 = linear_to_srgb(outgoing);
-    _fs2p_location0 = vec4(_e69, 1.0);
+    vec3 _e78 = linear_to_srgb(outgoing);
+    _fs2p_location0 = vec4(_e78, 1.0);
     return;
 }
 `,
@@ -3854,27 +3862,29 @@ void main() {
     base = (_e9 * in_.vertex_color.xyz);
     float _e13 = alpha;
     alpha = (_e13 * in_.vertex_color.w);
-    vec3 to_view_3 = normalize(-(in_.relative));
-    vec3 _e21 = dFdx(in_.relative);
-    vec3 _e23 = dFdy(in_.relative);
-    vec3 face = normalize(cross(_e21, _e23));
+    vec4 _e19 = _group_0_binding_0_fs.camera_position;
+    float _e25 = _group_0_binding_0_fs.camera_position.w;
+    vec3 to_view_3 = normalize((_e19.xyz - (in_.relative * _e25)));
+    vec3 _e30 = dFdx(in_.relative);
+    vec3 _e32 = dFdy(in_.relative);
+    vec3 face = normalize(cross(_e30, _e32));
     vec3 face_normal = ((dot(face, to_view_3) >= 0.0) ? face : -(face));
     vec3 smooth_normal = (normalize(in_.normal) * (front ? 1.0 : -1.0));
     bool use_face = ((uint(_e2.strengths.z) & FLAT_SHADING) != 0u);
     vec3 normal_4 = (use_face ? face_normal : smooth_normal);
-    vec3 _e46 = dFdx(normal_4);
-    vec3 _e48 = dFdy(normal_4);
-    vec3 change = max(abs(_e46), abs(_e48));
+    vec3 _e55 = dFdx(normal_4);
+    vec3 _e57 = dFdy(normal_4);
+    vec3 change = max(abs(_e55), abs(_e57));
     float geometry_roughness_1 = max(max(change.x, change.y), change.z);
-    vec3 _e56 = base;
-    PbrMaterial _e61 = pbr_material(_e56, _e2.surface.x, _e2.surface.y, geometry_roughness_1);
+    vec3 _e65 = base;
+    PbrMaterial _e70 = pbr_material(_e65, _e2.surface.x, _e2.surface.y, geometry_roughness_1);
     float n_dot_v_3 = clamp(dot(normal_4, to_view_3), 0.0, 1.0);
-    vec2 _e65 = dfg_lut(n_dot_v_3, _e61.roughness);
+    vec2 _e74 = dfg_lut(n_dot_v_3, _e70.roughness);
     vec3 emitted = (_e2.emissive.xyz * _e2.strengths.w);
-    vec3 _e71 = light_surface(_e61, normal_4, to_view_3, _e65);
-    vec3 outgoing = (_e71 + emitted);
-    vec3 _e73 = linear_to_srgb(outgoing);
-    _fs2p_location0 = vec4(_e73, 1.0);
+    vec3 _e80 = light_surface(_e70, normal_4, to_view_3, _e74);
+    vec3 outgoing = (_e80 + emitted);
+    vec3 _e82 = linear_to_srgb(outgoing);
+    _fs2p_location0 = vec4(_e82, 1.0);
     return;
 }
 `,
@@ -4562,31 +4572,33 @@ void main() {
     base = (_e9 * in_.vertex_color.xyz);
     float _e13 = alpha;
     alpha = (_e13 * in_.vertex_color.w);
-    vec3 to_view_3 = normalize(-(in_.relative));
-    vec3 _e21 = dFdx(in_.relative);
-    vec3 _e23 = dFdy(in_.relative);
-    vec3 face = normalize(cross(_e21, _e23));
+    vec4 _e19 = _group_0_binding_0_fs.camera_position;
+    float _e25 = _group_0_binding_0_fs.camera_position.w;
+    vec3 to_view_3 = normalize((_e19.xyz - (in_.relative * _e25)));
+    vec3 _e30 = dFdx(in_.relative);
+    vec3 _e32 = dFdy(in_.relative);
+    vec3 face = normalize(cross(_e30, _e32));
     vec3 face_normal = ((dot(face, to_view_3) >= 0.0) ? face : -(face));
     vec3 smooth_normal = (normalize(in_.normal) * (front ? 1.0 : -1.0));
     bool use_face = ((uint(_e2.strengths.z) & FLAT_SHADING) != 0u);
     vec3 normal_4 = (use_face ? face_normal : smooth_normal);
-    vec3 _e46 = dFdx(normal_4);
-    vec3 _e48 = dFdy(normal_4);
-    vec3 change = max(abs(_e46), abs(_e48));
+    vec3 _e55 = dFdx(normal_4);
+    vec3 _e57 = dFdy(normal_4);
+    vec3 change = max(abs(_e55), abs(_e57));
     float geometry_roughness_1 = max(max(change.x, change.y), change.z);
-    vec3 _e56 = base;
-    PbrMaterial _e61 = pbr_material(_e56, _e2.surface.x, _e2.surface.y, geometry_roughness_1);
+    vec3 _e65 = base;
+    PbrMaterial _e70 = pbr_material(_e65, _e2.surface.x, _e2.surface.y, geometry_roughness_1);
     float n_dot_v_3 = clamp(dot(normal_4, to_view_3), 0.0, 1.0);
-    vec2 _e65 = dfg_lut(n_dot_v_3, _e61.roughness);
+    vec2 _e74 = dfg_lut(n_dot_v_3, _e70.roughness);
     vec3 emitted = (_e2.emissive.xyz * _e2.strengths.w);
-    vec3 _e71 = light_surface(_e61, normal_4, to_view_3, _e65);
-    vec3 outgoing = (_e71 + emitted);
-    float _e73 = alpha;
-    if ((_e73 < _e2.emissive.w)) {
+    vec3 _e80 = light_surface(_e70, normal_4, to_view_3, _e74);
+    vec3 outgoing = (_e80 + emitted);
+    float _e82 = alpha;
+    if ((_e82 < _e2.emissive.w)) {
         discard;
     }
-    vec3 _e77 = linear_to_srgb(outgoing);
-    _fs2p_location0 = vec4(_e77, 1.0);
+    vec3 _e86 = linear_to_srgb(outgoing);
+    _fs2p_location0 = vec4(_e86, 1.0);
     return;
 }
 `,
@@ -5271,27 +5283,29 @@ void main() {
     base = (_e9 * in_.vertex_color.xyz);
     float _e13 = alpha;
     alpha = (_e13 * in_.vertex_color.w);
-    vec3 to_view_3 = normalize(-(in_.relative));
-    vec3 _e21 = dFdx(in_.relative);
-    vec3 _e23 = dFdy(in_.relative);
-    vec3 face = normalize(cross(_e21, _e23));
+    vec4 _e19 = _group_0_binding_0_fs.camera_position;
+    float _e25 = _group_0_binding_0_fs.camera_position.w;
+    vec3 to_view_3 = normalize((_e19.xyz - (in_.relative * _e25)));
+    vec3 _e30 = dFdx(in_.relative);
+    vec3 _e32 = dFdy(in_.relative);
+    vec3 face = normalize(cross(_e30, _e32));
     vec3 face_normal = ((dot(face, to_view_3) >= 0.0) ? face : -(face));
     vec3 smooth_normal = (normalize(in_.normal) * (front ? 1.0 : -1.0));
     bool use_face = ((uint(_e2.strengths.z) & FLAT_SHADING) != 0u);
     vec3 normal_4 = (use_face ? face_normal : smooth_normal);
-    vec3 _e46 = dFdx(normal_4);
-    vec3 _e48 = dFdy(normal_4);
-    vec3 change = max(abs(_e46), abs(_e48));
+    vec3 _e55 = dFdx(normal_4);
+    vec3 _e57 = dFdy(normal_4);
+    vec3 change = max(abs(_e55), abs(_e57));
     float geometry_roughness_1 = max(max(change.x, change.y), change.z);
-    vec3 _e56 = base;
-    PbrMaterial _e61 = pbr_material(_e56, _e2.surface.x, _e2.surface.y, geometry_roughness_1);
+    vec3 _e65 = base;
+    PbrMaterial _e70 = pbr_material(_e65, _e2.surface.x, _e2.surface.y, geometry_roughness_1);
     float n_dot_v_3 = clamp(dot(normal_4, to_view_3), 0.0, 1.0);
-    vec2 _e65 = dfg_lut(n_dot_v_3, _e61.roughness);
+    vec2 _e74 = dfg_lut(n_dot_v_3, _e70.roughness);
     vec3 emitted = (_e2.emissive.xyz * _e2.strengths.w);
-    vec3 _e71 = light_surface(_e61, normal_4, to_view_3, _e65);
-    vec3 outgoing = (_e71 + emitted);
-    vec3 _e73 = linear_to_srgb(outgoing);
-    _fs2p_location0 = vec4(_e73, 1.0);
+    vec3 _e80 = light_surface(_e70, normal_4, to_view_3, _e74);
+    vec3 outgoing = (_e80 + emitted);
+    vec3 _e82 = linear_to_srgb(outgoing);
+    _fs2p_location0 = vec4(_e82, 1.0);
     return;
 }
 `,
@@ -5976,31 +5990,33 @@ void main() {
     base = (_e9 * in_.vertex_color.xyz);
     float _e13 = alpha;
     alpha = (_e13 * in_.vertex_color.w);
-    vec3 to_view_3 = normalize(-(in_.relative));
-    vec3 _e21 = dFdx(in_.relative);
-    vec3 _e23 = dFdy(in_.relative);
-    vec3 face = normalize(cross(_e21, _e23));
+    vec4 _e19 = _group_0_binding_0_fs.camera_position;
+    float _e25 = _group_0_binding_0_fs.camera_position.w;
+    vec3 to_view_3 = normalize((_e19.xyz - (in_.relative * _e25)));
+    vec3 _e30 = dFdx(in_.relative);
+    vec3 _e32 = dFdy(in_.relative);
+    vec3 face = normalize(cross(_e30, _e32));
     vec3 face_normal = ((dot(face, to_view_3) >= 0.0) ? face : -(face));
     vec3 smooth_normal = (normalize(in_.normal) * (front ? 1.0 : -1.0));
     bool use_face = ((uint(_e2.strengths.z) & FLAT_SHADING) != 0u);
     vec3 normal_4 = (use_face ? face_normal : smooth_normal);
-    vec3 _e46 = dFdx(normal_4);
-    vec3 _e48 = dFdy(normal_4);
-    vec3 change = max(abs(_e46), abs(_e48));
+    vec3 _e55 = dFdx(normal_4);
+    vec3 _e57 = dFdy(normal_4);
+    vec3 change = max(abs(_e55), abs(_e57));
     float geometry_roughness_1 = max(max(change.x, change.y), change.z);
-    vec3 _e56 = base;
-    PbrMaterial _e61 = pbr_material(_e56, _e2.surface.x, _e2.surface.y, geometry_roughness_1);
+    vec3 _e65 = base;
+    PbrMaterial _e70 = pbr_material(_e65, _e2.surface.x, _e2.surface.y, geometry_roughness_1);
     float n_dot_v_3 = clamp(dot(normal_4, to_view_3), 0.0, 1.0);
-    vec2 _e65 = dfg_lut(n_dot_v_3, _e61.roughness);
+    vec2 _e74 = dfg_lut(n_dot_v_3, _e70.roughness);
     vec3 emitted = (_e2.emissive.xyz * _e2.strengths.w);
-    vec3 _e71 = light_surface(_e61, normal_4, to_view_3, _e65);
-    vec3 outgoing = (_e71 + emitted);
-    float _e73 = alpha;
-    if ((_e73 < _e2.emissive.w)) {
+    vec3 _e80 = light_surface(_e70, normal_4, to_view_3, _e74);
+    vec3 outgoing = (_e80 + emitted);
+    float _e82 = alpha;
+    if ((_e82 < _e2.emissive.w)) {
         discard;
     }
-    vec3 _e77 = linear_to_srgb(outgoing);
-    _fs2p_location0 = vec4(_e77, 1.0);
+    vec3 _e86 = linear_to_srgb(outgoing);
+    _fs2p_location0 = vec4(_e86, 1.0);
     return;
 }
 `,
@@ -6308,27 +6324,29 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f3
     let _e2 = material_of(in.material);
     base = _e2.color.xyz;
     alpha = _e2.color.w;
-    let to_view_3 = normalize(-(in.relative));
-    let _e13 = dpdx(in.relative);
-    let _e15 = dpdy(in.relative);
-    let face = normalize(cross(_e13, _e15));
+    let _e11 = frame.camera_position;
+    let _e17 = frame.camera_position.w;
+    let to_view_3 = normalize((_e11.xyz - (in.relative * _e17)));
+    let _e22 = dpdx(in.relative);
+    let _e24 = dpdy(in.relative);
+    let face = normalize(cross(_e22, _e24));
     let face_normal = select(-(face), face, (dot(face, to_view_3) >= 0f));
     let smooth_normal = (normalize(in.normal) * select(-1f, 1f, front));
     let use_face = ((u32(_e2.strengths.z) & FLAT_SHADING) != 0u);
     let normal_4 = select(smooth_normal, face_normal, use_face);
-    let _e38 = dpdx(normal_4);
-    let _e40 = dpdy(normal_4);
-    let change = max(abs(_e38), abs(_e40));
+    let _e47 = dpdx(normal_4);
+    let _e49 = dpdy(normal_4);
+    let change = max(abs(_e47), abs(_e49));
     let geometry_roughness_1 = max(max(change.x, change.y), change.z);
-    let _e48 = base;
-    let _e53 = pbr_material(_e48, _e2.surface.x, _e2.surface.y, geometry_roughness_1);
+    let _e57 = base;
+    let _e62 = pbr_material(_e57, _e2.surface.x, _e2.surface.y, geometry_roughness_1);
     let n_dot_v_3 = saturate(dot(normal_4, to_view_3));
-    let _e57 = dfg_lut(n_dot_v_3, _e53.roughness);
+    let _e66 = dfg_lut(n_dot_v_3, _e62.roughness);
     let emitted = (_e2.emissive.xyz * _e2.strengths.w);
-    let _e63 = light_surface(_e53, normal_4, to_view_3, _e57);
-    let outgoing = (_e63 + emitted);
-    let _e65 = linear_to_srgb(outgoing);
-    return vec4<f32>(_e65, 1f);
+    let _e72 = light_surface(_e62, normal_4, to_view_3, _e66);
+    let outgoing = (_e72 + emitted);
+    let _e74 = linear_to_srgb(outgoing);
+    return vec4<f32>(_e74, 1f);
 }
 `,
 			pipelines: {
@@ -6619,31 +6637,33 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f3
     let _e2 = material_of(in.material);
     base = _e2.color.xyz;
     alpha = _e2.color.w;
-    let to_view_3 = normalize(-(in.relative));
-    let _e13 = dpdx(in.relative);
-    let _e15 = dpdy(in.relative);
-    let face = normalize(cross(_e13, _e15));
+    let _e11 = frame.camera_position;
+    let _e17 = frame.camera_position.w;
+    let to_view_3 = normalize((_e11.xyz - (in.relative * _e17)));
+    let _e22 = dpdx(in.relative);
+    let _e24 = dpdy(in.relative);
+    let face = normalize(cross(_e22, _e24));
     let face_normal = select(-(face), face, (dot(face, to_view_3) >= 0f));
     let smooth_normal = (normalize(in.normal) * select(-1f, 1f, front));
     let use_face = ((u32(_e2.strengths.z) & FLAT_SHADING) != 0u);
     let normal_4 = select(smooth_normal, face_normal, use_face);
-    let _e38 = dpdx(normal_4);
-    let _e40 = dpdy(normal_4);
-    let change = max(abs(_e38), abs(_e40));
+    let _e47 = dpdx(normal_4);
+    let _e49 = dpdy(normal_4);
+    let change = max(abs(_e47), abs(_e49));
     let geometry_roughness_1 = max(max(change.x, change.y), change.z);
-    let _e48 = base;
-    let _e53 = pbr_material(_e48, _e2.surface.x, _e2.surface.y, geometry_roughness_1);
+    let _e57 = base;
+    let _e62 = pbr_material(_e57, _e2.surface.x, _e2.surface.y, geometry_roughness_1);
     let n_dot_v_3 = saturate(dot(normal_4, to_view_3));
-    let _e57 = dfg_lut(n_dot_v_3, _e53.roughness);
+    let _e66 = dfg_lut(n_dot_v_3, _e62.roughness);
     let emitted = (_e2.emissive.xyz * _e2.strengths.w);
-    let _e63 = light_surface(_e53, normal_4, to_view_3, _e57);
-    let outgoing = (_e63 + emitted);
-    let _e65 = alpha;
-    if (_e65 < _e2.emissive.w) {
+    let _e72 = light_surface(_e62, normal_4, to_view_3, _e66);
+    let outgoing = (_e72 + emitted);
+    let _e74 = alpha;
+    if (_e74 < _e2.emissive.w) {
         discard;
     }
-    let _e69 = linear_to_srgb(outgoing);
-    return vec4<f32>(_e69, 1f);
+    let _e78 = linear_to_srgb(outgoing);
+    return vec4<f32>(_e78, 1f);
 }
 `,
 			pipelines: {
@@ -6941,27 +6961,29 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f3
     base = (_e9 * in.vertex_color.xyz);
     let _e13 = alpha;
     alpha = (_e13 * in.vertex_color.w);
-    let to_view_3 = normalize(-(in.relative));
-    let _e21 = dpdx(in.relative);
-    let _e23 = dpdy(in.relative);
-    let face = normalize(cross(_e21, _e23));
+    let _e19 = frame.camera_position;
+    let _e25 = frame.camera_position.w;
+    let to_view_3 = normalize((_e19.xyz - (in.relative * _e25)));
+    let _e30 = dpdx(in.relative);
+    let _e32 = dpdy(in.relative);
+    let face = normalize(cross(_e30, _e32));
     let face_normal = select(-(face), face, (dot(face, to_view_3) >= 0f));
     let smooth_normal = (normalize(in.normal) * select(-1f, 1f, front));
     let use_face = ((u32(_e2.strengths.z) & FLAT_SHADING) != 0u);
     let normal_4 = select(smooth_normal, face_normal, use_face);
-    let _e46 = dpdx(normal_4);
-    let _e48 = dpdy(normal_4);
-    let change = max(abs(_e46), abs(_e48));
+    let _e55 = dpdx(normal_4);
+    let _e57 = dpdy(normal_4);
+    let change = max(abs(_e55), abs(_e57));
     let geometry_roughness_1 = max(max(change.x, change.y), change.z);
-    let _e56 = base;
-    let _e61 = pbr_material(_e56, _e2.surface.x, _e2.surface.y, geometry_roughness_1);
+    let _e65 = base;
+    let _e70 = pbr_material(_e65, _e2.surface.x, _e2.surface.y, geometry_roughness_1);
     let n_dot_v_3 = saturate(dot(normal_4, to_view_3));
-    let _e65 = dfg_lut(n_dot_v_3, _e61.roughness);
+    let _e74 = dfg_lut(n_dot_v_3, _e70.roughness);
     let emitted = (_e2.emissive.xyz * _e2.strengths.w);
-    let _e71 = light_surface(_e61, normal_4, to_view_3, _e65);
-    let outgoing = (_e71 + emitted);
-    let _e73 = linear_to_srgb(outgoing);
-    return vec4<f32>(_e73, 1f);
+    let _e80 = light_surface(_e70, normal_4, to_view_3, _e74);
+    let outgoing = (_e80 + emitted);
+    let _e82 = linear_to_srgb(outgoing);
+    return vec4<f32>(_e82, 1f);
 }
 `,
 			pipelines: {
@@ -7259,31 +7281,33 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f3
     base = (_e9 * in.vertex_color.xyz);
     let _e13 = alpha;
     alpha = (_e13 * in.vertex_color.w);
-    let to_view_3 = normalize(-(in.relative));
-    let _e21 = dpdx(in.relative);
-    let _e23 = dpdy(in.relative);
-    let face = normalize(cross(_e21, _e23));
+    let _e19 = frame.camera_position;
+    let _e25 = frame.camera_position.w;
+    let to_view_3 = normalize((_e19.xyz - (in.relative * _e25)));
+    let _e30 = dpdx(in.relative);
+    let _e32 = dpdy(in.relative);
+    let face = normalize(cross(_e30, _e32));
     let face_normal = select(-(face), face, (dot(face, to_view_3) >= 0f));
     let smooth_normal = (normalize(in.normal) * select(-1f, 1f, front));
     let use_face = ((u32(_e2.strengths.z) & FLAT_SHADING) != 0u);
     let normal_4 = select(smooth_normal, face_normal, use_face);
-    let _e46 = dpdx(normal_4);
-    let _e48 = dpdy(normal_4);
-    let change = max(abs(_e46), abs(_e48));
+    let _e55 = dpdx(normal_4);
+    let _e57 = dpdy(normal_4);
+    let change = max(abs(_e55), abs(_e57));
     let geometry_roughness_1 = max(max(change.x, change.y), change.z);
-    let _e56 = base;
-    let _e61 = pbr_material(_e56, _e2.surface.x, _e2.surface.y, geometry_roughness_1);
+    let _e65 = base;
+    let _e70 = pbr_material(_e65, _e2.surface.x, _e2.surface.y, geometry_roughness_1);
     let n_dot_v_3 = saturate(dot(normal_4, to_view_3));
-    let _e65 = dfg_lut(n_dot_v_3, _e61.roughness);
+    let _e74 = dfg_lut(n_dot_v_3, _e70.roughness);
     let emitted = (_e2.emissive.xyz * _e2.strengths.w);
-    let _e71 = light_surface(_e61, normal_4, to_view_3, _e65);
-    let outgoing = (_e71 + emitted);
-    let _e73 = alpha;
-    if (_e73 < _e2.emissive.w) {
+    let _e80 = light_surface(_e70, normal_4, to_view_3, _e74);
+    let outgoing = (_e80 + emitted);
+    let _e82 = alpha;
+    if (_e82 < _e2.emissive.w) {
         discard;
     }
-    let _e77 = linear_to_srgb(outgoing);
-    return vec4<f32>(_e77, 1f);
+    let _e86 = linear_to_srgb(outgoing);
+    return vec4<f32>(_e86, 1f);
 }
 `,
 			pipelines: {

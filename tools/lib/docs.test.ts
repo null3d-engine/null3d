@@ -12,6 +12,7 @@ import {
 	pageList,
 	placeholderPage,
 	referenceProblems,
+	tableMarkers,
 } from './docs';
 import { fixture } from './fixture';
 import { parseFrontMatter, renderFrontMatter, yamlString } from './frontmatter';
@@ -190,6 +191,57 @@ describe('generateDocs', () => {
 			'docs/api/objects.md': writtenObjects('No markers.'),
 		});
 		expect(() => generateDocs(root, { symbols: [THING], problems: [] })).toThrow('API reference');
+	});
+});
+
+describe('the quality presets page', () => {
+	const presetsPage = (body: string) =>
+		`${renderFrontMatter([
+			['id', 'concepts/quality-presets'],
+			['title', 'Quality presets'],
+			['status', 'experimental'],
+			['since', '0.1'],
+			['summary', 'Written.'],
+		])}\n# Quality presets\n\n${body}\n`;
+	const markers = (name: string, inner = '') => tableMarkers(name).join(`\n${inner}\n`);
+
+	it("fills each of its tables from the engine's constants", () => {
+		const root = fixture({
+			'docs/index.md': INDEX,
+			'docs/data/threejs-mapping.json': MAPPING,
+			'docs/concepts/quality-presets.md': presetsPage(
+				[
+					markers('preset-devices'),
+					markers('preset-ceilings'),
+					markers('preset-settings', 'STALE TABLE'),
+				].join('\n\nText between the tables.\n\n'),
+			),
+		});
+		const page = generateDocs(root, NO_API).get('docs/concepts/quality-presets.md') ?? '';
+		expect(page).toContain('| Phone | coarse | under 600 CSS pixels | Low |');
+		expect(page).toContain('| Desktop or laptop | fine | any | High |');
+		expect(page).toContain('A memory reading under 4 GB lowers the starting preset by one.');
+		expect(page).toContain("| WebGPU's compatibility mode | Medium |");
+		expect(page).toContain(
+			'| Pixel ratio cap (`maxPixelRatio`) | 1.5 | 2 | 2 | none | during play | built |',
+		);
+		expect(page).toContain(
+			'| Anti-aliasing (`antialias`) | FXAA | MSAA 4x | MSAA 4x | MSAA 4x | at the start | planned |',
+		);
+		expect(page).toContain(
+			'| Far cascade updates (`farCascadeInterval`) | every 4th frame | every 3rd frame | every 2nd frame | every 2nd frame |',
+		);
+		expect(page).not.toContain('STALE TABLE');
+		expect(page).toContain('Text between the tables.');
+	});
+
+	it('fails when the page lacks the markers of one of its tables', () => {
+		const root = fixture({
+			'docs/index.md': INDEX,
+			'docs/data/threejs-mapping.json': MAPPING,
+			'docs/concepts/quality-presets.md': presetsPage(markers('preset-devices')),
+		});
+		expect(() => generateDocs(root, NO_API)).toThrow('preset-ceilings');
 	});
 });
 

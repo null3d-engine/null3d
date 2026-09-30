@@ -78,7 +78,9 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
     base *= in.vertex_color.rgb;
     alpha *= in.vertex_color.a;
 #endif
-    let to_view = normalize(-in.relative);
+    // Toward the camera: from the point for a perspective camera, and one direction for an
+    // orthographic camera, whose view rays are parallel.
+    let to_view = normalize(frame.camera_position.xyz - in.relative * frame.camera_position.w);
     // A face's normal comes from how the position changes between pixels. The two GPU paths count
     // pixel rows in opposite directions, so the normal is turned to face the camera, as three.js's
     // flat normals face it.

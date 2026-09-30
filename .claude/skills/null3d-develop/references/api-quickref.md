@@ -33,8 +33,8 @@ import { createEngine } from '@null3d/engine';
 const engine = await createEngine({
   canvas,                                        // HTMLCanvasElement, sized by CSS
   sketch: new URL('./sketch.ts', import.meta.url),   // the sketch module
-  preset: 'auto',        // 'auto' | 'low' | 'medium' | 'high' | 'ultra'
-  maxPixelRatio: 2,      // cap for devicePixelRatio; presets cap it too
+  preset: 'auto',        // 'auto' | 'low' | 'medium' | 'high' | 'ultra'; WebGL2 runs at most 'medium'
+  maxPixelRatio: 2,      // cap for devicePixelRatio in place of the preset's cap
   gpu: 'auto',           // 'auto' | 'webgpu' | 'webgl2' (testing only)
   powerPreference: 'high-performance',   // the default; 'low-power' saves battery on devices with two GPUs
   latency: 'pipelined',  // or 'low'; 'pipelined' is the default
@@ -116,7 +116,7 @@ export default defineSketch(async (ctx) => {
 
 ## 4. Objects and transforms (`api/objects`)
 
-Every node (group, mesh, camera, instantiated model) has these calls. Lights become nodes with the same calls later in 0.1; until then they have only the calls in section 7.
+Every node (group, mesh, camera, light, instantiated model) has these calls.
 
 ```ts
 obj.setPosition(x, y, z);            obj.getPosition(out);         // out: number[3] or Float32Array
@@ -124,7 +124,7 @@ obj.setRotation(qx, qy, qz, qw);     obj.getRotation(out);         // quaternion
 obj.setRotationEuler(x, y, z, 'XYZ');                               // radians, three.js order names
 obj.rotateX(a); obj.rotateY(a); obj.rotateZ(a);                     // about the object's own axes
 obj.setScale(x, y, z);               obj.translate(x, y, z);       // along the object's own axes, scale ignored
-obj.lookAt(x, y, z);                                                // cameras look down -Z, and so will lights
+obj.lookAt(x, y, z);                                                // cameras and lights look down -Z
 obj.getWorldPosition(out); obj.getWorldQuaternion(out); obj.getWorldMatrix(out);  // last frame; matrix column by column
 obj.setParent(parent);               obj.setParent(parent, { keepWorld: true }); obj.setParent(null);
 obj.setVisible(false);               obj.setDynamic(true);
@@ -193,17 +193,23 @@ An orthographic camera made with `height` follows the canvas's aspect ratio; one
 
 ```ts
 scene.createDirectionalLight({ direction, color, intensity, castShadows,
-  shadow: { cascades, mapSize, bias, normalBias } });
+  shadow: { cascades, mapSize, bias, normalBias } });                       // shadow: later in 0.1
 scene.createPointLight({ position, color, intensity, range, decay, castShadows });  // range is required
 scene.createSpotLight({ position, direction, target, angle, penumbra, range, decay, intensity, castShadows });
 scene.createHemisphereLight({ skyColor, groundColor, intensity });
 scene.createAmbientLight({ color, intensity });
 
-light.setIntensity(v); light.setColor(c); light.setRange(r); light.setDirection(x, y, z);
-light.setCastShadows(true);
+light.setIntensity(v); light.setColor(c);   // every light; only setColor allocates
+light.setDirection(x, y, z);                 // directional and spot lights
+light.setRange(r); light.setDecay(d);        // point and spot lights
+light.setAngle(a); light.setPenumbra(p);     // spot lights
+light.setGroundColor(c);                     // hemisphere lights; setColor sets the sky
+light.setCastShadows(true);                  // directional, point and spot lights
 ```
 
-Units match three.js r155 and later: directional intensity in lux-like units, point and spot intensity in candela. Shadow cascades fit the view by themselves.
+Lights are nodes: they take the node options (`name`, `position`, `parent`, `dynamic`, `layers` and the rest) and have the calls in section 4. Directional and spot lights shine along their -Z axis, so `lookAt` aims them; a hemisphere light's sky is its +Y axis. A light lights a camera's view when their layer masks share a bit. Units match three.js r155 and later: directional intensity in lux-like units, point and spot intensity in candela. Shadow cascades fit the view by themselves.
+
+Later in 0.1: point, spot and hemisphere lights light surfaces (clustered lighting), and shadows draw. Until then, surfaces show the first directional light created and the ambient lights, and `castShadows` is stored.
 
 ## 8. Geometry (`api/geometry`)
 
@@ -341,16 +347,19 @@ input.actions.define({ jump: ['Space', 'GamepadA'], fire: ['Mouse0', 'GamepadRT'
 input.isDown('jump');   // actions work in every input call; an unknown name throws E1205
 input.touches;          // fingers on the canvas, oldest first: { id, x, y, dx, dy }; changes in place
 
-import { createOrbitControls } from '@null3d/controls';
-const controls = createOrbitControls(ctx, camera, {
+import { createMapControls, createOrbitControls } from '@null3d/controls';
+const controls = createOrbitControls(ctx, camera, {   // three.js's OrbitControls names and defaults
   target: [0, 1, 0], enableDamping: true, dampingFactor: 0.08,
   minDistance: 2, maxDistance: 30, maxPolarAngle: Math.PI * 0.49, enablePan: true,
 });
-// in onUpdate: controls.update(dt)
-// also createMapControls; createFlyControls and createFirstPersonControls (0.2)
+controls.update(dt);                    // every frame in onUpdate; true when the camera moved
+vec3.set(controls.target, 0, 2, 0);     // change the target in place; set any property at any time
+controls.rotateLeft(a); controls.pan(dx, dy); controls.dollyIn(0.9);   // from code: keys, a gamepad
+createMapControls(ctx, camera);         // pans over the ground; fly and first-person controls (0.2)
+// either camera kind: an orthographic camera zooms by its view height, within minZoom and maxZoom
 ```
 
-Input changes once per frame, before `onUpdate`. Give a canvas that takes touch gestures `touch-action: none` in its CSS, or the browser scrolls the page and cancels the touches.
+Input changes once per frame, before `onUpdate`. Give a canvas that takes touch gestures `touch-action: none` in its CSS, or the browser scrolls the page and cancels the touches. When the wheel or a pinch zooms the camera, stop the page from scrolling and zooming with `canvas.addEventListener('wheel', (e) => e.preventDefault(), { passive: false })` on the page.
 
 ## 15. Post-processing (`api/post`)
 
@@ -392,13 +401,17 @@ Passes are declarations: the engine checks them, orders them, and shares memory 
 ## 17. Quality (`api/quality`)
 
 ```ts
-quality.preset;                         // 'low' | 'medium' | 'high' | 'ultra'
-quality.set({ shadows: { cascades: 2 }, ao: false, maxPixelRatio: 1.5, antialias: 'msaa' });  // antialias: 'msaa' | 'fxaa' | 'none'
-quality.onChange((q) => { particles.setActiveCount(q.preset === 'low' ? 500 : 2000); });
-quality.setBudget({ name: 'ai', ms: 2, onScale: (scale) => { aiRate = scale; } });
+quality.preset;                         // 'low' | 'medium' | 'high' | 'ultra': the preset the engine runs
+quality.settings.maxPixelRatio;         // the settings in use
+quality.set({ maxPixelRatio: 1.5 });    // from the next frame; E1213 for another setting or value
+quality.set({ antialias: 'fxaa', shadowCascades: 2 });  // planned: the preset table gives each setting's status
+const PARTICLES = { low: 500, medium: 2000, high: 5000, ultra: 10000 };  // your values per preset, in one table
+quality.onChange(() => { particles.setActiveCount(PARTICLES[quality.preset]); });
+quality.setBudget({ name: 'ai', ms: 2, onScale: (scale) => { aiRate = scale; } });  // (0.2)
+engine.mode.preset;                     // on the page: the preset, crashedStarts and memoryMaximumMiB
 ```
 
-The frame-budget governor lowers settings in a fixed order when frames run long, and raises them again after a stable period.
+The page's `?preset=low` switch fixes the preset for tests. After a start that crashed the tab, the engine starts one preset lower. The frame-budget governor lowers settings in a fixed order when frames run long, and raises them again after a stable period.
 
 ## 18. Messages and UI (`api/page`, `api/ui`)
 
