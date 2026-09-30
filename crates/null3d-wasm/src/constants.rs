@@ -2,6 +2,7 @@
 //! neither side copies them by hand.
 
 use null3d_core::handle::{GENERATION_BITS, SLOT_BITS};
+use null3d_core::layers::DEFAULT_LAYERS;
 use null3d_core::scene::{NO_PARENT, flags, op};
 use null3d_core::world::MATRIX_FLOATS;
 use null3d_gpu::caps::Capabilities;
@@ -101,6 +102,7 @@ pub fn typescript() -> String {
                 ("SET_MATERIAL", op::SET_MATERIAL),
                 ("SET_DYNAMIC", op::SET_DYNAMIC),
                 ("SET_VISIBLE", op::SET_VISIBLE),
+                ("SET_LAYERS", op::SET_LAYERS),
                 ("WORDS", COMMAND_WORDS),
             ],
         ),
@@ -108,6 +110,7 @@ pub fn typescript() -> String {
             "FLAG",
             &[("DYNAMIC", flags::DYNAMIC), ("VISIBLE", flags::VISIBLE)],
         ),
+        ("LAYERS", &[("DEFAULT", DEFAULT_LAYERS)]),
         (
             "SCENE_FIELD",
             &[
