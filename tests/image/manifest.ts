@@ -14,6 +14,7 @@
 import { BENCH_SCENES } from '../../bench/lib/parity.ts';
 import { MASK_IMAGE } from '../../bench/scenes/alpha-mask.ts';
 import { FOG_IMAGE } from '../../bench/scenes/fog.ts';
+import { MAPS_IMAGE } from '../../bench/scenes/material-maps.ts';
 import { ORTHO_IMAGE } from '../../bench/scenes/ortho-camera.ts';
 import { HOLD_TIME, PARITY_CANVAS } from '../../bench/scenes/spec.ts';
 import { DEMOS } from '../../examples/demos.ts';
@@ -271,6 +272,16 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		size: [480, 270],
 		modes: ALL_MODES,
+	},
+	// Each texture map of the standard material, made in code: base color, metal-rough, normal maps
+	// on quads with and without tangents, occlusion, emissive, a light map on the second texture
+	// coordinates, and base color maps through a texture coordinate transform, standard and unlit.
+	// The parity test draws the same scene with three.js.
+	{
+		name: 'standard-maps',
+		sketch: 'tests/pages/sketches/standard-maps-sketch.ts',
+		hold: 0,
+		size: [MAPS_IMAGE.width, MAPS_IMAGE.height],
 	},
 	// Masked materials under MSAA: cards cut by vertex alpha at three cutoffs, with the standard and
 	// the unlit material, crossing each other, and a batch of tilted cards. The parity test compares
