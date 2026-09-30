@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import {
 	type BuiltFile,
+	DOWNLOADS,
 	downloadSizes,
 	ENGINE_SOURCE,
 	findEngineParts,
@@ -25,7 +26,8 @@ describe('REPORTED_FILES', () => {
 			'single/null3d.js',
 		]);
 		expect(REPORTED_FILES).toContain('js/page.js');
-		expect(REPORTED_FILES).toContain('js/render-worker.js');
+		expect(REPORTED_FILES).toContain('js/render-worker-webgpu.js');
+		expect(REPORTED_FILES).toContain('js/render-worker-webgl2.js');
 	});
 });
 
@@ -57,6 +59,29 @@ describe('findEngineParts', () => {
 		]);
 	});
 
+	it('names by a module that several files hold the file that earlier parts leave', () => {
+		const ordered = [
+			{ name: 'page.js', module: 'page/engine.ts' },
+			{ name: 'fast-worker.js', module: 'workers/fast-worker.ts' },
+			{ name: 'worker.js', module: 'workers/worker.ts' },
+		];
+		const fast = built('fast-F1.js', ['workers/worker.ts', 'workers/fast-worker.ts']);
+		const found = findEngineParts([page, fast, worker], ordered);
+		expect(found.get('fast-worker.js')?.file).toBe('fast-F1.js');
+		expect(found.get('worker.js')?.file).toBe('worker-W1.js');
+	});
+
+	it('finds a file that another file loaded on demand imports', () => {
+		const chain = [
+			...parts,
+			{ name: 'worker-shared.js', module: 'render/shared.ts', loadedBy: 'worker-renderer.js' },
+		];
+		const renderer = built('draw-W2.js', ['render/draw.ts'], 'from"./shared-W3.js"');
+		const shared = built('shared-W3.js', ['render/shared.ts']);
+		const found = findEngineParts([page, pageRenderer, worker, renderer, shared], chain);
+		expect(found.get('worker-shared.js')?.file).toBe('shared-W3.js');
+	});
+
 	it('leaves out a part loaded on demand that the build bundles into its loader', () => {
 		const eager = built('worker-W1.js', ['workers/worker.ts', 'render/draw.ts']);
 		const found = findEngineParts([page, pageRenderer, eager], parts);
@@ -78,6 +103,23 @@ describe('findEngineParts', () => {
 		expect(() => findEngineParts([mixed, worker], parts)).toThrow(
 			"page.js (engine-T1.js) also holds a page's own code (tests/pages/engine.ts)",
 		);
+	});
+});
+
+describe('DOWNLOADS', () => {
+	it('gives each thread mode on each GPU path, with the renderers of that path only', () => {
+		expect(DOWNLOADS.map(({ mode }) => mode)).toEqual(
+			['WebGPU', 'WebGL2'].flatMap((path) =>
+				['pipelined', 'low latency', 'drawing on the main thread', 'single-threaded'].map(
+					(mode) => `${mode}, ${path}`,
+				),
+			),
+		);
+		for (const { mode, parts } of DOWNLOADS) {
+			const other = mode.endsWith('WebGPU') ? 'webgl2' : 'webgpu';
+			expect(parts.filter((part) => part.includes(other))).toEqual([]);
+			for (const part of parts) expect(REPORTED_FILES).toContain(`js/${part}`);
+		}
 	});
 });
 

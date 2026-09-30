@@ -84,7 +84,7 @@ export function growthLines(
 ): string[] {
 	const row = (cells: readonly string[]) => {
 		const [file = '', base = '', head = '', growth = '', note = ''] = cells;
-		return `  ${file.padEnd(28)} ${base.padStart(10)} ${head.padStart(12)} ${growth.padStart(9)}  ${note}`.trimEnd();
+		return `  ${file.padEnd(36)} ${base.padStart(10)} ${head.padStart(12)} ${growth.padStart(9)}  ${note}`.trimEnd();
 	};
 	return [
 		row(['file', 'base', 'this build', 'growth']),

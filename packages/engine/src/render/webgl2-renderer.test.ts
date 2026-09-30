@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'bun:test';
 import type { CoreDevice } from '../page/limits';
-import { createRenderer, type RenderCanvas } from './renderer';
+import type { RenderCanvas } from './renderer';
+import { createRenderer } from './webgl2-renderer';
 
 type ContextRequest = { type: string; settings: unknown };
 

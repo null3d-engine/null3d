@@ -1,14 +1,16 @@
-// What a thread needs to draw: the renderer, the GPU layer beneath it and the frame loops. The
-// render worker always draws. The page draws in single-threaded mode and with ?render=main, and the
-// sketch worker in low-latency mode, so those two load this module only when they draw
-// (load-draw.ts). A page then downloads the GPU layer once, for the thread that draws.
+// What a thread needs to draw, apart from the renderer of its GPU path: the frame loops and the
+// recovery after GPU losses. Each GPU path's renderer module binds them to its renderer, as that
+// path's `DrawModule`. The render worker always draws. The page draws in single-threaded mode and
+// with ?render=main, and the sketch worker in low-latency mode, so those two load their path's
+// module only when they draw. A page then downloads the GPU layer once, for the thread that draws,
+// and for its own GPU path only.
 
 import { controlViews, Slot } from '../shared/control';
 import type { SketchRunner } from '../sketch/runner';
 import { runDirectLoop } from './direct-loop';
 import { emptySceneInput, HoldLoop, runRenderLoop } from './loop';
 import { Drawing } from './recovery';
-import { createRenderer, type RenderCanvas, type Renderer, type RendererOptions } from './renderer';
+import type { CreateRenderer, RenderCanvas, Renderer, RendererOptions } from './renderer';
 
 export interface DrawingSetup extends RendererOptions {
 	/** The canvas that this thread owns. */
@@ -31,8 +33,21 @@ export interface DrawingSetup extends RendererOptions {
 	fail: (reason: string) => void;
 }
 
-/** Starts drawing on this thread's canvas, with a new renderer after each GPU loss. */
-export async function startDrawing(setup: DrawingSetup): Promise<Drawing<Renderer>> {
+/** What a thread that draws uses: the frame loops with the renderer of one GPU path. */
+export interface DrawModule {
+	/** Starts drawing on this thread's canvas, with a new renderer after each GPU loss. */
+	startDrawing(setup: DrawingSetup): Promise<Drawing<Renderer>>;
+	captureFrame: typeof captureFrame;
+}
+
+/**
+ * Starts drawing on this thread's canvas with the renderer that `createRenderer` makes, and with a
+ * new one after each GPU loss.
+ */
+export async function startDrawingWith(
+	createRenderer: CreateRenderer,
+	setup: DrawingSetup,
+): Promise<Drawing<Renderer>> {
 	const { canvas, control, metrics, fps, sketch, hold = false } = setup;
 	const { slots } = controlViews(control);
 	const create = () => createRenderer(canvas, setup);

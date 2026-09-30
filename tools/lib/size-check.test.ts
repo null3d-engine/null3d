@@ -86,9 +86,9 @@ describe('the growth tables', () => {
 
 	it("show each file's sizes, its growth and the commit that explains growth over the limit", () => {
 		expect(growthLines(changes, explained)).toEqual([
-			'  file                               base   this build    growth',
-			'  js/page.js                       13,709       14,203     +3.6%  explained in a1b2c3d4',
-			'  js/job-worker.js                  1,596        1,600     +0.3%',
+			'  file                                       base   this build    growth',
+			'  js/page.js                               13,709       14,203     +3.6%  explained in a1b2c3d4',
+			'  js/job-worker.js                          1,596        1,600     +0.3%',
 		]);
 		expect(growthLines(changes, new Map())[1]).toEndWith('+3.6%  not explained');
 	});

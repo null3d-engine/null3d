@@ -385,6 +385,41 @@ class EngineWorker {
  * worker without work blocks its thread in a wait. When Safari stops a thread inside such a wait,
  * it keeps the thread's shared memory until the tab closes, even across reloads.
  */
+/**
+ * Starts the sketch worker. With a tier, the worker draws too (low-latency mode), and its file loads
+ * that GPU path's renderer; without one, its file holds no renderer. Each worker file is written
+ * out in full, so the bundler builds each one.
+ */
+function startSketchWorker(drawsWith: Tier | undefined): Worker {
+	if (drawsWith === undefined)
+		return new Worker(new URL('../workers/sketch-worker.ts', import.meta.url), {
+			type: 'module',
+			name: 'null3d-sketch',
+		});
+	return drawsWith === 'webgl2'
+		? new Worker(new URL('../workers/sketch-worker-webgl2.ts', import.meta.url), {
+				type: 'module',
+				name: 'null3d-sketch',
+			})
+		: new Worker(new URL('../workers/sketch-worker-webgpu.ts', import.meta.url), {
+				type: 'module',
+				name: 'null3d-sketch',
+			});
+}
+
+/** Starts the render worker whose file holds the renderers of `tier`'s GPU path, and no other's. */
+function startRenderWorker(tier: Tier): Worker {
+	return tier === 'webgl2'
+		? new Worker(new URL('../workers/render-worker-webgl2.ts', import.meta.url), {
+				type: 'module',
+				name: 'null3d-render',
+			})
+		: new Worker(new URL('../workers/render-worker-webgpu.ts', import.meta.url), {
+				type: 'module',
+				name: 'null3d-render',
+			});
+}
+
 async function stopWorkers(workers: readonly EngineWorker[], jobs: readonly EngineWorker[]) {
 	let timer: ReturnType<typeof setTimeout> | undefined;
 	await Promise.race([
@@ -502,7 +537,7 @@ async function startEngine(
 	onProgress?.('core');
 	// A page that draws loads the renderer after the core, whose download it would slow on a slow
 	// network, and while the page starts the core and the sketch.
-	const drawModule = renderThread === 'main' ? loadDrawModule() : undefined;
+	const drawModule = renderThread === 'main' ? loadDrawModule(tier) : undefined;
 	let wasmMemory = core.memory;
 	const device = coreDevice(tier === 'webgl2', report, switches);
 	const handoff: CoreHandoff = {
@@ -567,7 +602,7 @@ async function startEngine(
 	 * loads for it. With a sketch, the page steps it before each draw.
 	 */
 	const drawOnPage = async (memory: WebAssembly.Memory | undefined, sketch?: SketchRunner) => {
-		draw = await (drawModule ?? loadDrawModule());
+		draw = await (drawModule ?? loadDrawModule(tier));
 		return draw.startDrawing({
 			canvas: options.canvas,
 			...rendererSetup,
@@ -620,10 +655,7 @@ async function startEngine(
 			localDrawing = await drawOnPage(memory, localRunner);
 		} else {
 			sketch = new EngineWorker(
-				new Worker(new URL('../workers/sketch-worker.ts', import.meta.url), {
-					type: 'module',
-					name: 'null3d-sketch',
-				}),
+				startSketchWorker(renderThread === 'sketch-worker' ? tier : undefined),
 				'sketch',
 				onSketchMessage,
 				onFailure,
@@ -646,10 +678,7 @@ async function startEngine(
 				if (renderThread === 'render-worker') {
 					const canvas = options.canvas.transferControlToOffscreen();
 					rendererHost = new EngineWorker(
-						new Worker(new URL('../workers/render-worker.ts', import.meta.url), {
-							type: 'module',
-							name: 'null3d-render',
-						}),
+						startRenderWorker(tier),
 						'render',
 						onSketchMessage,
 						onFailure,

@@ -2,11 +2,17 @@
 // N+1 while the render worker draws frame N, and waits for the render worker's signal with
 // Atomics.waitAsync, so its event loop stays alive for promises and messages. In low-latency mode it
 // also owns the canvas and draws each frame itself; only then does it load the renderer.
+//
+// Where another thread draws, the page starts this file itself, and it holds no renderer. In
+// low-latency mode the page starts the entry file of its GPU path instead, which runs this module
+// and gives it the loader of that path's renderer. That worker then loads one file of renderer
+// code, and never the other path's.
 
 import { messageOf } from '../errors/message';
-import { type DrawModule, loadDrawModule } from '../render/load-draw';
+import type { DrawModule } from '../render/draw';
 import type { Drawing } from '../render/recovery';
 import type { Renderer } from '../render/renderer';
+import { awaitLater } from '../shared/await-later';
 import { controlViews, Slot } from '../shared/control';
 import { loadSketch } from '../sketch/define-sketch';
 import { SketchRunner } from '../sketch/runner';
@@ -23,6 +29,20 @@ let runner: SketchRunner | undefined;
 let draw: DrawModule | undefined;
 let drawing: Drawing<Renderer> | undefined;
 let controlSlots: Int32Array | undefined;
+/** Loads the renderer of this worker's GPU path, which a low-latency entry file gives. */
+let loadDraw: (() => Promise<DrawModule>) | undefined;
+
+/** Gives the worker the loader of its GPU path's renderer. The entry file calls it as it loads. */
+export function drawWith(load: () => Promise<DrawModule>): void {
+	loadDraw = load;
+}
+
+/** Starts loading the renderer, so the download overlaps the worker's other startup work. */
+function loadRenderer(): Promise<DrawModule> {
+	return awaitLater(
+		loadDraw ? loadDraw() : Promise.reject(new Error('this sketch worker file does not draw')),
+	);
+}
 
 /**
  * A promise that settles when the slot no longer holds `value`, or undefined when it already
@@ -62,7 +82,7 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 	if (message.type === 'init') {
 		try {
 			// The renderer loads while the core and the sketch start.
-			const drawModule = message.renderer && loadDrawModule();
+			const drawModule = message.renderer && loadRenderer();
 			const control = controlViews(message.control);
 			controlSlots = control.slots;
 			const started = await startWorkerCore(message, step);

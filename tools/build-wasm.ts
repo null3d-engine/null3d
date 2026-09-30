@@ -420,7 +420,7 @@ function printSize(name: string, size: SizeEntry, budgetBytes?: number): void {
 		? `  ${((size.brotli / budgetBytes) * 100).toFixed(1)}% of budget`
 		: '';
 	console.log(
-		`  ${name.padEnd(28)} raw ${kb(size.raw).padStart(10)}   brotli ${kb(size.brotli).padStart(10)}${budget}`,
+		`  ${name.padEnd(36)} raw ${kb(size.raw).padStart(10)}   brotli ${kb(size.brotli).padStart(10)}${budget}`,
 	);
 }
 
@@ -578,7 +578,7 @@ async function main(): Promise<void> {
 		printSize(file, size, file.endsWith('.wasm') ? WASM_BUDGET_BYTES : undefined);
 	printSize('js total', totalSize(parts.values()));
 	console.log(
-		"\nthe engine's JavaScript that a page downloads in each thread mode, besides the core's glue (budget: 60 KB after Brotli)",
+		"\nthe engine's JavaScript that a page downloads in each thread mode on each GPU path, besides the core's glue (budget: 60 KB after Brotli)",
 	);
 	for (const { mode, size } of downloads) printSize(mode, size, JS_BUDGET_BYTES);
 	if (options.sizesOnly) {
@@ -595,7 +595,7 @@ async function main(): Promise<void> {
 	for (const { mode, size } of downloads)
 		if (size.brotli > JS_BUDGET_BYTES)
 			problems.push(
-				`the engine JavaScript that a page downloads in ${mode} mode is over its 60 KB Brotli budget`,
+				`the engine JavaScript that a page downloads (${mode}) is over its 60 KB Brotli budget`,
 			);
 	const growth = options.checkSize ? checkGrowth(sizes, options.base) : [];
 	for (const p of [...problems, ...growth]) console.error(`error: ${p}`);
