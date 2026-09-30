@@ -1,6 +1,7 @@
 // The scene API: objects with transforms, cameras, lights and instance batches. Setters write
-// straight into engine memory; structural changes (create, destroy, reparent, visibility) go into
-// the command ring as 16-byte records, which the engine applies when the next frame starts.
+// straight into engine memory. Structural changes (create, destroy, reparent, visibility, layers)
+// go into the command ring as 16-byte records, which the engine applies when the next frame
+// starts.
 
 import {
 	checkLayers,
