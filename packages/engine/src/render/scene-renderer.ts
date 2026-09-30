@@ -55,7 +55,7 @@ interface SceneBackend {
  * pipelines start to build the first time the frame is prepared or replayed. Until a frame has
  * drawn with every pipeline built, a frame waits for its pipelines.
  */
-class FrameReplay {
+export class FrameReplay {
 	private words = new Uint32Array(0);
 	private floats = new Float32Array(0);
 	private viewsOf: ArrayBufferLike = new ArrayBuffer(0);
