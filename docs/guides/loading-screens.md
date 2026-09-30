@@ -8,18 +8,66 @@ summary: "preload; onProgress; scene.warmUp; upload budgets."
 
 # Loading screens and warm-up
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. `assets.preload`, `assets.onProgress` and upload budgets are not built yet, so coding agents must not use them.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart LR
-    engine["Page:<br/>createEngine"] --> setup["Sketch setup:<br/>objects and materials"]
-    setup --> warm["await scene.warmUp()"]
-    warm --> build["Thread that draws:<br/>builds the GPU pipelines"]
-    build --> first["First frame<br/>on screen"]
-    first --> hide["Page: engine.firstFrame<br/>resolves, loading screen goes"]
+    start["createEngine starts<br/>the core and the sketch"] --> preload["The sketch preloads its files<br/>and reports progress"]
+    preload --> setup["The sketch builds its scene<br/>from the files in memory"]
+    setup --> warm["await scene.warmUp():<br/>the GPU builds its pipelines"]
+    warm --> uploads["Textures upload over<br/>the first frames"]
+    uploads --> first["engine.firstFrame:<br/>remove the loading screen"]
 ```
 
-A loading screen covers the canvas while the engine starts, the sketch builds its scene, and the GPU gets ready to draw it. The last step is warm-up: the GPU builds a pipeline for each kind of object in the scene. This page shows how to wait for each step, so the first frame and each later loading stage appear complete.
+A loading screen covers the canvas while the engine starts and the sketch loads its files. It stays while the sketch builds its scene and the GPU gets ready to draw it. The page draws the screen in HTML, and the sketch tells it how far loading has come with messages. The last step is warm-up: the GPU builds a pipeline for each kind of object in the scene.
+
+## Report progress from the sketch
+
+`assets.preload` downloads a list of files at once, and `assets.onProgress` counts them as they arrive. The loads that follow take the files from memory, so the scene builds without further waits.
+
+```ts
+// sketch.ts
+import { defineSketch } from '@null3d/engine';
+
+export default defineSketch(async ({ assets, page, scene }) => {
+  assets.onProgress((loaded, total) => page.post('loading', loaded / total));
+  await assets.preload(['/levels/one.json', '/tex/terrain.png', '/tex/rocks.png']);
+
+  const level = await assets.loadJson('/levels/one.json');
+  const terrain = await assets.loadTexture('/tex/terrain.png', { wrap: 'repeat', anisotropy: 8 });
+  // Build the scene from the level and its textures here.
+  await scene.warmUp();
+});
+```
+
+The handler gets the files downloaded so far and the files asked for so far. A file that fails counts as done, so the bar still reaches its end. The failed load rejects with an error that says what went wrong. [Assets](../api/assets.md) covers the loading calls and their errors.
+
+## Show progress on the page
+
+The page passes `onSketchMessage` to `createEngine`, so it hears the messages that the sketch sends during its setup. It removes the loading screen when `engine.firstFrame` resolves: until the GPU has finished the first frame, the canvas is blank.
+
+```ts
+// page.ts
+import { createEngine } from '@null3d/engine';
+
+const bar = document.querySelector<HTMLElement>('#bar')!;
+let shown = 0;
+const show = (progress: number) => {
+  shown = Math.max(shown, progress); // the bar never moves back
+  bar.style.width = `${Math.round(shown * 100)}%`;
+};
+
+const engine = await createEngine({
+  canvas: document.querySelector('canvas')!,
+  sketch: new URL('./sketch.ts', import.meta.url),
+  onProgress: (stage) => { if (stage === 'core') show(0.1); },
+  onSketchMessage: (name, loaded) => { if (name === 'loading') show(0.1 + 0.8 * (loaded as number)); },
+});
+await engine.firstFrame;
+document.querySelector('#loading')?.remove();
+```
+
+A handler that `engine.onSketchMessage` adds after `createEngine` resolves hears the setup's messages late, once the setup ends. That is too late for a progress bar.
 
 ## Pipelines and warm-up
 
@@ -34,30 +82,9 @@ The first frame waits until every pipeline that it needs is built, so it shows t
 
 ## The first frame
 
-Remove the loading screen when `engine.firstFrame` resolves. The GPU has then finished the first frame, with every pipeline built:
+`engine.firstFrame` resolves once the GPU has finished the first frame, with every pipeline built. `createEngine` resolves earlier, once the sketch's setup has run. So remove the loading screen only after `engine.firstFrame` resolves.
 
-```ts
-// page.ts
-const engine = await createEngine({
-  canvas,
-  sketch: new URL('./sketch.ts', import.meta.url),
-});
-await engine.firstFrame;
-loadingScreen.remove();
-```
-
-`createEngine` resolves once the sketch's setup has run. Until the first frame is on screen, the canvas is blank, so wait for `engine.firstFrame`, not `createEngine`.
-
-A setup function can also await `scene.warmUp()` after it creates the scene. The engine then builds the pipelines while the setup runs, and it draws the first frame as soon as they are built:
-
-```ts
-// sketch.ts
-export default defineSketch(async ({ scene, geometry, materials }) => {
-  // Create the objects, meshes and materials of the first level here.
-  await scene.warmUp();
-  return { onUpdate(dt) {} };
-});
-```
+A setup function that awaits `scene.warmUp()` after it creates the scene, as the sketch above does, lets the engine build the pipelines while the setup runs. The engine then draws the first frame as soon as they are built.
 
 ## A later loading stage
 
@@ -77,6 +104,12 @@ for (const piece of pieces) piece.setVisible(true);
 
 In hold mode, the engine draws one frame, which waits for its pipelines, so `scene.warmUp()` resolves at once.
 
+## Textures after the loading screen
+
+A texture returns at once, and its texels go to the GPU over the frames that follow. Each frame uploads at most 4 MiB of texels, so a scene with many large textures does not stall a frame. Until a texture's texels arrive, its material draws with its color alone. [Textures](../api/textures.md) says how uploads work.
+
+Keep the textures of the first view small, so the first frames show them. Or wait a few frames before you remove the loading screen.
+
 ## Measure the warm-up
 
 `engine.measure()` reports the first frame's warm-up in its `load` figures:
@@ -91,6 +124,8 @@ Where a browser compiles WebGL2 programs without the extension, `load.warmUpMs` 
 
 ## Related pages
 
+- [Assets](../api/assets.md): `assets.preload`, `assets.onProgress` and the loading calls.
+- [Textures](../api/textures.md): how texture uploads work.
 - [Performance guide](performance.md): what makes the GPU build a pipeline, and the costs of a frame.
 - [Engine](../api/engine.md): `createEngine`, `engine.firstFrame` and `engine.measure`.
 - [Scene](../api/scene.md): `scene.warmUp`.

@@ -9,20 +9,25 @@
 //! entry in the maps table names its layer. An array starts with a few layers and doubles when it
 //! fills: the draw list makes the larger texture, copies every mip level of the old one into it,
 //! and the next frame's list releases the old one. An array holds at most [`MAX_LAYERS`] layers,
-//! the iPad's limit, and a key with more textures starts another array.
+//! the iPad's limit, and a key with more textures starts another array. A texture of several
+//! layers has an array of its own, with exactly its layers.
 //!
-//! # Images and uploads
+//! # Images, data and uploads
 //!
-//! A texture's image travels to the thread that draws on its own, and gets the next image id. That
-//! thread counts the images it received, and ids count in the order they were sent, so every id up
-//! to the count has arrived. Uploads wait for their images, and take turns in the order the
-//! textures got them. Each frame uploads at most its byte budget: a large image goes up a band of
-//! rows per frame, and the next frame's list releases the image. After a frame's uploads, each
-//! texture that finished makes its mip levels on the GPU. A material draws without its map until
-//! the map's image is on the GPU, so a texture on its way looks like no texture.
+//! A texture's texels come from an image or from data. An image travels to the thread that draws
+//! on its own, and gets the next image id. That thread counts the images it received, and ids
+//! count in the order they were sent, so every id up to the count has arrived. Data lives in
+//! engine memory, in a slot of the store, and is ready at once. Uploads take turns in the order
+//! the textures got their texels. Each frame uploads at most its byte budget: a large texture goes
+//! up a band of rows per frame. After a frame's uploads, each texture that finished makes its mip
+//! levels on the GPU. A material draws without its map until the map's texels are on the GPU, so a
+//! texture on its way looks like no texture.
 //!
 //! A capture replays a frame's list a second time. A list therefore never releases what it uses
-//! itself, and replaying it again gives the same textures.
+//! itself, and replaying it again gives the same textures. An image is released by a later
+//! frame's list; data is freed once the thread that draws has taken a later frame.
+//!
+//! Texels of another size move a texture to an array of that size, and so to another bind group.
 //!
 //! Formats come by code, and every byte count goes through [`format::level_bytes`], so formats
 //! stored in blocks of texels can join the array keys and the uploads.
@@ -30,8 +35,8 @@
 //! # A new GPU device
 //!
 //! The thread that draws closes an image once the frame whose list releases it has run. When the
-//! browser replaces the GPU, a texture whose image is still there uploads again. A texture whose
-//! image is gone keeps its layer and draws as without a map until it gets a new image.
+//! browser replaces the GPU, a texture whose image or data is still there uploads again. A texture
+//! whose texels are gone keeps its layer and draws as without a map until it gets new texels.
 
 use null3d_core::error::CoreError;
 use null3d_core::handle::{Handle, SlotAllocator};
@@ -39,7 +44,7 @@ use null3d_gpu::drawlist::{
     DrawList, Op, address, compare, filter, format, layout, resource_kind, texture_usage, view,
 };
 
-use crate::frame::RecordError;
+use crate::frame::{RecordError, address as memory_address, words_as_bytes};
 
 /// The most layers in one texture array: WebGPU's default limit, which the iPad keeps.
 pub const MAX_LAYERS: u32 = 256;
@@ -95,9 +100,13 @@ impl Default for Sampling {
 pub struct TextureDesc {
     pub width: u32,
     pub height: u32,
-    /// `format::RGBA8_UNORM_SRGB` for colors, `format::RGBA8_UNORM` for data.
+    /// Its layers: 1 for a texture that shares an array with others of its key, and up to
+    /// [`MAX_LAYERS`] for a texture with an array of its own.
+    pub depth: u32,
+    /// `format::RGBA8_UNORM_SRGB` for colors, `format::RGBA8_UNORM` for data, or
+    /// `format::RGBA16_FLOAT` for data in half floats, which has no mip levels and takes no images.
     pub format: u32,
-    /// True for a whole chain of mip levels, which the GPU makes from each image.
+    /// True for a whole chain of mip levels, which the GPU makes from each upload.
     pub mipmaps: bool,
     pub sampling: Sampling,
 }
@@ -105,13 +114,13 @@ pub struct TextureDesc {
 /// Why the store refused a call.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TextureError {
-    /// The handle names no live texture.
-    Handle(CoreError),
+    /// The handle names no live texture, or the memory for its data could not grow.
+    Core(CoreError),
     /// The texture is wider or taller than `limit` texels, the most that every array allows.
     TooLarge { limit: u32 },
     /// [`MAX_TEXTURES`] textures live already.
     Full,
-    /// A format, a sampler setting or an image size that the texture cannot use.
+    /// A format, a sampler setting, a depth or an image size that the texture cannot use.
     Unsupported,
 }
 
@@ -122,30 +131,40 @@ pub struct UploadStats {
     pub last_frame_bytes: u32,
     /// The most texel bytes that any frame uploaded.
     pub largest_frame_bytes: u32,
-    /// Textures with an image that is not on the GPU yet.
+    /// Textures whose texels are not on the GPU yet.
     pub waiting: u32,
+}
+
+/// Where a texture's texels come from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Source {
+    /// Image `id`, which the thread that draws holds, uploaded with the `upload_flags` in `flags`.
+    Image { id: u32, flags: u32 },
+    /// Tightly packed rows, layer after layer, in the store's data slot `slot`.
+    Data { slot: u32 },
 }
 
 /// Where a texture is on its way to the GPU.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum State {
-    /// No image to upload: none came yet, or it was lost with the GPU.
+    /// No texels to upload: none came yet, or they were lost with the GPU.
     Empty,
-    /// Image `image` uploads next, `rows` rows of it are uploaded.
-    Queued { image: u32, rows: u32 },
-    /// Image `image` is on the GPU, and the list of frame `released_in` releases it, or none yet
-    /// while that is 0.
-    Uploaded { image: u32, released_in: u32 },
+    /// `source` uploads next, and `rows` of its rows are up, counting through every layer.
+    Queued { source: Source, rows: u32 },
+    /// `source` is on the GPU. `released_in` is the frame whose recording released it, or 0 while
+    /// the store still holds it.
+    Uploaded { source: Source, released_in: u32 },
 }
 
-/// An image that a later frame's list releases.
+/// Texels that the store releases once no list that reads them can run again.
 #[derive(Clone, Copy, Debug)]
 struct Release {
-    image: u32,
-    /// The frame whose list last uses the image: the release goes in a later one.
+    source: Source,
+    /// The last frame whose list may read the texels. An image is released in a later frame's
+    /// list; data is freed once the thread that draws has taken a later frame.
     after: u32,
-    /// The texture that the image went to, which notes the frame of the release, or
-    /// `Handle::NONE` for an image that went nowhere.
+    /// The texture that the texels went to, which notes the frame of the release, or
+    /// `Handle::NONE` for texels that went nowhere.
     texture: Handle,
 }
 
@@ -154,6 +173,9 @@ struct TextureSlot {
     array: u32,
     layer: u32,
     group: u32,
+    sampler: u32,
+    /// True for a whole chain of mip levels, at any size the texture takes.
+    mipmaps: bool,
     state: State,
 }
 
@@ -164,11 +186,18 @@ struct ArrayKey {
     height: u32,
     format: u32,
     mips: u32,
+    /// The layers of each texture: an array of textures of more than one has one texture.
+    depth: u32,
 }
 
 impl ArrayKey {
     fn layer_bytes(&self) -> u64 {
         format::layer_bytes(self.format, self.width, self.height, self.mips)
+    }
+
+    /// The bytes of one row of level 0.
+    fn row_bytes(&self) -> u64 {
+        format::level_bytes(self.format, self.width, 1, 0)
     }
 }
 
@@ -186,20 +215,26 @@ struct TextureArray {
 }
 
 impl TextureArray {
+    /// Marks the texture's layers from `layer` used or free.
     fn mark(&mut self, layer: u32, used: bool) {
-        let bit = 1 << (layer % 64);
-        let word = &mut self.used[(layer / 64) as usize];
-        if used {
-            *word |= bit;
-            self.live += 1;
-        } else {
-            *word &= !bit;
-            self.live -= 1;
+        for layer in layer..layer + self.key.depth {
+            let bit = 1 << (layer % 64);
+            let word = &mut self.used[(layer / 64) as usize];
+            if used {
+                *word |= bit;
+                self.live += 1;
+            } else {
+                *word &= !bit;
+                self.live -= 1;
+            }
         }
     }
 
-    /// The lowest free layer, or `None` when every layer an array may have is taken.
+    /// The lowest free layer for another texture, or `None` when the array takes no more.
     fn free_layer(&self) -> Option<u32> {
+        if self.key.depth > 1 && self.live > 0 {
+            return None;
+        }
         let (word, bits) = self
             .used
             .iter()
@@ -218,6 +253,17 @@ impl TextureArray {
             .map_or(0, |(word, bits)| {
                 word as u32 * 64 + 64 - bits.leading_zeros()
             })
+    }
+
+    /// The layers that the GPU texture needs: a power of two for arrays that textures share, and
+    /// exactly its texture's layers for an array of one texture.
+    fn layers_needed(&self) -> u32 {
+        let needed = self.layers_in_use();
+        if self.key.depth > 1 {
+            needed
+        } else {
+            needed.next_power_of_two().clamp(FIRST_LAYERS, MAX_LAYERS)
+        }
     }
 }
 
@@ -247,9 +293,11 @@ pub struct TextureStore {
     arrays: Vec<TextureArray>,
     samplers: Vec<SamplerSlot>,
     groups: Vec<GroupSlot>,
-    /// The textures with an image to upload, in the order they got it.
+    /// Texels in engine memory, by data slot; a free slot holds no memory.
+    data: Vec<Vec<u32>>,
+    /// The textures with texels to upload, in the order they got them.
     queue: Vec<Handle>,
-    /// Images to release, which the thread that draws closes once it has them.
+    /// Texels to release once no list that reads them can run again.
     releases: Vec<Release>,
     /// Array textures that an array outgrew, which the next frame's list destroys.
     retired: Vec<u32>,
@@ -261,6 +309,8 @@ pub struct TextureStore {
     arrived: u32,
     /// The newest frame that the thread that draws took.
     frames_taken: u32,
+    /// The last frame recorded.
+    recorded: u32,
     budget: u32,
     /// True while the next frame uploads everything, whatever its budget.
     unbudgeted: bool,
@@ -282,6 +332,7 @@ impl TextureStore {
             arrays: Vec::new(),
             samplers: Vec::new(),
             groups: Vec::new(),
+            data: Vec::new(),
             queue: Vec::new(),
             releases: Vec::new(),
             retired: Vec::new(),
@@ -289,6 +340,7 @@ impl TextureStore {
             last_image: 0,
             arrived: 0,
             frames_taken: 0,
+            recorded: 0,
             budget: DEFAULT_UPLOAD_BUDGET,
             unbudgeted: false,
             max_anisotropy: DEFAULT_MAX_ANISOTROPY,
@@ -303,18 +355,12 @@ impl TextureStore {
     }
 
     fn slot(&self, texture: Handle) -> Result<&TextureSlot, TextureError> {
-        let slot = self
-            .handles
-            .resolve(texture)
-            .map_err(TextureError::Handle)?;
+        let slot = self.handles.resolve(texture).map_err(TextureError::Core)?;
         Ok(&self.textures[slot as usize])
     }
 
     fn slot_mut(&mut self, texture: Handle) -> Result<&mut TextureSlot, TextureError> {
-        let slot = self
-            .handles
-            .resolve(texture)
-            .map_err(TextureError::Handle)?;
+        let slot = self.handles.resolve(texture).map_err(TextureError::Core)?;
         Ok(&mut self.textures[slot as usize])
     }
 
@@ -323,17 +369,29 @@ impl TextureStore {
         self.ids.first_texture + 2 * array + self.arrays[array as usize].generation
     }
 
-    /// Creates a texture with no image yet, in a free layer of an array of its key.
-    pub fn create(&mut self, desc: TextureDesc) -> Result<Handle, TextureError> {
+    /// Checks a size against the store's limit.
+    fn check_size(&self, width: u32, height: u32) -> Result<(), TextureError> {
         let limit = self.max_size;
-        if desc.width > limit || desc.height > limit {
+        if width > limit || height > limit {
             return Err(TextureError::TooLarge { limit });
         }
+        if width == 0 || height == 0 {
+            return Err(TextureError::Unsupported);
+        }
+        Ok(())
+    }
+
+    /// Creates a texture with no texels yet, in a free layer of an array of its key.
+    pub fn create(&mut self, desc: TextureDesc) -> Result<Handle, TextureError> {
+        self.check_size(desc.width, desc.height)?;
         let sampling = desc.sampling;
         let known = |code: u32, last: u32| code <= last;
-        let supported = desc.width > 0
-            && desc.height > 0
-            && matches!(desc.format, format::RGBA8_UNORM | format::RGBA8_UNORM_SRGB)
+        let supported = (1..=MAX_LAYERS).contains(&desc.depth)
+            && match desc.format {
+                format::RGBA8_UNORM | format::RGBA8_UNORM_SRGB => true,
+                format::RGBA16_FLOAT => !desc.mipmaps,
+                _ => false,
+            }
             && sampling
                 .wrap
                 .iter()
@@ -349,33 +407,40 @@ impl TextureStore {
         if !supported {
             return Err(TextureError::Unsupported);
         }
+        let handle = self.handles.reserve().map_err(|_| TextureError::Full)?;
+        let sampler = self.sampler_for(sampling);
+        let mut slot = TextureSlot {
+            array: 0,
+            layer: 0,
+            group: 0,
+            sampler,
+            mipmaps: desc.mipmaps,
+            state: State::Empty,
+        };
         let key = ArrayKey {
             width: desc.width,
             height: desc.height,
             format: desc.format,
-            mips: if desc.mipmaps {
-                format::full_chain(desc.width, desc.height)
-            } else {
-                1
-            },
+            mips: mips_of(desc.mipmaps, desc.width, desc.height),
+            depth: desc.depth,
         };
-        let handle = self.handles.reserve().map_err(|_| TextureError::Full)?;
-        let (array, layer) = self.place(key);
-        self.arrays[array as usize].mark(layer, true);
-        let sampler = self.sampler_for(sampling);
-        let group = self.group_for(array, sampler);
-        let slot = TextureSlot {
-            array,
-            layer,
-            group,
-            state: State::Empty,
-        };
+        self.settle(&mut slot, key);
         let index = handle.slot() as usize;
         if self.textures.len() <= index {
             self.textures.resize(index + 1, slot);
         }
         self.textures[index] = slot;
         Ok(handle)
+    }
+
+    /// Gives a texture a layer of an array of `key`, and the bind group of that array and its
+    /// sampler.
+    fn settle(&mut self, slot: &mut TextureSlot, key: ArrayKey) {
+        let (array, layer) = self.place(key);
+        self.arrays[array as usize].mark(layer, true);
+        slot.array = array;
+        slot.layer = layer;
+        slot.group = self.group_for(array, slot.sampler);
     }
 
     /// The array and the layer for a new texture of `key`: the lowest free layer of the first
@@ -425,44 +490,107 @@ impl TextureStore {
         self.groups.len() as u32 - 1
     }
 
-    /// Gives a texture a new image of `width` x `height` pixels, which uploads in its turn, and
-    /// returns the image's id. The caller sends the image to the thread that draws under that id,
-    /// in the order of the ids. An image that was waiting is released unused.
+    /// Gives a texture a new image of `width` x `height` pixels, uploaded with the
+    /// `upload_flags` in `flags`, and returns the image's id, with true when the texture moved to
+    /// an array of the image's size. The caller sends the image to the thread that draws under
+    /// that id, in the order of the ids. Texels that were waiting are released unused.
     pub fn set_image(
         &mut self,
         texture: Handle,
         width: u32,
         height: u32,
-    ) -> Result<u32, TextureError> {
-        let slot = *self.slot(texture)?;
-        let key = self.arrays[slot.array as usize].key;
-        if (width, height) != (key.width, key.height) {
+        flags: u32,
+    ) -> Result<(u32, bool), TextureError> {
+        let key = self.arrays[self.slot(texture)?.array as usize].key;
+        if key.depth > 1 || !format::makes_mipmaps(key.format) {
             return Err(TextureError::Unsupported);
         }
-        match slot.state {
-            State::Queued { image, .. } => self.release_now(image),
-            State::Uploaded { .. } => self.layers_changed = true,
-            State::Empty => {}
-        }
-        if !matches!(slot.state, State::Queued { .. }) {
-            self.queue.push(texture);
-        }
+        let moved = self.resize(texture, width, height)?;
         self.last_image += 1;
-        let image = self.last_image;
-        self.slot_mut(texture)?.state = State::Queued { image, rows: 0 };
-        Ok(image)
+        let id = self.last_image;
+        self.queue_source(texture, Source::Image { id, flags })?;
+        Ok((id, moved))
+    }
+
+    /// Gives a texture new texels of `width` x `height` in each of its layers, and returns the
+    /// words that the caller fills with them, as tightly packed rows, layer after layer, with true
+    /// when the texture moved to an array of that size. Texels that were waiting are released
+    /// unused.
+    pub fn set_data(
+        &mut self,
+        texture: Handle,
+        width: u32,
+        height: u32,
+    ) -> Result<(&mut [u32], bool), TextureError> {
+        let key = self.arrays[self.slot(texture)?.array as usize].key;
+        let bytes = format::level_bytes(key.format, width, height, 0) * u64::from(key.depth);
+        let words = usize::try_from(bytes.div_ceil(4)).map_err(|_| out_of_memory(bytes))?;
+        let mut data = Vec::new();
+        data.try_reserve_exact(words)
+            .map_err(|_| out_of_memory(bytes))?;
+        data.resize(words, 0);
+        let moved = self.resize(texture, width, height)?;
+        let slot = match self.data.iter().position(|d| d.capacity() == 0) {
+            Some(slot) => slot,
+            None => {
+                self.data.push(Vec::new());
+                self.data.len() - 1
+            }
+        };
+        self.data[slot] = data;
+        self.queue_source(texture, Source::Data { slot: slot as u32 })?;
+        Ok((&mut self.data[slot], moved))
+    }
+
+    /// Moves a texture to an array of `width` x `height` when its size is another, and returns
+    /// true when it moved. Its bind group then changes, and its old layer is free.
+    fn resize(&mut self, texture: Handle, width: u32, height: u32) -> Result<bool, TextureError> {
+        let mut slot = *self.slot(texture)?;
+        let key = self.arrays[slot.array as usize].key;
+        if (width, height) == (key.width, key.height) {
+            return Ok(false);
+        }
+        self.check_size(width, height)?;
+        self.arrays[slot.array as usize].mark(slot.layer, false);
+        let key = ArrayKey {
+            width,
+            height,
+            mips: mips_of(slot.mipmaps, width, height),
+            ..key
+        };
+        self.settle(&mut slot, key);
+        *self.slot_mut(texture)? = slot;
+        self.layers_changed = true;
+        Ok(true)
+    }
+
+    /// Makes `source` the texels that a texture uploads next, and releases texels that were
+    /// waiting.
+    fn queue_source(&mut self, texture: Handle, source: Source) -> Result<(), TextureError> {
+        let slot = self.slot_mut(texture)?;
+        let old = slot.state;
+        slot.state = State::Queued { source, rows: 0 };
+        match old {
+            State::Queued { source, .. } => self.release_unused(source),
+            State::Uploaded { .. } => {
+                self.layers_changed = true;
+                self.queue.push(texture);
+            }
+            State::Empty => self.queue.push(texture),
+        }
+        Ok(())
     }
 
     /// Destroys a texture in frame `frame`: its layer is free for the next texture of its key,
-    /// and an image that is still waiting is released.
+    /// and texels that are still waiting are released.
     pub fn destroy(&mut self, texture: Handle, frame: u32) -> Result<(), TextureError> {
         let slot = *self.slot(texture)?;
         self.handles
             .release(texture, frame)
-            .map_err(TextureError::Handle)?;
+            .map_err(TextureError::Core)?;
         match slot.state {
-            State::Queued { image, .. } => {
-                self.release_now(image);
+            State::Queued { source, .. } => {
+                self.release_unused(source);
                 self.queue.retain(|&queued| queued != texture);
             }
             State::Uploaded { .. } => self.layers_changed = true,
@@ -472,11 +600,15 @@ impl TextureStore {
         Ok(())
     }
 
-    /// Releases an image that no list used, in the next frame's list.
-    fn release_now(&mut self, image: u32) {
+    /// Releases texels that went to no texture: an image in the next frame's list, and data once
+    /// the lists recorded so far cannot run again.
+    fn release_unused(&mut self, source: Source) {
         self.releases.push(Release {
-            image,
-            after: 0,
+            source,
+            after: match source {
+                Source::Image { .. } => 0,
+                Source::Data { .. } => self.recorded,
+            },
             texture: Handle::NONE,
         });
     }
@@ -486,7 +618,7 @@ impl TextureStore {
         self.handles.is_live(texture)
     }
 
-    /// The layer that a material samples a texture from, once its image is on the GPU.
+    /// The layer that a material samples a texture from, once its texels are on the GPU.
     pub fn ready_layer(&self, texture: Handle) -> Option<u32> {
         let slot = self.slot(texture).ok()?;
         matches!(slot.state, State::Uploaded { .. }).then_some(slot.layer)
@@ -498,10 +630,10 @@ impl TextureStore {
         Some(self.ids.first_group + slot.group)
     }
 
-    /// The GPU bytes of a texture: its layer, with every mip level.
+    /// The GPU bytes of a texture: its layers, with every mip level.
     pub fn bytes(&self, texture: Handle) -> Result<u64, TextureError> {
-        let slot = self.slot(texture)?;
-        Ok(self.arrays[slot.array as usize].key.layer_bytes())
+        let key = self.arrays[self.slot(texture)?.array as usize].key;
+        Ok(key.layer_bytes() * u64::from(key.depth))
     }
 
     /// The GPU bytes that every array holds, its free layers included.
@@ -517,7 +649,7 @@ impl TextureStore {
         self.budget = bytes;
     }
 
-    /// Makes the next recorded frame upload every image that arrived, whatever its budget, as a
+    /// Makes the next recorded frame upload every texel that is ready, whatever its budget, as a
     /// held frame, the only one drawn, must.
     pub fn upload_all_next_frame(&mut self) {
         self.unbudgeted = true;
@@ -567,6 +699,7 @@ impl TextureStore {
     /// budget, mip levels, samplers and bind groups. Returns true when it made a bind group
     /// again, which render bundles that bind it must see.
     pub fn record(&mut self, list: &mut DrawList, frame: u32) -> Result<bool, RecordError> {
+        self.recorded = frame;
         for &id in &self.retired {
             list.push(Op::DestroyTexture, &[id])?;
         }
@@ -602,11 +735,10 @@ impl TextureStore {
                 }
                 continue;
             }
-            let needed = array.layers_in_use();
-            if needed <= old_capacity {
+            if array.layers_in_use() <= old_capacity {
                 continue;
             }
-            let capacity = needed.next_power_of_two().clamp(FIRST_LAYERS, MAX_LAYERS);
+            let capacity = array.layers_needed();
             let old_id = self.array_id(index);
             let new_id = if old_capacity > 0 {
                 self.arrays[index as usize].generation ^= 1;
@@ -663,26 +795,34 @@ impl TextureStore {
         Ok(copied)
     }
 
-    /// Releases each image that the thread that draws holds and that no list of this frame or a
-    /// later one uses, and notes the frame of the release on its texture.
+    /// Releases the texels that no list of this frame or a later one reads, and notes the frame
+    /// of the release on their texture. The thread that draws must hold an image before a list
+    /// releases it, and must have taken a frame after the last list that reads data before the
+    /// data is freed.
     fn record_releases(&mut self, list: &mut DrawList, frame: u32) -> Result<(), RecordError> {
-        let due = |r: &Release, arrived: u32| r.image <= arrived && r.after < frame;
-        for release in self.releases.iter().filter(|r| due(r, self.arrived)) {
-            list.push(Op::ReleaseImage, &[release.image])?;
+        let (arrived, taken) = (self.arrived, self.frames_taken);
+        let due = |r: &Release| match r.source {
+            Source::Image { id, .. } => id <= arrived && r.after < frame,
+            Source::Data { .. } => r.after < taken,
+        };
+        for release in self.releases.iter().filter(|r| due(r)) {
+            match release.source {
+                Source::Image { id, .. } => list.push(Op::ReleaseImage, &[id])?,
+                Source::Data { slot } => self.data[slot as usize] = Vec::new(),
+            }
             if let Ok(slot) = self.handles.resolve(release.texture) {
                 let state = &mut self.textures[slot as usize].state;
-                if let State::Uploaded { image, .. } = *state
-                    && image == release.image
+                if let State::Uploaded { source, .. } = *state
+                    && source == release.source
                 {
                     *state = State::Uploaded {
-                        image,
+                        source,
                         released_in: frame,
                     };
                 }
             }
         }
-        let arrived = self.arrived;
-        self.releases.retain(|r| !due(r, arrived));
+        self.releases.retain(|r| !due(r));
         Ok(())
     }
 
@@ -692,9 +832,10 @@ impl TextureStore {
         }
     }
 
-    /// Uploads waiting images in the order the textures got them, until the frame's budget is
-    /// spent. Each frame uploads at least one row, so a budget below a row still makes progress.
-    /// Notes each texture whose last rows went up in [`Self::finished`].
+    /// Uploads waiting texels in the order the textures got them, until the frame's budget is
+    /// spent: a band of rows of one layer at a time. Each frame uploads at least one row, so a
+    /// budget below a row still makes progress. Notes each layer of a texture whose last rows
+    /// went up in [`Self::finished`].
     fn upload(&mut self, list: &mut DrawList, frame: u32) -> Result<(), RecordError> {
         self.finished.clear();
         let budget = if self.unbudgeted {
@@ -704,56 +845,88 @@ impl TextureStore {
         };
         self.unbudgeted = false;
         let mut spent: u64 = 0;
+        let mut spent_all = false;
         for k in 0..self.queue.len() {
+            if spent_all {
+                break;
+            }
             let handle = self.queue[k];
             let Ok(index) = self.handles.resolve(handle) else {
                 continue;
             };
             let slot = self.textures[index as usize];
-            let State::Queued { image, rows } = slot.state else {
+            let State::Queued { source, mut rows } = slot.state else {
                 continue;
             };
-            if image > self.arrived {
+            if let Source::Image { id, .. } = source
+                && id > self.arrived
+            {
                 continue;
             }
             let key = self.arrays[slot.array as usize].key;
-            let row_bytes = format::level_bytes(key.format, key.width, 1, 0);
-            let left = budget.saturating_sub(spent);
-            let mut take = (u64::from(key.height - rows)).min(left / row_bytes) as u32;
-            if take == 0 {
-                if spent > 0 {
-                    break;
-                }
-                take = 1;
-            }
-            let done = rows + take == key.height;
+            let row_bytes = key.row_bytes();
             let id = self.array_id(slot.array);
-            list.push(
-                Op::UploadImage,
-                &[
-                    id, 0, 0, rows, slot.layer, key.width, take, image, 0, 0, rows,
-                ],
-            )?;
-            spent += u64::from(take) * row_bytes;
-            self.textures[index as usize].state = if done {
+            let total = key.height * key.depth;
+            while rows < total {
+                let (layer, y) = (rows / key.height, rows % key.height);
+                let left = budget.saturating_sub(spent);
+                let mut take = u64::from(key.height - y).min(left / row_bytes) as u32;
+                if take == 0 {
+                    if spent > 0 {
+                        spent_all = true;
+                        break;
+                    }
+                    take = 1;
+                }
+                let layer = slot.layer + layer;
+                match source {
+                    Source::Image { id: image, flags } => list.push(
+                        Op::UploadImage,
+                        &[id, 0, 0, y, layer, key.width, take, image, flags, 0, y],
+                    )?,
+                    Source::Data { slot: data } => {
+                        let bytes = words_as_bytes(&self.data[data as usize]);
+                        let start = u64::from(rows) * row_bytes;
+                        let length = u64::from(take) * row_bytes;
+                        let band = &bytes[start as usize..(start + length) as usize];
+                        list.push(
+                            Op::WriteTexture,
+                            &[
+                                id,
+                                0,
+                                0,
+                                y,
+                                layer,
+                                key.width,
+                                take,
+                                1,
+                                memory_address(band),
+                                length as u32,
+                            ],
+                        )?;
+                    }
+                }
+                spent += u64::from(take) * row_bytes;
+                rows += take;
+            }
+            self.textures[index as usize].state = if rows == total {
                 if key.mips > 1 {
-                    self.finished.push((id, slot.layer));
+                    for layer in slot.layer..slot.layer + key.depth {
+                        self.finished.push((id, layer));
+                    }
                 }
                 self.releases.push(Release {
-                    image,
+                    source,
                     after: frame,
                     texture: handle,
                 });
                 self.layers_changed = true;
                 State::Uploaded {
-                    image,
+                    source,
                     released_in: 0,
                 }
             } else {
-                State::Queued {
-                    image,
-                    rows: rows + take,
-                }
+                State::Queued { source, rows }
             };
         }
         let handles = &self.handles;
@@ -835,7 +1008,8 @@ impl TextureStore {
     }
 
     /// Forgets every GPU object after the thread that draws replaced the GPU. Textures whose
-    /// images the thread still holds upload again from the start; the rest wait for new images.
+    /// images the thread still holds, or whose data the store still holds, upload again from the
+    /// start; the rest wait for new texels.
     pub fn reset_gpu(&mut self) {
         self.retired.clear();
         for array in &mut self.arrays {
@@ -851,16 +1025,22 @@ impl TextureStore {
         let taken = self.frames_taken;
         for slot in self.handles.live().iter_ones() {
             let texture = &mut self.textures[slot as usize];
-            texture.state = match texture.state {
-                State::Queued { image, .. } => State::Queued { image, rows: 0 },
+            let held = |source: Source, released_in: u32| match source {
                 // The list that releases the image never ran, so the image is still there.
-                State::Uploaded { image, released_in }
-                    if released_in == 0 || released_in > taken =>
-                {
-                    self.releases.retain(|release| release.image != image);
+                Source::Image { .. } => released_in == 0 || released_in > taken,
+                // The store frees data as it records the release.
+                Source::Data { .. } => released_in == 0,
+            };
+            texture.state = match texture.state {
+                State::Queued { source, .. } => State::Queued { source, rows: 0 },
+                State::Uploaded {
+                    source,
+                    released_in,
+                } if held(source, released_in) => {
+                    self.releases.retain(|release| release.source != source);
                     let generation = u32::from(self.handles.generations()[slot as usize]);
                     self.queue.push(Handle::new(slot, generation));
-                    State::Queued { image, rows: 0 }
+                    State::Queued { source, rows: 0 }
                 }
                 State::Uploaded { .. } | State::Empty => State::Empty,
             };
@@ -869,10 +1049,25 @@ impl TextureStore {
     }
 }
 
+/// The mip levels of a texture of `width` x `height`: a whole chain, or level 0 alone.
+fn mips_of(mipmaps: bool, width: u32, height: u32) -> u32 {
+    if mipmaps {
+        format::full_chain(width, height)
+    } else {
+        1
+    }
+}
+
+fn out_of_memory(bytes: u64) -> TextureError {
+    TextureError::Core(CoreError::OutOfMemory {
+        bytes: u32::try_from(bytes).unwrap_or(u32::MAX),
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use null3d_gpu::drawlist::{Command, decode};
+    use null3d_gpu::drawlist::{Command, decode, upload_flags};
     use null3d_gpu::mock::MockBackend;
 
     const IDS: TextureIds = TextureIds {
@@ -885,6 +1080,7 @@ mod tests {
         TextureDesc {
             width,
             height,
+            depth: 1,
             format: format::RGBA8_UNORM_SRGB,
             mipmaps: true,
             sampling: Sampling::default(),
@@ -926,7 +1122,7 @@ mod tests {
 
         /// Gives a texture an image of its size, which is on its way to the thread that draws.
         fn image(&mut self, texture: Handle, width: u32, height: u32) -> u32 {
-            let image = self.store.set_image(texture, width, height).unwrap();
+            let (image, _) = self.store.set_image(texture, width, height, 0).unwrap();
             assert_eq!(image as usize, self.images.len() + 1, "image ids count up");
             self.images.push((width, height));
             image
@@ -1023,16 +1219,43 @@ mod tests {
             ..desc(16, 16)
         };
         assert_eq!(store.create(float), Err(TextureError::Unsupported));
+        let half_float = TextureDesc {
+            format: format::RGBA16_FLOAT,
+            ..desc(16, 16)
+        };
+        assert_eq!(
+            store.create(half_float),
+            Err(TextureError::Unsupported),
+            "half floats make no mip levels"
+        );
+        for depth in [0, MAX_LAYERS + 1] {
+            let layers = TextureDesc {
+                depth,
+                ..desc(16, 16)
+            };
+            assert_eq!(store.create(layers), Err(TextureError::Unsupported));
+        }
         let texture = store.create(desc(16, 16)).unwrap();
         assert_eq!(
-            store.set_image(texture, 16, 8),
+            store.set_image(texture, 4096, 8, 0),
+            Err(TextureError::TooLarge { limit: 2048 }),
+            "an image past the limit"
+        );
+        let data = store
+            .create(TextureDesc {
+                mipmaps: false,
+                ..half_float
+            })
+            .unwrap();
+        assert_eq!(
+            store.set_image(data, 16, 16, 0),
             Err(TextureError::Unsupported),
-            "an image of another size"
+            "images fill 8-bit textures"
         );
         store.destroy(texture, 3).unwrap();
         assert!(matches!(
-            store.set_image(texture, 16, 16),
-            Err(TextureError::Handle(CoreError::StaleHandle { .. }))
+            store.set_image(texture, 16, 16, 0),
+            Err(TextureError::Core(CoreError::StaleHandle { .. }))
         ));
     }
 
@@ -1375,5 +1598,185 @@ mod tests {
         let mut list = DrawList::with_capacity(256);
         store.record(&mut list, 1).unwrap();
         assert_eq!(store.memory_bytes(), u64::from(FIRST_LAYERS) * expected);
+    }
+
+    /// A texture for data: RGBA8 without mip levels, in `depth` layers.
+    fn data_desc(width: u32, height: u32, depth: u32) -> TextureDesc {
+        TextureDesc {
+            depth,
+            format: format::RGBA8_UNORM,
+            mipmaps: false,
+            ..desc(width, height)
+        }
+    }
+
+    /// Gives a texture data of its size, each word its index, and returns the data's address.
+    fn fill(store: &mut TextureStore, texture: Handle, width: u32, height: u32) -> u32 {
+        let (words, _) = store.set_data(texture, width, height).unwrap();
+        for (k, word) in words.iter_mut().enumerate() {
+            *word = k as u32;
+        }
+        memory_address(words_as_bytes(words))
+    }
+
+    /// The data slots that hold memory.
+    fn data_held(store: &TextureStore) -> usize {
+        store.data.iter().filter(|d| d.capacity() > 0).count()
+    }
+
+    #[test]
+    fn data_uploads_in_bands_from_engine_memory_and_is_freed_once_a_later_frame_was_taken() {
+        let mut h = Harness::new();
+        // Rows of 16 texels take 64 bytes, so a budget of 200 bytes takes 3 rows a frame.
+        h.store.set_budget(200);
+        let texture = h.store.create(data_desc(16, 4, 1)).unwrap();
+        let at = fill(&mut h.store, texture, 16, 4);
+        let (commands, _) = h.frame();
+        assert_eq!(
+            ops(&commands, Op::WriteTexture),
+            [vec![IDS.first_texture, 0, 0, 0, 0, 16, 3, 1, at, 192]],
+            "data waits for no image: its first band goes up at once"
+        );
+        assert_eq!(h.store.ready_layer(texture), None);
+        let (commands, _) = h.frame();
+        let writes = ops(&commands, Op::WriteTexture);
+        assert_eq!(writes[0][3..], [3, 0, 16, 1, 1, at + 192, 64]);
+        assert_eq!(h.store.ready_layer(texture), Some(0));
+        assert!(ops(&commands, Op::GenerateMipmaps).is_empty());
+        // Frame 2's list is the last that reads the data. The thread that draws has taken frame
+        // 3 once frame 4 records, which frees it.
+        h.frame();
+        assert_eq!(data_held(&h.store), 1);
+        let (commands, _) = h.frame();
+        assert_eq!(data_held(&h.store), 0, "freed");
+        assert!(ops(&commands, Op::ReleaseImage).is_empty());
+        // Data that replaces data waiting for its turn frees it once no list can read it.
+        let first = fill(&mut h.store, texture, 16, 4);
+        let second = fill(&mut h.store, texture, 16, 4);
+        assert_ne!(first, second);
+        let (commands, _) = h.frame();
+        assert_eq!(ops(&commands, Op::WriteTexture)[0][8], second);
+        assert_eq!(data_held(&h.store), 2);
+        for _ in 0..3 {
+            h.frame();
+        }
+        assert_eq!(data_held(&h.store), 0);
+    }
+
+    #[test]
+    fn a_texture_of_several_layers_has_an_array_of_its_own() {
+        let mut h = Harness::new();
+        let shared = h.store.create(data_desc(8, 8, 1)).unwrap();
+        let layers = h.store.create(data_desc(8, 8, 3)).unwrap();
+        let other = h.store.create(data_desc(8, 8, 3)).unwrap();
+        let place = |h: &Harness, t: Handle| {
+            let s = h.store.slot(t).unwrap();
+            (s.array, s.layer)
+        };
+        assert_eq!(place(&h, shared), (0, 0));
+        assert_eq!(place(&h, layers), (1, 0));
+        assert_eq!(place(&h, other), (2, 0), "no two textures of layers share");
+        let layer_bytes = 8 * 8 * 4;
+        assert_eq!(h.store.bytes(layers), Ok(3 * layer_bytes));
+        // A band stays within a layer: a budget of 32 rows takes the 3 layers of 8 rows.
+        h.store.set_budget(8 * 32 * 4);
+        fill(&mut h.store, layers, 8, 8);
+        let (commands, _) = h.frame();
+        let created = ops(&commands, Op::CreateTexture);
+        assert_eq!(
+            created.iter().map(|c| c[3]).collect::<Vec<_>>(),
+            [FIRST_LAYERS, 3, 3],
+            "an array of one texture has exactly its layers"
+        );
+        let writes = ops(&commands, Op::WriteTexture);
+        let bands: Vec<(u32, u32, u32)> = writes.iter().map(|w| (w[4], w[3], w[6])).collect();
+        assert_eq!(bands, [(0, 0, 8), (1, 0, 8), (2, 0, 8)]);
+        assert_eq!(h.store.ready_layer(layers), Some(0));
+        assert_eq!(
+            h.store.memory_bytes(),
+            u64::from(FIRST_LAYERS) * layer_bytes + 6 * layer_bytes
+        );
+        // A texture of layers with mip levels makes them for each layer.
+        let mipped = h
+            .store
+            .create(TextureDesc {
+                depth: 2,
+                ..desc(4, 4)
+            })
+            .unwrap();
+        fill(&mut h.store, mipped, 4, 4);
+        let (commands, _) = h.frame();
+        let array = ops(&commands, Op::CreateTexture)[0][0];
+        assert_eq!(
+            ops(&commands, Op::GenerateMipmaps),
+            [vec![array, 0], vec![array, 1]]
+        );
+        assert_eq!(
+            h.store.set_image(mipped, 4, 4, 0),
+            Err(TextureError::Unsupported),
+            "an image fills one layer"
+        );
+    }
+
+    #[test]
+    fn texels_of_another_size_move_the_texture_to_an_array_of_that_size() {
+        let mut h = Harness::new();
+        let texture = h.texture(8, 8);
+        let neighbour = h.texture(8, 8);
+        h.image(texture, 8, 8);
+        h.arrive(1);
+        h.frame();
+        let group = h.store.group_id(texture);
+        assert_eq!(h.store.ready_layer(texture), Some(0));
+        h.store.take_layers_changed();
+
+        let (image, moved) = h
+            .store
+            .set_image(texture, 16, 4, upload_flags::PREMULTIPLIED_ALPHA)
+            .unwrap();
+        h.images.push((16, 4));
+        assert!(moved);
+        assert!(h.store.take_layers_changed());
+        assert_ne!(h.store.group_id(texture), group, "another array's group");
+        assert_eq!(h.store.ready_layer(texture), None);
+        assert_eq!(
+            h.store.bytes(texture),
+            Ok(layer_bytes(16, 4)),
+            "a whole chain of mip levels at the new size"
+        );
+        h.arrive(image);
+        let (commands, _) = h.frame();
+        let uploads = ops(&commands, Op::UploadImage);
+        assert_eq!(
+            (uploads[0][5], uploads[0][6], uploads[0][8]),
+            (16, 4, upload_flags::PREMULTIPLIED_ALPHA)
+        );
+        assert_eq!(h.store.ready_layer(texture), Some(0));
+        // The old layer is free for the next texture of its size.
+        let next = h.texture(8, 8);
+        assert_eq!(h.store.slot(next).unwrap().layer, 0);
+        assert_eq!(h.store.slot(neighbour).unwrap().layer, 1);
+        let (_, moved) = h.store.set_image(texture, 16, 4, 0).unwrap();
+        assert!(!moved, "the same size stays");
+    }
+
+    #[test]
+    fn after_a_gpu_reset_data_uploads_again_until_it_is_freed() {
+        let mut h = Harness::new();
+        let kept = h.store.create(data_desc(4, 4, 1)).unwrap();
+        let freed = h.store.create(data_desc(4, 4, 1)).unwrap();
+        fill(&mut h.store, freed, 4, 4);
+        for _ in 0..3 {
+            h.frame();
+        }
+        fill(&mut h.store, kept, 4, 4);
+        h.frame();
+        h.store.reset_gpu();
+        h.gpu = MockBackend::default();
+        let (commands, _) = h.frame();
+        let writes = ops(&commands, Op::WriteTexture);
+        assert_eq!(writes.len(), 1, "only the data still held uploads again");
+        assert_eq!(h.store.ready_layer(kept), Some(0));
+        assert_eq!(h.store.ready_layer(freed), None);
     }
 }

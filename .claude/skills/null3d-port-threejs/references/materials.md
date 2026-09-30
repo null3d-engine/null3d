@@ -48,7 +48,7 @@ Engine docs: `porting/threejs-materials`, `api/materials`, `api/textures`, `conc
 | `toneMapped: false` | Not in 1.0 | Draw the objects in a declared pass after post-processing (0.2) |
 | `dithering` | Always on in the final pass | |
 | `clippingPlanes`, `clipShadows` | A surface function (section 8) | |
-| `shadowSide`, `precision`, `premultipliedAlpha` | Not needed | Textures stored premultiplied: `loadTexture(url, { premultipliedAlpha: true })` |
+| `shadowSide`, `precision`, `premultipliedAlpha` | Not needed | To store a texture's colors multiplied by alpha: `loadTexture(url, { premultipliedAlpha: true })` |
 
 ## 2. MeshPhysicalMaterial
 

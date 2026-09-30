@@ -47,7 +47,7 @@ scene.createMesh({ mesh: crate, material: materials.standard({ color: '#c8a064' 
 
 Every shape is centered on its origin. The options have the names of the three.js constructor's arguments, and the API reference below gives each default. Angles are in radians. Segment counts round down to whole numbers. Each count has a least, which the API reference gives, and a smaller count rises to it. A sphere, for example, has at least 3 segments around it.
 
-The generators give each vertex a position, a normal and texture coordinates, with the values that three.js gives them.
+The generators give each vertex a position, a normal and texture coordinates, with the values that three.js gives them. The [geometry generators demo](https://github.com/null3d-engine/null3d/tree/main/examples/generators) draws all nine shapes.
 
 ## Meshes from arrays
 

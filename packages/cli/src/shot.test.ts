@@ -8,8 +8,8 @@ import {
 	type ShotReport,
 	shotReport,
 	shotSummary,
-	shownPath,
 } from './shot.js';
+import { shownPath } from './text.js';
 
 const DEFAULTS: ShotOptions = {
 	out: 'shot.png',

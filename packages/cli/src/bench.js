@@ -5,12 +5,13 @@
 // and the frame rates. It saves every run's figures in a JSON file.
 import { existsSync } from 'node:fs';
 import { join, resolve } from 'node:path';
-import { readOptions, readSeconds, UsageError } from './args.js';
+import { readOptions, readSeconds, readTiers, UsageError } from './args.js';
 import { WEBGPU_DEVELOPER_FEATURES } from './browser.js';
 import { ENGINE_GLOBAL, switchedPath, TIERS } from './page.js';
 import { MEASURE_SECONDS, ms, RUNS, summarizeRuns, timedRun, WARMUP_SECONDS } from './protocol.js';
 import { failure, pollPage, startRunner, visitPage } from './runner.js';
-import { listed, readPage, readSize, shownPath, writeJson } from './shot.js';
+import { readPage, readSize, writeJson } from './shot.js';
+import { listed, shownPath } from './text.js';
 
 /** @import { JSHandle, Page } from 'playwright-core' */
 /** @import { Environment } from './browser.js' */
@@ -67,21 +68,6 @@ Playwright's Chromium on SwiftShader, the software GPU of machines without a GPU
  */
 
 /**
- * The GPU tiers of a comma-separated list, each at most once.
- *
- * @param {string} text
- * @returns {Tier[]}
- */
-function readTiers(text) {
-	const tiers = /** @type {Tier[]} */ (text.split(','));
-	if (tiers.every((tier) => TIERS.includes(tier)) && new Set(tiers).size === tiers.length)
-		return tiers;
-	throw new UsageError(
-		`--gpu takes tiers from ${TIERS.join(', ')}, joined by commas, such as webgpu,webgl2, not "${text}"`,
-	);
-}
-
-/**
  * A whole number of runs from 1.
  *
  * @param {string} text
@@ -105,7 +91,7 @@ export function parseBenchArgs(args) {
 	if (!/\.json$/i.test(out)) throw new UsageError(`--out must name a .json file, not "${out}"`);
 	return {
 		page,
-		...(values.gpu !== undefined && { gpu: readTiers(values.gpu) }),
+		...(values.gpu !== undefined && { gpu: readTiers('--gpu', values.gpu) }),
 		runs: readRuns(values.runs),
 		warmupSeconds: readSeconds('--warmup', values.warmup),
 		measureSeconds: readSeconds('--seconds', values.seconds, { above: true }),
@@ -422,14 +408,13 @@ export async function run(args) {
 	try {
 		runner = await startRunner({ production: true, browserArgs: [WEBGPU_DEVELOPER_FEATURES] });
 		unbuiltPage(page, runner.server.hasFile);
-		const { environment, browser } = runner;
 		const { runs, errors, warnings } = await runRounds(runner, options, gpus);
 		const paths = pathReports(gpus, runs);
 		report = {
 			ok: runs.every((path) => path.every((one) => one.ok)),
 			page,
-			environment,
-			browser: `${environment === 'chrome-real-gpu' ? 'Chrome' : 'Chromium'} ${browser.version()}`,
+			environment: runner.environment,
+			browser: runner.browserName,
 			warmupSeconds,
 			measureSeconds,
 			paths,
