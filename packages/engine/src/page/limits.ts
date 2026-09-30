@@ -1,9 +1,10 @@
 // What the engine core and the thread that draws need to know about the device: on WebGPU, the
-// storage binding size the engine asks the GPU for; on WebGL2, multi-draw, the texture size and
-// whether WebGL reads shared memory. They also set how many objects and instance rows a scene can
-// draw.
+// storage binding size the engine asks the GPU for; on WebGL2, multi-draw, the texture size,
+// whether WebGL reads shared memory and how depth is stored. They also set how many objects and
+// instance rows a scene can draw.
 
 import * as C from '../generated/core';
+import type { DepthMode, Switches } from './switches';
 
 /** The parts of the capability report that decide how the engine uses the device. */
 export interface DeviceReport {
@@ -33,6 +34,21 @@ export interface CoreDevice {
 	 * thread that draws copies the data out first.
 	 */
 	sharedUploads: boolean;
+	/** How the GPU path stores depth: always `reversed` on WebGPU. */
+	depth: DepthMode;
+}
+
+/** The depth mode of a WebGL2 device without `EXT_clip_control`. */
+export const DEPTH_WITHOUT_CLIP_CONTROL: DepthMode = 'reversed-gl';
+
+/**
+ * The depth mode a WebGL2 device draws with: `reversed` where it has `EXT_clip_control`, and
+ * `DEPTH_WITHOUT_CLIP_CONTROL` elsewhere. `wanted`, from the ?depth= switch, overrides that
+ * where the device can draw it.
+ */
+export function webgl2Depth(clipControl: boolean, wanted: DepthMode | undefined): DepthMode {
+	if (wanted && (wanted !== 'reversed' || clipControl)) return wanted;
+	return clipControl ? 'reversed' : DEPTH_WITHOUT_CLIP_CONTROL;
 }
 
 /**
@@ -47,14 +63,14 @@ export function storageBindingBytes(limits: Record<string, number | null>): numb
 }
 
 /**
- * The device as the engine uses it on WebGL2 or WebGPU, from the capability report. `copyUploads`
- * makes the WebGL2 path copy uploads out of shared memory even where WebGL reads it, so tests
- * reach both routes.
+ * The device as the engine uses it on WebGL2 or WebGPU, from the capability report and the test
+ * switches. `copyUploads` makes the WebGL2 path copy uploads out of shared memory even where
+ * WebGL reads it, and `depth` forces a WebGL2 depth mode, so tests reach every route.
  */
 export function coreDevice(
 	webgl2: boolean,
 	report: DeviceReport,
-	copyUploads: boolean,
+	{ copyUploads, depth }: Pick<Switches, 'copyUploads' | 'depth'>,
 ): CoreDevice {
 	if (!webgl2) {
 		return {
@@ -63,6 +79,7 @@ export function coreDevice(
 			capabilities: 0,
 			maxTextureSize: 0,
 			sharedUploads: true,
+			depth: 'reversed',
 		};
 	}
 	const gl = report.webgl2;
@@ -74,6 +91,7 @@ export function coreDevice(
 		capabilities: multiDraw ? C.CAPABILITY_MULTI_DRAW : 0,
 		maxTextureSize: Math.max(C.LIMIT_WEBGL2_MIN_TEXTURE_SIZE, gl.maxTextureSize ?? 0),
 		sharedUploads: !copyUploads && shared !== null && shared.bufferSubData && shared.texSubImage2D,
+		depth: webgl2Depth(gl.extensions.EXT_clip_control === true, depth),
 	};
 }
 

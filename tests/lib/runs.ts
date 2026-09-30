@@ -9,7 +9,10 @@ import { CURRENT_RUN_FILE, RUNS_DIR } from './report-collector.ts';
 export interface PlanItem<Check = unknown> {
 	/** The item's name, which is also its result's file name. */
 	id: string;
-	/** The page to open: a path on the dev server, with its switches. */
+	/**
+	 * The page to open: a path on the dev server, with its switches. The runner page puts its run and
+	 * its own name where the path has `{run}` and `{runner}`.
+	 */
 	path: string;
 	/** How long the page may take to publish its result. */
 	timeoutSeconds: number;

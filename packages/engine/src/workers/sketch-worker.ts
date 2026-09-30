@@ -15,6 +15,7 @@ import {
 	replyWithCapture,
 	type SketchWorkerMessage,
 	startSteps,
+	startWorker,
 	startWorkerCore,
 } from './protocol';
 
@@ -55,15 +56,15 @@ async function runPipelined(sketch: SketchRunner, control: ArrayBufferLike): Pro
 }
 
 const step = startSteps('sketch');
-step('loaded');
 
-self.onmessage = async (event: MessageEvent<SketchWorkerMessage>) => {
+startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => {
 	const message = event.data;
 	if (message.type === 'init') {
 		try {
 			// The renderer loads while the core and the sketch start.
 			const drawModule = message.renderer && loadDrawModule();
-			controlSlots = controlViews(message.control).slots;
+			const control = controlViews(message.control);
+			controlSlots = control.slots;
 			const started = await startWorkerCore(message, step);
 			const core = started.glue;
 			const memory = started.memory as WebAssembly.Memory;
@@ -73,7 +74,8 @@ self.onmessage = async (event: MessageEvent<SketchWorkerMessage>) => {
 				{
 					glue: core,
 					memory,
-					slots: controlSlots,
+					control,
+					keyCodes: message.keyCodes,
 					jobWorkers: message.jobWorkers,
 					device: message.device,
 				},
@@ -118,4 +120,4 @@ self.onmessage = async (event: MessageEvent<SketchWorkerMessage>) => {
 	} else if (message.type === 'lose-gpu') {
 		drawing?.simulateLoss();
 	}
-};
+});

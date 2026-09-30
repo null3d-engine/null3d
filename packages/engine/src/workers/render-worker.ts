@@ -12,6 +12,7 @@ import {
 	replyToPage,
 	replyWithCapture,
 	startSteps,
+	startWorker,
 	startWorkerCore,
 } from './protocol';
 
@@ -19,9 +20,8 @@ let drawing: Drawing<Renderer> | undefined;
 let controlSlots: Int32Array | undefined;
 
 const step = startSteps('render');
-step('loaded');
 
-self.onmessage = async (event: MessageEvent<RenderWorkerInit | RendererRequest>) => {
+startWorker('render', step, async (event: MessageEvent<RenderWorkerInit | RendererRequest>) => {
 	const message = event.data;
 	if (message.type === 'init') {
 		try {
@@ -51,4 +51,4 @@ self.onmessage = async (event: MessageEvent<RenderWorkerInit | RendererRequest>)
 	} else if (message.type === 'lose-gpu') {
 		drawing?.simulateLoss();
 	}
-};
+});

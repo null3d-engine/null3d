@@ -23,10 +23,11 @@ use null3d_core::scene::{CommandRing, SceneStorage};
 use null3d_core::snapshot::FrameSnapshot;
 use null3d_gpu::caps::Capabilities;
 use null3d_gpu::drawlist::sizes;
+use null3d_render::arrays::{ArrayName, ArraysError, MeshArrays, from_arrays};
 use null3d_render::camera::Perspective;
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::frame::{FrameBuilder, FrameInput, RecordError};
-use null3d_render::geometry::{box_geometry, sphere_geometry};
+use null3d_render::geometry::{Geometry, box_geometry, sphere_geometry};
 use null3d_render::gpu_driven::{
     BYTES_PER_SOURCE, GpuDrivenRenderer, MAX_USEFUL_BINDING_BYTES, RendererConfig,
 };
@@ -35,7 +36,7 @@ use wasm_bindgen::prelude::*;
 
 pub mod constants;
 
-use constants::{batch_field, ring_field, scene_field};
+use constants::{arrays_problem, batch_field, mesh_arrays, ring_field, scene_field, shading};
 
 /// The engine version, as the loader reports it.
 #[wasm_bindgen(js_name = engineVersion)]
@@ -61,6 +62,8 @@ const UPLOAD_RANGES: u32 = 4096;
 
 /// Engine error codes for failures that do not come from the core.
 mod codes {
+    /// Arrays that make no mesh; the details give the problem (`constants::arrays_problem`).
+    pub const BAD_ARRAYS: u32 = 1206;
     /// A function that needs the engine ran before `initEngine`, or `initEngine` ran twice.
     pub const NOT_READY: u32 = 1403;
     /// A mesh, material or GPU buffer is full, or an id names nothing (details say which).
@@ -70,7 +73,6 @@ mod codes {
 /// Details of `codes::RENDER` failures.
 mod render_detail {
     pub const DRAW_LIST_FULL: u32 = 1;
-    pub const MESH_BUFFERS_FULL: u32 = 2;
     pub const TOO_MANY_SOURCES: u32 = 3;
     pub const MATERIALS_FULL: u32 = 4;
     pub const UNKNOWN_MATERIAL: u32 = 5;
@@ -88,6 +90,8 @@ struct Engine {
     structure_changed: bool,
     /// True when the last recorded frame rebuilt its draw tables.
     rebuilt: bool,
+    /// The words that TypeScript writes a mesh's arrays into, for `createMeshFromArrays`.
+    staging: Vec<u32>,
 }
 
 impl Engine {
@@ -145,14 +149,27 @@ fn render_failure(detail: u32, value: u32) -> u32 {
 fn record_failure(error: RecordError) -> u32 {
     let (detail, value) = match error {
         RecordError::DrawListFull => (render_detail::DRAW_LIST_FULL, 0),
-        RecordError::MeshBuffersFull => (render_detail::MESH_BUFFERS_FULL, 0),
         RecordError::TooManySources { limit } => (render_detail::TOO_MANY_SOURCES, limit),
         RecordError::UploadsFull => (render_detail::UPLOADS_FULL, 0),
         RecordError::OutOfMemory { bytes } => {
             return core_failure(CoreError::OutOfMemory { bytes });
         }
+        RecordError::Graph(error) => return fail(error.code(), error.details()),
     };
     render_failure(detail, value)
+}
+
+fn arrays_failure(error: ArraysError) -> u32 {
+    let (problem, value) = match error {
+        ArraysError::NoVertices => (arrays_problem::NO_VERTICES, 0),
+        ArraysError::Length(array) => (arrays_problem::LENGTH, array as u32),
+        ArraysError::NotTriangles => (arrays_problem::NOT_TRIANGLES, 0),
+        ArraysError::Twice(array) => (arrays_problem::TWICE, array as u32),
+        ArraysError::Missing(array) => (arrays_problem::MISSING, array as u32),
+        ArraysError::IndexOutOfRange { at } => (arrays_problem::INDEX_OUT_OF_RANGE, at),
+        ArraysError::NotFinite { array, at } => (arrays_problem::NOT_FINITE + array as u32, at),
+    };
+    fail(codes::BAD_ARRAYS, [problem, value])
 }
 
 fn material_failure(error: MaterialError) -> u32 {
@@ -263,6 +280,7 @@ pub fn init_engine(
         },
         structure_changed: true,
         rebuilt: false,
+        staging: Vec::new(),
     });
     0
 }
@@ -606,7 +624,7 @@ pub fn memory_epoch() -> u32 {
 
 // --- Meshes and materials ---
 
-fn add_mesh(e: &mut Engine, geometry: &null3d_render::geometry::Geometry) -> Result<u32, u32> {
+fn add_mesh(e: &mut Engine, geometry: &Geometry) -> Result<u32, u32> {
     let id = e
         .renderer
         .settings_mut()
@@ -654,6 +672,99 @@ pub fn create_sphere_mesh(radius: f32, width_segments: u32, height_segments: u32
     })
 }
 
+/// Makes room for `words` 32-bit words of a mesh's arrays, which TypeScript then writes, and
+/// returns their address. `createMeshFromArrays` reads them, and frees them.
+#[wasm_bindgen(js_name = meshArrays)]
+pub fn mesh_arrays(words: u32) -> u32 {
+    value_with_engine(|e| {
+        let out_of_memory = || {
+            core_failure(CoreError::OutOfMemory {
+                bytes: words.saturating_mul(4),
+            })
+        };
+        e.staging.clear();
+        e.staging
+            .try_reserve_exact(words.max(1) as usize)
+            .map_err(|_| out_of_memory())?;
+        e.staging.resize(words as usize, 0);
+        Ok(address(e.staging.as_slice()))
+    })
+}
+
+/// A mesh from the arrays in the staging words, as `layout` (`constants::mesh_arrays` bits)
+/// describes them, for `vertices` vertices and `indices` indices. Normals and tangents that
+/// `layout` asks for are computed on the job workers. Returns the mesh id.
+#[wasm_bindgen(js_name = createMeshFromArrays)]
+pub fn create_mesh_from_arrays(vertices: u32, indices: u32, layout: u32) -> u32 {
+    value_with_engine(|e| {
+        let jobs = JOBS.get().ok_or_else(|| fail(codes::NOT_READY, [0, 0]))?;
+        let staging = std::mem::take(&mut e.staging);
+        let geometry = {
+            let arrays = staged_arrays(&staging, vertices as usize, indices as usize, layout)
+                .ok_or_else(|| arrays_failure(ArraysError::Length(ArrayName::Positions)))?;
+            from_arrays(&arrays, jobs).map_err(arrays_failure)?
+        };
+        drop(staging);
+        add_mesh(e, &geometry)
+    })
+}
+
+/// The arrays in the staging words, or `None` when the words are fewer than the layout needs.
+fn staged_arrays(
+    words: &[u32],
+    vertices: usize,
+    indices: usize,
+    layout: u32,
+) -> Option<MeshArrays<'_>> {
+    let has = |bit: u32| layout & bit != 0;
+    let color_floats = if has(mesh_arrays::COLORS_ALPHA) { 4 } else { 3 };
+    let float_words = vertices
+        * [
+            (true, 3),
+            (has(mesh_arrays::NORMALS), 3),
+            (has(mesh_arrays::UVS), 2),
+            (has(mesh_arrays::UVS1), 2),
+            (has(mesh_arrays::COLORS), color_floats),
+            (has(mesh_arrays::TANGENTS), 4),
+        ]
+        .iter()
+        .filter(|(present, _)| *present)
+        .map(|(_, floats)| floats)
+        .sum::<usize>();
+    let index_words = if has(mesh_arrays::INDICES) {
+        indices
+    } else {
+        0
+    };
+    if words.len() != float_words + index_words {
+        return None;
+    }
+    // SAFETY: every `u32` is four initialized bytes that make a valid `f32`, of the same size and
+    // alignment, and the float words stay in bounds.
+    let floats: &[f32] =
+        unsafe { std::slice::from_raw_parts(words.as_ptr().cast::<f32>(), float_words) };
+    let mut at = 0;
+    let mut next = |present: bool, per_vertex: usize| {
+        present.then(|| {
+            let array = &floats[at..at + vertices * per_vertex];
+            at += vertices * per_vertex;
+            array
+        })
+    };
+    Some(MeshArrays {
+        positions: next(true, 3)?,
+        normals: next(has(mesh_arrays::NORMALS), 3),
+        uvs: next(has(mesh_arrays::UVS), 2),
+        uvs1: next(has(mesh_arrays::UVS1), 2),
+        colors: next(has(mesh_arrays::COLORS), color_floats),
+        color_floats,
+        tangents: next(has(mesh_arrays::TANGENTS), 4),
+        indices: has(mesh_arrays::INDICES).then(|| &words[float_words..]),
+        compute_normals: has(mesh_arrays::COMPUTE_NORMALS),
+        compute_tangents: has(mesh_arrays::COMPUTE_TANGENTS),
+    })
+}
+
 /// The distance from a mesh's origin to its farthest vertex, or 0 for an unknown mesh.
 #[wasm_bindgen(js_name = meshRadius)]
 pub fn mesh_radius(mesh: u32) -> f32 {
@@ -670,11 +781,16 @@ pub fn mesh_radius(mesh: u32) -> f32 {
     radius
 }
 
-/// Creates a material with a linear color and returns its id, counting from 1: a lit material
-/// shades like three.js's `MeshLambertMaterial`, an unlit one like its `MeshBasicMaterial`.
+/// Creates a material with a linear color and returns its id, counting from 1. Its shading
+/// (`constants::shading`) is lit, like three.js's `MeshLambertMaterial`, unlit, like its
+/// `MeshBasicMaterial`, or the first texture coordinates as colors, for the engine's own tests.
 #[wasm_bindgen(js_name = createMaterial)]
-pub fn create_material(unlit: bool, r: f32, g: f32, b: f32, a: f32) -> u32 {
-    let shading = if unlit { Shading::Unlit } else { Shading::Lit };
+pub fn create_material(shading: u32, r: f32, g: f32, b: f32, a: f32) -> u32 {
+    let shading = match shading {
+        shading::UNLIT => Shading::Unlit,
+        shading::TEXCOORDS => Shading::TexCoords,
+        _ => Shading::Lit,
+    };
     value_with_engine(|e| {
         e.renderer
             .settings_mut()

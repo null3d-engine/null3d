@@ -405,6 +405,7 @@ export class WebGPUBackend {
 						this.format(words[a + 4] as number),
 						words[a + 5] as number,
 						words[a + 6] as number,
+						words[a + 7] as number,
 					);
 					break;
 				case G.OP_CREATE_COMPUTE_PIPELINE:

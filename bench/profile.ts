@@ -11,14 +11,20 @@
 //   bun run bench:profile --scene s2 --gpu webgpu --seconds 10
 //   bun run bench:profile --android --n 300000 --thread sketch
 import { chromium } from '@playwright/test';
-import { forwardDevTools, forwardPort, phoneModel, startBrowser } from '../tests/lib/adb.ts';
-import { HTTP_PORT, startServer } from '../tests/lib/server.ts';
-import { attachWorkers, type CallFrame, DevTools, evaluate, pagesAt, sleep } from './lib/devtools';
+import { forwardPort, phoneModel } from '../tests/lib/adb.ts';
+import { DEBUG_PORT, HTTP_PORT, startServer } from '../tests/lib/server.ts';
+import {
+	attachWorkers,
+	type CallFrame,
+	closePagesAt,
+	connectPhoneChrome,
+	DevTools,
+	pageResultOf,
+	sleep,
+} from './lib/devtools';
 import { PARITY_SCENES, type ParityScene, pagePath } from './lib/parity';
 import { type CpuProfile, type EntrySplit, splitEntry } from './lib/profile';
 
-/** Chrome's debugging port on this computer, for a Chrome started here or one on a phone. */
-const DEBUG_PORT = 9334;
 /** The engine's source files, as the dev server serves them. */
 const ENGINE_URL = '/packages/engine/src/';
 /** The worker whose time the tool splits, by a part of its script's address. */
@@ -112,20 +118,9 @@ interface PageResult {
 }
 
 async function waitForResult(devtools: DevTools, page: string, timeoutMs: number) {
-	const deadline = Date.now() + timeoutMs;
-	while (Date.now() < deadline) {
-		const result = await evaluate<PageResult | null>(
-			devtools,
-			page,
-			'globalThis.__null3dResult ?? null',
-		);
-		if (result) {
-			if (!result.ok) throw new Error(`the page failed: ${result.error}`);
-			return result;
-		}
-		await sleep(1000);
-	}
-	throw new Error('the page published no result in time');
+	const result = await pageResultOf<PageResult>(devtools, page, timeoutMs);
+	if (!result.ok) throw new Error(`the page failed: ${result.error}`);
+	return result;
 }
 
 interface SceneProfile {
@@ -203,12 +198,11 @@ async function main(): Promise<void> {
 	const stops: (() => Promise<void> | void)[] = [() => server.stop()];
 	try {
 		let device = 'this computer, Chrome';
+		let devtools: DevTools;
 		if (options.android) {
 			device = `${phoneModel()}, Chrome`;
 			forwardPort(HTTP_PORT);
-			forwardDevTools(DEBUG_PORT);
-			// Chrome has its debugging socket only while it runs.
-			startBrowser('chrome');
+			devtools = await connectPhoneChrome(DEBUG_PORT);
 		} else {
 			const browser = await chromium.launch({
 				channel: 'chrome',
@@ -216,12 +210,11 @@ async function main(): Promise<void> {
 				args: [`--remote-debugging-port=${DEBUG_PORT}`],
 			});
 			stops.push(() => browser.close());
+			devtools = await DevTools.connect(DEBUG_PORT);
 		}
-		const devtools = await DevTools.connect(DEBUG_PORT);
 		stops.push(() => devtools.close());
 		// A benchmark page left open by an earlier run would draw beside the profiled one.
-		for (const { targetId } of await pagesAt(devtools, `${server.url}/bench/pages/`))
-			await devtools.send('Target.closeTarget', { targetId });
+		await closePagesAt(devtools, `${server.url}/bench/pages/`);
 		console.log(
 			`Profiling the ${THREADS[options.thread].worker.replace('-', ' ')} on ${device}, ${options.gpu}: ${options.seconds} s per scene after at least ${options.warmup} s`,
 		);

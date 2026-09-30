@@ -20,6 +20,7 @@
 //! | [`alloc`] | Allocation that reports running out of memory instead of aborting |
 //! | [`snapshot`] | The frame handoff between the sketch worker and the render worker |
 //! | [`jobs`] | The job system: parallel loops, background tasks, worker loops |
+//! | [`shared`] | Writes to disjoint parts of one buffer from a parallel loop's chunks |
 //! | `testing` | With the `testing` feature: a global allocator that counts allocations, for tests |
 //!
 //! Frame code allocates nothing: every buffer a frame uses is allocated at creation with a fixed
@@ -43,7 +44,7 @@ pub mod instances;
 pub mod jobs;
 pub mod math;
 pub mod scene;
-mod shared;
+pub mod shared;
 pub mod snapshot;
 #[cfg(feature = "testing")]
 pub mod testing;

@@ -1,6 +1,13 @@
 import { describe, expect, it } from 'bun:test';
 import * as C from '../generated/core';
-import { coreDevice, type DeviceReport, maxInstances, storageBindingBytes } from './limits';
+import {
+	coreDevice,
+	DEPTH_WITHOUT_CLIP_CONTROL,
+	type DeviceReport,
+	maxInstances,
+	storageBindingBytes,
+	webgl2Depth,
+} from './limits';
 
 const MIB = 1024 * 1024;
 
@@ -11,7 +18,13 @@ const webgpu = (storageBindingBytes: number) => ({
 	capabilities: 0,
 	maxTextureSize: 0,
 	sharedUploads: true,
+	depth: 'reversed' as const,
 });
+
+/** No test switch. */
+const NO_SWITCHES = { copyUploads: false, depth: undefined };
+/** ?uploads=copy. */
+const COPY_UPLOADS = { copyUploads: true, depth: undefined };
 
 /** A report whose WebGL2 part has these fields. */
 function report(webgl2: Partial<DeviceReport['webgl2']>): DeviceReport {
@@ -58,33 +71,56 @@ describe('storageBindingBytes', () => {
 
 describe('coreDevice on WebGL2', () => {
 	it('sizes the scene by the texture size, never below what every device allows', () => {
-		const device = coreDevice(true, report({ maxTextureSize: 8192 }), false);
+		const device = coreDevice(true, report({ maxTextureSize: 8192 }), NO_SWITCHES);
 		expect(maxInstances(device)).toBe(C.LIMIT_MATRICES_PER_TEXTURE_ROW * 8192);
-		const small = coreDevice(true, report({ maxTextureSize: 1024 }), false);
+		const small = coreDevice(true, report({ maxTextureSize: 1024 }), NO_SWITCHES);
 		expect(small.maxTextureSize).toBe(C.LIMIT_WEBGL2_MIN_TEXTURE_SIZE);
 	});
 
 	it('stops at the sources an index list entry can name, however large the textures', () => {
-		const large = coreDevice(true, report({ maxTextureSize: 32768 }), false);
+		const large = coreDevice(true, report({ maxTextureSize: 32768 }), NO_SWITCHES);
 		expect(maxInstances(large)).toBe(C.LIMIT_WEBGL2_MAX_SOURCES);
 		expect(C.LIMIT_WEBGL2_MAX_SOURCES).toBe(C.LIMIT_MATRICES_PER_TEXTURE_ROW * 16384);
 	});
 
 	it('passes multi-draw to the core only where the extension exists', () => {
 		const withIt = report({ extensions: { WEBGL_multi_draw: true } });
-		expect(coreDevice(true, withIt, false).capabilities).toBe(C.CAPABILITY_MULTI_DRAW);
-		expect(coreDevice(true, report({}), false).capabilities).toBe(0);
+		expect(coreDevice(true, withIt, NO_SWITCHES).capabilities).toBe(C.CAPABILITY_MULTI_DRAW);
+		expect(coreDevice(true, report({}), NO_SWITCHES).capabilities).toBe(0);
 	});
 
 	it('reads shared memory only where WebGL accepts it for both kinds of upload', () => {
-		expect(coreDevice(true, report({}), false).sharedUploads).toBe(true);
-		expect(coreDevice(true, report({}), true).sharedUploads).toBe(false);
+		expect(coreDevice(true, report({}), NO_SWITCHES).sharedUploads).toBe(true);
+		expect(coreDevice(true, report({}), COPY_UPLOADS).sharedUploads).toBe(false);
 		const noTextures = report({
 			sharedMemoryUploads: { bufferSubData: true, texSubImage2D: false },
 		});
-		expect(coreDevice(true, noTextures, false).sharedUploads).toBe(false);
-		expect(coreDevice(true, report({ sharedMemoryUploads: null }), false).sharedUploads).toBe(
+		expect(coreDevice(true, noTextures, NO_SWITCHES).sharedUploads).toBe(false);
+		expect(coreDevice(true, report({ sharedMemoryUploads: null }), NO_SWITCHES).sharedUploads).toBe(
 			false,
+		);
+	});
+});
+
+describe('the depth mode', () => {
+	const clipControl = report({ extensions: { EXT_clip_control: true } });
+
+	it('is reversed on WebGPU, and on WebGL2 where the browser has EXT_clip_control', () => {
+		expect(coreDevice(false, report({}), NO_SWITCHES).depth).toBe('reversed');
+		expect(coreDevice(true, clipControl, NO_SWITCHES).depth).toBe('reversed');
+		expect(coreDevice(true, report({}), NO_SWITCHES).depth).toBe(DEPTH_WITHOUT_CLIP_CONTROL);
+	});
+
+	it('follows ?depth= on WebGL2, but never to reversed depth without EXT_clip_control', () => {
+		for (const wanted of ['reversed', 'reversed-gl', 'standard'] as const)
+			expect(coreDevice(true, clipControl, { copyUploads: false, depth: wanted }).depth).toBe(
+				wanted,
+			);
+		expect(webgl2Depth(false, 'standard')).toBe('standard');
+		expect(webgl2Depth(false, 'reversed-gl')).toBe('reversed-gl');
+		expect(webgl2Depth(false, 'reversed')).toBe(DEPTH_WITHOUT_CLIP_CONTROL);
+		expect(coreDevice(false, report({}), { copyUploads: false, depth: 'standard' }).depth).toBe(
+			'reversed',
 		);
 	});
 });

@@ -1,14 +1,12 @@
 ---
 id: concepts/culling
 title: Culling
-status: planned
+status: experimental
 since: "0.1"
 summary: "Frustum culling on the GPU on WebGPU and on the job workers on WebGL2; grid cells and positions relative to the camera."
 ---
 
 # Culling
-
-> Planned for null3D 0.1. No release has these APIs yet, so coding agents must not use them.
 
 ```mermaid
 flowchart LR
@@ -24,7 +22,7 @@ flowchart LR
     cull --> draw["Draw the visible<br/>objects and rows"]
 ```
 
-Culling finds the objects and instance rows in the camera's view, so the GPU draws only those. The engine tests each bounding sphere against the six planes of the view. Every position in the test is relative to the camera, so a scene far from the origin culls and draws as it does near it.
+Culling finds the objects and instance rows in the camera's view, so the GPU draws only those. The engine tests each bounding sphere against the six planes of the view. Every position in the test is relative to the camera, so a scene far from the origin culls and draws as it does near it. The engine culls each [view](render-graph.md) on its own, against its own camera.
 
 ## How each path culls
 
@@ -41,7 +39,7 @@ The engine divides space into cells 1,024 m wide. The origin cell spans 512 m on
 - A root object takes the cell that holds its position. Its children take its cell.
 - An instance row takes the cell that holds its position.
 
-The engine keeps each world matrix relative to its cell's center, where 32-bit floats are precise to a fraction of a millimeter. Each frame it computes the offset from the camera to each cell in use, in 64-bit floats, and uploads one vector per cell. The GPU adds an object's offset to its position, so every position it sees is relative to the camera. Positions near the camera keep the most precision.
+The engine keeps each world matrix relative to its cell's center, where 32-bit floats are precise to a fraction of a millimeter. Each frame it computes the offset from the camera to each cell in use, in 64-bit floats, and uploads one vector per cell. Each view gets the offsets from its own camera. The GPU adds an object's offset to its position, so every position it sees is relative to the camera. Positions near the camera keep the most precision.
 
 When only the camera moves, static objects keep their data on the GPU, and only the offsets change. A scene inside one cell uploads one vector per frame.
 

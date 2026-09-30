@@ -10,17 +10,23 @@
 //   bun tests/real-browsers.ts --plan bench --allow-no-webgpu --android chrome --n 250000
 //   bun tests/real-browsers.ts --plan bench --allow-no-webgpu --android chrome --n 300000 --jobs 2,4,6,8
 //   bun tests/real-browsers.ts --plan memory --android chrome --lan ipad-safari
+//   bun tests/real-browsers.ts --plan startup --android brave --lan ipad-safari,ipad-brave
+//   bun tests/real-browsers.ts --plan depth --allow-no-webgpu --android chrome,brave --lan ipad-safari,ipad-brave
 // Options:
 //   --plan <name>       the plan to run: checks (the default), parity, bench, memory, which loads
 //                       the engine page 20 times at each shared memory maximum from 256 to 4096 MiB,
-//                       or scale, which finds the largest S1 count at which three.js holds 30
-//                       frames per second
+//                       startup, which times cold and warm loads of the engine page's production
+//                       build in each thread mode, depth, which runs the image test manifest's depth
+//                       precision tests and counts the fighting pixels of surfaces 1 cm apart from
+//                       1 m to 10 km in each depth mode, or scale, which finds the largest S1 count
+//                       at which three.js holds 30 frames per second
 //   --allow-no-webgpu   a browser without WebGPU skips the WebGPU pages instead of failing them
 //   --allow-no-webgl2   a browser without WebGL2 skips the WebGL2 pages instead of failing them
 //   --n <count>         the instance count of the bench plan's pages
-//   --runs <count>      fresh runs of each bench plan page, the protocol's 5 by default, or loads
-//                       at each maximum of the memory plan, 20 by default; 0 there runs only the
-//                       counts of how many engines fit at once
+//   --runs <count>      fresh runs of each bench plan page, the protocol's 5 by default, loads at
+//                       each maximum of the memory plan, 20 by default, where 0 runs only the
+//                       counts of how many engines fit at once, or cold and warm loads of each
+//                       thread mode in the startup plan, 5 by default
 //   --jobs <list>       job worker counts, such as 2,4,6,8: the bench plan then runs null3D's two
 //                       GPU paths at each count instead of its usual pages
 //   --pages <list>      the bench plan's page kinds, such as null3d-webgl2,null3d-webgl2-low
@@ -51,8 +57,12 @@ import {
 import { forwardPort, openOnPhone, phoneModel } from './lib/adb.ts';
 import { HeatLog, type HeatSample, type HeatSummary, heatText, summarizeHeat } from './lib/heat.ts';
 import { clearCandidates } from './lib/images.ts';
+import { isLoadPath } from './lib/load-routes.ts';
+import { buildStartupPages, prepareLoads } from './lib/load-server.ts';
 import {
 	benchSummary,
+	type Check,
+	depthSummary,
 	judge,
 	type MissingAllowed,
 	memorySummary,
@@ -60,11 +70,13 @@ import {
 	NONE_MISSING,
 	neededPath,
 	PLANS,
+	startupSummary,
 } from './lib/plans.ts';
 import { RUNS_DIR } from './lib/report-collector.ts';
 import {
 	addToResult,
 	type ItemResult,
+	type PlanItem,
 	type Runner,
 	readDevice,
 	readResult,
@@ -364,29 +376,31 @@ function wholeHeatText(samples: readonly HeatSample[]): string | undefined {
 	return heat ? heatText(heat) : undefined;
 }
 
+/** A fixed plan's items with the command line's settings, or undefined for the phone-scale search. */
+export function planItems(options: Options): PlanItem<Check>[] | undefined {
+	return PLANS[options.plan]?.({
+		count: options.count,
+		runs: options.runs,
+		jobs: options.jobs,
+		pages: options.pages,
+		scenes: options.scenes,
+		seconds: options.seconds,
+	});
+}
+
 /**
  * Runs a fixed plan: each batch of runners at once, one browser per device, while the phone's heat
  * is read. Judges each result and prints a summary; returns the number of failures.
  */
 async function runPlan(
 	options: Options,
+	items: PlanItem<Check>[],
 	runners: readonly LaunchedRunner[],
 	launches: Launches,
 	local: DevServer,
 ): Promise<number> {
-	const makeItems = PLANS[options.plan] as NonNullable<(typeof PLANS)[string]>;
 	const run = runName(options.plan);
-	const plan = writePlan(
-		run,
-		makeItems({
-			count: options.count,
-			runs: options.runs,
-			jobs: options.jobs,
-			pages: options.pages,
-			scenes: options.scenes,
-			seconds: options.seconds,
-		}),
-	);
+	const plan = writePlan(run, items);
 	const heatReadings = new Map<string, HeatSample[]>();
 	try {
 		for (const batch of turnBatches(runners)) {
@@ -490,8 +504,10 @@ async function runPlan(
 	writeFileSync(join(RUNS_DIR, run, 'summary.json'), JSON.stringify(summary, null, '\t'));
 	for (const { name } of runners) {
 		const resultOf = (id: string) => readResult(run, name, id);
-		for (const table of [benchSummary(plan.items, resultOf), memorySummary(plan.items, resultOf)])
-			if (table) console.log(`\n${name}\n${table}\n`);
+		const tables = [benchSummary, memorySummary, startupSummary, depthSummary].map((summary) =>
+			summary(plan.items, resultOf),
+		);
+		for (const table of tables) if (table) console.log(`\n${name}\n${table}\n`);
 		const heat = wholeHeatText(heatReadings.get(name) ?? []);
 		if (heat) console.log(`${name}, heat through the run: ${heat}`);
 	}
@@ -638,6 +654,10 @@ async function main(): Promise<void> {
 		console.log(`${deviceChecklist(names, options.shields).join('\n')}\n`);
 	}
 
+	const items = planItems(options);
+	// A plan that loads the production build builds it first, and each dev server serves it per load.
+	const loads = items?.some((item) => isLoadPath(item.path)) ?? false;
+	if (loads) buildStartupPages();
 	const local = await startServer();
 	const lan = options.lan.length > 0 ? await startServer(true) : undefined;
 	if (lan) {
@@ -650,10 +670,10 @@ async function main(): Promise<void> {
 	}
 	let failures: number;
 	try {
-		failures =
-			options.plan === SCALE_PLAN
-				? await runScale(options, runners, launches, local)
-				: await runPlan(options, runners, launches, local);
+		if (loads) for (const server of [local, lan]) if (server) await prepareLoads(server.selfUrl);
+		failures = items
+			? await runPlan(options, items, runners, launches, local)
+			: await runScale(options, runners, launches, local);
 	} finally {
 		local.stop();
 		lan?.stop();

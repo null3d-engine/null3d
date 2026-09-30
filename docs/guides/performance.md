@@ -98,9 +98,9 @@ Performance advice written for other engines often assumes things that do not ho
 
 | Question | null3D's answer |
 | --- | --- |
-| What makes the GPU build a pipeline? | A shading model, lit or unlit, with the canvas's color format, the depth format and the sample count. A material never does: materials are rows in one shared table, so a thousand lit materials share one lit pipeline. |
-| When are pipelines built? | In the first frame, and again after the browser replaces the GPU. Sketch code never compiles one. `measure` counts builds in `pipelines`. |
-| What does the engine batch by itself? | Every object and instance row with the same shading model, mesh and material goes into one bucket, which one indirect draw call draws. Separate objects from `createMesh` batch the same way as the rows of an instance batch. |
+| What makes the GPU build a pipeline? | A shading model, lit or unlit, and the vertex format of the meshes it draws, with the canvas's color format, the depth format and the sample count. A material never does: materials are rows in one shared table, so a thousand lit materials share one lit pipeline for each vertex format. |
+| When are pipelines built? | In the first frame that draws a shading model with a vertex format, and again after the browser replaces the GPU. Sketch code never compiles one. `measure` counts builds in `pipelines`. |
+| What does the engine batch by itself? | Every object and instance row with the same shading model, mesh and material goes into one bucket, which one indirect draw call draws. A mesh over 65,535 vertices takes one draw per part. Separate objects from `createMesh` batch the same way as the rows of an instance batch. |
 | Which passes walk the scene? | Two: a culling pass on the GPU, which tests every object and row against the view, and the main pass, which replays a draw bundle. The engine records the bundle again only when the scene's structure changes. |
 | Does the engine know when the GPU finished a frame? | Yes. It listens to the WebGPU queue, or checks a WebGL2 fence, and blocks no thread. `measure` reports `completedFps` and `gpuLatencyMs`. Sketch code never waits for the GPU. |
 | What must stay the same for the engine to reuse its work? | The scene's structure. A static object costs nothing until a setter changes it. The calls that rebuild the draw tables are listed in [Objects during play](#objects-during-play). |
@@ -108,7 +108,7 @@ Performance advice written for other engines often assumes things that do not ho
 So some common advice does not apply:
 
 - **Merge meshes to cut draw calls.** Objects that share a mesh and a material already share one draw. Merging different small static meshes still cuts the number of buckets.
-- **Share materials so objects share a shader.** Every material already shares its pipeline. Share materials anyway, because each mesh and material pair is its own bucket and draw.
+- **Share materials so objects share a shader.** Every material already shares its pipeline for each vertex format. Share materials anyway, because each mesh and material pair is its own bucket and draw.
 - **Compile or warm up after each loading stage.** The engine builds its pipelines in the first frame. Wait for `engine.firstFrame` before you remove the loading screen.
 - **Turn off matrix updates for objects that do not move.** Objects are static by default, and a static object costs nothing per frame.
 - **Mark a changed object for update.** Setters mark the change themselves.

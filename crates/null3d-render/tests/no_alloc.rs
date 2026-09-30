@@ -7,14 +7,15 @@
 
 mod common;
 
-use common::World;
 use common::graph::{CASCADES, engine_passes};
+use common::{World, grid};
 use null3d_core::jobs::JobSystem;
 use null3d_core::testing::CountingAllocator;
 use null3d_gpu::drawlist::{DrawList, Op};
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::frame::FrameBuilder;
 use null3d_render::geometry::sphere_geometry;
+use null3d_render::materials::Shading;
 use null3d_render::parallel_record::ParallelRecorder;
 
 #[global_allocator]
@@ -36,6 +37,34 @@ fn recording_steady_frames_allocates_nothing() {
         world.record(false);
     }
     assert_eq!(CountingAllocator::disarm(), 0);
+}
+
+/// Records warm-up frames of a world with a second view, then steady frames and frames whose
+/// structure changes, and returns what those allocated.
+fn two_view_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
+    world.add_view([5.0, 0.0, 6.0]);
+    world.record(true);
+    // Frames of both parities and every ring slot, and a rebuild on each parity, warm up.
+    record_until(&mut world, 6, false);
+    record_until(&mut world, 8, true);
+    CountingAllocator::arm();
+    record_until(&mut world, 100, false);
+    record_until(&mut world, 120, true);
+    CountingAllocator::disarm()
+}
+
+#[test]
+fn recording_frames_of_two_views_allocates_nothing() {
+    let _only = CountingAllocator::exclusive();
+    CountingAllocator::track_this_thread();
+    assert_eq!(two_view_allocations(World::new()), 0, "WebGPU");
+    for multi_draw in [true, false] {
+        assert_eq!(
+            two_view_allocations(webgl2_world(multi_draw)),
+            0,
+            "WebGL2, multi-draw {multi_draw}"
+        );
+    }
 }
 
 /// The world drawn by the WebGL2 frame builder, with or without multi-draw.
@@ -125,6 +154,31 @@ fn structure_changes_after_warm_up_allocate_nothing() {
     CountingAllocator::arm();
     record_until(&mut world, 40, true);
     assert_eq!(CountingAllocator::disarm(), 0);
+}
+
+#[test]
+fn rebuilds_with_meshes_of_several_formats_and_parts_allocate_nothing_after_warm_up() {
+    let _only = CountingAllocator::exclusive();
+    CountingAllocator::track_this_thread();
+    // A grid of 90,601 vertices splits into two parts, of another vertex format than the world's
+    // meshes, and draws with a pipeline of its own.
+    let large = grid(300, 300);
+    let mut webgpu = World::new();
+    webgpu.add_object(&large, Shading::TexCoords);
+    webgpu.record(true);
+    record_until(&mut webgpu, 4, false);
+    CountingAllocator::arm();
+    record_until(&mut webgpu, 40, true);
+    assert_eq!(CountingAllocator::disarm(), 0, "WebGPU");
+    for multi_draw in [true, false] {
+        let mut world = webgl2_world(multi_draw);
+        world.add_object(&large, Shading::TexCoords);
+        world.record(true);
+        record_until(&mut world, 6, false);
+        CountingAllocator::arm();
+        record_until(&mut world, 40, true);
+        assert_eq!(CountingAllocator::disarm(), 0, "multi-draw {multi_draw}");
+    }
 }
 
 #[test]

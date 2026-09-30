@@ -44,12 +44,14 @@ run('replay', async () => {
 		instanceBuckets.filter((b) => b === 0).length,
 		instanceBuckets.filter((b) => b === 1).length,
 	];
-	const bucketInfo = new Uint32Array(8);
+	// Each bucket's record: its slice's base, its material, the mesh's radius, then its indirect
+	// draws, from its first on. Each bucket has one draw, the box's one part.
+	const bucketInfo = new Uint32Array(16);
 	const bucketFloats = new Float32Array(bucketInfo.buffer);
-	bucketInfo.set([0, 0], 0);
+	bucketInfo.set([0, 0, 0, 0, 1], 0);
 	bucketFloats[2] = Math.sqrt(3) * (BOX / 2);
-	bucketInfo.set([capacity[0] as number, 1], 4);
-	bucketFloats[6] = Math.sqrt(3) * (BOX / 2);
+	bucketInfo.set([capacity[0] as number, 1, 0, 1, 1], 8);
+	bucketFloats[10] = Math.sqrt(3) * (BOX / 2);
 
 	const view = lookAt([0, 6, 10], [0, 0, 0]);
 	const viewProj = multiply(perspectiveReversed((60 * Math.PI) / 180, 1, 0.1, 100), view);
@@ -138,6 +140,7 @@ run('replay', async () => {
 		G.FORMAT_CANVAS,
 		G.FORMAT_DEPTH32_FLOAT,
 		SAMPLES,
+		0,
 		0,
 	);
 	memory.push(G.OP_CREATE_COMPUTE_PIPELINE, 1, G.TEMPLATE_CULL, 0);

@@ -57,7 +57,7 @@ const image = await engine.capture();             // Blob of the next complete f
 // engine.registerVideo and textures.fromVideo come after 1.0; recipe 14 shows the workaround
 engine.labels.bind('hp-12', element);             // (0.2) HTML label that follows an object
 await engine.requestPointerLock();                // (0.2) for first-person controls
-engine.capabilities;  // { tier: 'webgpu' | 'webgpu-compat' | 'webgl2', threaded, features, limits, maxInstances }
+engine.capabilities;  // { tier: 'webgpu' | 'webgpu-compat' | 'webgl2', threaded, features, limits, maxInstances, depth }
 engine.setPaused(true);                           // the first step after resuming counts no time
 engine.onFailure((error) => { /* error.code: E1302 GPU lost for good, E1404 engine thread failed */ });
 engine.simulateGpuLoss();                         // acts out a driver reset; the engine recovers
@@ -194,13 +194,17 @@ Units match three.js r155 and later: directional intensity in lux-like units, po
 
 ```ts
 const mesh = geometry.fromArrays({
-  positions, normals, uvs, uvs1, colors, tangents,   // Float32Arrays
-  indices,                                            // Uint16Array or Uint32Array
-  computeNormals: false, computeTangents: false,
+  positions,                // 3 numbers per vertex: a Float32Array or a number[]
+  normals,                  // 3 per vertex, or computeNormals: true instead
+  uvs, uvs1, colors,        // 2, 2, and 3 or 4 per vertex; colors are linear
+  tangents,                 // 4 per vertex, or computeTangents: true (needs uvs)
+  indices,                  // Uint16Array, Uint32Array or number[]; omit for one triangle per 3 vertices
 });
 mesh.updateVertices('positions', data, start, count);  // (0.2) vertices that change at run time
 mesh.destroy();
 ```
+
+A mesh keeps the attributes it gets, and meshes with the same attributes share GPU buffers, so pass only the attributes the materials use. Bad arrays throw E1206. `api/geometry` covers vertex formats and meshes over 65,535 vertices.
 
 ## 9. Materials (`api/materials`)
 
@@ -305,12 +309,13 @@ Hit objects are the same wrappers you created; `hit.instance` is the row index f
 ## 14. Input (`api/input`) and controls (`api/controls`)
 
 ```ts
-input.pointer;          // { x, y (CSS pixels), ndcX, ndcY, buttons, dx, dy, wheel, isTouch }
-input.isDown('KeyW');   // KeyboardEvent.code names, mouse 'Mouse0', gamepad 'GamepadA'
-input.wasPressed('Space'); input.wasReleased('Space');
+input.pointer;          // { x, y (CSS pixels), ndcX, ndcY, buttons, dx, dy (this frame), wheel (this frame), isTouch }
+input.isDown('KeyW');   // KeyboardEvent.code names; 'Mouse0' to 'Mouse4' (Mouse0 is also a tap); 'GamepadA'
+input.wasPressed('Space'); input.wasReleased('Space');   // true for one frame; a tap between frames gives both
+input.value('GamepadRT');                // 0 to 1: triggers and stick directions such as 'GamepadLeftStickLeft'
 input.actions.define({ jump: ['Space', 'GamepadA'], fire: ['Mouse0', 'GamepadRT'] });
-input.isDown('jump');
-input.touches;          // active touches, for custom gestures
+input.isDown('jump');   // actions work in every input call; an unknown name throws E1205
+input.touches;          // fingers on the canvas, oldest first: { id, x, y, dx, dy }; changes in place
 
 import { createOrbitControls } from '@null3d/controls';
 const controls = createOrbitControls(ctx, camera, {
@@ -320,6 +325,8 @@ const controls = createOrbitControls(ctx, camera, {
 // in onUpdate: controls.update(dt)
 // also createMapControls; createFlyControls and createFirstPersonControls (0.2)
 ```
+
+Input changes once per frame, before `onUpdate`. Give a canvas that takes touch gestures `touch-action: none` in its CSS, or the browser scrolls the page and cancels the touches.
 
 ## 15. Post-processing (`api/post`)
 
@@ -403,13 +410,26 @@ Debug drawing exists in development builds only and costs nothing in release bui
 
 ```ts
 import { vec3, quat, mat4, math, color } from '@null3d/engine';
-const tmp = vec3.create();                // create once, reuse
+const tmp = vec3.create();                // create once in the setup, reuse every frame
 vec3.set(tmp, 1, 2, 3); vec3.add(tmp, tmp, other); vec3.normalize(tmp, tmp);
-quat.setAxisAngle(q, [0, 1, 0], angle); quat.slerp(q, a, b, t);
+// Also vec3.copy, sub, multiply, scale, scaleAndAdd, negate, cross, lerp, min, max,
+// transformQuat, transformMat4; and dot, length, squaredLength, distance, squaredDistance, angle.
+quat.setAxisAngle(q, [0, 1, 0], angle); quat.fromEuler(q, x, y, z, 'XYZ'); quat.slerp(q, a, b, t);
+quat.lookAt(q, eye, target);              // +Z toward the target, as a mesh looks
+// Also quat.set, copy, identity, fromMat4, rotationTo, multiply, rotateX/Y/Z, invert, normalize, dot.
+mat4.compose(m, position, rotation, scale); mat4.decompose(position, rotation, scale, m);
+// Also mat4.identity, copy, multiply, invert.
 math.clamp(v, lo, hi); math.lerp(a, b, t); math.damp(a, b, lambda, dt); math.degToRad(d);
+// Also math.inverseLerp, mapLinear, smoothstep, radToDeg, euclideanModulo.
+math.random(); math.seed(42); math.randFloat(lo, hi); math.randInt(lo, hi); math.randFloatSpread(r);
 color.fromHex(out, '#ff8800');            // linear RGB from an sRGB hex value
+color.fromSrgb(out, r, g, b); color.fromHsl(out, h, s, l); color.srgbToLinear(c); color.linearToSrgb(c);
 
 time.now; time.dt; time.frame;            // seconds, seconds, frame counter
 ```
 
-Colors given as `'#rrggbb'` strings or `0xrrggbb` numbers are sRGB and are converted to linear, as in three.js. Arrays `[r, g, b]` are linear.
+- Each helper writes its result into its first argument, `out`, and returns it. Inputs can be tuples such as `[0, 1, 0]`, plain arrays or typed arrays. Make `out` arrays with `create()`, never in per-frame code.
+- Angles are in radians. `quat.fromEuler` takes three.js's axis orders; gl-matrix's function of that name takes degrees.
+- `quat.lookAt` gives a mesh's rotation. For a camera or a light, which looks down -Z, swap `eye` and `target`.
+- `math.random` draws from one generator per thread. `math.seed(n)` makes a run repeatable. Hold mode seeds it and routes `Math.random` to it.
+- Color options take `'#rrggbb'` or `'#rgb'` strings, `0xrrggbb` numbers and `[r, g, b]` arrays from 0 to 1, all in sRGB. The engine converts them to linear, as three.js does for hex colors. The `color` helpers give linear RGB, which instance colors take.

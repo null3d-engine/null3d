@@ -11,14 +11,23 @@ use null3d_core::jobs::JobSystem;
 use null3d_core::scene::{Command, SceneStorage, flags};
 use null3d_core::snapshot::FrameSnapshot;
 use null3d_gpu::drawlist::{Op, decode};
+use null3d_render::arrays::{MeshArrays, from_arrays};
 use null3d_render::camera::Perspective;
 use null3d_render::frame::{FrameBuilder, FrameInput, NO_MESH, RecordError};
-use null3d_render::geometry::{box_geometry, sphere_geometry};
+use null3d_render::geometry::{Geometry, box_geometry, sphere_geometry};
 use null3d_render::gpu_driven::{GpuDrivenRenderer, RendererConfig};
+use null3d_render::graph::ALL_LAYERS;
 use null3d_render::materials::Shading;
+use null3d_render::view::{View, ViewId};
 
 pub const SCENE_CAPACITY: u32 = 31;
 pub const BATCH_ROWS: u32 = 1000;
+/// The lens of every camera in the world.
+pub const LENS: Perspective = Perspective {
+    fov_degrees: 60.0,
+    near: 0.1,
+    far: 100.0,
+};
 
 pub struct World<B: FrameBuilder = GpuDrivenRenderer> {
     pub jobs: JobSystem,
@@ -115,14 +124,7 @@ impl<B: FrameBuilder> World<B> {
             .set_active_count(BATCH_ROWS)
             .unwrap();
         let settings = renderer.settings_mut();
-        settings.set_camera(
-            camera,
-            Perspective {
-                fov_degrees: 60.0,
-                near: 0.1,
-                far: 100.0,
-            },
-        );
+        settings.set_camera(camera, LENS);
         settings.set_sun([-1.0, -2.0, -1.0], [3.0, 3.0, 3.0]);
         settings.set_ambient([0.4, 0.4, 0.4]);
         World {
@@ -137,6 +139,29 @@ impl<B: FrameBuilder> World<B> {
             frame: 1,
             canvas: (640, 360),
         }
+    }
+
+    /// Adds a view from a second camera at `position`, which looks down -z as the first camera
+    /// does, with the same lens, and returns it. The camera is a new object, created in the
+    /// current frame, so the frame that records next has a structure change.
+    pub fn add_view(&mut self, position: [f32; 3]) -> ViewId {
+        let camera = self.scene.reserve().unwrap();
+        self.scene.set_position(camera, position).unwrap();
+        self.scene
+            .apply_commands(
+                &[Command::create(
+                    camera,
+                    Handle::NONE,
+                    NO_MESH,
+                    flags::VISIBLE,
+                )],
+                self.frame,
+            )
+            .unwrap();
+        self.renderer
+            .settings_mut()
+            .add_view(View::new(camera, LENS, ALL_LAYERS))
+            .unwrap()
     }
 
     /// Runs the core's part of the current frame, then culls and records its draw list. Returns
@@ -168,6 +193,26 @@ impl<B: FrameBuilder> World<B> {
         self.renderer.record(&input)
     }
 
+    /// Adds a mesh and a material to the builder, and an object that draws with them, in the
+    /// current frame. Returns the engine mesh id.
+    pub fn add_object(&mut self, mesh: &Geometry, shading: Shading) -> u32 {
+        let settings = self.renderer.settings_mut();
+        let mesh = settings.meshes_mut().add(mesh).unwrap() + 1;
+        let material = settings
+            .materials_mut()
+            .create(shading, [1.0, 1.0, 1.0, 1.0])
+            .unwrap()
+            + 1;
+        let object = self.scene.reserve().unwrap();
+        self.scene.set_local_radius(object, 1.0).unwrap();
+        let commands = [
+            Command::create(object, Handle::NONE, mesh, flags::VISIBLE),
+            Command::set_material(object, material),
+        ];
+        self.scene.apply_commands(&commands, self.frame).unwrap();
+        mesh
+    }
+
     /// The operations of the frame's list with their operands.
     pub fn commands(&self) -> Vec<(Op, Vec<u32>)> {
         decode(self.renderer.list(self.frame).words())
@@ -177,6 +222,33 @@ impl<B: FrameBuilder> World<B> {
             })
             .collect()
     }
+}
+
+/// A flat grid of `columns` x `rows` unit quads facing +z, with texture coordinates from 0 to 1,
+/// and normals computed from its triangles.
+pub fn grid(columns: u32, rows: u32) -> Geometry {
+    let (mut positions, mut uvs, mut indices) = (Vec::new(), Vec::new(), Vec::new());
+    for y in 0..=rows {
+        for x in 0..=columns {
+            positions.extend_from_slice(&[x as f32, y as f32, 0.0]);
+            uvs.extend_from_slice(&[x as f32 / columns as f32, y as f32 / rows as f32]);
+        }
+    }
+    let row = columns + 1;
+    for y in 0..rows {
+        for x in 0..columns {
+            let (a, b) = (y * row + x, (y + 1) * row + x);
+            indices.extend_from_slice(&[a, a + 1, b, b, a + 1, b + 1]);
+        }
+    }
+    let arrays = MeshArrays {
+        positions: &positions,
+        uvs: Some(&uvs),
+        indices: Some(&indices),
+        compute_normals: true,
+        ..MeshArrays::default()
+    };
+    from_arrays(&arrays, &JobSystem::new(0)).unwrap()
 }
 
 pub fn count(commands: &[(Op, Vec<u32>)], op: Op) -> usize {

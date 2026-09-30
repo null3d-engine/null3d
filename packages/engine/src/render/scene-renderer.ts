@@ -8,6 +8,7 @@ import { WebGL2Backend } from '../gpu/webgl2/backend';
 import { contextFinished, releaseContext, simulateContextLoss } from '../gpu/webgl2/context';
 import { WebGPUBackend } from '../gpu/webgpu/backend';
 import { GpuTimer } from '../gpu/webgpu/gpu-timer';
+import type { CoreDevice } from '../page/limits';
 import { controlViews, Slot } from '../shared/control';
 import { Counter, type FrameRecorder, Phase } from '../shared/metrics';
 import { contextLoss, deviceLoss } from './loss';
@@ -146,8 +147,9 @@ export class WebGL2SceneRenderer implements Renderer {
 	private readonly release = new AbortController();
 
 	/**
-	 * `gl` is the canvas's context, made with the engine's settings. `sharedUploads` is false where
-	 * WebGL refuses views on shared memory, so the backend copies uploads out of engine memory first.
+	 * `gl` is the canvas's context, made with the engine's settings. Where WebGL refuses views on
+	 * shared memory, the device says so, and the backend copies uploads out of engine memory first.
+	 * The device also gives the depth mode.
 	 */
 	constructor(
 		private readonly canvas: RenderCanvas,
@@ -155,10 +157,10 @@ export class WebGL2SceneRenderer implements Renderer {
 		memory: WebAssembly.Memory,
 		control: ArrayBufferLike,
 		metrics: ArrayBufferLike | undefined,
-		sharedUploads: boolean,
+		device: CoreDevice,
 	) {
 		this.lost = contextLoss(canvas, this.release.signal);
-		this.backend = new WebGL2Backend(gl, canvas, sharedUploads);
+		this.backend = new WebGL2Backend(gl, canvas, device.sharedUploads, device.depth);
 		this.completions = metrics && new FenceCompletion(gl, metrics);
 		this.lists = new DrawLists(memory, control);
 	}

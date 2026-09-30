@@ -1,6 +1,5 @@
 //! What every frame builder shares: the frame's input, the scene settings (meshes, materials, the
-//! camera and the lights), the draw lists and upload arenas kept per frame parity, and the
-//! commands that size and clear the render targets.
+//! views and the lights), and the draw lists and upload arenas kept per frame parity.
 //!
 //! # Frames in flight
 //!
@@ -17,12 +16,15 @@ use null3d_core::instances::{BatchTable, InstanceBatch};
 use null3d_core::jobs::JobSystem;
 use null3d_core::scene::SceneStorage;
 use null3d_core::snapshot::FrameSnapshot;
-use null3d_gpu::drawlist::{DrawList, DrawListError, Op, format, pass_flags, texture_usage, view};
+use null3d_gpu::drawlist::{DrawList, DrawListError, Op, buffer_usage};
 
-use crate::camera::{Affine, Perspective};
+use crate::camera::Perspective;
 use crate::frame_data::{FrameUniform, normalized_direction};
+use crate::frame_graph::{COLOR_FORMAT, DEPTH_FORMAT};
+use crate::graph::GraphError;
 use crate::materials::{MaterialTable, Shading};
-use crate::meshes::{MeshStorage, Page};
+use crate::meshes::{MAX_BUFFER_BYTES, MeshStorage, Page};
+use crate::view::{MAX_VIEWS, View, ViewFrame, ViewId};
 
 /// Engine mesh ids count from 1; 0 marks an object with no mesh, such as a group or a camera.
 pub const NO_MESH: u32 = 0;
@@ -55,8 +57,6 @@ pub(crate) fn drawn_rows(buckets: &[u32], start: u32, count: u32) -> Option<(u32
 pub enum RecordError {
     /// The frame's commands do not fit the draw list.
     DrawListFull,
-    /// The meshes need more room than the shared vertex or index buffer has.
-    MeshBuffersFull,
     /// More sources than the builder can draw on this device.
     TooManySources {
         /// The most sources the builder can draw on this device.
@@ -69,6 +69,8 @@ pub enum RecordError {
         /// The bytes the tables needed, or `u32::MAX` for more than that.
         bytes: u32,
     },
+    /// The render graph of the frame's passes did not compile.
+    Graph(GraphError),
 }
 
 impl From<DrawListError> for RecordError {
@@ -148,35 +150,27 @@ pub(crate) fn floats_as_bytes(floats: &[f32]) -> &[u8] {
     }
 }
 
-/// What a frame is drawn from: its constants, and where its camera is.
-#[derive(Clone, Copy, Debug)]
-pub struct FrameView {
-    /// The frame's constants. Their view-projection matrix takes positions relative to the camera.
-    pub uniform: FrameUniform,
-    /// The camera's cell, and its position relative to the cell's center.
-    pub camera: CellPosition,
-}
-
-/// The offset from a frame's camera to the center of each cell in use, by cell index, as the
+/// The offset from a view's camera to the center of each cell in use, by cell index, as the
 /// shaders read them. Allocated once.
+#[derive(Debug)]
 pub(crate) struct CellOffsets {
     offsets: Vec<[f32; 4]>,
     len: usize,
 }
 
-impl CellOffsets {
-    pub(crate) fn new() -> Self {
+impl Default for CellOffsets {
+    fn default() -> Self {
         Self {
             offsets: vec![[0.0; 4]; MAX_CELLS as usize],
             len: 0,
         }
     }
+}
 
-    /// Computes the offsets of the scene's cells from the view's camera, in 64-bit floats.
-    pub(crate) fn update(&mut self, scene: &SceneStorage, view: &FrameView) {
-        self.len = scene
-            .cell_table()
-            .write_offsets(&view.camera, &mut self.offsets);
+impl CellOffsets {
+    /// Computes the offsets of the scene's cells from a camera, in 64-bit floats.
+    pub(crate) fn update(&mut self, scene: &SceneStorage, camera: &CellPosition) {
+        self.len = scene.cell_table().write_offsets(camera, &mut self.offsets);
     }
 
     /// Copies another frame's offsets.
@@ -316,11 +310,12 @@ struct Lighting {
     background: [f32; 3],
 }
 
-/// What the sketch sets and changes rarely: meshes, materials, the camera and the lights.
+/// What the sketch sets and changes rarely: meshes, materials, the views and the lights.
 pub struct SceneSettings {
     meshes: MeshStorage,
     materials: MaterialTable,
-    camera: Option<(Handle, Perspective)>,
+    /// The views, the camera's first.
+    views: Vec<View>,
     lighting: Lighting,
 }
 
@@ -329,7 +324,7 @@ impl SceneSettings {
         Self {
             meshes,
             materials: MaterialTable::with_capacity(max_materials),
-            camera: None,
+            views: vec![View::default()],
             lighting: Lighting {
                 sun_direction: [0.0, -1.0, 0.0, 0.0],
                 sun_color: [0.0; 4],
@@ -357,9 +352,24 @@ impl SceneSettings {
         &mut self.materials
     }
 
-    /// The camera the frame is drawn from: a scene object, and its lens.
+    /// The camera the canvas shows the scene from: a scene object, and its lens.
     pub fn set_camera(&mut self, camera: Handle, lens: Perspective) {
-        self.camera = Some((camera, lens));
+        self.views[ViewId::CAMERA.index()].set_camera(camera, lens);
+    }
+
+    /// Adds a view that draws the scene into color and depth targets of its own, or returns
+    /// `None` when the builder already draws [`MAX_VIEWS`] views.
+    pub fn add_view(&mut self, view: View) -> Option<ViewId> {
+        if self.views.len() >= MAX_VIEWS {
+            return None;
+        }
+        self.views.push(view);
+        Some(ViewId::from_index(self.views.len() - 1))
+    }
+
+    /// The views, the camera's first.
+    pub fn views(&self) -> &[View] {
+        &self.views
     }
 
     /// The directional light: the direction its light travels, and its linear color times its
@@ -379,118 +389,49 @@ impl SceneSettings {
         self.lighting.background = color;
     }
 
+    /// The color that clears the color targets, as the scene's render passes hold it: the
+    /// background, encoded as sRGB as the shaders write their colors, and opaque.
+    pub(crate) fn clear_color(&self) -> [f32; 4] {
+        let [r, g, b] = self.lighting.background.map(linear_to_srgb);
+        [r, g, b, 1.0]
+    }
+
     /// The pipeline of a mesh and material pair, by engine ids, or `None` when the pair draws
-    /// nowhere: no mesh, no material, or an id that names nothing.
-    pub fn shading_of(&self, mesh: u32, material: u32) -> Option<Shading> {
+    /// nowhere: no mesh, no material, an id that names nothing, or a mesh without the vertex
+    /// attributes that the material's shading reads.
+    pub fn pipeline_of(&self, mesh: u32, material: u32) -> Option<PipelineKey> {
         if mesh == NO_MESH || material == NO_MATERIAL {
             return None;
         }
-        self.meshes.mesh(mesh - 1)?;
-        self.materials.shading(material - 1).ok()
+        let format = self.meshes.mesh(mesh - 1)?.format;
+        let shading = self.materials.shading(material - 1).ok()?;
+        let needs = shading.attributes();
+        ((format & needs) == needs).then_some(PipelineKey { shading, format })
     }
 
-    /// What the frame is drawn from, for a canvas of this size, or `None` when the frame has no
-    /// camera to draw from. Shaders work in positions relative to the camera, so the constants
-    /// put the camera at the origin.
-    pub fn frame_view(
+    /// A view's values for a frame whose targets have the canvas's size, or `None` when the view
+    /// has no camera to draw from. Shaders work in positions relative to the camera, so the
+    /// constants put the camera at the origin.
+    pub fn view_frame(
         &self,
+        view: ViewId,
         scene: &SceneStorage,
         parity: usize,
         canvas: (u32, u32),
-    ) -> Option<FrameView> {
-        let (camera, lens) = self.camera?;
-        let slot = scene.resolve(camera).ok()?;
-        let world: Affine = *scene.world(parity).matrix(slot as usize);
+    ) -> Option<ViewFrame> {
         let aspect = canvas.0 as f32 / canvas.1.max(1) as f32;
-        Some(FrameView {
-            uniform: FrameUniform {
-                view_proj: lens.relative_view_projection(&world, aspect),
-                camera_position: [0.0, 0.0, 0.0, 1.0],
-                sun_direction: self.lighting.sun_direction,
-                sun_color: self.lighting.sun_color,
-                ambient: self.lighting.ambient,
-            },
-            camera: scene.cell_position(slot, parity),
-        })
-    }
-
-    /// Begins the scene's render pass: both targets cleared, the color resolved into the canvas,
-    /// and neither multisampled target stored, as tile-based GPUs need.
-    pub(crate) fn record_begin_pass(
-        &self,
-        list: &mut DrawList,
-        targets: SceneTargets,
-    ) -> Result<(), RecordError> {
-        // The targets hold sRGB-encoded values, as the shaders write them.
-        let [r, g, b] = self.lighting.background.map(linear_to_srgb);
-        list.push(
-            Op::BeginRenderPass,
-            &[
-                targets.color,
-                0,
-                targets.depth,
-                r.to_bits(),
-                g.to_bits(),
-                b.to_bits(),
-                1f32.to_bits(),
-                0f32.to_bits(),
-                pass_flags::CLEAR_COLOR | pass_flags::CLEAR_DEPTH,
-            ],
-        )?;
-        Ok(())
-    }
-
-    /// A frame with no camera: the background only.
-    pub(crate) fn record_clear_only(
-        &self,
-        list: &mut DrawList,
-        targets: SceneTargets,
-    ) -> Result<(), RecordError> {
-        self.record_begin_pass(list, targets)?;
-        list.push(Op::EndRenderPass, &[])?;
-        list.push(Op::Submit, &[])?;
-        Ok(())
-    }
-}
-
-/// A builder's multisampled color and depth targets: their texture ids and sample count.
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct SceneTargets {
-    pub color: u32,
-    pub depth: u32,
-    pub samples: u32,
-}
-
-impl SceneTargets {
-    /// Resizes the canvas and makes the targets for its new size, in the frame built for that
-    /// size. Returns the size, at least one pixel each way.
-    pub(crate) fn record_resize(
-        self,
-        list: &mut DrawList,
-        (width, height): (u32, u32),
-    ) -> Result<(u32, u32), RecordError> {
-        let (width, height) = (width.max(1), height.max(1));
-        list.push(Op::ResizeCanvas, &[width, height])?;
-        for (id, tex_format) in [
-            (self.color, format::CANVAS),
-            (self.depth, format::DEPTH32_FLOAT),
-        ] {
-            list.push(
-                Op::CreateTexture,
-                &[
-                    id,
-                    width,
-                    height,
-                    1,
-                    tex_format,
-                    texture_usage::RENDER_ATTACHMENT,
-                    self.samples,
-                    1,
-                    view::D2,
-                ],
-            )?;
-        }
-        Ok((width, height))
+        let (view_proj, camera) = self
+            .views
+            .get(view.index())?
+            .transform(scene, parity, aspect)?;
+        let uniform = FrameUniform {
+            view_proj,
+            camera_position: [0.0, 0.0, 0.0, 1.0],
+            sun_direction: self.lighting.sun_direction,
+            sun_color: self.lighting.sun_color,
+            ambient: self.lighting.ambient,
+        };
+        Some(ViewFrame::new(uniform, camera))
     }
 }
 
@@ -536,54 +477,198 @@ pub(crate) fn bucket_of<K: Ord + Copy>(table: &[(K, u32)], key: Option<K>) -> Op
         .map(|bucket| bucket as u32)
 }
 
-/// How much of one mesh page its GPU vertex and index buffers hold.
+/// What a render pipeline of the scene draws: a shading, and the vertex format of the meshes it
+/// draws. Its order is the order in which builders sort their buckets.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct PipelineKey {
+    pub shading: Shading,
+    /// The vertex format (`vertex::*` bits) of the meshes it draws.
+    pub format: u32,
+}
+
+/// The render pipelines that a builder draws with. A pipeline's id is its place in the table plus
+/// one, and it keeps its id while the builder lives, so layouts can hold ids across rebuilds.
+#[derive(Debug, Default)]
+pub(crate) struct PipelineTable {
+    keys: Vec<PipelineKey>,
+    /// The pipelines that the GPU has: the first `created` keys.
+    created: usize,
+}
+
+impl PipelineTable {
+    /// The id of a key's pipeline. A new key's pipeline is created by the next
+    /// [`PipelineTable::create_new`].
+    pub(crate) fn id(&mut self, key: PipelineKey) -> u32 {
+        let index = match self.keys.iter().position(|&k| k == key) {
+            Some(index) => index,
+            None => {
+                self.keys.push(key);
+                self.keys.len() - 1
+            }
+        };
+        index as u32 + 1
+    }
+
+    /// Records the creation of every pipeline that the GPU does not have yet, for the scene's
+    /// targets, in the shader variant that the permutation bits pick.
+    pub(crate) fn create_new(
+        &mut self,
+        list: &mut DrawList,
+        permutation: u32,
+        samples: u32,
+    ) -> Result<(), RecordError> {
+        while let Some(key) = self.keys.get(self.created) {
+            list.push(
+                Op::CreateRenderPipeline,
+                &[
+                    self.created as u32 + 1,
+                    key.shading.template(),
+                    permutation,
+                    COLOR_FORMAT,
+                    DEPTH_FORMAT,
+                    samples,
+                    0,
+                    key.format,
+                ],
+            )?;
+            self.created += 1;
+        }
+        Ok(())
+    }
+
+    /// Forgets which pipelines the GPU has, after the thread that draws replaced it, so the next
+    /// frame creates each again under the same id.
+    pub(crate) fn forget(&mut self) {
+        self.created = 0;
+    }
+}
+
+/// How large one mesh page's GPU vertex and index buffers are, and how much of the page they hold.
 #[derive(Clone, Copy, Debug, Default)]
-pub(crate) struct PageUploads {
+struct PageBuffers {
+    vertex_bytes: u32,
+    index_bytes: u32,
     vertex_floats: usize,
     indices: usize,
 }
 
-impl PageUploads {
-    /// The bytes the next upload copies into the arena: the page's data added since the last one.
-    pub(crate) fn pending_bytes(&self, page: &Page) -> usize {
-        (page.vertices.len() - self.vertex_floats) * 4
-            + ((page.indices.len() - (self.indices & !1)) * 2).next_multiple_of(4)
+impl PageBuffers {
+    /// True when the page outgrew its buffers, so they must be made again and filled whole.
+    fn outgrown(&self, page: &Page) -> bool {
+        let (vertex_bytes, index_bytes) = page.buffer_bytes();
+        vertex_bytes > u64::from(self.vertex_bytes) || index_bytes > u64::from(self.index_bytes)
     }
 
-    /// Uploads the page's data added since the last upload into its vertex and index buffers
-    /// (`buffers`), from copies in the frame's arena. Data past the buffers' sizes (`sizes`) fails
-    /// with [`RecordError::MeshBuffersFull`]. Writes land on four-byte boundaries, so index uploads
-    /// start at an even index; the index before the new ones is uploaded again when the last upload
-    /// ended on an odd one.
+    /// The bytes that the next upload copies into the arena: the page's data added since the last
+    /// one, or the whole page when it outgrew its buffers.
+    fn pending_bytes(&self, page: &Page) -> usize {
+        let held = if self.outgrown(page) {
+            PageBuffers::default()
+        } else {
+            *self
+        };
+        (page.vertices.len() - held.vertex_floats) * 4
+            + ((page.indices.len() - (held.indices & !1)) * 2).next_multiple_of(4)
+    }
+}
+
+/// The GPU buffers of the mesh pages: page `p` keeps its vertices in buffer `first_id + 2p` and
+/// its indices in the buffer after it. Buffers grow with their pages, with room to spare.
+#[derive(Debug)]
+pub(crate) struct MeshBuffers {
+    first_id: u32,
+    pages: Vec<PageBuffers>,
+}
+
+impl MeshBuffers {
+    pub(crate) fn new(first_id: u32) -> Self {
+        Self {
+            first_id,
+            pages: Vec::new(),
+        }
+    }
+
+    /// The vertex and index buffer ids of a page.
+    pub(crate) fn ids(&self, page: u32) -> (u32, u32) {
+        let vertices = self.first_id + 2 * page;
+        (vertices, vertices + 1)
+    }
+
+    /// The most that the next [`MeshBuffers::upload`] copies into the arena.
+    pub(crate) fn pending_bytes(&self, pages: &[Page]) -> usize {
+        pages
+            .iter()
+            .enumerate()
+            .map(|(p, page)| {
+                let buffers = self.pages.get(p).copied().unwrap_or_default();
+                buffers.pending_bytes(page)
+            })
+            .sum()
+    }
+
+    /// Uploads the pages' data added since the last upload, from copies in the frame's arena. A
+    /// page whose buffers are too small gets new ones, with room to grow, and uploads again whole.
+    /// Returns true when it made a buffer again, which a recorded bundle that draws from it must
+    /// see. Writes land on four-byte boundaries, so index uploads start at an even index; the index
+    /// before the new ones is uploaded again when the last upload ended on an odd one.
     pub(crate) fn upload(
         &mut self,
         list: &mut DrawList,
         arena: &mut UploadArena,
-        page: &Page,
-        buffers: [u32; 2],
-        sizes: [u32; 2],
-    ) -> Result<(), RecordError> {
-        let new_vertices = &page.vertices[self.vertex_floats..];
-        if !new_vertices.is_empty() {
-            let offset = (self.vertex_floats * 4) as u32;
-            let (at, bytes) = arena.push(floats_as_bytes(new_vertices))?;
-            if offset + bytes > sizes[0] {
-                return Err(RecordError::MeshBuffersFull);
+        pages: &[Page],
+    ) -> Result<bool, RecordError> {
+        let mut remade = false;
+        for (p, page) in pages.iter().enumerate() {
+            if self.pages.len() <= p {
+                self.pages.push(PageBuffers::default());
             }
-            list.push(Op::WriteBuffer, &[buffers[0], offset, at, bytes])?;
-            self.vertex_floats = page.vertices.len();
-        }
-        if self.indices < page.indices.len() {
-            let first = self.indices & !1;
-            let offset = (first * 2) as u32;
-            let (at, bytes) = arena.push(indices_as_bytes(&page.indices[first..]))?;
-            if offset + bytes > sizes[1] {
-                return Err(RecordError::MeshBuffersFull);
+            let (vertex_id, index_id) = self.ids(p as u32);
+            let buffers = &mut self.pages[p];
+            if buffers.outgrown(page) {
+                let limit = MAX_BUFFER_BYTES as u32;
+                let (vertex_bytes, index_bytes) = page.buffer_bytes();
+                *buffers = PageBuffers {
+                    vertex_bytes: grown_size(vertex_bytes as u32, limit),
+                    index_bytes: grown_size(index_bytes as u32, limit),
+                    ..PageBuffers::default()
+                };
+                let copied = buffer_usage::COPY_DST;
+                list.push(
+                    Op::CreateBuffer,
+                    &[
+                        vertex_id,
+                        buffers.vertex_bytes,
+                        buffer_usage::VERTEX | copied,
+                    ],
+                )?;
+                list.push(
+                    Op::CreateBuffer,
+                    &[index_id, buffers.index_bytes, buffer_usage::INDEX | copied],
+                )?;
+                remade = true;
             }
-            list.push(Op::WriteBuffer, &[buffers[1], offset, at, bytes])?;
-            self.indices = page.indices.len();
+            let new_vertices = &page.vertices[buffers.vertex_floats..];
+            if !new_vertices.is_empty() {
+                let offset = (buffers.vertex_floats * 4) as u32;
+                let (at, bytes) = arena.push(floats_as_bytes(new_vertices))?;
+                list.push(Op::WriteBuffer, &[vertex_id, offset, at, bytes])?;
+                buffers.vertex_floats = page.vertices.len();
+            }
+            if buffers.indices < page.indices.len() {
+                let first = buffers.indices & !1;
+                let offset = (first * 2) as u32;
+                let (at, bytes) = arena.push(indices_as_bytes(&page.indices[first..]))?;
+                list.push(Op::WriteBuffer, &[index_id, offset, at, bytes])?;
+                buffers.indices = page.indices.len();
+            }
         }
-        Ok(())
+        Ok(remade)
+    }
+
+    /// Forgets every buffer, after the thread that draws replaced the GPU, so the next upload
+    /// makes each page's buffers again and fills them whole.
+    pub(crate) fn forget(&mut self) {
+        self.pages.clear();
     }
 }
 

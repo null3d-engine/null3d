@@ -3,12 +3,212 @@
 
 mod common;
 
+use std::collections::HashMap;
+
 use common::{BATCH_ROWS, SCENE_CAPACITY, World, count, far_out};
-use null3d_gpu::drawlist::Op;
+use null3d_gpu::drawlist::{NO_TARGET, Op, layout};
 use null3d_gpu::mock::MockBackend;
 use null3d_render::frame::FrameBuilder;
+use null3d_render::view::ViewId;
 
 const MATRIX_BYTES: u32 = 48;
+/// The builder's buffers of world matrices and of the bucket of every source.
+const MATRICES: u32 = 2;
+const INSTANCE_BUCKETS: u32 = 3;
+
+/// A view's part of a frame's list, found by following what its commands name.
+#[derive(Debug)]
+struct ViewCommands {
+    /// The buffers its culling group binds, by binding: its parameters, the matrices, the bucket
+    /// table, the bucket records, its compacted instances and its indirect draws.
+    culling: [u32; 6],
+    /// The operands of the render pass that executes its bundle.
+    pass: Vec<u32>,
+    /// The buffers its bundle draws from: compacted instances and indirect draws.
+    instances: Vec<u32>,
+    indirect: Vec<u32>,
+}
+
+/// Each view's commands in a frame that culls and draws every view, in the order they run.
+fn views_of(commands: &[(Op, Vec<u32>)]) -> Vec<ViewCommands> {
+    let groups: HashMap<u32, [u32; 6]> = commands
+        .iter()
+        .filter(|(op, o)| *op == Op::CreateBindGroup && o[1] == layout::CULL)
+        .map(|(_, o)| (o[0], std::array::from_fn(|binding| o[5 + 5 * binding])))
+        .collect();
+    let mut bundles: HashMap<u32, (Vec<u32>, Vec<u32>)> = HashMap::new();
+    let mut recording = None;
+    let mut dispatched = Vec::new();
+    let mut bound = 0;
+    let mut pass = Vec::new();
+    let mut executed = Vec::new();
+    for (op, o) in commands {
+        match op {
+            Op::BeginBundle => recording = Some(o[0]),
+            Op::EndBundle => recording = None,
+            Op::SetVertexBuffer if o[0] == 1 => {
+                let bundle = bundles.entry(recording.unwrap()).or_default();
+                bundle.0.push(o[1]);
+            }
+            Op::DrawIndexedIndirect => {
+                let bundle = bundles.entry(recording.unwrap()).or_default();
+                bundle.1.push(o[0]);
+            }
+            Op::SetBindGroup if recording.is_none() => bound = o[1],
+            Op::Dispatch => dispatched.push(groups[&bound]),
+            Op::BeginRenderPass => pass = o.clone(),
+            Op::ExecuteBundles => executed.push((pass.clone(), o[1])),
+            _ => {}
+        }
+    }
+    assert_eq!(dispatched.len(), executed.len(), "one dispatch per bundle");
+    dispatched
+        .into_iter()
+        .zip(executed)
+        .map(|(culling, (pass, bundle))| {
+            let (instances, indirect) = bundles.remove(&bundle).unwrap();
+            ViewCommands {
+                culling,
+                pass,
+                instances,
+                indirect,
+            }
+        })
+        .collect()
+}
+
+#[test]
+fn two_views_cull_into_buffers_of_their_own_and_draw_their_own_bundles() {
+    let mut world = World::new();
+    // A second camera to the right of the first and nearer: it sees the objects at x = -1 and 1
+    // and the batch at the origin, but not the one at x = -3.
+    let side = world.add_view([5.0, 0.0, 6.0]);
+    world.record(true);
+    MockBackend::default()
+        .replay(world.renderer.list(1).words())
+        .unwrap();
+    let commands = world.commands();
+    let views = views_of(&commands);
+    let [camera, other] = &views[..] else {
+        panic!("two views: {views:?}");
+    };
+
+    // Both views cull the same sources and bucket tables, into buffers of their own, which
+    // each frame fills from new parameters and reset indirect draws.
+    assert_eq!(camera.culling[1..4], other.culling[1..4]);
+    for binding in [0, 4, 5] {
+        assert_ne!(camera.culling[binding], other.culling[binding]);
+    }
+    let written = |buffer: u32| {
+        commands
+            .iter()
+            .any(|(op, o)| *op == Op::WriteBuffer && o[0] == buffer)
+    };
+    for view in &views {
+        assert!(written(view.culling[0]) && written(view.culling[5]));
+        // Its bundle draws every bucket from the view's own compacted instances and indirect
+        // draws.
+        assert_eq!(view.instances, [view.culling[4]; 3]);
+        assert_eq!(view.indirect, [view.culling[5]; 3]);
+    }
+    // The camera's render pass resolves into the canvas. The side view's draws into targets of
+    // its own, which share the camera's textures, as the two render passes do not overlap.
+    assert_eq!(camera.pass[1], 0);
+    assert_eq!(other.pass[1], NO_TARGET);
+    assert_eq!(count(&commands, Op::CreateTexture), 2);
+
+    // Each view's culling tests its own frustum: the side view's leaves out the object at
+    // x = -3, which the camera sees. A frustum is relative to its view's camera, so each sphere
+    // moves by the offset from that camera to the sphere's cell.
+    let spheres = world.scene.world(1).spheres();
+    let sees = |view: ViewId, object: usize| {
+        let slot = world.scene.resolve(world.objects[object]).unwrap() as usize;
+        let frame = world.renderer.view_frame(view).unwrap();
+        let cell = world.scene.cell_table().coords(world.scene.cells()[slot]);
+        let [x, y, z] = frame.camera.offset_to(cell);
+        frame.frustum.contains_sphere(
+            spheres.xs[slot] + x,
+            spheres.ys[slot] + y,
+            spheres.zs[slot] + z,
+            spheres.radii[slot],
+        )
+    };
+    assert!(sees(ViewId::CAMERA, 0) && !sees(side, 0));
+    assert!(sees(ViewId::CAMERA, 1) && sees(side, 1));
+    assert!(sees(ViewId::CAMERA, 2) && sees(side, 2));
+}
+
+#[test]
+fn the_frame_runs_the_passes_of_the_render_graph_and_compiles_it_only_when_they_change() {
+    let mut world = World::new();
+    let mut mock = MockBackend::default();
+    world.record(true);
+    mock.replay(world.renderer.list(1).words()).unwrap();
+    let steps = |world: &World| -> Vec<Vec<String>> {
+        let graph = world.renderer.render_graph();
+        let plan = graph.plan().unwrap();
+        plan.steps()
+            .iter()
+            .map(|step| {
+                plan.passes(step)
+                    .iter()
+                    .map(|&pass| graph.pass_name(pass).to_owned())
+                    .collect()
+            })
+            .collect()
+    };
+    // The culling pass, then the scene's render pass, which resolves into the canvas while the
+    // final pass, which has no work, stays off.
+    assert_eq!(steps(&world), [vec!["Culling"], vec!["Opaque", "Resolve"]]);
+    let graph = world.renderer.render_graph();
+    assert!(!graph.is_enabled(graph.find_pass("Final").unwrap()));
+    for frame in 2..=10 {
+        world.frame = frame;
+        world.record(false);
+        mock.replay(world.renderer.list(frame).words()).unwrap();
+    }
+    assert_eq!(world.renderer.render_graph().compiles(), 1);
+
+    // A new view adds its culling pass to the compute pass, and a render pass of its own.
+    world.frame = 11;
+    world.scene.begin_frame(11);
+    world.add_view([5.0, 0.0, 6.0]);
+    world.record(true);
+    mock.replay(world.renderer.list(11).words()).unwrap();
+    assert_eq!(
+        steps(&world),
+        [
+            vec!["Culling", "Culling1"],
+            vec!["Opaque", "Resolve"],
+            vec!["Opaque1"]
+        ]
+    );
+    assert_eq!(world.renderer.render_graph().compiles(), 2);
+    assert_eq!(count(&world.commands(), Op::Dispatch), 2);
+}
+
+#[test]
+fn a_frame_without_a_camera_clears_and_resolves_the_canvas_only() {
+    use null3d_core::handle::Handle;
+
+    let mut world = World::new();
+    world
+        .renderer
+        .settings_mut()
+        .set_camera(Handle::NONE, common::LENS);
+    world.record(true);
+    MockBackend::default()
+        .replay(world.renderer.list(1).words())
+        .unwrap();
+    let commands = world.commands();
+    assert_eq!(count(&commands, Op::BeginComputePass), 0);
+    assert_eq!(count(&commands, Op::ExecuteBundles), 0);
+    let tail: Vec<Op> = commands[commands.len() - 3..]
+        .iter()
+        .map(|(op, _)| *op)
+        .collect();
+    assert_eq!(tail, [Op::BeginRenderPass, Op::EndRenderPass, Op::Submit]);
+}
 
 #[test]
 fn the_first_frame_creates_everything_and_a_valid_frame_replays() {
@@ -35,7 +235,7 @@ fn the_first_frame_creates_everything_and_a_valid_frame_replays() {
     assert_eq!(dispatch.1, vec![sources.div_ceil(128), 1, 1]);
     let matrix_writes: Vec<&Vec<u32>> = commands
         .iter()
-        .filter(|(op, o)| *op == Op::WriteBuffer && o[0] == 4)
+        .filter(|(op, o)| *op == Op::WriteBuffer && o[0] == MATRICES)
         .map(|(_, o)| o)
         .collect();
     assert_eq!(matrix_writes.len(), 2);
@@ -102,7 +302,7 @@ fn a_steady_frame_uploads_only_changed_rows_and_replays_the_same_bundle() {
     // The dynamic batch changes every row; the static objects and the camera do not move.
     let matrix_writes: Vec<&Vec<u32>> = commands
         .iter()
-        .filter(|(op, o)| *op == Op::WriteBuffer && o[0] == 4)
+        .filter(|(op, o)| *op == Op::WriteBuffer && o[0] == MATRICES)
         .map(|(_, o)| o)
         .collect();
     assert_eq!(matrix_writes.len(), 1);
@@ -122,7 +322,7 @@ fn a_steady_frame_uploads_only_changed_rows_and_replays_the_same_bundle() {
     let scene_writes = world
         .commands()
         .into_iter()
-        .filter(|(op, o)| *op == Op::WriteBuffer && o[0] == 4)
+        .filter(|(op, o)| *op == Op::WriteBuffer && o[0] == MATRICES)
         .filter(|(_, o)| o[1] < (SCENE_CAPACITY + 1) * MATRIX_BYTES)
         .count();
     assert_eq!(scene_writes, 0);
@@ -187,7 +387,7 @@ fn a_structure_change_rebuilds_the_buckets() {
 fn bucket_table_writes(commands: &[(Op, Vec<u32>)]) -> Vec<(u32, u32)> {
     commands
         .iter()
-        .filter(|(op, o)| *op == Op::WriteBuffer && o[0] == 5)
+        .filter(|(op, o)| *op == Op::WriteBuffer && o[0] == INSTANCE_BUCKETS)
         .map(|(_, o)| (o[1], o[3]))
         .collect()
 }
@@ -356,11 +556,11 @@ fn pipelines_follow_the_shading_model_and_objects_sharing_a_mesh_and_material_sh
     assert_eq!(count(&second, Op::DrawIndexedIndirect), 3 + 1 + 10 + 1);
 }
 
-/// Writes of a frame into the culling parameters: offset and byte count.
-fn cull_params_writes(commands: &[(Op, Vec<u32>)]) -> Vec<(u32, u32)> {
+/// Writes of a frame into a view's culling parameters, the buffer `params`: offset and byte count.
+fn cull_params_writes(commands: &[(Op, Vec<u32>)], params: u32) -> Vec<(u32, u32)> {
     commands
         .iter()
-        .filter(|(op, o)| *op == Op::WriteBuffer && o[0] == 2)
+        .filter(|(op, o)| *op == Op::WriteBuffer && o[0] == params)
         .map(|(_, o)| (o[1], o[3]))
         .collect()
 }
@@ -381,7 +581,8 @@ fn far_from_the_origin_only_the_camera_offsets_upload_when_the_camera_moves() {
     }
     // The planes, then the offsets from the camera to the two cells in use.
     let params = vec![(0, 112), (112, 2 * 16)];
-    assert_eq!(cull_params_writes(&world.commands()), params);
+    let buffer = views_of(&world.commands())[0].culling[0];
+    assert_eq!(cull_params_writes(&world.commands(), buffer), params);
 
     for frame in 2..=5 {
         world.frame = frame;
@@ -398,12 +599,16 @@ fn far_from_the_origin_only_the_camera_offsets_upload_when_the_camera_moves() {
         // batch's rows, after every scene slot, upload.
         let scene_writes = commands
             .iter()
-            .filter(|(op, o)| *op == Op::WriteBuffer && o[0] == 4)
+            .filter(|(op, o)| *op == Op::WriteBuffer && o[0] == MATRICES)
             .filter(|(_, o)| o[1] < (SCENE_CAPACITY + 1) * MATRIX_BYTES)
             .count();
         assert_eq!(scene_writes, 0, "frame {frame}");
         assert!(bucket_table_writes(&commands).is_empty(), "frame {frame}");
-        assert_eq!(cull_params_writes(&commands), params, "frame {frame}");
+        assert_eq!(
+            cull_params_writes(&commands, buffer),
+            params,
+            "frame {frame}"
+        );
     }
 }
 
@@ -413,8 +618,9 @@ fn an_object_that_moves_into_another_cell_rewrites_its_entry() {
     let mut mock = MockBackend::default();
     world.record(true);
     mock.replay(world.renderer.list(1).words()).unwrap();
+    let buffer = views_of(&world.commands())[0].culling[0];
     assert_eq!(
-        cull_params_writes(&world.commands()),
+        cull_params_writes(&world.commands(), buffer),
         vec![(0, 112), (112, 16)]
     );
 
@@ -431,10 +637,11 @@ fn an_object_that_moves_into_another_cell_rewrites_its_entry() {
     let commands = world.commands();
     // Its matrix, now relative to its new cell, and its entry, which names that cell, upload.
     assert_eq!(bucket_table_writes(&commands), vec![(slot * 4, 4)]);
-    assert!(
-        commands
-            .iter()
-            .any(|(op, o)| *op == Op::WriteBuffer && o[0] == 4 && o[1] == slot * MATRIX_BYTES)
+    assert!(commands.iter().any(|(op, o)| {
+        *op == Op::WriteBuffer && o[0] == MATRICES && o[1] == slot * MATRIX_BYTES
+    }));
+    assert_eq!(
+        cull_params_writes(&commands, buffer),
+        vec![(0, 112), (112, 2 * 16)]
     );
-    assert_eq!(cull_params_writes(&commands), vec![(0, 112), (112, 2 * 16)]);
 }

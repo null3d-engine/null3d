@@ -1,8 +1,9 @@
 // GPU culling. One thread per instance tests the instance's bounding sphere against the six
 // frustum planes and appends each survivor to its bucket's slice of the compacted instance buffer,
-// raising the instance count of the bucket's indirect draw with an atomic add. The sphere comes
-// from the world matrix: its center is the translation, and its radius is the mesh's radius times
-// the largest axis scale.
+// raising the instance count of the bucket's indirect draws with atomic adds. A bucket has one
+// draw per part of its mesh, and each part's draw reads the same slice, so every draw of the
+// bucket counts each survivor. The sphere comes from the world matrix: its center is the
+// translation, and its radius is the mesh's radius times the largest axis scale.
 //
 // World matrices are relative to the centers of their grid cells, and the planes to the camera. An
 // instance's entry in the bucket table holds its cell index above its bucket, and the thread moves
@@ -24,12 +25,17 @@ struct CullParams {
     cell_offsets: array<vec4f, MAX_CELLS>,
 }
 
-/// A bucket: one pipeline, mesh and material, with its slice of the compacted instance buffer.
+/// A bucket: one pipeline, mesh and material, with its slice of the compacted instance buffer and
+/// its indirect draws, one per part of the mesh, from `first_draw` on.
 struct Bucket {
     base: u32,
     material: u32,
     radius: f32,
-    pad: u32,
+    first_draw: u32,
+    draws: u32,
+    pad0: u32,
+    pad1: u32,
+    pad2: u32,
 }
 
 @group(0) @binding(0) var<uniform> params: CullParams;
@@ -73,7 +79,10 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
             return;
         }
     }
-    let slot = atomicAdd(&indirect[b * INDIRECT_WORDS + 1u], 1u);
+    let slot = atomicAdd(&indirect[bucket.first_draw * INDIRECT_WORDS + 1u], 1u);
+    for (var d = 1u; d < bucket.draws; d++) {
+        atomicAdd(&indirect[(bucket.first_draw + d) * INDIRECT_WORDS + 1u], 1u);
+    }
     let dst = (bucket.base + slot) * 4u;
     visible[dst] = r0;
     visible[dst + 1u] = r1;

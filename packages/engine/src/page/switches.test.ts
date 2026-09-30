@@ -9,6 +9,7 @@ describe('parseSwitches', () => {
 			renderOnMain: false,
 			latency: undefined,
 			copyUploads: false,
+			depth: undefined,
 			fps: undefined,
 			jobs: undefined,
 			memoryMiB: undefined,
@@ -43,5 +44,12 @@ describe('parseSwitches', () => {
 	it('reads a frame rate above 0, with decimals', () => {
 		expect(parseSwitches('?fps=59.94').fps).toBe(59.94);
 		expect(parseSwitches('?fps=0').fps).toBeUndefined();
+	});
+
+	it('reads the WebGL2 depth mode, and ignores a mode it does not know', () => {
+		expect(parseSwitches('?gpu=webgl2&depth=standard').depth).toBe('standard');
+		expect(parseSwitches('?depth=reversed-gl').depth).toBe('reversed-gl');
+		expect(parseSwitches('?depth=reversed').depth).toBe('reversed');
+		expect(parseSwitches('?depth=log').depth).toBeUndefined();
 	});
 });

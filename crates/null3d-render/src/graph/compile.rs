@@ -8,8 +8,8 @@ use std::ops::Range;
 use null3d_gpu::drawlist::texture_usage;
 
 use super::{
-    Access, GraphError, Mismatch, Mode, PassDecl, PassId, ResourceDecl, ResourceId, Size, Source,
-    Target,
+    Access, GraphError, Mismatch, Mode, PassDecl, PassId, PassKind, ResourceDecl, ResourceId, Size,
+    Source, Target,
 };
 
 /// No pass, or no step.
@@ -80,7 +80,8 @@ pub struct Attachment {
     pub format: u32,
     /// Where the step draws.
     pub texture: Surface,
-    /// Where the step resolves a multisampled color target that a later pass samples.
+    /// Where the step resolves a multisampled color target: the texture that a later pass
+    /// samples, or the canvas for a target that a resolve pass resolves.
     pub resolve: Option<Surface>,
     /// How the step starts with the attachment.
     pub load: LoadOp,
@@ -322,6 +323,11 @@ impl<'a> Decls<'a> {
         &self.accesses[start as usize..end as usize]
     }
 
+    /// True for a resolve pass.
+    fn resolves(&self, pass: usize) -> bool {
+        self.passes[pass].kind == PassKind::Resolve
+    }
+
     /// The passes that are switched on, with their indices, in the order of declaration.
     fn running(&self) -> impl Iterator<Item = (usize, &'a PassDecl)> + 'a {
         self.passes
@@ -482,8 +488,8 @@ impl Compiler {
                     return Err(GraphError::MissingInput { pass: id, resource });
                 }
                 // Compute passes share a compute pass with any other, so only passes that draw
-                // need their reads and writes listed.
-                if !pass.kind.draws() {
+                // need their reads and writes listed. A resolve pass lists its own below.
+                if !pass.kind.draws() || pass.kind == PassKind::Resolve {
                     continue;
                 }
                 if !access.mode.writes() {
@@ -519,6 +525,9 @@ impl Compiler {
                     depth: state.target.depth,
                 });
             }
+            if pass.kind == PassKind::Resolve {
+                samples = self.check_resolve(graph, index)?;
+            }
             if pass.kind.draws() && self.targets.len() as u32 == targets {
                 return Err(GraphError::TargetMismatch {
                     pass: id,
@@ -535,6 +544,56 @@ impl Compiler {
             };
         }
         Ok(())
+    }
+
+    /// Checks a running resolve pass: it writes the canvas and nothing else, and reads one
+    /// multisampled color target of one layer, in the canvas's format, at the pass's size, which
+    /// is the canvas's. No other running pass may read the target, since its color attachment
+    /// resolves into one place. The target becomes the pass's attachment, so the pass joins the
+    /// render pass that draws it. Returns the target's sample count.
+    fn check_resolve(&mut self, graph: Decls<'_>, index: usize) -> Result<u32, GraphError> {
+        let pass = &graph.passes[index];
+        let mismatch = |resource: Option<ResourceId>| GraphError::TargetMismatch {
+            pass: PassId(index as u16),
+            resource,
+            reason: Mismatch::Resolve,
+        };
+        let mut source = None;
+        let mut into_canvas = false;
+        for access in graph.uses(index) {
+            let resource = ResourceId(access.resource);
+            match access.mode {
+                Mode::Read if source.is_none() => source = Some(resource),
+                Mode::Write if resource.index() == 0 => into_canvas = true,
+                _ => return Err(mismatch(Some(resource))),
+            }
+        }
+        let Some(source) = source else {
+            return Err(mismatch(None));
+        };
+        let state = &self.resources[source.index()];
+        let target = state.target;
+        let canvas_sized = matches!(pass.size, Size::Full | Size::Canvas);
+        let read_elsewhere = graph.running_uses().any(|(user, access)| {
+            user != index && access.resource == source.0 && !access.mode.writes()
+        });
+        if !into_canvas
+            || state.kind != Kind::Texture
+            || !target.resolves()
+            || target.layers != 1
+            || target.format != Target::CANVAS.format
+            || state.size != pass.size
+            || !canvas_sized
+            || read_elsewhere
+        {
+            return Err(mismatch(Some(source)));
+        }
+        self.targets.push(Attached {
+            resource: source.0,
+            layer: 0,
+            depth: false,
+        });
+        Ok(target.samples)
     }
 
     /// Lists each resource's running writers and the pairs of passes that must run in order:
@@ -578,7 +637,7 @@ impl Compiler {
             let last = self.writers[(start + count - 1) as usize];
             self.edges.push((last, index as u16));
         }
-        self.edges.sort_unstable();
+        sort_short(&mut self.edges, |&edge| edge);
         self.first_edge.resize(graph.passes.len() + 1, 0);
         let mut edge = 0;
         for (pass, first) in self.first_edge.iter_mut().enumerate() {
@@ -786,19 +845,21 @@ impl Compiler {
         GraphError::Cycle { first, second }
     }
 
-    /// Records the steps in which each texture is drawn into, sampled and written as storage.
+    /// Records the steps in which each texture is drawn into, sampled and written as storage. A
+    /// resolve pass's target counts as drawn into, since the step attaches it.
     fn trace_uses(&mut self, graph: Decls<'_>) {
         for (index, step) in self.plan.steps.iter().enumerate() {
             let at = index as u16;
             let draws = matches!(step.kind, StepKind::Render { .. });
             for pass in &self.plan.order[step.passes.0 as usize..step.passes.1 as usize] {
+                let resolves = graph.resolves(pass.index());
                 for access in graph.uses(pass.index()) {
                     let state = &mut self.resources[access.resource as usize];
                     if state.kind != Kind::Texture {
                         continue;
                     }
                     state.uses.add(at);
-                    if !access.mode.writes() {
+                    if !access.mode.writes() && !resolves {
                         state.sampled.add(at);
                     } else if draws {
                         if state.attached.last != at {
@@ -879,8 +940,9 @@ impl Compiler {
                 _ => {}
             }
         }
-        self.surfaces
-            .sort_unstable_by_key(|u| (u.span.first, u.resource, u.resolved));
+        sort_short(&mut self.surfaces, |u| {
+            (u.span.first, u.resource, u.resolved)
+        });
         let kept = self.textures.len();
         for surface in &self.surfaces {
             let shared = (kept..self.textures.len()).find(|&slot| {
@@ -931,7 +993,7 @@ impl Compiler {
                 let written = self.attached_in(resource, attachment.layer, 0..index)
                     || state.storage.first < at;
                 let load = if written
-                    || (kept && self.starts_with_part(graph, &step, resource, attachment.layer))
+                    || (kept && self.starts_by_keeping(graph, &step, resource, attachment.layer))
                 {
                     LoadOp::Load
                 } else {
@@ -946,12 +1008,20 @@ impl Compiler {
                 } else {
                     state.uses.last > at
                 };
-                let resolves = state.target.resolves() && !state.sampled.is_empty() && !drawn_later;
+                let resolve = if !state.target.resolves() || drawn_later {
+                    None
+                } else if !state.sampled.is_empty() {
+                    placement.sampled
+                } else if resolved_in(graph, self.plan.passes(&step), resource) {
+                    Some(Surface::Canvas)
+                } else {
+                    None
+                };
                 // Every attached texture was placed, and the canvas places itself.
                 debug_assert!(placement.texture.is_some(), "an attachment has no texture");
                 self.plan.attachments[place] = Attachment {
                     texture: placement.texture.unwrap_or(Surface::Canvas),
-                    resolve: if resolves { placement.sampled } else { None },
+                    resolve,
                     load,
                     store: if kept || later {
                         StoreOp::Store
@@ -964,27 +1034,66 @@ impl Compiler {
         }
     }
 
-    /// True when a step in `steps` draws into the layer of the target.
+    /// True when a step in `steps` draws into the layer of the target, or, for the canvas,
+    /// resolves a target into it.
     fn attached_in(&self, resource: u16, layer: u32, steps: Range<usize>) -> bool {
         self.plan.steps[steps].iter().any(|step| {
             self.plan.attachments[step.attachments.0 as usize..step.attachments.1 as usize]
                 .iter()
-                .any(|a| a.resource.0 == resource && a.layer == layer)
+                .any(|a| {
+                    (a.resource.0 == resource && a.layer == layer)
+                        || (resource == 0 && a.resolve == Some(Surface::Canvas))
+                })
         })
     }
 
-    /// True when the step's first pass that draws into the layer of the target draws into part
-    /// of it.
-    fn starts_with_part(&self, graph: Decls<'_>, step: &Step, resource: u16, layer: u32) -> bool {
-        self.plan.order[step.passes.0 as usize..step.passes.1 as usize]
+    /// True when the step's first pass that attaches the layer of the target keeps what it holds:
+    /// it draws into part of it, or it resolves it.
+    fn starts_by_keeping(&self, graph: Decls<'_>, step: &Step, resource: u16, layer: u32) -> bool {
+        self.plan
+            .passes(step)
             .iter()
             .find_map(|pass| {
-                graph.uses(pass.index()).iter().find(|a| {
-                    a.resource == resource && a.mode.writes() && a.layer.unwrap_or(0) == layer
-                })
+                let resolves = graph.resolves(pass.index());
+                graph
+                    .uses(pass.index())
+                    .iter()
+                    .find(|a| {
+                        a.resource == resource
+                            && (a.mode.writes() || resolves)
+                            && a.layer.unwrap_or(0) == layer
+                    })
+                    .map(|a| resolves || a.mode == Mode::WritePart)
             })
-            .is_some_and(|a| a.mode == Mode::WritePart)
+            .unwrap_or(false)
     }
+}
+
+/// Sorts a list by `key` in place, keeping the order of items with equal keys. The lists a graph
+/// sorts hold tens of items and sort only when it compiles, so an insertion sort serves, and it
+/// compiles to far less WebAssembly than the standard library's sorts.
+fn sort_short<T: Copy, K: Ord>(items: &mut [T], key: impl Fn(&T) -> K) {
+    for next in 1..items.len() {
+        let item = items[next];
+        let mut at = next;
+        while at > 0 && key(&items[at - 1]) > key(&item) {
+            items[at] = items[at - 1];
+            at -= 1;
+        }
+        items[at] = item;
+    }
+}
+
+/// True when one of `passes` is a resolve pass that reads the target, which then resolves into the
+/// canvas.
+fn resolved_in(graph: Decls<'_>, passes: &[PassId], resource: u16) -> bool {
+    passes.iter().any(|pass| {
+        graph.resolves(pass.index())
+            && graph
+                .uses(pass.index())
+                .iter()
+                .any(|a| a.resource == resource && !a.mode.writes())
+    })
 }
 
 /// The usage flags of a target that passes draw into, sample, or write as storage. Passes sample a
@@ -1004,15 +1113,17 @@ fn usage_of(target: Target, drawn: bool, sampled: bool, storage: bool) -> u32 {
 }
 
 /// The usage of a kept target, from every declared pass whether it runs or not, so switching
-/// passes on and off never changes its texture. Also says whether a pass samples it.
+/// passes on and off never changes its texture. Also says whether a pass samples it. A resolve
+/// pass attaches the target it reads.
 fn kept_usage(graph: Decls<'_>, resource: u16, target: Target) -> (u32, bool) {
     let (mut drawn, mut sampled, mut storage) = (false, false, false);
     for (index, pass) in graph.passes.iter().enumerate() {
         for access in graph.uses(index).iter().filter(|a| a.resource == resource) {
-            match (access.mode.writes(), pass.kind.draws()) {
+            match (access.mode.writes(), pass.kind) {
+                (false, PassKind::Resolve) => drawn = true,
                 (false, _) => sampled = true,
-                (true, true) => drawn = true,
-                (true, false) => storage = true,
+                (true, PassKind::Compute) => storage = true,
+                (true, _) => drawn = true,
             }
         }
     }
