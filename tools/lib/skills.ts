@@ -207,10 +207,16 @@ function checkSkill(root: string, name: string, docRefs: Map<string, Set<string>
 	if (evalsText !== null) {
 		const evals = JSON.parse(evalsText) as {
 			skill_name?: string;
+			engine_version?: unknown;
 			evals: { id: number; files?: string[] }[];
 		};
 		if (evals.skill_name !== name)
 			problems.push(`${name}: evals.json skill_name is "${evals.skill_name}"`);
+		// The expectations hold for one engine version, so a change of API updates them with it.
+		if (typeof evals.engine_version !== 'string' || !/^\d+\.\d+$/.test(evals.engine_version))
+			problems.push(
+				`${name}: evals.json needs engine_version, the engine version its expectations assume, such as "0.1"`,
+			);
 		for (const e of evals.evals) {
 			for (const f of e.files ?? []) {
 				if (!existsSync(join(root, dir, f)))

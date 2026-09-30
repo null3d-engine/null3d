@@ -2,7 +2,7 @@
 // its own requestAnimationFrame callback.
 
 import { messageOf } from '../errors/message';
-import { captureFrame, startDrawing } from '../render/draw';
+import { captureFrame, captureImage, startDrawing } from '../render/draw';
 import type { Drawing } from '../render/recovery';
 import type { Renderer } from '../render/renderer';
 import { controlViews } from '../shared/control';
@@ -47,7 +47,8 @@ startWorker('render', step, async (event: MessageEvent<RenderWorkerInit | Render
 			});
 		}
 	} else if (message.type === 'capture' && drawing && controlSlots) {
-		await replyWithCapture(captureFrame(drawing, controlSlots));
+		const capture = message.image ? captureImage : captureFrame;
+		await replyWithCapture(capture(drawing, controlSlots));
 	} else if (message.type === 'lose-gpu') {
 		drawing?.simulateLoss();
 	}

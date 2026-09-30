@@ -8,7 +8,7 @@ Engine docs: `guides/testing`, `guides/debugging`, `errors/index`, `cli/null3d`.
 2. Image tests in hold mode
 3. Behavior tests
 4. Testing on real devices
-5. The MCP server for agents
+5. The MCP server for agents (0.3)
 6. Error codes
 7. Troubleshooting table
 8. Before you ship
@@ -17,16 +17,16 @@ Engine docs: `guides/testing`, `guides/debugging`, `errors/index`, `cli/null3d`.
 
 | Command | What it does |
 | --- | --- |
-| `bunx vite` | Dev server; the null3D Vite plugin adds the cross-origin isolation headers and shader hot reload |
+| `bunx vite` | Dev server; the null3D Vite plugin adds the cross-origin isolation headers and compiles WGSL. Editing a shader reloads the page; hot reload comes in 0.2 |
 | `bunx @null3d/cli shot --out shot.png [--time 2.0] [--size 1280x720] [--gpu webgl2] [--page /other.html]` | Draws one held frame of the page headless and saves it, plus `shot.json` with the frame's time, number and GPU tier and the page's errors and warnings. When no frame is drawn, it says why and exits with 1 |
 | `bunx @null3d/cli test` | Type checks with the project's TypeScript, runs its `lint` script, and draws each image test in `null3d.json` headless on each of its tiers, against its reference. Prints one line per result with the image files, and exits with 1 when one fails |
 | `bunx @null3d/cli test --gpu webgpu,webgl2` | Draws the image tests on these GPU tiers only |
 | `bunx @null3d/cli test --update-references` | Keeps each new or changed image as its reference; check the images before committing them |
 | `bunx @null3d/cli bench [--gpu webgpu,webgl2] [--page /other.html]` | Builds the project for production and measures the page headless: 5 fresh runs of 30 seconds, each after 5 seconds of warm-up. Prints the median and the spread of CPU time per frame by thread, GPU time and frame rates, and saves every run's figures in `bench.json` |
-| `bunx @null3d/cli doctor` | Checks versions, headers, asset CORS, and the capabilities of the local browser |
-| `bunx @null3d/cli docs show <id>` / `bunx @null3d/cli docs search "<words>"` | Prints docs for the installed engine version |
+| `bunx @null3d/cli doctor` (0.3) | Checks versions, headers, asset CORS, and the capabilities of the local browser |
+| `bunx @null3d/cli docs show <id>` / `bunx @null3d/cli docs search "<words>"` (0.3) | Prints docs for the installed engine version |
 
-Of these commands, `shot`, `test` and `bench` are built, and `test` runs image tests only. The note on `cli/null3d` names the commands that are not built yet: do not run those.
+The `shot`, `test` and `bench` commands are built, and `test` runs image tests only. Until `docs show` comes, read the docs in `node_modules/@null3d/engine/docs/` (SKILL.md section 1).
 
 Every command prints short text results (pass or fail, reasons, file paths), so you can read them directly. Open the image files it names when a visual check fails.
 
@@ -76,22 +76,10 @@ List the image tests that `bunx @null3d/cli test` runs in `null3d.json` in the p
 
 ## 3. Behavior tests
 
-```ts
-// tests/pickup.test.ts
-import { defineSketchTest } from '@null3d/engine/testing';
+The engine has no runner yet for sketch logic with scripted input. Until it does, test logic in two ways:
 
-export default defineSketchTest({
-  name: 'player picks up a coin',
-  sketch: () => import('../src/sketch'),
-  steps: 120,                                  // fixed steps at 60 Hz
-  input: [{ at: 0, down: 'KeyW' }, { at: 60, up: 'KeyW' }],
-  assert: ({ scene, messages }) => {
-    if (!messages.some((m) => m.type === 'coin')) throw new Error('no coin message');
-  },
-});
-```
-
-Behavior tests run the sketch worker code with scripted input. They check sketch logic and messages to the page, not pixels.
+- Keep game rules in plain modules that take numbers and arrays and import nothing from the engine, and test them with `bun test`. The sketch calls them from `onUpdate` or `onFixedUpdate`.
+- Put a scene into a state for an image test through the sketch module's address, such as `sketch.ts?score=90`, and check the held frame. Hold mode gives the sketch no input.
 
 ## 4. Testing on real devices
 
@@ -117,9 +105,9 @@ Reaching the dev server:
 
 - Android phone: connect by USB and run `adb reverse tcp:5173 tcp:5173`; the phone opens `http://localhost:5173`, which counts as a secure context. Plain `http` on a network address does not, and Chrome 154 asks before loading it.
 - iPhone or iPad: serve HTTPS with a local certificate through the Vite plugin's `https` option (`getting-started/hosting`). Install the root certificate on the device, and trust it in Settings > General > About > Certificate Trust Settings. Debug from Safari on a Mac through the Develop menu.
-- Record the device, browser version, GPU tier and preset with every result; `bunx @null3d/cli doctor --device` prints them.
+- Record the device, browser version, GPU tier and preset with every result: `engine.capabilities.tier` and `engine.mode.preset` give the last two. `bunx @null3d/cli doctor --device` (0.3) will print them all.
 
-## 5. The MCP server for agents
+## 5. The MCP server for agents (0.3)
 
 `bunx @null3d/cli mcp` starts a Model Context Protocol server connected to the running dev session. Its tool names can change until `guides/agents` is stable:
 
@@ -143,7 +131,7 @@ Every engine error is an `EngineError` with a code, the object's name, what fail
 E1203: setPosition() got NaN for x on "Player" (slot 12). Check the value computed before this call.
 ```
 
-Look up the full explanation with `bunx @null3d/cli docs show errors/E1203`. Release builds remove most checks, so reproduce problems in a development build.
+Each code has a docs page, such as `errors/E1203`, with the full explanation. Release builds remove most checks, so reproduce problems in a development build.
 
 ## 7. Troubleshooting table
 
@@ -152,25 +140,26 @@ Look up the full explanation with `bunx @null3d/cli docs show errors/E1203`. Rel
 | Blank canvas; console mentions `SharedArrayBuffer` or `crossOriginIsolated` | No isolation headers | The null3D Vite plugin, or set COOP `same-origin` and COEP `require-corp` on the host | `getting-started/hosting` |
 | Blank canvas; console shows CORS errors for models or textures | Assets from another origin without CORS or CORP headers | Serve them with `Access-Control-Allow-Origin` or `Cross-Origin-Resource-Policy` | `getting-started/hosting` |
 | Canvas works, nothing visible | No active camera, camera inside an object, or objects outside near and far | `scene.setActiveCamera`; check positions with `debug.axes`; widen near and far | `api/cameras` |
+| Objects draw black | No light reaches them: standard materials need a directional or ambient light | `scene.createDirectionalLight` and `scene.createAmbientLight`; check that the lights share a layer with the camera | `api/lights` |
 | An object does not move, or a development build logs E1110 | A static object's values changed without a setter | The setter, or `dynamic: true` | `concepts/static-dynamic` |
 | A row of an instance batch does not move | A static batch's row written without `markDirty` | `markDirty(start, count)`, or `dynamic: true` on the batch | `concepts/static-dynamic` |
 | Error: stale handle | The object was destroyed earlier | Drop your reference when you destroy; check the frame number in the message | `concepts/handles` |
 | Colors too dark or washed out | Texture color space | `'srgb'` for color maps, `'linear'` for data maps | `concepts/color-management` |
-| Lighting much brighter or darker than expected | Light units (physical, like three.js r155+) or exposure | Retune intensities; check `post.set({ exposure })` | `concepts/lighting` |
-| Shadows missing | Light or object not casting, receiver not receiving, or out of range | `castShadows` on light and caster, `receiveShadows` on the receiver | `concepts/shadows` |
-| Shadow acne or peter-panning | Bias | Adjust `shadow.bias` and `normalBias` in small steps | `concepts/shadows` |
+| Lighting much brighter or darker than expected | Light units (physical, like three.js r155+) or exposure | Retune intensities; check `post.set({ exposure })` (later in 0.1) | `concepts/lighting` |
+| Shadows missing | Shadows draw later in 0.1; then a light or object not casting, a receiver not receiving, or out of range | `castShadows` on light and caster, `receiveShadows` on the receiver | `concepts/shadows` |
+| Shadow acne or peter-panning (later in 0.1) | Bias | Adjust `shadow.bias` and `normalBias` in small steps | `concepts/shadows` |
 | Flicker between overlapping surfaces | Z-fighting | Separate the surfaces; raise the near plane | `api/cameras` |
-| Transparent objects in the wrong order | Sorting by object center | `setRenderOrder`; split large transparent meshes | `api/objects` |
+| Transparent objects in the wrong order (later in 0.1) | Sorting by object center | `setRenderOrder`; split large transparent meshes | `api/objects` |
 | Works on WebGPU, broken on WebGL2 | A feature without a fallback | Check capabilities; test with `?gpu=webgl2` | `concepts/backends` |
 | Shader works in Chrome, fails in Safari or Firefox | A WGSL feature or limit they lack | Follow the portable WGSL rules | `shaders/wgsl-rules` |
 | A console warning that the browser took the GPU away, then the scene draws again | A driver reset or a GPU crash; the engine started a new device and drew the whole scene again | Nothing, unless it repeats. Test your page's handling with `engine.simulateGpuLoss()` | `api/engine` |
 | `engine.onFailure` reports E1302 and the canvas stops changing | The GPU did not come back, or it was lost more than twice within a minute | Destroy the engine, put a new canvas in place of the old one and start again; lower the preset; report reproducible cases | `errors/E1302` |
 | Stutter every few seconds | Garbage collection | Remove per-frame allocations | `guides/performance` |
 | Something appears late, or a hitch when it appears | Its pipeline was building | Create it hidden, `await scene.warmUp()`, then show it | `guides/loading-screens` |
-| Tab reloads or crashes on a phone | Memory limit | Compressed textures, fewer and smaller assets, destroy unused prefabs | `guides/phones` |
+| Tab reloads or crashes on a phone | Memory limit | Fewer and smaller assets, and textures destroyed when unused. The next start runs one preset lower (`engine.mode.crashedStarts`) | `guides/phones` |
 | `document is not defined` or `window is not defined` | DOM code in `sketch.ts` | Move it to `page.ts`; send data with messages | `api/page` |
 | `createEngine` rejects with E1410 | The sketch module did not load: a wrong address, or an error that its top-level code threw | Pass `sketch: new URL('./sketch.ts', import.meta.url)`; fix the error that the message quotes | `errors/E1410` |
-| Pointer position off by a factor | Mixing CSS pixels and render pixels | `input.pointer.x` and `y` are CSS pixels, like `screenToRay` expects | `api/input` |
+| Pointer position off by a factor | Mixing CSS pixels and render pixels | `input.pointer.x` and `y` are CSS pixels, as `ctx.engine.viewport` gives the canvas size | `api/input` |
 
 ## 8. Before you ship
 
