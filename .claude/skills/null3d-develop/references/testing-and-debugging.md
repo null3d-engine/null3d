@@ -159,7 +159,7 @@ Rendering:
 - The page renders with `?gpu=webgpu` and with `?gpu=webgl2`, and the console shows no errors and no warnings.
 - The image stays right after a window resize, at phone width, and at a pixel ratio of 3.
 - On a real phone, a ten-minute run holds its frame rate as the phone warms up (`guides/phones`).
-- A scene with more than 2,097,152 objects and instance rows ran on a device with WebGPU's default limits, or stays below that number. The limit of each device is in `engine.capabilities.maxInstances`.
+- A scene with more than 1,048,576 objects and instance rows ran on the smallest devices your users have, on both GPU paths. On WebGPU every device draws 2,097,152. On WebGL2 a device whose textures reach only 2,048 pixels draws 1,048,576. The limit of each device is in `engine.capabilities.maxInstances`.
 
 Startup:
 
