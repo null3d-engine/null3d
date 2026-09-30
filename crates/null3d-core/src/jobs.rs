@@ -10,6 +10,12 @@
 //! system with `n` job workers has `n + 1` worker ids, and per-thread storage such as frame
 //! arenas needs `n + 1` entries.
 //!
+//! How a loop's chunks fall across the threads changes from loop to loop, and any thread may run
+//! none of them or all of them. The caller runs every chunk that no job worker claims, for example
+//! while the workers wake, and a fast core claims more chunks than a slow one. Per-thread storage
+//! that chunks fill must therefore hold what the whole loop writes, or let a thread that runs out
+//! continue in the other threads' storage, as [`ArenaPool`](crate::arena::ArenaPool) does.
+//!
 //! The single-threaded WebAssembly build has no job workers: [`JobSystem::new`] ignores the count
 //! and every loop runs on the calling thread.
 //!
@@ -260,6 +266,7 @@ impl JobSystem {
 
     /// Runs `f` over `0..count` in chunks of `chunk_size` items, on the calling thread and the
     /// job workers, and returns when every chunk has finished. A chunk size of 0 counts as 1.
+    /// Any thread may run any number of the chunks (see the module documentation).
     ///
     /// The call allocates nothing. It runs inline when there is only one chunk, no job worker, a
     /// frame job already running (a nested call), or when the calling thread is a job worker.

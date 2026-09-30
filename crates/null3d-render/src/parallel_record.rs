@@ -56,8 +56,9 @@ pub struct ParallelRecorder {
 unsafe impl Sync for ParallelRecorder {}
 
 impl ParallelRecorder {
-    /// Room for `threads` threads (the job system's thread count), `words` words of commands per
-    /// thread, and `max_chunks` chunks per recording.
+    /// Room for `threads` threads (the job system's thread count), `max_chunks` chunks per
+    /// recording, and `words` words of commands in each thread's list. One thread may record
+    /// every chunk, so `words` must hold a whole recording.
     pub fn new(threads: u32, words: usize, max_chunks: u32) -> Self {
         Self {
             threads: (0..threads.max(1))
