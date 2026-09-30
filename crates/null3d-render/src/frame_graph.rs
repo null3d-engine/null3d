@@ -31,6 +31,7 @@ use crate::graph::{
     CANVAS, LoadOp, Pass, PassId, PassKind, Plan, PlannedTexture, RenderGraph, Size, Step,
     StepKind, StoreOp, Surface, Target,
 };
+use crate::pipelines::PassTargets;
 use crate::view::{View, ViewId};
 
 /// The format of the scene's color targets: the canvas's, as the shaders write sRGB-encoded color.
@@ -123,6 +124,17 @@ impl FrameGraph {
     /// The render graph.
     pub(crate) fn graph(&self) -> &RenderGraph {
         &self.graph
+    }
+
+    /// What the scene's render pipelines and bundles draw into: the scene's color and depth
+    /// formats and its sample count. The scene sets no permutation bits of its own.
+    pub(crate) fn scene_targets(&self) -> PassTargets {
+        PassTargets {
+            color_format: COLOR_FORMAT,
+            depth_format: DEPTH_FORMAT,
+            samples: self.samples,
+            permutation: 0,
+        }
     }
 
     /// Declares the passes again when the number of views changed, and gives each view's opaque

@@ -1,8 +1,9 @@
 //! The shader manifest, `shaders.toml`: the entry shaders to build, their render pipelines, and
-//! their variants with shader defs and output targets.
+//! their variants with shader defs, permutation bits and output targets.
 
 use std::collections::BTreeMap;
 
+use null3d_gpu::drawlist::permutation;
 use serde::{Deserialize, Serialize};
 
 /// A language that a variant builds for.
@@ -67,13 +68,17 @@ impl Pipeline {
     }
 }
 
-/// One build of an entry shader.
+/// One variant of an entry shader: a build for each combination of its permutation bits.
 #[derive(Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct Variant {
-    /// Shader defs that are true in this build.
+    /// Shader defs that are true in every build of the variant.
     #[serde(default)]
     pub defs: Vec<String>,
+    /// Permutation bits by name, as the draw list's `permutation` module names them. The variant
+    /// builds once for each combination of them, with the names of the bits it has as more defs.
+    #[serde(default)]
+    pub permutations: Vec<String>,
     /// The languages to write.
     pub targets: Vec<Target>,
 }
@@ -83,6 +88,49 @@ impl Variant {
     pub fn has(&self, target: Target) -> bool {
         self.targets.contains(&target)
     }
+
+    /// Every build of the variant `name`, one for each combination of its permutation bits, in
+    /// the order of their permutation words. The build without any bit takes the variant's name,
+    /// and each other build adds the names of its bits in lowercase, in bit order: variant
+    /// `webgl2` with `DRAW_INDEX` builds `webgl2` and `webgl2_draw_index`. The variant's names
+    /// must be checked first.
+    pub(crate) fn builds(&self, name: &str) -> Vec<Build> {
+        let mut bits: Vec<(&str, u32)> = self
+            .permutations
+            .iter()
+            .filter_map(|bit| permutation::bit(bit).map(|value| (bit.as_str(), value)))
+            .collect();
+        bits.sort_by_key(|&(_, value)| value);
+        let mut builds: Vec<Build> = (0..1usize << bits.len())
+            .map(|combination| {
+                let mut build = Build {
+                    name: name.to_owned(),
+                    defs: self.defs.clone(),
+                    permutation: 0,
+                };
+                for (k, &(bit, value)) in bits.iter().enumerate() {
+                    if combination & (1 << k) != 0 {
+                        build.name.push('_');
+                        build.name.push_str(&bit.to_ascii_lowercase());
+                        build.defs.push(bit.to_owned());
+                        build.permutation |= value;
+                    }
+                }
+                build.defs.sort();
+                build
+            })
+            .collect();
+        builds.sort_by_key(|build| build.permutation);
+        builds
+    }
+}
+
+/// One build of a variant: its name, its shader defs and its permutation word.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct Build {
+    pub name: String,
+    pub defs: Vec<String>,
+    pub permutation: u32,
 }
 
 impl Manifest {
@@ -145,20 +193,34 @@ pub(crate) fn check_builds(
             "{shader} has no variants. Add one, for example `variants.plain = {{ targets = [\"wgsl\", \"glsl\"] }}`."
         ));
     }
+    let mut builds: BTreeMap<String, &str> = BTreeMap::new();
     for (variant_name, variant) in variants {
         let variant_key = child(format!("variants.{variant_name}"));
         check_name(&mut errors, &variant_key, variant_name);
-        check_variant(&mut errors, &variant_key, variant);
+        let known_bits = check_variant(&mut errors, &variant_key, variant);
         if variant.has(Target::Glsl) && pipelines.is_empty() {
             errors.push(format!(
                 "{variant_key} targets \"glsl\", but {shader} names no pipelines. WebGL2 needs a vertex and a fragment shader for each program: add `pipelines.main = {{ vertex = \"vs_main\", fragment = \"fs_main\" }}` with your entry point names."
             ));
         }
+        if !known_bits {
+            continue;
+        }
+        for build in variant.builds(variant_name) {
+            if let Some(other) = builds.insert(build.name.clone(), variant_name) {
+                errors.push(format!(
+                    "{variant_key} and variant `{other}` both build `{}`, since each permutation bit adds its name to a variant's name. Rename one of the variants.",
+                    build.name
+                ));
+            }
+        }
     }
     errors
 }
 
-fn check_variant(errors: &mut Vec<String>, key: &str, variant: &Variant) {
+/// Checks a variant's targets, defs and permutation bits. Returns false when a permutation bit is
+/// not one of the draw list's, so its builds cannot be named.
+fn check_variant(errors: &mut Vec<String>, key: &str, variant: &Variant) -> bool {
     if variant.targets.is_empty() {
         errors.push(format!(
             "{key}.targets is empty. List \"wgsl\", \"glsl\" or both."
@@ -179,6 +241,26 @@ fn check_variant(errors: &mut Vec<String>, key: &str, variant: &Variant) {
             errors.push(format!("{key}.defs lists \"{def}\" twice."));
         }
     }
+    let mut known = true;
+    for (index, bit) in variant.permutations.iter().enumerate() {
+        if permutation::bit(bit).is_none() {
+            let names: Vec<&str> = permutation::NAMES.iter().map(|&(name, _)| name).collect();
+            errors.push(format!(
+                "{key}.permutations has \"{bit}\", which is not a permutation bit. The bits are {}.",
+                names.join(", ")
+            ));
+            known = false;
+        }
+        if variant.permutations[..index].contains(bit) {
+            errors.push(format!("{key}.permutations lists \"{bit}\" twice."));
+        }
+        if variant.defs.contains(bit) {
+            errors.push(format!(
+                "{key} lists \"{bit}\" in both defs and permutations. Keep it in permutations, which builds the variant with it and without it."
+            ));
+        }
+    }
+    known
 }
 
 fn check_name(errors: &mut Vec<String>, key: &str, name: &str) {
@@ -279,6 +361,83 @@ variants.plain = { defs = ["A", "A", "1B"], targets = [] }
         let errors = Manifest::parse(&text).unwrap_err();
         assert!(
             errors[0].contains("targets lists \"glsl\" twice"),
+            "{errors:?}"
+        );
+    }
+
+    #[test]
+    fn a_variant_builds_once_for_each_combination_of_its_permutation_bits() {
+        let text = r#"
+[shaders.lit]
+file = "lit.wgsl"
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgl2 = { defs = ["WEBGL2"], permutations = ["TONE_MAP", "DRAW_INDEX"], targets = ["glsl"] }
+variants.webgpu = { targets = ["wgsl"] }
+"#;
+        let manifest = Manifest::parse(text).unwrap();
+        let lit = &manifest.shaders["lit"];
+        let builds = lit.variants["webgl2"].builds("webgl2");
+        let summary: Vec<(&str, Vec<&str>, u32)> = builds
+            .iter()
+            .map(|b| {
+                let defs = b.defs.iter().map(String::as_str).collect();
+                (b.name.as_str(), defs, b.permutation)
+            })
+            .collect();
+        assert_eq!(
+            summary,
+            [
+                ("webgl2", vec!["WEBGL2"], 0),
+                ("webgl2_draw_index", vec!["DRAW_INDEX", "WEBGL2"], 1),
+                ("webgl2_tone_map", vec!["TONE_MAP", "WEBGL2"], 2),
+                (
+                    "webgl2_draw_index_tone_map",
+                    vec!["DRAW_INDEX", "TONE_MAP", "WEBGL2"],
+                    3
+                ),
+            ]
+        );
+        let plain = lit.variants["webgpu"].builds("webgpu");
+        assert_eq!(plain.len(), 1);
+        assert_eq!(
+            (plain[0].name.as_str(), plain[0].permutation),
+            ("webgpu", 0)
+        );
+    }
+
+    #[test]
+    fn permutation_bits_are_checked() {
+        let text = r#"
+[shaders.mesh]
+file = "mesh.wgsl"
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.a = { defs = ["TONE_MAP"], permutations = ["SHINY", "TONE_MAP", "TONE_MAP"], targets = ["wgsl"] }
+"#;
+        let all = Manifest::parse(text).unwrap_err().join("\n");
+        assert!(
+            all.contains("\"SHINY\", which is not a permutation bit"),
+            "{all}"
+        );
+        assert!(all.contains("The bits are DRAW_INDEX, TONE_MAP,"), "{all}");
+        assert!(
+            all.contains("permutations lists \"TONE_MAP\" twice"),
+            "{all}"
+        );
+        assert!(all.contains("in both defs and permutations"), "{all}");
+    }
+
+    #[test]
+    fn a_build_name_that_another_variant_takes_is_rejected() {
+        let text = r#"
+[shaders.mesh]
+file = "mesh.wgsl"
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.a = { permutations = ["TONE_MAP"], targets = ["wgsl"] }
+variants.a_tone_map = { targets = ["wgsl"] }
+"#;
+        let errors = Manifest::parse(text).unwrap_err();
+        assert!(
+            errors[0].contains("variants.a_tone_map and variant `a` both build `a_tone_map`"),
             "{errors:?}"
         );
     }

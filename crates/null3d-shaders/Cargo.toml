@@ -8,6 +8,7 @@ repository.workspace = true
 publish.workspace = true
 
 [dependencies]
+null3d-gpu = { path = "../null3d-gpu" }
 naga = { version = "30", features = ["wgsl-in", "wgsl-out", "glsl-out"] }
 naga_oil = { version = "0.23", default-features = false }
 serde = { version = "1", features = ["derive"] }
