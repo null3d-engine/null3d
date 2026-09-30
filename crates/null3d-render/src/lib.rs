@@ -14,6 +14,7 @@
 //! - `materials`: the material table
 //! - `meshes`: mesh storage for both GPU paths
 //! - `parallel_record`: draw lists recorded in chunks on the job workers, joined in chunk order
+//! - `textures`: texture arrays, their samplers and bind groups, and uploads under a byte budget
 //! - `view`: views, each a camera, a layer mask and a target, culled on its own
 
 pub mod arrays;
@@ -28,4 +29,5 @@ pub mod graph;
 pub mod materials;
 pub mod meshes;
 pub mod parallel_record;
+pub mod textures;
 pub mod view;

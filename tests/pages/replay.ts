@@ -102,6 +102,8 @@ run('replay', async () => {
 		[8, positions.length * INSTANCE_BYTES, U.VERTEX | U.STORAGE, -1],
 		[9, indirect.byteLength, U.INDIRECT | U.STORAGE | U.COPY_DST | U.COPY_SRC, blobs.indirect],
 		[10, cull.byteLength, U.UNIFORM | U.COPY_DST, blobs.cull],
+		// The maps table, which the frame group binds, though no pipeline here reads a map.
+		[11, materials.byteLength, U.STORAGE | U.COPY_DST, -1],
 	];
 	for (const [id, size, usage] of buffers) memory.push(G.OP_CREATE_BUFFER, id, size, usage);
 	for (const [id, size, , source] of buffers)
@@ -146,17 +148,10 @@ run('replay', async () => {
 		G.OP_CREATE_BIND_GROUP,
 		1,
 		G.LAYOUT_FRAME,
-		2,
-		0,
-		G.RESOURCE_BUFFER,
 		3,
-		0,
-		0,
-		1,
-		G.RESOURCE_BUFFER,
-		4,
-		0,
-		0,
+		...[0, G.RESOURCE_BUFFER, 3, 0, 0],
+		...[1, G.RESOURCE_BUFFER, 4, 0, 0],
+		...[2, G.RESOURCE_BUFFER, 11, 0, 0],
 	);
 	memory.push(
 		G.OP_CREATE_BIND_GROUP,

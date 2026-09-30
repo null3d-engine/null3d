@@ -46,6 +46,7 @@ mod opaque;
 
 use std::collections::TryReserveError;
 
+use null3d_gpu::caps::{BUDGET, Limit};
 use null3d_gpu::drawlist::{DrawList, Op, buffer_usage as usage, sizes};
 
 use crate::frame::{
@@ -54,8 +55,9 @@ use crate::frame::{
 };
 use crate::frame_graph::{FrameGraph, Role};
 use crate::graph::RenderGraph;
-use crate::materials::MATERIAL_FLOATS;
+use crate::materials::{MAP_WORDS, MATERIAL_FLOATS};
 use crate::meshes::{MeshStorage, Packing};
+use crate::textures::{TextureIds, TextureStore};
 use crate::view::{ViewFrame, ViewId};
 use cull::{CULL_PARAMS_BYTES, Culling, INDIRECT_BYTES};
 use layout::Layout;
@@ -111,11 +113,17 @@ mod ids {
         frame(view) + 3
     }
 
+    /// The maps table, which names the layer of each material's map.
+    pub const MAPS: u32 = VIEW_BUFFERS + 4 * MAX_VIEWS as u32;
     /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
-    pub const PAGES: u32 = VIEW_BUFFERS + 4 * MAX_VIEWS as u32;
+    pub const PAGES: u32 = MAPS + 1;
 
     /// The render graph's textures, from this id on.
     pub const TARGETS: u32 = 1;
+    /// The texture arrays of materials' maps, after every id the render graph can take.
+    pub const TEXTURE_ARRAYS: u32 = TARGETS + 256;
+    /// The samplers of materials' maps, the only samplers the builder makes.
+    pub const SAMPLERS: u32 = 1;
 
     pub const CULL: u32 = 1;
 
@@ -126,6 +134,8 @@ mod ids {
     pub const fn cull_group(view: ViewId) -> u32 {
         frame_group(view) + 1
     }
+    /// The bind groups of materials' maps, after every view's groups.
+    pub const TEXTURE_GROUPS: u32 = 1 + 2 * MAX_VIEWS as u32;
 
     pub const fn bundle(view: ViewId) -> u32 {
         1 + view.index() as u32
@@ -174,11 +184,20 @@ pub struct GpuDrivenRenderer {
 
 impl GpuDrivenRenderer {
     pub fn new(config: RendererConfig) -> Self {
+        let textures = TextureStore::new(
+            TextureIds {
+                first_texture: ids::TEXTURE_ARRAYS,
+                first_sampler: ids::SAMPLERS,
+                first_group: ids::TEXTURE_GROUPS,
+            },
+            BUDGET[Limit::TextureDimension2D as usize],
+        );
         Self {
             config,
             settings: SceneSettings::new(
                 MeshStorage::new(Packing::SharedBuffers),
                 config.max_materials,
+                textures,
             ),
             meshes: MeshBuffers::new(ids::PAGES),
             pipelines: PipelineTable::default(),
@@ -245,6 +264,9 @@ impl GpuDrivenRenderer {
             let (at, bytes) = arena.push(floats_as_bytes(parameters))?;
             list.push(Op::WriteBuffer, &[ids::MATERIALS, 0, at, bytes])?;
         }
+        let groups_remade = self
+            .settings
+            .record_textures(list, arena, ids::MAPS, input.frame)?;
         let binding_bytes = self.config.storage_binding_bytes;
         let shared_recreated = if upload_everything {
             self.layout.apply(list, arena, binding_bytes)?
@@ -252,9 +274,10 @@ impl GpuDrivenRenderer {
             self.layout.update_membership(list, arena, input, parity)?;
             false
         };
-        // A view's bundle names the buffers and the layout it draws, so each new view, and every
-        // view after a new layout or new mesh buffers, records its bundle.
-        let first_to_apply = if upload_everything || pages_remade {
+        // A view's bundle names the buffers, the bind groups and the layout it draws, so each new
+        // view, and every view after a new layout, new mesh buffers or new map groups, records its
+        // bundle.
+        let first_to_apply = if upload_everything || pages_remade || groups_remade {
             0
         } else {
             first_new
@@ -292,28 +315,32 @@ impl GpuDrivenRenderer {
         Ok(upload_everything)
     }
 
-    /// Records the creation of the culling pipeline and of the material table, whose size never
-    /// changes.
+    /// Records the creation of the culling pipeline and of the material and maps tables, whose
+    /// sizes never change.
     fn create_fixed(&mut self, list: &mut DrawList) -> Result<(), RecordError> {
         cull::create_pipeline(list)?;
-        list.push(
-            Op::CreateBuffer,
-            &[
-                ids::MATERIALS,
-                self.config.max_materials.max(1) * 16,
-                usage::STORAGE | usage::COPY_DST,
-            ],
-        )?;
+        let materials = self.config.max_materials.max(1);
+        for (id, words) in [(ids::MATERIALS, MATERIAL_FLOATS), (ids::MAPS, MAP_WORDS)] {
+            list.push(
+                Op::CreateBuffer,
+                &[
+                    id,
+                    materials * words as u32 * 4,
+                    usage::STORAGE | usage::COPY_DST,
+                ],
+            )?;
+        }
         self.created = true;
         Ok(())
     }
 
     /// The most that one frame can copy into its arena for the scene as it stands: mesh data not
-    /// uploaded yet, the whole material table, the layout's tables, and each view's frame uniform,
-    /// culling parameters and indirect draws.
+    /// uploaded yet, the whole material and maps tables, the layout's tables, and each view's
+    /// frame uniform, culling parameters and indirect draws.
     fn upload_bound(&self) -> usize {
         let meshes = self.meshes.pending_bytes(self.settings.meshes().pages());
-        let materials = self.settings.materials().capacity() as usize * MATERIAL_FLOATS * 4;
+        let materials =
+            self.settings.materials().capacity() as usize * (MATERIAL_FLOATS + MAP_WORDS) * 4;
         let per_view = (sizes::FRAME_UNIFORM_BYTES + CULL_PARAMS_BYTES) as usize
             + self.layout.draws.len() * INDIRECT_BYTES as usize;
         meshes + materials + self.layout.upload_bound() + self.settings.views().len() * per_view
@@ -357,6 +384,7 @@ impl FrameBuilder for GpuDrivenRenderer {
         self.meshes.forget();
         self.pipelines.forget();
         self.settings.materials_mut().mark_changed();
+        self.settings.textures_mut().reset_gpu();
     }
 
     fn list(&self, frame: u32) -> &DrawList {

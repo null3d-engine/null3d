@@ -102,6 +102,33 @@ export interface CoreGlue extends CoreErrors {
 	/** A material with a linear color; `shading` is one of the `SHADING_*` codes. */
 	createMaterial(shading: number, r: number, g: number, b: number, a: number): number;
 	setMaterialColor(material: number, r: number, g: number, b: number, a: number): number;
+	/** Gives a material a map, a texture's handle, or none with 0. */
+	setMaterialMap(material: number, texture: number): number;
+	/**
+	 * A texture with no image yet, in a layer of a texture array. `format` is a `FORMAT_*` code;
+	 * the rest set its sampler with `ADDRESS_*` and `FILTER_*` codes. Returns its handle.
+	 */
+	createTexture(
+		width: number,
+		height: number,
+		format: number,
+		mipmaps: boolean,
+		wrapU: number,
+		wrapV: number,
+		magFilter: number,
+		minFilter: number,
+		mipFilter: number,
+		anisotropy: number,
+	): number;
+	/** Gives a texture an image of its size, and returns the image's id for the thread that draws. */
+	setTextureImage(texture: number, width: number, height: number): number;
+	destroyTexture(texture: number, frame: number): number;
+	/** Tells the texture store what the thread that draws has: images received, and frames taken. */
+	syncTextures(imagesArrived: number, framesTaken: number): void;
+	/** One of the texture store's numbers, by `TEXTURE_STAT_*` code; `texture` names one texture. */
+	textureStat(field: number, texture: number): number;
+	/** Changes one of the texture store's settings, by `TEXTURE_OPTION_*` code. */
+	setTextureOption(option: number, value: number): number;
 	setCamera(camera: number, fovDegrees: number, near: number, far: number): number;
 	setSun(dx: number, dy: number, dz: number, r: number, g: number, b: number): number;
 	setAmbient(r: number, g: number, b: number): number;
@@ -148,6 +175,13 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'meshRadius',
 	'createMaterial',
 	'setMaterialColor',
+	'setMaterialMap',
+	'createTexture',
+	'setTextureImage',
+	'destroyTexture',
+	'syncTextures',
+	'textureStat',
+	'setTextureOption',
 	'setCamera',
 	'setSun',
 	'setAmbient',

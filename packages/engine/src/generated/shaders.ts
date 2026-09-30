@@ -187,9 +187,9 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
 
 /** The variants of the `mesh` shader, by variant name. */
 export const MESH_SHADER: {
-	readonly webgl2: ShaderVariant<'lit' | 'texcoords' | 'unlit'>;
-	readonly webgl2_multi_draw: ShaderVariant<'lit' | 'texcoords' | 'unlit'>;
-	readonly webgpu: ShaderVariant<'lit' | 'texcoords' | 'unlit'>;
+	readonly webgl2: ShaderVariant<'lit' | 'texcoords' | 'unlit' | 'unlit_map'>;
+	readonly webgl2_multi_draw: ShaderVariant<'lit' | 'texcoords' | 'unlit' | 'unlit_map'>;
+	readonly webgpu: ShaderVariant<'lit' | 'texcoords' | 'unlit' | 'unlit_map'>;
 } = {
 	webgl2: {
 		wgsl: null,
@@ -220,6 +220,9 @@ struct MaterialTable {
 struct DrawTable {
     uvec4 items[1];
 };
+struct MapTable {
+    uvec4 items[1024];
+};
 struct VertexIn {
     vec3 position;
     vec3 normal;
@@ -237,6 +240,11 @@ struct TexCoordsOut {
     vec4 clip;
     vec2 uv0_;
 };
+struct MappedOut {
+    vec4 clip;
+    vec2 uv0_;
+    uint material;
+};
 struct Instance {
     vec4 row0_;
     vec4 row1_;
@@ -249,6 +257,7 @@ const uint MATRIX_ROW_SHIFT = 9u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint DRAW_RECORDS = 1u;
+const uint NO_LAYER = 4294967295u;
 
 layout(std140) uniform Frame_block_0Vertex { Frame _group_0_binding_0_vs; };
 
@@ -278,48 +287,48 @@ vec3 linear_to_srgb(vec3 c) {
     return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
 }
 
-Instance instance_of(uvec4 record, uint instance_2) {
+Instance instance_of(uvec4 record, uint instance_3) {
     uint source = 0u;
-    Instance out_2 = Instance(vec4(0.0), vec4(0.0), vec4(0.0), 0u, false);
+    Instance out_3 = Instance(vec4(0.0), vec4(0.0), vec4(0.0), 0u, false);
     uint shift = record.w;
-    uint slot = (record.x + (instance_2 >> shift));
+    uint slot = (record.x + (instance_3 >> shift));
     uvec4 _e13 = texelFetch(_group_2_binding_2_vs, ivec2(uvec2((slot & 2047u), (slot >> INDEX_ROW_SHIFT))), 0);
     source = _e13.x;
     if ((shift != 0u)) {
         uint _e18 = source;
-        uint place = ((_e18 << shift) | (instance_2 & ((1u << shift) - 1u)));
+        uint place = ((_e18 << shift) | (instance_3 & ((1u << shift) - 1u)));
         uvec4 _e32 = texelFetch(_group_2_binding_3_vs, ivec2(uvec2((place & 2047u), (place >> INDEX_ROW_SHIFT))), 0);
         source = _e32.x;
     }
     uint _e36 = source;
-    out_2.drawn = (_e36 != NO_ROW);
+    out_3.drawn = (_e36 != NO_ROW);
     uint _e40 = source;
-    bool _e42 = out_2.drawn;
+    bool _e42 = out_3.drawn;
     uint row = (_e42 ? _e40 : 0u);
     uvec2 at = uvec2(((row & 511u) * 3u), (row >> MATRIX_ROW_SHIFT));
     if ((record.z == 0u)) {
         vec4 _e57 = texelFetch(_group_2_binding_0_vs, ivec2(at), 0);
-        out_2.row0_ = _e57;
+        out_3.row0_ = _e57;
         vec4 _e65 = texelFetch(_group_2_binding_0_vs, ivec2((at + uvec2(1u, 0u))), 0);
-        out_2.row1_ = _e65;
+        out_3.row1_ = _e65;
         vec4 _e73 = texelFetch(_group_2_binding_0_vs, ivec2((at + uvec2(2u, 0u))), 0);
-        out_2.row2_ = _e73;
+        out_3.row2_ = _e73;
     } else {
         vec4 _e77 = texelFetch(_group_2_binding_1_vs, ivec2(at), 0);
-        out_2.row0_ = _e77;
+        out_3.row0_ = _e77;
         vec4 _e85 = texelFetch(_group_2_binding_1_vs, ivec2((at + uvec2(1u, 0u))), 0);
-        out_2.row1_ = _e85;
+        out_3.row1_ = _e85;
         vec4 _e93 = texelFetch(_group_2_binding_1_vs, ivec2((at + uvec2(2u, 0u))), 0);
-        out_2.row2_ = _e93;
+        out_3.row2_ = _e93;
     }
-    out_2.material = record.y;
-    Instance _e96 = out_2;
+    out_3.material = record.y;
+    Instance _e96 = out_3;
     return _e96;
 }
 
-Instance find_instance(uint instance_3) {
+Instance find_instance(uint instance_4) {
     uvec4 _e3 = _group_1_binding_0_vs.items[0];
-    Instance _e5 = instance_of(_e3, instance_3);
+    Instance _e5 = instance_of(_e3, instance_4);
     return _e5;
 }
 
@@ -411,6 +420,9 @@ struct MaterialTable {
 struct DrawTable {
     uvec4 items[1];
 };
+struct MapTable {
+    uvec4 items[1024];
+};
 struct VertexIn {
     vec3 position;
     vec3 normal;
@@ -428,6 +440,11 @@ struct TexCoordsOut {
     vec4 clip;
     vec2 uv0_;
 };
+struct MappedOut {
+    vec4 clip;
+    vec2 uv0_;
+    uint material;
+};
 struct Instance {
     vec4 row0_;
     vec4 row1_;
@@ -440,6 +457,7 @@ const uint MATRIX_ROW_SHIFT = 9u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint DRAW_RECORDS = 1u;
+const uint NO_LAYER = 4294967295u;
 
 layout(std140) uniform Frame_block_0Fragment { Frame _group_0_binding_0_fs; };
 
@@ -528,6 +546,9 @@ struct MaterialTable {
 struct DrawTable {
     uvec4 items[1];
 };
+struct MapTable {
+    uvec4 items[1024];
+};
 struct VertexIn {
     vec3 position;
     vec3 normal;
@@ -545,6 +566,11 @@ struct TexCoordsOut {
     vec4 clip;
     vec2 uv0_;
 };
+struct MappedOut {
+    vec4 clip;
+    vec2 uv0_;
+    uint material;
+};
 struct Instance {
     vec4 row0_;
     vec4 row1_;
@@ -557,6 +583,7 @@ const uint MATRIX_ROW_SHIFT = 9u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint DRAW_RECORDS = 1u;
+const uint NO_LAYER = 4294967295u;
 
 layout(std140) uniform Frame_block_0Vertex { Frame _group_0_binding_0_vs; };
 
@@ -585,48 +612,48 @@ vec3 linear_to_srgb(vec3 c) {
     return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
 }
 
-Instance instance_of(uvec4 record, uint instance_2) {
+Instance instance_of(uvec4 record, uint instance_3) {
     uint source = 0u;
-    Instance out_2 = Instance(vec4(0.0), vec4(0.0), vec4(0.0), 0u, false);
+    Instance out_3 = Instance(vec4(0.0), vec4(0.0), vec4(0.0), 0u, false);
     uint shift = record.w;
-    uint slot = (record.x + (instance_2 >> shift));
+    uint slot = (record.x + (instance_3 >> shift));
     uvec4 _e13 = texelFetch(_group_2_binding_2_vs, ivec2(uvec2((slot & 2047u), (slot >> INDEX_ROW_SHIFT))), 0);
     source = _e13.x;
     if ((shift != 0u)) {
         uint _e18 = source;
-        uint place = ((_e18 << shift) | (instance_2 & ((1u << shift) - 1u)));
+        uint place = ((_e18 << shift) | (instance_3 & ((1u << shift) - 1u)));
         uvec4 _e32 = texelFetch(_group_2_binding_3_vs, ivec2(uvec2((place & 2047u), (place >> INDEX_ROW_SHIFT))), 0);
         source = _e32.x;
     }
     uint _e36 = source;
-    out_2.drawn = (_e36 != NO_ROW);
+    out_3.drawn = (_e36 != NO_ROW);
     uint _e40 = source;
-    bool _e42 = out_2.drawn;
+    bool _e42 = out_3.drawn;
     uint row = (_e42 ? _e40 : 0u);
     uvec2 at = uvec2(((row & 511u) * 3u), (row >> MATRIX_ROW_SHIFT));
     if ((record.z == 0u)) {
         vec4 _e57 = texelFetch(_group_2_binding_0_vs, ivec2(at), 0);
-        out_2.row0_ = _e57;
+        out_3.row0_ = _e57;
         vec4 _e65 = texelFetch(_group_2_binding_0_vs, ivec2((at + uvec2(1u, 0u))), 0);
-        out_2.row1_ = _e65;
+        out_3.row1_ = _e65;
         vec4 _e73 = texelFetch(_group_2_binding_0_vs, ivec2((at + uvec2(2u, 0u))), 0);
-        out_2.row2_ = _e73;
+        out_3.row2_ = _e73;
     } else {
         vec4 _e77 = texelFetch(_group_2_binding_1_vs, ivec2(at), 0);
-        out_2.row0_ = _e77;
+        out_3.row0_ = _e77;
         vec4 _e85 = texelFetch(_group_2_binding_1_vs, ivec2((at + uvec2(1u, 0u))), 0);
-        out_2.row1_ = _e85;
+        out_3.row1_ = _e85;
         vec4 _e93 = texelFetch(_group_2_binding_1_vs, ivec2((at + uvec2(2u, 0u))), 0);
-        out_2.row2_ = _e93;
+        out_3.row2_ = _e93;
     }
-    out_2.material = record.y;
-    Instance _e96 = out_2;
+    out_3.material = record.y;
+    Instance _e96 = out_3;
     return _e96;
 }
 
-Instance find_instance(uint instance_3) {
+Instance find_instance(uint instance_4) {
     uvec4 _e3 = _group_1_binding_0_vs.items[0];
-    Instance _e5 = instance_of(_e3, instance_3);
+    Instance _e5 = instance_of(_e3, instance_4);
     return _e5;
 }
 
@@ -715,6 +742,9 @@ struct MaterialTable {
 struct DrawTable {
     uvec4 items[1];
 };
+struct MapTable {
+    uvec4 items[1024];
+};
 struct VertexIn {
     vec3 position;
     vec3 normal;
@@ -732,6 +762,11 @@ struct TexCoordsOut {
     vec4 clip;
     vec2 uv0_;
 };
+struct MappedOut {
+    vec4 clip;
+    vec2 uv0_;
+    uint material;
+};
 struct Instance {
     vec4 row0_;
     vec4 row1_;
@@ -744,6 +779,7 @@ const uint MATRIX_ROW_SHIFT = 9u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint DRAW_RECORDS = 1u;
+const uint NO_LAYER = 4294967295u;
 
 smooth in vec2 _vs2fs_location0;
 layout(location = 0) out vec4 _fs2p_location0;
@@ -760,8 +796,8 @@ vec3 linear_to_srgb(vec3 c) {
 }
 
 void main() {
-    TexCoordsOut in_2 = TexCoordsOut(gl_FragCoord, _vs2fs_location0);
-    _fs2p_location0 = vec4(in_2.uv0_, 0.0, 1.0);
+    TexCoordsOut in_3 = TexCoordsOut(gl_FragCoord, _vs2fs_location0);
+    _fs2p_location0 = vec4(in_3.uv0_, 0.0, 1.0);
     return;
 }
 `,
@@ -795,6 +831,9 @@ struct MaterialTable {
 struct DrawTable {
     uvec4 items[1];
 };
+struct MapTable {
+    uvec4 items[1024];
+};
 struct VertexIn {
     vec3 position;
     vec3 normal;
@@ -812,6 +851,11 @@ struct TexCoordsOut {
     vec4 clip;
     vec2 uv0_;
 };
+struct MappedOut {
+    vec4 clip;
+    vec2 uv0_;
+    uint material;
+};
 struct Instance {
     vec4 row0_;
     vec4 row1_;
@@ -824,6 +868,7 @@ const uint MATRIX_ROW_SHIFT = 9u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint DRAW_RECORDS = 1u;
+const uint NO_LAYER = 4294967295u;
 
 layout(std140) uniform Frame_block_0Vertex { Frame _group_0_binding_0_vs; };
 
@@ -853,48 +898,48 @@ vec3 linear_to_srgb(vec3 c) {
     return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
 }
 
-Instance instance_of(uvec4 record, uint instance_2) {
+Instance instance_of(uvec4 record, uint instance_3) {
     uint source = 0u;
-    Instance out_2 = Instance(vec4(0.0), vec4(0.0), vec4(0.0), 0u, false);
+    Instance out_3 = Instance(vec4(0.0), vec4(0.0), vec4(0.0), 0u, false);
     uint shift = record.w;
-    uint slot = (record.x + (instance_2 >> shift));
+    uint slot = (record.x + (instance_3 >> shift));
     uvec4 _e13 = texelFetch(_group_2_binding_2_vs, ivec2(uvec2((slot & 2047u), (slot >> INDEX_ROW_SHIFT))), 0);
     source = _e13.x;
     if ((shift != 0u)) {
         uint _e18 = source;
-        uint place = ((_e18 << shift) | (instance_2 & ((1u << shift) - 1u)));
+        uint place = ((_e18 << shift) | (instance_3 & ((1u << shift) - 1u)));
         uvec4 _e32 = texelFetch(_group_2_binding_3_vs, ivec2(uvec2((place & 2047u), (place >> INDEX_ROW_SHIFT))), 0);
         source = _e32.x;
     }
     uint _e36 = source;
-    out_2.drawn = (_e36 != NO_ROW);
+    out_3.drawn = (_e36 != NO_ROW);
     uint _e40 = source;
-    bool _e42 = out_2.drawn;
+    bool _e42 = out_3.drawn;
     uint row = (_e42 ? _e40 : 0u);
     uvec2 at = uvec2(((row & 511u) * 3u), (row >> MATRIX_ROW_SHIFT));
     if ((record.z == 0u)) {
         vec4 _e57 = texelFetch(_group_2_binding_0_vs, ivec2(at), 0);
-        out_2.row0_ = _e57;
+        out_3.row0_ = _e57;
         vec4 _e65 = texelFetch(_group_2_binding_0_vs, ivec2((at + uvec2(1u, 0u))), 0);
-        out_2.row1_ = _e65;
+        out_3.row1_ = _e65;
         vec4 _e73 = texelFetch(_group_2_binding_0_vs, ivec2((at + uvec2(2u, 0u))), 0);
-        out_2.row2_ = _e73;
+        out_3.row2_ = _e73;
     } else {
         vec4 _e77 = texelFetch(_group_2_binding_1_vs, ivec2(at), 0);
-        out_2.row0_ = _e77;
+        out_3.row0_ = _e77;
         vec4 _e85 = texelFetch(_group_2_binding_1_vs, ivec2((at + uvec2(1u, 0u))), 0);
-        out_2.row1_ = _e85;
+        out_3.row1_ = _e85;
         vec4 _e93 = texelFetch(_group_2_binding_1_vs, ivec2((at + uvec2(2u, 0u))), 0);
-        out_2.row2_ = _e93;
+        out_3.row2_ = _e93;
     }
-    out_2.material = record.y;
-    Instance _e96 = out_2;
+    out_3.material = record.y;
+    Instance _e96 = out_3;
     return _e96;
 }
 
-Instance find_instance(uint instance_3) {
+Instance find_instance(uint instance_4) {
     uvec4 _e3 = _group_1_binding_0_vs.items[0];
-    Instance _e5 = instance_of(_e3, instance_3);
+    Instance _e5 = instance_of(_e3, instance_4);
     return _e5;
 }
 
@@ -986,6 +1031,9 @@ struct MaterialTable {
 struct DrawTable {
     uvec4 items[1];
 };
+struct MapTable {
+    uvec4 items[1024];
+};
 struct VertexIn {
     vec3 position;
     vec3 normal;
@@ -1003,6 +1051,11 @@ struct TexCoordsOut {
     vec4 clip;
     vec2 uv0_;
 };
+struct MappedOut {
+    vec4 clip;
+    vec2 uv0_;
+    uint material;
+};
 struct Instance {
     vec4 row0_;
     vec4 row1_;
@@ -1015,6 +1068,7 @@ const uint MATRIX_ROW_SHIFT = 9u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint DRAW_RECORDS = 1u;
+const uint NO_LAYER = 4294967295u;
 
 layout(std140) uniform MaterialTable_block_0Fragment { MaterialTable _group_0_binding_1_fs; };
 
@@ -1056,6 +1110,340 @@ void main() {
 					textures: [],
 				},
 			},
+			unlit_map: {
+				vertex: {
+					source: `#version 300 es
+uniform vec2 null3d_depth_mapping;
+
+precision highp float;
+precision highp int;
+
+uniform uint naga_vs_first_instance;
+
+struct Frame {
+    mat4x4 view_proj;
+    vec4 camera_position;
+    vec4 sun_direction;
+    vec4 sun_color;
+    vec4 ambient;
+};
+struct Material {
+    vec4 color;
+};
+struct MaterialTable {
+    Material items[1024];
+};
+struct DrawTable {
+    uvec4 items[1];
+};
+struct MapTable {
+    uvec4 items[1024];
+};
+struct VertexIn {
+    vec3 position;
+    vec3 normal;
+};
+struct VertexOut {
+    vec4 clip;
+    vec3 normal;
+    uint material;
+};
+struct TexCoordsIn {
+    vec3 position;
+    vec2 uv0_;
+};
+struct TexCoordsOut {
+    vec4 clip;
+    vec2 uv0_;
+};
+struct MappedOut {
+    vec4 clip;
+    vec2 uv0_;
+    uint material;
+};
+struct Instance {
+    vec4 row0_;
+    vec4 row1_;
+    vec4 row2_;
+    uint material;
+    bool drawn;
+};
+const uint MAX_MATERIALS = 1024u;
+const uint MATRIX_ROW_SHIFT = 9u;
+const uint INDEX_ROW_SHIFT = 11u;
+const uint NO_ROW = 4294967295u;
+const uint DRAW_RECORDS = 1u;
+const uint NO_LAYER = 4294967295u;
+
+layout(std140) uniform Frame_block_0Vertex { Frame _group_0_binding_0_vs; };
+
+layout(std140) uniform DrawTable_block_1Vertex { DrawTable _group_1_binding_0_vs; };
+
+uniform highp sampler2D _group_2_binding_0_vs;
+
+uniform highp sampler2D _group_2_binding_1_vs;
+
+uniform highp usampler2D _group_2_binding_2_vs;
+
+uniform highp usampler2D _group_2_binding_3_vs;
+
+layout(location = 0) in vec3 _p2vs_location0;
+layout(location = 2) in vec2 _p2vs_location2;
+smooth out vec2 _vs2fs_location0;
+flat out uint _vs2fs_location1;
+
+vec3 lambert(vec3 albedo, vec3 normal, vec3 to_light, vec3 light, vec3 ambient) {
+    float n_dot_l = max(dot(normal, to_light), 0.0);
+    return ((albedo / vec3(3.1415927)) * ((n_dot_l * light) + ambient));
+}
+
+vec3 linear_to_srgb(vec3 c) {
+    vec3 low = (c * 12.92);
+    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
+    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
+}
+
+Instance instance_of(uvec4 record, uint instance_3) {
+    uint source = 0u;
+    Instance out_3 = Instance(vec4(0.0), vec4(0.0), vec4(0.0), 0u, false);
+    uint shift = record.w;
+    uint slot = (record.x + (instance_3 >> shift));
+    uvec4 _e13 = texelFetch(_group_2_binding_2_vs, ivec2(uvec2((slot & 2047u), (slot >> INDEX_ROW_SHIFT))), 0);
+    source = _e13.x;
+    if ((shift != 0u)) {
+        uint _e18 = source;
+        uint place = ((_e18 << shift) | (instance_3 & ((1u << shift) - 1u)));
+        uvec4 _e32 = texelFetch(_group_2_binding_3_vs, ivec2(uvec2((place & 2047u), (place >> INDEX_ROW_SHIFT))), 0);
+        source = _e32.x;
+    }
+    uint _e36 = source;
+    out_3.drawn = (_e36 != NO_ROW);
+    uint _e40 = source;
+    bool _e42 = out_3.drawn;
+    uint row = (_e42 ? _e40 : 0u);
+    uvec2 at = uvec2(((row & 511u) * 3u), (row >> MATRIX_ROW_SHIFT));
+    if ((record.z == 0u)) {
+        vec4 _e57 = texelFetch(_group_2_binding_0_vs, ivec2(at), 0);
+        out_3.row0_ = _e57;
+        vec4 _e65 = texelFetch(_group_2_binding_0_vs, ivec2((at + uvec2(1u, 0u))), 0);
+        out_3.row1_ = _e65;
+        vec4 _e73 = texelFetch(_group_2_binding_0_vs, ivec2((at + uvec2(2u, 0u))), 0);
+        out_3.row2_ = _e73;
+    } else {
+        vec4 _e77 = texelFetch(_group_2_binding_1_vs, ivec2(at), 0);
+        out_3.row0_ = _e77;
+        vec4 _e85 = texelFetch(_group_2_binding_1_vs, ivec2((at + uvec2(1u, 0u))), 0);
+        out_3.row1_ = _e85;
+        vec4 _e93 = texelFetch(_group_2_binding_1_vs, ivec2((at + uvec2(2u, 0u))), 0);
+        out_3.row2_ = _e93;
+    }
+    out_3.material = record.y;
+    Instance _e96 = out_3;
+    return _e96;
+}
+
+Instance find_instance(uint instance_4) {
+    uvec4 _e3 = _group_1_binding_0_vs.items[0];
+    Instance _e5 = instance_of(_e3, instance_4);
+    return _e5;
+}
+
+vec4 clip_position(Instance found, vec3 position) {
+    vec4 p = vec4(position, 1.0);
+    if (!(found.drawn)) {
+        return vec4(2.0, 2.0, 2.0, 1.0);
+    }
+    mat4x4 _e13 = _group_0_binding_0_vs.view_proj;
+    return (_e13 * vec4(dot(found.row0_, p), dot(found.row1_, p), dot(found.row2_, p), 1.0));
+}
+
+void main() {
+    TexCoordsIn v_2 = TexCoordsIn(_p2vs_location0, _p2vs_location2);
+    uint instance_2 = (uint(gl_InstanceID) + naga_vs_first_instance);
+    MappedOut out_2 = MappedOut(vec4(0.0), vec2(0.0), 0u);
+    Instance _e1 = find_instance(instance_2);
+    vec4 _e6 = clip_position(_e1, v_2.position);
+    out_2.clip = _e6;
+    out_2.uv0_ = v_2.uv0_;
+    out_2.material = _e1.material;
+    MappedOut _e11 = out_2;
+    gl_Position = _e11.clip;
+    _vs2fs_location0 = _e11.uv0_;
+    _vs2fs_location1 = _e11.material;
+    gl_Position.z = gl_Position.z * null3d_depth_mapping.x + gl_Position.w * null3d_depth_mapping.y;
+    return;
+}
+`,
+					uniformBlocks: [
+						{
+							name: 'Frame_block_0Vertex',
+							group: 0,
+							binding: 0,
+						},
+						{
+							name: 'DrawTable_block_1Vertex',
+							group: 1,
+							binding: 0,
+						},
+					],
+					textures: [
+						{
+							name: '_group_2_binding_0_vs',
+							group: 2,
+							binding: 0,
+							sampler: null,
+						},
+						{
+							name: '_group_2_binding_1_vs',
+							group: 2,
+							binding: 1,
+							sampler: null,
+						},
+						{
+							name: '_group_2_binding_2_vs',
+							group: 2,
+							binding: 2,
+							sampler: null,
+						},
+						{
+							name: '_group_2_binding_3_vs',
+							group: 2,
+							binding: 3,
+							sampler: null,
+						},
+					],
+				},
+				fragment: {
+					source: `#version 300 es
+
+precision highp float;
+precision highp int;
+
+struct Frame {
+    mat4x4 view_proj;
+    vec4 camera_position;
+    vec4 sun_direction;
+    vec4 sun_color;
+    vec4 ambient;
+};
+struct Material {
+    vec4 color;
+};
+struct MaterialTable {
+    Material items[1024];
+};
+struct DrawTable {
+    uvec4 items[1];
+};
+struct MapTable {
+    uvec4 items[1024];
+};
+struct VertexIn {
+    vec3 position;
+    vec3 normal;
+};
+struct VertexOut {
+    vec4 clip;
+    vec3 normal;
+    uint material;
+};
+struct TexCoordsIn {
+    vec3 position;
+    vec2 uv0_;
+};
+struct TexCoordsOut {
+    vec4 clip;
+    vec2 uv0_;
+};
+struct MappedOut {
+    vec4 clip;
+    vec2 uv0_;
+    uint material;
+};
+struct Instance {
+    vec4 row0_;
+    vec4 row1_;
+    vec4 row2_;
+    uint material;
+    bool drawn;
+};
+const uint MAX_MATERIALS = 1024u;
+const uint MATRIX_ROW_SHIFT = 9u;
+const uint INDEX_ROW_SHIFT = 11u;
+const uint NO_ROW = 4294967295u;
+const uint DRAW_RECORDS = 1u;
+const uint NO_LAYER = 4294967295u;
+
+layout(std140) uniform MaterialTable_block_0Fragment { MaterialTable _group_0_binding_1_fs; };
+
+layout(std140) uniform MapTable_block_1Fragment { MapTable _group_0_binding_2_fs; };
+
+uniform highp sampler2DArray _group_3_binding_0_fs;
+
+smooth in vec2 _vs2fs_location0;
+flat in uint _vs2fs_location1;
+layout(location = 0) out vec4 _fs2p_location0;
+
+vec3 lambert(vec3 albedo, vec3 normal, vec3 to_light, vec3 light, vec3 ambient) {
+    float n_dot_l = max(dot(normal, to_light), 0.0);
+    return ((albedo / vec3(3.1415927)) * ((n_dot_l * light) + ambient));
+}
+
+vec3 linear_to_srgb(vec3 c) {
+    vec3 low = (c * 12.92);
+    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
+    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
+}
+
+Material material(uint id) {
+    Material _e4 = _group_0_binding_1_fs.items[id];
+    return _e4;
+}
+
+uvec4 maps_of(uint id_1) {
+    uvec4 _e4 = _group_0_binding_2_fs.items[id_1];
+    return _e4;
+}
+
+void main() {
+    MappedOut in_2 = MappedOut(gl_FragCoord, _vs2fs_location0, _vs2fs_location1);
+    uvec4 _e2 = maps_of(in_2.material);
+    uint layer = _e2.x;
+    bool ready = (layer != NO_LAYER);
+    vec4 texel = texture(_group_3_binding_0_fs, vec3(in_2.uv0_, (ready ? layer : 0u)));
+    vec4 map = (ready ? texel : vec4(1.0));
+    Material _e16 = material(in_2.material);
+    vec3 base = (_e16.color.xyz * map.xyz);
+    vec3 _e21 = linear_to_srgb(base);
+    _fs2p_location0 = vec4(_e21, 1.0);
+    return;
+}
+`,
+					uniformBlocks: [
+						{
+							name: 'MaterialTable_block_0Fragment',
+							group: 0,
+							binding: 1,
+						},
+						{
+							name: 'MapTable_block_1Fragment',
+							group: 0,
+							binding: 2,
+						},
+					],
+					textures: [
+						{
+							name: '_group_3_binding_0_fs',
+							group: 3,
+							binding: 0,
+							sampler: {
+								group: 3,
+								binding: 1,
+							},
+						},
+					],
+				},
+			},
 		},
 	},
 	webgl2_multi_draw: {
@@ -1088,6 +1476,9 @@ struct MaterialTable {
 struct DrawTable {
     uvec4 items[256];
 };
+struct MapTable {
+    uvec4 items[1024];
+};
 struct VertexIn {
     vec3 position;
     vec3 normal;
@@ -1105,6 +1496,11 @@ struct TexCoordsOut {
     vec4 clip;
     vec2 uv0_;
 };
+struct MappedOut {
+    vec4 clip;
+    vec2 uv0_;
+    uint material;
+};
 struct Instance {
     vec4 row0_;
     vec4 row1_;
@@ -1117,6 +1513,7 @@ const uint MATRIX_ROW_SHIFT = 9u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint DRAW_RECORDS = 256u;
+const uint NO_LAYER = 4294967295u;
 
 layout(std140) uniform Frame_block_0Vertex { Frame _group_0_binding_0_vs; };
 
@@ -1146,48 +1543,48 @@ vec3 linear_to_srgb(vec3 c) {
     return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
 }
 
-Instance instance_of(uvec4 record, uint instance_2) {
+Instance instance_of(uvec4 record, uint instance_3) {
     uint source = 0u;
-    Instance out_2 = Instance(vec4(0.0), vec4(0.0), vec4(0.0), 0u, false);
+    Instance out_3 = Instance(vec4(0.0), vec4(0.0), vec4(0.0), 0u, false);
     uint shift = record.w;
-    uint slot = (record.x + (instance_2 >> shift));
+    uint slot = (record.x + (instance_3 >> shift));
     uvec4 _e13 = texelFetch(_group_2_binding_2_vs, ivec2(uvec2((slot & 2047u), (slot >> INDEX_ROW_SHIFT))), 0);
     source = _e13.x;
     if ((shift != 0u)) {
         uint _e18 = source;
-        uint place = ((_e18 << shift) | (instance_2 & ((1u << shift) - 1u)));
+        uint place = ((_e18 << shift) | (instance_3 & ((1u << shift) - 1u)));
         uvec4 _e32 = texelFetch(_group_2_binding_3_vs, ivec2(uvec2((place & 2047u), (place >> INDEX_ROW_SHIFT))), 0);
         source = _e32.x;
     }
     uint _e36 = source;
-    out_2.drawn = (_e36 != NO_ROW);
+    out_3.drawn = (_e36 != NO_ROW);
     uint _e40 = source;
-    bool _e42 = out_2.drawn;
+    bool _e42 = out_3.drawn;
     uint row = (_e42 ? _e40 : 0u);
     uvec2 at = uvec2(((row & 511u) * 3u), (row >> MATRIX_ROW_SHIFT));
     if ((record.z == 0u)) {
         vec4 _e57 = texelFetch(_group_2_binding_0_vs, ivec2(at), 0);
-        out_2.row0_ = _e57;
+        out_3.row0_ = _e57;
         vec4 _e65 = texelFetch(_group_2_binding_0_vs, ivec2((at + uvec2(1u, 0u))), 0);
-        out_2.row1_ = _e65;
+        out_3.row1_ = _e65;
         vec4 _e73 = texelFetch(_group_2_binding_0_vs, ivec2((at + uvec2(2u, 0u))), 0);
-        out_2.row2_ = _e73;
+        out_3.row2_ = _e73;
     } else {
         vec4 _e77 = texelFetch(_group_2_binding_1_vs, ivec2(at), 0);
-        out_2.row0_ = _e77;
+        out_3.row0_ = _e77;
         vec4 _e85 = texelFetch(_group_2_binding_1_vs, ivec2((at + uvec2(1u, 0u))), 0);
-        out_2.row1_ = _e85;
+        out_3.row1_ = _e85;
         vec4 _e93 = texelFetch(_group_2_binding_1_vs, ivec2((at + uvec2(2u, 0u))), 0);
-        out_2.row2_ = _e93;
+        out_3.row2_ = _e93;
     }
-    out_2.material = record.y;
-    Instance _e96 = out_2;
+    out_3.material = record.y;
+    Instance _e96 = out_3;
     return _e96;
 }
 
-Instance find_instance(uint instance_3, uint draw_2) {
-    uvec4 _e4 = _group_1_binding_0_vs.items[draw_2];
-    Instance _e6 = instance_of(_e4, instance_3);
+Instance find_instance(uint instance_4, uint draw_3) {
+    uvec4 _e4 = _group_1_binding_0_vs.items[draw_3];
+    Instance _e6 = instance_of(_e4, instance_4);
     return _e6;
 }
 
@@ -1280,6 +1677,9 @@ struct MaterialTable {
 struct DrawTable {
     uvec4 items[256];
 };
+struct MapTable {
+    uvec4 items[1024];
+};
 struct VertexIn {
     vec3 position;
     vec3 normal;
@@ -1297,6 +1697,11 @@ struct TexCoordsOut {
     vec4 clip;
     vec2 uv0_;
 };
+struct MappedOut {
+    vec4 clip;
+    vec2 uv0_;
+    uint material;
+};
 struct Instance {
     vec4 row0_;
     vec4 row1_;
@@ -1309,6 +1714,7 @@ const uint MATRIX_ROW_SHIFT = 9u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint DRAW_RECORDS = 256u;
+const uint NO_LAYER = 4294967295u;
 
 layout(std140) uniform Frame_block_0Fragment { Frame _group_0_binding_0_fs; };
 
@@ -1398,6 +1804,9 @@ struct MaterialTable {
 struct DrawTable {
     uvec4 items[256];
 };
+struct MapTable {
+    uvec4 items[1024];
+};
 struct VertexIn {
     vec3 position;
     vec3 normal;
@@ -1415,6 +1824,11 @@ struct TexCoordsOut {
     vec4 clip;
     vec2 uv0_;
 };
+struct MappedOut {
+    vec4 clip;
+    vec2 uv0_;
+    uint material;
+};
 struct Instance {
     vec4 row0_;
     vec4 row1_;
@@ -1427,6 +1841,7 @@ const uint MATRIX_ROW_SHIFT = 9u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint DRAW_RECORDS = 256u;
+const uint NO_LAYER = 4294967295u;
 
 layout(std140) uniform Frame_block_0Vertex { Frame _group_0_binding_0_vs; };
 
@@ -1455,48 +1870,48 @@ vec3 linear_to_srgb(vec3 c) {
     return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
 }
 
-Instance instance_of(uvec4 record, uint instance_2) {
+Instance instance_of(uvec4 record, uint instance_3) {
     uint source = 0u;
-    Instance out_2 = Instance(vec4(0.0), vec4(0.0), vec4(0.0), 0u, false);
+    Instance out_3 = Instance(vec4(0.0), vec4(0.0), vec4(0.0), 0u, false);
     uint shift = record.w;
-    uint slot = (record.x + (instance_2 >> shift));
+    uint slot = (record.x + (instance_3 >> shift));
     uvec4 _e13 = texelFetch(_group_2_binding_2_vs, ivec2(uvec2((slot & 2047u), (slot >> INDEX_ROW_SHIFT))), 0);
     source = _e13.x;
     if ((shift != 0u)) {
         uint _e18 = source;
-        uint place = ((_e18 << shift) | (instance_2 & ((1u << shift) - 1u)));
+        uint place = ((_e18 << shift) | (instance_3 & ((1u << shift) - 1u)));
         uvec4 _e32 = texelFetch(_group_2_binding_3_vs, ivec2(uvec2((place & 2047u), (place >> INDEX_ROW_SHIFT))), 0);
         source = _e32.x;
     }
     uint _e36 = source;
-    out_2.drawn = (_e36 != NO_ROW);
+    out_3.drawn = (_e36 != NO_ROW);
     uint _e40 = source;
-    bool _e42 = out_2.drawn;
+    bool _e42 = out_3.drawn;
     uint row = (_e42 ? _e40 : 0u);
     uvec2 at = uvec2(((row & 511u) * 3u), (row >> MATRIX_ROW_SHIFT));
     if ((record.z == 0u)) {
         vec4 _e57 = texelFetch(_group_2_binding_0_vs, ivec2(at), 0);
-        out_2.row0_ = _e57;
+        out_3.row0_ = _e57;
         vec4 _e65 = texelFetch(_group_2_binding_0_vs, ivec2((at + uvec2(1u, 0u))), 0);
-        out_2.row1_ = _e65;
+        out_3.row1_ = _e65;
         vec4 _e73 = texelFetch(_group_2_binding_0_vs, ivec2((at + uvec2(2u, 0u))), 0);
-        out_2.row2_ = _e73;
+        out_3.row2_ = _e73;
     } else {
         vec4 _e77 = texelFetch(_group_2_binding_1_vs, ivec2(at), 0);
-        out_2.row0_ = _e77;
+        out_3.row0_ = _e77;
         vec4 _e85 = texelFetch(_group_2_binding_1_vs, ivec2((at + uvec2(1u, 0u))), 0);
-        out_2.row1_ = _e85;
+        out_3.row1_ = _e85;
         vec4 _e93 = texelFetch(_group_2_binding_1_vs, ivec2((at + uvec2(2u, 0u))), 0);
-        out_2.row2_ = _e93;
+        out_3.row2_ = _e93;
     }
-    out_2.material = record.y;
-    Instance _e96 = out_2;
+    out_3.material = record.y;
+    Instance _e96 = out_3;
     return _e96;
 }
 
-Instance find_instance(uint instance_3, uint draw_2) {
-    uvec4 _e4 = _group_1_binding_0_vs.items[draw_2];
-    Instance _e6 = instance_of(_e4, instance_3);
+Instance find_instance(uint instance_4, uint draw_3) {
+    uvec4 _e4 = _group_1_binding_0_vs.items[draw_3];
+    Instance _e6 = instance_of(_e4, instance_4);
     return _e6;
 }
 
@@ -1586,6 +2001,9 @@ struct MaterialTable {
 struct DrawTable {
     uvec4 items[256];
 };
+struct MapTable {
+    uvec4 items[1024];
+};
 struct VertexIn {
     vec3 position;
     vec3 normal;
@@ -1603,6 +2021,11 @@ struct TexCoordsOut {
     vec4 clip;
     vec2 uv0_;
 };
+struct MappedOut {
+    vec4 clip;
+    vec2 uv0_;
+    uint material;
+};
 struct Instance {
     vec4 row0_;
     vec4 row1_;
@@ -1615,6 +2038,7 @@ const uint MATRIX_ROW_SHIFT = 9u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint DRAW_RECORDS = 256u;
+const uint NO_LAYER = 4294967295u;
 
 smooth in vec2 _vs2fs_location0;
 layout(location = 0) out vec4 _fs2p_location0;
@@ -1631,8 +2055,8 @@ vec3 linear_to_srgb(vec3 c) {
 }
 
 void main() {
-    TexCoordsOut in_2 = TexCoordsOut(gl_FragCoord, _vs2fs_location0);
-    _fs2p_location0 = vec4(in_2.uv0_, 0.0, 1.0);
+    TexCoordsOut in_3 = TexCoordsOut(gl_FragCoord, _vs2fs_location0);
+    _fs2p_location0 = vec4(in_3.uv0_, 0.0, 1.0);
     return;
 }
 `,
@@ -1667,6 +2091,9 @@ struct MaterialTable {
 struct DrawTable {
     uvec4 items[256];
 };
+struct MapTable {
+    uvec4 items[1024];
+};
 struct VertexIn {
     vec3 position;
     vec3 normal;
@@ -1684,6 +2111,11 @@ struct TexCoordsOut {
     vec4 clip;
     vec2 uv0_;
 };
+struct MappedOut {
+    vec4 clip;
+    vec2 uv0_;
+    uint material;
+};
 struct Instance {
     vec4 row0_;
     vec4 row1_;
@@ -1696,6 +2128,7 @@ const uint MATRIX_ROW_SHIFT = 9u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint DRAW_RECORDS = 256u;
+const uint NO_LAYER = 4294967295u;
 
 layout(std140) uniform Frame_block_0Vertex { Frame _group_0_binding_0_vs; };
 
@@ -1725,48 +2158,48 @@ vec3 linear_to_srgb(vec3 c) {
     return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
 }
 
-Instance instance_of(uvec4 record, uint instance_2) {
+Instance instance_of(uvec4 record, uint instance_3) {
     uint source = 0u;
-    Instance out_2 = Instance(vec4(0.0), vec4(0.0), vec4(0.0), 0u, false);
+    Instance out_3 = Instance(vec4(0.0), vec4(0.0), vec4(0.0), 0u, false);
     uint shift = record.w;
-    uint slot = (record.x + (instance_2 >> shift));
+    uint slot = (record.x + (instance_3 >> shift));
     uvec4 _e13 = texelFetch(_group_2_binding_2_vs, ivec2(uvec2((slot & 2047u), (slot >> INDEX_ROW_SHIFT))), 0);
     source = _e13.x;
     if ((shift != 0u)) {
         uint _e18 = source;
-        uint place = ((_e18 << shift) | (instance_2 & ((1u << shift) - 1u)));
+        uint place = ((_e18 << shift) | (instance_3 & ((1u << shift) - 1u)));
         uvec4 _e32 = texelFetch(_group_2_binding_3_vs, ivec2(uvec2((place & 2047u), (place >> INDEX_ROW_SHIFT))), 0);
         source = _e32.x;
     }
     uint _e36 = source;
-    out_2.drawn = (_e36 != NO_ROW);
+    out_3.drawn = (_e36 != NO_ROW);
     uint _e40 = source;
-    bool _e42 = out_2.drawn;
+    bool _e42 = out_3.drawn;
     uint row = (_e42 ? _e40 : 0u);
     uvec2 at = uvec2(((row & 511u) * 3u), (row >> MATRIX_ROW_SHIFT));
     if ((record.z == 0u)) {
         vec4 _e57 = texelFetch(_group_2_binding_0_vs, ivec2(at), 0);
-        out_2.row0_ = _e57;
+        out_3.row0_ = _e57;
         vec4 _e65 = texelFetch(_group_2_binding_0_vs, ivec2((at + uvec2(1u, 0u))), 0);
-        out_2.row1_ = _e65;
+        out_3.row1_ = _e65;
         vec4 _e73 = texelFetch(_group_2_binding_0_vs, ivec2((at + uvec2(2u, 0u))), 0);
-        out_2.row2_ = _e73;
+        out_3.row2_ = _e73;
     } else {
         vec4 _e77 = texelFetch(_group_2_binding_1_vs, ivec2(at), 0);
-        out_2.row0_ = _e77;
+        out_3.row0_ = _e77;
         vec4 _e85 = texelFetch(_group_2_binding_1_vs, ivec2((at + uvec2(1u, 0u))), 0);
-        out_2.row1_ = _e85;
+        out_3.row1_ = _e85;
         vec4 _e93 = texelFetch(_group_2_binding_1_vs, ivec2((at + uvec2(2u, 0u))), 0);
-        out_2.row2_ = _e93;
+        out_3.row2_ = _e93;
     }
-    out_2.material = record.y;
-    Instance _e96 = out_2;
+    out_3.material = record.y;
+    Instance _e96 = out_3;
     return _e96;
 }
 
-Instance find_instance(uint instance_3, uint draw_2) {
-    uvec4 _e4 = _group_1_binding_0_vs.items[draw_2];
-    Instance _e6 = instance_of(_e4, instance_3);
+Instance find_instance(uint instance_4, uint draw_3) {
+    uvec4 _e4 = _group_1_binding_0_vs.items[draw_3];
+    Instance _e6 = instance_of(_e4, instance_4);
     return _e6;
 }
 
@@ -1859,6 +2292,9 @@ struct MaterialTable {
 struct DrawTable {
     uvec4 items[256];
 };
+struct MapTable {
+    uvec4 items[1024];
+};
 struct VertexIn {
     vec3 position;
     vec3 normal;
@@ -1876,6 +2312,11 @@ struct TexCoordsOut {
     vec4 clip;
     vec2 uv0_;
 };
+struct MappedOut {
+    vec4 clip;
+    vec2 uv0_;
+    uint material;
+};
 struct Instance {
     vec4 row0_;
     vec4 row1_;
@@ -1888,6 +2329,7 @@ const uint MATRIX_ROW_SHIFT = 9u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint DRAW_RECORDS = 256u;
+const uint NO_LAYER = 4294967295u;
 
 layout(std140) uniform MaterialTable_block_0Fragment { MaterialTable _group_0_binding_1_fs; };
 
@@ -1927,6 +2369,342 @@ void main() {
 						},
 					],
 					textures: [],
+				},
+			},
+			unlit_map: {
+				vertex: {
+					source: `#version 300 es
+#extension GL_ANGLE_multi_draw : require
+uniform vec2 null3d_depth_mapping;
+
+precision highp float;
+precision highp int;
+
+uniform uint naga_vs_first_instance;
+
+struct Frame {
+    mat4x4 view_proj;
+    vec4 camera_position;
+    vec4 sun_direction;
+    vec4 sun_color;
+    vec4 ambient;
+};
+struct Material {
+    vec4 color;
+};
+struct MaterialTable {
+    Material items[1024];
+};
+struct DrawTable {
+    uvec4 items[256];
+};
+struct MapTable {
+    uvec4 items[1024];
+};
+struct VertexIn {
+    vec3 position;
+    vec3 normal;
+};
+struct VertexOut {
+    vec4 clip;
+    vec3 normal;
+    uint material;
+};
+struct TexCoordsIn {
+    vec3 position;
+    vec2 uv0_;
+};
+struct TexCoordsOut {
+    vec4 clip;
+    vec2 uv0_;
+};
+struct MappedOut {
+    vec4 clip;
+    vec2 uv0_;
+    uint material;
+};
+struct Instance {
+    vec4 row0_;
+    vec4 row1_;
+    vec4 row2_;
+    uint material;
+    bool drawn;
+};
+const uint MAX_MATERIALS = 1024u;
+const uint MATRIX_ROW_SHIFT = 9u;
+const uint INDEX_ROW_SHIFT = 11u;
+const uint NO_ROW = 4294967295u;
+const uint DRAW_RECORDS = 256u;
+const uint NO_LAYER = 4294967295u;
+
+layout(std140) uniform Frame_block_0Vertex { Frame _group_0_binding_0_vs; };
+
+layout(std140) uniform DrawTable_block_1Vertex { DrawTable _group_1_binding_0_vs; };
+
+uniform highp sampler2D _group_2_binding_0_vs;
+
+uniform highp sampler2D _group_2_binding_1_vs;
+
+uniform highp usampler2D _group_2_binding_2_vs;
+
+uniform highp usampler2D _group_2_binding_3_vs;
+
+layout(location = 0) in vec3 _p2vs_location0;
+layout(location = 2) in vec2 _p2vs_location2;
+smooth out vec2 _vs2fs_location0;
+flat out uint _vs2fs_location1;
+
+vec3 lambert(vec3 albedo, vec3 normal, vec3 to_light, vec3 light, vec3 ambient) {
+    float n_dot_l = max(dot(normal, to_light), 0.0);
+    return ((albedo / vec3(3.1415927)) * ((n_dot_l * light) + ambient));
+}
+
+vec3 linear_to_srgb(vec3 c) {
+    vec3 low = (c * 12.92);
+    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
+    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
+}
+
+Instance instance_of(uvec4 record, uint instance_3) {
+    uint source = 0u;
+    Instance out_3 = Instance(vec4(0.0), vec4(0.0), vec4(0.0), 0u, false);
+    uint shift = record.w;
+    uint slot = (record.x + (instance_3 >> shift));
+    uvec4 _e13 = texelFetch(_group_2_binding_2_vs, ivec2(uvec2((slot & 2047u), (slot >> INDEX_ROW_SHIFT))), 0);
+    source = _e13.x;
+    if ((shift != 0u)) {
+        uint _e18 = source;
+        uint place = ((_e18 << shift) | (instance_3 & ((1u << shift) - 1u)));
+        uvec4 _e32 = texelFetch(_group_2_binding_3_vs, ivec2(uvec2((place & 2047u), (place >> INDEX_ROW_SHIFT))), 0);
+        source = _e32.x;
+    }
+    uint _e36 = source;
+    out_3.drawn = (_e36 != NO_ROW);
+    uint _e40 = source;
+    bool _e42 = out_3.drawn;
+    uint row = (_e42 ? _e40 : 0u);
+    uvec2 at = uvec2(((row & 511u) * 3u), (row >> MATRIX_ROW_SHIFT));
+    if ((record.z == 0u)) {
+        vec4 _e57 = texelFetch(_group_2_binding_0_vs, ivec2(at), 0);
+        out_3.row0_ = _e57;
+        vec4 _e65 = texelFetch(_group_2_binding_0_vs, ivec2((at + uvec2(1u, 0u))), 0);
+        out_3.row1_ = _e65;
+        vec4 _e73 = texelFetch(_group_2_binding_0_vs, ivec2((at + uvec2(2u, 0u))), 0);
+        out_3.row2_ = _e73;
+    } else {
+        vec4 _e77 = texelFetch(_group_2_binding_1_vs, ivec2(at), 0);
+        out_3.row0_ = _e77;
+        vec4 _e85 = texelFetch(_group_2_binding_1_vs, ivec2((at + uvec2(1u, 0u))), 0);
+        out_3.row1_ = _e85;
+        vec4 _e93 = texelFetch(_group_2_binding_1_vs, ivec2((at + uvec2(2u, 0u))), 0);
+        out_3.row2_ = _e93;
+    }
+    out_3.material = record.y;
+    Instance _e96 = out_3;
+    return _e96;
+}
+
+Instance find_instance(uint instance_4, uint draw_3) {
+    uvec4 _e4 = _group_1_binding_0_vs.items[draw_3];
+    Instance _e6 = instance_of(_e4, instance_4);
+    return _e6;
+}
+
+vec4 clip_position(Instance found, vec3 position) {
+    vec4 p = vec4(position, 1.0);
+    if (!(found.drawn)) {
+        return vec4(2.0, 2.0, 2.0, 1.0);
+    }
+    mat4x4 _e13 = _group_0_binding_0_vs.view_proj;
+    return (_e13 * vec4(dot(found.row0_, p), dot(found.row1_, p), dot(found.row2_, p), 1.0));
+}
+
+void main() {
+    TexCoordsIn v_2 = TexCoordsIn(_p2vs_location0, _p2vs_location2);
+    uint instance_2 = (uint(gl_InstanceID) + naga_vs_first_instance);
+    uint draw_2 = uint(gl_DrawID);
+    MappedOut out_2 = MappedOut(vec4(0.0), vec2(0.0), 0u);
+    Instance _e2 = find_instance(instance_2, draw_2);
+    vec4 _e7 = clip_position(_e2, v_2.position);
+    out_2.clip = _e7;
+    out_2.uv0_ = v_2.uv0_;
+    out_2.material = _e2.material;
+    MappedOut _e12 = out_2;
+    gl_Position = _e12.clip;
+    _vs2fs_location0 = _e12.uv0_;
+    _vs2fs_location1 = _e12.material;
+    gl_Position.z = gl_Position.z * null3d_depth_mapping.x + gl_Position.w * null3d_depth_mapping.y;
+    return;
+}
+`,
+					uniformBlocks: [
+						{
+							name: 'Frame_block_0Vertex',
+							group: 0,
+							binding: 0,
+						},
+						{
+							name: 'DrawTable_block_1Vertex',
+							group: 1,
+							binding: 0,
+						},
+					],
+					textures: [
+						{
+							name: '_group_2_binding_0_vs',
+							group: 2,
+							binding: 0,
+							sampler: null,
+						},
+						{
+							name: '_group_2_binding_1_vs',
+							group: 2,
+							binding: 1,
+							sampler: null,
+						},
+						{
+							name: '_group_2_binding_2_vs',
+							group: 2,
+							binding: 2,
+							sampler: null,
+						},
+						{
+							name: '_group_2_binding_3_vs',
+							group: 2,
+							binding: 3,
+							sampler: null,
+						},
+					],
+				},
+				fragment: {
+					source: `#version 300 es
+
+precision highp float;
+precision highp int;
+
+struct Frame {
+    mat4x4 view_proj;
+    vec4 camera_position;
+    vec4 sun_direction;
+    vec4 sun_color;
+    vec4 ambient;
+};
+struct Material {
+    vec4 color;
+};
+struct MaterialTable {
+    Material items[1024];
+};
+struct DrawTable {
+    uvec4 items[256];
+};
+struct MapTable {
+    uvec4 items[1024];
+};
+struct VertexIn {
+    vec3 position;
+    vec3 normal;
+};
+struct VertexOut {
+    vec4 clip;
+    vec3 normal;
+    uint material;
+};
+struct TexCoordsIn {
+    vec3 position;
+    vec2 uv0_;
+};
+struct TexCoordsOut {
+    vec4 clip;
+    vec2 uv0_;
+};
+struct MappedOut {
+    vec4 clip;
+    vec2 uv0_;
+    uint material;
+};
+struct Instance {
+    vec4 row0_;
+    vec4 row1_;
+    vec4 row2_;
+    uint material;
+    bool drawn;
+};
+const uint MAX_MATERIALS = 1024u;
+const uint MATRIX_ROW_SHIFT = 9u;
+const uint INDEX_ROW_SHIFT = 11u;
+const uint NO_ROW = 4294967295u;
+const uint DRAW_RECORDS = 256u;
+const uint NO_LAYER = 4294967295u;
+
+layout(std140) uniform MaterialTable_block_0Fragment { MaterialTable _group_0_binding_1_fs; };
+
+layout(std140) uniform MapTable_block_1Fragment { MapTable _group_0_binding_2_fs; };
+
+uniform highp sampler2DArray _group_3_binding_0_fs;
+
+smooth in vec2 _vs2fs_location0;
+flat in uint _vs2fs_location1;
+layout(location = 0) out vec4 _fs2p_location0;
+
+vec3 lambert(vec3 albedo, vec3 normal, vec3 to_light, vec3 light, vec3 ambient) {
+    float n_dot_l = max(dot(normal, to_light), 0.0);
+    return ((albedo / vec3(3.1415927)) * ((n_dot_l * light) + ambient));
+}
+
+vec3 linear_to_srgb(vec3 c) {
+    vec3 low = (c * 12.92);
+    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
+    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
+}
+
+Material material(uint id) {
+    Material _e4 = _group_0_binding_1_fs.items[id];
+    return _e4;
+}
+
+uvec4 maps_of(uint id_1) {
+    uvec4 _e4 = _group_0_binding_2_fs.items[id_1];
+    return _e4;
+}
+
+void main() {
+    MappedOut in_2 = MappedOut(gl_FragCoord, _vs2fs_location0, _vs2fs_location1);
+    uvec4 _e2 = maps_of(in_2.material);
+    uint layer = _e2.x;
+    bool ready = (layer != NO_LAYER);
+    vec4 texel = texture(_group_3_binding_0_fs, vec3(in_2.uv0_, (ready ? layer : 0u)));
+    vec4 map = (ready ? texel : vec4(1.0));
+    Material _e16 = material(in_2.material);
+    vec3 base = (_e16.color.xyz * map.xyz);
+    vec3 _e21 = linear_to_srgb(base);
+    _fs2p_location0 = vec4(_e21, 1.0);
+    return;
+}
+`,
+					uniformBlocks: [
+						{
+							name: 'MaterialTable_block_0Fragment',
+							group: 0,
+							binding: 1,
+						},
+						{
+							name: 'MapTable_block_1Fragment',
+							group: 0,
+							binding: 2,
+						},
+					],
+					textures: [
+						{
+							name: '_group_3_binding_0_fs',
+							group: 3,
+							binding: 0,
+							sampler: {
+								group: 3,
+								binding: 1,
+							},
+						},
+					],
 				},
 			},
 		},
@@ -1973,6 +2751,12 @@ struct TexCoordsOut {
     @location(0) uv0_: vec2<f32>,
 }
 
+struct MappedOut {
+    @builtin(position) clip: vec4<f32>,
+    @location(0) uv0_: vec2<f32>,
+    @location(1) @interpolate(flat, either) material: u32,
+}
+
 struct Instance {
     row0_: vec4<f32>,
     row1_: vec4<f32>,
@@ -1981,10 +2765,18 @@ struct Instance {
     drawn: bool,
 }
 
+const NO_LAYER: u32 = 4294967295u;
+
 @group(0) @binding(0)
 var<uniform> frame: Frame;
 @group(0) @binding(1)
 var<storage> materials: array<Material>;
+@group(0) @binding(2)
+var<storage> map_table: array<vec4<u32>>;
+@group(1) @binding(0)
+var map_layers: texture_2d_array<f32>;
+@group(1) @binding(1)
+var map_sampler: sampler;
 
 fn lambert(albedo: vec3<f32>, normal: vec3<f32>, to_light: vec3<f32>, light: vec3<f32>, ambient: vec3<f32>) -> vec3<f32> {
     let n_dot_l = max(dot(normal, to_light), 0f);
@@ -2002,8 +2794,13 @@ fn material(id: u32) -> Material {
     return _e3;
 }
 
-fn find_instance(i_2: InstanceIn) -> Instance {
-    return Instance(i_2.row0_, i_2.row1_, i_2.row2_, i_2.ids.x, true);
+fn maps_of(id_1: u32) -> vec4<u32> {
+    let _e3 = map_table[id_1];
+    return _e3;
+}
+
+fn find_instance(i_3: InstanceIn) -> Instance {
+    return Instance(i_3.row0_, i_3.row1_, i_3.row2_, i_3.ids.x, true);
 }
 
 fn clip_position(found: Instance, position: vec3<f32>) -> vec4<f32> {
@@ -2041,6 +2838,19 @@ fn vs_texcoords(v_1: TexCoordsIn, i_1: InstanceIn) -> TexCoordsOut {
     return _e9;
 }
 
+@vertex
+fn vs_mapped(v_2: TexCoordsIn, i_2: InstanceIn) -> MappedOut {
+    var out_2: MappedOut;
+
+    let _e1 = find_instance(i_2);
+    let _e6 = clip_position(_e1, v_2.position);
+    out_2.clip = _e6;
+    out_2.uv0_ = v_2.uv0_;
+    out_2.material = _e1.material;
+    let _e11 = out_2;
+    return _e11;
+}
+
 @fragment
 fn fs_lit(in: VertexOut) -> @location(0) vec4<f32> {
     let _e2 = material(in.material);
@@ -2061,8 +2871,21 @@ fn fs_unlit(in_1: VertexOut) -> @location(0) vec4<f32> {
 }
 
 @fragment
-fn fs_texcoords(in_2: TexCoordsOut) -> @location(0) vec4<f32> {
-    return vec4<f32>(in_2.uv0_, 0f, 1f);
+fn fs_unlit_map(in_2: MappedOut) -> @location(0) vec4<f32> {
+    let _e2 = maps_of(in_2.material);
+    let layer = _e2.x;
+    let ready = (layer != NO_LAYER);
+    let texel = textureSample(map_layers, map_sampler, in_2.uv0_, select(0u, layer, ready));
+    let map = select(vec4(1f), texel, ready);
+    let _e16 = material(in_2.material);
+    let base = (_e16.color.xyz * map.xyz);
+    let _e21 = linear_to_srgb(base);
+    return vec4<f32>(_e21, 1f);
+}
+
+@fragment
+fn fs_texcoords(in_3: TexCoordsOut) -> @location(0) vec4<f32> {
+    return vec4<f32>(in_3.uv0_, 0f, 1f);
 }
 `,
 			pipelines: {
@@ -2077,6 +2900,134 @@ fn fs_texcoords(in_2: TexCoordsOut) -> @location(0) vec4<f32> {
 				unlit: {
 					vertex: 'vs',
 					fragment: 'fs_unlit',
+				},
+				unlit_map: {
+					vertex: 'vs_mapped',
+					fragment: 'fs_unlit_map',
+				},
+			},
+		},
+		glsl: null,
+	},
+};
+
+/** The variants of the `mipmap` shader, by variant name. */
+export const MIPMAP_SHADER: {
+	readonly webgl2: ShaderVariant<'main'>;
+	readonly webgpu: ShaderVariant<'main'>;
+} = {
+	webgl2: {
+		wgsl: null,
+		glsl: {
+			main: {
+				vertex: {
+					source: `#version 300 es
+uniform vec2 null3d_depth_mapping;
+
+precision highp float;
+precision highp int;
+
+uniform uint naga_vs_first_instance;
+
+struct VertexOut {
+    vec4 clip;
+    uint layer;
+};
+flat out uint _vs2fs_location0;
+
+void main() {
+    uint vertex = uint(gl_VertexID);
+    uint layer = (uint(gl_InstanceID) + naga_vs_first_instance);
+    VertexOut out_ = VertexOut(vec4(0.0), 0u);
+    vec2 corner = vec2(float(((vertex << 1u) & 2u)), float((vertex & 2u)));
+    out_.clip = vec4(((corner * 2.0) - vec2(1.0)), 0.5, 1.0);
+    out_.layer = layer;
+    VertexOut _e22 = out_;
+    gl_Position = _e22.clip;
+    _vs2fs_location0 = _e22.layer;
+    gl_Position.z = gl_Position.z * null3d_depth_mapping.x + gl_Position.w * null3d_depth_mapping.y;
+    return;
+}
+`,
+					uniformBlocks: [],
+					textures: [],
+				},
+				fragment: {
+					source: `#version 300 es
+
+precision highp float;
+precision highp int;
+
+struct VertexOut {
+    vec4 clip;
+    uint layer;
+};
+uniform highp sampler2DArray _group_0_binding_0_fs;
+
+flat in uint _vs2fs_location0;
+layout(location = 0) out vec4 _fs2p_location0;
+
+void main() {
+    VertexOut in_ = VertexOut(gl_FragCoord, _vs2fs_location0);
+    vec2 size = vec2(uvec2(textureSize(_group_0_binding_0_fs, 0).xy));
+    vec2 level = max(floor((size * 0.5)), vec2(1.0));
+    vec4 _e17 = textureLod(_group_0_binding_0_fs, vec3((in_.clip.xy / level), in_.layer), 0.0);
+    _fs2p_location0 = _e17;
+    return;
+}
+`,
+					uniformBlocks: [],
+					textures: [
+						{
+							name: '_group_0_binding_0_fs',
+							group: 0,
+							binding: 0,
+							sampler: {
+								group: 0,
+								binding: 1,
+							},
+						},
+					],
+				},
+			},
+		},
+	},
+	webgpu: {
+		wgsl: {
+			source: `struct VertexOut {
+    @builtin(position) clip: vec4<f32>,
+    @location(0) @interpolate(flat, either) layer: u32,
+}
+
+@group(0) @binding(0)
+var source: texture_2d_array<f32>;
+@group(0) @binding(1)
+var source_sampler: sampler;
+
+@vertex
+fn vs_main(@builtin(vertex_index) vertex: u32, @builtin(instance_index) layer: u32) -> VertexOut {
+    var out: VertexOut;
+
+    let corner = vec2<f32>(f32(((vertex << 1u) & 2u)), f32((vertex & 2u)));
+    out.clip = vec4<f32>(((corner * 2f) - vec2(1f)), 0.5f, 1f);
+    out.layer = layer;
+    let _e22 = out;
+    return _e22;
+}
+
+@fragment
+fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
+    let _e1 = textureDimensions(source);
+    let size = vec2<f32>(_e1);
+    let level = max(floor((size * 0.5f)), vec2(1f));
+    let _e17 = textureSampleLevel(source, source_sampler, (in.clip.xy / level), in.layer, 0f);
+    return _e17;
+}
+`,
+			pipelines: {
+				main: {
+					vertex: 'vs_main',
+					fragment: 'fs_main',
 				},
 			},
 		},
@@ -3005,6 +3956,7 @@ fn fs_sample(in: VertexOut) -> @location(0) vec4<f32> {
 export const SHADERS = {
 	cull: CULL_SHADER,
 	mesh: MESH_SHADER,
+	mipmap: MIPMAP_SHADER,
 	test_mesh: TEST_MESH_SHADER,
 	test_textures: TEST_TEXTURES_SHADER,
 } as const;

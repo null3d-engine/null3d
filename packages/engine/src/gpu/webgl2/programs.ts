@@ -9,12 +9,14 @@ import {
 	TEMPLATE_INSTANCED_LIT,
 	TEMPLATE_INSTANCED_TEXCOORDS,
 	TEMPLATE_INSTANCED_UNLIT,
+	TEMPLATE_INSTANCED_UNLIT_MAP,
 } from '../../generated/gpu';
 import {
 	DEPTH_MAPPING_UNIFORM,
 	type GlslProgram,
 	type GlslStage,
 	MESH_SHADER,
+	MIPMAP_SHADER,
 } from '../../generated/shaders';
 import type { DepthSetup } from './depth';
 
@@ -60,7 +62,7 @@ export interface Pipeline {
 }
 
 /** The mesh template of one pipeline of the mesh shader, plain and for multi-draw. */
-function meshTemplate(pipeline: 'lit' | 'unlit' | 'texcoords'): GlslTemplate {
+function meshTemplate(pipeline: 'lit' | 'unlit' | 'unlit_map' | 'texcoords'): GlslTemplate {
 	const plain = MESH_SHADER.webgl2.glsl;
 	const multiDraw = MESH_SHADER.webgl2_multi_draw.glsl;
 	if (!plain || !multiDraw) throw new Error('the mesh shader has no WebGL2 build');
@@ -73,7 +75,15 @@ export function engineTemplates(): (GlslTemplate | undefined)[] {
 	templates[TEMPLATE_INSTANCED_LIT] = meshTemplate('lit');
 	templates[TEMPLATE_INSTANCED_UNLIT] = meshTemplate('unlit');
 	templates[TEMPLATE_INSTANCED_TEXCOORDS] = meshTemplate('texcoords');
+	templates[TEMPLATE_INSTANCED_UNLIT_MAP] = meshTemplate('unlit_map');
 	return templates;
+}
+
+/** The program that draws a mip level of a texture array's layer from the level before it. */
+export function mipmapTemplate(): GlslTemplate {
+	const glsl = MIPMAP_SHADER.webgl2.glsl;
+	if (!glsl) throw new Error('the mip level shader has no WebGL2 build');
+	return { plain: glsl.main };
 }
 
 function compile(gl: WebGL2RenderingContext, type: number, stage: GlslStage): WebGLShader {

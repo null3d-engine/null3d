@@ -1,8 +1,14 @@
 enable draw_index;
 
 // Meshes drawn by instance. The lit pipeline shades like three.js's MeshLambertMaterial, and the
-// unlit pipeline like its MeshBasicMaterial. The texcoords pipeline shows each vertex's first
-// texture coordinates as red and green, for the engine's own tests of vertex formats.
+// unlit pipeline like its MeshBasicMaterial. The unlit_map pipeline multiplies the base color by
+// the material's map, a layer of a texture array, at the first texture coordinates. The texcoords
+// pipeline shows each vertex's first texture coordinates as red and green, for the engine's own
+// tests of vertex formats.
+//
+// Materials whose maps share an array and a sampler share the maps' bind group, and the maps
+// table gives each material's layer. A map whose image is not on the GPU yet has no layer, and
+// the material draws as without it.
 //
 // Vertex attributes take the fixed locations of the engine's vertex formats (drawlist.rs, module
 // `vertex`): the position at 0, the normal at 1 and the first texture coordinates at 2. Each
@@ -50,14 +56,25 @@ struct DrawTable {
     items: array<vec4u, DRAW_RECORDS>,
 }
 
+/// Each material's maps: the layer of its map, then words that other maps will take.
+struct MapTable {
+    items: array<vec4u, MAX_MATERIALS>,
+}
+
 @group(0) @binding(1) var<uniform> materials: MaterialTable;
+@group(0) @binding(2) var<uniform> map_table: MapTable;
 @group(1) @binding(0) var<uniform> draws: DrawTable;
 @group(2) @binding(0) var resident_rows: texture_2d<f32>;
 @group(2) @binding(1) var streamed_rows: texture_2d<f32>;
 @group(2) @binding(2) var visible: texture_2d<u32>;
 @group(2) @binding(3) var cluster_rows: texture_2d<u32>;
+@group(3) @binding(0) var map_layers: texture_2d_array<f32>;
+@group(3) @binding(1) var map_sampler: sampler;
 #else
 @group(0) @binding(1) var<storage, read> materials: array<Material>;
+@group(0) @binding(2) var<storage, read> map_table: array<vec4u>;
+@group(1) @binding(0) var map_layers: texture_2d_array<f32>;
+@group(1) @binding(1) var map_sampler: sampler;
 
 /// The instance's attributes: three rows of its world matrix, then its ids.
 struct InstanceIn {
@@ -91,6 +108,16 @@ struct TexCoordsOut {
     @location(0) uv0: vec2f,
 }
 
+/// What the vertex shader of the pipelines that sample maps passes on.
+struct MappedOut {
+    @builtin(position) clip: vec4f,
+    @location(0) uv0: vec2f,
+    @location(1) @interpolate(flat, either) material: u32,
+}
+
+/// A maps table entry for a map that draws nothing yet.
+const NO_LAYER: u32 = 0xffffffffu;
+
 /// One instance: the rows of its world matrix, its material, and whether it draws at all.
 struct Instance {
     row0: vec4f,
@@ -105,6 +132,15 @@ fn material(id: u32) -> Material {
     return materials.items[id];
 #else
     return materials[id];
+#endif
+}
+
+/// A material's entry in the maps table.
+fn maps_of(id: u32) -> vec4u {
+#ifdef WEBGL2
+    return map_table.items[id];
+#else
+    return map_table[id];
 #endif
 }
 
@@ -229,6 +265,34 @@ fn vs_texcoords(
     return out;
 }
 
+@vertex
+fn vs_mapped(
+    v: TexCoordsIn,
+#ifdef WEBGL2
+    @builtin(instance_index) instance: u32,
+#else
+    i: InstanceIn,
+#endif
+#ifdef DRAW_INDEX
+    @builtin(draw_index) draw: u32,
+#endif
+) -> MappedOut {
+#ifdef WEBGL2
+#ifdef DRAW_INDEX
+    let found = find_instance(instance, draw);
+#else
+    let found = find_instance(instance);
+#endif
+#else
+    let found = find_instance(i);
+#endif
+    var out: MappedOut;
+    out.clip = clip_position(found, v.position);
+    out.uv0 = v.uv0;
+    out.material = found.material;
+    return out;
+}
+
 @fragment
 fn fs_lit(in: VertexOut) -> @location(0) vec4f {
     let albedo = material(in.material).color.rgb;
@@ -245,6 +309,19 @@ fn fs_lit(in: VertexOut) -> @location(0) vec4f {
 @fragment
 fn fs_unlit(in: VertexOut) -> @location(0) vec4f {
     return vec4f(null3d::color::linear_to_srgb(material(in.material).color.rgb), 1.0);
+}
+
+/// The base color times the map. Sampling decodes an sRGB map to linear values, and reads a
+/// linear map as it is. The texture is sampled whether the map is ready or not, as sampling needs
+/// the same control flow in every invocation, and a map that is not ready reads as white.
+@fragment
+fn fs_unlit_map(in: MappedOut) -> @location(0) vec4f {
+    let layer = maps_of(in.material).x;
+    let ready = layer != NO_LAYER;
+    let texel = textureSample(map_layers, map_sampler, in.uv0, select(0u, layer, ready));
+    let map = select(vec4f(1.0), texel, ready);
+    let base = material(in.material).color.rgb * map.rgb;
+    return vec4f(null3d::color::linear_to_srgb(base), 1.0);
 }
 
 /// The first texture coordinates as they are, red for u and green for v, with no color encoding,

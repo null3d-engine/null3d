@@ -6,15 +6,17 @@
 import {
 	LAYOUT_CULL,
 	LAYOUT_FRAME,
+	LAYOUT_TEXTURES,
 	SIZE_INSTANCE_STRIDE,
 	STATE_CULL_NONE,
 	TEMPLATE_CULL,
 	TEMPLATE_INSTANCED_LIT,
 	TEMPLATE_INSTANCED_TEXCOORDS,
 	TEMPLATE_INSTANCED_UNLIT,
+	TEMPLATE_INSTANCED_UNLIT_MAP,
 	VERTEX_INSTANCE_LOCATION,
 } from '../../generated/gpu';
-import { CULL_SHADER, MESH_SHADER, type WgslShader } from '../../generated/shaders';
+import { CULL_SHADER, MESH_SHADER, MIPMAP_SHADER, type WgslShader } from '../../generated/shaders';
 import { vertexAttribute, vertexStride } from '../vertex-format';
 
 /** The WebGPU build of a shader variant. */
@@ -46,6 +48,7 @@ export interface RenderTemplate {
 
 const MESH = wgslOf(MESH_SHADER.webgpu);
 const CULL = wgslOf(CULL_SHADER.webgpu);
+const MIPMAP = wgslOf(MIPMAP_SHADER.webgpu);
 /** The culling shader's compute entry point. */
 const CULL_ENTRY_POINT = 'main';
 
@@ -100,15 +103,23 @@ export class Pipelines {
 	private readonly pipelineLayouts: (GPUPipelineLayout | undefined)[] = [];
 	private readonly cullLayout: GPUPipelineLayout;
 	private readonly modules = new Map<WgslShader, GPUShaderModule>();
+	/** The pipelines that make mip levels, by the format they draw. */
+	private readonly mipPipelines = new Map<GPUTextureFormat, GPURenderPipeline>();
 
 	constructor(private readonly device: GPUDevice) {
+		const fragment = GPUShaderStage.FRAGMENT;
 		this.defineLayout(LAYOUT_FRAME, 'frame', [
 			{
 				binding: 0,
-				visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
+				visibility: GPUShaderStage.VERTEX | fragment,
 				buffer: { type: 'uniform' },
 			},
-			{ binding: 1, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } },
+			{ binding: 1, visibility: fragment, buffer: { type: 'read-only-storage' } },
+			{ binding: 2, visibility: fragment, buffer: { type: 'read-only-storage' } },
+		]);
+		this.defineLayout(LAYOUT_TEXTURES, 'textures', [
+			{ binding: 0, visibility: fragment, texture: { viewDimension: '2d-array' } },
+			{ binding: 1, visibility: fragment, sampler: {} },
 		]);
 		this.defineLayout(LAYOUT_CULL, 'cull', [
 			{ binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
@@ -118,16 +129,17 @@ export class Pipelines {
 			{ binding: 4, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
 			{ binding: 5, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
 		]);
-		for (const [id, pipeline, meshLocations] of [
-			[TEMPLATE_INSTANCED_LIT, 'lit', [0, 1]],
-			[TEMPLATE_INSTANCED_UNLIT, 'unlit', [0, 1]],
-			[TEMPLATE_INSTANCED_TEXCOORDS, 'texcoords', [0, 2]],
+		for (const [id, pipeline, meshLocations, layouts] of [
+			[TEMPLATE_INSTANCED_LIT, 'lit', [0, 1], [LAYOUT_FRAME]],
+			[TEMPLATE_INSTANCED_UNLIT, 'unlit', [0, 1], [LAYOUT_FRAME]],
+			[TEMPLATE_INSTANCED_TEXCOORDS, 'texcoords', [0, 2], [LAYOUT_FRAME]],
+			[TEMPLATE_INSTANCED_UNLIT_MAP, 'unlit_map', [0, 2], [LAYOUT_FRAME, LAYOUT_TEXTURES]],
 		] as const) {
 			this.defineTemplate(id, {
 				label: `mesh ${pipeline}`,
 				shader: MESH,
 				pipeline,
-				layouts: [LAYOUT_FRAME],
+				layouts,
 				meshLocations,
 				vertexBuffers: INSTANCE_BUFFERS,
 			});
@@ -210,6 +222,23 @@ export class Pipelines {
 				: undefined,
 			multisample: { count: sampleCount },
 		});
+	}
+
+	/** The pipeline that makes mip levels of textures of `format`, made at its first use. */
+	mipmaps(format: GPUTextureFormat): GPURenderPipeline {
+		let pipeline = this.mipPipelines.get(format);
+		if (!pipeline) {
+			const module = this.module('mipmaps', MIPMAP);
+			const entryPoints = MIPMAP.pipelines.main;
+			pipeline = this.device.createRenderPipeline({
+				label: 'mipmaps',
+				layout: 'auto',
+				vertex: { module, entryPoint: entryPoints?.vertex },
+				fragment: { module, entryPoint: entryPoints?.fragment, targets: [{ format }] },
+			});
+			this.mipPipelines.set(format, pipeline);
+		}
+		return pipeline;
 	}
 
 	compute(template: number): GPUComputePipeline {

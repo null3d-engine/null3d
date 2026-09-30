@@ -15,6 +15,7 @@ export const OP_WRITE_TEXTURE = 11;
 export const OP_CREATE_SAMPLER = 12;
 export const OP_CREATE_TEXTURE_VIEW = 13;
 export const OP_UPLOAD_IMAGE = 14;
+export const OP_GENERATE_MIPMAPS = 15;
 export const OP_BEGIN_RENDER_PASS = 16;
 export const OP_SET_PIPELINE = 17;
 export const OP_SET_BIND_GROUP = 18;
@@ -36,6 +37,7 @@ export const OP_DISPATCH = 42;
 export const OP_END_COMPUTE_PASS = 44;
 export const OP_COPY_BUFFER_TO_BUFFER = 48;
 export const OP_COPY_TEXTURE_TO_TEXTURE = 49;
+export const OP_RELEASE_IMAGE = 51;
 export const OP_SUBMIT = 63;
 
 export const NO_TARGET = 4294967295;
@@ -90,6 +92,7 @@ export const LAYOUT_FRAME = 0;
 export const LAYOUT_CULL = 1;
 export const LAYOUT_DRAWS = 2;
 export const LAYOUT_INSTANCES = 3;
+export const LAYOUT_TEXTURES = 4;
 
 export const PERMUTATION_DRAW_INDEX = 1;
 
@@ -105,6 +108,7 @@ export const STATE_CULL_NONE = 1;
 export const TEMPLATE_INSTANCED_LIT = 1;
 export const TEMPLATE_INSTANCED_UNLIT = 2;
 export const TEMPLATE_INSTANCED_TEXCOORDS = 3;
+export const TEMPLATE_INSTANCED_UNLIT_MAP = 4;
 export const TEMPLATE_CULL = 16;
 
 export const BUFFER_USAGE_MAP_READ = 1;

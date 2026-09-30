@@ -55,9 +55,14 @@ export enum Slot {
 	/** The canvas size in CSS pixels, as float bits: read them through `slotFloats`. */
 	CanvasCssWidth = 20,
 	CanvasCssHeight = 21,
+	/**
+	 * The images that the thread that draws received for texture uploads. The sketch thread sends
+	 * them in the order of their ids, which count from 1, so every id up to this count arrived.
+	 */
+	ImagesArrived = 22,
 }
 
-const SLOT_COUNT = 22;
+const SLOT_COUNT = 23;
 
 /** Int32 values per input event record. */
 export const INPUT_EVENT_INTS = 8;

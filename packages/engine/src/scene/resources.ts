@@ -7,6 +7,7 @@ import { SHADING_LIT, SHADING_TEXCOORDS, SHADING_UNLIT } from '../generated/core
 import { type ColorInput, linearColor } from './color';
 import type { CoreMemory } from './memory';
 import { arraysProblem, meshFromArrays } from './mesh-arrays';
+import type { Texture } from './textures';
 
 /**
  * A mesh the engine can draw: its id in the engine core, and its bounding radius.
@@ -218,6 +219,12 @@ export class Materials {
 			throw new EngineError('E1108', `${call}() got the opacity ${opacity}, outside 0 to 1.`);
 		const id = this.core.check(this.core.glue.createMaterial(shading, r, g, b, opacity), call);
 		return new Material(id, this.core, call);
+	}
+
+	/** @internal Gives a material a map, or none. */
+	setMap(material: Material, map: Texture | undefined, call: string): void {
+		const status = this.core.glue.setMaterialMap(material.id, map?.handle ?? 0);
+		this.core.check(status, call, undefined, true);
 	}
 
 	/** A lit material. */

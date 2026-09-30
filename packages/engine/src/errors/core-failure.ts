@@ -27,8 +27,11 @@ const RENDER_LIMITS: Record<number, string> = {
 	4: 'the material table is full',
 	7: 'the mesh does not fit the mesh buffers',
 	8: "the frame's uploads do not fit the room the renderer set aside for them",
+	10: 'the texture table is full',
+	11: "the texture's format, sampler settings or image size is not one the engine draws",
 };
 const TOO_MANY_SOURCES = 3;
+const TEXTURE_TOO_LARGE = 9;
 const UNKNOWN_MATERIAL = 5;
 const UNKNOWN_MESH = 6;
 
@@ -78,6 +81,11 @@ export function coreFailure(core: CoreErrors, call: string, what = 'an object'):
 				return error(
 					'E1501',
 					`${call}() failed: the scene has more objects and instance rows than this device can cull and draw (${b.toLocaleString('en-US')} at most).`,
+				);
+			if (a === TEXTURE_TOO_LARGE)
+				return error(
+					'E1501',
+					`${call}() failed: the texture is larger than the ${b} pixels a side that this device's texture arrays hold.`,
 				);
 			if (a === UNKNOWN_MATERIAL || a === UNKNOWN_MESH)
 				return error(

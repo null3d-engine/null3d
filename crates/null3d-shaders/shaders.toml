@@ -28,13 +28,14 @@
 # "glsl" may read `@builtin(draw_index)`: its vertex shader reads `gl_DrawID` from
 # WEBGL_multi_draw, which WebGPU does not have.
 
-# Meshes drawn by instance, lit (Lambert) or unlit, or colored by their first texture coordinates
-# for the engine's own tests. WebGL2 reads instances from data textures, one draw per bucket, or
-# many buckets in one multi-draw call where WEBGL_multi_draw exists.
+# Meshes drawn by instance, lit (Lambert) or unlit, unlit with a map, or colored by their first
+# texture coordinates for the engine's own tests. WebGL2 reads instances from data textures, one
+# draw per bucket, or many buckets in one multi-draw call where WEBGL_multi_draw exists.
 [shaders.mesh]
 file = "mesh.wgsl"
 pipelines.lit = { vertex = "vs", fragment = "fs_lit" }
 pipelines.unlit = { vertex = "vs", fragment = "fs_unlit" }
+pipelines.unlit_map = { vertex = "vs_mapped", fragment = "fs_unlit_map" }
 pipelines.texcoords = { vertex = "vs_texcoords", fragment = "fs_texcoords" }
 variants.webgpu = { targets = ["wgsl"] }
 variants.webgl2 = { defs = ["WEBGL2"], targets = ["glsl"] }
@@ -44,6 +45,13 @@ variants.webgl2_multi_draw = { defs = ["WEBGL2", "DRAW_INDEX"], targets = ["glsl
 [shaders.cull]
 file = "cull.wgsl"
 variants.webgpu = { targets = ["wgsl"] }
+
+# The mip levels of a layer of a texture array, one render pass per level.
+[shaders.mipmap]
+file = "mipmap.wgsl"
+pipelines.main = { vertex = "vs_main", fragment = "fs_main" }
+variants.webgpu = { targets = ["wgsl"] }
+variants.webgl2 = { targets = ["glsl"] }
 
 # A test shader for the GPU layer's texture commands, which the texture replay test page draws
 # with. The engine does not import it, so its download does not hold it.
