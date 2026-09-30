@@ -66,11 +66,18 @@ pub enum Op {
     /// to draw into as a render target. Views take their ids from the texture ids, and
     /// `DestroyTexture` releases them. A view lasts as long as its texture.
     CreateTextureView = 13,
-    /// [texture location (5 words), width, height, image id, flags]: copies the top-left
-    /// `width` x `height` pixels of an image that the backend holds into a texture with
-    /// `COPY_DST` and `RENDER_ATTACHMENT` usage. The image keeps its own orientation and alpha,
-    /// so the thread that decodes it chooses both.
+    /// [texture location (5 words), width, height, image id, flags, source x, source y]: copies
+    /// the `width` x `height` pixels at (`source x`, `source y`) of an image that the backend
+    /// holds into a texture with `COPY_DST` and `RENDER_ATTACHMENT` usage. Rows count from the
+    /// image's first row. The image keeps its own orientation and alpha, so the thread that
+    /// decodes it chooses both. Uploads of a few rows at a time spread a large image over frames.
     UploadImage = 14,
+    /// [texture id, layer]: makes mip levels 1 and up of one layer from its level 0, each from the
+    /// level before it, with a linear filter in linear color. The texture is a 2D array of
+    /// `RGBA8_UNORM` or `RGBA8_UNORM_SRGB`, with `TEXTURE_BINDING` and `RENDER_ATTACHMENT` usage.
+    /// Both backends draw each level with the mip shader, which samples the level before it.
+    /// WebGL2's `generateMipmap` would remake every layer of an array.
+    GenerateMipmaps = 15,
     /// [color target texture id or 0 for the canvas or `NO_TARGET`, resolve target texture id or
     /// 0 for the canvas or `NO_TARGET`, depth texture id or `NO_TARGET`, clear red, green, blue,
     /// alpha (f32), clear depth (f32), pass flags]. A target is a texture of one layer and one mip
@@ -123,12 +130,15 @@ pub enum Op {
     /// layer count]: copies texels between two textures of the same format, one sample each. Depth
     /// textures do not copy, because WebGL2 cannot copy them.
     CopyTextureToTexture = 49,
+    /// [image id]: closes an image that the backend holds, once no later command uploads it. A
+    /// backend that holds no such image does nothing, as when a capture replays a list again.
+    ReleaseImage = 51,
     /// []: submits everything recorded since the previous submit.
     Submit = 63,
 }
 
 impl Op {
-    pub const ALL: [Op; 36] = [
+    pub const ALL: [Op; 38] = [
         Op::CreateBuffer,
         Op::WriteBuffer,
         Op::DestroyBuffer,
@@ -143,6 +153,7 @@ impl Op {
         Op::CreateSampler,
         Op::CreateTextureView,
         Op::UploadImage,
+        Op::GenerateMipmaps,
         Op::BeginRenderPass,
         Op::SetPipeline,
         Op::SetBindGroup,
@@ -164,6 +175,7 @@ impl Op {
         Op::EndComputePass,
         Op::CopyBufferToBuffer,
         Op::CopyTextureToTexture,
+        Op::ReleaseImage,
         Op::Submit,
     ];
 
@@ -187,6 +199,7 @@ impl Op {
             Op::CreateSampler => "CREATE_SAMPLER",
             Op::CreateTextureView => "CREATE_TEXTURE_VIEW",
             Op::UploadImage => "UPLOAD_IMAGE",
+            Op::GenerateMipmaps => "GENERATE_MIPMAPS",
             Op::BeginRenderPass => "BEGIN_RENDER_PASS",
             Op::SetPipeline => "SET_PIPELINE",
             Op::SetBindGroup => "SET_BIND_GROUP",
@@ -208,6 +221,7 @@ impl Op {
             Op::EndComputePass => "END_COMPUTE_PASS",
             Op::CopyBufferToBuffer => "COPY_BUFFER_TO_BUFFER",
             Op::CopyTextureToTexture => "COPY_TEXTURE_TO_TEXTURE",
+            Op::ReleaseImage => "RELEASE_IMAGE",
             Op::Submit => "SUBMIT",
         }
     }
@@ -216,13 +230,10 @@ impl Op {
 /// Opcode numbers kept for commands that the renderer will need, so that work on several of them
 /// at once does not collide. The change that adds such a command moves its number into [`Op`].
 pub mod reserved {
-    /// Makes the mip levels of a texture from its first level: a render pass per level on
-    /// WebGPU, and `generateMipmap` on WebGL2.
-    pub const GENERATE_MIPMAPS: u8 = 15;
     /// Copies texels into a buffer, to read a frame or computed values back.
     pub const COPY_TEXTURE_TO_BUFFER: u8 = 50;
 
-    pub const ALL: [u8; 2] = [GENERATE_MIPMAPS, COPY_TEXTURE_TO_BUFFER];
+    pub const ALL: [u8; 1] = [COPY_TEXTURE_TO_BUFFER];
 }
 
 /// A target slot left empty in `BeginRenderPass`.
@@ -304,6 +315,43 @@ pub mod format {
         } else {
             0
         }
+    }
+
+    /// True for the formats whose mip levels `GenerateMipmaps` makes: 8-bit color, which every
+    /// device can filter and draw into.
+    pub const fn makes_mipmaps(format: u32) -> bool {
+        matches!(format, RGBA8_UNORM | RGBA8_UNORM_SRGB)
+    }
+
+    /// The width or height of a mip level, from the size of level 0.
+    pub const fn level_size(size: u32, level: u32) -> u32 {
+        let size = if level < u32::BITS { size >> level } else { 0 };
+        if size == 0 { 1 } else { size }
+    }
+
+    /// The mip levels of a whole chain, from a texture's size down to 1 x 1.
+    pub const fn full_chain(width: u32, height: u32) -> u32 {
+        let largest = if width > height { width } else { height };
+        u32::BITS - (largest | 1).leading_zeros()
+    }
+
+    /// Bytes of one layer of one mip level, which every upload, budget and memory count of
+    /// textures reads, so a format stored in blocks of texels changes this one place.
+    pub const fn level_bytes(format: u32, width: u32, height: u32, level: u32) -> u64 {
+        texel_bytes(format) as u64
+            * level_size(width, level) as u64
+            * level_size(height, level) as u64
+    }
+
+    /// Bytes of one layer with its first `mips` mip levels.
+    pub const fn layer_bytes(format: u32, width: u32, height: u32, mips: u32) -> u64 {
+        let mut bytes = 0;
+        let mut level = 0;
+        while level < mips {
+            bytes += level_bytes(format, width, height, level);
+            level += 1;
+        }
+        bytes
     }
 }
 
@@ -391,6 +439,9 @@ pub mod layout {
     pub const INSTANCES: u32 = 3;
     /// Group 0 of the final pass: the output settings, and the scene color it reads.
     pub const FINAL: u32 = 4;
+    /// The maps of render pipelines that sample them: a 2D array texture, then its sampler. It is
+    /// group 1 on WebGPU, and group 3 on WebGL2, after the groups of the data textures.
+    pub const TEXTURES: u32 = 5;
 }
 
 /// Bits of a render pipeline's permutation word, which pick a shader variant. A feature that
@@ -609,8 +660,11 @@ pub mod template {
     /// Instanced meshes colored by their first texture coordinates, for the engine's own tests of
     /// vertex formats.
     pub const INSTANCED_TEXCOORDS: u32 = 3;
+    /// Instanced meshes without lighting, whose base color is multiplied by a map that the first
+    /// texture coordinates place.
+    pub const INSTANCED_UNLIT_MAP: u32 = 5;
     /// The final pass: one triangle over the canvas, which tone maps the scene color into it.
-    pub const FINAL: u32 = 4;
+    pub const FINAL: u32 = 7;
     /// The GPU culling compute shader.
     pub const CULL: u32 = 16;
 }
@@ -825,6 +879,7 @@ pub fn typescript_constants() -> String {
                 ("DRAWS", layout::DRAWS),
                 ("INSTANCES", layout::INSTANCES),
                 ("FINAL", layout::FINAL),
+                ("TEXTURES", layout::TEXTURES),
             ],
         ),
         ("PERMUTATION", &permutation::NAMES),
@@ -846,6 +901,7 @@ pub fn typescript_constants() -> String {
                 ("INSTANCED_LIT", template::INSTANCED_LIT),
                 ("INSTANCED_UNLIT", template::INSTANCED_UNLIT),
                 ("INSTANCED_TEXCOORDS", template::INSTANCED_TEXCOORDS),
+                ("INSTANCED_UNLIT_MAP", template::INSTANCED_UNLIT_MAP),
                 ("FINAL", template::FINAL),
                 ("CULL", template::CULL),
             ],
@@ -986,6 +1042,10 @@ mod tests {
                 "texcoords",
                 include_str!("../../null3d-shaders/wgsl/texcoords.wgsl"),
             ),
+            (
+                "unlit_map",
+                include_str!("../../null3d-shaders/wgsl/unlit_map.wgsl"),
+            ),
         ];
         for (name, source) in templates {
             let line = format!("@location({}) position: vec3f", position.location);
@@ -997,10 +1057,9 @@ mod tests {
             "lit.wgsl lacks {normal_line}"
         );
         let uv0_line = format!("@location({}) uv0: vec2f", uv0.location);
-        assert!(
-            templates[2].1.contains(&uv0_line),
-            "texcoords.wgsl lacks {uv0_line}"
-        );
+        for (name, source) in &templates[2..] {
+            assert!(source.contains(&uv0_line), "{name}.wgsl lacks {uv0_line}");
+        }
         assert_eq!(uv0.bit, vertex::UV0);
     }
 
@@ -1151,6 +1210,28 @@ mod tests {
     }
 
     #[test]
+    fn mip_chains_and_their_bytes_follow_the_level_sizes() {
+        assert_eq!(format::full_chain(1, 1), 1);
+        assert_eq!(format::full_chain(256, 256), 9);
+        assert_eq!(format::full_chain(300, 20), 9);
+        assert_eq!(format::full_chain(5, 1024), 11);
+        assert_eq!(format::level_size(300, 2), 75);
+        assert_eq!(format::level_size(300, 9), 1);
+        assert_eq!(format::level_size(7, 40), 1);
+        let rgba = format::RGBA8_UNORM_SRGB;
+        assert_eq!(format::level_bytes(rgba, 256, 128, 0), 256 * 128 * 4);
+        assert_eq!(format::level_bytes(rgba, 256, 128, 8), 4);
+        // Levels of 4 x 2, 2 x 1 and 1 x 1 texels.
+        assert_eq!(format::layer_bytes(rgba, 4, 2, 3), (8 + 2 + 1) * 4);
+        assert_eq!(
+            format::layer_bytes(format::RGBA32_FLOAT, 2, 2, 2),
+            (4 + 1) * 16
+        );
+        assert!(format::makes_mipmaps(format::RGBA8_UNORM));
+        assert!(!format::makes_mipmaps(format::RGBA16_FLOAT));
+    }
+
+    #[test]
     fn texture_and_sampler_commands_round_trip_with_their_float_operands() {
         let mut list = DrawList::with_capacity(128);
         list.push(
@@ -1178,9 +1259,11 @@ mod tests {
         .unwrap();
         list.push(
             Op::UploadImage,
-            &[4, 0, 16, 8, 1, 32, 32, 7, upload_flags::RELEASE],
+            &[4, 0, 16, 8, 1, 32, 8, 7, upload_flags::RELEASE, 0, 24],
         )
         .unwrap();
+        list.push(Op::GenerateMipmaps, &[4, 1]).unwrap();
+        list.push(Op::ReleaseImage, &[9]).unwrap();
         list.push(
             Op::CopyTextureToTexture,
             &[4, 0, 16, 8, 0, 5, 0, 0, 40, 1, 32, 16, 1],
@@ -1202,18 +1285,21 @@ mod tests {
                 Op::CreateTextureView,
                 Op::WriteTexture,
                 Op::UploadImage,
+                Op::GenerateMipmaps,
+                Op::ReleaseImage,
                 Op::CopyTextureToTexture,
                 Op::SetViewport,
                 Op::SetScissor,
             ]
         );
         let lengths: Vec<usize> = commands.iter().map(|c| c.operands.len()).collect();
-        assert_eq!(lengths, [11, 4, 10, 9, 13, 6, 4]);
+        assert_eq!(lengths, [11, 4, 10, 11, 2, 1, 13, 6, 4]);
         assert_eq!(f32::from_bits(commands[0].operands[7]), 0.5);
         assert_eq!(f32::from_bits(commands[0].operands[8]), 8.0);
         assert_eq!(commands[0].operands[9], compare::GREATER);
-        assert_eq!(f32::from_bits(commands[5].operands[5]), 1.0);
-        assert_eq!(commands[4].operands[5..10], [5, 0, 0, 40, 1]);
+        assert_eq!(commands[3].operands[9..11], [0, 24]);
+        assert_eq!(f32::from_bits(commands[7].operands[5]), 1.0);
+        assert_eq!(commands[6].operands[5..10], [5, 0, 0, 40, 1]);
     }
 
     /// Keeps the generated TypeScript constants equal to the Rust definitions.

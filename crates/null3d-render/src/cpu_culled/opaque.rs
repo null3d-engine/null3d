@@ -23,6 +23,7 @@ use crate::frame::{
     CELL_OFFSET_BYTES, CellOffsets, MeshBuffers, RecordError, UploadArena, grown_size, put_u32,
 };
 use crate::frame_data::FrameUniform;
+use crate::materials::{MAP_WORDS, MATERIAL_FLOATS};
 use crate::view::{ViewFrame, ViewId};
 
 /// Where a frame's slot in a view's ring of frame uniforms holds the offset from the camera to
@@ -33,6 +34,9 @@ pub(super) const OFFSETS_BYTES: u32 = MAX_CELLS * CELL_OFFSET_BYTES;
 /// Bytes of one frame's slot in a view's ring of frame uniforms: the uniform block, then the
 /// offsets.
 const FRAME_SLOT_BYTES: u32 = OFFSETS_AT + OFFSETS_BYTES;
+/// The group index of the maps' bind group in the mesh pipelines that sample a map, after the
+/// groups of the draw records and the data textures.
+const TEXTURES_GROUP: u32 = 3;
 
 /// The ring slots a view's frame draws from.
 #[derive(Clone, Copy, Debug, Default)]
@@ -168,14 +172,14 @@ impl Opaque {
     }
 
     /// Creates the ring of frame uniforms of each view from the first one without it up to
-    /// `views`, with the group that binds its uniform block, its cell offsets and the material
-    /// table.
+    /// `views`, with the group that binds its uniform block, its cell offsets, the material table
+    /// and the maps table.
     pub(super) fn add_views(
         &mut self,
         list: &mut DrawList,
         views: usize,
     ) -> Result<(), RecordError> {
-        let material_bytes = sizes::MAX_MATERIALS * crate::materials::MATERIAL_FLOATS as u32 * 4;
+        let table_bytes = |words: usize| sizes::MAX_MATERIALS * words as u32 * 4;
         while self.views.len() < views {
             let view = ViewId::from_index(self.views.len());
             list.push(
@@ -193,7 +197,7 @@ impl Opaque {
                 &[
                     ids::frame_group(view),
                     bind_layout::FRAME,
-                    3,
+                    4,
                     0,
                     resource_kind::BUFFER,
                     ids::frame(view),
@@ -208,7 +212,12 @@ impl Opaque {
                     resource_kind::BUFFER,
                     ids::MATERIALS,
                     0,
-                    material_bytes,
+                    table_bytes(MATERIAL_FLOATS),
+                    3,
+                    resource_kind::BUFFER,
+                    ids::MAPS,
+                    0,
+                    table_bytes(MAP_WORDS),
                 ],
             )?;
             self.views.push(ViewDraws::default());
@@ -390,6 +399,7 @@ impl Opaque {
         let instances = ids::instances_group(view) + slots.streamed * RING + slots.listed;
         list.push(Op::SetBindGroup, &[2, instances, 0])?;
         let mut pipeline = None;
+        let mut textures = 0;
         let mut run = usize::MAX;
         for_each_call(draws, &visible, multi_draw, |index, call| {
             if call.run != run {
@@ -398,6 +408,10 @@ impl Opaque {
                 if pipeline != Some(first.pipeline) {
                     list.push(Op::SetPipeline, &[first.pipeline])?;
                     pipeline = Some(first.pipeline);
+                }
+                if first.textures != 0 && first.textures != textures {
+                    list.push(Op::SetBindGroup, &[TEXTURES_GROUP, first.textures, 0])?;
+                    textures = first.textures;
                 }
                 let (vertices, indices) = meshes.ids(first.page);
                 list.push(Op::SetVertexBuffer, &[0, vertices, 0, 0])?;
@@ -455,6 +469,7 @@ mod tests {
     fn draw(pipeline: u32, page: u32) -> Draw {
         Draw {
             pipeline,
+            textures: 0,
             page,
             bucket: 0,
             index_count: 36,

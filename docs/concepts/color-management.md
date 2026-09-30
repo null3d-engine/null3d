@@ -3,17 +3,19 @@ id: concepts/color-management
 title: Color management
 status: experimental
 since: "0.1"
-summary: "Linear working space; sRGB hex colors and linear arrays; HDR color; exposure and tone mapping; transparent canvases; parity with three.js."
+summary: "Linear working space; sRGB hex colors and linear arrays; texture color spaces; HDR color; exposure and tone mapping; transparent canvases; parity with three.js."
 ---
 
 # Color management
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Textures, and the color space that says how to read a texture's data, are not built yet, so coding agents must not use them.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. The calls that load textures and choose their color space are not built yet, so coding agents must not use them.
 
 ```mermaid
 flowchart LR
     hex["'#4a8cff' or 0x4a8cff<br/>sRGB"] --> linear
     arr["[0.07, 0.26, 1]<br/>linear"] --> linear
+    maps["Color maps:<br/>sRGB textures"] -->|"decoded as the GPU samples them"| linear
+    data["Data maps:<br/>linear textures"] -->|"read as they are"| linear
     linear["Linear color"] --> light["Lighting"] --> scene[("HDR scene color")]
     scene --> final["Final pass: exposure, tone mapping,<br/>sRGB encoding, dithering"] --> canvas[("Canvas")]
 ```
@@ -39,6 +41,17 @@ scene.createDirectionalLight({ color: '#fff4e0', intensity: 3 });
 ```
 
 Three numbers are linear, as three.js's `Color.setRGB` reads them. The color helpers give linear numbers too: `color.fromSrgb` converts sRGB components, and `color.fromHsl` gives what three.js's `setHSL` gives ([Math helpers](../api/math.md#colors)). A light's intensity multiplies its linear color. A color in any other form throws [E1204](../errors/E1204.md).
+
+## Texture color spaces
+
+A texture stores its image in one of two ways:
+
+| Kind | Examples | How the GPU reads it |
+| --- | --- | --- |
+| Color | Base color, emissive color | The texture has an sRGB format, so the GPU decodes each texel to linear values as it samples it. Filtering and mip levels average in linear color too. |
+| Data | Normals, roughness, metalness, occlusion | The texture has a linear format, so the GPU reads each texel as it is. |
+
+A data map stored as a color map comes out wrong: its values shrink toward 0. A color map stored as data comes out too bright and washed out. [Textures](../api/textures.md) covers how the engine keeps textures on the GPU.
 
 ## HDR color and the final pass
 
@@ -95,6 +108,8 @@ const engine = await createEngine({
 
 - Hex colors, linear lighting and sRGB output work as in three.js r152 and later, where color management is on by default.
 - Three numbers are linear, as `Color.setRGB` reads them.
+- A color map with `texture.colorSpace = SRGBColorSpace` is a texture with an sRGB format in null3D.
+- A data map with `NoColorSpace` or `LinearSRGBColorSpace` is a texture with a linear format.
 - The tone mapping curves use three.js's formulas. The defaults differ: three.js uses no tone mapping, and null3D uses ACES. A port of a scene without tone mapping sets `toneMapping: 'none'`.
 - three.js's `NoToneMapping` ignores the exposure. null3D's `'none'` applies it, as `LinearToneMapping` does, and an exposure of 1 gives the same image.
 - three.js's WebGLRenderer draws a `scene.background` color without tone mapping. null3D tone maps the background, as three.js's WebGPURenderer does.
@@ -107,4 +122,5 @@ const engine = await createEngine({
 - [The render graph](render-graph.md): the final pass, and the resolve pass that takes its place on the 8-bit path.
 - [GPU tiers and backends](backends.md): which devices draw HDR color.
 - [Math helpers](../api/math.md#colors): the color helpers, which give linear RGB.
+- [Textures](../api/textures.md): how the engine keeps textures on the GPU.
 - [three.js to null3D mapping](../porting/threejs-mapping.md): tone mapping, color output and background entries.

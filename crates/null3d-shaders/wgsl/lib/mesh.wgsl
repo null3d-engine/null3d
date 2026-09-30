@@ -2,11 +2,15 @@ enable draw_index;
 #define_import_path null3d::mesh
 #import null3d::globals::{Frame, Material}
 #import null3d::tonemap
+#import null3d::vertex::{OUTSIDE_CLIP, Transform, to_clip, transform_direction, transform_point}
 
 // What every template for meshes drawn by instance shares: the frame's bindings, where each
 // instance's world matrix and material come from, and positions in clip space. A template's vertex
 // entry point takes an `InstanceIn` beside its vertex attributes, and `find_instance` turns it into
 // the instance's matrix rows and material.
+//
+// The frame's bindings include the maps table, which gives the texture array layer of each
+// material's map. A map whose image is not on the GPU yet has no layer.
 //
 // Vertex attributes take the fixed locations of the engine's vertex formats (drawlist.rs, module
 // `vertex`): the position at 0, the normal at 1 and the first texture coordinates at 2. Each
@@ -70,8 +74,14 @@ struct CellOffsets {
     items: array<vec4f, MAX_CELLS>,
 }
 
+/// Each material's maps: the layer of its map, then words that other maps will take.
+struct MapTable {
+    items: array<vec4u, MAX_MATERIALS>,
+}
+
 @group(0) @binding(1) var<uniform> materials: MaterialTable;
 @group(0) @binding(2) var<uniform> cell_offsets: CellOffsets;
+@group(0) @binding(3) var<uniform> map_table: MapTable;
 @group(1) @binding(0) var<uniform> draws: DrawTable;
 @group(2) @binding(0) var resident_rows: texture_2d<f32>;
 @group(2) @binding(1) var streamed_rows: texture_2d<f32>;
@@ -79,7 +89,11 @@ struct CellOffsets {
 @group(2) @binding(3) var cluster_rows: texture_2d<u32>;
 #else
 @group(0) @binding(1) var<storage, read> materials: array<Material>;
+@group(0) @binding(2) var<storage, read> map_table: array<vec4u>;
 #endif
+
+/// The maps table's entry for a map that draws nothing yet.
+const NO_LAYER: u32 = 0xffffffffu;
 
 /// What a vertex shader invocation learns of its instance. On WebGPU: the three rows of the
 /// instance's world matrix that give x, y and z, then its ids. On WebGL2: the instance's number in its draw, and with
@@ -117,6 +131,15 @@ fn material_of(id: u32) -> Material {
     return materials.items[id];
 #else
     return materials[id];
+#endif
+}
+
+/// The texture array layer of a material's map, by its id in the material table, or `NO_LAYER`.
+fn map_layer_of(id: u32) -> u32 {
+#ifdef WEBGL2
+    return map_table.items[id].x;
+#else
+    return map_table[id].x;
 #endif
 }
 
@@ -171,21 +194,23 @@ fn find_instance(i: InstanceIn) -> Instance {
 #endif
 }
 
+/// The instance's world matrix, relative to the camera.
+fn transform_of(found: Instance) -> Transform {
+    return Transform(found.row_x, found.row_y, found.row_z);
+}
+
 /// A position in clip space: the instance's world matrix, then the camera. An instance that draws
 /// nothing lands outside the clip volume on every axis, so the whole triangle is clipped away.
 fn clip_position(found: Instance, position: vec3f) -> vec4f {
-    let p = vec4f(position, 1.0);
     if !found.drawn {
-        return vec4f(2.0, 2.0, 2.0, 1.0);
+        return OUTSIDE_CLIP;
     }
-    return frame.view_proj
-        * vec4f(dot(found.row_x, p), dot(found.row_y, p), dot(found.row_z, p), 1.0);
+    return to_clip(frame.view_proj, transform_point(transform_of(found), position));
 }
 
 /// A direction from the mesh into the world: the instance's world matrix without its translation.
 fn world_direction(found: Instance, direction: vec3f) -> vec3f {
-    let d = vec4f(direction, 0.0);
-    return vec3f(dot(found.row_x, d), dot(found.row_y, d), dot(found.row_z, d));
+    return transform_direction(transform_of(found), direction);
 }
 
 /// The color a fragment writes for linear color `c` at framebuffer position `pixel`: `c` itself for

@@ -14,6 +14,7 @@ import { GpuTimer } from '../gpu/webgpu/gpu-timer';
 import { RenderPassSetup, submitOne } from '../gpu/webgpu/reusable';
 import type { PowerPreference } from '../page/capabilities';
 import type { CoreDevice } from '../page/limits';
+import type { ImageTable } from '../shared/images';
 import { type FrameRecorder, Phase } from '../shared/metrics';
 import { contextLoss, contextRestored, deviceLoss } from './loss';
 import { WebGL2SceneRenderer, WebGPUSceneRenderer } from './scene-renderer';
@@ -73,6 +74,8 @@ export interface RendererOptions {
 	 * lists the sketch thread records; without them it clears to the frame's background.
 	 */
 	scene?: { memory: WebAssembly.Memory; control: ArrayBufferLike };
+	/** The images that texture uploads read, which the thread keeps across GPU devices. */
+	imageTable?: ImageTable;
 }
 
 /** WebGPU's default `maxBufferSize`, which every device offers. */
@@ -253,6 +256,7 @@ export async function createRenderer(
 				options.scene.control,
 				options.metrics,
 				engineDevice,
+				options.imageTable,
 			);
 		return new WebGL2Renderer(canvas, gl, options.metrics);
 	}
@@ -286,6 +290,7 @@ export async function createRenderer(
 			options.scene.memory,
 			options.scene.control,
 			options.metrics,
+			options.imageTable,
 			engineDevice.transparent,
 		);
 	return new WebGPURenderer(tier, device, canvas, options.metrics);

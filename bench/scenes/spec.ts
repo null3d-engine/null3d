@@ -39,10 +39,8 @@ export const SUN = { direction: [-1, -2, -1], color: '#ffffff', intensity: 3 } a
 export const AMBIENT = { color: '#ffffff', intensity: 0.4 } as const;
 /** The scene time, in seconds, of the single frame that hold mode renders. */
 export const HOLD_TIME = 2.0;
-/** Seconds that a benchmark run renders before it starts to measure. */
-export const WARMUP_SECONDS = 5;
-/** Seconds that a benchmark run measures. */
-export const MEASURE_SECONDS = 30;
+/** A benchmark run's warm-up and measured seconds: the protocol that the bench command shares. */
+export { MEASURE_SECONDS, WARMUP_SECONDS } from '../../packages/cli/src/protocol.js';
 
 /** Seconds per turn of the orbiting cameras. */
 export const ORBIT_SECONDS = 60;

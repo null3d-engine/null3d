@@ -26,15 +26,18 @@ const BUCKET_BYTES: u32 = 32;
 /// Bytes of one world matrix: three rows of four floats.
 const MATRIX_BYTES: u32 = (MATRIX_FLOATS * 4) as u32;
 
-/// What makes a bucket, in draw order: what its mesh and material ask of their pipeline, the mesh
-/// page of its mesh's first part, and its engine mesh and material ids.
-type BucketKey = (DrawKey, u32, u32, u32);
+/// What makes a bucket, in draw order: what its mesh and material ask of their pipeline, the bind
+/// group of its material's map, the mesh page of its mesh's first part, and its engine mesh and
+/// material ids.
+type BucketKey = (DrawKey, u32, u32, u32, u32);
 
 /// One bucket: its pipeline, its slice of each view's compacted instance buffer, and its draws.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) struct Bucket {
     /// The id of its render pipeline.
     pub(super) pipeline: u32,
+    /// The bind group of its material's map, or 0 for a pipeline that reads none.
+    pub(super) group: u32,
     pub(super) material: u32,
     pub(super) base: u32,
     pub(super) capacity: u32,
@@ -229,8 +232,9 @@ impl Layout {
         let meshes = settings.meshes();
         let key_of = |mesh: u32, material: u32| -> Option<BucketKey> {
             let pipeline = settings.pipeline_of(mesh, material)?;
+            let group = settings.texture_group(material, pipeline);
             let page = meshes.parts(meshes.mesh(mesh - 1)?).first()?.page;
-            Some((pipeline, page, mesh, material))
+            Some((pipeline, group, page, mesh, material))
         };
         let world = scene.world(parity);
         let scene_key = |slot: usize| key_of(scene.meshes()[slot], scene.materials()[slot]);
@@ -246,11 +250,12 @@ impl Layout {
         self.buckets.clear();
         self.draws.clear();
         let mut base = 0;
-        for &((pipeline, _, mesh, material), count) in &self.key_counts {
+        for &((pipeline, group, _, mesh, material), count) in &self.key_counts {
             let slot = meshes.mesh(mesh - 1).expect("keys name known meshes");
             let parts = meshes.parts(slot);
             self.buckets.push(Bucket {
                 pipeline: pipelines.id(pipeline.in_pass(targets)),
+                group,
                 material,
                 base,
                 capacity: count,

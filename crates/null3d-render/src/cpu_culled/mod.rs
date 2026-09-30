@@ -54,6 +54,7 @@ use std::collections::TryReserveError;
 use null3d_core::cells::CELL_SHIFT;
 use null3d_core::culling::BucketedCull;
 use null3d_core::snapshot::SCENE_TARGET;
+use null3d_gpu::caps::{BUDGET, Limit};
 use null3d_gpu::drawlist::{DrawList, Op, buffer_usage as usage, permutation, sizes};
 
 use crate::final_pass::FinalIds;
@@ -63,9 +64,10 @@ use crate::frame::{
 };
 use crate::frame_graph::{FrameGraph, GraphIds, Role};
 use crate::graph::RenderGraph;
-use crate::materials::MATERIAL_FLOATS;
+use crate::materials::{MAP_WORDS, MATERIAL_FLOATS};
 use crate::meshes::{MeshStorage, Packing};
 use crate::pipelines::{PassTargets, PipelineCache};
+use crate::textures::{TextureIds, TextureStore};
 use crate::view::{ViewFrame, ViewId};
 use cull::Culling;
 use data::{RingSlot, SharedTextures, matrices_of, write_matrices};
@@ -88,9 +90,10 @@ mod ids {
     pub const fn draws(view: ViewId) -> u32 {
         frame(view) + 1
     }
-    /// The final pass's output settings, after every view's buffers.
-    pub const FINAL_SETTINGS: u32 = VIEW_BUFFERS + 2 * MAX_VIEWS as u32;
-
+    /// The maps table, which names the layer of each material's map.
+    pub const MAPS: u32 = VIEW_BUFFERS + 2 * MAX_VIEWS as u32;
+    /// The final pass's output settings.
+    pub const FINAL_SETTINGS: u32 = MAPS + 1;
     /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
     pub const PAGES: u32 = FINAL_SETTINGS + 1;
 
@@ -109,6 +112,10 @@ mod ids {
 
     /// The render graph's textures, from this id on.
     pub const TARGETS: u32 = VIEW_TEXTURES + RING * MAX_VIEWS as u32;
+    /// The texture arrays of materials' maps, after every id the render graph can take.
+    pub const TEXTURE_ARRAYS: u32 = TARGETS + 256;
+    /// The samplers of materials' maps, the only samplers the builder makes.
+    pub const SAMPLERS: u32 = 1;
 
     /// Each view's bind groups: the frame group, the draw record group, then the groups of its
     /// instance textures, one per pair of ring slots.
@@ -127,6 +134,8 @@ mod ids {
     pub const fn instances_group(view: ViewId) -> u32 {
         frame_group(view) + 2
     }
+    /// The bind groups of materials' maps, after the final pass's group.
+    pub const TEXTURE_GROUPS: u32 = FINAL_GROUP + 1;
 }
 
 /// Sizes the builder allocates once, what the device offers, and how frames reach the canvas.
@@ -200,11 +209,22 @@ impl CpuCulledRenderer {
             "the material block holds {} materials",
             sizes::MAX_MATERIALS
         );
+        let textures = TextureStore::new(
+            TextureIds {
+                first_texture: ids::TEXTURE_ARRAYS,
+                first_sampler: ids::SAMPLERS,
+                first_group: ids::TEXTURE_GROUPS,
+            },
+            config
+                .max_texture_size
+                .min(BUDGET[Limit::TextureDimension2D as usize]),
+        );
         Self {
             config,
             settings: SceneSettings::new(
                 MeshStorage::new(Packing::Pages),
                 config.max_materials,
+                textures,
                 config.canvas,
             ),
             lists: ParityLists::new(config.draw_list_words),
@@ -311,8 +331,8 @@ impl CpuCulledRenderer {
     }
 
     /// The most that one frame can copy into its arena for the scene as it stands: mesh data not
-    /// uploaded yet, the material table, each view's frame uniform, draw records and multi-draw
-    /// arrays, the final pass's settings, and the cluster orders not uploaded yet.
+    /// uploaded yet, the material and maps tables, each view's frame uniform, draw records and
+    /// multi-draw arrays, the final pass's settings, and the cluster orders not uploaded yet.
     fn upload_bound(&self) -> usize {
         self.upload_bound_without_clusters() + self.clusters.pending_bytes(&self.layout)
     }
@@ -320,23 +340,27 @@ impl CpuCulledRenderer {
     /// [`Self::upload_bound`] without the cluster orders.
     fn upload_bound_without_clusters(&self) -> usize {
         let meshes = self.meshes.pending_bytes(self.settings.meshes().pages());
-        let materials = self.settings.materials().capacity() as usize * MATERIAL_FLOATS * 4;
+        let materials =
+            self.settings.materials().capacity() as usize * (MATERIAL_FLOATS + MAP_WORDS) * 4;
         let per_view = (sizes::FRAME_UNIFORM_BYTES + OFFSETS_BYTES) as usize
             + self.layout.draws_slot_bytes as usize
             + self.layout.draws.len() * 12;
         meshes + materials + self.settings.views().len() * per_view + self.graph.upload_bound()
     }
 
+    /// Records the creation of the material and maps tables, uniform blocks of the most materials
+    /// the shaders read.
     fn create_fixed(&mut self, list: &mut DrawList) -> Result<(), RecordError> {
-        let material_bytes = sizes::MAX_MATERIALS * MATERIAL_FLOATS as u32 * 4;
-        list.push(
-            Op::CreateBuffer,
-            &[
-                ids::MATERIALS,
-                material_bytes,
-                usage::UNIFORM | usage::COPY_DST,
-            ],
-        )?;
+        for (id, words) in [(ids::MATERIALS, MATERIAL_FLOATS), (ids::MAPS, MAP_WORDS)] {
+            list.push(
+                Op::CreateBuffer,
+                &[
+                    id,
+                    sizes::MAX_MATERIALS * words as u32 * 4,
+                    usage::UNIFORM | usage::COPY_DST,
+                ],
+            )?;
+        }
         self.created = true;
         Ok(())
     }
@@ -498,6 +522,9 @@ impl CpuCulledRenderer {
             let (at, bytes) = arena.push(floats_as_bytes(parameters))?;
             list.push(Op::WriteBuffer, &[ids::MATERIALS, 0, at, bytes])?;
         }
+        // Draws bind the maps' groups by id as they run, so a group made again needs nothing more.
+        self.settings
+            .record_textures(list, arena, ids::MAPS, input.frame)?;
         let new_texture = if rebuilt || first_new < views {
             self.size_resources(list, first_new, rebuilt)?
         } else {
@@ -600,6 +627,7 @@ impl FrameBuilder for CpuCulledRenderer {
         self.opaque.forget_gpu();
         self.streamed_slot.forget();
         self.settings.materials_mut().mark_changed();
+        self.settings.textures_mut().reset_gpu();
     }
 
     fn list(&self, frame: u32) -> &DrawList {

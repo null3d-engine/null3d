@@ -1,0 +1,1381 @@
+//! Textures on the GPU: the 2D texture arrays that textures of one size, format and mip count
+//! share, the samplers and bind groups that materials draw them with, and the uploads that fill
+//! them.
+//!
+//! # Arrays and layers
+//!
+//! Each texture takes one layer of an array whose key is its size, format and mip count. Materials
+//! that sample textures of one array with one sampler share one bind group, and each material's
+//! entry in the maps table names its layer. An array starts with a few layers and doubles when it
+//! fills: the draw list makes the larger texture, copies every mip level of the old one into it,
+//! and the next frame's list releases the old one. An array holds at most [`MAX_LAYERS`] layers,
+//! the iPad's limit, and a key with more textures starts another array.
+//!
+//! # Images and uploads
+//!
+//! A texture's image travels to the thread that draws on its own, and gets the next image id. That
+//! thread counts the images it received, and ids count in the order they were sent, so every id up
+//! to the count has arrived. Uploads wait for their images, and take turns in the order the
+//! textures got them. Each frame uploads at most its byte budget: a large image goes up a band of
+//! rows per frame, and the next frame's list releases the image. After a frame's uploads, each
+//! texture that finished makes its mip levels on the GPU. A material draws without its map until
+//! the map's image is on the GPU, so a texture on its way looks like no texture.
+//!
+//! A capture replays a frame's list a second time. A list therefore never releases what it uses
+//! itself, and replaying it again gives the same textures.
+//!
+//! Formats come by code, and every byte count goes through [`format::level_bytes`], so formats
+//! stored in blocks of texels can join the array keys and the uploads.
+//!
+//! # A new GPU device
+//!
+//! The thread that draws closes an image once the frame whose list releases it has run. When the
+//! browser replaces the GPU, a texture whose image is still there uploads again. A texture whose
+//! image is gone keeps its layer and draws as without a map until it gets a new image.
+
+use null3d_core::error::CoreError;
+use null3d_core::handle::{Handle, SlotAllocator};
+use null3d_gpu::drawlist::{
+    DrawList, Op, address, compare, filter, format, layout, resource_kind, texture_usage, view,
+};
+
+use crate::frame::RecordError;
+
+/// The most layers in one texture array: WebGPU's default limit, which the iPad keeps.
+pub const MAX_LAYERS: u32 = 256;
+/// The layers of an array when it is first made.
+pub const FIRST_LAYERS: u32 = 4;
+/// The most textures that live at once.
+pub const MAX_TEXTURES: u32 = 4095;
+/// The bytes that one frame uploads, until the quality preset sets another budget.
+pub const DEFAULT_UPLOAD_BUDGET: u32 = 4 * 1024 * 1024;
+/// The largest anisotropy that samplers use, until the quality preset caps it lower.
+pub const DEFAULT_MAX_ANISOTROPY: u32 = 16;
+/// A maps table entry for a map that draws nothing yet: its image is not on the GPU.
+pub const NO_LAYER: u32 = u32::MAX;
+
+/// The GPU ids that the store gives its objects, which the frame builder keeps free for it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TextureIds {
+    /// Array `a` takes texture ids `first_texture + 2a` and the one after it, in turn, as it grows.
+    pub first_texture: u32,
+    /// Sampler `s` has id `first_sampler + s`.
+    pub first_sampler: u32,
+    /// Bind group `g` has id `first_group + g`.
+    pub first_group: u32,
+}
+
+/// How a texture is sampled.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Sampling {
+    /// The address modes (`address::*`) along u and v.
+    pub wrap: [u32; 2],
+    /// The filters (`filter::*`) of magnified texels, of minified texels and between mip levels.
+    pub mag_filter: u32,
+    pub min_filter: u32,
+    pub mip_filter: u32,
+    /// The anisotropy asked for, 1 for none. Samplers use at most the store's cap, and none when
+    /// a filter is nearest.
+    pub anisotropy: u32,
+}
+
+impl Default for Sampling {
+    /// three.js's defaults: clamped at the edges, linear filters, no anisotropy.
+    fn default() -> Self {
+        Self {
+            wrap: [address::CLAMP_TO_EDGE; 2],
+            mag_filter: filter::LINEAR,
+            min_filter: filter::LINEAR,
+            mip_filter: filter::LINEAR,
+            anisotropy: 1,
+        }
+    }
+}
+
+/// A texture as its creator describes it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TextureDesc {
+    pub width: u32,
+    pub height: u32,
+    /// `format::RGBA8_UNORM_SRGB` for colors, `format::RGBA8_UNORM` for data.
+    pub format: u32,
+    /// True for a whole chain of mip levels, which the GPU makes from each image.
+    pub mipmaps: bool,
+    pub sampling: Sampling,
+}
+
+/// Why the store refused a call.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TextureError {
+    /// The handle names no live texture.
+    Handle(CoreError),
+    /// The texture is wider or taller than `limit` texels, the most that every array allows.
+    TooLarge { limit: u32 },
+    /// [`MAX_TEXTURES`] textures live already.
+    Full,
+    /// A format, a sampler setting or an image size that the texture cannot use.
+    Unsupported,
+}
+
+/// What the uploads of recent frames did.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct UploadStats {
+    /// Texel bytes that the last recorded frame uploads.
+    pub last_frame_bytes: u32,
+    /// The most texel bytes that any frame uploaded.
+    pub largest_frame_bytes: u32,
+    /// Textures with an image that is not on the GPU yet.
+    pub waiting: u32,
+}
+
+/// Where a texture is on its way to the GPU.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum State {
+    /// No image to upload: none came yet, or it was lost with the GPU.
+    Empty,
+    /// Image `image` uploads next, `rows` rows of it are uploaded.
+    Queued { image: u32, rows: u32 },
+    /// Image `image` is on the GPU, and the list of frame `released_in` releases it, or none yet
+    /// while that is 0.
+    Uploaded { image: u32, released_in: u32 },
+}
+
+/// An image that a later frame's list releases.
+#[derive(Clone, Copy, Debug)]
+struct Release {
+    image: u32,
+    /// The frame whose list last uses the image: the release goes in a later one.
+    after: u32,
+    /// The texture that the image went to, which notes the frame of the release, or
+    /// `Handle::NONE` for an image that went nowhere.
+    texture: Handle,
+}
+
+#[derive(Clone, Copy, Debug)]
+struct TextureSlot {
+    array: u32,
+    layer: u32,
+    group: u32,
+    state: State,
+}
+
+/// What makes textures share an array.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct ArrayKey {
+    width: u32,
+    height: u32,
+    format: u32,
+    mips: u32,
+}
+
+impl ArrayKey {
+    fn layer_bytes(&self) -> u64 {
+        format::layer_bytes(self.format, self.width, self.height, self.mips)
+    }
+}
+
+#[derive(Debug)]
+struct TextureArray {
+    key: ArrayKey,
+    /// Which layers hold a texture.
+    used: [u64; (MAX_LAYERS / 64) as usize],
+    /// Layers that hold a texture.
+    live: u32,
+    /// Layers of the GPU texture, 0 while it has none.
+    capacity: u32,
+    /// Which of its two texture ids the GPU texture has.
+    generation: u32,
+}
+
+impl TextureArray {
+    fn mark(&mut self, layer: u32, used: bool) {
+        let bit = 1 << (layer % 64);
+        let word = &mut self.used[(layer / 64) as usize];
+        if used {
+            *word |= bit;
+            self.live += 1;
+        } else {
+            *word &= !bit;
+            self.live -= 1;
+        }
+    }
+
+    /// The lowest free layer, or `None` when every layer an array may have is taken.
+    fn free_layer(&self) -> Option<u32> {
+        let (word, bits) = self
+            .used
+            .iter()
+            .enumerate()
+            .find(|(_, bits)| **bits != u64::MAX)?;
+        Some(word as u32 * 64 + (!bits).trailing_zeros())
+    }
+
+    /// One past the highest layer in use.
+    fn layers_in_use(&self) -> u32 {
+        self.used
+            .iter()
+            .enumerate()
+            .rev()
+            .find(|(_, bits)| **bits != 0)
+            .map_or(0, |(word, bits)| {
+                word as u32 * 64 + 64 - bits.leading_zeros()
+            })
+    }
+}
+
+/// A sampler: what textures ask for, and whether the GPU has it.
+#[derive(Clone, Copy, Debug)]
+struct SamplerSlot {
+    sampling: Sampling,
+    created: bool,
+}
+
+/// A bind group of one array and one sampler.
+#[derive(Clone, Copy, Debug)]
+struct GroupSlot {
+    array: u32,
+    sampler: u32,
+    created: bool,
+}
+
+/// Every texture, the arrays that hold them, their samplers and bind groups, and their uploads.
+pub struct TextureStore {
+    ids: TextureIds,
+    /// The widest and tallest texture: the portable budget, or less where the device allows less.
+    max_size: u32,
+    handles: SlotAllocator,
+    /// Each texture, by slot.
+    textures: Vec<TextureSlot>,
+    arrays: Vec<TextureArray>,
+    samplers: Vec<SamplerSlot>,
+    groups: Vec<GroupSlot>,
+    /// The textures with an image to upload, in the order they got it.
+    queue: Vec<Handle>,
+    /// Images to release, which the thread that draws closes once it has them.
+    releases: Vec<Release>,
+    /// Array textures that an array outgrew, which the next frame's list destroys.
+    retired: Vec<u32>,
+    /// Each finished upload of the frame being recorded: its array's texture id, and its layer.
+    finished: Vec<(u32, u32)>,
+    /// The last image id handed out; ids count from 1.
+    last_image: u32,
+    /// The images that the thread that draws received.
+    arrived: u32,
+    /// The newest frame that the thread that draws took.
+    frames_taken: u32,
+    budget: u32,
+    /// True while the next frame uploads everything, whatever its budget.
+    unbudgeted: bool,
+    max_anisotropy: u32,
+    /// True when a map became ready or stopped drawing since the last check.
+    layers_changed: bool,
+    stats: UploadStats,
+}
+
+impl TextureStore {
+    /// A store whose GPU objects take ids from `ids`, for textures of at most `max_size` texels
+    /// on each side.
+    pub fn new(ids: TextureIds, max_size: u32) -> Self {
+        Self {
+            ids,
+            max_size,
+            handles: SlotAllocator::with_capacity(MAX_TEXTURES),
+            textures: Vec::new(),
+            arrays: Vec::new(),
+            samplers: Vec::new(),
+            groups: Vec::new(),
+            queue: Vec::new(),
+            releases: Vec::new(),
+            retired: Vec::new(),
+            finished: Vec::new(),
+            last_image: 0,
+            arrived: 0,
+            frames_taken: 0,
+            budget: DEFAULT_UPLOAD_BUDGET,
+            unbudgeted: false,
+            max_anisotropy: DEFAULT_MAX_ANISOTROPY,
+            layers_changed: false,
+            stats: UploadStats::default(),
+        }
+    }
+
+    /// The widest and tallest texture the store takes.
+    pub fn max_size(&self) -> u32 {
+        self.max_size
+    }
+
+    fn slot(&self, texture: Handle) -> Result<&TextureSlot, TextureError> {
+        let slot = self
+            .handles
+            .resolve(texture)
+            .map_err(TextureError::Handle)?;
+        Ok(&self.textures[slot as usize])
+    }
+
+    fn slot_mut(&mut self, texture: Handle) -> Result<&mut TextureSlot, TextureError> {
+        let slot = self
+            .handles
+            .resolve(texture)
+            .map_err(TextureError::Handle)?;
+        Ok(&mut self.textures[slot as usize])
+    }
+
+    /// The GPU texture id of an array.
+    fn array_id(&self, array: u32) -> u32 {
+        self.ids.first_texture + 2 * array + self.arrays[array as usize].generation
+    }
+
+    /// Creates a texture with no image yet, in a free layer of an array of its key.
+    pub fn create(&mut self, desc: TextureDesc) -> Result<Handle, TextureError> {
+        let limit = self.max_size;
+        if desc.width > limit || desc.height > limit {
+            return Err(TextureError::TooLarge { limit });
+        }
+        let sampling = desc.sampling;
+        let known = |code: u32, last: u32| code <= last;
+        let supported = desc.width > 0
+            && desc.height > 0
+            && matches!(desc.format, format::RGBA8_UNORM | format::RGBA8_UNORM_SRGB)
+            && sampling
+                .wrap
+                .iter()
+                .all(|&mode| known(mode, address::MIRROR_REPEAT))
+            && [
+                sampling.mag_filter,
+                sampling.min_filter,
+                sampling.mip_filter,
+            ]
+            .iter()
+            .all(|&mode| known(mode, filter::LINEAR))
+            && sampling.anisotropy >= 1;
+        if !supported {
+            return Err(TextureError::Unsupported);
+        }
+        let key = ArrayKey {
+            width: desc.width,
+            height: desc.height,
+            format: desc.format,
+            mips: if desc.mipmaps {
+                format::full_chain(desc.width, desc.height)
+            } else {
+                1
+            },
+        };
+        let handle = self.handles.reserve().map_err(|_| TextureError::Full)?;
+        let (array, layer) = self.place(key);
+        self.arrays[array as usize].mark(layer, true);
+        let sampler = self.sampler_for(sampling);
+        let group = self.group_for(array, sampler);
+        let slot = TextureSlot {
+            array,
+            layer,
+            group,
+            state: State::Empty,
+        };
+        let index = handle.slot() as usize;
+        if self.textures.len() <= index {
+            self.textures.resize(index + 1, slot);
+        }
+        self.textures[index] = slot;
+        Ok(handle)
+    }
+
+    /// The array and the layer for a new texture of `key`: the lowest free layer of the first
+    /// array of the key with room, or the first layer of a new array.
+    fn place(&mut self, key: ArrayKey) -> (u32, u32) {
+        for (index, array) in self.arrays.iter().enumerate() {
+            if array.key == key
+                && let Some(layer) = array.free_layer()
+            {
+                return (index as u32, layer);
+            }
+        }
+        self.arrays.push(TextureArray {
+            key,
+            used: [0; (MAX_LAYERS / 64) as usize],
+            live: 0,
+            capacity: 0,
+            generation: 0,
+        });
+        (self.arrays.len() as u32 - 1, 0)
+    }
+
+    fn sampler_for(&mut self, sampling: Sampling) -> u32 {
+        if let Some(index) = self.samplers.iter().position(|s| s.sampling == sampling) {
+            return index as u32;
+        }
+        self.samplers.push(SamplerSlot {
+            sampling,
+            created: false,
+        });
+        self.samplers.len() as u32 - 1
+    }
+
+    fn group_for(&mut self, array: u32, sampler: u32) -> u32 {
+        let found = self
+            .groups
+            .iter()
+            .position(|g| g.array == array && g.sampler == sampler);
+        if let Some(index) = found {
+            return index as u32;
+        }
+        self.groups.push(GroupSlot {
+            array,
+            sampler,
+            created: false,
+        });
+        self.groups.len() as u32 - 1
+    }
+
+    /// Gives a texture a new image of `width` x `height` pixels, which uploads in its turn, and
+    /// returns the image's id. The caller sends the image to the thread that draws under that id,
+    /// in the order of the ids. An image that was waiting is released unused.
+    pub fn set_image(
+        &mut self,
+        texture: Handle,
+        width: u32,
+        height: u32,
+    ) -> Result<u32, TextureError> {
+        let slot = *self.slot(texture)?;
+        let key = self.arrays[slot.array as usize].key;
+        if (width, height) != (key.width, key.height) {
+            return Err(TextureError::Unsupported);
+        }
+        match slot.state {
+            State::Queued { image, .. } => self.release_now(image),
+            State::Uploaded { .. } => self.layers_changed = true,
+            State::Empty => {}
+        }
+        if !matches!(slot.state, State::Queued { .. }) {
+            self.queue.push(texture);
+        }
+        self.last_image += 1;
+        let image = self.last_image;
+        self.slot_mut(texture)?.state = State::Queued { image, rows: 0 };
+        Ok(image)
+    }
+
+    /// Destroys a texture in frame `frame`: its layer is free for the next texture of its key,
+    /// and an image that is still waiting is released.
+    pub fn destroy(&mut self, texture: Handle, frame: u32) -> Result<(), TextureError> {
+        let slot = *self.slot(texture)?;
+        self.handles
+            .release(texture, frame)
+            .map_err(TextureError::Handle)?;
+        match slot.state {
+            State::Queued { image, .. } => {
+                self.release_now(image);
+                self.queue.retain(|&queued| queued != texture);
+            }
+            State::Uploaded { .. } => self.layers_changed = true,
+            State::Empty => {}
+        }
+        self.arrays[slot.array as usize].mark(slot.layer, false);
+        Ok(())
+    }
+
+    /// Releases an image that no list used, in the next frame's list.
+    fn release_now(&mut self, image: u32) {
+        self.releases.push(Release {
+            image,
+            after: 0,
+            texture: Handle::NONE,
+        });
+    }
+
+    /// True when the handle names a live texture.
+    pub fn is_live(&self, texture: Handle) -> bool {
+        self.handles.is_live(texture)
+    }
+
+    /// The layer that a material samples a texture from, once its image is on the GPU.
+    pub fn ready_layer(&self, texture: Handle) -> Option<u32> {
+        let slot = self.slot(texture).ok()?;
+        matches!(slot.state, State::Uploaded { .. }).then_some(slot.layer)
+    }
+
+    /// The GPU id of the bind group that samples a live texture: its array with its sampler.
+    pub fn group_id(&self, texture: Handle) -> Option<u32> {
+        let slot = self.slot(texture).ok()?;
+        Some(self.ids.first_group + slot.group)
+    }
+
+    /// The GPU bytes of a texture: its layer, with every mip level.
+    pub fn bytes(&self, texture: Handle) -> Result<u64, TextureError> {
+        let slot = self.slot(texture)?;
+        Ok(self.arrays[slot.array as usize].key.layer_bytes())
+    }
+
+    /// The GPU bytes that every array holds, its free layers included.
+    pub fn memory_bytes(&self) -> u64 {
+        self.arrays
+            .iter()
+            .map(|array| u64::from(array.capacity) * array.key.layer_bytes())
+            .sum()
+    }
+
+    /// Sets the bytes that one frame may upload.
+    pub fn set_budget(&mut self, bytes: u32) {
+        self.budget = bytes;
+    }
+
+    /// Makes the next recorded frame upload every image that arrived, whatever its budget, as a
+    /// held frame, the only one drawn, must.
+    pub fn upload_all_next_frame(&mut self) {
+        self.unbudgeted = true;
+    }
+
+    /// Caps the anisotropy of every sampler, which the GPU makes again when the cap changes.
+    pub fn set_max_anisotropy(&mut self, cap: u32) {
+        let cap = cap.max(1);
+        if cap == self.max_anisotropy {
+            return;
+        }
+        self.max_anisotropy = cap;
+        for sampler in &mut self.samplers {
+            sampler.created = false;
+        }
+        for group in &mut self.groups {
+            group.created = false;
+        }
+    }
+
+    /// Notes what the thread that draws has: the images it received, and the newest frame it took.
+    pub fn sync(&mut self, images_arrived: u32, frames_taken: u32) {
+        self.arrived = images_arrived;
+        self.frames_taken = frames_taken;
+    }
+
+    /// The last image id handed out, which is the number of images sent so far.
+    pub fn images_sent(&self) -> u32 {
+        self.last_image
+    }
+
+    /// What the uploads did.
+    pub fn stats(&self) -> UploadStats {
+        UploadStats {
+            waiting: self.queue.len() as u32,
+            ..self.stats
+        }
+    }
+
+    /// True once after a map became ready to draw or stopped drawing, so the maps table uploads
+    /// again.
+    pub fn take_layers_changed(&mut self) -> bool {
+        std::mem::take(&mut self.layers_changed)
+    }
+
+    /// Records the frame's texture work: arrays made or grown, releases, uploads within the
+    /// budget, mip levels, samplers and bind groups. Returns true when it made a bind group
+    /// again, which render bundles that bind it must see.
+    pub fn record(&mut self, list: &mut DrawList, frame: u32) -> Result<bool, RecordError> {
+        for &id in &self.retired {
+            list.push(Op::DestroyTexture, &[id])?;
+        }
+        self.retired.clear();
+        let copied = self.size_arrays(list)?;
+        if copied {
+            // The copies land before the uploads that follow, which WebGPU would otherwise run
+            // first, and which may fill layers that the copies write.
+            list.push(Op::Submit, &[])?;
+        }
+        self.record_releases(list, frame)?;
+        self.upload(list, frame)?;
+        for &(id, layer) in &self.finished {
+            list.push(Op::GenerateMipmaps, &[id, layer])?;
+        }
+        self.create_samplers(list)?;
+        self.create_groups(list)
+    }
+
+    /// Makes each array's GPU texture big enough for its layers in use, copying what a smaller
+    /// one held, and releases the texture of an array that holds none. Returns true when it
+    /// copied.
+    fn size_arrays(&mut self, list: &mut DrawList) -> Result<bool, RecordError> {
+        let mut copied = false;
+        for index in 0..self.arrays.len() as u32 {
+            let array = &self.arrays[index as usize];
+            let (key, old_capacity) = (array.key, array.capacity);
+            if array.live == 0 {
+                if old_capacity > 0 {
+                    list.push(Op::DestroyTexture, &[self.array_id(index)])?;
+                    self.arrays[index as usize].capacity = 0;
+                    self.forget_groups_of(index);
+                }
+                continue;
+            }
+            let needed = array.layers_in_use();
+            if needed <= old_capacity {
+                continue;
+            }
+            let capacity = needed.next_power_of_two().clamp(FIRST_LAYERS, MAX_LAYERS);
+            let old_id = self.array_id(index);
+            let new_id = if old_capacity > 0 {
+                self.arrays[index as usize].generation ^= 1;
+                self.array_id(index)
+            } else {
+                old_id
+            };
+            list.push(
+                Op::CreateTexture,
+                &[
+                    new_id,
+                    key.width,
+                    key.height,
+                    capacity,
+                    key.format,
+                    texture_usage::TEXTURE_BINDING
+                        | texture_usage::COPY_DST
+                        | texture_usage::COPY_SRC
+                        | texture_usage::RENDER_ATTACHMENT,
+                    1,
+                    key.mips,
+                    view::D2_ARRAY,
+                ],
+            )?;
+            if old_capacity > 0 {
+                for level in 0..key.mips {
+                    let width = format::level_size(key.width, level);
+                    let height = format::level_size(key.height, level);
+                    list.push(
+                        Op::CopyTextureToTexture,
+                        &[
+                            old_id,
+                            level,
+                            0,
+                            0,
+                            0,
+                            new_id,
+                            level,
+                            0,
+                            0,
+                            0,
+                            width,
+                            height,
+                            old_capacity,
+                        ],
+                    )?;
+                }
+                self.retired.push(old_id);
+                copied = true;
+            }
+            self.arrays[index as usize].capacity = capacity;
+            self.forget_groups_of(index);
+        }
+        Ok(copied)
+    }
+
+    /// Releases each image that the thread that draws holds and that no list of this frame or a
+    /// later one uses, and notes the frame of the release on its texture.
+    fn record_releases(&mut self, list: &mut DrawList, frame: u32) -> Result<(), RecordError> {
+        let due = |r: &Release, arrived: u32| r.image <= arrived && r.after < frame;
+        for release in self.releases.iter().filter(|r| due(r, self.arrived)) {
+            list.push(Op::ReleaseImage, &[release.image])?;
+            if let Ok(slot) = self.handles.resolve(release.texture) {
+                let state = &mut self.textures[slot as usize].state;
+                if let State::Uploaded { image, .. } = *state
+                    && image == release.image
+                {
+                    *state = State::Uploaded {
+                        image,
+                        released_in: frame,
+                    };
+                }
+            }
+        }
+        let arrived = self.arrived;
+        self.releases.retain(|r| !due(r, arrived));
+        Ok(())
+    }
+
+    fn forget_groups_of(&mut self, array: u32) {
+        for group in self.groups.iter_mut().filter(|g| g.array == array) {
+            group.created = false;
+        }
+    }
+
+    /// Uploads waiting images in the order the textures got them, until the frame's budget is
+    /// spent. Each frame uploads at least one row, so a budget below a row still makes progress.
+    /// Notes each texture whose last rows went up in [`Self::finished`].
+    fn upload(&mut self, list: &mut DrawList, frame: u32) -> Result<(), RecordError> {
+        self.finished.clear();
+        let budget = if self.unbudgeted {
+            u64::MAX
+        } else {
+            u64::from(self.budget)
+        };
+        self.unbudgeted = false;
+        let mut spent: u64 = 0;
+        for k in 0..self.queue.len() {
+            let handle = self.queue[k];
+            let Ok(index) = self.handles.resolve(handle) else {
+                continue;
+            };
+            let slot = self.textures[index as usize];
+            let State::Queued { image, rows } = slot.state else {
+                continue;
+            };
+            if image > self.arrived {
+                continue;
+            }
+            let key = self.arrays[slot.array as usize].key;
+            let row_bytes = format::level_bytes(key.format, key.width, 1, 0);
+            let left = budget.saturating_sub(spent);
+            let mut take = (u64::from(key.height - rows)).min(left / row_bytes) as u32;
+            if take == 0 {
+                if spent > 0 {
+                    break;
+                }
+                take = 1;
+            }
+            let done = rows + take == key.height;
+            let id = self.array_id(slot.array);
+            list.push(
+                Op::UploadImage,
+                &[
+                    id, 0, 0, rows, slot.layer, key.width, take, image, 0, 0, rows,
+                ],
+            )?;
+            spent += u64::from(take) * row_bytes;
+            self.textures[index as usize].state = if done {
+                if key.mips > 1 {
+                    self.finished.push((id, slot.layer));
+                }
+                self.releases.push(Release {
+                    image,
+                    after: frame,
+                    texture: handle,
+                });
+                self.layers_changed = true;
+                State::Uploaded {
+                    image,
+                    released_in: 0,
+                }
+            } else {
+                State::Queued {
+                    image,
+                    rows: rows + take,
+                }
+            };
+        }
+        let handles = &self.handles;
+        let textures = &self.textures;
+        self.queue.retain(|&handle| {
+            handles
+                .resolve(handle)
+                .is_ok_and(|index| matches!(textures[index as usize].state, State::Queued { .. }))
+        });
+        let spent = spent.min(u64::from(u32::MAX)) as u32;
+        self.stats.last_frame_bytes = spent;
+        self.stats.largest_frame_bytes = self.stats.largest_frame_bytes.max(spent);
+        Ok(())
+    }
+
+    fn create_samplers(&mut self, list: &mut DrawList) -> Result<(), RecordError> {
+        let cap = self.max_anisotropy;
+        for (index, sampler) in self.samplers.iter_mut().enumerate() {
+            if sampler.created {
+                continue;
+            }
+            let s = sampler.sampling;
+            let linear = [s.mag_filter, s.min_filter, s.mip_filter]
+                .iter()
+                .all(|&f| f == filter::LINEAR);
+            let anisotropy = if linear { s.anisotropy.min(cap) } else { 1 };
+            list.push(
+                Op::CreateSampler,
+                &[
+                    self.ids.first_sampler + index as u32,
+                    s.wrap[0],
+                    s.wrap[1],
+                    address::CLAMP_TO_EDGE,
+                    s.mag_filter,
+                    s.min_filter,
+                    s.mip_filter,
+                    0f32.to_bits(),
+                    32f32.to_bits(),
+                    compare::NONE,
+                    anisotropy,
+                ],
+            )?;
+            sampler.created = true;
+        }
+        Ok(())
+    }
+
+    /// Makes each bind group of an array whose GPU texture exists, when the GPU lacks it or holds
+    /// it for an older texture. Returns true when it made any.
+    fn create_groups(&mut self, list: &mut DrawList) -> Result<bool, RecordError> {
+        let mut made = false;
+        for index in 0..self.groups.len() {
+            let group = self.groups[index];
+            if group.created || self.arrays[group.array as usize].capacity == 0 {
+                continue;
+            }
+            list.push(
+                Op::CreateBindGroup,
+                &[
+                    self.ids.first_group + index as u32,
+                    layout::TEXTURES,
+                    2,
+                    0,
+                    resource_kind::TEXTURE,
+                    self.array_id(group.array),
+                    0,
+                    0,
+                    1,
+                    resource_kind::SAMPLER,
+                    self.ids.first_sampler + group.sampler,
+                    0,
+                    0,
+                ],
+            )?;
+            self.groups[index].created = true;
+            made = true;
+        }
+        Ok(made)
+    }
+
+    /// Forgets every GPU object after the thread that draws replaced the GPU. Textures whose
+    /// images the thread still holds upload again from the start; the rest wait for new images.
+    pub fn reset_gpu(&mut self) {
+        self.retired.clear();
+        for array in &mut self.arrays {
+            array.capacity = 0;
+            array.generation = 0;
+        }
+        for sampler in &mut self.samplers {
+            sampler.created = false;
+        }
+        for group in &mut self.groups {
+            group.created = false;
+        }
+        let taken = self.frames_taken;
+        for slot in self.handles.live().iter_ones() {
+            let texture = &mut self.textures[slot as usize];
+            texture.state = match texture.state {
+                State::Queued { image, .. } => State::Queued { image, rows: 0 },
+                // The list that releases the image never ran, so the image is still there.
+                State::Uploaded { image, released_in }
+                    if released_in == 0 || released_in > taken =>
+                {
+                    self.releases.retain(|release| release.image != image);
+                    let generation = u32::from(self.handles.generations()[slot as usize]);
+                    self.queue.push(Handle::new(slot, generation));
+                    State::Queued { image, rows: 0 }
+                }
+                State::Uploaded { .. } | State::Empty => State::Empty,
+            };
+        }
+        self.layers_changed = true;
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use null3d_gpu::drawlist::{Command, decode};
+    use null3d_gpu::mock::MockBackend;
+
+    const IDS: TextureIds = TextureIds {
+        first_texture: 100,
+        first_sampler: 1,
+        first_group: 50,
+    };
+
+    fn desc(width: u32, height: u32) -> TextureDesc {
+        TextureDesc {
+            width,
+            height,
+            format: format::RGBA8_UNORM_SRGB,
+            mipmaps: true,
+            sampling: Sampling::default(),
+        }
+    }
+
+    fn layer_bytes(width: u32, height: u32) -> u64 {
+        let mips = format::full_chain(width, height);
+        format::layer_bytes(format::RGBA8_UNORM_SRGB, width, height, mips)
+    }
+
+    /// The store with a mock backend that replays each frame's list twice, as a capture does, and
+    /// the images that the thread that draws holds.
+    struct Harness {
+        store: TextureStore,
+        gpu: MockBackend,
+        list: DrawList,
+        frame: u32,
+        /// Each image's size, in id order.
+        images: Vec<(u32, u32)>,
+        arrived: u32,
+    }
+
+    impl Harness {
+        fn new() -> Self {
+            Self {
+                store: TextureStore::new(IDS, 4096),
+                gpu: MockBackend::default(),
+                list: DrawList::with_capacity(4096),
+                frame: 0,
+                images: Vec::new(),
+                arrived: 0,
+            }
+        }
+
+        fn texture(&mut self, width: u32, height: u32) -> Handle {
+            self.store.create(desc(width, height)).unwrap()
+        }
+
+        /// Gives a texture an image of its size, which is on its way to the thread that draws.
+        fn image(&mut self, texture: Handle, width: u32, height: u32) -> u32 {
+            let image = self.store.set_image(texture, width, height).unwrap();
+            assert_eq!(image as usize, self.images.len() + 1, "image ids count up");
+            self.images.push((width, height));
+            image
+        }
+
+        /// The thread that draws receives the images up to `count`.
+        fn arrive(&mut self, count: u32) {
+            for id in self.arrived + 1..=count {
+                let (width, height) = self.images[id as usize - 1];
+                self.gpu.provide_image(id, width, height);
+            }
+            self.arrived = count;
+        }
+
+        /// Records one frame and replays it twice, and returns its commands and whether it made
+        /// bind groups again.
+        fn frame(&mut self) -> (Vec<(Op, Vec<u32>)>, bool) {
+            self.frame += 1;
+            self.list.clear();
+            self.store.sync(self.arrived, self.frame - 1);
+            let groups = self.store.record(&mut self.list, self.frame).unwrap();
+            self.list.push(Op::Submit, &[]).unwrap();
+            for _ in 0..2 {
+                self.gpu.replay(self.list.words()).unwrap();
+            }
+            let commands = decode(self.list.words())
+                .map(Result::unwrap)
+                .map(|Command { op, operands }| (op, operands.to_vec()))
+                .collect();
+            (commands, groups)
+        }
+    }
+
+    fn ops(commands: &[(Op, Vec<u32>)], op: Op) -> Vec<Vec<u32>> {
+        commands
+            .iter()
+            .filter(|(o, _)| *o == op)
+            .map(|(_, operands)| operands.clone())
+            .collect()
+    }
+
+    #[test]
+    fn textures_of_one_size_and_format_share_an_array_and_a_group_per_sampler() {
+        let mut store = TextureStore::new(IDS, 4096);
+        let a = store.create(desc(64, 32)).unwrap();
+        let b = store.create(desc(64, 32)).unwrap();
+        let linear = store
+            .create(TextureDesc {
+                format: format::RGBA8_UNORM,
+                ..desc(64, 32)
+            })
+            .unwrap();
+        let repeat = store
+            .create(TextureDesc {
+                sampling: Sampling {
+                    wrap: [address::REPEAT; 2],
+                    ..Sampling::default()
+                },
+                ..desc(64, 32)
+            })
+            .unwrap();
+        let flat = store
+            .create(TextureDesc {
+                mipmaps: false,
+                ..desc(64, 32)
+            })
+            .unwrap();
+        let slot = |t: Handle| *store.slot(t).unwrap();
+        assert_eq!((slot(a).array, slot(a).layer), (0, 0));
+        assert_eq!((slot(b).array, slot(b).layer), (0, 1));
+        assert_eq!((slot(repeat).array, slot(repeat).layer), (0, 2));
+        assert_eq!(
+            slot(linear).array,
+            1,
+            "a data format has an array of its own"
+        );
+        assert_eq!(slot(flat).array, 2, "so does a texture without mip levels");
+        assert_eq!(store.group_id(a), Some(IDS.first_group));
+        assert_eq!(store.group_id(a), store.group_id(b));
+        assert_ne!(store.group_id(a), store.group_id(repeat));
+        assert_ne!(store.group_id(a), store.group_id(linear));
+    }
+
+    #[test]
+    fn a_texture_the_store_cannot_hold_is_refused() {
+        let mut store = TextureStore::new(IDS, 2048);
+        assert_eq!(
+            store.create(desc(4096, 16)),
+            Err(TextureError::TooLarge { limit: 2048 })
+        );
+        assert_eq!(store.create(desc(0, 16)), Err(TextureError::Unsupported));
+        let float = TextureDesc {
+            format: format::RGBA32_FLOAT,
+            ..desc(16, 16)
+        };
+        assert_eq!(store.create(float), Err(TextureError::Unsupported));
+        let texture = store.create(desc(16, 16)).unwrap();
+        assert_eq!(
+            store.set_image(texture, 16, 8),
+            Err(TextureError::Unsupported),
+            "an image of another size"
+        );
+        store.destroy(texture, 3).unwrap();
+        assert!(matches!(
+            store.set_image(texture, 16, 16),
+            Err(TextureError::Handle(CoreError::StaleHandle { .. }))
+        ));
+    }
+
+    #[test]
+    fn uploads_wait_for_their_images_then_go_up_in_bands_within_the_budget() {
+        let mut h = Harness::new();
+        // Rows of 64 texels take 256 bytes, so a budget of 1,000 bytes takes 3 rows a frame.
+        h.store.set_budget(1000);
+        let first = h.texture(64, 16);
+        let second = h.texture(64, 16);
+        h.image(first, 64, 16);
+        h.image(second, 64, 16);
+        let (commands, groups) = h.frame();
+        assert!(groups, "the first frame makes the array's bind group");
+        assert!(
+            ops(&commands, Op::UploadImage).is_empty(),
+            "no image arrived"
+        );
+        assert_eq!(h.store.ready_layer(first), None);
+        assert_eq!(h.store.stats().waiting, 2);
+
+        h.arrive(1);
+        let mut bands = Vec::new();
+        for _ in 0..6 {
+            let (commands, _) = h.frame();
+            let uploads = ops(&commands, Op::UploadImage);
+            let bytes: u32 = uploads.iter().map(|u| u[5] * u[6] * 4).sum();
+            assert!(bytes <= 1000, "a frame uploads {bytes} bytes");
+            assert_eq!(h.store.stats().last_frame_bytes, bytes);
+            assert!(ops(&commands, Op::ReleaseImage).is_empty());
+            bands.extend(uploads.iter().map(|u| (u[7], u[3], u[6], u[8], u[10])));
+        }
+        // Image 1 goes up in bands of 3 rows, and image 2 has not arrived.
+        let expected: Vec<(u32, u32, u32, u32, u32)> = (0..6)
+            .map(|k| (1, k * 3, if k == 5 { 1 } else { 3 }, 0, k * 3))
+            .collect();
+        assert_eq!(bands, expected);
+        assert_eq!(h.store.ready_layer(first), Some(0));
+        assert_eq!(h.store.ready_layer(second), None);
+        assert!(h.store.take_layers_changed());
+        assert!(!h.store.take_layers_changed());
+        assert_eq!(h.store.stats().largest_frame_bytes, 768);
+        assert_eq!(h.store.stats().waiting, 1);
+        // The next frame's list releases the image, after every list that uploads it.
+        let (commands, _) = h.frame();
+        assert_eq!(ops(&commands, Op::ReleaseImage), [vec![1]]);
+    }
+
+    #[test]
+    fn a_finished_upload_makes_its_mip_levels_after_the_frame_uploads() {
+        let mut h = Harness::new();
+        let first = h.texture(32, 32);
+        let second = h.texture(32, 32);
+        h.image(first, 32, 32);
+        h.image(second, 32, 32);
+        h.arrive(2);
+        let (commands, _) = h.frame();
+        let order: Vec<Op> = commands
+            .iter()
+            .map(|(op, _)| *op)
+            .filter(|op| matches!(op, Op::UploadImage | Op::GenerateMipmaps))
+            .collect();
+        assert_eq!(
+            order,
+            [
+                Op::UploadImage,
+                Op::UploadImage,
+                Op::GenerateMipmaps,
+                Op::GenerateMipmaps
+            ]
+        );
+        let array = IDS.first_texture;
+        assert_eq!(
+            ops(&commands, Op::GenerateMipmaps),
+            [vec![array, 0], vec![array, 1]]
+        );
+        // A texture without mip levels makes none.
+        let flat = h
+            .store
+            .create(TextureDesc {
+                mipmaps: false,
+                ..desc(8, 8)
+            })
+            .unwrap();
+        h.image(flat, 8, 8);
+        h.arrive(3);
+        let (commands, _) = h.frame();
+        assert_eq!(ops(&commands, Op::UploadImage).len(), 1);
+        assert!(ops(&commands, Op::GenerateMipmaps).is_empty());
+    }
+
+    #[test]
+    fn a_frame_uploads_a_row_at_least_and_a_held_frame_uploads_everything() {
+        let mut h = Harness::new();
+        h.store.set_budget(16);
+        let texture = h.texture(64, 4);
+        h.image(texture, 64, 4);
+        h.arrive(1);
+        let (commands, _) = h.frame();
+        assert_eq!(ops(&commands, Op::UploadImage)[0][6], 1, "one row a frame");
+        h.store.upload_all_next_frame();
+        let (commands, _) = h.frame();
+        let uploads = ops(&commands, Op::UploadImage);
+        assert_eq!(uploads.len(), 1);
+        assert_eq!(
+            (uploads[0][3], uploads[0][6]),
+            (1, 3),
+            "the other rows at once"
+        );
+        // The frame after keeps the budget again.
+        let other = h.texture(64, 4);
+        h.image(other, 64, 4);
+        h.arrive(2);
+        let (commands, _) = h.frame();
+        assert_eq!(ops(&commands, Op::UploadImage)[0][6], 1);
+    }
+
+    #[test]
+    fn an_array_grows_by_copying_every_mip_level_into_a_texture_twice_its_size() {
+        let mut h = Harness::new();
+        for k in 0..FIRST_LAYERS {
+            let texture = h.texture(16, 8);
+            h.image(texture, 16, 8);
+            h.arrive(k + 1);
+        }
+        let (commands, _) = h.frame();
+        let created = ops(&commands, Op::CreateTexture);
+        assert_eq!(created.len(), 1);
+        assert_eq!((created[0][0], created[0][3], created[0][7]), (100, 4, 5));
+        assert_eq!(h.store.memory_bytes(), 4 * layer_bytes(16, 8));
+
+        let fifth = h.texture(16, 8);
+        h.image(fifth, 16, 8);
+        h.arrive(5);
+        let (commands, groups) = h.frame();
+        assert!(groups, "the group binds the new texture");
+        let created = ops(&commands, Op::CreateTexture);
+        assert_eq!((created[0][0], created[0][3]), (101, 8));
+        let copies = ops(&commands, Op::CopyTextureToTexture);
+        assert_eq!(copies.len(), 5, "one copy per mip level");
+        assert_eq!(copies[0], [100, 0, 0, 0, 0, 101, 0, 0, 0, 0, 16, 8, 4]);
+        assert_eq!(copies[4], [100, 4, 0, 0, 0, 101, 4, 0, 0, 0, 1, 1, 4]);
+        assert!(
+            ops(&commands, Op::DestroyTexture).is_empty(),
+            "the copies' source stays"
+        );
+        // A submit comes between the copies and the upload, so the copies land first.
+        let at = |op: Op| commands.iter().position(|(o, _)| *o == op).unwrap();
+        assert!(at(Op::CopyTextureToTexture) < at(Op::Submit));
+        assert!(at(Op::Submit) < at(Op::UploadImage));
+        assert_eq!(ops(&commands, Op::UploadImage)[0][0], 101);
+        assert_eq!(ops(&commands, Op::CreateBindGroup)[0][5], 101);
+        assert_eq!(h.store.ready_layer(fifth), Some(4));
+        assert_eq!(h.store.memory_bytes(), 8 * layer_bytes(16, 8));
+        let (commands, _) = h.frame();
+        assert_eq!(ops(&commands, Op::DestroyTexture), [vec![100]]);
+        // Growing again takes the first id back.
+        for _ in 0..4 {
+            let texture = h.texture(16, 8);
+            h.image(texture, 16, 8);
+        }
+        h.arrive(9);
+        let (commands, _) = h.frame();
+        let created = ops(&commands, Op::CreateTexture);
+        assert_eq!((created[0][0], created[0][3]), (100, 16));
+        assert_eq!(ops(&commands, Op::CopyTextureToTexture)[0][12], 8);
+    }
+
+    #[test]
+    fn a_full_array_leaves_more_textures_of_its_key_to_another() {
+        let mut store = TextureStore::new(IDS, 4096);
+        let textures: Vec<Handle> = (0..=MAX_LAYERS)
+            .map(|_| store.create(desc(1, 1)).unwrap())
+            .collect();
+        let last = *store.slot(textures[MAX_LAYERS as usize]).unwrap();
+        assert_eq!((last.array, last.layer), (1, 0));
+        // A freed layer takes the next texture of the key.
+        store.destroy(textures[7], 1).unwrap();
+        let next = store.create(desc(1, 1)).unwrap();
+        let slot = *store.slot(next).unwrap();
+        assert_eq!((slot.array, slot.layer), (0, 7));
+    }
+
+    #[test]
+    fn destroying_a_texture_frees_its_layer_and_releases_its_image_once_it_arrived() {
+        let mut h = Harness::new();
+        let kept = h.texture(8, 8);
+        let dropped = h.texture(8, 8);
+        h.image(kept, 8, 8);
+        h.image(dropped, 8, 8);
+        h.arrive(1);
+        h.store.destroy(dropped, 1).unwrap();
+        let (commands, _) = h.frame();
+        assert!(
+            ops(&commands, Op::ReleaseImage).is_empty(),
+            "image 2 is on its way"
+        );
+        assert_eq!(ops(&commands, Op::UploadImage).len(), 1);
+        h.arrive(2);
+        let (commands, _) = h.frame();
+        assert_eq!(ops(&commands, Op::ReleaseImage), [vec![2], vec![1]]);
+        assert!(ops(&commands, Op::UploadImage).is_empty());
+        // The array's last texture goes, and its GPU texture with it.
+        h.store.take_layers_changed();
+        h.store.destroy(kept, 3).unwrap();
+        assert!(h.store.take_layers_changed());
+        let (commands, _) = h.frame();
+        assert_eq!(
+            ops(&commands, Op::DestroyTexture),
+            [vec![IDS.first_texture]]
+        );
+        assert_eq!(h.store.memory_bytes(), 0);
+        assert!(!h.store.is_live(kept));
+    }
+
+    #[test]
+    fn a_new_image_replaces_one_that_waits_and_stops_the_map_until_it_is_up() {
+        let mut h = Harness::new();
+        let texture = h.texture(8, 8);
+        h.image(texture, 8, 8);
+        h.image(texture, 8, 8);
+        h.arrive(2);
+        let (commands, _) = h.frame();
+        assert_eq!(ops(&commands, Op::ReleaseImage), [vec![1]]);
+        assert_eq!(ops(&commands, Op::UploadImage)[0][7], 2);
+        assert!(h.store.take_layers_changed());
+        h.image(texture, 8, 8);
+        assert!(h.store.take_layers_changed());
+        assert_eq!(h.store.ready_layer(texture), None);
+        h.arrive(3);
+        h.frame();
+        assert_eq!(h.store.ready_layer(texture), Some(0));
+    }
+
+    #[test]
+    fn after_a_gpu_reset_textures_upload_again_from_images_the_thread_still_holds() {
+        let mut h = Harness::new();
+        let early = h.texture(8, 8);
+        h.image(early, 8, 8);
+        h.arrive(1);
+        h.frame();
+        let late = h.texture(8, 8);
+        h.image(late, 8, 8);
+        h.arrive(2);
+        h.frame();
+        // The thread that draws took frame 2, which released image 1, but not frame 3, whose list
+        // releases image 2.
+        h.frame();
+        h.store.sync(2, 2);
+        h.store.reset_gpu();
+        assert_eq!(h.store.ready_layer(early), None);
+        assert_eq!(h.store.ready_layer(late), None);
+        assert!(h.store.take_layers_changed());
+        h.gpu = MockBackend::default();
+        h.gpu.provide_image(2, 8, 8);
+        let (commands, groups) = h.frame();
+        assert!(groups);
+        assert_eq!(ops(&commands, Op::CreateTexture).len(), 1);
+        assert_eq!(ops(&commands, Op::CreateSampler).len(), 1);
+        let uploads = ops(&commands, Op::UploadImage);
+        assert_eq!(uploads.len(), 1);
+        assert_eq!(
+            uploads[0][7], 2,
+            "image 1 is gone, and image 2 uploads again"
+        );
+        assert_eq!(h.store.ready_layer(late), Some(1));
+        assert_eq!(h.store.ready_layer(early), None);
+        // The texture that lost its image uploads once it gets a new one.
+        let image = h.image(early, 8, 8);
+        h.arrive(image);
+        h.frame();
+        assert_eq!(h.store.ready_layer(early), Some(0));
+    }
+
+    #[test]
+    fn samplers_follow_the_textures_settings_under_the_anisotropy_cap() {
+        let mut h = Harness::new();
+        let sharp = h
+            .store
+            .create(TextureDesc {
+                sampling: Sampling {
+                    anisotropy: 8,
+                    ..Sampling::default()
+                },
+                ..desc(8, 8)
+            })
+            .unwrap();
+        let pixelated = h
+            .store
+            .create(TextureDesc {
+                sampling: Sampling {
+                    wrap: [address::REPEAT, address::MIRROR_REPEAT],
+                    mag_filter: filter::NEAREST,
+                    anisotropy: 8,
+                    ..Sampling::default()
+                },
+                ..desc(8, 8)
+            })
+            .unwrap();
+        h.store.set_max_anisotropy(4);
+        let (commands, _) = h.frame();
+        let samplers = ops(&commands, Op::CreateSampler);
+        assert_eq!(samplers.len(), 2);
+        assert_eq!(samplers[0][10], 4, "the cap lowers the anisotropy");
+        assert_eq!(samplers[1][10], 1, "a nearest filter takes no anisotropy");
+        assert_eq!(
+            samplers[1][1..5],
+            [
+                address::REPEAT,
+                address::MIRROR_REPEAT,
+                address::CLAMP_TO_EDGE,
+                filter::NEAREST
+            ]
+        );
+        assert_ne!(h.store.group_id(sharp), h.store.group_id(pixelated));
+        // A new cap makes the samplers and their groups again.
+        h.store.set_max_anisotropy(16);
+        let (commands, groups) = h.frame();
+        assert!(groups);
+        assert_eq!(ops(&commands, Op::CreateSampler)[0][10], 8);
+        assert_eq!(ops(&commands, Op::CreateBindGroup).len(), 2);
+        let (commands, groups) = h.frame();
+        assert!(!groups);
+        assert_eq!(commands.len(), 1, "a steady frame records only its submit");
+    }
+
+    #[test]
+    fn each_texture_counts_its_layer_with_every_mip_level() {
+        let mut store = TextureStore::new(IDS, 4096);
+        let texture = store.create(desc(256, 128)).unwrap();
+        let expected: u64 = (0..9)
+            .map(|level| {
+                let width = format::level_size(256, level);
+                let height = format::level_size(128, level);
+                u64::from(width * height * 4)
+            })
+            .sum();
+        assert_eq!(store.bytes(texture), Ok(expected));
+        assert_eq!(store.memory_bytes(), 0, "no GPU texture yet");
+        let mut list = DrawList::with_capacity(256);
+        store.record(&mut list, 1).unwrap();
+        assert_eq!(store.memory_bytes(), u64::from(FIRST_LAYERS) * expected);
+    }
+}

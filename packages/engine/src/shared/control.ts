@@ -2,67 +2,10 @@
 // worker exchange frame signals, canvas size and input events. It lives in its own shared buffer,
 // separate from WebAssembly memory, so it exists before any worker has loaded the engine core.
 
-/** Int32 slots of the control block. */
-export enum Slot {
-	/** Frames the sketch worker has published, counting from 1. */
-	FramesPublished = 0,
-	/** The newest frame the renderer has taken for drawing. */
-	FramesTaken = 1,
-	/** Nonzero while the engine runs; zero stops every loop. */
-	Running = 2,
-	/** Nonzero while the engine is paused by the page. */
-	Paused = 3,
-	/** Incremented each time the page writes a new canvas size. */
-	ResizeSerial = 4,
-	/** Canvas size in device pixels. */
-	CanvasWidth = 5,
-	CanvasHeight = 6,
-	/** Input ring: the index of the next event slot the page writes, counting up without wrapping. */
-	InputWrite = 7,
-	/**
-	 * The number of the frame the renderer drew last. The page writes it with each input event, so a
-	 * pointer event names the frame that was on screen when it came.
-	 */
-	FramePresented = 8,
-	/** Addresses of the two draw lists in engine memory, by frame parity. They never move. */
-	DrawListAddress0 = 9,
-	DrawListAddress1 = 10,
-	/** Words recorded into each draw list, by frame parity. */
-	DrawListWords0 = 11,
-	DrawListWords1 = 12,
-	/**
-	 * Incremented each time the page resumes the sketch or shows a hidden page again, so the sketch's
-	 * next step counts no time.
-	 */
-	Resumes = 13,
-	/**
-	 * Incremented by the thread that draws each time it replaces a GPU device that the browser took
-	 * away. The sketch thread then records a frame that creates every GPU object again.
-	 */
-	GpuEpoch = 14,
-	/**
-	 * The GPU epoch each frame parity's draw list was recorded for. A list from an older epoch names
-	 * GPU objects that the new device lacks, so the renderer takes that frame without drawing it.
-	 */
-	FrameEpoch0 = 15,
-	FrameEpoch1 = 16,
-	/** Nonzero while the user's system asks pages for less motion. */
-	ReducedMotion = 17,
-	/** Nonzero once the sketch thread has created the job system that the job workers serve. */
-	JobsReady = 18,
-	/** Input ring: the index of the next event the sketch reads, counting up as `InputWrite` does. */
-	InputRead = 19,
-	/** The canvas size in CSS pixels, as float bits: read them through `slotFloats`. */
-	CanvasCssWidth = 20,
-	CanvasCssHeight = 21,
-	/**
-	 * The display's refresh period in whole microseconds, as the page measures it from its own frame
-	 * callbacks, or 0 before the first measurement. A worker that draws holds its frames to it.
-	 */
-	DisplayInterval = 22,
-}
+/** Int32 slots of the control block, read as `Slot.Running`. */
+export * as Slot from './slot';
 
-const SLOT_COUNT = 23;
+const SLOT_COUNT = 24;
 
 /** Int32 values per input event record. */
 export const INPUT_EVENT_INTS = 8;

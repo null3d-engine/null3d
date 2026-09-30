@@ -11,8 +11,8 @@
 //! background. The 8-bit path clears its target to the background after the output transform,
 //! which this module computes on the CPU with the shaders' formulas.
 //!
-//! The tone mapping operators follow three.js's formulas, as `null3d::tonemap` in the shader
-//! library writes them. Their codes are the same in the core, the shaders and the TypeScript API.
+//! The tone mapping operators follow three.js's formulas, as `null3d::color` in the shader library
+//! writes them. Their codes are the same in the core, `null3d::tonemap` and the TypeScript API.
 
 use null3d_gpu::drawlist::{format, permutation, sizes::OUTPUT_UNIFORM_BYTES};
 

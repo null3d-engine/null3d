@@ -1,10 +1,11 @@
-// The server side of startup measurements. A Vite plugin serves the production build of the engine
-// test page under the load addresses of load-routes.ts, on the dev server and on `vite preview`,
-// and counts what it sent for each load. It serves each file as a host that compresses its files
-// ahead of time would, with Brotli, and with the caching that the null3D Vite plugin gives a
-// production build: hashed files are immutable, and the page is checked again on each visit. The
-// build has relative addresses, so a load's prefix reaches every file that the page, its workers
-// and the engine core ask for.
+// The server side of loads of production builds: the engine test page's build, which startup
+// measurements load, and the benchmark pages' build, which benchmark runs on phones and tablets
+// load. A Vite plugin serves both builds under the load addresses of load-routes.ts, on the dev
+// server and on `vite preview`, and counts what it sent for each load. It serves each file as a
+// host that compresses its files ahead of time would, with Brotli, and with the caching that the
+// null3D Vite plugin gives a production build: hashed files are immutable, and the page is checked
+// again on each visit. Each build has relative addresses, so a load's prefix reaches every file that
+// the page, its workers and the engine core ask for.
 import { spawnSync } from 'node:child_process';
 import { createHash, randomBytes } from 'node:crypto';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
@@ -20,25 +21,85 @@ import {
 	LOAD_READY_ROUTE,
 	LOAD_ROUTE,
 	type Load,
+	loadedFile,
 	parseDownloadsPath,
 	parseLoadPath,
 } from './load-routes.ts';
 import { send } from './report-collector.ts';
 import { localFetch, REPO_ROOT } from './server.ts';
 
-/** Where the startup build goes, from the repository's root. */
-const STARTUP_PAGES = 'target/startup-pages';
-export const STARTUP_PAGES_DIR = join(REPO_ROOT, STARTUP_PAGES);
+/** Where the startup build goes. */
+export const STARTUP_PAGES_DIR = join(REPO_ROOT, 'target/startup-pages');
+/** Where the benchmark pages' build goes. */
+export const BENCH_PAGES_DIR = join(REPO_ROOT, 'target/bench-pages');
+/** The Vite config of the benchmark pages' build, from a copy of the repository's root. */
+const BENCH_CONFIG = 'bench/vite.pages.config.ts';
+
+/** Runs `vite build` in the repository copy at `root`, with `env` added. */
+function viteBuild(root: string, args: readonly string[], env: Record<string, string> = {}): void {
+	const build = spawnSync('bunx', ['vite', 'build', ...args], {
+		cwd: root,
+		encoding: 'utf8',
+		env: { ...process.env, ...env },
+	});
+	if (build.status !== 0)
+		throw new Error(`the production build failed:\n${build.stdout}\n${build.stderr}`);
+}
 
 /**
  * Builds the engine test page for production with relative addresses, into its own folder, so a
  * build for the other tests never replaces the files that a startup run serves.
  */
 export function buildStartupPages(): void {
-	const args = ['vite', 'build', '--base', './', '--outDir', STARTUP_PAGES];
-	const build = spawnSync('bunx', args, { cwd: REPO_ROOT, encoding: 'utf8' });
-	if (build.status !== 0)
-		throw new Error(`the production build failed:\n${build.stdout}\n${build.stderr}`);
+	viteBuild(REPO_ROOT, ['--base', './', '--outDir', STARTUP_PAGES_DIR]);
+}
+
+/**
+ * Builds the benchmark pages of the repository copy at `root` for production, into `outDir`, as
+ * `bench/vite.pages.config.ts` says. A copy from before that file is built with this copy's.
+ */
+export function buildBenchPages(root = REPO_ROOT, outDir = BENCH_PAGES_DIR): void {
+	const config = existsSync(join(root, BENCH_CONFIG)) ? root : REPO_ROOT;
+	viteBuild(root, ['--config', join(config, BENCH_CONFIG), '--outDir', outDir], {
+		NULL3D_BENCH_ROOT: root,
+	});
+}
+
+/** A production build that the load routes serve. */
+export interface LoadBuild {
+	name: string;
+	/** The start of the paths of the build's files; the first build whose start fits serves a path. */
+	prefix: string;
+	dir: string;
+}
+
+/**
+ * The builds the load routes serve, and how to make each. Every file of the benchmark pages' build
+ * lies under bench/, and the startup build holds the rest.
+ */
+export const LOAD_BUILDS: readonly (LoadBuild & { build(): void })[] = [
+	{
+		name: 'benchmark pages',
+		prefix: 'bench/',
+		dir: BENCH_PAGES_DIR,
+		build: () => buildBenchPages(),
+	},
+	{ name: 'startup', prefix: '', dir: STARTUP_PAGES_DIR, build: buildStartupPages },
+];
+
+/** The build of `builds` that serves the file at `path`, a path in a build. */
+function buildOf<T extends LoadBuild>(path: string, builds: readonly T[]): T | undefined {
+	return builds.find(({ prefix }) => path.startsWith(prefix));
+}
+
+/** The builds that loads of these addresses need, each once. */
+export function buildsForLoads(paths: readonly string[]): (typeof LOAD_BUILDS)[number][] {
+	return LOAD_BUILDS.filter((build) =>
+		paths.some((path) => {
+			const file = loadedFile(path);
+			return file !== undefined && buildOf(file, LOAD_BUILDS) === build;
+		}),
+	);
 }
 
 const CONTENT_TYPES: Readonly<Record<string, string>> = {
@@ -136,6 +197,12 @@ const version = (file: string) => {
 	return `${mtimeMs}:${size}`;
 };
 
+/** What the ready route answers: how many files the server prepared, and the builds they are of. */
+interface Readiness {
+	files: number;
+	builds: string[];
+}
+
 /** Every file of a build, by its path in the build. */
 function buildFiles(dir: string): string[] {
 	return readdirSync(dir, { recursive: true, encoding: 'utf8' })
@@ -144,10 +211,12 @@ function buildFiles(dir: string): string[] {
 }
 
 /**
- * Serves the build in `dir` for loads, and answers the routes that tools ask: what the server sent
- * for a load, and whether it is ready to serve the build.
+ * Serves the builds in `builds` for loads, and answers the routes that tools ask: what the server
+ * sent for a load, and which builds it is ready to serve.
  */
-export function loadMiddleware(dir = STARTUP_PAGES_DIR): Connect.NextHandleFunction {
+export function loadMiddleware(
+	builds: readonly LoadBuild[] = LOAD_BUILDS,
+): Connect.NextHandleFunction {
 	const files = new Map<string, { version: string; encoded: Promise<Encoded> }>();
 	const marked = new Map<string, { version: string; ready: Promise<Encoded>[] }>();
 	const tallies = new Map<string, { firstAt: number; files: DownloadedFile[] }>();
@@ -218,8 +287,9 @@ export function loadMiddleware(dir = STARTUP_PAGES_DIR): Connect.NextHandleFunct
 				encoding,
 				atMs: Math.round(arrived - tally.firstAt),
 			});
-		const file = join(dir, asked.path);
-		if (!existsSync(file) || !statSync(file).isFile()) {
+		const build = buildOf(asked.path, builds);
+		const file = build ? join(build.dir, asked.path) : '';
+		if (!build || !existsSync(file) || !statSync(file).isFile()) {
 			res.statusCode = 404;
 			res.end();
 			record(404, 0, 'identity');
@@ -251,15 +321,23 @@ export function loadMiddleware(dir = STARTUP_PAGES_DIR): Connect.NextHandleFunct
 		record(200, body.length, encoding);
 	}
 
-	/** Compresses every file of the build and a copy of each core ahead of the first load. */
-	async function prepare(): Promise<{ files: number } | undefined> {
-		if (!existsSync(dir)) return undefined;
-		const paths = buildFiles(dir).map((path) => join(dir, path));
+	/**
+	 * Compresses every file of each build there is, and a copy of each core, ahead of the first load.
+	 * A build's files are those its prefix reaches, so a file of another build's folder is left out.
+	 */
+	async function prepare(): Promise<Readiness | undefined> {
+		const present = builds.filter(({ dir }) => existsSync(dir));
+		if (present.length === 0) return undefined;
+		const paths = present.flatMap((build) =>
+			buildFiles(build.dir)
+				.filter((path) => buildOf(path, builds) === build)
+				.map((path) => join(build.dir, path)),
+		);
 		await Promise.all([
 			...paths.map(encodedFile),
 			...paths.filter((file) => extname(file) === '.wasm').flatMap(markedCopies),
 		]);
-		return { files: paths.length };
+		return { files: paths.length, builds: present.map(({ name }) => name) };
 	}
 
 	const json = (res: ServerResponse, status: number, body: unknown) =>
@@ -274,7 +352,7 @@ export function loadMiddleware(dir = STARTUP_PAGES_DIR): Connect.NextHandleFunct
 				(ready) =>
 					ready
 						? json(res, 200, ready)
-						: json(res, 404, { error: `no startup build in ${dir}; build it first` }),
+						: json(res, 404, { error: 'no production build to serve; build one first' }),
 				(error: unknown) => json(res, 500, { error: String(error) }),
 			);
 		if (!url.startsWith(LOAD_ROUTE)) return next();
@@ -286,8 +364,8 @@ export function loadMiddleware(dir = STARTUP_PAGES_DIR): Connect.NextHandleFunct
 }
 
 /** The plugin that adds the load routes to the dev server and to `vite preview`. */
-export function loadServer(dir = STARTUP_PAGES_DIR): Plugin {
-	const middleware = loadMiddleware(dir);
+export function loadServer(): Plugin {
+	const middleware = loadMiddleware();
 	return {
 		name: 'null3d-load-server',
 		configureServer(server) {
@@ -300,14 +378,21 @@ export function loadServer(dir = STARTUP_PAGES_DIR): Plugin {
 }
 
 /**
- * Asks the server at `serverUrl`, as this computer reaches it, to prepare the build for loads. It
- * throws when the server cannot serve them, as a server started before the load routes existed.
+ * Asks the server at `serverUrl`, as this computer reaches it, to prepare its builds for loads, and
+ * checks that it serves each build `needed` names. It throws when the server cannot, as a server
+ * started before the load routes, or before they served that build.
  */
-export async function prepareLoads(serverUrl: string): Promise<void> {
+export async function prepareLoads(serverUrl: string, needed: readonly string[]): Promise<void> {
 	const response = await localFetch(`${serverUrl}${LOAD_READY_ROUTE}`);
-	if (response.ok) return;
-	const { error } = (await response.json().catch(() => ({}))) as { error?: string };
-	throw new Error(
-		`${serverUrl} cannot serve startup loads (HTTP ${response.status}): ${error ?? 'restart its dev server, which predates the load routes'}`,
-	);
+	const answer = (await response.json().catch(() => ({}))) as Partial<Readiness> & {
+		error?: string;
+	};
+	// A server from before the benchmark pages' build served the startup build alone.
+	const served = answer.builds ?? ['startup'];
+	const missing = needed.filter((name) => !served.includes(name));
+	if (response.ok && missing.length === 0) return;
+	const problem = response.ok
+		? `it serves no ${missing.join(' or ')} build; restart its dev server, which predates that build`
+		: (answer.error ?? 'restart its dev server, which predates the load routes');
+	throw new Error(`${serverUrl} cannot serve the loads (HTTP ${response.status}): ${problem}`);
 }

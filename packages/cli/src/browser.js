@@ -27,6 +27,9 @@ export const SWIFTSHADER_ARGS = [
 	'--hide-scrollbars',
 ];
 
+/** The flag that turns on WebGPU's developer features, without which Chrome rounds GPU timestamps. */
+export const WEBGPU_DEVELOPER_FEATURES = '--enable-webgpu-developer-features';
+
 /**
  * How Playwright starts an environment's browser. On a Mac, Playwright's own headless Chromium
  * falls back to SwiftShader, so the real GPU needs the installed Google Chrome.
@@ -68,14 +71,21 @@ export function missingBrowserFix(environment) {
 }
 
 /**
- * Starts an environment's browser, headless. A browser that is not installed fails with the fix.
+ * Starts an environment's browser, headless, with any `args` besides its own flags. A browser that
+ * is not installed fails with the fix.
  *
  * @param {Environment} environment
+ * @param {readonly string[]} [args]
  * @returns {Promise<Browser>}
  */
-export async function launchBrowser(environment) {
+export async function launchBrowser(environment, args = []) {
+	const options = browserOptions(environment);
 	try {
-		return await chromium.launch({ headless: true, ...browserOptions(environment) });
+		return await chromium.launch({
+			headless: true,
+			...options,
+			args: [...(options.args ?? []), ...args],
+		});
 	} catch (error) {
 		const message = error instanceof Error ? error.message : String(error);
 		if (/Executable doesn't exist|is not found at/.test(message))
