@@ -153,6 +153,16 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 			...(scene === 's2' && { deviceTolerance: { maxDiffRatio: 0.002 } }),
 		}),
 	),
+	// S1-cells culled without grid cells, which must draw what skipping whole cells draws.
+	{
+		name: 's1-cells-off',
+		page: 'bench/pages/null3d/s1-cells.html',
+		size: [PARITY_CANVAS.width, PARITY_CANVAS.height],
+		hold: HOLD_TIME,
+		switches: ['cells=off'],
+		reference: 's1-cells',
+		timeoutSeconds: 90,
+	},
 ];
 
 /** Every run of the manifest's tests: each test on each of its tiers, in each of its thread modes. */
