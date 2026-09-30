@@ -93,6 +93,7 @@ async function start(
 		},
 		capabilities: CAPABILITIES,
 		sendImage: () => {},
+		pageUrl: 'http://localhost/',
 	});
 	let context: SketchContext | undefined;
 	await runner.setup(

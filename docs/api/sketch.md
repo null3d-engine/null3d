@@ -192,6 +192,8 @@ What the engine passes to a sketch's setup function.
 | `scene: Scene` | Objects, cameras, lights and instance batches. |
 | `materials: Materials` | Material factories. |
 | `geometry: Geometry` | Mesh generators. |
+| `textures: Textures` | Textures from decoded images and from data. |
+| `assets: Assets` | Loading of textures and files, with a count of downloads for loading screens. |
 | `input: Input` | Pointer, touch, keyboard and gamepad input, which the page forwards to the sketch. |
 | `time: SketchTime` | Sketch time, the frame's step and the frame number. |
 | `engine: SketchEngine` | The canvas's size, and what the device can do. |

@@ -10,7 +10,6 @@
 		"@null3d/engine": "workspace:*",
 		"@null3d/vite-plugin": "workspace:*",
 		"@webgpu/types": "0.1.74",
-		"pixelmatch": "7.2.0",
 		"vite": "8.3.1"
 	}
 }

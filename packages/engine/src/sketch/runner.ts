@@ -16,10 +16,11 @@ import { messageOf } from '../errors/message';
 import { TEXTURE_OPTION_UPLOAD_ALL, TEXTURE_STAT_IMAGES_SENT } from '../generated/core';
 import type { EngineCapabilities } from '../page/engine';
 import type { CoreDevice } from '../page/limits';
+import { Assets } from '../scene/assets';
 import { CoreMemory } from '../scene/memory';
 import { Geometry, Materials } from '../scene/resources';
 import { Scene } from '../scene/scene';
-import { attachTextures, Textures } from '../scene/textures';
+import { Textures } from '../scene/textures';
 import { type ControlViews, Slot } from '../shared/control';
 import type { CoreGlue } from '../shared/core';
 import { type ImageSender, imagesArrived } from '../shared/images';
@@ -50,6 +51,8 @@ export interface SketchCore {
 	capabilities: EngineCapabilities;
 	/** Sends texture images to the thread that draws. */
 	sendImage: ImageSender;
+	/** The page's address, which the sketch's relative asset addresses resolve against. */
+	pageUrl: string;
 }
 
 /**
@@ -135,12 +138,15 @@ export class SketchRunner {
 		this.reducedMotion = Atomics.load(slots, Slot.ReducedMotion);
 		this.input = new InputReader(sketch.control, sketch.keyCodes);
 		this.readViewport();
+		const textures = new Textures(this.core, sketch.sendImage, this.time);
 		this.context = {
 			time: this.time,
 			engine: { viewport: this.viewport, capabilities: sketch.capabilities },
 			scene: new Scene(this.core, this.time, device.webgl2),
 			materials: new Materials(this.core),
 			geometry: new Geometry(this.core),
+			textures,
+			assets: new Assets(textures, sketch.pageUrl),
 			input: this.input,
 			preferences: {
 				get reducedMotion() {
@@ -159,7 +165,6 @@ export class SketchRunner {
 				},
 			},
 		};
-		attachTextures(this.context, new Textures(this.core, sketch.sendImage, this.time));
 		// Last, so a constructor that fails leaves the thread's own Math.random in place.
 		if (holdSeconds !== undefined) this.restoreRandom = seedMathRandom(HOLD_SEED);
 	}

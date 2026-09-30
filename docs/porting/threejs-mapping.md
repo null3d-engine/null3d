@@ -69,7 +69,7 @@ The "Since" column gives the first engine version with the feature:
 | object.userData | Your own arrays, or a Map keyed by the object | manual | 0.1 | Engine objects are not extensible. A Map from each object to its data keeps the data beside the object, and arrays indexed the way your sketch counts objects stay fastest in per-frame loops. | `concepts/handles` |
 | object.onBeforeRender / onAfterRender | onUpdate / onLateUpdate, or a declared pass | manual | 0.1 | Sketch code never runs in the render worker, so per-draw callbacks cannot exist. | `porting/threejs-loop-and-threads` |
 | object.clone() / SkeletonUtils.clone(gltf.scene) | scene.instantiate(prefab) for loaded models; scene.clone(obj) for built objects | changed | 0.2 | Skinned models clone correctly with instantiate. | `api/scene` |
-| geometry.dispose() / material.dispose() / texture.dispose() | destroy() on the engine object | changed | 0.1 | A prefab frees its GPU data when the prefab and its last instance are destroyed. | `api/assets` |
+| geometry.dispose() / material.dispose() / texture.dispose() | destroy() on the engine object | changed | 0.1 | texture.destroy() frees a texture's GPU memory, and materials that map it draw with their colors alone. A prefab (0.2) frees its GPU data when the prefab and its last instance are destroyed. | `api/assets` |
 | scene.overrideMaterial | render.addPass({ kind: 'scene', materialOverride }) or debug.view('normals') | changed | 0.2 |  | `guides/custom-passes` |
 | scene.environmentRotation / backgroundRotation / material.envMapRotation | scene.setEnvironment(env, { rotation }) and scene.setBackground(env, { rotation }) | direct | 0.2 | Rotation is an Euler array in radians, as in three.js. | `api/scene` |
 | scene.backgroundBlurriness / backgroundIntensity | scene.setBackground(env, { blur, intensity }) | direct | 0.2 |  | `api/scene` |
@@ -142,19 +142,19 @@ The "Since" column gives the first engine version with the feature:
 
 | three.js | null3D | Status | Since | Notes | Docs |
 | --- | --- | --- | --- | --- | --- |
-| new TextureLoader().load / loadAsync | await assets.loadTexture(url, { colorSpace, flipY, wrap, filter, anisotropy }) | changed | 0.1 | Prefer KTX2 files made with `bunx @null3d/cli assets`. | `api/textures` |
-| texture.colorSpace = SRGBColorSpace (older: encoding = sRGBEncoding) | colorSpace: 'srgb' for color maps, 'linear' for data maps | direct | 0.1 | Same rule as three.js: base color and emissive maps are sRGB; normal, roughness, metalness and AO maps are linear. glTF sets them automatically. | `concepts/color-management` |
+| new TextureLoader().load / loadAsync | await assets.loadTexture(url, { colorSpace, flipY, wrap, filter, mipmaps, anisotropy, uvSet, premultipliedAlpha }) | changed | 0.1 | It returns a promise of the texture, which draws once its texels upload. flipY is true by default, as in three.js, and colorSpace is 'srgb'. | `api/textures` |
+| texture.colorSpace = SRGBColorSpace (older: encoding = sRGBEncoding) | colorSpace: 'srgb' for color maps, 'linear' for data maps | direct | 0.1 | Same rule as three.js: base color and emissive maps are sRGB; normal, roughness, metalness and AO maps are linear. The default is 'srgb' for images and 'linear' for data. glTF sets them automatically. | `concepts/color-management` |
 | texture.flipY | flipY in the loadTexture options | direct | 0.1 | glTF textures never flip. | `api/textures` |
 | wrapS / wrapT / repeat / offset / rotation / center | wrap: 'repeat' \| 'clamp' \| 'mirror' in the texture options; repeat, offset and rotation go in the material's uvTransform | changed | 0.1 | uvTransform follows glTF's KHR_texture_transform. | `api/textures` |
 | minFilter / magFilter / generateMipmaps / anisotropy | filter: 'linear' \| 'nearest', mipmaps, anisotropy (capped by the preset) | changed | 0.1 |  | `api/textures` |
-| DataTexture / DataArrayTexture / Data3DTexture | textures.fromData({ width, height, depth, format, data }) | changed | 0.1 |  | `api/textures` |
-| CanvasTexture (a 2D canvas redrawn at run time) | Draw on an OffscreenCanvas in the sketch worker, then textures.fromImageBitmap(bitmap) and texture.update(bitmap) | changed | 0.1 | The sketch worker has no DOM canvas; OffscreenCanvas with a 2D context works in workers. | `api/textures` |
+| DataTexture / DataArrayTexture / Data3DTexture | textures.fromData({ width, height, depth, format, data }) | changed | 0.1 | Formats rgba8unorm and rgba16float (a Uint16Array of half floats or a Float32Array). depth above 1 makes a texture array of that many layers. Filters are linear by default, where three.js's DataTexture is nearest: pass filter: 'nearest'. | `api/textures` |
+| CanvasTexture (a 2D canvas redrawn at run time) | Draw on an OffscreenCanvas in the sketch worker, then textures.fromImageBitmap(bitmap) and texture.update(bitmap) | changed | 0.1 | The sketch worker has no DOM canvas; OffscreenCanvas with a 2D context works in workers. Decode with createImageBitmap(canvas, { imageOrientation: 'flipY' }) so the drawing stands upright, as three.js flips it. | `api/textures` |
 | VideoTexture | After 1.0: engine.registerVideo on the page and textures.fromVideo in the sketch. Until then, send ImageBitmap frames from the page and call texture.update(bitmap) | post-1.0 | - | The ImageBitmap route decodes and uploads every frame, so keep frames small (null3d-develop recipe 14). | `guides/video-textures` |
 | CubeTextureLoader / CubeTexture | assets.loadCubemap(urls) for sky boxes; assets.loadEnvironment for lighting | changed | 0.2 |  | `api/textures` |
 | RGBELoader / EXRLoader / HDRLoader / UltraHDRLoader + PMREMGenerator | `bunx @null3d/cli assets env studio.hdr` offline, then assets.loadEnvironment | changed | 0.2 | Prefiltering happens once at build time instead of on every visit. | `guides/assets-pipeline` |
 | KTX2Loader + setTranscoderPath + detectSupport | assets.loadTexture('x.ktx2') | direct | 0.2 | Built in; delete the setup. | `api/textures` |
 | texture.channel (which UV set a map uses) | uvSet: 0 or 1 in loadTexture options, or per map in the material | direct | 0.1 | glTF files carry this per texture, so loaded models need nothing. | `api/textures` |
-| material.premultipliedAlpha / texture.premultiplyAlpha | loadTexture(url, { premultipliedAlpha: true }) for textures stored premultiplied | changed | 0.1 | Standard blending needs no flag. | `api/textures` |
+| material.premultipliedAlpha / texture.premultiplyAlpha | loadTexture(url, { premultipliedAlpha: true }), which multiplies each color by its alpha as the image decodes | changed | 0.1 | Standard blending needs no flag. | `api/textures` |
 
 ## Loaders
 
@@ -166,7 +166,7 @@ The "Since" column gives the first engine version with the feature:
 | FBXLoader / OBJLoader / MTLLoader / ColladaLoader / STLLoader / PLYLoader / 3DMLoader / USDZLoader | Convert to glTF before release (`bunx @null3d/cli assets convert`, or Blender) | changed | 0.2 | The engine loads glTF only. | `guides/assets-pipeline` |
 | LoadingManager / onProgress callbacks | assets.onProgress((loaded, total) => ...) and assets.preload([...urls]) | changed | 0.1 |  | `guides/loading-screens` |
 | FileLoader / ImageLoader / ImageBitmapLoader | assets.loadBinary(url), assets.loadJson(url), assets.loadImageBitmap(url) | changed | 0.1 |  | `api/assets` |
-| THREE.Cache.enabled | Nothing to do | changed | 0.1 | Assets are cached per URL within a session, and the HTTP cache applies. | `api/assets` |
+| THREE.Cache.enabled | Nothing to do | changed | 0.1 | Loads of one URL at the same time share one download, files that assets.preload downloaded wait in memory until a load takes them, and the HTTP cache keeps the rest. | `api/assets` |
 
 ## Instancing and batching
 

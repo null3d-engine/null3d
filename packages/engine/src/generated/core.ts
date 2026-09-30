@@ -74,6 +74,9 @@ export const TEXTURE_STAT_MAX_SIZE = 6;
 
 export const TEXTURE_FORMAT_SRGB = 9;
 export const TEXTURE_FORMAT_LINEAR = 2;
+export const TEXTURE_FORMAT_HALF_FLOAT = 4;
+export const TEXTURE_PREMULTIPLIED_ALPHA = 1;
+export const TEXTURE_MAX_DEPTH = 256;
 export const TEXTURE_WRAP_CLAMP = 0;
 export const TEXTURE_WRAP_REPEAT = 1;
 export const TEXTURE_WRAP_MIRROR = 2;

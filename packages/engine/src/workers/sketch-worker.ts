@@ -86,6 +86,7 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 					device: message.device,
 					capabilities: message.capabilities,
 					sendImage,
+					pageUrl: message.pageUrl,
 				},
 				message.hold,
 			);
