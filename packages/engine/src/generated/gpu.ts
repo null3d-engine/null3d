@@ -148,6 +148,7 @@ export const SIZE_INDICES_PER_TEXTURE_ROW = 2048;
 export const SIZE_DRAW_RECORD_BYTES = 16;
 export const SIZE_MULTI_DRAW_RECORDS = 256;
 export const SIZE_MAX_MATERIALS = 1024;
+export const SIZE_MATERIAL_BYTES = 128;
 export const SIZE_MAX_CELLS = 512;
 export const SIZE_CELL_SHIFT = 23;
 

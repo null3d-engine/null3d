@@ -3,11 +3,11 @@ enable draw_index;
 // Meshes drawn by instance in their material's color times its map, as three.js's
 // MeshBasicMaterial draws them with a `map`. The map is a layer of a texture array, read at the
 // first texture coordinates. Materials whose maps share an array and a sampler share the maps'
-// bind group, and the maps table gives each material's layer. A map whose image is not on the GPU
-// yet has no layer, and the material draws as without it. null3d::mesh finds each instance on both
+// bind group, and each material's row in the material table gives its layer. A map whose image is
+// not on the GPU yet has no layer, and the material draws as without it. null3d::mesh finds each instance on both
 // GPU paths.
-#import null3d::mesh::{InstanceIn, NO_LAYER, clip_position, find_instance, finish}
-#import null3d::mesh::{map_layer_of, material_of}
+#import null3d::mesh::{InstanceIn, clip_position, find_instance, finish}
+#import null3d::mesh::{map_layer, map_ready, material_of}
 
 // The maps' bind group comes after the frame's group, and on WebGL2 after the groups of the draw
 // records and the data textures.
@@ -46,10 +46,9 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
 /// the same control flow in every invocation, and a map that is not ready reads as white.
 @fragment
 fn fs(in: VertexOut) -> @location(0) vec4f {
-    let layer = map_layer_of(in.material);
-    let ready = layer != NO_LAYER;
-    let texel = textureSample(map_layers, map_sampler, in.uv0, select(0u, layer, ready));
-    let map = select(vec4f(1.0), texel, ready);
-    let base = material_of(in.material).color.rgb * map.rgb;
+    let m = material_of(in.material);
+    let texel = textureSample(map_layers, map_sampler, in.uv0, map_layer(m.maps.x));
+    let map = select(vec4f(1.0), texel, map_ready(m.maps.x));
+    let base = m.color.rgb * map.rgb;
     return finish(base, in.clip.xy);
 }

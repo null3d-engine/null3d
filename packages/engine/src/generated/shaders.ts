@@ -102,9 +102,9 @@ struct Bucket {
     radius: f32,
     first_draw: u32,
     draws: u32,
-    pad0_: u32,
-    pad1_: u32,
-    pad2_: u32,
+    center_x: f32,
+    center_y: f32,
+    center_z: f32,
 }
 
 const CELL_SHIFT: u32 = 23u;
@@ -158,45 +158,46 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
     let r1_ = (_e52 + vec4<f32>(0f, 0f, 0f, offset.y));
     let _e65 = matrices[((i * 3u) + 2u)];
     let r2_ = (_e65 + vec4<f32>(0f, 0f, 0f, offset.z));
-    let center = vec3<f32>(r0_.w, r1_.w, r2_.w);
-    let scale = max(length(vec3<f32>(r0_.x, r1_.x, r2_.x)), max(length(vec3<f32>(r0_.y, r1_.y, r2_.y)), length(vec3<f32>(r0_.z, r1_.z, r2_.z))));
     let bucket = buckets[b];
+    let local_center = vec4<f32>(bucket.center_x, bucket.center_y, bucket.center_z, 1f);
+    let center = vec3<f32>(dot(r0_, local_center), dot(r1_, local_center), dot(r2_, local_center));
+    let scale = max(length(vec3<f32>(r0_.x, r1_.x, r2_.x)), max(length(vec3<f32>(r0_.y, r1_.y, r2_.y)), length(vec3<f32>(r0_.z, r1_.z, r2_.z))));
     let radius = (bucket.radius * scale);
     loop {
-        let _e99 = p;
-        if (_e99 < 6u) {
+        let _e104 = p;
+        if (_e104 < 6u) {
         } else {
             break;
         }
         {
-            let _e104 = p;
-            let plane = params.planes[_e104];
+            let _e109 = p;
+            let plane = params.planes[_e109];
             if ((dot(plane.xyz, center) + plane.w) < -(radius)) {
                 return;
             }
         }
         continuing {
-            let _e114 = p;
-            p = (_e114 + 1u);
+            let _e119 = p;
+            p = (_e119 + 1u);
         }
     }
-    let _e124 = atomicAdd((&indirect[((bucket.first_draw * INDIRECT_WORDS) + 1u)]), 1u);
+    let _e129 = atomicAdd((&indirect[((bucket.first_draw * INDIRECT_WORDS) + 1u)]), 1u);
     loop {
-        let _e126 = d;
-        if (_e126 < bucket.draws) {
+        let _e131 = d;
+        if (_e131 < bucket.draws) {
         } else {
             break;
         }
         {
-            let _e130 = d;
-            let _e139 = atomicAdd((&indirect[(((bucket.first_draw + _e130) * INDIRECT_WORDS) + 1u)]), 1u);
+            let _e135 = d;
+            let _e144 = atomicAdd((&indirect[(((bucket.first_draw + _e135) * INDIRECT_WORDS) + 1u)]), 1u);
         }
         continuing {
-            let _e141 = d;
-            d = (_e141 + 1u);
+            let _e146 = d;
+            d = (_e146 + 1u);
         }
     }
-    let dst = ((bucket.base + _e124) * 4u);
+    let dst = ((bucket.base + _e129) * 4u);
     visible[dst] = r0_;
     visible[(dst + 1u)] = r1_;
     visible[(dst + 2u)] = r2_;
@@ -655,6 +656,13 @@ struct Frame {
 };
 struct Material {
     vec4 color;
+    vec4 emissive;
+    vec4 surface;
+    vec4 strengths;
+    vec4 uv_u;
+    vec4 uv_v;
+    vec4 maps;
+    vec4 more_maps;
 };
 struct Transform {
     vec4 x;
@@ -663,9 +671,6 @@ struct Transform {
 };
 struct InstanceIn {
     uint instance;
-};
-struct MaterialTable {
-    Material items[1024];
 };
 struct Instance {
     vec4 row_x;
@@ -904,6 +909,13 @@ struct Frame {
 };
 struct Material {
     vec4 color;
+    vec4 emissive;
+    vec4 surface;
+    vec4 strengths;
+    vec4 uv_u;
+    vec4 uv_v;
+    vec4 maps;
+    vec4 more_maps;
 };
 struct Transform {
     vec4 x;
@@ -912,9 +924,6 @@ struct Transform {
 };
 struct InstanceIn {
     uint instance;
-};
-struct MaterialTable {
-    Material items[1024];
 };
 struct Instance {
     vec4 row_x;
@@ -955,7 +964,7 @@ const float EPSILON = 1e-6;
 
 layout(std140) uniform Frame_block_0Fragment { Frame _group_0_binding_0_fs; };
 
-layout(std140) uniform MaterialTable_block_1Fragment { MaterialTable _group_0_binding_1_fs; };
+uniform highp sampler2D _group_0_binding_1_fs;
 
 smooth in vec3 _vs2fs_location0;
 flat in uint _vs2fs_location1;
@@ -976,8 +985,25 @@ vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
 }
 
 Material material_of(uint id) {
-    Material _e4 = _group_0_binding_1_fs.items[id];
-    return _e4;
+    Material m = Material(vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0));
+    vec4 _e7 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(0u, id)), 0);
+    m.color = _e7;
+    vec4 _e13 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(1u, id)), 0);
+    m.emissive = _e13;
+    vec4 _e19 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(2u, id)), 0);
+    m.surface = _e19;
+    vec4 _e25 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(3u, id)), 0);
+    m.strengths = _e25;
+    vec4 _e31 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(4u, id)), 0);
+    m.uv_u = _e31;
+    vec4 _e37 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(5u, id)), 0);
+    m.uv_v = _e37;
+    vec4 _e43 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(6u, id)), 0);
+    m.maps = _e43;
+    vec4 _e49 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(7u, id)), 0);
+    m.more_maps = _e49;
+    Material _e50 = m;
+    return _e50;
 }
 
 Transform transform_of(Instance found) {
@@ -1029,13 +1055,15 @@ void main() {
 							group: 0,
 							binding: 0,
 						},
+					],
+					textures: [
 						{
-							name: 'MaterialTable_block_1Fragment',
+							name: '_group_0_binding_1_fs',
 							group: 0,
 							binding: 1,
+							sampler: null,
 						},
 					],
-					textures: [],
 				},
 			},
 		},
@@ -1071,6 +1099,13 @@ struct Frame {
 };
 struct Material {
     vec4 color;
+    vec4 emissive;
+    vec4 surface;
+    vec4 strengths;
+    vec4 uv_u;
+    vec4 uv_v;
+    vec4 maps;
+    vec4 more_maps;
 };
 struct Transform {
     vec4 x;
@@ -1080,9 +1115,6 @@ struct Transform {
 struct InstanceIn {
     uint instance;
     uint draw;
-};
-struct MaterialTable {
-    Material items[1024];
 };
 struct Instance {
     vec4 row_x;
@@ -1321,6 +1353,13 @@ struct Frame {
 };
 struct Material {
     vec4 color;
+    vec4 emissive;
+    vec4 surface;
+    vec4 strengths;
+    vec4 uv_u;
+    vec4 uv_v;
+    vec4 maps;
+    vec4 more_maps;
 };
 struct Transform {
     vec4 x;
@@ -1330,9 +1369,6 @@ struct Transform {
 struct InstanceIn {
     uint instance;
     uint draw;
-};
-struct MaterialTable {
-    Material items[1024];
 };
 struct Instance {
     vec4 row_x;
@@ -1373,7 +1409,7 @@ const float EPSILON = 1e-6;
 
 layout(std140) uniform Frame_block_0Fragment { Frame _group_0_binding_0_fs; };
 
-layout(std140) uniform MaterialTable_block_1Fragment { MaterialTable _group_0_binding_1_fs; };
+uniform highp sampler2D _group_0_binding_1_fs;
 
 smooth in vec3 _vs2fs_location0;
 flat in uint _vs2fs_location1;
@@ -1394,8 +1430,25 @@ vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
 }
 
 Material material_of(uint id) {
-    Material _e4 = _group_0_binding_1_fs.items[id];
-    return _e4;
+    Material m = Material(vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0));
+    vec4 _e7 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(0u, id)), 0);
+    m.color = _e7;
+    vec4 _e13 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(1u, id)), 0);
+    m.emissive = _e13;
+    vec4 _e19 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(2u, id)), 0);
+    m.surface = _e19;
+    vec4 _e25 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(3u, id)), 0);
+    m.strengths = _e25;
+    vec4 _e31 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(4u, id)), 0);
+    m.uv_u = _e31;
+    vec4 _e37 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(5u, id)), 0);
+    m.uv_v = _e37;
+    vec4 _e43 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(6u, id)), 0);
+    m.maps = _e43;
+    vec4 _e49 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(7u, id)), 0);
+    m.more_maps = _e49;
+    Material _e50 = m;
+    return _e50;
 }
 
 Transform transform_of(Instance found) {
@@ -1447,13 +1500,15 @@ void main() {
 							group: 0,
 							binding: 0,
 						},
+					],
+					textures: [
 						{
-							name: 'MaterialTable_block_1Fragment',
+							name: '_group_0_binding_1_fs',
 							group: 0,
 							binding: 1,
+							sampler: null,
 						},
 					],
-					textures: [],
 				},
 			},
 		},
@@ -1489,6 +1544,13 @@ struct Frame {
 };
 struct Material {
     vec4 color;
+    vec4 emissive;
+    vec4 surface;
+    vec4 strengths;
+    vec4 uv_u;
+    vec4 uv_v;
+    vec4 maps;
+    vec4 more_maps;
 };
 struct Transform {
     vec4 x;
@@ -1498,9 +1560,6 @@ struct Transform {
 struct InstanceIn {
     uint instance;
     uint draw;
-};
-struct MaterialTable {
-    Material items[1024];
 };
 struct Instance {
     vec4 row_x;
@@ -1827,6 +1886,13 @@ struct Frame {
 };
 struct Material {
     vec4 color;
+    vec4 emissive;
+    vec4 surface;
+    vec4 strengths;
+    vec4 uv_u;
+    vec4 uv_v;
+    vec4 maps;
+    vec4 more_maps;
 };
 struct Transform {
     vec4 x;
@@ -1836,9 +1902,6 @@ struct Transform {
 struct InstanceIn {
     uint instance;
     uint draw;
-};
-struct MaterialTable {
-    Material items[1024];
 };
 struct Instance {
     vec4 row_x;
@@ -1882,7 +1945,7 @@ const float EPSILON = 1e-6;
 
 layout(std140) uniform Frame_block_0Fragment { Frame _group_0_binding_0_fs; };
 
-layout(std140) uniform MaterialTable_block_1Fragment { MaterialTable _group_0_binding_1_fs; };
+uniform highp sampler2D _group_0_binding_1_fs;
 
 smooth in vec3 _vs2fs_location0;
 flat in uint _vs2fs_location1;
@@ -1985,8 +2048,25 @@ vec3 encode(vec3 c_5, vec2 pixel_1) {
 }
 
 Material material_of(uint id) {
-    Material _e4 = _group_0_binding_1_fs.items[id];
-    return _e4;
+    Material m = Material(vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0));
+    vec4 _e7 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(0u, id)), 0);
+    m.color = _e7;
+    vec4 _e13 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(1u, id)), 0);
+    m.emissive = _e13;
+    vec4 _e19 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(2u, id)), 0);
+    m.surface = _e19;
+    vec4 _e25 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(3u, id)), 0);
+    m.strengths = _e25;
+    vec4 _e31 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(4u, id)), 0);
+    m.uv_u = _e31;
+    vec4 _e37 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(5u, id)), 0);
+    m.uv_v = _e37;
+    vec4 _e43 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(6u, id)), 0);
+    m.maps = _e43;
+    vec4 _e49 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(7u, id)), 0);
+    m.more_maps = _e49;
+    Material _e50 = m;
+    return _e50;
 }
 
 Transform transform_of(Instance found) {
@@ -2041,13 +2121,15 @@ void main() {
 							group: 0,
 							binding: 0,
 						},
+					],
+					textures: [
 						{
-							name: 'MaterialTable_block_1Fragment',
+							name: '_group_0_binding_1_fs',
 							group: 0,
 							binding: 1,
+							sampler: null,
 						},
 					],
-					textures: [],
 				},
 			},
 		},
@@ -2082,6 +2164,13 @@ struct Frame {
 };
 struct Material {
     vec4 color;
+    vec4 emissive;
+    vec4 surface;
+    vec4 strengths;
+    vec4 uv_u;
+    vec4 uv_v;
+    vec4 maps;
+    vec4 more_maps;
 };
 struct Transform {
     vec4 x;
@@ -2090,9 +2179,6 @@ struct Transform {
 };
 struct InstanceIn {
     uint instance;
-};
-struct MaterialTable {
-    Material items[1024];
 };
 struct Instance {
     vec4 row_x;
@@ -2419,6 +2505,13 @@ struct Frame {
 };
 struct Material {
     vec4 color;
+    vec4 emissive;
+    vec4 surface;
+    vec4 strengths;
+    vec4 uv_u;
+    vec4 uv_v;
+    vec4 maps;
+    vec4 more_maps;
 };
 struct Transform {
     vec4 x;
@@ -2427,9 +2520,6 @@ struct Transform {
 };
 struct InstanceIn {
     uint instance;
-};
-struct MaterialTable {
-    Material items[1024];
 };
 struct Instance {
     vec4 row_x;
@@ -2473,7 +2563,7 @@ const float EPSILON = 1e-6;
 
 layout(std140) uniform Frame_block_0Fragment { Frame _group_0_binding_0_fs; };
 
-layout(std140) uniform MaterialTable_block_1Fragment { MaterialTable _group_0_binding_1_fs; };
+uniform highp sampler2D _group_0_binding_1_fs;
 
 smooth in vec3 _vs2fs_location0;
 flat in uint _vs2fs_location1;
@@ -2576,8 +2666,25 @@ vec3 encode(vec3 c_5, vec2 pixel_1) {
 }
 
 Material material_of(uint id) {
-    Material _e4 = _group_0_binding_1_fs.items[id];
-    return _e4;
+    Material m = Material(vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0));
+    vec4 _e7 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(0u, id)), 0);
+    m.color = _e7;
+    vec4 _e13 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(1u, id)), 0);
+    m.emissive = _e13;
+    vec4 _e19 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(2u, id)), 0);
+    m.surface = _e19;
+    vec4 _e25 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(3u, id)), 0);
+    m.strengths = _e25;
+    vec4 _e31 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(4u, id)), 0);
+    m.uv_u = _e31;
+    vec4 _e37 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(5u, id)), 0);
+    m.uv_v = _e37;
+    vec4 _e43 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(6u, id)), 0);
+    m.maps = _e43;
+    vec4 _e49 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(7u, id)), 0);
+    m.more_maps = _e49;
+    Material _e50 = m;
+    return _e50;
 }
 
 Transform transform_of(Instance found) {
@@ -2632,13 +2739,15 @@ void main() {
 							group: 0,
 							binding: 0,
 						},
+					],
+					textures: [
 						{
-							name: 'MaterialTable_block_1Fragment',
+							name: '_group_0_binding_1_fs',
 							group: 0,
 							binding: 1,
+							sampler: null,
 						},
 					],
-					textures: [],
 				},
 			},
 		},
@@ -2664,6 +2773,13 @@ struct Frame {
 
 struct Material {
     color: vec4<f32>,
+    emissive: vec4<f32>,
+    surface: vec4<f32>,
+    strengths: vec4<f32>,
+    uv_u: vec4<f32>,
+    uv_v: vec4<f32>,
+    maps: vec4<f32>,
+    more_maps: vec4<f32>,
 }
 
 struct Transform {
@@ -2823,6 +2939,13 @@ struct Frame {
 
 struct Material {
     color: vec4<f32>,
+    emissive: vec4<f32>,
+    surface: vec4<f32>,
+    strengths: vec4<f32>,
+    uv_u: vec4<f32>,
+    uv_v: vec4<f32>,
+    maps: vec4<f32>,
+    more_maps: vec4<f32>,
 }
 
 struct Transform {
@@ -10598,6 +10721,13 @@ struct Frame {
 };
 struct Material {
     vec4 color;
+    vec4 emissive;
+    vec4 surface;
+    vec4 strengths;
+    vec4 uv_u;
+    vec4 uv_v;
+    vec4 maps;
+    vec4 more_maps;
 };
 struct Transform {
     vec4 x;
@@ -10606,9 +10736,6 @@ struct Transform {
 };
 struct InstanceIn {
     uint instance;
-};
-struct MaterialTable {
-    Material items[1024];
 };
 struct Instance {
     vec4 row_x;
@@ -10821,6 +10948,13 @@ struct Frame {
 };
 struct Material {
     vec4 color;
+    vec4 emissive;
+    vec4 surface;
+    vec4 strengths;
+    vec4 uv_u;
+    vec4 uv_v;
+    vec4 maps;
+    vec4 more_maps;
 };
 struct Transform {
     vec4 x;
@@ -10829,9 +10963,6 @@ struct Transform {
 };
 struct InstanceIn {
     uint instance;
-};
-struct MaterialTable {
-    Material items[1024];
 };
 struct Instance {
     vec4 row_x;
@@ -10865,7 +10996,7 @@ const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
 const uint CELL_SHIFT = 23u;
 
-layout(std140) uniform MaterialTable_block_0Fragment { MaterialTable _group_0_binding_1_fs; };
+uniform highp sampler2D _group_0_binding_1_fs;
 
 flat in uint _vs2fs_location0;
 layout(location = 0) out vec4 _fs2p_location0;
@@ -10880,8 +11011,25 @@ vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
 }
 
 Material material_of(uint id) {
-    Material _e4 = _group_0_binding_1_fs.items[id];
-    return _e4;
+    Material m = Material(vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0));
+    vec4 _e7 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(0u, id)), 0);
+    m.color = _e7;
+    vec4 _e13 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(1u, id)), 0);
+    m.emissive = _e13;
+    vec4 _e19 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(2u, id)), 0);
+    m.surface = _e19;
+    vec4 _e25 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(3u, id)), 0);
+    m.strengths = _e25;
+    vec4 _e31 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(4u, id)), 0);
+    m.uv_u = _e31;
+    vec4 _e37 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(5u, id)), 0);
+    m.uv_v = _e37;
+    vec4 _e43 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(6u, id)), 0);
+    m.maps = _e43;
+    vec4 _e49 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(7u, id)), 0);
+    m.more_maps = _e49;
+    Material _e50 = m;
+    return _e50;
 }
 
 Transform transform_of(Instance found) {
@@ -10900,14 +11048,15 @@ void main() {
     return;
 }
 `,
-					uniformBlocks: [
+					uniformBlocks: [],
+					textures: [
 						{
-							name: 'MaterialTable_block_0Fragment',
+							name: '_group_0_binding_1_fs',
 							group: 0,
 							binding: 1,
+							sampler: null,
 						},
 					],
-					textures: [],
 				},
 			},
 		},
@@ -10943,6 +11092,13 @@ struct Frame {
 };
 struct Material {
     vec4 color;
+    vec4 emissive;
+    vec4 surface;
+    vec4 strengths;
+    vec4 uv_u;
+    vec4 uv_v;
+    vec4 maps;
+    vec4 more_maps;
 };
 struct Transform {
     vec4 x;
@@ -10952,9 +11108,6 @@ struct Transform {
 struct InstanceIn {
     uint instance;
     uint draw;
-};
-struct MaterialTable {
-    Material items[1024];
 };
 struct Instance {
     vec4 row_x;
@@ -11167,6 +11320,13 @@ struct Frame {
 };
 struct Material {
     vec4 color;
+    vec4 emissive;
+    vec4 surface;
+    vec4 strengths;
+    vec4 uv_u;
+    vec4 uv_v;
+    vec4 maps;
+    vec4 more_maps;
 };
 struct Transform {
     vec4 x;
@@ -11176,9 +11336,6 @@ struct Transform {
 struct InstanceIn {
     uint instance;
     uint draw;
-};
-struct MaterialTable {
-    Material items[1024];
 };
 struct Instance {
     vec4 row_x;
@@ -11212,7 +11369,7 @@ const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
 const uint CELL_SHIFT = 23u;
 
-layout(std140) uniform MaterialTable_block_0Fragment { MaterialTable _group_0_binding_1_fs; };
+uniform highp sampler2D _group_0_binding_1_fs;
 
 flat in uint _vs2fs_location0;
 layout(location = 0) out vec4 _fs2p_location0;
@@ -11227,8 +11384,25 @@ vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
 }
 
 Material material_of(uint id) {
-    Material _e4 = _group_0_binding_1_fs.items[id];
-    return _e4;
+    Material m = Material(vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0));
+    vec4 _e7 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(0u, id)), 0);
+    m.color = _e7;
+    vec4 _e13 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(1u, id)), 0);
+    m.emissive = _e13;
+    vec4 _e19 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(2u, id)), 0);
+    m.surface = _e19;
+    vec4 _e25 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(3u, id)), 0);
+    m.strengths = _e25;
+    vec4 _e31 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(4u, id)), 0);
+    m.uv_u = _e31;
+    vec4 _e37 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(5u, id)), 0);
+    m.uv_v = _e37;
+    vec4 _e43 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(6u, id)), 0);
+    m.maps = _e43;
+    vec4 _e49 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(7u, id)), 0);
+    m.more_maps = _e49;
+    Material _e50 = m;
+    return _e50;
 }
 
 Transform transform_of(Instance found) {
@@ -11247,14 +11421,15 @@ void main() {
     return;
 }
 `,
-					uniformBlocks: [
+					uniformBlocks: [],
+					textures: [
 						{
-							name: 'MaterialTable_block_0Fragment',
+							name: '_group_0_binding_1_fs',
 							group: 0,
 							binding: 1,
+							sampler: null,
 						},
 					],
-					textures: [],
 				},
 			},
 		},
@@ -11290,6 +11465,13 @@ struct Frame {
 };
 struct Material {
     vec4 color;
+    vec4 emissive;
+    vec4 surface;
+    vec4 strengths;
+    vec4 uv_u;
+    vec4 uv_v;
+    vec4 maps;
+    vec4 more_maps;
 };
 struct Transform {
     vec4 x;
@@ -11299,9 +11481,6 @@ struct Transform {
 struct InstanceIn {
     uint instance;
     uint draw;
-};
-struct MaterialTable {
-    Material items[1024];
 };
 struct Instance {
     vec4 row_x;
@@ -11602,6 +11781,13 @@ struct Frame {
 };
 struct Material {
     vec4 color;
+    vec4 emissive;
+    vec4 surface;
+    vec4 strengths;
+    vec4 uv_u;
+    vec4 uv_v;
+    vec4 maps;
+    vec4 more_maps;
 };
 struct Transform {
     vec4 x;
@@ -11611,9 +11797,6 @@ struct Transform {
 struct InstanceIn {
     uint instance;
     uint draw;
-};
-struct MaterialTable {
-    Material items[1024];
 };
 struct Instance {
     vec4 row_x;
@@ -11650,9 +11833,9 @@ const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
 const uint CELL_SHIFT = 23u;
 
-layout(std140) uniform MaterialTable_block_0Fragment { MaterialTable _group_0_binding_1_fs; };
+uniform highp sampler2D _group_0_binding_1_fs;
 
-layout(std140) uniform Frame_block_1Fragment { Frame _group_0_binding_0_fs; };
+layout(std140) uniform Frame_block_0Fragment { Frame _group_0_binding_0_fs; };
 
 flat in uint _vs2fs_location0;
 layout(location = 0) out vec4 _fs2p_location0;
@@ -11749,8 +11932,25 @@ vec3 encode(vec3 c_5, vec2 pixel_1) {
 }
 
 Material material_of(uint id) {
-    Material _e4 = _group_0_binding_1_fs.items[id];
-    return _e4;
+    Material m = Material(vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0));
+    vec4 _e7 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(0u, id)), 0);
+    m.color = _e7;
+    vec4 _e13 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(1u, id)), 0);
+    m.emissive = _e13;
+    vec4 _e19 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(2u, id)), 0);
+    m.surface = _e19;
+    vec4 _e25 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(3u, id)), 0);
+    m.strengths = _e25;
+    vec4 _e31 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(4u, id)), 0);
+    m.uv_u = _e31;
+    vec4 _e37 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(5u, id)), 0);
+    m.uv_v = _e37;
+    vec4 _e43 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(6u, id)), 0);
+    m.maps = _e43;
+    vec4 _e49 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(7u, id)), 0);
+    m.more_maps = _e49;
+    Material _e50 = m;
+    return _e50;
 }
 
 Transform transform_of(Instance found) {
@@ -11785,17 +11985,19 @@ void main() {
 `,
 					uniformBlocks: [
 						{
-							name: 'Frame_block_1Fragment',
+							name: 'Frame_block_0Fragment',
 							group: 0,
 							binding: 0,
 						},
+					],
+					textures: [
 						{
-							name: 'MaterialTable_block_0Fragment',
+							name: '_group_0_binding_1_fs',
 							group: 0,
 							binding: 1,
+							sampler: null,
 						},
 					],
-					textures: [],
 				},
 			},
 		},
@@ -11830,6 +12032,13 @@ struct Frame {
 };
 struct Material {
     vec4 color;
+    vec4 emissive;
+    vec4 surface;
+    vec4 strengths;
+    vec4 uv_u;
+    vec4 uv_v;
+    vec4 maps;
+    vec4 more_maps;
 };
 struct Transform {
     vec4 x;
@@ -11838,9 +12047,6 @@ struct Transform {
 };
 struct InstanceIn {
     uint instance;
-};
-struct MaterialTable {
-    Material items[1024];
 };
 struct Instance {
     vec4 row_x;
@@ -12141,6 +12347,13 @@ struct Frame {
 };
 struct Material {
     vec4 color;
+    vec4 emissive;
+    vec4 surface;
+    vec4 strengths;
+    vec4 uv_u;
+    vec4 uv_v;
+    vec4 maps;
+    vec4 more_maps;
 };
 struct Transform {
     vec4 x;
@@ -12149,9 +12362,6 @@ struct Transform {
 };
 struct InstanceIn {
     uint instance;
-};
-struct MaterialTable {
-    Material items[1024];
 };
 struct Instance {
     vec4 row_x;
@@ -12188,9 +12398,9 @@ const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
 const uint CELL_SHIFT = 23u;
 
-layout(std140) uniform MaterialTable_block_0Fragment { MaterialTable _group_0_binding_1_fs; };
+uniform highp sampler2D _group_0_binding_1_fs;
 
-layout(std140) uniform Frame_block_1Fragment { Frame _group_0_binding_0_fs; };
+layout(std140) uniform Frame_block_0Fragment { Frame _group_0_binding_0_fs; };
 
 flat in uint _vs2fs_location0;
 layout(location = 0) out vec4 _fs2p_location0;
@@ -12287,8 +12497,25 @@ vec3 encode(vec3 c_5, vec2 pixel_1) {
 }
 
 Material material_of(uint id) {
-    Material _e4 = _group_0_binding_1_fs.items[id];
-    return _e4;
+    Material m = Material(vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0));
+    vec4 _e7 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(0u, id)), 0);
+    m.color = _e7;
+    vec4 _e13 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(1u, id)), 0);
+    m.emissive = _e13;
+    vec4 _e19 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(2u, id)), 0);
+    m.surface = _e19;
+    vec4 _e25 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(3u, id)), 0);
+    m.strengths = _e25;
+    vec4 _e31 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(4u, id)), 0);
+    m.uv_u = _e31;
+    vec4 _e37 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(5u, id)), 0);
+    m.uv_v = _e37;
+    vec4 _e43 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(6u, id)), 0);
+    m.maps = _e43;
+    vec4 _e49 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(7u, id)), 0);
+    m.more_maps = _e49;
+    Material _e50 = m;
+    return _e50;
 }
 
 Transform transform_of(Instance found) {
@@ -12323,17 +12550,19 @@ void main() {
 `,
 					uniformBlocks: [
 						{
-							name: 'Frame_block_1Fragment',
+							name: 'Frame_block_0Fragment',
 							group: 0,
 							binding: 0,
 						},
+					],
+					textures: [
 						{
-							name: 'MaterialTable_block_0Fragment',
+							name: '_group_0_binding_1_fs',
 							group: 0,
 							binding: 1,
+							sampler: null,
 						},
 					],
-					textures: [],
 				},
 			},
 		},
@@ -12359,6 +12588,13 @@ struct Frame {
 
 struct Material {
     color: vec4<f32>,
+    emissive: vec4<f32>,
+    surface: vec4<f32>,
+    strengths: vec4<f32>,
+    uv_u: vec4<f32>,
+    uv_v: vec4<f32>,
+    maps: vec4<f32>,
+    more_maps: vec4<f32>,
 }
 
 struct Transform {
@@ -12490,6 +12726,13 @@ struct Frame {
 
 struct Material {
     color: vec4<f32>,
+    emissive: vec4<f32>,
+    surface: vec4<f32>,
+    strengths: vec4<f32>,
+    uv_u: vec4<f32>,
+    uv_v: vec4<f32>,
+    maps: vec4<f32>,
+    more_maps: vec4<f32>,
 }
 
 struct Transform {
@@ -12729,6 +12972,13 @@ struct Frame {
 };
 struct Material {
     vec4 color;
+    vec4 emissive;
+    vec4 surface;
+    vec4 strengths;
+    vec4 uv_u;
+    vec4 uv_v;
+    vec4 maps;
+    vec4 more_maps;
 };
 struct Transform {
     vec4 x;
@@ -12737,12 +12987,6 @@ struct Transform {
 };
 struct InstanceIn {
     uint instance;
-};
-struct MaterialTable {
-    Material items[1024];
-};
-struct MapTable {
-    uvec4 items[1024];
 };
 struct Instance {
     vec4 row_x;
@@ -12773,7 +13017,6 @@ const mat3x3 AGX_INSET = mat3x3(vec3(0.85662717, 0.13731897, 0.11189821), vec3(0
 const mat3x3 AGX_OUTSET = mat3x3(vec3(1.1271006, -0.14132977, -0.14132977), vec3(-0.11060664, 1.1578237, -0.11060664), vec3(-0.016493939, -0.016493939, 1.2519364));
 const mat3x3 LINEAR_REC2020_TO_LINEAR_SRGB = mat3x3(vec3(1.6605, -0.1246, -0.0182), vec3(-0.5876, 1.1329, -0.1006), vec3(-0.0728, -0.0083, 1.1187));
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
-const uint NO_LAYER = 4294967295u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -12805,6 +13048,14 @@ vec3 transform_point(Transform t, vec3 p) {
 
 vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
     return (view_proj * vec4(relative_position, 1.0));
+}
+
+bool map_ready(float layer) {
+    return (layer >= 0.0);
+}
+
+uint map_layer(float layer_1) {
+    return uint(max(layer_1, 0.0));
 }
 
 Instance instance_of(uvec4 record, uint instance) {
@@ -12962,6 +13213,13 @@ struct Frame {
 };
 struct Material {
     vec4 color;
+    vec4 emissive;
+    vec4 surface;
+    vec4 strengths;
+    vec4 uv_u;
+    vec4 uv_v;
+    vec4 maps;
+    vec4 more_maps;
 };
 struct Transform {
     vec4 x;
@@ -12970,12 +13228,6 @@ struct Transform {
 };
 struct InstanceIn {
     uint instance;
-};
-struct MaterialTable {
-    Material items[1024];
-};
-struct MapTable {
-    uvec4 items[1024];
 };
 struct Instance {
     vec4 row_x;
@@ -13006,15 +13258,12 @@ const mat3x3 AGX_INSET = mat3x3(vec3(0.85662717, 0.13731897, 0.11189821), vec3(0
 const mat3x3 AGX_OUTSET = mat3x3(vec3(1.1271006, -0.14132977, -0.14132977), vec3(-0.11060664, 1.1578237, -0.11060664), vec3(-0.016493939, -0.016493939, 1.2519364));
 const mat3x3 LINEAR_REC2020_TO_LINEAR_SRGB = mat3x3(vec3(1.6605, -0.1246, -0.0182), vec3(-0.5876, 1.1329, -0.1006), vec3(-0.0728, -0.0083, 1.1187));
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
-const uint NO_LAYER = 4294967295u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
 const uint CELL_SHIFT = 23u;
 
-layout(std140) uniform MaterialTable_block_0Fragment { MaterialTable _group_0_binding_1_fs; };
-
-layout(std140) uniform MapTable_block_1Fragment { MapTable _group_0_binding_3_fs; };
+uniform highp sampler2D _group_0_binding_1_fs;
 
 uniform highp sampler2DArray _group_3_binding_0_fs;
 
@@ -13032,13 +13281,33 @@ vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
 }
 
 Material material_of(uint id) {
-    Material _e4 = _group_0_binding_1_fs.items[id];
-    return _e4;
+    Material m = Material(vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0));
+    vec4 _e7 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(0u, id)), 0);
+    m.color = _e7;
+    vec4 _e13 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(1u, id)), 0);
+    m.emissive = _e13;
+    vec4 _e19 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(2u, id)), 0);
+    m.surface = _e19;
+    vec4 _e25 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(3u, id)), 0);
+    m.strengths = _e25;
+    vec4 _e31 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(4u, id)), 0);
+    m.uv_u = _e31;
+    vec4 _e37 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(5u, id)), 0);
+    m.uv_v = _e37;
+    vec4 _e43 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(6u, id)), 0);
+    m.maps = _e43;
+    vec4 _e49 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(7u, id)), 0);
+    m.more_maps = _e49;
+    Material _e50 = m;
+    return _e50;
 }
 
-uint map_layer_of(uint id_1) {
-    uint _e5 = _group_0_binding_3_fs.items[id_1].x;
-    return _e5;
+bool map_ready(float layer) {
+    return (layer >= 0.0);
+}
+
+uint map_layer(float layer_1) {
+    return uint(max(layer_1, 0.0));
 }
 
 Transform transform_of(Instance found) {
@@ -13051,30 +13320,25 @@ vec4 finish(vec3 c, vec2 pixel) {
 
 void main() {
     VertexOut in_ = VertexOut(gl_FragCoord, _vs2fs_location0, _vs2fs_location1);
-    uint _e2 = map_layer_of(in_.material);
-    bool ready = (_e2 != NO_LAYER);
-    vec4 texel = texture(_group_3_binding_0_fs, vec3(in_.uv0_, (ready ? _e2 : 0u)));
-    vec4 map = (ready ? texel : vec4(1.0));
-    Material _e15 = material_of(in_.material);
-    vec3 base = (_e15.color.xyz * map.xyz);
+    Material _e2 = material_of(in_.material);
+    uint _e6 = map_layer(_e2.maps.x);
+    vec4 texel = texture(_group_3_binding_0_fs, vec3(in_.uv0_, _e6));
+    bool _e14 = map_ready(_e2.maps.x);
+    vec4 map = (_e14 ? texel : vec4(1.0));
+    vec3 base = (_e2.color.xyz * map.xyz);
     vec4 _e22 = finish(base, in_.clip.xy);
     _fs2p_location0 = _e22;
     return;
 }
 `,
-					uniformBlocks: [
+					uniformBlocks: [],
+					textures: [
 						{
-							name: 'MaterialTable_block_0Fragment',
+							name: '_group_0_binding_1_fs',
 							group: 0,
 							binding: 1,
+							sampler: null,
 						},
-						{
-							name: 'MapTable_block_1Fragment',
-							group: 0,
-							binding: 3,
-						},
-					],
-					textures: [
 						{
 							name: '_group_3_binding_0_fs',
 							group: 3,
@@ -13120,6 +13384,13 @@ struct Frame {
 };
 struct Material {
     vec4 color;
+    vec4 emissive;
+    vec4 surface;
+    vec4 strengths;
+    vec4 uv_u;
+    vec4 uv_v;
+    vec4 maps;
+    vec4 more_maps;
 };
 struct Transform {
     vec4 x;
@@ -13129,12 +13400,6 @@ struct Transform {
 struct InstanceIn {
     uint instance;
     uint draw;
-};
-struct MaterialTable {
-    Material items[1024];
-};
-struct MapTable {
-    uvec4 items[1024];
 };
 struct Instance {
     vec4 row_x;
@@ -13165,7 +13430,6 @@ const mat3x3 AGX_INSET = mat3x3(vec3(0.85662717, 0.13731897, 0.11189821), vec3(0
 const mat3x3 AGX_OUTSET = mat3x3(vec3(1.1271006, -0.14132977, -0.14132977), vec3(-0.11060664, 1.1578237, -0.11060664), vec3(-0.016493939, -0.016493939, 1.2519364));
 const mat3x3 LINEAR_REC2020_TO_LINEAR_SRGB = mat3x3(vec3(1.6605, -0.1246, -0.0182), vec3(-0.5876, 1.1329, -0.1006), vec3(-0.0728, -0.0083, 1.1187));
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
-const uint NO_LAYER = 4294967295u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -13197,6 +13461,14 @@ vec3 transform_point(Transform t, vec3 p) {
 
 vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
     return (view_proj * vec4(relative_position, 1.0));
+}
+
+bool map_ready(float layer) {
+    return (layer >= 0.0);
+}
+
+uint map_layer(float layer_1) {
+    return uint(max(layer_1, 0.0));
 }
 
 Instance instance_of(uvec4 record, uint instance) {
@@ -13354,6 +13626,13 @@ struct Frame {
 };
 struct Material {
     vec4 color;
+    vec4 emissive;
+    vec4 surface;
+    vec4 strengths;
+    vec4 uv_u;
+    vec4 uv_v;
+    vec4 maps;
+    vec4 more_maps;
 };
 struct Transform {
     vec4 x;
@@ -13363,12 +13642,6 @@ struct Transform {
 struct InstanceIn {
     uint instance;
     uint draw;
-};
-struct MaterialTable {
-    Material items[1024];
-};
-struct MapTable {
-    uvec4 items[1024];
 };
 struct Instance {
     vec4 row_x;
@@ -13399,15 +13672,12 @@ const mat3x3 AGX_INSET = mat3x3(vec3(0.85662717, 0.13731897, 0.11189821), vec3(0
 const mat3x3 AGX_OUTSET = mat3x3(vec3(1.1271006, -0.14132977, -0.14132977), vec3(-0.11060664, 1.1578237, -0.11060664), vec3(-0.016493939, -0.016493939, 1.2519364));
 const mat3x3 LINEAR_REC2020_TO_LINEAR_SRGB = mat3x3(vec3(1.6605, -0.1246, -0.0182), vec3(-0.5876, 1.1329, -0.1006), vec3(-0.0728, -0.0083, 1.1187));
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
-const uint NO_LAYER = 4294967295u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
 const uint CELL_SHIFT = 23u;
 
-layout(std140) uniform MaterialTable_block_0Fragment { MaterialTable _group_0_binding_1_fs; };
-
-layout(std140) uniform MapTable_block_1Fragment { MapTable _group_0_binding_3_fs; };
+uniform highp sampler2D _group_0_binding_1_fs;
 
 uniform highp sampler2DArray _group_3_binding_0_fs;
 
@@ -13425,13 +13695,33 @@ vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
 }
 
 Material material_of(uint id) {
-    Material _e4 = _group_0_binding_1_fs.items[id];
-    return _e4;
+    Material m = Material(vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0));
+    vec4 _e7 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(0u, id)), 0);
+    m.color = _e7;
+    vec4 _e13 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(1u, id)), 0);
+    m.emissive = _e13;
+    vec4 _e19 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(2u, id)), 0);
+    m.surface = _e19;
+    vec4 _e25 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(3u, id)), 0);
+    m.strengths = _e25;
+    vec4 _e31 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(4u, id)), 0);
+    m.uv_u = _e31;
+    vec4 _e37 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(5u, id)), 0);
+    m.uv_v = _e37;
+    vec4 _e43 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(6u, id)), 0);
+    m.maps = _e43;
+    vec4 _e49 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(7u, id)), 0);
+    m.more_maps = _e49;
+    Material _e50 = m;
+    return _e50;
 }
 
-uint map_layer_of(uint id_1) {
-    uint _e5 = _group_0_binding_3_fs.items[id_1].x;
-    return _e5;
+bool map_ready(float layer) {
+    return (layer >= 0.0);
+}
+
+uint map_layer(float layer_1) {
+    return uint(max(layer_1, 0.0));
 }
 
 Transform transform_of(Instance found) {
@@ -13444,30 +13734,25 @@ vec4 finish(vec3 c, vec2 pixel) {
 
 void main() {
     VertexOut in_ = VertexOut(gl_FragCoord, _vs2fs_location0, _vs2fs_location1);
-    uint _e2 = map_layer_of(in_.material);
-    bool ready = (_e2 != NO_LAYER);
-    vec4 texel = texture(_group_3_binding_0_fs, vec3(in_.uv0_, (ready ? _e2 : 0u)));
-    vec4 map = (ready ? texel : vec4(1.0));
-    Material _e15 = material_of(in_.material);
-    vec3 base = (_e15.color.xyz * map.xyz);
+    Material _e2 = material_of(in_.material);
+    uint _e6 = map_layer(_e2.maps.x);
+    vec4 texel = texture(_group_3_binding_0_fs, vec3(in_.uv0_, _e6));
+    bool _e14 = map_ready(_e2.maps.x);
+    vec4 map = (_e14 ? texel : vec4(1.0));
+    vec3 base = (_e2.color.xyz * map.xyz);
     vec4 _e22 = finish(base, in_.clip.xy);
     _fs2p_location0 = _e22;
     return;
 }
 `,
-					uniformBlocks: [
+					uniformBlocks: [],
+					textures: [
 						{
-							name: 'MaterialTable_block_0Fragment',
+							name: '_group_0_binding_1_fs',
 							group: 0,
 							binding: 1,
+							sampler: null,
 						},
-						{
-							name: 'MapTable_block_1Fragment',
-							group: 0,
-							binding: 3,
-						},
-					],
-					textures: [
 						{
 							name: '_group_3_binding_0_fs',
 							group: 3,
@@ -13513,6 +13798,13 @@ struct Frame {
 };
 struct Material {
     vec4 color;
+    vec4 emissive;
+    vec4 surface;
+    vec4 strengths;
+    vec4 uv_u;
+    vec4 uv_v;
+    vec4 maps;
+    vec4 more_maps;
 };
 struct Transform {
     vec4 x;
@@ -13522,12 +13814,6 @@ struct Transform {
 struct InstanceIn {
     uint instance;
     uint draw;
-};
-struct MaterialTable {
-    Material items[1024];
-};
-struct MapTable {
-    uvec4 items[1024];
 };
 struct Instance {
     vec4 row_x;
@@ -13561,7 +13847,6 @@ const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
 const uint AGX = 1u;
 const uint NEUTRAL = 2u;
 const uint NONE = 3u;
-const uint NO_LAYER = 4294967295u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -13675,6 +13960,14 @@ vec3 encode(vec3 c_5, vec2 pixel_1) {
     float dither = ((_e1 - 0.5) / 255.0);
     vec3 _e7 = linear_to_srgb(c_5);
     return (_e7 + vec3(dither));
+}
+
+bool map_ready(float layer) {
+    return (layer >= 0.0);
+}
+
+uint map_layer(float layer_1) {
+    return uint(max(layer_1, 0.0));
 }
 
 Instance instance_of(uvec4 record, uint instance) {
@@ -13835,6 +14128,13 @@ struct Frame {
 };
 struct Material {
     vec4 color;
+    vec4 emissive;
+    vec4 surface;
+    vec4 strengths;
+    vec4 uv_u;
+    vec4 uv_v;
+    vec4 maps;
+    vec4 more_maps;
 };
 struct Transform {
     vec4 x;
@@ -13844,12 +14144,6 @@ struct Transform {
 struct InstanceIn {
     uint instance;
     uint draw;
-};
-struct MaterialTable {
-    Material items[1024];
-};
-struct MapTable {
-    uvec4 items[1024];
 };
 struct Instance {
     vec4 row_x;
@@ -13883,17 +14177,14 @@ const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
 const uint AGX = 1u;
 const uint NEUTRAL = 2u;
 const uint NONE = 3u;
-const uint NO_LAYER = 4294967295u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
 const uint CELL_SHIFT = 23u;
 
-layout(std140) uniform MaterialTable_block_0Fragment { MaterialTable _group_0_binding_1_fs; };
+uniform highp sampler2D _group_0_binding_1_fs;
 
-layout(std140) uniform MapTable_block_1Fragment { MapTable _group_0_binding_3_fs; };
-
-layout(std140) uniform Frame_block_2Fragment { Frame _group_0_binding_0_fs; };
+layout(std140) uniform Frame_block_0Fragment { Frame _group_0_binding_0_fs; };
 
 uniform highp sampler2DArray _group_3_binding_0_fs;
 
@@ -13993,13 +14284,33 @@ vec3 encode(vec3 c_5, vec2 pixel_1) {
 }
 
 Material material_of(uint id) {
-    Material _e4 = _group_0_binding_1_fs.items[id];
-    return _e4;
+    Material m = Material(vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0));
+    vec4 _e7 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(0u, id)), 0);
+    m.color = _e7;
+    vec4 _e13 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(1u, id)), 0);
+    m.emissive = _e13;
+    vec4 _e19 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(2u, id)), 0);
+    m.surface = _e19;
+    vec4 _e25 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(3u, id)), 0);
+    m.strengths = _e25;
+    vec4 _e31 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(4u, id)), 0);
+    m.uv_u = _e31;
+    vec4 _e37 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(5u, id)), 0);
+    m.uv_v = _e37;
+    vec4 _e43 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(6u, id)), 0);
+    m.maps = _e43;
+    vec4 _e49 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(7u, id)), 0);
+    m.more_maps = _e49;
+    Material _e50 = m;
+    return _e50;
 }
 
-uint map_layer_of(uint id_1) {
-    uint _e5 = _group_0_binding_3_fs.items[id_1].x;
-    return _e5;
+bool map_ready(float layer) {
+    return (layer >= 0.0);
+}
+
+uint map_layer(float layer_1) {
+    return uint(max(layer_1, 0.0));
 }
 
 Transform transform_of(Instance found) {
@@ -14026,12 +14337,12 @@ vec4 finish(vec3 c_6, vec2 pixel_2) {
 
 void main() {
     VertexOut in_ = VertexOut(gl_FragCoord, _vs2fs_location0, _vs2fs_location1);
-    uint _e2 = map_layer_of(in_.material);
-    bool ready = (_e2 != NO_LAYER);
-    vec4 texel = texture(_group_3_binding_0_fs, vec3(in_.uv0_, (ready ? _e2 : 0u)));
-    vec4 map = (ready ? texel : vec4(1.0));
-    Material _e15 = material_of(in_.material);
-    vec3 base = (_e15.color.xyz * map.xyz);
+    Material _e2 = material_of(in_.material);
+    uint _e6 = map_layer(_e2.maps.x);
+    vec4 texel = texture(_group_3_binding_0_fs, vec3(in_.uv0_, _e6));
+    bool _e14 = map_ready(_e2.maps.x);
+    vec4 map = (_e14 ? texel : vec4(1.0));
+    vec3 base = (_e2.color.xyz * map.xyz);
     vec4 _e22 = finish(base, in_.clip.xy);
     _fs2p_location0 = _e22;
     return;
@@ -14039,22 +14350,18 @@ void main() {
 `,
 					uniformBlocks: [
 						{
-							name: 'Frame_block_2Fragment',
+							name: 'Frame_block_0Fragment',
 							group: 0,
 							binding: 0,
 						},
-						{
-							name: 'MaterialTable_block_0Fragment',
-							group: 0,
-							binding: 1,
-						},
-						{
-							name: 'MapTable_block_1Fragment',
-							group: 0,
-							binding: 3,
-						},
 					],
 					textures: [
+						{
+							name: '_group_0_binding_1_fs',
+							group: 0,
+							binding: 1,
+							sampler: null,
+						},
 						{
 							name: '_group_3_binding_0_fs',
 							group: 3,
@@ -14099,6 +14406,13 @@ struct Frame {
 };
 struct Material {
     vec4 color;
+    vec4 emissive;
+    vec4 surface;
+    vec4 strengths;
+    vec4 uv_u;
+    vec4 uv_v;
+    vec4 maps;
+    vec4 more_maps;
 };
 struct Transform {
     vec4 x;
@@ -14107,12 +14421,6 @@ struct Transform {
 };
 struct InstanceIn {
     uint instance;
-};
-struct MaterialTable {
-    Material items[1024];
-};
-struct MapTable {
-    uvec4 items[1024];
 };
 struct Instance {
     vec4 row_x;
@@ -14146,7 +14454,6 @@ const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
 const uint AGX = 1u;
 const uint NEUTRAL = 2u;
 const uint NONE = 3u;
-const uint NO_LAYER = 4294967295u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -14260,6 +14567,14 @@ vec3 encode(vec3 c_5, vec2 pixel_1) {
     float dither = ((_e1 - 0.5) / 255.0);
     vec3 _e7 = linear_to_srgb(c_5);
     return (_e7 + vec3(dither));
+}
+
+bool map_ready(float layer) {
+    return (layer >= 0.0);
+}
+
+uint map_layer(float layer_1) {
+    return uint(max(layer_1, 0.0));
 }
 
 Instance instance_of(uvec4 record, uint instance) {
@@ -14420,6 +14735,13 @@ struct Frame {
 };
 struct Material {
     vec4 color;
+    vec4 emissive;
+    vec4 surface;
+    vec4 strengths;
+    vec4 uv_u;
+    vec4 uv_v;
+    vec4 maps;
+    vec4 more_maps;
 };
 struct Transform {
     vec4 x;
@@ -14428,12 +14750,6 @@ struct Transform {
 };
 struct InstanceIn {
     uint instance;
-};
-struct MaterialTable {
-    Material items[1024];
-};
-struct MapTable {
-    uvec4 items[1024];
 };
 struct Instance {
     vec4 row_x;
@@ -14467,17 +14783,14 @@ const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
 const uint AGX = 1u;
 const uint NEUTRAL = 2u;
 const uint NONE = 3u;
-const uint NO_LAYER = 4294967295u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
 const uint CELL_SHIFT = 23u;
 
-layout(std140) uniform MaterialTable_block_0Fragment { MaterialTable _group_0_binding_1_fs; };
+uniform highp sampler2D _group_0_binding_1_fs;
 
-layout(std140) uniform MapTable_block_1Fragment { MapTable _group_0_binding_3_fs; };
-
-layout(std140) uniform Frame_block_2Fragment { Frame _group_0_binding_0_fs; };
+layout(std140) uniform Frame_block_0Fragment { Frame _group_0_binding_0_fs; };
 
 uniform highp sampler2DArray _group_3_binding_0_fs;
 
@@ -14577,13 +14890,33 @@ vec3 encode(vec3 c_5, vec2 pixel_1) {
 }
 
 Material material_of(uint id) {
-    Material _e4 = _group_0_binding_1_fs.items[id];
-    return _e4;
+    Material m = Material(vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0));
+    vec4 _e7 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(0u, id)), 0);
+    m.color = _e7;
+    vec4 _e13 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(1u, id)), 0);
+    m.emissive = _e13;
+    vec4 _e19 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(2u, id)), 0);
+    m.surface = _e19;
+    vec4 _e25 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(3u, id)), 0);
+    m.strengths = _e25;
+    vec4 _e31 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(4u, id)), 0);
+    m.uv_u = _e31;
+    vec4 _e37 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(5u, id)), 0);
+    m.uv_v = _e37;
+    vec4 _e43 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(6u, id)), 0);
+    m.maps = _e43;
+    vec4 _e49 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(7u, id)), 0);
+    m.more_maps = _e49;
+    Material _e50 = m;
+    return _e50;
 }
 
-uint map_layer_of(uint id_1) {
-    uint _e5 = _group_0_binding_3_fs.items[id_1].x;
-    return _e5;
+bool map_ready(float layer) {
+    return (layer >= 0.0);
+}
+
+uint map_layer(float layer_1) {
+    return uint(max(layer_1, 0.0));
 }
 
 Transform transform_of(Instance found) {
@@ -14610,12 +14943,12 @@ vec4 finish(vec3 c_6, vec2 pixel_2) {
 
 void main() {
     VertexOut in_ = VertexOut(gl_FragCoord, _vs2fs_location0, _vs2fs_location1);
-    uint _e2 = map_layer_of(in_.material);
-    bool ready = (_e2 != NO_LAYER);
-    vec4 texel = texture(_group_3_binding_0_fs, vec3(in_.uv0_, (ready ? _e2 : 0u)));
-    vec4 map = (ready ? texel : vec4(1.0));
-    Material _e15 = material_of(in_.material);
-    vec3 base = (_e15.color.xyz * map.xyz);
+    Material _e2 = material_of(in_.material);
+    uint _e6 = map_layer(_e2.maps.x);
+    vec4 texel = texture(_group_3_binding_0_fs, vec3(in_.uv0_, _e6));
+    bool _e14 = map_ready(_e2.maps.x);
+    vec4 map = (_e14 ? texel : vec4(1.0));
+    vec3 base = (_e2.color.xyz * map.xyz);
     vec4 _e22 = finish(base, in_.clip.xy);
     _fs2p_location0 = _e22;
     return;
@@ -14623,22 +14956,18 @@ void main() {
 `,
 					uniformBlocks: [
 						{
-							name: 'Frame_block_2Fragment',
+							name: 'Frame_block_0Fragment',
 							group: 0,
 							binding: 0,
 						},
-						{
-							name: 'MaterialTable_block_0Fragment',
-							group: 0,
-							binding: 1,
-						},
-						{
-							name: 'MapTable_block_1Fragment',
-							group: 0,
-							binding: 3,
-						},
 					],
 					textures: [
+						{
+							name: '_group_0_binding_1_fs',
+							group: 0,
+							binding: 1,
+							sampler: null,
+						},
 						{
 							name: '_group_3_binding_0_fs',
 							group: 3,
@@ -14674,6 +15003,13 @@ struct Frame {
 
 struct Material {
     color: vec4<f32>,
+    emissive: vec4<f32>,
+    surface: vec4<f32>,
+    strengths: vec4<f32>,
+    uv_u: vec4<f32>,
+    uv_v: vec4<f32>,
+    maps: vec4<f32>,
+    more_maps: vec4<f32>,
 }
 
 struct Transform {
@@ -14715,12 +15051,9 @@ const AGX_INSET: mat3x3<f32> = mat3x3<f32>(vec3<f32>(0.85662717f, 0.13731897f, 0
 const AGX_OUTSET: mat3x3<f32> = mat3x3<f32>(vec3<f32>(1.1271006f, -0.14132977f, -0.14132977f), vec3<f32>(-0.11060664f, 1.1578237f, -0.11060664f), vec3<f32>(-0.016493939f, -0.016493939f, 1.2519364f));
 const LINEAR_REC2020_TO_LINEAR_SRGB: mat3x3<f32> = mat3x3<f32>(vec3<f32>(1.6605f, -0.1246f, -0.0182f), vec3<f32>(-0.5876f, 1.1329f, -0.1006f), vec3<f32>(-0.0728f, -0.0083f, 1.1187f));
 const OUTSIDE_CLIP: vec4<f32> = vec4<f32>(2f, 2f, 2f, 1f);
-const NO_LAYER: u32 = 4294967295u;
 
 @group(0) @binding(1)
 var<storage> materials: array<Material>;
-@group(0) @binding(2)
-var<storage> map_table: array<vec4<u32>>;
 @group(0) @binding(0)
 var<uniform> frame: Frame;
 @group(1) @binding(0)
@@ -14742,9 +15075,12 @@ fn material_of(id: u32) -> Material {
     return _e3;
 }
 
-fn map_layer_of(id_1: u32) -> u32 {
-    let _e4 = map_table[id_1].x;
-    return _e4;
+fn map_ready(layer: f32) -> bool {
+    return (layer >= 0f);
+}
+
+fn map_layer(layer_1: f32) -> u32 {
+    return u32(max(layer_1, 0f));
 }
 
 fn find_instance(i_1: InstanceIn) -> Instance {
@@ -14785,12 +15121,12 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
 
 @fragment
 fn fs(in: VertexOut) -> @location(0) vec4<f32> {
-    let _e2 = map_layer_of(in.material);
-    let ready = (_e2 != NO_LAYER);
-    let texel = textureSample(map_layers, map_sampler, in.uv0_, select(0u, _e2, ready));
-    let map = select(vec4(1f), texel, ready);
-    let _e15 = material_of(in.material);
-    let base = (_e15.color.xyz * map.xyz);
+    let _e2 = material_of(in.material);
+    let _e6 = map_layer(_e2.maps.x);
+    let texel = textureSample(map_layers, map_sampler, in.uv0_, _e6);
+    let _e14 = map_ready(_e2.maps.x);
+    let map = select(vec4(1f), texel, _e14);
+    let base = (_e2.color.xyz * map.xyz);
     let _e22 = finish(base, in.clip.xy);
     return _e22;
 }
@@ -14825,6 +15161,13 @@ struct Frame {
 
 struct Material {
     color: vec4<f32>,
+    emissive: vec4<f32>,
+    surface: vec4<f32>,
+    strengths: vec4<f32>,
+    uv_u: vec4<f32>,
+    uv_v: vec4<f32>,
+    maps: vec4<f32>,
+    more_maps: vec4<f32>,
 }
 
 struct Transform {
@@ -14869,12 +15212,9 @@ const OUTSIDE_CLIP: vec4<f32> = vec4<f32>(2f, 2f, 2f, 1f);
 const AGX: u32 = 1u;
 const NEUTRAL: u32 = 2u;
 const NONE: u32 = 3u;
-const NO_LAYER: u32 = 4294967295u;
 
 @group(0) @binding(1)
 var<storage> materials: array<Material>;
-@group(0) @binding(2)
-var<storage> map_table: array<vec4<u32>>;
 @group(0) @binding(0)
 var<uniform> frame: Frame;
 @group(1) @binding(0)
@@ -14978,9 +15318,12 @@ fn material_of(id: u32) -> Material {
     return _e3;
 }
 
-fn map_layer_of(id_1: u32) -> u32 {
-    let _e4 = map_table[id_1].x;
-    return _e4;
+fn map_ready(layer: f32) -> bool {
+    return (layer >= 0f);
+}
+
+fn map_layer(layer_1: f32) -> u32 {
+    return u32(max(layer_1, 0f));
 }
 
 fn find_instance(i_1: InstanceIn) -> Instance {
@@ -15024,12 +15367,12 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
 
 @fragment
 fn fs(in: VertexOut) -> @location(0) vec4<f32> {
-    let _e2 = map_layer_of(in.material);
-    let ready = (_e2 != NO_LAYER);
-    let texel = textureSample(map_layers, map_sampler, in.uv0_, select(0u, _e2, ready));
-    let map = select(vec4(1f), texel, ready);
-    let _e15 = material_of(in.material);
-    let base = (_e15.color.xyz * map.xyz);
+    let _e2 = material_of(in.material);
+    let _e6 = map_layer(_e2.maps.x);
+    let texel = textureSample(map_layers, map_sampler, in.uv0_, _e6);
+    let _e14 = map_ready(_e2.maps.x);
+    let map = select(vec4(1f), texel, _e14);
+    let base = (_e2.color.xyz * map.xyz);
     let _e22 = finish(base, in.clip.xy);
     return _e22;
 }

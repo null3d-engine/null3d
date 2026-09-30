@@ -1,14 +1,20 @@
 // The frame loop of the thread that draws, in every thread mode. A frame callback that finds no new
 // frame draws nothing, as while the page pauses the engine, and the sketch's first step after a pause
-// counts no time. ?fps= holds the drawing to a fixed rate below the display's.
+// counts no time. ?fps= holds the drawing to a fixed rate below the display's. On a GPU that falls
+// behind, at most two frames wait on it, on both GPU paths.
 import { expect, test } from '@playwright/test';
 import { ENGINE_MODES, type EngineResult } from '../lib/engine-checks.ts';
 import { pageResult } from '../lib/page-result.ts';
+import { framesInFlight, type OverloadResult, ratesParted } from '../pages/lib/overload.ts';
 
 type Result = EngineResult & { error?: string };
 
-/** Fewer frames in the half second after the sketch resumes means that drawing did not resume. */
-const MIN_FRAMES_RESUMED = 10;
+/**
+ * Fewer frames in the half second after the sketch resumes means that drawing did not resume. The
+ * engine draws no faster than the GPU finishes frames, and the software GPU of a busy CI machine
+ * can finish only a few in that time.
+ */
+const MIN_FRAMES_RESUMED = 3;
 /** Well under the page's 600 ms pause, and above the longest step the engine allows. */
 const LONGEST_STEP_S = 0.5;
 /** The rate that ?fps= holds in the test, and how far the presented rate may stray from it. */
@@ -41,5 +47,27 @@ for (const mode of ENGINE_MODES) {
 		test.skip(hz < MIN_REFRESH_HZ, `the display refreshes at ${hz} Hz, below ${MIN_REFRESH_HZ} Hz`);
 		expect(result.stats.presentedFps).toBeGreaterThan(HELD_FPS * (1 - HELD_FPS_SHARE));
 		expect(result.stats.presentedFps).toBeLessThan(HELD_FPS * (1 + HELD_FPS_SHARE));
+	});
+}
+
+/**
+ * The most frames in flight that a run may report: the engine's limit of two, and a little more,
+ * since the figure divides the median time from submit to completion by the mean completed interval.
+ */
+const MOST_FRAMES_IN_FLIGHT = 2.5;
+
+for (const tier of ['webgpu', 'webgl2'] as const) {
+	test(`a GPU that falls behind has at most two frames waiting on it, ${tier}`, async ({
+		page,
+	}) => {
+		test.setTimeout(120_000);
+		await page.goto(`overload.html?gpu=${tier}&seconds=2`);
+		const result = await pageResult<OverloadResult & { error?: string }>(page, 110_000);
+		expect(result.error).toBeUndefined();
+		const step = result.overloaded;
+		test.skip(!step, 'no step of the page overloaded this GPU');
+		if (!step) return;
+		expect(ratesParted(step), 'the presented rate stayed above the completed rate').toBe(false);
+		expect(framesInFlight(step) ?? Number.POSITIVE_INFINITY).toBeLessThan(MOST_FRAMES_IN_FLIGHT);
 	});
 }

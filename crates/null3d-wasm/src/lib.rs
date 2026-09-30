@@ -31,7 +31,7 @@ use null3d_render::geometry::{Geometry, OutOfMemory, Shape, generate};
 use null3d_render::gpu_driven::{
     BYTES_PER_SOURCE, GpuDrivenRenderer, MAX_USEFUL_BINDING_BYTES, RendererConfig,
 };
-use null3d_render::materials::{MaterialError, MaterialTable, Shading};
+use null3d_render::materials::{MapSlot, MaterialError, MaterialTable, Shading};
 use null3d_render::output::{Output, SceneColor, ToneMapping};
 use null3d_render::textures::{MAX_TEXTURES, Sampling, TextureDesc, TextureError};
 use null3d_render::view::ViewId;
@@ -356,8 +356,8 @@ pub fn scene_capacity() -> u32 {
 }
 
 /// The address of one of the per-slot arrays TypeScript writes (see `constants::scene_field`):
-/// positions (3 floats), rotations (4), scales (3), local bounding radii (1), or the dirty
-/// bitset's words, which TypeScript views as 32-bit words.
+/// positions (3 floats), rotations (4), scales (3), local bounding radii (1), local bounding
+/// sphere centres (3), or the dirty bitset's words, which TypeScript views as 32-bit words.
 #[wasm_bindgen(js_name = sceneArrays)]
 pub fn scene_arrays(field: u32) -> u32 {
     value_with_engine(|e| {
@@ -366,6 +366,7 @@ pub fn scene_arrays(field: u32) -> u32 {
             scene_field::ROTATIONS => address(e.scene.rotations()),
             scene_field::SCALES => address(e.scene.scales()),
             scene_field::LOCAL_RADII => address(e.scene.local_radii()),
+            scene_field::LOCAL_CENTERS => address(e.scene.local_centers()),
             _ => address(e.scene.dirty().words()),
         })
     })
@@ -876,7 +877,7 @@ pub fn set_material_map(material: u32, texture: u32) -> u32 {
         }
         match settings
             .materials_mut()
-            .set_map(material.wrapping_sub(1), map)
+            .set_map(material.wrapping_sub(1), MapSlot::BaseColor, map)
         {
             Ok(()) => {
                 e.structure_changed = true;

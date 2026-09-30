@@ -129,7 +129,6 @@ export class Pipelines {
 				buffer: { type: 'uniform' },
 			},
 			{ binding: 1, visibility: fragment, buffer: { type: 'read-only-storage' } },
-			{ binding: 2, visibility: fragment, buffer: { type: 'read-only-storage' } },
 		]);
 		this.defineLayout(LAYOUT_TEXTURES, 'textures', [
 			{ binding: 0, visibility: fragment, texture: { viewDimension: '2d-array' } },
