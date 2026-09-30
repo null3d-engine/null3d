@@ -321,3 +321,25 @@ The sustained S1-static run on the iPad presented 23 frames per second on WebGPU
 The slow run was on main at e54f443. That was before hold mode (#41), the render graph (#42) and the new GPU layer operations (#43). It is not known which change removed the cost, or whether Safari's state that night caused it.
 
 A Safari fault on the Mac explained part of the gap. Safari rebuilds a render bundle that holds an indirect draw on every replay; WebKit has fixed this, and Safari 27.2 lists the fix. Pull request #49 replays each bundle's commands into the render pass instead. On the iPad, it raised S1 at 240,000 boxes on WebGPU from 26.8 to 28.1 frames per second, in Safari and in Brave alike. The GPU time stayed at 27.8 ms, and the time from submit to done fell by 1.7 ms. The runs are `target/runs/20260930-013339-bench` to `20260930-015149-bench`. S1-static stayed at about 59, the display's rate.
+
+## Addendum, 2026-09-30: time to first frame (T-28)
+
+The startup tools of #50 measure the time from navigation start until the GPU has finished the first frame. They load a production build of the engine test page, five cold and five warm loads in each thread mode. A cold load gets a new address for every file, so every file downloads and the browser compiles the core and the scripts from scratch. A warm load repeats an earlier load. Medians in ms; each device loaded from this Mac, over USB (the S24+) or the local network (the iPad).
+
+| Device and browser | Network | Pipelined, cold / warm | Low latency, cold / warm | Single-threaded, cold / warm | Main thread, cold / warm |
+| --- | --- | --- | --- | --- | --- |
+| S24+, Chrome 154, WebGL2 | Slow 4G | 4,431 / 923 | 4,460 / 940 | 3,922 / 906 | 4,490 / 912 |
+| S24+, Chrome 154, WebGL2 | full speed | 306 / 300 | 325 / 307 | 297 / 273 | 331 / 304 |
+| S24+, Brave, Shields on, WebGL2 | full speed | 305 / 254 | 340 / 317 | 254 / 322 | 389 / 284 |
+| iPad, Safari 26.6, WebGPU | full speed | 173 / 117 | 154 / 104 | 126 / 75 | 164 / 102 |
+| iPad, Brave, Shields on, WebGPU | full speed | 155 / 123 | 156 / 109 | 125 / 90 | 158 / 115 |
+
+Runs: S24+ Chrome from `bun run bench:startup --android`; the rest from the runner's `startup` plan, `target/runs/20260930-001309-startup` (iPad Safari) and the plans of 30 September 09:35 to 10:02 (+08). Before #58, low latency stalled in Safari on production builds; these rows are after the fix.
+
+Reading the data:
+
+- A cold load downloads 10 files, about 110 to 117 KB after Brotli (9 files in single-threaded mode). A warm load makes one request, the page's check, and downloads nothing.
+- On Slow 4G, a cold start on the S24+ takes 3.9 to 4.5 s, and a warm one about 0.9 s. The page script itself runs at 1.4 s. In the threaded modes, the engine becomes ready about 1.9 s after the core. It starts its workers only once the core has compiled, which adds two round trips. In single-threaded mode, that wait is about 1.3 s.
+- At full speed, the GPU probe takes about 60 to 80 ms on the S24+. Chrome there has no WebGPU, and the probe tries it first.
+
+Proposed target, for the owner: on the S24+ in Chrome on Slow 4G, the first frame within 4.5 s on a cold load, and within 1 s on a warm load, at the engine test page's size. Two changes can bring the cold load down. The first starts the workers' downloads with the core's, which saves about two round trips (1.1 s on Slow 4G). The second is the earlier sketch download in single-threaded mode (M1-K7, about 0.56 s).
