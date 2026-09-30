@@ -1,8 +1,8 @@
 //! The WebGL2 frame builder. WebGL2 has no compute shaders, so the job workers cull every object
 //! and instance on the CPU, view by view. Each view's frame lists its visible objects, bucket by
 //! bucket, in an index list, and the view's opaque pass draws each bucket's slice of the list with
-//! instanced draws: many buckets in one call where the device has `WEBGL_multi_draw`, one draw per
-//! bucket elsewhere.
+//! instanced draws: many draws in one call where the device has `WEBGL_multi_draw`, one call per
+//! draw elsewhere.
 //!
 //! # Sources and data textures
 //!
@@ -15,9 +15,12 @@
 //!
 //! # Buckets and passes
 //!
-//! A bucket is one pipeline, vertex page, mesh, material and data texture. Buckets change only with
-//! the scene's structure, as on WebGPU. Showing or hiding an object, or changing a batch's active
-//! count, needs no rebuild: culling skips hidden objects and stops at each batch's active count.
+//! A bucket is one pipeline, mesh, material and data texture, and culling lists its visible
+//! sources in its slice of the index list. A pipeline is one shading and one vertex format. A
+//! bucket has one draw per part of its mesh, and every draw of a bucket draws the bucket's slice.
+//! Buckets change only with the scene's structure, as on WebGPU. Showing or hiding an object, or
+//! changing a batch's active count, needs no rebuild: culling skips hidden objects and stops at
+//! each batch's active count.
 //!
 //! Each part has a module: `layout` keeps the sources, buckets and clusters, `data` the data
 //! textures and their rings, `cull` culls each view on the job workers, and `opaque` records the
@@ -43,13 +46,13 @@ use null3d_core::snapshot::SCENE_TARGET;
 use null3d_gpu::drawlist::{DrawList, Op, buffer_usage as usage, sizes};
 
 use crate::frame::{
-    FrameBuilder, FrameInput, PageUploads, ParityLists, RecordError, SceneSettings, UploadArena,
-    drawn_rows, floats_as_bytes, grown_size,
+    FrameBuilder, FrameInput, MeshBuffers, ParityLists, PipelineTable, RecordError, SceneSettings,
+    UploadArena, drawn_rows, floats_as_bytes,
 };
 use crate::frame_graph::{FrameGraph, Role};
 use crate::graph::RenderGraph;
 use crate::materials::MATERIAL_FLOATS;
-use crate::meshes::{MAX_BUFFER_BYTES, MeshStorage, Packing, Page};
+use crate::meshes::{MeshStorage, Packing};
 use crate::view::{ViewFrame, ViewId};
 use cull::Culling;
 use data::{RingSlot, SharedTextures, matrices_of, write_matrices};
@@ -73,13 +76,8 @@ mod ids {
         frame(view) + 1
     }
 
-    /// Page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in `PAGES + 2p + 1`.
-    const PAGES: u32 = VIEW_BUFFERS + 2 * MAX_VIEWS as u32;
-
-    /// The vertex and index buffers of a mesh page.
-    pub const fn page(page: u32) -> (u32, u32) {
-        (PAGES + 2 * page, PAGES + 2 * page + 1)
-    }
+    /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
+    pub const PAGES: u32 = VIEW_BUFFERS + 2 * MAX_VIEWS as u32;
 
     pub const RESIDENT: u32 = 1;
     /// The ring of streamed textures, one per ring slot.
@@ -96,9 +94,6 @@ mod ids {
 
     /// The render graph's textures, from this id on.
     pub const TARGETS: u32 = VIEW_TEXTURES + RING * MAX_VIEWS as u32;
-
-    pub const LIT: u32 = 1;
-    pub const UNLIT: u32 = 2;
 
     /// Each view's bind groups: the frame group, the draw record group, then the groups of its
     /// instance textures, one per pair of ring slots.
@@ -150,30 +145,6 @@ pub const fn max_sources(max_texture_size: u32) -> u32 {
     sizes::MATRICES_PER_TEXTURE_ROW.saturating_mul(max_texture_size)
 }
 
-/// A vertex page's GPU buffers: their sizes, and how much of the page they hold.
-#[derive(Clone, Copy, Debug, Default)]
-struct PageBuffers {
-    vertex_bytes: u32,
-    index_bytes: u32,
-    uploaded: PageUploads,
-}
-
-impl PageBuffers {
-    /// Bytes of the page's vertices and indices, as its buffers must hold them.
-    fn needed(page: &Page) -> (u32, u32) {
-        (
-            (page.vertices.len() * 4) as u32,
-            (page.indices.len() * 2).next_multiple_of(4) as u32,
-        )
-    }
-
-    /// True when the page outgrew its buffers, so they must be made again and filled whole.
-    fn outgrown(&self, page: &Page) -> bool {
-        let (vertex_bytes, index_bytes) = Self::needed(page);
-        vertex_bytes > self.vertex_bytes || index_bytes > self.index_bytes
-    }
-}
-
 /// Records one draw list per frame for the WebGL2 path.
 pub struct CpuCulledRenderer {
     config: CpuCulledConfig,
@@ -184,7 +155,9 @@ pub struct CpuCulledRenderer {
     clusters: Clusters,
     culling: Culling,
     opaque: Opaque,
-    pages: Vec<PageBuffers>,
+    /// The vertex pages' vertex and index buffers.
+    meshes: MeshBuffers,
+    pipelines: PipelineTable,
     textures: SharedTextures,
     /// The slot of the streamed textures, which every view reads.
     streamed_slot: RingSlot,
@@ -207,7 +180,8 @@ impl CpuCulledRenderer {
             clusters: Clusters::default(),
             culling: Culling::default(),
             opaque: Opaque::new(config.multi_draw),
-            pages: Vec::new(),
+            meshes: MeshBuffers::new(ids::PAGES),
+            pipelines: PipelineTable::default(),
             textures: SharedTextures::default(),
             streamed_slot: RingSlot::default(),
             created: false,
@@ -233,8 +207,13 @@ impl CpuCulledRenderer {
     /// the clusters, the culling runs and every view's output, and the upload arenas.
     fn rebuild_layout(&mut self, input: &FrameInput<'_>) -> Result<(), RecordError> {
         let limit = FrameBuilder::max_sources(self);
-        self.layout
-            .rebuild(&self.settings, input, limit, self.config.multi_draw)?;
+        self.layout.rebuild(
+            &self.settings,
+            &mut self.pipelines,
+            input,
+            limit,
+            self.config.multi_draw,
+        )?;
         let room = self.layout.room;
         let out_of_memory = |_: TryReserveError| RecordError::OutOfMemory {
             bytes: room.rows.saturating_mul(8),
@@ -279,31 +258,15 @@ impl CpuCulledRenderer {
 
     /// [`Self::upload_bound`] without the cluster orders.
     fn upload_bound_without_clusters(&self) -> usize {
-        let meshes: usize = self
-            .settings
-            .meshes()
-            .pages()
-            .iter()
-            .enumerate()
-            .map(|(p, page)| {
-                let buffers = self.pages.get(p).copied().unwrap_or_default();
-                let uploaded = if buffers.outgrown(page) {
-                    PageUploads::default()
-                } else {
-                    buffers.uploaded
-                };
-                uploaded.pending_bytes(page)
-            })
-            .sum();
+        let meshes = self.meshes.pending_bytes(self.settings.meshes().pages());
         let materials = self.settings.materials().capacity() as usize * MATERIAL_FLOATS * 4;
         let per_view = sizes::FRAME_UNIFORM_BYTES as usize
             + self.layout.draws_slot_bytes as usize
-            + self.layout.buckets.len() * 12;
+            + self.layout.draws.len() * 12;
         meshes + materials + self.settings.views().len() * per_view
     }
 
     fn create_fixed(&mut self, list: &mut DrawList) -> Result<(), RecordError> {
-        self.opaque.create_pipelines(list, self.config.samples)?;
         let material_bytes = sizes::MAX_MATERIALS * MATERIAL_FLOATS as u32 * 4;
         list.push(
             Op::CreateBuffer,
@@ -314,50 +277,6 @@ impl CpuCulledRenderer {
             ],
         )?;
         self.created = true;
-        Ok(())
-    }
-
-    /// Uploads mesh data added since the last upload, from copies in the frame's arena. A page
-    /// whose buffers are too small gets new ones, with room to grow, and uploads again whole.
-    fn upload_meshes(
-        &mut self,
-        list: &mut DrawList,
-        arena: &mut UploadArena,
-    ) -> Result<(), RecordError> {
-        for (p, page) in self.settings.meshes().pages().iter().enumerate() {
-            if self.pages.len() <= p {
-                self.pages.push(PageBuffers::default());
-            }
-            let buffers = &mut self.pages[p];
-            let (vertex_id, index_id) = ids::page(p as u32);
-            if buffers.outgrown(page) {
-                let (vertex_bytes, index_bytes) = PageBuffers::needed(page);
-                let limit = MAX_BUFFER_BYTES as u32;
-                buffers.vertex_bytes = grown_size(vertex_bytes, limit);
-                buffers.index_bytes = grown_size(index_bytes, limit);
-                list.push(
-                    Op::CreateBuffer,
-                    &[
-                        vertex_id,
-                        buffers.vertex_bytes,
-                        usage::VERTEX | usage::COPY_DST,
-                    ],
-                )?;
-                list.push(
-                    Op::CreateBuffer,
-                    &[
-                        index_id,
-                        buffers.index_bytes,
-                        usage::INDEX | usage::COPY_DST,
-                    ],
-                )?;
-                buffers.uploaded = PageUploads::default();
-            }
-            let capacity = [buffers.vertex_bytes, buffers.index_bytes];
-            buffers
-                .uploaded
-                .upload(list, arena, page, [vertex_id, index_id], capacity)?;
-        }
         Ok(())
     }
 
@@ -508,7 +427,10 @@ impl CpuCulledRenderer {
         self.opaque.add_views(list, views)?;
         let rebuilt = self.layout.built_in == input.frame;
         arena.reset(self.upload_bound());
-        self.upload_meshes(list, arena)?;
+        self.meshes
+            .upload(list, arena, self.settings.meshes().pages())?;
+        self.opaque
+            .create_pipelines(list, &mut self.pipelines, self.config.samples)?;
         if self.settings.materials_mut().take_changed() {
             let parameters = self.settings.materials().parameters();
             let (at, bytes) = arena.push(floats_as_bytes(parameters))?;
@@ -552,12 +474,13 @@ impl CpuCulledRenderer {
             }
         }
 
-        let (culling, opaque, layout) = (&self.culling, &self.opaque, &self.layout);
+        let (culling, opaque) = (&self.culling, &self.opaque);
+        let (layout, meshes) = (&self.layout, &self.meshes);
         self.graph
             .record(list, self.settings.clear_color(), |list, role| match role {
                 Role::Opaque(view) if culling.frame(view).is_some() => {
                     let starts = culling.culled(frame, view).bucket_starts();
-                    opaque.record(list, arena, view, starts, layout)
+                    opaque.record(list, arena, view, starts, layout, meshes)
                 }
                 _ => Ok(()),
             })?;
@@ -607,7 +530,8 @@ impl FrameBuilder for CpuCulledRenderer {
         self.created = false;
         self.graph.reset_gpu();
         self.layout.built = false;
-        self.pages.clear();
+        self.meshes.forget();
+        self.pipelines.forget();
         self.textures.forget_gpu();
         self.culling.forget_gpu();
         self.opaque.forget_gpu();

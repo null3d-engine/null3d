@@ -88,7 +88,7 @@ export interface InstanceOptions {
 	material: Material;
 	/** Every row updates and uploads every frame; a static batch updates rows marked dirty only. */
 	dynamic?: boolean;
-	/** Adds a color per row (RGBA, linear). */
+	/** Adds a color per row (RGBA, linear). This version stores the colors but does not draw them yet. */
 	colors?: boolean;
 }
 
@@ -512,7 +512,10 @@ export class InstanceBatch {
 		return this.views().scales;
 	}
 
-	/** Linear RGBA colors, 4 floats per row, when the batch was created with colors. */
+	/**
+	 * Linear RGBA colors, 4 floats per row, when the batch was created with colors. This version
+	 * stores them but does not draw them yet.
+	 */
 	get colors(): Float32Array | undefined {
 		return this.views().colors;
 	}

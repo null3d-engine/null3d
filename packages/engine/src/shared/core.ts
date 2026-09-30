@@ -88,8 +88,19 @@ export interface CoreGlue extends CoreErrors {
 		depthSegments: number,
 	): number;
 	createSphereMesh(radius: number, widthSegments: number, heightSegments: number): number;
+	/**
+	 * Makes room for a mesh's arrays in engine memory, `words` 32-bit words, and returns their
+	 * address; `createMeshFromArrays` reads and frees them.
+	 */
+	meshArrays(words: number): number;
+	/**
+	 * A mesh from the arrays at `meshArrays`'s address, as `layout` (the `MESH_ARRAYS_*` bits)
+	 * describes them. Returns the mesh id.
+	 */
+	createMeshFromArrays(vertices: number, indices: number, layout: number): number;
 	meshRadius(mesh: number): number;
-	createMaterial(unlit: boolean, r: number, g: number, b: number, a: number): number;
+	/** A material with a linear color; `shading` is one of the `SHADING_*` codes. */
+	createMaterial(shading: number, r: number, g: number, b: number, a: number): number;
 	setMaterialColor(material: number, r: number, g: number, b: number, a: number): number;
 	setCamera(camera: number, fovDegrees: number, near: number, far: number): number;
 	setSun(dx: number, dy: number, dz: number, r: number, g: number, b: number): number;
@@ -132,6 +143,8 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'memoryEpoch',
 	'createBoxMesh',
 	'createSphereMesh',
+	'meshArrays',
+	'createMeshFromArrays',
 	'meshRadius',
 	'createMaterial',
 	'setMaterialColor',

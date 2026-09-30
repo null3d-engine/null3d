@@ -194,13 +194,17 @@ Units match three.js r155 and later: directional intensity in lux-like units, po
 
 ```ts
 const mesh = geometry.fromArrays({
-  positions, normals, uvs, uvs1, colors, tangents,   // Float32Arrays
-  indices,                                            // Uint16Array or Uint32Array
-  computeNormals: false, computeTangents: false,
+  positions,                // 3 numbers per vertex: a Float32Array or a number[]
+  normals,                  // 3 per vertex, or computeNormals: true instead
+  uvs, uvs1, colors,        // 2, 2, and 3 or 4 per vertex; colors are linear
+  tangents,                 // 4 per vertex, or computeTangents: true (needs uvs)
+  indices,                  // Uint16Array, Uint32Array or number[]; omit for one triangle per 3 vertices
 });
 mesh.updateVertices('positions', data, start, count);  // (0.2) vertices that change at run time
 mesh.destroy();
 ```
+
+A mesh keeps the attributes it gets, and meshes with the same attributes share GPU buffers, so pass only the attributes the materials use. Bad arrays throw E1206. `api/geometry` covers vertex formats and meshes over 65,535 vertices.
 
 ## 9. Materials (`api/materials`)
 

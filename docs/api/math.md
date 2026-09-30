@@ -79,7 +79,7 @@ export default defineSketch(({ scene, geometry, materials, time }) => {
 The color helpers give linear RGB, the color space that the engine lights in. The color options of materials, lights and the background take sRGB colors and convert them for you, as three.js does. The colors of an instance batch are linear, so convert sRGB colors with the helpers first:
 
 ```ts
-// In the setup: a rainbow of boxes.
+// In the setup: a color for each box.
 const boxes = scene.createInstances(geometry.box(), 100, {
   material: materials.standard(),
   colors: true, // a linear RGBA color per row, white to start
@@ -93,6 +93,8 @@ for (let i = 0; i < boxes.count; i++) {
 boxes.markDirty();
 color.fromHex(rgb, '#ff8800'); // the linear RGB of an sRGB hex color
 ```
+
+This version stores a batch's colors but does not draw them yet, so every row shows its material's color.
 
 ## Random numbers
 

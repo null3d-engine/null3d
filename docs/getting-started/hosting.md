@@ -1,14 +1,14 @@
 ---
 id: getting-started/hosting
 title: Hosting and cross-origin isolation
-status: planned
+status: experimental
 since: "0.1"
 summary: "COOP and COEP headers; require-corp on Safari; CORS and CORP for assets; the single-threaded fallback."
 ---
 
 # Hosting and cross-origin isolation
 
-> Planned for null3D 0.1. No release has these APIs yet, so coding agents must not use them.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart TD
@@ -36,7 +36,7 @@ To check a page, open the browser console and read `crossOriginIsolated`. It is 
 
 With `require-corp`, the browser loads a file from another origin only when that file allows it. This covers models, textures, fonts and scripts from a CDN or a separate asset domain. Each such file needs one of these:
 
-- A CORS response (`Access-Control-Allow-Origin`), requested in CORS mode. The engine's asset loaders request in CORS mode.
+- A CORS response (`Access-Control-Allow-Origin`) to a request in CORS mode. `fetch` uses CORS mode for other origins by default.
 - The header `Cross-Origin-Resource-Policy: cross-origin`.
 
 Files from the page's own origin need nothing. Serve the engine's own files, the `.wasm` builds and the worker scripts, from the same origin as the page, or give them the same headers.

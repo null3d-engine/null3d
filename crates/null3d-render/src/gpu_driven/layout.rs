@@ -12,30 +12,42 @@ use null3d_gpu::drawlist::{DrawList, Op, buffer_usage as usage};
 
 use super::ids;
 use crate::frame::{
-    FrameInput, HIDDEN, RecordError, SceneSettings, UploadArena, address, bucket_of,
-    collect_bucket_keys, drawn_rows, floats_as_bytes, grown_size, words_as_bytes,
+    FrameInput, HIDDEN, PipelineKey, PipelineTable, RecordError, SceneSettings, UploadArena,
+    address, bucket_of, collect_bucket_keys, drawn_rows, floats_as_bytes, grown_size,
+    words_as_bytes,
 };
-use crate::materials::Shading;
 
-/// Bytes of one bucket record in the culling shader: base, material, radius, padding.
-pub(super) const BUCKET_BYTES: u32 = 16;
+/// Bytes of one bucket record in the culling shader: base, material, radius, first draw, draw
+/// count, padding.
+const BUCKET_BYTES: u32 = 32;
 /// Bytes of one world matrix: three rows of four floats.
 const MATRIX_BYTES: u32 = (MATRIX_FLOATS * 4) as u32;
 
-/// What makes a bucket: its shading (the pipeline), its engine mesh id and its material id.
-type BucketKey = (Shading, u32, u32);
+/// What makes a bucket, in draw order: its pipeline, the mesh page of its mesh's first part, and
+/// its engine mesh and material ids.
+type BucketKey = (PipelineKey, u32, u32, u32);
 
-/// One bucket: its draw, and its slice of each view's compacted instance buffer.
+/// One bucket: its pipeline, its slice of each view's compacted instance buffer, and its draws.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub(super) struct Bucket {
-    pub(super) shading: Shading,
+    /// The id of its render pipeline.
+    pub(super) pipeline: u32,
     pub(super) material: u32,
     pub(super) base: u32,
     pub(super) capacity: u32,
+    /// Its draws, one per part of its mesh: `draws` of the layout's draws from `first_draw` on.
+    pub(super) first_draw: u32,
+    pub(super) draws: u32,
+    pub(super) radius: f32,
+}
+
+/// One indexed indirect draw of each view: a part of a bucket's mesh.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(super) struct Draw {
+    pub(super) page: u32,
     pub(super) index_count: u32,
     pub(super) first_index: u32,
     pub(super) base_vertex: u32,
-    pub(super) radius: f32,
 }
 
 /// A scene object's entry in the bucket table: its bucket, or `HIDDEN` while it is hidden, which
@@ -71,6 +83,8 @@ pub(super) struct Layout {
     /// Each batch's raw id and the first source of its rows.
     batch_bases: Vec<(u32, u32)>,
     pub(super) buckets: Vec<Bucket>,
+    /// Every bucket's draws, bucket by bucket; a draw's place is its indirect draw's.
+    pub(super) draws: Vec<Draw>,
     /// The bucket of every source, or `HIDDEN`.
     instance_buckets: Vec<u32>,
     /// The bucket of every scene slot whether it is shown or not, or `HIDDEN` for a slot with no
@@ -78,7 +92,7 @@ pub(super) struct Layout {
     home_buckets: Vec<u32>,
     /// Each batch's bucket and the active row count its table entries hold, in `batch_bases` order.
     batch_rows: Vec<(u32, u32)>,
-    /// The per-frame reset of every bucket's indirect draw: instance counts at zero.
+    /// The per-frame reset of every indirect draw: instance counts at zero.
     pub(super) indirect_template: Vec<u32>,
     /// Bucket records in the culling shader's layout.
     bucket_records: Vec<u32>,
@@ -124,12 +138,13 @@ impl Layout {
         self.buffer_sizes = [0; 3];
     }
 
-    /// Assigns every source to a bucket and lays the buckets out, from the frame's world state. It
-    /// reuses the layout's tables and scratch space, which grow only with the scene. A scene of
-    /// more than `limit` sources fails.
+    /// Assigns every source to a bucket and lays the buckets out, from the frame's world state,
+    /// with each bucket's pipeline id from `pipelines`. It reuses the layout's tables and scratch
+    /// space, which grow only with the scene. A scene of more than `limit` sources fails.
     pub(super) fn rebuild(
         &mut self,
         settings: &SceneSettings,
+        pipelines: &mut PipelineTable,
         scene: &SceneStorage,
         batches: &BatchTable,
         parity: usize,
@@ -147,8 +162,11 @@ impl Layout {
         }
         self.sources = sources;
 
+        let meshes = settings.meshes();
         let key_of = |mesh: u32, material: u32| -> Option<BucketKey> {
-            Some((settings.shading_of(mesh, material)?, mesh, material))
+            let pipeline = settings.pipeline_of(mesh, material)?;
+            let page = meshes.parts(meshes.mesh(mesh - 1)?).first()?.page;
+            Some((pipeline, page, mesh, material))
         };
         let world = scene.world(parity);
         let scene_key = |slot: usize| key_of(scene.meshes()[slot], scene.materials()[slot]);
@@ -162,22 +180,26 @@ impl Layout {
         );
 
         self.buckets.clear();
+        self.draws.clear();
         let mut base = 0;
-        for &((shading, mesh, material), count) in &self.key_counts {
-            let slot = settings
-                .meshes()
-                .mesh(mesh - 1)
-                .expect("keys name known meshes");
+        for &((pipeline, _, mesh, material), count) in &self.key_counts {
+            let slot = meshes.mesh(mesh - 1).expect("keys name known meshes");
+            let parts = meshes.parts(slot);
             self.buckets.push(Bucket {
-                shading,
+                pipeline: pipelines.id(pipeline),
                 material,
                 base,
                 capacity: count,
-                index_count: slot.index_count,
-                first_index: slot.first_index,
-                base_vertex: slot.base_vertex,
+                first_draw: self.draws.len() as u32,
+                draws: parts.len() as u32,
                 radius: slot.radius,
             });
+            self.draws.extend(parts.iter().map(|part| Draw {
+                page: part.page,
+                index_count: part.index_count,
+                first_index: part.first_index,
+                base_vertex: part.base_vertex,
+            }));
             base += count;
         }
 
@@ -202,19 +224,25 @@ impl Layout {
         }
 
         self.indirect_template.clear();
-        self.bucket_records.clear();
-        for bucket in &self.buckets {
+        for draw in &self.draws {
             self.indirect_template.extend_from_slice(&[
-                bucket.index_count,
+                draw.index_count,
                 0,
-                bucket.first_index,
-                bucket.base_vertex,
+                draw.first_index,
+                draw.base_vertex,
                 0,
             ]);
+        }
+        self.bucket_records.clear();
+        for bucket in &self.buckets {
             self.bucket_records.extend_from_slice(&[
                 bucket.base,
                 bucket.material - 1,
                 bucket.radius.to_bits(),
+                bucket.first_draw,
+                bucket.draws,
+                0,
+                0,
                 0,
             ]);
         }

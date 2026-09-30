@@ -28,9 +28,9 @@ Fighting pixels over all 11 distances, WebGL2 forced (`?gpu=webgl2&depth=<mode>`
 | MacBook Pro M5 Max, Safari 26.6.2 | 16,591 | 5,441 | 0 | 0 | `reversed` | 20260929-191110-depth |
 | MacBook Pro M5 Max, Brave (Chromium 153), Shields not recorded | 16,591 | 5,441 | 0 | 0 | `reversed` | 20260929-191110-depth |
 | MacBook Pro M5 Max, Firefox 156 | 14,148 | 9,156 | no `EXT_clip_control`: the forced page draws `reversed-gl` | 0 | `reversed-gl` | 20260929-191110-depth |
-| Galaxy S24+, Chrome | pending | pending | pending | no WebGPU | pending | |
-| Galaxy S24+, Brave | pending | pending | pending | no WebGPU | pending | |
-| iPad Pro 11-inch, Safari | pending | pending | pending | pending | pending | |
+| Galaxy S24+, Chrome 154 | 20,613 | 8,236 | 0 | no WebGPU | `reversed` | 20260930-020015-depth |
+| Galaxy S24+, Brave, Shields on | 20,613 | 8,236 | 0 | no WebGPU | `reversed` | 20260930-020015-depth |
+| iPad Pro 11-inch, Safari 26.6 | 16,737 | 5,441 | 0 | 0 (compatibility mode 0 too) | `reversed` | 20260930-015804-depth |
 | iPad Pro 11-inch, Brave | pending | pending | pending | pending | pending | |
 
 Share of each distance's pixels that fight on the Mac (every mode fights in none up to 100 m):
@@ -43,15 +43,26 @@ Share of each distance's pixels that fight on the Mac (every mode fights in none
 | Firefox: `standard` | 0 | 100% | 100% | 0 | 100% |
 | Firefox: `reversed-gl` | 0 | 30.4% | 99.7% | 0 | 68.9% |
 
+On the phone and the tablet:
+
+| Device and mode | 250 m | 630 m | 1.6 km | 4 km | 10 km |
+| --- | --- | --- | --- | --- | --- |
+| S24+, Chrome and Brave: `standard` | 35.7% | 100% | 100% | 100% | 71.9% |
+| S24+, Chrome and Brave: `reversed-gl` | 0 | 100% | 64.6% | 0 | 28.5% |
+| S24+, Chrome and Brave: `reversed` | 0 | 0 | 0 | 0 | 0 |
+| iPad, Safari: `standard` | 37.2% | 100% | 100% | 63.5% | 44.5% |
+| iPad, Safari: `reversed-gl` | 0 | 14.4% | 37.8% | 0 | 57.0% |
+| iPad, Safari: `reversed` | 0 | 0 | 0 | 0 | 0 |
+
 For reference, not a user device: SwiftShader, the software GPU of the CI machines (Chromium 153 headless shell, through the Playwright image tests), fought in 22,859 pixels in `standard`, 8,822 in `reversed-gl` and 14,867 in `reversed`. WebGPU on SwiftShader fought in 14,867 too, at 250 m, 4 km and 10 km. SwiftShader appears to lose depth precision in its rasterizer, so it is the one place where `reversed` fights more than `reversed-gl`.
 
 How the data was produced: `NULL3D_PORT=20173 bun tests/real-browsers.ts --plan depth Safari Firefox "Google Chrome" "Brave Browser"`, on 30 September 2026 (the run names use UTC), from the worktree of the branch `feat/webgl2-clip-control`. After the image test manifest merged, the depth precision tests moved into it (`depth-precision` on every tier, and `depth-precision-<mode>` on WebGL2). A second run of the depth plan (20260929-203132-depth) gave the same counts in all four browsers. Both runs' results are in the main checkout's `target/runs`. The behavior test `tests/image/depth.spec.ts` gave the same Chrome counts, and the SwiftShader counts with `CI=1`. The unit test `packages/engine/src/gpu/webgl2/depth.test.ts` models the vertex shader's 32-bit arithmetic without the rasterizer. For 100 pairs from 5 to 10 km, only `reversed` ordered every pair; `standard` and `reversed-gl` ordered fewer than half.
 
-Reading the counts: Chrome, Safari and Brave give identical counts, because all three draw WebGL2 through ANGLE on Metal. Firefox draws through Apple's OpenGL. Each tile's count depends on how its surfaces' corner depths round, so a farther tile can fight less than a nearer one (4 km in both modes). The totals over the 11 tiles decide.
+Reading the counts: on the Mac, Chrome, Safari and Brave give identical counts. All three draw WebGL2 through ANGLE on Metal. The iPad's Safari gives the Mac's counts, apart from 146 more fighting pixels in `standard` at 10 km. Chrome and Brave on the S24+ give identical counts. Both draw through the same ANGLE build on the phone's GPU, and both have `EXT_clip_control`. Firefox draws through Apple's OpenGL. Each tile's count depends on how its surfaces' corner depths round, so a farther tile can fight less than a nearer one (4 km in both modes). The totals over the 11 tiles decide.
 
 ## Decision
 
-Proposed, pending the phone and tablet rows:
+Proposed; every row but Brave on the iPad is in, and each supports it:
 
 - Where the browser has `EXT_clip_control`: `reversed`. It fought in the fewest pixels in every browser that has the extension: none, against 5,441 in `reversed-gl` and 16,591 in `standard`, out to 10 km.
 - Where it does not: `reversed-gl`. The rule's second clause does not apply, because `reversed-gl` is better than `standard` in all four Mac browsers. It fought in 5,441 pixels against 16,591 in the three ANGLE browsers, and in 9,156 against 14,148 in Firefox, the one browser measured that needs the fallback. In the ANGLE browsers it also keeps the surfaces apart at 250 m, where `standard` already fights in 37% of the pixels.
@@ -77,4 +88,4 @@ The phone connects by USB with USB debugging on; the runner forwards the port an
 - Follow-ups for M1-L4, the decision records task:
   - Large worlds: reversed depth on WebGL2 too, with clip control.
   - Logarithmic depth: "WebGL2 keeps standard depth unless a clip-control extension exists" becomes `reversed-gl` without the extension.
-  - T-29: partial on 2026-09-30 with the Mac data, closed once the S24+ and iPad rows are in.
+  - T-29: the S24+ (Chrome, Brave) and iPad Safari rows are in; it closes with the iPad Brave row.

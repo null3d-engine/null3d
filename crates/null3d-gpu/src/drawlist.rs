@@ -42,7 +42,9 @@ pub enum Op {
     /// [width, height]: the canvas's drawing buffer size in device pixels. Recorded in the frame
     /// built for that size, so the canvas and the frame's render targets always match.
     ResizeCanvas = 6,
-    /// [render pipeline id, template, permutation bits, color format, depth format, sample count, state flags]
+    /// [render pipeline id, template, permutation bits, color format, depth format, sample count,
+    /// state flags, vertex format]: the vertex format (`vertex::*` bits) places the attributes that
+    /// the template's vertex shader reads, in the vertex buffer of slot 0.
     CreateRenderPipeline = 7,
     /// [compute pipeline id, template, permutation bits]
     CreateComputePipeline = 8,
@@ -397,11 +399,116 @@ pub mod state_flags {
     pub const CULL_NONE: u32 = 1;
 }
 
+/// Vertex formats. Every vertex has a position and a normal, three floats each. A format adds
+/// optional attributes after them, and is the set of those attributes as bits. Each attribute sits
+/// at its place in [`ATTRIBUTES`](vertex::ATTRIBUTES) order, so a format's layout follows from its
+/// bits alone. Every attribute is 32-bit floats, and each has a fixed vertex shader location.
+pub mod vertex {
+    /// The first texture coordinates: two floats.
+    pub const UV0: u32 = 1;
+    /// The second texture coordinates: two floats.
+    pub const UV1: u32 = 2;
+    /// A tangent and its handedness, +1 or -1, as three.js and glTF store them: four floats.
+    pub const TANGENT: u32 = 4;
+    /// A linear color and its alpha: four floats.
+    pub const COLOR: u32 = 8;
+    /// Every optional attribute. Formats run from 0, a position and a normal only, to this.
+    pub const ALL: u32 = UV0 | UV1 | TANGENT | COLOR;
+    /// The first vertex shader location of the per-instance attributes, after every location
+    /// that a vertex attribute can take.
+    pub const INSTANCE_LOCATION: u32 = 8;
+
+    /// One vertex attribute.
+    #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+    pub struct Attribute {
+        /// The attribute's format bit, or 0 for the position and the normal, which every
+        /// format has.
+        pub bit: u32,
+        /// Its 32-bit floats.
+        pub floats: u32,
+        /// The vertex shader location that reads it.
+        pub location: u32,
+    }
+
+    /// Every attribute, in the order they sit in a vertex: the position, the normal, then the
+    /// optional attributes in bit order.
+    pub const ATTRIBUTES: [Attribute; 6] = [
+        Attribute {
+            bit: 0,
+            floats: 3,
+            location: 0,
+        },
+        Attribute {
+            bit: 0,
+            floats: 3,
+            location: 1,
+        },
+        Attribute {
+            bit: UV0,
+            floats: 2,
+            location: 2,
+        },
+        Attribute {
+            bit: UV1,
+            floats: 2,
+            location: 3,
+        },
+        Attribute {
+            bit: TANGENT,
+            floats: 4,
+            location: 4,
+        },
+        Attribute {
+            bit: COLOR,
+            floats: 4,
+            location: 5,
+        },
+    ];
+
+    /// Floats per vertex of a format.
+    pub const fn floats(format: u32) -> u32 {
+        let mut floats = 0;
+        let mut k = 0;
+        while k < ATTRIBUTES.len() {
+            let attribute = ATTRIBUTES[k];
+            if (attribute.bit & format) == attribute.bit {
+                floats += attribute.floats;
+            }
+            k += 1;
+        }
+        floats
+    }
+
+    /// Bytes per vertex of a format.
+    pub const fn stride(format: u32) -> u32 {
+        floats(format) * 4
+    }
+
+    /// The first float of an optional attribute (`bit`) in a vertex of a format, or `None` when
+    /// the format lacks it.
+    pub const fn offset(format: u32, bit: u32) -> Option<u32> {
+        if bit == 0 || (format & bit) != bit {
+            return None;
+        }
+        let mut floats = 0;
+        let mut k = 0;
+        while k < ATTRIBUTES.len() {
+            let attribute = ATTRIBUTES[k];
+            if attribute.bit == bit {
+                return Some(floats);
+            }
+            if (attribute.bit & format) == attribute.bit {
+                floats += attribute.floats;
+            }
+            k += 1;
+        }
+        None
+    }
+}
+
 /// Sizes of the data that the render pipelines read. The shaders in `crates/null3d-shaders/wgsl/`
 /// declare the same sizes, and a test checks that they agree.
 pub mod sizes {
-    /// Bytes per mesh vertex: a position and a normal, three floats each.
-    pub const VERTEX_STRIDE: u32 = 24;
     /// Bytes per compacted instance: three rows of the world matrix, then a vector of ids.
     pub const INSTANCE_STRIDE: u32 = 64;
     /// Bytes of the per-frame uniform block: the view-projection matrix and four vectors.
@@ -436,6 +543,9 @@ pub mod template {
     pub const INSTANCED_LIT: u32 = 1;
     /// Instanced meshes without lighting.
     pub const INSTANCED_UNLIT: u32 = 2;
+    /// Instanced meshes colored by their first texture coordinates, for the engine's own tests of
+    /// vertex formats.
+    pub const INSTANCED_TEXCOORDS: u32 = 3;
     /// The GPU culling compute shader.
     pub const CULL: u32 = 16;
 }
@@ -567,7 +677,7 @@ pub fn typescript_constants() -> String {
         out.push_str(&format!("export const OP_{} = {};\n", op.name(), op as u8));
     }
     out.push_str(&format!("\nexport const NO_TARGET = {NO_TARGET};\n\n"));
-    let groups: [(&str, &[(&str, u32)]); 16] = [
+    let groups: [(&str, &[(&str, u32)]); 17] = [
         (
             "FORMAT",
             &[
@@ -651,12 +761,24 @@ pub fn typescript_constants() -> String {
             ],
         ),
         ("PERMUTATION", &[("DRAW_INDEX", permutation::DRAW_INDEX)]),
+        (
+            "VERTEX",
+            &[
+                ("UV0", vertex::UV0),
+                ("UV1", vertex::UV1),
+                ("TANGENT", vertex::TANGENT),
+                ("COLOR", vertex::COLOR),
+                ("ALL", vertex::ALL),
+                ("INSTANCE_LOCATION", vertex::INSTANCE_LOCATION),
+            ],
+        ),
         ("STATE", &[("CULL_NONE", state_flags::CULL_NONE)]),
         (
             "TEMPLATE",
             &[
                 ("INSTANCED_LIT", template::INSTANCED_LIT),
                 ("INSTANCED_UNLIT", template::INSTANCED_UNLIT),
+                ("INSTANCED_TEXCOORDS", template::INSTANCED_TEXCOORDS),
                 ("CULL", template::CULL),
             ],
         ),
@@ -687,7 +809,6 @@ pub fn typescript_constants() -> String {
         (
             "SIZE",
             &[
-                ("VERTEX_STRIDE", sizes::VERTEX_STRIDE),
                 ("INSTANCE_STRIDE", sizes::INSTANCE_STRIDE),
                 ("FRAME_UNIFORM_BYTES", sizes::FRAME_UNIFORM_BYTES),
                 ("CULL_WORKGROUP_SIZE", sizes::CULL_WORKGROUP_SIZE),
@@ -711,6 +832,14 @@ pub fn typescript_constants() -> String {
     out.push_str(&format!(
         "/** Bytes per texel of each format, by format code. */\nexport const FORMAT_TEXEL_BYTES: readonly number[] = [{}];\n",
         texel_bytes.join(", ")
+    ));
+    let attributes: Vec<String> = vertex::ATTRIBUTES
+        .iter()
+        .map(|a| format!("[{}, {}, {}]", a.bit, a.floats, a.location))
+        .collect();
+    out.push_str(&format!(
+        "/** Each vertex attribute in vertex order: its format bit (0 for one every format has), its floats and its shader location. */\nexport const VERTEX_ATTRIBUTES: readonly (readonly [bit: number, floats: number, location: number])[] = [{}];\n",
+        attributes.join(", ")
     ));
     out
 }
@@ -754,6 +883,61 @@ mod tests {
             assert!(mesh.contains(&line), "mesh.wgsl lacks {line}");
         }
         assert_eq!(sizes::DRAW_RECORD_BYTES, 16, "a draw record is one vec4u");
+        // The vertex attributes the shader reads, at their formats' locations, and the instance
+        // attributes after every vertex attribute's location.
+        let [position, normal, uv0, ..] = vertex::ATTRIBUTES;
+        let instance = vertex::INSTANCE_LOCATION;
+        for line in [
+            format!("@location({}) position: vec3f", position.location),
+            format!("@location({}) normal: vec3f", normal.location),
+            format!("@location({}) uv0: vec2f", uv0.location),
+            format!("@location({instance}) row0: vec4f"),
+            format!("@location({}) ids: vec4u", instance + 3),
+        ] {
+            assert!(mesh.contains(&line), "mesh.wgsl lacks {line}");
+        }
+        assert_eq!(uv0.bit, vertex::UV0);
+    }
+
+    #[test]
+    fn vertex_formats_place_each_attribute_after_the_ones_before_it() {
+        assert_eq!(vertex::stride(0), 24);
+        assert_eq!(vertex::stride(vertex::ALL), 72);
+        assert_eq!(vertex::offset(vertex::UV0, vertex::UV0), Some(6));
+        assert_eq!(vertex::offset(vertex::UV1, vertex::UV1), Some(6));
+        assert_eq!(
+            vertex::offset(vertex::UV0 | vertex::TANGENT, vertex::TANGENT),
+            Some(8)
+        );
+        assert_eq!(vertex::offset(vertex::ALL, vertex::COLOR), Some(14));
+        assert_eq!(vertex::offset(vertex::UV1, vertex::UV0), None);
+        assert_eq!(vertex::offset(vertex::ALL, 0), None);
+        for format in 0..=vertex::ALL {
+            // Each optional attribute of the format starts where the ones before it end, and the
+            // last ends at the stride.
+            let mut end = 6;
+            for attribute in &vertex::ATTRIBUTES[2..] {
+                if format & attribute.bit != 0 {
+                    assert_eq!(vertex::offset(format, attribute.bit), Some(end));
+                    end += attribute.floats;
+                } else {
+                    assert_eq!(vertex::offset(format, attribute.bit), None);
+                }
+            }
+            assert_eq!(vertex::floats(format), end, "format {format}");
+            assert_eq!(vertex::stride(format), end * 4);
+        }
+        // Every attribute has its own location, below the instance attributes' first one.
+        for (k, attribute) in vertex::ATTRIBUTES.iter().enumerate() {
+            assert!(attribute.location < vertex::INSTANCE_LOCATION);
+            assert!(
+                vertex::ATTRIBUTES[k + 1..]
+                    .iter()
+                    .all(|other| other.location != attribute.location)
+            );
+        }
+        // WebGPU's default maxVertexAttributes: the instance attributes' four locations fit.
+        const { assert!(vertex::INSTANCE_LOCATION + 4 <= 16) };
     }
 
     #[test]
