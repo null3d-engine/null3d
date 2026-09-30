@@ -8,7 +8,7 @@ summary: "Main thread, sketch worker, render worker, job workers; the pipelined 
 
 # Architecture: threads and the frame
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. The `sketchThread` option of `createEngine` is not built yet: sketch code runs on the page's main thread only in the single-threaded build.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart LR
@@ -99,7 +99,14 @@ Pipelined is the default when the page can use threads, and single-threaded othe
 
 ## Sketch code on the main thread
 
-`createEngine({ sketchThread: 'main' })` runs your sketch code on the page's main thread. Use it for apps that work mostly with the DOM, and for debugging. The API stays the same.
+`createEngine({ sketchThread: 'main' })` runs your sketch code and the engine core on the page's main thread, in the threaded build. Your sketch can then reach the DOM. Use it for apps that work mostly with the DOM, for a three.js port whose scene code still uses the DOM, and for debugging. The API stays the same.
+
+- In pipelined mode, the render worker still draws, and the job workers still share the parallel work.
+- In low-latency mode, and with the `?render=main` switch, the page draws too. It steps the sketch and draws the frame in the same animation frame callback, so `engine.mode.latency` is `low`.
+- Your sketch's frames share the main thread with the page. Layout work and page scripts can delay a frame, and a slow frame delays the page's input.
+- The page runs the sketch of one engine at a time. A second engine that asks for the main thread before the first has stopped fails with [E1415](../errors/E1415.md).
+
+`engine.mode.sketchThread` says which thread runs the sketch. The single-threaded build always runs it on the main thread.
 
 ## Without cross-origin isolation
 

@@ -41,7 +41,7 @@ const engine = await createEngine({
   memory: { maximumMiB: 1024 },          // the default; up to 4096 for scenes that need more (E1409 outside 256 to 4096)
   transparent: false,    // true for a see-through canvas
   largeWorld: false,     // (0.2) planet-scale scenes: cell-relative positions, batch origins
-  sketchThread: 'worker',  // later in 0.1: 'main' for DOM-heavy apps and debugging
+  sketchThread: 'worker',  // or 'main': sketch code on the page's thread, for DOM-heavy apps and debugging
   onProgress: (stage) => {},             // 'core', then 'sketch' after the sketch's setup, then 'first-frame'
   onSketchMessage: (type, data) => {},     // sketch messages from the start of setup, such as load progress
   signal: controller.signal,             // abort to cancel the start; createEngine then rejects

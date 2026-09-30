@@ -163,9 +163,9 @@ Pointer events that land on HTML UI elements above the canvas do not reach the e
 
 ## 7. The two-step route for large apps
 
-Large apps mix DOM and scene code everywhere, which makes a direct move to the worker slow and risky. Split the work. The first step needs `createEngine({ sketchThread: 'main' })`, which comes later in 0.1. Until then, do the second step first, then port straight into the worker.
+Large apps mix DOM and scene code everywhere, which makes a direct move to the worker slow and risky. Split the work.
 
-1. Port with `createEngine({ sketchThread: 'main' })` (later in 0.1). Sketch code runs on the main thread, so DOM access keeps working while you replace three.js calls. Reach parity here.
+1. Port with `createEngine({ sketchThread: 'main' })`. Sketch code runs on the main thread, so DOM access keeps working while you replace three.js calls. Reach parity here.
 2. Move the DOM-touching code into `page.ts` and messages, then switch to the default worker mode. The scanner's "DOM access" warning lists the files to fix.
 
 Main-thread mode keeps the render and job workers, but sketch code then shares the main thread with the page, so layout work and page scripts can delay frames. Treat it as a stage of the port, not the destination.

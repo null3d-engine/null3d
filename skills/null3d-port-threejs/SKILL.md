@@ -47,7 +47,7 @@ Capture reference images and timings from the running three.js app at fixed came
 
 In null3D, a 3D scene is called a sketch, and it lives in `sketch.ts`. Decide what stays on the page: DOM, HTML UI, GUI panels, audio, video elements and storage. The rest moves to `sketch.ts`: the scene, the loop, input handling, controls, and state such as scores or selections. Design the few messages between them. Read `references/architecture-and-loop.md`; for React Three Fiber apps, `references/react-three-fiber.md`.
 
-For a large app, a two-step route lowers risk. It needs `createEngine({ sketchThread: 'main' })`, which comes later in 0.1. First port with sketch code on the main thread, where it can still reach the DOM, then move it to the worker once parity holds. Until the option exists, move DOM code to the page as you port.
+For a large app, a two-step route lowers risk. First port with `createEngine({ sketchThread: 'main' })`, so sketch code runs on the main thread, where it can still reach the DOM. Then move it to the worker once parity holds.
 
 ### Phase 4: Port in this order
 

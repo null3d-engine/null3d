@@ -99,6 +99,16 @@ export const DOWNLOADS: readonly Download[] = [
 		mode: 'single-threaded',
 		parts: ['page.js', 'page-sketch-runner.js', 'page-renderer.js', 'probe-worker.js'],
 	},
+	{
+		mode: 'sketch on the main thread',
+		parts: [
+			'page.js',
+			'page-sketch-runner.js',
+			'probe-worker.js',
+			'render-worker.js',
+			'job-worker.js',
+		],
+	},
 ];
 
 /** True for a source file of a page that uses the engine, such as a test page. */

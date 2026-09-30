@@ -264,6 +264,14 @@ const DOCS = {
 		example: 'E1414: engine.capture() failed: the engine has stopped.',
 		since: '0.1',
 	},
+	E1415: {
+		title: 'Page thread already runs a sketch',
+		cause:
+			"createEngine() was asked to run a sketch on the page's thread while another engine still runs its sketch there. The page's copy of the engine core serves one engine at a time. This happens with sketchThread: 'main', and in the single-threaded build, which runs every sketch on the page's thread.",
+		example:
+			'E1415: createEngine() found another engine that runs its sketch on this page, which has not stopped.',
+		since: '0.1',
+	},
 	E1501: {
 		title: 'Render space full',
 		cause:
