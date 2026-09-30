@@ -2,7 +2,7 @@
 import { defineSketch, vec3 } from '@null3d/engine';
 
 export default defineSketch(async ({ scene, geometry, materials, page, input }) => {
-  const enemyMesh = geometry.capsule({ radius: 0.3, length: 1 });
+  const enemyMesh = geometry.capsule({ radius: 0.3, height: 1 });
   const enemyMat = materials.standard({ color: '#c83232' });
   const enemies = [];
   for (let i = 0; i < 5000; i++) {
