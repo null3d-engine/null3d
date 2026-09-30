@@ -41,7 +41,7 @@ Put the four files below in one folder. The project needs the `@null3d/engine` p
 </html>
 ```
 
-CSS sets the canvas's size. The engine draws at that size times the screen's pixel ratio, and caps the ratio at 2 unless you set `maxPixelRatio`.
+CSS sets the canvas's size. The engine draws at that size times the screen's pixel ratio, up to a cap that the [quality preset](../concepts/quality-presets.md) sets. The `maxPixelRatio` option of `createEngine` replaces the cap.
 
 ## The page module
 
@@ -96,7 +96,7 @@ The module's default export is `defineSketch(setup)`. The engine calls `setup` o
 
 - The camera's `fov` is vertical, in degrees, and `target` turns the camera toward a point. `setActiveCamera` draws the scene from it.
 - The directional light's `direction` is the way its light travels, like sunlight. The ambient light lights every surface equally.
-- `geometry.box` takes the parameters and defaults of three.js's `BoxGeometry`. `materials.standard` shades diffuse light, like three.js's `MeshLambertMaterial`.
+- `geometry.box` takes the parameters and defaults of three.js's `BoxGeometry`. `materials.standard` shades with the physically based formulas of three.js's `MeshStandardMaterial`.
 - `dynamic: true` says that the cube moves in most frames. Objects are static by default, and a static object costs nothing in a frame where it does not change.
 
 The sketch worker has no `document` and no `window`. The page keeps the HTML, and the two sides talk through [messages](../api/page.md).

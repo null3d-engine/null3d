@@ -40,7 +40,7 @@ Product pages, marketing pages and landing pages that show a 3D scene next to te
 - Scroll-driven cameras: the page sends the scroll progress at most once per animation frame, and only when it changes. The sketch eases with `k = 1 - Math.pow(0.001, dt)` and jumps to the first value it receives. Reveal after the sketch confirms the first value.
 - Cache generated data in IndexedDB from the sketch. Store numbers and typed arrays only, keyed by `import.meta.url` in production builds. Run the same code after a hit or a miss. Write after the page reports its first frame, and skip the cache in development.
 - Listen for `pagehide`, never `unload`, and never send `Cache-Control: no-store` on the page. Browsers decide whether they can keep a page with a running engine in the back/forward cache, so a reload must work too.
-- Crash marker: write a time stamp to `localStorage` before `createEngine`, clear it a few seconds after the first frame and on `pagehide`. A marker younger than a week on the next load means the last start never finished: show the fallback. Wrap every storage access in `try`.
+- Crash marker: write a time stamp to `localStorage` before `createEngine`, clear it a few seconds after the first frame and on `pagehide`. A marker younger than a week on the next load means the last start never finished: show the fallback. Wrap every storage access in `try`. The engine keeps a note of its own: after a start that crashed the tab, it starts one quality preset lower, and `engine.mode.crashedStarts` counts such starts.
 - Never call the loading wait "hold": in null3D, hold mode is the fixed-frame mode of image tests.
 
 ## 4. Checks before you finish

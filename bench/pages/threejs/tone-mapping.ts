@@ -60,7 +60,7 @@ run('tone-mapping', async () => {
 	for (const tile of all) {
 		// Color.setRGB reads linear components, as null3D's color arrays are.
 		const color = new three.Color().setRGB(...tile.color);
-		const mesh = new three.Mesh(box, new three.MeshLambertMaterial({ color }));
+		const mesh = new three.Mesh(box, new three.MeshStandardMaterial({ color }));
 		mesh.position.set(...tile.position);
 		scene.add(mesh);
 	}

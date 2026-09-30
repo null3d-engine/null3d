@@ -6,6 +6,7 @@ import { join } from 'node:path';
 import {
 	BASELINE_PAIR,
 	type BenchPageKind,
+	type BenchScene,
 	compareFrames,
 	comparisonName,
 	decodeHoldResult,
@@ -18,7 +19,6 @@ import {
 	PARITY_SCENES,
 	TIERS as PARITY_TIERS,
 	type PagePair,
-	type ParityScene,
 	pagePath,
 	parityFiles,
 	passesWithBaseline,
@@ -56,6 +56,7 @@ import {
 	ratesParted,
 } from '../pages/lib/overload.ts';
 import { ROOM_KEPT } from '../pages/lib/room.ts';
+import { type CaptureResult, captureProblems } from './capture-checks.ts';
 import {
 	ENGINE_MODES,
 	type EngineMode,
@@ -79,6 +80,7 @@ export type Check =
 	| { kind: 'shaders' }
 	| { kind: 'shader-library'; tier: Tier }
 	| { kind: 'engine'; tier: Tier; mode: EngineMode }
+	| { kind: 'capture'; tier: Tier; mode: EngineMode }
 	| { kind: 'restarts'; mode: EngineMode }
 	| { kind: 'memory'; maximumMiB: number }
 	| { kind: 'room'; maximumMiB: number }
@@ -87,8 +89,8 @@ export type Check =
 	/** The warm-up page: pipelines build before the first frame, and a warm-up during play. */
 	| { kind: 'warm-up'; tier: Tier }
 	| { kind: 'hold'; tier: Tier }
-	| { kind: 'parity'; tier: Tier; scene: ParityScene; pair: PagePair }
-	| { kind: 'bench'; tier: Tier; scene: ParityScene; page: BenchPageKind; jobs?: number }
+	| { kind: 'parity'; tier: Tier; scene: BenchScene; pair: PagePair }
+	| { kind: 'bench'; tier: Tier; scene: BenchScene; page: BenchPageKind; jobs?: number }
 	/** The GPU-bound page, with the ?queue= setting it ran with, if any. */
 	| { kind: 'overload'; tier: Tier; queue?: string }
 	/** A load of the startup build; `first` marks the first warm load, which fills the cache. */
@@ -189,7 +191,7 @@ export function benchItem(
 	id: string,
 	page: BenchPageKind,
 	{ seconds, n, jobs }: BenchSwitches = {},
-	scene: ParityScene = 's1',
+	scene: BenchScene = 's1',
 ): PlanItem<Check> {
 	const switches = Object.entries({ seconds, n, jobs }).flatMap(([name, value]) =>
 		value === undefined ? [] : [`${name}=${value}`],
@@ -229,8 +231,9 @@ const PRODUCTION_BUILD: Load = { kind: 'warm', key: runnerKey('production') };
 /**
  * The browser checks: the capability report, isolation, the shader library's values on both GPU
  * paths, every run of the image test manifest, the engine in every mode on both GPU paths, and
- * again on the production build, and the engine started and stopped again and again in every mode. The capabilities page loads again last, so its
- * extension answers can be compared across loads.
+ * again on the production build, a frame captured as a PNG file in every mode on both GPU paths,
+ * and the engine started and stopped again and again in every mode. The capabilities page loads
+ * again last, so its extension answers can be compared across loads.
  */
 export function checksPlan(): PlanItem<Check>[] {
 	return [
@@ -279,6 +282,16 @@ export function checksPlan(): PlanItem<Check>[] {
 				PRODUCTION_BUILD,
 			),
 		),
+		...TIERS.flatMap((tier) =>
+			ENGINE_MODES.map((mode) =>
+				pageItem(
+					`capture-${tier}-${slug(mode.name)}`,
+					'capture',
+					{ kind: 'capture', tier, mode },
+					{ switches: [`gpu=${tier}`, mode.query] },
+				),
+			),
+		),
 		...ENGINE_MODES.map((mode) =>
 			pageItem(
 				`restarts-${slug(mode.name)}`,
@@ -295,7 +308,7 @@ export function checksPlan(): PlanItem<Check>[] {
 }
 
 /** The name of the parity plan's item for one scene's hold page of one kind. */
-const parityItemId = (scene: ParityScene, kind: string) => `parity-${scene}-${kind}`;
+const parityItemId = (scene: BenchScene, kind: string) => `parity-${scene}-${kind}`;
 
 /**
  * The benchmark scenes' hold frames from null3D and three.js on every GPU tier. Each three.js
@@ -351,7 +364,7 @@ export interface PlanSettings {
 	/** The bench plan's pages, or undefined for its usual pages, or null3D's two GPU paths with jobs. */
 	pages?: readonly BenchPageKind[];
 	/** The bench plan's scenes, or undefined for S1. */
-	scenes?: readonly ParityScene[];
+	scenes?: readonly BenchScene[];
 	/** The bench plan's warm-up and measured seconds, each, or undefined for the protocol's. */
 	seconds?: number;
 }
@@ -596,7 +609,7 @@ function missingPath(path: Tier, error: string | undefined): boolean {
  * it, or else as stored from a device that draws with both.
  */
 function baselineShare(
-	scene: ParityScene,
+	scene: BenchScene,
 	context: JudgeContext,
 ): { share: number; stored: boolean } | null {
 	try {
@@ -814,6 +827,8 @@ export function judge(
 		}
 		case 'engine':
 			return engineProblems(result as unknown as EngineResult, check.mode, check.tier);
+		case 'capture':
+			return captureProblems(result as unknown as CaptureResult, check.mode);
 		case 'warm-up':
 			return warmUpProblems(result as unknown as WarmUpResult, check.tier);
 		case 'restarts':

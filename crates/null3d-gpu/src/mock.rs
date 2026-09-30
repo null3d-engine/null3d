@@ -816,9 +816,14 @@ impl MockBackend {
             }
             Op::CreateRenderPipeline => {
                 check(
-                    o.len() == 8 && o[7] & !vertex::ALL == 0,
+                    o.len() == 10 && o[7] & !vertex::ALL == 0,
                     op,
                     "a render pipeline names a vertex format of known attributes",
+                )?;
+                check(
+                    f32::from_bits(o[9]).is_finite(),
+                    op,
+                    "a render pipeline's depth bias slope scale is finite",
                 )?;
                 check(
                     o[2] & !permutation::ALL == 0,
@@ -1109,7 +1114,18 @@ mod tests {
         .unwrap();
         list.push(
             Op::CreateRenderPipeline,
-            &[1, 1, 0, format::CANVAS, format::DEPTH32_FLOAT, 4, 0, 0],
+            &[
+                1,
+                1,
+                0,
+                format::CANVAS,
+                format::DEPTH32_FLOAT,
+                4,
+                0,
+                0,
+                0,
+                0,
+            ],
         )
         .unwrap();
         list.push(Op::CreateBindGroup, &[1, layout::FRAME, 1, 0, 0, 3, 0, 256])
@@ -1195,6 +1211,8 @@ mod tests {
                 4,
                 state_flags::LINE_LIST,
                 0,
+                0,
+                0,
             ],
         )
         .unwrap();
@@ -1247,7 +1265,7 @@ mod tests {
         unknown
             .push(
                 Op::CreateRenderPipeline,
-                &[1, 1, 0, format::CANVAS, format::NONE, 1, flags, 0],
+                &[1, 1, 0, format::CANVAS, format::NONE, 1, flags, 0, 0, 0],
             )
             .unwrap();
         assert_eq!(
@@ -1533,17 +1551,17 @@ mod tests {
         .unwrap();
         list.push(
             Op::CreateRenderPipeline,
-            &[2, 20, 0, format::NONE, format::DEPTH32_FLOAT, 1, 0, 0],
+            &[2, 20, 0, format::NONE, format::DEPTH32_FLOAT, 1, 0, 0, 0, 0],
         )
         .unwrap();
         list.push(
             Op::CreateRenderPipeline,
-            &[3, 20, 0, format::RGBA8_UNORM, format::NONE, 1, 0, 0],
+            &[3, 20, 0, format::RGBA8_UNORM, format::NONE, 1, 0, 0, 0, 0],
         )
         .unwrap();
         list.push(
             Op::CreateRenderPipeline,
-            &[4, 20, 0, format::CANVAS, format::NONE, 1, 0, 0],
+            &[4, 20, 0, format::CANVAS, format::NONE, 1, 0, 0, 0, 0],
         )
         .unwrap();
     }

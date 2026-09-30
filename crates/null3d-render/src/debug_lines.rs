@@ -26,7 +26,7 @@ use null3d_gpu::drawlist::sizes::LINE_VERTEX_BYTES;
 use null3d_gpu::drawlist::{DrawList, Op, buffer_usage, permutation, state_flags, template};
 
 use crate::frame::{RecordError, UploadArena, grown_size};
-use crate::pipelines::{DrawKey, PassTargets, PipelineCache};
+use crate::pipelines::{DepthBias, DrawKey, PassTargets, PipelineCache};
 
 /// Points that one frame draws as lines, two points per line: each point's position in world
 /// space, three 64-bit floats, and its sRGB color, four bytes with red in the lowest and alpha in
@@ -161,6 +161,7 @@ const LINES_DRAW: DrawKey = DrawKey {
     permutation: 0,
     vertex_format: 0,
     state: state_flags::LINE_LIST,
+    bias: DepthBias::NONE,
 };
 
 /// The pass's vertex buffer and pipeline, and the points of the frame being recorded.

@@ -135,7 +135,7 @@ fn two_views_list_their_own_visible_objects_and_draw_them_in_passes_of_their_own
         );
         assert_eq!(passes[0][0], passes[1][0]);
         assert_eq!(passes[0][2], passes[1][2]);
-        assert_eq!(count(&commands, Op::CreateTexture), 11 + 3);
+        assert_eq!(count(&commands, Op::CreateTexture), 12 + 3);
         // Each pass binds its view's frame uniform and index list textures.
         let bound = |group: u32| -> Vec<u32> {
             commands
@@ -295,8 +295,8 @@ fn the_first_frame_creates_everything_and_replays_on_both_draw_paths() {
 
         assert_eq!(count(&commands, Op::CreateRenderPipeline), 2);
         // The color and depth targets, the resident texture, the two rings of three, the
-        // cluster texture and the material table.
-        assert_eq!(count(&commands, Op::CreateTexture), 11);
+        // cluster texture, the material table and the table of specular terms.
+        assert_eq!(count(&commands, Op::CreateTexture), 12);
         // Buckets: lit boxes (the object, and the batch in the streamed texture), lit balls, and
         // unlit boxes. The hidden ball culls away; everything else is in view. Nothing is static
         // but the scene, so no bucket has clusters.
@@ -787,6 +787,168 @@ fn a_frame_counts_the_index_list_entries_it_draws() {
     );
     step(&mut world, &mut mock, false);
     assert_eq!(world.renderer.visible_entries(world.frame), Some(0));
+}
+
+/// The camera poses of the grid-cell tests: places inside the spread world's square, each with a
+/// turn about +y and a small tilt.
+fn poses() -> Vec<([f32; 3], f32, f32)> {
+    (0..10)
+        .map(|k| {
+            let k = k as f32;
+            let at = [
+                (k * 731.0) % 4000.0 - 2000.0,
+                10.0,
+                (k * 1173.0) % 4000.0 - 2000.0,
+            ];
+            (at, k * 0.9, (k * 0.7).sin() * 0.15)
+        })
+        .collect()
+}
+
+/// A WebGL2 world spread over 5 x 5 grid cells, with or without grid-cell culling, with its own
+/// moving batch emptied, and its static batch.
+fn spread_world(cell_culling: bool, objects: u32, rows: u32) -> (World<CpuCulledRenderer>, Handle) {
+    let renderer = CpuCulledRenderer::new(CpuCulledConfig {
+        multi_draw: true,
+        cell_culling,
+        ..CpuCulledConfig::default()
+    });
+    let mut world = World::build_sized(renderer, objects + 16);
+    let batch = world.spread(objects, rows, 7);
+    let moving = world.batch;
+    world
+        .batches
+        .get_mut(moving)
+        .unwrap()
+        .set_active_count(0)
+        .unwrap();
+    world.record(true);
+    (world, batch)
+}
+
+/// Records two frames with the camera at a pose: the second finds a static batch at rest.
+fn record_at(world: &mut World<CpuCulledRenderer>, (at, yaw, pitch): ([f32; 3], f32, f32)) {
+    for _ in 0..2 {
+        world.frame += 1;
+        world.scene.begin_frame(world.frame);
+        world.aim(at, yaw, pitch);
+        world.record(false);
+    }
+}
+
+/// Each bucket's index list entries in the camera view's output: (bucket, entry).
+fn listed(world: &World<CpuCulledRenderer>) -> Vec<(usize, u32)> {
+    let culled = world.renderer.culled(world.frame, ViewId::CAMERA);
+    let starts = culled.bucket_starts();
+    (0..starts.len() - 1)
+        .flat_map(|bucket| {
+            let entries = &culled.indices()[starts[bucket] as usize..starts[bucket + 1] as usize];
+            entries.iter().map(move |&entry| (bucket, entry))
+        })
+        .collect()
+}
+
+/// True for a scene object that is static, with every ancestor static too: a still object.
+fn still(world: &World<CpuCulledRenderer>, slot: u32) -> bool {
+    let (parents, flags) = (world.scene.parents(), world.scene.flags());
+    let mut at = slot;
+    loop {
+        if flags[at as usize] & null3d_core::scene::flags::DYNAMIC != 0 {
+            return false;
+        }
+        match parents[at as usize] {
+            null3d_core::scene::NO_PARENT => return true,
+            parent => at = parent,
+        }
+    }
+}
+
+#[test]
+fn cell_culling_lists_exactly_the_scene_objects_that_culling_each_object_lists() {
+    const OBJECTS: u32 = 400;
+    const ROWS: u32 = 6000;
+    let (mut on, batch) = spread_world(true, OBJECTS, ROWS);
+    let (mut off, _) = spread_world(false, OBJECTS, ROWS);
+    let scene_rows = OBJECTS + 16 + 1;
+    let row_mask = (1 << CELL_SHIFT) - 1;
+    for (k, pose) in poses().into_iter().enumerate() {
+        record_at(&mut on, pose);
+        record_at(&mut off, pose);
+        // Scene objects sit in the buckets of rows, below the scene's rows.
+        let objects = |world: &World<CpuCulledRenderer>| {
+            let mut entries: Vec<u32> = listed(world)
+                .into_iter()
+                .filter(|&(bucket, entry)| bucket % 2 == 0 && entry & row_mask < scene_rows)
+                .map(|(_, entry)| entry)
+                .collect();
+            entries.sort_unstable();
+            entries
+        };
+        let listed_on = objects(&on);
+        assert_eq!(listed_on, objects(&off), "pose {k}");
+        assert!(!listed_on.is_empty(), "pose {k} sees no object");
+
+        // Each still object is listed exactly when its sphere is inside the frustum moved into its
+        // cell, with its cell above its slot.
+        let parity = on.scene.parity();
+        let spheres = on.scene.world(parity).spheres();
+        let frame = *on.renderer.view_frame(ViewId::CAMERA).unwrap();
+        for &object in &on.objects {
+            let slot = on.scene.resolve(object).unwrap();
+            if !still(&on, slot) {
+                continue;
+            }
+            let (s, cell) = (slot as usize, on.scene.cells()[slot as usize]);
+            let offset = frame.camera.offset_to(on.scene.cell_table().coords(cell));
+            let seen = frame.frustum.moved_by(offset).contains_sphere(
+                spheres.xs[s],
+                spheres.ys[s],
+                spheres.zs[s],
+                spheres.radii[s],
+            );
+            let entry = slot | (cell << CELL_SHIFT);
+            assert_eq!(
+                listed_on.binary_search(&entry).is_ok(),
+                seen,
+                "pose {k}, {slot}"
+            );
+        }
+
+        // The batch's clusters inside cells draw every row that culling row by row lists.
+        let order = on
+            .renderer
+            .cluster_order(batch)
+            .expect("the batch is at rest");
+        let mut drawn = vec![false; ROWS as usize];
+        for (bucket, entry) in listed(&on) {
+            if bucket % 2 == 1 {
+                let cluster = (entry & row_mask) as usize;
+                for &row in &order[cluster * 64..cluster * 64 + 64] {
+                    if row != u32::MAX {
+                        drawn[row as usize] = true;
+                    }
+                }
+            }
+        }
+        for (bucket, entry) in listed(&off) {
+            if bucket % 2 == 0 && entry & row_mask >= scene_rows {
+                let row = (entry & row_mask) - scene_rows;
+                assert!(
+                    drawn[row as usize],
+                    "pose {k}: row {row} is in view, not drawn"
+                );
+            }
+        }
+        // Whole cells out of view, and clusters, leave far less to test.
+        let (tested_on, tested_off) = (
+            on.renderer.tested(ViewId::CAMERA),
+            off.renderer.tested(ViewId::CAMERA),
+        );
+        assert!(
+            tested_on * 4 < tested_off,
+            "pose {k}: {tested_on} tested with cells, {tested_off} without"
+        );
+    }
 }
 
 #[test]

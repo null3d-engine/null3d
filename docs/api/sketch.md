@@ -8,7 +8,7 @@ summary: "The context object: scene, assets, materials, geometry, textures, inpu
 
 # Sketch API: defineSketch and the context
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. The context fields `assets`, `textures`, `render`, `ui` and `debug` are not built yet, so coding agents must not use them. Of `post`, only `post.set` with `toneMapping` and `exposure` is built.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. The context fields `render` and `ui` are not built yet, so coding agents must not use them. Of `post`, only `post.set` with `toneMapping` and `exposure` is built.
 
 In null3D, a 3D scene is called a sketch. A sketch module builds the scene and updates it every frame, and its default export is `defineSketch(setup)`. The engine loads the module, calls `setup` once with the sketch's context, and then calls the callbacks that `setup` returns.
 
@@ -74,6 +74,8 @@ An option out of its range fails the start with [E1214](../errors/E1214.md), bef
 | `scene` | Objects, cameras, lights, instance batches and the background: [Scene](scene.md) |
 | `geometry` | Mesh generators, such as `geometry.box` and `geometry.sphere` |
 | `materials` | Material factories: [Materials](materials.md) |
+| `textures` | Textures from decoded images and from data: [Textures](textures.md) |
+| `assets` | Downloads of textures, JSON and binary files, with preloads and progress: [Assets](assets.md) |
 | `input` | Pointer, touch, keyboard and gamepad input, and action maps: [Input](input.md) |
 | `post` | The tone mapping and the exposure: [Post-processing API](post.md) |
 | `quality` | The quality preset that the engine runs, and its settings: [Quality API](quality.md) |
@@ -81,6 +83,7 @@ An option out of its range fails the start with [E1214](../errors/E1214.md), bef
 | `engine` | The canvas's size, and what the device can do: [The engine field](#the-engine-field) |
 | `preferences` | What the user's system asks of every page, such as less motion: [Accessibility](../guides/accessibility.md) |
 | `page` | Messages to and from the page: [Messages between sketch and page](page.md) |
+| `debug` | Lines, boxes, spheres, axes, grids, frustums and lights, drawn for one frame in development builds: [Debug drawing and stats](debug.md) |
 
 ## The engine field
 

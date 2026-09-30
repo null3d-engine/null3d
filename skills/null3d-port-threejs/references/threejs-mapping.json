@@ -143,7 +143,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "await engine.capture() on the page",
-      "notes": "Returns an image of the next complete frame. Tests use the engine's readback instead.",
+      "notes": "Resolves with a PNG Blob of the next frame that the engine draws. Tests read pixels with engine.captureFrame() instead.",
       "docs": "api/engine",
       "detect": "preserveDrawingBuffer|readRenderTargetPixels|\\.toDataURL\\s*\\("
     },
@@ -220,7 +220,7 @@
       "status": "direct",
       "since": "0.1",
       "target": "scene.setFog({ type: 'linear', color, near, far }) or { type: 'exp2', color, density }",
-      "notes": "Materials opt out with fog: false.",
+      "notes": "Same formulas and defaults. Materials opt out with fog: false. null3D mixes the fog in linear color, as WebGPURenderer does. WebGLRenderer mixes it after the sRGB encoding when it draws to the canvas, so there the same fog looks a little darker at middle distances.",
       "docs": "api/scene",
       "detect": "\\bFog(Exp2)?\\b"
     },
@@ -726,8 +726,8 @@
       "status": "direct",
       "since": "0.1",
       "target": "materials.standard({ color, map, metalness, roughness, normalMap, aoMap, emissive, ... })",
-      "notes": "See the materials reference for every parameter and its new name.",
-      "docs": "porting/threejs-materials",
+      "notes": "Both follow glTF's metallic-roughness model with the same formulas, so color, metalness, roughness and emissive values carry over. Texture maps are not built yet.",
+      "docs": "api/materials",
       "detect": "\\bMeshStandardMaterial\\b"
     },
     {
@@ -748,7 +748,7 @@
       "status": "direct",
       "since": "0.1",
       "target": "materials.unlit({ color, map, opacity, alphaMode, vertexColors })",
-      "notes": "",
+      "notes": "Texture maps and alpha modes are not built yet.",
       "docs": "api/materials",
       "detect": "\\bMeshBasicMaterial\\b"
     },
@@ -759,8 +759,8 @@
       "status": "changed",
       "since": "0.1",
       "target": "materials.standard with metalness 0 and roughness near 1 (Lambert), or roughness tuned to the Phong shininess",
-      "notes": "Expect small visual differences; check with parity images and accept or tune.",
-      "docs": "porting/threejs-materials",
+      "notes": "Expect small visual differences: the standard material adds a faint highlight and keeps energy as three.js's MeshStandardMaterial does. Check with parity images and accept or tune.",
+      "docs": "api/materials",
       "detect": "\\bMesh(Lambert|Phong)Material\\b"
     },
     {
@@ -791,9 +791,9 @@
       "three": "ShaderMaterial / RawShaderMaterial (GLSL)",
       "status": "manual",
       "since": "0.1",
-      "target": "materials.shader({ surface: wgslSource, uniforms, textures }) or a full WGSL shader",
-      "notes": "Rewrite in WGSL; prefer a surface function so lighting, shadows, fog and instancing keep working.",
-      "docs": "porting/threejs-shaders",
+      "target": "materials.shader({ wgsl, uniforms, textures }) with a WGSL surface function, or a full WGSL shader",
+      "notes": "Rewrite in WGSL, in one literal tagged /* wgsl */. Prefer a surface function, so lighting, shadows, fog and instancing keep working. Declare the uniforms once, as struct Uniforms.",
+      "docs": "shaders/surface-functions",
       "detect": "\\b(Raw)?ShaderMaterial\\b"
     },
     {
@@ -802,9 +802,9 @@
       "three": "material.onBeforeCompile (shader-chunk patching)",
       "status": "manual",
       "since": "0.1",
-      "target": "A surface function or a vertex-offset function",
-      "notes": "The engine has no shader chunks to patch.",
-      "docs": "porting/threejs-shaders",
+      "target": "materials.shader({ wgsl }) with a surface function or a vertex-offset function",
+      "notes": "The engine has no shader chunks to patch. Keep the standard options on the new material: defaultSurface applies them.",
+      "docs": "shaders/surface-functions",
       "detect": "\\.onBeforeCompile\\s*="
     },
     {
@@ -813,9 +813,9 @@
       "three": "TSL / NodeMaterial (three/tsl, three/webgpu)",
       "status": "manual",
       "since": "0.1",
-      "target": "WGSL surface functions",
+      "target": "materials.shader({ wgsl }) with a WGSL surface function",
       "notes": "Most TSL nodes map to one WGSL expression; see the shader porting reference.",
-      "docs": "porting/threejs-shaders",
+      "docs": "shaders/surface-functions",
       "detect": "from\\s+['\"]three/tsl['\"]|\\b\\w*NodeMaterial\\b"
     },
     {
@@ -858,7 +858,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "Nothing to do",
-      "notes": "Options that change the shader, such as a normal map, are fixed when a material is created. Create each variant during loading: a new one compiles a pipeline, which can stall a frame.",
+      "notes": "Options that change the shader or the pipeline, such as vertexColors, doubleSided and flatShading, are fixed when a material is created. Create each variant during loading: a new one compiles a pipeline, which can make a frame late.",
       "docs": "concepts/materials",
       "detect": "\\bmaterial\\w*\\.needsUpdate\\b"
     },
@@ -1638,7 +1638,7 @@
       "three": "GLSL source strings (gl_FragColor, gl_Position, #include <chunk>)",
       "status": "manual",
       "since": "0.1",
-      "target": "WGSL",
+      "target": "WGSL, which the null3D Vite plugin compiles",
       "notes": "See the shader porting reference.",
       "docs": "porting/threejs-shaders",
       "detect": "gl_FragColor|gl_Position|#include\\s*<\\w+>|\\bvoid\\s+main\\s*\\("

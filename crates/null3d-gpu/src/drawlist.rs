@@ -48,8 +48,11 @@ pub enum Op {
     /// built for that size, so the canvas and the frame's render targets always match.
     ResizeCanvas = 6,
     /// [render pipeline id, template, permutation bits, color format, depth format, sample count,
-    /// state flags, vertex format]: the vertex format (`vertex::*` bits) places the attributes that
-    /// the template's vertex shader reads, in the vertex buffer of slot 0.
+    /// state flags, vertex format, depth bias (i32), depth bias slope scale (f32)]: the vertex
+    /// format (`vertex::*` bits) places the attributes that the template's vertex shader reads, in
+    /// the vertex buffer of slot 0. The depth bias adds to each fragment's depth as WebGPU's does,
+    /// in reversed depth, so a positive bias moves a surface toward the camera. Its clamp is 0, as
+    /// compatibility mode requires.
     CreateRenderPipeline = 7,
     /// [compute pipeline id, template, permutation bits]
     CreateComputePipeline = 8,
@@ -489,6 +492,12 @@ pub mod permutation {
         ("FXAA", FXAA),
     ];
 
+    /// The bits that a device fixes when the engine starts, the same in every pipeline it builds:
+    /// the draw index where WebGL2 has multi-draw, and tone mapping in the shader where the device
+    /// draws scene color in 8 bits. The shader build writes the engine's variants into one module
+    /// for each GPU path and each value of these bits, and a page loads only its own.
+    pub const DEVICE: u32 = DRAW_INDEX | TONE_MAP;
+
     /// Every bit.
     pub const ALL: u32 = {
         let mut all = 0;
@@ -512,8 +521,12 @@ pub mod state_flags {
     pub const CULL_NONE: u32 = 1;
     /// Draws each pair of vertices as a line one pixel wide, instead of each three as a triangle.
     pub const LINE_LIST: u32 = 2;
+    /// Writes no depth.
+    pub const NO_DEPTH_WRITE: u32 = 8;
+    /// Draws every fragment whatever the depth target holds, and writes no depth.
+    pub const NO_DEPTH_TEST: u32 = 16;
     /// Every flag.
-    pub const ALL: u32 = CULL_NONE | LINE_LIST;
+    pub const ALL: u32 = CULL_NONE | LINE_LIST | NO_DEPTH_WRITE | NO_DEPTH_TEST;
 }
 
 /// Vertex formats. Every vertex has a position and a normal, three floats each. A format adds
@@ -628,9 +641,9 @@ pub mod vertex {
 pub mod sizes {
     /// Bytes per compacted instance: three rows of the world matrix, then a vector of ids.
     pub const INSTANCE_STRIDE: u32 = 64;
-    /// Bytes of the per-frame uniform block: the view-projection matrix, four vectors and the
-    /// output settings.
-    pub const FRAME_UNIFORM_BYTES: u32 = 144;
+    /// Bytes of the per-frame uniform block: the view-projection matrix, four vectors, the output
+    /// settings and the fog's 48 bytes.
+    pub const FRAME_UNIFORM_BYTES: u32 = 192;
     /// Bytes of the output settings: the exposure, the tone mapping and two spare words.
     pub const OUTPUT_UNIFORM_BYTES: u32 = 16;
     /// Threads per workgroup of the culling shader.
@@ -663,6 +676,10 @@ pub mod sizes {
     /// Where a cell index starts in a word that packs it above a bucket or a row: a bucket table
     /// entry of the culling shader, or an index list entry.
     pub const CELL_SHIFT: u32 = 23;
+    /// Runs of sources in cell order that one culling dispatch covers at most: the culling
+    /// parameters list them for the cells a view can see. Runs that follow each other join, so
+    /// there is at most one per pair of cells, and one more for the sources that move.
+    pub const MAX_CULL_RANGES: u32 = MAX_CELLS / 2 + 1;
     /// Bytes of one vertex of the debug lines: its position relative to the camera, three 32-bit
     /// floats, then its sRGB color, four bytes from red to alpha.
     pub const LINE_VERTEX_BYTES: u32 = 16;
@@ -920,6 +937,8 @@ pub fn typescript_constants() -> String {
             &[
                 ("CULL_NONE", state_flags::CULL_NONE),
                 ("LINE_LIST", state_flags::LINE_LIST),
+                ("NO_DEPTH_WRITE", state_flags::NO_DEPTH_WRITE),
+                ("NO_DEPTH_TEST", state_flags::NO_DEPTH_TEST),
             ],
         ),
         (
@@ -975,6 +994,7 @@ pub fn typescript_constants() -> String {
                 ("MATERIAL_BYTES", sizes::MATERIAL_BYTES),
                 ("MAX_CELLS", sizes::MAX_CELLS),
                 ("CELL_SHIFT", sizes::CELL_SHIFT),
+                ("MAX_CULL_RANGES", sizes::MAX_CULL_RANGES),
                 ("LINE_VERTEX_BYTES", sizes::LINE_VERTEX_BYTES),
             ],
         ),
@@ -1014,6 +1034,11 @@ mod tests {
             format!("const INDIRECT_WORDS: u32 = {}u;", sizes::INDIRECT_WORDS),
             format!("const CELL_SHIFT: u32 = {}u;", sizes::CELL_SHIFT),
             format!("const MAX_CELLS: u32 = {}u;", sizes::MAX_CELLS),
+            format!("const MAX_RANGES: u32 = {}u;", sizes::MAX_CULL_RANGES),
+            format!(
+                "const WORKGROUP_SIZE: u32 = {}u;",
+                sizes::CULL_WORKGROUP_SIZE
+            ),
         ] {
             assert!(cull.contains(&line), "cull.wgsl lacks {line}");
         }

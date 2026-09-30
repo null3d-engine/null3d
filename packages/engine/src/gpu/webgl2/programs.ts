@@ -16,22 +16,38 @@ import {
 import {
 	DEBUG_LINES_SHADER,
 	DEPTH_MAPPING_UNIFORM,
-	FINAL_SHADER,
+	type DeviceShaders,
 	type GlslProgram,
 	type GlslStage,
-	LIT_SHADER,
-	MIPMAP_SHADER,
-	TEXCOORDS_SHADER,
-	UNLIT_MAP_SHADER,
-	UNLIT_SHADER,
+	type ShaderVariants,
 } from '../../generated/shaders';
 import { DEV } from '../dev';
 import { LINE_VERTICES } from '../line-vertices';
-import { type ShaderVariants, variantFor } from '../variants';
+import { variantFor } from '../variants';
 import type { DepthSetup } from './depth';
 
-/** Texture units and uniform block binding points of each bind group: one per binding. */
-export const SLOTS_PER_GROUP = 4;
+/**
+ * The first slot of each bind group. A slot is a texture unit, a uniform block binding point and a
+ * sampler's place, and each binding of a group takes its group's first slot plus its binding
+ * number. The per-frame group, which holds the most bindings, comes first. The groups' uniform
+ * blocks stay below the fewest binding points that WebGL2 allows, and their textures below the
+ * texture upload unit.
+ */
+const GROUP_BASES = Uint8Array.of(0, 10, 14, 18);
+
+/** The fewest uniform block binding points that a WebGL2 context has. */
+export const MIN_UNIFORM_BLOCK_SLOTS = 24;
+
+/**
+ * The texture unit that texture uploads and copies use, apart from the units that bind groups use:
+ * the last of the 32 that every WebGL2 context has.
+ */
+export const UPLOAD_UNIT = 31;
+
+/** The slot of a binding of a bind group: its texture unit, uniform block binding point or sampler's place. */
+export function slotOf(group: number, binding: number): number {
+	return (GROUP_BASES[group] as number) + binding;
+}
 /** The sampler slot of a texture that a shader reads with `texelFetch`, which needs no sampler. */
 export const NO_SAMPLER = -1;
 
@@ -79,7 +95,15 @@ export interface Program {
 export interface Pipeline {
 	readonly program: Program;
 	readonly cullNone: boolean;
+	/** True when it draws with a depth target, whose test it then runs. */
 	readonly depth: boolean;
+	/** True when it writes depth. */
+	readonly depthWrite: boolean;
+	/** True when every fragment passes the depth test. */
+	readonly depthAlways: boolean;
+	/** GL's polygon offset for the backend's depth mode: its factor and its units. */
+	readonly offsetFactor: number;
+	readonly offsetUnits: number;
 	/** The vertex format of the meshes it draws, which places their attributes in vertex arrays. */
 	readonly vertexFormat: number;
 	/** The primitive that its draws make: GL's `TRIANGLES`, or `LINES`. */
@@ -88,14 +112,14 @@ export interface Pipeline {
 	readonly vertices: GPUVertexBufferLayout | undefined;
 }
 
-/** The engine's render pipeline templates, by template id. */
-export function engineTemplates(): (GlslTemplate | undefined)[] {
+/** The engine's render pipeline templates, by template id, from the shaders the device loaded. */
+export function engineTemplates(shaders: DeviceShaders): (GlslTemplate | undefined)[] {
 	const templates: (GlslTemplate | undefined)[] = [];
-	templates[TEMPLATE_INSTANCED_LIT] = { shader: LIT_SHADER, pipeline: 'main' };
-	templates[TEMPLATE_INSTANCED_UNLIT] = { shader: UNLIT_SHADER, pipeline: 'main' };
-	templates[TEMPLATE_INSTANCED_TEXCOORDS] = { shader: TEXCOORDS_SHADER, pipeline: 'main' };
-	templates[TEMPLATE_INSTANCED_UNLIT_MAP] = { shader: UNLIT_MAP_SHADER, pipeline: 'main' };
-	templates[TEMPLATE_FINAL] = { shader: FINAL_SHADER, pipeline: 'main' };
+	templates[TEMPLATE_INSTANCED_LIT] = { shader: shaders.lit, pipeline: 'main' };
+	templates[TEMPLATE_INSTANCED_UNLIT] = { shader: shaders.unlit, pipeline: 'main' };
+	templates[TEMPLATE_INSTANCED_TEXCOORDS] = { shader: shaders.texcoords, pipeline: 'main' };
+	templates[TEMPLATE_INSTANCED_UNLIT_MAP] = { shader: shaders.unlit_map, pipeline: 'main' };
+	templates[TEMPLATE_FINAL] = { shader: shaders.final, pipeline: 'main' };
 	if (DEV)
 		templates[TEMPLATE_DEBUG_LINES] = {
 			shader: DEBUG_LINES_SHADER,
@@ -105,8 +129,13 @@ export function engineTemplates(): (GlslTemplate | undefined)[] {
 	return templates;
 }
 
-/** The program that draws a mip level of a texture array's layer from the level before it. */
-export const MIPMAP_TEMPLATE: GlslTemplate = { shader: MIPMAP_SHADER, pipeline: 'main' };
+/**
+ * The program that draws a mip level of a texture array's layer from the level before it, from the
+ * shaders the device loaded.
+ */
+export function mipmapTemplate(shaders: DeviceShaders): GlslTemplate {
+	return { shader: shaders.mipmap, pipeline: 'main' };
+}
 
 function compile(gl: WebGL2RenderingContext, type: number, stage: GlslStage): WebGLShader {
 	const shader = gl.createShader(type);
@@ -172,14 +201,14 @@ export function prepareProgram(gl: WebGL2RenderingContext, p: Program, depth: De
 		for (const block of stage.uniformBlocks) {
 			const index = gl.getUniformBlockIndex(p.program, block.name);
 			if (index !== gl.INVALID_INDEX)
-				gl.uniformBlockBinding(p.program, index, block.group * SLOTS_PER_GROUP + block.binding);
+				gl.uniformBlockBinding(p.program, index, slotOf(block.group, block.binding));
 		}
 		for (const texture of stage.textures) {
-			const unit = texture.group * SLOTS_PER_GROUP + texture.binding;
+			const unit = slotOf(texture.group, texture.binding);
 			const location = gl.getUniformLocation(p.program, texture.name);
 			if (location) gl.uniform1i(location, unit);
 			const sampler = texture.sampler;
-			const slot = sampler ? sampler.group * SLOTS_PER_GROUP + sampler.binding : NO_SAMPLER;
+			const slot = sampler ? slotOf(sampler.group, sampler.binding) : NO_SAMPLER;
 			let known = -1;
 			for (let k = 0; k < samplerUnits.length; k += 2) if (samplerUnits[k] === unit) known = k;
 			if (known < 0) {

@@ -17,7 +17,7 @@ React app (page)                                 sketch.ts (sketch worker)
 ----------------                                 -------------------------
 <Configurator> UI, forms, menus    --messages--> scene setup and onUpdate
 <FourView sketch={sketchUrl} />                  the former <Canvas> contents
-labels bound with engine.labels                  ui.trackLabel for former <Html> elements
+labels bound with engine.labels (0.2)            ui.trackLabel for former <Html> elements (0.2)
 ```
 
 The React tree above the former `<Canvas>` barely changes. The subtree inside `<Canvas>` becomes `sketch.ts`.
@@ -127,12 +127,12 @@ Never mirror per-frame scene state into React state: it re-renders React every f
 | --- | --- |
 | `<Canvas camera={{ position, fov }}>` | `scene.createPerspectiveCamera({ position, fov })` in `sketch.ts` |
 | `<Canvas dpr={[1, 2]}>` | `createEngine({ maxPixelRatio: 2 })`, or leave it out and the quality preset sets the cap |
-| `<Canvas shadows>` | `castShadows` on lights and meshes, `receiveShadows` on receivers |
+| `<Canvas shadows>` | `castShadows` on lights and meshes, `receiveShadows` on receivers; shadows draw later in 0.1 |
 | `<Canvas gl={{ antialias, alpha }}>` | `createEngine({ antialias: 'msaa' })` or the preset's mode, `createEngine({ transparent: true })` |
-| `<Canvas frameloop="demand">` | No on-demand mode in 1.0: pause with `engine.setPaused(true)` while nothing changes, or use the battery-saver 30 fps cap |
+| `<Canvas frameloop="demand">` | No on-demand mode in 1.0: pause with `engine.setPaused(true)` while nothing changes |
 | `<mesh>` with `<boxGeometry>` and `<meshStandardMaterial>` | `scene.createMesh({ mesh: geometry.box(...), material: materials.standard(...) })` |
 | `<group>` | `scene.createGroup()` and `setParent` |
-| `<primitive object={gltf.scene} />` | `scene.instantiate(prefab)` |
+| `<primitive object={gltf.scene} />` | `scene.instantiate(prefab)` (0.2) |
 | `useFrame((state, delta) => ...)` | `onUpdate(dt)` |
 | `useThree()` (camera, size, viewport) | The context: `scene`, `ctx.engine.viewport` |
 | `useLoader(GLTFLoader, url)`, drei `useGLTF(url)` | `await assets.loadGltf(url)` (0.2) |
@@ -140,8 +140,8 @@ Never mirror per-frame scene state into React state: it re-renders React every f
 | `<Suspense fallback>`, drei `<Loader>`, `useProgress` | `assets.onProgress` plus a `'loading'` message; the page shows the loader |
 | drei `useAnimations(animations, ref)` | `obj.animator()` (0.2) |
 | drei `<OrbitControls makeDefault />` | `createOrbitControls(ctx, camera, options)` |
-| drei `<Environment preset="studio" />` | `scene.setEnvironment(assets.builtinEnvironment('studio'))`; other presets: `bunx @null3d/cli assets env` from an HDR file |
-| drei `<Environment files="x.hdr" background />` | `bunx @null3d/cli assets env x.hdr`, then `setEnvironment` and `setBackground` |
+| drei `<Environment preset="studio" />` | `scene.setEnvironment(assets.builtinEnvironment('studio'))` (0.2); other presets: `bunx @null3d/cli assets env` from an HDR file (0.2) |
+| drei `<Environment files="x.hdr" background />` | `bunx @null3d/cli assets env x.hdr`, then `setEnvironment` and `setBackground` (0.2) |
 | drei `<ContactShadows />` | `materials.shadowCatcher` on a ground plane (0.2); softer, blurred contact shadows are not built in |
 | drei `<Html>` | `ui.trackLabel` in the sketch, `engine.labels.bind` on the page, with the HTML rendered by React (0.2) |
 | drei `<Text>`, `<Text3D>` | Not in 1.0: HTML labels, a text texture, or a text mesh baked into glTF |
@@ -149,11 +149,11 @@ Never mirror per-frame scene state into React state: it re-renders React every f
 | drei `<Sky>` | `scene.setBackground({ sky: { ... } })` (0.2) |
 | drei `<Stars>` | `scene.createPoints` (0.2) |
 | drei `<Float>` | A sine offset in `onUpdate` |
-| drei `<Center>`, `<Bounds>` | `prefab.bounds` and a camera fit computed at setup |
-| drei `<PerformanceMonitor>`, `<AdaptiveDpr>` | `quality.onChange`; dynamic resolution is built in |
-| drei `<Stats>` | `debug.stats(true)` |
+| drei `<Center>`, `<Bounds>` | `prefab.bounds` (0.2) and a camera fit computed at setup |
+| drei `<PerformanceMonitor>`, `<AdaptiveDpr>` | `quality.onChange`; dynamic resolution comes later in 0.1 |
+| drei `<Stats>` | `engine.measure()` on the page; the overlay `debug.stats(true)` comes later in 0.1 |
 | Mesh events: `onClick`, `onPointerOver`, `onPointerOut` | `obj.on('click' | 'pointerenter' | 'pointerleave', fn)` (0.2), then `page.post` if React needs to know |
-| `@react-three/postprocessing` `<EffectComposer>` with `<Bloom>` and others | `post.set` (`references/post-processing.md`) |
+| `@react-three/postprocessing` `<EffectComposer>` with `<Bloom>` and others | `post.set`: tone mapping now, bloom and other effects in 0.2 (`references/post-processing.md`) |
 | `@react-three/rapier` | Rapier inside the sketch worker (null3d-develop recipe 11) |
 | Components that change props every frame through React state | `onUpdate` logic; React sends intent, not frames |
 
@@ -163,6 +163,6 @@ Never mirror per-frame scene state into React state: it re-renders React every f
 2. Write `sketch.ts` that creates the same objects at setup. Props that React changes become `page.onMessage` handlers.
 3. Move `useFrame` bodies into `onUpdate`, turning refs into handles or batch rows.
 4. Replace `<Canvas>` with `<FourView>`.
-5. Route events: mesh events become `obj.on(...)` in the sketch plus `page.post` to React.
-6. Replace `<Html>` elements with tracked labels, rendered by React on the page.
+5. Route events: mesh events become `obj.on(...)` (0.2) in the sketch plus `page.post` to React.
+6. Replace `<Html>` elements with tracked labels (0.2), rendered by React on the page.
 7. Compare parity images per camera view, then measure performance (`references/verification.md`).

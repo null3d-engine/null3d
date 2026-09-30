@@ -97,6 +97,8 @@ interface Variant {
 	rustflags: string;
 	cargoArgs: string[];
 	wasmOptFeatures: string[];
+	/** True when the glue needs `releaseInstance` (`addReleaseInstance`). */
+	releasesInstance: boolean;
 }
 
 const COMMON_WASM_FEATURES = [
@@ -132,15 +134,36 @@ export const VARIANTS: Variant[] = [
 		].join(' '),
 		cargoArgs: ['-Z', 'build-std=panic_abort,std'],
 		wasmOptFeatures: [...COMMON_WASM_FEATURES, '--enable-threads'],
+		releasesInstance: true,
 	},
 	{
 		name: 'single',
 		rustflags: '-Ctarget-feature=+simd128',
 		cargoArgs: [],
 		wasmOptFeatures: COMMON_WASM_FEATURES,
+		releasesInstance: false,
 	},
 ];
 
+/** The glue's variables that hold the instance of the thread. */
+const INSTANCE_VARIABLES = 'let wasmModule, wasmInstance, wasm;';
+
+/**
+ * Adds `releaseInstance` to the glue. wasm-bindgen's glue keeps the instance that its thread
+ * started, with views of the instance's memory, and initSync returns that instance on each later
+ * call. Each threaded engine has a shared memory of its own, so a page that runs the sketch calls
+ * `releaseInstance` once the engine has stopped. The browser can then free the engine's memory, and
+ * the next initSync starts a new instance in the memory of the next engine.
+ */
+export function addReleaseInstance(glue: string): string {
+	const views = [...glue.matchAll(/^let (cached\w*Memory0) = null;$/gm)].map((match) => match[1]);
+	if (!glue.includes(INSTANCE_VARIABLES) || views.length === 0)
+		throw new Error(
+			'the glue no longer holds its instance as this build expects: update addReleaseInstance for this wasm-bindgen version',
+		);
+	const clears = views.map((view) => `    ${view} = null;\n`).join('');
+	return `${glue}\nexport function releaseInstance() {\n    wasmModule = wasmInstance = wasm = undefined;\n${clears}}\n`;
+}
 /** The locked version of a package in Cargo.lock. */
 export function lockedVersion(cargoLock: string, name: string): string {
 	const match = cargoLock.match(
@@ -279,6 +302,10 @@ function buildVariant(variant: Variant, bindgen: string, keepNames: boolean): vo
 		'null3d',
 		`${targetDir}/wasm32-unknown-unknown/release/${CRATE.replace(/-/g, '_')}.wasm`,
 	]);
+	if (variant.releasesInstance) {
+		const glue = join(root, outDir, 'null3d.js');
+		writeFileSync(glue, addReleaseInstance(readFileSync(glue, 'utf8')));
+	}
 	const wasm = `${outDir}/null3d_bg.wasm`;
 	run(join(root, 'node_modules/.bin/wasm-opt'), [
 		'-O3',

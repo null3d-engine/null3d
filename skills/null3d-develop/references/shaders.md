@@ -2,62 +2,62 @@
 
 All engine shaders are WGSL. The build translates them to GLSL for the WebGL2 path, so one source serves both backends. The null3D Vite plugin compiles the WGSL in your code: `.wgsl` files that you import, and template literals tagged `/* wgsl */`. The WebGL2 build sets the shader def `WEBGL2`. Engine docs: `guides/custom-shaders`, `shaders/surface-functions`, `shaders/builtins`, `shaders/wgsl-rules`, `shaders/library`.
 
+Custom materials come later in 0.1. Until then, the plugin compiles your WGSL, checks it against the portable rules and resolves library imports, but the engine cannot draw with it. Sections 8 to 10 apply now. Sections 1 to 5 describe the planned contract: do not ship code that uses it until `api/materials` lists `materials.shader`.
+
 ## Contents
 
-1. Choose the kind of shader
-2. Surface functions
-3. Built-in values
-4. Uniforms, textures and per-instance data
-5. Vertex offsets and full shaders
+1. Choose the kind of shader (later in 0.1)
+2. Surface functions (later in 0.1)
+3. Built-in values (later in 0.1)
+4. Uniforms, textures and per-instance data (later in 0.1)
+5. Vertex offsets and full shaders (later in 0.1)
 6. Custom post effects (0.2)
 7. Custom passes (0.2)
 8. Portable WGSL rules
 9. Imports from the shader library
 10. Debugging shaders
 
-## 1. Choose the kind of shader
+## 1. Choose the kind of shader (later in 0.1)
 
-| Goal | Kind | Keeps lights, shadows, fog, instancing and skinning |
+| Goal | Kind | Keeps lights, shadows, fog and instancing |
 | --- | --- | --- |
 | Change how a surface looks (color, roughness, patterns, dissolve, water) | Surface function | Yes |
-| Move vertices (waves, wind, swelling) | Vertex offset, alone or with a surface function | Yes |
-| Something the lighting model cannot express (holograms, custom lighting) | Full shader | No: you write everything |
+| Move vertices (waves, wind, swelling) | Vertex offset, alone or with a surface function (later in 0.1) | Yes |
+| Something the lighting model cannot express (holograms, custom lighting) | Full shader (later in 0.1) | No: you write everything |
 | A full-screen image effect | Post effect (section 6) | Not applicable |
 | An extra render or compute step | Custom pass (section 7) | Not applicable |
 
-Choose the first row that works. Surface functions keep working when the engine's lighting, shadows or backends change.
+Choose the first row that works. Surface functions keep working when the engine's lighting, shadows or backends change. The docs pages' status says what is built: `shaders/surface-functions`, `shaders/builtins`, `guides/custom-shaders`.
 
-## 2. Surface functions
+A custom material takes one `wgsl` option: WGSL that the Vite plugin compiled, from a template literal right after a `/* wgsl */` comment or from a `.wgsl` import. That one WGSL holds every function of the material (`fn surface`, and later `fn vertexOffset`), because the plugin compiles each literal on its own at build time. WGSL as plain text throws E1215.
+
+## 2. Surface functions (later in 0.1)
 
 The engine calls your function once per pixel and lights the result.
 
 ```wgsl
-// Provided by the engine (do not declare these yourself):
+// Declared by the engine (do not declare these yourself):
 struct SurfaceInput {
-  worldPosition: vec3f,    // absolute world position; precise near the origin
   relativePosition: vec3f, // position relative to the camera; always precise
-  worldNormal: vec3f,      // normalized, facing the camera for double-sided back faces
-  uv: vec2f,               // first UV set
-  uv1: vec2f,              // second UV set, or zero
-  color: vec4f,            // vertex color times instance color, or (1, 1, 1, 1)
-  viewDirection: vec3f,    // normalized, from the surface toward the camera
-  fragCoord: vec4f,        // pixel position; xy in render-target pixels
-  instance: u32,           // row index inside an instance batch, else 0
+  normal: vec3f,           // unit normal, facing the camera on double-sided back faces
+  viewDirection: vec3f,    // unit direction from the surface toward the camera
+  vertexColor: vec4f,      // vertex color with vertexColors on a mesh that has colors, else (1, 1, 1, 1)
+  uv: vec2f,               // first UV set; meshes need UVs to draw with a custom material
   frontFacing: bool,
 };
 struct Surface {
   baseColor: vec3f,        // linear RGB
-  alpha: f32,
+  alpha: f32,              // drawn opaque until alpha modes exist
   metalness: f32,
   roughness: f32,          // perceptual roughness, as in glTF and three.js
-  normal: vec3f,           // world space, normalized
+  normal: vec3f,           // world space, unit length
   emissive: vec3f,         // linear RGB, added after lighting
   occlusion: f32,          // ambient occlusion, 0 to 1
 };
-fn defaultSurface(input: SurfaceInput) -> Surface;  // the material's own values
+fn defaultSurface(input: SurfaceInput) -> Surface;  // the material's own options
 ```
 
-Your function:
+Your function, with exactly this signature (the build rejects another):
 
 ```wgsl
 fn surface(input: SurfaceInput) -> Surface {
@@ -67,19 +67,78 @@ fn surface(input: SurfaceInput) -> Surface {
 }
 ```
 
-`defaultSurface` applies the material's options (color, textures, roughness), so a surface function can adjust a standard look instead of rebuilding it. Alpha only has an effect when the material's `alphaMode` is `'mask'` or `'blend'`.
+`defaultSurface` applies the material's standard options: color times vertex color, metalness, roughness, emissive and flat shading. A surface function therefore adjusts a standard look instead of rebuilding it. `set()` changes those options at any time.
 
-Example: a dissolve effect.
+```ts
+const stripes = materials.shader({
+  color: '#c0c4cc', roughness: 0.7,
+  wgsl: /* wgsl */ `
+    #import null3d::math::{remap}
+
+    fn surface(input: SurfaceInput) -> Surface {
+      var s = defaultSurface(input);
+      let stripe = step(0.5, fract(input.uv.x * 12.0));
+      s.baseColor = mix(s.baseColor, vec3f(0.05), stripe);
+      s.emissive += vec3f(1.0, 0.35, 0.05) * stripe * remap(input.uv.y, 0.0, 1.0, 0.2, 1.0);
+      return s;
+    }`,
+});
+stripes.set({ roughness: 0.4 });
+```
+
+Materials from the same WGSL share one shader and its pipelines. Make one WGSL per look, and many materials from it.
+
+Planned additions, not built yet: `worldPosition`, `uv1`, `fragCoord` and `instance` in `SurfaceInput`, and alpha modes that use `s.alpha`.
+
+Names: your WGSL shares a file with the engine's standard material. Do not declare `SurfaceInput`, `Surface`, `defaultSurface`, `shade`, `light_surface`, `material_row`, `VertexIn`, `VertexOut`, `vs` or `fs`. Import library items by name (`#import null3d::noise::{fbm2}`), because a whole-module import reserves the module's name. No `enable` directives.
+
+## 3. Built-in values (later in 0.1)
+
+| Name | Fields | Notes |
+| --- | --- | --- |
+| `frame` | `time`, `deltaTime`, `frameIndex` (u32), `resolution` (vec2f, render-target pixels) | Same values for every draw in a frame |
+| `camera` | `position` (absolute world position), `view`, `projection`, `viewProjection`, `near`, `far` | Matrices are `mat4x4f` |
+| `object` | `worldMatrix`, `normalMatrix`, `id` (u32) | For instances, the instance's values |
+| `material` | Your uniforms, as `struct Uniforms` declares them | See section 4 |
+
+The engine renders relative to the camera. `input.relativePosition` is therefore exact near the camera, even in very large worlds. Use it for distances, fades and view-dependent effects. Until `worldPosition` exists, use `input.uv` for a pattern that must stay on the surface as the camera moves.
+
+## 4. Uniforms, textures and per-instance data (later in 0.1)
+
+The WGSL declares the uniforms once, as `struct Uniforms`, and reads them from `material`. The `uniforms` option gives their first values by field name:
+
+```ts
+materials.shader({
+  uniforms: {
+    speed: 1.5,                 // f32
+    tint: '#88ccff',            // vec3f, converted from sRGB to linear
+    offset: [0, 0],             // vec2f
+  },
+  wgsl: /* wgsl */ `
+    struct Uniforms { speed: f32, tint: vec3f, offset: vec2f }
+
+    fn surface(input: SurfaceInput) -> Surface {
+      var s = defaultSurface(input);
+      s.baseColor *= material.tint;
+      return s;
+    }`,
+});
+```
+
+Example: a dissolve effect, which needs alpha modes too.
 
 ```ts
 const dissolve = materials.shader({
   alphaMode: 'mask', alphaCutoff: 0.5,
   uniforms: { progress: 0, edgeColor: '#ff6a00' },
-  textures: { noise: await assets.loadTexture('/tex/noise.ktx2', { colorSpace: 'linear' }) },
-  surface: /* wgsl */ `
+  wgsl: /* wgsl */ `
+    #import null3d::noise::{fbm2}
+
+    struct Uniforms { progress: f32, edgeColor: vec3f }
+
     fn surface(input: SurfaceInput) -> Surface {
       var s = defaultSurface(input);
-      let n = textureSample(noise, noiseSampler, input.uv).r;
+      let n = fbm2(input.uv * 8.0, 4u) * 0.5 + 0.5;
       s.alpha = step(material.progress, n);
       let edge = 1.0 - smoothstep(0.0, 0.05, n - material.progress);
       s.emissive = material.edgeColor * edge * 4.0;
@@ -89,59 +148,26 @@ const dissolve = materials.shader({
 // later: dissolve.set({ progress: 0.6 });
 ```
 
-## 3. Built-in values
-
-| Name | Fields | Notes |
-| --- | --- | --- |
-| `frame` | `time`, `deltaTime`, `frameIndex` (u32), `resolution` (vec2f, render-target pixels) | Same values for every draw in a frame |
-| `camera` | `position` (absolute world position), `view`, `projection`, `viewProjection`, `inverseView`, `near`, `far` | Matrices are `mat4x4f`; `view` is camera-relative, so its translation is zero |
-| `object` | `worldMatrix` (3 x 4 as `mat4x3f`), `normalMatrix` (`mat3x3f`), `id` (u32) | For instances, the instance's values |
-| `material` | Your `uniforms`, with the same names | Generated struct; see section 4 |
-
-The engine renders relative to the camera. `input.relativePosition` is therefore exact near the camera even in very large worlds; use it for distances, fades and view-dependent effects. `input.worldPosition` is the absolute position, for world-space patterns such as noise or grid lines; far from the origin it loses precision, as any 32-bit value does.
-
-## 4. Uniforms, textures and per-instance data
-
-```ts
-materials.shader({
-  uniforms: {
-    speed: 1.5,                 // f32
-    tint: '#88ccff',            // vec3f, converted from sRGB to linear
-    offset: [0, 0],             // vec2f
-    params: [1, 2, 3, 4],       // vec4f
-    count: { type: 'u32', value: 8 },
-  },
-  textures: {
-    detail: detailTexture,      // WGSL gets `detail` (texture_2d<f32>) and `detailSampler`
-  },
-  surface,
-});
-```
-
-- The build reads your WGSL and your `uniforms` and generates a typed `set()`: `mat.set({ speed: 2 })` type-checks in TypeScript (0.2; in 0.1 `set` is untyped).
-- `set()` changes only the uniforms you pass, cheaply at any time, and the others keep their values. The texture keys are fixed when you create the material, because they change the shader.
+- `set()` changes only the uniforms you pass, cheaply at any time, and the others keep their values. A typed `set()` generated from the struct comes in 0.2.
 - Color strings and hex numbers are sRGB and are converted to linear. Arrays are used as given.
-- Per-instance data: `createInstances(mesh, count, { material, attributes: { tint: 4 } })` (0.2) makes `batch.attributes.tint` in TypeScript and `instanceAttr.tint` (`vec4f`) in the surface function.
+- Textures come with a `textures` option; their WGSL form is not settled yet.
+- Per-instance data: `createInstances(mesh, count, { material, attributes: { tint: 4 } })` (0.2).
 
-## 5. Vertex offsets and full shaders
+## 5. Vertex offsets and full shaders (later in 0.1)
 
-A vertex offset moves vertices in object space before the engine applies transforms, skinning and instancing:
+A vertex offset moves vertices in object space before the engine applies transforms and instancing. It goes in the same WGSL as the surface function:
 
 ```wgsl
 fn vertexOffset(input: VertexInput) -> vec3f {
-  // VertexInput: position, normal, uv, color, instance
-  let w = sin(input.position.x * 2.0 + frame.time * 3.0) * 0.1;
+  // VertexInput: position, normal, uv
+  let w = sin(input.position.x * 2.0) * 0.1;
   return vec3f(0.0, w, 0.0);
 }
 ```
 
-```ts
-materials.shader({ vertexOffset, surface });
-```
-
 Vertices that move outside the mesh's bounding sphere can be culled wrongly. Give the mesh a sphere that holds them with `mesh.setBounds(center, radius)`, at setup, because the call rebuilds the draw tables.
 
-A full shader supplies `vertex` and `fragment` functions. The shader library's `null3d::vertex` module helps it keep instancing and camera-relative positions working. Full shaders do not receive lighting, shadows or fog unless you import the helpers (`null3d::lighting`, `null3d::fog`).
+A full shader is WGSL with `@vertex` and `@fragment` entry points. The shader library's `null3d::vertex` module helps it keep instancing and camera-relative positions working. Full shaders do not receive lighting, shadows or fog unless you import the helpers (`null3d::lighting`, `null3d::fog`).
 
 ## 6. Custom post effects (0.2)
 
@@ -162,7 +188,7 @@ post.addEffect({
 });
 ```
 
-Effects in the `final` stage should read the scene at their own pixel, or a few nearby pixels at most, because they share one pass with the others. Blurs and other wide filters belong in the `hdr` stage.
+Effects in the `final` stage share one pass with the others. So they should read the scene at their own pixel, or at most a few nearby pixels. Blurs and other wide filters belong in the `hdr` stage.
 
 ## 7. Custom passes (0.2)
 
@@ -188,7 +214,7 @@ These rules come from the capabilities browsers report; `shaders/wgsl-rules` lis
 
 1. Use only these WGSL language features: `packed_4x8_integer_dot_product`, `pointer_composite_access`, `readonly_and_readwrite_storage_textures`. They are the three that Chrome, Safari and Firefox all report.
 2. Write flat interpolation as `@interpolate(flat, either)`; compatibility mode accepts no other flat form.
-3. Stay within these limits unless you check capabilities first: 16 vertex attributes (including built-ins in compatibility mode), 15 values passed between stages, 16 sampled textures and 16 samplers per stage, 4 storage buffers in fragment shaders and none in vertex shaders, 16 KB of uniform data per binding, compute workgroups of at most 128 invocations, 16 KB of workgroup memory, textures up to 4096 pixels.
+3. Stay within these limits unless you check capabilities first. Vertex shaders: 16 attributes, built-ins included in compatibility mode, and no storage buffers. Fragment shaders: 4 storage buffers. Each stage: 16 sampled textures and 16 samplers, and 15 values passed between stages. Uniform data: 16 KB per binding. Compute: workgroups of at most 128 invocations, and 16 KB of workgroup memory. Textures: up to 4096 pixels.
 4. Do not use `f16`. The build rejects it, as it rejects every optional WebGPU feature, such as `enable subgroups;`. Write the math in `f32`.
 5. Do not read 32-bit float textures with filtering. Filtering them is an optional GPU feature, and some devices, such as iPads, lack it. Use `textureLoad`, or 16-bit float textures.
 6. Keep `textureSample` in uniform control flow, or use `textureSampleLevel` inside branches that differ between pixels. Chrome rejects the shader otherwise.
@@ -219,6 +245,6 @@ Importing a module whole reserves its name. After `#import null3d::color`, no va
 
 - A shader error stops Vite with the file, line and column. It shows in Vite's overlay and the terminal on the dev server, and in the output of `vite build`. Fix the WGSL; never edit generated GLSL. (`guides/custom-shaders`)
 - Output an intermediate value as color: `s.emissive = vec3f(n); s.baseColor = vec3f(0.0);` shows `n` directly.
-- `debug.view('normals')` and `debug.view('overdraw')` show normals and overdraw for the whole scene.
+- `debug.view('normals')` and `debug.view('overdraw')` (later in 0.1) show normals and overdraw for the whole scene.
 - Shader hot reload: the null3D Vite plugin reloads WGSL files and inline WGSL strings without reloading the page (0.2). Until then, editing a shader reloads the page.
 - Check both backends: `?gpu=webgl2` runs the translated shaders.

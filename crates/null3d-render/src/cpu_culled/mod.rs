@@ -52,12 +52,15 @@ mod opaque;
 use std::collections::TryReserveError;
 
 use null3d_core::cells::CELL_SHIFT;
-use null3d_core::culling::BucketedCull;
+use null3d_core::culling::{BucketedCull, NO_BUCKET};
+use null3d_core::handle::Handle;
 use null3d_core::snapshot::SCENE_TARGET;
 use null3d_gpu::caps::{BUDGET, Limit};
 use null3d_gpu::drawlist::{DrawList, Op, format, permutation, sizes, texture_usage, view};
 
+use crate::cells::CellCulling;
 use crate::debug_lines::LinesPass;
+use crate::dfg;
 use crate::final_pass::FinalIds;
 use crate::frame::{
     CanvasOutput, FrameBuilder, FrameInput, MaterialStorage, MeshBuffers, ParityLists, RecordError,
@@ -112,8 +115,10 @@ mod ids {
 
     /// The material table: one row of texels per material.
     pub const MATERIALS: u32 = VIEW_TEXTURES + RING * MAX_VIEWS as u32;
+    /// three.js's table of the split-sum terms of specular light.
+    pub const DFG: u32 = MATERIALS + 1;
     /// The render graph's textures, from this id on.
-    pub const TARGETS: u32 = MATERIALS + 1;
+    pub const TARGETS: u32 = DFG + 1;
     /// The texture arrays of materials' maps, after every id the render graph can take.
     pub const TEXTURE_ARRAYS: u32 = TARGETS + 256;
     /// The samplers of materials' maps, the only samplers the builder makes.
@@ -153,6 +158,9 @@ pub struct CpuCulledConfig {
     pub max_texture_size: u32,
     /// True when the device has `WEBGL_multi_draw`.
     pub multi_draw: bool,
+    /// True to skip every still object of a grid cell out of view before testing objects; false
+    /// to test every object, as a benchmark of cell culling compares.
+    pub cell_culling: bool,
 }
 
 impl Default for CpuCulledConfig {
@@ -163,6 +171,7 @@ impl Default for CpuCulledConfig {
             draw_list_words: 64 * 1024,
             max_texture_size: 2048,
             multi_draw: false,
+            cell_culling: true,
         }
     }
 }
@@ -190,6 +199,8 @@ pub struct CpuCulledRenderer {
     graph: FrameGraph,
     layout: Layout,
     clusters: Clusters,
+    /// Grid-cell culling: the still scene objects in cell order, and each cell's box.
+    cells: CellCulling,
     culling: Culling,
     opaque: Opaque,
     lines: LinesPass,
@@ -200,6 +211,8 @@ pub struct CpuCulledRenderer {
     /// The slot of the streamed textures, which every view reads.
     streamed_slot: RingSlot,
     created: bool,
+    /// True from the creation of three.js's table of specular terms until a frame uploads it.
+    dfg_pending: bool,
 }
 
 impl CpuCulledRenderer {
@@ -244,6 +257,7 @@ impl CpuCulledRenderer {
             ),
             layout: Layout::default(),
             clusters: Clusters::default(),
+            cells: CellCulling::new(config.cell_culling, true),
             culling: Culling::default(),
             opaque: Opaque::new(config.multi_draw),
             lines: LinesPass::new(ids::LINES),
@@ -252,6 +266,7 @@ impl CpuCulledRenderer {
             textures: SharedTextures::default(),
             streamed_slot: RingSlot::default(),
             created: false,
+            dfg_pending: false,
         }
     }
 
@@ -268,6 +283,19 @@ impl CpuCulledRenderer {
     /// A view's values in the frame that culled last, or `None` when the view had no camera.
     pub fn view_frame(&self, view: ViewId) -> Option<&ViewFrame> {
         self.culling.frame(view)
+    }
+
+    /// The objects, instance rows and clusters that a view's culling tested in the frame that
+    /// culled last. For tests of what grid-cell culling skips.
+    pub fn tested(&self, view: ViewId) -> u32 {
+        self.culling.tested(view)
+    }
+
+    /// A static batch's rows in cluster order, while its clusters are current: each cluster holds
+    /// 64 entries, and a cell's last cluster ends with `u32::MAX`. For tests.
+    pub fn cluster_order(&self, batch: Handle) -> Option<&[u32]> {
+        let slot = self.layout.batch(batch.raw())?;
+        self.clusters.current_order(slot)
     }
 
     /// What the scene's render pipelines draw into, in the shader variant that reads the draw's
@@ -305,6 +333,10 @@ impl CpuCulledRenderer {
         self.clusters
             .prepare(input.batches, &self.layout)
             .map_err(out_of_memory)?;
+        let scene_buckets = &self.layout.scene_buckets;
+        self.cells
+            .classify(input.scene, &|slot| scene_buckets[slot] != NO_BUCKET)
+            .map_err(out_of_memory)?;
         let views = self.settings.views().len();
         self.culling.reserve(room, views).map_err(out_of_memory)?;
         // Room for every static batch's cluster order, so a batch coming to rest later uploads
@@ -334,8 +366,9 @@ impl CpuCulledRenderer {
     }
 
     /// The most that one frame can copy into its arena for the scene as it stands: mesh data not
-    /// uploaded yet, the material table, each view's frame uniform, draw records and multi-draw
-    /// arrays, the final pass's settings, and the cluster orders not uploaded yet.
+    /// uploaded yet, the material table, three.js's table of specular terms, each view's frame
+    /// uniform, draw records and multi-draw arrays, the final pass's settings, and the cluster
+    /// orders not uploaded yet.
     fn upload_bound(&self) -> usize {
         self.upload_bound_without_clusters() + self.clusters.pending_bytes(&self.layout)
     }
@@ -343,7 +376,8 @@ impl CpuCulledRenderer {
     /// [`Self::upload_bound`] without the cluster orders.
     fn upload_bound_without_clusters(&self) -> usize {
         let meshes = self.meshes.pending_bytes(self.settings.meshes().pages());
-        let materials = self.settings.materials().capacity() as usize * MATERIAL_FLOATS * 4;
+        let materials =
+            self.settings.materials().capacity() as usize * MATERIAL_FLOATS * 4 + dfg::BYTES;
         let per_view = (sizes::FRAME_UNIFORM_BYTES + OFFSETS_BYTES) as usize
             + self.layout.draws_slot_bytes as usize
             + self.layout.draws.len() * 12;
@@ -351,7 +385,7 @@ impl CpuCulledRenderer {
     }
 
     /// Records the creation of the material table, a data texture with one row of texels for each
-    /// material it holds.
+    /// material it holds, and of three.js's table of specular terms.
     fn create_fixed(&mut self, list: &mut DrawList) -> Result<(), RecordError> {
         list.push(
             Op::CreateTexture,
@@ -367,6 +401,8 @@ impl CpuCulledRenderer {
                 view::D2,
             ],
         )?;
+        dfg::create(list, ids::DFG)?;
+        self.dfg_pending = true;
         self.created = true;
         Ok(())
     }
@@ -529,6 +565,9 @@ impl CpuCulledRenderer {
         let rebuilt = self.layout.built_in == input.frame;
         arena.reset(self.upload_bound() + LinesPass::upload_bytes(&input.lines));
         self.graph.upload(list, arena, self.settings.output())?;
+        if std::mem::take(&mut self.dfg_pending) {
+            dfg::upload(list, arena, ids::DFG)?;
+        }
         self.meshes
             .upload(list, arena, self.settings.meshes().pages())?;
         // Draws bind the maps' groups by id as they run, so a group made again needs nothing more.
@@ -621,9 +660,13 @@ impl FrameBuilder for CpuCulledRenderer {
             self.rebuild_layout(input)?;
         }
         self.add_culled_views()?;
+        self.cells.update(input);
+        let (layout, cells) = (&self.layout, &self.cells);
         self.culling
-            .cull(input, &self.settings, &self.layout, &mut self.clusters);
-        Ok(())
+            .cull(input, &self.settings, layout, &mut self.clusters, cells)
+            .map_err(|_| RecordError::OutOfMemory {
+                bytes: layout.room.rows.saturating_mul(8),
+            })
     }
 
     fn record(&mut self, input: &FrameInput<'_>) -> Result<bool, RecordError> {

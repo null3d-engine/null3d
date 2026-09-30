@@ -1,10 +1,16 @@
 # The shader manifest. `bun run shaders` (cargo run -p null3d-shaders --bin shader-build) builds
-# every variant listed here into packages/engine/src/generated/shaders.ts, and
-# `bun run shaders:check` fails when that file is out of date.
+# every variant listed here into packages/engine/src/generated/shaders.ts and the device modules
+# beside it, and `bun run shaders:check` fails when one of those files is out of date.
 #
 # Each [shaders.<name>] table is one entry shader:
 #
 #   file       The WGSL file, relative to wgsl/. Every .wgsl file there needs a table.
+#   by_device  true for a shader that the engine loads by device. Its builds go into the device
+#              modules, generated/shaders-<target>[-<bit>...].ts, one for each target and each
+#              value of the permutation bits that a device fixes (DEVICE in the `permutation`
+#              module): the draw index and tone mapping in the shader. A page loads one of them,
+#              so it downloads only the builds that its device draws with. Each variant of such a
+#              shader has one target. Other shaders stay in shaders.ts, each an export of its own.
 #   pipelines  Render pipelines by name, each a vertex and a fragment entry point. WebGL2 gets one
 #              GLSL program for each pipeline, and WebGPU gets the entry point names. Needed when a
 #              variant targets "glsl".
@@ -43,45 +49,58 @@
 # with and without the draw index of WEBGL_multi_draw: WebGL2 reads instances from data textures,
 # one draw per bucket, or many buckets in one multi-draw call. The TONE_MAP builds tone map and
 # encode their color themselves, for the 8-bit path. The library module null3d::mesh holds what
-# they share.
+# they share. They load by device, with the culling shader.
 
-# Lit like three.js's MeshLambertMaterial.
+# The standard material, lit like three.js's MeshStandardMaterial. VERTEX_COLOR multiplies the
+# base color by the mesh's vertex colors, and ALPHA_MASK discards the fragments whose alpha falls
+# below the material's cutoff, as glTF's alpha mode MASK and three.js's alphaTest do. Only masked
+# materials pay for the discard, which keeps the GPU's early depth test for the others.
 [shaders.lit]
 file = "lit.wgsl"
+by_device = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
-variants.webgpu = { permutations = ["TONE_MAP"], targets = ["wgsl"] }
-variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP"], targets = ["glsl"] }
+variants.webgpu = { permutations = ["TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK"], targets = ["glsl"] }
 
-# The material's color alone, like three.js's MeshBasicMaterial.
+# The material's color alone, like three.js's MeshBasicMaterial, times the mesh's vertex colors
+# with VERTEX_COLOR. ALPHA_MASK as for the standard material.
 [shaders.unlit]
 file = "unlit.wgsl"
+by_device = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
-variants.webgpu = { permutations = ["TONE_MAP"], targets = ["wgsl"] }
-variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP"], targets = ["glsl"] }
+variants.webgpu = { permutations = ["TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK"], targets = ["glsl"] }
 
-# The material's color times its map, like three.js's MeshBasicMaterial with a map.
+# The material's color times its map, like three.js's MeshBasicMaterial with a map, times the
+# mesh's vertex colors with VERTEX_COLOR. ALPHA_MASK as for the standard material.
 [shaders.unlit_map]
 file = "unlit_map.wgsl"
+by_device = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
-variants.webgpu = { permutations = ["TONE_MAP"], targets = ["wgsl"] }
-variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP"], targets = ["glsl"] }
+variants.webgpu = { permutations = ["TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP", "VERTEX_COLOR", "ALPHA_MASK"], targets = ["glsl"] }
 
 # Colored by the first texture coordinates, for the engine's own tests of vertex formats.
 [shaders.texcoords]
 file = "texcoords.wgsl"
+by_device = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
 variants.webgpu = { permutations = ["TONE_MAP"], targets = ["wgsl"] }
 variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP"], targets = ["glsl"] }
 
 # The final pass: one triangle over the canvas, which tone maps the HDR scene color into it. The
-# FXAA builds smooth edges first, for the FXAA anti-aliasing mode.
+# FXAA builds smooth edges first, for the FXAA anti-aliasing mode. It loads by device, in every
+# module of its target.
 [shaders.final]
 file = "final.wgsl"
+by_device = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
-variants.main = { permutations = ["FXAA"], targets = ["wgsl", "glsl"] }
+variants.webgpu = { permutations = ["FXAA"], targets = ["wgsl"] }
+variants.webgl2 = { permutations = ["FXAA"], targets = ["glsl"] }
 
 # Debug lines, which development builds of the engine draw after the opaque objects: a position
-# relative to the camera and an sRGB color per vertex, from a vertex buffer of their own.
+# relative to the camera and an sRGB color per vertex, from a vertex buffer of their own. It stays
+# in shaders.ts, where only development builds import it, so release builds hold none of it.
 [shaders.debug_lines]
 file = "debug_lines.wgsl"
 pipelines.main = { vertex = "vs", fragment = "fs" }
@@ -91,17 +110,20 @@ variants.webgl2 = { permutations = ["TONE_MAP"], targets = ["glsl"] }
 # GPU culling into buckets for indirect draws; its compute entry point is `main`. WebGPU only.
 [shaders.cull]
 file = "cull.wgsl"
+by_device = true
 variants.webgpu = { targets = ["wgsl"] }
 
-# The mip levels of a layer of a texture array, one render pass per level.
+# The mip levels of a layer of a texture array, one render pass per level. It loads by device, as
+# the backends make the mip levels of textures that the scene uploads.
 [shaders.mipmap]
 file = "mipmap.wgsl"
+by_device = true
 pipelines.main = { vertex = "vs_main", fragment = "fs_main" }
 variants.webgpu = { targets = ["wgsl"] }
 variants.webgl2 = { targets = ["glsl"] }
 
 # The GPU timer's start mark, one invocation that does nothing; its compute entry point is `main`.
-# WebGPU only.
+# WebGPU only. It stays in shaders.ts, where the GPU timer imports it.
 [shaders.timer_mark]
 file = "timer_mark.wgsl"
 variants.webgpu = { targets = ["wgsl"] }

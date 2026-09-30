@@ -14,23 +14,24 @@
 // turns clear values and viewport depth ranges around for standard depth.
 
 import * as G from '../../generated/gpu';
+import type { DeviceShaders } from '../../generated/shaders';
 import type { DepthMode } from '../../page/switches';
 import { ImageTable } from '../../shared/images';
+import { floatOfBits } from '../float-bits';
 import { forEachVertexAttribute, vertexStride } from '../vertex-format';
 import { type DepthSetup, setDepthMode } from './depth';
 import {
 	createProgram,
 	engineTemplates,
 	type GlslTemplate,
-	MIPMAP_TEMPLATE,
+	mipmapTemplate,
 	type Pipeline,
 	type Program,
 	prepareProgram,
-	SLOTS_PER_GROUP,
+	slotOf,
+	UPLOAD_UNIT,
 } from './programs';
 
-/** The texture unit that texture uploads and copies use, apart from the units that bind groups use. */
-const UPLOAD_UNIT = 15;
 /** The unit that the mip level shader samples: its source texture's group 0, binding 0. */
 const MIP_UNIT = 0;
 /** The key of the mip level program among the programs of pipelines. */
@@ -204,7 +205,9 @@ export class WebGL2Backend {
 	private readonly pipelines: (Pipeline | undefined)[] = [];
 	/** The programs of the templates and permutations in use, which their pipelines share. */
 	private readonly programs = new Map<string, Program>();
-	private readonly templates: (GlslTemplate | undefined)[] = engineTemplates();
+	private readonly templates: (GlslTemplate | undefined)[];
+	/** The template of the program that draws mip levels. */
+	private readonly mipTemplate: GlslTemplate;
 	private readonly bindGroups: (BindEntry[] | undefined)[] = [];
 	private readonly vertexArrays: (VertexArray | undefined)[] = [];
 	/** Vertex arrays of the buffers that templates with their own vertex layout draw from, by id. */
@@ -278,6 +281,9 @@ export class WebGL2Backend {
 	private cullFace = false;
 	private depthTest = false;
 	private depthMask = true;
+	private depthAlways = false;
+	private offsetFactor = 0;
+	private offsetUnits = 0;
 	// Fractions passed to WebGL become new number objects, so the clear values and the depth range
 	// are set only when they change. The depth values are the draw list's, before any turn.
 	private readonly clearColor = [0, 0, 0, 0];
@@ -302,22 +308,26 @@ export class WebGL2Backend {
 	private passToCanvas = false;
 
 	/**
-	 * `sharedUploads` is false where WebGL refuses views on shared memory, so uploads and multi-draw
-	 * arrays go through copies. `depthMode` is how the backend stores depth. `images` holds the
-	 * images that uploads read, which the thread that draws keeps across GPU devices; by default
-	 * the backend has its own. `parallelCompile` lets programs compile in the background where the
-	 * context has `KHR_parallel_shader_compile`. `canvasAlpha` says whether the canvas's context has
-	 * alpha.
+	 * `shaders` are the GLSL builds that the device loaded (`loadGlslShaders`), with the bits
+	 * that it fixes. `sharedUploads` is false where WebGL refuses views on shared memory, so uploads
+	 * and multi-draw arrays go through copies. `depthMode` is how the backend stores depth.
+	 * `images` holds the images that uploads read, which the thread that draws keeps across GPU
+	 * devices; by default the backend has its own. `parallelCompile` lets programs compile in the
+	 * background where the context has `KHR_parallel_shader_compile`. `canvasAlpha` says whether
+	 * the canvas's context has alpha.
 	 */
 	constructor(
 		private readonly gl: WebGL2RenderingContext,
 		private readonly canvas: OffscreenCanvas | HTMLCanvasElement,
+		shaders: DeviceShaders,
 		private readonly sharedUploads: boolean,
 		depthMode: DepthMode,
 		images?: ImageTable,
 		parallelCompile = true,
 		canvasAlpha = false,
 	) {
+		this.templates = engineTemplates(shaders);
+		this.mipTemplate = mipmapTemplate(shaders);
 		this.images = images ?? new ImageTable();
 		this.ownsImages = !images;
 		this.multiDraw = gl.getExtension('WEBGL_multi_draw');
@@ -419,10 +429,18 @@ export class WebGL2Backend {
 	private createPipeline(words: Uint32Array, a: number, background: boolean): void {
 		const template = words[a + 1] as number;
 		const flags = words[a + 6] as number;
+		const depth = words[a + 4] !== G.FORMAT_NONE;
+		// The list's bias is in reversed depth. Standard depth stores the near plane as 0, so a bias
+		// toward the camera turns negative there.
+		const sign = this.depth.standard ? -1 : 1;
 		this.pipelines[words[a] as number] = {
 			program: this.programOf(template, words[a + 2] as number, background),
 			cullNone: (flags & G.STATE_CULL_NONE) !== 0,
-			depth: words[a + 4] !== G.FORMAT_NONE,
+			depth,
+			depthWrite: depth && (flags & (G.STATE_NO_DEPTH_WRITE | G.STATE_NO_DEPTH_TEST)) === 0,
+			depthAlways: (flags & G.STATE_NO_DEPTH_TEST) !== 0,
+			offsetUnits: sign * ((words[a + 8] as number) | 0),
+			offsetFactor: sign * floatOfBits(words[a + 9] as number),
 			vertexFormat: words[a + 7] as number,
 			mode: flags & G.STATE_LINE_LIST ? this.gl.LINES : this.gl.TRIANGLES,
 			vertices: this.need(this.templates, template, 'render pipeline template').vertices,
@@ -624,7 +642,7 @@ export class WebGL2Backend {
 	private mipmapProgram(): Program {
 		let program = this.programs.get(MIP_PROGRAM);
 		if (!program) {
-			program = createProgram(this.gl, MIPMAP_TEMPLATE, 0);
+			program = createProgram(this.gl, this.mipTemplate, 0);
 			this.programs.set(MIP_PROGRAM, program);
 		}
 		this.useProgram(program);
@@ -1348,10 +1366,32 @@ export class WebGL2Backend {
 		this.current = p;
 		this.setCullFace(!p.cullNone);
 		this.setDepthTest(p.depth);
-		if (p.depth && !this.depthMask) {
-			this.gl.depthMask(true);
-			this.depthMask = true;
+		if (p.depthWrite !== this.depthMask) {
+			this.gl.depthMask(p.depthWrite);
+			this.depthMask = p.depthWrite;
 		}
+		// A pass without the depth test still keeps GL's test on, with a function that passes every
+		// fragment: GL writes no depth while its test is off, and the pass writes none either way.
+		if (p.depthAlways !== this.depthAlways) {
+			const gl = this.gl;
+			gl.depthFunc(p.depthAlways ? gl.ALWAYS : this.depth.standard ? gl.LESS : gl.GREATER);
+			this.depthAlways = p.depthAlways;
+		}
+		this.setPolygonOffset(p.offsetFactor, p.offsetUnits);
+	}
+
+	/** Sets GL's polygon offset, switched on only while it moves depth. */
+	private setPolygonOffset(factor: number, units: number): void {
+		if (this.offsetFactor === factor && this.offsetUnits === units) return;
+		const gl = this.gl;
+		const on = factor !== 0 || units !== 0;
+		if (on !== (this.offsetFactor !== 0 || this.offsetUnits !== 0)) {
+			if (on) gl.enable(gl.POLYGON_OFFSET_FILL);
+			else gl.disable(gl.POLYGON_OFFSET_FILL);
+		}
+		if (on) gl.polygonOffset(factor, units);
+		this.offsetFactor = factor;
+		this.offsetUnits = units;
 	}
 
 	private setBindGroup(words: Uint32Array, a: number): void {
@@ -1363,7 +1403,7 @@ export class WebGL2Backend {
 		let dynamic = 0;
 		for (let k = 0; k < entries.length; k++) {
 			const entry = entries[k] as BindEntry;
-			const slot = group * SLOTS_PER_GROUP + entry.binding;
+			const slot = slotOf(group, entry.binding);
 			if (entry.kind === G.RESOURCE_BUFFER) {
 				const buffer = this.need(this.buffers, entry.resource, 'buffer');
 				const offset = entry.offset + (dynamic < offsets ? (words[a + 3 + dynamic] as number) : 0);
