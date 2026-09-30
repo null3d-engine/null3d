@@ -70,7 +70,7 @@ Surface functions keep instancing, skinning, shadows, fog and both backends work
 
 ## 3. three.js built-ins and their null3D equivalents
 
-The inputs and built-in values in this table come with custom materials, later in 0.1. The `null3d::` library modules exist now.
+The surface input's `normal`, `viewDirection`, `relativePosition`, `uv` and `vertexColor` exist now, and so do the `null3d::` library modules. The other inputs and built-in values in this table come later in 0.1: the surface input's `uv1`, `worldPosition` and `fragCoord`, `vertexOffset`'s `VertexInput`, and `frame`, `camera` and `object`.
 
 | three.js (ShaderMaterial adds these) | null3D |
 | --- | --- |
@@ -262,4 +262,4 @@ The null3D version is the dissolve example in the null3d-develop skill's `refere
 - Avoid `mat3x3f` uniforms: their layout pads each column. Pass three `vec3f` values or a `mat4x4f`.
 - Use only the three WGSL language features every browser shares, and `@interpolate(flat, either)` for flat values (null3d-develop `references/shaders.md`, section 8).
 - Test on WebGL2 (`?gpu=webgl2`): the translated GLSL can hit limits the WGSL did not.
-- Until custom materials come later in 0.1, the build checks a ported shader, but no material can draw it.
+- Until full shaders come later in 0.1, the build checks a ported whole shader, but no material can draw it. A port that fits a surface function draws now.
