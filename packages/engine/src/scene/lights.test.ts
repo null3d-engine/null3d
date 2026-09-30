@@ -260,9 +260,12 @@ describe('light calls', () => {
 		spot.setDecay(0);
 		spot.setAngle(Math.PI / 2);
 		spot.setPenumbra(1);
-		spot.setColor([1, 0.5, 0]);
+		spot.setColor('#ff8000');
 		expect(tableRow(spot).values).toEqual([8, 20, 0, Math.PI / 2, 1]);
-		expectClose(tableRow(spot).colors[C.LIGHT_COLOR_MAIN] as number[], [1, 0.21404114, 0]);
+		expectClose(tableRow(spot).colors[C.LIGHT_COLOR_MAIN] as number[], [1, 0.2158605, 0]);
+		// Three numbers are linear already.
+		spot.setColor([1, 0.5, 0]);
+		expectClose(tableRow(spot).colors[C.LIGHT_COLOR_MAIN] as number[], [1, 0.5, 0]);
 
 		const lamp = scene.createPointLight({ range: 1 });
 		lamp.setRange(6);

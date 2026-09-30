@@ -53,7 +53,7 @@ A light's scale changes neither its range nor its cone.
 
 ## Color, intensity and units
 
-Each color is a hex string, a number, or three sRGB components from 0 to 1, and the default is white. The intensity scales the color, and the default is 1. A hemisphere light's intensity scales both of its colors.
+Each color is a hex string or a number, which are sRGB, or three linear components from 0 to 1. The default is white. The intensity scales the color, and the default is 1. A hemisphere light's intensity scales both of its colors.
 
 Units follow three.js since r155. The intensity of a point or spot light is in candela. A directional light's intensity is the light that reaches a surface facing it. The standard material uses the lighting formulas of three.js's `MeshStandardMaterial`, so the same colors and intensities give the same result in both engines. Take a white directional light with an intensity of π, about 3.14, and no ambient light. A rough surface that faces it shows nearly its full color. [Lighting and environment](../concepts/lighting.md) covers the units in full.
 

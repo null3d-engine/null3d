@@ -14,9 +14,8 @@ enable draw_index;
 // and the material draws as without it. The normal map bends the normal in a frame from the mesh's
 // tangents with VERTEX_TANGENT, and otherwise from how the position and the texture coordinates
 // change between pixels, as three.js's getTangentFrame makes it.
-#import null3d::color
 #import null3d::lighting
-#import null3d::mesh::{InstanceIn, clip_of, find_instance, fogged, frame, material_of}
+#import null3d::mesh::{InstanceIn, clip_of, find_instance, finish, fogged, frame, material_of}
 #import null3d::mesh::{map_layer, map_ready, relative_position, world_direction, world_normal}
 #ifdef RECEIVE_SHADOWS
 #import null3d::shadows::{sun_shadow}
@@ -291,5 +290,5 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
         discard;
     }
 #endif
-    return vec4f(null3d::color::linear_to_srgb(fogged(outgoing, in.relative, m)), 1.0);
+    return finish(fogged(outgoing, in.relative, m), in.clip.xy);
 }

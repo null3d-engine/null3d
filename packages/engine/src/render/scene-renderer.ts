@@ -111,6 +111,7 @@ export class WebGPUSceneRenderer implements Renderer {
 	private simulated = false;
 	readonly lost: Promise<string>;
 
+	/** A transparent canvas composites with premultiplied alpha; any other ignores alpha. */
 	constructor(
 		readonly tier: Tier,
 		private readonly device: GPUDevice,
@@ -120,13 +121,18 @@ export class WebGPUSceneRenderer implements Renderer {
 		metrics: ArrayBufferLike | undefined,
 		images: ImageTable | undefined,
 		shaders: DeviceShaders,
+		readonly transparent: boolean,
 	) {
 		this.lost = deviceLoss(device, () => this.simulated);
 		const context = canvas.getContext('webgpu') as GPUCanvasContext | null;
 		if (!context) throw new Error('the canvas has no WebGPU context');
 		this.context = context;
 		this.format = navigator.gpu.getPreferredCanvasFormat();
-		context.configure({ device, format: this.format, alphaMode: 'opaque' });
+		context.configure({
+			device,
+			format: this.format,
+			alphaMode: transparent ? 'premultiplied' : 'opaque',
+		});
 		this.backend = new WebGPUBackend(device, context, this.format, shaders, undefined, images);
 		this.backend.timer = metrics && GpuTimer.create(device, metrics);
 		this.completions = metrics && new QueueCompletion(device.queue, metrics);
@@ -205,17 +211,22 @@ export class WebGPUSceneRenderer implements Renderer {
 
 export class WebGL2SceneRenderer implements Renderer {
 	readonly tier: Tier = 'webgl2';
+	readonly transparent: boolean;
 	readonly lost: Promise<string>;
 	readonly completions: FenceCompletion | undefined;
 	private readonly backend: WebGL2Backend;
 	private readonly frames: FrameReplay;
 	private readonly release = new AbortController();
 
+	/** The canvas's sized format, which a capture's stand-in takes: RGBA8 with alpha, else RGB8. */
+	private readonly canvasFormat: number;
+
 	/**
 	 * `gl` is the canvas's context, made with the engine's settings. Where WebGL refuses views on
 	 * shared memory, the device says so, and the backend copies uploads out of engine memory first.
-	 * The device also gives the depth mode. `images` holds the images that texture uploads read.
-	 * `shaders` are the GLSL builds that the device loaded.
+	 * The device also gives the depth mode, and whether the canvas is transparent, with alpha.
+	 * `images` holds the images that texture uploads read. `shaders` are the GLSL builds that the
+	 * device loaded.
 	 */
 	constructor(
 		private readonly canvas: RenderCanvas,
@@ -236,7 +247,10 @@ export class WebGL2SceneRenderer implements Renderer {
 			device.depth,
 			images,
 			device.parallelCompile,
+			device.transparent,
 		);
+		this.transparent = device.transparent;
+		this.canvasFormat = device.transparent ? gl.RGBA8 : gl.RGB8;
 		this.completions = metrics && new FenceCompletion(gl, metrics);
 		this.frames = new FrameReplay(this.backend, memory, control);
 	}
@@ -280,7 +294,7 @@ export class WebGL2SceneRenderer implements Renderer {
 		const color = gl.createRenderbuffer();
 		if (!framebuffer || !color) throw new Error('WebGL2 could not make a capture target');
 		gl.bindRenderbuffer(gl.RENDERBUFFER, color);
-		gl.renderbufferStorage(gl.RENDERBUFFER, gl.RGB8, width, height);
+		gl.renderbufferStorage(gl.RENDERBUFFER, this.canvasFormat, width, height);
 		gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
 		gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.RENDERBUFFER, color);
 		this.backend.canvasTarget = { framebuffer, width, height };

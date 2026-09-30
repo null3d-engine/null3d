@@ -7,6 +7,7 @@
 import {
 	LAYOUT_CULL,
 	LAYOUT_DEPTH,
+	LAYOUT_FINAL,
 	LAYOUT_FRAME,
 	LAYOUT_MATERIAL_MAPS,
 	LAYOUT_TEXTURES,
@@ -18,6 +19,7 @@ import {
 	STATE_NO_DEPTH_WRITE,
 	TEMPLATE_CULL,
 	TEMPLATE_DEBUG_LINES,
+	TEMPLATE_FINAL,
 	TEMPLATE_INSTANCED_LIT,
 	TEMPLATE_INSTANCED_STANDARD_MAPS,
 	TEMPLATE_INSTANCED_TEXCOORDS,
@@ -195,6 +197,15 @@ export class Pipelines {
 			{ binding: 6, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
 			{ binding: 7, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
 		]);
+		// The final pass reads the scene color with textureLoad, which takes any float format.
+		this.defineLayout(LAYOUT_FINAL, 'final', [
+			{ binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+			{
+				binding: 1,
+				visibility: GPUShaderStage.FRAGMENT,
+				texture: { sampleType: 'unfilterable-float', viewDimension: '2d' },
+			},
+		]);
 		for (const [id, label, shader, meshLocations, layouts] of [
 			[TEMPLATE_INSTANCED_LIT, 'lit', shaders.lit, [0, 1], [LAYOUT_FRAME]],
 			[TEMPLATE_INSTANCED_UNLIT, 'unlit', shaders.unlit, [0], [LAYOUT_FRAME]],
@@ -224,6 +235,13 @@ export class Pipelines {
 				vertexBuffers: INSTANCE_BUFFERS,
 			});
 		}
+		this.defineTemplate(TEMPLATE_FINAL, {
+			label: 'final',
+			shader: shaders.final,
+			pipeline: 'main',
+			layouts: [LAYOUT_FINAL],
+			vertexBuffers: [],
+		});
 		if (DEV)
 			this.defineTemplate(TEMPLATE_DEBUG_LINES, {
 				label: 'debug lines',

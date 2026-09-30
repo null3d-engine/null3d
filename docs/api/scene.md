@@ -71,7 +71,7 @@ door?.setVisible(false);
 
 ## The camera and the background
 
-The canvas shows the scene from the active camera, which `setActiveCamera` picks. It can be either kind of camera, and [Cameras](cameras.md) covers both lenses. Until you pick a camera, the canvas shows only the background. `setBackground` takes a color, and the default background is black.
+The canvas shows the scene from the active camera, which `setActiveCamera` picks. It can be either kind of camera, and [Cameras](cameras.md) covers both lenses. Until you pick a camera, the canvas shows only the background. `setBackground` takes a color. The default background is black, or the page behind a transparent canvas. Exposure and tone mapping change the background as they change the objects: [Color management](../concepts/color-management.md#the-background).
 
 ## Fog
 
@@ -243,7 +243,7 @@ The scene: every object, the active camera, the lights and the background.
 | `createSpotLight(options: SpotLightOptions): SpotLight` | Light from a point in a cone, out to `range` meters, which it needs. |
 | `createHemisphereLight(options: HemisphereLightOptions = {}): HemisphereLight` | Light from the sky above and the ground below. |
 | `createAmbientLight(options: LightOptions = {}): AmbientLight` | Light on every surface, from no direction. |
-| `setBackground(color: ColorInput): void` | The color behind every object. |
+| `setBackground(color: ColorInput): void` | The color behind every object. Exposure and tone mapping change it with the rest of the scene. Without a background, the canvas shows black, or the page behind it on a transparent canvas. |
 | `setFog(fog: FogOptions \| null): void` | Fog over every object, with three.js's formulas: linear fog as its `Fog`, or exponential squared fog as its `FogExp2`. Null removes the fog. The background takes no fog, and a material created with `fog: false` keeps its color. Converting the color allocates. |
 | `warmUp(): Promise<void>` | Builds every GPU pipeline that the scene needs as it stands, and resolves once they are all built. Hidden objects count too. After the first frame, an object whose pipeline is still building draws nothing, so create a loading stage's objects hidden, warm up, then show them. The first frame waits for its pipelines anyway. In the setup, a warm-up draws that frame once they are built, before the setup goes on. |
 
