@@ -379,17 +379,13 @@ Several full views, such as split screens, come after 1.0 (`guides/multiple-view
 ```ts
 // page.ts
 shotButton.onclick = async () => {
-  const { width, height, pixels } = await engine.captureFrame();   // RGBA8 rows, top row first
-  const canvas = new OffscreenCanvas(width, height);
-  const image = new ImageData(new Uint8ClampedArray(pixels.buffer, pixels.byteOffset, pixels.length), width, height);
-  canvas.getContext('2d')!.putImageData(image, 0, 0);
-  const blob = await canvas.convertToBlob({ type: 'image/png' });
+  const blob = await engine.capture();          // the next frame, as a PNG
   const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: 'shot.png' });
   a.click();
 };
 ```
 
-`captureFrame` draws one frame offscreen and reads it back through the engine, so the canvas needs no `preserveDrawingBuffer`. `engine.capture()` (later in 0.1) gives the PNG in one call. For tests, use `bunx @null3d/cli shot` or hold-mode tests instead (`references/testing-and-debugging.md`). Docs: `api/engine`.
+The thread that draws reads the frame back and encodes it, so the canvas needs no `preserveDrawingBuffer`. After `destroy()` the call fails with E1414. For tests, use `bunx @null3d/cli shot` or hold-mode tests instead (`references/testing-and-debugging.md`). Docs: `api/engine`.
 
 ## 14. Video on a surface (after 1.0; a workaround later in 0.1)
 
