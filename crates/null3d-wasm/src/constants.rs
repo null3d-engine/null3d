@@ -13,7 +13,7 @@ use null3d_render::cpu_culled::{CpuCulledConfig, MAX_SOURCE_BITS};
 use null3d_render::frame::{NO_MATERIAL, NO_MESH};
 use null3d_render::geometry::Shape;
 use null3d_render::gpu_driven::{MAX_USEFUL_BINDING_BYTES, PORTABLE_MAX_SOURCES};
-use null3d_render::textures::{DEFAULT_MAX_ANISOTROPY, DEFAULT_UPLOAD_BUDGET, MAX_LAYERS};
+use null3d_render::textures::MAX_LAYERS;
 
 /// Fields of `sceneArrays`.
 pub mod scene_field {
@@ -78,6 +78,10 @@ pub mod texture_stat {
     pub const IMAGES_SENT: u32 = 5;
     /// The widest and tallest texture the store takes.
     pub const MAX_SIZE: u32 = 6;
+    /// The texel bytes that one frame may upload.
+    pub const UPLOAD_BUDGET: u32 = 7;
+    /// The largest anisotropy that samplers use.
+    pub const MAX_ANISOTROPY: u32 = 8;
 }
 
 /// The settings that `setTextureOption` changes.
@@ -280,6 +284,8 @@ pub fn typescript() -> String {
                 ("WAITING", texture_stat::WAITING),
                 ("IMAGES_SENT", texture_stat::IMAGES_SENT),
                 ("MAX_SIZE", texture_stat::MAX_SIZE),
+                ("UPLOAD_BUDGET", texture_stat::UPLOAD_BUDGET),
+                ("MAX_ANISOTROPY", texture_stat::MAX_ANISOTROPY),
             ],
         ),
         // The draw list's codes that `createTexture` takes, so the sketch thread needs no import of
@@ -305,8 +311,6 @@ pub fn typescript() -> String {
                 ("UPLOAD_BUDGET", texture_option::UPLOAD_BUDGET),
                 ("MAX_ANISOTROPY", texture_option::MAX_ANISOTROPY),
                 ("UPLOAD_ALL", texture_option::UPLOAD_ALL),
-                ("DEFAULT_UPLOAD_BUDGET", DEFAULT_UPLOAD_BUDGET),
-                ("DEFAULT_MAX_ANISOTROPY", DEFAULT_MAX_ANISOTROPY),
             ],
         ),
         (

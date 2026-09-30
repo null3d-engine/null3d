@@ -1081,6 +1081,8 @@ pub fn texture_stat(field: u32, texture: u32) -> f64 {
             texture_stat::LARGEST_FRAME_BYTES => f64::from(stats.largest_frame_bytes),
             texture_stat::WAITING => f64::from(stats.waiting),
             texture_stat::IMAGES_SENT => f64::from(textures.images_sent()),
+            texture_stat::UPLOAD_BUDGET => f64::from(textures.budget()),
+            texture_stat::MAX_ANISOTROPY => f64::from(textures.max_anisotropy()),
             _ => f64::from(textures.max_size()),
         };
         0

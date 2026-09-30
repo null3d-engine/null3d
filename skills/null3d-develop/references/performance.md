@@ -67,7 +67,7 @@ These numbers are starting points. The engine docs page `guides/performance` hol
 | High "replay" or draw buckets | Too many mesh and material combinations | Share materials; pack textures into arrays with `bunx @null3d/cli assets`; merge small static meshes offline |
 | GPU time high, CPU low | Pixels or shader cost | Lower `maxPixelRatio`; cheaper materials; fewer shadowed lights; avoid large transparent areas |
 | Hitch when something new appears, or it appears a moment late | A rebuild (`rebuilds` above zero), or a pipeline build (`pipelines` above zero) | Create materials and objects during loading; create a later stage hidden, `await scene.warmUp()`, then show it |
-| Hitch while loading during play | Uploads and decoding | Load before play, or stream smaller files; the per-frame upload budget spreads uploads |
+| Hitch while loading during play | Uploads and decoding | Load before play, or stream smaller files; the per-frame upload budget spreads uploads, and `quality.set({ uploadBytesPerFrame })` lowers it |
 | Frame rate drops after a few minutes on a phone | Heat | Aim for 70% of the budget; the governor steps quality down; test 10-minute runs |
 
 ## 5. Phones and tablets
