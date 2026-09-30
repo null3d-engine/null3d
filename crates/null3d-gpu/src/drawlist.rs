@@ -1001,7 +1001,11 @@ mod tests {
                 shift(sizes::INDICES_PER_TEXTURE_ROW)
             ),
             format!("const DRAW_RECORDS: u32 = {}u;", sizes::MULTI_DRAW_RECORDS),
-            format!("const MAX_MATERIALS: u32 = {}u;", sizes::MAX_MATERIALS),
+            // The last of a material row's texels on WebGL2, one per vec4f.
+            format!(
+                "textureLoad(materials, vec2u({}u, id), 0)",
+                sizes::MATERIAL_BYTES / 16 - 1
+            ),
             format!("const CELL_SHIFT: u32 = {}u;", sizes::CELL_SHIFT),
             format!("const MAX_CELLS: u32 = {}u;", sizes::MAX_CELLS),
         ] {
