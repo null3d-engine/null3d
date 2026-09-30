@@ -128,7 +128,7 @@ fn material_of(id: u32) -> Material {
 }
 
 /// The bit of a material's flags that keeps the scene's fog off its color.
-const NO_FOG: u32 = 2u;
+const NO_FOG: u32 = 4u;
 
 /// Linear color `c` of a fragment at `relative`, its position relative to the camera, seen through
 /// the scene's fog. A material with fog off keeps its color.

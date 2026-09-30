@@ -268,7 +268,7 @@ struct VertexOut {
 const LINEAR: u32 = 1u;
 const EXP2_: u32 = 2u;
 const OUTSIDE_CLIP: vec4<f32> = vec4<f32>(2f, 2f, 2f, 1f);
-const NO_FOG: u32 = 2u;
+const NO_FOG: u32 = 4u;
 const PI: f32 = 3.1415927f;
 const INV_PI: f32 = 0.31830987f;
 const EPSILON: f32 = 0.000001f;
@@ -628,7 +628,7 @@ struct VertexOut {
 const LINEAR: u32 = 1u;
 const EXP2_: u32 = 2u;
 const OUTSIDE_CLIP: vec4<f32> = vec4<f32>(2f, 2f, 2f, 1f);
-const NO_FOG: u32 = 2u;
+const NO_FOG: u32 = 4u;
 const PI: f32 = 3.1415927f;
 const INV_PI: f32 = 0.31830987f;
 const EPSILON: f32 = 0.000001f;
@@ -1138,7 +1138,7 @@ struct VertexOut {
 const LINEAR: u32 = 1u;
 const EXP2_: u32 = 2u;
 const OUTSIDE_CLIP: vec4<f32> = vec4<f32>(2f, 2f, 2f, 1f);
-const NO_FOG: u32 = 2u;
+const NO_FOG: u32 = 4u;
 
 @group(0) @binding(1)
 var<storage> materials: array<Material>;
@@ -1325,7 +1325,7 @@ struct VertexOut {
 const LINEAR: u32 = 1u;
 const EXP2_: u32 = 2u;
 const OUTSIDE_CLIP: vec4<f32> = vec4<f32>(2f, 2f, 2f, 1f);
-const NO_FOG: u32 = 2u;
+const NO_FOG: u32 = 4u;
 
 @group(0) @binding(1)
 var<storage> materials: array<Material>;
@@ -1517,7 +1517,7 @@ struct VertexOut {
 const LINEAR: u32 = 1u;
 const EXP2_: u32 = 2u;
 const OUTSIDE_CLIP: vec4<f32> = vec4<f32>(2f, 2f, 2f, 1f);
-const NO_FOG: u32 = 2u;
+const NO_FOG: u32 = 4u;
 
 @group(0) @binding(1)
 var<storage> materials: array<Material>;
@@ -1723,7 +1723,7 @@ struct VertexOut {
 const LINEAR: u32 = 1u;
 const EXP2_: u32 = 2u;
 const OUTSIDE_CLIP: vec4<f32> = vec4<f32>(2f, 2f, 2f, 1f);
-const NO_FOG: u32 = 2u;
+const NO_FOG: u32 = 4u;
 
 @group(0) @binding(1)
 var<storage> materials: array<Material>;
