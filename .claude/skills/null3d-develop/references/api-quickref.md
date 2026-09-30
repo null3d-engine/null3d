@@ -117,7 +117,7 @@ export default defineSketch(async (ctx) => {
 | `scene.setBackground({ sky: { turbidity, rayleigh, sunDirection } })` (0.2) | | Sky backgrounds |
 | `scene.setEnvironment(env, { intensity, rotation })` (0.2) | | env from `assets.loadEnvironment` |
 | `scene.setBackground(env, { blur, intensity, rotation })` (0.2) | | Blurred environment backgrounds |
-| `scene.setFog({ type: 'linear', color, near, far })`, `{ type: 'exp2', color, density }` or `null` | | Later in 0.1 |
+| `scene.setFog({ type: 'linear', color, near, far })`, `{ type: 'exp2', color, density }` or `null` | | three.js's formulas and defaults. The background takes no fog, so give it the fog's color. Materials opt out with `fog: false` |
 | `scene.createSprites`, `createPoints`, `createLines`, `createLod` (0.2) | | Docs `api/sprites`, `api/points`, `api/lines`, `concepts/lod` |
 | `scene.createView({ camera, rect })` (after 1.0) | View | Split screens; until then, minimaps use a render-to-texture pass (`guides/multiple-views`) |
 | `scene.animateProperty(target, path, keyframes)` (after 1.0) | Animation | Until then, animate values in `onUpdate` |
@@ -271,9 +271,10 @@ const stripes = materials.shader({ ...anyStandardOption, wgsl });  // later in 0
 ```
 
 - `materials.standard` shades as three.js's `MeshStandardMaterial` does, with its formulas and its table of specular terms.
+- `fog: false` keeps a material's color out of the scene's fog (`scene.setFog`).
 - Later in 0.1, `materials.shader` keeps the standard look and lighting, and a WGSL surface function changes the surface before the engine lights it. Every `materials.standard` option feeds `defaultSurface()`. `references/shaders.md` has the contract.
 - `alphaMode: 'mask'` is three.js's `alphaTest`, and `alphaMode: 'blend'` is `transparent: true`. Blended objects cost culling and sorting in every frame, so use `'mask'` for cut-out shapes.
-- Later in 0.1: texture maps (`map`, `normalMap`, `metalnessRoughnessMap`, `aoMap`, `emissiveMap`, `lightMap`), `uvTransform`, `fog: false`, and in `materials.shader` uniforms, textures, vertex offsets and full shaders.
+- Later in 0.1: texture maps (`map`, `normalMap`, `metalnessRoughnessMap`, `aoMap`, `emissiveMap`, `lightMap`), `uvTransform`, and in `materials.shader` uniforms, textures, vertex offsets and full shaders.
 - `envIntensity` (0.2) comes with environment lighting, and `materials.shadowCatcher` in 0.2.
 - `set()` changes values cheaply at any time. Options that change the shader or the pipeline are fixed when you create the material: `doubleSided`, `vertexColors`, `flatShading`, `alphaMode`, `blending`, `depthWrite`, `depthTest`, `depthBias`, and later the texture maps. So create each variant before play, and switch with `setMaterial`.
 

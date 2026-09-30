@@ -84,6 +84,8 @@ pub mod feature {
     pub const ADDITIVE: u32 = 128;
     /// With [`BLEND`], the surface tints what lies behind it. It wins over [`ADDITIVE`].
     pub const MULTIPLY: u32 = 256;
+    /// The scene's fog leaves the material's color as it is.
+    pub const NO_FOG: u32 = 1024;
     /// Every feature.
     pub const ALL: u32 = DOUBLE_SIDED
         | VERTEX_COLORS
@@ -93,7 +95,8 @@ pub mod feature {
         | NO_DEPTH_WRITE
         | NO_DEPTH_TEST
         | ADDITIVE
-        | MULTIPLY;
+        | MULTIPLY
+        | NO_FOG;
 }
 
 /// The blend state of a material's features (`state_flags::BLEND_*`), or 0 for a material that
@@ -117,9 +120,27 @@ pub mod flag {
     /// The shader writes its color times its alpha, beside the alpha, as premultiplied blending
     /// reads them. Other shaders write an alpha of 1.
     pub const BLEND: u32 = 2;
+    /// The shader skips the scene's fog.
+    pub const NO_FOG: u32 = 4;
     /// The base color map holds colors multiplied by their alpha already, so the shader
     /// multiplies them by the rest of the alpha only.
     pub const MAP_PREMULTIPLIED: u32 = 8;
+}
+
+/// The row flags (`flag::*` bits) of a material with `features` (`feature::*` bits). The base
+/// color map's flag comes later, from its texels.
+const fn row_flags(features: u32) -> u32 {
+    let mut flags = 0;
+    if features & feature::FLAT_SHADING != 0 {
+        flags |= flag::FLAT_SHADING;
+    }
+    if features & feature::BLEND != 0 {
+        flags |= flag::BLEND;
+    }
+    if features & feature::NO_FOG != 0 {
+        flags |= flag::NO_FOG;
+    }
+    flags
 }
 
 /// Floats in each material's row: eight `vec4f`s.
@@ -283,10 +304,7 @@ impl MaterialTable {
         self.rows.extend_from_slice(&DEFAULT_ROW);
         let row = &mut self.rows[id as usize * MATERIAL_FLOATS..];
         row[..4].copy_from_slice(&color);
-        let bit = |on: bool, bit: u32| if on { bit } else { 0 };
-        let flags = bit(features & feature::FLAT_SHADING != 0, flag::FLAT_SHADING)
-            | bit(features & feature::BLEND != 0, flag::BLEND);
-        row[param::FLAGS] = flags as f32;
+        row[param::FLAGS] = row_flags(features) as f32;
         self.shading.push(shading);
         self.features.push(features);
         self.maps.push([Handle::NONE; MAP_SLOTS]);
@@ -594,8 +612,8 @@ mod tests {
     }
 
     #[test]
-    fn features_are_kept_and_flat_shading_is_a_flag_in_the_row() {
-        let mut table = MaterialTable::with_capacity(2);
+    fn features_are_kept_and_flat_shading_and_no_fog_are_flags_in_the_row() {
+        let mut table = MaterialTable::with_capacity(4);
         let flat = feature::FLAT_SHADING | feature::DOUBLE_SIDED;
         table
             .create(Shading::Lit, flat | 1 << 30, [1.0; 4])
@@ -603,11 +621,25 @@ mod tests {
         table
             .create(Shading::Unlit, feature::VERTEX_COLORS, [1.0; 4])
             .unwrap();
+        table
+            .create(Shading::Unlit, feature::NO_FOG, [1.0; 4])
+            .unwrap();
+        table
+            .create(
+                Shading::Lit,
+                feature::NO_FOG | feature::FLAT_SHADING,
+                [1.0; 4],
+            )
+            .unwrap();
         assert_eq!(table.features(0), flat, "unknown bits are dropped");
         assert_eq!(table.features(1), feature::VERTEX_COLORS);
+        assert_eq!(table.features(2), feature::NO_FOG);
         assert_eq!(table.features(9), 0);
         assert_eq!(row(&table, 0)[param::FLAGS], flag::FLAT_SHADING as f32);
         assert_eq!(row(&table, 1)[param::FLAGS], 0.0);
+        assert_eq!(row(&table, 2)[param::FLAGS], flag::NO_FOG as f32);
+        let both = flag::FLAT_SHADING | flag::NO_FOG;
+        assert_eq!(row(&table, 3)[param::FLAGS], both as f32);
     }
 
     #[test]

@@ -10,6 +10,7 @@ use null3d_gpu::caps::Capabilities;
 use null3d_gpu::drawlist::{address, filter, format, sizes, upload_flags};
 use null3d_render::arrays::ArrayName;
 use null3d_render::cpu_culled::{CpuCulledConfig, MAX_SOURCE_BITS};
+use null3d_render::fog;
 use null3d_render::frame::{NO_MATERIAL, NO_MESH};
 use null3d_render::geometry::Shape;
 use null3d_render::gpu_driven::{MAX_USEFUL_BINDING_BYTES, PORTABLE_MAX_SOURCES};
@@ -288,6 +289,16 @@ pub fn typescript() -> String {
                 ("NO_DEPTH_TEST", feature::NO_DEPTH_TEST),
                 ("ADDITIVE", feature::ADDITIVE),
                 ("MULTIPLY", feature::MULTIPLY),
+                ("NO_FOG", feature::NO_FOG),
+            ],
+        ),
+        // The kinds of fog that `setFog` takes.
+        (
+            "FOG_KIND",
+            &[
+                ("NONE", fog::kind::NONE),
+                ("LINEAR", fog::kind::LINEAR),
+                ("EXP2", fog::kind::EXP2),
             ],
         ),
         // The values that `setMaterialValue` changes, by the float where each starts in a row.

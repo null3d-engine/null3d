@@ -8,7 +8,7 @@ enable draw_index;
 // blends writes premultiplied color.
 #import null3d::color
 #import null3d::lighting
-#import null3d::mesh::{InstanceIn, clip_of, find_instance, frame, material_of}
+#import null3d::mesh::{InstanceIn, clip_of, find_instance, fogged, frame, material_of}
 #import null3d::mesh::{fragment_color, relative_position, world_normal}
 
 /// The bit of a material's flags that lights each triangle with its face's normal.
@@ -105,5 +105,6 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
         discard;
     }
 #endif
-    return fragment_color(m, null3d::color::linear_to_srgb(outgoing), alpha, alpha);
+    let encoded = null3d::color::linear_to_srgb(fogged(outgoing, in.relative, m));
+    return fragment_color(m, encoded, alpha, alpha);
 }
