@@ -39,7 +39,7 @@ The "Since" column gives the first engine version with the feature:
 | three.js | null3D | Status | Since | Notes | Docs |
 | --- | --- | --- | --- | --- | --- |
 | WebGLRenderer / WebGPURenderer | createEngine({ canvas, sketch }) on the page; scene code moves to sketch.ts inside defineSketch() | changed | 0.1 | The engine picks WebGPU or WebGL2 itself. antialias maps to the quality preset (MSAA 4x from Medium); alpha: true maps to createEngine({ transparent: true }); powerPreference maps to createEngine({ powerPreference }), whose default is 'high-performance'. | `getting-started/first-scene` |
-| renderer.setPixelRatio(devicePixelRatio) | createEngine({ maxPixelRatio }) and the quality presets | changed | 0.1 | Presets cap the pixel ratio (1.5 on Low, 2 on Medium and High). Dynamic resolution then adjusts the render scale. | `concepts/quality-presets` |
+| renderer.setPixelRatio(devicePixelRatio) | createEngine({ maxPixelRatio }) and the quality presets; quality.set({ maxPixelRatio }) in the sketch | changed | 0.1 | The engine sizes the canvas to its CSS size times the screen's pixel ratio, up to the quality preset's cap. The option replaces the cap, and quality.set changes it during play. | `concepts/quality-presets` |
 | renderer.setSize / window resize handler / camera.aspect + updateProjectionMatrix | Automatic | changed | 0.1 | The engine follows the canvas's CSS size. Perspective cameras, and orthographic cameras made with a height, follow its aspect ratio in every frame. Delete resize handlers and updateProjectionMatrix calls. | `api/engine` |
 | requestAnimationFrame(animate) / renderer.setAnimationLoop / renderer.render(scene, camera) | onUpdate(dt) returned from defineSketch() | changed | 0.1 | The engine renders every frame by itself; never call a render function. Per-frame logic goes in onUpdate, camera-follow logic in onLateUpdate. | `porting/threejs-loop-and-threads` |
 | renderer.shadowMap.enabled / .type (PCFSoftShadowMap, VSMShadowMap) | castShadows: true on the light; filtering follows the preset | changed | 0.1 | Presets use 3 x 3 or 5 x 5 PCF filtering. VSM has no equivalent. | `concepts/shadows` |
@@ -255,7 +255,7 @@ The "Since" column gives the first engine version with the feature:
 | three.js | null3D | Status | Since | Notes | Docs |
 | --- | --- | --- | --- | --- | --- |
 | WebXR (renderer.xr, VRButton, ARButton) | None | unsupported | - | XR is out of scope for version 1. | `porting/threejs-unsupported` |
-| Audio / PositionalAudio / AudioListener / AudioLoader | Web Audio on the page | unsupported | - | The sketch sends positions with page.post: every frame for moving sounds, or on events only. | `guides/audio` |
+| Audio / PositionalAudio / AudioListener / AudioLoader | Web Audio on the page | unsupported | - | The sketch writes the positions of moving sounds into a shared array, which it sends to the page once. It sends one message with page.post for each sound event. | `guides/audio` |
 | lil-gui / dat.gui panels | Keep the panel on the page; send changes with engine.postToSketch and receive them with page.onMessage | changed | 0.1 |  | `guides/ui-overlays` |
 | cannon-es / Rapier / Ammo / Oimo | Run the physics library in the sketch worker; copy body transforms into dynamic arrays after each step | changed | 0.1 | WebAssembly physics builds run in workers. An official Rapier adapter comes after 1.0. | `guides/physics` |
 | three-mesh-bvh (computeBoundsTree, acceleratedRaycast) | Built in | direct | 0.2 | Delete the setup. | `api/raycast` |

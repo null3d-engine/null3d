@@ -32,8 +32,8 @@
       "three": "renderer.setPixelRatio(devicePixelRatio)",
       "status": "changed",
       "since": "0.1",
-      "target": "createEngine({ maxPixelRatio }) and the quality presets",
-      "notes": "Presets cap the pixel ratio (1.5 on Low, 2 on Medium and High). Dynamic resolution then adjusts the render scale.",
+      "target": "createEngine({ maxPixelRatio }) and the quality presets; quality.set({ maxPixelRatio }) in the sketch",
+      "notes": "The engine sizes the canvas to its CSS size times the screen's pixel ratio, up to the quality preset's cap. The option replaces the cap, and quality.set changes it during play.",
       "docs": "concepts/quality-presets",
       "detect": "\\.setPixelRatio\\s*\\("
     },
@@ -1584,7 +1584,7 @@
       "status": "unsupported",
       "since": null,
       "target": "Web Audio on the page",
-      "notes": "The sketch sends positions with page.post: every frame for moving sounds, or on events only.",
+      "notes": "The sketch writes the positions of moving sounds into a shared array, which it sends to the page once. It sends one message with page.post for each sound event.",
       "docs": "guides/audio",
       "detect": "\\b(PositionalAudio|AudioListener|AudioLoader|AudioAnalyser)\\b"
     },
