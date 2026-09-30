@@ -139,7 +139,7 @@ fn vertexOffset(input: VertexInput) -> vec3f {
 materials.shader({ vertexOffset, surface });
 ```
 
-Vertices that move outside the object's bounds can be culled wrongly; enlarge the bounds with `obj.setBounds(center, radius)`.
+Vertices that move outside the mesh's bounding sphere can be culled wrongly. Give the mesh a sphere that holds them with `mesh.setBounds(center, radius)`, at setup, because the call rebuilds the draw tables.
 
 A full shader supplies `vertex` and `fragment` functions. Use the engine's vertex input and output structs from the shader library (`#import null3d::vertex`), so instancing and camera-relative positions still work. Full shaders do not receive lighting, shadows or fog unless you import the helpers (`null3d::lighting`, `null3d::fog`).
 

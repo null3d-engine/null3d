@@ -74,7 +74,7 @@ const DOCS = {
 	E1108: {
 		title: 'Value out of range',
 		cause:
-			'A call received a count or an index past its limit, such as a row past the capacity of an instance batch.',
+			'A call received a number outside the range it takes. Examples are a row past the capacity of an instance batch, an opacity above 1, and a negative radius.',
 		example: 'E1108: setActiveCount() got 1200, above the limit of 1000.',
 		since: '0.1',
 	},
