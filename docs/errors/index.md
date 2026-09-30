@@ -37,7 +37,7 @@ Every error the engine throws is an `EngineError` with a code. Its message names
 | [E1402](E1402.md) | Engine core out of date | The engine core WebAssembly file lacks functions that the TypeScript side calls, so the two come from different builds. Development builds check this when the core loads. |
 | [E1403](E1403.md) | Engine core not ready | An engine call ran before the engine core started in this worker, or the core started twice. |
 | [E1404](E1404.md) | Engine thread failed | An engine thread hit an error it could not handle after the engine started, so the engine may have stopped. |
-| [E1405](E1405.md) | Engine thread did not start | An engine thread failed while the engine started, before the sketch ran. |
+| [E1405](E1405.md) | Engine thread did not start | An engine worker failed while the engine started. The worker's script, the engine core or the renderer did not start there, or the sketch's setup function threw an error without an engine code. |
 | [E1406](E1406.md) | Engine core not downloaded | A file of the engine core did not download whole: the server answered with an error, or the connection broke off. |
 | [E1407](E1407.md) | Invalid hold time | The ?hold= switch or the hold option of createEngine gave a hold time that is not a number of seconds from 0 to 600. |
 | [E1408](E1408.md) | Hold failed | The sketch or the engine failed in hold mode, before the engine read the held frame back. A live engine logs an error in the sketch and carries on. Hold mode stops at the first one, so a test fails at once. |

@@ -18,14 +18,16 @@ use null3d_core::lights::{LightTable, LightView, SunShadow};
 use null3d_core::scene::SceneStorage;
 use null3d_core::snapshot::FrameSnapshot;
 use null3d_gpu::drawlist::{
-    DrawList, DrawListError, Op, buffer_usage, permutation, state_flags, template,
+    DrawList, DrawListError, Op, buffer_usage, permutation, state_flags, template, vertex,
 };
 
 use crate::camera::Lens;
 use crate::debug_lines::DebugLines;
 use crate::frame_data::{FrameUniform, normalized_direction};
 use crate::graph::GraphError;
-use crate::materials::{MATERIAL_FLOATS, MATERIAL_TEXELS, MapSlot, MaterialTable, Shading};
+use crate::materials::{
+    MATERIAL_FLOATS, MATERIAL_TEXELS, MapSlot, MaterialTable, Shading, feature,
+};
 use crate::meshes::{MAX_BUFFER_BYTES, MeshStorage, Page};
 use crate::pipelines::DrawKey;
 use crate::shadows::{ShadowFrame, ShadowSettings, fit_cascades};
@@ -578,7 +580,9 @@ impl SceneSettings {
     /// What a mesh and material pair, by engine ids, asks of the pipeline that draws it, or `None`
     /// when the pair draws nowhere: no mesh, no material, an id that names nothing, or a mesh
     /// without the vertex attributes that the material's shading reads. A material whose map is
-    /// gone, or whose mesh has no texture coordinates for it, draws with its color alone.
+    /// gone, or whose mesh has no texture coordinates for it, draws with its color alone. A
+    /// material with vertex colors reads them only from a mesh that has them, and a double-sided
+    /// material culls no faces.
     pub fn pipeline_of(&self, mesh: u32, material: u32) -> Option<DrawKey> {
         if mesh == NO_MESH || material == NO_MATERIAL {
             return None;
@@ -595,11 +599,24 @@ impl SceneSettings {
             shading = Shading::Unlit;
         }
         let needs = shading.attributes();
+        let features = self.materials.features(material - 1);
+        let vertex_colors = features & feature::VERTEX_COLORS != 0
+            && format & vertex::COLOR != 0
+            && shading.takes_vertex_colors();
+        let double_sided = features & feature::DOUBLE_SIDED != 0;
         ((format & needs) == needs).then_some(DrawKey {
             template: shading.template(),
-            permutation: 0,
+            permutation: if vertex_colors {
+                permutation::VERTEX_COLOR
+            } else {
+                0
+            },
             vertex_format: format,
-            state: 0,
+            state: if double_sided {
+                state_flags::CULL_NONE
+            } else {
+                0
+            },
         })
     }
 

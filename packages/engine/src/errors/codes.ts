@@ -198,7 +198,8 @@ const DOCS = {
 	},
 	E1405: {
 		title: 'Engine thread did not start',
-		cause: 'An engine thread failed while the engine started, before the sketch ran.',
+		cause:
+			"An engine worker failed while the engine started. The worker's script, the engine core or the renderer did not start there, or the sketch's setup function threw an error without an engine code.",
 		example: 'E1405: the render worker did not start: no WebGPU adapter.',
 		since: '0.1',
 	},

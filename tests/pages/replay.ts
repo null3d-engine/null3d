@@ -74,9 +74,9 @@ run('replay', async () => {
 	materials.set([0.8, 0.1, 0.1, 1], 0);
 	materials.set([0.1, 0.3, 0.9, 1], G.SIZE_MATERIAL_BYTES / 4);
 	// The planes, the instance count and the view's layers, then the offset from the camera to each
-	// grid cell. Every instance here lies in cell 0, whose zero offset keeps the positions in world
-	// space.
-	const cull = new Float32Array(28 + 4 * G.SIZE_MAX_CELLS);
+	// grid cell, then the runs of the cell order. Every instance here lies in cell 0, whose zero
+	// offset keeps the positions in world space, and no run is listed, so thread i culls instance i.
+	const cull = new Float32Array(28 + 4 * G.SIZE_MAX_CELLS + 4 * G.SIZE_MAX_CULL_RANGES);
 	cull.set(frustumPlanes(viewProj), 0);
 	new Uint32Array(cull.buffer).set([positions.length, viewLayers, 0, 0], 24);
 	const indirect = new Uint32Array([36, 0, 0, 0, 0, 36, 0, 0, 0, 0]);
@@ -94,6 +94,9 @@ run('replay', async () => {
 		buckets: memory.put(bucketInfo),
 		indirect: memory.put(indirect),
 		cull: memory.put(cull),
+		// A one-entry table of the split-sum terms of specular light that the frame group binds:
+		// the scale and bias of a smooth surface seen head on.
+		dfg: memory.put(new Float32Array([1, 0, 0, 0])),
 	};
 	const U = {
 		VERTEX: 0x20,
@@ -116,8 +119,10 @@ run('replay', async () => {
 		[9, indirect.byteLength, U.INDIRECT | U.STORAGE | U.COPY_DST | U.COPY_SRC, blobs.indirect],
 		[10, cull.byteLength, U.UNIFORM | U.COPY_DST, blobs.cull],
 		[11, instanceLayers.byteLength, U.STORAGE | U.COPY_DST, blobs.instanceLayers],
+		// The cell order, which a dispatch with no runs never reads.
+		[12, 4, U.STORAGE | U.COPY_DST, -1],
 		// The shadow cascades' uniform, which the frame group binds; no light casts shadows here.
-		[12, G.SIZE_SHADOW_UNIFORM_BYTES, U.UNIFORM | U.COPY_DST, -1],
+		[13, G.SIZE_SHADOW_UNIFORM_BYTES, U.UNIFORM | U.COPY_DST, -1],
 	];
 	for (const [id, size, usage] of buffers) memory.push(G.OP_CREATE_BUFFER, id, size, usage);
 	for (const [id, size, , source] of buffers)
@@ -150,7 +155,7 @@ run('replay', async () => {
 	// sampler that compares depths in it.
 	memory.push(
 		G.OP_CREATE_TEXTURE,
-		3,
+		4,
 		1,
 		1,
 		1,
@@ -178,6 +183,19 @@ run('replay', async () => {
 		1,
 	);
 	memory.push(
+		G.OP_CREATE_TEXTURE,
+		3,
+		1,
+		1,
+		1,
+		G.FORMAT_RGBA32_FLOAT,
+		GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+		1,
+		1,
+		G.VIEW_2D,
+	);
+	memory.push(G.OP_WRITE_TEXTURE, 3, 0, 0, 0, 0, 1, 1, 1, blobs.dfg, 16);
+	memory.push(
 		G.OP_CREATE_RENDER_PIPELINE,
 		1,
 		G.TEMPLATE_INSTANCED_LIT,
@@ -193,19 +211,20 @@ run('replay', async () => {
 		G.OP_CREATE_BIND_GROUP,
 		1,
 		G.LAYOUT_FRAME,
-		5,
+		6,
 		...[0, G.RESOURCE_BUFFER, 3, 0, 0],
 		...[1, G.RESOURCE_BUFFER, 4, 0, 0],
-		...[4, G.RESOURCE_TEXTURE, 3, 0, 0],
+		...[3, G.RESOURCE_TEXTURE, 3, 0, 0],
+		...[4, G.RESOURCE_TEXTURE, 4, 0, 0],
 		...[5, G.RESOURCE_SAMPLER, 1, 0, 0],
-		...[6, G.RESOURCE_BUFFER, 12, 0, 0],
+		...[6, G.RESOURCE_BUFFER, 13, 0, 0],
 	);
 	memory.push(
 		G.OP_CREATE_BIND_GROUP,
 		2,
 		G.LAYOUT_CULL,
-		7,
-		...[10, 5, 6, 7, 8, 9, 11].flatMap((buffer, binding) => [
+		8,
+		...[10, 5, 6, 7, 8, 9, 11, 12].flatMap((buffer, binding) => [
 			binding,
 			G.RESOURCE_BUFFER,
 			buffer,

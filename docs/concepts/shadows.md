@@ -95,7 +95,7 @@ Raise them in small steps if a surface shows acne. Values that are too large mak
 Each cascade has a render pass that draws its casters' depth. Each cascade culls its casters too:
 
 - On WebGPU, a culling pass on the GPU runs before each cascade's render pass. The CPU does the same small amount of work per cascade whatever the number of casters.
-- On WebGL2, the job workers test each caster against each cascade's box, as they test each object against the camera's view. That CPU work grows with the number of casters.
+- On WebGL2, the job workers test each caster against each cascade's box, as they test each object against the camera's view. They first skip the still casters of the grid cells out of the box. That CPU work grows with the number of casters.
 
 Each layer of the shadow map takes 4 bytes per texel: 16 MB at 2,048 texels on each side. Surfaces that receive shadows read the map once per pixel.
 

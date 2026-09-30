@@ -8,7 +8,7 @@ summary: "Low to Ultra; pixel-ratio caps; the frame-budget governor; quality eve
 
 # Quality presets, dynamic resolution and frame budgets
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. The engine chooses a preset, applies its pixel ratio cap and its memory maximum, and reports it. The settings that the table below marks as planned are not built yet. Neither are dynamic resolution, the frame-budget governor, the warm-up check that lowers a preset on a slow GPU, or `quality.setPreset`. Coding agents must not use them.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. The engine chooses a preset, applies its pixel ratio cap, its texture settings and its memory maximum, and reports it. The settings that the table below marks as planned are not built yet. Neither are dynamic resolution, the frame-budget governor, the warm-up check that lowers a preset on a slow GPU, or `quality.setPreset`. Coding agents must not use them.
 
 ```mermaid
 flowchart TD
@@ -112,8 +112,8 @@ Each value is a starting point, which measurements on phones, tablets and deskto
 | Far cascade updates (`farCascadeInterval`) | every 4th frame | every 3rd frame | every 2nd frame | every 2nd frame | during play | planned |
 | Point light shadows (`pointLightShadows`) | no | no | yes | yes | at the start | planned |
 | Depth prepass (`depthPrepass`) | no | no | yes | yes | at the start | planned |
-| Anisotropic filtering cap (`maxAnisotropy`) | 2x | 4x | 8x | 16x | during play | planned |
-| Texture uploads per frame (`uploadBytesPerFrame`) | 2 MiB | 4 MiB | 8 MiB | 16 MiB | during play | planned |
+| Anisotropic filtering cap (`maxAnisotropy`) | 2x | 4x | 8x | 16x | during play | built |
+| Texture uploads per frame (`uploadBytesPerFrame`) | 2 MiB | 4 MiB | 8 MiB | 16 MiB | during play | built |
 | Point and spot lights per frame (`maxLights`) | 256 | 256 | 512 | 1024 | at the start | planned |
 | Lights per cluster (`maxLightsPerCluster`) | 32 | 64 | 64 | 128 | at the start | planned |
 | Texture memory budget (`textureMemoryMiB`) | 256 MiB | 512 MiB | 1024 MiB | 2048 MiB | at the start | planned |
@@ -122,6 +122,8 @@ Each value is a starting point, which measurements on phones, tablets and deskto
 <!-- null3d:preset-settings:end -->
 
 The pixel ratio cap is the cheapest large saving on phones. The GPU fills each device pixel, and a screen's device pixels grow with the square of its ratio. So a ratio of 3 fills 2.25 times the pixels of a ratio of 2. The `maxPixelRatio` option of `createEngine` replaces the preset's cap, and `quality.set({ maxPixelRatio })` changes it during play.
+
+The anisotropic filtering cap limits the `anisotropy` option of every texture, so surfaces seen at a slant cost fewer texture reads on the lighter presets. The upload budget limits the texel bytes that one frame sends to the GPU, so loading many textures does not make one frame slow. A larger texture goes up over several frames. `quality.set({ maxAnisotropy, uploadBytesPerFrame })` changes either during play.
 
 The engine makes its memory while it tests the GPU paths. So the memory maximum follows the starting preset and the crashed starts, and the GPU path does not cap it. The `memory` option of `createEngine` replaces it: [Page API](../api/engine.md#memory).
 

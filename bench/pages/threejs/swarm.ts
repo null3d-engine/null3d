@@ -11,14 +11,20 @@ export interface Swarm {
 }
 
 /**
- * Makes S1's instances with their matrices at time 0. Set `moving` when the matrices change every
- * frame: it marks the matrix buffer for frequent updates.
+ * Makes S1's instances with their matrices at time 0, each placed at a time by `instanceAt`: S1's
+ * own by default. Set `moving` when the matrices change every frame: it marks the matrix buffer
+ * for frequent updates.
  */
-export function createSwarm(three: Three, count: number, moving: boolean): Swarm {
+export function createSwarm(
+	three: Three,
+	count: number,
+	moving: boolean,
+	instanceAt = s1InstanceAt,
+): Swarm {
 	const data = createS1(count);
 	const mesh = new three.InstancedMesh(
 		new three.BoxGeometry(S1_BOX_SIZE, S1_BOX_SIZE, S1_BOX_SIZE),
-		new three.MeshLambertMaterial({ color: S1_COLOR }),
+		new three.MeshStandardMaterial({ color: S1_COLOR }),
 		count,
 	);
 	if (moving) mesh.instanceMatrix.setUsage(three.DynamicDrawUsage);
@@ -31,7 +37,7 @@ export function createSwarm(three: Three, count: number, moving: boolean): Swarm
 	const matrix = new three.Matrix4();
 	const setMatrices = (t: number): void => {
 		for (let i = 0; i < count; i++) {
-			s1InstanceAt(data, i, t, positionOut, quaternionOut);
+			instanceAt(data, i, t, positionOut, quaternionOut);
 			position.fromArray(positionOut);
 			quaternion.fromArray(quaternionOut);
 			matrix.compose(position, quaternion, scale);

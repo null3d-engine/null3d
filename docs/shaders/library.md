@@ -566,13 +566,13 @@ fn brdf_ggx(to_light: vec3f, to_view: vec3f, normal: vec3f, f0: vec3f, f90: f32,
 
 The GGX specular reflectance for one light, as three.js's `BRDF_GGX`: the GGX distribution, Schlick's Fresnel term and the correlated Smith visibility term. `roughness` is perceptual.
 
-### `dfg_approx`
+### `dfg_lut`
 
 ```wgsl
-fn dfg_approx(n_dot_v: f32, roughness: f32) -> vec2f
+fn dfg_lut(n_dot_v: f32, roughness: f32) -> vec2f
 ```
 
-The scale and bias of the split-sum approximation of specular light from all directions, for a view at `n_dot_v` and a perceptual `roughness`. This is Karis's analytic fit from "Physically Based Shading on Mobile". three.js reads the same two terms from a lookup texture instead.
+The scale and bias of the split-sum approximation of specular light from all directions, for a view at `n_dot_v` and a perceptual `roughness`. It reads three.js's table of these terms, as three.js does, filtered between the nearest four entries. The engine binds the table in group 0 at binding 3 of its mesh pipelines, and a shader that calls this function binds it there too. The function reads the table with `textureLoad`, so the table needs no sampler and no filterable format.
 
 ### `environment_brdf`
 

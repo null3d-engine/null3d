@@ -212,9 +212,10 @@ impl Opaque {
     }
 
     /// Records the creation of a view's frame group, which binds its uniform block, its cell
-    /// offsets and the material table's texture. A camera's view also binds `shadow_map`, with
-    /// the comparison sampler and the cascades' uniform block that read it. A shadow cascade's
-    /// view binds no shadow map, so no pass reads the texture it draws into.
+    /// offsets and the material table's texture. A camera's view also binds three.js's table of
+    /// the split-sum terms of specular light, and `shadow_map`, with the comparison sampler and
+    /// the cascades' uniform block that read it. A shadow cascade's view binds no shadow map, so
+    /// no pass reads the texture it draws into.
     pub(super) fn bind_frame(
         list: &mut DrawList,
         view: ViewId,
@@ -248,10 +249,15 @@ impl Opaque {
             list.push(Op::CreateBindGroup, &words)?;
             return Ok(());
         };
-        let mut words = [0; 33];
-        words[..3].copy_from_slice(&[group, bind_layout::FRAME, 6]);
+        let mut words = [0; 38];
+        words[..3].copy_from_slice(&[group, bind_layout::FRAME, 7]);
         words[3..18].copy_from_slice(&common);
         words[18..].copy_from_slice(&[
+            3,
+            resource_kind::TEXTURE,
+            ids::DFG,
+            0,
+            0,
             4,
             resource_kind::TEXTURE,
             map,

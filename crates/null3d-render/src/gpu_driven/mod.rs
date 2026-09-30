@@ -80,7 +80,9 @@ use std::collections::TryReserveError;
 use null3d_gpu::caps::{BUDGET, Limit};
 use null3d_gpu::drawlist::{DrawList, Op, buffer_usage as usage, sizes};
 
+use crate::cells::CellCulling;
 use crate::debug_lines::LinesPass;
+use crate::dfg;
 use crate::frame::{
     FrameBuilder, FrameInput, MaterialStorage, MeshBuffers, ParityLists, RecordError,
     SceneSettings, UploadArena,
@@ -110,9 +112,13 @@ pub const fn max_sources(binding_bytes: u32) -> u32 {
     }
 }
 
-/// Engine memory the builder keeps for each source: its entries in the bucket table, the layer
-/// table and the casters' bucket table, and room for all three in both frames' upload arenas.
-pub const BYTES_PER_SOURCE: u32 = 36;
+/// Bytes of each source in the builder's tables: its entries in the bucket table, the layer table
+/// and the casters' bucket table, and its place in the cell order.
+const TABLE_BYTES_PER_SOURCE: u32 = 16;
+
+/// Engine memory the builder keeps for each source: its entries in the tables, and room for them
+/// in both frames' upload arenas.
+pub const BYTES_PER_SOURCE: u32 = 3 * TABLE_BYTES_PER_SOURCE;
 
 /// The most sources on every WebGPU device: [`max_sources`] at WebGPU's default storage binding
 /// limit. The WebGL2 path has its own limit, which follows the device's largest texture.
@@ -133,9 +139,11 @@ mod ids {
     pub const INSTANCE_BUCKETS: u32 = 3;
     pub const BUCKETS: u32 = 4;
     pub const SOURCE_LAYERS: u32 = 5;
+    /// Every drawn source's place, in cell order.
+    pub const ORDER: u32 = 6;
     /// Each view's buffers: its frame uniform, culling parameters, compacted instances and
     /// indirect draws, four ids from `VIEW_BUFFERS + 4 * view`.
-    const VIEW_BUFFERS: u32 = 6;
+    const VIEW_BUFFERS: u32 = 7;
 
     pub const fn frame(view: ViewId) -> u32 {
         VIEW_BUFFERS + 4 * view.index() as u32
@@ -160,8 +168,10 @@ mod ids {
     /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
     pub const PAGES: u32 = LINES + 4;
 
+    /// three.js's table of the split-sum terms of specular light.
+    pub const DFG: u32 = 1;
     /// The render graph's textures, from this id on.
-    pub const TARGETS: u32 = 1;
+    pub const TARGETS: u32 = DFG + 1;
     /// The texture arrays of materials' maps, after every id the render graph can take.
     pub const TEXTURE_ARRAYS: u32 = TARGETS + 256;
     /// The comparison sampler of the shadow map.
@@ -197,6 +207,9 @@ pub struct RendererConfig {
     /// The device's largest storage binding, at most [`MAX_USEFUL_BINDING_BYTES`]. It caps the
     /// builder's buffers and the sources it can draw.
     pub storage_binding_bytes: u32,
+    /// True to cull only the sources of grid cells in view; false to cull every source, as a
+    /// benchmark of cell culling compares.
+    pub cell_culling: bool,
 }
 
 impl Default for RendererConfig {
@@ -206,6 +219,7 @@ impl Default for RendererConfig {
             max_materials: sizes::MAX_MATERIALS,
             draw_list_words: 16 * 1024,
             storage_binding_bytes: sizes::PORTABLE_STORAGE_BINDING_BYTES,
+            cell_culling: true,
         }
     }
 }
@@ -225,6 +239,8 @@ pub struct GpuDrivenRenderer {
     casters: Layout,
     /// True when the layouts were built for a frame with shadows.
     layouts_shadowed: bool,
+    /// Grid-cell culling: the scene's still objects in cell order, and each cell's box.
+    cells: CellCulling,
     culling: Culling,
     lines: LinesPass,
     /// Each camera view's values in the frame being recorded, or `None` for a view with no camera.
@@ -236,6 +252,8 @@ pub struct GpuDrivenRenderer {
     views_made: usize,
     cascades_made: usize,
     created: bool,
+    /// True from the creation of three.js's table of specular terms until a frame uploads it.
+    dfg_pending: bool,
 }
 
 /// The builder's scene settings: meshes in shared buffers, `max_materials` materials, and
@@ -272,6 +290,7 @@ impl GpuDrivenRenderer {
             layout: Layout::new(Drawn::Scene),
             casters: Layout::new(Drawn::Casters),
             layouts_shadowed: false,
+            cells: CellCulling::new(config.cell_culling, false),
             culling: Culling::default(),
             lines: LinesPass::new(ids::LINES),
             frames: Vec::new(),
@@ -279,6 +298,7 @@ impl GpuDrivenRenderer {
             views_made: 0,
             cascades_made: 0,
             created: false,
+            dfg_pending: false,
         }
     }
 
@@ -293,6 +313,21 @@ impl GpuDrivenRenderer {
         match view.cascade_index() {
             Some(cascade) => self.cascade_frames.get(cascade)?.as_ref(),
             None => self.frames.get(view.index())?.as_ref(),
+        }
+    }
+
+    /// The sources that a view's culling pass tests in the last recorded frame, in the order its
+    /// threads take them: the sources in the runs of the cell order that it culls, or every
+    /// source in place when it culls without cells. For tests; it allocates the list.
+    pub fn culled_sources(&self, view: ViewId) -> Vec<u32> {
+        match self.culling.ranges(view) {
+            Some(ranges) => {
+                let order = self.layout.order();
+                ranges
+                    .flat_map(|(start, end)| order[start as usize..end as usize].iter().copied())
+                    .collect()
+            }
+            None => (0..self.layout.sources).collect(),
         }
     }
 
@@ -341,6 +376,12 @@ impl GpuDrivenRenderer {
                 self.casters.clear();
             }
             self.layouts_shadowed = shadows;
+            let layout = &self.layout;
+            self.cells
+                .classify(input.scene, &|slot| layout.draws(slot))
+                .map_err(|_| RecordError::OutOfMemory {
+                    bytes: (input.scene.capacity() + 1).saturating_mul(16),
+                })?;
         }
         // The list starts with the pipelines it creates, so the thread that draws can start to
         // build them before it replays the rest (see `null3d_gpu::drawlist`).
@@ -391,7 +432,11 @@ impl GpuDrivenRenderer {
         }
         self.cascades_made = self.cascades_made.max(cascades);
 
+        self.cells.update(input);
         arena.reset(self.upload_bound() + LinesPass::upload_bytes(&input.lines));
+        if std::mem::take(&mut self.dfg_pending) {
+            dfg::upload(list, arena, ids::DFG)?;
+        }
         let pages_remade = self
             .meshes
             .upload(list, arena, self.settings.meshes().pages())?;
@@ -441,6 +486,7 @@ impl GpuDrivenRenderer {
         }
         self.layout
             .upload_matrices(list, input, parity, upload_everything)?;
+        self.layout.update_order(list, arena, &self.cells, input)?;
 
         self.frames.clear();
         for index in 0..views {
@@ -450,8 +496,17 @@ impl GpuDrivenRenderer {
                 .view_frame(view, input.scene, parity, input.canvas);
             if let Some(frame) = &frame {
                 opaque::upload(list, arena, view, frame)?;
-                self.culling
-                    .upload(list, arena, view, frame, &self.layout, input.scene)?;
+                let (layout, cells) = (&self.layout, &self.cells);
+                self.culling.upload(
+                    list,
+                    arena,
+                    view,
+                    frame,
+                    layout,
+                    layout,
+                    input.scene,
+                    cells,
+                )?;
             }
             self.frames.push(frame);
         }
@@ -462,8 +517,17 @@ impl GpuDrivenRenderer {
                 let view = ViewId::cascade(cascade);
                 let frame = shadow.view_frame(cascade);
                 opaque::upload(list, arena, view, &frame)?;
-                self.culling
-                    .upload(list, arena, view, &frame, &self.casters, input.scene)?;
+                let (layout, casters, cells) = (&self.layout, &self.casters, &self.cells);
+                self.culling.upload(
+                    list,
+                    arena,
+                    view,
+                    &frame,
+                    layout,
+                    casters,
+                    input.scene,
+                    cells,
+                )?;
                 self.cascade_frames[cascade] = Some(frame);
             }
         }
@@ -471,7 +535,8 @@ impl GpuDrivenRenderer {
         self.lines
             .upload(list, arena, &input.lines, camera.map(|frame| &frame.camera))?;
 
-        let (layout, casters, lines) = (&self.layout, &self.casters, &self.lines);
+        let (layout, casters, culling, lines) =
+            (&self.layout, &self.casters, &self.culling, &self.lines);
         let (frames, cascade_frames) = (&self.frames, &self.cascade_frames);
         let drawn = |view: ViewId| match view.cascade_index() {
             Some(cascade) => cascade_frames[cascade].is_some(),
@@ -483,7 +548,7 @@ impl GpuDrivenRenderer {
         };
         self.graph
             .record(list, self.settings.clear_color(), |list, role| match role {
-                Role::Cull(view) if drawn(view) => Culling::record(list, view, layout_of(view)),
+                Role::Cull(view) if drawn(view) => culling.record(list, view, layout_of(view)),
                 Role::Opaque(view) | Role::Shadow(view) if drawn(view) => {
                     opaque::record(list, view)
                 }
@@ -493,8 +558,8 @@ impl GpuDrivenRenderer {
         Ok(upload_everything)
     }
 
-    /// Records the creation of the material table, whose size never changes, and of the shadows'
-    /// uniform block and sampler.
+    /// Records the creation of the material table and three.js's table of specular terms, whose
+    /// sizes never change, and of the shadows' uniform block and sampler.
     fn create_fixed(&mut self, list: &mut DrawList) -> Result<(), RecordError> {
         shadows::create_objects(list, ids::SHADOWS, ids::SHADOW_SAMPLER)?;
         let materials = self.config.max_materials.max(1);
@@ -506,16 +571,20 @@ impl GpuDrivenRenderer {
                 usage::STORAGE | usage::COPY_DST,
             ],
         )?;
+        dfg::create(list, ids::DFG)?;
+        self.dfg_pending = true;
         self.created = true;
         Ok(())
     }
 
     /// The most that one frame can copy into its arena for the scene as it stands: mesh data not
-    /// uploaded yet, the whole material table, both layouts' tables, each view's and each
-    /// cascade's frame uniform, culling parameters and indirect draws, and the cascades' uniform.
+    /// uploaded yet, the whole material table, three.js's table of specular terms, both layouts'
+    /// tables, each view's and each cascade's frame uniform, culling parameters and indirect
+    /// draws, and the cascades' uniform.
     fn upload_bound(&self) -> usize {
         let meshes = self.meshes.pending_bytes(self.settings.meshes().pages());
-        let materials = self.settings.materials().capacity() as usize * MATERIAL_FLOATS * 4;
+        let materials =
+            self.settings.materials().capacity() as usize * MATERIAL_FLOATS * 4 + dfg::BYTES;
         let per_view = |layout: &Layout| {
             (sizes::FRAME_UNIFORM_BYTES + CULL_PARAMS_BYTES) as usize
                 + layout.draws.len() * INDIRECT_BYTES as usize
@@ -543,7 +612,8 @@ impl FrameBuilder for GpuDrivenRenderer {
     fn reserve_sources(&mut self, sources: u32) -> Result<(), TryReserveError> {
         self.layout.reserve(sources)?;
         self.casters.reserve(sources)?;
-        let bound = self.upload_bound() + sources.saturating_sub(self.layout.sources) as usize * 12;
+        let added = sources.saturating_sub(self.layout.sources);
+        let bound = self.upload_bound() + (added * TABLE_BYTES_PER_SOURCE) as usize;
         for arena in self.lists.arenas_mut() {
             arena.try_reserve(bound)?;
         }

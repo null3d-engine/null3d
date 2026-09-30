@@ -5,18 +5,20 @@
 
 mod common;
 
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 
 use common::{World, count};
 use null3d_core::layers::DEFAULT_LAYERS;
 use null3d_core::lights::SunShadow;
 use null3d_core::scene::{Command, flags};
+use null3d_core::world::SphereArrays;
 use null3d_gpu::drawlist::{
     NO_TARGET, Op, format, layout, permutation, resource_kind, state_flags, template,
     texture_usage, view,
 };
 use null3d_gpu::mock::MockBackend;
 use null3d_render::frame::FrameBuilder;
+use null3d_render::gpu_driven::{GpuDrivenRenderer, RendererConfig};
 use null3d_render::view::ViewId;
 
 /// Three cascades of 1,024 texels on each side, out to 60 m, on the default layer.
@@ -335,4 +337,66 @@ fn a_caster_that_stops_casting_leaves_the_cascades() {
         cascades.iter().all(|(_, draws)| *draws == 1),
         "the box alone"
     );
+}
+
+#[test]
+fn each_cascade_culls_the_casters_of_the_cells_it_can_see() {
+    const OBJECTS: u32 = 400;
+    let renderer = GpuDrivenRenderer::new(RendererConfig::default());
+    let mut world = World::build_sized(renderer, OBJECTS + 16);
+    world.spread(OBJECTS, 2000, 7);
+    let casts = flags::CAST_SHADOWS;
+    let commands: Vec<_> = world
+        .objects
+        .iter()
+        .map(|&object| Command::set_flags(object, casts, casts))
+        .collect();
+    world.scene.apply_commands(&commands, world.frame).unwrap();
+    let shadow = SunShadow {
+        distance: 400.0,
+        ..SUN
+    };
+    world.renderer.settings_mut().set_sun_shadow(Some(shadow));
+    world.record(true);
+    let sources = world.scene.capacity() + 1 + common::BATCH_ROWS + 2000;
+    for k in 0..6 {
+        let k = k as f32;
+        world.frame += 1;
+        world.scene.begin_frame(world.frame);
+        let at = [
+            (k * 731.0) % 4000.0 - 2000.0,
+            10.0,
+            (k * 1173.0) % 4000.0 - 2000.0,
+        ];
+        world.aim(at, k * 0.9, -0.2);
+        world.record(false);
+        let parity = world.scene.parity();
+        let spheres = world.scene.world(parity).spheres();
+        let table = world.scene.cell_table();
+        for cascade in 0..SUN.cascades as usize {
+            let view = ViewId::cascade(cascade);
+            let tested: HashSet<u32> = world.renderer.culled_sources(view).into_iter().collect();
+            assert!(
+                (tested.len() as u32) < sources,
+                "pose {k}, cascade {cascade}: every source tested"
+            );
+            // Every caster whose sphere is in the cascade's box, moved into its cell, is tested.
+            let frame = *world.renderer.view_frame(view).unwrap();
+            let in_box = |spheres: SphereArrays<'_>, slot: usize, cell: u32| {
+                let offset = frame.camera.offset_to(table.coords(cell));
+                let [x, y, z, r] =
+                    [spheres.xs, spheres.ys, spheres.zs, spheres.radii].map(|v| v[slot]);
+                frame.frustum.moved_by(offset).contains_sphere(x, y, z, r)
+            };
+            for &object in &world.objects {
+                let slot = world.scene.resolve(object).unwrap() as usize;
+                if in_box(spheres, slot, world.scene.cells()[slot]) {
+                    assert!(
+                        tested.contains(&(slot as u32)),
+                        "pose {k}, cascade {cascade}: caster {slot}"
+                    );
+                }
+            }
+        }
+    }
 }

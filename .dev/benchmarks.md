@@ -34,7 +34,7 @@ The benchmarks measure the engine as developers ship it. A production build leav
 - GitHub's machines are shared, and their speed changes from run to run. So the job judges a new commit only against a baseline measured in the same job. It builds both commits on one machine, each in a git worktree of its own, with `bun run build`.
 - It then runs `bun run bench:run --compare <baseline>,<new>` in Chrome. The command builds each commit's benchmark pages for production, into `target/bench-pages-baseline` and `target/bench-pages-new`, and serves each build on a port of its own.
 - A commit from before `bench/vite.pages.config.ts` existed has its pages built with the new commit's config.
-- S1, S1-static and S2 run on null3D's two GPU paths. The job runs 10 rounds. Each round runs every page once in each build, the two runs back to back, and even rounds run the new build first. Each run has 5 s of warm-up and 5 s measured.
+- S1, S1-static, S1-cells and S2 run on null3D's two GPU paths. A scene that one of the two commits has no page for runs in neither. So a pull request that adds a benchmark is compared on the other scenes. The job runs 10 rounds. Each round runs every page once in each build, the two runs back to back, and even rounds run the new build first. Each run has 5 s of warm-up and 5 s measured.
 - It drops a run that measured no frames, and a run that measured another refresh rate than most runs of its page did.
 - Each run gives two medians of CPU time per frame: the busiest thread's time, and the engine's own work on that thread. For each page and measure, the job divides the new build's median by the baseline's in each round. The change is the median of these ratios. A machine that changes speed between rounds then changes both runs of a round alike.
 - The job fails when the busiest thread's change is more than 5% and more than 0.01 ms. It also fails when own work's change is more than 15% and more than 0.02 ms. The browser's timer counts in steps of 5 microseconds, so a small time moves by whole steps between runs.
@@ -85,6 +85,15 @@ Build two checkouts, such as a git worktree of main beside your branch, with `bu
 - Both plans load the production build of the benchmark pages, as the tools on the Mac do.
 - The bench plan runs S1 on its usual pages. `--pages` and `--scenes` pick others. For example, to compare two null3D paths on a phone: `bun tests/real-browsers.ts --plan bench --allow-no-webgpu --android chrome --scenes s1-static,s2 --pages null3d-webgl2,null3d-webgl2-low`.
 - `--seconds <n>` sets each bench page's warm-up and measured time, n seconds each. For the protocol's 10-minute sustained run on a phone, use `--seconds 300`: 5 minutes of warm-up, then 5 measured.
+
+## Grid-cell culling
+
+- S1-cells spreads S1-static's boxes over 8 x 8 grid cells, 8 km on each side. Its camera flies low along -Z at 200 m/s, so a few cells are in view. New ones come into view about every 5 seconds.
+- The page kinds that end in `-cells-off` start null3D with `?cells=off`. Culling then skips no cell: WebGPU's culling pass covers every source. WebGL2 culls every object. It builds no clusters for a static batch whose rows lie in several cells.
+- On the Mac, compare both paths with and without cells: `bun run bench:run --scenes s1-cells --pages null3d-webgpu,null3d-webgpu-cells-off,null3d-webgl2,null3d-webgl2-cells-off,threejs-webgpu,threejs-webgl,scene-code`.
+- On the phone: `bun tests/real-browsers.ts --plan bench --allow-no-webgpu --android chrome --scenes s1-cells --pages null3d-webgl2,null3d-webgl2-cells-off,threejs-webgl`.
+- On 30 September 2026 the MacBook Pro ran S1-cells in Chrome at 144 Hz, 3 runs of 10 s per page (`target/bench/20260930-052100-bench`). Other builds loaded the machine at the time. On WebGL2, cells cut the busiest thread's CPU time from 0.21 ms to 0.07 ms per frame. They cut all threads' time from 0.54 ms to 0.12 ms. Each frame then listed 79 entries instead of 1,517. three.js's WebGL renderer took 0.07 ms.
+- On WebGPU the CPU time stayed at 0.10 ms, because the GPU culls. The culling pass took 0.025 ms of GPU time with cells and 0.039 ms without them, and the drawing pass 0.082 ms either way.
 
 ## Sweeps for the open defaults
 

@@ -2,8 +2,10 @@
 // (webgpu), WebGPU in compatibility mode (compat) or WebGL2 (webgl2). The library test shader
 // draws one row of four rgba32uint texels per case, and the page compares the bits it reads back
 // with the TypeScript references of `lib/shader-library-cases.ts`. The values are numbers, not an
-// image, so the page reads them straight from the GPU objects it made.
+// image, so the page reads them straight from the GPU objects it made. The page binds three.js's
+// table of specular terms where the engine binds it, for `lighting::dfg_lut`.
 import { SHADERS } from '@null3d/engine/internal';
+import { DFG_SIZE, dfgTexels } from './lib/dfg-table';
 import { run } from './lib/result';
 import {
 	allCases,
@@ -53,9 +55,22 @@ async function runWebGPU(input: Uint32Array, rows: number): Promise<Uint32Array>
 		throw new Error(
 			`WGSL: ${messages.map((m) => `${m.lineNum}:${m.linePos} ${m.message}`).join('; ')}`,
 		);
+	const fragment = GPUShaderStage.FRAGMENT;
 	const layout = device.createBindGroupLayout({
-		entries: [{ binding: 0, visibility: GPUShaderStage.FRAGMENT, texture: { sampleType: 'uint' } }],
+		entries: [
+			{ binding: 0, visibility: fragment, texture: { sampleType: 'uint' } },
+			{ binding: 3, visibility: fragment, texture: { sampleType: 'unfilterable-float' } },
+		],
 	});
+	const dfg = device.createTexture({
+		size: [DFG_SIZE, DFG_SIZE],
+		format: 'rgba32float',
+		usage: GPUTextureUsage.TEXTURE_BINDING | GPUTextureUsage.COPY_DST,
+	});
+	device.queue.writeTexture({ texture: dfg }, dfgTexels(), { bytesPerRow: DFG_SIZE * 16 }, [
+		DFG_SIZE,
+		DFG_SIZE,
+	]);
 	const pipeline = device.createRenderPipeline({
 		layout: device.createPipelineLayout({ bindGroupLayouts: [layout] }),
 		vertex: { module, entryPoint: wgsl.pipelines.main.vertex },
@@ -94,7 +109,13 @@ async function runWebGPU(input: Uint32Array, rows: number): Promise<Uint32Array>
 	pass.setPipeline(pipeline);
 	pass.setBindGroup(
 		0,
-		device.createBindGroup({ layout, entries: [{ binding: 0, resource: cases.createView() }] }),
+		device.createBindGroup({
+			layout,
+			entries: [
+				{ binding: 0, resource: cases.createView() },
+				{ binding: 3, resource: dfg.createView() },
+			],
+		}),
 	);
 	pass.draw(3);
 	pass.end();
@@ -155,8 +176,25 @@ function runWebGL2(input: Uint32Array, rows: number): Uint32Array {
 		gl.UNSIGNED_INT,
 		input,
 	);
+	// The table of specular terms goes in unit 1; its floats are read with texelFetch.
+	const dfg = gl.createTexture();
+	gl.activeTexture(gl.TEXTURE1);
+	gl.bindTexture(gl.TEXTURE_2D, dfg);
+	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
+	gl.texParameteri(gl.TEXTURE_2D, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
+	gl.texImage2D(
+		gl.TEXTURE_2D,
+		0,
+		gl.RGBA32F,
+		DFG_SIZE,
+		DFG_SIZE,
+		0,
+		gl.RGBA,
+		gl.FLOAT,
+		dfgTexels(),
+	);
 	for (const texture of glsl.fragment.textures)
-		gl.uniform1i(gl.getUniformLocation(program, texture.name), 0);
+		gl.uniform1i(gl.getUniformLocation(program, texture.name), texture.binding === 3 ? 1 : 0);
 
 	const target = gl.createRenderbuffer();
 	gl.bindRenderbuffer(gl.RENDERBUFFER, target);
