@@ -9,11 +9,11 @@ import {
 	CHECK_GRACE_MS,
 	CHECK_UPLOAD_WAIT_MS,
 	CHECK_WINDOW_MS,
-	checkTargetFps,
 	frameRate,
 	holdsTarget,
 	type PresetCheck,
 	type PresetCheckRound,
+	raiseTarget,
 } from '../quality/check';
 import type { QualityPreset } from '../quality/presets';
 import { RingSums, Role, refreshRate, SUM_INTERVAL_MS, SUM_RECORDS } from '../shared/metrics';
@@ -61,7 +61,7 @@ export async function checkPreset(
 ): Promise<PresetCheck | undefined> {
 	const from = host.preset;
 	const rounds: PresetCheckRound[] = [];
-	let targetFps = checkTargetFps(0, host.maxFps);
+	let targetFps = 0;
 	let start = graceStart;
 	for (;;) {
 		const graceEnd = start + CHECK_GRACE_MS;
@@ -77,7 +77,7 @@ export async function checkPreset(
 		if (!(await drawWhile(host, () => performance.now() < windowEnd))) return undefined;
 		presented.add();
 		completed.add();
-		targetFps = checkTargetFps(refreshRate(host.metrics), host.maxFps);
+		targetFps = raiseTarget(targetFps, refreshRate(host.metrics), host.maxFps);
 		const round = {
 			preset: host.preset,
 			presentedFps: rateOf(presented),

@@ -70,6 +70,16 @@ export function checkTargetFps(refreshHz: number, maxFps = CHECK_MAX_FPS): numbe
 	return refreshHz > 0 ? Math.min(target, refreshHz) : target;
 }
 
+/**
+ * The target after a round: the higher of the target so far and the one from the refresh rate that
+ * the meter reads now. A GPU that falls behind can slow the meter, which then reads low, so the
+ * target never falls during a check. Each round that the check lowered then missed the target that
+ * the check reports.
+ */
+export function raiseTarget(targetFps: number, refreshHz: number, maxFps = CHECK_MAX_FPS): number {
+	return Math.max(targetFps, checkTargetFps(refreshHz, maxFps));
+}
+
 /** A rate from a count of frames and the time they covered, in ms; 0 when they covered none. */
 export function frameRate(frames: number, ms: number): number {
 	return frames > 0 && ms > 0 ? (frames * 1000) / ms : 0;

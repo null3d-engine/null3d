@@ -47,7 +47,9 @@ export function heavyCheckProblems(mode: PresetMode, chosen: QualityPreset): str
 	const target = check.targetFps * CHECK_HOLD_SHARE;
 	for (const round of check.rounds.slice(0, -1))
 		if (Math.min(round.presentedFps, round.completedFps) >= target)
-			problems.push(`the check lowered ${round.preset}, which held its target`);
+			problems.push(
+				`the check lowered ${roundText(round)}, which held the target of ${check.targetFps}`,
+			);
 	if (presetIndex(mode.preset) >= presetIndex(chosen))
 		problems.push(`the check kept ${mode.preset} for a scene too heavy for the GPU`);
 	return problems;

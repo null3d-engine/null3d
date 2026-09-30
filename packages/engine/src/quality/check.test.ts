@@ -1,5 +1,12 @@
 import { describe, expect, it } from 'bun:test';
-import { CHECK_HOLD_SHARE, CHECK_MAX_FPS, checkTargetFps, frameRate, holdsTarget } from './check';
+import {
+	CHECK_HOLD_SHARE,
+	CHECK_MAX_FPS,
+	checkTargetFps,
+	frameRate,
+	holdsTarget,
+	raiseTarget,
+} from './check';
 
 describe('the preset check', () => {
 	it("targets the display's refresh rate, at most 60 and at most the ?fps= rate", () => {
@@ -14,6 +21,14 @@ describe('the preset check', () => {
 	it('targets 60 before the refresh rate is measured', () => {
 		expect(checkTargetFps(0)).toBe(60);
 		expect(checkTargetFps(0, 30)).toBe(30);
+	});
+
+	it('never lowers the target when a busy GPU slows the refresh meter', () => {
+		expect(raiseTarget(0, 60)).toBe(60);
+		expect(raiseTarget(60, 30)).toBe(60);
+		expect(raiseTarget(50, 60)).toBe(60);
+		expect(raiseTarget(0, 0)).toBe(60);
+		expect(raiseTarget(30, 120, 30)).toBe(30);
 	});
 
 	it('counts frames per second, and 0 when no frame or no time passed', () => {
