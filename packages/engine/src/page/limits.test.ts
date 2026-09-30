@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import * as C from '../generated/core';
+import { PERMUTATION_DRAW_INDEX } from '../generated/gpu';
 import {
 	coreDevice,
 	DEPTH_WITHOUT_CLIP_CONTROL,
@@ -22,6 +23,7 @@ const webgpu = (storageBindingBytes: number) => ({
 	sharedUploads: true,
 	depth: 'reversed' as const,
 	parallelCompile: true,
+	shaderBits: 0,
 	cellCulling: true,
 });
 
@@ -165,6 +167,15 @@ describe('the depth mode', () => {
 		expect(coreDevice(false, report({}), { ...NO_SWITCHES, depth: 'standard' }).depth).toBe(
 			'reversed',
 		);
+	});
+});
+
+describe('the permutation bits that a device fixes', () => {
+	it('hold the draw index where WebGL2 has multi-draw, and nothing on WebGPU', () => {
+		const multiDraw = report({ extensions: { WEBGL_multi_draw: true } });
+		expect(coreDevice(true, multiDraw, NO_SWITCHES).shaderBits).toBe(PERMUTATION_DRAW_INDEX);
+		expect(coreDevice(true, report({}), NO_SWITCHES).shaderBits).toBe(0);
+		expect(coreDevice(false, multiDraw, NO_SWITCHES).shaderBits).toBe(0);
 	});
 });
 

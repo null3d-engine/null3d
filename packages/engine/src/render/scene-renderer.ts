@@ -4,6 +4,7 @@
 // with the pipelines it creates, which begin to build, without blocking, when the frame is first
 // prepared.
 
+import type { DeviceShaders } from '../generated/shaders';
 import { FenceCompletion, QueueCompletion } from '../gpu/completion';
 import { readbackWebGL2, readbackWebGPU } from '../gpu/readback';
 import { WebGL2Backend } from '../gpu/webgl2/backend';
@@ -118,6 +119,7 @@ export class WebGPUSceneRenderer implements Renderer {
 		control: ArrayBufferLike,
 		metrics: ArrayBufferLike | undefined,
 		images: ImageTable | undefined,
+		shaders: DeviceShaders,
 	) {
 		this.lost = deviceLoss(device, () => this.simulated);
 		const context = canvas.getContext('webgpu') as GPUCanvasContext | null;
@@ -125,7 +127,7 @@ export class WebGPUSceneRenderer implements Renderer {
 		this.context = context;
 		this.format = navigator.gpu.getPreferredCanvasFormat();
 		context.configure({ device, format: this.format, alphaMode: 'opaque' });
-		this.backend = new WebGPUBackend(device, context, this.format, undefined, images);
+		this.backend = new WebGPUBackend(device, context, this.format, shaders, undefined, images);
 		this.backend.timer = metrics && GpuTimer.create(device, metrics);
 		this.completions = metrics && new QueueCompletion(device.queue, metrics);
 		this.frames = new FrameReplay(this.backend, memory, control);
@@ -213,6 +215,7 @@ export class WebGL2SceneRenderer implements Renderer {
 	 * `gl` is the canvas's context, made with the engine's settings. Where WebGL refuses views on
 	 * shared memory, the device says so, and the backend copies uploads out of engine memory first.
 	 * The device also gives the depth mode. `images` holds the images that texture uploads read.
+	 * `shaders` are the GLSL builds that the device loaded.
 	 */
 	constructor(
 		private readonly canvas: RenderCanvas,
@@ -222,11 +225,13 @@ export class WebGL2SceneRenderer implements Renderer {
 		metrics: ArrayBufferLike | undefined,
 		device: CoreDevice,
 		images: ImageTable | undefined,
+		shaders: DeviceShaders,
 	) {
 		this.lost = contextLoss(canvas, this.release.signal);
 		this.backend = new WebGL2Backend(
 			gl,
 			canvas,
+			shaders,
 			device.sharedUploads,
 			device.depth,
 			images,

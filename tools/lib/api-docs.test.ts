@@ -141,7 +141,7 @@ describe('readApi', () => {
 		const where = '(packages/engine/src/parts.ts)';
 		const helpers = '(packages/engine/src/helpers.ts)';
 		expect(api.problems.sort()).toEqual([
-			`Options ${where} names Hidden, which the engine does not export`,
+			`Options ${where} names Hidden, which its package does not export`,
 			`Options ${where}: member d has no TSDoc summary`,
 			`bare ${helpers} has no @category api/<page> tag`,
 			`bare ${helpers} has no TSDoc summary`,
@@ -181,6 +181,50 @@ describe('readApi', () => {
 			"\t| 'cccccccccccccccccccc'",
 			"\t| 'dddddddddddddddddddd'",
 			"\t| 'eeeeeeeeeeeeeeeeeeee';",
+		]);
+	});
+});
+
+describe('readApi with a package built on the engine', () => {
+	const CONTROLS = `import type { Base, Hidden } from '../../engine/src/parts';
+
+/**
+ * Makes a base.
+ *
+ * @category api/controls
+ */
+export function makeBase(from: Base): Base {
+	return from;
+}
+
+/**
+ * Takes a type that no entry point exports.
+ *
+ * @category api/controls
+ */
+export function takeHidden(hidden: Hidden): Hidden {
+	return hidden;
+}
+`;
+	const both = readApi(
+		fixture({
+			'packages/engine/tsconfig.json': JSON.stringify({
+				compilerOptions: { strict: true, target: 'ES2022', module: 'ESNext', lib: ['ES2022'] },
+			}),
+			'packages/engine/src/index.ts': "export { Base } from './parts';\n",
+			'packages/engine/src/parts.ts': PARTS,
+			'packages/controls/src/index.ts': CONTROLS,
+		}),
+	);
+
+	it("reads its exports beside the engine's, and lets them name the engine's exports", () => {
+		expect(both.symbols.map((s) => `${s.name} ${s.page}`)).toEqual([
+			'Base api/objects',
+			'makeBase api/controls',
+			'takeHidden api/controls',
+		]);
+		expect(both.problems).toEqual([
+			'takeHidden (packages/controls/src/index.ts) names Hidden, which its package does not export',
 		]);
 	});
 });

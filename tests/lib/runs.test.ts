@@ -154,6 +154,17 @@ describe('the checks plan', () => {
 		);
 	});
 
+	it('captures a frame as a PNG file in every mode, on both GPU paths', () => {
+		const captures = items.filter((item) => item.check.kind === 'capture');
+		expect(captures).toHaveLength(2 * ENGINE_MODES.length);
+		expect(captures[0]).toEqual({
+			id: 'capture-webgpu-pipelined',
+			path: '/tests/pages/capture.html?gpu=webgpu',
+			timeoutSeconds: 30,
+			check: { kind: 'capture', tier: 'webgpu', mode: ENGINE_MODES[0] },
+		});
+	});
+
 	it('runs the engine page again on its production build in every mode, on WebGL2', () => {
 		const production = items.filter((item) => item.id.startsWith('engine-production-'));
 		expect(production.map(({ id }) => id)).toEqual([
