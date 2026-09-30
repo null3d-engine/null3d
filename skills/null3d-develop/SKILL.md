@@ -127,11 +127,11 @@ Materials:
 
 | Need | Use | Docs |
 | --- | --- | --- |
-| Lit surfaces, which is most things | `materials.standard` (metalness and roughness later in 0.1) | `api/materials` |
+| Lit surfaces, which is most things | `materials.standard` | `api/materials` |
 | Flat color or texture without lighting | `materials.unlit` | `api/materials` |
 | A ground plane that only shows shadows | `materials.shadowCatcher` (0.2) | `api/materials` |
-| A custom look that still gets lights, shadows and fog | `materials.shader({ surface })` (later in 0.1) | `shaders/surface-functions` |
-| A fully custom effect, such as a hologram | `materials.shader({ vertex, fragment })` (later in 0.1) | `guides/custom-shaders` |
+| A custom look that still gets lights, shadows and fog | `materials.shader({ wgsl })` with `fn surface` in the WGSL (later in 0.1) | `shaders/surface-functions` |
+| A fully custom effect, such as a hologram | `materials.shader({ wgsl })` with `@vertex` and `@fragment` entry points (later in 0.1) | `guides/custom-shaders` |
 
 Lighting and shadows: for now, surfaces show one directional light and the ambient lights. Point, spot and hemisphere lights exist, and they light surfaces later in 0.1, when shadows come too. Then one directional light with shadows, plus a hemisphere light, covers most outdoor scenes. Point and spot lights are cheap without shadows, because lighting is clustered, and expensive with them. Shadow quality follows the preset. Environment maps come in 0.2. (`api/lights`, `concepts/lighting`, `concepts/shadows`)
 
@@ -156,30 +156,29 @@ Effects:
 | Bloom, ambient occlusion, color grading, outlines | `post.set({ ... })` (0.2) | `api/post` |
 | A custom full-screen effect | `post.addEffect({ name, wgsl, uniforms })` (0.2) | `api/post` |
 | Render to a texture, or add a pass | `render.addPass({ ... })` (0.2) | `guides/custom-passes` |
-| Fog or sky | `scene.setFog` (later in 0.1), `scene.setBackground({ sky })` (0.2) | `api/scene` |
+| Fog or sky | `scene.setFog` with the fog's color in `scene.setBackground`; `scene.setBackground({ sky })` (0.2) | `api/scene` |
 
 ## 6. Custom shaders in brief (later in 0.1)
 
 Custom materials come later in 0.1. Until then, the Vite plugin compiles WGSL in sketch code, but the engine cannot draw with it (`guides/custom-shaders`).
 
-Prefer surface functions. You describe the surface; the engine adds lighting, shadows, fog, instancing and skinning, on both backends.
+Prefer surface functions. You describe the surface; the engine adds lighting, shadows, fog and instancing, on both backends. The material's WGSL goes in one `wgsl` option, tagged so the Vite plugin compiles it, and the material takes every `materials.standard` option.
 
 ```ts
-const water = materials.shader({
-  uniforms: { waveSpeed: 1.5, deep: '#05202e', shallow: '#1a6b80' },
-  surface: /* wgsl */ `
+const rings = materials.shader({
+  color: '#e04040', roughness: 0.5,
+  wgsl: /* wgsl */ `
     fn surface(input: SurfaceInput) -> Surface {
       var s = defaultSurface(input);
-      let wave = sin(input.worldPosition.x * 0.8 + frame.time * material.waveSpeed) * 0.5 + 0.5;
-      s.baseColor = mix(material.deep, material.shallow, wave);
-      s.roughness = 0.08;
+      let ring = step(0.5, fract(input.uv.y * 6.0));
+      s.baseColor = mix(s.baseColor, vec3f(1.0), ring);
       return s;
     }`,
 });
-water.set({ waveSpeed: 2.0 }); // uniforms change through set(); set is typed from them in 0.2
+rings.set({ roughness: 0.2 }); // the standard values, which defaultSurface reads
 ```
 
-`references/shaders.md` has the full contract: every field of `SurfaceInput` and `Surface`, the built-in values (`frame`, `camera`, `object`), vertex offsets, textures, per-instance attributes, and the WGSL rules.
+`references/shaders.md` has the full contract: every field of `SurfaceInput` and `Surface`, the names to avoid, and the WGSL rules. Uniforms (`struct Uniforms` in the WGSL), textures, the built-in values (`frame`, `camera`, `object`), vertex offsets and full shaders come later in 0.1.
 
 ## 7. When something goes wrong
 

@@ -5,11 +5,12 @@ enable draw_index;
 // first texture coordinates. Materials whose maps share an array and a sampler share the maps'
 // bind group, and each material's row in the material table gives its layer. A map whose image is
 // not on the GPU yet has no layer, and the material draws as without it. The VERTEX_COLOR builds
-// multiply the color by the mesh's vertex colors too. null3d::mesh finds each instance on both GPU
-// paths.
+// multiply the color by the mesh's vertex colors too. The ALPHA_MASK builds draw nothing where the
+// alpha of the color, the map and the vertex colors falls below the material's cutoff.
+// null3d::mesh finds each instance on both GPU paths.
 #import null3d::color
-#import null3d::mesh::{InstanceIn, clip_position, find_instance}
-#import null3d::mesh::{map_layer, map_ready, material_of}
+#import null3d::mesh::{InstanceIn, clip_of, find_instance, fogged}
+#import null3d::mesh::{map_layer, map_ready, material_of, relative_position}
 
 // The maps' bind group comes after the frame's group, and on WebGL2 after the groups of the draw
 // records and the data textures.
@@ -37,13 +38,16 @@ struct VertexOut {
 #ifdef VERTEX_COLOR
     @location(2) vertex_color: vec4f,
 #endif
+    /// The position relative to the camera.
+    @location(3) relative: vec3f,
 }
 
 @vertex
 fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
     let found = find_instance(i);
     var out: VertexOut;
-    out.clip = clip_position(found, v.position);
+    out.relative = relative_position(found, v.position);
+    out.clip = clip_of(found, out.relative);
     out.uv0 = v.uv0;
     out.material = found.material;
 #ifdef VERTEX_COLOR
@@ -61,8 +65,15 @@ fn fs(in: VertexOut) -> @location(0) vec4f {
     let texel = textureSample(map_layers, map_sampler, in.uv0, map_layer(m.maps.x));
     let map = select(vec4f(1.0), texel, map_ready(m.maps.x));
     var base = m.color.rgb * map.rgb;
+    var alpha = m.color.a * map.a;
 #ifdef VERTEX_COLOR
     base *= in.vertex_color.rgb;
+    alpha *= in.vertex_color.a;
 #endif
-    return vec4f(null3d::color::linear_to_srgb(base), 1.0);
+#ifdef ALPHA_MASK
+    if alpha < m.emissive.w {
+        discard;
+    }
+#endif
+    return vec4f(null3d::color::linear_to_srgb(fogged(base, in.relative, m)), 1.0);
 }

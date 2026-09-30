@@ -126,7 +126,8 @@ export interface CoreGlue extends CoreErrors {
 	meshRadius(mesh: number): number;
 	/**
 	 * A material with a linear color and opacity. `shading` is one of the `SHADING_*` codes, and
-	 * `features` holds `MATERIAL_FEATURE_*` bits, fixed from then on.
+	 * `features` holds `MATERIAL_FEATURE_*` bits, fixed from then on, as is the depth bias: three.js's
+	 * polygon offset units and factor.
 	 */
 	createMaterial(
 		shading: number,
@@ -135,6 +136,8 @@ export interface CoreGlue extends CoreErrors {
 		g: number,
 		b: number,
 		a: number,
+		biasConstant: number,
+		biasSlope: number,
 	): number;
 	/**
 	 * Changes one value of a material, `param` (a `MATERIAL_PARAM_*` code), and keeps the others.
@@ -214,6 +217,19 @@ export interface CoreGlue extends CoreErrors {
 	/** Sets one of a light's numbers: `which` is one of the `LIGHT_VALUE_*` codes. */
 	setLightValue(light: number, which: number, value: number): number;
 	setBackground(r: number, g: number, b: number): number;
+	/**
+	 * The scene's fog: its kind (`FOG_KIND_*`), its linear color, the near and far distances of
+	 * linear fog, and the density of exponential squared fog.
+	 */
+	setFog(
+		kind: number,
+		r: number,
+		g: number,
+		b: number,
+		near: number,
+		far: number,
+		density: number,
+	): number;
 }
 
 const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
@@ -275,6 +291,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setLightColor',
 	'setLightValue',
 	'setBackground',
+	'setFog',
 ];
 
 /** Stack size for each engine thread. */
