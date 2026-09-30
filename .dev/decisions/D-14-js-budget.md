@@ -159,7 +159,7 @@ Decided by the owner on 2026-09-30:
 - The engine's JavaScript that a page downloads may take up to 70 KB after Brotli, in each thread mode on each GPU path, for now. The standard material's shaders take a pipelined page to about 57 KB, and texture maps, shadows and lights add more before the gate.
 - The budget may rise again, but only with the owner's approval in writing. Until then, a pull request that passes 70 KB fails the size check.
 
-On 2026-10-01 the owner raised the budget to 80 KB, in writing. With texture maps, HDR color and dynamic resolution on main, a pipelined page downloaded 67.3 KB, and anti-aliasing, clustered lighting, transparency, custom materials and shadows still had to land. The owner chose to raise the budget rather than wait for the size cuts in the options table, and set aside the renderer split by GPU path (#103). A further raise again needs the owner's approval in writing; a pull request that passes 80 KB fails the size check until then.
+On 2026-10-01 the owner raised the budget to 80 KB, in writing. With texture maps, HDR color and dynamic resolution on main, a pipelined page downloaded 67.3 KB. Anti-aliasing, clustered lighting, transparency, custom materials and shadows still had to land. The owner chose to raise the budget rather than wait for the size cuts in the options table. The renderer split by GPU path (#103) stays set aside. A further raise again needs the owner's approval in writing; a pull request that passes 80 KB fails the size check until then.
 
 The options in the table stay open, and each task can still take one to keep the download down. The proposal before the owner's decision was:
 
