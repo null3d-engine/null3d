@@ -55,6 +55,10 @@ function projectCopy({
 	const root = test.info().outputPath('project');
 	const environment = environmentNamed(test.info().project.name);
 	cpSync(FIXTURE, root, { recursive: true });
+	// A package of its own, as every project has. Without one, Vite takes the repository as the
+	// copy's package and keeps its prebundled dependencies in the repository's cache folder. The
+	// copy's dev server then empties that folder while the tests' dev server serves files from it.
+	writeFileSync(join(root, 'package.json'), JSON.stringify({ private: true, type: 'module' }));
 	symlinkSync(join(REPO_ROOT, 'tests/node_modules'), join(root, 'node_modules'), 'dir');
 	const tsconfig = JSON.parse(readFileSync(join(FIXTURE, 'tsconfig.json'), 'utf8'));
 	// The fixture's config extends the repository's base config by a path from the fixture.
