@@ -51,15 +51,16 @@ import {
 	s3BoxAt,
 	s3Camera,
 	s3Grid,
-	s3LightAt,
 	s3LightColor,
+	s3LightsAt,
 	s4BlockCenter,
 	s4Camera,
 	s4KindOf,
 	s4ObjectAt,
 	s4Texture,
-	s4VehicleAt,
+	s4VehicleRotation,
 	s4VehicleScale,
+	s4VehiclesAt,
 } from './spec';
 
 const TAU = 2 * Math.PI;
@@ -511,18 +512,17 @@ describe('S3', () => {
 	});
 
 	test('moves each light around its circle at its own rate and height', () => {
-		const position = [0, 0, 0];
-		for (let i = 0; i < S3_LIGHT_COUNT; i += 37) {
-			const [cx, cz] = [data.lightCenter[i * 2]!, data.lightCenter[i * 2 + 1]!];
-			for (const t of [0, 1, HOLD_TIME, 60]) {
-				s3LightAt(data, i, t, position);
+		const positions = new Float64Array(S3_LIGHT_COUNT * 3);
+		for (const t of [0, 1, HOLD_TIME, 60]) {
+			s3LightsAt(data, [t], positions);
+			for (let i = 0; i < S3_LIGHT_COUNT; i++) {
+				const [cx, cz] = [data.lightCenter[i * 2]!, data.lightCenter[i * 2 + 1]!];
 				const angle = data.lightSpeed[i]! * t + data.lightPhase[i]!;
 				const r = data.lightRadius[i]!;
-				expectClose(position, [
-					cx + r * Math.cos(angle),
-					data.lightHeight[i]!,
-					cz + r * Math.sin(angle),
-				]);
+				expectClose(
+					[...positions.subarray(i * 3, i * 3 + 3)],
+					[cx + r * Math.cos(angle), data.lightHeight[i]!, cz + r * Math.sin(angle)],
+				);
 			}
 		}
 	});
@@ -632,17 +632,22 @@ describe('S4', () => {
 	});
 
 	test('drives each vehicle along its lane, pointed the way it drives, and back in at the edge', () => {
-		const position = [0, 0, 0];
-		const later = [0, 0, 0];
-		const quaternion = [0, 0, 0, 0];
+		const at = (t: number) => {
+			const positions = new Float64Array(data.vehicles * 3);
+			s4VehiclesAt(data, [t], positions);
+			return { positions };
+		};
+		const [now, soon] = [at(3), at(3.1)];
 		const scale = [0, 0, 0];
 		for (let i = 0; i < data.vehicles; i++) {
-			s4VehicleAt(data, i, 3, position, quaternion);
-			s4VehicleAt(data, i, 3.1, later, quaternion);
+			const position = [...now.positions.subarray(i * 3, i * 3 + 3)];
+			const later = [...soon.positions.subarray(i * 3, i * 3 + 3)];
+			const quaternion = [0, 0, 0, 0];
+			s4VehicleRotation(data, i, quaternion);
 			s4VehicleScale(data, i, scale);
 			const along = data.vehicleAxis[i] === 0 ? 0 : 2;
 			expect(position[2 - along]).toBeCloseTo(data.vehicleLane[i]!, 5);
-			expect(position[1]).toBeCloseTo(scale[1]! / 2, 9);
+			expect(position[1]).toBeCloseTo(scale[1]! / 2, 5);
 			expect(Math.abs(position[along]!)).toBeLessThanOrEqual(S4_EXTENT);
 			const moved = later[along]! - position[along]!;
 			// Unless it came back in at the other edge, it moved 0.1 s at its speed, the way it faces.
@@ -653,8 +658,7 @@ describe('S4', () => {
 				expect(forward[along]).toBeCloseTo(Math.sign(moved), 6);
 			}
 			const loop = (2 * S4_EXTENT) / data.vehicleSpeed[i]!;
-			s4VehicleAt(data, i, 3 + loop, later, quaternion);
-			expectClose(later, position, 3);
+			expectClose([...at(3 + loop).positions.subarray(i * 3, i * 3 + 3)], position, 3);
 		}
 	});
 

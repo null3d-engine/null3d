@@ -12,8 +12,8 @@ import {
 	S3_VIEW_LIGHTS,
 	s3BoxAt,
 	s3Camera,
-	s3LightAt,
 	s3LightColor,
+	s3LightsAt,
 } from '../../scenes/spec';
 import { followPath, readCount, setUpView } from './sketch-common';
 
@@ -55,11 +55,22 @@ export default defineSketch((context) => {
 			}),
 		);
 
+	// The lights move in a function of their own that takes no fraction, so the browser allocates
+	// nothing for its call whether it inlines it or not. The time reaches it in `clock`.
+	const clock = new Float64Array(1);
+	const lightPositions = new Float64Array(S3_LIGHT_COUNT * 3);
+	const moveLights = (): void => {
+		s3LightsAt(data, clock, lightPositions);
+		for (let i = 0; i < S3_LIGHT_COUNT; i++)
+			lights[i]?.setPosition(
+				lightPositions[i * 3] as number,
+				lightPositions[i * 3 + 1] as number,
+				lightPositions[i * 3 + 2] as number,
+			);
+	};
 	const pose = (t: number): void => {
-		for (let i = 0; i < S3_LIGHT_COUNT; i++) {
-			s3LightAt(data, i, t, position);
-			lights[i]?.setPosition(position[0] as number, position[1] as number, position[2] as number);
-		}
+		clock[0] = t;
+		moveLights();
 		moveCamera(t);
 	};
 	pose(time.now);

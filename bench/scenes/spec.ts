@@ -6,6 +6,13 @@
 /** A list of numbers that a per-frame function fills: a typed array or a plain array. */
 export type OutArray = Float32Array | Float64Array | number[];
 
+/**
+ * The scene time in seconds, as the first entry of an array that the caller fills each frame. The
+ * per-frame functions that move many objects in a loop take the time this way: a call that the
+ * browser does not inline allocates each fraction that it passes as an argument.
+ */
+export type SceneClock = Float64Array | number[];
+
 const TAU = 2 * Math.PI;
 
 /**
@@ -598,13 +605,20 @@ export function s3LightColor(i: number): string {
 	return S3_LIGHT_COLORS[i % S3_LIGHT_COLORS.length] as string;
 }
 
-/** Writes point light i's position at time t: on its circle, at its height above the floor. */
-export function s3LightAt(data: S3Data, i: number, t: number, outPosition: OutArray): void {
-	const angle = (data.lightSpeed[i] ?? 0) * t + (data.lightPhase[i] ?? 0);
-	const radius = data.lightRadius[i] ?? 0;
-	outPosition[0] = (data.lightCenter[i * 2] ?? 0) + radius * Math.cos(angle);
-	outPosition[1] = data.lightHeight[i] ?? 0;
-	outPosition[2] = (data.lightCenter[i * 2 + 1] ?? 0) + radius * Math.sin(angle);
+/**
+ * Writes every point light's position at the time that `clock` holds, three floats per light in
+ * light order: on the light's circle, at its height above the floor.
+ */
+export function s3LightsAt(data: S3Data, clock: SceneClock, out: OutArray): void {
+	const t = clock[0] as number;
+	const { lightSpeed, lightPhase, lightRadius, lightCenter, lightHeight } = data;
+	for (let i = 0; i < S3_LIGHT_COUNT; i++) {
+		const angle = (lightSpeed[i] as number) * t + (lightPhase[i] as number);
+		const radius = lightRadius[i] as number;
+		out[i * 3] = (lightCenter[i * 2] as number) + radius * Math.cos(angle);
+		out[i * 3 + 1] = lightHeight[i] as number;
+		out[i * 3 + 2] = (lightCenter[i * 2 + 1] as number) + radius * Math.sin(angle);
+	}
 }
 
 /** Writes S3's camera at time t: an orbit of the origin, one turn per `ORBIT_SECONDS`. */
@@ -932,6 +946,8 @@ export interface S4Data {
 	vehicleSpeed: Float32Array;
 	/** Where each vehicle is at time 0, as a share of the town's length from its -X or -Z edge. */
 	vehiclePhase: Float32Array;
+	/** Each vehicle's height, from its kind's size. */
+	vehicleHeight: Float32Array;
 	/** The street lights' positions, three floats per light. */
 	lights: Float32Array;
 }
@@ -1078,6 +1094,7 @@ export function createS4(seed = 4): S4Data {
 		vehicleDirection: new Int8Array(vehicles),
 		vehicleSpeed: new Float32Array(vehicles),
 		vehiclePhase: new Float32Array(vehicles),
+		vehicleHeight: new Float32Array(vehicles),
 		lights: Float32Array.from(lights),
 	};
 	for (let i = 0; i < vehicles; i++) {
@@ -1094,6 +1111,7 @@ export function createS4(seed = 4): S4Data {
 		data.vehicleDirection[i] = direction;
 		data.vehicleSpeed[i] = between(S4_VEHICLES.minSpeed, S4_VEHICLES.maxSpeed, random());
 		data.vehiclePhase[i] = random();
+		data.vehicleHeight[i] = s4KindOf(S4_FIRST_VEHICLE_KIND + kind).size?.[1] ?? 1;
 	}
 	return data;
 }
@@ -1146,30 +1164,36 @@ export function s4VehicleScale(data: S4Data, i: number, outScale: OutArray): voi
 }
 
 /**
- * Writes vehicle i's position and rotation at time t. It drives along its lane, and when it leaves
- * the town at one edge it comes back in at the other.
+ * Writes vehicle i's rotation, which never changes, as a quaternion in x, y, z, w order. The box's
+ * length lies along its own +X, and the vehicle faces the way it drives: a quarter turn clockwise,
+ * seen from above, points the box along +Z.
  */
-export function s4VehicleAt(
-	data: S4Data,
-	i: number,
-	t: number,
-	outPosition: OutArray,
-	outQuaternion: OutArray,
-): void {
+export function s4VehicleRotation(data: S4Data, i: number, outQuaternion: OutArray): void {
+	const forward = (data.vehicleDirection[i] as number) > 0 ? 0 : Math.PI;
+	s4Rotation(data.vehicleAxis[i] === 0 ? forward : forward - Math.PI / 2, false, outQuaternion);
+}
+
+/**
+ * Writes every vehicle's position at the time that `clock` holds, three floats per vehicle. A
+ * vehicle drives along its lane, and when it leaves the town at one edge it comes back in at the
+ * other.
+ */
+export function s4VehiclesAt(data: S4Data, clock: SceneClock, outPositions: OutArray): void {
+	const t = clock[0] as number;
 	const length = 2 * S4_EXTENT;
-	const direction = data.vehicleDirection[i] as number;
-	const speed = data.vehicleSpeed[i] as number;
-	const travelled = (data.vehiclePhase[i] as number) * length + direction * speed * t;
-	const u = -S4_EXTENT + (((travelled % length) + length) % length);
-	const lane = data.vehicleLane[i] as number;
-	const alongX = data.vehicleAxis[i] === 0;
-	outPosition[0] = alongX ? u : lane;
-	outPosition[1] = (s4KindOf(data.vehicleKind[i] as number).size?.[1] ?? 1) / 2;
-	outPosition[2] = alongX ? lane : u;
-	// The box's length lies along its own +X. A quarter turn clockwise, seen from above, points it
-	// along +Z.
-	const forward = direction > 0 ? 0 : Math.PI;
-	s4Rotation(alongX ? forward : forward - Math.PI / 2, false, outQuaternion);
+	const { vehicleDirection, vehicleSpeed, vehiclePhase, vehicleLane, vehicleAxis, vehicleHeight } =
+		data;
+	for (let i = 0; i < data.vehicles; i++) {
+		const travelled =
+			(vehiclePhase[i] as number) * length +
+			(vehicleDirection[i] as number) * (vehicleSpeed[i] as number) * t;
+		const u = -S4_EXTENT + travelled - length * Math.floor(travelled / length);
+		const lane = vehicleLane[i] as number;
+		const alongX = vehicleAxis[i] === 0;
+		outPositions[i * 3] = alongX ? u : lane;
+		outPositions[i * 3 + 1] = (vehicleHeight[i] as number) / 2;
+		outPositions[i * 3 + 2] = alongX ? lane : u;
+	}
 }
 
 /** Writes S4's camera at time t, on its path. */

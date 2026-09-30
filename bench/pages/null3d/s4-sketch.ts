@@ -5,13 +5,7 @@
 // Some of the engine's features that S4 uses are not built yet. The sketch asks for each one in
 // one place, marked "Feature:", and the scene shows it as soon as the engine draws it. The pull
 // request that builds a feature makes S4's image references again.
-import {
-	defineSketch,
-	type Material,
-	type MeshGeometry,
-	type StandardOptions,
-	type Texture,
-} from '@null3d/engine';
+import { defineSketch, type Material, type MeshGeometry, type Texture } from '@null3d/engine';
 import {
 	createS4,
 	S4_ANISOTROPY,
@@ -30,8 +24,9 @@ import {
 	s4KindOf,
 	s4ObjectAt,
 	s4Texture,
-	s4VehicleAt,
+	s4VehicleRotation,
 	s4VehicleScale,
+	s4VehiclesAt,
 } from '../../scenes/spec';
 import { followPath, setUpView, watchQuality } from './sketch-common';
 
@@ -79,10 +74,7 @@ export default defineSketch((context) => {
 		S4MaterialName,
 		(typeof S4_MATERIALS)[S4MaterialName],
 	][]) {
-		// Feature: texture maps. Standard materials take `map` once the engine has maps; until then
-		// the engine ignores it, and each material shows its color alone.
-		const options = { color, roughness, metalness, map: maps.get(texture) } as StandardOptions;
-		looks.set(name, materials.standard(options));
+		looks.set(name, materials.standard({ color, roughness, metalness, map: maps.get(texture) }));
 	}
 
 	const data = createS4();
@@ -109,12 +101,20 @@ export default defineSketch((context) => {
 		});
 	}
 
+	// Each vehicle's rotation and scale never change, so the sketch sets them once.
 	const vehicles = Array.from({ length: data.vehicles }, (_, i) => {
 		const { mesh, material } = s4KindOf(data.vehicleKind[i] as number);
 		s4VehicleScale(data, i, scale);
+		s4VehicleRotation(data, i, rotation);
 		return scene.createMesh({
 			mesh: meshes.get(mesh) as MeshGeometry,
 			material: looks.get(material) as Material,
+			rotation: [
+				rotation[0] as number,
+				rotation[1] as number,
+				rotation[2] as number,
+				rotation[3] as number,
+			],
 			scale: [scale[0] as number, scale[1] as number, scale[2] as number],
 			dynamic: true,
 			castShadows: true,
@@ -137,18 +137,22 @@ export default defineSketch((context) => {
 			],
 		});
 
-	const pose = (t: number): void => {
-		for (let i = 0; i < data.vehicles; i++) {
-			s4VehicleAt(data, i, t, position, rotation);
-			const vehicle = vehicles[i];
-			vehicle?.setPosition(position[0] as number, position[1] as number, position[2] as number);
-			vehicle?.setRotation(
-				rotation[0] as number,
-				rotation[1] as number,
-				rotation[2] as number,
-				rotation[3] as number,
+	// The vehicles move in a function of their own that takes no fraction, so the browser
+	// allocates nothing for its call whether it inlines it or not. The time reaches it in `clock`.
+	const clock = new Float64Array(1);
+	const vehiclePositions = new Float64Array(data.vehicles * 3);
+	const moveVehicles = (): void => {
+		s4VehiclesAt(data, clock, vehiclePositions);
+		for (let i = 0; i < data.vehicles; i++)
+			vehicles[i]?.setPosition(
+				vehiclePositions[i * 3] as number,
+				vehiclePositions[i * 3 + 1] as number,
+				vehiclePositions[i * 3 + 2] as number,
 			);
-		}
+	};
+	const pose = (t: number): void => {
+		clock[0] = t;
+		moveVehicles();
 		moveCamera(t);
 	};
 	pose(time.now);

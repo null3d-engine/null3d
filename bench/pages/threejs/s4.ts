@@ -34,8 +34,9 @@ import {
 	s4KindOf,
 	s4ObjectAt,
 	s4Texture,
-	s4VehicleAt,
+	s4VehicleRotation,
 	s4VehicleScale,
+	s4VehiclesAt,
 } from '../../scenes/spec';
 import { chosenPreset, type TwinSettings, twinSettings } from '../lib/preset';
 import { type BuildContext, runThreePage, type SceneSetup, type Three } from './harness';
@@ -213,16 +214,19 @@ runThreePage(
 			vehicleMeshes.set(kind, mesh);
 			scene.add(mesh);
 		}
-		// Each vehicle's mesh, its slot in that mesh, and its scale, which never changes.
+		// Each vehicle's mesh, its slot in that mesh, and its scale and rotation, which never change.
 		const meshOf: ThreeModule.InstancedMesh[] = [];
 		const slot = new Int32Array(data.vehicles);
 		const scales = new Float64Array(data.vehicles * 3);
+		const rotations = new Float64Array(data.vehicles * 4);
 		for (let i = 0; i < data.vehicles; i++) {
 			const mesh = vehicleMeshes.get(data.vehicleKind[i] as number) as ThreeModule.InstancedMesh;
 			meshOf.push(mesh);
 			slot[i] = mesh.count++;
 			s4VehicleScale(data, i, out.scale);
 			scales.set(out.scale, i * 3);
+			s4VehicleRotation(data, i, out.rotation);
+			rotations.set(out.rotation, i * 4);
 		}
 
 		for (let i = 0; i < data.lights.length / 3; i++) {
@@ -232,15 +236,20 @@ runThreePage(
 			scene.add(light);
 		}
 
+		const clock = new Float64Array(1);
+		const vehiclePositions = new Float64Array(data.vehicles * 3);
 		return {
 			n: data.count,
 			update(t) {
+				clock[0] = t;
+				s4VehiclesAt(data, clock, vehiclePositions);
 				for (let i = 0; i < data.vehicles; i++) {
-					s4VehicleAt(data, i, t, out.position, out.rotation);
-					out.scale[0] = scales[i * 3] as number;
-					out.scale[1] = scales[i * 3 + 1] as number;
-					out.scale[2] = scales[i * 3 + 2] as number;
-					meshOf[i]?.setMatrixAt(slot[i] as number, compose());
+					matrix.compose(
+						position.fromArray(vehiclePositions, i * 3),
+						rotation.fromArray(rotations, i * 4),
+						scale.fromArray(scales, i * 3),
+					);
+					meshOf[i]?.setMatrixAt(slot[i] as number, matrix);
 				}
 				for (const mesh of vehicleMeshes.values()) mesh.instanceMatrix.needsUpdate = true;
 			},
