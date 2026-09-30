@@ -852,6 +852,7 @@ async function startEngine(
 		frame: Atomics.load(slots, Slot.FramesTaken),
 		tier,
 		...held,
+		stats: summarizeFrames(new MetricsReader(metrics).readWritten(), threadRoles(mode)),
 	});
 	return engine;
 }

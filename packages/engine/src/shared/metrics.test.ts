@@ -97,6 +97,29 @@ describe('frame records', () => {
 		expect(gpu.measuring).toBe(false);
 	});
 
+	it('reach the page after a hold, which steps every frame before the page reads any', () => {
+		const buffer = createMetricsBuffer(true, 0, 4);
+		const sketch = new FrameRecorder(buffer, Role.Sketch);
+		const render = new FrameRecorder(buffer, Role.Render);
+		for (let frame = 1; frame <= 6; frame++) record(sketch, frame, frame);
+		record(render, 6, 2);
+		const reader = new MetricsReader(buffer);
+		const records = reader.readWritten();
+		expect(records[Role.Sketch]?.frames).toEqual([3, 4, 5, 6]);
+		expect(records[Role.Render]?.frames).toEqual([6]);
+		expect(reader.lost).toBe(2);
+		expect(render.measuring).toBe(false);
+		const threads = threadRoles({
+			latency: 'pipelined',
+			renderThread: 'render-worker',
+			jobWorkers: 0,
+		});
+		const held = summarizeFrames(records, threads);
+		expect([held.frames, held.cpuMs.median, held.threads['render-worker']?.busyMs.median]).toEqual([
+			1, 6, 2,
+		]);
+	});
+
 	it('keep the time of the first frame only', () => {
 		const buffer = createMetricsBuffer(true, 0);
 		const render = new FrameRecorder(buffer, Role.Render);

@@ -49,6 +49,7 @@ import {
 	type OverloadStep,
 	ratesParted,
 } from '../pages/lib/overload.ts';
+import { ROOM_KEPT } from '../pages/lib/room.ts';
 import {
 	ENGINE_MODES,
 	type EngineMode,
@@ -102,8 +103,11 @@ const TEST_PAGES = '/tests/pages/';
 const TIERS: readonly Tier[] = ['webgpu', 'webgl2'];
 /** How long a benchmark page may take to publish its hold frame on a slow device. */
 const HOLD_TIMEOUT_SECONDS = 60;
-/** How long the restart page may take: up to ten starts and stops, and two counts of the room. */
-const RESTARTS_TIMEOUT_SECONDS = 120;
+/**
+ * How long the restart page may take: up to ten starts and stops, which may wait 30 s in all for
+ * the browser to free memory, and the counts of the room, which may wait 31 s for it to come back.
+ */
+const RESTARTS_TIMEOUT_SECONDS = 180;
 
 /** The result text of an item that the runner page never reached. */
 export const NO_RESULT = 'no result; the runner stopped before this page';
@@ -160,8 +164,15 @@ export interface BenchSwitches {
 }
 
 /**
- * The runner page's item for a timed run of one benchmark page, S1 unless `scene` names another.
- * The item needs the GPU interface the page draws with, so a device that lacks it skips the page.
+ * The benchmark pages' production build, which timed runs load under one address prefix of the
+ * runner's own, so they measure the engine as a developer ships it: without development checks.
+ */
+const BENCH_BUILD: Load = { kind: 'warm', key: runnerKey('bench') };
+
+/**
+ * The runner page's item for a timed run of one benchmark page, S1 unless `scene` names another,
+ * from the production build. The item needs the GPU interface the page draws with, so a device
+ * that lacks it skips the page.
  */
 export function benchItem(
 	id: string,
@@ -175,7 +186,7 @@ export function benchItem(
 	const tier = gpuApiOfPage(page);
 	return {
 		id,
-		path: pagePath(scene, page, switches.join('&')),
+		path: loadPath(BENCH_BUILD, pagePath(scene, page, switches.join('&')).slice(1)),
 		timeoutSeconds: (seconds === undefined ? WARMUP_SECONDS + MEASURE_SECONDS : 2 * seconds) + 60,
 		check: { kind: 'bench', tier, scene, page, ...(jobs !== undefined && { jobs }) },
 	};
@@ -393,8 +404,11 @@ export const MEMORY_MAXIMUMS_MIB = [256, 512, 1024, 2048, 4096] as const;
 export const MEMORY_LOADS = 20;
 /** WebAssembly memory comes in pages of 64 KiB, 16 to a MiB. */
 const PAGES_PER_MIB = 16;
-/** How long the shared memory page may take to count its room twice, a few seconds apart. */
-const ROOM_TIMEOUT_SECONDS = 60;
+/**
+ * How long the shared memory page may take to count its room, and to wait up to 31 s for the room
+ * to come back after its one cycle.
+ */
+const ROOM_TIMEOUT_SECONDS = 90;
 /** The most memories the shared memory page counts; a browser with room for this many has more. */
 const MOST_COUNTED = 64;
 
@@ -677,15 +691,20 @@ export interface RestartResult {
 	room?: number;
 	cycles: number;
 	kinds: {
-		engine?: { cycles: number; error?: string; trail?: string[]; roomLater?: number };
+		engine?: {
+			cycles: number;
+			error?: string;
+			trail?: string[];
+			/** The room when it came back, or when the page stopped waiting for it. */
+			roomLater?: number;
+			roomWaitMs?: number;
+		};
 	};
 }
 
-/**
- * Room for shared memories that the page may lose over its restarts: the single-threaded build's
- * page keeps one core for the next engine.
- */
-const ROOM_KEPT = 1;
+/** How long the restart page waited for the room to come back, as the problem's text gives it. */
+const waitedText = (ms: number | undefined) =>
+	ms === undefined ? '' : ` within ${Math.round(ms / 1000)} s`;
 
 /**
  * What is wrong with the restart page's result: a start or a stop that failed, or room for shared
@@ -705,7 +724,7 @@ export function restartProblems(result: RestartResult): string[] {
 		engine.roomLater < result.room - ROOM_KEPT
 	)
 		problems.push(
-			`the browser did not get back the memory of stopped engines: it had room for ${result.room} shared memories before ${engine.cycles} starts and stops, and for ${engine.roomLater} after`,
+			`the browser did not get back the memory of stopped engines${waitedText(engine.roomWaitMs)}: it had room for ${result.room} shared memories before ${engine.cycles} starts and stops, and for ${engine.roomLater} after`,
 		);
 	return problems;
 }

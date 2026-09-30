@@ -64,8 +64,7 @@ import {
 import { forwardPort, openOnPhone, phoneModel } from './lib/adb.ts';
 import { HeatLog, type HeatSample, type HeatSummary, heatText, summarizeHeat } from './lib/heat.ts';
 import { clearCandidates } from './lib/images.ts';
-import { isLoadPath } from './lib/load-routes.ts';
-import { buildStartupPages, prepareLoads } from './lib/load-server.ts';
+import { buildsForLoads, prepareLoads } from './lib/load-server.ts';
 import {
 	benchSummary,
 	type Check,
@@ -688,9 +687,13 @@ async function main(): Promise<void> {
 	}
 
 	const items = planItems(options);
-	// A plan that loads the production build builds it first, and each dev server serves it per load.
-	const loads = items?.some((item) => isLoadPath(item.path)) ?? false;
-	if (loads) buildStartupPages();
+	// A plan that loads production builds makes them first, and each dev server serves them per load.
+	// The scale search makes its items as it goes, each a page of three.js's renderers.
+	const paths = (items ?? SCALE_RENDERERS.map(([page]) => scaleItem(page, 1))).map(
+		(item) => item.path,
+	);
+	const builds = buildsForLoads(paths);
+	for (const { build } of builds) build();
 	const local = await startServer();
 	const lan = options.lan.length > 0 ? await startServer(true) : undefined;
 	if (lan) {
@@ -703,7 +706,9 @@ async function main(): Promise<void> {
 	}
 	let failures: number;
 	try {
-		if (loads) for (const server of [local, lan]) if (server) await prepareLoads(server.selfUrl);
+		const names = builds.map(({ name }) => name);
+		if (names.length > 0)
+			for (const server of [local, lan]) if (server) await prepareLoads(server.selfUrl, names);
 		failures = items
 			? await runPlan(options, items, runners, launches, local)
 			: await runScale(options, runners, launches, local);

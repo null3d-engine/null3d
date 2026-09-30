@@ -6,15 +6,19 @@
 // prints the bytes per frame of every place that allocated. From the page's start to the end of
 // the sample, it moves the mouse over the canvas and presses a key and the mouse button, so the
 // sample covers the sketch's reading of input. It draws with WebGPU, or with WebGL2 when
-// `--gpu webgl2` asks for it. From the repository root:
+// `--gpu webgl2` asks for it. It samples the production build of the benchmark pages, as a
+// developer ships the engine, and names the build's functions through its source maps; `--dev`
+// samples the dev server's pages, with the engine's development checks. From the repository root:
 //   bun run bench:allocation
 //   bun run bench:allocation --n 30000 --seconds 5 --warmup 30
 //   bun run bench:allocation --gpu webgl2
 // At 30,000 instances a frame's upload goes through the staging ring; at 100,000 it does not.
 import { chromium, type Page } from '@playwright/test';
-import { DEBUG_PORT, startServer } from '../tests/lib/server.ts';
-import { attachWorkers, DevTools, pagesAt, placeName, sleep } from './lib/devtools';
+import { DEBUG_PORT } from '../tests/lib/server.ts';
+import { attachWorkers, type CallFrame, DevTools, pagesAt, placeName, sleep } from './lib/devtools';
 import { pagePath } from './lib/parity';
+import { DEV_OPTION, pagesText, serveBenchPages } from './lib/serve';
+import type { BuildNames } from './lib/source-names';
 
 /** Bytes between allocation samples: small, so a few bytes per frame still show. */
 const SAMPLING_INTERVAL = 128;
@@ -47,7 +51,8 @@ const WORKERS = ['sketch-worker', 'render-worker'] as const;
  *   copy into it, and the promise of the request to map the buffer again;
  * - the upload route timing, which reads the clock around the uploads of one submit in a few;
  * - the time the browser passes to each animation frame callback, between tasks;
- * - the benchmark sketch's camera path, whose numbers go to the engine's development checks;
+ * - with --dev, the benchmark sketch's camera path, whose numbers go to the engine's development
+ *   checks;
  * - an instance batch's array views, rebuilt once each time the engine's memory grows, which it
  *   does a few times while its buffers reach their final sizes.
  */
@@ -82,9 +87,15 @@ const BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = {
 const OTHER_BUDGET = 4;
 
 interface ProfileNode {
-	callFrame: { functionName: string; url: string; lineNumber: number };
+	callFrame: CallFrame;
 	selfSize: number;
 	children: ProfileNode[];
+}
+
+/** Gives each node of a profile its function's name and file from the build's source maps. */
+function nameNodes(node: ProfileNode, names: BuildNames): void {
+	node.callFrame = names.name(node.callFrame);
+	for (const child of node.children) nameNodes(child, names);
 }
 
 function totalSize(node: ProfileNode): number {
@@ -159,7 +170,8 @@ async function main(): Promise<void> {
 	// The browser optimizes code that runs once per frame only after many frames; until then,
 	// numbers that such code computes are allocated.
 	const warmup = option('--warmup', WARMUP_SECONDS);
-	const server = await startServer();
+	const dev = args.includes(DEV_OPTION);
+	const server = await serveBenchPages({ dev });
 	const browser = await chromium.launch({
 		channel: 'chrome',
 		headless: false,
@@ -225,6 +237,7 @@ async function main(): Promise<void> {
 				{},
 				sessionId,
 			);
+			if (server.names) nameNodes(profile.head, server.names);
 			profiles.set(name, profile.head);
 		}
 		const frames = (await framesSoFar()) - startFrames;
@@ -232,7 +245,7 @@ async function main(): Promise<void> {
 		await input;
 		devtools.close();
 		console.log(
-			`S1 on ${gpu} with ${n} instances, sampled for ${seconds} s after ${warmup} s: ${frames} frames`,
+			`S1 on ${gpu} with ${n} instances, ${pagesText(dev)}, sampled for ${seconds} s after ${warmup} s: ${frames} frames`,
 		);
 		const over: string[] = [];
 		for (const [worker, head] of profiles) {

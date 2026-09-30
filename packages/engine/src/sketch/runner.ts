@@ -1,11 +1,13 @@
 // Runs a sketch: starts the engine on this thread's core, calls the sketch's setup function once with
 // the scene API, and steps it once per frame. A frame reads the input the page wrote, runs the
 // sketch's update, then the core's steps, and publishes the frame's draw list; each step's CPU time
-// is recorded, and so is the time each job worker spent on the frame's work. In hold mode it seeds
-// this thread's math.random and routes Math.random to it, steps the sketch to the held time in
-// fixed steps after the setup, and publishes the last frame alone. Hold mode reads no input, so the
-// held frame never depends on it.
+// is recorded, and so is the time each job worker spent on the frame's work. Development builds
+// report static objects whose transform changed without a setter, before the transform update. In
+// hold mode it seeds this thread's math.random and routes Math.random to it, steps the sketch to the
+// held time in fixed steps after the setup, and publishes the last frame alone. Hold mode reads no
+// input, so the held frame never depends on it.
 
+import { DEV } from '../errors/checks';
 import { coreFailure, QUEUED_CHANGE } from '../errors/core-failure';
 import { EngineError } from '../errors/engine-error';
 import { messageOf } from '../errors/message';
@@ -271,6 +273,11 @@ export class SketchRunner {
 		glue.prepareJobs();
 		if (glue.beginFrame(frame) !== 0) this.report(coreFailure(glue, QUEUED_CHANGE));
 		this.endPhase(Phase.Commands);
+		if (DEV) {
+			// Before the update clears the marks that setters leave on static objects.
+			const unmarked = this.context.scene.unmarkedWrites?.check();
+			if (unmarked) this.report(unmarked);
+		}
 		glue.updateTransforms();
 		this.endPhase(Phase.Transforms);
 		glue.updateBatches(frame);
