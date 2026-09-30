@@ -8,7 +8,7 @@ summary: "Creating objects; find; background, environment, fog, sky; warmUp."
 
 # Scene
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Fog, sky, environments, texture backgrounds and `scene.warmUp` are not built yet, so coding agents must not use them.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Fog, sky, environments and texture backgrounds are not built yet, so coding agents must not use them.
 
 The scene holds everything the engine draws: the objects, the camera that the canvas shows, the lights and the background. A sketch gets it as `scene` in its setup function, and creates everything through it.
 
@@ -47,10 +47,13 @@ export default defineSketch(({ scene, geometry, materials }) => {
 | `createInstances(mesh, count, { material })` | An `InstanceBatch`: `count` copies of one mesh with one material |
 | `createPerspectiveCamera(options)` | A `PerspectiveCamera` that the scene can draw from |
 | `createOrthographicCamera(options)` | An `OrthographicCamera`, whose view is a box, that the scene can draw from |
-| `createDirectionalLight(options)` | The scene's directional light |
-| `createAmbientLight(options)` | The scene's ambient light |
+| `createDirectionalLight(options)` | A `DirectionalLight`: light from one direction, like sunlight |
+| `createPointLight(options)` | A `PointLight`: light from a point in every direction, out to its range |
+| `createSpotLight(options)` | A `SpotLight`: light from a point in a cone, out to its range |
+| `createHemisphereLight(options)` | A `HemisphereLight`: light from the sky above and the ground below |
+| `createAmbientLight(options)` | An `AmbientLight`: the same light on every surface |
 
-Groups, meshes and cameras take the same object options: `name`, `position`, `rotation`, `scale`, `parent`, `dynamic` and `layers`. [Objects and transforms](objects.md) describes them. `createMesh` also takes `castShadows` and `receiveShadows`, which this version stores but does not draw yet. Meshes come from `geometry` and materials from `materials` in the sketch context. One mesh and one material can serve any number of objects.
+Groups, meshes, cameras and lights take the same object options: `name`, `position`, `rotation`, `scale`, `parent`, `dynamic` and `layers`. [Objects and transforms](objects.md) describes them. `createMesh` also takes `castShadows` and `receiveShadows`, which this version stores but does not draw yet. Meshes come from `geometry` and materials from `materials` in the sketch context. One mesh and one material can serve any number of objects.
 
 ## Finding objects by name
 
@@ -72,7 +75,7 @@ The canvas shows the scene from the active camera, which `setActiveCamera` picks
 
 ## Lights
 
-The scene has one directional light and one ambient light. `createDirectionalLight` and `createAmbientLight` each set that one light, so a second call replaces the first. Without lights, standard materials draw black. [Lights](lights.md) covers both.
+Each light is an object, so a scene can hold many, and each call creates another. Without lights, standard materials draw black. [Lights](lights.md) covers each kind, and which of them light surfaces in this version.
 
 ## When changes take effect
 
@@ -82,22 +85,27 @@ Values that the engine computes, such as the result of `getWorldPosition`, come 
 
 When the engine cannot apply a change, such as a parent loop (E1104), it skips that change and logs the error to the console. The rest of the queue still applies.
 
+## Warm-up
+
+The GPU draws each kind of object with a pipeline, which takes time to build. The first frame waits until its pipelines are built. After that, an object whose pipeline is still building draws nothing until it is built. A warm-up, `await scene.warmUp()`, resolves once every pipeline that the scene needs is built, hidden objects included. So create a later loading stage hidden, warm up, then show it. [Loading screens and warm-up](../guides/loading-screens.md) shows the pattern.
+
 ## Instance batches
 
 An instance batch is one object that draws many copies of one mesh with one material. Its rows live in typed arrays that sketch code writes directly, with no call per row. A static batch, the default, uploads the rows you mark with `markDirty`. A batch created with `dynamic: true` uploads every row in every frame. Every row of a batch shares the batch's layers, which the `layers` option and `setLayers(mask)` set, as [Render layers](../concepts/render-layers.md) explains. [Instances and batching](../concepts/instances.md) explains batches in full.
 
 ## Limits
 
-- One engine holds up to 16,383 objects at once: groups, meshes and cameras together. One more throws E1102. A destroyed object frees its place when the frame applies the change.
+- One engine holds up to 16,383 objects at once: groups, meshes, cameras and lights together. One more throws E1102. A destroyed object frees its place when the frame applies the change.
 - The rows of an instance batch take none of those places. One engine holds up to 256 batches.
 - The queue holds up to 65,536 changes between two frames. One more throws E1102.
 
 ## Related pages
 
-- [Objects and transforms](objects.md): the calls that every group, mesh and camera has.
+- [Objects and transforms](objects.md): the calls that every object has.
 - [Handles and objects](../concepts/handles.md): how objects keep their data in the engine's memory.
 - [Static and dynamic objects](../concepts/static-dynamic.md): what the `dynamic` option changes.
 - [Materials](materials.md) and [Geometry](geometry.md): what a mesh draws.
+- [Loading screens and warm-up](../guides/loading-screens.md): waiting for the scene's pipelines.
 
 ## API reference
 
@@ -178,8 +186,12 @@ The scene: every object, the active camera, the lights and the background.
 | `createPerspectiveCamera(options: PerspectiveCameraOptions = {}): PerspectiveCamera` | A perspective camera; `fov` is vertical, in degrees. Cameras are dynamic by default. |
 | `createOrthographicCamera(options: OrthographicCameraOptions = {}): OrthographicCamera` | An orthographic camera, whose view is a box: things keep their size at every distance. Give `height`, and the width follows the canvas, or give `left`, `right`, `top` and `bottom`. Cameras are dynamic by default. |
 | `setActiveCamera(camera: Camera): void` | Draws the scene from this camera. |
-| `createDirectionalLight(options: DirectionalLightOptions = {}): DirectionalLight` | Light from one direction. This version has one directional light: a newer one replaces the older. |
-| `createAmbientLight(options: LightOptions = {}): AmbientLight` | Light on every surface. This version has one ambient light: a newer one replaces the older. |
+| `createDirectionalLight(options: DirectionalLightOptions = {}): DirectionalLight` | Light from one direction, like sunlight: `direction` is the way it travels. |
+| `createPointLight(options: PointLightOptions): PointLight` | Light from a point in every direction, out to `range` meters, which it needs. |
+| `createSpotLight(options: SpotLightOptions): SpotLight` | Light from a point in a cone, out to `range` meters, which it needs. |
+| `createHemisphereLight(options: HemisphereLightOptions = {}): HemisphereLight` | Light from the sky above and the ground below. |
+| `createAmbientLight(options: LightOptions = {}): AmbientLight` | Light on every surface, from no direction. |
 | `setBackground(color: ColorInput): void` | The color behind every object. |
+| `warmUp(): Promise<void>` | Builds every GPU pipeline that the scene needs as it stands, and resolves once they are all built. Hidden objects count too. After the first frame, an object whose pipeline is still building draws nothing, so create a loading stage's objects hidden, warm up, then show them. The first frame waits for its pipelines anyway. In the setup, a warm-up draws that frame once they are built, before the setup goes on. |
 
 <!-- null3d:api:end -->

@@ -208,7 +208,7 @@ await assets.preload(['/levels/one.json', '/tex/terrain.png', '/tex/rocks.png'])
 const level = await assets.loadJson<Level>('/levels/one.json');   // from memory: preload downloaded it
 const terrain = await assets.loadTexture('/tex/terrain.png', { wrap: 'repeat', anisotropy: 8 });
 buildLevel(scene, level, terrain);
-await scene.warmUp();                          // compile every pipeline before the first frame
+await scene.warmUp();                          // build every pipeline before the first frame
 ```
 
 ```ts
@@ -236,7 +236,7 @@ try {
 - Pass `onSketchMessage` to `createEngine`. A handler added after `createEngine` resolves hears the setup's messages only once setup is over, which is too late for a progress bar.
 - Remove the loading screen when `engine.firstFrame` resolves, not when setup ends. Until the GPU finishes the first frame, the canvas is blank.
 - `createEngine` rejects when the browser cannot run the engine, for example without WebAssembly SIMD (E1303). Show a message or a still image in place of the canvas.
-- `warmUp` prevents the hitches that appear when a new pipeline compiles during play; the Godot browser port measured seconds of such stalls.
+- `warmUp` resolves once every pipeline that the scene needs is built, hidden objects included. For a later loading stage, create its objects hidden, await it, then show them, so nothing appears late or stalls a frame. The Godot browser port measured seconds of such stalls.
 
 Docs: `guides/loading-screens`, `api/engine`.
 
