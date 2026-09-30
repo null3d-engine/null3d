@@ -19,6 +19,7 @@ use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::{Duration, Instant};
 
 use common::{Rng, Workers, mul4, perspective, translation};
+use null3d_core::cells::CellTable;
 use null3d_core::culling::{
     CullOutput, Frustum, cull_parallel, cull_spheres, cull_spheres_reference,
 };
@@ -281,9 +282,10 @@ fn bench_s1_batch_update() {
         }
         let pool = Workers::start(workers);
         let jobs: &JobSystem = pool.jobs();
+        let mut cells = CellTable::new();
         let mut frame = 1;
         let (median, best) = median_and_fastest(500, || {
-            table.update(jobs, frame);
+            table.update(jobs, frame, &mut cells);
             frame += 1;
         });
         println!(

@@ -77,6 +77,12 @@ describe('coreDevice on WebGL2', () => {
 		expect(small.maxTextureSize).toBe(C.LIMIT_WEBGL2_MIN_TEXTURE_SIZE);
 	});
 
+	it('stops at the sources an index list entry can name, however large the textures', () => {
+		const large = coreDevice(true, report({ maxTextureSize: 32768 }), NO_SWITCHES);
+		expect(maxInstances(large)).toBe(C.LIMIT_WEBGL2_MAX_SOURCES);
+		expect(C.LIMIT_WEBGL2_MAX_SOURCES).toBe(C.LIMIT_MATRICES_PER_TEXTURE_ROW * 16384);
+	});
+
 	it('passes multi-draw to the core only where the extension exists', () => {
 		const withIt = report({ extensions: { WEBGL_multi_draw: true } });
 		expect(coreDevice(true, withIt, NO_SWITCHES).capabilities).toBe(C.CAPABILITY_MULTI_DRAW);

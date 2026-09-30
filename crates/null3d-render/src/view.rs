@@ -7,7 +7,12 @@
 //! Each frame builder culls every view on its own. On WebGPU a view has its own culling dispatch,
 //! compacted instances, indirect draws and bundle. On WebGL2 the job workers list each view's
 //! visible objects in an index list of its own.
+//!
+//! Shaders work in positions relative to a view's camera. Each view has its own offsets from its
+//! camera to the grid cells in use (see [`null3d_core::cells`]), and its frustum is relative to its
+//! camera.
 
+use null3d_core::cells::CellPosition;
 use null3d_core::culling::Frustum;
 use null3d_core::handle::Handle;
 use null3d_core::scene::SceneStorage;
@@ -77,37 +82,41 @@ impl View {
         self.layers
     }
 
-    /// The view-projection matrix and the camera's world position for a target of `aspect`, or
-    /// `None` when the view has no camera, or its camera object is gone.
+    /// The view-projection matrix for positions relative to the camera, for a target of `aspect`,
+    /// and the camera's cell and position in it, or `None` when the view has no camera, or its
+    /// camera object is gone.
     pub(crate) fn transform(
         &self,
         scene: &SceneStorage,
         parity: usize,
         aspect: f32,
-    ) -> Option<([f32; 16], [f32; 4])> {
+    ) -> Option<([f32; 16], CellPosition)> {
         let (camera, lens) = self.camera?;
         let slot = scene.resolve(camera).ok()?;
         let world: Affine = *scene.world(parity).matrix(slot as usize);
         Some((
-            lens.view_projection(&world, aspect),
-            [world[3], world[7], world[11], 1.0],
+            lens.relative_view_projection(&world, aspect),
+            scene.cell_position(slot, parity),
         ))
     }
 }
 
-/// A view's values for one frame: the uniform block its passes read, and the frustum its
-/// culling tests against.
+/// A view's values for one frame: the uniform block its passes read, the frustum its culling
+/// tests against, both relative to its camera, and where its camera is.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ViewFrame {
     pub uniform: FrameUniform,
     pub frustum: Frustum,
+    /// The camera's cell, and its position relative to the cell's center.
+    pub camera: CellPosition,
 }
 
 impl ViewFrame {
-    pub(crate) fn new(uniform: FrameUniform) -> Self {
+    pub(crate) fn new(uniform: FrameUniform, camera: CellPosition) -> Self {
         Self {
             frustum: Frustum::from_view_projection(&uniform.view_proj),
             uniform,
+            camera,
         }
     }
 }

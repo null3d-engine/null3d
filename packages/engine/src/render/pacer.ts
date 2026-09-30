@@ -1,9 +1,11 @@
-// Holds the thread that draws to a fixed frame rate below the display's, as the ?fps= switch asks,
-// so runs on displays of different refresh rates can be compared at one rate. The thread skips frame
-// callbacks until the next frame's turn comes. The turns keep a fixed schedule, one frame interval
-// apart, instead of counting from the callback that drew last. When the display's refresh period
-// does not divide the interval, the gaps between frames alternate between whole periods, and the
-// average rate still matches: 60 frames per second on a 144 Hz display, for example.
+// Holds the thread that draws to a frame rate: the fixed rate that the ?fps= switch asks for, so
+// runs on displays of different refresh rates can be compared at one rate, and the display's own
+// rate where the thread's frame callbacks come faster than the display, as a timer runs them in
+// Safari's workers. The thread skips frame callbacks until the next frame's turn comes. The turns
+// keep a fixed schedule, one frame interval apart, instead of counting from the callback that drew
+// last. When the callbacks' period does not divide the interval, the gaps between frames alternate
+// between whole periods, and the average rate still matches: 60 frames per second on a 144 Hz
+// display, or from callbacks every 15 ms, for example.
 
 /**
  * How early a callback may come and still take a frame's turn, in ms: more than callback timestamps
@@ -12,14 +14,25 @@
 const EARLY_MS = 1;
 
 export class FramePacer {
-	/** Time between frames in ms, or 0 to draw at every callback. */
-	private readonly interval: number;
+	/** Time between frames that ?fps= asks for in ms, or 0 for none. */
+	private readonly fpsInterval: number;
+	/** Time between frames in ms: the longer of the ?fps= interval and the display's, or 0 for neither. */
+	private interval: number;
 	/** When the next frame's turn starts, in the callbacks' clock. */
 	private next = Number.NEGATIVE_INFINITY;
 
 	/** `fps` is the rate to hold, or undefined to draw at every callback. */
 	constructor(fps: number | undefined) {
-		this.interval = fps === undefined ? 0 : 1000 / fps;
+		this.fpsInterval = fps === undefined ? 0 : 1000 / fps;
+		this.interval = this.fpsInterval;
+	}
+
+	/**
+	 * Holds the frames to at most one per `ms`, the display's refresh period, or to no display
+	 * rate with 0. The ?fps= rate still holds when it is the lower one.
+	 */
+	holdToDisplay(ms: number): void {
+		this.interval = Math.max(this.fpsInterval, ms);
 	}
 
 	/**

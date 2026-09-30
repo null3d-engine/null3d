@@ -1,14 +1,14 @@
 ---
 id: concepts/architecture
 title: "Architecture: threads and the frame"
-status: planned
+status: experimental
 since: "0.1"
 summary: "Main thread, sketch worker, render worker, job workers; the pipelined frame; latency modes."
 ---
 
 # Architecture: threads and the frame
 
-> Planned for null3D 0.1. No release has these APIs yet, so coding agents must not use them.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. The `sketchThread` option of `createEngine` is not built yet: sketch code runs on the page's main thread only in the single-threaded build.
 
 ```mermaid
 flowchart LR
@@ -20,7 +20,7 @@ flowchart LR
         core["Engine core<br/>(Rust, WebAssembly)"]
     end
     subgraph jobs["Job workers"]
-        work["Transforms, culling,<br/>animation, draw lists"]
+        work["Transforms, instance batches,<br/>culling on WebGL2"]
     end
     subgraph render["Render worker"]
         gpu["GPU layer<br/>WebGPU or WebGL2"]
@@ -36,20 +36,20 @@ In null3D, a 3D scene is called a sketch: a module that builds the scene and upd
 
 | Thread | What runs there | How many |
 | --- | --- | --- |
-| Main thread | The page and a thin engine shim. The shim picks the engine build, hands the canvas to the render worker, and writes input and resize events into shared memory. | 1 |
+| Main thread | The page and a thin engine shim. The shim picks the engine build, hands the canvas to the thread that draws, and writes input and resize events into shared memory. | 1 |
 | Sketch worker | Your sketch code and the engine core. Reading or writing scene data is a plain memory access here. | 1 |
 | Render worker | The GPU device and the canvas. It uploads changed data and replays draw lists into WebGPU or WebGL2 calls. It runs no sketch code. | 1 |
-| Job workers | Parallel loops over scene data in Rust: transforms, culling, animation and draw-list recording, plus asset decoding. | Logical cores minus 2, at least 1 |
+| Job workers | Parallel loops over scene data in Rust: transforms and bounds, instance batches, WebGL2 culling, and the normals and tangents it computes for new meshes. | Logical cores minus 2, at least 1 |
 
 ## Why the work is split this way
 
 Sketch code runs in a worker so that it can touch scene data directly. The engine keeps positions, rotations and other fields in shared arrays, and your code reads and writes those arrays with no copy and no message.
 
-One thread owns the GPU because browser GPU objects cannot move between workers. The parallel work therefore happens before any GPU call: job workers write binary draw lists, and the render worker replays them.
+One thread owns the GPU because browser GPU objects cannot move between workers. The parallel work therefore happens before any GPU call. The sketch worker records each frame as binary draw lists, and the render worker replays them.
 
 The render worker runs no sketch code. A garbage-collection pause in your code cannot delay the frame on screen.
 
-The busy loops stay inside WebAssembly. Each call from JavaScript into WebAssembly has a cost, so the API crosses into WebAssembly once per batch of work.
+The busy loops stay inside WebAssembly. Each call from JavaScript into WebAssembly has a cost, so each step of the frame is one call that covers every object.
 
 ## One frame
 
@@ -60,9 +60,9 @@ The sketch worker, computing frame N+1:
 1. Wakes when the render worker signals a new frame, and reads the new input from shared memory.
 2. Runs your `onUpdate`. Your code writes transforms straight into the shared arrays and queues structural changes, such as creating, destroying and reparenting objects.
 3. Applies the structural changes in one batch.
-4. Runs parallel jobs: animation, transforms by hierarchy depth, bounds and level of detail. On the WebGL2 path the jobs also cull each view, such as the camera's.
-5. Records the frame's draw lists: the uploads first, then each pass in the order that the [render graph](render-graph.md) sets.
-6. Publishes the finished frame by flipping one shared index, then signals the render worker.
+4. Runs parallel jobs: transforms by hierarchy depth with their bounds, then the instance batches. On the WebGL2 path the jobs also cull each view, such as the camera's.
+5. Records the frame's draw lists: the new GPU objects and the uploads first, then each pass in the order that the [render graph](render-graph.md) sets.
+6. Publishes the finished frame: it stores the frame's number in one shared slot, which the render worker reads in its next frame callback.
 
 The render worker, drawing frame N inside its own `requestAnimationFrame` callback:
 
@@ -71,7 +71,11 @@ The render worker, drawing frame N inside its own `requestAnimationFrame` callba
 3. Uploads the changed byte ranges to GPU buffers, and on WebGL2 to data textures. On WebGPU, uploads from 64 KiB up to 4 MiB have two routes: the direct write call, and staging buffers that the browser keeps mapped. The render worker times both on the device and takes the faster one. Chrome favors the staging buffers, and Safari the direct call. On WebGL2, uploads read straight from shared memory, or from a copy in a browser that refuses to read it.
 4. Replays the draw lists into WebGPU or WebGL2 calls and submits them. The browser shows the frame when the callback returns.
 
-The engine times each step on every thread, job workers included. The [performance guide](../guides/performance.md) shows how to read those figures.
+The engine times each step of the sketch worker's frame, the replay on the drawing thread, and each job worker's busy time. The [performance guide](../guides/performance.md) shows how to read those figures.
+
+## Precision far from the origin
+
+Positions are 32-bit floats, as in three.js. Far from the origin such a value moves in coarse steps: about 8 mm at 100 km. The engine therefore keeps each world matrix relative to the center of a grid cell, 1,024 m wide. Each frame the engine computes the offset from the camera to each cell in use, in 64-bit floats. The GPU adds those offsets, so it draws positions relative to the camera, which stay precise near it. Static matrices stay on the GPU while the camera moves. [Culling](culling.md) describes the cells.
 
 ## Latency modes
 
@@ -79,16 +83,16 @@ The engine times each step on every thread, job workers included. The [performan
 | --- | --- | --- | --- |
 | Pipelined | The render worker, one frame behind | 1 frame | Most sketches: the highest throughput and the steadiest frame pacing |
 | Low latency | The sketch worker, in the same frame | None | Sketches where input delay matters most, such as fast sketches, when the frame budget allows |
-| Single-threaded | One thread, in sequence | None | Pages without cross-origin isolation, and older iPhones |
+| Single-threaded | One thread, in sequence | None | Pages without cross-origin isolation |
 
-Pipelined is the default when the page can use threads, and single-threaded otherwise. You pick a mode with `createEngine({ latency })`.
+Pipelined is the default when the page can use threads, and single-threaded otherwise. On a page that can use threads, `createEngine({ latency: 'low' })` asks for low latency.
 
 ## Rules the engine keeps
 
-- No thread waits for another on the critical path. Work that needs the GPU's answer, such as pixel-exact picking, returns its result in a later frame through a promise.
+- The render worker never waits for the sketch worker. Work that needs the GPU's answer, such as `engine.captureFrame()`, returns its result through a promise.
 - No worker makes a blocking call to the main thread. Messages to the page never wait for a reply.
 - Each frame's data has two copies. The sketch worker writes one while the render worker reads the other, so neither waits on a lock.
-- Frame work comes before background work such as asset decoding. A worker that finishes early takes the remaining chunks from the others, so a phone's slower cores never hold up a frame.
+- Each parallel loop splits into chunks, and a worker that finishes early claims the next chunk. A phone's slower cores then take fewer chunks, so they hold up the frame less.
 - A hidden tab pauses the frames, because the browser stops `requestAnimationFrame` there. The job workers then sleep.
 
 ## Sketch code on the main thread

@@ -12,7 +12,7 @@
 export enum Role {
 	Sketch = 0,
 	Render = 1,
-	/** GPU time per frame from timestamp queries, written by the thread that draws. */
+	/** GPU time per frame and per pass from timestamp queries, written by the thread that draws. */
 	Gpu = 2,
 	/**
 	 * Frames the GPU finished: each record's busy time is the time from the frame's submit to its
@@ -83,6 +83,24 @@ export const COUNTER_NAMES = [
 ] as const;
 
 export type CounterName = (typeof COUNTER_NAMES)[number];
+
+/**
+ * Passes that a GPU record times one by one. A GPU record's phase slots hold the time before the
+ * frame's first pass, which the copies recorded there take, then the time of each of these passes
+ * in order. A pass after them adds its time to the last one's.
+ */
+export const GPU_TIMED_PASSES = PHASE_NAMES.length - 1;
+
+/** A GPU record's time for a part of the frame that the browser gave no timestamps for. */
+export const UNTIMED = -1;
+
+/** What a GPU record's counter slots hold. */
+export enum GpuCounter {
+	/** The passes of the frame, timed alone or not. */
+	Passes = 0,
+	/** Bit k is set when the frame's pass k is a render pass, and clear when it is a compute pass. */
+	RenderPasses = 1,
+}
 
 /** Records each ring holds: several seconds of frames, far longer than the page waits between drains. */
 export const RING_RECORDS = 1024;
@@ -198,6 +216,18 @@ export class FrameRecorder {
 
 	count(counter: Counter, value: number): void {
 		this.views.words[this.at + COUNTERS + counter] = value;
+	}
+
+	/** A GPU record's pass count, and which of its passes are render passes, one bit each. */
+	gpuPasses(passes: number, renderPasses: number): void {
+		const { words } = this.views;
+		words[this.at + COUNTERS + GpuCounter.Passes] = passes;
+		words[this.at + COUNTERS + GpuCounter.RenderPasses] = renderPasses;
+	}
+
+	/** A GPU record's time in one slot: 0 for the copies before the first pass, then one per pass. */
+	gpuTime(slot: number, ms: number): void {
+		this.views.floats[this.at + PHASES + slot] = ms;
 	}
 
 	/** Time since the previous presented frame, recorded by the thread that presents. */

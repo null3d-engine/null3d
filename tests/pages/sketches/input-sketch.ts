@@ -1,7 +1,8 @@
 // Records what ctx.input reports each frame: how often each name was pressed and released, the names
-// pressed and released in one frame, the sums of the pointer's movement and wheel, the fingers, and
-// the gamepad's values. It answers the page's 'state' message with all of it. Its setup tells the
-// page when it starts and waits a moment, so the page can send input before the first frame.
+// pressed and released in one frame, the sums of the pointer's movement, drags, wheel and pinches,
+// the fingers, and the gamepad's values. It answers the page's 'state' message with all of it. Its
+// setup tells the page when it starts and waits a moment, so the page can send input before the
+// first frame.
 import { defineSketch } from '@null3d/engine';
 
 const NAMES = [
@@ -27,7 +28,7 @@ export default defineSketch(async ({ input, page }) => {
 	const pressed = counts();
 	const released = counts();
 	const together: string[] = [];
-	const moved = { dx: 0, dy: 0, wheel: 0, touchDx: 0 };
+	const moved = { dx: 0, dy: 0, dragDx: 0, dragDy: 0, wheel: 0, pinch: 0, touchDx: 0 };
 	let mostTouches = 0;
 	page.onMessage((name) => {
 		if (name !== 'state') return;
@@ -57,7 +58,10 @@ export default defineSketch(async ({ input, page }) => {
 			}
 			moved.dx += input.pointer.dx;
 			moved.dy += input.pointer.dy;
+			moved.dragDx += input.pointer.dragDx;
+			moved.dragDy += input.pointer.dragDy;
 			moved.wheel += input.pointer.wheel;
+			moved.pinch += input.pointer.pinch;
 			for (const touch of input.touches) moved.touchDx += touch.dx;
 			mostTouches = Math.max(mostTouches, input.touches.length);
 		},

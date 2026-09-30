@@ -20,7 +20,15 @@ interface InputState {
 		isTouch: boolean;
 		frame: number;
 	};
-	moved: { dx: number; dy: number; wheel: number; touchDx: number };
+	moved: {
+		dx: number;
+		dy: number;
+		dragDx: number;
+		dragDy: number;
+		wheel: number;
+		pinch: number;
+		touchDx: number;
+	};
 	touches: { id: number; x: number; y: number }[];
 	mostTouches: number;
 	stick: number;
@@ -149,8 +157,22 @@ for (const mode of ENGINE_MODES)
 			released: { Mouse0: 1, Mouse2: 1 },
 			down: { Mouse0: false, Mouse2: false },
 		});
+		// Only the movement between a press and its release drags.
+		await page.mouse.down({ button: 'left' });
+		await page.mouse.move(130, 70, { steps: 3 });
+		await page.mouse.up({ button: 'left' });
+		await page.mouse.move(150, 80);
+		await expect.poll(state).toMatchObject({
+			pointer: { x: 150, y: 80 },
+			moved: { dx: 110, dy: 50, dragDx: 30, dragDy: 20 },
+		});
 		await page.mouse.wheel(0, 120);
-		await expect.poll(state).toMatchObject({ moved: { wheel: 120 } });
+		await expect.poll(state).toMatchObject({ moved: { wheel: 120, pinch: 0 } });
+		// A trackpad's pinch reaches the page as wheel scroll with the Control key's flag.
+		await page.evaluate(() =>
+			(globalThis as { pinchWheel?: (scroll: number) => void }).pinchWheel?.(-8),
+		);
+		await expect.poll(state).toMatchObject({ moved: { wheel: 112, pinch: -8 } });
 
 		// With no pad connected, the page reads the pads once, when it starts.
 		expect(await padReads(page)).toBe(1);
@@ -257,5 +279,13 @@ for (const mode of ENGINE_MODES)
 		expect(held.frames).toBe(31);
 		expect(held.pressed).toMatchObject({ KeyW: 0, Mouse0: 0 });
 		expect(held.down).toMatchObject({ KeyW: false, Mouse0: false });
-		expect(held.moved).toEqual({ dx: 0, dy: 0, wheel: 0, touchDx: 0 });
+		expect(held.moved).toEqual({
+			dx: 0,
+			dy: 0,
+			dragDx: 0,
+			dragDy: 0,
+			wheel: 0,
+			pinch: 0,
+			touchDx: 0,
+		});
 	});

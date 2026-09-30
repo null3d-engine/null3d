@@ -95,9 +95,13 @@ export function coreDevice(
 	};
 }
 
-/** The most objects and instance rows, counted together, that a scene draws on the device. */
+/**
+ * The most objects and instance rows, counted together, that a scene draws on the device. On
+ * WebGL2 a data texture row holds a fixed number of matrices, and an index list entry names at
+ * most `LIMIT_WEBGL2_MAX_SOURCES` of them, below its grid cell.
+ */
 export function maxInstances(device: CoreDevice): number {
 	return device.webgl2
-		? C.LIMIT_MATRICES_PER_TEXTURE_ROW * device.maxTextureSize
+		? Math.min(C.LIMIT_MATRICES_PER_TEXTURE_ROW * device.maxTextureSize, C.LIMIT_WEBGL2_MAX_SOURCES)
 		: Math.floor(device.storageBindingBytes / C.LIMIT_INSTANCE_STRIDE);
 }

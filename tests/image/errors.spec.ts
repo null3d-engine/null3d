@@ -48,6 +48,10 @@ for (const mode of ENGINE_MODES) {
 		expect(result.failedStarts).toEqual([
 			engineError('E1401', `${result.notASketch} must export default defineSketch(...).`),
 			BAD_COLOR,
+			engineError(
+				'E1409',
+				'the memory.maximumMiB option 8192 is not a whole number of MiB from 256 to 4096.',
+			),
 		]);
 		expect(result.inSketch).toEqual([
 			BAD_COLOR,

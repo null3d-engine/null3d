@@ -4,11 +4,17 @@
 //! spheres into registers. `std::simd` compiles to WebAssembly `simd128` and to Arm NEON from the
 //! same code. The SIMD test and the scalar reference use the same operations in the same order,
 //! without fused multiply-adds, so they return identical results, even on plane boundaries.
+//!
+//! Sphere centers are relative to their grid cells' centers (see [`crate::cells`]), and the
+//! frustum is relative to the camera. A run of rows in one cell is tested against the frustum
+//! moved into that cell ([`Frustum::moved_by`]), so the test per sphere stays the same. A run
+//! whose rows lie in different cells adds each row's camera offset to its center first.
 
 use std::collections::TryReserveError;
 use std::ops::Range;
 use std::simd::prelude::*;
 
+use crate::cells::CELL_SHIFT;
 use crate::jobs::JobSystem;
 use crate::shared::SharedMut;
 use crate::world::SphereArrays;
@@ -81,6 +87,21 @@ impl Frustum {
         &self.planes
     }
 
+    /// This frustum as seen from a point `offset` away from its origin: a sphere at `c` is inside
+    /// the moved frustum when a sphere at `c + offset` is inside this one. Each plane's distance
+    /// is computed in 64-bit floats and rounded once.
+    pub fn moved_by(&self, offset: [f32; 3]) -> Frustum {
+        Frustum {
+            planes: self.planes.map(|[x, y, z, d]| {
+                let moved = f64::from(d)
+                    + f64::from(x) * f64::from(offset[0])
+                    + f64::from(y) * f64::from(offset[1])
+                    + f64::from(z) * f64::from(offset[2]);
+                [x, y, z, moved as f32]
+            }),
+        }
+    }
+
     /// True when the sphere touches or crosses the inside of every plane. This is the scalar
     /// test; [`cull_spheres`] returns the same answers four at a time.
     #[inline(always)]
@@ -134,6 +155,77 @@ pub fn cull_spheres(
     out: &mut [u32],
 ) -> usize {
     check_range(xs, ys, zs, rs, &range, out);
+    cull_centers(
+        frustum,
+        rs,
+        range,
+        out,
+        |i| {
+            [
+                f32x4::from_slice(&xs[i..i + 4]),
+                f32x4::from_slice(&ys[i..i + 4]),
+                f32x4::from_slice(&zs[i..i + 4]),
+            ]
+        },
+        |i| [xs[i], ys[i], zs[i]],
+    )
+}
+
+/// [`cull_spheres`] for spheres in different cells: each center first moves by its cell's offset
+/// from the camera, `offsets[cells[i]]`, and the frustum is relative to the camera. The SIMD test
+/// and the scalar tail add the offsets the same way, so they agree.
+///
+/// # Panics
+/// As for [`cull_spheres`], and when `cells` ends before the range does or names a cell past
+/// `offsets`.
+pub fn cull_spheres_in_cells(
+    frustum: &Frustum,
+    spheres: SphereArrays<'_>,
+    cells: &[u32],
+    offsets: &[[f32; 4]],
+    range: Range<u32>,
+    out: &mut [u32],
+) -> usize {
+    let SphereArrays { xs, ys, zs, radii } = spheres;
+    check_range(xs, ys, zs, radii, &range, out);
+    assert!(
+        range.end as usize <= cells.len(),
+        "range {range:?} is past the {} cells",
+        cells.len()
+    );
+    let offset = |i: usize| offsets[cells[i] as usize];
+    cull_centers(
+        frustum,
+        radii,
+        range,
+        out,
+        |i| {
+            let o = [offset(i), offset(i + 1), offset(i + 2), offset(i + 3)];
+            [
+                f32x4::from_slice(&xs[i..i + 4]) + f32x4::from_array(o.map(|v| v[0])),
+                f32x4::from_slice(&ys[i..i + 4]) + f32x4::from_array(o.map(|v| v[1])),
+                f32x4::from_slice(&zs[i..i + 4]) + f32x4::from_array(o.map(|v| v[2])),
+            ]
+        },
+        |i| {
+            let o = offset(i);
+            [xs[i] + o[0], ys[i] + o[1], zs[i] + o[2]]
+        },
+    )
+}
+
+/// Writes the indices of the spheres in `range` that are inside the frustum to `out`, in
+/// increasing order, and returns how many it wrote. `centers4` gives the centers of four spheres
+/// from an index on, and `center` one sphere's, in the frustum's space; `rs` holds the radii.
+#[inline(always)]
+fn cull_centers(
+    frustum: &Frustum,
+    rs: &[f32],
+    range: Range<u32>,
+    out: &mut [u32],
+    centers4: impl Fn(usize) -> [f32x4; 3],
+    center: impl Fn(usize) -> [f32; 3],
+) -> usize {
     let planes = frustum.planes.map(|p| p.map(f32x4::splat));
     let (start, end) = (range.start as usize, range.end as usize);
     let simd_end = start + (end - start) / 4 * 4;
@@ -141,9 +233,7 @@ pub fn cull_spheres(
     let mut n = 0;
     let mut i = start;
     while i < simd_end {
-        let x = f32x4::from_slice(&xs[i..i + 4]);
-        let y = f32x4::from_slice(&ys[i..i + 4]);
-        let z = f32x4::from_slice(&zs[i..i + 4]);
+        let [x, y, z] = centers4(i);
         let limit = -f32x4::from_slice(&rs[i..i + 4]);
         let mut inside = mask32x4::splat(true);
         for p in &planes {
@@ -159,9 +249,10 @@ pub fn cull_spheres(
         n += bits.count_ones() as usize;
         i += 4;
     }
-    for i in simd_end..end {
+    for (i, &radius) in (simd_end..end).zip(&rs[simd_end..end]) {
+        let [x, y, z] = center(i);
         out[n] = i as u32;
-        n += usize::from(frustum.contains_sphere(xs[i], ys[i], zs[i], rs[i]));
+        n += usize::from(frustum.contains_sphere(x, y, z, radius));
     }
     n
 }
@@ -361,6 +452,8 @@ pub fn cull_parallel(
 pub const BY_ROW: u32 = u32::MAX - 1;
 /// A row bucket that draws nowhere: the row is culled but never listed.
 pub const NO_BUCKET: u32 = u32::MAX;
+/// The cell of a run whose rows each look up their own cell in their set's cells.
+pub const ROW_CELLS: u32 = u32::MAX;
 
 /// A run of rows for [`cull_into_buckets`]: rows `start..end` of one set of sphere arrays.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -375,12 +468,24 @@ pub struct CullRun {
     pub bucket: u32,
     /// Added to each visible row to make its list entry.
     pub base: u32,
+    /// The cell index of every row, or [`ROW_CELLS`] to look each row up in its set's cells.
+    pub cell: u32,
 }
 
 impl CullRun {
     fn len(&self) -> usize {
         (self.end - self.start) as usize
     }
+}
+
+/// The rows of one set that runs cull: their spheres, relative to their cells' centers, and each
+/// row's cell index, which only runs with [`ROW_CELLS`] read.
+#[derive(Clone, Copy, Debug)]
+pub struct CullSet<'a> {
+    /// The spheres, one per row.
+    pub spheres: SphereArrays<'a>,
+    /// Each row's cell index, or an empty slice when no run of the set looks cells up.
+    pub cells: &'a [u32],
 }
 
 /// The output and working space of [`cull_into_buckets`]: the list of visible entries grouped by
@@ -474,8 +579,13 @@ fn same_words(a: &[u32], b: &[u32]) -> bool {
 
 /// Culls runs of rows from several sets of sphere arrays, on the calling thread and the job
 /// workers, and lists the visible rows grouped by bucket. Each visible row's entry is its row
-/// plus its run's base. A run either puts every visible row in one bucket, or looks each row up
-/// in `row_buckets`, where [`NO_BUCKET`] drops the row. Returns the number of entries.
+/// plus its run's base, with the row's cell index in the bits from [`CELL_SHIFT`] up. A run either
+/// puts every visible row in one bucket, or looks each row up in `row_buckets`, where
+/// [`NO_BUCKET`] drops the row. Returns the number of entries.
+///
+/// `frustum` is relative to the camera, and `offsets` holds the offset from the camera to each
+/// cell's center, by cell index. A run whose rows share a cell is culled against the frustum moved
+/// into that cell; a run with [`ROW_CELLS`] moves each row's sphere by its cell's offset instead.
 ///
 /// Each run culls into its own part of a scratch list and counts its rows per bucket, on the
 /// job workers too when the runs hold many rows. A prefix sum over the buckets and runs then
@@ -484,12 +594,14 @@ fn same_words(a: &[u32], b: &[u32]) -> bool {
 /// work spreads over the workers.
 ///
 /// # Panics
-/// When `out` has less room than the runs, their rows or the buckets need, or a run's bucket is
-/// out of range.
+/// When `out` has less room than the runs, their rows or the buckets need, or a run's bucket or
+/// cell is out of range.
+#[allow(clippy::too_many_arguments)]
 pub fn cull_into_buckets<'a>(
     jobs: &JobSystem,
     frustum: &Frustum,
-    sets: &(dyn Fn(u32) -> SphereArrays<'a> + Sync),
+    offsets: &[[f32; 4]],
+    sets: &(dyn Fn(u32) -> CullSet<'a> + Sync),
     runs: &[CullRun],
     row_buckets: &[u32],
     buckets: u32,
@@ -514,6 +626,11 @@ pub fn cull_into_buckets<'a>(
             "run bucket {} is out of range",
             run.bucket
         );
+        assert!(
+            run.cell == ROW_CELLS || (run.cell as usize) < offsets.len(),
+            "run cell {} has no offset",
+            run.cell
+        );
         out.run_offsets[index] = rows as u32;
         rows += run.len();
         if run.bucket == BY_ROW {
@@ -531,22 +648,35 @@ pub fn cull_into_buckets<'a>(
     let scratch = SharedMut::new(&mut out.scratch);
     let counts = SharedMut::new(&mut out.run_counts);
     let histograms = SharedMut::new(&mut out.histograms);
-    let (offsets, positions) = (&out.run_offsets, &out.run_positions);
+    let (run_offsets, positions) = (&out.run_offsets, &out.run_positions);
     let cull = |index: usize| {
         let run = runs[index];
-        let spheres = sets(run.set);
+        let set = sets(run.set);
         // SAFETY: each run writes only its own part of the scratch list, its own count and its
         // own histogram; the parts of different runs do not overlap.
-        let dst = unsafe { scratch.slice(offsets[index] as usize, run.len()) };
-        let visible = cull_spheres(
-            frustum,
-            spheres.xs,
-            spheres.ys,
-            spheres.zs,
-            spheres.radii,
-            run.start..run.end,
-            dst,
-        );
+        let dst = unsafe { scratch.slice(run_offsets[index] as usize, run.len()) };
+        let visible = if run.cell == ROW_CELLS {
+            cull_spheres_in_cells(
+                frustum,
+                set.spheres,
+                set.cells,
+                offsets,
+                run.start..run.end,
+                dst,
+            )
+        } else {
+            let [x, y, z, _] = offsets[run.cell as usize];
+            let spheres = set.spheres;
+            cull_spheres(
+                &frustum.moved_by([x, y, z]),
+                spheres.xs,
+                spheres.ys,
+                spheres.zs,
+                spheres.radii,
+                run.start..run.end,
+                dst,
+            )
+        };
         // SAFETY: as above.
         unsafe { counts.write(index, visible as u32) };
         if run.bucket == BY_ROW {
@@ -613,8 +743,9 @@ pub fn cull_into_buckets<'a>(
         }
     }
 
-    // Pass 2: copy each run's visible rows to their places, adding the run's base.
-    let (scratch, offsets, counts, positions) = (
+    // Pass 2: copy each run's visible rows to their places as entries: the row plus the run's
+    // base, with the row's cell above them.
+    let (scratch, run_offsets, counts, positions) = (
         &out.scratch,
         &out.run_offsets,
         &out.run_counts,
@@ -624,8 +755,25 @@ pub fn cull_into_buckets<'a>(
     let histograms = SharedMut::new(&mut out.histograms);
     let place = |index: usize| {
         let run = runs[index];
-        let from = offsets[index] as usize;
+        let from = run_offsets[index] as usize;
         let visible = &scratch[from..from + counts[index] as usize];
+        let cells = if run.cell == ROW_CELLS {
+            sets(run.set).cells
+        } else {
+            &[]
+        };
+        let base = if run.cell == ROW_CELLS {
+            run.base
+        } else {
+            run.base + (run.cell << CELL_SHIFT)
+        };
+        let entry = |row: u32| {
+            if run.cell == ROW_CELLS {
+                base + (cells[row as usize] << CELL_SHIFT) + row
+            } else {
+                base + row
+            }
+        };
         if run.bucket == BY_ROW {
             // SAFETY: the run's histogram holds its own write positions, and the prefix sum gave
             // each run and bucket its own range of the list, so no two runs write one place.
@@ -635,15 +783,21 @@ pub fn cull_into_buckets<'a>(
                 if bucket != NO_BUCKET {
                     let at = &mut next[bucket as usize];
                     // SAFETY: as above.
-                    unsafe { indices.write(*at as usize, row + run.base) };
+                    unsafe { indices.write(*at as usize, entry(row)) };
                     *at += 1;
                 }
             }
         } else {
             // SAFETY: as above.
             let dst = unsafe { indices.slice(positions[index] as usize, visible.len()) };
-            for (entry, &row) in dst.iter_mut().zip(visible) {
-                *entry = row + run.base;
+            if run.cell == ROW_CELLS {
+                for (slot, &row) in dst.iter_mut().zip(visible) {
+                    *slot = entry(row);
+                }
+            } else {
+                for (slot, &row) in dst.iter_mut().zip(visible) {
+                    *slot = base + row;
+                }
             }
         }
     };
