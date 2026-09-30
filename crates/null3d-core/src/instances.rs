@@ -35,6 +35,7 @@ use crate::cells::{self, CellCoords, CellTable, HALF_CELL, ORIGIN_CELL};
 use crate::error::{CoreError, Resource};
 use crate::handle::{Handle, SlotAllocator};
 use crate::jobs::JobSystem;
+use crate::layers::DEFAULT_LAYERS;
 use crate::math::{self, IDENTITY_ROTATION, compose4, deinterleave3, max_axis_scale4, transpose4};
 use crate::world::{COLOR_FLOATS, MATRIX_FLOATS, WorldArrays, WorldPtrs};
 
@@ -64,6 +65,8 @@ pub struct InstanceBatch {
     material: u32,
     local_radius: f32,
     active: u32,
+    /// The layer mask of every row (see [`crate::layers`]).
+    layers: u32,
     positions: Vec<f32>,
     rotations: Vec<f32>,
     scales: Vec<f32>,
@@ -132,6 +135,7 @@ impl InstanceBatch {
             material,
             local_radius,
             active: capacity,
+            layers: DEFAULT_LAYERS,
             positions: filled(rows * 3, 0.0)?,
             rotations,
             scales: filled(rows * 3, 1.0)?,
@@ -199,6 +203,17 @@ impl InstanceBatch {
     /// The number of rows drawn: rows `0..active_count()`.
     pub fn active_count(&self) -> u32 {
         self.active
+    }
+
+    /// The layer mask of every row (see [`crate::layers`]).
+    pub fn layers(&self) -> u32 {
+        self.layers
+    }
+
+    /// Sets the layer mask of every row. The renderer reads it when it culls, so a change needs
+    /// no rebuild and no update of the rows.
+    pub fn set_layers(&mut self, mask: u32) {
+        self.layers = mask;
     }
 
     /// Sets how many rows are drawn. Rows that become active are marked dirty. Fails with

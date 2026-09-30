@@ -17,9 +17,10 @@ use null3d_gpu::drawlist::{DrawList, sizes};
 use super::data::{TextureRows, write_rows};
 use super::ids;
 use crate::frame::{
-    FrameInput, HIDDEN, PipelineKey, PipelineTable, RecordError, SceneSettings, UploadArena,
-    bucket_of, collect_bucket_keys, put_u32,
+    FrameInput, HIDDEN, RecordError, SceneSettings, UploadArena, bucket_of, collect_bucket_keys,
+    put_u32,
 };
+use crate::pipelines::{DrawKey, PassTargets, PipelineCache};
 
 /// The data texture of a bucket's instances, as its draw record names it.
 pub(super) const RESIDENT: u32 = 0;
@@ -29,9 +30,9 @@ pub(super) const MULTI_DRAW_BLOCK_BYTES: u32 = sizes::MULTI_DRAW_RECORDS * sizes
 // A scene slot that draws nowhere has the same marker in the culling tables and the upload trims.
 const _: () = assert!(NO_BUCKET == HIDDEN);
 
-/// What makes a bucket, in draw order: the pipeline, the vertex page of the mesh's first part,
-/// the engine mesh and material ids, and the data texture.
-type BucketKey = (PipelineKey, u32, u32, u32, u32);
+/// What makes a bucket, in draw order: what the mesh and material ask of their pipeline, the vertex
+/// page of the mesh's first part, the engine mesh and material ids, and the data texture.
+type BucketKey = (DrawKey, u32, u32, u32, u32);
 
 /// One bucket of a bucket key. Each key has two, next to each other: the bucket whose index list
 /// entries are rows, then the bucket whose entries are clusters of rows.
@@ -122,14 +123,16 @@ impl Layout {
     }
 
     /// Assigns every source to a data texture and a bucket, from the frame's world state, with
-    /// each draw's pipeline id from `pipelines`. It reuses the layout's tables, which grow only
-    /// with the scene. A scene of more than `limit` sources fails. With `multi_draw`, one block of
-    /// draw records serves each multi-draw call; else each draw has an aligned record of its own.
-    /// The caller marks the layout built once the room it needs is made.
+    /// each draw's pipeline id from `pipelines`, for a pass that draws into `targets`. It reuses
+    /// the layout's tables, which grow only with the scene. A scene of more than `limit` sources
+    /// fails. With `multi_draw`, one block of draw records serves each multi-draw call; else each
+    /// draw has an aligned record of its own. The caller marks the layout built once the room it
+    /// needs is made.
     pub(super) fn rebuild(
         &mut self,
         settings: &SceneSettings,
-        pipelines: &mut PipelineTable,
+        pipelines: &mut PipelineCache,
+        targets: PassTargets,
         input: &FrameInput<'_>,
         limit: u32,
         multi_draw: bool,
@@ -194,7 +197,7 @@ impl Layout {
         self.draws.clear();
         for &((pipeline, _, mesh, material, group), _) in &self.key_counts {
             let slot = meshes.mesh(mesh - 1).expect("keys name known meshes");
-            let pipeline = pipelines.id(pipeline);
+            let pipeline = pipelines.id(pipeline.in_pass(targets));
             for shift in [0, CLUSTER_SHIFT] {
                 let bucket = self.buckets.len() as u32;
                 self.buckets.push(Bucket {

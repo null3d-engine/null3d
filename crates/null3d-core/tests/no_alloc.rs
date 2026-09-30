@@ -14,8 +14,8 @@ use null3d_core::arena::{ArenaPool, FrameArena};
 use null3d_core::cells::{CellPosition, MAX_CELLS, ORIGIN_CELL};
 use null3d_core::clusters::{ClusterScratch, RowCells, RowClusters};
 use null3d_core::culling::{
-    BY_ROW, BucketedCull, CULL_CHUNK, CullOutput, CullRun, CullSet, Frustum, ROW_CELLS, SetOrder,
-    cull_into_buckets, cull_parallel,
+    BY_ROW, BucketedCull, CULL_CHUNK, CullOutput, CullRun, CullSet, CullView, Frustum, ROW_CELLS,
+    SetLayers, SetOrder, cull_into_buckets, cull_parallel,
 };
 use null3d_core::handle::Handle;
 use null3d_core::instances::BatchTable;
@@ -183,6 +183,10 @@ fn frame(world: &mut World, jobs: &JobSystem, frame: u32, rng: &mut Rng) {
         .ring
         .push(Command::set_visible(b, frame.is_multiple_of(2)))
         .unwrap();
+    world
+        .ring
+        .push(Command::set_layers(a, 1 << (frame % 32)))
+        .unwrap();
     world.scene.apply_ring(&world.ring, frame).unwrap();
     world.scene.update_transforms(jobs);
 
@@ -272,33 +276,42 @@ fn frame(world: &mut World, jobs: &JobSystem, frame: u32, rng: &mut Rng) {
         .write_offsets(&camera_at, &mut world.offsets);
     let (scene, clusters, order) = (&world.scene, &world.clusters, &world.order);
     // The moving rows are reached through the order list, and the still rows through it with
-    // their spheres at its positions, as cell order reaches still scene objects.
+    // their spheres at its positions, as cell order reaches still scene objects. The scene's rows
+    // have layer masks of their own; the batches' rows share their batch's.
     let sets = |set: u32| match set {
         0 => CullSet {
             spheres: scene.world(parity).spheres(),
             cells: scene.cells(),
             order: SetOrder::Rows,
+            layers: SetLayers::Rows(scene.layers()),
         },
         1 => CullSet {
             spheres: moving.world(parity).spheres(),
             cells: moving.cells(),
             order: SetOrder::Gathered(order),
+            layers: SetLayers::All(moving.layers()),
         },
         2 => CullSet {
             spheres: still.world(parity).spheres(),
             cells: &[],
             order: SetOrder::Copied(order),
+            layers: SetLayers::All(still.layers()),
         },
         _ => CullSet {
             spheres: clusters.spheres(),
             cells: &[],
             order: SetOrder::Rows,
+            layers: SetLayers::All(still.layers()),
         },
+    };
+    let view = CullView {
+        frustum: &frustum,
+        offsets: &world.offsets[..cells],
+        layers: 0x5555_5555,
     };
     cull_into_buckets(
         jobs,
-        &frustum,
-        &world.offsets[..cells],
+        view,
         &sets,
         &world.runs,
         &world.row_buckets,

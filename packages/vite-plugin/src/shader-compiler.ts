@@ -10,6 +10,7 @@
 // library modules it composed.
 import { readFileSync } from 'node:fs';
 import { fileURLToPath } from 'node:url';
+import type { ShaderVariant, WgslPipeline } from './shader-types.ts';
 
 /** Where `bun run build` writes the module. */
 export const SHADER_COMPILER_URL = new URL('../dist/shader-compiler.wasm', import.meta.url);
@@ -17,16 +18,16 @@ export const SHADER_COMPILER_URL = new URL('../dist/shader-compiler.wasm', impor
 /** A language that a shader variant builds for: WGSL for WebGPU, or GLSL ES 3.00 for WebGL2. */
 export type ShaderTarget = 'wgsl' | 'glsl';
 
-/** The WGSL entry points of one render pipeline. */
-export interface WgslPipeline {
-	readonly vertex: string;
-	readonly fragment: string;
-}
-
-/** One build of a shader. */
+/** One variant of a shader: a build for each combination of its permutation bits. */
 export interface ShaderVariantSpec {
-	/** Shader defs that are true in this build, for `#ifdef NAME` lines. */
+	/** Shader defs that are true in every build of the variant, for `#ifdef NAME` lines. */
 	readonly defs?: readonly string[];
+	/**
+	 * Permutation bits by name, such as `TONE_MAP`. The variant builds once for each combination
+	 * of them, with the names of the bits it has as more shader defs. The build without any bit
+	 * takes the variant's name, and each other build adds the names of its bits in lowercase.
+	 */
+	readonly permutations?: readonly string[];
 	/**
 	 * The languages to write. A variant whose only target is `glsl` may read
 	 * `@builtin(draw_index)`: its vertex shader then reads `gl_DrawID` from `WEBGL_multi_draw`.
@@ -63,56 +64,6 @@ export interface ShaderProblem {
 	readonly message: string;
 	/** The variants that have the problem. */
 	readonly variants: readonly string[];
-}
-
-// The records below are the ones that the engine's generated shader module declares, so the
-// engine takes the compiler's output as it is.
-
-/** The WGSL bind group and binding of a resource. */
-export interface ShaderBinding {
-	readonly group: number;
-	readonly binding: number;
-}
-
-/** A uniform block of one GLSL shader, and the WGSL uniform buffer it stands for. */
-export interface GlslUniformBlock extends ShaderBinding {
-	/** The block name, for `getUniformBlockIndex`. */
-	readonly name: string;
-}
-
-/** A texture uniform of one GLSL shader, which joins a WGSL texture and its sampler. */
-export interface GlslTexture extends ShaderBinding {
-	/** The uniform name, for `getUniformLocation`. */
-	readonly name: string;
-	/** The sampler that the shader samples the texture with, or null when it only loads texels. */
-	readonly sampler: ShaderBinding | null;
-}
-
-/** One GLSL ES 3.00 shader, and the names that its resources have in it. */
-export interface GlslStage {
-	readonly source: string;
-	readonly uniformBlocks: readonly GlslUniformBlock[];
-	readonly textures: readonly GlslTexture[];
-}
-
-/** The shaders of one render pipeline, to link into one WebGL2 program. */
-export interface GlslProgram {
-	readonly vertex: GlslStage;
-	readonly fragment: GlslStage;
-}
-
-/** One WGSL module for WebGPU, and the entry points of its render pipelines. */
-export interface WgslShader<Pipeline extends string = string> {
-	readonly source: string;
-	readonly pipelines: Readonly<Record<Pipeline, WgslPipeline>>;
-}
-
-/** One variant of a shader, with its output for each backend it targets. */
-export interface ShaderVariant<Pipeline extends string = string> {
-	/** WGSL for WebGPU, or null when the variant does not target WebGPU. */
-	readonly wgsl: WgslShader<Pipeline> | null;
-	/** GLSL programs for WebGL2 by pipeline, or null when the variant does not target WebGL2. */
-	readonly glsl: Readonly<Record<Pipeline, GlslProgram>> | null;
 }
 
 /** The result of a compile: each variant by name, or the problems that stopped it. */
@@ -175,9 +126,10 @@ const encoder = new TextEncoder();
 const decoder = new TextDecoder();
 
 function loadModule(): WebAssembly.Module {
-	let bytes: Buffer;
+	// A copy of the file's bytes, in memory of its own that WebAssembly accepts under every lib.
+	let bytes: Uint8Array<ArrayBuffer>;
 	try {
-		bytes = readFileSync(SHADER_COMPILER_URL);
+		bytes = new Uint8Array(readFileSync(SHADER_COMPILER_URL));
 	} catch {
 		throw new Error(
 			`null3D: the shader compiler is missing from ${fileURLToPath(SHADER_COMPILER_URL)}. Reinstall @null3d/vite-plugin; in a copy of the engine's source, run bun run build first.`,

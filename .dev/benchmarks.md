@@ -15,7 +15,9 @@ The benchmarks compare null3D with three.js in the same browser. These points co
 
 ## The benchmark job in CI
 
-- The Benchmarks workflow compares a new commit with a baseline on one of GitHub's machines. It runs on every push to main, against the commit before it on main.
+- The Benchmarks workflow compares a new commit with a baseline on one of GitHub's machines. On main it runs one job at a time, so it leaves GitHub's other Mac machines to the pull requests' Safari and Firefox checks.
+- A push to main waits while a job runs, and a newer push replaces the job that waits. So the baseline of a push is the last commit on main that a job measured with success, which `bench/ci-baseline.ts` finds. The next job then measures the change of every push that got no job.
+- Without such a commit, the baseline is the commit before. After a failed job, the next job still compares with the last commit that passed. Main's job then fails until a commit fixes the slowdown or names it in a `Bench-Expected:` trailer.
 - For a pull request it runs on demand, against the pull request's merge base. Add the `benchmark` label, and each push runs it again while the label stays. You can also start the workflow from the Actions tab with a pull request's number, a branch or a commit.
 - GitHub's machines are shared, and their speed changes from run to run. So the job judges a new commit only against a baseline measured in the same job. It builds both commits on one machine, each in a git worktree of its own, with `bun run build`.
 - It then runs `bun run bench:run --compare <baseline>,<new>` in Chrome. S1, S1-static, S1-cells and S2 run on null3D's two GPU paths. A scene that one of the two commits has no page for runs in neither. So a pull request that adds a benchmark is compared on the other scenes. The job runs 10 rounds. Each round runs every page once in each build, the two runs back to back, and even rounds run the new build first. Each run has 5 s of warm-up and 5 s measured.
@@ -107,6 +109,7 @@ Three sweeps measure the defaults that are still open: the latency mode, the job
 - Chrome refuses network limits on a worker. It applies the page's limit to a worker's own requests only once the debugging protocol's Network domain is on in that worker. So on Slow 4G the tool attaches to each worker, which waits at its start until the domain is on.
 - Without that step, the workers would load the core's loader and the sketch at full speed. The first frame would then come about a second early.
 - On Slow 4G the start is a chain of round trips of at least 562 ms each. After the page and its script come the core and the probe worker, then the other workers. Then the workers load the core's loader, and then the sketch.
+- In single-threaded mode the sketch downloads with the core. The page asks for the core's loader and the renderer once the core has compiled, and both take about one round trip.
 - The engine starts its workers only once the core has compiled. On Slow 4G their scripts and imports therefore add two round trips after the core.
 - The MacBook Pro was measured in Chrome 154 on 30 September 2026. A cold load in the pipelined mode finished its first frame after 4.0 s on Slow 4G. A warm load took 0.7 s, and both took about 0.1 s at full speed.
 

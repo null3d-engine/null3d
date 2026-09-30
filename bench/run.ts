@@ -29,8 +29,8 @@
 //                     the runs above
 //   --compare <a>,<b> two checkouts, each built with bun run build: the baseline a and the new
 //                     build b. Each serves its pages on its own port, NULL3D_PORT's and the next.
-//                     The command fails when b is slower than the rule in bench/lib/compare.ts
-//                     allows and no Bench-Expected trailer in the commits from a to b names it
+//                     The command fails when b is slower than the rules in bench/lib/compare.ts
+//                     allow and no Bench-Expected trailer in the commits from a to b names it
 //   --browser <name>  chrome (the default), brave, or chromium: Playwright's Chromium without a
 //                     window, drawing with SwiftShader as CI's Linux machines do
 // Every browser starts with WebGPU's developer features on, so GPU timestamps are not rounded.
@@ -39,6 +39,7 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { cpus, platform } from 'node:os';
 import { join, relative, resolve } from 'node:path';
 import { type Browser, chromium } from '@playwright/test';
+import { SWIFTSHADER_ARGS } from '../packages/cli/src/browser.js';
 import { jobWorkersProblem } from '../tests/lib/engine-checks.ts';
 import { pageResult } from '../tests/lib/page-result.ts';
 import { runName } from '../tests/lib/runs.ts';
@@ -46,7 +47,6 @@ import {
 	type DevServer,
 	HTTP_PORT,
 	REPO_ROOT,
-	SWIFTSHADER_ARGS,
 	startServer,
 	startServerAt,
 } from '../tests/lib/server.ts';

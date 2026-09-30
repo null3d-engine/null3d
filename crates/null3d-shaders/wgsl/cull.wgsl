@@ -10,6 +10,9 @@
 // the instance by its cell's offset from the camera before it tests it. The compacted instance
 // buffer then holds matrices relative to the camera, which the vertex shader draws as they are.
 //
+// Each instance also has a layer mask, and the view one of its own. The thread skips an instance
+// whose mask shares no bit with the view's.
+//
 // When the CPU culls whole grid cells first, the parameters list runs of the cell order: the
 // instances of the cells in view, and the instances that move. The dispatch covers only those
 // runs. Each workgroup finds its run, and each thread reads its instance from the cell order.
@@ -27,7 +30,8 @@ const WORKGROUP_SIZE: u32 = 128u;
 struct CullParams {
     planes: array<vec4f, 6>,
     instance_count: u32,
-    pad0: u32,
+    /// The view's layer mask.
+    layers: u32,
     /// The runs of the cell order to cull, or 0 to cull every instance in place.
     range_count: u32,
     pad2: u32,
@@ -56,6 +60,7 @@ struct Bucket {
 @group(0) @binding(3) var<storage, read> buckets: array<Bucket>;
 @group(0) @binding(4) var<storage, read_write> visible: array<vec4f>;
 @group(0) @binding(5) var<storage, read_write> indirect: array<atomic<u32>>;
+@group(0) @binding(6) var<storage, read> instance_layers: array<u32>;
 /// The instances in cell order: each cell's still instances, then the ones that move.
 @group(0) @binding(7) var<storage, read> order: array<u32>;
 
@@ -103,7 +108,7 @@ fn main(
         return;
     }
     let entry = instance_buckets[i];
-    if entry == HIDDEN {
+    if entry == HIDDEN || (instance_layers[i] & params.layers) == 0u {
         return;
     }
     let b = entry & ((1u << CELL_SHIFT) - 1u);

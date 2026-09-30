@@ -4,6 +4,9 @@
 //! view's bundle then draws. Every view reads the same sources and bucket tables, and writes
 //! buffers of its own.
 //!
+//! A view's parameters also hold its layer mask, and the shader skips a source whose layer mask
+//! shares no bit with it.
+//!
 //! A view's planes are relative to its camera, and its parameters also hold the offset from its
 //! camera to each cell in use. The shader adds a source's offset to its matrix before it tests the
 //! source, and copies the moved matrix into the compacted instance buffer, so the vertex shader
@@ -29,11 +32,13 @@ use crate::frame::{
 };
 use crate::view::{ViewFrame, ViewId};
 
-/// Bytes of the culling planes: six planes, the source count, padding, the count of runs of the
-/// cell order, and padding.
+/// Bytes of the culling planes: six planes, the source count, the view's layer mask, the count of
+/// runs of the cell order, and padding.
 const CULL_PLANES_BYTES: u32 = 112;
-/// The words of the culling planes that hold the source count and the count of runs.
+/// The words of the culling planes that hold the source count, the view's layer mask and the
+/// count of runs.
 const SOURCES_WORD: usize = 24;
+const LAYERS_WORD: usize = 25;
 const RANGES_WORD: usize = 26;
 /// Where the runs of the cell order start in the culling parameters: after the offset from the
 /// camera to each cell.
@@ -46,10 +51,10 @@ const RANGE_BYTES: u32 = 16;
 pub(super) const CULL_PARAMS_BYTES: u32 = RANGES_OFFSET + sizes::MAX_CULL_RANGES * RANGE_BYTES;
 /// Bytes of one indexed indirect draw.
 pub(super) const INDIRECT_BYTES: u32 = sizes::INDIRECT_WORDS * 4;
-/// The binding of the cell order in the culling pass's bind group, the last one.
-const ORDER_BINDING: u32 = 7;
+/// The buffers of the culling pass's bind group, one per binding.
+const CULL_BINDINGS: usize = 8;
 /// Words of the culling pass's bind group entries: three for the group, five per buffer.
-const CULL_GROUP_WORDS: usize = 3 + 7 * 5;
+const CULL_GROUP_WORDS: usize = 3 + CULL_BINDINGS * 5;
 
 // Runs of the cell order that follow each other join, so a view's runs are at most one per pair
 // of cells, and one for the moving sources.
@@ -156,22 +161,28 @@ impl Culling {
             }
         }
         if recreated {
-            let buffers = [
-                (0, ids::cull_params(view)),
-                (1, ids::MATRICES),
-                (2, ids::INSTANCE_BUCKETS),
-                (3, ids::BUCKETS),
-                (4, ids::visible(view)),
-                (5, ids::indirect(view)),
-                (ORDER_BINDING, ids::ORDER),
-            ];
             let mut entries = [0u32; CULL_GROUP_WORDS];
-            let count = buffers.len() as u32;
-            entries[..3].copy_from_slice(&[ids::cull_group(view), bind_layout::CULL, count]);
-            for (k, (binding, buffer)) in buffers.into_iter().enumerate() {
-                let at = 3 + k * 5;
+            entries[..3].copy_from_slice(&[
+                ids::cull_group(view),
+                bind_layout::CULL,
+                CULL_BINDINGS as u32,
+            ]);
+            for (binding, buffer) in [
+                ids::cull_params(view),
+                ids::MATRICES,
+                ids::INSTANCE_BUCKETS,
+                ids::BUCKETS,
+                ids::visible(view),
+                ids::indirect(view),
+                ids::SOURCE_LAYERS,
+                ids::ORDER,
+            ]
+            .into_iter()
+            .enumerate()
+            {
+                let at = 3 + binding * 5;
                 entries[at..at + 5].copy_from_slice(&[
-                    binding,
+                    binding as u32,
                     resource_kind::BUFFER,
                     buffer,
                     0,
@@ -183,10 +194,10 @@ impl Culling {
         Ok(())
     }
 
-    /// Uploads a view's culling parameters: its frustum's planes, the source count, the offset
-    /// from its camera to each cell in use in `scene`, and, while `cells` culls by cell, the runs
-    /// of the cell order of the cells it can see. Resets its indirect draws' instance counts to
-    /// zero, and notes the workgroups of its dispatch.
+    /// Uploads a view's culling parameters: its frustum's planes, the source count, its layer
+    /// mask, the offset from its camera to each cell in use in `scene`, and, while `cells` culls by
+    /// cell, the runs of the cell order of the cells it can see. Resets its indirect draws'
+    /// instance counts to zero, and notes the workgroups of its dispatch.
     #[allow(clippy::too_many_arguments)]
     pub(super) fn upload(
         &mut self,
@@ -205,6 +216,7 @@ impl Culling {
             }
         }
         params[SOURCES_WORD] = layout.sources;
+        params[LAYERS_WORD] = frame.layers;
         self.offsets.update(scene, &frame.camera);
         let buffers = &mut self.views[view.index()];
         let (ranges, groups) = if cells.active() {

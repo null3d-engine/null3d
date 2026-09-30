@@ -1,7 +1,7 @@
 // Compares the hold frames of the benchmark scenes between engines. On each GPU tier, the null3d
 // page must match the three.js page by three.js's own image rule, or at least as closely as
-// three.js's two renderers match each other on the same frame. It opens the hold pages in
-// Chrome through Playwright, with the browser tests' launch options, compares the two frames, and
+// three.js's two renderers match each other on the same frame. It opens the hold pages in the
+// browser tests' environment through Playwright, compares the two frames, and
 // saves them side by side with a diff image under test-results/parity/. It prints one line per
 // scene and comparison, and exits with 1 when any comparison fails. From the repository root:
 //   bun run parity
@@ -20,10 +20,11 @@
 //                    that cannot draw with both
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
-import { type Browser, chromium, errors } from '@playwright/test';
+import { type Browser, errors } from '@playwright/test';
+import { defaultEnvironment, launchBrowser } from '../packages/cli/src/browser.js';
+import { watchConsole } from '../packages/cli/src/page.js';
 import { pageResult } from '../tests/lib/page-result.ts';
 import { REPO_ROOT, startServer } from '../tests/lib/server.ts';
-import browserTests from '../tests/playwright.config.ts';
 import {
 	BASELINE_PAIR,
 	type Comparison,
@@ -62,11 +63,7 @@ async function loadFrame(
 ): Promise<HoldFrame | string> {
 	const path = holdPagePath(scene, kind);
 	const page = await browser.newPage();
-	const pageErrors: string[] = [];
-	page.on('pageerror', (error) => pageErrors.push(error.message));
-	page.on('console', (message) => {
-		if (message.type() === 'error') pageErrors.push(message.text());
-	});
+	const { errors: pageErrors } = watchConsole(page);
 	try {
 		const response = await page.goto(`${baseUrl}${path}`);
 		if (response?.status() === 404) return `${kind}: page not found at ${path}`;
@@ -136,12 +133,11 @@ async function main(): Promise<void> {
 	rmSync(OUTPUT_DIR, { recursive: true, force: true });
 	mkdirSync(OUTPUT_DIR, { recursive: true });
 	const server = await startServer();
-	const { headless, channel, launchOptions } = browserTests.use ?? {};
 	let passed = 0;
 	let total = 0;
 	const measured: StoredBaselines = {};
 	try {
-		const browser = await chromium.launch({ ...launchOptions, headless, channel });
+		const browser = await launchBrowser(defaultEnvironment());
 		try {
 			for (const scene of options.scenes) {
 				// Each page loads once per scene, however many comparisons use its frame.

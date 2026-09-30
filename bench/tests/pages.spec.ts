@@ -3,7 +3,8 @@
 // with their references, and the parity command compares them with three.js's.
 import { join } from 'node:path';
 import { expect, type Page, test } from '@playwright/test';
-import { writePng } from '../../tests/lib/images.ts';
+import { watchConsole } from '../../packages/cli/src/page.js';
+import { writePng } from '../../packages/cli/src/png.js';
 import { pageResult } from '../../tests/lib/page-result.ts';
 import { isNull3dPage, PARITY_SCENES, type PageKind, pagePath, SCENE_CODE } from '../lib/parity';
 import { BACKGROUND, PARITY_CANVAS, S2_NODES_PER_TREE, s2Trees } from '../scenes/spec';
@@ -66,11 +67,7 @@ async function openPage<T extends Report>(
 	page: Page,
 	path: string,
 ): Promise<{ result: T; errors: string[] }> {
-	const errors: string[] = [];
-	page.on('pageerror', (error) => errors.push(error.message));
-	page.on('console', (message) => {
-		if (message.type() === 'error') errors.push(message.text());
-	});
+	const { errors } = watchConsole(page);
 	await page.goto(path);
 	return { result: await pageResult<T>(page, 90_000), errors };
 }

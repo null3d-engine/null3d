@@ -55,17 +55,18 @@ use null3d_core::cells::CELL_SHIFT;
 use null3d_core::culling::{BucketedCull, NO_BUCKET};
 use null3d_core::handle::Handle;
 use null3d_core::snapshot::SCENE_TARGET;
-use null3d_gpu::drawlist::{DrawList, Op, buffer_usage as usage, sizes};
+use null3d_gpu::drawlist::{DrawList, Op, buffer_usage as usage, permutation, sizes};
 
 use crate::cells::CellCulling;
 use crate::frame::{
-    FrameBuilder, FrameInput, MeshBuffers, ParityLists, PipelineTable, RecordError, SceneSettings,
-    UploadArena, drawn_rows, floats_as_bytes,
+    FrameBuilder, FrameInput, MeshBuffers, ParityLists, RecordError, SceneSettings, UploadArena,
+    drawn_rows, floats_as_bytes,
 };
 use crate::frame_graph::{FrameGraph, Role};
 use crate::graph::RenderGraph;
 use crate::materials::MATERIAL_FLOATS;
 use crate::meshes::{MeshStorage, Packing};
+use crate::pipelines::{PassTargets, PipelineCache};
 use crate::view::{ViewFrame, ViewId};
 use cull::Culling;
 use data::{RingSlot, SharedTextures, matrices_of, write_matrices};
@@ -185,7 +186,7 @@ pub struct CpuCulledRenderer {
     opaque: Opaque,
     /// The vertex pages' vertex and index buffers.
     meshes: MeshBuffers,
-    pipelines: PipelineTable,
+    pipelines: PipelineCache,
     textures: SharedTextures,
     /// The slot of the streamed textures, which every view reads.
     streamed_slot: RingSlot,
@@ -210,7 +211,7 @@ impl CpuCulledRenderer {
             culling: Culling::default(),
             opaque: Opaque::new(config.multi_draw),
             meshes: MeshBuffers::new(ids::PAGES),
-            pipelines: PipelineTable::default(),
+            pipelines: PipelineCache::default(),
             textures: SharedTextures::default(),
             streamed_slot: RingSlot::default(),
             created: false,
@@ -245,13 +246,30 @@ impl CpuCulledRenderer {
         self.clusters.current_order(slot)
     }
 
+    /// What the scene's render pipelines draw into, in the shader variant that reads the draw's
+    /// index where the device has multi-draw.
+    fn scene_targets(&self) -> PassTargets {
+        let targets = self.graph.scene_targets();
+        let draw_index = if self.config.multi_draw {
+            permutation::DRAW_INDEX
+        } else {
+            0
+        };
+        PassTargets {
+            permutation: targets.permutation | draw_index,
+            ..targets
+        }
+    }
+
     /// Assigns every source to a data texture and a bucket, then makes room for the new layout:
     /// the clusters, the culling runs and every view's output, and the upload arenas.
     fn rebuild_layout(&mut self, input: &FrameInput<'_>) -> Result<(), RecordError> {
         let limit = FrameBuilder::max_sources(self);
+        let targets = self.scene_targets();
         self.layout.rebuild(
             &self.settings,
             &mut self.pipelines,
+            targets,
             input,
             limit,
             self.config.multi_draw,
@@ -475,8 +493,7 @@ impl CpuCulledRenderer {
         arena.reset(self.upload_bound());
         self.meshes
             .upload(list, arena, self.settings.meshes().pages())?;
-        self.opaque
-            .create_pipelines(list, &mut self.pipelines, self.config.samples)?;
+        self.pipelines.create_new(list)?;
         if self.settings.materials_mut().take_changed() {
             let parameters = self.settings.materials().parameters();
             let (at, bytes) = arena.push(floats_as_bytes(parameters))?;

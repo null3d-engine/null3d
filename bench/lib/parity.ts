@@ -7,7 +7,10 @@
 // benchmark pages use). A pixel differs when the distance between its two RGB colors is more than a
 // set share of the distance from black to white. Alpha does not count, and no pixel is excused as
 // anti-aliasing. Two images match when strictly less than a set percentage of their pixels differ.
-import { encode } from 'fast-png';
+import { TIERS, type Tier } from '../../packages/cli/src/page.js';
+import { encodePng, type RgbaImage } from '../../packages/cli/src/png.js';
+
+export { encodePng, type RgbaImage, TIERS, type Tier };
 
 /** A pixel differs when its RGB distance is more than this share of the distance from black to white. */
 export const PIXEL_THRESHOLD = 0.1;
@@ -20,13 +23,6 @@ const MAX_SQUARED_DISTANCE = 255 * 255 * 3;
 const DIFF_DIM = 0.2;
 const BYTES_PER_PIXEL = 4;
 const OPAQUE = 255;
-
-/** RGBA8 pixels, rows tightly packed, top row first. */
-export interface RgbaImage {
-	width: number;
-	height: number;
-	data: Uint8Array;
-}
 
 /** A hold frame that a benchmark page published, and what the page drew. */
 export interface HoldFrame extends RgbaImage {
@@ -51,10 +47,6 @@ export interface ImageComparison {
 
 export const PARITY_SCENES = ['s1', 's1-static', 's1-cells', 's2'] as const;
 export type ParityScene = (typeof PARITY_SCENES)[number];
-
-/** The GPU tiers: core WebGPU, WebGPU forced into compatibility mode, and WebGL2. */
-export const TIERS = ['webgpu', 'compat', 'webgl2'] as const;
-export type Tier = (typeof TIERS)[number];
 
 /** The GPU interface a tier draws with: compatibility mode is WebGPU within lower limits. */
 export function gpuApiOf(tier: Tier): 'webgpu' | 'webgl2' {
@@ -397,11 +389,6 @@ function sideBySide(left: RgbaImage, right: RgbaImage): RgbaImage {
 		data.set(right.data.subarray(y * rightRow, (y + 1) * rightRow), row + leftRow);
 	}
 	return { width, height, data };
-}
-
-/** An image as a PNG file's bytes. */
-export function encodePng({ width, height, data }: RgbaImage): Uint8Array {
-	return encode({ width, height, data, channels: 4, depth: 8 });
 }
 
 /**

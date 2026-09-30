@@ -11,6 +11,10 @@
 //! clusters again, and the cluster texture gets their order. Every view culls the same runs of
 //! rows and clusters.
 //!
+//! Each view lists only the sources on its layers (see [`null3d_core::layers`]): the job workers
+//! test each scene object's mask, and a batch's one mask for all its rows and clusters. A mask
+//! change needs no rebuild, as the next frame culls with the new mask.
+//!
 //! Each index list entry holds its row, or its cluster, with the row's cell index above it (see
 //! [`null3d_core::cells`]). The job workers cull each run of rows in one cell against the view's
 //! frustum moved into that cell, and add each row's offset from the view's camera to its sphere
@@ -36,7 +40,8 @@ use std::ops::Range;
 use null3d_core::cells::ORIGIN_CELL;
 use null3d_core::clusters::RowCells;
 use null3d_core::culling::{
-    BY_ROW, BucketedCull, CULL_CHUNK, CullRun, CullSet, NO_BUCKET, ROW_CELLS, SetOrder,
+    BY_ROW, BucketedCull, CULL_CHUNK, CullRun, CullSet, CullView, NO_BUCKET, ROW_CELLS, SetLayers,
+    SetOrder,
 };
 use null3d_gpu::drawlist::DrawList;
 
@@ -337,6 +342,10 @@ impl Culling {
         self.refresh_clusters(input, layout, clusters, cells.active());
         let (batches, clusters) = (input.batches, &*clusters);
         let slots = &layout.batches;
+        // Scene objects test their own masks, unless every one has the same mask.
+        let scene_layers = scene
+            .common_layers()
+            .map_or(SetLayers::Rows(scene.layers()), SetLayers::All);
         let order = cells.scene_order().sources();
         let sets = |set: u32| -> CullSet<'_> {
             let world = scene.world(parity).spheres();
@@ -345,28 +354,33 @@ impl Culling {
                 STILL_SET => (cells.still_spheres(), SetOrder::Copied(order)),
                 MOVING_SET => (world, SetOrder::Gathered(order)),
                 _ => {
-                    // Each batch's rows, then each batch's clusters.
+                    // Each batch's rows, then each batch's clusters, with the batch's mask.
                     let k = (set - FIRST_BATCH_SET) as usize;
                     let slot = &slots[k % slots.len()];
+                    let batch = batches.get(slot.id).expect("the layout names live batches");
+                    let layers = SetLayers::All(batch.layers());
                     if k >= slots.len() {
                         return CullSet {
                             spheres: clusters.set(slot).clusters.spheres(),
                             cells: &[],
                             order: SetOrder::Rows,
+                            layers,
                         };
                     }
-                    let batch = batches.get(slot.id).expect("the layout names live batches");
                     return CullSet {
                         spheres: batch.world(parity).spheres(),
                         cells: batch.cells(),
                         order: SetOrder::Rows,
+                        layers,
                     };
                 }
             };
+            // The scene's sets list slots, whose masks the scene holds.
             CullSet {
                 spheres,
                 cells: scene.cells(),
                 order,
+                layers: scene_layers,
             }
         };
         for view in &mut self.views {
@@ -399,10 +413,14 @@ impl Culling {
                 by_row as u32,
                 room.buckets,
             )?;
+            let cull_view = CullView {
+                frustum: &frame.frustum,
+                offsets: view.offsets.as_slice(),
+                layers: frame.layers,
+            };
             null3d_core::culling::cull_into_buckets(
                 input.jobs,
-                &frame.frustum,
-                view.offsets.as_slice(),
+                cull_view,
                 &sets,
                 &self.runs,
                 &layout.scene_buckets,

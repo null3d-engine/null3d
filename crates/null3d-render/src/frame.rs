@@ -20,10 +20,10 @@ use null3d_gpu::drawlist::{DrawList, DrawListError, Op, buffer_usage};
 
 use crate::camera::Perspective;
 use crate::frame_data::{FrameUniform, normalized_direction};
-use crate::frame_graph::{COLOR_FORMAT, DEPTH_FORMAT};
 use crate::graph::GraphError;
-use crate::materials::{MaterialTable, Shading};
+use crate::materials::MaterialTable;
 use crate::meshes::{MAX_BUFFER_BYTES, MeshStorage, Page};
+use crate::pipelines::DrawKey;
 use crate::view::{MAX_VIEWS, View, ViewFrame, ViewId};
 
 /// Engine mesh ids count from 1; 0 marks an object with no mesh, such as a group or a camera.
@@ -357,6 +357,14 @@ impl SceneSettings {
         self.views[ViewId::CAMERA.index()].set_camera(camera, lens);
     }
 
+    /// Sets the layers of the objects a view draws. A change needs no rebuild of the draw
+    /// tables: culling tests the view's mask every frame.
+    pub fn set_layers(&mut self, view: ViewId, mask: u32) {
+        if let Some(view) = self.views.get_mut(view.index()) {
+            view.set_layers(mask);
+        }
+    }
+
     /// Adds a view that draws the scene into color and depth targets of its own, or returns
     /// `None` when the builder already draws [`MAX_VIEWS`] views.
     pub fn add_view(&mut self, view: View) -> Option<ViewId> {
@@ -396,17 +404,22 @@ impl SceneSettings {
         [r, g, b, 1.0]
     }
 
-    /// The pipeline of a mesh and material pair, by engine ids, or `None` when the pair draws
-    /// nowhere: no mesh, no material, an id that names nothing, or a mesh without the vertex
-    /// attributes that the material's shading reads.
-    pub fn pipeline_of(&self, mesh: u32, material: u32) -> Option<PipelineKey> {
+    /// What a mesh and material pair, by engine ids, asks of the pipeline that draws it, or `None`
+    /// when the pair draws nowhere: no mesh, no material, an id that names nothing, or a mesh
+    /// without the vertex attributes that the material's shading reads.
+    pub fn pipeline_of(&self, mesh: u32, material: u32) -> Option<DrawKey> {
         if mesh == NO_MESH || material == NO_MATERIAL {
             return None;
         }
         let format = self.meshes.mesh(mesh - 1)?.format;
         let shading = self.materials.shading(material - 1).ok()?;
         let needs = shading.attributes();
-        ((format & needs) == needs).then_some(PipelineKey { shading, format })
+        ((format & needs) == needs).then_some(DrawKey {
+            template: shading.template(),
+            permutation: 0,
+            vertex_format: format,
+            state: 0,
+        })
     }
 
     /// A view's values for a frame whose targets have the canvas's size, or `None` when the view
@@ -420,10 +433,8 @@ impl SceneSettings {
         canvas: (u32, u32),
     ) -> Option<ViewFrame> {
         let aspect = canvas.0 as f32 / canvas.1.max(1) as f32;
-        let (view_proj, camera) = self
-            .views
-            .get(view.index())?
-            .transform(scene, parity, aspect)?;
+        let view = self.views.get(view.index())?;
+        let (view_proj, camera) = view.transform(scene, parity, aspect)?;
         let uniform = FrameUniform {
             view_proj,
             camera_position: [0.0, 0.0, 0.0, 1.0],
@@ -431,7 +442,7 @@ impl SceneSettings {
             sun_color: self.lighting.sun_color,
             ambient: self.lighting.ambient,
         };
-        Some(ViewFrame::new(uniform, camera))
+        Some(ViewFrame::new(uniform, camera, view.layers()))
     }
 }
 
@@ -475,72 +486,6 @@ pub(crate) fn bucket_of<K: Ord + Copy>(table: &[(K, u32)], key: Option<K>) -> Op
         .binary_search_by_key(&key, |&(k, _)| k)
         .ok()
         .map(|bucket| bucket as u32)
-}
-
-/// What a render pipeline of the scene draws: a shading, and the vertex format of the meshes it
-/// draws. Its order is the order in which builders sort their buckets.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct PipelineKey {
-    pub shading: Shading,
-    /// The vertex format (`vertex::*` bits) of the meshes it draws.
-    pub format: u32,
-}
-
-/// The render pipelines that a builder draws with. A pipeline's id is its place in the table plus
-/// one, and it keeps its id while the builder lives, so layouts can hold ids across rebuilds.
-#[derive(Debug, Default)]
-pub(crate) struct PipelineTable {
-    keys: Vec<PipelineKey>,
-    /// The pipelines that the GPU has: the first `created` keys.
-    created: usize,
-}
-
-impl PipelineTable {
-    /// The id of a key's pipeline. A new key's pipeline is created by the next
-    /// [`PipelineTable::create_new`].
-    pub(crate) fn id(&mut self, key: PipelineKey) -> u32 {
-        let index = match self.keys.iter().position(|&k| k == key) {
-            Some(index) => index,
-            None => {
-                self.keys.push(key);
-                self.keys.len() - 1
-            }
-        };
-        index as u32 + 1
-    }
-
-    /// Records the creation of every pipeline that the GPU does not have yet, for the scene's
-    /// targets, in the shader variant that the permutation bits pick.
-    pub(crate) fn create_new(
-        &mut self,
-        list: &mut DrawList,
-        permutation: u32,
-        samples: u32,
-    ) -> Result<(), RecordError> {
-        while let Some(key) = self.keys.get(self.created) {
-            list.push(
-                Op::CreateRenderPipeline,
-                &[
-                    self.created as u32 + 1,
-                    key.shading.template(),
-                    permutation,
-                    COLOR_FORMAT,
-                    DEPTH_FORMAT,
-                    samples,
-                    0,
-                    key.format,
-                ],
-            )?;
-            self.created += 1;
-        }
-        Ok(())
-    }
-
-    /// Forgets which pipelines the GPU has, after the thread that draws replaced it, so the next
-    /// frame creates each again under the same id.
-    pub(crate) fn forget(&mut self) {
-        self.created = 0;
-    }
 }
 
 /// How large one mesh page's GPU vertex and index buffers are, and how much of the page they hold.

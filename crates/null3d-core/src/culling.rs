@@ -9,6 +9,10 @@
 //! frustum is relative to the camera. A run of rows in one cell is tested against the frustum
 //! moved into that cell ([`Frustum::moved_by`]), so the test per sphere stays the same. A run
 //! whose rows lie in different cells adds each row's camera offset to its center first.
+//!
+//! Bucketed culling also tests layer masks (see [`crate::layers`]). A set of rows that share one
+//! mask outside the view's layers is skipped whole. A set whose rows have masks of their own keeps
+//! only the visible rows on the view's layers.
 
 use std::collections::TryReserveError;
 use std::ops::Range;
@@ -16,6 +20,7 @@ use std::simd::prelude::*;
 
 use crate::cells::CELL_SHIFT;
 use crate::jobs::JobSystem;
+use crate::layers::shares_layer;
 use crate::shared::SharedMut;
 use crate::world::SphereArrays;
 
@@ -585,8 +590,18 @@ pub enum SetOrder<'a> {
     Gathered(&'a [u32]),
 }
 
+/// The layer masks of a set's rows.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SetLayers<'a> {
+    /// Every row has this mask.
+    All(u32),
+    /// Each row has its own mask: row `i` has the mask at `i`.
+    Rows(&'a [u32]),
+}
+
 /// The rows of one set that runs cull: their spheres, relative to their cells' centers, each row's
-/// cell index, which only runs with [`ROW_CELLS`] read, and how runs reach the rows.
+/// cell index, which only runs with [`ROW_CELLS`] read, how runs reach the rows, and their layer
+/// masks.
 #[derive(Clone, Copy, Debug)]
 pub struct CullSet<'a> {
     /// The spheres, by row or by position as `order` says.
@@ -595,6 +610,32 @@ pub struct CullSet<'a> {
     pub cells: &'a [u32],
     /// How the runs' positions name rows.
     pub order: SetOrder<'a>,
+    /// The rows' layer masks.
+    pub layers: SetLayers<'a>,
+}
+
+/// What one view culls against: its frustum, relative to its camera, the offset from its camera
+/// to each cell's center, by cell index, and its layer mask.
+#[derive(Clone, Copy, Debug)]
+pub struct CullView<'a> {
+    /// The view's frustum, relative to its camera.
+    pub frustum: &'a Frustum,
+    /// The offset from the camera to each cell's center, by cell index.
+    pub offsets: &'a [[f32; 4]],
+    /// The view's layer mask: a row draws when its mask shares a bit with it.
+    pub layers: u32,
+}
+
+/// Keeps the rows of `rows` whose masks share a bit with the view's `layers`, in order, and
+/// returns how many it kept. Row `r` has the mask at `masks[r]`.
+fn keep_layers(rows: &mut [u32], masks: &[u32], layers: u32) -> usize {
+    let mut kept = 0;
+    for i in 0..rows.len() {
+        let row = rows[i];
+        rows[kept] = row;
+        kept += usize::from(shares_layer(masks[row as usize], layers));
+    }
+    kept
 }
 
 /// Culls one run of a set into `dst`, and returns how many rows it wrote there: the rows of the
@@ -730,16 +771,16 @@ fn same_words(a: &[u32], b: &[u32]) -> bool {
         && a_rest.iter().zip(b_rest).all(|(x, y)| x == y)
 }
 
-/// Culls runs of rows from several sets of sphere arrays, on the calling thread and the job
-/// workers, and lists the visible rows grouped by bucket. Each visible row's entry is its row
-/// plus its run's base, with the row's cell index in the bits from [`CELL_SHIFT`] up. A run either
-/// puts every visible row in one bucket, or looks each row up in `row_buckets`, where
+/// Culls runs of rows from several sets of sphere arrays for one view, on the calling thread and
+/// the job workers, and lists the visible rows grouped by bucket. Each visible row's entry is its
+/// row plus its run's base, with the row's cell index in the bits from [`CELL_SHIFT`] up. A run
+/// either puts every visible row in one bucket, or looks each row up in `row_buckets`, where
 /// [`NO_BUCKET`] drops the row. Returns the number of entries.
 ///
-/// `frustum` is relative to the camera, and `offsets` holds the offset from the camera to each
-/// cell's center, by cell index. A run whose rows share a cell is culled against the frustum moved
-/// into that cell; a run with [`ROW_CELLS`] moves each row's sphere by its cell's offset instead.
-/// A run of a set in an order of its own ([`SetOrder`]) lists the rows its positions name.
+/// A run whose rows share a cell is culled against the view's frustum moved into that cell; a run
+/// with [`ROW_CELLS`] moves each row's sphere by its cell's offset from the camera instead. A run
+/// of a set in an order of its own ([`SetOrder`]) lists the rows its positions name. A row is
+/// listed only when its layer mask shares a bit with the view's.
 ///
 /// Each run culls into its own part of a scratch list and counts its rows per bucket, on the
 /// job workers too when the runs hold many rows. A prefix sum over the buckets and runs then
@@ -750,17 +791,20 @@ fn same_words(a: &[u32], b: &[u32]) -> bool {
 /// # Panics
 /// When `out` has less room than the runs, their rows or the buckets need, or a run's bucket or
 /// cell is out of range.
-#[allow(clippy::too_many_arguments)]
 pub fn cull_into_buckets<'a>(
     jobs: &JobSystem,
-    frustum: &Frustum,
-    offsets: &[[f32; 4]],
+    view: CullView<'_>,
     sets: &(dyn Fn(u32) -> CullSet<'a> + Sync),
     runs: &[CullRun],
     row_buckets: &[u32],
     buckets: u32,
     out: &mut BucketedCull,
 ) -> usize {
+    let CullView {
+        frustum,
+        offsets,
+        layers,
+    } = view;
     let bucket_count = buckets as usize;
     assert!(
         runs.len() <= out.run_offsets.len() && bucket_count < out.bucket_starts.len(),
@@ -797,8 +841,8 @@ pub fn cull_into_buckets<'a>(
         "the output has too little room for {rows} rows and {histogram_at} histogram counts"
     );
 
-    // Pass 1: cull each run into its part of the scratch list, and count looked-up rows per
-    // bucket in the run's histogram.
+    // Pass 1: cull each run into its part of the scratch list, keep the rows on the view's layers,
+    // and count looked-up rows per bucket in the run's histogram.
     let scratch = SharedMut::new(&mut out.scratch);
     let counts = SharedMut::new(&mut out.run_counts);
     let histograms = SharedMut::new(&mut out.histograms);
@@ -809,7 +853,15 @@ pub fn cull_into_buckets<'a>(
         // SAFETY: each run writes only its own part of the scratch list, its own count and its
         // own histogram; the parts of different runs do not overlap.
         let dst = unsafe { scratch.slice(run_offsets[index] as usize, run.len()) };
-        let visible = cull_run(frustum, offsets, set, &run, dst);
+        let visible = match set.layers {
+            SetLayers::All(mask) if !shares_layer(mask, layers) => 0,
+            _ => cull_run(frustum, offsets, set, &run, dst),
+        };
+        // The culled entries are rows, whichever order the set's runs reach them in.
+        let visible = match set.layers {
+            SetLayers::Rows(masks) => keep_layers(&mut dst[..visible], masks, layers),
+            SetLayers::All(_) => visible,
+        };
         // SAFETY: as above.
         unsafe { counts.write(index, visible as u32) };
         if run.bucket == BY_ROW {
