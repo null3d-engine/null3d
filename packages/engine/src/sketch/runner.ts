@@ -92,7 +92,7 @@ export class SketchRunner {
 			(_, k) => new FrameRecorder(metrics, Role.Job + k),
 		);
 		const { glue, device } = sketch;
-		const { slots } = sketch.control;
+		const { slots, slotFloats } = sketch.control;
 		const status = glue.initEngine(
 			sketch.jobWorkers,
 			SCENE_CAPACITY,
@@ -128,6 +128,20 @@ export class SketchRunner {
 				onChange: (handler) => {
 					this.preferenceHandlers.add(handler);
 					return () => this.preferenceHandlers.delete(handler);
+				},
+			},
+			engine: {
+				viewport: {
+					get width() {
+						return slotFloats[Slot.CanvasCssWidth] as number;
+					},
+					get height() {
+						return slotFloats[Slot.CanvasCssHeight] as number;
+					},
+					get pixelRatio() {
+						const css = slotFloats[Slot.CanvasCssWidth] as number;
+						return css > 0 ? Atomics.load(slots, Slot.CanvasWidth) / css : 1;
+					},
 				},
 			},
 			page: {

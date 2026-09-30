@@ -67,6 +67,15 @@ export interface SketchContext {
 	time: { now: number; frame: number };
 	/** What the user's system asks of every page, and a notice when that changes. */
 	preferences: SketchPreferences;
+	/** The engine as the sketch sees it. */
+	engine: {
+		/** The canvas size in CSS pixels, and device pixels per CSS pixel. */
+		readonly viewport: {
+			readonly width: number;
+			readonly height: number;
+			readonly pixelRatio: number;
+		};
+	};
 	/**
 	 * Messages between the sketch and the page. `onMessage` returns a function that removes the
 	 * handler.

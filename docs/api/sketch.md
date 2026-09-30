@@ -112,6 +112,7 @@ What the engine passes to a sketch's setup function.
 | `input: Input` | Pointer, touch, keyboard and gamepad input, which the page forwards to the sketch. |
 | `time: { now: number; frame: number; }` | Sketch time in seconds, which is the sum of every step that `onUpdate` received, so paused and hidden time do not count. Also the current frame number. In hold mode, the last frame's time is the held time exactly. |
 | `preferences: SketchPreferences` | What the user's system asks of every page, and a notice when that changes. |
+| `engine: { readonly viewport: { readonly width: number; readonly height: number; readonly pixelRatio: number; }; }` | The engine as the sketch sees it. |
 | `page: { post(type: string, data?: unknown, transfer?: Transferable[]): void; onMessage(handler: (type: string, data: unknown) => void): () => void; }` | Messages between the sketch and the page. `onMessage` returns a function that removes the handler. |
 
 ### `SketchDefinition`
