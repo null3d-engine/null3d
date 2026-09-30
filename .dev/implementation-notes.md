@@ -31,15 +31,38 @@ The engine's hot paths stay allocation-free with these habits (hard rule 1):
 
 - The page and the sketch worker load the renderer and the GPU layer (`render/draw.ts`) with a dynamic import, only in the modes where they draw. A pipelined page then downloads the GPU layer once, in the render worker.
 - In their other modules, import only types from the renderer and the GPU layer: a value import bundles the GPU layer into their files again.
-- The sketch worker starts the import with its other startup work. The page starts it once the core has downloaded. An earlier start slowed the core's download on Slow 4G and delayed the first frame by 22 to 37 ms.
+- The page and the sketch worker start that import while the core downloads, as "Start order" says. It once started after the core, because an earlier start slowed the core's download and delayed the first frame by 22 to 37 ms. Now that the other downloads start early too, the renderer is the last download to arrive unless it starts early.
 - The page loads the sketch runner and the scene API (`sketch/runner.ts`) with a dynamic import, only in single-threaded mode, where it runs the sketch itself. Other page modules import only types from them.
 - The page starts that import as soon as it knows the mode, while the core downloads, because it needs the runner right after the core. In `bun run bench:startup --switches threads=off`, the first frame came at a median of 4,131 ms over 14 runs. With the runner in the page's file, it came at 4,131 ms too. A start after the core's download gave 4,135 ms.
-- In single-threaded mode the page imports the sketch module while the core downloads too. Before, it asked for the module only after the core's loader, one round trip later. A cold start on Slow 4G then reached its first frame at 3,110 ms instead of 3,580 ms. Those are medians of 10 loads each, with the old and new code in turns, in Chrome 154 on a MacBook Pro. The module's top-level code runs when the module arrives. Hold mode imports it after the sketch runner has seeded the thread's random numbers, so that code draws the same numbers on every run.
+- In single-threaded mode the page imports the sketch module while the core downloads too. The module's top-level code runs when the module arrives. Hold mode imports it after the sketch runner has seeded the thread's random numbers, so that code draws the same numbers on every run.
 - Keep `loadSketch` in `sketch/define-sketch.ts`, where the page imports it. That import keeps `defineSketch` in the page's file, which the sketch worker finds in the browser's cache. In a file of its own, `defineSketch` costs the sketch worker one more request before the sketch runs. On Slow 4G, that request adds a round trip of 562 ms.
 - Only the page imports the error fixes (`errors/fixes.ts`). It sets them in `createEngine` and sends them to each worker in its handoff, and `startWorkerCore` sets them in the worker before the core starts. A worker module that imports the fixes adds their text to its file.
 - `errors/codes.ts` holds each code's docs text for the docs generator and the tests. Runtime code must not import it: a value import bundles every code's docs text into the engine's files.
 - The page hands the key names (`shared/key-codes.ts`) to the sketch worker when it starts it, as it does the error fixes. The sketch worker's file then holds no copy of the list.
 - The input ring's record format is plain constants, not enums. The bundler writes a constant into the code as a number, while a TypeScript enum ships as an object that holds each member's name. A `const enum` ships the same object.
+
+## Start order
+
+The page starts every download that the start needs while the core downloads. On Slow 4G each download that waits for the core adds a round trip of at least 562 ms.
+
+- With worker threads the page starts the sketch worker, the render worker and the job workers before it probes the GPU paths. Each worker imports the core's loader as soon as it runs (`startWorker` in `workers/protocol.ts`). It then waits for its start message, which carries the core.
+- The page fetches the sketch module into the HTTP cache (`prefetch` in `page/engine.ts`). The sketch worker imports it only after it has started the core, so the module's code runs no earlier than before. When the host serves build files as immutable, as the startup server does, the worker's import makes no request.
+- In low-latency mode the page sends the sketch worker `load-renderer` as soon as it starts it, so the worker loads the renderer at once.
+- Where the page draws, it imports the renderer while the core downloads. In single-threaded mode it imports the core's loader then too. Each of the two was the last download to arrive once the other started early.
+- The page starts the render worker before the probe says whether a worker can draw. When one cannot, the page stops the render worker and draws itself.
+- A start that fails before the workers have the core stops them at once, because none waits in the job system yet. After that, a stop waits until each job worker leaves the job system. So the page sends the job workers the core before anything else that can fail, such as the canvas's transfer.
+- The core now arrives last on Slow 4G. Its download shares the link with the workers' scripts. In the pipelined mode it is ready about 300 ms later than before, and the engine about 10 ms after it. In low-latency mode the engine is ready about 270 ms after the core. There the sketch worker asks for the renderer only once its own script has arrived.
+
+`bun run bench:startup --modes all --loads cold,warm --network slow-4g,full` in Chrome 154 on a MacBook Pro, 30 September 2026. The old and new code ran in turns while other work loaded the machine. The table gives the first frame of a cold load on Slow 4G, in ms. Each value is a median of 15 loads of the old code or 10 of the new.
+
+| Thread mode | Start after the core | Start with the core |
+| --- | --- | --- |
+| Pipelined | 4,183 | 2,674 |
+| Low latency | 4,169 | 2,752 |
+| Single-threaded, with the sketch module early | 3,166 | 2,607 |
+| Drawing on the main thread | 4,298 | 2,661 |
+
+Warm loads and loads at full speed stayed within the spread between runs. The first row of the single-threaded mode already downloaded the sketch module with the core. Before that, the first frame came at 3,580 ms. In single-threaded mode, starting only the renderer early gave 3,194 ms, because the core's loader was then last. Starting both gave 2,624 ms.
 
 ## Textures on both GPU paths
 
