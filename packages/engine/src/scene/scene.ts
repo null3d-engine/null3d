@@ -26,6 +26,7 @@ import { transformQuat } from '../math/vec3';
 import { rowLimitWarning } from '../page/limits';
 import type { CoreGlue } from '../shared/core';
 import { type ColorInput, linearColor } from './color';
+import { type FogOptions, setSceneFog } from './fog';
 import {
 	checkFov,
 	checkNearFar,
@@ -1682,6 +1683,15 @@ export class Scene {
 	setBackground(color: ColorInput): void {
 		const [r, g, b] = linearColor(color, 'setBackground');
 		this.core.glue.setBackground(r, g, b);
+	}
+
+	/**
+	 * Fog over every object, with three.js's formulas: linear fog as its `Fog`, or exponential
+	 * squared fog as its `FogExp2`. Null removes the fog. The background takes no fog, and a
+	 * material created with `fog: false` keeps its color. Converting the color allocates.
+	 */
+	setFog(fog: FogOptions | null): void {
+		setSceneFog(this.core.glue, fog);
 	}
 
 	/**

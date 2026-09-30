@@ -23,12 +23,21 @@ precision highp int;
 
 uniform uint naga_vs_first_instance;
 
+struct Fog {
+    vec3 color;
+    uint kind;
+    vec3 forward;
+    float density;
+    float near;
+    float far;
+};
 struct Frame {
     mat4x4 view_proj;
     vec4 camera_position;
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Fog fog;
 };
 struct Material {
     vec4 color;
@@ -89,7 +98,10 @@ struct VertexOut {
     vec3 normal;
     uint material;
 };
+const uint LINEAR = 1u;
+const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
+const uint NO_FOG = 4u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -119,6 +131,30 @@ smooth out vec3 _vs2fs_location0;
 smooth out vec3 _vs2fs_location1;
 flat out uint _vs2fs_location2;
 
+vec3 apply_fog(vec3 c, vec3 fog_color, float factor) {
+    return mix(c, fog_color, factor);
+}
+
+float fog_depth(vec3 relative_position, vec3 forward) {
+    return dot(relative_position, forward);
+}
+
+float fog_linear(float depth, float near, float far) {
+    return smoothstep(near, far, depth);
+}
+
+float fog_exp2_(float depth_1, float density) {
+    return (1.0 - exp((((-(density) * density) * depth_1) * depth_1)));
+}
+
+float fog_factor(Fog fog, vec3 relative_position_1) {
+    float _e3 = fog_depth(relative_position_1, fog.forward);
+    float _e6 = fog_linear(_e3, fog.near, fog.far);
+    float linear = ((fog.kind == LINEAR) ? _e6 : 0.0);
+    float _e13 = fog_exp2_(_e3, fog.density);
+    return ((fog.kind == EXP2_) ? _e13 : linear);
+}
+
 vec3 transform_point(Transform t, vec3 p) {
     vec4 q = vec4(p, 1.0);
     return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
@@ -127,16 +163,25 @@ vec3 transform_point(Transform t, vec3 p) {
 vec3 transform_normal(Transform t_1, vec3 n) {
     vec3 a = t_1.x.xyz;
     vec3 b = t_1.y.xyz;
-    vec3 c_1 = t_1.z.xyz;
-    vec3 bc = cross(b, c_1);
-    vec3 ca = cross(c_1, a);
+    vec3 c_3 = t_1.z.xyz;
+    vec3 bc = cross(b, c_3);
+    vec3 ca = cross(c_3, a);
     vec3 ab = cross(a, b);
     float facing = ((dot(a, bc) >= 0.0) ? 1.0 : -1.0);
     return normalize((vec3(dot(bc, n), dot(ca, n), dot(ab, n)) * facing));
 }
 
-vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
-    return (view_proj * vec4(relative_position, 1.0));
+vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
+    return (view_proj * vec4(relative_position_2, 1.0));
+}
+
+vec3 fogged(vec3 c_1, vec3 relative, Material m_1) {
+    bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
+    vec3 _e11 = _group_0_binding_0_vs.fog.color;
+    Fog _e14 = _group_0_binding_0_vs.fog;
+    float _e16 = fog_factor(_e14, relative);
+    vec3 _e20 = apply_fog(c_1, _e11, (fog_on ? _e16 : 0.0));
+    return _e20;
 }
 
 Instance instance_of(uvec4 record, uint instance) {
@@ -192,12 +237,12 @@ Instance find_instance(InstanceIn i_1) {
     return _e7;
 }
 
-vec4 clip_of(Instance found, vec3 relative) {
+vec4 clip_of(Instance found, vec3 relative_1) {
     if (!(found.drawn)) {
         return OUTSIDE_CLIP;
     }
     mat4x4 _e6 = _group_0_binding_0_vs.view_proj;
-    vec4 _e8 = to_clip(_e6, relative);
+    vec4 _e8 = to_clip(_e6, relative_1);
     return _e8;
 }
 
@@ -205,7 +250,7 @@ Transform transform_of(Instance found_1) {
     return Transform(found_1.row_x, found_1.row_y, found_1.row_z);
 }
 
-vec3 relative_position_1(Instance found_2, vec3 position) {
+vec3 relative_position_3(Instance found_2, vec3 position) {
     Transform _e1 = transform_of(found_2);
     vec3 _e3 = transform_point(_e1, position);
     return _e3;
@@ -222,16 +267,16 @@ vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
 }
 
 PbrMaterial pbr_material(vec3 base_color, float metalness, float roughness_1, float geometry_roughness) {
-    PbrMaterial m_1 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
-    m_1.base_color = base_color;
-    m_1.diffuse = (base_color * (1.0 - metalness));
-    m_1.specular = vec3(0.04);
-    vec3 _e13 = m_1.specular;
-    m_1.specular_blended = mix(_e13, base_color, metalness);
-    m_1.specular_grazing = 1.0;
-    m_1.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
-    m_1.metalness = metalness;
-    PbrMaterial _e26 = m_1;
+    PbrMaterial m_2 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
+    m_2.base_color = base_color;
+    m_2.diffuse = (base_color * (1.0 - metalness));
+    m_2.specular = vec3(0.04);
+    vec3 _e13 = m_2.specular;
+    m_2.specular_blended = mix(_e13, base_color, metalness);
+    m_2.specular_grazing = 1.0;
+    m_2.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
+    m_2.metalness = metalness;
+    PbrMaterial _e26 = m_2;
     return _e26;
 }
 
@@ -270,12 +315,12 @@ vec3 brdf_lambert(vec3 diffuse) {
     return (INV_PI * diffuse);
 }
 
-Reflected direct_light(PbrMaterial m_2, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
+Reflected direct_light(PbrMaterial m_3, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
     vec3 irradiance_1 = (clamp(dot(normal_2, to_light_1), 0.0, 1.0) * light);
-    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_2.specular_blended, m_2.specular_grazing, m_2.roughness);
+    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_3.specular_blended, m_3.specular_grazing, m_3.roughness);
     float v_dot_h_2 = clamp(dot(to_view_1, normalize((to_light_1 + to_view_1))), 0.0, 1.0);
-    vec3 _e18 = f_schlick(m_2.specular, m_2.specular_grazing, v_dot_h_2);
-    vec3 _e20 = brdf_lambert(m_2.diffuse);
+    vec3 _e18 = f_schlick(m_3.specular, m_3.specular_grazing, v_dot_h_2);
+    vec3 _e20 = brdf_lambert(m_3.diffuse);
     return Reflected(((irradiance_1 * _e20) * (vec3(1.0) - _e18)), ((irradiance_1 * _e11) * compensation));
 }
 
@@ -288,28 +333,28 @@ Scattering multiscattering(vec3 f0_3, float f90_2, vec2 dfg_1) {
     return Scattering(single, (multi * ems));
 }
 
-vec3 indirect_diffuse(PbrMaterial m_3, vec3 irradiance, vec2 dfg_2) {
-    Scattering _e4 = multiscattering(m_3.specular, m_3.specular_grazing, dfg_2);
-    vec3 _e6 = brdf_lambert(m_3.diffuse);
+vec3 indirect_diffuse(PbrMaterial m_4, vec3 irradiance, vec2 dfg_2) {
+    Scattering _e4 = multiscattering(m_4.specular, m_4.specular_grazing, dfg_2);
+    vec3 _e6 = brdf_lambert(m_4.diffuse);
     return ((irradiance * _e6) * ((vec3(1.0) - _e4.single) - _e4.multi));
 }
 
-vec3 linear_to_srgb(vec3 c) {
-    vec3 low = (c * 12.92);
-    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
-    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
+vec3 linear_to_srgb(vec3 c_2) {
+    vec3 low = (c_2 * 12.92);
+    vec3 high = ((1.055 * pow(c_2, vec3(0.41666666))) - vec3(0.055));
+    return mix(high, low, lessThanEqual(c_2, vec3(0.0031308)));
 }
 
-vec3 light_surface(PbrMaterial m_4, vec3 relative_1, vec3 normal_3, vec3 to_view_2, vec2 dfg_3) {
+vec3 light_surface(PbrMaterial m_5, vec3 relative_2, vec3 normal_3, vec3 to_view_2, vec2 dfg_3) {
     vec3 sun_color = vec3(0.0);
-    vec3 _e3 = multiscatter_compensation(m_4.specular_blended, dfg_3);
+    vec3 _e3 = multiscatter_compensation(m_5.specular_blended, dfg_3);
     vec4 _e6 = _group_0_binding_0_vs.sun_color;
     sun_color = _e6.xyz;
     vec4 _e11 = _group_0_binding_0_vs.sun_direction;
     vec3 _e14 = sun_color;
-    Reflected _e17 = direct_light(m_4, normal_3, to_view_2, -(_e11.xyz), _e14, _e3);
+    Reflected _e17 = direct_light(m_5, normal_3, to_view_2, -(_e11.xyz), _e14, _e3);
     vec4 _e20 = _group_0_binding_0_vs.ambient;
-    vec3 _e22 = indirect_diffuse(m_4, _e20.xyz, dfg_3);
+    vec3 _e22 = indirect_diffuse(m_5, _e20.xyz, dfg_3);
     return ((_e17.diffuse + _e17.specular) + _e22);
 }
 
@@ -318,7 +363,7 @@ void main() {
     InstanceIn i = InstanceIn((uint(gl_InstanceID) + naga_vs_first_instance), uint(gl_DrawID));
     VertexOut out_ = VertexOut(vec4(0.0), vec3(0.0), vec3(0.0), 0u);
     Instance _e1 = find_instance(i);
-    vec3 _e6 = relative_position_1(_e1, v.position);
+    vec3 _e6 = relative_position_3(_e1, v.position);
     out_.relative = _e6;
     vec3 _e9 = out_.relative;
     vec4 _e10 = clip_of(_e1, _e9);
@@ -385,12 +430,21 @@ void main() {
 precision highp float;
 precision highp int;
 
+struct Fog {
+    vec3 color;
+    uint kind;
+    vec3 forward;
+    float density;
+    float near;
+    float far;
+};
 struct Frame {
     mat4x4 view_proj;
     vec4 camera_position;
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Fog fog;
 };
 struct Material {
     vec4 color;
@@ -451,7 +505,10 @@ struct VertexOut {
     vec3 normal;
     uint material;
 };
+const uint LINEAR = 1u;
+const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
+const uint NO_FOG = 4u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -472,6 +529,30 @@ smooth in vec3 _vs2fs_location1;
 flat in uint _vs2fs_location2;
 layout(location = 0) out vec4 _fs2p_location0;
 
+vec3 apply_fog(vec3 c, vec3 fog_color, float factor) {
+    return mix(c, fog_color, factor);
+}
+
+float fog_depth(vec3 relative_position, vec3 forward) {
+    return dot(relative_position, forward);
+}
+
+float fog_linear(float depth, float near, float far) {
+    return smoothstep(near, far, depth);
+}
+
+float fog_exp2_(float depth_1, float density) {
+    return (1.0 - exp((((-(density) * density) * depth_1) * depth_1)));
+}
+
+float fog_factor(Fog fog, vec3 relative_position_1) {
+    float _e3 = fog_depth(relative_position_1, fog.forward);
+    float _e6 = fog_linear(_e3, fog.near, fog.far);
+    float linear = ((fog.kind == LINEAR) ? _e6 : 0.0);
+    float _e13 = fog_exp2_(_e3, fog.density);
+    return ((fog.kind == EXP2_) ? _e13 : linear);
+}
+
 vec3 transform_point(Transform t, vec3 p) {
     vec4 q = vec4(p, 1.0);
     return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
@@ -480,16 +561,16 @@ vec3 transform_point(Transform t, vec3 p) {
 vec3 transform_normal(Transform t_1, vec3 n) {
     vec3 a = t_1.x.xyz;
     vec3 b = t_1.y.xyz;
-    vec3 c_1 = t_1.z.xyz;
-    vec3 bc = cross(b, c_1);
-    vec3 ca = cross(c_1, a);
+    vec3 c_3 = t_1.z.xyz;
+    vec3 bc = cross(b, c_3);
+    vec3 ca = cross(c_3, a);
     vec3 ab = cross(a, b);
     float facing = ((dot(a, bc) >= 0.0) ? 1.0 : -1.0);
     return normalize((vec3(dot(bc, n), dot(ca, n), dot(ab, n)) * facing));
 }
 
-vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
-    return (view_proj * vec4(relative_position, 1.0));
+vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
+    return (view_proj * vec4(relative_position_2, 1.0));
 }
 
 Material material_of(uint id) {
@@ -514,12 +595,21 @@ Material material_of(uint id) {
     return _e50;
 }
 
-vec4 clip_of(Instance found, vec3 relative) {
+vec3 fogged(vec3 c_1, vec3 relative, Material m_1) {
+    bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
+    vec3 _e11 = _group_0_binding_0_fs.fog.color;
+    Fog _e14 = _group_0_binding_0_fs.fog;
+    float _e16 = fog_factor(_e14, relative);
+    vec3 _e20 = apply_fog(c_1, _e11, (fog_on ? _e16 : 0.0));
+    return _e20;
+}
+
+vec4 clip_of(Instance found, vec3 relative_1) {
     if (!(found.drawn)) {
         return OUTSIDE_CLIP;
     }
     mat4x4 _e6 = _group_0_binding_0_fs.view_proj;
-    vec4 _e8 = to_clip(_e6, relative);
+    vec4 _e8 = to_clip(_e6, relative_1);
     return _e8;
 }
 
@@ -527,7 +617,7 @@ Transform transform_of(Instance found_1) {
     return Transform(found_1.row_x, found_1.row_y, found_1.row_z);
 }
 
-vec3 relative_position_1(Instance found_2, vec3 position) {
+vec3 relative_position_3(Instance found_2, vec3 position) {
     Transform _e1 = transform_of(found_2);
     vec3 _e3 = transform_point(_e1, position);
     return _e3;
@@ -550,10 +640,10 @@ vec2 dfg_lut(float n_dot_v, float roughness) {
     vec4 _e36 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(high.x, low.y)), 0);
     vec2 b_1 = _e36.xy;
     vec4 _e43 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(low.x, high.y)), 0);
-    vec2 c_2 = _e43.xy;
+    vec2 c_4 = _e43.xy;
     vec4 _e47 = texelFetch(_group_0_binding_3_fs, ivec2(high), 0);
     vec2 d = _e47.xy;
-    return mix(mix(a_1, b_1, t_2.x), mix(c_2, d, t_2.x), t_2.y);
+    return mix(mix(a_1, b_1, t_2.x), mix(c_4, d, t_2.x), t_2.y);
 }
 
 vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
@@ -561,16 +651,16 @@ vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
 }
 
 PbrMaterial pbr_material(vec3 base_color, float metalness, float roughness_1, float geometry_roughness) {
-    PbrMaterial m_1 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
-    m_1.base_color = base_color;
-    m_1.diffuse = (base_color * (1.0 - metalness));
-    m_1.specular = vec3(0.04);
-    vec3 _e13 = m_1.specular;
-    m_1.specular_blended = mix(_e13, base_color, metalness);
-    m_1.specular_grazing = 1.0;
-    m_1.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
-    m_1.metalness = metalness;
-    PbrMaterial _e26 = m_1;
+    PbrMaterial m_2 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
+    m_2.base_color = base_color;
+    m_2.diffuse = (base_color * (1.0 - metalness));
+    m_2.specular = vec3(0.04);
+    vec3 _e13 = m_2.specular;
+    m_2.specular_blended = mix(_e13, base_color, metalness);
+    m_2.specular_grazing = 1.0;
+    m_2.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
+    m_2.metalness = metalness;
+    PbrMaterial _e26 = m_2;
     return _e26;
 }
 
@@ -609,12 +699,12 @@ vec3 brdf_lambert(vec3 diffuse) {
     return (INV_PI * diffuse);
 }
 
-Reflected direct_light(PbrMaterial m_2, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
+Reflected direct_light(PbrMaterial m_3, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
     vec3 irradiance_1 = (clamp(dot(normal_2, to_light_1), 0.0, 1.0) * light);
-    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_2.specular_blended, m_2.specular_grazing, m_2.roughness);
+    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_3.specular_blended, m_3.specular_grazing, m_3.roughness);
     float v_dot_h_2 = clamp(dot(to_view_1, normalize((to_light_1 + to_view_1))), 0.0, 1.0);
-    vec3 _e18 = f_schlick(m_2.specular, m_2.specular_grazing, v_dot_h_2);
-    vec3 _e20 = brdf_lambert(m_2.diffuse);
+    vec3 _e18 = f_schlick(m_3.specular, m_3.specular_grazing, v_dot_h_2);
+    vec3 _e20 = brdf_lambert(m_3.diffuse);
     return Reflected(((irradiance_1 * _e20) * (vec3(1.0) - _e18)), ((irradiance_1 * _e11) * compensation));
 }
 
@@ -627,28 +717,28 @@ Scattering multiscattering(vec3 f0_3, float f90_2, vec2 dfg_1) {
     return Scattering(single, (multi * ems));
 }
 
-vec3 indirect_diffuse(PbrMaterial m_3, vec3 irradiance, vec2 dfg_2) {
-    Scattering _e4 = multiscattering(m_3.specular, m_3.specular_grazing, dfg_2);
-    vec3 _e6 = brdf_lambert(m_3.diffuse);
+vec3 indirect_diffuse(PbrMaterial m_4, vec3 irradiance, vec2 dfg_2) {
+    Scattering _e4 = multiscattering(m_4.specular, m_4.specular_grazing, dfg_2);
+    vec3 _e6 = brdf_lambert(m_4.diffuse);
     return ((irradiance * _e6) * ((vec3(1.0) - _e4.single) - _e4.multi));
 }
 
-vec3 linear_to_srgb(vec3 c) {
-    vec3 low_1 = (c * 12.92);
-    vec3 high_1 = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
-    return mix(high_1, low_1, lessThanEqual(c, vec3(0.0031308)));
+vec3 linear_to_srgb(vec3 c_2) {
+    vec3 low_1 = (c_2 * 12.92);
+    vec3 high_1 = ((1.055 * pow(c_2, vec3(0.41666666))) - vec3(0.055));
+    return mix(high_1, low_1, lessThanEqual(c_2, vec3(0.0031308)));
 }
 
-vec3 light_surface(PbrMaterial m_4, vec3 relative_1, vec3 normal_3, vec3 to_view_2, vec2 dfg_3) {
+vec3 light_surface(PbrMaterial m_5, vec3 relative_2, vec3 normal_3, vec3 to_view_2, vec2 dfg_3) {
     vec3 sun_color = vec3(0.0);
-    vec3 _e3 = multiscatter_compensation(m_4.specular_blended, dfg_3);
+    vec3 _e3 = multiscatter_compensation(m_5.specular_blended, dfg_3);
     vec4 _e6 = _group_0_binding_0_fs.sun_color;
     sun_color = _e6.xyz;
     vec4 _e11 = _group_0_binding_0_fs.sun_direction;
     vec3 _e14 = sun_color;
-    Reflected _e17 = direct_light(m_4, normal_3, to_view_2, -(_e11.xyz), _e14, _e3);
+    Reflected _e17 = direct_light(m_5, normal_3, to_view_2, -(_e11.xyz), _e14, _e3);
     vec4 _e20 = _group_0_binding_0_fs.ambient;
-    vec3 _e22 = indirect_diffuse(m_4, _e20.xyz, dfg_3);
+    vec3 _e22 = indirect_diffuse(m_5, _e20.xyz, dfg_3);
     return ((_e17.diffuse + _e17.specular) + _e22);
 }
 
@@ -681,8 +771,9 @@ void main() {
     vec3 emitted = (_e2.emissive.xyz * _e2.strengths.w);
     vec3 _e73 = light_surface(_e62, in_.relative, normal_4, to_view_3, _e66);
     vec3 outgoing = (_e73 + emitted);
-    vec3 _e75 = linear_to_srgb(outgoing);
-    _fs2p_location0 = vec4(_e75, 1.0);
+    vec3 _e76 = fogged(outgoing, in_.relative, _e2);
+    vec3 _e77 = linear_to_srgb(_e76);
+    _fs2p_location0 = vec4(_e77, 1.0);
     return;
 }
 `,
@@ -726,12 +817,21 @@ precision highp int;
 
 uniform uint naga_vs_first_instance;
 
+struct Fog {
+    vec3 color;
+    uint kind;
+    vec3 forward;
+    float density;
+    float near;
+    float far;
+};
 struct Frame {
     mat4x4 view_proj;
     vec4 camera_position;
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Fog fog;
 };
 struct Material {
     vec4 color;
@@ -792,7 +892,10 @@ struct VertexOut {
     vec3 normal;
     uint material;
 };
+const uint LINEAR = 1u;
+const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
+const uint NO_FOG = 4u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -822,6 +925,30 @@ smooth out vec3 _vs2fs_location0;
 smooth out vec3 _vs2fs_location1;
 flat out uint _vs2fs_location2;
 
+vec3 apply_fog(vec3 c, vec3 fog_color, float factor) {
+    return mix(c, fog_color, factor);
+}
+
+float fog_depth(vec3 relative_position, vec3 forward) {
+    return dot(relative_position, forward);
+}
+
+float fog_linear(float depth, float near, float far) {
+    return smoothstep(near, far, depth);
+}
+
+float fog_exp2_(float depth_1, float density) {
+    return (1.0 - exp((((-(density) * density) * depth_1) * depth_1)));
+}
+
+float fog_factor(Fog fog, vec3 relative_position_1) {
+    float _e3 = fog_depth(relative_position_1, fog.forward);
+    float _e6 = fog_linear(_e3, fog.near, fog.far);
+    float linear = ((fog.kind == LINEAR) ? _e6 : 0.0);
+    float _e13 = fog_exp2_(_e3, fog.density);
+    return ((fog.kind == EXP2_) ? _e13 : linear);
+}
+
 vec3 transform_point(Transform t, vec3 p) {
     vec4 q = vec4(p, 1.0);
     return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
@@ -830,16 +957,25 @@ vec3 transform_point(Transform t, vec3 p) {
 vec3 transform_normal(Transform t_1, vec3 n) {
     vec3 a = t_1.x.xyz;
     vec3 b = t_1.y.xyz;
-    vec3 c_1 = t_1.z.xyz;
-    vec3 bc = cross(b, c_1);
-    vec3 ca = cross(c_1, a);
+    vec3 c_3 = t_1.z.xyz;
+    vec3 bc = cross(b, c_3);
+    vec3 ca = cross(c_3, a);
     vec3 ab = cross(a, b);
     float facing = ((dot(a, bc) >= 0.0) ? 1.0 : -1.0);
     return normalize((vec3(dot(bc, n), dot(ca, n), dot(ab, n)) * facing));
 }
 
-vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
-    return (view_proj * vec4(relative_position, 1.0));
+vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
+    return (view_proj * vec4(relative_position_2, 1.0));
+}
+
+vec3 fogged(vec3 c_1, vec3 relative, Material m_1) {
+    bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
+    vec3 _e11 = _group_0_binding_0_vs.fog.color;
+    Fog _e14 = _group_0_binding_0_vs.fog;
+    float _e16 = fog_factor(_e14, relative);
+    vec3 _e20 = apply_fog(c_1, _e11, (fog_on ? _e16 : 0.0));
+    return _e20;
 }
 
 Instance instance_of(uvec4 record, uint instance) {
@@ -895,12 +1031,12 @@ Instance find_instance(InstanceIn i_1) {
     return _e7;
 }
 
-vec4 clip_of(Instance found, vec3 relative) {
+vec4 clip_of(Instance found, vec3 relative_1) {
     if (!(found.drawn)) {
         return OUTSIDE_CLIP;
     }
     mat4x4 _e6 = _group_0_binding_0_vs.view_proj;
-    vec4 _e8 = to_clip(_e6, relative);
+    vec4 _e8 = to_clip(_e6, relative_1);
     return _e8;
 }
 
@@ -908,7 +1044,7 @@ Transform transform_of(Instance found_1) {
     return Transform(found_1.row_x, found_1.row_y, found_1.row_z);
 }
 
-vec3 relative_position_1(Instance found_2, vec3 position) {
+vec3 relative_position_3(Instance found_2, vec3 position) {
     Transform _e1 = transform_of(found_2);
     vec3 _e3 = transform_point(_e1, position);
     return _e3;
@@ -925,16 +1061,16 @@ vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
 }
 
 PbrMaterial pbr_material(vec3 base_color, float metalness, float roughness_1, float geometry_roughness) {
-    PbrMaterial m_1 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
-    m_1.base_color = base_color;
-    m_1.diffuse = (base_color * (1.0 - metalness));
-    m_1.specular = vec3(0.04);
-    vec3 _e13 = m_1.specular;
-    m_1.specular_blended = mix(_e13, base_color, metalness);
-    m_1.specular_grazing = 1.0;
-    m_1.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
-    m_1.metalness = metalness;
-    PbrMaterial _e26 = m_1;
+    PbrMaterial m_2 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
+    m_2.base_color = base_color;
+    m_2.diffuse = (base_color * (1.0 - metalness));
+    m_2.specular = vec3(0.04);
+    vec3 _e13 = m_2.specular;
+    m_2.specular_blended = mix(_e13, base_color, metalness);
+    m_2.specular_grazing = 1.0;
+    m_2.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
+    m_2.metalness = metalness;
+    PbrMaterial _e26 = m_2;
     return _e26;
 }
 
@@ -973,12 +1109,12 @@ vec3 brdf_lambert(vec3 diffuse) {
     return (INV_PI * diffuse);
 }
 
-Reflected direct_light(PbrMaterial m_2, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
+Reflected direct_light(PbrMaterial m_3, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
     vec3 irradiance_1 = (clamp(dot(normal_2, to_light_1), 0.0, 1.0) * light);
-    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_2.specular_blended, m_2.specular_grazing, m_2.roughness);
+    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_3.specular_blended, m_3.specular_grazing, m_3.roughness);
     float v_dot_h_2 = clamp(dot(to_view_1, normalize((to_light_1 + to_view_1))), 0.0, 1.0);
-    vec3 _e18 = f_schlick(m_2.specular, m_2.specular_grazing, v_dot_h_2);
-    vec3 _e20 = brdf_lambert(m_2.diffuse);
+    vec3 _e18 = f_schlick(m_3.specular, m_3.specular_grazing, v_dot_h_2);
+    vec3 _e20 = brdf_lambert(m_3.diffuse);
     return Reflected(((irradiance_1 * _e20) * (vec3(1.0) - _e18)), ((irradiance_1 * _e11) * compensation));
 }
 
@@ -991,28 +1127,28 @@ Scattering multiscattering(vec3 f0_3, float f90_2, vec2 dfg_1) {
     return Scattering(single, (multi * ems));
 }
 
-vec3 indirect_diffuse(PbrMaterial m_3, vec3 irradiance, vec2 dfg_2) {
-    Scattering _e4 = multiscattering(m_3.specular, m_3.specular_grazing, dfg_2);
-    vec3 _e6 = brdf_lambert(m_3.diffuse);
+vec3 indirect_diffuse(PbrMaterial m_4, vec3 irradiance, vec2 dfg_2) {
+    Scattering _e4 = multiscattering(m_4.specular, m_4.specular_grazing, dfg_2);
+    vec3 _e6 = brdf_lambert(m_4.diffuse);
     return ((irradiance * _e6) * ((vec3(1.0) - _e4.single) - _e4.multi));
 }
 
-vec3 linear_to_srgb(vec3 c) {
-    vec3 low = (c * 12.92);
-    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
-    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
+vec3 linear_to_srgb(vec3 c_2) {
+    vec3 low = (c_2 * 12.92);
+    vec3 high = ((1.055 * pow(c_2, vec3(0.41666666))) - vec3(0.055));
+    return mix(high, low, lessThanEqual(c_2, vec3(0.0031308)));
 }
 
-vec3 light_surface(PbrMaterial m_4, vec3 relative_1, vec3 normal_3, vec3 to_view_2, vec2 dfg_3) {
+vec3 light_surface(PbrMaterial m_5, vec3 relative_2, vec3 normal_3, vec3 to_view_2, vec2 dfg_3) {
     vec3 sun_color = vec3(0.0);
-    vec3 _e3 = multiscatter_compensation(m_4.specular_blended, dfg_3);
+    vec3 _e3 = multiscatter_compensation(m_5.specular_blended, dfg_3);
     vec4 _e6 = _group_0_binding_0_vs.sun_color;
     sun_color = _e6.xyz;
     vec4 _e11 = _group_0_binding_0_vs.sun_direction;
     vec3 _e14 = sun_color;
-    Reflected _e17 = direct_light(m_4, normal_3, to_view_2, -(_e11.xyz), _e14, _e3);
+    Reflected _e17 = direct_light(m_5, normal_3, to_view_2, -(_e11.xyz), _e14, _e3);
     vec4 _e20 = _group_0_binding_0_vs.ambient;
-    vec3 _e22 = indirect_diffuse(m_4, _e20.xyz, dfg_3);
+    vec3 _e22 = indirect_diffuse(m_5, _e20.xyz, dfg_3);
     return ((_e17.diffuse + _e17.specular) + _e22);
 }
 
@@ -1021,7 +1157,7 @@ void main() {
     InstanceIn i = InstanceIn((uint(gl_InstanceID) + naga_vs_first_instance), uint(gl_DrawID));
     VertexOut out_ = VertexOut(vec4(0.0), vec3(0.0), vec3(0.0), 0u);
     Instance _e1 = find_instance(i);
-    vec3 _e6 = relative_position_1(_e1, v.position);
+    vec3 _e6 = relative_position_3(_e1, v.position);
     out_.relative = _e6;
     vec3 _e9 = out_.relative;
     vec4 _e10 = clip_of(_e1, _e9);
@@ -1088,12 +1224,21 @@ void main() {
 precision highp float;
 precision highp int;
 
+struct Fog {
+    vec3 color;
+    uint kind;
+    vec3 forward;
+    float density;
+    float near;
+    float far;
+};
 struct Frame {
     mat4x4 view_proj;
     vec4 camera_position;
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Fog fog;
 };
 struct Material {
     vec4 color;
@@ -1154,7 +1299,10 @@ struct VertexOut {
     vec3 normal;
     uint material;
 };
+const uint LINEAR = 1u;
+const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
+const uint NO_FOG = 4u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -1175,6 +1323,30 @@ smooth in vec3 _vs2fs_location1;
 flat in uint _vs2fs_location2;
 layout(location = 0) out vec4 _fs2p_location0;
 
+vec3 apply_fog(vec3 c, vec3 fog_color, float factor) {
+    return mix(c, fog_color, factor);
+}
+
+float fog_depth(vec3 relative_position, vec3 forward) {
+    return dot(relative_position, forward);
+}
+
+float fog_linear(float depth, float near, float far) {
+    return smoothstep(near, far, depth);
+}
+
+float fog_exp2_(float depth_1, float density) {
+    return (1.0 - exp((((-(density) * density) * depth_1) * depth_1)));
+}
+
+float fog_factor(Fog fog, vec3 relative_position_1) {
+    float _e3 = fog_depth(relative_position_1, fog.forward);
+    float _e6 = fog_linear(_e3, fog.near, fog.far);
+    float linear = ((fog.kind == LINEAR) ? _e6 : 0.0);
+    float _e13 = fog_exp2_(_e3, fog.density);
+    return ((fog.kind == EXP2_) ? _e13 : linear);
+}
+
 vec3 transform_point(Transform t, vec3 p) {
     vec4 q = vec4(p, 1.0);
     return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
@@ -1183,16 +1355,16 @@ vec3 transform_point(Transform t, vec3 p) {
 vec3 transform_normal(Transform t_1, vec3 n) {
     vec3 a = t_1.x.xyz;
     vec3 b = t_1.y.xyz;
-    vec3 c_1 = t_1.z.xyz;
-    vec3 bc = cross(b, c_1);
-    vec3 ca = cross(c_1, a);
+    vec3 c_3 = t_1.z.xyz;
+    vec3 bc = cross(b, c_3);
+    vec3 ca = cross(c_3, a);
     vec3 ab = cross(a, b);
     float facing = ((dot(a, bc) >= 0.0) ? 1.0 : -1.0);
     return normalize((vec3(dot(bc, n), dot(ca, n), dot(ab, n)) * facing));
 }
 
-vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
-    return (view_proj * vec4(relative_position, 1.0));
+vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
+    return (view_proj * vec4(relative_position_2, 1.0));
 }
 
 Material material_of(uint id) {
@@ -1217,12 +1389,21 @@ Material material_of(uint id) {
     return _e50;
 }
 
-vec4 clip_of(Instance found, vec3 relative) {
+vec3 fogged(vec3 c_1, vec3 relative, Material m_1) {
+    bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
+    vec3 _e11 = _group_0_binding_0_fs.fog.color;
+    Fog _e14 = _group_0_binding_0_fs.fog;
+    float _e16 = fog_factor(_e14, relative);
+    vec3 _e20 = apply_fog(c_1, _e11, (fog_on ? _e16 : 0.0));
+    return _e20;
+}
+
+vec4 clip_of(Instance found, vec3 relative_1) {
     if (!(found.drawn)) {
         return OUTSIDE_CLIP;
     }
     mat4x4 _e6 = _group_0_binding_0_fs.view_proj;
-    vec4 _e8 = to_clip(_e6, relative);
+    vec4 _e8 = to_clip(_e6, relative_1);
     return _e8;
 }
 
@@ -1230,7 +1411,7 @@ Transform transform_of(Instance found_1) {
     return Transform(found_1.row_x, found_1.row_y, found_1.row_z);
 }
 
-vec3 relative_position_1(Instance found_2, vec3 position) {
+vec3 relative_position_3(Instance found_2, vec3 position) {
     Transform _e1 = transform_of(found_2);
     vec3 _e3 = transform_point(_e1, position);
     return _e3;
@@ -1253,10 +1434,10 @@ vec2 dfg_lut(float n_dot_v, float roughness) {
     vec4 _e36 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(high.x, low.y)), 0);
     vec2 b_1 = _e36.xy;
     vec4 _e43 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(low.x, high.y)), 0);
-    vec2 c_2 = _e43.xy;
+    vec2 c_4 = _e43.xy;
     vec4 _e47 = texelFetch(_group_0_binding_3_fs, ivec2(high), 0);
     vec2 d = _e47.xy;
-    return mix(mix(a_1, b_1, t_2.x), mix(c_2, d, t_2.x), t_2.y);
+    return mix(mix(a_1, b_1, t_2.x), mix(c_4, d, t_2.x), t_2.y);
 }
 
 vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
@@ -1264,16 +1445,16 @@ vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
 }
 
 PbrMaterial pbr_material(vec3 base_color, float metalness, float roughness_1, float geometry_roughness) {
-    PbrMaterial m_1 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
-    m_1.base_color = base_color;
-    m_1.diffuse = (base_color * (1.0 - metalness));
-    m_1.specular = vec3(0.04);
-    vec3 _e13 = m_1.specular;
-    m_1.specular_blended = mix(_e13, base_color, metalness);
-    m_1.specular_grazing = 1.0;
-    m_1.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
-    m_1.metalness = metalness;
-    PbrMaterial _e26 = m_1;
+    PbrMaterial m_2 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
+    m_2.base_color = base_color;
+    m_2.diffuse = (base_color * (1.0 - metalness));
+    m_2.specular = vec3(0.04);
+    vec3 _e13 = m_2.specular;
+    m_2.specular_blended = mix(_e13, base_color, metalness);
+    m_2.specular_grazing = 1.0;
+    m_2.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
+    m_2.metalness = metalness;
+    PbrMaterial _e26 = m_2;
     return _e26;
 }
 
@@ -1312,12 +1493,12 @@ vec3 brdf_lambert(vec3 diffuse) {
     return (INV_PI * diffuse);
 }
 
-Reflected direct_light(PbrMaterial m_2, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
+Reflected direct_light(PbrMaterial m_3, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
     vec3 irradiance_1 = (clamp(dot(normal_2, to_light_1), 0.0, 1.0) * light);
-    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_2.specular_blended, m_2.specular_grazing, m_2.roughness);
+    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_3.specular_blended, m_3.specular_grazing, m_3.roughness);
     float v_dot_h_2 = clamp(dot(to_view_1, normalize((to_light_1 + to_view_1))), 0.0, 1.0);
-    vec3 _e18 = f_schlick(m_2.specular, m_2.specular_grazing, v_dot_h_2);
-    vec3 _e20 = brdf_lambert(m_2.diffuse);
+    vec3 _e18 = f_schlick(m_3.specular, m_3.specular_grazing, v_dot_h_2);
+    vec3 _e20 = brdf_lambert(m_3.diffuse);
     return Reflected(((irradiance_1 * _e20) * (vec3(1.0) - _e18)), ((irradiance_1 * _e11) * compensation));
 }
 
@@ -1330,28 +1511,28 @@ Scattering multiscattering(vec3 f0_3, float f90_2, vec2 dfg_1) {
     return Scattering(single, (multi * ems));
 }
 
-vec3 indirect_diffuse(PbrMaterial m_3, vec3 irradiance, vec2 dfg_2) {
-    Scattering _e4 = multiscattering(m_3.specular, m_3.specular_grazing, dfg_2);
-    vec3 _e6 = brdf_lambert(m_3.diffuse);
+vec3 indirect_diffuse(PbrMaterial m_4, vec3 irradiance, vec2 dfg_2) {
+    Scattering _e4 = multiscattering(m_4.specular, m_4.specular_grazing, dfg_2);
+    vec3 _e6 = brdf_lambert(m_4.diffuse);
     return ((irradiance * _e6) * ((vec3(1.0) - _e4.single) - _e4.multi));
 }
 
-vec3 linear_to_srgb(vec3 c) {
-    vec3 low_1 = (c * 12.92);
-    vec3 high_1 = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
-    return mix(high_1, low_1, lessThanEqual(c, vec3(0.0031308)));
+vec3 linear_to_srgb(vec3 c_2) {
+    vec3 low_1 = (c_2 * 12.92);
+    vec3 high_1 = ((1.055 * pow(c_2, vec3(0.41666666))) - vec3(0.055));
+    return mix(high_1, low_1, lessThanEqual(c_2, vec3(0.0031308)));
 }
 
-vec3 light_surface(PbrMaterial m_4, vec3 relative_1, vec3 normal_3, vec3 to_view_2, vec2 dfg_3) {
+vec3 light_surface(PbrMaterial m_5, vec3 relative_2, vec3 normal_3, vec3 to_view_2, vec2 dfg_3) {
     vec3 sun_color = vec3(0.0);
-    vec3 _e3 = multiscatter_compensation(m_4.specular_blended, dfg_3);
+    vec3 _e3 = multiscatter_compensation(m_5.specular_blended, dfg_3);
     vec4 _e6 = _group_0_binding_0_fs.sun_color;
     sun_color = _e6.xyz;
     vec4 _e11 = _group_0_binding_0_fs.sun_direction;
     vec3 _e14 = sun_color;
-    Reflected _e17 = direct_light(m_4, normal_3, to_view_2, -(_e11.xyz), _e14, _e3);
+    Reflected _e17 = direct_light(m_5, normal_3, to_view_2, -(_e11.xyz), _e14, _e3);
     vec4 _e20 = _group_0_binding_0_fs.ambient;
-    vec3 _e22 = indirect_diffuse(m_4, _e20.xyz, dfg_3);
+    vec3 _e22 = indirect_diffuse(m_5, _e20.xyz, dfg_3);
     return ((_e17.diffuse + _e17.specular) + _e22);
 }
 
@@ -1388,8 +1569,9 @@ void main() {
     if ((_e75 < _e2.emissive.w)) {
         discard;
     }
-    vec3 _e79 = linear_to_srgb(outgoing);
-    _fs2p_location0 = vec4(_e79, 1.0);
+    vec3 _e80 = fogged(outgoing, in_.relative, _e2);
+    vec3 _e81 = linear_to_srgb(_e80);
+    _fs2p_location0 = vec4(_e81, 1.0);
     return;
 }
 `,
@@ -1433,12 +1615,21 @@ precision highp int;
 
 uniform uint naga_vs_first_instance;
 
+struct Fog {
+    vec3 color;
+    uint kind;
+    vec3 forward;
+    float density;
+    float near;
+    float far;
+};
 struct Frame {
     mat4x4 view_proj;
     vec4 camera_position;
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Fog fog;
 };
 struct Material {
     vec4 color;
@@ -1506,7 +1697,10 @@ struct VertexOut {
     vec3 normal;
     uint material;
 };
+const uint LINEAR = 1u;
+const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
+const uint NO_FOG = 4u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -1536,6 +1730,30 @@ smooth out vec3 _vs2fs_location0;
 smooth out vec3 _vs2fs_location1;
 flat out uint _vs2fs_location2;
 
+vec3 apply_fog(vec3 c, vec3 fog_color, float factor) {
+    return mix(c, fog_color, factor);
+}
+
+float fog_depth(vec3 relative_position, vec3 forward) {
+    return dot(relative_position, forward);
+}
+
+float fog_linear(float depth, float near, float far) {
+    return smoothstep(near, far, depth);
+}
+
+float fog_exp2_(float depth_1, float density) {
+    return (1.0 - exp((((-(density) * density) * depth_1) * depth_1)));
+}
+
+float fog_factor(Fog fog, vec3 relative_position_1) {
+    float _e3 = fog_depth(relative_position_1, fog.forward);
+    float _e6 = fog_linear(_e3, fog.near, fog.far);
+    float linear = ((fog.kind == LINEAR) ? _e6 : 0.0);
+    float _e13 = fog_exp2_(_e3, fog.density);
+    return ((fog.kind == EXP2_) ? _e13 : linear);
+}
+
 vec3 transform_point(Transform t, vec3 p) {
     vec4 q = vec4(p, 1.0);
     return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
@@ -1544,16 +1762,25 @@ vec3 transform_point(Transform t, vec3 p) {
 vec3 transform_normal(Transform t_1, vec3 n) {
     vec3 a = t_1.x.xyz;
     vec3 b = t_1.y.xyz;
-    vec3 c_1 = t_1.z.xyz;
-    vec3 bc = cross(b, c_1);
-    vec3 ca = cross(c_1, a);
+    vec3 c_3 = t_1.z.xyz;
+    vec3 bc = cross(b, c_3);
+    vec3 ca = cross(c_3, a);
     vec3 ab = cross(a, b);
     float facing = ((dot(a, bc) >= 0.0) ? 1.0 : -1.0);
     return normalize((vec3(dot(bc, n), dot(ca, n), dot(ab, n)) * facing));
 }
 
-vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
-    return (view_proj * vec4(relative_position, 1.0));
+vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
+    return (view_proj * vec4(relative_position_2, 1.0));
+}
+
+vec3 fogged(vec3 c_1, vec3 relative, Material m_1) {
+    bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
+    vec3 _e11 = _group_0_binding_0_vs.fog.color;
+    Fog _e14 = _group_0_binding_0_vs.fog;
+    float _e16 = fog_factor(_e14, relative);
+    vec3 _e20 = apply_fog(c_1, _e11, (fog_on ? _e16 : 0.0));
+    return _e20;
 }
 
 Instance instance_of(uvec4 record, uint instance) {
@@ -1609,12 +1836,12 @@ Instance find_instance(InstanceIn i_1) {
     return _e7;
 }
 
-vec4 clip_of(Instance found, vec3 relative) {
+vec4 clip_of(Instance found, vec3 relative_1) {
     if (!(found.drawn)) {
         return OUTSIDE_CLIP;
     }
     mat4x4 _e6 = _group_0_binding_0_vs.view_proj;
-    vec4 _e8 = to_clip(_e6, relative);
+    vec4 _e8 = to_clip(_e6, relative_1);
     return _e8;
 }
 
@@ -1622,7 +1849,7 @@ Transform transform_of(Instance found_1) {
     return Transform(found_1.row_x, found_1.row_y, found_1.row_z);
 }
 
-vec3 relative_position_1(Instance found_2, vec3 position) {
+vec3 relative_position_3(Instance found_2, vec3 position) {
     Transform _e1 = transform_of(found_2);
     vec3 _e3 = transform_point(_e1, position);
     return _e3;
@@ -1639,16 +1866,16 @@ vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
 }
 
 PbrMaterial pbr_material(vec3 base_color, float metalness, float roughness_1, float geometry_roughness) {
-    PbrMaterial m_1 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
-    m_1.base_color = base_color;
-    m_1.diffuse = (base_color * (1.0 - metalness));
-    m_1.specular = vec3(0.04);
-    vec3 _e13 = m_1.specular;
-    m_1.specular_blended = mix(_e13, base_color, metalness);
-    m_1.specular_grazing = 1.0;
-    m_1.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
-    m_1.metalness = metalness;
-    PbrMaterial _e26 = m_1;
+    PbrMaterial m_2 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
+    m_2.base_color = base_color;
+    m_2.diffuse = (base_color * (1.0 - metalness));
+    m_2.specular = vec3(0.04);
+    vec3 _e13 = m_2.specular;
+    m_2.specular_blended = mix(_e13, base_color, metalness);
+    m_2.specular_grazing = 1.0;
+    m_2.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
+    m_2.metalness = metalness;
+    PbrMaterial _e26 = m_2;
     return _e26;
 }
 
@@ -1687,12 +1914,12 @@ vec3 brdf_lambert(vec3 diffuse) {
     return (INV_PI * diffuse);
 }
 
-Reflected direct_light(PbrMaterial m_2, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
+Reflected direct_light(PbrMaterial m_3, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
     vec3 irradiance_1 = (clamp(dot(normal_2, to_light_1), 0.0, 1.0) * light);
-    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_2.specular_blended, m_2.specular_grazing, m_2.roughness);
+    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_3.specular_blended, m_3.specular_grazing, m_3.roughness);
     float v_dot_h_2 = clamp(dot(to_view_1, normalize((to_light_1 + to_view_1))), 0.0, 1.0);
-    vec3 _e18 = f_schlick(m_2.specular, m_2.specular_grazing, v_dot_h_2);
-    vec3 _e20 = brdf_lambert(m_2.diffuse);
+    vec3 _e18 = f_schlick(m_3.specular, m_3.specular_grazing, v_dot_h_2);
+    vec3 _e20 = brdf_lambert(m_3.diffuse);
     return Reflected(((irradiance_1 * _e20) * (vec3(1.0) - _e18)), ((irradiance_1 * _e11) * compensation));
 }
 
@@ -1705,16 +1932,16 @@ Scattering multiscattering(vec3 f0_3, float f90_2, vec2 dfg_1) {
     return Scattering(single, (multi * ems));
 }
 
-vec3 indirect_diffuse(PbrMaterial m_3, vec3 irradiance, vec2 dfg_2) {
-    Scattering _e4 = multiscattering(m_3.specular, m_3.specular_grazing, dfg_2);
-    vec3 _e6 = brdf_lambert(m_3.diffuse);
+vec3 indirect_diffuse(PbrMaterial m_4, vec3 irradiance, vec2 dfg_2) {
+    Scattering _e4 = multiscattering(m_4.specular, m_4.specular_grazing, dfg_2);
+    vec3 _e6 = brdf_lambert(m_4.diffuse);
     return ((irradiance * _e6) * ((vec3(1.0) - _e4.single) - _e4.multi));
 }
 
-vec3 linear_to_srgb(vec3 c) {
-    vec3 low = (c * 12.92);
-    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
-    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
+vec3 linear_to_srgb(vec3 c_2) {
+    vec3 low = (c_2 * 12.92);
+    vec3 high = ((1.055 * pow(c_2, vec3(0.41666666))) - vec3(0.055));
+    return mix(high, low, lessThanEqual(c_2, vec3(0.0031308)));
 }
 
 void main() {
@@ -1722,7 +1949,7 @@ void main() {
     InstanceIn i = InstanceIn((uint(gl_InstanceID) + naga_vs_first_instance), uint(gl_DrawID));
     VertexOut out_ = VertexOut(vec4(0.0), vec3(0.0), vec3(0.0), 0u);
     Instance _e1 = find_instance(i);
-    vec3 _e6 = relative_position_1(_e1, v.position);
+    vec3 _e6 = relative_position_3(_e1, v.position);
     out_.relative = _e6;
     vec3 _e9 = out_.relative;
     vec4 _e10 = clip_of(_e1, _e9);
@@ -1789,12 +2016,21 @@ void main() {
 precision highp float;
 precision highp int;
 
+struct Fog {
+    vec3 color;
+    uint kind;
+    vec3 forward;
+    float density;
+    float near;
+    float far;
+};
 struct Frame {
     mat4x4 view_proj;
     vec4 camera_position;
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Fog fog;
 };
 struct Material {
     vec4 color;
@@ -1862,7 +2098,10 @@ struct VertexOut {
     vec3 normal;
     uint material;
 };
+const uint LINEAR = 1u;
+const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
+const uint NO_FOG = 4u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -1887,6 +2126,30 @@ smooth in vec3 _vs2fs_location1;
 flat in uint _vs2fs_location2;
 layout(location = 0) out vec4 _fs2p_location0;
 
+vec3 apply_fog(vec3 c, vec3 fog_color, float factor) {
+    return mix(c, fog_color, factor);
+}
+
+float fog_depth(vec3 relative_position, vec3 forward) {
+    return dot(relative_position, forward);
+}
+
+float fog_linear(float depth, float near, float far) {
+    return smoothstep(near, far, depth);
+}
+
+float fog_exp2_(float depth_1, float density) {
+    return (1.0 - exp((((-(density) * density) * depth_1) * depth_1)));
+}
+
+float fog_factor(Fog fog, vec3 relative_position_1) {
+    float _e3 = fog_depth(relative_position_1, fog.forward);
+    float _e6 = fog_linear(_e3, fog.near, fog.far);
+    float linear = ((fog.kind == LINEAR) ? _e6 : 0.0);
+    float _e13 = fog_exp2_(_e3, fog.density);
+    return ((fog.kind == EXP2_) ? _e13 : linear);
+}
+
 vec3 transform_point(Transform t, vec3 p) {
     vec4 q = vec4(p, 1.0);
     return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
@@ -1895,16 +2158,16 @@ vec3 transform_point(Transform t, vec3 p) {
 vec3 transform_normal(Transform t_1, vec3 n) {
     vec3 a = t_1.x.xyz;
     vec3 b = t_1.y.xyz;
-    vec3 c_1 = t_1.z.xyz;
-    vec3 bc = cross(b, c_1);
-    vec3 ca = cross(c_1, a);
+    vec3 c_3 = t_1.z.xyz;
+    vec3 bc = cross(b, c_3);
+    vec3 ca = cross(c_3, a);
     vec3 ab = cross(a, b);
     float facing = ((dot(a, bc) >= 0.0) ? 1.0 : -1.0);
     return normalize((vec3(dot(bc, n), dot(ca, n), dot(ab, n)) * facing));
 }
 
-vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
-    return (view_proj * vec4(relative_position, 1.0));
+vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
+    return (view_proj * vec4(relative_position_2, 1.0));
 }
 
 Material material_of(uint id) {
@@ -1929,12 +2192,21 @@ Material material_of(uint id) {
     return _e50;
 }
 
-vec4 clip_of(Instance found, vec3 relative) {
+vec3 fogged(vec3 c_1, vec3 relative, Material m_1) {
+    bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
+    vec3 _e11 = _group_0_binding_0_fs.fog.color;
+    Fog _e14 = _group_0_binding_0_fs.fog;
+    float _e16 = fog_factor(_e14, relative);
+    vec3 _e20 = apply_fog(c_1, _e11, (fog_on ? _e16 : 0.0));
+    return _e20;
+}
+
+vec4 clip_of(Instance found, vec3 relative_1) {
     if (!(found.drawn)) {
         return OUTSIDE_CLIP;
     }
     mat4x4 _e6 = _group_0_binding_0_fs.view_proj;
-    vec4 _e8 = to_clip(_e6, relative);
+    vec4 _e8 = to_clip(_e6, relative_1);
     return _e8;
 }
 
@@ -1942,7 +2214,7 @@ Transform transform_of(Instance found_1) {
     return Transform(found_1.row_x, found_1.row_y, found_1.row_z);
 }
 
-vec3 relative_position_1(Instance found_2, vec3 position) {
+vec3 relative_position_3(Instance found_2, vec3 position) {
     Transform _e1 = transform_of(found_2);
     vec3 _e3 = transform_point(_e1, position);
     return _e3;
@@ -1965,10 +2237,10 @@ vec2 dfg_lut(float n_dot_v, float roughness) {
     vec4 _e36 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(high.x, low.y)), 0);
     vec2 b_1 = _e36.xy;
     vec4 _e43 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(low.x, high.y)), 0);
-    vec2 c_2 = _e43.xy;
+    vec2 c_4 = _e43.xy;
     vec4 _e47 = texelFetch(_group_0_binding_3_fs, ivec2(high), 0);
     vec2 d = _e47.xy;
-    return mix(mix(a_1, b_1, t_2.x), mix(c_2, d, t_2.x), t_2.y);
+    return mix(mix(a_1, b_1, t_2.x), mix(c_4, d, t_2.x), t_2.y);
 }
 
 vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
@@ -1976,16 +2248,16 @@ vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
 }
 
 PbrMaterial pbr_material(vec3 base_color, float metalness, float roughness_1, float geometry_roughness) {
-    PbrMaterial m_1 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
-    m_1.base_color = base_color;
-    m_1.diffuse = (base_color * (1.0 - metalness));
-    m_1.specular = vec3(0.04);
-    vec3 _e13 = m_1.specular;
-    m_1.specular_blended = mix(_e13, base_color, metalness);
-    m_1.specular_grazing = 1.0;
-    m_1.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
-    m_1.metalness = metalness;
-    PbrMaterial _e26 = m_1;
+    PbrMaterial m_2 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
+    m_2.base_color = base_color;
+    m_2.diffuse = (base_color * (1.0 - metalness));
+    m_2.specular = vec3(0.04);
+    vec3 _e13 = m_2.specular;
+    m_2.specular_blended = mix(_e13, base_color, metalness);
+    m_2.specular_grazing = 1.0;
+    m_2.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
+    m_2.metalness = metalness;
+    PbrMaterial _e26 = m_2;
     return _e26;
 }
 
@@ -2024,12 +2296,12 @@ vec3 brdf_lambert(vec3 diffuse) {
     return (INV_PI * diffuse);
 }
 
-Reflected direct_light(PbrMaterial m_2, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
+Reflected direct_light(PbrMaterial m_3, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
     vec3 irradiance_1 = (clamp(dot(normal_2, to_light_1), 0.0, 1.0) * light);
-    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_2.specular_blended, m_2.specular_grazing, m_2.roughness);
+    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_3.specular_blended, m_3.specular_grazing, m_3.roughness);
     float v_dot_h_2 = clamp(dot(to_view_1, normalize((to_light_1 + to_view_1))), 0.0, 1.0);
-    vec3 _e18 = f_schlick(m_2.specular, m_2.specular_grazing, v_dot_h_2);
-    vec3 _e20 = brdf_lambert(m_2.diffuse);
+    vec3 _e18 = f_schlick(m_3.specular, m_3.specular_grazing, v_dot_h_2);
+    vec3 _e20 = brdf_lambert(m_3.diffuse);
     return Reflected(((irradiance_1 * _e20) * (vec3(1.0) - _e18)), ((irradiance_1 * _e11) * compensation));
 }
 
@@ -2042,18 +2314,18 @@ Scattering multiscattering(vec3 f0_3, float f90_2, vec2 dfg_1) {
     return Scattering(single, (multi * ems));
 }
 
-vec3 indirect_diffuse(PbrMaterial m_3, vec3 irradiance, vec2 dfg_2) {
-    Scattering _e4 = multiscattering(m_3.specular, m_3.specular_grazing, dfg_2);
-    vec3 _e6 = brdf_lambert(m_3.diffuse);
+vec3 indirect_diffuse(PbrMaterial m_4, vec3 irradiance, vec2 dfg_2) {
+    Scattering _e4 = multiscattering(m_4.specular, m_4.specular_grazing, dfg_2);
+    vec3 _e6 = brdf_lambert(m_4.diffuse);
     return ((irradiance * _e6) * ((vec3(1.0) - _e4.single) - _e4.multi));
 }
 
-float sun_shadow(vec3 relative_1, vec3 normal_3) {
+float sun_shadow(vec3 relative_2, vec3 normal_3) {
     uint cascade = 0u;
     bool local = false;
     vec2 uv = vec2(0.0);
     vec4 _e4 = _group_0_binding_6_fs.forward;
-    float along = dot(relative_1, _e4.xyz);
+    float along = dot(relative_2, _e4.xyz);
     float _e10 = _group_0_binding_6_fs.forward.w;
     uint count = uint(_e10);
     while(true) {
@@ -2081,7 +2353,7 @@ float sun_shadow(vec3 relative_1, vec3 normal_3) {
     }
     uint _e34 = cascade;
     float _e36 = _group_0_binding_6_fs.normal_offsets[_e34];
-    vec3 moved = (relative_1 + (normal_3 * _e36));
+    vec3 moved = (relative_2 + (normal_3 * _e36));
     uint _e41 = cascade;
     mat4x4 _e43 = _group_0_binding_6_fs.view_proj[_e41];
     vec4 clip = (_e43 * vec4(moved, 1.0));
@@ -2090,33 +2362,33 @@ float sun_shadow(vec3 relative_1, vec3 normal_3) {
     uv.y = (1.0 - _e58);
     uint _e64 = cascade;
     float _e66 = _group_0_binding_6_fs.depth_biases[_e64];
-    float depth = (clip.z + _e66);
+    float depth_2 = (clip.z + _e66);
     vec2 _e70 = uv;
     uint _e71 = cascade;
-    float lit = textureGrad(_group_0_binding_4_fs, vec4(_e70, _e71, depth), vec2(0.0), vec2(0.0));
+    float lit = textureGrad(_group_0_binding_4_fs, vec4(_e70, _e71, depth_2), vec2(0.0), vec2(0.0));
     float end = _group_0_binding_6_fs.ends[(count - 1u)];
     return mix(lit, 1.0, smoothstep((end * 0.9), end, along));
 }
 
-vec3 linear_to_srgb(vec3 c) {
-    vec3 low_1 = (c * 12.92);
-    vec3 high_1 = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
-    return mix(high_1, low_1, lessThanEqual(c, vec3(0.0031308)));
+vec3 linear_to_srgb(vec3 c_2) {
+    vec3 low_1 = (c_2 * 12.92);
+    vec3 high_1 = ((1.055 * pow(c_2, vec3(0.41666666))) - vec3(0.055));
+    return mix(high_1, low_1, lessThanEqual(c_2, vec3(0.0031308)));
 }
 
-vec3 light_surface(PbrMaterial m_4, vec3 relative_2, vec3 normal_4, vec3 to_view_2, vec2 dfg_3) {
+vec3 light_surface(PbrMaterial m_5, vec3 relative_3, vec3 normal_4, vec3 to_view_2, vec2 dfg_3) {
     vec3 sun_color = vec3(0.0);
-    vec3 _e3 = multiscatter_compensation(m_4.specular_blended, dfg_3);
+    vec3 _e3 = multiscatter_compensation(m_5.specular_blended, dfg_3);
     vec4 _e6 = _group_0_binding_0_fs.sun_color;
     sun_color = _e6.xyz;
     vec3 _e9 = sun_color;
-    float _e12 = sun_shadow(relative_2, normal_4);
+    float _e12 = sun_shadow(relative_3, normal_4);
     sun_color = (_e9 * _e12);
     vec4 _e16 = _group_0_binding_0_fs.sun_direction;
     vec3 _e19 = sun_color;
-    Reflected _e21 = direct_light(m_4, normal_4, to_view_2, -(_e16.xyz), _e19, _e3);
+    Reflected _e21 = direct_light(m_5, normal_4, to_view_2, -(_e16.xyz), _e19, _e3);
     vec4 _e24 = _group_0_binding_0_fs.ambient;
-    vec3 _e26 = indirect_diffuse(m_4, _e24.xyz, dfg_3);
+    vec3 _e26 = indirect_diffuse(m_5, _e24.xyz, dfg_3);
     return ((_e21.diffuse + _e21.specular) + _e26);
 }
 
@@ -2153,8 +2425,9 @@ void main() {
     if ((_e75 < _e2.emissive.w)) {
         discard;
     }
-    vec3 _e79 = linear_to_srgb(outgoing);
-    _fs2p_location0 = vec4(_e79, 1.0);
+    vec3 _e80 = fogged(outgoing, in_.relative, _e2);
+    vec3 _e81 = linear_to_srgb(_e80);
+    _fs2p_location0 = vec4(_e81, 1.0);
     return;
 }
 `,
@@ -2212,12 +2485,21 @@ precision highp int;
 
 uniform uint naga_vs_first_instance;
 
+struct Fog {
+    vec3 color;
+    uint kind;
+    vec3 forward;
+    float density;
+    float near;
+    float far;
+};
 struct Frame {
     mat4x4 view_proj;
     vec4 camera_position;
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Fog fog;
 };
 struct Material {
     vec4 color;
@@ -2285,7 +2567,10 @@ struct VertexOut {
     vec3 normal;
     uint material;
 };
+const uint LINEAR = 1u;
+const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
+const uint NO_FOG = 4u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -2315,6 +2600,30 @@ smooth out vec3 _vs2fs_location0;
 smooth out vec3 _vs2fs_location1;
 flat out uint _vs2fs_location2;
 
+vec3 apply_fog(vec3 c, vec3 fog_color, float factor) {
+    return mix(c, fog_color, factor);
+}
+
+float fog_depth(vec3 relative_position, vec3 forward) {
+    return dot(relative_position, forward);
+}
+
+float fog_linear(float depth, float near, float far) {
+    return smoothstep(near, far, depth);
+}
+
+float fog_exp2_(float depth_1, float density) {
+    return (1.0 - exp((((-(density) * density) * depth_1) * depth_1)));
+}
+
+float fog_factor(Fog fog, vec3 relative_position_1) {
+    float _e3 = fog_depth(relative_position_1, fog.forward);
+    float _e6 = fog_linear(_e3, fog.near, fog.far);
+    float linear = ((fog.kind == LINEAR) ? _e6 : 0.0);
+    float _e13 = fog_exp2_(_e3, fog.density);
+    return ((fog.kind == EXP2_) ? _e13 : linear);
+}
+
 vec3 transform_point(Transform t, vec3 p) {
     vec4 q = vec4(p, 1.0);
     return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
@@ -2323,16 +2632,25 @@ vec3 transform_point(Transform t, vec3 p) {
 vec3 transform_normal(Transform t_1, vec3 n) {
     vec3 a = t_1.x.xyz;
     vec3 b = t_1.y.xyz;
-    vec3 c_1 = t_1.z.xyz;
-    vec3 bc = cross(b, c_1);
-    vec3 ca = cross(c_1, a);
+    vec3 c_3 = t_1.z.xyz;
+    vec3 bc = cross(b, c_3);
+    vec3 ca = cross(c_3, a);
     vec3 ab = cross(a, b);
     float facing = ((dot(a, bc) >= 0.0) ? 1.0 : -1.0);
     return normalize((vec3(dot(bc, n), dot(ca, n), dot(ab, n)) * facing));
 }
 
-vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
-    return (view_proj * vec4(relative_position, 1.0));
+vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
+    return (view_proj * vec4(relative_position_2, 1.0));
+}
+
+vec3 fogged(vec3 c_1, vec3 relative, Material m_1) {
+    bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
+    vec3 _e11 = _group_0_binding_0_vs.fog.color;
+    Fog _e14 = _group_0_binding_0_vs.fog;
+    float _e16 = fog_factor(_e14, relative);
+    vec3 _e20 = apply_fog(c_1, _e11, (fog_on ? _e16 : 0.0));
+    return _e20;
 }
 
 Instance instance_of(uvec4 record, uint instance) {
@@ -2388,12 +2706,12 @@ Instance find_instance(InstanceIn i_1) {
     return _e7;
 }
 
-vec4 clip_of(Instance found, vec3 relative) {
+vec4 clip_of(Instance found, vec3 relative_1) {
     if (!(found.drawn)) {
         return OUTSIDE_CLIP;
     }
     mat4x4 _e6 = _group_0_binding_0_vs.view_proj;
-    vec4 _e8 = to_clip(_e6, relative);
+    vec4 _e8 = to_clip(_e6, relative_1);
     return _e8;
 }
 
@@ -2401,7 +2719,7 @@ Transform transform_of(Instance found_1) {
     return Transform(found_1.row_x, found_1.row_y, found_1.row_z);
 }
 
-vec3 relative_position_1(Instance found_2, vec3 position) {
+vec3 relative_position_3(Instance found_2, vec3 position) {
     Transform _e1 = transform_of(found_2);
     vec3 _e3 = transform_point(_e1, position);
     return _e3;
@@ -2418,16 +2736,16 @@ vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
 }
 
 PbrMaterial pbr_material(vec3 base_color, float metalness, float roughness_1, float geometry_roughness) {
-    PbrMaterial m_1 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
-    m_1.base_color = base_color;
-    m_1.diffuse = (base_color * (1.0 - metalness));
-    m_1.specular = vec3(0.04);
-    vec3 _e13 = m_1.specular;
-    m_1.specular_blended = mix(_e13, base_color, metalness);
-    m_1.specular_grazing = 1.0;
-    m_1.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
-    m_1.metalness = metalness;
-    PbrMaterial _e26 = m_1;
+    PbrMaterial m_2 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
+    m_2.base_color = base_color;
+    m_2.diffuse = (base_color * (1.0 - metalness));
+    m_2.specular = vec3(0.04);
+    vec3 _e13 = m_2.specular;
+    m_2.specular_blended = mix(_e13, base_color, metalness);
+    m_2.specular_grazing = 1.0;
+    m_2.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
+    m_2.metalness = metalness;
+    PbrMaterial _e26 = m_2;
     return _e26;
 }
 
@@ -2466,12 +2784,12 @@ vec3 brdf_lambert(vec3 diffuse) {
     return (INV_PI * diffuse);
 }
 
-Reflected direct_light(PbrMaterial m_2, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
+Reflected direct_light(PbrMaterial m_3, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
     vec3 irradiance_1 = (clamp(dot(normal_2, to_light_1), 0.0, 1.0) * light);
-    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_2.specular_blended, m_2.specular_grazing, m_2.roughness);
+    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_3.specular_blended, m_3.specular_grazing, m_3.roughness);
     float v_dot_h_2 = clamp(dot(to_view_1, normalize((to_light_1 + to_view_1))), 0.0, 1.0);
-    vec3 _e18 = f_schlick(m_2.specular, m_2.specular_grazing, v_dot_h_2);
-    vec3 _e20 = brdf_lambert(m_2.diffuse);
+    vec3 _e18 = f_schlick(m_3.specular, m_3.specular_grazing, v_dot_h_2);
+    vec3 _e20 = brdf_lambert(m_3.diffuse);
     return Reflected(((irradiance_1 * _e20) * (vec3(1.0) - _e18)), ((irradiance_1 * _e11) * compensation));
 }
 
@@ -2484,16 +2802,16 @@ Scattering multiscattering(vec3 f0_3, float f90_2, vec2 dfg_1) {
     return Scattering(single, (multi * ems));
 }
 
-vec3 indirect_diffuse(PbrMaterial m_3, vec3 irradiance, vec2 dfg_2) {
-    Scattering _e4 = multiscattering(m_3.specular, m_3.specular_grazing, dfg_2);
-    vec3 _e6 = brdf_lambert(m_3.diffuse);
+vec3 indirect_diffuse(PbrMaterial m_4, vec3 irradiance, vec2 dfg_2) {
+    Scattering _e4 = multiscattering(m_4.specular, m_4.specular_grazing, dfg_2);
+    vec3 _e6 = brdf_lambert(m_4.diffuse);
     return ((irradiance * _e6) * ((vec3(1.0) - _e4.single) - _e4.multi));
 }
 
-vec3 linear_to_srgb(vec3 c) {
-    vec3 low = (c * 12.92);
-    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
-    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
+vec3 linear_to_srgb(vec3 c_2) {
+    vec3 low = (c_2 * 12.92);
+    vec3 high = ((1.055 * pow(c_2, vec3(0.41666666))) - vec3(0.055));
+    return mix(high, low, lessThanEqual(c_2, vec3(0.0031308)));
 }
 
 void main() {
@@ -2501,7 +2819,7 @@ void main() {
     InstanceIn i = InstanceIn((uint(gl_InstanceID) + naga_vs_first_instance), uint(gl_DrawID));
     VertexOut out_ = VertexOut(vec4(0.0), vec3(0.0), vec3(0.0), 0u);
     Instance _e1 = find_instance(i);
-    vec3 _e6 = relative_position_1(_e1, v.position);
+    vec3 _e6 = relative_position_3(_e1, v.position);
     out_.relative = _e6;
     vec3 _e9 = out_.relative;
     vec4 _e10 = clip_of(_e1, _e9);
@@ -2568,12 +2886,21 @@ void main() {
 precision highp float;
 precision highp int;
 
+struct Fog {
+    vec3 color;
+    uint kind;
+    vec3 forward;
+    float density;
+    float near;
+    float far;
+};
 struct Frame {
     mat4x4 view_proj;
     vec4 camera_position;
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Fog fog;
 };
 struct Material {
     vec4 color;
@@ -2641,7 +2968,10 @@ struct VertexOut {
     vec3 normal;
     uint material;
 };
+const uint LINEAR = 1u;
+const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
+const uint NO_FOG = 4u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -2666,6 +2996,30 @@ smooth in vec3 _vs2fs_location1;
 flat in uint _vs2fs_location2;
 layout(location = 0) out vec4 _fs2p_location0;
 
+vec3 apply_fog(vec3 c, vec3 fog_color, float factor) {
+    return mix(c, fog_color, factor);
+}
+
+float fog_depth(vec3 relative_position, vec3 forward) {
+    return dot(relative_position, forward);
+}
+
+float fog_linear(float depth, float near, float far) {
+    return smoothstep(near, far, depth);
+}
+
+float fog_exp2_(float depth_1, float density) {
+    return (1.0 - exp((((-(density) * density) * depth_1) * depth_1)));
+}
+
+float fog_factor(Fog fog, vec3 relative_position_1) {
+    float _e3 = fog_depth(relative_position_1, fog.forward);
+    float _e6 = fog_linear(_e3, fog.near, fog.far);
+    float linear = ((fog.kind == LINEAR) ? _e6 : 0.0);
+    float _e13 = fog_exp2_(_e3, fog.density);
+    return ((fog.kind == EXP2_) ? _e13 : linear);
+}
+
 vec3 transform_point(Transform t, vec3 p) {
     vec4 q = vec4(p, 1.0);
     return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
@@ -2674,16 +3028,16 @@ vec3 transform_point(Transform t, vec3 p) {
 vec3 transform_normal(Transform t_1, vec3 n) {
     vec3 a = t_1.x.xyz;
     vec3 b = t_1.y.xyz;
-    vec3 c_1 = t_1.z.xyz;
-    vec3 bc = cross(b, c_1);
-    vec3 ca = cross(c_1, a);
+    vec3 c_3 = t_1.z.xyz;
+    vec3 bc = cross(b, c_3);
+    vec3 ca = cross(c_3, a);
     vec3 ab = cross(a, b);
     float facing = ((dot(a, bc) >= 0.0) ? 1.0 : -1.0);
     return normalize((vec3(dot(bc, n), dot(ca, n), dot(ab, n)) * facing));
 }
 
-vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
-    return (view_proj * vec4(relative_position, 1.0));
+vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
+    return (view_proj * vec4(relative_position_2, 1.0));
 }
 
 Material material_of(uint id) {
@@ -2708,12 +3062,21 @@ Material material_of(uint id) {
     return _e50;
 }
 
-vec4 clip_of(Instance found, vec3 relative) {
+vec3 fogged(vec3 c_1, vec3 relative, Material m_1) {
+    bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
+    vec3 _e11 = _group_0_binding_0_fs.fog.color;
+    Fog _e14 = _group_0_binding_0_fs.fog;
+    float _e16 = fog_factor(_e14, relative);
+    vec3 _e20 = apply_fog(c_1, _e11, (fog_on ? _e16 : 0.0));
+    return _e20;
+}
+
+vec4 clip_of(Instance found, vec3 relative_1) {
     if (!(found.drawn)) {
         return OUTSIDE_CLIP;
     }
     mat4x4 _e6 = _group_0_binding_0_fs.view_proj;
-    vec4 _e8 = to_clip(_e6, relative);
+    vec4 _e8 = to_clip(_e6, relative_1);
     return _e8;
 }
 
@@ -2721,7 +3084,7 @@ Transform transform_of(Instance found_1) {
     return Transform(found_1.row_x, found_1.row_y, found_1.row_z);
 }
 
-vec3 relative_position_1(Instance found_2, vec3 position) {
+vec3 relative_position_3(Instance found_2, vec3 position) {
     Transform _e1 = transform_of(found_2);
     vec3 _e3 = transform_point(_e1, position);
     return _e3;
@@ -2744,10 +3107,10 @@ vec2 dfg_lut(float n_dot_v, float roughness) {
     vec4 _e36 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(high.x, low.y)), 0);
     vec2 b_1 = _e36.xy;
     vec4 _e43 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(low.x, high.y)), 0);
-    vec2 c_2 = _e43.xy;
+    vec2 c_4 = _e43.xy;
     vec4 _e47 = texelFetch(_group_0_binding_3_fs, ivec2(high), 0);
     vec2 d = _e47.xy;
-    return mix(mix(a_1, b_1, t_2.x), mix(c_2, d, t_2.x), t_2.y);
+    return mix(mix(a_1, b_1, t_2.x), mix(c_4, d, t_2.x), t_2.y);
 }
 
 vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
@@ -2755,16 +3118,16 @@ vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
 }
 
 PbrMaterial pbr_material(vec3 base_color, float metalness, float roughness_1, float geometry_roughness) {
-    PbrMaterial m_1 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
-    m_1.base_color = base_color;
-    m_1.diffuse = (base_color * (1.0 - metalness));
-    m_1.specular = vec3(0.04);
-    vec3 _e13 = m_1.specular;
-    m_1.specular_blended = mix(_e13, base_color, metalness);
-    m_1.specular_grazing = 1.0;
-    m_1.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
-    m_1.metalness = metalness;
-    PbrMaterial _e26 = m_1;
+    PbrMaterial m_2 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
+    m_2.base_color = base_color;
+    m_2.diffuse = (base_color * (1.0 - metalness));
+    m_2.specular = vec3(0.04);
+    vec3 _e13 = m_2.specular;
+    m_2.specular_blended = mix(_e13, base_color, metalness);
+    m_2.specular_grazing = 1.0;
+    m_2.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
+    m_2.metalness = metalness;
+    PbrMaterial _e26 = m_2;
     return _e26;
 }
 
@@ -2803,12 +3166,12 @@ vec3 brdf_lambert(vec3 diffuse) {
     return (INV_PI * diffuse);
 }
 
-Reflected direct_light(PbrMaterial m_2, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
+Reflected direct_light(PbrMaterial m_3, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
     vec3 irradiance_1 = (clamp(dot(normal_2, to_light_1), 0.0, 1.0) * light);
-    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_2.specular_blended, m_2.specular_grazing, m_2.roughness);
+    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_3.specular_blended, m_3.specular_grazing, m_3.roughness);
     float v_dot_h_2 = clamp(dot(to_view_1, normalize((to_light_1 + to_view_1))), 0.0, 1.0);
-    vec3 _e18 = f_schlick(m_2.specular, m_2.specular_grazing, v_dot_h_2);
-    vec3 _e20 = brdf_lambert(m_2.diffuse);
+    vec3 _e18 = f_schlick(m_3.specular, m_3.specular_grazing, v_dot_h_2);
+    vec3 _e20 = brdf_lambert(m_3.diffuse);
     return Reflected(((irradiance_1 * _e20) * (vec3(1.0) - _e18)), ((irradiance_1 * _e11) * compensation));
 }
 
@@ -2821,18 +3184,18 @@ Scattering multiscattering(vec3 f0_3, float f90_2, vec2 dfg_1) {
     return Scattering(single, (multi * ems));
 }
 
-vec3 indirect_diffuse(PbrMaterial m_3, vec3 irradiance, vec2 dfg_2) {
-    Scattering _e4 = multiscattering(m_3.specular, m_3.specular_grazing, dfg_2);
-    vec3 _e6 = brdf_lambert(m_3.diffuse);
+vec3 indirect_diffuse(PbrMaterial m_4, vec3 irradiance, vec2 dfg_2) {
+    Scattering _e4 = multiscattering(m_4.specular, m_4.specular_grazing, dfg_2);
+    vec3 _e6 = brdf_lambert(m_4.diffuse);
     return ((irradiance * _e6) * ((vec3(1.0) - _e4.single) - _e4.multi));
 }
 
-float sun_shadow(vec3 relative_1, vec3 normal_3) {
+float sun_shadow(vec3 relative_2, vec3 normal_3) {
     uint cascade = 0u;
     bool local = false;
     vec2 uv = vec2(0.0);
     vec4 _e4 = _group_0_binding_6_fs.forward;
-    float along = dot(relative_1, _e4.xyz);
+    float along = dot(relative_2, _e4.xyz);
     float _e10 = _group_0_binding_6_fs.forward.w;
     uint count = uint(_e10);
     while(true) {
@@ -2860,7 +3223,7 @@ float sun_shadow(vec3 relative_1, vec3 normal_3) {
     }
     uint _e34 = cascade;
     float _e36 = _group_0_binding_6_fs.normal_offsets[_e34];
-    vec3 moved = (relative_1 + (normal_3 * _e36));
+    vec3 moved = (relative_2 + (normal_3 * _e36));
     uint _e41 = cascade;
     mat4x4 _e43 = _group_0_binding_6_fs.view_proj[_e41];
     vec4 clip = (_e43 * vec4(moved, 1.0));
@@ -2869,33 +3232,33 @@ float sun_shadow(vec3 relative_1, vec3 normal_3) {
     uv.y = (1.0 - _e58);
     uint _e64 = cascade;
     float _e66 = _group_0_binding_6_fs.depth_biases[_e64];
-    float depth = (clip.z + _e66);
+    float depth_2 = (clip.z + _e66);
     vec2 _e70 = uv;
     uint _e71 = cascade;
-    float lit = textureGrad(_group_0_binding_4_fs, vec4(_e70, _e71, depth), vec2(0.0), vec2(0.0));
+    float lit = textureGrad(_group_0_binding_4_fs, vec4(_e70, _e71, depth_2), vec2(0.0), vec2(0.0));
     float end = _group_0_binding_6_fs.ends[(count - 1u)];
     return mix(lit, 1.0, smoothstep((end * 0.9), end, along));
 }
 
-vec3 linear_to_srgb(vec3 c) {
-    vec3 low_1 = (c * 12.92);
-    vec3 high_1 = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
-    return mix(high_1, low_1, lessThanEqual(c, vec3(0.0031308)));
+vec3 linear_to_srgb(vec3 c_2) {
+    vec3 low_1 = (c_2 * 12.92);
+    vec3 high_1 = ((1.055 * pow(c_2, vec3(0.41666666))) - vec3(0.055));
+    return mix(high_1, low_1, lessThanEqual(c_2, vec3(0.0031308)));
 }
 
-vec3 light_surface(PbrMaterial m_4, vec3 relative_2, vec3 normal_4, vec3 to_view_2, vec2 dfg_3) {
+vec3 light_surface(PbrMaterial m_5, vec3 relative_3, vec3 normal_4, vec3 to_view_2, vec2 dfg_3) {
     vec3 sun_color = vec3(0.0);
-    vec3 _e3 = multiscatter_compensation(m_4.specular_blended, dfg_3);
+    vec3 _e3 = multiscatter_compensation(m_5.specular_blended, dfg_3);
     vec4 _e6 = _group_0_binding_0_fs.sun_color;
     sun_color = _e6.xyz;
     vec3 _e9 = sun_color;
-    float _e12 = sun_shadow(relative_2, normal_4);
+    float _e12 = sun_shadow(relative_3, normal_4);
     sun_color = (_e9 * _e12);
     vec4 _e16 = _group_0_binding_0_fs.sun_direction;
     vec3 _e19 = sun_color;
-    Reflected _e21 = direct_light(m_4, normal_4, to_view_2, -(_e16.xyz), _e19, _e3);
+    Reflected _e21 = direct_light(m_5, normal_4, to_view_2, -(_e16.xyz), _e19, _e3);
     vec4 _e24 = _group_0_binding_0_fs.ambient;
-    vec3 _e26 = indirect_diffuse(m_4, _e24.xyz, dfg_3);
+    vec3 _e26 = indirect_diffuse(m_5, _e24.xyz, dfg_3);
     return ((_e21.diffuse + _e21.specular) + _e26);
 }
 
@@ -2928,8 +3291,9 @@ void main() {
     vec3 emitted = (_e2.emissive.xyz * _e2.strengths.w);
     vec3 _e73 = light_surface(_e62, in_.relative, normal_5, to_view_3, _e66);
     vec3 outgoing = (_e73 + emitted);
-    vec3 _e75 = linear_to_srgb(outgoing);
-    _fs2p_location0 = vec4(_e75, 1.0);
+    vec3 _e76 = fogged(outgoing, in_.relative, _e2);
+    vec3 _e77 = linear_to_srgb(_e76);
+    _fs2p_location0 = vec4(_e77, 1.0);
     return;
 }
 `,
@@ -2987,12 +3351,21 @@ precision highp int;
 
 uniform uint naga_vs_first_instance;
 
+struct Fog {
+    vec3 color;
+    uint kind;
+    vec3 forward;
+    float density;
+    float near;
+    float far;
+};
 struct Frame {
     mat4x4 view_proj;
     vec4 camera_position;
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Fog fog;
 };
 struct Material {
     vec4 color;
@@ -3055,7 +3428,10 @@ struct VertexOut {
     uint material;
     vec4 vertex_color;
 };
+const uint LINEAR = 1u;
+const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
+const uint NO_FOG = 4u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -3087,6 +3463,30 @@ smooth out vec3 _vs2fs_location1;
 flat out uint _vs2fs_location2;
 smooth out vec4 _vs2fs_location3;
 
+vec3 apply_fog(vec3 c, vec3 fog_color, float factor) {
+    return mix(c, fog_color, factor);
+}
+
+float fog_depth(vec3 relative_position, vec3 forward) {
+    return dot(relative_position, forward);
+}
+
+float fog_linear(float depth, float near, float far) {
+    return smoothstep(near, far, depth);
+}
+
+float fog_exp2_(float depth_1, float density) {
+    return (1.0 - exp((((-(density) * density) * depth_1) * depth_1)));
+}
+
+float fog_factor(Fog fog, vec3 relative_position_1) {
+    float _e3 = fog_depth(relative_position_1, fog.forward);
+    float _e6 = fog_linear(_e3, fog.near, fog.far);
+    float linear = ((fog.kind == LINEAR) ? _e6 : 0.0);
+    float _e13 = fog_exp2_(_e3, fog.density);
+    return ((fog.kind == EXP2_) ? _e13 : linear);
+}
+
 vec3 transform_point(Transform t, vec3 p) {
     vec4 q = vec4(p, 1.0);
     return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
@@ -3095,16 +3495,25 @@ vec3 transform_point(Transform t, vec3 p) {
 vec3 transform_normal(Transform t_1, vec3 n) {
     vec3 a = t_1.x.xyz;
     vec3 b = t_1.y.xyz;
-    vec3 c_1 = t_1.z.xyz;
-    vec3 bc = cross(b, c_1);
-    vec3 ca = cross(c_1, a);
+    vec3 c_3 = t_1.z.xyz;
+    vec3 bc = cross(b, c_3);
+    vec3 ca = cross(c_3, a);
     vec3 ab = cross(a, b);
     float facing = ((dot(a, bc) >= 0.0) ? 1.0 : -1.0);
     return normalize((vec3(dot(bc, n), dot(ca, n), dot(ab, n)) * facing));
 }
 
-vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
-    return (view_proj * vec4(relative_position, 1.0));
+vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
+    return (view_proj * vec4(relative_position_2, 1.0));
+}
+
+vec3 fogged(vec3 c_1, vec3 relative, Material m_1) {
+    bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
+    vec3 _e11 = _group_0_binding_0_vs.fog.color;
+    Fog _e14 = _group_0_binding_0_vs.fog;
+    float _e16 = fog_factor(_e14, relative);
+    vec3 _e20 = apply_fog(c_1, _e11, (fog_on ? _e16 : 0.0));
+    return _e20;
 }
 
 Instance instance_of(uvec4 record, uint instance) {
@@ -3160,12 +3569,12 @@ Instance find_instance(InstanceIn i_1) {
     return _e7;
 }
 
-vec4 clip_of(Instance found, vec3 relative) {
+vec4 clip_of(Instance found, vec3 relative_1) {
     if (!(found.drawn)) {
         return OUTSIDE_CLIP;
     }
     mat4x4 _e6 = _group_0_binding_0_vs.view_proj;
-    vec4 _e8 = to_clip(_e6, relative);
+    vec4 _e8 = to_clip(_e6, relative_1);
     return _e8;
 }
 
@@ -3173,7 +3582,7 @@ Transform transform_of(Instance found_1) {
     return Transform(found_1.row_x, found_1.row_y, found_1.row_z);
 }
 
-vec3 relative_position_1(Instance found_2, vec3 position) {
+vec3 relative_position_3(Instance found_2, vec3 position) {
     Transform _e1 = transform_of(found_2);
     vec3 _e3 = transform_point(_e1, position);
     return _e3;
@@ -3190,16 +3599,16 @@ vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
 }
 
 PbrMaterial pbr_material(vec3 base_color, float metalness, float roughness_1, float geometry_roughness) {
-    PbrMaterial m_1 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
-    m_1.base_color = base_color;
-    m_1.diffuse = (base_color * (1.0 - metalness));
-    m_1.specular = vec3(0.04);
-    vec3 _e13 = m_1.specular;
-    m_1.specular_blended = mix(_e13, base_color, metalness);
-    m_1.specular_grazing = 1.0;
-    m_1.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
-    m_1.metalness = metalness;
-    PbrMaterial _e26 = m_1;
+    PbrMaterial m_2 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
+    m_2.base_color = base_color;
+    m_2.diffuse = (base_color * (1.0 - metalness));
+    m_2.specular = vec3(0.04);
+    vec3 _e13 = m_2.specular;
+    m_2.specular_blended = mix(_e13, base_color, metalness);
+    m_2.specular_grazing = 1.0;
+    m_2.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
+    m_2.metalness = metalness;
+    PbrMaterial _e26 = m_2;
     return _e26;
 }
 
@@ -3238,12 +3647,12 @@ vec3 brdf_lambert(vec3 diffuse) {
     return (INV_PI * diffuse);
 }
 
-Reflected direct_light(PbrMaterial m_2, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
+Reflected direct_light(PbrMaterial m_3, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
     vec3 irradiance_1 = (clamp(dot(normal_2, to_light_1), 0.0, 1.0) * light);
-    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_2.specular_blended, m_2.specular_grazing, m_2.roughness);
+    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_3.specular_blended, m_3.specular_grazing, m_3.roughness);
     float v_dot_h_2 = clamp(dot(to_view_1, normalize((to_light_1 + to_view_1))), 0.0, 1.0);
-    vec3 _e18 = f_schlick(m_2.specular, m_2.specular_grazing, v_dot_h_2);
-    vec3 _e20 = brdf_lambert(m_2.diffuse);
+    vec3 _e18 = f_schlick(m_3.specular, m_3.specular_grazing, v_dot_h_2);
+    vec3 _e20 = brdf_lambert(m_3.diffuse);
     return Reflected(((irradiance_1 * _e20) * (vec3(1.0) - _e18)), ((irradiance_1 * _e11) * compensation));
 }
 
@@ -3256,28 +3665,28 @@ Scattering multiscattering(vec3 f0_3, float f90_2, vec2 dfg_1) {
     return Scattering(single, (multi * ems));
 }
 
-vec3 indirect_diffuse(PbrMaterial m_3, vec3 irradiance, vec2 dfg_2) {
-    Scattering _e4 = multiscattering(m_3.specular, m_3.specular_grazing, dfg_2);
-    vec3 _e6 = brdf_lambert(m_3.diffuse);
+vec3 indirect_diffuse(PbrMaterial m_4, vec3 irradiance, vec2 dfg_2) {
+    Scattering _e4 = multiscattering(m_4.specular, m_4.specular_grazing, dfg_2);
+    vec3 _e6 = brdf_lambert(m_4.diffuse);
     return ((irradiance * _e6) * ((vec3(1.0) - _e4.single) - _e4.multi));
 }
 
-vec3 linear_to_srgb(vec3 c) {
-    vec3 low = (c * 12.92);
-    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
-    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
+vec3 linear_to_srgb(vec3 c_2) {
+    vec3 low = (c_2 * 12.92);
+    vec3 high = ((1.055 * pow(c_2, vec3(0.41666666))) - vec3(0.055));
+    return mix(high, low, lessThanEqual(c_2, vec3(0.0031308)));
 }
 
-vec3 light_surface(PbrMaterial m_4, vec3 relative_1, vec3 normal_3, vec3 to_view_2, vec2 dfg_3) {
+vec3 light_surface(PbrMaterial m_5, vec3 relative_2, vec3 normal_3, vec3 to_view_2, vec2 dfg_3) {
     vec3 sun_color = vec3(0.0);
-    vec3 _e3 = multiscatter_compensation(m_4.specular_blended, dfg_3);
+    vec3 _e3 = multiscatter_compensation(m_5.specular_blended, dfg_3);
     vec4 _e6 = _group_0_binding_0_vs.sun_color;
     sun_color = _e6.xyz;
     vec4 _e11 = _group_0_binding_0_vs.sun_direction;
     vec3 _e14 = sun_color;
-    Reflected _e17 = direct_light(m_4, normal_3, to_view_2, -(_e11.xyz), _e14, _e3);
+    Reflected _e17 = direct_light(m_5, normal_3, to_view_2, -(_e11.xyz), _e14, _e3);
     vec4 _e20 = _group_0_binding_0_vs.ambient;
-    vec3 _e22 = indirect_diffuse(m_4, _e20.xyz, dfg_3);
+    vec3 _e22 = indirect_diffuse(m_5, _e20.xyz, dfg_3);
     return ((_e17.diffuse + _e17.specular) + _e22);
 }
 
@@ -3286,7 +3695,7 @@ void main() {
     InstanceIn i = InstanceIn((uint(gl_InstanceID) + naga_vs_first_instance), uint(gl_DrawID));
     VertexOut out_ = VertexOut(vec4(0.0), vec3(0.0), vec3(0.0), 0u, vec4(0.0));
     Instance _e1 = find_instance(i);
-    vec3 _e6 = relative_position_1(_e1, v.position);
+    vec3 _e6 = relative_position_3(_e1, v.position);
     out_.relative = _e6;
     vec3 _e9 = out_.relative;
     vec4 _e10 = clip_of(_e1, _e9);
@@ -3355,12 +3764,21 @@ void main() {
 precision highp float;
 precision highp int;
 
+struct Fog {
+    vec3 color;
+    uint kind;
+    vec3 forward;
+    float density;
+    float near;
+    float far;
+};
 struct Frame {
     mat4x4 view_proj;
     vec4 camera_position;
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Fog fog;
 };
 struct Material {
     vec4 color;
@@ -3423,7 +3841,10 @@ struct VertexOut {
     uint material;
     vec4 vertex_color;
 };
+const uint LINEAR = 1u;
+const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
+const uint NO_FOG = 4u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -3445,6 +3866,30 @@ flat in uint _vs2fs_location2;
 smooth in vec4 _vs2fs_location3;
 layout(location = 0) out vec4 _fs2p_location0;
 
+vec3 apply_fog(vec3 c, vec3 fog_color, float factor) {
+    return mix(c, fog_color, factor);
+}
+
+float fog_depth(vec3 relative_position, vec3 forward) {
+    return dot(relative_position, forward);
+}
+
+float fog_linear(float depth, float near, float far) {
+    return smoothstep(near, far, depth);
+}
+
+float fog_exp2_(float depth_1, float density) {
+    return (1.0 - exp((((-(density) * density) * depth_1) * depth_1)));
+}
+
+float fog_factor(Fog fog, vec3 relative_position_1) {
+    float _e3 = fog_depth(relative_position_1, fog.forward);
+    float _e6 = fog_linear(_e3, fog.near, fog.far);
+    float linear = ((fog.kind == LINEAR) ? _e6 : 0.0);
+    float _e13 = fog_exp2_(_e3, fog.density);
+    return ((fog.kind == EXP2_) ? _e13 : linear);
+}
+
 vec3 transform_point(Transform t, vec3 p) {
     vec4 q = vec4(p, 1.0);
     return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
@@ -3453,16 +3898,16 @@ vec3 transform_point(Transform t, vec3 p) {
 vec3 transform_normal(Transform t_1, vec3 n) {
     vec3 a = t_1.x.xyz;
     vec3 b = t_1.y.xyz;
-    vec3 c_1 = t_1.z.xyz;
-    vec3 bc = cross(b, c_1);
-    vec3 ca = cross(c_1, a);
+    vec3 c_3 = t_1.z.xyz;
+    vec3 bc = cross(b, c_3);
+    vec3 ca = cross(c_3, a);
     vec3 ab = cross(a, b);
     float facing = ((dot(a, bc) >= 0.0) ? 1.0 : -1.0);
     return normalize((vec3(dot(bc, n), dot(ca, n), dot(ab, n)) * facing));
 }
 
-vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
-    return (view_proj * vec4(relative_position, 1.0));
+vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
+    return (view_proj * vec4(relative_position_2, 1.0));
 }
 
 Material material_of(uint id) {
@@ -3487,12 +3932,21 @@ Material material_of(uint id) {
     return _e50;
 }
 
-vec4 clip_of(Instance found, vec3 relative) {
+vec3 fogged(vec3 c_1, vec3 relative, Material m_1) {
+    bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
+    vec3 _e11 = _group_0_binding_0_fs.fog.color;
+    Fog _e14 = _group_0_binding_0_fs.fog;
+    float _e16 = fog_factor(_e14, relative);
+    vec3 _e20 = apply_fog(c_1, _e11, (fog_on ? _e16 : 0.0));
+    return _e20;
+}
+
+vec4 clip_of(Instance found, vec3 relative_1) {
     if (!(found.drawn)) {
         return OUTSIDE_CLIP;
     }
     mat4x4 _e6 = _group_0_binding_0_fs.view_proj;
-    vec4 _e8 = to_clip(_e6, relative);
+    vec4 _e8 = to_clip(_e6, relative_1);
     return _e8;
 }
 
@@ -3500,7 +3954,7 @@ Transform transform_of(Instance found_1) {
     return Transform(found_1.row_x, found_1.row_y, found_1.row_z);
 }
 
-vec3 relative_position_1(Instance found_2, vec3 position) {
+vec3 relative_position_3(Instance found_2, vec3 position) {
     Transform _e1 = transform_of(found_2);
     vec3 _e3 = transform_point(_e1, position);
     return _e3;
@@ -3523,10 +3977,10 @@ vec2 dfg_lut(float n_dot_v, float roughness) {
     vec4 _e36 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(high.x, low.y)), 0);
     vec2 b_1 = _e36.xy;
     vec4 _e43 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(low.x, high.y)), 0);
-    vec2 c_2 = _e43.xy;
+    vec2 c_4 = _e43.xy;
     vec4 _e47 = texelFetch(_group_0_binding_3_fs, ivec2(high), 0);
     vec2 d = _e47.xy;
-    return mix(mix(a_1, b_1, t_2.x), mix(c_2, d, t_2.x), t_2.y);
+    return mix(mix(a_1, b_1, t_2.x), mix(c_4, d, t_2.x), t_2.y);
 }
 
 vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
@@ -3534,16 +3988,16 @@ vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
 }
 
 PbrMaterial pbr_material(vec3 base_color, float metalness, float roughness_1, float geometry_roughness) {
-    PbrMaterial m_1 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
-    m_1.base_color = base_color;
-    m_1.diffuse = (base_color * (1.0 - metalness));
-    m_1.specular = vec3(0.04);
-    vec3 _e13 = m_1.specular;
-    m_1.specular_blended = mix(_e13, base_color, metalness);
-    m_1.specular_grazing = 1.0;
-    m_1.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
-    m_1.metalness = metalness;
-    PbrMaterial _e26 = m_1;
+    PbrMaterial m_2 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
+    m_2.base_color = base_color;
+    m_2.diffuse = (base_color * (1.0 - metalness));
+    m_2.specular = vec3(0.04);
+    vec3 _e13 = m_2.specular;
+    m_2.specular_blended = mix(_e13, base_color, metalness);
+    m_2.specular_grazing = 1.0;
+    m_2.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
+    m_2.metalness = metalness;
+    PbrMaterial _e26 = m_2;
     return _e26;
 }
 
@@ -3582,12 +4036,12 @@ vec3 brdf_lambert(vec3 diffuse) {
     return (INV_PI * diffuse);
 }
 
-Reflected direct_light(PbrMaterial m_2, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
+Reflected direct_light(PbrMaterial m_3, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
     vec3 irradiance_1 = (clamp(dot(normal_2, to_light_1), 0.0, 1.0) * light);
-    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_2.specular_blended, m_2.specular_grazing, m_2.roughness);
+    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_3.specular_blended, m_3.specular_grazing, m_3.roughness);
     float v_dot_h_2 = clamp(dot(to_view_1, normalize((to_light_1 + to_view_1))), 0.0, 1.0);
-    vec3 _e18 = f_schlick(m_2.specular, m_2.specular_grazing, v_dot_h_2);
-    vec3 _e20 = brdf_lambert(m_2.diffuse);
+    vec3 _e18 = f_schlick(m_3.specular, m_3.specular_grazing, v_dot_h_2);
+    vec3 _e20 = brdf_lambert(m_3.diffuse);
     return Reflected(((irradiance_1 * _e20) * (vec3(1.0) - _e18)), ((irradiance_1 * _e11) * compensation));
 }
 
@@ -3600,28 +4054,28 @@ Scattering multiscattering(vec3 f0_3, float f90_2, vec2 dfg_1) {
     return Scattering(single, (multi * ems));
 }
 
-vec3 indirect_diffuse(PbrMaterial m_3, vec3 irradiance, vec2 dfg_2) {
-    Scattering _e4 = multiscattering(m_3.specular, m_3.specular_grazing, dfg_2);
-    vec3 _e6 = brdf_lambert(m_3.diffuse);
+vec3 indirect_diffuse(PbrMaterial m_4, vec3 irradiance, vec2 dfg_2) {
+    Scattering _e4 = multiscattering(m_4.specular, m_4.specular_grazing, dfg_2);
+    vec3 _e6 = brdf_lambert(m_4.diffuse);
     return ((irradiance * _e6) * ((vec3(1.0) - _e4.single) - _e4.multi));
 }
 
-vec3 linear_to_srgb(vec3 c) {
-    vec3 low_1 = (c * 12.92);
-    vec3 high_1 = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
-    return mix(high_1, low_1, lessThanEqual(c, vec3(0.0031308)));
+vec3 linear_to_srgb(vec3 c_2) {
+    vec3 low_1 = (c_2 * 12.92);
+    vec3 high_1 = ((1.055 * pow(c_2, vec3(0.41666666))) - vec3(0.055));
+    return mix(high_1, low_1, lessThanEqual(c_2, vec3(0.0031308)));
 }
 
-vec3 light_surface(PbrMaterial m_4, vec3 relative_1, vec3 normal_3, vec3 to_view_2, vec2 dfg_3) {
+vec3 light_surface(PbrMaterial m_5, vec3 relative_2, vec3 normal_3, vec3 to_view_2, vec2 dfg_3) {
     vec3 sun_color = vec3(0.0);
-    vec3 _e3 = multiscatter_compensation(m_4.specular_blended, dfg_3);
+    vec3 _e3 = multiscatter_compensation(m_5.specular_blended, dfg_3);
     vec4 _e6 = _group_0_binding_0_fs.sun_color;
     sun_color = _e6.xyz;
     vec4 _e11 = _group_0_binding_0_fs.sun_direction;
     vec3 _e14 = sun_color;
-    Reflected _e17 = direct_light(m_4, normal_3, to_view_2, -(_e11.xyz), _e14, _e3);
+    Reflected _e17 = direct_light(m_5, normal_3, to_view_2, -(_e11.xyz), _e14, _e3);
     vec4 _e20 = _group_0_binding_0_fs.ambient;
-    vec3 _e22 = indirect_diffuse(m_4, _e20.xyz, dfg_3);
+    vec3 _e22 = indirect_diffuse(m_5, _e20.xyz, dfg_3);
     return ((_e17.diffuse + _e17.specular) + _e22);
 }
 
@@ -3658,8 +4112,9 @@ void main() {
     vec3 emitted = (_e2.emissive.xyz * _e2.strengths.w);
     vec3 _e81 = light_surface(_e70, in_.relative, normal_4, to_view_3, _e74);
     vec3 outgoing = (_e81 + emitted);
-    vec3 _e83 = linear_to_srgb(outgoing);
-    _fs2p_location0 = vec4(_e83, 1.0);
+    vec3 _e84 = fogged(outgoing, in_.relative, _e2);
+    vec3 _e85 = linear_to_srgb(_e84);
+    _fs2p_location0 = vec4(_e85, 1.0);
     return;
 }
 `,
@@ -3703,12 +4158,21 @@ precision highp int;
 
 uniform uint naga_vs_first_instance;
 
+struct Fog {
+    vec3 color;
+    uint kind;
+    vec3 forward;
+    float density;
+    float near;
+    float far;
+};
 struct Frame {
     mat4x4 view_proj;
     vec4 camera_position;
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Fog fog;
 };
 struct Material {
     vec4 color;
@@ -3771,7 +4235,10 @@ struct VertexOut {
     uint material;
     vec4 vertex_color;
 };
+const uint LINEAR = 1u;
+const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
+const uint NO_FOG = 4u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -3803,6 +4270,30 @@ smooth out vec3 _vs2fs_location1;
 flat out uint _vs2fs_location2;
 smooth out vec4 _vs2fs_location3;
 
+vec3 apply_fog(vec3 c, vec3 fog_color, float factor) {
+    return mix(c, fog_color, factor);
+}
+
+float fog_depth(vec3 relative_position, vec3 forward) {
+    return dot(relative_position, forward);
+}
+
+float fog_linear(float depth, float near, float far) {
+    return smoothstep(near, far, depth);
+}
+
+float fog_exp2_(float depth_1, float density) {
+    return (1.0 - exp((((-(density) * density) * depth_1) * depth_1)));
+}
+
+float fog_factor(Fog fog, vec3 relative_position_1) {
+    float _e3 = fog_depth(relative_position_1, fog.forward);
+    float _e6 = fog_linear(_e3, fog.near, fog.far);
+    float linear = ((fog.kind == LINEAR) ? _e6 : 0.0);
+    float _e13 = fog_exp2_(_e3, fog.density);
+    return ((fog.kind == EXP2_) ? _e13 : linear);
+}
+
 vec3 transform_point(Transform t, vec3 p) {
     vec4 q = vec4(p, 1.0);
     return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
@@ -3811,16 +4302,25 @@ vec3 transform_point(Transform t, vec3 p) {
 vec3 transform_normal(Transform t_1, vec3 n) {
     vec3 a = t_1.x.xyz;
     vec3 b = t_1.y.xyz;
-    vec3 c_1 = t_1.z.xyz;
-    vec3 bc = cross(b, c_1);
-    vec3 ca = cross(c_1, a);
+    vec3 c_3 = t_1.z.xyz;
+    vec3 bc = cross(b, c_3);
+    vec3 ca = cross(c_3, a);
     vec3 ab = cross(a, b);
     float facing = ((dot(a, bc) >= 0.0) ? 1.0 : -1.0);
     return normalize((vec3(dot(bc, n), dot(ca, n), dot(ab, n)) * facing));
 }
 
-vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
-    return (view_proj * vec4(relative_position, 1.0));
+vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
+    return (view_proj * vec4(relative_position_2, 1.0));
+}
+
+vec3 fogged(vec3 c_1, vec3 relative, Material m_1) {
+    bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
+    vec3 _e11 = _group_0_binding_0_vs.fog.color;
+    Fog _e14 = _group_0_binding_0_vs.fog;
+    float _e16 = fog_factor(_e14, relative);
+    vec3 _e20 = apply_fog(c_1, _e11, (fog_on ? _e16 : 0.0));
+    return _e20;
 }
 
 Instance instance_of(uvec4 record, uint instance) {
@@ -3876,12 +4376,12 @@ Instance find_instance(InstanceIn i_1) {
     return _e7;
 }
 
-vec4 clip_of(Instance found, vec3 relative) {
+vec4 clip_of(Instance found, vec3 relative_1) {
     if (!(found.drawn)) {
         return OUTSIDE_CLIP;
     }
     mat4x4 _e6 = _group_0_binding_0_vs.view_proj;
-    vec4 _e8 = to_clip(_e6, relative);
+    vec4 _e8 = to_clip(_e6, relative_1);
     return _e8;
 }
 
@@ -3889,7 +4389,7 @@ Transform transform_of(Instance found_1) {
     return Transform(found_1.row_x, found_1.row_y, found_1.row_z);
 }
 
-vec3 relative_position_1(Instance found_2, vec3 position) {
+vec3 relative_position_3(Instance found_2, vec3 position) {
     Transform _e1 = transform_of(found_2);
     vec3 _e3 = transform_point(_e1, position);
     return _e3;
@@ -3906,16 +4406,16 @@ vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
 }
 
 PbrMaterial pbr_material(vec3 base_color, float metalness, float roughness_1, float geometry_roughness) {
-    PbrMaterial m_1 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
-    m_1.base_color = base_color;
-    m_1.diffuse = (base_color * (1.0 - metalness));
-    m_1.specular = vec3(0.04);
-    vec3 _e13 = m_1.specular;
-    m_1.specular_blended = mix(_e13, base_color, metalness);
-    m_1.specular_grazing = 1.0;
-    m_1.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
-    m_1.metalness = metalness;
-    PbrMaterial _e26 = m_1;
+    PbrMaterial m_2 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
+    m_2.base_color = base_color;
+    m_2.diffuse = (base_color * (1.0 - metalness));
+    m_2.specular = vec3(0.04);
+    vec3 _e13 = m_2.specular;
+    m_2.specular_blended = mix(_e13, base_color, metalness);
+    m_2.specular_grazing = 1.0;
+    m_2.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
+    m_2.metalness = metalness;
+    PbrMaterial _e26 = m_2;
     return _e26;
 }
 
@@ -3954,12 +4454,12 @@ vec3 brdf_lambert(vec3 diffuse) {
     return (INV_PI * diffuse);
 }
 
-Reflected direct_light(PbrMaterial m_2, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
+Reflected direct_light(PbrMaterial m_3, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
     vec3 irradiance_1 = (clamp(dot(normal_2, to_light_1), 0.0, 1.0) * light);
-    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_2.specular_blended, m_2.specular_grazing, m_2.roughness);
+    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_3.specular_blended, m_3.specular_grazing, m_3.roughness);
     float v_dot_h_2 = clamp(dot(to_view_1, normalize((to_light_1 + to_view_1))), 0.0, 1.0);
-    vec3 _e18 = f_schlick(m_2.specular, m_2.specular_grazing, v_dot_h_2);
-    vec3 _e20 = brdf_lambert(m_2.diffuse);
+    vec3 _e18 = f_schlick(m_3.specular, m_3.specular_grazing, v_dot_h_2);
+    vec3 _e20 = brdf_lambert(m_3.diffuse);
     return Reflected(((irradiance_1 * _e20) * (vec3(1.0) - _e18)), ((irradiance_1 * _e11) * compensation));
 }
 
@@ -3972,28 +4472,28 @@ Scattering multiscattering(vec3 f0_3, float f90_2, vec2 dfg_1) {
     return Scattering(single, (multi * ems));
 }
 
-vec3 indirect_diffuse(PbrMaterial m_3, vec3 irradiance, vec2 dfg_2) {
-    Scattering _e4 = multiscattering(m_3.specular, m_3.specular_grazing, dfg_2);
-    vec3 _e6 = brdf_lambert(m_3.diffuse);
+vec3 indirect_diffuse(PbrMaterial m_4, vec3 irradiance, vec2 dfg_2) {
+    Scattering _e4 = multiscattering(m_4.specular, m_4.specular_grazing, dfg_2);
+    vec3 _e6 = brdf_lambert(m_4.diffuse);
     return ((irradiance * _e6) * ((vec3(1.0) - _e4.single) - _e4.multi));
 }
 
-vec3 linear_to_srgb(vec3 c) {
-    vec3 low = (c * 12.92);
-    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
-    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
+vec3 linear_to_srgb(vec3 c_2) {
+    vec3 low = (c_2 * 12.92);
+    vec3 high = ((1.055 * pow(c_2, vec3(0.41666666))) - vec3(0.055));
+    return mix(high, low, lessThanEqual(c_2, vec3(0.0031308)));
 }
 
-vec3 light_surface(PbrMaterial m_4, vec3 relative_1, vec3 normal_3, vec3 to_view_2, vec2 dfg_3) {
+vec3 light_surface(PbrMaterial m_5, vec3 relative_2, vec3 normal_3, vec3 to_view_2, vec2 dfg_3) {
     vec3 sun_color = vec3(0.0);
-    vec3 _e3 = multiscatter_compensation(m_4.specular_blended, dfg_3);
+    vec3 _e3 = multiscatter_compensation(m_5.specular_blended, dfg_3);
     vec4 _e6 = _group_0_binding_0_vs.sun_color;
     sun_color = _e6.xyz;
     vec4 _e11 = _group_0_binding_0_vs.sun_direction;
     vec3 _e14 = sun_color;
-    Reflected _e17 = direct_light(m_4, normal_3, to_view_2, -(_e11.xyz), _e14, _e3);
+    Reflected _e17 = direct_light(m_5, normal_3, to_view_2, -(_e11.xyz), _e14, _e3);
     vec4 _e20 = _group_0_binding_0_vs.ambient;
-    vec3 _e22 = indirect_diffuse(m_4, _e20.xyz, dfg_3);
+    vec3 _e22 = indirect_diffuse(m_5, _e20.xyz, dfg_3);
     return ((_e17.diffuse + _e17.specular) + _e22);
 }
 
@@ -4002,7 +4502,7 @@ void main() {
     InstanceIn i = InstanceIn((uint(gl_InstanceID) + naga_vs_first_instance), uint(gl_DrawID));
     VertexOut out_ = VertexOut(vec4(0.0), vec3(0.0), vec3(0.0), 0u, vec4(0.0));
     Instance _e1 = find_instance(i);
-    vec3 _e6 = relative_position_1(_e1, v.position);
+    vec3 _e6 = relative_position_3(_e1, v.position);
     out_.relative = _e6;
     vec3 _e9 = out_.relative;
     vec4 _e10 = clip_of(_e1, _e9);
@@ -4071,12 +4571,21 @@ void main() {
 precision highp float;
 precision highp int;
 
+struct Fog {
+    vec3 color;
+    uint kind;
+    vec3 forward;
+    float density;
+    float near;
+    float far;
+};
 struct Frame {
     mat4x4 view_proj;
     vec4 camera_position;
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Fog fog;
 };
 struct Material {
     vec4 color;
@@ -4139,7 +4648,10 @@ struct VertexOut {
     uint material;
     vec4 vertex_color;
 };
+const uint LINEAR = 1u;
+const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
+const uint NO_FOG = 4u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -4161,6 +4673,30 @@ flat in uint _vs2fs_location2;
 smooth in vec4 _vs2fs_location3;
 layout(location = 0) out vec4 _fs2p_location0;
 
+vec3 apply_fog(vec3 c, vec3 fog_color, float factor) {
+    return mix(c, fog_color, factor);
+}
+
+float fog_depth(vec3 relative_position, vec3 forward) {
+    return dot(relative_position, forward);
+}
+
+float fog_linear(float depth, float near, float far) {
+    return smoothstep(near, far, depth);
+}
+
+float fog_exp2_(float depth_1, float density) {
+    return (1.0 - exp((((-(density) * density) * depth_1) * depth_1)));
+}
+
+float fog_factor(Fog fog, vec3 relative_position_1) {
+    float _e3 = fog_depth(relative_position_1, fog.forward);
+    float _e6 = fog_linear(_e3, fog.near, fog.far);
+    float linear = ((fog.kind == LINEAR) ? _e6 : 0.0);
+    float _e13 = fog_exp2_(_e3, fog.density);
+    return ((fog.kind == EXP2_) ? _e13 : linear);
+}
+
 vec3 transform_point(Transform t, vec3 p) {
     vec4 q = vec4(p, 1.0);
     return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
@@ -4169,16 +4705,16 @@ vec3 transform_point(Transform t, vec3 p) {
 vec3 transform_normal(Transform t_1, vec3 n) {
     vec3 a = t_1.x.xyz;
     vec3 b = t_1.y.xyz;
-    vec3 c_1 = t_1.z.xyz;
-    vec3 bc = cross(b, c_1);
-    vec3 ca = cross(c_1, a);
+    vec3 c_3 = t_1.z.xyz;
+    vec3 bc = cross(b, c_3);
+    vec3 ca = cross(c_3, a);
     vec3 ab = cross(a, b);
     float facing = ((dot(a, bc) >= 0.0) ? 1.0 : -1.0);
     return normalize((vec3(dot(bc, n), dot(ca, n), dot(ab, n)) * facing));
 }
 
-vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
-    return (view_proj * vec4(relative_position, 1.0));
+vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
+    return (view_proj * vec4(relative_position_2, 1.0));
 }
 
 Material material_of(uint id) {
@@ -4203,12 +4739,21 @@ Material material_of(uint id) {
     return _e50;
 }
 
-vec4 clip_of(Instance found, vec3 relative) {
+vec3 fogged(vec3 c_1, vec3 relative, Material m_1) {
+    bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
+    vec3 _e11 = _group_0_binding_0_fs.fog.color;
+    Fog _e14 = _group_0_binding_0_fs.fog;
+    float _e16 = fog_factor(_e14, relative);
+    vec3 _e20 = apply_fog(c_1, _e11, (fog_on ? _e16 : 0.0));
+    return _e20;
+}
+
+vec4 clip_of(Instance found, vec3 relative_1) {
     if (!(found.drawn)) {
         return OUTSIDE_CLIP;
     }
     mat4x4 _e6 = _group_0_binding_0_fs.view_proj;
-    vec4 _e8 = to_clip(_e6, relative);
+    vec4 _e8 = to_clip(_e6, relative_1);
     return _e8;
 }
 
@@ -4216,7 +4761,7 @@ Transform transform_of(Instance found_1) {
     return Transform(found_1.row_x, found_1.row_y, found_1.row_z);
 }
 
-vec3 relative_position_1(Instance found_2, vec3 position) {
+vec3 relative_position_3(Instance found_2, vec3 position) {
     Transform _e1 = transform_of(found_2);
     vec3 _e3 = transform_point(_e1, position);
     return _e3;
@@ -4239,10 +4784,10 @@ vec2 dfg_lut(float n_dot_v, float roughness) {
     vec4 _e36 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(high.x, low.y)), 0);
     vec2 b_1 = _e36.xy;
     vec4 _e43 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(low.x, high.y)), 0);
-    vec2 c_2 = _e43.xy;
+    vec2 c_4 = _e43.xy;
     vec4 _e47 = texelFetch(_group_0_binding_3_fs, ivec2(high), 0);
     vec2 d = _e47.xy;
-    return mix(mix(a_1, b_1, t_2.x), mix(c_2, d, t_2.x), t_2.y);
+    return mix(mix(a_1, b_1, t_2.x), mix(c_4, d, t_2.x), t_2.y);
 }
 
 vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
@@ -4250,16 +4795,16 @@ vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
 }
 
 PbrMaterial pbr_material(vec3 base_color, float metalness, float roughness_1, float geometry_roughness) {
-    PbrMaterial m_1 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
-    m_1.base_color = base_color;
-    m_1.diffuse = (base_color * (1.0 - metalness));
-    m_1.specular = vec3(0.04);
-    vec3 _e13 = m_1.specular;
-    m_1.specular_blended = mix(_e13, base_color, metalness);
-    m_1.specular_grazing = 1.0;
-    m_1.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
-    m_1.metalness = metalness;
-    PbrMaterial _e26 = m_1;
+    PbrMaterial m_2 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
+    m_2.base_color = base_color;
+    m_2.diffuse = (base_color * (1.0 - metalness));
+    m_2.specular = vec3(0.04);
+    vec3 _e13 = m_2.specular;
+    m_2.specular_blended = mix(_e13, base_color, metalness);
+    m_2.specular_grazing = 1.0;
+    m_2.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
+    m_2.metalness = metalness;
+    PbrMaterial _e26 = m_2;
     return _e26;
 }
 
@@ -4298,12 +4843,12 @@ vec3 brdf_lambert(vec3 diffuse) {
     return (INV_PI * diffuse);
 }
 
-Reflected direct_light(PbrMaterial m_2, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
+Reflected direct_light(PbrMaterial m_3, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
     vec3 irradiance_1 = (clamp(dot(normal_2, to_light_1), 0.0, 1.0) * light);
-    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_2.specular_blended, m_2.specular_grazing, m_2.roughness);
+    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_3.specular_blended, m_3.specular_grazing, m_3.roughness);
     float v_dot_h_2 = clamp(dot(to_view_1, normalize((to_light_1 + to_view_1))), 0.0, 1.0);
-    vec3 _e18 = f_schlick(m_2.specular, m_2.specular_grazing, v_dot_h_2);
-    vec3 _e20 = brdf_lambert(m_2.diffuse);
+    vec3 _e18 = f_schlick(m_3.specular, m_3.specular_grazing, v_dot_h_2);
+    vec3 _e20 = brdf_lambert(m_3.diffuse);
     return Reflected(((irradiance_1 * _e20) * (vec3(1.0) - _e18)), ((irradiance_1 * _e11) * compensation));
 }
 
@@ -4316,28 +4861,28 @@ Scattering multiscattering(vec3 f0_3, float f90_2, vec2 dfg_1) {
     return Scattering(single, (multi * ems));
 }
 
-vec3 indirect_diffuse(PbrMaterial m_3, vec3 irradiance, vec2 dfg_2) {
-    Scattering _e4 = multiscattering(m_3.specular, m_3.specular_grazing, dfg_2);
-    vec3 _e6 = brdf_lambert(m_3.diffuse);
+vec3 indirect_diffuse(PbrMaterial m_4, vec3 irradiance, vec2 dfg_2) {
+    Scattering _e4 = multiscattering(m_4.specular, m_4.specular_grazing, dfg_2);
+    vec3 _e6 = brdf_lambert(m_4.diffuse);
     return ((irradiance * _e6) * ((vec3(1.0) - _e4.single) - _e4.multi));
 }
 
-vec3 linear_to_srgb(vec3 c) {
-    vec3 low_1 = (c * 12.92);
-    vec3 high_1 = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
-    return mix(high_1, low_1, lessThanEqual(c, vec3(0.0031308)));
+vec3 linear_to_srgb(vec3 c_2) {
+    vec3 low_1 = (c_2 * 12.92);
+    vec3 high_1 = ((1.055 * pow(c_2, vec3(0.41666666))) - vec3(0.055));
+    return mix(high_1, low_1, lessThanEqual(c_2, vec3(0.0031308)));
 }
 
-vec3 light_surface(PbrMaterial m_4, vec3 relative_1, vec3 normal_3, vec3 to_view_2, vec2 dfg_3) {
+vec3 light_surface(PbrMaterial m_5, vec3 relative_2, vec3 normal_3, vec3 to_view_2, vec2 dfg_3) {
     vec3 sun_color = vec3(0.0);
-    vec3 _e3 = multiscatter_compensation(m_4.specular_blended, dfg_3);
+    vec3 _e3 = multiscatter_compensation(m_5.specular_blended, dfg_3);
     vec4 _e6 = _group_0_binding_0_fs.sun_color;
     sun_color = _e6.xyz;
     vec4 _e11 = _group_0_binding_0_fs.sun_direction;
     vec3 _e14 = sun_color;
-    Reflected _e17 = direct_light(m_4, normal_3, to_view_2, -(_e11.xyz), _e14, _e3);
+    Reflected _e17 = direct_light(m_5, normal_3, to_view_2, -(_e11.xyz), _e14, _e3);
     vec4 _e20 = _group_0_binding_0_fs.ambient;
-    vec3 _e22 = indirect_diffuse(m_4, _e20.xyz, dfg_3);
+    vec3 _e22 = indirect_diffuse(m_5, _e20.xyz, dfg_3);
     return ((_e17.diffuse + _e17.specular) + _e22);
 }
 
@@ -4378,8 +4923,9 @@ void main() {
     if ((_e83 < _e2.emissive.w)) {
         discard;
     }
-    vec3 _e87 = linear_to_srgb(outgoing);
-    _fs2p_location0 = vec4(_e87, 1.0);
+    vec3 _e88 = fogged(outgoing, in_.relative, _e2);
+    vec3 _e89 = linear_to_srgb(_e88);
+    _fs2p_location0 = vec4(_e89, 1.0);
     return;
 }
 `,
@@ -4423,12 +4969,21 @@ precision highp int;
 
 uniform uint naga_vs_first_instance;
 
+struct Fog {
+    vec3 color;
+    uint kind;
+    vec3 forward;
+    float density;
+    float near;
+    float far;
+};
 struct Frame {
     mat4x4 view_proj;
     vec4 camera_position;
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Fog fog;
 };
 struct Material {
     vec4 color;
@@ -4498,7 +5053,10 @@ struct VertexOut {
     uint material;
     vec4 vertex_color;
 };
+const uint LINEAR = 1u;
+const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
+const uint NO_FOG = 4u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -4530,6 +5088,30 @@ smooth out vec3 _vs2fs_location1;
 flat out uint _vs2fs_location2;
 smooth out vec4 _vs2fs_location3;
 
+vec3 apply_fog(vec3 c, vec3 fog_color, float factor) {
+    return mix(c, fog_color, factor);
+}
+
+float fog_depth(vec3 relative_position, vec3 forward) {
+    return dot(relative_position, forward);
+}
+
+float fog_linear(float depth, float near, float far) {
+    return smoothstep(near, far, depth);
+}
+
+float fog_exp2_(float depth_1, float density) {
+    return (1.0 - exp((((-(density) * density) * depth_1) * depth_1)));
+}
+
+float fog_factor(Fog fog, vec3 relative_position_1) {
+    float _e3 = fog_depth(relative_position_1, fog.forward);
+    float _e6 = fog_linear(_e3, fog.near, fog.far);
+    float linear = ((fog.kind == LINEAR) ? _e6 : 0.0);
+    float _e13 = fog_exp2_(_e3, fog.density);
+    return ((fog.kind == EXP2_) ? _e13 : linear);
+}
+
 vec3 transform_point(Transform t, vec3 p) {
     vec4 q = vec4(p, 1.0);
     return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
@@ -4538,16 +5120,25 @@ vec3 transform_point(Transform t, vec3 p) {
 vec3 transform_normal(Transform t_1, vec3 n) {
     vec3 a = t_1.x.xyz;
     vec3 b = t_1.y.xyz;
-    vec3 c_1 = t_1.z.xyz;
-    vec3 bc = cross(b, c_1);
-    vec3 ca = cross(c_1, a);
+    vec3 c_3 = t_1.z.xyz;
+    vec3 bc = cross(b, c_3);
+    vec3 ca = cross(c_3, a);
     vec3 ab = cross(a, b);
     float facing = ((dot(a, bc) >= 0.0) ? 1.0 : -1.0);
     return normalize((vec3(dot(bc, n), dot(ca, n), dot(ab, n)) * facing));
 }
 
-vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
-    return (view_proj * vec4(relative_position, 1.0));
+vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
+    return (view_proj * vec4(relative_position_2, 1.0));
+}
+
+vec3 fogged(vec3 c_1, vec3 relative, Material m_1) {
+    bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
+    vec3 _e11 = _group_0_binding_0_vs.fog.color;
+    Fog _e14 = _group_0_binding_0_vs.fog;
+    float _e16 = fog_factor(_e14, relative);
+    vec3 _e20 = apply_fog(c_1, _e11, (fog_on ? _e16 : 0.0));
+    return _e20;
 }
 
 Instance instance_of(uvec4 record, uint instance) {
@@ -4603,12 +5194,12 @@ Instance find_instance(InstanceIn i_1) {
     return _e7;
 }
 
-vec4 clip_of(Instance found, vec3 relative) {
+vec4 clip_of(Instance found, vec3 relative_1) {
     if (!(found.drawn)) {
         return OUTSIDE_CLIP;
     }
     mat4x4 _e6 = _group_0_binding_0_vs.view_proj;
-    vec4 _e8 = to_clip(_e6, relative);
+    vec4 _e8 = to_clip(_e6, relative_1);
     return _e8;
 }
 
@@ -4616,7 +5207,7 @@ Transform transform_of(Instance found_1) {
     return Transform(found_1.row_x, found_1.row_y, found_1.row_z);
 }
 
-vec3 relative_position_1(Instance found_2, vec3 position) {
+vec3 relative_position_3(Instance found_2, vec3 position) {
     Transform _e1 = transform_of(found_2);
     vec3 _e3 = transform_point(_e1, position);
     return _e3;
@@ -4633,16 +5224,16 @@ vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
 }
 
 PbrMaterial pbr_material(vec3 base_color, float metalness, float roughness_1, float geometry_roughness) {
-    PbrMaterial m_1 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
-    m_1.base_color = base_color;
-    m_1.diffuse = (base_color * (1.0 - metalness));
-    m_1.specular = vec3(0.04);
-    vec3 _e13 = m_1.specular;
-    m_1.specular_blended = mix(_e13, base_color, metalness);
-    m_1.specular_grazing = 1.0;
-    m_1.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
-    m_1.metalness = metalness;
-    PbrMaterial _e26 = m_1;
+    PbrMaterial m_2 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
+    m_2.base_color = base_color;
+    m_2.diffuse = (base_color * (1.0 - metalness));
+    m_2.specular = vec3(0.04);
+    vec3 _e13 = m_2.specular;
+    m_2.specular_blended = mix(_e13, base_color, metalness);
+    m_2.specular_grazing = 1.0;
+    m_2.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
+    m_2.metalness = metalness;
+    PbrMaterial _e26 = m_2;
     return _e26;
 }
 
@@ -4681,12 +5272,12 @@ vec3 brdf_lambert(vec3 diffuse) {
     return (INV_PI * diffuse);
 }
 
-Reflected direct_light(PbrMaterial m_2, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
+Reflected direct_light(PbrMaterial m_3, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
     vec3 irradiance_1 = (clamp(dot(normal_2, to_light_1), 0.0, 1.0) * light);
-    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_2.specular_blended, m_2.specular_grazing, m_2.roughness);
+    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_3.specular_blended, m_3.specular_grazing, m_3.roughness);
     float v_dot_h_2 = clamp(dot(to_view_1, normalize((to_light_1 + to_view_1))), 0.0, 1.0);
-    vec3 _e18 = f_schlick(m_2.specular, m_2.specular_grazing, v_dot_h_2);
-    vec3 _e20 = brdf_lambert(m_2.diffuse);
+    vec3 _e18 = f_schlick(m_3.specular, m_3.specular_grazing, v_dot_h_2);
+    vec3 _e20 = brdf_lambert(m_3.diffuse);
     return Reflected(((irradiance_1 * _e20) * (vec3(1.0) - _e18)), ((irradiance_1 * _e11) * compensation));
 }
 
@@ -4699,16 +5290,16 @@ Scattering multiscattering(vec3 f0_3, float f90_2, vec2 dfg_1) {
     return Scattering(single, (multi * ems));
 }
 
-vec3 indirect_diffuse(PbrMaterial m_3, vec3 irradiance, vec2 dfg_2) {
-    Scattering _e4 = multiscattering(m_3.specular, m_3.specular_grazing, dfg_2);
-    vec3 _e6 = brdf_lambert(m_3.diffuse);
+vec3 indirect_diffuse(PbrMaterial m_4, vec3 irradiance, vec2 dfg_2) {
+    Scattering _e4 = multiscattering(m_4.specular, m_4.specular_grazing, dfg_2);
+    vec3 _e6 = brdf_lambert(m_4.diffuse);
     return ((irradiance * _e6) * ((vec3(1.0) - _e4.single) - _e4.multi));
 }
 
-vec3 linear_to_srgb(vec3 c) {
-    vec3 low = (c * 12.92);
-    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
-    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
+vec3 linear_to_srgb(vec3 c_2) {
+    vec3 low = (c_2 * 12.92);
+    vec3 high = ((1.055 * pow(c_2, vec3(0.41666666))) - vec3(0.055));
+    return mix(high, low, lessThanEqual(c_2, vec3(0.0031308)));
 }
 
 void main() {
@@ -4716,7 +5307,7 @@ void main() {
     InstanceIn i = InstanceIn((uint(gl_InstanceID) + naga_vs_first_instance), uint(gl_DrawID));
     VertexOut out_ = VertexOut(vec4(0.0), vec3(0.0), vec3(0.0), 0u, vec4(0.0));
     Instance _e1 = find_instance(i);
-    vec3 _e6 = relative_position_1(_e1, v.position);
+    vec3 _e6 = relative_position_3(_e1, v.position);
     out_.relative = _e6;
     vec3 _e9 = out_.relative;
     vec4 _e10 = clip_of(_e1, _e9);
@@ -4785,12 +5376,21 @@ void main() {
 precision highp float;
 precision highp int;
 
+struct Fog {
+    vec3 color;
+    uint kind;
+    vec3 forward;
+    float density;
+    float near;
+    float far;
+};
 struct Frame {
     mat4x4 view_proj;
     vec4 camera_position;
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Fog fog;
 };
 struct Material {
     vec4 color;
@@ -4860,7 +5460,10 @@ struct VertexOut {
     uint material;
     vec4 vertex_color;
 };
+const uint LINEAR = 1u;
+const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
+const uint NO_FOG = 4u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -4886,6 +5489,30 @@ flat in uint _vs2fs_location2;
 smooth in vec4 _vs2fs_location3;
 layout(location = 0) out vec4 _fs2p_location0;
 
+vec3 apply_fog(vec3 c, vec3 fog_color, float factor) {
+    return mix(c, fog_color, factor);
+}
+
+float fog_depth(vec3 relative_position, vec3 forward) {
+    return dot(relative_position, forward);
+}
+
+float fog_linear(float depth, float near, float far) {
+    return smoothstep(near, far, depth);
+}
+
+float fog_exp2_(float depth_1, float density) {
+    return (1.0 - exp((((-(density) * density) * depth_1) * depth_1)));
+}
+
+float fog_factor(Fog fog, vec3 relative_position_1) {
+    float _e3 = fog_depth(relative_position_1, fog.forward);
+    float _e6 = fog_linear(_e3, fog.near, fog.far);
+    float linear = ((fog.kind == LINEAR) ? _e6 : 0.0);
+    float _e13 = fog_exp2_(_e3, fog.density);
+    return ((fog.kind == EXP2_) ? _e13 : linear);
+}
+
 vec3 transform_point(Transform t, vec3 p) {
     vec4 q = vec4(p, 1.0);
     return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
@@ -4894,16 +5521,16 @@ vec3 transform_point(Transform t, vec3 p) {
 vec3 transform_normal(Transform t_1, vec3 n) {
     vec3 a = t_1.x.xyz;
     vec3 b = t_1.y.xyz;
-    vec3 c_1 = t_1.z.xyz;
-    vec3 bc = cross(b, c_1);
-    vec3 ca = cross(c_1, a);
+    vec3 c_3 = t_1.z.xyz;
+    vec3 bc = cross(b, c_3);
+    vec3 ca = cross(c_3, a);
     vec3 ab = cross(a, b);
     float facing = ((dot(a, bc) >= 0.0) ? 1.0 : -1.0);
     return normalize((vec3(dot(bc, n), dot(ca, n), dot(ab, n)) * facing));
 }
 
-vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
-    return (view_proj * vec4(relative_position, 1.0));
+vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
+    return (view_proj * vec4(relative_position_2, 1.0));
 }
 
 Material material_of(uint id) {
@@ -4928,12 +5555,21 @@ Material material_of(uint id) {
     return _e50;
 }
 
-vec4 clip_of(Instance found, vec3 relative) {
+vec3 fogged(vec3 c_1, vec3 relative, Material m_1) {
+    bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
+    vec3 _e11 = _group_0_binding_0_fs.fog.color;
+    Fog _e14 = _group_0_binding_0_fs.fog;
+    float _e16 = fog_factor(_e14, relative);
+    vec3 _e20 = apply_fog(c_1, _e11, (fog_on ? _e16 : 0.0));
+    return _e20;
+}
+
+vec4 clip_of(Instance found, vec3 relative_1) {
     if (!(found.drawn)) {
         return OUTSIDE_CLIP;
     }
     mat4x4 _e6 = _group_0_binding_0_fs.view_proj;
-    vec4 _e8 = to_clip(_e6, relative);
+    vec4 _e8 = to_clip(_e6, relative_1);
     return _e8;
 }
 
@@ -4941,7 +5577,7 @@ Transform transform_of(Instance found_1) {
     return Transform(found_1.row_x, found_1.row_y, found_1.row_z);
 }
 
-vec3 relative_position_1(Instance found_2, vec3 position) {
+vec3 relative_position_3(Instance found_2, vec3 position) {
     Transform _e1 = transform_of(found_2);
     vec3 _e3 = transform_point(_e1, position);
     return _e3;
@@ -4964,10 +5600,10 @@ vec2 dfg_lut(float n_dot_v, float roughness) {
     vec4 _e36 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(high.x, low.y)), 0);
     vec2 b_1 = _e36.xy;
     vec4 _e43 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(low.x, high.y)), 0);
-    vec2 c_2 = _e43.xy;
+    vec2 c_4 = _e43.xy;
     vec4 _e47 = texelFetch(_group_0_binding_3_fs, ivec2(high), 0);
     vec2 d = _e47.xy;
-    return mix(mix(a_1, b_1, t_2.x), mix(c_2, d, t_2.x), t_2.y);
+    return mix(mix(a_1, b_1, t_2.x), mix(c_4, d, t_2.x), t_2.y);
 }
 
 vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
@@ -4975,16 +5611,16 @@ vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
 }
 
 PbrMaterial pbr_material(vec3 base_color, float metalness, float roughness_1, float geometry_roughness) {
-    PbrMaterial m_1 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
-    m_1.base_color = base_color;
-    m_1.diffuse = (base_color * (1.0 - metalness));
-    m_1.specular = vec3(0.04);
-    vec3 _e13 = m_1.specular;
-    m_1.specular_blended = mix(_e13, base_color, metalness);
-    m_1.specular_grazing = 1.0;
-    m_1.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
-    m_1.metalness = metalness;
-    PbrMaterial _e26 = m_1;
+    PbrMaterial m_2 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
+    m_2.base_color = base_color;
+    m_2.diffuse = (base_color * (1.0 - metalness));
+    m_2.specular = vec3(0.04);
+    vec3 _e13 = m_2.specular;
+    m_2.specular_blended = mix(_e13, base_color, metalness);
+    m_2.specular_grazing = 1.0;
+    m_2.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
+    m_2.metalness = metalness;
+    PbrMaterial _e26 = m_2;
     return _e26;
 }
 
@@ -5023,12 +5659,12 @@ vec3 brdf_lambert(vec3 diffuse) {
     return (INV_PI * diffuse);
 }
 
-Reflected direct_light(PbrMaterial m_2, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
+Reflected direct_light(PbrMaterial m_3, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
     vec3 irradiance_1 = (clamp(dot(normal_2, to_light_1), 0.0, 1.0) * light);
-    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_2.specular_blended, m_2.specular_grazing, m_2.roughness);
+    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_3.specular_blended, m_3.specular_grazing, m_3.roughness);
     float v_dot_h_2 = clamp(dot(to_view_1, normalize((to_light_1 + to_view_1))), 0.0, 1.0);
-    vec3 _e18 = f_schlick(m_2.specular, m_2.specular_grazing, v_dot_h_2);
-    vec3 _e20 = brdf_lambert(m_2.diffuse);
+    vec3 _e18 = f_schlick(m_3.specular, m_3.specular_grazing, v_dot_h_2);
+    vec3 _e20 = brdf_lambert(m_3.diffuse);
     return Reflected(((irradiance_1 * _e20) * (vec3(1.0) - _e18)), ((irradiance_1 * _e11) * compensation));
 }
 
@@ -5041,18 +5677,18 @@ Scattering multiscattering(vec3 f0_3, float f90_2, vec2 dfg_1) {
     return Scattering(single, (multi * ems));
 }
 
-vec3 indirect_diffuse(PbrMaterial m_3, vec3 irradiance, vec2 dfg_2) {
-    Scattering _e4 = multiscattering(m_3.specular, m_3.specular_grazing, dfg_2);
-    vec3 _e6 = brdf_lambert(m_3.diffuse);
+vec3 indirect_diffuse(PbrMaterial m_4, vec3 irradiance, vec2 dfg_2) {
+    Scattering _e4 = multiscattering(m_4.specular, m_4.specular_grazing, dfg_2);
+    vec3 _e6 = brdf_lambert(m_4.diffuse);
     return ((irradiance * _e6) * ((vec3(1.0) - _e4.single) - _e4.multi));
 }
 
-float sun_shadow(vec3 relative_1, vec3 normal_3) {
+float sun_shadow(vec3 relative_2, vec3 normal_3) {
     uint cascade = 0u;
     bool local = false;
     vec2 uv = vec2(0.0);
     vec4 _e4 = _group_0_binding_6_fs.forward;
-    float along = dot(relative_1, _e4.xyz);
+    float along = dot(relative_2, _e4.xyz);
     float _e10 = _group_0_binding_6_fs.forward.w;
     uint count = uint(_e10);
     while(true) {
@@ -5080,7 +5716,7 @@ float sun_shadow(vec3 relative_1, vec3 normal_3) {
     }
     uint _e34 = cascade;
     float _e36 = _group_0_binding_6_fs.normal_offsets[_e34];
-    vec3 moved = (relative_1 + (normal_3 * _e36));
+    vec3 moved = (relative_2 + (normal_3 * _e36));
     uint _e41 = cascade;
     mat4x4 _e43 = _group_0_binding_6_fs.view_proj[_e41];
     vec4 clip = (_e43 * vec4(moved, 1.0));
@@ -5089,33 +5725,33 @@ float sun_shadow(vec3 relative_1, vec3 normal_3) {
     uv.y = (1.0 - _e58);
     uint _e64 = cascade;
     float _e66 = _group_0_binding_6_fs.depth_biases[_e64];
-    float depth = (clip.z + _e66);
+    float depth_2 = (clip.z + _e66);
     vec2 _e70 = uv;
     uint _e71 = cascade;
-    float lit = textureGrad(_group_0_binding_4_fs, vec4(_e70, _e71, depth), vec2(0.0), vec2(0.0));
+    float lit = textureGrad(_group_0_binding_4_fs, vec4(_e70, _e71, depth_2), vec2(0.0), vec2(0.0));
     float end = _group_0_binding_6_fs.ends[(count - 1u)];
     return mix(lit, 1.0, smoothstep((end * 0.9), end, along));
 }
 
-vec3 linear_to_srgb(vec3 c) {
-    vec3 low_1 = (c * 12.92);
-    vec3 high_1 = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
-    return mix(high_1, low_1, lessThanEqual(c, vec3(0.0031308)));
+vec3 linear_to_srgb(vec3 c_2) {
+    vec3 low_1 = (c_2 * 12.92);
+    vec3 high_1 = ((1.055 * pow(c_2, vec3(0.41666666))) - vec3(0.055));
+    return mix(high_1, low_1, lessThanEqual(c_2, vec3(0.0031308)));
 }
 
-vec3 light_surface(PbrMaterial m_4, vec3 relative_2, vec3 normal_4, vec3 to_view_2, vec2 dfg_3) {
+vec3 light_surface(PbrMaterial m_5, vec3 relative_3, vec3 normal_4, vec3 to_view_2, vec2 dfg_3) {
     vec3 sun_color = vec3(0.0);
-    vec3 _e3 = multiscatter_compensation(m_4.specular_blended, dfg_3);
+    vec3 _e3 = multiscatter_compensation(m_5.specular_blended, dfg_3);
     vec4 _e6 = _group_0_binding_0_fs.sun_color;
     sun_color = _e6.xyz;
     vec3 _e9 = sun_color;
-    float _e12 = sun_shadow(relative_2, normal_4);
+    float _e12 = sun_shadow(relative_3, normal_4);
     sun_color = (_e9 * _e12);
     vec4 _e16 = _group_0_binding_0_fs.sun_direction;
     vec3 _e19 = sun_color;
-    Reflected _e21 = direct_light(m_4, normal_4, to_view_2, -(_e16.xyz), _e19, _e3);
+    Reflected _e21 = direct_light(m_5, normal_4, to_view_2, -(_e16.xyz), _e19, _e3);
     vec4 _e24 = _group_0_binding_0_fs.ambient;
-    vec3 _e26 = indirect_diffuse(m_4, _e24.xyz, dfg_3);
+    vec3 _e26 = indirect_diffuse(m_5, _e24.xyz, dfg_3);
     return ((_e21.diffuse + _e21.specular) + _e26);
 }
 
@@ -5156,8 +5792,9 @@ void main() {
     if ((_e83 < _e2.emissive.w)) {
         discard;
     }
-    vec3 _e87 = linear_to_srgb(outgoing);
-    _fs2p_location0 = vec4(_e87, 1.0);
+    vec3 _e88 = fogged(outgoing, in_.relative, _e2);
+    vec3 _e89 = linear_to_srgb(_e88);
+    _fs2p_location0 = vec4(_e89, 1.0);
     return;
 }
 `,
@@ -5215,12 +5852,21 @@ precision highp int;
 
 uniform uint naga_vs_first_instance;
 
+struct Fog {
+    vec3 color;
+    uint kind;
+    vec3 forward;
+    float density;
+    float near;
+    float far;
+};
 struct Frame {
     mat4x4 view_proj;
     vec4 camera_position;
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Fog fog;
 };
 struct Material {
     vec4 color;
@@ -5290,7 +5936,10 @@ struct VertexOut {
     uint material;
     vec4 vertex_color;
 };
+const uint LINEAR = 1u;
+const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
+const uint NO_FOG = 4u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -5322,6 +5971,30 @@ smooth out vec3 _vs2fs_location1;
 flat out uint _vs2fs_location2;
 smooth out vec4 _vs2fs_location3;
 
+vec3 apply_fog(vec3 c, vec3 fog_color, float factor) {
+    return mix(c, fog_color, factor);
+}
+
+float fog_depth(vec3 relative_position, vec3 forward) {
+    return dot(relative_position, forward);
+}
+
+float fog_linear(float depth, float near, float far) {
+    return smoothstep(near, far, depth);
+}
+
+float fog_exp2_(float depth_1, float density) {
+    return (1.0 - exp((((-(density) * density) * depth_1) * depth_1)));
+}
+
+float fog_factor(Fog fog, vec3 relative_position_1) {
+    float _e3 = fog_depth(relative_position_1, fog.forward);
+    float _e6 = fog_linear(_e3, fog.near, fog.far);
+    float linear = ((fog.kind == LINEAR) ? _e6 : 0.0);
+    float _e13 = fog_exp2_(_e3, fog.density);
+    return ((fog.kind == EXP2_) ? _e13 : linear);
+}
+
 vec3 transform_point(Transform t, vec3 p) {
     vec4 q = vec4(p, 1.0);
     return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
@@ -5330,16 +6003,25 @@ vec3 transform_point(Transform t, vec3 p) {
 vec3 transform_normal(Transform t_1, vec3 n) {
     vec3 a = t_1.x.xyz;
     vec3 b = t_1.y.xyz;
-    vec3 c_1 = t_1.z.xyz;
-    vec3 bc = cross(b, c_1);
-    vec3 ca = cross(c_1, a);
+    vec3 c_3 = t_1.z.xyz;
+    vec3 bc = cross(b, c_3);
+    vec3 ca = cross(c_3, a);
     vec3 ab = cross(a, b);
     float facing = ((dot(a, bc) >= 0.0) ? 1.0 : -1.0);
     return normalize((vec3(dot(bc, n), dot(ca, n), dot(ab, n)) * facing));
 }
 
-vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
-    return (view_proj * vec4(relative_position, 1.0));
+vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
+    return (view_proj * vec4(relative_position_2, 1.0));
+}
+
+vec3 fogged(vec3 c_1, vec3 relative, Material m_1) {
+    bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
+    vec3 _e11 = _group_0_binding_0_vs.fog.color;
+    Fog _e14 = _group_0_binding_0_vs.fog;
+    float _e16 = fog_factor(_e14, relative);
+    vec3 _e20 = apply_fog(c_1, _e11, (fog_on ? _e16 : 0.0));
+    return _e20;
 }
 
 Instance instance_of(uvec4 record, uint instance) {
@@ -5395,12 +6077,12 @@ Instance find_instance(InstanceIn i_1) {
     return _e7;
 }
 
-vec4 clip_of(Instance found, vec3 relative) {
+vec4 clip_of(Instance found, vec3 relative_1) {
     if (!(found.drawn)) {
         return OUTSIDE_CLIP;
     }
     mat4x4 _e6 = _group_0_binding_0_vs.view_proj;
-    vec4 _e8 = to_clip(_e6, relative);
+    vec4 _e8 = to_clip(_e6, relative_1);
     return _e8;
 }
 
@@ -5408,7 +6090,7 @@ Transform transform_of(Instance found_1) {
     return Transform(found_1.row_x, found_1.row_y, found_1.row_z);
 }
 
-vec3 relative_position_1(Instance found_2, vec3 position) {
+vec3 relative_position_3(Instance found_2, vec3 position) {
     Transform _e1 = transform_of(found_2);
     vec3 _e3 = transform_point(_e1, position);
     return _e3;
@@ -5425,16 +6107,16 @@ vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
 }
 
 PbrMaterial pbr_material(vec3 base_color, float metalness, float roughness_1, float geometry_roughness) {
-    PbrMaterial m_1 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
-    m_1.base_color = base_color;
-    m_1.diffuse = (base_color * (1.0 - metalness));
-    m_1.specular = vec3(0.04);
-    vec3 _e13 = m_1.specular;
-    m_1.specular_blended = mix(_e13, base_color, metalness);
-    m_1.specular_grazing = 1.0;
-    m_1.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
-    m_1.metalness = metalness;
-    PbrMaterial _e26 = m_1;
+    PbrMaterial m_2 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
+    m_2.base_color = base_color;
+    m_2.diffuse = (base_color * (1.0 - metalness));
+    m_2.specular = vec3(0.04);
+    vec3 _e13 = m_2.specular;
+    m_2.specular_blended = mix(_e13, base_color, metalness);
+    m_2.specular_grazing = 1.0;
+    m_2.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
+    m_2.metalness = metalness;
+    PbrMaterial _e26 = m_2;
     return _e26;
 }
 
@@ -5473,12 +6155,12 @@ vec3 brdf_lambert(vec3 diffuse) {
     return (INV_PI * diffuse);
 }
 
-Reflected direct_light(PbrMaterial m_2, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
+Reflected direct_light(PbrMaterial m_3, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
     vec3 irradiance_1 = (clamp(dot(normal_2, to_light_1), 0.0, 1.0) * light);
-    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_2.specular_blended, m_2.specular_grazing, m_2.roughness);
+    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_3.specular_blended, m_3.specular_grazing, m_3.roughness);
     float v_dot_h_2 = clamp(dot(to_view_1, normalize((to_light_1 + to_view_1))), 0.0, 1.0);
-    vec3 _e18 = f_schlick(m_2.specular, m_2.specular_grazing, v_dot_h_2);
-    vec3 _e20 = brdf_lambert(m_2.diffuse);
+    vec3 _e18 = f_schlick(m_3.specular, m_3.specular_grazing, v_dot_h_2);
+    vec3 _e20 = brdf_lambert(m_3.diffuse);
     return Reflected(((irradiance_1 * _e20) * (vec3(1.0) - _e18)), ((irradiance_1 * _e11) * compensation));
 }
 
@@ -5491,16 +6173,16 @@ Scattering multiscattering(vec3 f0_3, float f90_2, vec2 dfg_1) {
     return Scattering(single, (multi * ems));
 }
 
-vec3 indirect_diffuse(PbrMaterial m_3, vec3 irradiance, vec2 dfg_2) {
-    Scattering _e4 = multiscattering(m_3.specular, m_3.specular_grazing, dfg_2);
-    vec3 _e6 = brdf_lambert(m_3.diffuse);
+vec3 indirect_diffuse(PbrMaterial m_4, vec3 irradiance, vec2 dfg_2) {
+    Scattering _e4 = multiscattering(m_4.specular, m_4.specular_grazing, dfg_2);
+    vec3 _e6 = brdf_lambert(m_4.diffuse);
     return ((irradiance * _e6) * ((vec3(1.0) - _e4.single) - _e4.multi));
 }
 
-vec3 linear_to_srgb(vec3 c) {
-    vec3 low = (c * 12.92);
-    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
-    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
+vec3 linear_to_srgb(vec3 c_2) {
+    vec3 low = (c_2 * 12.92);
+    vec3 high = ((1.055 * pow(c_2, vec3(0.41666666))) - vec3(0.055));
+    return mix(high, low, lessThanEqual(c_2, vec3(0.0031308)));
 }
 
 void main() {
@@ -5508,7 +6190,7 @@ void main() {
     InstanceIn i = InstanceIn((uint(gl_InstanceID) + naga_vs_first_instance), uint(gl_DrawID));
     VertexOut out_ = VertexOut(vec4(0.0), vec3(0.0), vec3(0.0), 0u, vec4(0.0));
     Instance _e1 = find_instance(i);
-    vec3 _e6 = relative_position_1(_e1, v.position);
+    vec3 _e6 = relative_position_3(_e1, v.position);
     out_.relative = _e6;
     vec3 _e9 = out_.relative;
     vec4 _e10 = clip_of(_e1, _e9);
@@ -5577,12 +6259,21 @@ void main() {
 precision highp float;
 precision highp int;
 
+struct Fog {
+    vec3 color;
+    uint kind;
+    vec3 forward;
+    float density;
+    float near;
+    float far;
+};
 struct Frame {
     mat4x4 view_proj;
     vec4 camera_position;
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Fog fog;
 };
 struct Material {
     vec4 color;
@@ -5652,7 +6343,10 @@ struct VertexOut {
     uint material;
     vec4 vertex_color;
 };
+const uint LINEAR = 1u;
+const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
+const uint NO_FOG = 4u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -5678,6 +6372,30 @@ flat in uint _vs2fs_location2;
 smooth in vec4 _vs2fs_location3;
 layout(location = 0) out vec4 _fs2p_location0;
 
+vec3 apply_fog(vec3 c, vec3 fog_color, float factor) {
+    return mix(c, fog_color, factor);
+}
+
+float fog_depth(vec3 relative_position, vec3 forward) {
+    return dot(relative_position, forward);
+}
+
+float fog_linear(float depth, float near, float far) {
+    return smoothstep(near, far, depth);
+}
+
+float fog_exp2_(float depth_1, float density) {
+    return (1.0 - exp((((-(density) * density) * depth_1) * depth_1)));
+}
+
+float fog_factor(Fog fog, vec3 relative_position_1) {
+    float _e3 = fog_depth(relative_position_1, fog.forward);
+    float _e6 = fog_linear(_e3, fog.near, fog.far);
+    float linear = ((fog.kind == LINEAR) ? _e6 : 0.0);
+    float _e13 = fog_exp2_(_e3, fog.density);
+    return ((fog.kind == EXP2_) ? _e13 : linear);
+}
+
 vec3 transform_point(Transform t, vec3 p) {
     vec4 q = vec4(p, 1.0);
     return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
@@ -5686,16 +6404,16 @@ vec3 transform_point(Transform t, vec3 p) {
 vec3 transform_normal(Transform t_1, vec3 n) {
     vec3 a = t_1.x.xyz;
     vec3 b = t_1.y.xyz;
-    vec3 c_1 = t_1.z.xyz;
-    vec3 bc = cross(b, c_1);
-    vec3 ca = cross(c_1, a);
+    vec3 c_3 = t_1.z.xyz;
+    vec3 bc = cross(b, c_3);
+    vec3 ca = cross(c_3, a);
     vec3 ab = cross(a, b);
     float facing = ((dot(a, bc) >= 0.0) ? 1.0 : -1.0);
     return normalize((vec3(dot(bc, n), dot(ca, n), dot(ab, n)) * facing));
 }
 
-vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
-    return (view_proj * vec4(relative_position, 1.0));
+vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
+    return (view_proj * vec4(relative_position_2, 1.0));
 }
 
 Material material_of(uint id) {
@@ -5720,12 +6438,21 @@ Material material_of(uint id) {
     return _e50;
 }
 
-vec4 clip_of(Instance found, vec3 relative) {
+vec3 fogged(vec3 c_1, vec3 relative, Material m_1) {
+    bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
+    vec3 _e11 = _group_0_binding_0_fs.fog.color;
+    Fog _e14 = _group_0_binding_0_fs.fog;
+    float _e16 = fog_factor(_e14, relative);
+    vec3 _e20 = apply_fog(c_1, _e11, (fog_on ? _e16 : 0.0));
+    return _e20;
+}
+
+vec4 clip_of(Instance found, vec3 relative_1) {
     if (!(found.drawn)) {
         return OUTSIDE_CLIP;
     }
     mat4x4 _e6 = _group_0_binding_0_fs.view_proj;
-    vec4 _e8 = to_clip(_e6, relative);
+    vec4 _e8 = to_clip(_e6, relative_1);
     return _e8;
 }
 
@@ -5733,7 +6460,7 @@ Transform transform_of(Instance found_1) {
     return Transform(found_1.row_x, found_1.row_y, found_1.row_z);
 }
 
-vec3 relative_position_1(Instance found_2, vec3 position) {
+vec3 relative_position_3(Instance found_2, vec3 position) {
     Transform _e1 = transform_of(found_2);
     vec3 _e3 = transform_point(_e1, position);
     return _e3;
@@ -5756,10 +6483,10 @@ vec2 dfg_lut(float n_dot_v, float roughness) {
     vec4 _e36 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(high.x, low.y)), 0);
     vec2 b_1 = _e36.xy;
     vec4 _e43 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(low.x, high.y)), 0);
-    vec2 c_2 = _e43.xy;
+    vec2 c_4 = _e43.xy;
     vec4 _e47 = texelFetch(_group_0_binding_3_fs, ivec2(high), 0);
     vec2 d = _e47.xy;
-    return mix(mix(a_1, b_1, t_2.x), mix(c_2, d, t_2.x), t_2.y);
+    return mix(mix(a_1, b_1, t_2.x), mix(c_4, d, t_2.x), t_2.y);
 }
 
 vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
@@ -5767,16 +6494,16 @@ vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
 }
 
 PbrMaterial pbr_material(vec3 base_color, float metalness, float roughness_1, float geometry_roughness) {
-    PbrMaterial m_1 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
-    m_1.base_color = base_color;
-    m_1.diffuse = (base_color * (1.0 - metalness));
-    m_1.specular = vec3(0.04);
-    vec3 _e13 = m_1.specular;
-    m_1.specular_blended = mix(_e13, base_color, metalness);
-    m_1.specular_grazing = 1.0;
-    m_1.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
-    m_1.metalness = metalness;
-    PbrMaterial _e26 = m_1;
+    PbrMaterial m_2 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
+    m_2.base_color = base_color;
+    m_2.diffuse = (base_color * (1.0 - metalness));
+    m_2.specular = vec3(0.04);
+    vec3 _e13 = m_2.specular;
+    m_2.specular_blended = mix(_e13, base_color, metalness);
+    m_2.specular_grazing = 1.0;
+    m_2.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
+    m_2.metalness = metalness;
+    PbrMaterial _e26 = m_2;
     return _e26;
 }
 
@@ -5815,12 +6542,12 @@ vec3 brdf_lambert(vec3 diffuse) {
     return (INV_PI * diffuse);
 }
 
-Reflected direct_light(PbrMaterial m_2, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
+Reflected direct_light(PbrMaterial m_3, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
     vec3 irradiance_1 = (clamp(dot(normal_2, to_light_1), 0.0, 1.0) * light);
-    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_2.specular_blended, m_2.specular_grazing, m_2.roughness);
+    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_3.specular_blended, m_3.specular_grazing, m_3.roughness);
     float v_dot_h_2 = clamp(dot(to_view_1, normalize((to_light_1 + to_view_1))), 0.0, 1.0);
-    vec3 _e18 = f_schlick(m_2.specular, m_2.specular_grazing, v_dot_h_2);
-    vec3 _e20 = brdf_lambert(m_2.diffuse);
+    vec3 _e18 = f_schlick(m_3.specular, m_3.specular_grazing, v_dot_h_2);
+    vec3 _e20 = brdf_lambert(m_3.diffuse);
     return Reflected(((irradiance_1 * _e20) * (vec3(1.0) - _e18)), ((irradiance_1 * _e11) * compensation));
 }
 
@@ -5833,18 +6560,18 @@ Scattering multiscattering(vec3 f0_3, float f90_2, vec2 dfg_1) {
     return Scattering(single, (multi * ems));
 }
 
-vec3 indirect_diffuse(PbrMaterial m_3, vec3 irradiance, vec2 dfg_2) {
-    Scattering _e4 = multiscattering(m_3.specular, m_3.specular_grazing, dfg_2);
-    vec3 _e6 = brdf_lambert(m_3.diffuse);
+vec3 indirect_diffuse(PbrMaterial m_4, vec3 irradiance, vec2 dfg_2) {
+    Scattering _e4 = multiscattering(m_4.specular, m_4.specular_grazing, dfg_2);
+    vec3 _e6 = brdf_lambert(m_4.diffuse);
     return ((irradiance * _e6) * ((vec3(1.0) - _e4.single) - _e4.multi));
 }
 
-float sun_shadow(vec3 relative_1, vec3 normal_3) {
+float sun_shadow(vec3 relative_2, vec3 normal_3) {
     uint cascade = 0u;
     bool local = false;
     vec2 uv = vec2(0.0);
     vec4 _e4 = _group_0_binding_6_fs.forward;
-    float along = dot(relative_1, _e4.xyz);
+    float along = dot(relative_2, _e4.xyz);
     float _e10 = _group_0_binding_6_fs.forward.w;
     uint count = uint(_e10);
     while(true) {
@@ -5872,7 +6599,7 @@ float sun_shadow(vec3 relative_1, vec3 normal_3) {
     }
     uint _e34 = cascade;
     float _e36 = _group_0_binding_6_fs.normal_offsets[_e34];
-    vec3 moved = (relative_1 + (normal_3 * _e36));
+    vec3 moved = (relative_2 + (normal_3 * _e36));
     uint _e41 = cascade;
     mat4x4 _e43 = _group_0_binding_6_fs.view_proj[_e41];
     vec4 clip = (_e43 * vec4(moved, 1.0));
@@ -5881,33 +6608,33 @@ float sun_shadow(vec3 relative_1, vec3 normal_3) {
     uv.y = (1.0 - _e58);
     uint _e64 = cascade;
     float _e66 = _group_0_binding_6_fs.depth_biases[_e64];
-    float depth = (clip.z + _e66);
+    float depth_2 = (clip.z + _e66);
     vec2 _e70 = uv;
     uint _e71 = cascade;
-    float lit = textureGrad(_group_0_binding_4_fs, vec4(_e70, _e71, depth), vec2(0.0), vec2(0.0));
+    float lit = textureGrad(_group_0_binding_4_fs, vec4(_e70, _e71, depth_2), vec2(0.0), vec2(0.0));
     float end = _group_0_binding_6_fs.ends[(count - 1u)];
     return mix(lit, 1.0, smoothstep((end * 0.9), end, along));
 }
 
-vec3 linear_to_srgb(vec3 c) {
-    vec3 low_1 = (c * 12.92);
-    vec3 high_1 = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
-    return mix(high_1, low_1, lessThanEqual(c, vec3(0.0031308)));
+vec3 linear_to_srgb(vec3 c_2) {
+    vec3 low_1 = (c_2 * 12.92);
+    vec3 high_1 = ((1.055 * pow(c_2, vec3(0.41666666))) - vec3(0.055));
+    return mix(high_1, low_1, lessThanEqual(c_2, vec3(0.0031308)));
 }
 
-vec3 light_surface(PbrMaterial m_4, vec3 relative_2, vec3 normal_4, vec3 to_view_2, vec2 dfg_3) {
+vec3 light_surface(PbrMaterial m_5, vec3 relative_3, vec3 normal_4, vec3 to_view_2, vec2 dfg_3) {
     vec3 sun_color = vec3(0.0);
-    vec3 _e3 = multiscatter_compensation(m_4.specular_blended, dfg_3);
+    vec3 _e3 = multiscatter_compensation(m_5.specular_blended, dfg_3);
     vec4 _e6 = _group_0_binding_0_fs.sun_color;
     sun_color = _e6.xyz;
     vec3 _e9 = sun_color;
-    float _e12 = sun_shadow(relative_2, normal_4);
+    float _e12 = sun_shadow(relative_3, normal_4);
     sun_color = (_e9 * _e12);
     vec4 _e16 = _group_0_binding_0_fs.sun_direction;
     vec3 _e19 = sun_color;
-    Reflected _e21 = direct_light(m_4, normal_4, to_view_2, -(_e16.xyz), _e19, _e3);
+    Reflected _e21 = direct_light(m_5, normal_4, to_view_2, -(_e16.xyz), _e19, _e3);
     vec4 _e24 = _group_0_binding_0_fs.ambient;
-    vec3 _e26 = indirect_diffuse(m_4, _e24.xyz, dfg_3);
+    vec3 _e26 = indirect_diffuse(m_5, _e24.xyz, dfg_3);
     return ((_e21.diffuse + _e21.specular) + _e26);
 }
 
@@ -5944,8 +6671,9 @@ void main() {
     vec3 emitted = (_e2.emissive.xyz * _e2.strengths.w);
     vec3 _e81 = light_surface(_e70, in_.relative, normal_5, to_view_3, _e74);
     vec3 outgoing = (_e81 + emitted);
-    vec3 _e83 = linear_to_srgb(outgoing);
-    _fs2p_location0 = vec4(_e83, 1.0);
+    vec3 _e84 = fogged(outgoing, in_.relative, _e2);
+    vec3 _e85 = linear_to_srgb(_e84);
+    _fs2p_location0 = vec4(_e85, 1.0);
     return;
 }
 `,
@@ -6084,12 +6812,21 @@ precision highp int;
 
 uniform uint naga_vs_first_instance;
 
+struct Fog {
+    vec3 color;
+    uint kind;
+    vec3 forward;
+    float density;
+    float near;
+    float far;
+};
 struct Frame {
     mat4x4 view_proj;
     vec4 camera_position;
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Fog fog;
 };
 struct Transform {
     vec4 x;
@@ -6116,6 +6853,8 @@ struct CellOffsets {
 struct VertexIn {
     vec3 position;
 };
+const uint LINEAR = 1u;
+const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
@@ -6291,12 +7030,21 @@ void main() {
 precision highp float;
 precision highp int;
 
+struct Fog {
+    vec3 color;
+    uint kind;
+    vec3 forward;
+    float density;
+    float near;
+    float far;
+};
 struct Frame {
     mat4x4 view_proj;
     vec4 camera_position;
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Fog fog;
 };
 struct Transform {
     vec4 x;
@@ -6323,6 +7071,8 @@ struct CellOffsets {
 struct VertexIn {
     vec3 position;
 };
+const uint LINEAR = 1u;
+const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
@@ -6376,12 +7126,21 @@ precision highp int;
 
 uniform uint naga_vs_first_instance;
 
+struct Fog {
+    vec3 color;
+    uint kind;
+    vec3 forward;
+    float density;
+    float near;
+    float far;
+};
 struct Frame {
     mat4x4 view_proj;
     vec4 camera_position;
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Fog fog;
 };
 struct Transform {
     vec4 x;
@@ -6413,6 +7172,8 @@ struct VertexOut {
     vec4 clip;
     vec2 uv0_;
 };
+const uint LINEAR = 1u;
+const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
@@ -6589,12 +7350,21 @@ void main() {
 precision highp float;
 precision highp int;
 
+struct Fog {
+    vec3 color;
+    uint kind;
+    vec3 forward;
+    float density;
+    float near;
+    float far;
+};
 struct Frame {
     mat4x4 view_proj;
     vec4 camera_position;
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Fog fog;
 };
 struct Transform {
     vec4 x;
@@ -6626,6 +7396,8 @@ struct VertexOut {
     vec4 clip;
     vec2 uv0_;
 };
+const uint LINEAR = 1u;
+const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
@@ -6683,12 +7455,21 @@ precision highp int;
 
 uniform uint naga_vs_first_instance;
 
+struct Fog {
+    vec3 color;
+    uint kind;
+    vec3 forward;
+    float density;
+    float near;
+    float far;
+};
 struct Frame {
     mat4x4 view_proj;
     vec4 camera_position;
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Fog fog;
 };
 struct Material {
     vec4 color;
@@ -6728,14 +7509,20 @@ struct VertexIn {
 struct VertexOut {
     vec4 clip;
     uint material;
+    vec3 relative;
 };
+const uint LINEAR = 1u;
+const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
+const uint NO_FOG = 4u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
 const uint CELL_SHIFT = 23u;
 
-layout(std140) uniform DrawTable_block_0Vertex { DrawTable _group_1_binding_0_vs; };
+layout(std140) uniform Frame_block_0Vertex { Frame _group_0_binding_0_vs; };
+
+layout(std140) uniform DrawTable_block_1Vertex { DrawTable _group_1_binding_0_vs; };
 
 uniform highp usampler2D _group_2_binding_2_vs;
 
@@ -6745,20 +7532,52 @@ uniform highp sampler2D _group_2_binding_0_vs;
 
 uniform highp sampler2D _group_2_binding_1_vs;
 
-layout(std140) uniform CellOffsets_block_1Vertex { CellOffsets _group_0_binding_2_vs; };
-
-layout(std140) uniform Frame_block_2Vertex { Frame _group_0_binding_0_vs; };
+layout(std140) uniform CellOffsets_block_2Vertex { CellOffsets _group_0_binding_2_vs; };
 
 layout(location = 0) in vec3 _p2vs_location0;
 flat out uint _vs2fs_location0;
+smooth out vec3 _vs2fs_location2;
+
+vec3 apply_fog(vec3 c, vec3 fog_color, float factor) {
+    return mix(c, fog_color, factor);
+}
+
+float fog_depth(vec3 relative_position, vec3 forward) {
+    return dot(relative_position, forward);
+}
+
+float fog_linear(float depth, float near, float far) {
+    return smoothstep(near, far, depth);
+}
+
+float fog_exp2_(float depth_1, float density) {
+    return (1.0 - exp((((-(density) * density) * depth_1) * depth_1)));
+}
+
+float fog_factor(Fog fog, vec3 relative_position_1) {
+    float _e3 = fog_depth(relative_position_1, fog.forward);
+    float _e6 = fog_linear(_e3, fog.near, fog.far);
+    float linear = ((fog.kind == LINEAR) ? _e6 : 0.0);
+    float _e13 = fog_exp2_(_e3, fog.density);
+    return ((fog.kind == EXP2_) ? _e13 : linear);
+}
 
 vec3 transform_point(Transform t, vec3 p) {
     vec4 q = vec4(p, 1.0);
     return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
 }
 
-vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
-    return (view_proj * vec4(relative_position, 1.0));
+vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
+    return (view_proj * vec4(relative_position_2, 1.0));
+}
+
+vec3 fogged(vec3 c_1, vec3 relative, Material m_1) {
+    bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
+    vec3 _e11 = _group_0_binding_0_vs.fog.color;
+    Fog _e14 = _group_0_binding_0_vs.fog;
+    float _e16 = fog_factor(_e14, relative);
+    vec3 _e20 = apply_fog(c_1, _e11, (fog_on ? _e16 : 0.0));
+    return _e20;
 }
 
 Instance instance_of(uvec4 record, uint instance) {
@@ -6814,65 +7633,63 @@ Instance find_instance(InstanceIn i_1) {
     return _e7;
 }
 
-Transform transform_of(Instance found) {
-    return Transform(found.row_x, found.row_y, found.row_z);
+vec4 clip_of(Instance found, vec3 relative_1) {
+    if (!(found.drawn)) {
+        return OUTSIDE_CLIP;
+    }
+    mat4x4 _e6 = _group_0_binding_0_vs.view_proj;
+    vec4 _e8 = to_clip(_e6, relative_1);
+    return _e8;
 }
 
-vec3 relative_position_1(Instance found_1, vec3 position) {
-    Transform _e1 = transform_of(found_1);
+Transform transform_of(Instance found_1) {
+    return Transform(found_1.row_x, found_1.row_y, found_1.row_z);
+}
+
+vec3 relative_position_3(Instance found_2, vec3 position) {
+    Transform _e1 = transform_of(found_2);
     vec3 _e3 = transform_point(_e1, position);
     return _e3;
 }
 
-vec4 clip_of(Instance found_2, vec3 relative) {
-    if (!(found_2.drawn)) {
-        return OUTSIDE_CLIP;
-    }
-    mat4x4 _e6 = _group_0_binding_0_vs.view_proj;
-    vec4 _e8 = to_clip(_e6, relative);
-    return _e8;
-}
-
-vec4 clip_position(Instance found_3, vec3 position_1) {
-    vec3 _e2 = relative_position_1(found_3, position_1);
-    vec4 _e3 = clip_of(found_3, _e2);
-    return _e3;
-}
-
-vec3 linear_to_srgb(vec3 c) {
-    vec3 low = (c * 12.92);
-    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
-    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
+vec3 linear_to_srgb(vec3 c_2) {
+    vec3 low = (c_2 * 12.92);
+    vec3 high = ((1.055 * pow(c_2, vec3(0.41666666))) - vec3(0.055));
+    return mix(high, low, lessThanEqual(c_2, vec3(0.0031308)));
 }
 
 void main() {
     VertexIn v = VertexIn(_p2vs_location0);
     InstanceIn i = InstanceIn((uint(gl_InstanceID) + naga_vs_first_instance), uint(gl_DrawID));
-    VertexOut out_ = VertexOut(vec4(0.0), 0u);
+    VertexOut out_ = VertexOut(vec4(0.0), 0u, vec3(0.0));
     Instance _e1 = find_instance(i);
-    vec4 _e6 = clip_position(_e1, v.position);
-    out_.clip = _e6;
+    vec3 _e6 = relative_position_3(_e1, v.position);
+    out_.relative = _e6;
+    vec3 _e9 = out_.relative;
+    vec4 _e10 = clip_of(_e1, _e9);
+    out_.clip = _e10;
     out_.material = _e1.material;
-    VertexOut _e9 = out_;
-    gl_Position = _e9.clip;
-    _vs2fs_location0 = _e9.material;
+    VertexOut _e13 = out_;
+    gl_Position = _e13.clip;
+    _vs2fs_location0 = _e13.material;
+    _vs2fs_location2 = _e13.relative;
     gl_Position.z = gl_Position.z * null3d_depth_mapping.x + gl_Position.w * null3d_depth_mapping.y;
     return;
 }
 `,
 						uniformBlocks: [
 							{
-								name: 'Frame_block_2Vertex',
+								name: 'Frame_block_0Vertex',
 								group: 0,
 								binding: 0,
 							},
 							{
-								name: 'CellOffsets_block_1Vertex',
+								name: 'CellOffsets_block_2Vertex',
 								group: 0,
 								binding: 2,
 							},
 							{
-								name: 'DrawTable_block_0Vertex',
+								name: 'DrawTable_block_1Vertex',
 								group: 1,
 								binding: 0,
 							},
@@ -6910,12 +7727,21 @@ void main() {
 precision highp float;
 precision highp int;
 
+struct Fog {
+    vec3 color;
+    uint kind;
+    vec3 forward;
+    float density;
+    float near;
+    float far;
+};
 struct Frame {
     mat4x4 view_proj;
     vec4 camera_position;
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Fog fog;
 };
 struct Material {
     vec4 color;
@@ -6955,8 +7781,12 @@ struct VertexIn {
 struct VertexOut {
     vec4 clip;
     uint material;
+    vec3 relative;
 };
+const uint LINEAR = 1u;
+const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
+const uint NO_FOG = 4u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -6964,16 +7794,43 @@ const uint CELL_SHIFT = 23u;
 
 uniform highp sampler2D _group_0_binding_1_fs;
 
+layout(std140) uniform Frame_block_0Fragment { Frame _group_0_binding_0_fs; };
+
 flat in uint _vs2fs_location0;
+smooth in vec3 _vs2fs_location2;
 layout(location = 0) out vec4 _fs2p_location0;
+
+vec3 apply_fog(vec3 c, vec3 fog_color, float factor) {
+    return mix(c, fog_color, factor);
+}
+
+float fog_depth(vec3 relative_position, vec3 forward) {
+    return dot(relative_position, forward);
+}
+
+float fog_linear(float depth, float near, float far) {
+    return smoothstep(near, far, depth);
+}
+
+float fog_exp2_(float depth_1, float density) {
+    return (1.0 - exp((((-(density) * density) * depth_1) * depth_1)));
+}
+
+float fog_factor(Fog fog, vec3 relative_position_1) {
+    float _e3 = fog_depth(relative_position_1, fog.forward);
+    float _e6 = fog_linear(_e3, fog.near, fog.far);
+    float linear = ((fog.kind == LINEAR) ? _e6 : 0.0);
+    float _e13 = fog_exp2_(_e3, fog.density);
+    return ((fog.kind == EXP2_) ? _e13 : linear);
+}
 
 vec3 transform_point(Transform t, vec3 p) {
     vec4 q = vec4(p, 1.0);
     return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
 }
 
-vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
-    return (view_proj * vec4(relative_position, 1.0));
+vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
+    return (view_proj * vec4(relative_position_2, 1.0));
 }
 
 Material material_of(uint id) {
@@ -6998,36 +7855,61 @@ Material material_of(uint id) {
     return _e50;
 }
 
-Transform transform_of(Instance found) {
-    return Transform(found.row_x, found.row_y, found.row_z);
+vec3 fogged(vec3 c_1, vec3 relative, Material m_1) {
+    bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
+    vec3 _e11 = _group_0_binding_0_fs.fog.color;
+    Fog _e14 = _group_0_binding_0_fs.fog;
+    float _e16 = fog_factor(_e14, relative);
+    vec3 _e20 = apply_fog(c_1, _e11, (fog_on ? _e16 : 0.0));
+    return _e20;
 }
 
-vec3 relative_position_1(Instance found_1, vec3 position) {
-    Transform _e1 = transform_of(found_1);
+vec4 clip_of(Instance found, vec3 relative_1) {
+    if (!(found.drawn)) {
+        return OUTSIDE_CLIP;
+    }
+    mat4x4 _e6 = _group_0_binding_0_fs.view_proj;
+    vec4 _e8 = to_clip(_e6, relative_1);
+    return _e8;
+}
+
+Transform transform_of(Instance found_1) {
+    return Transform(found_1.row_x, found_1.row_y, found_1.row_z);
+}
+
+vec3 relative_position_3(Instance found_2, vec3 position) {
+    Transform _e1 = transform_of(found_2);
     vec3 _e3 = transform_point(_e1, position);
     return _e3;
 }
 
-vec3 linear_to_srgb(vec3 c) {
-    vec3 low = (c * 12.92);
-    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
-    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
+vec3 linear_to_srgb(vec3 c_2) {
+    vec3 low = (c_2 * 12.92);
+    vec3 high = ((1.055 * pow(c_2, vec3(0.41666666))) - vec3(0.055));
+    return mix(high, low, lessThanEqual(c_2, vec3(0.0031308)));
 }
 
 void main() {
-    VertexOut in_ = VertexOut(gl_FragCoord, _vs2fs_location0);
+    VertexOut in_ = VertexOut(gl_FragCoord, _vs2fs_location0, _vs2fs_location2);
     vec3 base = vec3(0.0);
     float alpha = 0.0;
     Material _e2 = material_of(in_.material);
     base = _e2.color.xyz;
     alpha = _e2.color.w;
     vec3 _e9 = base;
-    vec3 _e10 = linear_to_srgb(_e9);
-    _fs2p_location0 = vec4(_e10, 1.0);
+    vec3 _e11 = fogged(_e9, in_.relative, _e2);
+    vec3 _e12 = linear_to_srgb(_e11);
+    _fs2p_location0 = vec4(_e12, 1.0);
     return;
 }
 `,
-						uniformBlocks: [],
+						uniformBlocks: [
+							{
+								name: 'Frame_block_0Fragment',
+								group: 0,
+								binding: 0,
+							},
+						],
 						textures: [
 							{
 								name: '_group_0_binding_1_fs',
@@ -7055,12 +7937,21 @@ precision highp int;
 
 uniform uint naga_vs_first_instance;
 
+struct Fog {
+    vec3 color;
+    uint kind;
+    vec3 forward;
+    float density;
+    float near;
+    float far;
+};
 struct Frame {
     mat4x4 view_proj;
     vec4 camera_position;
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Fog fog;
 };
 struct Material {
     vec4 color;
@@ -7100,14 +7991,20 @@ struct VertexIn {
 struct VertexOut {
     vec4 clip;
     uint material;
+    vec3 relative;
 };
+const uint LINEAR = 1u;
+const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
+const uint NO_FOG = 4u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
 const uint CELL_SHIFT = 23u;
 
-layout(std140) uniform DrawTable_block_0Vertex { DrawTable _group_1_binding_0_vs; };
+layout(std140) uniform Frame_block_0Vertex { Frame _group_0_binding_0_vs; };
+
+layout(std140) uniform DrawTable_block_1Vertex { DrawTable _group_1_binding_0_vs; };
 
 uniform highp usampler2D _group_2_binding_2_vs;
 
@@ -7117,20 +8014,52 @@ uniform highp sampler2D _group_2_binding_0_vs;
 
 uniform highp sampler2D _group_2_binding_1_vs;
 
-layout(std140) uniform CellOffsets_block_1Vertex { CellOffsets _group_0_binding_2_vs; };
-
-layout(std140) uniform Frame_block_2Vertex { Frame _group_0_binding_0_vs; };
+layout(std140) uniform CellOffsets_block_2Vertex { CellOffsets _group_0_binding_2_vs; };
 
 layout(location = 0) in vec3 _p2vs_location0;
 flat out uint _vs2fs_location0;
+smooth out vec3 _vs2fs_location2;
+
+vec3 apply_fog(vec3 c, vec3 fog_color, float factor) {
+    return mix(c, fog_color, factor);
+}
+
+float fog_depth(vec3 relative_position, vec3 forward) {
+    return dot(relative_position, forward);
+}
+
+float fog_linear(float depth, float near, float far) {
+    return smoothstep(near, far, depth);
+}
+
+float fog_exp2_(float depth_1, float density) {
+    return (1.0 - exp((((-(density) * density) * depth_1) * depth_1)));
+}
+
+float fog_factor(Fog fog, vec3 relative_position_1) {
+    float _e3 = fog_depth(relative_position_1, fog.forward);
+    float _e6 = fog_linear(_e3, fog.near, fog.far);
+    float linear = ((fog.kind == LINEAR) ? _e6 : 0.0);
+    float _e13 = fog_exp2_(_e3, fog.density);
+    return ((fog.kind == EXP2_) ? _e13 : linear);
+}
 
 vec3 transform_point(Transform t, vec3 p) {
     vec4 q = vec4(p, 1.0);
     return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
 }
 
-vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
-    return (view_proj * vec4(relative_position, 1.0));
+vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
+    return (view_proj * vec4(relative_position_2, 1.0));
+}
+
+vec3 fogged(vec3 c_1, vec3 relative, Material m_1) {
+    bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
+    vec3 _e11 = _group_0_binding_0_vs.fog.color;
+    Fog _e14 = _group_0_binding_0_vs.fog;
+    float _e16 = fog_factor(_e14, relative);
+    vec3 _e20 = apply_fog(c_1, _e11, (fog_on ? _e16 : 0.0));
+    return _e20;
 }
 
 Instance instance_of(uvec4 record, uint instance) {
@@ -7186,65 +8115,63 @@ Instance find_instance(InstanceIn i_1) {
     return _e7;
 }
 
-Transform transform_of(Instance found) {
-    return Transform(found.row_x, found.row_y, found.row_z);
+vec4 clip_of(Instance found, vec3 relative_1) {
+    if (!(found.drawn)) {
+        return OUTSIDE_CLIP;
+    }
+    mat4x4 _e6 = _group_0_binding_0_vs.view_proj;
+    vec4 _e8 = to_clip(_e6, relative_1);
+    return _e8;
 }
 
-vec3 relative_position_1(Instance found_1, vec3 position) {
-    Transform _e1 = transform_of(found_1);
+Transform transform_of(Instance found_1) {
+    return Transform(found_1.row_x, found_1.row_y, found_1.row_z);
+}
+
+vec3 relative_position_3(Instance found_2, vec3 position) {
+    Transform _e1 = transform_of(found_2);
     vec3 _e3 = transform_point(_e1, position);
     return _e3;
 }
 
-vec4 clip_of(Instance found_2, vec3 relative) {
-    if (!(found_2.drawn)) {
-        return OUTSIDE_CLIP;
-    }
-    mat4x4 _e6 = _group_0_binding_0_vs.view_proj;
-    vec4 _e8 = to_clip(_e6, relative);
-    return _e8;
-}
-
-vec4 clip_position(Instance found_3, vec3 position_1) {
-    vec3 _e2 = relative_position_1(found_3, position_1);
-    vec4 _e3 = clip_of(found_3, _e2);
-    return _e3;
-}
-
-vec3 linear_to_srgb(vec3 c) {
-    vec3 low = (c * 12.92);
-    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
-    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
+vec3 linear_to_srgb(vec3 c_2) {
+    vec3 low = (c_2 * 12.92);
+    vec3 high = ((1.055 * pow(c_2, vec3(0.41666666))) - vec3(0.055));
+    return mix(high, low, lessThanEqual(c_2, vec3(0.0031308)));
 }
 
 void main() {
     VertexIn v = VertexIn(_p2vs_location0);
     InstanceIn i = InstanceIn((uint(gl_InstanceID) + naga_vs_first_instance), uint(gl_DrawID));
-    VertexOut out_ = VertexOut(vec4(0.0), 0u);
+    VertexOut out_ = VertexOut(vec4(0.0), 0u, vec3(0.0));
     Instance _e1 = find_instance(i);
-    vec4 _e6 = clip_position(_e1, v.position);
-    out_.clip = _e6;
+    vec3 _e6 = relative_position_3(_e1, v.position);
+    out_.relative = _e6;
+    vec3 _e9 = out_.relative;
+    vec4 _e10 = clip_of(_e1, _e9);
+    out_.clip = _e10;
     out_.material = _e1.material;
-    VertexOut _e9 = out_;
-    gl_Position = _e9.clip;
-    _vs2fs_location0 = _e9.material;
+    VertexOut _e13 = out_;
+    gl_Position = _e13.clip;
+    _vs2fs_location0 = _e13.material;
+    _vs2fs_location2 = _e13.relative;
     gl_Position.z = gl_Position.z * null3d_depth_mapping.x + gl_Position.w * null3d_depth_mapping.y;
     return;
 }
 `,
 						uniformBlocks: [
 							{
-								name: 'Frame_block_2Vertex',
+								name: 'Frame_block_0Vertex',
 								group: 0,
 								binding: 0,
 							},
 							{
-								name: 'CellOffsets_block_1Vertex',
+								name: 'CellOffsets_block_2Vertex',
 								group: 0,
 								binding: 2,
 							},
 							{
-								name: 'DrawTable_block_0Vertex',
+								name: 'DrawTable_block_1Vertex',
 								group: 1,
 								binding: 0,
 							},
@@ -7282,12 +8209,21 @@ void main() {
 precision highp float;
 precision highp int;
 
+struct Fog {
+    vec3 color;
+    uint kind;
+    vec3 forward;
+    float density;
+    float near;
+    float far;
+};
 struct Frame {
     mat4x4 view_proj;
     vec4 camera_position;
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Fog fog;
 };
 struct Material {
     vec4 color;
@@ -7327,8 +8263,12 @@ struct VertexIn {
 struct VertexOut {
     vec4 clip;
     uint material;
+    vec3 relative;
 };
+const uint LINEAR = 1u;
+const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
+const uint NO_FOG = 4u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -7336,16 +8276,43 @@ const uint CELL_SHIFT = 23u;
 
 uniform highp sampler2D _group_0_binding_1_fs;
 
+layout(std140) uniform Frame_block_0Fragment { Frame _group_0_binding_0_fs; };
+
 flat in uint _vs2fs_location0;
+smooth in vec3 _vs2fs_location2;
 layout(location = 0) out vec4 _fs2p_location0;
+
+vec3 apply_fog(vec3 c, vec3 fog_color, float factor) {
+    return mix(c, fog_color, factor);
+}
+
+float fog_depth(vec3 relative_position, vec3 forward) {
+    return dot(relative_position, forward);
+}
+
+float fog_linear(float depth, float near, float far) {
+    return smoothstep(near, far, depth);
+}
+
+float fog_exp2_(float depth_1, float density) {
+    return (1.0 - exp((((-(density) * density) * depth_1) * depth_1)));
+}
+
+float fog_factor(Fog fog, vec3 relative_position_1) {
+    float _e3 = fog_depth(relative_position_1, fog.forward);
+    float _e6 = fog_linear(_e3, fog.near, fog.far);
+    float linear = ((fog.kind == LINEAR) ? _e6 : 0.0);
+    float _e13 = fog_exp2_(_e3, fog.density);
+    return ((fog.kind == EXP2_) ? _e13 : linear);
+}
 
 vec3 transform_point(Transform t, vec3 p) {
     vec4 q = vec4(p, 1.0);
     return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
 }
 
-vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
-    return (view_proj * vec4(relative_position, 1.0));
+vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
+    return (view_proj * vec4(relative_position_2, 1.0));
 }
 
 Material material_of(uint id) {
@@ -7370,24 +8337,42 @@ Material material_of(uint id) {
     return _e50;
 }
 
-Transform transform_of(Instance found) {
-    return Transform(found.row_x, found.row_y, found.row_z);
+vec3 fogged(vec3 c_1, vec3 relative, Material m_1) {
+    bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
+    vec3 _e11 = _group_0_binding_0_fs.fog.color;
+    Fog _e14 = _group_0_binding_0_fs.fog;
+    float _e16 = fog_factor(_e14, relative);
+    vec3 _e20 = apply_fog(c_1, _e11, (fog_on ? _e16 : 0.0));
+    return _e20;
 }
 
-vec3 relative_position_1(Instance found_1, vec3 position) {
-    Transform _e1 = transform_of(found_1);
+vec4 clip_of(Instance found, vec3 relative_1) {
+    if (!(found.drawn)) {
+        return OUTSIDE_CLIP;
+    }
+    mat4x4 _e6 = _group_0_binding_0_fs.view_proj;
+    vec4 _e8 = to_clip(_e6, relative_1);
+    return _e8;
+}
+
+Transform transform_of(Instance found_1) {
+    return Transform(found_1.row_x, found_1.row_y, found_1.row_z);
+}
+
+vec3 relative_position_3(Instance found_2, vec3 position) {
+    Transform _e1 = transform_of(found_2);
     vec3 _e3 = transform_point(_e1, position);
     return _e3;
 }
 
-vec3 linear_to_srgb(vec3 c) {
-    vec3 low = (c * 12.92);
-    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
-    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
+vec3 linear_to_srgb(vec3 c_2) {
+    vec3 low = (c_2 * 12.92);
+    vec3 high = ((1.055 * pow(c_2, vec3(0.41666666))) - vec3(0.055));
+    return mix(high, low, lessThanEqual(c_2, vec3(0.0031308)));
 }
 
 void main() {
-    VertexOut in_ = VertexOut(gl_FragCoord, _vs2fs_location0);
+    VertexOut in_ = VertexOut(gl_FragCoord, _vs2fs_location0, _vs2fs_location2);
     vec3 base = vec3(0.0);
     float alpha = 0.0;
     Material _e2 = material_of(in_.material);
@@ -7398,12 +8383,19 @@ void main() {
         discard;
     }
     vec3 _e13 = base;
-    vec3 _e14 = linear_to_srgb(_e13);
-    _fs2p_location0 = vec4(_e14, 1.0);
+    vec3 _e15 = fogged(_e13, in_.relative, _e2);
+    vec3 _e16 = linear_to_srgb(_e15);
+    _fs2p_location0 = vec4(_e16, 1.0);
     return;
 }
 `,
-						uniformBlocks: [],
+						uniformBlocks: [
+							{
+								name: 'Frame_block_0Fragment',
+								group: 0,
+								binding: 0,
+							},
+						],
 						textures: [
 							{
 								name: '_group_0_binding_1_fs',
@@ -7431,12 +8423,21 @@ precision highp int;
 
 uniform uint naga_vs_first_instance;
 
+struct Fog {
+    vec3 color;
+    uint kind;
+    vec3 forward;
+    float density;
+    float near;
+    float far;
+};
 struct Frame {
     mat4x4 view_proj;
     vec4 camera_position;
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Fog fog;
 };
 struct Material {
     vec4 color;
@@ -7478,14 +8479,20 @@ struct VertexOut {
     vec4 clip;
     uint material;
     vec4 vertex_color;
+    vec3 relative;
 };
+const uint LINEAR = 1u;
+const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
+const uint NO_FOG = 4u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
 const uint CELL_SHIFT = 23u;
 
-layout(std140) uniform DrawTable_block_0Vertex { DrawTable _group_1_binding_0_vs; };
+layout(std140) uniform Frame_block_0Vertex { Frame _group_0_binding_0_vs; };
+
+layout(std140) uniform DrawTable_block_1Vertex { DrawTable _group_1_binding_0_vs; };
 
 uniform highp usampler2D _group_2_binding_2_vs;
 
@@ -7495,22 +8502,54 @@ uniform highp sampler2D _group_2_binding_0_vs;
 
 uniform highp sampler2D _group_2_binding_1_vs;
 
-layout(std140) uniform CellOffsets_block_1Vertex { CellOffsets _group_0_binding_2_vs; };
-
-layout(std140) uniform Frame_block_2Vertex { Frame _group_0_binding_0_vs; };
+layout(std140) uniform CellOffsets_block_2Vertex { CellOffsets _group_0_binding_2_vs; };
 
 layout(location = 0) in vec3 _p2vs_location0;
 layout(location = 5) in vec4 _p2vs_location5;
 flat out uint _vs2fs_location0;
 smooth out vec4 _vs2fs_location1;
+smooth out vec3 _vs2fs_location2;
+
+vec3 apply_fog(vec3 c, vec3 fog_color, float factor) {
+    return mix(c, fog_color, factor);
+}
+
+float fog_depth(vec3 relative_position, vec3 forward) {
+    return dot(relative_position, forward);
+}
+
+float fog_linear(float depth, float near, float far) {
+    return smoothstep(near, far, depth);
+}
+
+float fog_exp2_(float depth_1, float density) {
+    return (1.0 - exp((((-(density) * density) * depth_1) * depth_1)));
+}
+
+float fog_factor(Fog fog, vec3 relative_position_1) {
+    float _e3 = fog_depth(relative_position_1, fog.forward);
+    float _e6 = fog_linear(_e3, fog.near, fog.far);
+    float linear = ((fog.kind == LINEAR) ? _e6 : 0.0);
+    float _e13 = fog_exp2_(_e3, fog.density);
+    return ((fog.kind == EXP2_) ? _e13 : linear);
+}
 
 vec3 transform_point(Transform t, vec3 p) {
     vec4 q = vec4(p, 1.0);
     return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
 }
 
-vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
-    return (view_proj * vec4(relative_position, 1.0));
+vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
+    return (view_proj * vec4(relative_position_2, 1.0));
+}
+
+vec3 fogged(vec3 c_1, vec3 relative, Material m_1) {
+    bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
+    vec3 _e11 = _group_0_binding_0_vs.fog.color;
+    Fog _e14 = _group_0_binding_0_vs.fog;
+    float _e16 = fog_factor(_e14, relative);
+    vec3 _e20 = apply_fog(c_1, _e11, (fog_on ? _e16 : 0.0));
+    return _e20;
 }
 
 Instance instance_of(uvec4 record, uint instance) {
@@ -7566,67 +8605,65 @@ Instance find_instance(InstanceIn i_1) {
     return _e7;
 }
 
-Transform transform_of(Instance found) {
-    return Transform(found.row_x, found.row_y, found.row_z);
+vec4 clip_of(Instance found, vec3 relative_1) {
+    if (!(found.drawn)) {
+        return OUTSIDE_CLIP;
+    }
+    mat4x4 _e6 = _group_0_binding_0_vs.view_proj;
+    vec4 _e8 = to_clip(_e6, relative_1);
+    return _e8;
 }
 
-vec3 relative_position_1(Instance found_1, vec3 position) {
-    Transform _e1 = transform_of(found_1);
+Transform transform_of(Instance found_1) {
+    return Transform(found_1.row_x, found_1.row_y, found_1.row_z);
+}
+
+vec3 relative_position_3(Instance found_2, vec3 position) {
+    Transform _e1 = transform_of(found_2);
     vec3 _e3 = transform_point(_e1, position);
     return _e3;
 }
 
-vec4 clip_of(Instance found_2, vec3 relative) {
-    if (!(found_2.drawn)) {
-        return OUTSIDE_CLIP;
-    }
-    mat4x4 _e6 = _group_0_binding_0_vs.view_proj;
-    vec4 _e8 = to_clip(_e6, relative);
-    return _e8;
-}
-
-vec4 clip_position(Instance found_3, vec3 position_1) {
-    vec3 _e2 = relative_position_1(found_3, position_1);
-    vec4 _e3 = clip_of(found_3, _e2);
-    return _e3;
-}
-
-vec3 linear_to_srgb(vec3 c) {
-    vec3 low = (c * 12.92);
-    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
-    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
+vec3 linear_to_srgb(vec3 c_2) {
+    vec3 low = (c_2 * 12.92);
+    vec3 high = ((1.055 * pow(c_2, vec3(0.41666666))) - vec3(0.055));
+    return mix(high, low, lessThanEqual(c_2, vec3(0.0031308)));
 }
 
 void main() {
     VertexIn v = VertexIn(_p2vs_location0, _p2vs_location5);
     InstanceIn i = InstanceIn((uint(gl_InstanceID) + naga_vs_first_instance), uint(gl_DrawID));
-    VertexOut out_ = VertexOut(vec4(0.0), 0u, vec4(0.0));
+    VertexOut out_ = VertexOut(vec4(0.0), 0u, vec4(0.0), vec3(0.0));
     Instance _e1 = find_instance(i);
-    vec4 _e6 = clip_position(_e1, v.position);
-    out_.clip = _e6;
+    vec3 _e6 = relative_position_3(_e1, v.position);
+    out_.relative = _e6;
+    vec3 _e9 = out_.relative;
+    vec4 _e10 = clip_of(_e1, _e9);
+    out_.clip = _e10;
     out_.material = _e1.material;
     out_.vertex_color = v.vertex_color;
-    VertexOut _e11 = out_;
-    gl_Position = _e11.clip;
-    _vs2fs_location0 = _e11.material;
-    _vs2fs_location1 = _e11.vertex_color;
+    VertexOut _e15 = out_;
+    gl_Position = _e15.clip;
+    _vs2fs_location0 = _e15.material;
+    _vs2fs_location1 = _e15.vertex_color;
+    _vs2fs_location2 = _e15.relative;
     gl_Position.z = gl_Position.z * null3d_depth_mapping.x + gl_Position.w * null3d_depth_mapping.y;
     return;
 }
 `,
 						uniformBlocks: [
 							{
-								name: 'Frame_block_2Vertex',
+								name: 'Frame_block_0Vertex',
 								group: 0,
 								binding: 0,
 							},
 							{
-								name: 'CellOffsets_block_1Vertex',
+								name: 'CellOffsets_block_2Vertex',
 								group: 0,
 								binding: 2,
 							},
 							{
-								name: 'DrawTable_block_0Vertex',
+								name: 'DrawTable_block_1Vertex',
 								group: 1,
 								binding: 0,
 							},
@@ -7664,12 +8701,21 @@ void main() {
 precision highp float;
 precision highp int;
 
+struct Fog {
+    vec3 color;
+    uint kind;
+    vec3 forward;
+    float density;
+    float near;
+    float far;
+};
 struct Frame {
     mat4x4 view_proj;
     vec4 camera_position;
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Fog fog;
 };
 struct Material {
     vec4 color;
@@ -7711,8 +8757,12 @@ struct VertexOut {
     vec4 clip;
     uint material;
     vec4 vertex_color;
+    vec3 relative;
 };
+const uint LINEAR = 1u;
+const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
+const uint NO_FOG = 4u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -7720,17 +8770,44 @@ const uint CELL_SHIFT = 23u;
 
 uniform highp sampler2D _group_0_binding_1_fs;
 
+layout(std140) uniform Frame_block_0Fragment { Frame _group_0_binding_0_fs; };
+
 flat in uint _vs2fs_location0;
 smooth in vec4 _vs2fs_location1;
+smooth in vec3 _vs2fs_location2;
 layout(location = 0) out vec4 _fs2p_location0;
+
+vec3 apply_fog(vec3 c, vec3 fog_color, float factor) {
+    return mix(c, fog_color, factor);
+}
+
+float fog_depth(vec3 relative_position, vec3 forward) {
+    return dot(relative_position, forward);
+}
+
+float fog_linear(float depth, float near, float far) {
+    return smoothstep(near, far, depth);
+}
+
+float fog_exp2_(float depth_1, float density) {
+    return (1.0 - exp((((-(density) * density) * depth_1) * depth_1)));
+}
+
+float fog_factor(Fog fog, vec3 relative_position_1) {
+    float _e3 = fog_depth(relative_position_1, fog.forward);
+    float _e6 = fog_linear(_e3, fog.near, fog.far);
+    float linear = ((fog.kind == LINEAR) ? _e6 : 0.0);
+    float _e13 = fog_exp2_(_e3, fog.density);
+    return ((fog.kind == EXP2_) ? _e13 : linear);
+}
 
 vec3 transform_point(Transform t, vec3 p) {
     vec4 q = vec4(p, 1.0);
     return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
 }
 
-vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
-    return (view_proj * vec4(relative_position, 1.0));
+vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
+    return (view_proj * vec4(relative_position_2, 1.0));
 }
 
 Material material_of(uint id) {
@@ -7755,24 +8832,42 @@ Material material_of(uint id) {
     return _e50;
 }
 
-Transform transform_of(Instance found) {
-    return Transform(found.row_x, found.row_y, found.row_z);
+vec3 fogged(vec3 c_1, vec3 relative, Material m_1) {
+    bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
+    vec3 _e11 = _group_0_binding_0_fs.fog.color;
+    Fog _e14 = _group_0_binding_0_fs.fog;
+    float _e16 = fog_factor(_e14, relative);
+    vec3 _e20 = apply_fog(c_1, _e11, (fog_on ? _e16 : 0.0));
+    return _e20;
 }
 
-vec3 relative_position_1(Instance found_1, vec3 position) {
-    Transform _e1 = transform_of(found_1);
+vec4 clip_of(Instance found, vec3 relative_1) {
+    if (!(found.drawn)) {
+        return OUTSIDE_CLIP;
+    }
+    mat4x4 _e6 = _group_0_binding_0_fs.view_proj;
+    vec4 _e8 = to_clip(_e6, relative_1);
+    return _e8;
+}
+
+Transform transform_of(Instance found_1) {
+    return Transform(found_1.row_x, found_1.row_y, found_1.row_z);
+}
+
+vec3 relative_position_3(Instance found_2, vec3 position) {
+    Transform _e1 = transform_of(found_2);
     vec3 _e3 = transform_point(_e1, position);
     return _e3;
 }
 
-vec3 linear_to_srgb(vec3 c) {
-    vec3 low = (c * 12.92);
-    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
-    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
+vec3 linear_to_srgb(vec3 c_2) {
+    vec3 low = (c_2 * 12.92);
+    vec3 high = ((1.055 * pow(c_2, vec3(0.41666666))) - vec3(0.055));
+    return mix(high, low, lessThanEqual(c_2, vec3(0.0031308)));
 }
 
 void main() {
-    VertexOut in_ = VertexOut(gl_FragCoord, _vs2fs_location0, _vs2fs_location1);
+    VertexOut in_ = VertexOut(gl_FragCoord, _vs2fs_location0, _vs2fs_location1, _vs2fs_location2);
     vec3 base = vec3(0.0);
     float alpha = 0.0;
     Material _e2 = material_of(in_.material);
@@ -7783,12 +8878,19 @@ void main() {
     float _e13 = alpha;
     alpha = (_e13 * in_.vertex_color.w);
     vec3 _e17 = base;
-    vec3 _e18 = linear_to_srgb(_e17);
-    _fs2p_location0 = vec4(_e18, 1.0);
+    vec3 _e19 = fogged(_e17, in_.relative, _e2);
+    vec3 _e20 = linear_to_srgb(_e19);
+    _fs2p_location0 = vec4(_e20, 1.0);
     return;
 }
 `,
-						uniformBlocks: [],
+						uniformBlocks: [
+							{
+								name: 'Frame_block_0Fragment',
+								group: 0,
+								binding: 0,
+							},
+						],
 						textures: [
 							{
 								name: '_group_0_binding_1_fs',
@@ -7816,12 +8918,21 @@ precision highp int;
 
 uniform uint naga_vs_first_instance;
 
+struct Fog {
+    vec3 color;
+    uint kind;
+    vec3 forward;
+    float density;
+    float near;
+    float far;
+};
 struct Frame {
     mat4x4 view_proj;
     vec4 camera_position;
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Fog fog;
 };
 struct Material {
     vec4 color;
@@ -7863,14 +8974,20 @@ struct VertexOut {
     vec4 clip;
     uint material;
     vec4 vertex_color;
+    vec3 relative;
 };
+const uint LINEAR = 1u;
+const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
+const uint NO_FOG = 4u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
 const uint CELL_SHIFT = 23u;
 
-layout(std140) uniform DrawTable_block_0Vertex { DrawTable _group_1_binding_0_vs; };
+layout(std140) uniform Frame_block_0Vertex { Frame _group_0_binding_0_vs; };
+
+layout(std140) uniform DrawTable_block_1Vertex { DrawTable _group_1_binding_0_vs; };
 
 uniform highp usampler2D _group_2_binding_2_vs;
 
@@ -7880,22 +8997,54 @@ uniform highp sampler2D _group_2_binding_0_vs;
 
 uniform highp sampler2D _group_2_binding_1_vs;
 
-layout(std140) uniform CellOffsets_block_1Vertex { CellOffsets _group_0_binding_2_vs; };
-
-layout(std140) uniform Frame_block_2Vertex { Frame _group_0_binding_0_vs; };
+layout(std140) uniform CellOffsets_block_2Vertex { CellOffsets _group_0_binding_2_vs; };
 
 layout(location = 0) in vec3 _p2vs_location0;
 layout(location = 5) in vec4 _p2vs_location5;
 flat out uint _vs2fs_location0;
 smooth out vec4 _vs2fs_location1;
+smooth out vec3 _vs2fs_location2;
+
+vec3 apply_fog(vec3 c, vec3 fog_color, float factor) {
+    return mix(c, fog_color, factor);
+}
+
+float fog_depth(vec3 relative_position, vec3 forward) {
+    return dot(relative_position, forward);
+}
+
+float fog_linear(float depth, float near, float far) {
+    return smoothstep(near, far, depth);
+}
+
+float fog_exp2_(float depth_1, float density) {
+    return (1.0 - exp((((-(density) * density) * depth_1) * depth_1)));
+}
+
+float fog_factor(Fog fog, vec3 relative_position_1) {
+    float _e3 = fog_depth(relative_position_1, fog.forward);
+    float _e6 = fog_linear(_e3, fog.near, fog.far);
+    float linear = ((fog.kind == LINEAR) ? _e6 : 0.0);
+    float _e13 = fog_exp2_(_e3, fog.density);
+    return ((fog.kind == EXP2_) ? _e13 : linear);
+}
 
 vec3 transform_point(Transform t, vec3 p) {
     vec4 q = vec4(p, 1.0);
     return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
 }
 
-vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
-    return (view_proj * vec4(relative_position, 1.0));
+vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
+    return (view_proj * vec4(relative_position_2, 1.0));
+}
+
+vec3 fogged(vec3 c_1, vec3 relative, Material m_1) {
+    bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
+    vec3 _e11 = _group_0_binding_0_vs.fog.color;
+    Fog _e14 = _group_0_binding_0_vs.fog;
+    float _e16 = fog_factor(_e14, relative);
+    vec3 _e20 = apply_fog(c_1, _e11, (fog_on ? _e16 : 0.0));
+    return _e20;
 }
 
 Instance instance_of(uvec4 record, uint instance) {
@@ -7951,67 +9100,65 @@ Instance find_instance(InstanceIn i_1) {
     return _e7;
 }
 
-Transform transform_of(Instance found) {
-    return Transform(found.row_x, found.row_y, found.row_z);
+vec4 clip_of(Instance found, vec3 relative_1) {
+    if (!(found.drawn)) {
+        return OUTSIDE_CLIP;
+    }
+    mat4x4 _e6 = _group_0_binding_0_vs.view_proj;
+    vec4 _e8 = to_clip(_e6, relative_1);
+    return _e8;
 }
 
-vec3 relative_position_1(Instance found_1, vec3 position) {
-    Transform _e1 = transform_of(found_1);
+Transform transform_of(Instance found_1) {
+    return Transform(found_1.row_x, found_1.row_y, found_1.row_z);
+}
+
+vec3 relative_position_3(Instance found_2, vec3 position) {
+    Transform _e1 = transform_of(found_2);
     vec3 _e3 = transform_point(_e1, position);
     return _e3;
 }
 
-vec4 clip_of(Instance found_2, vec3 relative) {
-    if (!(found_2.drawn)) {
-        return OUTSIDE_CLIP;
-    }
-    mat4x4 _e6 = _group_0_binding_0_vs.view_proj;
-    vec4 _e8 = to_clip(_e6, relative);
-    return _e8;
-}
-
-vec4 clip_position(Instance found_3, vec3 position_1) {
-    vec3 _e2 = relative_position_1(found_3, position_1);
-    vec4 _e3 = clip_of(found_3, _e2);
-    return _e3;
-}
-
-vec3 linear_to_srgb(vec3 c) {
-    vec3 low = (c * 12.92);
-    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
-    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
+vec3 linear_to_srgb(vec3 c_2) {
+    vec3 low = (c_2 * 12.92);
+    vec3 high = ((1.055 * pow(c_2, vec3(0.41666666))) - vec3(0.055));
+    return mix(high, low, lessThanEqual(c_2, vec3(0.0031308)));
 }
 
 void main() {
     VertexIn v = VertexIn(_p2vs_location0, _p2vs_location5);
     InstanceIn i = InstanceIn((uint(gl_InstanceID) + naga_vs_first_instance), uint(gl_DrawID));
-    VertexOut out_ = VertexOut(vec4(0.0), 0u, vec4(0.0));
+    VertexOut out_ = VertexOut(vec4(0.0), 0u, vec4(0.0), vec3(0.0));
     Instance _e1 = find_instance(i);
-    vec4 _e6 = clip_position(_e1, v.position);
-    out_.clip = _e6;
+    vec3 _e6 = relative_position_3(_e1, v.position);
+    out_.relative = _e6;
+    vec3 _e9 = out_.relative;
+    vec4 _e10 = clip_of(_e1, _e9);
+    out_.clip = _e10;
     out_.material = _e1.material;
     out_.vertex_color = v.vertex_color;
-    VertexOut _e11 = out_;
-    gl_Position = _e11.clip;
-    _vs2fs_location0 = _e11.material;
-    _vs2fs_location1 = _e11.vertex_color;
+    VertexOut _e15 = out_;
+    gl_Position = _e15.clip;
+    _vs2fs_location0 = _e15.material;
+    _vs2fs_location1 = _e15.vertex_color;
+    _vs2fs_location2 = _e15.relative;
     gl_Position.z = gl_Position.z * null3d_depth_mapping.x + gl_Position.w * null3d_depth_mapping.y;
     return;
 }
 `,
 						uniformBlocks: [
 							{
-								name: 'Frame_block_2Vertex',
+								name: 'Frame_block_0Vertex',
 								group: 0,
 								binding: 0,
 							},
 							{
-								name: 'CellOffsets_block_1Vertex',
+								name: 'CellOffsets_block_2Vertex',
 								group: 0,
 								binding: 2,
 							},
 							{
-								name: 'DrawTable_block_0Vertex',
+								name: 'DrawTable_block_1Vertex',
 								group: 1,
 								binding: 0,
 							},
@@ -8049,12 +9196,21 @@ void main() {
 precision highp float;
 precision highp int;
 
+struct Fog {
+    vec3 color;
+    uint kind;
+    vec3 forward;
+    float density;
+    float near;
+    float far;
+};
 struct Frame {
     mat4x4 view_proj;
     vec4 camera_position;
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Fog fog;
 };
 struct Material {
     vec4 color;
@@ -8096,8 +9252,12 @@ struct VertexOut {
     vec4 clip;
     uint material;
     vec4 vertex_color;
+    vec3 relative;
 };
+const uint LINEAR = 1u;
+const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
+const uint NO_FOG = 4u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -8105,17 +9265,44 @@ const uint CELL_SHIFT = 23u;
 
 uniform highp sampler2D _group_0_binding_1_fs;
 
+layout(std140) uniform Frame_block_0Fragment { Frame _group_0_binding_0_fs; };
+
 flat in uint _vs2fs_location0;
 smooth in vec4 _vs2fs_location1;
+smooth in vec3 _vs2fs_location2;
 layout(location = 0) out vec4 _fs2p_location0;
+
+vec3 apply_fog(vec3 c, vec3 fog_color, float factor) {
+    return mix(c, fog_color, factor);
+}
+
+float fog_depth(vec3 relative_position, vec3 forward) {
+    return dot(relative_position, forward);
+}
+
+float fog_linear(float depth, float near, float far) {
+    return smoothstep(near, far, depth);
+}
+
+float fog_exp2_(float depth_1, float density) {
+    return (1.0 - exp((((-(density) * density) * depth_1) * depth_1)));
+}
+
+float fog_factor(Fog fog, vec3 relative_position_1) {
+    float _e3 = fog_depth(relative_position_1, fog.forward);
+    float _e6 = fog_linear(_e3, fog.near, fog.far);
+    float linear = ((fog.kind == LINEAR) ? _e6 : 0.0);
+    float _e13 = fog_exp2_(_e3, fog.density);
+    return ((fog.kind == EXP2_) ? _e13 : linear);
+}
 
 vec3 transform_point(Transform t, vec3 p) {
     vec4 q = vec4(p, 1.0);
     return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
 }
 
-vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
-    return (view_proj * vec4(relative_position, 1.0));
+vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
+    return (view_proj * vec4(relative_position_2, 1.0));
 }
 
 Material material_of(uint id) {
@@ -8140,24 +9327,42 @@ Material material_of(uint id) {
     return _e50;
 }
 
-Transform transform_of(Instance found) {
-    return Transform(found.row_x, found.row_y, found.row_z);
+vec3 fogged(vec3 c_1, vec3 relative, Material m_1) {
+    bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
+    vec3 _e11 = _group_0_binding_0_fs.fog.color;
+    Fog _e14 = _group_0_binding_0_fs.fog;
+    float _e16 = fog_factor(_e14, relative);
+    vec3 _e20 = apply_fog(c_1, _e11, (fog_on ? _e16 : 0.0));
+    return _e20;
 }
 
-vec3 relative_position_1(Instance found_1, vec3 position) {
-    Transform _e1 = transform_of(found_1);
+vec4 clip_of(Instance found, vec3 relative_1) {
+    if (!(found.drawn)) {
+        return OUTSIDE_CLIP;
+    }
+    mat4x4 _e6 = _group_0_binding_0_fs.view_proj;
+    vec4 _e8 = to_clip(_e6, relative_1);
+    return _e8;
+}
+
+Transform transform_of(Instance found_1) {
+    return Transform(found_1.row_x, found_1.row_y, found_1.row_z);
+}
+
+vec3 relative_position_3(Instance found_2, vec3 position) {
+    Transform _e1 = transform_of(found_2);
     vec3 _e3 = transform_point(_e1, position);
     return _e3;
 }
 
-vec3 linear_to_srgb(vec3 c) {
-    vec3 low = (c * 12.92);
-    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
-    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
+vec3 linear_to_srgb(vec3 c_2) {
+    vec3 low = (c_2 * 12.92);
+    vec3 high = ((1.055 * pow(c_2, vec3(0.41666666))) - vec3(0.055));
+    return mix(high, low, lessThanEqual(c_2, vec3(0.0031308)));
 }
 
 void main() {
-    VertexOut in_ = VertexOut(gl_FragCoord, _vs2fs_location0, _vs2fs_location1);
+    VertexOut in_ = VertexOut(gl_FragCoord, _vs2fs_location0, _vs2fs_location1, _vs2fs_location2);
     vec3 base = vec3(0.0);
     float alpha = 0.0;
     Material _e2 = material_of(in_.material);
@@ -8172,12 +9377,19 @@ void main() {
         discard;
     }
     vec3 _e21 = base;
-    vec3 _e22 = linear_to_srgb(_e21);
-    _fs2p_location0 = vec4(_e22, 1.0);
+    vec3 _e23 = fogged(_e21, in_.relative, _e2);
+    vec3 _e24 = linear_to_srgb(_e23);
+    _fs2p_location0 = vec4(_e24, 1.0);
     return;
 }
 `,
-						uniformBlocks: [],
+						uniformBlocks: [
+							{
+								name: 'Frame_block_0Fragment',
+								group: 0,
+								binding: 0,
+							},
+						],
 						textures: [
 							{
 								name: '_group_0_binding_1_fs',
@@ -8207,12 +9419,21 @@ precision highp int;
 
 uniform uint naga_vs_first_instance;
 
+struct Fog {
+    vec3 color;
+    uint kind;
+    vec3 forward;
+    float density;
+    float near;
+    float far;
+};
 struct Frame {
     mat4x4 view_proj;
     vec4 camera_position;
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Fog fog;
 };
 struct Material {
     vec4 color;
@@ -8254,14 +9475,20 @@ struct VertexOut {
     vec4 clip;
     vec2 uv0_;
     uint material;
+    vec3 relative;
 };
+const uint LINEAR = 1u;
+const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
+const uint NO_FOG = 4u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
 const uint CELL_SHIFT = 23u;
 
-layout(std140) uniform DrawTable_block_0Vertex { DrawTable _group_1_binding_0_vs; };
+layout(std140) uniform Frame_block_0Vertex { Frame _group_0_binding_0_vs; };
+
+layout(std140) uniform DrawTable_block_1Vertex { DrawTable _group_1_binding_0_vs; };
 
 uniform highp usampler2D _group_2_binding_2_vs;
 
@@ -8271,22 +9498,54 @@ uniform highp sampler2D _group_2_binding_0_vs;
 
 uniform highp sampler2D _group_2_binding_1_vs;
 
-layout(std140) uniform CellOffsets_block_1Vertex { CellOffsets _group_0_binding_2_vs; };
-
-layout(std140) uniform Frame_block_2Vertex { Frame _group_0_binding_0_vs; };
+layout(std140) uniform CellOffsets_block_2Vertex { CellOffsets _group_0_binding_2_vs; };
 
 layout(location = 0) in vec3 _p2vs_location0;
 layout(location = 2) in vec2 _p2vs_location2;
 smooth out vec2 _vs2fs_location0;
 flat out uint _vs2fs_location1;
+smooth out vec3 _vs2fs_location3;
+
+vec3 apply_fog(vec3 c, vec3 fog_color, float factor) {
+    return mix(c, fog_color, factor);
+}
+
+float fog_depth(vec3 relative_position, vec3 forward) {
+    return dot(relative_position, forward);
+}
+
+float fog_linear(float depth, float near, float far) {
+    return smoothstep(near, far, depth);
+}
+
+float fog_exp2_(float depth_1, float density) {
+    return (1.0 - exp((((-(density) * density) * depth_1) * depth_1)));
+}
+
+float fog_factor(Fog fog, vec3 relative_position_1) {
+    float _e3 = fog_depth(relative_position_1, fog.forward);
+    float _e6 = fog_linear(_e3, fog.near, fog.far);
+    float linear = ((fog.kind == LINEAR) ? _e6 : 0.0);
+    float _e13 = fog_exp2_(_e3, fog.density);
+    return ((fog.kind == EXP2_) ? _e13 : linear);
+}
 
 vec3 transform_point(Transform t, vec3 p) {
     vec4 q = vec4(p, 1.0);
     return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
 }
 
-vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
-    return (view_proj * vec4(relative_position, 1.0));
+vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
+    return (view_proj * vec4(relative_position_2, 1.0));
+}
+
+vec3 fogged(vec3 c_1, vec3 relative, Material m_1) {
+    bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
+    vec3 _e11 = _group_0_binding_0_vs.fog.color;
+    Fog _e14 = _group_0_binding_0_vs.fog;
+    float _e16 = fog_factor(_e14, relative);
+    vec3 _e20 = apply_fog(c_1, _e11, (fog_on ? _e16 : 0.0));
+    return _e20;
 }
 
 bool map_ready(float layer) {
@@ -8350,67 +9609,65 @@ Instance find_instance(InstanceIn i_1) {
     return _e7;
 }
 
-Transform transform_of(Instance found) {
-    return Transform(found.row_x, found.row_y, found.row_z);
+vec4 clip_of(Instance found, vec3 relative_1) {
+    if (!(found.drawn)) {
+        return OUTSIDE_CLIP;
+    }
+    mat4x4 _e6 = _group_0_binding_0_vs.view_proj;
+    vec4 _e8 = to_clip(_e6, relative_1);
+    return _e8;
 }
 
-vec3 relative_position_1(Instance found_1, vec3 position) {
-    Transform _e1 = transform_of(found_1);
+Transform transform_of(Instance found_1) {
+    return Transform(found_1.row_x, found_1.row_y, found_1.row_z);
+}
+
+vec3 relative_position_3(Instance found_2, vec3 position) {
+    Transform _e1 = transform_of(found_2);
     vec3 _e3 = transform_point(_e1, position);
     return _e3;
 }
 
-vec4 clip_of(Instance found_2, vec3 relative) {
-    if (!(found_2.drawn)) {
-        return OUTSIDE_CLIP;
-    }
-    mat4x4 _e6 = _group_0_binding_0_vs.view_proj;
-    vec4 _e8 = to_clip(_e6, relative);
-    return _e8;
-}
-
-vec4 clip_position(Instance found_3, vec3 position_1) {
-    vec3 _e2 = relative_position_1(found_3, position_1);
-    vec4 _e3 = clip_of(found_3, _e2);
-    return _e3;
-}
-
-vec3 linear_to_srgb(vec3 c) {
-    vec3 low = (c * 12.92);
-    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
-    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
+vec3 linear_to_srgb(vec3 c_2) {
+    vec3 low = (c_2 * 12.92);
+    vec3 high = ((1.055 * pow(c_2, vec3(0.41666666))) - vec3(0.055));
+    return mix(high, low, lessThanEqual(c_2, vec3(0.0031308)));
 }
 
 void main() {
     VertexIn v = VertexIn(_p2vs_location0, _p2vs_location2);
     InstanceIn i = InstanceIn((uint(gl_InstanceID) + naga_vs_first_instance), uint(gl_DrawID));
-    VertexOut out_ = VertexOut(vec4(0.0), vec2(0.0), 0u);
+    VertexOut out_ = VertexOut(vec4(0.0), vec2(0.0), 0u, vec3(0.0));
     Instance _e1 = find_instance(i);
-    vec4 _e6 = clip_position(_e1, v.position);
-    out_.clip = _e6;
+    vec3 _e6 = relative_position_3(_e1, v.position);
+    out_.relative = _e6;
+    vec3 _e9 = out_.relative;
+    vec4 _e10 = clip_of(_e1, _e9);
+    out_.clip = _e10;
     out_.uv0_ = v.uv0_;
     out_.material = _e1.material;
-    VertexOut _e11 = out_;
-    gl_Position = _e11.clip;
-    _vs2fs_location0 = _e11.uv0_;
-    _vs2fs_location1 = _e11.material;
+    VertexOut _e15 = out_;
+    gl_Position = _e15.clip;
+    _vs2fs_location0 = _e15.uv0_;
+    _vs2fs_location1 = _e15.material;
+    _vs2fs_location3 = _e15.relative;
     gl_Position.z = gl_Position.z * null3d_depth_mapping.x + gl_Position.w * null3d_depth_mapping.y;
     return;
 }
 `,
 						uniformBlocks: [
 							{
-								name: 'Frame_block_2Vertex',
+								name: 'Frame_block_0Vertex',
 								group: 0,
 								binding: 0,
 							},
 							{
-								name: 'CellOffsets_block_1Vertex',
+								name: 'CellOffsets_block_2Vertex',
 								group: 0,
 								binding: 2,
 							},
 							{
-								name: 'DrawTable_block_0Vertex',
+								name: 'DrawTable_block_1Vertex',
 								group: 1,
 								binding: 0,
 							},
@@ -8448,12 +9705,21 @@ void main() {
 precision highp float;
 precision highp int;
 
+struct Fog {
+    vec3 color;
+    uint kind;
+    vec3 forward;
+    float density;
+    float near;
+    float far;
+};
 struct Frame {
     mat4x4 view_proj;
     vec4 camera_position;
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Fog fog;
 };
 struct Material {
     vec4 color;
@@ -8495,8 +9761,12 @@ struct VertexOut {
     vec4 clip;
     vec2 uv0_;
     uint material;
+    vec3 relative;
 };
+const uint LINEAR = 1u;
+const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
+const uint NO_FOG = 4u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -8504,19 +9774,46 @@ const uint CELL_SHIFT = 23u;
 
 uniform highp sampler2D _group_0_binding_1_fs;
 
+layout(std140) uniform Frame_block_0Fragment { Frame _group_0_binding_0_fs; };
+
 uniform highp sampler2DArray _group_3_binding_0_fs;
 
 smooth in vec2 _vs2fs_location0;
 flat in uint _vs2fs_location1;
+smooth in vec3 _vs2fs_location3;
 layout(location = 0) out vec4 _fs2p_location0;
+
+vec3 apply_fog(vec3 c, vec3 fog_color, float factor) {
+    return mix(c, fog_color, factor);
+}
+
+float fog_depth(vec3 relative_position, vec3 forward) {
+    return dot(relative_position, forward);
+}
+
+float fog_linear(float depth, float near, float far) {
+    return smoothstep(near, far, depth);
+}
+
+float fog_exp2_(float depth_1, float density) {
+    return (1.0 - exp((((-(density) * density) * depth_1) * depth_1)));
+}
+
+float fog_factor(Fog fog, vec3 relative_position_1) {
+    float _e3 = fog_depth(relative_position_1, fog.forward);
+    float _e6 = fog_linear(_e3, fog.near, fog.far);
+    float linear = ((fog.kind == LINEAR) ? _e6 : 0.0);
+    float _e13 = fog_exp2_(_e3, fog.density);
+    return ((fog.kind == EXP2_) ? _e13 : linear);
+}
 
 vec3 transform_point(Transform t, vec3 p) {
     vec4 q = vec4(p, 1.0);
     return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
 }
 
-vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
-    return (view_proj * vec4(relative_position, 1.0));
+vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
+    return (view_proj * vec4(relative_position_2, 1.0));
 }
 
 Material material_of(uint id) {
@@ -8541,6 +9838,15 @@ Material material_of(uint id) {
     return _e50;
 }
 
+vec3 fogged(vec3 c_1, vec3 relative, Material m_1) {
+    bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
+    vec3 _e11 = _group_0_binding_0_fs.fog.color;
+    Fog _e14 = _group_0_binding_0_fs.fog;
+    float _e16 = fog_factor(_e14, relative);
+    vec3 _e20 = apply_fog(c_1, _e11, (fog_on ? _e16 : 0.0));
+    return _e20;
+}
+
 bool map_ready(float layer) {
     return (layer >= 0.0);
 }
@@ -8549,24 +9855,33 @@ uint map_layer(float layer_1) {
     return uint(max(layer_1, 0.0));
 }
 
-Transform transform_of(Instance found) {
-    return Transform(found.row_x, found.row_y, found.row_z);
+vec4 clip_of(Instance found, vec3 relative_1) {
+    if (!(found.drawn)) {
+        return OUTSIDE_CLIP;
+    }
+    mat4x4 _e6 = _group_0_binding_0_fs.view_proj;
+    vec4 _e8 = to_clip(_e6, relative_1);
+    return _e8;
 }
 
-vec3 relative_position_1(Instance found_1, vec3 position) {
-    Transform _e1 = transform_of(found_1);
+Transform transform_of(Instance found_1) {
+    return Transform(found_1.row_x, found_1.row_y, found_1.row_z);
+}
+
+vec3 relative_position_3(Instance found_2, vec3 position) {
+    Transform _e1 = transform_of(found_2);
     vec3 _e3 = transform_point(_e1, position);
     return _e3;
 }
 
-vec3 linear_to_srgb(vec3 c) {
-    vec3 low = (c * 12.92);
-    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
-    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
+vec3 linear_to_srgb(vec3 c_2) {
+    vec3 low = (c_2 * 12.92);
+    vec3 high = ((1.055 * pow(c_2, vec3(0.41666666))) - vec3(0.055));
+    return mix(high, low, lessThanEqual(c_2, vec3(0.0031308)));
 }
 
 void main() {
-    VertexOut in_ = VertexOut(gl_FragCoord, _vs2fs_location0, _vs2fs_location1);
+    VertexOut in_ = VertexOut(gl_FragCoord, _vs2fs_location0, _vs2fs_location1, _vs2fs_location3);
     vec3 base = vec3(0.0);
     float alpha = 0.0;
     Material _e2 = material_of(in_.material);
@@ -8577,12 +9892,19 @@ void main() {
     base = (_e2.color.xyz * map.xyz);
     alpha = (_e2.color.w * map.w);
     vec3 _e26 = base;
-    vec3 _e27 = linear_to_srgb(_e26);
-    _fs2p_location0 = vec4(_e27, 1.0);
+    vec3 _e28 = fogged(_e26, in_.relative, _e2);
+    vec3 _e29 = linear_to_srgb(_e28);
+    _fs2p_location0 = vec4(_e29, 1.0);
     return;
 }
 `,
-						uniformBlocks: [],
+						uniformBlocks: [
+							{
+								name: 'Frame_block_0Fragment',
+								group: 0,
+								binding: 0,
+							},
+						],
 						textures: [
 							{
 								name: '_group_0_binding_1_fs',
@@ -8619,12 +9941,21 @@ precision highp int;
 
 uniform uint naga_vs_first_instance;
 
+struct Fog {
+    vec3 color;
+    uint kind;
+    vec3 forward;
+    float density;
+    float near;
+    float far;
+};
 struct Frame {
     mat4x4 view_proj;
     vec4 camera_position;
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Fog fog;
 };
 struct Material {
     vec4 color;
@@ -8666,14 +9997,20 @@ struct VertexOut {
     vec4 clip;
     vec2 uv0_;
     uint material;
+    vec3 relative;
 };
+const uint LINEAR = 1u;
+const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
+const uint NO_FOG = 4u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
 const uint CELL_SHIFT = 23u;
 
-layout(std140) uniform DrawTable_block_0Vertex { DrawTable _group_1_binding_0_vs; };
+layout(std140) uniform Frame_block_0Vertex { Frame _group_0_binding_0_vs; };
+
+layout(std140) uniform DrawTable_block_1Vertex { DrawTable _group_1_binding_0_vs; };
 
 uniform highp usampler2D _group_2_binding_2_vs;
 
@@ -8683,22 +10020,54 @@ uniform highp sampler2D _group_2_binding_0_vs;
 
 uniform highp sampler2D _group_2_binding_1_vs;
 
-layout(std140) uniform CellOffsets_block_1Vertex { CellOffsets _group_0_binding_2_vs; };
-
-layout(std140) uniform Frame_block_2Vertex { Frame _group_0_binding_0_vs; };
+layout(std140) uniform CellOffsets_block_2Vertex { CellOffsets _group_0_binding_2_vs; };
 
 layout(location = 0) in vec3 _p2vs_location0;
 layout(location = 2) in vec2 _p2vs_location2;
 smooth out vec2 _vs2fs_location0;
 flat out uint _vs2fs_location1;
+smooth out vec3 _vs2fs_location3;
+
+vec3 apply_fog(vec3 c, vec3 fog_color, float factor) {
+    return mix(c, fog_color, factor);
+}
+
+float fog_depth(vec3 relative_position, vec3 forward) {
+    return dot(relative_position, forward);
+}
+
+float fog_linear(float depth, float near, float far) {
+    return smoothstep(near, far, depth);
+}
+
+float fog_exp2_(float depth_1, float density) {
+    return (1.0 - exp((((-(density) * density) * depth_1) * depth_1)));
+}
+
+float fog_factor(Fog fog, vec3 relative_position_1) {
+    float _e3 = fog_depth(relative_position_1, fog.forward);
+    float _e6 = fog_linear(_e3, fog.near, fog.far);
+    float linear = ((fog.kind == LINEAR) ? _e6 : 0.0);
+    float _e13 = fog_exp2_(_e3, fog.density);
+    return ((fog.kind == EXP2_) ? _e13 : linear);
+}
 
 vec3 transform_point(Transform t, vec3 p) {
     vec4 q = vec4(p, 1.0);
     return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
 }
 
-vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
-    return (view_proj * vec4(relative_position, 1.0));
+vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
+    return (view_proj * vec4(relative_position_2, 1.0));
+}
+
+vec3 fogged(vec3 c_1, vec3 relative, Material m_1) {
+    bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
+    vec3 _e11 = _group_0_binding_0_vs.fog.color;
+    Fog _e14 = _group_0_binding_0_vs.fog;
+    float _e16 = fog_factor(_e14, relative);
+    vec3 _e20 = apply_fog(c_1, _e11, (fog_on ? _e16 : 0.0));
+    return _e20;
 }
 
 bool map_ready(float layer) {
@@ -8762,67 +10131,65 @@ Instance find_instance(InstanceIn i_1) {
     return _e7;
 }
 
-Transform transform_of(Instance found) {
-    return Transform(found.row_x, found.row_y, found.row_z);
+vec4 clip_of(Instance found, vec3 relative_1) {
+    if (!(found.drawn)) {
+        return OUTSIDE_CLIP;
+    }
+    mat4x4 _e6 = _group_0_binding_0_vs.view_proj;
+    vec4 _e8 = to_clip(_e6, relative_1);
+    return _e8;
 }
 
-vec3 relative_position_1(Instance found_1, vec3 position) {
-    Transform _e1 = transform_of(found_1);
+Transform transform_of(Instance found_1) {
+    return Transform(found_1.row_x, found_1.row_y, found_1.row_z);
+}
+
+vec3 relative_position_3(Instance found_2, vec3 position) {
+    Transform _e1 = transform_of(found_2);
     vec3 _e3 = transform_point(_e1, position);
     return _e3;
 }
 
-vec4 clip_of(Instance found_2, vec3 relative) {
-    if (!(found_2.drawn)) {
-        return OUTSIDE_CLIP;
-    }
-    mat4x4 _e6 = _group_0_binding_0_vs.view_proj;
-    vec4 _e8 = to_clip(_e6, relative);
-    return _e8;
-}
-
-vec4 clip_position(Instance found_3, vec3 position_1) {
-    vec3 _e2 = relative_position_1(found_3, position_1);
-    vec4 _e3 = clip_of(found_3, _e2);
-    return _e3;
-}
-
-vec3 linear_to_srgb(vec3 c) {
-    vec3 low = (c * 12.92);
-    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
-    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
+vec3 linear_to_srgb(vec3 c_2) {
+    vec3 low = (c_2 * 12.92);
+    vec3 high = ((1.055 * pow(c_2, vec3(0.41666666))) - vec3(0.055));
+    return mix(high, low, lessThanEqual(c_2, vec3(0.0031308)));
 }
 
 void main() {
     VertexIn v = VertexIn(_p2vs_location0, _p2vs_location2);
     InstanceIn i = InstanceIn((uint(gl_InstanceID) + naga_vs_first_instance), uint(gl_DrawID));
-    VertexOut out_ = VertexOut(vec4(0.0), vec2(0.0), 0u);
+    VertexOut out_ = VertexOut(vec4(0.0), vec2(0.0), 0u, vec3(0.0));
     Instance _e1 = find_instance(i);
-    vec4 _e6 = clip_position(_e1, v.position);
-    out_.clip = _e6;
+    vec3 _e6 = relative_position_3(_e1, v.position);
+    out_.relative = _e6;
+    vec3 _e9 = out_.relative;
+    vec4 _e10 = clip_of(_e1, _e9);
+    out_.clip = _e10;
     out_.uv0_ = v.uv0_;
     out_.material = _e1.material;
-    VertexOut _e11 = out_;
-    gl_Position = _e11.clip;
-    _vs2fs_location0 = _e11.uv0_;
-    _vs2fs_location1 = _e11.material;
+    VertexOut _e15 = out_;
+    gl_Position = _e15.clip;
+    _vs2fs_location0 = _e15.uv0_;
+    _vs2fs_location1 = _e15.material;
+    _vs2fs_location3 = _e15.relative;
     gl_Position.z = gl_Position.z * null3d_depth_mapping.x + gl_Position.w * null3d_depth_mapping.y;
     return;
 }
 `,
 						uniformBlocks: [
 							{
-								name: 'Frame_block_2Vertex',
+								name: 'Frame_block_0Vertex',
 								group: 0,
 								binding: 0,
 							},
 							{
-								name: 'CellOffsets_block_1Vertex',
+								name: 'CellOffsets_block_2Vertex',
 								group: 0,
 								binding: 2,
 							},
 							{
-								name: 'DrawTable_block_0Vertex',
+								name: 'DrawTable_block_1Vertex',
 								group: 1,
 								binding: 0,
 							},
@@ -8860,12 +10227,21 @@ void main() {
 precision highp float;
 precision highp int;
 
+struct Fog {
+    vec3 color;
+    uint kind;
+    vec3 forward;
+    float density;
+    float near;
+    float far;
+};
 struct Frame {
     mat4x4 view_proj;
     vec4 camera_position;
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Fog fog;
 };
 struct Material {
     vec4 color;
@@ -8907,8 +10283,12 @@ struct VertexOut {
     vec4 clip;
     vec2 uv0_;
     uint material;
+    vec3 relative;
 };
+const uint LINEAR = 1u;
+const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
+const uint NO_FOG = 4u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -8916,19 +10296,46 @@ const uint CELL_SHIFT = 23u;
 
 uniform highp sampler2D _group_0_binding_1_fs;
 
+layout(std140) uniform Frame_block_0Fragment { Frame _group_0_binding_0_fs; };
+
 uniform highp sampler2DArray _group_3_binding_0_fs;
 
 smooth in vec2 _vs2fs_location0;
 flat in uint _vs2fs_location1;
+smooth in vec3 _vs2fs_location3;
 layout(location = 0) out vec4 _fs2p_location0;
+
+vec3 apply_fog(vec3 c, vec3 fog_color, float factor) {
+    return mix(c, fog_color, factor);
+}
+
+float fog_depth(vec3 relative_position, vec3 forward) {
+    return dot(relative_position, forward);
+}
+
+float fog_linear(float depth, float near, float far) {
+    return smoothstep(near, far, depth);
+}
+
+float fog_exp2_(float depth_1, float density) {
+    return (1.0 - exp((((-(density) * density) * depth_1) * depth_1)));
+}
+
+float fog_factor(Fog fog, vec3 relative_position_1) {
+    float _e3 = fog_depth(relative_position_1, fog.forward);
+    float _e6 = fog_linear(_e3, fog.near, fog.far);
+    float linear = ((fog.kind == LINEAR) ? _e6 : 0.0);
+    float _e13 = fog_exp2_(_e3, fog.density);
+    return ((fog.kind == EXP2_) ? _e13 : linear);
+}
 
 vec3 transform_point(Transform t, vec3 p) {
     vec4 q = vec4(p, 1.0);
     return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
 }
 
-vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
-    return (view_proj * vec4(relative_position, 1.0));
+vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
+    return (view_proj * vec4(relative_position_2, 1.0));
 }
 
 Material material_of(uint id) {
@@ -8953,6 +10360,15 @@ Material material_of(uint id) {
     return _e50;
 }
 
+vec3 fogged(vec3 c_1, vec3 relative, Material m_1) {
+    bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
+    vec3 _e11 = _group_0_binding_0_fs.fog.color;
+    Fog _e14 = _group_0_binding_0_fs.fog;
+    float _e16 = fog_factor(_e14, relative);
+    vec3 _e20 = apply_fog(c_1, _e11, (fog_on ? _e16 : 0.0));
+    return _e20;
+}
+
 bool map_ready(float layer) {
     return (layer >= 0.0);
 }
@@ -8961,24 +10377,33 @@ uint map_layer(float layer_1) {
     return uint(max(layer_1, 0.0));
 }
 
-Transform transform_of(Instance found) {
-    return Transform(found.row_x, found.row_y, found.row_z);
+vec4 clip_of(Instance found, vec3 relative_1) {
+    if (!(found.drawn)) {
+        return OUTSIDE_CLIP;
+    }
+    mat4x4 _e6 = _group_0_binding_0_fs.view_proj;
+    vec4 _e8 = to_clip(_e6, relative_1);
+    return _e8;
 }
 
-vec3 relative_position_1(Instance found_1, vec3 position) {
-    Transform _e1 = transform_of(found_1);
+Transform transform_of(Instance found_1) {
+    return Transform(found_1.row_x, found_1.row_y, found_1.row_z);
+}
+
+vec3 relative_position_3(Instance found_2, vec3 position) {
+    Transform _e1 = transform_of(found_2);
     vec3 _e3 = transform_point(_e1, position);
     return _e3;
 }
 
-vec3 linear_to_srgb(vec3 c) {
-    vec3 low = (c * 12.92);
-    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
-    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
+vec3 linear_to_srgb(vec3 c_2) {
+    vec3 low = (c_2 * 12.92);
+    vec3 high = ((1.055 * pow(c_2, vec3(0.41666666))) - vec3(0.055));
+    return mix(high, low, lessThanEqual(c_2, vec3(0.0031308)));
 }
 
 void main() {
-    VertexOut in_ = VertexOut(gl_FragCoord, _vs2fs_location0, _vs2fs_location1);
+    VertexOut in_ = VertexOut(gl_FragCoord, _vs2fs_location0, _vs2fs_location1, _vs2fs_location3);
     vec3 base = vec3(0.0);
     float alpha = 0.0;
     Material _e2 = material_of(in_.material);
@@ -8993,12 +10418,19 @@ void main() {
         discard;
     }
     vec3 _e30 = base;
-    vec3 _e31 = linear_to_srgb(_e30);
-    _fs2p_location0 = vec4(_e31, 1.0);
+    vec3 _e32 = fogged(_e30, in_.relative, _e2);
+    vec3 _e33 = linear_to_srgb(_e32);
+    _fs2p_location0 = vec4(_e33, 1.0);
     return;
 }
 `,
-						uniformBlocks: [],
+						uniformBlocks: [
+							{
+								name: 'Frame_block_0Fragment',
+								group: 0,
+								binding: 0,
+							},
+						],
 						textures: [
 							{
 								name: '_group_0_binding_1_fs',
@@ -9035,12 +10467,21 @@ precision highp int;
 
 uniform uint naga_vs_first_instance;
 
+struct Fog {
+    vec3 color;
+    uint kind;
+    vec3 forward;
+    float density;
+    float near;
+    float far;
+};
 struct Frame {
     mat4x4 view_proj;
     vec4 camera_position;
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Fog fog;
 };
 struct Material {
     vec4 color;
@@ -9084,14 +10525,20 @@ struct VertexOut {
     vec2 uv0_;
     uint material;
     vec4 vertex_color;
+    vec3 relative;
 };
+const uint LINEAR = 1u;
+const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
+const uint NO_FOG = 4u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
 const uint CELL_SHIFT = 23u;
 
-layout(std140) uniform DrawTable_block_0Vertex { DrawTable _group_1_binding_0_vs; };
+layout(std140) uniform Frame_block_0Vertex { Frame _group_0_binding_0_vs; };
+
+layout(std140) uniform DrawTable_block_1Vertex { DrawTable _group_1_binding_0_vs; };
 
 uniform highp usampler2D _group_2_binding_2_vs;
 
@@ -9101,9 +10548,7 @@ uniform highp sampler2D _group_2_binding_0_vs;
 
 uniform highp sampler2D _group_2_binding_1_vs;
 
-layout(std140) uniform CellOffsets_block_1Vertex { CellOffsets _group_0_binding_2_vs; };
-
-layout(std140) uniform Frame_block_2Vertex { Frame _group_0_binding_0_vs; };
+layout(std140) uniform CellOffsets_block_2Vertex { CellOffsets _group_0_binding_2_vs; };
 
 layout(location = 0) in vec3 _p2vs_location0;
 layout(location = 2) in vec2 _p2vs_location2;
@@ -9111,14 +10556,48 @@ layout(location = 5) in vec4 _p2vs_location5;
 smooth out vec2 _vs2fs_location0;
 flat out uint _vs2fs_location1;
 smooth out vec4 _vs2fs_location2;
+smooth out vec3 _vs2fs_location3;
+
+vec3 apply_fog(vec3 c, vec3 fog_color, float factor) {
+    return mix(c, fog_color, factor);
+}
+
+float fog_depth(vec3 relative_position, vec3 forward) {
+    return dot(relative_position, forward);
+}
+
+float fog_linear(float depth, float near, float far) {
+    return smoothstep(near, far, depth);
+}
+
+float fog_exp2_(float depth_1, float density) {
+    return (1.0 - exp((((-(density) * density) * depth_1) * depth_1)));
+}
+
+float fog_factor(Fog fog, vec3 relative_position_1) {
+    float _e3 = fog_depth(relative_position_1, fog.forward);
+    float _e6 = fog_linear(_e3, fog.near, fog.far);
+    float linear = ((fog.kind == LINEAR) ? _e6 : 0.0);
+    float _e13 = fog_exp2_(_e3, fog.density);
+    return ((fog.kind == EXP2_) ? _e13 : linear);
+}
 
 vec3 transform_point(Transform t, vec3 p) {
     vec4 q = vec4(p, 1.0);
     return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
 }
 
-vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
-    return (view_proj * vec4(relative_position, 1.0));
+vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
+    return (view_proj * vec4(relative_position_2, 1.0));
+}
+
+vec3 fogged(vec3 c_1, vec3 relative, Material m_1) {
+    bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
+    vec3 _e11 = _group_0_binding_0_vs.fog.color;
+    Fog _e14 = _group_0_binding_0_vs.fog;
+    float _e16 = fog_factor(_e14, relative);
+    vec3 _e20 = apply_fog(c_1, _e11, (fog_on ? _e16 : 0.0));
+    return _e20;
 }
 
 bool map_ready(float layer) {
@@ -9182,69 +10661,67 @@ Instance find_instance(InstanceIn i_1) {
     return _e7;
 }
 
-Transform transform_of(Instance found) {
-    return Transform(found.row_x, found.row_y, found.row_z);
+vec4 clip_of(Instance found, vec3 relative_1) {
+    if (!(found.drawn)) {
+        return OUTSIDE_CLIP;
+    }
+    mat4x4 _e6 = _group_0_binding_0_vs.view_proj;
+    vec4 _e8 = to_clip(_e6, relative_1);
+    return _e8;
 }
 
-vec3 relative_position_1(Instance found_1, vec3 position) {
-    Transform _e1 = transform_of(found_1);
+Transform transform_of(Instance found_1) {
+    return Transform(found_1.row_x, found_1.row_y, found_1.row_z);
+}
+
+vec3 relative_position_3(Instance found_2, vec3 position) {
+    Transform _e1 = transform_of(found_2);
     vec3 _e3 = transform_point(_e1, position);
     return _e3;
 }
 
-vec4 clip_of(Instance found_2, vec3 relative) {
-    if (!(found_2.drawn)) {
-        return OUTSIDE_CLIP;
-    }
-    mat4x4 _e6 = _group_0_binding_0_vs.view_proj;
-    vec4 _e8 = to_clip(_e6, relative);
-    return _e8;
-}
-
-vec4 clip_position(Instance found_3, vec3 position_1) {
-    vec3 _e2 = relative_position_1(found_3, position_1);
-    vec4 _e3 = clip_of(found_3, _e2);
-    return _e3;
-}
-
-vec3 linear_to_srgb(vec3 c) {
-    vec3 low = (c * 12.92);
-    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
-    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
+vec3 linear_to_srgb(vec3 c_2) {
+    vec3 low = (c_2 * 12.92);
+    vec3 high = ((1.055 * pow(c_2, vec3(0.41666666))) - vec3(0.055));
+    return mix(high, low, lessThanEqual(c_2, vec3(0.0031308)));
 }
 
 void main() {
     VertexIn v = VertexIn(_p2vs_location0, _p2vs_location2, _p2vs_location5);
     InstanceIn i = InstanceIn((uint(gl_InstanceID) + naga_vs_first_instance), uint(gl_DrawID));
-    VertexOut out_ = VertexOut(vec4(0.0), vec2(0.0), 0u, vec4(0.0));
+    VertexOut out_ = VertexOut(vec4(0.0), vec2(0.0), 0u, vec4(0.0), vec3(0.0));
     Instance _e1 = find_instance(i);
-    vec4 _e6 = clip_position(_e1, v.position);
-    out_.clip = _e6;
+    vec3 _e6 = relative_position_3(_e1, v.position);
+    out_.relative = _e6;
+    vec3 _e9 = out_.relative;
+    vec4 _e10 = clip_of(_e1, _e9);
+    out_.clip = _e10;
     out_.uv0_ = v.uv0_;
     out_.material = _e1.material;
     out_.vertex_color = v.vertex_color;
-    VertexOut _e13 = out_;
-    gl_Position = _e13.clip;
-    _vs2fs_location0 = _e13.uv0_;
-    _vs2fs_location1 = _e13.material;
-    _vs2fs_location2 = _e13.vertex_color;
+    VertexOut _e17 = out_;
+    gl_Position = _e17.clip;
+    _vs2fs_location0 = _e17.uv0_;
+    _vs2fs_location1 = _e17.material;
+    _vs2fs_location2 = _e17.vertex_color;
+    _vs2fs_location3 = _e17.relative;
     gl_Position.z = gl_Position.z * null3d_depth_mapping.x + gl_Position.w * null3d_depth_mapping.y;
     return;
 }
 `,
 						uniformBlocks: [
 							{
-								name: 'Frame_block_2Vertex',
+								name: 'Frame_block_0Vertex',
 								group: 0,
 								binding: 0,
 							},
 							{
-								name: 'CellOffsets_block_1Vertex',
+								name: 'CellOffsets_block_2Vertex',
 								group: 0,
 								binding: 2,
 							},
 							{
-								name: 'DrawTable_block_0Vertex',
+								name: 'DrawTable_block_1Vertex',
 								group: 1,
 								binding: 0,
 							},
@@ -9282,12 +10759,21 @@ void main() {
 precision highp float;
 precision highp int;
 
+struct Fog {
+    vec3 color;
+    uint kind;
+    vec3 forward;
+    float density;
+    float near;
+    float far;
+};
 struct Frame {
     mat4x4 view_proj;
     vec4 camera_position;
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Fog fog;
 };
 struct Material {
     vec4 color;
@@ -9331,8 +10817,12 @@ struct VertexOut {
     vec2 uv0_;
     uint material;
     vec4 vertex_color;
+    vec3 relative;
 };
+const uint LINEAR = 1u;
+const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
+const uint NO_FOG = 4u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -9340,20 +10830,47 @@ const uint CELL_SHIFT = 23u;
 
 uniform highp sampler2D _group_0_binding_1_fs;
 
+layout(std140) uniform Frame_block_0Fragment { Frame _group_0_binding_0_fs; };
+
 uniform highp sampler2DArray _group_3_binding_0_fs;
 
 smooth in vec2 _vs2fs_location0;
 flat in uint _vs2fs_location1;
 smooth in vec4 _vs2fs_location2;
+smooth in vec3 _vs2fs_location3;
 layout(location = 0) out vec4 _fs2p_location0;
+
+vec3 apply_fog(vec3 c, vec3 fog_color, float factor) {
+    return mix(c, fog_color, factor);
+}
+
+float fog_depth(vec3 relative_position, vec3 forward) {
+    return dot(relative_position, forward);
+}
+
+float fog_linear(float depth, float near, float far) {
+    return smoothstep(near, far, depth);
+}
+
+float fog_exp2_(float depth_1, float density) {
+    return (1.0 - exp((((-(density) * density) * depth_1) * depth_1)));
+}
+
+float fog_factor(Fog fog, vec3 relative_position_1) {
+    float _e3 = fog_depth(relative_position_1, fog.forward);
+    float _e6 = fog_linear(_e3, fog.near, fog.far);
+    float linear = ((fog.kind == LINEAR) ? _e6 : 0.0);
+    float _e13 = fog_exp2_(_e3, fog.density);
+    return ((fog.kind == EXP2_) ? _e13 : linear);
+}
 
 vec3 transform_point(Transform t, vec3 p) {
     vec4 q = vec4(p, 1.0);
     return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
 }
 
-vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
-    return (view_proj * vec4(relative_position, 1.0));
+vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
+    return (view_proj * vec4(relative_position_2, 1.0));
 }
 
 Material material_of(uint id) {
@@ -9378,6 +10895,15 @@ Material material_of(uint id) {
     return _e50;
 }
 
+vec3 fogged(vec3 c_1, vec3 relative, Material m_1) {
+    bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
+    vec3 _e11 = _group_0_binding_0_fs.fog.color;
+    Fog _e14 = _group_0_binding_0_fs.fog;
+    float _e16 = fog_factor(_e14, relative);
+    vec3 _e20 = apply_fog(c_1, _e11, (fog_on ? _e16 : 0.0));
+    return _e20;
+}
+
 bool map_ready(float layer) {
     return (layer >= 0.0);
 }
@@ -9386,24 +10912,33 @@ uint map_layer(float layer_1) {
     return uint(max(layer_1, 0.0));
 }
 
-Transform transform_of(Instance found) {
-    return Transform(found.row_x, found.row_y, found.row_z);
+vec4 clip_of(Instance found, vec3 relative_1) {
+    if (!(found.drawn)) {
+        return OUTSIDE_CLIP;
+    }
+    mat4x4 _e6 = _group_0_binding_0_fs.view_proj;
+    vec4 _e8 = to_clip(_e6, relative_1);
+    return _e8;
 }
 
-vec3 relative_position_1(Instance found_1, vec3 position) {
-    Transform _e1 = transform_of(found_1);
+Transform transform_of(Instance found_1) {
+    return Transform(found_1.row_x, found_1.row_y, found_1.row_z);
+}
+
+vec3 relative_position_3(Instance found_2, vec3 position) {
+    Transform _e1 = transform_of(found_2);
     vec3 _e3 = transform_point(_e1, position);
     return _e3;
 }
 
-vec3 linear_to_srgb(vec3 c) {
-    vec3 low = (c * 12.92);
-    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
-    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
+vec3 linear_to_srgb(vec3 c_2) {
+    vec3 low = (c_2 * 12.92);
+    vec3 high = ((1.055 * pow(c_2, vec3(0.41666666))) - vec3(0.055));
+    return mix(high, low, lessThanEqual(c_2, vec3(0.0031308)));
 }
 
 void main() {
-    VertexOut in_ = VertexOut(gl_FragCoord, _vs2fs_location0, _vs2fs_location1, _vs2fs_location2);
+    VertexOut in_ = VertexOut(gl_FragCoord, _vs2fs_location0, _vs2fs_location1, _vs2fs_location2, _vs2fs_location3);
     vec3 base = vec3(0.0);
     float alpha = 0.0;
     Material _e2 = material_of(in_.material);
@@ -9418,12 +10953,19 @@ void main() {
     float _e30 = alpha;
     alpha = (_e30 * in_.vertex_color.w);
     vec3 _e34 = base;
-    vec3 _e35 = linear_to_srgb(_e34);
-    _fs2p_location0 = vec4(_e35, 1.0);
+    vec3 _e36 = fogged(_e34, in_.relative, _e2);
+    vec3 _e37 = linear_to_srgb(_e36);
+    _fs2p_location0 = vec4(_e37, 1.0);
     return;
 }
 `,
-						uniformBlocks: [],
+						uniformBlocks: [
+							{
+								name: 'Frame_block_0Fragment',
+								group: 0,
+								binding: 0,
+							},
+						],
 						textures: [
 							{
 								name: '_group_0_binding_1_fs',
@@ -9460,12 +11002,21 @@ precision highp int;
 
 uniform uint naga_vs_first_instance;
 
+struct Fog {
+    vec3 color;
+    uint kind;
+    vec3 forward;
+    float density;
+    float near;
+    float far;
+};
 struct Frame {
     mat4x4 view_proj;
     vec4 camera_position;
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Fog fog;
 };
 struct Material {
     vec4 color;
@@ -9509,14 +11060,20 @@ struct VertexOut {
     vec2 uv0_;
     uint material;
     vec4 vertex_color;
+    vec3 relative;
 };
+const uint LINEAR = 1u;
+const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
+const uint NO_FOG = 4u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
 const uint CELL_SHIFT = 23u;
 
-layout(std140) uniform DrawTable_block_0Vertex { DrawTable _group_1_binding_0_vs; };
+layout(std140) uniform Frame_block_0Vertex { Frame _group_0_binding_0_vs; };
+
+layout(std140) uniform DrawTable_block_1Vertex { DrawTable _group_1_binding_0_vs; };
 
 uniform highp usampler2D _group_2_binding_2_vs;
 
@@ -9526,9 +11083,7 @@ uniform highp sampler2D _group_2_binding_0_vs;
 
 uniform highp sampler2D _group_2_binding_1_vs;
 
-layout(std140) uniform CellOffsets_block_1Vertex { CellOffsets _group_0_binding_2_vs; };
-
-layout(std140) uniform Frame_block_2Vertex { Frame _group_0_binding_0_vs; };
+layout(std140) uniform CellOffsets_block_2Vertex { CellOffsets _group_0_binding_2_vs; };
 
 layout(location = 0) in vec3 _p2vs_location0;
 layout(location = 2) in vec2 _p2vs_location2;
@@ -9536,14 +11091,48 @@ layout(location = 5) in vec4 _p2vs_location5;
 smooth out vec2 _vs2fs_location0;
 flat out uint _vs2fs_location1;
 smooth out vec4 _vs2fs_location2;
+smooth out vec3 _vs2fs_location3;
+
+vec3 apply_fog(vec3 c, vec3 fog_color, float factor) {
+    return mix(c, fog_color, factor);
+}
+
+float fog_depth(vec3 relative_position, vec3 forward) {
+    return dot(relative_position, forward);
+}
+
+float fog_linear(float depth, float near, float far) {
+    return smoothstep(near, far, depth);
+}
+
+float fog_exp2_(float depth_1, float density) {
+    return (1.0 - exp((((-(density) * density) * depth_1) * depth_1)));
+}
+
+float fog_factor(Fog fog, vec3 relative_position_1) {
+    float _e3 = fog_depth(relative_position_1, fog.forward);
+    float _e6 = fog_linear(_e3, fog.near, fog.far);
+    float linear = ((fog.kind == LINEAR) ? _e6 : 0.0);
+    float _e13 = fog_exp2_(_e3, fog.density);
+    return ((fog.kind == EXP2_) ? _e13 : linear);
+}
 
 vec3 transform_point(Transform t, vec3 p) {
     vec4 q = vec4(p, 1.0);
     return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
 }
 
-vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
-    return (view_proj * vec4(relative_position, 1.0));
+vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
+    return (view_proj * vec4(relative_position_2, 1.0));
+}
+
+vec3 fogged(vec3 c_1, vec3 relative, Material m_1) {
+    bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
+    vec3 _e11 = _group_0_binding_0_vs.fog.color;
+    Fog _e14 = _group_0_binding_0_vs.fog;
+    float _e16 = fog_factor(_e14, relative);
+    vec3 _e20 = apply_fog(c_1, _e11, (fog_on ? _e16 : 0.0));
+    return _e20;
 }
 
 bool map_ready(float layer) {
@@ -9607,69 +11196,67 @@ Instance find_instance(InstanceIn i_1) {
     return _e7;
 }
 
-Transform transform_of(Instance found) {
-    return Transform(found.row_x, found.row_y, found.row_z);
+vec4 clip_of(Instance found, vec3 relative_1) {
+    if (!(found.drawn)) {
+        return OUTSIDE_CLIP;
+    }
+    mat4x4 _e6 = _group_0_binding_0_vs.view_proj;
+    vec4 _e8 = to_clip(_e6, relative_1);
+    return _e8;
 }
 
-vec3 relative_position_1(Instance found_1, vec3 position) {
-    Transform _e1 = transform_of(found_1);
+Transform transform_of(Instance found_1) {
+    return Transform(found_1.row_x, found_1.row_y, found_1.row_z);
+}
+
+vec3 relative_position_3(Instance found_2, vec3 position) {
+    Transform _e1 = transform_of(found_2);
     vec3 _e3 = transform_point(_e1, position);
     return _e3;
 }
 
-vec4 clip_of(Instance found_2, vec3 relative) {
-    if (!(found_2.drawn)) {
-        return OUTSIDE_CLIP;
-    }
-    mat4x4 _e6 = _group_0_binding_0_vs.view_proj;
-    vec4 _e8 = to_clip(_e6, relative);
-    return _e8;
-}
-
-vec4 clip_position(Instance found_3, vec3 position_1) {
-    vec3 _e2 = relative_position_1(found_3, position_1);
-    vec4 _e3 = clip_of(found_3, _e2);
-    return _e3;
-}
-
-vec3 linear_to_srgb(vec3 c) {
-    vec3 low = (c * 12.92);
-    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
-    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
+vec3 linear_to_srgb(vec3 c_2) {
+    vec3 low = (c_2 * 12.92);
+    vec3 high = ((1.055 * pow(c_2, vec3(0.41666666))) - vec3(0.055));
+    return mix(high, low, lessThanEqual(c_2, vec3(0.0031308)));
 }
 
 void main() {
     VertexIn v = VertexIn(_p2vs_location0, _p2vs_location2, _p2vs_location5);
     InstanceIn i = InstanceIn((uint(gl_InstanceID) + naga_vs_first_instance), uint(gl_DrawID));
-    VertexOut out_ = VertexOut(vec4(0.0), vec2(0.0), 0u, vec4(0.0));
+    VertexOut out_ = VertexOut(vec4(0.0), vec2(0.0), 0u, vec4(0.0), vec3(0.0));
     Instance _e1 = find_instance(i);
-    vec4 _e6 = clip_position(_e1, v.position);
-    out_.clip = _e6;
+    vec3 _e6 = relative_position_3(_e1, v.position);
+    out_.relative = _e6;
+    vec3 _e9 = out_.relative;
+    vec4 _e10 = clip_of(_e1, _e9);
+    out_.clip = _e10;
     out_.uv0_ = v.uv0_;
     out_.material = _e1.material;
     out_.vertex_color = v.vertex_color;
-    VertexOut _e13 = out_;
-    gl_Position = _e13.clip;
-    _vs2fs_location0 = _e13.uv0_;
-    _vs2fs_location1 = _e13.material;
-    _vs2fs_location2 = _e13.vertex_color;
+    VertexOut _e17 = out_;
+    gl_Position = _e17.clip;
+    _vs2fs_location0 = _e17.uv0_;
+    _vs2fs_location1 = _e17.material;
+    _vs2fs_location2 = _e17.vertex_color;
+    _vs2fs_location3 = _e17.relative;
     gl_Position.z = gl_Position.z * null3d_depth_mapping.x + gl_Position.w * null3d_depth_mapping.y;
     return;
 }
 `,
 						uniformBlocks: [
 							{
-								name: 'Frame_block_2Vertex',
+								name: 'Frame_block_0Vertex',
 								group: 0,
 								binding: 0,
 							},
 							{
-								name: 'CellOffsets_block_1Vertex',
+								name: 'CellOffsets_block_2Vertex',
 								group: 0,
 								binding: 2,
 							},
 							{
-								name: 'DrawTable_block_0Vertex',
+								name: 'DrawTable_block_1Vertex',
 								group: 1,
 								binding: 0,
 							},
@@ -9707,12 +11294,21 @@ void main() {
 precision highp float;
 precision highp int;
 
+struct Fog {
+    vec3 color;
+    uint kind;
+    vec3 forward;
+    float density;
+    float near;
+    float far;
+};
 struct Frame {
     mat4x4 view_proj;
     vec4 camera_position;
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Fog fog;
 };
 struct Material {
     vec4 color;
@@ -9756,8 +11352,12 @@ struct VertexOut {
     vec2 uv0_;
     uint material;
     vec4 vertex_color;
+    vec3 relative;
 };
+const uint LINEAR = 1u;
+const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
+const uint NO_FOG = 4u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -9765,20 +11365,47 @@ const uint CELL_SHIFT = 23u;
 
 uniform highp sampler2D _group_0_binding_1_fs;
 
+layout(std140) uniform Frame_block_0Fragment { Frame _group_0_binding_0_fs; };
+
 uniform highp sampler2DArray _group_3_binding_0_fs;
 
 smooth in vec2 _vs2fs_location0;
 flat in uint _vs2fs_location1;
 smooth in vec4 _vs2fs_location2;
+smooth in vec3 _vs2fs_location3;
 layout(location = 0) out vec4 _fs2p_location0;
+
+vec3 apply_fog(vec3 c, vec3 fog_color, float factor) {
+    return mix(c, fog_color, factor);
+}
+
+float fog_depth(vec3 relative_position, vec3 forward) {
+    return dot(relative_position, forward);
+}
+
+float fog_linear(float depth, float near, float far) {
+    return smoothstep(near, far, depth);
+}
+
+float fog_exp2_(float depth_1, float density) {
+    return (1.0 - exp((((-(density) * density) * depth_1) * depth_1)));
+}
+
+float fog_factor(Fog fog, vec3 relative_position_1) {
+    float _e3 = fog_depth(relative_position_1, fog.forward);
+    float _e6 = fog_linear(_e3, fog.near, fog.far);
+    float linear = ((fog.kind == LINEAR) ? _e6 : 0.0);
+    float _e13 = fog_exp2_(_e3, fog.density);
+    return ((fog.kind == EXP2_) ? _e13 : linear);
+}
 
 vec3 transform_point(Transform t, vec3 p) {
     vec4 q = vec4(p, 1.0);
     return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
 }
 
-vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
-    return (view_proj * vec4(relative_position, 1.0));
+vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
+    return (view_proj * vec4(relative_position_2, 1.0));
 }
 
 Material material_of(uint id) {
@@ -9803,6 +11430,15 @@ Material material_of(uint id) {
     return _e50;
 }
 
+vec3 fogged(vec3 c_1, vec3 relative, Material m_1) {
+    bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
+    vec3 _e11 = _group_0_binding_0_fs.fog.color;
+    Fog _e14 = _group_0_binding_0_fs.fog;
+    float _e16 = fog_factor(_e14, relative);
+    vec3 _e20 = apply_fog(c_1, _e11, (fog_on ? _e16 : 0.0));
+    return _e20;
+}
+
 bool map_ready(float layer) {
     return (layer >= 0.0);
 }
@@ -9811,24 +11447,33 @@ uint map_layer(float layer_1) {
     return uint(max(layer_1, 0.0));
 }
 
-Transform transform_of(Instance found) {
-    return Transform(found.row_x, found.row_y, found.row_z);
+vec4 clip_of(Instance found, vec3 relative_1) {
+    if (!(found.drawn)) {
+        return OUTSIDE_CLIP;
+    }
+    mat4x4 _e6 = _group_0_binding_0_fs.view_proj;
+    vec4 _e8 = to_clip(_e6, relative_1);
+    return _e8;
 }
 
-vec3 relative_position_1(Instance found_1, vec3 position) {
-    Transform _e1 = transform_of(found_1);
+Transform transform_of(Instance found_1) {
+    return Transform(found_1.row_x, found_1.row_y, found_1.row_z);
+}
+
+vec3 relative_position_3(Instance found_2, vec3 position) {
+    Transform _e1 = transform_of(found_2);
     vec3 _e3 = transform_point(_e1, position);
     return _e3;
 }
 
-vec3 linear_to_srgb(vec3 c) {
-    vec3 low = (c * 12.92);
-    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
-    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
+vec3 linear_to_srgb(vec3 c_2) {
+    vec3 low = (c_2 * 12.92);
+    vec3 high = ((1.055 * pow(c_2, vec3(0.41666666))) - vec3(0.055));
+    return mix(high, low, lessThanEqual(c_2, vec3(0.0031308)));
 }
 
 void main() {
-    VertexOut in_ = VertexOut(gl_FragCoord, _vs2fs_location0, _vs2fs_location1, _vs2fs_location2);
+    VertexOut in_ = VertexOut(gl_FragCoord, _vs2fs_location0, _vs2fs_location1, _vs2fs_location2, _vs2fs_location3);
     vec3 base = vec3(0.0);
     float alpha = 0.0;
     Material _e2 = material_of(in_.material);
@@ -9847,12 +11492,19 @@ void main() {
         discard;
     }
     vec3 _e38 = base;
-    vec3 _e39 = linear_to_srgb(_e38);
-    _fs2p_location0 = vec4(_e39, 1.0);
+    vec3 _e40 = fogged(_e38, in_.relative, _e2);
+    vec3 _e41 = linear_to_srgb(_e40);
+    _fs2p_location0 = vec4(_e41, 1.0);
     return;
 }
 `,
-						uniformBlocks: [],
+						uniformBlocks: [
+							{
+								name: 'Frame_block_0Fragment',
+								group: 0,
+								binding: 0,
+							},
+						],
 						textures: [
 							{
 								name: '_group_0_binding_1_fs',

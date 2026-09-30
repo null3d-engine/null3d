@@ -93,6 +93,11 @@ export const MATERIAL_FEATURE_FLAT_SHADING = 4;
 export const MATERIAL_FEATURE_ALPHA_MASK = 8;
 export const MATERIAL_FEATURE_NO_DEPTH_WRITE = 32;
 export const MATERIAL_FEATURE_NO_DEPTH_TEST = 64;
+export const MATERIAL_FEATURE_NO_FOG = 1024;
+
+export const FOG_KIND_NONE = 0;
+export const FOG_KIND_LINEAR = 1;
+export const FOG_KIND_EXP2 = 2;
 
 export const MATERIAL_PARAM_COLOR = 0;
 export const MATERIAL_PARAM_OPACITY = 3;

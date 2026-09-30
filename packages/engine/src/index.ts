@@ -68,6 +68,7 @@ export type {
 	ProgressHandler,
 } from './scene/assets';
 export type { ColorInput } from './scene/color';
+export type { Exp2FogOptions, FogOptions, LinearFogOptions } from './scene/fog';
 export type {
 	AlphaMode,
 	BoxOptions,

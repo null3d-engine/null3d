@@ -10,7 +10,7 @@ use null3d_core::handle::Handle;
 use null3d_core::layers::DEFAULT_LAYERS;
 use null3d_core::lights::SunShadow;
 use null3d_core::scene::{Command, flags};
-use null3d_gpu::drawlist::{NO_TARGET, Op};
+use null3d_gpu::drawlist::{NO_TARGET, Op, sizes};
 use null3d_gpu::mock::MockBackend;
 use null3d_render::camera::Perspective;
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
@@ -1060,7 +1060,11 @@ fn far_from_the_origin_static_objects_stay_resident_and_list_their_cell() {
             .filter(|(op, o)| *op == Op::WriteBuffer && o[0] == FRAME)
             .map(|(_, o)| (o[1] % FRAME_SLOT, o[3]))
             .collect();
-        assert_eq!(frame_writes, vec![(0, 128), (256, 2 * 16)], "frame {frame}");
+        assert_eq!(
+            frame_writes,
+            vec![(0, sizes::FRAME_UNIFORM_BYTES), (256, 2 * 16)],
+            "frame {frame}"
+        );
     }
 }
 
