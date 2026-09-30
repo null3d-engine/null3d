@@ -85,8 +85,11 @@ export type RenderWorkerInit = CoreHandoff &
 
 export type JobWorkerInit = CoreHandoff & { type: 'init'; index: number };
 
-/** A request any worker that owns a renderer takes: a capture, which it answers, or a simulated loss. */
-export type RendererRequest = { type: 'capture' } | { type: 'lose-gpu' };
+/**
+ * A request any worker that owns a renderer takes: a capture, which it answers with the frame's
+ * pixels, or with a PNG file of the frame when `image` is true; or a simulated loss.
+ */
+export type RendererRequest = { type: 'capture'; image?: boolean } | { type: 'lose-gpu' };
 
 export type WorkerReply =
 	| {
@@ -109,6 +112,7 @@ export type WorkerReply =
 	| { type: 'lost'; role: 'sketch' | 'render'; reason: string }
 	| { type: 'sketch-message'; name: string; data: unknown }
 	| ({ type: 'captured' } & CapturedFrame)
+	| { type: 'captured-image'; image: Blob }
 	| { type: 'capture-failed'; message: string };
 
 export type SketchWorkerMessage =
@@ -123,11 +127,15 @@ export function replyToPage(message: WorkerReply, transfer: Transferable[] = [])
 	postMessage(message, { transfer });
 }
 
-/** Sends the page a captured frame once `capture` resolves, or the reason it failed. */
-export async function replyWithCapture(capture: Promise<CapturedFrame>): Promise<void> {
+/**
+ * Sends the page a captured frame, as pixels or as an image file, once `capture` resolves, or the
+ * reason it failed.
+ */
+export async function replyWithCapture(capture: Promise<CapturedFrame | Blob>): Promise<void> {
 	try {
 		const captured = await capture;
-		replyToPage({ type: 'captured', ...captured }, [captured.pixels.buffer]);
+		if (captured instanceof Blob) replyToPage({ type: 'captured-image', image: captured });
+		else replyToPage({ type: 'captured', ...captured }, [captured.pixels.buffer]);
 	} catch (e) {
 		replyToPage({ type: 'capture-failed', message: messageOf(e) });
 	}
