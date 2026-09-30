@@ -8,14 +8,12 @@
 
 import * as C from '../generated/core';
 import { FORMAT_CANVAS, FORMAT_RG11B10_UFLOAT, FORMAT_RGBA16_FLOAT } from '../generated/gpu';
+import type { QualitySettings } from '../quality/presets';
 import type { Tier } from '../render/renderer';
 import type { DepthMode, Switches } from './switches';
 
-/**
- * How the engine smooths the edges of what it draws: `msaa` draws 4 samples per pixel, `fxaa`
- * smooths edges in the final pass, and `none` leaves them.
- */
-export type AntialiasMode = 'none' | 'fxaa' | 'msaa';
+/** The anti-aliasing mode, as the quality settings name it. */
+export type AntialiasMode = QualitySettings['antialias'];
 
 /** Each anti-aliasing mode's code in the core. */
 const ANTIALIAS_CODES: Record<AntialiasMode, number> = {
