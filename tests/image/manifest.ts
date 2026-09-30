@@ -12,6 +12,7 @@
 // the reference with bun run images:review --accept. Then do the same with CI=1 for the SwiftShader
 // reference: on the Mac, Playwright's Chromium draws CI's SwiftShader images byte for byte.
 import { PARITY_SCENES } from '../../bench/lib/parity.ts';
+import { MAPS_IMAGE } from '../../bench/scenes/material-maps.ts';
 import { ORTHO_IMAGE } from '../../bench/scenes/ortho-camera.ts';
 import { HOLD_TIME, PARITY_CANVAS } from '../../bench/scenes/spec.ts';
 import { DEMOS } from '../../examples/demos.ts';
@@ -252,11 +253,12 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 	// Each texture map of the standard material, made in code: base color, metal-rough, normal maps
 	// on quads with and without tangents, occlusion, emissive, a light map on the second texture
 	// coordinates, and base color maps through a texture coordinate transform, standard and unlit.
+	// The parity test draws the same scene with three.js.
 	{
 		name: 'standard-maps',
 		sketch: 'tests/pages/sketches/standard-maps-sketch.ts',
 		hold: 0,
-		size: [480, 270],
+		size: [MAPS_IMAGE.width, MAPS_IMAGE.height],
 	},
 	// Orbit controls after the controls test's drags, made through the controls' own calls. The
 	// controls test must draw this image after it makes the drags with Playwright.

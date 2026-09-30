@@ -23,6 +23,7 @@ import { type PageReport, runPage } from './open-page';
 /** Each feature scene: the manifest's image test that draws it, and its three.js twin page. */
 const FEATURE_SCENES = [
 	{ test: 'ortho-camera', twin: '/bench/pages/threejs/ortho-camera.html' },
+	{ test: 'standard-maps', twin: '/bench/pages/threejs/material-maps.html' },
 ] as const;
 
 const OUTPUT_DIR = join(import.meta.dirname, '../../test-results/parity');
