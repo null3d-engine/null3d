@@ -5,11 +5,13 @@ use null3d_gpu::drawlist::sizes::FRAME_UNIFORM_BYTES;
 use crate::camera::Mat4;
 
 /// Per-frame values: the camera and the lights. Colors are linear and include the intensity.
+/// Shaders work in positions relative to the camera.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct FrameUniform {
+    /// The view-projection matrix for positions relative to the camera.
     pub view_proj: Mat4,
-    /// The camera's world position; the fourth value is unused.
+    /// The camera's position in the shaders' space: the origin. The fourth value is unused.
     pub camera_position: [f32; 4],
     /// The direction the sun's light travels, normalized.
     pub sun_direction: [f32; 4],

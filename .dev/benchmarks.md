@@ -13,6 +13,48 @@ The benchmarks compare null3D with three.js in the same browser. These points co
 - The page switch `?fps=<n>` holds null3D's drawing at n frames per second, at most the display's rate. Use it to compare runs on displays of different rates. The three.js pages do not read it.
 - On WebGL2, `measure` reports `visibleEntries`, the entries in each frame's list of visible objects, and the bench summary divides the upload by it. When only the camera moves, as in S1-static, the upload is about 4 bytes per entry.
 
+## The benchmark job in CI
+
+- The Benchmarks workflow compares a new commit with a baseline on one of GitHub's machines. It runs on every push to main, against the commit before it on main.
+- For a pull request it runs on demand, against the pull request's merge base. Add the `benchmark` label, and each push runs it again while the label stays. You can also start the workflow from the Actions tab with a pull request's number, a branch or a commit.
+- GitHub's machines are shared, and their speed changes from run to run. So the job judges a new commit only against a baseline measured in the same job. It builds both commits on one machine, each in a git worktree of its own, with `bun run build`.
+- It then runs `bun run bench:run --compare <baseline>,<new>` in Chrome. S1, S1-static and S2 run on null3D's two GPU paths. The job runs 10 rounds. Each round runs every page once in each build, the two runs back to back, and even rounds run the new build first. Each run has 5 s of warm-up and 5 s measured.
+- It drops a run that measured no frames, and a run that measured another refresh rate than most runs of its page did.
+- Each run gives two medians of CPU time per frame: the busiest thread's time, and the engine's own work on that thread. For each page and measure, the job divides the new build's median by the baseline's in each round. The change is the median of these ratios. A machine that changes speed between rounds then changes both runs of a round alike.
+- The job fails when the busiest thread's change is more than 5% and more than 0.01 ms. It also fails when own work's change is more than 15% and more than 0.02 ms. The browser's timer counts in steps of 5 microseconds, so a small time moves by whole steps between runs.
+- A pull request that makes a benchmark more than 3% slower still needs its written reason (hard rule 17). One job cannot tell such a change from the machine's noise, but its table shows every change.
+- The job runs on GitHub's Mac machine (`macos-15`, 3 cores of an Apple M1 in a virtual machine). Its GPU is shared with other machines, so the job reports GPU time but never judges it. Device sessions measure the GPU.
+- A job takes about 25 minutes: 3 minutes to set up, 3 to build both commits and 20 to run the pages.
+- The summary goes to the run's page. Each run's result, `summary.json` and `summary.md` stay in an artifact for 90 days, so the workflow's list of runs holds the history.
+
+### How the machine and the rules were chosen
+
+On 30 September 2026, jobs compared two builds of identical engine code, so every change they measured was noise.
+
+- On the Linux machine, the software GPU drew S1 and S1-static at under one frame per second. A run of 10 s measured 5 to 7 frames, and the software GPU took the processor from the engine's threads. Identical builds differed by up to 29% in own work. The job also dropped every run of S2, whose refresh rate varied from 20 to 30 Hz.
+- The Mac machine kept every run at 60 Hz, but its speed changed often. The same scene code took 3.4 to 5.4 ms per frame in runs 20 seconds apart. So the job compares the builds round by round. The builds' plain medians differed by up to 22% on identical builds.
+- Six jobs on the Mac ran 5 rounds of 10 s, 10 rounds of 5 s or 15 rounds of 3 s each. Round by round, the largest slowdowns of identical builds were +4.7% for the busiest thread and +12.0% for own work, both in S1. In S1-static and S2 the largest was 0.012 ms. Shorter runs gave noisier rounds, and 10 rounds of 5 s gave the least noise for the time.
+- Own work is the busiest thread's time less the scene's update: a small difference of two larger times. In S1 it also waits for a job worker, whose timing varies on 3 cores. Both make own work noisier, so its rule is wider.
+- The busiest thread's rule is the smallest tested that none of the six jobs broke: 3% failed three jobs, and 4% failed two. For own work, 10% failed two jobs and 12% one. Its rule of 15% keeps 3 points above the largest slowdown.
+- More rounds narrow the noise only slowly. A job of 20 rounds would take about 45 minutes, and its medians would still wander by about 2%.
+
+### Mark an expected slowdown
+
+A commit that makes a benchmark slower on purpose names the change and gives the reason in a `Bench-Expected:` trailer:
+
+```text
+Bench-Expected: s1/null3d-webgl2: the batch pass now writes normals, about 0.1 ms per frame
+```
+
+- Before the colon, name the benchmarks: a scene, then a page and a measure if needed. For example `s1`, `s1/null3d-webgl2` or `s1/null3d-webgl2/own-work`. The measures are `busiest-thread` and `own-work`. A `*` stands for any part, and a comma separates two benchmarks.
+- After the colon, give the reason. A bare value such as "yes" does not count.
+- The job reads the trailers of every commit from the baseline to the new commit. A squash merge keeps them, because main's squash messages list each commit's message.
+- A trailer that does not parse excuses nothing, and the summary lists it.
+
+### Run a comparison on your computer
+
+Build two checkouts, such as a git worktree of main beside your branch, with `bun run build` in each. Then run `bun run bench:run --compare ../main,. --runs 10 --seconds 5`, the job's settings. The baseline's dev server takes the port that `NULL3D_PORT` names, and the new build's server the next one.
+
 ## Hold frames
 
 - A benchmark page with `?hold` draws one frame at the scene's hold time, 2 seconds, and publishes its pixels. `?hold=<seconds>` holds at another time.

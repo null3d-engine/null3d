@@ -31,14 +31,15 @@ const DOCS = {
 	},
 	E1102: {
 		title: 'Too many objects',
-		cause: 'The scene reached the most objects one engine holds.',
-		example: 'E1102: createMesh() failed: the scene already holds 1048575 objects.',
+		cause:
+			'The scene, the table of instance batches or the queue of changes for the next frame is full. The message names which one, and how many it holds.',
+		example: 'E1102: createMesh() failed: the scene already holds 16383 objects.',
 		since: '0.1',
 	},
 	E1103: {
 		title: 'Object from another engine',
 		cause: 'A call received an object that this engine did not create.',
-		example: 'E1103: setParent() got an object that is not from this engine.',
+		example: 'E1103: createInstances() got a mesh that is not from this engine.',
 		since: '0.1',
 	},
 	E1104: {
@@ -46,7 +47,7 @@ const DOCS = {
 		cause:
 			'A call would make an object its own ancestor: the new parent is the object itself or one of its descendants.',
 		example:
-			'E1104: setParent() on "Arm" (slot 9) would put it under its own descendant (slot 12).',
+			'E1104: a queued change on an object (slot 9) would put it under its own descendant (slot 12).',
 		since: '0.1',
 	},
 	E1105: {
@@ -57,10 +58,10 @@ const DOCS = {
 		since: '0.1',
 	},
 	E1106: {
-		title: 'Object not created yet',
+		title: 'Object never created',
 		cause:
-			'A call read world data of an object in the frame that created it. New objects join the scene when the next frame starts.',
-		example: 'E1106: getWorldPosition() on "Crate" (slot 7) ran before the frame that creates it.',
+			'A call such as `setVisible` or `setParent` queued a change for an object that the engine never created. The engine creates an object when the next frame starts. When that fails, for example because its parent was destroyed, the object never joins the scene.',
+		example: 'E1106: a queued change named an object (slot 7), which the engine never created.',
 		since: '0.1',
 	},
 	E1107: {
