@@ -141,8 +141,10 @@ Enemies that need different meshes become one batch per mesh. Per-enemy state (h
 | `addEventListener('keydown', ...)` and a key-state object | `input.isDown('KeyW')`, `input.wasPressed('Space')` |
 | `addEventListener('touchstart', ...)` and a list of touches | `input.touches`, and `touch-action: none` on the canvas |
 | Gamepad API polling | `input.isDown('GamepadA')`, `input.value('GamepadLeftStickRight')`, or an action map |
-| `OrbitControls(camera, renderer.domElement)` | `createOrbitControls(ctx, camera, options)`; same option names |
-| `controls.addEventListener('change', render)` for on-demand rendering | Not needed: the engine renders continuously and skips unchanged work |
+| `OrbitControls(camera, renderer.domElement)`, `MapControls` | `createOrbitControls(ctx, camera, options)`, `createMapControls`; same option names and defaults; `controls.update(dt)` every frame |
+| `controls.listenToKeyEvents(window)` | Read the keys with `input.isDown`, and call `controls.pan(dx, dy)` or `controls.rotateLeft(angle)` |
+| The controls' own `preventDefault` on wheel events | On the page: `canvas.addEventListener('wheel', (e) => e.preventDefault(), { passive: false })`, so the wheel and a pinch zoom the camera, not the page |
+| `controls.addEventListener('change', render)` for on-demand rendering | Not needed: the engine renders continuously and skips unchanged work. `update(dt)` returns true when the camera moved |
 | `PointerLockControls` | `createFirstPersonControls` plus `engine.requestPointerLock()` on the page (0.2) |
 | Clicks on UI buttons over the canvas | Handled on the page; send the action to the sketch |
 
