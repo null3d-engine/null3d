@@ -4,6 +4,7 @@
 
 import * as G from '../../generated/gpu';
 import { ImageTable } from '../../shared/images';
+import { floatOfBits } from '../float-bits';
 import type { GpuTimer } from './gpu-timer';
 import { Pipelines, type RenderTemplate } from './pipelines';
 import { RenderPassSetup, submitOne, TexelCopySetup } from './reusable';
@@ -386,6 +387,8 @@ export class WebGPUBackend {
 			words[a + 5] as number,
 			words[a + 6] as number,
 			words[a + 7] as number,
+			(words[a + 8] as number) | 0,
+			floatOfBits(words[a + 9] as number),
 		);
 		if (!background) {
 			this.renderPipelines[id] = device.createRenderPipeline(descriptor);

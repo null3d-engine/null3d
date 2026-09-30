@@ -112,6 +112,8 @@ export const VERTEX_INSTANCE_LOCATION = 8;
 
 export const STATE_CULL_NONE = 1;
 export const STATE_LINE_LIST = 2;
+export const STATE_NO_DEPTH_WRITE = 8;
+export const STATE_NO_DEPTH_TEST = 16;
 
 export const TEMPLATE_INSTANCED_LIT = 1;
 export const TEMPLATE_INSTANCED_UNLIT = 2;

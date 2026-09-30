@@ -68,11 +68,13 @@ export type {
 } from './scene/assets';
 export type { ColorInput } from './scene/color';
 export type {
+	AlphaMode,
 	BoxOptions,
 	CapsuleOptions,
 	CircleOptions,
 	ConeOptions,
 	CylinderOptions,
+	DepthBias,
 	Geometry,
 	Material,
 	MaterialFeatures,

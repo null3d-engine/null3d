@@ -142,6 +142,13 @@ const DOCS = {
 		example: 'E1214: defineSketch() got 0 for fixedRate.',
 		since: '0.1',
 	},
+	E1215: {
+		title: 'Invalid material option',
+		cause:
+			'A material factory received a value that one of its options does not take, such as an alpha mode that the engine does not know.',
+		example: `E1215: materials.standard() got the alpha mode "cutout"; it takes 'opaque' or 'mask'.`,
+		since: '0.1',
+	},
 	E1301: {
 		title: 'No usable GPU path',
 		cause: 'The browser offers neither WebGPU nor WebGL2 for the way the engine was asked to draw.',
