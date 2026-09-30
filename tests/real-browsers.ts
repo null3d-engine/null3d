@@ -54,9 +54,11 @@ import {
 import { forwardPort, openOnPhone, phoneModel } from './lib/adb.ts';
 import { HeatLog, type HeatSample, type HeatSummary, heatText, summarizeHeat } from './lib/heat.ts';
 import { clearCandidates } from './lib/images.ts';
+import { isLoadPath } from './lib/load-routes.ts';
 import { buildStartupPages, prepareLoads } from './lib/load-server.ts';
 import {
 	benchSummary,
+	type Check,
 	judge,
 	type MissingAllowed,
 	memorySummary,
@@ -70,6 +72,7 @@ import { RUNS_DIR } from './lib/report-collector.ts';
 import {
 	addToResult,
 	type ItemResult,
+	type PlanItem,
 	type Runner,
 	readDevice,
 	readResult,
@@ -369,29 +372,31 @@ function wholeHeatText(samples: readonly HeatSample[]): string | undefined {
 	return heat ? heatText(heat) : undefined;
 }
 
+/** A fixed plan's items with the command line's settings, or undefined for the phone-scale search. */
+export function planItems(options: Options): PlanItem<Check>[] | undefined {
+	return PLANS[options.plan]?.({
+		count: options.count,
+		runs: options.runs,
+		jobs: options.jobs,
+		pages: options.pages,
+		scenes: options.scenes,
+		seconds: options.seconds,
+	});
+}
+
 /**
  * Runs a fixed plan: each batch of runners at once, one browser per device, while the phone's heat
  * is read. Judges each result and prints a summary; returns the number of failures.
  */
 async function runPlan(
 	options: Options,
+	items: PlanItem<Check>[],
 	runners: readonly LaunchedRunner[],
 	launches: Launches,
 	local: DevServer,
 ): Promise<number> {
-	const makeItems = PLANS[options.plan] as NonNullable<(typeof PLANS)[string]>;
 	const run = runName(options.plan);
-	const plan = writePlan(
-		run,
-		makeItems({
-			count: options.count,
-			runs: options.runs,
-			jobs: options.jobs,
-			pages: options.pages,
-			scenes: options.scenes,
-			seconds: options.seconds,
-		}),
-	);
+	const plan = writePlan(run, items);
 	const heatReadings = new Map<string, HeatSample[]>();
 	try {
 		for (const batch of turnBatches(runners)) {
@@ -645,8 +650,10 @@ async function main(): Promise<void> {
 		console.log(`${deviceChecklist(names, options.shields).join('\n')}\n`);
 	}
 
-	// The startup plan loads its own production build, which the dev servers serve per load.
-	if (options.plan === 'startup') buildStartupPages();
+	const items = planItems(options);
+	// A plan that loads the production build builds it first, and each dev server serves it per load.
+	const loads = items?.some((item) => isLoadPath(item.path)) ?? false;
+	if (loads) buildStartupPages();
 	const local = await startServer();
 	const lan = options.lan.length > 0 ? await startServer(true) : undefined;
 	if (lan) {
@@ -659,12 +666,10 @@ async function main(): Promise<void> {
 	}
 	let failures: number;
 	try {
-		if (options.plan === 'startup')
-			for (const server of [local, lan]) if (server) await prepareLoads(server.selfUrl);
-		failures =
-			options.plan === SCALE_PLAN
-				? await runScale(options, runners, launches, local)
-				: await runPlan(options, runners, launches, local);
+		if (loads) for (const server of [local, lan]) if (server) await prepareLoads(server.selfUrl);
+		failures = items
+			? await runPlan(options, items, runners, launches, local)
+			: await runScale(options, runners, launches, local);
 	} finally {
 		local.stop();
 		lan?.stop();

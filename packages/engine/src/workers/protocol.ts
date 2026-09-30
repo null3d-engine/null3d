@@ -123,3 +123,23 @@ export async function replyWithCapture(capture: Promise<CapturedFrame>): Promise
 export function startSteps(role: 'sketch' | 'render' | 'job'): (step: string) => void {
 	return (step) => replyToPage({ type: 'progress', role, step });
 }
+
+/**
+ * Starts a worker on the first run of its entry file in the thread: reports the first step, and
+ * handles the page's messages with `handle`. Safari runs a module worker's entry file again when
+ * another file imports it (WebKit bug 324459). A production build's files that a worker loads later
+ * import the entry file for the code they share with it. A later run starts nothing, so the handler
+ * of the first run keeps the worker's state.
+ */
+export function startWorker<Message>(
+	role: 'sketch' | 'render' | 'job',
+	step: (name: string) => void,
+	handle: (event: MessageEvent<Message>) => unknown,
+): void {
+	const started = Symbol.for(`null3d.${role}WorkerStarted`);
+	const thread = globalThis as { [started]?: true };
+	if (thread[started]) return;
+	thread[started] = true;
+	step('loaded');
+	self.onmessage = handle;
+}

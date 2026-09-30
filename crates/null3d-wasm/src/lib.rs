@@ -151,6 +151,7 @@ fn record_failure(error: RecordError) -> u32 {
         RecordError::OutOfMemory { bytes } => {
             return core_failure(CoreError::OutOfMemory { bytes });
         }
+        RecordError::Graph(error) => return fail(error.code(), error.details()),
     };
     render_failure(detail, value)
 }

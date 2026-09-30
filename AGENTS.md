@@ -101,7 +101,7 @@ The benchmarks compare null3D with three.js in the same browser. [Benchmarks](.d
 
 - A report gives each engine's whole frame and its own work on the busiest thread. The desktop target uses own work, because both engines run the same scene code.
 - Do not edit engine or benchmark page files, or the dev server's config, during a browser run. The dev server reloads the pages being measured, and restarts when its config changes.
-- Every tool finds the dev server on port 5173, and uses the one that already answers there. A second copy of the repository, such as a git worktree, would test the first copy's code. Give each copy its own ports with `NULL3D_PORT`, for example `NULL3D_PORT=6173 bun run test:browser`. Its dev server takes that port, the HTTPS server the next one, and the production preview the one after. The allocation check, the soak and the startup benchmark use the one after that as Chrome's debugging port.
+- Every tool finds the dev server on port 5173, and uses the one that already answers there. A second copy of the repository, such as a git worktree, would test the first copy's code. Give each copy its own ports with `NULL3D_PORT`, for example `NULL3D_PORT=6173 bun run test:browser`. Its dev server takes that port, the HTTPS server the next one, and the production preview the one after. Tools that drive Chrome through its debugging protocol take the one after that.
 - Run one device runner at a time. Runs share one file that tells waiting runner pages which run to start.
 - Keep hot paths free of allocation with the habits in the implementation notes, and check them with `bun run bench:allocation`.
 

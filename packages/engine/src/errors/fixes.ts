@@ -25,7 +25,7 @@ export const ERROR_FIXES = {
 	E1108:
 		'Keep counts and indices within the capacity you created the batch with, or create a larger batch.',
 	E1109:
-		'Use fewer instance rows. Size each batch for the rows it uses, and give a batch colors only when it needs them. Destroy the batches you no longer draw.',
+		'Use fewer instance rows. Size each batch for the rows it uses, and give a batch colors only when it needs them. Destroy the batches you no longer draw. When a new engine fails to start this way, destroy the engines you no longer use, or keep one engine and detach and attach it.',
 	E1203:
 		'Check the value computed before this call. NaN often comes from dividing zero by zero, or from normalizing a zero-length vector.',
 	E1204:

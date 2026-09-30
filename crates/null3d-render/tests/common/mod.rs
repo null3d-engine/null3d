@@ -15,10 +15,18 @@ use null3d_render::camera::Perspective;
 use null3d_render::frame::{FrameBuilder, FrameInput, NO_MESH, RecordError};
 use null3d_render::geometry::{box_geometry, sphere_geometry};
 use null3d_render::gpu_driven::{GpuDrivenRenderer, RendererConfig};
+use null3d_render::graph::ALL_LAYERS;
 use null3d_render::materials::Shading;
+use null3d_render::view::{View, ViewId};
 
 pub const SCENE_CAPACITY: u32 = 31;
 pub const BATCH_ROWS: u32 = 1000;
+/// The lens of every camera in the world.
+pub const LENS: Perspective = Perspective {
+    fov_degrees: 60.0,
+    near: 0.1,
+    far: 100.0,
+};
 
 pub struct World<B: FrameBuilder = GpuDrivenRenderer> {
     pub jobs: JobSystem,
@@ -115,14 +123,7 @@ impl<B: FrameBuilder> World<B> {
             .set_active_count(BATCH_ROWS)
             .unwrap();
         let settings = renderer.settings_mut();
-        settings.set_camera(
-            camera,
-            Perspective {
-                fov_degrees: 60.0,
-                near: 0.1,
-                far: 100.0,
-            },
-        );
+        settings.set_camera(camera, LENS);
         settings.set_sun([-1.0, -2.0, -1.0], [3.0, 3.0, 3.0]);
         settings.set_ambient([0.4, 0.4, 0.4]);
         World {
@@ -137,6 +138,29 @@ impl<B: FrameBuilder> World<B> {
             frame: 1,
             canvas: (640, 360),
         }
+    }
+
+    /// Adds a view from a second camera at `position`, which looks down -z as the first camera
+    /// does, with the same lens, and returns it. The camera is a new object, created in the
+    /// current frame, so the frame that records next has a structure change.
+    pub fn add_view(&mut self, position: [f32; 3]) -> ViewId {
+        let camera = self.scene.reserve().unwrap();
+        self.scene.set_position(camera, position).unwrap();
+        self.scene
+            .apply_commands(
+                &[Command::create(
+                    camera,
+                    Handle::NONE,
+                    NO_MESH,
+                    flags::VISIBLE,
+                )],
+                self.frame,
+            )
+            .unwrap();
+        self.renderer
+            .settings_mut()
+            .add_view(View::new(camera, LENS, ALL_LAYERS))
+            .unwrap()
     }
 
     /// Runs the core's part of the current frame, then culls and records its draw list. Returns

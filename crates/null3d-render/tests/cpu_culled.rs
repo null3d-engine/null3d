@@ -3,24 +3,26 @@
 
 mod common;
 
-use common::{BATCH_ROWS, World, count};
+use common::{BATCH_ROWS, LENS, World, count};
 use null3d_core::clusters::{CLUSTER_ROWS, CLUSTER_SHIFT};
 use null3d_core::handle::Handle;
 use null3d_core::scene::Command;
-use null3d_gpu::drawlist::Op;
+use null3d_gpu::drawlist::{NO_TARGET, Op};
 use null3d_gpu::mock::MockBackend;
 use null3d_render::camera::Perspective;
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::frame::{FrameBuilder, RecordError};
+use null3d_render::graph::ALL_LAYERS;
+use null3d_render::view::{View, ViewId};
 
-/// The builder's data texture ids: resident, then the streamed ring, the index list ring, and the
-/// cluster texture.
-const RESIDENT: u32 = 3;
-const STREAMED: u32 = 4;
-const VISIBLE: u32 = 7;
-const CLUSTERS: u32 = 10;
-/// The buffers of the frame uniform ring and of the draw records.
-const FRAME: u32 = 1;
+/// The builder's data texture ids: resident, then the streamed ring, the cluster texture, and the
+/// camera view's index list ring.
+const RESIDENT: u32 = 1;
+const STREAMED: u32 = 2;
+const CLUSTERS: u32 = 5;
+const VISIBLE: u32 = 6;
+/// The buffers of the camera view's frame uniform ring and of its draw records.
+const FRAME: u32 = 2;
 const DRAWS: u32 = 3;
 /// Scene slots up to the highest the world uses: slot 0 is never used, then the camera and four
 /// objects.
@@ -42,11 +44,236 @@ fn texture_writes(commands: &[(Op, Vec<u32>)], texture: u32) -> Vec<[u32; 5]> {
         .collect()
 }
 
-/// Each bucket's index list entries, from the culling output: its rows, then its clusters.
+/// Each bucket's index list entries, from the camera view's culling output: its rows, then its
+/// clusters.
 fn bucket_counts(world: &World<CpuCulledRenderer>) -> Vec<(u32, u32)> {
-    let starts = world.renderer.culled(world.frame).bucket_starts();
+    view_bucket_counts(world, ViewId::CAMERA)
+}
+
+/// Each bucket's index list entries in a view's culling output: its rows, then its clusters.
+fn view_bucket_counts(world: &World<CpuCulledRenderer>, view: ViewId) -> Vec<(u32, u32)> {
+    let starts = world.renderer.culled(world.frame, view).bucket_starts();
     let entries: Vec<u32> = starts.windows(2).map(|w| w[1] - w[0]).collect();
     entries.chunks(2).map(|pair| (pair[0], pair[1])).collect()
+}
+
+/// The operands of each render pass a frame begins.
+fn render_passes(commands: &[(Op, Vec<u32>)]) -> Vec<Vec<u32>> {
+    commands
+        .iter()
+        .filter(|(op, _)| *op == Op::BeginRenderPass)
+        .map(|(_, o)| o.clone())
+        .collect()
+}
+
+/// The index list textures of the second view: the ring after the camera view's.
+const SIDE_VISIBLE: u32 = VISIBLE + 3;
+
+#[test]
+fn two_views_list_their_own_visible_objects_and_draw_them_in_passes_of_their_own() {
+    for multi_draw in [true, false] {
+        let mut world = world(multi_draw);
+        // A second camera to the right of the first and nearer: it sees the objects at x = -1
+        // and 1 and the batch at the origin, but not the one at x = -3.
+        let side = world.add_view([5.0, 0.0, 6.0]);
+        world.record(true);
+        let mut mock = MockBackend::default();
+        mock.replay(world.renderer.list(1).words()).unwrap();
+
+        // Buckets: lit boxes (the object at x = -3), the batch, lit balls (x = 1), and unlit
+        // boxes (x = -1). The hidden ball culls away in both.
+        assert_eq!(
+            view_bucket_counts(&world, ViewId::CAMERA),
+            vec![(1, 0), (BATCH_ROWS, 0), (1, 0), (1, 0)]
+        );
+        assert_eq!(
+            view_bucket_counts(&world, side),
+            vec![(0, 0), (BATCH_ROWS, 0), (1, 0), (1, 0)]
+        );
+        let lit_boxes = |view| {
+            let culled = world.renderer.culled(world.frame, view);
+            let starts = culled.bucket_starts();
+            culled.indices()[starts[0] as usize..starts[1] as usize].to_vec()
+        };
+        let slot = world.scene.resolve(world.objects[0]).unwrap();
+        assert_eq!(lit_boxes(ViewId::CAMERA), [slot]);
+        assert!(lit_boxes(side).is_empty());
+        assert_eq!(
+            world.renderer.visible_entries(world.frame),
+            Some(2 * BATCH_ROWS + 5),
+            "the entries of both views"
+        );
+
+        // Each view's list goes into its own ring of index list textures, and each view draws
+        // in a render pass of its own: the camera's resolves into the canvas, and the side
+        // view's draws into targets of its own. The render passes do not overlap, so the side
+        // view's targets share the camera's textures.
+        let commands = world.commands();
+        let ring = world.frame % 3;
+        let visible = BATCH_ROWS + 3;
+        assert_eq!(
+            texture_writes(&commands, VISIBLE + ring),
+            vec![[0, 0, visible, 1, visible * 4]]
+        );
+        assert_eq!(
+            texture_writes(&commands, SIDE_VISIBLE + ring),
+            vec![[0, 0, visible - 1, 1, (visible - 1) * 4]]
+        );
+        let passes = render_passes(&commands);
+        assert_eq!(passes.len(), 2);
+        assert_eq!(
+            passes[0][1], 0,
+            "the camera's pass resolves into the canvas"
+        );
+        assert_eq!(
+            passes[1][1], NO_TARGET,
+            "nothing reads the side view's color"
+        );
+        assert_eq!(passes[0][0], passes[1][0]);
+        assert_eq!(passes[0][2], passes[1][2]);
+        assert_eq!(count(&commands, Op::CreateTexture), 10 + 3);
+        // Each pass binds its view's frame uniform and index list textures.
+        let bound = |group: u32| -> Vec<u32> {
+            commands
+                .iter()
+                .filter(|(op, o)| *op == Op::SetBindGroup && o[0] == group)
+                .map(|(_, o)| o[1])
+                .collect()
+        };
+        assert_eq!(bound(0).len(), 2);
+        assert_ne!(bound(0)[0], bound(0)[1]);
+        assert_ne!(bound(2)[0], bound(2)[1]);
+        assert_eq!(
+            mock.draws,
+            4 + 3,
+            "four buckets drawn by the camera, three by the side view"
+        );
+    }
+}
+
+#[test]
+fn a_view_added_later_draws_from_its_own_rings_without_a_rebuild() {
+    let mut world = world(true);
+    let mut mock = MockBackend::default();
+    world.record(true);
+    mock.replay(world.renderer.list(1).words()).unwrap();
+    step(&mut world, &mut mock, false);
+    // A second view from the first camera, whose object exists: no structure change.
+    let camera = world.camera;
+    let twin = world
+        .renderer
+        .settings_mut()
+        .add_view(View::new(camera, LENS, ALL_LAYERS))
+        .unwrap();
+    step(&mut world, &mut mock, false);
+    let commands = world.commands();
+    assert_eq!(
+        view_bucket_counts(&world, twin),
+        view_bucket_counts(&world, ViewId::CAMERA),
+        "one camera, one visible set"
+    );
+    assert_eq!(render_passes(&commands).len(), 2);
+    // Its index list textures, draw records and frame uniforms are new. The data textures that
+    // every view reads and the camera view's rings are not, and its targets share the camera's
+    // textures, as their render passes do not overlap.
+    assert_eq!(count(&commands, Op::CreateTexture), 3);
+    assert_eq!(count(&commands, Op::CreateRenderPipeline), 0);
+    assert!(texture_writes(&commands, RESIDENT).is_empty());
+    // A new ring lists into the slot after slot 0, as the camera's did in the first frame.
+    assert_eq!(texture_writes(&commands, SIDE_VISIBLE + 1).len(), 1);
+    // The next frames change nothing: neither view writes its list or its uniform again.
+    step(&mut world, &mut mock, false);
+    step(&mut world, &mut mock, false);
+    let commands = world.commands();
+    assert_eq!(count(&commands, Op::CreateTexture), 0);
+    for listed in 0..3 {
+        assert!(texture_writes(&commands, VISIBLE + listed).is_empty());
+        assert!(texture_writes(&commands, SIDE_VISIBLE + listed).is_empty());
+    }
+    assert_eq!(render_passes(&commands).len(), 2);
+}
+
+#[test]
+fn a_view_added_after_the_frame_culled_draws_from_the_next_frame() {
+    use null3d_render::frame::FrameInput;
+
+    let mut world = world(true);
+    let mut mock = MockBackend::default();
+    world.record(true);
+    mock.replay(world.renderer.list(1).words()).unwrap();
+    // The engine culls a frame, then records it. A view that arrives in between has no culling
+    // output yet: the frame records its pass, which only clears, and the next frame culls it.
+    world.frame = 2;
+    world.scene.begin_frame(2);
+    world.scene.update_transforms(&world.jobs);
+    world.batches.update(&world.jobs, 2);
+    world.snapshot.record(2, &world.scene, &world.batches);
+    let input = FrameInput {
+        frame: 2,
+        scene: &world.scene,
+        batches: &world.batches,
+        snapshot: &world.snapshot,
+        canvas: world.canvas,
+        structure_changed: false,
+        jobs: &world.jobs,
+    };
+    world.renderer.cull(&input).unwrap();
+    let late = world
+        .renderer
+        .settings_mut()
+        .add_view(View::new(world.camera, LENS, ALL_LAYERS))
+        .unwrap();
+    world.renderer.record(&input).unwrap();
+    let before = mock.draws;
+    mock.replay(world.renderer.list(2).words()).unwrap();
+    assert_eq!(mock.draws - before, 4, "only the camera's view draws");
+    assert_eq!(render_passes(&world.commands()).len(), 2);
+    assert!(world.renderer.view_frame(late).is_none());
+
+    step(&mut world, &mut mock, false);
+    assert_eq!(
+        view_bucket_counts(&world, late),
+        view_bucket_counts(&world, ViewId::CAMERA)
+    );
+}
+
+#[test]
+fn the_frame_draws_through_the_render_graph_and_compiles_it_only_when_its_passes_change() {
+    let mut world = world(true);
+    let mut mock = MockBackend::default();
+    world.record(true);
+    mock.replay(world.renderer.list(1).words()).unwrap();
+    let steps = |world: &World<CpuCulledRenderer>| -> Vec<Vec<String>> {
+        let graph = world.renderer.render_graph();
+        let plan = graph.plan().unwrap();
+        plan.steps()
+            .iter()
+            .map(|step| {
+                plan.passes(step)
+                    .iter()
+                    .map(|&pass| graph.pass_name(pass).to_owned())
+                    .collect()
+            })
+            .collect()
+    };
+    // The job workers cull, so the graph has no culling pass. The scene's render pass resolves
+    // into the canvas while the final pass, which has no work, stays off.
+    assert_eq!(steps(&world), [vec!["Opaque", "Resolve"]]);
+    let graph = world.renderer.render_graph();
+    assert!(!graph.is_enabled(graph.find_pass("Final").unwrap()));
+    for _ in 0..10 {
+        step(&mut world, &mut mock, false);
+    }
+    assert_eq!(world.renderer.render_graph().compiles(), 1);
+
+    world.frame += 1;
+    world.scene.begin_frame(world.frame);
+    world.add_view([5.0, 0.0, 6.0]);
+    world.record(true);
+    mock.replay(world.renderer.list(world.frame).words())
+        .unwrap();
+    assert_eq!(steps(&world), [vec!["Opaque", "Resolve"], vec!["Opaque1"]]);
+    assert_eq!(world.renderer.render_graph().compiles(), 2);
 }
 
 #[test]
@@ -109,7 +336,7 @@ fn the_first_frame_creates_everything_and_replays_on_both_draw_paths() {
 fn the_index_list_holds_each_buckets_sources_in_order() {
     let mut world = world(true);
     world.record(true);
-    let culled = world.renderer.culled(world.frame);
+    let culled = world.renderer.culled(world.frame, ViewId::CAMERA);
     let starts = culled.bucket_starts();
     let slot = |object: usize| world.scene.resolve(world.objects[object]).unwrap();
     // The lit box object, then the batch's rows at the start of the streamed texture, then the
@@ -448,7 +675,7 @@ fn a_static_batch_at_rest_is_culled_and_drawn_by_cluster() {
             .map(|write| write[4])
             .sum();
         assert_eq!(written, clusters_in_all * CLUSTER_ROWS * 4);
-        let culled = world.renderer.culled(world.frame);
+        let culled = world.renderer.culled(world.frame, ViewId::CAMERA);
         let starts = culled.bucket_starts();
         let entries = &culled.indices()[starts[1] as usize..starts[2] as usize];
         assert!(entries.windows(2).all(|pair| pair[0] < pair[1]));
