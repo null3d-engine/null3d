@@ -8,6 +8,8 @@ import {
 	type DeviceOptions,
 	type DeviceReport,
 	maxInstances,
+	portableMaxInstances,
+	rowLimitWarning,
 	sceneColorFormat,
 	storageBindingBytes,
 	webgl2Depth,
@@ -147,6 +149,37 @@ describe('coreDevice on WebGL2', () => {
 		expect(coreDevice('webgl2', noTextures, PLAIN).sharedUploads).toBe(false);
 		expect(coreDevice('webgl2', report({ sharedMemoryUploads: null }), PLAIN).sharedUploads).toBe(
 			false,
+		);
+	});
+});
+
+describe('the warning past the rows that every device of a GPU path draws', () => {
+	const smallWebGL2 = coreDevice('webgl2', report({ maxTextureSize: 2048 }), PLAIN);
+	const largeWebGL2 = coreDevice('webgl2', report({ maxTextureSize: 16384 }), PLAIN);
+
+	it('comes on WebGL2 past the limit of a device whose textures reach 2,048 pixels', () => {
+		expect(maxInstances(smallWebGL2)).toBe(1_048_576);
+		expect(portableMaxInstances(true)).toBe(maxInstances(smallWebGL2));
+		expect(rowLimitWarning(1_048_576, true)).toBeUndefined();
+		const warning = rowLimitWarning(1_048_577, true);
+		expect(warning).toContain('1,048,577 objects and instance rows');
+		expect(warning).toContain('textures reach only 2,048 pixels draw at most 1,048,576');
+	});
+
+	it('comes before a larger WebGL2 device reaches its own limit, where it can show', () => {
+		const largeLimit = maxInstances(largeWebGL2);
+		expect(largeLimit).toBe(C.LIMIT_WEBGL2_MAX_SOURCES);
+		expect(rowLimitWarning(largeLimit, true)).toBeDefined();
+		expect(rowLimitWarning(2_097_152, true)).toBeDefined();
+	});
+
+	it('comes on WebGPU past the limit of a device with the default storage binding', () => {
+		const portable = webgpu(C.LIMIT_PORTABLE_STORAGE_BINDING_BYTES);
+		expect(portableMaxInstances(false)).toBe(maxInstances(portable));
+		expect(portableMaxInstances(false)).toBe(C.LIMIT_PORTABLE_MAX_SOURCES);
+		expect(rowLimitWarning(C.LIMIT_PORTABLE_MAX_SOURCES, false)).toBeUndefined();
+		expect(rowLimitWarning(C.LIMIT_PORTABLE_MAX_SOURCES + 1, false)).toContain(
+			"devices with WebGPU's default limits draw at most 2,097,152",
 		);
 	});
 });

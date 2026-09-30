@@ -11,8 +11,8 @@ import {
 	type ShaderBuildInputs,
 	type ShaderProblem,
 	type ShaderSource,
-	type ShaderVariant,
 } from './shader-compiler';
+import type { ShaderVariant } from './shader-types';
 
 /**
  * `bun run test:shader-compiler` sets this. The module must be built first with `bun run build`,

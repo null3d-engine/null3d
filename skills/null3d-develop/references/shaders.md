@@ -1,6 +1,6 @@
 # Custom shaders in null3D
 
-All engine shaders are WGSL. The build translates them to GLSL for the WebGL2 path, so one source serves both backends. Engine docs: `guides/custom-shaders`, `shaders/surface-functions`, `shaders/builtins`, `shaders/wgsl-rules`, `shaders/library`.
+All engine shaders are WGSL. The build translates them to GLSL for the WebGL2 path, so one source serves both backends. The null3D Vite plugin compiles the WGSL in your code: `.wgsl` files that you import, and template literals tagged `/* wgsl */`. The WebGL2 build sets the shader def `WEBGL2`. Engine docs: `guides/custom-shaders`, `shaders/surface-functions`, `shaders/builtins`, `shaders/wgsl-rules`, `shaders/library`.
 
 ## Contents
 
@@ -184,15 +184,15 @@ const heat = textures.fromPass('heat');   // use it in a material or effect
 
 ## 8. Portable WGSL rules
 
-These rules come from the capabilities browsers report; `shaders/wgsl-rules` lists them in full. The build enforces them.
+These rules come from the capabilities browsers report; `shaders/wgsl-rules` lists them in full. The build rejects a shader that breaks rule 1, 2 or 4, with the file, line and column. It cannot check rules 3, 5 and 6, so test on each GPU path.
 
 1. Use only these WGSL language features: `packed_4x8_integer_dot_product`, `pointer_composite_access`, `readonly_and_readwrite_storage_textures`. They are the three that Chrome, Safari and Firefox all report.
 2. Write flat interpolation as `@interpolate(flat, either)`; compatibility mode accepts no other flat form.
 3. Stay within these limits unless you check capabilities first: 16 vertex attributes (including built-ins in compatibility mode), 15 values passed between stages, 16 sampled textures and 16 samplers per stage, 4 storage buffers in fragment shaders and none in vertex shaders, 16 KB of uniform data per binding, compute workgroups of at most 128 invocations, 16 KB of workgroup memory, textures up to 4096 pixels.
 4. Do not use `f16`. The build rejects it, as it rejects every optional WebGPU feature, such as `enable subgroups;`. Write the math in `f32`.
 5. Do not read 32-bit float textures with filtering. Filtering them is an optional GPU feature, and some devices, such as iPads, lack it. Use `textureLoad`, or 16-bit float textures.
-6. Keep `textureSample` in uniform control flow, or use `textureSampleLevel` inside branches that differ between pixels.
-7. WGSL's `%` on floats keeps the sign of the left operand, like C, so `-1.5 % 1.0` is `-0.5`. For GLSL-style `mod`, write `x - y * floor(x / y)`.
+6. Keep `textureSample` in uniform control flow, or use `textureSampleLevel` inside branches that differ between pixels. Chrome rejects the shader otherwise.
+7. WGSL's `%` on floats keeps the sign of the left operand, like C, so `-1.5 % 1.0` is `-0.5`, on both backends. For GLSL-style `mod`, write `x - y * floor(x / y)`. On integers, keep both values zero or more, or use `u32`: WebGL2 leaves `%` undefined for negative values.
 8. No storage buffers or storage textures in vertex shaders: per-instance data arrives as vertex attributes.
 
 ## 9. Imports from the shader library
@@ -206,8 +206,8 @@ The build resolves imports before translating, and includes only the functions y
 
 ## 10. Debugging shaders
 
-- Build errors show the WGSL line, and the translated GLSL line for WebGL2 errors. Fix the WGSL; never edit generated GLSL.
+- A shader error stops Vite with the file, line and column. It shows in Vite's overlay and the terminal on the dev server, and in the output of `vite build`. Fix the WGSL; never edit generated GLSL. (`guides/custom-shaders`)
 - Output an intermediate value as color: `s.emissive = vec3f(n); s.baseColor = vec3f(0.0);` shows `n` directly.
 - `debug.view('normals')` and `debug.view('overdraw')` show normals and overdraw for the whole scene.
-- Shader hot reload: the null3D Vite plugin reloads WGSL files and inline WGSL strings without reloading the page (0.2).
+- Shader hot reload: the null3D Vite plugin reloads WGSL files and inline WGSL strings without reloading the page (0.2). Until then, editing a shader reloads the page.
 - Check both backends: `?gpu=webgl2` runs the translated shaders.
