@@ -2,9 +2,11 @@ enable draw_index;
 
 // Meshes drawn by instance in their material's color times its map, as three.js's
 // MeshBasicMaterial draws them with a `map`. The map is a layer of a texture array, read at the
-// first texture coordinates. Materials whose maps share an array and a sampler share the maps'
-// bind group, and each material's row in the material table gives its layer. A map whose image is
-// not on the GPU yet has no layer, and the material draws as without it. The VERTEX_COLOR builds
+// first or the second texture coordinates through the material's texture coordinate transform,
+// as three.js reads a texture with its `channel` and its transform. Materials whose maps share an
+// array and a sampler share the maps' bind group, and each material's row in the material table
+// gives its layer. A map whose image is not on the GPU yet has no layer, and the material draws as
+// without it. The VERTEX_COLOR builds
 // multiply the color by the mesh's vertex colors too. The ALPHA_MASK builds draw nothing where the
 // alpha of the color, the map and the vertex colors falls below the material's cutoff.
 // null3d::mesh finds each instance on both GPU paths.
@@ -21,10 +23,15 @@ enable draw_index;
 @group(1) @binding(1) var map_sampler: sampler;
 #endif
 
+/// The bit of a material's flags for a base color map on the second texture coordinates.
+const SECOND_UV: u32 = 256u;
+
 /// The vertex attributes that the template reads.
 struct VertexIn {
     @location(0) position: vec3f,
     @location(2) uv0: vec2f,
+    /// The second texture coordinates, or the first on a mesh without a second set.
+    @location(3) uv1: vec2f,
 #ifdef VERTEX_COLOR
     @location(5) vertex_color: vec4f,
 #endif
@@ -32,7 +39,8 @@ struct VertexIn {
 
 struct VertexOut {
     @builtin(position) clip: vec4f,
-    @location(0) uv0: vec2f,
+    /// The first texture coordinates, then the second.
+    @location(0) uv: vec4f,
     @location(1) @interpolate(flat, either) material: u32,
 #ifdef VERTEX_COLOR
     @location(2) vertex_color: vec4f,
@@ -47,7 +55,7 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
     var out: VertexOut;
     out.relative = relative_position(found, v.position);
     out.clip = clip_of(found, out.relative);
-    out.uv0 = v.uv0;
+    out.uv = vec4f(v.uv0, v.uv1);
     out.material = found.material;
 #ifdef VERTEX_COLOR
     out.vertex_color = v.vertex_color;
@@ -55,13 +63,17 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
     return out;
 }
 
-/// The base color times the map. Sampling decodes an sRGB map to linear values, and reads a
+/// The base color times the map, which the coordinates that the material's flags pick place through
+/// its texture coordinate transform. Sampling decodes an sRGB map to linear values, and reads a
 /// linear map as it is. The texture is sampled whether the map is ready or not, as sampling needs
 /// the same control flow in every invocation, and a map that is not ready reads as white.
 @fragment
 fn fs(in: VertexOut) -> @location(0) vec4f {
     let m = material_of(in.material);
-    let texel = textureSample(map_layers, map_sampler, in.uv0, map_layer(m.maps.x));
+    let second = (u32(m.strengths.z) & SECOND_UV) != 0u;
+    let raw = vec3f(select(in.uv.xy, in.uv.zw, second), 1.0);
+    let uv = vec2f(dot(m.uv_u.xyz, raw), dot(m.uv_v.xyz, raw));
+    let texel = textureSample(map_layers, map_sampler, uv, map_layer(m.maps.x));
     let map = select(vec4f(1.0), texel, map_ready(m.maps.x));
     var base = m.color.rgb * map.rgb;
     var alpha = m.color.a * map.a;

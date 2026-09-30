@@ -14,6 +14,7 @@
 import { BENCH_SCENES } from '../../bench/lib/parity.ts';
 import { MASK_IMAGE } from '../../bench/scenes/alpha-mask.ts';
 import { FOG_IMAGE } from '../../bench/scenes/fog.ts';
+import { MAPS_IMAGE } from '../../bench/scenes/material-maps.ts';
 import { ORTHO_IMAGE } from '../../bench/scenes/ortho-camera.ts';
 import { HOLD_TIME, PARITY_CANVAS } from '../../bench/scenes/spec.ts';
 import { DEMOS } from '../../examples/demos.ts';
@@ -22,6 +23,15 @@ import type { EngineModeName } from '../lib/engine-checks.ts';
 import { ALL_MODES, type ImageRun, type ImageTest, imageRuns, type Tier } from '../lib/images.ts';
 import { STOPS, TONE_MAPPINGS } from '../pages/lib/bright-scene.ts';
 import { PRECISION } from '../pages/lib/depth-precision.ts';
+
+/**
+ * The tolerance of a scene drawn about 1,000 km out against its image at the origin: any change of
+ * color counts, and a few pixels may change. The final pass dithers after the tone mapping, so a
+ * rounding difference of the GPU below the last bit can still move a pixel by one step, as CI's
+ * software GPU did in one pixel of a whole image. A world matrix relative to the origin, instead of
+ * to its cell, changes many times more.
+ */
+const FAR_OUT_TOLERANCE = { threshold: 0, maxDiffRatio: 0.00005 };
 
 /** The sketch of the tone mapping tests: tiles whose linear colors run from about 0.2 to 16. */
 export const BRIGHT_SKETCH = 'tests/pages/sketches/bright-sketch.ts';
@@ -225,7 +235,7 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 		sketch: `tests/pages/sketches/cells-sketch.ts?x=${977 * 1024}`,
 		hold: 1,
 		reference: 'cells',
-		tolerance: { threshold: 0, maxDiffRatio: 0 },
+		tolerance: FAR_OUT_TOLERANCE,
 	},
 	// Debug drawing: every shape of ctx.debug over a small scene, the axes of a spinning box and the
 	// frustum of a second camera. The single-threaded mode runs the sketch on the page, which draws
@@ -247,7 +257,7 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 		hold: 1,
 		size: [400, 225],
 		reference: 'debug',
-		tolerance: { threshold: 0, maxDiffRatio: 0 },
+		tolerance: FAR_OUT_TOLERANCE,
 	},
 	// Objects, a parent and its child, and instance batches on three layers, some of them moved to
 	// other layers after they were created, and a camera that draws two of the layers. A child keeps
@@ -271,7 +281,7 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 		...ORTHO,
 		sketch: `${ORTHO.sketch}?x=${977 * 1024}`,
 		reference: 'ortho-camera',
-		tolerance: { threshold: 0, maxDiffRatio: 0 },
+		tolerance: FAR_OUT_TOLERANCE,
 	},
 	// Each depth mode that ?depth= forces on WebGL2 must cut the scene at the same near and far
 	// planes, and draw its image.
@@ -339,6 +349,16 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 		sketch: 'tests/pages/sketches/standard-sketch.ts?scene=features',
 		hold: 0,
 		size: [480, 270],
+	},
+	// Each texture map of the standard material, made in code: base color, metal-rough, normal maps
+	// on quads with and without tangents, occlusion, emissive, a light map on the second texture
+	// coordinates, and base color maps through a texture coordinate transform, standard and unlit.
+	// The parity test draws the same scene with three.js.
+	{
+		name: 'standard-maps',
+		sketch: 'tests/pages/sketches/standard-maps-sketch.ts',
+		hold: 0,
+		size: [MAPS_IMAGE.width, MAPS_IMAGE.height],
 	},
 	// Masked materials under MSAA: cards cut by vertex alpha at three cutoffs, with the standard and
 	// the unlit material, crossing each other, and a batch of tilted cards. The parity test compares
