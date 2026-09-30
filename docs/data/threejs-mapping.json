@@ -175,7 +175,7 @@
       "three": "renderer.capabilities / renderer.extensions",
       "status": "changed",
       "since": "0.1",
-      "target": "engine.capabilities (page) or ctx.engine.capabilities (sketch)",
+      "target": "engine.capabilities on the page, which sends the sketch what it needs with engine.postToSketch",
       "notes": "Reports GPU tier, limits and features. Never branch on GPU names: some browsers hide them.",
       "docs": "concepts/backends",
       "detect": "\\.capabilities\\b|\\.extensions\\.(get|has)\\s*\\("

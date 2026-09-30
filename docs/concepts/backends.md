@@ -1,14 +1,12 @@
 ---
 id: concepts/backends
 title: GPU tiers and backends
-status: planned
+status: experimental
 since: "0.1"
 summary: "WebGPU core, compatibility mode and WebGL2; depth on each tier; capability flags; the portable budget; never branching on GPU names."
 ---
 
 # GPU tiers and backends
-
-> Planned for null3D 0.1. No release has these APIs yet, so coding agents must not use them.
 
 ```mermaid
 flowchart TD
@@ -72,7 +70,7 @@ The features it tests include:
 - MSAA on 16-bit float targets
 - rendering into 16-bit and 32-bit float textures on WebGL2 (`engine.report.webgl2.floatRenderTargets`)
 
-Sketch code that uses an optional feature checks this object first.
+Code that uses an optional feature checks this object first. The sketch worker has no copy of its own, so the page sends the sketch what it needs: `engine.postToSketch('capabilities', engine.capabilities)`.
 
 ## The portable budget
 
@@ -102,7 +100,7 @@ A 2018 iPad Pro on iPadOS 26 reports almost exactly WebGPU's default limits, whi
 
 ## Never branch on GPU names
 
-Some browsers hide the GPU's name. Firefox on macOS reports every adapter detail as empty, and Brave can hide them by design. A name also does not tell you which features the engine turned on. Read `engine.capabilities` instead, on the page or in your sketch.
+Some browsers hide the GPU's name. Firefox on macOS reports every adapter detail as empty, and Brave can hide them by design. A name also does not tell you which features the engine turned on. Read `engine.capabilities` instead.
 
 ## Devices with two GPUs
 
