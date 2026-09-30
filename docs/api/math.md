@@ -1,14 +1,14 @@
 ---
 id: api/math
 title: Math helpers
-status: planned
+status: experimental
 since: "0.1"
 summary: "vec3, quat, mat4 and color on plain arrays; math.clamp, lerp, damp and a random generator that hold mode seeds."
 ---
 
 # Math helpers
 
-> Planned for null3D 0.1. No release has these APIs yet, so coding agents must not use them.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions.
 
 The math helpers work on plain arrays, in the style of the gl-matrix library. A helper that makes a vector, a rotation, a matrix or a color writes it into the array you pass first, `out`. It also returns that array. The helpers allocate nothing, so create your arrays once in the setup and reuse them in every frame.
 
