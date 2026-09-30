@@ -2,8 +2,10 @@
 // the sizes of the engine's JavaScript in a production build of the engine test page. Run from
 // the repository root:
 //   bun tools/build-wasm.ts                 build everything, then print the size report
-//   bun tools/build-wasm.ts --check-size    also fail when a file grew past the allowed margin
-//   bun tools/build-wasm.ts --update-size   also rewrite the committed size baseline
+//   bun tools/build-wasm.ts --check-size    also compare each file's size with a build of the base
+//     [--base <ref>]                        commit, and fail on growth that no trailer explains
+//   bun tools/build-wasm.ts --sizes-only    build only what the size report measures, and write the
+//                                           sizes for a size check that builds this commit as its base
 //   bun tools/build-wasm.ts --names         keep the core's function names, for a CPU profile;
 //                                           the names add size, so this skips the size checks
 //
@@ -12,9 +14,14 @@
 // wasm-bindgen command-line tool must match the crate version exactly, so the script downloads
 // that release into the build folder and verifies its checksum. The shader compiler runs in build
 // tools, never in a page, so it has no size budget.
+//
+// The size check's base is main's own build: tools/lib/size-check.ts picks the commit, and the
+// check builds it in a worktree under target/ with that commit's own build script. It keeps the
+// sizes of each base commit it built and reuses them.
 import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import {
+	appendFileSync,
 	chmodSync,
 	copyFileSync,
 	existsSync,
@@ -23,16 +30,28 @@ import {
 	readFileSync,
 	renameSync,
 	rmSync,
+	symlinkSync,
 	writeFileSync,
 } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { SHADER_COMPILER_URL } from '../packages/vite-plugin/src/shader-compiler';
+import { explainedFiles, SIZE_GROWTH_GUIDANCE } from './hooks/check-size-growth';
+import {
+	type BaseChoice,
+	chooseBase,
+	compareSizes,
+	grownFiles,
+	growthLines,
+	growthProblems,
+	growthSummary,
+} from './lib/size-check';
 import {
 	type BuiltFile,
+	type CORE_BUILDS,
+	CORE_FILES,
 	downloadSizes,
 	findEngineParts,
-	growthProblems,
 	measure,
 	type SizeEntry,
 	totalSize,
@@ -42,7 +61,21 @@ const root = process.cwd();
 const CRATE = 'null3d-wasm';
 const OUT_DIR = 'packages/engine/dist/wasm';
 const TOOLS_DIR = 'target/tools';
-const SIZE_BASELINE = 'tools/size-baseline.json';
+/** Where `--sizes-only` writes the sizes it measured, for the size check that asked for them. */
+const SIZE_RECORD = 'target/size-report.json';
+/**
+ * Where the size check keeps its bases: a worktree that it reuses, and each base commit's sizes. The
+ * folder is hidden because `bun test` finds the tests of a git checkout in any other folder, even an
+ * ignored one, and would run the base's tests with this checkout's.
+ */
+const BASE_DIR = 'target/.size-base';
+/** The worktree where the size check builds each base commit with that commit's own build script. */
+const BASE_TREE = `${BASE_DIR}/tree`;
+/**
+ * The committed size record of a base from before the size check compared with main's build. That
+ * base's build script rewrites the record with `--update-size`.
+ */
+const COMMITTED_RECORD = 'tools/size-baseline.json';
 /** Brotli budget for each core WebAssembly file. */
 const WASM_BUDGET_BYTES = 600 * 1024;
 /**
@@ -58,7 +91,7 @@ const SHADER_COMPILER_CRATE = 'null3d-shaders-wasm';
 const SHADER_COMPILER_PATH = fileURLToPath(SHADER_COMPILER_URL);
 
 interface Variant {
-	name: 'threaded' | 'single';
+	name: (typeof CORE_BUILDS)[number];
 	rustflags: string;
 	cargoArgs: string[];
 	wasmOptFeatures: string[];
@@ -155,15 +188,58 @@ async function wasmBindgen(version: string): Promise<string> {
 	return bin;
 }
 
-function run(cmd: string, args: string[], env: Record<string, string> = {}): void {
-	execFileSync(cmd, args, { cwd: root, stdio: 'inherit', env: { ...process.env, ...env } });
+function run(cmd: string, args: string[], env: Record<string, string> = {}, cwd = root): void {
+	execFileSync(cmd, args, { cwd, stdio: 'inherit', env: { ...process.env, ...env } });
 }
 
-/** True when the build keeps the core's function names, which a CPU profile shows. */
-const KEEP_NAMES = process.argv.includes('--names');
+const git = (args: string[], cwd = root) =>
+	execFileSync('git', args, { cwd, encoding: 'utf8' }).trim();
 
-function buildVariant(variant: Variant, bindgen: string): void {
-	const targetDir = `target/wasm-${variant.name}`;
+export interface BuildOptions {
+	/** Compare each file's size after Brotli with a build of the base commit. */
+	checkSize: boolean;
+	/** The commit that the size check compares with, in place of the one it picks. */
+	base?: string;
+	/** Build and measure only the files that the size report covers, and write their sizes. */
+	sizesOnly: boolean;
+	/** Keep the core's function names, which a CPU profile shows. */
+	keepNames: boolean;
+}
+
+const USAGE =
+	'usage: bun tools/build-wasm.ts [--check-size [--base <ref>] | --sizes-only | --names]';
+
+/** Reads the command line. It throws on an unknown option and on options that exclude each other. */
+export function parseOptions(args: readonly string[]): BuildOptions {
+	const options: BuildOptions = { checkSize: false, sizesOnly: false, keepNames: false };
+	for (let i = 0; i < args.length; i++) {
+		const arg = args[i];
+		if (arg === '--check-size') options.checkSize = true;
+		else if (arg === '--sizes-only') options.sizesOnly = true;
+		else if (arg === '--names') options.keepNames = true;
+		else if (arg === '--base' && args[i + 1] && !args[i + 1]?.startsWith('-'))
+			options.base = args[++i];
+		else
+			throw new Error(
+				`${arg === '--base' ? '--base needs a commit' : `unknown option ${arg}`}. ${USAGE}`,
+			);
+	}
+	if (options.keepNames && (options.checkSize || options.sizesOnly))
+		throw new Error('--names adds the function names to the core, so it cannot measure sizes');
+	if (options.checkSize && options.sizesOnly)
+		throw new Error(
+			'--sizes-only measures a base for the size check, so it cannot also run the check',
+		);
+	if (options.base !== undefined && !options.checkSize)
+		throw new Error(`--base names the commit that --check-size compares with. ${USAGE}`);
+	return options;
+}
+
+/** The Rust build folder of a variant, relative to the checkout. */
+const buildFolder = (variant: Variant) => `target/wasm-${variant.name}`;
+
+function buildVariant(variant: Variant, bindgen: string, keepNames: boolean): void {
+	const targetDir = buildFolder(variant);
 	console.log(`\nbuilding the ${variant.name} WebAssembly file`);
 	run(
 		'cargo',
@@ -195,7 +271,7 @@ function buildVariant(variant: Variant, bindgen: string): void {
 	run(join(root, 'node_modules/.bin/wasm-opt'), [
 		'-O3',
 		// wasm-opt drops the name section unless it keeps debug information.
-		...(KEEP_NAMES ? ['--debuginfo'] : []),
+		...(keepNames ? ['--debuginfo'] : []),
 		...variant.wasmOptFeatures,
 		wasm,
 		'-o',
@@ -336,26 +412,145 @@ function printSize(name: string, size: SizeEntry, budgetBytes?: number): void {
 	);
 }
 
-async function main(): Promise<void> {
-	if (
-		KEEP_NAMES &&
-		(process.argv.includes('--update-size') || process.argv.includes('--check-size'))
-	)
-		throw new Error(
-			'--names adds the function names to the core, so it cannot check or record sizes',
+interface Base {
+	sha: string;
+	subject: string;
+	/** Why the check picked this commit. */
+	why: string;
+}
+
+/** HEAD's merge base with a branch of origin, after a fetch of the branch. Offline, the last fetch serves. */
+function mergeBaseWith(branch: string): string {
+	const remote = `origin/${branch}`;
+	console.log(`\nfetching ${remote} for the size check's base`);
+	const fetch = spawnSync('git', ['fetch', '--quiet', 'origin', branch], {
+		cwd: root,
+		encoding: 'utf8',
+		env: { ...process.env, GIT_TERMINAL_PROMPT: '0' },
+	});
+	if (fetch.status !== 0)
+		console.warn(
+			`could not fetch ${remote}, so the check uses the last fetch: ${fetch.stderr.trim()}`,
 		);
+	try {
+		return git(['merge-base', 'HEAD', remote]);
+	} catch {
+		throw new Error(`HEAD has no merge base with ${remote}: fetch it, or pass --base <ref>`);
+	}
+}
+
+/** The commit that the choice names, with its subject. */
+function resolveBase(choice: BaseChoice): Base {
+	const ref = 'ref' in choice ? choice.ref : mergeBaseWith(choice.branch);
+	let sha: string;
+	try {
+		sha = git(['rev-parse', '--verify', '--quiet', `${ref}^{commit}`]);
+	} catch {
+		throw new Error(`${ref} names no commit in this clone: fetch it, or pass --base <ref>`);
+	}
+	return { sha, subject: git(['log', '-1', '--format=%s', sha]), why: choice.why };
+}
+
+/** Puts the base worktree at the commit, and makes it when it is missing or broken. True when new. */
+function checkoutBaseTree(tree: string, sha: string): boolean {
+	if (existsSync(join(tree, '.git'))) {
+		const args = ['checkout', '--force', '--quiet', '--detach', sha];
+		if (spawnSync('git', args, { cwd: tree }).status === 0) return false;
+	}
+	rmSync(tree, { recursive: true, force: true });
+	// --force also takes over the path when git still lists a worktree there that was deleted.
+	git(['worktree', 'add', '--force', '--detach', tree, sha]);
+	return true;
+}
+
+/**
+ * Copies this checkout's Rust build folders into a new base worktree with their file times, and
+ * shares the downloaded wasm-bindgen, whose folder names its version. The worktree's files are
+ * newer than the copies, so Cargo rebuilds the engine's crates from the base's code and reuses the
+ * standard library and the dependencies. Two checkouts never share one Rust build folder: Cargo
+ * finds the engine's crates at the same paths in both, and judges them fresh by file times, so the
+ * next build of one checkout could take the other's crates.
+ */
+function seedBuildFolders(tree: string): void {
+	mkdirSync(join(tree, 'target'), { recursive: true });
+	for (const variant of VARIANTS) {
+		const folder = buildFolder(variant);
+		if (existsSync(join(root, folder)))
+			execFileSync('cp', ['-Rp', join(root, folder), join(tree, folder)]);
+	}
+	if (existsSync(join(root, TOOLS_DIR))) symlinkSync(join(root, TOOLS_DIR), join(tree, TOOLS_DIR));
+}
+
+/**
+ * The base commit's sizes. The check keeps them by commit and reuses them. Otherwise it builds the
+ * commit in the base worktree with the commit's own build script, so the base has that commit's
+ * flags, toolchain and list of parts.
+ */
+function baseSizes(sha: string): Record<string, SizeEntry> {
+	const kept = join(root, BASE_DIR, `${sha}.json`);
+	if (existsSync(kept)) {
+		console.log(`reusing the sizes of the base build of ${sha.slice(0, 8)}, kept in ${BASE_DIR}`);
+		return JSON.parse(readFileSync(kept, 'utf8'));
+	}
+	const started = performance.now();
+	const tree = join(root, BASE_TREE);
+	const group = process.env.GITHUB_ACTIONS === 'true';
+	if (group) console.log(`::group::the base build of ${sha.slice(0, 8)}`);
+	try {
+		console.log(`\nbuilding the base, ${sha.slice(0, 8)}, in ${BASE_TREE}`);
+		if (checkoutBaseTree(tree, sha)) seedBuildFolders(tree);
+		run('bun', ['install', '--frozen-lockfile'], { HUSKY: '0' }, tree);
+		const committed = existsSync(join(tree, COMMITTED_RECORD));
+		run('bun', ['tools/build-wasm.ts', committed ? '--update-size' : '--sizes-only'], {}, tree);
+		mkdirSync(dirname(kept), { recursive: true });
+		copyFileSync(join(tree, committed ? COMMITTED_RECORD : SIZE_RECORD), kept);
+	} finally {
+		if (group) console.log('::endgroup::');
+	}
+	console.log(`built the base in ${Math.round((performance.now() - started) / 1000)} s`);
+	return JSON.parse(readFileSync(kept, 'utf8'));
+}
+
+/** The commits after the base up to HEAD, with their messages. */
+function commitsSince(base: string): { sha: string; message: string }[] {
+	return git(['log', '--format=%H%x1f%B%x1e', `${base}..HEAD`])
+		.split('\x1e')
+		.map((entry) => entry.trim().split('\x1f'))
+		.filter(([sha]) => sha)
+		.map(([sha = '', message = '']) => ({ sha, message }));
+}
+
+/**
+ * Compares each file's size with the base build and shows the growth in the log and in CI's job
+ * summary. Returns a problem for each file that grew past the limit with no trailer to explain it.
+ */
+function checkGrowth(sizes: Record<string, SizeEntry>, ref: string | undefined): string[] {
+	const base = resolveBase(chooseBase(ref, process.env));
+	const changes = compareSizes(baseSizes(base.sha), sizes);
+	const grown = grownFiles(changes).map(({ file }) => file);
+	const explainedBy = explainedFiles(commitsSince(base.sha), grown);
+	const short = base.sha.slice(0, 8);
+	console.log(`\ngrowth after Brotli against the base, ${short} "${base.subject}", ${base.why}`);
+	for (const line of growthLines(changes, explainedBy)) console.log(line);
+	const summary = process.env.GITHUB_STEP_SUMMARY;
+	if (summary)
+		appendFileSync(summary, growthSummary(changes, explainedBy, `\`${short}\`, ${base.why}`));
+	return growthProblems(changes, explainedBy);
+}
+
+async function main(): Promise<void> {
+	const options = parseOptions(process.argv.slice(2));
 	const version = lockedVersion(readFileSync(join(root, 'Cargo.lock'), 'utf8'), 'wasm-bindgen');
 	const bindgen = await wasmBindgen(version);
-	for (const variant of VARIANTS) buildVariant(variant, bindgen);
-	buildShaderCompiler();
+	for (const variant of VARIANTS) buildVariant(variant, bindgen, options.keepNames);
+	if (!options.sizesOnly) buildShaderCompiler();
 
 	const sizes: Record<string, SizeEntry> = {};
-	for (const variant of VARIANTS) {
-		for (const file of ['null3d_bg.wasm', 'null3d.js']) {
-			const path = `${OUT_DIR}/${variant.name}/${file}`;
-			sizes[`${variant.name}/${file}`] = measure(readFileSync(join(root, path)));
-		}
-	}
+	for (const variant of VARIANTS)
+		for (const file of CORE_FILES)
+			sizes[`${variant.name}/${file}`] = measure(
+				readFileSync(join(root, OUT_DIR, variant.name, file)),
+			);
 	const parts = new Map(
 		[...findEngineParts(buildEngineTestPage())].map(([part, file]) => [
 			part,
@@ -373,6 +568,11 @@ async function main(): Promise<void> {
 		"\nthe engine's JavaScript that a page downloads in each thread mode, besides the core's glue (budget: 60 KB after Brotli)",
 	);
 	for (const { mode, size } of downloads) printSize(mode, size, JS_BUDGET_BYTES);
+	if (options.sizesOnly) {
+		writeFileSync(join(root, SIZE_RECORD), `${JSON.stringify(sizes, null, '\t')}\n`);
+		console.log(`\nwrote ${SIZE_RECORD}`);
+		return;
+	}
 	console.log('\nthe shader compiler, which only build tools load (no budget)');
 	printSize('shader-compiler.wasm', measure(readFileSync(SHADER_COMPILER_PATH)));
 
@@ -384,15 +584,16 @@ async function main(): Promise<void> {
 			problems.push(
 				`the engine JavaScript that a page downloads in ${mode} mode is over its 60 KB Brotli budget`,
 			);
-	const baselinePath = join(root, SIZE_BASELINE);
-	if (process.argv.includes('--update-size')) {
-		writeFileSync(baselinePath, `${JSON.stringify(sizes, null, '\t')}\n`);
-		console.log(`\nwrote ${SIZE_BASELINE}`);
-	} else if (process.argv.includes('--check-size') && existsSync(baselinePath)) {
-		problems.push(...growthProblems(sizes, JSON.parse(readFileSync(baselinePath, 'utf8'))));
+	const growth = options.checkSize ? checkGrowth(sizes, options.base) : [];
+	for (const p of [...problems, ...growth]) console.error(`error: ${p}`);
+	if (growth.length > 0) {
+		console.error('');
+		for (const line of SIZE_GROWTH_GUIDANCE) console.error(line);
+		console.error(
+			'\nThe check reads the trailers of every commit after the base, so an empty commit can carry them.',
+		);
 	}
-	for (const p of problems) console.error(`error: ${p}`);
-	if (problems.length > 0) process.exit(1);
+	if (problems.length + growth.length > 0) process.exit(1);
 }
 
 if (import.meta.main) {

@@ -156,7 +156,7 @@ Gate item 5 asks for both core builds to be measured and the 600 KB target confi
 | Threaded glue (`null3d.js`) | 18,335 B | 4,074 B | |
 | Engine JavaScript (page, sketch, render, job and probe workers) | 354,975 B | 77,507 B | against the 60 KB API budget, see below |
 
-Sizes from `tools/size-baseline.json` (the committed baseline, main at 9b792d0) and from the production build measured for [D-01](D-01-gpu-layer.md), whose full tables stay with its size probe outside the repository.
+Sizes from `tools/size-baseline.json` (main's size record then, at 9b792d0) and from the production build measured for [D-01](D-01-gpu-layer.md), whose full tables stay with its size probe outside the repository.
 
 Decision: the 600 KB budget for each core build stands. Both builds use under a tenth of it, which leaves room for the renderer features still to come (shadows, PBR, glTF, animation) without a revision now. CI keeps checking every build against it and against 2% growth.
 
