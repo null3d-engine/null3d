@@ -239,6 +239,8 @@ export interface Engine {
 }
 
 const DEFAULT_MAX_PIXEL_RATIO = 2;
+/** The global where the `?bench` switch publishes the running engine. */
+const BENCH_GLOBAL = '__null3dEngine';
 /** The GPU the engine asks for on a device with two: the faster one. */
 const DEFAULT_POWER_PREFERENCE: PowerPreference = 'high-performance';
 /** Logical cores kept free of job workers: one for the sketch worker, one for the render worker. */
@@ -403,7 +405,8 @@ async function stopWorkers(workers: readonly EngineWorker[], jobs: readonly Engi
  * Starts the engine on the page. It tests the device, picks the build and the GPU path, starts the
  * workers, and runs the sketch module. In hold mode it also steps the sketch to the held time, then
  * draws that frame and reads it back. It publishes the frame, or the error that stopped it, as
- * `window.__null3dHold` for test tools.
+ * `window.__null3dHold` for test tools. With the `?bench` switch, it publishes the running engine
+ * as `window.__null3dEngine`, where a benchmark tool calls `measure`.
  *
  * @category api/engine
  */
@@ -841,7 +844,10 @@ async function startEngine(
 			return stop();
 		},
 	};
-	if (hold === undefined) return engine;
+	if (hold === undefined) {
+		if (switches.bench) (globalThis as Record<string, unknown>)[BENCH_GLOBAL] = engine;
+		return engine;
+	}
 	try {
 		held = await abortable(holdFrame(capture, failureHandlers), signal);
 	} catch (error) {
