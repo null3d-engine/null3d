@@ -10,6 +10,7 @@ import { WebGPUBackend } from '../gpu/webgpu/backend';
 import { GpuTimer } from '../gpu/webgpu/gpu-timer';
 import type { CoreDevice } from '../page/limits';
 import { controlViews, Slot } from '../shared/control';
+import type { ImageTable } from '../shared/images';
 import { Counter, type FrameRecorder, Phase } from '../shared/metrics';
 import { contextLoss, deviceLoss } from './loss';
 import type { FrameInput, RenderCanvas, Renderer, Tier } from './renderer';
@@ -64,6 +65,7 @@ export class WebGPUSceneRenderer implements Renderer {
 		memory: WebAssembly.Memory,
 		control: ArrayBufferLike,
 		metrics: ArrayBufferLike | undefined,
+		images: ImageTable | undefined,
 	) {
 		this.lost = deviceLoss(device, () => this.simulated);
 		const context = canvas.getContext('webgpu') as GPUCanvasContext | null;
@@ -71,7 +73,7 @@ export class WebGPUSceneRenderer implements Renderer {
 		this.context = context;
 		this.format = navigator.gpu.getPreferredCanvasFormat();
 		context.configure({ device, format: this.format, alphaMode: 'opaque' });
-		this.backend = new WebGPUBackend(device, context, this.format);
+		this.backend = new WebGPUBackend(device, context, this.format, undefined, images);
 		this.backend.timer = metrics && GpuTimer.create(device, metrics);
 		this.completions = metrics && new QueueCompletion(device.queue, metrics);
 		this.lists = new DrawLists(memory, control);
@@ -147,7 +149,7 @@ export class WebGL2SceneRenderer implements Renderer {
 	/**
 	 * `gl` is the canvas's context, made with the engine's settings. Where WebGL refuses views on
 	 * shared memory, the device says so, and the backend copies uploads out of engine memory first.
-	 * The device also gives the depth mode.
+	 * The device also gives the depth mode. `images` holds the images that texture uploads read.
 	 */
 	constructor(
 		private readonly canvas: RenderCanvas,
@@ -156,9 +158,10 @@ export class WebGL2SceneRenderer implements Renderer {
 		control: ArrayBufferLike,
 		metrics: ArrayBufferLike | undefined,
 		device: CoreDevice,
+		images: ImageTable | undefined,
 	) {
 		this.lost = contextLoss(canvas, this.release.signal);
-		this.backend = new WebGL2Backend(gl, canvas, device.sharedUploads, device.depth);
+		this.backend = new WebGL2Backend(gl, canvas, device.sharedUploads, device.depth, images);
 		this.completions = metrics && new FenceCompletion(gl, metrics);
 		this.lists = new DrawLists(memory, control);
 	}

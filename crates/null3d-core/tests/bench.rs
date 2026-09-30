@@ -15,17 +15,17 @@ mod common;
 
 use std::hint::black_box;
 use std::simd::prelude::*;
-use std::sync::atomic::{AtomicU32, Ordering};
+use std::sync::atomic::{AtomicU32, AtomicU64, Ordering};
 use std::time::{Duration, Instant};
 
-use common::{Rng, Workers, mul4, perspective, translation};
+use common::{Rng, Workers, mul4, perspective, translation, wait_for_every_thread};
 use null3d_core::cells::CellTable;
 use null3d_core::culling::{
     CullOutput, Frustum, cull_parallel, cull_spheres, cull_spheres_reference,
 };
 use null3d_core::handle::Handle;
 use null3d_core::instances::BatchTable;
-use null3d_core::jobs::JobSystem;
+use null3d_core::jobs::{BackgroundTask, JobConfig, JobSystem, WorkerId};
 use null3d_core::scene::{Command, SceneStorage, flags};
 use null3d_core::world::SphereArrays;
 
@@ -293,6 +293,62 @@ fn bench_s1_batch_update() {
             workers + 1,
             micros(median),
             micros(best)
+        );
+    }
+}
+
+/// A background task that busy-waits for `micros` microseconds, as real work would.
+fn spin_task(micros: u64, _: WorkerId) {
+    let end = Instant::now() + Duration::from_micros(micros);
+    while Instant::now() < end {
+        std::hint::spin_loop();
+    }
+}
+
+#[test]
+#[ignore = "benchmark: run with --release --ignored"]
+fn bench_job_workers_join_a_frame_job() {
+    const TASK_MICROS: u64 = 1000;
+    const ROUNDS: usize = 500;
+    println!(
+        "\nA frame job while the job workers run background tasks of {TASK_MICROS} µs: when the last \
+         job worker joins it"
+    );
+    for workers in [1, 3, 7] {
+        let pool = Workers::with_config(JobConfig {
+            workers,
+            background_capacity: 1 << 12,
+            ..JobConfig::default()
+        });
+        let jobs = pool.jobs();
+        let threads = jobs.thread_count();
+        let mut joins: Vec<Duration> = Vec::with_capacity(ROUNDS);
+        for _ in 0..ROUNDS {
+            while jobs.pending_background() < 4 * workers {
+                jobs.spawn_background(BackgroundTask {
+                    run: spin_task,
+                    arg: TASK_MICROS,
+                })
+                .unwrap();
+            }
+            // Workers take the tasks between frame jobs.
+            std::thread::sleep(Duration::from_micros(TASK_MICROS / 2));
+            let joined = AtomicU64::new(0);
+            let last_join = AtomicU64::new(0);
+            let start = Instant::now();
+            jobs.parallel_for(threads, 1, &|_, worker| {
+                if worker != WorkerId::CALLER {
+                    last_join.fetch_max(start.elapsed().as_nanos() as u64, Ordering::Relaxed);
+                }
+                wait_for_every_thread(&joined, worker, threads);
+            });
+            joins.push(Duration::from_nanos(last_join.load(Ordering::Relaxed)));
+        }
+        joins.sort();
+        println!(
+            "  {threads} threads: median {:>7.1} µs, slowest {:>7.1} µs",
+            micros(joins[ROUNDS / 2]),
+            micros(joins[ROUNDS - 1])
         );
     }
 }
