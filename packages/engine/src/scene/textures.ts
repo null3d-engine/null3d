@@ -1,0 +1,532 @@
+// Textures as a sketch makes them: from decoded images, from data, and through the loading calls
+// of assets.ts. The engine core gives each texture a layer of a texture array that textures of
+// its size, format and mip levels share, and a sampler. An image travels to the thread that
+// draws; data goes into engine memory. Either uploads in its turn, a band of rows per frame
+// within the frame's upload budget, and then makes its mip levels on the GPU. Until its texels
+// are on the GPU, a material draws as without the map.
+
+import { DEV } from '../errors/checks';
+import { EngineError } from '../errors/engine-error';
+import {
+	SHADING_UNLIT_MAP,
+	TEXTURE_FILTER_LINEAR,
+	TEXTURE_FILTER_NEAREST,
+	TEXTURE_FORMAT_HALF_FLOAT,
+	TEXTURE_FORMAT_LINEAR,
+	TEXTURE_FORMAT_SRGB,
+	TEXTURE_MAX_DEPTH,
+	TEXTURE_OPTION_MAX_ANISOTROPY,
+	TEXTURE_OPTION_UPLOAD_BUDGET,
+	TEXTURE_PREMULTIPLIED_ALPHA,
+	TEXTURE_STAT_IMAGES_SENT,
+	TEXTURE_STAT_LARGEST_FRAME_BYTES,
+	TEXTURE_STAT_LAST_FRAME_BYTES,
+	TEXTURE_STAT_MAX_SIZE,
+	TEXTURE_STAT_MEMORY_BYTES,
+	TEXTURE_STAT_TEXTURE_BYTES,
+	TEXTURE_STAT_WAITING,
+	TEXTURE_WRAP_CLAMP,
+	TEXTURE_WRAP_MIRROR,
+	TEXTURE_WRAP_REPEAT,
+} from '../generated/core';
+import type { ImageSender } from '../shared/images';
+import { toHalfFloats } from './half-float';
+import type { CoreMemory } from './memory';
+import type { Material, MaterialOptions, Materials } from './resources';
+
+/**
+ * What texture coordinates outside 0 to 1 read. `clamp` reads the texel at the edge, `repeat`
+ * repeats the texture, and `mirror` repeats it with every other copy mirrored.
+ *
+ * @category api/textures
+ */
+export type TextureWrap = 'clamp' | 'repeat' | 'mirror';
+
+/**
+ * How texels are read between their centers and between mip levels: blended (`linear`), or the
+ * nearest one (`nearest`), which keeps pixel art sharp.
+ *
+ * @category api/textures
+ */
+export type TextureFilter = 'linear' | 'nearest';
+
+/**
+ * `srgb` for colors, which sampling turns into linear values, or `linear` for data such as
+ * normals, roughness and metalness, which sampling reads as they are.
+ *
+ * @category api/textures
+ */
+export type TextureColorSpace = 'srgb' | 'linear';
+
+/**
+ * How a texture stores its texels on the GPU: `rgba8unorm`, four 8-bit channels, or
+ * `rgba16float`, four 16-bit floats for values outside 0 to 1.
+ *
+ * @category api/textures
+ */
+export type TextureFormat = 'rgba8unorm' | 'rgba16float';
+
+/**
+ * Texel data: bytes for `rgba8unorm`, and for `rgba16float` either half floats as 16-bit words or
+ * 32-bit floats, which the engine turns into half floats.
+ *
+ * @category api/textures
+ */
+export type TextureDataArray = Uint8Array | Uint8ClampedArray | Uint16Array | Float32Array;
+
+/**
+ * How a texture stores and samples its texels. Every call that makes a texture takes them.
+ *
+ * @category api/textures
+ */
+export interface TextureOptions {
+	/**
+	 * `srgb` for color maps, such as a base color, and `linear` for data maps, such as normal,
+	 * roughness, metalness and occlusion maps. The default is `srgb` for images and `linear` for
+	 * data.
+	 */
+	colorSpace?: TextureColorSpace;
+	/** Along u, then v, or one value for both. The default is `clamp`, as in three.js. */
+	wrap?: TextureWrap | readonly [TextureWrap, TextureWrap];
+	/** The filter of magnified and minified texels and between mip levels. The default is `linear`. */
+	filter?: TextureFilter;
+	/**
+	 * True to make mip levels on the GPU after each upload, so the texture does not shimmer where
+	 * it covers few pixels. The default is true for images and false for data. `rgba16float`
+	 * textures have no mip levels.
+	 */
+	mipmaps?: boolean;
+	/**
+	 * Samples along the direction of steepest change, a whole number from 1 to 16, which keeps a
+	 * texture sharp on a surface seen at a slant. The quality preset caps it, and a `nearest`
+	 * filter turns it off. The default is 1, which is off.
+	 */
+	anisotropy?: number;
+	/**
+	 * The set of texture coordinates that materials read the texture at: 0 for the first, 1 for
+	 * the second, as three.js's `texture.channel`. The default is 0.
+	 */
+	uvSet?: 0 | 1;
+}
+
+/**
+ * A texture's size and texels for `textures.fromData`, with its options.
+ *
+ * @category api/textures
+ */
+export interface TextureData extends TextureOptions {
+	/** Texels in each row, from 1 up to `textures.maxSize`. */
+	width: number;
+	/** Rows in each layer, from 1 up to `textures.maxSize`. */
+	height: number;
+	/** Layers, from 1 to 256. The default is 1. */
+	depth?: number;
+	/** The default is `rgba8unorm`. */
+	format?: TextureFormat;
+	/**
+	 * Four numbers per texel, in rows from the first to the last, layer after layer. The first
+	 * row is at v = 0, the bottom of a plane.
+	 */
+	data: TextureDataArray;
+}
+
+/** Numbers of the texture uploads. */
+export interface TextureUploads {
+	/** Texel bytes that the last recorded frame uploads. */
+	lastFrameBytes: number;
+	/** The most texel bytes that any frame uploaded. */
+	largestFrameBytes: number;
+	/** Textures whose texels are not on the GPU yet. */
+	waiting: number;
+}
+
+const WRAPS: Record<TextureWrap, number> = {
+	clamp: TEXTURE_WRAP_CLAMP,
+	repeat: TEXTURE_WRAP_REPEAT,
+	mirror: TEXTURE_WRAP_MIRROR,
+};
+
+const FILTERS: Record<TextureFilter, number> = {
+	linear: TEXTURE_FILTER_LINEAR,
+	nearest: TEXTURE_FILTER_NEAREST,
+};
+
+const COLOR_SPACES: Record<TextureColorSpace, true> = { srgb: true, linear: true };
+
+const FORMATS: Record<TextureFormat, true> = { rgba8unorm: true, rgba16float: true };
+
+/**
+ * A texture: an image or data on the GPU, which materials sample. Its texels upload in the
+ * frames after the call that makes it, a band of rows per frame. A material draws with its color
+ * alone until they are on the GPU.
+ *
+ * @category api/textures
+ */
+export class Texture {
+	private size: [number, number];
+
+	/** @internal */
+	constructor(
+		/** @internal The engine core's handle. */
+		readonly handle: number,
+		width: number,
+		height: number,
+		/** Layers: 1, or more for a texture from data with a depth. */
+		readonly depth: number,
+		/** How the texture stores its texels on the GPU. */
+		readonly format: TextureFormat,
+		/** Whether sampling turns the texels from sRGB into linear values, or reads them as they are. */
+		readonly colorSpace: TextureColorSpace,
+		/** The set of texture coordinates that materials read the texture at. */
+		readonly uvSet: 0 | 1,
+		private readonly textures: Textures,
+	) {
+		this.size = [width, height];
+	}
+
+	/** Texels in each row. An update with an image of another size changes it. */
+	get width(): number {
+		return this.size[0];
+	}
+
+	/** Rows in each layer. An update with an image of another size changes it. */
+	get height(): number {
+		return this.size[1];
+	}
+
+	/** The GPU bytes of the texture: its layers, with every mip level. */
+	get bytes(): number {
+		return this.textures.bytesOf(this);
+	}
+
+	/**
+	 * Gives the texture new texels, which upload in their turn. An image may have another size,
+	 * and the texture then takes that size; the image moves to the thread that draws, so this
+	 * thread can use it no more. Data must fit the texture's size and format. Until the new texels
+	 * are on the GPU, materials draw with their colors alone.
+	 */
+	update(source: ImageBitmap | TextureDataArray): void {
+		const call = 'texture.update';
+		if (ArrayBuffer.isView(source)) this.textures.setData(this, source, call);
+		else this.textures.setImage(this, source, 0, call);
+	}
+
+	/** @internal Takes the size that an image of another size gave the texture. */
+	resize(width: number, height: number): void {
+		this.size = [width, height];
+	}
+
+	/**
+	 * Frees the texture's GPU memory. Materials that map it draw with their colors alone. Calls on
+	 * the texture after this throw E1101.
+	 */
+	destroy(): void {
+		this.textures.destroy(this);
+	}
+}
+
+/**
+ * Makes textures from decoded images and from data, and reads what the GPU holds. A sketch finds
+ * it as `ctx.textures`. `ctx.assets.loadTexture` loads and decodes image files into textures.
+ *
+ * @category api/textures
+ */
+export class Textures {
+	/** @internal */
+	constructor(
+		private readonly core: CoreMemory,
+		private readonly send: ImageSender,
+		private readonly time: { readonly frame: number },
+	) {}
+
+	/**
+	 * A texture from a decoded image. The image's first row goes to v = 0, the bottom of a plane.
+	 * Decode images with `imageOrientation: 'flipY'`, as `assets.loadImageBitmap` does by default,
+	 * so that they stand upright as three.js shows them. The image moves to the thread that draws,
+	 * so this thread can use it no more. Throws E1208 for an image without pixels, one larger than
+	 * `maxSize`, and options the engine does not know.
+	 */
+	fromImageBitmap(image: ImageBitmap, options: TextureOptions = {}): Texture {
+		return this.fromImage(image, options, 0, 'textures.fromImageBitmap');
+	}
+
+	/**
+	 * @internal A texture from a decoded image that holds colors multiplied by alpha when
+	 * `premultiplied` is true, as `assets.loadTexture` decodes them.
+	 */
+	fromImage(
+		image: ImageBitmap,
+		options: TextureOptions,
+		premultiplied: 0 | 1,
+		call: string,
+	): Texture {
+		if (DEV) checkImage(image, call);
+		const texture = this.create(image.width, image.height, 1, 'rgba8unorm', options, true, call);
+		this.setImage(texture, image, premultiplied, call);
+		return texture;
+	}
+
+	/**
+	 * A texture from data: four numbers per texel, in rows from the bottom up, layer after layer.
+	 * A texture of several layers is a texture array of its own. Throws E1208 when the data does
+	 * not fit the size and format, and for options the engine does not know.
+	 */
+	fromData(texture: TextureData): Texture {
+		const call = 'textures.fromData';
+		const { width, height, depth = 1, format = 'rgba8unorm', data } = texture;
+		if (DEV) {
+			if (!FORMATS[format as TextureFormat])
+				throw invalid(call, `got the format ${quote(format)}. Use 'rgba8unorm' or 'rgba16float'.`);
+			for (const [name, value, max] of [
+				['width', width, this.maxSize],
+				['height', height, this.maxSize],
+				['depth', depth, TEXTURE_MAX_DEPTH],
+			] as const)
+				if (!(Number.isInteger(value) && value >= 1 && value <= max))
+					throw invalid(call, `got the ${name} ${value}: give a whole number from 1 to ${max}.`);
+		}
+		const made = this.create(width, height, depth, format, texture, false, call);
+		try {
+			this.setData(made, data, call);
+		} catch (error) {
+			made.destroy();
+			throw error;
+		}
+		return made;
+	}
+
+	/**
+	 * Checks the options and makes a texture with no texels yet. `image` says whether the texture
+	 * is for images, whose defaults differ from those of data.
+	 */
+	private create(
+		width: number,
+		height: number,
+		depth: number,
+		format: TextureFormat,
+		options: TextureOptions,
+		image: boolean,
+		call: string,
+	): Texture {
+		const {
+			colorSpace = image ? 'srgb' : 'linear',
+			wrap = 'clamp',
+			filter = 'linear',
+			mipmaps = image,
+			anisotropy = 1,
+			uvSet = 0,
+		} = options;
+		const half = format === 'rgba16float';
+		const [wrapU, wrapV] = typeof wrap === 'string' ? [wrap, wrap] : wrap;
+		if (DEV) {
+			if (!COLOR_SPACES[colorSpace as TextureColorSpace])
+				throw invalid(call, `got the colorSpace ${quote(colorSpace)}. Use 'srgb' or 'linear'.`);
+			if (half && colorSpace === 'srgb')
+				throw invalid(call, "got colorSpace 'srgb' for rgba16float data, which is linear.");
+			if (half && mipmaps)
+				throw invalid(call, 'got mipmaps: true for rgba16float data, which has no mip levels.');
+			if (!(Number.isInteger(anisotropy) && anisotropy >= 1 && anisotropy <= 16))
+				throw invalid(call, `got the anisotropy ${anisotropy}: give a whole number from 1 to 16.`);
+			if (uvSet !== 0 && uvSet !== 1) throw invalid(call, `got the uvSet ${uvSet}: give 0 or 1.`);
+			checkName(WRAPS, wrapU, 'wrap', call);
+			checkName(WRAPS, wrapV, 'wrap', call);
+			checkName(FILTERS, filter, 'filter', call);
+			const max = this.maxSize;
+			if (width > max || height > max)
+				throw invalid(
+					call,
+					`got ${width} x ${height} texels, larger than the ${max} a side that this device's textures hold. Use a smaller image.`,
+				);
+		}
+		const filterCode = FILTERS[filter];
+		const { core } = this;
+		const handle = core.check(
+			core.glue.createTexture(
+				width,
+				height,
+				depth,
+				half
+					? TEXTURE_FORMAT_HALF_FLOAT
+					: colorSpace === 'srgb'
+						? TEXTURE_FORMAT_SRGB
+						: TEXTURE_FORMAT_LINEAR,
+				mipmaps === true,
+				WRAPS[wrapU],
+				WRAPS[wrapV],
+				filterCode,
+				filterCode,
+				filterCode,
+				anisotropy,
+			),
+			call,
+		);
+		return new Texture(handle, width, height, depth, format, colorSpace, uvSet, this);
+	}
+
+	/**
+	 * @internal Gives a texture an image, and sends the image under the id the core gave it. An
+	 * image of another size gives the texture that size.
+	 */
+	setImage(texture: Texture, image: ImageBitmap, premultiplied: 0 | 1, call: string): void {
+		if (DEV) {
+			checkImage(image, call);
+			if (texture.depth > 1 || texture.format !== 'rgba8unorm')
+				throw invalid(
+					call,
+					`got an image for a texture of ${texture.depth} layers in ${texture.format}. Images fill textures of one layer in rgba8unorm: update this one with data.`,
+				);
+		}
+		const { width, height } = image;
+		const id = this.core.check(
+			this.core.glue.setTextureImage(
+				texture.handle,
+				width,
+				height,
+				premultiplied * TEXTURE_PREMULTIPLIED_ALPHA,
+			),
+			call,
+			'a texture',
+		);
+		texture.resize(width, height);
+		this.send(id, image);
+	}
+
+	/** @internal Copies data of the texture's size and format into engine memory for its upload. */
+	setData(texture: Texture, data: TextureDataArray, call: string): void {
+		const { width, height, depth, format } = texture;
+		const values = width * height * depth * 4;
+		if (DEV) {
+			const half = format === 'rgba16float';
+			const fits = half
+				? data instanceof Uint16Array || data instanceof Float32Array
+				: data instanceof Uint8Array || data instanceof Uint8ClampedArray;
+			if (!fits)
+				throw invalid(
+					call,
+					`got a ${data?.constructor?.name ?? typeof data} for ${format} data. Give ${half ? 'a Uint16Array of half floats or a Float32Array' : 'a Uint8Array or a Uint8ClampedArray'}.`,
+				);
+			if (data.length !== values)
+				throw invalid(
+					call,
+					`got ${data.length} numbers for ${width} x ${height} x ${depth} texels, not ${values}: give four per texel.`,
+				);
+		}
+		const { core } = this;
+		const address = core.check(
+			core.glue.setTextureData(texture.handle, width, height),
+			call,
+			'a texture',
+		);
+		const { buffer } = core.memory;
+		if (data instanceof Float32Array) toHalfFloats(data, new Uint16Array(buffer, address, values));
+		else if (data instanceof Uint16Array) new Uint16Array(buffer, address, values).set(data);
+		else new Uint8Array(buffer, address, values).set(data);
+	}
+
+	/** @internal */
+	bytesOf(texture: Texture): number {
+		return this.stat(TEXTURE_STAT_TEXTURE_BYTES, texture.handle);
+	}
+
+	/** @internal */
+	destroy(texture: Texture): void {
+		this.core.check(
+			this.core.glue.destroyTexture(texture.handle, this.time.frame),
+			'texture.destroy',
+			'a texture',
+			true,
+		);
+	}
+
+	private stat(field: number, texture = 0): number {
+		return this.core.glue.textureStat(field, texture);
+	}
+
+	/**
+	 * The GPU bytes that every texture holds, with the free layers of their texture arrays. It
+	 * counts what the GPU holds already, so it grows as uploads finish.
+	 */
+	get memoryBytes(): number {
+		return this.stat(TEXTURE_STAT_MEMORY_BYTES);
+	}
+
+	/**
+	 * The widest and tallest texture this device takes: 4096 texels, or less on a WebGL2 device
+	 * that allows less.
+	 */
+	get maxSize(): number {
+		return this.stat(TEXTURE_STAT_MAX_SIZE);
+	}
+
+	/** @internal The images sent to the thread that draws so far. */
+	get imagesSent(): number {
+		return this.stat(TEXTURE_STAT_IMAGES_SENT);
+	}
+
+	/** @internal */
+	uploads(): TextureUploads {
+		return {
+			lastFrameBytes: this.stat(TEXTURE_STAT_LAST_FRAME_BYTES),
+			largestFrameBytes: this.stat(TEXTURE_STAT_LARGEST_FRAME_BYTES),
+			waiting: this.stat(TEXTURE_STAT_WAITING),
+		};
+	}
+
+	/** @internal Sets the texel bytes that one frame may upload. */
+	setUploadBudget(bytes: number): void {
+		this.core.glue.setTextureOption(TEXTURE_OPTION_UPLOAD_BUDGET, bytes);
+	}
+
+	/** @internal Caps the anisotropy of every texture's sampler. */
+	setMaxAnisotropy(cap: number): void {
+		this.core.glue.setTextureOption(TEXTURE_OPTION_MAX_ANISOTROPY, cap);
+	}
+}
+
+/** E1208 from a call, with the details of what it got. */
+function invalid(call: string, detail: string): EngineError {
+	return new EngineError('E1208', `${call}() ${detail}`);
+}
+
+const quote = (value: unknown) => (typeof value === 'string' ? `'${value}'` : String(value));
+
+/**
+ * Throws E1208 unless the image holds pixels: a closed image, or one sent away already, has none.
+ * Call it inside `if (DEV)`.
+ */
+function checkImage(image: ImageBitmap, call: string): void {
+	if (!image || image.width === 0 || image.height === 0)
+		throw invalid(
+			call,
+			'got an image without pixels: it was closed, or it went to the GPU already. Decode the image again.',
+		);
+}
+
+/** Throws E1208 that lists the values when an option names none of them. Call it inside `if (DEV)`. */
+function checkName(
+	codes: Record<string, number>,
+	value: string,
+	option: string,
+	call: string,
+): void {
+	if (codes[value] === undefined)
+		throw invalid(
+			call,
+			`got the ${option} ${quote(value)}. Use ${Object.keys(codes).map(quote).join(' or ')}.`,
+		);
+}
+
+/**
+ * A material that shows its color times a map, like three.js's `MeshBasicMaterial` with a `map`.
+ * Meshes need texture coordinates to show the map.
+ */
+export function unlitMapMaterial(
+	materials: Materials,
+	map: Texture,
+	options: MaterialOptions = {},
+): Material {
+	const call = 'unlitMapMaterial';
+	const material = materials.create(SHADING_UNLIT_MAP, options, call);
+	materials.setMap(material, map, call);
+	return material;
+}

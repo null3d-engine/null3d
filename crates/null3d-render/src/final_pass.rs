@@ -76,23 +76,28 @@ impl FinalPass {
     /// Bytes the pass may copy into a frame's arena: the output settings.
     pub(crate) const UPLOAD_BYTES: usize = OUTPUT_UNIFORM_BYTES as usize;
 
-    /// Gives the pass its pipeline from `pipelines`, whose next creation makes it, makes the
-    /// settings buffer when the GPU lacks it, uploads the settings for `output` when they changed, and binds the scene color texture `scene_color` when it is new. The
-    /// frame's list made the plan's textures again when `textures_made`, which leaves an older bind
-    /// group reading a texture that is gone.
+    /// Asks `pipelines` for the pass's pipeline, once. A builder asks before it records the
+    /// pipelines that its frame creates, so the list creates this one with the others, at its
+    /// start.
+    pub(crate) fn request_pipeline(&mut self, pipelines: &mut PipelineCache) {
+        if self.pipeline.is_none() {
+            self.pipeline = Some(pipelines.id(pipeline(self.fxaa)));
+        }
+    }
+
+    /// Makes the settings buffer when the GPU lacks it, uploads the settings for `output` when
+    /// they changed, and binds the scene color texture `scene_color` when it is new. The frame's
+    /// list made the plan's textures again when `textures_made`, which leaves an older bind group
+    /// reading a texture that is gone.
     pub(crate) fn prepare(
         &mut self,
         list: &mut DrawList,
         arena: &mut UploadArena,
-        pipelines: &mut PipelineCache,
         output: Output,
         scene_color: u32,
         textures_made: bool,
     ) -> Result<(), RecordError> {
         let ids = self.ids;
-        if self.pipeline.is_none() {
-            self.pipeline = Some(pipelines.id(pipeline(self.fxaa)));
-        }
         if !self.created {
             list.push(
                 Op::CreateBuffer,
@@ -141,7 +146,7 @@ impl FinalPass {
     pub(crate) fn record(&self, list: &mut DrawList) -> Result<(), RecordError> {
         let pipeline = self
             .pipeline
-            .expect("the final pass prepares before it records");
+            .expect("the final pass asks for its pipeline before it records");
         list.push(Op::SetPipeline, &[pipeline])?;
         list.push(Op::SetBindGroup, &[0, self.ids.group, 0])?;
         list.push(Op::Draw, &[3, 1, 0, 0])?;
@@ -174,15 +179,9 @@ mod tests {
         let mut arena = UploadArena::default();
         arena.reset(FinalPass::UPLOAD_BYTES);
         let mut pipelines = PipelineCache::default();
-        pass.prepare(
-            &mut list,
-            &mut arena,
-            &mut pipelines,
-            Output::default(),
-            4,
-            true,
-        )
-        .unwrap();
+        pass.request_pipeline(&mut pipelines);
+        pass.prepare(&mut list, &mut arena, Output::default(), 4, true)
+            .unwrap();
         (pipelines.keys()[0], pass.uploaded.unwrap())
     }
 

@@ -1,7 +1,11 @@
 // URL switches that let one device exercise every engine path: ?gpu=, ?threads=off, ?render=main,
-// ?latency=, ?uploads=copy, ?depth= and ?hdr=off. Three more set what the benchmarks vary: ?fps=
-// for a fixed frame rate, ?jobs= for the job worker count and ?memory= for the shared memory's
-// maximum. ?hold starts hold mode for image tests.
+// ?latency=, ?uploads=copy, ?depth=, ?compile=wait and ?hdr=off. Four more set what the benchmarks
+// vary: ?fps= for a fixed frame rate, ?jobs= for the job worker count, ?memory= for the shared
+// memory's maximum and ?queue= for the frames that may wait on the GPU. ?hold starts hold mode for
+// image tests, ?preset= fixes the quality preset, and ?bench publishes the running engine for
+// benchmark tools.
+
+import { QUALITY_PRESETS, type QualityPreset } from '../quality/presets';
 
 export type GpuSwitch = 'auto' | 'webgpu' | 'compat' | 'webgl2';
 /**
@@ -40,6 +44,11 @@ export interface Switches {
 	 */
 	depth: DepthMode | undefined;
 	/**
+	 * False when ?compile=wait makes the WebGL2 path wait for each program's compile at its first
+	 * draw, as it does in a browser without `KHR_parallel_shader_compile`.
+	 */
+	parallelCompile: boolean;
+	/**
 	 * False when ?hdr=off makes the engine take the 8-bit path, where the scene shaders tone map
 	 * themselves, on a device that draws HDR color.
 	 */
@@ -52,15 +61,27 @@ export interface Switches {
 	/** The job workers that ?jobs= asks for, or undefined for the count from the device's cores. */
 	jobs: number | undefined;
 	/**
+	 * The most frames that ?queue= lets wait unfinished on the GPU: a whole number, or infinity
+	 * for ?queue=off, which leaves the queue to the browser. Undefined for the engine's own limit.
+	 */
+	queue: number | undefined;
+	/**
 	 * The shared memory's declared maximum in MiB from ?memory=, which wins over the page's option,
 	 * or undefined to use the option or the default.
 	 */
 	memoryMiB: number | undefined;
 	/**
+	 * The quality preset that ?preset= fixes, which wins over the page's option and over the
+	 * crash marker, or undefined without the switch or with a name that is no preset.
+	 */
+	preset: QualityPreset | undefined;
+	/**
 	 * The text of ?hold=, an empty text for a bare ?hold, or undefined without the switch. The
 	 * engine checks it when it starts, so a bad time fails at once instead of starting a live engine.
 	 */
 	hold: string | undefined;
+	/** True when ?bench asks the engine to publish itself on the page for a benchmark tool. */
+	bench: boolean;
 }
 
 /** The most job workers the engine core runs. */
@@ -93,10 +114,14 @@ export function parseSwitches(search: string): Switches {
 		latency: oneOf(params.get('latency'), ['pipelined', 'low'] as const),
 		copyUploads: params.get('uploads') === 'copy',
 		depth: oneOf(params.get('depth'), ['reversed', 'reversed-gl', 'standard'] as const),
+		parallelCompile: params.get('compile') !== 'wait',
 		hdr: params.get('hdr') !== 'off',
 		fps: positive(params.get('fps')),
 		jobs: whole(params.get('jobs'), MAX_JOB_WORKERS),
+		queue: params.get('queue') === 'off' ? Number.POSITIVE_INFINITY : whole(params.get('queue')),
 		memoryMiB: whole(params.get('memory')),
+		preset: oneOf(params.get('preset'), QUALITY_PRESETS),
 		hold: params.get('hold') ?? undefined,
+		bench: params.has('bench'),
 	};
 }

@@ -1,15 +1,30 @@
 // The documentation inventory and every file generated from a single source: placeholder pages for
 // planned pages, the API reference on the api/ pages, the page list in docs/index.md, the error
-// pages, and the three.js mapping page with the porting skill's copies of the mapping. Generation
-// is computed in memory first, so the same code writes the files and checks that the committed
-// files are current.
+// pages, the tables of the quality presets page, the shader library's page, and the three.js
+// mapping page with the porting skill's copies of the mapping. Generation is computed in memory
+// first, so the same code writes the files and checks that the committed files are current.
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { ERRORS, type ErrorEntry } from '../../packages/engine/src/errors/codes.ts';
+import {
+	DEVICE_PRESETS,
+	type DeviceKind,
+	LOW_MEMORY_GB,
+	TIER_CEILINGS,
+} from '../../packages/engine/src/quality/chooser.ts';
+import {
+	CHANGE_DOCS,
+	DEVICE_DOCS,
+	settingRows,
+	TIER_DOCS,
+} from '../../packages/engine/src/quality/preset-docs.ts';
+import { QUALITY_PRESETS } from '../../packages/engine/src/quality/presets.ts';
+import type { Tier } from '../../packages/engine/src/shared/tier.ts';
 import { type ApiReference, readApi, renderReference, tableCell } from './api-docs';
 import { docsFiles, readIfExists } from './files';
 import { parseFrontMatter, renderFrontMatter } from './frontmatter';
 import { checkLinkTree, linkedFiles } from './links';
+import { LIBRARY_PAGE_ID, libraryPage, readLibrary } from './shader-library';
 
 export interface PageEntry {
 	/** Path under docs/ without the .md extension. */
@@ -65,7 +80,7 @@ export const PAGES: readonly PageEntry[] = [
 	{ id: 'concepts/post-processing', title: 'The post-processing chain', since: '0.2', summary: 'HDR target; bloom; ambient occlusion; the single final pass; custom effects.' },
 
 	{ id: 'api/engine', title: 'Page API: createEngine', since: '0.1', summary: 'createEngine options; engine.postToSketch, capture, labels, requestPointerLock, capabilities, destroy.' },
-	{ id: 'api/sketch', title: 'Sketch API: defineSketch and the context', since: '0.1', summary: 'The context object: scene, assets, materials, geometry, textures, input, time, quality, post, render, page, ui, debug; the callbacks.' },
+	{ id: 'api/sketch', title: 'Sketch API: defineSketch and the context', since: '0.1', summary: 'The context object: scene, assets, materials, geometry, textures, input, time, engine, quality, post, render, page, ui, debug; the callbacks.' },
 	{ id: 'api/scene', title: 'Scene', since: '0.1', summary: 'Creating objects; find; background, environment, fog, sky; warmUp.' },
 	{ id: 'api/objects', title: 'Objects and transforms', since: '0.1', summary: 'Setters and getters; parents; flags; destroy.' },
 	{ id: 'api/cameras', title: 'Cameras', since: '0.1', summary: 'Perspective and orthographic cameras; screenToRay; worldToScreen; layers.' },
@@ -73,7 +88,7 @@ export const PAGES: readonly PageEntry[] = [
 	{ id: 'api/geometry', title: 'Geometry', since: '0.1', summary: 'Generators with three.js parameters; meshes from arrays; vertex formats; large meshes.' },
 	{ id: 'api/materials', title: 'Materials', since: '0.1', summary: 'standard, unlit, shader, shadowCatcher; every option.' },
 	{ id: 'api/textures', title: 'Textures', since: '0.1', summary: 'loadTexture options; fromData; fromImageBitmap; fromPass; cube maps.' },
-	{ id: 'api/assets', title: 'Assets', since: '0.2', summary: 'loadGltf, loadTexture, loadEnvironment, preload, onProgress, destroy.' },
+	{ id: 'api/assets', title: 'Assets', since: '0.1', summary: 'loadTexture, loadImageBitmap, loadJson, loadBinary, preload, onProgress; glTF models and environments.' },
 	{ id: 'api/animation', title: 'Animation', since: '0.2', summary: 'The animator; play, crossFade, layers, events; morph weights.' },
 	{ id: 'api/raycast', title: 'Raycasting and spatial queries', since: '0.2', summary: 'raycast, raycastAny, raycastAll, raycastBatch, overlap queries, pointer events on objects.' },
 	{ id: 'api/input', title: 'Input', since: '0.1', summary: 'Pointer, keyboard, touch and gamepad; action maps.' },
@@ -81,7 +96,7 @@ export const PAGES: readonly PageEntry[] = [
 	{ id: 'api/post', title: 'Post-processing API', since: '0.1', summary: 'post.set for tone mapping and exposure; the effects and post.addEffect of 0.2.' },
 	{ id: 'api/render', title: 'Render graph API', since: '0.2', summary: 'render.addPass declarations; enabling and disabling passes; dumpGraph.' },
 	{ id: 'api/quality', title: 'Quality API', since: '0.1', summary: 'quality.preset, quality.set, frame budgets, quality events.' },
-	{ id: 'api/debug', title: 'Debug drawing and stats', since: '0.1', summary: 'engine.measure and its figures; debug.line, box, axes, grid, frustum; debug.view; debug.stats.' },
+	{ id: 'api/debug', title: 'Debug drawing and stats', since: '0.1', summary: 'debug.line, box, sphere, arrow, axes, grid, frustum and light; engine.measure and its figures; debug.view; debug.stats.' },
 	{ id: 'api/math', title: 'Math helpers', since: '0.1', summary: 'vec3, quat, mat4 and color on plain arrays; math.clamp, lerp, damp and a random generator that hold mode seeds.' },
 	{ id: 'api/time', title: 'Time', since: '0.1', summary: 'dt, time.now, fixed steps.' },
 	{ id: 'api/sprites', title: 'Sprites', since: '0.2', summary: 'createSprites; world and screen size modes; atlases.' },
@@ -106,12 +121,12 @@ export const PAGES: readonly PageEntry[] = [
 	{ id: 'guides/testing', title: 'Testing your sketch', since: '0.1', summary: 'Hold mode; image tests; reading results; frames that stay the same on every run.' },
 	{ id: 'guides/debugging', title: 'Debugging', since: '0.1', summary: 'Error codes; the inspector; the MCP server; the render-graph dump; common failures.' },
 	{ id: 'guides/deploying', title: 'Deploying', since: '0.3', summary: 'Headers on common hosts; asset caching; size budgets.' },
-	{ id: 'guides/agents', title: 'Working with AI agents', since: '0.1', summary: 'Installing the null3D skills in Claude Code, claude.ai and other agent tools; docs by ID; the MCP server and AGENTS.md in templates (0.3).' },
+	{ id: 'guides/agents', title: 'Working with AI agents', since: '0.1', summary: 'Installing the null3D skills in Claude Code, claude.ai and other agent tools; docs by ID; the test loop; the MCP server and AGENTS.md in templates (0.3).' },
 
 	{ id: 'shaders/wgsl-rules', title: 'WGSL rules for portable shaders', since: '0.1', summary: 'The three shared language features; optional features; flat interpolation; limits budget; rules the build cannot check.' },
 	{ id: 'shaders/surface-functions', title: 'Surface functions', since: '0.1', summary: 'The surface record; vertex-offset functions; per-instance attributes.' },
 	{ id: 'shaders/builtins', title: 'Built-in shader inputs', since: '0.1', summary: 'Camera, time, object, instance and light values available to custom shaders.' },
-	{ id: 'shaders/library', title: 'Shader library and imports', since: '0.1', summary: 'Importing engine shader modules (math, noise, lighting helpers).' },
+	{ id: 'shaders/library', title: 'Shader library and imports', since: '0.1', summary: 'The WGSL modules that ship with the engine: math, noise, color, lighting, fog, vertex, depth and signed distance helpers, and how to import them.' },
 
 	{ id: 'porting/threejs-overview', title: 'Porting from three.js', since: '0.3', summary: 'The porting workflow; what gets faster; what needs rewriting.' },
 	{ id: 'porting/threejs-materials', title: 'Porting materials and textures', since: '0.3', summary: 'Parameter-by-parameter conversion; color spaces; approximations.' },
@@ -133,6 +148,63 @@ const PAGE_LIST_END = '<!-- null3d:page-list:end -->';
 /** Written API pages hold their generated reference between these markers. */
 export const API_START = '<!-- null3d:api:start -->';
 export const API_END = '<!-- null3d:api:end -->';
+
+/** The markers around a generated table on a written page. */
+export function tableMarkers(name: string): readonly [start: string, end: string] {
+	return [`<!-- null3d:${name}:start -->`, `<!-- null3d:${name}:end -->`];
+}
+
+/** A preset's name as a table prints it: "Low". */
+const presetTitle = (preset: string) => preset.charAt(0).toUpperCase() + preset.slice(1);
+
+/** A Markdown table from its header and its rows of cells. */
+function markdownTable(header: readonly string[], rows: readonly (readonly string[])[]): string {
+	const line = (cells: readonly string[]) => `| ${cells.join(' | ')} |`;
+	return [line(header), line(header.map(() => '---')), ...rows.map(line)].join('\n');
+}
+
+/** The preset that each kind of device starts at, from the chooser's constants. */
+export function presetDeviceTable(): string {
+	const rows = (Object.keys(DEVICE_PRESETS) as DeviceKind[]).map((kind) => {
+		const { name, pointer, screen } = DEVICE_DOCS[kind];
+		return [name, pointer, screen, presetTitle(DEVICE_PRESETS[kind])];
+	});
+	return `${markdownTable(['Device', 'Main pointer', 'Smaller screen edge', 'Starting preset'], rows)}
+
+A memory reading under ${LOW_MEMORY_GB} GB lowers the starting preset by one.`;
+}
+
+/** The highest preset of each GPU path, from the chooser's constants. */
+export function presetCeilingTable(): string {
+	const rows = (Object.keys(TIER_CEILINGS) as Tier[]).map((tier) => [
+		TIER_DOCS[tier],
+		presetTitle(TIER_CEILINGS[tier]),
+	]);
+	return markdownTable(['GPU path', 'Highest preset'], rows);
+}
+
+/** Every quality setting with its value on each preset, from the preset table. */
+export function presetSettingsTable(): string {
+	const rows = settingRows().map((row) => [
+		`${row.label} (\`${row.name}\`)`,
+		...row.values.map(tableCell),
+		CHANGE_DOCS[row.changes],
+		row.built ? 'built' : 'planned',
+	]);
+	return markdownTable(['Setting', ...QUALITY_PRESETS.map(presetTitle), 'Changes', 'Status'], rows);
+}
+
+/**
+ * The tables that the generator writes into written pages, each between its markers. A page
+ * named here must hold the markers of each of its tables.
+ */
+export const PAGE_TABLES: Readonly<Record<string, readonly (readonly [string, () => string])[]>> = {
+	'concepts/quality-presets': [
+		['preset-devices', presetDeviceTable],
+		['preset-ceilings', presetCeilingTable],
+		['preset-settings', presetSettingsTable],
+	],
+};
 
 /**
  * The single source of the three.js mapping. The mapping page and the porting skill's copies come
@@ -175,6 +247,11 @@ ${PLACEHOLDER_MARKER}
 
 This page will cover: ${page.summary}
 ${reference ? `\n## API reference\n\n${reference}\n` : ''}`;
+}
+
+/** Problems with the shader library's modules that keep its page from being right. */
+export function libraryProblems(root: string): string[] {
+	return readLibrary(root).problems.map((problem) => `Shader library: ${problem}`);
 }
 
 /** Problems that keep an export out of the reference, including a page tag that names no page. */
@@ -380,19 +457,31 @@ export function generateDocs(root: string, api: ApiReference = readApi(root)): M
 
 	const byPage = Map.groupBy(api.symbols, (s) => s.page);
 	for (const page of PAGES) {
-		if (page.id === 'index') continue;
+		if (page.id === 'index' || page.id === LIBRARY_PAGE_ID) continue;
 		const path = pagePath(page.id);
 		const current = readIfExists(root, path);
 		const symbols = byPage.get(page.id);
 		const reference = symbols ? renderReference(symbols) : '';
-		if (current === null || current.includes(PLACEHOLDER_MARKER))
+		if (current === null || current.includes(PLACEHOLDER_MARKER)) {
 			out.set(path, placeholderPage(page, reference));
-		else if (reference || current.includes(API_START))
-			out.set(
-				path,
-				replaceBetween(current, [API_START, API_END], reference, path, 'API reference'),
-			);
+			continue;
+		}
+		const tables = PAGE_TABLES[page.id] ?? [];
+		if (!reference && !current.includes(API_START) && tables.length === 0) continue;
+		let text = current;
+		if (reference || current.includes(API_START))
+			text = replaceBetween(text, [API_START, API_END], reference, path, 'API reference');
+		for (const [name, render] of tables)
+			text = replaceBetween(text, tableMarkers(name), render(), path, `table ${name}`);
+		out.set(path, text);
 	}
+
+	const library = PAGES.find((page) => page.id === LIBRARY_PAGE_ID);
+	if (library)
+		out.set(
+			pagePath(LIBRARY_PAGE_ID),
+			libraryPage(readLibrary(root).modules, library.title, library.summary),
+		);
 
 	const mappingText = readIfExists(root, MAPPING_SOURCE);
 	if (mappingText === null) throw new Error(`${MAPPING_SOURCE} is missing`);
@@ -474,15 +563,15 @@ export function frontMatterProblems(path: string, text: string, inventory: Set<s
 }
 
 /**
- * Every problem with the docs: exports the API reference cannot show, stale generated files,
- * missing pages, bad front matter and broken links.
+ * Every problem with the docs: exports the API reference cannot show, library items without doc
+ * comments, stale generated files, missing pages, bad front matter and broken links.
  */
 export function checkDocs(root: string): string[] {
 	const problems: string[] = [];
 	let generated = new Map<string, string>();
 	try {
 		const api = readApi(root);
-		problems.push(...referenceProblems(api));
+		problems.push(...referenceProblems(api), ...libraryProblems(root));
 		generated = generateDocs(root, api);
 		for (const path of staleFiles(root, generated))
 			problems.push(`${path} is out of date: run bun run docs`);

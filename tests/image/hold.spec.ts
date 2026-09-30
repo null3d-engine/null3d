@@ -64,6 +64,13 @@ test('hold mode steps the sketch in fixed steps to the held time, with seeded ra
 	for (const mode of ENGINE_MODES) {
 		const held = frameOf(await hold(page, `hold=${HOLD_SECONDS}${modeSwitches(mode)}`), mode.name);
 		expect([mode.name, held.time, held.frame]).toEqual([mode.name, HOLD_SECONDS, HELD_FRAME]);
+		// The held frame is the first that the engine draws: it builds its pipelines and uploads the
+		// whole scene. A hold times no GPU work.
+		const { stats } = held;
+		expect([mode.name, stats?.frames, stats?.gpuMs]).toEqual([mode.name, 1, null]);
+		expect(stats?.drawCalls.median).toBeGreaterThan(0);
+		expect(stats?.uploadBytes.median).toBeGreaterThan(0);
+		expect(stats?.pipelines).toBeGreaterThan(0);
 		const { state, mode: engineMode, seededOnPage, ownAfterStop } = await sketchState(page);
 		expect([mode.name, engineMode.hold, engineMode.renderThread]).toEqual([
 			mode.name,
@@ -125,6 +132,79 @@ test('hold mode seeds math.random in every thread mode, and Math.random draws fr
 	expect(live.state.drawn).not.toEqual(expected);
 });
 
+/** What the follow sketch reports. */
+interface FollowState {
+	now: number;
+	frame: number;
+	fixedSteps: number;
+	updates: number;
+	lateUpdates: number;
+	outOfOrder: number;
+	staleReads: number;
+	stepMismatches: number;
+	x: number;
+	viewport: [number, number, number];
+	tier: string;
+}
+
+/** The follow sketch's fixed steps per second, and its box's speed in meters per second. */
+const FOLLOW_RATE = 50;
+const FOLLOW_SPEED = 30;
+
+/** The first and last column and row that hold red pixels in RGBA8 rows, top row first. */
+function redBounds(pixels: Uint8Array, width: number, height: number) {
+	const bounds = { left: width, right: -1, top: height, bottom: -1 };
+	for (let y = 0; y < height; y++)
+		for (let x = 0; x < width; x++) {
+			const i = (y * width + x) * 4;
+			if (!((pixels[i] ?? 0) > 150 && (pixels[i + 1] ?? 0) < 80 && (pixels[i + 2] ?? 0) < 80))
+				continue;
+			bounds.left = Math.min(bounds.left, x);
+			bounds.right = Math.max(bounds.right, x);
+			bounds.top = Math.min(bounds.top, y);
+			bounds.bottom = Math.max(bounds.bottom, y);
+		}
+	return bounds;
+}
+
+test('fixed steps, the update and the late update run in order, and a camera that follows in the late update keeps its object at the center', async ({
+	page,
+}) => {
+	const steps = Math.floor(HOLD_SECONDS * FOLLOW_RATE);
+	for (const mode of ENGINE_MODES) {
+		const held = frameOf(
+			await hold(page, `hold=${HOLD_SECONDS}&sketch=follow${modeSwitches(mode)}`),
+			mode.name,
+		);
+		const { state } = await sketchState<FollowState>(page);
+		// The first frame, at time 0, runs no fixed step; the late update runs in every frame.
+		expect([mode.name, state.fixedSteps, state.updates, state.lateUpdates]).toEqual([
+			mode.name,
+			steps,
+			HELD_FRAME,
+			HELD_FRAME,
+		]);
+		expect([mode.name, state.outOfOrder, state.staleReads, state.stepMismatches]).toEqual([
+			mode.name,
+			0,
+			0,
+			0,
+		]);
+		expect(state.x).toBeCloseTo((steps * FOLLOW_SPEED) / FOLLOW_RATE, 9);
+		expect([mode.name, state.viewport, state.tier]).toEqual([mode.name, [320, 180, 1], held.tier]);
+		// The box moved 0.6 m in the held frame, about 18 pixels, so a camera a frame behind it
+		// would show it that far from the center.
+		const box = redBounds(Buffer.from(held.pixels, 'base64'), held.width, held.height);
+		const middle = (box.left + box.right + 1) / 2;
+		expect([mode.name, Math.abs(middle - held.width / 2) <= 1]).toEqual([mode.name, true]);
+		expect([mode.name, box.top < held.height / 2, box.bottom >= held.height / 2]).toEqual([
+			mode.name,
+			true,
+			true,
+		]);
+	}
+});
+
 for (const mode of ENGINE_MODES)
 	test(`hold mode publishes the sketch's first error at once, ${mode.name}`, async ({ page }) => {
 		const started = Date.now();
@@ -134,6 +214,18 @@ for (const mode of ENGINE_MODES)
 		expect(result.code).toBe('E1408');
 		expect(result.error).toContain('hold mode stopped at 0.5 seconds, in frame 31');
 		expect(result.error).toContain('the throwing sketch threw on purpose');
+	});
+
+for (const mode of ENGINE_MODES)
+	test(`hold mode stops in the frame that skips a static object's setter, ${mode.name}`, async ({
+		page,
+	}) => {
+		const result = await hold(page, `hold=2&sketch=unmarked-write${modeSwitches(mode)}`);
+		if (result.ok) throw new Error('the hold passed, though the sketch skipped a setter');
+		expect(result.code).toBe('E1408');
+		expect(result.error).toContain(
+			'hold mode stopped at 0.5 seconds, in frame 31: E1110: the position of "Crate" (slot 1) changed without a setter.',
+		);
 	});
 
 test('hold mode publishes a failed setup at once, with its code', async ({ page }) => {

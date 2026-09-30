@@ -41,8 +41,21 @@ import {
 	startupTable,
 } from '../../bench/lib/startup.ts';
 import { MEASURE_SECONDS, WARMUP_SECONDS } from '../../bench/scenes/spec.ts';
+import {
+	choosePreset,
+	type DeviceHints,
+	deviceKind,
+} from '../../packages/engine/src/quality/chooser.ts';
+import type { Tier as GpuPath } from '../../packages/engine/src/shared/tier.ts';
 import { IMAGE_RUNS } from '../image/manifest.ts';
 import { distanceLabel, PRECISION, type PrecisionFacts } from '../pages/lib/depth-precision.ts';
+import {
+	framesInFlight,
+	type OverloadResult,
+	type OverloadStep,
+	ratesParted,
+} from '../pages/lib/overload.ts';
+import { ROOM_KEPT } from '../pages/lib/room.ts';
 import {
 	ENGINE_MODES,
 	type EngineMode,
@@ -53,6 +66,7 @@ import {
 import { type HarnessDirs, type ImageRun, imageProblems } from './images.ts';
 import { type Load, type LoadKind, loadPath, runnerKey } from './load-routes.ts';
 import { failureText, type ItemResult, lastSteps, type PlanItem, slug } from './runs.ts';
+import { type WarmUpResult, warmUpProblems } from './warm-up-checks.ts';
 
 /** The GPU interface that a page draws with. */
 export type Tier = 'webgpu' | 'webgl2';
@@ -63,14 +77,20 @@ export type Check =
 	| { kind: 'isolation' }
 	| { kind: 'image'; run: ImageRun }
 	| { kind: 'shaders' }
+	| { kind: 'shader-library'; tier: Tier }
 	| { kind: 'engine'; tier: Tier; mode: EngineMode }
 	| { kind: 'restarts'; mode: EngineMode }
 	| { kind: 'memory'; maximumMiB: number }
 	| { kind: 'room'; maximumMiB: number }
 	| { kind: 'uploads'; tier: Tier }
+	| { kind: 'quality' }
+	/** The warm-up page: pipelines build before the first frame, and a warm-up during play. */
+	| { kind: 'warm-up'; tier: Tier }
 	| { kind: 'hold'; tier: Tier }
 	| { kind: 'parity'; tier: Tier; scene: ParityScene; pair: PagePair }
 	| { kind: 'bench'; tier: Tier; scene: ParityScene; page: BenchPageKind; jobs?: number }
+	/** The GPU-bound page, with the ?queue= setting it ran with, if any. */
+	| { kind: 'overload'; tier: Tier; queue?: string }
 	/** A load of the startup build; `first` marks the first warm load, which fills the cache. */
 	| { kind: 'startup'; mode: EngineMode; load: LoadKind; first?: true };
 
@@ -94,8 +114,11 @@ const TEST_PAGES = '/tests/pages/';
 const TIERS: readonly Tier[] = ['webgpu', 'webgl2'];
 /** How long a benchmark page may take to publish its hold frame on a slow device. */
 const HOLD_TIMEOUT_SECONDS = 60;
-/** How long the restart page may take: up to ten starts and stops, and two counts of the room. */
-const RESTARTS_TIMEOUT_SECONDS = 120;
+/**
+ * How long the restart page may take: up to ten starts and stops, which may wait 30 s in all for
+ * the browser to free memory, and the counts of the room, which may wait 31 s for it to come back.
+ */
+const RESTARTS_TIMEOUT_SECONDS = 180;
 
 /** The result text of an item that the runner page never reached. */
 export const NO_RESULT = 'no result; the runner stopped before this page';
@@ -152,8 +175,15 @@ export interface BenchSwitches {
 }
 
 /**
- * The runner page's item for a timed run of one benchmark page, S1 unless `scene` names another.
- * The item needs the GPU interface the page draws with, so a device that lacks it skips the page.
+ * The benchmark pages' production build, which timed runs load under one address prefix of the
+ * runner's own, so they measure the engine as a developer ships it: without development checks.
+ */
+const BENCH_BUILD: Load = { kind: 'warm', key: runnerKey('bench') };
+
+/**
+ * The runner page's item for a timed run of one benchmark page, S1 unless `scene` names another,
+ * from the production build. The item needs the GPU interface the page draws with, so a device
+ * that lacks it skips the page.
  */
 export function benchItem(
 	id: string,
@@ -167,7 +197,7 @@ export function benchItem(
 	const tier = gpuApiOfPage(page);
 	return {
 		id,
-		path: pagePath(scene, page, switches.join('&')),
+		path: loadPath(BENCH_BUILD, pagePath(scene, page, switches.join('&')).slice(1)),
 		timeoutSeconds: (seconds === undefined ? WARMUP_SECONDS + MEASURE_SECONDS : 2 * seconds) + 60,
 		check: { kind: 'bench', tier, scene, page, ...(jobs !== undefined && { jobs }) },
 	};
@@ -197,9 +227,9 @@ function imageItem(run: ImageRun): PlanItem<Check> {
 const PRODUCTION_BUILD: Load = { kind: 'warm', key: runnerKey('production') };
 
 /**
- * The browser checks: the capability report, isolation, every run of the image test manifest, the
- * engine in every mode on both GPU paths, and again on the production build, and the engine
- * started and stopped again and again in every mode. The capabilities page loads again last, so its
+ * The browser checks: the capability report, isolation, the shader library's values on both GPU
+ * paths, every run of the image test manifest, the engine in every mode on both GPU paths, and
+ * again on the production build, and the engine started and stopped again and again in every mode. The capabilities page loads again last, so its
  * extension answers can be compared across loads.
  */
 export function checksPlan(): PlanItem<Check>[] {
@@ -207,7 +237,30 @@ export function checksPlan(): PlanItem<Check>[] {
 		pageItem(CAPABILITIES, 'capabilities', { kind: 'capabilities' }),
 		pageItem('isolation', 'isolation', { kind: 'isolation' }),
 		pageItem('shaders', 'shaders', { kind: 'shaders' }),
+		...TIERS.map((tier) =>
+			pageItem(
+				`shader-library-${tier}`,
+				'shader-library',
+				{ kind: 'shader-library', tier },
+				{ switches: [`gpu=${tier}`] },
+			),
+		),
 		pageItem('uploads', 'uploads', { kind: 'uploads', tier: 'webgpu' }, { timeoutSeconds: 90 }),
+		pageItem('quality', 'quality', { kind: 'quality' }),
+		...TIERS.map((tier) =>
+			pageItem(
+				`warm-up-${tier}`,
+				'warm-up',
+				{ kind: 'warm-up', tier },
+				{ switches: [`gpu=${tier}`] },
+			),
+		),
+		pageItem(
+			'warm-up-webgl2-compile-wait',
+			'warm-up',
+			{ kind: 'warm-up', tier: 'webgl2' },
+			{ switches: ['gpu=webgl2', 'compile=wait'] },
+		),
 		...IMAGE_RUNS.map(imageItem),
 		...TIERS.flatMap((tier) =>
 			ENGINE_MODES.map((mode) =>
@@ -349,14 +402,47 @@ export function depthPlan(): PlanItem<Check>[] {
 	return IMAGE_RUNS.filter((run) => isDepthTest(run.test)).map(imageItem);
 }
 
+/** How long the GPU-bound page may take to raise its load step by step and measure the last step. */
+const OVERLOAD_TIMEOUT_SECONDS = 120;
+
+/**
+ * The ?queue= settings of the GPU-bound page: the engine's own limit on the frames that wait on the
+ * GPU, then no limit, which shows what the browser does on its own.
+ */
+const OVERLOAD_QUEUES = [undefined, 'off'] as const;
+
+/**
+ * The GPU-bound page on each GPU path, in the default thread mode, with each ?queue= setting. The
+ * run's summary gives, for each, the presented and completed rates at the load that overloaded the
+ * GPU, and the frames that waited on the GPU.
+ */
+export function overloadPlan(): PlanItem<Check>[] {
+	return TIERS.flatMap((tier) =>
+		OVERLOAD_QUEUES.map((queue) =>
+			pageItem(
+				`overload-${tier}${queue === undefined ? '' : `-queue-${queue}`}`,
+				'overload',
+				{ kind: 'overload', tier, ...(queue !== undefined && { queue }) },
+				{
+					switches: [`gpu=${tier}`, queue === undefined ? '' : `queue=${queue}`],
+					timeoutSeconds: OVERLOAD_TIMEOUT_SECONDS,
+				},
+			),
+		),
+	);
+}
+
 /** The shared memory maximums that the memory plan tries, in MiB, from low to high. */
 export const MEMORY_MAXIMUMS_MIB = [256, 512, 1024, 2048, 4096] as const;
 /** Loads of the engine page at each maximum in the memory plan. */
 export const MEMORY_LOADS = 20;
 /** WebAssembly memory comes in pages of 64 KiB, 16 to a MiB. */
 const PAGES_PER_MIB = 16;
-/** How long the shared memory page may take to count its room twice, a few seconds apart. */
-const ROOM_TIMEOUT_SECONDS = 60;
+/**
+ * How long the shared memory page may take to count its room, and to wait up to 31 s for the room
+ * to come back after its one cycle.
+ */
+const ROOM_TIMEOUT_SECONDS = 90;
 /** The most memories the shared memory page counts; a browser with room for this many has more. */
 const MOST_COUNTED = 64;
 
@@ -442,6 +528,7 @@ export const PLANS: Readonly<Record<string, (settings?: PlanSettings) => PlanIte
 	memory: memoryPlan,
 	depth: depthPlan,
 	startup: startupPlan,
+	overload: overloadPlan,
 };
 
 /**
@@ -638,15 +725,20 @@ export interface RestartResult {
 	room?: number;
 	cycles: number;
 	kinds: {
-		engine?: { cycles: number; error?: string; trail?: string[]; roomLater?: number };
+		engine?: {
+			cycles: number;
+			error?: string;
+			trail?: string[];
+			/** The room when it came back, or when the page stopped waiting for it. */
+			roomLater?: number;
+			roomWaitMs?: number;
+		};
 	};
 }
 
-/**
- * Room for shared memories that the page may lose over its restarts: the single-threaded build's
- * page keeps one core for the next engine.
- */
-const ROOM_KEPT = 1;
+/** How long the restart page waited for the room to come back, as the problem's text gives it. */
+const waitedText = (ms: number | undefined) =>
+	ms === undefined ? '' : ` within ${Math.round(ms / 1000)} s`;
 
 /**
  * What is wrong with the restart page's result: a start or a stop that failed, or room for shared
@@ -666,7 +758,7 @@ export function restartProblems(result: RestartResult): string[] {
 		engine.roomLater < result.room - ROOM_KEPT
 	)
 		problems.push(
-			`the browser did not get back the memory of stopped engines: it had room for ${result.room} shared memories before ${engine.cycles} starts and stops, and for ${engine.roomLater} after`,
+			`the browser did not get back the memory of stopped engines${waitedText(engine.roomWaitMs)}: it had room for ${result.room} shared memories before ${engine.cycles} starts and stops, and for ${engine.roomLater} after`,
 		);
 	return problems;
 }
@@ -708,8 +800,22 @@ export function judge(
 			if (!result.webgpu && !missing.webgpu) problems.push('no WebGPU to compile the WGSL');
 			return problems;
 		}
+		case 'shader-library': {
+			const mismatches = (result.mismatches ?? []) as {
+				function: string;
+				expected: number[];
+				got: number[];
+			}[];
+			const problems = mismatches.map(
+				(m) => `${m.function}: expected ${m.expected.join(', ')}, got ${m.got.join(', ')}`,
+			);
+			if (!(Number(result.cases) > 0)) problems.push('the page ran no cases');
+			return problems;
+		}
 		case 'engine':
 			return engineProblems(result as unknown as EngineResult, check.mode, check.tier);
+		case 'warm-up':
+			return warmUpProblems(result as unknown as WarmUpResult, check.tier);
 		case 'restarts':
 			return restartProblems(result as unknown as RestartResult);
 		case 'memory':
@@ -734,6 +840,8 @@ export function judge(
 				...((result.uncaptured ?? []) as string[]).map((error) => `WebGPU error: ${error}`),
 			];
 		}
+		case 'quality':
+			return qualityProblems(result as unknown as QualityResult, context);
 		case 'bench': {
 			const frames = Number(result.frames ?? 0);
 			const cpu = (result.cpuMs as { median?: number } | undefined)?.median ?? 0;
@@ -758,7 +866,38 @@ export function judge(
 			return parityProblems(check, result, context);
 		case 'startup':
 			return startupProblems(result as StartupResult, check.mode);
+		case 'overload': {
+			const { overloaded, steps } = result as ItemResult & OverloadResult;
+			if (!overloaded)
+				return [
+					`the GPU kept up with all ${steps.at(-1)?.count ?? 0} spheres, so no step overloaded it`,
+				];
+			return overloaded.completedFps ? [] : ['no frame completions were counted'];
+		}
 	}
+}
+
+/** What the quality page reports: the preset, the GPU path and the device hints it chose from. */
+interface QualityResult {
+	mode: { preset: string; crashedStarts: number };
+	tier: GpuPath;
+	hints: DeviceHints;
+}
+
+/**
+ * Checks that the engine ran the preset that the chooser gives for the device hints and the GPU
+ * path it reported, and notes the preset and the hints, so each device's choice is on record.
+ */
+function qualityProblems(result: QualityResult, context?: JudgeContext): string[] {
+	const { mode, tier, hints } = result;
+	const expected = choosePreset({ wanted: 'auto', hints, crashedStarts: mode.crashedStarts }, tier);
+	const memory = hints.deviceMemoryGB === null ? 'no memory reading' : `${hints.deviceMemoryGB} GB`;
+	context?.note?.(
+		`quality preset ${mode.preset} on ${tier} for a ${deviceKind(hints)} (${hints.coarsePointer ? 'coarse' : 'fine'} pointer, smaller screen edge ${hints.screenMinEdge} px, ${memory}, ${mode.crashedStarts} crashed starts)`,
+	);
+	return mode.preset === expected
+		? []
+		: [`the engine ran the ${mode.preset} preset, where the chooser gives ${expected}`];
 }
 
 /**
@@ -914,4 +1053,59 @@ export function depthSummary(
 		lines.push(`| ${where} | ${drawn} | ${facts.fighting ?? 'unknown'} | ${shares || empty} |`);
 	}
 	return lines.join('\n');
+}
+
+/** A rate in frames per second, to one decimal place, or a dash when there is none. */
+const fpsText = (fps: number | null) => (fps === null ? '-' : fps.toFixed(1));
+
+/**
+ * One row of the overload summary: a GPU path's step that overloaded the GPU with a ?queue= setting,
+ * or why none did.
+ */
+function overloadRow(
+	{ tier, queue = 'engine' }: { tier: Tier; queue?: string },
+	result: ItemResult | undefined,
+): string {
+	const where = `${tier} | ${queue}`;
+	if (!result?.ok)
+		return `| ${where} | ${result ? failureText(result) : NO_RESULT} | | | | | | | |`;
+	const { displayHz, overloaded } = result as ItemResult & OverloadResult;
+	if (!overloaded)
+		return `| ${where} | ${displayHz ?? '-'} Hz | no step overloaded the GPU | | | | | | |`;
+	const step: OverloadStep = overloaded;
+	const latency = step.gpuLatencyMs;
+	const inFlight = framesInFlight(step);
+	const cells = [
+		where,
+		`${displayHz ?? '-'} Hz`,
+		step.count,
+		fpsText(step.presentedFps),
+		fpsText(step.completedFps),
+		ratesParted(step) ? 'yes' : 'no',
+		latency ? `${latency.median.toFixed(1)} / ${latency.p95.toFixed(1)}` : '-',
+		inFlight === null ? '-' : inFlight.toFixed(1),
+		step.gpuMs === null ? '-' : step.gpuMs.toFixed(1),
+	];
+	return `| ${cells.join(' | ')} |`;
+}
+
+/**
+ * The GPU-bound page's results as a Markdown table: for each GPU path and ?queue= setting, the load
+ * that overloaded the GPU, the presented and completed rates there, whether they parted, the time
+ * from submit to completion, the frames in flight that it makes, and the GPU time. Undefined when
+ * the plan has no GPU-bound pages.
+ */
+export function overloadSummary(
+	items: readonly PlanItem<Check>[],
+	resultOf: (id: string) => ItemResult | undefined,
+): string | undefined {
+	const rows = items.flatMap(({ id, check }) =>
+		check.kind === 'overload' ? [overloadRow(check, resultOf(id))] : [],
+	);
+	if (rows.length === 0) return undefined;
+	return [
+		'| Path | Queue | Display | Spheres | Presented fps | Completed fps | Parted | Submit to completion, median / p95 ms | Frames in flight | GPU ms |',
+		'| --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |',
+		...rows,
+	].join('\n');
 }

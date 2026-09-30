@@ -1,6 +1,6 @@
 // The scene API: objects with transforms, cameras, lights and instance batches. Setters write
-// straight into engine memory. Structural changes (create, destroy, reparent, visibility, layers)
-// go into the command ring as 16-byte records, which the engine applies when the next frame
+// straight into engine memory. Structural changes (create, destroy, reparent, visibility, layers,
+// flags) go into the command ring as 16-byte records, which the engine applies when the next frame
 // starts.
 
 import {
@@ -13,13 +13,36 @@ import {
 } from '../errors/checks';
 import { EngineError } from '../errors/engine-error';
 import * as C from '../generated/core';
-import { fromEuler as quaternionFromEuler } from '../math/quat';
-import type { EulerOrder } from '../math/types';
+import { copy as copyMatrix, decompose } from '../math/mat4';
+import {
+	fromEuler as quaternionFromEuler,
+	rotateX,
+	rotateY,
+	rotateZ,
+	rotationTo,
+} from '../math/quat';
+import type { EulerOrder, Mat4Like, QuatLike, Vec3Like } from '../math/types';
+import { transformQuat } from '../math/vec3';
 import { rowLimitWarning } from '../page/limits';
+import type { CoreGlue } from '../shared/core';
 import { type ColorInput, linearColor } from './color';
+import {
+	checkFov,
+	checkNearFar,
+	checkOrthographicSize,
+	checkSize,
+	DEFAULT_FAR,
+	DEFAULT_FOV,
+	DEFAULT_NEAR,
+	newCamera,
+	type OrthographicView,
+	orthographicView,
+	setViewHeight,
+} from './lens';
 import type { CoreMemory } from './memory';
 import type { Material, MeshGeometry } from './resources';
 import { quaternionLookAt } from './rotation';
+import { UnmarkedWrites } from './unmarked-writes';
 
 /**
  * A vector (x, y, z).
@@ -74,6 +97,58 @@ export interface MeshOptions extends NodeOptions {
 	mesh: MeshGeometry;
 	/** How the surface looks, from `ctx.materials`. */
 	material: Material;
+	/**
+	 * True makes the mesh cast shadows, like `setCastShadows(true)`. The default is false. This
+	 * version stores the setting but draws no shadows yet.
+	 */
+	castShadows?: boolean;
+	/**
+	 * True makes the mesh receive shadows, like `setReceiveShadows(true)`. The default is false.
+	 * This version stores the setting but draws no shadows yet.
+	 */
+	receiveShadows?: boolean;
+}
+
+/**
+ * Options for `setParent`.
+ *
+ * @category api/objects
+ */
+export interface ParentOptions {
+	/**
+	 * True keeps the object's place, rotation and size in the world, as three.js's `attach` does:
+	 * the engine gives it the position, rotation and scale that do that under the new parent. The
+	 * default, false, keeps the values relative to the parent, as three.js's `add` does.
+	 */
+	keepWorld?: boolean;
+}
+
+/**
+ * An object class, which a scene creates with a handle, a name and any further arguments, such
+ * as a camera's lens.
+ */
+type ObjectClass<T extends Object3D, A extends unknown[] = []> = new (
+	scene: Scene,
+	handle: number,
+	name: string,
+	...rest: A
+) => T;
+
+/** A function from the quaternion helpers that turns a rotation about one of its own axes. */
+type Turn = (out: QuatLike, a: QuatLike, rad: number) => QuatLike;
+
+/**
+ * Options that both kinds of camera take.
+ *
+ * @category api/cameras
+ */
+export interface CameraOptions extends NodeOptions {
+	/** The distance to the near clipping plane. The default is 0.1. */
+	near?: number;
+	/** The distance to the far clipping plane. The default is 2000. */
+	far?: number;
+	/** A point the camera turns toward. */
+	target?: Vec3;
 }
 
 /**
@@ -81,15 +156,29 @@ export interface MeshOptions extends NodeOptions {
  *
  * @category api/cameras
  */
-export interface CameraOptions extends NodeOptions {
+export interface PerspectiveCameraOptions extends CameraOptions {
 	/** The vertical field of view in degrees. The default is 50. */
 	fov?: number;
-	/** The distance to the near clipping plane. The default is 0.1. */
-	near?: number;
-	/** The distance to the far clipping plane. The default is 2000. */
-	far?: number;
-	/** A point the camera turns toward. */
-	target?: Vec3;
+}
+
+/**
+ * Options for `scene.createOrthographicCamera`. Give `height`, and the width follows the canvas's
+ * aspect ratio. Or give all four edges, as three.js's `OrthographicCamera` takes them, for a view
+ * that keeps its shape on any canvas.
+ *
+ * @category api/cameras
+ */
+export interface OrthographicCameraOptions extends CameraOptions {
+	/** The view's height in world units. The default is 2. Leave it out when you give the edges. */
+	height?: number;
+	/** The view's left edge, in world units from the camera's axis. */
+	left?: number;
+	/** The view's right edge, in world units from the camera's axis. */
+	right?: number;
+	/** The view's top edge, in world units from the camera's axis. */
+	top?: number;
+	/** The view's bottom edge, in world units from the camera's axis. */
+	bottom?: number;
 }
 
 /**
@@ -109,11 +198,11 @@ export interface InstanceOptions {
 }
 
 /**
- * Options every light takes.
+ * Options every light takes, besides the options of every node.
  *
  * @category api/lights
  */
-export interface LightOptions {
+export interface LightOptions extends NodeOptions {
 	/** The light's color. The default is white. */
 	color?: ColorInput;
 	/** A factor that scales the color. The default is 1. */
@@ -126,9 +215,105 @@ export interface LightOptions {
  * @category api/lights
  */
 export interface DirectionalLightOptions extends LightOptions {
-	/** The direction the light travels. The default, (0, -1, 0), points straight down. */
+	/**
+	 * The direction the light travels, relative to the parent. The default, (0, -1, 0), points
+	 * straight down. It sets the light's rotation, so it wins over `rotation`.
+	 */
 	direction?: Vec3;
+	/**
+	 * True makes the light cast shadows, like `setCastShadows(true)`. The default is false. This
+	 * version stores the setting but draws no shadows yet.
+	 */
+	castShadows?: boolean;
 }
+
+/**
+ * Options for `scene.createPointLight`.
+ *
+ * @category api/lights
+ */
+export interface PointLightOptions extends LightOptions {
+	/**
+	 * The distance in meters where the light ends, above 0. Every point light needs one, because the
+	 * engine finds the lights near each surface by their ranges.
+	 */
+	range: number;
+	/** How fast the light fades with distance, at least 0. The default, 2, is the physical rate. */
+	decay?: number;
+	/**
+	 * True makes the light cast shadows, like `setCastShadows(true)`. The default is false. This
+	 * version stores the setting but draws no shadows yet.
+	 */
+	castShadows?: boolean;
+}
+
+/**
+ * Options for `scene.createSpotLight`.
+ *
+ * @category api/lights
+ */
+export interface SpotLightOptions extends PointLightOptions {
+	/**
+	 * The direction the light travels, relative to the parent. The default, (0, -1, 0), points
+	 * straight down. It sets the light's rotation, so it wins over `rotation`.
+	 */
+	direction?: Vec3;
+	/** A point the light turns toward. It wins over `direction`. */
+	target?: Vec3;
+	/**
+	 * The angle in radians from the light's direction to the edge of its cone, above 0 and at most
+	 * π/2. The default is π/3.
+	 */
+	angle?: number;
+	/**
+	 * The part of the cone, from 0 to 1, over which the light fades out toward the edge. The
+	 * default, 0, gives a sharp edge.
+	 */
+	penumbra?: number;
+}
+
+/**
+ * Options for `scene.createHemisphereLight`.
+ *
+ * @category api/lights
+ */
+export interface HemisphereLightOptions extends NodeOptions {
+	/** The color of the light from above. The default is white. */
+	skyColor?: ColorInput;
+	/** The color of the light from below. The default is white. */
+	groundColor?: ColorInput;
+	/** A factor that scales both colors. The default is 1. */
+	intensity?: number;
+}
+
+/** The options of any light, as the scene's shared create path reads them. */
+type AnyLightOptions = LightOptions & Partial<Omit<SpotLightOptions, keyof LightOptions>>;
+
+/** The numbers of a light's options, and their codes in the light table. */
+const LIGHT_NUMBERS = [
+	['intensity', C.LIGHT_VALUE_INTENSITY],
+	['range', C.LIGHT_VALUE_RANGE],
+	['decay', C.LIGHT_VALUE_DECAY],
+	['angle', C.LIGHT_VALUE_ANGLE],
+	['penumbra', C.LIGHT_VALUE_PENUMBRA],
+] as const;
+
+/**
+ * Each light number's name, lowest and highest value, and its range in words, by its code, for the
+ * development checks.
+ */
+const LIGHT_LIMITS: Record<number, readonly [string, number, number, string]> = {
+	[C.LIGHT_VALUE_INTENSITY]: ['intensity', -Infinity, Infinity, 'a finite number'],
+	[C.LIGHT_VALUE_RANGE]: ['range', Number.MIN_VALUE, Number.MAX_VALUE, 'above 0'],
+	[C.LIGHT_VALUE_DECAY]: ['decay', 0, Number.MAX_VALUE, 'at least 0'],
+	[C.LIGHT_VALUE_ANGLE]: ['angle', Number.MIN_VALUE, Math.PI / 2, 'above 0 and at most π/2'],
+	[C.LIGHT_VALUE_PENUMBRA]: ['penumbra', 0, 1, 'from 0 to 1'],
+};
+
+/** The direction a new directional or spot light points: straight down. */
+const DOWN: Vec3 = [0, -1, 0];
+/** The axis that a light's light travels along before the light turns: -Z, as a camera looks. */
+const LIGHT_AXIS: Vec3 = [0, 0, -1];
 
 /** Views of the per-slot arrays and the command ring. */
 class SceneViews {
@@ -136,6 +321,8 @@ class SceneViews {
 	readonly rotations: Float32Array;
 	readonly scales: Float32Array;
 	readonly radii: Float32Array;
+	/** The centers of the local bounding spheres, 3 floats per slot. */
+	readonly centers: Float32Array;
 	readonly dirty: Uint32Array;
 	readonly records: Uint32Array;
 	readonly writeIndex: Uint32Array;
@@ -149,6 +336,7 @@ class SceneViews {
 		this.rotations = core.f32(glue.sceneArrays(C.SCENE_FIELD_ROTATIONS), rows * 4);
 		this.scales = core.f32(glue.sceneArrays(C.SCENE_FIELD_SCALES), rows * 3);
 		this.radii = core.f32(glue.sceneArrays(C.SCENE_FIELD_LOCAL_RADII), rows);
+		this.centers = core.f32(glue.sceneArrays(C.SCENE_FIELD_LOCAL_CENTERS), rows * 3);
 		this.dirty = core.u32(glue.sceneArrays(C.SCENE_FIELD_DIRTY_WORDS), Math.ceil(rows / 32));
 		this.ringCapacity = glue.commandRing(C.RING_FIELD_CAPACITY);
 		this.records = core.u32(
@@ -186,9 +374,14 @@ export class Object3D implements Described {
 		return false;
 	}
 
+	/** @internal The object's name in quotes, or "an object", as error messages show it. */
+	get label(): string {
+		return this.name ? `"${this.name}"` : 'an object';
+	}
+
 	/** The object's name and slot, as error messages show them. */
 	describe(): string {
-		return `${this.name ? `"${this.name}"` : 'an object'} (slot ${this.slot})`;
+		return `${this.label} (slot ${this.slot})`;
 	}
 
 	/** Sets the position relative to the parent. */
@@ -268,8 +461,63 @@ export class Object3D implements Described {
 		this.scene.markDirty(this.slot);
 	}
 
-	/** Copies the position into `out`. */
-	getPosition(out: { [index: number]: number }): void {
+	/** Turns the object by `angle` radians about its own X axis. */
+	rotateX(angle: number): void {
+		this.turn('rotateX', rotateX, angle);
+	}
+
+	/** Turns the object by `angle` radians about its own Y axis. */
+	rotateY(angle: number): void {
+		this.turn('rotateY', rotateY, angle);
+	}
+
+	/** Turns the object by `angle` radians about its own Z axis. */
+	rotateZ(angle: number): void {
+		this.turn('rotateZ', rotateZ, angle);
+	}
+
+	/** Turns the object's rotation with one of the quaternion helpers' turns about its own axes. */
+	private turn(call: string, by: Turn, angle: number): void {
+		if (DEV) {
+			checkLive(call, this);
+			checkNumber(call, 'angle', angle, this);
+		}
+		const q = this.scene.scratch;
+		this.scene.readRotation(this.slot, q);
+		by(q, q, angle);
+		this.scene.views.rotations.set(q, this.slot * 4);
+		this.scene.markDirty(this.slot);
+	}
+
+	/**
+	 * Moves the object by (x, y, z) along its own axes, as three.js's `translateX`, `translateY` and
+	 * `translateZ` do together. The object's rotation turns the vector, and its scale leaves it as
+	 * it is, so `translate(0, 0, -1)` moves a camera 1 m forward.
+	 */
+	translate(x: number, y: number, z: number): void {
+		if (DEV) {
+			checkLive('translate', this);
+			checkVector('translate', this, x, y, z);
+		}
+		const { scene } = this;
+		const q = scene.scratch;
+		scene.readRotation(this.slot, q);
+		const v = scene.eye;
+		v[0] = x;
+		v[1] = y;
+		v[2] = z;
+		transformQuat(v, v, q);
+		const p = scene.views.positions;
+		const i = this.slot * 3;
+		p[i] = (p[i] as number) + (v[0] as number);
+		p[i + 1] = (p[i + 1] as number) + (v[1] as number);
+		p[i + 2] = (p[i + 2] as number) + (v[2] as number);
+		scene.markDirty(this.slot);
+	}
+
+	/** Copies the position relative to the parent into `out`. */
+	getPosition(out: Vec3Like): void {
+		if (DEV) checkLive('getPosition', this);
 		const p = this.scene.views.positions;
 		const i = this.slot * 3;
 		out[0] = p[i] as number;
@@ -277,18 +525,63 @@ export class Object3D implements Described {
 		out[2] = p[i + 2] as number;
 	}
 
+	/** Copies the rotation relative to the parent into `out`, as a quaternion (x, y, z, w). */
+	getRotation(out: QuatLike): void {
+		if (DEV) checkLive('getRotation', this);
+		this.scene.readRotation(this.slot, out);
+	}
+
 	/** Copies the world position of the frame that last ran into `out`. */
-	getWorldPosition(out: { [index: number]: number }): void {
+	getWorldPosition(out: Vec3Like): void {
+		if (DEV) checkLive('getWorldPosition', this);
 		const m = this.scene.worldMatrix(this, 'getWorldPosition');
 		out[0] = m[3] as number;
 		out[1] = m[7] as number;
 		out[2] = m[11] as number;
 	}
 
-	/** Moves the object under another, or to the root with null. It keeps its local transform. */
-	setParent(parent: Object3D | null): void {
-		if (DEV) checkLive('setParent', this);
-		this.scene.command(C.COMMAND_SET_PARENT, this.handle, parent?.handle ?? 0, 0, 'setParent');
+	/**
+	 * Copies the world rotation of the frame that last ran into `out`, as a quaternion (x, y, z, w).
+	 * It is the rotation part of the world matrix, which `mat4.decompose` splits off.
+	 */
+	getWorldQuaternion(out: QuatLike): void {
+		if (DEV) checkLive('getWorldQuaternion', this);
+		const { scene } = this;
+		const m = scene.worldColumns(this, 'getWorldQuaternion');
+		decompose(scene.eye, out, scene.target, m);
+	}
+
+	/**
+	 * Copies the world matrix of the frame that last ran into `out`: 16 numbers, column by column,
+	 * as `mat4` and three.js's `matrixWorld` hold them. Its translation keeps full precision far
+	 * from the origin when `out` is a plain array or a `Float64Array`.
+	 */
+	getWorldMatrix(out: Mat4Like): void {
+		if (DEV) checkLive('getWorldMatrix', this);
+		copyMatrix(out, this.scene.worldColumns(this, 'getWorldMatrix'));
+	}
+
+	/**
+	 * Moves the object under another, or to the root with null, from the next frame. By default it
+	 * keeps its position, rotation and scale relative to the parent, so its place in the world
+	 * changes with the new parent. With `keepWorld: true` it keeps its place in the world instead.
+	 */
+	setParent(parent: Object3D | null, options?: ParentOptions): void {
+		if (DEV) {
+			checkLive('setParent', this);
+			if (parent) {
+				checkLive('setParent', parent, true);
+				if (parent.scene !== this.scene)
+					throw new EngineError(
+						'E1103',
+						`setParent() got ${parent.describe()}, which is not from this engine.`,
+					);
+				if (parent === this)
+					throw new EngineError('E1104', `setParent() would put ${this.describe()} under itself.`);
+			}
+		}
+		const keep = options?.keepWorld ? C.COMMAND_KEEP_WORLD : 0;
+		this.scene.command(C.COMMAND_SET_PARENT, this.handle, parent?.handle ?? 0, keep, 'setParent');
 	}
 
 	/** Hides or shows the object and everything under it. */
@@ -312,15 +605,28 @@ export class Object3D implements Described {
 
 	/** Makes the object dynamic or static from the next frame. See `NodeOptions.dynamic`. */
 	setDynamic(dynamic: boolean): void {
-		if (DEV) checkLive('setDynamic', this);
+		if (DEV) {
+			checkLive('setDynamic', this);
+			this.scene.unmarkedWrites?.watch(this, !dynamic);
+		}
 		this.scene.command(C.COMMAND_SET_DYNAMIC, this.handle, dynamic ? 1 : 0, 0, 'setDynamic');
 	}
 
 	/** Removes the object at the next frame. Its children become roots. */
 	destroy(): void {
-		if (DEV) checkLive('destroy', this);
+		if (DEV) {
+			checkLive('destroy', this);
+			this.scene.unmarkedWrites?.watch(this, false);
+		}
 		this.scene.command(C.COMMAND_DESTROY, this.handle, 0, 0, 'destroy');
 		this.destroyedFrame = this.scene.frame;
+		this.scene.forget(this);
+	}
+
+	/** @internal Sets or clears one of the object's flags from the next frame. */
+	protected setFlag(call: string, flag: number, on: boolean): void {
+		if (DEV) checkLive(call, this);
+		this.scene.command(C.COMMAND_SET_FLAGS, this.handle, flag, on ? flag : 0, call);
 	}
 }
 
@@ -339,27 +645,137 @@ export class Group extends Object3D {}
 export class Mesh extends Object3D {
 	/** Changes the material from the next frame. */
 	setMaterial(material: Material): void {
+		if (DEV) {
+			checkLive('setMaterial', this);
+			checkSameEngine('setMaterial', 'material', material.core, this.scene);
+		}
 		this.scene.command(C.COMMAND_SET_MATERIAL, this.handle, material.id, 0, 'setMaterial');
+	}
+
+	/**
+	 * Changes the shape from the next frame. The mesh's bounds replace the object's, so call
+	 * `setBounds` again after this when the object needs bounds of its own.
+	 */
+	setMesh(mesh: MeshGeometry): void {
+		if (DEV) {
+			checkLive('setMesh', this);
+			checkSameEngine('setMesh', 'mesh', mesh.core, this.scene);
+		}
+		this.scene.writeBounds(this.slot, 0, 0, 0, mesh.radius);
+		this.scene.command(C.COMMAND_SET_MESH, this.handle, mesh.id, 0, 'setMesh');
+	}
+
+	/**
+	 * Makes the mesh cast shadows, or stop. The default is false. This version stores the setting
+	 * but draws no shadows yet.
+	 */
+	setCastShadows(cast: boolean): void {
+		this.setFlag('setCastShadows', C.FLAG_CAST_SHADOWS, cast);
+	}
+
+	/**
+	 * Makes the mesh receive shadows, or stop. The default is false. This version stores the
+	 * setting but draws no shadows yet.
+	 */
+	setReceiveShadows(receive: boolean): void {
+		this.setFlag('setReceiveShadows', C.FLAG_RECEIVE_SHADOWS, receive);
+	}
+
+	/**
+	 * Sets the order in which the mesh draws among transparent objects, lower first, as three.js's
+	 * `renderOrder`. The default is 0. The engine orders opaque objects itself, and this version
+	 * draws every material opaque, so the order has no effect yet.
+	 */
+	setRenderOrder(order: number): void {
+		if (DEV) {
+			checkLive('setRenderOrder', this);
+			checkNumber('setRenderOrder', 'order', order, this);
+		}
+		const bits = this.scene.floatBits(order);
+		this.scene.command(C.COMMAND_SET_RENDER_ORDER, this.handle, bits, 0, 'setRenderOrder');
+	}
+
+	/**
+	 * With false, the engine draws the mesh even where its bounds are out of view, as three.js's
+	 * `frustumCulled = false` does. The default is true. For vertices that a shader moves, larger
+	 * bounds from `setBounds` cost less.
+	 */
+	setFrustumCulled(culled: boolean): void {
+		this.setFlag('setFrustumCulled', C.FLAG_UNCULLED, !culled);
+	}
+
+	/**
+	 * Replaces the mesh's bounding sphere, which culling tests, with a sphere of your own: `center`
+	 * relative to the object's origin, and `radius`, both before the object's scale. Use it when a
+	 * shader moves vertices outside the mesh's sphere. `setMesh` gives the mesh's sphere back.
+	 */
+	setBounds(center: Vec3Like, radius: number): void {
+		const x = center[0] as number;
+		const y = center[1] as number;
+		const z = center[2] as number;
+		if (DEV) {
+			checkLive('setBounds', this);
+			checkVector('setBounds', this, x, y, z);
+			checkNumber('setBounds', 'radius', radius, this);
+			if (radius < 0)
+				throw new EngineError(
+					'E1108',
+					`setBounds() got the radius ${radius} on ${this.describe()}, below 0.`,
+				);
+		}
+		this.scene.writeBounds(this.slot, x, y, z, radius);
+		this.setFlag('setBounds', C.FLAG_CUSTOM_BOUNDS, true);
 	}
 }
 
+/** Throws E1103 when a mesh or a material comes from another engine. Call it inside `if (DEV)`. */
+function checkSameEngine(
+	call: string,
+	kind: 'mesh' | 'material',
+	core: CoreMemory,
+	scene: Scene,
+): void {
+	if (core !== scene.core)
+		throw new EngineError('E1103', `${call}() got a ${kind} that is not from this engine.`);
+}
+
 /**
- * A perspective camera. Make it the scene's view with `scene.setActiveCamera`.
+ * An object that the scene can be drawn from. `scene.setActiveCamera` picks the camera that the
+ * canvas shows. A camera is a `PerspectiveCamera` or an `OrthographicCamera`, and
+ * `isOrthographic` tells them apart.
  *
  * @category api/cameras
  */
-export class Camera extends Object3D {
-	/** @internal */
-	fov = 50;
-	/** @internal */
-	near = 0.1;
-	/** @internal */
-	far = 2000;
+export abstract class Camera extends Object3D {
+	/** True for an `OrthographicCamera`, false for a `PerspectiveCamera`. */
+	abstract readonly isOrthographic: boolean;
+
 	/** @internal The layers of the objects the camera draws. */
 	layers: number = C.LAYERS_DEFAULT;
 
+	/** @internal */
+	constructor(
+		scene: Scene,
+		handle: number,
+		name: string,
+		private nearPlane: number,
+		private farPlane: number,
+	) {
+		super(scene, handle, name);
+	}
+
 	protected override get looksDownMinusZ(): boolean {
 		return true;
+	}
+
+	/** The distance to the near clipping plane. */
+	get near(): number {
+		return this.nearPlane;
+	}
+
+	/** The distance to the far clipping plane. */
+	get far(): number {
+		return this.farPlane;
 	}
 
 	/**
@@ -372,123 +788,319 @@ export class Camera extends Object3D {
 		this.scene.lensChanged(this);
 	}
 
-	/** Sets the vertical field of view in degrees. */
-	setFov(degrees: number): void {
-		if (DEV) checkNumber('setFov', 'fov', degrees, this);
-		this.fov = degrees;
-		this.scene.lensChanged(this);
-	}
-
 	/** Sets the distances to the near and far clipping planes. */
 	setNearFar(near: number, far: number): void {
 		if (DEV) {
-			checkNumber('setNearFar', 'near', near, this);
-			checkNumber('setNearFar', 'far', far, this);
+			checkLive('setNearFar', this);
+			checkNearFar('setNearFar', near, far, !this.isOrthographic, this);
 		}
-		this.near = near;
-		this.far = far;
+		this.nearPlane = near;
+		this.farPlane = far;
 		this.scene.lensChanged(this);
 	}
+
+	/**
+	 * @internal Gives the engine core this camera's lens and layers, which the active camera draws
+	 * with.
+	 */
+	abstract sendLens(glue: CoreGlue): void;
 }
 
 /**
- * Light arriving from one direction, like sunlight. Its direction and intensity setters allocate
- * nothing.
+ * A camera that shows near things larger than far things, as the eye does.
+ *
+ * @category api/cameras
+ */
+export class PerspectiveCamera extends Camera {
+	/** False: a perspective camera. */
+	readonly isOrthographic = false;
+
+	/** @internal */
+	constructor(
+		scene: Scene,
+		handle: number,
+		name: string,
+		private verticalFov: number,
+		near: number,
+		far: number,
+	) {
+		super(scene, handle, name, near, far);
+	}
+
+	/** The vertical field of view in degrees. */
+	get fov(): number {
+		return this.verticalFov;
+	}
+
+	/** Sets the vertical field of view in degrees. */
+	setFov(degrees: number): void {
+		if (DEV) {
+			checkLive('setFov', this);
+			checkFov('setFov', degrees, this);
+		}
+		this.verticalFov = degrees;
+		this.scene.lensChanged(this);
+	}
+
+	/** @internal */
+	sendLens(glue: CoreGlue): void {
+		glue.setPerspectiveCamera(this.handle, this.verticalFov, this.near, this.far, this.layers);
+	}
+}
+
+/**
+ * A camera whose view is a box: things keep their size at every distance, as in maps and
+ * isometric games.
+ *
+ * @category api/cameras
+ */
+export class OrthographicCamera extends Camera {
+	/** True: an orthographic camera. */
+	readonly isOrthographic = true;
+
+	/** @internal */
+	constructor(
+		scene: Scene,
+		handle: number,
+		name: string,
+		/** @internal The view's box across the camera's axis. */ readonly view: OrthographicView,
+		near: number,
+		far: number,
+	) {
+		super(scene, handle, name, near, far);
+	}
+
+	/** The view's height in world units. */
+	get height(): number {
+		return this.view.height;
+	}
+
+	/**
+	 * The view's width in world units, or undefined when the width follows the canvas's aspect
+	 * ratio.
+	 */
+	get width(): number | undefined {
+		return this.view.width > 0 ? this.view.width : undefined;
+	}
+
+	/**
+	 * Sets the view's height in world units. A width that follows the canvas keeps following it.
+	 * A view made from four edges scales about its center and keeps its shape, as three.js's
+	 * `zoom` scales it.
+	 */
+	setOrthoHeight(height: number): void {
+		if (DEV) {
+			checkLive('setOrthoHeight', this);
+			checkSize('setOrthoHeight', 'height', height, this);
+		}
+		setViewHeight(this.view, height);
+		this.scene.lensChanged(this);
+	}
+
+	/** @internal */
+	sendLens(glue: CoreGlue): void {
+		const view = this.view;
+		glue.setOrthographicCamera(
+			this.handle,
+			view.height,
+			view.width,
+			view.centerX,
+			view.centerY,
+			this.near,
+			this.far,
+			this.layers,
+		);
+	}
+}
+
+/**
+ * A light: a scene object that lights the objects around it. Each kind of light has a class of its
+ * own. Setters allocate nothing except those that convert a color, so `onUpdate` can animate
+ * lights.
  *
  * @category api/lights
  */
-export class DirectionalLight {
-	private readonly direction = new Float64Array(3);
-	/** The color in linear RGB, before the intensity scales it. */
-	private readonly linear = new Float64Array(3);
+export class Light extends Object3D {
+	/** @internal The light's row in the engine's light table. */
+	id = 0;
+	/** @internal The light's color in linear RGB, before the intensity scales it. */
+	readonly linear = new Float64Array([1, 1, 1]);
 
-	constructor(
-		private readonly scene: Scene,
-		direction: readonly [number, number, number],
-		color: ColorInput,
-		private intensity: number,
-	) {
-		this.direction.set(direction);
-		this.linear.set(linearColor(color, 'createDirectionalLight'));
-		this.apply();
+	protected override get looksDownMinusZ(): boolean {
+		return true;
 	}
 
-	private apply(): void {
-		const d = this.direction;
-		const c = this.linear;
-		const k = this.intensity;
-		this.scene.core.glue.setSun(
-			d[0] as number,
-			d[1] as number,
-			d[2] as number,
-			(c[0] as number) * k,
-			(c[1] as number) * k,
-			(c[2] as number) * k,
-		);
+	/** Sets the color. Converting a color allocates, so per-frame code sets the intensity instead. */
+	setColor(color: ColorInput): void {
+		this.paint('setColor', C.LIGHT_COLOR_MAIN, color);
 	}
 
-	/** Sets the direction the light travels. */
+	/** Sets the factor that scales the color. */
+	setIntensity(intensity: number): void {
+		this.write('setIntensity', C.LIGHT_VALUE_INTENSITY, intensity);
+	}
+
+	/** Removes the light at the next frame. Its children become roots. */
+	override destroy(): void {
+		super.destroy();
+		const { core } = this.scene;
+		core.check(core.glue.destroyLight(this.id), 'destroy', this.label, true);
+	}
+
+	/** @internal Sets one of the light's colors, by its code in the light table. */
+	paint(call: string, which: number, color: ColorInput): void {
+		if (DEV) checkLive(call, this);
+		const rgb = linearColor(color, call);
+		if (which === C.LIGHT_COLOR_MAIN) this.linear.set(rgb);
+		this.scene.core.glue.setLightColor(this.id, which, rgb[0], rgb[1], rgb[2]);
+	}
+
+	/** @internal Sets one of the light's numbers, by its code in the light table. */
+	write(call: string, which: number, value: number): void {
+		if (DEV) {
+			checkLive(call, this);
+			const limits = LIGHT_LIMITS[which] as (typeof LIGHT_LIMITS)[number];
+			if (typeof value === 'number') checkNumber(call, limits[0], value, this);
+			if (!(value >= limits[1] && value <= limits[2]))
+				throw new EngineError(
+					'E1108',
+					`${call}() got the ${limits[0]} ${value} on ${this.describe()}, which must be ${limits[3]}.`,
+				);
+		}
+		this.scene.core.glue.setLightValue(this.id, which, value);
+	}
+
+	/**
+	 * @internal Turns the light so that its light travels along (x, y, z), relative to its parent.
+	 */
+	aim(call: string, x: number, y: number, z: number): void {
+		if (DEV) {
+			checkLive(call, this);
+			checkVector(call, this, x, y, z);
+			if (x === 0 && y === 0 && z === 0)
+				throw new EngineError(
+					'E1108',
+					`${call}() got the direction (0, 0, 0) on ${this.describe()}, which points nowhere.`,
+				);
+		}
+		const { scene } = this;
+		const d = scene.target;
+		const k = 1 / (Math.sqrt(x * x + y * y + z * z) || 1);
+		d[0] = x * k;
+		d[1] = y * k;
+		d[2] = z * k;
+		rotationTo(scene.scratch, LIGHT_AXIS, d);
+		scene.views.rotations.set(scene.scratch, this.slot * 4);
+		scene.markDirty(this.slot);
+	}
+}
+
+/**
+ * Light from one direction, like sunlight. It travels along the light's -Z axis, which
+ * `setDirection`, `lookAt` and the light's parents turn. Its position does not matter.
+ *
+ * @category api/lights
+ */
+export class DirectionalLight extends Light {
+	/** Turns the light so that its light travels along (x, y, z), relative to its parent. */
 	setDirection(x: number, y: number, z: number): void {
-		const d = this.direction;
-		d[0] = x;
-		d[1] = y;
-		d[2] = z;
-		this.apply();
+		this.aim('setDirection', x, y, z);
 	}
 
-	/** Sets the color. Converting a color allocates, so per-frame code sets the intensity instead. */
-	setColor(color: ColorInput): void {
-		this.linear.set(linearColor(color, 'setColor'));
-		this.apply();
-	}
-
-	/** Sets the factor that scales the color. */
-	setIntensity(intensity: number): void {
-		this.intensity = intensity;
-		this.apply();
+	/**
+	 * Makes the light cast shadows, or stop. The default is false. This version stores the setting
+	 * but draws no shadows yet.
+	 */
+	setCastShadows(cast: boolean): void {
+		this.setFlag('setCastShadows', C.FLAG_CAST_SHADOWS, cast);
 	}
 }
 
 /**
- * Light that reaches every surface equally. Its intensity setter allocates nothing.
+ * Light from a point in every direction, which fades with distance and ends at its range.
  *
  * @category api/lights
  */
-export class AmbientLight {
-	/** The color in linear RGB, before the intensity scales it. */
-	private readonly linear = new Float64Array(3);
-
-	constructor(
-		private readonly scene: Scene,
-		color: ColorInput,
-		private intensity: number,
-	) {
-		this.linear.set(linearColor(color, 'createAmbientLight'));
-		this.apply();
+export class PointLight extends Light {
+	/** Sets the distance in meters where the light ends, above 0. */
+	setRange(range: number): void {
+		this.write('setRange', C.LIGHT_VALUE_RANGE, range);
 	}
 
-	private apply(): void {
-		const c = this.linear;
-		const k = this.intensity;
-		this.scene.core.glue.setAmbient(
-			(c[0] as number) * k,
-			(c[1] as number) * k,
-			(c[2] as number) * k,
-		);
+	/** Sets how fast the light fades with distance, at least 0: 2 is the physical rate. */
+	setDecay(decay: number): void {
+		this.write('setDecay', C.LIGHT_VALUE_DECAY, decay);
 	}
 
-	/** Sets the color. Converting a color allocates, so per-frame code sets the intensity instead. */
-	setColor(color: ColorInput): void {
-		this.linear.set(linearColor(color, 'setColor'));
-		this.apply();
-	}
-
-	/** Sets the factor that scales the color. */
-	setIntensity(intensity: number): void {
-		this.intensity = intensity;
-		this.apply();
+	/**
+	 * Makes the light cast shadows, or stop. The default is false. This version stores the setting
+	 * but draws no shadows yet.
+	 */
+	setCastShadows(cast: boolean): void {
+		this.setFlag('setCastShadows', C.FLAG_CAST_SHADOWS, cast);
 	}
 }
+
+/**
+ * Light from a point in a cone, which fades with distance and ends at its range. The cone points
+ * along the light's -Z axis, which `setDirection`, `lookAt` and the light's parents turn.
+ *
+ * @category api/lights
+ */
+export class SpotLight extends Light {
+	/** Sets the distance in meters where the light ends, above 0. */
+	setRange(range: number): void {
+		this.write('setRange', C.LIGHT_VALUE_RANGE, range);
+	}
+
+	/** Sets how fast the light fades with distance, at least 0: 2 is the physical rate. */
+	setDecay(decay: number): void {
+		this.write('setDecay', C.LIGHT_VALUE_DECAY, decay);
+	}
+
+	/** Sets the angle in radians from the light's direction to the edge of its cone: up to π/2. */
+	setAngle(angle: number): void {
+		this.write('setAngle', C.LIGHT_VALUE_ANGLE, angle);
+	}
+
+	/** Sets the part of the cone, from 0 to 1, over which the light fades out toward the edge. */
+	setPenumbra(penumbra: number): void {
+		this.write('setPenumbra', C.LIGHT_VALUE_PENUMBRA, penumbra);
+	}
+
+	/** Turns the light so that its light travels along (x, y, z), relative to its parent. */
+	setDirection(x: number, y: number, z: number): void {
+		this.aim('setDirection', x, y, z);
+	}
+
+	/**
+	 * Makes the light cast shadows, or stop. The default is false. This version stores the setting
+	 * but draws no shadows yet.
+	 */
+	setCastShadows(cast: boolean): void {
+		this.setFlag('setCastShadows', C.FLAG_CAST_SHADOWS, cast);
+	}
+}
+
+/**
+ * Light from the sky above and the ground below, which fades from one color to the other with the
+ * way a surface faces. The sky lies along the light's +Y axis. `setColor` sets the sky color.
+ *
+ * @category api/lights
+ */
+export class HemisphereLight extends Light {
+	/** Sets the ground color. Converting a color allocates. */
+	setGroundColor(color: ColorInput): void {
+		this.paint('setGroundColor', C.LIGHT_COLOR_GROUND, color);
+	}
+}
+
+/**
+ * Light that reaches every surface equally.
+ *
+ * @category api/lights
+ */
+export class AmbientLight extends Light {}
 
 /**
  * Many copies of one mesh and material. Write rows straight into the typed arrays; a dynamic batch
@@ -610,16 +1222,34 @@ export class Scene {
 	readonly target = new Float64Array(3);
 	/** A world matrix, whose translation keeps 64-bit precision far from the origin. */
 	private readonly matrix = new Float64Array(C.CORE_MATRIX_FLOATS);
+	/** The same world matrix as 16 numbers, column by column. */
+	private readonly columns = new Float64Array(16);
+	/** A 32-bit float and its bits, for commands that carry a float. */
+	private readonly float = new Float32Array(1);
+	private readonly floatWord = new Uint32Array(this.float.buffer);
+	/**
+	 * The live objects with each name: the object itself, or the objects with a name that several
+	 * share, in the order of their creation.
+	 */
+	private readonly names = new Map<string, Object3D | Set<Object3D>>();
 	/** Rows of the live instance batches, which development builds count. */
 	private batchRows = 0;
 	private warnedPastPortable = false;
+	/**
+	 * @internal Development builds: finds static objects whose transform changed without a setter.
+	 * Declared without a value, so release builds hold no trace of it.
+	 */
+	declare readonly unmarkedWrites: UnmarkedWrites | undefined;
 
 	constructor(
 		/** @internal */ readonly core: CoreMemory,
 		private readonly time: { readonly frame: number },
 		/** True when the engine draws with WebGL2, whose devices draw fewer rows than WebGPU's. */
 		private readonly webgl2: boolean,
-	) {}
+		private readonly warmUpScene: () => Promise<void> = () => Promise.resolve(),
+	) {
+		if (DEV) this.unmarkedWrites = new UnmarkedWrites(this);
+	}
 
 	/** @internal */
 	get frame(): number {
@@ -659,15 +1289,89 @@ export class Scene {
 		Atomics.store(v.writeIndex, 0, (write + 1) >>> 0);
 	}
 
-	/** @internal */
+	/** @internal The world matrix of the frame that last ran: 12 numbers, row by row. */
 	worldMatrix(object: Object3D, call: string): Float64Array {
+		// The core's error adds the slot to the object's name.
 		this.core.check(
 			this.core.glue.worldMatrix(object.handle, this.matrix),
 			call,
-			object.describe(),
+			object.label,
 			true,
 		);
 		return this.matrix;
+	}
+
+	/** @internal The world matrix of the frame that last ran: 16 numbers, column by column. */
+	worldColumns(object: Object3D, call: string): Float64Array {
+		const m = this.worldMatrix(object, call);
+		const out = this.columns;
+		for (let row = 0; row < 3; row++)
+			for (let column = 0; column < 4; column++)
+				out[column * 4 + row] = m[row * 4 + column] as number;
+		out[3] = 0;
+		out[7] = 0;
+		out[11] = 0;
+		out[15] = 1;
+		return out;
+	}
+
+	/** @internal Copies the rotation of the object in `slot` into `out`. */
+	readRotation(slot: number, out: QuatLike): void {
+		const r = this.views.rotations;
+		const i = slot * 4;
+		out[0] = r[i] as number;
+		out[1] = r[i + 1] as number;
+		out[2] = r[i + 2] as number;
+		out[3] = r[i + 3] as number;
+	}
+
+	/**
+	 * @internal Writes the local bounding sphere of the object in `slot`. The command that follows
+	 * makes the engine recompute the object.
+	 */
+	writeBounds(slot: number, x: number, y: number, z: number, radius: number): void {
+		const { centers, radii } = this.views;
+		centers[slot * 3] = x;
+		centers[slot * 3 + 1] = y;
+		centers[slot * 3 + 2] = z;
+		radii[slot] = radius;
+	}
+
+	/** @internal The bits of `value` as a 32-bit float, for a command's argument. */
+	floatBits(value: number): number {
+		this.float[0] = value;
+		return this.floatWord[0] as number;
+	}
+
+	/** Adds a new object to the index of names, after the live objects with the same name. */
+	private remember(object: Object3D): void {
+		const { name } = object;
+		if (!name) return;
+		const known = this.names.get(name);
+		if (known === undefined) this.names.set(name, object);
+		else if (known instanceof Set) known.add(object);
+		else this.names.set(name, new Set([known, object]));
+	}
+
+	/** @internal Takes a destroyed object out of the index of names. */
+	forget(object: Object3D): void {
+		const { name } = object;
+		const known = this.names.get(name);
+		if (known === object) this.names.delete(name);
+		else if (known instanceof Set) {
+			known.delete(object);
+			if (known.size === 0) this.names.delete(name);
+		}
+	}
+
+	/**
+	 * The first object created with `name` that is not destroyed, or undefined when no object has
+	 * the name. It looks the name up in an index, so its cost does not grow with the scene. Call it
+	 * at setup and keep the object it returns.
+	 */
+	find(name: string): Object3D | undefined {
+		const known = this.names.get(name);
+		return known instanceof Set ? known.values().next().value : known;
 	}
 
 	/**
@@ -687,13 +1391,28 @@ export class Scene {
 
 	/** @internal */
 	lensChanged(camera: Camera): void {
-		if (camera === this.activeCamera)
-			this.core.glue.setCamera(camera.handle, camera.fov, camera.near, camera.far, camera.layers);
+		if (camera === this.activeCamera) camera.sendLens(this.core.glue);
 	}
 
-	private create(options: NodeOptions, mesh: number, radius: number, call: string): number {
+	/**
+	 * Creates an object of class `kind` from the next frame: its slot with the transform of
+	 * `options`, its create command with `flags` besides visibility and `dynamic`, its layers, and
+	 * its wrapper, built with any further constructor arguments, which the index of names learns.
+	 */
+	private create<T extends Object3D, A extends unknown[]>(
+		kind: ObjectClass<T, A>,
+		options: NodeOptions,
+		mesh: number,
+		radius: number,
+		flags: number,
+		call: string,
+		...extra: A
+	): T {
 		const { layers } = options;
-		if (DEV && layers !== undefined) checkLayers(call, layers);
+		if (DEV) {
+			if (options.parent) checkLive(call, options.parent, true);
+			if (layers !== undefined) checkLayers(call, layers);
+		}
 		const handle = this.core.check(this.core.glue.reserveObject(), call, options.name);
 		const slot = handle & SLOT_MASK;
 		const v = this.views;
@@ -701,24 +1420,34 @@ export class Scene {
 		v.rotations.set(options.rotation ?? [0, 0, 0, 1], slot * 4);
 		v.scales.set(options.scale ?? [1, 1, 1], slot * 3);
 		v.radii[slot] = radius;
-		const flags = C.FLAG_VISIBLE | (options.dynamic ? C.FLAG_DYNAMIC : 0);
-		this.command(C.COMMAND_CREATE | (flags << 8), handle, options.parent?.handle ?? 0, mesh, call);
+		const all = flags | C.FLAG_VISIBLE | (options.dynamic ? C.FLAG_DYNAMIC : 0);
+		this.command(C.COMMAND_CREATE | (all << 8), handle, options.parent?.handle ?? 0, mesh, call);
 		if (layers !== undefined && layers >>> 0 !== C.LAYERS_DEFAULT)
 			this.command(C.COMMAND_SET_LAYERS, handle, layers >>> 0, 0, call);
-		return handle;
+		const object = new kind(this, handle, options.name ?? '', ...extra);
+		this.remember(object);
+		if (DEV) this.unmarkedWrites?.watch(object, !options.dynamic);
+		return object;
 	}
 
 	/** An empty node, for hierarchy. */
 	createGroup(options: NodeOptions = {}): Group {
-		const handle = this.create(options, C.CORE_NO_MESH, 0, 'createGroup');
-		return new Group(this, handle, options.name ?? '');
+		return this.create(Group, options, C.CORE_NO_MESH, 0, 0, 'createGroup');
 	}
 
 	/** A drawn object. It is static unless `dynamic: true`. */
 	createMesh(options: MeshOptions): Mesh {
-		const handle = this.create(options, options.mesh.id, options.mesh.radius, 'createMesh');
-		this.command(C.COMMAND_SET_MATERIAL, handle, options.material.id, 0, 'createMesh');
-		return new Mesh(this, handle, options.name ?? '');
+		const { mesh, material } = options;
+		if (DEV) {
+			checkSameEngine('createMesh', 'mesh', mesh.core, this);
+			checkSameEngine('createMesh', 'material', material.core, this);
+		}
+		const flags =
+			(options.castShadows ? C.FLAG_CAST_SHADOWS : 0) |
+			(options.receiveShadows ? C.FLAG_RECEIVE_SHADOWS : 0);
+		const object = this.create(Mesh, options, mesh.id, mesh.radius, flags, 'createMesh');
+		this.command(C.COMMAND_SET_MATERIAL, object.handle, material.id, 0, 'createMesh');
+		return object;
 	}
 
 	/** Many copies of one mesh and material, with typed arrays of rows. */
@@ -745,18 +1474,47 @@ export class Scene {
 	}
 
 	/** A perspective camera; `fov` is vertical, in degrees. Cameras are dynamic by default. */
-	createPerspectiveCamera(options: CameraOptions = {}): Camera {
-		const handle = this.create(
-			{ dynamic: true, ...options },
-			C.CORE_NO_MESH,
-			0,
-			'createPerspectiveCamera',
-		);
-		const camera = new Camera(this, handle, options.name ?? '');
+	createPerspectiveCamera(options: PerspectiveCameraOptions = {}): PerspectiveCamera {
+		const call = 'createPerspectiveCamera';
+		const { fov = DEFAULT_FOV, near = DEFAULT_NEAR, far = DEFAULT_FAR } = options;
+		if (DEV) {
+			const camera = newCamera(options.name);
+			checkFov(call, fov, camera);
+			checkNearFar(call, near, far, true, camera);
+		}
+		return this.createCamera(PerspectiveCamera, options, call, fov, near, far);
+	}
+
+	/**
+	 * An orthographic camera, whose view is a box: things keep their size at every distance. Give
+	 * `height`, and the width follows the canvas, or give `left`, `right`, `top` and `bottom`.
+	 * Cameras are dynamic by default.
+	 */
+	createOrthographicCamera(options: OrthographicCameraOptions = {}): OrthographicCamera {
+		const call = 'createOrthographicCamera';
+		const { near = DEFAULT_NEAR, far = DEFAULT_FAR } = options;
+		if (DEV) {
+			const camera = newCamera(options.name);
+			checkOrthographicSize(call, options, camera);
+			checkNearFar(call, near, far, false, camera);
+		}
+		const view = orthographicView(options);
+		return this.createCamera(OrthographicCamera, options, call, view, near, far);
+	}
+
+	/**
+	 * Creates a camera of the given class with its lens settings, dynamic unless the options say
+	 * otherwise, gives it the options' layers to draw, and turns it toward the options' target.
+	 */
+	private createCamera<T extends Camera, A extends unknown[]>(
+		kind: ObjectClass<T, A>,
+		options: CameraOptions,
+		call: string,
+		...lens: A
+	): T {
+		const node = { dynamic: true, ...options };
+		const camera = this.create(kind, node, C.CORE_NO_MESH, 0, 0, call, ...lens);
 		camera.layers = (options.layers ?? C.LAYERS_DEFAULT) >>> 0;
-		camera.fov = options.fov ?? 50;
-		camera.near = options.near ?? 0.1;
-		camera.far = options.far ?? 2000;
 		if (options.target) camera.lookAt(...options.target);
 		return camera;
 	}
@@ -768,22 +1526,70 @@ export class Scene {
 	}
 
 	/**
-	 * Light from one direction. This version has one directional light: a newer one replaces the
-	 * older.
+	 * Creates a light of class `kind` from the next frame: its object, its row in the light table,
+	 * and the values of `options`. A directional or spot light turns to its target or direction.
 	 */
+	private createLight<T extends Light>(
+		kind: ObjectClass<T>,
+		type: number,
+		options: AnyLightOptions,
+		call: string,
+	): T {
+		const flags = options.castShadows ? C.FLAG_CAST_SHADOWS : 0;
+		const light = this.create(kind, options, C.CORE_NO_MESH, 0, flags, call);
+		light.id = this.core.check(this.core.glue.createLight(light.handle, type), call, options.name);
+		if (options.color !== undefined) light.paint(call, C.LIGHT_COLOR_MAIN, options.color);
+		const ranged = type === C.LIGHT_KIND_POINT || type === C.LIGHT_KIND_SPOT;
+		for (const [key, which] of LIGHT_NUMBERS) {
+			const value = options[key];
+			if (value !== undefined || (ranged && which === C.LIGHT_VALUE_RANGE))
+				light.write(call, which, value as number);
+		}
+		if (type === C.LIGHT_KIND_DIRECTIONAL || type === C.LIGHT_KIND_SPOT) {
+			if (options.target) light.lookAt(...options.target);
+			else if (options.direction || !options.rotation)
+				light.aim(call, ...(options.direction ?? DOWN));
+		}
+		return light;
+	}
+
+	/** Light from one direction, like sunlight: `direction` is the way it travels. */
 	createDirectionalLight(options: DirectionalLightOptions = {}): DirectionalLight {
-		const [x, y, z] = options.direction ?? [0, -1, 0];
-		return new DirectionalLight(
-			this,
-			[x, y, z],
-			options.color ?? '#ffffff',
-			options.intensity ?? 1,
+		return this.createLight(
+			DirectionalLight,
+			C.LIGHT_KIND_DIRECTIONAL,
+			options,
+			'createDirectionalLight',
 		);
 	}
 
-	/** Light on every surface. This version has one ambient light: a newer one replaces the older. */
+	/** Light from a point in every direction, out to `range` meters, which it needs. */
+	createPointLight(options: PointLightOptions): PointLight {
+		return this.createLight(PointLight, C.LIGHT_KIND_POINT, options, 'createPointLight');
+	}
+
+	/** Light from a point in a cone, out to `range` meters, which it needs. */
+	createSpotLight(options: SpotLightOptions): SpotLight {
+		return this.createLight(SpotLight, C.LIGHT_KIND_SPOT, options, 'createSpotLight');
+	}
+
+	/** Light from the sky above and the ground below. */
+	createHemisphereLight(options: HemisphereLightOptions = {}): HemisphereLight {
+		const call = 'createHemisphereLight';
+		const light = this.createLight(
+			HemisphereLight,
+			C.LIGHT_KIND_HEMISPHERE,
+			{ ...options, color: options.skyColor },
+			call,
+		);
+		if (options.groundColor !== undefined)
+			light.paint(call, C.LIGHT_COLOR_GROUND, options.groundColor);
+		return light;
+	}
+
+	/** Light on every surface, from no direction. */
 	createAmbientLight(options: LightOptions = {}): AmbientLight {
-		return new AmbientLight(this, options.color ?? '#ffffff', options.intensity ?? 1);
+		return this.createLight(AmbientLight, C.LIGHT_KIND_AMBIENT, options, 'createAmbientLight');
 	}
 
 	/**
@@ -793,5 +1599,16 @@ export class Scene {
 	setBackground(color: ColorInput): void {
 		const [r, g, b] = linearColor(color, 'setBackground');
 		this.core.glue.setBackground(r, g, b);
+	}
+
+	/**
+	 * Builds every GPU pipeline that the scene needs as it stands, and resolves once they are all
+	 * built. Hidden objects count too. After the first frame, an object whose pipeline is still
+	 * building draws nothing, so create a loading stage's objects hidden, warm up, then show them.
+	 * The first frame waits for its pipelines anyway. In the setup, a warm-up draws that frame once
+	 * they are built, before the setup goes on.
+	 */
+	warmUp(): Promise<void> {
+		return this.warmUpScene();
 	}
 }

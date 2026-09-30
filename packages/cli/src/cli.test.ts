@@ -6,7 +6,7 @@ import {
 	SWIFTSHADER_ARGS,
 } from './browser.js';
 import { main, VERSION } from './cli.js';
-import { holdPath } from './page.js';
+import { holdPath, switchedPath } from './page.js';
 
 describe('main', () => {
 	const log = spyOn(console, 'log').mockImplementation(() => {});
@@ -21,12 +21,13 @@ describe('main', () => {
 		expect(log).toHaveBeenLastCalledWith(VERSION);
 		expect(await main([])).toBe(0);
 		expect(log.mock.lastCall?.[0]).toContain("shot    Draws one frame of the project's page");
+		expect(log.mock.lastCall?.[0]).toContain('test    Type checks and lints the project');
 	});
 
 	it('fails on a command it does not have, and names its commands', async () => {
 		expect(await main(['create'])).toBe(1);
 		expect(error.mock.lastCall?.[0]).toBe(
-			'null3d has no "create" command. Its commands: shot. Run bunx @null3d/cli --help for more.',
+			'null3d has no "create" command. Its commands: bench, shot, test. Run bunx @null3d/cli --help for more.',
 		);
 		expect(await main(['toString'])).toBe(1);
 	});
@@ -70,5 +71,14 @@ describe('holdPath', () => {
 
 	it('replaces hold switches that the path already has', () => {
 		expect(holdPath('/?hold=9&gpu=webgpu', { time: 2, gpu: 'compat' })).toBe('/?hold=2&gpu=compat');
+	});
+});
+
+describe('switchedPath', () => {
+	it("adds each switch to the page's own query, bare for an empty value, and leaves out the rest", () => {
+		expect(switchedPath('/', { bench: '', gpu: undefined })).toBe('/?bench=');
+		expect(switchedPath('/game.html?level=2', { bench: '', gpu: 'webgl2' })).toBe(
+			'/game.html?level=2&bench=&gpu=webgl2',
+		);
 	});
 });

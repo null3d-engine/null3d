@@ -2,6 +2,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'bun:test';
 import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { DEMOS } from '../../examples/demos.ts';
 import { IMAGE_RUNS, IMAGE_TESTS, manifestRun } from '../image/manifest.ts';
 import { ENGINE_MODES, type EngineMode } from './engine-checks.ts';
 import {
@@ -25,6 +26,7 @@ import {
 	writePng,
 } from './images.ts';
 import type { ItemResult } from './runs.ts';
+import { REPO_ROOT } from './server.ts';
 
 /** A few tests of every kind, on made-up pages whose files the checks below say exist. */
 const TESTS: readonly ImageTest[] = [
@@ -117,6 +119,19 @@ describe('the manifest', () => {
 			'/bench/pages/null3d/s1.html?gpu=compat&latency=low&hold=2',
 		);
 		expect(new Set(IMAGE_RUNS.map((r) => r.id)).size).toBe(IMAGE_RUNS.length);
+	});
+
+	it('draws every demo in examples/, each a sketch of under 150 lines', () => {
+		const examples = join(REPO_ROOT, 'examples');
+		const sketchOf = (name: string) => join(examples, name, 'sketch.ts');
+		const folders = readdirSync(examples).filter((name) => existsSync(sketchOf(name)));
+		expect(DEMOS.map((demo) => demo.name).sort()).toEqual(folders.sort());
+		const tests = new Set(IMAGE_TESTS.map((test) => ('sketch' in test ? test.sketch : '')));
+		expect(DEMOS.filter((demo) => !tests.has(`examples/${demo.name}/sketch.ts`))).toEqual([]);
+		const long = DEMOS.filter(
+			(demo) => readFileSync(sketchOf(demo.name), 'utf8').trimEnd().split('\n').length >= 150,
+		);
+		expect(long.map((demo) => demo.name)).toEqual([]);
 	});
 
 	it('finds what is wrong with a list of tests', () => {

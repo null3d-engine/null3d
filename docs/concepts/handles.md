@@ -35,7 +35,7 @@ Handles are 30 bits because Chrome's JavaScript engine stores integers of up to 
 
 ## Wrapper objects
 
-`Mesh`, `Camera` and `Group` are small classes that hold the scene and a handle. The engine creates one wrapper per object, at the moment you create the object, so frames allocate no wrappers. The directional light and the ambient light have no handle: each one sets a light for the whole scene.
+`Mesh`, `Camera`, `Group` and the light classes are small classes that hold the scene and a handle. The engine creates one wrapper per object, at the moment you create the object, so frames allocate no wrappers.
 
 ```ts
 const crate = scene.createMesh({
@@ -51,7 +51,7 @@ const out = new Float32Array(3); // made once, in the setup
 crate.getWorldPosition(out); // writes into out, allocates nothing
 ```
 
-Setters such as `setPosition`, `setRotation` and `setScale` write straight into the shared arrays. Getters take an output array, so a hot path allocates nothing. The engine adds a new object to the scene when it processes the frame, after `onUpdate` returns. Read the object's world position from the next `onUpdate` call on.
+Setters such as `setPosition`, `setRotation` and `setScale` write straight into the shared arrays. Getters take an output array, so a hot path allocates nothing. The engine adds a new object to the scene when it processes the frame, after `onUpdate` returns. Read the object's world position in that frame's `onLateUpdate`, or from the next `onUpdate` call on.
 
 Each kind of object has its own class. Passing a mesh where the engine expects a camera, as in `scene.setActiveCamera(crate)`, fails at compile time.
 
@@ -59,7 +59,7 @@ Each kind of object has its own class. Passing a mesh where the engine expects a
 
 A slot keeps its index until its object is destroyed. The engine reuses freed slots for new objects, but it never moves an object into another slot to close a gap. Error messages name an object by its name and slot, such as `"Crate" (slot 7)`, and `describe()` returns the same text.
 
-Each slot holds the object's position (3 floats), rotation as a quaternion (4 floats) and scale (3 floats). It also holds the parent's slot, flags, the mesh and material IDs, and the radius of the object's bounding sphere.
+Each slot holds the object's position (3 floats), rotation as a quaternion (4 floats) and scale (3 floats). It also holds the parent's slot, flags, the mesh and material IDs, the render order, and the center and radius of the object's bounding sphere.
 
 ## Stale handles
 
@@ -70,7 +70,7 @@ crate.destroy();
 crate.setPosition(0, 0, 0); // development build: throws E1101
 ```
 
-In development builds, the transform setters, `lookAt`, `setParent`, `setVisible`, `setDynamic` and `destroy` check that their object still lives. A call on a destroyed object throws an `EngineError` with the code [E1101](../errors/E1101.md), which names the object and the frame it was destroyed in. Release builds leave this check out, so a transform setter costs only its memory writes.
+In development builds, every call on an object apart from `describe` checks that the object still lives. A call on a destroyed object throws an `EngineError` with the code [E1101](../errors/E1101.md), which names the object and the frame it was destroyed in. Release builds leave this check out, so a transform setter costs only its memory writes.
 
 ## Keep per-object data in your own arrays
 

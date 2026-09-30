@@ -33,8 +33,8 @@ import { createEngine } from '@null3d/engine';
 const engine = await createEngine({
   canvas,                                        // HTMLCanvasElement, sized by CSS
   sketch: new URL('./sketch.ts', import.meta.url),   // the sketch module
-  preset: 'auto',        // 'auto' | 'low' | 'medium' | 'high' | 'ultra'
-  maxPixelRatio: 2,      // cap for devicePixelRatio; presets cap it too
+  preset: 'auto',        // 'auto' | 'low' | 'medium' | 'high' | 'ultra'; WebGL2 runs at most 'medium'
+  maxPixelRatio: 2,      // cap for devicePixelRatio in place of the preset's cap
   gpu: 'auto',           // 'auto' | 'webgpu' | 'webgl2' (testing only)
   powerPreference: 'high-performance',   // the default; 'low-power' saves battery on devices with two GPUs
   latency: 'pipelined',  // or 'low'; 'pipelined' is the default
@@ -79,14 +79,16 @@ export default defineSketch(async (ctx) => {
   // preferences.reducedMotion: true when the user's system asks for less motion
   // preferences.onChange(() => { ... }) runs at the first frame after it changes; it returns a remover
   return {
-    onFixedUpdate(step) {},  // 0 to n times per frame at a fixed rate (default 60 Hz)
+    onFixedUpdate(step) {},  // 0 to n times per frame at a fixed rate (default 60 Hz), before onUpdate
     onUpdate(dt) {},         // once per frame, before transforms; dt is 0 after a pause, at most 0.25 s
-    onLateUpdate(dt) {},     // after transforms, before culling: camera follow
+    onLateUpdate(dt) {},     // after transforms, before culling: camera follow; its moves show this frame
   };
-});
+}, { fixedRate: 60, maxFixedSteps: 8 });  // optional; these are the defaults
 ```
 
-`ctx.engine.viewport` gives the canvas size in CSS pixels and the pixel ratio. `ctx.engine.capabilities` is the same object as on the page.
+- `ctx.engine.viewport` gives `{ width, height, pixelRatio }`: the canvas size in CSS pixels, and the pixel ratio the engine draws with. The engine reads them at the start of each frame. `ctx.engine.capabilities` holds the values of `engine.capabilities` on the page.
+- In `onLateUpdate`, `getWorldPosition` already gives this frame's positions, and setters show in the same frame. Structural changes made there, such as creating an object, wait for the next frame.
+- Fixed steps fall due from sketch time. The first frame and the first after a pause run none. A frame runs at most `maxFixedSteps` and drops the rest. `time` keeps the frame's values during the steps, so count simulation time with `step`. Read `wasPressed` in `onUpdate`, because some frames run no fixed step.
 
 ## 3. Scene (`api/scene`)
 
@@ -97,9 +99,9 @@ export default defineSketch(async (ctx) => {
 | `scene.createInstances(meshOrPrefab, count, { dynamic, colors, attributes, material, layers, origin })` | InstanceBatch | Section 5 |
 | `scene.instantiate(prefab, { position, rotation, scale, parent })` (0.2) | Node | Creates a loaded glTF model |
 | `scene.clone(obj)` (0.2) | same type | Deep copy of a built object |
-| `scene.find(name)` | Node or null | Use at setup, not per frame |
-| `scene.createPerspectiveCamera({ fov, near, far, position, target, layers })` | Camera | fov is vertical, in degrees |
-| `scene.createOrthographicCamera({ height, near, far, position, target })` | Camera | Or left, right, top, bottom |
+| `scene.find(name)` | Node or undefined | The first live node with the name; use at setup, not per frame |
+| `scene.createPerspectiveCamera({ fov, near, far, position, target, layers })` | PerspectiveCamera | fov is vertical, in degrees |
+| `scene.createOrthographicCamera({ height, near, far, position, target, layers })` | OrthographicCamera | Or left, right, top, bottom in place of height |
 | `scene.setActiveCamera(camera)` | | |
 | `scene.createDirectionalLight(opts)` and the other lights | Light | Section 7 |
 | `scene.setBackground('#rrggbb' or texture or environment or { sky })` | | `{ sky: { turbidity, rayleigh, sunDirection } }` (0.2) |
@@ -114,22 +116,20 @@ export default defineSketch(async (ctx) => {
 
 ## 4. Objects and transforms (`api/objects`)
 
-Every node (group, mesh, camera, instantiated model) has these calls. Lights become nodes with the same calls later in 0.1; until then they have only the calls in section 7.
+Every node (group, mesh, camera, light, instantiated model) has these calls.
 
 ```ts
 obj.setPosition(x, y, z);            obj.getPosition(out);         // out: number[3] or Float32Array
 obj.setRotation(qx, qy, qz, qw);     obj.getRotation(out);         // quaternion
 obj.setRotationEuler(x, y, z, 'XYZ');                               // radians, three.js order names
-obj.rotateX(a); obj.rotateY(a); obj.rotateZ(a);                     // local axes
-obj.setScale(x, y, z);               obj.translate(x, y, z);       // local translate
-obj.lookAt(x, y, z);                                                // cameras look down -Z, and so will lights
-obj.getWorldPosition(out); obj.getWorldQuaternion(out); obj.getWorldMatrix(out);
+obj.rotateX(a); obj.rotateY(a); obj.rotateZ(a);                     // about the object's own axes
+obj.setScale(x, y, z);               obj.translate(x, y, z);       // along the object's own axes, scale ignored
+obj.lookAt(x, y, z);                                                // cameras and lights look down -Z
+obj.getWorldPosition(out); obj.getWorldQuaternion(out); obj.getWorldMatrix(out);  // last frame; matrix column by column
 obj.setParent(parent);               obj.setParent(parent, { keepWorld: true }); obj.setParent(null);
 obj.setVisible(false);               obj.setDynamic(true);
-obj.setCastShadows(true);            obj.setReceiveShadows(true);
-obj.setLayers(mask);                 obj.setRenderOrder(n);        // render order sorts transparent objects
-obj.setFrustumCulled(false);         obj.setBounds(center, radius);
-obj.setMaterial(material);           obj.setMorphWeight(nameOrIndex, w);   // morph (0.2)
+obj.setLayers(mask);
+obj.setMorphWeight(nameOrIndex, w);  // morph (0.2)
 obj.setOutlined(true);               // (0.2) with post.set({ outline })
 obj.setOccluder(false);              // (0.2) WebGL2 path: stop this object hiding others; true makes it a blocker
 obj.on('click', fn); obj.off('click', fn);  // (0.2) 'pointerenter', 'pointerleave', 'pointerdown', 'pointerup'
@@ -138,7 +138,16 @@ obj.destroy();
 obj.name;                            // string, read-only after creation
 ```
 
-Getters write into the `out` array you pass, so they allocate nothing. Use a setter for static objects; direct array writes are for dynamic objects and batches.
+Meshes also have these calls. `setCastShadows` and `setReceiveShadows` are stored until shadows draw, and `setRenderOrder` orders transparent objects, which do not draw yet.
+
+```ts
+mesh.setMaterial(material);          mesh.setMesh(geometry);       // setMesh brings back the mesh's bounds
+mesh.setCastShadows(true);           mesh.setReceiveShadows(true); // false by default, as in three.js
+mesh.setRenderOrder(n);                                             // transparent objects, lower first
+mesh.setFrustumCulled(false);        mesh.setBounds(center, radius);  // center relative to the origin, before scale
+```
+
+Getters write into the `out` array you pass, so they allocate nothing. The world getters read the last frame the engine processed. Pass them a plain array or `Float64Array` to keep 64-bit positions. Use a setter for static objects; direct array writes are for dynamic objects and batches. A parent change with `keepWorld: true` works out the new local transform when the frame applies it, so set the object's transform first. These calls rebuild the draw tables, so make them at setup: `setMaterial`, `setMesh`, `setParent`, `setDynamic`, `setBounds` and `setFrustumCulled`.
 
 ## 5. Instance batches (`concepts/instances`)
 
@@ -169,27 +178,38 @@ A prefab with several meshes (0.2) gives one batch per mesh inside a group batch
 ## 6. Cameras (`api/cameras`)
 
 ```ts
-camera.setFov(deg); camera.setNearFar(near, far); camera.setOrthoHeight(h);
+camera.setNearFar(near, far);     camera.near; camera.far;     // both kinds
+camera.isOrthographic;            // false for PerspectiveCamera, true for OrthographicCamera
+camera.setFov(deg);               camera.fov;                  // PerspectiveCamera
+camera.setOrthoHeight(h);         camera.height; camera.width; // OrthographicCamera; width undefined while it follows the canvas
 camera.setLayers(mask);
-camera.screenToRay(x, y, ray);    // x, y in CSS pixels; ray = { origin: number[3], direction: number[3] }
-camera.worldToScreen(p, out);     // out = [x, y, depth]; depth < 0 means behind the camera
+camera.screenToRay(x, y, ray);    // (0.2) x, y in CSS pixels; ray = { origin: number[3], direction: number[3] }
+camera.worldToScreen(p, out);     // (0.2) out = [x, y, depth]; depth < 0 means behind the camera
 ```
+
+An orthographic camera made with `height` follows the canvas's aspect ratio; one made with `left`, `right`, `top` and `bottom` keeps those edges, and `setOrthoHeight` scales them about their center.
 
 ## 7. Lights (`api/lights`)
 
 ```ts
 scene.createDirectionalLight({ direction, color, intensity, castShadows,
-  shadow: { cascades, mapSize, bias, normalBias } });
+  shadow: { cascades, mapSize, bias, normalBias } });                       // shadow: later in 0.1
 scene.createPointLight({ position, color, intensity, range, decay, castShadows });  // range is required
 scene.createSpotLight({ position, direction, target, angle, penumbra, range, decay, intensity, castShadows });
 scene.createHemisphereLight({ skyColor, groundColor, intensity });
 scene.createAmbientLight({ color, intensity });
 
-light.setIntensity(v); light.setColor(c); light.setRange(r); light.setDirection(x, y, z);
-light.setCastShadows(true);
+light.setIntensity(v); light.setColor(c);   // every light; only setColor allocates
+light.setDirection(x, y, z);                 // directional and spot lights
+light.setRange(r); light.setDecay(d);        // point and spot lights
+light.setAngle(a); light.setPenumbra(p);     // spot lights
+light.setGroundColor(c);                     // hemisphere lights; setColor sets the sky
+light.setCastShadows(true);                  // directional, point and spot lights
 ```
 
-Units match three.js r155 and later: directional intensity in lux-like units, point and spot intensity in candela. Shadow cascades fit the view by themselves.
+Lights are nodes: they take the node options (`name`, `position`, `parent`, `dynamic`, `layers` and the rest) and have the calls in section 4. Directional and spot lights shine along their -Z axis, so `lookAt` aims them; a hemisphere light's sky is its +Y axis. A light lights a camera's view when their layer masks share a bit. Units match three.js r155 and later: directional intensity in lux-like units, point and spot intensity in candela. Shadow cascades fit the view by themselves.
+
+Later in 0.1: point, spot and hemisphere lights light surfaces (clustered lighting), and shadows draw. Until then, surfaces show the first directional light created and the ambient lights, and `castShadows` is stored.
 
 ## 8. Geometry (`api/geometry`)
 
@@ -241,25 +261,34 @@ materials.shader({ ...anyStandardOption, uniforms, textures, surface, vertexOffs
 ## 10. Textures (`api/textures`)
 
 ```ts
-const tex = await assets.loadTexture('/tex/bricks.ktx2', {
+const tex = await assets.loadTexture('/tex/bricks.png', {  // PNG, JPEG, WebP, AVIF where decoded
   colorSpace: 'srgb',        // 'srgb' for color maps; 'linear' for normal, roughness, metalness, AO
-  flipY: false,
+  flipY: true,               // default, as three.js's TextureLoader; glTF textures use false
   wrap: 'repeat',            // 'repeat' | 'clamp' | 'mirror', or [u, v]
   filter: 'linear',          // or 'nearest'
   mipmaps: true,
   anisotropy: 8,             // capped by the preset
   uvSet: 0,                  // which UV set the map uses (three.js texture.channel)
-  premultipliedAlpha: false, // true for textures stored premultiplied
+  premultipliedAlpha: false, // true to store color multiplied by alpha
 });
-textures.fromData({ width, height, depth, format: 'rgba8unorm', data });
-textures.fromImageBitmap(bitmap, { colorSpace });  // draw on an OffscreenCanvas in the worker
-tex.update(bitmap);
+textures.fromData({ width, height, depth: 1, format: 'rgba8unorm', colorSpace: 'linear', data }); // 4 numbers per texel
+textures.fromData({ width, height, format: 'rgba16float', data: new Float32Array(width * height * 4) });
+// fromImageBitmap uploads the bitmap as it is: decode with imageOrientation: 'flipY' to stand upright
+textures.fromImageBitmap(await createImageBitmap(offscreenCanvas, { imageOrientation: 'flipY' }));
+tex.update(bitmap);        // a new size is fine; or tex.update(data) of the same size
+tex.width; tex.height; tex.bytes;   // size and GPU memory
 tex.destroy();
 ```
+
+Textures return at once and upload over the next frames, within each frame's upload budget. A material draws with its color alone until the texels arrive.
 
 ## 11. Assets (`api/assets`)
 
 ```ts
+assets.onProgress((loaded, total) => page.post('loading', loaded / total));
+await assets.preload(['/tex/bricks.png', '/level.json']);      // later loads take these from memory
+const data = await assets.loadJson('/level.json');             // also loadBinary, loadImageBitmap
+// relative addresses resolve against the page; errors: E1411 download, E1412 decode, E1413 CORS
 const ship = await assets.loadGltf('/models/ship.glb');        // (0.2) Prefab
 ship.animations;           // clip names
 ship.find('Turret');       // a node inside the prefab
@@ -268,10 +297,7 @@ const env = await assets.loadEnvironment('/env/studio.ktx2');  // (0.2) from `bu
 const studio = assets.builtinEnvironment('studio');            // (0.2) neutral lighting, no download
 const sky = await assets.loadCubemap([px, nx, py, ny, pz, nz]);  // (0.2)
 const lut = await assets.loadLut('/grade.cube');                // (0.2)
-await assets.preload(['/models/ship.glb', '/tex/bricks.ktx2']);
-assets.onProgress((loaded, total) => page.post('loading', loaded / total));
-const data = await assets.loadJson('/level.json');   // also loadBinary, loadImageBitmap
-ship.destroy();   // frees GPU data once no instance uses it
+ship.destroy();   // (0.2) frees GPU data once no instance uses it
 ```
 
 ## 12. Animation (0.2) (`api/animation`)
@@ -321,16 +347,19 @@ input.actions.define({ jump: ['Space', 'GamepadA'], fire: ['Mouse0', 'GamepadRT'
 input.isDown('jump');   // actions work in every input call; an unknown name throws E1205
 input.touches;          // fingers on the canvas, oldest first: { id, x, y, dx, dy }; changes in place
 
-import { createOrbitControls } from '@null3d/controls';
-const controls = createOrbitControls(ctx, camera, {
+import { createMapControls, createOrbitControls } from '@null3d/controls';
+const controls = createOrbitControls(ctx, camera, {   // three.js's OrbitControls names and defaults
   target: [0, 1, 0], enableDamping: true, dampingFactor: 0.08,
   minDistance: 2, maxDistance: 30, maxPolarAngle: Math.PI * 0.49, enablePan: true,
 });
-// in onUpdate: controls.update(dt)
-// also createMapControls; createFlyControls and createFirstPersonControls (0.2)
+controls.update(dt);                    // every frame in onUpdate; true when the camera moved
+vec3.set(controls.target, 0, 2, 0);     // change the target in place; set any property at any time
+controls.rotateLeft(a); controls.pan(dx, dy); controls.dollyIn(0.9);   // from code: keys, a gamepad
+createMapControls(ctx, camera);         // pans over the ground; fly and first-person controls (0.2)
+// either camera kind: an orthographic camera zooms by its view height, within minZoom and maxZoom
 ```
 
-Input changes once per frame, before `onUpdate`. Give a canvas that takes touch gestures `touch-action: none` in its CSS, or the browser scrolls the page and cancels the touches.
+Input changes once per frame, before `onUpdate`. Give a canvas that takes touch gestures `touch-action: none` in its CSS, or the browser scrolls the page and cancels the touches. When the wheel or a pinch zooms the camera, stop the page from scrolling and zooming with `canvas.addEventListener('wheel', (e) => e.preventDefault(), { passive: false })` on the page.
 
 ## 15. Post-processing (`api/post`)
 
@@ -372,13 +401,17 @@ Passes are declarations: the engine checks them, orders them, and shares memory 
 ## 17. Quality (`api/quality`)
 
 ```ts
-quality.preset;                         // 'low' | 'medium' | 'high' | 'ultra'
-quality.set({ shadows: { cascades: 2 }, ao: false, maxPixelRatio: 1.5, antialias: 'msaa' });  // antialias: 'msaa' | 'fxaa' | 'none'
-quality.onChange((q) => { particles.setActiveCount(q.preset === 'low' ? 500 : 2000); });
-quality.setBudget({ name: 'ai', ms: 2, onScale: (scale) => { aiRate = scale; } });
+quality.preset;                         // 'low' | 'medium' | 'high' | 'ultra': the preset the engine runs
+quality.settings.maxPixelRatio;         // the settings in use
+quality.set({ maxPixelRatio: 1.5 });    // from the next frame; E1213 for another setting or value
+quality.set({ antialias: 'fxaa', shadowCascades: 2 });  // planned: the preset table gives each setting's status
+const PARTICLES = { low: 500, medium: 2000, high: 5000, ultra: 10000 };  // your values per preset, in one table
+quality.onChange(() => { particles.setActiveCount(PARTICLES[quality.preset]); });
+quality.setBudget({ name: 'ai', ms: 2, onScale: (scale) => { aiRate = scale; } });  // (0.2)
+engine.mode.preset;                     // on the page: the preset, crashedStarts and memoryMaximumMiB
 ```
 
-The frame-budget governor lowers settings in a fixed order when frames run long, and raises them again after a stable period.
+The page's `?preset=low` switch fixes the preset for tests. After a start that crashed the tab, the engine starts one preset lower. The frame-budget governor lowers settings in a fixed order when frames run long, and raises them again after a stable period.
 
 ## 18. Messages and UI (`api/page`, `api/ui`)
 
@@ -400,15 +433,22 @@ Messages are fire-and-forget. Send events, not per-frame state.
 ## 19. Debug (`api/debug`)
 
 ```ts
-debug.stats(true);                       // overlay: frame phases per thread, tier, preset
-const s = debug.frameStats();            // numbers for tests and logs
-debug.view('normals');                   // 'lit' | 'normals' | 'depth' | 'wireframe' | 'overdraw'
-debug.line(a, b, '#ff0000'); debug.box(min, max, color); debug.sphere(center, r, color);
-debug.arrow(origin, dir, length, color); debug.axes(objOrPosition, size); debug.grid(size, divisions);
-debug.frustum(camera); debug.light(light); debug.skeleton(obj);
+// Call these in onUpdate: each call draws its lines for one frame.
+debug.line([0, 0, 0], [1, 2, 0], '#ff0000');     // colors as for materials; yellow by default
+debug.box(min, max, color); debug.sphere(center, radius, color);
+debug.arrow(origin, direction, length, color);  // length 1 unless given
+debug.axes(objectOrPosition, size);             // an object's axes follow it in the same frame
+debug.grid(size, divisions, { center, color, centerColor });  // GridHelper's defaults, 10 and 10
+debug.frustum(camera, color);                   // in the canvas's shape
+debug.light(sun, { position, size, color });    // a directional light's direction
+debug.skeleton(obj);                            // (0.2)
+
+debug.stats(true);                       // later in 0.1: overlay of frame phases per thread, tier, preset
+const s = debug.frameStats();            // later in 0.1: numbers for tests and logs
+debug.view('normals');                   // later in 0.1: 'lit' | 'normals' | 'depth' | 'wireframe' | 'overdraw'
 ```
 
-Debug drawing exists in development builds only and costs nothing in release builds.
+Debug drawing exists in development builds only. In a production build every call does nothing, and the build holds none of the drawing code. Lines are one pixel wide, and objects in front of them hide them.
 
 ## 20. Math, color and time (`api/math`, `api/time`)
 
@@ -429,8 +469,7 @@ math.random(); math.seed(42); math.randFloat(lo, hi); math.randInt(lo, hi); math
 color.fromHex(out, '#ff8800');            // linear RGB from an sRGB hex value
 color.fromSrgb(out, r, g, b); color.fromHsl(out, h, s, l); color.srgbToLinear(c); color.linearToSrgb(c);
 
-time.now; time.frame;                     // seconds, frame counter
-time.dt;                                  // later in 0.1: the frame's step in seconds; until then use onUpdate's dt
+time.now; time.dt; time.frame;            // seconds, the frame's step in seconds, frame counter
 ```
 
 - Each helper writes its result into its first argument, `out`, and returns it. Inputs can be tuples such as `[0, 1, 0]`, plain arrays or typed arrays. Make `out` arrays with `create()`, never in per-frame code.

@@ -59,6 +59,13 @@ pipelines.main = { vertex = "vs", fragment = "fs" }
 variants.webgpu = { permutations = ["TONE_MAP"], targets = ["wgsl"] }
 variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP"], targets = ["glsl"] }
 
+# The material's color times its map, like three.js's MeshBasicMaterial with a map.
+[shaders.unlit_map]
+file = "unlit_map.wgsl"
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgpu = { permutations = ["TONE_MAP"], targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP"], targets = ["glsl"] }
+
 # Colored by the first texture coordinates, for the engine's own tests of vertex formats.
 [shaders.texcoords]
 file = "texcoords.wgsl"
@@ -73,25 +80,47 @@ file = "final.wgsl"
 pipelines.main = { vertex = "vs", fragment = "fs" }
 variants.main = { permutations = ["FXAA"], targets = ["wgsl", "glsl"] }
 
+# Debug lines, which development builds of the engine draw after the opaque objects: a position
+# relative to the camera and an sRGB color per vertex, from a vertex buffer of their own.
+[shaders.debug_lines]
+file = "debug_lines.wgsl"
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgpu = { permutations = ["TONE_MAP"], targets = ["wgsl"] }
+variants.webgl2 = { permutations = ["TONE_MAP"], targets = ["glsl"] }
+
 # GPU culling into buckets for indirect draws; its compute entry point is `main`. WebGPU only.
 [shaders.cull]
 file = "cull.wgsl"
 variants.webgpu = { targets = ["wgsl"] }
 
-# A test shader for the GPU layer's texture commands, which the texture replay test page draws
-# with. The engine does not import it, so its download does not hold it.
+# The mip levels of a layer of a texture array, one render pass per level.
+[shaders.mipmap]
+file = "mipmap.wgsl"
+pipelines.main = { vertex = "vs_main", fragment = "fs_main" }
+variants.webgpu = { targets = ["wgsl"] }
+variants.webgl2 = { targets = ["glsl"] }
+
 # The GPU timer's start mark, one invocation that does nothing; its compute entry point is `main`.
 # WebGPU only.
 [shaders.timer_mark]
 file = "timer_mark.wgsl"
 variants.webgpu = { targets = ["wgsl"] }
 
+# A test shader for the GPU layer's texture commands, which the texture replay test page draws
+# with. The engine does not import it, so its download does not hold it.
 [shaders.test_textures]
 file = "test_textures.wgsl"
 pipelines.sample = { vertex = "vs_main", fragment = "fs_sample" }
 pipelines.solid = { vertex = "vs_main", fragment = "fs_solid" }
 variants.webgpu = { targets = ["wgsl"] }
 variants.webgl2 = { defs = ["WEBGL2"], targets = ["glsl"] }
+
+# A test shader for the shader library, which the library test page draws with: each case runs one
+# library function on the GPU. The engine does not import it, so its download does not hold it.
+[shaders.test_library]
+file = "test_library.wgsl"
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.main = { targets = ["wgsl", "glsl"] }
 
 # A test shader for the build itself.
 [shaders.test_mesh]

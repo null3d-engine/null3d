@@ -87,7 +87,7 @@ export default defineSketch(async ({ scene, geometry, materials }) => {
 3. Make the change in small steps. Scene logic goes in `sketch.ts`; DOM, HTML UI and audio go in `page.ts`.
 4. Look at the result. `bunx vite` serves the project, and the null3D Vite plugin adds the right headers. `bunx @null3d/cli shot --out shot.png` renders one frame headless and saves it. Open the image and check it: code that compiles can still draw nothing.
 5. Check the cost with `bunx @null3d/cli bench`, or with `debug.stats(true)` while running. Compare the frame phases with the preset's budget (`references/performance.md`).
-6. Add or update a test. Anything visual gets a hold-mode image test (`references/testing-and-debugging.md`). Run `bunx @null3d/cli test`.
+6. Add or update a test. Anything visual gets a hold-mode image test, listed in `null3d.json` (`references/testing-and-debugging.md`). Run `bunx @null3d/cli test`, and open the images of each test that fails.
 7. If the change touches rendering, check the WebGL2 path: add `?gpu=webgl2` to the dev URL, or run `bunx @null3d/cli test --gpu webgl2`.
 8. Summarize what changed, how you verified it (images, numbers), and any limits: planned APIs you avoided, device classes you could not test.
 
@@ -100,10 +100,10 @@ Each rule comes with its reason, because the reason covers cases the rule does n
 3. Move many objects by writing arrays, not by calling setters in a loop. Each setter call crosses from JavaScript into WebAssembly; a typed-array write does not cross at all.
 4. Create an object with `dynamic: true` only if it changes most frames. Static objects cost nothing until changed, and dynamic ones are recomputed every frame. Only dynamic objects and batches may be written through arrays, because static objects rely on setters to mark them changed.
 5. Create and destroy in bulk, and pool short-lived objects such as bullets: make a batch with a fixed capacity and use `setActiveCount`. A frame with a structural change (create, destroy, a new mesh or material) rebuilds the draw tables; `setVisible` and `setActiveCount` do not. The engine sizes its memory for the scene it holds, so create meshes, materials and batches during setup: one created during play makes engine memory grow in the next frame.
-6. Load and warm up before play: `await assets.preload([...])` and `await scene.warmUp()` behind a loading screen. A material with new shader features, such as a normal map, compiles a pipeline when it first draws, which can stall a frame. Those features are fixed when you create a material, so create every variant before play. (`guides/loading-screens`)
+6. Load and warm up before play: `await assets.preload([...])` and `await scene.warmUp()` behind a loading screen. A new shading model, vertex format or shader feature, such as a normal map, needs a new pipeline. The first frame waits for its pipelines. During play, an object whose pipeline is still building draws nothing, or the frame waits in browsers that cannot build in the background. Shader features are fixed when you create a material, so create every variant before play. For a later stage, create its objects hidden, await `scene.warmUp()`, then show them. (`guides/loading-screens`)
 7. Keep the DOM on the page, and keep messages rare: send events, not per-frame state. Labels that follow objects use `ui.trackLabel` (0.2), which needs no messages. (`guides/ui-overlays`)
 8. Use layer masks to limit work. A raycast with a mask tests fewer objects, and a camera with a mask draws fewer. (`concepts/render-layers`)
-9. Respect the quality preset. Do not force High settings on phones. Listen to `quality.onChange` to scale your own systems, such as particle counts or AI update rates. (`concepts/quality-presets`)
+9. Respect the quality preset. Do not force a heavier preset on phones. Keep your own values per preset, such as particle counts or AI update rates, in one table keyed by `quality.preset`. Never check the device type yourself, and listen to `quality.onChange` to apply the values. (`concepts/quality-presets`)
 10. Ship optimized assets: glTF with meshopt compression and KTX2 textures, made with `bunx @null3d/cli assets optimize`. Large PNG files and uncompressed meshes cost download time and GPU memory. (`guides/assets-pipeline`)
 11. Keep custom WGSL portable. Use only the three language features every browser shares, and write flat interpolation as `@interpolate(flat, either)`. The build rejects other features, `enable` lines and `f16`, but it cannot check the portable limits or `textureSample` in branches. Test those on each GPU path. (`shaders/wgsl-rules`)
 12. Never branch on GPU names or user agents; read `engine.capabilities` on the page. Several browsers hide GPU names, and a name does not tell you what the engine enabled.
@@ -142,7 +142,7 @@ Interaction:
 | --- | --- | --- |
 | Orbit or map camera | `createOrbitControls` or `createMapControls` from `@null3d/controls` | `api/controls` |
 | Fly or first-person camera | `createFlyControls` or `createFirstPersonControls` (0.2) | `api/controls` |
-| Click or hover on objects | `obj.on('click', fn)` and `'pointerenter'` or `'pointerleave'` (0.2), or `camera.screenToRay` with `scene.raycast` | `api/raycast` |
+| Click or hover on objects | `obj.on('click', fn)` and `'pointerenter'` or `'pointerleave'`, or `camera.screenToRay` with `scene.raycast` (all 0.2) | `api/raycast` |
 | Keys, pointer, touch, gamepad | `input.isDown`, `input.wasPressed`, `input.value`, `input.pointer`, `input.touches`, `input.actions.define` | `api/input` |
 | HTML UI and settings panels | On the page, sending messages to the sketch | `guides/ui-overlays` |
 | Labels above objects | `ui.trackLabel` in the sketch, `engine.labels.bind` on the page (0.2) | `api/ui` |
@@ -185,10 +185,10 @@ water.set({ waveSpeed: 2.0 }); // typed from the uniforms above
 | Symptom | Likely cause | Fix |
 | --- | --- | --- |
 | Blank canvas; the console mentions `SharedArrayBuffer` or `crossOriginIsolated` | The page is not cross-origin isolated | Add the null3D Vite plugin to `vite.config.ts`, or set the COOP and COEP headers on the host (`getting-started/hosting`) |
-| An object does not move | A static object was written through an array | Use a setter, or create it with `dynamic: true` |
+| An object does not move, or a development build logs E1110 | A static object changed without a setter | Use the setter, or create it with `dynamic: true` |
 | Colors too dark or washed out | Wrong texture color space | `colorSpace: 'srgb'` for color maps, `'linear'` for data maps (`concepts/color-management`) |
 | A stutter every few seconds | Allocations in per-frame code | Scratch values created once; confirm with the browser's memory profiler |
-| A hitch when something first appears | A pipeline compiled during play | Load and warm up earlier (`guides/loading-screens`) |
+| Something appears a moment late, or a hitch when it first appears | Its pipeline was building during play | Create it hidden, `await scene.warmUp()`, then show it (`guides/loading-screens`) |
 | Fine on desktop, slow or crashing on a phone | Preset, pixel ratio or memory | `guides/phones`, `references/performance.md` |
 | An `EngineError` with a code | An invalid call | Read the fix in the message, then `bunx @null3d/cli docs show errors/<code>` |
 

@@ -73,7 +73,11 @@ run('replay', async () => {
 	// colors encoded as sRGB.
 	frame[32] = 1;
 	new Uint32Array(frame.buffer)[33] = C.TONE_MAPPING_NONE;
-	const materials = new Float32Array([0.8, 0.1, 0.1, 1, 0.1, 0.3, 0.9, 1]);
+	// Two rows of the material table, each starting with its color and opacity. The shader reads
+	// nothing else of them.
+	const materials = new Float32Array((2 * G.SIZE_MATERIAL_BYTES) / 4);
+	materials.set([0.8, 0.1, 0.1, 1], 0);
+	materials.set([0.1, 0.3, 0.9, 1], G.SIZE_MATERIAL_BYTES / 4);
 	// The planes, the instance count and the view's layers, then the offset from the camera to each
 	// grid cell. Every instance here lies in cell 0, whose zero offset keeps the positions in world
 	// space.
@@ -162,16 +166,8 @@ run('replay', async () => {
 		1,
 		G.LAYOUT_FRAME,
 		2,
-		0,
-		G.RESOURCE_BUFFER,
-		3,
-		0,
-		0,
-		1,
-		G.RESOURCE_BUFFER,
-		4,
-		0,
-		0,
+		...[0, G.RESOURCE_BUFFER, 3, 0, 0],
+		...[1, G.RESOURCE_BUFFER, 4, 0, 0],
 	);
 	memory.push(
 		G.OP_CREATE_BIND_GROUP,

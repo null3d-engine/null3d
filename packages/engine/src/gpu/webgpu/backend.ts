@@ -3,6 +3,7 @@
 // engine memory and allocates nothing per command, except when a command creates a GPU object.
 
 import * as G from '../../generated/gpu';
+import { ImageTable } from '../../shared/images';
 import type { GpuTimer } from './gpu-timer';
 import { Pipelines, type RenderTemplate } from './pipelines';
 import { RenderPassSetup, submitOne, TexelCopySetup } from './reusable';
@@ -61,10 +62,22 @@ export class WebGPUBackend {
 	/** Each render target's view: a texture of one layer and one mip level, or a view of one. */
 	private readonly targetViews: (GPUTextureView | undefined)[] = [];
 	private readonly samplers: (GPUSampler | undefined)[] = [];
-	/** Images the page handed over for uploads, by id. */
-	private readonly images: (ImageBitmap | undefined)[] = [];
-	private readonly renderPipelines: (GPURenderPipeline | undefined)[] = [];
-	private readonly computePipelines: (GPUComputePipeline | undefined)[] = [];
+	/** Images for uploads, by id, which outlive the backend when the drawing thread owns them. */
+	private readonly images: ImageTable;
+	private readonly ownsImages: boolean;
+	/** The sampler that mip levels read the level before them with. */
+	private mipSampler: GPUSampler | undefined;
+	/** Pipelines by id: null while one builds, and undefined for an id that names none. */
+	private readonly renderPipelines: (GPURenderPipeline | null | undefined)[] = [];
+	private readonly computePipelines: (GPUComputePipeline | null | undefined)[] = [];
+	/** Pipelines that are building. */
+	private builds = 0;
+	/** Why a pipeline failed to build, which the next replay reports. */
+	private buildFailure: string | undefined;
+	/** True while the render pass's pipeline is building: its draws draw nothing until it is set again. */
+	private skipDraws = false;
+	/** True while the compute pass's pipeline is building: its dispatches do nothing. */
+	private skipDispatches = false;
 	private readonly bindGroups: (GPUBindGroup | undefined)[] = [];
 	/**
 	 * Each bundle's commands as the draw list recorded them, which `ExecuteBundles` replays into the
@@ -94,17 +107,21 @@ export class WebGPUBackend {
 
 	/**
 	 * `routes` chooses between writeBuffer and the staging ring for mid-size uploads; by default it
-	 * times both routes and takes the faster one.
+	 * times both routes and takes the faster one. `images` holds the images that uploads read,
+	 * which the thread that draws keeps across GPU devices; by default the backend has its own.
 	 */
 	constructor(
 		readonly device: GPUDevice,
 		private readonly context: GPUCanvasContext | undefined,
 		canvasFormat: GPUTextureFormat,
 		private readonly routes = new UploadRoutes(),
+		images?: ImageTable,
 	) {
 		this.canvasFormat = canvasFormat;
 		this.pipelines = new Pipelines(device);
 		this.staging = new StagingRing(device);
+		this.images = images ?? new ImageTable();
+		this.ownsImages = !images;
 	}
 
 	private format(code: number): GPUTextureFormat | undefined {
@@ -139,8 +156,7 @@ export class WebGPUBackend {
 
 	/** Hands the backend an image for `UploadImage` commands to copy from, under the draw list's id. */
 	setImage(id: number, image: ImageBitmap): void {
-		this.images[id]?.close();
-		this.images[id] = image;
+		this.images.set(id, image);
 	}
 
 	/** The texture the canvas shows this frame, or an offscreen target standing in for it. */
@@ -218,6 +234,48 @@ export class WebGPUBackend {
 		return G.FORMAT_TEXEL_BYTES[this.formats[id] as number] ?? 0;
 	}
 
+	/**
+	 * Makes mip levels 1 and up of one layer of a texture array, a render pass per level. Each pass
+	 * draws into its level of the layer, and reads the level before it through a view of every
+	 * layer, as compatibility mode binds whole arrays only.
+	 */
+	private generateMipmaps(id: number, layer: number): void {
+		const texture = this.need(this.textures, id, 'texture');
+		const pipeline = this.pipelines.mipmaps(texture.format);
+		this.mipSampler ??= this.device.createSampler({ magFilter: 'linear', minFilter: 'linear' });
+		const encoder = this.commandEncoder();
+		for (let level = 1; level < texture.mipLevelCount; level++) {
+			const source = texture.createView({
+				dimension: '2d-array',
+				baseMipLevel: level - 1,
+				mipLevelCount: 1,
+				usage: G.TEXTURE_USAGE_TEXTURE_BINDING,
+			});
+			const group = this.device.createBindGroup({
+				layout: pipeline.getBindGroupLayout(0),
+				entries: [
+					{ binding: 0, resource: source },
+					{ binding: 1, resource: this.mipSampler },
+				],
+			});
+			const target = texture.createView({
+				dimension: '2d',
+				baseMipLevel: level,
+				mipLevelCount: 1,
+				baseArrayLayer: layer,
+				arrayLayerCount: 1,
+				usage: G.TEXTURE_USAGE_RENDER_ATTACHMENT,
+			});
+			const pass = encoder.beginRenderPass({
+				colorAttachments: [{ view: target, loadOp: 'clear', storeOp: 'store' }],
+			});
+			pass.setPipeline(pipeline);
+			pass.setBindGroup(0, group);
+			pass.draw(3, 1, 0, layer);
+			pass.end();
+		}
+	}
+
 	private createSampler(words: Uint32Array, floats: Float32Array, a: number): void {
 		const setup = this.samplerSetup;
 		setup.addressModeU = lookUp(ADDRESS_MODES, words[a + 1] as number, 'address mode');
@@ -278,6 +336,82 @@ export class WebGPUBackend {
 	}
 
 	/**
+	 * Starts to build each pipeline that the list in `words[start, end)` creates before its first
+	 * other command, and returns where the rest of the list starts. The builds run without
+	 * blocking. Until a pipeline is built, `building` is true and the draws that use it draw
+	 * nothing.
+	 */
+	prepare(words: Uint32Array, start: number, end: number): number {
+		let i = start;
+		while (i < end) {
+			const header = words[i] as number;
+			const op = header & 0xff;
+			if (op !== G.OP_CREATE_RENDER_PIPELINE && op !== G.OP_CREATE_COMPUTE_PIPELINE) break;
+			this.createPipeline(op, words, i + 1, true);
+			i += header >>> 8;
+		}
+		return i;
+	}
+
+	/** True while a pipeline is building. */
+	get building(): boolean {
+		return this.builds > 0;
+	}
+
+	/**
+	 * Creates the pipeline of a `CreateRenderPipeline` or `CreateComputePipeline` command with its
+	 * operands at `a`: in the background when `background` is set, else at once.
+	 */
+	private createPipeline(op: number, words: Uint32Array, a: number, background: boolean): void {
+		this.counts.pipelines++;
+		const id = words[a] as number;
+		const device = this.device;
+		if (op === G.OP_CREATE_COMPUTE_PIPELINE) {
+			const descriptor = this.pipelines.compute(words[a + 1] as number);
+			if (!background) {
+				this.computePipelines[id] = device.createComputePipeline(descriptor);
+				return;
+			}
+			this.computePipelines[id] = null;
+			this.builds++;
+			device.createComputePipelineAsync(descriptor).then(
+				(pipeline) => this.built(this.computePipelines, id, pipeline),
+				(error: unknown) => this.failed(error),
+			);
+			return;
+		}
+		const descriptor = this.pipelines.render(
+			words[a + 1] as number,
+			words[a + 2] as number,
+			this.format(words[a + 3] as number),
+			this.format(words[a + 4] as number),
+			words[a + 5] as number,
+			words[a + 6] as number,
+			words[a + 7] as number,
+		);
+		if (!background) {
+			this.renderPipelines[id] = device.createRenderPipeline(descriptor);
+			return;
+		}
+		this.renderPipelines[id] = null;
+		this.builds++;
+		device.createRenderPipelineAsync(descriptor).then(
+			(pipeline) => this.built(this.renderPipelines, id, pipeline),
+			(error: unknown) => this.failed(error),
+		);
+	}
+
+	private built<T>(table: (T | null | undefined)[], id: number, pipeline: T): void {
+		table[id] = pipeline;
+		this.builds--;
+	}
+
+	private failed(error: unknown): void {
+		this.builds--;
+		this.buildFailure ??= error instanceof Error ? error.message : String(error);
+	}
+
+	/**
 	 * Replays the draw list in `words[start, end)`. `floats` views the same memory as `words`, for
 	 * float operands; the caller keeps both views and rebuilds them only when engine memory grows.
 	 * `memory` is the engine memory that WriteBuffer commands read from.
@@ -292,6 +426,8 @@ export class WebGPUBackend {
 		const device = this.device;
 		let pass: GPURenderPassEncoder | undefined;
 		let computePass: GPUComputePassEncoder | undefined;
+		if (this.buildFailure !== undefined)
+			throw new Error(`a pipeline failed to build: ${this.buildFailure}`);
 
 		for (let i = start; i < end; ) {
 			const header = words[i] as number;
@@ -362,21 +498,24 @@ export class WebGPUBackend {
 					const id = words[a] as number;
 					const imageId = words[a + 7] as number;
 					const flags = words[a + 8] as number;
-					const image = this.need(this.images, imageId, 'image');
+					const image = this.images.need(imageId);
 					const width = words[a + 5] as number;
 					const height = words[a + 6] as number;
 					copy.setDestination(this.need(this.textures, id, 'texture'), words, a);
 					copy.destination.premultipliedAlpha = (flags & G.UPLOAD_PREMULTIPLIED_ALPHA) !== 0;
-					copy.image.source = image;
+					copy.setImage(image, words[a + 9] as number, words[a + 10] as number);
 					copy.setSize(width, height, 1);
 					device.queue.copyExternalImageToTexture(copy.image, copy.destination, copy.size);
 					this.counts.uploadBytes += width * height * this.texelBytes(id);
-					if (flags & G.UPLOAD_RELEASE) {
-						image.close();
-						this.images[imageId] = undefined;
-					}
+					if (flags & G.UPLOAD_RELEASE) this.images.release(imageId);
 					break;
 				}
+				case G.OP_RELEASE_IMAGE:
+					this.images.release(words[a] as number);
+					break;
+				case G.OP_GENERATE_MIPMAPS:
+					this.generateMipmaps(words[a] as number, words[a + 1] as number);
+					break;
 				case G.OP_COPY_TEXTURE_TO_TEXTURE: {
 					const copy = this.copy;
 					copy.setSource(this.need(this.textures, words[a] as number, 'texture'), words, a);
@@ -406,22 +545,9 @@ export class WebGPUBackend {
 					this.releaseTexture(words[a] as number);
 					break;
 				case G.OP_CREATE_RENDER_PIPELINE:
-					this.counts.pipelines++;
-					this.renderPipelines[words[a] as number] = this.pipelines.render(
-						words[a + 1] as number,
-						words[a + 2] as number,
-						this.format(words[a + 3] as number),
-						this.format(words[a + 4] as number),
-						words[a + 5] as number,
-						words[a + 6] as number,
-						words[a + 7] as number,
-					);
-					break;
 				case G.OP_CREATE_COMPUTE_PIPELINE:
-					this.counts.pipelines++;
-					this.computePipelines[words[a] as number] = this.pipelines.compute(
-						words[a + 1] as number,
-					);
+					// A list that creates a pipeline after other commands builds it at once.
+					this.createPipeline(op, words, a, false);
 					break;
 				case G.OP_CREATE_BIND_GROUP: {
 					const layout = this.pipelines.layout(words[a + 1] as number);
@@ -475,6 +601,7 @@ export class WebGPUBackend {
 					);
 					setup.setTimestampWrites(this.timer?.passWrites(true));
 					pass = this.commandEncoder().beginRenderPass(setup.descriptor);
+					this.skipDraws = false;
 					break;
 				}
 				case G.OP_SET_VIEWPORT:
@@ -532,13 +659,16 @@ export class WebGPUBackend {
 				case G.OP_BEGIN_COMPUTE_PASS:
 					this.computePass.timestampWrites = this.timer?.passWrites(false);
 					computePass = this.commandEncoder().beginComputePass(this.computePass);
+					this.skipDispatches = false;
 					break;
-				case G.OP_SET_COMPUTE_PIPELINE:
-					computePass?.setPipeline(
-						this.need(this.computePipelines, words[a] as number, 'compute pipeline'),
-					);
+				case G.OP_SET_COMPUTE_PIPELINE: {
+					const pipeline = this.need(this.computePipelines, words[a] as number, 'compute pipeline');
+					this.skipDispatches = pipeline === null;
+					if (pipeline) computePass?.setPipeline(pipeline);
 					break;
+				}
 				case G.OP_DISPATCH:
+					if (this.skipDispatches) break;
 					this.counts.dispatches++;
 					computePass?.dispatchWorkgroups(
 						words[a] as number,
@@ -592,9 +722,12 @@ export class WebGPUBackend {
 		pass: GPURenderPassEncoder,
 	): boolean {
 		switch (op) {
-			case G.OP_SET_PIPELINE:
-				pass.setPipeline(this.need(this.renderPipelines, words[a] as number, 'render pipeline'));
+			case G.OP_SET_PIPELINE: {
+				const pipeline = this.need(this.renderPipelines, words[a] as number, 'render pipeline');
+				this.skipDraws = pipeline === null;
+				if (pipeline) pass.setPipeline(pipeline);
 				return true;
+			}
 			case G.OP_SET_BIND_GROUP:
 				this.setBindGroup(pass, words, a);
 				return true;
@@ -619,6 +752,7 @@ export class WebGPUBackend {
 				return true;
 			}
 			case G.OP_DRAW:
+				if (this.skipDraws) return true;
 				this.counts.drawCalls++;
 				pass.draw(
 					words[a] as number,
@@ -628,6 +762,7 @@ export class WebGPUBackend {
 				);
 				return true;
 			case G.OP_DRAW_INDEXED:
+				if (this.skipDraws) return true;
 				this.counts.drawCalls++;
 				pass.drawIndexed(
 					words[a] as number,
@@ -638,6 +773,7 @@ export class WebGPUBackend {
 				);
 				return true;
 			case G.OP_DRAW_INDEXED_INDIRECT:
+				if (this.skipDraws) return true;
 				this.counts.drawCalls++;
 				pass.drawIndexedIndirect(
 					this.need(this.buffers, words[a] as number, 'buffer'),
@@ -667,7 +803,7 @@ export class WebGPUBackend {
 	destroy(): void {
 		for (const buffer of this.buffers) buffer?.destroy();
 		for (const texture of this.textures) texture?.destroy();
-		for (const image of this.images) image?.close();
+		if (this.ownsImages) this.images.clear();
 		this.staging.destroy();
 	}
 }

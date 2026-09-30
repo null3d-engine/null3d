@@ -1,7 +1,9 @@
 // What tools read from a page in the browser: the result that the engine's hold mode publishes on
-// the window, other values that a page publishes, and the errors and warnings that the page logs.
+// the window, the engine that the bench switch publishes, other values that a page publishes, and
+// the errors and warnings that the page logs.
 
 /** @import { ConsoleMessage, JSHandle, Page } from 'playwright-core' */
+/** @import { RgbaImage } from './png.js' */
 
 /**
  * The GPU tiers that the `?gpu=` switch forces: core WebGPU, WebGPU in compatibility mode, and
@@ -13,16 +15,55 @@ export const TIERS = ['webgpu', 'compat', 'webgl2'];
 
 /** @typedef {(typeof TIERS)[number]} Tier */
 
+/**
+ * The tier that the engine reports for each value of the `?gpu=` switch.
+ *
+ * @type {Readonly<Record<Tier, string>>}
+ */
+export const REPORTED_TIERS = { webgpu: 'webgpu', compat: 'webgpu-compat', webgl2: 'webgl2' };
+
 /** The global that hold mode publishes its result in. */
 export const HOLD_RESULT = '__null3dHold';
 
 /**
- * Hold mode's result as a tool reads it: the engine's own, with the pixels as base64.
+ * Hold mode's result as a tool reads it: the engine's own, with the pixels as base64. The held
+ * frame's figures take the form of the engine's frame summary, whose per-frame figures summarize
+ * the one held frame.
  *
  * @typedef {HeldReport | HoldFailure} HoldReport
- * @typedef {{ ok: true, time: number, frame: number, tier: string, width: number, height: number, pixels: string }} HeldReport
+ * @typedef {{ ok: true, time: number, frame: number, tier: string, width: number, height: number, pixels: string, stats?: HeldStats }} HeldReport
  * @typedef {{ ok: false, code: string | null, error: string }} HoldFailure
+ * @typedef {{ drawCalls: { median: number }, uploadBytes: { median: number }, pipelines: number } & Record<string, unknown>} HeldStats
  */
+
+/** The global where the engine's `?bench` switch publishes the running engine. */
+export const ENGINE_GLOBAL = '__null3dEngine';
+
+/**
+ * A page's path with engine switches added to its own query: each switch with its value, or bare
+ * for an empty value. A switch without a value is left out.
+ *
+ * @param {string} path
+ * @param {Record<string, string | undefined>} switches
+ */
+export function switchedPath(path, switches) {
+	const url = new URL(path, 'http://localhost');
+	for (const [name, value] of Object.entries(switches))
+		if (value !== undefined) url.searchParams.set(name, value);
+	return `${url.pathname}${url.search}`;
+}
+
+/**
+ * The image of a held frame, with its pixels as bytes.
+ *
+ * @param {HeldReport} held
+ * @returns {RgbaImage}
+ */
+export const heldImage = ({ width, height, pixels }) => ({
+	width,
+	height,
+	data: new Uint8Array(Buffer.from(pixels, 'base64')),
+});
 
 /**
  * A page's path with hold mode's switches: the sketch time to hold at, or without a time a bare
@@ -31,12 +72,8 @@ export const HOLD_RESULT = '__null3dHold';
  * @param {string} path
  * @param {{ time?: number, gpu?: Tier }} switches
  */
-export function holdPath(path, { time, gpu } = {}) {
-	const url = new URL(path, 'http://localhost');
-	url.searchParams.set('hold', time === undefined ? '' : String(time));
-	if (gpu !== undefined) url.searchParams.set('gpu', gpu);
-	return `${url.pathname}${url.search}`;
-}
+export const holdPath = (path, { time, gpu } = {}) =>
+	switchedPath(path, { hold: time === undefined ? '' : String(time), gpu });
 
 /**
  * Waits until the page's window holds a value under `name`, and returns a handle to it.

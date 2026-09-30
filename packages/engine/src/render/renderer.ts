@@ -2,7 +2,7 @@
 // worker (low-latency mode) or on the page's main thread (single-threaded mode and ?render=main).
 
 import { FORMAT_RG11B10_UFLOAT } from '../generated/gpu';
-import { type CompletionSignal, FenceCompletion, QueueCompletion } from '../gpu/completion';
+import { type Completion, FenceCompletion, QueueCompletion } from '../gpu/completion';
 import { readbackWebGL2, readbackWebGPU } from '../gpu/readback';
 import {
 	contextFinished,
@@ -14,17 +14,13 @@ import { GpuTimer } from '../gpu/webgpu/gpu-timer';
 import { RenderPassSetup, submitOne } from '../gpu/webgpu/reusable';
 import type { PowerPreference } from '../page/capabilities';
 import type { CoreDevice } from '../page/limits';
+import type { ImageTable } from '../shared/images';
 import { type FrameRecorder, Phase } from '../shared/metrics';
+import type { Tier } from '../shared/tier';
 import { contextLoss, contextRestored, deviceLoss } from './loss';
 import { WebGL2SceneRenderer, WebGPUSceneRenderer } from './scene-renderer';
 
-/**
- * The GPU path the engine draws with: core WebGPU, WebGPU in compatibility mode on devices that
- * cannot run core WebGPU, or WebGL2.
- *
- * @category api/engine
- */
-export type Tier = 'webgpu' | 'webgpu-compat' | 'webgl2';
+export type { Tier } from '../shared/tier';
 
 export type RenderCanvas = OffscreenCanvas | HTMLCanvasElement;
 
@@ -38,10 +34,22 @@ export interface FrameInput {
 
 export interface Renderer {
 	readonly tier: Tier;
-	/** How the renderer learns that the GPU finished a frame, which it counts while the page measures. */
-	readonly completion: CompletionSignal;
+	/**
+	 * Counts the frames that the GPU finished, and says how many it has not; undefined without a
+	 * metrics buffer.
+	 */
+	readonly completions: Completion | undefined;
 	/** Resizes the drawing buffer, in device pixels. Only the thread that owns the canvas calls this. */
 	resize(width: number, height: number): void;
+	/**
+	 * Starts to build the pipelines that a frame's list creates, the first time it is asked for that
+	 * frame, and returns true when the frame may draw. Until the renderer has drawn a frame with
+	 * every pipeline built, a frame waits for its pipelines. After that, a frame draws at once, and
+	 * objects whose pipelines are still building appear once they are built.
+	 */
+	prepare(frame: number): boolean;
+	/** True while a pipeline is building. */
+	readonly building: boolean;
 	/** Draws a frame to the canvas, adding its phase times and counters to the frame's record. */
 	drawFrame(input: FrameInput, record: FrameRecorder): void;
 	/** Draws one frame into an offscreen target and returns its pixels as RGBA8 rows, top row first. */
@@ -73,6 +81,8 @@ export interface RendererOptions {
 	 * lists the sketch thread records; without them it clears to the frame's background.
 	 */
 	scene?: { memory: WebAssembly.Memory; control: ArrayBufferLike };
+	/** The images that texture uploads read, which the thread keeps across GPU devices. */
+	imageTable?: ImageTable;
 }
 
 /** WebGPU's default `maxBufferSize`, which every device offers. */
@@ -88,9 +98,8 @@ class WebGPURenderer implements Renderer {
 	private readonly format: GPUTextureFormat;
 	private readonly timer: GpuTimer | undefined;
 	private readonly pass = new RenderPassSetup();
-	private readonly completions: QueueCompletion | undefined;
+	readonly completions: QueueCompletion | undefined;
 	private simulated = false;
-	readonly completion: CompletionSignal = 'queue';
 	readonly lost: Promise<string>;
 
 	constructor(
@@ -135,6 +144,12 @@ class WebGPURenderer implements Renderer {
 		this.timer?.afterSubmit();
 	}
 
+	prepare(): boolean {
+		return true;
+	}
+
+	readonly building = false;
+
 	drawFrame(input: FrameInput, record: FrameRecorder): void {
 		const start = performance.now();
 		this.timer?.beginFrame(input.frame);
@@ -174,8 +189,7 @@ class WebGPURenderer implements Renderer {
 
 class WebGL2Renderer implements Renderer {
 	readonly tier: Tier = 'webgl2';
-	readonly completion: CompletionSignal = 'fence';
-	private readonly completions: FenceCompletion | undefined;
+	readonly completions: FenceCompletion | undefined;
 	private readonly release = new AbortController();
 	readonly lost: Promise<string>;
 
@@ -205,9 +219,14 @@ class WebGL2Renderer implements Renderer {
 		gl.clear(gl.COLOR_BUFFER_BIT);
 	}
 
+	prepare(): boolean {
+		return true;
+	}
+
+	readonly building = false;
+
 	drawFrame(input: FrameInput, record: FrameRecorder): void {
 		const start = performance.now();
-		this.completions?.poll();
 		this.clear(input.background);
 		this.completions?.afterSubmit(input.frame);
 		record.addPhase(Phase.Replay, performance.now() - start);
@@ -253,6 +272,7 @@ export async function createRenderer(
 				options.scene.control,
 				options.metrics,
 				engineDevice,
+				options.imageTable,
 			);
 		return new WebGL2Renderer(canvas, gl, options.metrics);
 	}
@@ -286,6 +306,7 @@ export async function createRenderer(
 			options.scene.memory,
 			options.scene.control,
 			options.metrics,
+			options.imageTable,
 			engineDevice.transparent,
 		);
 	return new WebGPURenderer(tier, device, canvas, options.metrics);

@@ -1,29 +1,39 @@
 // Standard bind group layouts and the render pipeline templates. Every render pipeline shares the
 // layouts of its template's groups, so switching pipelines never forces a rebind of the per-frame
 // group. The engine defines its own layouts and templates, and a page can add more, as the texture
-// test page does.
+// test page does. Only development builds define the template of the debug lines, so release builds
+// hold none of its code.
 
 import {
 	LAYOUT_CULL,
 	LAYOUT_FINAL,
 	LAYOUT_FRAME,
+	LAYOUT_TEXTURES,
 	SIZE_INSTANCE_STRIDE,
 	STATE_CULL_NONE,
+	STATE_LINE_LIST,
 	TEMPLATE_CULL,
+	TEMPLATE_DEBUG_LINES,
 	TEMPLATE_FINAL,
 	TEMPLATE_INSTANCED_LIT,
 	TEMPLATE_INSTANCED_TEXCOORDS,
 	TEMPLATE_INSTANCED_UNLIT,
+	TEMPLATE_INSTANCED_UNLIT_MAP,
 	VERTEX_INSTANCE_LOCATION,
 } from '../../generated/gpu';
 import {
 	CULL_SHADER,
+	DEBUG_LINES_SHADER,
 	FINAL_SHADER,
 	LIT_SHADER,
+	MIPMAP_SHADER,
 	TEXCOORDS_SHADER,
+	UNLIT_MAP_SHADER,
 	UNLIT_SHADER,
 	type WgslShader,
 } from '../../generated/shaders';
+import { DEV } from '../dev';
+import { LINE_VERTICES } from '../line-vertices';
 import { type ShaderVariants, variantFor } from '../variants';
 import { vertexAttribute, vertexStride } from '../vertex-format';
 
@@ -58,6 +68,7 @@ export interface RenderTemplate {
 }
 
 const CULL = wgslOf(CULL_SHADER.webgpu);
+const MIPMAP = wgslOf(MIPMAP_SHADER.webgpu);
 /** The culling shader's compute entry point. */
 const CULL_ENTRY_POINT = 'main';
 
@@ -112,15 +123,22 @@ export class Pipelines {
 	private readonly pipelineLayouts: (GPUPipelineLayout | undefined)[] = [];
 	private readonly cullLayout: GPUPipelineLayout;
 	private readonly modules = new Map<WgslShader, GPUShaderModule>();
+	/** The pipelines that make mip levels, by the format they draw. */
+	private readonly mipPipelines = new Map<GPUTextureFormat, GPURenderPipeline>();
 
 	constructor(private readonly device: GPUDevice) {
+		const fragment = GPUShaderStage.FRAGMENT;
 		this.defineLayout(LAYOUT_FRAME, 'frame', [
 			{
 				binding: 0,
-				visibility: GPUShaderStage.VERTEX | GPUShaderStage.FRAGMENT,
+				visibility: GPUShaderStage.VERTEX | fragment,
 				buffer: { type: 'uniform' },
 			},
-			{ binding: 1, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'read-only-storage' } },
+			{ binding: 1, visibility: fragment, buffer: { type: 'read-only-storage' } },
+		]);
+		this.defineLayout(LAYOUT_TEXTURES, 'textures', [
+			{ binding: 0, visibility: fragment, texture: { viewDimension: '2d-array' } },
+			{ binding: 1, visibility: fragment, sampler: {} },
 		]);
 		this.defineLayout(LAYOUT_CULL, 'cull', [
 			{ binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
@@ -140,16 +158,23 @@ export class Pipelines {
 				texture: { sampleType: 'unfilterable-float', viewDimension: '2d' },
 			},
 		]);
-		for (const [id, label, shader, meshLocations] of [
-			[TEMPLATE_INSTANCED_LIT, 'lit', LIT_SHADER, [0, 1]],
-			[TEMPLATE_INSTANCED_UNLIT, 'unlit', UNLIT_SHADER, [0]],
-			[TEMPLATE_INSTANCED_TEXCOORDS, 'texcoords', TEXCOORDS_SHADER, [0, 2]],
+		for (const [id, label, shader, meshLocations, layouts] of [
+			[TEMPLATE_INSTANCED_LIT, 'lit', LIT_SHADER, [0, 1], [LAYOUT_FRAME]],
+			[TEMPLATE_INSTANCED_UNLIT, 'unlit', UNLIT_SHADER, [0], [LAYOUT_FRAME]],
+			[TEMPLATE_INSTANCED_TEXCOORDS, 'texcoords', TEXCOORDS_SHADER, [0, 2], [LAYOUT_FRAME]],
+			[
+				TEMPLATE_INSTANCED_UNLIT_MAP,
+				'unlit map',
+				UNLIT_MAP_SHADER,
+				[0, 2],
+				[LAYOUT_FRAME, LAYOUT_TEXTURES],
+			],
 		] as const) {
 			this.defineTemplate(id, {
 				label: `mesh ${label}`,
 				shader,
 				pipeline: 'main',
-				layouts: [LAYOUT_FRAME],
+				layouts,
 				meshLocations,
 				vertexBuffers: INSTANCE_BUFFERS,
 			});
@@ -161,6 +186,14 @@ export class Pipelines {
 			layouts: [LAYOUT_FINAL],
 			vertexBuffers: [],
 		});
+		if (DEV)
+			this.defineTemplate(TEMPLATE_DEBUG_LINES, {
+				label: 'debug lines',
+				shader: DEBUG_LINES_SHADER,
+				pipeline: 'main',
+				layouts: [LAYOUT_FRAME],
+				vertexBuffers: [LINE_VERTICES],
+			});
 		this.cullLayout = device.createPipelineLayout({ bindGroupLayouts: [this.layout(LAYOUT_CULL)] });
 	}
 
@@ -194,9 +227,9 @@ export class Pipelines {
 	}
 
 	/**
-	 * A render pipeline of a template, in the shader variant that its permutation bits pick, for
-	 * meshes of a vertex format where the template draws meshes. Without a color format it draws
-	 * depth only.
+	 * How to build a render pipeline of a template, in the shader variant that its permutation bits
+	 * pick, for meshes of a vertex format where the template draws meshes. Without a color format it
+	 * draws depth only.
 	 */
 	render(
 		template: number,
@@ -206,7 +239,7 @@ export class Pipelines {
 		sampleCount: number,
 		stateFlags: number,
 		vertexFormat: number,
-	): GPURenderPipeline {
+	): GPURenderPipelineDescriptor {
 		const t = this.templates[template];
 		if (!t) throw new Error(`unknown render template ${template}`);
 		const shader = variantFor(t.shader, permutation, 'wgsl')?.wgsl;
@@ -222,7 +255,7 @@ export class Pipelines {
 			});
 			this.pipelineLayouts[template] = layout;
 		}
-		return this.device.createRenderPipeline({
+		return {
 			label: t.label,
 			layout,
 			vertex: {
@@ -234,7 +267,7 @@ export class Pipelines {
 				? { module, entryPoint: entryPoints?.fragment, targets: [{ format: colorFormat }] }
 				: undefined,
 			primitive: {
-				topology: 'triangle-list',
+				topology: stateFlags & STATE_LINE_LIST ? 'line-list' : 'triangle-list',
 				cullMode: stateFlags & STATE_CULL_NONE ? 'none' : 'back',
 				frontFace: 'ccw',
 			},
@@ -243,15 +276,33 @@ export class Pipelines {
 				? { format: depthFormat, depthWriteEnabled: true, depthCompare: 'greater' }
 				: undefined,
 			multisample: { count: sampleCount },
-		});
+		};
 	}
 
-	compute(template: number): GPUComputePipeline {
+	/** The pipeline that makes mip levels of textures of `format`, made at its first use. */
+	mipmaps(format: GPUTextureFormat): GPURenderPipeline {
+		let pipeline = this.mipPipelines.get(format);
+		if (!pipeline) {
+			const module = this.module('mipmaps', MIPMAP);
+			const entryPoints = MIPMAP.pipelines.main;
+			pipeline = this.device.createRenderPipeline({
+				label: 'mipmaps',
+				layout: 'auto',
+				vertex: { module, entryPoint: entryPoints?.vertex },
+				fragment: { module, entryPoint: entryPoints?.fragment, targets: [{ format }] },
+			});
+			this.mipPipelines.set(format, pipeline);
+		}
+		return pipeline;
+	}
+
+	/** How to build a compute pipeline of a template. */
+	compute(template: number): GPUComputePipelineDescriptor {
 		if (template !== TEMPLATE_CULL) throw new Error(`unknown compute template ${template}`);
-		return this.device.createComputePipeline({
+		return {
 			label: 'cull',
 			layout: this.cullLayout,
 			compute: { module: this.module('cull', CULL), entryPoint: CULL_ENTRY_POINT },
-		});
+		};
 	}
 }

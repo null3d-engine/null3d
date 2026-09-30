@@ -1,21 +1,33 @@
-// createEngine: the page side of the engine. It probes the device, picks the build and the GPU tier,
-// starts the workers, and hands the canvas to the thread that draws. The page loads the renderer
-// only when it draws itself, and the sketch runner and the scene API only when it runs the sketch
-// itself.
+// createEngine: the page side of the engine. It probes the device, picks the build, the GPU tier
+// and the quality preset, starts the workers, and hands the canvas to the thread that draws. The
+// page loads the renderer only when it draws itself, and the sketch runner and the scene API only
+// when it runs the sketch itself.
 
 import { EngineError, isErrorCode, setErrorFixes } from '../errors/engine-error';
 import { ERROR_FIXES } from '../errors/fixes';
 import { messageOf } from '../errors/message';
 import { FORMAT_CANVAS } from '../generated/gpu';
+import { choosePreset, crashTier, memoryPreset, type PresetRequest } from '../quality/chooser';
+import {
+	checkSettings,
+	presetOption,
+	presetSettings,
+	presetValue,
+	type QualityPreset,
+	type QualitySettings,
+} from '../quality/presets';
+import type { DrawingSetup } from '../render/draw';
 import { type DrawModule, loadDrawModule } from '../render/load-draw';
 import type { Drawing } from '../render/recovery';
 import type { Renderer, Tier } from '../render/renderer';
 import { awaitLater } from '../shared/await-later';
 import { controlViews, createControlBuffer, Slot } from '../shared/control';
-import { type Build, type CoreGlue, startCore } from '../shared/core';
+import { type Build, type CoreGlue, loadGlue, startCore } from '../shared/core';
+import { ImageTable, sendToTable } from '../shared/images';
 import { KEY_CODES } from '../shared/key-codes';
 import { createMetricsBuffer, MetricsReader } from '../shared/metrics';
 import { loadSketch } from '../sketch/define-sketch';
+import type { QualityStart } from '../sketch/quality';
 import type { SketchRunner } from '../sketch/runner';
 import type {
 	CapturedFrame,
@@ -26,7 +38,12 @@ import type {
 } from '../workers/protocol';
 import { abortable } from './abortable';
 import { watchCanvas } from './canvas-watch';
-import { type CapabilityReport, type PowerPreference, probeCapabilities } from './capabilities';
+import {
+	type CapabilityReport,
+	type PowerPreference,
+	probeCapabilities,
+	readDeviceHints,
+} from './capabilities';
 import { watchDisplay } from './display';
 import {
 	type FrameMetrics,
@@ -41,6 +58,7 @@ import { antialiasOption, coreDevice, maxInstances } from './limits';
 import { loadCore, memoryMaximumMiB } from './loader';
 import { MainThreadWatch } from './main-thread';
 import { watchPreferences } from './preferences';
+import { NO_HISTORY, StartMarker } from './start-marker';
 import {
 	type DepthMode,
 	type GpuSwitch,
@@ -59,7 +77,17 @@ export interface EngineOptions {
 	canvas: HTMLCanvasElement;
 	/** The sketch module, which runs in the sketch worker; `new URL('./sketch.ts', import.meta.url)`. */
 	sketch: URL | string;
-	/** Cap for the device pixel ratio. */
+	/**
+	 * The quality preset: `auto`, the default, lets the engine choose one for the device, and
+	 * `low`, `medium`, `high` or `ultra` names one. The GPU path caps it: WebGL2 and WebGPU's
+	 * compatibility mode run at most `medium`. After a start that crashed the tab, the engine starts
+	 * a preset lower. Another value fails with E1213. The `?preset=` switch wins over it.
+	 */
+	preset?: 'auto' | QualityPreset;
+	/**
+	 * Cap for the device pixel ratio, a number from 0.5 up. Without it, the quality preset sets the
+	 * cap. `ctx.quality.set` changes it during play.
+	 */
 	maxPixelRatio?: number;
 	/** Forces a GPU tier, for testing only. */
 	gpu?: 'auto' | 'webgpu' | 'webgl2';
@@ -184,6 +212,19 @@ export interface EngineMode {
 	jobWorkers: number;
 	/** The sketch time in seconds that hold mode holds the sketch at, or null for a live engine. */
 	hold: number | null;
+	/** The quality preset that the engine runs. */
+	preset: QualityPreset;
+	/**
+	 * The starts of this sketch before this one that crashed the tab, one after another, as the
+	 * engine's note in `localStorage` records them. After one, the engine starts a preset lower, and
+	 * after two at `low`.
+	 */
+	crashedStarts: number;
+	/**
+	 * The shared memory's maximum in MiB, or null for the single-threaded build, whose memory is not
+	 * shared.
+	 */
+	memoryMaximumMiB: number | null;
 }
 
 /**
@@ -258,7 +299,8 @@ export interface Engine {
 	destroy(): Promise<void>;
 }
 
-const DEFAULT_MAX_PIXEL_RATIO = 2;
+/** The global where the `?bench` switch publishes the running engine. */
+const BENCH_GLOBAL = '__null3dEngine';
 /** The GPU the engine asks for on a device with two: the faster one. */
 const DEFAULT_POWER_PREFERENCE: PowerPreference = 'high-performance';
 /** Logical cores kept free of job workers: one for the sketch worker, one for the render worker. */
@@ -331,7 +373,17 @@ const SIMD_PROBE = new Uint8Array([
 	253, 98, 11,
 ]);
 
-/** A worker whose replies are routed: sketch messages to handlers, answers to the oldest request. */
+/** What the page does with the replies of a worker that answer no request. */
+interface WorkerEvents {
+	/** A message that the sketch sent with `ctx.page.post`. */
+	sketchMessage(name: string, data: unknown): void;
+	/** A failure after the engine started. */
+	failure(error: EngineError): void;
+	/** The quality settings after the sketch changed them. */
+	quality(settings: QualitySettings): void;
+}
+
+/** A worker whose replies are routed: events to the page's handlers, answers to the oldest request. */
 class EngineWorker {
 	private readonly waiting: Pending[] = [];
 	private readyPromise: Promise<WorkerReply>;
@@ -341,8 +393,7 @@ class EngineWorker {
 	constructor(
 		readonly worker: Worker,
 		role: string,
-		onSketchMessage: (name: string, data: unknown) => void,
-		onFailure: (error: EngineError) => void,
+		events: WorkerEvents,
 	) {
 		this.readyPromise = new Promise((resolve, reject) => {
 			this.waiting.push({ resolve, reject });
@@ -360,11 +411,15 @@ class EngineWorker {
 		worker.onmessage = (event: MessageEvent<WorkerReply>) => {
 			const reply = event.data;
 			if (reply.type === 'sketch-message') {
-				onSketchMessage(reply.name, reply.data);
+				events.sketchMessage(reply.name, reply.data);
+				return;
+			}
+			if (reply.type === 'quality') {
+				events.quality(reply.settings);
 				return;
 			}
 			if (reply.type === 'lost') {
-				onFailure(
+				events.failure(
 					new EngineError('E1302', `the ${reply.role} worker lost its GPU: ${reply.reason}.`),
 				);
 				return;
@@ -381,7 +436,7 @@ class EngineWorker {
 			const message = event.message || 'a worker failed';
 			this.waiting.shift()?.reject(startError(role, message));
 			if (this.started)
-				onFailure(new EngineError('E1404', `the ${role} worker failed: ${message}.`));
+				events.failure(new EngineError('E1404', `the ${role} worker failed: ${message}.`));
 		};
 	}
 
@@ -419,11 +474,90 @@ async function stopWorkers(workers: readonly EngineWorker[], jobs: readonly Engi
 	for (const w of workers) w.worker.terminate();
 }
 
+/** The engine's workers, which the page starts before the core has compiled. */
+interface EngineWorkers {
+	sketch: EngineWorker;
+	/** The render worker, in the mode where it draws. */
+	render: EngineWorker | undefined;
+	jobs: EngineWorker[];
+}
+
+/** Every worker of a set, in the order the page stops them. */
+function allWorkers(workers: EngineWorkers | undefined): EngineWorker[] {
+	if (!workers) return [];
+	return [workers.sketch, ...(workers.render ? [workers.render] : []), ...workers.jobs];
+}
+
+/**
+ * Starts the engine's workers: the sketch worker, the render worker when it draws, and the job
+ * workers. The page starts them before the core has compiled, so their scripts and the core's loader
+ * download while the core does. Each worker waits for its start message, which carries the core. A
+ * job worker that fails to start is reported as a failure of the running engine, and never holds up
+ * the start.
+ */
+function startWorkers(
+	renderWorker: boolean,
+	jobWorkers: number,
+	slots: Int32Array,
+	events: WorkerEvents,
+): EngineWorkers {
+	const sketch = new EngineWorker(
+		new Worker(new URL('../workers/sketch-worker.ts', import.meta.url), {
+			type: 'module',
+			name: 'null3d-sketch',
+		}),
+		'sketch',
+		events,
+	);
+	const render = renderWorker
+		? new EngineWorker(
+				new Worker(new URL('../workers/render-worker.ts', import.meta.url), {
+					type: 'module',
+					name: 'null3d-render',
+				}),
+				'render',
+				events,
+			)
+		: undefined;
+	const jobs = Array.from({ length: jobWorkers }, (_, index) => {
+		const job = new EngineWorker(
+			new Worker(new URL('../workers/job-worker.ts', import.meta.url), {
+				type: 'module',
+				name: `null3d-job-${index}`,
+			}),
+			`job ${index}`,
+			events,
+		);
+		// Job workers join the job system as each becomes ready: until then the sketch thread and the
+		// job workers already running take every chunk, so no frame waits for them.
+		job.ready().catch((error: unknown) => {
+			if (Atomics.load(slots, Slot.Running) !== 0)
+				events.failure(
+					error instanceof EngineError ? error : startError(`job ${index}`, String(error)),
+				);
+		});
+		return job;
+	});
+	return { sketch, render, jobs };
+}
+
+/**
+ * Downloads a file into the browser's cache, for a worker that imports it later. A host that lets
+ * the browser keep build files, as the null3D Vite plugin asks, then saves the worker a round trip.
+ * A failed download only loses that head start: the worker's own import reports the failure.
+ */
+function prefetch(url: string): void {
+	fetch(url)
+		.then((response) => response.arrayBuffer())
+		.catch(() => {});
+}
+
 /**
  * Starts the engine on the page. It tests the device, picks the build and the GPU path, starts the
  * workers, and runs the sketch module. In hold mode it also steps the sketch to the held time, then
  * draws that frame and reads it back. It publishes the frame, or the error that stopped it, as
- * `window.__null3dHold` for test tools.
+ * `window.__null3dHold` for test tools. With the `?bench` switch, it publishes the running engine
+ * as `window.__null3dEngine`, where a benchmark tool calls `measure`.
  *
  * @category api/engine
  */
@@ -455,8 +589,26 @@ async function startEngine(
 	const startedAt = performance.now();
 	const { signal, onProgress } = options;
 	signal?.throwIfAborted();
-	const maximumMiB = memoryMaximumMiB(options.memory?.maximumMiB, switches.memoryMiB);
-	const antialias = antialiasOption(options.antialias);
+	const pageUrl = globalThis.location?.href;
+	const sketchUrl = new URL(options.sketch, pageUrl).href;
+	// The quality preset follows the device hints and the crash marker, which the page has at once,
+	// so its memory maximum is known before the core loads. Hold mode and the ?preset= switch fix
+	// the preset for tests, so they neither read nor write the marker.
+	const marker =
+		hold === undefined && switches.preset === undefined ? new StartMarker(sketchUrl) : undefined;
+	const history = marker?.read() ?? NO_HISTORY;
+	const optionPreset = presetOption(options.preset);
+	checkSettings('createEngine()', { maxPixelRatio: options.maxPixelRatio });
+	const presetRequest: PresetRequest = {
+		wanted: switches.preset ?? optionPreset,
+		hints: readDeviceHints(),
+		crashedStarts: history.crashed,
+	};
+	const maximumMiB = memoryMaximumMiB(
+		options.memory?.maximumMiB,
+		switches.memoryMiB,
+		presetValue('memoryMaximumMiB', memoryPreset(presetRequest)),
+	);
 	// Checked before any download, so an old browser learns at once why the engine cannot run.
 	if (!WebAssembly.validate(SIMD_PROBE))
 		throw new EngineError('E1303', 'this browser runs WebAssembly without SIMD.');
@@ -475,86 +627,16 @@ async function startEngine(
 			return loaded;
 		}),
 	);
-	const sketchUrl = new URL(options.sketch, globalThis.location?.href).href;
-	// The page runs the sketch itself only in single-threaded mode. It needs the sketch runner and
-	// the sketch module right after the core, so both download while the core does: a later start
-	// delays the first frame on a slow network. The sketch module's top-level code then runs when the
-	// module arrives. Hold mode loads the module once the runner has seeded the thread's random
-	// numbers, so that code draws the same numbers on every run.
+	// The page runs the sketch itself only in single-threaded mode. It needs the core's loader, the
+	// sketch runner and the sketch module right after the core, so they download while the core does:
+	// each later start delays the first frame by a round trip on a slow network. The sketch module's
+	// top-level code then runs when the module arrives. Hold mode loads the module once the runner
+	// has seeded the thread's random numbers, so that code draws the same numbers on every run.
+	if (latency === 'single') void awaitLater(loadGlue('single'));
 	const runnerModule = latency === 'single' ? loadRunnerModule() : undefined;
 	const sketchModule =
 		latency === 'single' && hold === undefined ? awaitLater(loadSketch(sketchUrl)) : undefined;
 	const powerPreference = options.powerPreference ?? DEFAULT_POWER_PREFERENCE;
-	const report = await abortable(probeCapabilities(powerPreference), signal);
-	const probeMs = performance.now() - startedAt;
-	const wanted = switches.gpu !== 'auto' ? switches.gpu : (options.gpu ?? 'auto');
-
-	let renderThread: EngineMode['renderThread'] =
-		latency === 'single' || switches.renderOnMain
-			? 'main'
-			: latency === 'low'
-				? 'sketch-worker'
-				: 'render-worker';
-	let choice = chooseTier(report, wanted, renderThread !== 'main');
-	if (!choice && renderThread === 'render-worker') {
-		// Worker rendering is unavailable here, so the page draws while the sketch worker computes.
-		renderThread = 'main';
-		choice = chooseTier(report, wanted, false);
-	}
-	if (!choice)
-		throw new EngineError('E1301', `no usable GPU path for ?gpu=${wanted} in this browser.`);
-	const { tier, forceCompat } = choice;
-	// What the thread that draws needs besides its canvas, whichever thread that is.
-	const rendererSetup: Omit<RendererSetup, 'canvas'> = {
-		tier,
-		forceCompat,
-		powerPreference,
-		fps: switches.fps,
-		hold: hold !== undefined,
-	};
-
-	const jobWorkers = threaded
-		? (switches.jobs ?? Math.max(1, report.hardwareConcurrency - RESERVED_CORES))
-		: 0;
-	const control = createControlBuffer(threaded);
-	const metrics = createMetricsBuffer(threaded, jobWorkers);
-	const views = controlViews(control);
-	const { slots } = views;
-	Atomics.store(slots, Slot.Running, 1);
-	const core = await abortable(coreLoad, signal);
-	onProgress?.('core');
-	// A page that draws loads the renderer after the core, whose download it would slow on a slow
-	// network, and while the page starts the core and the sketch.
-	const drawModule = renderThread === 'main' ? loadDrawModule() : undefined;
-	let wasmMemory = core.memory;
-	const device = coreDevice(tier, report, {
-		...switches,
-		antialias,
-		transparent: options.transparent === true,
-	});
-	const handoff: CoreHandoff = {
-		build,
-		module: core.module,
-		memory: core.memory,
-		control,
-		metrics,
-		device,
-		errorFixes: ERROR_FIXES,
-	};
-	const canvasWatch = watchCanvas(
-		options.canvas,
-		control,
-		options.maxPixelRatio ?? DEFAULT_MAX_PIXEL_RATIO,
-	);
-	canvasWatch.listen(true);
-	// Hold mode keeps input out, so a held frame never depends on it.
-	const takesInput = hold === undefined;
-	const input = captureInput(options.canvas, control);
-	input.listen(takesInput);
-	const stopPreferences = watchPreferences(slots);
-	// A worker that draws holds its frames to the display's rate, which only the page can measure.
-	const stopDisplay =
-		renderThread !== 'main' && hold === undefined ? watchDisplay(slots) : undefined;
 
 	const messageHandlers = new Set<(name: string, data: unknown) => void>();
 	if (options.onSketchMessage) messageHandlers.add(options.onSketchMessage);
@@ -576,6 +658,133 @@ async function startEngine(
 		if (failureHandlers.size === 0) console.error(error);
 		for (const handler of failureHandlers) handler(error);
 	};
+	const events: WorkerEvents = {
+		sketchMessage: onSketchMessage,
+		failure: onFailure,
+		// The page applies the settings that it owns: the pixel ratio cap sizes the canvas.
+		quality: (settings) => canvasWatch.setMaxPixelRatio(settings.maxPixelRatio),
+	};
+
+	const jobWorkers = threaded
+		? (switches.jobs ?? Math.max(1, (navigator.hardwareConcurrency ?? 1) - RESERVED_CORES))
+		: 0;
+	const control = createControlBuffer(threaded);
+	const metrics = createMetricsBuffer(threaded, jobWorkers);
+	const views = controlViews(control);
+	const { slots } = views;
+	Atomics.store(slots, Slot.Running, 1);
+	/** The thread that draws, unless the probe finds that a worker cannot draw here. */
+	let renderThread: EngineMode['renderThread'] =
+		latency === 'single' || switches.renderOnMain
+			? 'main'
+			: latency === 'low'
+				? 'sketch-worker'
+				: 'render-worker';
+	// A page that draws loads the renderer while the core downloads too. When the probe finds that a
+	// worker cannot draw here, the page loads it later, once it knows.
+	const drawModule = renderThread === 'main' ? loadDrawModule() : undefined;
+	// With worker threads the page starts the workers now, and downloads the sketch module into the
+	// browser's cache. The sketch worker still runs the module only after it has started the core.
+	const threads = threaded
+		? startWorkers(renderThread === 'render-worker', jobWorkers, slots, events)
+		: undefined;
+	if (threads) {
+		prefetch(sketchUrl);
+		// In low-latency mode the sketch worker draws, so it loads the renderer now too.
+		if (renderThread === 'sketch-worker')
+			threads.sketch.worker.postMessage({ type: 'load-renderer' });
+	}
+	/**
+	 * Stops the workers when the start fails before they get the core. None waits in the job system
+	 * yet, so they stop at once.
+	 */
+	const failEarly = (error: unknown) => {
+		for (const worker of allWorkers(threads)) worker.worker.terminate();
+		return error;
+	};
+	const report = await abortable(
+		probeCapabilities(powerPreference, presetRequest.hints),
+		signal,
+	).catch((e: unknown) => {
+		throw failEarly(e);
+	});
+	const probeMs = performance.now() - startedAt;
+	const requested = switches.gpu !== 'auto' ? switches.gpu : (options.gpu ?? 'auto');
+	// After starts that crashed on WebGPU, WebGL2 comes first, unless the page names a GPU path.
+	const safeGpu = requested === 'auto' ? crashTier(history.crashed, history.lastTier) : undefined;
+	const pickTier = (inWorker: boolean) =>
+		(safeGpu && chooseTier(report, safeGpu, inWorker)) || chooseTier(report, requested, inWorker);
+
+	let choice = pickTier(renderThread !== 'main');
+	if (!choice && renderThread === 'render-worker') {
+		// Worker rendering is unavailable here, so the page draws while the sketch worker computes.
+		renderThread = 'main';
+		choice = pickTier(false);
+		threads?.render?.worker.terminate();
+		if (threads) threads.render = undefined;
+	}
+	if (!choice)
+		throw failEarly(
+			new EngineError('E1301', `no usable GPU path for ?gpu=${requested} in this browser.`),
+		);
+	const { tier, forceCompat } = choice;
+	const preset = choosePreset(presetRequest, tier);
+	const quality: QualityStart = {
+		preset,
+		settings: presetSettings(preset, { maxPixelRatio: options.maxPixelRatio }),
+	};
+	// What the thread that draws needs besides its canvas, whichever thread that is.
+	const rendererSetup: Omit<RendererSetup, 'canvas'> = {
+		tier,
+		forceCompat,
+		powerPreference,
+		fps: switches.fps,
+		queue: switches.queue,
+		hold: hold !== undefined,
+	};
+
+	const core = await abortable(coreLoad, signal).catch((e: unknown) => {
+		throw failEarly(e);
+	});
+	onProgress?.('core');
+	let wasmMemory = core.memory;
+	const device = coreDevice(tier, report, {
+		...switches,
+		antialias: antialiasOption(options.antialias),
+		transparent: options.transparent === true,
+	});
+	const capabilities: EngineCapabilities = {
+		tier,
+		threaded,
+		features:
+			tier === 'webgl2'
+				? Object.keys(report.webgl2.extensions).filter((n) => report.webgl2.extensions[n])
+				: report.webgpu.features,
+		limits: tier === 'webgl2' ? {} : report.webgpu.limits,
+		hdr: device.sceneColor !== FORMAT_CANVAS,
+		maxInstances: maxInstances(device),
+		depth: device.depth,
+	};
+	const handoff: CoreHandoff = {
+		build,
+		module: core.module,
+		memory: core.memory,
+		control,
+		metrics,
+		device,
+		errorFixes: ERROR_FIXES,
+	};
+	const canvasWatch = watchCanvas(options.canvas, control, quality.settings.maxPixelRatio);
+	canvasWatch.listen(true);
+	// Hold mode keeps input out, so a held frame never depends on it.
+	const takesInput = hold === undefined;
+	const input = captureInput(options.canvas, control);
+	input.listen(takesInput);
+	const stopPreferences = watchPreferences(slots);
+	// A worker that draws holds its frames to the display's rate, which only the page can measure.
+	const stopDisplay =
+		renderThread !== 'main' && hold === undefined ? watchDisplay(slots) : undefined;
+
 	let userPaused = false;
 	let detached = false;
 	const applyPause = () => {
@@ -591,9 +800,14 @@ async function startEngine(
 	let draw: DrawModule | undefined;
 	/**
 	 * Draws on the page's thread from the draw lists in `memory`, with the renderer that the page
-	 * loads for it. With a sketch, the page steps it before each draw.
+	 * loads for it. With a sketch, the page steps it before each draw. Texture images come into the
+	 * page's table from that sketch, or through a port from the sketch worker.
 	 */
-	const drawOnPage = async (memory: WebAssembly.Memory | undefined, sketch?: SketchRunner) => {
+	const drawOnPage = async (
+		memory: WebAssembly.Memory | undefined,
+		images: Pick<DrawingSetup, 'imageTable' | 'imagePort'>,
+		sketch?: SketchRunner,
+	) => {
 		draw = await (drawModule ?? loadDrawModule());
 		return draw.startDrawing({
 			canvas: options.canvas,
@@ -603,13 +817,11 @@ async function startEngine(
 			scene: memory && { memory, control },
 			control,
 			sketch,
+			...images,
 			fail: pageLoss,
 		});
 	};
 
-	const workers: EngineWorker[] = [];
-	const jobs: EngineWorker[] = [];
-	let sketch: EngineWorker | undefined;
 	let rendererHost: EngineWorker | undefined;
 	let localDrawing: Drawing<Renderer> | undefined;
 	let localRunner: SketchRunner | undefined;
@@ -618,7 +830,13 @@ async function startEngine(
 	/** Stops every loop and then the workers, and wakes each thread that waits, so it sees the stop. */
 	const stop = () => {
 		Atomics.store(slots, Slot.Running, 0);
-		for (const slot of [Slot.Running, Slot.FramesTaken, Slot.Paused, Slot.JobsReady])
+		for (const slot of [
+			Slot.Running,
+			Slot.FramesTaken,
+			Slot.Paused,
+			Slot.JobsReady,
+			Slot.PipelinesBuilt,
+		])
 			Atomics.notify(slots, slot);
 		localDrawing?.stop();
 		localRunner?.dispose();
@@ -627,9 +845,12 @@ async function startEngine(
 		canvasWatch.listen(false);
 		stopPreferences();
 		stopDisplay?.();
-		return stopWorkers(workers, jobs);
+		// A start that fails or stops has not crashed the tab.
+		marker?.end();
+		return stopWorkers(allWorkers(threads), threads?.jobs ?? []);
 	};
 
+	marker?.begin(history, tier);
 	try {
 		if (latency === 'single') {
 			const started = await startCore('single', core.module);
@@ -637,82 +858,70 @@ async function startEngine(
 			const memory = started.memory as WebAssembly.Memory;
 			wasmMemory = memory;
 			const { SketchRunner } = await (runnerModule ?? loadRunnerModule());
+			const imageTable = new ImageTable();
 			localRunner = new SketchRunner(
 				(name, data) => onSketchMessage(name, data),
 				metrics,
-				{ glue: started.glue, memory, control: views, keyCodes: KEY_CODES, jobWorkers: 0, device },
+				{
+					glue: started.glue,
+					memory,
+					control: views,
+					keyCodes: KEY_CODES,
+					jobWorkers: 0,
+					device,
+					quality,
+					applyQuality: events.quality,
+					capabilities,
+					sendImage: sendToTable(imageTable, slots),
+					pageUrl: pageUrl ?? sketchUrl,
+				},
 				hold,
 			);
-			await localRunner.setup(await (sketchModule ?? loadSketch(sketchUrl)));
-			localDrawing = await drawOnPage(memory, localRunner);
-		} else {
-			sketch = new EngineWorker(
-				new Worker(new URL('../workers/sketch-worker.ts', import.meta.url), {
-					type: 'module',
-					name: 'null3d-sketch',
-				}),
-				'sketch',
-				onSketchMessage,
-				onFailure,
-			);
-			workers.push(sketch);
+			// In hold mode the sketch module loads only now, after the runner seeded the random
+			// numbers. The renderer starts before the setup, so a warm-up in the setup has a renderer
+			// to build its pipelines.
+			const sketchLoad = sketchModule ?? awaitLater(loadSketch(sketchUrl));
+			localDrawing = await drawOnPage(memory, { imageTable }, localRunner);
+			await localRunner.setup(await sketchLoad);
+		} else if (threads) {
+			const { sketch, render, jobs } = threads;
+			// The job workers get the core first. A stop waits until each job worker reports that it left
+			// the job system, which one without the core never does.
+			for (const [index, job] of jobs.entries())
+				job.worker.postMessage({ type: 'init', ...handoff, index });
 			const init: SketchWorkerInit = {
 				type: 'init',
 				...handoff,
 				sketchUrl,
+				pageUrl: pageUrl ?? sketchUrl,
 				keyCodes: KEY_CODES,
 				jobWorkers,
+				capabilities,
 				hold,
+				quality,
 			};
 			if (renderThread === 'sketch-worker') {
 				const canvas = options.canvas.transferControlToOffscreen();
 				sketch.worker.postMessage({ ...init, renderer: { canvas, ...rendererSetup } }, [canvas]);
 				rendererHost = sketch;
 			} else {
-				sketch.worker.postMessage(init);
-				if (renderThread === 'render-worker') {
+				// Texture images go from the sketch worker straight to the thread that draws.
+				const images = new MessageChannel();
+				sketch.worker.postMessage({ ...init, imagePort: images.port1 }, [images.port1]);
+				if (render) {
 					const canvas = options.canvas.transferControlToOffscreen();
-					rendererHost = new EngineWorker(
-						new Worker(new URL('../workers/render-worker.ts', import.meta.url), {
-							type: 'module',
-							name: 'null3d-render',
-						}),
-						'render',
-						onSketchMessage,
-						onFailure,
+					const imagePort = images.port2;
+					render.worker.postMessage(
+						{ type: 'init', ...handoff, canvas, ...rendererSetup, imagePort },
+						[canvas, imagePort],
 					);
-					workers.push(rendererHost);
-					rendererHost.worker.postMessage({ type: 'init', ...handoff, canvas, ...rendererSetup }, [
-						canvas,
-					]);
+					rendererHost = render;
 				} else {
-					localDrawing = await drawOnPage(core.memory);
+					localDrawing = await drawOnPage(core.memory, { imagePort: images.port2 });
 				}
 			}
-			// The sketch and render threads start first; the engine is ready once they are.
-			const essential = [...workers];
-			for (let index = 0; index < jobWorkers; index++) {
-				const job = new EngineWorker(
-					new Worker(new URL('../workers/job-worker.ts', import.meta.url), {
-						type: 'module',
-						name: `null3d-job-${index}`,
-					}),
-					`job ${index}`,
-					onSketchMessage,
-					onFailure,
-				);
-				workers.push(job);
-				jobs.push(job);
-				job.worker.postMessage({ type: 'init', ...handoff, index });
-				// Job workers join the job system as each becomes ready: until then the sketch thread
-				// and the job workers already running take every chunk, so no frame waits for them.
-				job.ready().catch((error: unknown) => {
-					if (Atomics.load(slots, Slot.Running) !== 0)
-						onFailure(
-							error instanceof EngineError ? error : startError(`job ${index}`, String(error)),
-						);
-				});
-			}
+			// The engine is ready once the sketch worker and the render worker are.
+			const essential = render ? [sketch, render] : [sketch];
 			await abortable(Promise.all(essential.map((w) => w.ready())), signal);
 		}
 		signal?.throwIfAborted();
@@ -722,7 +931,16 @@ async function startEngine(
 	}
 
 	const engineStartMs = performance.now() - startedAt;
-	const mode: EngineMode = { build, latency, renderThread, jobWorkers, hold: hold ?? null };
+	const mode: EngineMode = {
+		build,
+		latency,
+		renderThread,
+		jobWorkers,
+		hold: hold ?? null,
+		preset,
+		crashedStarts: history.crashed,
+		memoryMaximumMiB: threaded ? maximumMiB : null,
+	};
 	onProgress?.('sketch');
 	// The thread that draws writes the time the GPU finished the first frame; the page checks for
 	// it once per animation frame until it appears.
@@ -739,10 +957,7 @@ async function startEngine(
 		};
 		requestAnimationFrame(check);
 	});
-	const features =
-		tier === 'webgl2'
-			? Object.keys(report.webgl2.extensions).filter((n) => report.webgl2.extensions[n])
-			: report.webgpu.features;
+	marker?.endAfter(firstFrame);
 	/** Hold mode's frame, read back once. */
 	let held: CapturedFrame | undefined;
 	/** Draws a frame offscreen on the thread that draws, and reads it back. */
@@ -756,21 +971,13 @@ async function startEngine(
 	};
 
 	const engine: Engine = {
-		capabilities: {
-			tier,
-			threaded,
-			features,
-			limits: tier === 'webgl2' ? {} : report.webgpu.limits,
-			hdr: device.sceneColor !== FORMAT_CANVAS,
-			maxInstances: maxInstances(device),
-			depth: device.depth,
-		},
+		capabilities,
 		report,
 		mode,
 		firstFrame,
 		postToSketch(name, data, transfer = []) {
 			if (localRunner) localRunner.receive(name, data);
-			else sketch?.worker.postMessage({ type: 'post', name, data }, transfer);
+			else threads?.sketch.worker.postMessage({ type: 'post', name, data }, transfer);
 		},
 		onSketchMessage(handler) {
 			messageHandlers.add(handler);
@@ -826,6 +1033,8 @@ async function startEngine(
 						reader.firstFrameDoneTime > 0
 							? reader.firstFrameDoneTime - performance.timeOrigin
 							: null,
+					warmUpMs: reader.warmUpMs,
+					firstFramePipelines: reader.firstFramePipelines,
 				},
 				downloadBytes: { wasm: wasmDownloadBytes() },
 				lostRecords: reader.lost,
@@ -845,7 +1054,10 @@ async function startEngine(
 			return stop();
 		},
 	};
-	if (hold === undefined) return engine;
+	if (hold === undefined) {
+		if (switches.bench) (globalThis as Record<string, unknown>)[BENCH_GLOBAL] = engine;
+		return engine;
+	}
 	try {
 		held = await abortable(holdFrame(capture, failureHandlers), signal);
 	} catch (error) {
@@ -858,6 +1070,7 @@ async function startEngine(
 		frame: Atomics.load(slots, Slot.FramesTaken),
 		tier,
 		...held,
+		stats: summarizeFrames(new MetricsReader(metrics).readWritten(), threadRoles(mode)),
 	});
 	return engine;
 }

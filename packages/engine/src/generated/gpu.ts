@@ -15,6 +15,7 @@ export const OP_WRITE_TEXTURE = 11;
 export const OP_CREATE_SAMPLER = 12;
 export const OP_CREATE_TEXTURE_VIEW = 13;
 export const OP_UPLOAD_IMAGE = 14;
+export const OP_GENERATE_MIPMAPS = 15;
 export const OP_BEGIN_RENDER_PASS = 16;
 export const OP_SET_PIPELINE = 17;
 export const OP_SET_BIND_GROUP = 18;
@@ -36,6 +37,7 @@ export const OP_DISPATCH = 42;
 export const OP_END_COMPUTE_PASS = 44;
 export const OP_COPY_BUFFER_TO_BUFFER = 48;
 export const OP_COPY_TEXTURE_TO_TEXTURE = 49;
+export const OP_RELEASE_IMAGE = 51;
 export const OP_SUBMIT = 63;
 
 export const NO_TARGET = 4294967295;
@@ -92,6 +94,7 @@ export const LAYOUT_CULL = 1;
 export const LAYOUT_DRAWS = 2;
 export const LAYOUT_INSTANCES = 3;
 export const LAYOUT_FINAL = 4;
+export const LAYOUT_TEXTURES = 5;
 
 export const PERMUTATION_DRAW_INDEX = 1;
 export const PERMUTATION_TONE_MAP = 2;
@@ -111,11 +114,14 @@ export const VERTEX_ALL = 15;
 export const VERTEX_INSTANCE_LOCATION = 8;
 
 export const STATE_CULL_NONE = 1;
+export const STATE_LINE_LIST = 2;
 
 export const TEMPLATE_INSTANCED_LIT = 1;
 export const TEMPLATE_INSTANCED_UNLIT = 2;
 export const TEMPLATE_INSTANCED_TEXCOORDS = 3;
-export const TEMPLATE_FINAL = 4;
+export const TEMPLATE_DEBUG_LINES = 4;
+export const TEMPLATE_INSTANCED_UNLIT_MAP = 5;
+export const TEMPLATE_FINAL = 7;
 export const TEMPLATE_CULL = 16;
 
 export const BUFFER_USAGE_MAP_READ = 1;
@@ -145,8 +151,10 @@ export const SIZE_INDICES_PER_TEXTURE_ROW = 2048;
 export const SIZE_DRAW_RECORD_BYTES = 16;
 export const SIZE_MULTI_DRAW_RECORDS = 256;
 export const SIZE_MAX_MATERIALS = 1024;
+export const SIZE_MATERIAL_BYTES = 128;
 export const SIZE_MAX_CELLS = 512;
 export const SIZE_CELL_SHIFT = 23;
+export const SIZE_LINE_VERTEX_BYTES = 16;
 
 /** Bytes per texel of each format, by format code. */
 export const FORMAT_TEXEL_BYTES: readonly number[] = [0, 4, 4, 4, 8, 0, 4, 16, 4, 4, 4];

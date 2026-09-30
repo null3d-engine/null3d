@@ -7,10 +7,12 @@
 	},
 	"devDependencies": {
 		"@playwright/test": "1.63.0",
+		"@null3d/controls": "workspace:*",
 		"@null3d/engine": "workspace:*",
 		"@null3d/vite-plugin": "workspace:*",
+		"@types/three": "0.186.0",
 		"@webgpu/types": "0.1.74",
-		"pixelmatch": "7.2.0",
+		"three": "0.186.1",
 		"vite": "8.3.1"
 	}
 }

@@ -8,36 +8,15 @@
 // its sequence word holds the expected value before and after the fields are copied, so a record
 // the writer overwrote meanwhile is counted as lost instead of read half-written.
 
-/** The rings of the metrics buffer, one per thread role. Job worker k writes ring `Role.Job + k`. */
-export enum Role {
-	Sketch = 0,
-	Render = 1,
-	/** GPU time per frame and per pass from timestamp queries, written by the thread that draws. */
-	Gpu = 2,
-	/**
-	 * Frames the GPU finished: each record's busy time is the time from the frame's submit to its
-	 * completion, and its interval the time since the previous completion.
-	 */
-	Completion = 3,
-	Job = 4,
-}
+import * as Counter from './counter';
+import * as GpuCounter from './gpu-counter';
+import * as Phase from './phase';
+import * as Role from './role';
 
-/** CPU phases of a frame, in the order they run. */
-export enum Phase {
-	/** The sketch's update callback. */
-	Update = 0,
-	/** Structural changes applied from the command ring. */
-	Commands = 1,
-	Transforms = 2,
-	Batches = 3,
-	Cull = 4,
-	/** Draw-list recording. */
-	Record = 5,
-	/** Writes of changed data to GPU buffers. */
-	Upload = 6,
-	/** Draw-list replay into GPU commands, including the submit. */
-	Replay = 7,
-}
+// The numbered names of the metrics buffer: the rings, one per thread role (job worker k writes
+// ring `Role.Job + k`), the CPU phases of a frame in the order they run, the counters of a frame
+// record, and what a GPU record's counter slots hold.
+export { Counter, GpuCounter, Phase, Role };
 
 export const PHASE_NAMES = [
 	'update',
@@ -51,27 +30,12 @@ export const PHASE_NAMES = [
 ] as const;
 
 /**
- * A step of a frame that `engine.measure` times. The `update` step is the sketch's own code, and the
- * other steps are the engine's.
+ * A step of a frame that `engine.measure` times. The `update` step is the sketch's own code, in all
+ * of its callbacks, and the other steps are the engine's.
  *
  * @category api/debug
  */
 export type PhaseName = (typeof PHASE_NAMES)[number];
-
-export enum Counter {
-	UploadBytes = 0,
-	DrawCalls = 1,
-	Dispatches = 2,
-	/** 1 in a frame whose structure change rebuilt the draw tables, on the sketch thread's record. */
-	Rebuilds = 3,
-	/** Render and compute pipelines the GPU built for the frame. */
-	Pipelines = 4,
-	/**
-	 * The frame's index list entries, on the sketch thread's record, or `CORE_NOT_COUNTED` where the
-	 * GPU culls.
-	 */
-	VisibleEntries = 5,
-}
 
 export const COUNTER_NAMES = [
 	'uploadBytes',
@@ -94,21 +58,13 @@ export const GPU_TIMED_PASSES = PHASE_NAMES.length - 1;
 /** A GPU record's time for a part of the frame that the browser gave no timestamps for. */
 export const UNTIMED = -1;
 
-/** What a GPU record's counter slots hold. */
-export enum GpuCounter {
-	/** The passes of the frame, timed alone or not. */
-	Passes = 0,
-	/** Bit k is set when the frame's pass k is a render pass, and clear when it is a compute pass. */
-	RenderPasses = 1,
-}
-
 /** Records each ring holds: several seconds of frames, far longer than the page waits between drains. */
 export const RING_RECORDS = 1024;
 
 /**
- * One frame in this many has its GPU time measured and its completion tracked. Doing both costs
- * the thread that draws about as much as drawing a small scene, so the engine samples frames
- * instead of paying it every frame.
+ * One frame in this many has its GPU time measured while the page measures. Timing costs the
+ * thread that draws about as much as drawing a small scene, so the engine samples frames instead
+ * of paying it every frame.
  */
 export const SAMPLED_EVERY = 8;
 
@@ -131,7 +87,13 @@ const FIRST_FRAME = 2;
 const REFRESH_HZ = 3;
 /** Float64 index of the epoch time, in ms, at which the GPU finished the first frame. */
 const FIRST_FRAME_DONE = 4;
-const HEADER_WORDS = 12;
+/** Float64 index of the epoch time, in ms, at which the first frame's pipelines started to build. */
+const WARM_UP_START = 5;
+/** Float64 index of the epoch time, in ms, at which the first frame's pipelines were all built. */
+const WARM_UP_END = 6;
+/** Float64 index of the number of pipelines that the first frame built. */
+const FIRST_FRAME_PIPELINES = 7;
+const HEADER_WORDS = 16;
 const WRITTEN = HEADER_WORDS;
 
 function recordsStart(rings: number): number {
@@ -176,6 +138,14 @@ class MetricsViews {
 			recordsStart(this.rings) + (ring * this.capacity + (sequence % this.capacity)) * RECORD_WORDS
 		);
 	}
+
+	/**
+	 * True when the record at word `at` is the whole record with this sequence number: finished, and
+	 * not being written again.
+	 */
+	holds(at: number, sequence: number): boolean {
+		return Atomics.load(this.words, at + SEQUENCE) === sequence + 1;
+	}
 }
 
 /** Writes one role's records. Only one thread writes a given ring. */
@@ -208,13 +178,13 @@ export class FrameRecorder {
 		this.at = at;
 	}
 
-	addPhase(phase: Phase, ms: number): void {
+	addPhase(phase: number, ms: number): void {
 		const { floats } = this.views;
 		const at = this.at + PHASES + phase;
 		floats[at] = (floats[at] as number) + ms;
 	}
 
-	count(counter: Counter, value: number): void {
+	count(counter: number, value: number): void {
 		this.views.words[this.at + COUNTERS + counter] = value;
 	}
 
@@ -256,10 +226,27 @@ export class FrameRecorder {
 		this.views.times[REFRESH_HZ] = hz;
 	}
 
-	/** Records when the first frame reached the screen, as epoch milliseconds, once per engine. */
+	/**
+	 * Records when the first frame reached the screen, as epoch milliseconds, once per engine, with
+	 * the pipelines it built: the pipeline count of the record that `commit` has not closed yet.
+	 */
 	markFirstFrame(): void {
+		const { times, words } = this.views;
+		if (times[FIRST_FRAME] !== 0) return;
+		times[FIRST_FRAME] = performance.timeOrigin + performance.now();
+		times[FIRST_FRAME_PIPELINES] = words[this.at + COUNTERS + Counter.Pipelines] as number;
+	}
+
+	/**
+	 * Records, once per engine, when the first frame's pipelines started to build and when none was
+	 * building any longer, as epoch milliseconds. The thread that draws calls it each time it
+	 * checks the first frame, until that frame draws.
+	 */
+	markWarmUp(building: boolean): void {
 		const { times } = this.views;
-		if (times[FIRST_FRAME] === 0) times[FIRST_FRAME] = performance.timeOrigin + performance.now();
+		const now = performance.timeOrigin + performance.now();
+		if (times[WARM_UP_START] === 0) times[WARM_UP_START] = now;
+		if (!building && times[WARM_UP_END] === 0) times[WARM_UP_END] = now;
 	}
 }
 
@@ -309,9 +296,35 @@ export class MetricsReader {
 		return this.views.times[FIRST_FRAME_DONE] as number;
 	}
 
+	/**
+	 * Milliseconds from the start of the first frame's pipeline builds until none was building, or
+	 * null before then.
+	 */
+	get warmUpMs(): number | null {
+		const { times } = this.views;
+		const end = times[WARM_UP_END] as number;
+		return end > 0 ? end - (times[WARM_UP_START] as number) : null;
+	}
+
+	/** Pipelines that the first frame built, or null before the first frame. */
+	get firstFramePipelines(): number | null {
+		const { times } = this.views;
+		return (times[FIRST_FRAME] as number) > 0 ? (times[FIRST_FRAME_PIPELINES] as number) : null;
+	}
+
 	/** The display's refresh rate in hertz, or 0 before the thread that draws has measured it. */
 	get refreshHz(): number {
 		return this.views.times[REFRESH_HZ] as number;
+	}
+
+	/**
+	 * Keeps the records that the rings still hold, without turning the costly timing on: the frames
+	 * of a hold, which the engine stepped before the page could read them.
+	 */
+	readWritten(): RingRecords[] {
+		this.records = Array.from({ length: this.views.rings }, emptyRecords);
+		this.drain();
+		return this.records;
 	}
 
 	/** Forgets older records, then keeps every record written from now on. */
@@ -333,7 +346,7 @@ export class MetricsReader {
 			const out = this.records[ring] as RingRecords;
 			for (let sequence = from; sequence < written; sequence++) {
 				const at = this.views.record(ring, sequence);
-				if (Atomics.load(words, at + SEQUENCE) !== sequence + 1) {
+				if (!this.views.holds(at, sequence)) {
 					this.lost++;
 					continue;
 				}
@@ -344,7 +357,7 @@ export class MetricsReader {
 					out.phases[p]?.push(floats[at + PHASES + p] as number);
 				for (let c = 0; c < COUNTER_NAMES.length; c++)
 					out.counters[c]?.push(words[at + COUNTERS + c] as number);
-				if (Atomics.load(words, at + SEQUENCE) !== sequence + 1) {
+				if (!this.views.holds(at, sequence)) {
 					dropLast(out);
 					this.lost++;
 				}
@@ -357,6 +370,66 @@ export class MetricsReader {
 	end(): void {
 		this.drain();
 		Atomics.store(this.views.header, MEASURING, 0);
+	}
+}
+
+// What `RingSums.sums` holds, by index.
+/** Records taken in. */
+export const SUM_RECORDS = 0;
+/** Their busy times, summed. */
+export const SUM_BUSY_MS = 1;
+/** The longest of their busy times. */
+export const SUM_LONGEST_BUSY_MS = 2;
+/** Their intervals, summed. */
+export const SUM_INTERVAL_MS = 3;
+
+/**
+ * Sums the records that one ring receives, for code that judges the frames during play, such as
+ * the quality governor. `add` takes in the records written since its last call, and `clear` starts
+ * a new window. It allocates nothing and leaves the page's costly timing off, so any thread that
+ * holds the metrics buffer can call it as often as every frame. A record that the writer
+ * overwrote before `add` read it is left out. The records' count over their summed intervals is
+ * their rate. Every completion record has an interval, which is 0 for a frame that the GPU
+ * finished with the one before. The render ring's first record has none, so a window that holds
+ * the first presented frame counts one frame more than its intervals cover.
+ */
+export class RingSums {
+	/** The window's sums, by the `SUM_` indices. */
+	readonly sums = new Float64Array(SUM_INTERVAL_MS + 1);
+	private readonly views: MetricsViews;
+	private next: number;
+
+	/** Sums `ring`'s records from those written after this call. */
+	constructor(
+		buffer: ArrayBufferLike,
+		readonly ring: number,
+	) {
+		this.views = new MetricsViews(buffer);
+		this.next = Atomics.load(this.views.header, WRITTEN + ring);
+	}
+
+	/** Takes in the records written since the last call. */
+	add(): void {
+		const { views, sums } = this;
+		const written = Atomics.load(views.header, WRITTEN + this.ring);
+		const from = Math.max(this.next, written - views.capacity);
+		for (let sequence = from; sequence < written; sequence++) {
+			const at = views.record(this.ring, sequence);
+			if (!views.holds(at, sequence)) continue;
+			const busy = views.floats[at + BUSY] as number;
+			const interval = views.floats[at + INTERVAL] as number;
+			if (!views.holds(at, sequence)) continue;
+			sums[SUM_RECORDS] = (sums[SUM_RECORDS] as number) + 1;
+			sums[SUM_BUSY_MS] = (sums[SUM_BUSY_MS] as number) + busy;
+			sums[SUM_LONGEST_BUSY_MS] = Math.max(sums[SUM_LONGEST_BUSY_MS] as number, busy);
+			sums[SUM_INTERVAL_MS] = (sums[SUM_INTERVAL_MS] as number) + interval;
+		}
+		this.next = written;
+	}
+
+	/** Starts a new window: the sums go back to zero, and the place in the ring stays. */
+	clear(): void {
+		this.sums.fill(0);
 	}
 }
 

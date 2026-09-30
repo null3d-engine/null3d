@@ -160,7 +160,7 @@ Sizes from `tools/size-baseline.json` (main's size record then, at 9b792d0) and 
 
 Decision: the 600 KB budget for each core build stands. Both builds use under a tenth of it, which leaves room for the renderer features still to come (shadows, PBR, glTF, animation) without a revision now. CI keeps checking every build against it and against 2% growth.
 
-There is also a 60 KB budget for the TypeScript API and page shim. The engine's JavaScript is 77.5 KB after Brotli across its five chunks, but a page downloads only the chunks its mode needs. Of the total, 37.5 KB is the GPU layer shipped three times (in the page, the sketch worker and the render worker; finding in [D-01](D-01-gpu-layer.md)). The page chunk alone is 31 KB. This budget has no check in CI yet (audit item I5). A revision waits for that check and for the owner's call on sharing the GPU layer's code between chunks.
+There is also a 60 KB budget for the TypeScript API and page shim. The engine's JavaScript is 77.5 KB after Brotli across its five chunks, but a page downloads only the chunks its mode needs. Of the total, 37.5 KB is the GPU layer shipped three times (in the page, the sketch worker and the render worker; finding in [D-01](D-01-gpu-layer.md)). The page chunk alone is 31 KB. This budget has no check in CI yet (audit item I5). On 2026-09-30 the owner raised it to 70 KB ([D-14](D-14-js-budget.md)). A revision waits for that check and for the owner's call on sharing the GPU layer's code between chunks.
 
 ## Addendum, 2026-09-29: the phone target on the Galaxy S24+
 
@@ -342,4 +342,34 @@ Reading the data:
 - On Slow 4G, a cold start on the S24+ takes 3.9 to 4.5 s, and a warm one about 0.9 s. The page script itself runs at 1.4 s. In the threaded modes, the engine becomes ready about 1.9 s after the core. It starts its workers only once the core has compiled, which adds two round trips. In single-threaded mode, that wait is about 1.3 s.
 - At full speed, the GPU probe takes about 60 to 80 ms on the S24+. Chrome there has no WebGPU, and the probe tries it first.
 
-Proposed target, for the owner: on the S24+ in Chrome on Slow 4G, the first frame within 4.5 s on a cold load, and within 1 s on a warm load, at the engine test page's size. Two changes can bring the cold load down. The first starts the workers' downloads with the core's, which saves about two round trips (1.1 s on Slow 4G). The second is the earlier sketch download in single-threaded mode (M1-K7, about 0.56 s).
+Target, confirmed by the owner on 2026-09-30: on the S24+ in Chrome on Slow 4G, the first frame within 4.5 s on a cold load, and within 1 s on a warm load, at the engine test page's size. Two changes can bring the cold load down. The first starts the workers' downloads with the core's, which saves about two round trips (1.1 s on Slow 4G). The second is the earlier sketch download in single-threaded mode (M1-K7, about 0.56 s).
+
+## Addendum, 2026-09-30: figures from production builds
+
+From pull request #98 on, the benchmarks measure a production build of the benchmark pages, as developers ship the engine. The build leaves out the engine's development checks, such as the handle and argument checks. The figures above this addendum came from the dev server's pages, with the checks of their day on. The benchmark run, the CI benchmark job, the device runner's bench plan, the profile, the allocation check and the soak all use the build now. With `--dev`, the tools run the dev server's pages instead.
+
+To see what the checks cost, each scene ran on both GPU paths, on the dev server's pages and on the production build. There were 10 rounds. Each round ran each page once per build, back to back, and the order alternated by round. Each run had 5 s of warm-up and 5 s measured, in Chrome 154 on the MacBook Pro. Other work kept the Mac busy, and the display ran at 120 or 144 Hz. The table gives the medians of the runs. The change is the median over rounds of the production run against the development run, as the CI job computes it.
+
+Main at 38d5c1c, CPU time per frame:
+
+| Scene | GPU path | Busiest thread, development / production | Change | Own work, development / production |
+| --- | --- | --- | --- | --- |
+| S1 | WebGPU | 2.16 / 1.90 ms | -9% | 0.171 / 0.155 ms |
+| S1 | WebGL2 | 2.09 / 2.03 ms | -3% | 0.215 / 0.231 ms |
+| S1-static | WebGPU | 0.075 / 0.067 ms | -11% | 0.075 / 0.067 ms |
+| S1-static | WebGL2 | 0.040 / 0.050 ms | +8% | 0.040 / 0.045 ms |
+| S2 | WebGPU | 0.145 / 0.153 ms | -5% | 0.133 / 0.143 ms |
+| S2 | WebGL2 | 0.188 / 0.178 ms | +9% | 0.175 / 0.170 ms |
+
+On main the checks cost less than this Mac's noise. S1's runs spread from 1.8 to 4.6 ms, and S1's two paths run the same sketch code. The other changes are 0.01 ms or less, one or two steps of the browser's 5-microsecond timer, and they go both ways. Own work moved by 0.02 ms or less on every page. The figures above this addendum therefore stand.
+
+The per-frame check of static objects in pull request #93 costs more. The same measurement on that branch, at 353bbe9:
+
+| Scene | GPU path | Busiest thread, development / production | Change | Own work, development / production |
+| --- | --- | --- | --- | --- |
+| S1-static | WebGPU | 0.070 / 0.067 ms | -7% | 0.070 / 0.067 ms |
+| S1-static | WebGL2 | 0.045 / 0.047 ms | 0% | 0.040 / 0.045 ms |
+| S2 | WebGPU | 0.218 / 0.135 ms | -25% | 0.208 / 0.127 ms |
+| S2 | WebGL2 | 0.223 / 0.185 ms | -12% | 0.210 / 0.175 ms |
+
+In S2 that check costs the sketch worker about 0.06 ms per frame on WebGPU and 0.03 ms on WebGL2. On the dev server's pages, the benchmarks and the CI job would have charged that to null3D, though no shipped page pays it.

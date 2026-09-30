@@ -19,6 +19,7 @@ import {
 import { type ColorInput, linearColor } from './color';
 import type { CoreMemory } from './memory';
 import { arraysProblem, meshFromArrays } from './mesh-arrays';
+import type { Texture } from './textures';
 
 /**
  * A mesh the engine can draw: its id in the engine core, and its bounding radius.
@@ -473,7 +474,7 @@ function checkOpacity(opacity: number, call: string): void {
 export class Material {
 	constructor(
 		/** @internal */ readonly id: number,
-		private readonly core: CoreMemory,
+		/** @internal */ readonly core: CoreMemory,
 		/** The name that errors from `set` give the call, such as 'materials.standard.set'. */
 		private readonly call: string,
 	) {}
@@ -512,6 +513,12 @@ export class Materials {
 		if (DEV) checkOpacity(opacity, call);
 		const id = this.core.check(this.core.glue.createMaterial(shading, r, g, b, opacity), call);
 		return new Material(id, this.core, `${call}.set`);
+	}
+
+	/** @internal Gives a material a map, or none. */
+	setMap(material: Material, map: Texture | undefined, call: string): void {
+		const status = this.core.glue.setMaterialMap(material.id, map?.handle ?? 0);
+		this.core.check(status, call, undefined, true);
 	}
 
 	/** A lit material. */

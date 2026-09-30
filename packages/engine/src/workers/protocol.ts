@@ -4,9 +4,13 @@ import { setErrorFixes } from '../errors/engine-error';
 import type { ErrorFixes } from '../errors/fixes';
 import { messageOf } from '../errors/message';
 import type { PowerPreference } from '../page/capabilities';
+import type { EngineCapabilities } from '../page/engine';
 import type { CoreDevice } from '../page/limits';
+import type { QualitySettings } from '../quality/presets';
 import type { Tier } from '../render/renderer';
-import { type Build, type StartedCore, startCore } from '../shared/core';
+import { awaitLater } from '../shared/await-later';
+import { type Build, loadGlue, type StartedCore, startCore } from '../shared/core';
+import type { QualityStart } from '../sketch/quality';
 
 export interface CoreHandoff {
 	build: Build;
@@ -49,6 +53,8 @@ export interface RendererSetup {
 	powerPreference?: PowerPreference;
 	/** The frame rate that ?fps= holds, or undefined to draw at the display's rate. */
 	fps?: number;
+	/** The most frames that ?queue= lets wait on the GPU, or undefined for the engine's limit. */
+	queue?: number;
 	/** Hold mode: the thread runs no frame loop, and draws the held frame once, when a capture asks. */
 	hold?: boolean;
 }
@@ -56,6 +62,8 @@ export interface RendererSetup {
 export type SketchWorkerInit = CoreHandoff & {
 	type: 'init';
 	sketchUrl: string;
+	/** The page's address, which the sketch's relative asset addresses resolve against. */
+	pageUrl: string;
 	/**
 	 * The key names, in the order of the numbers that the page gives keys in the input ring. The
 	 * page hands them over, so the sketch worker's file needs no copy.
@@ -63,13 +71,24 @@ export type SketchWorkerInit = CoreHandoff & {
 	keyCodes: readonly string[];
 	/** Job workers that serve the sketch's job system. */
 	jobWorkers: number;
+	/** The GPU path the engine chose, and what it offers, for the sketch's `engine.capabilities`. */
+	capabilities: EngineCapabilities;
 	/** Present in low-latency mode, where the sketch worker also draws. */
 	renderer?: RendererSetup;
 	/** Hold mode's sketch time in seconds, which the sketch worker steps the sketch to after setup. */
 	hold?: number;
+	/** The quality preset and settings that the page chose. */
+	quality: QualityStart;
+	/** The port that texture images go through to the thread that draws, when that is another. */
+	imagePort?: MessagePort;
 };
 
-export type RenderWorkerInit = CoreHandoff & RendererSetup & { type: 'init' };
+export type RenderWorkerInit = CoreHandoff &
+	RendererSetup & {
+		type: 'init';
+		/** The port that texture images come through from the sketch worker. */
+		imagePort: MessagePort;
+	};
 
 export type JobWorkerInit = CoreHandoff & { type: 'init'; index: number };
 
@@ -96,11 +115,15 @@ export type WorkerReply =
 	/** The browser took the GPU away from the worker that draws, which stopped drawing. */
 	| { type: 'lost'; role: 'sketch' | 'render'; reason: string }
 	| { type: 'sketch-message'; name: string; data: unknown }
+	/** The quality settings after the sketch changed them, for the settings that the page applies. */
+	| { type: 'quality'; settings: QualitySettings }
 	| ({ type: 'captured' } & CapturedFrame)
 	| { type: 'capture-failed'; message: string };
 
 export type SketchWorkerMessage =
 	| SketchWorkerInit
+	/** Sent before the core in low-latency mode, where the sketch worker draws: load the renderer. */
+	| { type: 'load-renderer' }
 	| RendererRequest
 	| { type: 'post'; name: string; data: unknown };
 
@@ -140,6 +163,9 @@ export function startWorker<Message>(
 	const thread = globalThis as { [started]?: true };
 	if (thread[started]) return;
 	thread[started] = true;
+	// Workers run only the threaded build. The page starts them before the core has compiled, so
+	// each imports the core's loader now, and finds it ready when the core arrives.
+	void awaitLater(loadGlue('threaded'));
 	step('loaded');
 	self.onmessage = handle;
 }

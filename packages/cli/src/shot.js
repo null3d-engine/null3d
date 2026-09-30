@@ -3,19 +3,17 @@
 // and what the page and the dev server logged. It prints a short summary for agents, and fails when
 // the engine drew no frame.
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
-import { basename, dirname, isAbsolute, relative, resolve } from 'node:path';
-import { readOptions, readSeconds, UsageError } from './args.js';
-import { TIERS } from './page.js';
+import { basename, dirname, resolve } from 'node:path';
+import { parseSize, readOptions, readSeconds, sizeRule, UsageError } from './args.js';
+import { heldImage, TIERS } from './page.js';
 import { writePng } from './png.js';
 import { holdPage, startRunner } from './runner.js';
+import { counted, listed, shownPath } from './text.js';
 
 /** @import { Environment } from './browser.js' */
-/** @import { Tier } from './page.js' */
+/** @import { HeldStats, Tier } from './page.js' */
 /** @import { RgbaImage } from './png.js' */
 /** @import { HeldPage } from './runner.js' */
-
-/** The largest side of a shot: WebGPU's default limit on a texture's size. */
-const MAX_SIDE = 8192;
 
 const OPTIONS = /** @type {const} */ ({
 	out: { type: 'string', default: 'shot.png' },
@@ -58,20 +56,24 @@ Playwright's Chromium on SwiftShader, the software GPU of machines without a GPU
  */
 
 /**
- * A size such as `1280x720`, in whole pixels from 1 to the largest side.
+ * The size that `--size` gives, such as `1280x720`.
  *
  * @param {string} text
- * @returns {readonly [number, number]}
  */
-function readSize(text) {
-	const [width, height, extra] = text.split('x').map(Number);
-	const side = (/** @type {number | undefined} */ n) =>
-		n !== undefined && Number.isSafeInteger(n) && n >= 1 && n <= MAX_SIDE;
-	if (extra === undefined && side(width) && side(height))
-		return [/** @type {number} */ (width), /** @type {number} */ (height)];
-	throw new UsageError(
-		`--size takes a width and a height in pixels from 1 to ${MAX_SIDE}, such as 1280x720, not "${text}"`,
-	);
+export function readSize(text) {
+	const size = parseSize(text);
+	if (size) return size;
+	throw new UsageError(sizeRule('--size', text));
+}
+
+/**
+ * Checks that `--page` gives a path on the project's server, not a full address.
+ *
+ * @param {string} page
+ */
+export function readPage(page) {
+	if (/^[a-z][a-z0-9+.-]*:/i.test(page))
+		throw new UsageError(`--page takes a path on the project's server, such as /, not "${page}"`);
 }
 
 /**
@@ -87,10 +89,7 @@ export function parseShotArgs(args) {
 	const gpu = /** @type {Tier | undefined} */ (values.gpu);
 	if (gpu !== undefined && !TIERS.includes(gpu))
 		throw new UsageError(`--gpu takes ${TIERS.join(', ')}, not "${gpu}"`);
-	if (/^[a-z][a-z0-9+.-]*:/i.test(page))
-		throw new UsageError(
-			`--page takes a path on the project's dev server, such as /, not "${page}"`,
-		);
+	readPage(page);
 	return {
 		out,
 		...(values.time !== undefined && { time: readSeconds('--time', values.time) }),
@@ -117,6 +116,9 @@ export function parseShotArgs(args) {
  * @property {string} [image] The image file, in the JSON file's folder.
  * @property {string | null} [code] For a failure, the error's code, or null without one.
  * @property {string} [error] For a failure, what went wrong.
+ * @property {HeldStats} [stats] The frame's figures: CPU time by thread and phase, draw calls,
+ *   uploads and pipelines, as the engine summarizes frames. The held frame is the first that the
+ *   engine draws, so it builds every pipeline and uploads the whole scene.
  * @property {number} [ms] Time from the page's navigation to the engine's result, in milliseconds.
  * @property {string[]} errors What the page and the dev server logged as errors.
  * @property {string[]} warnings What the page logged as warnings.
@@ -146,35 +148,35 @@ export function shotReport(
 				warnings,
 			},
 		};
-	const { time, frame, tier, width, height, pixels } = result;
+	const { time, frame, tier, width, height, stats } = result;
 	return {
-		report: { ok: true, ...common, time, frame, tier, width, height, image, ms, errors, warnings },
-		image: { width, height, data: new Uint8Array(Buffer.from(pixels, 'base64')) },
+		report: {
+			ok: true,
+			...common,
+			time,
+			frame,
+			tier,
+			width,
+			height,
+			image,
+			...(stats && { stats }),
+			ms,
+			errors,
+			warnings,
+		},
+		image: heldImage(result),
 	};
 }
 
-/** The lines of each logged entry that the summary shows. The JSON file keeps all of them. */
-const SHOWN_LINES = 3;
-
 /**
- * Lines that list what the page logged, such as `2 errors:`, then each entry indented, cut to its
- * first lines.
+ * A number of bytes in the unit that suits it, such as `512 bytes`, `45.2 KB` or `1.2 MB`.
  *
- * @param {readonly string[]} entries
- * @param {string} kind
+ * @param {number} bytes
  */
-function listed(entries, kind) {
-	if (entries.length === 0) return [];
-	const noun = entries.length === 1 ? kind : `${kind}s`;
-	return [
-		`${entries.length} ${noun}:`,
-		...entries.flatMap((entry) => {
-			const lines = entry.split('\n');
-			const shown = lines.slice(0, SHOWN_LINES);
-			if (lines.length > SHOWN_LINES) shown.push('    ...');
-			return shown.map((line) => `  ${line}`);
-		}),
-	];
+export function byteSize(bytes) {
+	if (bytes < 1024) return `${bytes} bytes`;
+	const kb = bytes / 1024;
+	return kb < 1024 ? `${kb.toFixed(1)} KB` : `${(kb / 1024).toFixed(1)} MB`;
 }
 
 /**
@@ -195,6 +197,11 @@ export function shotSummary(report, { page, size, png, json }) {
 			lines.push(
 				`The canvas is ${report.width} x ${report.height} pixels in a ${size[0]} x ${size[1]} window, as the page's own CSS sets it.`,
 			);
+		const { stats } = report;
+		if (stats)
+			lines.push(
+				`It made ${counted(stats.drawCalls.median, 'draw call')}, uploaded ${byteSize(stats.uploadBytes.median)} and built ${counted(stats.pipelines, 'pipeline')}.`,
+			);
 		lines.push(`Saved ${png}, and the frame's facts and what the page logged in ${json}.`);
 	} else {
 		lines.push(`Drew no frame of ${page}: ${report.error}`);
@@ -211,7 +218,7 @@ export function shotSummary(report, { page, size, png, json }) {
  * @param {string} path
  * @param {unknown} value
  */
-function writeJson(path, value) {
+export function writeJson(path, value) {
 	mkdirSync(dirname(path), { recursive: true });
 	writeFileSync(path, `${JSON.stringify(value, null, '\t')}\n`);
 }
@@ -239,10 +246,9 @@ export async function run(args) {
 	try {
 		runner = await startRunner();
 		const held = await holdPage(runner, { ...options, path: options.page });
-		const { environment, browser } = runner;
 		const facts = {
-			environment,
-			browser: `${environment === 'chrome-real-gpu' ? 'Chrome' : 'Chromium'} ${browser.version()}`,
+			environment: runner.environment,
+			browser: runner.browserName,
 			image: basename(png),
 		};
 		const made = shotReport(held, facts);
@@ -264,15 +270,4 @@ export async function run(args) {
 	writeJson(json, report);
 	console.log(shotSummary(report, { ...options, png: shownPath(png), json: shownPath(json) }));
 	return report.ok ? 0 : 1;
-}
-
-/**
- * A file as the summary names it: from the current folder when the file is inside it, and in full
- * elsewhere.
- *
- * @param {string} file
- */
-export function shownPath(file, cwd = process.cwd()) {
-	const path = relative(cwd, file);
-	return path === '' || path.startsWith('..') || isAbsolute(path) ? file : path;
 }

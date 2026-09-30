@@ -40,6 +40,8 @@ export default defineSketch(({ scene, input }) => {
 });
 ```
 
+The [input demo](https://github.com/null3d-engine/null3d/tree/main/examples/input) moves a box with an action map. Drags turn its camera, and the wheel and trackpad pinches zoom.
+
 ## Names
 
 Every input call takes a name. A name that no key, button or action has throws [E1205](../errors/E1205.md) in development builds. Names are case-sensitive.

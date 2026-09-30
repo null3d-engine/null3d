@@ -459,3 +459,69 @@ fn the_draw_list_asks_for_transient_attachments_only_when_the_device_has_them() 
     world.record(true);
     assert!(hdr_device().replay(world.renderer.list(1).words()).is_err());
 }
+
+/// Records a frame with a debug line on the HDR path, and checks that the line draws linear color
+/// into the scene color, in the camera's render pass, before the final pass tone maps it.
+fn check_hdr_lines<B: FrameBuilder>(mut world: World<B>, scene: u32) {
+    let mut device = hdr_device();
+    world.record(true);
+    device.replay(world.renderer.list(1).words()).unwrap();
+    world.draw_lines(&[
+        ([0.0, 0.0, 4.0], 0xffff_ffff),
+        ([1.0, 0.0, 4.0], 0xffff_ffff),
+    ]);
+    let commands = next(&mut world, &mut device);
+    let lines = operands(&commands, Op::CreateRenderPipeline)
+        .into_iter()
+        .find(|o| o[1] == template::DEBUG_LINES)
+        .expect("the frame makes the lines' pipeline");
+    assert_eq!(
+        lines[2], 0,
+        "the lines leave the tone mapping to the final pass"
+    );
+    assert_eq!((lines[3], lines[5]), (scene, 4));
+    let line_draw = commands
+        .iter()
+        .position(|(op, o)| *op == Op::Draw && o[0] == 2)
+        .expect("the frame draws the line");
+    let final_pass = commands
+        .iter()
+        .rposition(|(op, _)| *op == Op::BeginRenderPass)
+        .unwrap();
+    assert_eq!(count(&commands, Op::BeginRenderPass), 2);
+    assert!(
+        line_draw < final_pass,
+        "the line draws in the scene's render pass"
+    );
+}
+
+#[test]
+fn debug_lines_draw_into_the_hdr_scene_color_before_the_final_pass() {
+    for scene in HDR {
+        let (webgpu, webgl2) = worlds(scene, false);
+        check_hdr_lines(webgpu, scene);
+        check_hdr_lines(webgl2, scene);
+    }
+}
+
+/// Records the first frame of a world with a mapped material on the HDR path, and checks that
+/// every bind group it makes, the final pass's and the map's among them, has an id of its own.
+fn check_group_ids<B: FrameBuilder>(mut world: World<B>) {
+    world.add_mapped(16);
+    world.record(true);
+    hdr_device().replay(world.renderer.list(1).words()).unwrap();
+    let groups = operands(&world.commands(), Op::CreateBindGroup);
+    assert!(groups.iter().any(|o| o[1] == layout::FINAL));
+    assert!(groups.iter().any(|o| o[1] == layout::TEXTURES));
+    let mut ids: Vec<u32> = groups.iter().map(|o| o[0]).collect();
+    ids.sort_unstable();
+    ids.dedup();
+    assert_eq!(ids.len(), groups.len(), "{groups:?}");
+}
+
+#[test]
+fn the_final_pass_and_the_maps_bind_groups_of_their_own() {
+    let (webgpu, webgl2) = worlds(format::RGBA16_FLOAT, false);
+    check_group_ids(webgpu);
+    check_group_ids(webgl2);
+}

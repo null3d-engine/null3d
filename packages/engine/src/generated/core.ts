@@ -9,23 +9,49 @@ export const COMMAND_SET_MATERIAL = 5;
 export const COMMAND_SET_DYNAMIC = 6;
 export const COMMAND_SET_VISIBLE = 7;
 export const COMMAND_SET_LAYERS = 8;
+export const COMMAND_SET_FLAGS = 9;
+export const COMMAND_SET_RENDER_ORDER = 10;
+export const COMMAND_KEEP_WORLD = 1;
 export const COMMAND_WORDS = 4;
 
 export const FLAG_DYNAMIC = 1;
 export const FLAG_VISIBLE = 2;
+export const FLAG_CAST_SHADOWS = 4;
+export const FLAG_RECEIVE_SHADOWS = 8;
+export const FLAG_UNCULLED = 16;
+export const FLAG_CUSTOM_BOUNDS = 32;
 
 export const LAYERS_DEFAULT = 1;
+
+export const LIGHT_KIND_DIRECTIONAL = 1;
+export const LIGHT_KIND_POINT = 2;
+export const LIGHT_KIND_SPOT = 3;
+export const LIGHT_KIND_HEMISPHERE = 4;
+export const LIGHT_KIND_AMBIENT = 5;
+
+export const LIGHT_COLOR_MAIN = 0;
+export const LIGHT_COLOR_GROUND = 1;
+
+export const LIGHT_VALUE_INTENSITY = 0;
+export const LIGHT_VALUE_RANGE = 1;
+export const LIGHT_VALUE_DECAY = 2;
+export const LIGHT_VALUE_ANGLE = 3;
+export const LIGHT_VALUE_PENUMBRA = 4;
 
 export const SCENE_FIELD_POSITIONS = 0;
 export const SCENE_FIELD_ROTATIONS = 1;
 export const SCENE_FIELD_SCALES = 2;
 export const SCENE_FIELD_LOCAL_RADII = 3;
 export const SCENE_FIELD_DIRTY_WORDS = 4;
+export const SCENE_FIELD_LOCAL_CENTERS = 5;
 
 export const BATCH_FIELD_POSITIONS = 0;
 export const BATCH_FIELD_ROTATIONS = 1;
 export const BATCH_FIELD_SCALES = 2;
 export const BATCH_FIELD_COLORS = 3;
+
+export const DEBUG_LINE_FIELD_POSITIONS = 0;
+export const DEBUG_LINE_FIELD_COLORS = 1;
 
 export const RING_FIELD_RECORDS = 0;
 export const RING_FIELD_CAPACITY = 1;
@@ -65,6 +91,32 @@ export const TONE_MAPPING_NONE = 3;
 export const SHADING_LIT = 0;
 export const SHADING_UNLIT = 1;
 export const SHADING_TEXCOORDS = 2;
+export const SHADING_UNLIT_MAP = 3;
+
+export const TEXTURE_STAT_MEMORY_BYTES = 0;
+export const TEXTURE_STAT_TEXTURE_BYTES = 1;
+export const TEXTURE_STAT_LAST_FRAME_BYTES = 2;
+export const TEXTURE_STAT_LARGEST_FRAME_BYTES = 3;
+export const TEXTURE_STAT_WAITING = 4;
+export const TEXTURE_STAT_IMAGES_SENT = 5;
+export const TEXTURE_STAT_MAX_SIZE = 6;
+
+export const TEXTURE_FORMAT_SRGB = 9;
+export const TEXTURE_FORMAT_LINEAR = 2;
+export const TEXTURE_FORMAT_HALF_FLOAT = 4;
+export const TEXTURE_PREMULTIPLIED_ALPHA = 1;
+export const TEXTURE_MAX_DEPTH = 256;
+export const TEXTURE_WRAP_CLAMP = 0;
+export const TEXTURE_WRAP_REPEAT = 1;
+export const TEXTURE_WRAP_MIRROR = 2;
+export const TEXTURE_FILTER_NEAREST = 0;
+export const TEXTURE_FILTER_LINEAR = 1;
+
+export const TEXTURE_OPTION_UPLOAD_BUDGET = 0;
+export const TEXTURE_OPTION_MAX_ANISOTROPY = 1;
+export const TEXTURE_OPTION_UPLOAD_ALL = 2;
+export const TEXTURE_OPTION_DEFAULT_UPLOAD_BUDGET = 4194304;
+export const TEXTURE_OPTION_DEFAULT_MAX_ANISOTROPY = 16;
 
 export const SHAPE_BOX = 0;
 export const SHAPE_SPHERE = 1;

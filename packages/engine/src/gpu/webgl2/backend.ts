@@ -15,12 +15,14 @@
 
 import * as G from '../../generated/gpu';
 import type { DepthMode } from '../../page/switches';
+import { ImageTable } from '../../shared/images';
 import { forEachVertexAttribute, vertexStride } from '../vertex-format';
 import { type DepthSetup, setDepthMode } from './depth';
 import {
 	createProgram,
 	engineTemplates,
 	type GlslTemplate,
+	MIPMAP_TEMPLATE,
 	type Pipeline,
 	type Program,
 	prepareProgram,
@@ -29,6 +31,10 @@ import {
 
 /** The texture unit that texture uploads and copies use, apart from the units that bind groups use. */
 const UPLOAD_UNIT = 15;
+/** The unit that the mip level shader samples: its source texture's group 0, binding 0. */
+const MIP_UNIT = 0;
+/** The key of the mip level program among the programs of pipelines. */
+const MIP_PROGRAM = 'mipmap';
 
 // Attachment names, for invalidating what a pass does not store.
 const COLOR_ATTACHMENT0 = 0x8ce0;
@@ -74,6 +80,8 @@ interface GlTexture {
 	readonly width: number;
 	readonly height: number;
 	readonly format: GlFormat;
+	/** The mip levels of the texture. */
+	readonly mips: number;
 	/** The mip level and the layer that a render pass draws into. */
 	readonly level: number;
 	readonly layer: number;
@@ -100,6 +108,32 @@ interface VertexArray {
 	vertices: WebGLBuffer;
 	indices: WebGLBuffer;
 	format: number;
+}
+
+/** The vertex array of a buffer that a template's own layout describes, and what it was made for. */
+interface LayoutArray {
+	vao: WebGLVertexArrayObject;
+	vertices: WebGLBuffer;
+	layout: GPUVertexBufferLayout;
+}
+
+/** GL's size, type and normalization of a WebGPU vertex format that the backend reads. */
+function glAttribute(
+	gl: WebGL2RenderingContext,
+	format: GPUVertexFormat,
+): [number, number, boolean] {
+	switch (format) {
+		case 'float32x2':
+			return [2, gl.FLOAT, false];
+		case 'float32x3':
+			return [3, gl.FLOAT, false];
+		case 'float32x4':
+			return [4, gl.FLOAT, false];
+		case 'unorm8x4':
+			return [4, gl.UNSIGNED_BYTE, true];
+		default:
+			throw new Error(`the WebGL2 backend reads no vertex format ${format}`);
+	}
 }
 
 /** How GL stores each texture format, by format code, for a canvas with alpha or without. */
@@ -138,6 +172,7 @@ function glTexture(
 	width: number,
 	height: number,
 	format: GlFormat,
+	mips: number,
 	level: number,
 	layer: number,
 	view: boolean,
@@ -149,6 +184,7 @@ function glTexture(
 		width,
 		height,
 		format,
+		mips,
 		level,
 		layer,
 		view,
@@ -162,19 +198,31 @@ export class WebGL2Backend {
 	private readonly buffers: (GlBuffer | undefined)[] = [];
 	private readonly textures: (GlTexture | undefined)[] = [];
 	private readonly samplers: (WebGLSampler | undefined)[] = [];
-	/** Images the page handed over for uploads, by id. */
-	private readonly images: (ImageBitmap | undefined)[] = [];
+	/** Images for uploads, by id, which outlive the backend when the drawing thread owns them. */
+	private readonly images: ImageTable;
+	private readonly ownsImages: boolean;
 	private readonly pipelines: (Pipeline | undefined)[] = [];
 	/** The programs of the templates and permutations in use, which their pipelines share. */
 	private readonly programs = new Map<string, Program>();
 	private readonly templates: (GlslTemplate | undefined)[] = engineTemplates();
 	private readonly bindGroups: (BindEntry[] | undefined)[] = [];
 	private readonly vertexArrays: (VertexArray | undefined)[] = [];
+	/** Vertex arrays of the buffers that templates with their own vertex layout draw from, by id. */
+	private readonly layoutArrays: (LayoutArray | undefined)[] = [];
 	private readonly formats: (GlFormat | undefined)[];
 	/** GL's address modes and min filters, by the draw list's codes. */
 	private readonly addressModes: number[] = [];
 	private readonly minFilters: number[][] = [];
 	private readonly multiDraw: WEBGL_multi_draw | null;
+	/**
+	 * `KHR_parallel_shader_compile`, where the context has it and the device uses it: programs then
+	 * compile in the background, and the backend asks whether each has finished.
+	 */
+	private readonly parallel: KHR_parallel_shader_compile | null;
+	/** Programs that may still be compiling in the background. */
+	private readonly compiling: Program[] = [];
+	/** True while the current pipeline's program is compiling: draws draw nothing until it is set again. */
+	private skipDraws = false;
 	private readonly anisotropic: EXT_texture_filter_anisotropic | null;
 	private readonly maxAnisotropy: number;
 	private readonly maxSamples: number;
@@ -183,6 +231,9 @@ export class WebGL2Backend {
 	private shaderVertices: WebGLVertexArrayObject | null = null;
 	/** The framebuffer through which copies read their source. */
 	private copyFramebuffer: WebGLFramebuffer | null = null;
+	/** The framebuffer through which a mip level is drawn, and the sampler that reads the level before. */
+	private mipFramebuffer: WebGLFramebuffer | null = null;
+	private mipSampler: WebGLSampler | null = null;
 	/** Where drawing into the canvas goes during a capture; the canvas itself otherwise. */
 	canvasTarget: CanvasTarget | undefined;
 	/** What the replays since the last reset uploaded, drew and built. */
@@ -252,18 +303,25 @@ export class WebGL2Backend {
 
 	/**
 	 * `sharedUploads` is false where WebGL refuses views on shared memory, so uploads and multi-draw
-	 * arrays go through copies. `depthMode` is how the backend stores depth. `canvasAlpha` says
-	 * whether the canvas's context has alpha.
+	 * arrays go through copies. `depthMode` is how the backend stores depth. `images` holds the
+	 * images that uploads read, which the thread that draws keeps across GPU devices; by default
+	 * the backend has its own. `parallelCompile` lets programs compile in the background where the
+	 * context has `KHR_parallel_shader_compile`. `canvasAlpha` says whether the canvas's context has
+	 * alpha.
 	 */
 	constructor(
 		private readonly gl: WebGL2RenderingContext,
 		private readonly canvas: OffscreenCanvas | HTMLCanvasElement,
 		private readonly sharedUploads: boolean,
 		depthMode: DepthMode,
+		images?: ImageTable,
+		parallelCompile = true,
 		canvasAlpha = false,
 	) {
+		this.images = images ?? new ImageTable();
+		this.ownsImages = !images;
 		this.multiDraw = gl.getExtension('WEBGL_multi_draw');
-		gl.getExtension('KHR_parallel_shader_compile');
+		this.parallel = parallelCompile ? gl.getExtension('KHR_parallel_shader_compile') : null;
 		// Float render targets, for HDR color, where the device draws them: WebGL turns them on only
 		// when the extensions are asked for by name.
 		gl.getExtension('EXT_color_buffer_float');
@@ -308,8 +366,68 @@ export class WebGL2Backend {
 
 	/** Hands the backend an image for `UploadImage` commands to copy from, under the draw list's id. */
 	setImage(id: number, image: ImageBitmap): void {
-		this.images[id]?.close();
-		this.images[id] = image;
+		this.images.set(id, image);
+	}
+
+	/**
+	 * Starts to build each pipeline that the list in `words[start, end)` creates before its first
+	 * other command, and returns where the rest of the list starts. Programs compile without
+	 * blocking where the context has `KHR_parallel_shader_compile`. Until one has compiled,
+	 * `building` is true and the draws that use it draw nothing. Without the extension, a program's
+	 * first draw waits for its compile.
+	 */
+	prepare(words: Uint32Array, start: number, end: number): number {
+		let i = start;
+		while (i < end && ((words[i] as number) & 0xff) === G.OP_CREATE_RENDER_PIPELINE) {
+			this.createPipeline(words, i + 1, true);
+			i += (words[i] as number) >>> 8;
+		}
+		return i;
+	}
+
+	/** True while a program is compiling in the background. */
+	get building(): boolean {
+		const compiling = this.compiling;
+		for (let k = compiling.length - 1; k >= 0; k--) {
+			if (this.compiled(compiling[k] as Program)) {
+				compiling[k] = compiling[compiling.length - 1] as Program;
+				compiling.pop();
+			}
+		}
+		return compiling.length > 0;
+	}
+
+	/**
+	 * True once a program may be used without waiting: it has compiled and linked, or failed to, or
+	 * its first draw waits for its compile.
+	 */
+	private compiled(p: Program): boolean {
+		const parallel = this.parallel;
+		return (
+			p.ready ||
+			!p.background ||
+			!parallel ||
+			this.gl.getProgramParameter(p.program, parallel.COMPLETION_STATUS_KHR) === true
+		);
+	}
+
+	/**
+	 * Creates the pipeline of a `CreateRenderPipeline` command with its operands at `a`. A new
+	 * program compiles in the background when `background` is set; otherwise its first draw waits
+	 * for it.
+	 */
+	private createPipeline(words: Uint32Array, a: number, background: boolean): void {
+		const template = words[a + 1] as number;
+		const flags = words[a + 6] as number;
+		this.pipelines[words[a] as number] = {
+			program: this.programOf(template, words[a + 2] as number, background),
+			cullNone: (flags & G.STATE_CULL_NONE) !== 0,
+			depth: words[a + 4] !== G.FORMAT_NONE,
+			vertexFormat: words[a + 7] as number,
+			mode: flags & G.STATE_LINE_LIST ? this.gl.LINES : this.gl.TRIANGLES,
+			vertices: this.need(this.templates, template, 'render pipeline template').vertices,
+		};
+		this.counts.pipelines++;
 	}
 
 	resetCounts(): void {
@@ -384,6 +502,12 @@ export class WebGL2Backend {
 				case G.OP_UPLOAD_IMAGE:
 					this.uploadImage(words, a);
 					break;
+				case G.OP_RELEASE_IMAGE:
+					this.images.release(words[a] as number);
+					break;
+				case G.OP_GENERATE_MIPMAPS:
+					this.generateMipmaps(words[a] as number, words[a + 1] as number);
+					break;
 				case G.OP_COPY_TEXTURE_TO_TEXTURE:
 					this.copyTexture(words, a);
 					break;
@@ -400,13 +524,8 @@ export class WebGL2Backend {
 					break;
 				}
 				case G.OP_CREATE_RENDER_PIPELINE:
-					this.pipelines[words[a] as number] = {
-						program: this.programOf(words[a + 1] as number, words[a + 2] as number),
-						cullNone: ((words[a + 6] as number) & G.STATE_CULL_NONE) !== 0,
-						depth: words[a + 4] !== G.FORMAT_NONE,
-						vertexFormat: words[a + 7] as number,
-					};
-					this.counts.pipelines++;
+					// A list that creates a pipeline after other commands waits for it at its first draw.
+					this.createPipeline(words, a, false);
 					break;
 				case G.OP_CREATE_BIND_GROUP: {
 					const entries: BindEntry[] = [];
@@ -463,10 +582,11 @@ export class WebGL2Backend {
 					this.indexBytes = words[a + 1] === G.INDEX_FORMAT_UINT32 ? 4 : 2;
 					break;
 				case G.OP_DRAW:
-					this.useVertexArray(this.shaderVertexArray());
+					if (this.skipDraws) break;
+					this.useVertexArray(this.drawVertexArray());
 					this.prepareDraw(words[a + 3] as number);
 					gl.drawArraysInstanced(
-						gl.TRIANGLES,
+						(this.current as Pipeline).mode,
 						words[a + 2] as number,
 						words[a] as number,
 						words[a + 1] as number,
@@ -474,11 +594,12 @@ export class WebGL2Backend {
 					this.counts.drawCalls++;
 					break;
 				case G.OP_DRAW_INDEXED: {
+					if (this.skipDraws) break;
 					if (words[a + 3] !== 0) throw new Error('WebGL2 has no base vertex for draws');
 					this.useMeshVertexArray();
 					this.prepareDraw(words[a + 4] as number);
 					gl.drawElementsInstanced(
-						gl.TRIANGLES,
+						(this.current as Pipeline).mode,
 						words[a] as number,
 						this.indexType,
 						(words[a + 2] as number) * this.indexBytes,
@@ -488,7 +609,7 @@ export class WebGL2Backend {
 					break;
 				}
 				case G.OP_MULTI_DRAW_INDEXED:
-					this.multiDrawIndexed(words, a);
+					if (!this.skipDraws) this.multiDrawIndexed(words, a);
 					break;
 				case G.OP_SUBMIT:
 					break;
@@ -499,14 +620,44 @@ export class WebGL2Backend {
 		}
 	}
 
-	/** The program of a template and permutation, which starts compiling the first time. */
-	private programOf(template: number, permutation: number): Program {
+	/** The program that draws mip levels, in use. */
+	private mipmapProgram(): Program {
+		let program = this.programs.get(MIP_PROGRAM);
+		if (!program) {
+			program = createProgram(this.gl, MIPMAP_TEMPLATE, 0);
+			this.programs.set(MIP_PROGRAM, program);
+		}
+		this.useProgram(program);
+		return program;
+	}
+
+	/** Puts a program in use, first checking its link and binding its slots at its first use. */
+	private useProgram(program: Program): void {
+		if (!program.ready) {
+			prepareProgram(this.gl, program, this.depth);
+			this.program = program.program;
+		}
+		if (this.program !== program.program) {
+			this.gl.useProgram(program.program);
+			this.program = program.program;
+		}
+	}
+
+	/**
+	 * The program of a template and permutation, which starts compiling the first time, in the
+	 * background when `background` is set and the context can.
+	 */
+	private programOf(template: number, permutation: number, background: boolean): Program {
 		const key = `${template} ${permutation}`;
 		let program = this.programs.get(key);
 		if (!program) {
 			const glsl = this.need(this.templates, template, 'render pipeline template');
 			program = createProgram(this.gl, glsl, permutation);
 			this.programs.set(key, program);
+			if (background && this.parallel) {
+				program.background = true;
+				this.compiling.push(program);
+			}
 		}
 		return program;
 	}
@@ -560,14 +711,25 @@ export class WebGL2Backend {
 	}
 
 	private bindTexture(unit: number, target: number, texture: WebGLTexture | null): void {
-		const gl = this.gl;
 		if (this.unitTextures[unit] === texture) return;
-		if (this.activeUnit !== unit) {
-			gl.activeTexture(gl.TEXTURE0 + unit);
-			this.activeUnit = unit;
-		}
-		gl.bindTexture(target, texture);
+		this.activate(unit);
+		this.gl.bindTexture(target, texture);
 		this.unitTextures[unit] = texture;
+	}
+
+	private activate(unit: number): void {
+		if (this.activeUnit === unit) return;
+		this.gl.activeTexture(this.gl.TEXTURE0 + unit);
+		this.activeUnit = unit;
+	}
+
+	/**
+	 * Binds a texture for the calls that change it, which act on the active unit: when the texture
+	 * is bound already, a bind group may have made another unit active since.
+	 */
+	private editTexture(unit: number, target: number, texture: WebGLTexture | null): void {
+		this.bindTexture(unit, target, texture);
+		this.activate(unit);
 	}
 
 	private createBuffer(id: number, size: number, usage: number): void {
@@ -636,14 +798,14 @@ export class WebGL2Backend {
 			} else {
 				gl.renderbufferStorage(gl.RENDERBUFFER, format.internal, width, height);
 			}
-			this.textures[id] = glTexture(null, renderbuffer, 0, width, height, format, 0, 0, false);
+			this.textures[id] = glTexture(null, renderbuffer, 0, width, height, format, 1, 0, 0, false);
 			return;
 		}
 		const texture = gl.createTexture();
 		if (!texture) throw new Error('WebGL2 could not create a texture');
 		// WebGL2 fixes a texture's kind at its first binding, as compatibility mode fixes its view.
 		const target = words[a + 8] === G.VIEW_2D_ARRAY ? gl.TEXTURE_2D_ARRAY : gl.TEXTURE_2D;
-		this.bindTexture(UPLOAD_UNIT, target, texture);
+		this.editTexture(UPLOAD_UNIT, target, texture);
 		if (target === gl.TEXTURE_2D_ARRAY)
 			gl.texStorage3D(target, mips, format.internal, width, height, layers);
 		else gl.texStorage2D(target, mips, format.internal, width, height);
@@ -652,7 +814,7 @@ export class WebGL2Backend {
 		// textures are complete only with nearest filters.
 		gl.texParameteri(target, gl.TEXTURE_MIN_FILTER, gl.NEAREST);
 		gl.texParameteri(target, gl.TEXTURE_MAG_FILTER, gl.NEAREST);
-		this.textures[id] = glTexture(texture, null, target, width, height, format, 0, 0, false);
+		this.textures[id] = glTexture(texture, null, target, width, height, format, mips, 0, 0, false);
 	}
 
 	/** A texture by id, which a view, a write, an upload or a copy can use: not a render-only one. */
@@ -675,6 +837,7 @@ export class WebGL2Backend {
 			Math.max(1, texture.width >> level),
 			Math.max(1, texture.height >> level),
 			texture.format,
+			texture.mips,
 			level,
 			words[a + 3] as number,
 			true,
@@ -724,7 +887,7 @@ export class WebGL2Backend {
 		if (this.copying) this.stage(source, bytes);
 		const data = this.texels(type);
 		const index = this.texelIndex(type, source);
-		this.bindTexture(UPLOAD_UNIT, texture.target, texture.texture);
+		this.editTexture(UPLOAD_UNIT, texture.target, texture.texture);
 		if (texture.target === gl.TEXTURE_2D_ARRAY) {
 			gl.texSubImage3D(
 				gl.TEXTURE_2D_ARRAY,
@@ -758,18 +921,23 @@ export class WebGL2Backend {
 	}
 
 	/**
-	 * Copies an image into a texture. WebGL applies no flip and no premultiplication to an image
-	 * bitmap, so the texture gets the bitmap as its decoder made it.
+	 * Copies part of an image into a texture. WebGL applies no flip and no premultiplication to an
+	 * image bitmap, so the texture gets the bitmap as its decoder made it. The pixel store's skips
+	 * pick the part, as WebGL2 applies them to images too.
 	 */
 	private uploadImage(words: Uint32Array, a: number): void {
 		const gl = this.gl;
 		const texture = this.textureOf(words[a] as number);
 		const id = words[a + 7] as number;
-		const image = this.need(this.images, id, 'image');
+		const image = this.images.need(id);
 		const width = words[a + 5] as number;
 		const height = words[a + 6] as number;
+		const skipPixels = words[a + 9] as number;
+		const skipRows = words[a + 10] as number;
 		const { format, type } = texture.format;
-		this.bindTexture(UPLOAD_UNIT, texture.target, texture.texture);
+		this.editTexture(UPLOAD_UNIT, texture.target, texture.texture);
+		if (skipPixels) gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, skipPixels);
+		if (skipRows) gl.pixelStorei(gl.UNPACK_SKIP_ROWS, skipRows);
 		if (texture.target === gl.TEXTURE_2D_ARRAY) {
 			gl.texSubImage3D(
 				gl.TEXTURE_2D_ARRAY,
@@ -797,11 +965,57 @@ export class WebGL2Backend {
 				image,
 			);
 		}
+		// Writes from engine memory read whole rows from their first texel.
+		if (skipPixels) gl.pixelStorei(gl.UNPACK_SKIP_PIXELS, 0);
+		if (skipRows) gl.pixelStorei(gl.UNPACK_SKIP_ROWS, 0);
 		this.counts.uploadBytes += width * height * texture.format.bytes;
-		if ((words[a + 8] as number) & G.UPLOAD_RELEASE) {
-			image.close();
-			this.images[id] = undefined;
+		if ((words[a + 8] as number) & G.UPLOAD_RELEASE) this.images.release(id);
+	}
+
+	/**
+	 * Makes mip levels 1 and up of one layer of a texture array, as the WebGPU backend does: a
+	 * triangle over each level samples the level before it with a linear filter. While a level is
+	 * drawn, the level before is the texture's base and highest level, so the draw reads no level
+	 * that it writes. A blit per level would average the stored bytes of sRGB texels in Firefox,
+	 * not their linear values, and `generateMipmap` would remake every layer.
+	 */
+	private generateMipmaps(id: number, layer: number): void {
+		const gl = this.gl;
+		const texture = this.textureOf(id);
+		const program = this.mipmapProgram();
+		if (program.firstInstance && program.firstInstanceValue !== layer) {
+			gl.uniform1ui(program.firstInstance, layer);
+			program.firstInstanceValue = layer;
 		}
+		if (!this.mipFramebuffer) this.mipFramebuffer = gl.createFramebuffer();
+		if (!this.mipSampler) {
+			this.mipSampler = gl.createSampler();
+			gl.samplerParameteri(this.mipSampler, gl.TEXTURE_MIN_FILTER, gl.LINEAR);
+			gl.samplerParameteri(this.mipSampler, gl.TEXTURE_WRAP_S, gl.CLAMP_TO_EDGE);
+			gl.samplerParameteri(this.mipSampler, gl.TEXTURE_WRAP_T, gl.CLAMP_TO_EDGE);
+		}
+		gl.bindFramebuffer(gl.DRAW_FRAMEBUFFER, this.mipFramebuffer);
+		this.useVertexArray(this.emptyVertexArray());
+		this.setScissorTest(false);
+		this.setDepthTest(false);
+		this.setCullFace(false);
+		this.editTexture(MIP_UNIT, gl.TEXTURE_2D_ARRAY, texture.texture);
+		this.bindUnitSampler(MIP_UNIT, this.mipSampler);
+		this.samplersChanged = true;
+		const attachment = texture.format.attachment;
+		for (let level = 1; level < texture.mips; level++) {
+			gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_BASE_LEVEL, level - 1);
+			gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MAX_LEVEL, level - 1);
+			gl.framebufferTextureLayer(gl.DRAW_FRAMEBUFFER, attachment, texture.texture, level, layer);
+			const width = Math.max(1, texture.width >> level);
+			const height = Math.max(1, texture.height >> level);
+			this.setGlViewport(0, 0, width, height);
+			gl.drawArrays(gl.TRIANGLES, 0, 3);
+		}
+		gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_BASE_LEVEL, 0);
+		gl.texParameteri(gl.TEXTURE_2D_ARRAY, gl.TEXTURE_MAX_LEVEL, texture.mips - 1);
+		// A framebuffer that is not bound keeps what it holds alive, so the texture leaves it.
+		gl.framebufferTextureLayer(gl.DRAW_FRAMEBUFFER, attachment, null, 0, 0);
 	}
 
 	/** Attaches one mip level and layer of a texture to a framebuffer. */
@@ -839,7 +1053,7 @@ export class WebGL2Backend {
 		const layers = words[a + 12] as number;
 		if (!this.copyFramebuffer) this.copyFramebuffer = gl.createFramebuffer();
 		gl.bindFramebuffer(gl.READ_FRAMEBUFFER, this.copyFramebuffer);
-		this.bindTexture(UPLOAD_UNIT, destination.target, destination.texture);
+		this.editTexture(UPLOAD_UNIT, destination.target, destination.texture);
 		const attachment = source.format.attachment;
 		for (let k = 0; k < layers; k++) {
 			this.attachLevel(gl.READ_FRAMEBUFFER, attachment, source, sourceLevel, sourceLayer + k);
@@ -960,6 +1174,7 @@ export class WebGL2Backend {
 
 	private beginPass(words: Uint32Array, floats: Float32Array, a: number): void {
 		const gl = this.gl;
+		this.skipDraws = false;
 		const color = words[a] as number;
 		const depth = words[a + 2] as number;
 		const flags = words[a + 8] as number;
@@ -1060,7 +1275,11 @@ export class WebGL2Backend {
 
 	/** Sets the viewport from a rectangle given from the target's top, as GL counts from its bottom. */
 	private setViewport(x: number, y: number, width: number, height: number): void {
-		const bottom = this.passHeight - y - height;
+		this.setGlViewport(x, this.passHeight - y - height, width, height);
+	}
+
+	/** Sets GL's viewport, a rectangle counted from the target's bottom. */
+	private setGlViewport(x: number, bottom: number, width: number, height: number): void {
 		const viewport = this.viewport;
 		if (
 			viewport[0] === x &&
@@ -1082,6 +1301,20 @@ export class WebGL2Backend {
 		else this.gl.depthRange(near, far);
 		this.depthNear = near;
 		this.depthFar = far;
+	}
+
+	private setCullFace(on: boolean): void {
+		if (this.cullFace === on) return;
+		if (on) this.gl.enable(this.gl.CULL_FACE);
+		else this.gl.disable(this.gl.CULL_FACE);
+		this.cullFace = on;
+	}
+
+	private setDepthTest(on: boolean): void {
+		if (this.depthTest === on) return;
+		if (on) this.gl.enable(this.gl.DEPTH_TEST);
+		else this.gl.disable(this.gl.DEPTH_TEST);
+		this.depthTest = on;
 	}
 
 	private setScissorTest(on: boolean): void {
@@ -1106,32 +1339,17 @@ export class WebGL2Backend {
 	}
 
 	private setPipeline(p: Pipeline): void {
-		const gl = this.gl;
 		const program = p.program;
-		if (!program.ready) {
-			prepareProgram(gl, program, this.depth);
-			this.program = program.program;
-		}
-		if (this.program !== program.program) {
-			gl.useProgram(program.program);
-			this.program = program.program;
-		}
+		this.skipDraws = !this.compiled(program);
+		if (this.skipDraws) return;
+		this.useProgram(program);
 		if (this.current?.program !== program && (program.sampled || this.boundSamplers > 0))
 			this.samplersChanged = true;
 		this.current = p;
-		const cull = !p.cullNone;
-		if (cull !== this.cullFace) {
-			if (cull) gl.enable(gl.CULL_FACE);
-			else gl.disable(gl.CULL_FACE);
-			this.cullFace = cull;
-		}
-		if (p.depth !== this.depthTest) {
-			if (p.depth) gl.enable(gl.DEPTH_TEST);
-			else gl.disable(gl.DEPTH_TEST);
-			this.depthTest = p.depth;
-		}
+		this.setCullFace(!p.cullNone);
+		this.setDepthTest(p.depth);
 		if (p.depth && !this.depthMask) {
-			gl.depthMask(true);
+			this.gl.depthMask(true);
 			this.depthMask = true;
 		}
 	}
@@ -1174,10 +1392,62 @@ export class WebGL2Backend {
 		}
 	}
 
+	/**
+	 * The vertex array of a draw without indices: the current vertex buffer in the layout of the
+	 * pipeline's template, or none where the template's vertex shader makes its vertices.
+	 */
+	private drawVertexArray(): WebGLVertexArrayObject {
+		const layout = this.current?.vertices;
+		return layout ? this.layoutVertexArray(layout) : this.shaderVertexArray();
+	}
+
+	/** The vertex array of the current vertex buffer in a template's own layout. */
+	private layoutVertexArray(layout: GPUVertexBufferLayout): WebGLVertexArrayObject {
+		const vertices = this.need(this.buffers, this.vertexBuffer, 'buffer').buffer;
+		const cached = this.layoutArrays[this.vertexBuffer];
+		if (cached && cached.vertices === vertices && cached.layout === layout) return cached.vao;
+		if (cached) this.gl.deleteVertexArray(cached.vao);
+		return this.createLayoutVertexArray(vertices, layout);
+	}
+
+	/**
+	 * Makes the vertex array of the current vertex buffer in a template's layout. It runs only when
+	 * the buffer or the layout change.
+	 */
+	private createLayoutVertexArray(
+		vertices: WebGLBuffer,
+		layout: GPUVertexBufferLayout,
+	): WebGLVertexArrayObject {
+		const gl = this.gl;
+		const vao = gl.createVertexArray();
+		if (!vao) throw new Error('WebGL2 could not create a vertex array');
+		this.useVertexArray(vao);
+		gl.bindBuffer(gl.ARRAY_BUFFER, vertices);
+		for (const attribute of layout.attributes) {
+			const [size, type, normalized] = glAttribute(gl, attribute.format);
+			gl.enableVertexAttribArray(attribute.shaderLocation);
+			gl.vertexAttribPointer(
+				attribute.shaderLocation,
+				size,
+				type,
+				normalized,
+				layout.arrayStride,
+				attribute.offset,
+			);
+		}
+		this.layoutArrays[this.vertexBuffer] = { vao, vertices, layout };
+		return vao;
+	}
+
 	/** The vertex array of draws that read no vertex buffer: their vertex shaders make vertices. */
 	private shaderVertexArray(): WebGLVertexArrayObject {
 		if (this.vertexBuffer !== 0)
 			throw new Error('a WebGL2 draw without indices reads no vertex buffer');
+		return this.emptyVertexArray();
+	}
+
+	/** A vertex array with no attributes. */
+	private emptyVertexArray(): WebGLVertexArrayObject {
 		if (!this.shaderVertices) {
 			this.shaderVertices = this.gl.createVertexArray();
 			if (!this.shaderVertices) throw new Error('WebGL2 could not create a vertex array');
@@ -1246,15 +1516,18 @@ export class WebGL2Backend {
 		for (let k = 0; k < pairs.length; k += 2) {
 			const unit = pairs[k] as number;
 			const slot = pairs[k + 1] as number;
-			const sampler = slot < 0 ? null : (this.slotSamplers[slot] ?? null);
-			const bound = this.unitSamplers[unit] ?? null;
-			if (bound !== sampler) {
-				gl.bindSampler(unit, sampler);
-				this.unitSamplers[unit] = sampler;
-				this.boundSamplers += (sampler ? 1 : 0) - (bound ? 1 : 0);
-			}
+			this.bindUnitSampler(unit, slot < 0 ? null : (this.slotSamplers[slot] ?? null));
 		}
 		this.samplersChanged = false;
+	}
+
+	/** Binds a sampler to a texture unit, or none, and keeps the count of units that have one. */
+	private bindUnitSampler(unit: number, sampler: WebGLSampler | null): void {
+		const bound = this.unitSamplers[unit] ?? null;
+		if (bound === sampler) return;
+		this.gl.bindSampler(unit, sampler);
+		this.unitSamplers[unit] = sampler;
+		this.boundSamplers += (sampler ? 1 : 0) - (bound ? 1 : 0);
 	}
 
 	/**
@@ -1273,10 +1546,11 @@ export class WebGL2Backend {
 		const instances = (words[a + 3] as number) / 4;
 		this.useMeshVertexArray();
 		this.prepareDraw(0);
+		const mode = (this.current as Pipeline).mode;
 		if (count === 1) {
 			// One draw needs no arrays. Its gl_DrawID is 0 either way, so it reads the same record.
 			this.gl.drawElementsInstanced(
-				this.gl.TRIANGLES,
+				mode,
 				ints[counts] as number,
 				this.indexType,
 				ints[offsets] as number,
@@ -1293,7 +1567,7 @@ export class WebGL2Backend {
 			lists[2 * count + k] = ints[instances + k] as number;
 		}
 		ext.multiDrawElementsInstancedWEBGL(
-			this.gl.TRIANGLES,
+			mode,
 			lists,
 			0,
 			this.indexType,
@@ -1311,10 +1585,13 @@ export class WebGL2Backend {
 		for (let id = 0; id < this.buffers.length; id++) this.destroyBuffer(id);
 		for (let id = 0; id < this.textures.length; id++) this.destroyTexture(id);
 		for (let id = 0; id < this.samplers.length; id++) this.destroySampler(id);
-		for (const image of this.images) image?.close();
+		if (this.ownsImages) this.images.clear();
 		for (const p of this.programs.values()) gl.deleteProgram(p.program);
 		for (const v of this.vertexArrays) if (v) gl.deleteVertexArray(v.vao);
+		for (const v of this.layoutArrays) if (v) gl.deleteVertexArray(v.vao);
 		if (this.shaderVertices) gl.deleteVertexArray(this.shaderVertices);
 		if (this.copyFramebuffer) gl.deleteFramebuffer(this.copyFramebuffer);
+		if (this.mipFramebuffer) gl.deleteFramebuffer(this.mipFramebuffer);
+		if (this.mipSampler) gl.deleteSampler(this.mipSampler);
 	}
 }

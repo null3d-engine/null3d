@@ -1,9 +1,10 @@
 // The render loop for a thread that owns the canvas and runs no sketch code: the render worker in
 // pipelined mode, or the page's main thread with ?render=main. Inside its own frame callback it takes
 // the newest published frame, applies a pending resize, draws, and tells the sketch worker it may
-// compute the next frame. A callback that finds no new frame, or that comes before the frame's turn
-// under ?fps= or the display's rate, draws nothing. In a worker, each callback also sets a timer
-// that wakes the thread shortly before the next callback is due.
+// compute the next frame. A callback that finds no new frame, a frame that waits for its pipelines,
+// too many frames unfinished on the GPU, or that comes before the frame's turn under ?fps= or the
+// display's rate, draws nothing. In a worker, each callback also sets a timer that wakes the thread
+// shortly before the next callback is due.
 
 import { controlViews, Slot } from '../shared/control';
 import { FrameRecorder, Role } from '../shared/metrics';
@@ -27,6 +28,13 @@ const WAKE_AHEAD_MS = 4;
 const ASSUMED_DISPLAY_HZ = 60;
 const MS_PER_SECOND = 1000;
 const MICROSECONDS_PER_MS = 1000;
+/**
+ * The most frames that may be unfinished on the GPU once a frame is submitted. Browsers let many
+ * more queue when the GPU falls behind, and each frame in the queue adds a frame of delay between
+ * input and the screen. With two, the GPU has the next frame ready as it finishes one, so it never
+ * waits for work.
+ */
+const MAX_FRAMES_IN_FLIGHT = 2;
 
 /**
  * The delay, in whole milliseconds, from the start of a frame callback to the wake-up before the
@@ -60,6 +68,8 @@ export function emptySceneInput(frame: number, out?: ReusableInput): FrameInput 
 export class Presenter {
 	private resizeSerial = 0;
 	private lastPresented = -1;
+	/** The newest frame whose pipelines the presenter reported built to the sketch thread. */
+	private builtFrame = 0;
 	private readonly input: ReusableInput = { frame: 0, background: [0, 0, 0] };
 	private readonly refresh = new RefreshMeter();
 	private readonly pacer: FramePacer;
@@ -71,12 +81,16 @@ export class Presenter {
 	private displayInterval = 0;
 	readonly record: FrameRecorder;
 
-	/** `fps` is the frame rate that ?fps= holds, or undefined to draw at the display's rate. */
+	/**
+	 * `fps` is the frame rate that ?fps= holds, or undefined to draw at the display's rate. `queue`
+	 * is the most frames that may wait unfinished on the GPU.
+	 */
 	constructor(
 		private readonly slots: Int32Array,
 		private readonly renderer: Renderer,
 		metrics: ArrayBufferLike,
 		fps: number | undefined,
+		private readonly queue = MAX_FRAMES_IN_FLIGHT,
 	) {
 		this.record = new FrameRecorder(metrics, Role.Render);
 		this.pacer = new FramePacer(fps);
@@ -113,11 +127,13 @@ export class Presenter {
 	}
 
 	/**
-	 * True when the callback at `timestamp` may draw a frame, under the frame rate that ?fps= or the
-	 * display holds. A true answer uses up the frame's turn, so ask only when a frame is ready to draw.
+	 * True when the callback at `timestamp` may draw a frame: the GPU has room for one more, and the
+	 * frame rate that ?fps= or the display holds gives the frame its turn. A true answer uses up the
+	 * turn, so ask only when a frame is ready to draw.
 	 */
 	due(timestamp: number): boolean {
-		return this.pacer.take(timestamp);
+		const unfinished = this.renderer.completions?.unfinished() ?? 0;
+		return unfinished < this.queue && this.pacer.take(timestamp);
 	}
 
 	/** Applies the canvas size the page wrote last, if it changed. */
@@ -131,14 +147,37 @@ export class Presenter {
 		);
 	}
 
+	/** True when a frame's draw list was recorded for a GPU device that the browser took away. */
+	private stale(frame: number): boolean {
+		const recordedFor = Atomics.load(this.slots, Slot.FrameEpoch0 + (frame & 1));
+		return recordedFor !== Atomics.load(this.slots, Slot.GpuEpoch);
+	}
+
+	/**
+	 * True when a frame may draw. The first call for a frame starts to build the pipelines that its
+	 * list creates, and the frame waits for them until the renderer has drawn a frame with every
+	 * pipeline built. A stale frame never waits, since it draws nothing. Once no pipeline is building,
+	 * the frame's number goes to the sketch thread, whose warm-ups wait for it.
+	 */
+	ready(frame: number): boolean {
+		if (this.stale(frame)) return true;
+		const ready = this.renderer.prepare(frame);
+		if (this.lastPresented < 0) this.record.markWarmUp(this.renderer.building);
+		if (!this.renderer.building && frame > this.builtFrame) {
+			this.builtFrame = frame;
+			Atomics.store(this.slots, Slot.PipelinesBuilt, frame);
+			Atomics.notify(this.slots, Slot.PipelinesBuilt);
+		}
+		return ready;
+	}
+
 	/**
 	 * Draws a frame and records its CPU time and the interval since the previous one. A frame whose
 	 * draw list was recorded for a GPU device the browser took away is skipped: its list names
 	 * objects the new device lacks.
 	 */
 	draw(frame: number, timestamp: number): void {
-		const recordedFor = Atomics.load(this.slots, Slot.FrameEpoch0 + (frame & 1));
-		if (recordedFor !== Atomics.load(this.slots, Slot.GpuEpoch)) return;
+		if (this.stale(frame)) return;
 		const start = performance.now();
 		this.record.begin(frame);
 		this.renderer.drawFrame(emptySceneInput(frame, this.input), this.record);
@@ -155,7 +194,8 @@ export class Presenter {
 
 /**
  * Hold mode's loop, which runs no frame loop. When first asked, it draws the frame that the sketch
- * thread published, in one animation frame callback, and it draws nothing after.
+ * thread published, in the first animation frame callback after its pipelines are built, and it
+ * draws nothing after.
  */
 export class HoldLoop implements RenderLoop {
 	private readonly presenter: Presenter;
@@ -172,12 +212,16 @@ export class HoldLoop implements RenderLoop {
 
 	drawHeld(): Promise<void> {
 		this.drawn ??= new Promise((resolve, reject) => {
-			requestAnimationFrame((timestamp) => {
+			const attempt = (timestamp: number) => {
 				const frame = Atomics.load(this.slots, Slot.FramesPublished);
 				if (this.stopped) reject(new Error('the engine stopped before it drew the held frame'));
 				else if (frame === 0) reject(new Error('the sketch thread published no held frame'));
 				else
 					try {
+						if (!this.presenter.ready(frame)) {
+							requestAnimationFrame(attempt);
+							return;
+						}
 						this.presenter.applyResize();
 						Atomics.store(this.slots, Slot.FramesTaken, frame);
 						this.presenter.draw(frame, timestamp);
@@ -185,7 +229,8 @@ export class HoldLoop implements RenderLoop {
 					} catch (error) {
 						reject(error);
 					}
-			});
+			};
+			requestAnimationFrame(attempt);
 		});
 		return this.drawn;
 	}
@@ -200,9 +245,10 @@ export function runRenderLoop(
 	control: ArrayBufferLike,
 	metrics: ArrayBufferLike,
 	fps: number | undefined,
+	queue?: number,
 ): RenderLoop {
 	const { slots } = controlViews(control);
-	const presenter = new Presenter(slots, renderer, metrics, fps);
+	const presenter = new Presenter(slots, renderer, metrics, fps, queue);
 	let taken = 0;
 	let stopped = false;
 
@@ -212,7 +258,7 @@ export function runRenderLoop(
 		presenter.wakeBeforeNextFrame();
 		presenter.applyResize();
 		const published = Atomics.load(slots, Slot.FramesPublished);
-		if (published > taken && presenter.due(timestamp)) {
+		if (published > taken && presenter.ready(published) && presenter.due(timestamp)) {
 			taken = published;
 			Atomics.store(slots, Slot.FramesTaken, taken);
 			Atomics.notify(slots, Slot.FramesTaken);

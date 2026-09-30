@@ -2,23 +2,31 @@
 // build translated from WGSL. A program compiles when the first pipeline of its template and
 // permutation is created, and pipelines for other vertex formats share it, because WebGL2 keeps a
 // mesh's vertex layout in its vertex array, not in the program. Its link result is read only when
-// it is first drawn with, so the driver can compile a frame's programs in parallel.
+// it is first drawn with, so the driver can compile a frame's programs in parallel. Only
+// development builds define the template of the debug lines, so release builds hold none of it.
 
 import {
+	TEMPLATE_DEBUG_LINES,
 	TEMPLATE_FINAL,
 	TEMPLATE_INSTANCED_LIT,
 	TEMPLATE_INSTANCED_TEXCOORDS,
 	TEMPLATE_INSTANCED_UNLIT,
+	TEMPLATE_INSTANCED_UNLIT_MAP,
 } from '../../generated/gpu';
 import {
+	DEBUG_LINES_SHADER,
 	DEPTH_MAPPING_UNIFORM,
 	FINAL_SHADER,
 	type GlslProgram,
 	type GlslStage,
 	LIT_SHADER,
+	MIPMAP_SHADER,
 	TEXCOORDS_SHADER,
+	UNLIT_MAP_SHADER,
 	UNLIT_SHADER,
 } from '../../generated/shaders';
+import { DEV } from '../dev';
+import { LINE_VERTICES } from '../line-vertices';
 import { type ShaderVariants, variantFor } from '../variants';
 import type { DepthSetup } from './depth';
 
@@ -35,6 +43,11 @@ export const NO_SAMPLER = -1;
 export interface GlslTemplate {
 	readonly shader: ShaderVariants;
 	readonly pipeline: string;
+	/**
+	 * For a template that draws from a vertex buffer of its own, not from a mesh: the layout of the
+	 * buffer in slot 0, as WebGPU describes it.
+	 */
+	readonly vertices?: GPUVertexBufferLayout;
 }
 
 /** A linked, or linking, program, which every pipeline of its template and permutation shares. */
@@ -55,6 +68,11 @@ export interface Program {
 	sampled: boolean;
 	/** True once the link result was checked and the blocks and textures were bound. */
 	ready: boolean;
+	/**
+	 * True when the program compiles in the background: until it has, the draws that use it draw
+	 * nothing. Otherwise its first draw waits for the compile.
+	 */
+	background: boolean;
 }
 
 /** A render pipeline: its program, and the fixed-function state and vertex format it asks for. */
@@ -64,6 +82,10 @@ export interface Pipeline {
 	readonly depth: boolean;
 	/** The vertex format of the meshes it draws, which places their attributes in vertex arrays. */
 	readonly vertexFormat: number;
+	/** The primitive that its draws make: GL's `TRIANGLES`, or `LINES`. */
+	readonly mode: number;
+	/** The layout of its template's own vertex buffer, for a template that draws no mesh. */
+	readonly vertices: GPUVertexBufferLayout | undefined;
 }
 
 /** The engine's render pipeline templates, by template id. */
@@ -72,9 +94,19 @@ export function engineTemplates(): (GlslTemplate | undefined)[] {
 	templates[TEMPLATE_INSTANCED_LIT] = { shader: LIT_SHADER, pipeline: 'main' };
 	templates[TEMPLATE_INSTANCED_UNLIT] = { shader: UNLIT_SHADER, pipeline: 'main' };
 	templates[TEMPLATE_INSTANCED_TEXCOORDS] = { shader: TEXCOORDS_SHADER, pipeline: 'main' };
+	templates[TEMPLATE_INSTANCED_UNLIT_MAP] = { shader: UNLIT_MAP_SHADER, pipeline: 'main' };
 	templates[TEMPLATE_FINAL] = { shader: FINAL_SHADER, pipeline: 'main' };
+	if (DEV)
+		templates[TEMPLATE_DEBUG_LINES] = {
+			shader: DEBUG_LINES_SHADER,
+			pipeline: 'main',
+			vertices: LINE_VERTICES,
+		};
 	return templates;
 }
+
+/** The program that draws a mip level of a texture array's layer from the level before it. */
+export const MIPMAP_TEMPLATE: GlslTemplate = { shader: MIPMAP_SHADER, pipeline: 'main' };
 
 function compile(gl: WebGL2RenderingContext, type: number, stage: GlslStage): WebGLShader {
 	const shader = gl.createShader(type);
@@ -113,6 +145,7 @@ export function createProgram(
 		samplerUnits: [],
 		sampled: false,
 		ready: false,
+		background: false,
 	};
 }
 

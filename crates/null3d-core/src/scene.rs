@@ -25,6 +25,14 @@
 //! change the next update rebuilds the whole order with a breadth-first pass over a child list
 //! built by counting sort (linear in the object count).
 //!
+//! # Late updates
+//!
+//! Sketch code can move objects after the frame's transform update, as a camera that follows an
+//! object does. [`SceneStorage::update_late_transforms`] then recomputes the objects moved since
+//! the update, and the objects below them, before culling. A moved object without children
+//! updates alone. Below the shallowest moved object with children, levels update in order, and an
+//! object updates when it moved or its parent updated in the late update.
+//!
 //! # Double-buffered world output
 //!
 //! Frame `f` writes world buffer `f & 1`. A static object that changed in frame `f - 1` but not in
@@ -57,16 +65,26 @@
 //! | --- | --- | --- |
 //! | [`op::CREATE`] (flags in bits 8 to 15 of `op`) | parent handle, or 0 | mesh id |
 //! | [`op::DESTROY`] | unused | unused |
-//! | [`op::SET_PARENT`] | parent handle, or 0 | unused |
+//! | [`op::SET_PARENT`] | parent handle, or 0 | [`op::KEEP_WORLD`], or 0 |
 //! | [`op::SET_MESH`] | mesh id | unused |
 //! | [`op::SET_MATERIAL`] | material id | unused |
 //! | [`op::SET_DYNAMIC`] | 1 for dynamic, 0 for static | unused |
 //! | [`op::SET_VISIBLE`] | 1 for visible, 0 for hidden | unused |
 //! | [`op::SET_LAYERS`] | layer mask | unused |
+//! | [`op::SET_FLAGS`] | the [`flags::SETTABLE`] bits to change | their new values |
+//! | [`op::SET_RENDER_ORDER`] | the order's 32-bit float bits | unused |
 //!
 //! The handle is reserved with [`SceneStorage::reserve`] before its create command, so TypeScript
-//! can write the object's position, rotation, scale and local radius straight away. Destroying an
+//! can write the object's position, rotation, scale and local bounds straight away. Destroying an
 //! object whose children live on makes them roots, keeping their local transforms.
+//!
+//! # Bounds
+//!
+//! Culling tests each object's world bounding sphere. By default it is the mesh's local sphere,
+//! centred on the object's origin with the radius in the local radius array. An object with
+//! [`flags::CUSTOM_BOUNDS`] has a sphere of its own: the local centre array holds its centre. An
+//! object with [`flags::UNCULLED`] gets a world radius of [`UNBOUNDED_RADIUS`], so culling keeps
+//! it wherever it is.
 
 use std::ops::Range;
 use std::simd::prelude::*;
@@ -79,9 +97,9 @@ use crate::error::{CoreError, Resource};
 use crate::handle::{Handle, SlotAllocator};
 use crate::jobs::JobSystem;
 use crate::layers::DEFAULT_LAYERS;
-use crate::math::{self, Affine, IDENTITY_ROTATION};
+use crate::math::{self, Affine, Affine64, IDENTITY_ROTATION, IDENTITY64};
 use crate::shared::SharedMut;
-use crate::world::{HIDDEN_RADIUS, WorldArrays, WorldPtrs};
+use crate::world::{HIDDEN_RADIUS, UNBOUNDED_RADIUS, WorldArrays, WorldPtrs};
 
 /// Bits of an object's flags word.
 pub mod flags {
@@ -89,10 +107,19 @@ pub mod flags {
     pub const DYNAMIC: u32 = 1 << 0;
     /// Drawn and culled. An object is hidden when this bit is clear on it or on any ancestor.
     pub const VISIBLE: u32 = 1 << 1;
-    /// Reserved: casts shadows.
+    /// Casts shadows, for the shadow passes to read.
     pub const CAST_SHADOWS: u32 = 1 << 2;
-    /// Reserved: receives shadows.
+    /// Receives shadows, for the shadow passes to read.
     pub const RECEIVE_SHADOWS: u32 = 1 << 3;
+    /// Never culled: the object's world bounding sphere covers all of space.
+    pub const UNCULLED: u32 = 1 << 4;
+    /// Culled with a bounding sphere of its own, whose centre the local centre array holds,
+    /// instead of its mesh's sphere.
+    pub const CUSTOM_BOUNDS: u32 = 1 << 5;
+    /// The bits that change an object's world bounding sphere.
+    pub const BOUNDS: u32 = UNCULLED | CUSTOM_BOUNDS;
+    /// The bits that [`super::op::SET_FLAGS`] changes. The other bits have operations of their own.
+    pub const SETTABLE: u32 = CAST_SHADOWS | RECEIVE_SHADOWS | BOUNDS;
 }
 
 /// Operation numbers of [`Command`] records (the low byte of [`Command::op`]).
@@ -102,10 +129,11 @@ pub mod op {
     pub const CREATE: u32 = 1;
     /// Destroys an object and frees its slot.
     pub const DESTROY: u32 = 2;
-    /// Moves an object under a new parent. `a`: parent handle, or 0 for none.
+    /// Moves an object under a new parent. `a`: parent handle, or 0 for none. `b`: [`KEEP_WORLD`]
+    /// keeps the object's place in the world, else 0 keeps its local transform.
     pub const SET_PARENT: u32 = 3;
-    /// Sets the mesh id. `a`: mesh id. The object is recomputed, so write its new local bounding
-    /// radius first.
+    /// Sets the mesh id, and the object takes the mesh's bounds again. `a`: mesh id. The object is
+    /// recomputed, so write the mesh's local radius and a zero local centre first.
     pub const SET_MESH: u32 = 4;
     /// Sets the material id. `a`: material id.
     pub const SET_MATERIAL: u32 = 5;
@@ -115,6 +143,14 @@ pub mod op {
     pub const SET_VISIBLE: u32 = 7;
     /// Sets an object's layer mask. `a`: the mask. Its descendants keep their own.
     pub const SET_LAYERS: u32 = 8;
+    /// Changes flags. `a`: the [`super::flags::SETTABLE`] bits to change; other bits are ignored.
+    /// `b`: their new values. A change of the [`super::flags::BOUNDS`] bits recomputes the object,
+    /// so write its local bounds first.
+    pub const SET_FLAGS: u32 = 9;
+    /// Sets the render order. `a`: the order's bits as a 32-bit float.
+    pub const SET_RENDER_ORDER: u32 = 10;
+    /// The `b` of [`SET_PARENT`] that keeps the object's place in the world.
+    pub const KEEP_WORLD: u32 = 1;
 }
 
 /// The parent value of an object with no parent.
@@ -165,13 +201,25 @@ impl Command {
         }
     }
 
-    /// Moves `handle` under `parent` ([`Handle::NONE`] makes it a root).
+    /// Moves `handle` under `parent` ([`Handle::NONE`] makes it a root). It keeps its local
+    /// transform, so its place in the world changes with the new parent.
     pub const fn set_parent(handle: Handle, parent: Handle) -> Command {
         Command {
             op: op::SET_PARENT,
             handle: handle.raw(),
             a: parent.raw(),
             b: 0,
+        }
+    }
+
+    /// Moves `handle` under `parent` ([`Handle::NONE`] makes it a root), with the local transform
+    /// that keeps its place in the world.
+    pub const fn set_parent_keeping_world(handle: Handle, parent: Handle) -> Command {
+        Command {
+            op: op::SET_PARENT,
+            handle: handle.raw(),
+            a: parent.raw(),
+            b: op::KEEP_WORLD,
         }
     }
 
@@ -225,15 +273,40 @@ impl Command {
         }
     }
 
-    /// True for a command that changes what draws without changing the scene's structure: the
-    /// renderer updates the object's draw membership and keeps its tables.
-    pub const fn keeps_structure(&self) -> bool {
-        matches!(self.opcode(), op::SET_VISIBLE | op::SET_LAYERS)
+    /// Sets the flags of `handle` in `mask` to their values in `values`.
+    pub const fn set_flags(handle: Handle, mask: u32, values: u32) -> Command {
+        Command {
+            op: op::SET_FLAGS,
+            handle: handle.raw(),
+            a: mask,
+            b: values,
+        }
+    }
+
+    /// Sets the render order of `handle`.
+    pub const fn set_render_order(handle: Handle, order: f32) -> Command {
+        Command {
+            op: op::SET_RENDER_ORDER,
+            handle: handle.raw(),
+            a: order.to_bits(),
+            b: 0,
+        }
     }
 
     /// The operation number: the low byte of the operation word.
     pub const fn opcode(&self) -> u32 {
         self.op & 0xFF
+    }
+
+    /// True for a change that keeps the scene's structure, so the renderer updates what it draws
+    /// without rebuilding its tables: showing or hiding an object, its layers, a render order, and
+    /// flags that leave the object's bounds alone.
+    pub const fn keeps_structure(&self) -> bool {
+        match self.opcode() {
+            op::SET_VISIBLE | op::SET_LAYERS | op::SET_RENDER_ORDER => true,
+            op::SET_FLAGS => self.a & flags::BOUNDS == 0,
+            _ => false,
+        }
     }
 }
 
@@ -324,6 +397,34 @@ struct Level {
     end: u32,
 }
 
+/// The context of a transform update of `$scene`'s current frame, which writes frame parity
+/// `$parity`'s buffer. It borrows the scene field by field, so the caller can still use the
+/// scene's other fields, such as the late update's bitset, while the context lives.
+macro_rules! update_context {
+    ($scene:expr, $parity:expr) => {
+        UpdateContext {
+            frame: $scene.frame,
+            order: &$scene.order,
+            positions: &$scene.positions,
+            rotations: &$scene.rotations,
+            scales: &$scene.scales,
+            local_radii: &$scene.local_radii,
+            local_centers: &$scene.local_centers,
+            parents: &$scene.parents,
+            flags: &$scene.flags,
+            dirty: $scene.dirty.words(),
+            changed_frames: SharedMut::new(&mut $scene.changed_frames),
+            out: $scene.world[$parity].ptrs(),
+            previous: $scene.world[$parity ^ 1].ptrs(),
+            cells: &$scene.cells,
+            cell_coords: $scene.table.all_coords(),
+            origin_only: $scene.table.origin_only(),
+            moved: SharedMut::new($scene.moved.words_mut()),
+            moved_any: &$scene.moved_any,
+        }
+    };
+}
+
 /// Scene objects, stored as one array per field and indexed by slot. See the module
 /// documentation.
 pub struct SceneStorage {
@@ -333,6 +434,10 @@ pub struct SceneStorage {
     rotations: Vec<f32>,
     scales: Vec<f32>,
     local_radii: Vec<f32>,
+    /// The centre of each object's own bounding sphere, 3 floats per slot, read with
+    /// [`flags::CUSTOM_BOUNDS`].
+    local_centers: Vec<f32>,
+    render_orders: Vec<f32>,
     parents: Vec<u32>,
     flags: Vec<u32>,
     meshes: Vec<u32>,
@@ -348,6 +453,10 @@ pub struct SceneStorage {
     moved_any: AtomicBool,
     depths: Vec<u32>,
     dirty: Bitset,
+    /// Objects with at least one child, rebuilt with the hierarchy order.
+    branches: Bitset,
+    /// Objects that the late update recomputes: the moved ones, then the ones below them.
+    late: Bitset,
     world: [WorldArrays; 2],
     changed_frames: Vec<u32>,
     changed: Bitset,
@@ -384,6 +493,8 @@ impl SceneStorage {
             rotations,
             scales: vec![1.0; rows * 3],
             local_radii: vec![0.0; rows],
+            local_centers: vec![0.0; rows * 3],
+            render_orders: vec![0.0; rows],
             parents: vec![NO_PARENT; rows],
             flags: vec![0; rows],
             meshes: vec![0; rows],
@@ -396,6 +507,8 @@ impl SceneStorage {
             moved_any: AtomicBool::new(false),
             depths: vec![0; rows],
             dirty: Bitset::new(rows as u32),
+            branches: Bitset::new(rows as u32),
+            late: Bitset::new(rows as u32),
             world: [WorldArrays::new(rows, false), WorldArrays::new(rows, false)],
             changed_frames: vec![0; rows],
             changed: Bitset::new(rows as u32),
@@ -488,6 +601,22 @@ impl SceneStorage {
     /// Local bounding radii, for direct writes. Mark static objects dirty after writing.
     pub fn local_radii_mut(&mut self) -> &mut [f32] {
         &mut self.local_radii
+    }
+
+    /// The centres of objects' own bounding spheres, 3 floats per slot, which culling uses for
+    /// objects with [`flags::CUSTOM_BOUNDS`].
+    pub fn local_centers(&self) -> &[f32] {
+        &self.local_centers
+    }
+
+    /// Local bounding sphere centres, for direct writes. Mark static objects dirty after writing.
+    pub fn local_centers_mut(&mut self) -> &mut [f32] {
+        &mut self.local_centers
+    }
+
+    /// Render orders, one per slot: 0 unless [`op::SET_RENDER_ORDER`] set one.
+    pub fn render_orders(&self) -> &[f32] {
+        &self.render_orders
     }
 
     /// Parent slots, [`NO_PARENT`] for roots.
@@ -788,6 +917,8 @@ impl SceneStorage {
                 self.rotations[s * 4..s * 4 + 4].copy_from_slice(&IDENTITY_ROTATION);
                 self.scales[s * 3..s * 3 + 3].fill(1.0);
                 self.local_radii[s] = 0.0;
+                self.local_centers[s * 3..s * 3 + 3].fill(0.0);
+                self.render_orders[s] = 0.0;
                 self.parents[s] = NO_PARENT;
                 self.flags[s] = 0;
                 self.meshes[s] = 0;
@@ -809,6 +940,9 @@ impl SceneStorage {
                     ancestor = self.parents[ancestor as usize];
                 }
                 if self.parents[slot as usize] != parent {
+                    if command.b == op::KEEP_WORLD {
+                        self.keep_world_place(slot, parent);
+                    }
                     self.parents[slot as usize] = parent;
                     self.order_dirty = true;
                     self.dirty.set(slot);
@@ -817,6 +951,7 @@ impl SceneStorage {
             op::SET_MESH => {
                 let slot = self.created_slot(command.handle)?;
                 self.meshes[slot as usize] = command.a;
+                self.flags[slot as usize] &= !flags::CUSTOM_BOUNDS;
                 self.dirty.set(slot);
             }
             op::SET_MATERIAL => {
@@ -853,6 +988,19 @@ impl SceneStorage {
                     self.dirty.set(slot);
                 }
             }
+            op::SET_FLAGS => {
+                let slot = self.created_slot(command.handle)?;
+                let mask = command.a & flags::SETTABLE;
+                let f = &mut self.flags[slot as usize];
+                *f = (*f & !mask) | (command.b & mask);
+                if mask & flags::BOUNDS != 0 {
+                    self.dirty.set(slot);
+                }
+            }
+            op::SET_RENDER_ORDER => {
+                let slot = self.created_slot(command.handle)?;
+                self.render_orders[slot as usize] = f32::from_bits(command.a);
+            }
             other => return Err(CoreError::UnknownCommand { op: other }),
         }
         Ok(())
@@ -867,6 +1015,54 @@ impl SceneStorage {
         before != mask
     }
 
+    /// The local transform of the object in `slot`, in 64-bit floats.
+    fn local_matrix64(&self, slot: usize) -> Affine64 {
+        let p = &self.positions[slot * 3..slot * 3 + 3];
+        let r = &self.rotations[slot * 4..slot * 4 + 4];
+        let s = &self.scales[slot * 3..slot * 3 + 3];
+        math::compose(
+            [p[0], p[1], p[2]].map(f64::from),
+            [r[0], r[1], r[2], r[3]].map(f64::from),
+            [s[0], s[1], s[2]].map(f64::from),
+        )
+    }
+
+    /// The world transform that the next update gives the object in `slot`, relative to the
+    /// origin, from the local transforms of the object and its ancestors as they are now. The
+    /// identity for [`NO_PARENT`].
+    fn world_matrix64(&self, slot: u32) -> Affine64 {
+        if slot == NO_PARENT {
+            return IDENTITY64;
+        }
+        let mut world = self.local_matrix64(slot as usize);
+        let mut ancestor = self.parents[slot as usize];
+        while ancestor != NO_PARENT {
+            world = math::mul64(&self.local_matrix64(ancestor as usize), &world);
+            ancestor = self.parents[ancestor as usize];
+        }
+        world
+    }
+
+    /// Gives the object in `slot` the local transform under `parent` that keeps its place in the
+    /// world, as three.js's `attach` does. A parent whose scale flattens space leaves the local
+    /// transform as it is, as no local transform can undo that. An object that is flat itself
+    /// keeps its rotation and scale, and takes the new position alone. A rotated parent with
+    /// different scales on its axes shears its children, which no position, rotation and scale
+    /// can express, so the object's rotation and scale then come out near the sheared ones.
+    fn keep_world_place(&mut self, slot: u32, parent: u32) {
+        let Some(undo_parent) = math::invert64(&self.world_matrix64(parent)) else {
+            return;
+        };
+        let local = math::mul64(&undo_parent, &self.world_matrix64(slot));
+        let s = slot as usize;
+        let position = [local[3], local[7], local[11]].map(|v| v as f32);
+        self.positions[s * 3..s * 3 + 3].copy_from_slice(&position);
+        if let Some((rotation, scale)) = math::rotation_and_scale64(&local) {
+            self.rotations[s * 4..s * 4 + 4].copy_from_slice(&rotation.map(|v| v as f32));
+            self.scales[s * 3..s * 3 + 3].copy_from_slice(&scale.map(|v| v as f32));
+        }
+    }
+
     /// Rebuilds the hierarchy order: roots, then each depth level, dynamic objects first, and
     /// slots in increasing order within each group. Increasing slots keep each chunk of a level on
     /// its own cache lines of the per-slot arrays.
@@ -877,10 +1073,12 @@ impl SceneStorage {
         // the next parent's.
         let offsets = &mut self.child_offsets[..high];
         offsets.fill(0);
+        self.branches.clear_all();
         for slot in self.created.iter_ones() {
             let parent = self.parents[slot as usize];
             if parent != NO_PARENT {
                 offsets[parent as usize] += 1;
+                self.branches.set(parent);
             }
         }
         let mut running = 0;
@@ -991,25 +1189,7 @@ impl SceneStorage {
             let count = level.end - level.start;
             let root = index == 0;
             {
-                let ctx = UpdateContext {
-                    frame: self.frame,
-                    order: &self.order,
-                    positions: &self.positions,
-                    rotations: &self.rotations,
-                    scales: &self.scales,
-                    local_radii: &self.local_radii,
-                    parents: &self.parents,
-                    flags: &self.flags,
-                    dirty: self.dirty.words(),
-                    changed_frames: SharedMut::new(&mut self.changed_frames),
-                    out: self.world[parity].ptrs(),
-                    previous: self.world[parity ^ 1].ptrs(),
-                    cells: &self.cells,
-                    cell_coords: self.table.all_coords(),
-                    origin_only: self.table.origin_only(),
-                    moved: SharedMut::new(self.moved.words_mut()),
-                    moved_any: &self.moved_any,
-                };
+                let ctx = update_context!(self, parity);
                 if count >= PARALLEL_LEVEL_THRESHOLD {
                     jobs.parallel_for(count, LEVEL_CHUNK, &|range, _| {
                         ctx.update_range(&level, root, range);
@@ -1018,9 +1198,7 @@ impl SceneStorage {
                     ctx.update_range(&level, root, 0..count);
                 }
             }
-            if std::mem::take(self.moved_any.get_mut()) {
-                self.move_cells(parity);
-            }
+            self.move_cells(parity);
         }
         // Dirty bits only exist below the high-water slot.
         let used_words = self.slots.high_water().div_ceil(64) as usize;
@@ -1028,11 +1206,85 @@ impl SceneStorage {
         self.build_changed_bits(jobs);
     }
 
+    /// Recomputes the objects moved since the frame's [`SceneStorage::update_transforms`], and
+    /// every object below them, so culling and drawing see them where a late update put them.
+    /// See "Late updates" in the module documentation. Clears the dirty bits, and adds the
+    /// recomputed objects to [`SceneStorage::changed`]. Runs on the calling thread and allocates
+    /// nothing.
+    ///
+    /// # Panics
+    /// When no frame has started: frames start at 1.
+    pub fn update_late_transforms(&mut self) {
+        assert!(
+            self.frame != 0,
+            "start a frame (numbered from 1) with begin_frame or apply_commands first"
+        );
+        if self.order_dirty {
+            self.rebuild_order();
+        }
+        // Dirty bits only exist below the high-water slot. An object that is reserved but not yet
+        // created updates when its create command applies, which marks it dirty again.
+        let used_words = self.slots.high_water().div_ceil(64) as usize;
+        let mut moved = false;
+        let mut branch_depth: Option<u32> = None;
+        let words = self.late.words_mut()[..used_words].iter_mut();
+        for (w, (late, dirty)) in words.zip(self.dirty.words_mut()).enumerate() {
+            *late = std::mem::take(dirty) & self.created.words()[w];
+            moved |= *late != 0;
+            let mut branches = *late & self.branches.words()[w];
+            while branches != 0 {
+                let depth = self.depths[w * 64 + branches.trailing_zeros() as usize];
+                branch_depth = Some(branch_depth.map_or(depth, |d| d.min(depth)));
+                branches &= branches - 1;
+            }
+        }
+        if !moved {
+            return;
+        }
+        let parity = self.parity();
+        {
+            // No moved object down to the shallowest moved branch has a moved ancestor, so each
+            // one reads its parent's final matrix and cell.
+            let ctx = update_context!(self, parity);
+            for slot in self.late.iter_ones() {
+                let depth = self.depths[slot as usize];
+                if branch_depth.is_none_or(|d| depth <= d) {
+                    ctx.compute_one(slot, depth == 0);
+                }
+            }
+        }
+        self.move_cells(parity);
+        if let Some(depth) = branch_depth {
+            // A branch has children, so the levels below it exist. Each level reads the final
+            // cells of the level above it.
+            for index in depth as usize + 1..self.level_count {
+                let level = self.levels[index];
+                {
+                    let ctx = update_context!(self, parity);
+                    for &slot in &self.order[level.start as usize..level.end as usize] {
+                        if self.late.get(slot) || self.late.get(self.parents[slot as usize]) {
+                            ctx.compute_one(slot, false);
+                            self.late.set(slot);
+                        }
+                    }
+                }
+                self.move_cells(parity);
+            }
+        }
+        let changed = self.changed.words_mut()[..used_words].iter_mut();
+        for (changed, late) in changed.zip(self.late.words()) {
+            *changed |= late;
+        }
+    }
+
     /// Moves the objects that the last level's loop found in a new cell into that cell: a root into
     /// the cell that holds its position, a child into its parent's. Their world rows already hold
     /// matrices relative to the new cell. A root goes into the origin cell when the table has no
-    /// room for its cell (see [`cells::enter_cell`]).
+    /// room for its cell (see [`cells::enter_cell`]). Does nothing when the loop found none.
     fn move_cells(&mut self, parity: usize) {
+        if !std::mem::take(self.moved_any.get_mut()) {
+            return;
+        }
         // In slot order, so cells take the same indices on every run.
         for slot in self.moved.iter_ones() {
             let s = slot as usize;
@@ -1101,6 +1353,7 @@ struct UpdateContext<'a> {
     rotations: &'a [f32],
     scales: &'a [f32],
     local_radii: &'a [f32],
+    local_centers: &'a [f32],
     parents: &'a [u32],
     flags: &'a [u32],
     dirty: &'a [u64],
@@ -1150,6 +1403,13 @@ impl UpdateContext<'_> {
                 unsafe { self.out.copy_row(&self.previous, s) };
             }
         }
+    }
+
+    /// [`UpdateContext::compute`] in a function of its own, for the late update, which recomputes
+    /// few objects: its loops then call one copy of the computation instead of inlining it twice.
+    #[inline(never)]
+    fn compute_one(&self, slot: u32, root: bool) {
+        self.compute(slot, root);
     }
 
     /// Recomputes one object's world matrix and sphere relative to its cell's center, and stamps it
@@ -1202,8 +1462,21 @@ impl UpdateContext<'_> {
             let (matrix, radius) = unsafe { (self.out.matrix(parent), self.out.radius(parent)) };
             (math::mul(&matrix, &local), radius != HIDDEN_RADIUS)
         };
-        let visible = parent_visible && self.flags[s] & flags::VISIBLE != 0;
-        let mut sphere = math::world_sphere(&world, self.local_radii[s]);
+        let object_flags = self.flags[s];
+        let visible = parent_visible && object_flags & flags::VISIBLE != 0;
+        let mut sphere = if object_flags & flags::CUSTOM_BOUNDS == 0 {
+            math::world_sphere(&world, self.local_radii[s])
+        } else {
+            let center = [
+                self.local_centers[s * 3],
+                self.local_centers[s * 3 + 1],
+                self.local_centers[s * 3 + 2],
+            ];
+            math::world_sphere_at(&world, center, self.local_radii[s])
+        };
+        if object_flags & flags::UNCULLED != 0 {
+            sphere[3] = UNBOUNDED_RADIUS;
+        }
         if !visible {
             sphere[3] = HIDDEN_RADIUS;
         }
@@ -1655,6 +1928,145 @@ mod tests {
         SceneStorage::with_capacity(4).update_transforms(&JobSystem::new(0));
     }
 
+    /// True when the object was recomputed in the current frame.
+    fn recomputed(scene: &SceneStorage, h: Handle) -> bool {
+        let slot = scene.resolve(h).unwrap();
+        scene.changed_frames()[slot as usize] == scene.frame() && scene.changed().get(slot)
+    }
+
+    #[test]
+    fn a_late_update_recomputes_moved_objects_without_children_alone() {
+        let jobs = JobSystem::new(0);
+        let mut scene = SceneStorage::with_capacity(16);
+        let (target, c1) = object(&mut scene, [0.0; 3], Handle::NONE, MOVING);
+        let (rider, c2) = object(&mut scene, [0.0, 1.0, 0.0], target, SHOWN);
+        let (camera, c3) = object(&mut scene, [0.0, 0.0, 10.0], Handle::NONE, MOVING);
+        let (post, c4) = object(&mut scene, [5.0, 0.0, 0.0], Handle::NONE, SHOWN);
+        let (sign, c5) = object(&mut scene, [0.0, 2.0, 0.0], post, SHOWN);
+        let (lamp, c6) = object(&mut scene, [-5.0, 0.0, 0.0], Handle::NONE, SHOWN);
+        scene.apply_commands(&[c1, c2, c3, c4, c5, c6], 1).unwrap();
+        scene.update_transforms(&jobs);
+
+        scene.set_position(target, [3.0, 0.0, 0.0]).unwrap();
+        scene.begin_frame(2);
+        scene.update_transforms(&jobs);
+        // The late update reads this frame's world positions, and moves objects to match them.
+        assert_eq!(translation(&scene, rider), [3.0, 1.0, 0.0]);
+        scene.set_position(camera, [3.0, 0.0, 10.0]).unwrap();
+        scene.set_position(rider, [0.0, 4.0, 0.0]).unwrap();
+        scene.set_position(lamp, [-5.0, 1.0, 0.0]).unwrap();
+        scene.update_late_transforms();
+        assert_eq!(translation(&scene, camera), [3.0, 0.0, 10.0]);
+        assert_eq!(translation(&scene, rider), [3.0, 4.0, 0.0]);
+        assert_eq!(translation(&scene, lamp), [-5.0, 1.0, 0.0]);
+        for h in [camera, rider, lamp] {
+            assert!(recomputed(&scene, h), "a moved object uploads this frame");
+        }
+        // The static post and its sign did not move, so neither update recomputed them.
+        assert!(!recomputed(&scene, post) && !recomputed(&scene, sign));
+        assert!(!scene.dirty().any());
+
+        // The next frame copies the late matrices into the other buffer.
+        scene.begin_frame(3);
+        scene.update_transforms(&jobs);
+        let lamp_slot = scene.resolve(lamp).unwrap() as usize;
+        assert_eq!(
+            scene.world(0).matrix(lamp_slot),
+            scene.world(1).matrix(lamp_slot)
+        );
+    }
+
+    #[test]
+    fn a_late_update_recomputes_the_objects_below_a_moved_branch() {
+        let jobs = JobSystem::new(0);
+        let mut scene = SceneStorage::with_capacity(16);
+        let (rig, c1) = object(&mut scene, [0.0; 3], Handle::NONE, SHOWN);
+        let (camera, c2) = object(&mut scene, [0.0, 2.0, 8.0], rig, SHOWN);
+        let (flash, c3) = object(&mut scene, [0.0, 0.0, -1.0], camera, SHOWN);
+        let (tower, c4) = object(&mut scene, [20.0, 0.0, 0.0], Handle::NONE, SHOWN);
+        let (floor, c5) = object(&mut scene, [0.0, 10.0, 0.0], tower, SHOWN);
+        let (flag, c6) = object(&mut scene, [0.0, 1.0, 0.0], floor, SHOWN);
+        scene.apply_commands(&[c1, c2, c3, c4, c5, c6], 1).unwrap();
+        scene.update_transforms(&jobs);
+
+        scene.begin_frame(2);
+        scene.update_transforms(&jobs);
+        scene.set_position(rig, [1.0, 0.0, 0.0]).unwrap();
+        // A moved object deeper than the rig, whose own parents did not move.
+        scene.set_position(flag, [0.0, 3.0, 0.0]).unwrap();
+        scene.update_late_transforms();
+        assert_eq!(translation(&scene, camera), [1.0, 2.0, 8.0]);
+        assert_eq!(translation(&scene, flash), [1.0, 2.0, 7.0]);
+        assert_eq!(translation(&scene, flag), [20.0, 13.0, 0.0]);
+        for h in [rig, camera, flash, flag] {
+            assert!(recomputed(&scene, h));
+        }
+        assert!(!recomputed(&scene, tower) && !recomputed(&scene, floor));
+    }
+
+    #[test]
+    fn a_late_update_skips_objects_that_are_not_created_yet() {
+        let jobs = JobSystem::new(0);
+        let mut scene = SceneStorage::with_capacity(8);
+        let (h, c) = object(&mut scene, [1.0, 0.0, 0.0], Handle::NONE, SHOWN);
+        scene.apply_commands(&[], 1).unwrap();
+        scene.update_transforms(&jobs);
+        // The object's position is written, but its create command waits for the next frame.
+        scene.update_late_transforms();
+        assert!(!scene.changed().any() && !scene.dirty().any());
+        scene.apply_commands(&[c], 2).unwrap();
+        scene.update_transforms(&jobs);
+        assert_eq!(translation(&scene, h), [1.0, 0.0, 0.0]);
+        // With nothing moved, the late update leaves the frame's changes as they are.
+        scene.begin_frame(3);
+        scene.update_transforms(&jobs);
+        scene.update_late_transforms();
+        assert!(!scene.changed().any());
+    }
+
+    #[test]
+    #[should_panic(expected = "start a frame")]
+    fn a_late_update_before_the_first_frame_panics() {
+        SceneStorage::with_capacity(4).update_late_transforms();
+    }
+
+    #[test]
+    fn a_late_update_moves_a_tree_into_the_cell_its_root_crossed_into() {
+        let jobs = JobSystem::new(0);
+        let mut scene = SceneStorage::with_capacity(8);
+        let (rig, c1) = object(&mut scene, [100_000.5, 0.0, 0.0], Handle::NONE, SHOWN);
+        let (camera, c2) = object(&mut scene, [0.0, 2.0, 8.0], rig, SHOWN);
+        let (probe, c3) = object(&mut scene, [3.0, 0.0, 0.0], Handle::NONE, SHOWN);
+        scene.apply_commands(&[c1, c2, c3], 1).unwrap();
+        scene.update_transforms(&jobs);
+        let (cell, _) = cell_and_translation(&scene, rig);
+        assert_eq!(scene.cell_table().coords(cell), [98, 0, 0]);
+
+        // The rig crosses into the next cell in the late update, and the camera below it follows.
+        scene.begin_frame(2);
+        scene.update_transforms(&jobs);
+        scene.set_position(rig, [100_900.0, 0.0, 0.0]).unwrap();
+        scene.set_position(probe, [4.0, 0.0, 0.0]).unwrap();
+        scene.update_late_transforms();
+        let (next, local) = cell_and_translation(&scene, rig);
+        assert_eq!(scene.cell_table().coords(next), [99, 0, 0]);
+        assert_eq!(local, [-476.0, 0.0, 0.0]);
+        assert_eq!(
+            cell_and_translation(&scene, camera),
+            (next, [-476.0, 2.0, 8.0])
+        );
+        assert_eq!(scene.cell_table().count(next), 2);
+        assert_eq!(
+            scene.cell_table().find([98, 0, 0]),
+            None,
+            "the old cell emptied"
+        );
+        assert_eq!(
+            cell_and_translation(&scene, probe),
+            (ORIGIN_CELL, [4.0, 0.0, 0.0])
+        );
+    }
+
     /// The cell index of an object, and its world translation relative to that cell's center.
     fn cell_and_translation(scene: &SceneStorage, h: Handle) -> (u32, [f32; 3]) {
         let slot = scene.resolve(h).unwrap() as usize;
@@ -1785,6 +2197,228 @@ mod tests {
             (ORIGIN_CELL, [0.0, 1.0, 0.0])
         );
         assert_eq!(scene.cell_table().count(far_cell), 1);
+    }
+
+    /// True when two world matrices, relative to the origin, differ by at most `tolerance`.
+    fn same_matrix(a: &[f64; 12], b: &[f64; 12], tolerance: f64) -> bool {
+        a.iter().zip(b).all(|(x, y)| (x - y).abs() <= tolerance)
+    }
+
+    /// A quaternion that turns by `angle` radians about the axis `(x, y, z)` of length 1.
+    fn turn(x: f32, y: f32, z: f32, angle: f32) -> [f32; 4] {
+        let (sin, cos) = (angle * 0.5).sin_cos();
+        [x * sin, y * sin, z * sin, cos]
+    }
+
+    #[test]
+    fn keeping_the_world_place_under_a_new_parent() {
+        let jobs = JobSystem::new(0);
+        let mut scene = SceneStorage::with_capacity(8);
+        let (arm, c1) = object(&mut scene, [10.0, 2.0, -3.0], Handle::NONE, SHOWN);
+        let (hand, c2) = object(&mut scene, [3.0, 4.0, 5.0], Handle::NONE, SHOWN);
+        let (finger, c3) = object(&mut scene, [0.0, 0.5, 0.0], hand, SHOWN);
+        scene.set_rotation(arm, turn(0.0, 1.0, 0.0, 1.2)).unwrap();
+        scene.set_scale(arm, [2.0, 2.0, 2.0]).unwrap();
+        scene.set_rotation(hand, turn(0.6, 0.0, 0.8, 0.7)).unwrap();
+        scene.set_scale(hand, [0.5, 0.5, 0.5]).unwrap();
+        scene.apply_commands(&[c1, c2, c3], 1).unwrap();
+        scene.update_transforms(&jobs);
+        let hand_before = scene.absolute_world_matrix(hand).unwrap();
+        let finger_before = scene.absolute_world_matrix(finger).unwrap();
+
+        scene
+            .apply_commands(&[Command::set_parent_keeping_world(hand, arm)], 2)
+            .unwrap();
+        scene.update_transforms(&jobs);
+        // The hand and its child keep their places, turns and sizes in the world.
+        let hand_after = scene.absolute_world_matrix(hand).unwrap();
+        assert!(
+            same_matrix(&hand_after, &hand_before, 1e-5),
+            "{hand_after:?}"
+        );
+        let finger_after = scene.absolute_world_matrix(finger).unwrap();
+        assert!(same_matrix(&finger_after, &finger_before, 1e-5));
+        // The local scale undoes the arm's: 0.5 in the world is 0.25 of the arm's 2.
+        let slot = scene.resolve(hand).unwrap() as usize;
+        let scale = &scene.scales()[slot * 3..slot * 3 + 3];
+        assert!(scale.iter().all(|s| (s - 0.25).abs() < 1e-6), "{scale:?}");
+        assert_eq!(scene.depths()[slot], 1);
+
+        // Now the hand moves with the arm.
+        scene.set_position(arm, [11.0, 2.0, -3.0]).unwrap();
+        scene.begin_frame(3);
+        scene.update_transforms(&jobs);
+        let moved = scene.absolute_world_matrix(hand).unwrap();
+        assert!((moved[3] - hand_before[3] - 1.0).abs() < 1e-5);
+
+        // Made a root again, it keeps its place: its local transform is its world transform.
+        let world = scene.absolute_world_matrix(hand).unwrap();
+        scene
+            .apply_commands(&[Command::set_parent_keeping_world(hand, Handle::NONE)], 4)
+            .unwrap();
+        scene.update_transforms(&jobs);
+        let root = scene.absolute_world_matrix(hand).unwrap();
+        assert!(same_matrix(&root, &world, 1e-5), "{root:?}");
+        let position = &scene.positions()[slot * 3..slot * 3 + 3];
+        assert!((position[0] as f64 - world[3]).abs() < 1e-5);
+    }
+
+    #[test]
+    fn keeping_the_world_place_far_from_the_origin_stays_precise() {
+        let jobs = JobSystem::new(0);
+        let mut scene = SceneStorage::with_capacity(8);
+        // A turned ship 1,000 km out, and a crate 3 m from it, both roots.
+        let (ship, c1) = object(&mut scene, [1.0e6, 0.0, -2.0e6], Handle::NONE, SHOWN);
+        let (crate_, c2) = object(&mut scene, [1.0e6 + 3.0, 1.0, -2.0e6], Handle::NONE, SHOWN);
+        scene.set_rotation(ship, turn(0.0, 1.0, 0.0, 0.5)).unwrap();
+        scene.apply_commands(&[c1, c2], 1).unwrap();
+        scene.update_transforms(&jobs);
+        let before = scene.absolute_world_matrix(crate_).unwrap();
+
+        scene
+            .apply_commands(&[Command::set_parent_keeping_world(crate_, ship)], 2)
+            .unwrap();
+        scene.update_transforms(&jobs);
+        // The crate's local position is small, so it keeps its place to a tenth of a millimeter,
+        // where a 32-bit position relative to the origin would move in steps of 6 cm.
+        let after = scene.absolute_world_matrix(crate_).unwrap();
+        assert!(
+            same_matrix(&after, &before, 1e-4),
+            "{after:?} != {before:?}"
+        );
+        let slot = scene.resolve(crate_).unwrap() as usize;
+        let local = &scene.positions()[slot * 3..slot * 3 + 3];
+        let distance = local.iter().map(|v| v * v).sum::<f32>().sqrt();
+        assert!((distance - 10.0f32.sqrt()).abs() < 1e-5, "{local:?}");
+    }
+
+    #[test]
+    fn keeping_the_world_place_sees_the_changes_made_before_it() {
+        let jobs = JobSystem::new(0);
+        let mut scene = SceneStorage::with_capacity(8);
+        let (box_, c1) = object(&mut scene, [1.0, 0.0, 0.0], Handle::NONE, SHOWN);
+        scene.apply_commands(&[c1], 1).unwrap();
+        scene.update_transforms(&jobs);
+        // A parent created in the same frame, and a move of the box before the change applies.
+        let (holder, c2) = object(&mut scene, [0.0, 5.0, 0.0], Handle::NONE, SHOWN);
+        scene.set_position(box_, [2.0, 0.0, 0.0]).unwrap();
+        scene
+            .apply_commands(&[c2, Command::set_parent_keeping_world(box_, holder)], 2)
+            .unwrap();
+        scene.update_transforms(&jobs);
+        assert_eq!(translation(&scene, box_), [2.0, 0.0, 0.0]);
+        let slot = scene.resolve(box_).unwrap() as usize;
+        assert_eq!(
+            &scene.positions()[slot * 3..slot * 3 + 3],
+            &[2.0, -5.0, 0.0]
+        );
+        // A flat parent leaves the local transform alone, as nothing can undo its scale.
+        let (flat, c3) = object(&mut scene, [0.0; 3], Handle::NONE, SHOWN);
+        scene.set_scale(flat, [1.0, 0.0, 1.0]).unwrap();
+        scene
+            .apply_commands(&[c3, Command::set_parent_keeping_world(box_, flat)], 3)
+            .unwrap();
+        assert_eq!(
+            &scene.positions()[slot * 3..slot * 3 + 3],
+            &[2.0, -5.0, 0.0]
+        );
+    }
+
+    #[test]
+    fn flags_change_only_the_bits_that_they_name() {
+        let jobs = JobSystem::new(0);
+        let mut scene = SceneStorage::with_capacity(8);
+        let (h, c) = object(&mut scene, [0.0; 3], Handle::NONE, SHOWN);
+        scene.apply_commands(&[c], 1).unwrap();
+        scene.update_transforms(&jobs);
+        assert!(scene.take_structure_changed());
+        let slot = scene.resolve(h).unwrap() as usize;
+        let everything = flags::CAST_SHADOWS | flags::RECEIVE_SHADOWS | flags::DYNAMIC;
+        scene
+            .apply_commands(&[Command::set_flags(h, everything, everything)], 2)
+            .unwrap();
+        // Flags with operations of their own, such as dynamic, do not change this way.
+        assert_eq!(
+            scene.flags()[slot],
+            SHOWN | flags::CAST_SHADOWS | flags::RECEIVE_SHADOWS
+        );
+        scene
+            .apply_commands(&[Command::set_flags(h, flags::CAST_SHADOWS, 0)], 3)
+            .unwrap();
+        assert_eq!(scene.flags()[slot], SHOWN | flags::RECEIVE_SHADOWS);
+        // Shadow flags keep the structure; bounds flags change it.
+        assert!(!scene.take_structure_changed());
+        scene
+            .apply_commands(&[Command::set_flags(h, flags::UNCULLED, 0)], 4)
+            .unwrap();
+        assert!(scene.take_structure_changed());
+    }
+
+    #[test]
+    fn bounds_of_their_own_and_unculled_objects_give_their_spheres() {
+        let jobs = JobSystem::new(0);
+        let mut scene = SceneStorage::with_capacity(8);
+        let (h, c) = object(&mut scene, [10.0, 0.0, 0.0], Handle::NONE, SHOWN);
+        scene.set_scale(h, [2.0, 2.0, 2.0]).unwrap();
+        scene.apply_commands(&[c], 1).unwrap();
+        scene.update_transforms(&jobs);
+        let s = scene.resolve(h).unwrap() as usize;
+        assert_eq!(scene.current_world().sphere(s), [10.0, 0.0, 0.0, 2.0]);
+
+        // A sphere of its own: its centre moves and scales with the object.
+        scene.local_centers_mut()[s * 3 + 1] = 1.5;
+        scene.local_radii_mut()[s] = 3.0;
+        let own = Command::set_flags(h, flags::CUSTOM_BOUNDS, flags::CUSTOM_BOUNDS);
+        scene.apply_commands(&[own], 2).unwrap();
+        scene.update_transforms(&jobs);
+        assert_eq!(scene.current_world().sphere(s), [10.0, 3.0, 0.0, 6.0]);
+
+        // Never culled: a sphere wider than any scene, unless the object is hidden.
+        let unculled = Command::set_flags(h, flags::UNCULLED, flags::UNCULLED);
+        scene.apply_commands(&[unculled], 3).unwrap();
+        scene.update_transforms(&jobs);
+        assert_eq!(scene.current_world().sphere(s)[3], UNBOUNDED_RADIUS);
+        scene
+            .apply_commands(&[Command::set_visible(h, false)], 4)
+            .unwrap();
+        scene.update_transforms(&jobs);
+        assert_eq!(scene.current_world().sphere(s)[3], HIDDEN_RADIUS);
+
+        // A new mesh brings its own bounds back: the centre the caller zeroed and its radius.
+        scene.local_centers_mut()[s * 3 + 1] = 0.0;
+        scene.local_radii_mut()[s] = 0.5;
+        scene
+            .apply_commands(
+                &[
+                    Command::set_visible(h, true),
+                    Command::set_flags(h, flags::UNCULLED, 0),
+                    Command::set_mesh(h, 3),
+                ],
+                5,
+            )
+            .unwrap();
+        scene.update_transforms(&jobs);
+        assert_eq!(scene.flags()[s] & flags::BOUNDS, 0);
+        assert_eq!(scene.current_world().sphere(s), [10.0, 0.0, 0.0, 1.0]);
+    }
+
+    #[test]
+    fn render_orders_are_kept_without_a_structure_change() {
+        let jobs = JobSystem::new(0);
+        let mut scene = SceneStorage::with_capacity(8);
+        let (h, c) = object(&mut scene, [0.0; 3], Handle::NONE, SHOWN);
+        scene.apply_commands(&[c], 1).unwrap();
+        scene.update_transforms(&jobs);
+        assert!(scene.take_structure_changed());
+        let slot = scene.resolve(h).unwrap() as usize;
+        scene
+            .apply_commands(&[Command::set_render_order(h, -2.5)], 2)
+            .unwrap();
+        assert_eq!(scene.render_orders()[slot], -2.5);
+        assert!(!scene.take_structure_changed());
+        // A destroyed object's slot starts again from the defaults.
+        scene.apply_commands(&[Command::destroy(h)], 3).unwrap();
+        assert_eq!(scene.render_orders()[slot], 0.0);
     }
 
     #[test]

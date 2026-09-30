@@ -11,9 +11,18 @@ import { UsageError } from './args.js';
  * @type {Record<string, { summary: string, load: () => Promise<Command> }>}
  */
 const COMMANDS = {
+	bench: {
+		summary: "Measures the engine on the project's page: CPU time by thread and frame rates",
+		load: () => import('./bench.js'),
+	},
 	shot: {
 		summary: "Draws one frame of the project's page headless, and saves it as a PNG file",
 		load: () => import('./shot.js'),
+	},
+	test: {
+		summary:
+			'Type checks and lints the project, and compares its image tests with their references',
+		load: () => import('./test.js'),
 	},
 };
 

@@ -5,7 +5,7 @@
 use crate::caps::{BUDGET, Capabilities, Limit, OFFSET_ALIGNMENT};
 use crate::drawlist::{
     Command, NO_TARGET, Op, address, compare, decode, filter, format, permutation, resource_kind,
-    texture_usage, upload_flags, vertex, view,
+    state_flags, texture_usage, upload_flags, vertex, view,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -57,6 +57,8 @@ struct Texture {
     format: u32,
     usage: u32,
     samples: u32,
+    /// The view dimension that bind groups see it as.
+    binding_view: u32,
 }
 
 /// A view of one mip level and one layer of a texture: the texture, the generation it had when
@@ -193,7 +195,7 @@ fn check(holds: bool, op: Op, rule: &'static str) -> Result<(), MockError> {
 
 /// The size of a mip level.
 fn level_size(size: u32, level: u32) -> u32 {
-    (size >> level).max(1)
+    format::level_size(size, level)
 }
 
 impl MockBackend {
@@ -397,8 +399,9 @@ impl MockBackend {
             usage: o[5],
             samples: o[6],
             mips: o[7],
+            binding_view: o[8],
         };
-        let binding_view = o[8];
+        let binding_view = texture.binding_view;
         let largest = texture.width.max(texture.height).max(1);
         let most_mips = u32::BITS - largest.leading_zeros();
         let size_limit = BUDGET[Limit::TextureDimension2D as usize];
@@ -526,6 +529,7 @@ impl MockBackend {
     fn upload_image(&mut self, op: Op, o: &[u32]) -> Result<(), MockError> {
         let at = Location::read(o);
         let (width, height, image, flags) = (o[5], o[6], o[7], o[8]);
+        let (source_x, source_y) = (o[9], o[10]);
         let texture = self.texel_box(op, at, width, height, 1)?;
         let usage = texture_usage::COPY_DST | texture_usage::RENDER_ATTACHMENT;
         check(
@@ -545,7 +549,9 @@ impl MockBackend {
         )?;
         let &(image_width, image_height) =
             self.images.get(&image).ok_or(missing(op, "image", image))?;
-        if width > image_width || height > image_height {
+        let right = source_x.checked_add(width);
+        let bottom = source_y.checked_add(height);
+        if right.is_none_or(|r| r > image_width) || bottom.is_none_or(|b| b > image_height) {
             return Err(MockError::OutOfRange { op, id: image });
         }
         self.write(op, Resource::Texture(at.texture))?;
@@ -587,6 +593,39 @@ impl MockBackend {
         )?;
         self.use_resource(Resource::Texture(source.texture));
         self.use_resource(Resource::Texture(destination.texture));
+        Ok(())
+    }
+
+    /// Makes the mip levels of one layer, in render passes on WebGPU and blits on WebGL2: the
+    /// texture must be an array that both paths can draw into and filter.
+    fn generate_mipmaps(&mut self, op: Op, o: &[u32]) -> Result<(), MockError> {
+        self.outside_passes(op)?;
+        let texture = self.texture(op, o[0])?;
+        let usage = texture_usage::TEXTURE_BINDING | texture_usage::RENDER_ATTACHMENT;
+        check(
+            texture.usage & usage == usage,
+            op,
+            "a texture whose mip levels are made needs TEXTURE_BINDING and RENDER_ATTACHMENT usage",
+        )?;
+        check(
+            texture.binding_view == view::D2_ARRAY && texture.samples == 1,
+            op,
+            "mip levels are made for 2d-array textures of one sample",
+        )?;
+        check(
+            format::makes_mipmaps(texture.format),
+            op,
+            "mip levels are made for RGBA8 and sRGB RGBA8 textures",
+        )?;
+        check(
+            texture.mips > 1,
+            op,
+            "the texture has more than one mip level",
+        )?;
+        if o[1] >= texture.layers {
+            return Err(MockError::OutOfRange { op, id: o[0] });
+        }
+        self.use_resource(Resource::Texture(o[0]));
         Ok(())
     }
 
@@ -762,6 +801,10 @@ impl MockBackend {
                 *self.generations.entry(o[0]).or_default() += 1;
             }
             Op::UploadImage => self.upload_image(op, o)?,
+            Op::GenerateMipmaps => self.generate_mipmaps(op, o)?,
+            Op::ReleaseImage => {
+                self.images.remove(&o[0]);
+            }
             Op::CopyTextureToTexture => self.copy_texture(op, o)?,
             Op::CreateSampler => self.create_sampler(op, o)?,
             Op::ResizeCanvas => {
@@ -798,6 +841,11 @@ impl MockBackend {
                     "a render pipeline writes color, depth or both",
                 )?;
                 check(matches!(o[5], 1 | 4), op, "the sample count is 1 or 4")?;
+                check(
+                    o[6] & !state_flags::ALL == 0,
+                    op,
+                    "a render pipeline sets known state flags",
+                )?;
                 self.render_pipelines.insert(
                     o[0],
                     Formats {
@@ -957,6 +1005,11 @@ impl MockBackend {
                         self.read_resource(op, resource)?;
                     }
                 }
+                // WebGPU clears the pass's pipeline and buffers after it replays bundles, so a
+                // draw after them sets its own.
+                self.pipeline_set = false;
+                self.vertex_buffer_set = false;
+                self.index_buffer_set = false;
             }
             Op::EndRenderPass => {
                 if self.pass.take().is_none() {
@@ -1028,7 +1081,7 @@ impl MockBackend {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::drawlist::{DrawList, buffer_usage, index_format, layout, pass_flags};
+    use crate::drawlist::{DrawList, buffer_usage, index_format, layout, pass_flags, template};
 
     const MSAA_COLOR: u32 = 5;
     const MSAA_DEPTH: u32 = 1;
@@ -1124,6 +1177,86 @@ mod tests {
         let mut backend = MockBackend::default();
         assert_eq!(backend.replay(list.words()), Ok(()));
         assert_eq!((backend.draws, backend.submits), (1, 1));
+    }
+
+    /// A frame that replays a bundle, then draws lines from a vertex buffer of their own with
+    /// `lines`, the commands after the bundle.
+    fn lines_after_a_bundle(lines: &[(Op, &[u32])]) -> DrawList {
+        let mut list = DrawList::with_capacity(256);
+        setup(&mut list);
+        list.push(
+            Op::CreateRenderPipeline,
+            &[
+                2,
+                template::DEBUG_LINES,
+                0,
+                format::CANVAS,
+                format::DEPTH32_FLOAT,
+                4,
+                state_flags::LINE_LIST,
+                0,
+            ],
+        )
+        .unwrap();
+        list.push(
+            Op::CreateBuffer,
+            &[5, 256, buffer_usage::VERTEX | buffer_usage::COPY_DST],
+        )
+        .unwrap();
+        list.push(Op::ResizeCanvas, &[64, 64]).unwrap();
+        list.push(
+            Op::BeginBundle,
+            &[9, format::CANVAS, format::DEPTH32_FLOAT, 4],
+        )
+        .unwrap();
+        draw_bucket(&mut list);
+        list.push(Op::EndBundle, &[]).unwrap();
+        begin_scene_pass(&mut list);
+        list.push(Op::ExecuteBundles, &[1, 9]).unwrap();
+        for &(op, operands) in lines {
+            list.push(op, operands).unwrap();
+        }
+        list.push(Op::EndRenderPass, &[]).unwrap();
+        list
+    }
+
+    #[test]
+    fn draws_after_a_bundle_set_their_own_pipeline_and_lines_draw_from_a_vertex_buffer() {
+        let lines = lines_after_a_bundle(&[
+            (Op::SetPipeline, &[2]),
+            (Op::SetBindGroup, &[0, 1, 1, 256]),
+            (Op::SetVertexBuffer, &[0, 5, 0, 64]),
+            (Op::Draw, &[4, 1, 0, 0]),
+        ]);
+        let mut backend = MockBackend::default();
+        assert_eq!(backend.replay(lines.words()), Ok(()));
+        assert_eq!(backend.draws, 2);
+
+        // WebGPU forgets the bundle's pipeline once the pass has replayed it.
+        let no_pipeline = lines_after_a_bundle(&[(Op::Draw, &[4, 1, 0, 0])]);
+        assert_eq!(
+            MockBackend::default().replay(no_pipeline.words()),
+            Err(MockError::NotReady {
+                op: Op::Draw,
+                what: "a pipeline"
+            })
+        );
+
+        let mut unknown = DrawList::with_capacity(64);
+        let flags = state_flags::ALL + 1;
+        unknown
+            .push(
+                Op::CreateRenderPipeline,
+                &[1, 1, 0, format::CANVAS, format::NONE, 1, flags, 0],
+            )
+            .unwrap();
+        assert_eq!(
+            MockBackend::default().replay(unknown.words()),
+            Err(MockError::Invalid {
+                op: Op::CreateRenderPipeline,
+                rule: "a render pipeline sets known state flags"
+            })
+        );
     }
 
     #[test]
@@ -1430,7 +1563,19 @@ mod tests {
         .unwrap();
         list.push(
             Op::UploadImage,
-            &[IMAGES, 0, 16, 8, 0, 32, 32, IMAGE, upload_flags::RELEASE],
+            &[
+                IMAGES,
+                0,
+                16,
+                8,
+                0,
+                32,
+                32,
+                IMAGE,
+                upload_flags::RELEASE,
+                0,
+                0,
+            ],
         )
         .unwrap();
         list.push(
@@ -1664,7 +1809,10 @@ mod tests {
         );
         assert!(
             rejects(&|l| l
-                .push(Op::UploadImage, &[PATTERN, 0, 0, 0, 0, 8, 8, IMAGE, 0])
+                .push(
+                    Op::UploadImage,
+                    &[PATTERN, 0, 0, 0, 0, 8, 8, IMAGE, 0, 0, 0]
+                )
                 .unwrap()),
             "an image needs RENDER_ATTACHMENT usage on its texture"
         );
@@ -1684,17 +1832,44 @@ mod tests {
             run_textures(&|l| {
                 l.push(
                     Op::UploadImage,
-                    &[IMAGES, 0, 0, 0, 0, 32, 32, IMAGE, upload_flags::RELEASE],
+                    &[
+                        IMAGES,
+                        0,
+                        0,
+                        0,
+                        0,
+                        32,
+                        32,
+                        IMAGE,
+                        upload_flags::RELEASE,
+                        0,
+                        0,
+                    ],
                 )
                 .unwrap();
-                l.push(Op::UploadImage, &[IMAGES, 0, 0, 0, 1, 32, 32, IMAGE, 0])
-                    .unwrap();
+                l.push(
+                    Op::UploadImage,
+                    &[IMAGES, 0, 0, 0, 1, 32, 32, IMAGE, 0, 0, 0],
+                )
+                .unwrap();
             }),
             Err(MockError::Missing { what: "image", .. })
         ));
         assert!(matches!(
             run_textures(&|l| l
-                .push(Op::UploadImage, &[IMAGES, 0, 0, 0, 0, 33, 32, IMAGE, 0])
+                .push(
+                    Op::UploadImage,
+                    &[IMAGES, 0, 0, 0, 0, 33, 32, IMAGE, 0, 0, 0]
+                )
+                .unwrap()),
+            Err(MockError::OutOfRange { .. })
+        ));
+        assert!(matches!(
+            run_textures(&|l| l
+                .push(
+                    Op::UploadImage,
+                    &[IMAGES, 0, 0, 0, 0, 32, 8, IMAGE, 0, 0, 25]
+                )
                 .unwrap()),
             Err(MockError::OutOfRange { .. })
         ));
@@ -1723,6 +1898,92 @@ mod tests {
             }),
             Err(MockError::Outside { .. })
         ));
+    }
+
+    #[test]
+    fn mip_levels_are_made_for_color_arrays_outside_passes_and_images_release_once() {
+        let upload = |l: &mut DrawList, flags: u32| {
+            l.push(
+                Op::UploadImage,
+                &[IMAGES, 0, 0, 0, 0, 32, 16, IMAGE, flags, 0, 16],
+            )
+            .unwrap();
+        };
+        assert_eq!(
+            run_textures(&|l| {
+                l.push(Op::WriteTexture, &[MIPS, 0, 0, 0, 0, 16, 16, 1, 0, 1024])
+                    .unwrap();
+                l.push(Op::GenerateMipmaps, &[MIPS, 0]).unwrap();
+                upload(l, 0);
+                l.push(Op::ReleaseImage, &[IMAGE]).unwrap();
+            }),
+            Ok(())
+        );
+        let rule = |build: &dyn Fn(&mut DrawList)| match run_textures(build) {
+            Err(MockError::Invalid { rule, .. }) => rule,
+            other => panic!("expected a broken rule, got {other:?}"),
+        };
+        assert!(rule(&|l| l.push(Op::GenerateMipmaps, &[PATTERN, 0]).unwrap()).contains("usage"));
+        assert!(
+            rule(&|l| {
+                texture(
+                    l,
+                    40,
+                    [16, 16, 1, 3],
+                    format::RGBA8_UNORM,
+                    texture_usage::TEXTURE_BINDING | texture_usage::RENDER_ATTACHMENT,
+                    view::D2,
+                );
+                l.push(Op::GenerateMipmaps, &[40, 0]).unwrap();
+            })
+            .contains("2d-array")
+        );
+        assert!(
+            rule(&|l| {
+                texture(
+                    l,
+                    40,
+                    [16, 16, 1, 1],
+                    format::RGBA8_UNORM,
+                    texture_usage::TEXTURE_BINDING | texture_usage::RENDER_ATTACHMENT,
+                    view::D2_ARRAY,
+                );
+                l.push(Op::GenerateMipmaps, &[40, 0]).unwrap();
+            })
+            .contains("more than one mip level")
+        );
+        assert!(matches!(
+            run_textures(&|l| l.push(Op::GenerateMipmaps, &[MIPS, 1]).unwrap()),
+            Err(MockError::OutOfRange { .. })
+        ));
+        assert!(matches!(
+            run_textures(&|l| {
+                l.push(
+                    Op::BeginRenderPass,
+                    &[0, NO_TARGET, NO_TARGET, 0, 0, 0, 0, 0, 0],
+                )
+                .unwrap();
+                l.push(Op::GenerateMipmaps, &[MIPS, 0]).unwrap();
+            }),
+            Err(MockError::Outside { .. })
+        ));
+        // A released image is gone: an upload after it names nothing, and a second release does
+        // nothing, as a capture's second replay of a list needs.
+        let result = run_textures(&|l| {
+            upload(l, upload_flags::RELEASE);
+            upload(l, 0);
+        });
+        assert!(
+            matches!(result, Err(MockError::Missing { what: "image", .. })),
+            "an upload after the release: {result:?}"
+        );
+        assert_eq!(
+            run_textures(&|l| {
+                upload(l, upload_flags::RELEASE);
+                l.push(Op::ReleaseImage, &[IMAGE]).unwrap();
+            }),
+            Ok(())
+        );
     }
 
     #[test]

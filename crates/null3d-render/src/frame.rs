@@ -14,17 +14,20 @@ use null3d_core::cells::{CellPosition, MAX_CELLS};
 use null3d_core::handle::Handle;
 use null3d_core::instances::{BatchTable, InstanceBatch};
 use null3d_core::jobs::JobSystem;
+use null3d_core::lights::{LightTable, LightView};
 use null3d_core::scene::SceneStorage;
 use null3d_core::snapshot::FrameSnapshot;
 use null3d_gpu::drawlist::{DrawList, DrawListError, Op, buffer_usage};
 
-use crate::camera::Perspective;
+use crate::camera::Lens;
+use crate::debug_lines::DebugLines;
 use crate::frame_data::{FrameUniform, normalized_direction};
 use crate::graph::GraphError;
-use crate::materials::MaterialTable;
+use crate::materials::{MATERIAL_FLOATS, MATERIAL_TEXELS, MapSlot, MaterialTable, Shading};
 use crate::meshes::{MAX_BUFFER_BYTES, MeshStorage, Page};
 use crate::output::{Antialias, Output, SceneColor};
 use crate::pipelines::DrawKey;
+use crate::textures::TextureStore;
 use crate::view::{MAX_VIEWS, View, ViewFrame, ViewId};
 
 /// Engine mesh ids count from 1; 0 marks an object with no mesh, such as a group or a camera.
@@ -95,6 +98,9 @@ pub struct FrameInput<'a> {
     pub structure_changed: bool,
     /// The job system, for work that runs on the job workers.
     pub jobs: &'a JobSystem,
+    /// The lines that the sketch drew for the frame, which development builds draw over the
+    /// camera's view. Release builds draw none.
+    pub lines: DebugLines<'a>,
 }
 
 impl FrameInput<'_> {
@@ -301,6 +307,15 @@ impl ParityLists {
     }
 }
 
+/// Where a frame builder keeps the material table on the GPU.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum MaterialStorage {
+    /// A storage buffer of rows, by buffer id: the WebGPU path.
+    Buffer(u32),
+    /// A data texture with one row of texels per material, by texture id: the WebGL2 path.
+    Texture(u32),
+}
+
 /// The lights and the background.
 #[derive(Clone, Copy, Debug)]
 struct Lighting {
@@ -323,11 +338,12 @@ pub struct CanvasOutput {
     pub transparent: bool,
 }
 
-/// What the sketch sets and changes rarely: meshes, materials, the views, the lights and the
-/// output settings.
+/// What the sketch sets and changes rarely: meshes, materials, textures, the views, the lights and
+/// the output settings.
 pub struct SceneSettings {
     meshes: MeshStorage,
     materials: MaterialTable,
+    textures: TextureStore,
     /// The views, the camera's first.
     views: Vec<View>,
     lighting: Lighting,
@@ -336,10 +352,16 @@ pub struct SceneSettings {
 }
 
 impl SceneSettings {
-    pub fn new(meshes: MeshStorage, max_materials: u32, canvas: CanvasOutput) -> Self {
+    pub fn new(
+        meshes: MeshStorage,
+        max_materials: u32,
+        textures: TextureStore,
+        canvas: CanvasOutput,
+    ) -> Self {
         Self {
             meshes,
             materials: MaterialTable::with_capacity(max_materials),
+            textures,
             views: vec![View::default()],
             lighting: Lighting {
                 sun_direction: [0.0, -1.0, 0.0, 0.0],
@@ -385,9 +407,73 @@ impl SceneSettings {
         &mut self.materials
     }
 
+    pub fn textures(&self) -> &TextureStore {
+        &self.textures
+    }
+
+    pub fn textures_mut(&mut self) -> &mut TextureStore {
+        &mut self.textures
+    }
+
+    /// Records the frame's texture work, writes each map's layer into its material's row when a
+    /// map changed, or a texture's layer became ready or stopped drawing, then uploads the rows
+    /// that changed into `table`. Returns true when a map's bind group was made again, which
+    /// render bundles that bind it must see.
+    pub(crate) fn record_materials(
+        &mut self,
+        list: &mut DrawList,
+        arena: &mut UploadArena,
+        table: MaterialStorage,
+        frame: u32,
+    ) -> Result<bool, RecordError> {
+        let remade = self.textures.record(list, frame)?;
+        let layers_changed = self.textures.take_layers_changed();
+        let textures = &self.textures;
+        self.materials
+            .update_map_layers(layers_changed, |map| textures.ready_layer(map));
+        if let Some(ids) = self.materials.take_changed() {
+            let (at, bytes) = arena.push(floats_as_bytes(self.materials.rows(ids.clone())))?;
+            match table {
+                MaterialStorage::Buffer(buffer) => {
+                    let offset = ids.start * MATERIAL_FLOATS as u32 * 4;
+                    list.push(Op::WriteBuffer, &[buffer, offset, at, bytes])?;
+                }
+                MaterialStorage::Texture(texture) => {
+                    let rows = ids.end - ids.start;
+                    list.push(
+                        Op::WriteTexture,
+                        &[
+                            texture,
+                            0,
+                            0,
+                            ids.start,
+                            0,
+                            MATERIAL_TEXELS,
+                            rows,
+                            1,
+                            at,
+                            bytes,
+                        ],
+                    )?;
+                }
+            }
+        }
+        Ok(remade)
+    }
+
+    /// The bind group of the map that a material draws with through `pipeline`, as
+    /// [`SceneSettings::pipeline_of`] chose it, or 0 when that pipeline reads no map.
+    pub fn texture_group(&self, material: u32, pipeline: DrawKey) -> u32 {
+        if pipeline.template != Shading::UnlitMap.template() {
+            return 0;
+        }
+        let map = self.materials.map(material - 1, MapSlot::BaseColor);
+        self.textures.group_id(map).unwrap_or(0)
+    }
+
     /// The camera the canvas shows the scene from: a scene object, and its lens.
-    pub fn set_camera(&mut self, camera: Handle, lens: Perspective) {
-        self.views[ViewId::CAMERA.index()].set_camera(camera, lens);
+    pub fn set_camera(&mut self, camera: Handle, lens: impl Into<Lens>) {
+        self.views[ViewId::CAMERA.index()].set_camera(camera, lens.into());
     }
 
     /// Sets the layers of the objects a view draws. A change needs no rebuild of the draw
@@ -425,6 +511,29 @@ impl SceneSettings {
         self.lighting.ambient = [color[0], color[1], color[2], 0.0];
     }
 
+    /// Gathers the lights of the frame whose world output is `parity`'s for the camera's view
+    /// (see [`LightTable::gather`]), after the transform update and before the frame records. The
+    /// main directional light and the ambient lights become the light the shaders read, and the
+    /// light table's visible list holds the point and spot lights the camera sees.
+    pub fn gather_lights(
+        &mut self,
+        lights: &mut LightTable,
+        scene: &SceneStorage,
+        parity: usize,
+        canvas: (u32, u32),
+    ) {
+        let view = self
+            .view_frame(ViewId::CAMERA, scene, parity, canvas)
+            .map(|frame| LightView {
+                camera: frame.camera,
+                frustum: frame.frustum,
+                layers: frame.layers,
+            });
+        let lit = lights.gather(scene, parity, view.as_ref());
+        self.set_sun(lit.sun_direction, lit.sun_color);
+        self.set_ambient(lit.ambient);
+    }
+
     /// The linear color behind every object. Exposure and tone mapping change it as they change
     /// the objects.
     pub fn set_background(&mut self, color: [f32; 3]) {
@@ -442,13 +551,23 @@ impl SceneSettings {
 
     /// What a mesh and material pair, by engine ids, asks of the pipeline that draws it, or `None`
     /// when the pair draws nowhere: no mesh, no material, an id that names nothing, or a mesh
-    /// without the vertex attributes that the material's shading reads.
+    /// without the vertex attributes that the material's shading reads. A material whose map is
+    /// gone, or whose mesh has no texture coordinates for it, draws with its color alone.
     pub fn pipeline_of(&self, mesh: u32, material: u32) -> Option<DrawKey> {
         if mesh == NO_MESH || material == NO_MATERIAL {
             return None;
         }
         let format = self.meshes.mesh(mesh - 1)?.format;
-        let shading = self.materials.shading(material - 1).ok()?;
+        let mut shading = self.materials.shading(material - 1).ok()?;
+        let needs = shading.attributes();
+        if shading == Shading::UnlitMap
+            && ((format & needs) != needs
+                || !self
+                    .textures
+                    .is_live(self.materials.map(material - 1, MapSlot::BaseColor)))
+        {
+            shading = Shading::Unlit;
+        }
         let needs = shading.attributes();
         ((format & needs) == needs).then_some(DrawKey {
             template: shading.template(),
@@ -460,7 +579,8 @@ impl SceneSettings {
 
     /// A view's values for a frame whose targets have the canvas's size, or `None` when the view
     /// has no camera to draw from. Shaders work in positions relative to the camera, so the
-    /// constants put the camera at the origin.
+    /// constants put a perspective camera at the origin, and an orthographic camera at infinity
+    /// behind its view.
     pub fn view_frame(
         &self,
         view: ViewId,
@@ -470,10 +590,10 @@ impl SceneSettings {
     ) -> Option<ViewFrame> {
         let aspect = canvas.0 as f32 / canvas.1.max(1) as f32;
         let view = self.views.get(view.index())?;
-        let (view_proj, camera) = view.transform(scene, parity, aspect)?;
+        let (view_proj, eye, camera) = view.transform(scene, parity, aspect)?;
         let uniform = FrameUniform {
             view_proj,
-            camera_position: [0.0, 0.0, 0.0, 1.0],
+            camera_position: eye,
             sun_direction: self.lighting.sun_direction,
             sun_color: self.lighting.sun_color,
             ambient: self.lighting.ambient,

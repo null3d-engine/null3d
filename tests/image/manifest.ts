@@ -12,7 +12,9 @@
 // the reference with bun run images:review --accept. Then do the same with CI=1 for the SwiftShader
 // reference: on the Mac, Playwright's Chromium draws CI's SwiftShader images byte for byte.
 import { PARITY_SCENES } from '../../bench/lib/parity.ts';
+import { ORTHO_IMAGE } from '../../bench/scenes/ortho-camera.ts';
 import { HOLD_TIME, PARITY_CANVAS } from '../../bench/scenes/spec.ts';
+import { DEMOS } from '../../examples/demos.ts';
 import type { DepthMode } from '../../packages/engine/src/page/switches.ts';
 import type { EngineModeName } from '../lib/engine-checks.ts';
 import { ALL_MODES, type ImageRun, type ImageTest, imageRuns, type Tier } from '../lib/images.ts';
@@ -117,6 +119,13 @@ const GENERATORS = {
 	size: [480, 270],
 } as const;
 
+/** The orthographic camera's sketch, and the size of its image. */
+const ORTHO = {
+	sketch: 'tests/pages/sketches/ortho-camera-sketch.ts',
+	size: [ORTHO_IMAGE.width, ORTHO_IMAGE.height] as const,
+	hold: 0,
+};
+
 /** The page of the depth precision tests, and its image's size. */
 const DEPTH_PAGE = { page: 'tests/pages/depth-precision.html', size: PRECISION.size, hold: 0 };
 
@@ -126,12 +135,14 @@ const DEPTH_MODES: readonly DepthMode[] = ['standard', 'reversed-gl', 'reversed'
 export const IMAGE_TESTS: readonly ImageTest[] = [
 	// A clear color, read back through the engine's readback on each GPU interface.
 	{ name: 'clear', page: 'tests/pages/clear.html', size: [64, 64], tiers: ['webgpu', 'webgl2'] },
-	// Every texture command of the GPU layer, replayed on each path, which must all draw one image.
+	// Every texture command of the GPU layer, replayed on each path, which must all draw one image,
+	// and release every image they had.
 	{
 		name: 'replay-textures',
 		page: 'tests/pages/replay-textures.html',
-		size: [256, 256],
+		size: [320, 256],
 		sameOnEveryTier: true,
+		expect: { released: true },
 	},
 	// A hand-built draw list: GPU culling, then indirect draws from a render bundle with MSAA.
 	{
@@ -150,8 +161,54 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 		hold: 1.5,
 		modes: ALL_MODES,
 	},
+	// Textures from PNG, JPEG, WebP and AVIF files, sRGB and linear textures, each wrap mode, and
+	// magnified texels with each filter. Every thread mode sends the images to the thread that draws
+	// its own way, and must draw the same image.
+	{
+		name: 'textures',
+		sketch: 'tests/pages/sketches/textures-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+		modes: ALL_MODES,
+	},
+	// Mip levels that the GPU makes: a checkerboard that shrinks and a floor that recedes, with and
+	// without mip levels, and with anisotropic filtering.
+	{
+		name: 'texture-mipmaps',
+		sketch: 'tests/pages/sketches/texture-mipmaps-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+	},
+	// The texture calls of a sketch: loadTexture with and without the flip, loadImageBitmap with
+	// fromImageBitmap, data in bytes, half floats and layers, updates that bring new texels and a new
+	// size, a destroyed map, and colors multiplied by alpha. Every thread mode must draw one image.
+	{
+		name: 'texture-api',
+		sketch: 'tests/pages/sketches/texture-api-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+		modes: ALL_MODES,
+	},
+	// Fifty textures that load in waves in a live engine, a band of rows per frame under a small
+	// upload budget, while their array grows twice, to 64 layers. No frame may upload more than the
+	// budget, and the GPU memory count must match the array.
+	{
+		name: 'texture-arrays',
+		page: 'tests/pages/texture-arrays.html',
+		size: [400, 240],
+		modes: ALL_MODES,
+		expect: { withinBudget: true, memoryCounted: true },
+	},
 	// A small static scene: lit and unlit meshes, a hierarchy and an instance batch.
 	{ name: 'scene', sketch: 'tests/pages/sketches/boxes-sketch.ts', hold: 0, modes: ALL_MODES },
+	// A box that fixed steps move at 50 steps per second, and a camera that follows it from the late
+	// update, held at 1.5 seconds: the box stays at the center, and every mode runs the same steps.
+	{
+		name: 'follow',
+		sketch: 'tests/pages/sketches/follow-sketch.ts',
+		hold: 1.5,
+		modes: ALL_MODES,
+	},
 	// The sketch of the project that the command-line tool's tests run in, held at 1.5 seconds. The
 	// shot command draws the project's own page, and its images must match these references.
 	{ name: 'project', sketch: 'tests/fixtures/project/sketch.ts', hold: 1.5 },
@@ -174,6 +231,10 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		switches: ['transparent'],
 	},
+	// Object calls: turns about an object's own axes, a move along them, a hand moved under a turned
+	// and scaled arm with keepWorld, which then swings with the arm, and bounds that culling tests:
+	// one box that its bounds hide, and one that is never culled.
+	{ name: 'objects', sketch: 'tests/pages/sketches/objects-sketch.ts', hold: 1 },
 	// A scene that spans grid cells, with a turned tree and a camera on a turned rig.
 	{ name: 'cells', sketch: 'tests/pages/sketches/cells-sketch.ts', hold: 1 },
 	// The same scene 100 km out, away from a cell's center, and about 1,000 km out at the center of a
@@ -197,10 +258,64 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 		reference: 'cells',
 		tolerance: { threshold: 0, maxDiffRatio: 0 },
 	},
+	// Debug drawing: every shape of ctx.debug over a small scene, the axes of a spinning box and the
+	// frustum of a second camera. The single-threaded mode runs the sketch on the page, which draws
+	// the same lines.
+	{
+		name: 'debug',
+		sketch: 'tests/pages/sketches/debug-sketch.ts',
+		hold: 1,
+		size: [400, 225],
+		modes: ['pipelined', 'single-threaded'],
+		tolerance: { threshold: 0, maxDiffRatio: 0 },
+	},
+	// The same scene about 1,000 km out, at the center of a cell: the lines keep 64-bit positions,
+	// which the engine draws relative to the camera, so the frame must match. In 32-bit floats from
+	// the origin, the lines would move in steps of 6 cm there.
+	{
+		name: 'debug-1000km',
+		sketch: `tests/pages/sketches/debug-sketch.ts?x=${977 * 1024}`,
+		hold: 1,
+		size: [400, 225],
+		reference: 'debug',
+		tolerance: { threshold: 0, maxDiffRatio: 0 },
+	},
 	// Objects, a parent and its child, and instance batches on three layers, some of them moved to
 	// other layers after they were created, and a camera that draws two of the layers. A child keeps
 	// its own layers, so the child of a parent that the camera leaves out still draws.
 	{ name: 'layers', sketch: 'tests/pages/sketches/layers-sketch.ts', hold: 0.1 },
+	// The orthographic camera: towers seen from above at an angle, with the near plane cutting the
+	// slab's front corner and the far plane cutting the bar at the back. The parity test compares
+	// the image with three.js's OrthographicCamera.
+	{ name: 'ortho-camera', ...ORTHO },
+	// The same view from four edges that setOrthoHeight then halves.
+	{
+		name: 'ortho-camera-edges',
+		...ORTHO,
+		sketch: `${ORTHO.sketch}?edges`,
+		reference: 'ortho-camera',
+	},
+	// The same scene 1,000 km out, at the center of a cell, where each cell's offset moves the
+	// view's box. It must draw exactly the scene's image, as the cells test does there.
+	{
+		name: 'ortho-camera-1000km',
+		...ORTHO,
+		sketch: `${ORTHO.sketch}?x=${977 * 1024}`,
+		reference: 'ortho-camera',
+		tolerance: { threshold: 0, maxDiffRatio: 0 },
+	},
+	// Each depth mode that ?depth= forces on WebGL2 must cut the scene at the same near and far
+	// planes, and draw its image.
+	...DEPTH_MODES.map(
+		(depth): ImageTest => ({
+			name: `ortho-camera-${depth}`,
+			...ORTHO,
+			tiers: ['webgl2'],
+			switches: [`depth=${depth}`],
+			reference: 'ortho-camera',
+			expect: { drewAsked: true },
+		}),
+	),
 	// Meshes from arrays in every vertex format, a mesh too big for 16-bit indices that splits into
 	// parts, and normals and tangents that the engine computes: on job workers in the threaded build,
 	// and on the page in the single-threaded build, which must compute the same values. WebGL2 lays
@@ -230,6 +345,9 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 	// Compatibility mode's 8-bit path averages antialiased edges after the tone mapping, so it keeps
 	// references of its own.
 	{ name: 'generators-compat', ...GENERATORS, tiers: ['compat'], expect: { hdr: false } },
+	// Orbit controls after the controls test's drags, made through the controls' own calls. The
+	// controls test must draw this image after it makes the drags with Playwright.
+	{ name: 'controls', sketch: 'tests/pages/sketches/controls-sketch.ts?moved', hold: 0 },
 	// Two surfaces 1 cm apart at each distance from 1 m to 10 km, in each GPU path's own depth mode.
 	// The page paints each pixel where the farther surface shows through as the nearer one, and
 	// publishes their count. The engine must draw the depth it chose, no mode may fight up to 40 m,
@@ -255,6 +373,14 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 				apartNear: true,
 				...(depth !== 'reversed' && { fights: true }),
 			},
+		}),
+	),
+	// Each feature demo in examples/, held at the demo's time.
+	...DEMOS.map(
+		(demo): ImageTest => ({
+			name: `demo-${demo.name}`,
+			sketch: `examples/${demo.name}/sketch.ts`,
+			hold: demo.hold,
 		}),
 	),
 	// The benchmark scenes' hold frames, which the parity command also compares with three.js.

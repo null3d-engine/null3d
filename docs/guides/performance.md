@@ -3,7 +3,7 @@ id: guides/performance
 title: Performance guide
 status: experimental
 since: "0.1"
-summary: "Measuring; the frame budget; common causes of slow frames and their fixes."
+summary: "Measuring; the frame budget on computers, phones and tablets; common causes of slow frames and their fixes."
 ---
 
 # Performance guide
@@ -45,16 +45,35 @@ This is how one frame of the S1 benchmark splits. S1 has 100,000 boxes, and its 
 | --- | --- |
 | Sketch worker: the sketch's update | 2.18 ms |
 | Sketch worker: the engine's steps | 0.14 ms |
-| Render worker | 0.15 ms |
-| 16 job workers, all together | 0.45 ms, at most 0.09 ms on one worker |
+| Render worker | 0.16 ms |
+| 16 job workers, all together | 0.45 ms |
 
 The update calls `Math.sin` or `Math.cos` three times per box, about 20 nanoseconds per box. Make your own loops tight before you look at the engine.
+
+`bunx @null3d/cli bench` measures a production build, which leaves out the development checks. In such a build on the same Mac, S1's busiest thread took 1.90 ms per frame with WebGPU and 2.03 ms with WebGL2. The engine's own work on that thread was 0.16 ms and 0.23 ms.
 
 ## The frame budget
 
 At 60 frames per second a frame has 16.7 ms, and at 120 frames per second it has 8.3 ms. The busiest thread must finish its work inside that time. Phones slow down as they heat up, so plan to use at most about 70% of the budget there.
 
 S1 used 2.3 ms of the busiest thread's time for 100,000 moving boxes. That leaves most of a 120 Hz frame for more sketch code.
+
+### Phones and tablets
+
+The benchmarks run S1 with 240,000 boxes on phones and tablets. These runs show how heat and the GPU change the frame rate:
+
+| Device, browser and GPU path | CPU time per frame, busiest thread | Frames per second |
+| --- | --- | --- |
+| Galaxy S24+, Chrome, WebGL2, cool | 13.3 ms | 57 |
+| Galaxy S24+, Chrome, WebGL2, warm | 22.1 to 22.8 ms | 30 |
+| iPad Pro, Safari, WebGPU | 15.5 ms | 28 |
+| iPad Pro, Safari, WebGL2 | 15.6 ms | 29 |
+
+On the Galaxy S24+, the same frame took about 70% longer once the phone was warm. The sketch's own update took most of each frame.
+
+The warm phone showed 30 frames per second, half the display's rate. In pipelined mode, a frame that takes a little longer than one refresh waits for the next one, as [Latency modes](../concepts/architecture.md#latency-modes) explains. Low-latency mode draws each frame in the sketch worker, right after its update. In another run on the warm phone, each frame took about 21 ms of CPU time. There low latency showed 40.4 frames per second, and pipelined mode 32.5.
+
+On the iPad the GPU sets the rate: it took about 28 ms per frame, longer than the CPU's 15.5 ms. [The presented rate, the completed rate and GPU time](#the-presented-rate-the-completed-rate-and-gpu-time) shows how to find the busier side.
 
 ## Write per-frame code that allocates nothing
 
@@ -77,18 +96,21 @@ The engine keeps each scene's draw tables and every object's matrix on the GPU, 
 
 | Call | Cost in the frame it takes effect |
 | --- | --- |
-| `setPosition`, `setRotation`, `setScale`, and writes to a batch's arrays | The changed matrices |
+| `setPosition`, `setRotation`, `setScale`, the other transform setters, and writes to a batch's arrays | The changed matrices |
 | `setVisible` | The matrix and 4-byte draw entry of the object and of each object under it |
 | `setActiveCount` | The 4-byte draw entry of each row that starts or stops drawing |
+| `setLayers` | No rebuild: each view tests the new mask from the next frame |
+| `setCastShadows`, `setReceiveShadows` and `setRenderOrder` | Nothing |
 | Creating or destroying an object or an instance batch | A rebuild, and engine memory can grow in the next frame |
-| `setMaterial`, `setParent` and `setDynamic` | A rebuild |
+| `setMaterial`, `setMesh`, `setParent`, `setDynamic`, `setBounds` and `setFrustumCulled` | A rebuild |
 
 These habits keep play free of rebuilds:
 
 - Create every object, batch, mesh and material a level needs during setup or behind a loading screen. The engine sizes its memory for the scene it holds, so one created during play makes engine memory grow in the next frame.
 - Hide and show objects with `setVisible` instead of destroying and creating them.
 - Pool short-lived things, such as bullets and particles, in an instance batch sized for the most rows it will ever need. Show fewer with `setActiveCount`, and keep the live rows at the front of the arrays.
-- For a look that changes often, such as a highlight, keep two objects and swap their visibility. Keep `setMaterial` for rare changes.
+- For a look that changes often, such as a highlight, keep two objects and swap their visibility. Keep `setMaterial` and `setMesh` for rare changes.
+- Give bounds of your own with `setBounds` to few objects. On WebGPU, each object with bounds of its own takes a draw of its own. Objects that share a mesh and a material share one draw.
 - Every row of a batch counts toward the scene's limit of objects and instance rows, active or not. On WebGPU every device draws 2,097,152. On WebGL2 the limit follows the largest texture the device allows. It is 1,048,576 at 2,048 pixels, the least that WebGL2 allows. For the device the page runs on, `engine.capabilities.maxInstances` gives the limit (E1501). Engine memory holds about 5 million rows (E1109). So size each batch for the rows it uses.
 - Check with `measure`. A `rebuilds` count above zero during play points to one of the calls in the lower rows of the table.
 
@@ -99,24 +121,26 @@ Performance advice written for other engines often assumes things that do not ho
 | Question | null3D's answer |
 | --- | --- |
 | What makes the GPU build a pipeline? | A shading model, lit or unlit, and the vertex format of the meshes it draws, with the scene color's format, the depth format and the sample count. A material never does: materials are rows in one shared table, so a thousand lit materials share one lit pipeline for each vertex format. Tone mapping and exposure are values the shaders read, so changing them builds nothing. |
-| When are pipelines built? | In the first frame that draws a shading model with a vertex format, and again after the browser replaces the GPU. Sketch code never compiles one. `measure` counts builds in `pipelines`. |
+| When are pipelines built? | In the background, from the first frame that draws a shading model with a vertex format, and again after the browser replaces the GPU. The first frame waits for its pipelines. After that, an object whose pipeline is still building draws nothing until it is built. `scene.warmUp()` resolves once every pipeline is built, and `measure` counts builds in `pipelines`. |
 | What does the engine batch by itself? | Every object and instance row with the same shading model, mesh and material goes into one bucket, which one indirect draw call draws. A mesh over 65,535 vertices takes one draw per part. Separate objects from `createMesh` batch the same way as the rows of an instance batch. |
 | Which passes walk the scene? | On WebGPU, two: a culling pass on the GPU, which tests every object and row against the view, and the main pass, which replays a draw bundle. The engine records the bundle again only when the scene's structure changes. On WebGL2 the job workers cull on the CPU, and the main pass draws the objects in view. Where the scene draws HDR color, a final pass then reads each pixel once to tone map it, whatever the scene holds. |
-| Does the engine know when the GPU finished a frame? | Yes. It listens to the WebGPU queue, or checks a WebGL2 fence, and blocks no thread. `measure` reports `completedFps` and `gpuLatencyMs`. Sketch code never waits for the GPU. |
+| Does the engine know when the GPU finished a frame? | Yes, for every frame. It listens to the WebGPU queue, or checks a WebGL2 fence, and blocks no thread. `measure` reports `completedFps` and `gpuLatencyMs`. Sketch code never waits for the GPU. |
+| How many frames can wait on the GPU? | Two. While two frames are unfinished, the thread that draws takes no new frame, and the sketch worker waits for it. Without that limit, browsers let from 4 to more than 80 frames queue when the GPU falls behind, and each adds a frame of input lag. |
 | What must stay the same for the engine to reuse its work? | The scene's structure. A static object costs nothing until a setter changes it. The calls that rebuild the draw tables are listed in [Objects during play](#objects-during-play). |
 
 So some common advice does not apply:
 
 - **Merge meshes to cut draw calls.** Objects that share a mesh and a material already share one draw. Merging different small static meshes still cuts the number of buckets.
 - **Share materials so objects share a shader.** Every material already shares its pipeline for each vertex format. Share materials anyway, because each mesh and material pair is its own bucket and draw.
-- **Compile or warm up after each loading stage.** The engine builds each pipeline in the first frame that draws with it. Wait for `engine.firstFrame` before you remove the first loading screen.
+- **Compile shaders before the first frame.** The first frame waits for its pipelines. Wait for `engine.firstFrame` before you remove the first loading screen. A later loading stage does need a warm-up, as [Loading screens and warm-up](loading-screens.md) shows.
 - **Turn off matrix updates for objects that do not move.** Objects are static by default, and a static object costs nothing per frame.
 - **Mark a changed object for update.** Setters mark the change themselves.
 - **Track GPU completion in your own code.** `measure` reports it.
+- **Limit the frames that wait on the GPU.** The engine holds them to two.
 
 ## Moving objects cost uploads
 
-Each dynamic instance uploads its 48-byte world matrix in every frame, so 100,000 moving boxes upload 4.8 MB per frame. A static batch uploads its matrices once and then nothing. The S1-static benchmark draws the same 100,000 boxes standing still. It uploads no matrices per frame and takes 0.08 ms of CPU time.
+Each dynamic instance uploads its 48-byte world matrix in every frame, so 100,000 moving boxes upload 4.8 MB per frame. A static batch uploads its matrices once and then nothing. The S1-static benchmark draws the same 100,000 boxes standing still. It uploads no matrices per frame. In a production build in Chrome on a MacBook Pro, its busiest thread took 0.07 ms per frame with WebGPU and 0.05 ms with WebGL2.
 
 On WebGL2 the job workers cull, so a frame whose view changed also uploads its list of visible objects, at 4 bytes per entry. Each visible object or instance row is one entry, and so is each visible group of 64 rows in a static batch. The `visibleEntries` figure of `measure` counts them. Divide `uploadBytes` by it: when only the camera moves, the result is about 4 bytes.
 
@@ -146,25 +170,46 @@ The render worker picks how each upload travels, so you do not need to. Uploads 
 | `rebuilds` | Frames whose structure change rebuilt the draw tables |
 | `pipelines` | GPU pipelines built, which can stall the frame they happen in |
 | `memory` | The engine's WebAssembly memory and the JavaScript heap |
+| `load` | The start's times in milliseconds: the GPU probe, the core's download and compile, `createEngine`, and the first frame's submit and finish |
 
 The sketch worker's steps are `update`, `commands`, `transforms`, `batches`, `cull` and `record`, and the render worker's is `replay`. A thread's time less its `update` step is the engine's own work on that thread.
 
-A frame callback keeps firing at the display rate while the GPU falls behind. So a count of callbacks can report a healthy rate while the screen shows fewer frames. Compare `completedFps` with `presentedFps`. When the GPU finishes fewer frames than the renderer presents, frames queue on the GPU. Then `gpuLatencyMs` grows, and users feel it as input lag. The engine checks a WebGL2 fence at its next frame callback, so there `gpuLatencyMs` rounds up to a frame interval. The `gpuMs` figure is the GPU's working time within a frame, not the time from submit to screen. The engine measures GPU time and completion on one frame in eight. Measuring every frame would cost the drawing thread about as much as drawing a small scene.
+To measure your page with no code, run `bunx @null3d/cli bench` in your project's folder. It builds the project for production and opens the page in a headless browser with the `?bench` switch. That switch publishes the running engine as `window.__null3dEngine`. Then `bench` takes 5 fresh runs of 30 seconds, each after 5 seconds of warm-up. It prints the median and the spread of the figures above ([The `null3d` command](../cli/null3d.md#bench)).
 
 Chrome measures the heap of the page and its workers only when every worker answers, or after a minute. Job workers never answer while the engine runs, so each sample takes about a minute and leaves them out. Chrome also adds shared memory, such as the engine's own, to each worker's figure. A render worker whose own heap is 1.4 MB can show as 52 MB. The `jsHeapNote` field says when the figures cover only the page.
 
+### The presented rate, the completed rate and GPU time
+
+Three figures show whether the GPU keeps up:
+
+- `presentedFps` counts the frames that the renderer presented. A frame callback keeps firing at the display rate while the GPU falls behind. So this count alone can look healthy while the screen shows fewer frames.
+- `completedFps` counts the frames that the GPU finished. The engine tracks every frame.
+- `gpuMs` is the GPU's working time within a frame, where the device has timestamp queries. It is not the time from submit to screen. The engine measures it on one frame in eight. Timing every frame would cost the drawing thread about as much as drawing a small scene.
+
+The lower of the two rates is the rate that users see. The engine lets at most two frames wait unfinished on the GPU. So when the GPU falls behind, the presented rate falls to the completed rate, and `gpuLatencyMs` stays near two completed frame intervals. A rate below `refreshHz` with `gpuLatencyMs` near two frame intervals means that the GPU limits the frame rate. On a phone without GPU timers, `completedFps` and `gpuLatencyMs` are the GPU's only signal.
+
+Firefox reports finished WebGPU frames to the engine about a frame late. There the limit holds back frames that the GPU has already finished, which costs frame rate when the GPU is busy. In a GPU-bound test on a Mac, Firefox's WebGPU path drew 15% fewer frames at a load that used 60% of the GPU. Under heavier load it drew far fewer. Firefox's WebGL2 path lost none.
+
+The engine checks a WebGL2 fence at its next frame callback, so there `gpuLatencyMs` rounds up to a frame interval. In Safari, a worker that draws with WebGPU waits for the GPU at the end of each frame, so there `gpuLatencyMs` stays near one frame interval. Some GPUs, such as Apple's, work on two frames at once, so a frame's `gpuMs` can be longer than the time between completed frames.
+
 ## Measure fairly
 
+- Measure a production build, as your users get it. Development builds check each call's arguments, and check every static object in each frame. In the S2 benchmark on a MacBook Pro, that check cost about 0.06 ms per frame on WebGPU, and 0.03 ms on WebGL2. The other checks cost less than the benchmarks can measure.
 - Let the sketch run for several seconds before you measure, so that the browser has optimized your per-frame code.
 - Keep the page visible, the screen unlocked and the display awake. Safari stops running a page while the Mac is locked.
 - Compare runs at the same display refresh rate. `refreshHz` records it with each measurement. Runs at 120 and at 144 frames per second differed by about 10% for both engines.
 - To compare displays with different refresh rates, add `?fps=60` to the page's address. The engine then draws 60 frames per second on any display of 60 Hz or more.
+- The engine lets at most two frames wait on the GPU. To see what a browser does without that limit, add `?queue=off` to the page's address. `?queue=3` lets three frames wait.
 - Chrome rounds GPU times to 65.5 microseconds unless you start it with `--enable-webgpu-developer-features`.
 - In Safari, a worker's frame callbacks run from a timer of about 15 ms, not from the display. The engine holds its frames to the display's rate, which the page measures, but `refreshHz` there reports the timer's rate.
 - Compare engines in the same browser, one run after another.
 
 ## Browsers differ
 
-The same S1 update code took 1.7 ms in Safari, 2.2 to 2.6 ms in Chrome and 4.2 ms in Firefox on the same Mac. Test your sketch in each browser that your audience uses.
+S1's busiest thread took 1.74 ms per frame in Safari, 2.32 ms in Chrome and 4.42 ms in Firefox on the same Mac. Most of that time was the same update code. Test your sketch in each browser that your audience uses.
 
-Safari reports at most 8 logical cores, so the engine starts 6 job workers there. Chrome and Firefox report every core.
+The engine starts one job worker for each logical core that the browser reports, less 2, and at least 1. Browsers report different numbers on the same device:
+
+- Chrome and Firefox report every core: 18 on a MacBook Pro, so the engine starts 16 job workers there.
+- Safari reports at most 8 logical cores, so the engine starts 6 job workers there.
+- Brave can report fewer. With Shields on, it reported 3 cores on an iPad Pro, so the engine started 1 job worker.

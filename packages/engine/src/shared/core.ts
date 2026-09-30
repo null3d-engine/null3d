@@ -3,6 +3,7 @@
 // The generated wasm-bindgen module is loaded by URL, and `CoreGlue` describes the functions the
 // TypeScript side calls, so type checking does not depend on a Rust build.
 
+import { DEV } from '../errors/checks';
 import type { CoreErrors } from '../errors/core-failure';
 import { EngineError } from '../errors/engine-error';
 
@@ -57,6 +58,11 @@ export interface CoreGlue extends CoreErrors {
 	prepareJobs(): void;
 	beginFrame(frame: number): number;
 	updateTransforms(): number;
+	/**
+	 * Updates the objects that the sketch moved after `updateTransforms`, and the objects below
+	 * them, so culling and drawing see the moves in the same frame.
+	 */
+	updateLateTransforms(): number;
 	updateBatches(frame: number): number;
 	/** Finds the frame's visible objects on the job workers, where the path culls on the CPU. */
 	cullFrame(frame: number, width: number, height: number): number;
@@ -71,6 +77,15 @@ export interface CoreGlue extends CoreErrors {
 	resetGpu(): number;
 	drawListAddress(parity: number): number;
 	drawListWords(frame: number): number;
+	/**
+	 * Makes room for `points` points of debug lines, keeping those written since the last recorded
+	 * frame. The arrays can move, so their addresses must be read again.
+	 */
+	reserveDebugLines(points: number): number;
+	/** The address of a debug line array: `DEBUG_LINE_FIELD_POSITIONS` or `..._COLORS`. */
+	debugLineArrays(field: number): number;
+	/** Draws the first `points` points of the debug line arrays in the next recorded frame. */
+	drawDebugLines(points: number): number;
 	createBatch(
 		capacity: number,
 		dynamic: boolean,
@@ -117,10 +132,78 @@ export interface CoreGlue extends CoreErrors {
 	setMaterialColor(material: number, r: number, g: number, b: number): number;
 	/** Changes a material's opacity and keeps its color. */
 	setMaterialOpacity(material: number, opacity: number): number;
-	/** Draws from a camera object: its lens, and the layers of the objects it draws. */
-	setCamera(camera: number, fovDegrees: number, near: number, far: number, layers: number): number;
-	setSun(dx: number, dy: number, dz: number, r: number, g: number, b: number): number;
-	setAmbient(r: number, g: number, b: number): number;
+	/** Gives a material a map, a texture's handle, or none with 0. */
+	setMaterialMap(material: number, texture: number): number;
+	/**
+	 * A texture with no texels yet, in `depth` layers of a texture array. `format` is a `FORMAT_*` code;
+	 * the rest set its sampler with `ADDRESS_*` and `FILTER_*` codes. Returns its handle.
+	 */
+	createTexture(
+		width: number,
+		height: number,
+		depth: number,
+		format: number,
+		mipmaps: boolean,
+		wrapU: number,
+		wrapV: number,
+		magFilter: number,
+		minFilter: number,
+		mipFilter: number,
+		anisotropy: number,
+	): number;
+	/**
+	 * Gives a texture an image, uploaded with the `TEXTURE_PREMULTIPLIED_ALPHA` flag or 0, and
+	 * returns the image's id for the thread that draws. An image of another size resizes it.
+	 */
+	setTextureImage(texture: number, width: number, height: number, flags: number): number;
+	/**
+	 * Gives a texture texels of `width` x `height` in each layer, and returns the address that
+	 * TypeScript writes them at, as tightly packed rows, layer after layer.
+	 */
+	setTextureData(texture: number, width: number, height: number): number;
+	destroyTexture(texture: number, frame: number): number;
+	/** Tells the texture store what the thread that draws has: images received, and frames taken. */
+	syncTextures(imagesArrived: number, framesTaken: number): void;
+	/** One of the texture store's numbers, by `TEXTURE_STAT_*` code; `texture` names one texture. */
+	textureStat(field: number, texture: number): number;
+	/** Changes one of the texture store's settings, by `TEXTURE_OPTION_*` code. */
+	setTextureOption(option: number, value: number): number;
+	/**
+	 * Draws from a camera object with a perspective lens, a vertical field of view in degrees, and
+	 * the objects on `layers`.
+	 */
+	setPerspectiveCamera(
+		camera: number,
+		fovDegrees: number,
+		near: number,
+		far: number,
+		layers: number,
+	): number;
+	/**
+	 * Draws from a camera object with an orthographic lens: a view `height` tall and `width` wide,
+	 * where a width of 0 follows the canvas's aspect ratio, centered right of and above the
+	 * camera's axis by `centerX` and `centerY`, and the objects on `layers`.
+	 */
+	setOrthographicCamera(
+		camera: number,
+		height: number,
+		width: number,
+		centerX: number,
+		centerY: number,
+		near: number,
+		far: number,
+		layers: number,
+	): number;
+	/**
+	 * Adds a row to the light table for the object `handle`; `kind` is one of the `LIGHT_KIND_*`
+	 * codes. Returns the light's id.
+	 */
+	createLight(handle: number, kind: number): number;
+	destroyLight(light: number): number;
+	/** Sets one of a light's linear colors: `which` is one of the `LIGHT_COLOR_*` codes. */
+	setLightColor(light: number, which: number, r: number, g: number, b: number): number;
+	/** Sets one of a light's numbers: `which` is one of the `LIGHT_VALUE_*` codes. */
+	setLightValue(light: number, which: number, value: number): number;
 	setBackground(r: number, g: number, b: number): number;
 	/** The tone mapping, by code, and the exposure, from the next frame on. */
 	setOutput(toneMapping: number, exposure: number): number;
@@ -145,6 +228,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'prepareJobs',
 	'beginFrame',
 	'updateTransforms',
+	'updateLateTransforms',
 	'updateBatches',
 	'cullFrame',
 	'recordFrame',
@@ -153,6 +237,9 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'resetGpu',
 	'drawListAddress',
 	'drawListWords',
+	'reserveDebugLines',
+	'debugLineArrays',
+	'drawDebugLines',
 	'createBatch',
 	'destroyBatch',
 	'batchArrays',
@@ -167,9 +254,20 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'createMaterial',
 	'setMaterialColor',
 	'setMaterialOpacity',
-	'setCamera',
-	'setSun',
-	'setAmbient',
+	'setMaterialMap',
+	'createTexture',
+	'setTextureImage',
+	'setTextureData',
+	'destroyTexture',
+	'syncTextures',
+	'textureStat',
+	'setTextureOption',
+	'setPerspectiveCamera',
+	'setOrthographicCamera',
+	'createLight',
+	'destroyLight',
+	'setLightColor',
+	'setLightValue',
 	'setBackground',
 	'setOutput',
 ];
@@ -209,12 +307,18 @@ export function coreUrls(build: Build): CoreFiles {
 			};
 }
 
-/** Imports the generated module for a build and checks that it has every function the engine calls. */
+/**
+ * Imports the generated module for a build. Development builds also check that it has every
+ * function the engine calls. A release build bundles this code and the core from one install, so
+ * only a development setup can pair a core with code from another build, and release builds drop
+ * the check and its list of names.
+ */
 export async function loadGlue(build: Build): Promise<CoreGlue> {
 	const glue = (await import(/* @vite-ignore */ coreUrls(build).glue.href)) as Partial<CoreGlue>;
-	const missing = REQUIRED_FUNCTIONS.filter((name) => typeof glue[name] !== 'function');
-	if (missing.length > 0) {
-		throw new EngineError('E1402', `the ${build} engine core lacks ${missing.join(', ')}.`);
+	if (DEV) {
+		const missing = REQUIRED_FUNCTIONS.filter((name) => typeof glue[name] !== 'function');
+		if (missing.length > 0)
+			throw new EngineError('E1402', `the ${build} engine core lacks ${missing.join(', ')}.`);
 	}
 	return glue as CoreGlue;
 }
