@@ -12,11 +12,19 @@ import type { Renderer, Tier } from '../render/renderer';
 import { awaitLater } from '../shared/await-later';
 import { controlViews, createControlBuffer, Slot } from '../shared/control';
 import { type Build, type CoreGlue, startCore } from '../shared/core';
+import { KEY_CODES } from '../shared/key-codes';
 import { createMetricsBuffer, MetricsReader } from '../shared/metrics';
 import { loadSketch } from '../sketch/define-sketch';
 import type { SketchRunner } from '../sketch/runner';
-import type { CapturedFrame, CoreHandoff, RendererSetup, WorkerReply } from '../workers/protocol';
+import type {
+	CapturedFrame,
+	CoreHandoff,
+	RendererSetup,
+	SketchWorkerInit,
+	WorkerReply,
+} from '../workers/protocol';
 import { abortable } from './abortable';
+import { watchCanvas } from './canvas-watch';
 import { type CapabilityReport, type PowerPreference, probeCapabilities } from './capabilities';
 import {
 	type FrameMetrics,
@@ -81,8 +89,9 @@ export interface EngineOptions {
 	/**
 	 * Starts the engine in hold mode for image tests, held at this many seconds of sketch time. The
 	 * engine steps the sketch from 0 to the time in fixed steps of 1/60 second, with no frame loop.
-	 * `math.random` and `Math.random` in the sketch's thread give the same numbers on every run. The engine then
-	 * draws that one frame and reads it back, and `createEngine` resolves. The `?hold=<seconds>`
+	 * `math.random` and `Math.random` in the sketch's thread give the same numbers on every run, and
+	 * the sketch gets no input: every key and button stays up. The engine then draws that one frame
+	 * and reads it back, and `createEngine` resolves. The `?hold=<seconds>`
 	 * switch overrides this time, and a bare `?hold` holds at it, or at 0 without it.
 	 */
 	hold?: number;
@@ -177,7 +186,10 @@ export interface Engine {
 	 * that removes the handler.
 	 */
 	onFailure(handler: (error: EngineError) => void): () => void;
-	/** Pauses or resumes the sketch's frames. */
+	/**
+	 * Pauses or resumes the sketch's frames. A pause also stops input: the sketch sees every key and
+	 * button that was down come up, and input that comes during the pause never reaches it.
+	 */
 	setPaused(paused: boolean): void;
 	/**
 	 * Takes the canvas off the page and pauses the engine. The engine keeps its threads, its GPU
@@ -467,7 +479,8 @@ async function startEngine(
 		: 0;
 	const control = createControlBuffer(threaded);
 	const metrics = createMetricsBuffer(threaded, jobWorkers);
-	const { slots } = controlViews(control);
+	const views = controlViews(control);
+	const { slots } = views;
 	Atomics.store(slots, Slot.Running, 1);
 	const core = await abortable(coreLoad, signal);
 	onProgress?.('core');
@@ -486,11 +499,16 @@ async function startEngine(
 		device,
 		errorFixes: ERROR_FIXES,
 	};
-	const input = captureInput(
+	const canvasWatch = watchCanvas(
 		options.canvas,
 		control,
 		options.maxPixelRatio ?? DEFAULT_MAX_PIXEL_RATIO,
 	);
+	canvasWatch.listen(true);
+	// Hold mode keeps input out, so a held frame never depends on it.
+	const takesInput = hold === undefined;
+	const input = captureInput(options.canvas, control);
+	input.listen(takesInput);
 	const stopPreferences = watchPreferences(slots);
 
 	const messageHandlers = new Set<(name: string, data: unknown) => void>();
@@ -517,6 +535,7 @@ async function startEngine(
 	let detached = false;
 	const applyPause = () => {
 		const paused = userPaused || detached;
+		input.listen(takesInput && !paused);
 		// Counted before the flag clears, so the sketch's first step after the pause sees it.
 		if (!paused && Atomics.load(slots, Slot.Paused) !== 0) Atomics.add(slots, Slot.Resumes, 1);
 		Atomics.store(slots, Slot.Paused, paused ? 1 : 0);
@@ -559,7 +578,8 @@ async function startEngine(
 		localDrawing?.stop();
 		localRunner?.dispose();
 		localCore?.destroyEngine();
-		input.stop();
+		input.listen(false);
+		canvasWatch.listen(false);
 		stopPreferences();
 		return stopWorkers(workers, jobs);
 	};
@@ -574,7 +594,7 @@ async function startEngine(
 			localRunner = new SketchRunner(
 				(name, data) => onSketchMessage(name, data),
 				metrics,
-				{ glue: started.glue, memory, slots, jobWorkers: 0, device },
+				{ glue: started.glue, memory, control: views, keyCodes: KEY_CODES, jobWorkers: 0, device },
 				hold,
 			);
 			await localRunner.setup(await loadSketch(sketchUrl));
@@ -590,22 +610,20 @@ async function startEngine(
 				onFailure,
 			);
 			workers.push(sketch);
+			const init: SketchWorkerInit = {
+				type: 'init',
+				...handoff,
+				sketchUrl,
+				keyCodes: KEY_CODES,
+				jobWorkers,
+				hold,
+			};
 			if (renderThread === 'sketch-worker') {
 				const canvas = options.canvas.transferControlToOffscreen();
-				sketch.worker.postMessage(
-					{
-						type: 'init',
-						...handoff,
-						sketchUrl,
-						jobWorkers,
-						renderer: { canvas, ...rendererSetup },
-						hold,
-					},
-					[canvas],
-				);
+				sketch.worker.postMessage({ ...init, renderer: { canvas, ...rendererSetup } }, [canvas]);
 				rendererHost = sketch;
 			} else {
-				sketch.worker.postMessage({ type: 'init', ...handoff, sketchUrl, jobWorkers, hold });
+				sketch.worker.postMessage(init);
 				if (renderThread === 'render-worker') {
 					const canvas = options.canvas.transferControlToOffscreen();
 					rendererHost = new EngineWorker(
@@ -725,7 +743,7 @@ async function startEngine(
 		detach() {
 			if (detached) return;
 			detached = true;
-			input.suspend();
+			canvasWatch.listen(false);
 			applyPause();
 			options.canvas.remove();
 		},
@@ -733,7 +751,7 @@ async function startEngine(
 			container.append(options.canvas);
 			if (!detached) return;
 			detached = false;
-			input.resume();
+			canvasWatch.listen(true);
 			applyPause();
 		},
 		async measure(seconds) {

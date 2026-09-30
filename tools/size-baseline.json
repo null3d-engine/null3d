@@ -16,32 +16,32 @@
 		"brotli": 4020
 	},
 	"js/page.js": {
-		"raw": 36519,
-		"brotli": 12357
+		"raw": 40308,
+		"brotli": 13709
 	},
 	"js/page-renderer.js": {
-		"raw": 87647,
-		"brotli": 18164
+		"raw": 87648,
+		"brotli": 18172
 	},
 	"js/page-sketch-runner.js": {
-		"raw": 17479,
-		"brotli": 5752
+		"raw": 23157,
+		"brotli": 7587
 	},
 	"js/sketch-worker.js": {
-		"raw": 24903,
-		"brotli": 8074
+		"raw": 30786,
+		"brotli": 9937
 	},
 	"js/sketch-worker-renderer.js": {
-		"raw": 87929,
+		"raw": 87930,
 		"brotli": 18079
 	},
 	"js/render-worker.js": {
-		"raw": 93741,
-		"brotli": 20085
+		"raw": 93888,
+		"brotli": 20070
 	},
 	"js/job-worker.js": {
-		"raw": 3673,
-		"brotli": 1563
+		"raw": 3819,
+		"brotli": 1596
 	},
 	"js/probe-worker.js": {
 		"raw": 633,
