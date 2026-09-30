@@ -45,7 +45,9 @@ async function probe(): Promise<WorkerProbe> {
 			device.destroy();
 		}
 	} catch (e) {
-		result.error = messageOf(e);
+		result.error =
+			messageOf(e) ||
+			'The worker probe failed without a message while it tested the frame timer, WebGL2 and WebGPU in an offscreen canvas. Open the browser console of the worker for the cause.';
 	}
 	return result;
 }
