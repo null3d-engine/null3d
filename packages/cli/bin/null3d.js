@@ -1,24 +1,11 @@
 #!/usr/bin/env node
-// The null3d command. This version has no commands: it prints its version and the project's
-// status, and exits with an error when asked to run a command.
-import { readFileSync } from 'node:fs';
+// The null3d command. It runs the command that its arguments name, and exits with that command's
+// code. An unexpected failure prints its message and exits with 1.
+import { main } from '../src/cli.js';
 
-const { version } = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8'));
-const [command] = process.argv.slice(2);
-const home = 'https://github.com/null3d-engine/null3d';
-
-if (command === '--version' || command === '-v') {
-	console.log(version);
-} else if (command === undefined || command === '--help' || command === '-h') {
-	console.log(`null3D ${version}
-
-null3D is a browser 3D engine in early development. This package will hold its
-command-line tool, which has no commands yet. The first commands arrive with
-null3D 0.1.
-
-Follow the project at ${home}`);
-} else {
-	console.error(`null3D ${version} has no "${command}" command yet. The first commands arrive with
-null3D 0.1. Follow the project at ${home}`);
-	process.exit(1);
+try {
+	process.exitCode = await main(process.argv.slice(2));
+} catch (error) {
+	console.error(`null3d: ${error instanceof Error ? error.message : String(error)}`);
+	process.exitCode = 1;
 }

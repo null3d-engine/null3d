@@ -18,13 +18,15 @@ Engine docs: `guides/testing`, `guides/debugging`, `errors/index`, `cli/null3d`.
 | Command | What it does |
 | --- | --- |
 | `bunx vite` | Dev server; the null3D Vite plugin adds the cross-origin isolation headers and shader hot reload |
-| `bunx @null3d/cli shot --out shot.png [--time 2.0] [--size 1280x720] [--gpu webgl2]` | Renders one frame headless and saves it, plus `shot.json` with frame stats and console errors |
+| `bunx @null3d/cli shot --out shot.png [--time 2.0] [--size 1280x720] [--gpu webgl2] [--page /other.html]` | Draws one held frame of the page headless and saves it, plus `shot.json` with the frame's time, number and GPU tier and the page's errors and warnings. When no frame is drawn, it says why and exits with 1 |
 | `bunx @null3d/cli test` | Type checks, lint, and all visual and behavior tests, headless |
 | `bunx @null3d/cli test --gpu webgpu,webgl2,compat` | Runs visual tests on each GPU tier |
 | `bunx @null3d/cli test --update-references` | Rewrites reference images; review the diff before committing |
 | `bunx @null3d/cli bench --scene <name>` | Benchmark: 5 runs of 30 seconds after warm-up; median and spread per phase |
 | `bunx @null3d/cli doctor` | Checks versions, headers, asset CORS, and the capabilities of the local browser |
 | `bunx @null3d/cli docs show <id>` / `bunx @null3d/cli docs search "<words>"` | Prints docs for the installed engine version |
+
+Of these commands, `shot` is built. The note on `cli/null3d` names the commands that are not built yet: do not run those.
 
 Every command prints short text results (pass or fail, reasons, file paths), so you can read them directly. Open the image files it names when a visual check fails.
 
