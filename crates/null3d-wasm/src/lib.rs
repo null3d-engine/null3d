@@ -551,7 +551,8 @@ pub fn reset_gpu() -> u32 {
     })
 }
 
-/// The address of the draw list of a frame parity. It never moves.
+/// The address of the draw list of a frame parity. It moves when a frame needs more room than any
+/// before, so the thread that draws reads it with each frame.
 #[wasm_bindgen(js_name = drawListAddress)]
 pub fn draw_list_address(parity: u32) -> u32 {
     value_with_engine(|e| Ok(address(e.renderer.list(parity).words())))

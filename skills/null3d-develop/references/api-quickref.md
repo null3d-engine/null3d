@@ -148,12 +148,12 @@ obj.on('click', fn); obj.off('click', fn);  // (0.2) 'pointerenter', 'pointerlea
 obj.animator();                      // (0.2) section 12
 ```
 
-Meshes also have these calls:
+Meshes also have these calls. `setCastShadows` and `setReceiveShadows` are stored until shadows draw. `setRenderOrder` orders blended objects before their depth.
 
 ```ts
 mesh.setMaterial(material);          mesh.setMesh(geometry);       // setMesh brings back the mesh's bounds
-mesh.setCastShadows(true);           mesh.setReceiveShadows(true); // false by default; stored until shadows draw
-mesh.setRenderOrder(n);                                             // transparent objects, lower first
+mesh.setCastShadows(true);           mesh.setReceiveShadows(true); // false by default, as in three.js
+mesh.setRenderOrder(n);                                             // blended objects, lower first
 mesh.setFrustumCulled(false);        mesh.setBounds(center, radius);  // center relative to the origin, before scale
 ```
 

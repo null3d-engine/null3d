@@ -70,6 +70,7 @@ export type {
 export type { ColorInput } from './scene/color';
 export type {
 	AlphaMode,
+	Blending,
 	BoxOptions,
 	CapsuleOptions,
 	CircleOptions,

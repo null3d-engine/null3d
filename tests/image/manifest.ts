@@ -15,6 +15,7 @@ import { PARITY_SCENES } from '../../bench/lib/parity.ts';
 import { MASK_IMAGE } from '../../bench/scenes/alpha-mask.ts';
 import { ORTHO_IMAGE } from '../../bench/scenes/ortho-camera.ts';
 import { HOLD_TIME, PARITY_CANVAS } from '../../bench/scenes/spec.ts';
+import { GLASS_IMAGE } from '../../bench/scenes/transparency.ts';
 import { DEMOS } from '../../examples/demos.ts';
 import type { DepthMode } from '../../packages/engine/src/page/switches.ts';
 import type { EngineModeName } from '../lib/engine-checks.ts';
@@ -278,6 +279,22 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 			reference: 'depth-bias',
 		}),
 	),
+	// See-through planes and a sphere, created nearest first, which must draw farthest first with
+	// normal blending. The parity test compares it with three.js's transparent materials.
+	{
+		name: 'transparency',
+		sketch: 'tests/pages/sketches/transparency-sketch.ts',
+		hold: 0,
+		size: [GLASS_IMAGE.width, GLASS_IMAGE.height],
+	},
+	// Additive and multiply blending, a batch of blended quads sorted row by row, render order,
+	// a surface without the depth test, and a glow map with straight and premultiplied colors.
+	{
+		name: 'blending',
+		sketch: 'tests/pages/sketches/blending-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+	},
 	// Orbit controls after the controls test's drags, made through the controls' own calls. The
 	// controls test must draw this image after it makes the drags with Playwright.
 	{ name: 'controls', sketch: 'tests/pages/sketches/controls-sketch.ts?moved', hold: 0 },

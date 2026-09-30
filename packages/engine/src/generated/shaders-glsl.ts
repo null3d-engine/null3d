@@ -88,6 +88,7 @@ struct VertexOut {
     uint material;
 };
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
+const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -135,6 +136,11 @@ vec3 transform_normal(Transform t_1, vec3 n) {
 
 vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
     return (view_proj * vec4(relative_position, 1.0));
+}
+
+vec4 fragment_color(Material m_1, vec3 color, float alpha_1, float color_alpha) {
+    bool blended = ((uint(m_1.strengths.z) & BLEND_FLAG) != 0u);
+    return (blended ? vec4((color * color_alpha), alpha_1) : vec4(color, 1.0));
 }
 
 Instance instance_of(uvec4 record, uint instance) {
@@ -220,16 +226,16 @@ vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
 }
 
 PbrMaterial pbr_material(vec3 base_color, float metalness, float roughness_1, float geometry_roughness) {
-    PbrMaterial m_1 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
-    m_1.base_color = base_color;
-    m_1.diffuse = (base_color * (1.0 - metalness));
-    m_1.specular = vec3(0.04);
-    vec3 _e13 = m_1.specular;
-    m_1.specular_blended = mix(_e13, base_color, metalness);
-    m_1.specular_grazing = 1.0;
-    m_1.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
-    m_1.metalness = metalness;
-    PbrMaterial _e26 = m_1;
+    PbrMaterial m_2 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
+    m_2.base_color = base_color;
+    m_2.diffuse = (base_color * (1.0 - metalness));
+    m_2.specular = vec3(0.04);
+    vec3 _e13 = m_2.specular;
+    m_2.specular_blended = mix(_e13, base_color, metalness);
+    m_2.specular_grazing = 1.0;
+    m_2.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
+    m_2.metalness = metalness;
+    PbrMaterial _e26 = m_2;
     return _e26;
 }
 
@@ -238,29 +244,29 @@ vec3 f_schlick(vec3 f0_1, float f90_, float v_dot_h) {
     return ((f0_1 * (1.0 - fresnel)) + vec3((f90_ * fresnel)));
 }
 
-float v_ggx_smith_correlated(float alpha_1, float n_dot_l, float n_dot_v_1) {
-    float a2_ = (alpha_1 * alpha_1);
+float v_ggx_smith_correlated(float alpha_2, float n_dot_l, float n_dot_v_1) {
+    float a2_ = (alpha_2 * alpha_2);
     float gv = (n_dot_l * sqrt((a2_ + (((1.0 - a2_) * n_dot_v_1) * n_dot_v_1))));
     float gl = (n_dot_v_1 * sqrt((a2_ + (((1.0 - a2_) * n_dot_l) * n_dot_l))));
     return (0.5 / max((gv + gl), EPSILON));
 }
 
-float d_ggx(float alpha_2, float n_dot_h) {
-    float a2_1 = (alpha_2 * alpha_2);
+float d_ggx(float alpha_3, float n_dot_h) {
+    float a2_1 = (alpha_3 * alpha_3);
     float denom = (((n_dot_h * n_dot_h) * (a2_1 - 1.0)) + 1.0);
     return ((INV_PI * a2_1) / (denom * denom));
 }
 
 vec3 brdf_ggx(vec3 to_light, vec3 to_view, vec3 normal_1, vec3 f0_2, float f90_1, float roughness_2) {
-    float alpha_3 = (roughness_2 * roughness_2);
+    float alpha_4 = (roughness_2 * roughness_2);
     vec3 half_dir = normalize((to_light + to_view));
     float n_dot_l_1 = clamp(dot(normal_1, to_light), 0.0, 1.0);
     float n_dot_v_2 = clamp(dot(normal_1, to_view), 0.0, 1.0);
     float n_dot_h_1 = clamp(dot(normal_1, half_dir), 0.0, 1.0);
     float v_dot_h_1 = clamp(dot(to_view, half_dir), 0.0, 1.0);
     vec3 _e17 = f_schlick(f0_2, f90_1, v_dot_h_1);
-    float _e18 = v_ggx_smith_correlated(alpha_3, n_dot_l_1, n_dot_v_2);
-    float _e19 = d_ggx(alpha_3, n_dot_h_1);
+    float _e18 = v_ggx_smith_correlated(alpha_4, n_dot_l_1, n_dot_v_2);
+    float _e19 = d_ggx(alpha_4, n_dot_h_1);
     return (_e17 * (_e18 * _e19));
 }
 
@@ -268,12 +274,12 @@ vec3 brdf_lambert(vec3 diffuse) {
     return (INV_PI * diffuse);
 }
 
-Reflected direct_light(PbrMaterial m_2, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
+Reflected direct_light(PbrMaterial m_3, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
     vec3 irradiance_1 = (clamp(dot(normal_2, to_light_1), 0.0, 1.0) * light);
-    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_2.specular_blended, m_2.specular_grazing, m_2.roughness);
+    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_3.specular_blended, m_3.specular_grazing, m_3.roughness);
     float v_dot_h_2 = clamp(dot(to_view_1, normalize((to_light_1 + to_view_1))), 0.0, 1.0);
-    vec3 _e18 = f_schlick(m_2.specular, m_2.specular_grazing, v_dot_h_2);
-    vec3 _e20 = brdf_lambert(m_2.diffuse);
+    vec3 _e18 = f_schlick(m_3.specular, m_3.specular_grazing, v_dot_h_2);
+    vec3 _e20 = brdf_lambert(m_3.diffuse);
     return Reflected(((irradiance_1 * _e20) * (vec3(1.0) - _e18)), ((irradiance_1 * _e11) * compensation));
 }
 
@@ -286,9 +292,9 @@ Scattering multiscattering(vec3 f0_3, float f90_2, vec2 dfg_1) {
     return Scattering(single, (multi * ems));
 }
 
-vec3 indirect_diffuse(PbrMaterial m_3, vec3 irradiance, vec2 dfg_2) {
-    Scattering _e4 = multiscattering(m_3.specular, m_3.specular_grazing, dfg_2);
-    vec3 _e6 = brdf_lambert(m_3.diffuse);
+vec3 indirect_diffuse(PbrMaterial m_4, vec3 irradiance, vec2 dfg_2) {
+    Scattering _e4 = multiscattering(m_4.specular, m_4.specular_grazing, dfg_2);
+    vec3 _e6 = brdf_lambert(m_4.diffuse);
     return ((irradiance * _e6) * ((vec3(1.0) - _e4.single) - _e4.multi));
 }
 
@@ -298,13 +304,13 @@ vec3 linear_to_srgb(vec3 c) {
     return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
 }
 
-vec3 light_surface(PbrMaterial m_4, vec3 normal_3, vec3 to_view_2, vec2 dfg_3) {
-    vec3 _e3 = multiscatter_compensation(m_4.specular_blended, dfg_3);
+vec3 light_surface(PbrMaterial m_5, vec3 normal_3, vec3 to_view_2, vec2 dfg_3) {
+    vec3 _e3 = multiscatter_compensation(m_5.specular_blended, dfg_3);
     vec4 _e6 = _group_0_binding_0_vs.sun_direction;
     vec4 _e11 = _group_0_binding_0_vs.sun_color;
-    Reflected _e15 = direct_light(m_4, normal_3, to_view_2, -(_e6.xyz), _e11.xyz, _e3);
+    Reflected _e15 = direct_light(m_5, normal_3, to_view_2, -(_e6.xyz), _e11.xyz, _e3);
     vec4 _e18 = _group_0_binding_0_vs.ambient;
-    vec3 _e20 = indirect_diffuse(m_4, _e18.xyz, dfg_3);
+    vec3 _e20 = indirect_diffuse(m_5, _e18.xyz, dfg_3);
     return ((_e15.diffuse + _e15.specular) + _e20);
 }
 
@@ -446,6 +452,7 @@ struct VertexOut {
     uint material;
 };
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
+const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -508,6 +515,11 @@ Material material_of(uint id) {
     return _e50;
 }
 
+vec4 fragment_color(Material m_1, vec3 color, float alpha_1, float color_alpha) {
+    bool blended = ((uint(m_1.strengths.z) & BLEND_FLAG) != 0u);
+    return (blended ? vec4((color * color_alpha), alpha_1) : vec4(color, 1.0));
+}
+
 vec4 clip_of(Instance found, vec3 relative) {
     if (!(found.drawn)) {
         return OUTSIDE_CLIP;
@@ -555,16 +567,16 @@ vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
 }
 
 PbrMaterial pbr_material(vec3 base_color, float metalness, float roughness_1, float geometry_roughness) {
-    PbrMaterial m_1 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
-    m_1.base_color = base_color;
-    m_1.diffuse = (base_color * (1.0 - metalness));
-    m_1.specular = vec3(0.04);
-    vec3 _e13 = m_1.specular;
-    m_1.specular_blended = mix(_e13, base_color, metalness);
-    m_1.specular_grazing = 1.0;
-    m_1.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
-    m_1.metalness = metalness;
-    PbrMaterial _e26 = m_1;
+    PbrMaterial m_2 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
+    m_2.base_color = base_color;
+    m_2.diffuse = (base_color * (1.0 - metalness));
+    m_2.specular = vec3(0.04);
+    vec3 _e13 = m_2.specular;
+    m_2.specular_blended = mix(_e13, base_color, metalness);
+    m_2.specular_grazing = 1.0;
+    m_2.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
+    m_2.metalness = metalness;
+    PbrMaterial _e26 = m_2;
     return _e26;
 }
 
@@ -573,29 +585,29 @@ vec3 f_schlick(vec3 f0_1, float f90_, float v_dot_h) {
     return ((f0_1 * (1.0 - fresnel)) + vec3((f90_ * fresnel)));
 }
 
-float v_ggx_smith_correlated(float alpha_1, float n_dot_l, float n_dot_v_1) {
-    float a2_ = (alpha_1 * alpha_1);
+float v_ggx_smith_correlated(float alpha_2, float n_dot_l, float n_dot_v_1) {
+    float a2_ = (alpha_2 * alpha_2);
     float gv = (n_dot_l * sqrt((a2_ + (((1.0 - a2_) * n_dot_v_1) * n_dot_v_1))));
     float gl = (n_dot_v_1 * sqrt((a2_ + (((1.0 - a2_) * n_dot_l) * n_dot_l))));
     return (0.5 / max((gv + gl), EPSILON));
 }
 
-float d_ggx(float alpha_2, float n_dot_h) {
-    float a2_1 = (alpha_2 * alpha_2);
+float d_ggx(float alpha_3, float n_dot_h) {
+    float a2_1 = (alpha_3 * alpha_3);
     float denom = (((n_dot_h * n_dot_h) * (a2_1 - 1.0)) + 1.0);
     return ((INV_PI * a2_1) / (denom * denom));
 }
 
 vec3 brdf_ggx(vec3 to_light, vec3 to_view, vec3 normal_1, vec3 f0_2, float f90_1, float roughness_2) {
-    float alpha_3 = (roughness_2 * roughness_2);
+    float alpha_4 = (roughness_2 * roughness_2);
     vec3 half_dir = normalize((to_light + to_view));
     float n_dot_l_1 = clamp(dot(normal_1, to_light), 0.0, 1.0);
     float n_dot_v_2 = clamp(dot(normal_1, to_view), 0.0, 1.0);
     float n_dot_h_1 = clamp(dot(normal_1, half_dir), 0.0, 1.0);
     float v_dot_h_1 = clamp(dot(to_view, half_dir), 0.0, 1.0);
     vec3 _e17 = f_schlick(f0_2, f90_1, v_dot_h_1);
-    float _e18 = v_ggx_smith_correlated(alpha_3, n_dot_l_1, n_dot_v_2);
-    float _e19 = d_ggx(alpha_3, n_dot_h_1);
+    float _e18 = v_ggx_smith_correlated(alpha_4, n_dot_l_1, n_dot_v_2);
+    float _e19 = d_ggx(alpha_4, n_dot_h_1);
     return (_e17 * (_e18 * _e19));
 }
 
@@ -603,12 +615,12 @@ vec3 brdf_lambert(vec3 diffuse) {
     return (INV_PI * diffuse);
 }
 
-Reflected direct_light(PbrMaterial m_2, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
+Reflected direct_light(PbrMaterial m_3, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
     vec3 irradiance_1 = (clamp(dot(normal_2, to_light_1), 0.0, 1.0) * light);
-    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_2.specular_blended, m_2.specular_grazing, m_2.roughness);
+    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_3.specular_blended, m_3.specular_grazing, m_3.roughness);
     float v_dot_h_2 = clamp(dot(to_view_1, normalize((to_light_1 + to_view_1))), 0.0, 1.0);
-    vec3 _e18 = f_schlick(m_2.specular, m_2.specular_grazing, v_dot_h_2);
-    vec3 _e20 = brdf_lambert(m_2.diffuse);
+    vec3 _e18 = f_schlick(m_3.specular, m_3.specular_grazing, v_dot_h_2);
+    vec3 _e20 = brdf_lambert(m_3.diffuse);
     return Reflected(((irradiance_1 * _e20) * (vec3(1.0) - _e18)), ((irradiance_1 * _e11) * compensation));
 }
 
@@ -621,9 +633,9 @@ Scattering multiscattering(vec3 f0_3, float f90_2, vec2 dfg_1) {
     return Scattering(single, (multi * ems));
 }
 
-vec3 indirect_diffuse(PbrMaterial m_3, vec3 irradiance, vec2 dfg_2) {
-    Scattering _e4 = multiscattering(m_3.specular, m_3.specular_grazing, dfg_2);
-    vec3 _e6 = brdf_lambert(m_3.diffuse);
+vec3 indirect_diffuse(PbrMaterial m_4, vec3 irradiance, vec2 dfg_2) {
+    Scattering _e4 = multiscattering(m_4.specular, m_4.specular_grazing, dfg_2);
+    vec3 _e6 = brdf_lambert(m_4.diffuse);
     return ((irradiance * _e6) * ((vec3(1.0) - _e4.single) - _e4.multi));
 }
 
@@ -633,13 +645,13 @@ vec3 linear_to_srgb(vec3 c) {
     return mix(high_1, low_1, lessThanEqual(c, vec3(0.0031308)));
 }
 
-vec3 light_surface(PbrMaterial m_4, vec3 normal_3, vec3 to_view_2, vec2 dfg_3) {
-    vec3 _e3 = multiscatter_compensation(m_4.specular_blended, dfg_3);
+vec3 light_surface(PbrMaterial m_5, vec3 normal_3, vec3 to_view_2, vec2 dfg_3) {
+    vec3 _e3 = multiscatter_compensation(m_5.specular_blended, dfg_3);
     vec4 _e6 = _group_0_binding_0_fs.sun_direction;
     vec4 _e11 = _group_0_binding_0_fs.sun_color;
-    Reflected _e15 = direct_light(m_4, normal_3, to_view_2, -(_e6.xyz), _e11.xyz, _e3);
+    Reflected _e15 = direct_light(m_5, normal_3, to_view_2, -(_e6.xyz), _e11.xyz, _e3);
     vec4 _e18 = _group_0_binding_0_fs.ambient;
-    vec3 _e20 = indirect_diffuse(m_4, _e18.xyz, dfg_3);
+    vec3 _e20 = indirect_diffuse(m_5, _e18.xyz, dfg_3);
     return ((_e15.diffuse + _e15.specular) + _e20);
 }
 
@@ -673,7 +685,10 @@ void main() {
     vec3 _e72 = light_surface(_e62, normal_4, to_view_3, _e66);
     vec3 outgoing = (_e72 + emitted);
     vec3 _e74 = linear_to_srgb(outgoing);
-    _fs2p_location0 = vec4(_e74, 1.0);
+    float _e75 = alpha;
+    float _e76 = alpha;
+    vec4 _e77 = fragment_color(_e2, _e74, _e75, _e76);
+    _fs2p_location0 = _e77;
     return;
 }
 `,
@@ -782,6 +797,7 @@ struct VertexOut {
     uint material;
 };
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
+const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -829,6 +845,11 @@ vec3 transform_normal(Transform t_1, vec3 n) {
 
 vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
     return (view_proj * vec4(relative_position, 1.0));
+}
+
+vec4 fragment_color(Material m_1, vec3 color, float alpha_1, float color_alpha) {
+    bool blended = ((uint(m_1.strengths.z) & BLEND_FLAG) != 0u);
+    return (blended ? vec4((color * color_alpha), alpha_1) : vec4(color, 1.0));
 }
 
 Instance instance_of(uvec4 record, uint instance) {
@@ -914,16 +935,16 @@ vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
 }
 
 PbrMaterial pbr_material(vec3 base_color, float metalness, float roughness_1, float geometry_roughness) {
-    PbrMaterial m_1 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
-    m_1.base_color = base_color;
-    m_1.diffuse = (base_color * (1.0 - metalness));
-    m_1.specular = vec3(0.04);
-    vec3 _e13 = m_1.specular;
-    m_1.specular_blended = mix(_e13, base_color, metalness);
-    m_1.specular_grazing = 1.0;
-    m_1.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
-    m_1.metalness = metalness;
-    PbrMaterial _e26 = m_1;
+    PbrMaterial m_2 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
+    m_2.base_color = base_color;
+    m_2.diffuse = (base_color * (1.0 - metalness));
+    m_2.specular = vec3(0.04);
+    vec3 _e13 = m_2.specular;
+    m_2.specular_blended = mix(_e13, base_color, metalness);
+    m_2.specular_grazing = 1.0;
+    m_2.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
+    m_2.metalness = metalness;
+    PbrMaterial _e26 = m_2;
     return _e26;
 }
 
@@ -932,29 +953,29 @@ vec3 f_schlick(vec3 f0_1, float f90_, float v_dot_h) {
     return ((f0_1 * (1.0 - fresnel)) + vec3((f90_ * fresnel)));
 }
 
-float v_ggx_smith_correlated(float alpha_1, float n_dot_l, float n_dot_v_1) {
-    float a2_ = (alpha_1 * alpha_1);
+float v_ggx_smith_correlated(float alpha_2, float n_dot_l, float n_dot_v_1) {
+    float a2_ = (alpha_2 * alpha_2);
     float gv = (n_dot_l * sqrt((a2_ + (((1.0 - a2_) * n_dot_v_1) * n_dot_v_1))));
     float gl = (n_dot_v_1 * sqrt((a2_ + (((1.0 - a2_) * n_dot_l) * n_dot_l))));
     return (0.5 / max((gv + gl), EPSILON));
 }
 
-float d_ggx(float alpha_2, float n_dot_h) {
-    float a2_1 = (alpha_2 * alpha_2);
+float d_ggx(float alpha_3, float n_dot_h) {
+    float a2_1 = (alpha_3 * alpha_3);
     float denom = (((n_dot_h * n_dot_h) * (a2_1 - 1.0)) + 1.0);
     return ((INV_PI * a2_1) / (denom * denom));
 }
 
 vec3 brdf_ggx(vec3 to_light, vec3 to_view, vec3 normal_1, vec3 f0_2, float f90_1, float roughness_2) {
-    float alpha_3 = (roughness_2 * roughness_2);
+    float alpha_4 = (roughness_2 * roughness_2);
     vec3 half_dir = normalize((to_light + to_view));
     float n_dot_l_1 = clamp(dot(normal_1, to_light), 0.0, 1.0);
     float n_dot_v_2 = clamp(dot(normal_1, to_view), 0.0, 1.0);
     float n_dot_h_1 = clamp(dot(normal_1, half_dir), 0.0, 1.0);
     float v_dot_h_1 = clamp(dot(to_view, half_dir), 0.0, 1.0);
     vec3 _e17 = f_schlick(f0_2, f90_1, v_dot_h_1);
-    float _e18 = v_ggx_smith_correlated(alpha_3, n_dot_l_1, n_dot_v_2);
-    float _e19 = d_ggx(alpha_3, n_dot_h_1);
+    float _e18 = v_ggx_smith_correlated(alpha_4, n_dot_l_1, n_dot_v_2);
+    float _e19 = d_ggx(alpha_4, n_dot_h_1);
     return (_e17 * (_e18 * _e19));
 }
 
@@ -962,12 +983,12 @@ vec3 brdf_lambert(vec3 diffuse) {
     return (INV_PI * diffuse);
 }
 
-Reflected direct_light(PbrMaterial m_2, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
+Reflected direct_light(PbrMaterial m_3, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
     vec3 irradiance_1 = (clamp(dot(normal_2, to_light_1), 0.0, 1.0) * light);
-    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_2.specular_blended, m_2.specular_grazing, m_2.roughness);
+    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_3.specular_blended, m_3.specular_grazing, m_3.roughness);
     float v_dot_h_2 = clamp(dot(to_view_1, normalize((to_light_1 + to_view_1))), 0.0, 1.0);
-    vec3 _e18 = f_schlick(m_2.specular, m_2.specular_grazing, v_dot_h_2);
-    vec3 _e20 = brdf_lambert(m_2.diffuse);
+    vec3 _e18 = f_schlick(m_3.specular, m_3.specular_grazing, v_dot_h_2);
+    vec3 _e20 = brdf_lambert(m_3.diffuse);
     return Reflected(((irradiance_1 * _e20) * (vec3(1.0) - _e18)), ((irradiance_1 * _e11) * compensation));
 }
 
@@ -980,9 +1001,9 @@ Scattering multiscattering(vec3 f0_3, float f90_2, vec2 dfg_1) {
     return Scattering(single, (multi * ems));
 }
 
-vec3 indirect_diffuse(PbrMaterial m_3, vec3 irradiance, vec2 dfg_2) {
-    Scattering _e4 = multiscattering(m_3.specular, m_3.specular_grazing, dfg_2);
-    vec3 _e6 = brdf_lambert(m_3.diffuse);
+vec3 indirect_diffuse(PbrMaterial m_4, vec3 irradiance, vec2 dfg_2) {
+    Scattering _e4 = multiscattering(m_4.specular, m_4.specular_grazing, dfg_2);
+    vec3 _e6 = brdf_lambert(m_4.diffuse);
     return ((irradiance * _e6) * ((vec3(1.0) - _e4.single) - _e4.multi));
 }
 
@@ -992,13 +1013,13 @@ vec3 linear_to_srgb(vec3 c) {
     return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
 }
 
-vec3 light_surface(PbrMaterial m_4, vec3 normal_3, vec3 to_view_2, vec2 dfg_3) {
-    vec3 _e3 = multiscatter_compensation(m_4.specular_blended, dfg_3);
+vec3 light_surface(PbrMaterial m_5, vec3 normal_3, vec3 to_view_2, vec2 dfg_3) {
+    vec3 _e3 = multiscatter_compensation(m_5.specular_blended, dfg_3);
     vec4 _e6 = _group_0_binding_0_vs.sun_direction;
     vec4 _e11 = _group_0_binding_0_vs.sun_color;
-    Reflected _e15 = direct_light(m_4, normal_3, to_view_2, -(_e6.xyz), _e11.xyz, _e3);
+    Reflected _e15 = direct_light(m_5, normal_3, to_view_2, -(_e6.xyz), _e11.xyz, _e3);
     vec4 _e18 = _group_0_binding_0_vs.ambient;
-    vec3 _e20 = indirect_diffuse(m_4, _e18.xyz, dfg_3);
+    vec3 _e20 = indirect_diffuse(m_5, _e18.xyz, dfg_3);
     return ((_e15.diffuse + _e15.specular) + _e20);
 }
 
@@ -1140,6 +1161,7 @@ struct VertexOut {
     uint material;
 };
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
+const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -1202,6 +1224,11 @@ Material material_of(uint id) {
     return _e50;
 }
 
+vec4 fragment_color(Material m_1, vec3 color, float alpha_1, float color_alpha) {
+    bool blended = ((uint(m_1.strengths.z) & BLEND_FLAG) != 0u);
+    return (blended ? vec4((color * color_alpha), alpha_1) : vec4(color, 1.0));
+}
+
 vec4 clip_of(Instance found, vec3 relative) {
     if (!(found.drawn)) {
         return OUTSIDE_CLIP;
@@ -1249,16 +1276,16 @@ vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
 }
 
 PbrMaterial pbr_material(vec3 base_color, float metalness, float roughness_1, float geometry_roughness) {
-    PbrMaterial m_1 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
-    m_1.base_color = base_color;
-    m_1.diffuse = (base_color * (1.0 - metalness));
-    m_1.specular = vec3(0.04);
-    vec3 _e13 = m_1.specular;
-    m_1.specular_blended = mix(_e13, base_color, metalness);
-    m_1.specular_grazing = 1.0;
-    m_1.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
-    m_1.metalness = metalness;
-    PbrMaterial _e26 = m_1;
+    PbrMaterial m_2 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
+    m_2.base_color = base_color;
+    m_2.diffuse = (base_color * (1.0 - metalness));
+    m_2.specular = vec3(0.04);
+    vec3 _e13 = m_2.specular;
+    m_2.specular_blended = mix(_e13, base_color, metalness);
+    m_2.specular_grazing = 1.0;
+    m_2.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
+    m_2.metalness = metalness;
+    PbrMaterial _e26 = m_2;
     return _e26;
 }
 
@@ -1267,29 +1294,29 @@ vec3 f_schlick(vec3 f0_1, float f90_, float v_dot_h) {
     return ((f0_1 * (1.0 - fresnel)) + vec3((f90_ * fresnel)));
 }
 
-float v_ggx_smith_correlated(float alpha_1, float n_dot_l, float n_dot_v_1) {
-    float a2_ = (alpha_1 * alpha_1);
+float v_ggx_smith_correlated(float alpha_2, float n_dot_l, float n_dot_v_1) {
+    float a2_ = (alpha_2 * alpha_2);
     float gv = (n_dot_l * sqrt((a2_ + (((1.0 - a2_) * n_dot_v_1) * n_dot_v_1))));
     float gl = (n_dot_v_1 * sqrt((a2_ + (((1.0 - a2_) * n_dot_l) * n_dot_l))));
     return (0.5 / max((gv + gl), EPSILON));
 }
 
-float d_ggx(float alpha_2, float n_dot_h) {
-    float a2_1 = (alpha_2 * alpha_2);
+float d_ggx(float alpha_3, float n_dot_h) {
+    float a2_1 = (alpha_3 * alpha_3);
     float denom = (((n_dot_h * n_dot_h) * (a2_1 - 1.0)) + 1.0);
     return ((INV_PI * a2_1) / (denom * denom));
 }
 
 vec3 brdf_ggx(vec3 to_light, vec3 to_view, vec3 normal_1, vec3 f0_2, float f90_1, float roughness_2) {
-    float alpha_3 = (roughness_2 * roughness_2);
+    float alpha_4 = (roughness_2 * roughness_2);
     vec3 half_dir = normalize((to_light + to_view));
     float n_dot_l_1 = clamp(dot(normal_1, to_light), 0.0, 1.0);
     float n_dot_v_2 = clamp(dot(normal_1, to_view), 0.0, 1.0);
     float n_dot_h_1 = clamp(dot(normal_1, half_dir), 0.0, 1.0);
     float v_dot_h_1 = clamp(dot(to_view, half_dir), 0.0, 1.0);
     vec3 _e17 = f_schlick(f0_2, f90_1, v_dot_h_1);
-    float _e18 = v_ggx_smith_correlated(alpha_3, n_dot_l_1, n_dot_v_2);
-    float _e19 = d_ggx(alpha_3, n_dot_h_1);
+    float _e18 = v_ggx_smith_correlated(alpha_4, n_dot_l_1, n_dot_v_2);
+    float _e19 = d_ggx(alpha_4, n_dot_h_1);
     return (_e17 * (_e18 * _e19));
 }
 
@@ -1297,12 +1324,12 @@ vec3 brdf_lambert(vec3 diffuse) {
     return (INV_PI * diffuse);
 }
 
-Reflected direct_light(PbrMaterial m_2, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
+Reflected direct_light(PbrMaterial m_3, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
     vec3 irradiance_1 = (clamp(dot(normal_2, to_light_1), 0.0, 1.0) * light);
-    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_2.specular_blended, m_2.specular_grazing, m_2.roughness);
+    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_3.specular_blended, m_3.specular_grazing, m_3.roughness);
     float v_dot_h_2 = clamp(dot(to_view_1, normalize((to_light_1 + to_view_1))), 0.0, 1.0);
-    vec3 _e18 = f_schlick(m_2.specular, m_2.specular_grazing, v_dot_h_2);
-    vec3 _e20 = brdf_lambert(m_2.diffuse);
+    vec3 _e18 = f_schlick(m_3.specular, m_3.specular_grazing, v_dot_h_2);
+    vec3 _e20 = brdf_lambert(m_3.diffuse);
     return Reflected(((irradiance_1 * _e20) * (vec3(1.0) - _e18)), ((irradiance_1 * _e11) * compensation));
 }
 
@@ -1315,9 +1342,9 @@ Scattering multiscattering(vec3 f0_3, float f90_2, vec2 dfg_1) {
     return Scattering(single, (multi * ems));
 }
 
-vec3 indirect_diffuse(PbrMaterial m_3, vec3 irradiance, vec2 dfg_2) {
-    Scattering _e4 = multiscattering(m_3.specular, m_3.specular_grazing, dfg_2);
-    vec3 _e6 = brdf_lambert(m_3.diffuse);
+vec3 indirect_diffuse(PbrMaterial m_4, vec3 irradiance, vec2 dfg_2) {
+    Scattering _e4 = multiscattering(m_4.specular, m_4.specular_grazing, dfg_2);
+    vec3 _e6 = brdf_lambert(m_4.diffuse);
     return ((irradiance * _e6) * ((vec3(1.0) - _e4.single) - _e4.multi));
 }
 
@@ -1327,13 +1354,13 @@ vec3 linear_to_srgb(vec3 c) {
     return mix(high_1, low_1, lessThanEqual(c, vec3(0.0031308)));
 }
 
-vec3 light_surface(PbrMaterial m_4, vec3 normal_3, vec3 to_view_2, vec2 dfg_3) {
-    vec3 _e3 = multiscatter_compensation(m_4.specular_blended, dfg_3);
+vec3 light_surface(PbrMaterial m_5, vec3 normal_3, vec3 to_view_2, vec2 dfg_3) {
+    vec3 _e3 = multiscatter_compensation(m_5.specular_blended, dfg_3);
     vec4 _e6 = _group_0_binding_0_fs.sun_direction;
     vec4 _e11 = _group_0_binding_0_fs.sun_color;
-    Reflected _e15 = direct_light(m_4, normal_3, to_view_2, -(_e6.xyz), _e11.xyz, _e3);
+    Reflected _e15 = direct_light(m_5, normal_3, to_view_2, -(_e6.xyz), _e11.xyz, _e3);
     vec4 _e18 = _group_0_binding_0_fs.ambient;
-    vec3 _e20 = indirect_diffuse(m_4, _e18.xyz, dfg_3);
+    vec3 _e20 = indirect_diffuse(m_5, _e18.xyz, dfg_3);
     return ((_e15.diffuse + _e15.specular) + _e20);
 }
 
@@ -1371,7 +1398,10 @@ void main() {
         discard;
     }
     vec3 _e78 = linear_to_srgb(outgoing);
-    _fs2p_location0 = vec4(_e78, 1.0);
+    float _e79 = alpha;
+    float _e80 = alpha;
+    vec4 _e81 = fragment_color(_e2, _e78, _e79, _e80);
+    _fs2p_location0 = _e81;
     return;
 }
 `,
@@ -1482,6 +1512,7 @@ struct VertexOut {
     vec4 vertex_color;
 };
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
+const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -1531,6 +1562,11 @@ vec3 transform_normal(Transform t_1, vec3 n) {
 
 vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
     return (view_proj * vec4(relative_position, 1.0));
+}
+
+vec4 fragment_color(Material m_1, vec3 color, float alpha_1, float color_alpha) {
+    bool blended = ((uint(m_1.strengths.z) & BLEND_FLAG) != 0u);
+    return (blended ? vec4((color * color_alpha), alpha_1) : vec4(color, 1.0));
 }
 
 Instance instance_of(uvec4 record, uint instance) {
@@ -1616,16 +1652,16 @@ vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
 }
 
 PbrMaterial pbr_material(vec3 base_color, float metalness, float roughness_1, float geometry_roughness) {
-    PbrMaterial m_1 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
-    m_1.base_color = base_color;
-    m_1.diffuse = (base_color * (1.0 - metalness));
-    m_1.specular = vec3(0.04);
-    vec3 _e13 = m_1.specular;
-    m_1.specular_blended = mix(_e13, base_color, metalness);
-    m_1.specular_grazing = 1.0;
-    m_1.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
-    m_1.metalness = metalness;
-    PbrMaterial _e26 = m_1;
+    PbrMaterial m_2 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
+    m_2.base_color = base_color;
+    m_2.diffuse = (base_color * (1.0 - metalness));
+    m_2.specular = vec3(0.04);
+    vec3 _e13 = m_2.specular;
+    m_2.specular_blended = mix(_e13, base_color, metalness);
+    m_2.specular_grazing = 1.0;
+    m_2.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
+    m_2.metalness = metalness;
+    PbrMaterial _e26 = m_2;
     return _e26;
 }
 
@@ -1634,29 +1670,29 @@ vec3 f_schlick(vec3 f0_1, float f90_, float v_dot_h) {
     return ((f0_1 * (1.0 - fresnel)) + vec3((f90_ * fresnel)));
 }
 
-float v_ggx_smith_correlated(float alpha_1, float n_dot_l, float n_dot_v_1) {
-    float a2_ = (alpha_1 * alpha_1);
+float v_ggx_smith_correlated(float alpha_2, float n_dot_l, float n_dot_v_1) {
+    float a2_ = (alpha_2 * alpha_2);
     float gv = (n_dot_l * sqrt((a2_ + (((1.0 - a2_) * n_dot_v_1) * n_dot_v_1))));
     float gl = (n_dot_v_1 * sqrt((a2_ + (((1.0 - a2_) * n_dot_l) * n_dot_l))));
     return (0.5 / max((gv + gl), EPSILON));
 }
 
-float d_ggx(float alpha_2, float n_dot_h) {
-    float a2_1 = (alpha_2 * alpha_2);
+float d_ggx(float alpha_3, float n_dot_h) {
+    float a2_1 = (alpha_3 * alpha_3);
     float denom = (((n_dot_h * n_dot_h) * (a2_1 - 1.0)) + 1.0);
     return ((INV_PI * a2_1) / (denom * denom));
 }
 
 vec3 brdf_ggx(vec3 to_light, vec3 to_view, vec3 normal_1, vec3 f0_2, float f90_1, float roughness_2) {
-    float alpha_3 = (roughness_2 * roughness_2);
+    float alpha_4 = (roughness_2 * roughness_2);
     vec3 half_dir = normalize((to_light + to_view));
     float n_dot_l_1 = clamp(dot(normal_1, to_light), 0.0, 1.0);
     float n_dot_v_2 = clamp(dot(normal_1, to_view), 0.0, 1.0);
     float n_dot_h_1 = clamp(dot(normal_1, half_dir), 0.0, 1.0);
     float v_dot_h_1 = clamp(dot(to_view, half_dir), 0.0, 1.0);
     vec3 _e17 = f_schlick(f0_2, f90_1, v_dot_h_1);
-    float _e18 = v_ggx_smith_correlated(alpha_3, n_dot_l_1, n_dot_v_2);
-    float _e19 = d_ggx(alpha_3, n_dot_h_1);
+    float _e18 = v_ggx_smith_correlated(alpha_4, n_dot_l_1, n_dot_v_2);
+    float _e19 = d_ggx(alpha_4, n_dot_h_1);
     return (_e17 * (_e18 * _e19));
 }
 
@@ -1664,12 +1700,12 @@ vec3 brdf_lambert(vec3 diffuse) {
     return (INV_PI * diffuse);
 }
 
-Reflected direct_light(PbrMaterial m_2, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
+Reflected direct_light(PbrMaterial m_3, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
     vec3 irradiance_1 = (clamp(dot(normal_2, to_light_1), 0.0, 1.0) * light);
-    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_2.specular_blended, m_2.specular_grazing, m_2.roughness);
+    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_3.specular_blended, m_3.specular_grazing, m_3.roughness);
     float v_dot_h_2 = clamp(dot(to_view_1, normalize((to_light_1 + to_view_1))), 0.0, 1.0);
-    vec3 _e18 = f_schlick(m_2.specular, m_2.specular_grazing, v_dot_h_2);
-    vec3 _e20 = brdf_lambert(m_2.diffuse);
+    vec3 _e18 = f_schlick(m_3.specular, m_3.specular_grazing, v_dot_h_2);
+    vec3 _e20 = brdf_lambert(m_3.diffuse);
     return Reflected(((irradiance_1 * _e20) * (vec3(1.0) - _e18)), ((irradiance_1 * _e11) * compensation));
 }
 
@@ -1682,9 +1718,9 @@ Scattering multiscattering(vec3 f0_3, float f90_2, vec2 dfg_1) {
     return Scattering(single, (multi * ems));
 }
 
-vec3 indirect_diffuse(PbrMaterial m_3, vec3 irradiance, vec2 dfg_2) {
-    Scattering _e4 = multiscattering(m_3.specular, m_3.specular_grazing, dfg_2);
-    vec3 _e6 = brdf_lambert(m_3.diffuse);
+vec3 indirect_diffuse(PbrMaterial m_4, vec3 irradiance, vec2 dfg_2) {
+    Scattering _e4 = multiscattering(m_4.specular, m_4.specular_grazing, dfg_2);
+    vec3 _e6 = brdf_lambert(m_4.diffuse);
     return ((irradiance * _e6) * ((vec3(1.0) - _e4.single) - _e4.multi));
 }
 
@@ -1694,13 +1730,13 @@ vec3 linear_to_srgb(vec3 c) {
     return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
 }
 
-vec3 light_surface(PbrMaterial m_4, vec3 normal_3, vec3 to_view_2, vec2 dfg_3) {
-    vec3 _e3 = multiscatter_compensation(m_4.specular_blended, dfg_3);
+vec3 light_surface(PbrMaterial m_5, vec3 normal_3, vec3 to_view_2, vec2 dfg_3) {
+    vec3 _e3 = multiscatter_compensation(m_5.specular_blended, dfg_3);
     vec4 _e6 = _group_0_binding_0_vs.sun_direction;
     vec4 _e11 = _group_0_binding_0_vs.sun_color;
-    Reflected _e15 = direct_light(m_4, normal_3, to_view_2, -(_e6.xyz), _e11.xyz, _e3);
+    Reflected _e15 = direct_light(m_5, normal_3, to_view_2, -(_e6.xyz), _e11.xyz, _e3);
     vec4 _e18 = _group_0_binding_0_vs.ambient;
-    vec3 _e20 = indirect_diffuse(m_4, _e18.xyz, dfg_3);
+    vec3 _e20 = indirect_diffuse(m_5, _e18.xyz, dfg_3);
     return ((_e15.diffuse + _e15.specular) + _e20);
 }
 
@@ -1846,6 +1882,7 @@ struct VertexOut {
     vec4 vertex_color;
 };
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
+const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -1909,6 +1946,11 @@ Material material_of(uint id) {
     return _e50;
 }
 
+vec4 fragment_color(Material m_1, vec3 color, float alpha_1, float color_alpha) {
+    bool blended = ((uint(m_1.strengths.z) & BLEND_FLAG) != 0u);
+    return (blended ? vec4((color * color_alpha), alpha_1) : vec4(color, 1.0));
+}
+
 vec4 clip_of(Instance found, vec3 relative) {
     if (!(found.drawn)) {
         return OUTSIDE_CLIP;
@@ -1956,16 +1998,16 @@ vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
 }
 
 PbrMaterial pbr_material(vec3 base_color, float metalness, float roughness_1, float geometry_roughness) {
-    PbrMaterial m_1 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
-    m_1.base_color = base_color;
-    m_1.diffuse = (base_color * (1.0 - metalness));
-    m_1.specular = vec3(0.04);
-    vec3 _e13 = m_1.specular;
-    m_1.specular_blended = mix(_e13, base_color, metalness);
-    m_1.specular_grazing = 1.0;
-    m_1.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
-    m_1.metalness = metalness;
-    PbrMaterial _e26 = m_1;
+    PbrMaterial m_2 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
+    m_2.base_color = base_color;
+    m_2.diffuse = (base_color * (1.0 - metalness));
+    m_2.specular = vec3(0.04);
+    vec3 _e13 = m_2.specular;
+    m_2.specular_blended = mix(_e13, base_color, metalness);
+    m_2.specular_grazing = 1.0;
+    m_2.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
+    m_2.metalness = metalness;
+    PbrMaterial _e26 = m_2;
     return _e26;
 }
 
@@ -1974,29 +2016,29 @@ vec3 f_schlick(vec3 f0_1, float f90_, float v_dot_h) {
     return ((f0_1 * (1.0 - fresnel)) + vec3((f90_ * fresnel)));
 }
 
-float v_ggx_smith_correlated(float alpha_1, float n_dot_l, float n_dot_v_1) {
-    float a2_ = (alpha_1 * alpha_1);
+float v_ggx_smith_correlated(float alpha_2, float n_dot_l, float n_dot_v_1) {
+    float a2_ = (alpha_2 * alpha_2);
     float gv = (n_dot_l * sqrt((a2_ + (((1.0 - a2_) * n_dot_v_1) * n_dot_v_1))));
     float gl = (n_dot_v_1 * sqrt((a2_ + (((1.0 - a2_) * n_dot_l) * n_dot_l))));
     return (0.5 / max((gv + gl), EPSILON));
 }
 
-float d_ggx(float alpha_2, float n_dot_h) {
-    float a2_1 = (alpha_2 * alpha_2);
+float d_ggx(float alpha_3, float n_dot_h) {
+    float a2_1 = (alpha_3 * alpha_3);
     float denom = (((n_dot_h * n_dot_h) * (a2_1 - 1.0)) + 1.0);
     return ((INV_PI * a2_1) / (denom * denom));
 }
 
 vec3 brdf_ggx(vec3 to_light, vec3 to_view, vec3 normal_1, vec3 f0_2, float f90_1, float roughness_2) {
-    float alpha_3 = (roughness_2 * roughness_2);
+    float alpha_4 = (roughness_2 * roughness_2);
     vec3 half_dir = normalize((to_light + to_view));
     float n_dot_l_1 = clamp(dot(normal_1, to_light), 0.0, 1.0);
     float n_dot_v_2 = clamp(dot(normal_1, to_view), 0.0, 1.0);
     float n_dot_h_1 = clamp(dot(normal_1, half_dir), 0.0, 1.0);
     float v_dot_h_1 = clamp(dot(to_view, half_dir), 0.0, 1.0);
     vec3 _e17 = f_schlick(f0_2, f90_1, v_dot_h_1);
-    float _e18 = v_ggx_smith_correlated(alpha_3, n_dot_l_1, n_dot_v_2);
-    float _e19 = d_ggx(alpha_3, n_dot_h_1);
+    float _e18 = v_ggx_smith_correlated(alpha_4, n_dot_l_1, n_dot_v_2);
+    float _e19 = d_ggx(alpha_4, n_dot_h_1);
     return (_e17 * (_e18 * _e19));
 }
 
@@ -2004,12 +2046,12 @@ vec3 brdf_lambert(vec3 diffuse) {
     return (INV_PI * diffuse);
 }
 
-Reflected direct_light(PbrMaterial m_2, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
+Reflected direct_light(PbrMaterial m_3, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
     vec3 irradiance_1 = (clamp(dot(normal_2, to_light_1), 0.0, 1.0) * light);
-    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_2.specular_blended, m_2.specular_grazing, m_2.roughness);
+    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_3.specular_blended, m_3.specular_grazing, m_3.roughness);
     float v_dot_h_2 = clamp(dot(to_view_1, normalize((to_light_1 + to_view_1))), 0.0, 1.0);
-    vec3 _e18 = f_schlick(m_2.specular, m_2.specular_grazing, v_dot_h_2);
-    vec3 _e20 = brdf_lambert(m_2.diffuse);
+    vec3 _e18 = f_schlick(m_3.specular, m_3.specular_grazing, v_dot_h_2);
+    vec3 _e20 = brdf_lambert(m_3.diffuse);
     return Reflected(((irradiance_1 * _e20) * (vec3(1.0) - _e18)), ((irradiance_1 * _e11) * compensation));
 }
 
@@ -2022,9 +2064,9 @@ Scattering multiscattering(vec3 f0_3, float f90_2, vec2 dfg_1) {
     return Scattering(single, (multi * ems));
 }
 
-vec3 indirect_diffuse(PbrMaterial m_3, vec3 irradiance, vec2 dfg_2) {
-    Scattering _e4 = multiscattering(m_3.specular, m_3.specular_grazing, dfg_2);
-    vec3 _e6 = brdf_lambert(m_3.diffuse);
+vec3 indirect_diffuse(PbrMaterial m_4, vec3 irradiance, vec2 dfg_2) {
+    Scattering _e4 = multiscattering(m_4.specular, m_4.specular_grazing, dfg_2);
+    vec3 _e6 = brdf_lambert(m_4.diffuse);
     return ((irradiance * _e6) * ((vec3(1.0) - _e4.single) - _e4.multi));
 }
 
@@ -2034,13 +2076,13 @@ vec3 linear_to_srgb(vec3 c) {
     return mix(high_1, low_1, lessThanEqual(c, vec3(0.0031308)));
 }
 
-vec3 light_surface(PbrMaterial m_4, vec3 normal_3, vec3 to_view_2, vec2 dfg_3) {
-    vec3 _e3 = multiscatter_compensation(m_4.specular_blended, dfg_3);
+vec3 light_surface(PbrMaterial m_5, vec3 normal_3, vec3 to_view_2, vec2 dfg_3) {
+    vec3 _e3 = multiscatter_compensation(m_5.specular_blended, dfg_3);
     vec4 _e6 = _group_0_binding_0_fs.sun_direction;
     vec4 _e11 = _group_0_binding_0_fs.sun_color;
-    Reflected _e15 = direct_light(m_4, normal_3, to_view_2, -(_e6.xyz), _e11.xyz, _e3);
+    Reflected _e15 = direct_light(m_5, normal_3, to_view_2, -(_e6.xyz), _e11.xyz, _e3);
     vec4 _e18 = _group_0_binding_0_fs.ambient;
-    vec3 _e20 = indirect_diffuse(m_4, _e18.xyz, dfg_3);
+    vec3 _e20 = indirect_diffuse(m_5, _e18.xyz, dfg_3);
     return ((_e15.diffuse + _e15.specular) + _e20);
 }
 
@@ -2078,7 +2120,10 @@ void main() {
     vec3 _e80 = light_surface(_e70, normal_4, to_view_3, _e74);
     vec3 outgoing = (_e80 + emitted);
     vec3 _e82 = linear_to_srgb(outgoing);
-    _fs2p_location0 = vec4(_e82, 1.0);
+    float _e83 = alpha;
+    float _e84 = alpha;
+    vec4 _e85 = fragment_color(_e2, _e82, _e83, _e84);
+    _fs2p_location0 = _e85;
     return;
 }
 `,
@@ -2189,6 +2234,7 @@ struct VertexOut {
     vec4 vertex_color;
 };
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
+const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -2238,6 +2284,11 @@ vec3 transform_normal(Transform t_1, vec3 n) {
 
 vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
     return (view_proj * vec4(relative_position, 1.0));
+}
+
+vec4 fragment_color(Material m_1, vec3 color, float alpha_1, float color_alpha) {
+    bool blended = ((uint(m_1.strengths.z) & BLEND_FLAG) != 0u);
+    return (blended ? vec4((color * color_alpha), alpha_1) : vec4(color, 1.0));
 }
 
 Instance instance_of(uvec4 record, uint instance) {
@@ -2323,16 +2374,16 @@ vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
 }
 
 PbrMaterial pbr_material(vec3 base_color, float metalness, float roughness_1, float geometry_roughness) {
-    PbrMaterial m_1 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
-    m_1.base_color = base_color;
-    m_1.diffuse = (base_color * (1.0 - metalness));
-    m_1.specular = vec3(0.04);
-    vec3 _e13 = m_1.specular;
-    m_1.specular_blended = mix(_e13, base_color, metalness);
-    m_1.specular_grazing = 1.0;
-    m_1.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
-    m_1.metalness = metalness;
-    PbrMaterial _e26 = m_1;
+    PbrMaterial m_2 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
+    m_2.base_color = base_color;
+    m_2.diffuse = (base_color * (1.0 - metalness));
+    m_2.specular = vec3(0.04);
+    vec3 _e13 = m_2.specular;
+    m_2.specular_blended = mix(_e13, base_color, metalness);
+    m_2.specular_grazing = 1.0;
+    m_2.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
+    m_2.metalness = metalness;
+    PbrMaterial _e26 = m_2;
     return _e26;
 }
 
@@ -2341,29 +2392,29 @@ vec3 f_schlick(vec3 f0_1, float f90_, float v_dot_h) {
     return ((f0_1 * (1.0 - fresnel)) + vec3((f90_ * fresnel)));
 }
 
-float v_ggx_smith_correlated(float alpha_1, float n_dot_l, float n_dot_v_1) {
-    float a2_ = (alpha_1 * alpha_1);
+float v_ggx_smith_correlated(float alpha_2, float n_dot_l, float n_dot_v_1) {
+    float a2_ = (alpha_2 * alpha_2);
     float gv = (n_dot_l * sqrt((a2_ + (((1.0 - a2_) * n_dot_v_1) * n_dot_v_1))));
     float gl = (n_dot_v_1 * sqrt((a2_ + (((1.0 - a2_) * n_dot_l) * n_dot_l))));
     return (0.5 / max((gv + gl), EPSILON));
 }
 
-float d_ggx(float alpha_2, float n_dot_h) {
-    float a2_1 = (alpha_2 * alpha_2);
+float d_ggx(float alpha_3, float n_dot_h) {
+    float a2_1 = (alpha_3 * alpha_3);
     float denom = (((n_dot_h * n_dot_h) * (a2_1 - 1.0)) + 1.0);
     return ((INV_PI * a2_1) / (denom * denom));
 }
 
 vec3 brdf_ggx(vec3 to_light, vec3 to_view, vec3 normal_1, vec3 f0_2, float f90_1, float roughness_2) {
-    float alpha_3 = (roughness_2 * roughness_2);
+    float alpha_4 = (roughness_2 * roughness_2);
     vec3 half_dir = normalize((to_light + to_view));
     float n_dot_l_1 = clamp(dot(normal_1, to_light), 0.0, 1.0);
     float n_dot_v_2 = clamp(dot(normal_1, to_view), 0.0, 1.0);
     float n_dot_h_1 = clamp(dot(normal_1, half_dir), 0.0, 1.0);
     float v_dot_h_1 = clamp(dot(to_view, half_dir), 0.0, 1.0);
     vec3 _e17 = f_schlick(f0_2, f90_1, v_dot_h_1);
-    float _e18 = v_ggx_smith_correlated(alpha_3, n_dot_l_1, n_dot_v_2);
-    float _e19 = d_ggx(alpha_3, n_dot_h_1);
+    float _e18 = v_ggx_smith_correlated(alpha_4, n_dot_l_1, n_dot_v_2);
+    float _e19 = d_ggx(alpha_4, n_dot_h_1);
     return (_e17 * (_e18 * _e19));
 }
 
@@ -2371,12 +2422,12 @@ vec3 brdf_lambert(vec3 diffuse) {
     return (INV_PI * diffuse);
 }
 
-Reflected direct_light(PbrMaterial m_2, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
+Reflected direct_light(PbrMaterial m_3, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
     vec3 irradiance_1 = (clamp(dot(normal_2, to_light_1), 0.0, 1.0) * light);
-    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_2.specular_blended, m_2.specular_grazing, m_2.roughness);
+    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_3.specular_blended, m_3.specular_grazing, m_3.roughness);
     float v_dot_h_2 = clamp(dot(to_view_1, normalize((to_light_1 + to_view_1))), 0.0, 1.0);
-    vec3 _e18 = f_schlick(m_2.specular, m_2.specular_grazing, v_dot_h_2);
-    vec3 _e20 = brdf_lambert(m_2.diffuse);
+    vec3 _e18 = f_schlick(m_3.specular, m_3.specular_grazing, v_dot_h_2);
+    vec3 _e20 = brdf_lambert(m_3.diffuse);
     return Reflected(((irradiance_1 * _e20) * (vec3(1.0) - _e18)), ((irradiance_1 * _e11) * compensation));
 }
 
@@ -2389,9 +2440,9 @@ Scattering multiscattering(vec3 f0_3, float f90_2, vec2 dfg_1) {
     return Scattering(single, (multi * ems));
 }
 
-vec3 indirect_diffuse(PbrMaterial m_3, vec3 irradiance, vec2 dfg_2) {
-    Scattering _e4 = multiscattering(m_3.specular, m_3.specular_grazing, dfg_2);
-    vec3 _e6 = brdf_lambert(m_3.diffuse);
+vec3 indirect_diffuse(PbrMaterial m_4, vec3 irradiance, vec2 dfg_2) {
+    Scattering _e4 = multiscattering(m_4.specular, m_4.specular_grazing, dfg_2);
+    vec3 _e6 = brdf_lambert(m_4.diffuse);
     return ((irradiance * _e6) * ((vec3(1.0) - _e4.single) - _e4.multi));
 }
 
@@ -2401,13 +2452,13 @@ vec3 linear_to_srgb(vec3 c) {
     return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
 }
 
-vec3 light_surface(PbrMaterial m_4, vec3 normal_3, vec3 to_view_2, vec2 dfg_3) {
-    vec3 _e3 = multiscatter_compensation(m_4.specular_blended, dfg_3);
+vec3 light_surface(PbrMaterial m_5, vec3 normal_3, vec3 to_view_2, vec2 dfg_3) {
+    vec3 _e3 = multiscatter_compensation(m_5.specular_blended, dfg_3);
     vec4 _e6 = _group_0_binding_0_vs.sun_direction;
     vec4 _e11 = _group_0_binding_0_vs.sun_color;
-    Reflected _e15 = direct_light(m_4, normal_3, to_view_2, -(_e6.xyz), _e11.xyz, _e3);
+    Reflected _e15 = direct_light(m_5, normal_3, to_view_2, -(_e6.xyz), _e11.xyz, _e3);
     vec4 _e18 = _group_0_binding_0_vs.ambient;
-    vec3 _e20 = indirect_diffuse(m_4, _e18.xyz, dfg_3);
+    vec3 _e20 = indirect_diffuse(m_5, _e18.xyz, dfg_3);
     return ((_e15.diffuse + _e15.specular) + _e20);
 }
 
@@ -2553,6 +2604,7 @@ struct VertexOut {
     vec4 vertex_color;
 };
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
+const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -2616,6 +2668,11 @@ Material material_of(uint id) {
     return _e50;
 }
 
+vec4 fragment_color(Material m_1, vec3 color, float alpha_1, float color_alpha) {
+    bool blended = ((uint(m_1.strengths.z) & BLEND_FLAG) != 0u);
+    return (blended ? vec4((color * color_alpha), alpha_1) : vec4(color, 1.0));
+}
+
 vec4 clip_of(Instance found, vec3 relative) {
     if (!(found.drawn)) {
         return OUTSIDE_CLIP;
@@ -2663,16 +2720,16 @@ vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
 }
 
 PbrMaterial pbr_material(vec3 base_color, float metalness, float roughness_1, float geometry_roughness) {
-    PbrMaterial m_1 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
-    m_1.base_color = base_color;
-    m_1.diffuse = (base_color * (1.0 - metalness));
-    m_1.specular = vec3(0.04);
-    vec3 _e13 = m_1.specular;
-    m_1.specular_blended = mix(_e13, base_color, metalness);
-    m_1.specular_grazing = 1.0;
-    m_1.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
-    m_1.metalness = metalness;
-    PbrMaterial _e26 = m_1;
+    PbrMaterial m_2 = PbrMaterial(vec3(0.0), vec3(0.0), vec3(0.0), vec3(0.0), 0.0, 0.0, 0.0);
+    m_2.base_color = base_color;
+    m_2.diffuse = (base_color * (1.0 - metalness));
+    m_2.specular = vec3(0.04);
+    vec3 _e13 = m_2.specular;
+    m_2.specular_blended = mix(_e13, base_color, metalness);
+    m_2.specular_grazing = 1.0;
+    m_2.roughness = min((max(roughness_1, 0.0525) + geometry_roughness), 1.0);
+    m_2.metalness = metalness;
+    PbrMaterial _e26 = m_2;
     return _e26;
 }
 
@@ -2681,29 +2738,29 @@ vec3 f_schlick(vec3 f0_1, float f90_, float v_dot_h) {
     return ((f0_1 * (1.0 - fresnel)) + vec3((f90_ * fresnel)));
 }
 
-float v_ggx_smith_correlated(float alpha_1, float n_dot_l, float n_dot_v_1) {
-    float a2_ = (alpha_1 * alpha_1);
+float v_ggx_smith_correlated(float alpha_2, float n_dot_l, float n_dot_v_1) {
+    float a2_ = (alpha_2 * alpha_2);
     float gv = (n_dot_l * sqrt((a2_ + (((1.0 - a2_) * n_dot_v_1) * n_dot_v_1))));
     float gl = (n_dot_v_1 * sqrt((a2_ + (((1.0 - a2_) * n_dot_l) * n_dot_l))));
     return (0.5 / max((gv + gl), EPSILON));
 }
 
-float d_ggx(float alpha_2, float n_dot_h) {
-    float a2_1 = (alpha_2 * alpha_2);
+float d_ggx(float alpha_3, float n_dot_h) {
+    float a2_1 = (alpha_3 * alpha_3);
     float denom = (((n_dot_h * n_dot_h) * (a2_1 - 1.0)) + 1.0);
     return ((INV_PI * a2_1) / (denom * denom));
 }
 
 vec3 brdf_ggx(vec3 to_light, vec3 to_view, vec3 normal_1, vec3 f0_2, float f90_1, float roughness_2) {
-    float alpha_3 = (roughness_2 * roughness_2);
+    float alpha_4 = (roughness_2 * roughness_2);
     vec3 half_dir = normalize((to_light + to_view));
     float n_dot_l_1 = clamp(dot(normal_1, to_light), 0.0, 1.0);
     float n_dot_v_2 = clamp(dot(normal_1, to_view), 0.0, 1.0);
     float n_dot_h_1 = clamp(dot(normal_1, half_dir), 0.0, 1.0);
     float v_dot_h_1 = clamp(dot(to_view, half_dir), 0.0, 1.0);
     vec3 _e17 = f_schlick(f0_2, f90_1, v_dot_h_1);
-    float _e18 = v_ggx_smith_correlated(alpha_3, n_dot_l_1, n_dot_v_2);
-    float _e19 = d_ggx(alpha_3, n_dot_h_1);
+    float _e18 = v_ggx_smith_correlated(alpha_4, n_dot_l_1, n_dot_v_2);
+    float _e19 = d_ggx(alpha_4, n_dot_h_1);
     return (_e17 * (_e18 * _e19));
 }
 
@@ -2711,12 +2768,12 @@ vec3 brdf_lambert(vec3 diffuse) {
     return (INV_PI * diffuse);
 }
 
-Reflected direct_light(PbrMaterial m_2, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
+Reflected direct_light(PbrMaterial m_3, vec3 normal_2, vec3 to_view_1, vec3 to_light_1, vec3 light, vec3 compensation) {
     vec3 irradiance_1 = (clamp(dot(normal_2, to_light_1), 0.0, 1.0) * light);
-    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_2.specular_blended, m_2.specular_grazing, m_2.roughness);
+    vec3 _e11 = brdf_ggx(to_light_1, to_view_1, normal_2, m_3.specular_blended, m_3.specular_grazing, m_3.roughness);
     float v_dot_h_2 = clamp(dot(to_view_1, normalize((to_light_1 + to_view_1))), 0.0, 1.0);
-    vec3 _e18 = f_schlick(m_2.specular, m_2.specular_grazing, v_dot_h_2);
-    vec3 _e20 = brdf_lambert(m_2.diffuse);
+    vec3 _e18 = f_schlick(m_3.specular, m_3.specular_grazing, v_dot_h_2);
+    vec3 _e20 = brdf_lambert(m_3.diffuse);
     return Reflected(((irradiance_1 * _e20) * (vec3(1.0) - _e18)), ((irradiance_1 * _e11) * compensation));
 }
 
@@ -2729,9 +2786,9 @@ Scattering multiscattering(vec3 f0_3, float f90_2, vec2 dfg_1) {
     return Scattering(single, (multi * ems));
 }
 
-vec3 indirect_diffuse(PbrMaterial m_3, vec3 irradiance, vec2 dfg_2) {
-    Scattering _e4 = multiscattering(m_3.specular, m_3.specular_grazing, dfg_2);
-    vec3 _e6 = brdf_lambert(m_3.diffuse);
+vec3 indirect_diffuse(PbrMaterial m_4, vec3 irradiance, vec2 dfg_2) {
+    Scattering _e4 = multiscattering(m_4.specular, m_4.specular_grazing, dfg_2);
+    vec3 _e6 = brdf_lambert(m_4.diffuse);
     return ((irradiance * _e6) * ((vec3(1.0) - _e4.single) - _e4.multi));
 }
 
@@ -2741,13 +2798,13 @@ vec3 linear_to_srgb(vec3 c) {
     return mix(high_1, low_1, lessThanEqual(c, vec3(0.0031308)));
 }
 
-vec3 light_surface(PbrMaterial m_4, vec3 normal_3, vec3 to_view_2, vec2 dfg_3) {
-    vec3 _e3 = multiscatter_compensation(m_4.specular_blended, dfg_3);
+vec3 light_surface(PbrMaterial m_5, vec3 normal_3, vec3 to_view_2, vec2 dfg_3) {
+    vec3 _e3 = multiscatter_compensation(m_5.specular_blended, dfg_3);
     vec4 _e6 = _group_0_binding_0_fs.sun_direction;
     vec4 _e11 = _group_0_binding_0_fs.sun_color;
-    Reflected _e15 = direct_light(m_4, normal_3, to_view_2, -(_e6.xyz), _e11.xyz, _e3);
+    Reflected _e15 = direct_light(m_5, normal_3, to_view_2, -(_e6.xyz), _e11.xyz, _e3);
     vec4 _e18 = _group_0_binding_0_fs.ambient;
-    vec3 _e20 = indirect_diffuse(m_4, _e18.xyz, dfg_3);
+    vec3 _e20 = indirect_diffuse(m_5, _e18.xyz, dfg_3);
     return ((_e15.diffuse + _e15.specular) + _e20);
 }
 
@@ -2789,7 +2846,10 @@ void main() {
         discard;
     }
     vec3 _e86 = linear_to_srgb(outgoing);
-    _fs2p_location0 = vec4(_e86, 1.0);
+    float _e87 = alpha;
+    float _e88 = alpha;
+    vec4 _e89 = fragment_color(_e2, _e86, _e87, _e88);
+    _fs2p_location0 = _e89;
     return;
 }
 `,
@@ -3263,6 +3323,7 @@ struct VertexOut {
     uint material;
 };
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
+const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -3292,6 +3353,11 @@ vec3 transform_point(Transform t, vec3 p) {
 
 vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
     return (view_proj * vec4(relative_position, 1.0));
+}
+
+vec4 fragment_color(Material m_1, vec3 color, float alpha_1, float color_alpha) {
+    bool blended = ((uint(m_1.strengths.z) & BLEND_FLAG) != 0u);
+    return (blended ? vec4((color * color_alpha), alpha_1) : vec4(color, 1.0));
 }
 
 Instance instance_of(uvec4 record, uint instance) {
@@ -3489,6 +3555,7 @@ struct VertexOut {
     uint material;
 };
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
+const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -3530,6 +3597,11 @@ Material material_of(uint id) {
     return _e50;
 }
 
+vec4 fragment_color(Material m_1, vec3 color, float alpha_1, float color_alpha) {
+    bool blended = ((uint(m_1.strengths.z) & BLEND_FLAG) != 0u);
+    return (blended ? vec4((color * color_alpha), alpha_1) : vec4(color, 1.0));
+}
+
 Transform transform_of(Instance found) {
     return Transform(found.row_x, found.row_y, found.row_z);
 }
@@ -3555,7 +3627,10 @@ void main() {
     alpha = _e2.color.w;
     vec3 _e9 = base;
     vec3 _e10 = linear_to_srgb(_e9);
-    _fs2p_location0 = vec4(_e10, 1.0);
+    float _e11 = alpha;
+    float _e12 = alpha;
+    vec4 _e13 = fragment_color(_e2, _e10, _e11, _e12);
+    _fs2p_location0 = _e13;
     return;
 }
 `,
@@ -3632,6 +3707,7 @@ struct VertexOut {
     uint material;
 };
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
+const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -3661,6 +3737,11 @@ vec3 transform_point(Transform t, vec3 p) {
 
 vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
     return (view_proj * vec4(relative_position, 1.0));
+}
+
+vec4 fragment_color(Material m_1, vec3 color, float alpha_1, float color_alpha) {
+    bool blended = ((uint(m_1.strengths.z) & BLEND_FLAG) != 0u);
+    return (blended ? vec4((color * color_alpha), alpha_1) : vec4(color, 1.0));
 }
 
 Instance instance_of(uvec4 record, uint instance) {
@@ -3858,6 +3939,7 @@ struct VertexOut {
     uint material;
 };
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
+const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -3899,6 +3981,11 @@ Material material_of(uint id) {
     return _e50;
 }
 
+vec4 fragment_color(Material m_1, vec3 color, float alpha_1, float color_alpha) {
+    bool blended = ((uint(m_1.strengths.z) & BLEND_FLAG) != 0u);
+    return (blended ? vec4((color * color_alpha), alpha_1) : vec4(color, 1.0));
+}
+
 Transform transform_of(Instance found) {
     return Transform(found.row_x, found.row_y, found.row_z);
 }
@@ -3928,7 +4015,10 @@ void main() {
     }
     vec3 _e13 = base;
     vec3 _e14 = linear_to_srgb(_e13);
-    _fs2p_location0 = vec4(_e14, 1.0);
+    float _e15 = alpha;
+    float _e16 = alpha;
+    vec4 _e17 = fragment_color(_e2, _e14, _e15, _e16);
+    _fs2p_location0 = _e17;
     return;
 }
 `,
@@ -4007,6 +4097,7 @@ struct VertexOut {
     vec4 vertex_color;
 };
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
+const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -4038,6 +4129,11 @@ vec3 transform_point(Transform t, vec3 p) {
 
 vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
     return (view_proj * vec4(relative_position, 1.0));
+}
+
+vec4 fragment_color(Material m_1, vec3 color, float alpha_1, float color_alpha) {
+    bool blended = ((uint(m_1.strengths.z) & BLEND_FLAG) != 0u);
+    return (blended ? vec4((color * color_alpha), alpha_1) : vec4(color, 1.0));
 }
 
 Instance instance_of(uvec4 record, uint instance) {
@@ -4239,6 +4335,7 @@ struct VertexOut {
     vec4 vertex_color;
 };
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
+const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -4281,6 +4378,11 @@ Material material_of(uint id) {
     return _e50;
 }
 
+vec4 fragment_color(Material m_1, vec3 color, float alpha_1, float color_alpha) {
+    bool blended = ((uint(m_1.strengths.z) & BLEND_FLAG) != 0u);
+    return (blended ? vec4((color * color_alpha), alpha_1) : vec4(color, 1.0));
+}
+
 Transform transform_of(Instance found) {
     return Transform(found.row_x, found.row_y, found.row_z);
 }
@@ -4310,7 +4412,10 @@ void main() {
     alpha = (_e13 * in_.vertex_color.w);
     vec3 _e17 = base;
     vec3 _e18 = linear_to_srgb(_e17);
-    _fs2p_location0 = vec4(_e18, 1.0);
+    float _e19 = alpha;
+    float _e20 = alpha;
+    vec4 _e21 = fragment_color(_e2, _e18, _e19, _e20);
+    _fs2p_location0 = _e21;
     return;
 }
 `,
@@ -4389,6 +4494,7 @@ struct VertexOut {
     vec4 vertex_color;
 };
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
+const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -4420,6 +4526,11 @@ vec3 transform_point(Transform t, vec3 p) {
 
 vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
     return (view_proj * vec4(relative_position, 1.0));
+}
+
+vec4 fragment_color(Material m_1, vec3 color, float alpha_1, float color_alpha) {
+    bool blended = ((uint(m_1.strengths.z) & BLEND_FLAG) != 0u);
+    return (blended ? vec4((color * color_alpha), alpha_1) : vec4(color, 1.0));
 }
 
 Instance instance_of(uvec4 record, uint instance) {
@@ -4621,6 +4732,7 @@ struct VertexOut {
     vec4 vertex_color;
 };
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
+const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -4663,6 +4775,11 @@ Material material_of(uint id) {
     return _e50;
 }
 
+vec4 fragment_color(Material m_1, vec3 color, float alpha_1, float color_alpha) {
+    bool blended = ((uint(m_1.strengths.z) & BLEND_FLAG) != 0u);
+    return (blended ? vec4((color * color_alpha), alpha_1) : vec4(color, 1.0));
+}
+
 Transform transform_of(Instance found) {
     return Transform(found.row_x, found.row_y, found.row_z);
 }
@@ -4696,7 +4813,10 @@ void main() {
     }
     vec3 _e21 = base;
     vec3 _e22 = linear_to_srgb(_e21);
-    _fs2p_location0 = vec4(_e22, 1.0);
+    float _e23 = alpha;
+    float _e24 = alpha;
+    vec4 _e25 = fragment_color(_e2, _e22, _e23, _e24);
+    _fs2p_location0 = _e25;
     return;
 }
 `,
@@ -4777,6 +4897,8 @@ struct VertexOut {
     uint material;
 };
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
+const uint MAP_PREMULTIPLIED_FLAG = 8u;
+const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -4816,6 +4938,15 @@ bool map_ready(float layer) {
 
 uint map_layer(float layer_1) {
     return uint(max(layer_1, 0.0));
+}
+
+bool premultiplied_map(Material m_1) {
+    return ((uint(m_1.strengths.z) & MAP_PREMULTIPLIED_FLAG) != 0u);
+}
+
+vec4 fragment_color(Material m_2, vec3 color, float alpha, float color_alpha) {
+    bool blended = ((uint(m_2.strengths.z) & BLEND_FLAG) != 0u);
+    return (blended ? vec4((color * color_alpha), alpha) : vec4(color, 1.0));
 }
 
 Instance instance_of(uvec4 record, uint instance) {
@@ -5017,6 +5148,8 @@ struct VertexOut {
     uint material;
 };
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
+const uint MAP_PREMULTIPLIED_FLAG = 8u;
+const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -5069,6 +5202,15 @@ uint map_layer(float layer_1) {
     return uint(max(layer_1, 0.0));
 }
 
+bool premultiplied_map(Material m_1) {
+    return ((uint(m_1.strengths.z) & MAP_PREMULTIPLIED_FLAG) != 0u);
+}
+
+vec4 fragment_color(Material m_2, vec3 color, float alpha, float color_alpha) {
+    bool blended = ((uint(m_2.strengths.z) & BLEND_FLAG) != 0u);
+    return (blended ? vec4((color * color_alpha), alpha) : vec4(color, 1.0));
+}
+
 Transform transform_of(Instance found) {
     return Transform(found.row_x, found.row_y, found.row_z);
 }
@@ -5088,17 +5230,23 @@ vec3 linear_to_srgb(vec3 c) {
 void main() {
     VertexOut in_ = VertexOut(gl_FragCoord, _vs2fs_location0, _vs2fs_location1);
     vec3 base = vec3(0.0);
-    float alpha = 0.0;
+    float rest = 0.0;
     Material _e2 = material_of(in_.material);
     uint _e6 = map_layer(_e2.maps.x);
     vec4 texel = texture(_group_3_binding_0_fs, vec3(in_.uv0_, _e6));
     bool _e14 = map_ready(_e2.maps.x);
     vec4 map = (_e14 ? texel : vec4(1.0));
     base = (_e2.color.xyz * map.xyz);
-    alpha = (_e2.color.w * map.w);
-    vec3 _e26 = base;
-    vec3 _e27 = linear_to_srgb(_e26);
-    _fs2p_location0 = vec4(_e27, 1.0);
+    rest = _e2.color.w;
+    float _e24 = rest;
+    float alpha_1 = (_e24 * map.w);
+    float _e27 = rest;
+    bool _e28 = premultiplied_map(_e2);
+    float color_alpha_1 = (_e28 ? _e27 : alpha_1);
+    vec3 _e30 = base;
+    vec3 _e31 = linear_to_srgb(_e30);
+    vec4 _e32 = fragment_color(_e2, _e31, alpha_1, color_alpha_1);
+    _fs2p_location0 = _e32;
     return;
 }
 `,
@@ -5186,6 +5334,8 @@ struct VertexOut {
     uint material;
 };
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
+const uint MAP_PREMULTIPLIED_FLAG = 8u;
+const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -5225,6 +5375,15 @@ bool map_ready(float layer) {
 
 uint map_layer(float layer_1) {
     return uint(max(layer_1, 0.0));
+}
+
+bool premultiplied_map(Material m_1) {
+    return ((uint(m_1.strengths.z) & MAP_PREMULTIPLIED_FLAG) != 0u);
+}
+
+vec4 fragment_color(Material m_2, vec3 color, float alpha, float color_alpha) {
+    bool blended = ((uint(m_2.strengths.z) & BLEND_FLAG) != 0u);
+    return (blended ? vec4((color * color_alpha), alpha) : vec4(color, 1.0));
 }
 
 Instance instance_of(uvec4 record, uint instance) {
@@ -5426,6 +5585,8 @@ struct VertexOut {
     uint material;
 };
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
+const uint MAP_PREMULTIPLIED_FLAG = 8u;
+const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -5478,6 +5639,15 @@ uint map_layer(float layer_1) {
     return uint(max(layer_1, 0.0));
 }
 
+bool premultiplied_map(Material m_1) {
+    return ((uint(m_1.strengths.z) & MAP_PREMULTIPLIED_FLAG) != 0u);
+}
+
+vec4 fragment_color(Material m_2, vec3 color, float alpha, float color_alpha) {
+    bool blended = ((uint(m_2.strengths.z) & BLEND_FLAG) != 0u);
+    return (blended ? vec4((color * color_alpha), alpha) : vec4(color, 1.0));
+}
+
 Transform transform_of(Instance found) {
     return Transform(found.row_x, found.row_y, found.row_z);
 }
@@ -5497,21 +5667,26 @@ vec3 linear_to_srgb(vec3 c) {
 void main() {
     VertexOut in_ = VertexOut(gl_FragCoord, _vs2fs_location0, _vs2fs_location1);
     vec3 base = vec3(0.0);
-    float alpha = 0.0;
+    float rest = 0.0;
     Material _e2 = material_of(in_.material);
     uint _e6 = map_layer(_e2.maps.x);
     vec4 texel = texture(_group_3_binding_0_fs, vec3(in_.uv0_, _e6));
     bool _e14 = map_ready(_e2.maps.x);
     vec4 map = (_e14 ? texel : vec4(1.0));
     base = (_e2.color.xyz * map.xyz);
-    alpha = (_e2.color.w * map.w);
-    float _e26 = alpha;
-    if ((_e26 < _e2.emissive.w)) {
+    rest = _e2.color.w;
+    float _e24 = rest;
+    float alpha_1 = (_e24 * map.w);
+    if ((alpha_1 < _e2.emissive.w)) {
         discard;
     }
-    vec3 _e30 = base;
-    vec3 _e31 = linear_to_srgb(_e30);
-    _fs2p_location0 = vec4(_e31, 1.0);
+    float _e30 = rest;
+    bool _e31 = premultiplied_map(_e2);
+    float color_alpha_1 = (_e31 ? _e30 : alpha_1);
+    vec3 _e33 = base;
+    vec3 _e34 = linear_to_srgb(_e33);
+    vec4 _e35 = fragment_color(_e2, _e34, alpha_1, color_alpha_1);
+    _fs2p_location0 = _e35;
     return;
 }
 `,
@@ -5601,6 +5776,8 @@ struct VertexOut {
     vec4 vertex_color;
 };
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
+const uint MAP_PREMULTIPLIED_FLAG = 8u;
+const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -5642,6 +5819,15 @@ bool map_ready(float layer) {
 
 uint map_layer(float layer_1) {
     return uint(max(layer_1, 0.0));
+}
+
+bool premultiplied_map(Material m_1) {
+    return ((uint(m_1.strengths.z) & MAP_PREMULTIPLIED_FLAG) != 0u);
+}
+
+vec4 fragment_color(Material m_2, vec3 color, float alpha, float color_alpha) {
+    bool blended = ((uint(m_2.strengths.z) & BLEND_FLAG) != 0u);
+    return (blended ? vec4((color * color_alpha), alpha) : vec4(color, 1.0));
 }
 
 Instance instance_of(uvec4 record, uint instance) {
@@ -5847,6 +6033,8 @@ struct VertexOut {
     vec4 vertex_color;
 };
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
+const uint MAP_PREMULTIPLIED_FLAG = 8u;
+const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -5900,6 +6088,15 @@ uint map_layer(float layer_1) {
     return uint(max(layer_1, 0.0));
 }
 
+bool premultiplied_map(Material m_1) {
+    return ((uint(m_1.strengths.z) & MAP_PREMULTIPLIED_FLAG) != 0u);
+}
+
+vec4 fragment_color(Material m_2, vec3 color, float alpha, float color_alpha) {
+    bool blended = ((uint(m_2.strengths.z) & BLEND_FLAG) != 0u);
+    return (blended ? vec4((color * color_alpha), alpha) : vec4(color, 1.0));
+}
+
 Transform transform_of(Instance found) {
     return Transform(found.row_x, found.row_y, found.row_z);
 }
@@ -5919,21 +6116,27 @@ vec3 linear_to_srgb(vec3 c) {
 void main() {
     VertexOut in_ = VertexOut(gl_FragCoord, _vs2fs_location0, _vs2fs_location1, _vs2fs_location2);
     vec3 base = vec3(0.0);
-    float alpha = 0.0;
+    float rest = 0.0;
     Material _e2 = material_of(in_.material);
     uint _e6 = map_layer(_e2.maps.x);
     vec4 texel = texture(_group_3_binding_0_fs, vec3(in_.uv0_, _e6));
     bool _e14 = map_ready(_e2.maps.x);
     vec4 map = (_e14 ? texel : vec4(1.0));
     base = (_e2.color.xyz * map.xyz);
-    alpha = (_e2.color.w * map.w);
-    vec3 _e26 = base;
-    base = (_e26 * in_.vertex_color.xyz);
-    float _e30 = alpha;
-    alpha = (_e30 * in_.vertex_color.w);
-    vec3 _e34 = base;
-    vec3 _e35 = linear_to_srgb(_e34);
-    _fs2p_location0 = vec4(_e35, 1.0);
+    rest = _e2.color.w;
+    vec3 _e24 = base;
+    base = (_e24 * in_.vertex_color.xyz);
+    float _e28 = rest;
+    rest = (_e28 * in_.vertex_color.w);
+    float _e32 = rest;
+    float alpha_1 = (_e32 * map.w);
+    float _e35 = rest;
+    bool _e36 = premultiplied_map(_e2);
+    float color_alpha_1 = (_e36 ? _e35 : alpha_1);
+    vec3 _e38 = base;
+    vec3 _e39 = linear_to_srgb(_e38);
+    vec4 _e40 = fragment_color(_e2, _e39, alpha_1, color_alpha_1);
+    _fs2p_location0 = _e40;
     return;
 }
 `,
@@ -6023,6 +6226,8 @@ struct VertexOut {
     vec4 vertex_color;
 };
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
+const uint MAP_PREMULTIPLIED_FLAG = 8u;
+const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -6064,6 +6269,15 @@ bool map_ready(float layer) {
 
 uint map_layer(float layer_1) {
     return uint(max(layer_1, 0.0));
+}
+
+bool premultiplied_map(Material m_1) {
+    return ((uint(m_1.strengths.z) & MAP_PREMULTIPLIED_FLAG) != 0u);
+}
+
+vec4 fragment_color(Material m_2, vec3 color, float alpha, float color_alpha) {
+    bool blended = ((uint(m_2.strengths.z) & BLEND_FLAG) != 0u);
+    return (blended ? vec4((color * color_alpha), alpha) : vec4(color, 1.0));
 }
 
 Instance instance_of(uvec4 record, uint instance) {
@@ -6269,6 +6483,8 @@ struct VertexOut {
     vec4 vertex_color;
 };
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
+const uint MAP_PREMULTIPLIED_FLAG = 8u;
+const uint BLEND_FLAG = 2u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -6322,6 +6538,15 @@ uint map_layer(float layer_1) {
     return uint(max(layer_1, 0.0));
 }
 
+bool premultiplied_map(Material m_1) {
+    return ((uint(m_1.strengths.z) & MAP_PREMULTIPLIED_FLAG) != 0u);
+}
+
+vec4 fragment_color(Material m_2, vec3 color, float alpha, float color_alpha) {
+    bool blended = ((uint(m_2.strengths.z) & BLEND_FLAG) != 0u);
+    return (blended ? vec4((color * color_alpha), alpha) : vec4(color, 1.0));
+}
+
 Transform transform_of(Instance found) {
     return Transform(found.row_x, found.row_y, found.row_z);
 }
@@ -6341,25 +6566,30 @@ vec3 linear_to_srgb(vec3 c) {
 void main() {
     VertexOut in_ = VertexOut(gl_FragCoord, _vs2fs_location0, _vs2fs_location1, _vs2fs_location2);
     vec3 base = vec3(0.0);
-    float alpha = 0.0;
+    float rest = 0.0;
     Material _e2 = material_of(in_.material);
     uint _e6 = map_layer(_e2.maps.x);
     vec4 texel = texture(_group_3_binding_0_fs, vec3(in_.uv0_, _e6));
     bool _e14 = map_ready(_e2.maps.x);
     vec4 map = (_e14 ? texel : vec4(1.0));
     base = (_e2.color.xyz * map.xyz);
-    alpha = (_e2.color.w * map.w);
-    vec3 _e26 = base;
-    base = (_e26 * in_.vertex_color.xyz);
-    float _e30 = alpha;
-    alpha = (_e30 * in_.vertex_color.w);
-    float _e34 = alpha;
-    if ((_e34 < _e2.emissive.w)) {
+    rest = _e2.color.w;
+    vec3 _e24 = base;
+    base = (_e24 * in_.vertex_color.xyz);
+    float _e28 = rest;
+    rest = (_e28 * in_.vertex_color.w);
+    float _e32 = rest;
+    float alpha_1 = (_e32 * map.w);
+    if ((alpha_1 < _e2.emissive.w)) {
         discard;
     }
-    vec3 _e38 = base;
-    vec3 _e39 = linear_to_srgb(_e38);
-    _fs2p_location0 = vec4(_e39, 1.0);
+    float _e38 = rest;
+    bool _e39 = premultiplied_map(_e2);
+    float color_alpha_1 = (_e39 ? _e38 : alpha_1);
+    vec3 _e41 = base;
+    vec3 _e42 = linear_to_srgb(_e41);
+    vec4 _e43 = fragment_color(_e2, _e42, alpha_1, color_alpha_1);
+    _fs2p_location0 = _e43;
     return;
 }
 `,

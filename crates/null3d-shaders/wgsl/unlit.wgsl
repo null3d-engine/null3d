@@ -2,10 +2,10 @@ enable draw_index;
 
 // Meshes drawn by instance in their material's color alone, as three.js's MeshBasicMaterial draws
 // them, times the mesh's vertex colors in the VERTEX_COLOR builds. The ALPHA_MASK builds draw
-// nothing where the alpha falls below the material's cutoff. null3d::mesh finds each instance on
-// both GPU paths.
+// nothing where the alpha falls below the material's cutoff, and a material that blends writes
+// premultiplied color. null3d::mesh finds each instance on both GPU paths.
 #import null3d::color
-#import null3d::mesh::{InstanceIn, clip_position, find_instance, material_of}
+#import null3d::mesh::{InstanceIn, clip_position, find_instance, fragment_color, material_of}
 
 /// The vertex attributes that the template reads.
 struct VertexIn {
@@ -49,5 +49,5 @@ fn fs(in: VertexOut) -> @location(0) vec4f {
         discard;
     }
 #endif
-    return vec4f(null3d::color::linear_to_srgb(base), 1.0);
+    return fragment_color(m, null3d::color::linear_to_srgb(base), alpha, alpha);
 }

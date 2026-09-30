@@ -137,6 +137,27 @@ fn map_layer(layer: f32) -> u32 {
     return u32(max(layer, 0.0));
 }
 
+/// The bit of a material's flags that makes its fragments write premultiplied color, for the
+/// transparent pass's blending.
+const BLEND_FLAG: u32 = 2u;
+/// The bit of a material's flags that says its base color map holds premultiplied colors.
+const MAP_PREMULTIPLIED_FLAG: u32 = 8u;
+
+/// True when a material's base color map holds colors that its alpha multiplied already, so the
+/// color takes only the rest of the alpha.
+fn premultiplied_map(m: Material) -> bool {
+    return (u32(m.strengths.z) & MAP_PREMULTIPLIED_FLAG) != 0u;
+}
+
+/// What a mesh's fragment writes, from its color in the target's encoding and its alpha. A
+/// material that blends writes the color times `color_alpha`, beside `alpha`, as premultiplied
+/// blending reads them. `color_alpha` is the alpha that the color does not hold yet: all of it,
+/// or the part besides a premultiplied map's. Other materials write the color with an alpha of 1.
+fn fragment_color(m: Material, color: vec3f, alpha: f32, color_alpha: f32) -> vec4f {
+    let blended = (u32(m.strengths.z) & BLEND_FLAG) != 0u;
+    return select(vec4f(color, 1.0), vec4f(color * color_alpha, alpha), blended);
+}
+
 #ifdef WEBGL2
 /// The instance a draw with this record draws as its `instance`-th: the index list gives its
 /// source, or the cluster whose rows the cluster texture lists, and its cell. The draw's data
