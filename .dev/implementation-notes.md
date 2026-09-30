@@ -52,6 +52,14 @@ The engine's hot paths stay allocation-free with these habits (hard rule 1):
 - The page chooses the preset: workers have no media queries and no screen. The memory maximum follows the device hints and the crash marker alone, which the page has at once. So the core's download and the shared memory never wait for the GPU probe.
 - Hold mode and `?preset=` neither read nor write the crash marker, so a test that crashes can never lower the next test's preset.
 
+## Render scale
+
+- The render scale crosses into the core as whole thousandths, an argument of `recordFrame`. Whole numbers never become number objects, and the core turns them into sizes in pixels with integer math, the same on every device.
+- The controller (`quality/resolution.ts`) runs in the frame loop of the thread that records frames, before the sketch's update. It reads the render and completion rings with `RingSums`, and the loop writes the frame's clock reading into its typed array, so it allocates nothing. Hold mode has no controller and draws at the highest scale.
+- Scene passes of a relative size set the viewport and the scissor after `BeginRenderPass`. A pass at the whole canvas records neither, so its draw list is the same as without a render scale.
+- The final pass filters by hand: four `textureLoad` reads, each tone mapped, then blended. A sampler would blend HDR color first, and a small share of a very bright texel turns its neighbors almost white. A WebGL2 program also cannot read one texture both with `textureLoad` and through a sampler.
+- The 8-bit path resolves straight into the canvas only while the range is fixed at 1. Every path builds the final pass's pipeline with its first frame, so a change of range draws at once.
+
 ## Start order
 
 The page starts every download that the start needs while the core downloads. On Slow 4G each download that waits for the core adds a round trip of at least 562 ms.

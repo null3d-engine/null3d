@@ -3,7 +3,8 @@
 //! thread, so the test runner's own work on other threads cannot reach the count. Frames whose
 //! structure changes allocate nothing either, on either frame parity, until the scene grows, and
 //! neither do frames that draw debug lines or stop drawing them. The render graph allocates nothing
-//! while it stays the same, nor when passes switch on and off after it has compiled once.
+//! while it stays the same, nor when passes switch on and off after it has compiled once, nor when
+//! the render scale changes.
 
 mod common;
 
@@ -16,6 +17,7 @@ use null3d_gpu::drawlist::{DrawList, Op, format};
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::frame::{CanvasOutput, FrameBuilder};
 use null3d_render::gpu_driven::RendererConfig;
+use null3d_render::graph::RenderScale;
 use null3d_render::materials::Shading;
 use null3d_render::output::{Output, SceneColor, ToneMapping};
 use null3d_render::parallel_record::ParallelRecorder;
@@ -84,6 +86,43 @@ fn hdr_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
         world.record(false);
     }
     CountingAllocator::disarm()
+}
+
+/// Records warm-up frames of a world whose render scale can drop, then frames whose render scale
+/// changes every frame, and returns what those allocated.
+fn scale_change_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
+    world.renderer.settings_mut().set_render_scaling(true);
+    record_until(&mut world, 6, false);
+    CountingAllocator::arm();
+    for frame in 7..=200 {
+        world.frame = frame;
+        world.render_scale = RenderScale::from_thousandths(500 + (frame * 37) % 501);
+        world.record(false);
+    }
+    CountingAllocator::disarm()
+}
+
+#[test]
+fn render_scale_changes_allocate_nothing() {
+    let _only = CountingAllocator::exclusive();
+    CountingAllocator::track_this_thread();
+    for scene_color in [format::RGBA16_FLOAT, format::CANVAS] {
+        let canvas = CanvasOutput {
+            scene_color: SceneColor::from_format(scene_color),
+            transparent: false,
+        };
+        let webgpu = World::with_config(RendererConfig {
+            canvas,
+            ..RendererConfig::default()
+        });
+        assert_eq!(scale_change_allocations(webgpu), 0, "WebGPU, {scene_color}");
+        let webgl2 = World::build(CpuCulledRenderer::new(CpuCulledConfig {
+            canvas,
+            multi_draw: true,
+            ..CpuCulledConfig::default()
+        }));
+        assert_eq!(scale_change_allocations(webgl2), 0, "WebGL2, {scene_color}");
+    }
 }
 
 /// Records frames of a world with a second view up to `last`, each giving an object, the batch

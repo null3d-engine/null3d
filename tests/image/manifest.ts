@@ -183,6 +183,22 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 		switches: ['uploads=copy'],
 		reference: 'scene',
 	},
+	// The same scene at render scales of 1, 0.75 and 0.5. Each range reaches down to 0.5, so the
+	// final pass scales the image up on every GPU path, even the 8-bit one, and hold mode draws at
+	// the range's highest scale. At 1 each pixel shows its own texel, so the image is the scene's.
+	{
+		name: 'render-scale-100',
+		sketch: 'tests/pages/sketches/boxes-sketch.ts?scale=1',
+		hold: 0,
+		reference: 'scene',
+	},
+	{ name: 'render-scale-75', sketch: 'tests/pages/sketches/boxes-sketch.ts?scale=0.75', hold: 0 },
+	{
+		name: 'render-scale-50',
+		sketch: 'tests/pages/sketches/boxes-sketch.ts?scale=0.5',
+		hold: 0,
+		modes: ALL_MODES,
+	},
 	...toneMappingTests(),
 	// The bright scene without a background on a transparent canvas, which keeps premultiplied
 	// alpha: the output spec checks the alpha of the captured pixels.

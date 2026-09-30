@@ -60,6 +60,18 @@ export const QUALITY_SETTINGS = {
 		changes: 'live',
 		values: { min: 0.5, max: Number.POSITIVE_INFINITY },
 	},
+	// The range of the render scale, the part of the canvas's width and height that the scene draws
+	// at. Dynamic resolution moves the scale within it (resolution.ts).
+	minRenderScale: {
+		presets: [0.5, 0.6, 0.75, 1],
+		changes: 'live',
+		values: { min: 0.25, max: 1 },
+	},
+	maxRenderScale: {
+		presets: [1, 1, 1, 1],
+		changes: 'live',
+		values: { min: 0.25, max: 1 },
+	},
 	// The shared memory's maximum, from 256 MiB to the 4 GiB that the threaded core declares. Every
 	// preset keeps the loader's default until measurements of the memory that tabs can use on
 	// phones and tablets set one per preset (D-04).
@@ -92,6 +104,19 @@ export interface QualitySettings {
 	 * its new size within a frame or two.
 	 */
 	maxPixelRatio: number;
+	/**
+	 * The lowest render scale: the smallest part of the canvas's width and height that the scene
+	 * draws at when frames take too long. The engine draws the scene at a render scale between this
+	 * and `maxRenderScale`, and scales the image up to the canvas. It takes a number from 0.25 to
+	 * 1, at most `maxRenderScale`, and changes during play. 1 keeps the whole canvas.
+	 */
+	minRenderScale: number;
+	/**
+	 * The highest render scale, where the engine starts. It takes a number from 0.25 to 1, and
+	 * changes during play. With `minRenderScale` at the same value, the scene always draws at that
+	 * scale.
+	 */
+	maxRenderScale: number;
 }
 
 /** The settings that a sketch reads and changes: those that can change after the load. */

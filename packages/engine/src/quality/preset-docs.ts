@@ -15,11 +15,6 @@ const MIB = 1024 * 1024;
  * feature moves its row into the engine's table (presets.ts) when it applies the setting.
  */
 export const PLANNED_SETTINGS = {
-	minRenderScale: {
-		presets: [0.5, 0.6, 0.75, 1],
-		changes: 'live',
-		values: { min: 0.25, max: 1 },
-	},
 	antialias: {
 		presets: ['fxaa', 'msaa', 'msaa', 'msaa'],
 		changes: 'start',
@@ -114,6 +109,7 @@ export const SETTING_DOCS: {
 		print: (value) => (value === Number.POSITIVE_INFINITY ? 'none' : String(value)),
 	},
 	minRenderScale: { label: 'Lowest render scale' },
+	maxRenderScale: { label: 'Highest render scale' },
 	antialias: {
 		label: 'Anti-aliasing',
 		print: (value) => ({ none: 'none', fxaa: 'FXAA', msaa: 'MSAA 4x' })[value],

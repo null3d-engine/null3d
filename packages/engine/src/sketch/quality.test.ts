@@ -7,21 +7,26 @@ import { SketchQuality } from './quality';
 // The page sets the table of fixes that ends each error's message before it can raise an error.
 beforeEach(() => setErrorFixes(ERROR_FIXES));
 
+/** Medium's settings. */
+const MEDIUM: QualitySettings = { maxPixelRatio: 2, minRenderScale: 0.6, maxRenderScale: 1 };
+
 /** A sketch's quality API on Medium, and the settings that it gave the page. */
 function medium() {
 	const applied: QualitySettings[] = [];
+	let scale = 0.8;
 	const quality = new SketchQuality(
-		{ preset: 'medium', settings: { maxPixelRatio: 2 } },
+		{ preset: 'medium', settings: MEDIUM },
 		(settings) => applied.push(settings),
+		() => scale,
 	);
-	return { quality, applied };
+	return { quality, applied, setScale: (to: number) => (scale = to) };
 }
 
 describe('SketchQuality', () => {
 	it('starts with the preset and the settings that the page chose', () => {
 		const { quality, applied } = medium();
 		expect(quality.preset).toBe('medium');
-		expect(quality.settings).toEqual({ maxPixelRatio: 2 });
+		expect(quality.settings).toEqual(MEDIUM);
 		expect(quality.takeChange()).toBe(false);
 		expect(applied).toEqual([]);
 	});
@@ -30,7 +35,7 @@ describe('SketchQuality', () => {
 		const { quality, applied } = medium();
 		quality.set({ maxPixelRatio: 1.25 });
 		expect(quality.settings.maxPixelRatio).toBe(1.25);
-		expect(applied).toEqual([{ maxPixelRatio: 1.25 }]);
+		expect(applied).toEqual([{ ...MEDIUM, maxPixelRatio: 1.25 }]);
 		expect(quality.takeChange()).toBe(true);
 		expect(quality.takeChange()).toBe(false);
 	});
@@ -39,7 +44,10 @@ describe('SketchQuality', () => {
 		const { quality, applied } = medium();
 		quality.set({ maxPixelRatio: 1 });
 		quality.set({ maxPixelRatio: Number.POSITIVE_INFINITY });
-		expect(applied).toEqual([{ maxPixelRatio: 1 }, { maxPixelRatio: Number.POSITIVE_INFINITY }]);
+		expect(applied).toEqual([
+			{ ...MEDIUM, maxPixelRatio: 1 },
+			{ ...MEDIUM, maxPixelRatio: Number.POSITIVE_INFINITY },
+		]);
 	});
 
 	it('notes no change when a setting keeps its value', () => {
@@ -55,9 +63,29 @@ describe('SketchQuality', () => {
 		const { quality, applied } = medium();
 		expect(() => quality.set({ maxPixelRatio: 0 })).toThrow('E1213');
 		expect(() => quality.set({ antialias: 'fxaa' } as Partial<QualitySettings>)).toThrow('E1213');
-		expect(quality.settings).toEqual({ maxPixelRatio: 2 });
+		expect(() => quality.set({ minRenderScale: 0.2 })).toThrow('E1213');
+		expect(() => quality.set({ maxRenderScale: 1.5 })).toThrow('E1213');
+		expect(quality.settings).toEqual(MEDIUM);
 		expect(applied).toEqual([]);
 		expect(quality.takeChange()).toBe(false);
+	});
+
+	it('keeps the lowest render scale at or below the highest', () => {
+		const { quality, applied } = medium();
+		expect(() => quality.set({ maxRenderScale: 0.5 })).toThrow(
+			'quality.set() would give minRenderScale 0.6, above maxRenderScale 0.5.',
+		);
+		expect(() => quality.set({ minRenderScale: 0.9, maxRenderScale: 0.8 })).toThrow('E1213');
+		expect(applied).toEqual([]);
+		quality.set({ minRenderScale: 0.5, maxRenderScale: 0.5 });
+		expect(quality.settings).toEqual({ ...MEDIUM, minRenderScale: 0.5, maxRenderScale: 0.5 });
+	});
+
+	it('reads the render scale that the engine draws at', () => {
+		const { quality, setScale } = medium();
+		expect(quality.renderScale).toBe(0.8);
+		setScale(0.65);
+		expect(quality.renderScale).toBe(0.65);
 	});
 
 	it('keeps the change handlers until their remover runs', () => {

@@ -1,8 +1,17 @@
 // A small static scene: lit and unlit meshes, a hierarchy, and an instance batch, lit by a sun
-// and ambient light. The scene test captures it and compares it with a reference image.
+// and ambient light. The scene test captures it and compares it with a reference image. ?scale=
+// draws it at that render scale: hold mode draws at the highest scale of the range, which reaches
+// down to 0.5, so the final pass scales the image up on every GPU path.
 import { defineSketch } from '@null3d/engine';
 
-export default defineSketch(({ scene, materials, geometry, page, time }) => {
+/** The render scale, from the sketch module's ?scale= switch, or none to keep the preset's range. */
+const SCALE = new URL(import.meta.url).searchParams.get('scale');
+
+export default defineSketch(({ scene, materials, geometry, page, quality, time }) => {
+	if (SCALE !== null) {
+		const scale = Number(SCALE);
+		quality.set({ minRenderScale: Math.min(scale, 0.5), maxRenderScale: scale });
+	}
 	scene.setBackground('#101418');
 	const camera = scene.createPerspectiveCamera({
 		fov: 60,

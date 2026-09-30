@@ -165,7 +165,7 @@ test('a sketch changes its pixel ratio cap, and hears of the change', async ({ p
 		page,
 		`gpu=webgpu&set=${JSON.stringify({ maxPixelRatio: 1.25 })}`,
 	);
-	expect(result.changed).toEqual({ maxPixelRatio: 1.25 });
+	expect(result.changed).toEqual({ maxPixelRatio: 1.25, minRenderScale: 0.75, maxRenderScale: 1 });
 	expect(result.refused).toBeUndefined();
 });
 
@@ -173,6 +173,6 @@ test('a sketch that changes a setting the engine does not take gets E1213', asyn
 	const result = await openQuality(page, `gpu=webgpu&set=${JSON.stringify({ antialias: 'fxaa' })}`);
 	expect(result.changed).toBeUndefined();
 	expect(result.refused).toContain(
-		'E1213: quality.set() got "antialias", which is not a setting it takes. It takes maxPixelRatio.',
+		'E1213: quality.set() got "antialias", which is not a setting it takes. It takes maxPixelRatio, minRenderScale or maxRenderScale.',
 	);
 });

@@ -11,10 +11,12 @@ export function readCount(moduleUrl: string): number {
 
 /**
  * Sets the background and the lights, and makes the active camera. The three.js twins draw with no
- * tone mapping, three.js's default, so the null3D pages turn off the engine's default of ACES.
+ * tone mapping, three.js's default, so the null3D pages turn off the engine's default of ACES. The
+ * twins also draw every pixel of the canvas, so the null3D pages keep the render scale at 1.
  */
-export function setUpView({ scene, post }: SketchContext): Camera {
+export function setUpView({ scene, post, quality }: SketchContext): Camera {
 	post.set({ toneMapping: 'none' });
+	quality.set({ minRenderScale: 1 });
 	scene.setBackground(BACKGROUND);
 	scene.createDirectionalLight({
 		direction: SUN.direction,

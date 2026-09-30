@@ -20,7 +20,7 @@ use null3d_render::debug_lines::LineStore;
 use null3d_render::frame::{FrameBuilder, FrameInput, NO_MESH, RecordError};
 use null3d_render::geometry::{Geometry, box_geometry, sphere_geometry};
 use null3d_render::gpu_driven::{GpuDrivenRenderer, RendererConfig};
-use null3d_render::graph::ALL_LAYERS;
+use null3d_render::graph::{ALL_LAYERS, RenderScale};
 use null3d_render::materials::{MapSlot, Shading};
 use null3d_render::textures::{Sampling, TextureDesc};
 use null3d_render::view::{View, ViewId};
@@ -47,6 +47,8 @@ pub struct World<B: FrameBuilder = GpuDrivenRenderer> {
     pub canvas: (u32, u32),
     /// The debug lines of the frame that records next, which it then forgets, as the engine does.
     pub lines: LineStore,
+    /// The render scale of the frames that record next.
+    pub render_scale: RenderScale,
 }
 
 impl World {
@@ -148,6 +150,7 @@ impl<B: FrameBuilder> World<B> {
             frame: 1,
             canvas: (640, 360),
             lines: LineStore::default(),
+            render_scale: RenderScale::FULL,
         }
     }
 
@@ -201,6 +204,7 @@ impl<B: FrameBuilder> World<B> {
             batches: &self.batches,
             snapshot: &self.snapshot,
             canvas: self.canvas,
+            render_scale: self.render_scale,
             structure_changed,
             jobs: &self.jobs,
             lines: self.lines.lines(),

@@ -163,6 +163,7 @@ export class WebGPUSceneRenderer implements Renderer {
 		record.count(Counter.DrawCalls, backend.counts.drawCalls);
 		record.count(Counter.Dispatches, backend.counts.dispatches);
 		record.count(Counter.Pipelines, backend.counts.pipelines);
+		record.count(Counter.GpuObjects, backend.counts.objects);
 		backend.resetCounts();
 	}
 
@@ -272,6 +273,7 @@ export class WebGL2SceneRenderer implements Renderer {
 		record.count(Counter.UploadBytes, backend.counts.uploadBytes);
 		record.count(Counter.DrawCalls, backend.counts.drawCalls);
 		record.count(Counter.Pipelines, backend.counts.pipelines);
+		record.count(Counter.GpuObjects, backend.counts.objects);
 		backend.resetCounts();
 	}
 

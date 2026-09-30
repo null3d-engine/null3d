@@ -91,28 +91,56 @@ impl Output {
         self.tone_mapping.apply(c.map(|v| v * self.exposure))
     }
 
-    /// The block the shaders read.
+    /// The block the shaders read, with no flags and no render size.
     pub fn uniform(self) -> OutputUniform {
         OutputUniform {
             exposure: self.exposure,
             tone_mapping: self.tone_mapping.code(),
-            spare: [0; 2],
+            flags: 0,
+            render_size: 0,
         }
     }
 }
 
-/// The output settings as the shaders' `Output` block lays them out.
+/// Bits of [`OutputUniform::flags`], which the final pass reads.
+pub mod output_flags {
+    /// The scene color holds display color already, as the 8-bit path's shaders write it, so the
+    /// final pass only copies it.
+    pub const DISPLAY_COLOR: u32 = 1;
+}
+
+/// The output settings as the shaders' `Output` block lays them out. Scene shaders read the
+/// exposure and the tone mapping. The final pass also reads the flags and the render size.
 #[repr(C)]
 #[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct OutputUniform {
     pub exposure: f32,
     pub tone_mapping: u32,
-    pub spare: [u32; 2],
+    /// Bits from [`output_flags`].
+    pub flags: u32,
+    /// The part of the scene color that the scene drew, from its top-left corner: the width in
+    /// pixels in the low 16 bits, and the height in the high 16 bits.
+    pub render_size: u32,
 }
 
 const _: () = assert!(std::mem::size_of::<OutputUniform>() == OUTPUT_UNIFORM_BYTES as usize);
 
 impl OutputUniform {
+    /// Says whether the scene color holds display color already.
+    pub fn set_display_color(&mut self, display: bool) {
+        if display {
+            self.flags |= output_flags::DISPLAY_COLOR;
+        } else {
+            self.flags &= !output_flags::DISPLAY_COLOR;
+        }
+    }
+
+    /// Sets the size the scene drew at, in pixels. Each side keeps its low 16 bits, which hold any
+    /// texture size a GPU makes.
+    pub fn set_render_size(&mut self, (width, height): (u32, u32)) {
+        self.render_size = (width & 0xffff) | (height & 0xffff) << 16;
+    }
+
     /// The block as bytes, for an upload.
     pub fn as_bytes(&self) -> &[u8] {
         // SAFETY: the struct is `repr(C)` and made only of 4-byte fields, so it has no padding, and
@@ -367,6 +395,27 @@ mod tests {
         let uniform = brighter.uniform();
         assert_eq!((uniform.exposure, uniform.tone_mapping), (2.0, 0));
         assert_eq!(uniform.as_bytes().len(), OUTPUT_UNIFORM_BYTES as usize);
+    }
+
+    #[test]
+    fn the_final_pass_reads_its_flags_and_the_render_size_from_the_spare_words() {
+        let mut uniform = Output::default().uniform();
+        assert_eq!((uniform.flags, uniform.render_size), (0, 0));
+        uniform.set_display_color(true);
+        uniform.set_render_size((1001, 600));
+        assert_eq!(uniform.flags, output_flags::DISPLAY_COLOR);
+        assert_eq!(uniform.render_size & 0xffff, 1001);
+        assert_eq!(uniform.render_size >> 16, 600);
+        uniform.set_display_color(false);
+        assert_eq!(uniform.flags, 0);
+        // The shader library's block has the same words in the same order.
+        let library = include_str!("../../null3d-shaders/wgsl/lib/tonemap.wgsl");
+        let block =
+            "    exposure: f32,\n    tone_mapping: u32,\n    flags: u32,\n    render_size: u32,\n";
+        assert!(
+            library.contains(block),
+            "tonemap.wgsl's Output block differs"
+        );
     }
 
     #[test]

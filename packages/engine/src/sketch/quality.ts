@@ -3,6 +3,7 @@
 // settings their first values. A sketch changes the settings that can change during play, and the
 // engine applies each change from the next frame on.
 
+import { EngineError } from '../errors/engine-error';
 import { checkSettings, type QualityPreset, type QualitySettings } from '../quality/presets';
 
 /** The preset and the settings that the page starts a sketch with. */
@@ -25,9 +26,16 @@ export interface Quality {
 	 */
 	readonly settings: Readonly<QualitySettings>;
 	/**
+	 * The render scale that the engine draws the scene at: the part of the canvas's width and
+	 * height, from `minRenderScale` to `maxRenderScale`. The engine lowers it when frames take too
+	 * long and raises it again when they have time to spare. A change of the range applies to the
+	 * frame being drawn.
+	 */
+	readonly renderScale: number;
+	/**
 	 * Changes settings from the next frame on. It takes the settings that can change during play,
-	 * each with a value that the setting takes, and throws E1213 for any other setting or value. A
-	 * setting that it does not get keeps its value.
+	 * each with a value that the setting takes, and throws E1213 for any other setting or value, or
+	 * for a `minRenderScale` above `maxRenderScale`. A setting that it does not get keeps its value.
 	 */
 	set(settings: Partial<QualitySettings>): void;
 	/**
@@ -37,7 +45,10 @@ export interface Quality {
 	onChange(handler: (quality: Quality) => void): () => void;
 }
 
-/** The sketch's quality API. `apply` gives the page the settings after each change. */
+/**
+ * The sketch's quality API. `apply` gives the engine the settings after each change, and `scale`
+ * reads the render scale.
+ */
 export class SketchQuality implements Quality {
 	readonly preset: QualityPreset;
 	readonly settings: QualitySettings;
@@ -47,13 +58,25 @@ export class SketchQuality implements Quality {
 	constructor(
 		start: QualityStart,
 		private readonly apply: (settings: QualitySettings) => void,
+		private readonly scale: () => number = () => 1,
 	) {
 		this.preset = start.preset;
 		this.settings = { ...start.settings };
 	}
 
+	get renderScale(): number {
+		return this.scale();
+	}
+
 	set(settings: Partial<QualitySettings>): void {
 		checkSettings('quality.set()', settings);
+		const lowest = settings.minRenderScale ?? this.settings.minRenderScale;
+		const highest = settings.maxRenderScale ?? this.settings.maxRenderScale;
+		if (lowest > highest)
+			throw new EngineError(
+				'E1213',
+				`quality.set() would give minRenderScale ${lowest}, above maxRenderScale ${highest}. Give both in one call to change them together.`,
+			);
 		const current = this.settings as unknown as Record<string, unknown>;
 		let changed = false;
 		for (const [name, value] of Object.entries(settings)) {

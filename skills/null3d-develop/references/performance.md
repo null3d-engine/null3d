@@ -76,6 +76,7 @@ These numbers are starting points. The engine docs page `guides/performance` hol
 - Many phones run the WebGL2 path (for example Samsung Exynos phones in Chrome 154). Budget for it.
 - On the WebGL2 path (0.2), job workers hide objects that sit behind blocker meshes, which the asset tool makes from large static meshes. See-through meshes such as glass and fences must not be blockers: call `setOccluder(false)` on them if the tool picked them.
 - Pixel ratio is the largest GPU lever: a ratio of 3 draws 2.25 times the pixels of a ratio of 2. Presets cap it; do not raise the cap on phones.
+- Dynamic resolution is on by default. When frames run over budget, the engine draws the scene at a lower render scale, down to 0.5 on Low. It scales the image up to the canvas. Read it in `quality.renderScale`. `quality.set({ minRenderScale: 1 })` turns it off. One value for both `minRenderScale` and `maxRenderScale` fixes the scale (`concepts/quality-presets`). Draw text and interface in HTML over the canvas, which stays sharp.
 - The engine starts phones and tablets on lighter presets than desktops, and WebGL2 runs at most Medium. The page reads the preset in `engine.mode.preset`, and `?preset=low` fixes one for a test (`concepts/quality-presets`).
 - After a start that crashed the tab, the engine starts one preset lower, and at Low after two. A phone that ran out of memory shows it in `engine.mode.crashedStarts`.
 - Shadows: one cascade on Low, two on Medium. Each shadowed point light draws the scene six times; avoid them on phones.

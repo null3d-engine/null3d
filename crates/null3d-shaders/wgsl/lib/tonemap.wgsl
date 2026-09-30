@@ -14,13 +14,17 @@ const NEUTRAL: u32 = 2u;
 const NONE: u32 = 3u;
 
 /// How the output maps scene color to the display: the exposure that scales the scene color, and
-/// the tone mapping, by code. The last two words are spare, so the block fills 16 bytes.
+/// the tone mapping, by code. Only the final pass reads the last two words: its flags, and the
+/// size the scene drew at in pixels, the width in the low 16 bits and the height in the high 16.
 struct Output {
     exposure: f32,
     tone_mapping: u32,
-    spare_a: u32,
-    spare_b: u32,
+    flags: u32,
+    render_size: u32,
 }
+
+/// The flag of a scene color that holds display color already, which the final pass only copies.
+const DISPLAY_COLOR: u32 = 1u;
 
 /// Linear scene color after the exposure and the tone mapping: linear color from 0 to 1. Without
 /// tone mapping, the exposed color is clipped at 1, as three.js's LinearToneMapping does.
