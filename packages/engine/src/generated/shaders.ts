@@ -90,7 +90,7 @@ export const CULL_SHADER: {
 			source: `struct CullParams {
     planes: array<vec4<f32>, 6>,
     instance_count: u32,
-    pad0_: u32,
+    layers: u32,
     pad1_: u32,
     pad2_: u32,
     cell_offsets: array<vec4<f32>, 512>,
@@ -124,9 +124,12 @@ var<storage> buckets: array<Bucket>;
 var<storage, read_write> visible: array<vec4<f32>>;
 @group(0) @binding(5)
 var<storage, read_write> indirect: array<atomic<u32>>;
+@group(0) @binding(6)
+var<storage> instance_layers: array<u32>;
 
 @compute @workgroup_size(128, 1, 1)
 fn main(@builtin(global_invocation_id) id: vec3<u32>) {
+    var local: bool;
     var p: u32 = 0u;
     var d: u32 = 1u;
 
@@ -136,56 +139,64 @@ fn main(@builtin(global_invocation_id) id: vec3<u32>) {
         return;
     }
     let entry = instance_buckets[i];
-    if (entry == HIDDEN) {
+    if !((entry == HIDDEN)) {
+        let _e16 = instance_layers[i];
+        let _e19 = params.layers;
+        local = ((_e16 & _e19) == 0u);
+    } else {
+        local = true;
+    }
+    let _e26 = local;
+    if _e26 {
         return;
     }
     let b = (entry & 8388607u);
     let offset = params.cell_offsets[(entry >> CELL_SHIFT)];
-    let _e25 = matrices[(i * 3u)];
-    let r0_ = (_e25 + vec4<f32>(0f, 0f, 0f, offset.x));
-    let _e38 = matrices[((i * 3u) + 1u)];
-    let r1_ = (_e38 + vec4<f32>(0f, 0f, 0f, offset.y));
-    let _e51 = matrices[((i * 3u) + 2u)];
-    let r2_ = (_e51 + vec4<f32>(0f, 0f, 0f, offset.z));
+    let _e39 = matrices[(i * 3u)];
+    let r0_ = (_e39 + vec4<f32>(0f, 0f, 0f, offset.x));
+    let _e52 = matrices[((i * 3u) + 1u)];
+    let r1_ = (_e52 + vec4<f32>(0f, 0f, 0f, offset.y));
+    let _e65 = matrices[((i * 3u) + 2u)];
+    let r2_ = (_e65 + vec4<f32>(0f, 0f, 0f, offset.z));
     let center = vec3<f32>(r0_.w, r1_.w, r2_.w);
     let scale = max(length(vec3<f32>(r0_.x, r1_.x, r2_.x)), max(length(vec3<f32>(r0_.y, r1_.y, r2_.y)), length(vec3<f32>(r0_.z, r1_.z, r2_.z))));
     let bucket = buckets[b];
     let radius = (bucket.radius * scale);
     loop {
-        let _e85 = p;
-        if (_e85 < 6u) {
+        let _e99 = p;
+        if (_e99 < 6u) {
         } else {
             break;
         }
         {
-            let _e90 = p;
-            let plane = params.planes[_e90];
+            let _e104 = p;
+            let plane = params.planes[_e104];
             if ((dot(plane.xyz, center) + plane.w) < -(radius)) {
                 return;
             }
         }
         continuing {
-            let _e100 = p;
-            p = (_e100 + 1u);
+            let _e114 = p;
+            p = (_e114 + 1u);
         }
     }
-    let _e110 = atomicAdd((&indirect[((bucket.first_draw * INDIRECT_WORDS) + 1u)]), 1u);
+    let _e124 = atomicAdd((&indirect[((bucket.first_draw * INDIRECT_WORDS) + 1u)]), 1u);
     loop {
-        let _e112 = d;
-        if (_e112 < bucket.draws) {
+        let _e126 = d;
+        if (_e126 < bucket.draws) {
         } else {
             break;
         }
         {
-            let _e116 = d;
-            let _e125 = atomicAdd((&indirect[(((bucket.first_draw + _e116) * INDIRECT_WORDS) + 1u)]), 1u);
+            let _e130 = d;
+            let _e139 = atomicAdd((&indirect[(((bucket.first_draw + _e130) * INDIRECT_WORDS) + 1u)]), 1u);
         }
         continuing {
-            let _e127 = d;
-            d = (_e127 + 1u);
+            let _e141 = d;
+            d = (_e141 + 1u);
         }
     }
-    let dst = ((bucket.base + _e110) * 4u);
+    let dst = ((bucket.base + _e124) * 4u);
     visible[dst] = r0_;
     visible[(dst + 1u)] = r1_;
     visible[(dst + 2u)] = r2_;

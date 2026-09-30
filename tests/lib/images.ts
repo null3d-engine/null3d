@@ -8,12 +8,13 @@
 // image without a reference, or one that differs from its reference, becomes a candidate under
 // test-results/images/, with its diff. Only the review step (tests/review-images.ts) turns a
 // candidate into a reference.
-import { copyFileSync, existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { dirname, join, relative } from 'node:path';
+import { copyFileSync, existsSync, rmSync, writeFileSync } from 'node:fs';
+import { join, relative } from 'node:path';
 import { isDeepStrictEqual } from 'node:util';
-import { decode } from 'fast-png';
 import pixelmatch from 'pixelmatch';
-import { encodePng, percent, type RgbaImage, TIERS, type Tier } from '../../bench/lib/parity.ts';
+import { percent, type RgbaImage, TIERS, type Tier } from '../../bench/lib/parity.ts';
+import { ENVIRONMENTS, type Environment } from '../../packages/cli/src/browser.js';
+import { readPng, writePng } from '../../packages/cli/src/png.js';
 import {
 	ENGINE_MODES,
 	type EngineMode,
@@ -24,15 +25,10 @@ import {
 import { type ItemResult, slug } from './runs.ts';
 import { REPO_ROOT } from './server.ts';
 
-export { TIERS, type Tier };
-
-/**
- * The environments that keep a full set of references, one folder each: Chromium on SwiftShader,
- * the software GPU that CI draws with, and Chrome on the real GPU of the Mac that makes the
- * references. The two differ at object edges.
- */
-export const ENVIRONMENTS = ['chromium-swiftshader', 'chrome-real-gpu'] as const;
-export type Environment = (typeof ENVIRONMENTS)[number];
+// Each environment keeps a full set of references, one folder each: Chromium on SwiftShader, the
+// software GPU that CI draws with, and Chrome on the real GPU of the Mac that makes the references.
+// The two differ at object edges.
+export { ENVIRONMENTS, type Environment, readPng, TIERS, type Tier, writePng };
 
 /** The environment whose references other browsers and devices compare with. */
 export const REAL_GPU: Environment = 'chrome-real-gpu';
@@ -149,7 +145,7 @@ export interface ImageRun {
 }
 
 /** The tier the engine reports for each value of the ?gpu= switch. */
-const REPORTED_TIERS: Readonly<Record<Tier, string>> = {
+export const REPORTED_TIERS: Readonly<Record<Tier, string>> = {
 	webgpu: 'webgpu',
 	compat: 'webgpu-compat',
 	webgl2: 'webgl2',
@@ -379,18 +375,6 @@ export function clearCandidate(run: ImageRun, place: Place, dirs = HARNESS_DIRS)
 /** Removes every candidate that a place saved, as before a runner's results are judged again. */
 export function clearCandidates(place: Place, dirs = HARNESS_DIRS): void {
 	rmSync(join(dirs.candidates, drawnIn(place)), { recursive: true, force: true });
-}
-
-export function writePng(path: string, image: RgbaImage): void {
-	mkdirSync(dirname(path), { recursive: true });
-	writeFileSync(path, encodePng(image));
-}
-
-export function readPng(path: string): RgbaImage {
-	const { width, height, data, channels } = decode(readFileSync(path));
-	if (channels !== 4 || !(data instanceof Uint8Array))
-		throw new Error(`${path} is not an 8-bit RGBA image`);
-	return { width, height, data };
 }
 
 /**

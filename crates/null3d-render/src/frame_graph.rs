@@ -96,6 +96,8 @@ pub(crate) struct FrameGraph {
     graph: RenderGraph,
     /// What each declared pass records, by the pass's place in the order of declaration.
     roles: Vec<Role>,
+    /// Each view's opaque pass, by view.
+    opaque: Vec<PassId>,
     /// MSAA samples of the scene's color and depth targets.
     samples: u32,
     /// True when the GPU culls each view in a culling pass.
@@ -119,6 +121,7 @@ impl FrameGraph {
         Self {
             graph: RenderGraph::new(),
             roles: Vec::new(),
+            opaque: Vec::new(),
             samples,
             gpu_culling,
             views: 0,
@@ -145,10 +148,14 @@ impl FrameGraph {
         }
     }
 
-    /// Declares the passes again when the number of views changed.
+    /// Declares the passes again when the number of views changed, and gives each view's opaque
+    /// pass the view's layers, which change without a new plan.
     pub(crate) fn sync_views(&mut self, views: &[View]) {
         if views.len() != self.views {
             self.declare(views);
+        }
+        for (&pass, view) in self.opaque.iter().zip(views) {
+            self.graph.set_layers(pass, view.layers());
         }
     }
 
@@ -170,6 +177,7 @@ impl FrameGraph {
     fn declare(&mut self, views: &[View]) {
         self.graph.clear();
         self.roles.clear();
+        self.opaque.clear();
         let color = Target::color(COLOR_FORMAT).samples(self.samples);
         let depth = Target::depth(DEPTH_FORMAT).samples(self.samples);
         if self.gpu_culling {
@@ -189,7 +197,8 @@ impl FrameGraph {
             if self.gpu_culling {
                 pass = pass.reads(view_name(index, "visible", "visible"));
             }
-            self.add(pass, Role::Opaque(ViewId::from_index(index)));
+            let pass = self.add(pass, Role::Opaque(ViewId::from_index(index)));
+            self.opaque.push(pass);
         }
         let lines = Pass::new("DebugLines", PassKind::Scene)
             .writes(SCENE_COLOR)

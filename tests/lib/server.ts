@@ -144,18 +144,3 @@ export async function startServerAt(root: string, port: number): Promise<DevServ
 		);
 	return spawnServer(root, { NULL3D_HTTPS: '0', NULL3D_PORT: String(port) }, url, url);
 }
-
-/**
- * Chromium's flags for WebGPU and WebGL2 on SwiftShader, the software GPU that CI's Linux machines
- * draw with.
- */
-export const SWIFTSHADER_ARGS = [
-	'--enable-unsafe-webgpu',
-	'--enable-features=Vulkan',
-	'--use-angle=swiftshader',
-	'--use-vulkan=swiftshader',
-	'--enable-unsafe-swiftshader',
-	'--ignore-gpu-blocklist',
-	'--no-sandbox',
-	'--hide-scrollbars',
-];

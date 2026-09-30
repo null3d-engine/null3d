@@ -11,6 +11,10 @@
 //! clusters again, and the cluster texture gets their order. Every view culls the same runs of
 //! rows and clusters.
 //!
+//! Each view lists only the sources on its layers (see [`null3d_core::layers`]): the job workers
+//! test each scene object's mask, and a batch's one mask for all its rows and clusters. A mask
+//! change needs no rebuild, as the next frame culls with the new mask.
+//!
 //! Each index list entry holds its row, or its cluster, with the row's cell index above it (see
 //! [`null3d_core::cells`]). The job workers cull each run of rows in one cell against the view's
 //! frustum moved into that cell, and add each row's offset from the view's camera to its sphere
@@ -24,7 +28,7 @@ use std::collections::TryReserveError;
 
 use null3d_core::cells::ORIGIN_CELL;
 use null3d_core::culling::{
-    BY_ROW, BucketedCull, CULL_CHUNK, CullRun, CullSet, NO_BUCKET, ROW_CELLS,
+    BY_ROW, BucketedCull, CULL_CHUNK, CullRun, CullSet, CullView, NO_BUCKET, ROW_CELLS, SetLayers,
 };
 use null3d_gpu::drawlist::DrawList;
 
@@ -257,39 +261,49 @@ impl Culling {
         }
         let (batches, clusters) = (input.batches, &*clusters);
         let slots = &layout.batches;
+        // Scene objects test their own masks, unless every one has the same mask.
+        let scene_layers = scene
+            .common_layers()
+            .map_or(SetLayers::Rows(scene.layers()), SetLayers::All);
         let sets = |set: u32| -> CullSet<'_> {
             let set = set as usize;
             if set == 0 {
                 return CullSet {
                     spheres: scene.world(parity).spheres(),
                     cells: scene.cells(),
+                    layers: scene_layers,
                 };
             }
-            if set <= slots.len() {
-                let batch = batches
-                    .get(slots[set - 1].id)
-                    .expect("the layout names live batches");
+            // Sets 1 to n are the batches' rows, and the next n their clusters.
+            let rows = set <= slots.len();
+            let slot = &slots[if rows { set - 1 } else { set - 1 - slots.len() }];
+            let batch = batches.get(slot.id).expect("the layout names live batches");
+            let layers = SetLayers::All(batch.layers());
+            if rows {
                 return CullSet {
                     spheres: batch.world(parity).spheres(),
                     cells: batch.cells(),
+                    layers,
                 };
             }
             CullSet {
-                spheres: clusters
-                    .set(&slots[set - 1 - slots.len()])
-                    .clusters
-                    .spheres(),
+                spheres: clusters.set(slot).clusters.spheres(),
                 cells: &[],
+                layers,
             }
         };
         for view in &mut self.views {
             let Some(frame) = &view.frame else {
                 continue;
             };
+            let cull_view = CullView {
+                frustum: &frame.frustum,
+                offsets: view.offsets.as_slice(),
+                layers: frame.layers,
+            };
             null3d_core::culling::cull_into_buckets(
                 input.jobs,
-                &frame.frustum,
-                view.offsets.as_slice(),
+                cull_view,
                 &sets,
                 &self.runs,
                 &layout.scene_buckets,
