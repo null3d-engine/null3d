@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'bun:test';
-import { lockedVersion, memoryImportLimits, parseOptions, releaseTarget } from './build-wasm';
+import {
+	addReleaseInstance,
+	lockedVersion,
+	memoryImportLimits,
+	parseOptions,
+	releaseTarget,
+} from './build-wasm';
 
 describe('parseOptions', () => {
 	it('reads the size check, its base, the base build, the names build and the core build', () => {
@@ -73,5 +79,40 @@ describe('memoryImportLimits', () => {
 
 	it('returns null for a module without imports', () => {
 		expect(memoryImportLimits(new Uint8Array(header))).toBeNull();
+	});
+});
+
+describe('addReleaseInstance', () => {
+	const glue = [
+		'let cachedFloat64ArrayMemory0 = null;',
+		'let cachedTextDecoder = new TextDecoder();',
+		'let cachedUint8ArrayMemory0 = null;',
+		'let wasmModule, wasmInstance, wasm;',
+		'function initSync(module, memory) {',
+		'    if (wasm !== undefined) return wasm;',
+		'}',
+		'',
+	].join('\n');
+
+	it('adds a function that drops the instance and every view of its memory', () => {
+		const released = addReleaseInstance(glue);
+		expect(released.startsWith(glue)).toBe(true);
+		expect(released.slice(glue.length)).toBe(
+			[
+				'',
+				'export function releaseInstance() {',
+				'    wasmModule = wasmInstance = wasm = undefined;',
+				'    cachedFloat64ArrayMemory0 = null;',
+				'    cachedUint8ArrayMemory0 = null;',
+				'}',
+				'',
+			].join('\n'),
+		);
+	});
+
+	it('fails on glue that holds its instance in another way', () => {
+		expect(() => addReleaseInstance(glue.replace('wasmInstance, ', ''))).toThrow(
+			'update addReleaseInstance',
+		);
 	});
 });

@@ -91,6 +91,7 @@ URL switches for the dev server (engine docs `guides/testing`):
 | `?gpu=webgpu`, `?gpu=compat`, `?gpu=webgl2` | Force a GPU tier, if the device supports it |
 | `?threads=off` | Single-threaded build |
 | `?render=main` | Render on the main thread |
+| `?sketch-thread=main` | Run the sketch on the main thread, over the `sketchThread` option |
 | `?uploads=copy` | On WebGL2, copy each upload out of shared memory first, as browsers that refuse shared memory need |
 | `?depth=reversed-gl` | On WebGL2, force a depth mode: `reversed`, `reversed-gl` (as in browsers without `EXT_clip_control`, such as Firefox) or `standard` (`concepts/backends`) |
 | `?latency=pipelined`, `?latency=low` | Latency mode |
