@@ -51,11 +51,15 @@ export class RefreshMeter {
 	private readonly sorted = new Int32Array(SAMPLES);
 	private count = 0;
 	private last = -1;
+	private matched = true;
+
 	/**
 	 * False when the last measurement matched no display's rate, as the callbacks of a timer do;
 	 * true before the first measurement.
 	 */
-	onDisplayRate = true;
+	get onDisplayRate(): boolean {
+		return this.matched;
+	}
 
 	/** Adds a frame callback's timestamp; returns the refresh rate each time the samples fill up. */
 	tick(timestamp: number): number | undefined {
@@ -78,7 +82,7 @@ export class RefreshMeter {
 		}
 		if (near === 0 || sum === 0) return undefined;
 		const display = displayRateNear(sum, near);
-		this.onDisplayRate = display !== 0;
+		this.matched = display !== 0;
 		return display || Math.round((MICROSECONDS_PER_SECOND * near) / sum);
 	}
 }
