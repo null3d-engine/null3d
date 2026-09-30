@@ -27,11 +27,10 @@ import {
 	type Pipeline,
 	type Program,
 	prepareProgram,
-	SLOTS_PER_GROUP,
+	slotOf,
+	UPLOAD_UNIT,
 } from './programs';
 
-/** The texture unit that texture uploads and copies use, apart from the units that bind groups use. */
-const UPLOAD_UNIT = 15;
 /** The unit that the mip level shader samples: its source texture's group 0, binding 0. */
 const MIP_UNIT = 0;
 /** The key of the mip level program among the programs of pipelines. */
@@ -1356,7 +1355,7 @@ export class WebGL2Backend {
 		let dynamic = 0;
 		for (let k = 0; k < entries.length; k++) {
 			const entry = entries[k] as BindEntry;
-			const slot = group * SLOTS_PER_GROUP + entry.binding;
+			const slot = slotOf(group, entry.binding);
 			if (entry.kind === G.RESOURCE_BUFFER) {
 				const buffer = this.need(this.buffers, entry.resource, 'buffer');
 				const offset = entry.offset + (dynamic < offsets ? (words[a + 3 + dynamic] as number) : 0);
