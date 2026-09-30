@@ -542,13 +542,20 @@ impl SceneSettings {
     }
 
     /// The pipeline that draws the depth of a shadow caster whose mesh and material draw with
-    /// `pipeline`: only its back faces, as three.js draws them with its filtered shadow maps.
+    /// `pipeline`: only its back faces, as three.js draws them with its filtered shadow maps, or
+    /// both faces of a double-sided material. The material's depth bias moves what the camera sees,
+    /// so the caster draws without it.
     pub fn caster_of(&self, pipeline: DrawKey) -> DrawKey {
+        let faces = if pipeline.state & state_flags::CULL_NONE != 0 {
+            state_flags::CULL_NONE
+        } else {
+            state_flags::CULL_FRONT
+        };
         DrawKey {
             template: template::SHADOW_DEPTH,
             permutation: 0,
             vertex_format: pipeline.vertex_format,
-            state: state_flags::CULL_FRONT,
+            state: faces,
             bias: DepthBias::NONE,
         }
     }

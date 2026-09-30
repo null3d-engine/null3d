@@ -3,9 +3,9 @@ enable draw_index;
 // Meshes drawn by instance with the standard material: glTF's metallic-roughness model, shaded
 // with the formulas of three.js's MeshStandardMaterial. null3d::mesh finds each instance on both
 // GPU paths, and null3d::lighting holds the formulas. `light_surface` gathers the scene's lights,
-// so the rest of the shader does not change with where the lights come from. The RECEIVE_SHADOWS
-// builds dim the sun's light where the main directional light's shadows fall. The ALPHA_MASK
-// builds draw nothing where the surface's alpha falls below the material's cutoff.
+// so the rest of the shader does not change with where the lights come from. The ALPHA_MASK builds
+// draw nothing where the surface's alpha falls below the material's cutoff. The RECEIVE_SHADOWS
+// builds dim the sun's light where the main directional light's shadows fall.
 #import null3d::color
 #import null3d::lighting
 #import null3d::mesh::{InstanceIn, clip_of, find_instance, frame, material_of}
