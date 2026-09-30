@@ -13,10 +13,10 @@ use null3d_gpu::drawlist::{DrawList, Op, buffer_usage as usage, sizes};
 
 use super::ids;
 use crate::frame::{
-    FrameInput, HIDDEN, PipelineKey, PipelineTable, RecordError, SceneSettings, UploadArena,
-    address, bucket_of, collect_bucket_keys, drawn_rows, floats_as_bytes, grown_size,
-    words_as_bytes,
+    FrameInput, HIDDEN, RecordError, SceneSettings, UploadArena, address, bucket_of,
+    collect_bucket_keys, drawn_rows, floats_as_bytes, grown_size, words_as_bytes,
 };
+use crate::pipelines::{DrawKey, PassTargets, PipelineCache};
 
 /// Bytes of one bucket record in the culling shader: base, material, radius, first draw, draw
 /// count, and the centre of the local sphere that culls the bucket's sources.
@@ -24,10 +24,11 @@ const BUCKET_BYTES: u32 = 32;
 /// Bytes of one world matrix: three rows of four floats.
 const MATRIX_BYTES: u32 = (MATRIX_FLOATS * 4) as u32;
 
-/// What makes a bucket, in draw order: its pipeline, the mesh page of its mesh's first part, its
-/// engine mesh and material ids, and the bounds that cull its sources (see [`bounds_of`]). The
-/// WebGL2 builder's keys have the same type, so both share one sort.
-type BucketKey = (PipelineKey, u32, u32, u32, u32);
+/// What makes a bucket, in draw order: what its mesh and material ask of their pipeline, the mesh
+/// page of its mesh's first part, its engine mesh and material ids, and the bounds that cull its
+/// sources (see [`bounds_of`]). The WebGL2 builder's keys have the same type, so both share one
+/// sort.
+type BucketKey = (DrawKey, u32, u32, u32, u32);
 
 /// The bounds of sources culled with their mesh's sphere, centred on their origin.
 const MESH_BOUNDS: u32 = 0;
@@ -200,12 +201,15 @@ impl Layout {
     }
 
     /// Assigns every source to a bucket and lays the buckets out, from the frame's world state,
-    /// with each bucket's pipeline id from `pipelines`. It reuses the layout's tables and scratch
-    /// space, which grow only with the scene. A scene of more than `limit` sources fails.
+    /// with each bucket's pipeline id from `pipelines`, for a pass that draws into `targets`. It
+    /// reuses the layout's tables and scratch space, which grow only with the scene. A scene of
+    /// more than `limit` sources fails.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn rebuild(
         &mut self,
         settings: &SceneSettings,
-        pipelines: &mut PipelineTable,
+        pipelines: &mut PipelineCache,
+        targets: PassTargets,
         scene: &SceneStorage,
         batches: &BatchTable,
         parity: usize,
@@ -252,7 +256,7 @@ impl Layout {
             let parts = meshes.parts(slot);
             let (center, radius) = local_sphere(scene, bounds, slot.radius);
             self.buckets.push(Bucket {
-                pipeline: pipelines.id(pipeline),
+                pipeline: pipelines.id(pipeline.in_pass(targets)),
                 material,
                 base,
                 capacity: count,
@@ -479,6 +483,7 @@ impl Layout {
 mod tests {
     use null3d_core::jobs::JobSystem;
     use null3d_core::scene::Command;
+    use null3d_gpu::drawlist::format;
 
     use super::*;
     use crate::geometry::box_geometry;
@@ -515,11 +520,18 @@ mod tests {
         let mut layout = Layout::default();
         let batches = BatchTable::with_capacity(1);
         let parity = scene.parity();
-        let mut pipelines = PipelineTable::default();
+        let mut pipelines = PipelineCache::default();
+        let targets = PassTargets {
+            color_format: format::CANVAS,
+            depth_format: format::DEPTH32_FLOAT,
+            samples: 4,
+            permutation: 0,
+        };
         layout
             .rebuild(
                 &settings,
                 &mut pipelines,
+                targets,
                 &scene,
                 &batches,
                 parity,

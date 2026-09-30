@@ -259,6 +259,7 @@ version = "0.0.0"
 dependencies = [
  "naga",
  "naga_oil",
+ "null3d-gpu",
  "serde",
  "serde_json",
  "toml",
