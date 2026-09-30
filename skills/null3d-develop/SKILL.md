@@ -105,7 +105,7 @@ Each rule comes with its reason, because the reason covers cases the rule does n
 8. Use layer masks to limit work. A raycast with a mask tests fewer objects, and a camera with a mask draws fewer. (`concepts/render-layers`)
 9. Respect the quality preset. Do not force High settings on phones. Listen to `quality.onChange` to scale your own systems, such as particle counts or AI update rates. (`concepts/quality-presets`)
 10. Ship optimized assets: glTF with meshopt compression and KTX2 textures, made with `bunx @null3d/cli assets optimize`. Large PNG files and uncompressed meshes cost download time and GPU memory. (`guides/assets-pipeline`)
-11. Keep custom WGSL portable: use only the three language features every browser shares, stay within the portable limits, and write flat interpolation as `@interpolate(flat, either)`. The build rejects anything else. (`shaders/wgsl-rules`)
+11. Keep custom WGSL portable. Use only the three language features every browser shares, and write flat interpolation as `@interpolate(flat, either)`. The build rejects other features, `enable` lines and `f16`, but it cannot check the portable limits or `textureSample` in branches. Test those on each GPU path. (`shaders/wgsl-rules`)
 12. Never branch on GPU names or user agents; read `engine.capabilities` on the page. Several browsers hide GPU names, and a name does not tell you what the engine enabled.
 
 ## 5. Choosing the right tool

@@ -311,6 +311,65 @@ fn tier1_storage_texel_formats_are_rejected() {
     assert_feature(source, "texture_formats_tier1", 1, "r8unorm");
 }
 
+/// Asserts that a shader with one WGSL variant fails once, at the first `at` in a line of the entry
+/// shader, with a message that holds `needs` and ends with a link to the rules page.
+fn assert_optional_feature(source: &str, line: u32, at: &str, needs: &str) {
+    let problem = only_problem(build_wgsl(source));
+    let shown = problem.to_string();
+    assert_eq!(problem.feature, None, "{shown}");
+    assert_eq!(problem.file.as_deref(), Some(SHADER), "{shown}");
+    let column = column_of(source, line, at);
+    assert_eq!(
+        (problem.line, problem.column),
+        (Some(line), Some(column)),
+        "{shown}"
+    );
+    assert!(problem.message.contains(needs), "{shown}");
+    assert!(problem.message.ends_with(SEE_RULES), "{shown}");
+}
+
+#[test]
+fn enable_f16_is_rejected_once_with_a_fix() {
+    let source = "enable f16;\n\n@fragment\nfn fs_main() -> @location(0) vec4f {\n    let half: f16 = 0.5h;\n    return vec4f(f32(half));\n}\n";
+    assert_optional_feature(source, 1, "f16", "`shader-f16`");
+    let problem = only_problem(build_wgsl(source));
+    assert!(
+        problem.message.contains("Write the math in `f32`"),
+        "{problem}"
+    );
+}
+
+#[test]
+fn half_floats_without_enable_are_rejected_at_the_first_one() {
+    let typed = "@fragment\nfn fs_main() -> @location(0) vec4f {\n    let tint = vec3h(1.0, 0.5, 0.25);\n    let alpha: f16 = 1.0h;\n    return vec4f(vec3f(tint), f32(alpha));\n}\n";
+    assert_optional_feature(typed, 3, "vec3h", "The type `vec3h` uses 16-bit floats");
+    let valued =
+        "@fragment\nfn fs_main() -> @location(0) vec4f {\n    return vec4f(f32(0.5h));\n}\n";
+    assert_optional_feature(valued, 3, "0.5h", "The value `0.5h` uses 16-bit floats");
+}
+
+#[test]
+fn an_enable_line_for_an_optional_webgpu_feature_is_rejected() {
+    let shader = |extension: &str| {
+        format!(
+            "enable {extension};\n\n@fragment\nfn fs_main() -> @location(0) vec4f {{\n    return vec4f(1.0);\n}}\n"
+        )
+    };
+    assert_optional_feature(&shader("subgroups"), 1, "subgroups", "`subgroups`");
+    assert_optional_feature(
+        &shader("clip_distances"),
+        1,
+        "clip_distances",
+        "`clip-distances`",
+    );
+    assert_optional_feature(
+        &shader("chromium_experimental_framebuffer_fetch"),
+        1,
+        "chromium",
+        "not every browser supports",
+    );
+}
+
 #[test]
 fn vec2u_atomic_store_min_and_max_are_rejected() {
     let source = "@group(0) @binding(0) var<storage, read_write> depth: atomic<vec2<u32>>;\n\n@compute @workgroup_size(1)\nfn cs_main() {\n    atomicStoreMin(&depth, vec2u(1u, 2u));\n}\n";
