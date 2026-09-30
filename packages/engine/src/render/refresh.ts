@@ -50,7 +50,11 @@ export class RefreshMeter {
 	private readonly intervals = new Int32Array(SAMPLES);
 	private readonly sorted = new Int32Array(SAMPLES);
 	private count = 0;
-	private last = -1;
+	/**
+	 * The last callback's timestamp, or -1 before the first. It lives in a typed array: some
+	 * browsers make a new object for each fraction stored in a property.
+	 */
+	private readonly last = Float64Array.of(-1);
 	private matched = true;
 
 	/**
@@ -63,11 +67,12 @@ export class RefreshMeter {
 
 	/** Adds a frame callback's timestamp; returns the refresh rate each time the samples fill up. */
 	tick(timestamp: number): number | undefined {
-		if (this.last >= 0 && timestamp > this.last) {
-			const interval = Math.round((timestamp - this.last) * 1000);
+		const last = this.last[0] as number;
+		if (last >= 0 && timestamp > last) {
+			const interval = Math.round((timestamp - last) * 1000);
 			this.intervals[this.count++ % SAMPLES] = Math.min(interval, LONGEST_INTERVAL);
 		}
-		this.last = timestamp;
+		this.last[0] = timestamp;
 		if (this.count === 0 || this.count % SAMPLES !== 0) return undefined;
 		this.sorted.set(this.intervals);
 		this.sorted.sort();
