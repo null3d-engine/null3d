@@ -1,5 +1,8 @@
 import { describe, expect, it, spyOn } from 'bun:test';
+import { messageOf } from '../errors/message';
+import * as C from '../generated/core';
 import type { EngineCapabilities } from '../page/engine';
+import type { Material, MeshGeometry } from '../scene/resources';
 import { controlViews, createControlBuffer, Slot } from '../shared/control';
 import type { CoreGlue } from '../shared/core';
 import { createMetricsBuffer } from '../shared/metrics';
@@ -25,13 +28,40 @@ const CAPABILITIES: EngineCapabilities = {
 	depth: 'reversed',
 };
 
-/** A core that does nothing, and logs each frame step it takes. */
-function fakeGlue(log: string[]): CoreGlue {
+/** Scene slots of the fake core, and records of its command ring. */
+const CAPACITY = 15;
+const RING = 64;
+
+/**
+ * A core that keeps the scene arrays and the command ring in memory, hands out slots, and logs each
+ * frame step it takes. Its transform updates clear the dirty bits, as the core's do. Its other calls
+ * do nothing.
+ */
+function fakeGlue(log: string[], memory: WebAssembly.Memory): CoreGlue {
+	// Each scene field, then each ring field, in its own 4 KB block.
+	const block = (index: number) => 4096 * (index + 1);
+	const ringBlock = C.SCENE_FIELD_DIRTY_WORDS + 1;
+	let slots = 0;
+	const kept: Partial<Record<keyof CoreGlue, (field: number) => number>> = {
+		sceneCapacity: () => CAPACITY,
+		sceneArrays: block,
+		commandRing: (field) => (field === C.RING_FIELD_CAPACITY ? RING : block(ringBlock + field)),
+		reserveObject: () => ++slots,
+	};
+	const clearDirty = () =>
+		new Uint32Array(
+			memory.buffer,
+			block(C.SCENE_FIELD_DIRTY_WORDS),
+			Math.ceil((CAPACITY + 1) / 32),
+		).fill(0);
 	return new Proxy({} as CoreGlue, {
-		get: (_, name: string) => () => {
-			if (FRAME_STEPS.has(name)) log.push(name);
-			return name === 'drawTablesRebuilt' ? false : 0;
-		},
+		get: (_, name: string) =>
+			kept[name as keyof CoreGlue] ??
+			(() => {
+				if (FRAME_STEPS.has(name)) log.push(name);
+				if (name === 'updateTransforms' || name === 'updateLateTransforms') clearDirty();
+				return name === 'drawTablesRebuilt' ? false : 0;
+			}),
 	});
 }
 
@@ -45,9 +75,10 @@ async function start(
 	control.slotFloats[Slot.CanvasCssWidth] = 320;
 	control.slotFloats[Slot.CanvasCssHeight] = 180;
 	control.slotFloats[Slot.PixelRatio] = 2;
+	const memory = new WebAssembly.Memory({ initial: 1 });
 	const runner = new SketchRunner(() => {}, createMetricsBuffer(false, 0), {
-		glue: fakeGlue(log),
-		memory: new WebAssembly.Memory({ initial: 1 }),
+		glue: fakeGlue(log, memory),
+		memory,
 		control,
 		keyCodes: [],
 		jobWorkers: 0,
@@ -157,6 +188,36 @@ describe('SketchRunner', () => {
 			expect(log.filter((entry) => entry === 'fixed')).toHaveLength(2);
 			expect(log).toContain('update');
 			expect(error).toHaveBeenCalledTimes(1);
+		} finally {
+			error.mockRestore();
+		}
+	});
+
+	it('checks static objects before the late transform update too, which clears the marks of its setters', async () => {
+		const error = spyOn(console, 'error').mockImplementation(() => {});
+		try {
+			let skip = false;
+			const { runner } = await start(({ scene, time }) => {
+				const mesh = { id: 1, radius: 1 } as MeshGeometry;
+				const material = { id: 1 } as Material;
+				const crate = scene.createMesh({ name: 'Crate', mesh, material });
+				const sign = scene.createMesh({ name: 'Sign', mesh, material });
+				return {
+					onLateUpdate: () => {
+						sign.setPosition(time.frame, 0, 0);
+						if (skip) scene.views.positions[crate.slot * 3] = time.frame;
+					},
+				};
+			});
+			for (let k = 0; k < 3; k++) runner.step(k * 16);
+			expect(error).not.toHaveBeenCalled();
+			// A write that skips a setter in the late update shows in the same frame.
+			skip = true;
+			runner.step(48);
+			expect(error).toHaveBeenCalledTimes(1);
+			expect(messageOf(error.mock.calls[0]?.[0])).toStartWith(
+				'E1110: the position of "Crate" (slot 1) changed without a setter.',
+			);
 		} finally {
 			error.mockRestore();
 		}

@@ -4,7 +4,7 @@
 // then runs the sketch's late update and updates what that moved, and ends with the core's other
 // steps, which publish the frame's draw list. Each step's CPU time is recorded, and so is the time
 // each job worker spent on the frame's work. Development builds report static objects whose
-// transform changed without a setter, before the transform update. In hold mode it seeds this
+// transform changed without a setter, before each transform update. In hold mode it seeds this
 // thread's math.random and routes Math.random to it, steps the sketch to the held time in fixed
 // steps after the setup, and publishes the last frame alone. Hold mode reads no input, so the held
 // frame never depends on it.
@@ -265,6 +265,23 @@ export class SketchRunner {
 		Atomics.notify(slots, Slot.FramesPublished);
 	}
 
+	/**
+	 * Updates the world transforms of the objects that moved: every one, or with `late`, only those
+	 * that moved since the last update, and the objects below them. Development builds first report
+	 * static objects whose transform changed without a setter, because the update clears the marks
+	 * that setters leave.
+	 */
+	private updateTransforms(late: boolean): void {
+		if (DEV) {
+			const unmarked = this.context.scene.unmarkedWrites?.check();
+			if (unmarked) this.report(unmarked);
+		}
+		const { glue } = this.sketch;
+		if (late) glue.updateLateTransforms();
+		else glue.updateTransforms();
+		this.endPhase(Phase.Transforms);
+	}
+
 	/** Runs one frame at the clock's time and step, and returns its number. */
 	private frame(): number {
 		const start = performance.now();
@@ -314,13 +331,7 @@ export class SketchRunner {
 		glue.prepareJobs();
 		if (glue.beginFrame(frame) !== 0) this.report(coreFailure(glue, QUEUED_CHANGE));
 		this.endPhase(Phase.Commands);
-		if (DEV) {
-			// Before the update clears the marks that setters leave on static objects.
-			const unmarked = this.context.scene.unmarkedWrites?.check();
-			if (unmarked) this.report(unmarked);
-		}
-		glue.updateTransforms();
-		this.endPhase(Phase.Transforms);
+		this.updateTransforms(false);
 		if (callbacks.onLateUpdate) {
 			try {
 				callbacks.onLateUpdate(dt);
@@ -328,8 +339,7 @@ export class SketchRunner {
 				this.report(error);
 			}
 			this.endPhase(Phase.Update);
-			glue.updateLateTransforms();
-			this.endPhase(Phase.Transforms);
+			this.updateTransforms(true);
 		}
 		glue.updateBatches(frame);
 		this.endPhase(Phase.Batches);
