@@ -1,11 +1,15 @@
 import { describe, expect, test } from 'bun:test';
+import { existsSync } from 'node:fs';
+import { join } from 'node:path';
 import { decode } from 'fast-png';
 import {
+	BENCH_SCENES,
 	compareFrames,
 	compareImages,
 	comparisonName,
 	decodeHoldResult,
 	differenceText,
+	FEATURES_TO_COME,
 	formatStoredBaselines,
 	gpuApiOf,
 	gpuApiOfPage,
@@ -15,6 +19,7 @@ import {
 	JOBS_PAGES,
 	MAX_DIFFERENT_PERCENT,
 	PAGE_KINDS,
+	PARITY_SCENES,
 	PIXEL_THRESHOLD,
 	pagePath,
 	parityFiles,
@@ -235,6 +240,21 @@ describe('parityFiles', () => {
 	});
 });
 
+describe('the scenes', () => {
+	test('every benchmark scene has a null3D page, a three.js twin and a scene-code page', () => {
+		const root = join(import.meta.dirname, '../..');
+		for (const scene of BENCH_SCENES)
+			for (const kind of ['null3d-webgpu', 'threejs-webgl', 'scene-code'] as const)
+				expect(existsSync(join(root, pagePath(scene, kind).split('?')[0] as string))).toBe(true);
+	});
+
+	test('compares with three.js the scenes whose every feature null3D draws', () => {
+		expect(PARITY_SCENES).toEqual(['s1', 's1-static', 's1-cells', 's2']);
+		for (const scene of BENCH_SCENES)
+			expect(PARITY_SCENES.includes(scene)).toBe(FEATURES_TO_COME[scene].length === 0);
+	});
+});
+
 describe('the pages', () => {
 	test('each hold page lives in its engine folder with its GPU switch and hold mode', () => {
 		expect(holdPagePath('s1', 'threejs-webgl')).toBe(
@@ -339,7 +359,7 @@ describe('stored baselines', () => {
 		expect(Object.keys(JSON.parse(text).scenes)).toEqual(['s1', 's2']);
 		expect(parseStoredBaselines(text)).toEqual({ s1: 0.04372, s2: 0.00332 });
 		expect(
-			parseStoredBaselines(JSON.stringify({ scenes: { s1: 2, 's1-static': 'x', s3: 0.1 } })),
+			parseStoredBaselines(JSON.stringify({ scenes: { s1: 2, 's1-static': 'x', s9: 0.1 } })),
 		).toEqual({});
 		expect(parseStoredBaselines('{}')).toEqual({});
 	});
@@ -381,9 +401,14 @@ describe('parseParityArgs', () => {
 		});
 	});
 
+	test('compares a scene whose features null3D does not all draw yet only when asked', () => {
+		expect(parseParityArgs([]).scenes).not.toContain('s3');
+		expect(parseParityArgs(['--scene', 's3']).scenes).toEqual(['s3']);
+	});
+
 	test('refuses unknown names, a pair that is not two pages, and --tier with --pair', () => {
-		expect(() => parseParityArgs(['--scene', 's3'])).toThrow(
-			'"s3" is not a scene. Use one of: s1, s1-static, s1-cells, s2.',
+		expect(() => parseParityArgs(['--scene', 's9'])).toThrow(
+			'"s9" is not a scene. Use one of: s1, s1-static, s1-cells, s2, s3.',
 		);
 		expect(() => parseParityArgs(['--tier', 'webgl1'])).toThrow('"webgl1" is not a tier.');
 		expect(() => parseParityArgs(['--pair', 'threejs-webgl'])).toThrow(
