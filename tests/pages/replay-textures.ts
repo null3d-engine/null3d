@@ -9,6 +9,8 @@
 // asked for, and whether the WebGPU device has core features.
 import {
 	type GlslTemplate,
+	loadGlslShaders,
+	loadWgslShaders,
 	type RenderTemplate,
 	readbackWebGL2,
 	readbackWebGPU,
@@ -515,7 +517,8 @@ async function drawWebGPU(memory: TestMemory, images: ImageBitmap[]): Promise<Dr
 		format: 'rgba8unorm',
 		usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
 	});
-	const backend = new WebGPUBackend(device, undefined, 'rgba8unorm');
+	const shaders = await loadWgslShaders(0);
+	const backend = new WebGPUBackend(device, undefined, 'rgba8unorm', shaders);
 	backend.canvasTarget = target;
 	const stage = GPUShaderStage.FRAGMENT;
 	backend.defineLayout(LAYOUT_PARAMS, 'test params', [
@@ -570,7 +573,7 @@ async function drawWebGPU(memory: TestMemory, images: ImageBitmap[]): Promise<Dr
 	return { pixels, errors, core };
 }
 
-function drawWebGL2(memory: TestMemory, images: ImageBitmap[]): Drawn {
+async function drawWebGL2(memory: TestMemory, images: ImageBitmap[]): Promise<Drawn> {
 	const canvas = new OffscreenCanvas(WIDTH, HEIGHT);
 	const gl = canvas.getContext('webgl2', {
 		antialias: false,
@@ -587,7 +590,8 @@ function drawWebGL2(memory: TestMemory, images: ImageBitmap[]): Drawn {
 	gl.bindFramebuffer(gl.FRAMEBUFFER, framebuffer);
 	gl.framebufferRenderbuffer(gl.FRAMEBUFFER, gl.COLOR_ATTACHMENT0, gl.RENDERBUFFER, color);
 	// Reversed depth, as on WebGPU, so every path draws the same reference image.
-	const backend = new WebGL2Backend(gl, canvas, true, 'reversed');
+	const shaders = await loadGlslShaders(0);
+	const backend = new WebGL2Backend(gl, canvas, shaders, true, 'reversed');
 	backend.canvasTarget = { framebuffer, width: WIDTH, height: HEIGHT };
 	const shader = SHADERS.test_textures;
 	const templates: [number, GlslTemplate][] = [
@@ -614,7 +618,7 @@ run('replay-textures', async () => {
 		await createImageBitmap(imagePixels(), decode),
 	];
 	const { pixels, errors, core } =
-		tier === 'webgl2' ? drawWebGL2(memory, images) : await drawWebGPU(memory, images);
+		tier === 'webgl2' ? await drawWebGL2(memory, images) : await drawWebGPU(memory, images);
 	return {
 		tier: tier === 'compat' ? 'webgpu-compat' : tier,
 		core,

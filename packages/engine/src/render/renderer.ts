@@ -1,6 +1,7 @@
 // The renderer interface. The same renderer runs in the render worker (pipelined mode), in the sketch
 // worker (low-latency mode) or on the page's main thread (single-threaded mode and ?render=main).
 
+import { loadGlslShaders, loadWgslShaders } from '../generated/shaders';
 import { type Completion, FenceCompletion, QueueCompletion } from '../gpu/completion';
 import { readbackWebGL2, readbackWebGPU } from '../gpu/readback';
 import {
@@ -256,24 +257,50 @@ export async function createRenderer(
 	canvas: RenderCanvas,
 	options: RendererOptions,
 ): Promise<Renderer> {
+	const { scene, device, metrics } = options;
 	if (options.tier === 'webgl2') {
 		// A canvas keeps the settings of the first request for its context and ignores later ones,
 		// so the context is made here with the engine's settings, before anything else asks for it.
 		const gl = webgl2Context(canvas, options.powerPreference);
-		// After a loss, the context must come back before the engine can draw with it again.
-		await contextRestored(gl);
-		if (options.scene)
+		// After a loss, the context must come back before the engine can draw with it again. A
+		// scene's shaders download meanwhile.
+		const [, shaders] = await Promise.all([
+			contextRestored(gl),
+			scene && loadGlslShaders(device.shaderBits),
+		]);
+		if (scene && shaders)
 			return new WebGL2SceneRenderer(
 				canvas,
 				gl,
-				options.scene.memory,
-				options.scene.control,
-				options.metrics,
-				options.device,
+				scene.memory,
+				scene.control,
+				metrics,
+				device,
 				options.imageTable,
+				shaders,
 			);
-		return new WebGL2Renderer(canvas, gl, options.metrics);
+		return new WebGL2Renderer(canvas, gl, metrics);
 	}
+	const [gpu, shaders] = await Promise.all([
+		requestDevice(options),
+		scene && loadWgslShaders(device.shaderBits),
+	]);
+	if (scene && shaders)
+		return new WebGPUSceneRenderer(
+			gpu.tier,
+			gpu.device,
+			canvas,
+			scene.memory,
+			scene.control,
+			metrics,
+			options.imageTable,
+			shaders,
+		);
+	return new WebGPURenderer(gpu.tier, gpu.device, canvas, metrics);
+}
+
+/** Requests a WebGPU device with the features and limits that the engine uses, and its tier. */
+async function requestDevice(options: RendererOptions): Promise<{ tier: Tier; device: GPUDevice }> {
 	const adapter = await navigator.gpu?.requestAdapter({
 		featureLevel: 'compatibility',
 		powerPreference: options.powerPreference,
@@ -293,16 +320,5 @@ export async function createRenderer(
 			maxBufferSize: Math.max(binding, DEFAULT_MAX_BUFFER_BYTES),
 		},
 	});
-	const tier = core ? 'webgpu' : 'webgpu-compat';
-	if (options.scene)
-		return new WebGPUSceneRenderer(
-			tier,
-			device,
-			canvas,
-			options.scene.memory,
-			options.scene.control,
-			options.metrics,
-			options.imageTable,
-		);
-	return new WebGPURenderer(tier, device, canvas, options.metrics);
+	return { tier: core ? 'webgpu' : 'webgpu-compat', device };
 }

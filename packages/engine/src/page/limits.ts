@@ -1,10 +1,12 @@
 // What the engine core and the thread that draws need to know about the device: on WebGPU, the
 // storage binding size the engine asks the GPU for; on WebGL2, multi-draw, the texture size,
-// whether WebGL reads shared memory and how depth is stored. They also set how many objects and
+// whether WebGL reads shared memory and how depth is stored. The permutation bits that the device
+// fixes pick the shader module that the thread that draws loads. They also set how many objects and
 // instance rows a scene can draw, and past how many development builds warn that other devices of
 // the same GPU path draw fewer.
 
 import * as C from '../generated/core';
+import { PERMUTATION_DRAW_INDEX } from '../generated/gpu';
 import type { DepthMode, Switches } from './switches';
 
 /** The parts of the capability report that decide how the engine uses the device. */
@@ -42,6 +44,11 @@ export interface CoreDevice {
 	 * `KHR_parallel_shader_compile`, false to wait for each program's compile at its first draw.
 	 */
 	parallelCompile: boolean;
+	/**
+	 * The permutation bits that the device fixes, in every pipeline it builds: the draw index where
+	 * WebGL2 has multi-draw. They pick the module of shader builds that the thread that draws loads.
+	 */
+	shaderBits: number;
 }
 
 /** The depth mode of a WebGL2 device without `EXT_clip_control`. */
@@ -92,6 +99,7 @@ export function coreDevice(
 			sharedUploads: true,
 			depth: 'reversed',
 			parallelCompile,
+			shaderBits: 0,
 		};
 	}
 	const gl = report.webgl2;
@@ -105,6 +113,7 @@ export function coreDevice(
 		sharedUploads: !copyUploads && shared !== null && shared.bufferSubData && shared.texSubImage2D,
 		depth: webgl2Depth(gl.extensions.EXT_clip_control === true, depth),
 		parallelCompile,
+		shaderBits: multiDraw ? PERMUTATION_DRAW_INDEX : 0,
 	};
 }
 

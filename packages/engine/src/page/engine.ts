@@ -31,6 +31,7 @@ import type { SketchRunner } from '../sketch/runner';
 import type {
 	CapturedFrame,
 	CoreHandoff,
+	RendererRequest,
 	RendererSetup,
 	SketchWorkerInit,
 	WorkerReply,
@@ -259,8 +260,16 @@ export interface Engine {
 	 */
 	measure(seconds: number): Promise<FrameMetrics>;
 	/**
-	 * Draws one frame offscreen and returns its pixels as RGBA8 rows, top row first. In hold mode,
-	 * it returns the held frame.
+	 * Resolves with an image of the next frame that the engine draws, as a PNG file. The thread
+	 * that draws reads the frame back and encodes it, so the page's thread does no work for it when
+	 * a worker draws. In hold mode, and while the engine is paused, the image shows the frame on the
+	 * canvas. A hidden page draws no frames, so its image comes once the page shows again. Fails
+	 * with E1414 once the engine has stopped.
+	 */
+	capture(): Promise<Blob>;
+	/**
+	 * Draws one frame offscreen and returns its pixels as RGBA8 rows, top row first, for tests. In
+	 * hold mode, it returns the held frame.
 	 */
 	captureFrame(): Promise<{ width: number; height: number; pixels: Uint8Array }>;
 	/**
@@ -427,7 +436,13 @@ class EngineWorker {
 		return this.stoppedPromise;
 	}
 
-	request(message: { type: 'capture' }): Promise<WorkerReply> {
+	/** Stops the worker, and fails each request that still waits for its answer. */
+	terminate(): void {
+		this.worker.terminate();
+		for (const pending of this.waiting.splice(0)) pending.reject(new Error('the engine stopped'));
+	}
+
+	request(message: RendererRequest): Promise<WorkerReply> {
 		return new Promise((resolve, reject) => {
 			this.waiting.push({ resolve, reject });
 			this.worker.postMessage(message);
@@ -449,7 +464,7 @@ async function stopWorkers(workers: readonly EngineWorker[], jobs: readonly Engi
 		}),
 	]);
 	clearTimeout(timer);
-	for (const w of workers) w.worker.terminate();
+	for (const w of workers) w.terminate();
 }
 
 /** The engine's workers, which the page starts before the core has compiled. */
@@ -677,7 +692,7 @@ async function startEngine(
 	 * yet, so they stop at once.
 	 */
 	const failEarly = (error: unknown) => {
-		for (const worker of allWorkers(threads)) worker.worker.terminate();
+		for (const worker of allWorkers(threads)) worker.terminate();
 		return error;
 	};
 	const report = await abortable(
@@ -698,7 +713,7 @@ async function startEngine(
 		// Worker rendering is unavailable here, so the page draws while the sketch worker computes.
 		renderThread = 'main';
 		choice = pickTier(false);
-		threads?.render?.worker.terminate();
+		threads?.render?.terminate();
 		if (threads) threads.render = undefined;
 	}
 	if (!choice)
@@ -933,15 +948,27 @@ async function startEngine(
 	marker?.endAfter(firstFrame);
 	/** Hold mode's frame, read back once. */
 	let held: CapturedFrame | undefined;
+	/** The error of a thread that draws when it could not capture a frame. */
+	const captureFailure = (reply: WorkerReply | undefined) =>
+		new Error(
+			`the frame could not be captured${reply?.type === 'capture-failed' ? `: ${reply.message}` : ''}`,
+		);
 	/** Draws a frame offscreen on the thread that draws, and reads it back. */
 	const capture = async (): Promise<CapturedFrame> => {
 		if (localDrawing && draw) return draw.captureFrame(localDrawing, slots);
 		const reply = await rendererHost?.request({ type: 'capture' });
 		if (reply?.type === 'captured')
 			return { width: reply.width, height: reply.height, pixels: reply.pixels };
-		const reason = reply?.type === 'capture-failed' ? `: ${reply.message}` : '';
-		throw new Error(`the frame could not be captured${reason}`);
+		throw captureFailure(reply);
 	};
+	/** Draws a frame offscreen on the thread that draws, which encodes it as a PNG file. */
+	const captureImage = async (): Promise<Blob> => {
+		if (localDrawing && draw) return draw.captureImage(localDrawing, slots);
+		const reply = await rendererHost?.request({ type: 'capture', image: true });
+		if (reply?.type === 'captured-image') return reply.image;
+		throw captureFailure(reply);
+	};
+	const stopped = () => Atomics.load(slots, Slot.Running) === 0;
 
 	const engine: Engine = {
 		capabilities,
@@ -1016,6 +1043,15 @@ async function startEngine(
 				mainThread: mainThread.stop(),
 			};
 		},
+		async capture() {
+			try {
+				if (!stopped()) await nextFrame(slots, hold !== undefined);
+				if (stopped()) throw new Error('the engine has stopped');
+				return await captureImage();
+			} catch (error) {
+				throw new EngineError('E1414', `engine.capture() failed: ${messageOf(error)}.`);
+			}
+		},
 		async captureFrame() {
 			return held ? { ...held, pixels: held.pixels.slice() } : capture();
 		},
@@ -1046,6 +1082,27 @@ async function startEngine(
 		stats: summarizeFrames(new MetricsReader(metrics).readWritten(), threadRoles(mode)),
 	});
 	return engine;
+}
+
+/**
+ * Resolves once the thread that draws has taken a frame after this call. It resolves at once when
+ * no new frame comes: in hold mode, and while the engine is paused or stopped.
+ */
+function nextFrame(slots: Int32Array, holding: boolean): Promise<void> {
+	const taken = Atomics.load(slots, Slot.FramesTaken);
+	return new Promise((resolve) => {
+		const check = () => {
+			if (
+				holding ||
+				Atomics.load(slots, Slot.Paused) !== 0 ||
+				Atomics.load(slots, Slot.Running) === 0 ||
+				Atomics.load(slots, Slot.FramesTaken) !== taken
+			)
+				resolve();
+			else requestAnimationFrame(check);
+		};
+		check();
+	});
 }
 
 /**
