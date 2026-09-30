@@ -11,6 +11,7 @@ This guide covers the image test manifest, its references, and the review that m
 - Every thread mode of a test must draw the pixels of its first mode exactly. A thread mode changes only when the engine draws a frame, so the pixels must stay the same.
 - A test can borrow the references of another test: the same scene drawn another way, such as with `?uploads=copy`. A test can also require that every tier draws the image of its first tier.
 - A test can require values in its page's result besides the image, such as the replay page's counts of visible boxes.
+- Test images live in `tests/pages/assets/`, and sketches fetch them from their own address. The texture tests decode one small picture from PNG, JPEG, WebP and AVIF files, and make their other images in code.
 - The command-line tool's tests, `tests/image/cli.spec.ts`, run `bunx @null3d/cli shot` in the fixture project `tests/fixtures/project`. Its images must match the references of the manifest's `project` test, which draws the same sketch. Change the fixture's sketch, and its references change too.
 - The tests of `bunx @null3d/cli test`, `tests/image/cli-test.spec.ts`, run it in copies of the fixture project, each with its own `null3d.json`. A copy's references are copies of the manifest's `project` references, so its passing tests need no reference images of their own.
 - The harness and `bunx @null3d/cli test` judge images with the same code and the same default tolerance, from `packages/cli/src/compare.js`.

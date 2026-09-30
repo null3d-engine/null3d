@@ -5,13 +5,13 @@
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { basename, dirname, resolve } from 'node:path';
 import { parseSize, readOptions, readSeconds, sizeRule, UsageError } from './args.js';
-import { TIERS } from './page.js';
+import { heldImage, TIERS } from './page.js';
 import { writePng } from './png.js';
 import { holdPage, startRunner } from './runner.js';
-import { listed, shownPath } from './text.js';
+import { counted, listed, shownPath } from './text.js';
 
 /** @import { Environment } from './browser.js' */
-/** @import { Tier } from './page.js' */
+/** @import { HeldStats, Tier } from './page.js' */
 /** @import { RgbaImage } from './png.js' */
 /** @import { HeldPage } from './runner.js' */
 
@@ -109,6 +109,9 @@ export function parseShotArgs(args) {
  * @property {string} [image] The image file, in the JSON file's folder.
  * @property {string | null} [code] For a failure, the error's code, or null without one.
  * @property {string} [error] For a failure, what went wrong.
+ * @property {HeldStats} [stats] The frame's figures: CPU time by thread and phase, draw calls,
+ *   uploads and pipelines, as the engine summarizes frames. The held frame is the first that the
+ *   engine draws, so it builds every pipeline and uploads the whole scene.
  * @property {number} [ms] Time from the page's navigation to the engine's result, in milliseconds.
  * @property {string[]} errors What the page and the dev server logged as errors.
  * @property {string[]} warnings What the page logged as warnings.
@@ -138,11 +141,35 @@ export function shotReport(
 				warnings,
 			},
 		};
-	const { time, frame, tier, width, height, pixels } = result;
+	const { time, frame, tier, width, height, stats } = result;
 	return {
-		report: { ok: true, ...common, time, frame, tier, width, height, image, ms, errors, warnings },
-		image: { width, height, data: new Uint8Array(Buffer.from(pixels, 'base64')) },
+		report: {
+			ok: true,
+			...common,
+			time,
+			frame,
+			tier,
+			width,
+			height,
+			image,
+			...(stats && { stats }),
+			ms,
+			errors,
+			warnings,
+		},
+		image: heldImage(result),
 	};
+}
+
+/**
+ * A number of bytes in the unit that suits it, such as `512 bytes`, `45.2 KB` or `1.2 MB`.
+ *
+ * @param {number} bytes
+ */
+export function byteSize(bytes) {
+	if (bytes < 1024) return `${bytes} bytes`;
+	const kb = bytes / 1024;
+	return kb < 1024 ? `${kb.toFixed(1)} KB` : `${(kb / 1024).toFixed(1)} MB`;
 }
 
 /**
@@ -162,6 +189,11 @@ export function shotSummary(report, { page, size, png, json }) {
 		if (report.width !== size[0] || report.height !== size[1])
 			lines.push(
 				`The canvas is ${report.width} x ${report.height} pixels in a ${size[0]} x ${size[1]} window, as the page's own CSS sets it.`,
+			);
+		const { stats } = report;
+		if (stats)
+			lines.push(
+				`It made ${counted(stats.drawCalls.median, 'draw call')}, uploaded ${byteSize(stats.uploadBytes.median)} and built ${counted(stats.pipelines, 'pipeline')}.`,
 			);
 		lines.push(`Saved ${png}, and the frame's facts and what the page logged in ${json}.`);
 	} else {

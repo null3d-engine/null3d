@@ -2,6 +2,7 @@ import { describe, expect, it } from 'bun:test';
 import { UsageError } from './args.js';
 import type { HeldPage } from './runner.js';
 import {
+	byteSize,
 	parseShotArgs,
 	type ShotOptions,
 	type ShotReport,
@@ -79,12 +80,23 @@ describe('parseShotArgs', () => {
 const FACTS = { environment: 'chrome-real-gpu', browser: 'Chrome 154', image: 'shot.png' } as const;
 const FILES = { page: '/', size: [4, 2] as const, png: 'shot.png', json: 'shot.json' };
 
+/** The figures of a held frame, as the engine summarizes one frame. */
+const STATS = {
+	frames: 1,
+	drawCalls: { count: 1, median: 3 },
+	uploadBytes: { count: 1, median: 46_285 },
+	pipelines: 4,
+};
+
 /** A page that drew a 4 x 2 frame of one color. */
 function drawn(extra: Partial<HeldPage> = {}): HeldPage {
 	const pixels = Buffer.from(new Uint8Array(4 * 2 * 4).fill(7)).toString('base64');
 	return {
 		path: '/?hold=1.5',
-		result: { ok: true, time: 1.5, frame: 91, tier: 'webgl2', width: 4, height: 2, pixels },
+		result: {
+			ok: true,
+			...{ time: 1.5, frame: 91, tier: 'webgl2', width: 4, height: 2, pixels, stats: STATS },
+		},
 		errors: [],
 		warnings: [],
 		ms: 120,
@@ -104,6 +116,7 @@ describe('shotReport', () => {
 			tier: 'webgl2',
 			width: 4,
 			height: 2,
+			stats: STATS,
 			ms: 120,
 			errors: [],
 			warnings: [],
@@ -136,6 +149,7 @@ describe('shotSummary', () => {
 		expect(shotSummary(report(), FILES)).toBe(
 			[
 				'Drew / at 1.5 s, frame 91, on webgl2: 4 x 2 pixels.',
+				'It made 3 draw calls, uploaded 45.2 KB and built 4 pipelines.',
 				"Saved shot.png, and the frame's facts and what the page logged in shot.json.",
 				'The page logged no errors or warnings.',
 			].join('\n'),
@@ -181,6 +195,16 @@ describe('shotSummary', () => {
 				'  page error: boom (at /broken.html:2:10)',
 			].join('\n'),
 		);
+	});
+});
+
+describe('byteSize', () => {
+	it('gives bytes in the unit that suits them', () => {
+		expect([byteSize(512), byteSize(46_285), byteSize(3_250_000)]).toEqual([
+			'512 bytes',
+			'45.2 KB',
+			'3.1 MB',
+		]);
 	});
 });
 

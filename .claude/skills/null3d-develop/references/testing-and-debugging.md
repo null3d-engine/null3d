@@ -46,7 +46,7 @@ const { width, height, pixels } = await engine.captureFrame(); // the held frame
 
 - The engine seeds `math.random` in the sketch's thread, makes `Math.random` draw from it, and runs the setup. It steps the sketch from time 0 to the held time in fixed steps of 1/60 second, with no frame loop. Then it draws that one frame and reads it back through the engine.
 - `createEngine` resolves once the frame is read back. `engine.mode.hold` holds the time, or `null` in a live engine. A bare `?hold` holds at the `hold` option's time, or at 0.
-- The engine publishes the result as `window.__null3dHold`: `{ ok: true, time, frame, tier, width, height, pixels }`, or `{ ok: false, code, error }` at the first failure. A test runner waits for it, so a page that failed never costs a timeout.
+- The engine publishes the result as `window.__null3dHold`: `{ ok: true, time, frame, tier, width, height, pixels, stats }`, or `{ ok: false, code, error }` at the first failure. `stats` holds the held frame's figures in the form that `engine.measure()` returns. A test runner waits for it, so a page that failed never costs a timeout.
 - The first error stops the hold: E1407 for a bad time, and E1408 for an error in `onUpdate` or the core. E1408 gives the sketch time of the error. A live engine would log that error and carry on.
 - Keep one reference image per GPU tier, and force the tier with `?gpu=`. Tiers, and software and real GPUs, can differ slightly at edges, so compare with a small tolerance, such as three.js's 0.1%.
 - Pixels come back through the engine, never through a canvas screenshot, because some browsers alter canvas reads for privacy.

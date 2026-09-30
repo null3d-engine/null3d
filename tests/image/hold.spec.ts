@@ -64,6 +64,13 @@ test('hold mode steps the sketch in fixed steps to the held time, with seeded ra
 	for (const mode of ENGINE_MODES) {
 		const held = frameOf(await hold(page, `hold=${HOLD_SECONDS}${modeSwitches(mode)}`), mode.name);
 		expect([mode.name, held.time, held.frame]).toEqual([mode.name, HOLD_SECONDS, HELD_FRAME]);
+		// The held frame is the first that the engine draws: it builds its pipelines and uploads the
+		// whole scene. A hold times no GPU work.
+		const { stats } = held;
+		expect([mode.name, stats?.frames, stats?.gpuMs]).toEqual([mode.name, 1, null]);
+		expect(stats?.drawCalls.median).toBeGreaterThan(0);
+		expect(stats?.uploadBytes.median).toBeGreaterThan(0);
+		expect(stats?.pipelines).toBeGreaterThan(0);
 		const { state, mode: engineMode, seededOnPage, ownAfterStop } = await sketchState(page);
 		expect([mode.name, engineMode.hold, engineMode.renderThread]).toEqual([
 			mode.name,

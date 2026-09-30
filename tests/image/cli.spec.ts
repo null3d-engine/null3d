@@ -50,6 +50,9 @@ for (const tier of TIERS)
 		expect(output).toContain(
 			`Drew / at 1.5 s, frame 91, on ${REPORTED_TIERS[tier]}: 320 x 180 pixels.`,
 		);
+		expect(output).toMatch(
+			/It made \d+ draw calls?, uploaded [\d.]+ \w+ and built \d+ pipelines?\./,
+		);
 		const environment = environmentNamed(test.info().project.name);
 		expect(report).toMatchObject({
 			ok: true,
@@ -61,6 +64,7 @@ for (const tier of TIERS)
 			width: 320,
 			height: 180,
 			image: 'shot.png',
+			stats: { frames: 1 },
 			errors: [],
 		});
 		const place = { environment };
