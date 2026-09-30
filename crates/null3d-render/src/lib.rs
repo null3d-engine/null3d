@@ -14,6 +14,7 @@
 //! - `gpu_driven`: the WebGPU frame builder, with GPU culling and a prerecorded bundle per view
 //! - `graph`: the render graph, which orders declared passes and plans their render passes and
 //!   textures
+//! - `light_grid`: the clusters of a view, and the point and spot lights that reach each one
 //! - `materials`: the material table
 //! - `meshes`: mesh storage for both GPU paths
 //! - `parallel_record`: draw lists recorded in chunks on the job workers, joined in chunk order
@@ -33,6 +34,7 @@ pub mod frame_graph;
 pub mod geometry;
 pub mod gpu_driven;
 pub mod graph;
+pub mod light_grid;
 pub mod materials;
 pub mod meshes;
 pub mod parallel_record;

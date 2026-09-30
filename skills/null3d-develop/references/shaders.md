@@ -2,20 +2,22 @@
 
 All engine shaders are WGSL. The build translates them to GLSL for the WebGL2 path, so one source serves both backends. The null3D Vite plugin compiles the WGSL in your code: `.wgsl` files that you import, and template literals tagged `/* wgsl */`. The WebGL2 build sets the shader def `WEBGL2`. Engine docs: `guides/custom-shaders`, `shaders/surface-functions`, `shaders/builtins`, `shaders/wgsl-rules`, `shaders/library`.
 
+Custom materials come later in 0.1. Until then, the plugin compiles your WGSL, checks it against the portable rules and resolves library imports, but the engine cannot draw with it. Sections 8 to 10 apply now. Sections 1 to 5 describe the planned contract: do not ship code that uses it until `api/materials` lists `materials.shader`.
+
 ## Contents
 
-1. Choose the kind of shader
-2. Surface functions
-3. Built-in values
-4. Uniforms, textures and per-instance data
-5. Vertex offsets and full shaders
+1. Choose the kind of shader (later in 0.1)
+2. Surface functions (later in 0.1)
+3. Built-in values (later in 0.1)
+4. Uniforms, textures and per-instance data (later in 0.1)
+5. Vertex offsets and full shaders (later in 0.1)
 6. Custom post effects (0.2)
 7. Custom passes (0.2)
 8. Portable WGSL rules
 9. Imports from the shader library
 10. Debugging shaders
 
-## 1. Choose the kind of shader
+## 1. Choose the kind of shader (later in 0.1)
 
 | Goal | Kind | Keeps lights, shadows, fog, instancing and skinning |
 | --- | --- | --- |
@@ -27,7 +29,7 @@ All engine shaders are WGSL. The build translates them to GLSL for the WebGL2 pa
 
 Choose the first row that works. Surface functions keep working when the engine's lighting, shadows or backends change.
 
-## 2. Surface functions
+## 2. Surface functions (later in 0.1)
 
 The engine calls your function once per pixel and lights the result.
 
@@ -89,7 +91,7 @@ const dissolve = materials.shader({
 // later: dissolve.set({ progress: 0.6 });
 ```
 
-## 3. Built-in values
+## 3. Built-in values (later in 0.1)
 
 | Name | Fields | Notes |
 | --- | --- | --- |
@@ -100,7 +102,7 @@ const dissolve = materials.shader({
 
 The engine renders relative to the camera. `input.relativePosition` is therefore exact near the camera even in very large worlds; use it for distances, fades and view-dependent effects. `input.worldPosition` is the absolute position, for world-space patterns such as noise or grid lines; far from the origin it loses precision, as any 32-bit value does.
 
-## 4. Uniforms, textures and per-instance data
+## 4. Uniforms, textures and per-instance data (later in 0.1)
 
 ```ts
 materials.shader({
@@ -123,7 +125,7 @@ materials.shader({
 - Color strings and hex numbers are sRGB and are converted to linear. Arrays are used as given.
 - Per-instance data: `createInstances(mesh, count, { material, attributes: { tint: 4 } })` (0.2) makes `batch.attributes.tint` in TypeScript and `instanceAttr.tint` (`vec4f`) in the surface function.
 
-## 5. Vertex offsets and full shaders
+## 5. Vertex offsets and full shaders (later in 0.1)
 
 A vertex offset moves vertices in object space before the engine applies transforms, skinning and instancing:
 
@@ -219,6 +221,6 @@ Importing a module whole reserves its name. After `#import null3d::color`, no va
 
 - A shader error stops Vite with the file, line and column. It shows in Vite's overlay and the terminal on the dev server, and in the output of `vite build`. Fix the WGSL; never edit generated GLSL. (`guides/custom-shaders`)
 - Output an intermediate value as color: `s.emissive = vec3f(n); s.baseColor = vec3f(0.0);` shows `n` directly.
-- `debug.view('normals')` and `debug.view('overdraw')` show normals and overdraw for the whole scene.
+- `debug.view('normals')` and `debug.view('overdraw')` (later in 0.1) show normals and overdraw for the whole scene.
 - Shader hot reload: the null3D Vite plugin reloads WGSL files and inline WGSL strings without reloading the page (0.2). Until then, editing a shader reloads the page.
 - Check both backends: `?gpu=webgl2` runs the translated shaders.
