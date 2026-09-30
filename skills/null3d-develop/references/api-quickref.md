@@ -20,7 +20,7 @@ This is the API of null3D, with the parts planned up to version 1.0. A version i
 14. Input and controls
 15. Post-processing (later in 0.1; effects 0.2)
 16. Render graph (0.2)
-17. Quality (later in 0.1)
+17. Quality
 18. Messages and UI
 19. Debug
 20. Math, color and time
@@ -33,7 +33,8 @@ import { createEngine } from '@null3d/engine';
 const engine = await createEngine({
   canvas,                                        // HTMLCanvasElement, sized by CSS
   sketch: new URL('./sketch.ts', import.meta.url),   // the sketch module
-  maxPixelRatio: 2,      // cap for devicePixelRatio
+  preset: 'auto',        // 'auto' | 'low' | 'medium' | 'high' | 'ultra'; WebGL2 runs at most 'medium'
+  maxPixelRatio: 2,      // cap for devicePixelRatio in place of the preset's cap
   gpu: 'auto',           // 'auto' | 'webgpu' | 'webgl2' (testing only)
   powerPreference: 'high-performance',   // the default; 'low-power' saves battery on devices with two GPUs
   latency: 'pipelined',  // or 'low'; 'pipelined' is the default
@@ -42,7 +43,6 @@ const engine = await createEngine({
   onSketchMessage: (type, data) => {},     // sketch messages from the start of setup, such as load progress
   signal: controller.signal,             // abort to cancel the start; createEngine then rejects
   hold: 1.5,             // image tests: step the sketch to 1.5 s, draw that one frame, and run no frame loop
-  preset: 'auto',        // later in 0.1: 'auto' | 'low' | 'medium' | 'high' | 'ultra'
   transparent: false,    // later in 0.1: true for a see-through canvas
   sketchThread: 'worker',  // later in 0.1: 'main' for DOM-heavy apps and debugging
   largeWorld: false,     // (0.2) planet-scale scenes: cell-relative positions, batch origins
@@ -57,7 +57,7 @@ engine.detach();                         // single-page apps: canvas off the pag
 engine.attach(container);                // canvas back on the page; the engine resumes with no new start
 engine.setPaused(true);                  // the first step after resuming counts no time
 engine.capabilities;  // { tier: 'webgpu' | 'webgpu-compat' | 'webgl2', threaded, features, limits, maxInstances, depth }
-engine.mode;          // { build: 'threaded' | 'single', latency, renderThread, jobWorkers, hold }
+engine.mode;          // { build, latency, renderThread, jobWorkers, hold, preset, crashedStarts, memoryMaximumMiB }
 const metrics = await engine.measure(5);          // CPU time per thread and phase, GPU time, frame rates, memory
 const frame = await engine.captureFrame();        // { width, height, pixels }: RGBA8 rows, top row first
 engine.onFailure((error) => { /* error.code: E1302 GPU lost for good, E1404 engine thread failed */ });
@@ -80,9 +80,9 @@ import { defineSketch } from '@null3d/engine';
 export default defineSketch(async (ctx) => {
   const {
     scene, assets, materials, geometry, textures,
-    input, time, page, debug, engine, preferences,
+    input, time, quality, page, debug, engine, preferences,
   } = ctx;
-  // later in 0.1: ctx.quality and ctx.post; (0.2): ctx.render and ctx.ui
+  // later in 0.1: ctx.post; (0.2): ctx.render and ctx.ui
   // setup: create objects, load assets, await scene.warmUp()
   // preferences.reducedMotion: true when the user's system asks for less motion
   // preferences.onChange(() => { ... }) runs at the first frame after it changes; it returns a remover
@@ -407,16 +407,20 @@ render.dumpGraph();   // Graphviz DOT text of the compiled graph, for debugging
 
 Passes are declarations: the engine checks them, orders them, and shares memory between their temporary textures. No sketch code runs during rendering.
 
-## 17. Quality (`api/quality`, later in 0.1)
+## 17. Quality (`api/quality`)
 
 ```ts
-quality.preset;                         // 'low' | 'medium' | 'high' | 'ultra'
-quality.set({ shadows: { cascades: 2 }, ao: false, maxPixelRatio: 1.5, antialias: 'msaa' });  // antialias: 'msaa' | 'fxaa' | 'none'
-quality.onChange((q) => { particles.setActiveCount(q.preset === 'low' ? 500 : 2000); });
+quality.preset;                         // 'low' | 'medium' | 'high' | 'ultra': the preset the engine runs
+quality.settings.maxPixelRatio;         // the settings in use
+quality.set({ maxPixelRatio: 1.5 });    // from the next frame; E1213 for another setting or value
+quality.set({ antialias: 'fxaa', shadowCascades: 2 });  // planned: the preset table gives each setting's status
+const PARTICLES = { low: 500, medium: 2000, high: 5000, ultra: 10000 };  // your values per preset, in one table
+quality.onChange(() => { particles.setActiveCount(PARTICLES[quality.preset]); });
 quality.setBudget({ name: 'ai', ms: 2, onScale: (scale) => { aiRate = scale; } });  // (0.2)
+engine.mode.preset;                     // on the page: the preset, crashedStarts and memoryMaximumMiB
 ```
 
-The frame-budget governor lowers settings in a fixed order when frames run long, and raises them again after a stable period.
+The page's `?preset=low` switch fixes the preset for tests. After a start that crashed the tab, the engine starts one preset lower. The frame-budget governor lowers settings in a fixed order when frames run long, and raises them again after a stable period.
 
 ## 18. Messages and UI (`api/page`, `api/ui`)
 
