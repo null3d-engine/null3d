@@ -443,6 +443,16 @@ pub fn update_transforms() -> u32 {
     })
 }
 
+/// Updates the world matrices and bounding spheres of the objects that the sketch moved after
+/// `updateTransforms`, and of the objects below them. Call it before `cullFrame`.
+#[wasm_bindgen(js_name = updateLateTransforms)]
+pub fn update_late_transforms() -> u32 {
+    with_engine(|e| {
+        e.scene.update_late_transforms();
+        0
+    })
+}
+
 /// Updates the rows of every instance batch that need it.
 #[wasm_bindgen(js_name = updateBatches)]
 pub fn update_batches(frame: u32) -> u32 {

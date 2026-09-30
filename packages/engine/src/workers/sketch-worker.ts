@@ -92,6 +92,7 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 					device: message.device,
 					quality: message.quality,
 					applyQuality: (settings) => replyToPage({ type: 'quality', settings }),
+					capabilities: message.capabilities,
 					sendImage,
 					pageUrl: message.pageUrl,
 				},

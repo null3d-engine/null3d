@@ -122,8 +122,12 @@ export type {
 	SketchCallbacks,
 	SketchContext,
 	SketchDefinition,
+	SketchEngine,
+	SketchOptions,
 	SketchPreferences,
 	SketchSetup,
+	SketchTime,
+	SketchViewport,
 } from './sketch/define-sketch';
 export { defineSketch } from './sketch/define-sketch';
 export type { Input, InputActions, InputPointer, InputTouch } from './sketch/input';

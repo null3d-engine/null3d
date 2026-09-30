@@ -88,7 +88,7 @@ const DOCS = {
 	E1110: {
 		title: 'Unmarked write to a static object',
 		cause:
-			"A static object's position, rotation, scale or bounding sphere changed without a setter. The engine recomputes a static object only in a frame where a setter marks it or its parent moves. So such a change can show late, or never. Development builds check these values of every static object before each frame's transform update. Release builds leave the check out.",
+			"A static object's position, rotation, scale or bounding sphere changed without a setter. The engine recomputes a static object only in a frame where a setter marks it or its parent moves. So such a change can show late, or never. Development builds check these values of every static object before each transform update. Each frame has one transform update, and a sketch with onLateUpdate gets a second one after that callback. Release builds leave the check out.",
 		example: 'E1110: the position of "Crate" (slot 7) changed without a setter.',
 		since: '0.1',
 	},
@@ -140,6 +140,13 @@ const DOCS = {
 		cause:
 			'A call received a setting that it does not have, or a value that the setting does not take. Examples are a tone mapping that the engine does not know, and a negative exposure.',
 		example: `E1213: post.set() got the tone mapping "filmic", which is not 'aces', 'agx', 'neutral' or 'none'.`,
+		since: '0.1',
+	},
+	E1214: {
+		title: 'Invalid sketch option',
+		cause:
+			'defineSketch() received an option out of its range. fixedRate must be a number above 0, and maxFixedSteps a whole number of 1 or more. The engine checks the options before it runs the setup function.',
+		example: 'E1214: defineSketch() got 0 for fixedRate.',
 		since: '0.1',
 	},
 	E1301: {

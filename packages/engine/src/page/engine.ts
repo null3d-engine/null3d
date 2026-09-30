@@ -727,6 +727,17 @@ async function startEngine(
 	onProgress?.('core');
 	let wasmMemory = core.memory;
 	const device = coreDevice(tier === 'webgl2', report, switches);
+	const capabilities: EngineCapabilities = {
+		tier,
+		threaded,
+		features:
+			tier === 'webgl2'
+				? Object.keys(report.webgl2.extensions).filter((n) => report.webgl2.extensions[n])
+				: report.webgpu.features,
+		limits: tier === 'webgl2' ? {} : report.webgpu.limits,
+		maxInstances: maxInstances(device),
+		depth: device.depth,
+	};
 	const handoff: CoreHandoff = {
 		build,
 		module: core.module,
@@ -827,6 +838,7 @@ async function startEngine(
 					device,
 					quality,
 					applyQuality: events.quality,
+					capabilities,
 					sendImage: sendToTable(imageTable, slots),
 					pageUrl: pageUrl ?? sketchUrl,
 				},
@@ -847,6 +859,7 @@ async function startEngine(
 				pageUrl: pageUrl ?? sketchUrl,
 				keyCodes: KEY_CODES,
 				jobWorkers,
+				capabilities,
 				hold,
 				quality,
 			};
@@ -908,10 +921,6 @@ async function startEngine(
 		requestAnimationFrame(check);
 	});
 	marker?.endAfter(firstFrame);
-	const features =
-		tier === 'webgl2'
-			? Object.keys(report.webgl2.extensions).filter((n) => report.webgl2.extensions[n])
-			: report.webgpu.features;
 	/** Hold mode's frame, read back once. */
 	let held: CapturedFrame | undefined;
 	/** Draws a frame offscreen on the thread that draws, and reads it back. */
@@ -925,14 +934,7 @@ async function startEngine(
 	};
 
 	const engine: Engine = {
-		capabilities: {
-			tier,
-			threaded,
-			features,
-			limits: tier === 'webgl2' ? {} : report.webgpu.limits,
-			maxInstances: maxInstances(device),
-			depth: device.depth,
-		},
+		capabilities,
 		report,
 		mode,
 		firstFrame,

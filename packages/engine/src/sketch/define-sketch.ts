@@ -8,6 +8,7 @@
 import type { Debug } from '../debug/debug';
 import { EngineError } from '../errors/engine-error';
 import { messageOf } from '../errors/message';
+import type { EngineCapabilities } from '../page/engine';
 import type { Assets } from '../scene/assets';
 import type { Geometry, Materials } from '../scene/resources';
 import type { Scene } from '../scene/scene';
@@ -16,11 +17,21 @@ import type { Input } from './input';
 import type { Quality } from './quality';
 
 /**
- * Callbacks a sketch returns from its setup function.
+ * Callbacks a sketch returns from its setup function. In each frame the engine calls
+ * `onFixedUpdate` as many times as fixed steps fall due, then `onUpdate`, then updates transforms,
+ * then calls `onLateUpdate`.
  *
  * @category api/sketch
  */
 export interface SketchCallbacks {
+	/**
+	 * Runs at a fixed rate, 60 times per second of sketch time unless `defineSketch`'s options set
+	 * another, with the step's length in seconds. A frame runs it once for each step that falls due
+	 * since the previous frame, so 0 or more times, before `onUpdate`. After a slow frame, a frame
+	 * runs at most 8 steps unless the options set another number, and drops the rest. Use it for
+	 * simulation, such as physics, that must step the same at every frame rate.
+	 */
+	onFixedUpdate?(step: number): void;
 	/**
 	 * Runs once per frame, before transforms, with the frame's step in seconds. The first frame, and
 	 * the first after a pause or a hidden page, gets 0. No step is longer than a quarter second, so a
@@ -28,6 +39,61 @@ export interface SketchCallbacks {
 	 * first gets a fixed step of 1/60 second.
 	 */
 	onUpdate?(dt: number): void;
+	/**
+	 * Runs once per frame after the engine updates transforms, and before it culls and draws, with
+	 * the frame's step in seconds. World positions already hold the frame's changes, and the engine
+	 * updates the objects that it moves before it draws the frame. A camera that follows an object
+	 * here does not lag a frame behind it.
+	 */
+	onLateUpdate?(dt: number): void;
+}
+
+/**
+ * The sketch's clock. The engine updates it at the start of each frame, before it calls
+ * `onFixedUpdate`.
+ *
+ * @category api/time
+ */
+export interface SketchTime {
+	/**
+	 * Sketch time in seconds: the sum of every frame's step, so paused and hidden time do not count.
+	 * It is 0 during the setup function. In hold mode, the last frame's time is the held time exactly.
+	 */
+	readonly now: number;
+	/** The frame's step in seconds, which `onUpdate` and `onLateUpdate` also get. 0 during the setup function. */
+	readonly dt: number;
+	/** The frame number: 0 during the setup function, 1 in the first frame, and one more in each frame after it. */
+	readonly frame: number;
+}
+
+/**
+ * The canvas's size. The engine reads it at the start of each frame, so it stays the same
+ * throughout a frame.
+ *
+ * @category api/sketch
+ */
+export interface SketchViewport {
+	/** The canvas width in CSS pixels. */
+	readonly width: number;
+	/** The canvas height in CSS pixels. */
+	readonly height: number;
+	/**
+	 * Device pixels per CSS pixel that the engine draws with: the display's ratio, capped by the
+	 * `maxPixelRatio` quality setting.
+	 */
+	readonly pixelRatio: number;
+}
+
+/**
+ * The engine as the sketch sees it: the canvas's size, and what the device can do.
+ *
+ * @category api/sketch
+ */
+export interface SketchEngine {
+	/** The canvas's size in CSS pixels, and the pixel ratio the engine draws with. */
+	readonly viewport: SketchViewport;
+	/** The GPU path the engine chose, and what it offers: the values of `engine.capabilities` on the page. */
+	readonly capabilities: EngineCapabilities;
 }
 
 /**
@@ -70,12 +136,10 @@ export interface SketchContext {
 	input: Input;
 	/** The quality preset that the engine runs, its settings, and a notice when they change. */
 	quality: Quality;
-	/**
-	 * Sketch time in seconds, which is the sum of every step that `onUpdate` received, so paused and
-	 * hidden time do not count. Also the current frame number. In hold mode, the last frame's time is
-	 * the held time exactly.
-	 */
-	time: { now: number; frame: number };
+	/** Sketch time, the frame's step and the frame number. */
+	time: SketchTime;
+	/** The canvas's size, and what the device can do. */
+	engine: SketchEngine;
 	/** What the user's system asks of every page, and a notice when that changes. */
 	preferences: SketchPreferences;
 	/**
@@ -103,6 +167,18 @@ export type SketchSetup = (
 	context: SketchContext,
 ) => SketchCallbacks | undefined | Promise<SketchCallbacks | undefined>;
 
+/**
+ * Options for `defineSketch`.
+ *
+ * @category api/sketch
+ */
+export interface SketchOptions {
+	/** Fixed steps per second of sketch time, the rate of `onFixedUpdate`. The default is 60. */
+	fixedRate?: number;
+	/** The most fixed steps that one frame runs, after a slow frame. The default is 8. */
+	maxFixedSteps?: number;
+}
+
 const SKETCH_MARKER = Symbol.for('null3d.sketch');
 
 /**
@@ -114,17 +190,19 @@ export interface SketchDefinition {
 	readonly [SKETCH_MARKER]: true;
 	/** The setup function passed to `defineSketch`. */
 	readonly setup: SketchSetup;
+	/** The options passed to `defineSketch`. */
+	readonly options: SketchOptions;
 }
 
 /**
  * Declares a sketch. In null3D, a 3D scene is called a sketch: a module that builds the scene and
  * updates it every frame, in the sketch worker. The module must export the result as its default
- * export.
+ * export. `options` sets the rate of the fixed steps.
  *
  * @category api/sketch
  */
-export function defineSketch(setup: SketchSetup): SketchDefinition {
-	return { [SKETCH_MARKER]: true, setup };
+export function defineSketch(setup: SketchSetup, options: SketchOptions = {}): SketchDefinition {
+	return { [SKETCH_MARKER]: true, setup, options };
 }
 
 function isSketchDefinition(value: unknown): value is SketchDefinition {
