@@ -64,6 +64,11 @@ export interface Program {
 	samplerUnits: readonly number[];
 	/** True once the link result was checked and the blocks and textures were bound. */
 	ready: boolean;
+	/**
+	 * True when the program compiles in the background: until it has, the draws that use it draw
+	 * nothing. Otherwise its first draw waits for the compile.
+	 */
+	background: boolean;
 }
 
 /** A render pipeline: its program, and the fixed-function state and vertex format it asks for. */
@@ -134,6 +139,7 @@ export function createProgram(
 		firstInstanceValue: 0,
 		samplerUnits: [],
 		ready: false,
+		background: false,
 	};
 }
 

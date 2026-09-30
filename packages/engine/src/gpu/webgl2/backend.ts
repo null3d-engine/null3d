@@ -212,6 +212,15 @@ export class WebGL2Backend {
 	private readonly addressModes: number[] = [];
 	private readonly minFilters: number[][] = [];
 	private readonly multiDraw: WEBGL_multi_draw | null;
+	/**
+	 * `KHR_parallel_shader_compile`, where the context has it and the device uses it: programs then
+	 * compile in the background, and the backend asks whether each has finished.
+	 */
+	private readonly parallel: KHR_parallel_shader_compile | null;
+	/** Programs that may still be compiling in the background. */
+	private readonly compiling: Program[] = [];
+	/** True while the current pipeline's program is compiling: draws draw nothing until it is set again. */
+	private skipDraws = false;
 	private readonly anisotropic: EXT_texture_filter_anisotropic | null;
 	private readonly maxAnisotropy: number;
 	private readonly maxSamples: number;
@@ -289,7 +298,8 @@ export class WebGL2Backend {
 	 * `sharedUploads` is false where WebGL refuses views on shared memory, so uploads and multi-draw
 	 * arrays go through copies. `depthMode` is how the backend stores depth. `images` holds the
 	 * images that uploads read, which the thread that draws keeps across GPU devices; by default
-	 * the backend has its own.
+	 * the backend has its own. `parallelCompile` lets programs compile in the background where the
+	 * context has `KHR_parallel_shader_compile`.
 	 */
 	constructor(
 		private readonly gl: WebGL2RenderingContext,
@@ -297,11 +307,12 @@ export class WebGL2Backend {
 		private readonly sharedUploads: boolean,
 		depthMode: DepthMode,
 		images?: ImageTable,
+		parallelCompile = true,
 	) {
 		this.images = images ?? new ImageTable();
 		this.ownsImages = !images;
 		this.multiDraw = gl.getExtension('WEBGL_multi_draw');
-		gl.getExtension('KHR_parallel_shader_compile');
+		this.parallel = parallelCompile ? gl.getExtension('KHR_parallel_shader_compile') : null;
 		this.anisotropic = gl.getExtension('EXT_texture_filter_anisotropic');
 		this.maxAnisotropy = this.anisotropic
 			? (gl.getParameter(this.anisotropic.MAX_TEXTURE_MAX_ANISOTROPY_EXT) as number)
@@ -343,6 +354,67 @@ export class WebGL2Backend {
 	/** Hands the backend an image for `UploadImage` commands to copy from, under the draw list's id. */
 	setImage(id: number, image: ImageBitmap): void {
 		this.images.set(id, image);
+	}
+
+	/**
+	 * Starts to build each pipeline that the list in `words[start, end)` creates before its first
+	 * other command, and returns where the rest of the list starts. Programs compile without
+	 * blocking where the context has `KHR_parallel_shader_compile`. Until one has compiled,
+	 * `building` is true and the draws that use it draw nothing. Without the extension, a program's
+	 * first draw waits for its compile.
+	 */
+	prepare(words: Uint32Array, start: number, end: number): number {
+		let i = start;
+		while (i < end && ((words[i] as number) & 0xff) === G.OP_CREATE_RENDER_PIPELINE) {
+			this.createPipeline(words, i + 1, true);
+			i += (words[i] as number) >>> 8;
+		}
+		return i;
+	}
+
+	/** True while a program is compiling in the background. */
+	get building(): boolean {
+		const compiling = this.compiling;
+		for (let k = compiling.length - 1; k >= 0; k--) {
+			if (this.compiled(compiling[k] as Program)) {
+				compiling[k] = compiling[compiling.length - 1] as Program;
+				compiling.pop();
+			}
+		}
+		return compiling.length > 0;
+	}
+
+	/**
+	 * True once a program may be used without waiting: it has compiled and linked, or failed to, or
+	 * its first draw waits for its compile.
+	 */
+	private compiled(p: Program): boolean {
+		const parallel = this.parallel;
+		return (
+			p.ready ||
+			!p.background ||
+			!parallel ||
+			this.gl.getProgramParameter(p.program, parallel.COMPLETION_STATUS_KHR) === true
+		);
+	}
+
+	/**
+	 * Creates the pipeline of a `CreateRenderPipeline` command with its operands at `a`. A new
+	 * program compiles in the background when `background` is set; otherwise its first draw waits
+	 * for it.
+	 */
+	private createPipeline(words: Uint32Array, a: number, background: boolean): void {
+		const template = words[a + 1] as number;
+		const flags = words[a + 6] as number;
+		this.pipelines[words[a] as number] = {
+			program: this.programOf(template, words[a + 2] as number, background),
+			cullNone: (flags & G.STATE_CULL_NONE) !== 0,
+			depth: words[a + 4] !== G.FORMAT_NONE,
+			vertexFormat: words[a + 7] as number,
+			mode: flags & G.STATE_LINE_LIST ? this.gl.LINES : this.gl.TRIANGLES,
+			vertices: this.need(this.templates, template, 'render pipeline template').vertices,
+		};
+		this.counts.pipelines++;
 	}
 
 	resetCounts(): void {
@@ -438,20 +510,10 @@ export class WebGL2Backend {
 					}
 					break;
 				}
-				case G.OP_CREATE_RENDER_PIPELINE: {
-					const template = words[a + 1] as number;
-					const flags = words[a + 6] as number;
-					this.pipelines[words[a] as number] = {
-						program: this.programOf(template, words[a + 2] as number),
-						cullNone: (flags & G.STATE_CULL_NONE) !== 0,
-						depth: words[a + 4] !== G.FORMAT_NONE,
-						vertexFormat: words[a + 7] as number,
-						mode: flags & G.STATE_LINE_LIST ? gl.LINES : gl.TRIANGLES,
-						vertices: this.need(this.templates, template, 'render pipeline template').vertices,
-					};
-					this.counts.pipelines++;
+				case G.OP_CREATE_RENDER_PIPELINE:
+					// A list that creates a pipeline after other commands waits for it at its first draw.
+					this.createPipeline(words, a, false);
 					break;
-				}
 				case G.OP_CREATE_BIND_GROUP: {
 					const entries: BindEntry[] = [];
 					for (let k = 0; k < (words[a + 2] as number); k++) {
@@ -507,6 +569,7 @@ export class WebGL2Backend {
 					this.indexBytes = words[a + 1] === G.INDEX_FORMAT_UINT32 ? 4 : 2;
 					break;
 				case G.OP_DRAW:
+					if (this.skipDraws) break;
 					this.useVertexArray(this.drawVertexArray());
 					this.prepareDraw(words[a + 3] as number);
 					gl.drawArraysInstanced(
@@ -518,6 +581,7 @@ export class WebGL2Backend {
 					this.counts.drawCalls++;
 					break;
 				case G.OP_DRAW_INDEXED: {
+					if (this.skipDraws) break;
 					if (words[a + 3] !== 0) throw new Error('WebGL2 has no base vertex for draws');
 					this.useMeshVertexArray();
 					this.prepareDraw(words[a + 4] as number);
@@ -532,7 +596,7 @@ export class WebGL2Backend {
 					break;
 				}
 				case G.OP_MULTI_DRAW_INDEXED:
-					this.multiDrawIndexed(words, a);
+					if (!this.skipDraws) this.multiDrawIndexed(words, a);
 					break;
 				case G.OP_SUBMIT:
 					break;
@@ -566,14 +630,21 @@ export class WebGL2Backend {
 		}
 	}
 
-	/** The program of a template and permutation, which starts compiling the first time. */
-	private programOf(template: number, permutation: number): Program {
+	/**
+	 * The program of a template and permutation, which starts compiling the first time, in the
+	 * background when `background` is set and the context can.
+	 */
+	private programOf(template: number, permutation: number, background: boolean): Program {
 		const key = `${template} ${permutation}`;
 		let program = this.programs.get(key);
 		if (!program) {
 			const glsl = this.need(this.templates, template, 'render pipeline template');
 			program = createProgram(this.gl, glsl, permutation);
 			this.programs.set(key, program);
+			if (background && this.parallel) {
+				program.background = true;
+				this.compiling.push(program);
+			}
 		}
 		return program;
 	}
@@ -1090,6 +1161,7 @@ export class WebGL2Backend {
 
 	private beginPass(words: Uint32Array, floats: Float32Array, a: number): void {
 		const gl = this.gl;
+		this.skipDraws = false;
 		const color = words[a] as number;
 		const depth = words[a + 2] as number;
 		const flags = words[a + 8] as number;
@@ -1255,6 +1327,8 @@ export class WebGL2Backend {
 
 	private setPipeline(p: Pipeline): void {
 		const program = p.program;
+		this.skipDraws = !this.compiled(program);
+		if (this.skipDraws) return;
 		this.useProgram(program);
 		if (this.current?.program !== program) this.samplersChanged = true;
 		this.current = p;

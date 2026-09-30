@@ -26,7 +26,11 @@ function fakeCore() {
 		sceneArrays: (field: number) => AT.fields + field * 256,
 		commandRing: (field: number) => [AT.records, RING, AT.write, AT.read][field] as number,
 		reserveObject: () => ++slot,
-		setCamera: (...values: number[]) => {
+		setPerspectiveCamera: (...values: number[]) => {
+			cameras.push(values);
+			return 0;
+		},
+		setOrthographicCamera: (...values: number[]) => {
 			cameras.push(values);
 			return 0;
 		},
@@ -111,6 +115,12 @@ describe('layers', () => {
 		expect(cameras.at(-1)).toEqual([camera.handle, 50, 0.1, 2000, 0b11]);
 		scene.setActiveCamera(other);
 		expect(cameras.at(-1)).toEqual([other.handle, 50, 0.1, 2000, 0b1000]);
+		// An orthographic camera's view takes its layers with its lens.
+		const map = scene.createOrthographicCamera({ height: 10, layers: 0b10 });
+		scene.setActiveCamera(map);
+		expect(cameras.at(-1)).toEqual([map.handle, 10, 0, 0, 0, 0.1, 2000, 0b10]);
+		map.setOrthoHeight(20);
+		expect(cameras.at(-1)).toEqual([map.handle, 20, 0, 0, 0, 0.1, 2000, 0b10]);
 	});
 
 	test("a batch's rows take its layers from the create options and from setLayers", () => {

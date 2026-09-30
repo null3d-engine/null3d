@@ -166,6 +166,14 @@ export interface FrameMetrics extends FrameSummary {
 		firstFrameMs: number | null;
 		/** Time from the start of page navigation until the GPU finished the first frame. */
 		firstFrameDoneMs: number | null;
+		/**
+		 * Time the first frame's GPU pipelines took to build, from the first build's start until
+		 * none was building, or null before the first frame. Browsers that cannot build WebGL2
+		 * programs in the background report about 0, and the first frame's draw waits instead.
+		 */
+		warmUpMs: number | null;
+		/** GPU pipelines that the first frame built, or null before the first frame. */
+		firstFramePipelines: number | null;
 	};
 	/** Bytes of the engine's WebAssembly file as the page downloaded it. */
 	downloadBytes: { wasm: number | null };

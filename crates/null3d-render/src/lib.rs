@@ -1,7 +1,7 @@
 //! The render graph, passes, materials and the post-processing chain.
 //!
 //! - `arrays`: meshes from arrays, with normals and tangents computed as three.js computes them
-//! - `camera`: perspective projection with reversed depth, and view matrices
+//! - `camera`: perspective and orthographic lenses with reversed depth, and view matrices
 //! - `cpu_culled`: the WebGL2 frame builder, with culling on the job workers and an index list per
 //!   view
 //! - `debug_lines`: the lines that a sketch draws for one frame, and the pass that draws them
