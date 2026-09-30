@@ -30,13 +30,13 @@ flowchart LR
     sketch -- "frame snapshot" --> render
 ```
 
-In null3D, a 3D scene is called a sketch: a module that builds the scene and updates it every frame. null3D runs your sketch in a worker thread and draws from a second worker. The page's main thread keeps nothing but the page, so scrolling, input and page UI stay smooth while the sketch runs. All threads share one block of WebAssembly memory, so they pass scene data by reading the same arrays.
+In null3D, a 3D scene is called a sketch: a module that builds the scene and updates it every frame. null3D runs your sketch in a worker thread and draws from a second worker. The page's main thread keeps nothing but the page, so scrolling, input and page UI stay smooth while the sketch runs. All threads share one block of WebAssembly memory, so they pass scene data by reading the same arrays. Texture images are the exception: the sketch worker sends each image in a message to the thread that draws.
 
 ## The four kinds of thread
 
 | Thread | What runs there | How many |
 | --- | --- | --- |
-| Main thread | The page and a thin engine shim. The shim picks the engine build, hands the canvas to the thread that draws, and writes input and resize events into shared memory. | 1 |
+| Main thread | The page and a thin engine shim. The shim tests the browser and picks the engine build, the GPU path and the quality preset. It hands the canvas to the thread that draws, and writes input and resize events into shared memory. | 1 |
 | Sketch worker | Your sketch code and the engine core. Reading or writing scene data is a plain memory access here. | 1 |
 | Render worker | The GPU device and the canvas. It uploads changed data and replays draw lists into WebGPU or WebGL2 calls. It runs no sketch code. | 1 |
 | Job workers | Parallel loops over scene data in Rust: transforms and bounds, instance batches, WebGL2 culling, and the normals and tangents it computes for new meshes. | Logical cores minus 2, at least 1 |
@@ -62,16 +62,19 @@ The sketch worker, computing frame N+1:
 3. Applies the structural changes in one batch.
 4. Runs parallel jobs: transforms by hierarchy depth, with their bounds.
 5. Runs your `onLateUpdate`, then updates the objects that it moved and the objects below them.
-6. Runs more parallel jobs: the instance batches. On the WebGL2 path the jobs also cull each view, such as the camera's.
-7. Records the frame's draw lists: the new GPU objects and the uploads first, then each pass in the order that the [render graph](render-graph.md) sets.
-8. Publishes the finished frame: it stores the frame's number in one shared slot, which the render worker reads in its next frame callback.
+6. Runs more parallel jobs: the instance batches.
+7. Gathers the lights that shade the frame, and tests each grid cell against each view, such as the camera's. On the WebGL2 path, parallel jobs then cull the objects of the cells in view.
+8. Records the frame's draw lists: the new GPU objects and the uploads first, then each pass in the order that the [render graph](render-graph.md) sets.
+9. Publishes the finished frame: it stores the frame's number in one shared slot, which the render worker reads in its next frame callback.
 
 The render worker, drawing frame N inside its own `requestAnimationFrame` callback:
 
 1. Takes the next complete frame. The sketch worker runs at most one frame ahead, so no frame is skipped. If none is ready, it draws nothing, and the browser keeps showing the last frame. It also draws nothing while two frames are unfinished on the GPU. The sketch worker then waits too, so at most two frames wait on a GPU that falls behind.
 2. Applies a canvas resize that arrives with the frame. The frame was built for that size, so the canvas and the frame's render targets always agree. A new pixel ratio, as when the window moves to another screen, resizes the canvas too.
-3. Uploads the changed byte ranges to GPU buffers, and on WebGL2 to data textures. On WebGPU, uploads from 64 KiB up to 4 MiB have two routes: the direct write call, and staging buffers that the browser keeps mapped. The render worker times both on the device and takes the faster one. Chrome favors the staging buffers, and Safari the direct call. On WebGL2, uploads read straight from shared memory, or from a copy in a browser that refuses to read it.
+3. Uploads the changed byte ranges to GPU buffers, and on WebGL2 to data textures. On WebGPU, uploads from 64 KiB up to 4 MiB have two routes: the direct write call, and staging buffers that the browser keeps mapped. The render worker times both on the device and takes the faster one. Chrome favors the staging buffers, and Safari the direct call. On WebGL2, uploads read straight from shared memory, or from a copy in a browser that refuses to read it. Textures upload in bands of rows, within the quality preset's budget of bytes per frame, and the GPU then makes their mip levels.
 4. Replays the draw lists into WebGPU or WebGL2 calls and submits them. The browser shows the frame when the callback returns.
+
+The thread that draws builds GPU pipelines in the background. The first frame waits until its pipelines are built. After that, an object whose pipeline is still building draws nothing until the build ends. `scene.warmUp()` waits for the builds ([Loading screens and warm-up](../guides/loading-screens.md)).
 
 The engine times each step of the sketch worker's frame, the replay on the drawing thread, and each job worker's busy time. The [performance guide](../guides/performance.md) shows how to read those figures.
 
@@ -79,7 +82,7 @@ The engine times each step of the sketch worker's frame, the replay on the drawi
 
 A frame's draw list holds a series of passes, and the [render graph](render-graph.md) puts them in order. A pass is one job for the GPU, such as drawing the scene from the camera. In this version the engine declares every pass itself:
 
-- On WebGPU, a culling pass comes first. This compute pass tests every object and instance row against the camera's view, on the GPU.
+- On WebGPU, a culling pass comes first. This compute pass tests the objects and instance rows against the camera's view, on the GPU. In a scene over several grid cells, it skips the still objects of the cells out of view ([Culling](culling.md)).
 - The opaque pass draws the objects in view into multisampled color and depth. Its render pass resolves the color straight into the canvas.
 - In development builds, a frame with [debug drawing](../api/debug.md) draws the lines after the opaque pass, in the same render pass.
 
@@ -116,13 +119,13 @@ The engine puts the sketch, the drawing and the parallel work on threads by the 
 | Pipelined, where a worker cannot draw | The sketch worker | The page's main thread | The job workers and the sketch worker |
 | Single-threaded | The page's main thread | The page's main thread | The page's main thread |
 
-A worker can draw only where the browser gives it a WebGPU or WebGL2 context for a canvas that the page hands over. The engine tests this at startup. Where a worker cannot draw, the page draws, and the sketch still runs in its worker. Read `engine.mode` for the build, the latency mode, the thread that draws and the number of job workers.
+A worker can draw only where the browser gives it a WebGPU or WebGL2 context for a canvas that the page hands over. The engine tests this at startup. In pipelined mode, where a worker cannot draw, the page draws, and the sketch still runs in its worker. Low latency needs a worker that draws, so there the start fails with [E1301](../errors/E1301.md). Read `engine.mode` for the build, the latency mode, the thread that draws and the number of job workers.
 
 Worker threads need shared memory, and browsers allow shared memory only on cross-origin isolated pages. On any other page, the engine loads its single-threaded build, which runs the same code on one thread. [Hosting and cross-origin isolation](../getting-started/hosting.md) shows how to send the two headers that turn isolation on. The page switches `?threads=off` and `?render=main` force the other modes on one device, for tests ([Testing your sketch](../guides/testing.md)).
 
 ## Rules the engine keeps
 
-- The render worker never waits for the sketch worker. Work that needs the GPU's answer, such as `engine.captureFrame()`, returns its result through a promise.
+- The render worker never waits for the sketch worker. Work that needs the GPU's answer, such as `engine.capture()`, returns its result through a promise.
 - No worker makes a blocking call to the main thread. Messages to the page never wait for a reply.
 - Each frame's data has two copies. The sketch worker writes one while the render worker reads the other, so neither waits on a lock.
 - Each parallel loop splits into chunks, and a worker that finishes early claims the next chunk. A phone's slower cores then take fewer chunks, so they hold up the frame less.

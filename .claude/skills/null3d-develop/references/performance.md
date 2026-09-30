@@ -100,7 +100,7 @@ The lower of `presentedFps` and `completedFps` is the rate users see. The engine
 | 2048 x 2048 RGBA8 texture with mipmaps | about 22 MB on the GPU | KTX2 compression (later in 0.1), 4 to 8 times smaller |
 | Same texture as ASTC or ETC2 | about 4 to 6 MB | `bunx @null3d/cli assets optimize` (0.2) |
 | One static object | a few hundred bytes of engine data | Instances for many copies |
-| One instance row | About 180 bytes of engine memory, 230 with per-row colors, plus your own arrays | Only the columns you need; colors only where the batch needs them |
+| One instance row | About 210 bytes of engine memory, 260 with per-row colors, plus your own arrays | Only the columns you need; colors only where the batch needs them |
 | A new mesh, instance batch, or mesh drawn with a new material, during play | A one-time growth of engine memory in the next frame | Create them during setup; size a batch for its most rows and show fewer with `setActiveCount` |
 | Shadow map 2048 x 2048, depth 32-bit (later in 0.1) | about 16 MB | Smaller maps on Low and Medium presets |
 
