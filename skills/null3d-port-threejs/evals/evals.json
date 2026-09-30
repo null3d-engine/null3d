@@ -40,11 +40,11 @@
     {
       "id": 3,
       "prompt": "Convert this three.js ShaderMaterial to null3d: evals/files/wave-shader.js",
-      "expected_output": "A materials.shader with a WGSL vertexOffset for the wave and a surface function for the color and fresnel, uniforms mapped to the uniforms option, time from frame.time, and notes on color output and bounds.",
+      "expected_output": "A materials.shader with one WGSL literal that holds a vertexOffset for the wave and a surface function for the color and fresnel, uniforms declared as struct Uniforms and given in the uniforms option, time from frame.time, and notes on color output and bounds.",
       "files": ["evals/files/wave-shader.js"],
       "expectations": [
         "The vertex displacement becomes a vertexOffset function returning only the offset",
-        "The fragment logic becomes a surface function using input.worldNormal and input.viewDirection",
+        "The fragment logic becomes a surface function using input.normal and input.viewDirection",
         "uTime is replaced by frame.time, and uColor and uAmplitude become entries in uniforms",
         "The height used for coloring is recomputed or derived in the surface stage, since custom varyings do not exist",
         "Notes that the original wrote colors without color-space conversion, and handles the difference",

@@ -80,6 +80,36 @@ export function compileShader(shader: ShaderSource): CompileResult {
 	return response.ok ? { ok: true, variants: response.output } : response;
 }
 
+/** The WGSL of a custom material: functions that the engine's standard material calls. */
+export interface MaterialSource {
+	/** The file that the WGSL comes from, as problems name it. */
+	readonly path: string;
+	/** The WGSL, which declares `fn surface` and anything it uses. */
+	readonly source: string;
+}
+
+/** A custom material, built into every variant of the engine's standard material. */
+export interface MaterialBuild {
+	/** The functions that the WGSL declares for the engine to call, such as `surface`. */
+	readonly functions: readonly string[];
+	/** The standard material's variants with the WGSL's functions, by name. */
+	readonly variants: Readonly<Record<string, ShaderVariant>>;
+}
+
+/** The result of a custom material's compile. */
+export type MaterialResult =
+	| { readonly ok: true; readonly material: MaterialBuild }
+	| { readonly ok: false; readonly problems: readonly ShaderProblem[] };
+
+/**
+ * Builds a custom material's WGSL into every variant of the engine's standard material, which
+ * then calls its functions. Problems in the WGSL name its own lines.
+ */
+export function compileMaterial(material: MaterialSource): MaterialResult {
+	const response = call<MaterialBuild>('compile_material', material);
+	return response.ok ? { ok: true, material: response.output } : response;
+}
+
 /** A shader manifest and every WGSL file beside it, as `bun run shaders` reads them. */
 export interface ShaderBuildInputs {
 	/** The manifest's text. */
@@ -111,6 +141,7 @@ interface Exports {
 	readonly memory: WebAssembly.Memory;
 	request(length: number): number;
 	compile(): void;
+	compile_material(): void;
 	build(): void;
 	response(): number;
 	response_length(): number;
@@ -139,7 +170,7 @@ function loadModule(): WebAssembly.Module {
 }
 
 /** Runs one export on a request. The first call compiles the module. */
-function call<T>(name: 'compile' | 'build', request: unknown): Response<T> {
+function call<T>(name: 'compile' | 'compile_material' | 'build', request: unknown): Response<T> {
 	compiled ??= loadModule();
 	instance ??= new WebAssembly.Instance(compiled).exports as unknown as Exports;
 	const wasm = instance;

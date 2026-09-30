@@ -19,6 +19,10 @@
 #                              order, such as `webgl2_draw_index`. Each build records its bits as
 #                              its permutation word, which the backends pick it by.
 #                targets       "wgsl" for WebGPU, "glsl" for WebGL2 (GLSL ES 3.00), or both.
+#   custom_materials  True for the one template that custom materials build with: the shader
+#              compiler adds a material's WGSL after the file's last line, and builds every variant
+#              with the shader def of each function that the WGSL declares (CUSTOM_SURFACE for
+#              `fn surface`). The shader compiler holds this manifest and the entry shaders.
 #
 # Names of shaders, variants and pipelines use letters, digits and underscores and do not start
 # with a digit, because they become TypeScript property names.
@@ -45,9 +49,10 @@
 # holds what they share.
 
 # The standard material, lit like three.js's MeshStandardMaterial. VERTEX_COLOR multiplies the
-# base color by the mesh's vertex colors.
+# base color by the mesh's vertex colors. Custom materials build this template.
 [shaders.lit]
 file = "lit.wgsl"
+custom_materials = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
 variants.webgpu = { permutations = ["VERTEX_COLOR"], targets = ["wgsl"] }
 variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "VERTEX_COLOR"], targets = ["glsl"] }

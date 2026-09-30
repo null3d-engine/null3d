@@ -62,11 +62,18 @@ export interface ShaderVariant<Pipeline extends string = string> {
 
 /**
  * WGSL from a project's modules, compiled by the null3D Vite plugin: a `.wgsl` file that a module
- * imports, or a template literal that a `wgsl` block comment tags. The shader has one render
- * pipeline for each `@fragment` entry point, named after it, with the shader's `@vertex` entry
- * point.
+ * imports, or a template literal that a `wgsl` block comment tags. WGSL with entry points is a
+ * whole shader. WGSL without entry points holds the functions of a custom material.
+ */
+export type CompiledWgsl = CompiledShader | CompiledMaterial;
+
+/**
+ * A whole shader from a project's modules. It has one render pipeline for each `@fragment` entry
+ * point, named after it, with the shader's `@vertex` entry point.
  */
 export interface CompiledShader {
+	/** Marks a whole shader. */
+	readonly kind: 'shader';
 	/** The shader for WebGPU, with every `#import null3d::...` resolved. */
 	readonly webgpu: ShaderVariant;
 	/**
@@ -74,4 +81,17 @@ export interface CompiledShader {
 	 * each render pipeline. Null when the shader has only compute entry points.
 	 */
 	readonly webgl2: ShaderVariant | null;
+}
+
+/**
+ * The functions of a custom material from a project's modules, such as `fn surface`, built into
+ * every variant of the engine's standard material. `materials.shader` draws with it.
+ */
+export interface CompiledMaterial {
+	/** Marks the WGSL of a custom material. */
+	readonly kind: 'material';
+	/** The functions that the WGSL declares for the engine to call, such as `surface`. */
+	readonly functions: readonly string[];
+	/** The standard material's variants with the WGSL's functions, by name. */
+	readonly variants: Readonly<Record<string, ShaderVariant>>;
 }

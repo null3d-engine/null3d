@@ -8,7 +8,7 @@ summary: "Built-in materials; permutations; pipeline warm-up; why changing shade
 
 # Materials and pipelines
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Texture maps, alpha modes, custom materials and `scene.warmUp()` are not built yet, so coding agents must not use them.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Texture maps, alpha modes and `scene.warmUp()` are not built yet, and custom materials take only a surface function. Coding agents must not use the parts that are not built.
 
 ```mermaid
 flowchart LR
@@ -28,6 +28,7 @@ A material has two parts. Its values, such as its color and roughness, sit in on
 | --- | --- | --- |
 | `materials.standard` | glTF's metallic-roughness model, lit by the scene's lights | `MeshStandardMaterial` |
 | `materials.unlit` | Its color alone, without lights | `MeshBasicMaterial` |
+| `materials.shader` | The standard model, with a WGSL surface function that changes the look | `ShaderMaterial`, `onBeforeCompile` |
 
 The standard material uses the same formulas as three.js's `MeshStandardMaterial`. It also reads three.js's own table of specular terms, so its highlights and its energy match three.js's. [Materials](../api/materials.md) lists every option.
 
@@ -48,7 +49,7 @@ A feature that changes what a shader costs is a variant of the shader, which the
 
 | Option | Where it goes |
 | --- | --- |
-| The kind: standard or unlit | The shader |
+| The kind: standard, unlit or custom | The shader |
 | `vertexColors` | A shader variant that reads the mesh's colors, on meshes that have them |
 | `doubleSided` | The pipeline's state: it culls no faces |
 | `flatShading` | The material's row: every standard shader can light with face normals |
@@ -61,6 +62,10 @@ const faceted = materials.standard({ color: '#8098d0', flatShading: true });
 const cloth = materials.standard({ color: '#8098d0', doubleSided: true });
 ```
 
+## Custom materials share shaders
+
+A custom material's WGSL becomes a shader of its own: the standard material's shader with the surface function in it. Every material made from the same WGSL shares that shader, and its pipelines, whatever its values. The fixed options above choose its variants and states, as they do for a standard material. Each new WGSL therefore costs its own pipeline compiles, so reuse one WGSL for materials that differ only in their values.
+
 ## Why a new combination can make a frame late
 
 A pipeline compiles the first time a frame draws a combination of shader variant, state and vertex format that no earlier frame drew. The GPU driver can take many milliseconds for that, on a phone above all. So an object that appears in play with a new combination can make that frame late. Create every material in the setup, and use its combinations in the first frames, so the compiles happen before play starts.
@@ -68,5 +73,6 @@ A pipeline compiles the first time a frame draws a combination of shader variant
 ## Related pages
 
 - [Materials](../api/materials.md): every option of each material.
+- [Surface functions](../shaders/surface-functions.md): the WGSL of a custom material.
 - [Lights](../api/lights.md): what lights a standard material.
 - [Color management](color-management.md): how colors turn into linear values.

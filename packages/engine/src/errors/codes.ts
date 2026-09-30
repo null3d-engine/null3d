@@ -142,6 +142,14 @@ const DOCS = {
 		example: 'E1214: defineSketch() got 0 for fixedRate.',
 		since: '0.1',
 	},
+	E1215: {
+		title: 'Invalid custom material WGSL',
+		cause:
+			'materials.shader() received WGSL that it cannot draw with. The null3D Vite plugin compiles WGSL while it builds the project. The engine therefore takes only what the plugin compiled: a template literal after a /* wgsl */ comment, or a .wgsl file that a module imports. In this version, the WGSL of a custom material declares a surface function.',
+		example:
+			'E1215: materials.shader() got WGSL as text, which the null3D Vite plugin did not compile.',
+		since: '0.1',
+	},
 	E1301: {
 		title: 'No usable GPU path',
 		cause: 'The browser offers neither WebGPU nor WebGL2 for the way the engine was asked to draw.',

@@ -196,6 +196,26 @@ export class Pipelines {
 		this.layouts[id] = this.device.createBindGroupLayout({ label, entries });
 	}
 
+	/**
+	 * Adds a custom material's template: the standard material's template with the material's WGSL,
+	 * in the shader variants that the plugin built, which also read the first texture coordinates.
+	 */
+	defineCustom(id: number, shader: ShaderVariants): void {
+		this.defineTemplate(id, {
+			label: `custom material ${id}`,
+			shader,
+			pipeline: 'main',
+			layouts: [LAYOUT_FRAME],
+			meshLocations: [0, 1, 2],
+			vertexBuffers: INSTANCE_BUFFERS,
+		});
+	}
+
+	/** True when a template has this id. */
+	has(id: number): boolean {
+		return this.templates[id] !== undefined;
+	}
+
 	/** Adds a render pipeline template under an id that no other template has. */
 	defineTemplate(id: number, template: RenderTemplate): void {
 		if (this.templates[id]) throw new Error(`render pipeline template ${id} already exists`);

@@ -253,11 +253,14 @@ A dissolve effect as a surface function, which keeps the engine's lighting (0.1)
 const dissolve = materials.shader({
   alphaMode: 'mask', alphaCutoff: 0.5,
   uniforms: { progress: 0, edgeColor: '#ff6a00' },
-  textures: { noise: await assets.loadTexture('/tex/noise.ktx2', { colorSpace: 'linear' }) },
-  surface: /* wgsl */ `
+  wgsl: /* wgsl */ `
+    #import null3d::noise::{fbm2}
+
+    struct Uniforms { progress: f32, edgeColor: vec3f }
+
     fn surface(input: SurfaceInput) -> Surface {
       var s = defaultSurface(input);
-      let n = textureSample(noise, noiseSampler, input.uv).r;
+      let n = fbm2(input.uv * 8.0, 4u) * 0.5 + 0.5;
       s.alpha = step(material.progress, n);
       let edge = 1.0 - smoothstep(0.0, 0.05, n - material.progress);
       s.emissive = material.edgeColor * edge * 4.0;

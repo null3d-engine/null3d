@@ -122,10 +122,12 @@ Toon shading with three bands:
 ```ts
 const toon = materials.shader({
   uniforms: { bands: 3, shadowColor: '#303050', lightDirection: [-0.5, -1, -0.3] },
-  surface: /* wgsl */ `
+  wgsl: /* wgsl */ `
+    struct Uniforms { bands: f32, shadowColor: vec3f, lightDirection: vec3f }
+
     fn surface(input: SurfaceInput) -> Surface {
       var s = defaultSurface(input);
-      let ndl = max(dot(input.worldNormal, -normalize(material.lightDirection)), 0.0);
+      let ndl = max(dot(input.normal, -normalize(material.lightDirection)), 0.0);
       let band = floor(ndl * material.bands) / max(material.bands - 1.0, 1.0);
       s.emissive = mix(material.shadowColor, s.baseColor, band);
       s.baseColor = vec3f(0.0);      // lighting off; emissive carries the look
@@ -140,10 +142,10 @@ Matcap:
 ```ts
 const matcap = materials.shader({
   textures: { matcap: await assets.loadTexture('/tex/matcap-clay.ktx2', { colorSpace: 'srgb' }) },
-  surface: /* wgsl */ `
+  wgsl: /* wgsl */ `
     fn surface(input: SurfaceInput) -> Surface {
       var s = defaultSurface(input);
-      let n = normalize((camera.view * vec4f(input.worldNormal, 0.0)).xyz);
+      let n = normalize((camera.view * vec4f(input.normal, 0.0)).xyz);
       let uv = n.xy * vec2f(0.5, -0.5) + 0.5;     // y flipped: WebGPU texture space starts at the top
       s.emissive = textureSample(matcap, matcapSampler, uv).rgb;
       s.baseColor = vec3f(0.0);
@@ -158,7 +160,9 @@ Clipping plane (section views):
 const clipped = materials.shader({
   alphaMode: 'mask', alphaCutoff: 0.5,
   uniforms: { plane: [0, -1, 0, 1.2] },          // normal xyz, constant w, as in THREE.Plane
-  surface: /* wgsl */ `
+  wgsl: /* wgsl */ `
+    struct Uniforms { plane: vec4f }
+
     fn surface(input: SurfaceInput) -> Surface {
       var s = defaultSurface(input);
       let d = dot(material.plane.xyz, input.worldPosition) + material.plane.w;
@@ -174,7 +178,7 @@ Alpha map (three.js reads the G channel):
 const leaf = materials.shader({
   alphaMode: 'mask', alphaCutoff: 0.5,
   textures: { alphaTex: await assets.loadTexture('/tex/leaf-alpha.ktx2', { colorSpace: 'linear' }) },
-  surface: /* wgsl */ `
+  wgsl: /* wgsl */ `
     fn surface(input: SurfaceInput) -> Surface {
       var s = defaultSurface(input);
       s.alpha = s.alpha * textureSample(alphaTex, alphaTexSampler, input.uv).g;

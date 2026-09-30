@@ -13,7 +13,7 @@ import type { Renderer, Tier } from '../render/renderer';
 import { awaitLater } from '../shared/await-later';
 import { controlViews, createControlBuffer, Slot } from '../shared/control';
 import { type Build, type CoreGlue, loadGlue, startCore } from '../shared/core';
-import { ImageTable, sendToTable } from '../shared/images';
+import { ImageTable, sendToTable, shadersToTable } from '../shared/images';
 import { KEY_CODES } from '../shared/key-codes';
 import { createMetricsBuffer, MetricsReader } from '../shared/metrics';
 import { loadSketch } from '../sketch/define-sketch';
@@ -761,6 +761,7 @@ async function startEngine(
 					device,
 					capabilities,
 					sendImage: sendToTable(imageTable, slots),
+					sendShader: shadersToTable(imageTable),
 					pageUrl: pageUrl ?? sketchUrl,
 				},
 				hold,

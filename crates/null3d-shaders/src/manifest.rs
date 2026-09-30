@@ -46,6 +46,9 @@ pub struct Shader {
     pub pipelines: BTreeMap<String, Pipeline>,
     /// Builds of the shader by name.
     pub variants: BTreeMap<String, Variant>,
+    /// True for the template that custom materials build with their own WGSL added.
+    #[serde(default)]
+    pub custom_materials: bool,
 }
 
 /// The entry points of one render pipeline.

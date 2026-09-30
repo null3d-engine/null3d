@@ -60,6 +60,9 @@ pub mod shading {
     pub const TEXCOORDS: u32 = 2;
     /// The base color times the material's map, as three.js's `MeshBasicMaterial` with a `map`.
     pub const UNLIT_MAP: u32 = 3;
+    /// The first custom material: a shading from here up is the render pipeline template of a
+    /// custom material's compiled WGSL.
+    pub const CUSTOM_FIRST: u32 = null3d_gpu::drawlist::template::CUSTOM_FIRST;
 }
 
 /// The numbers that `textureStat` reads from the texture store.
@@ -244,6 +247,7 @@ pub fn typescript() -> String {
                 ("UNLIT", shading::UNLIT),
                 ("TEXCOORDS", shading::TEXCOORDS),
                 ("UNLIT_MAP", shading::UNLIT_MAP),
+                ("CUSTOM_FIRST", shading::CUSTOM_FIRST),
             ],
         ),
         // The features that `createMaterial` takes, fixed from then on.

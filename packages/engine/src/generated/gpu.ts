@@ -119,6 +119,7 @@ export const TEMPLATE_INSTANCED_TEXCOORDS = 3;
 export const TEMPLATE_DEBUG_LINES = 4;
 export const TEMPLATE_INSTANCED_UNLIT_MAP = 5;
 export const TEMPLATE_CULL = 16;
+export const TEMPLATE_CUSTOM_FIRST = 64;
 
 export const BUFFER_USAGE_MAP_READ = 1;
 export const BUFFER_USAGE_COPY_SRC = 4;

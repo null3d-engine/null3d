@@ -94,6 +94,7 @@ async function start(
 		},
 		capabilities: CAPABILITIES,
 		sendImage: () => {},
+		sendShader: () => {},
 		pageUrl: 'http://localhost/',
 	});
 	let context: SketchContext | undefined;

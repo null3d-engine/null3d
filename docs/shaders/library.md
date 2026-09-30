@@ -10,7 +10,7 @@ summary: "The WGSL modules that ship with the engine: math, noise, color, lighti
 
 # Shader library and imports
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. The Vite plugin compiles shaders that import these modules, but custom materials are not built yet, so the engine cannot draw with such shaders.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. A custom material's surface function can call these modules. Full shaders are not built yet, so the engine cannot draw with a whole shader of your own.
 
 The shader library is a set of WGSL modules that ship with the engine. A shader imports a module with an `#import` line, and the build adds the functions that the shader calls. The build then translates the shader for WebGL2, so each function works on both GPU paths. The engine's own shaders use the same modules.
 
@@ -1029,4 +1029,5 @@ A shell of `thickness` on each side of a shape's surface.
 ## Related pages
 
 - [Custom shaders](../guides/custom-shaders.md): WGSL in sketch code, and how the Vite plugin compiles it.
+- [Surface functions](surface-functions.md): custom materials, which call these modules.
 - [WGSL rules for portable shaders](wgsl-rules.md): what the build rejects, and what it cannot check.

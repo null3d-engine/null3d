@@ -2,20 +2,38 @@ enable draw_index;
 
 // Meshes drawn by instance with the standard material: glTF's metallic-roughness model, shaded
 // with the formulas of three.js's MeshStandardMaterial. null3d::mesh finds each instance on both
-// GPU paths, and null3d::lighting holds the formulas. `light_surface` gathers the scene's lights,
-// so the rest of the shader does not change with where the lights come from.
-#import null3d::color
-#import null3d::lighting
+// GPU paths, and null3d::lighting holds the formulas.
+//
+// The fragment shader works in two steps. First a surface function fills a `Surface` from a
+// `SurfaceInput`: `defaultSurface` reads the material's own values, and a custom material's
+// surface function starts from it. Then `shade` lights the surface with the scene's lights. Code
+// that reads the material's options belongs in `defaultSurface`, and code that lights, shadows,
+// fogs or blends the surface belongs in `shade`, so custom materials get both.
+//
+// Custom materials build this template with their WGSL added after its last line, and with the
+// shader def CUSTOM_SURFACE when that WGSL declares `fn surface`. Their WGSL shares this file's
+// names, so the template imports library items by name and keeps its own names few. It never
+// imports a module whole, which would reserve the module's name in their WGSL too.
+#import null3d::color::{linear_to_srgb}
+#import null3d::lighting::{PbrMaterial, dfg_lut, direct_light, indirect_diffuse}
+#import null3d::lighting::{multiscatter_compensation, pbr_material}
+#import null3d::globals::{Material}
 #import null3d::mesh::{InstanceIn, clip_of, find_instance, frame, material_of}
 #import null3d::mesh::{relative_position, world_normal}
 
 /// The bit of a material's flags that lights each triangle with its face's normal.
 const FLAT_SHADING: u32 = 1u;
 
+/// The row of the material that the pixel shows, which the fragment shader reads once.
+var<private> material_row: Material;
+
 /// The vertex attributes that the template reads.
 struct VertexIn {
     @location(0) position: vec3f,
     @location(1) normal: vec3f,
+#ifdef CUSTOM_SURFACE
+    @location(2) uv: vec2f,
+#endif
 #ifdef VERTEX_COLOR
     @location(5) vertex_color: vec4f,
 #endif
@@ -30,6 +48,70 @@ struct VertexOut {
 #ifdef VERTEX_COLOR
     @location(3) vertex_color: vec4f,
 #endif
+#ifdef CUSTOM_SURFACE
+    @location(4) uv: vec2f,
+#endif
+}
+
+/// What a surface function knows of the point of the surface that a pixel shows. Positions and
+/// directions are in world space, relative to the camera.
+struct SurfaceInput {
+    /// The position relative to the camera, which stays precise far from the world's origin.
+    relativePosition: vec3f,
+    /// The unit normal of the mesh, turned toward the camera on the back faces of double-sided
+    /// materials.
+    normal: vec3f,
+    /// The unit direction from the surface toward the camera.
+    viewDirection: vec3f,
+    /// The mesh's vertex color when the material takes vertex colors and the mesh has them, else
+    /// white.
+    vertexColor: vec4f,
+#ifdef CUSTOM_SURFACE
+    /// The mesh's first texture coordinates.
+    uv: vec2f,
+#endif
+    /// True on the front face of a triangle.
+    frontFacing: bool,
+}
+
+/// A point of a surface, ready to light. Colors are linear.
+struct Surface {
+    /// The base color, which the surface reflects.
+    baseColor: vec3f,
+    /// The opacity, from 0 to 1.
+    alpha: f32,
+    /// How much the surface acts like a metal, from 0 to 1.
+    metalness: f32,
+    /// The perceptual roughness, from 0 (a mirror) to 1 (fully matte).
+    roughness: f32,
+    /// The unit normal that lights the surface, in world space.
+    normal: vec3f,
+    /// The light that the surface gives off, added after lighting.
+    emissive: vec3f,
+    /// How much light from all directions reaches the surface, from 0 (none) to 1 (all).
+    occlusion: f32,
+}
+
+/// The surface as the material's own values make it: its base color times the vertex color, its
+/// metalness, roughness and emissive light, and the normal of the mesh, or of each face with flat
+/// shading.
+fn defaultSurface(input: SurfaceInput) -> Surface {
+    let m = material_row;
+    // A face's normal comes from how the position changes between pixels. The two GPU paths count
+    // pixel rows in opposite directions, so the normal is turned to face the camera, as three.js's
+    // flat normals face it.
+    let face = normalize(cross(dpdx(input.relativePosition), dpdy(input.relativePosition)));
+    let face_normal = select(-face, face, dot(face, input.viewDirection) >= 0.0);
+    let use_face = (u32(m.strengths.z) & FLAT_SHADING) != 0u;
+    var s: Surface;
+    s.baseColor = m.color.rgb * input.vertexColor.rgb;
+    s.alpha = m.color.a * input.vertexColor.a;
+    s.metalness = m.surface.x;
+    s.roughness = m.surface.y;
+    s.normal = select(input.normal, face_normal, use_face);
+    s.emissive = m.emissive.rgb * m.strengths.w;
+    s.occlusion = 1.0;
+    return s;
 }
 
 @vertex
@@ -43,20 +125,18 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
 #ifdef VERTEX_COLOR
     out.vertex_color = v.vertex_color;
 #endif
+#ifdef CUSTOM_SURFACE
+    out.uv = v.uv;
+#endif
     return out;
 }
 
 /// The light that a surface reflects toward the camera from the scene's lights: the sun and the
 /// ambient light. `to_view` points from the surface toward the camera, and `dfg` holds the
 /// split-sum terms at the surface's roughness and view angle.
-fn light_surface(
-    m: null3d::lighting::PbrMaterial,
-    normal: vec3f,
-    to_view: vec3f,
-    dfg: vec2f,
-) -> vec3f {
-    let compensation = null3d::lighting::multiscatter_compensation(m.specular_blended, dfg);
-    let sun = null3d::lighting::direct_light(
+fn light_surface(m: PbrMaterial, normal: vec3f, to_view: vec3f, dfg: vec2f) -> vec3f {
+    let compensation = multiscatter_compensation(m.specular_blended, dfg);
+    let sun = direct_light(
         m,
         normal,
         to_view,
@@ -64,34 +144,43 @@ fn light_surface(
         frame.sun_color.rgb,
         compensation,
     );
-    let ambient = null3d::lighting::indirect_diffuse(m, frame.ambient.rgb, dfg);
+    let ambient = indirect_diffuse(m, frame.ambient.rgb, dfg);
     return sun.diffuse + sun.specular + ambient;
+}
+
+/// The color of a pixel that shows the surface: the light it reflects and the light it gives off.
+fn shade(s: Surface, input: SurfaceInput) -> vec4f {
+    let normal = normalize(s.normal);
+    // Where the normal changes fast between pixels, highlights soften, as three.js softens them.
+    let change = max(abs(dpdx(normal)), abs(dpdy(normal)));
+    let geometry_roughness = max(max(change.x, change.y), change.z);
+    let pbr = pbr_material(s.baseColor, s.metalness, s.roughness, geometry_roughness);
+    let n_dot_v = saturate(dot(normal, input.viewDirection));
+    let dfg = dfg_lut(n_dot_v, pbr.roughness);
+    let outgoing = light_surface(pbr, normal, input.viewDirection, dfg) + s.emissive;
+    return vec4f(linear_to_srgb(outgoing), 1.0);
 }
 
 @fragment
 fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
-    let m = material_of(in.material);
-    var base = m.color.rgb;
-#ifdef VERTEX_COLOR
-    base *= in.vertex_color.rgb;
-#endif
-    let to_view = normalize(-in.relative);
-    // A face's normal comes from how the position changes between pixels. The two GPU paths count
-    // pixel rows in opposite directions, so the normal is turned to face the camera, as three.js's
-    // flat normals face it.
-    let face = normalize(cross(dpdx(in.relative), dpdy(in.relative)));
-    let face_normal = select(-face, face, dot(face, to_view) >= 0.0);
+    material_row = material_of(in.material);
+    var input: SurfaceInput;
+    input.relativePosition = in.relative;
     // Back faces draw only for double-sided materials, and light as front faces do.
-    let smooth_normal = normalize(in.normal) * select(-1.0, 1.0, front);
-    let use_face = (u32(m.strengths.z) & FLAT_SHADING) != 0u;
-    let normal = select(smooth_normal, face_normal, use_face);
-    // Where the normal changes fast between pixels, highlights soften, as three.js softens them.
-    let change = max(abs(dpdx(normal)), abs(dpdy(normal)));
-    let geometry_roughness = max(max(change.x, change.y), change.z);
-    let pbr = null3d::lighting::pbr_material(base, m.surface.x, m.surface.y, geometry_roughness);
-    let n_dot_v = saturate(dot(normal, to_view));
-    let dfg = null3d::lighting::dfg_lut(n_dot_v, pbr.roughness);
-    let emitted = m.emissive.rgb * m.strengths.w;
-    let outgoing = light_surface(pbr, normal, to_view, dfg) + emitted;
-    return vec4f(null3d::color::linear_to_srgb(outgoing), 1.0);
+    input.normal = normalize(in.normal) * select(-1.0, 1.0, front);
+    input.viewDirection = normalize(-in.relative);
+    input.vertexColor = vec4f(1.0);
+#ifdef VERTEX_COLOR
+    input.vertexColor = in.vertex_color;
+#endif
+#ifdef CUSTOM_SURFACE
+    input.uv = in.uv;
+#endif
+    input.frontFacing = front;
+#ifdef CUSTOM_SURFACE
+    let s = surface(input);
+#else
+    let s = defaultSurface(input);
+#endif
+    return shade(s, input);
 }

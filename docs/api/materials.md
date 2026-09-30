@@ -8,7 +8,7 @@ summary: "standard, unlit, shader, shadowCatcher; every option."
 
 # Materials
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Texture maps, transparency, `materials.shader` and `materials.shadowCatcher` are not built yet, so coding agents must not use them.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Texture maps, transparency and `materials.shadowCatcher` are not built yet, and `materials.shader` takes only a surface function. Coding agents must not use the parts that are not built.
 
 A material sets how the surfaces of the objects that use it look. `materials.standard` makes a lit material, and `materials.unlit` makes one that ignores lights. Create materials in the setup, and share each one between the objects that look alike.
 
@@ -31,12 +31,13 @@ export default defineSketch(({ scene, geometry, materials, page }) => {
 });
 ```
 
-## The two materials
+## The materials
 
 | Factory | How it looks |
 | --- | --- |
 | `materials.standard(options)` | Lit by the scene's lights with glTF's metallic-roughness model and the formulas of three.js's `MeshStandardMaterial` |
 | `materials.unlit(options)` | Its color as it is, whatever the lights, like three.js's `MeshBasicMaterial` |
+| `materials.shader(options)` | A standard material whose WGSL surface function changes its look before the engine lights it |
 
 Without lights, a standard material draws black, apart from its emissive color. [Lights](lights.md) explains how light colors and intensities shade it.
 
@@ -75,6 +76,24 @@ These options choose the material's shader or its pipeline, so they are fixed wh
 
 A material with `vertexColors` draws a mesh without colors in its base color alone. The kind of material, standard or unlit, is fixed too.
 
+## Custom materials
+
+`materials.shader(options)` takes every option of `materials.standard`, and a `wgsl` option: WGSL that the null3D Vite plugin compiled. The WGSL declares a surface function, which starts from the look that the standard options make:
+
+```ts
+const rings = /* wgsl */ `
+fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    s.baseColor = mix(s.baseColor, vec3f(1.0), step(0.5, fract(input.uv.y * 6.0)));
+    return s;
+}
+`;
+const red = materials.shader({ wgsl: rings, color: '#e04040', roughness: 0.5 });
+red.set({ roughness: 0.2 });
+```
+
+`set` changes the standard values, as it does for a standard material. Materials made from the same WGSL share one shader. A mesh needs texture coordinates to draw with a custom material. WGSL as plain text, which the plugin did not compile, throws E1215, and so does a whole shader with entry points. [Surface functions](../shaders/surface-functions.md) describes the WGSL.
+
 ## Ranges
 
 `opacity`, `metalness` and `roughness` go from 0 to 1, and `emissiveIntensity` takes 0 or more. When a factory or `set` gets a value outside its range, development builds throw E1108. This version stores the opacity, but it draws every material opaque.
@@ -88,6 +107,7 @@ One engine holds up to 1,024 materials, and a material lasts as long as the engi
 - [Scene](scene.md): creating meshes with a material.
 - [Objects and transforms](objects.md): `setMaterial` on a mesh.
 - [Lights](lights.md): what lights a standard material.
+- [Surface functions](../shaders/surface-functions.md): the WGSL of a custom material.
 - [Math helpers](math.md#colors): sRGB and linear colors.
 
 ## API reference
@@ -101,6 +121,16 @@ type ColorInput = string | number | readonly [number, number, number];
 ```
 
 A color: a hex string such as `'#4a8cff'` or `'#48f'`, a number such as `0x4a8cff`, or three sRGB components from 0 to 1.
+
+### `CompiledWgsl`
+
+Interface `CompiledWgsl`.
+
+WGSL that the null3D Vite plugin compiled: a template literal that a `wgsl` block comment tags, or a `.wgsl` file that a module imports. TypeScript sees a tagged literal as a string, and the plugin puts the compiled WGSL in its place.
+
+| Member | Description |
+| --- | --- |
+| `readonly kind: 'material' \| 'shader'` | `'material'` for the functions of a custom material, and `'shader'` for a whole shader. |
 
 ### `Material`
 
@@ -144,6 +174,17 @@ Material factories. The standard material follows glTF's metallic-roughness mode
 | --- | --- |
 | `standard(options: StandardOptions = {}): Material<StandardValues>` | A lit material with glTF's metallic-roughness model, like three.js's `MeshStandardMaterial`. |
 | `unlit(options: UnlitOptions = {}): Material` | A material that ignores lights and shows its color as it is, like three.js's `MeshBasicMaterial`. |
+| `shader(options: ShaderOptions): Material<StandardValues>` | A custom material: the standard material with a surface function in WGSL, which changes how each pixel of the surface looks before the engine lights it. It takes every option of `materials.standard`, and `set` changes the same values. Meshes need texture coordinates to draw with it. Throws E1215 for WGSL that the null3D Vite plugin did not compile, and for a whole shader with entry points. |
+
+### `ShaderOptions`
+
+Interface `ShaderOptions`, which extends `StandardOptions`.
+
+Options of `materials.shader`: the material's WGSL, and every option of `materials.standard`, which `defaultSurface` applies.
+
+| Member | Description |
+| --- | --- |
+| `wgsl: string \| CompiledWgsl` | The material's WGSL, compiled by the null3D Vite plugin. It declares `fn surface(input: SurfaceInput) -> Surface`, which the engine calls for each pixel, and which can start from `defaultSurface(input)`. The engine lights the surface that it returns. Materials made from the same WGSL share their shader. |
 
 ### `StandardOptions`
 

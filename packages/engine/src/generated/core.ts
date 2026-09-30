@@ -66,6 +66,7 @@ export const SHADING_LIT = 0;
 export const SHADING_UNLIT = 1;
 export const SHADING_TEXCOORDS = 2;
 export const SHADING_UNLIT_MAP = 3;
+export const SHADING_CUSTOM_FIRST = 64;
 
 export const MATERIAL_FEATURE_DOUBLE_SIDED = 1;
 export const MATERIAL_FEATURE_VERTEX_COLORS = 2;

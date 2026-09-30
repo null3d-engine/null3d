@@ -3,12 +3,19 @@
 // id order. The thread that draws keeps them in a table and counts each one it receives in the
 // control block, so the core knows which uploads can run. The table outlives each GPU device, so
 // a new device can upload the images that it still holds.
+//
+// Custom materials' shaders take the same way, each under its render pipeline template. A backend
+// looks a template up in the table when a draw list first names it. A pipeline whose shader has
+// not arrived yet builds once it has.
 
+import type { ShaderVariants } from '../gpu/variants';
 import { Slot } from './control';
 
-/** The images that the thread that draws holds, by id. */
+/** The images and custom materials' shaders that the thread that draws holds. */
 export class ImageTable {
 	private readonly images = new Map<number, ImageBitmap>();
+	/** Custom materials' shader variants, by render pipeline template. */
+	readonly shaders = new Map<number, ShaderVariants>();
 
 	/** Keeps an image under its id, and closes one that the id named before. */
 	set(id: number, image: ImageBitmap): void {
@@ -33,21 +40,24 @@ export class ImageTable {
 		this.images.delete(id);
 	}
 
-	/** Closes every image. */
+	/** Closes every image, and forgets every shader. */
 	clear(): void {
 		for (const image of this.images.values()) image.close();
 		this.images.clear();
+		this.shaders.clear();
 	}
 }
 
 /** Sends an image, under its id, to the thread that draws. */
 export type ImageSender = (id: number, image: ImageBitmap) => void;
 
-/** A message that carries an image to the thread that draws. */
-interface ImageMessage {
-	id: number;
-	image: ImageBitmap;
-}
+/** Sends a custom material's shader variants, under its template, to the thread that draws. */
+export type ShaderSender = (template: number, shader: ShaderVariants) => void;
+
+/** A message that carries an image or a custom material's shader to the thread that draws. */
+type DrawingMessage =
+	| { id: number; image: ImageBitmap }
+	| { template: number; shader: ShaderVariants };
 
 /** Counts an image that the thread that draws received, and wakes a thread that waits for it. */
 function countArrival(slots: Int32Array): void {
@@ -57,7 +67,17 @@ function countArrival(slots: Int32Array): void {
 
 /** Sends images through a port to another thread, which receives them with `receiveImages`. */
 export function sendThrough(port: MessagePort): ImageSender {
-	return (id, image) => port.postMessage({ id, image } satisfies ImageMessage, [image]);
+	return (id, image) => port.postMessage({ id, image } satisfies DrawingMessage, [image]);
+}
+
+/** Sends shaders through a port to another thread, which receives them with `receiveImages`. */
+export function shadersThrough(port: MessagePort): ShaderSender {
+	return (template, shader) => port.postMessage({ template, shader } satisfies DrawingMessage);
+}
+
+/** Puts shaders straight into the table of this thread, which draws as well. */
+export function shadersToTable(table: ImageTable): ShaderSender {
+	return (template, shader) => table.shaders.set(template, shader);
 }
 
 /** Puts images straight into the table of this thread, which draws as well. */
@@ -68,10 +88,17 @@ export function sendToTable(table: ImageTable, slots: Int32Array): ImageSender {
 	};
 }
 
-/** Keeps the images that arrive through a port in the table, and counts each one. */
+/**
+ * Keeps the images and shaders that arrive through a port in the table, and counts each image.
+ */
 export function receiveImages(port: MessagePort, table: ImageTable, slots: Int32Array): void {
-	port.onmessage = (event: MessageEvent<ImageMessage>) => {
-		table.set(event.data.id, event.data.image);
+	port.onmessage = (event: MessageEvent<DrawingMessage>) => {
+		const data = event.data;
+		if ('shader' in data) {
+			table.shaders.set(data.template, data.shader);
+			return;
+		}
+		table.set(data.id, data.image);
 		countArrival(slots);
 	};
 }

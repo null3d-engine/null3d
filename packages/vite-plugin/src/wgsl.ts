@@ -1,12 +1,19 @@
 // The WGSL in a project's own modules: `.wgsl` files that modules import, and template literals
 // that a `wgsl` block comment tags, as in `const glow = /* wgsl */ `...``. The plugin compiles
 // each with the engine's shader library, checks it against the portable WGSL rules, and puts the
-// compiled shader where its source was: WGSL for WebGPU, and GLSL ES 3.00 for WebGL2 with the
-// reflection that the WebGL2 backend binds by. WGSL that does not compile stops the module with
-// an error at the file, line and column of each problem.
+// compiled result where its source was: WGSL for WebGPU, and GLSL ES 3.00 for WebGL2 with the
+// reflection that the WebGL2 backend binds by. WGSL with entry points is a whole shader. WGSL
+// without them holds a custom material's functions, such as `fn surface`, which the plugin builds
+// into every variant of the engine's standard material. WGSL that does not compile stops the
+// module with an error at the file, line and column of each problem.
 import { type ESTree, parseSync, Visitor } from 'vite';
-import { compileShader, type ShaderProblem, type ShaderVariantSpec } from './shader-compiler.ts';
-import type { CompiledShader, WgslPipeline } from './shader-types.ts';
+import {
+	compileMaterial,
+	compileShader,
+	type ShaderProblem,
+	type ShaderVariantSpec,
+} from './shader-compiler.ts';
+import type { CompiledWgsl, WgslPipeline } from './shader-types.ts';
 
 /** The block comment that tags a template literal as WGSL, with any spacing inside it. */
 export const WGSL_TAG = /\/\*\s*wgsl\s*\*\//;
@@ -133,6 +140,16 @@ function blankComments(source: string): string {
 	return text;
 }
 
+/** The functions that a custom material's WGSL may declare for the engine to call. */
+const MATERIAL_FUNCTIONS: ReadonlySet<string> = new Set(['surface']);
+
+/** True when WGSL declares a function of a custom material, such as `fn surface`. */
+function declaresMaterialFunction(source: string): boolean {
+	for (const match of blankComments(source).matchAll(FUNCTION))
+		if (MATERIAL_FUNCTIONS.has(match[2] ?? '')) return true;
+	return false;
+}
+
 /**
  * The entry points that a shader declares, each once. Code behind shader defs counts too, so a
  * stage that `#ifdef` lines declare twice under one name is one entry point.
@@ -177,7 +194,7 @@ function pipelinesOf(
 	if (entries.length === 0) {
 		return problem(
 			0,
-			`the WGSL has no entry point. The plugin compiles whole shaders, so give it a \`@vertex\` and a \`@fragment\` entry point, or a \`@compute\` one. ${hint}`,
+			`the WGSL has no entry point and no function of a custom material. For a custom material, declare \`fn surface(input: SurfaceInput) -> Surface\`. For a shader of your own, give it a \`@vertex\` and a \`@fragment\` entry point, or a \`@compute\` one. ${hint}`,
 		);
 	}
 	if (secondVertex) {
@@ -213,7 +230,7 @@ const BUILDS = {
 
 /** The result of compiling WGSL from a project: the shader, or the problems that stopped it. */
 export type WgslCompile =
-	| { readonly ok: true; readonly shader: CompiledShader }
+	| { readonly ok: true; readonly shader: CompiledWgsl }
 	| {
 			readonly ok: false;
 			readonly problems: readonly ShaderProblem[];
@@ -222,11 +239,18 @@ export type WgslCompile =
 	  };
 
 /**
- * Compiles WGSL from a project with the engine's shader library: for WebGPU, and for WebGL2 when
- * the shader has a render pipeline. `path` names the file in messages, and `hint` ends the message
- * about WGSL with no entry point.
+ * Compiles WGSL from a project with the engine's shader library. A whole shader builds for WebGPU,
+ * and for WebGL2 when it has a render pipeline. A custom material's functions build into every
+ * variant of the engine's standard material. `path` names the file in messages, and `hint` ends
+ * the message about WGSL that is neither.
  */
 export function compileWgsl(path: string, source: string, hint: string): WgslCompile {
+	if (entryPoints(source).length === 0 && declaresMaterialFunction(source)) {
+		const result = compileMaterial({ path, source });
+		// The standard material builds for both GPU paths.
+		if (!result.ok) return { ok: false, problems: result.problems, builds: ['webgpu', 'webgl2'] };
+		return { ok: true, shader: { kind: 'material', ...result.material } };
+	}
 	const shape = pipelinesOf(path, source, hint);
 	if ('problem' in shape) return { ok: false, problems: [shape.problem], builds: [] };
 	const render = Object.keys(shape.pipelines).length > 0;
@@ -235,7 +259,7 @@ export function compileWgsl(path: string, source: string, hint: string): WgslCom
 	if (!result.ok) return { ok: false, problems: result.problems, builds: Object.keys(variants) };
 	const { webgpu, webgl2 } = result.variants;
 	if (!webgpu) throw new Error('null3D: the shader compiler gave no WebGPU build.');
-	return { ok: true, shader: { webgpu, webgl2: webgl2 ?? null } };
+	return { ok: true, shader: { kind: 'shader', webgpu, webgl2: webgl2 ?? null } };
 }
 
 /** Where WGSL starts in the file that holds it: the file as messages name it, and a place. */
@@ -265,14 +289,21 @@ function inFile(problem: ShaderProblem, source: string, origin: WgslOrigin): Sha
 	};
 }
 
-/** Names of the builds, as messages give them. */
-const BUILD_NAMES: Readonly<Record<string, string>> = { webgpu: 'WebGPU', webgl2: 'WebGL2' };
+/** The GPU path of a build, as messages name it, from the start of the build's name. */
+function pathOf(build: string): string {
+	return build.startsWith('webgl2') ? 'WebGL2' : 'WebGPU';
+}
 
-/** A problem as one line of a message: its place, what is wrong, and the build that has it. */
+/**
+ * A problem as one line of a message: its place, what is wrong, and the GPU path whose builds have
+ * it, when not every path's builds do. `builds` names every build that the compile made.
+ */
 function describe(problem: ShaderProblem, builds: readonly string[]): string {
 	const place = [problem.file, problem.line, problem.column].filter((part) => part !== null);
-	const only = problem.variants.length === 1 && builds.length > 1 ? problem.variants[0] : null;
-	const build = only ? ` (in the ${BUILD_NAMES[only] ?? only} build)` : '';
+	const paths = new Set(problem.variants.map(pathOf));
+	const [only] = paths;
+	const partial = paths.size === 1 && new Set(builds.map(pathOf)).size > 1;
+	const build = partial ? ` (in the ${only} build)` : '';
 	return `${place.length > 0 ? `${place.join(':')}: ` : ''}${problem.message}${build}`;
 }
 
@@ -314,8 +345,8 @@ export function wgslError(
 	};
 }
 
-/** A compiled shader, or the error that stops the module that holds its WGSL. */
-export type ShaderOrError = { readonly shader: CompiledShader } | { readonly error: WgslError };
+/** Compiled WGSL, or the error that stops the module that holds it. */
+export type ShaderOrError = { readonly shader: CompiledWgsl } | { readonly error: WgslError };
 
 /**
  * Compiles a `.wgsl` file. `path` names the file in messages, `id` is its module id, and `text` its
@@ -328,11 +359,11 @@ export function compileWgslFile(path: string, id: string, text: string): ShaderO
 	return { error: wgslError(compiled, source, { path, line: 1, column: 1 }, id, source) };
 }
 
-/** A tagged template literal of a module, and the compiled shader that takes its place. */
+/** A tagged template literal of a module, and the compiled WGSL that takes its place. */
 export interface TaggedShader {
 	readonly start: number;
 	readonly end: number;
-	readonly shader: CompiledShader;
+	readonly shader: CompiledWgsl;
 }
 
 /**

@@ -2,6 +2,8 @@
 
 null3D shaders are WGSL. The build translates them to GLSL for the WebGL2 path, so you write each shader once. The null3d-develop skill's `references/shaders.md` defines the surface-function contract used below. Engine docs: `porting/threejs-shaders`, `shaders/surface-functions`, `shaders/builtins`, `shaders/wgsl-rules`.
 
+A custom material takes its WGSL in one `wgsl` option: a template literal tagged `/* wgsl */`, or a `.wgsl` import. That WGSL holds `fn surface`, `fn vertexOffset`, or both. It declares its uniforms once, as `struct Uniforms`, and reads them from `material`. Built so far: `materials.shader({ wgsl })` with `fn surface`. Uniforms, textures, vertex offsets, full shaders and the built-in values (`frame`, `camera`, `object`) are not built yet, so a port that needs them waits, or keeps its values in the standard options.
+
 ## Contents
 
 1. Choose the target form
@@ -68,14 +70,14 @@ Surface functions keep instancing, skinning, shadows, fog and both backends work
 
 | three.js (ShaderMaterial adds these) | null3D |
 | --- | --- |
-| `position`, `normal`, `uv`, `uv1` (older: `uv2`), `color` attributes | `VertexInput.position`, `normal`, `uv`, `color` in `vertexOffset`; `SurfaceInput.uv`, `uv1`, `color` in surface functions |
+| `position`, `normal`, `uv`, `uv1` (older: `uv2`), `color` attributes | `VertexInput.position`, `normal`, `uv` in `vertexOffset`; `SurfaceInput.uv`, `uv1`, `vertexColor` in surface functions |
 | `modelMatrix` | `object.worldMatrix` |
 | `viewMatrix`, `projectionMatrix` | `camera.view`, `camera.projection` |
 | `modelViewMatrix * vec4(position, 1.0)` | Nothing: the engine transforms vertices; in full shaders use `null3d::vertex::to_clip` |
-| `normalMatrix` (view space in three.js) | `input.worldNormal` is already world space; for view space: `(camera.view * vec4f(n, 0.0)).xyz` |
+| `normalMatrix` (view space in three.js) | `input.normal` is already world space; for view space: `(camera.view * vec4f(n, 0.0)).xyz` |
 | `cameraPosition` | `camera.position` |
-| Varyings such as `vWorldPosition`, `vViewDir`, `vNormal` | `input.worldPosition`, `input.relativePosition`, `input.viewDirection`, `input.worldNormal` |
-| `instanceMatrix`, `instanceColor` | Handled by the engine; `input.color` includes the instance color |
+| Varyings such as `vWorldPosition`, `vViewDir`, `vNormal` | `input.worldPosition`, `input.relativePosition`, `input.viewDirection`, `input.normal` |
+| `instanceMatrix`, `instanceColor` | Handled by the engine; `input.vertexColor` includes the instance color |
 | Uniform `time` passed by the app | `frame.time` |
 | `#include <fog_fragment>` and fog uniforms | Nothing: fog is applied after the surface function |
 | `#include <tonemapping_fragment>`, `<colorspace_fragment>` | Delete: the final pass does both, once |
@@ -93,7 +95,7 @@ Surface functions keep instancing, skinning, shadows, fog and both backends work
 
 ## 5. ShaderMaterial and RawShaderMaterial
 
-1. List the uniforms. Each becomes an entry in `uniforms` (numbers, `'#rrggbb'` colors, arrays) or `textures`. Updates such as `material.uniforms.uSpeed.value = 2` become `material.set({ speed: 2 })`.
+1. List the uniforms. Each becomes a field of `struct Uniforms` in the WGSL, with its first value in `uniforms` (numbers, `'#rrggbb'` colors, arrays), or an entry in `textures`. Updates such as `material.uniforms.uSpeed.value = 2` become `material.set({ speed: 2 })`.
 2. Read the vertex shader. If it only applies `projectionMatrix * modelViewMatrix * vec4(position, 1.0)` and passes varyings along, drop it: the engine does both. If it moves vertices, port that part as `vertexOffset`.
 3. Read the fragment shader. Map its varyings to `SurfaceInput` fields and its output to `Surface` fields: lit look to `baseColor`, `roughness` and `metalness`; unlit look to `emissive` with `baseColor` set to zero; transparency to `alpha` plus the right `alphaMode`.
 4. Set the material options that were ShaderMaterial flags: `transparent` becomes `alphaMode: 'blend'`, `side: DoubleSide` becomes `doubleSided: true`, `blending: AdditiveBlending` becomes `blending: 'additive'`, `depthWrite: false` stays `depthWrite: false`.
@@ -125,10 +127,10 @@ Keep the original's standard options (color, maps, roughness) on the new materia
 | `uv()`, `uv(1)` | `input.uv`, `input.uv1` |
 | `positionGeometry` | `VertexInput.position` in `vertexOffset` |
 | `positionLocal` | `VertexInput.position` in `vertexOffset`, except inside `positionNode` on an `InstancedMesh` (see below) |
-| `positionWorld`, `normalWorld` | `input.worldPosition`, `input.worldNormal` |
-| `normalView` | `(camera.view * vec4f(input.worldNormal, 0.0)).xyz` |
+| `positionWorld`, `normalWorld` | `input.worldPosition`, `input.normal` |
+| `normalView` | `(camera.view * vec4f(input.normal, 0.0)).xyz` |
 | `cameraPosition`, `time` | `camera.position`, `frame.time` |
-| `vertexColor()`, `instanceIndex` | `input.color`, `input.instance` |
+| `vertexColor()`, `instanceIndex` | `input.vertexColor`, `input.instance` |
 | `screenUV` | `input.fragCoord.xy / frame.resolution` in surfaces, `input.uv` in effects |
 | `add`, `sub`, `mul`, `div`, `.add()` chains | `+`, `-`, `*`, `/` |
 | `oneMinus(x)`, `saturate(x)` | `1.0 - x`, `saturate(x)` |
@@ -147,7 +149,9 @@ const terrain = materials.shader({
   map: groundColor, normalMap: groundNormal,        // standard options still apply
   uniforms: { scale: 2.0, bias: 0.0 },
   textures: { height: heightMap },                  // linear color space
-  vertexOffset: /* wgsl */ `
+  wgsl: /* wgsl */ `
+    struct Uniforms { scale: f32, bias: f32 }
+
     fn vertexOffset(input: VertexInput) -> vec3f {
       let h = textureSampleLevel(height, heightSampler, input.uv, 0.0).r;
       return input.normal * (h * material.scale + material.bias);
@@ -185,10 +189,12 @@ void main() {
 const glow = materials.shader({
   alphaMode: 'blend', blending: 'additive', depthWrite: false,
   uniforms: { color: '#44aaff', power: 3 },
-  surface: /* wgsl */ `
+  wgsl: /* wgsl */ `
+    struct Uniforms { color: vec3f, power: f32 }
+
     fn surface(input: SurfaceInput) -> Surface {
       var s = defaultSurface(input);
-      let f = pow(1.0 - max(dot(input.worldNormal, input.viewDirection), 0.0), material.power);
+      let f = pow(1.0 - max(dot(input.normal, input.viewDirection), 0.0), material.power);
       s.baseColor = vec3f(0.0);
       s.emissive = material.color * f;
       s.alpha = f;
@@ -216,7 +222,9 @@ material.onBeforeCompile = (shader) => {
 const foliage = materials.shader({
   map: leafColor, alphaMode: 'mask', alphaCutoff: 0.5, doubleSided: true,
   uniforms: { strength: 0.1 },
-  vertexOffset: /* wgsl */ `
+  wgsl: /* wgsl */ `
+    struct Uniforms { strength: f32 }
+
     fn vertexOffset(input: VertexInput) -> vec3f {
       let sway = sin(frame.time * 2.0 + input.position.y) * material.strength * input.position.y;
       return vec3f(sway, 0.0, 0.0);
@@ -235,7 +243,7 @@ material.emissiveNode = color(0xff6a00).mul(smoothstep(0.05, 0.0, n.sub(progress
 material.alphaTest = 0.5;
 ```
 
-The null3D version is the dissolve example in the null3d-develop skill's `references/shaders.md` (section 2). The mapping is one to one: `opacityNode` becomes `s.alpha`, `emissiveNode` becomes `s.emissive`, and `alphaTest` becomes `alphaMode: 'mask'` with `alphaCutoff`.
+The null3D version is the dissolve example in the null3d-develop skill's `references/shaders.md` (section 4), which uses `null3d::noise` in place of the noise texture. The mapping is one to one: `opacityNode` becomes `s.alpha`, `emissiveNode` becomes `s.emissive`, and `alphaTest` becomes `alphaMode: 'mask'` with `alphaCutoff`.
 
 ## 10. Pitfalls checklist
 

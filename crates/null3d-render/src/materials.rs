@@ -32,6 +32,10 @@ pub enum Shading {
     /// A material without a live map, or on a mesh without texture coordinates, draws as
     /// [`Shading::Unlit`].
     UnlitMap,
+    /// A custom material: the standard material's template with the sketch's own WGSL, under its
+    /// own template id, from [`template::CUSTOM_FIRST`] up. Its surface function reads the first
+    /// texture coordinates.
+    Custom(u32),
 }
 
 impl Shading {
@@ -42,6 +46,7 @@ impl Shading {
             Shading::Unlit => template::INSTANCED_UNLIT,
             Shading::TexCoords => template::INSTANCED_TEXCOORDS,
             Shading::UnlitMap => template::INSTANCED_UNLIT_MAP,
+            Shading::Custom(template) => template,
         }
     }
 
@@ -50,7 +55,7 @@ impl Shading {
     pub const fn attributes(self) -> u32 {
         match self {
             Shading::Lit | Shading::Unlit => 0,
-            Shading::TexCoords | Shading::UnlitMap => vertex::UV0,
+            Shading::TexCoords | Shading::UnlitMap | Shading::Custom(_) => vertex::UV0,
         }
     }
 

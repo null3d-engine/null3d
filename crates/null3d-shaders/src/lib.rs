@@ -16,6 +16,7 @@ mod features;
 mod glsl;
 mod library;
 mod manifest;
+mod material;
 mod names;
 mod output;
 mod position;
@@ -34,6 +35,7 @@ use serde::{Deserialize, Serialize};
 
 pub use features::ALLOWED_LANGUAGE_FEATURES;
 pub use manifest::{Pipeline, Target, Variant};
+pub use material::{MaterialOutput, MaterialSource, MaterialTemplate};
 pub use output::{
     Binding, GlslProgram, GlslStage, GlslTexture, GlslUniformBlock, Output, Response,
     VariantOutput, WgslOutput,

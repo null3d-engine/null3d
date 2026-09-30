@@ -36,7 +36,7 @@
     {
       "id": 3,
       "prompt": "Add an animated water surface to my null3d scene: gentle waves that move the vertices, a lighter color on the crests, and it should still receive shadows and fog.",
-      "expected_output": "A materials.shader material with a WGSL vertexOffset for the waves and a surface function that starts from defaultSurface and changes color by wave height, keeping engine lighting, shadows and fog; bounds enlarged; WebGL2 check suggested.",
+      "expected_output": "A materials.shader material whose one WGSL literal holds a vertexOffset for the waves and a surface function that starts from defaultSurface and changes color by wave height, keeping engine lighting, shadows and fog; bounds enlarged; WebGL2 check suggested.",
       "files": [],
       "expectations": [
         "Uses materials.shader with a vertexOffset function and a surface function written in WGSL",

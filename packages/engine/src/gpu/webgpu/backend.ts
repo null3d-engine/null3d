@@ -69,8 +69,13 @@ export class WebGPUBackend {
 	/** Pipelines by id: null while one builds, and undefined for an id that names none. */
 	private readonly renderPipelines: (GPURenderPipeline | null | undefined)[] = [];
 	private readonly computePipelines: (GPUComputePipeline | null | undefined)[] = [];
-	/** Pipelines that are building. */
+	/** Pipelines that are building, or that wait for their custom material's shader. */
 	private builds = 0;
+	/**
+	 * The operands of each `CreateRenderPipeline` whose custom material's shader has not reached
+	 * this thread yet. Each builds once its shader arrives.
+	 */
+	private readonly parked: Uint32Array[] = [];
 	/** Why a pipeline failed to build, which the next replay reports. */
 	private buildFailure: string | undefined;
 	/** True while the render pass's pipeline is building: its draws draw nothing until it is set again. */
@@ -351,9 +356,34 @@ export class WebGPUBackend {
 		return i;
 	}
 
-	/** True while a pipeline is building. */
+	/** True while a pipeline is building. Pipelines whose shaders arrived start to build first. */
 	get building(): boolean {
+		if (this.parked.length > 0) this.unpark();
 		return this.builds > 0;
+	}
+
+	/**
+	 * True when a render pipeline template can build pipelines now: an engine template, or a custom
+	 * material's whose shader arrived, which it defines at its first use.
+	 */
+	private templateReady(template: number): boolean {
+		if (this.pipelines.has(template)) return true;
+		const shader = this.images.shaders.get(template);
+		if (shader) this.pipelines.defineCustom(template, shader);
+		return shader !== undefined;
+	}
+
+	/** Starts to build each parked pipeline whose custom material's shader has arrived. */
+	private unpark(): void {
+		const parked = this.parked;
+		for (let k = parked.length - 1; k >= 0; k--) {
+			const operands = parked[k] as Uint32Array;
+			if (!this.templateReady(operands[1] as number)) continue;
+			parked.splice(k, 1);
+			this.builds--;
+			this.counts.pipelines--;
+			this.createPipeline(G.OP_CREATE_RENDER_PIPELINE, operands, 0, true);
+		}
 	}
 
 	/**
@@ -376,6 +406,13 @@ export class WebGPUBackend {
 				(pipeline) => this.built(this.computePipelines, id, pipeline),
 				(error: unknown) => this.failed(error),
 			);
+			return;
+		}
+		if (!this.templateReady(words[a + 1] as number)) {
+			// Its draws draw nothing until the shader arrives and the pipeline builds.
+			this.renderPipelines[id] = null;
+			this.builds++;
+			this.parked.push(words.slice(a, a + 8));
 			return;
 		}
 		const descriptor = this.pipelines.render(

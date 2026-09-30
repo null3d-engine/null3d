@@ -874,14 +874,15 @@ pub fn mesh_radius(mesh: u32) -> f32 {
 /// Creates a material with a linear color and opacity, and returns its id, counting from 1. Its
 /// shading (`constants::shading`) is the standard material, like three.js's
 /// `MeshStandardMaterial`, unlit, like its `MeshBasicMaterial`, or the first texture coordinates as
-/// colors, for the engine's own tests. Its features (`constants::material_feature`) are fixed from
-/// now on.
+/// colors, for the engine's own tests. A shading from `shading::CUSTOM_FIRST` up is a custom
+/// material's template. Its features (`constants::material_feature`) are fixed from now on.
 #[wasm_bindgen(js_name = createMaterial)]
 pub fn create_material(shading: u32, features: u32, r: f32, g: f32, b: f32, a: f32) -> u32 {
     let shading = match shading {
         shading::UNLIT => Shading::Unlit,
         shading::TEXCOORDS => Shading::TexCoords,
         shading::UNLIT_MAP => Shading::UnlitMap,
+        custom if custom >= shading::CUSTOM_FIRST => Shading::Custom(custom),
         _ => Shading::Lit,
     };
     value_with_engine(|e| {

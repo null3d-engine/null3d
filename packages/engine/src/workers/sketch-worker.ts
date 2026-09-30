@@ -9,7 +9,13 @@ import type { Drawing } from '../render/recovery';
 import type { Renderer } from '../render/renderer';
 import { awaitLater } from '../shared/await-later';
 import { controlViews, Slot } from '../shared/control';
-import { ImageTable, sendThrough, sendToTable } from '../shared/images';
+import {
+	ImageTable,
+	sendThrough,
+	sendToTable,
+	shadersThrough,
+	shadersToTable,
+} from '../shared/images';
 import { loadSketch } from '../sketch/define-sketch';
 import { SketchRunner } from '../sketch/runner';
 import {
@@ -79,9 +85,9 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 			const memory = started.memory as WebAssembly.Memory;
 			// Texture images go to the thread that draws: another through a port, or this one.
 			const imageTable = new ImageTable();
-			const sendImage = message.imagePort
-				? sendThrough(message.imagePort)
-				: sendToTable(imageTable, control.slots);
+			const port = message.imagePort;
+			const sendImage = port ? sendThrough(port) : sendToTable(imageTable, control.slots);
+			const sendShader = port ? shadersThrough(port) : shadersToTable(imageTable);
 			runner = new SketchRunner(
 				(name, data, transfer) => replyToPage({ type: 'sketch-message', name, data }, transfer),
 				message.metrics,
@@ -94,6 +100,7 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 					device: message.device,
 					capabilities: message.capabilities,
 					sendImage,
+					sendShader,
 					pageUrl: message.pageUrl,
 				},
 				message.hold,

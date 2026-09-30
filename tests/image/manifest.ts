@@ -243,6 +243,16 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		size: [480, 270],
 	},
+	// Custom materials with surface functions: pairs of a standard material and a surface function
+	// that keeps its look, which must match, then surface functions that change the look. Each
+	// thread mode sends the shaders to the thread that draws in its own way.
+	{
+		name: 'custom-surface',
+		sketch: 'tests/pages/sketches/custom-material-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+		modes: ALL_MODES,
+	},
 	// Two surfaces 1 cm apart at each distance from 1 m to 10 km, in each GPU path's own depth mode.
 	// The page paints each pixel where the farther surface shows through as the nearer one, and
 	// publishes their count. The engine must draw the depth it chose, no mode may fight up to 40 m,

@@ -5,7 +5,7 @@ import { build, createServer, type Rollup } from 'vite';
 import { fixture } from '../../../tools/lib/fixture';
 import null3d from './index';
 import type { ShaderProblem } from './shader-compiler';
-import type { CompiledShader } from './shader-types';
+import type { CompiledMaterial, CompiledShader } from './shader-types';
 import {
 	codeFrame,
 	compileTaggedWgsl,
@@ -170,11 +170,35 @@ describe('the places of problems', () => {
 	});
 });
 
-/** The compiled shader, or the failure's message. */
-function compiled(result: WgslCompile): CompiledShader {
+/** The compiled WGSL of a compile that should pass, or the failure's message. */
+function passed(result: WgslCompile) {
 	if (!result.ok) throw new Error(result.problems.map((p) => p.message).join('\n'));
 	return result.shader;
 }
+
+/** The compiled whole shader. */
+function compiled(result: WgslCompile): CompiledShader {
+	const shader = passed(result);
+	if (shader.kind !== 'shader') throw new Error('the WGSL compiled as a custom material');
+	return shader;
+}
+
+/** The compiled custom material. */
+function material(result: WgslCompile): CompiledMaterial {
+	const shader = passed(result);
+	if (shader.kind !== 'material') throw new Error('the WGSL compiled as a whole shader');
+	return shader;
+}
+
+/** A surface function that stripes the standard look by the first texture coordinates. */
+const SURFACE = `#import null3d::math::{square}
+
+fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    s.roughness = square(fract(input.uv.x * 4.0));
+    return s;
+}
+`;
 
 /** The message of a compile that should fail. */
 function failure(result: WgslCompile): ShaderProblem {
@@ -214,7 +238,9 @@ describe.skipIf(!ENABLED)('compileWgsl', () => {
 	it('explains WGSL whose entry points make no render pipeline', () => {
 		const none = failure(compileWgsl('a.wgsl', 'fn helper() -> f32 {\n    return 1.0;\n}\n', HINT));
 		expect([none.line, none.column]).toEqual([1, 1]);
-		expect(none.message).toStartWith('the WGSL has no entry point.');
+		expect(none.message).toStartWith(
+			'the WGSL has no entry point and no function of a custom material.',
+		);
 		expect(none.message).toEndWith(' HINT');
 		const twice = SHADER.replace(
 			'@fragment',
@@ -225,6 +251,39 @@ describe.skipIf(!ENABLED)('compileWgsl', () => {
 		expect(second.message).toContain('more than one `@vertex` entry point');
 		const alone = SHADER.slice(0, SHADER.indexOf('@fragment'));
 		expect(failure(compileWgsl('a.wgsl', alone, HINT)).message).toContain('no `@fragment` one');
+	});
+
+	it('builds a surface function into every variant of the standard material', () => {
+		const built = material(compileWgsl('src/stripes.wgsl', SURFACE, HINT));
+		expect(built.functions).toEqual(['surface']);
+		expect(Object.keys(built.variants).sort()).toEqual([
+			'webgl2',
+			'webgl2_draw_index',
+			'webgl2_draw_index_vertex_color',
+			'webgl2_vertex_color',
+			'webgpu',
+			'webgpu_vertex_color',
+		]);
+		const webgpu = built.variants.webgpu;
+		expect(webgpu?.wgsl?.source).toMatch(/fn surface\(\w+: SurfaceInput\) -> Surface/);
+		expect(webgpu?.wgsl?.pipelines).toEqual({ main: { vertex: 'vs', fragment: 'fs' } });
+		expect(built.variants.webgl2?.glsl?.main?.fragment.source).toContain('#version 300 es');
+	});
+
+	it('places problems of a surface function in its own lines', () => {
+		const broken = SURFACE.replace('4.0));', '4.0)) 2.0;');
+		const syntax = failure(compileWgsl('src/stripes.wgsl', broken, HINT));
+		expect(`${syntax.line}:${syntax.column}`).toBe(where(broken, '2.0;'));
+		const wrong = SURFACE.replace('-> Surface', '-> vec4f');
+		const signature = failure(compileWgsl('src/stripes.wgsl', wrong, HINT));
+		expect([signature.line, signature.column]).toEqual([3, 4]);
+		expect(signature.message).toBe(
+			'`surface` does not have the signature that the engine calls. Declare it as `fn surface(input: SurfaceInput) -> Surface`.',
+		);
+		const clash = `${SURFACE}\nfn shade(x: f32) -> f32 {\n    return x;\n}\n`;
+		const twice = failure(compileWgsl('src/stripes.wgsl', clash, HINT));
+		expect(twice.line).toBe(9);
+		expect(twice.message).toContain('redefinition of `shade`');
 	});
 
 	it('names the build that a problem is in', () => {
@@ -362,7 +421,7 @@ describe.skipIf(!ENABLED)('the plugin with WGSL in a project', () => {
 			expect(sketch?.code).toContain('#version 300 es');
 			expect(sketch?.code).not.toContain('-> @builtin(position) vec4f {');
 			const file = await server.transformRequest('/src/shaders/glow.wgsl');
-			expect(file?.code).toStartWith('export default ({"webgpu":');
+			expect(file?.code).toStartWith('export default ({"kind":"shader","webgpu":');
 			const error = await server.transformRequest('/src/broken.ts').then(
 				() => null,
 				(e: { plugin?: string; loc?: unknown; frame?: string }) => e,

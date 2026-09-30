@@ -421,13 +421,6 @@ precision highp int;
 
 uniform uint naga_vs_first_instance;
 
-struct Frame {
-    mat4x4 view_proj;
-    vec4 camera_position;
-    vec4 sun_direction;
-    vec4 sun_color;
-    vec4 ambient;
-};
 struct Material {
     vec4 color;
     vec4 emissive;
@@ -437,6 +430,13 @@ struct Material {
     vec4 uv_v;
     vec4 maps;
     vec4 more_maps;
+};
+struct Frame {
+    mat4x4 view_proj;
+    vec4 camera_position;
+    vec4 sun_direction;
+    vec4 sun_color;
+    vec4 ambient;
 };
 struct Transform {
     vec4 x;
@@ -485,6 +485,22 @@ struct VertexOut {
     vec3 relative;
     vec3 normal;
     uint material;
+};
+struct SurfaceInput {
+    vec3 relativePosition;
+    vec3 normal;
+    vec3 viewDirection;
+    vec4 vertexColor;
+    bool frontFacing;
+};
+struct Surface {
+    vec3 baseColor;
+    float alpha;
+    float metalness;
+    float roughness;
+    vec3 normal;
+    vec3 emissive;
+    float occlusion;
 };
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
 const uint INDEX_ROW_SHIFT = 11u;
@@ -779,13 +795,6 @@ void main() {
 precision highp float;
 precision highp int;
 
-struct Frame {
-    mat4x4 view_proj;
-    vec4 camera_position;
-    vec4 sun_direction;
-    vec4 sun_color;
-    vec4 ambient;
-};
 struct Material {
     vec4 color;
     vec4 emissive;
@@ -795,6 +804,13 @@ struct Material {
     vec4 uv_v;
     vec4 maps;
     vec4 more_maps;
+};
+struct Frame {
+    mat4x4 view_proj;
+    vec4 camera_position;
+    vec4 sun_direction;
+    vec4 sun_color;
+    vec4 ambient;
 };
 struct Transform {
     vec4 x;
@@ -844,6 +860,22 @@ struct VertexOut {
     vec3 normal;
     uint material;
 };
+struct SurfaceInput {
+    vec3 relativePosition;
+    vec3 normal;
+    vec3 viewDirection;
+    vec4 vertexColor;
+    bool frontFacing;
+};
+struct Surface {
+    vec3 baseColor;
+    float alpha;
+    float metalness;
+    float roughness;
+    vec3 normal;
+    vec3 emissive;
+    float occlusion;
+};
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
@@ -859,6 +891,8 @@ layout(std140) uniform Frame_block_0Fragment { Frame _group_0_binding_0_fs; };
 uniform highp sampler2D _group_0_binding_1_fs;
 
 uniform highp sampler2D _group_0_binding_3_fs;
+
+Material material_row = Material(vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0));
 
 smooth in vec3 _vs2fs_location0;
 smooth in vec3 _vs2fs_location1;
@@ -1032,6 +1066,25 @@ vec3 linear_to_srgb(vec3 c) {
     return mix(high_1, low_1, lessThanEqual(c, vec3(0.0031308)));
 }
 
+Surface defaultSurface(SurfaceInput input_1) {
+    Surface s = Surface(vec3(0.0), 0.0, 0.0, 0.0, vec3(0.0), vec3(0.0), 0.0);
+    Material m_5 = material_row;
+    vec3 _e4 = dFdx(input_1.relativePosition);
+    vec3 _e6 = dFdy(input_1.relativePosition);
+    vec3 face = normalize(cross(_e4, _e6));
+    vec3 face_normal = ((dot(face, input_1.viewDirection) >= 0.0) ? face : -(face));
+    bool use_face = ((uint(m_5.strengths.z) & FLAT_SHADING) != 0u);
+    s.baseColor = (m_5.color.xyz * input_1.vertexColor.xyz);
+    s.alpha = (m_5.color.w * input_1.vertexColor.w);
+    s.metalness = m_5.surface.x;
+    s.roughness = m_5.surface.y;
+    s.normal = (use_face ? face_normal : input_1.normal);
+    s.emissive = (m_5.emissive.xyz * m_5.strengths.w);
+    s.occlusion = 1.0;
+    Surface _e52 = s;
+    return _e52;
+}
+
 vec3 light_surface(PbrMaterial m_4, vec3 normal_3, vec3 to_view_2, vec2 dfg_3) {
     vec3 _e3 = multiscatter_compensation(m_4.specular_blended, dfg_3);
     vec4 _e6 = _group_0_binding_0_fs.sun_direction;
@@ -1042,33 +1095,37 @@ vec3 light_surface(PbrMaterial m_4, vec3 normal_3, vec3 to_view_2, vec2 dfg_3) {
     return ((_e15.diffuse + _e15.specular) + _e20);
 }
 
+vec4 shade(Surface s_1, SurfaceInput input_2) {
+    vec3 normal_4 = normalize(s_1.normal);
+    vec3 _e3 = dFdx(normal_4);
+    vec3 _e5 = dFdy(normal_4);
+    vec3 change = max(abs(_e3), abs(_e5));
+    float geometry_roughness_1 = max(max(change.x, change.y), change.z);
+    PbrMaterial _e16 = pbr_material(s_1.baseColor, s_1.metalness, s_1.roughness, geometry_roughness_1);
+    float n_dot_v_3 = clamp(dot(normal_4, input_2.viewDirection), 0.0, 1.0);
+    vec2 _e22 = dfg_lut(n_dot_v_3, _e16.roughness);
+    vec3 _e24 = light_surface(_e16, normal_4, input_2.viewDirection, _e22);
+    vec3 outgoing = (_e24 + s_1.emissive);
+    vec3 _e27 = linear_to_srgb(outgoing);
+    return vec4(_e27, 1.0);
+}
+
 void main() {
     VertexOut in_ = VertexOut(gl_FragCoord, _vs2fs_location0, _vs2fs_location1, _vs2fs_location2);
     bool front = gl_FrontFacing;
-    vec3 base = vec3(0.0);
+    SurfaceInput input_ = SurfaceInput(vec3(0.0), vec3(0.0), vec3(0.0), vec4(0.0), false);
     Material _e2 = material_of(in_.material);
-    base = _e2.color.xyz;
-    vec3 to_view_3 = normalize(-(in_.relative));
-    vec3 _e10 = dFdx(in_.relative);
-    vec3 _e12 = dFdy(in_.relative);
-    vec3 face = normalize(cross(_e10, _e12));
-    vec3 face_normal = ((dot(face, to_view_3) >= 0.0) ? face : -(face));
-    vec3 smooth_normal = (normalize(in_.normal) * (front ? 1.0 : -1.0));
-    bool use_face = ((uint(_e2.strengths.z) & FLAT_SHADING) != 0u);
-    vec3 normal_4 = (use_face ? face_normal : smooth_normal);
-    vec3 _e35 = dFdx(normal_4);
-    vec3 _e37 = dFdy(normal_4);
-    vec3 change = max(abs(_e35), abs(_e37));
-    float geometry_roughness_1 = max(max(change.x, change.y), change.z);
-    vec3 _e45 = base;
-    PbrMaterial _e50 = pbr_material(_e45, _e2.surface.x, _e2.surface.y, geometry_roughness_1);
-    float n_dot_v_3 = clamp(dot(normal_4, to_view_3), 0.0, 1.0);
-    vec2 _e54 = dfg_lut(n_dot_v_3, _e50.roughness);
-    vec3 emitted = (_e2.emissive.xyz * _e2.strengths.w);
-    vec3 _e60 = light_surface(_e50, normal_4, to_view_3, _e54);
-    vec3 outgoing = (_e60 + emitted);
-    vec3 _e62 = linear_to_srgb(outgoing);
-    _fs2p_location0 = vec4(_e62, 1.0);
+    material_row = _e2;
+    input_.relativePosition = in_.relative;
+    input_.normal = (normalize(in_.normal) * (front ? 1.0 : -1.0));
+    input_.viewDirection = normalize(-(in_.relative));
+    input_.vertexColor = vec4(1.0);
+    input_.frontFacing = front;
+    SurfaceInput _e23 = input_;
+    Surface _e24 = defaultSurface(_e23);
+    SurfaceInput _e25 = input_;
+    vec4 _e26 = shade(_e24, _e25);
+    _fs2p_location0 = _e26;
     return;
 }
 `,
@@ -1112,13 +1169,6 @@ precision highp int;
 
 uniform uint naga_vs_first_instance;
 
-struct Frame {
-    mat4x4 view_proj;
-    vec4 camera_position;
-    vec4 sun_direction;
-    vec4 sun_color;
-    vec4 ambient;
-};
 struct Material {
     vec4 color;
     vec4 emissive;
@@ -1128,6 +1178,13 @@ struct Material {
     vec4 uv_v;
     vec4 maps;
     vec4 more_maps;
+};
+struct Frame {
+    mat4x4 view_proj;
+    vec4 camera_position;
+    vec4 sun_direction;
+    vec4 sun_color;
+    vec4 ambient;
 };
 struct Transform {
     vec4 x;
@@ -1177,6 +1234,22 @@ struct VertexOut {
     vec3 relative;
     vec3 normal;
     uint material;
+};
+struct SurfaceInput {
+    vec3 relativePosition;
+    vec3 normal;
+    vec3 viewDirection;
+    vec4 vertexColor;
+    bool frontFacing;
+};
+struct Surface {
+    vec3 baseColor;
+    float alpha;
+    float metalness;
+    float roughness;
+    vec3 normal;
+    vec3 emissive;
+    float occlusion;
 };
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
 const uint INDEX_ROW_SHIFT = 11u;
@@ -1471,13 +1544,6 @@ void main() {
 precision highp float;
 precision highp int;
 
-struct Frame {
-    mat4x4 view_proj;
-    vec4 camera_position;
-    vec4 sun_direction;
-    vec4 sun_color;
-    vec4 ambient;
-};
 struct Material {
     vec4 color;
     vec4 emissive;
@@ -1487,6 +1553,13 @@ struct Material {
     vec4 uv_v;
     vec4 maps;
     vec4 more_maps;
+};
+struct Frame {
+    mat4x4 view_proj;
+    vec4 camera_position;
+    vec4 sun_direction;
+    vec4 sun_color;
+    vec4 ambient;
 };
 struct Transform {
     vec4 x;
@@ -1537,6 +1610,22 @@ struct VertexOut {
     vec3 normal;
     uint material;
 };
+struct SurfaceInput {
+    vec3 relativePosition;
+    vec3 normal;
+    vec3 viewDirection;
+    vec4 vertexColor;
+    bool frontFacing;
+};
+struct Surface {
+    vec3 baseColor;
+    float alpha;
+    float metalness;
+    float roughness;
+    vec3 normal;
+    vec3 emissive;
+    float occlusion;
+};
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
@@ -1552,6 +1641,8 @@ layout(std140) uniform Frame_block_0Fragment { Frame _group_0_binding_0_fs; };
 uniform highp sampler2D _group_0_binding_1_fs;
 
 uniform highp sampler2D _group_0_binding_3_fs;
+
+Material material_row = Material(vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0));
 
 smooth in vec3 _vs2fs_location0;
 smooth in vec3 _vs2fs_location1;
@@ -1725,6 +1816,25 @@ vec3 linear_to_srgb(vec3 c) {
     return mix(high_1, low_1, lessThanEqual(c, vec3(0.0031308)));
 }
 
+Surface defaultSurface(SurfaceInput input_1) {
+    Surface s = Surface(vec3(0.0), 0.0, 0.0, 0.0, vec3(0.0), vec3(0.0), 0.0);
+    Material m_5 = material_row;
+    vec3 _e4 = dFdx(input_1.relativePosition);
+    vec3 _e6 = dFdy(input_1.relativePosition);
+    vec3 face = normalize(cross(_e4, _e6));
+    vec3 face_normal = ((dot(face, input_1.viewDirection) >= 0.0) ? face : -(face));
+    bool use_face = ((uint(m_5.strengths.z) & FLAT_SHADING) != 0u);
+    s.baseColor = (m_5.color.xyz * input_1.vertexColor.xyz);
+    s.alpha = (m_5.color.w * input_1.vertexColor.w);
+    s.metalness = m_5.surface.x;
+    s.roughness = m_5.surface.y;
+    s.normal = (use_face ? face_normal : input_1.normal);
+    s.emissive = (m_5.emissive.xyz * m_5.strengths.w);
+    s.occlusion = 1.0;
+    Surface _e52 = s;
+    return _e52;
+}
+
 vec3 light_surface(PbrMaterial m_4, vec3 normal_3, vec3 to_view_2, vec2 dfg_3) {
     vec3 _e3 = multiscatter_compensation(m_4.specular_blended, dfg_3);
     vec4 _e6 = _group_0_binding_0_fs.sun_direction;
@@ -1735,33 +1845,37 @@ vec3 light_surface(PbrMaterial m_4, vec3 normal_3, vec3 to_view_2, vec2 dfg_3) {
     return ((_e15.diffuse + _e15.specular) + _e20);
 }
 
+vec4 shade(Surface s_1, SurfaceInput input_2) {
+    vec3 normal_4 = normalize(s_1.normal);
+    vec3 _e3 = dFdx(normal_4);
+    vec3 _e5 = dFdy(normal_4);
+    vec3 change = max(abs(_e3), abs(_e5));
+    float geometry_roughness_1 = max(max(change.x, change.y), change.z);
+    PbrMaterial _e16 = pbr_material(s_1.baseColor, s_1.metalness, s_1.roughness, geometry_roughness_1);
+    float n_dot_v_3 = clamp(dot(normal_4, input_2.viewDirection), 0.0, 1.0);
+    vec2 _e22 = dfg_lut(n_dot_v_3, _e16.roughness);
+    vec3 _e24 = light_surface(_e16, normal_4, input_2.viewDirection, _e22);
+    vec3 outgoing = (_e24 + s_1.emissive);
+    vec3 _e27 = linear_to_srgb(outgoing);
+    return vec4(_e27, 1.0);
+}
+
 void main() {
     VertexOut in_ = VertexOut(gl_FragCoord, _vs2fs_location0, _vs2fs_location1, _vs2fs_location2);
     bool front = gl_FrontFacing;
-    vec3 base = vec3(0.0);
+    SurfaceInput input_ = SurfaceInput(vec3(0.0), vec3(0.0), vec3(0.0), vec4(0.0), false);
     Material _e2 = material_of(in_.material);
-    base = _e2.color.xyz;
-    vec3 to_view_3 = normalize(-(in_.relative));
-    vec3 _e10 = dFdx(in_.relative);
-    vec3 _e12 = dFdy(in_.relative);
-    vec3 face = normalize(cross(_e10, _e12));
-    vec3 face_normal = ((dot(face, to_view_3) >= 0.0) ? face : -(face));
-    vec3 smooth_normal = (normalize(in_.normal) * (front ? 1.0 : -1.0));
-    bool use_face = ((uint(_e2.strengths.z) & FLAT_SHADING) != 0u);
-    vec3 normal_4 = (use_face ? face_normal : smooth_normal);
-    vec3 _e35 = dFdx(normal_4);
-    vec3 _e37 = dFdy(normal_4);
-    vec3 change = max(abs(_e35), abs(_e37));
-    float geometry_roughness_1 = max(max(change.x, change.y), change.z);
-    vec3 _e45 = base;
-    PbrMaterial _e50 = pbr_material(_e45, _e2.surface.x, _e2.surface.y, geometry_roughness_1);
-    float n_dot_v_3 = clamp(dot(normal_4, to_view_3), 0.0, 1.0);
-    vec2 _e54 = dfg_lut(n_dot_v_3, _e50.roughness);
-    vec3 emitted = (_e2.emissive.xyz * _e2.strengths.w);
-    vec3 _e60 = light_surface(_e50, normal_4, to_view_3, _e54);
-    vec3 outgoing = (_e60 + emitted);
-    vec3 _e62 = linear_to_srgb(outgoing);
-    _fs2p_location0 = vec4(_e62, 1.0);
+    material_row = _e2;
+    input_.relativePosition = in_.relative;
+    input_.normal = (normalize(in_.normal) * (front ? 1.0 : -1.0));
+    input_.viewDirection = normalize(-(in_.relative));
+    input_.vertexColor = vec4(1.0);
+    input_.frontFacing = front;
+    SurfaceInput _e23 = input_;
+    Surface _e24 = defaultSurface(_e23);
+    SurfaceInput _e25 = input_;
+    vec4 _e26 = shade(_e24, _e25);
+    _fs2p_location0 = _e26;
     return;
 }
 `,
@@ -1805,13 +1919,6 @@ precision highp int;
 
 uniform uint naga_vs_first_instance;
 
-struct Frame {
-    mat4x4 view_proj;
-    vec4 camera_position;
-    vec4 sun_direction;
-    vec4 sun_color;
-    vec4 ambient;
-};
 struct Material {
     vec4 color;
     vec4 emissive;
@@ -1821,6 +1928,13 @@ struct Material {
     vec4 uv_v;
     vec4 maps;
     vec4 more_maps;
+};
+struct Frame {
+    mat4x4 view_proj;
+    vec4 camera_position;
+    vec4 sun_direction;
+    vec4 sun_color;
+    vec4 ambient;
 };
 struct Transform {
     vec4 x;
@@ -1872,6 +1986,22 @@ struct VertexOut {
     vec3 normal;
     uint material;
     vec4 vertex_color;
+};
+struct SurfaceInput {
+    vec3 relativePosition;
+    vec3 normal;
+    vec3 viewDirection;
+    vec4 vertexColor;
+    bool frontFacing;
+};
+struct Surface {
+    vec3 baseColor;
+    float alpha;
+    float metalness;
+    float roughness;
+    vec3 normal;
+    vec3 emissive;
+    float occlusion;
 };
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
 const uint INDEX_ROW_SHIFT = 11u;
@@ -2170,13 +2300,6 @@ void main() {
 precision highp float;
 precision highp int;
 
-struct Frame {
-    mat4x4 view_proj;
-    vec4 camera_position;
-    vec4 sun_direction;
-    vec4 sun_color;
-    vec4 ambient;
-};
 struct Material {
     vec4 color;
     vec4 emissive;
@@ -2186,6 +2309,13 @@ struct Material {
     vec4 uv_v;
     vec4 maps;
     vec4 more_maps;
+};
+struct Frame {
+    mat4x4 view_proj;
+    vec4 camera_position;
+    vec4 sun_direction;
+    vec4 sun_color;
+    vec4 ambient;
 };
 struct Transform {
     vec4 x;
@@ -2238,6 +2368,22 @@ struct VertexOut {
     uint material;
     vec4 vertex_color;
 };
+struct SurfaceInput {
+    vec3 relativePosition;
+    vec3 normal;
+    vec3 viewDirection;
+    vec4 vertexColor;
+    bool frontFacing;
+};
+struct Surface {
+    vec3 baseColor;
+    float alpha;
+    float metalness;
+    float roughness;
+    vec3 normal;
+    vec3 emissive;
+    float occlusion;
+};
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
@@ -2253,6 +2399,8 @@ layout(std140) uniform Frame_block_0Fragment { Frame _group_0_binding_0_fs; };
 uniform highp sampler2D _group_0_binding_1_fs;
 
 uniform highp sampler2D _group_0_binding_3_fs;
+
+Material material_row = Material(vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0));
 
 smooth in vec3 _vs2fs_location0;
 smooth in vec3 _vs2fs_location1;
@@ -2427,6 +2575,25 @@ vec3 linear_to_srgb(vec3 c) {
     return mix(high_1, low_1, lessThanEqual(c, vec3(0.0031308)));
 }
 
+Surface defaultSurface(SurfaceInput input_1) {
+    Surface s = Surface(vec3(0.0), 0.0, 0.0, 0.0, vec3(0.0), vec3(0.0), 0.0);
+    Material m_5 = material_row;
+    vec3 _e4 = dFdx(input_1.relativePosition);
+    vec3 _e6 = dFdy(input_1.relativePosition);
+    vec3 face = normalize(cross(_e4, _e6));
+    vec3 face_normal = ((dot(face, input_1.viewDirection) >= 0.0) ? face : -(face));
+    bool use_face = ((uint(m_5.strengths.z) & FLAT_SHADING) != 0u);
+    s.baseColor = (m_5.color.xyz * input_1.vertexColor.xyz);
+    s.alpha = (m_5.color.w * input_1.vertexColor.w);
+    s.metalness = m_5.surface.x;
+    s.roughness = m_5.surface.y;
+    s.normal = (use_face ? face_normal : input_1.normal);
+    s.emissive = (m_5.emissive.xyz * m_5.strengths.w);
+    s.occlusion = 1.0;
+    Surface _e52 = s;
+    return _e52;
+}
+
 vec3 light_surface(PbrMaterial m_4, vec3 normal_3, vec3 to_view_2, vec2 dfg_3) {
     vec3 _e3 = multiscatter_compensation(m_4.specular_blended, dfg_3);
     vec4 _e6 = _group_0_binding_0_fs.sun_direction;
@@ -2437,35 +2604,38 @@ vec3 light_surface(PbrMaterial m_4, vec3 normal_3, vec3 to_view_2, vec2 dfg_3) {
     return ((_e15.diffuse + _e15.specular) + _e20);
 }
 
+vec4 shade(Surface s_1, SurfaceInput input_2) {
+    vec3 normal_4 = normalize(s_1.normal);
+    vec3 _e3 = dFdx(normal_4);
+    vec3 _e5 = dFdy(normal_4);
+    vec3 change = max(abs(_e3), abs(_e5));
+    float geometry_roughness_1 = max(max(change.x, change.y), change.z);
+    PbrMaterial _e16 = pbr_material(s_1.baseColor, s_1.metalness, s_1.roughness, geometry_roughness_1);
+    float n_dot_v_3 = clamp(dot(normal_4, input_2.viewDirection), 0.0, 1.0);
+    vec2 _e22 = dfg_lut(n_dot_v_3, _e16.roughness);
+    vec3 _e24 = light_surface(_e16, normal_4, input_2.viewDirection, _e22);
+    vec3 outgoing = (_e24 + s_1.emissive);
+    vec3 _e27 = linear_to_srgb(outgoing);
+    return vec4(_e27, 1.0);
+}
+
 void main() {
     VertexOut in_ = VertexOut(gl_FragCoord, _vs2fs_location0, _vs2fs_location1, _vs2fs_location2, _vs2fs_location3);
     bool front = gl_FrontFacing;
-    vec3 base = vec3(0.0);
+    SurfaceInput input_ = SurfaceInput(vec3(0.0), vec3(0.0), vec3(0.0), vec4(0.0), false);
     Material _e2 = material_of(in_.material);
-    base = _e2.color.xyz;
-    vec3 _e6 = base;
-    base = (_e6 * in_.vertex_color.xyz);
-    vec3 to_view_3 = normalize(-(in_.relative));
-    vec3 _e14 = dFdx(in_.relative);
-    vec3 _e16 = dFdy(in_.relative);
-    vec3 face = normalize(cross(_e14, _e16));
-    vec3 face_normal = ((dot(face, to_view_3) >= 0.0) ? face : -(face));
-    vec3 smooth_normal = (normalize(in_.normal) * (front ? 1.0 : -1.0));
-    bool use_face = ((uint(_e2.strengths.z) & FLAT_SHADING) != 0u);
-    vec3 normal_4 = (use_face ? face_normal : smooth_normal);
-    vec3 _e39 = dFdx(normal_4);
-    vec3 _e41 = dFdy(normal_4);
-    vec3 change = max(abs(_e39), abs(_e41));
-    float geometry_roughness_1 = max(max(change.x, change.y), change.z);
-    vec3 _e49 = base;
-    PbrMaterial _e54 = pbr_material(_e49, _e2.surface.x, _e2.surface.y, geometry_roughness_1);
-    float n_dot_v_3 = clamp(dot(normal_4, to_view_3), 0.0, 1.0);
-    vec2 _e58 = dfg_lut(n_dot_v_3, _e54.roughness);
-    vec3 emitted = (_e2.emissive.xyz * _e2.strengths.w);
-    vec3 _e64 = light_surface(_e54, normal_4, to_view_3, _e58);
-    vec3 outgoing = (_e64 + emitted);
-    vec3 _e66 = linear_to_srgb(outgoing);
-    _fs2p_location0 = vec4(_e66, 1.0);
+    material_row = _e2;
+    input_.relativePosition = in_.relative;
+    input_.normal = (normalize(in_.normal) * (front ? 1.0 : -1.0));
+    input_.viewDirection = normalize(-(in_.relative));
+    input_.vertexColor = vec4(1.0);
+    input_.vertexColor = in_.vertex_color;
+    input_.frontFacing = front;
+    SurfaceInput _e25 = input_;
+    Surface _e26 = defaultSurface(_e25);
+    SurfaceInput _e27 = input_;
+    vec4 _e28 = shade(_e26, _e27);
+    _fs2p_location0 = _e28;
     return;
 }
 `,
@@ -2508,13 +2678,6 @@ precision highp int;
 
 uniform uint naga_vs_first_instance;
 
-struct Frame {
-    mat4x4 view_proj;
-    vec4 camera_position;
-    vec4 sun_direction;
-    vec4 sun_color;
-    vec4 ambient;
-};
 struct Material {
     vec4 color;
     vec4 emissive;
@@ -2524,6 +2687,13 @@ struct Material {
     vec4 uv_v;
     vec4 maps;
     vec4 more_maps;
+};
+struct Frame {
+    mat4x4 view_proj;
+    vec4 camera_position;
+    vec4 sun_direction;
+    vec4 sun_color;
+    vec4 ambient;
 };
 struct Transform {
     vec4 x;
@@ -2574,6 +2744,22 @@ struct VertexOut {
     vec3 normal;
     uint material;
     vec4 vertex_color;
+};
+struct SurfaceInput {
+    vec3 relativePosition;
+    vec3 normal;
+    vec3 viewDirection;
+    vec4 vertexColor;
+    bool frontFacing;
+};
+struct Surface {
+    vec3 baseColor;
+    float alpha;
+    float metalness;
+    float roughness;
+    vec3 normal;
+    vec3 emissive;
+    float occlusion;
 };
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
 const uint INDEX_ROW_SHIFT = 11u;
@@ -2872,13 +3058,6 @@ void main() {
 precision highp float;
 precision highp int;
 
-struct Frame {
-    mat4x4 view_proj;
-    vec4 camera_position;
-    vec4 sun_direction;
-    vec4 sun_color;
-    vec4 ambient;
-};
 struct Material {
     vec4 color;
     vec4 emissive;
@@ -2888,6 +3067,13 @@ struct Material {
     vec4 uv_v;
     vec4 maps;
     vec4 more_maps;
+};
+struct Frame {
+    mat4x4 view_proj;
+    vec4 camera_position;
+    vec4 sun_direction;
+    vec4 sun_color;
+    vec4 ambient;
 };
 struct Transform {
     vec4 x;
@@ -2939,6 +3125,22 @@ struct VertexOut {
     uint material;
     vec4 vertex_color;
 };
+struct SurfaceInput {
+    vec3 relativePosition;
+    vec3 normal;
+    vec3 viewDirection;
+    vec4 vertexColor;
+    bool frontFacing;
+};
+struct Surface {
+    vec3 baseColor;
+    float alpha;
+    float metalness;
+    float roughness;
+    vec3 normal;
+    vec3 emissive;
+    float occlusion;
+};
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
@@ -2954,6 +3156,8 @@ layout(std140) uniform Frame_block_0Fragment { Frame _group_0_binding_0_fs; };
 uniform highp sampler2D _group_0_binding_1_fs;
 
 uniform highp sampler2D _group_0_binding_3_fs;
+
+Material material_row = Material(vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0));
 
 smooth in vec3 _vs2fs_location0;
 smooth in vec3 _vs2fs_location1;
@@ -3128,6 +3332,25 @@ vec3 linear_to_srgb(vec3 c) {
     return mix(high_1, low_1, lessThanEqual(c, vec3(0.0031308)));
 }
 
+Surface defaultSurface(SurfaceInput input_1) {
+    Surface s = Surface(vec3(0.0), 0.0, 0.0, 0.0, vec3(0.0), vec3(0.0), 0.0);
+    Material m_5 = material_row;
+    vec3 _e4 = dFdx(input_1.relativePosition);
+    vec3 _e6 = dFdy(input_1.relativePosition);
+    vec3 face = normalize(cross(_e4, _e6));
+    vec3 face_normal = ((dot(face, input_1.viewDirection) >= 0.0) ? face : -(face));
+    bool use_face = ((uint(m_5.strengths.z) & FLAT_SHADING) != 0u);
+    s.baseColor = (m_5.color.xyz * input_1.vertexColor.xyz);
+    s.alpha = (m_5.color.w * input_1.vertexColor.w);
+    s.metalness = m_5.surface.x;
+    s.roughness = m_5.surface.y;
+    s.normal = (use_face ? face_normal : input_1.normal);
+    s.emissive = (m_5.emissive.xyz * m_5.strengths.w);
+    s.occlusion = 1.0;
+    Surface _e52 = s;
+    return _e52;
+}
+
 vec3 light_surface(PbrMaterial m_4, vec3 normal_3, vec3 to_view_2, vec2 dfg_3) {
     vec3 _e3 = multiscatter_compensation(m_4.specular_blended, dfg_3);
     vec4 _e6 = _group_0_binding_0_fs.sun_direction;
@@ -3138,35 +3361,38 @@ vec3 light_surface(PbrMaterial m_4, vec3 normal_3, vec3 to_view_2, vec2 dfg_3) {
     return ((_e15.diffuse + _e15.specular) + _e20);
 }
 
+vec4 shade(Surface s_1, SurfaceInput input_2) {
+    vec3 normal_4 = normalize(s_1.normal);
+    vec3 _e3 = dFdx(normal_4);
+    vec3 _e5 = dFdy(normal_4);
+    vec3 change = max(abs(_e3), abs(_e5));
+    float geometry_roughness_1 = max(max(change.x, change.y), change.z);
+    PbrMaterial _e16 = pbr_material(s_1.baseColor, s_1.metalness, s_1.roughness, geometry_roughness_1);
+    float n_dot_v_3 = clamp(dot(normal_4, input_2.viewDirection), 0.0, 1.0);
+    vec2 _e22 = dfg_lut(n_dot_v_3, _e16.roughness);
+    vec3 _e24 = light_surface(_e16, normal_4, input_2.viewDirection, _e22);
+    vec3 outgoing = (_e24 + s_1.emissive);
+    vec3 _e27 = linear_to_srgb(outgoing);
+    return vec4(_e27, 1.0);
+}
+
 void main() {
     VertexOut in_ = VertexOut(gl_FragCoord, _vs2fs_location0, _vs2fs_location1, _vs2fs_location2, _vs2fs_location3);
     bool front = gl_FrontFacing;
-    vec3 base = vec3(0.0);
+    SurfaceInput input_ = SurfaceInput(vec3(0.0), vec3(0.0), vec3(0.0), vec4(0.0), false);
     Material _e2 = material_of(in_.material);
-    base = _e2.color.xyz;
-    vec3 _e6 = base;
-    base = (_e6 * in_.vertex_color.xyz);
-    vec3 to_view_3 = normalize(-(in_.relative));
-    vec3 _e14 = dFdx(in_.relative);
-    vec3 _e16 = dFdy(in_.relative);
-    vec3 face = normalize(cross(_e14, _e16));
-    vec3 face_normal = ((dot(face, to_view_3) >= 0.0) ? face : -(face));
-    vec3 smooth_normal = (normalize(in_.normal) * (front ? 1.0 : -1.0));
-    bool use_face = ((uint(_e2.strengths.z) & FLAT_SHADING) != 0u);
-    vec3 normal_4 = (use_face ? face_normal : smooth_normal);
-    vec3 _e39 = dFdx(normal_4);
-    vec3 _e41 = dFdy(normal_4);
-    vec3 change = max(abs(_e39), abs(_e41));
-    float geometry_roughness_1 = max(max(change.x, change.y), change.z);
-    vec3 _e49 = base;
-    PbrMaterial _e54 = pbr_material(_e49, _e2.surface.x, _e2.surface.y, geometry_roughness_1);
-    float n_dot_v_3 = clamp(dot(normal_4, to_view_3), 0.0, 1.0);
-    vec2 _e58 = dfg_lut(n_dot_v_3, _e54.roughness);
-    vec3 emitted = (_e2.emissive.xyz * _e2.strengths.w);
-    vec3 _e64 = light_surface(_e54, normal_4, to_view_3, _e58);
-    vec3 outgoing = (_e64 + emitted);
-    vec3 _e66 = linear_to_srgb(outgoing);
-    _fs2p_location0 = vec4(_e66, 1.0);
+    material_row = _e2;
+    input_.relativePosition = in_.relative;
+    input_.normal = (normalize(in_.normal) * (front ? 1.0 : -1.0));
+    input_.viewDirection = normalize(-(in_.relative));
+    input_.vertexColor = vec4(1.0);
+    input_.vertexColor = in_.vertex_color;
+    input_.frontFacing = front;
+    SurfaceInput _e25 = input_;
+    Surface _e26 = defaultSurface(_e25);
+    SurfaceInput _e27 = input_;
+    vec4 _e28 = shade(_e26, _e27);
+    _fs2p_location0 = _e28;
     return;
 }
 `,
@@ -3198,15 +3424,7 @@ void main() {
 	webgpu: {
 		permutation: 0,
 		wgsl: {
-			source: `struct Frame {
-    view_proj: mat4x4<f32>,
-    camera_position: vec4<f32>,
-    sun_direction: vec4<f32>,
-    sun_color: vec4<f32>,
-    ambient: vec4<f32>,
-}
-
-struct Material {
+			source: `struct Material {
     color: vec4<f32>,
     emissive: vec4<f32>,
     surface: vec4<f32>,
@@ -3215,6 +3433,14 @@ struct Material {
     uv_v: vec4<f32>,
     maps: vec4<f32>,
     more_maps: vec4<f32>,
+}
+
+struct Frame {
+    view_proj: mat4x4<f32>,
+    camera_position: vec4<f32>,
+    sun_direction: vec4<f32>,
+    sun_color: vec4<f32>,
+    ambient: vec4<f32>,
 }
 
 struct Transform {
@@ -3270,6 +3496,24 @@ struct VertexOut {
     @location(2) @interpolate(flat, either) material: u32,
 }
 
+struct SurfaceInput {
+    relativePosition: vec3<f32>,
+    normal: vec3<f32>,
+    viewDirection: vec3<f32>,
+    vertexColor: vec4<f32>,
+    frontFacing: bool,
+}
+
+struct Surface {
+    baseColor: vec3<f32>,
+    alpha: f32,
+    metalness: f32,
+    roughness: f32,
+    normal: vec3<f32>,
+    emissive: vec3<f32>,
+    occlusion: f32,
+}
+
 const OUTSIDE_CLIP: vec4<f32> = vec4<f32>(2f, 2f, 2f, 1f);
 const PI: f32 = 3.1415927f;
 const INV_PI: f32 = 0.31830987f;
@@ -3282,6 +3526,7 @@ var<uniform> frame: Frame;
 var<storage> materials: array<Material>;
 @group(0) @binding(3)
 var dfg_table: texture_2d<f32>;
+var<private> material_row: Material;
 
 fn transform_point(t: Transform, p: vec3<f32>) -> vec3<f32> {
     let q = vec4<f32>(p, 1f);
@@ -3439,6 +3684,26 @@ fn linear_to_srgb(c: vec3<f32>) -> vec3<f32> {
     return select(high_1, low_1, (c <= vec3(0.0031308f)));
 }
 
+fn defaultSurface(input_1: SurfaceInput) -> Surface {
+    var s: Surface;
+
+    let m_4 = material_row;
+    let _e4 = dpdx(input_1.relativePosition);
+    let _e6 = dpdy(input_1.relativePosition);
+    let face = normalize(cross(_e4, _e6));
+    let face_normal = select(-(face), face, (dot(face, input_1.viewDirection) >= 0f));
+    let use_face = ((u32(m_4.strengths.z) & FLAT_SHADING) != 0u);
+    s.baseColor = (m_4.color.xyz * input_1.vertexColor.xyz);
+    s.alpha = (m_4.color.w * input_1.vertexColor.w);
+    s.metalness = m_4.surface.x;
+    s.roughness = m_4.surface.y;
+    s.normal = select(input_1.normal, face_normal, use_face);
+    s.emissive = (m_4.emissive.xyz * m_4.strengths.w);
+    s.occlusion = 1f;
+    let _e52 = s;
+    return _e52;
+}
+
 fn light_surface(m_3: PbrMaterial, normal_3: vec3<f32>, to_view_2: vec3<f32>, dfg_3: vec2<f32>) -> vec3<f32> {
     let _e3 = multiscatter_compensation(m_3.specular_blended, dfg_3);
     let _e6 = frame.sun_direction;
@@ -3447,6 +3712,21 @@ fn light_surface(m_3: PbrMaterial, normal_3: vec3<f32>, to_view_2: vec3<f32>, df
     let _e18 = frame.ambient;
     let _e20 = indirect_diffuse(m_3, _e18.xyz, dfg_3);
     return ((_e15.diffuse + _e15.specular) + _e20);
+}
+
+fn shade(s_1: Surface, input_2: SurfaceInput) -> vec4<f32> {
+    let normal_4 = normalize(s_1.normal);
+    let _e3 = dpdx(normal_4);
+    let _e5 = dpdy(normal_4);
+    let change = max(abs(_e3), abs(_e5));
+    let geometry_roughness_1 = max(max(change.x, change.y), change.z);
+    let _e16 = pbr_material(s_1.baseColor, s_1.metalness, s_1.roughness, geometry_roughness_1);
+    let n_dot_v_3 = saturate(dot(normal_4, input_2.viewDirection));
+    let _e22 = dfg_lut(n_dot_v_3, _e16.roughness);
+    let _e24 = light_surface(_e16, normal_4, input_2.viewDirection, _e22);
+    let outgoing = (_e24 + s_1.emissive);
+    let _e27 = linear_to_srgb(outgoing);
+    return vec4<f32>(_e27, 1f);
 }
 
 @vertex
@@ -3468,31 +3748,20 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
 
 @fragment
 fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f32> {
-    var base: vec3<f32>;
+    var input: SurfaceInput;
 
     let _e2 = material_of(in.material);
-    base = _e2.color.xyz;
-    let to_view_3 = normalize(-(in.relative));
-    let _e10 = dpdx(in.relative);
-    let _e12 = dpdy(in.relative);
-    let face = normalize(cross(_e10, _e12));
-    let face_normal = select(-(face), face, (dot(face, to_view_3) >= 0f));
-    let smooth_normal = (normalize(in.normal) * select(-1f, 1f, front));
-    let use_face = ((u32(_e2.strengths.z) & FLAT_SHADING) != 0u);
-    let normal_4 = select(smooth_normal, face_normal, use_face);
-    let _e35 = dpdx(normal_4);
-    let _e37 = dpdy(normal_4);
-    let change = max(abs(_e35), abs(_e37));
-    let geometry_roughness_1 = max(max(change.x, change.y), change.z);
-    let _e45 = base;
-    let _e50 = pbr_material(_e45, _e2.surface.x, _e2.surface.y, geometry_roughness_1);
-    let n_dot_v_3 = saturate(dot(normal_4, to_view_3));
-    let _e54 = dfg_lut(n_dot_v_3, _e50.roughness);
-    let emitted = (_e2.emissive.xyz * _e2.strengths.w);
-    let _e60 = light_surface(_e50, normal_4, to_view_3, _e54);
-    let outgoing = (_e60 + emitted);
-    let _e62 = linear_to_srgb(outgoing);
-    return vec4<f32>(_e62, 1f);
+    material_row = _e2;
+    input.relativePosition = in.relative;
+    input.normal = (normalize(in.normal) * select(-1f, 1f, front));
+    input.viewDirection = normalize(-(in.relative));
+    input.vertexColor = vec4(1f);
+    input.frontFacing = front;
+    let _e23 = input;
+    let _e24 = defaultSurface(_e23);
+    let _e25 = input;
+    let _e26 = shade(_e24, _e25);
+    return _e26;
 }
 `,
 			pipelines: {
@@ -3507,15 +3776,7 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f3
 	webgpu_vertex_color: {
 		permutation: 4,
 		wgsl: {
-			source: `struct Frame {
-    view_proj: mat4x4<f32>,
-    camera_position: vec4<f32>,
-    sun_direction: vec4<f32>,
-    sun_color: vec4<f32>,
-    ambient: vec4<f32>,
-}
-
-struct Material {
+			source: `struct Material {
     color: vec4<f32>,
     emissive: vec4<f32>,
     surface: vec4<f32>,
@@ -3524,6 +3785,14 @@ struct Material {
     uv_v: vec4<f32>,
     maps: vec4<f32>,
     more_maps: vec4<f32>,
+}
+
+struct Frame {
+    view_proj: mat4x4<f32>,
+    camera_position: vec4<f32>,
+    sun_direction: vec4<f32>,
+    sun_color: vec4<f32>,
+    ambient: vec4<f32>,
 }
 
 struct Transform {
@@ -3581,6 +3850,24 @@ struct VertexOut {
     @location(3) vertex_color: vec4<f32>,
 }
 
+struct SurfaceInput {
+    relativePosition: vec3<f32>,
+    normal: vec3<f32>,
+    viewDirection: vec3<f32>,
+    vertexColor: vec4<f32>,
+    frontFacing: bool,
+}
+
+struct Surface {
+    baseColor: vec3<f32>,
+    alpha: f32,
+    metalness: f32,
+    roughness: f32,
+    normal: vec3<f32>,
+    emissive: vec3<f32>,
+    occlusion: f32,
+}
+
 const OUTSIDE_CLIP: vec4<f32> = vec4<f32>(2f, 2f, 2f, 1f);
 const PI: f32 = 3.1415927f;
 const INV_PI: f32 = 0.31830987f;
@@ -3593,6 +3880,7 @@ var<uniform> frame: Frame;
 var<storage> materials: array<Material>;
 @group(0) @binding(3)
 var dfg_table: texture_2d<f32>;
+var<private> material_row: Material;
 
 fn transform_point(t: Transform, p: vec3<f32>) -> vec3<f32> {
     let q = vec4<f32>(p, 1f);
@@ -3750,6 +4038,26 @@ fn linear_to_srgb(c: vec3<f32>) -> vec3<f32> {
     return select(high_1, low_1, (c <= vec3(0.0031308f)));
 }
 
+fn defaultSurface(input_1: SurfaceInput) -> Surface {
+    var s: Surface;
+
+    let m_4 = material_row;
+    let _e4 = dpdx(input_1.relativePosition);
+    let _e6 = dpdy(input_1.relativePosition);
+    let face = normalize(cross(_e4, _e6));
+    let face_normal = select(-(face), face, (dot(face, input_1.viewDirection) >= 0f));
+    let use_face = ((u32(m_4.strengths.z) & FLAT_SHADING) != 0u);
+    s.baseColor = (m_4.color.xyz * input_1.vertexColor.xyz);
+    s.alpha = (m_4.color.w * input_1.vertexColor.w);
+    s.metalness = m_4.surface.x;
+    s.roughness = m_4.surface.y;
+    s.normal = select(input_1.normal, face_normal, use_face);
+    s.emissive = (m_4.emissive.xyz * m_4.strengths.w);
+    s.occlusion = 1f;
+    let _e52 = s;
+    return _e52;
+}
+
 fn light_surface(m_3: PbrMaterial, normal_3: vec3<f32>, to_view_2: vec3<f32>, dfg_3: vec2<f32>) -> vec3<f32> {
     let _e3 = multiscatter_compensation(m_3.specular_blended, dfg_3);
     let _e6 = frame.sun_direction;
@@ -3758,6 +4066,21 @@ fn light_surface(m_3: PbrMaterial, normal_3: vec3<f32>, to_view_2: vec3<f32>, df
     let _e18 = frame.ambient;
     let _e20 = indirect_diffuse(m_3, _e18.xyz, dfg_3);
     return ((_e15.diffuse + _e15.specular) + _e20);
+}
+
+fn shade(s_1: Surface, input_2: SurfaceInput) -> vec4<f32> {
+    let normal_4 = normalize(s_1.normal);
+    let _e3 = dpdx(normal_4);
+    let _e5 = dpdy(normal_4);
+    let change = max(abs(_e3), abs(_e5));
+    let geometry_roughness_1 = max(max(change.x, change.y), change.z);
+    let _e16 = pbr_material(s_1.baseColor, s_1.metalness, s_1.roughness, geometry_roughness_1);
+    let n_dot_v_3 = saturate(dot(normal_4, input_2.viewDirection));
+    let _e22 = dfg_lut(n_dot_v_3, _e16.roughness);
+    let _e24 = light_surface(_e16, normal_4, input_2.viewDirection, _e22);
+    let outgoing = (_e24 + s_1.emissive);
+    let _e27 = linear_to_srgb(outgoing);
+    return vec4<f32>(_e27, 1f);
 }
 
 @vertex
@@ -3780,33 +4103,21 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
 
 @fragment
 fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f32> {
-    var base: vec3<f32>;
+    var input: SurfaceInput;
 
     let _e2 = material_of(in.material);
-    base = _e2.color.xyz;
-    let _e6 = base;
-    base = (_e6 * in.vertex_color.xyz);
-    let to_view_3 = normalize(-(in.relative));
-    let _e14 = dpdx(in.relative);
-    let _e16 = dpdy(in.relative);
-    let face = normalize(cross(_e14, _e16));
-    let face_normal = select(-(face), face, (dot(face, to_view_3) >= 0f));
-    let smooth_normal = (normalize(in.normal) * select(-1f, 1f, front));
-    let use_face = ((u32(_e2.strengths.z) & FLAT_SHADING) != 0u);
-    let normal_4 = select(smooth_normal, face_normal, use_face);
-    let _e39 = dpdx(normal_4);
-    let _e41 = dpdy(normal_4);
-    let change = max(abs(_e39), abs(_e41));
-    let geometry_roughness_1 = max(max(change.x, change.y), change.z);
-    let _e49 = base;
-    let _e54 = pbr_material(_e49, _e2.surface.x, _e2.surface.y, geometry_roughness_1);
-    let n_dot_v_3 = saturate(dot(normal_4, to_view_3));
-    let _e58 = dfg_lut(n_dot_v_3, _e54.roughness);
-    let emitted = (_e2.emissive.xyz * _e2.strengths.w);
-    let _e64 = light_surface(_e54, normal_4, to_view_3, _e58);
-    let outgoing = (_e64 + emitted);
-    let _e66 = linear_to_srgb(outgoing);
-    return vec4<f32>(_e66, 1f);
+    material_row = _e2;
+    input.relativePosition = in.relative;
+    input.normal = (normalize(in.normal) * select(-1f, 1f, front));
+    input.viewDirection = normalize(-(in.relative));
+    input.vertexColor = vec4(1f);
+    input.vertexColor = in.vertex_color;
+    input.frontFacing = front;
+    let _e25 = input;
+    let _e26 = defaultSurface(_e25);
+    let _e27 = input;
+    let _e28 = shade(_e26, _e27);
+    return _e28;
 }
 `,
 			pipelines: {
