@@ -347,7 +347,7 @@ scene.overlapBox(min, max, opts, out);
 
 Hit objects are the same wrappers you created; `hit.instance` is the row index for batches. Create `ray` and `hit` once and reuse them.
 
-## 14. Input (`api/input`) and controls (`api/controls`, later in 0.1)
+## 14. Input (`api/input`) and controls (`api/controls`)
 
 ```ts
 input.pointer;          // { x, y (CSS pixels), ndcX, ndcY, buttons, dx, dy, dragDx, dragDy, wheel, pinch, isTouch }
