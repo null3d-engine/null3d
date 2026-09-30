@@ -280,6 +280,14 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		size: [480, 270],
 	},
+	// The README's dissolve: a surface function with uniforms and the mask alpha mode, at four
+	// stages of its progress.
+	{
+		name: 'custom-dissolve',
+		sketch: 'tests/pages/sketches/custom-dissolve-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+	},
 	// Masked materials under MSAA: cards cut by vertex alpha at three cutoffs, with the standard and
 	// the unlit material, crossing each other, and a batch of tilted cards. The parity test compares
 	// it with three.js's alphaTest.
