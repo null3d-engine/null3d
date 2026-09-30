@@ -6,7 +6,7 @@
 // The comparison judges CPU time only: the busiest thread's time per frame, and the engine's own
 // work on its busiest thread. Machines without a real GPU, or with a shared one, time the GPU
 // poorly, so GPU time is reported and never judged.
-import { isBareAck } from '../../tools/hooks/commit-ack.ts';
+import { findAckValues, isBareAck } from '../../tools/hooks/commit-ack.ts';
 import { type BenchResult, median, ownWorkMs, summarizeRuns } from './report';
 
 /** The two builds of a comparison. */
@@ -308,7 +308,7 @@ export interface Selector {
 export interface ExpectedChange {
 	selectors: Selector[];
 	reason: string;
-	/** The trailer's line as the commit wrote it. */
+	/** The trailer as a line: its name, then its value as the commit wrote it. */
 	line: string;
 }
 
@@ -323,8 +323,6 @@ export interface KnownNames {
 	scenes: readonly string[];
 	kinds: readonly string[];
 }
-
-const TRAILER_LINE = new RegExp(`^${EXPECTED_TRAILER}:[ \\t]*(.*)$`, 'gim');
 
 /** The format of the trailer's value, for error messages. */
 export const EXPECTED_FORMAT = `${EXPECTED_TRAILER}: <scene>[/<page>[/<measure>]], ...: <reason>`;
@@ -364,9 +362,8 @@ export function readExpectedChanges(
 ): ExpectedChanges {
 	const out: ExpectedChanges = { changes: [], problems: [] };
 	for (const message of messages) {
-		for (const match of message.matchAll(TRAILER_LINE)) {
-			const line = match[0].trim();
-			const value = (match[1] ?? '').trim();
+		for (const value of findAckValues(message, EXPECTED_TRAILER)) {
+			const line = `${EXPECTED_TRAILER}: ${value}`;
 			const colon = value.indexOf(':');
 			const reason = colon < 0 ? '' : value.slice(colon + 1).trim();
 			try {
