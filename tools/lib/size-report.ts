@@ -1,7 +1,7 @@
-// The size report's measuring and judging: raw and Brotli sizes, the growth check against the
-// committed baseline, and the parts of the engine's JavaScript in a production build. Vite names
-// each built file after a module and adds a content hash, so the report names each part by the
-// engine module that its file holds, and a file loaded on demand by the part that loads it. The
+// The size report's measuring: raw and Brotli sizes, and the parts of the engine's JavaScript in a
+// production build. Vite names each built file after a module and adds a content hash, so the report
+// names each part by the engine module that its file holds, and a file loaded on demand by the part
+// that loads it. tools/lib/size-check.ts judges how the sizes changed against a base build. The
 // functions here do no file or process work: tools/build-wasm.ts builds, reads and prints.
 import { brotliCompressSync, constants } from 'node:zlib';
 
@@ -11,9 +11,6 @@ export interface SizeEntry {
 	brotli: number;
 }
 
-/** Growth over the committed baseline that fails the size check. */
-export const MAX_GROWTH = 0.02;
-
 /** The raw size and the size after Brotli at its highest quality, as a server would send it. */
 export function measure(bytes: Buffer): SizeEntry {
 	const brotli = brotliCompressSync(bytes, {
@@ -22,25 +19,11 @@ export function measure(bytes: Buffer): SizeEntry {
 	return { raw: bytes.length, brotli };
 }
 
-/** Files whose Brotli size grew more than the allowed margin over the baseline. */
-export function growthProblems(
-	current: Record<string, SizeEntry>,
-	baseline: Record<string, SizeEntry>,
-): string[] {
-	const problems: string[] = [];
-	for (const [file, size] of Object.entries(current)) {
-		const before = baseline[file];
-		if (!before) continue;
-		const growth = (size.brotli - before.brotli) / before.brotli;
-		if (growth > MAX_GROWTH) {
-			problems.push(
-				`${file} grew ${(growth * 100).toFixed(1)}% after Brotli (${before.brotli} to ${size.brotli} bytes). ` +
-					'Explain the growth in the commit message and run bun tools/build-wasm.ts --update-size.',
-			);
-		}
-	}
-	return problems;
-}
+/** The core's two builds: with threads and shared memory, and without. */
+export const CORE_BUILDS = ['threaded', 'single'] as const;
+
+/** The files of each core build that a page downloads: the module and its generated glue. */
+export const CORE_FILES = ['null3d_bg.wasm', 'null3d.js'] as const;
 
 /** A built JavaScript file: its name, its text and the source files that its source map lists. */
 export interface BuiltFile {
@@ -55,7 +38,7 @@ export interface BuiltFile {
 export const ENGINE_SOURCE = 'packages/engine/src/';
 
 export interface EnginePart {
-	/** The part's name in the report and in the size baseline. */
+	/** The part's name in the report. */
 	name: string;
 	/** The engine module that marks the part's file, relative to the engine's source. */
 	module: string;
@@ -77,6 +60,12 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	{ name: 'render-worker.js', module: 'workers/render-worker.ts' },
 	{ name: 'job-worker.js', module: 'workers/job-worker.ts' },
 	{ name: 'probe-worker.js', module: 'workers/probe-worker.ts' },
+];
+
+/** Every file that the size report measures, by the name that the report prints. */
+export const REPORTED_FILES: readonly string[] = [
+	...CORE_BUILDS.flatMap((build) => CORE_FILES.map((file) => `${build}/${file}`)),
+	...ENGINE_PARTS.map(({ name }) => `js/${name}`),
 ];
 
 export interface Download {

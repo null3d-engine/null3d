@@ -39,6 +39,15 @@ Three sweeps measure the defaults that are still open: the latency mode, the job
 ## Download size
 
 - The size report builds the engine test page for production with hidden source maps, which leave the built files unchanged. Vite names each file after a module and adds a hash. The report therefore names each file of the engine's JavaScript by the engine module that it holds. The list of parts is `ENGINE_PARTS` in `tools/lib/size-report.ts`. A new file of engine code fails the report until the list names it.
+- `bun run build:check-size` compares each file's size after Brotli with a build of a base commit. The base is main's own build. The repository keeps no size record, so pull requests cannot conflict over one.
+- The base is HEAD's merge base with main. CI tests a pull request as GitHub's merge of it into main, so the base there is the main commit that it merged into. A push to main compares with the commit before. `--base <ref>` picks another commit.
+- The check builds the base in a git worktree, `target/.size-base/tree`, with the base's own build script. The base therefore keeps its own flags, toolchain and list of parts. The script's `--sizes-only` builds only what the report measures, without the shader compiler, and writes the sizes.
+- The check keeps the sizes of each base commit in `target/.size-base/<commit>.json` and reuses them. Locally it fetches main first. For a new base commit, the check rebuilds only what changed in the worktree.
+- The folder is hidden because `bun test` runs the tests of any git checkout inside a folder that is not hidden, even an ignored one.
+- The check copies this checkout's Rust build folders, with their file times, into a new worktree. Cargo then compiles only the engine's own crates. Never share one Rust build folder between two checkouts. Cargo finds the engine's crates at the same paths in both, and judges them fresh by file times. The next build of one checkout can then take the other's crates.
+- A file that grows more than 2% after Brotli fails the check, and so does a new file. A `Size-Growth:` trailer on a commit after the base explains the growth. It names each file as the report prints it and gives the reason. The squash merge copies the trailers into main's commit, so keep them when you edit a squash message.
+- The check prints each file's growth in the log, and CI adds the table to the job summary. A base from before this check keeps its sizes in `tools/size-baseline.json`, and the check reads them after that base's own build rewrites the file.
+- On GitHub's Linux machines, the base build takes about 28 s, because it compiles only the engine's own crates and builds no shader compiler. On a MacBook Pro, the first local run took 21 s, and the base build took 12 s of that. A later run with the same base took 14 s, against 8 s for `bun run build`, and the fetch of main took most of the difference. The times are from 30 September 2026.
 
 ## Startup
 

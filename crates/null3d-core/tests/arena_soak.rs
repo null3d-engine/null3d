@@ -5,7 +5,7 @@
 mod common;
 
 use common::Workers;
-use null3d_core::arena::ArenaPool;
+use null3d_core::arena::{ArenaPool, FrameArena};
 use null3d_core::jobs::{JobConfig, WorkerId};
 use null3d_core::testing::CountingAllocator;
 
@@ -14,15 +14,22 @@ static ALLOCATOR: CountingAllocator = CountingAllocator;
 
 /// Frames repeat their allocation pattern with this period.
 const PERIOD: u32 = 1000;
+/// The most values in a part's longest slice.
+const MAX_LEN: usize = 700;
+/// The most bytes that one part of a frame takes, and the most that one of its slices takes.
+const PART_BYTES: usize = FrameArena::bytes_for::<u32>(MAX_LEN)
+    + FrameArena::bytes_for::<u8>(13)
+    + FrameArena::bytes_for::<[f32; 4]>(MAX_LEN / 4 + 1);
+const LARGEST: usize = FrameArena::bytes_for::<[f32; 4]>(MAX_LEN / 4 + 1);
 
-/// One frame's allocations in `arena`: a few slices whose sizes follow the frame number.
+/// One part of a frame's allocations for `worker`: a few slices whose sizes follow the frame
+/// number.
 fn allocate(pool: &ArenaPool, worker: WorkerId, frame: u32, part: u32) {
-    let arena = pool.arena(worker);
-    let n = ((frame % PERIOD) * 37 + part * 101) as usize % 700 + 1;
-    let indices = arena.alloc::<u32>(n).unwrap();
+    let n = ((frame % PERIOD) * 37 + part * 101) as usize % MAX_LEN + 1;
+    let indices = pool.alloc::<u32>(worker, n).unwrap();
     indices.fill(frame);
-    let bytes = arena.alloc_filled::<u8>(n % 13 + 1, 7).unwrap();
-    let vectors = arena.alloc::<[f32; 4]>(n / 4 + 1).unwrap();
+    let bytes = pool.alloc_filled::<u8>(worker, n % 13 + 1, 7).unwrap();
+    let vectors = pool.alloc::<[f32; 4]>(worker, n / 4 + 1).unwrap();
     vectors[0] = [frame as f32; 4];
     assert_eq!(indices[n - 1], frame);
     assert_eq!(bytes[0], 7);
@@ -41,7 +48,7 @@ fn worker(w: u32) -> WorkerId {
 fn a_million_frames_keep_the_high_water_mark_flat() {
     let _exclusive = CountingAllocator::exclusive();
     CountingAllocator::track_this_thread();
-    let mut pool = ArenaPool::new(4, 16 * 1024);
+    let mut pool = ArenaPool::new(4, 4 * PART_BYTES, LARGEST);
     let run = |pool: &mut ArenaPool, frames: std::ops::Range<u32>| {
         for frame in frames {
             for w in 0..4 {
@@ -52,9 +59,9 @@ fn a_million_frames_keep_the_high_water_mark_flat() {
     };
     // One full period of the pattern reaches every size the frames use.
     run(&mut pool, 0..PERIOD);
-    let marks: Vec<usize> = (0..4).map(|w| pool.arena(worker(w)).high_water()).collect();
+    let marks: Vec<usize> = (0..4).map(|w| pool.high_water_of(worker(w))).collect();
     let peak = pool.high_water();
-    assert!(peak > 0 && peak <= 16 * 1024);
+    assert!(peak > 0 && peak <= PART_BYTES);
 
     CountingAllocator::arm();
     run(&mut pool, PERIOD..1_000_000);
@@ -62,12 +69,12 @@ fn a_million_frames_keep_the_high_water_mark_flat() {
     assert_eq!(allocations, 0);
     assert_eq!(pool.high_water(), peak);
     for (w, &mark) in (0..4).zip(&marks) {
-        assert_eq!(pool.arena(worker(w)).high_water(), mark);
+        assert_eq!(pool.high_water_of(worker(w)), mark);
     }
 }
 
 #[test]
-fn job_workers_use_their_own_arenas_without_growth() {
+fn job_workers_take_scratch_without_growth() {
     let _exclusive = CountingAllocator::exclusive();
     CountingAllocator::track_this_thread();
     let workers = Workers::with_setup(
@@ -78,9 +85,9 @@ fn job_workers_use_their_own_arenas_without_growth() {
         CountingAllocator::track_this_thread,
     );
     let jobs = workers.jobs();
-    // A frame asks for at most eight parts, all of which could land on one thread.
-    let mut pool = ArenaPool::for_jobs(jobs, 8 * 8 * 1024);
-    let worst_frame = 8 * (700 * 4 + 13 + (700 / 4 + 1) * 16 + 32);
+    // A frame asks for at most eight parts, and any thread may run any number of them.
+    let mut pool = ArenaPool::for_jobs(jobs, 8 * PART_BYTES, LARGEST);
+    let mut most_used = 0;
     CountingAllocator::arm();
     for frame in 0..100_000 {
         jobs.parallel_for(8, 1, &|parts, worker| {
@@ -88,13 +95,10 @@ fn job_workers_use_their_own_arenas_without_growth() {
                 allocate(&pool, worker, frame, part);
             }
         });
+        most_used = most_used.max(pool.used());
         pool.reset_all();
     }
     let allocations = CountingAllocator::disarm();
     assert_eq!(allocations, 0);
-    assert!(
-        pool.high_water() <= worst_frame,
-        "{} bytes",
-        pool.high_water()
-    );
+    assert!(most_used <= 8 * PART_BYTES, "{most_used} bytes");
 }

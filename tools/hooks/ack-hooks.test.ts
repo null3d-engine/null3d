@@ -9,8 +9,9 @@ import {
 import { audienceOf, isStyleChecked, subjectOf } from './check-docs-style';
 import { unstagedPaths } from './check-generated';
 import { touchesRust } from './check-rust';
+import { explainedFiles, growthReason, namesFile, sizeGrowthProblems } from './check-size-growth';
 import { checkCommitMessage as checkSkills, skillBearingFiles } from './check-skills-ack';
-import { checkAck, findAckValue } from './commit-ack';
+import { checkAck, findAckValue, findAckValues } from './commit-ack';
 
 describe('docBearingFiles', () => {
 	it('flags engine code, package source and binaries, skills, tools, benchmarks and commands', () => {
@@ -107,6 +108,85 @@ describe('message parsing', () => {
 			'updated docs/a.md',
 		);
 		expect(findAckValue('feat: x\n\nbody', 'Docs-Checked')).toBeNull();
+	});
+
+	it('finds every value of a trailer, in order', () => {
+		const message = 'feat: x\n\nSize-Growth: first\nbody\nsize-growth:  second ';
+		expect(findAckValues(message, 'Size-Growth')).toEqual(['first', 'second']);
+		expect(findAckValues('feat: x', 'Size-Growth')).toEqual([]);
+	});
+});
+
+describe('the Size-Growth trailer', () => {
+	const files = [
+		'js/page.js',
+		'js/page-renderer.js',
+		'threaded/null3d_bg.wasm',
+		'single/null3d_bg.wasm',
+	];
+
+	it('names a file only by its whole name', () => {
+		expect(namesFile('js/page.js +3%, the input ring', 'js/page.js')).toBe(true);
+		expect(namesFile('the page (`js/page.js`).', 'js/page.js')).toBe(true);
+		expect(namesFile('js/page-renderer.js grew', 'js/page.js')).toBe(false);
+		expect(namesFile('js/page.jsx grew', 'js/page.js')).toBe(false);
+		expect(namesFile('js/page.js.map grew', 'js/page.js')).toBe(false);
+		expect(namesFile('xjs/page.js grew', 'js/page.js')).toBe(false);
+	});
+
+	it('finds the reason in what is left without the names and the figures', () => {
+		expect(growthReason('js/page.js +3.6% (13,709 to 14,203 bytes)', ['js/page.js'])).toBe('to');
+		expect(growthReason('js/page.js +3.6%, the input ring and its key table', ['js/page.js'])).toBe(
+			'the input ring and its key table',
+		);
+	});
+
+	it('accepts trailers that name files and give a reason, and messages without one', () => {
+		const ring = 'feat: x\n\nSize-Growth: js/page.js +3.1%, the input ring and its key table';
+		expect(sizeGrowthProblems(ring, files)).toEqual([]);
+		const both =
+			'feat: x\n\nsize-growth: threaded/null3d_bg.wasm and single/null3d_bg.wasm +6%, meshes from arrays';
+		expect(sizeGrowthProblems(both, files)).toEqual([]);
+		expect(sizeGrowthProblems('feat: x\n\nDocs-Checked: re-read docs/api/scene.md', files)).toEqual(
+			[],
+		);
+	});
+
+	it('rejects a trailer that names no reported file, or gives no reason', () => {
+		expect(sizeGrowthProblems('feat: x\n\nSize-Growth: the core grew for meshes', files)).toEqual([
+			'Size-Growth value "the core grew for meshes" names no file that the size report measures.',
+		]);
+		expect(
+			sizeGrowthProblems('feat: x\n\nSize-Growth: page.js grew for the ring', files)[0],
+		).toContain('names no file');
+		expect(
+			sizeGrowthProblems('feat: x\n\nSize-Growth: js/page.js +3.6% (13,709 bytes)', files),
+		).toEqual([
+			'Size-Growth value "js/page.js +3.6% (13,709 bytes)" gives no reason for the growth.',
+		]);
+		expect(sizeGrowthProblems('Revert "feat: x"\n\nSize-Growth: yes', files)).toEqual([]);
+	});
+
+	it('finds the first commit whose trailer explains each file', () => {
+		const commits = [
+			{ sha: 'c1', message: 'feat: a\n\nSize-Growth: js/page.js +3%' },
+			{
+				sha: 'c2',
+				message:
+					'feat: b\n\nSize-Growth: js/page.js +3.1%, the input ring and its key table\nSize-Growth: threaded/null3d_bg.wasm, meshes from arrays',
+			},
+			{
+				sha: 'c3',
+				message: 'chore: c\n\nSize-Growth: js/page.js and js/page-renderer.js, the vertex formats',
+			},
+		];
+		expect(explainedFiles(commits, files)).toEqual(
+			new Map([
+				['js/page.js', 'c2'],
+				['threaded/null3d_bg.wasm', 'c2'],
+				['js/page-renderer.js', 'c3'],
+			]),
+		);
 	});
 });
 

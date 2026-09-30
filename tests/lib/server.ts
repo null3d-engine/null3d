@@ -2,6 +2,7 @@
 // it answers. Plain HTTP stays on localhost, which phones reach through adb; HTTPS on the local
 // network serves tablets and phones that reach the Mac by its .local name.
 import { type ChildProcess, spawn } from 'node:child_process';
+import { constants } from 'node:os';
 import { join } from 'node:path';
 import { localHostName } from '../../tools/lib/host.ts';
 
@@ -58,6 +59,35 @@ async function answers(url: string): Promise<boolean> {
 	}
 }
 
+/** Servers that this process started and has not stopped yet. */
+const running = new Set<ChildProcess>();
+const STOP_SIGNALS = ['SIGINT', 'SIGTERM', 'SIGHUP'] as const;
+
+/** Stops every server this process started, then ends the process as the signal asks. */
+function stopAllAndExit(signal: NodeJS.Signals): void {
+	for (const child of running) child.kill();
+	process.exit(128 + (constants.signals[signal] ?? 1));
+}
+
+/**
+ * Keeps track of a server that this process started, and returns the function that stops it. A
+ * process stopped by a signal, such as Ctrl-C or `kill`, then stops its servers first, so no
+ * server stays behind on its port for the next run to trip over.
+ */
+export function trackServer(child: ChildProcess): () => void {
+	if (running.size === 0) for (const signal of STOP_SIGNALS) process.on(signal, stopAllAndExit);
+	running.add(child);
+	const forget = () => {
+		running.delete(child);
+		if (running.size === 0) for (const signal of STOP_SIGNALS) process.off(signal, stopAllAndExit);
+	};
+	child.once('exit', forget);
+	return () => {
+		forget();
+		child.kill();
+	};
+}
+
 /** Starts the dev server, or reuses one that already runs, and waits until it answers. */
 export async function startServer(https = false): Promise<DevServer> {
 	const url = https
@@ -71,15 +101,16 @@ export async function startServer(https = false): Promise<DevServer> {
 		stdio: ['ignore', 'ignore', 'pipe'],
 		env: { ...process.env, NULL3D_HTTPS: https ? '1' : '0' },
 	});
+	const stop = trackServer(child);
 	let errors = '';
 	child.stderr?.on('data', (chunk: Buffer) => {
 		errors += chunk.toString();
 	});
 	const deadline = Date.now() + START_TIMEOUT_MS;
 	while (Date.now() < deadline) {
-		if (await answers(probe)) return { url, selfUrl, stop: () => child.kill() };
+		if (await answers(probe)) return { url, selfUrl, stop };
 		await new Promise((resolve) => setTimeout(resolve, 250));
 	}
-	child.kill();
+	stop();
 	throw new Error(`the dev server did not answer at ${probe}\n${errors.trim()}`);
 }
