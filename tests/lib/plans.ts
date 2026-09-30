@@ -263,12 +263,6 @@ export function checksPlan(): PlanItem<Check>[] {
 		),
 		pageItem('uploads', 'uploads', { kind: 'uploads', tier: 'webgpu' }, { timeoutSeconds: 90 }),
 		pageItem('quality', 'quality', { kind: 'quality' }),
-		pageItem(
-			'preset-check',
-			'quality',
-			{ kind: 'preset-check' },
-			{ switches: [`spheres=${HEAVY_SPHERES}`], timeoutSeconds: 120 },
-		),
 		...TIERS.map((tier) =>
 			pageItem(
 				`preset-change-${tier}`,
@@ -454,22 +448,31 @@ const OVERLOAD_QUEUES = [undefined, 'off'] as const;
 /**
  * The GPU-bound page on each GPU path, in the default thread mode, with each ?queue= setting. The
  * run's summary gives, for each, the presented and completed rates at the load that overloaded the
- * GPU, and the frames that waited on the GPU.
+ * GPU, and the frames that waited on the GPU. Then the quality page with the GPU-bound scene, which
+ * the preset check must find too heavy for the preset that the engine chose.
  */
 export function overloadPlan(): PlanItem<Check>[] {
-	return TIERS.flatMap((tier) =>
-		OVERLOAD_QUEUES.map((queue) =>
-			pageItem(
-				`overload-${tier}${queue === undefined ? '' : `-queue-${queue}`}`,
-				'overload',
-				{ kind: 'overload', tier, ...(queue !== undefined && { queue }) },
-				{
-					switches: [`gpu=${tier}`, queue === undefined ? '' : `queue=${queue}`],
-					timeoutSeconds: OVERLOAD_TIMEOUT_SECONDS,
-				},
+	return [
+		...TIERS.flatMap((tier) =>
+			OVERLOAD_QUEUES.map((queue) =>
+				pageItem(
+					`overload-${tier}${queue === undefined ? '' : `-queue-${queue}`}`,
+					'overload',
+					{ kind: 'overload', tier, ...(queue !== undefined && { queue }) },
+					{
+						switches: [`gpu=${tier}`, queue === undefined ? '' : `queue=${queue}`],
+						timeoutSeconds: OVERLOAD_TIMEOUT_SECONDS,
+					},
+				),
 			),
 		),
-	);
+		pageItem(
+			'preset-check',
+			'quality',
+			{ kind: 'preset-check' },
+			{ switches: [`spheres=${HEAVY_SPHERES}`], timeoutSeconds: OVERLOAD_TIMEOUT_SECONDS },
+		),
+	];
 }
 
 /** The shared memory maximums that the memory plan tries, in MiB, from low to high. */

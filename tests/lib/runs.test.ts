@@ -27,6 +27,7 @@ import {
 	memorySummary,
 	NO_RESULT,
 	NONE_MISSING,
+	overloadPlan,
 	PLANS,
 	parityPlan,
 	STARTUP_RUNS,
@@ -226,7 +227,7 @@ describe('the checks plan', () => {
 		]);
 
 		// The heavy scene's page: the check must lower the chosen preset.
-		const heavy = items.find((item) => item.id === 'preset-check');
+		const heavy = overloadPlan().find((item) => item.id === 'preset-check');
 		if (!heavy) throw new Error('the plan lacks the preset check page');
 		expect(heavy.path).toBe('/tests/pages/quality.html?spheres=32768');
 		const lowered = result('medium', [round('medium', 20), round('low', 25)]);

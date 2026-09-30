@@ -35,8 +35,8 @@ function refresh(hz: number, count: number, before: (call: number) => void = () 
  * was asked to prepare. Its pipelines build while `builds.left` is above 0: each check of a frame
  * counts it down.
  */
-function setup() {
-	const control = createControlBuffer(false);
+function setup(shared = false) {
+	const control = createControlBuffer(shared);
 	const metrics = createMetricsBuffer(false, 0);
 	const drawn: number[] = [];
 	const prepared: number[] = [];
@@ -211,6 +211,16 @@ describe('the direct loop', () => {
 		refresh(DISPLAY_HZ, 2);
 		// The sketch's own frames count from 1 in this fake: the loop steps and draws them.
 		expect(drawn).toEqual([1, 1, 2]);
+	});
+
+	it("wakes the setup's code that waits for its frame to be taken", async () => {
+		const { control, metrics, slots, renderer } = setup(true);
+		loop = runDirectLoop(countingSketch(false), renderer, control, metrics, undefined);
+		Atomics.store(slots, Slot.FramesPublished, 1);
+		const wait = Atomics.waitAsync(slots, Slot.FramesTaken, 0, 1000);
+		expect(wait.async).toBe(true);
+		refresh(DISPLAY_HZ, 1);
+		expect(await wait.value).toBe('ok');
 	});
 
 	it('steps no new frame while the frame it stepped waits for its pipelines', () => {

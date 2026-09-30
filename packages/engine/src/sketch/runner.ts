@@ -119,8 +119,14 @@ export class SketchRunner {
 	private readonly clock = new FrameClock();
 	/** The fixed steps' clock, which the sketch's options set up. */
 	private fixed = new FixedClock();
-	/** The sketch's `time`, which each frame updates in place. */
+	/** The sketch's `time`, which each frame updates in place. Its frames are those that run the sketch. */
 	private readonly time = { now: 0, dt: 0, frame: 0 };
+	/**
+	 * The engine's number of the frame it recorded last. The setup's frames, for warm-ups and the
+	 * preset check, count here but not in `time.frame`. The core, the draw lists and the thread that
+	 * draws use these numbers.
+	 */
+	private readonly recorded = { frame: 0 };
 	/** The sketch's `engine.viewport`, which each frame updates in place when the canvas changed. */
 	private readonly viewport = { width: 0, height: 0, pixelRatio: 1 };
 	/** The page's count of canvas size changes when the viewport last read them. */
@@ -190,11 +196,11 @@ export class SketchRunner {
 		this.readViewport();
 		this.debugDraw = DEV ? new DebugDraw(this.core) : undefined;
 		const debug: Debug = this.debugDraw ?? RELEASE_DEBUG;
-		const textures = new Textures(this.core, sketch.sendImage, this.time);
+		const textures = new Textures(this.core, sketch.sendImage, this.recorded);
 		this.context = {
 			time: this.time,
 			engine: { viewport: this.viewport, capabilities: sketch.capabilities },
-			scene: new Scene(this.core, this.time, device.webgl2, () => this.warmUp()),
+			scene: new Scene(this.core, this.recorded, device.webgl2, () => this.warmUp()),
 			materials: new Materials(this.core),
 			geometry: new Geometry(this.core),
 			textures,
@@ -299,7 +305,7 @@ export class SketchRunner {
 	private async settle(drawn: boolean): Promise<void> {
 		if (this.holdSeconds !== undefined) return;
 		const { slots } = this.sketch.control;
-		const target = this.setUp ? this.context.time.frame + 1 : await this.queueSetupFrame();
+		const target = this.setUp ? this.recorded.frame + 1 : await this.queueSetupFrame();
 		await reached(slots, Slot.PipelinesBuilt, target);
 		if (drawn) await reached(slots, Slot.FramesTaken, target);
 		// The sketch's code carries on between frames, after frames that may have grown engine
@@ -331,7 +337,7 @@ export class SketchRunner {
 	 */
 	private async publishSetupFrame(): Promise<number> {
 		const { slots } = this.sketch.control;
-		await reached(slots, Slot.FramesTaken, this.context.time.frame - 1);
+		await reached(slots, Slot.FramesTaken, this.recorded.frame - 1);
 		const frame = this.frame(false);
 		Atomics.store(slots, Slot.FramesPublished, frame);
 		Atomics.notify(slots, Slot.FramesPublished);
@@ -472,8 +478,8 @@ export class SketchRunner {
 		const dt = this.clock.dt;
 		time.now = this.clock.now;
 		time.dt = dt;
-		time.frame++;
-		const frame = time.frame;
+		const frame = ++this.recorded.frame;
+		if (play) time.frame++;
 		this.record.begin(frame);
 		this.core.refresh();
 		this.phaseStart = start;
@@ -485,7 +491,7 @@ export class SketchRunner {
 		// steps and the update. It stays in this function: a call that passed the step on would
 		// allocate a number for it in every frame.
 		if (play) {
-			if (this.holdSeconds === undefined) this.input.beginFrame(frame);
+			if (this.holdSeconds === undefined) this.input.beginFrame(frame, frame - time.frame);
 			const reducedMotion = Atomics.load(slots, Slot.ReducedMotion);
 			if (reducedMotion !== this.reducedMotion) {
 				this.reducedMotion = reducedMotion;

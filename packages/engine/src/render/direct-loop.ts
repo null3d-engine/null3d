@@ -47,6 +47,8 @@ export function runDirectLoop(
 		}
 		if (pending !== 0 && presenter.ready(pending)) {
 			Atomics.store(slots, Slot.FramesTaken, pending);
+			// The setup's code on this thread waits for its frames to be taken.
+			Atomics.notify(slots, Slot.FramesTaken);
 			presenter.draw(pending, timestamp);
 			pending = 0;
 		}
