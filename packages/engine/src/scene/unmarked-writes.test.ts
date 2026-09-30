@@ -41,7 +41,7 @@ function fakeScene() {
 	};
 	const core = new CoreMemory(glue as unknown as CoreGlue, memory);
 	const time = { frame: 0 };
-	const s = new Scene(core, time);
+	const s = new Scene(core, time, false);
 	const mesh = { id: 1, radius: 1 } as MeshGeometry;
 	const material = { id: 1 } as Material;
 	return {
