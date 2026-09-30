@@ -26,6 +26,10 @@ const MANIFEST_REFERENCES = join(REPO_ROOT, 'tests/image/references');
 /** The line that says where the images were drawn, whose browser version changes. */
 const DRAWN_IN = /^The images are drawn in .+\.$/m;
 
+// Each run of the command starts a dev server and a browser, and a test runs it up to twice. On a
+// busy machine that takes more than Playwright's default minute.
+test.describe.configure({ timeout: 120_000 });
+
 /** A copy of the fixture project for one test. */
 interface ProjectCopy {
 	root: string;
