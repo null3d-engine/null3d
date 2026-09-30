@@ -43,6 +43,7 @@ import {
 import { MEASURE_SECONDS, WARMUP_SECONDS } from '../../bench/scenes/spec.ts';
 import { IMAGE_RUNS } from '../image/manifest.ts';
 import { distanceLabel, PRECISION, type PrecisionFacts } from '../pages/lib/depth-precision.ts';
+import { ROOM_KEPT } from '../pages/lib/room.ts';
 import {
 	ENGINE_MODES,
 	type EngineMode,
@@ -63,6 +64,7 @@ export type Check =
 	| { kind: 'isolation' }
 	| { kind: 'image'; run: ImageRun }
 	| { kind: 'shaders' }
+	| { kind: 'shader-library'; tier: Tier }
 	| { kind: 'engine'; tier: Tier; mode: EngineMode }
 	| { kind: 'restarts'; mode: EngineMode }
 	| { kind: 'memory'; maximumMiB: number }
@@ -94,8 +96,11 @@ const TEST_PAGES = '/tests/pages/';
 const TIERS: readonly Tier[] = ['webgpu', 'webgl2'];
 /** How long a benchmark page may take to publish its hold frame on a slow device. */
 const HOLD_TIMEOUT_SECONDS = 60;
-/** How long the restart page may take: up to ten starts and stops, and two counts of the room. */
-const RESTARTS_TIMEOUT_SECONDS = 120;
+/**
+ * How long the restart page may take: up to ten starts and stops, which may wait 30 s in all for
+ * the browser to free memory, and the counts of the room, which may wait 31 s for it to come back.
+ */
+const RESTARTS_TIMEOUT_SECONDS = 180;
 
 /** The result text of an item that the runner page never reached. */
 export const NO_RESULT = 'no result; the runner stopped before this page';
@@ -152,8 +157,15 @@ export interface BenchSwitches {
 }
 
 /**
- * The runner page's item for a timed run of one benchmark page, S1 unless `scene` names another.
- * The item needs the GPU interface the page draws with, so a device that lacks it skips the page.
+ * The benchmark pages' production build, which timed runs load under one address prefix of the
+ * runner's own, so they measure the engine as a developer ships it: without development checks.
+ */
+const BENCH_BUILD: Load = { kind: 'warm', key: runnerKey('bench') };
+
+/**
+ * The runner page's item for a timed run of one benchmark page, S1 unless `scene` names another,
+ * from the production build. The item needs the GPU interface the page draws with, so a device
+ * that lacks it skips the page.
  */
 export function benchItem(
 	id: string,
@@ -167,7 +179,7 @@ export function benchItem(
 	const tier = gpuApiOfPage(page);
 	return {
 		id,
-		path: pagePath(scene, page, switches.join('&')),
+		path: loadPath(BENCH_BUILD, pagePath(scene, page, switches.join('&')).slice(1)),
 		timeoutSeconds: (seconds === undefined ? WARMUP_SECONDS + MEASURE_SECONDS : 2 * seconds) + 60,
 		check: { kind: 'bench', tier, scene, page, ...(jobs !== undefined && { jobs }) },
 	};
@@ -197,9 +209,9 @@ function imageItem(run: ImageRun): PlanItem<Check> {
 const PRODUCTION_BUILD: Load = { kind: 'warm', key: runnerKey('production') };
 
 /**
- * The browser checks: the capability report, isolation, every run of the image test manifest, the
- * engine in every mode on both GPU paths, and again on the production build, and the engine
- * started and stopped again and again in every mode. The capabilities page loads again last, so its
+ * The browser checks: the capability report, isolation, the shader library's values on both GPU
+ * paths, every run of the image test manifest, the engine in every mode on both GPU paths, and
+ * again on the production build, and the engine started and stopped again and again in every mode. The capabilities page loads again last, so its
  * extension answers can be compared across loads.
  */
 export function checksPlan(): PlanItem<Check>[] {
@@ -207,6 +219,14 @@ export function checksPlan(): PlanItem<Check>[] {
 		pageItem(CAPABILITIES, 'capabilities', { kind: 'capabilities' }),
 		pageItem('isolation', 'isolation', { kind: 'isolation' }),
 		pageItem('shaders', 'shaders', { kind: 'shaders' }),
+		...TIERS.map((tier) =>
+			pageItem(
+				`shader-library-${tier}`,
+				'shader-library',
+				{ kind: 'shader-library', tier },
+				{ switches: [`gpu=${tier}`] },
+			),
+		),
 		pageItem('uploads', 'uploads', { kind: 'uploads', tier: 'webgpu' }, { timeoutSeconds: 90 }),
 		...IMAGE_RUNS.map(imageItem),
 		...TIERS.flatMap((tier) =>
@@ -355,8 +375,11 @@ export const MEMORY_MAXIMUMS_MIB = [256, 512, 1024, 2048, 4096] as const;
 export const MEMORY_LOADS = 20;
 /** WebAssembly memory comes in pages of 64 KiB, 16 to a MiB. */
 const PAGES_PER_MIB = 16;
-/** How long the shared memory page may take to count its room twice, a few seconds apart. */
-const ROOM_TIMEOUT_SECONDS = 60;
+/**
+ * How long the shared memory page may take to count its room, and to wait up to 31 s for the room
+ * to come back after its one cycle.
+ */
+const ROOM_TIMEOUT_SECONDS = 90;
 /** The most memories the shared memory page counts; a browser with room for this many has more. */
 const MOST_COUNTED = 64;
 
@@ -638,15 +661,20 @@ export interface RestartResult {
 	room?: number;
 	cycles: number;
 	kinds: {
-		engine?: { cycles: number; error?: string; trail?: string[]; roomLater?: number };
+		engine?: {
+			cycles: number;
+			error?: string;
+			trail?: string[];
+			/** The room when it came back, or when the page stopped waiting for it. */
+			roomLater?: number;
+			roomWaitMs?: number;
+		};
 	};
 }
 
-/**
- * Room for shared memories that the page may lose over its restarts: the single-threaded build's
- * page keeps one core for the next engine.
- */
-const ROOM_KEPT = 1;
+/** How long the restart page waited for the room to come back, as the problem's text gives it. */
+const waitedText = (ms: number | undefined) =>
+	ms === undefined ? '' : ` within ${Math.round(ms / 1000)} s`;
 
 /**
  * What is wrong with the restart page's result: a start or a stop that failed, or room for shared
@@ -666,7 +694,7 @@ export function restartProblems(result: RestartResult): string[] {
 		engine.roomLater < result.room - ROOM_KEPT
 	)
 		problems.push(
-			`the browser did not get back the memory of stopped engines: it had room for ${result.room} shared memories before ${engine.cycles} starts and stops, and for ${engine.roomLater} after`,
+			`the browser did not get back the memory of stopped engines${waitedText(engine.roomWaitMs)}: it had room for ${result.room} shared memories before ${engine.cycles} starts and stops, and for ${engine.roomLater} after`,
 		);
 	return problems;
 }
@@ -706,6 +734,18 @@ export function judge(
 			const problems = failures.map((f) => `${f.shader} ${f.stage}: ${f.log.split('\n')[0]}`);
 			if (!(Number(result.glslPrograms) > 0)) problems.push('no GLSL program was compiled');
 			if (!result.webgpu && !missing.webgpu) problems.push('no WebGPU to compile the WGSL');
+			return problems;
+		}
+		case 'shader-library': {
+			const mismatches = (result.mismatches ?? []) as {
+				function: string;
+				expected: number[];
+				got: number[];
+			}[];
+			const problems = mismatches.map(
+				(m) => `${m.function}: expected ${m.expected.join(', ')}, got ${m.got.join(', ')}`,
+			);
+			if (!(Number(result.cases) > 0)) problems.push('the page ran no cases');
 			return problems;
 		}
 		case 'engine':

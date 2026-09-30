@@ -42,11 +42,39 @@ pub(crate) fn describe(
         .or_else(|| library.source(&path))
         .unwrap_or(&text);
     let position = offset(error, &text).map(|offset| locate(original, &text, offset));
+    let clash = match (&error.inner, position) {
+        (ComposerErrorInner::ImportNotFound(..), Some(position)) => {
+            module_name_clash(original, position)
+        }
+        _ => None,
+    };
     Described {
         path,
         position,
-        message: library.undecorate(&message(&error.inner)),
+        message: clash.unwrap_or_else(|| library.undecorate(&message(&error.inner))),
     }
+}
+
+/// The message for a name that the composer read as a module path: the last part of the path of
+/// a module that the file imports whole, such as `color` after `#import null3d::color`. The
+/// composer reports such a name as an import it cannot find.
+fn module_name_clash(original: &str, position: Position) -> Option<String> {
+    let line = original
+        .lines()
+        .nth(position.line.checked_sub(1)? as usize)?;
+    let name: String = line
+        .chars()
+        .skip(position.column.checked_sub(1)? as usize)
+        .take_while(|c| c.is_alphanumeric() || *c == '_')
+        .collect();
+    let module = original
+        .lines()
+        .filter_map(|line| line.trim().strip_prefix("#import "))
+        .map(str::trim)
+        .find(|path| path.rsplit("::").next() == Some(name.as_str()))?;
+    Some(format!(
+        "`{name}` is the name of the module {module}, which this file imports whole, so nothing else in the file can have that name. Rename it, or import the items the file uses by name, such as `#import {module}::{{item}}`."
+    ))
 }
 
 /// The byte offset in the composer's copy of the file that the error points to.
