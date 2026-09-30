@@ -64,7 +64,12 @@ To collect the numbers, rest each device first and close its other tabs:
 
 - Keep the Mac's screen unlocked and its display awake during runs. Safari stops running pages while the Mac is locked, and the runner then waits until its deadline. Chrome started by Playwright keeps running.
 - Close a Safari tab that a test opened with AppleScript: tell Safari to close the tabs whose address holds `localhost:517`.
-- On GitHub's macOS machines, Safari has no WebGPU and Firefox has no WebGL2. The CI job passes `--allow-no-webgpu` and `--allow-no-webgl2`, so those pages count as skipped there.
+- On GitHub's macOS machines, Safari has no WebGPU and Firefox has no WebGL2. The CI jobs pass `--allow-no-webgpu` and `--allow-no-webgl2`, so those pages count as skipped there.
+- CI runs the checks plan in each browser in a job of its own, such as `real-browsers (Safari 1/1)`. A Linux job first builds the two WebAssembly files with `bun tools/build-wasm.ts --core-only`, and each macOS job downloads them.
+- The runner's `--shard <i>/<n>` runs one of n shards of a fixed plan. The plan's items split evenly, and each item stays with the items whose results its check compares with. Examples are the capabilities page's second load and an image test's first thread mode.
+- On 30 September 2026, one job for both browsers took about 7.7 minutes. It built for 1.5 minutes, then ran the two browsers in turn for 5.6 minutes. The Rust cache did not shorten the build much. The threaded build compiled the standard library again each time, and the shader compiler took another half minute.
+- The split jobs took 3.3 minutes for Safari and 3.4 for Firefox, after a Linux build of 1 minute. That is 6.6 minutes of macOS machines per run. Two shards per browser took at most 2.3 minutes each, but 8.0 machine minutes and four machines at once.
+- GitHub's free plan gives 5 macOS machines at once, and main's benchmark job holds one for about 25 minutes after each merge. So add a shard only when a browser's job takes longer than the slowest Linux job, about 5 minutes. Before that, a run finishes no sooner, and other runs wait longer for a machine.
 
 ## Android phone
 

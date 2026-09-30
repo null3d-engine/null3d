@@ -52,6 +52,15 @@ export const SHADING_LIT = 0;
 export const SHADING_UNLIT = 1;
 export const SHADING_TEXCOORDS = 2;
 
+export const SHAPE_BOX = 0;
+export const SHAPE_SPHERE = 1;
+export const SHAPE_PLANE = 2;
+export const SHAPE_CYLINDER = 3;
+export const SHAPE_TORUS = 4;
+export const SHAPE_CAPSULE = 5;
+export const SHAPE_CIRCLE = 6;
+export const SHAPE_RING = 7;
+
 export const MESH_ARRAYS_NORMALS = 1;
 export const MESH_ARRAYS_UVS = 2;
 export const MESH_ARRAYS_UVS1 = 4;
