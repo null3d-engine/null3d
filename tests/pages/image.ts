@@ -1,8 +1,10 @@
 // Draws one sketch of the image test manifest in the engine's hold mode and publishes the held
-// frame. ?sketch= names the sketch module from the server's root, with the sketch's own query after
-// it, and ?size= gives the canvas in pixels, such as 320x180. The engine reads its own switches:
-// ?hold= the sketch time, ?gpu= the tier, and the thread mode's switches.
+// frame, with the depth mode that the engine drew. ?sketch= names the sketch module from the
+// server's root, with the sketch's own query after it, and ?size= gives the canvas in pixels, such
+// as 320x180. The engine reads its own switches: ?hold= the sketch time, ?gpu= the tier, ?depth=
+// the WebGL2 depth mode, and the thread mode's switches.
 import { createEngine } from '@null3d/engine';
+import { depthFacts } from './lib/depth';
 import { run, toBase64 } from './lib/result';
 
 const params = new URLSearchParams(location.search);
@@ -37,6 +39,7 @@ run('image', async () => {
 	return {
 		tier: engine.capabilities.tier,
 		mode: engine.mode,
+		...depthFacts(engine),
 		width: frame.width,
 		height: frame.height,
 		pixels: toBase64(frame.pixels),

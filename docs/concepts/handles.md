@@ -35,7 +35,7 @@ Handles are 30 bits because Chrome's JavaScript engine stores integers of up to 
 
 ## Wrapper objects
 
-`Mesh`, `Camera` and `Group` are small classes that hold the scene and a handle. The engine creates one wrapper per object, at the moment you create the object, so frames allocate no wrappers. The directional light and the ambient light have no handle: each one sets a light for the whole scene.
+`Mesh`, `Camera`, `Group` and the light classes are small classes that hold the scene and a handle. The engine creates one wrapper per object, at the moment you create the object, so frames allocate no wrappers.
 
 ```ts
 const crate = scene.createMesh({
@@ -51,7 +51,7 @@ const out = new Float32Array(3); // made once, in the setup
 crate.getWorldPosition(out); // writes into out, allocates nothing
 ```
 
-Setters such as `setPosition`, `setRotation` and `setScale` write straight into the shared arrays. Getters take an output array, so a hot path allocates nothing. The engine adds a new object to the scene when it processes the frame, after `onUpdate` returns. Read the object's world position from the next `onUpdate` call on.
+Setters such as `setPosition`, `setRotation` and `setScale` write straight into the shared arrays. Getters take an output array, so a hot path allocates nothing. The engine adds a new object to the scene when it processes the frame, after `onUpdate` returns. Read the object's world position in that frame's `onLateUpdate`, or from the next `onUpdate` call on.
 
 Each kind of object has its own class. Passing a mesh where the engine expects a camera, as in `scene.setActiveCamera(crate)`, fails at compile time.
 

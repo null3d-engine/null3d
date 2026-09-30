@@ -87,9 +87,9 @@ return {
 };
 ```
 
-- `clock.getDelta()` becomes the `dt` argument; `clock.getElapsedTime()` becomes `ctx.time.now`.
-- Physics moves to `onFixedUpdate`, whose rate is set in `defineSketch` options (default 60 Hz).
-- Camera-follow code moves to `onLateUpdate`, so the camera uses this frame's final object positions.
+- `clock.getDelta()` becomes the `dt` argument, also in `ctx.time.dt`; `clock.getElapsedTime()` becomes `ctx.time.now`.
+- Physics moves to `onFixedUpdate`, at the rate that `defineSketch(setup, { fixedRate: 60 })` sets, 60 steps per second by default. One call of `world.step()` per fixed step replaces `world.step(1 / 60, dt, 3)`. The engine counts the steps, and `maxFixedSteps` (default 8) caps them per frame.
+- Camera-follow code moves to `onLateUpdate`, so the camera uses this frame's final object positions, and its moves show in the same frame.
 - Rendering calls and `composer.render()` disappear.
 - Code that ran "every N frames" can use `ctx.time.frame % N === 0`.
 
@@ -141,8 +141,10 @@ Enemies that need different meshes become one batch per mesh. Per-enemy state (h
 | `addEventListener('keydown', ...)` and a key-state object | `input.isDown('KeyW')`, `input.wasPressed('Space')` |
 | `addEventListener('touchstart', ...)` and a list of touches | `input.touches`, and `touch-action: none` on the canvas |
 | Gamepad API polling | `input.isDown('GamepadA')`, `input.value('GamepadLeftStickRight')`, or an action map |
-| `OrbitControls(camera, renderer.domElement)` | `createOrbitControls(ctx, camera, options)`; same option names |
-| `controls.addEventListener('change', render)` for on-demand rendering | Not needed: the engine renders continuously and skips unchanged work |
+| `OrbitControls(camera, renderer.domElement)`, `MapControls` | `createOrbitControls(ctx, camera, options)`, `createMapControls`; same option names and defaults; `controls.update(dt)` every frame |
+| `controls.listenToKeyEvents(window)` | Read the keys with `input.isDown`, and call `controls.pan(dx, dy)` or `controls.rotateLeft(angle)` |
+| The controls' own `preventDefault` on wheel events | On the page: `canvas.addEventListener('wheel', (e) => e.preventDefault(), { passive: false })`, so the wheel and a pinch zoom the camera, not the page |
+| `controls.addEventListener('change', render)` for on-demand rendering | Not needed: the engine renders continuously and skips unchanged work. `update(dt)` returns true when the camera moved |
 | `PointerLockControls` | `createFirstPersonControls` plus `engine.requestPointerLock()` on the page (0.2) |
 | Clicks on UI buttons over the canvas | Handled on the page; send the action to the sketch |
 

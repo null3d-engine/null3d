@@ -15,7 +15,7 @@ use null3d_core::snapshot::FrameSnapshot;
 use null3d_gpu::drawlist::format;
 use null3d_gpu::drawlist::{Op, decode};
 use null3d_render::arrays::{MeshArrays, from_arrays};
-use null3d_render::camera::Perspective;
+use null3d_render::camera::{Lens, Perspective};
 use null3d_render::debug_lines::LineStore;
 use null3d_render::frame::{FrameBuilder, FrameInput, NO_MESH, RecordError};
 use null3d_render::geometry::{Geometry, box_geometry, sphere_geometry};
@@ -155,6 +155,11 @@ impl<B: FrameBuilder> World<B> {
     /// does, with the same lens, and returns it. The camera is a new object, created in the
     /// current frame, so the frame that records next has a structure change.
     pub fn add_view(&mut self, position: [f32; 3]) -> ViewId {
+        self.add_view_through(position, LENS)
+    }
+
+    /// As [`World::add_view`], with its own lens.
+    pub fn add_view_through(&mut self, position: [f32; 3], lens: impl Into<Lens>) -> ViewId {
         let camera = self.scene.reserve().unwrap();
         self.scene.set_position(camera, position).unwrap();
         self.scene
@@ -170,7 +175,7 @@ impl<B: FrameBuilder> World<B> {
             .unwrap();
         self.renderer
             .settings_mut()
-            .add_view(View::new(camera, LENS, ALL_LAYERS))
+            .add_view(View::new(camera, lens, ALL_LAYERS))
             .unwrap()
     }
 
@@ -205,7 +210,25 @@ impl<B: FrameBuilder> World<B> {
             .cull(&input)
             .and_then(|()| self.renderer.record(&input));
         self.lines.clear();
-        recorded
+        let rebuilt = recorded?;
+        self.check_pipelines_first();
+        Ok(rebuilt)
+    }
+
+    /// Checks that the frame's list creates its pipelines before any other command, as the thread
+    /// that draws expects: it starts to build them before it replays the rest.
+    fn check_pipelines_first(&self) {
+        let mut other = false;
+        for command in decode(self.renderer.list(self.frame).words()) {
+            let op = command.unwrap().op;
+            let creates = matches!(op, Op::CreateRenderPipeline | Op::CreateComputePipeline);
+            assert!(
+                !(creates && other),
+                "frame {}: {op:?} comes after other commands",
+                self.frame
+            );
+            other |= !creates;
+        }
     }
 
     /// Draws debug lines in the frame that records next: each pair of points is a line.

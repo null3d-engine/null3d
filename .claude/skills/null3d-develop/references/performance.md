@@ -66,7 +66,7 @@ These numbers are starting points. The engine docs page `guides/performance` hol
 | `rebuilds` above zero during play, with upload and replay spikes in the same frames | Objects, meshes, materials or batches created, destroyed or changed during play: each such frame rebuilds the draw tables and uploads every matrix | Create during setup; hide and show with `setVisible` and pool with `setActiveCount`, which do not rebuild (`guides/performance`) |
 | High "replay" or draw buckets | Too many mesh and material combinations | Share materials; pack textures into arrays with `bunx @null3d/cli assets`; merge small static meshes offline |
 | GPU time high, CPU low | Pixels or shader cost | Lower `maxPixelRatio`; cheaper materials; fewer shadowed lights; avoid large transparent areas |
-| Hitch when something new appears | A rebuild (`rebuilds` above zero), or a pipeline build (`pipelines` above zero) | Create materials and objects during loading; `await scene.warmUp()` |
+| Hitch when something new appears, or it appears a moment late | A rebuild (`rebuilds` above zero), or a pipeline build (`pipelines` above zero) | Create materials and objects during loading; create a later stage hidden, `await scene.warmUp()`, then show it |
 | Hitch while loading during play | Uploads and decoding | Load before play, or stream smaller files; the per-frame upload budget spreads uploads |
 | Frame rate drops after a few minutes on a phone | Heat | Aim for 70% of the budget; the governor steps quality down; test 10-minute runs |
 
@@ -76,6 +76,8 @@ These numbers are starting points. The engine docs page `guides/performance` hol
 - Many phones run the WebGL2 path (for example Samsung Exynos phones in Chrome 154). Budget for it.
 - On the WebGL2 path (0.2), job workers hide objects that sit behind blocker meshes, which the asset tool makes from large static meshes. See-through meshes such as glass and fences must not be blockers: call `setOccluder(false)` on them if the tool picked them.
 - Pixel ratio is the largest GPU lever: a ratio of 3 draws 2.25 times the pixels of a ratio of 2. Presets cap it; do not raise the cap on phones.
+- The engine starts phones and tablets on lighter presets than desktops, and WebGL2 runs at most Medium. The page reads the preset in `engine.mode.preset`, and `?preset=low` fixes one for a test (`concepts/quality-presets`).
+- After a start that crashed the tab, the engine starts one preset lower, and at Low after two. A phone that ran out of memory shows it in `engine.mode.crashedStarts`.
 - Shadows: one cascade on Low, two on Medium. Each shadowed point light draws the scene six times; avoid them on phones.
 - Transparent and additive effects covering the screen (smoke, glass) cost the most on phone GPUs.
 - Memory is tight: a 4 GB iPad reports a 256 MB largest buffer and closes tabs that use too much. Use KTX2 textures, share materials, and free unused prefabs with `destroy()`.
@@ -98,11 +100,12 @@ The number of objects and instance rows one scene can draw depends on the GPU pa
 
 ## 7. The quality governor and your own systems
 
-The engine lowers settings in a fixed order when frames run over budget: render scale first, then shadow updates, then effects, then the preset. It raises them again after a stable period, so quality does not flicker. Your systems can join in:
+The engine lowers settings in a fixed order when frames run over budget: render scale first, then shadow updates, then effects. It never changes the preset during play. It raises the settings again after a stable period, so quality does not flicker. Your systems can join in:
 
 ```ts
-quality.setBudget({ name: 'ai', ms: 2, onScale: (s) => { aiUpdateEvery = s < 0.5 ? 4 : s < 0.8 ? 2 : 1; } });
-quality.onChange((q) => { rain.setActiveCount(q.preset === 'low' ? 2000 : 10000); });
+quality.setBudget({ name: 'ai', ms: 2, onScale: (s) => { aiUpdateEvery = s < 0.5 ? 4 : s < 0.8 ? 2 : 1; } });  // (0.2)
+const RAIN = { low: 2000, medium: 5000, high: 10000, ultra: 10000 };  // one table, keyed by preset
+quality.onChange(() => { rain.setActiveCount(RAIN[quality.preset]); });
 ```
 
 `onScale` receives a value from 0 to 1: 1 means full quality. Keep the callbacks cheap; they run when quality changes, not every frame.
@@ -139,7 +142,7 @@ Performance advice for three.js and other engines assumes things that do not hol
 | --- | --- |
 | Merge meshes to cut draw calls | Objects that share a mesh and material already share one draw. Merge only different small static meshes, to cut buckets |
 | Share materials so objects share a shader | Every material already shares its pipeline. Share materials anyway: each mesh and material pair is its own draw |
-| Compile or warm up after each loading stage | The engine builds its pipelines in the first frame. Wait for `engine.firstFrame` |
+| Compile shaders before the first frame | The first frame waits for its pipelines. Wait for `engine.firstFrame`; warm up later stages with `scene.warmUp()` |
 | Turn off matrix updates for still objects | Objects are static by default and cost nothing until a setter changes them |
 | Set a needs-update flag after a change | Setters mark changes themselves |
 | Track GPU completion yourself | `engine.measure` reports `completedFps` and `gpuLatencyMs` |

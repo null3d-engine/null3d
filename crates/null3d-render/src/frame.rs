@@ -14,11 +14,12 @@ use null3d_core::cells::{CellPosition, MAX_CELLS};
 use null3d_core::handle::Handle;
 use null3d_core::instances::{BatchTable, InstanceBatch};
 use null3d_core::jobs::JobSystem;
+use null3d_core::lights::{LightTable, LightView};
 use null3d_core::scene::SceneStorage;
 use null3d_core::snapshot::FrameSnapshot;
 use null3d_gpu::drawlist::{DrawList, DrawListError, Op, buffer_usage};
 
-use crate::camera::Perspective;
+use crate::camera::Lens;
 use crate::debug_lines::DebugLines;
 use crate::frame_data::{FrameUniform, normalized_direction};
 use crate::graph::GraphError;
@@ -434,8 +435,8 @@ impl SceneSettings {
     }
 
     /// The camera the canvas shows the scene from: a scene object, and its lens.
-    pub fn set_camera(&mut self, camera: Handle, lens: Perspective) {
-        self.views[ViewId::CAMERA.index()].set_camera(camera, lens);
+    pub fn set_camera(&mut self, camera: Handle, lens: impl Into<Lens>) {
+        self.views[ViewId::CAMERA.index()].set_camera(camera, lens.into());
     }
 
     /// Sets the layers of the objects a view draws. A change needs no rebuild of the draw
@@ -471,6 +472,29 @@ impl SceneSettings {
     /// The ambient light's linear color times its intensity.
     pub fn set_ambient(&mut self, color: [f32; 3]) {
         self.lighting.ambient = [color[0], color[1], color[2], 0.0];
+    }
+
+    /// Gathers the lights of the frame whose world output is `parity`'s for the camera's view
+    /// (see [`LightTable::gather`]), after the transform update and before the frame records. The
+    /// main directional light and the ambient lights become the light the shaders read, and the
+    /// light table's visible list holds the point and spot lights the camera sees.
+    pub fn gather_lights(
+        &mut self,
+        lights: &mut LightTable,
+        scene: &SceneStorage,
+        parity: usize,
+        canvas: (u32, u32),
+    ) {
+        let view = self
+            .view_frame(ViewId::CAMERA, scene, parity, canvas)
+            .map(|frame| LightView {
+                camera: frame.camera,
+                frustum: frame.frustum,
+                layers: frame.layers,
+            });
+        let lit = lights.gather(scene, parity, view.as_ref());
+        self.set_sun(lit.sun_direction, lit.sun_color);
+        self.set_ambient(lit.ambient);
     }
 
     /// The linear color behind every object.
@@ -515,7 +539,8 @@ impl SceneSettings {
 
     /// A view's values for a frame whose targets have the canvas's size, or `None` when the view
     /// has no camera to draw from. Shaders work in positions relative to the camera, so the
-    /// constants put the camera at the origin.
+    /// constants put a perspective camera at the origin, and an orthographic camera at infinity
+    /// behind its view.
     pub fn view_frame(
         &self,
         view: ViewId,
@@ -525,10 +550,10 @@ impl SceneSettings {
     ) -> Option<ViewFrame> {
         let aspect = canvas.0 as f32 / canvas.1.max(1) as f32;
         let view = self.views.get(view.index())?;
-        let (view_proj, camera) = view.transform(scene, parity, aspect)?;
+        let (view_proj, eye, camera) = view.transform(scene, parity, aspect)?;
         let uniform = FrameUniform {
             view_proj,
-            camera_position: [0.0, 0.0, 0.0, 1.0],
+            camera_position: eye,
             sun_direction: self.lighting.sun_direction,
             sun_color: self.lighting.sun_color,
             ambient: self.lighting.ambient,

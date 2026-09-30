@@ -1,6 +1,6 @@
 # D-11: Preset values, the governor's thresholds, and frames in flight
 
-Status: proposed. Date: 2026-09-30. Tasks: M1-G1 (frames in flight), then M1-G3, M1-G5 and M1-G6.
+Status: frames in flight decided by the owner on 2026-09-30; the preset values and the governor's thresholds are still open. Date: 2026-09-30. Tasks: M1-G1 (frames in flight), then M1-G3, M1-G5 and M1-G6.
 
 This record settles three questions. M1-G1 answers the third, frames in flight, with the GPU-bound page. The preset values and the governor's thresholds follow from the S4 traces of M1-G5 and M1-G6, and from the live shadow-map resize test of M1-G3. Those tasks add their sections here.
 
@@ -84,9 +84,20 @@ Firefox's WebGL2 path finished 31 frames per second at 8,192 spheres with each l
 - Apple's GPUs work on two frames at once, so a frame's GPU time from timestamps can exceed the completed frame interval. Before the limit, Chrome's WebGPU path reported 44 ms of GPU time per frame at 69 frames per second.
 - The tracker costs one browser object per frame, and two clock readings. In Chrome on WebGPU, the queue's promise and its reaction took about 165 bytes per frame, and the clock readings about 38. On WebGL2 the fence fit within the renderer's earlier budget. `bun run bench:allocation` budgets them.
 
-### Pending rows: the iPad and the S24+
+### The S24+ and the iPad
 
-The phone and the tablet run the page from the main checkout, once this record's pull request has merged:
+Run 20260930-074130-overload, Galaxy S24+, 60 Hz display, from the main checkout:
+
+| Browser | Path | Limit | Spheres | Presented fps | Completed fps | Parted | Submit to completion, median / p95 ms | Frames in flight |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| Chrome 154 | WebGL2 | 2 | 8,192 | 21.1 | 21.1 | no | 98.7 / 101.1 | 2.1 |
+| Chrome 154 | WebGL2 | none | 8,192 | 21.2 | 21.2 | no | 358.7 / 394.8 | 7.6 |
+| Brave, Shields on | WebGL2 | 2 | 8,192 | 21.1 | 21.1 | no | 98.9 / 101.1 | 2.1 |
+| Brave, Shields on | WebGL2 | none | 8,192 | 20.5 | 21.2 | no | 365.6 / 412.5 | 7.8 |
+
+Without the limit, frames queued on the phone's GPU as they did in Chrome and Brave on the Mac. About 8 frames waited, with 360 ms of delay. The limit cut the delay to about 100 ms at the same frame rate.
+
+The iPad's rows are still to come. The phone and the tablet run the page from the main checkout:
 
 ```sh
 bun tests/real-browsers.ts --plan overload --allow-no-webgpu --android chrome,brave --lan ipad-safari,ipad-brave --shields on
@@ -98,11 +109,11 @@ How the data was produced: `NULL3D_PORT=63173 bun tests/real-browsers.ts --plan 
 
 ## Decision
 
-Proposed, for the owner to confirm: the thread that draws takes no new frame while two frames are unfinished on the GPU. This holds on both GPU paths and in every thread mode.
+Decided by the owner on 2026-09-30: the thread that draws takes no new frame while two frames are unfinished on the GPU. This holds on both GPU paths and in every thread mode.
 
 The rule's condition holds in Firefox, whose rates parted by more than half on both paths. The condition misses the queues in Chrome, Brave and Safari's WebGL2 path, where the rates stayed together while 4 to 8 frames waited. The limit's purpose is to keep frames from queuing, so the data supports it there too. In Chrome it cut the delay to a third or less, at no clear cost in frame rate.
 
-The cost falls on Firefox's WebGPU path, because Firefox reports completions late. At 4,096 spheres it finished 102 frames per second with the limit and 120 without. At 8,192 spheres it finished 22 with the limit and 84 with a limit of 4. Options for the owner:
+The cost falls on Firefox's WebGPU path, because Firefox reports completions late. At 4,096 spheres it finished 102 frames per second with the limit and 120 without. At 8,192 spheres it finished 22 with the limit and 84 with a limit of 4. The owner weighed two options and chose the first:
 
 - Keep 2 everywhere (this proposal). Firefox's WebGPU path draws fewer frames when the GPU is busy, with far less delay than without the limit.
 - Raise the limit to 3 or 4 on WebGPU. Firefox's WebGPU path recovers most of its rate, and Chrome, Brave and Safari get one or two more frames of delay under load.

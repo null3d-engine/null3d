@@ -3,10 +3,12 @@ id: concepts/backends
 title: GPU tiers and backends
 status: experimental
 since: "0.1"
-summary: "WebGPU core, compatibility mode and WebGL2; depth on each tier; capability flags; the portable budget; never branching on GPU names."
+summary: "WebGPU core, compatibility mode and WebGL2; color, anti-aliasing and depth on each tier; capability flags; the portable budget; never branching on GPU names."
 ---
 
 # GPU tiers and backends
+
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. High dynamic range color, tone mapping and the choice of anti-aliasing mode are not built yet, so every tier draws 8-bit color with MSAA.
 
 ```mermaid
 flowchart TD
@@ -35,6 +37,16 @@ On WebGPU, the GPU culls the scene itself. The engine records one draw for each 
 On WebGL2 there are no compute shaders, so the job workers cull in parallel on the CPU and group the visible objects the same way. Each object's matrix sits in a data texture on the GPU. Static objects upload theirs only when they change. Moving instance batches write theirs each frame into the next of three textures. A frame then never writes a texture that the GPU may still read. Each frame lists the visible objects, 4 bytes each, and uploads the list only when it changed. The `visibleEntries` figure of `engine.measure` counts the entries of each frame's list. A static instance batch that has stopped changing is culled in groups of 64 nearby rows, with one test and one list entry per group. A group partly in view draws all its rows, and the GPU clips the ones outside. Where the browser has the `WEBGL_multi_draw` extension, one call draws every group with the same shading and the same mesh buffer. Firefox lacks the extension, so there each group takes one call.
 
 Every feature works on both paths, or its page describes its WebGL2 fallback.
+
+## Color and anti-aliasing on each tier
+
+In this version, every tier draws color and anti-aliasing the same way:
+
+- The opaque pass draws with 4 samples per pixel (MSAA), into color and depth targets the size of the canvas. WebGL2 lets every device draw at least 4 samples.
+- The render pass resolves the samples straight into the canvas. Anti-aliasing then needs no pass or texture of its own.
+- Each shader lights in linear color, then encodes its result as sRGB into 8 bits per channel. [Color management](color-management.md) describes the conversions.
+
+An 8-bit channel holds no value above 1, so light brighter than white clips at white. High dynamic range color needs a float target that the GPU can draw into with MSAA. Compatibility mode allows no MSAA on 16-bit float targets, and some WebGL2 devices draw into no float target at all. On WebGL2, `engine.report.webgl2.floatRenderTargets` gives the result of the engine's test.
 
 ## Depth on each tier
 

@@ -1,5 +1,8 @@
-// The sketch's clock: turns frame timestamps into the step that each onUpdate call receives, or, in
-// hold mode, counts fixed steps up to the held time.
+// The sketch's clocks. The frame clock turns frame timestamps into the step that each onUpdate call
+// receives, or, in hold mode, counts fixed steps up to the held time. The fixed clock counts the
+// fixed steps that each frame runs from the sketch time.
+
+import { EngineError } from '../errors/engine-error';
 
 /** The longest step one frame counts, in seconds. A slower frame slows the sketch instead of jumping it. */
 export const MAX_STEP_SECONDS = 0.25;
@@ -7,14 +10,24 @@ export const MAX_STEP_SECONDS = 0.25;
 /** Hold mode's steps per second of sketch time. */
 export const HOLD_STEPS_PER_SECOND = 60;
 
+/** Fixed steps per second, unless the sketch's options set another rate. */
+export const DEFAULT_FIXED_RATE = 60;
+
+/** The most fixed steps one frame runs, unless the sketch's options set another number. */
+export const DEFAULT_MAX_FIXED_STEPS = 8;
+
+/**
+ * A margin, in steps, for a time that is a whole number of steps. Its product with a rate can round
+ * to just past or just short of the whole number, and a count of steps must not change with that.
+ */
+const STEP_MARGIN = 1e-6;
+
 /**
  * How many fixed steps take hold mode's clock from 0 to `seconds`. The last step is shorter than
  * the rest when the time is not a whole number of steps.
  */
 export function holdSteps(seconds: number): number {
-	// The margin keeps a time such as 0.1, whose product with the rate rounds up past a whole
-	// number, from counting one step too many.
-	return Math.max(0, Math.ceil(seconds * HOLD_STEPS_PER_SECOND - 1e-6));
+	return Math.max(0, Math.ceil(seconds * HOLD_STEPS_PER_SECOND - STEP_MARGIN));
 }
 
 /**
@@ -53,5 +66,37 @@ export class FrameClock {
 		const now = step >= steps ? seconds : step / HOLD_STEPS_PER_SECOND;
 		this.dt = now - this.now;
 		this.now = now;
+	}
+}
+
+/**
+ * Counts the fixed steps that each frame runs. Step `n` falls due when the sketch time reaches `n`
+ * steps. The count comes from the sketch time, not from a sum of steps, so it never drifts, and
+ * hold mode, whose times are exact, runs the same steps on every run. A frame runs at most
+ * `maxSteps` steps and drops the rest, so after a slow frame the simulation falls behind the sketch
+ * time instead of slowing the frames that follow. Throws E1214 when an option is out of range.
+ */
+export class FixedClock {
+	/** One step's length in seconds. */
+	readonly step: number;
+	/** Steps run or dropped since time 0. */
+	private counted = 0;
+
+	constructor(
+		private readonly rate = DEFAULT_FIXED_RATE,
+		private readonly maxSteps = DEFAULT_MAX_FIXED_STEPS,
+	) {
+		if (!(Number.isFinite(rate) && rate > 0))
+			throw new EngineError('E1214', `defineSketch() got ${rate} for fixedRate.`);
+		if (!(Number.isInteger(maxSteps) && maxSteps >= 1))
+			throw new EngineError('E1214', `defineSketch() got ${maxSteps} for maxFixedSteps.`);
+		this.step = 1 / rate;
+	}
+
+	/** The number of steps that a frame at sketch time `now` seconds runs. */
+	stepsAt(now: number): number {
+		const due = Math.floor(now * this.rate + STEP_MARGIN) - this.counted;
+		this.counted += due;
+		return Math.min(due, this.maxSteps);
 	}
 }

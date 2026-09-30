@@ -2,8 +2,15 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import { type EngineError, setErrorFixes } from '../errors/engine-error';
 import { ERROR_FIXES } from '../errors/fixes';
 import * as C from '../generated/core';
+import { orthographicView } from '../scene/lens';
 import { CoreMemory } from '../scene/memory';
-import { Camera, DirectionalLight, Object3D, type Scene } from '../scene/scene';
+import {
+	DirectionalLight,
+	Object3D,
+	OrthographicCamera,
+	PerspectiveCamera,
+	type Scene,
+} from '../scene/scene';
 import type { CoreGlue } from '../shared/core';
 import { RELEASE_DEBUG } from './debug';
 import { DebugDraw, MAX_POINTS, packedColor } from './draw';
@@ -94,6 +101,41 @@ const lines = (points: Point[]): [Point, Point][] =>
 		points[2 * k] as Point,
 		points[2 * k + 1] as Point,
 	]);
+
+/**
+ * The corners of the frustum that a camera at (50, 0, 0) draws on a canvas of the given size, in
+ * the default color, after checking that it draws the frustum's twelve edges.
+ */
+function frustumCorners(
+	camera: PerspectiveCamera | OrthographicCamera,
+	width: number,
+	height: number,
+): string[] {
+	const { draw, frames, matrices } = fakeCore();
+	matrices.set(camera.handle, [1, 0, 0, 50, 0, 1, 0, 0, 0, 0, 1, 0]);
+	draw.frustum(camera);
+	draw.flush(width, height);
+	const edges = lines(frames[0] as Point[]);
+	expect(edges.length).toBe(12);
+	expect(edges.every(([a]) => a.color === 0xff00aaff)).toBe(true);
+	return [...new Set(edges.flat().map((p) => rounded([p])[0]?.position.join() ?? ''))].sort();
+}
+
+/** The corners of a box across the -z axis: its x and y ranges at each of two depths. */
+function boxCorners(
+	[left, right]: [number, number],
+	[bottom, top]: [number, number],
+	depths: number[],
+): string[] {
+	return depths
+		.flatMap((z) => [
+			`${left},${bottom},${-z}`,
+			`${right},${bottom},${-z}`,
+			`${right},${top},${-z}`,
+			`${left},${top},${-z}`,
+		])
+		.sort();
+}
 
 const length = (a: Point, b: Point) =>
 	Math.hypot(...a.position.map((v, k) => v - (b.position[k] as number)));
@@ -272,43 +314,39 @@ describe('debug drawing', () => {
 		expect(odd.every(([a]) => a.color === 0xff888888)).toBe(true);
 	});
 
-	test("a camera's frustum draws its near and far planes in the canvas's shape", () => {
-		const { draw, frames, matrices } = fakeCore();
-		const camera = new Camera({} as Scene, 9, 'eye');
-		camera.fov = 90;
-		camera.near = 1;
-		camera.far = 10;
-		matrices.set(9, [1, 0, 0, 50, 0, 1, 0, 0, 0, 0, 1, 0]);
-		draw.frustum(camera);
-		draw.flush(2, 1);
-		const edges = lines(frames[0] as Point[]);
-		expect(edges.length).toBe(12);
-		expect(edges.every(([a]) => a.color === 0xff00aaff)).toBe(true);
-		const corners = new Set(edges.flat().map((p) => rounded([p])[0]?.position.join()));
-		expect([...corners].sort()).toEqual(
-			[
-				'48,-1,-1',
-				'52,-1,-1',
-				'52,1,-1',
-				'48,1,-1',
-				'30,-10,-10',
-				'70,-10,-10',
-				'70,10,-10',
-				'30,10,-10',
-			].sort(),
+	test("a perspective camera's frustum draws its near and far planes in the canvas's shape", () => {
+		const camera = new PerspectiveCamera({} as Scene, 9, 'eye', 90, 1, 10);
+		expect(frustumCorners(camera, 2, 1)).toEqual(
+			[...boxCorners([48, 52], [-1, 1], [1]), ...boxCorners([30, 70], [-10, 10], [10])].sort(),
 		);
 	});
 
+	test("an orthographic camera's frustum is a box, as wide as the canvas's shape makes it", () => {
+		const view = orthographicView({ height: 4 });
+		const camera = new OrthographicCamera({} as Scene, 9, 'map', view, 1, 10);
+		expect(frustumCorners(camera, 2, 1)).toEqual(boxCorners([46, 54], [-2, 2], [1, 10]));
+	});
+
+	test("an orthographic camera's frustum keeps the shape and place of the edges it has", () => {
+		const view = orthographicView({ left: -3, right: 5, top: 2, bottom: -1 });
+		const camera = new OrthographicCamera({} as Scene, 9, 'map', view, 1, 10);
+		expect(frustumCorners(camera, 2, 1)).toEqual(boxCorners([47, 55], [-1, 2], [1, 10]));
+	});
+
 	test('a directional light draws a square that faces it and an arrow in its direction', () => {
-		const { draw, frames } = fakeCore();
-		const scene = { core: { glue: { setSun: () => 0 } } } as unknown as Scene;
-		const sun = new DirectionalLight(scene, [0, -3, 0], '#ff8800', 2);
+		const { draw, frames, matrices } = fakeCore();
+		const scene = { core: { glue: { setLightColor: () => 0 } } } as unknown as Scene;
+		const sun = new DirectionalLight(scene, 7, 'sun');
+		sun.paint('setColor', C.LIGHT_COLOR_MAIN, '#ff8800');
+		// Turned a quarter back about X, so its -Z axis points down, and scaled by 3.
+		matrices.set(sun.handle, [3, 0, 0, 5, 0, 0, 3, 6, 0, -3, 0, 7]);
 		draw.light(sun, { position: [0, 10, 0], size: 2 });
+		draw.light(sun, { color: '#0000ff' });
 		draw.flush(1, 1);
 		const drawn = lines(frames[0] as Point[]);
-		// Four sides, then the arrow: its shaft and four lines of its head.
-		expect(drawn.length).toBe(9);
-		expect(drawn.every(([a]) => a.color === 0xff0088ff)).toBe(true);
+		// Four sides, then the arrow: its shaft and four lines of its head, for each drawing.
+		expect(drawn.length).toBe(18);
+		expect(drawn.slice(0, 9).every(([a]) => a.color === 0xff0088ff)).toBe(true);
 		for (const [a, b] of drawn.slice(0, 4)) {
 			expect([a.position[1], b.position[1]]).toEqual([10, 10]);
 			expect(length(a, b)).toBeCloseTo(2, 9);
@@ -317,6 +355,13 @@ describe('debug drawing', () => {
 		expect(rounded([start, tip]).map((p) => p.position)).toEqual([
 			[0, 10, 0],
 			[0, 8, 0],
+		]);
+		// Without a position, the light draws where it is, with a size of 1.
+		const [from, to] = drawn[13] as [Point, Point];
+		expect(from.color).toBe(0xffff0000);
+		expect(rounded([from, to]).map((p) => p.position)).toEqual([
+			[5, 6, 7],
+			[5, 5, 7],
 		]);
 	});
 

@@ -11,7 +11,7 @@ The benchmarks measure the engine as developers ship it. A production build leav
 - `bench/vite.pages.config.ts` builds every benchmark page for production: null3D's pages, three.js's pages and the scene-code pages. The development checks are off, and Vite minifies as it does in any production build. So three.js runs minified too, as it ships.
 - `bun run bench:run`, `bun run bench:profile`, `bun run bench:allocation` and `bun run bench:soak` build the pages into `target/bench-pages` before each run. `vite preview` serves the build on the preview port, the dev server's port plus 2.
 - `--dev` runs the dev server's pages instead, where the engine runs its development checks. Run the same pages with and without it to see what the checks cost.
-- `bun run test:bench` checks the production build, as the benchmarks run it. The image test manifest and `bun run parity` still load the dev server's pages.
+- `bun run test:bench` checks the production build, as the benchmarks run it. The image test manifest and `bun run parity` still load the dev server's pages. So does null3D's side of each feature scene's [parity test](image-tests.md#parity-with-threejs), so `bun run test:bench` starts the dev server too.
 - The device runner's bench and scale plans load the production build through the dev server's load routes. [Device sessions](devices.md#benchmark-runs) says how.
 - The build keeps hidden source maps beside its files, and the built files stay as a production build writes them. The profile and the allocation check read the maps to name each function and its source file, as the dev server's pages would.
 

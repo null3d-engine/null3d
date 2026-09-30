@@ -1,7 +1,7 @@
 //! The render graph, passes, materials and the post-processing chain.
 //!
 //! - `arrays`: meshes from arrays, with normals and tangents computed as three.js computes them
-//! - `camera`: perspective projection with reversed depth, and view matrices
+//! - `camera`: perspective and orthographic lenses with reversed depth, and view matrices
 //! - `cpu_culled`: the WebGL2 frame builder, with culling on the job workers and an index list per
 //!   view
 //! - `debug_lines`: the lines that a sketch draws for one frame, and the pass that draws them
@@ -16,6 +16,7 @@
 //! - `meshes`: mesh storage for both GPU paths
 //! - `parallel_record`: draw lists recorded in chunks on the job workers, joined in chunk order
 //! - `pipelines`: the render pipeline cache, by the key of everything that sets a pipeline apart
+//! - `shadows`: the cascades of a directional light's shadows, fitted to the camera's view
 //! - `textures`: texture arrays, their samplers and bind groups, and uploads under a byte budget
 //! - `view`: views, each a camera, a layer mask and a target, culled on its own
 
@@ -33,5 +34,6 @@ pub mod materials;
 pub mod meshes;
 pub mod parallel_record;
 pub mod pipelines;
+pub mod shadows;
 pub mod textures;
 pub mod view;

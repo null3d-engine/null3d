@@ -15,16 +15,11 @@ import type { PowerPreference } from '../page/capabilities';
 import { type CoreDevice, TEXTURE_COMPRESSION } from '../page/limits';
 import type { ImageTable } from '../shared/images';
 import { type FrameRecorder, Phase } from '../shared/metrics';
+import type { Tier } from '../shared/tier';
 import { contextLoss, contextRestored, deviceLoss } from './loss';
 import { WebGL2SceneRenderer, WebGPUSceneRenderer } from './scene-renderer';
 
-/**
- * The GPU path the engine draws with: core WebGPU, WebGPU in compatibility mode on devices that
- * cannot run core WebGPU, or WebGL2.
- *
- * @category api/engine
- */
-export type Tier = 'webgpu' | 'webgpu-compat' | 'webgl2';
+export type { Tier } from '../shared/tier';
 
 export type RenderCanvas = OffscreenCanvas | HTMLCanvasElement;
 
@@ -45,6 +40,15 @@ export interface Renderer {
 	readonly completions: Completion | undefined;
 	/** Resizes the drawing buffer, in device pixels. Only the thread that owns the canvas calls this. */
 	resize(width: number, height: number): void;
+	/**
+	 * Starts to build the pipelines that a frame's list creates, the first time it is asked for that
+	 * frame, and returns true when the frame may draw. Until the renderer has drawn a frame with
+	 * every pipeline built, a frame waits for its pipelines. After that, a frame draws at once, and
+	 * objects whose pipelines are still building appear once they are built.
+	 */
+	prepare(frame: number): boolean;
+	/** True while a pipeline is building. */
+	readonly building: boolean;
 	/** Draws a frame to the canvas, adding its phase times and counters to the frame's record. */
 	drawFrame(input: FrameInput, record: FrameRecorder): void;
 	/** Draws one frame into an offscreen target and returns its pixels as RGBA8 rows, top row first. */
@@ -139,6 +143,12 @@ class WebGPURenderer implements Renderer {
 		this.timer?.afterSubmit();
 	}
 
+	prepare(): boolean {
+		return true;
+	}
+
+	readonly building = false;
+
 	drawFrame(input: FrameInput, record: FrameRecorder): void {
 		const start = performance.now();
 		this.timer?.beginFrame(input.frame);
@@ -207,6 +217,12 @@ class WebGL2Renderer implements Renderer {
 		);
 		gl.clear(gl.COLOR_BUFFER_BIT);
 	}
+
+	prepare(): boolean {
+		return true;
+	}
+
+	readonly building = false;
 
 	drawFrame(input: FrameInput, record: FrameRecorder): void {
 		const start = performance.now();

@@ -11,10 +11,12 @@ describe('parseSwitches', () => {
 			copyUploads: false,
 			depth: undefined,
 			compression: undefined,
+			parallelCompile: true,
 			fps: undefined,
 			queue: undefined,
 			jobs: undefined,
 			memoryMiB: undefined,
+			preset: undefined,
 			hold: undefined,
 			bench: false,
 		});
@@ -64,10 +66,22 @@ describe('parseSwitches', () => {
 		expect(parseSwitches('?queue=1.5').queue).toBeUndefined();
 	});
 
+	it('turns background compiles off with ?compile=wait only', () => {
+		expect(parseSwitches('?gpu=webgl2&compile=wait').parallelCompile).toBe(false);
+		expect(parseSwitches('?compile=later').parallelCompile).toBe(true);
+	});
+
 	it('reads the WebGL2 depth mode, and ignores a mode it does not know', () => {
 		expect(parseSwitches('?gpu=webgl2&depth=standard').depth).toBe('standard');
 		expect(parseSwitches('?depth=reversed-gl').depth).toBe('reversed-gl');
 		expect(parseSwitches('?depth=reversed').depth).toBe('reversed');
 		expect(parseSwitches('?depth=log').depth).toBeUndefined();
+	});
+
+	it('reads the quality preset, and ignores a name that is no preset', () => {
+		for (const preset of ['low', 'medium', 'high', 'ultra'] as const)
+			expect(parseSwitches(`?preset=${preset}`).preset).toBe(preset);
+		for (const value of ['auto', 'Low', 'epic', ''])
+			expect(parseSwitches(`?preset=${value}`).preset).toBeUndefined();
 	});
 });

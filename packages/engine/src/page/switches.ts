@@ -1,8 +1,11 @@
 // URL switches that let one device exercise every engine path: ?gpu=, ?threads=off, ?render=main,
-// ?latency=, ?uploads=copy, ?depth= and ?compression=. Four more set what the benchmarks vary: ?fps= for a fixed
-// frame rate, ?jobs= for the job worker count, ?memory= for the shared memory's maximum and ?queue=
-// for the frames that may wait on the GPU. ?hold starts hold mode for image tests, and ?bench
-// publishes the running engine for benchmark tools.
+// ?latency=, ?uploads=copy, ?depth=, ?compile=wait and ?compression=. Four more set what the
+// benchmarks vary: ?fps= for a fixed frame rate, ?jobs= for the job worker count, ?memory= for the
+// shared memory's maximum and ?queue= for the frames that may wait on the GPU. ?hold starts hold
+// mode for image tests, ?preset= fixes the quality preset, and ?bench publishes the running engine
+// for benchmark tools.
+
+import { QUALITY_PRESETS, type QualityPreset } from '../quality/presets';
 
 export type GpuSwitch = 'auto' | 'webgpu' | 'compat' | 'webgl2';
 /**
@@ -52,6 +55,11 @@ export interface Switches {
 	 */
 	compression: readonly CompressionFamily[] | undefined;
 	/**
+	 * False when ?compile=wait makes the WebGL2 path wait for each program's compile at its first
+	 * draw, as it does in a browser without `KHR_parallel_shader_compile`.
+	 */
+	parallelCompile: boolean;
+	/**
 	 * The frame rate from ?fps= that the thread that draws holds, up to the display's rate, or
 	 * undefined to draw at the display's rate.
 	 */
@@ -68,6 +76,11 @@ export interface Switches {
 	 * or undefined to use the option or the default.
 	 */
 	memoryMiB: number | undefined;
+	/**
+	 * The quality preset that ?preset= fixes, which wins over the page's option and over the
+	 * crash marker, or undefined without the switch or with a name that is no preset.
+	 */
+	preset: QualityPreset | undefined;
 	/**
 	 * The text of ?hold=, an empty text for a bare ?hold, or undefined without the switch. The
 	 * engine checks it when it starts, so a bad time fails at once instead of starting a live engine.
@@ -111,10 +124,12 @@ export function parseSwitches(search: string): Switches {
 			.get('compression')
 			?.split(',')
 			.flatMap((name) => oneOf(name, COMPRESSION_FAMILIES) ?? []),
+		parallelCompile: params.get('compile') !== 'wait',
 		fps: positive(params.get('fps')),
 		jobs: whole(params.get('jobs'), MAX_JOB_WORKERS),
 		queue: params.get('queue') === 'off' ? Number.POSITIVE_INFINITY : whole(params.get('queue')),
 		memoryMiB: whole(params.get('memory')),
+		preset: oneOf(params.get('preset'), QUALITY_PRESETS),
 		hold: params.get('hold') ?? undefined,
 		bench: params.has('bench'),
 	};

@@ -40,6 +40,10 @@ export const ERROR_FIXES = {
 		'Pass a whole number whose bits name the layers: 1 << n is layer n. The operator | joins layers, so (1 << 0) | (1 << 3) is layers 0 and 3. Layers run from 0 to 31.',
 	E1208:
 		"Give options from the texture's docs page, such as wrap: 'repeat', filter: 'nearest' or anisotropy: 8. Give fromData four numbers per texel: a Uint8Array for rgba8unorm, and a Uint16Array of half floats or a Float32Array for rgba16float. Resize images larger than textures.maxSize, and decode a closed image again. Encode a KTX2 file flipped instead of passing flipY: true, and load it again instead of updating its texture.",
+	E1213:
+		"Pass only the settings that the call has, each with a value that it takes. The call's docs page lists them.",
+	E1214:
+		'Give fixedRate the fixed steps per second, a number above 0 such as 60 or 120. Give maxFixedSteps a whole number of 1 or more, such as 8.',
 	E1301:
 		'Remove a ?gpu= switch or createEngine gpu option that forces a path this browser lacks. Update the browser, or turn on hardware acceleration in its settings.',
 	E1302:

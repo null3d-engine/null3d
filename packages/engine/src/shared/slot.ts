@@ -63,3 +63,13 @@ export const DisplayInterval = 22;
  * them in the order of their ids, which count from 1, so every id up to this count arrived.
  */
 export const ImagesArrived = 23;
+/**
+ * The newest frame whose pipelines are all built, with those of every frame before it, as the
+ * thread that draws reports it. `scene.warmUp` waits for it.
+ */
+export const PipelinesBuilt = 24;
+/**
+ * Device pixels per CSS pixel that the engine draws with, as float bits: the display's ratio,
+ * capped by the `maxPixelRatio` quality setting.
+ */
+export const PixelRatio = 25;

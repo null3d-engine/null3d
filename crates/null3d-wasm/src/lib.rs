@@ -19,12 +19,13 @@ use null3d_core::error::CoreError;
 use null3d_core::handle::Handle;
 use null3d_core::instances::BatchTable;
 use null3d_core::jobs::{JobConfig, JobSystem};
+use null3d_core::lights::LightTable;
 use null3d_core::scene::{CommandRing, SceneStorage};
 use null3d_core::snapshot::FrameSnapshot;
 use null3d_gpu::caps::Capabilities;
 use null3d_gpu::drawlist::sizes;
 use null3d_render::arrays::{ArrayName, ArraysError, MeshArrays, from_arrays};
-use null3d_render::camera::Perspective;
+use null3d_render::camera::{Lens, Orthographic, Perspective};
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::debug_lines::LineStore;
 use null3d_render::frame::{FrameBuilder, FrameInput, RecordError};
@@ -96,6 +97,7 @@ struct Engine {
     scene: SceneStorage,
     ring: CommandRing,
     batches: BatchTable,
+    lights: LightTable,
     snapshot: FrameSnapshot,
     renderer: Box<dyn FrameBuilder>,
     structure_changed: bool,
@@ -108,8 +110,8 @@ struct Engine {
 }
 
 impl Engine {
-    /// The frame builder, and the frame's input for it. The frame's upload list is recorded once,
-    /// by the frame's first step.
+    /// The frame builder, and the frame's input for it. The frame's upload list and its lights are
+    /// recorded once, by the frame's first step.
     fn frame(
         &mut self,
         frame: u32,
@@ -118,6 +120,12 @@ impl Engine {
     ) -> (&mut dyn FrameBuilder, FrameInput<'_>) {
         if self.snapshot.frame() != frame {
             self.snapshot.record(frame, &self.scene, &self.batches);
+            self.renderer.settings_mut().gather_lights(
+                &mut self.lights,
+                &self.scene,
+                self.scene.parity(),
+                canvas,
+            );
         }
         let input = FrameInput {
             frame,
@@ -284,6 +292,7 @@ pub fn init_engine(
         scene: SceneStorage::with_capacity(scene_capacity),
         ring: CommandRing::with_capacity(commands),
         batches: BatchTable::with_capacity(max_batches),
+        lights: LightTable::new(),
         snapshot: FrameSnapshot::with_capacity(UPLOAD_RANGES),
         renderer: if webgl2 {
             let capabilities = Capabilities::from_bits(u64::from(capabilities));
@@ -439,6 +448,16 @@ pub fn update_transforms() -> u32 {
     };
     with_engine(|e| {
         e.scene.update_transforms(jobs);
+        0
+    })
+}
+
+/// Updates the world matrices and bounding spheres of the objects that the sketch moved after
+/// `updateTransforms`, and of the objects below them. Call it before `cullFrame`.
+#[wasm_bindgen(js_name = updateLateTransforms)]
+pub fn update_late_transforms() -> u32 {
+    with_engine(|e| {
+        e.scene.update_late_transforms();
         0
     })
 }
@@ -1094,38 +1113,101 @@ pub fn set_texture_option(option: u32, value: u32) -> u32 {
 
 /// Draws from this camera object with a perspective lens (vertical field of view in degrees), the
 /// objects whose layer masks share a bit with `layers`.
-#[wasm_bindgen(js_name = setCamera)]
-pub fn set_camera(camera: u32, fov_degrees: f32, near: f32, far: f32, layers: u32) -> u32 {
+#[wasm_bindgen(js_name = setPerspectiveCamera)]
+pub fn set_perspective_camera(
+    camera: u32,
+    fov_degrees: f32,
+    near: f32,
+    far: f32,
+    layers: u32,
+) -> u32 {
+    set_camera(
+        camera,
+        Lens::Perspective(Perspective {
+            fov_degrees,
+            near,
+            far,
+        }),
+        layers,
+    )
+}
+
+/// Draws from this camera object with an orthographic lens: a view `height` tall and `width` wide,
+/// with a width of 0 following the canvas's aspect ratio, centered right of and above the camera's
+/// axis by `center_x` and `center_y`. It draws the objects whose layer masks share a bit with
+/// `layers`.
+#[wasm_bindgen(js_name = setOrthographicCamera)]
+#[allow(clippy::too_many_arguments)]
+pub fn set_orthographic_camera(
+    camera: u32,
+    height: f32,
+    width: f32,
+    center_x: f32,
+    center_y: f32,
+    near: f32,
+    far: f32,
+    layers: u32,
+) -> u32 {
+    set_camera(
+        camera,
+        Lens::Orthographic(Orthographic {
+            height,
+            width: (width > 0.0).then_some(width),
+            center: [center_x, center_y],
+            near,
+            far,
+        }),
+        layers,
+    )
+}
+
+fn set_camera(camera: u32, lens: Lens, layers: u32) -> u32 {
     with_engine(|e| {
         let settings = e.renderer.settings_mut();
-        settings.set_camera(
-            Handle::from_raw(camera),
-            Perspective {
-                fov_degrees,
-                near,
-                far,
-            },
-        );
+        settings.set_camera(Handle::from_raw(camera), lens);
         settings.set_layers(ViewId::CAMERA, layers);
         0
     })
 }
 
-/// The directional light: the direction its light travels, and its linear color times intensity.
-#[wasm_bindgen(js_name = setSun)]
-pub fn set_sun(dx: f32, dy: f32, dz: f32, r: f32, g: f32, b: f32) -> u32 {
-    with_engine(|e| {
-        e.renderer.settings_mut().set_sun([dx, dy, dz], [r, g, b]);
-        0
+// A light is a scene object with a row in the light table, which holds its kind, colors and
+// numbers (see `constants::light_kind`, `light_color` and `light_value`). The object's handle is
+// reserved first, and its create command applies at the next frame; the light lights frames from
+// then on. Destroying the object frees nothing here, so TypeScript destroys the light too.
+
+/// Adds a light of `kind` for the object `handle`; returns its id.
+#[wasm_bindgen(js_name = createLight)]
+pub fn create_light(handle: u32, kind: u32) -> u32 {
+    value_with_engine(|e| {
+        e.lights
+            .create(Handle::from_raw(handle), kind)
+            .map_err(core_failure)
     })
 }
 
-/// The ambient light's linear color times its intensity.
-#[wasm_bindgen(js_name = setAmbient)]
-pub fn set_ambient(r: f32, g: f32, b: f32) -> u32 {
+/// Frees a light's row.
+#[wasm_bindgen(js_name = destroyLight)]
+pub fn destroy_light(light: u32) -> u32 {
+    with_engine(|e| e.lights.destroy(light).map_or_else(core_failure, |()| 0))
+}
+
+/// Sets one of a light's linear colors.
+#[wasm_bindgen(js_name = setLightColor)]
+pub fn set_light_color(light: u32, which: u32, r: f32, g: f32, b: f32) -> u32 {
     with_engine(|e| {
-        e.renderer.settings_mut().set_ambient([r, g, b]);
-        0
+        e.lights
+            .set_color(light, which, [r, g, b])
+            .map_or_else(core_failure, |()| 0)
+    })
+}
+
+/// Sets one of a light's numbers.
+#[wasm_bindgen(js_name = setLightValue)]
+pub fn set_light_value(light: u32, which: u32, value: f32) -> u32 {
+    with_engine(|e| {
+        e.lights
+            .set_value(light, which, value)
+            .map_or_else(core_failure, |()| 0)
     })
 }
 

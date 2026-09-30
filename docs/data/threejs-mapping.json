@@ -32,8 +32,8 @@
       "three": "renderer.setPixelRatio(devicePixelRatio)",
       "status": "changed",
       "since": "0.1",
-      "target": "createEngine({ maxPixelRatio }) and the quality presets",
-      "notes": "Presets cap the pixel ratio (1.5 on Low, 2 on Medium and High). Dynamic resolution then adjusts the render scale.",
+      "target": "createEngine({ maxPixelRatio }) and the quality presets; quality.set({ maxPixelRatio }) in the sketch",
+      "notes": "The engine sizes the canvas to its CSS size times the screen's pixel ratio, up to the quality preset's cap. The option replaces the cap, and quality.set changes it during play.",
       "docs": "concepts/quality-presets",
       "detect": "\\.setPixelRatio\\s*\\("
     },
@@ -44,7 +44,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "Automatic",
-      "notes": "The engine follows the canvas's CSS size and updates every camera's aspect ratio. Delete resize handlers and updateProjectionMatrix calls.",
+      "notes": "The engine follows the canvas's CSS size. Perspective cameras, and orthographic cameras made with a height, follow its aspect ratio in every frame. Delete resize handlers and updateProjectionMatrix calls.",
       "docs": "api/engine",
       "detect": "\\.setSize\\s*\\(|\\.updateProjectionMatrix\\s*\\(|\\.aspect\\s*="
     },
@@ -110,7 +110,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "await scene.warmUp() before hiding the loading screen",
-      "notes": "Pipelines for loaded assets compile during loading. warmUp resolves when every pipeline the scene needs is ready.",
+      "notes": "The first frame waits for its pipelines. warmUp resolves once every pipeline that the scene needs is built, hidden objects included, so warm up a later loading stage before you show it.",
       "docs": "guides/loading-screens",
       "detect": "\\.compile(Async)?\\s*\\("
     },
@@ -297,7 +297,7 @@
       "status": "direct",
       "since": "0.1",
       "target": "obj.lookAt(x, y, z)",
-      "notes": "Cameras look down -Z, as in three.js, and lights will too when they become objects later in 0.1.",
+      "notes": "Cameras and lights look down -Z, as in three.js.",
       "docs": "api/objects",
       "detect": "\\.lookAt\\s*\\("
     },
@@ -473,7 +473,7 @@
       "status": "direct",
       "since": "0.1",
       "target": "scene.createPerspectiveCamera({ fov, near, far, position, target })",
-      "notes": "fov is vertical and in degrees, as in three.js. The aspect ratio is automatic.",
+      "notes": "fov is vertical and in degrees, as in three.js. The aspect ratio is automatic. The fov, near and far properties are read-only: change them with camera.setFov(degrees) and camera.setNearFar(near, far).",
       "docs": "api/cameras",
       "detect": "\\bPerspectiveCamera\\b"
     },
@@ -483,8 +483,8 @@
       "three": "OrthographicCamera(left, right, top, bottom, near, far)",
       "status": "direct",
       "since": "0.1",
-      "target": "scene.createOrthographicCamera({ height, near, far }), or left/right/top/bottom",
-      "notes": "With height only, the width follows the canvas aspect ratio.",
+      "target": "scene.createOrthographicCamera({ height, near, far, position, target }), or left, right, top and bottom in place of height",
+      "notes": "With height alone, the width follows the canvas's aspect ratio, so code that recomputes left and right on resize goes away. The four edges keep their shape on any canvas, as in three.js. To zoom, call camera.setOrthoHeight with the original height divided by three.js's zoom.",
       "docs": "api/cameras",
       "detect": "\\bOrthographicCamera\\b"
     },
@@ -517,7 +517,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "scene.createDirectionalLight({ direction, color, intensity, castShadows })",
-      "notes": "Shadow cascades fit the view automatically, so delete shadow.camera bounds and target updates.",
+      "notes": "The light is an object. Pass the target minus the position as direction, or call light.lookAt(x, y, z), again whenever the target moves. Surfaces show the first directional light created, and castShadows is stored until shadows draw. Delete shadow.camera bounds: the engine's shadow cascades will fit the view by themselves.",
       "docs": "api/lights",
       "detect": "\\bDirectionalLight\\b"
     },
@@ -528,7 +528,7 @@
       "status": "direct",
       "since": "0.1",
       "target": "scene.createPointLight({ position, color, intensity, range, decay })",
-      "notes": "distance becomes range; 0 (infinite) is not allowed, because clustered lighting needs a range.",
+      "notes": "distance becomes range, which every point light needs: 0, a light with no end, is not allowed, because the engine finds the lights near each surface by their ranges. The light is stored but does not light surfaces yet.",
       "docs": "api/lights",
       "detect": "\\bPointLight\\b"
     },
@@ -538,8 +538,8 @@
       "three": "SpotLight(color, intensity, distance, angle, penumbra, decay)",
       "status": "direct",
       "since": "0.1",
-      "target": "scene.createSpotLight({ position, direction | target, angle, penumbra, range, intensity })",
-      "notes": "Spot light cookies (light.map) come after 1.0.",
+      "target": "scene.createSpotLight({ position, direction | target, angle, penumbra, range, decay, intensity })",
+      "notes": "distance becomes range, which every spot light needs. target is a point: call light.lookAt(x, y, z) when it moves. The light is stored but does not light surfaces yet. Spot light cookies (light.map) come after 1.0.",
       "docs": "api/lights",
       "detect": "\\bSpotLight\\b"
     },
@@ -550,7 +550,7 @@
       "status": "direct",
       "since": "0.1",
       "target": "scene.createHemisphereLight({ skyColor, groundColor, intensity })",
-      "notes": "",
+      "notes": "The sky lies along the light's +Y axis: turn the light to tilt it, where three.js moves it. The light is stored but does not light surfaces yet.",
       "docs": "api/lights",
       "detect": "\\bHemisphereLight\\b"
     },
@@ -561,7 +561,7 @@
       "status": "direct",
       "since": "0.1",
       "target": "scene.createAmbientLight({ color, intensity })",
-      "notes": "",
+      "notes": "Several ambient lights add up.",
       "docs": "api/lights",
       "detect": "\\bAmbientLight\\b"
     },
@@ -1297,8 +1297,8 @@
       "three": "OrbitControls / MapControls / TrackballControls / ArcballControls",
       "status": "changed",
       "since": "0.1",
-      "target": "createOrbitControls(ctx, camera, { target, enableDamping, dampingFactor, minDistance, maxDistance, maxPolarAngle }) from @null3d/controls; controls.update(dt) in onUpdate",
-      "notes": "Option names match OrbitControls. Trackball and Arcball come after 1.0.",
+      "target": "createOrbitControls(ctx, camera, { target, enableDamping, dampingFactor, minDistance, maxDistance, maxPolarAngle }) or createMapControls(ctx, camera) from @null3d/controls; controls.update(dt) in onUpdate",
+      "notes": "Option names and defaults match OrbitControls and MapControls, and mouseButtons and touches take strings such as 'rotate' and 'dolly-pan'. There is no DOM element, dispose or change event: update(dt) returns true when the camera moved. For keys, call controls.pan or controls.rotateLeft with the input the sketch reads. An orthographic camera zooms by its view height, and minZoom and maxZoom count zoom as three.js does from the height when the controls start. zoomToCursor, keys, listenToKeyEvents, saveState and reset are not built yet. Trackball and Arcball come after 1.0.",
       "docs": "api/controls",
       "detect": "\\b(Orbit|Map|Trackball|Arcball)Controls\\b"
     },
@@ -1352,8 +1352,8 @@
       "three": "Clock / getDelta / getElapsedTime",
       "status": "changed",
       "since": "0.1",
-      "target": "onUpdate(dt) and ctx.time.now",
-      "notes": "",
+      "target": "onUpdate(dt) or ctx.time.dt, and ctx.time.now",
+      "notes": "getDelta() becomes the dt that onUpdate gets, also in ctx.time.dt, and getElapsedTime() becomes ctx.time.now. Sketch time stops while the engine is paused or the page is hidden. A fixed-step simulation, such as world.step(1 / 60), moves to onFixedUpdate.",
       "docs": "api/time",
       "detect": "\\bClock\\b|\\.getDelta\\s*\\(|\\.getElapsedTime\\s*\\("
     },
@@ -1595,7 +1595,7 @@
       "status": "unsupported",
       "since": null,
       "target": "Web Audio on the page",
-      "notes": "The sketch sends positions with page.post: every frame for moving sounds, or on events only.",
+      "notes": "The sketch writes the positions of moving sounds into a shared array, which it sends to the page once. It sends one message with page.post for each sound event.",
       "docs": "guides/audio",
       "detect": "\\b(PositionalAudio|AudioListener|AudioLoader|AudioAnalyser)\\b"
     },

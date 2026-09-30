@@ -60,7 +60,7 @@ Colors take the same forms as material colors: a hex string such as `'#ff0000'`,
 
 ### Objects and cameras
 
-`debug.axes(object)` and `debug.frustum(camera)` draw at the object's place in the frame that draws them. They wait until the engine has updated the frame's transforms, so they never trail a moving object by one frame. A camera's frustum takes the shape of the canvas, as its view does.
+`debug.axes(object)`, `debug.frustum(camera)` and `debug.light(light)` draw at the object's place in the frame that draws them. A light draws where it stands unless its `position` option gives another place, which suits a directional light, whose position does not change its light. They wait until the engine has updated the frame's transforms, so they never trail a moving object by one frame. A camera's frustum takes the shape of the canvas, as its view does.
 
 ### Release builds
 
@@ -128,7 +128,7 @@ Debug drawing: lines that show where things are, such as bounds, directions and 
 | `axes(target: Object3D \| Vec3Like, size?: number): void` | Draws x, y and z axes, in red, green and blue, `size` meters long: at a position, or on an object. An object's axes take its position and rotation in the frame they draw in, so they never lag behind it. The default size is 1. |
 | `grid(size?: number, divisions?: number, options?: DebugGridOptions): void` | Draws a square grid on the horizontal plane through its center, `size` meters wide, with `divisions` cells along each side, as three.js's `GridHelper` does. The defaults are 10 and 10. |
 | `frustum(camera: Camera, color?: ColorInput): void` | Draws the space that a camera sees: its near and far planes and the edges between them, in the canvas's shape. The camera takes its place in the frame it draws in. The default color is orange, as in three.js's `CameraHelper`. |
-| `light(light: DirectionalLight, options?: DebugLightOptions): void` | Draws a light. A directional light draws as a square that faces its light, with an arrow in the direction its light travels. |
+| `light(light: DirectionalLight, options?: DebugLightOptions): void` | Draws a directional light as a square that faces its light, with an arrow in the direction its light travels. The light takes its place and direction in the frame it draws in. |
 
 ### `DebugGridOptions`
 
@@ -150,7 +150,7 @@ Options for `debug.light`.
 
 | Member | Description |
 | --- | --- |
-| `position?: Vec3Like` | Where to draw a light that has no position of its own, such as a directional light. The default is the origin. |
+| `position?: Vec3Like` | Where to draw the light, such as a place in view for a directional light, whose own position does not change its light. The default is the light's position. |
 | `size?: number` | The size of the drawing in meters. The default is 1. |
 | `color?: ColorInput` | The color of the drawing. The default is the light's own color. |
 
@@ -164,7 +164,7 @@ What `engine.measure` returns: the per-frame figures, memory, load time and down
 | --- | --- |
 | `seconds: number` | Length of the measurement. |
 | `memory: MemoryStats` | The engine's WebAssembly memory and the JavaScript heap. |
-| `load: { engineStartMs: number; probeMs: number; coreMs: number; firstFrameMs: number \| null; firstFrameDoneMs: number \| null; }` | How long the engine took to start and to draw its first frame, in milliseconds. |
+| `load: { engineStartMs: number; probeMs: number; coreMs: number; firstFrameMs: number \| null; firstFrameDoneMs: number \| null; warmUpMs: number \| null; firstFramePipelines: number \| null; }` | How long the engine took to start and to draw its first frame, in milliseconds. |
 | `downloadBytes: { wasm: number \| null; }` | Bytes of the engine's WebAssembly file as the page downloaded it. |
 | `lostRecords: number` | Frame records the page read too late; nonzero means some frames are missing from the figures. |
 | `completionSignal: 'queue' \| 'fence'` | How the renderer learned that the GPU finished a frame: its queue (WebGPU) or a fence (WebGL2). |
@@ -260,7 +260,7 @@ type PhaseName =
 	| 'replay';
 ```
 
-A step of a frame that `engine.measure` times. The `update` step is the sketch's own code, and the other steps are the engine's.
+A step of a frame that `engine.measure` times. The `update` step is the sketch's own code, in all of its callbacks, and the other steps are the engine's.
 
 ### `ThreadStats`
 

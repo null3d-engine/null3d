@@ -41,6 +41,11 @@ export interface CoreDevice {
 	sharedUploads: boolean;
 	/** How the GPU path stores depth: always `reversed` on WebGPU. */
 	depth: DepthMode;
+	/**
+	 * WebGL2: true to compile programs in the background where the context has
+	 * `KHR_parallel_shader_compile`, false to wait for each program's compile at its first draw.
+	 */
+	parallelCompile: boolean;
 }
 
 /**
@@ -100,8 +105,9 @@ export function storageBindingBytes(limits: Record<string, number | null>): numb
 /**
  * The device as the engine uses it on WebGL2 or WebGPU, from the capability report and the test
  * switches. `copyUploads` makes the WebGL2 path copy uploads out of shared memory even where
- * WebGL reads it, `depth` forces a WebGL2 depth mode, and `compression` limits the compressed
- * texture families, so tests reach every route.
+ * WebGL reads it, `depth` forces a WebGL2 depth mode, `parallelCompile` off makes WebGL2 wait for
+ * each program's compile, and `compression` limits the compressed texture families, so tests reach
+ * every route.
  */
 export function coreDevice(
 	webgl2: boolean,
@@ -109,8 +115,9 @@ export function coreDevice(
 	{
 		copyUploads,
 		depth,
+		parallelCompile,
 		compression: allowed,
-	}: Pick<Switches, 'copyUploads' | 'depth' | 'compression'>,
+	}: Pick<Switches, 'copyUploads' | 'depth' | 'parallelCompile' | 'compression'>,
 ): CoreDevice {
 	if (!webgl2) {
 		const features = new Set(report.webgpu.features);
@@ -121,6 +128,7 @@ export function coreDevice(
 			maxTextureSize: 0,
 			sharedUploads: true,
 			depth: 'reversed',
+			parallelCompile,
 		};
 	}
 	const gl = report.webgl2;
@@ -135,6 +143,7 @@ export function coreDevice(
 		maxTextureSize: Math.max(C.LIMIT_WEBGL2_MIN_TEXTURE_SIZE, gl.maxTextureSize ?? 0),
 		sharedUploads: !copyUploads && shared !== null && shared.bufferSubData && shared.texSubImage2D,
 		depth: webgl2Depth(gl.extensions.EXT_clip_control === true, depth),
+		parallelCompile,
 	};
 }
 
