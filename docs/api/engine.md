@@ -3,7 +3,7 @@ id: api/engine
 title: "Page API: createEngine"
 status: experimental
 since: "0.1"
-summary: "createEngine options; engine.postToSketch, capture, labels, requestPointerLock, capabilities, destroy."
+summary: "createEngine options and start errors; memory; capabilities and mode; pausing, detaching, failures, measuring, captureFrame, messages and destroy."
 ---
 
 # Page API: createEngine
