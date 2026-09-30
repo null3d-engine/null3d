@@ -2,6 +2,7 @@
 // for, in hold mode with ?hold=. It publishes the frame with each fighting pixel painted as the
 // nearer surface, which every GPU draws alike, and the fighting pixels themselves as data.
 import { createEngine } from '@null3d/engine';
+import { depthFacts } from './lib/depth';
 import { countFighting, precisionFacts, withoutFighting } from './lib/depth-precision';
 import { run, toBase64 } from './lib/result';
 
@@ -15,16 +16,10 @@ run('depth-precision', async () => {
 	});
 	const frame = await engine.captureFrame();
 	await engine.destroy();
-	const { tier, depth } = engine.capabilities;
-	const clipControl = engine.report.webgl2.extensions.EXT_clip_control === true;
-	// Every path draws reversed depth unless ?depth= asks for another, or WebGL2 lacks the extension.
-	const asked = new URLSearchParams(location.search).get('depth') ?? 'reversed';
 	return {
-		tier,
+		tier: engine.capabilities.tier,
 		mode: engine.mode,
-		depth,
-		clipControl,
-		drewAsked: depth === asked || (asked === 'reversed' && tier === 'webgl2' && !clipControl),
+		...depthFacts(engine),
 		...precisionFacts(countFighting(frame.pixels, frame.width, frame.height)),
 		width: frame.width,
 		height: frame.height,

@@ -643,6 +643,17 @@ async function startEngine(
 	onProgress?.('core');
 	let wasmMemory = core.memory;
 	const device = coreDevice(tier === 'webgl2', report, switches);
+	const capabilities: EngineCapabilities = {
+		tier,
+		threaded,
+		features:
+			tier === 'webgl2'
+				? Object.keys(report.webgl2.extensions).filter((n) => report.webgl2.extensions[n])
+				: report.webgpu.features,
+		limits: tier === 'webgl2' ? {} : report.webgpu.limits,
+		maxInstances: maxInstances(device),
+		depth: device.depth,
+	};
 	const handoff: CoreHandoff = {
 		build,
 		module: core.module,
@@ -712,7 +723,13 @@ async function startEngine(
 	/** Stops every loop and then the workers, and wakes each thread that waits, so it sees the stop. */
 	const stop = () => {
 		Atomics.store(slots, Slot.Running, 0);
-		for (const slot of [Slot.Running, Slot.FramesTaken, Slot.Paused, Slot.JobsReady])
+		for (const slot of [
+			Slot.Running,
+			Slot.FramesTaken,
+			Slot.Paused,
+			Slot.JobsReady,
+			Slot.PipelinesBuilt,
+		])
 			Atomics.notify(slots, slot);
 		localDrawing?.stop();
 		localRunner?.dispose();
@@ -742,13 +759,18 @@ async function startEngine(
 					keyCodes: KEY_CODES,
 					jobWorkers: 0,
 					device,
+					capabilities,
 					sendImage: sendToTable(imageTable, slots),
 					pageUrl: pageUrl ?? sketchUrl,
 				},
 				hold,
 			);
-			await localRunner.setup(await (sketchModule ?? loadSketch(sketchUrl)));
+			// In hold mode the sketch module loads only now, after the runner seeded the random
+			// numbers. The renderer starts before the setup, so a warm-up in the setup has a renderer
+			// to build its pipelines.
+			const sketchLoad = sketchModule ?? awaitLater(loadSketch(sketchUrl));
 			localDrawing = await drawOnPage(memory, { imageTable }, localRunner);
+			await localRunner.setup(await sketchLoad);
 		} else if (threads) {
 			const { sketch, render, jobs } = threads;
 			// The job workers get the core first. A stop waits until each job worker reports that it left
@@ -762,6 +784,7 @@ async function startEngine(
 				pageUrl: pageUrl ?? sketchUrl,
 				keyCodes: KEY_CODES,
 				jobWorkers,
+				capabilities,
 				hold,
 			};
 			if (renderThread === 'sketch-worker') {
@@ -812,10 +835,6 @@ async function startEngine(
 		};
 		requestAnimationFrame(check);
 	});
-	const features =
-		tier === 'webgl2'
-			? Object.keys(report.webgl2.extensions).filter((n) => report.webgl2.extensions[n])
-			: report.webgpu.features;
 	/** Hold mode's frame, read back once. */
 	let held: CapturedFrame | undefined;
 	/** Draws a frame offscreen on the thread that draws, and reads it back. */
@@ -829,14 +848,7 @@ async function startEngine(
 	};
 
 	const engine: Engine = {
-		capabilities: {
-			tier,
-			threaded,
-			features,
-			limits: tier === 'webgl2' ? {} : report.webgpu.limits,
-			maxInstances: maxInstances(device),
-			depth: device.depth,
-		},
+		capabilities,
 		report,
 		mode,
 		firstFrame,
@@ -898,6 +910,8 @@ async function startEngine(
 						reader.firstFrameDoneTime > 0
 							? reader.firstFrameDoneTime - performance.timeOrigin
 							: null,
+					warmUpMs: reader.warmUpMs,
+					firstFramePipelines: reader.firstFramePipelines,
 				},
 				downloadBytes: { wasm: wasmDownloadBytes() },
 				lostRecords: reader.lost,

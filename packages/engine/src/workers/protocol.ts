@@ -4,6 +4,7 @@ import { setErrorFixes } from '../errors/engine-error';
 import type { ErrorFixes } from '../errors/fixes';
 import { messageOf } from '../errors/message';
 import type { PowerPreference } from '../page/capabilities';
+import type { EngineCapabilities } from '../page/engine';
 import type { CoreDevice } from '../page/limits';
 import type { Tier } from '../render/renderer';
 import { awaitLater } from '../shared/await-later';
@@ -68,6 +69,8 @@ export type SketchWorkerInit = CoreHandoff & {
 	keyCodes: readonly string[];
 	/** Job workers that serve the sketch's job system. */
 	jobWorkers: number;
+	/** The GPU path the engine chose, and what it offers, for the sketch's `engine.capabilities`. */
+	capabilities: EngineCapabilities;
 	/** Present in low-latency mode, where the sketch worker also draws. */
 	renderer?: RendererSetup;
 	/** Hold mode's sketch time in seconds, which the sketch worker steps the sketch to after setup. */

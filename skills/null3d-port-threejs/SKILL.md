@@ -96,12 +96,12 @@ Write `PORTING-REPORT.md` with the template in `references/verification.md`: wha
 | `document`, `window` and DOM events next to scene code | The page owns the DOM; input arrives in `ctx.input`; messages carry data | Sketch code runs in a worker without a DOM |
 | `obj.userData`, subclasses of `Mesh` | Your own maps or typed arrays keyed by handle or row | Engine objects are not extensible |
 | `onBeforeRender`, per-draw callbacks | `onUpdate` or `onLateUpdate`, or a declared pass | No sketch code runs in the render worker |
-| `material.needsUpdate = true` to switch features at run time | Create both material variants while loading. Swap with `setMaterial` for a rare change; for a frequent one, keep two objects and swap their visibility | A shader change compiles a pipeline, which stalls a frame, and `setMaterial` rebuilds the draw tables |
+| `material.needsUpdate = true` to switch features at run time | Create both material variants while loading. Swap with `setMaterial` for a rare change; for a frequent one, keep two objects and swap their visibility | A shader change needs a new pipeline, whose objects draw nothing until it is built, and `setMaterial` rebuilds the draw tables |
 | `InstancedMesh.setMatrixAt` with a dummy `Object3D` | Write `positions`, `rotations` and `scales` arrays | No matrix composition in JavaScript: in the S1 benchmark it cost three.js about 0.5 ms per frame for 100,000 instances. The loop's own motion math costs the same in both engines, so keep it tight |
 | `object.traverse` every frame | Collect the handles you need at setup | Traversal costs work every frame |
 | `mergeGeometries` to cut draw calls | Separate objects that share a mesh and material | They already share one draw (`guides/performance`) |
 | `matrixAutoUpdate = false` on still objects | Nothing | Objects are static by default and cost nothing until a setter changes them |
-| `renderer.compile` or `compileAsync` after loading | Wait for `engine.firstFrame` | The engine builds its pipelines in the first frame |
+| `renderer.compile` or `compileAsync` after loading | `await scene.warmUp()` in the sketch, and wait for `engine.firstFrame` on the page | The first frame waits for its pipelines; warm up a later loading stage before you show it |
 | Resize handlers and `setSize` | Nothing | The engine follows the canvas size |
 | `EffectComposer` pass chains | `post.set` and `post.addEffect` | The chain is built in and merged into few passes |
 | `localStorage` in scene code | Keep it on the page, or use IndexedDB, which workers have | Workers have no `localStorage` |

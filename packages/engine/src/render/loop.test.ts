@@ -3,7 +3,7 @@ import { controlViews, createControlBuffer, Slot } from '../shared/control';
 import { createMetricsBuffer, MetricsReader } from '../shared/metrics';
 import type { SketchRunner } from '../sketch/runner';
 import { runDirectLoop } from './direct-loop';
-import { type RenderLoop, runRenderLoop, wakeDelayMs } from './loop';
+import { HoldLoop, type RenderLoop, runRenderLoop, wakeDelayMs } from './loop';
 import type { FrameInput, Renderer } from './renderer';
 
 /** Frame callbacks that the loops asked for, which the test runs in place of a display. */
@@ -30,25 +30,51 @@ function refresh(hz: number, count: number, before: (call: number) => void = () 
 	}
 }
 
-/** The control block, the metrics and a renderer that lists the frames it draws. */
+/**
+ * The control block, the metrics and a renderer that lists the frames it draws and the frames it
+ * was asked to prepare. Its pipelines build while `builds.left` is above 0: each check of a frame
+ * counts it down.
+ */
 function setup() {
 	const control = createControlBuffer(false);
 	const metrics = createMetricsBuffer(false, 0);
 	const drawn: number[] = [];
+	const prepared: number[] = [];
+	const builds = { left: 0, drawn: false };
 	const renderer = {
-		drawFrame: (input: FrameInput) => drawn.push(input.frame),
+		prepare(frame: number) {
+			prepared.push(frame);
+			if (builds.left > 0) builds.left--;
+			return builds.drawn || builds.left === 0;
+		},
+		get building() {
+			return builds.left > 0;
+		},
+		drawFrame: (input: FrameInput) => {
+			drawn.push(input.frame);
+			if (builds.left === 0) builds.drawn = true;
+		},
 		finished: () => Promise.resolve(),
 		resize() {},
 	} as unknown as Renderer;
 	const { slots } = controlViews(control);
 	Atomics.store(slots, Slot.Running, 1);
-	return { control, metrics, slots, drawn, renderer, reader: new MetricsReader(metrics) };
+	return {
+		control,
+		metrics,
+		slots,
+		drawn,
+		prepared,
+		builds,
+		renderer,
+		reader: new MetricsReader(metrics),
+	};
 }
 
-/** A sketch whose steps count frames from 1. */
-function countingSketch(): SketchRunner {
+/** A sketch whose steps count frames from 1, and whose setup has run unless `started` is false. */
+function countingSketch(started = true): SketchRunner & { started: boolean } {
 	let frame = 0;
-	return { step: () => ++frame } as unknown as SketchRunner;
+	return { step: () => ++frame, started } as unknown as SketchRunner & { started: boolean };
 }
 
 const DISPLAY_HZ = 60;
@@ -80,6 +106,67 @@ describe('the render loop', () => {
 		expect(drawn).toHaveLength(CALLBACKS / 2);
 		expect(reader.refreshHz).toBe(DISPLAY_HZ);
 	});
+
+	it('takes and draws the first frame only once its pipelines are built', () => {
+		const { control, metrics, slots, drawn, prepared, builds, renderer, reader } = setup();
+		builds.left = 4;
+		loop = runRenderLoop(renderer, control, metrics, undefined);
+		Atomics.store(slots, Slot.FramesPublished, 1);
+		refresh(DISPLAY_HZ, 3);
+		// The sketch may not record the next frame yet, and warm-ups still wait.
+		expect(drawn).toEqual([]);
+		expect(Atomics.load(slots, Slot.FramesTaken)).toBe(0);
+		expect(Atomics.load(slots, Slot.PipelinesBuilt)).toBe(0);
+		refresh(DISPLAY_HZ, 2);
+		expect(drawn).toEqual([1]);
+		expect(prepared).toEqual([1, 1, 1, 1]);
+		expect(Atomics.load(slots, Slot.FramesTaken)).toBe(1);
+		expect(Atomics.load(slots, Slot.PipelinesBuilt)).toBe(1);
+		expect(reader.warmUpMs).toBeGreaterThanOrEqual(0);
+		expect(reader.firstFramePipelines).toBe(0);
+	});
+
+	it('draws later frames at once while their pipelines build, and reports them built after', () => {
+		const { control, metrics, slots, drawn, builds, renderer } = setup();
+		loop = runRenderLoop(renderer, control, metrics, undefined);
+		Atomics.store(slots, Slot.FramesPublished, 1);
+		refresh(DISPLAY_HZ, 1);
+		// Frame 2 creates a pipeline, which builds while frames 2 to 4 are checked.
+		builds.left = 4;
+		refresh(DISPLAY_HZ, 3, (call) => Atomics.store(slots, Slot.FramesPublished, call + 2));
+		expect(drawn).toEqual([1, 2, 3, 4]);
+		expect(Atomics.load(slots, Slot.PipelinesBuilt)).toBe(1);
+		refresh(DISPLAY_HZ, 1, () => Atomics.store(slots, Slot.FramesPublished, 5));
+		expect(Atomics.load(slots, Slot.PipelinesBuilt)).toBe(5);
+	});
+
+	it('takes a frame of a device that the browser took away without waiting for it', () => {
+		const { control, metrics, slots, drawn, prepared, builds, renderer } = setup();
+		builds.left = 100;
+		Atomics.store(slots, Slot.GpuEpoch, 1);
+		loop = runRenderLoop(renderer, control, metrics, undefined);
+		Atomics.store(slots, Slot.FramesPublished, 1);
+		refresh(DISPLAY_HZ, 1);
+		expect(Atomics.load(slots, Slot.FramesTaken)).toBe(1);
+		expect(drawn).toEqual([]);
+		expect(prepared).toEqual([]);
+	});
+});
+
+describe('the hold loop', () => {
+	it('draws the held frame once its pipelines are built', async () => {
+		const { metrics, slots, drawn, builds, renderer } = setup();
+		builds.left = 3;
+		const hold = new HoldLoop(slots, renderer, metrics);
+		Atomics.store(slots, Slot.FramesPublished, 7);
+		const held = hold.drawHeld();
+		refresh(DISPLAY_HZ, 2);
+		expect(drawn).toEqual([]);
+		refresh(DISPLAY_HZ, 2);
+		await held;
+		expect(drawn).toEqual([7]);
+		expect(Atomics.load(slots, Slot.FramesTaken)).toBe(7);
+	});
 });
 
 describe('the direct loop', () => {
@@ -104,6 +191,36 @@ describe('the direct loop', () => {
 		refresh(DISPLAY_HZ, CALLBACKS);
 		expect(drawn).toHaveLength(CALLBACKS / 2);
 		expect(reader.refreshHz).toBe(DISPLAY_HZ);
+	});
+
+	it('steps nothing before the setup has run, and draws the frames that its warm-ups publish', () => {
+		const { control, metrics, slots, drawn, builds, renderer } = setup();
+		const sketch = countingSketch(false);
+		loop = runDirectLoop(sketch, renderer, control, metrics, undefined);
+		refresh(DISPLAY_HZ, 3);
+		expect(drawn).toEqual([]);
+		// A warm-up records frame 1 itself; the loop draws it once its pipelines are built.
+		builds.left = 2;
+		Atomics.store(slots, Slot.FramesPublished, 1);
+		refresh(DISPLAY_HZ, 1);
+		expect(drawn).toEqual([]);
+		refresh(DISPLAY_HZ, 1);
+		expect(drawn).toEqual([1]);
+		expect(Atomics.load(slots, Slot.PipelinesBuilt)).toBe(1);
+		sketch.started = true;
+		refresh(DISPLAY_HZ, 2);
+		// The sketch's own frames count from 1 in this fake: the loop steps and draws them.
+		expect(drawn).toEqual([1, 1, 2]);
+	});
+
+	it('steps no new frame while the frame it stepped waits for its pipelines', () => {
+		const { control, metrics, drawn, builds, renderer } = setup();
+		builds.left = 3;
+		loop = runDirectLoop(countingSketch(), renderer, control, metrics, undefined);
+		refresh(DISPLAY_HZ, 2);
+		expect(drawn).toEqual([]);
+		refresh(DISPLAY_HZ, 2);
+		expect(drawn).toEqual([1, 2]);
 	});
 });
 
