@@ -1,12 +1,15 @@
 //! The portability check: shaders use only the WGSL language features that every target browser
-//! supports (AGENTS.md hard rule 10), and write flat interpolation as `@interpolate(flat, either)`.
+//! supports (AGENTS.md hard rule 10), no extension that needs an optional WebGPU feature, and
+//! write flat interpolation as `@interpolate(flat, either)`.
 //!
 //! WGSL does not require a `requires` directive before code uses a language feature, so reading
 //! `requires` lines is not enough. The check works in three layers:
 //!
 //! 1. A scan of each file, as the variant sees it after the shader defs, finds `requires` lines
 //!    and the syntax that each other feature adds: swizzle assignment, `var<immediate>`, the
-//!    built-in values and texel formats of newer features, and the buffer view functions.
+//!    built-in values and texel formats of newer features, and the buffer view functions. It
+//!    also finds `enable` lines, and the 16-bit float types and values that `enable f16;` would
+//!    allow, whose own errors from naga would ask for that directive.
 //! 2. naga, the translator, rejects some features on its own: pointer parameters outside the
 //!    `function` and `private` address spaces, and uniform buffers that break the uniform layout
 //!    rules. Their errors become messages that name the feature.
@@ -122,6 +125,84 @@ fn fix(feature: &str) -> &'static str {
 /// How to fix a `requires` directive that names a feature outside the allowed three.
 const REMOVE_REQUIRES: &str = "Remove the feature from the directive, and rewrite the code that needs it or keep that code behind a capability flag with a fallback.";
 
+/// The WGSL extension that the shader build allows in `enable` lines. It exists only in the build:
+/// variants for WebGL2 alone read the draw index from `WEBGL_multi_draw`.
+const BUILD_EXTENSION: &str = "draw_index";
+
+/// WGSL extensions, each with the optional WebGPU feature that a device needs for it.
+const OPTIONAL_EXTENSIONS: [(&str, &str); 5] = [
+    ("f16", "shader-f16"),
+    ("subgroups", "subgroups"),
+    ("clip_distances", "clip-distances"),
+    ("dual_source_blending", "dual-source-blending"),
+    ("primitive_index", "primitive-index"),
+];
+
+/// A problem with an `enable` line that names an extension other than the build's own.
+fn extension_problem(path: &str, position: Position, extension: &str) -> Problem {
+    if extension == "f16" {
+        return half_float_problem(path, position, "`enable f16;`");
+    }
+    let needs = OPTIONAL_EXTENSIONS
+        .iter()
+        .find(|(name, _)| *name == extension)
+        .map_or_else(
+            || "a WGSL extension that not every browser supports".to_owned(),
+            |(_, feature)| {
+                format!("the optional WebGPU feature `{feature}`, which not every device has")
+            },
+        );
+    Problem::at(
+        path,
+        Some(position),
+        format!(
+            "`enable {extension};` needs {needs}, so null3D shaders cannot use it. Remove the directive, and write the code without the extension. See {RULES_PAGE}"
+        ),
+    )
+}
+
+/// A problem with 16-bit floats, found at `what`.
+fn half_float_problem(path: &str, position: Position, what: &str) -> Problem {
+    Problem::at(
+        path,
+        Some(position),
+        format!(
+            "{what} uses 16-bit floats, which need the optional WebGPU feature `shader-f16`. Not every device has it, so null3D shaders cannot use `f16`. Write the math in `f32` types and values, such as `vec3f` and `1.0`. See {RULES_PAGE}"
+        ),
+    )
+}
+
+/// True for a 16-bit float type: `f16`, and the vector and matrix aliases that end in `h`.
+fn is_half_float_type(name: &str) -> bool {
+    if name == "f16" {
+        return true;
+    }
+    let Some(shape) = name.strip_suffix('h') else {
+        return false;
+    };
+    let size = |digit: u8| (b'2'..=b'4').contains(&digit);
+    match shape.as_bytes() {
+        [b'v', b'e', b'c', n] => size(*n),
+        [b'm', b'a', b't', c, b'x', r] => size(*c) && size(*r),
+        _ => false,
+    }
+}
+
+/// True for a 16-bit float value, such as `1.0h`, `2h` or `0x1p-2h`. A hexadecimal value ends in
+/// `h` only when it has an exponent, because `h` is not a hexadecimal digit.
+fn is_half_float_value(number: &str) -> bool {
+    let Some(value) = number.strip_suffix('h') else {
+        return false;
+    };
+    match value
+        .strip_prefix("0x")
+        .or_else(|| value.strip_prefix("0X"))
+    {
+        Some(hex) => hex.contains(['p', 'P']),
+        None => !value.is_empty(),
+    }
+}
+
 /// A problem about a language feature, found at `what` in a file.
 fn language_feature(path: &str, position: Option<Position>, feature: &str, what: &str) -> Problem {
     feature_problem(path, position, feature, what, fix(feature))
@@ -218,7 +299,9 @@ fn is_assignment(operator: &str) -> bool {
 }
 
 /// Scans one file. Each problem points at the token its message names: an attribute's `@`, the
-/// name of a function, type or texel format, or the start of a swizzle.
+/// name of a function, type, extension or texel format, or the start of a swizzle. Of the 16-bit
+/// float types and values in a file, only the first gets a problem, and none does when an
+/// `enable f16;` line already has one.
 fn scan_file(
     view: &View,
     members: &BTreeSet<&str>,
@@ -228,6 +311,8 @@ fn scan_file(
     let tokens = &view.tokens;
     let path = view.path;
     let mut depth = 0usize;
+    let mut enables_f16 = false;
+    let mut first_half_float = None;
     for (index, token) in tokens.iter().enumerate() {
         let next = |n: usize| tokens.get(index + n).map_or("", |t| t.text);
         let previous = index.checked_sub(1).map_or("", |p| tokens[p].text);
@@ -243,10 +328,7 @@ fn scan_file(
             "{" => depth += 1,
             "}" => depth = depth.saturating_sub(1),
             "requires" if depth == 0 && matches!(previous, "" | ";" | "}") => {
-                let names = (index + 1..tokens.len())
-                    .take_while(|&i| tokens[i].text != ";")
-                    .filter(|&i| tokens[i].kind == Kind::Ident);
-                for name in names {
+                for name in directive_names(tokens, index) {
                     let feature = tokens[name].text;
                     if !ALLOWED_LANGUAGE_FEATURES.contains(&feature) {
                         problems.push(feature_problem(
@@ -258,6 +340,23 @@ fn scan_file(
                         ));
                     }
                 }
+            }
+            "enable" if depth == 0 && matches!(previous, "" | ";" | "}") => {
+                for name in directive_names(tokens, index) {
+                    let extension = tokens[name].text;
+                    enables_f16 |= extension == "f16";
+                    if extension != BUILD_EXTENSION {
+                        problems.push(extension_problem(path, view.position(name), extension));
+                    }
+                }
+            }
+            name if first_half_float.is_none()
+                && ((token.kind == Kind::Ident
+                    && is_half_float_type(name)
+                    && !declared.contains(name))
+                    || (token.kind == Kind::Number && is_half_float_value(name))) =>
+            {
+                first_half_float = Some(index);
             }
             "." if is_swizzle(next(1)) && is_assignment(next(2)) && !members.contains(next(1)) => {
                 found(
@@ -328,6 +427,21 @@ fn scan_file(
             _ => {}
         }
     }
+    if let Some(index) = first_half_float.filter(|_| !enables_f16) {
+        let token = tokens[index];
+        let what = match token.kind {
+            Kind::Number => format!("The value `{}`", token.text),
+            _ => format!("The type `{}`", token.text),
+        };
+        problems.push(half_float_problem(path, view.position(index), &what));
+    }
+}
+
+/// The names that the directive at `index` lists before its `;`.
+fn directive_names<'a>(tokens: &'a [Token], index: usize) -> impl Iterator<Item = usize> + 'a {
+    (index + 1..tokens.len())
+        .take_while(|&i| tokens[i].text != ";")
+        .filter(|&i| tokens[i].kind == Kind::Ident)
 }
 
 /// Problems with WGSL directives that come after the top of a file. The shader composer passes
@@ -653,5 +767,27 @@ mod tests {
             text.contains("`@interpolate(flat, either)`"),
             "{page} lacks the flat rule"
         );
+        for (extension, _) in OPTIONAL_EXTENSIONS {
+            assert!(
+                text.contains(&format!("`{extension}`")),
+                "{page} does not name the extension `{extension}`"
+            );
+        }
+    }
+
+    #[test]
+    fn half_float_types_and_values_are_told_apart_from_other_names() {
+        for name in ["f16", "vec2h", "vec4h", "mat2x2h", "mat4x3h"] {
+            assert!(is_half_float_type(name), "{name}");
+        }
+        for name in ["f32", "vec3f", "vech", "vec5h", "mat4x4", "mat1x2h", "h"] {
+            assert!(!is_half_float_type(name), "{name}");
+        }
+        for value in ["1.0h", "2h", "1e3h", "0x1p-2h"] {
+            assert!(is_half_float_value(value), "{value}");
+        }
+        for value in ["1.0", "2u", "0x1h", "0xAh", "h"] {
+            assert!(!is_half_float_value(value), "{value}");
+        }
     }
 }

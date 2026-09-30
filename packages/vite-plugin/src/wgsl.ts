@@ -1,0 +1,378 @@
+// The WGSL in a project's own modules: `.wgsl` files that modules import, and template literals
+// that a `wgsl` block comment tags, as in `const glow = /* wgsl */ `...``. The plugin compiles
+// each with the engine's shader library, checks it against the portable WGSL rules, and puts the
+// compiled shader where its source was: WGSL for WebGPU, and GLSL ES 3.00 for WebGL2 with the
+// reflection that the WebGL2 backend binds by. WGSL that does not compile stops the module with
+// an error at the file, line and column of each problem.
+import { type ESTree, parseSync, Visitor } from 'vite';
+import { compileShader, type ShaderProblem, type ShaderVariantSpec } from './shader-compiler.ts';
+import type { CompiledShader, WgslPipeline } from './shader-types.ts';
+
+/** The block comment that tags a template literal as WGSL, with any spacing inside it. */
+export const WGSL_TAG = /\/\*\s*wgsl\s*\*\//;
+
+/** How to keep WGSL away from the plugin, for messages about WGSL that it cannot compile. */
+const TAG_HINT =
+	'The plugin compiles every template literal that a `/* wgsl */` comment tags, so remove the tag from WGSL that null3D does not draw.';
+const FILE_HINT =
+	'To import the text of a `.wgsl` file without compiling it, add `?raw` to the import.';
+
+/** What is wrong with a substitution in a tagged template literal, and how to fix it. */
+const SUBSTITUTION =
+	// biome-ignore lint/suspicious/noTemplateCurlyInString: the message names the substitution syntax.
+	'a template literal that a `/* wgsl */` comment tags cannot hold `${...}`. The plugin compiles the WGSL while it builds the project, before any of your code runs, so write the value in the WGSL itself.';
+
+/** A template literal that a `wgsl` block comment tags, in a module's code. */
+export interface TaggedWgsl {
+	/** The offset of the literal's opening backtick in the code. */
+	readonly start: number;
+	/** The offset just after the literal's closing backtick. */
+	readonly end: number;
+	/** The WGSL between the backticks, with Windows line ends made plain. */
+	readonly source: string;
+	/** The offset of the first `${` in the literal, or null when it has no substitution. */
+	readonly substitution: number | null;
+}
+
+/** The parser's language for a script file, from its extension. */
+function languageOf(file: string): 'js' | 'jsx' | 'ts' | 'tsx' {
+	const extension = /\.[cm]?([jt]sx?)$/.exec(file)?.[1];
+	return extension === 'ts' || extension === 'tsx' || extension === 'jsx' ? extension : 'js';
+}
+
+/**
+ * The template literals that a `wgsl` block comment tags in a script module. Only a real comment
+ * directly before a real template literal counts, so the same text inside a string or a line
+ * comment does not. Code that does not parse gives none: Vite reports its syntax error.
+ */
+export function findTaggedWgsl(code: string, file: string): TaggedWgsl[] {
+	const parsed = parseSync(file, code, { lang: languageOf(file) });
+	if (parsed.errors.length > 0) return [];
+	const literals = new Map<number, ESTree.TemplateLiteral>();
+	new Visitor({
+		TemplateLiteral: (node) => {
+			literals.set(node.start, node);
+		},
+	}).visit(parsed.program);
+	const tagged: TaggedWgsl[] = [];
+	for (const comment of parsed.comments) {
+		if (comment.type !== 'Block' || comment.value.trim() !== 'wgsl') continue;
+		let at = comment.end;
+		while (at < code.length && /\s/.test(code.charAt(at))) at++;
+		const literal = literals.get(at);
+		if (!literal) continue;
+		const first = literal.expressions[0];
+		tagged.push({
+			start: literal.start,
+			end: literal.end,
+			source: code.slice(literal.start + 1, literal.end - 1).replaceAll('\r\n', '\n'),
+			substitution: first ? code.lastIndexOf('${', first.start) : null,
+		});
+	}
+	return tagged;
+}
+
+/** A place in a text: a 1-based line, and a 1-based column in UTF-16 code units. */
+export interface Place {
+	readonly line: number;
+	readonly column: number;
+}
+
+/** The place of an offset in a text. */
+export function placeOf(text: string, offset: number): Place {
+	const lineStart = text.lastIndexOf('\n', offset - 1) + 1;
+	let line = 1;
+	for (let at = text.indexOf('\n'); at !== -1 && at < offset; at = text.indexOf('\n', at + 1))
+		line++;
+	return { line, column: offset - lineStart + 1 };
+}
+
+/** One entry point of a shader, and the offset of its stage attribute in the WGSL. */
+interface EntryPoint {
+	readonly stage: 'vertex' | 'fragment' | 'compute';
+	readonly name: string;
+	readonly at: number;
+}
+
+/** A WGSL name, as the language defines identifiers. */
+const NAME = String.raw`[\p{XID_Start}_]\p{XID_Continue}*`;
+
+/** A function declaration, with the attributes directly before it. */
+const FUNCTION = new RegExp(
+	String.raw`((?:@\s*${NAME}\s*(?:\([^()]*\))?\s*)*)\bfn\s+(${NAME})`,
+	'gu',
+);
+
+/** The stage attribute among a function's attributes. */
+const STAGE = /@\s*(vertex|fragment|compute)\b/;
+
+/** WGSL with each comment turned into spaces, so every other character keeps its offset. */
+function blankComments(source: string): string {
+	let text = '';
+	let depth = 0;
+	for (let i = 0; i < source.length; i++) {
+		const pair = source.slice(i, i + 2);
+		if (depth === 0 && pair === '//') {
+			const end = source.indexOf('\n', i);
+			const stop = end === -1 ? source.length : end;
+			text += ' '.repeat(stop - i);
+			i = stop - 1;
+		} else if (pair === '/*') {
+			depth++;
+			text += '  ';
+			i++;
+		} else if (depth > 0 && pair === '*/') {
+			depth--;
+			text += '  ';
+			i++;
+		} else {
+			const char = source.charAt(i);
+			text += depth > 0 && char !== '\n' ? ' ' : char;
+		}
+	}
+	return text;
+}
+
+/**
+ * The entry points that a shader declares, each once. Code behind shader defs counts too, so a
+ * stage that `#ifdef` lines declare twice under one name is one entry point.
+ */
+function entryPoints(source: string): EntryPoint[] {
+	const found = new Map<string, EntryPoint>();
+	for (const match of blankComments(source).matchAll(FUNCTION)) {
+		const stage = STAGE.exec(match[1] ?? '');
+		const name = match[2] ?? '';
+		const kind = stage?.[1] as EntryPoint['stage'] | undefined;
+		if (!stage || !kind || found.has(`${kind} ${name}`)) continue;
+		found.set(`${kind} ${name}`, { stage: kind, name, at: match.index + stage.index });
+	}
+	return [...found.values()];
+}
+
+/**
+ * A problem that the plugin finds itself, at an offset in a text. Its column counts characters, as
+ * the compiler's columns do.
+ */
+function problemAt(path: string, text: string, offset: number, message: string): ShaderProblem {
+	const { line, column } = placeOf(text, offset);
+	const before = [...text.slice(offset - column + 1, offset)].length;
+	return { file: path, line, column: before + 1, feature: null, message, variants: [] };
+}
+
+/**
+ * The render pipelines of a shader: one for each `@fragment` entry point, named after it, with
+ * the shader's `@vertex` entry point. A shader with only `@compute` entry points has none.
+ */
+function pipelinesOf(
+	path: string,
+	source: string,
+	hint: string,
+): { pipelines: Record<string, WgslPipeline> } | { problem: ShaderProblem } {
+	const entries = entryPoints(source);
+	const [vertex, secondVertex] = entries.filter((entry) => entry.stage === 'vertex');
+	const fragments = entries.filter((entry) => entry.stage === 'fragment');
+	const problem = (at: number, message: string) => ({
+		problem: problemAt(path, source, at, message),
+	});
+	if (entries.length === 0) {
+		return problem(
+			0,
+			`the WGSL has no entry point. The plugin compiles whole shaders, so give it a \`@vertex\` and a \`@fragment\` entry point, or a \`@compute\` one. ${hint}`,
+		);
+	}
+	if (secondVertex) {
+		return problem(
+			secondVertex.at,
+			'the WGSL has more than one `@vertex` entry point. The plugin pairs each `@fragment` entry point with the one `@vertex` entry point of its shader, so keep one, or split the shader in two.',
+		);
+	}
+	const [fragment] = fragments;
+	if (fragment && !vertex) {
+		return problem(
+			fragment.at,
+			'the WGSL has a `@fragment` entry point but no `@vertex` one. A render pipeline needs both, so add a `@vertex` entry point.',
+		);
+	}
+	if (vertex && !fragment) {
+		return problem(
+			vertex.at,
+			'the WGSL has a `@vertex` entry point but no `@fragment` one. A render pipeline needs both, so add a `@fragment` entry point.',
+		);
+	}
+	const pipelines: Record<string, WgslPipeline> = {};
+	for (const { name } of fragments)
+		pipelines[name] = { vertex: vertex?.name ?? '', fragment: name };
+	return { pipelines };
+}
+
+/** The builds of a shader from a project: one for WebGPU, and one for WebGL2. */
+const BUILDS = {
+	webgpu: { targets: ['wgsl'] },
+	webgl2: { defs: ['WEBGL2'], targets: ['glsl'] },
+} as const satisfies Record<string, ShaderVariantSpec>;
+
+/** The result of compiling WGSL from a project: the shader, or the problems that stopped it. */
+export type WgslCompile =
+	| { readonly ok: true; readonly shader: CompiledShader }
+	| {
+			readonly ok: false;
+			readonly problems: readonly ShaderProblem[];
+			/** The builds that the compile tried, which the problems' variants name. */
+			readonly builds: readonly string[];
+	  };
+
+/**
+ * Compiles WGSL from a project with the engine's shader library: for WebGPU, and for WebGL2 when
+ * the shader has a render pipeline. `path` names the file in messages, and `hint` ends the message
+ * about WGSL with no entry point.
+ */
+export function compileWgsl(path: string, source: string, hint: string): WgslCompile {
+	const shape = pipelinesOf(path, source, hint);
+	if ('problem' in shape) return { ok: false, problems: [shape.problem], builds: [] };
+	const render = Object.keys(shape.pipelines).length > 0;
+	const variants = render ? BUILDS : { webgpu: BUILDS.webgpu };
+	const result = compileShader({ path, source, pipelines: shape.pipelines, variants });
+	if (!result.ok) return { ok: false, problems: result.problems, builds: Object.keys(variants) };
+	const { webgpu, webgl2 } = result.variants;
+	if (!webgpu) throw new Error('null3D: the shader compiler gave no WebGPU build.');
+	return { ok: true, shader: { webgpu, webgl2: webgl2 ?? null } };
+}
+
+/** Where WGSL starts in the file that holds it: the file as messages name it, and a place. */
+export interface WgslOrigin extends Place {
+	readonly path: string;
+}
+
+/** The 1-based UTF-16 column of a 1-based column that counts characters, in a line. */
+function utf16Column(line: string, column: number): number {
+	const chars = [...line];
+	return chars.slice(0, column - 1).join('').length + 1 + Math.max(0, column - 1 - chars.length);
+}
+
+/**
+ * A problem at its place in the file that holds the WGSL. The compiler counts from the start of
+ * the WGSL, and a template literal starts part way into a module.
+ */
+function inFile(problem: ShaderProblem, source: string, origin: WgslOrigin): ShaderProblem {
+	if (problem.file !== origin.path || problem.line === null) return problem;
+	const text = source.split('\n')[problem.line - 1] ?? '';
+	const column = problem.column === null ? null : utf16Column(text, problem.column);
+	const first = problem.line === 1;
+	return {
+		...problem,
+		line: origin.line + problem.line - 1,
+		column: column === null ? null : first ? origin.column + column - 1 : column,
+	};
+}
+
+/** Names of the builds, as messages give them. */
+const BUILD_NAMES: Readonly<Record<string, string>> = { webgpu: 'WebGPU', webgl2: 'WebGL2' };
+
+/** A problem as one line of a message: its place, what is wrong, and the build that has it. */
+function describe(problem: ShaderProblem, builds: readonly string[]): string {
+	const place = [problem.file, problem.line, problem.column].filter((part) => part !== null);
+	const only = problem.variants.length === 1 && builds.length > 1 ? problem.variants[0] : null;
+	const build = only ? ` (in the ${BUILD_NAMES[only] ?? only} build)` : '';
+	return `${place.length > 0 ? `${place.join(':')}: ` : ''}${problem.message}${build}`;
+}
+
+/** An error in the form that Vite and Rolldown show with its place and the code around it. */
+export interface WgslError {
+	readonly message: string;
+	/** The module that the error stopped. */
+	readonly id: string;
+	/**
+	 * The place to show. Its column counts from 1, as editors and the message do, although Rollup
+	 * counts its own columns from 0: Vite and Rolldown only print the place, and Vite's overlay
+	 * opens the editor at it.
+	 */
+	readonly loc: { readonly file: string; readonly line: number; readonly column: number };
+	readonly frame: string;
+}
+
+/**
+ * The error for WGSL that did not compile. It lists every problem, and shows the first one in the
+ * WGSL's own file, or else the WGSL's start. `id` is the file's module id, and `text` its text.
+ */
+export function wgslError(
+	failed: Extract<WgslCompile, { ok: false }>,
+	source: string,
+	origin: WgslOrigin,
+	id: string,
+	text: string,
+): WgslError {
+	const problems = failed.problems.map((problem) => inFile(problem, source, origin));
+	const shown = problems.find((problem) => problem.file === origin.path && problem.line !== null);
+	const line = shown?.line ?? origin.line;
+	const column = shown ? (shown.column ?? 1) : origin.column;
+	const lines = problems.map((problem) => describe(problem, failed.builds));
+	return {
+		message: `null3D could not compile the WGSL:\n${lines.join('\n')}`,
+		id,
+		loc: { file: id, line, column },
+		frame: codeFrame(text, line, column),
+	};
+}
+
+/** A compiled shader, or the error that stops the module that holds its WGSL. */
+export type ShaderOrError = { readonly shader: CompiledShader } | { readonly error: WgslError };
+
+/**
+ * Compiles a `.wgsl` file. `path` names the file in messages, `id` is its module id, and `text` its
+ * content as read from disk.
+ */
+export function compileWgslFile(path: string, id: string, text: string): ShaderOrError {
+	const source = text.replaceAll('\r\n', '\n');
+	const compiled = compileWgsl(path, source, FILE_HINT);
+	if (compiled.ok) return { shader: compiled.shader };
+	return { error: wgslError(compiled, source, { path, line: 1, column: 1 }, id, source) };
+}
+
+/** A tagged template literal of a module, and the compiled shader that takes its place. */
+export interface TaggedShader {
+	readonly start: number;
+	readonly end: number;
+	readonly shader: CompiledShader;
+}
+
+/**
+ * Compiles each tagged template literal in a script module, or gives the error that stops the
+ * module at its first literal that does not compile.
+ */
+export function compileTaggedWgsl(
+	code: string,
+	id: string,
+	path: string,
+): { readonly shaders: readonly TaggedShader[] } | { readonly error: WgslError } {
+	const shaders: TaggedShader[] = [];
+	for (const literal of findTaggedWgsl(code, id)) {
+		if (literal.substitution !== null) {
+			const problem = problemAt(path, code, literal.substitution, SUBSTITUTION);
+			const failed = { ok: false, problems: [problem], builds: [] } as const;
+			return { error: wgslError(failed, code, { path, line: 1, column: 1 }, id, code) };
+		}
+		const origin = { path, ...placeOf(code, literal.start + 1) };
+		const compiled = compileWgsl(path, literal.source, TAG_HINT);
+		if (!compiled.ok) return { error: wgslError(compiled, literal.source, origin, id, code) };
+		shaders.push({ start: literal.start, end: literal.end, shader: compiled.shader });
+	}
+	return { shaders };
+}
+
+/** Lines of text around a place, each with its number, and a caret under the place's column. */
+export function codeFrame(text: string, line: number, column: number): string {
+	const lines = text.split('\n');
+	const first = Math.max(1, line - 2);
+	const last = Math.min(lines.length, line + 2);
+	const width = String(last).length;
+	const frame: string[] = [];
+	for (let number = first; number <= last; number++) {
+		const content = (lines[number - 1] ?? '').replace(/\r$/, '');
+		frame.push(`${String(number).padStart(width)} | ${content}`);
+		if (number === line) {
+			const indent = content.slice(0, column - 1).replace(/[^\t]/g, ' ');
+			frame.push(`${' '.repeat(width)} | ${indent}^`);
+		}
+	}
+	return frame.join('\n');
+}
