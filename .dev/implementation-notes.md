@@ -83,6 +83,17 @@ Warm loads and loads at full speed stayed within the spread between runs. The fi
 - An upload of a band of rows reads the image from a row inside it: `copyExternalImageToTexture` takes an origin, and WebGL2 applies `UNPACK_SKIP_PIXELS` and `UNPACK_SKIP_ROWS` to image bitmaps.
 - The sketch thread reads the texture constants from the core's generated module, not the GPU layer's. A value import of the GPU layer's constants would put them in a file of their own, which the size report refuses.
 
+## KTX2 textures
+
+- `assets.loadTexture` finds a KTX2 file by its first 12 bytes, and imports the KTX2 loader (`scene/ktx2.ts`) only then. The loader reads the file's header on the sketch thread. It picks the format from the device's capability flags, which the page sets from the probe's WebGPU features or WebGL2 extensions.
+- The official Basis Universal build is a classic script, which a module worker cannot load without `eval` or a blob address. So the transcoder's worker (`workers/transcoder-worker.js`) is a classic script without imports, which Vite copies as it is, and it loads the build with `importScripts`.
+- The loader names the transcoder's files with `?no-inline`. Vite would otherwise turn the worker, which is under 4 KB, into a `data:` address. A worker from one has an opaque origin, so its `importScripts` of the page's origin fails, as the production build tests saw.
+- The worker loads the script while the sketch thread downloads and compiles the module, and the module then moves to the worker. The script and the module download at once. So after the loader, the first KTX2 file waits for two round trips: the worker's script, then the transcoder's files.
+- The loader imports only modules that the first file of its thread holds whole. It once imported the error message helper, and then the core's loader. Each time, Rolldown moved modules that the loader shared with that file into a new file. Every page would then download it at its start. The size report fails on such a file, as its part has no name.
+- A compressed texture has an array of its own, with exactly its layers. Compatibility mode copies no compressed texels, so such an array could never grow. Its GPU texture has no `RENDER_ATTACHMENT` and no `COPY_SRC` usage.
+- The texels go into engine memory as data does, level after level, each level's layers in turn. The store uploads them in bands of rows of blocks under the frame's budget. A write names its box in texels, cut by the level's edge. WebGL2 takes that box, and WebGPU rounds it up to whole blocks.
+- WebGPU makes compressed textures of whole blocks only, so a size that is not a multiple of 4 texels becomes RGBA8, on both paths alike.
+
 ## The shader compiler
 
 The shader compiler is the shader crate built as a WebAssembly module. Build tools such as the Vite plugin load it in Node or Bun, so pages never download a shader translator. The crate `null3d-shaders-wasm` builds it, and the wrapper in `packages/vite-plugin/src/shader-compiler.ts` loads it and gives its API.

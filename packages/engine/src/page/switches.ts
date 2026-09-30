@@ -1,5 +1,5 @@
 // URL switches that let one device exercise every engine path: ?gpu=, ?threads=off, ?render=main,
-// ?latency=, ?uploads=copy and ?depth=. Four more set what the benchmarks vary: ?fps= for a fixed
+// ?latency=, ?uploads=copy, ?depth= and ?compression=. Four more set what the benchmarks vary: ?fps= for a fixed
 // frame rate, ?jobs= for the job worker count, ?memory= for the shared memory's maximum and ?queue=
 // for the frames that may wait on the GPU. ?hold starts hold mode for image tests, and ?bench
 // publishes the running engine for benchmark tools.
@@ -26,6 +26,11 @@ export type LatencyMode = 'pipelined' | 'low';
  */
 export type DepthMode = 'reversed' | 'reversed-gl' | 'standard';
 
+/** A family of compressed texture formats that KTX2 files can become. */
+export type CompressionFamily = 'astc' | 'bc' | 'etc2';
+
+const COMPRESSION_FAMILIES: readonly CompressionFamily[] = ['astc', 'bc', 'etc2'];
+
 export interface Switches {
 	gpu: GpuSwitch;
 	/** False when ?threads=off asks for the single-threaded build. */
@@ -40,6 +45,12 @@ export interface Switches {
 	 * own. A device without `EXT_clip_control` cannot draw `reversed`, and draws its own instead.
 	 */
 	depth: DepthMode | undefined;
+	/**
+	 * The compressed texture families that ?compression= lets KTX2 files become, of those the
+	 * device has: a list such as ?compression=bc,etc2, or none with ?compression=none. Undefined
+	 * for every family the device has.
+	 */
+	compression: readonly CompressionFamily[] | undefined;
 	/**
 	 * The frame rate from ?fps= that the thread that draws holds, up to the display's rate, or
 	 * undefined to draw at the display's rate.
@@ -96,6 +107,10 @@ export function parseSwitches(search: string): Switches {
 		latency: oneOf(params.get('latency'), ['pipelined', 'low'] as const),
 		copyUploads: params.get('uploads') === 'copy',
 		depth: oneOf(params.get('depth'), ['reversed', 'reversed-gl', 'standard'] as const),
+		compression: params
+			.get('compression')
+			?.split(',')
+			.flatMap((name) => oneOf(name, COMPRESSION_FAMILIES) ?? []),
 		fps: positive(params.get('fps')),
 		jobs: whole(params.get('jobs'), MAX_JOB_WORKERS),
 		queue: params.get('queue') === 'off' ? Number.POSITIVE_INFINITY : whole(params.get('queue')),

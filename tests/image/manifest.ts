@@ -82,6 +82,32 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 		size: [480, 270],
 		modes: ALL_MODES,
 	},
+	// KTX2 files of ETC1S and UASTC data, which the transcoder turns into the compressed format that
+	// each device supports, with the files' mip levels, beside the same picture from a PNG file. A
+	// ramp whose size takes no compressed format becomes RGBA8. Every thread mode starts the
+	// transcoder from its own thread, and must draw the same image.
+	{
+		name: 'ktx2',
+		sketch: 'tests/pages/sketches/ktx2-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+		modes: ALL_MODES,
+	},
+	// The same files where the device keeps to one family of compressed formats, or has none, as
+	// ?compression= makes it: BC7 as on a desktop GPU, ASTC alone, and RGBA8.
+	...(
+		[
+			['ktx2-bc7', 'bc'],
+			['ktx2-astc', 'astc'],
+			['ktx2-rgba8', 'none'],
+		] as const
+	).map(([name, family]) => ({
+		name,
+		sketch: 'tests/pages/sketches/ktx2-sketch.ts',
+		hold: 0,
+		size: [480, 270] as const,
+		switches: [`compression=${family}`],
+	})),
 	// Fifty textures that load in waves in a live engine, a band of rows per frame under a small
 	// upload budget, while their array grows twice, to 64 layers. No frame may upload more than the
 	// budget, and the GPU memory count must match the array.

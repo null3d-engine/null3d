@@ -12,7 +12,7 @@ import {
 import { GpuTimer } from '../gpu/webgpu/gpu-timer';
 import { RenderPassSetup, submitOne } from '../gpu/webgpu/reusable';
 import type { PowerPreference } from '../page/capabilities';
-import type { CoreDevice } from '../page/limits';
+import { type CoreDevice, TEXTURE_COMPRESSION } from '../page/limits';
 import type { ImageTable } from '../shared/images';
 import { type FrameRecorder, Phase } from '../shared/metrics';
 import { contextLoss, contextRestored, deviceLoss } from './loss';
@@ -268,6 +268,10 @@ export async function createRenderer(
 	if (core) requiredFeatures.push('core-features-and-limits' as GPUFeatureName);
 	if (options.metrics && adapter.features.has('timestamp-query'))
 		requiredFeatures.push('timestamp-query');
+	// The compressed formats that the sketch thread picks for KTX2 files, from the same adapter.
+	for (const [flag, feature] of TEXTURE_COMPRESSION)
+		if (options.device.capabilities & flag && adapter.features.has(feature))
+			requiredFeatures.push(feature);
 	const binding = options.device.storageBindingBytes;
 	const device = await adapter.requestDevice({
 		requiredFeatures,

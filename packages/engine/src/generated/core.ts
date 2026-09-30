@@ -61,6 +61,9 @@ export const LIMIT_WEBGL2_MIN_TEXTURE_SIZE = 2048;
 export const LIMIT_WEBGL2_MAX_SOURCES = 8388608;
 
 export const CAPABILITY_MULTI_DRAW = 8;
+export const CAPABILITY_TEXTURE_BC = 16;
+export const CAPABILITY_TEXTURE_ETC2 = 32;
+export const CAPABILITY_TEXTURE_ASTC = 64;
 
 export const SHADING_LIT = 0;
 export const SHADING_UNLIT = 1;
@@ -78,6 +81,14 @@ export const TEXTURE_STAT_MAX_SIZE = 6;
 export const TEXTURE_FORMAT_SRGB = 9;
 export const TEXTURE_FORMAT_LINEAR = 2;
 export const TEXTURE_FORMAT_HALF_FLOAT = 4;
+export const TEXTURE_FORMAT_ASTC = 11;
+export const TEXTURE_FORMAT_ASTC_SRGB = 12;
+export const TEXTURE_FORMAT_BC7 = 13;
+export const TEXTURE_FORMAT_BC7_SRGB = 14;
+export const TEXTURE_FORMAT_ETC2_RGB = 15;
+export const TEXTURE_FORMAT_ETC2_RGB_SRGB = 16;
+export const TEXTURE_FORMAT_ETC2_RGBA = 17;
+export const TEXTURE_FORMAT_ETC2_RGBA_SRGB = 18;
 export const TEXTURE_PREMULTIPLIED_ALPHA = 1;
 export const TEXTURE_MAX_DEPTH = 256;
 export const TEXTURE_WRAP_CLAMP = 0;

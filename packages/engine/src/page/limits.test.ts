@@ -24,14 +24,14 @@ const webgpu = (storageBindingBytes: number) => ({
 });
 
 /** No test switch. */
-const NO_SWITCHES = { copyUploads: false, depth: undefined };
+const NO_SWITCHES = { copyUploads: false, depth: undefined, compression: undefined };
 /** ?uploads=copy. */
-const COPY_UPLOADS = { copyUploads: true, depth: undefined };
+const COPY_UPLOADS = { ...NO_SWITCHES, copyUploads: true };
 
-/** A report whose WebGL2 part has these fields. */
-function report(webgl2: Partial<DeviceReport['webgl2']>): DeviceReport {
+/** A report whose WebGL2 part has these fields, and whose WebGPU adapter has these features. */
+function report(webgl2: Partial<DeviceReport['webgl2']>, features: string[] = []): DeviceReport {
 	return {
-		webgpu: { limits: {} },
+		webgpu: { limits: {}, features },
 		webgl2: {
 			extensions: {},
 			maxTextureSize: 4096,
@@ -40,6 +40,29 @@ function report(webgl2: Partial<DeviceReport['webgl2']>): DeviceReport {
 		},
 	};
 }
+
+describe('coreDevice on WebGPU', () => {
+	it("flags each compressed texture family among the adapter's features", () => {
+		const features = ['texture-compression-bc', 'timestamp-query', 'texture-compression-astc'];
+		expect(coreDevice(false, report({}, features), NO_SWITCHES).capabilities).toBe(
+			C.CAPABILITY_TEXTURE_BC | C.CAPABILITY_TEXTURE_ASTC,
+		);
+		expect(coreDevice(false, report({}), NO_SWITCHES).capabilities).toBe(0);
+	});
+
+	it('keeps only the families that ?compression= names', () => {
+		const all = ['texture-compression-bc', 'texture-compression-etc2', 'texture-compression-astc'];
+		const limited = (compression: ('astc' | 'bc' | 'etc2')[]) =>
+			coreDevice(false, report({}, all), { ...NO_SWITCHES, compression }).capabilities;
+		expect(limited(['bc'])).toBe(C.CAPABILITY_TEXTURE_BC);
+		expect(limited(['etc2', 'astc'])).toBe(C.CAPABILITY_TEXTURE_ETC2 | C.CAPABILITY_TEXTURE_ASTC);
+		expect(limited([])).toBe(0);
+		const bcOnly = report({}, ['texture-compression-bc']);
+		expect(coreDevice(false, bcOnly, { ...NO_SWITCHES, compression: ['astc'] }).capabilities).toBe(
+			0,
+		);
+	});
+});
 
 describe('storageBindingBytes', () => {
 	it('keeps WebGPU default where the adapter offers no more, or reports nothing', () => {
@@ -89,6 +112,18 @@ describe('coreDevice on WebGL2', () => {
 		const withIt = report({ extensions: { WEBGL_multi_draw: true } });
 		expect(coreDevice(true, withIt, NO_SWITCHES).capabilities).toBe(C.CAPABILITY_MULTI_DRAW);
 		expect(coreDevice(true, report({}), NO_SWITCHES).capabilities).toBe(0);
+	});
+
+	it('flags each compressed texture family whose extension the context turned on', () => {
+		const extensions = {
+			WEBGL_compressed_texture_astc: true,
+			WEBGL_compressed_texture_etc: true,
+			EXT_texture_compression_bptc: false,
+			WEBGL_compressed_texture_s3tc: true,
+		};
+		expect(coreDevice(true, report({ extensions }), NO_SWITCHES).capabilities).toBe(
+			C.CAPABILITY_TEXTURE_ASTC | C.CAPABILITY_TEXTURE_ETC2,
+		);
 	});
 
 	it('reads shared memory only where WebGL accepts it for both kinds of upload', () => {
@@ -146,13 +181,11 @@ describe('the depth mode', () => {
 
 	it('follows ?depth= on WebGL2, but never to reversed depth without EXT_clip_control', () => {
 		for (const wanted of ['reversed', 'reversed-gl', 'standard'] as const)
-			expect(coreDevice(true, clipControl, { copyUploads: false, depth: wanted }).depth).toBe(
-				wanted,
-			);
+			expect(coreDevice(true, clipControl, { ...NO_SWITCHES, depth: wanted }).depth).toBe(wanted);
 		expect(webgl2Depth(false, 'standard')).toBe('standard');
 		expect(webgl2Depth(false, 'reversed-gl')).toBe('reversed-gl');
 		expect(webgl2Depth(false, 'reversed')).toBe(DEPTH_WITHOUT_CLIP_CONTROL);
-		expect(coreDevice(false, report({}), { copyUploads: false, depth: 'standard' }).depth).toBe(
+		expect(coreDevice(false, report({}), { ...NO_SWITCHES, depth: 'standard' }).depth).toBe(
 			'reversed',
 		);
 	});

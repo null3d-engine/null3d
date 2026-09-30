@@ -133,7 +133,7 @@ export class SketchRunner {
 		this.debugDraw = DEV ? new DebugDraw(this.core) : undefined;
 		const debug: Debug = this.debugDraw ?? RELEASE_DEBUG;
 		const time = { now: 0, frame: 0 };
-		const textures = new Textures(this.core, sketch.sendImage, time);
+		const textures = new Textures(this.core, sketch.sendImage, time, device.capabilities);
 		this.context = {
 			time,
 			scene: new Scene(this.core, time, device.webgl2),

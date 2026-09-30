@@ -1,15 +1,16 @@
 // What the engine core and the thread that draws need to know about the device: on WebGPU, the
 // storage binding size the engine asks the GPU for; on WebGL2, multi-draw, the texture size,
-// whether WebGL reads shared memory and how depth is stored. They also set how many objects and
+// whether WebGL reads shared memory and how depth is stored; on both, the compressed texture
+// formats that KTX2 files can become. They also set how many objects and
 // instance rows a scene can draw, and past how many development builds warn that other devices of
 // the same GPU path draw fewer.
 
 import * as C from '../generated/core';
-import type { DepthMode, Switches } from './switches';
+import type { CompressionFamily, DepthMode, Switches } from './switches';
 
 /** The parts of the capability report that decide how the engine uses the device. */
 export interface DeviceReport {
-	webgpu: { limits: Record<string, number | null> };
+	webgpu: { limits: Record<string, number | null>; features: string[] };
 	webgl2: {
 		extensions: Record<string, boolean>;
 		maxTextureSize: number | null;
@@ -26,7 +27,10 @@ export interface CoreDevice {
 	webgl2: boolean;
 	/** WebGPU: the largest storage binding to request, which sizes the scene the core can draw. */
 	storageBindingBytes: number;
-	/** WebGL2: the core's capability flags, such as multi-draw. */
+	/**
+	 * The core's capability flags: the compressed texture families on both paths, and multi-draw
+	 * on WebGL2.
+	 */
 	capabilities: number;
 	/** WebGL2: the largest texture width and height in texels. */
 	maxTextureSize: number;
@@ -37,6 +41,36 @@ export interface CoreDevice {
 	sharedUploads: boolean;
 	/** How the GPU path stores depth: always `reversed` on WebGPU. */
 	depth: DepthMode;
+}
+
+/**
+ * Each compressed texture family that KTX2 files become: its capability flag, the WebGPU feature
+ * that the renderer asks the device for, the WebGL2 extension, which each context asks for by
+ * name, and the family's name in the ?compression= switch.
+ */
+export const TEXTURE_COMPRESSION: readonly (readonly [
+	flag: number,
+	feature: GPUFeatureName,
+	extension: string,
+	family: CompressionFamily,
+])[] = [
+	[C.CAPABILITY_TEXTURE_ASTC, 'texture-compression-astc', 'WEBGL_compressed_texture_astc', 'astc'],
+	[C.CAPABILITY_TEXTURE_BC, 'texture-compression-bc', 'EXT_texture_compression_bptc', 'bc'],
+	[C.CAPABILITY_TEXTURE_ETC2, 'texture-compression-etc2', 'WEBGL_compressed_texture_etc', 'etc2'],
+];
+
+/**
+ * The capability flags of the compressed texture families that `has` finds, by feature or
+ * extension, among those that `allowed` names when it names any.
+ */
+function compression(
+	has: (feature: GPUFeatureName, extension: string) => boolean,
+	allowed: readonly CompressionFamily[] | undefined,
+): number {
+	let flags = 0;
+	for (const [flag, feature, extension, family] of TEXTURE_COMPRESSION)
+		if (has(feature, extension) && (!allowed || allowed.includes(family))) flags |= flag;
+	return flags;
 }
 
 /** The depth mode of a WebGL2 device without `EXT_clip_control`. */
@@ -66,18 +100,24 @@ export function storageBindingBytes(limits: Record<string, number | null>): numb
 /**
  * The device as the engine uses it on WebGL2 or WebGPU, from the capability report and the test
  * switches. `copyUploads` makes the WebGL2 path copy uploads out of shared memory even where
- * WebGL reads it, and `depth` forces a WebGL2 depth mode, so tests reach every route.
+ * WebGL reads it, `depth` forces a WebGL2 depth mode, and `compression` limits the compressed
+ * texture families, so tests reach every route.
  */
 export function coreDevice(
 	webgl2: boolean,
 	report: DeviceReport,
-	{ copyUploads, depth }: Pick<Switches, 'copyUploads' | 'depth'>,
+	{
+		copyUploads,
+		depth,
+		compression: allowed,
+	}: Pick<Switches, 'copyUploads' | 'depth' | 'compression'>,
 ): CoreDevice {
 	if (!webgl2) {
+		const features = new Set(report.webgpu.features);
 		return {
 			webgl2,
 			storageBindingBytes: storageBindingBytes(report.webgpu.limits),
-			capabilities: 0,
+			capabilities: compression((feature) => features.has(feature), allowed),
 			maxTextureSize: 0,
 			sharedUploads: true,
 			depth: 'reversed',
@@ -89,7 +129,9 @@ export function coreDevice(
 	return {
 		webgl2,
 		storageBindingBytes: C.LIMIT_PORTABLE_STORAGE_BINDING_BYTES,
-		capabilities: multiDraw ? C.CAPABILITY_MULTI_DRAW : 0,
+		capabilities:
+			(multiDraw ? C.CAPABILITY_MULTI_DRAW : 0) |
+			compression((_, extension) => gl.extensions[extension] === true, allowed),
 		maxTextureSize: Math.max(C.LIMIT_WEBGL2_MIN_TEXTURE_SIZE, gl.maxTextureSize ?? 0),
 		sharedUploads: !copyUploads && shared !== null && shared.bufferSubData && shared.texSubImage2D,
 		depth: webgl2Depth(gl.extensions.EXT_clip_control === true, depth),

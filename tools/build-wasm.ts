@@ -54,6 +54,7 @@ import {
 	CORE_FILES,
 	downloadSizes,
 	findEngineParts,
+	findTranscoderFiles,
 	measure,
 	type SizeEntry,
 	totalSize,
@@ -572,8 +573,15 @@ async function main(): Promise<void> {
 	);
 	for (const [part, size] of parts) sizes[`js/${part}`] = size;
 	const downloads = downloadSizes(parts);
+	const assets = join(root, JS_BUILD_DIR, 'assets');
+	const transcoder = new Map(
+		[...findTranscoderFiles(readdirSync(assets))].map(([file, built]) => [
+			`ktx2/${file}`,
+			measure(readFileSync(join(assets, built))),
+		]),
+	);
 
-	console.log('\nsize report (budget for each .wasm file: 600 KB after Brotli)');
+	console.log('\nsize report (budget for each .wasm file of the core: 600 KB after Brotli)');
 	for (const [file, size] of Object.entries(sizes))
 		printSize(file, size, file.endsWith('.wasm') ? WASM_BUDGET_BYTES : undefined);
 	printSize('js total', totalSize(parts.values()));
@@ -581,6 +589,12 @@ async function main(): Promise<void> {
 		"\nthe engine's JavaScript that a page downloads in each thread mode, besides the core's glue (budget: 60 KB after Brotli)",
 	);
 	for (const { mode, size } of downloads) printSize(mode, size, JS_BUDGET_BYTES);
+	console.log(
+		'\nthe KTX2 transcoder, which a page downloads when it loads its first KTX2 file (no budget)',
+	);
+	for (const [file, size] of transcoder) printSize(file, size);
+	printSize('ktx2 total', totalSize(transcoder.values()));
+	for (const [file, size] of transcoder) sizes[file] = size;
 	if (options.sizesOnly) {
 		writeFileSync(join(root, SIZE_RECORD), `${JSON.stringify(sizes, null, '\t')}\n`);
 		console.log(`\nwrote ${SIZE_RECORD}`);
@@ -590,7 +604,10 @@ async function main(): Promise<void> {
 	printSize('shader-compiler.wasm', measure(readFileSync(SHADER_COMPILER_PATH)));
 
 	const problems = Object.entries(sizes)
-		.filter(([file, size]) => file.endsWith('.wasm') && size.brotli > WASM_BUDGET_BYTES)
+		.filter(
+			([file, size]) =>
+				file.endsWith('.wasm') && !transcoder.has(file) && size.brotli > WASM_BUDGET_BYTES,
+		)
 		.map(([file]) => `${file} is over its 600 KB Brotli budget`);
 	for (const { mode, size } of downloads)
 		if (size.brotli > JS_BUDGET_BYTES)

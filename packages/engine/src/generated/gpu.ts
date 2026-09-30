@@ -52,6 +52,14 @@ export const FORMAT_DEPTH32_FLOAT = 6;
 export const FORMAT_RGBA32_FLOAT = 7;
 export const FORMAT_R32_UINT = 8;
 export const FORMAT_RGBA8_UNORM_SRGB = 9;
+export const FORMAT_ASTC_4X4_UNORM = 11;
+export const FORMAT_ASTC_4X4_UNORM_SRGB = 12;
+export const FORMAT_BC7_RGBA_UNORM = 13;
+export const FORMAT_BC7_RGBA_UNORM_SRGB = 14;
+export const FORMAT_ETC2_RGB8_UNORM = 15;
+export const FORMAT_ETC2_RGB8_UNORM_SRGB = 16;
+export const FORMAT_ETC2_RGBA8_UNORM = 17;
+export const FORMAT_ETC2_RGBA8_UNORM_SRGB = 18;
 
 export const VIEW_2D = 0;
 export const VIEW_2D_ARRAY = 1;
@@ -151,7 +159,9 @@ export const SIZE_MAX_CELLS = 512;
 export const SIZE_CELL_SHIFT = 23;
 export const SIZE_LINE_VERTEX_BYTES = 16;
 
-/** Bytes per texel of each format, by format code. */
-export const FORMAT_TEXEL_BYTES: readonly number[] = [0, 4, 4, 4, 8, 0, 4, 16, 4, 4];
+/** Bytes of one block of texels of each format, by format code: one texel unless compressed. */
+export const FORMAT_BLOCK_BYTES: readonly number[] = [0, 4, 4, 4, 8, 0, 4, 16, 4, 4, 0, 16, 16, 16, 16, 8, 8, 16, 16];
+/** Texels on each side of a block of each format, by format code. */
+export const FORMAT_BLOCK_SIZE: readonly number[] = [1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 1, 4, 4, 4, 4, 4, 4, 4, 4];
 /** Each vertex attribute in vertex order: its format bit (0 for one every format has), its floats and its shader location. */
 export const VERTEX_ATTRIBUTES: readonly (readonly [bit: number, floats: number, location: number])[] = [[0, 3, 0], [0, 3, 1], [1, 2, 2], [2, 2, 3], [4, 4, 4], [8, 4, 5]];

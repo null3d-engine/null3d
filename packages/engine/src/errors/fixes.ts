@@ -39,7 +39,7 @@ export const ERROR_FIXES = {
 	E1207:
 		'Pass a whole number whose bits name the layers: 1 << n is layer n. The operator | joins layers, so (1 << 0) | (1 << 3) is layers 0 and 3. Layers run from 0 to 31.',
 	E1208:
-		"Give options from the texture's docs page, such as wrap: 'repeat', filter: 'nearest' or anisotropy: 8. Give fromData four numbers per texel: a Uint8Array for rgba8unorm, and a Uint16Array of half floats or a Float32Array for rgba16float. Resize images larger than textures.maxSize, and decode a closed image again.",
+		"Give options from the texture's docs page, such as wrap: 'repeat', filter: 'nearest' or anisotropy: 8. Give fromData four numbers per texel: a Uint8Array for rgba8unorm, and a Uint16Array of half floats or a Float32Array for rgba16float. Resize images larger than textures.maxSize, and decode a closed image again. Encode a KTX2 file flipped instead of passing flipY: true, and load it again instead of updating its texture.",
 	E1301:
 		'Remove a ?gpu= switch or createEngine gpu option that forces a path this browser lacks. Update the browser, or turn on hardware acceleration in its settings.',
 	E1302:
@@ -57,7 +57,7 @@ export const ERROR_FIXES = {
 	E1405:
 		'Read the message for the thread and its cause. Check that the page is served with the isolation headers and that the engine files load, then report it if it repeats.',
 	E1406:
-		"Check that the host serves the files from the engine's dist/wasm folder at the paths that the build gave them. If the page loads at other times, the network dropped: reload the page.",
+		"Check that the host serves every file that the build wrote, at the paths that the build gave them. The engine's .wasm files and the KTX2 transcoder's files are among them. If the page loads at other times, the network dropped: reload the page.",
 	E1407:
 		'Give the sketch time to hold at in seconds, such as ?hold=1.5 or hold: 1.5. A bare ?hold holds at the time of the hold option, or at 0 without one.',
 	E1408:
@@ -69,7 +69,7 @@ export const ERROR_FIXES = {
 	E1411:
 		"Check the file's address: a relative address resolves against the page's address, and new URL('./file.png', import.meta.url) resolves against the sketch module's. Check that the server sends the file, and handle the error where the file is optional.",
 	E1412:
-		'Give loadTexture and loadImageBitmap a PNG, JPEG or WebP file, or an AVIF file in browsers that decode AVIF. Give loadJson valid JSON. Check that the server sends the file itself, not an error page.',
+		'Give loadTexture and loadImageBitmap a PNG, JPEG or WebP file, or an AVIF file in browsers that decode AVIF. Give loadTexture KTX2 files of 2D ETC1S or UASTC data, as basisu writes them. Give loadJson valid JSON. Check that the server sends the file itself, not an error page.',
 	E1413:
 		"Serve the file from the same origin as the page, or have its server send Access-Control-Allow-Origin with the page's origin or *. On a page with Cross-Origin-Embedder-Policy: require-corp, the file needs that header too.",
 	E1501:

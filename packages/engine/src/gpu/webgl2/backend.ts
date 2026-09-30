@@ -59,11 +59,13 @@ interface GlBuffer {
 interface GlFormat {
 	/** The sized internal format. */
 	readonly internal: number;
-	/** The format and type of uploaded texels. */
+	/** The format and type of uploaded texels: bytes of blocks for a compressed format. */
 	readonly format: number;
 	readonly type: number;
-	/** Bytes per texel. */
+	/** Bytes of one block of texels: one texel unless the format is compressed. */
 	readonly bytes: number;
+	/** Texels on each side of a block: more than 1 for a compressed format. */
+	readonly block: number;
 	/** Where a render target of the format attaches to a framebuffer. */
 	readonly attachment: number;
 }
@@ -136,7 +138,10 @@ function glAttribute(
 	}
 }
 
-/** How GL stores each texture format, by format code. */
+/**
+ * How GL stores each texture format, by format code. A compressed format is there only when the
+ * context turned on its extension, which the backend asks for by name.
+ */
 function glFormats(gl: WebGL2RenderingContext): (GlFormat | undefined)[] {
 	const formats: (GlFormat | undefined)[] = [];
 	const add = (
@@ -146,8 +151,35 @@ function glFormats(gl: WebGL2RenderingContext): (GlFormat | undefined)[] {
 		type: number,
 		attachment: number,
 	) => {
-		formats[code] = { internal, format, type, attachment, bytes: G.FORMAT_TEXEL_BYTES[code] ?? 0 };
+		formats[code] = {
+			internal,
+			format,
+			type,
+			attachment,
+			bytes: G.FORMAT_BLOCK_BYTES[code] ?? 0,
+			block: G.FORMAT_BLOCK_SIZE[code] ?? 1,
+		};
 	};
+	// A compressed format's writes read bytes.
+	const compressed = (code: number, internal: number) =>
+		add(code, internal, 0, gl.UNSIGNED_BYTE, 0);
+	const astc = gl.getExtension('WEBGL_compressed_texture_astc');
+	if (astc) {
+		compressed(G.FORMAT_ASTC_4X4_UNORM, astc.COMPRESSED_RGBA_ASTC_4x4_KHR);
+		compressed(G.FORMAT_ASTC_4X4_UNORM_SRGB, astc.COMPRESSED_SRGB8_ALPHA8_ASTC_4x4_KHR);
+	}
+	const bptc = gl.getExtension('EXT_texture_compression_bptc');
+	if (bptc) {
+		compressed(G.FORMAT_BC7_RGBA_UNORM, bptc.COMPRESSED_RGBA_BPTC_UNORM_EXT);
+		compressed(G.FORMAT_BC7_RGBA_UNORM_SRGB, bptc.COMPRESSED_SRGB_ALPHA_BPTC_UNORM_EXT);
+	}
+	const etc = gl.getExtension('WEBGL_compressed_texture_etc');
+	if (etc) {
+		compressed(G.FORMAT_ETC2_RGB8_UNORM, etc.COMPRESSED_RGB8_ETC2);
+		compressed(G.FORMAT_ETC2_RGB8_UNORM_SRGB, etc.COMPRESSED_SRGB8_ETC2);
+		compressed(G.FORMAT_ETC2_RGBA8_UNORM, etc.COMPRESSED_RGBA8_ETC2_EAC);
+		compressed(G.FORMAT_ETC2_RGBA8_UNORM_SRGB, etc.COMPRESSED_SRGB8_ALPHA8_ETC2_EAC);
+	}
 	const color = gl.COLOR_ATTACHMENT0;
 	// The canvas holds three channels, because its context has no alpha, and a multisampled image
 	// resolves only into the same format.
@@ -793,46 +825,72 @@ export class WebGL2Backend {
 		}
 	}
 
-	/** Writes a box of texels, layer after layer, from tightly packed rows in engine memory. */
+	/**
+	 * Writes a box of texels, layer after layer, from tightly packed rows in engine memory. A
+	 * compressed format's rows are rows of blocks: WebGL2 takes the box in texels, cut by the
+	 * level's edge, and the bytes of its whole blocks.
+	 */
 	private writeTexture(words: Uint32Array, a: number): void {
 		const gl = this.gl;
 		const texture = this.textureOf(words[a] as number);
 		const source = words[a + 8] as number;
 		const bytes = words[a + 9] as number;
-		const { format, type } = texture.format;
+		const { format, type, internal } = texture.format;
+		const compressed = texture.format.block > 1;
+		const level = words[a + 1] as number;
+		const x = words[a + 2] as number;
+		const y = words[a + 3] as number;
+		const width = words[a + 5] as number;
+		const height = words[a + 6] as number;
 		if (this.copying) this.stage(source, bytes);
 		const data = this.texels(type);
 		const index = this.texelIndex(type, source);
 		this.editTexture(UPLOAD_UNIT, texture.target, texture.texture);
 		if (texture.target === gl.TEXTURE_2D_ARRAY) {
-			gl.texSubImage3D(
-				gl.TEXTURE_2D_ARRAY,
-				words[a + 1] as number,
-				words[a + 2] as number,
-				words[a + 3] as number,
-				words[a + 4] as number,
-				words[a + 5] as number,
-				words[a + 6] as number,
-				words[a + 7] as number,
-				format,
-				type,
-				data,
-				index,
-			);
-		} else {
-			gl.texSubImage2D(
+			if (compressed)
+				gl.compressedTexSubImage3D(
+					gl.TEXTURE_2D_ARRAY,
+					level,
+					x,
+					y,
+					words[a + 4] as number,
+					width,
+					height,
+					words[a + 7] as number,
+					internal,
+					data,
+					index,
+					bytes,
+				);
+			else
+				gl.texSubImage3D(
+					gl.TEXTURE_2D_ARRAY,
+					level,
+					x,
+					y,
+					words[a + 4] as number,
+					width,
+					height,
+					words[a + 7] as number,
+					format,
+					type,
+					data,
+					index,
+				);
+		} else if (compressed)
+			gl.compressedTexSubImage2D(
 				gl.TEXTURE_2D,
-				words[a + 1] as number,
-				words[a + 2] as number,
-				words[a + 3] as number,
-				words[a + 5] as number,
-				words[a + 6] as number,
-				format,
-				type,
+				level,
+				x,
+				y,
+				width,
+				height,
+				internal,
 				data,
 				index,
+				bytes,
 			);
-		}
+		else gl.texSubImage2D(gl.TEXTURE_2D, level, x, y, width, height, format, type, data, index);
 		this.counts.uploadBytes += bytes;
 	}
 

@@ -114,6 +114,8 @@ On WebGL2, uploads read straight from the engine's shared memory. A browser that
 
 The switch `?depth=` forces a WebGL2 depth mode: `reversed`, `reversed-gl` or `standard`, which draws depth as three.js's WebGL renderer does by default. A browser without `EXT_clip_control` cannot draw `reversed`, so it draws its own mode instead.
 
+KTX2 textures take the compressed format of the first family that the device has: ASTC, BC7 or ETC2 by the file's data ([Textures](../api/textures.md#ktx2-files)). The switch `?compression=` keeps them to the families that it lists, such as `?compression=bc`, or to none with `?compression=none`. One device can then test the format of each kind of device.
+
 ## When the GPU goes away
 
 A WebGPU device can be lost, for example after a driver reset, and so can a WebGL2 context. The thread that draws then makes a new device, or waits for the context to come back. It draws the whole scene again from data the engine kept. The sketch worker keeps running, so your sketch's state survives. If the GPU is lost more than twice within one minute, or no new device starts, the engine stops drawing and reports E1302.

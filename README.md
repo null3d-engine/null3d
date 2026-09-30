@@ -163,7 +163,7 @@ flowchart LR
 
 | Version | Adds |
 | --- | --- |
-| 0.1 | Clustered forward lighting with MSAA, cascaded shadows, fog, quality presets, dynamic resolution, render layers, orbit and map camera controls, debug drawing, WGSL imports from an engine shader library, and a headless test runner |
+| 0.1 | Clustered forward lighting with MSAA, cascaded shadows, fog, quality presets, dynamic resolution, render layers, KTX2 textures in the device's compressed format, orbit and map camera controls, debug drawing, WGSL imports from an engine shader library, and a headless test runner |
 | 0.2 | glTF with KTX2 textures and meshopt compression, the `bunx @null3d/cli assets` optimizer, skeletal and morph animation, raycasting, pointer events on objects, environment lighting, skies, post-processing with custom effects, custom render passes, sprites, points, wide lines, HTML labels, large-world mode, and occlusion culling on both GPU paths |
 | 0.3 | The docs site and `bunx @null3d/cli docs`, starter templates, an MCP server, an in-page inspector, an ESLint plugin, and the three.js porting tools |
 
@@ -299,7 +299,7 @@ Each release lists its changes in `CHANGELOG.md`. Until 1.0, the API can change 
 | Release | What it adds |
 | --- | --- |
 | Now, before 0.1 | The threaded core, both GPU backends with instanced meshes and one light, and benchmarks against three.js on a laptop, an Android phone and an iPad |
-| 0.1 | Cameras, materials, clustered lights, shadows, fog, quality presets, dynamic resolution, camera controls, the first TypeScript API, the Vite plugin, and the first `null3d` commands for tests, screenshots and benchmarks |
+| 0.1 | Cameras, materials, KTX2 textures, clustered lights, shadows, fog, quality presets, dynamic resolution, camera controls, the first TypeScript API, the Vite plugin, and the first `null3d` commands for tests, screenshots and benchmarks |
 | 0.2 | glTF loading, the asset optimizer, animation, raycasting, environment lighting, post-processing, sprites, lines and large worlds |
 | 0.3 | The docs site, the rest of the `null3d` command, templates, agent tooling and the porting tools |
 | 1.0 | A stable API, testing on many devices, size budgets and public benchmarks |

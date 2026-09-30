@@ -98,6 +98,7 @@ Three sweeps measure the defaults that are still open: the latency mode, the job
 ## Download size
 
 - The size report builds the engine test page for production with hidden source maps, which leave the built files unchanged. Vite names each file after a module and adds a hash. The report therefore names each file of the engine's JavaScript by the engine module that it holds. The list of parts is `ENGINE_PARTS` in `tools/lib/size-report.ts`. A new file of engine code fails the report until the list names it.
+- The report lists the KTX2 transcoder apart from what a page downloads at its start. Its `ktx2/` files are the transcoder's worker and the Basis Universal build's script and module. A page downloads them with its first KTX2 file. They have no budget, and the growth check covers them as it covers every file.
 - `bun run build:check-size` compares each file's size after Brotli with a build of a base commit. The base is main's own build. The repository keeps no size record, so pull requests cannot conflict over one.
 - The base is HEAD's merge base with main. CI tests a pull request as GitHub's merge of it into main, so the base there is the main commit that it merged into. A push to main compares with the commit before. `--base <ref>` picks another commit.
 - The check builds the base in a git worktree, `target/.size-base/tree`, with the base's own build script. The base therefore keeps its own flags, toolchain and list of parts. The script's `--sizes-only` builds only what the report measures, without the shader compiler, and writes the sizes.

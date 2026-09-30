@@ -401,10 +401,30 @@ impl MockBackend {
             "a texture's size, layers and mip levels must be at least 1 and within the portable budget",
         )?;
         check(
-            texture.format != format::NONE && (texture.format as usize) < format::ALL.len(),
+            texture.format != format::NONE && format::is_known(texture.format),
             op,
             "unknown texture format",
         )?;
+        if format::is_compressed(texture.format) {
+            check(
+                self.caps.contains(format::capability(texture.format)),
+                op,
+                "a compressed format needs its family's capability",
+            )?;
+            let block = format::block_size(texture.format);
+            check(
+                texture.width.is_multiple_of(block) && texture.height.is_multiple_of(block),
+                op,
+                "WebGPU makes compressed textures of whole blocks only",
+            )?;
+            check(
+                texture.usage & (texture_usage::RENDER_ATTACHMENT | texture_usage::STORAGE_BINDING)
+                    == 0
+                    && texture.samples == 1,
+                op,
+                "a compressed texture is never drawn into or multisampled",
+            )?;
+        }
         check(
             texture.format != format::BGRA8_UNORM,
             op,
@@ -488,16 +508,28 @@ impl MockBackend {
             op,
             "a written texture needs COPY_DST usage",
         )?;
-        let texel = format::texel_bytes(texture.format);
+        let block_bytes = format::block_bytes(texture.format);
         check(
-            texel > 0 && !format::is_depth(texture.format),
+            block_bytes > 0 && !format::is_depth(texture.format),
             op,
             "depth textures take no writes",
         )?;
+        // A box of blocks starts on a block, and covers whole blocks or reaches the level's edge.
+        let block = format::block_size(texture.format);
+        let whole = |start: u32, size: u32, edge: u32| {
+            start.is_multiple_of(block) && (size.is_multiple_of(block) || start + size == edge)
+        };
         check(
-            o[9] == o[5] * o[6] * o[7] * texel,
+            whole(at.x, o[5], level_size(texture.width, at.level))
+                && whole(at.y, o[6], level_size(texture.height, at.level)),
             op,
-            "the byte length must match the box, in tightly packed rows",
+            "a write of compressed texels covers whole blocks, or blocks cut by the level's edge",
+        )?;
+        let blocks = o[5].div_ceil(block) * o[6].div_ceil(block) * o[7];
+        check(
+            o[9] == blocks * block_bytes,
+            op,
+            "the byte length must match the box, in tightly packed rows of blocks",
         )?;
         self.write(op, Resource::Texture(at.texture))
     }
@@ -557,6 +589,11 @@ impl MockBackend {
             !format::is_depth(from.format),
             op,
             "depth textures do not copy, because WebGL2 cannot copy them",
+        )?;
+        check(
+            !format::is_compressed(from.format),
+            op,
+            "compressed textures do not copy, because compatibility mode cannot copy them",
         )?;
         let overlaps = source.texture == destination.texture
             && source.level == destination.level
@@ -2034,6 +2071,99 @@ mod tests {
                 ..
             })
         ));
+    }
+
+    #[test]
+    fn compressed_textures_need_their_capability_and_take_whole_blocks() {
+        use texture_usage::{COPY_DST, COPY_SRC, RENDER_ATTACHMENT, TEXTURE_BINDING};
+        const ASTC: u32 = 40;
+        let run = |caps: Capabilities, build: &dyn Fn(&mut DrawList)| {
+            let mut list = DrawList::with_capacity(256);
+            build(&mut list);
+            MockBackend::with_capabilities(caps).replay(list.words())
+        };
+        let astc = |l: &mut DrawList, size: [u32; 4], usage: u32| {
+            texture(
+                l,
+                ASTC,
+                size,
+                format::ASTC_4X4_UNORM_SRGB,
+                usage,
+                view::D2_ARRAY,
+            )
+        };
+        let sampled = TEXTURE_BINDING | COPY_DST;
+        let invalid = |result| matches!(result, Err(MockError::Invalid { .. }));
+        assert!(
+            invalid(run(Capabilities::TEXTURE_BC, &|l| astc(
+                l,
+                [8, 8, 1, 1],
+                sampled
+            ))),
+            "ASTC needs its capability"
+        );
+        let caps = Capabilities::TEXTURE_ASTC;
+        assert!(
+            invalid(run(caps, &|l| astc(l, [6, 8, 1, 1], sampled))),
+            "level 0 holds whole blocks"
+        );
+        assert!(
+            invalid(run(caps, &|l| astc(
+                l,
+                [8, 8, 1, 1],
+                sampled | RENDER_ATTACHMENT
+            ))),
+            "no pass draws into a compressed texture"
+        );
+        // Levels of 12 x 8, 6 x 4 and 3 x 2 texels: 3 x 2, 2 x 1 and 1 x 1 blocks of 16 bytes.
+        let levels = |l: &mut DrawList| {
+            astc(l, [12, 8, 2, 3], sampled | COPY_SRC);
+            l.push(Op::WriteTexture, &[ASTC, 0, 0, 0, 0, 12, 8, 2, 0, 12 * 16])
+                .unwrap();
+            l.push(Op::WriteTexture, &[ASTC, 1, 0, 0, 1, 6, 4, 1, 0, 2 * 16])
+                .unwrap();
+            l.push(Op::WriteTexture, &[ASTC, 2, 0, 0, 0, 3, 2, 1, 0, 16])
+                .unwrap();
+        };
+        assert_eq!(run(caps, &levels), Ok(()));
+        let write = |at: [u32; 3], size: [u32; 2], bytes: u32| {
+            move |l: &mut DrawList| {
+                astc(l, [12, 8, 1, 3], sampled | COPY_SRC);
+                l.push(
+                    Op::WriteTexture,
+                    &[ASTC, at[0], at[1], at[2], 0, size[0], size[1], 1, 0, bytes],
+                )
+                .unwrap();
+            }
+        };
+        assert_eq!(
+            run(caps, &write([0, 0, 4], [12, 4], 3 * 16)),
+            Ok(()),
+            "a band of one row of blocks"
+        );
+        assert!(
+            invalid(run(caps, &write([0, 0, 2], [12, 4], 3 * 16))),
+            "a band starts on a block"
+        );
+        assert!(
+            invalid(run(caps, &write([0, 0, 0], [6, 4], 32))),
+            "a band covers whole blocks unless it reaches the level's edge"
+        );
+        assert!(
+            invalid(run(caps, &write([0, 0, 0], [12, 8], 12 * 16 * 4))),
+            "the byte length counts blocks, not texels"
+        );
+        assert!(
+            invalid(run(caps, &|l| {
+                astc(l, [8, 8, 2, 1], sampled | COPY_SRC);
+                l.push(
+                    Op::CopyTextureToTexture,
+                    &[ASTC, 0, 0, 0, 0, ASTC, 0, 0, 0, 1, 8, 8, 1],
+                )
+                .unwrap();
+            })),
+            "compatibility mode copies no compressed texels"
+        );
     }
 
     #[test]
