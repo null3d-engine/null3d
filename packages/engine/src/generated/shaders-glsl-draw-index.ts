@@ -89,6 +89,10 @@ uint pcg(uint v_1) {
     return ((word >> 22u) ^ word);
 }
 
+float to_unit(uint h) {
+    return (float((h >> 8u)) / 16777216.0);
+}
+
 vec3 tone_map(vec3 c_4, Output settings) {
     vec3 exposed = (c_4 * settings.exposure);
     if ((settings.tone_mapping == AGX)) {
@@ -109,7 +113,8 @@ vec3 tone_map(vec3 c_4, Output settings) {
 float pixel_noise(vec2 pixel) {
     uint _e5 = pcg(uint(pixel.y));
     uint _e7 = pcg((uint(pixel.x) + _e5));
-    return (float((_e7 >> 8u)) / 16777216.0);
+    float _e8 = to_unit(_e7);
+    return _e8;
 }
 
 vec3 encode(vec3 c_5, vec2 pixel_1) {
@@ -211,6 +216,10 @@ uint pcg(uint v_1) {
     return ((word >> 22u) ^ word);
 }
 
+float to_unit(uint h) {
+    return (float((h >> 8u)) / 16777216.0);
+}
+
 vec3 tone_map(vec3 c_4, Output settings) {
     vec3 exposed = (c_4 * settings.exposure);
     if ((settings.tone_mapping == AGX)) {
@@ -231,7 +240,8 @@ vec3 tone_map(vec3 c_4, Output settings) {
 float pixel_noise(vec2 pixel) {
     uint _e5 = pcg(uint(pixel.y));
     uint _e7 = pcg((uint(pixel.x) + _e5));
-    return (float((_e7 >> 8u)) / 16777216.0);
+    float _e8 = to_unit(_e7);
+    return _e8;
 }
 
 vec3 encode(vec3 c_5, vec2 pixel_1) {
