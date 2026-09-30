@@ -27,7 +27,7 @@ use null3d_render::arrays::{ArrayName, ArraysError, MeshArrays, from_arrays};
 use null3d_render::camera::Perspective;
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::frame::{FrameBuilder, FrameInput, RecordError};
-use null3d_render::geometry::{Geometry, box_geometry, sphere_geometry};
+use null3d_render::geometry::{Geometry, OutOfMemory, Shape, generate};
 use null3d_render::gpu_driven::{
     BYTES_PER_SOURCE, GpuDrivenRenderer, MAX_USEFUL_BINDING_BYTES, RendererConfig,
 };
@@ -644,41 +644,31 @@ fn add_mesh(e: &mut Engine, geometry: &Geometry) -> Result<u32, u32> {
     Ok(id + 1)
 }
 
-/// A box mesh with three.js's `BoxGeometry` parameters; returns its mesh id.
-#[wasm_bindgen(js_name = createBoxMesh)]
-pub fn create_box_mesh(
-    width: f32,
-    height: f32,
-    depth: f32,
-    width_segments: u32,
-    height_segments: u32,
-    depth_segments: u32,
+/// A mesh from a geometry generator: `shape` is a `Shape` code, and the numbers after it are the
+/// arguments of the three.js class's constructor, in their order. Returns the mesh id.
+#[wasm_bindgen(js_name = createShapeMesh)]
+#[allow(clippy::too_many_arguments)]
+pub fn create_shape_mesh(
+    shape: u32,
+    a: f64,
+    b: f64,
+    c: f64,
+    d: f64,
+    e: f64,
+    f: f64,
+    g: f64,
+    h: f64,
 ) -> u32 {
-    value_with_engine(|e| {
-        add_mesh(
-            e,
-            &box_geometry(
-                width,
-                height,
-                depth,
-                [
-                    width_segments.max(1),
-                    height_segments.max(1),
-                    depth_segments.max(1),
-                ],
-            ),
-        )
-    })
-}
-
-/// A sphere mesh with three.js's `SphereGeometry` parameters; returns its mesh id.
-#[wasm_bindgen(js_name = createSphereMesh)]
-pub fn create_sphere_mesh(radius: f32, width_segments: u32, height_segments: u32) -> u32 {
-    value_with_engine(|e| {
-        add_mesh(
-            e,
-            &sphere_geometry(radius, width_segments.max(3), height_segments.max(2)),
-        )
+    value_with_engine(|engine| {
+        let kind = Shape::from_code(shape)
+            .ok_or_else(|| core_failure(CoreError::UnknownCommand { op: shape }))?;
+        let geometry =
+            generate(kind, [a, b, c, d, e, f, g, h]).map_err(|OutOfMemory { bytes }| {
+                core_failure(CoreError::OutOfMemory {
+                    bytes: u32::try_from(bytes).unwrap_or(u32::MAX),
+                })
+            })?;
+        add_mesh(engine, &geometry)
     })
 }
 

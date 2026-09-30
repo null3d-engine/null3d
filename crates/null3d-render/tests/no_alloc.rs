@@ -8,13 +8,12 @@
 mod common;
 
 use common::graph::{CASCADES, engine_passes};
-use common::{World, grid};
+use common::{World, base_sphere, grid};
 use null3d_core::jobs::JobSystem;
 use null3d_core::testing::CountingAllocator;
 use null3d_gpu::drawlist::{DrawList, Op};
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::frame::FrameBuilder;
-use null3d_render::geometry::sphere_geometry;
 use null3d_render::materials::Shading;
 use null3d_render::parallel_record::ParallelRecorder;
 
@@ -193,7 +192,7 @@ fn only_the_frames_after_the_scene_grows_allocate() {
         .renderer
         .settings_mut()
         .meshes_mut()
-        .add(&sphere_geometry(0.5, 16, 12))
+        .add(&base_sphere(0.5, [16, 12]))
         .unwrap()
         + 1;
     let batch = world
