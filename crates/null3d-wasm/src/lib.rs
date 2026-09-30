@@ -257,7 +257,8 @@ pub fn last_error_detail(index: u32) -> u32 {
 /// serve, timing their work with the browser's clock. On WebGPU, `storage_binding_bytes` is the
 /// largest storage binding of the device the engine draws with. On WebGL2 (`webgl2`), the
 /// capability flags say whether the device has multi-draw, and `max_texture_size` is its largest
-/// texture. Every capacity is fixed from here on.
+/// texture. Without `cell_culling`, culling tests every object, with no grid cells skipped first.
+/// Every capacity is fixed from here on.
 #[wasm_bindgen(js_name = initEngine)]
 #[allow(clippy::too_many_arguments)]
 pub fn init_engine(
@@ -269,6 +270,7 @@ pub fn init_engine(
     webgl2: bool,
     capabilities: u32,
     max_texture_size: u32,
+    cell_culling: bool,
 ) -> u32 {
     // SAFETY: as in `with_engine`; no other call on the sketch thread runs while this one does.
     let cell = unsafe { &mut *ENGINE.0.get() };
@@ -302,6 +304,7 @@ pub fn init_engine(
             Box::new(CpuCulledRenderer::new(CpuCulledConfig {
                 multi_draw: capabilities.contains(Capabilities::MULTI_DRAW),
                 max_texture_size: max_texture_size.max(CpuCulledConfig::default().max_texture_size),
+                cell_culling,
                 ..CpuCulledConfig::default()
             }))
         } else {
@@ -310,6 +313,7 @@ pub fn init_engine(
                     sizes::PORTABLE_STORAGE_BINDING_BYTES,
                     MAX_USEFUL_BINDING_BYTES,
                 ),
+                cell_culling,
                 ..RendererConfig::default()
             }))
         },
@@ -1089,6 +1093,8 @@ pub fn texture_stat(field: u32, texture: u32) -> f64 {
             texture_stat::LARGEST_FRAME_BYTES => f64::from(stats.largest_frame_bytes),
             texture_stat::WAITING => f64::from(stats.waiting),
             texture_stat::IMAGES_SENT => f64::from(textures.images_sent()),
+            texture_stat::UPLOAD_BUDGET => f64::from(textures.budget()),
+            texture_stat::MAX_ANISOTROPY => f64::from(textures.max_anisotropy()),
             _ => f64::from(textures.max_size()),
         };
         0

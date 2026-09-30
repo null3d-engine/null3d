@@ -649,14 +649,14 @@ const ALPHA_MODES: Readonly<Record<AlphaMode, number>> = {
 };
 
 /**
- * Throws E1215 for an option that fixes the material's pipeline but takes no such value, and
+ * Throws E1217 for an option that fixes the material's pipeline but takes no such value, and
  * E1203 for a depth bias that is not a finite number. Call it inside `if (DEV)`.
  */
 function checkFeatures(options: StandardOptions, call: string): void {
 	const { alphaMode, depthBias } = options;
 	if (alphaMode !== undefined && !Object.hasOwn(ALPHA_MODES, alphaMode))
 		throw new EngineError(
-			'E1215',
+			'E1217',
 			`${call}() got the alpha mode ${JSON.stringify(alphaMode)}; it takes 'opaque' or 'mask'.`,
 		);
 	for (const key of ['constant', 'slopeScale'] as const) {

@@ -143,7 +143,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "await engine.capture() on the page",
-      "notes": "Returns an image of the next complete frame. Tests use the engine's readback instead.",
+      "notes": "Resolves with a PNG Blob of the next frame that the engine draws. Tests read pixels with engine.captureFrame() instead.",
       "docs": "api/engine",
       "detect": "preserveDrawingBuffer|readRenderTargetPixels|\\.toDataURL\\s*\\("
     },
@@ -748,7 +748,7 @@
       "status": "direct",
       "since": "0.1",
       "target": "materials.unlit({ color, map, opacity, alphaMode, vertexColors })",
-      "notes": "Texture maps and the blend alpha mode are not built yet.",
+      "notes": "Texture maps and alpha modes are not built yet.",
       "docs": "api/materials",
       "detect": "\\bMeshBasicMaterial\\b"
     },
@@ -825,7 +825,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "alphaMode: 'blend' | 'mask' (with alphaCutoff), doubleSided, depthWrite, depthTest, blending: 'normal' | 'additive' | 'multiply', vertexColors, flatShading",
-      "notes": "transparent: true becomes alphaMode: 'blend'; alphaTest becomes alphaMode: 'mask' with alphaCutoff; side: DoubleSide becomes doubleSided: true. BackSide has no equivalent: flip the geometry. depthTest: false writes no depth either, as in three.js's WebGL renderer. The blend alpha mode and blending are not built yet.",
+      "notes": "transparent: true becomes alphaMode: 'blend'; alphaTest becomes alphaMode: 'mask' with alphaCutoff; side: DoubleSide becomes doubleSided: true. BackSide has no equivalent: flip the geometry.",
       "docs": "porting/threejs-materials",
       "detect": "\\b(transparent|alphaTest|side|depthWrite|depthTest|blending|vertexColors|flatShading)\\s*[:=]"
     },
@@ -935,7 +935,7 @@
       "status": "direct",
       "since": "0.1",
       "target": "depthBias: { constant, slopeScale } in the material options",
-      "notes": "Keep three.js's values: negative values pull the surface toward the camera. The engine draws with reversed depth and turns the signs itself. A fraction in constant rounds to a whole number, as WebGPU takes it.",
+      "notes": "Signs differ because WebGPU uses reversed depth: the engine converts, so keep the three.js intent (push away from the camera).",
       "docs": "api/materials",
       "detect": "polygonOffset(Factor|Units)?\\b"
     },

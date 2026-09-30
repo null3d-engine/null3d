@@ -9,6 +9,9 @@
 
 import { EngineError } from '../errors/engine-error';
 
+/** Bytes in a mebibyte. */
+export const MIB = 1024 * 1024;
+
 /**
  * A quality preset: `low`, `medium`, `high` or `ultra`, from the lightest to the heaviest. Each
  * preset gives every quality setting a value, and the engine starts with the values of the preset
@@ -60,6 +63,20 @@ export const QUALITY_SETTINGS = {
 		changes: 'live',
 		values: { min: 0.5, max: Number.POSITIVE_INFINITY },
 	},
+	// The highest anisotropy that texture samplers use. WebGPU samplers take at most 16. A change
+	// makes the samplers and their bind groups again, and no pipeline.
+	maxAnisotropy: {
+		presets: [2, 4, 8, 16],
+		changes: 'live',
+		values: { min: 1, max: 16, whole: true },
+	},
+	// The texel bytes that one frame may upload, so a scene that loads many textures spreads them
+	// over frames.
+	uploadBytesPerFrame: {
+		presets: [2 * MIB, 4 * MIB, 8 * MIB, 16 * MIB],
+		changes: 'live',
+		values: { min: 64 * 1024, max: 64 * MIB, whole: true },
+	},
 	// The shared memory's maximum, from 256 MiB to the 4 GiB that the threaded core declares. Every
 	// preset keeps the loader's default until measurements of the memory that tabs can use on
 	// phones and tablets set one per preset (D-04).
@@ -92,6 +109,17 @@ export interface QualitySettings {
 	 * its new size within a frame or two.
 	 */
 	maxPixelRatio: number;
+	/**
+	 * The highest anisotropy that textures sample with. A texture whose own `anisotropy` option is
+	 * higher samples at this value. It takes a whole number from 1 to 16, and changes during play.
+	 */
+	maxAnisotropy: number;
+	/**
+	 * The texel bytes that one frame may upload, so that loading many textures does not make one
+	 * frame slow. A larger texture goes up in bands of rows over several frames. It takes a whole
+	 * number from 65,536 (64 KiB) to 67,108,864 (64 MiB), and changes during play.
+	 */
+	uploadBytesPerFrame: number;
 }
 
 /** The settings that a sketch reads and changes: those that can change after the load. */

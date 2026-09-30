@@ -64,9 +64,14 @@ impl World {
 
 impl<B: FrameBuilder> World<B> {
     /// The world, drawn by `renderer`.
-    pub fn build(mut renderer: B) -> World<B> {
+    pub fn build(renderer: B) -> World<B> {
+        World::build_sized(renderer, SCENE_CAPACITY)
+    }
+
+    /// The world, drawn by `renderer`, with room for `capacity` scene objects.
+    pub fn build_sized(mut renderer: B, capacity: u32) -> World<B> {
         let jobs = JobSystem::new(0);
-        let mut scene = SceneStorage::with_capacity(SCENE_CAPACITY);
+        let mut scene = SceneStorage::with_capacity(capacity);
         let mut batches = BatchTable::with_capacity(4);
         let box_mesh = renderer
             .settings_mut()
@@ -363,6 +368,117 @@ pub fn count(commands: &[(Op, Vec<u32>)], op: Op) -> usize {
 /// A position 1,000 km out along x.
 pub fn far_out(x: f32, y: f32, z: f32) -> [f32; 3] {
     [1.0e6 + x, y, z]
+}
+
+/// A small seeded random number generator (xorshift), so each test scene is the same every run.
+pub struct Rng(u64);
+
+impl Rng {
+    pub fn new(seed: u64) -> Rng {
+        Rng(seed.wrapping_mul(0x9E37_79B9_7F4A_7C15) | 1)
+    }
+
+    /// The next number in [0, 1).
+    pub fn next(&mut self) -> f32 {
+        self.0 ^= self.0 << 13;
+        self.0 ^= self.0 >> 7;
+        self.0 ^= self.0 << 17;
+        (self.0 >> 40) as f32 / (1u64 << 24) as f32
+    }
+
+    /// A number in [lo, hi).
+    pub fn range(&mut self, lo: f32, hi: f32) -> f32 {
+        lo + (hi - lo) * self.next()
+    }
+
+    /// True with chance `p`.
+    pub fn chance(&mut self, p: f32) -> bool {
+        self.next() < p
+    }
+}
+
+/// Half the side of the square that [`World::spread`] fills: 2.5 grid cells, so the square covers
+/// the 5 x 5 cells around the origin cell.
+pub const SPREAD_HALF_SIDE: f32 = 2.5 * 1024.0;
+/// The lens of a spread world's cameras, which see into the cells around them.
+pub const WIDE_LENS: Perspective = Perspective {
+    fov_degrees: 70.0,
+    near: 0.5,
+    far: 1500.0,
+};
+
+impl<B: FrameBuilder> World<B> {
+    /// Spreads the world over the 5 x 5 grid cells around the origin, at seeded random places:
+    /// `objects` more scene objects, some hidden, some dynamic and some under a dynamic parent,
+    /// and a static batch of `rows` rows, which it returns. The world's own objects and batch stay
+    /// at the origin, and its camera gets [`WIDE_LENS`]. Call it before the first frame.
+    pub fn spread(&mut self, objects: u32, rows: u32, seed: u64) -> Handle {
+        let mut rng = Rng::new(seed);
+        let mut commands = Vec::new();
+        let mut roots: Vec<(Handle, bool)> = Vec::new();
+        for _ in 0..objects {
+            let object = self.scene.reserve().unwrap();
+            let size = rng.range(0.5, 40.0);
+            self.scene.set_scale(object, [size; 3]).unwrap();
+            self.scene.set_local_radius(object, 0.9).unwrap();
+            let visible = if rng.chance(0.1) { 0 } else { flags::VISIBLE };
+            let dynamic = if rng.chance(0.15) { flags::DYNAMIC } else { 0 };
+            // A few hang under an earlier root: moving with it when it is dynamic.
+            let parent = match roots.len() {
+                0 => None,
+                n if rng.chance(0.1) => Some(roots[(rng.next() * n as f32) as usize % n].0),
+                _ => None,
+            };
+            let position = if parent.is_some() {
+                [rng.range(-30.0, 30.0), 0.0, rng.range(-30.0, 30.0)]
+            } else {
+                [
+                    rng.range(-SPREAD_HALF_SIDE, SPREAD_HALF_SIDE),
+                    rng.range(-50.0, 50.0),
+                    rng.range(-SPREAD_HALF_SIDE, SPREAD_HALF_SIDE),
+                ]
+            };
+            self.scene.set_position(object, position).unwrap();
+            let (mesh, material) = (1 + rng.chance(0.5) as u32, 1 + rng.chance(0.5) as u32);
+            let flags = visible | dynamic;
+            commands.push(Command::create(
+                object,
+                parent.unwrap_or(Handle::NONE),
+                mesh,
+                flags,
+            ));
+            commands.push(Command::set_material(object, material));
+            if parent.is_none() {
+                roots.push((object, dynamic != 0));
+            }
+            self.objects.push(object);
+        }
+        self.scene.apply_commands(&commands, self.frame).unwrap();
+        let batch = self.batches.create(rows, false, false, 1, 1, 0.9).unwrap();
+        let still = self.batches.get_mut(batch).unwrap();
+        for position in still.positions_mut().as_chunks_mut::<3>().0 {
+            *position = [
+                rng.range(-SPREAD_HALF_SIDE, SPREAD_HALF_SIDE),
+                rng.range(-50.0, 50.0),
+                rng.range(-SPREAD_HALF_SIDE, SPREAD_HALF_SIDE),
+            ];
+        }
+        self.renderer
+            .settings_mut()
+            .set_camera(self.camera, WIDE_LENS);
+        batch
+    }
+
+    /// Puts the camera at `position`, turned `yaw` radians about +y from looking down -z, and
+    /// tilted `pitch` radians up.
+    pub fn aim(&mut self, position: [f32; 3], yaw: f32, pitch: f32) {
+        let (sy, cy) = (yaw * 0.5).sin_cos();
+        let (sp, cp) = (pitch * 0.5).sin_cos();
+        // The turn about y, then the tilt about the turned x.
+        let rotation = [cy * sp, sy * cp, -sy * sp, cy * cp];
+        self.scene.set_position(self.camera, position).unwrap();
+        self.scene.set_rotation(self.camera, rotation).unwrap();
+    }
 }
 
 impl<B: FrameBuilder> World<B> {

@@ -28,6 +28,7 @@ Every scene object is static or dynamic. The engine recomputes a static object o
 | --- | --- | --- |
 | Recomputed | Only in a frame where a setter marked it dirty, or where its parent moved | Every frame |
 | GPU data | Uploaded once, then left alone | Uploaded every frame |
+| Culling in a scene over several grid cells | Skipped with its whole cell when the cell is out of view, unless a parent is dynamic | Tested in every view, every frame |
 | Best for | Scenery, buildings, a door that opens now and then | Characters, projectiles, anything that moves most frames |
 
 Objects are static unless you create them with `dynamic: true`. Cameras are the exception: they are dynamic unless you pass `dynamic: false`. `setDynamic` changes the kind from the next frame:
@@ -41,13 +42,13 @@ const rock = scene.createMesh({ mesh: rockMesh, material: stone });
 rock.setDynamic(true); // it starts rolling
 ```
 
-The loop over dynamic objects has no dirty checks and no branches, which suits objects that change in most frames. A static object costs nothing in a frame where it does not change.
+The loop over dynamic objects has no dirty checks and no branches, which suits objects that change in most frames. In a frame where a static object does not change, the engine neither recomputes nor uploads it.
 
 ## Setters and direct writes
 
 Move a mesh, a camera or a group with its setters, such as `setPosition`. Every setter marks its object dirty, and the engine recomputes a static object only in a frame where a setter marked it.
 
-Development builds check this rule in every frame. Before the engine recomputes objects, it compares the position, rotation, scale and bounding sphere of each static object with the values from its last check. In a sketch with `onLateUpdate`, the engine checks again before it recomputes what that callback moved. A change that no setter marked raises [E1110](../errors/E1110.md), which names the object. A live engine logs the error once and carries on. Hold mode stops at it, so a test fails at once. The check reads every static object in each frame. In the S2 benchmark, its 5,082 static objects cost about 0.05 ms per frame on a MacBook Pro. Release builds leave the check out.
+Development builds check this rule in every frame. Before the engine recomputes objects, it compares the position, rotation, scale and bounding sphere of each static object with the values from its last check. In a sketch with `onLateUpdate`, the engine checks again before it recomputes what that callback moved. A change that no setter marked raises [E1110](../errors/E1110.md), which names the object. A live engine logs the error once and carries on. Hold mode stops at it, so a test fails at once. The check reads every static object in each frame. In the S2 benchmark on a MacBook Pro, it cost about 0.06 ms per frame on WebGPU and 0.03 ms on WebGL2. Release builds leave the check out.
 
 Instance batches are where sketch code writes the engine's arrays directly. A loop writes a batch's rows into its typed arrays, with no call per row. Such a write skips every setter, so the engine cannot see it. A dynamic batch needs no mark, because it uploads every row in every frame. A static batch uploads only the rows you mark with `markDirty`. The development check does not read batch rows, so it cannot report a row that you forgot to mark.
 
@@ -75,11 +76,11 @@ trees.markDirty(42, 1); // upload one row, starting at row 42
 
 Each row has its own bounds, so culling works per instance.
 
-Each moving row uploads its 48-byte world matrix in every frame. In the S1 benchmark on WebGPU, 100,000 moving boxes uploaded 4.8 MB per frame. The same boxes standing still in a static batch uploaded nothing per frame after the first.
+On WebGPU, each moving row uploads its 48-byte world matrix in every frame, so 100,000 moving boxes upload 4.8 MB per frame. The same boxes standing still in a static batch upload no matrices after the first frame.
 
 ## Why it matters on phones
 
-On the WebGL2 path, which many phones use, static objects keep their data on the GPU. Each frame uploads only the list of what is visible. The list has a 4-byte entry for each visible object or batch row, where a full matrix takes 48 bytes. A static batch at rest takes one entry for each visible group of 64 nearby rows. So 100,000 visible rows of such a batch need about 1,600 entries, or about 6 KB. A frame whose list matches the previous frame's list uploads nothing. Marking objects static when they do not move keeps these savings.
+On the WebGL2 path, which many phones use, static objects keep their data on the GPU. A frame uploads no matrices for them, only the list of what is visible. The list has a 4-byte entry for each visible object or batch row, where a full matrix takes 48 bytes. A static batch at rest takes one entry for each visible group of 64 nearby rows. So 100,000 visible rows of such a batch need about 1,600 entries, or about 6 KB. A frame whose list matches the previous frame's list uploads no list. Marking objects static when they do not move keeps these savings.
 
 ## Related pages
 

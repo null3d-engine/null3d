@@ -1,7 +1,7 @@
 // Replays a hand-built draw list through the engine's WebGPU backend: GPU culling in a compute pass,
 // then indirect draws from a render bundle with 4x MSAA and reversed depth. It checks the GPU side of
 // the WebGPU render path before the core records these lists itself.
-import { readbackWebGPU, WebGPUBackend } from '@null3d/engine/internal';
+import { loadWgslShaders, readbackWebGPU, WebGPUBackend } from '@null3d/engine/internal';
 import * as G from '../../packages/engine/src/generated/gpu';
 import {
 	boxMesh,
@@ -27,7 +27,8 @@ run('replay', async () => {
 		format: 'rgba8unorm',
 		usage: GPUTextureUsage.RENDER_ATTACHMENT | GPUTextureUsage.COPY_SRC,
 	});
-	const backend = new WebGPUBackend(device, undefined, 'rgba8unorm');
+	const shaders = await loadWgslShaders(0);
+	const backend = new WebGPUBackend(device, undefined, 'rgba8unorm', shaders);
 	backend.canvasTarget = target;
 
 	// Instances: a 5 x 5 grid in two buckets, on the view's two layers, plus one behind the camera
@@ -73,9 +74,9 @@ run('replay', async () => {
 	materials.set([0.8, 0.1, 0.1, 1], 0);
 	materials.set([0.1, 0.3, 0.9, 1], G.SIZE_MATERIAL_BYTES / 4);
 	// The planes, the instance count and the view's layers, then the offset from the camera to each
-	// grid cell. Every instance here lies in cell 0, whose zero offset keeps the positions in world
-	// space.
-	const cull = new Float32Array(28 + 4 * G.SIZE_MAX_CELLS);
+	// grid cell, then the runs of the cell order. Every instance here lies in cell 0, whose zero
+	// offset keeps the positions in world space, and no run is listed, so thread i culls instance i.
+	const cull = new Float32Array(28 + 4 * G.SIZE_MAX_CELLS + 4 * G.SIZE_MAX_CULL_RANGES);
 	cull.set(frustumPlanes(viewProj), 0);
 	new Uint32Array(cull.buffer).set([positions.length, viewLayers, 0, 0], 24);
 	const indirect = new Uint32Array([36, 0, 0, 0, 0, 36, 0, 0, 0, 0]);
@@ -118,6 +119,8 @@ run('replay', async () => {
 		[9, indirect.byteLength, U.INDIRECT | U.STORAGE | U.COPY_DST | U.COPY_SRC, blobs.indirect],
 		[10, cull.byteLength, U.UNIFORM | U.COPY_DST, blobs.cull],
 		[11, instanceLayers.byteLength, U.STORAGE | U.COPY_DST, blobs.instanceLayers],
+		// The cell order, which a dispatch with no runs never reads.
+		[12, 4, U.STORAGE | U.COPY_DST, -1],
 	];
 	for (const [id, size, usage] of buffers) memory.push(G.OP_CREATE_BUFFER, id, size, usage);
 	for (const [id, size, , source] of buffers)
@@ -186,8 +189,8 @@ run('replay', async () => {
 		G.OP_CREATE_BIND_GROUP,
 		2,
 		G.LAYOUT_CULL,
-		7,
-		...[10, 5, 6, 7, 8, 9, 11].flatMap((buffer, binding) => [
+		8,
+		...[10, 5, 6, 7, 8, 9, 11, 12].flatMap((buffer, binding) => [
 			binding,
 			G.RESOURCE_BUFFER,
 			buffer,

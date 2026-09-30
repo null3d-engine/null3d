@@ -3,7 +3,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join, sep } from 'node:path';
 import {
 	type ShaderVariant as EngineShaderVariant,
-	SHADERS,
+	everyShader,
 } from '../../engine/src/generated/shaders';
 import {
 	buildShaders,
@@ -196,9 +196,9 @@ describe.skipIf(!ENABLED)('the shader compiler', () => {
 		);
 	});
 
-	it("gives the native build's output for the engine's shaders", () => {
+	it("gives the native build's output for the engine's shaders", async () => {
 		const result = buildShaders(engineShaderInputs());
 		if (!result.ok) throw new Error(result.problems.map((p) => p.message).join('\n'));
-		expect(result.output.shaders).toEqual(SHADERS);
+		expect(result.output.shaders).toEqual(await everyShader());
 	});
 });

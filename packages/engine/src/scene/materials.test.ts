@@ -230,9 +230,9 @@ describe('Material.set', () => {
 		const mode = thrown(() =>
 			materials.standard({ alphaMode: 'cutout' as unknown as 'mask', color: 0xff0000 }),
 		);
-		expect(mode.code).toBe('E1215');
+		expect(mode.code).toBe('E1217');
 		expect(mode.message).toStartWith(
-			`E1215: materials.standard() got the alpha mode "cutout"; it takes 'opaque' or 'mask'.`,
+			`E1217: materials.standard() got the alpha mode "cutout"; it takes 'opaque' or 'mask'.`,
 		);
 		const bias = thrown(() => materials.unlit({ depthBias: { slopeScale: Number.NaN } }));
 		expect(bias.code).toBe('E1203');
