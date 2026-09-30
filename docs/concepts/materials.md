@@ -13,7 +13,7 @@ summary: "Built-in materials; permutations; pipeline warm-up; why changing shade
 ```mermaid
 flowchart LR
     values["Values:<br/>color, metalness, roughness, emissive"] -->|"set() writes them"| row["The material's row<br/>in the material table"]
-    fixed["Options fixed at creation:<br/>kind, vertexColors, alphaMode, doubleSided, depth"] --> key["Pipeline key"]
+    fixed["Options fixed at creation:<br/>kind, maps, vertexColors, alphaMode, doubleSided, depth"] --> key["Pipeline key"]
     format["The mesh's vertex format"] --> key
     key -->|"compiled once per key"| pipeline["Render pipeline:<br/>shader variant and state"]
     row --> draw["Each draw"]
