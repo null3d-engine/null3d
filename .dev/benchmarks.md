@@ -34,7 +34,7 @@ The benchmarks measure the engine as developers ship it. A production build leav
 - GitHub's machines are shared, and their speed changes from run to run. So the job judges a new commit only against a baseline measured in the same job. It builds both commits on one machine, each in a git worktree of its own, with `bun run build`.
 - It then runs `bun run bench:run --compare <baseline>,<new>` in Chrome. The command builds each commit's benchmark pages for production, into `target/bench-pages-baseline` and `target/bench-pages-new`, and serves each build on a port of its own.
 - A commit from before `bench/vite.pages.config.ts` existed has its pages built with the new commit's config.
-- S1, S1-static and S2 run on null3D's two GPU paths. The job runs 10 rounds. Each round runs every page once in each build, the two runs back to back, and even rounds run the new build first. Each run has 5 s of warm-up and 5 s measured.
+- S1, S1-static, S2 and S3 run on null3D's two GPU paths. A scene that one of the two commits has no page for runs in neither. So a pull request that adds a benchmark is compared on the other scenes. The job runs 10 rounds. Each round runs every page once in each build, the two runs back to back, and even rounds run the new build first. Each run has 5 s of warm-up and 5 s measured.
 - It drops a run that measured no frames, and a run that measured another refresh rate than most runs of its page did.
 - Each run gives two medians of CPU time per frame: the busiest thread's time, and the engine's own work on that thread. For each page and measure, the job divides the new build's median by the baseline's in each round. The change is the median of these ratios. A machine that changes speed between rounds then changes both runs of a round alike.
 - The job fails when the busiest thread's change is more than 5% and more than 0.01 ms. It also fails when own work's change is more than 15% and more than 0.02 ms. The browser's timer counts in steps of 5 microseconds, so a small time moves by whole steps between runs.
@@ -85,6 +85,18 @@ Build two checkouts, such as a git worktree of main beside your branch, with `bu
 - Both plans load the production build of the benchmark pages, as the tools on the Mac do.
 - The bench plan runs S1 on its usual pages. `--pages` and `--scenes` pick others. For example, to compare two null3D paths on a phone: `bun tests/real-browsers.ts --plan bench --allow-no-webgpu --android chrome --scenes s1-static,s2 --pages null3d-webgl2,null3d-webgl2-low`.
 - `--seconds <n>` sets each bench page's warm-up and measured time, n seconds each. For the protocol's 10-minute sustained run on a phone, use `--seconds 300`: 5 minutes of warm-up, then 5 measured.
+
+## Many point lights
+
+- S3 stands 20,000 still boxes in one instance batch on a floor 200 m wide. 256 point lights with a range of 12 m light them, and each light moves on a circle of its own. The camera orbits. `?n=` sets the box count, and the lights stay at 256.
+- The boxes stand on a grid, one per cell, and never touch. Where two boxes meet, some pixels have equal depth, and the GPU can draw them in either order. With random places, the image test's two thread modes differed by one pixel on SwiftShader.
+- The sun and the ambient light are dim, so the point lights stand out. The twin's hold frame shows a pool of colored light under each point light.
+- The three.js twin draws the 256 lights as `PointLight` objects with a distance and a decay. WebGPURenderer shades them through three.js's clustered lighting, the `ClusteredLighting` addon (Forward+). It assigns each light to the clusters of the view that its range reaches, so each fragment shades only its cluster's lights.
+- WebGLRenderer has no clustered lighting. Its shader for 256 point lights needs more than the 1,024 uniform vectors that Chrome gives a fragment shader on the Mac and on SwiftShader. The shader fails to build, and the WebGL page reports the GPU's reason and draws nothing. So a benchmark run lists the WebGL page as failed, and a device without WebGPU, such as the S24+, has no three.js twin of S3.
+- null3D's point lights do not light surfaces until clustered lighting lands. Until then, S3 draws its boxes under the dim sun and ambient light alone. The parity checks leave it out. `FEATURES_TO_COME` in `bench/lib/parity.ts` lists what each twin draws and null3D does not. The pull request that builds a feature takes it off the list and makes the scene's image references again.
+- On the Mac: `bun run bench:run --scenes s3 --pages null3d-webgpu,null3d-webgl2,threejs-webgpu,scene-code`.
+- On the phone: `bun tests/real-browsers.ts --plan bench --allow-no-webgpu --android chrome --scenes s3 --pages null3d-webgl2,null3d-webgl2-low,scene-code`.
+- On the iPad: `bun tests/real-browsers.ts --plan bench --lan ipad-safari --scenes s3 --pages null3d-webgpu,null3d-webgl2,threejs-webgpu,scene-code`.
 
 ## Sweeps for the open defaults
 

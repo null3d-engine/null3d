@@ -4,11 +4,11 @@
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
 import { writePng } from '../../packages/cli/src/png.js';
-import { isNull3dPage, PARITY_SCENES, type PageKind, pagePath, SCENE_CODE } from '../lib/parity';
+import { BENCH_SCENES, isNull3dPage, type PageKind, pagePath, SCENE_CODE } from '../lib/parity';
 import { BACKGROUND, PARITY_CANVAS, S2_NODES_PER_TREE, s2Trees } from '../scenes/spec';
 import { openPage, type PageReport, runPage } from './open-page';
 
-const SCENES = PARITY_SCENES;
+const SCENES = BENCH_SCENES;
 /** The pages each scene is tested on, with the renderer each one reports. */
 const PAGES: { kind: PageKind; renderer: string }[] = [
 	{ kind: 'threejs-webgl', renderer: 'webgl' },
@@ -26,13 +26,21 @@ const IMAGE_DIR = join(import.meta.dirname, '../../test-results/bench');
 const BACKGROUND_TOLERANCE = 2;
 /**
  * An image counts as blank unless more than this share of its pixels differs from the background.
- * S2's small trees cover less than 1% of its hold frame, so its bar is lower.
+ * S2's small trees cover less than 1% of its hold frame, so its bar is lower. S3's floor covers
+ * most of its frame, so its bar is higher.
  */
 const MIN_DRAWN_SHARE: Record<(typeof SCENES)[number], number> = {
 	s1: 0.01,
 	's1-static': 0.01,
 	s2: 0.005,
+	s3: 0.1,
 };
+/**
+ * Pages whose renderer cannot draw their scene in Chrome. WebGLRenderer's shader for S3's 256 point
+ * lights needs more uniform vectors than the 1,024 that Chrome's GPUs give a fragment shader, on the
+ * Mac and on SwiftShader, so the shader fails to build. The page must say so.
+ */
+const CANNOT_DRAW: readonly string[] = ['s3 on threejs-webgl'];
 /** The instance count of the short benchmark runs. */
 const SHORT_RUN_COUNT = 1000;
 /** S2 draws whole trees, so it rounds the short runs' count up to them. */
@@ -81,6 +89,18 @@ function meanBrightness(pixels: Uint8Array, width: number, fromRow: number, toRo
 
 for (const scene of SCENES) {
 	for (const { kind, renderer } of PAGES) {
+		if (CANNOT_DRAW.includes(`${scene} on ${kind}`)) {
+			test(`${scene} on ${kind} reports that its shader is past the GPU's limits`, async ({
+				page,
+			}) => {
+				for (const switches of ['hold', `seconds=1&n=${SHORT_RUN_COUNT}`]) {
+					const { result } = await openPage<Report>(page, pagePath(scene, kind, switches));
+					expect(result.ok).toBe(false);
+					expect(result.error).toContain('could not build a shader of this scene on this GPU');
+				}
+			});
+			continue;
+		}
 		if (!isNull3dPage(kind))
 			test(`${scene} on ${kind} renders a hold frame that is not blank`, async ({ page }) => {
 				const result = await runPage<HoldReport>(page, pagePath(scene, kind, 'hold'));
