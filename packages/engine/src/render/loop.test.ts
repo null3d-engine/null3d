@@ -256,6 +256,19 @@ describe('the frames in flight', () => {
 		expect(drawn).toEqual([1, 2, 5]);
 	});
 
+	it("takes the setup's frames in the direct loop only when the GPU has room for them", () => {
+		const { control, metrics, slots, drawn, renderer, gpu } = slowGpu();
+		loop = runDirectLoop(countingSketch(false), renderer, control, metrics, undefined);
+		// The setup publishes each frame once the one before it was taken, as the preset check does.
+		refresh(DISPLAY_HZ, 4, () =>
+			Atomics.store(slots, Slot.FramesPublished, Atomics.load(slots, Slot.FramesTaken) + 1),
+		);
+		expect(drawn).toEqual([1, 2]);
+		gpu.unfinished = 0;
+		refresh(DISPLAY_HZ, 1);
+		expect(drawn).toEqual([1, 2, 3]);
+	});
+
 	it('steps the sketch of the direct loop only when the GPU has room for its frame', () => {
 		const { control, metrics, drawn, renderer, gpu } = slowGpu();
 		loop = runDirectLoop(countingSketch(), renderer, control, metrics, undefined);

@@ -25,7 +25,8 @@
 			<li><a href="image.html?hold=1.5&amp;size=320x180&amp;sketch=/tests/pages/sketches/animated-sketch.ts">Draw a sketch of the image test manifest (add ?gpu= and a thread mode's switch)</a></li>
 			<li><a href="depth-precision.html?gpu=webgl2&amp;hold=0&amp;depth=standard">Surfaces 1 cm apart from 1 m to 10 km in standard depth on WebGL2 (or ?depth=reversed-gl, ?depth=reversed, ?gpu=webgpu)</a></li>
 			<li><a href="input.html">Input in the sketch (ask with inputState() in the console)</a></li>
-			<li><a href="quality.html">The quality preset that the engine chooses (add ?preset=low, ?option=ultra or ?gpu=webgl2)</a></li>
+			<li><a href="quality.html">The quality preset that the engine chooses (add ?preset=low, ?option=ultra or ?gpu=webgl2; ?spheres=32768 gives the preset check a scene too heavy to hold its frame rate)</a></li>
+			<li><a href="preset-change.html">A change of quality preset that needs new pipelines, with no frame drawn without them (add ?from=, ?to=, ?swap or ?gpu=webgl2)</a></li>
 			<li><a href="overload.html?gpu=webgpu">Raise the GPU's work until it falls behind, and compare the presented and completed rates (add ?gpu=webgl2, ?queue=off or ?spheres=8192)</a></li>
 			<li><a href="/bench/pages/">The benchmark pages</a></li>
 			<li><a href="/examples/">The feature demos</a></li>

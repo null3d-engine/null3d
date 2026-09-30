@@ -46,6 +46,7 @@ import {
 	type DeviceHints,
 	deviceKind,
 } from '../../packages/engine/src/quality/chooser.ts';
+import { presetSettings } from '../../packages/engine/src/quality/presets.ts';
 import type { Tier as GpuPath } from '../../packages/engine/src/shared/tier.ts';
 import { IMAGE_RUNS } from '../image/manifest.ts';
 import { distanceLabel, PRECISION, type PrecisionFacts } from '../pages/lib/depth-precision.ts';
@@ -65,6 +66,14 @@ import {
 } from './engine-checks.ts';
 import { type HarnessDirs, type ImageRun, imageProblems } from './images.ts';
 import { type Load, type LoadKind, loadPath, runnerKey } from './load-routes.ts';
+import {
+	HEAVY_SPHERES,
+	heavyCheckProblems,
+	type PresetChangeResult,
+	type PresetMode,
+	presetChangeProblems,
+	roundText,
+} from './preset-checks.ts';
 import { failureText, type ItemResult, lastSteps, type PlanItem, slug } from './runs.ts';
 import { type WarmUpResult, warmUpProblems } from './warm-up-checks.ts';
 
@@ -84,6 +93,10 @@ export type Check =
 	| { kind: 'room'; maximumMiB: number }
 	| { kind: 'uploads'; tier: Tier }
 	| { kind: 'quality' }
+	/** The quality page with a scene too heavy for the GPU: the preset check lowers the preset. */
+	| { kind: 'preset-check' }
+	/** A change of preset that needs a new pipeline draws no frame without it. */
+	| { kind: 'preset-change'; tier: Tier }
 	/** The warm-up page: pipelines build before the first frame, and a warm-up during play. */
 	| { kind: 'warm-up'; tier: Tier }
 	| { kind: 'hold'; tier: Tier }
@@ -247,6 +260,20 @@ export function checksPlan(): PlanItem<Check>[] {
 		),
 		pageItem('uploads', 'uploads', { kind: 'uploads', tier: 'webgpu' }, { timeoutSeconds: 90 }),
 		pageItem('quality', 'quality', { kind: 'quality' }),
+		pageItem(
+			'preset-check',
+			'quality',
+			{ kind: 'preset-check' },
+			{ switches: [`spheres=${HEAVY_SPHERES}`], timeoutSeconds: 120 },
+		),
+		...TIERS.map((tier) =>
+			pageItem(
+				`preset-change-${tier}`,
+				'preset-change',
+				{ kind: 'preset-change', tier },
+				{ switches: [`gpu=${tier}`, 'from=medium', 'to=low'] },
+			),
+		),
 		...TIERS.map((tier) =>
 			pageItem(
 				`warm-up-${tier}`,
@@ -842,6 +869,17 @@ export function judge(
 		}
 		case 'quality':
 			return qualityProblems(result as unknown as QualityResult, context);
+		case 'preset-check': {
+			const quality = result as unknown as QualityResult;
+			const problems = qualityProblems(quality, context);
+			return problems.length > 0
+				? problems
+				: heavyCheckProblems(quality.mode, chosenPreset(quality));
+		}
+		case 'preset-change':
+			return presetChangeProblems(result as unknown as PresetChangeResult, 'low', {
+				...presetSettings('low', { maxPixelRatio: 1 }),
+			});
 		case 'bench': {
 			const frames = Number(result.frames ?? 0);
 			const cpu = (result.cpuMs as { median?: number } | undefined)?.median ?? 0;
@@ -879,25 +917,33 @@ export function judge(
 
 /** What the quality page reports: the preset, the GPU path and the device hints it chose from. */
 interface QualityResult {
-	mode: { preset: string; crashedStarts: number };
+	mode: PresetMode & { crashedStarts: number };
 	tier: GpuPath;
 	hints: DeviceHints;
 }
 
+/** The preset that the engine chose from the device, before the preset check could lower it. */
+const chosenPreset = ({ mode }: QualityResult) => mode.presetCheck?.from ?? mode.preset;
+
 /**
- * Checks that the engine ran the preset that the chooser gives for the device hints and the GPU
- * path it reported, and notes the preset and the hints, so each device's choice is on record.
+ * Checks that the engine chose the preset that the chooser gives for the device hints and the GPU
+ * path it reported, and notes the preset, the hints and what the preset check measured, so each
+ * device's choice is on record.
  */
 function qualityProblems(result: QualityResult, context?: JudgeContext): string[] {
 	const { mode, tier, hints } = result;
+	const chosen = chosenPreset(result);
 	const expected = choosePreset({ wanted: 'auto', hints, crashedStarts: mode.crashedStarts }, tier);
 	const memory = hints.deviceMemoryGB === null ? 'no memory reading' : `${hints.deviceMemoryGB} GB`;
+	const check = mode.presetCheck
+		? `the preset check measured ${mode.presetCheck.rounds.map(roundText).join(', then ')}, against a target of ${mode.presetCheck.targetFps}`
+		: 'no preset check';
 	context?.note?.(
-		`quality preset ${mode.preset} on ${tier} for a ${deviceKind(hints)} (${hints.coarsePointer ? 'coarse' : 'fine'} pointer, smaller screen edge ${hints.screenMinEdge} px, ${memory}, ${mode.crashedStarts} crashed starts)`,
+		`quality preset ${chosen} on ${tier} for a ${deviceKind(hints)} (${hints.coarsePointer ? 'coarse' : 'fine'} pointer, smaller screen edge ${hints.screenMinEdge} px, ${memory}, ${mode.crashedStarts} crashed starts); ${check}; ${mode.preset} runs`,
 	);
-	return mode.preset === expected
+	return chosen === expected
 		? []
-		: [`the engine ran the ${mode.preset} preset, where the chooser gives ${expected}`];
+		: [`the engine chose the ${chosen} preset, where the chooser gives ${expected}`];
 }
 
 /**

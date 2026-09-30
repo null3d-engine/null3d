@@ -5,8 +5,9 @@ import type { EngineCapabilities } from '../page/engine';
 import type { Material, MeshGeometry } from '../scene/resources';
 import { controlViews, createControlBuffer, Slot } from '../shared/control';
 import type { CoreGlue } from '../shared/core';
-import { createMetricsBuffer } from '../shared/metrics';
+import { createMetricsBuffer, FrameRecorder, Role } from '../shared/metrics';
 import { defineSketch, type SketchContext, type SketchOptions } from './define-sketch';
+import type { QualityStart, QualityUpdate } from './quality';
 import { SketchRunner } from './runner';
 
 /** The core's frame steps, which the tests follow among the sketch's callbacks. */
@@ -66,18 +67,71 @@ function fakeGlue(log: string[], memory: WebAssembly.Memory): CoreGlue {
 	});
 }
 
-/** A runner of a sketch whose callbacks come from `callbacks`, with a log of what each frame ran. */
+/** How the thread that draws behaves in a test: the intervals it records, in ms. */
+interface FakeDrawing {
+	presentedMs: number;
+	completedMs: number;
+}
+
+/**
+ * A stand-in for the thread that draws: each few ms it takes the newest published frame, reports
+ * its pipelines built, and records a presented and a completed frame with the given intervals.
+ * Returns a function that stops it.
+ */
+function drawFrames(
+	control: ReturnType<typeof controlViews>,
+	metrics: ArrayBufferLike,
+	drawing: FakeDrawing,
+): () => void {
+	const { slots } = control;
+	const render = new FrameRecorder(metrics, Role.Render);
+	const completion = new FrameRecorder(metrics, Role.Completion);
+	const timer = setInterval(() => {
+		const published = Atomics.load(slots, Slot.FramesPublished);
+		if (published <= Atomics.load(slots, Slot.FramesTaken)) return;
+		Atomics.store(slots, Slot.PipelinesBuilt, published);
+		Atomics.store(slots, Slot.FramesTaken, published);
+		for (const [recorder, ms] of [
+			[render, drawing.presentedMs],
+			[completion, drawing.completedMs],
+		] as const) {
+			recorder.begin(published);
+			recorder.interval(ms);
+			recorder.commit(0);
+		}
+	}, 2);
+	return () => clearInterval(timer);
+}
+
+/** The quality that the tests' page chose: Medium, with no check. */
+const MEDIUM: QualityStart = {
+	preset: 'medium',
+	settings: { maxPixelRatio: 2 },
+	options: {},
+	highest: 'ultra',
+};
+
+/**
+ * A runner of a sketch whose callbacks come from `callbacks`, with a log of what each frame ran.
+ * `quality` replaces the page's quality start. With `drawing`, a stand-in for the thread that
+ * draws takes the frames, and the engine runs, so waits for frames wait for that stand-in.
+ */
 async function start(
 	callbacks: (context: SketchContext, log: string[]) => object,
 	options?: SketchOptions,
+	{ quality = MEDIUM, drawing }: { quality?: QualityStart; drawing?: FakeDrawing } = {},
 ) {
 	const log: string[] = [];
+	const updates: QualityUpdate[] = [];
 	const control = controlViews(createControlBuffer(false));
 	control.slotFloats[Slot.CanvasCssWidth] = 320;
 	control.slotFloats[Slot.CanvasCssHeight] = 180;
 	control.slotFloats[Slot.PixelRatio] = 2;
+	const metrics = createMetricsBuffer(false, 0);
+	const stopDrawing = drawing ? drawFrames(control, metrics, drawing) : () => {};
+	if (drawing) Atomics.store(control.slots, Slot.Running, 1);
 	const memory = new WebAssembly.Memory({ initial: 2 });
-	const runner = new SketchRunner(() => {}, createMetricsBuffer(false, 0), {
+	const runner = new SketchRunner(() => {}, metrics, {
 		glue: fakeGlue(log, memory),
 		memory,
 		control,
@@ -93,19 +147,24 @@ async function start(
 			parallelCompile: true,
 		},
 		capabilities: CAPABILITIES,
-		quality: { preset: 'medium', settings: { maxPixelRatio: 2 } },
-		applyQuality: () => {},
+		quality,
+		applyQuality: (update) => updates.push(update),
 		sendImage: () => {},
 		pageUrl: 'http://localhost/',
 	});
 	let context: SketchContext | undefined;
-	await runner.setup(
-		defineSketch((ctx) => {
-			context = ctx;
-			return callbacks(ctx, log);
-		}, options),
-	);
-	return { runner, log, control, context: context as SketchContext };
+	try {
+		await runner.setup(
+			defineSketch((ctx) => {
+				context = ctx;
+				return callbacks(ctx, log);
+			}, options),
+		);
+	} catch (error) {
+		stopDrawing();
+		throw error;
+	}
+	return { runner, log, control, updates, stopDrawing, context: context as SketchContext };
 }
 
 describe('SketchRunner', () => {
@@ -240,5 +299,108 @@ describe('SketchRunner', () => {
 		);
 		await expect(failed).rejects.toThrow('E1214: defineSketch() got 0 for fixedRate.');
 		expect(ran).toBe(false);
+	});
+});
+
+describe('SketchRunner and quality presets', () => {
+	it('holds the frame after a change of preset, whose handlers hear of it, until it draws', async () => {
+		const heard: string[] = [];
+		const drawing = { presentedMs: 16, completedMs: 16 };
+		const { runner, control, context, stopDrawing } = await start(
+			({ quality }) => {
+				quality.onChange(() => heard.push(quality.preset));
+				return {};
+			},
+			undefined,
+			{ drawing },
+		);
+		try {
+			const { slots } = control;
+			const publish = (frame: number) => Atomics.store(slots, Slot.FramesPublished, frame);
+			publish(runner.step(0));
+			let drawn = false;
+			const changed = context.quality.setPreset('low').then(() => {
+				drawn = true;
+			});
+			const frame = runner.step(16);
+			expect(heard).toEqual(['low']);
+			expect(Atomics.load(slots, Slot.PipelineHold)).toBe(frame);
+			await new Promise((resolve) => setTimeout(resolve, 20));
+			expect(drawn).toBe(false);
+			publish(frame);
+			await changed;
+			expect(Atomics.load(slots, Slot.FramesTaken)).toBeGreaterThanOrEqual(frame);
+			// Later frames draw at once.
+			publish(runner.step(32));
+			expect(Atomics.load(slots, Slot.PipelineHold)).toBe(frame);
+		} finally {
+			stopDrawing();
+		}
+	});
+
+	it('holds a setup frame for a change in the setup, and the first frame of play for its handlers', async () => {
+		const heard: string[] = [];
+		const { runner, control, log, stopDrawing } = await start(
+			async ({ quality, time }, log) => {
+				quality.onChange(() => heard.push(quality.preset));
+				await quality.setPreset('low');
+				log.push(`set up at frame ${time.frame}`);
+				return {};
+			},
+			undefined,
+			{ drawing: { presentedMs: 16, completedMs: 16 } },
+		);
+		try {
+			expect(log).toContain('set up at frame 1');
+			expect(heard).toEqual([]);
+			expect(Atomics.load(control.slots, Slot.PipelineHold)).toBe(1);
+			const played = runner.step(0);
+			expect(heard).toEqual(['low']);
+			expect(Atomics.load(control.slots, Slot.PipelineHold)).toBe(played);
+		} finally {
+			stopDrawing();
+		}
+	});
+
+	it('checks the preset after the setup, and keeps a preset that holds the target', async () => {
+		const { context, updates, log, stopDrawing } = await start(
+			(_, log) => ({ onUpdate: () => log.push('update') }),
+			undefined,
+			{ quality: { ...MEDIUM, check: {} }, drawing: { presentedMs: 16, completedMs: 16.5 } },
+		);
+		stopDrawing();
+		expect(context.quality.preset).toBe('medium');
+		// The check draws the scene as the setup built it, without the sketch's update.
+		expect(log).not.toContain('update');
+		const check = updates.at(-1)?.check;
+		expect(check?.from).toBe('medium');
+		expect(check?.targetFps).toBe(60);
+		expect(check?.rounds).toEqual([{ preset: 'medium', presentedFps: 62.5, completedFps: 60.6 }]);
+	});
+
+	it('lowers the preset when the GPU finishes too few frames, down to Low', async () => {
+		const { context, updates, stopDrawing } = await start(() => ({}), undefined, {
+			quality: { ...MEDIUM, check: {} },
+			drawing: { presentedMs: 16, completedMs: 40 },
+		});
+		stopDrawing();
+		expect(context.quality.preset).toBe('low');
+		expect(context.quality.settings.maxPixelRatio).toBe(1.5);
+		const last = updates.at(-1);
+		expect(last?.preset).toBe('low');
+		expect(last?.check?.rounds.map((round) => [round.preset, round.completedFps])).toEqual([
+			['medium', 25],
+			['low', 25],
+		]);
+	}, 10_000);
+
+	it('asks for no more than the frame rate that ?fps= holds', async () => {
+		const { context, updates, stopDrawing } = await start(() => ({}), undefined, {
+			quality: { ...MEDIUM, check: { fps: 30 } },
+			drawing: { presentedMs: 1000 / 30, completedMs: 1000 / 30 },
+		});
+		stopDrawing();
+		expect(context.quality.preset).toBe('medium');
+		expect(updates.at(-1)?.check?.targetFps).toBe(30);
 	});
 });

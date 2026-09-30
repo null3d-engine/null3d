@@ -93,7 +93,7 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 					jobWorkers: message.jobWorkers,
 					device: message.device,
 					quality: message.quality,
-					applyQuality: (settings) => replyToPage({ type: 'quality', settings }),
+					applyQuality: (update) => replyToPage({ type: 'quality', update }),
 					capabilities: message.capabilities,
 					sendImage,
 					pageUrl: message.pageUrl,

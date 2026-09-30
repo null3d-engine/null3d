@@ -4,8 +4,9 @@
 // page pauses the engine, while too many frames are unfinished on the GPU, or before the frame's
 // turn under ?fps=, a callback does neither. A frame that waits for its pipelines draws in a later
 // callback, and no new frame is stepped until then. The loop starts before the sketch's setup has
-// run: until then it steps nothing, and draws the frames that warm-ups in the setup publish. In a
-// worker, each callback also sets a timer that wakes the thread shortly before the next is due.
+// run: until then it steps nothing, and draws the frames that the setup publishes, for its warm-ups
+// and the preset check, at the same pace as play. In a worker, each callback also sets a timer that
+// wakes the thread shortly before the next is due.
 
 import { controlViews, Slot } from '../shared/control';
 import type { SketchRunner } from '../sketch/runner';
@@ -33,8 +34,9 @@ export function runDirectLoop(
 		presenter.applyResize();
 		if (pending === 0) {
 			const published = Atomics.load(slots, Slot.FramesPublished);
-			if (published > Atomics.load(slots, Slot.FramesTaken)) pending = published;
-			else if (
+			if (published > Atomics.load(slots, Slot.FramesTaken)) {
+				if (presenter.due(timestamp)) pending = published;
+			} else if (
 				runner.started &&
 				Atomics.load(slots, Slot.Paused) === 0 &&
 				presenter.due(timestamp)

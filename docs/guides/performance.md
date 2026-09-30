@@ -121,7 +121,7 @@ Performance advice written for other engines often assumes things that do not ho
 | Question | null3D's answer |
 | --- | --- |
 | What makes the GPU build a pipeline? | A shading model, lit or unlit, and the vertex format of the meshes it draws, with the canvas's color format, the depth format and the sample count. A material never does: materials are rows in one shared table, so a thousand lit materials share one lit pipeline for each vertex format. |
-| When are pipelines built? | In the background, from the first frame that draws a shading model with a vertex format, and again after the browser replaces the GPU. The first frame waits for its pipelines. After that, an object whose pipeline is still building draws nothing until it is built. `scene.warmUp()` resolves once every pipeline is built, and `measure` counts builds in `pipelines`. |
+| When are pipelines built? | In the background, from the first frame that draws a shading model with a vertex format, and again after the browser replaces the GPU. The first frame waits for its pipelines, and so does the first frame after `quality.setPreset`. After that, an object whose pipeline is still building draws nothing until it is built. `scene.warmUp()` resolves once every pipeline is built. `measure` counts builds in `pipelines`, and the draws that a building pipeline kept from drawing in `skippedDraws`. |
 | What does the engine batch by itself? | Every object and instance row with the same shading model, mesh and material goes into one bucket, which one indirect draw call draws. A mesh over 65,535 vertices takes one draw per part. Separate objects from `createMesh` batch the same way as the rows of an instance batch. |
 | Which passes walk the scene? | On WebGPU, two: a culling pass on the GPU, which tests every object and row against the view, and the main pass, which replays a draw bundle. The engine records the bundle again only when the scene's structure changes. On WebGL2 the job workers cull on the CPU, and the main pass draws the objects in view. |
 | Does the engine know when the GPU finished a frame? | Yes, for every frame. It listens to the WebGPU queue, or checks a WebGL2 fence, and blocks no thread. `measure` reports `completedFps` and `gpuLatencyMs`. Sketch code never waits for the GPU. |
@@ -169,6 +169,7 @@ The render worker picks how each upload travels, so you do not need to. Uploads 
 | `visibleEntries` | On WebGL2, the entries per frame in the list of visible objects. It is null on WebGPU, where the GPU culls |
 | `rebuilds` | Frames whose structure change rebuilt the draw tables |
 | `pipelines` | GPU pipelines built, which can stall the frame they happen in |
+| `skippedDraws` | Draws skipped because their pipeline was still building, so their objects were missing from those frames |
 | `memory` | The engine's WebAssembly memory and the JavaScript heap |
 | `load` | The start's times in milliseconds: the GPU probe, the core's download and compile, `createEngine`, and the first frame's submit and finish |
 

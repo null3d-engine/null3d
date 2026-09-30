@@ -3,7 +3,7 @@ id: guides/loading-screens
 title: Loading screens and warm-up
 status: experimental
 since: "0.1"
-summary: "preload; onProgress; scene.warmUp; upload budgets."
+summary: "preload; onProgress; scene.warmUp; the preset check; upload budgets; switching presets behind a loading screen."
 ---
 
 # Loading screens and warm-up
@@ -16,10 +16,11 @@ flowchart LR
     preload --> setup["The sketch builds its scene<br/>from the files in memory"]
     setup --> warm["await scene.warmUp():<br/>the GPU builds its pipelines"]
     warm --> uploads["Textures upload over<br/>the first frames"]
-    uploads --> first["engine.firstFrame:<br/>remove the loading screen"]
+    uploads --> check["The preset check:<br/>a lighter preset if the GPU is slow"]
+    check --> first["createEngine and engine.firstFrame<br/>resolve: remove the loading screen"]
 ```
 
-A loading screen covers the canvas while the engine starts and the sketch loads its files. It stays while the sketch builds its scene and the GPU gets ready to draw it. The page draws the screen in HTML, and the sketch tells it how far loading has come with messages. The last step is warm-up: the GPU builds a pipeline for each kind of object in the scene.
+A loading screen covers the canvas while the engine starts and the sketch loads its files. It stays while the sketch builds its scene and the GPU gets ready to draw it. The page draws the screen in HTML, and the sketch tells it how far loading has come with messages. Then comes warm-up: the GPU builds a pipeline for each kind of object in the scene. When the engine chose the quality preset itself, it last checks that the GPU draws the scene fast enough at that preset.
 
 ## Report progress from the sketch
 
@@ -82,9 +83,15 @@ The first frame waits until every pipeline that it needs is built, so it shows t
 
 ## The first frame
 
-`engine.firstFrame` resolves once the GPU has finished the first frame, with every pipeline built. `createEngine` resolves earlier, once the sketch's setup has run. So remove the loading screen only after `engine.firstFrame` resolves.
+`engine.firstFrame` resolves once the GPU has finished the first frame, with every pipeline built. The promise of `createEngine` resolves once the sketch's setup has run, and after the preset check when the engine runs one. Either can come first. So remove the loading screen only once both have resolved, as the page above does.
 
 A setup function that awaits `scene.warmUp()` after it creates the scene, as the sketch above does, lets the engine build the pipelines while the setup runs. The engine then draws the first frame as soon as they are built.
+
+## The preset check
+
+When the page leaves the quality preset to the engine, the engine checks its choice after the setup. For about three quarters of a second, it draws the scene that the setup built and measures the frame rate. The sketch's `onUpdate` does not run yet. Where the GPU cannot hold the display's rate, up to 60 frames per second, the engine lowers the preset and measures again. The loading screen hides these frames. [Quality presets](../concepts/quality-presets.md#the-preset-check) gives the rules.
+
+So build the whole first view in the setup, with its textures: the check measures what the setup built, and waits while textures upload. A sketch whose setup leaves the scene empty gets a preset that the scene may not hold.
 
 ## A later loading stage
 
@@ -104,6 +111,21 @@ for (const piece of pieces) piece.setVisible(true);
 
 In hold mode, the engine draws one frame, which waits for its pipelines, so `scene.warmUp()` resolves at once.
 
+## A change of preset
+
+A player who picks another preset in a menu changes pipelines and render targets. The `quality.setPreset` call builds them without a gap in the picture. The engine keeps the last frame on screen until the new preset's frame has all of its pipelines built. The promise resolves once that frame is on screen. A page can cover the canvas meanwhile, as a loading screen does:
+
+```ts
+// sketch.ts, in the setup
+page.onMessage(async (name, preset) => {
+  if (name !== 'preset') return;
+  await quality.setPreset(preset as 'low' | 'medium' | 'high' | 'ultra');
+  page.post('preset-ready', quality.preset);
+});
+```
+
+[Quality API](../api/quality.md#switching-presets) says what the call changes.
+
 ## Textures after the loading screen
 
 A texture returns at once, and its texels go to the GPU over the frames that follow. Each frame uploads at most 4 MiB of texels, so a scene with many large textures does not stall a frame. Until a texture's texels arrive, its material draws with its color alone. [Textures](../api/textures.md) says how uploads work.
@@ -119,6 +141,7 @@ Keep the textures of the first view small, so the first frames show them. Or wai
 | `load.warmUpMs` | Time from the start of the first frame's pipeline builds until none was building |
 | `load.firstFramePipelines` | The pipelines that the first frame built |
 | `pipelines` | The pipelines built during the measurement, which stays at 0 in steady play |
+| `skippedDraws` | Draws that frames skipped because their pipeline was still building, so their objects were missing. A warm-up before new objects show keeps it at 0 |
 
 Where a browser compiles WebGL2 programs without the extension, `load.warmUpMs` is about 0, and the first frame's draw takes the compile time instead.
 

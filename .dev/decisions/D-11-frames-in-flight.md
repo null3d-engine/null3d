@@ -1,8 +1,8 @@
 # D-11: Preset values, the governor's thresholds, and frames in flight
 
-Status: frames in flight decided by the owner on 2026-09-30; the preset values and the governor's thresholds are still open. Date: 2026-09-30. Tasks: M1-G1 (frames in flight), then M1-G3, M1-G5 and M1-G6.
+Status: frames in flight decided by the owner on 2026-09-30. The preset check's thresholds proposed by M1-G3. The preset values and the governor's thresholds are still open. Date: 2026-09-30. Tasks: M1-G1 (frames in flight), then M1-G3, M1-G5 and M1-G6.
 
-This record settles three questions. M1-G1 answers the third, frames in flight, with the GPU-bound page. The preset values and the governor's thresholds follow from the S4 traces of M1-G5 and M1-G6, and from the live shadow-map resize test of M1-G3. Those tasks add their sections here.
+This record settles three questions. M1-G1 answers the third, frames in flight, with the GPU-bound page. The preset values and the governor's thresholds follow from the S4 traces of M1-G5 and M1-G6, and from the live shadow-map resize test of M1-G3. Those tasks add their sections here. M1-G3 adds the preset check's thresholds at the end.
 
 ## Question
 
@@ -127,3 +127,57 @@ The cost falls on Firefox's WebGPU path, because Firefox reports completions lat
 - `FrameSummary.completedFps` and `gpuLatencyMs` cover every frame. The performance guide explains the presented rate, the completed rate and GPU time. The develop skill tells agents to judge a phone's GPU by the completed rate.
 - `bench/allocation.ts` budgets the tracker's objects.
 - Revisit the limit on Firefox's WebGPU path when Firefox reports completions sooner.
+
+## The preset check's thresholds (M1-G3)
+
+Status: proposed, for the owner. When the engine chooses the preset itself, it checks the choice after the sketch's setup. It draws the scene that the setup built, and measures the lower of the presented and completed rates. It lowers the preset by one until a preset holds the target. The file `quality/check.ts` holds the thresholds, and `concepts/quality-presets` prints them from there.
+
+### Proposed values
+
+| Threshold | Proposed | Why |
+| --- | --- | --- |
+| Target | The measured refresh rate, at most 60 frames per second, and at most the `?fps=` rate | A 120 Hz iPad or Mac plays smoothly at 60. A higher target would push those devices to lighter presets |
+| A preset holds at | 90% of the target | At 60 Hz, a 500 ms window with two dropped frames still holds; three do not |
+| Grace before each measurement | 250 ms, plus up to 2 s while textures wait to upload | The first frames after a warm-up, and the frames that carry uploads, can run slower than play. A new pixel ratio reaches the canvas a frame or two after a change |
+| Measurement | 500 ms per preset | About 30 frames at 60 Hz |
+| Presets checked | Only a preset that the engine chose, and never Low | A preset that the page, `?preset=` or hold mode fixes stays. Low has no lighter preset |
+
+### Data
+
+Headless Chrome 154 through Playwright on the MacBook Pro M5 Max, with the Mac's GPU, 30 September 2026. The canvas was 320 x 180 at a pixel ratio of 1, so each preset drew the same pixels. Other helpers built and tested on the same Mac.
+
+A light scene held the target. The engine test page's empty scene measured 60 presented and 60 completed frames per second on WebGPU and WebGL2, in 3 of 3 runs each. The call to `createEngine` then took 991 to 1,045 ms with the check, and 144 to 279 ms with `?preset=` fixing the preset. The first frame was done at 164 to 303 ms in both cases. So the check adds about 0.8 s before `createEngine` resolves, and nothing before the first frame.
+
+A heavy scene, 32,768 of the GPU-bound page's spheres, missed the target at every preset:
+
+| Path | Chosen | Rounds (presented / completed fps) | Runs |
+| --- | --- | --- | --- |
+| WebGPU | High | High 31.0 / 29.6, Medium 24.0 / 23.3, Low 18.6 / 18.2 | Low |
+| WebGL2 | Medium | Medium 28.1 / 28.2, Low 20.0 / 20.1 | Low |
+
+The same scene with `?preset=` and no check, measured in 0.5 s windows after `createEngine` resolved, fell over its first 2 seconds and then held:
+
+| Path | Lower rate in each 0.5 s window, fps |
+| --- | --- |
+| WebGPU | 28, 25, 21, 18, 18, 18, 19, 17, 19, 20 |
+| WebGL2 | 27, 24, 21, 19, 19, 19, 19, 20, 21, 21 |
+
+So the check's first round saw this GPU-bound scene about 50% faster than steady play. The rounds fell only because the scene slowed; the presets differ only in the pixel ratio cap here. A device near the threshold could keep a preset that play then misses. A longer grace would catch this, at the cost of loading time.
+
+CI's software GPU drew 8 spheres at 1 to 6 frames per second, so the check lowered High or Medium to Low on every path.
+
+### Open for the owner
+
+- The grace and the window. A 1.5 s grace would let the scene above settle before the measurement, and would add about 1.25 s to each start that checks. Shorter windows cut the cost, and measure fewer frames.
+- The target on 120 Hz displays. With 60, the iPad keeps a preset that holds 60 but not 120.
+- Dynamic resolution (M1-G4) lets a preset hold its target at a lower render scale. The check measures at the full scale, so it may lower a preset that dynamic resolution could have saved. M1-G6 tunes the target and the share with S4 traces on the three devices.
+
+### The live shadow-map resize test
+
+Pending. A live change of the shadow map size needs the shadow maps. Their first part (#120) holds the cascade math and the render graph's array targets. The test resizes the shadow maps during rendering on both paths once the shadow passes draw. Until it passes, the shadow map size changes only through `quality.setPreset`, whose first frame waits for its pipelines and targets.
+
+### Consequences
+
+- `quality.setPreset` in the sketch changes every setting. The control block's pipeline hold (`Slot.PipelineHold`) makes the first frame after the change, and the frame whose `quality.onChange` handlers hear of it, wait for their pipelines. The promise resolves once that frame is taken.
+- `FrameSummary.skippedDraws` counts the draws that a building pipeline kept from drawing. The preset change test holds it at 0 on every GPU path and thread mode.
+- The check's code (`sketch/preset-check.ts`) loads after the first frame, as D-14's option B proposes. The size report prints its files apart from the downloads before the first frame.

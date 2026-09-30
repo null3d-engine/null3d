@@ -214,6 +214,7 @@ describe('the quality presets page', () => {
 					markers('preset-devices'),
 					markers('preset-ceilings'),
 					markers('preset-settings', 'STALE TABLE'),
+					markers('preset-check'),
 				].join('\n\nText between the tables.\n\n'),
 			),
 		});
@@ -231,6 +232,10 @@ describe('the quality presets page', () => {
 		expect(page).toContain(
 			'| Far cascade updates (`farCascadeInterval`) | every 4th frame | every 3rd frame | every 2nd frame | every 2nd frame |',
 		);
+		expect(page).toContain(
+			"| Target frame rate | The display's refresh rate, at most 60 frames per second |",
+		);
+		expect(page).toContain('| Measurement of each preset | 500 ms |');
 		expect(page).not.toContain('STALE TABLE');
 		expect(page).toContain('Text between the tables.');
 	});
