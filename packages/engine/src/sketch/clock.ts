@@ -74,7 +74,7 @@ export class FrameClock {
  * steps. The count comes from the sketch time, not from a sum of steps, so it never drifts, and
  * hold mode, whose times are exact, runs the same steps on every run. A frame runs at most
  * `maxSteps` steps and drops the rest, so after a slow frame the simulation falls behind the sketch
- * time instead of slowing the frames that follow. Throws E1207 when an option is out of range.
+ * time instead of slowing the frames that follow. Throws E1214 when an option is out of range.
  */
 export class FixedClock {
 	/** One step's length in seconds. */
@@ -87,9 +87,9 @@ export class FixedClock {
 		private readonly maxSteps = DEFAULT_MAX_FIXED_STEPS,
 	) {
 		if (!(Number.isFinite(rate) && rate > 0))
-			throw new EngineError('E1207', `defineSketch() got ${rate} for fixedRate.`);
+			throw new EngineError('E1214', `defineSketch() got ${rate} for fixedRate.`);
 		if (!(Number.isInteger(maxSteps) && maxSteps >= 1))
-			throw new EngineError('E1207', `defineSketch() got ${maxSteps} for maxFixedSteps.`);
+			throw new EngineError('E1214', `defineSketch() got ${maxSteps} for maxFixedSteps.`);
 		this.step = 1 / rate;
 	}
 

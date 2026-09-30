@@ -113,11 +113,11 @@ const DOCS = {
 		example: 'E1206: geometry.fromArrays() got 9 numbers in normals for 4 vertices, not 12.',
 		since: '0.1',
 	},
-	E1207: {
+	E1214: {
 		title: 'Invalid sketch option',
 		cause:
 			'defineSketch() received an option out of its range. fixedRate must be a number above 0, and maxFixedSteps a whole number of 1 or more. The engine checks the options before it runs the setup function.',
-		example: 'E1207: defineSketch() got 0 for fixedRate.',
+		example: 'E1214: defineSketch() got 0 for fixedRate.',
 		since: '0.1',
 	},
 	E1301: {

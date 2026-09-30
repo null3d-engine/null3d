@@ -161,7 +161,7 @@ describe('SketchRunner', () => {
 		}
 	});
 
-	it('refuses options out of range with E1207, before the setup function runs', async () => {
+	it('refuses options out of range with E1214, before the setup function runs', async () => {
 		let ran = false;
 		const failed = start(
 			() => {
@@ -170,7 +170,7 @@ describe('SketchRunner', () => {
 			},
 			{ fixedRate: 0 },
 		);
-		await expect(failed).rejects.toThrow('E1207: defineSketch() got 0 for fixedRate.');
+		await expect(failed).rejects.toThrow('E1214: defineSketch() got 0 for fixedRate.');
 		expect(ran).toBe(false);
 	});
 });

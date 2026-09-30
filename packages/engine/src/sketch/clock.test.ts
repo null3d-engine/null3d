@@ -168,7 +168,7 @@ describe('FixedClock', () => {
 		}
 	});
 
-	it('refuses a rate or a cap out of range with E1207', () => {
+	it('refuses a rate or a cap out of range with E1214', () => {
 		for (const [rate, cap, name] of [
 			[0, 8, 'fixedRate'],
 			[-60, 8, 'fixedRate'],
@@ -185,7 +185,7 @@ describe('FixedClock', () => {
 				caught = error;
 			}
 			expect(caught).toBeInstanceOf(EngineError);
-			expect((caught as EngineError).code).toBe('E1207');
+			expect((caught as EngineError).code).toBe('E1214');
 			expect((caught as EngineError).message).toContain(`for ${name}.`);
 		}
 	});

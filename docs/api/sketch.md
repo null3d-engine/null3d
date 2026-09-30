@@ -65,7 +65,7 @@ An error that `setup` throws ends the start: `createEngine` rejects with it. An 
 export default defineSketch(setup, { fixedRate: 120 });
 ```
 
-An option out of its range fails the start with [E1207](../errors/E1207.md), before the engine calls `setup`.
+An option out of its range fails the start with [E1214](../errors/E1214.md), before the engine calls `setup`.
 
 ## The context
 

@@ -157,7 +157,7 @@ export class SketchRunner {
 
 	/**
 	 * Runs the sketch's setup function, which returns the sketch's callbacks. In hold mode, it then
-	 * steps the sketch to the held time (see `hold`). Options out of range fail with E1207 before
+	 * steps the sketch to the held time (see `hold`). Options out of range fail with E1214 before
 	 * the setup function runs.
 	 */
 	async setup(sketch: SketchDefinition): Promise<void> {
