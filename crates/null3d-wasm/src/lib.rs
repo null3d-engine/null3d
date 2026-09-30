@@ -31,7 +31,7 @@ use null3d_render::geometry::{Geometry, OutOfMemory, Shape, generate};
 use null3d_render::gpu_driven::{
     BYTES_PER_SOURCE, GpuDrivenRenderer, MAX_USEFUL_BINDING_BYTES, RendererConfig,
 };
-use null3d_render::materials::{MaterialError, MaterialTable, Shading};
+use null3d_render::materials::{MapSlot, MaterialError, MaterialTable, Shading};
 use null3d_render::textures::{MAX_TEXTURES, Sampling, TextureDesc, TextureError};
 use null3d_render::view::ViewId;
 use wasm_bindgen::prelude::*;
@@ -866,7 +866,7 @@ pub fn set_material_map(material: u32, texture: u32) -> u32 {
         }
         match settings
             .materials_mut()
-            .set_map(material.wrapping_sub(1), map)
+            .set_map(material.wrapping_sub(1), MapSlot::BaseColor, map)
         {
             Ok(()) => {
                 e.structure_changed = true;

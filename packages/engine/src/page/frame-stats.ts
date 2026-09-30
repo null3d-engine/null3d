@@ -83,17 +83,16 @@ export interface FrameSummary {
 	presentedFps: number;
 	/**
 	 * Frames per second that the GPU finished. Below `presentedFps`, frames queue on the GPU, and the
-	 * display shows fewer than the presented rate suggests. The engine tracks one frame in eight: the
-	 * GPU finishes frames in order, so each tracked frame also accounts for the frames before it.
-	 * Null when no completion arrived.
+	 * display shows fewer than the presented rate suggests. Null when no completion arrived.
 	 */
 	completedFps: number | null;
 	/**
-	 * Time from a frame's submit to the GPU finishing it, on one frame in eight. With a WebGL2
-	 * fence, the engine sees completion at its next frame callback, so the figure rounds up to frame
-	 * intervals. The figure ends when the thread that draws sees the finish, so it also counts time
-	 * that the thread spends blocked. In Safari, the copy of a worker's frame to the page blocks the
-	 * worker until the GPU has finished the frame.
+	 * Time from a frame's submit to the GPU finishing it. The engine lets at most two frames wait
+	 * unfinished on the GPU, so when the GPU falls behind, the figure grows to about two completed
+	 * frame intervals. With a WebGL2 fence, the engine sees completion at its next frame callback,
+	 * so the figure rounds up to frame intervals. The figure ends when the thread that draws sees
+	 * the finish, so it also counts time that the thread spends blocked. In Safari, the copy of a
+	 * worker's frame to the page blocks the worker until the GPU has finished the frame.
 	 */
 	gpuLatencyMs: Percentiles | null;
 	/** Bytes uploaded to the GPU per frame. */
@@ -266,7 +265,6 @@ export function summarizeFrames(
 	const gpu = ring(Role.Gpu).busy;
 	const completion = ring(Role.Completion);
 	const intervals = render.intervals.filter((ms) => ms > 0);
-	const completed = completion.intervals.filter((ms) => ms > 0);
 	return {
 		frames: frames.length,
 		cpuMs: percentiles(slowest),
@@ -277,7 +275,7 @@ export function summarizeFrames(
 		gpuStepMs: timerStep(gpu),
 		intervalMs: percentiles(intervals),
 		presentedFps: ratePerSecond(intervals) ?? 0,
-		completedFps: ratePerSecond(completed),
+		completedFps: ratePerSecond(completion.intervals),
 		gpuLatencyMs: completion.busy.length > 0 ? percentiles(completion.busy) : null,
 		uploadBytes: percentiles(render.counters[Counter.UploadBytes] ?? []),
 		drawCalls: percentiles(render.counters[Counter.DrawCalls] ?? []),

@@ -14,8 +14,24 @@ struct Frame {
     ambient: vec4f,
 }
 
-/// One material's parameters.
+/// One material's row of the material table, as the core writes it (`materials.rs` in the
+/// renderer crate names each float). Colors are linear.
 struct Material {
-    /// Linear base color and opacity.
+    /// The base color and the opacity.
     color: vec4f,
+    /// The emissive color times its intensity, and the alpha cutoff.
+    emissive: vec4f,
+    /// The metalness, the roughness, and the normal map's scale along u and v.
+    surface: vec4f,
+    /// The occlusion map's strength, the light map's intensity, the shading flags, and a spare.
+    strengths: vec4f,
+    /// The row of the texture coordinate transform that gives u, and a spare.
+    uv_u: vec4f,
+    /// The row of the texture coordinate transform that gives v, and a spare.
+    uv_v: vec4f,
+    /// The texture array layers of the base color, metal-rough, normal and occlusion maps. A layer
+    /// below 0 means that the map draws nothing.
+    maps: vec4f,
+    /// The layers of the emissive and light maps, and two spares.
+    more_maps: vec4f,
 }

@@ -493,6 +493,7 @@ async function startEngine(
 		forceCompat,
 		powerPreference,
 		fps: switches.fps,
+		queue: switches.queue,
 		hold: hold !== undefined,
 	};
 

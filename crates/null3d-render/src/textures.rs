@@ -56,8 +56,6 @@ pub const MAX_TEXTURES: u32 = 4095;
 pub const DEFAULT_UPLOAD_BUDGET: u32 = 4 * 1024 * 1024;
 /// The largest anisotropy that samplers use, until the quality preset caps it lower.
 pub const DEFAULT_MAX_ANISOTROPY: u32 = 16;
-/// A maps table entry for a map that draws nothing yet: its image is not on the GPU.
-pub const NO_LAYER: u32 = u32::MAX;
 
 /// The GPU ids that the store gives its objects, which the frame builder keeps free for it.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
