@@ -2,7 +2,8 @@
 // switches ask for. Four starts fail: one with a module that exports no sketch, one with a sketch
 // whose setup throws an engine error, one whose memory option asks for too large a maximum, and one
 // with a sketch module that does not load. A fifth start runs a sketch that catches four errors
-// from the engine's API and one that it makes itself, and posts them. The page then stops that engine and starts it again, which must draw.
+// from the engine's API and one that it makes itself, and posts them. The page then stops that
+// engine and starts it again, which must draw.
 // Each start takes a fresh canvas, as a canvas passes to the engine only once.
 import { createEngine, type EngineOptions } from '@null3d/engine';
 import { type ErrorFields, errorFields, noError } from './lib/error-fields';

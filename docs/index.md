@@ -57,7 +57,7 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 
 | Page | What it covers | Status | Version |
 | --- | --- | --- | --- |
-| [Architecture: threads and the frame](concepts/architecture.md) | Main thread, sketch worker, render worker, job workers; the pipelined frame; latency modes. | planned | 0.1 |
+| [Architecture: threads and the frame](concepts/architecture.md) | Main thread, sketch worker, render worker, job workers; the pipelined frame; latency modes. | experimental | 0.1 |
 | [Handles and objects](concepts/handles.md) | 30-bit handles; wrapper objects; stale-handle errors; keeping per-object data in your own arrays. | experimental | 0.1 |
 | [Static and dynamic objects](concepts/static-dynamic.md) | When to mark objects static; setters versus direct array writes; dirty ranges. | experimental | 0.1 |
 | [Instances and batching](concepts/instances.md) | createInstances; typed-array views; markDirty; automatic batching; per-instance attributes. | experimental | 0.1 |
@@ -70,7 +70,7 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 | [Render layers](concepts/render-layers.md) | 32-bit layer masks on objects, cameras, raycasts and passes. | planned | 0.1 |
 | [The render graph](concepts/render-graph.md) | Declared reads and writes; automatic order; transient memory; validation errors; the text dump. | experimental | 0.1 |
 | [Large worlds and precision](concepts/large-worlds.md) | Cell-relative positions and per-frame camera-to-cell offsets; reversed depth; largeWorld mode; batch origins; floating-origin geometry. | planned | 0.2 |
-| [Culling](concepts/culling.md) | Grid-cell culling; frustum and small-object tests; two-phase GPU occlusion culling on WebGPU; software occlusion culling and blocker meshes on WebGL2 (0.2). | planned | 0.1 |
+| [Culling](concepts/culling.md) | Frustum culling on the GPU on WebGPU and on the job workers on WebGL2; grid cells and positions relative to the camera. | experimental | 0.1 |
 | [Levels of detail](concepts/lod.md) | LOD groups; generated LODs; per-instance selection. | planned | 0.2 |
 | [Assets and prefabs](concepts/assets.md) | glTF, KTX2, meshopt; prefabs and instantiate; upload budgets; memory. | planned | 0.2 |
 | [The post-processing chain](concepts/post-processing.md) | HDR target; bloom; ambient occlusion; the single final pass; custom effects. | planned | 0.2 |
@@ -96,7 +96,7 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 | [Post-processing API](api/post.md) | post.set options; post.addEffect for custom WGSL effects. | planned | 0.2 |
 | [Render graph API](api/render.md) | render.addPass declarations; enabling and disabling passes; dumpGraph. | planned | 0.2 |
 | [Quality API](api/quality.md) | quality.preset, quality.set, frame budgets, quality events. | planned | 0.1 |
-| [Debug drawing and stats](api/debug.md) | debug.line, box, axes, grid, frustum; debug.view; debug.stats. | planned | 0.1 |
+| [Debug drawing and stats](api/debug.md) | engine.measure and its figures; debug.line, box, axes, grid, frustum; debug.view; debug.stats. | experimental | 0.1 |
 | [Math helpers](api/math.md) | vec3, quat, mat4 and color on plain arrays; math.clamp, lerp, damp and a random generator that hold mode seeds. | experimental | 0.1 |
 | [Time](api/time.md) | dt, time.now, fixed steps. | experimental | 0.1 |
 | [Sprites](api/sprites.md) | createSprites; world and screen size modes; atlases. | planned | 0.2 |
@@ -109,7 +109,7 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 
 | Page | What it covers | Status | Version |
 | --- | --- | --- | --- |
-| [Performance guide](guides/performance.md) | Measuring; the frame budget; common causes of slow frames and their fixes. | planned | 0.1 |
+| [Performance guide](guides/performance.md) | Measuring; the frame budget; common causes of slow frames and their fixes. | experimental | 0.1 |
 | [Phones and tablets](guides/phones.md) | Pixel-ratio caps; memory budgets; heat; testing on real devices. | planned | 0.1 |
 | [Custom shaders](guides/custom-shaders.md) | Surface functions; full shaders; uniforms and typed materials; hot reload. | planned | 0.1 |
 | [Custom passes and render targets](guides/custom-passes.md) | Declaring passes; reading and writing named textures; layer masks. | planned | 0.2 |

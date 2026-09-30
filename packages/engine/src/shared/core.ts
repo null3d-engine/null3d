@@ -44,7 +44,8 @@ export interface CoreGlue extends CoreErrors {
 	sceneCapacity(): number;
 	sceneArrays(field: number): number;
 	reserveObject(): number;
-	worldMatrix(handle: number, out: Float32Array): number;
+	/** Copies a world matrix: 12 numbers, with the translation from the origin in 64 bits. */
+	worldMatrix(handle: number, out: Float64Array): number;
 	commandRing(field: number): number;
 	/**
 	 * Wakes the job workers at the start of a frame when the previous frame gave them work, so they

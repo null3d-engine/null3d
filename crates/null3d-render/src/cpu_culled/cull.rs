@@ -11,19 +11,27 @@
 //! clusters again, and the cluster texture gets their order. Every view culls the same runs of
 //! rows and clusters.
 //!
+//! Each index list entry holds its row, or its cluster, with the row's cell index above it (see
+//! [`null3d_core::cells`]). The job workers cull each run of rows in one cell against the view's
+//! frustum moved into that cell, and add each row's offset from the view's camera to its sphere
+//! where a run's rows lie in different cells. Clusters form only in a batch whose rows share one
+//! cell.
+//!
 //! Each frame parity keeps its own culling output, because the render worker replays a frame's
 //! list while the next frame culls, and the list uploads the index list straight from that output.
 
 use std::collections::TryReserveError;
 
-use null3d_core::culling::{BY_ROW, BucketedCull, CULL_CHUNK, CullRun, NO_BUCKET};
-use null3d_core::world::SphereArrays;
+use null3d_core::cells::ORIGIN_CELL;
+use null3d_core::culling::{
+    BY_ROW, BucketedCull, CULL_CHUNK, CullRun, CullSet, NO_BUCKET, ROW_CELLS,
+};
 use null3d_gpu::drawlist::DrawList;
 
 use super::data::{DataTexture, RING, RingSlot, TextureRows, write_rows};
 use super::ids;
 use super::layout::{Clusters, CullRoom, Layout};
-use crate::frame::{FrameInput, RecordError, SceneSettings, address, words_as_bytes};
+use crate::frame::{CellOffsets, FrameInput, RecordError, SceneSettings, address, words_as_bytes};
 use crate::view::{ViewFrame, ViewId};
 
 /// A view's culling output: its index list of each frame parity, and the textures it goes into.
@@ -33,6 +41,8 @@ struct ViewCull {
     culls: [BucketedCull; 2],
     /// The view's values in the frame that culled last, or `None` when it has no camera.
     frame: Option<ViewFrame>,
+    /// The offset from the view's camera to each cell in use, in the frame that culled last.
+    offsets: CellOffsets,
     /// The slot of the index list textures, which the view's draw records share.
     listed: RingSlot,
     /// Rows of each index list texture, 0 before they exist.
@@ -49,17 +59,45 @@ pub(super) struct Culling {
     culled: u32,
 }
 
-/// Splits rows `0..rows` of a set into culling runs of at most one chunk each.
-fn push_runs(runs: &mut Vec<CullRun>, set: u32, rows: u32, bucket: u32, base: u32) {
+/// Where the rows of a set lie: all in one cell, or each in the cell its entry of a list names.
+#[derive(Clone, Copy, Debug)]
+enum RunCells<'a> {
+    One(u32),
+    Rows(&'a [u32]),
+}
+
+/// Splits rows `0..rows` of a set into culling runs of at most one chunk each. A run whose rows
+/// share a cell culls as that cell's run; the others look each row's cell up.
+fn push_runs(
+    runs: &mut Vec<CullRun>,
+    set: u32,
+    rows: u32,
+    bucket: u32,
+    base: u32,
+    cells: RunCells<'_>,
+) {
     let mut start = 0;
     while start < rows {
         let end = (start + CULL_CHUNK).min(rows);
+        let cell = match cells {
+            RunCells::One(cell) => cell,
+            RunCells::Rows(cells) => {
+                let run = &cells[start as usize..end as usize];
+                let first = run[0];
+                if run.iter().all(|&cell| cell == first) {
+                    first
+                } else {
+                    ROW_CELLS
+                }
+            }
+        };
         runs.push(CullRun {
             set,
             start,
             end,
             bucket,
             base,
+            cell,
         });
         start = end;
     }
@@ -79,6 +117,11 @@ impl Culling {
     /// A view's values in the frame that culled last, or `None` when it has no camera.
     pub(super) fn frame(&self, view: ViewId) -> Option<&ViewFrame> {
         self.views.get(view.index())?.frame.as_ref()
+    }
+
+    /// The offset from a view's camera to each cell in use, in the frame that culled last.
+    pub(super) fn offsets(&self, view: ViewId) -> &CellOffsets {
+        &self.views[view.index()].offsets
     }
 
     /// The culling output of a frame's parity for a view: its visible sources, bucket by bucket.
@@ -157,26 +200,29 @@ impl Culling {
         layout: &Layout,
         clusters: &mut Clusters,
     ) {
-        let parity = input.parity();
+        let (parity, scene) = (input.parity(), input.scene);
         self.culled = input.frame;
         let mut any = false;
         for (index, view) in self.views.iter_mut().enumerate() {
             let id = ViewId::from_index(index);
-            view.frame = settings.view_frame(id, input.scene, parity, input.canvas);
-            any |= view.frame.is_some();
+            view.frame = settings.view_frame(id, scene, parity, input.canvas);
+            if let Some(frame) = &view.frame {
+                view.offsets.update(scene, &frame.camera);
+                any = true;
+            }
         }
         if !any {
             return;
         }
-        self.runs.clear();
+        let runs = &mut self.runs;
+        runs.clear();
         // Slots past the highest one ever used hold no object.
-        push_runs(
-            &mut self.runs,
-            0,
-            input.scene.slots().high_water(),
-            BY_ROW,
-            0,
-        );
+        let scene_cells = if scene.cell_table().origin_only() {
+            RunCells::One(ORIGIN_CELL)
+        } else {
+            RunCells::Rows(scene.cells())
+        };
+        push_runs(runs, 0, scene.slots().high_water(), BY_ROW, 0, scene_cells);
         // Set 0 is the scene, sets 1 to n the batches' rows, and the next n the batches' clusters.
         let first_cluster_set = layout.batches.len() as u32 + 1;
         for (k, slot) in layout.batches.iter().enumerate() {
@@ -188,45 +234,53 @@ impl Culling {
                 .get(slot.id)
                 .expect("the layout names live batches");
             let active = batch.frame_active_count(parity);
+            let common = batch.common_cell();
             if slot.clustered() {
                 // At rest: nothing changed in this frame's update, which also copies the previous
                 // frame's changes into this buffer, so both world buffers hold the same rows.
+                // Clusters form only in a batch whose rows share one cell.
                 let at_rest = batch.frame() == input.frame
                     && batch.changed_ranges().is_empty()
                     && batch.frame_active_count(parity ^ 1) == active;
                 let spheres = batch.world(parity).spheres();
-                if let Some(count) = clusters.refresh(slot, at_rest, spheres, active) {
-                    let set = first_cluster_set + k as u32;
-                    push_runs(
-                        &mut self.runs,
-                        set,
-                        count,
-                        slot.bucket + 1,
-                        slot.first_cluster,
-                    );
+                let clustered =
+                    clusters.refresh(slot, at_rest && common.is_some(), spheres, active);
+                if let (Some(count), Some(cell)) = (clustered, common) {
+                    let (set, bucket) = (first_cluster_set + k as u32, slot.bucket + 1);
+                    let cells = RunCells::One(cell);
+                    push_runs(runs, set, count, bucket, slot.first_cluster, cells);
                     continue;
                 }
             }
-            push_runs(&mut self.runs, k as u32 + 1, active, slot.bucket, slot.base);
+            let cells = common.map_or(RunCells::Rows(batch.cells()), RunCells::One);
+            push_runs(runs, k as u32 + 1, active, slot.bucket, slot.base, cells);
         }
-        let (scene, batches, clusters) = (input.scene, input.batches, &*clusters);
+        let (batches, clusters) = (input.batches, &*clusters);
         let slots = &layout.batches;
-        let sets = |set: u32| -> SphereArrays<'_> {
+        let sets = |set: u32| -> CullSet<'_> {
             let set = set as usize;
             if set == 0 {
-                return scene.world(parity).spheres();
+                return CullSet {
+                    spheres: scene.world(parity).spheres(),
+                    cells: scene.cells(),
+                };
             }
             if set <= slots.len() {
-                return batches
+                let batch = batches
                     .get(slots[set - 1].id)
-                    .expect("the layout names live batches")
-                    .world(parity)
-                    .spheres();
+                    .expect("the layout names live batches");
+                return CullSet {
+                    spheres: batch.world(parity).spheres(),
+                    cells: batch.cells(),
+                };
             }
-            clusters
-                .set(&slots[set - 1 - slots.len()])
-                .clusters
-                .spheres()
+            CullSet {
+                spheres: clusters
+                    .set(&slots[set - 1 - slots.len()])
+                    .clusters
+                    .spheres(),
+                cells: &[],
+            }
         };
         for view in &mut self.views {
             let Some(frame) = &view.frame else {
@@ -235,6 +289,7 @@ impl Culling {
             null3d_core::culling::cull_into_buckets(
                 input.jobs,
                 &frame.frustum,
+                view.offsets.as_slice(),
                 &sets,
                 &self.runs,
                 &layout.scene_buckets,

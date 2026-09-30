@@ -55,9 +55,14 @@ export enum Slot {
 	/** The canvas size in CSS pixels, as float bits: read them through `slotFloats`. */
 	CanvasCssWidth = 20,
 	CanvasCssHeight = 21,
+	/**
+	 * The display's refresh period in whole microseconds, as the page measures it from its own frame
+	 * callbacks, or 0 before the first measurement. A worker that draws holds its frames to it.
+	 */
+	DisplayInterval = 22,
 }
 
-const SLOT_COUNT = 22;
+const SLOT_COUNT = 23;
 
 /** Int32 values per input event record. */
 export const INPUT_EVENT_INTS = 8;
