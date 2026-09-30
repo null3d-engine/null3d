@@ -8,6 +8,9 @@ enable draw_index;
 // entry point takes an `InstanceIn` beside its vertex attributes, and `find_instance` turns it into
 // the instance's matrix rows and material.
 //
+// The frame's bindings include the maps table, which gives the texture array layer of each
+// material's map. A map whose image is not on the GPU yet has no layer.
+//
 // Vertex attributes take the fixed locations of the engine's vertex formats (drawlist.rs, module
 // `vertex`): the position at 0, the normal at 1 and the first texture coordinates at 2. Each
 // pipeline reads only the attributes that its template's vertex entry point declares, wherever the
@@ -66,8 +69,14 @@ struct CellOffsets {
     items: array<vec4f, MAX_CELLS>,
 }
 
+/// Each material's maps: the layer of its map, then words that other maps will take.
+struct MapTable {
+    items: array<vec4u, MAX_MATERIALS>,
+}
+
 @group(0) @binding(1) var<uniform> materials: MaterialTable;
 @group(0) @binding(2) var<uniform> cell_offsets: CellOffsets;
+@group(0) @binding(3) var<uniform> map_table: MapTable;
 @group(1) @binding(0) var<uniform> draws: DrawTable;
 @group(2) @binding(0) var resident_rows: texture_2d<f32>;
 @group(2) @binding(1) var streamed_rows: texture_2d<f32>;
@@ -75,7 +84,11 @@ struct CellOffsets {
 @group(2) @binding(3) var cluster_rows: texture_2d<u32>;
 #else
 @group(0) @binding(1) var<storage, read> materials: array<Material>;
+@group(0) @binding(2) var<storage, read> map_table: array<vec4u>;
 #endif
+
+/// The maps table's entry for a map that draws nothing yet.
+const NO_LAYER: u32 = 0xffffffffu;
 
 /// What a vertex shader invocation learns of its instance. On WebGPU: the three rows of the
 /// instance's world matrix that give x, y and z, then its ids. On WebGL2: the instance's number in its draw, and with
@@ -113,6 +126,15 @@ fn material_of(id: u32) -> Material {
     return materials.items[id];
 #else
     return materials[id];
+#endif
+}
+
+/// The texture array layer of a material's map, by its id in the material table, or `NO_LAYER`.
+fn map_layer_of(id: u32) -> u32 {
+#ifdef WEBGL2
+    return map_table.items[id].x;
+#else
+    return map_table[id].x;
 #endif
 }
 
