@@ -40,6 +40,13 @@
 //! changed cells in each level's loop, and moves them in the table between levels, one thread
 //! alone, so each level's children read their parents' final cells.
 //!
+//! # Layers
+//!
+//! Each object has a 32-bit layer mask (see [`crate::layers`]), which a view tests against its own
+//! mask when it culls. The mask belongs to the object alone: its children keep their own. A
+//! layer change marks the object dirty, as a visibility change does, so the frame's uploads name
+//! it and the renderer updates its draw membership without rebuilding its tables.
+//!
 //! # Commands
 //!
 //! Structural changes arrive as 16-byte [`Command`] records, applied in one batch per frame by
@@ -55,6 +62,7 @@
 //! | [`op::SET_MATERIAL`] | material id | unused |
 //! | [`op::SET_DYNAMIC`] | 1 for dynamic, 0 for static | unused |
 //! | [`op::SET_VISIBLE`] | 1 for visible, 0 for hidden | unused |
+//! | [`op::SET_LAYERS`] | layer mask | unused |
 //! | [`op::SET_FLAGS`] | the [`flags::SETTABLE`] bits to change | their new values |
 //! | [`op::SET_RENDER_ORDER`] | the order's 32-bit float bits | unused |
 //!
@@ -80,6 +88,7 @@ use crate::cells::{self, CellCoords, CellPosition, CellTable, ORIGIN_CELL};
 use crate::error::{CoreError, Resource};
 use crate::handle::{Handle, SlotAllocator};
 use crate::jobs::JobSystem;
+use crate::layers::DEFAULT_LAYERS;
 use crate::math::{self, Affine, Affine64, IDENTITY_ROTATION, IDENTITY64};
 use crate::shared::SharedMut;
 use crate::world::{HIDDEN_RADIUS, UNBOUNDED_RADIUS, WorldArrays, WorldPtrs};
@@ -124,6 +133,8 @@ pub mod op {
     pub const SET_DYNAMIC: u32 = 6;
     /// Shows (`a` = 1) or hides (`a` = 0) an object and its descendants.
     pub const SET_VISIBLE: u32 = 7;
+    /// Sets an object's layer mask. `a`: the mask. Its descendants keep their own.
+    pub const SET_LAYERS: u32 = 8;
     /// Changes flags. `a`: the [`super::flags::SETTABLE`] bits to change; other bits are ignored.
     /// `b`: their new values. A change of the [`super::flags::BOUNDS`] bits recomputes the object,
     /// so write its local bounds first.
@@ -244,6 +255,16 @@ impl Command {
         }
     }
 
+    /// Sets the layer mask of `handle`.
+    pub const fn set_layers(handle: Handle, mask: u32) -> Command {
+        Command {
+            op: op::SET_LAYERS,
+            handle: handle.raw(),
+            a: mask,
+            b: 0,
+        }
+    }
+
     /// Sets the flags of `handle` in `mask` to their values in `values`.
     pub const fn set_flags(handle: Handle, mask: u32, values: u32) -> Command {
         Command {
@@ -270,11 +291,11 @@ impl Command {
     }
 
     /// True for a change that keeps the scene's structure, so the renderer updates what it draws
-    /// without rebuilding its tables: showing or hiding an object, a render order, and flags that
-    /// leave the object's bounds alone.
+    /// without rebuilding its tables: showing or hiding an object, its layers, a render order, and
+    /// flags that leave the object's bounds alone.
     pub const fn keeps_structure(&self) -> bool {
         match self.opcode() {
-            op::SET_VISIBLE | op::SET_RENDER_ORDER => true,
+            op::SET_VISIBLE | op::SET_LAYERS | op::SET_RENDER_ORDER => true,
             op::SET_FLAGS => self.a & flags::BOUNDS == 0,
             _ => false,
         }
@@ -385,6 +406,9 @@ pub struct SceneStorage {
     flags: Vec<u32>,
     meshes: Vec<u32>,
     materials: Vec<u32>,
+    layers: Vec<u32>,
+    /// The number of created objects whose layer mask is not the default one.
+    custom_layers: u32,
     cells: Vec<u32>,
     /// The cells in use by scene objects and instance rows.
     table: CellTable,
@@ -402,7 +426,8 @@ pub struct SceneStorage {
     levels: Vec<Level>,
     level_count: usize,
     order_dirty: bool,
-    /// True once a command other than a visibility change applied, until [`Self::take_structure_changed`].
+    /// True once a command that changes the structure applied, until
+    /// [`Self::take_structure_changed`].
     structure_changed: bool,
     child_offsets: Vec<u32>,
     child_list: Vec<u32>,
@@ -434,6 +459,8 @@ impl SceneStorage {
             flags: vec![0; rows],
             meshes: vec![0; rows],
             materials: vec![0; rows],
+            layers: vec![DEFAULT_LAYERS; rows],
+            custom_layers: 0,
             cells: vec![ORIGIN_CELL; rows],
             table: CellTable::new(),
             moved: Bitset::new(rows as u32),
@@ -568,6 +595,17 @@ impl SceneStorage {
     /// Material ids.
     pub fn materials(&self) -> &[u32] {
         &self.materials
+    }
+
+    /// Layer masks (see [`crate::layers`]).
+    pub fn layers(&self) -> &[u32] {
+        &self.layers
+    }
+
+    /// The mask that every object has, when no object has a mask other than
+    /// [`DEFAULT_LAYERS`]. Culling then needs no test per object.
+    pub fn common_layers(&self) -> Option<u32> {
+        (self.custom_layers == 0).then_some(DEFAULT_LAYERS)
     }
 
     /// Each object's cell, as an index into [`SceneStorage::cell_table`]. Valid after an update.
@@ -775,8 +813,8 @@ impl SceneStorage {
         first_error.map_or(Ok(()), Err)
     }
 
-    /// True when a command other than a visibility change applied since the last call. The
-    /// renderer then rebuilds its tables.
+    /// True when a command that changes the scene's structure applied since the last call: any
+    /// command but a visibility or layer change. The renderer then rebuilds its tables.
     pub fn take_structure_changed(&mut self) -> bool {
         std::mem::take(&mut self.structure_changed)
     }
@@ -843,6 +881,7 @@ impl SceneStorage {
                 self.flags[s] = 0;
                 self.meshes[s] = 0;
                 self.materials[s] = 0;
+                self.change_layers(s, DEFAULT_LAYERS);
                 self.table.release(self.cells[s]);
                 self.cells[s] = ORIGIN_CELL;
                 self.depths[s] = 0;
@@ -901,6 +940,12 @@ impl SceneStorage {
                 };
                 self.dirty.set(slot);
             }
+            op::SET_LAYERS => {
+                let slot = self.created_slot(command.handle)?;
+                if self.change_layers(slot as usize, command.a) {
+                    self.dirty.set(slot);
+                }
+            }
             op::SET_FLAGS => {
                 let slot = self.created_slot(command.handle)?;
                 let mask = command.a & flags::SETTABLE;
@@ -917,6 +962,15 @@ impl SceneStorage {
             other => return Err(CoreError::UnknownCommand { op: other }),
         }
         Ok(())
+    }
+
+    /// Sets the layer mask of slot `s`, and keeps the count of objects off the default mask.
+    /// Returns true when the mask changed.
+    fn change_layers(&mut self, s: usize, mask: u32) -> bool {
+        let before = std::mem::replace(&mut self.layers[s], mask);
+        self.custom_layers = self.custom_layers + u32::from(mask != DEFAULT_LAYERS)
+            - u32::from(before != DEFAULT_LAYERS);
+        before != mask
     }
 
     /// The local transform of the object in `slot`, in 64-bit floats.
@@ -1546,6 +1600,56 @@ mod tests {
             .unwrap();
         scene.update_transforms(&jobs);
         assert_eq!(radius(&scene, child), 1.0);
+    }
+
+    #[test]
+    fn a_layer_change_keeps_the_structure_and_names_the_object_in_the_uploads() {
+        let jobs = JobSystem::new(0);
+        let mut scene = SceneStorage::with_capacity(8);
+        let (parent, c1) = object(&mut scene, [0.0; 3], Handle::NONE, SHOWN);
+        let (child, c2) = object(&mut scene, [1.0, 0.0, 0.0], parent, SHOWN);
+        scene.apply_commands(&[c1, c2], 1).unwrap();
+        scene.update_transforms(&jobs);
+        assert!(scene.take_structure_changed());
+        let layers = |scene: &SceneStorage, h| scene.layers()[scene.resolve(h).unwrap() as usize];
+        assert_eq!(layers(&scene, parent), DEFAULT_LAYERS);
+        assert_eq!(scene.common_layers(), Some(DEFAULT_LAYERS));
+
+        // The mask changes, the parent's alone, and the static object updates in this frame, so
+        // the frame's uploads name it. No structure changed.
+        scene
+            .apply_commands(&[Command::set_layers(parent, 0b110)], 2)
+            .unwrap();
+        assert!(!scene.take_structure_changed());
+        scene.update_transforms(&jobs);
+        assert_eq!(layers(&scene, parent), 0b110);
+        assert_eq!(layers(&scene, child), DEFAULT_LAYERS);
+        assert!(scene.changed().get(scene.resolve(parent).unwrap()));
+        assert_eq!(scene.common_layers(), None);
+
+        // Setting the same mask again changes nothing.
+        scene
+            .apply_commands(&[Command::set_layers(parent, 0b110)], 3)
+            .unwrap();
+        scene.update_transforms(&jobs);
+        assert!(!scene.changed().get(scene.resolve(parent).unwrap()));
+
+        // Back on the default layer, every object shares one mask again. A destroyed object's
+        // slot returns to the default mask for the next object that takes it.
+        scene
+            .apply_commands(
+                &[
+                    Command::set_layers(parent, DEFAULT_LAYERS),
+                    Command::set_layers(child, 0),
+                ],
+                4,
+            )
+            .unwrap();
+        assert_eq!(scene.common_layers(), None);
+        let child_slot = scene.resolve(child).unwrap() as usize;
+        scene.apply_commands(&[Command::destroy(child)], 5).unwrap();
+        assert_eq!(scene.layers()[child_slot], DEFAULT_LAYERS);
+        assert_eq!(scene.common_layers(), Some(DEFAULT_LAYERS));
     }
 
     #[test]

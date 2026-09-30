@@ -4,14 +4,13 @@
 
 mod common;
 
-use common::{BATCH_ROWS, World, count, grid};
+use common::{BATCH_ROWS, World, base_sphere, count, grid};
 use null3d_core::handle::Handle;
 use null3d_core::scene::{Command, flags};
 use null3d_gpu::drawlist::{Op, template, vertex};
 use null3d_gpu::mock::MockBackend;
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::frame::FrameBuilder;
-use null3d_render::geometry::sphere_geometry;
 use null3d_render::materials::Shading;
 use null3d_render::view::ViewId;
 
@@ -127,7 +126,7 @@ fn a_page_that_outgrows_its_buffers_gets_new_ones_and_webgpu_records_its_bundle_
         .renderer
         .settings_mut()
         .meshes_mut()
-        .add(&sphere_geometry(1.0, 128, 64))
+        .add(&base_sphere(1.0, [128, 64]))
         .unwrap();
     world.frame = 3;
     world.record(false);

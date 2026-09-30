@@ -8,7 +8,7 @@ summary: "Creating objects; find; background, environment, fog, sky; warmUp."
 
 # Scene
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Fog, sky, environments, texture backgrounds, `scene.warmUp`, and the `layers` option of `createMesh` are not built yet, so coding agents must not use them.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Fog, sky, environments, texture backgrounds and `scene.warmUp` are not built yet, so coding agents must not use them.
 
 The scene holds everything the engine draws: the objects, the camera that the canvas shows, the lights and the background. A sketch gets it as `scene` in its setup function, and creates everything through it.
 
@@ -49,7 +49,7 @@ export default defineSketch(({ scene, geometry, materials }) => {
 | `createDirectionalLight(options)` | The scene's directional light |
 | `createAmbientLight(options)` | The scene's ambient light |
 
-Groups, meshes and cameras take the same object options: `name`, `position`, `rotation`, `scale`, `parent` and `dynamic`. [Objects and transforms](objects.md) describes them. `createMesh` also takes `castShadows` and `receiveShadows`, which this version stores but does not draw yet. Meshes come from `geometry` and materials from `materials` in the sketch context. One mesh and one material can serve any number of objects.
+Groups, meshes and cameras take the same object options: `name`, `position`, `rotation`, `scale`, `parent`, `dynamic` and `layers`. [Objects and transforms](objects.md) describes them. `createMesh` also takes `castShadows` and `receiveShadows`, which this version stores but does not draw yet. Meshes come from `geometry` and materials from `materials` in the sketch context. One mesh and one material can serve any number of objects.
 
 ## Finding objects by name
 
@@ -75,7 +75,7 @@ The scene has one directional light and one ambient light. `createDirectionalLig
 
 ## When changes take effect
 
-Creating an object, `destroy`, `setParent`, `setVisible` and `setDynamic` change the structure of the scene, and so do the mesh calls: `setMaterial`, `setMesh`, `setCastShadows`, `setReceiveShadows`, `setRenderOrder`, `setFrustumCulled` and `setBounds`. The engine queues these changes and applies them after `onUpdate` returns, before it updates transforms and draws. The frame drawn after the call shows the change. Some of them make the engine rebuild its draw tables, as the [performance guide](../guides/performance.md#objects-during-play) lists.
+Creating an object, `destroy`, `setParent`, `setVisible`, `setLayers` and `setDynamic` change the structure of the scene, and so do the mesh calls: `setMaterial`, `setMesh`, `setCastShadows`, `setReceiveShadows`, `setRenderOrder`, `setFrustumCulled` and `setBounds`. The engine queues these changes and applies them after `onUpdate` returns, before it updates transforms and draws. The frame drawn after the call shows the change. Some of them make the engine rebuild its draw tables, as the [performance guide](../guides/performance.md#objects-during-play) lists.
 
 Values that the engine computes, such as the result of `getWorldPosition`, come from the last frame it processed. They show a change from the next `onUpdate` call on.
 
@@ -83,7 +83,7 @@ When the engine cannot apply a change, such as a parent loop (E1104), it skips t
 
 ## Instance batches
 
-An instance batch is one object that draws many copies of one mesh with one material. Its rows live in typed arrays that sketch code writes directly, with no call per row. A static batch, the default, uploads the rows you mark with `markDirty`. A batch created with `dynamic: true` uploads every row in every frame. [Instances and batching](../concepts/instances.md) explains batches in full.
+An instance batch is one object that draws many copies of one mesh with one material. Its rows live in typed arrays that sketch code writes directly, with no call per row. A static batch, the default, uploads the rows you mark with `markDirty`. A batch created with `dynamic: true` uploads every row in every frame. Every row of a batch shares the batch's layers, which the `layers` option and `setLayers(mask)` set, as [Render layers](../concepts/render-layers.md) explains. [Instances and batching](../concepts/instances.md) explains batches in full.
 
 ## Limits
 
@@ -116,6 +116,7 @@ Many copies of one mesh and material. Write rows straight into the typed arrays;
 | `readonly scales: Float32Array` | Scales, 3 floats per row. |
 | `readonly colors: Float32Array \| undefined` | Linear RGBA colors, 4 floats per row, when the batch was created with colors. This version stores them but does not draw them yet. |
 | `setActiveCount(count: number): void` | Draws only the first `count` rows. |
+| `setLayers(mask: number): void` | Puts every row on the layers of a 32-bit mask, as `Object3D.setLayers` does for one object. A new mask needs no rebuild. |
 | `markDirty(start = 0, count = this.count - start): void` | Marks rows of a static batch to update and upload. |
 | `destroy(): void` | Removes the batch and frees its rows. Its typed arrays are not valid after this. |
 
@@ -130,6 +131,7 @@ Options for `scene.createInstances`.
 | `material: Material` | The material of every row. |
 | `dynamic?: boolean` | Every row updates and uploads every frame; a static batch updates rows marked dirty only. |
 | `colors?: boolean` | Adds a color per row (RGBA, linear). This version stores the colors but does not draw them yet. |
+| `layers?: number` | The layers every row is on, as a 32-bit mask. The default, 1, is layer 0. |
 
 ### `MeshOptions`
 
@@ -158,6 +160,7 @@ Options every node takes when it is created.
 | `scale?: Vec3` | The scale on each axis. The default is (1, 1, 1). |
 | `parent?: Object3D \| null` | The node to attach this one to. The default, null, makes a root node. |
 | `dynamic?: boolean` | True recomputes the node every frame without checks. A static node, the default for all but cameras, updates only when it changes. |
+| `layers?: number` | The layers the node is on, as a 32-bit mask: bit n puts it on layer n. A camera draws the objects that share a layer with it. The default, 1, is layer 0. |
 
 ### `Scene`
 

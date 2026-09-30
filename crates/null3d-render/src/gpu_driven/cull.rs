@@ -4,6 +4,9 @@
 //! view's bundle then draws. Every view reads the same sources and bucket tables, and writes
 //! buffers of its own.
 //!
+//! A view's parameters also hold its layer mask, and the shader skips a source whose layer mask
+//! shares no bit with it.
+//!
 //! A view's planes are relative to its camera, and its parameters also hold the offset from its
 //! camera to each cell in use. The shader adds a source's offset to its matrix before it tests the
 //! source, and copies the moved matrix into the compacted instance buffer, so the vertex shader
@@ -22,14 +25,20 @@ use crate::frame::{
 };
 use crate::view::{ViewFrame, ViewId};
 
-/// Bytes of the culling planes: six planes, the source count and padding.
+/// Bytes of the culling planes: six planes, the source count, the view's layer mask and padding.
 const CULL_PLANES_BYTES: u32 = 112;
+/// The word of the culling parameters that holds the source count, and the one after it, the
+/// view's layer mask.
+const SOURCES_WORD: usize = 24;
+const LAYERS_WORD: usize = 25;
 /// Bytes of the culling parameters: the planes, then the offset from the camera to each cell.
 pub(super) const CULL_PARAMS_BYTES: u32 = CULL_PLANES_BYTES + MAX_CELLS * CELL_OFFSET_BYTES;
 /// Bytes of one indexed indirect draw.
 pub(super) const INDIRECT_BYTES: u32 = sizes::INDIRECT_WORDS * 4;
+/// The buffers of the culling pass's bind group.
+const CULL_BINDINGS: usize = 7;
 /// Words of the culling pass's bind group entries: three for the group, five per buffer.
-const CULL_GROUP_WORDS: usize = 3 + 6 * 5;
+const CULL_GROUP_WORDS: usize = 3 + CULL_BINDINGS * 5;
 
 /// A view's culling buffers that grow with the layout: their sizes, 0 before they exist.
 #[derive(Clone, Copy, Debug, Default)]
@@ -116,7 +125,11 @@ impl Culling {
         }
         if recreated {
             let mut entries = [0u32; CULL_GROUP_WORDS];
-            entries[..3].copy_from_slice(&[ids::cull_group(view), bind_layout::CULL, 6]);
+            entries[..3].copy_from_slice(&[
+                ids::cull_group(view),
+                bind_layout::CULL,
+                CULL_BINDINGS as u32,
+            ]);
             for (binding, buffer) in [
                 ids::cull_params(view),
                 ids::MATRICES,
@@ -124,6 +137,7 @@ impl Culling {
                 ids::BUCKETS,
                 ids::visible(view),
                 ids::indirect(view),
+                ids::SOURCE_LAYERS,
             ]
             .into_iter()
             .enumerate()
@@ -142,8 +156,8 @@ impl Culling {
         Ok(())
     }
 
-    /// Uploads a view's culling parameters: its frustum's planes, the source count, and the offset
-    /// from its camera to each cell in use in `scene`. Resets its indirect draws' instance counts
+    /// Uploads a view's culling parameters: its frustum's planes, the source count, its layer mask,
+    /// and the offset from its camera to each cell in use in `scene`. Resets its indirect draws' instance counts
     /// to zero.
     pub(super) fn upload(
         &mut self,
@@ -160,7 +174,8 @@ impl Culling {
                 *word = value.to_bits();
             }
         }
-        params[24] = layout.sources;
+        params[SOURCES_WORD] = layout.sources;
+        params[LAYERS_WORD] = frame.layers;
         self.offsets.update(scene, &frame.camera);
         // The planes fill whole words, so the arena lays the offsets right after them, as the
         // parameters hold them, and one write carries both.

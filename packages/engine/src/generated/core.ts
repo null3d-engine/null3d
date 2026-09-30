@@ -8,6 +8,7 @@ export const COMMAND_SET_MESH = 4;
 export const COMMAND_SET_MATERIAL = 5;
 export const COMMAND_SET_DYNAMIC = 6;
 export const COMMAND_SET_VISIBLE = 7;
+export const COMMAND_SET_LAYERS = 8;
 export const COMMAND_SET_FLAGS = 9;
 export const COMMAND_SET_RENDER_ORDER = 10;
 export const COMMAND_KEEP_WORLD = 1;
@@ -19,6 +20,8 @@ export const FLAG_CAST_SHADOWS = 4;
 export const FLAG_RECEIVE_SHADOWS = 8;
 export const FLAG_UNCULLED = 16;
 export const FLAG_CUSTOM_BOUNDS = 32;
+
+export const LAYERS_DEFAULT = 1;
 
 export const SCENE_FIELD_POSITIONS = 0;
 export const SCENE_FIELD_ROTATIONS = 1;
@@ -59,6 +62,15 @@ export const CAPABILITY_MULTI_DRAW = 8;
 export const SHADING_LIT = 0;
 export const SHADING_UNLIT = 1;
 export const SHADING_TEXCOORDS = 2;
+
+export const SHAPE_BOX = 0;
+export const SHAPE_SPHERE = 1;
+export const SHAPE_PLANE = 2;
+export const SHAPE_CYLINDER = 3;
+export const SHAPE_TORUS = 4;
+export const SHAPE_CAPSULE = 5;
+export const SHAPE_CIRCLE = 6;
+export const SHAPE_RING = 7;
 
 export const MESH_ARRAYS_NORMALS = 1;
 export const MESH_ARRAYS_UVS = 2;

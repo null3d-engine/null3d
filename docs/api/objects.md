@@ -8,7 +8,7 @@ summary: "Setters and getters; parents; flags; destroy."
 
 # Objects and transforms
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. The call `setLayers` is not built yet, so coding agents must not use it.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions.
 
 Groups, meshes and cameras are objects: nodes in the scene with a position, a rotation, a scale and a parent. Each class extends `Object3D`, so the calls in the first sections of this page work on all three. Meshes have more calls, which [Mesh calls](#mesh-calls) lists. Lights are not objects in this version, and [Lights](lights.md) gives their own calls.
 
@@ -93,6 +93,12 @@ These calls change the structure of the scene, so they take effect when the engi
 
 In development builds, every call on an object apart from `describe` throws E1101 once you destroy the object. So does a call that gets a destroyed object, such as `setParent`. Once the frame has removed the object, the world getters throw E1101 in every build.
 
+## Layers
+
+`setLayers(mask)` puts the object on the layers of a 32-bit mask: bit n puts it on layer n. A camera draws the object only when their masks share a bit. New objects are on layer 0, which every new camera draws. The `layers` option sets the mask when you create the object.
+
+The mask belongs to the object alone, so its children keep their own. Like `setVisible`, `setLayers` takes effect when the engine processes the frame, and it rebuilds nothing. In development builds, a mask that is not a whole number of 32 bits throws E1207. [Render layers](../concepts/render-layers.md) explains masks in full.
+
 ## Mesh calls
 
 A mesh has these calls besides the ones above. Like the structural calls, they take effect in the next frame.
@@ -114,6 +120,7 @@ The `name` option gives an object a name that error messages show, such as `"Cra
 - [Scene](scene.md): creating objects, and when changes take effect.
 - [Handles and objects](../concepts/handles.md): how an object keeps its data in the engine's memory.
 - [Static and dynamic objects](../concepts/static-dynamic.md): the `dynamic` option.
+- [Render layers](../concepts/render-layers.md): which cameras draw which objects.
 - [Math helpers](math.md): vectors, quaternions and matrices for the setters and getters.
 
 ## API reference
@@ -168,6 +175,7 @@ A node in the scene: position, rotation and scale, a parent, visibility.
 | `getWorldMatrix(out: Mat4Like): void` | Copies the world matrix of the frame that last ran into `out`: 16 numbers, column by column, as `mat4` and three.js's `matrixWorld` hold them. Its translation keeps full precision far from the origin when `out` is a plain array or a `Float64Array`. |
 | `setParent(parent: Object3D \| null, options?: ParentOptions): void` | Moves the object under another, or to the root with null, from the next frame. By default it keeps its position, rotation and scale relative to the parent, so its place in the world changes with the new parent. With `keepWorld: true` it keeps its place in the world instead. |
 | `setVisible(visible: boolean): void` | Hides or shows the object and everything under it. |
+| `setLayers(mask: number): void` | Puts the object on the layers of a 32-bit mask: bit n puts it on layer n, so `1 << 2` is layer 2 and `0b101` is layers 0 and 2. A camera draws the object only when their masks share a layer. The object's children keep their own layers. A new mask needs no rebuild. |
 | `setDynamic(dynamic: boolean): void` | Makes the object dynamic or static from the next frame. See `NodeOptions.dynamic`. |
 | `destroy(): void` | Removes the object at the next frame. Its children become roots. |
 

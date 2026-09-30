@@ -51,6 +51,16 @@ export function checkLive(call: string, target: Destroyable, argument = false): 
 		);
 }
 
+/**
+ * Throws E1207 when a layer mask is not a whole number that fits 32 bits, signed or not, so that
+ * `1 << 31` passes. Call it inside `if (DEV)`.
+ */
+export function checkLayers(call: string, mask: number, target?: Described): void {
+	if (Number.isInteger(mask) && mask >= -0x8000_0000 && mask <= 0xffff_ffff) return;
+	const on = target ? ` on ${target.describe()}` : '';
+	throw new EngineError('E1207', `${call}() got ${mask}${on}, which is not a 32-bit layer mask.`);
+}
+
 /** Throws E1203 when a number is not finite. Call it inside `if (DEV)`. */
 export function checkNumber(call: string, name: string, value: number, target: Described): void {
 	if (!Number.isFinite(value))

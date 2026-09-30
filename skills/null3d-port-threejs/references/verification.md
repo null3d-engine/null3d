@@ -68,7 +68,11 @@ bunx @null3d/cli port compare --baseline baseline/ --views views.json --gpu webg
 
 The command runs the sketch in hold mode, overrides the active camera with each view's camera, captures through the engine's readback, and compares each image with the baseline using three.js's own image comparison script. It writes `compare/<view>.<tier>.actual.png`, `.diff.png` and a summary in the terminal.
 
-Before 0.3, write one visual test per view with `defineVisualTest` (null3d-develop `references/testing-and-debugging.md`), with the camera set from the view in `setup`, and compare the output images with the baseline by hand.
+Before 0.3, capture each view with `bunx @null3d/cli shot` (engine docs `cli/null3d`). Pass the view's name to the sketch in its module's address, and set the camera from that view in the sketch's setup (`guides/testing`). Then draw each view on each tier, and compare each image with its baseline by hand:
+
+```sh
+bunx @null3d/cli shot --page '/?view=hero-closeup' --time 1.5 --size 800x450 --gpu webgl2 --out compare/hero-closeup.webgl2.png
+```
 
 For the comparison, match the original's settings: `post.set({ toneMapping: 'none' })` if the original had no tone mapping, `quality.set({ antialias: 'none' })` if the baseline was captured without anti-aliasing, and a pixel ratio of 1.
 
