@@ -150,6 +150,8 @@ The [hold mode demo](https://github.com/null3d-engine/null3d/tree/main/examples/
 | `?hold=1.5` | Hold mode at 1.5 seconds of sketch time; a bare `?hold` holds at the `hold` option's time, or at 0 |
 | `?gpu=webgpu`, `?gpu=compat`, `?gpu=webgl2` | Force a GPU tier, where the device has it |
 | `?depth=reversed`, `?depth=reversed-gl`, `?depth=standard` | Force a WebGL2 depth mode. `reversed-gl` draws as browsers without the `EXT_clip_control` extension do, such as Firefox |
+| `?uploads=copy` | On WebGL2, upload a copy of the data, as browsers that refuse to read shared memory need |
+| `?compile=wait` | On WebGL2, wait for each shader program's compile at its first draw, as browsers without the `KHR_parallel_shader_compile` extension do |
 | `?threads=off` | The single-threaded build |
 | `?render=main` | Draw on the page's main thread |
 | `?sketch-thread=main` | Run the sketch on the page's main thread, over the `sketchThread` option |
