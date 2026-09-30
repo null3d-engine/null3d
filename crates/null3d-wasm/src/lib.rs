@@ -136,6 +136,7 @@ impl Engine {
             structure_changed: self.structure_changed,
             jobs,
             lines: self.lines.lines(),
+            lights: self.lights.visible(),
         };
         (self.renderer.as_mut(), input)
     }

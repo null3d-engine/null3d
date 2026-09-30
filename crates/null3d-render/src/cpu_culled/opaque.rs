@@ -10,6 +10,8 @@
 //! also holds the offset from the view's camera to each cell in use, which the vertex shader adds
 //! to an instance's matrix, so it draws positions relative to the camera.
 
+use std::ops::Range;
+
 use null3d_core::cells::MAX_CELLS;
 use null3d_gpu::caps::OFFSET_ALIGNMENT;
 use null3d_gpu::drawlist::{
@@ -177,54 +179,80 @@ impl Opaque {
     }
 
     /// Creates the ring of frame uniforms of each view from the first one without it up to
-    /// `views`, with the group that binds its uniform block, its cell offsets, the material
-    /// table's texture and three.js's table of the split-sum terms of specular light.
+    /// `views`, with its frame groups.
     pub(super) fn add_views(
         &mut self,
         list: &mut DrawList,
         views: usize,
     ) -> Result<(), RecordError> {
-        while self.views.len() < views {
-            let view = ViewId::from_index(self.views.len());
+        let first = self.views.len();
+        for index in first..views {
             list.push(
                 Op::CreateBuffer,
                 &[
-                    ids::frame(view),
+                    ids::frame(ViewId::from_index(index)),
                     RING * FRAME_SLOT_BYTES,
                     usage::UNIFORM | usage::COPY_DST,
                 ],
             )?;
-            // The frame's slot offset moves the uniform block and the cell offsets together, and
-            // the backend gives dynamic offsets to a group's buffers in their order here.
-            list.push(
-                Op::CreateBindGroup,
-                &[
-                    ids::frame_group(view),
-                    bind_layout::FRAME,
-                    4,
-                    0,
-                    resource_kind::BUFFER,
-                    ids::frame(view),
-                    0,
-                    sizes::FRAME_UNIFORM_BYTES,
-                    2,
-                    resource_kind::BUFFER,
-                    ids::frame(view),
-                    OFFSETS_AT,
-                    OFFSETS_BYTES,
-                    1,
-                    resource_kind::TEXTURE,
-                    ids::MATERIALS,
-                    0,
-                    0,
-                    3,
-                    resource_kind::TEXTURE,
-                    ids::DFG,
-                    0,
-                    0,
-                ],
-            )?;
             self.views.push(ViewDraws::default());
+        }
+        self.bind_frames(list, first..views)
+    }
+
+    /// Creates the frame groups of the views `views`, one for each slot of the light textures'
+    /// ring. Each binds the view's uniform block and cell offsets, the material table's texture,
+    /// three.js's table of the split-sum terms of specular light, and the slot's light grid and
+    /// light records.
+    pub(super) fn bind_frames(
+        &self,
+        list: &mut DrawList,
+        views: Range<usize>,
+    ) -> Result<(), RecordError> {
+        for index in views {
+            let view = ViewId::from_index(index);
+            for slot in 0..RING {
+                // The frame's slot offset moves the uniform block and the cell offsets together,
+                // and the backend gives dynamic offsets to a group's buffers in their order here.
+                list.push(
+                    Op::CreateBindGroup,
+                    &[
+                        ids::frame_group(view) + slot,
+                        bind_layout::FRAME,
+                        6,
+                        0,
+                        resource_kind::BUFFER,
+                        ids::frame(view),
+                        0,
+                        sizes::FRAME_UNIFORM_BYTES,
+                        2,
+                        resource_kind::BUFFER,
+                        ids::frame(view),
+                        OFFSETS_AT,
+                        OFFSETS_BYTES,
+                        1,
+                        resource_kind::TEXTURE,
+                        ids::MATERIALS,
+                        0,
+                        0,
+                        3,
+                        resource_kind::TEXTURE,
+                        ids::DFG,
+                        0,
+                        0,
+                        7,
+                        resource_kind::TEXTURE,
+                        ids::LIGHT_GRID + slot,
+                        0,
+                        0,
+                        8,
+                        resource_kind::TEXTURE,
+                        ids::LIGHTS + slot,
+                        0,
+                        0,
+                    ],
+                )?;
+            }
         }
         Ok(())
     }
@@ -378,8 +406,9 @@ impl Opaque {
 
     /// Records a view's opaque pass inside the render pass that the render graph began: every
     /// draw whose bucket has visible instances, where the index list of bucket `b` starts at
-    /// `starts[b]`, from its mesh page's buffers in `meshes` and the ring slots that
-    /// [`Opaque::upload`] took.
+    /// `starts[b]`, from its mesh page's buffers in `meshes`, the ring slots that
+    /// [`Opaque::upload`] took, and the light textures of the ring slot `light_slot`.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn record(
         &self,
         list: &mut DrawList,
@@ -388,6 +417,7 @@ impl Opaque {
         starts: &[u32],
         layout: &Layout,
         meshes: &MeshBuffers,
+        light_slot: u32,
     ) -> Result<(), RecordError> {
         let slots = self.views[view.index()].slots;
         let (buckets, draws, multi_draw) = (&layout.buckets, &layout.draws, self.multi_draw);
@@ -398,7 +428,13 @@ impl Opaque {
         let frame_slot = self.frame_slot(view);
         list.push(
             Op::SetBindGroup,
-            &[0, ids::frame_group(view), 2, frame_slot, frame_slot],
+            &[
+                0,
+                ids::frame_group(view) + light_slot,
+                2,
+                frame_slot,
+                frame_slot,
+            ],
         )?;
         let instances = ids::instances_group(view) + slots.streamed * RING + slots.listed;
         list.push(Op::SetBindGroup, &[2, instances, 0])?;

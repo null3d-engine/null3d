@@ -235,6 +235,11 @@ impl Culling {
         self.views.get(view.index())?.frame.as_ref()
     }
 
+    /// A view's values in the frame that culled last, to add to them.
+    pub(super) fn frame_mut(&mut self, view: ViewId) -> Option<&mut ViewFrame> {
+        self.views.get_mut(view.index())?.frame.as_mut()
+    }
+
     /// The offset from a view's camera to each cell in use, in the frame that culled last.
     pub(super) fn offsets(&self, view: ViewId) -> &CellOffsets {
         &self.views[view.index()].offsets

@@ -189,6 +189,8 @@ fn main(@builtin(workgroup_id) group: vec3<u32>, @builtin(local_invocation_index
     sun_direction: vec4<f32>,
     sun_color: vec4<f32>,
     ambient: vec4<f32>,
+    cluster_depth: vec4<f32>,
+    cluster_grid: vec4<f32>,
 }
 
 struct Material {
@@ -243,6 +245,13 @@ struct Scattering {
     multi: vec3<f32>,
 }
 
+struct PointLight {
+    position_range: vec4<f32>,
+    color_decay: vec4<f32>,
+    direction_cone: vec4<f32>,
+    penumbra: vec4<f32>,
+}
+
 struct VertexIn {
     @location(0) position: vec3<f32>,
     @location(1) normal: vec3<f32>,
@@ -259,6 +268,7 @@ const OUTSIDE_CLIP: vec4<f32> = vec4<f32>(2f, 2f, 2f, 1f);
 const PI: f32 = 3.1415927f;
 const INV_PI: f32 = 0.31830987f;
 const EPSILON: f32 = 0.000001f;
+const START_BITS: u32 = 23u;
 const FLAT_SHADING: u32 = 1u;
 
 @group(0) @binding(0)
@@ -267,6 +277,10 @@ var<uniform> frame: Frame;
 var<storage> materials: array<Material>;
 @group(0) @binding(3)
 var dfg_table: texture_2d<f32>;
+@group(0) @binding(7)
+var<storage> light_grid: array<u32>;
+@group(0) @binding(8)
+var<storage> light_list: array<PointLight>;
 
 fn transform_point(t: Transform, p: vec3<f32>) -> vec3<f32> {
     let q = vec4<f32>(p, 1f);
@@ -320,6 +334,10 @@ fn world_normal(found_3: Instance, normal: vec3<f32>) -> vec3<f32> {
     let _e1 = transform_of(found_3);
     let _e3 = transform_normal(_e1, normal);
     return _e3;
+}
+
+fn square(x: f32) -> f32 {
+    return (x * x);
 }
 
 fn dfg_lut(n_dot_v: f32, roughness: f32) -> vec2<f32> {
@@ -418,20 +436,104 @@ fn indirect_diffuse(m_2: PbrMaterial, irradiance: vec3<f32>, dfg_2: vec2<f32>) -
     return ((irradiance * _e6) * ((vec3(1f) - _e4.single) - _e4.multi));
 }
 
+fn distance_attenuation(distance_: f32, cutoff: f32, decay: f32) -> f32 {
+    var falloff: f32;
+
+    falloff = (1f / max(pow(distance_, decay), 0.01f));
+    if (cutoff > 0f) {
+        let _e12 = square((distance_ / cutoff));
+        let _e13 = falloff;
+        let _e18 = square(saturate((1f - (_e12 * _e12))));
+        falloff = (_e13 * _e18);
+    }
+    let _e20 = falloff;
+    return _e20;
+}
+
+fn spot_attenuation(cone_cos: f32, penumbra_cos: f32, angle_cos: f32) -> f32 {
+    return smoothstep(cone_cos, penumbra_cos, angle_cos);
+}
+
+fn grid_word(i_2: u32) -> u32 {
+    let _e3 = light_grid[i_2];
+    return _e3;
+}
+
+fn cluster_lights(relative_1: vec3<f32>) -> vec2<u32> {
+    let grid = frame.cluster_grid;
+    if (grid.z == 0f) {
+        return vec2(0u);
+    }
+    let _e10 = frame.view_proj;
+    let clip = (_e10 * vec4<f32>(relative_1, 1f));
+    let tile = clamp(floor(((((clip.xy / vec2(clip.w)) * 0.5f) + vec2(0.5f)) * grid.xy)), vec2(0f), (grid.xy - vec2(1f)));
+    let _e36 = frame.cluster_depth;
+    let slice_depth = max(dot(_e36, vec4<f32>(relative_1, 1f)), 1f);
+    let slice = floor((log2(slice_depth) * grid.w));
+    if (slice >= grid.z) {
+        return vec2(0u);
+    }
+    let tiles = vec2<u32>(grid.xy);
+    let cluster = ((((u32(slice) * tiles.y) + u32(tile.y)) * tiles.x) + u32(tile.x));
+    let _e63 = grid_word(cluster);
+    return vec2<u32>((_e63 & 8388607u), (_e63 >> START_BITS));
+}
+
+fn light_of(i_3: u32) -> PointLight {
+    let _e3 = light_list[i_3];
+    return _e3;
+}
+
+fn clustered_light(m_3: PbrMaterial, relative_2: vec3<f32>, normal_3: vec3<f32>, to_view_2: vec3<f32>, compensation_1: vec3<f32>) -> Reflected {
+    var sum: Reflected = Reflected(vec3(0f), vec3(0f));
+    var k: u32 = 0u;
+
+    let _e5 = cluster_lights(relative_2);
+    loop {
+        let _e7 = k;
+        if (_e7 < _e5.y) {
+        } else {
+            break;
+        }
+        {
+            let _e11 = k;
+            let _e13 = grid_word((_e5.x + _e11));
+            let _e14 = light_of(_e13);
+            let offset = (_e14.position_range.xyz - relative_2);
+            let gap = length(offset);
+            let to_light_2 = (offset / vec3(max(gap, 0.000001f)));
+            let _e27 = distance_attenuation(gap, _e14.position_range.w, _e14.color_decay.w);
+            let _e36 = spot_attenuation(_e14.direction_cone.w, _e14.penumbra.x, dot(-(to_light_2), _e14.direction_cone.xyz));
+            let _e45 = direct_light(m_3, normal_3, to_view_2, to_light_2, (_e14.color_decay.xyz * (_e27 * _e36)), compensation_1);
+            let _e48 = sum.diffuse;
+            sum.diffuse = (_e48 + _e45.diffuse);
+            let _e52 = sum.specular;
+            sum.specular = (_e52 + _e45.specular);
+        }
+        continuing {
+            let _e56 = k;
+            k = (_e56 + 1u);
+        }
+    }
+    let _e58 = sum;
+    return _e58;
+}
+
 fn linear_to_srgb(c: vec3<f32>) -> vec3<f32> {
     let low_1 = (c * 12.92f);
     let high_1 = ((1.055f * pow(c, vec3(0.41666666f))) - vec3(0.055f));
     return select(high_1, low_1, (c <= vec3(0.0031308f)));
 }
 
-fn light_surface(m_3: PbrMaterial, normal_3: vec3<f32>, to_view_2: vec3<f32>, dfg_3: vec2<f32>) -> vec3<f32> {
-    let _e3 = multiscatter_compensation(m_3.specular_blended, dfg_3);
+fn light_surface(m_4: PbrMaterial, relative_3: vec3<f32>, normal_4: vec3<f32>, to_view_3: vec3<f32>, dfg_3: vec2<f32>) -> vec3<f32> {
+    let _e3 = multiscatter_compensation(m_4.specular_blended, dfg_3);
     let _e6 = frame.sun_direction;
     let _e11 = frame.sun_color;
-    let _e15 = direct_light(m_3, normal_3, to_view_2, -(_e6.xyz), _e11.xyz, _e3);
-    let _e18 = frame.ambient;
-    let _e20 = indirect_diffuse(m_3, _e18.xyz, dfg_3);
-    return ((_e15.diffuse + _e15.specular) + _e20);
+    let _e15 = direct_light(m_4, normal_4, to_view_3, -(_e6.xyz), _e11.xyz, _e3);
+    let _e17 = clustered_light(m_4, relative_3, normal_4, to_view_3, _e3);
+    let _e20 = frame.ambient;
+    let _e22 = indirect_diffuse(m_4, _e20.xyz, dfg_3);
+    return ((((_e15.diffuse + _e15.specular) + _e17.diffuse) + _e17.specular) + _e22);
 }
 
 @vertex
@@ -459,27 +561,27 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f3
     base = _e2.color.xyz;
     let _e8 = frame.camera_position;
     let _e14 = frame.camera_position.w;
-    let to_view_3 = normalize((_e8.xyz - (in.relative * _e14)));
+    let to_view_4 = normalize((_e8.xyz - (in.relative * _e14)));
     let _e19 = dpdx(in.relative);
     let _e21 = dpdy(in.relative);
     let face = normalize(cross(_e19, _e21));
-    let face_normal = select(-(face), face, (dot(face, to_view_3) >= 0f));
+    let face_normal = select(-(face), face, (dot(face, to_view_4) >= 0f));
     let smooth_normal = (normalize(in.normal) * select(-1f, 1f, front));
     let use_face = ((u32(_e2.strengths.z) & FLAT_SHADING) != 0u);
-    let normal_4 = select(smooth_normal, face_normal, use_face);
-    let _e44 = dpdx(normal_4);
-    let _e46 = dpdy(normal_4);
+    let normal_5 = select(smooth_normal, face_normal, use_face);
+    let _e44 = dpdx(normal_5);
+    let _e46 = dpdy(normal_5);
     let change = max(abs(_e44), abs(_e46));
     let geometry_roughness_1 = max(max(change.x, change.y), change.z);
     let _e54 = base;
     let _e59 = pbr_material(_e54, _e2.surface.x, _e2.surface.y, geometry_roughness_1);
-    let n_dot_v_3 = saturate(dot(normal_4, to_view_3));
+    let n_dot_v_3 = saturate(dot(normal_5, to_view_4));
     let _e63 = dfg_lut(n_dot_v_3, _e59.roughness);
     let emitted = (_e2.emissive.xyz * _e2.strengths.w);
-    let _e69 = light_surface(_e59, normal_4, to_view_3, _e63);
-    let outgoing = (_e69 + emitted);
-    let _e71 = linear_to_srgb(outgoing);
-    return vec4<f32>(_e71, 1f);
+    let _e70 = light_surface(_e59, in.relative, normal_5, to_view_4, _e63);
+    let outgoing = (_e70 + emitted);
+    let _e72 = linear_to_srgb(outgoing);
+    return vec4<f32>(_e72, 1f);
 }
 `,
 				pipelines: {
@@ -500,6 +602,8 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f3
     sun_direction: vec4<f32>,
     sun_color: vec4<f32>,
     ambient: vec4<f32>,
+    cluster_depth: vec4<f32>,
+    cluster_grid: vec4<f32>,
 }
 
 struct Material {
@@ -554,6 +658,13 @@ struct Scattering {
     multi: vec3<f32>,
 }
 
+struct PointLight {
+    position_range: vec4<f32>,
+    color_decay: vec4<f32>,
+    direction_cone: vec4<f32>,
+    penumbra: vec4<f32>,
+}
+
 struct VertexIn {
     @location(0) position: vec3<f32>,
     @location(1) normal: vec3<f32>,
@@ -572,6 +683,7 @@ const OUTSIDE_CLIP: vec4<f32> = vec4<f32>(2f, 2f, 2f, 1f);
 const PI: f32 = 3.1415927f;
 const INV_PI: f32 = 0.31830987f;
 const EPSILON: f32 = 0.000001f;
+const START_BITS: u32 = 23u;
 const FLAT_SHADING: u32 = 1u;
 
 @group(0) @binding(0)
@@ -580,6 +692,10 @@ var<uniform> frame: Frame;
 var<storage> materials: array<Material>;
 @group(0) @binding(3)
 var dfg_table: texture_2d<f32>;
+@group(0) @binding(7)
+var<storage> light_grid: array<u32>;
+@group(0) @binding(8)
+var<storage> light_list: array<PointLight>;
 
 fn transform_point(t: Transform, p: vec3<f32>) -> vec3<f32> {
     let q = vec4<f32>(p, 1f);
@@ -633,6 +749,10 @@ fn world_normal(found_3: Instance, normal: vec3<f32>) -> vec3<f32> {
     let _e1 = transform_of(found_3);
     let _e3 = transform_normal(_e1, normal);
     return _e3;
+}
+
+fn square(x: f32) -> f32 {
+    return (x * x);
 }
 
 fn dfg_lut(n_dot_v: f32, roughness: f32) -> vec2<f32> {
@@ -731,20 +851,104 @@ fn indirect_diffuse(m_2: PbrMaterial, irradiance: vec3<f32>, dfg_2: vec2<f32>) -
     return ((irradiance * _e6) * ((vec3(1f) - _e4.single) - _e4.multi));
 }
 
+fn distance_attenuation(distance_: f32, cutoff: f32, decay: f32) -> f32 {
+    var falloff: f32;
+
+    falloff = (1f / max(pow(distance_, decay), 0.01f));
+    if (cutoff > 0f) {
+        let _e12 = square((distance_ / cutoff));
+        let _e13 = falloff;
+        let _e18 = square(saturate((1f - (_e12 * _e12))));
+        falloff = (_e13 * _e18);
+    }
+    let _e20 = falloff;
+    return _e20;
+}
+
+fn spot_attenuation(cone_cos: f32, penumbra_cos: f32, angle_cos: f32) -> f32 {
+    return smoothstep(cone_cos, penumbra_cos, angle_cos);
+}
+
+fn grid_word(i_2: u32) -> u32 {
+    let _e3 = light_grid[i_2];
+    return _e3;
+}
+
+fn cluster_lights(relative_1: vec3<f32>) -> vec2<u32> {
+    let grid = frame.cluster_grid;
+    if (grid.z == 0f) {
+        return vec2(0u);
+    }
+    let _e10 = frame.view_proj;
+    let clip = (_e10 * vec4<f32>(relative_1, 1f));
+    let tile = clamp(floor(((((clip.xy / vec2(clip.w)) * 0.5f) + vec2(0.5f)) * grid.xy)), vec2(0f), (grid.xy - vec2(1f)));
+    let _e36 = frame.cluster_depth;
+    let slice_depth = max(dot(_e36, vec4<f32>(relative_1, 1f)), 1f);
+    let slice = floor((log2(slice_depth) * grid.w));
+    if (slice >= grid.z) {
+        return vec2(0u);
+    }
+    let tiles = vec2<u32>(grid.xy);
+    let cluster = ((((u32(slice) * tiles.y) + u32(tile.y)) * tiles.x) + u32(tile.x));
+    let _e63 = grid_word(cluster);
+    return vec2<u32>((_e63 & 8388607u), (_e63 >> START_BITS));
+}
+
+fn light_of(i_3: u32) -> PointLight {
+    let _e3 = light_list[i_3];
+    return _e3;
+}
+
+fn clustered_light(m_3: PbrMaterial, relative_2: vec3<f32>, normal_3: vec3<f32>, to_view_2: vec3<f32>, compensation_1: vec3<f32>) -> Reflected {
+    var sum: Reflected = Reflected(vec3(0f), vec3(0f));
+    var k: u32 = 0u;
+
+    let _e5 = cluster_lights(relative_2);
+    loop {
+        let _e7 = k;
+        if (_e7 < _e5.y) {
+        } else {
+            break;
+        }
+        {
+            let _e11 = k;
+            let _e13 = grid_word((_e5.x + _e11));
+            let _e14 = light_of(_e13);
+            let offset = (_e14.position_range.xyz - relative_2);
+            let gap = length(offset);
+            let to_light_2 = (offset / vec3(max(gap, 0.000001f)));
+            let _e27 = distance_attenuation(gap, _e14.position_range.w, _e14.color_decay.w);
+            let _e36 = spot_attenuation(_e14.direction_cone.w, _e14.penumbra.x, dot(-(to_light_2), _e14.direction_cone.xyz));
+            let _e45 = direct_light(m_3, normal_3, to_view_2, to_light_2, (_e14.color_decay.xyz * (_e27 * _e36)), compensation_1);
+            let _e48 = sum.diffuse;
+            sum.diffuse = (_e48 + _e45.diffuse);
+            let _e52 = sum.specular;
+            sum.specular = (_e52 + _e45.specular);
+        }
+        continuing {
+            let _e56 = k;
+            k = (_e56 + 1u);
+        }
+    }
+    let _e58 = sum;
+    return _e58;
+}
+
 fn linear_to_srgb(c: vec3<f32>) -> vec3<f32> {
     let low_1 = (c * 12.92f);
     let high_1 = ((1.055f * pow(c, vec3(0.41666666f))) - vec3(0.055f));
     return select(high_1, low_1, (c <= vec3(0.0031308f)));
 }
 
-fn light_surface(m_3: PbrMaterial, normal_3: vec3<f32>, to_view_2: vec3<f32>, dfg_3: vec2<f32>) -> vec3<f32> {
-    let _e3 = multiscatter_compensation(m_3.specular_blended, dfg_3);
+fn light_surface(m_4: PbrMaterial, relative_3: vec3<f32>, normal_4: vec3<f32>, to_view_3: vec3<f32>, dfg_3: vec2<f32>) -> vec3<f32> {
+    let _e3 = multiscatter_compensation(m_4.specular_blended, dfg_3);
     let _e6 = frame.sun_direction;
     let _e11 = frame.sun_color;
-    let _e15 = direct_light(m_3, normal_3, to_view_2, -(_e6.xyz), _e11.xyz, _e3);
-    let _e18 = frame.ambient;
-    let _e20 = indirect_diffuse(m_3, _e18.xyz, dfg_3);
-    return ((_e15.diffuse + _e15.specular) + _e20);
+    let _e15 = direct_light(m_4, normal_4, to_view_3, -(_e6.xyz), _e11.xyz, _e3);
+    let _e17 = clustered_light(m_4, relative_3, normal_4, to_view_3, _e3);
+    let _e20 = frame.ambient;
+    let _e22 = indirect_diffuse(m_4, _e20.xyz, dfg_3);
+    return ((((_e15.diffuse + _e15.specular) + _e17.diffuse) + _e17.specular) + _e22);
 }
 
 @vertex
@@ -775,27 +979,27 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f3
     base = (_e6 * in.vertex_color.xyz);
     let _e12 = frame.camera_position;
     let _e18 = frame.camera_position.w;
-    let to_view_3 = normalize((_e12.xyz - (in.relative * _e18)));
+    let to_view_4 = normalize((_e12.xyz - (in.relative * _e18)));
     let _e23 = dpdx(in.relative);
     let _e25 = dpdy(in.relative);
     let face = normalize(cross(_e23, _e25));
-    let face_normal = select(-(face), face, (dot(face, to_view_3) >= 0f));
+    let face_normal = select(-(face), face, (dot(face, to_view_4) >= 0f));
     let smooth_normal = (normalize(in.normal) * select(-1f, 1f, front));
     let use_face = ((u32(_e2.strengths.z) & FLAT_SHADING) != 0u);
-    let normal_4 = select(smooth_normal, face_normal, use_face);
-    let _e48 = dpdx(normal_4);
-    let _e50 = dpdy(normal_4);
+    let normal_5 = select(smooth_normal, face_normal, use_face);
+    let _e48 = dpdx(normal_5);
+    let _e50 = dpdy(normal_5);
     let change = max(abs(_e48), abs(_e50));
     let geometry_roughness_1 = max(max(change.x, change.y), change.z);
     let _e58 = base;
     let _e63 = pbr_material(_e58, _e2.surface.x, _e2.surface.y, geometry_roughness_1);
-    let n_dot_v_3 = saturate(dot(normal_4, to_view_3));
+    let n_dot_v_3 = saturate(dot(normal_5, to_view_4));
     let _e67 = dfg_lut(n_dot_v_3, _e63.roughness);
     let emitted = (_e2.emissive.xyz * _e2.strengths.w);
-    let _e73 = light_surface(_e63, normal_4, to_view_3, _e67);
-    let outgoing = (_e73 + emitted);
-    let _e75 = linear_to_srgb(outgoing);
-    return vec4<f32>(_e75, 1f);
+    let _e74 = light_surface(_e63, in.relative, normal_5, to_view_4, _e67);
+    let outgoing = (_e74 + emitted);
+    let _e76 = linear_to_srgb(outgoing);
+    return vec4<f32>(_e76, 1f);
 }
 `,
 				pipelines: {
@@ -862,6 +1066,8 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     sun_direction: vec4<f32>,
     sun_color: vec4<f32>,
     ambient: vec4<f32>,
+    cluster_depth: vec4<f32>,
+    cluster_grid: vec4<f32>,
 }
 
 struct Transform {
@@ -975,6 +1181,8 @@ fn fs(in: VertexOut) -> @location(0) vec4<f32> {
     sun_direction: vec4<f32>,
     sun_color: vec4<f32>,
     ambient: vec4<f32>,
+    cluster_depth: vec4<f32>,
+    cluster_grid: vec4<f32>,
 }
 
 struct Material {
@@ -1115,6 +1323,8 @@ fn fs(in: VertexOut) -> @location(0) vec4<f32> {
     sun_direction: vec4<f32>,
     sun_color: vec4<f32>,
     ambient: vec4<f32>,
+    cluster_depth: vec4<f32>,
+    cluster_grid: vec4<f32>,
 }
 
 struct Material {
@@ -1262,6 +1472,8 @@ fn fs(in: VertexOut) -> @location(0) vec4<f32> {
     sun_direction: vec4<f32>,
     sun_color: vec4<f32>,
     ambient: vec4<f32>,
+    cluster_depth: vec4<f32>,
+    cluster_grid: vec4<f32>,
 }
 
 struct Material {
@@ -1421,6 +1633,8 @@ fn fs(in: VertexOut) -> @location(0) vec4<f32> {
     sun_direction: vec4<f32>,
     sun_color: vec4<f32>,
     ambient: vec4<f32>,
+    cluster_depth: vec4<f32>,
+    cluster_grid: vec4<f32>,
 }
 
 struct Material {

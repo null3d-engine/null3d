@@ -122,6 +122,8 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    vec4 cluster_depth;
+    vec4 cluster_grid;
 };
 struct VertexIn {
     vec3 position;
@@ -184,6 +186,8 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    vec4 cluster_depth;
+    vec4 cluster_grid;
 };
 struct VertexIn {
     vec3 position;
@@ -230,6 +234,8 @@ void main() {
     sun_direction: vec4<f32>,
     sun_color: vec4<f32>,
     ambient: vec4<f32>,
+    cluster_depth: vec4<f32>,
+    cluster_grid: vec4<f32>,
 }
 
 struct VertexIn {

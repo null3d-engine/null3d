@@ -62,6 +62,7 @@
 
 mod cull;
 mod layout;
+mod lights;
 mod opaque;
 
 use std::collections::TryReserveError;
@@ -78,6 +79,7 @@ use crate::frame::{
 };
 use crate::frame_graph::{FrameGraph, Role};
 use crate::graph::RenderGraph;
+use crate::light_grid::{CameraLights, LightLimits};
 use crate::materials::MATERIAL_FLOATS;
 use crate::meshes::{MeshStorage, Packing};
 use crate::pipelines::PipelineCache;
@@ -143,8 +145,12 @@ mod ids {
 
     /// The vertices of the debug lines.
     pub const LINES: u32 = VIEW_BUFFERS + 4 * MAX_VIEWS as u32;
+    /// The light grid of the camera's view: a word per cluster, then the light index list.
+    pub const LIGHT_GRID: u32 = LINES + 1;
+    /// The records of the lights that the light grid lists.
+    pub const LIGHTS: u32 = LIGHT_GRID + 1;
     /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
-    pub const PAGES: u32 = LINES + 1;
+    pub const PAGES: u32 = LIGHTS + 1;
 
     /// three.js's table of the split-sum terms of specular light.
     pub const DFG: u32 = 1;
@@ -186,6 +192,8 @@ pub struct RendererConfig {
     /// True to cull only the sources of grid cells in view; false to cull every source, as a
     /// benchmark of cell culling compares.
     pub cell_culling: bool,
+    /// The most point and spot lights that the camera's light grid lists.
+    pub light_limits: LightLimits,
 }
 
 impl Default for RendererConfig {
@@ -196,6 +204,7 @@ impl Default for RendererConfig {
             draw_list_words: 16 * 1024,
             storage_binding_bytes: sizes::PORTABLE_STORAGE_BINDING_BYTES,
             cell_culling: true,
+            light_limits: LightLimits::default(),
         }
     }
 }
@@ -214,6 +223,8 @@ pub struct GpuDrivenRenderer {
     cells: CellCulling,
     culling: Culling,
     lines: LinesPass,
+    /// The point and spot lights of the camera's view.
+    lights: CameraLights,
     /// Each view's values in the frame being recorded, or `None` for a view with no camera.
     frames: Vec<Option<ViewFrame>>,
     created: bool,
@@ -252,6 +263,7 @@ impl GpuDrivenRenderer {
             cells: CellCulling::new(config.cell_culling, false),
             culling: Culling::default(),
             lines: LinesPass::new(ids::LINES),
+            lights: CameraLights::new(config.light_limits),
             frames: Vec::new(),
             created: false,
             dfg_pending: false,
@@ -338,6 +350,19 @@ impl GpuDrivenRenderer {
         self.culling.add_views(list, views)?;
 
         self.cells.update(input);
+        // Each view's values first: the camera's light grid sets how much its upload takes.
+        self.frames.clear();
+        for index in 0..views {
+            let view = ViewId::from_index(index);
+            let mut frame = self
+                .settings
+                .view_frame(view, input.scene, parity, input.canvas);
+            if let (Some(frame), ViewId::CAMERA) = (&mut frame, view) {
+                self.lights.assign(input.jobs, frame, input.lights);
+            }
+            self.frames.push(frame);
+        }
+
         arena.reset(self.upload_bound() + LinesPass::upload_bytes(&input.lines));
         if std::mem::take(&mut self.dfg_pending) {
             dfg::upload(list, arena, ids::DFG)?;
@@ -373,20 +398,16 @@ impl GpuDrivenRenderer {
         self.layout
             .upload_matrices(list, input, parity, upload_everything)?;
         self.layout.update_order(list, arena, &self.cells, input)?;
+        lights::upload(list, arena, &mut self.lights)?;
 
-        self.frames.clear();
-        for index in 0..views {
+        for (index, frame) in self.frames.iter().enumerate() {
             let view = ViewId::from_index(index);
-            let frame = self
-                .settings
-                .view_frame(view, input.scene, parity, input.canvas);
-            if let Some(frame) = &frame {
+            if let Some(frame) = frame {
                 opaque::upload(list, arena, view, frame)?;
                 let (layout, cells) = (&self.layout, &self.cells);
                 self.culling
                     .upload(list, arena, view, frame, layout, input.scene, cells)?;
             }
-            self.frames.push(frame);
         }
         let camera = self.frames[ViewId::CAMERA.index()].as_ref();
         self.lines
@@ -418,6 +439,7 @@ impl GpuDrivenRenderer {
             ],
         )?;
         dfg::create(list, ids::DFG)?;
+        lights::create(list, &self.lights)?;
         self.dfg_pending = true;
         self.created = true;
         Ok(())
@@ -425,14 +447,19 @@ impl GpuDrivenRenderer {
 
     /// The most that one frame can copy into its arena for the scene as it stands: mesh data not
     /// uploaded yet, the whole material table, three.js's table of specular terms, the layout's
-    /// tables, and each view's frame uniform, culling parameters and indirect draws.
+    /// tables, the light grid, and each view's frame uniform, culling parameters and indirect
+    /// draws.
     fn upload_bound(&self) -> usize {
         let meshes = self.meshes.pending_bytes(self.settings.meshes().pages());
         let materials =
             self.settings.materials().capacity() as usize * MATERIAL_FLOATS * 4 + dfg::BYTES;
         let per_view = (sizes::FRAME_UNIFORM_BYTES + CULL_PARAMS_BYTES) as usize
             + self.layout.draws.len() * INDIRECT_BYTES as usize;
-        meshes + materials + self.layout.upload_bound() + self.settings.views().len() * per_view
+        meshes
+            + materials
+            + self.layout.upload_bound()
+            + self.lights.upload_room()
+            + self.settings.views().len() * per_view
     }
 }
 
@@ -471,6 +498,7 @@ impl FrameBuilder for GpuDrivenRenderer {
         self.layout.forget_gpu();
         self.culling.forget_gpu();
         self.lines.forget_gpu();
+        self.lights.forget_gpu();
         self.meshes.forget();
         self.pipelines.forget();
         self.settings.materials_mut().mark_changed();

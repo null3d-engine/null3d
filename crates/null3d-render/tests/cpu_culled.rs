@@ -135,7 +135,7 @@ fn two_views_list_their_own_visible_objects_and_draw_them_in_passes_of_their_own
         );
         assert_eq!(passes[0][0], passes[1][0]);
         assert_eq!(passes[0][2], passes[1][2]);
-        assert_eq!(count(&commands, Op::CreateTexture), 12 + 3);
+        assert_eq!(count(&commands, Op::CreateTexture), 18 + 3);
         // Each pass binds its view's frame uniform and index list textures.
         let bound = |group: u32| -> Vec<u32> {
             commands
@@ -224,6 +224,7 @@ fn a_view_added_after_the_frame_culled_draws_from_the_next_frame() {
         structure_changed: false,
         jobs: &world.jobs,
         lines: DebugLines::NONE,
+        lights: &[],
     };
     world.renderer.cull(&input).unwrap();
     let late = world
@@ -295,8 +296,9 @@ fn the_first_frame_creates_everything_and_replays_on_both_draw_paths() {
 
         assert_eq!(count(&commands, Op::CreateRenderPipeline), 2);
         // The color and depth targets, the resident texture, the two rings of three, the
-        // cluster texture, the material table and the table of specular terms.
-        assert_eq!(count(&commands, Op::CreateTexture), 12);
+        // cluster texture, the material table, the table of specular terms, and the two rings of
+        // three light textures.
+        assert_eq!(count(&commands, Op::CreateTexture), 18);
         // Buckets: lit boxes (the object, and the batch in the streamed texture), lit balls, and
         // unlit boxes. The hidden ball culls away; everything else is in view. Nothing is static
         // but the scene, so no bucket has clusters.
@@ -360,7 +362,9 @@ fn the_index_list_holds_each_buckets_sources_in_order() {
 /// The id of the bind group of the streamed texture of ring slot `streamed` and the index list
 /// of ring slot `listed`.
 fn instances_group(streamed: u32, listed: u32) -> u32 {
-    3 + streamed * 3 + listed
+    // After the camera view's three frame groups, one per slot of the light textures' ring, and
+    // its draw record group.
+    5 + streamed * 3 + listed
 }
 
 /// The instances bind group a frame's list binds.
@@ -459,7 +463,7 @@ fn steady_frames_upload_the_moving_rows_into_the_ring_and_keep_an_unchanged_inde
     assert!(texture_writes(&commands, RESIDENT).is_empty());
 
     // With no active moving rows, the streamed ring keeps its slot.
-    let streamed = (bound_instances(&commands) - 3) / 3;
+    let streamed = (bound_instances(&commands) - instances_group(0, 0)) / 3;
     world
         .batches
         .get_mut(world.batch)
@@ -473,7 +477,10 @@ fn steady_frames_upload_the_moving_rows_into_the_ring_and_keep_an_unchanged_inde
     for slot in 0..3 {
         assert!(texture_writes(&commands, STREAMED + slot).is_empty());
     }
-    assert_eq!((bound_instances(&commands) - 3) / 3, streamed);
+    assert_eq!(
+        (bound_instances(&commands) - instances_group(0, 0)) / 3,
+        streamed
+    );
 }
 
 #[test]
@@ -998,7 +1005,7 @@ fn far_from_the_origin_static_objects_stay_resident_and_list_their_cell() {
             .filter(|(op, o)| *op == Op::WriteBuffer && o[0] == FRAME)
             .map(|(_, o)| (o[1] % FRAME_SLOT, o[3]))
             .collect();
-        assert_eq!(frame_writes, vec![(0, 128), (256, 2 * 16)], "frame {frame}");
+        assert_eq!(frame_writes, vec![(0, 160), (256, 2 * 16)], "frame {frame}");
     }
 }
 
