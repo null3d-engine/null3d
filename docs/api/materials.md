@@ -65,13 +65,14 @@ The values have the meaning and the defaults of three.js's `MeshStandardMaterial
 
 ## Options fixed at creation
 
-These options choose the material's shader or its pipeline, so they are fixed when you create the material. A change would compile a new pipeline, which can make a frame late. Make one material for each combination instead.
+These options are fixed when you create the material. Most of them choose the material's shader or its pipeline, and a change would compile a new pipeline, which can make a frame late. Make one material for each combination instead.
 
 | Option | Materials | Default | What it does |
 | --- | --- | --- | --- |
 | `doubleSided` | Both | false | Draws both faces of each triangle. A back face lights as if it faced the camera, as with three.js's `side: DoubleSide` |
 | `vertexColors` | Both | false | Multiplies the base color by the mesh's vertex colors, on meshes that have them. [Geometry](geometry.md) makes meshes with colors |
 | `flatShading` | Standard | false | Lights each triangle with the normal of its face, so the mesh looks faceted |
+| `fog` | Both | true | Takes the scene's fog. With `false`, the material keeps its color at every distance, as with three.js's `fog: false`. [Scene](scene.md#fog) sets the fog |
 
 A material with `vertexColors` draws a mesh without colors in its base color alone. The kind of material, standard or unlit, is fixed too.
 
@@ -116,12 +117,13 @@ A material: how the surfaces of the objects that use it look. `Values` are the o
 
 Interface `MaterialFeatures`.
 
-The options that choose how a material's shader and pipeline draw it. They are fixed when the material is created, because a change would compile a new pipeline.
+The options that choose how a material's shader and pipeline draw it. They are fixed when the material is created, as most of them would need a new pipeline.
 
 | Member | Description |
 | --- | --- |
 | `doubleSided?: boolean` | Draws both faces of each triangle. Back faces light as if they faced the camera. The default is false. |
 | `vertexColors?: boolean` | Multiplies the base color by the mesh's vertex colors, on meshes that have them. The default is false. |
+| `fog?: boolean` | Takes the scene's fog. False keeps the material's color at every distance. The default is true. |
 
 ### `MaterialOptions`
 

@@ -8,8 +8,8 @@ enable draw_index;
 // multiply the color by the mesh's vertex colors too. null3d::mesh finds each instance on both GPU
 // paths.
 #import null3d::color
-#import null3d::mesh::{InstanceIn, clip_position, find_instance}
-#import null3d::mesh::{map_layer, map_ready, material_of}
+#import null3d::mesh::{InstanceIn, clip_of, find_instance, fogged}
+#import null3d::mesh::{map_layer, map_ready, material_of, relative_position}
 
 // The maps' bind group comes after the frame's group, and on WebGL2 after the groups of the draw
 // records and the data textures.
@@ -37,13 +37,16 @@ struct VertexOut {
 #ifdef VERTEX_COLOR
     @location(2) vertex_color: vec4f,
 #endif
+    /// The position relative to the camera.
+    @location(3) relative: vec3f,
 }
 
 @vertex
 fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
     let found = find_instance(i);
     var out: VertexOut;
-    out.clip = clip_position(found, v.position);
+    out.relative = relative_position(found, v.position);
+    out.clip = clip_of(found, out.relative);
     out.uv0 = v.uv0;
     out.material = found.material;
 #ifdef VERTEX_COLOR
@@ -64,5 +67,5 @@ fn fs(in: VertexOut) -> @location(0) vec4f {
 #ifdef VERTEX_COLOR
     base *= in.vertex_color.rgb;
 #endif
-    return vec4f(null3d::color::linear_to_srgb(base), 1.0);
+    return vec4f(null3d::color::linear_to_srgb(fogged(base, in.relative, m)), 1.0);
 }

@@ -157,7 +157,7 @@ Effects:
 | Bloom, ambient occlusion, color grading, outlines | `post.set({ ... })` (0.2) | `api/post` |
 | A custom full-screen effect | `post.addEffect({ name, wgsl, uniforms })` (0.2) | `api/post` |
 | Render to a texture, or add a pass | `render.addPass({ ... })` (0.2) | `guides/custom-passes` |
-| Fog or sky | `scene.setFog`, `scene.setBackground({ sky })` (sky 0.2) | `api/scene` |
+| Fog or sky | `scene.setFog` with the fog's color in `scene.setBackground`; `scene.setBackground({ sky })` (0.2) | `api/scene` |
 
 ## 6. Custom shaders in brief
 

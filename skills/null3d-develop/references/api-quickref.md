@@ -107,7 +107,7 @@ export default defineSketch(async (ctx) => {
 | `scene.setBackground('#rrggbb' or texture or environment or { sky })` | | `{ sky: { turbidity, rayleigh, sunDirection } }` (0.2) |
 | `scene.setEnvironment(env, { intensity, rotation })` (0.2) | | env from `assets.loadEnvironment` |
 | `scene.setBackground(env, { blur, intensity, rotation })` (0.2) | | Blurred environment backgrounds |
-| `scene.setFog({ type: 'linear', color, near, far })` or `{ type: 'exp2', color, density }`, or `null` | | |
+| `scene.setFog({ type: 'linear', color, near, far })` or `{ type: 'exp2', color, density }`, or `null` | | three.js's formulas and defaults. The background takes no fog, so give it the fog's color. Materials opt out with `fog: false` |
 | `scene.createSprites`, `createPoints`, `createLines`, `createLod` (0.2) | | Docs `api/sprites`, `api/points`, `api/lines`, `concepts/lod` |
 | `scene.createView({ camera, rect })` (after 1.0) | View | Split screens; until then, minimaps use a render-to-texture pass (`guides/multiple-views`) |
 | `scene.animateProperty(target, path, keyframes)` (after 1.0) | Animation | Until then, animate values in `onUpdate` |

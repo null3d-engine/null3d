@@ -6,7 +6,7 @@ enable draw_index;
 // so the rest of the shader does not change with where the lights come from.
 #import null3d::color
 #import null3d::lighting
-#import null3d::mesh::{InstanceIn, clip_of, find_instance, frame, material_of}
+#import null3d::mesh::{InstanceIn, clip_of, find_instance, fogged, frame, material_of}
 #import null3d::mesh::{relative_position, world_normal}
 
 /// The bit of a material's flags that lights each triangle with its face's normal.
@@ -93,5 +93,5 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
     let dfg = null3d::lighting::dfg_lut(n_dot_v, pbr.roughness);
     let emitted = m.emissive.rgb * m.strengths.w;
     let outgoing = light_surface(pbr, normal, to_view, dfg) + emitted;
-    return vec4f(null3d::color::linear_to_srgb(outgoing), 1.0);
+    return vec4f(null3d::color::linear_to_srgb(fogged(outgoing, in.relative, m)), 1.0);
 }

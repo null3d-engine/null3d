@@ -4,7 +4,8 @@ enable draw_index;
 // them, times the mesh's vertex colors in the VERTEX_COLOR builds. null3d::mesh finds each instance
 // on both GPU paths.
 #import null3d::color
-#import null3d::mesh::{InstanceIn, clip_position, find_instance, material_of}
+#import null3d::mesh::{InstanceIn, clip_of, find_instance, fogged, material_of}
+#import null3d::mesh::relative_position
 
 /// The vertex attributes that the template reads.
 struct VertexIn {
@@ -20,13 +21,16 @@ struct VertexOut {
 #ifdef VERTEX_COLOR
     @location(1) vertex_color: vec4f,
 #endif
+    /// The position relative to the camera.
+    @location(2) relative: vec3f,
 }
 
 @vertex
 fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
     let found = find_instance(i);
     var out: VertexOut;
-    out.clip = clip_position(found, v.position);
+    out.relative = relative_position(found, v.position);
+    out.clip = clip_of(found, out.relative);
     out.material = found.material;
 #ifdef VERTEX_COLOR
     out.vertex_color = v.vertex_color;
@@ -36,9 +40,10 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
 
 @fragment
 fn fs(in: VertexOut) -> @location(0) vec4f {
-    var base = material_of(in.material).color.rgb;
+    let m = material_of(in.material);
+    var base = m.color.rgb;
 #ifdef VERTEX_COLOR
     base *= in.vertex_color.rgb;
 #endif
-    return vec4f(null3d::color::linear_to_srgb(base), 1.0);
+    return vec4f(null3d::color::linear_to_srgb(fogged(base, in.relative, m)), 1.0);
 }

@@ -205,6 +205,19 @@ export interface CoreGlue extends CoreErrors {
 	setSun(dx: number, dy: number, dz: number, r: number, g: number, b: number): number;
 	setAmbient(r: number, g: number, b: number): number;
 	setBackground(r: number, g: number, b: number): number;
+	/**
+	 * The scene's fog: its kind (`FOG_KIND_*`), its linear color, the near and far distances of
+	 * linear fog, and the density of exponential squared fog.
+	 */
+	setFog(
+		kind: number,
+		r: number,
+		g: number,
+		b: number,
+		near: number,
+		far: number,
+		density: number,
+	): number;
 }
 
 const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
@@ -264,6 +277,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'setSun',
 	'setAmbient',
 	'setBackground',
+	'setFog',
 ];
 
 /** Stack size for each engine thread. */

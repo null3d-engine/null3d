@@ -6,6 +6,7 @@ import { EngineError } from '../errors/engine-error';
 import {
 	MATERIAL_FEATURE_DOUBLE_SIDED,
 	MATERIAL_FEATURE_FLAT_SHADING,
+	MATERIAL_FEATURE_NO_FOG,
 	MATERIAL_FEATURE_VERTEX_COLORS,
 	MATERIAL_PARAM_COLOR,
 	MATERIAL_PARAM_EMISSIVE,
@@ -490,7 +491,7 @@ export interface StandardValues extends MaterialOptions {
 
 /**
  * The options that choose how a material's shader and pipeline draw it. They are fixed when the
- * material is created, because a change would compile a new pipeline.
+ * material is created, as most of them would need a new pipeline.
  *
  * @category api/materials
  */
@@ -502,6 +503,8 @@ export interface MaterialFeatures {
 	 * is false.
 	 */
 	vertexColors?: boolean;
+	/** Takes the scene's fog. False keeps the material's color at every distance. The default is true. */
+	fog?: boolean;
 }
 
 /**
@@ -595,7 +598,8 @@ function featureBits(options: StandardOptions): number {
 	return (
 		(options.doubleSided ? MATERIAL_FEATURE_DOUBLE_SIDED : 0) |
 		(options.vertexColors ? MATERIAL_FEATURE_VERTEX_COLORS : 0) |
-		(options.flatShading ? MATERIAL_FEATURE_FLAT_SHADING : 0)
+		(options.flatShading ? MATERIAL_FEATURE_FLAT_SHADING : 0) |
+		(options.fog === false ? MATERIAL_FEATURE_NO_FOG : 0)
 	);
 }
 
