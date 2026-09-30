@@ -31,7 +31,7 @@ use null3d_render::geometry::{Geometry, box_geometry, sphere_geometry};
 use null3d_render::gpu_driven::{
     BYTES_PER_SOURCE, GpuDrivenRenderer, MAX_USEFUL_BINDING_BYTES, RendererConfig,
 };
-use null3d_render::materials::{MaterialError, Shading};
+use null3d_render::materials::{MaterialError, MaterialTable, Shading};
 use wasm_bindgen::prelude::*;
 
 pub mod constants;
@@ -795,16 +795,26 @@ pub fn create_material(shading: u32, r: f32, g: f32, b: f32, a: f32) -> u32 {
     })
 }
 
-/// Changes a material's linear color.
+/// Changes a material's linear color and keeps its opacity.
 #[wasm_bindgen(js_name = setMaterialColor)]
-pub fn set_material_color(material: u32, r: f32, g: f32, b: f32, a: f32) -> u32 {
+pub fn set_material_color(material: u32, r: f32, g: f32, b: f32) -> u32 {
+    change_material(material, |table, id| table.set_color(id, [r, g, b]))
+}
+
+/// Changes a material's opacity and keeps its color.
+#[wasm_bindgen(js_name = setMaterialOpacity)]
+pub fn set_material_opacity(material: u32, opacity: f32) -> u32 {
+    change_material(material, |table, id| table.set_opacity(id, opacity))
+}
+
+/// Applies a change to the material with this id, counting from 1.
+fn change_material(
+    material: u32,
+    change: impl FnOnce(&mut MaterialTable, u32) -> Result<(), MaterialError>,
+) -> u32 {
     with_engine(|e| {
-        match e
-            .renderer
-            .settings_mut()
-            .materials_mut()
-            .set_color(material.wrapping_sub(1), [r, g, b, a])
-        {
+        let table = e.renderer.settings_mut().materials_mut();
+        match change(table, material.wrapping_sub(1)) {
             Ok(()) => 0,
             Err(error) => material_failure(error),
         }

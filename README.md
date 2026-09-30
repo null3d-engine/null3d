@@ -173,7 +173,7 @@ flowchart LR
 three.js keeps each object as a JavaScript object and walks the scene graph object by object in every frame. That work grows with the object count and runs on the page's main thread. null3D keeps scene data in flat arrays inside WebAssembly memory, processes them in bulk on job workers, and lets your code write straight into them:
 
 ```ts
-const rocks = scene.createInstances(rockMesh, 10_000, { dynamic: true });
+const rocks = scene.createInstances(rockMesh, 10_000, { material: rockMaterial, dynamic: true });
 
 // In onUpdate: one typed-array loop, no allocation, no per-object calls.
 const p = rocks.positions; // Float32Array, 3 floats per row
@@ -216,7 +216,7 @@ The API uses three.js names where the ideas match. A few of the 147 entries in t
 | --- | --- | --- |
 | `WebGLRenderer` / `WebGPURenderer` | `createEngine({ canvas, sketch })` on the page; scene code moves into `defineSketch()` in a worker | 0.1 |
 | `MeshStandardMaterial` | `materials.standard({ color, map, metalness, roughness, ... })` | 0.1 |
-| `InstancedMesh` with `setMatrixAt` | `scene.createInstances(mesh, count, { dynamic })`, then write the batch's typed arrays | 0.1 |
+| `InstancedMesh` with `setMatrixAt` | `scene.createInstances(mesh, count, { material, dynamic })`, then write the batch's typed arrays | 0.1 |
 | `OrbitControls` | `createOrbitControls(ctx, camera, { ... })` from `@null3d/controls` | 0.1 |
 | `GLTFLoader` | `await assets.loadGltf(url)`, then `scene.instantiate(prefab)` | 0.2 |
 | `Raycaster` | `camera.screenToRay(x, y, ray)`, then `scene.raycast(...)` | 0.2 |
@@ -238,7 +238,7 @@ Each example names the first version with its API.
 Thousands of moving objects in one batch (0.1):
 
 ```ts
-const drones = scene.createInstances(droneMesh, 5_000, { dynamic: true, colors: true });
+const drones = scene.createInstances(droneMesh, 5_000, { material: droneMaterial, dynamic: true, colors: true });
 const velocity = new Float32Array(drones.count * 3); // your own data, one row per drone
 
 // In onUpdate:

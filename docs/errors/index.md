@@ -13,11 +13,11 @@ Every error the engine throws is an `EngineError` with a code. Its message names
 | Code | Error | What happened |
 | --- | --- | --- |
 | [E1101](E1101.md) | Stale handle | A call used an object after it was destroyed. Its slot may already hold a new object. |
-| [E1102](E1102.md) | Too many objects | The scene reached the most objects one engine holds. |
+| [E1102](E1102.md) | Too many objects | The scene, the table of instance batches or the queue of changes for the next frame is full. The message names which one, and how many it holds. |
 | [E1103](E1103.md) | Object from another engine | A call received an object that this engine did not create. |
 | [E1104](E1104.md) | Parent loop | A call would make an object its own ancestor: the new parent is the object itself or one of its descendants. |
 | [E1105](E1105.md) | Unknown command | The engine core received a structural change it does not know, so the TypeScript side and the core come from different builds. |
-| [E1106](E1106.md) | Object not created yet | A call read world data of an object in the frame that created it. New objects join the scene when the next frame starts. |
+| [E1106](E1106.md) | Object never created | A call such as `setVisible` or `setParent` queued a change for an object that the engine never created. The engine creates an object when the next frame starts. When that fails, for example because its parent was destroyed, the object never joins the scene. |
 | [E1107](E1107.md) | Object created twice | The engine core received a second create command for one object, so the TypeScript side and the core disagree about the scene. |
 | [E1108](E1108.md) | Value out of range | A call received a count or an index past its limit, such as a row past the capacity of an instance batch. |
 | [E1109](E1109.md) | Engine memory full | The engine could not create or grow its WebAssembly memory. A page with worker threads gives the engine 1 GiB by default, and up to 4 GiB through the memory option of createEngine. Each instance row takes about 180 bytes, or about 230 with per-row colors. So about 5 million rows fill 1 GiB, along with the rest of the scene. A browser can refuse memory sooner, as phones often do. It can also refuse a new engine's memory while the memory of an engine that stopped a moment before is not free yet. The engine then tries again for about 3 seconds before it fails. |
