@@ -18,7 +18,7 @@ flowchart LR
     gen --> check["Development builds:<br/>catch use after destroy"]
 ```
 
-Every mesh, camera and group in null3D is a small integer called a handle. The object's data lives in shared arrays, one array per field, and the handle's slot number is the object's index into each array.
+Every mesh, camera and group in null3D has a handle: a small integer that names it. The object's data lives in shared arrays, one array per field, and the handle's slot number is the object's index into each array.
 
 ## What a handle holds
 
@@ -59,7 +59,7 @@ Each kind of object has its own class. Passing a mesh where the engine expects a
 
 A slot keeps its index until its object is destroyed. The engine reuses freed slots for new objects, but it never moves an object into another slot to close a gap. Error messages name an object by its name and slot, such as `"Crate" (slot 7)`, and `describe()` returns the same text.
 
-Each slot holds the object's position (3 floats), rotation as a quaternion (4 floats) and scale (3 floats). It also holds the parent's slot, flags, the mesh and material IDs, the render order, and the center and radius of the object's bounding sphere.
+Each slot holds the object's position (3 floats), rotation as a quaternion (4 floats) and scale (3 floats). It also holds the parent's slot, flags, the layer mask, the grid cell, and the mesh and material IDs. The last fields are the render order and the center and radius of the object's bounding sphere.
 
 ## Stale handles
 
