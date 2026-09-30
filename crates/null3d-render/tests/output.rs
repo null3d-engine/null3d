@@ -94,6 +94,14 @@ fn check_hdr_frame<B: FrameBuilder>(world: &mut World<B>, device: &mut MockBacke
         panic!("one final pipeline: {finals:?}");
     };
     assert_eq!(&final_pipeline[3..6], [format::CANVAS, format::NONE, 1]);
+    // Every pipeline has an id of its own, and the final pass, which draws last, draws with its
+    // pipeline.
+    let mut ids: Vec<u32> = pipelines.iter().map(|o| o[0]).collect();
+    ids.sort_unstable();
+    ids.dedup();
+    assert_eq!(ids.len(), pipelines.len(), "{pipelines:?}");
+    let set = operands(&commands, Op::SetPipeline);
+    assert_eq!(set.last().map(|o| o[0]), Some(final_pipeline[0]));
 
     // The multisampled color and the depth, then the texture the color resolves into.
     assert_eq!(targets_made(&commands), 3);
