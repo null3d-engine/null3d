@@ -28,6 +28,7 @@ use null3d_render::arrays::{ArrayName, ArraysError, MeshArrays, from_arrays};
 use null3d_render::camera::{Lens, Orthographic, Perspective};
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::debug_lines::LineStore;
+use null3d_render::fog::Fog;
 use null3d_render::frame::{FrameBuilder, FrameInput, RecordError};
 use null3d_render::geometry::{Geometry, OutOfMemory, Shape, generate};
 use null3d_render::gpu_driven::{
@@ -1225,6 +1226,17 @@ pub fn set_light_value(light: u32, which: u32, value: f32) -> u32 {
 pub fn set_background(r: f32, g: f32, b: f32) -> u32 {
     with_engine(|e| {
         e.renderer.settings_mut().set_background([r, g, b]);
+        0
+    })
+}
+
+/// The scene's fog: its kind (`constants::fog_kind`), its linear color, the near and far distances
+/// of linear fog, and the density of exponential squared fog.
+#[wasm_bindgen(js_name = setFog)]
+pub fn set_fog(kind: u32, r: f32, g: f32, b: f32, near: f32, far: f32, density: f32) -> u32 {
+    with_engine(|e| {
+        let fog = Fog::from_code(kind, [r, g, b], near, far, density);
+        e.renderer.settings_mut().set_fog(fog);
         0
     })
 }
