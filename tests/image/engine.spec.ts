@@ -37,6 +37,24 @@ for (const mode of ENGINE_MODES) {
 	});
 }
 
+// In single-threaded mode the page downloads the sketch module while the core downloads, so it asks
+// for the module before it asks for the core's loader, which it needs only once the core has
+// compiled.
+test('the page asks for the sketch module before the core loader in single-threaded mode', async ({
+	page,
+}) => {
+	await page.goto(`engine.html?gpu=webgl2&seconds=1&downloads&${singleThreaded.query}`);
+	const result = await pageResult<EngineResult & { error?: string }>(page, 30_000);
+	expect(result.error).toBeUndefined();
+	expect(engineProblems(result, singleThreaded, 'webgl2')).toEqual([]);
+	const asked = (file: RegExp) => result.downloads?.find(({ name }) => file.test(name))?.startTime;
+	const sketch = asked(/\/empty-sketch[^/]*\.[jt]s$/);
+	const coreLoader = asked(/\/null3d[^/_]*\.js$/);
+	expect(sketch).toBeDefined();
+	expect(coreLoader).toBeDefined();
+	expect(sketch).toBeLessThan(coreLoader as number);
+});
+
 for (const gpu of ['webgpu', 'webgl2'] as const) {
 	for (const mode of ENGINE_MODES) {
 		test(`the engine runs ${mode.name} on ${gpu}`, async ({ page }) => {

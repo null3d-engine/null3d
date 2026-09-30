@@ -45,6 +45,7 @@ try {
 | [E1301](../errors/E1301.md) | The browser has no usable GPU path, or no path that `gpu` or `?gpu=` asks for. |
 | [E1406](../errors/E1406.md) | A file of the engine core did not download. |
 | [E1109](../errors/E1109.md) | The browser refused the engine's memory, even after about 3 seconds of tries. |
+| [E1410](../errors/E1410.md) | The sketch module did not load: it did not download, or its code threw an error while it loaded. |
 | [E1401](../errors/E1401.md) | The sketch module's default export is not `defineSketch(...)`. |
 | [E1405](../errors/E1405.md) | An engine thread did not start. |
 
@@ -257,6 +258,7 @@ type ErrorCode =
 	| 'E1407'
 	| 'E1408'
 	| 'E1409'
+	| 'E1410'
 	| 'E1501'
 	| 'E1502'
 	| 'E1503'

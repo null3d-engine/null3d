@@ -451,10 +451,15 @@ async function startEngine(
 			return loaded;
 		}),
 	);
-	// The page runs the sketch itself only in single-threaded mode. It needs the sketch runner right
-	// after the core, so the runner downloads while the core does: a later start delays the first
-	// frame on a slow network.
+	const sketchUrl = new URL(options.sketch, globalThis.location?.href).href;
+	// The page runs the sketch itself only in single-threaded mode. It needs the sketch runner and
+	// the sketch module right after the core, so both download while the core does: a later start
+	// delays the first frame on a slow network. The sketch module's top-level code then runs when the
+	// module arrives. Hold mode loads the module once the runner has seeded the thread's random
+	// numbers, so that code draws the same numbers on every run.
 	const runnerModule = latency === 'single' ? loadRunnerModule() : undefined;
+	const sketchModule =
+		latency === 'single' && hold === undefined ? awaitLater(loadSketch(sketchUrl)) : undefined;
 	const powerPreference = options.powerPreference ?? DEFAULT_POWER_PREFERENCE;
 	const report = await abortable(probeCapabilities(powerPreference), signal);
 	const probeMs = performance.now() - startedAt;
@@ -498,7 +503,6 @@ async function startEngine(
 	// network, and while the page starts the core and the sketch.
 	const drawModule = renderThread === 'main' ? loadDrawModule() : undefined;
 	let wasmMemory = core.memory;
-	const sketchUrl = new URL(options.sketch, globalThis.location?.href).href;
 	const device = coreDevice(tier === 'webgl2', report, switches);
 	const handoff: CoreHandoff = {
 		build,
@@ -607,7 +611,7 @@ async function startEngine(
 				{ glue: started.glue, memory, control: views, keyCodes: KEY_CODES, jobWorkers: 0, device },
 				hold,
 			);
-			await localRunner.setup(await loadSketch(sketchUrl));
+			await localRunner.setup(await (sketchModule ?? loadSketch(sketchUrl)));
 			localDrawing = await drawOnPage(memory, localRunner);
 		} else {
 			sketch = new EngineWorker(
