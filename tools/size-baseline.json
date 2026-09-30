@@ -17,23 +17,23 @@
 	},
 	"js/page.js": {
 		"raw": 36910,
-		"brotli": 12482
+		"brotli": 12496
 	},
 	"js/page-renderer.js": {
 		"raw": 105205,
-		"brotli": 19004
+		"brotli": 19009
 	},
 	"js/page-sketch-runner.js": {
-		"raw": 18979,
-		"brotli": 6195
+		"raw": 19542,
+		"brotli": 6425
 	},
 	"js/sketch-worker.js": {
-		"raw": 26439,
-		"brotli": 8537
+		"raw": 26990,
+		"brotli": 8738
 	},
 	"js/sketch-worker-renderer.js": {
 		"raw": 105500,
-		"brotli": 18941
+		"brotli": 18936
 	},
 	"js/render-worker.js": {
 		"raw": 111346,

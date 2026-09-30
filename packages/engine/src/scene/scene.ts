@@ -5,10 +5,12 @@
 import { checkLive, checkNumber, checkVector, DEV, type Described } from '../errors/checks';
 import { EngineError } from '../errors/engine-error';
 import * as C from '../generated/core';
+import { fromEuler as quaternionFromEuler } from '../math/quat';
+import type { EulerOrder } from '../math/types';
 import { type ColorInput, linearColor } from './color';
 import type { CoreMemory } from './memory';
 import type { Material, MeshGeometry } from './resources';
-import { type EulerOrder, quaternionFromEuler, quaternionLookAt } from './rotation';
+import { quaternionLookAt } from './rotation';
 
 /**
  * A vector (x, y, z).
