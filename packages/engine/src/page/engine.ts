@@ -26,6 +26,7 @@ import { type Build, type CoreGlue, loadGlue, startCore } from '../shared/core';
 import { ImageTable, sendThrough, sendToTable } from '../shared/images';
 import { KEY_CODES } from '../shared/key-codes';
 import { createMetricsBuffer, MetricsReader } from '../shared/metrics';
+import { notifySlot, setWakeByMessage } from '../shared/wake';
 import { loadSketch } from '../sketch/define-sketch';
 import type { QualityStart } from '../sketch/quality';
 import type { SketchRunner } from '../sketch/runner';
@@ -828,6 +829,9 @@ async function startEngine(
 		maxInstances: maxInstances(device),
 		depth: device.depth,
 	};
+	// Where the browser lacks Atomics.waitAsync, the threads wake each other with messages.
+	const wakeByMessage = switches.wakeByMessage || !report.atomicsWaitAsync;
+	setWakeByMessage(wakeByMessage);
 	const handoff: CoreHandoff = {
 		build,
 		module: core.module,
@@ -836,6 +840,7 @@ async function startEngine(
 		metrics,
 		device,
 		errorFixes: ERROR_FIXES,
+		wakeByMessage,
 	};
 	const canvasWatch = watchCanvas(options.canvas, control, quality.settings.maxPixelRatio);
 	canvasWatch.listen(true);
@@ -856,7 +861,7 @@ async function startEngine(
 		// Counted before the flag clears, so the sketch's first step after the pause sees it.
 		if (!paused && Atomics.load(slots, Slot.Paused) !== 0) Atomics.add(slots, Slot.Resumes, 1);
 		Atomics.store(slots, Slot.Paused, paused ? 1 : 0);
-		Atomics.notify(slots, Slot.Paused);
+		notifySlot(slots, Slot.Paused, threads?.sketch?.worker);
 	};
 	const pageLoss = (reason: string) =>
 		onFailure(new EngineError('E1302', `the page lost its GPU: ${reason}.`));
@@ -909,7 +914,7 @@ async function startEngine(
 				Slot.JobsReady,
 				Slot.PipelinesBuilt,
 			])
-				Atomics.notify(slots, slot);
+				notifySlot(slots, slot, threads?.sketch?.worker);
 			localDrawing?.stop();
 			localRunner?.dispose();
 			localCore?.destroyEngine();
