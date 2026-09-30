@@ -27,8 +27,8 @@ export interface DebugGridOptions {
  */
 export interface DebugLightOptions {
 	/**
-	 * Where to draw a light that has no position of its own, such as a directional light. The
-	 * default is the origin.
+	 * Where to draw the light, such as a place in view for a directional light, whose own position
+	 * does not change its light. The default is the light's position.
 	 */
 	position?: Vec3Like;
 	/** The size of the drawing in meters. The default is 1. */
@@ -84,8 +84,8 @@ export interface Debug {
 	 */
 	frustum(camera: Camera, color?: ColorInput): void;
 	/**
-	 * Draws a light. A directional light draws as a square that faces its light, with an arrow in the
-	 * direction its light travels.
+	 * Draws a directional light as a square that faces its light, with an arrow in the direction its
+	 * light travels. The light takes its place and direction in the frame it draws in.
 	 */
 	light(light: DirectionalLight, options?: DebugLightOptions): void;
 }

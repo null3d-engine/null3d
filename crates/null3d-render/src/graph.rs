@@ -237,6 +237,9 @@ pub struct Target {
     pub samples: u32,
     /// Array layers. A pass draws into one layer at a time.
     pub layers: u32,
+    /// True when shaders read the target as an array, even one of one layer, as a shadow map whose
+    /// cascade count changes is read.
+    pub array: bool,
 }
 
 impl Target {
@@ -247,6 +250,7 @@ impl Target {
             depth: false,
             samples: 1,
             layers: 1,
+            array: false,
         }
     }
 
@@ -257,6 +261,7 @@ impl Target {
             depth: true,
             samples: 1,
             layers: 1,
+            array: false,
         }
     }
 
@@ -268,6 +273,19 @@ impl Target {
     /// The same target with `layers` array layers.
     pub const fn layers(self, layers: u32) -> Self {
         Self { layers, ..self }
+    }
+
+    /// The same target, which shaders read as an array whatever its layer count.
+    pub const fn array(self) -> Self {
+        Self {
+            array: true,
+            ..self
+        }
+    }
+
+    /// True when shaders read the target as an array, and passes draw into a view of one layer.
+    pub const fn is_array(self) -> bool {
+        self.array || self.layers > 1
     }
 
     /// True for a multisampled color target, which passes that sample it read through a resolve.

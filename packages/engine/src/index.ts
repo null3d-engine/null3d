@@ -59,7 +59,8 @@ export type {
 } from './page/frame-stats';
 export type { HeldFrame, HoldFailure, HoldResult } from './page/hold';
 export type { DepthMode, LatencyMode } from './page/switches';
-export type { Tier } from './render/renderer';
+export type { DeviceHints } from './quality/chooser';
+export type { QualityPreset, QualitySettings } from './quality/presets';
 export type {
 	Assets,
 	LoadImageOptions,
@@ -95,8 +96,11 @@ export type {
 	DirectionalLight,
 	DirectionalLightOptions,
 	Group,
+	HemisphereLight,
+	HemisphereLightOptions,
 	InstanceBatch,
 	InstanceOptions,
+	Light,
 	LightOptions,
 	Mesh,
 	MeshOptions,
@@ -107,8 +111,12 @@ export type {
 	ParentOptions,
 	PerspectiveCamera,
 	PerspectiveCameraOptions,
+	PointLight,
+	PointLightOptions,
 	Quat,
 	Scene,
+	SpotLight,
+	SpotLightOptions,
 	Vec3,
 } from './scene/scene';
 export type {
@@ -124,6 +132,7 @@ export type {
 } from './scene/textures';
 export type { PhaseName } from './shared/metrics';
 export type { Percentiles } from './shared/stats';
+export type { Tier } from './shared/tier';
 export type {
 	SketchCallbacks,
 	SketchContext,
@@ -137,6 +146,7 @@ export type {
 } from './sketch/define-sketch';
 export { defineSketch } from './sketch/define-sketch';
 export type { Input, InputActions, InputPointer, InputTouch } from './sketch/input';
+export type { Quality } from './sketch/quality';
 export type { WorkerProbe } from './workers/probe-worker';
 
 /**

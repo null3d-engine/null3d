@@ -3,19 +3,21 @@
 // only once.
 
 import { EngineError } from '../errors/engine-error';
+import { QUALITY_SETTINGS } from '../quality/presets';
 import { type Build, coreUrls, type MemoryLimits } from '../shared/core';
 
 /**
- * The shared memory's maximum when the page asks for none: 1 GiB. The browser reserves address
- * space for the whole maximum when the engine starts, and the page's other engines and WebAssembly
- * modules share what is left. An iPad holds 6 memories with this maximum and 3 with 4 GiB, and
- * scenes need far less than 1 GiB today (D-04).
+ * The shared memory's maximum when neither the page nor a quality preset asks for one: 1 GiB. The
+ * browser reserves address space for the whole maximum when the engine starts, and the page's
+ * other engines and WebAssembly modules share what is left. An iPad holds 6 memories with this
+ * maximum and 3 with 4 GiB, and scenes need far less than 1 GiB today (D-04). Every preset asks
+ * for it until measurements of the memory that tabs can use set a maximum per preset.
  */
 export const DEFAULT_MAXIMUM_MIB = 1024;
-/** The smallest maximum a page can ask for. */
-export const MIN_MAXIMUM_MIB = 256;
+/** The smallest maximum a page can ask for, as the preset table's memory setting takes it. */
+export const MIN_MAXIMUM_MIB = QUALITY_SETTINGS.memoryMaximumMiB.values.min;
 /** The largest maximum a page can ask for: the 4 GiB that the threaded core declares. */
-export const MAX_MAXIMUM_MIB = 4096;
+export const MAX_MAXIMUM_MIB = QUALITY_SETTINGS.memoryMaximumMiB.values.max;
 /** WebAssembly memory comes in pages of 64 KiB, 16 to a MiB. */
 const PAGES_PER_MIB = 16;
 /**
@@ -61,12 +63,14 @@ async function compile(url: URL): Promise<WebAssembly.Module> {
 
 /**
  * The shared memory's maximum in MiB: the `?memory=` switch's, which wins, then the page's
- * `memory.maximumMiB` option's, then the default. An option that is not a whole number of MiB
- * within the range a page can ask for fails with E1409, even when the switch wins.
+ * `memory.maximumMiB` option's, then `fallback`, the quality preset's. An option that is not a
+ * whole number of MiB within the range a page can ask for fails with E1409, even when the switch
+ * wins.
  */
 export function memoryMaximumMiB(
 	option: number | undefined,
 	fromSwitch: number | undefined,
+	fallback = DEFAULT_MAXIMUM_MIB,
 ): number {
 	if (
 		option !== undefined &&
@@ -76,7 +80,7 @@ export function memoryMaximumMiB(
 			'E1409',
 			`the memory.maximumMiB option ${String(option)} is not a whole number of MiB from ${MIN_MAXIMUM_MIB} to ${MAX_MAXIMUM_MIB}.`,
 		);
-	return fromSwitch ?? option ?? DEFAULT_MAXIMUM_MIB;
+	return fromSwitch ?? option ?? fallback;
 }
 
 /**

@@ -15,6 +15,7 @@
 //! | [`scene`] | Scene objects by slot, 16-byte commands, the hierarchy and the transform update |
 //! | [`instances`] | Instance batches: per-row arrays, dirty ranges, the batch table, memory epoch |
 //! | [`layers`] | Render layers: the masks that choose which views draw which sources |
+//! | [`lights`] | The light table, and the lights each frame finds for a view |
 //! | [`culling`] | Frustum planes and SIMD sphere culling, serial and parallel |
 //! | [`clusters`] | Groups of nearby rows that culling tests as one sphere each |
 //! | [`arena`] | Per-thread bump allocators reset each frame |
@@ -44,6 +45,7 @@ pub mod handle;
 pub mod instances;
 pub mod jobs;
 pub mod layers;
+pub mod lights;
 pub mod math;
 pub mod scene;
 pub mod shared;
