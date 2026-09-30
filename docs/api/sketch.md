@@ -42,7 +42,9 @@ export default defineSketch(({ scene, geometry, materials, input, page }) => {
 
 The page passes the module's address to `createEngine`, and the engine loads the module in the sketch worker. The sketch worker has no `document` and no `window`, so the page keeps the HTML and the two sides talk through [messages](page.md). On a page without cross-origin isolation, the engine runs the sketch on the page's own thread, with the same API ([Hosting and cross-origin isolation](../getting-started/hosting.md)).
 
-A module whose default export is not `defineSketch(...)` fails the start with [E1401](../errors/E1401.md). Code at the top of the module runs once, when the module loads, before the engine calls `setup`.
+A module whose default export is not `defineSketch(...)` fails the start with [E1401](../errors/E1401.md). A module that does not load fails it with [E1410](../errors/E1410.md): the module did not download, or its code threw an error while it loaded.
+
+Code at the top of the module runs once, when the module loads, before the engine calls `setup`. With worker threads, the module loads after the engine has started in the sketch worker. In the single-threaded build, the engine downloads the module while it downloads its core, to start sooner on a slow network. So there, code at the top of the module can run before the engine has started, and also when the start fails.
 
 ## The setup function
 

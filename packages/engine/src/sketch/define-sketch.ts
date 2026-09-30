@@ -7,6 +7,7 @@
 
 import type { Debug } from '../debug/debug';
 import { EngineError } from '../errors/engine-error';
+import { messageOf } from '../errors/message';
 import type { Geometry, Materials } from '../scene/resources';
 import type { Scene } from '../scene/scene';
 import type { Input } from './input';
@@ -125,9 +126,20 @@ function isSketchDefinition(value: unknown): value is SketchDefinition {
 	);
 }
 
-/** Imports a sketch module and returns its sketch, or throws E1401 when it exports none. */
+/**
+ * Imports a sketch module and returns its sketch. A module that does not load fails with E1410,
+ * unless its code threw an engine error, which keeps its code. A module that exports no sketch
+ * fails with E1401.
+ */
 export async function loadSketch(url: string): Promise<SketchDefinition> {
-	const module = (await import(/* @vite-ignore */ url)) as { default?: unknown };
+	let module: { default?: unknown };
+	try {
+		module = await import(/* @vite-ignore */ url);
+	} catch (e) {
+		if (e instanceof EngineError) throw e;
+		const reason = messageOf(e).replace(/\.$/, '');
+		throw new EngineError('E1410', `the sketch module ${url} did not load: ${reason}.`);
+	}
 	if (!isSketchDefinition(module.default))
 		throw new EngineError('E1401', `${url} must export default defineSketch(...).`);
 	return module.default;

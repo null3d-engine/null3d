@@ -1,16 +1,19 @@
 // Reports the engine errors that reach a page and a sketch, in the thread mode that the URL's
-// switches ask for. Two starts fail: one with a module that exports no sketch, and one with a sketch
-// whose setup throws an engine error. A third start runs a sketch that catches four errors from the
-// engine's API and one that it makes itself, and posts them. The page then stops that engine and
-// starts it again, which must draw. Each start takes a fresh canvas, as a canvas passes to the
-// engine only once.
-import { createEngine } from '@null3d/engine';
+// switches ask for. Four starts fail: one with a module that exports no sketch, one with a sketch
+// whose setup throws an engine error, one whose memory option asks for too large a maximum, and one
+// with a sketch module that does not load. A fifth start runs a sketch that catches four errors
+// from the engine's API and one that it makes itself, and posts them. The page then stops that
+// engine and starts it again, which must draw.
+// Each start takes a fresh canvas, as a canvas passes to the engine only once.
+import { createEngine, type EngineOptions } from '@null3d/engine';
 import { type ErrorFields, errorFields, noError } from './lib/error-fields';
 import { run } from './lib/result';
 
 const notASketch = new URL('./sketches/not-a-sketch.ts', import.meta.url);
 const failingSetup = new URL('./sketches/failing-setup-sketch.ts', import.meta.url);
 const errorSketch = new URL('./sketches/error-sketch.ts', import.meta.url);
+/** A module that the server does not have, so its import fails. */
+const missingSketch = new URL('missing-sketch.js', location.href);
 
 function freshCanvas(): HTMLCanvasElement {
 	const canvas = document.createElement('canvas');
@@ -19,9 +22,12 @@ function freshCanvas(): HTMLCanvasElement {
 }
 
 /** The error that a start rejects with, or a note that the start ran. */
-async function failedStart(sketch: URL): Promise<ErrorFields> {
+async function failedStart(
+	sketch: URL,
+	options: Partial<EngineOptions> = {},
+): Promise<ErrorFields> {
 	try {
-		const engine = await createEngine({ canvas: freshCanvas(), sketch });
+		const engine = await createEngine({ canvas: freshCanvas(), sketch, ...options });
 		await engine.destroy();
 		return noError('the engine started');
 	} catch (e) {
@@ -30,7 +36,12 @@ async function failedStart(sketch: URL): Promise<ErrorFields> {
 }
 
 run('errors', async () => {
-	const failedStarts = [await failedStart(notASketch), await failedStart(failingSetup)];
+	const failedStarts = [
+		await failedStart(notASketch),
+		await failedStart(failingSetup),
+		await failedStart(errorSketch, { memory: { maximumMiB: 8192 } }),
+		await failedStart(missingSketch),
+	];
 	const engine = await createEngine({ canvas: freshCanvas(), sketch: errorSketch });
 	const inSketch = await new Promise<unknown>((resolve) => {
 		engine.onSketchMessage((name, data) => {
@@ -46,6 +57,7 @@ run('errors', async () => {
 	return {
 		mode: again.mode,
 		notASketch: notASketch.href,
+		missingSketch: missingSketch.href,
 		failedStarts,
 		inSketch,
 		framesAfterRestart: stats.frames,

@@ -89,7 +89,7 @@ URL switches for the dev server (engine docs `guides/testing`):
 | `?depth=reversed-gl` | On WebGL2, force a depth mode: `reversed`, `reversed-gl` (as in browsers without `EXT_clip_control`, such as Firefox) or `standard` (`concepts/backends`) |
 | `?latency=pipelined`, `?latency=low` | Latency mode |
 | `?jobs=4` | Start this many job workers, from 1 to 255, instead of the logical cores minus 2 |
-| `?memory=2048` | Set the maximum of the memory that worker threads share, in MiB, up to 4096; the default is 1024 |
+| `?memory=2048` | Set the maximum of the memory that worker threads share, in MiB, up to 4096, over the `memory` option of `createEngine`; the default is 1024 |
 | `?fps=30` | Hold drawing at this many frames per second, at most the display's rate, to compare runs on displays of different refresh rates |
 | `?hold=1.5` | Hold mode: step the sketch to 1.5 seconds, draw that one frame and publish it as `window.__null3dHold`; a bare `?hold` holds at the `hold` option's time, or at 0 |
 
@@ -148,6 +148,7 @@ Look up the full explanation with `bunx @null3d/cli docs show errors/E1203`. Rel
 | Hitch when something appears | Pipeline compile | Create earlier; `scene.warmUp()` | `guides/loading-screens` |
 | Tab reloads or crashes on a phone | Memory limit | Compressed textures, fewer and smaller assets, destroy unused prefabs | `guides/phones` |
 | `document is not defined` or `window is not defined` | DOM code in `sketch.ts` | Move it to `page.ts`; send data with messages | `api/page` |
+| `createEngine` rejects with E1410 | The sketch module did not load: a wrong address, or an error that its top-level code threw | Pass `sketch: new URL('./sketch.ts', import.meta.url)`; fix the error that the message quotes | `errors/E1410` |
 | Pointer position off by a factor | Mixing CSS pixels and render pixels | `input.pointer.x` and `y` are CSS pixels, like `screenToRay` expects | `api/input` |
 
 ## 8. Before you ship
@@ -159,7 +160,7 @@ Rendering:
 - The page renders with `?gpu=webgpu` and with `?gpu=webgl2`, and the console shows no errors and no warnings.
 - The image stays right after a window resize, at phone width, and at a pixel ratio of 3.
 - On a real phone, a ten-minute run holds its frame rate as the phone warms up (`guides/phones`).
-- A scene with more than 2,097,152 objects and instance rows ran on a device with WebGPU's default limits, or stays below that number. The limit of each device is in `engine.capabilities.maxInstances`.
+- A scene with more than 1,048,576 objects and instance rows ran on the smallest devices your users have, on both GPU paths. On WebGPU every device draws 2,097,152. On WebGL2 a device whose textures reach only 2,048 pixels draws 1,048,576. The limit of each device is in `engine.capabilities.maxInstances`.
 
 Startup:
 

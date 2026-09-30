@@ -21,10 +21,10 @@ use null3d_gpu::drawlist::{DrawList, DrawListError, Op, buffer_usage};
 use crate::camera::Perspective;
 use crate::debug_lines::DebugLines;
 use crate::frame_data::{FrameUniform, normalized_direction};
-use crate::frame_graph::{COLOR_FORMAT, DEPTH_FORMAT};
 use crate::graph::GraphError;
-use crate::materials::{MaterialTable, Shading};
+use crate::materials::MaterialTable;
 use crate::meshes::{MAX_BUFFER_BYTES, MeshStorage, Page};
+use crate::pipelines::DrawKey;
 use crate::view::{MAX_VIEWS, View, ViewFrame, ViewId};
 
 /// Engine mesh ids count from 1; 0 marks an object with no mesh, such as a group or a camera.
@@ -400,17 +400,22 @@ impl SceneSettings {
         [r, g, b, 1.0]
     }
 
-    /// The pipeline of a mesh and material pair, by engine ids, or `None` when the pair draws
-    /// nowhere: no mesh, no material, an id that names nothing, or a mesh without the vertex
-    /// attributes that the material's shading reads.
-    pub fn pipeline_of(&self, mesh: u32, material: u32) -> Option<PipelineKey> {
+    /// What a mesh and material pair, by engine ids, asks of the pipeline that draws it, or `None`
+    /// when the pair draws nowhere: no mesh, no material, an id that names nothing, or a mesh
+    /// without the vertex attributes that the material's shading reads.
+    pub fn pipeline_of(&self, mesh: u32, material: u32) -> Option<DrawKey> {
         if mesh == NO_MESH || material == NO_MATERIAL {
             return None;
         }
         let format = self.meshes.mesh(mesh - 1)?.format;
         let shading = self.materials.shading(material - 1).ok()?;
         let needs = shading.attributes();
-        ((format & needs) == needs).then_some(PipelineKey { shading, format })
+        ((format & needs) == needs).then_some(DrawKey {
+            template: shading.template(),
+            permutation: 0,
+            vertex_format: format,
+            state: 0,
+        })
     }
 
     /// A view's values for a frame whose targets have the canvas's size, or `None` when the view
@@ -479,84 +484,6 @@ pub(crate) fn bucket_of<K: Ord + Copy>(table: &[(K, u32)], key: Option<K>) -> Op
         .binary_search_by_key(&key, |&(k, _)| k)
         .ok()
         .map(|bucket| bucket as u32)
-}
-
-/// What a render pipeline of the scene draws: a shading, and the vertex format of the meshes it
-/// draws. Its order is the order in which builders sort their buckets.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
-pub struct PipelineKey {
-    pub shading: Shading,
-    /// The vertex format (`vertex::*` bits) of the meshes it draws.
-    pub format: u32,
-}
-
-/// The render pipelines that a builder draws its scene with. A pipeline's id is its place in the
-/// table plus the table's first id, and it keeps its id while the builder lives, so layouts can
-/// hold ids across rebuilds. Ids below the first belong to the builder's other pipelines.
-#[derive(Debug)]
-pub(crate) struct PipelineTable {
-    keys: Vec<PipelineKey>,
-    /// The pipelines that the GPU has: the first `created` keys.
-    created: usize,
-    /// The id of the first key's pipeline.
-    first: u32,
-}
-
-impl PipelineTable {
-    /// A table whose pipelines take ids from `first` on.
-    pub(crate) fn starting_at(first: u32) -> Self {
-        Self {
-            keys: Vec::new(),
-            created: 0,
-            first,
-        }
-    }
-
-    /// The id of a key's pipeline. A new key's pipeline is created by the next
-    /// [`PipelineTable::create_new`].
-    pub(crate) fn id(&mut self, key: PipelineKey) -> u32 {
-        let index = match self.keys.iter().position(|&k| k == key) {
-            Some(index) => index,
-            None => {
-                self.keys.push(key);
-                self.keys.len() - 1
-            }
-        };
-        self.first + index as u32
-    }
-
-    /// Records the creation of every pipeline that the GPU does not have yet, for the scene's
-    /// targets, in the shader variant that the permutation bits pick.
-    pub(crate) fn create_new(
-        &mut self,
-        list: &mut DrawList,
-        permutation: u32,
-        samples: u32,
-    ) -> Result<(), RecordError> {
-        while let Some(key) = self.keys.get(self.created) {
-            list.push(
-                Op::CreateRenderPipeline,
-                &[
-                    self.first + self.created as u32,
-                    key.shading.template(),
-                    permutation,
-                    COLOR_FORMAT,
-                    DEPTH_FORMAT,
-                    samples,
-                    0,
-                    key.format,
-                ],
-            )?;
-            self.created += 1;
-        }
-        Ok(())
-    }
-
-    /// Forgets which pipelines the GPU has, after the thread that draws replaced it, so the next
-    /// frame creates each again under the same id.
-    pub(crate) fn forget(&mut self) {
-        self.created = 0;
-    }
 }
 
 /// How large one mesh page's GPU vertex and index buffers are, and how much of the page they hold.

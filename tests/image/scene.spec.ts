@@ -10,7 +10,7 @@ import { manifestRun } from './manifest.ts';
 interface SceneResult {
 	error?: string;
 	mode: { hold: number | null };
-	capabilities: { tier: string };
+	capabilities: { tier: string; features: string[] };
 	/** The live engine's frames; absent in hold mode, which draws one frame. */
 	stats?: {
 		drawCalls: { median: number };
@@ -18,6 +18,7 @@ interface SceneResult {
 		uploadBytes: { count: number };
 		frames: number;
 		rebuilds: number;
+		gpuPassMs: { name: string; ms: { count: number } }[] | null;
 	};
 	failures: string[];
 	width: number;
@@ -48,6 +49,18 @@ function expectFrames(result: SceneResult, tier: 'webgpu' | 'webgl2'): void {
 	// The measurement can start before the first frame, which builds the draw tables. The scene is
 	// still, so no later frame rebuilds them.
 	expect(stats.rebuilds).toBeLessThanOrEqual(1);
+	// Where the device has timestamp queries, the GPU timer covers the whole WebGPU frame: the copies
+	// before the first pass, the culling pass, the main pass and the time between them.
+	if (tier === 'webgpu' && result.capabilities.features.includes('timestamp-query')) {
+		const parts = stats.gpuPassMs ?? [];
+		expect(parts.map((part) => part.name).sort()).toEqual([
+			'between passes',
+			'compute 1',
+			'copies',
+			'render 1',
+		]);
+		for (const part of parts) expect(part.ms.count).toBeGreaterThan(0);
+	} else expect(stats.gpuPassMs).toBeNull();
 }
 
 for (const tier of ['webgpu', 'webgl2'] as const)

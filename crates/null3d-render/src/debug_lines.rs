@@ -16,8 +16,8 @@
 //! floats, as the grid cells do for objects (see [`null3d_core::cells`]), and uploads it as three
 //! 32-bit floats and its four color bytes. The pass then draws every line in one call, inside the
 //! render pass of the camera's opaque objects, with the frame uniform of the camera's view. The
-//! first frame with lines creates the pipeline and the vertex buffer, and a frame with more lines
-//! than the buffer holds makes the buffer again, larger.
+//! first frame with lines creates the pipeline, through the builder's pipeline cache, and the
+//! vertex buffer, and a frame with more lines than the buffer holds makes the buffer again, larger.
 
 use std::collections::TryReserveError;
 
@@ -26,7 +26,7 @@ use null3d_gpu::drawlist::sizes::LINE_VERTEX_BYTES;
 use null3d_gpu::drawlist::{DrawList, Op, buffer_usage, state_flags, template};
 
 use crate::frame::{RecordError, UploadArena, grown_size};
-use crate::frame_graph::{COLOR_FORMAT, DEPTH_FORMAT};
+use crate::pipelines::{DrawKey, PassTargets, PipelineCache};
 
 /// Points that one frame draws as lines, two points per line: each point's position in world
 /// space, three 64-bit floats, and its sRGB color, four bytes with red in the lowest and alpha in
@@ -154,30 +154,35 @@ impl LineStore {
     }
 }
 
-/// The ids of the pass's GPU objects, from the ranges of the frame builder that records it.
-#[derive(Clone, Copy, Debug)]
-pub(crate) struct LineIds {
-    pub(crate) pipeline: u32,
-    pub(crate) buffer: u32,
-}
+/// What the lines ask of their pipeline: the lines' template, which reads a vertex buffer of its own
+/// layout rather than a mesh's vertex format, drawing lines instead of triangles.
+const LINES_DRAW: DrawKey = DrawKey {
+    template: template::DEBUG_LINES,
+    permutation: 0,
+    vertex_format: 0,
+    state: state_flags::LINE_LIST,
+};
 
-/// The pass's GPU objects, and the points of the frame being recorded.
+/// The pass's vertex buffer and pipeline, and the points of the frame being recorded.
 #[derive(Debug)]
 pub(crate) struct LinesPass {
-    ids: LineIds,
-    pipeline_made: bool,
+    /// The id of the vertex buffer, from the range of the frame builder that records the pass.
+    buffer: u32,
     /// Bytes of the vertex buffer, 0 before it exists.
     buffer_bytes: u32,
+    /// The id of the pipeline, from the builder's pipeline cache, once a frame had lines.
+    pipeline: u32,
     /// The points that the frame being recorded draws.
     points: u32,
 }
 
 impl LinesPass {
-    pub(crate) fn new(ids: LineIds) -> Self {
+    /// The pass of a builder that keeps the lines' vertices in buffer `buffer`.
+    pub(crate) fn new(buffer: u32) -> Self {
         Self {
-            ids,
-            pipeline_made: false,
+            buffer,
             buffer_bytes: 0,
+            pipeline: 0,
             points: 0,
         }
     }
@@ -187,44 +192,37 @@ impl LinesPass {
         lines.points() * LINE_VERTEX_BYTES as usize
     }
 
-    /// Uploads the frame's lines relative to the camera, whose position `camera` gives, after it
-    /// creates the pipeline, for targets with `samples` samples, and a vertex buffer large enough.
-    /// Without lines or without a camera, it records nothing, and the pass draws nothing.
+    /// Uploads the frame's lines relative to the camera, whose position `camera` gives, into a
+    /// vertex buffer large enough for them. The pipeline draws into the scene's `targets`, and
+    /// `pipelines` creates it the first time. Without lines or without a camera, it records
+    /// nothing, and the pass draws nothing.
     pub(crate) fn upload(
         &mut self,
         list: &mut DrawList,
         arena: &mut UploadArena,
         lines: &DebugLines<'_>,
         camera: Option<&CellPosition>,
-        samples: u32,
+        pipelines: &mut PipelineCache,
+        targets: PassTargets,
     ) -> Result<(), RecordError> {
         self.points = 0;
         let Some(camera) = camera.filter(|_| !lines.is_empty()) else {
             return Ok(());
         };
-        if !self.pipeline_made {
-            list.push(
-                Op::CreateRenderPipeline,
-                &[
-                    self.ids.pipeline,
-                    template::DEBUG_LINES,
-                    0,
-                    COLOR_FORMAT,
-                    DEPTH_FORMAT,
-                    samples,
-                    state_flags::LINE_LIST,
-                    0,
-                ],
-            )?;
-            self.pipeline_made = true;
-        }
+        // The lines' shader reads no draw index and applies no pass's bits of its own.
+        let targets = PassTargets {
+            permutation: 0,
+            ..targets
+        };
+        self.pipeline = pipelines.id(LINES_DRAW.in_pass(targets));
+        pipelines.create_new(list)?;
         let bytes = Self::upload_bytes(lines) as u32;
         if bytes > self.buffer_bytes {
             self.buffer_bytes = grown_size(bytes, u32::MAX);
             list.push(
                 Op::CreateBuffer,
                 &[
-                    self.ids.buffer,
+                    self.buffer,
                     self.buffer_bytes,
                     buffer_usage::VERTEX | buffer_usage::COPY_DST,
                 ],
@@ -232,7 +230,7 @@ impl LinesPass {
         }
         let (at, vertices) = arena.push_zeroed(bytes as usize)?;
         lines.write_vertices(camera.absolute(), vertices);
-        list.push(Op::WriteBuffer, &[self.ids.buffer, 0, at, bytes])?;
+        list.push(Op::WriteBuffer, &[self.buffer, 0, at, bytes])?;
         self.points = lines.points() as u32;
         Ok(())
     }
@@ -255,20 +253,19 @@ impl LinesPass {
         bind[1] = frame_group;
         bind[2] = offsets.len() as u32;
         bind[3..words].copy_from_slice(offsets);
-        list.push(Op::SetPipeline, &[self.ids.pipeline])?;
+        list.push(Op::SetPipeline, &[self.pipeline])?;
         list.push(Op::SetBindGroup, &bind[..words])?;
         list.push(
             Op::SetVertexBuffer,
-            &[0, self.ids.buffer, 0, self.points * LINE_VERTEX_BYTES],
+            &[0, self.buffer, 0, self.points * LINE_VERTEX_BYTES],
         )?;
         list.push(Op::Draw, &[self.points, 1, 0, 0])?;
         Ok(())
     }
 
-    /// Forgets the pipeline and the vertex buffer, after the thread that draws replaced the GPU,
-    /// so the next frame with lines makes them again.
+    /// Forgets the vertex buffer, after the thread that draws replaced the GPU, so the next frame
+    /// with lines makes it again. The pipeline cache makes the pipeline again itself.
     pub(crate) fn forget_gpu(&mut self) {
-        self.pipeline_made = false;
         self.buffer_bytes = 0;
     }
 }

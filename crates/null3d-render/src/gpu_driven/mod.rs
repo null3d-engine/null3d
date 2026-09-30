@@ -60,15 +60,16 @@ use std::collections::TryReserveError;
 
 use null3d_gpu::drawlist::{DrawList, Op, buffer_usage as usage, sizes};
 
-use crate::debug_lines::{LineIds, LinesPass};
+use crate::debug_lines::LinesPass;
 use crate::frame::{
-    FrameBuilder, FrameInput, MeshBuffers, ParityLists, PipelineTable, RecordError, SceneSettings,
-    UploadArena, floats_as_bytes,
+    FrameBuilder, FrameInput, MeshBuffers, ParityLists, RecordError, SceneSettings, UploadArena,
+    floats_as_bytes,
 };
 use crate::frame_graph::{FrameGraph, Role};
 use crate::graph::RenderGraph;
 use crate::materials::MATERIAL_FLOATS;
 use crate::meshes::{MeshStorage, Packing};
+use crate::pipelines::PipelineCache;
 use crate::view::{ViewFrame, ViewId};
 use cull::{CULL_PARAMS_BYTES, Culling, INDIRECT_BYTES};
 use layout::Layout;
@@ -91,7 +92,8 @@ pub const fn max_sources(binding_bytes: u32) -> u32 {
 /// entry in both frames' upload arenas.
 pub const BYTES_PER_SOURCE: u32 = 12;
 
-/// The most sources on every device: [`max_sources`] at WebGPU's default storage binding limit.
+/// The most sources on every WebGPU device: [`max_sources`] at WebGPU's default storage binding
+/// limit. The WebGL2 path has its own limit, which follows the device's largest texture.
 pub const PORTABLE_MAX_SOURCES: u32 = max_sources(sizes::PORTABLE_STORAGE_BINDING_BYTES);
 
 /// The largest storage binding the builder can use: the instance buffer of the most sources one
@@ -131,11 +133,6 @@ mod ids {
 
     /// The render graph's textures, from this id on.
     pub const TARGETS: u32 = 1;
-
-    /// The render pipeline of the debug lines.
-    pub const LINES_PIPELINE: u32 = 1;
-    /// The render pipelines of the scene's objects, from this id on.
-    pub const MESH_PIPELINES: u32 = 2;
 
     pub const CULL: u32 = 1;
 
@@ -182,7 +179,7 @@ pub struct GpuDrivenRenderer {
     settings: SceneSettings,
     /// The mesh pages' vertex and index buffers.
     meshes: MeshBuffers,
-    pipelines: PipelineTable,
+    pipelines: PipelineCache,
     lists: ParityLists,
     graph: FrameGraph,
     layout: Layout,
@@ -202,15 +199,12 @@ impl GpuDrivenRenderer {
                 config.max_materials,
             ),
             meshes: MeshBuffers::new(ids::PAGES),
-            pipelines: PipelineTable::starting_at(ids::MESH_PIPELINES),
+            pipelines: PipelineCache::default(),
             lists: ParityLists::new(config.draw_list_words),
             graph: FrameGraph::new(config.samples, true, ids::TARGETS),
             layout: Layout::default(),
             culling: Culling::default(),
-            lines: LinesPass::new(LineIds {
-                pipeline: ids::LINES_PIPELINE,
-                buffer: ids::LINES,
-            }),
+            lines: LinesPass::new(ids::LINES),
             frames: Vec::new(),
             created: false,
         }
@@ -255,6 +249,7 @@ impl GpuDrivenRenderer {
             self.layout.rebuild(
                 &self.settings,
                 &mut self.pipelines,
+                self.graph.scene_targets(),
                 input.scene,
                 input.batches,
                 parity,
@@ -265,7 +260,7 @@ impl GpuDrivenRenderer {
         let pages_remade = self
             .meshes
             .upload(list, arena, self.settings.meshes().pages())?;
-        self.pipelines.create_new(list, 0, self.config.samples)?;
+        self.pipelines.create_new(list)?;
         if self.settings.materials_mut().take_changed() {
             let parameters = self.settings.materials().parameters();
             let (at, bytes) = arena.push(floats_as_bytes(parameters))?;
@@ -313,7 +308,8 @@ impl GpuDrivenRenderer {
             arena,
             &input.lines,
             camera.map(|frame| &frame.camera),
-            self.config.samples,
+            &mut self.pipelines,
+            self.graph.scene_targets(),
         )?;
 
         let (frames, layout, lines) = (&self.frames, &self.layout, &self.lines);
