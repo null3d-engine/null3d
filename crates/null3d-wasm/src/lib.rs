@@ -24,7 +24,7 @@ use null3d_core::snapshot::FrameSnapshot;
 use null3d_gpu::caps::Capabilities;
 use null3d_gpu::drawlist::sizes;
 use null3d_render::arrays::{ArrayName, ArraysError, MeshArrays, from_arrays};
-use null3d_render::camera::Perspective;
+use null3d_render::camera::{Lens, Orthographic, Perspective};
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::frame::{FrameBuilder, FrameInput, RecordError};
 use null3d_render::geometry::{Geometry, box_geometry, sphere_geometry};
@@ -830,17 +830,48 @@ fn change_material(
 // --- Camera, lights and background ---
 
 /// Draws from this camera object with a perspective lens (vertical field of view in degrees).
-#[wasm_bindgen(js_name = setCamera)]
-pub fn set_camera(camera: u32, fov_degrees: f32, near: f32, far: f32) -> u32 {
+#[wasm_bindgen(js_name = setPerspectiveCamera)]
+pub fn set_perspective_camera(camera: u32, fov_degrees: f32, near: f32, far: f32) -> u32 {
+    set_camera(
+        camera,
+        Lens::Perspective(Perspective {
+            fov_degrees,
+            near,
+            far,
+        }),
+    )
+}
+
+/// Draws from this camera object with an orthographic lens: a view `height` tall and `width` wide,
+/// with a width of 0 following the canvas's aspect ratio, centered right of and above the camera's
+/// axis by `center_x` and `center_y`.
+#[wasm_bindgen(js_name = setOrthographicCamera)]
+pub fn set_orthographic_camera(
+    camera: u32,
+    height: f32,
+    width: f32,
+    center_x: f32,
+    center_y: f32,
+    near: f32,
+    far: f32,
+) -> u32 {
+    set_camera(
+        camera,
+        Lens::Orthographic(Orthographic {
+            height,
+            width: (width > 0.0).then_some(width),
+            center: [center_x, center_y],
+            near,
+            far,
+        }),
+    )
+}
+
+fn set_camera(camera: u32, lens: Lens) -> u32 {
     with_engine(|e| {
-        e.renderer.settings_mut().set_camera(
-            Handle::from_raw(camera),
-            Perspective {
-                fov_degrees,
-                near,
-                far,
-            },
-        );
+        e.renderer
+            .settings_mut()
+            .set_camera(Handle::from_raw(camera), lens);
         0
     })
 }

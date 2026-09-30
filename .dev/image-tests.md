@@ -23,6 +23,12 @@ This guide covers the image test manifest, its references, and the review that m
 
 A CI run that finds a missing or changed image saves it too. `bun run images:review --ci <run>` fetches those images for review.
 
+## Parity with three.js
+
+- A test of a feature scene can have a three.js twin: a page in `bench/pages/threejs/` that draws the same scene. Both engines build the scene from one data module in `bench/scenes/`, such as `ortho-camera.ts`.
+- `bench/tests/parity.spec.ts` lists each such test with its twin. On each tier it compares the test's image with the twin's by three.js's rule, as `bun run parity` compares the benchmark scenes. It runs in `bun run test:bench`, on SwiftShader in CI.
+- A comparison passes when fewer than 0.1% of the pixels differ, or when no more differ than between three.js's two renderers on the same scene. Each run saves both images and their diff in `test-results/parity/`.
+
 ## References
 
 - References live in `tests/image/references/<set>/<tier>/<test>.png`. Each environment has a full set. `chromium-swiftshader` is Chromium on SwiftShader, the software GPU that CI draws with. `chrome-real-gpu` is Chrome on the Mac's GPU.

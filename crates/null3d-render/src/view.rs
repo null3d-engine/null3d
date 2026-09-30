@@ -1,8 +1,8 @@
 //! Views: the scene seen from one camera, culled on its own. A view has a frustum, which its
 //! camera and lens give each frame, a layer mask, which selects the objects it draws, and a
-//! target, which the pass that draws it declares in the render graph. The first view is the
-//! camera's, and it draws the scene color and depth that reach the canvas. Each further view
-//! draws color and depth targets of its own.
+//! target, which the pass that draws it declares in the render graph. Its lens is perspective or
+//! orthographic. The first view is the camera's, and it draws the scene color and depth that reach
+//! the canvas. Each further view draws color and depth targets of its own.
 //!
 //! Each frame builder culls every view on its own. On WebGPU a view has its own culling dispatch,
 //! compacted instances, indirect draws and bundle. On WebGL2 the job workers list each view's
@@ -17,7 +17,7 @@ use null3d_core::culling::Frustum;
 use null3d_core::handle::Handle;
 use null3d_core::scene::SceneStorage;
 
-use crate::camera::{Affine, Perspective};
+use crate::camera::{Affine, Lens, Mat4};
 use crate::frame_data::FrameUniform;
 use crate::graph::ALL_LAYERS;
 
@@ -46,7 +46,7 @@ impl ViewId {
 /// draws.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct View {
-    camera: Option<(Handle, Perspective)>,
+    camera: Option<(Handle, Lens)>,
     layers: u32,
 }
 
@@ -61,19 +61,19 @@ impl Default for View {
 
 impl View {
     /// A view from `camera` through `lens`, of the objects on `layers`.
-    pub fn new(camera: Handle, lens: Perspective, layers: u32) -> Self {
+    pub fn new(camera: Handle, lens: impl Into<Lens>, layers: u32) -> Self {
         Self {
-            camera: Some((camera, lens)),
+            camera: Some((camera, lens.into())),
             layers,
         }
     }
 
     /// The camera object and its lens, or `None` before one is set.
-    pub fn camera(&self) -> Option<(Handle, Perspective)> {
+    pub fn camera(&self) -> Option<(Handle, Lens)> {
         self.camera
     }
 
-    pub(crate) fn set_camera(&mut self, camera: Handle, lens: Perspective) {
+    pub(crate) fn set_camera(&mut self, camera: Handle, lens: Lens) {
         self.camera = Some((camera, lens));
     }
 
@@ -83,19 +83,20 @@ impl View {
     }
 
     /// The view-projection matrix for positions relative to the camera, for a target of `aspect`,
-    /// and the camera's cell and position in it, or `None` when the view has no camera, or its
-    /// camera object is gone.
+    /// the camera's place for those positions as [`Lens::eye`] gives it, and the camera's cell
+    /// and position in it. `None` when the view has no camera, or its camera object is gone.
     pub(crate) fn transform(
         &self,
         scene: &SceneStorage,
         parity: usize,
         aspect: f32,
-    ) -> Option<([f32; 16], CellPosition)> {
+    ) -> Option<(Mat4, [f32; 4], CellPosition)> {
         let (camera, lens) = self.camera?;
         let slot = scene.resolve(camera).ok()?;
         let world: Affine = *scene.world(parity).matrix(slot as usize);
         Some((
             lens.relative_view_projection(&world, aspect),
+            lens.eye(&world),
             scene.cell_position(slot, parity),
         ))
     }

@@ -106,7 +106,22 @@ export interface CoreGlue extends CoreErrors {
 	setMaterialColor(material: number, r: number, g: number, b: number): number;
 	/** Changes a material's opacity and keeps its color. */
 	setMaterialOpacity(material: number, opacity: number): number;
-	setCamera(camera: number, fovDegrees: number, near: number, far: number): number;
+	/** Draws from a camera object with a perspective lens: a vertical field of view in degrees. */
+	setPerspectiveCamera(camera: number, fovDegrees: number, near: number, far: number): number;
+	/**
+	 * Draws from a camera object with an orthographic lens: a view `height` tall and `width` wide,
+	 * where a width of 0 follows the canvas's aspect ratio, centered right of and above the
+	 * camera's axis by `centerX` and `centerY`.
+	 */
+	setOrthographicCamera(
+		camera: number,
+		height: number,
+		width: number,
+		centerX: number,
+		centerY: number,
+		near: number,
+		far: number,
+	): number;
 	setSun(dx: number, dy: number, dz: number, r: number, g: number, b: number): number;
 	setAmbient(r: number, g: number, b: number): number;
 	setBackground(r: number, g: number, b: number): number;
@@ -153,7 +168,8 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'createMaterial',
 	'setMaterialColor',
 	'setMaterialOpacity',
-	'setCamera',
+	'setPerspectiveCamera',
+	'setOrthographicCamera',
 	'setSun',
 	'setAmbient',
 	'setBackground',

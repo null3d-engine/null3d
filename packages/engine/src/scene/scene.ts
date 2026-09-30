@@ -2,12 +2,26 @@
 // straight into engine memory; structural changes (create, destroy, reparent, visibility) go into
 // the command ring as 16-byte records, which the engine applies when the next frame starts.
 
-import { checkLive, checkNumber, checkVector, DEV, type Described } from '../errors/checks';
+import { checkLive, checkVector, DEV, type Described } from '../errors/checks';
 import { EngineError } from '../errors/engine-error';
 import * as C from '../generated/core';
 import { fromEuler as quaternionFromEuler } from '../math/quat';
 import type { EulerOrder } from '../math/types';
+import type { CoreGlue } from '../shared/core';
 import { type ColorInput, linearColor } from './color';
+import {
+	checkFov,
+	checkNearFar,
+	checkOrthographicSize,
+	checkSize,
+	DEFAULT_FAR,
+	DEFAULT_FOV,
+	DEFAULT_NEAR,
+	newCamera,
+	type OrthographicView,
+	orthographicView,
+	setViewHeight,
+} from './lens';
 import type { CoreMemory } from './memory';
 import type { Material, MeshGeometry } from './resources';
 import { quaternionLookAt } from './rotation';
@@ -63,19 +77,47 @@ export interface MeshOptions extends NodeOptions {
 }
 
 /**
- * Options for `scene.createPerspectiveCamera`.
+ * Options that both kinds of camera take.
  *
  * @category api/cameras
  */
 export interface CameraOptions extends NodeOptions {
-	/** The vertical field of view in degrees. The default is 50. */
-	fov?: number;
 	/** The distance to the near clipping plane. The default is 0.1. */
 	near?: number;
 	/** The distance to the far clipping plane. The default is 2000. */
 	far?: number;
 	/** A point the camera turns toward. */
 	target?: Vec3;
+}
+
+/**
+ * Options for `scene.createPerspectiveCamera`.
+ *
+ * @category api/cameras
+ */
+export interface PerspectiveCameraOptions extends CameraOptions {
+	/** The vertical field of view in degrees. The default is 50. */
+	fov?: number;
+}
+
+/**
+ * Options for `scene.createOrthographicCamera`. Give `height`, and the width follows the canvas's
+ * aspect ratio. Or give all four edges, as three.js's `OrthographicCamera` takes them, for a view
+ * that keeps its shape on any canvas.
+ *
+ * @category api/cameras
+ */
+export interface OrthographicCameraOptions extends CameraOptions {
+	/** The view's height in world units. The default is 2. Leave it out when you give the edges. */
+	height?: number;
+	/** The view's left edge, in world units from the camera's axis. */
+	left?: number;
+	/** The view's right edge, in world units from the camera's axis. */
+	right?: number;
+	/** The view's top edge, in world units from the camera's axis. */
+	top?: number;
+	/** The view's bottom edge, in world units from the camera's axis. */
+	bottom?: number;
 }
 
 /**
@@ -315,38 +357,150 @@ export class Mesh extends Object3D {
 }
 
 /**
- * A perspective camera. Make it the scene's view with `scene.setActiveCamera`.
+ * An object that the scene can be drawn from. `scene.setActiveCamera` picks the camera that the
+ * canvas shows. A camera is a `PerspectiveCamera` or an `OrthographicCamera`, and
+ * `isOrthographic` tells them apart.
  *
  * @category api/cameras
  */
-export class Camera extends Object3D {
+export abstract class Camera extends Object3D {
+	/** True for an `OrthographicCamera`, false for a `PerspectiveCamera`. */
+	abstract readonly isOrthographic: boolean;
+
 	/** @internal */
-	fov = 50;
-	/** @internal */
-	near = 0.1;
-	/** @internal */
-	far = 2000;
+	constructor(
+		scene: Scene,
+		handle: number,
+		name: string,
+		private nearPlane: number,
+		private farPlane: number,
+	) {
+		super(scene, handle, name);
+	}
 
 	protected override get looksDownMinusZ(): boolean {
 		return true;
 	}
 
-	/** Sets the vertical field of view in degrees. */
-	setFov(degrees: number): void {
-		if (DEV) checkNumber('setFov', 'fov', degrees, this);
-		this.fov = degrees;
-		this.scene.lensChanged(this);
+	/** The distance to the near clipping plane. */
+	get near(): number {
+		return this.nearPlane;
+	}
+
+	/** The distance to the far clipping plane. */
+	get far(): number {
+		return this.farPlane;
 	}
 
 	/** Sets the distances to the near and far clipping planes. */
 	setNearFar(near: number, far: number): void {
-		if (DEV) {
-			checkNumber('setNearFar', 'near', near, this);
-			checkNumber('setNearFar', 'far', far, this);
-		}
-		this.near = near;
-		this.far = far;
+		if (DEV) checkNearFar('setNearFar', near, far, !this.isOrthographic, this);
+		this.nearPlane = near;
+		this.farPlane = far;
 		this.scene.lensChanged(this);
+	}
+
+	/** @internal Gives the engine core this camera's lens, which the active camera draws with. */
+	abstract sendLens(glue: CoreGlue): void;
+}
+
+/**
+ * A camera that shows near things larger than far things, as the eye does.
+ *
+ * @category api/cameras
+ */
+export class PerspectiveCamera extends Camera {
+	/** False: a perspective camera. */
+	readonly isOrthographic = false;
+
+	/** @internal */
+	constructor(
+		scene: Scene,
+		handle: number,
+		name: string,
+		private verticalFov: number,
+		near: number,
+		far: number,
+	) {
+		super(scene, handle, name, near, far);
+	}
+
+	/** The vertical field of view in degrees. */
+	get fov(): number {
+		return this.verticalFov;
+	}
+
+	/** Sets the vertical field of view in degrees. */
+	setFov(degrees: number): void {
+		if (DEV) checkFov('setFov', degrees, this);
+		this.verticalFov = degrees;
+		this.scene.lensChanged(this);
+	}
+
+	/** @internal */
+	sendLens(glue: CoreGlue): void {
+		glue.setPerspectiveCamera(this.handle, this.verticalFov, this.near, this.far);
+	}
+}
+
+/**
+ * A camera whose view is a box: things keep their size at every distance, as in maps and
+ * isometric games.
+ *
+ * @category api/cameras
+ */
+export class OrthographicCamera extends Camera {
+	/** True: an orthographic camera. */
+	readonly isOrthographic = true;
+
+	/** @internal */
+	constructor(
+		scene: Scene,
+		handle: number,
+		name: string,
+		private readonly view: OrthographicView,
+		near: number,
+		far: number,
+	) {
+		super(scene, handle, name, near, far);
+	}
+
+	/** The view's height in world units. */
+	get height(): number {
+		return this.view.height;
+	}
+
+	/**
+	 * The view's width in world units, or undefined when the width follows the canvas's aspect
+	 * ratio.
+	 */
+	get width(): number | undefined {
+		return this.view.width > 0 ? this.view.width : undefined;
+	}
+
+	/**
+	 * Sets the view's height in world units. A width that follows the canvas keeps following it.
+	 * A view made from four edges scales about its center and keeps its shape, as three.js's
+	 * `zoom` scales it.
+	 */
+	setOrthoHeight(height: number): void {
+		if (DEV) checkSize('setOrthoHeight', 'height', height, this);
+		setViewHeight(this.view, height);
+		this.scene.lensChanged(this);
+	}
+
+	/** @internal */
+	sendLens(glue: CoreGlue): void {
+		const view = this.view;
+		glue.setOrthographicCamera(
+			this.handle,
+			view.height,
+			view.width,
+			view.centerX,
+			view.centerY,
+			this.near,
+			this.far,
+		);
 	}
 }
 
@@ -636,8 +790,7 @@ export class Scene {
 
 	/** @internal */
 	lensChanged(camera: Camera): void {
-		if (camera === this.activeCamera)
-			this.core.glue.setCamera(camera.handle, camera.fov, camera.near, camera.far);
+		if (camera === this.activeCamera) camera.sendLens(this.core.glue);
 	}
 
 	private create(options: NodeOptions, mesh: number, radius: number, call: string): number {
@@ -687,17 +840,53 @@ export class Scene {
 	}
 
 	/** A perspective camera; `fov` is vertical, in degrees. Cameras are dynamic by default. */
-	createPerspectiveCamera(options: CameraOptions = {}): Camera {
-		const handle = this.create(
-			{ dynamic: true, ...options },
-			C.CORE_NO_MESH,
-			0,
-			'createPerspectiveCamera',
+	createPerspectiveCamera(options: PerspectiveCameraOptions = {}): PerspectiveCamera {
+		const call = 'createPerspectiveCamera';
+		const { fov = DEFAULT_FOV, near = DEFAULT_NEAR, far = DEFAULT_FAR } = options;
+		if (DEV) {
+			const camera = newCamera(options.name);
+			checkFov(call, fov, camera);
+			checkNearFar(call, near, far, true, camera);
+		}
+		return this.createCamera(
+			options,
+			call,
+			(handle, name) => new PerspectiveCamera(this, handle, name, fov, near, far),
 		);
-		const camera = new Camera(this, handle, options.name ?? '');
-		camera.fov = options.fov ?? 50;
-		camera.near = options.near ?? 0.1;
-		camera.far = options.far ?? 2000;
+	}
+
+	/**
+	 * An orthographic camera, whose view is a box: things keep their size at every distance. Give
+	 * `height`, and the width follows the canvas, or give `left`, `right`, `top` and `bottom`.
+	 * Cameras are dynamic by default.
+	 */
+	createOrthographicCamera(options: OrthographicCameraOptions = {}): OrthographicCamera {
+		const call = 'createOrthographicCamera';
+		const { near = DEFAULT_NEAR, far = DEFAULT_FAR } = options;
+		if (DEV) {
+			const camera = newCamera(options.name);
+			checkOrthographicSize(call, options, camera);
+			checkNearFar(call, near, far, false, camera);
+		}
+		const view = orthographicView(options);
+		return this.createCamera(
+			options,
+			call,
+			(handle, name) => new OrthographicCamera(this, handle, name, view, near, far),
+		);
+	}
+
+	/**
+	 * Creates a camera's object, dynamic unless the options say otherwise, wraps it with `make`, and
+	 * turns it toward the options' target.
+	 */
+	private createCamera<T extends Camera>(
+		options: CameraOptions,
+		call: string,
+		make: (handle: number, name: string) => T,
+	): T {
+		const handle = this.create({ dynamic: true, ...options }, C.CORE_NO_MESH, 0, call);
+		const camera = make(handle, options.name ?? '');
 		if (options.target) camera.lookAt(...options.target);
 		return camera;
 	}
