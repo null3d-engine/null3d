@@ -1,14 +1,14 @@
 ---
 id: api/input
 title: Input
-status: planned
+status: experimental
 since: "0.1"
 summary: "Pointer, keyboard, touch and gamepad; action maps."
 ---
 
 # Input
 
-> Planned for null3D 0.1. No release has these APIs yet, so coding agents must not use them.
+> This API is experimental: it ships in null3D 0.1, and it can still change between versions.
 
 ```mermaid
 flowchart LR
