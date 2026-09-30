@@ -86,3 +86,4 @@ The cells have these limits:
 - [GPU tiers and backends](backends.md): how each path draws.
 - [Architecture: threads and the frame](architecture.md): where culling runs in a frame.
 - [Static and dynamic objects](static-dynamic.md): which objects upload their data each frame.
+- [The demo far from the origin](https://github.com/null3d-engine/null3d/tree/main/examples/far-from-origin): keys 2 cm wide, 1,000 km from the origin, seen from 40 cm.

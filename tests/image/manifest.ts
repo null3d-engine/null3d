@@ -13,6 +13,7 @@
 // reference: on the Mac, Playwright's Chromium draws CI's SwiftShader images byte for byte.
 import { PARITY_SCENES } from '../../bench/lib/parity.ts';
 import { HOLD_TIME, PARITY_CANVAS } from '../../bench/scenes/spec.ts';
+import { DEMOS } from '../../examples/demos.ts';
 import type { DepthMode } from '../../packages/engine/src/page/switches.ts';
 import type { EngineModeName } from '../lib/engine-checks.ts';
 import { ALL_MODES, type ImageRun, type ImageTest, imageRuns, type Tier } from '../lib/images.ts';
@@ -194,6 +195,14 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 				apartNear: true,
 				...(depth !== 'reversed' && { fights: true }),
 			},
+		}),
+	),
+	// Each feature demo in examples/, held at the demo's time.
+	...DEMOS.map(
+		(demo): ImageTest => ({
+			name: `demo-${demo.name}`,
+			sketch: `examples/${demo.name}/sketch.ts`,
+			hold: demo.hold,
 		}),
 	),
 	// The benchmark scenes' hold frames, which the parity command also compares with three.js.

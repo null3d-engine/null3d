@@ -71,12 +71,12 @@ use null3d_gpu::drawlist::{DrawList, Op, buffer_usage as usage, sizes};
 
 use crate::debug_lines::LinesPass;
 use crate::frame::{
-    FrameBuilder, FrameInput, MeshBuffers, ParityLists, RecordError, SceneSettings, UploadArena,
-    floats_as_bytes,
+    FrameBuilder, FrameInput, MaterialStorage, MeshBuffers, ParityLists, RecordError,
+    SceneSettings, UploadArena,
 };
 use crate::frame_graph::{FrameGraph, Role};
 use crate::graph::RenderGraph;
-use crate::materials::{MAP_WORDS, MATERIAL_FLOATS};
+use crate::materials::MATERIAL_FLOATS;
 use crate::meshes::{MeshStorage, Packing};
 use crate::pipelines::PipelineCache;
 use crate::textures::{TextureIds, TextureStore};
@@ -137,10 +137,8 @@ mod ids {
         frame(view) + 3
     }
 
-    /// The maps table, which names the layer of each material's map.
-    pub const MAPS: u32 = VIEW_BUFFERS + 4 * MAX_VIEWS as u32;
     /// The vertices of the debug lines.
-    pub const LINES: u32 = MAPS + 1;
+    pub const LINES: u32 = VIEW_BUFFERS + 4 * MAX_VIEWS as u32;
     /// Mesh page `p` keeps its vertices in buffer `PAGES + 2p` and its indices in the next one.
     pub const PAGES: u32 = LINES + 1;
 
@@ -295,14 +293,10 @@ impl GpuDrivenRenderer {
             .meshes
             .upload(list, arena, self.settings.meshes().pages())?;
         self.pipelines.create_new(list)?;
-        if self.settings.materials_mut().take_changed() {
-            let parameters = self.settings.materials().parameters();
-            let (at, bytes) = arena.push(floats_as_bytes(parameters))?;
-            list.push(Op::WriteBuffer, &[ids::MATERIALS, 0, at, bytes])?;
-        }
+        let table = MaterialStorage::Buffer(ids::MATERIALS);
         let groups_remade = self
             .settings
-            .record_textures(list, arena, ids::MAPS, input.frame)?;
+            .record_materials(list, arena, table, input.frame)?;
         let binding_bytes = self.config.storage_binding_bytes;
         let shared_recreated = if upload_everything {
             self.layout.apply(list, arena, binding_bytes)?
@@ -362,32 +356,29 @@ impl GpuDrivenRenderer {
         Ok(upload_everything)
     }
 
-    /// Records the creation of the culling pipeline and of the material and maps tables, whose
-    /// sizes never change.
+    /// Records the creation of the culling pipeline and of the material table, whose size never
+    /// changes.
     fn create_fixed(&mut self, list: &mut DrawList) -> Result<(), RecordError> {
         cull::create_pipeline(list)?;
         let materials = self.config.max_materials.max(1);
-        for (id, words) in [(ids::MATERIALS, MATERIAL_FLOATS), (ids::MAPS, MAP_WORDS)] {
-            list.push(
-                Op::CreateBuffer,
-                &[
-                    id,
-                    materials * words as u32 * 4,
-                    usage::STORAGE | usage::COPY_DST,
-                ],
-            )?;
-        }
+        list.push(
+            Op::CreateBuffer,
+            &[
+                ids::MATERIALS,
+                materials * MATERIAL_FLOATS as u32 * 4,
+                usage::STORAGE | usage::COPY_DST,
+            ],
+        )?;
         self.created = true;
         Ok(())
     }
 
     /// The most that one frame can copy into its arena for the scene as it stands: mesh data not
-    /// uploaded yet, the whole material and maps tables, the layout's tables, and each view's
+    /// uploaded yet, the whole material table, the layout's tables, and each view's
     /// frame uniform, culling parameters and indirect draws.
     fn upload_bound(&self) -> usize {
         let meshes = self.meshes.pending_bytes(self.settings.meshes().pages());
-        let materials =
-            self.settings.materials().capacity() as usize * (MATERIAL_FLOATS + MAP_WORDS) * 4;
+        let materials = self.settings.materials().capacity() as usize * MATERIAL_FLOATS * 4;
         let per_view = (sizes::FRAME_UNIFORM_BYTES + CULL_PARAMS_BYTES) as usize
             + self.layout.draws.len() * INDIRECT_BYTES as usize;
         meshes + materials + self.layout.upload_bound() + self.settings.views().len() * per_view

@@ -53,7 +53,7 @@ It draws with WebGPU, and with WebGL2 where WebGPU is missing, from the same ske
 
 ## Quickstart
 
-Nothing is on npm yet, but the benchmark scenes run from a clone of this repository. First install the tools that [Development](#development) lists.
+Nothing is on npm yet, but the benchmark scenes and the demos run from a clone of this repository. First install the tools that [Development](#development) lists.
 
 ```sh
 git clone https://github.com/null3d-engine/null3d.git
@@ -70,6 +70,7 @@ Then open one of these pages in Chrome:
 | `http://localhost:5173/bench/pages/null3d/s1.html?demo` | S1: 100,000 boxes, each moved every frame by sketch code |
 | `http://localhost:5173/bench/pages/null3d/s2.html?demo` | S2: a scene graph of 5,096 objects |
 | `http://localhost:5173/bench/pages/threejs/s1.html?renderer=webgl&demo` | S1 in three.js, to compare |
+| `http://localhost:5173/examples/` | The feature demos: one short sketch for each feature |
 
 `bun run bench:run` measures S1 in both engines and prints a table of CPU time per frame.
 
@@ -320,7 +321,7 @@ bun install              # installs the tools and the git hooks
 bun run build            # builds both WebAssembly files and prints their sizes
 bun run test             # unit tests for the engine, the docs and the repository tools
 bun run test:browser     # image tests on WebGPU and WebGL2 in Chrome
-bun run dev              # serves the test and benchmark pages with the isolation headers
+bun run dev              # serves the test pages, benchmark pages and demos with the isolation headers
 bun run bench:run        # measures S1 in null3d and three.js in Chrome and prints a table
 ```
 

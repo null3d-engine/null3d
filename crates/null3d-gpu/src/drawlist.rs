@@ -633,9 +633,11 @@ pub mod sizes {
     pub const DRAW_RECORD_BYTES: u32 = 16;
     /// Draw records one multi-draw call reads: a 4 KiB uniform block.
     pub const MULTI_DRAW_RECORDS: u32 = 256;
-    /// Materials in the material table; as a uniform block this is 16 KiB, the largest block
-    /// every WebGL2 device allows.
+    /// Materials in the material table.
     pub const MAX_MATERIALS: u32 = 1024;
+    /// Bytes of one material's row in the material table: eight `vec4f`s. On WebGL2 each row is a
+    /// row of eight `RGBA32_FLOAT` texels of a data texture.
+    pub const MATERIAL_BYTES: u32 = 128;
     /// Grid cells in use at most, which the shaders' tables of offsets from the camera to each
     /// cell hold, one `vec4f` each.
     pub const MAX_CELLS: u32 = 512;
@@ -945,6 +947,7 @@ pub fn typescript_constants() -> String {
                 ("DRAW_RECORD_BYTES", sizes::DRAW_RECORD_BYTES),
                 ("MULTI_DRAW_RECORDS", sizes::MULTI_DRAW_RECORDS),
                 ("MAX_MATERIALS", sizes::MAX_MATERIALS),
+                ("MATERIAL_BYTES", sizes::MATERIAL_BYTES),
                 ("MAX_CELLS", sizes::MAX_CELLS),
                 ("CELL_SHIFT", sizes::CELL_SHIFT),
                 ("LINE_VERTEX_BYTES", sizes::LINE_VERTEX_BYTES),
@@ -1017,7 +1020,11 @@ mod tests {
                 shift(sizes::INDICES_PER_TEXTURE_ROW)
             ),
             format!("const DRAW_RECORDS: u32 = {}u;", sizes::MULTI_DRAW_RECORDS),
-            format!("const MAX_MATERIALS: u32 = {}u;", sizes::MAX_MATERIALS),
+            // The last of a material row's texels on WebGL2, one per vec4f.
+            format!(
+                "textureLoad(materials, vec2u({}u, id), 0)",
+                sizes::MATERIAL_BYTES / 16 - 1
+            ),
             format!("const CELL_SHIFT: u32 = {}u;", sizes::CELL_SHIFT),
             format!("const MAX_CELLS: u32 = {}u;", sizes::MAX_CELLS),
         ] {
