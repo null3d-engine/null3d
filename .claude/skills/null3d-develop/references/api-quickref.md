@@ -424,6 +424,7 @@ Passes are declarations: the engine checks them, orders them, and shares memory 
 quality.preset;                         // 'low' | 'medium' | 'high' | 'ultra': the preset the engine runs
 quality.settings.maxPixelRatio;         // the settings in use
 quality.set({ maxPixelRatio: 1.5 });    // from the next frame; E1213 for another setting or value
+quality.set({ maxAnisotropy: 4, uploadBytesPerFrame: 2 * 1024 * 1024 });  // texture sampling cap, upload bytes per frame
 quality.set({ antialias: 'fxaa', shadowCascades: 2 });  // planned: the preset table gives each setting's status
 const PARTICLES = { low: 500, medium: 2000, high: 5000, ultra: 10000 };  // your values per preset, in one table
 quality.onChange(() => { particles.setActiveCount(PARTICLES[quality.preset]); });

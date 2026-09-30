@@ -106,7 +106,7 @@ In hold mode, the engine draws one frame, which waits for its pipelines, so `sce
 
 ## Textures after the loading screen
 
-A texture returns at once, and its texels go to the GPU over the frames that follow. Each frame uploads at most 4 MiB of texels, so a scene with many large textures does not stall a frame. Until a texture's texels arrive, its material draws with its color alone. [Textures](../api/textures.md) says how uploads work.
+A texture returns at once, and its texels go to the GPU over the frames that follow. Each frame uploads no more texel bytes than the quality preset's upload budget, so a scene with many large textures does not stall a frame. Until a texture's texels arrive, its material draws with its color alone. [Textures](../api/textures.md) says how uploads work.
 
 Keep the textures of the first view small, so the first frames show them. Or wait a few frames before you remove the loading screen.
 

@@ -82,6 +82,10 @@ pub mod texture_stat {
     pub const IMAGES_SENT: u32 = 5;
     /// The widest and tallest texture the store takes.
     pub const MAX_SIZE: u32 = 6;
+    /// The texel bytes that one frame may upload.
+    pub const UPLOAD_BUDGET: u32 = 7;
+    /// The largest anisotropy that samplers use.
+    pub const MAX_ANISOTROPY: u32 = 8;
 }
 
 /// The settings that `setTextureOption` changes.
@@ -312,6 +316,8 @@ pub fn typescript() -> String {
                 ("WAITING", texture_stat::WAITING),
                 ("IMAGES_SENT", texture_stat::IMAGES_SENT),
                 ("MAX_SIZE", texture_stat::MAX_SIZE),
+                ("UPLOAD_BUDGET", texture_stat::UPLOAD_BUDGET),
+                ("MAX_ANISOTROPY", texture_stat::MAX_ANISOTROPY),
             ],
         ),
         // The draw list's codes that `createTexture` takes, so the sketch thread needs no import of

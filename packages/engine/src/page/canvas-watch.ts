@@ -9,7 +9,10 @@ import { controlViews, Slot } from '../shared/control';
 export interface CanvasWatch {
 	/** Starts or stops watching. Starting writes the canvas's current size. */
 	listen(on: boolean): void;
-	/** Caps the device pixel ratio at `ratio` from now on, and writes the size again while watching. */
+	/**
+	 * Caps the device pixel ratio at `ratio` from now on. A new cap writes the size again while
+	 * watching.
+	 */
 	setMaxPixelRatio(ratio: number): void;
 }
 
@@ -91,6 +94,7 @@ export function watchCanvas(
 			}
 		},
 		setMaxPixelRatio(ratio) {
+			if (ratio === cap) return;
 			cap = ratio;
 			if (listening && last) writeSize(last.cssWidth, last.cssHeight, last.devicePixels);
 		},
