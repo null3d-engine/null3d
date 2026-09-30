@@ -132,8 +132,8 @@ export interface EngineCapabilities {
 	 * The most objects and instance rows, counted together, that a scene can draw on this device.
 	 * On WebGPU every device draws at least 2,097,152, and a device with larger GPU buffers draws
 	 * more, up to 8,388,480. On WebGL2 the number follows the largest texture the device allows:
-	 * 2,097,152 at 4,096 pixels, and 1,048,576 at the 2,048 that every device allows. Engine memory
-	 * can run out first: see E1109.
+	 * 2,097,152 at 4,096 pixels, and 1,048,576 at the 2,048 that every WebGL2 device allows. Engine
+	 * memory can run out first: see E1109.
 	 */
 	maxInstances: number;
 	/**

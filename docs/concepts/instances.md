@@ -183,6 +183,7 @@ Some calls change the scene's structure: creating or destroying an object or a b
 - Every row counts toward the device's limit of objects and instance rows, whether it draws or not. `engine.capabilities.maxInstances` gives the limit. A `createInstances` call that would pass it throws [E1501](../errors/E1501.md).
 - Each row takes about 180 bytes of engine memory, or about 230 with colors. When the engine cannot get more memory, `createInstances` throws [E1109](../errors/E1109.md).
 - Development builds warn once in the console when a scene passes 2,097,152 objects and rows. Devices with WebGPU's default limits draw no more than that.
+- On WebGL2 the limit follows the largest texture the device allows. A device whose textures reach only 2,048 pixels, the least that WebGL2 allows, draws 1,048,576. No warning covers that number, so test a larger scene on both GPU paths. [GPU tiers and backends](backends.md#the-portable-budget) gives the numbers.
 
 ## Per-row colors
 
