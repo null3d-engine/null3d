@@ -78,14 +78,16 @@ export default defineSketch(async (ctx) => {
   // preferences.reducedMotion: true when the user's system asks for less motion
   // preferences.onChange(() => { ... }) runs at the first frame after it changes; it returns a remover
   return {
-    onFixedUpdate(step) {},  // 0 to n times per frame at a fixed rate (default 60 Hz)
+    onFixedUpdate(step) {},  // 0 to n times per frame at a fixed rate (default 60 Hz), before onUpdate
     onUpdate(dt) {},         // once per frame, before transforms; dt is 0 after a pause, at most 0.25 s
-    onLateUpdate(dt) {},     // after transforms, before culling: camera follow
+    onLateUpdate(dt) {},     // after transforms, before culling: camera follow; its moves show this frame
   };
-});
+}, { fixedRate: 60, maxFixedSteps: 8 });  // optional; these are the defaults
 ```
 
-`ctx.engine.viewport` gives the canvas size in CSS pixels and the pixel ratio. `ctx.engine.capabilities` is the same object as on the page.
+- `ctx.engine.viewport` gives `{ width, height, pixelRatio }`: the canvas size in CSS pixels and the pixel ratio the engine draws with, read at the start of each frame. `ctx.engine.capabilities` holds the values of `engine.capabilities` on the page.
+- In `onLateUpdate`, `getWorldPosition` already gives this frame's positions, and setters show in the same frame. Structural changes made there, such as creating an object, wait for the next frame.
+- Fixed steps fall due from sketch time: none in the first frame or after a pause, at most `maxFixedSteps` per frame, the rest dropped. `time` keeps the frame's values during them, so count simulation time with `step`. Read `wasPressed` in `onUpdate`, not in `onFixedUpdate`.
 
 ## 3. Scene (`api/scene`)
 

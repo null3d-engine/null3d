@@ -52,6 +52,14 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 	},
 	// A small static scene: lit and unlit meshes, a hierarchy and an instance batch.
 	{ name: 'scene', sketch: 'tests/pages/sketches/boxes-sketch.ts', hold: 0, modes: ALL_MODES },
+	// A box that fixed steps move at 50 steps per second, and a camera that follows it from the late
+	// update, held at 1.5 seconds: the box stays at the center, and every mode runs the same steps.
+	{
+		name: 'follow',
+		sketch: 'tests/pages/sketches/follow-sketch.ts',
+		hold: 1.5,
+		modes: ALL_MODES,
+	},
 	// The same scene on WebGL2 with each upload copied out of shared memory first.
 	{
 		name: 'scene-copied-uploads',

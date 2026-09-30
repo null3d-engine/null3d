@@ -1,7 +1,8 @@
 // Starts the engine as an app's own page would, and handles no error, so a test reads what hold
 // mode itself publishes on the page. ?sketch= picks the sketch: animated (the default), throwing,
-// whose update throws at half a second, failing-setup, whose setup throws an engine error, or
-// random, which draws from math.random and Math.random in its setup. Once
+// whose update throws at half a second, failing-setup, whose setup throws an engine error, random,
+// which draws from math.random and Math.random in its setup, or follow, whose camera follows a box
+// that fixed steps move. Once
 // the engine has started, the page asks the sketch for its state and notes whether the page's own
 // Math.random changed. Then it stops the engine, and publishes all of it with whether the page got
 // its Math.random back.

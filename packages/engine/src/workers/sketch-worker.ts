@@ -78,6 +78,7 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 					keyCodes: message.keyCodes,
 					jobWorkers: message.jobWorkers,
 					device: message.device,
+					capabilities: message.capabilities,
 				},
 				message.hold,
 			);

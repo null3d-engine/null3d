@@ -1,7 +1,7 @@
 //! Frame code allocates nothing: a counting global allocator watches the test thread and every
-//! job worker while whole frames run (structural commands, transforms, batch updates, culling,
-//! cluster builds, parallel loops with arena scratch memory, background tasks, and the frame
-//! handoff).
+//! job worker while whole frames run (structural commands, transforms, late transform updates,
+//! batch updates, culling, cluster builds, parallel loops with arena scratch memory, background
+//! tasks, and the frame handoff).
 #![allow(clippy::disallowed_methods)] // The self-check reads the clock.
 
 mod common;
@@ -173,6 +173,17 @@ fn frame(world: &mut World, jobs: &JobSystem, frame: u32, rng: &mut Rng) {
         .unwrap();
     world.scene.apply_ring(&world.ring, frame).unwrap();
     world.scene.update_transforms(jobs);
+    // A late update moves a leaf alone, or a root and the objects below it, in turns.
+    let late = if frame.is_multiple_of(2) {
+        world.leaves[rng.below(world.leaves.len() as u32) as usize]
+    } else {
+        world.roots[rng.below(world.roots.len() as u32) as usize]
+    };
+    world
+        .scene
+        .set_position(late, [rng.range(-1.0, 1.0), 1.0, 0.0])
+        .unwrap();
+    world.scene.update_late_transforms();
 
     let batch = world.table.get_mut(world.moving).unwrap();
     for x in batch.positions_mut().iter_mut().step_by(3) {

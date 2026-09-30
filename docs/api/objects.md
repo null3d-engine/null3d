@@ -54,7 +54,7 @@ Setters write straight into the engine's memory and mark the object as changed. 
 Getters copy into an array you pass, so they allocate nothing. Make the array once, for example with `vec3.create()`, and reuse it.
 
 - `getPosition(out)` copies the position that you set, relative to the parent.
-- `getWorldPosition(out)` copies the position in the world from the last frame that the engine processed. A change that you make in `onUpdate` shows in it from the next `onUpdate` call on.
+- `getWorldPosition(out)` copies the position in the world from the engine's last transform update. A change that you make in `onUpdate` shows in it in the same frame's `onLateUpdate`, and from the next `onUpdate` call on.
 
 ## Parents
 

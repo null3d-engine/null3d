@@ -58,11 +58,13 @@ In the default mode the two workers overlap. The render worker draws frame N whi
 The sketch worker, computing frame N+1:
 
 1. Wakes when the render worker signals a new frame, and reads the new input from shared memory.
-2. Runs your `onUpdate`. Your code writes transforms straight into the shared arrays and queues structural changes, such as creating, destroying and reparenting objects.
+2. Runs your `onFixedUpdate` once for each fixed step that fell due, then your `onUpdate`. Your code writes transforms straight into the shared arrays and queues structural changes, such as creating, destroying and reparenting objects.
 3. Applies the structural changes in one batch.
-4. Runs parallel jobs: animation, transforms by hierarchy depth, bounds and level of detail. On the WebGL2 path the jobs also cull each view, such as the camera's.
-5. Records the frame's draw lists: the uploads first, then each pass in the order that the [render graph](render-graph.md) sets.
-6. Publishes the finished frame by flipping one shared index, then signals the render worker.
+4. Runs parallel jobs: animation, transforms by hierarchy depth, bounds and level of detail.
+5. Runs your `onLateUpdate`, then updates the objects that it moved and the objects below them.
+6. On the WebGL2 path, culls each view, such as the camera's, on the job workers.
+7. Records the frame's draw lists: the uploads first, then each pass in the order that the [render graph](render-graph.md) sets.
+8. Publishes the finished frame by flipping one shared index, then signals the render worker.
 
 The render worker, drawing frame N inside its own `requestAnimationFrame` callback:
 

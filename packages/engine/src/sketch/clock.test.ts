@@ -1,5 +1,14 @@
 import { describe, expect, it } from 'bun:test';
-import { FrameClock, HOLD_STEPS_PER_SECOND, holdSteps, MAX_STEP_SECONDS } from './clock';
+import { EngineError } from '../errors/engine-error';
+import {
+	DEFAULT_FIXED_RATE,
+	DEFAULT_MAX_FIXED_STEPS,
+	FixedClock,
+	FrameClock,
+	HOLD_STEPS_PER_SECOND,
+	holdSteps,
+	MAX_STEP_SECONDS,
+} from './clock';
 
 /** The step the clock takes for a frame at `timestamp`. */
 function step(clock: FrameClock, timestamp: number, resumes: number): number {
@@ -80,5 +89,104 @@ describe('hold steps', () => {
 
 	it('hold a frame at time 0 with one frame and no step', () => {
 		expect(hold(0)).toEqual({ now: [0], dt: [0] });
+	});
+});
+
+/** The fixed steps of each frame at `timestamps` in milliseconds, with the page's resume count. */
+function fixedSteps(
+	fixed: FixedClock,
+	timestamps: readonly number[],
+	resumes: readonly number[] = [],
+): number[] {
+	const clock = new FrameClock();
+	return timestamps.map((t, k) => {
+		clock.advance(t, resumes[k] ?? 0);
+		return fixed.stepsAt(clock.now);
+	});
+}
+
+/** Timestamps of `count` frames at `hz` frames per second, from 0. */
+function frames(count: number, hz: number): number[] {
+	return Array.from({ length: count }, (_, k) => (k * 1000) / hz);
+}
+
+const sum = (values: readonly number[]) => values.reduce((a, b) => a + b, 0);
+
+describe('FixedClock', () => {
+	it('runs 60 steps per second, one per frame at 60 frames per second and none in the first', () => {
+		const fixed = new FixedClock();
+		expect(fixed.step).toBe(1 / DEFAULT_FIXED_RATE);
+		const steps = fixedSteps(fixed, frames(61, 60));
+		expect(steps[0]).toBe(0);
+		expect(steps.slice(1)).toEqual(Array(60).fill(1));
+	});
+
+	it('runs whole steps only, as many as fall due in each frame', () => {
+		// At 90 frames per second, two of every three frames run a step.
+		const at90 = fixedSteps(new FixedClock(), frames(91, 90));
+		expect(at90.slice(0, 7)).toEqual([0, 0, 1, 1, 0, 1, 1]);
+		expect(sum(at90)).toBe(60);
+		// At 30 frames per second, each frame after the first runs two.
+		const at30 = fixedSteps(new FixedClock(), frames(31, 30));
+		expect(at30.slice(1)).toEqual(Array(30).fill(2));
+		// Another rate from the options: 50 steps in a second of 60 frames.
+		expect(sum(fixedSteps(new FixedClock(50), frames(61, 60)))).toBe(50);
+	});
+
+	it('caps the steps after a slow frame, and drops the rest', () => {
+		// A frame a quarter second late has 15 steps due, runs the cap and drops the others.
+		const steps = fixedSteps(new FixedClock(), [0, 16.7, 266.7, 283.4]);
+		expect(steps).toEqual([0, 1, DEFAULT_MAX_FIXED_STEPS, 1]);
+		expect(fixedSteps(new FixedClock(60, 20), [0, 16.7, 266.7])).toEqual([0, 1, 15]);
+	});
+
+	it('runs no steps in the first frame after a pause', () => {
+		const steps = fixedSteps(new FixedClock(), [0, 16.7, 33.4, 60_000, 60_016.7], [0, 0, 0, 1, 1]);
+		expect(steps).toEqual([0, 1, 1, 0, 1]);
+	});
+
+	it('runs the same steps on every hold, however many steps fit in each frame', () => {
+		for (const [rate, total] of [
+			[60, 90],
+			[30, 45],
+			[144, 216],
+			[50, 75],
+		] as const) {
+			const run = () => {
+				const clock = new FrameClock();
+				const fixed = new FixedClock(rate);
+				const steps = holdSteps(1.5);
+				return Array.from({ length: steps + 1 }, (_, k) => {
+					clock.holdStep(k, steps, 1.5);
+					return fixed.stepsAt(clock.now);
+				});
+			};
+			const first = run();
+			expect([rate, sum(first)]).toEqual([rate, total]);
+			expect(run()).toEqual(first);
+			if (rate === 60) expect(first).toEqual([0, ...Array(90).fill(1)]);
+		}
+	});
+
+	it('refuses a rate or a cap out of range with E1207', () => {
+		for (const [rate, cap, name] of [
+			[0, 8, 'fixedRate'],
+			[-60, 8, 'fixedRate'],
+			[Number.NaN, 8, 'fixedRate'],
+			[Number.POSITIVE_INFINITY, 8, 'fixedRate'],
+			[60, 0, 'maxFixedSteps'],
+			[60, 2.5, 'maxFixedSteps'],
+			[60, Number.POSITIVE_INFINITY, 'maxFixedSteps'],
+		] as const) {
+			let caught: unknown;
+			try {
+				new FixedClock(rate, cap);
+			} catch (error) {
+				caught = error;
+			}
+			expect(caught).toBeInstanceOf(EngineError);
+			expect((caught as EngineError).code).toBe('E1207');
+			expect((caught as EngineError).message).toContain(`for ${name}.`);
+		}
 	});
 });

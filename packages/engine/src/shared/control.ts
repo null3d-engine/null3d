@@ -55,9 +55,14 @@ export enum Slot {
 	/** The canvas size in CSS pixels, as float bits: read them through `slotFloats`. */
 	CanvasCssWidth = 20,
 	CanvasCssHeight = 21,
+	/**
+	 * Device pixels per CSS pixel that the engine draws with, as float bits: the display's ratio,
+	 * capped by the page's `maxPixelRatio`.
+	 */
+	PixelRatio = 22,
 }
 
-const SLOT_COUNT = 22;
+const SLOT_COUNT = 23;
 
 /** Int32 values per input event record. */
 export const INPUT_EVENT_INTS = 8;

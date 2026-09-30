@@ -80,7 +80,7 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 | Page | What it covers | Status | Version |
 | --- | --- | --- | --- |
 | [Page API: createEngine](api/engine.md) | createEngine options; engine.postToSketch, capture, labels, requestPointerLock, capabilities, destroy. | experimental | 0.1 |
-| [Sketch API: defineSketch and the context](api/sketch.md) | The context object: scene, assets, materials, geometry, textures, input, time, quality, post, render, page, ui, debug; the callbacks. | experimental | 0.1 |
+| [Sketch API: defineSketch and the context](api/sketch.md) | The context object: scene, assets, materials, geometry, textures, input, time, engine, quality, post, render, page, ui, debug; the callbacks. | experimental | 0.1 |
 | [Scene](api/scene.md) | Creating objects; find; background, environment, fog, sky; warmUp. | experimental | 0.1 |
 | [Objects and transforms](api/objects.md) | Setters and getters; parents; flags; destroy. | experimental | 0.1 |
 | [Cameras](api/cameras.md) | Perspective and orthographic cameras; screenToRay; worldToScreen; layers. | experimental | 0.1 |
@@ -173,6 +173,7 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 | [E1204: Invalid color](errors/E1204.md) | A call received a color that is not a hex string, a number from 0 to 0xffffff, or three numbers from 0 to 1. | generated | 0.1 |
 | [E1205: Unknown input name](errors/E1205.md) | An input call received a name that no key, button or action has, or `input.actions.define()` received an action name that a key or button already has. Names are case-sensitive: `KeyW` is the W key, and `keyW` names nothing. | generated | 0.1 |
 | [E1206: Invalid mesh arrays](errors/E1206.md) | geometry.fromArrays() received arrays that make no mesh. An array can have the wrong length for the vertex count, an index can name no vertex, or a value can be NaN or Infinity. Normals can also be missing, or both given and computed. | generated | 0.1 |
+| [E1207: Invalid sketch option](errors/E1207.md) | defineSketch() received an option out of its range: a fixedRate that is not a number above 0, or a maxFixedSteps that is not a whole number of 1 or more. The engine checks the options before it runs the setup function. | generated | 0.1 |
 | [E1301: No usable GPU path](errors/E1301.md) | The browser offers neither WebGPU nor WebGL2 for the way the engine was asked to draw. | generated | 0.1 |
 | [E1302: GPU lost](errors/E1302.md) | The browser took the GPU away while the engine drew, for example after a driver reset or a GPU crash, and the engine could not carry on. No new GPU device started, or the GPU was lost more than twice within a minute. The engine stopped drawing. | generated | 0.1 |
 | [E1303: WebAssembly SIMD missing](errors/E1303.md) | The browser runs WebAssembly without SIMD, which the engine's core needs. | generated | 0.1 |

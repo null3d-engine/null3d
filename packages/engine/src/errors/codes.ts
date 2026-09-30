@@ -112,6 +112,13 @@ const DOCS = {
 		example: 'E1206: geometry.fromArrays() got 9 numbers in normals for 4 vertices, not 12.',
 		since: '0.1',
 	},
+	E1207: {
+		title: 'Invalid sketch option',
+		cause:
+			'defineSketch() received an option out of its range: a fixedRate that is not a number above 0, or a maxFixedSteps that is not a whole number of 1 or more. The engine checks the options before it runs the setup function.',
+		example: 'E1207: defineSketch() got 0 for fixedRate.',
+		since: '0.1',
+	},
 	E1301: {
 		title: 'No usable GPU path',
 		cause: 'The browser offers neither WebGPU nor WebGL2 for the way the engine was asked to draw.',

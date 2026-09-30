@@ -53,6 +53,11 @@ export interface CoreGlue extends CoreErrors {
 	prepareJobs(): void;
 	beginFrame(frame: number): number;
 	updateTransforms(): number;
+	/**
+	 * Updates the objects that the sketch moved after `updateTransforms`, and the objects below
+	 * them, so culling and drawing see the moves in the same frame.
+	 */
+	updateLateTransforms(): number;
 	updateBatches(frame: number): number;
 	/** Finds the frame's visible objects on the job workers, where the path culls on the CPU. */
 	cullFrame(frame: number, width: number, height: number): number;
@@ -127,6 +132,7 @@ const REQUIRED_FUNCTIONS: readonly (keyof CoreGlue)[] = [
 	'prepareJobs',
 	'beginFrame',
 	'updateTransforms',
+	'updateLateTransforms',
 	'updateBatches',
 	'cullFrame',
 	'recordFrame',

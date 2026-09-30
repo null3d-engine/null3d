@@ -22,12 +22,13 @@ export enum Role {
 	Job = 4,
 }
 
-/** CPU phases of a frame, in the order they run. */
+/** CPU phases of a frame, in the order they first run. */
 export enum Phase {
-	/** The sketch's update callback. */
+	/** The sketch's callbacks: its fixed steps, its update and its late update. */
 	Update = 0,
 	/** Structural changes applied from the command ring. */
 	Commands = 1,
+	/** The transform update, and the second one after the sketch's late update. */
 	Transforms = 2,
 	Batches = 3,
 	Cull = 4,
@@ -51,8 +52,8 @@ export const PHASE_NAMES = [
 ] as const;
 
 /**
- * A step of a frame that `engine.measure` times. The `update` step is the sketch's own code, and the
- * other steps are the engine's.
+ * A step of a frame that `engine.measure` times. The `update` step is the sketch's own code, in all
+ * of its callbacks, and the other steps are the engine's.
  *
  * @category api/debug
  */

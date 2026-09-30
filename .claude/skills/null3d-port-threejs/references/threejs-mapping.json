@@ -1319,8 +1319,8 @@
       "three": "Clock / getDelta / getElapsedTime",
       "status": "changed",
       "since": "0.1",
-      "target": "onUpdate(dt) and ctx.time.now",
-      "notes": "",
+      "target": "onUpdate(dt) or ctx.time.dt, and ctx.time.now",
+      "notes": "getDelta() becomes the dt that onUpdate gets, also in ctx.time.dt, and getElapsedTime() becomes ctx.time.now. Sketch time stops while the engine is paused or the page is hidden. A fixed-step simulation, such as world.step(1 / 60), moves to onFixedUpdate.",
       "docs": "api/time",
       "detect": "\\bClock\\b|\\.getDelta\\s*\\(|\\.getElapsedTime\\s*\\("
     },

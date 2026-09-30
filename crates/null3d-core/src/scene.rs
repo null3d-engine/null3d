@@ -25,6 +25,14 @@
 //! change the next update rebuilds the whole order with a breadth-first pass over a child list
 //! built by counting sort (linear in the object count).
 //!
+//! # Late updates
+//!
+//! Sketch code can move objects after the frame's transform update, as a camera that follows an
+//! object does. [`SceneStorage::update_late_transforms`] then recomputes the objects moved since
+//! the update, and the objects below them, before culling. A moved object without children
+//! updates alone. Below the shallowest moved object with children, levels update in order, and an
+//! object updates when it moved or its parent updated in the late update.
+//!
 //! # Double-buffered world output
 //!
 //! Frame `f` writes world buffer `f & 1`. A static object that changed in frame `f - 1` but not in
@@ -304,6 +312,10 @@ pub struct SceneStorage {
     cells: Vec<u32>,
     depths: Vec<u32>,
     dirty: Bitset,
+    /// Objects with at least one child, rebuilt with the hierarchy order.
+    branches: Bitset,
+    /// Objects that the late update recomputes: the moved ones, then the ones below them.
+    late: Bitset,
     world: [WorldArrays; 2],
     changed_frames: Vec<u32>,
     changed: Bitset,
@@ -346,6 +358,8 @@ impl SceneStorage {
             cells: vec![0; rows],
             depths: vec![0; rows],
             dirty: Bitset::new(rows as u32),
+            branches: Bitset::new(rows as u32),
+            late: Bitset::new(rows as u32),
             world: [WorldArrays::new(rows, false), WorldArrays::new(rows, false)],
             changed_frames: vec![0; rows],
             changed: Bitset::new(rows as u32),
@@ -771,10 +785,12 @@ impl SceneStorage {
         // the next parent's.
         let offsets = &mut self.child_offsets[..high];
         offsets.fill(0);
+        self.branches.clear_all();
         for slot in self.created.iter_ones() {
             let parent = self.parents[slot as usize];
             if parent != NO_PARENT {
                 offsets[parent as usize] += 1;
+                self.branches.set(parent);
             }
         }
         let mut running = 0;
@@ -910,6 +926,81 @@ impl SceneStorage {
         let used_words = self.slots.high_water().div_ceil(64) as usize;
         self.dirty.words_mut()[..used_words].fill(0);
         self.build_changed_bits(jobs);
+    }
+
+    /// Recomputes the objects moved since the frame's [`SceneStorage::update_transforms`], and
+    /// every object below them, so culling and drawing see them where a late update put them.
+    /// See "Late updates" in the module documentation. Clears the dirty bits, and adds the
+    /// recomputed objects to [`SceneStorage::changed`]. Runs on the calling thread and allocates
+    /// nothing.
+    ///
+    /// # Panics
+    /// When no frame has started: frames start at 1.
+    pub fn update_late_transforms(&mut self) {
+        assert!(
+            self.frame != 0,
+            "start a frame (numbered from 1) with begin_frame or apply_commands first"
+        );
+        if self.order_dirty {
+            self.rebuild_order();
+        }
+        // Dirty bits only exist below the high-water slot. An object that is reserved but not yet
+        // created updates when its create command applies, which marks it dirty again.
+        let used_words = self.slots.high_water().div_ceil(64) as usize;
+        let mut moved = false;
+        let mut branch_depth: Option<u32> = None;
+        let words = self.late.words_mut()[..used_words].iter_mut();
+        for (w, (late, dirty)) in words.zip(self.dirty.words_mut()).enumerate() {
+            *late = std::mem::take(dirty) & self.created.words()[w];
+            moved |= *late != 0;
+            let mut branches = *late & self.branches.words()[w];
+            while branches != 0 {
+                let depth = self.depths[w * 64 + branches.trailing_zeros() as usize];
+                branch_depth = Some(branch_depth.map_or(depth, |d| d.min(depth)));
+                branches &= branches - 1;
+            }
+        }
+        if !moved {
+            return;
+        }
+        let parity = self.parity();
+        let ctx = UpdateContext {
+            frame: self.frame,
+            order: &self.order,
+            positions: &self.positions,
+            rotations: &self.rotations,
+            scales: &self.scales,
+            local_radii: &self.local_radii,
+            parents: &self.parents,
+            flags: &self.flags,
+            dirty: self.dirty.words(),
+            changed_frames: SharedMut::new(&mut self.changed_frames),
+            out: self.world[parity].ptrs(),
+            previous: self.world[parity ^ 1].ptrs(),
+        };
+        // No moved object down to the shallowest moved branch has a moved ancestor, so each one
+        // reads its parent's final matrix.
+        for slot in self.late.iter_ones() {
+            let depth = self.depths[slot as usize];
+            if branch_depth.is_none_or(|d| depth <= d) {
+                ctx.compute(slot, depth == 0);
+            }
+        }
+        if let Some(depth) = branch_depth {
+            // A branch has children, so the levels below it exist.
+            for level in &self.levels[depth as usize + 1..self.level_count] {
+                for &slot in &self.order[level.start as usize..level.end as usize] {
+                    if self.late.get(slot) || self.late.get(self.parents[slot as usize]) {
+                        ctx.compute(slot, false);
+                        self.late.set(slot);
+                    }
+                }
+            }
+        }
+        let changed = self.changed.words_mut()[..used_words].iter_mut();
+        for (changed, late) in changed.zip(self.late.words()) {
+            *changed |= late;
+        }
     }
 
     /// Sets the changed bitset from this frame's stamps, 64 slots per word.
@@ -1431,5 +1522,107 @@ mod tests {
     #[should_panic(expected = "start a frame")]
     fn updating_before_the_first_frame_panics() {
         SceneStorage::with_capacity(4).update_transforms(&JobSystem::new(0));
+    }
+
+    /// True when the object was recomputed in the current frame.
+    fn recomputed(scene: &SceneStorage, h: Handle) -> bool {
+        let slot = scene.resolve(h).unwrap();
+        scene.changed_frames()[slot as usize] == scene.frame() && scene.changed().get(slot)
+    }
+
+    #[test]
+    fn a_late_update_recomputes_moved_objects_without_children_alone() {
+        let jobs = JobSystem::new(0);
+        let mut scene = SceneStorage::with_capacity(16);
+        let (target, c1) = object(&mut scene, [0.0; 3], Handle::NONE, MOVING);
+        let (rider, c2) = object(&mut scene, [0.0, 1.0, 0.0], target, SHOWN);
+        let (camera, c3) = object(&mut scene, [0.0, 0.0, 10.0], Handle::NONE, MOVING);
+        let (post, c4) = object(&mut scene, [5.0, 0.0, 0.0], Handle::NONE, SHOWN);
+        let (sign, c5) = object(&mut scene, [0.0, 2.0, 0.0], post, SHOWN);
+        let (lamp, c6) = object(&mut scene, [-5.0, 0.0, 0.0], Handle::NONE, SHOWN);
+        scene.apply_commands(&[c1, c2, c3, c4, c5, c6], 1).unwrap();
+        scene.update_transforms(&jobs);
+
+        scene.set_position(target, [3.0, 0.0, 0.0]).unwrap();
+        scene.begin_frame(2);
+        scene.update_transforms(&jobs);
+        // The late update reads this frame's world positions, and moves objects to match them.
+        assert_eq!(translation(&scene, rider), [3.0, 1.0, 0.0]);
+        scene.set_position(camera, [3.0, 0.0, 10.0]).unwrap();
+        scene.set_position(rider, [0.0, 4.0, 0.0]).unwrap();
+        scene.set_position(lamp, [-5.0, 1.0, 0.0]).unwrap();
+        scene.update_late_transforms();
+        assert_eq!(translation(&scene, camera), [3.0, 0.0, 10.0]);
+        assert_eq!(translation(&scene, rider), [3.0, 4.0, 0.0]);
+        assert_eq!(translation(&scene, lamp), [-5.0, 1.0, 0.0]);
+        for h in [camera, rider, lamp] {
+            assert!(recomputed(&scene, h), "a moved object uploads this frame");
+        }
+        // The static post and its sign did not move, so neither update recomputed them.
+        assert!(!recomputed(&scene, post) && !recomputed(&scene, sign));
+        assert!(!scene.dirty().any());
+
+        // The next frame copies the late matrices into the other buffer.
+        scene.begin_frame(3);
+        scene.update_transforms(&jobs);
+        let lamp_slot = scene.resolve(lamp).unwrap() as usize;
+        assert_eq!(
+            scene.world(0).matrix(lamp_slot),
+            scene.world(1).matrix(lamp_slot)
+        );
+    }
+
+    #[test]
+    fn a_late_update_recomputes_the_objects_below_a_moved_branch() {
+        let jobs = JobSystem::new(0);
+        let mut scene = SceneStorage::with_capacity(16);
+        let (rig, c1) = object(&mut scene, [0.0; 3], Handle::NONE, SHOWN);
+        let (camera, c2) = object(&mut scene, [0.0, 2.0, 8.0], rig, SHOWN);
+        let (flash, c3) = object(&mut scene, [0.0, 0.0, -1.0], camera, SHOWN);
+        let (tower, c4) = object(&mut scene, [20.0, 0.0, 0.0], Handle::NONE, SHOWN);
+        let (floor, c5) = object(&mut scene, [0.0, 10.0, 0.0], tower, SHOWN);
+        let (flag, c6) = object(&mut scene, [0.0, 1.0, 0.0], floor, SHOWN);
+        scene.apply_commands(&[c1, c2, c3, c4, c5, c6], 1).unwrap();
+        scene.update_transforms(&jobs);
+
+        scene.begin_frame(2);
+        scene.update_transforms(&jobs);
+        scene.set_position(rig, [1.0, 0.0, 0.0]).unwrap();
+        // A moved object deeper than the rig, whose own parents did not move.
+        scene.set_position(flag, [0.0, 3.0, 0.0]).unwrap();
+        scene.update_late_transforms();
+        assert_eq!(translation(&scene, camera), [1.0, 2.0, 8.0]);
+        assert_eq!(translation(&scene, flash), [1.0, 2.0, 7.0]);
+        assert_eq!(translation(&scene, flag), [20.0, 13.0, 0.0]);
+        for h in [rig, camera, flash, flag] {
+            assert!(recomputed(&scene, h));
+        }
+        assert!(!recomputed(&scene, tower) && !recomputed(&scene, floor));
+    }
+
+    #[test]
+    fn a_late_update_skips_objects_that_are_not_created_yet() {
+        let jobs = JobSystem::new(0);
+        let mut scene = SceneStorage::with_capacity(8);
+        let (h, c) = object(&mut scene, [1.0, 0.0, 0.0], Handle::NONE, SHOWN);
+        scene.apply_commands(&[], 1).unwrap();
+        scene.update_transforms(&jobs);
+        // The object's position is written, but its create command waits for the next frame.
+        scene.update_late_transforms();
+        assert!(!scene.changed().any() && !scene.dirty().any());
+        scene.apply_commands(&[c], 2).unwrap();
+        scene.update_transforms(&jobs);
+        assert_eq!(translation(&scene, h), [1.0, 0.0, 0.0]);
+        // With nothing moved, the late update leaves the frame's changes as they are.
+        scene.begin_frame(3);
+        scene.update_transforms(&jobs);
+        scene.update_late_transforms();
+        assert!(!scene.changed().any());
+    }
+
+    #[test]
+    #[should_panic(expected = "start a frame")]
+    fn a_late_update_before_the_first_frame_panics() {
+        SceneStorage::with_capacity(4).update_late_transforms();
     }
 }
