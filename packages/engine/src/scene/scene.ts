@@ -944,7 +944,8 @@ export class Scene {
 
 	/**
 	 * @internal Counts the rows of batches as they are created and destroyed, and warns once when
-	 * the scene passes the limit that every device draws.
+	 * the scene passes the limit that every WebGPU device draws. WebGL2 devices with small textures
+	 * draw fewer, and no warning covers them.
 	 */
 	countBatchRows(change: number): void {
 		this.batchRows += change;

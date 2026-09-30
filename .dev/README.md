@@ -4,7 +4,7 @@ These guides hold the detail behind [AGENTS.md](../AGENTS.md), so that file can 
 
 | Guide | Contents |
 | --- | --- |
-| [Benchmarks](benchmarks.md) | How to run the benchmarks and read their numbers, the sweeps for open defaults, allocation sampling and profiling |
+| [Benchmarks](benchmarks.md) | How to run the benchmarks and read their numbers, the benchmark job in CI and its expected-change trailer, the sweeps for open defaults, allocation sampling and profiling |
 | [Decision records](decisions/README.md) | Design choices settled by measurement: the question, the rule, the data and the outcome of each |
 | [Device sessions](devices.md) | The device runner and its plans, and how to set up and run the Android phone, the iPad and the Mac's browser apps |
 | [Image tests](image-tests.md) | The image test manifest, its references in each environment and on each device, the review step, and CI's shards |

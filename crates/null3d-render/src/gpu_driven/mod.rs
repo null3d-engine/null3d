@@ -89,7 +89,8 @@ pub const fn max_sources(binding_bytes: u32) -> u32 {
 /// entry in both frames' upload arenas.
 pub const BYTES_PER_SOURCE: u32 = 12;
 
-/// The most sources on every device: [`max_sources`] at WebGPU's default storage binding limit.
+/// The most sources on every WebGPU device: [`max_sources`] at WebGPU's default storage binding
+/// limit. The WebGL2 path has its own limit, which follows the device's largest texture.
 pub const PORTABLE_MAX_SOURCES: u32 = max_sources(sizes::PORTABLE_STORAGE_BINDING_BYTES);
 
 /// The largest storage binding the builder can use: the instance buffer of the most sources one

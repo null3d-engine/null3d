@@ -64,6 +64,26 @@ describe('FramePacer', () => {
 		expect(drawn(new FramePacer(200), 60, 100)).toHaveLength(100);
 	});
 
+	it('holds callbacks from a timer to the display rate, one frame per refresh on average', () => {
+		const pacer = new FramePacer(undefined);
+		pacer.holdToDisplay(1000 / 60);
+		const times = drawn(pacer, 1000 / 15, 900);
+		expect(rate(times)).toBeCloseTo(60, 0);
+		// The gaps are whole callback periods: one, or two where a callback is skipped.
+		expect(new Set(periods(times, 1000 / 15))).toEqual(new Set([1, 2]));
+	});
+
+	it('keeps the lower of the ?fps= rate and the display rate', () => {
+		const fps = new FramePacer(30);
+		fps.holdToDisplay(1000 / 60);
+		expect(rate(drawn(fps, 60, 240))).toBeCloseTo(30, 6);
+		const display = new FramePacer(60);
+		display.holdToDisplay(1000 / 30);
+		expect(rate(drawn(display, 60, 240))).toBeCloseTo(30, 6);
+		display.holdToDisplay(0);
+		expect(periods(drawn(display, 60, 240, { start: 10_000 }), 60)).not.toContain(2);
+	});
+
 	it('starts a new schedule after a pause instead of drawing a burst to catch up', () => {
 		const pacer = new FramePacer(30);
 		const before = drawn(pacer, 60, 20);

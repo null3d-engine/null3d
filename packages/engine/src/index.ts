@@ -51,6 +51,7 @@ export { createEngine } from './page/engine';
 export type {
 	FrameMetrics,
 	FrameSummary,
+	GpuPassStats,
 	MainThreadStats,
 	MemoryStats,
 	ThreadStats,
