@@ -8,7 +8,7 @@ enable draw_index;
 // builds dim the sun's light where the main directional light's shadows fall.
 #import null3d::color
 #import null3d::lighting
-#import null3d::mesh::{InstanceIn, clip_of, find_instance, frame, material_of}
+#import null3d::mesh::{InstanceIn, clip_of, find_instance, fogged, frame, material_of}
 #import null3d::mesh::{relative_position, world_normal}
 #ifdef RECEIVE_SHADOWS
 #import null3d::shadows::{sun_shadow}
@@ -114,5 +114,5 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
         discard;
     }
 #endif
-    return vec4f(null3d::color::linear_to_srgb(outgoing), 1.0);
+    return vec4f(null3d::color::linear_to_srgb(fogged(outgoing, in.relative, m)), 1.0);
 }

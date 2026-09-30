@@ -7,6 +7,7 @@
 //! - `cpu_culled`: the WebGL2 frame builder, with culling on the job workers and an index list per
 //!   view
 //! - `debug_lines`: the lines that a sketch draws for one frame, and the pass that draws them
+//! - `fog`: the scene's fog, with three.js's formulas, and its part of each frame's uniform block
 //! - `frame`: what every frame builder shares: its input, the scene settings, the per-parity lists
 //! - `frame_data`: the per-frame uniform block the shaders read
 //! - `frame_graph`: the engine's passes on the render graph, and the recording of its plan
@@ -29,6 +30,7 @@ mod cells;
 pub mod cpu_culled;
 pub mod debug_lines;
 pub mod dfg;
+pub mod fog;
 pub mod frame;
 pub mod frame_data;
 pub mod frame_graph;
