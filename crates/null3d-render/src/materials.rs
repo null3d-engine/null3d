@@ -69,7 +69,7 @@ pub mod feature {
     /// Each triangle lights with one normal, the normal of its face.
     pub const FLAT_SHADING: u32 = 4;
     /// The scene's fog leaves the material's color as it is.
-    pub const NO_FOG: u32 = 8;
+    pub const NO_FOG: u32 = 1024;
     /// Every feature.
     pub const ALL: u32 = DOUBLE_SIDED | VERTEX_COLORS | FLAT_SHADING | NO_FOG;
 }
@@ -79,7 +79,7 @@ pub mod flag {
     /// The shader lights each triangle with its face's normal.
     pub const FLAT_SHADING: u32 = 1;
     /// The shader skips the scene's fog.
-    pub const NO_FOG: u32 = 2;
+    pub const NO_FOG: u32 = 4;
 }
 
 /// The row flags (`flag::*` bits) of a material with `features` (`feature::*` bits).

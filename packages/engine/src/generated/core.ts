@@ -85,7 +85,7 @@ export const SHADING_UNLIT_MAP = 3;
 export const MATERIAL_FEATURE_DOUBLE_SIDED = 1;
 export const MATERIAL_FEATURE_VERTEX_COLORS = 2;
 export const MATERIAL_FEATURE_FLAT_SHADING = 4;
-export const MATERIAL_FEATURE_NO_FOG = 8;
+export const MATERIAL_FEATURE_NO_FOG = 1024;
 
 export const FOG_KIND_NONE = 0;
 export const FOG_KIND_LINEAR = 1;

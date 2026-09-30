@@ -526,7 +526,7 @@ struct VertexOut {
 const uint LINEAR = 1u;
 const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
-const uint NO_FOG = 2u;
+const uint NO_FOG = 4u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -929,7 +929,7 @@ struct VertexOut {
 const uint LINEAR = 1u;
 const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
-const uint NO_FOG = 2u;
+const uint NO_FOG = 4u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -1311,7 +1311,7 @@ struct VertexOut {
 const uint LINEAR = 1u;
 const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
-const uint NO_FOG = 2u;
+const uint NO_FOG = 4u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -1715,7 +1715,7 @@ struct VertexOut {
 const uint LINEAR = 1u;
 const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
-const uint NO_FOG = 2u;
+const uint NO_FOG = 4u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -2099,7 +2099,7 @@ struct VertexOut {
 const uint LINEAR = 1u;
 const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
-const uint NO_FOG = 2u;
+const uint NO_FOG = 4u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -2509,7 +2509,7 @@ struct VertexOut {
 const uint LINEAR = 1u;
 const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
-const uint NO_FOG = 2u;
+const uint NO_FOG = 4u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -2894,7 +2894,7 @@ struct VertexOut {
 const uint LINEAR = 1u;
 const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
-const uint NO_FOG = 2u;
+const uint NO_FOG = 4u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -3303,7 +3303,7 @@ struct VertexOut {
 const uint LINEAR = 1u;
 const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
-const uint NO_FOG = 2u;
+const uint NO_FOG = 4u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -3683,7 +3683,7 @@ struct VertexOut {
 const LINEAR: u32 = 1u;
 const EXP2_: u32 = 2u;
 const OUTSIDE_CLIP: vec4<f32> = vec4<f32>(2f, 2f, 2f, 1f);
-const NO_FOG: u32 = 2u;
+const NO_FOG: u32 = 4u;
 const PI: f32 = 3.1415927f;
 const INV_PI: f32 = 0.31830987f;
 const EPSILON: f32 = 0.000001f;
@@ -4043,7 +4043,7 @@ struct VertexOut {
 const LINEAR: u32 = 1u;
 const EXP2_: u32 = 2u;
 const OUTSIDE_CLIP: vec4<f32> = vec4<f32>(2f, 2f, 2f, 1f);
-const NO_FOG: u32 = 2u;
+const NO_FOG: u32 = 4u;
 const PI: f32 = 3.1415927f;
 const INV_PI: f32 = 0.31830987f;
 const EPSILON: f32 = 0.000001f;
@@ -10272,7 +10272,7 @@ struct VertexOut {
 const uint LINEAR = 1u;
 const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
-const uint NO_FOG = 2u;
+const uint NO_FOG = 4u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -10543,7 +10543,7 @@ struct VertexOut {
 const uint LINEAR = 1u;
 const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
-const uint NO_FOG = 2u;
+const uint NO_FOG = 4u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -10751,7 +10751,7 @@ struct VertexOut {
 const uint LINEAR = 1u;
 const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
-const uint NO_FOG = 2u;
+const uint NO_FOG = 4u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -11023,7 +11023,7 @@ struct VertexOut {
 const uint LINEAR = 1u;
 const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
-const uint NO_FOG = 2u;
+const uint NO_FOG = 4u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -11233,7 +11233,7 @@ struct VertexOut {
 const uint LINEAR = 1u;
 const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
-const uint NO_FOG = 2u;
+const uint NO_FOG = 4u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -11511,7 +11511,7 @@ struct VertexOut {
 const uint LINEAR = 1u;
 const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
-const uint NO_FOG = 2u;
+const uint NO_FOG = 4u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -11722,7 +11722,7 @@ struct VertexOut {
 const uint LINEAR = 1u;
 const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
-const uint NO_FOG = 2u;
+const uint NO_FOG = 4u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -11999,7 +11999,7 @@ struct VertexOut {
 const uint LINEAR = 1u;
 const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
-const uint NO_FOG = 2u;
+const uint NO_FOG = 4u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -12202,7 +12202,7 @@ struct VertexOut {
 const LINEAR: u32 = 1u;
 const EXP2_: u32 = 2u;
 const OUTSIDE_CLIP: vec4<f32> = vec4<f32>(2f, 2f, 2f, 1f);
-const NO_FOG: u32 = 2u;
+const NO_FOG: u32 = 4u;
 
 @group(0) @binding(1)
 var<storage> materials: array<Material>;
@@ -12389,7 +12389,7 @@ struct VertexOut {
 const LINEAR: u32 = 1u;
 const EXP2_: u32 = 2u;
 const OUTSIDE_CLIP: vec4<f32> = vec4<f32>(2f, 2f, 2f, 1f);
-const NO_FOG: u32 = 2u;
+const NO_FOG: u32 = 4u;
 
 @group(0) @binding(1)
 var<storage> materials: array<Material>;
@@ -12596,7 +12596,7 @@ struct VertexOut {
 const uint LINEAR = 1u;
 const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
-const uint NO_FOG = 2u;
+const uint NO_FOG = 4u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -12881,7 +12881,7 @@ struct VertexOut {
 const uint LINEAR = 1u;
 const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
-const uint NO_FOG = 2u;
+const uint NO_FOG = 4u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -13115,7 +13115,7 @@ struct VertexOut {
 const uint LINEAR = 1u;
 const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
-const uint NO_FOG = 2u;
+const uint NO_FOG = 4u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -13401,7 +13401,7 @@ struct VertexOut {
 const uint LINEAR = 1u;
 const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
-const uint NO_FOG = 2u;
+const uint NO_FOG = 4u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -13637,7 +13637,7 @@ struct VertexOut {
 const uint LINEAR = 1u;
 const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
-const uint NO_FOG = 2u;
+const uint NO_FOG = 4u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -13929,7 +13929,7 @@ struct VertexOut {
 const uint LINEAR = 1u;
 const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
-const uint NO_FOG = 2u;
+const uint NO_FOG = 4u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -14166,7 +14166,7 @@ struct VertexOut {
 const uint LINEAR = 1u;
 const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
-const uint NO_FOG = 2u;
+const uint NO_FOG = 4u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -14457,7 +14457,7 @@ struct VertexOut {
 const uint LINEAR = 1u;
 const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
-const uint NO_FOG = 2u;
+const uint NO_FOG = 4u;
 const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
@@ -14686,7 +14686,7 @@ struct VertexOut {
 const LINEAR: u32 = 1u;
 const EXP2_: u32 = 2u;
 const OUTSIDE_CLIP: vec4<f32> = vec4<f32>(2f, 2f, 2f, 1f);
-const NO_FOG: u32 = 2u;
+const NO_FOG: u32 = 4u;
 
 @group(0) @binding(1)
 var<storage> materials: array<Material>;
@@ -14892,7 +14892,7 @@ struct VertexOut {
 const LINEAR: u32 = 1u;
 const EXP2_: u32 = 2u;
 const OUTSIDE_CLIP: vec4<f32> = vec4<f32>(2f, 2f, 2f, 1f);
-const NO_FOG: u32 = 2u;
+const NO_FOG: u32 = 4u;
 
 @group(0) @binding(1)
 var<storage> materials: array<Material>;
