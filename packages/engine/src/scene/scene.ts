@@ -27,6 +27,7 @@ import {
 import type { CoreMemory } from './memory';
 import type { Material, MeshGeometry } from './resources';
 import { quaternionLookAt } from './rotation';
+import { UnmarkedWrites } from './unmarked-writes';
 
 /**
  * A vector (x, y, z).
@@ -42,6 +43,14 @@ export type Vec3 = readonly [number, number, number];
 export type Quat = readonly [number, number, number, number];
 
 const SLOT_MASK = (1 << C.HANDLE_SLOT_BITS) - 1;
+
+/** A class of scene object: built from the scene, a handle, a name and any further arguments. */
+type ObjectKind<T extends Object3D, A extends unknown[]> = new (
+	scene: Scene,
+	handle: number,
+	name: string,
+	...rest: A
+) => T;
 
 /**
  * Options every node takes when it is created.
@@ -347,13 +356,19 @@ export class Object3D implements Described {
 
 	/** Makes the object dynamic or static from the next frame. See `NodeOptions.dynamic`. */
 	setDynamic(dynamic: boolean): void {
-		if (DEV) checkLive('setDynamic', this);
+		if (DEV) {
+			checkLive('setDynamic', this);
+			this.scene.unmarkedWrites?.watch(this, !dynamic);
+		}
 		this.scene.command(C.COMMAND_SET_DYNAMIC, this.handle, dynamic ? 1 : 0, 0, 'setDynamic');
 	}
 
 	/** Removes the object at the next frame. Its children become roots. */
 	destroy(): void {
-		if (DEV) checkLive('destroy', this);
+		if (DEV) {
+			checkLive('destroy', this);
+			this.scene.unmarkedWrites?.watch(this, false);
+		}
 		this.scene.command(C.COMMAND_DESTROY, this.handle, 0, 0, 'destroy');
 		this.destroyedFrame = this.scene.frame;
 	}
@@ -765,13 +780,20 @@ export class Scene {
 	/** Rows of the live instance batches, which development builds count. */
 	private batchRows = 0;
 	private warnedPastPortable = false;
+	/**
+	 * @internal Development builds: finds static objects whose transform changed without a setter.
+	 * Declared without a value, so release builds hold no trace of it.
+	 */
+	declare readonly unmarkedWrites: UnmarkedWrites | undefined;
 
 	constructor(
 		/** @internal */ readonly core: CoreMemory,
 		private readonly time: { readonly frame: number },
 		/** True when the engine draws with WebGL2, whose devices draw fewer rows than WebGPU's. */
 		private readonly webgl2: boolean,
-	) {}
+	) {
+		if (DEV) this.unmarkedWrites = new UnmarkedWrites(this);
+	}
 
 	/** @internal */
 	get frame(): number {
@@ -842,7 +864,18 @@ export class Scene {
 		if (camera === this.activeCamera) camera.sendLens(this.core.glue);
 	}
 
-	private create(options: NodeOptions, mesh: number, radius: number, call: string): number {
+	/**
+	 * Reserves an object, writes its transform, queues its creation, and builds it as `Kind` with
+	 * any further constructor arguments.
+	 */
+	private create<T extends Object3D, A extends unknown[]>(
+		Kind: ObjectKind<T, A>,
+		options: NodeOptions,
+		mesh: number,
+		radius: number,
+		call: string,
+		...extra: A
+	): T {
 		const { layers } = options;
 		if (DEV && layers !== undefined) checkLayers(call, layers);
 		const handle = this.core.check(this.core.glue.reserveObject(), call, options.name);
@@ -856,20 +889,21 @@ export class Scene {
 		this.command(C.COMMAND_CREATE | (flags << 8), handle, options.parent?.handle ?? 0, mesh, call);
 		if (layers !== undefined && layers >>> 0 !== C.LAYERS_DEFAULT)
 			this.command(C.COMMAND_SET_LAYERS, handle, layers >>> 0, 0, call);
-		return handle;
+		const object = new Kind(this, handle, options.name ?? '', ...extra);
+		if (DEV) this.unmarkedWrites?.watch(object, !options.dynamic);
+		return object;
 	}
 
 	/** An empty node, for hierarchy. */
 	createGroup(options: NodeOptions = {}): Group {
-		const handle = this.create(options, C.CORE_NO_MESH, 0, 'createGroup');
-		return new Group(this, handle, options.name ?? '');
+		return this.create(Group, options, C.CORE_NO_MESH, 0, 'createGroup');
 	}
 
 	/** A drawn object. It is static unless `dynamic: true`. */
 	createMesh(options: MeshOptions): Mesh {
-		const handle = this.create(options, options.mesh.id, options.mesh.radius, 'createMesh');
-		this.command(C.COMMAND_SET_MATERIAL, handle, options.material.id, 0, 'createMesh');
-		return new Mesh(this, handle, options.name ?? '');
+		const mesh = this.create(Mesh, options, options.mesh.id, options.mesh.radius, 'createMesh');
+		this.command(C.COMMAND_SET_MATERIAL, mesh.handle, options.material.id, 0, 'createMesh');
+		return mesh;
 	}
 
 	/** Many copies of one mesh and material, with typed arrays of rows. */
@@ -904,11 +938,7 @@ export class Scene {
 			checkFov(call, fov, camera);
 			checkNearFar(call, near, far, true, camera);
 		}
-		return this.createCamera(
-			options,
-			call,
-			(handle, name) => new PerspectiveCamera(this, handle, name, fov, near, far),
-		);
+		return this.createCamera(PerspectiveCamera, options, call, fov, near, far);
 	}
 
 	/**
@@ -925,24 +955,21 @@ export class Scene {
 			checkNearFar(call, near, far, false, camera);
 		}
 		const view = orthographicView(options);
-		return this.createCamera(
-			options,
-			call,
-			(handle, name) => new OrthographicCamera(this, handle, name, view, near, far),
-		);
+		return this.createCamera(OrthographicCamera, options, call, view, near, far);
 	}
 
 	/**
-	 * Creates a camera's object, dynamic unless the options say otherwise, wraps it with `make`,
-	 * gives it the options' layers to draw, and turns it toward the options' target.
+	 * Creates a camera of the given class with its lens settings, dynamic unless the options say
+	 * otherwise, gives it the options' layers to draw, and turns it toward the options' target.
 	 */
-	private createCamera<T extends Camera>(
+	private createCamera<T extends Camera, A extends unknown[]>(
+		Kind: ObjectKind<T, A>,
 		options: CameraOptions,
 		call: string,
-		make: (handle: number, name: string) => T,
+		...lens: A
 	): T {
-		const handle = this.create({ dynamic: true, ...options }, C.CORE_NO_MESH, 0, call);
-		const camera = make(handle, options.name ?? '');
+		const node = { dynamic: true, ...options };
+		const camera = this.create(Kind, node, C.CORE_NO_MESH, 0, call, ...lens);
 		camera.layers = (options.layers ?? C.LAYERS_DEFAULT) >>> 0;
 		if (options.target) camera.lookAt(...options.target);
 		return camera;

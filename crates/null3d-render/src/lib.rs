@@ -15,6 +15,7 @@
 //! - `meshes`: mesh storage for both GPU paths
 //! - `parallel_record`: draw lists recorded in chunks on the job workers, joined in chunk order
 //! - `pipelines`: the render pipeline cache, by the key of everything that sets a pipeline apart
+//! - `textures`: texture arrays, their samplers and bind groups, and uploads under a byte budget
 //! - `view`: views, each a camera, a layer mask and a target, culled on its own
 
 pub mod arrays;
@@ -30,4 +31,5 @@ pub mod materials;
 pub mod meshes;
 pub mod parallel_record;
 pub mod pipelines;
+pub mod textures;
 pub mod view;

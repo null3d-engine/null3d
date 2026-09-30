@@ -185,7 +185,7 @@ water.set({ waveSpeed: 2.0 }); // typed from the uniforms above
 | Symptom | Likely cause | Fix |
 | --- | --- | --- |
 | Blank canvas; the console mentions `SharedArrayBuffer` or `crossOriginIsolated` | The page is not cross-origin isolated | Add the null3D Vite plugin to `vite.config.ts`, or set the COOP and COEP headers on the host (`getting-started/hosting`) |
-| An object does not move | A static object was written through an array | Use a setter, or create it with `dynamic: true` |
+| An object does not move, or a development build logs E1110 | A static object changed without a setter | Use the setter, or create it with `dynamic: true` |
 | Colors too dark or washed out | Wrong texture color space | `colorSpace: 'srgb'` for color maps, `'linear'` for data maps (`concepts/color-management`) |
 | A stutter every few seconds | Allocations in per-frame code | Scratch values created once; confirm with the browser's memory profiler |
 | A hitch when something first appears | A pipeline compiled during play | Load and warm up earlier (`guides/loading-screens`) |
