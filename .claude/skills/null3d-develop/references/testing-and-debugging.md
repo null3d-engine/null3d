@@ -42,7 +42,7 @@ const engine = await createEngine({
 const { width, height, pixels } = await engine.captureFrame(); // the held frame, RGBA8, top row first
 ```
 
-- The engine seeds `Math.random` in the sketch's thread and runs the setup. It steps the sketch from time 0 to the held time in fixed steps of 1/60 second, with no frame loop. Then it draws that one frame and reads it back through the engine.
+- The engine seeds `math.random` in the sketch's thread, makes `Math.random` draw from it, and runs the setup. It steps the sketch from time 0 to the held time in fixed steps of 1/60 second, with no frame loop. Then it draws that one frame and reads it back through the engine.
 - `createEngine` resolves once the frame is read back. `engine.mode.hold` holds the time, or `null` in a live engine. A bare `?hold` holds at the `hold` option's time, or at 0.
 - The engine publishes the result as `window.__null3dHold`: `{ ok: true, time, frame, tier, width, height, pixels }`, or `{ ok: false, code, error }` at the first failure. A test runner waits for it, so a page that failed never costs a timeout.
 - The first error stops the hold: E1407 for a bad time, and E1408 for an error in `onUpdate` or the core. E1408 gives the sketch time of the error. A live engine would log that error and carry on.
@@ -53,7 +53,7 @@ const { width, height, pixels } = await engine.captureFrame(); // the held frame
 Keep held frames the same on every run:
 
 - Move things with `time.now` and `dt`, never `Date.now()` or `performance.now()`.
-- Draw random numbers from `Math.random`, which hold mode seeds; `crypto.getRandomValues` is not seeded.
+- Draw random numbers from `math.random` or `Math.random`, which hold mode seeds; `crypto.getRandomValues` is not seeded.
 - Await every asset in the setup, because the hold starts when the setup resolves.
 - Pass test settings in the sketch module's address, such as `new URL('./sketch.ts?view=harbor', import.meta.url)`, and read them from `import.meta.url` in the sketch. Page messages reach the sketch only after the hold.
 

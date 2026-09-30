@@ -403,13 +403,26 @@ Debug drawing exists in development builds only and costs nothing in release bui
 
 ```ts
 import { vec3, quat, mat4, math, color } from '@null3d/engine';
-const tmp = vec3.create();                // create once, reuse
+const tmp = vec3.create();                // create once in the setup, reuse every frame
 vec3.set(tmp, 1, 2, 3); vec3.add(tmp, tmp, other); vec3.normalize(tmp, tmp);
-quat.setAxisAngle(q, [0, 1, 0], angle); quat.slerp(q, a, b, t);
+// Also vec3.copy, sub, multiply, scale, scaleAndAdd, negate, cross, lerp, min, max,
+// transformQuat, transformMat4; and dot, length, squaredLength, distance, squaredDistance, angle.
+quat.setAxisAngle(q, [0, 1, 0], angle); quat.fromEuler(q, x, y, z, 'XYZ'); quat.slerp(q, a, b, t);
+quat.lookAt(q, eye, target);              // +Z toward the target, as a mesh looks
+// Also quat.set, copy, identity, fromMat4, rotationTo, multiply, rotateX/Y/Z, invert, normalize, dot.
+mat4.compose(m, position, rotation, scale); mat4.decompose(position, rotation, scale, m);
+// Also mat4.identity, copy, multiply, invert.
 math.clamp(v, lo, hi); math.lerp(a, b, t); math.damp(a, b, lambda, dt); math.degToRad(d);
+// Also math.inverseLerp, mapLinear, smoothstep, radToDeg, euclideanModulo.
+math.random(); math.seed(42); math.randFloat(lo, hi); math.randInt(lo, hi); math.randFloatSpread(r);
 color.fromHex(out, '#ff8800');            // linear RGB from an sRGB hex value
+color.fromSrgb(out, r, g, b); color.fromHsl(out, h, s, l); color.srgbToLinear(c); color.linearToSrgb(c);
 
 time.now; time.dt; time.frame;            // seconds, seconds, frame counter
 ```
 
-Colors given as `'#rrggbb'` strings or `0xrrggbb` numbers are sRGB and are converted to linear, as in three.js. Arrays `[r, g, b]` are linear.
+- Each helper writes its result into its first argument, `out`, and returns it. Inputs can be tuples such as `[0, 1, 0]`, plain arrays or typed arrays. Make `out` arrays with `create()`, never in per-frame code.
+- Angles are in radians. `quat.fromEuler` takes three.js's axis orders; gl-matrix's function of that name takes degrees.
+- `quat.lookAt` gives a mesh's rotation. For a camera or a light, which looks down -Z, swap `eye` and `target`.
+- `math.random` draws from one generator per thread. `math.seed(n)` makes a run repeatable. Hold mode seeds it and routes `Math.random` to it.
+- Color options take `'#rrggbb'` or `'#rgb'` strings, `0xrrggbb` numbers and `[r, g, b]` arrays from 0 to 1, all in sRGB. The engine converts them to linear, as three.js does for hex colors. The `color` helpers give linear RGB, which instance colors take.

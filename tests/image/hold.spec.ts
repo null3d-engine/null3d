@@ -3,7 +3,8 @@
 // tests read what the engine publishes on a page that handles no error itself. The image test
 // manifest's held test checks the held frame's pixels in every thread mode and on every tier.
 import { expect, type Page, test } from '@playwright/test';
-import { HOLD_SEED, seededRandom } from '../../packages/engine/src/sketch/random.ts';
+import { randFloat, random, seed } from '../../packages/engine/src/math/math.ts';
+import { HOLD_SEED } from '../../packages/engine/src/sketch/random.ts';
 import { ENGINE_MODES, type EngineMode } from '../lib/engine-checks.ts';
 import { type HoldReport, holdResult, windowValue } from '../lib/page-result.ts';
 
@@ -13,15 +14,19 @@ const HELD_FRAME = 91;
 /** A failure must reach the page long before a test driver would give up. */
 const FAST_FAILURE_MS = 15_000;
 
-interface SketchState {
-	state: {
-		now: number;
-		frame: number;
-		updates: number;
-		smallestStep: number;
-		largestStep: number;
-		firstRandom: number[];
-	};
+/** What the animated sketch reports. */
+interface AnimatedState {
+	now: number;
+	frame: number;
+	updates: number;
+	smallestStep: number;
+	largestStep: number;
+	firstRandom: number[];
+}
+
+/** What the hold page publishes: the sketch's own report, and what the page saw. */
+interface SketchState<State = AnimatedState> {
+	state: State;
 	mode: { hold: number | null; latency: string; renderThread: string };
 	tier: string;
 	seededOnPage: boolean;
@@ -35,8 +40,14 @@ async function hold(page: Page, switches: string): Promise<HoldReport> {
 }
 
 /** Waits for the page to publish the sketch's state, which it asks for once the engine started. */
-function sketchState(page: Page): Promise<SketchState> {
-	return windowValue<SketchState>(page, '__null3dSketchState', 30_000);
+function sketchState<State = AnimatedState>(page: Page): Promise<SketchState<State>> {
+	return windowValue<SketchState<State>>(page, '__null3dSketchState', 30_000);
+}
+
+/** The first numbers that hold mode's seeded generator gives. */
+function seededNumbers(count: number): number[] {
+	seed(HOLD_SEED);
+	return Array.from({ length: count }, random);
 }
 
 /** The held frame from a result that must have one. */
@@ -67,8 +78,7 @@ test('hold mode steps the sketch in fixed steps to the held time, with seeded ra
 		]);
 		expect(state.smallestStep).toBeCloseTo(1 / 60, 12);
 		expect(state.largestStep).toBeCloseTo(1 / 60, 12);
-		const seeded = seededRandom(HOLD_SEED);
-		expect([mode.name, state.firstRandom]).toEqual([mode.name, [seeded(), seeded(), seeded()]]);
+		expect([mode.name, state.firstRandom]).toEqual([mode.name, seededNumbers(3)]);
 		// The single-threaded build runs the sketch on the page's thread, which gets its own
 		// Math.random back when the engine stops. Elsewhere the page's Math.random never changes.
 		expect([mode.name, seededOnPage, ownAfterStop]).toEqual([
@@ -92,11 +102,27 @@ test('a live engine publishes no hold result, and its random numbers are not see
 	await page.goto('hold.html');
 	const { state, mode } = await sketchState(page);
 	expect(mode.hold).toBeNull();
-	const seeded = seededRandom(HOLD_SEED);
-	expect(state.firstRandom).not.toEqual([seeded(), seeded(), seeded()]);
+	expect(state.firstRandom).not.toEqual(seededNumbers(3));
 	expect(
 		await page.evaluate(() => (globalThis as { __null3dHold?: unknown }).__null3dHold),
 	).toBeUndefined();
+});
+
+test('hold mode seeds math.random in every thread mode, and Math.random draws from it too', async ({
+	page,
+}) => {
+	// The sketch draws from math.random and Math.random in turn, so both take from one sequence.
+	seed(HOLD_SEED);
+	const expected = [random(), random(), randFloat(2, 4), random()];
+	for (const mode of ENGINE_MODES) {
+		frameOf(await hold(page, `hold=0.5&sketch=random${modeSwitches(mode)}`), mode.name);
+		const { state } = await sketchState<{ drawn: number[] }>(page);
+		expect([mode.name, state.drawn]).toEqual([mode.name, expected]);
+	}
+	await page.goto('hold.html?sketch=random');
+	const live = await sketchState<{ drawn: number[] }>(page);
+	expect(live.mode.hold).toBeNull();
+	expect(live.state.drawn).not.toEqual(expected);
 });
 
 for (const mode of ENGINE_MODES)

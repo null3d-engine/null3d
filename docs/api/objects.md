@@ -16,14 +16,6 @@ This page will cover: Setters and getters; parents; flags; destroy.
 
 ## API reference
 
-### `EulerOrder`
-
-```ts
-type EulerOrder = 'XYZ' | 'YXZ' | 'ZXY' | 'ZYX' | 'YZX' | 'XZY';
-```
-
-The axis order of Euler angles, with three.js's names. `'XYZ'` turns an object about its own X axis, then its Y axis, then its Z axis.
-
 ### `Group`
 
 Class `Group`, which extends `Object3D`.

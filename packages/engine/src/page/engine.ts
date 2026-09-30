@@ -81,7 +81,7 @@ export interface EngineOptions {
 	/**
 	 * Starts the engine in hold mode for image tests, held at this many seconds of sketch time. The
 	 * engine steps the sketch from 0 to the time in fixed steps of 1/60 second, with no frame loop.
-	 * `Math.random` in the sketch's thread gives the same numbers on every run. The engine then
+	 * `math.random` and `Math.random` in the sketch's thread give the same numbers on every run. The engine then
 	 * draws that one frame and reads it back, and `createEngine` resolves. The `?hold=<seconds>`
 	 * switch overrides this time, and a bare `?hold` holds at it, or at 0 without it.
 	 */
