@@ -9,13 +9,17 @@ import { localHostName } from '../../tools/lib/host.ts';
  * The dev server's port: 5173, or the one that NULL3D_PORT names. Each copy of the repository, such
  * as a second worktree, can then run its own server, and its tools reach that one. The HTTPS server
  * takes the next port, `vite preview`, which serves the production build of the test pages, the
- * one after, and the Chrome debugging port of the soak and the startup benchmark the one after that.
+ * one after, and the Chrome debugging port of the benchmark tools the one after that.
  */
 export const HTTP_PORT = devServerPort(process.env.NULL3D_PORT);
 export const HTTPS_PORT = HTTP_PORT + 1;
 /** Where `vite preview` serves the production build of the test pages. */
 export const PREVIEW_PORT = HTTP_PORT + 2;
-/** Chrome's debugging port for the soak and the startup benchmark, which start their own Chrome. */
+/**
+ * Chrome's debugging port for the benchmark tools that drive Chrome through its debugging protocol:
+ * a Chrome they start here, or Chrome on a phone that adb forwards here. Each copy of the repository
+ * has its own, so two copies can run these tools at the same time.
+ */
 export const DEBUG_PORT = HTTP_PORT + 3;
 export const REPO_ROOT = join(import.meta.dirname, '../..');
 

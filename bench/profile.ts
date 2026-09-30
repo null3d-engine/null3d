@@ -12,7 +12,7 @@
 //   bun run bench:profile --android --n 300000 --thread sketch
 import { chromium } from '@playwright/test';
 import { forwardPort, phoneModel } from '../tests/lib/adb.ts';
-import { HTTP_PORT, startServer } from '../tests/lib/server.ts';
+import { DEBUG_PORT, HTTP_PORT, startServer } from '../tests/lib/server.ts';
 import {
 	attachWorkers,
 	type CallFrame,
@@ -25,8 +25,6 @@ import {
 import { PARITY_SCENES, type ParityScene, pagePath } from './lib/parity';
 import { type CpuProfile, type EntrySplit, splitEntry } from './lib/profile';
 
-/** Chrome's debugging port on this computer, for a Chrome started here or one on a phone. */
-const DEBUG_PORT = 9334;
 /** The engine's source files, as the dev server serves them. */
 const ENGINE_URL = '/packages/engine/src/';
 /** The worker whose time the tool splits, by a part of its script's address. */

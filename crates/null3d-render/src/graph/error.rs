@@ -21,6 +21,9 @@ pub enum Mismatch {
     Layer,
     /// The pass draws but names no target.
     NoTarget,
+    /// A resolve pass reads no target, or one that it cannot resolve into the canvas, or it
+    /// writes something other than the canvas.
+    Resolve,
 }
 
 /// Why a render graph did not compile.
@@ -50,8 +53,9 @@ pub enum GraphError {
         /// The pass on the cycle that runs after `first`.
         second: PassId,
     },
-    /// Code 1505: a pass's targets cannot share one render pass. Details: the pass and the
-    /// target, or `u32::MAX` for a pass with no target.
+    /// Code 1505: a pass's targets cannot share one render pass, or a resolve pass cannot resolve
+    /// its target into the canvas. Details: the pass and the target, or `u32::MAX` for a pass
+    /// with no target.
     TargetMismatch {
         /// The pass.
         pass: PassId,
@@ -117,6 +121,18 @@ impl fmt::Display for GraphError {
             Self::Cycle { .. } => write!(
                 f,
                 "E{code}: passes {a} and {b} are on a cycle, so no order runs each after the passes it needs"
+            ),
+            Self::TargetMismatch {
+                resource: None,
+                reason: Mismatch::Resolve,
+                ..
+            } => write!(f, "E{code}: pass {a} resolves no target"),
+            Self::TargetMismatch {
+                reason: Mismatch::Resolve,
+                ..
+            } => write!(
+                f,
+                "E{code}: pass {a} cannot resolve target {b} into the canvas"
             ),
             Self::TargetMismatch { resource: None, .. } => {
                 write!(f, "E{code}: pass {a} draws into no target")
@@ -206,6 +222,21 @@ impl RenderGraph {
                 reason,
             } => {
                 let size = self.pass_size(drawer);
+                if reason == Mismatch::Resolve {
+                    let Some(target) = target else {
+                        return format!(
+                            "E{code}: the pass {} names no target to resolve into the canvas.",
+                            pass(drawer)
+                        );
+                    };
+                    return format!(
+                        "E{code}: the pass {} cannot resolve {} into the canvas. A resolve pass \
+                         writes only the canvas. It reads one multisampled color target in the \
+                         canvas's format and size, which no other running pass reads.",
+                        pass(drawer),
+                        resource(target)
+                    );
+                }
                 let Some(target) = target else {
                     return format!("E{code}: the pass {} draws into no target.", pass(drawer));
                 };
@@ -269,7 +300,7 @@ impl RenderGraph {
                             shape.layers
                         )
                     }
-                    Mismatch::NoTarget => {
+                    Mismatch::NoTarget | Mismatch::Resolve => {
                         format!("E{code}: the pass {} draws into no target.", pass(drawer))
                     }
                 }

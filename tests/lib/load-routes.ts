@@ -48,6 +48,9 @@ export function parseLoadPath(url: string): (Load & { path: string }) | undefine
 	return { kind, key: key as string, path };
 }
 
+/** True for an address under the load route, such as a plan item's before the runner fills it in. */
+export const isLoadPath = (path: string) => path.startsWith(LOAD_ROUTE);
+
 /** The load whose files an address of a page asks for, or undefined for any other page. */
 export function loadOf(url: string): Load | undefined {
 	const load = parseLoadPath(url);
