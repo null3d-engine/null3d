@@ -8,8 +8,9 @@
 //                                           sizes for a size check that builds this commit as its base
 //   bun tools/build-wasm.ts --names         keep the core's function names, for a CPU profile;
 //                                           the names add size, so this skips the size checks
-//   bun tools/build-wasm.ts --core-only     build only the two WebAssembly files, which is all
-//                                           that the test pages load, with no size report
+//   bun tools/build-wasm.ts --pages-only    build only what the test pages need, with no size
+//                                           report: the two WebAssembly files, and the shader
+//                                           compiler that the dev server runs on their WGSL
 //
 // The threaded build uses atomics and shared memory, so it rebuilds the standard library with
 // them. The single-threaded build runs on pages that are not cross-origin isolated. The
@@ -206,12 +207,12 @@ export interface BuildOptions {
 	sizesOnly: boolean;
 	/** Keep the core's function names, which a CPU profile shows. */
 	keepNames: boolean;
-	/** Build only the two WebAssembly files: no shader compiler and no size report. */
-	coreOnly: boolean;
+	/** Build only what the test pages need: the two WebAssembly files and the shader compiler. */
+	pagesOnly: boolean;
 }
 
 const USAGE =
-	'usage: bun tools/build-wasm.ts [--check-size [--base <ref>] | --sizes-only | --names | --core-only]';
+	'usage: bun tools/build-wasm.ts [--check-size [--base <ref>] | --sizes-only | --names | --pages-only]';
 
 /** Reads the command line. It throws on an unknown option and on options that exclude each other. */
 export function parseOptions(args: readonly string[]): BuildOptions {
@@ -219,14 +220,14 @@ export function parseOptions(args: readonly string[]): BuildOptions {
 		checkSize: false,
 		sizesOnly: false,
 		keepNames: false,
-		coreOnly: false,
+		pagesOnly: false,
 	};
 	for (let i = 0; i < args.length; i++) {
 		const arg = args[i];
 		if (arg === '--check-size') options.checkSize = true;
 		else if (arg === '--sizes-only') options.sizesOnly = true;
 		else if (arg === '--names') options.keepNames = true;
-		else if (arg === '--core-only') options.coreOnly = true;
+		else if (arg === '--pages-only') options.pagesOnly = true;
 		else if (arg === '--base' && args[i + 1] && !args[i + 1]?.startsWith('-'))
 			options.base = args[++i];
 		else
@@ -236,8 +237,8 @@ export function parseOptions(args: readonly string[]): BuildOptions {
 	}
 	if (options.keepNames && (options.checkSize || options.sizesOnly))
 		throw new Error('--names adds the function names to the core, so it cannot measure sizes');
-	if (options.coreOnly && (options.checkSize || options.sizesOnly))
-		throw new Error('--core-only makes no size report, so it cannot measure sizes');
+	if (options.pagesOnly && (options.checkSize || options.sizesOnly))
+		throw new Error('--pages-only makes no size report, so it cannot measure sizes');
 	if (options.checkSize && options.sizesOnly)
 		throw new Error(
 			'--sizes-only measures a base for the size check, so it cannot also run the check',
@@ -555,8 +556,8 @@ async function main(): Promise<void> {
 	const version = lockedVersion(readFileSync(join(root, 'Cargo.lock'), 'utf8'), 'wasm-bindgen');
 	const bindgen = await wasmBindgen(version);
 	for (const variant of VARIANTS) buildVariant(variant, bindgen, options.keepNames);
-	if (options.coreOnly) return;
 	if (!options.sizesOnly) buildShaderCompiler();
+	if (options.pagesOnly) return;
 
 	const sizes: Record<string, SizeEntry> = {};
 	for (const variant of VARIANTS)
