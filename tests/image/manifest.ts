@@ -16,6 +16,7 @@ import { MASK_IMAGE } from '../../bench/scenes/alpha-mask.ts';
 import { FOG_IMAGE } from '../../bench/scenes/fog.ts';
 import { MAPS_IMAGE } from '../../bench/scenes/material-maps.ts';
 import { ORTHO_IMAGE } from '../../bench/scenes/ortho-camera.ts';
+import { SHADOW_IMAGE } from '../../bench/scenes/shadows.ts';
 import { HOLD_TIME, PARITY_CANVAS } from '../../bench/scenes/spec.ts';
 import { DEMOS } from '../../examples/demos.ts';
 import type { DepthMode } from '../../packages/engine/src/page/switches.ts';
@@ -186,12 +187,13 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 	{ name: 'layers', sketch: 'tests/pages/sketches/layers-sketch.ts', hold: 0.1 },
 	// The main directional light's shadows with 1 to 4 cascades, near the camera and far from it:
 	// casters that receive shadows, a receiver that casts none, a caster that receives none, and an
-	// unlit box in a shadow. WebGL2 draws no shadows yet.
+	// unlit box in a shadow. The parity test compares the three cascades with three.js. WebGL2 draws
+	// no shadows yet.
 	...[3, 1, 2, 4].map((cascades) => ({
 		name: cascades === 3 ? 'shadows' : `shadows-cascades-${cascades}`,
 		sketch: `tests/pages/sketches/shadows-sketch.ts?cascades=${cascades}`,
 		hold: 0,
-		size: [480, 270] as const,
+		size: [SHADOW_IMAGE.width, SHADOW_IMAGE.height] as const,
 		tiers: ['webgpu', 'compat'] as const,
 	})),
 	// The orthographic camera: towers seen from above at an angle, with the near plane cutting the

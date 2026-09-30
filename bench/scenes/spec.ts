@@ -37,6 +37,13 @@ export const CAMERA = { fov: 60, near: 0.1, far: 1000 } as const;
 export const SUN = { direction: [-1, -2, -1], color: '#ffffff', intensity: 3 } as const;
 /** The ambient light. */
 export const AMBIENT = { color: '#ffffff', intensity: 0.4 } as const;
+/**
+ * The sun's shadows in a scene that a page runs with `?shadows=`: the texels on each side of the
+ * map, and how far from the camera they fall. null3D fits its cascades to that distance, and
+ * three.js draws one map of the same size in a box `threeHalfSize` meters to each side of the
+ * origin, which holds every benchmark scene.
+ */
+export const SHADOWS = { mapSize: 2048, distance: 250, threeHalfSize: 130 } as const;
 
 /** A scene's directional light, its sun, and its ambient light. */
 export interface SceneLights {

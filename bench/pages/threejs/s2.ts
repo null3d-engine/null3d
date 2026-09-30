@@ -2,7 +2,7 @@
 // count) whose roots turn every frame. Every node is a regular Mesh in an Object3D hierarchy, and
 // three.js updates the world matrices itself. BatchedMesh, three.js's usual tool for many draws,
 // cannot hold a hierarchy, so it does not fit this scene. The page rounds `?n=` up to whole trees and
-// reports the real count.
+// reports the real count. With `?shadows`, every node casts and receives the sun's shadows.
 import type * as ThreeModule from 'three';
 import {
 	createS2,
@@ -16,7 +16,7 @@ import {
 } from '../../scenes/spec';
 import { runThreePage } from './harness';
 
-runThreePage('s2', (three, scene, { count }) => {
+runThreePage('s2', (three, scene, { count, shadows }) => {
 	const data = createS2(2, s2Trees(count ?? S2_NODE_COUNT));
 	const geometries = Array.from(
 		{ length: S2_MESH_COUNT },
@@ -31,6 +31,7 @@ runThreePage('s2', (three, scene, { count }) => {
 		if (!geometry || !material)
 			throw new Error(`S2 node ${i} uses a mesh or material that does not exist`);
 		const node = new three.Mesh(geometry, material);
+		node.castShadow = node.receiveShadow = shadows !== null;
 		node.position.fromArray(data.position, i * 3);
 		node.rotation.y = data.rotationY[i] ?? 0;
 		node.scale.setScalar(data.scale[i] ?? 1);

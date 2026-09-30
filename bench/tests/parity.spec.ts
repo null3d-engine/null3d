@@ -13,21 +13,64 @@ import {
 	compareImages,
 	differenceText,
 	gpuApiOf,
+	MAX_DIFFERENT_PERCENT,
 	parityFiles,
 	passesWithBaseline,
 	type RgbaImage,
+	SHADOW_MAX_DIFFERENT_PERCENT,
 	TIERS,
+	type Tier,
 } from '../lib/parity';
 import { type PageReport, runPage } from './open-page';
 
-/** Each feature scene: the manifest's image test that draws it, and its three.js twin page. */
-const FEATURE_SCENES = [
-	{ test: 'ortho-camera', twin: '/bench/pages/threejs/ortho-camera.html' },
-	{ test: 'standard-maps', twin: '/bench/pages/threejs/material-maps.html' },
-	{ test: 'alpha-mask', twin: '/bench/pages/threejs/alpha-mask.html' },
-	{ test: 'fog-linear', twin: '/bench/pages/threejs/fog.html?fog=linear' },
-	{ test: 'fog-exp2', twin: '/bench/pages/threejs/fog.html?fog=exp2' },
-] as const;
+/**
+ * Each feature scene: the manifest's image test that draws it, its three.js twin page, the GPU
+ * tiers that draw it, and the share of pixels in percent under which it passes. WebGL2 draws no
+ * shadows yet.
+ */
+const FEATURE_SCENES: readonly {
+	test: string;
+	twin: string;
+	tiers: readonly Tier[];
+	limit: number;
+}[] = [
+	{
+		test: 'ortho-camera',
+		twin: '/bench/pages/threejs/ortho-camera.html',
+		tiers: TIERS,
+		limit: MAX_DIFFERENT_PERCENT,
+	},
+	{
+		test: 'standard-maps',
+		twin: '/bench/pages/threejs/material-maps.html',
+		tiers: TIERS,
+		limit: MAX_DIFFERENT_PERCENT,
+	},
+	{
+		test: 'alpha-mask',
+		twin: '/bench/pages/threejs/alpha-mask.html',
+		tiers: TIERS,
+		limit: MAX_DIFFERENT_PERCENT,
+	},
+	{
+		test: 'fog-linear',
+		twin: '/bench/pages/threejs/fog.html?fog=linear',
+		tiers: TIERS,
+		limit: MAX_DIFFERENT_PERCENT,
+	},
+	{
+		test: 'fog-exp2',
+		twin: '/bench/pages/threejs/fog.html?fog=exp2',
+		tiers: TIERS,
+		limit: MAX_DIFFERENT_PERCENT,
+	},
+	{
+		test: 'shadows',
+		twin: '/bench/pages/threejs/shadows.html',
+		tiers: ['webgpu', 'compat'],
+		limit: SHADOW_MAX_DIFFERENT_PERCENT,
+	},
+];
 
 const OUTPUT_DIR = join(import.meta.dirname, '../../test-results/parity');
 /** The dev server, which serves the image test pages. */
@@ -48,7 +91,7 @@ async function imageOf(page: Page, path: string): Promise<RgbaImage> {
 	return { width, height, data: Buffer.from(pixels, 'base64') };
 }
 
-for (const { test: name, twin } of FEATURE_SCENES) {
+for (const { test: name, twin, tiers, limit } of FEATURE_SCENES) {
 	test.describe(`${name} against three.js`, () => {
 		const threeImages = new Map<Renderer, RgbaImage>();
 		/** How much three.js's two renderers differ on the scene, as a share of its pixels. */
@@ -66,7 +109,7 @@ for (const { test: name, twin } of FEATURE_SCENES) {
 			baseline = compareImages(webgpu, webgl).share;
 		});
 
-		for (const tier of TIERS) {
+		for (const tier of tiers) {
 			test(`matches three.js on ${tier}`, async ({ page }) => {
 				const renderer: Renderer = gpuApiOf(tier) === 'webgl2' ? 'webgl' : 'webgpu';
 				const reference = threeImages.get(renderer) as RgbaImage;
@@ -82,10 +125,10 @@ for (const { test: name, twin } of FEATURE_SCENES) {
 				mkdirSync(OUTPUT_DIR, { recursive: true });
 				for (const { file, png } of files) writeFileSync(join(OUTPUT_DIR, file), png);
 				const images = files.map(({ file }) => `test-results/parity/${file}`).join(', ');
-				const difference = differenceText(comparison, baseline);
+				const difference = differenceText(comparison, baseline, false, limit);
 				console.log(`${name} on ${tier}: ${difference}`);
 				expect(
-					passesWithBaseline(comparison.share, baseline),
+					passesWithBaseline(comparison.share, baseline, limit),
 					`${difference}. Images: ${images}`,
 				).toBe(true);
 			});

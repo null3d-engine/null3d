@@ -108,6 +108,13 @@ Build two checkouts, such as a git worktree of main beside your branch, with `bu
 - On the phone: `bun tests/real-browsers.ts --plan bench --allow-no-webgpu --android chrome --scenes s3 --pages null3d-webgl2,null3d-webgl2-low,scene-code`.
 - On the iPad: `bun tests/real-browsers.ts --plan bench --lan ipad-safari --scenes s3 --pages null3d-webgpu,null3d-webgl2,threejs-webgpu,scene-code`.
 
+## Shadows
+
+- `?shadows=<n>` on S2's pages turns on the sun's shadows, and every node casts and receives them. null3D draws them in n cascades, from 1 to 4, and three.js in one map. Both maps have 2,048 texels on each side (`SHADOWS` in `bench/scenes/spec.ts`), and three.js's map covers a box around the whole forest.
+- `--switches <switches>` gives every page of a run more switches. On the Mac, run S2 without shadows, then with each cascade count: `bun run bench:run --scenes s2 --pages null3d-webgpu,null3d-compat,threejs-webgpu,threejs-webgl --switches shadows=1`. Each count's difference from the run without shadows is the cost of its cascades, in CPU time and in GPU time.
+- `bun run parity --scene s2 --tier webgpu,compat --switches shadows=3` compares the hold frames. On 30 September 2026 on the Mac, 0.147% of the pixels differed on both WebGPU tiers, and three.js's two renderers differed by 0.270%.
+- Each cascade adds a culling dispatch and a depth pass on the GPU. On the CPU it adds the recording of both, and its uniforms: about the same work whatever the number of casters.
+
 ## Sweeps for the open defaults
 
 Three sweeps measure the defaults that are still open: the latency mode, the job worker count and the shared memory's maximum. Each runs on the Mac, and on a phone or an iPad through the device runner.
@@ -156,6 +163,8 @@ Three sweeps measure the defaults that are still open: the latency mode, the job
 - While it warms up and samples, the check moves the mouse over the canvas and presses a key and the mouse button. So the sample covers the sketch's reading of input, and that code is warm when the sample starts.
 - Places that allocate because the browser does have budgets with their reasons in `bench/allocation.ts`. Every other place must stay under 4 bytes per frame. Add `--n 30000` to include the staging ring.
 - The check samples the production build. The build's source maps give each place its function and file, so one set of budgets holds for the build and for `--dev`. With `--dev`, the development checks allocate a little more on the sketch worker, which a budget allows.
+- `--scene s2 --switches shadows=4` samples S2 with the sun's shadows in four cascades. Each cascade adds a culling pass and a depth pass, and the browser's objects for the two come to about 65 bytes per frame. The replay's budget grows by 80 bytes per cascade.
+- On 30 September 2026, S2 went over the budget of the render loop's wake-up timer, with or without shadows. It took 57 bytes per frame without them, and 101 with four cascades. S1 stays under that budget.
 - `bun run bench:profile` shows where the render worker's replay spends its time. A browser call costs the same from any language. The engine's own share of the replay is therefore the most that a replay loop in another language could save.
 - The profile samples the production build, and names its functions through the build's source maps. With `--dev`, it profiles the dev server's pages, whose development checks then count in the engine's share.
 - The profiler samples every 50 microseconds after a 20-second warm-up. Code the browser has not optimized yet counts as the engine's, so a shorter warm-up overstates the engine's share.

@@ -160,6 +160,26 @@ for (const scene of SCENES) {
 	}
 }
 
+// S2 with the sun's shadows, as `bun run bench:run --switches shadows=2` runs it: each engine's page
+// runs, and its hold frame is darker than without shadows, where nodes shade the nodes below them.
+for (const kind of ['threejs-webgl', 'threejs-webgpu', 'null3d-webgpu', 'null3d-compat'] as const) {
+	test(`s2 with shadows on ${kind} runs a short benchmark and shades its hold frame`, async ({
+		page,
+	}) => {
+		const result = await runPage<BenchReport>(
+			page,
+			pagePath('s2', kind, `seconds=1&n=${SHORT_RUN_COUNT}&shadows=2`),
+		);
+		expect(result.frames).toBeGreaterThan(0);
+		const { width, height } = PARITY_CANVAS;
+		const brightness = async (switches: string) => {
+			const hold = await runPage<HoldReport>(page, pagePath('s2', kind, switches));
+			return meanBrightness(Buffer.from(hold.pixels, 'base64'), width, 0, height);
+		};
+		expect(await brightness('hold&shadows=2')).toBeLessThan(await brightness('hold'));
+	});
+}
+
 for (const scene of SCENES) {
 	test(`${scene}'s scene code runs alone and reports its time`, async ({ page }) => {
 		const result = await runPage<BenchReport>(

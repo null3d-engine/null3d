@@ -17,6 +17,14 @@ export { encodePng, percent, type RgbaImage, TIERS, type Tier };
 export const PIXEL_THRESHOLD = 0.1;
 /** Two images match when strictly less than this percentage of their pixels differ. */
 export const MAX_DIFFERENT_PERCENT = 0.1;
+/**
+ * The limit for scenes with shadows, which three.js's rule would fail on shadow edges alone. three.js
+ * softens each edge with five rotated taps of its shadow map, and null3D with one filtered tap of a
+ * cascade whose texels have another size. The shadows fall in the same places, and only the pixels
+ * that an edge crosses differ: 0.21% to 0.22% of the shadow scene's pixels, on the Mac's GPU and on
+ * SwiftShader.
+ */
+export const SHADOW_MAX_DIFFERENT_PERCENT = 0.5;
 
 /** The squared RGB distance from black to white, which scales a squared distance to [0, 1]. */
 const MAX_SQUARED_DISTANCE = 255 * 255 * 3;
@@ -149,9 +157,19 @@ export function pagePath(scene: BenchScene, kind: BenchPageKind, switches = ''):
 	return `/bench/pages/${page.folder}/${scene}.html?${[page.switches, switches].filter(Boolean).join('&')}`;
 }
 
-/** The dev-server path of the page that draws one scene's hold frame. */
-export function holdPagePath(scene: BenchScene, kind: PageKind): string {
-	return pagePath(scene, kind, 'hold');
+/** The dev-server path of the page that draws one scene's hold frame, with more switches. */
+export function holdPagePath(scene: BenchScene, kind: PageKind, switches = ''): string {
+	return pagePath(scene, kind, ['hold', switches].filter(Boolean).join('&'));
+}
+
+/**
+ * The page switches of a command's `option`, such as `--switches shadows=3`: names, each with a
+ * value or none, joined by `&`. It throws unless the text has that form.
+ */
+export function readSwitches(text: string | undefined, option: string): string {
+	if (!text || !/^[a-z]+(=[\w.]+)?(&[a-z]+(=[\w.]+)?)*$/i.test(text))
+		throw new Error(`${option}: give page switches without the ?, such as shadows=3 or a=1&b`);
+	return text;
 }
 
 /** The name that a comparison's image files start with. */
@@ -201,20 +219,27 @@ export function formatStoredBaselines(baselines: StoredBaselines): string {
  * two pixels wide, and three.js's rule counts every such pixel. An engine that matches three.js as
  * closely as three.js's renderers match each other draws the same scene.
  */
-export function passesWithBaseline(share: number, baselineShare: number | null): boolean {
-	return share * 100 < MAX_DIFFERENT_PERCENT || (baselineShare !== null && share <= baselineShare);
+export function passesWithBaseline(
+	share: number,
+	baselineShare: number | null,
+	limitPercent = MAX_DIFFERENT_PERCENT,
+): boolean {
+	return share * 100 < limitPercent || (baselineShare !== null && share <= baselineShare);
 }
 
 /**
  * How much two images differ, and what may differ, in words for a report. A `stored` baseline was
- * measured on another device, because this one cannot draw with both of three.js's renderers.
+ * measured on another device, because this one cannot draw with both of three.js's renderers. A
+ * scene with a limit of its own, such as a scene with shadows, names it as the scene's limit.
  */
 export function differenceText(
 	{ share }: Pick<ImageComparison, 'share'>,
 	baselineShare: number | null = null,
 	stored = false,
+	limitPercent = MAX_DIFFERENT_PERCENT,
 ): string {
-	const limit = `${percent(share)} of pixels differ; three.js's rule allows under ${MAX_DIFFERENT_PERCENT}%`;
+	const rule = limitPercent === MAX_DIFFERENT_PERCENT ? "three.js's rule" : "the scene's limit";
+	const limit = `${percent(share)} of pixels differ; ${rule} allows under ${limitPercent}%`;
 	if (baselineShare === null) return limit;
 	const where = stored ? `, in ${STORED_BASELINES_FILE} from a device that draws with both` : '';
 	return `${limit}, and three.js's two renderers differ by ${percent(baselineShare)}${where}`;
@@ -232,10 +257,12 @@ export interface ParityOptions {
 	comparisons: Comparison[];
 	/** Save how much three.js's two renderers differ on each scene, for devices that lack one. */
 	saveBaselines: boolean;
+	/** Page switches that every hold page gets, such as `shadows=3`, or an empty string. */
+	switches: string;
 }
 
 export const PARITY_USAGE =
-	'usage: bun run parity [-- [--scene <scenes>] [--tier <tiers>] [--pair <page kind>,<page kind>] [--save-baselines]]';
+	'usage: bun run parity [-- [--scene <scenes>] [--tier <tiers>] [--pair <page kind>,<page kind>] [--switches <switches>] [--save-baselines]]';
 
 function readList<T extends string>(
 	value: string | undefined,
@@ -267,16 +294,22 @@ export function parseParityArgs(args: readonly string[]): ParityOptions {
 	let tiers: Tier[] | undefined;
 	let pair: PageKind[] | undefined;
 	let saveBaselines = false;
+	let switches = '';
 	for (let i = 0; i < args.length; i++) {
 		const arg = args[i];
 		if (arg === '--') continue;
 		if (arg === '--save-baselines') saveBaselines = true;
+		else if (arg === '--switches') switches = readSwitches(args[++i], '--switches');
 		else if (arg === '--scene') scenes = readList(args[++i], BENCH_SCENES, 'scene');
 		else if (arg === '--tier') tiers = readList(args[++i], TIERS, 'tier');
 		else if (arg === '--pair') pair = readList(args[++i], PAGE_KINDS, 'page kind');
 		else throw new Error(`unknown option ${arg}\n${PARITY_USAGE}`);
 	}
 	if (tiers && pair) throw new Error('use --tier or --pair, not both');
+	if (saveBaselines && switches)
+		throw new Error(
+			'use --save-baselines without --switches: the baselines are of the plain scenes',
+		);
 	if (pair) {
 		const [candidate, reference] = pair;
 		if (pair.length !== 2 || !candidate || !reference)
@@ -287,12 +320,14 @@ export function parseParityArgs(args: readonly string[]): ParityOptions {
 			scenes,
 			comparisons: [{ label: `${candidate} vs ${reference}`, candidate, reference }],
 			saveBaselines,
+			switches,
 		};
 	}
 	return {
 		scenes,
 		comparisons: (tiers ?? [...TIERS]).map((tier) => ({ label: tier, ...TIER_PAIRS[tier] })),
 		saveBaselines,
+		switches,
 	};
 }
 

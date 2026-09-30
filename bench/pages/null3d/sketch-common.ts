@@ -7,6 +7,7 @@ import {
 	CAMERA,
 	type OutArray,
 	type SceneLights,
+	SHADOWS,
 	VIEW_LIGHTS,
 } from '../../scenes/spec';
 
@@ -15,16 +16,31 @@ export function readCount(moduleUrl: string): number {
 	return Number(new URL(moduleUrl).searchParams.get('n') ?? '0');
 }
 
-/** Sets the background, the sun and the ambient light, and makes the active camera. */
+/**
+ * Reads the sun's shadow cascades from the sketch module's address, where the page harness puts
+ * them when the page asks for shadows, or 0 for none.
+ */
+export function readShadows(moduleUrl: string): number {
+	return Number(new URL(moduleUrl).searchParams.get('shadows') ?? '0');
+}
+
+/**
+ * Sets the background, the sun and the ambient light, and makes the active camera. With
+ * `cascades` above 0 the sun casts shadows in that many cascades.
+ */
 export function setUpView(
 	{ scene }: SketchContext,
 	{ sun, ambient }: SceneLights = VIEW_LIGHTS,
+	cascades = 0,
 ): Camera {
 	scene.setBackground(BACKGROUND);
+	const { mapSize, distance } = SHADOWS;
 	scene.createDirectionalLight({
 		direction: sun.direction,
 		color: sun.color,
 		intensity: sun.intensity,
+		castShadows: cascades > 0,
+		...(cascades > 0 ? { shadow: { cascades, mapSize, distance } } : {}),
 	});
 	scene.createAmbientLight({ color: ambient.color, intensity: ambient.intensity });
 	const camera = scene.createPerspectiveCamera({

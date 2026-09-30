@@ -1,62 +1,62 @@
-// The main directional light's shadows: a ground that receives them, and boxes, balls and tall
-// posts that cast and receive them, from next to the camera out past 40 m, so each cascade holds
-// some. The sun shines low across the scene, so the shadows are long. A box on the left receives
-// shadows but casts none, a post on the right casts but receives none, and an unlit box shows no
-// shadow on itself. ?cascades=<n> sets the cascade count, from 1 to 4.
-import { defineSketch } from '@null3d/engine';
+// The directional light's shadows (bench/scenes/shadows.ts), which the parity test also draws with
+// three.js: a ground, and boxes, a ball and posts that cast and receive shadows, from next to the
+// camera out past 40 m, so each cascade holds some. ?cascades=<n> sets the cascade count, from 1
+// to 4.
+import { defineSketch, type Material, type MeshGeometry } from '@null3d/engine';
+import {
+	AMBIENT,
+	BACKGROUND,
+	SHADOW_CAMERA,
+	SHADOW_MESHES,
+	SHADOW_OBJECTS,
+	SHADOW_SUN,
+	type ShadowMeshName,
+} from '../../../bench/scenes/shadows';
 
 const params = new URL(import.meta.url).searchParams;
 /** The cascade count, from the sketch module's ?cascades switch. */
 const CASCADES = Number(params.get('cascades') ?? 3);
 
 export default defineSketch(({ scene, materials, geometry }) => {
-	scene.setBackground('#101418');
-	const camera = scene.createPerspectiveCamera({
-		fov: 50,
-		position: [0, 5, 12],
-		target: [0, 0, -4],
-		far: 300,
-	});
-	scene.setActiveCamera(camera);
+	scene.setBackground(BACKGROUND);
+	const { fov, position, target, near, far } = SHADOW_CAMERA;
+	scene.setActiveCamera(scene.createPerspectiveCamera({ fov, position, target, near, far }));
+	const { direction, color, intensity, mapSize, distance } = SHADOW_SUN;
 	scene.createDirectionalLight({
-		direction: [-1, -1.1, -0.6],
-		intensity: 3,
+		direction,
+		color,
+		intensity,
 		castShadows: true,
-		shadow: { cascades: CASCADES, mapSize: 1024, distance: 60 },
+		shadow: { cascades: CASCADES, mapSize, distance },
 	});
-	scene.createAmbientLight({ intensity: 0.4 });
+	scene.createAmbientLight({ color: AMBIENT.color, intensity: AMBIENT.intensity });
 
-	const ground = materials.standard({ color: '#9aa0a8' });
-	const red = materials.standard({ color: '#e8554e' });
-	const yellow = materials.standard({ color: '#f2c14e' });
-	const green = materials.standard({ color: '#5bc27a' });
-	const blue = materials.standard({ color: '#4a8cff' });
-	const unlit = materials.unlit({ color: '#b06ce0' });
-	const box = geometry.box();
-	const ball = geometry.sphere({ radius: 0.7 });
-	const post = geometry.box({ width: 0.4, height: 6, depth: 0.4 });
-	const both = { castShadows: true, receiveShadows: true };
-
-	scene.createMesh({
-		mesh: geometry.box({ width: 120, height: 0.2, depth: 120 }),
-		material: ground,
-		position: [0, -0.1, -40],
-		receiveShadows: true,
-	});
-	// Near the camera: in the first cascade.
-	scene.createMesh({ mesh: box, material: red, position: [1.5, 0.5, 4], ...both });
-	scene.createMesh({ mesh: ball, material: yellow, position: [-1, 0.7, 5.5], ...both });
-	// A box that receives shadows but casts none, beside the post that shades it.
-	scene.createMesh({ mesh: box, material: green, position: [-3.5, 0.5, 1], receiveShadows: true });
-	scene.createMesh({ mesh: post, material: blue, position: [-1.8, 3, 1.8], ...both });
-	// A post that casts but receives none, and an unlit box in its shadow.
-	scene.createMesh({ mesh: post, material: blue, position: [4, 3, -2], castShadows: true });
-	scene.createMesh({ mesh: box, material: unlit, position: [2.2, 0.5, -2.6], ...both });
-	// Farther out: in the later cascades.
-	for (let k = 0; k < 6; k++) {
-		const z = -8 - k * 7;
-		const x = k % 2 === 0 ? -4 - k : 3 + k;
-		scene.createMesh({ mesh: post, material: blue, position: [x, 3, z], ...both });
-		scene.createMesh({ mesh: box, material: red, position: [x + 2, 0.5, z + 1], ...both });
+	const meshOf = (name: ShadowMeshName): MeshGeometry => {
+		const shape: { size?: readonly number[]; radius?: number } = SHADOW_MESHES[name];
+		const [width, height, depth] = shape.size ?? [];
+		return shape.radius !== undefined
+			? geometry.sphere({ radius: shape.radius })
+			: geometry.box({ width, height, depth });
+	};
+	// Objects share their meshes and materials, as the three.js twin's do.
+	const meshes = new Map<ShadowMeshName, MeshGeometry>();
+	const colors = new Map<string, Material>();
+	for (const object of SHADOW_OBJECTS) {
+		const mesh = meshes.get(object.mesh) ?? meshOf(object.mesh);
+		meshes.set(object.mesh, mesh);
+		const key = `${object.color} ${object.lit}`;
+		const material =
+			colors.get(key) ??
+			(object.lit
+				? materials.standard({ color: object.color })
+				: materials.unlit({ color: object.color }));
+		colors.set(key, material);
+		scene.createMesh({
+			mesh,
+			material,
+			position: object.position,
+			castShadows: object.cast,
+			receiveShadows: object.receive,
+		});
 	}
 });

@@ -14,6 +14,7 @@ import {
 	type OutArray,
 	PARITY_CANVAS,
 	type SceneLights,
+	SHADOWS,
 	VIEW_LIGHTS,
 	WARMUP_SECONDS,
 } from '../../scenes/spec';
@@ -96,6 +97,8 @@ const SUN_DISTANCE = 100;
 /** What the harness needs from either three.js renderer. */
 interface Renderer {
 	readonly domElement: HTMLCanvasElement;
+	/** The shadow settings, which both renderers keep in the same shape. */
+	readonly shadowMap: { enabled: boolean };
 	setPixelRatio(ratio: number): void;
 	setSize(width: number, height: number): void;
 	render(scene: ThreeModule.Object3D, camera: ThreeModule.Camera): void;
@@ -209,16 +212,35 @@ export function startThree(
 	return renderer === 'webgpu' ? startWebGPU(options) : startWebGL();
 }
 
-/** Gives a scene the background, and a sun and an ambient light: the shared ones by default. */
+/**
+ * Gives a scene the background, and a sun and an ambient light: the shared ones by default.
+ * Returns the sun.
+ */
 export function lightScene(
 	three: Three,
 	scene: ThreeModule.Scene,
 	{ sun, ambient }: SceneLights = VIEW_LIGHTS,
-): void {
+): ThreeModule.DirectionalLight {
 	scene.background = new three.Color(BACKGROUND);
 	const light = new three.DirectionalLight(sun.color, sun.intensity);
 	light.position.set(...sun.direction).multiplyScalar(-SUN_DISTANCE);
 	scene.add(light, new three.AmbientLight(ambient.color, ambient.intensity));
+	return light;
+}
+
+/**
+ * Turns on the renderer's shadows, and has the sun cast them into one map of the benchmark scenes'
+ * shadow size, in a box around the origin that holds every scene.
+ */
+function castSunShadows(renderer: Renderer, sun: ThreeModule.DirectionalLight): void {
+	renderer.shadowMap.enabled = true;
+	sun.castShadow = true;
+	const { mapSize, threeHalfSize: half } = SHADOWS;
+	sun.shadow.mapSize.set(mapSize, mapSize);
+	const box = sun.shadow.camera;
+	[box.left, box.right, box.top, box.bottom] = [-half, half, half, -half];
+	[box.near, box.far] = [0, 2 * sun.position.length()];
+	box.updateProjectionMatrix();
 }
 
 /**
@@ -244,7 +266,8 @@ export function runThreePage(
 		renderer.setSize(CANVAS.width, CANVAS.height);
 
 		const scene = new three.Scene();
-		lightScene(three, scene, pageOptions.lights);
+		const sun = lightScene(three, scene, pageOptions.lights);
+		if (options.shadows !== null) castSunShadows(renderer, sun);
 		const camera = new three.PerspectiveCamera(
 			CAMERA.fov,
 			CANVAS.width / CANVAS.height,

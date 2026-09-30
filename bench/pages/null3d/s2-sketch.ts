@@ -1,6 +1,7 @@
 // The null3d version of S2, the hierarchy: trees of separate meshes (14 unless the page asks for
 // another count) whose roots turn every frame. Every node is a scene object under its parent; the
 // engine propagates the roots' turns to the static children, level by level on its job workers.
+// When the page asks for shadows, the sun casts them and every node casts and receives them.
 import { defineSketch, type Mesh } from '@null3d/engine';
 import {
 	createS2,
@@ -10,12 +11,14 @@ import {
 	s2MeshSize,
 	s2RootRotation,
 	s2Trees,
+	VIEW_LIGHTS,
 } from '../../scenes/spec';
-import { followPath, readCount, setUpView } from './sketch-common';
+import { followPath, readCount, readShadows, setUpView } from './sketch-common';
 
 export default defineSketch((context) => {
 	const { scene, materials, geometry, time } = context;
-	const moveCamera = followPath(setUpView(context), s2Camera);
+	const cascades = readShadows(import.meta.url);
+	const moveCamera = followPath(setUpView(context, VIEW_LIGHTS, cascades), s2Camera);
 	const data = createS2(2, s2Trees(readCount(import.meta.url)));
 	const meshes = Array.from({ length: S2_MESH_COUNT }, (_, k) => {
 		const [width, height, depth] = s2MeshSize(k);
@@ -45,6 +48,8 @@ export default defineSketch((context) => {
 			scale: [scale, scale, scale],
 			// Roots turn every frame; the rest never change their local transform.
 			dynamic: !parent,
+			castShadows: cascades > 0,
+			receiveShadows: cascades > 0,
 		});
 		nodes.push(node);
 		if (!parent) roots.push(node);

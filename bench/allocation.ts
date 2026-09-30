@@ -1,4 +1,4 @@
-// Measures what the engine's sketch worker and render worker allocate per frame while S1 runs, with
+// Measures what the engine's sketch worker and render worker allocate per frame while a scene runs, with
 // Chrome's heap profiler. Engine code and the sketch's row writes must allocate nothing per frame;
 // the few places that allocate because the browser does each have a budget below. It opens the
 // null3d S1 page in Chrome, lets the browser optimize the frame code, attaches the heap profiler to
@@ -6,19 +6,21 @@
 // prints the bytes per frame of every place that allocated. From the page's start to the end of
 // the sample, it moves the mouse over the canvas and presses a key and the mouse button, so the
 // sample covers the sketch's reading of input. It draws with WebGPU, or with WebGL2 when
-// `--gpu webgl2` asks for it, and runs S1-cells, whose views skip whole grid cells, when
-// `--scene s1-cells` asks for it. It samples the production build of the benchmark pages, as a
+// `--gpu webgl2` asks for it. It runs S1 unless `--scene` names S1-cells, whose views skip whole
+// grid cells, or S2. `--switches` gives the page more switches: S2 with `shadows=4` draws the sun's
+// shadows in four cascades. It samples the production build of the benchmark pages, as a
 // developer ships the engine, and names the build's functions through its source maps; `--dev`
 // samples the dev server's pages, with the engine's development checks. From the repository root:
 //   bun run bench:allocation
 //   bun run bench:allocation --n 30000 --seconds 5 --warmup 30
 //   bun run bench:allocation --gpu webgl2
 //   bun run bench:allocation --scene s1-cells --gpu webgl2
+//   bun run bench:allocation --scene s2 --switches shadows=4
 // At 30,000 instances a frame's upload goes through the staging ring; at 100,000 it does not.
 import { chromium, type Page } from '@playwright/test';
 import { DEBUG_PORT } from '../tests/lib/server.ts';
 import { attachWorkers, type CallFrame, DevTools, pagesAt, placeName, sleep } from './lib/devtools';
-import { pagePath } from './lib/parity';
+import { pagePath, readSwitches } from './lib/parity';
 import { DEV_OPTION, pagesText, serveBenchPages } from './lib/serve';
 import type { BuildNames } from './lib/source-names';
 
@@ -44,7 +46,7 @@ const WORKERS = ['sketch-worker', 'render-worker'] as const;
  * - the sketch worker's frame wait: the result and promise of `Atomics.waitAsync`, and settling it
  *   between tasks;
  * - the render worker's WebGPU objects: the command encoder, the passes, the command buffer, and
- *   the canvas texture and its view;
+ *   the canvas texture and its view. Each shadow cascade adds two passes;
  * - the completion tracker's object for each frame: the queue's promise and its reaction on WebGPU,
  *   which the browser counts in the renderer's `drawFrame` where it inlines the tracker, or the fence
  *   on WebGL2; and the clock readings at each frame's submit and completion, and at each check of
@@ -61,8 +63,8 @@ const WORKERS = ['sketch-worker', 'render-worker'] as const;
 const BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = {
 	'sketch-worker': {
 		'frame sketch/runner.ts': 240,
-		'runPipelined workers/sketch-worker.ts': 128,
-		'changeOf workers/sketch-worker.ts': 16,
+		'runPipelined sketch/runner.ts': 128,
+		'changeOf sketch/runner.ts': 16,
 		'(IDLE)': 96,
 		'(anonymous) null3d/sketch-common.ts': 48,
 		'views scene/scene.ts': 16,
@@ -87,6 +89,11 @@ const BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = {
 };
 /** The most bytes per frame any other place may allocate: sampling noise, less than one object. */
 const OTHER_BUDGET = 4;
+/**
+ * The bytes per frame that each shadow cascade adds to the replay: the browser's objects of its
+ * culling pass and its depth pass. Four cascades in S2 added 259 bytes on 30 September 2026.
+ */
+const CASCADE_REPLAY_BYTES = 80;
 
 interface ProfileNode {
 	callFrame: CallFrame;
@@ -170,8 +177,12 @@ async function main(): Promise<void> {
 	if (gpu !== 'webgpu' && gpu !== 'webgl2')
 		throw new Error(`--gpu takes webgpu or webgl2, not ${gpu}`);
 	const scene = args.includes('--scene') ? args[args.indexOf('--scene') + 1] : 's1';
-	if (scene !== 's1' && scene !== 's1-cells')
-		throw new Error(`--scene takes s1 or s1-cells, not ${scene}`);
+	if (scene !== 's1' && scene !== 's1-cells' && scene !== 's2')
+		throw new Error(`--scene takes s1, s1-cells or s2, not ${scene}`);
+	const switches = args.includes('--switches')
+		? readSwitches(args[args.indexOf('--switches') + 1], '--switches')
+		: '';
+	const cascades = Number(new URLSearchParams(switches).get('shadows') ?? 0);
 	// The browser optimizes code that runs once per frame only after many frames; until then,
 	// numbers that such code computes are allocated.
 	const warmup = option('--warmup', WARMUP_SECONDS);
@@ -187,7 +198,8 @@ async function main(): Promise<void> {
 		// The page's own measurement starts after the sampling ends, so its timers stay off.
 		const pageSeconds = warmup + seconds + 60;
 		const kind = gpu === 'webgl2' ? 'null3d-webgl2' : 'null3d-webgpu';
-		const url = `${server.url}${pagePath(scene, kind, `seconds=${pageSeconds}&n=${n}`)}`;
+		const own = `seconds=${pageSeconds}${scene === 's2' ? '' : `&n=${n}`}`;
+		const url = `${server.url}${pagePath(scene, kind, [own, switches].filter(Boolean).join('&'))}`;
 		await page.goto(url);
 		// Counts the display's frames on the page, which the render worker draws at the same rate.
 		await page.evaluate(() => {
@@ -250,11 +262,13 @@ async function main(): Promise<void> {
 		await input;
 		devtools.close();
 		console.log(
-			`S1 on ${gpu} with ${n} instances, ${pagesText(dev)}, sampled for ${seconds} s after ${warmup} s: ${frames} frames`,
+			`${scene.toUpperCase()} on ${gpu}${scene === 's2' ? '' : ` with ${n} instances`}${switches ? `, ${switches}` : ''}, ${pagesText(dev)}, sampled for ${seconds} s after ${warmup} s: ${frames} frames`,
 		);
 		const over: string[] = [];
 		for (const [worker, head] of profiles) {
-			const budgets = BUDGETS[worker as (typeof WORKERS)[number]];
+			const budgets = { ...BUDGETS[worker as (typeof WORKERS)[number]] };
+			const replay = 'replay webgpu/backend.ts';
+			if (budgets[replay] !== undefined) budgets[replay] += cascades * CASCADE_REPLAY_BYTES;
 			console.log(`${worker}: ${(totalSize(head) / frames).toFixed(1)} bytes per frame`);
 			const places = [...byPlace(head)].sort((a, b) => b[1].bytes - a[1].bytes);
 			for (const [name, { bytes, callers }] of places) {
