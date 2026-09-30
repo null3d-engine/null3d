@@ -39,6 +39,7 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { cpus, platform } from 'node:os';
 import { join, relative, resolve } from 'node:path';
 import { type Browser, chromium } from '@playwright/test';
+import { SWIFTSHADER_ARGS } from '../packages/cli/src/browser.js';
 import { jobWorkersProblem } from '../tests/lib/engine-checks.ts';
 import { pageResult } from '../tests/lib/page-result.ts';
 import { runName } from '../tests/lib/runs.ts';
@@ -46,7 +47,6 @@ import {
 	type DevServer,
 	HTTP_PORT,
 	REPO_ROOT,
-	SWIFTSHADER_ARGS,
 	startServer,
 	startServerAt,
 } from '../tests/lib/server.ts';

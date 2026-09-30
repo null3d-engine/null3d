@@ -3,7 +3,7 @@
 // with their references, and the parity command compares them with three.js's.
 import { join } from 'node:path';
 import { expect, test } from '@playwright/test';
-import { writePng } from '../../tests/lib/images.ts';
+import { writePng } from '../../packages/cli/src/png.js';
 import { isNull3dPage, PARITY_SCENES, type PageKind, pagePath, SCENE_CODE } from '../lib/parity';
 import { BACKGROUND, PARITY_CANVAS, S2_NODES_PER_TREE, s2Trees } from '../scenes/spec';
 import { openPage, type PageReport, runPage } from './open-page';
