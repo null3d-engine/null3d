@@ -98,7 +98,11 @@ export type {
 	MeshOptions,
 	NodeOptions,
 	Object3D,
+	OrthographicCamera,
+	OrthographicCameraOptions,
 	ParentOptions,
+	PerspectiveCamera,
+	PerspectiveCameraOptions,
 	Quat,
 	Scene,
 	Vec3,
@@ -120,8 +124,12 @@ export type {
 	SketchCallbacks,
 	SketchContext,
 	SketchDefinition,
+	SketchEngine,
+	SketchOptions,
 	SketchPreferences,
 	SketchSetup,
+	SketchTime,
+	SketchViewport,
 } from './sketch/define-sketch';
 export { defineSketch } from './sketch/define-sketch';
 export type { Input, InputActions, InputPointer, InputTouch } from './sketch/input';

@@ -11,7 +11,11 @@ use crate::camera::Mat4;
 pub struct FrameUniform {
     /// The view-projection matrix for positions relative to the camera.
     pub view_proj: Mat4,
-    /// The camera's position in the shaders' space: the origin. The fourth value is unused.
+    /// The camera's place in the shaders' space, as a homogeneous point: the origin,
+    /// `(0, 0, 0, 1)`, for a perspective camera. An orthographic camera's view rays are parallel,
+    /// so its point lies at infinity: `w` is 0, and `(x, y, z)` is the unit direction from the
+    /// scene toward the camera. From a position `p`, the direction toward the camera is
+    /// `(x, y, z) - p × w`, normalized, for both kinds.
     pub camera_position: [f32; 4],
     /// The direction the sun's light travels, normalized.
     pub sun_direction: [f32; 4],

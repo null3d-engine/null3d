@@ -11,7 +11,7 @@ The benchmarks measure the engine as developers ship it. A production build leav
 - `bench/vite.pages.config.ts` builds every benchmark page for production: null3D's pages, three.js's pages and the scene-code pages. The development checks are off, and Vite minifies as it does in any production build. So three.js runs minified too, as it ships.
 - `bun run bench:run`, `bun run bench:profile`, `bun run bench:allocation` and `bun run bench:soak` build the pages into `target/bench-pages` before each run. `vite preview` serves the build on the preview port, the dev server's port plus 2.
 - `--dev` runs the dev server's pages instead, where the engine runs its development checks. Run the same pages with and without it to see what the checks cost.
-- `bun run test:bench` checks the production build, as the benchmarks run it. The image test manifest and `bun run parity` still load the dev server's pages.
+- `bun run test:bench` checks the production build, as the benchmarks run it. The image test manifest and `bun run parity` still load the dev server's pages. So does null3D's side of each feature scene's [parity test](image-tests.md#parity-with-threejs), so `bun run test:bench` starts the dev server too.
 - The device runner's bench and scale plans load the production build through the dev server's load routes. [Device sessions](devices.md#benchmark-runs) says how.
 - The build keeps hidden source maps beside its files, and the built files stay as a production build writes them. The profile and the allocation check read the maps to name each function and its source file, as the dev server's pages would.
 
@@ -125,9 +125,8 @@ Three sweeps measure the defaults that are still open: the latency mode, the job
 - `--android` drives Chrome on the phone instead. It makes five loads of each kind, in every thread mode, cold and warm, on both networks. [Device sessions](devices.md#startup-times) says how cold loads avoid the phone's caches without clearing them.
 - Chrome refuses network limits on a worker. It applies the page's limit to a worker's own requests only once the debugging protocol's Network domain is on in that worker. So on Slow 4G the tool attaches to each worker, which waits at its start until the domain is on.
 - Without that step, the workers would load the core's loader and the sketch at full speed. The first frame would then come about a second early.
-- On Slow 4G the start is a chain of round trips of at least 562 ms each. After the page and its script come the core and the probe worker, then the other workers. Then the workers load the core's loader, and then the sketch.
-- In single-threaded mode the sketch downloads with the core. The page asks for the core's loader and the renderer once the core has compiled, and both take about one round trip.
-- The engine starts its workers only once the core has compiled. On Slow 4G their scripts and imports therefore add two round trips after the core.
+- On Slow 4G the start is a chain of round trips of at least 562 ms each. After the page and its script come the core, the probe worker and every other download that the start needs. With worker threads these are the workers and the sketch module. In single-threaded mode they are the core's loader, the sketch module and the renderer. The workers then load the core's loader while the core still downloads.
+- So the core is the last download in most modes, and the engine is ready soon after it. [Implementation notes](implementation-notes.md#start-order) give the order and the times.
 - The MacBook Pro was measured in Chrome 154 on 30 September 2026. A cold load in the pipelined mode finished its first frame after 4.0 s on Slow 4G. A warm load took 0.7 s, and both took about 0.1 s at full speed.
 
 ## Soak

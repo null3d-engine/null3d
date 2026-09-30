@@ -41,7 +41,7 @@ In hold mode, the engine does this:
 
 1. It seeds the engine's random generator, [`math.random`](../api/math.md#random-numbers), in the sketch's thread, and makes `Math.random` draw from it too. This happens before the sketch module loads.
 2. It runs the sketch's setup.
-3. It steps the sketch from time 0 to the held time. The first frame is at time 0 and its `onUpdate` gets a step of 0. Each later frame adds a fixed step of 1/60 second, and the last one lands on the held time exactly.
+3. It steps the sketch from time 0 to the held time. The first frame is at time 0 and its `onUpdate` gets a step of 0. Each later frame adds a fixed step of 1/60 second, and the last one lands on the held time exactly. The sketch's own fixed steps fall due from the sketch time, so every hold runs the same ones. At the default rate, each frame after the first runs one.
 4. It draws the last frame on the canvas, and reads its pixels back through its own GPU code.
 5. It publishes the frame, or the error that stopped it, as `window.__null3dHold`.
 
@@ -133,7 +133,7 @@ A live engine logs an error in `onUpdate` and carries on. Hold mode stops instea
 
 ## Frames that stay the same on every run
 
-- Move things with `time.now` and the `dt` that `onUpdate` receives. `Date.now()` and `performance.now()` change from run to run.
+- Move things with `time.now`, the frame's step (`dt` or `time.dt`), or in `onFixedUpdate`. `Date.now()` and `performance.now()` change from run to run.
 - Use `math.random` or `Math.random`: hold mode seeds both. Random numbers from another source, such as `crypto.getRandomValues`, are not seeded.
 - Expect no input. In hold mode, the sketch gets none: every key and button stays up, and the pointer stays at the canvas's top-left corner.
 - Finish loading in the setup. Await every asset there, because the hold starts when the setup's promise resolves.

@@ -15,7 +15,7 @@ use null3d_core::snapshot::FrameSnapshot;
 use null3d_gpu::drawlist::format;
 use null3d_gpu::drawlist::{Op, decode};
 use null3d_render::arrays::{MeshArrays, from_arrays};
-use null3d_render::camera::Perspective;
+use null3d_render::camera::{Lens, Perspective};
 use null3d_render::debug_lines::LineStore;
 use null3d_render::frame::{FrameBuilder, FrameInput, NO_MESH, RecordError};
 use null3d_render::geometry::{Geometry, box_geometry, sphere_geometry};
@@ -160,6 +160,11 @@ impl<B: FrameBuilder> World<B> {
     /// does, with the same lens, and returns it. The camera is a new object, created in the
     /// current frame, so the frame that records next has a structure change.
     pub fn add_view(&mut self, position: [f32; 3]) -> ViewId {
+        self.add_view_through(position, LENS)
+    }
+
+    /// As [`World::add_view`], with its own lens.
+    pub fn add_view_through(&mut self, position: [f32; 3], lens: impl Into<Lens>) -> ViewId {
         let camera = self.scene.reserve().unwrap();
         self.scene.set_position(camera, position).unwrap();
         self.scene
@@ -175,7 +180,7 @@ impl<B: FrameBuilder> World<B> {
             .unwrap();
         self.renderer
             .settings_mut()
-            .add_view(View::new(camera, LENS, ALL_LAYERS))
+            .add_view(View::new(camera, lens, ALL_LAYERS))
             .unwrap()
     }
 

@@ -1,7 +1,7 @@
 //! The render graph, passes, materials and the post-processing chain.
 //!
 //! - `arrays`: meshes from arrays, with normals and tangents computed as three.js computes them
-//! - `camera`: perspective projection with reversed depth, and view matrices
+//! - `camera`: perspective and orthographic lenses with reversed depth, and view matrices
 //! - `cells`: grid-cell culling, which both frame builders share: still objects in cell order, a
 //!   box per cell, and the cells each view can see
 //! - `cpu_culled`: the WebGL2 frame builder, with culling on the job workers and an index list per

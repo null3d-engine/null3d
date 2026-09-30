@@ -54,7 +54,7 @@ const { width, height, pixels } = await engine.captureFrame(); // the held frame
 
 Keep held frames the same on every run:
 
-- Move things with `time.now` and `dt`, never `Date.now()` or `performance.now()`.
+- Move things with `time.now` and `dt` (also `time.dt`), or in `onFixedUpdate`, never `Date.now()` or `performance.now()`. Every hold runs the same fixed steps.
 - Draw random numbers from `math.random` or `Math.random`, which hold mode seeds; `crypto.getRandomValues` is not seeded.
 - Await every asset in the setup, because the hold starts when the setup resolves.
 - Pass test settings in the sketch module's address, such as `new URL('./sketch.ts?view=harbor', import.meta.url)`, and read them from `import.meta.url` in the sketch. Page messages reach the sketch only after the hold.

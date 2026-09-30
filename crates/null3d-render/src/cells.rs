@@ -572,7 +572,7 @@ mod tests {
 
     #[test]
     fn a_cell_out_of_view_holds_no_sphere_that_culling_each_sphere_keeps() {
-        use crate::camera::Perspective;
+        use crate::camera::{Lens, Orthographic, Perspective};
         use null3d_core::cells::CellPosition;
         let mut state = 0x9E37_79B9_7F4A_7C15;
         let mut r = |lo: f32, hi: f32| lo + (hi - lo) * random(&mut state);
@@ -600,10 +600,21 @@ mod tests {
                 cy * cp,
                 0.0,
             ];
-            let lens = Perspective {
-                fov_degrees: r(20.0, 110.0),
-                near: r(0.05, 5.0),
-                far: r(50.0, 4000.0),
+            // Half the cameras of each distance look through an orthographic lens.
+            let lens = if trial % 4 < 2 {
+                Lens::from(Perspective {
+                    fov_degrees: r(20.0, 110.0),
+                    near: r(0.05, 5.0),
+                    far: r(50.0, 4000.0),
+                })
+            } else {
+                Lens::from(Orthographic {
+                    height: r(10.0, 2000.0),
+                    width: None,
+                    center: [r(-50.0, 50.0), r(-50.0, 50.0)],
+                    near: r(-100.0, 5.0),
+                    far: r(50.0, 4000.0),
+                })
             };
             let frustum =
                 Frustum::from_view_projection(&lens.relative_view_projection(&world, 1.7));
