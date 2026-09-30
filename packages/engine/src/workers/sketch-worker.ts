@@ -31,7 +31,7 @@ let controlSlots: Int32Array | undefined;
  * A promise that settles when the slot no longer holds `value`, or undefined when it already
  * holds another value. A plain function, so a wait makes no promise beyond the browser's own.
  */
-function changeOf(slots: Int32Array, slot: Slot, value: number): Promise<unknown> | undefined {
+function changeOf(slots: Int32Array, slot: number, value: number): Promise<unknown> | undefined {
 	const wait = Atomics.waitAsync(slots, slot, value);
 	return wait.async ? wait.value : undefined;
 }

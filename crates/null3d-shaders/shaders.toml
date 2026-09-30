@@ -99,6 +99,13 @@ pipelines.solid = { vertex = "vs_main", fragment = "fs_solid" }
 variants.webgpu = { targets = ["wgsl"] }
 variants.webgl2 = { defs = ["WEBGL2"], targets = ["glsl"] }
 
+# A test shader for the shader library, which the library test page draws with: each case runs one
+# library function on the GPU. The engine does not import it, so its download does not hold it.
+[shaders.test_library]
+file = "test_library.wgsl"
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.main = { targets = ["wgsl", "glsl"] }
+
 # A test shader for the build itself.
 [shaders.test_mesh]
 file = "test_mesh.wgsl"
