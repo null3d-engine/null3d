@@ -4,58 +4,10 @@
 // one of them or none. The KTX2 loader, the transcoder's worker and the transcoder download once,
 // when the first KTX2 file loads, and a page without KTX2 files downloads none of them.
 import { expect, type Page, test } from '@playwright/test';
-import { ENGINE_MODES, modeProblems, type ReportedMode } from '../lib/engine-checks.ts';
+import type { CompressionFamily } from '../../packages/engine/src/page/switches.ts';
+import { ENGINE_MODES, modeProblems } from '../lib/engine-checks.ts';
+import { type Ktx2Result, ktx2Problems } from '../lib/ktx2-checks.ts';
 import { pageResult } from '../lib/page-result.ts';
-
-interface Made {
-	format: string;
-	colorSpace: string;
-	size: [number, number, number];
-	bytes: number;
-}
-
-interface Ktx2Result {
-	error?: string;
-	mode: ReportedMode;
-	features: string[];
-	recorded: { textures: Made[]; memoryBytes: number; codes: Record<string, string> };
-}
-
-type Family = 'astc' | 'bc' | 'etc2';
-
-/** The WebGPU feature and the WebGL2 extension of each compressed family. */
-const FAMILIES: Record<Family, readonly string[]> = {
-	astc: ['texture-compression-astc', 'WEBGL_compressed_texture_astc'],
-	bc: ['texture-compression-bc', 'EXT_texture_compression_bptc'],
-	etc2: ['texture-compression-etc2', 'WEBGL_compressed_texture_etc'],
-};
-
-/**
- * The formats of the ETC1S file and of the UASTC file with alpha on a device with `families`:
- * ETC1S data goes to ETC2, BC7 or ASTC first, in that order, and UASTC data to ASTC, BC7 or ETC2.
- */
-function expectedFormats(families: readonly Family[]): [etc1s: string, uastc: string] {
-	const format: Record<Family, [string, string]> = {
-		astc: ['astc-4x4-unorm', 'astc-4x4-unorm'],
-		bc: ['bc7-rgba-unorm', 'bc7-rgba-unorm'],
-		etc2: ['etc2-rgb8unorm', 'etc2-rgba8unorm'],
-	};
-	const first = (order: Family[]) => order.find((family) => families.includes(family));
-	const etc1s = first(['etc2', 'bc', 'astc']);
-	const uastc = first(['astc', 'bc', 'etc2']);
-	return [etc1s ? format[etc1s][0] : 'rgba8unorm', uastc ? format[uastc][1] : 'rgba8unorm'];
-}
-
-/** GPU bytes of `levels` mip levels of a texture of one layer. */
-function textureBytes(format: string, width: number, height: number, levels: number): number {
-	const block = format === 'etc2-rgb8unorm' ? 8 : 16;
-	let bytes = 0;
-	for (let level = 0; level < levels; level++) {
-		const [w, h] = [Math.max(1, width >> level), Math.max(1, height >> level)];
-		bytes += format === 'rgba8unorm' ? w * h * 4 : Math.ceil(w / 4) * Math.ceil(h / 4) * block;
-	}
-	return bytes;
-}
 
 /**
  * The files of the KTX2 loader and the transcoder, by their addresses on the dev server and in a
@@ -93,52 +45,14 @@ function ktx2Downloads(urls: readonly string[]): Record<string, number> {
 async function checkTextures(
 	page: Page,
 	query: string,
-	allowed?: readonly Family[],
-): Promise<{ result: Ktx2Result; requests: string[] }> {
+	allowed?: readonly CompressionFamily[],
+): Promise<{ result: Ktx2Result & { error?: string }; requests: string[] }> {
 	const requests = recordRequests(page);
 	await page.goto(`ktx2-files.html?${query}`);
-	const result = await pageResult<Ktx2Result>(page, 60_000);
+	const result = await pageResult<Ktx2Result & { error?: string }>(page, 60_000);
 	expect(result.error).toBeUndefined();
-	const { textures, memoryBytes, codes } = result.recorded;
-
-	// Two ETC1S files, the UASTC file with alpha, the ramp of partial blocks, and the ETC1S file
-	// with level 0 alone.
-	const families = (Object.keys(FAMILIES) as Family[]).filter(
-		(family) =>
-			FAMILIES[family].some((name) => result.features.includes(name)) &&
-			(!allowed || allowed.includes(family)),
-	);
-	const [etc1s, uastc] = expectedFormats(families);
-	expect(textures.map((t) => t.format)).toEqual([etc1s, etc1s, uastc, 'rgba8unorm', etc1s]);
-	expect(textures.map((t) => t.colorSpace)).toEqual(['srgb', 'srgb', 'srgb', 'linear', 'srgb']);
-	expect(textures.map((t) => t.size)).toEqual([
-		[64, 64, 1],
-		[64, 64, 1],
-		[64, 64, 1],
-		[30, 20, 1],
-		[64, 64, 1],
-	]);
-	const levels = [7, 7, 7, 5, 1];
-	expect(textures.map((t) => t.bytes)).toEqual(
-		textures.map((t, k) => textureBytes(t.format, t.size[0], t.size[1], levels[k] ?? 0)),
-	);
-	// A production build has no development checks, so flipY: true loads the ETC1S file once more,
-	// with its rows as the file holds them.
 	const production = test.info().project.name === 'production build';
-	expect(codes).toEqual({
-		broken: 'E1412',
-		flipY: production ? 'none' : 'E1208',
-		update: 'E1208',
-	});
-	// A compressed texture has an array of its own. Textures of RGBA8 share an array of four
-	// layers by size, format and mip levels.
-	const arrays = new Map<string, number>();
-	for (const t of production ? [...textures, textures[0] as Made] : textures) {
-		const compressed = t.format !== 'rgba8unorm';
-		const key = compressed ? String(arrays.size) : `${t.colorSpace} ${t.size} ${t.bytes}`;
-		arrays.set(key, compressed ? t.bytes : 4 * t.bytes);
-	}
-	expect(memoryBytes).toBe([...arrays.values()].reduce((sum, bytes) => sum + bytes, 0));
+	expect(ktx2Problems(result, { allowed, production })).toEqual([]);
 	return { result, requests };
 }
 

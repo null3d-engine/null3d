@@ -65,6 +65,7 @@ import {
 	jobWorkersProblem,
 } from './engine-checks.ts';
 import { type HarnessDirs, type ImageRun, imageProblems } from './images.ts';
+import { type Ktx2Result, ktx2FormatsNote, ktx2Problems } from './ktx2-checks.ts';
 import { type Load, type LoadKind, loadPath, runnerKey } from './load-routes.ts';
 import { failureText, type ItemResult, lastSteps, type PlanItem, slug } from './runs.ts';
 import { type WarmUpResult, warmUpProblems } from './warm-up-checks.ts';
@@ -81,6 +82,8 @@ export type Check =
 	| { kind: 'shader-library'; tier: Tier }
 	| { kind: 'engine'; tier: Tier; mode: EngineMode }
 	| { kind: 'capture'; tier: Tier; mode: EngineMode }
+	/** The KTX2 page: each file becomes the compressed format that the device supports. */
+	| { kind: 'ktx2'; tier: Tier }
 	| { kind: 'restarts'; mode: EngineMode }
 	| { kind: 'memory'; maximumMiB: number }
 	| { kind: 'room'; maximumMiB: number }
@@ -230,10 +233,11 @@ const PRODUCTION_BUILD: Load = { kind: 'warm', key: runnerKey('production') };
 
 /**
  * The browser checks: the capability report, isolation, the shader library's values on both GPU
- * paths, every run of the image test manifest, the engine in every mode on both GPU paths, and
- * again on the production build, a frame captured as a PNG file in every mode on both GPU paths,
- * and the engine started and stopped again and again in every mode. The capabilities page loads
- * again last, so its extension answers can be compared across loads.
+ * paths, every run of the image test manifest, the compressed formats of KTX2 files on both GPU
+ * paths, the engine in every mode on both GPU paths, and again on the production build, a frame
+ * captured as a PNG file in every mode on both GPU paths, and the engine started and stopped again
+ * and again in every mode. The capabilities page loads again last, so its extension answers can be
+ * compared across loads.
  */
 export function checksPlan(): PlanItem<Check>[] {
 	return [
@@ -265,6 +269,14 @@ export function checksPlan(): PlanItem<Check>[] {
 			{ switches: ['gpu=webgl2', 'compile=wait'] },
 		),
 		...IMAGE_RUNS.map(imageItem),
+		...TIERS.map((tier) =>
+			pageItem(
+				`ktx2-${tier}`,
+				'ktx2-files',
+				{ kind: 'ktx2', tier },
+				{ switches: [`gpu=${tier}`], timeoutSeconds: 60 },
+			),
+		),
 		...TIERS.flatMap((tier) =>
 			ENGINE_MODES.map((mode) =>
 				engineItem(`engine-${tier}-${slug(mode.name)}`, [`gpu=${tier}`, mode.query], {
@@ -829,6 +841,11 @@ export function judge(
 			return engineProblems(result as unknown as EngineResult, check.mode, check.tier);
 		case 'capture':
 			return captureProblems(result as unknown as CaptureResult, check.mode);
+		case 'ktx2': {
+			const ktx2 = result as unknown as Ktx2Result;
+			context?.note?.(ktx2FormatsNote(ktx2, check.tier));
+			return ktx2Problems(ktx2, {});
+		}
 		case 'warm-up':
 			return warmUpProblems(result as unknown as WarmUpResult, check.tier);
 		case 'restarts':

@@ -217,6 +217,52 @@ describe('the checks plan', () => {
 		]);
 	});
 
+	it('checks the formats of KTX2 files on both GPU paths, and notes what each device got', () => {
+		const ktx2 = items.filter((item) => item.check.kind === 'ktx2');
+		expect(ktx2.map(({ id, path }) => [id, path])).toEqual([
+			['ktx2-webgpu', '/tests/pages/ktx2-files.html?gpu=webgpu'],
+			['ktx2-webgl2', '/tests/pages/ktx2-files.html?gpu=webgl2'],
+		]);
+		// A tablet's WebGL2 context with ASTC and ETC2: ETC1S data goes to ETC2, and UASTC to ASTC.
+		const texture = (format: string, size: number[], bytes: number, colorSpace = 'srgb') => ({
+			format,
+			colorSpace,
+			size,
+			bytes,
+		});
+		const result = (uastc: string) => ({
+			ok: true,
+			mode: { build: 'threaded', latency: 'pipelined', renderThread: 'render-worker' },
+			features: ['WEBGL_compressed_texture_astc', 'WEBGL_compressed_texture_etc'],
+			recorded: {
+				textures: [
+					texture('etc2-rgb8unorm', [64, 64, 1], 2744),
+					texture('etc2-rgb8unorm', [64, 64, 1], 2744),
+					texture(uastc, [64, 64, 1], 5488),
+					texture('rgba8unorm', [30, 20, 1], 3168, 'linear'),
+					texture('etc2-rgb8unorm', [64, 64, 1], 2048),
+				],
+				memoryBytes: 2744 * 2 + 5488 + 4 * 3168 + 2048,
+				codes: { broken: 'E1412', flipY: 'E1208', update: 'E1208' },
+			},
+		});
+		const notes: string[] = [];
+		const context = {
+			resultOf: () => undefined,
+			imageDir: '',
+			note: (text: string) => notes.push(text),
+		};
+		const [, webgl2] = ktx2;
+		if (!webgl2) throw new Error('the plan lacks the KTX2 page');
+		expect(judge(webgl2.check, result('astc-4x4-unorm'), NONE_MISSING, context)).toEqual([]);
+		expect(notes).toEqual([
+			'KTX2 on webgl2: ETC1S became etc2-rgb8unorm, UASTC astc-4x4-unorm (compressed families: astc, etc2)',
+		]);
+		expect(judge(webgl2.check, result('etc2-rgba8unorm'), NONE_MISSING, context)).toEqual([
+			'the formats are etc2-rgb8unorm, etc2-rgb8unorm, etc2-rgba8unorm, rgba8unorm, etc2-rgb8unorm, not etc2-rgb8unorm, etc2-rgb8unorm, astc-4x4-unorm, rgba8unorm, etc2-rgb8unorm',
+		]);
+	});
+
 	it('splits into shards that run each item once, each with the items its check compares with', () => {
 		const ids = (plan: { id: string }[]) => plan.map(({ id }) => id).sort();
 		for (const count of [2, 3, 4]) {
