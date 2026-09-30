@@ -102,7 +102,8 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 		modes: ALL_MODES,
 	},
 	// The same files where the device keeps to one family of compressed formats, or has none, as
-	// ?compression= makes it: BC7 as on a desktop GPU, ASTC alone, and RGBA8.
+	// ?compression= makes it: BC7 as on a desktop GPU, ASTC alone, and RGBA8. Every format draws the
+	// image of the device's own formats, so each borrows its references.
 	...(
 		[
 			['ktx2-bc7', 'bc'],
@@ -115,6 +116,7 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		size: [480, 270] as const,
 		switches: [`compression=${family}`],
+		reference: 'ktx2',
 	})),
 	// Fifty textures that load in waves in a live engine, a band of rows per frame under a small
 	// upload budget, while their array grows twice, to 64 layers. No frame may upload more than the
