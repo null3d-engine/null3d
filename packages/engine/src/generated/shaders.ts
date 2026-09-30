@@ -402,6 +402,8 @@ fn fs(in: VertexOut) -> @location(0) vec4<f32> {
 export const LIT_SHADER: {
 	readonly webgl2: ShaderVariant<'main'>;
 	readonly webgl2_draw_index: ShaderVariant<'main'>;
+	readonly webgl2_draw_index_receive_shadows: ShaderVariant<'main'>;
+	readonly webgl2_receive_shadows: ShaderVariant<'main'>;
 	readonly webgpu: ShaderVariant<'main'>;
 	readonly webgpu_receive_shadows: ShaderVariant<'main'>;
 } = {
@@ -1256,6 +1258,1043 @@ void main() {
 			},
 		},
 	},
+	webgl2_draw_index_receive_shadows: {
+		permutation: 33,
+		wgsl: null,
+		glsl: {
+			main: {
+				vertex: {
+					source: `#version 300 es
+#extension GL_ANGLE_multi_draw : require
+uniform vec2 null3d_depth_mapping;
+
+precision highp float;
+precision highp int;
+
+uniform uint naga_vs_first_instance;
+
+struct Frame {
+    mat4x4 view_proj;
+    vec4 camera_position;
+    vec4 sun_direction;
+    vec4 sun_color;
+    vec4 ambient;
+};
+struct Material {
+    vec4 color;
+    vec4 emissive;
+    vec4 surface;
+    vec4 strengths;
+    vec4 uv_u;
+    vec4 uv_v;
+    vec4 maps;
+    vec4 more_maps;
+};
+struct Transform {
+    vec4 x;
+    vec4 y;
+    vec4 z;
+};
+struct InstanceIn {
+    uint instance;
+    uint draw;
+};
+struct Instance {
+    vec4 row_x;
+    vec4 row_y;
+    vec4 row_z;
+    uint material;
+    bool drawn;
+};
+struct DrawTable {
+    uvec4 items[256];
+};
+struct CellOffsets {
+    vec4 items[512];
+};
+struct ShadowCascades {
+    mat4x4 view_proj[4];
+    vec4 ends;
+    vec4 forward;
+    vec4 normal_offsets;
+    vec4 depth_biases;
+};
+struct VertexIn {
+    vec3 position;
+    vec3 normal;
+};
+struct VertexOut {
+    vec4 clip;
+    vec3 normal;
+    uint material;
+    vec3 relative;
+};
+const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
+const uint INDEX_ROW_SHIFT = 11u;
+const uint NO_ROW = 4294967295u;
+const uint MATRIX_ROW_SHIFT = 9u;
+const uint CELL_SHIFT = 23u;
+const float PI = 3.1415927;
+const float INV_PI = 0.31830987;
+const float EPSILON = 1e-6;
+
+layout(std140) uniform Frame_block_0Vertex { Frame _group_0_binding_0_vs; };
+
+layout(std140) uniform DrawTable_block_1Vertex { DrawTable _group_1_binding_0_vs; };
+
+uniform highp usampler2D _group_2_binding_2_vs;
+
+uniform highp usampler2D _group_2_binding_3_vs;
+
+uniform highp sampler2D _group_2_binding_0_vs;
+
+uniform highp sampler2D _group_2_binding_1_vs;
+
+layout(std140) uniform CellOffsets_block_2Vertex { CellOffsets _group_0_binding_2_vs; };
+
+layout(location = 0) in vec3 _p2vs_location0;
+layout(location = 1) in vec3 _p2vs_location1;
+smooth out vec3 _vs2fs_location0;
+flat out uint _vs2fs_location1;
+smooth out vec3 _vs2fs_location2;
+
+vec3 transform_point(Transform t, vec3 p) {
+    vec4 q = vec4(p, 1.0);
+    return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
+}
+
+vec3 transform_direction(Transform t_1, vec3 d) {
+    vec4 q_1 = vec4(d, 0.0);
+    return vec3(dot(t_1.x, q_1), dot(t_1.y, q_1), dot(t_1.z, q_1));
+}
+
+vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
+    return (view_proj * vec4(relative_position, 1.0));
+}
+
+Instance instance_of(uvec4 record, uint instance) {
+    uint source = 0u;
+    Instance out_1 = Instance(vec4(0.0), vec4(0.0), vec4(0.0), 0u, false);
+    uint shift = record.w;
+    uint slot = (record.x + (instance >> shift));
+    uvec4 _e13 = texelFetch(_group_2_binding_2_vs, ivec2(uvec2((slot & 2047u), (slot >> INDEX_ROW_SHIFT))), 0);
+    uint entry = _e13.x;
+    source = (entry & 8388607u);
+    if ((shift != 0u)) {
+        uint _e20 = source;
+        uint place = ((_e20 << shift) | (instance & ((1u << shift) - 1u)));
+        uvec4 _e34 = texelFetch(_group_2_binding_3_vs, ivec2(uvec2((place & 2047u), (place >> INDEX_ROW_SHIFT))), 0);
+        source = _e34.x;
+    }
+    uint _e38 = source;
+    out_1.drawn = (_e38 != NO_ROW);
+    uint _e42 = source;
+    bool _e44 = out_1.drawn;
+    uint row = (_e44 ? _e42 : 0u);
+    uvec2 at = uvec2(((row & 511u) * 3u), (row >> MATRIX_ROW_SHIFT));
+    if ((record.z == 0u)) {
+        vec4 _e59 = texelFetch(_group_2_binding_0_vs, ivec2(at), 0);
+        out_1.row_x = _e59;
+        vec4 _e67 = texelFetch(_group_2_binding_0_vs, ivec2((at + uvec2(1u, 0u))), 0);
+        out_1.row_y = _e67;
+        vec4 _e75 = texelFetch(_group_2_binding_0_vs, ivec2((at + uvec2(2u, 0u))), 0);
+        out_1.row_z = _e75;
+    } else {
+        vec4 _e79 = texelFetch(_group_2_binding_1_vs, ivec2(at), 0);
+        out_1.row_x = _e79;
+        vec4 _e87 = texelFetch(_group_2_binding_1_vs, ivec2((at + uvec2(1u, 0u))), 0);
+        out_1.row_y = _e87;
+        vec4 _e95 = texelFetch(_group_2_binding_1_vs, ivec2((at + uvec2(2u, 0u))), 0);
+        out_1.row_z = _e95;
+    }
+    vec4 offset = _group_0_binding_2_vs.items[(entry >> CELL_SHIFT)];
+    float _e104 = out_1.row_x.w;
+    out_1.row_x.w = (_e104 + offset.x);
+    float _e109 = out_1.row_y.w;
+    out_1.row_y.w = (_e109 + offset.y);
+    float _e114 = out_1.row_z.w;
+    out_1.row_z.w = (_e114 + offset.z);
+    out_1.material = record.y;
+    Instance _e119 = out_1;
+    return _e119;
+}
+
+Instance find_instance(InstanceIn i_1) {
+    uvec4 _e5 = _group_1_binding_0_vs.items[i_1.draw];
+    Instance _e7 = instance_of(_e5, i_1.instance);
+    return _e7;
+}
+
+Transform transform_of(Instance found) {
+    return Transform(found.row_x, found.row_y, found.row_z);
+}
+
+vec4 clip_position(Instance found_1, vec3 position) {
+    if (!(found_1.drawn)) {
+        return OUTSIDE_CLIP;
+    }
+    mat4x4 _e6 = _group_0_binding_0_vs.view_proj;
+    Transform _e7 = transform_of(found_1);
+    vec3 _e9 = transform_point(_e7, position);
+    vec4 _e10 = to_clip(_e6, _e9);
+    return _e10;
+}
+
+vec3 world_direction(Instance found_2, vec3 direction) {
+    Transform _e1 = transform_of(found_2);
+    vec3 _e3 = transform_direction(_e1, direction);
+    return _e3;
+}
+
+vec3 lambert(vec3 albedo, vec3 normal_1, vec3 to_light, vec3 light, vec3 ambient) {
+    float n_dot_l = max(dot(normal_1, to_light), 0.0);
+    return ((albedo / vec3(3.1415927)) * ((n_dot_l * light) + ambient));
+}
+
+vec3 linear_to_srgb(vec3 c) {
+    vec3 low = (c * 12.92);
+    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
+    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
+}
+
+void main() {
+    VertexIn v = VertexIn(_p2vs_location0, _p2vs_location1);
+    InstanceIn i = InstanceIn((uint(gl_InstanceID) + naga_vs_first_instance), uint(gl_DrawID));
+    VertexOut out_ = VertexOut(vec4(0.0), vec3(0.0), 0u, vec3(0.0));
+    Instance _e1 = find_instance(i);
+    vec4 _e6 = clip_position(_e1, v.position);
+    out_.clip = _e6;
+    vec3 _e9 = world_direction(_e1, v.normal);
+    out_.normal = _e9;
+    out_.material = _e1.material;
+    Transform _e13 = transform_of(_e1);
+    vec3 _e15 = transform_point(_e13, v.position);
+    out_.relative = _e15;
+    VertexOut _e16 = out_;
+    gl_Position = _e16.clip;
+    _vs2fs_location0 = _e16.normal;
+    _vs2fs_location1 = _e16.material;
+    _vs2fs_location2 = _e16.relative;
+    gl_Position.z = gl_Position.z * null3d_depth_mapping.x + gl_Position.w * null3d_depth_mapping.y;
+    return;
+}
+`,
+					uniformBlocks: [
+						{
+							name: 'Frame_block_0Vertex',
+							group: 0,
+							binding: 0,
+						},
+						{
+							name: 'CellOffsets_block_2Vertex',
+							group: 0,
+							binding: 2,
+						},
+						{
+							name: 'DrawTable_block_1Vertex',
+							group: 1,
+							binding: 0,
+						},
+					],
+					textures: [
+						{
+							name: '_group_2_binding_0_vs',
+							group: 2,
+							binding: 0,
+							sampler: null,
+						},
+						{
+							name: '_group_2_binding_1_vs',
+							group: 2,
+							binding: 1,
+							sampler: null,
+						},
+						{
+							name: '_group_2_binding_2_vs',
+							group: 2,
+							binding: 2,
+							sampler: null,
+						},
+						{
+							name: '_group_2_binding_3_vs',
+							group: 2,
+							binding: 3,
+							sampler: null,
+						},
+					],
+				},
+				fragment: {
+					source: `#version 300 es
+
+precision highp float;
+precision highp int;
+
+struct Frame {
+    mat4x4 view_proj;
+    vec4 camera_position;
+    vec4 sun_direction;
+    vec4 sun_color;
+    vec4 ambient;
+};
+struct Material {
+    vec4 color;
+    vec4 emissive;
+    vec4 surface;
+    vec4 strengths;
+    vec4 uv_u;
+    vec4 uv_v;
+    vec4 maps;
+    vec4 more_maps;
+};
+struct Transform {
+    vec4 x;
+    vec4 y;
+    vec4 z;
+};
+struct InstanceIn {
+    uint instance;
+    uint draw;
+};
+struct Instance {
+    vec4 row_x;
+    vec4 row_y;
+    vec4 row_z;
+    uint material;
+    bool drawn;
+};
+struct DrawTable {
+    uvec4 items[256];
+};
+struct CellOffsets {
+    vec4 items[512];
+};
+struct ShadowCascades {
+    mat4x4 view_proj[4];
+    vec4 ends;
+    vec4 forward;
+    vec4 normal_offsets;
+    vec4 depth_biases;
+};
+struct VertexIn {
+    vec3 position;
+    vec3 normal;
+};
+struct VertexOut {
+    vec4 clip;
+    vec3 normal;
+    uint material;
+    vec3 relative;
+};
+const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
+const uint INDEX_ROW_SHIFT = 11u;
+const uint NO_ROW = 4294967295u;
+const uint MATRIX_ROW_SHIFT = 9u;
+const uint CELL_SHIFT = 23u;
+const float PI = 3.1415927;
+const float INV_PI = 0.31830987;
+const float EPSILON = 1e-6;
+
+layout(std140) uniform Frame_block_0Fragment { Frame _group_0_binding_0_fs; };
+
+uniform highp sampler2D _group_0_binding_1_fs;
+
+layout(std140) uniform ShadowCascades_block_1Fragment { ShadowCascades _group_0_binding_6_fs; };
+
+uniform highp sampler2DArrayShadow _group_0_binding_4_fs;
+
+smooth in vec3 _vs2fs_location0;
+flat in uint _vs2fs_location1;
+smooth in vec3 _vs2fs_location2;
+layout(location = 0) out vec4 _fs2p_location0;
+
+vec3 transform_point(Transform t, vec3 p) {
+    vec4 q = vec4(p, 1.0);
+    return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
+}
+
+vec3 transform_direction(Transform t_1, vec3 d) {
+    vec4 q_1 = vec4(d, 0.0);
+    return vec3(dot(t_1.x, q_1), dot(t_1.y, q_1), dot(t_1.z, q_1));
+}
+
+vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
+    return (view_proj * vec4(relative_position, 1.0));
+}
+
+Material material_of(uint id) {
+    Material m = Material(vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0));
+    vec4 _e7 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(0u, id)), 0);
+    m.color = _e7;
+    vec4 _e13 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(1u, id)), 0);
+    m.emissive = _e13;
+    vec4 _e19 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(2u, id)), 0);
+    m.surface = _e19;
+    vec4 _e25 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(3u, id)), 0);
+    m.strengths = _e25;
+    vec4 _e31 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(4u, id)), 0);
+    m.uv_u = _e31;
+    vec4 _e37 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(5u, id)), 0);
+    m.uv_v = _e37;
+    vec4 _e43 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(6u, id)), 0);
+    m.maps = _e43;
+    vec4 _e49 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(7u, id)), 0);
+    m.more_maps = _e49;
+    Material _e50 = m;
+    return _e50;
+}
+
+Transform transform_of(Instance found) {
+    return Transform(found.row_x, found.row_y, found.row_z);
+}
+
+vec4 clip_position(Instance found_1, vec3 position) {
+    if (!(found_1.drawn)) {
+        return OUTSIDE_CLIP;
+    }
+    mat4x4 _e6 = _group_0_binding_0_fs.view_proj;
+    Transform _e7 = transform_of(found_1);
+    vec3 _e9 = transform_point(_e7, position);
+    vec4 _e10 = to_clip(_e6, _e9);
+    return _e10;
+}
+
+vec3 world_direction(Instance found_2, vec3 direction) {
+    Transform _e1 = transform_of(found_2);
+    vec3 _e3 = transform_direction(_e1, direction);
+    return _e3;
+}
+
+float sun_shadow(vec3 relative, vec3 normal) {
+    uint cascade = 0u;
+    bool local = false;
+    vec2 uv = vec2(0.0);
+    vec4 _e4 = _group_0_binding_6_fs.forward;
+    float along = dot(relative, _e4.xyz);
+    float _e10 = _group_0_binding_6_fs.forward.w;
+    uint count = uint(_e10);
+    while(true) {
+        uint _e13 = cascade;
+        if ((_e13 < count)) {
+            uint _e17 = cascade;
+            float _e19 = _group_0_binding_6_fs.ends[_e17];
+            local = (along >= _e19);
+        } else {
+            local = false;
+        }
+        bool _e24 = local;
+        if (_e24) {
+        } else {
+            break;
+        }
+        {
+            uint _e25 = cascade;
+            cascade = (_e25 + 1u);
+        }
+    }
+    uint _e28 = cascade;
+    if ((_e28 >= count)) {
+        return 1.0;
+    }
+    uint _e34 = cascade;
+    float _e36 = _group_0_binding_6_fs.normal_offsets[_e34];
+    vec3 moved = (relative + (normal * _e36));
+    uint _e41 = cascade;
+    mat4x4 _e43 = _group_0_binding_6_fs.view_proj[_e41];
+    vec4 clip = (_e43 * vec4(moved, 1.0));
+    uv = ((clip.xy * vec2(0.5, -0.5)) + vec2(0.5));
+    float _e58 = uv.y;
+    uv.y = (1.0 - _e58);
+    uint _e64 = cascade;
+    float _e66 = _group_0_binding_6_fs.depth_biases[_e64];
+    float depth = (clip.z + _e66);
+    vec2 _e70 = uv;
+    uint _e71 = cascade;
+    float lit = textureGrad(_group_0_binding_4_fs, vec4(_e70, _e71, depth), vec2(0.0), vec2(0.0));
+    float end = _group_0_binding_6_fs.ends[(count - 1u)];
+    return mix(lit, 1.0, smoothstep((end * 0.9), end, along));
+}
+
+vec3 lambert(vec3 albedo, vec3 normal_1, vec3 to_light, vec3 light, vec3 ambient) {
+    float n_dot_l = max(dot(normal_1, to_light), 0.0);
+    return ((albedo / vec3(3.1415927)) * ((n_dot_l * light) + ambient));
+}
+
+vec3 linear_to_srgb(vec3 c) {
+    vec3 low = (c * 12.92);
+    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
+    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
+}
+
+void main() {
+    VertexOut in_ = VertexOut(gl_FragCoord, _vs2fs_location0, _vs2fs_location1, _vs2fs_location2);
+    vec3 sun = vec3(0.0);
+    Material _e2 = material_of(in_.material);
+    vec3 albedo_1 = _e2.color.xyz;
+    vec3 normal_2 = normalize(in_.normal);
+    vec4 _e9 = _group_0_binding_0_fs.sun_color;
+    sun = _e9.xyz;
+    vec3 _e12 = sun;
+    float _e14 = sun_shadow(in_.relative, normal_2);
+    sun = (_e12 * _e14);
+    vec4 _e18 = _group_0_binding_0_fs.sun_direction;
+    vec3 _e21 = sun;
+    vec4 _e24 = _group_0_binding_0_fs.ambient;
+    vec3 _e26 = lambert(albedo_1, normal_2, -(_e18.xyz), _e21, _e24.xyz);
+    vec3 _e27 = linear_to_srgb(_e26);
+    _fs2p_location0 = vec4(_e27, 1.0);
+    return;
+}
+`,
+					uniformBlocks: [
+						{
+							name: 'Frame_block_0Fragment',
+							group: 0,
+							binding: 0,
+						},
+						{
+							name: 'ShadowCascades_block_1Fragment',
+							group: 0,
+							binding: 6,
+						},
+					],
+					textures: [
+						{
+							name: '_group_0_binding_1_fs',
+							group: 0,
+							binding: 1,
+							sampler: null,
+						},
+						{
+							name: '_group_0_binding_4_fs',
+							group: 0,
+							binding: 4,
+							sampler: {
+								group: 0,
+								binding: 5,
+							},
+						},
+					],
+				},
+			},
+		},
+	},
+	webgl2_receive_shadows: {
+		permutation: 32,
+		wgsl: null,
+		glsl: {
+			main: {
+				vertex: {
+					source: `#version 300 es
+uniform vec2 null3d_depth_mapping;
+
+precision highp float;
+precision highp int;
+
+uniform uint naga_vs_first_instance;
+
+struct Frame {
+    mat4x4 view_proj;
+    vec4 camera_position;
+    vec4 sun_direction;
+    vec4 sun_color;
+    vec4 ambient;
+};
+struct Material {
+    vec4 color;
+    vec4 emissive;
+    vec4 surface;
+    vec4 strengths;
+    vec4 uv_u;
+    vec4 uv_v;
+    vec4 maps;
+    vec4 more_maps;
+};
+struct Transform {
+    vec4 x;
+    vec4 y;
+    vec4 z;
+};
+struct InstanceIn {
+    uint instance;
+};
+struct Instance {
+    vec4 row_x;
+    vec4 row_y;
+    vec4 row_z;
+    uint material;
+    bool drawn;
+};
+struct DrawTable {
+    uvec4 items[1];
+};
+struct CellOffsets {
+    vec4 items[512];
+};
+struct ShadowCascades {
+    mat4x4 view_proj[4];
+    vec4 ends;
+    vec4 forward;
+    vec4 normal_offsets;
+    vec4 depth_biases;
+};
+struct VertexIn {
+    vec3 position;
+    vec3 normal;
+};
+struct VertexOut {
+    vec4 clip;
+    vec3 normal;
+    uint material;
+    vec3 relative;
+};
+const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
+const uint INDEX_ROW_SHIFT = 11u;
+const uint NO_ROW = 4294967295u;
+const uint MATRIX_ROW_SHIFT = 9u;
+const uint CELL_SHIFT = 23u;
+const float PI = 3.1415927;
+const float INV_PI = 0.31830987;
+const float EPSILON = 1e-6;
+
+layout(std140) uniform Frame_block_0Vertex { Frame _group_0_binding_0_vs; };
+
+layout(std140) uniform DrawTable_block_1Vertex { DrawTable _group_1_binding_0_vs; };
+
+uniform highp usampler2D _group_2_binding_2_vs;
+
+uniform highp usampler2D _group_2_binding_3_vs;
+
+uniform highp sampler2D _group_2_binding_0_vs;
+
+uniform highp sampler2D _group_2_binding_1_vs;
+
+layout(std140) uniform CellOffsets_block_2Vertex { CellOffsets _group_0_binding_2_vs; };
+
+layout(location = 0) in vec3 _p2vs_location0;
+layout(location = 1) in vec3 _p2vs_location1;
+smooth out vec3 _vs2fs_location0;
+flat out uint _vs2fs_location1;
+smooth out vec3 _vs2fs_location2;
+
+vec3 transform_point(Transform t, vec3 p) {
+    vec4 q = vec4(p, 1.0);
+    return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
+}
+
+vec3 transform_direction(Transform t_1, vec3 d) {
+    vec4 q_1 = vec4(d, 0.0);
+    return vec3(dot(t_1.x, q_1), dot(t_1.y, q_1), dot(t_1.z, q_1));
+}
+
+vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
+    return (view_proj * vec4(relative_position, 1.0));
+}
+
+Instance instance_of(uvec4 record, uint instance) {
+    uint source = 0u;
+    Instance out_1 = Instance(vec4(0.0), vec4(0.0), vec4(0.0), 0u, false);
+    uint shift = record.w;
+    uint slot = (record.x + (instance >> shift));
+    uvec4 _e13 = texelFetch(_group_2_binding_2_vs, ivec2(uvec2((slot & 2047u), (slot >> INDEX_ROW_SHIFT))), 0);
+    uint entry = _e13.x;
+    source = (entry & 8388607u);
+    if ((shift != 0u)) {
+        uint _e20 = source;
+        uint place = ((_e20 << shift) | (instance & ((1u << shift) - 1u)));
+        uvec4 _e34 = texelFetch(_group_2_binding_3_vs, ivec2(uvec2((place & 2047u), (place >> INDEX_ROW_SHIFT))), 0);
+        source = _e34.x;
+    }
+    uint _e38 = source;
+    out_1.drawn = (_e38 != NO_ROW);
+    uint _e42 = source;
+    bool _e44 = out_1.drawn;
+    uint row = (_e44 ? _e42 : 0u);
+    uvec2 at = uvec2(((row & 511u) * 3u), (row >> MATRIX_ROW_SHIFT));
+    if ((record.z == 0u)) {
+        vec4 _e59 = texelFetch(_group_2_binding_0_vs, ivec2(at), 0);
+        out_1.row_x = _e59;
+        vec4 _e67 = texelFetch(_group_2_binding_0_vs, ivec2((at + uvec2(1u, 0u))), 0);
+        out_1.row_y = _e67;
+        vec4 _e75 = texelFetch(_group_2_binding_0_vs, ivec2((at + uvec2(2u, 0u))), 0);
+        out_1.row_z = _e75;
+    } else {
+        vec4 _e79 = texelFetch(_group_2_binding_1_vs, ivec2(at), 0);
+        out_1.row_x = _e79;
+        vec4 _e87 = texelFetch(_group_2_binding_1_vs, ivec2((at + uvec2(1u, 0u))), 0);
+        out_1.row_y = _e87;
+        vec4 _e95 = texelFetch(_group_2_binding_1_vs, ivec2((at + uvec2(2u, 0u))), 0);
+        out_1.row_z = _e95;
+    }
+    vec4 offset = _group_0_binding_2_vs.items[(entry >> CELL_SHIFT)];
+    float _e104 = out_1.row_x.w;
+    out_1.row_x.w = (_e104 + offset.x);
+    float _e109 = out_1.row_y.w;
+    out_1.row_y.w = (_e109 + offset.y);
+    float _e114 = out_1.row_z.w;
+    out_1.row_z.w = (_e114 + offset.z);
+    out_1.material = record.y;
+    Instance _e119 = out_1;
+    return _e119;
+}
+
+Instance find_instance(InstanceIn i_1) {
+    uvec4 _e4 = _group_1_binding_0_vs.items[0];
+    Instance _e6 = instance_of(_e4, i_1.instance);
+    return _e6;
+}
+
+Transform transform_of(Instance found) {
+    return Transform(found.row_x, found.row_y, found.row_z);
+}
+
+vec4 clip_position(Instance found_1, vec3 position) {
+    if (!(found_1.drawn)) {
+        return OUTSIDE_CLIP;
+    }
+    mat4x4 _e6 = _group_0_binding_0_vs.view_proj;
+    Transform _e7 = transform_of(found_1);
+    vec3 _e9 = transform_point(_e7, position);
+    vec4 _e10 = to_clip(_e6, _e9);
+    return _e10;
+}
+
+vec3 world_direction(Instance found_2, vec3 direction) {
+    Transform _e1 = transform_of(found_2);
+    vec3 _e3 = transform_direction(_e1, direction);
+    return _e3;
+}
+
+vec3 lambert(vec3 albedo, vec3 normal_1, vec3 to_light, vec3 light, vec3 ambient) {
+    float n_dot_l = max(dot(normal_1, to_light), 0.0);
+    return ((albedo / vec3(3.1415927)) * ((n_dot_l * light) + ambient));
+}
+
+vec3 linear_to_srgb(vec3 c) {
+    vec3 low = (c * 12.92);
+    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
+    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
+}
+
+void main() {
+    VertexIn v = VertexIn(_p2vs_location0, _p2vs_location1);
+    InstanceIn i = InstanceIn((uint(gl_InstanceID) + naga_vs_first_instance));
+    VertexOut out_ = VertexOut(vec4(0.0), vec3(0.0), 0u, vec3(0.0));
+    Instance _e1 = find_instance(i);
+    vec4 _e6 = clip_position(_e1, v.position);
+    out_.clip = _e6;
+    vec3 _e9 = world_direction(_e1, v.normal);
+    out_.normal = _e9;
+    out_.material = _e1.material;
+    Transform _e13 = transform_of(_e1);
+    vec3 _e15 = transform_point(_e13, v.position);
+    out_.relative = _e15;
+    VertexOut _e16 = out_;
+    gl_Position = _e16.clip;
+    _vs2fs_location0 = _e16.normal;
+    _vs2fs_location1 = _e16.material;
+    _vs2fs_location2 = _e16.relative;
+    gl_Position.z = gl_Position.z * null3d_depth_mapping.x + gl_Position.w * null3d_depth_mapping.y;
+    return;
+}
+`,
+					uniformBlocks: [
+						{
+							name: 'Frame_block_0Vertex',
+							group: 0,
+							binding: 0,
+						},
+						{
+							name: 'CellOffsets_block_2Vertex',
+							group: 0,
+							binding: 2,
+						},
+						{
+							name: 'DrawTable_block_1Vertex',
+							group: 1,
+							binding: 0,
+						},
+					],
+					textures: [
+						{
+							name: '_group_2_binding_0_vs',
+							group: 2,
+							binding: 0,
+							sampler: null,
+						},
+						{
+							name: '_group_2_binding_1_vs',
+							group: 2,
+							binding: 1,
+							sampler: null,
+						},
+						{
+							name: '_group_2_binding_2_vs',
+							group: 2,
+							binding: 2,
+							sampler: null,
+						},
+						{
+							name: '_group_2_binding_3_vs',
+							group: 2,
+							binding: 3,
+							sampler: null,
+						},
+					],
+				},
+				fragment: {
+					source: `#version 300 es
+
+precision highp float;
+precision highp int;
+
+struct Frame {
+    mat4x4 view_proj;
+    vec4 camera_position;
+    vec4 sun_direction;
+    vec4 sun_color;
+    vec4 ambient;
+};
+struct Material {
+    vec4 color;
+    vec4 emissive;
+    vec4 surface;
+    vec4 strengths;
+    vec4 uv_u;
+    vec4 uv_v;
+    vec4 maps;
+    vec4 more_maps;
+};
+struct Transform {
+    vec4 x;
+    vec4 y;
+    vec4 z;
+};
+struct InstanceIn {
+    uint instance;
+};
+struct Instance {
+    vec4 row_x;
+    vec4 row_y;
+    vec4 row_z;
+    uint material;
+    bool drawn;
+};
+struct DrawTable {
+    uvec4 items[1];
+};
+struct CellOffsets {
+    vec4 items[512];
+};
+struct ShadowCascades {
+    mat4x4 view_proj[4];
+    vec4 ends;
+    vec4 forward;
+    vec4 normal_offsets;
+    vec4 depth_biases;
+};
+struct VertexIn {
+    vec3 position;
+    vec3 normal;
+};
+struct VertexOut {
+    vec4 clip;
+    vec3 normal;
+    uint material;
+    vec3 relative;
+};
+const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
+const uint INDEX_ROW_SHIFT = 11u;
+const uint NO_ROW = 4294967295u;
+const uint MATRIX_ROW_SHIFT = 9u;
+const uint CELL_SHIFT = 23u;
+const float PI = 3.1415927;
+const float INV_PI = 0.31830987;
+const float EPSILON = 1e-6;
+
+layout(std140) uniform Frame_block_0Fragment { Frame _group_0_binding_0_fs; };
+
+uniform highp sampler2D _group_0_binding_1_fs;
+
+layout(std140) uniform ShadowCascades_block_1Fragment { ShadowCascades _group_0_binding_6_fs; };
+
+uniform highp sampler2DArrayShadow _group_0_binding_4_fs;
+
+smooth in vec3 _vs2fs_location0;
+flat in uint _vs2fs_location1;
+smooth in vec3 _vs2fs_location2;
+layout(location = 0) out vec4 _fs2p_location0;
+
+vec3 transform_point(Transform t, vec3 p) {
+    vec4 q = vec4(p, 1.0);
+    return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
+}
+
+vec3 transform_direction(Transform t_1, vec3 d) {
+    vec4 q_1 = vec4(d, 0.0);
+    return vec3(dot(t_1.x, q_1), dot(t_1.y, q_1), dot(t_1.z, q_1));
+}
+
+vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
+    return (view_proj * vec4(relative_position, 1.0));
+}
+
+Material material_of(uint id) {
+    Material m = Material(vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0));
+    vec4 _e7 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(0u, id)), 0);
+    m.color = _e7;
+    vec4 _e13 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(1u, id)), 0);
+    m.emissive = _e13;
+    vec4 _e19 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(2u, id)), 0);
+    m.surface = _e19;
+    vec4 _e25 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(3u, id)), 0);
+    m.strengths = _e25;
+    vec4 _e31 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(4u, id)), 0);
+    m.uv_u = _e31;
+    vec4 _e37 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(5u, id)), 0);
+    m.uv_v = _e37;
+    vec4 _e43 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(6u, id)), 0);
+    m.maps = _e43;
+    vec4 _e49 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(7u, id)), 0);
+    m.more_maps = _e49;
+    Material _e50 = m;
+    return _e50;
+}
+
+Transform transform_of(Instance found) {
+    return Transform(found.row_x, found.row_y, found.row_z);
+}
+
+vec4 clip_position(Instance found_1, vec3 position) {
+    if (!(found_1.drawn)) {
+        return OUTSIDE_CLIP;
+    }
+    mat4x4 _e6 = _group_0_binding_0_fs.view_proj;
+    Transform _e7 = transform_of(found_1);
+    vec3 _e9 = transform_point(_e7, position);
+    vec4 _e10 = to_clip(_e6, _e9);
+    return _e10;
+}
+
+vec3 world_direction(Instance found_2, vec3 direction) {
+    Transform _e1 = transform_of(found_2);
+    vec3 _e3 = transform_direction(_e1, direction);
+    return _e3;
+}
+
+float sun_shadow(vec3 relative, vec3 normal) {
+    uint cascade = 0u;
+    bool local = false;
+    vec2 uv = vec2(0.0);
+    vec4 _e4 = _group_0_binding_6_fs.forward;
+    float along = dot(relative, _e4.xyz);
+    float _e10 = _group_0_binding_6_fs.forward.w;
+    uint count = uint(_e10);
+    while(true) {
+        uint _e13 = cascade;
+        if ((_e13 < count)) {
+            uint _e17 = cascade;
+            float _e19 = _group_0_binding_6_fs.ends[_e17];
+            local = (along >= _e19);
+        } else {
+            local = false;
+        }
+        bool _e24 = local;
+        if (_e24) {
+        } else {
+            break;
+        }
+        {
+            uint _e25 = cascade;
+            cascade = (_e25 + 1u);
+        }
+    }
+    uint _e28 = cascade;
+    if ((_e28 >= count)) {
+        return 1.0;
+    }
+    uint _e34 = cascade;
+    float _e36 = _group_0_binding_6_fs.normal_offsets[_e34];
+    vec3 moved = (relative + (normal * _e36));
+    uint _e41 = cascade;
+    mat4x4 _e43 = _group_0_binding_6_fs.view_proj[_e41];
+    vec4 clip = (_e43 * vec4(moved, 1.0));
+    uv = ((clip.xy * vec2(0.5, -0.5)) + vec2(0.5));
+    float _e58 = uv.y;
+    uv.y = (1.0 - _e58);
+    uint _e64 = cascade;
+    float _e66 = _group_0_binding_6_fs.depth_biases[_e64];
+    float depth = (clip.z + _e66);
+    vec2 _e70 = uv;
+    uint _e71 = cascade;
+    float lit = textureGrad(_group_0_binding_4_fs, vec4(_e70, _e71, depth), vec2(0.0), vec2(0.0));
+    float end = _group_0_binding_6_fs.ends[(count - 1u)];
+    return mix(lit, 1.0, smoothstep((end * 0.9), end, along));
+}
+
+vec3 lambert(vec3 albedo, vec3 normal_1, vec3 to_light, vec3 light, vec3 ambient) {
+    float n_dot_l = max(dot(normal_1, to_light), 0.0);
+    return ((albedo / vec3(3.1415927)) * ((n_dot_l * light) + ambient));
+}
+
+vec3 linear_to_srgb(vec3 c) {
+    vec3 low = (c * 12.92);
+    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
+    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
+}
+
+void main() {
+    VertexOut in_ = VertexOut(gl_FragCoord, _vs2fs_location0, _vs2fs_location1, _vs2fs_location2);
+    vec3 sun = vec3(0.0);
+    Material _e2 = material_of(in_.material);
+    vec3 albedo_1 = _e2.color.xyz;
+    vec3 normal_2 = normalize(in_.normal);
+    vec4 _e9 = _group_0_binding_0_fs.sun_color;
+    sun = _e9.xyz;
+    vec3 _e12 = sun;
+    float _e14 = sun_shadow(in_.relative, normal_2);
+    sun = (_e12 * _e14);
+    vec4 _e18 = _group_0_binding_0_fs.sun_direction;
+    vec3 _e21 = sun;
+    vec4 _e24 = _group_0_binding_0_fs.ambient;
+    vec3 _e26 = lambert(albedo_1, normal_2, -(_e18.xyz), _e21, _e24.xyz);
+    vec3 _e27 = linear_to_srgb(_e26);
+    _fs2p_location0 = vec4(_e27, 1.0);
+    return;
+}
+`,
+					uniformBlocks: [
+						{
+							name: 'Frame_block_0Fragment',
+							group: 0,
+							binding: 0,
+						},
+						{
+							name: 'ShadowCascades_block_1Fragment',
+							group: 0,
+							binding: 6,
+						},
+					],
+					textures: [
+						{
+							name: '_group_0_binding_1_fs',
+							group: 0,
+							binding: 1,
+							sampler: null,
+						},
+						{
+							name: '_group_0_binding_4_fs',
+							group: 0,
+							binding: 4,
+							sampler: {
+								group: 0,
+								binding: 5,
+							},
+						},
+					],
+				},
+			},
+		},
+	},
 	webgpu: {
 		permutation: 0,
 		wgsl: {
@@ -1774,8 +2813,555 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
 
 /** The variants of the `shadow_depth` shader, by variant name. */
 export const SHADOW_DEPTH_SHADER: {
+	readonly webgl2: ShaderVariant<'main'>;
+	readonly webgl2_draw_index: ShaderVariant<'main'>;
 	readonly webgpu: ShaderVariant<'main'>;
 } = {
+	webgl2: {
+		permutation: 0,
+		wgsl: null,
+		glsl: {
+			main: {
+				vertex: {
+					source: `#version 300 es
+uniform vec2 null3d_depth_mapping;
+
+precision highp float;
+precision highp int;
+
+uniform uint naga_vs_first_instance;
+
+struct Frame {
+    mat4x4 view_proj;
+    vec4 camera_position;
+    vec4 sun_direction;
+    vec4 sun_color;
+    vec4 ambient;
+};
+struct Transform {
+    vec4 x;
+    vec4 y;
+    vec4 z;
+};
+struct InstanceIn {
+    uint instance;
+};
+struct Instance {
+    vec4 row_x;
+    vec4 row_y;
+    vec4 row_z;
+    uint material;
+    bool drawn;
+};
+struct DrawTable {
+    uvec4 items[1];
+};
+struct CellOffsets {
+    vec4 items[512];
+};
+struct VertexIn {
+    vec3 position;
+};
+const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
+const uint INDEX_ROW_SHIFT = 11u;
+const uint NO_ROW = 4294967295u;
+const uint MATRIX_ROW_SHIFT = 9u;
+const uint CELL_SHIFT = 23u;
+
+layout(std140) uniform DrawTable_block_0Vertex { DrawTable _group_1_binding_0_vs; };
+
+uniform highp usampler2D _group_2_binding_2_vs;
+
+uniform highp usampler2D _group_2_binding_3_vs;
+
+uniform highp sampler2D _group_2_binding_0_vs;
+
+uniform highp sampler2D _group_2_binding_1_vs;
+
+layout(std140) uniform CellOffsets_block_1Vertex { CellOffsets _group_0_binding_2_vs; };
+
+layout(std140) uniform Frame_block_2Vertex { Frame _group_0_binding_0_vs; };
+
+layout(location = 0) in vec3 _p2vs_location0;
+
+vec3 transform_point(Transform t, vec3 p) {
+    vec4 q = vec4(p, 1.0);
+    return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
+}
+
+vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
+    return (view_proj * vec4(relative_position, 1.0));
+}
+
+Instance instance_of(uvec4 record, uint instance) {
+    uint source = 0u;
+    Instance out_ = Instance(vec4(0.0), vec4(0.0), vec4(0.0), 0u, false);
+    uint shift = record.w;
+    uint slot = (record.x + (instance >> shift));
+    uvec4 _e13 = texelFetch(_group_2_binding_2_vs, ivec2(uvec2((slot & 2047u), (slot >> INDEX_ROW_SHIFT))), 0);
+    uint entry = _e13.x;
+    source = (entry & 8388607u);
+    if ((shift != 0u)) {
+        uint _e20 = source;
+        uint place = ((_e20 << shift) | (instance & ((1u << shift) - 1u)));
+        uvec4 _e34 = texelFetch(_group_2_binding_3_vs, ivec2(uvec2((place & 2047u), (place >> INDEX_ROW_SHIFT))), 0);
+        source = _e34.x;
+    }
+    uint _e38 = source;
+    out_.drawn = (_e38 != NO_ROW);
+    uint _e42 = source;
+    bool _e44 = out_.drawn;
+    uint row = (_e44 ? _e42 : 0u);
+    uvec2 at = uvec2(((row & 511u) * 3u), (row >> MATRIX_ROW_SHIFT));
+    if ((record.z == 0u)) {
+        vec4 _e59 = texelFetch(_group_2_binding_0_vs, ivec2(at), 0);
+        out_.row_x = _e59;
+        vec4 _e67 = texelFetch(_group_2_binding_0_vs, ivec2((at + uvec2(1u, 0u))), 0);
+        out_.row_y = _e67;
+        vec4 _e75 = texelFetch(_group_2_binding_0_vs, ivec2((at + uvec2(2u, 0u))), 0);
+        out_.row_z = _e75;
+    } else {
+        vec4 _e79 = texelFetch(_group_2_binding_1_vs, ivec2(at), 0);
+        out_.row_x = _e79;
+        vec4 _e87 = texelFetch(_group_2_binding_1_vs, ivec2((at + uvec2(1u, 0u))), 0);
+        out_.row_y = _e87;
+        vec4 _e95 = texelFetch(_group_2_binding_1_vs, ivec2((at + uvec2(2u, 0u))), 0);
+        out_.row_z = _e95;
+    }
+    vec4 offset = _group_0_binding_2_vs.items[(entry >> CELL_SHIFT)];
+    float _e104 = out_.row_x.w;
+    out_.row_x.w = (_e104 + offset.x);
+    float _e109 = out_.row_y.w;
+    out_.row_y.w = (_e109 + offset.y);
+    float _e114 = out_.row_z.w;
+    out_.row_z.w = (_e114 + offset.z);
+    out_.material = record.y;
+    Instance _e119 = out_;
+    return _e119;
+}
+
+Instance find_instance(InstanceIn i_1) {
+    uvec4 _e4 = _group_1_binding_0_vs.items[0];
+    Instance _e6 = instance_of(_e4, i_1.instance);
+    return _e6;
+}
+
+Transform transform_of(Instance found) {
+    return Transform(found.row_x, found.row_y, found.row_z);
+}
+
+vec4 clip_position(Instance found_1, vec3 position) {
+    if (!(found_1.drawn)) {
+        return OUTSIDE_CLIP;
+    }
+    mat4x4 _e6 = _group_0_binding_0_vs.view_proj;
+    Transform _e7 = transform_of(found_1);
+    vec3 _e9 = transform_point(_e7, position);
+    vec4 _e10 = to_clip(_e6, _e9);
+    return _e10;
+}
+
+void main() {
+    VertexIn v = VertexIn(_p2vs_location0);
+    InstanceIn i = InstanceIn((uint(gl_InstanceID) + naga_vs_first_instance));
+    vec4 clip = vec4(0.0);
+    Instance _e1 = find_instance(i);
+    vec4 _e4 = clip_position(_e1, v.position);
+    clip = _e4;
+    float _e8 = clip.z;
+    float _e10 = clip.w;
+    clip.z = min(_e8, _e10);
+    vec4 _e12 = clip;
+    gl_Position = _e12;
+    gl_Position.z = gl_Position.z * null3d_depth_mapping.x + gl_Position.w * null3d_depth_mapping.y;
+    return;
+}
+`,
+					uniformBlocks: [
+						{
+							name: 'Frame_block_2Vertex',
+							group: 0,
+							binding: 0,
+						},
+						{
+							name: 'CellOffsets_block_1Vertex',
+							group: 0,
+							binding: 2,
+						},
+						{
+							name: 'DrawTable_block_0Vertex',
+							group: 1,
+							binding: 0,
+						},
+					],
+					textures: [
+						{
+							name: '_group_2_binding_0_vs',
+							group: 2,
+							binding: 0,
+							sampler: null,
+						},
+						{
+							name: '_group_2_binding_1_vs',
+							group: 2,
+							binding: 1,
+							sampler: null,
+						},
+						{
+							name: '_group_2_binding_2_vs',
+							group: 2,
+							binding: 2,
+							sampler: null,
+						},
+						{
+							name: '_group_2_binding_3_vs',
+							group: 2,
+							binding: 3,
+							sampler: null,
+						},
+					],
+				},
+				fragment: {
+					source: `#version 300 es
+
+precision highp float;
+precision highp int;
+
+struct Frame {
+    mat4x4 view_proj;
+    vec4 camera_position;
+    vec4 sun_direction;
+    vec4 sun_color;
+    vec4 ambient;
+};
+struct Transform {
+    vec4 x;
+    vec4 y;
+    vec4 z;
+};
+struct InstanceIn {
+    uint instance;
+};
+struct Instance {
+    vec4 row_x;
+    vec4 row_y;
+    vec4 row_z;
+    uint material;
+    bool drawn;
+};
+struct DrawTable {
+    uvec4 items[1];
+};
+struct CellOffsets {
+    vec4 items[512];
+};
+struct VertexIn {
+    vec3 position;
+};
+const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
+const uint INDEX_ROW_SHIFT = 11u;
+const uint NO_ROW = 4294967295u;
+const uint MATRIX_ROW_SHIFT = 9u;
+const uint CELL_SHIFT = 23u;
+
+
+vec3 transform_point(Transform t, vec3 p) {
+    vec4 q = vec4(p, 1.0);
+    return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
+}
+
+vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
+    return (view_proj * vec4(relative_position, 1.0));
+}
+
+Transform transform_of(Instance found) {
+    return Transform(found.row_x, found.row_y, found.row_z);
+}
+
+void main() {
+    return;
+}
+`,
+					uniformBlocks: [],
+					textures: [],
+				},
+			},
+		},
+	},
+	webgl2_draw_index: {
+		permutation: 1,
+		wgsl: null,
+		glsl: {
+			main: {
+				vertex: {
+					source: `#version 300 es
+#extension GL_ANGLE_multi_draw : require
+uniform vec2 null3d_depth_mapping;
+
+precision highp float;
+precision highp int;
+
+uniform uint naga_vs_first_instance;
+
+struct Frame {
+    mat4x4 view_proj;
+    vec4 camera_position;
+    vec4 sun_direction;
+    vec4 sun_color;
+    vec4 ambient;
+};
+struct Transform {
+    vec4 x;
+    vec4 y;
+    vec4 z;
+};
+struct InstanceIn {
+    uint instance;
+    uint draw;
+};
+struct Instance {
+    vec4 row_x;
+    vec4 row_y;
+    vec4 row_z;
+    uint material;
+    bool drawn;
+};
+struct DrawTable {
+    uvec4 items[256];
+};
+struct CellOffsets {
+    vec4 items[512];
+};
+struct VertexIn {
+    vec3 position;
+};
+const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
+const uint INDEX_ROW_SHIFT = 11u;
+const uint NO_ROW = 4294967295u;
+const uint MATRIX_ROW_SHIFT = 9u;
+const uint CELL_SHIFT = 23u;
+
+layout(std140) uniform DrawTable_block_0Vertex { DrawTable _group_1_binding_0_vs; };
+
+uniform highp usampler2D _group_2_binding_2_vs;
+
+uniform highp usampler2D _group_2_binding_3_vs;
+
+uniform highp sampler2D _group_2_binding_0_vs;
+
+uniform highp sampler2D _group_2_binding_1_vs;
+
+layout(std140) uniform CellOffsets_block_1Vertex { CellOffsets _group_0_binding_2_vs; };
+
+layout(std140) uniform Frame_block_2Vertex { Frame _group_0_binding_0_vs; };
+
+layout(location = 0) in vec3 _p2vs_location0;
+
+vec3 transform_point(Transform t, vec3 p) {
+    vec4 q = vec4(p, 1.0);
+    return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
+}
+
+vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
+    return (view_proj * vec4(relative_position, 1.0));
+}
+
+Instance instance_of(uvec4 record, uint instance) {
+    uint source = 0u;
+    Instance out_ = Instance(vec4(0.0), vec4(0.0), vec4(0.0), 0u, false);
+    uint shift = record.w;
+    uint slot = (record.x + (instance >> shift));
+    uvec4 _e13 = texelFetch(_group_2_binding_2_vs, ivec2(uvec2((slot & 2047u), (slot >> INDEX_ROW_SHIFT))), 0);
+    uint entry = _e13.x;
+    source = (entry & 8388607u);
+    if ((shift != 0u)) {
+        uint _e20 = source;
+        uint place = ((_e20 << shift) | (instance & ((1u << shift) - 1u)));
+        uvec4 _e34 = texelFetch(_group_2_binding_3_vs, ivec2(uvec2((place & 2047u), (place >> INDEX_ROW_SHIFT))), 0);
+        source = _e34.x;
+    }
+    uint _e38 = source;
+    out_.drawn = (_e38 != NO_ROW);
+    uint _e42 = source;
+    bool _e44 = out_.drawn;
+    uint row = (_e44 ? _e42 : 0u);
+    uvec2 at = uvec2(((row & 511u) * 3u), (row >> MATRIX_ROW_SHIFT));
+    if ((record.z == 0u)) {
+        vec4 _e59 = texelFetch(_group_2_binding_0_vs, ivec2(at), 0);
+        out_.row_x = _e59;
+        vec4 _e67 = texelFetch(_group_2_binding_0_vs, ivec2((at + uvec2(1u, 0u))), 0);
+        out_.row_y = _e67;
+        vec4 _e75 = texelFetch(_group_2_binding_0_vs, ivec2((at + uvec2(2u, 0u))), 0);
+        out_.row_z = _e75;
+    } else {
+        vec4 _e79 = texelFetch(_group_2_binding_1_vs, ivec2(at), 0);
+        out_.row_x = _e79;
+        vec4 _e87 = texelFetch(_group_2_binding_1_vs, ivec2((at + uvec2(1u, 0u))), 0);
+        out_.row_y = _e87;
+        vec4 _e95 = texelFetch(_group_2_binding_1_vs, ivec2((at + uvec2(2u, 0u))), 0);
+        out_.row_z = _e95;
+    }
+    vec4 offset = _group_0_binding_2_vs.items[(entry >> CELL_SHIFT)];
+    float _e104 = out_.row_x.w;
+    out_.row_x.w = (_e104 + offset.x);
+    float _e109 = out_.row_y.w;
+    out_.row_y.w = (_e109 + offset.y);
+    float _e114 = out_.row_z.w;
+    out_.row_z.w = (_e114 + offset.z);
+    out_.material = record.y;
+    Instance _e119 = out_;
+    return _e119;
+}
+
+Instance find_instance(InstanceIn i_1) {
+    uvec4 _e5 = _group_1_binding_0_vs.items[i_1.draw];
+    Instance _e7 = instance_of(_e5, i_1.instance);
+    return _e7;
+}
+
+Transform transform_of(Instance found) {
+    return Transform(found.row_x, found.row_y, found.row_z);
+}
+
+vec4 clip_position(Instance found_1, vec3 position) {
+    if (!(found_1.drawn)) {
+        return OUTSIDE_CLIP;
+    }
+    mat4x4 _e6 = _group_0_binding_0_vs.view_proj;
+    Transform _e7 = transform_of(found_1);
+    vec3 _e9 = transform_point(_e7, position);
+    vec4 _e10 = to_clip(_e6, _e9);
+    return _e10;
+}
+
+void main() {
+    VertexIn v = VertexIn(_p2vs_location0);
+    InstanceIn i = InstanceIn((uint(gl_InstanceID) + naga_vs_first_instance), uint(gl_DrawID));
+    vec4 clip = vec4(0.0);
+    Instance _e1 = find_instance(i);
+    vec4 _e4 = clip_position(_e1, v.position);
+    clip = _e4;
+    float _e8 = clip.z;
+    float _e10 = clip.w;
+    clip.z = min(_e8, _e10);
+    vec4 _e12 = clip;
+    gl_Position = _e12;
+    gl_Position.z = gl_Position.z * null3d_depth_mapping.x + gl_Position.w * null3d_depth_mapping.y;
+    return;
+}
+`,
+					uniformBlocks: [
+						{
+							name: 'Frame_block_2Vertex',
+							group: 0,
+							binding: 0,
+						},
+						{
+							name: 'CellOffsets_block_1Vertex',
+							group: 0,
+							binding: 2,
+						},
+						{
+							name: 'DrawTable_block_0Vertex',
+							group: 1,
+							binding: 0,
+						},
+					],
+					textures: [
+						{
+							name: '_group_2_binding_0_vs',
+							group: 2,
+							binding: 0,
+							sampler: null,
+						},
+						{
+							name: '_group_2_binding_1_vs',
+							group: 2,
+							binding: 1,
+							sampler: null,
+						},
+						{
+							name: '_group_2_binding_2_vs',
+							group: 2,
+							binding: 2,
+							sampler: null,
+						},
+						{
+							name: '_group_2_binding_3_vs',
+							group: 2,
+							binding: 3,
+							sampler: null,
+						},
+					],
+				},
+				fragment: {
+					source: `#version 300 es
+
+precision highp float;
+precision highp int;
+
+struct Frame {
+    mat4x4 view_proj;
+    vec4 camera_position;
+    vec4 sun_direction;
+    vec4 sun_color;
+    vec4 ambient;
+};
+struct Transform {
+    vec4 x;
+    vec4 y;
+    vec4 z;
+};
+struct InstanceIn {
+    uint instance;
+    uint draw;
+};
+struct Instance {
+    vec4 row_x;
+    vec4 row_y;
+    vec4 row_z;
+    uint material;
+    bool drawn;
+};
+struct DrawTable {
+    uvec4 items[256];
+};
+struct CellOffsets {
+    vec4 items[512];
+};
+struct VertexIn {
+    vec3 position;
+};
+const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
+const uint INDEX_ROW_SHIFT = 11u;
+const uint NO_ROW = 4294967295u;
+const uint MATRIX_ROW_SHIFT = 9u;
+const uint CELL_SHIFT = 23u;
+
+
+vec3 transform_point(Transform t, vec3 p) {
+    vec4 q = vec4(p, 1.0);
+    return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
+}
+
+vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
+    return (view_proj * vec4(relative_position, 1.0));
+}
+
+Transform transform_of(Instance found) {
+    return Transform(found.row_x, found.row_y, found.row_z);
+}
+
+void main() {
+    return;
+}
+`,
+					uniformBlocks: [],
+					textures: [],
+				},
+			},
+		},
+	},
 	webgpu: {
 		permutation: 0,
 		wgsl: {

@@ -1,6 +1,12 @@
 //! The sources and buckets that every view culls and draws: the data texture and row of each
 //! source, the buckets with a draw for each part of their mesh, and the clusters of static
 //! batches, with the upload of their order.
+//!
+//! A layout holds one kind of bucket. The scene's layout holds every object and instance row with
+//! a mesh and a material, as the views of cameras draw them. The casters' layout holds the scene
+//! objects that cast shadows, grouped by mesh alone, as the shadow cascades draw their depth. Both
+//! place each source at the same row of the same data texture, so the cascades read the matrices
+//! that the scene's layout uploads.
 
 use std::collections::TryReserveError;
 
@@ -8,6 +14,7 @@ use null3d_core::clusters::{CLUSTER_ROWS, CLUSTER_SHIFT, ClusterScratch, NO_ROW,
 use null3d_core::culling::{CULL_CHUNK, NO_BUCKET};
 use null3d_core::handle::Handle;
 use null3d_core::instances::{BatchTable, InstanceBatch};
+use null3d_core::scene::flags;
 use null3d_core::world::SphereArrays;
 use null3d_gpu::caps::OFFSET_ALIGNMENT;
 use null3d_gpu::drawlist::{DrawList, sizes};
@@ -27,6 +34,21 @@ pub(super) const STREAMED: u32 = 1;
 pub(super) const MULTI_DRAW_BLOCK_BYTES: u32 = sizes::MULTI_DRAW_RECORDS * sizes::DRAW_RECORD_BYTES;
 // A scene slot that draws nowhere has the same marker in the culling tables and the upload trims.
 const _: () = assert!(NO_BUCKET == HIDDEN);
+
+/// What a layout's buckets draw.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(super) enum Drawn {
+    /// Every object and instance row with a mesh and a material, as the views of cameras draw
+    /// them.
+    #[default]
+    Scene,
+    /// The scene objects that cast shadows, as the shadow cascades draw their depth.
+    Casters,
+}
+
+/// The material of every caster bucket: a caster's depth does not depend on its material, so
+/// casters of one mesh share a bucket.
+const CASTER_MATERIAL: u32 = 1;
 
 /// What makes a bucket, in draw order: what the mesh and material ask of their pipeline, the bind
 /// group of the material's map, the vertex page of the mesh's first part, the engine mesh and
@@ -89,6 +111,8 @@ pub(super) struct CullRoom {
 /// The source layout and bucket tables, rebuilt when the structure changes.
 #[derive(Default)]
 pub(super) struct Layout {
+    /// What the buckets draw.
+    drawn: Drawn,
     pub(super) scene_rows: u32,
     pub(super) resident_rows: u32,
     pub(super) streamed_rows: u32,
@@ -116,6 +140,23 @@ pub(super) struct Layout {
 }
 
 impl Layout {
+    /// An empty layout of buckets that draw `drawn`.
+    pub(super) fn new(drawn: Drawn) -> Self {
+        Self {
+            drawn,
+            ..Self::default()
+        }
+    }
+
+    /// Empties the buckets, for a layout that draws nothing until it is built again.
+    pub(super) fn clear(&mut self) {
+        self.buckets.clear();
+        self.draws.clear();
+        self.scene_buckets.clear();
+        self.batches.clear();
+        self.room = CullRoom::default();
+    }
+
     pub(super) fn batch(&self, target: u32) -> Option<&BatchSlot> {
         self.batches.iter().find(|slot| slot.id.raw() == target)
     }
@@ -124,8 +165,10 @@ impl Layout {
     /// each draw's pipeline id from `pipelines`, for a pass that draws into `targets`. It reuses
     /// the layout's tables, which grow only with the scene. A scene of more than `limit` sources
     /// fails. With `multi_draw`, one block of draw records serves each multi-draw call; else each
-    /// draw has an aligned record of its own. The caller marks the layout built once the room it
-    /// needs is made.
+    /// draw has an aligned record of its own. With `shadows`, the scene's receivers draw with
+    /// pipelines that read the shadow maps, and the casters' layout holds the casters. The caller
+    /// marks the layout built once the room it needs is made.
+    #[allow(clippy::too_many_arguments)]
     pub(super) fn rebuild(
         &mut self,
         settings: &SceneSettings,
@@ -134,6 +177,7 @@ impl Layout {
         input: &FrameInput<'_>,
         limit: u32,
         multi_draw: bool,
+        shadows: bool,
     ) -> Result<(), RecordError> {
         let (scene, batches) = (input.scene, input.batches);
         self.scene_rows = scene.capacity() + 1;
@@ -169,10 +213,20 @@ impl Layout {
         self.largest_static = largest_static;
 
         let meshes = settings.meshes();
-        let key_of = |mesh: u32, material: u32, group: u32| -> Option<BucketKey> {
+        let drawn = self.drawn;
+        let key_of = |mesh: u32, material: u32, group: u32, object: u32| -> Option<BucketKey> {
             let pipeline = settings.pipeline_of(mesh, material)?;
-            let textures = settings.texture_group(material, pipeline);
             let page = meshes.parts(meshes.mesh(mesh - 1)?).first()?.page;
+            if drawn == Drawn::Casters {
+                let caster = settings.caster_of(pipeline);
+                return Some((caster, 0, page, mesh, CASTER_MATERIAL, group));
+            }
+            let pipeline = if shadows && object & flags::RECEIVE_SHADOWS != 0 {
+                settings.receiving(pipeline)
+            } else {
+                pipeline
+            };
+            let textures = settings.texture_group(material, pipeline);
             Some((pipeline, textures, page, mesh, material, group))
         };
         let group_of = |batch: &InstanceBatch| {
@@ -182,14 +236,29 @@ impl Layout {
                 RESIDENT
             }
         };
-        let scene_key =
-            |slot: usize| key_of(scene.meshes()[slot], scene.materials()[slot], RESIDENT);
+        let scene_key = |slot: usize| {
+            let object = scene.flags()[slot];
+            if drawn == Drawn::Casters && (!shadows || object & flags::CAST_SHADOWS == 0) {
+                return None;
+            }
+            key_of(
+                scene.meshes()[slot],
+                scene.materials()[slot],
+                RESIDENT,
+                object,
+            )
+        };
+        // Instance batches cast no shadows yet.
+        let batch_key = |batch: &InstanceBatch| match drawn {
+            Drawn::Scene => key_of(batch.mesh(), batch.material(), group_of(batch), 0),
+            Drawn::Casters => None,
+        };
         collect_bucket_keys(
             &mut self.key_counts,
             scene,
             batches,
             scene_key,
-            |_, batch| key_of(batch.mesh(), batch.material(), group_of(batch)),
+            |_, batch| batch_key(batch),
         );
 
         self.buckets.clear();
@@ -225,7 +294,7 @@ impl Layout {
         }
         let mut runs = self.scene_rows.div_ceil(CULL_CHUNK);
         for ((_, batch), slot) in batches.iter().zip(&mut self.batches) {
-            slot.bucket = bucket_of(key_of(batch.mesh(), batch.material(), group_of(batch)));
+            slot.bucket = bucket_of(batch_key(batch));
             if slot.bucket != NO_BUCKET {
                 runs += batch.capacity().div_ceil(CULL_CHUNK);
             }
@@ -245,8 +314,13 @@ impl Layout {
         } else {
             (self.draws.len() as u32).max(1) * OFFSET_ALIGNMENT
         };
+        // Only the scene's objects cast shadows, so a cascade lists at most the scene's rows.
+        let listed = match drawn {
+            Drawn::Scene => resident.saturating_add(streamed),
+            Drawn::Casters => self.scene_rows,
+        };
         self.room = CullRoom {
-            rows: resident.saturating_add(streamed),
+            rows: listed,
             runs,
             by_row: self.scene_rows.div_ceil(CULL_CHUNK),
             buckets: self.buckets.len() as u32,

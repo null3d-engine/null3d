@@ -8,7 +8,7 @@ summary: "Cascades; update rates; filtering per preset; bias settings."
 
 # Shadows
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. In this version the first directional light casts shadows on WebGPU only. WebGL2 draws no shadows yet, and neither do point and spot lights. Instance batches neither cast nor receive shadows yet. Cascades fit the view again in every frame, so their edges can shimmer as the camera turns, and every cascade draws in every frame. The quality presets do not set the cascades, the map size or the filter yet. Coding agents must not rely on these parts.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. In this version the first directional light casts shadows. Point and spot lights cast none yet. Instance batches neither cast nor receive shadows yet. Cascades fit the view again in every frame, so their edges can shimmer as the camera turns, and every cascade draws in every frame. The quality presets do not set the cascades, the map size or the filter yet. Coding agents must not rely on these parts.
 
 ```mermaid
 flowchart LR
@@ -92,9 +92,18 @@ Raise them in small steps if a surface shows acne. Values that are too large mak
 
 ## What shadows cost
 
-Each cascade has a render pass that draws its casters' depth, and on WebGPU a culling pass on the GPU before it. The CPU does the same small amount of work per cascade whatever the number of casters. Each layer of the shadow map takes 4 bytes per texel: 16 MB at 2,048 texels on each side. Surfaces that receive shadows read the map once per pixel.
+Each cascade has a render pass that draws its casters' depth. Each cascade culls its casters too:
+
+- On WebGPU, a culling pass on the GPU runs before each cascade's render pass. The CPU does the same small amount of work per cascade whatever the number of casters.
+- On WebGL2, the job workers test each caster against each cascade's box, as they test each object against the camera's view. That CPU work grows with the number of casters.
+
+Each layer of the shadow map takes 4 bytes per texel: 16 MB at 2,048 texels on each side. Surfaces that receive shadows read the map once per pixel.
 
 To make shadows cheaper, use fewer cascades, a smaller map, or a shorter distance. Mark only the objects whose shadows matter as casters.
+
+## On each GPU path
+
+WebGPU and WebGL2 draw the same shadows. Both keep the shadow map as a depth texture array of 32-bit floats, and read it with the GPU's depth comparison. The comparison blends the tests of the four nearest texels. On WebGL2 the shaders read it as a `sampler2DArrayShadow` through a comparison sampler. [Depth on each tier](backends.md#depth-on-each-tier) explains how WebGL2 keeps WebGPU's depth values.
 
 ## Coming from three.js
 

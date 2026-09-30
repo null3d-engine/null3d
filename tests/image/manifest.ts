@@ -177,13 +177,14 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 	{ name: 'layers', sketch: 'tests/pages/sketches/layers-sketch.ts', hold: 0.1 },
 	// The main directional light's shadows with 1 to 4 cascades, near the camera and far from it:
 	// casters that receive shadows, a receiver that casts none, a caster that receives none, and an
-	// unlit box in a shadow. WebGL2 draws no shadows yet.
+	// unlit box in a shadow. Both GPU paths draw the same shadows, so every tier must draw the
+	// WebGPU image.
 	...[3, 1, 2, 4].map((cascades) => ({
 		name: cascades === 3 ? 'shadows' : `shadows-cascades-${cascades}`,
 		sketch: `tests/pages/sketches/shadows-sketch.ts?cascades=${cascades}`,
 		hold: 0,
 		size: [480, 270] as const,
-		tiers: ['webgpu', 'compat'] as const,
+		sameOnEveryTier: true,
 	})),
 	// The orthographic camera: towers seen from above at an angle, with the near plane cutting the
 	// slab's front corner and the far plane cutting the bar at the back. The parity test compares

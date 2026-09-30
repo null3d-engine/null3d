@@ -23,6 +23,10 @@
 //!
 //! Each frame parity keeps its own culling output, because the render worker replays a frame's
 //! list while the next frame culls, and the list uploads the index list straight from that output.
+//!
+//! One [`Culling`] culls the views of cameras against the scene's layout, and another culls the
+//! shadow cascades against the casters' layout (see [`super::layout::Drawn`]). Each keeps its own
+//! runs, since the layouts put different sources in buckets.
 
 use std::collections::TryReserveError;
 
@@ -35,7 +39,7 @@ use null3d_gpu::drawlist::DrawList;
 use super::data::{DataTexture, RING, RingSlot, TextureRows, write_rows};
 use super::ids;
 use super::layout::{Clusters, CullRoom, Layout};
-use crate::frame::{CellOffsets, FrameInput, RecordError, SceneSettings, address, words_as_bytes};
+use crate::frame::{CellOffsets, FrameInput, RecordError, address, words_as_bytes};
 use crate::view::{ViewFrame, ViewId};
 
 /// A view's culling output: its index list of each frame parity, and the textures it goes into.
@@ -53,9 +57,12 @@ struct ViewCull {
     rows: u32,
 }
 
-/// Each view's culling output, and the runs of rows that every view culls.
-#[derive(Debug, Default)]
+/// Each view's culling output, and the runs of rows that every view culls. The views are of one
+/// kind, in order from the first: the views of cameras, or the shadow cascades.
+#[derive(Debug)]
 pub(super) struct Culling {
+    /// The first view, whose output is the first of `views`.
+    first: ViewId,
     views: Vec<ViewCull>,
     /// The frame's culling runs.
     runs: Vec<CullRun>,
@@ -108,6 +115,26 @@ fn push_runs(
 }
 
 impl Culling {
+    /// No culling output yet, for views from `first` on.
+    pub(super) fn new(first: ViewId) -> Self {
+        Self {
+            first,
+            views: Vec::new(),
+            runs: Vec::new(),
+            culled: 0,
+        }
+    }
+
+    /// The place of a view's output in `views`.
+    fn slot(&self, view: ViewId) -> usize {
+        view.index() - self.first.index()
+    }
+
+    /// The view whose output is `k`-th in `views`.
+    pub(super) fn view(&self, k: usize) -> ViewId {
+        ViewId::from_index(self.first.index() + k)
+    }
+
     /// The number of views with culling output.
     pub(super) fn views(&self) -> usize {
         self.views.len()
@@ -120,17 +147,18 @@ impl Culling {
 
     /// A view's values in the frame that culled last, or `None` when it has no camera.
     pub(super) fn frame(&self, view: ViewId) -> Option<&ViewFrame> {
-        self.views.get(view.index())?.frame.as_ref()
+        let slot = view.index().checked_sub(self.first.index())?;
+        self.views.get(slot)?.frame.as_ref()
     }
 
     /// The offset from a view's camera to each cell in use, in the frame that culled last.
     pub(super) fn offsets(&self, view: ViewId) -> &CellOffsets {
-        &self.views[view.index()].offsets
+        &self.views[self.slot(view)].offsets
     }
 
     /// The culling output of a frame's parity for a view: its visible sources, bucket by bucket.
     pub(super) fn culled(&self, frame: u32, view: ViewId) -> &BucketedCull {
-        &self.views[view.index()].culls[(frame & 1) as usize]
+        &self.views[self.slot(view)].culls[(frame & 1) as usize]
     }
 
     /// The index list entries that a frame draws over all its views, or 0 for a frame that did
@@ -194,22 +222,23 @@ impl Culling {
         Ok(())
     }
 
-    /// Finds each view's visible sources for the frame, on the calling thread and the job
-    /// workers. The runs of rows and clusters, and the clusters that come to rest, are the same
+    /// Finds each view's visible sources of `layout` for the frame, on the calling thread and the
+    /// job workers. `frame_of` gives each view's values, or `None` for a view that the frame does
+    /// not draw. The runs of rows and clusters, and the clusters that come to rest, are the same
     /// for every view, so they are made once.
     pub(super) fn cull(
         &mut self,
         input: &FrameInput<'_>,
-        settings: &SceneSettings,
         layout: &Layout,
         clusters: &mut Clusters,
+        frame_of: impl Fn(ViewId) -> Option<ViewFrame>,
     ) {
         let (parity, scene) = (input.parity(), input.scene);
         self.culled = input.frame;
         let mut any = false;
-        for (index, view) in self.views.iter_mut().enumerate() {
-            let id = ViewId::from_index(index);
-            view.frame = settings.view_frame(id, scene, parity, input.canvas);
+        let first = self.first.index();
+        for (k, view) in self.views.iter_mut().enumerate() {
+            view.frame = frame_of(ViewId::from_index(first + k));
             if let Some(frame) = &view.frame {
                 view.offsets.update(scene, &frame.camera);
                 any = true;
@@ -322,11 +351,14 @@ impl Culling {
         layout: &Layout,
         limit: u32,
     ) -> Result<bool, RecordError> {
-        let needed = (layout.resident_rows + layout.streamed_rows)
+        let slot = self.slot(view);
+        let needed = layout
+            .room
+            .rows
             .div_ceil(null3d_gpu::drawlist::sizes::INDICES_PER_TEXTURE_ROW);
         DataTexture::indices(ids::visible(view), RING).grow(
             list,
-            &mut self.views[view.index()].rows,
+            &mut self.views[slot].rows,
             needed,
             limit,
         )
@@ -342,7 +374,8 @@ impl Culling {
         frame: u32,
     ) -> Result<(u32, bool), RecordError> {
         let parity = (frame & 1) as usize;
-        let state = &mut self.views[view.index()];
+        let slot = self.slot(view);
+        let state = &mut self.views[slot];
         let kept = state.listed.holds_previous(frame)
             && state.culls[parity].same_entries(&state.culls[parity ^ 1]);
         let slot = state.listed.take(frame, !kept);

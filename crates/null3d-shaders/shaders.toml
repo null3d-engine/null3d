@@ -45,12 +45,12 @@
 # holds what they share.
 
 # Lit like three.js's MeshLambertMaterial. RECEIVE_SHADOWS reads the main directional light's shadow
-# maps; WebGL2 draws no shadows yet.
+# maps.
 [shaders.lit]
 file = "lit.wgsl"
 pipelines.main = { vertex = "vs", fragment = "fs" }
 variants.webgpu = { permutations = ["RECEIVE_SHADOWS"], targets = ["wgsl"] }
-variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX"], targets = ["glsl"] }
+variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "RECEIVE_SHADOWS"], targets = ["glsl"] }
 
 # The material's color alone, like three.js's MeshBasicMaterial.
 [shaders.unlit]
@@ -82,11 +82,12 @@ variants.webgpu = { targets = ["wgsl"] }
 variants.webgl2 = { targets = ["glsl"] }
 
 # The depth of shadow casters, drawn from the main directional light into one cascade's layer of
-# the shadow map. WebGL2 draws no shadows yet.
+# the shadow map.
 [shaders.shadow_depth]
 file = "shadow_depth.wgsl"
 pipelines.main = { vertex = "vs", fragment = "fs" }
 variants.webgpu = { targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX"], targets = ["glsl"] }
 
 # GPU culling into buckets for indirect draws; its compute entry point is `main`. WebGPU only.
 [shaders.cull]

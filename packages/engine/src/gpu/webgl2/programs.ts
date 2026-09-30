@@ -11,6 +11,7 @@ import {
 	TEMPLATE_INSTANCED_TEXCOORDS,
 	TEMPLATE_INSTANCED_UNLIT,
 	TEMPLATE_INSTANCED_UNLIT_MAP,
+	TEMPLATE_SHADOW_DEPTH,
 } from '../../generated/gpu';
 import {
 	DEBUG_LINES_SHADER,
@@ -19,6 +20,7 @@ import {
 	type GlslStage,
 	LIT_SHADER,
 	MIPMAP_SHADER,
+	SHADOW_DEPTH_SHADER,
 	TEXCOORDS_SHADER,
 	UNLIT_MAP_SHADER,
 	UNLIT_SHADER,
@@ -94,7 +96,8 @@ export interface Program {
 /** A render pipeline: its program, and the fixed-function state and vertex format it asks for. */
 export interface Pipeline {
 	readonly program: Program;
-	readonly cullNone: boolean;
+	/** The faces it culls: GL's `BACK` or `FRONT`, or 0 for none. */
+	readonly cull: number;
 	readonly depth: boolean;
 	/** The vertex format of the meshes it draws, which places their attributes in vertex arrays. */
 	readonly vertexFormat: number;
@@ -111,6 +114,7 @@ export function engineTemplates(): (GlslTemplate | undefined)[] {
 	templates[TEMPLATE_INSTANCED_UNLIT] = { shader: UNLIT_SHADER, pipeline: 'main' };
 	templates[TEMPLATE_INSTANCED_TEXCOORDS] = { shader: TEXCOORDS_SHADER, pipeline: 'main' };
 	templates[TEMPLATE_INSTANCED_UNLIT_MAP] = { shader: UNLIT_MAP_SHADER, pipeline: 'main' };
+	templates[TEMPLATE_SHADOW_DEPTH] = { shader: SHADOW_DEPTH_SHADER, pipeline: 'main' };
 	if (DEV)
 		templates[TEMPLATE_DEBUG_LINES] = {
 			shader: DEBUG_LINES_SHADER,

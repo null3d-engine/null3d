@@ -79,7 +79,8 @@ Warm loads and loads at full speed stayed within the spread between runs. The fi
 
 - WebGL2 keeps GL's row order in everything a render pass draws: row 0 is the bottom row, and on WebGPU it is the top row. Uploaded and written texels keep their order on both paths.
 - Draw lists give viewport and scissor rectangles from the top-left corner. The WebGL2 backend flips them, so each covers the same part of the image on both paths.
-- A shader that samples a target that a pass drew flips its v coordinate in its WebGL2 variant. The texture test shader (`test_textures.wgsl`) shows the pattern.
+- A shader that samples a target that a pass drew flips its v coordinate in its WebGL2 variant. The texture test shader (`test_textures.wgsl`) shows the pattern, and so does the shadow map lookup (`null3d::shadows`).
+- GLSL ES 3.00 has no binding numbers. So the WebGL2 backend gives each WGSL binding a slot: a texture unit, a uniform block binding point and a sampler's place. Each bind group starts at a slot of its own, with ten slots for the per-frame group (`slotOf` in `gpu/webgl2/programs.ts`). A unit test checks every GLSL shader's bindings against the slots.
 - Writes and uploads land when the GPU queue gets them. On WebGPU that is before the commands recorded since the last submit. A draw list therefore writes a resource before any command in the same submit that uses it. The mock backend rejects a write after such a use.
 
 ## Texture uploads
@@ -129,6 +130,7 @@ The shader compiler is the shader crate built as a WebAssembly module. Build too
 - Draw lists and shaders keep WebGPU's reversed depth. Each GLSL vertex shader maps its clip depth through one uniform, and the WebGL2 backend sets it once per program for its depth mode (`gpu/webgl2/depth.ts`). One set of GLSL programs then serves every mode.
 - The `reversed` mode sets a clip range from 0 to w with `EXT_clip_control`. The `reversed-gl` mode moves depth into GL's range as 2z - w, where the vertex shader rounds far depths away. The `standard` mode writes w - 2z, and the backend turns clear values and viewport depth ranges around to match.
 - Depth textures hold WebGPU's depth values in `reversed` and `reversed-gl`, so shaders that read depth work the same on both paths. In `standard`, they hold 1 minus WebGPU's value.
+- Shadow maps therefore need no flipped comparison on WebGL2. In `standard`, the receivers' reference depths would not match the map, so every comparison sampler compares with `ALWAYS` there, and every surface is lit.
 - A context that answers no `EXT_clip_control` draws `reversed` as `reversed-gl`, and never fails to start. A context lost while the backend starts answers no extension, and a failed start would end the engine's recovery from that loss.
 - The depth precision page counts the fighting pixels of surfaces 1 cm apart from 1 m to 10 km. On the Mac, Chrome, Safari and Brave give the same counts, because all three draw WebGL2 through ANGLE on Metal.
 - Firefox 156 on the Mac has no `EXT_clip_control`, so it draws `reversed-gl`. That fights in fewer pixels than `standard` there, as it does in every Mac browser.

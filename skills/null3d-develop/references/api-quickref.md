@@ -212,7 +212,7 @@ Lights are nodes: they take the node options (`name`, `position`, `parent`, `dyn
 
 Shadows: the first directional light created casts them onto meshes with `receiveShadows`, from meshes with `castShadows`. Defaults: 3 cascades, 2,048 texels, 200 m, bias 0.5 and normal bias 1, both in texels of each cascade. Unlit materials show no shadows (`concepts/shadows`).
 
-Later in 0.1: point, spot and hemisphere lights light surfaces (clustered lighting), and WebGL2 draws shadows. Instance batches cast and receive them, and point and spot lights cast them. Until then, surfaces show the first directional light created and the ambient lights.
+Later in 0.1: point, spot and hemisphere lights light surfaces (clustered lighting). Instance batches cast and receive shadows, and point and spot lights cast them. Until then, surfaces show the first directional light created and the ambient lights.
 
 ## 8. Geometry (`api/geometry`)
 
