@@ -152,7 +152,7 @@ export class WebGL2SceneRenderer implements Renderer {
 	private readonly lists: DrawLists;
 	private readonly release = new AbortController();
 
-	/** The canvas's sized format, which a capture's stand-in for it takes: RGBA8 with alpha. */
+	/** The canvas's sized format, which a capture's stand-in takes: RGBA8 with alpha, else RGB8. */
 	private readonly canvasFormat: number;
 
 	/**
