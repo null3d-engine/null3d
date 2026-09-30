@@ -1,7 +1,8 @@
 // What the engine core and the thread that draws need to know about the device: on WebGPU, the
 // storage binding size the engine asks the GPU for; on WebGL2, multi-draw, the texture size,
 // whether WebGL reads shared memory and how depth is stored. They also set how many objects and
-// instance rows a scene can draw.
+// instance rows a scene can draw, and past how many development builds warn that other devices of
+// the same GPU path draw fewer.
 
 import * as C from '../generated/core';
 import type { DepthMode, Switches } from './switches';
@@ -100,8 +101,38 @@ export function coreDevice(
  * WebGL2 a data texture row holds a fixed number of matrices, and an index list entry names at
  * most `LIMIT_WEBGL2_MAX_SOURCES` of them, below its grid cell.
  */
-export function maxInstances(device: CoreDevice): number {
+export function maxInstances(
+	device: Pick<CoreDevice, 'webgl2' | 'storageBindingBytes' | 'maxTextureSize'>,
+): number {
 	return device.webgl2
 		? Math.min(C.LIMIT_MATRICES_PER_TEXTURE_ROW * device.maxTextureSize, C.LIMIT_WEBGL2_MAX_SOURCES)
 		: Math.floor(device.storageBindingBytes / C.LIMIT_INSTANCE_STRIDE);
+}
+
+/**
+ * The most objects and instance rows that every device on a GPU path draws: `maxInstances` of the
+ * smallest device the path allows. That is a WebGPU device with the default storage binding, or a
+ * WebGL2 device whose textures reach only the size that WebGL2 promises.
+ */
+export function portableMaxInstances(webgl2: boolean): number {
+	return maxInstances({
+		webgl2,
+		storageBindingBytes: C.LIMIT_PORTABLE_STORAGE_BINDING_BYTES,
+		maxTextureSize: C.LIMIT_WEBGL2_MIN_TEXTURE_SIZE,
+	});
+}
+
+/**
+ * The development warning for a scene that counts `sources` objects and instance rows toward the
+ * GPU's limit on a device of the GPU path, or undefined while every device of that path draws them.
+ * The device that runs the page draws them all, since the core refuses a batch past its limit.
+ */
+export function rowLimitWarning(sources: number, webgl2: boolean): string | undefined {
+	const portable = portableMaxInstances(webgl2);
+	if (sources <= portable) return undefined;
+	const count = (n: number) => n.toLocaleString('en-US');
+	const smallest = webgl2
+		? `WebGL2 devices whose textures reach only ${count(C.LIMIT_WEBGL2_MIN_TEXTURE_SIZE)} pixels`
+		: "devices with WebGPU's default limits";
+	return `null3D: this scene counts ${count(sources)} objects and instance rows toward the GPU's limit. This device draws them, but ${smallest} draw at most ${count(portable)} and fail with E1501. engine.capabilities.maxInstances gives the limit of each device.`;
 }
