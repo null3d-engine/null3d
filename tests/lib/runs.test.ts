@@ -420,7 +420,7 @@ describe('the checks plan', () => {
 	it('fails restarts that fail, or whose memory the browser does not get back', () => {
 		const [restart] = items.filter((item) => item.check.kind === 'restarts');
 		if (!restart) throw new Error('the plan lacks the restart pages');
-		const engine = { cycles: 10, roomLater: 5 };
+		const engine = { cycles: 10, roomLater: 5, roomWaitMs: 31_000 };
 		const result = (fields: object) => ({
 			ok: true,
 			room: 6,
@@ -436,7 +436,7 @@ describe('the checks plan', () => {
 				NONE_MISSING,
 			),
 		).toEqual([
-			'the browser did not get back the memory of stopped engines: it had room for 6 shared memories before 10 starts and stops, and for 2 after',
+			'the browser did not get back the memory of stopped engines within 31 s: it had room for 6 shared memories before 10 starts and stops, and for 2 after',
 		]);
 		const failed = {
 			cycles: 2,
@@ -818,7 +818,7 @@ describe('the memory plan', () => {
 		expect(items[0]).toEqual({
 			id: 'room-256',
 			path: '/tests/pages/shared-memory.html?kinds=dropped&cycles=1&maximum=4096',
-			timeoutSeconds: 60,
+			timeoutSeconds: 90,
 			check: { kind: 'room', maximumMiB: 256 },
 		});
 		expect(items[1]).toEqual({
