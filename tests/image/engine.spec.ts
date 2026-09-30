@@ -19,6 +19,24 @@ async function withoutIsolation(page: Page): Promise<void> {
 const singleThreaded = ENGINE_MODES.find((mode) => mode.build === 'single');
 if (!singleThreaded) throw new Error('no single-threaded engine mode');
 
+// A page gets the shared memory maximum that its memory option asks for, and the ?memory= switch
+// wins over the option. The single-threaded build's memory is not shared, so it has none.
+for (const mode of ENGINE_MODES) {
+	test(`the engine's shared memory has the maximum that the page asks for, ${mode.name}`, async ({
+		page,
+	}) => {
+		const maxima: (number[] | undefined)[] = [];
+		for (const query of ['memory-option=2048', 'memory-option=2048&memory=512']) {
+			await page.goto(`engine.html?gpu=webgl2&seconds=1&${query}&${mode.query}`);
+			const result = await pageResult<EngineResult & { error?: string }>(page, 30_000);
+			expect(result.error).toBeUndefined();
+			expect(engineProblems(result, mode, 'webgl2')).toEqual([]);
+			maxima.push(result.sharedMemoryMiB);
+		}
+		expect(maxima).toEqual(mode.build === 'threaded' ? [[2048], [512]] : [[], []]);
+	});
+}
+
 for (const gpu of ['webgpu', 'webgl2'] as const) {
 	for (const mode of ENGINE_MODES) {
 		test(`the engine runs ${mode.name} on ${gpu}`, async ({ page }) => {

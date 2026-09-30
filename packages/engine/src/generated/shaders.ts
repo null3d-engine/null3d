@@ -2494,6 +2494,24 @@ fn fs(in: VertexOut) -> @location(0) vec4<f32> {
 	},
 };
 
+/** The variants of the `timer_mark` shader, by variant name. */
+export const TIMER_MARK_SHADER: {
+	readonly webgpu: ShaderVariant<never>;
+} = {
+	webgpu: {
+		permutation: 0,
+		wgsl: {
+			source: `@compute @workgroup_size(1, 1, 1)
+fn main() {
+    return;
+}
+`,
+			pipelines: {},
+		},
+		glsl: null,
+	},
+};
+
 /** The variants of the `unlit` shader, by variant name. */
 export const UNLIT_SHADER: {
 	readonly webgl2: ShaderVariant<'main'>;
@@ -3172,5 +3190,6 @@ export const SHADERS = {
 	test_mesh: TEST_MESH_SHADER,
 	test_textures: TEST_TEXTURES_SHADER,
 	texcoords: TEXCOORDS_SHADER,
+	timer_mark: TIMER_MARK_SHADER,
 	unlit: UNLIT_SHADER,
 } as const;

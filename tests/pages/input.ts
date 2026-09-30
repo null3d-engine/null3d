@@ -1,8 +1,9 @@
 // Starts the engine with a sketch that records what ctx.input reports, then keeps it running and
-// offers `inputState()`, `pauseEngine()` and `tapKey()` on the window, so a test can drive the
-// keyboard, the mouse, touch and a stand-in gamepad, and ask what the sketch saw. With ?setupInput, the page
-// presses W, the main mouse button and the wheel while the sketch's setup runs, before the first
-// frame; the input test runs it in hold mode too, where the sketch must see none of it.
+// offers `inputState()`, `pauseEngine()`, `tapKey()` and `pinchWheel()` on the window, so a test can
+// drive the keyboard, the mouse, a trackpad's pinch, touch and a stand-in gamepad, and ask what the
+// sketch saw. With ?setupInput, the page presses W, the main mouse button and the wheel while the
+// sketch's setup runs, before the first frame; the input test runs it in hold mode too, where the
+// sketch must see none of it.
 import { createEngine } from '@null3d/engine';
 import { run } from './lib/result';
 
@@ -11,6 +12,7 @@ declare global {
 		inputState?: () => Promise<unknown>;
 		pauseEngine?: (paused: boolean) => void;
 		tapKey?: (code: string) => void;
+		pinchWheel?: (scroll: number) => void;
 	}
 }
 
@@ -53,5 +55,8 @@ run('input', async () => {
 			engine.postToSketch('state');
 		});
 	window.pauseEngine = (paused) => engine.setPaused(paused);
+	// A trackpad's pinch reaches the page as wheel scroll with the Control key's flag.
+	window.pinchWheel = (scroll) =>
+		canvas.dispatchEvent(new WheelEvent('wheel', { deltaY: scroll, ctrlKey: true, bubbles: true }));
 	return { mode: engine.mode };
 });

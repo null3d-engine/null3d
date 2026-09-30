@@ -25,7 +25,7 @@ import { type ShaderVariants, variantFor } from '../variants';
 import { vertexAttribute, vertexStride } from '../vertex-format';
 
 /** The WebGPU build of a shader variant. */
-function wgslOf<Pipeline extends string>(variant: {
+export function wgslOf<Pipeline extends string>(variant: {
 	wgsl: WgslShader<Pipeline> | null;
 }): WgslShader<Pipeline> {
 	if (!variant.wgsl) throw new Error('a shader variant has no WebGPU build');

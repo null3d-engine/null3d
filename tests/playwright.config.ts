@@ -1,22 +1,11 @@
 import { defineConfig } from '@playwright/test';
 import type { Environment } from './lib/images.ts';
-import { HTTP_PORT, PREVIEW_PORT, REPO_ROOT } from './lib/server.ts';
+import { HTTP_PORT, PREVIEW_PORT, REPO_ROOT, SWIFTSHADER_ARGS } from './lib/server.ts';
 
 const ci = Boolean(process.env.CI);
 /** The main project's environment, which names the references that its image tests compare with. */
 const environment: Environment = ci ? 'chromium-swiftshader' : 'chrome-real-gpu';
 
-/** Chromium flags for WebGPU and WebGL2 on SwiftShader, the software GPU, on Linux CI. */
-const SWIFTSHADER_ARGS = [
-	'--enable-unsafe-webgpu',
-	'--enable-features=Vulkan',
-	'--use-angle=swiftshader',
-	'--use-vulkan=swiftshader',
-	'--enable-unsafe-swiftshader',
-	'--ignore-gpu-blocklist',
-	'--no-sandbox',
-	'--hide-scrollbars',
-];
 /** Device pixels per CSS pixel on the screen of the resize tests, as on most phones and laptops. */
 const HIGH_DENSITY_RATIO = 2;
 
