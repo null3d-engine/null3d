@@ -60,6 +60,8 @@ export interface Program {
 	 * the sampler of each pair to the pair's unit.
 	 */
 	samplerUnits: readonly number[];
+	/** True when the program samples a texture with a sampler, so the units' samplers matter to it. */
+	sampled: boolean;
 	/** True once the link result was checked and the blocks and textures were bound. */
 	ready: boolean;
 }
@@ -133,6 +135,7 @@ export function createProgram(
 		firstInstance: null,
 		firstInstanceValue: 0,
 		samplerUnits: [],
+		sampled: false,
 		ready: false,
 	};
 }
@@ -175,6 +178,7 @@ export function prepareProgram(gl: WebGL2RenderingContext, p: Program, depth: De
 			} else if (samplerUnits[known + 1] !== slot) {
 				throw new Error('a WebGL2 program samples one texture with two samplers');
 			}
+			if (slot !== NO_SAMPLER) p.sampled = true;
 		}
 	}
 	p.samplerUnits = samplerUnits;

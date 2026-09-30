@@ -216,6 +216,11 @@ export class WebGL2Backend {
 	private readonly slotSamplers: (WebGLSampler | null)[] = [];
 	/** True when the program or the bind groups' samplers changed since the units' samplers were set. */
 	private samplersChanged = true;
+	/**
+	 * The units that have a sampler bound. While none has, a program that samples no texture finds
+	 * every unit as it needs it, so switching to it leaves the units alone.
+	 */
+	private boundSamplers = 0;
 	private readonly blockBuffers: (WebGLBuffer | null)[] = [];
 	private readonly blockOffsets: number[] = [];
 	private readonly blockSizes: number[] = [];
@@ -906,7 +911,10 @@ export class WebGL2Backend {
 		for (let slot = 0; slot < this.slotSamplers.length; slot++)
 			if (this.slotSamplers[slot] === old) this.slotSamplers[slot] = null;
 		for (let unit = 0; unit < this.unitSamplers.length; unit++)
-			if (this.unitSamplers[unit] === old) this.unitSamplers[unit] = null;
+			if (this.unitSamplers[unit] === old) {
+				this.unitSamplers[unit] = null;
+				this.boundSamplers--;
+			}
 		this.samplersChanged = true;
 	}
 
@@ -1108,7 +1116,8 @@ export class WebGL2Backend {
 			gl.useProgram(program.program);
 			this.program = program.program;
 		}
-		if (this.current?.program !== program) this.samplersChanged = true;
+		if (this.current?.program !== program && (program.sampled || this.boundSamplers > 0))
+			this.samplersChanged = true;
 		this.current = p;
 		const cull = !p.cullNone;
 		if (cull !== this.cullFace) {
@@ -1238,9 +1247,11 @@ export class WebGL2Backend {
 			const unit = pairs[k] as number;
 			const slot = pairs[k + 1] as number;
 			const sampler = slot < 0 ? null : (this.slotSamplers[slot] ?? null);
-			if (this.unitSamplers[unit] !== sampler) {
+			const bound = this.unitSamplers[unit] ?? null;
+			if (bound !== sampler) {
 				gl.bindSampler(unit, sampler);
 				this.unitSamplers[unit] = sampler;
+				this.boundSamplers += (sampler ? 1 : 0) - (bound ? 1 : 0);
 			}
 		}
 		this.samplersChanged = false;
