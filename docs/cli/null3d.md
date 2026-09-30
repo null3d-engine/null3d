@@ -56,6 +56,7 @@ When the engine draws the frame, `shot` prints a short summary and exits with 0:
 
 ```text
 Drew / at 1.5 s, frame 91, on webgl2: 1280 x 720 pixels.
+It made 3 draw calls, uploaded 30.3 KB and built 2 pipelines.
 Saved shot.png, and the frame's facts and what the page logged in shot.json.
 The page logged no errors or warnings.
 ```
@@ -74,6 +75,7 @@ The summary lists what the page logged, with the first lines of each entry. The 
 | `tier` | The GPU path that drew the frame: `webgpu`, `webgpu-compat` or `webgl2` |
 | `width`, `height` | The image's size in pixels |
 | `image` | The image's file name, in the JSON file's folder |
+| `stats` | The frame's figures in the form that `engine.measure()` returns: CPU time by thread and phase, draw calls, uploads and pipelines. The held frame is the first frame that the engine draws, so it builds every pipeline and uploads the whole scene |
 | `code`, `error` | When no frame was drawn: the error's code, or `null`, and what went wrong |
 | `ms` | Time from opening the page to the engine's result, in milliseconds |
 | `errors` | The page's uncaught errors and console errors, then the dev server's errors |

@@ -239,6 +239,52 @@ fn culling_by_grid_cell_allocates_nothing_in_steady_frames() {
     }
 }
 
+/// Records warm-up frames of a world with a map that uploads, then frames that upload a larger
+/// map in bands, and steady frames, and returns what those allocated.
+fn map_upload_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
+    world.add_mapped(16);
+    world.record(true);
+    let textures = world.renderer.settings_mut().textures_mut();
+    textures.set_budget(16 * 1024);
+    textures.sync(1, 0);
+    record_until(&mut world, 6, false);
+    // A map of 256 rows, 1 KiB each, goes up in 16 bands, and its object draws once it is up.
+    let (texture, _, _) = world.add_mapped(256);
+    world.frame += 1;
+    world.record(true);
+    let textures = world.renderer.settings_mut().textures_mut();
+    textures.sync(2, world.frame - 1);
+    // The frame of the other parity after the scene grew makes room for it too.
+    world.frame += 1;
+    world.record(false);
+    CountingAllocator::arm();
+    record_until(&mut world, 60, false);
+    let allocated = CountingAllocator::disarm();
+    assert!(
+        world
+            .renderer
+            .settings()
+            .textures()
+            .ready_layer(texture)
+            .is_some()
+    );
+    allocated
+}
+
+#[test]
+fn frames_that_upload_maps_in_bands_and_steady_mapped_frames_allocate_nothing() {
+    let _only = CountingAllocator::exclusive();
+    CountingAllocator::track_this_thread();
+    assert_eq!(map_upload_allocations(World::new()), 0, "WebGPU");
+    for multi_draw in [true, false] {
+        assert_eq!(
+            map_upload_allocations(webgl2_world(multi_draw)),
+            0,
+            "WebGL2, multi-draw {multi_draw}"
+        );
+    }
+}
+
 /// Records frames up to `last`, each with its structure changed or not.
 fn record_until<B: FrameBuilder>(world: &mut World<B>, last: u32, structure_changed: bool) {
     while world.frame < last {

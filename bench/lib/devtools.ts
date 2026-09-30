@@ -10,10 +10,15 @@ export interface TargetInfo {
 	url: string;
 }
 
-/** A function in a profile: its name, and the script it comes from, empty for a built-in one. */
+/**
+ * A function in a profile: its name, the script it comes from, empty for a built-in one, and where
+ * in the script its parameters start, counted from 0.
+ */
 export interface CallFrame {
 	functionName: string;
 	url: string;
+	lineNumber?: number;
+	columnNumber?: number;
 }
 
 export const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));

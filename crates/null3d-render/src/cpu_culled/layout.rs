@@ -30,9 +30,10 @@ pub(super) const MULTI_DRAW_BLOCK_BYTES: u32 = sizes::MULTI_DRAW_RECORDS * sizes
 // A scene slot that draws nowhere has the same marker in the culling tables and the upload trims.
 const _: () = assert!(NO_BUCKET == HIDDEN);
 
-/// What makes a bucket, in draw order: what the mesh and material ask of their pipeline, the vertex
-/// page of the mesh's first part, the engine mesh and material ids, and the data texture.
-type BucketKey = (DrawKey, u32, u32, u32, u32);
+/// What makes a bucket, in draw order: what the mesh and material ask of their pipeline, the bind
+/// group of the material's map, the vertex page of the mesh's first part, the engine mesh and
+/// material ids, and the data texture.
+type BucketKey = (DrawKey, u32, u32, u32, u32, u32);
 
 /// One bucket of a bucket key. Each key has two, next to each other: the bucket whose index list
 /// entries are rows, then the bucket whose entries are clusters of rows.
@@ -50,6 +51,8 @@ pub(super) struct Bucket {
 pub(super) struct Draw {
     /// The id of its render pipeline.
     pub(super) pipeline: u32,
+    /// The bind group of its material's map, or 0 for a pipeline that reads none.
+    pub(super) textures: u32,
     pub(super) page: u32,
     pub(super) bucket: u32,
     pub(super) index_count: u32,
@@ -173,8 +176,9 @@ impl Layout {
         let meshes = settings.meshes();
         let key_of = |mesh: u32, material: u32, group: u32| -> Option<BucketKey> {
             let pipeline = settings.pipeline_of(mesh, material)?;
+            let textures = settings.texture_group(material, pipeline);
             let page = meshes.parts(meshes.mesh(mesh - 1)?).first()?.page;
-            Some((pipeline, page, mesh, material, group))
+            Some((pipeline, textures, page, mesh, material, group))
         };
         let group_of = |batch: &InstanceBatch| {
             if batch.is_dynamic() {
@@ -195,7 +199,7 @@ impl Layout {
 
         self.buckets.clear();
         self.draws.clear();
-        for &((pipeline, _, mesh, material, group), _) in &self.key_counts {
+        for &((pipeline, textures, _, mesh, material, group), _) in &self.key_counts {
             let slot = meshes.mesh(mesh - 1).expect("keys name known meshes");
             let pipeline = pipelines.id(pipeline.in_pass(targets));
             for shift in [0, CLUSTER_SHIFT] {
@@ -208,6 +212,7 @@ impl Layout {
                 self.draws
                     .extend(meshes.parts(slot).iter().map(|part| Draw {
                         pipeline,
+                        textures,
                         page: part.page,
                         bucket,
                         index_count: part.index_count,
@@ -256,13 +261,15 @@ impl Layout {
     }
 }
 
-/// The end of the run of draws that starts at `start`: the draws that share its pipeline and
-/// vertex page.
+/// The end of the run of draws that starts at `start`: the draws that share its pipeline, its
+/// maps' bind group and its vertex page.
 pub(super) fn run_end(draws: &[Draw], start: usize) -> usize {
     let first = draws[start];
     draws[start..]
         .iter()
-        .position(|d| d.pipeline != first.pipeline || d.page != first.page)
+        .position(|d| {
+            d.pipeline != first.pipeline || d.textures != first.textures || d.page != first.page
+        })
         .map_or(draws.len(), |n| start + n)
 }
 
