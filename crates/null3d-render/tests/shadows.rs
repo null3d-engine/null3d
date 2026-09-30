@@ -19,6 +19,8 @@ use null3d_gpu::drawlist::{
 use null3d_gpu::mock::MockBackend;
 use null3d_render::frame::FrameBuilder;
 use null3d_render::gpu_driven::{GpuDrivenRenderer, RendererConfig};
+use null3d_render::materials::{Shading, feature};
+use null3d_render::pipelines::DepthBias;
 use null3d_render::view::ViewId;
 
 /// Three cascades of 1,024 texels on each side, out to 60 m, on the default layer.
@@ -170,17 +172,32 @@ fn each_cascade_culls_the_casters_and_draws_their_depth_into_its_layer() {
         1,
         "both casters' meshes have one vertex format"
     );
-    let [_, _, bits, color, depth_format, samples, state, _] = depth[0][..] else {
-        panic!("eight operands")
+    let [
+        _,
+        _,
+        bits,
+        color,
+        depth_format,
+        samples,
+        state,
+        _,
+        bias,
+        slope,
+    ] = depth[0][..]
+    else {
+        panic!("ten operands")
     };
+    // No depth bias: the receivers' biases keep the casters off their own shadows.
     assert_eq!(
-        [bits, color, depth_format, samples, state],
+        [bits, color, depth_format, samples, state, bias, slope],
         [
             0,
             format::NONE,
             format::DEPTH32_FLOAT,
             1,
-            state_flags::CULL_FRONT
+            state_flags::CULL_FRONT,
+            0,
+            0
         ]
     );
     let receiving = |p: &Vec<u32>| p[2] & permutation::RECEIVE_SHADOWS != 0;
@@ -399,4 +416,36 @@ fn each_cascade_culls_the_casters_of_the_cells_it_can_see() {
             }
         }
     }
+}
+
+#[test]
+fn a_double_sided_caster_draws_both_faces_and_no_material_draws_its_depth_bias() {
+    let mut world = shadowed(SUN);
+    let table = world.renderer.settings_mut().materials_mut();
+    let material = table
+        .create(Shading::Lit, feature::DOUBLE_SIDED, [1.0; 4])
+        .unwrap();
+    table
+        .set_depth_bias(material, DepthBias::from_polygon_offset(1.0, 1.0))
+        .unwrap();
+    let ball = world.objects[2];
+    world
+        .scene
+        .apply_commands(&[Command::set_material(ball, material + 1)], world.frame)
+        .unwrap();
+    world.record(true);
+    // Operand 6 is the state and operands 8 and 9 the depth bias.
+    let mut casters: Vec<[u32; 3]> = operands(&world.commands(), Op::CreateRenderPipeline)
+        .iter()
+        .filter(|p| p[1] == template::SHADOW_DEPTH)
+        .map(|p| [p[6], p[8], p[9]])
+        .collect();
+    casters.sort_unstable();
+    assert_eq!(
+        casters,
+        [
+            [state_flags::CULL_NONE, 0, 0],
+            [state_flags::CULL_FRONT, 0, 0]
+        ]
+    );
 }
