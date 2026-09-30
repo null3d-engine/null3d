@@ -724,7 +724,53 @@ The light that a PBR surface reflects from an environment map, as three.js's `RE
 
 ## `null3d::fog`
 
-Fog with three.js's formulas. A fog factor runs from 0, no fog, to 1, where the fog color hides the surface. Fog depth is the distance from the camera along its view direction, which three.js takes from the view-space position.
+Fog with three.js's formulas. A fog factor runs from 0, no fog, to 1, where the fog color hides the surface. Fog depth is the distance from the camera along its view direction, which three.js takes from the view-space position. The engine's shaders mix their linear color with the scene's fog, before any tone mapping and encoding.
+
+### `NONE`
+
+```wgsl
+const NONE: u32 = 0u;
+```
+
+No fog, as `Fog.kind` names it.
+
+### `LINEAR`
+
+```wgsl
+const LINEAR: u32 = 1u;
+```
+
+Linear fog, as three.js's `Fog`.
+
+### `EXP2`
+
+```wgsl
+const EXP2: u32 = 2u;
+```
+
+Exponential squared fog, as three.js's `FogExp2`.
+
+### `Fog`
+
+```wgsl
+struct Fog {
+    color: vec3f,
+    kind: u32,
+    forward: vec3f,
+    density: f32,
+    near: f32,
+    far: f32,
+}
+```
+
+The scene's fog, as the engine writes it into each frame's values for the camera that draws.
+
+- `color`: The linear fog color.
+- `kind`: The kind of fog: `NONE`, `LINEAR` or `EXP2`.
+- `forward`: The camera's unit view direction, which fog depth follows.
+- `density`: The density of exponential squared fog.
+- `near`: Where linear fog starts.
+- `far`: Where linear fog hides everything.
 
 ### `fog_depth`
 
@@ -757,6 +803,14 @@ fn apply_fog(c: vec3f, fog_color: vec3f, factor: f32) -> vec3f
 ```
 
 A color seen through fog: `c` blended toward `fog_color` by the fog factor.
+
+### `fog_factor`
+
+```wgsl
+fn fog_factor(fog: Fog, relative_position: vec3f) -> f32
+```
+
+The factor of the scene's `fog` at a point, by its position relative to the camera: 0 where the scene has no fog.
 
 ## `null3d::vertex`
 
