@@ -1,26 +1,26 @@
 ---
 id: guides/performance
 title: Performance guide
-status: planned
+status: experimental
 since: "0.1"
 summary: "Measuring; the frame budget; common causes of slow frames and their fixes."
 ---
 
 # Performance guide
 
-> Planned for null3D 0.1. No release has these APIs yet, so coding agents must not use them.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions.
 
-null3D keeps its own work per frame small, so your sketch code usually decides how long a frame takes. This guide shows where frame time goes, how to write per-frame code that stays fast, and how to measure. The figures come from the engine's benchmark scenes, and `bun run bench:run` measures them on your own computer.
+null3D keeps its own work per frame small, so your sketch code usually decides how long a frame takes. This guide shows where frame time goes, how to write per-frame code that stays fast, and how to measure. The figures come from the engine's benchmark scenes, which the engine's repository runs with `bun run bench:run`.
 
 ## Where frame time goes
 
 ```mermaid
 flowchart LR
     subgraph sketch["Sketch worker"]
-        update["Your onUpdate"] --> steps["Engine steps:<br/>commands, transforms,<br/>batches, recording"]
+        update["Your onUpdate"] --> steps["Engine steps:<br/>commands, transforms,<br/>batches, culling, recording"]
     end
     subgraph jobs["Job workers"]
-        parallel["Matrices and<br/>draw lists in parallel"]
+        parallel["Matrices, and culling<br/>on WebGL2, in parallel"]
     end
     subgraph render["Render worker"]
         replay["Uploads and<br/>draw-list replay"]
@@ -73,7 +73,7 @@ Decimal numbers are a special case. Until the browser optimizes a function, the 
 
 ## Objects during play
 
-The engine keeps each scene's draw tables, its draw bundle and every object's matrix on the GPU. Some calls change the tables, and a frame with such a change rebuilds them: it records the bundle again and uploads every matrix. At 100,000 instances that is 4.8 MB in one frame. Other calls upload only what they changed. `measure` counts the rebuilding frames in `rebuilds`, which stays at zero in steady play.
+The engine keeps each scene's draw tables and every object's matrix on the GPU, and on WebGPU a draw bundle too. Some calls change the tables, and a frame with such a change rebuilds them. It uploads every matrix, and on WebGPU it records the bundle again. At 100,000 instances that is 4.8 MB in one frame. Other calls upload only what they changed. `measure` counts the rebuilding frames in `rebuilds`, which stays at zero in steady play.
 
 | Call | Cost in the frame it takes effect |
 | --- | --- |
@@ -81,15 +81,15 @@ The engine keeps each scene's draw tables, its draw bundle and every object's ma
 | `setVisible` | The matrix and 4-byte draw entry of the object and of each object under it |
 | `setActiveCount` | The 4-byte draw entry of each row that starts or stops drawing |
 | Creating or destroying an object or an instance batch | A rebuild, and engine memory can grow in the next frame |
-| `setMesh`, `setMaterial`, `setParent` and `setDynamic` | A rebuild |
+| `setMaterial`, `setParent` and `setDynamic` | A rebuild |
 
 These habits keep play free of rebuilds:
 
 - Create every object, batch, mesh and material a level needs during setup or behind a loading screen. The engine sizes its memory for the scene it holds, so one created during play makes engine memory grow in the next frame.
 - Hide and show objects with `setVisible` instead of destroying and creating them.
 - Pool short-lived things, such as bullets and particles, in an instance batch sized for the most rows it will ever need. Show fewer with `setActiveCount`, and keep the live rows at the front of the arrays.
-- For a look that changes often, such as a highlight, keep two objects and swap their visibility. Keep `setMaterial` and `setMesh` for rare changes.
-- Every row of a batch counts toward the scene's limit of objects and instance rows, active or not. Every device draws 2,097,152, and `engine.capabilities.maxInstances` gives the limit of the device the page runs on (E1501). Engine memory holds about 5 million rows (E1109). So size each batch for the rows it uses.
+- For a look that changes often, such as a highlight, keep two objects and swap their visibility. Keep `setMaterial` for rare changes.
+- Every row of a batch counts toward the scene's limit of objects and instance rows, active or not. On WebGPU every device draws 2,097,152. On WebGL2 the limit follows the largest texture the device allows. `engine.capabilities.maxInstances` gives the limit of the device the page runs on (E1501). Engine memory holds about 5 million rows (E1109). So size each batch for the rows it uses.
 - Check with `measure`. A `rebuilds` count above zero during play points to one of the calls in the lower rows of the table.
 
 ## How the engine batches, builds pipelines and times frames
@@ -101,7 +101,7 @@ Performance advice written for other engines often assumes things that do not ho
 | What makes the GPU build a pipeline? | A shading model, lit or unlit, and the vertex format of the meshes it draws, with the canvas's color format, the depth format and the sample count. A material never does: materials are rows in one shared table, so a thousand lit materials share one lit pipeline for each vertex format. |
 | When are pipelines built? | In the first frame that draws a shading model with a vertex format, and again after the browser replaces the GPU. Sketch code never compiles one. `measure` counts builds in `pipelines`. |
 | What does the engine batch by itself? | Every object and instance row with the same shading model, mesh and material goes into one bucket, which one indirect draw call draws. A mesh over 65,535 vertices takes one draw per part. Separate objects from `createMesh` batch the same way as the rows of an instance batch. |
-| Which passes walk the scene? | Two: a culling pass on the GPU, which tests every object and row against the view, and the main pass, which replays a draw bundle. The engine records the bundle again only when the scene's structure changes. |
+| Which passes walk the scene? | On WebGPU, two: a culling pass on the GPU, which tests every object and row against the view, and the main pass, which replays a draw bundle. The engine records the bundle again only when the scene's structure changes. On WebGL2 the job workers cull on the CPU, and the main pass draws the objects in view. |
 | Does the engine know when the GPU finished a frame? | Yes. It listens to the WebGPU queue, or checks a WebGL2 fence, and blocks no thread. `measure` reports `completedFps` and `gpuLatencyMs`. Sketch code never waits for the GPU. |
 | What must stay the same for the engine to reuse its work? | The scene's structure. A static object costs nothing until a setter changes it. The calls that rebuild the draw tables are listed in [Objects during play](#objects-during-play). |
 
@@ -109,14 +109,14 @@ So some common advice does not apply:
 
 - **Merge meshes to cut draw calls.** Objects that share a mesh and a material already share one draw. Merging different small static meshes still cuts the number of buckets.
 - **Share materials so objects share a shader.** Every material already shares its pipeline for each vertex format. Share materials anyway, because each mesh and material pair is its own bucket and draw.
-- **Compile or warm up after each loading stage.** The engine builds its pipelines in the first frame. Wait for `engine.firstFrame` before you remove the loading screen.
+- **Compile or warm up after each loading stage.** The engine builds each pipeline in the first frame that draws with it. Wait for `engine.firstFrame` before you remove the first loading screen.
 - **Turn off matrix updates for objects that do not move.** Objects are static by default, and a static object costs nothing per frame.
 - **Mark a changed object for update.** Setters mark the change themselves.
 - **Track GPU completion in your own code.** `measure` reports it.
 
 ## Moving objects cost uploads
 
-Each dynamic instance uploads its 48-byte world matrix in every frame, so 100,000 moving boxes upload 4.8 MB per frame. A static batch uploads its matrices once and then nothing. The S1-static benchmark draws the same 100,000 boxes standing still. It uploads nothing per frame and takes 0.08 ms of CPU time.
+Each dynamic instance uploads its 48-byte world matrix in every frame, so 100,000 moving boxes upload 4.8 MB per frame. A static batch uploads its matrices once and then nothing. The S1-static benchmark draws the same 100,000 boxes standing still. It uploads no matrices per frame and takes 0.08 ms of CPU time.
 
 On WebGL2 the job workers cull, so a frame whose view changed also uploads its list of visible objects, at 4 bytes per entry. Each visible object or instance row is one entry, and so is each visible group of 64 rows in a static batch. The `visibleEntries` figure of `measure` counts them. Divide `uploadBytes` by it: when only the camera moves, the result is about 4 bytes.
 
@@ -147,7 +147,7 @@ The render worker picks how each upload travels, so you do not need to. Uploads 
 | `pipelines` | GPU pipelines built, which can stall the frame they happen in |
 | `memory` | The engine's WebAssembly memory and the JavaScript heap |
 
-The sketch worker's steps are `update`, `commands`, `transforms`, `batches` and `record`, and the render worker's is `replay`. A thread's time less its `update` step is the engine's own work on that thread.
+The sketch worker's steps are `update`, `commands`, `transforms`, `batches`, `cull` and `record`, and the render worker's is `replay`. A thread's time less its `update` step is the engine's own work on that thread.
 
 A frame callback keeps firing at the display rate while the GPU falls behind. So a count of callbacks can report a healthy rate while the screen shows fewer frames. Compare `completedFps` with `presentedFps`. When the GPU finishes fewer frames than the renderer presents, frames queue on the GPU. Then `gpuLatencyMs` grows, and users feel it as input lag. The engine checks a WebGL2 fence at its next frame callback, so there `gpuLatencyMs` rounds up to a frame interval. The `gpuMs` figure is the GPU's working time within a frame, not the time from submit to screen. The engine measures GPU time and completion on one frame in eight. Measuring every frame would cost the drawing thread about as much as drawing a small scene.
 
