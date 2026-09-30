@@ -90,6 +90,7 @@ async function start(
 			maxTextureSize: 4096,
 			sharedUploads: false,
 			depth: 'reversed',
+			parallelCompile: true,
 		},
 		capabilities: CAPABILITIES,
 		quality: { preset: 'medium', settings: { maxPixelRatio: 2 } },

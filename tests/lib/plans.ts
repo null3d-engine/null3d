@@ -66,6 +66,7 @@ import {
 import { type HarnessDirs, type ImageRun, imageProblems } from './images.ts';
 import { type Load, type LoadKind, loadPath, runnerKey } from './load-routes.ts';
 import { failureText, type ItemResult, lastSteps, type PlanItem, slug } from './runs.ts';
+import { type WarmUpResult, warmUpProblems } from './warm-up-checks.ts';
 
 /** The GPU interface that a page draws with. */
 export type Tier = 'webgpu' | 'webgl2';
@@ -83,6 +84,8 @@ export type Check =
 	| { kind: 'room'; maximumMiB: number }
 	| { kind: 'uploads'; tier: Tier }
 	| { kind: 'quality' }
+	/** The warm-up page: pipelines build before the first frame, and a warm-up during play. */
+	| { kind: 'warm-up'; tier: Tier }
 	| { kind: 'hold'; tier: Tier }
 	| { kind: 'parity'; tier: Tier; scene: ParityScene; pair: PagePair }
 	| { kind: 'bench'; tier: Tier; scene: ParityScene; page: BenchPageKind; jobs?: number }
@@ -244,6 +247,20 @@ export function checksPlan(): PlanItem<Check>[] {
 		),
 		pageItem('uploads', 'uploads', { kind: 'uploads', tier: 'webgpu' }, { timeoutSeconds: 90 }),
 		pageItem('quality', 'quality', { kind: 'quality' }),
+		...TIERS.map((tier) =>
+			pageItem(
+				`warm-up-${tier}`,
+				'warm-up',
+				{ kind: 'warm-up', tier },
+				{ switches: [`gpu=${tier}`] },
+			),
+		),
+		pageItem(
+			'warm-up-webgl2-compile-wait',
+			'warm-up',
+			{ kind: 'warm-up', tier: 'webgl2' },
+			{ switches: ['gpu=webgl2', 'compile=wait'] },
+		),
 		...IMAGE_RUNS.map(imageItem),
 		...TIERS.flatMap((tier) =>
 			ENGINE_MODES.map((mode) =>
@@ -797,6 +814,8 @@ export function judge(
 		}
 		case 'engine':
 			return engineProblems(result as unknown as EngineResult, check.mode, check.tier);
+		case 'warm-up':
+			return warmUpProblems(result as unknown as WarmUpResult, check.tier);
 		case 'restarts':
 			return restartProblems(result as unknown as RestartResult);
 		case 'memory':

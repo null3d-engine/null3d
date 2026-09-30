@@ -112,6 +112,15 @@ The shader compiler is the shader crate built as a WebAssembly module. Build too
 - Each vertex attribute has a fixed shader location, and a pipeline reads only the attributes that its entry point declares. WebGPU needs a pipeline for each vertex format, since the format sets the stride and the offsets. On WebGL2 the vertex array holds that layout, so the pipelines of one template share one program.
 - The culling shader counts each visible instance in every draw of its bucket, one draw per part of the bucket's mesh. The parts' draws then read the same slice of instances.
 
+## Pipelines and warm-up
+
+- A frame's draw list creates its pipelines before any other command. The renderer starts their builds the first time it prepares the frame, and replays the rest of the list later. The render crate's test world checks this order in every list it records.
+- A list that creates a pipeline after other commands builds it at once. So a hand-written list, as on the replay test pages, draws everything in one replay.
+- The first frame on a GPU device waits for its pipelines. Later frames draw at once, and a draw whose pipeline is still building draws nothing. So each frame loop asks the presenter whether a frame is ready before it takes the frame. The sketch thread computes no frame past it.
+- Without `KHR_parallel_shader_compile`, a WebGL2 program never counts as building, and its first draw waits for its compile. The switch `?compile=wait` gives that path in a browser that has the extension.
+- A warm-up in the setup records a frame itself, since no frame loop runs yet. So the renderer must exist before the setup: low-latency and single-threaded modes start it first.
+- Sketch code that runs between frames, such as a message handler or the code after a warm-up, gets fresh views of engine memory first. The single-threaded build's memory detaches every view when it grows, which a frame may have done.
+
 ## Depth on WebGL2
 
 - Draw lists and shaders keep WebGPU's reversed depth. Each GLSL vertex shader maps its clip depth through one uniform, and the WebGL2 backend sets it once per program for its depth mode (`gpu/webgl2/depth.ts`). One set of GLSL programs then serves every mode.

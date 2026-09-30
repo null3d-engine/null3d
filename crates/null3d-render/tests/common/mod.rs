@@ -210,7 +210,25 @@ impl<B: FrameBuilder> World<B> {
             .cull(&input)
             .and_then(|()| self.renderer.record(&input));
         self.lines.clear();
-        recorded
+        let rebuilt = recorded?;
+        self.check_pipelines_first();
+        Ok(rebuilt)
+    }
+
+    /// Checks that the frame's list creates its pipelines before any other command, as the thread
+    /// that draws expects: it starts to build them before it replays the rest.
+    fn check_pipelines_first(&self) {
+        let mut other = false;
+        for command in decode(self.renderer.list(self.frame).words()) {
+            let op = command.unwrap().op;
+            let creates = matches!(op, Op::CreateRenderPipeline | Op::CreateComputePipeline);
+            assert!(
+                !(creates && other),
+                "frame {}: {op:?} comes after other commands",
+                self.frame
+            );
+            other |= !creates;
+        }
     }
 
     /// Draws debug lines in the frame that records next: each pair of points is a line.

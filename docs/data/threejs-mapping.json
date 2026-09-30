@@ -110,7 +110,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "await scene.warmUp() before hiding the loading screen",
-      "notes": "Pipelines for loaded assets compile during loading. warmUp resolves when every pipeline the scene needs is ready.",
+      "notes": "The first frame waits for its pipelines. warmUp resolves once every pipeline that the scene needs is built, hidden objects included, so warm up a later loading stage before you show it.",
       "docs": "guides/loading-screens",
       "detect": "\\.compile(Async)?\\s*\\("
     },
