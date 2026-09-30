@@ -3,10 +3,10 @@
 // tests read what the engine publishes on a page that handles no error itself. The image test
 // manifest's held test checks the held frame's pixels in every thread mode and on every tier.
 import { expect, type Page, test } from '@playwright/test';
+import { type HoldReport, holdResult, windowValue } from '../../packages/cli/src/page.js';
 import { randFloat, random, seed } from '../../packages/engine/src/math/math.ts';
 import { HOLD_SEED } from '../../packages/engine/src/sketch/random.ts';
 import { ENGINE_MODES, type EngineMode } from '../lib/engine-checks.ts';
-import { type HoldReport, holdResult, windowValue } from '../lib/page-result.ts';
 
 /** The sketch time the tests hold at, and the frame it gives: one frame, then 90 steps of 1/60 s. */
 const HOLD_SECONDS = 1.5;

@@ -85,6 +85,16 @@ const pixels = Buffer.from(result.pixels, 'base64'); // compare with the referen
 
 The engine reads the pixels back with its own GPU code and takes no screenshot of the canvas. Some browsers change what a page reads from a canvas, to stop fingerprinting.
 
+## A held frame from the command line
+
+`bunx @null3d/cli shot` draws one held frame of your page, with no test code. It starts your project's own Vite dev server and opens the page with `?hold` in a headless browser. Then it saves the frame as a PNG file:
+
+```sh
+bunx @null3d/cli shot --out shot.png --time 1.5 --gpu webgl2
+```
+
+Beside the image, it saves `shot.json` with the frame's time, number and GPU tier, and with what the page logged. When the hold fails, it prints the error and saves no image. [The `null3d` command](../cli/null3d.md) lists its options.
+
 ## When a hold fails
 
 Hold mode stops at the first error and publishes it with `ok: false`:

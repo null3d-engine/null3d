@@ -3,6 +3,7 @@
 // run in parallel, so CI can split them into shards. A missing or different image fails its test
 // and is saved as a candidate for bun run images:review.
 import { expect, test } from '@playwright/test';
+import { watchConsole } from '../../packages/cli/src/page.js';
 import { clearCandidate, environmentNamed, imageProblems, tiersOf } from '../lib/images.ts';
 import { loadResult } from '../lib/page-result.ts';
 import { failureText, type ItemResult } from '../lib/runs.ts';
@@ -19,14 +20,7 @@ for (const imageTest of IMAGE_TESTS)
 		test(`${imageTest.name} on ${tier}`, async ({ page }, testInfo) => {
 			test.setTimeout(runs.reduce((sum, run) => sum + run.timeoutSeconds + LOAD_SECONDS, 0) * 1000);
 			const place = { environment: environmentNamed(testInfo.project.name) };
-			const pageErrors: string[] = [];
-			page.on('pageerror', (error) => pageErrors.push(`page error: ${error.message}`));
-			page.on('console', (message) => {
-				// The browser asks for a site icon by itself, and test pages have none.
-				const icon = message.location().url.endsWith('/favicon.ico');
-				if (message.type() === 'error' && !icon)
-					pageErrors.push(`console error: ${message.text()}`);
-			});
+			const { errors: pageErrors } = watchConsole(page);
 			// The runs of a test on a tier share one candidate, so an earlier run's goes before any runs.
 			for (const run of runs) clearCandidate(run, place);
 			const results = new Map<string, ItemResult>();

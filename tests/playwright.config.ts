@@ -1,16 +1,17 @@
 import { defineConfig } from '@playwright/test';
-import type { Environment } from './lib/images.ts';
-import { HTTP_PORT, PREVIEW_PORT, REPO_ROOT, SWIFTSHADER_ARGS } from './lib/server.ts';
+import { browserOptions, defaultEnvironment } from '../packages/cli/src/browser.js';
+import { HTTP_PORT, PREVIEW_PORT, REPO_ROOT } from './lib/server.ts';
 
 const ci = Boolean(process.env.CI);
-/** The main project's environment, which names the references that its image tests compare with. */
-const environment: Environment = ci ? 'chromium-swiftshader' : 'chrome-real-gpu';
-
+/**
+ * The main project's environment, which names the references that its image tests compare with:
+ * SwiftShader in CI, and the real GPU through the installed Google Chrome elsewhere.
+ */
+const environment = defaultEnvironment();
+const launchOptions = browserOptions(environment);
 /** Device pixels per CSS pixel on the screen of the resize tests, as on most phones and laptops. */
 const HIGH_DENSITY_RATIO = 2;
 
-// On a Mac, the installed Google Chrome runs on the real GPU. Playwright's default headless shell
-// would fall back to SwiftShader there, so real-GPU runs use the Chrome channel.
 export default defineConfig({
 	testDir: 'image',
 	outputDir: '../test-results/playwright',
@@ -20,7 +21,7 @@ export default defineConfig({
 	use: {
 		baseURL: `http://localhost:${HTTP_PORT}/tests/pages/`,
 		headless: true,
-		...(ci ? { launchOptions: { args: SWIFTSHADER_ARGS } } : { channel: 'chrome' }),
+		launchOptions,
 	},
 	webServer: [
 		{
@@ -57,8 +58,9 @@ export default defineConfig({
 			use: {
 				deviceScaleFactor: HIGH_DENSITY_RATIO,
 				launchOptions: {
+					...launchOptions,
 					args: [
-						...(ci ? SWIFTSHADER_ARGS : []),
+						...(launchOptions.args ?? []),
 						`--force-device-scale-factor=${HIGH_DENSITY_RATIO}`,
 					],
 				},

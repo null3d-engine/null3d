@@ -154,7 +154,7 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 
 | Page | What it covers | Status | Version |
 | --- | --- | --- | --- |
-| [The `null3d` command](cli/null3d.md) | create, test, bench, shot, assets, docs, port, skills, mcp, doctor. | planned | 0.3 |
+| [The `null3d` command](cli/null3d.md) | create, test, bench, shot, assets, docs, port, skills, mcp, doctor. | experimental | 0.1 |
 
 ### Errors
 

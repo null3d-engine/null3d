@@ -122,7 +122,7 @@ export const PAGES: readonly PageEntry[] = [
 	{ id: 'porting/threejs-unsupported', title: 'Unsupported three.js features', since: '0.3', summary: 'Features after 1.0 or out of scope, with workarounds.' },
 	{ id: 'porting/verification', title: 'Verifying a port', since: '0.3', summary: 'Parity images per camera view; performance comparison; the WebGL2 path; phones.' },
 
-	{ id: 'cli/null3d', title: 'The `null3d` command', since: '0.3', summary: 'create, test, bench, shot, assets, docs, port, skills, mcp, doctor.' },
+	{ id: 'cli/null3d', title: 'The `null3d` command', since: '0.1', summary: 'create, test, bench, shot, assets, docs, port, skills, mcp, doctor.' },
 	{ id: 'cookbook/index', title: 'Cookbook', since: '0.2', summary: 'Short recipes; each is also a tested example.' },
 ];
 
