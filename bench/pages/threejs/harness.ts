@@ -1,20 +1,20 @@
 // Runs a three.js twin of a benchmark scene. It builds what every scene shares (the renderer, the
-// lights, the background and the camera), then does one of two things. With `?hold`, it renders one
-// frame at the hold time into an offscreen target and publishes the pixels. Otherwise it runs a
-// timed benchmark and publishes the frame timings. `?renderer=webgl` uses WebGLRenderer from
-// `three`; `?renderer=webgpu` uses WebGPURenderer from `three/webgpu`, on WebGPU only. The page
-// loads only the three.js build that it uses.
+// sun and the ambient light, the background and the camera), then does one of two things. With
+// `?hold`, it renders one frame at the hold time into an offscreen target and publishes the pixels.
+// Otherwise it runs a timed benchmark and publishes the frame timings. `?renderer=webgl` uses
+// WebGLRenderer from `three`; `?renderer=webgpu` uses WebGPURenderer from `three/webgpu`, on WebGPU
+// only. The page loads only the three.js build that it uses.
 import type * as ThreeModule from 'three';
 import { run, toBase64 } from '../../../tests/pages/lib/result';
 import {
-	AMBIENT,
 	BACKGROUND,
 	CAMERA,
 	CANVAS,
 	MEASURE_SECONDS,
 	type OutArray,
 	PARITY_CANVAS,
-	SUN,
+	type SceneLights,
+	VIEW_LIGHTS,
 	WARMUP_SECONDS,
 } from '../../scenes/spec';
 import { fitToWindow, showPageName } from '../lib/fit';
@@ -27,9 +27,13 @@ export type Three = Pick<
 	typeof ThreeModule,
 	| 'AmbientLight'
 	| 'BoxGeometry'
+	| 'BufferAttribute'
+	| 'BufferGeometry'
 	| 'Color'
 	| 'DirectionalLight'
 	| 'DynamicDrawUsage'
+	| 'Fog'
+	| 'FogExp2'
 	| 'InstancedMesh'
 	| 'Matrix4'
 	| 'Mesh'
@@ -37,10 +41,25 @@ export type Three = Pick<
 	| 'MeshStandardMaterial'
 	| 'OrthographicCamera'
 	| 'PerspectiveCamera'
+	| 'PlaneGeometry'
+	| 'PointLight'
 	| 'Quaternion'
 	| 'Scene'
 	| 'Vector3'
 >;
+
+/** How a twin lights its scene, besides the lights that it adds itself. */
+export interface ThreePageOptions {
+	/** The sun and the ambient light: the ones that every scene shares, unless it names others. */
+	lights?: SceneLights;
+	/**
+	 * Shade point lights through three.js's clustered lighting on WebGPURenderer. Its
+	 * `ClusteredLighting` addon (Forward+) assigns each point light to the clusters of the view that
+	 * its range reaches, in a compute pass, so each fragment shades only the lights of its cluster.
+	 * WebGLRenderer has no such lighting: it shades every point light in every fragment.
+	 */
+	clusteredLighting?: boolean;
+}
 
 export interface SceneSetup {
 	/** The object count that the report gives. */
@@ -87,6 +106,8 @@ export interface ThreeEngine {
 	 * the canvas shows it, and it has as many samples as the canvas.
 	 */
 	readFrame(width: number, height: number, draw: () => void): Promise<Uint8Array>;
+	/** Throws when a shader of the frames drawn so far failed to build, so the scene drew nothing. */
+	checkShaders(): void;
 }
 
 async function startWebGL(): Promise<ThreeEngine> {
@@ -96,9 +117,21 @@ async function startWebGL(): Promise<ThreeEngine> {
 		antialias: true,
 		powerPreference: 'high-performance',
 	});
+	// A shader past the GPU's limits, such as one with more uniforms than the GPU holds, fails to
+	// build, and its objects draw nothing. The page then fails with the GPU's reason.
+	let shaderFailure: string | undefined;
+	renderer.debug.onShaderError = (gl, program) => {
+		shaderFailure ??= gl.getProgramInfoLog(program)?.trim() || 'the GPU gave no reason';
+	};
 	return {
 		three,
 		renderer,
+		checkShaders() {
+			if (shaderFailure !== undefined)
+				throw new Error(
+					`three.js's WebGLRenderer could not build a shader of this scene on this GPU: ${shaderFailure}`,
+				);
+		},
 		async readFrame(width, height, draw) {
 			const target = new three.WebGLRenderTarget(width, height, {
 				samples: MSAA_SAMPLES,
@@ -115,7 +148,7 @@ async function startWebGL(): Promise<ThreeEngine> {
 	};
 }
 
-async function startWebGPU(): Promise<ThreeEngine> {
+async function startWebGPU({ clusteredLighting }: ThreePageOptions): Promise<ThreeEngine> {
 	if (!('gpu' in navigator)) {
 		throw new Error('This browser has no WebGPU. Use a browser with WebGPU, or ?renderer=webgl.');
 	}
@@ -132,9 +165,15 @@ async function startWebGPU(): Promise<ThreeEngine> {
 			'three.js could not start WebGPU and switched to WebGL 2. See the console for the cause, or use ?renderer=webgl.',
 		);
 	}
+	if (clusteredLighting) {
+		const { ClusteredLighting } = await import('three/addons/lighting/ClusteredLighting.js');
+		renderer.lighting = new ClusteredLighting();
+	}
 	return {
 		three,
 		renderer,
+		// WebGPU reports a shader that fails as a console error, which the page tests catch.
+		checkShaders() {},
 		async readFrame(width, height, draw) {
 			const target = new three.RenderTarget(width, height, {
 				samples: MSAA_SAMPLES,
@@ -151,17 +190,27 @@ async function startWebGPU(): Promise<ThreeEngine> {
 	};
 }
 
-/** Starts the three.js renderer that `?renderer=` names, loading only the build that it uses. */
-export function startThree(renderer: (typeof RENDERERS)[number]): Promise<ThreeEngine> {
-	return renderer === 'webgpu' ? startWebGPU() : startWebGL();
+/**
+ * Starts the three.js renderer that `?renderer=` names, loading only the build that it uses, and
+ * any lighting addon that `options` asks for.
+ */
+export function startThree(
+	renderer: (typeof RENDERERS)[number],
+	options: ThreePageOptions = {},
+): Promise<ThreeEngine> {
+	return renderer === 'webgpu' ? startWebGPU(options) : startWebGL();
 }
 
-/** Gives a scene what every parity scene shares: the background, the sun and the ambient light. */
-export function lightScene(three: Three, scene: ThreeModule.Scene): void {
+/** Gives a scene the background, and a sun and an ambient light: the shared ones by default. */
+export function lightScene(
+	three: Three,
+	scene: ThreeModule.Scene,
+	{ sun, ambient }: SceneLights = VIEW_LIGHTS,
+): void {
 	scene.background = new three.Color(BACKGROUND);
-	const sun = new three.DirectionalLight(SUN.color, SUN.intensity);
-	sun.position.set(...SUN.direction).multiplyScalar(-SUN_DISTANCE);
-	scene.add(sun, new three.AmbientLight(AMBIENT.color, AMBIENT.intensity));
+	const light = new three.DirectionalLight(sun.color, sun.intensity);
+	light.position.set(...sun.direction).multiplyScalar(-SUN_DISTANCE);
+	scene.add(light, new three.AmbientLight(ambient.color, ambient.intensity));
 }
 
 /**
@@ -169,18 +218,25 @@ export function lightScene(three: Three, scene: ThreeModule.Scene): void {
  * to the page and to the dev server's collector: as the `hold` report with `?hold`, else as the
  * `bench` report. A failure publishes its message as the result's error.
  */
-export function runThreePage(sceneName: string, build: BuildScene): void {
+export function runThreePage(
+	sceneName: string,
+	build: BuildScene,
+	pageOptions: ThreePageOptions = {},
+): void {
 	const params = new URLSearchParams(location.search);
 	showPageName();
 	run(pageReport(params), async () => {
 		const options = readRunOptions(params);
 		const rendererName = readChoice(params, 'renderer', RENDERERS);
-		const { three, renderer, readFrame } = await startThree(rendererName);
+		const { three, renderer, readFrame, checkShaders } = await startThree(
+			rendererName,
+			pageOptions,
+		);
 		renderer.setPixelRatio(CANVAS.pixelRatio);
 		renderer.setSize(CANVAS.width, CANVAS.height);
 
 		const scene = new three.Scene();
-		lightScene(three, scene);
+		lightScene(three, scene, pageOptions.lights);
 		const camera = new three.PerspectiveCamera(
 			CAMERA.fov,
 			CANVAS.width / CANVAS.height,
@@ -212,7 +268,11 @@ export function runThreePage(sceneName: string, build: BuildScene): void {
 			const { width, height } = PARITY_CANVAS;
 			camera.aspect = width / height;
 			camera.updateProjectionMatrix();
+			// Clustered lighting sizes its grid of clusters by the canvas, even when a target is bound,
+			// so the canvas takes the size of the frame.
+			renderer.setSize(width, height);
 			const pixels = await readFrame(width, height, () => frame(hold));
+			checkShaders();
 			return { ...report, width, height, pixels: toBase64(pixels) };
 		}
 
@@ -221,6 +281,7 @@ export function runThreePage(sceneName: string, build: BuildScene): void {
 		pose(0);
 		await renderer.compileAsync(scene, camera);
 		renderer.render(scene, camera);
+		checkShaders();
 		if (options.demo) {
 			renderer.setAnimationLoop((ms) => frame(ms / 1000));
 			return report;

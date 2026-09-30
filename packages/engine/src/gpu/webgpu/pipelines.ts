@@ -12,6 +12,8 @@ import {
 	SIZE_INSTANCE_STRIDE,
 	STATE_CULL_NONE,
 	STATE_LINE_LIST,
+	STATE_NO_DEPTH_TEST,
+	STATE_NO_DEPTH_WRITE,
 	TEMPLATE_CULL,
 	TEMPLATE_DEBUG_LINES,
 	TEMPLATE_INSTANCED_LIT,
@@ -163,6 +165,7 @@ export class Pipelines {
 			{ binding: 4, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
 			{ binding: 5, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
 			{ binding: 6, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
+			{ binding: 7, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
 		]);
 		for (const [id, label, shader, meshLocations, layouts] of [
 			[TEMPLATE_INSTANCED_LIT, 'lit', shaders.lit, [0, 1], [LAYOUT_FRAME]],
@@ -251,7 +254,7 @@ export class Pipelines {
 	/**
 	 * How to build a render pipeline of a template, in the shader variant that its permutation bits
 	 * pick, for meshes of a vertex format where the template draws meshes. Without a color format it
-	 * draws depth only.
+	 * draws depth only. The depth bias is in reversed depth, as the draw list holds it.
 	 */
 	render(
 		template: number,
@@ -261,6 +264,8 @@ export class Pipelines {
 		sampleCount: number,
 		stateFlags: number,
 		vertexFormat: number,
+		depthBias: number,
+		depthBiasSlopeScale: number,
 	): GPURenderPipelineDescriptor {
 		const t = this.templates[template];
 		if (!t) throw new Error(`unknown render template ${template}`);
@@ -293,9 +298,18 @@ export class Pipelines {
 				cullMode: stateFlags & STATE_CULL_NONE ? 'none' : 'back',
 				frontFace: 'ccw',
 			},
-			// Reversed depth: 1 at the near plane, 0 at the far plane.
+			// Reversed depth: 1 at the near plane, 0 at the far plane. Without the depth test a surface
+			// writes no depth either, as in three.js's WebGL renderer. Compatibility mode needs a bias
+			// clamp of 0.
 			depthStencil: depthFormat
-				? { format: depthFormat, depthWriteEnabled: true, depthCompare: 'greater' }
+				? {
+						format: depthFormat,
+						depthWriteEnabled: (stateFlags & (STATE_NO_DEPTH_WRITE | STATE_NO_DEPTH_TEST)) === 0,
+						depthCompare: stateFlags & STATE_NO_DEPTH_TEST ? 'always' : 'greater',
+						depthBias,
+						depthBiasSlopeScale,
+						depthBiasClamp: 0,
+					}
 				: undefined,
 			multisample: { count: sampleCount },
 		};

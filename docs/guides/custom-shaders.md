@@ -90,7 +90,7 @@ The plugin takes WGSL as a full shader when its `@vertex` entry point takes an `
 - `null3d::mesh` also gives `clip_position(found, position)`, `relative_position(found, position)` and `world_normal(found, normal)`. Positions are relative to the camera, as in the engine's own shaders.
 - The fragment entry point writes its linear color through `finish(color, clip.xy)` from `null3d::mesh`, which prepares it for the engine's output.
 - `fill_builtins(origin)` from `null3d::builtins` fills `frame`, `camera` and `object` in a stage. Pass the object's origin relative to the camera, or zero when the shader does not read `object`.
-- The fixed options apply, such as `doubleSided`. The standard values and uniforms do not reach a full shader.
+- The fixed options for faces and depth apply, such as `doubleSided` and `depthBias`. The standard values and uniforms do not reach a full shader, and `vertexColors` and the `mask` alpha mode change nothing: the shader reads the colors and discards pixels itself.
 
 ## WGSL in sketch code
 

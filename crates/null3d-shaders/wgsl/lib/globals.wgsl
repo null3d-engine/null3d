@@ -1,10 +1,11 @@
 #define_import_path null3d::globals
+#import null3d::fog::Fog
 
 // The data every render pipeline shares: per-frame values the core writes once a frame, and the
 // material table that fragment shaders read by material id.
 
-/// Per-frame values: the camera and the lights. Colors are linear and include the intensity.
-/// Positions are relative to the camera.
+/// Per-frame values: the camera, the lights and the fog. Colors are linear and include the
+/// intensity. Positions are relative to the camera.
 struct Frame {
     view_proj: mat4x4f,
     /// The camera as a homogeneous point: (0, 0, 0, 1) for a perspective camera, which sits at the
@@ -16,6 +17,8 @@ struct Frame {
     sun_direction: vec4f,
     sun_color: vec4f,
     ambient: vec4f,
+    /// The scene's fog, seen from this camera.
+    fog: Fog,
     /// The sketch time in seconds, the seconds since the frame before, the frame's number as the
     /// bits of a `u32`, and a spare.
     clock: vec4f,

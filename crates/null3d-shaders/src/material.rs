@@ -166,9 +166,9 @@ pub struct MaterialOutput {
     /// The optional vertex attributes (`vertex::*` bits) that those locations read, which a mesh
     /// needs to draw with the material.
     pub attributes: u32,
-    /// True when the shader multiplies the base color by the mesh's vertex colors in its
-    /// `VERTEX_COLOR` builds: the template does, and a full shader reads colors itself.
-    pub vertex_colors: bool,
+    /// True when the shader reads the material's base color and opacity in its `VERTEX_COLOR` and
+    /// `ALPHA_MASK` builds: the template does, and a full shader reads colors itself.
+    pub base_color: bool,
 }
 
 /// The entry points of a full shader: its `@vertex` function's name and the `@fragment` ones'.
@@ -347,7 +347,7 @@ impl Compiler {
             variants: built,
             locations,
             attributes,
-            vertex_colors: true,
+            base_color: true,
         })
     }
 
@@ -420,7 +420,7 @@ impl Compiler {
             variants: built,
             locations,
             attributes,
-            vertex_colors: false,
+            base_color: false,
         })
     }
 }

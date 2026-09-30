@@ -28,12 +28,14 @@ use null3d_render::arrays::{ArrayName, ArraysError, MeshArrays, from_arrays};
 use null3d_render::camera::{Lens, Orthographic, Perspective};
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::debug_lines::LineStore;
+use null3d_render::fog::Fog;
 use null3d_render::frame::{FrameBuilder, FrameInput, RecordError};
 use null3d_render::geometry::{Geometry, OutOfMemory, Shape, generate};
 use null3d_render::gpu_driven::{
     BYTES_PER_SOURCE, GpuDrivenRenderer, MAX_USEFUL_BINDING_BYTES, RendererConfig,
 };
 use null3d_render::materials::{self, CustomShading, MapSlot, MaterialError, Shading};
+use null3d_render::pipelines::DepthBias;
 use null3d_render::textures::{MAX_TEXTURES, Sampling, TextureDesc, TextureError};
 use null3d_render::view::ViewId;
 use wasm_bindgen::prelude::*;
@@ -256,7 +258,8 @@ pub fn last_error_detail(index: u32) -> u32 {
 /// serve, timing their work with the browser's clock. On WebGPU, `storage_binding_bytes` is the
 /// largest storage binding of the device the engine draws with. On WebGL2 (`webgl2`), the
 /// capability flags say whether the device has multi-draw, and `max_texture_size` is its largest
-/// texture. Every capacity is fixed from here on.
+/// texture. Without `cell_culling`, culling tests every object, with no grid cells skipped first.
+/// Every capacity is fixed from here on.
 #[wasm_bindgen(js_name = initEngine)]
 #[allow(clippy::too_many_arguments)]
 pub fn init_engine(
@@ -268,6 +271,7 @@ pub fn init_engine(
     webgl2: bool,
     capabilities: u32,
     max_texture_size: u32,
+    cell_culling: bool,
 ) -> u32 {
     // SAFETY: as in `with_engine`; no other call on the sketch thread runs while this one does.
     let cell = unsafe { &mut *ENGINE.0.get() };
@@ -301,6 +305,7 @@ pub fn init_engine(
             Box::new(CpuCulledRenderer::new(CpuCulledConfig {
                 multi_draw: capabilities.contains(Capabilities::MULTI_DRAW),
                 max_texture_size: max_texture_size.max(CpuCulledConfig::default().max_texture_size),
+                cell_culling,
                 ..CpuCulledConfig::default()
             }))
         } else {
@@ -309,6 +314,7 @@ pub fn init_engine(
                     sizes::PORTABLE_STORAGE_BINDING_BYTES,
                     MAX_USEFUL_BINDING_BYTES,
                 ),
+                cell_culling,
                 ..RendererConfig::default()
             }))
         },
@@ -890,9 +896,22 @@ pub fn mesh_radius(mesh: u32) -> f32 {
 /// `MeshStandardMaterial`, unlit, like its `MeshBasicMaterial`, or the first texture coordinates as
 /// colors, for the engine's own tests. A shading from `shading::CUSTOM_FIRST` up is a custom
 /// material's: its template in the low 16 bits, the vertex attributes that its shader reads from
-/// `shading::CUSTOM_ATTRIBUTE_SHIFT`, and `shading::CUSTOM_VERTEX_COLORS`. Its features (`constants::material_feature`) are fixed from now on.
+/// `shading::CUSTOM_ATTRIBUTE_SHIFT`, and `shading::CUSTOM_BASE_COLOR`. Its features
+/// (`constants::material_feature`) and its depth bias are fixed from now on. The bias takes
+/// three.js's `polygonOffsetUnits` as `bias_constant` and its `polygonOffsetFactor` as
+/// `bias_slope`, whose positive values push the surface away.
 #[wasm_bindgen(js_name = createMaterial)]
-pub fn create_material(shading: u32, features: u32, r: f32, g: f32, b: f32, a: f32) -> u32 {
+#[allow(clippy::too_many_arguments)]
+pub fn create_material(
+    shading: u32,
+    features: u32,
+    r: f32,
+    g: f32,
+    b: f32,
+    a: f32,
+    bias_constant: f32,
+    bias_slope: f32,
+) -> u32 {
     let shading = match shading {
         shading::UNLIT => Shading::Unlit,
         shading::TEXCOORDS => Shading::TexCoords,
@@ -900,17 +919,18 @@ pub fn create_material(shading: u32, features: u32, r: f32, g: f32, b: f32, a: f
         custom if custom >= shading::CUSTOM_FIRST => Shading::Custom(CustomShading {
             template: custom & 0xffff,
             attributes: (custom >> shading::CUSTOM_ATTRIBUTE_SHIFT) & 0xff,
-            vertex_colors: custom & shading::CUSTOM_VERTEX_COLORS != 0,
+            base_color: custom & shading::CUSTOM_BASE_COLOR != 0,
         }),
         _ => Shading::Lit,
     };
+    let bias = DepthBias::from_polygon_offset(bias_constant, bias_slope);
     value_with_engine(|e| {
-        e.renderer
-            .settings_mut()
-            .materials_mut()
+        let table = e.renderer.settings_mut().materials_mut();
+        let id = table
             .create(shading, features, [r, g, b, a])
-            .map(|id| id + 1)
-            .map_err(material_failure)
+            .map_err(material_failure)?;
+        table.set_depth_bias(id, bias).map_err(material_failure)?;
+        Ok(id + 1)
     })
 }
 
@@ -1111,6 +1131,8 @@ pub fn texture_stat(field: u32, texture: u32) -> f64 {
             texture_stat::LARGEST_FRAME_BYTES => f64::from(stats.largest_frame_bytes),
             texture_stat::WAITING => f64::from(stats.waiting),
             texture_stat::IMAGES_SENT => f64::from(textures.images_sent()),
+            texture_stat::UPLOAD_BUDGET => f64::from(textures.budget()),
+            texture_stat::MAX_ANISOTROPY => f64::from(textures.max_anisotropy()),
             _ => f64::from(textures.max_size()),
         };
         0
@@ -1241,6 +1263,17 @@ pub fn set_light_value(light: u32, which: u32, value: f32) -> u32 {
 pub fn set_background(r: f32, g: f32, b: f32) -> u32 {
     with_engine(|e| {
         e.renderer.settings_mut().set_background([r, g, b]);
+        0
+    })
+}
+
+/// The scene's fog: its kind (`constants::fog_kind`), its linear color, the near and far distances
+/// of linear fog, and the density of exponential squared fog.
+#[wasm_bindgen(js_name = setFog)]
+pub fn set_fog(kind: u32, r: f32, g: f32, b: f32, near: f32, far: f32, density: f32) -> u32 {
+    with_engine(|e| {
+        let fog = Fog::from_code(kind, [r, g, b], near, far, density);
+        e.renderer.settings_mut().set_fog(fog);
         0
     })
 }

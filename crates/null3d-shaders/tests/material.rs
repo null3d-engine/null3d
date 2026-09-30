@@ -51,16 +51,30 @@ fn a_surface_function_builds_into_every_variant_of_the_template() {
         names,
         [
             "webgl2",
+            "webgl2_alpha_mask",
             "webgl2_draw_index",
+            "webgl2_draw_index_alpha_mask",
             "webgl2_draw_index_vertex_color",
+            "webgl2_draw_index_vertex_color_alpha_mask",
             "webgl2_vertex_color",
+            "webgl2_vertex_color_alpha_mask",
             "webgpu",
+            "webgpu_alpha_mask",
             "webgpu_vertex_color",
+            "webgpu_vertex_color_alpha_mask",
         ]
     );
     let wgsl = &built.variants["webgpu"].wgsl.as_ref().expect("WGSL").source;
     assert!(wgsl.contains("fn square(x: f32) -> f32"), "{wgsl}");
     assert!(wgsl.contains("@location(2) uv: vec2<f32>"), "{wgsl}");
+    assert!(!wgsl.contains("discard"), "{wgsl}");
+    // A masked variant tests the alpha that the surface function returns.
+    let masked = &built.variants["webgpu_alpha_mask"]
+        .wgsl
+        .as_ref()
+        .expect("WGSL")
+        .source;
+    assert!(masked.contains("discard"), "{masked}");
     let program = &built.variants["webgl2_draw_index"]
         .glsl
         .as_ref()
@@ -80,7 +94,7 @@ fn a_problem_in_the_wgsl_names_its_own_line_and_column() {
     let line = broken.lines().nth(4).expect("the broken line");
     let column = line.find("2.0;").expect("the extra value") as u32 + 1;
     assert_eq!((problem.line, problem.column), (Some(5), Some(column)));
-    assert_eq!(problem.variants.len(), 6, "{problem}");
+    assert_eq!(problem.variants.len(), 12, "{problem}");
 }
 
 #[test]
@@ -218,7 +232,7 @@ fn vertexOffset(input: VertexInput) -> vec3f {
 fn a_vertex_offset_moves_the_vertex_in_every_variant_and_reads_the_uniforms() {
     let built = compile(WAVE).expect("the vertex offset builds");
     assert_eq!(built.functions, ["vertexOffset"]);
-    assert_eq!(built.variants.len(), 6);
+    assert_eq!(built.variants.len(), 12);
     let wgsl = &built.variants["webgpu"].wgsl.as_ref().expect("WGSL").source;
     assert!(wgsl.contains("fn vertexOffset("), "{wgsl}");
     assert!(!wgsl.contains("fn surface("), "{wgsl}");
@@ -285,7 +299,7 @@ fn fs(in: Varyings) -> @location(0) vec4f {
 fn a_full_shader_builds_for_both_paths_and_reports_the_attributes_it_reads() {
     let built = compile(FULL).expect("the full shader builds");
     assert!(built.functions.is_empty());
-    assert!(!built.vertex_colors);
+    assert!(!built.base_color);
     let names: Vec<&str> = built.variants.keys().map(String::as_str).collect();
     assert_eq!(names, ["webgl2", "webgl2_draw_index", "webgpu"]);
     assert_eq!(built.locations, [0, 1, 5]);
@@ -300,7 +314,7 @@ fn a_surface_function_reads_the_first_texture_coordinates() {
     let built = compile(STRIPES).expect("the surface function builds");
     assert_eq!(built.locations, [0, 1, 2]);
     assert_eq!(built.attributes, null3d_gpu::drawlist::vertex::UV0);
-    assert!(built.vertex_colors);
+    assert!(built.base_color);
 }
 
 #[test]

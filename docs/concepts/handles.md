@@ -18,7 +18,7 @@ flowchart LR
     gen --> check["Development builds:<br/>catch use after destroy"]
 ```
 
-Every mesh, camera and group in null3D has a handle: a small integer that names it. The object's data lives in shared arrays, one array per field, and the handle's slot number is the object's index into each array.
+Every mesh, camera, group and light in null3D has a handle: a small integer that names it. The object's data lives in shared arrays, one array per field, and the handle's slot number is the object's index into each array.
 
 ## What a handle holds
 
@@ -26,8 +26,8 @@ A handle packs two numbers into 30 bits:
 
 | Part | Bits | Purpose |
 | --- | --- | --- |
-| Slot index | 20 | The object's row in the data arrays. 20 bits give room for 1,048,575 objects, and this version's scene holds up to 16,383. |
-| Generation | 10 | A counter that changes when a slot is reused, so the engine can tell an old handle from a new one. |
+| Slot index | 20 | The object's row in the data arrays. 20 bits give room for 1,048,575 objects, and this version's scene holds up to 16,383, lights and cameras included. |
+| Generation | 10 | A counter that changes when the slot's object is destroyed, so the engine can tell an old handle from the handle of a new object in the same slot. |
 
 Each instance in an instance batch is a row of that batch, with no handle of its own. The limit therefore does not cap instance counts.
 
@@ -51,7 +51,7 @@ const out = new Float32Array(3); // made once, in the setup
 crate.getWorldPosition(out); // writes into out, allocates nothing
 ```
 
-Setters such as `setPosition`, `setRotation` and `setScale` write straight into the shared arrays. Getters take an output array, so a hot path allocates nothing. The engine adds a new object to the scene when it processes the frame, after `onUpdate` returns. Read the object's world position in that frame's `onLateUpdate`, or from the next `onUpdate` call on.
+Setters such as `setPosition`, `setRotation` and `setScale` write straight into the shared arrays. Getters take an output array, so a hot path allocates nothing. The engine adds a new object to the scene when it processes the frame, after `onUpdate` returns. Read the object's world position in that frame's `onLateUpdate`, or from the next `onUpdate` call on. An earlier read throws no error, but it does not give the object's position.
 
 Each kind of object has its own class. Passing a mesh where the engine expects a camera, as in `scene.setActiveCamera(crate)`, fails at compile time.
 
@@ -70,7 +70,7 @@ crate.destroy();
 crate.setPosition(0, 0, 0); // development build: throws E1101
 ```
 
-In development builds, every call on an object apart from `describe` checks that the object still lives. A call on a destroyed object throws an `EngineError` with the code [E1101](../errors/E1101.md), which names the object and the frame it was destroyed in. Release builds leave this check out, so a transform setter costs only its memory writes.
+In development builds, every call on an object apart from `describe` checks that the object still lives. A call on a destroyed object throws an `EngineError` with the code [E1101](../errors/E1101.md), which names the object and the frame it was destroyed in. Release builds leave this check out, so a transform setter costs only its memory writes. There, a call on a destroyed object is a bug that the engine does not catch: it can change the object that took the slot.
 
 ## Keep per-object data in your own arrays
 

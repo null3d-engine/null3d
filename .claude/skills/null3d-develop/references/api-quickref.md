@@ -44,7 +44,7 @@ const engine = await createEngine({
   signal: controller.signal,             // abort to cancel the start; createEngine then rejects
   hold: 1.5,             // image tests: step the sketch to 1.5 s, draw that one frame, and run no frame loop
   transparent: false,    // later in 0.1: true for a see-through canvas
-  sketchThread: 'worker',  // later in 0.1: 'main' for DOM-heavy apps and debugging
+  sketchThread: 'worker',  // or 'main': sketch code on the page's thread, for DOM-heavy apps and debugging
   largeWorld: false,     // (0.2) planet-scale scenes: cell-relative positions, batch origins
 });
 // createEngine rejects with an EngineError when the browser cannot run the engine (error.code)
@@ -57,7 +57,7 @@ engine.detach();                         // single-page apps: canvas off the pag
 engine.attach(container);                // canvas back on the page; the engine resumes with no new start
 engine.setPaused(true);                  // the first step after resuming counts no time
 engine.capabilities;  // { tier: 'webgpu' | 'webgpu-compat' | 'webgl2', threaded, features, limits, maxInstances, depth }
-engine.mode;          // { build, latency, renderThread, jobWorkers, hold, preset, crashedStarts, memoryMaximumMiB }
+engine.mode;          // { build, latency, sketchThread, renderThread, jobWorkers, hold, preset, crashedStarts, memoryMaximumMiB }
 const metrics = await engine.measure(5);          // CPU time per thread and phase, GPU time, frame rates, memory
 const frame = await engine.captureFrame();        // { width, height, pixels }: RGBA8 rows, top row first
 engine.onFailure((error) => { /* error.code: E1302 GPU lost for good, E1404 engine thread failed */ });
@@ -117,7 +117,7 @@ export default defineSketch(async (ctx) => {
 | `scene.setBackground({ sky: { turbidity, rayleigh, sunDirection } })` (0.2) | | Sky backgrounds |
 | `scene.setEnvironment(env, { intensity, rotation })` (0.2) | | env from `assets.loadEnvironment` |
 | `scene.setBackground(env, { blur, intensity, rotation })` (0.2) | | Blurred environment backgrounds |
-| `scene.setFog({ type: 'linear', color, near, far })`, `{ type: 'exp2', color, density }` or `null` | | Later in 0.1 |
+| `scene.setFog({ type: 'linear', color, near, far })`, `{ type: 'exp2', color, density }` or `null` | | three.js's formulas and defaults. The background takes no fog, so give it the fog's color. Materials opt out with `fog: false` |
 | `scene.createSprites`, `createPoints`, `createLines`, `createLod` (0.2) | | Docs `api/sprites`, `api/points`, `api/lines`, `concepts/lod` |
 | `scene.createView({ camera, rect })` (after 1.0) | View | Split screens; until then, minimaps use a render-to-texture pass (`guides/multiple-views`) |
 | `scene.animateProperty(target, path, keyframes)` (after 1.0) | Animation | Until then, animate values in `onUpdate` |
@@ -268,10 +268,11 @@ stripes.set({ speed: 2, roughness: 0.3 });  // uniforms of struct Uniforms and s
 ```
 
 - `materials.standard` shades as three.js's `MeshStandardMaterial` does, with its formulas and its table of specular terms.
+- `fog: false` keeps a material's color out of the scene's fog (`scene.setFog`).
 - `materials.shader` keeps the standard look and lighting, and a WGSL surface function changes the surface before the engine lights it. Every `materials.standard` option feeds `defaultSurface()`. `references/shaders.md` has the contract.
-- Later in 0.1: texture maps (`map`, `normalMap`, `metalnessRoughnessMap`, `aoMap`, `emissiveMap`, `lightMap`), `alphaMode`, `alphaCutoff`, `blending`, `depthWrite`, `depthTest`, `depthBias`, `uvTransform`, `fog: false`, and in `materials.shader` textures and full shaders.
+- Later in 0.1: texture maps (`map`, `normalMap`, `metalnessRoughnessMap`, `aoMap`, `emissiveMap`, `lightMap`), `alphaMode`, `alphaCutoff`, `blending`, `depthWrite`, `depthTest`, `depthBias`, `uvTransform`, and in `materials.shader` textures and full shaders.
 - `envIntensity` (0.2) comes with environment lighting, and `materials.shadowCatcher` in 0.2.
-- `set()` changes values cheaply at any time. Options that change the shader, such as a texture map, will be fixed when you create the material. So plan to create each variant before play, and switch with `setMaterial`.
+- `set()` changes values cheaply at any time. Options that change the shader or the pipeline are fixed when you create the material: `doubleSided`, `vertexColors`, `flatShading`, and later the texture maps. So create each variant before play, and switch with `setMaterial`.
 
 ## 10. Textures (`api/textures`)
 
@@ -425,6 +426,7 @@ Passes are declarations: the engine checks them, orders them, and shares memory 
 quality.preset;                         // 'low' | 'medium' | 'high' | 'ultra': the preset the engine runs
 quality.settings.maxPixelRatio;         // the settings in use
 quality.set({ maxPixelRatio: 1.5 });    // from the next frame; E1213 for another setting or value
+quality.set({ maxAnisotropy: 4, uploadBytesPerFrame: 2 * 1024 * 1024 });  // texture sampling cap, upload bytes per frame
 quality.set({ antialias: 'fxaa', shadowCascades: 2 });  // planned: the preset table gives each setting's status
 const PARTICLES = { low: 500, medium: 2000, high: 5000, ultra: 10000 };  // your values per preset, in one table
 quality.onChange(() => { particles.setActiveCount(PARTICLES[quality.preset]); });

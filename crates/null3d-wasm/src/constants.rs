@@ -10,6 +10,7 @@ use null3d_gpu::caps::Capabilities;
 use null3d_gpu::drawlist::{address, filter, format, sizes, upload_flags};
 use null3d_render::arrays::ArrayName;
 use null3d_render::cpu_culled::{CpuCulledConfig, MAX_SOURCE_BITS};
+use null3d_render::fog;
 use null3d_render::frame::{NO_MATERIAL, NO_MESH};
 use null3d_render::geometry::Shape;
 use null3d_render::gpu_driven::{MAX_USEFUL_BINDING_BYTES, PORTABLE_MAX_SOURCES};
@@ -67,8 +68,9 @@ pub mod shading {
     /// Where a custom shading holds the optional vertex attributes (`vertex::*` bits) that its
     /// vertex stage reads.
     pub const CUSTOM_ATTRIBUTE_SHIFT: u32 = 16;
-    /// The bit of a custom shading whose shader takes vertex colors, as the standard template does.
-    pub const CUSTOM_VERTEX_COLORS: u32 = 1 << 24;
+    /// The bit of a custom shading whose shader reads the material's base color and opacity, as the
+    /// standard template does.
+    pub const CUSTOM_BASE_COLOR: u32 = 1 << 24;
 }
 
 /// The numbers that `textureStat` reads from the texture store.
@@ -87,6 +89,10 @@ pub mod texture_stat {
     pub const IMAGES_SENT: u32 = 5;
     /// The widest and tallest texture the store takes.
     pub const MAX_SIZE: u32 = 6;
+    /// The texel bytes that one frame may upload.
+    pub const UPLOAD_BUDGET: u32 = 7;
+    /// The largest anisotropy that samplers use.
+    pub const MAX_ANISOTROPY: u32 = 8;
 }
 
 /// The settings that `setTextureOption` changes.
@@ -279,7 +285,7 @@ pub fn typescript() -> String {
                 ("UNLIT_MAP", shading::UNLIT_MAP),
                 ("CUSTOM_FIRST", shading::CUSTOM_FIRST),
                 ("CUSTOM_ATTRIBUTE_SHIFT", shading::CUSTOM_ATTRIBUTE_SHIFT),
-                ("CUSTOM_VERTEX_COLORS", shading::CUSTOM_VERTEX_COLORS),
+                ("CUSTOM_BASE_COLOR", shading::CUSTOM_BASE_COLOR),
             ],
         ),
         // The features that `createMaterial` takes, fixed from then on.
@@ -289,6 +295,19 @@ pub fn typescript() -> String {
                 ("DOUBLE_SIDED", feature::DOUBLE_SIDED),
                 ("VERTEX_COLORS", feature::VERTEX_COLORS),
                 ("FLAT_SHADING", feature::FLAT_SHADING),
+                ("ALPHA_MASK", feature::ALPHA_MASK),
+                ("NO_DEPTH_WRITE", feature::NO_DEPTH_WRITE),
+                ("NO_DEPTH_TEST", feature::NO_DEPTH_TEST),
+                ("NO_FOG", feature::NO_FOG),
+            ],
+        ),
+        // The kinds of fog that `setFog` takes.
+        (
+            "FOG_KIND",
+            &[
+                ("NONE", fog::kind::NONE),
+                ("LINEAR", fog::kind::LINEAR),
+                ("EXP2", fog::kind::EXP2),
             ],
         ),
         // The values that `setMaterialValue` changes, by the float where each starts in a row.
@@ -319,6 +338,8 @@ pub fn typescript() -> String {
                 ("WAITING", texture_stat::WAITING),
                 ("IMAGES_SENT", texture_stat::IMAGES_SENT),
                 ("MAX_SIZE", texture_stat::MAX_SIZE),
+                ("UPLOAD_BUDGET", texture_stat::UPLOAD_BUDGET),
+                ("MAX_ANISOTROPY", texture_stat::MAX_ANISOTROPY),
             ],
         ),
         // The draw list's codes that `createTexture` takes, so the sketch thread needs no import of

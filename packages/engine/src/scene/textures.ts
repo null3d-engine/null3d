@@ -21,14 +21,17 @@ import {
 	TEXTURE_STAT_IMAGES_SENT,
 	TEXTURE_STAT_LARGEST_FRAME_BYTES,
 	TEXTURE_STAT_LAST_FRAME_BYTES,
+	TEXTURE_STAT_MAX_ANISOTROPY,
 	TEXTURE_STAT_MAX_SIZE,
 	TEXTURE_STAT_MEMORY_BYTES,
 	TEXTURE_STAT_TEXTURE_BYTES,
+	TEXTURE_STAT_UPLOAD_BUDGET,
 	TEXTURE_STAT_WAITING,
 	TEXTURE_WRAP_CLAMP,
 	TEXTURE_WRAP_MIRROR,
 	TEXTURE_WRAP_REPEAT,
 } from '../generated/core';
+import type { QualitySettingName, QualitySettings } from '../quality/presets';
 import type { ImageSender } from '../shared/images';
 import { toHalfFloats } from './half-float';
 import type { CoreMemory } from './memory';
@@ -472,14 +475,34 @@ export class Textures {
 		};
 	}
 
-	/** @internal Sets the texel bytes that one frame may upload. */
+	/**
+	 * @internal Sets the texel bytes that one frame may upload, in place of the quality setting's
+	 * value until the setting changes. Tests take budgets below the setting's range.
+	 */
 	setUploadBudget(bytes: number): void {
 		this.core.glue.setTextureOption(TEXTURE_OPTION_UPLOAD_BUDGET, bytes);
 	}
 
-	/** @internal Caps the anisotropy of every texture's sampler. */
-	setMaxAnisotropy(cap: number): void {
-		this.core.glue.setTextureOption(TEXTURE_OPTION_MAX_ANISOTROPY, cap);
+	/** @internal The texel bytes that one frame may upload, as the core holds it. */
+	get uploadBudget(): number {
+		return this.stat(TEXTURE_STAT_UPLOAD_BUDGET);
+	}
+
+	/** @internal The anisotropy cap of every texture's sampler, as the core holds it. */
+	get maxAnisotropy(): number {
+		return this.stat(TEXTURE_STAT_MAX_ANISOTROPY);
+	}
+
+	/**
+	 * @internal Gives the core the texture settings among `names`: the upload budget and the
+	 * anisotropy cap. The others belong to other parts of the engine.
+	 */
+	applyQuality(settings: QualitySettings, names: readonly QualitySettingName[]): void {
+		const { glue } = this.core;
+		if (names.includes('uploadBytesPerFrame'))
+			glue.setTextureOption(TEXTURE_OPTION_UPLOAD_BUDGET, settings.uploadBytesPerFrame);
+		if (names.includes('maxAnisotropy'))
+			glue.setTextureOption(TEXTURE_OPTION_MAX_ANISOTROPY, settings.maxAnisotropy);
 	}
 }
 

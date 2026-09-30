@@ -5,6 +5,7 @@
 import * as G from '../../generated/gpu';
 import type { DeviceShaders } from '../../generated/shaders';
 import { ImageTable } from '../../shared/images';
+import { floatOfBits } from '../float-bits';
 import type { GpuTimer } from './gpu-timer';
 import { Pipelines, type RenderTemplate } from './pipelines';
 import { RenderPassSetup, submitOne, TexelCopySetup } from './reusable';
@@ -415,7 +416,8 @@ export class WebGPUBackend {
 			// Its draws draw nothing until the shader arrives and the pipeline builds.
 			this.renderPipelines[id] = null;
 			this.builds++;
-			this.parked.push(words.slice(a, a + 8));
+			// The command's header, before its operands, gives its length in words.
+			this.parked.push(words.slice(a, a - 1 + ((words[a - 1] as number) >>> 8)));
 			return;
 		}
 		const descriptor = this.pipelines.render(
@@ -426,6 +428,8 @@ export class WebGPUBackend {
 			words[a + 5] as number,
 			words[a + 6] as number,
 			words[a + 7] as number,
+			(words[a + 8] as number) | 0,
+			floatOfBits(words[a + 9] as number),
 		);
 		if (!background) {
 			this.renderPipelines[id] = device.createRenderPipeline(descriptor);

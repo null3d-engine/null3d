@@ -100,8 +100,8 @@ export interface MaterialBuild {
 	readonly locations: readonly number[];
 	/** The optional vertex attributes that those locations read, as the engine's format bits. */
 	readonly attributes: number;
-	/** True when the shader multiplies the base color by the mesh's vertex colors, as needed. */
-	readonly vertexColors: boolean;
+	/** True when the shader reads the material's base color and opacity, as the template does. */
+	readonly baseColor: boolean;
 }
 
 /** A uniform of a custom material, and where the engine writes its value. */

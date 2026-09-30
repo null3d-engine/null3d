@@ -2,9 +2,14 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import { type EngineError, setErrorFixes } from '../errors/engine-error';
 import { ERROR_FIXES } from '../errors/fixes';
 import {
+	MATERIAL_FEATURE_ALPHA_MASK,
 	MATERIAL_FEATURE_DOUBLE_SIDED,
 	MATERIAL_FEATURE_FLAT_SHADING,
+	MATERIAL_FEATURE_NO_DEPTH_TEST,
+	MATERIAL_FEATURE_NO_DEPTH_WRITE,
+	MATERIAL_FEATURE_NO_FOG,
 	MATERIAL_FEATURE_VERTEX_COLORS,
+	MATERIAL_PARAM_ALPHA_CUTOFF,
 	MATERIAL_PARAM_COLOR,
 	MATERIAL_PARAM_EMISSIVE,
 	MATERIAL_PARAM_EMISSIVE_INTENSITY,
@@ -12,8 +17,8 @@ import {
 	MATERIAL_PARAM_OPACITY,
 	MATERIAL_PARAM_ROUGHNESS,
 	SHADING_CUSTOM_ATTRIBUTE_SHIFT,
+	SHADING_CUSTOM_BASE_COLOR,
 	SHADING_CUSTOM_FIRST,
-	SHADING_CUSTOM_VERTEX_COLORS,
 	SHADING_LIT,
 } from '../generated/core';
 import { VERTEX_COLOR, VERTEX_UV0 } from '../generated/gpu';
@@ -33,6 +38,7 @@ const WIDTHS = new Map([
 	[MATERIAL_PARAM_COLOR, 3],
 	[MATERIAL_PARAM_EMISSIVE, 3],
 	[MATERIAL_PARAM_OPACITY, 1],
+	[MATERIAL_PARAM_ALPHA_CUTOFF, 1],
 	[MATERIAL_PARAM_METALNESS, 1],
 	[MATERIAL_PARAM_ROUGHNESS, 1],
 	[MATERIAL_PARAM_EMISSIVE_INTENSITY, 1],
@@ -40,7 +46,7 @@ const WIDTHS = new Map([
 
 /**
  * A core that keeps each material's row of values, from the linear color and opacity on, as the
- * engine core's table does, and each material's features.
+ * engine core's table does, and each material's features and depth bias.
  */
 function fakeCore() {
 	const table: number[][] = [];
@@ -49,6 +55,7 @@ function fakeCore() {
 	const sent: [number, CustomShader][] = [];
 	/** Each material's row of custom values. */
 	const custom: number[][] = [];
+	const biases: [number, number][] = [];
 	let failure = { code: 0, details: [0, 0] };
 	/** Runs a change on a known material, or reports the core's error for an unknown one. */
 	const change = (material: number, apply: (values: number[]) => void) => {
@@ -61,14 +68,25 @@ function fakeCore() {
 		return 0;
 	};
 	const glue = {
-		createMaterial: (shading: number, bits: number, r: number, g: number, b: number, a: number) => {
+		createMaterial: (
+			shading: number,
+			bits: number,
+			r: number,
+			g: number,
+			b: number,
+			a: number,
+			biasConstant: number,
+			biasSlope: number,
+		) => {
 			const row = new Array<number>(16).fill(0);
 			row.splice(0, 4, r, g, b, a);
+			row[MATERIAL_PARAM_ALPHA_CUTOFF] = 0.5;
 			row[MATERIAL_PARAM_ROUGHNESS] = 1;
 			row[MATERIAL_PARAM_EMISSIVE_INTENSITY] = 1;
 			features.push(bits);
 			shadings.push(shading);
 			custom.push(new Array<number>(32).fill(0));
+			biases.push([biasConstant, biasSlope]);
 			return table.push(row);
 		},
 		setMaterialValue: (material: number, param: number, x: number, y: number, z: number) =>
@@ -88,6 +106,7 @@ function fakeCore() {
 		shadings,
 		sent,
 		custom,
+		biases,
 		materials: new Materials(core, (template, shader) => sent.push([template, shader])),
 	};
 }
@@ -101,13 +120,13 @@ function compiledMaterial(uniforms: { name: string; type: string; offset: number
 		uniforms,
 		locations: [0, 1, 2],
 		attributes: VERTEX_UV0,
-		vertexColors: true,
+		baseColor: true,
 	} as const;
 }
 
 /** The shading code of a custom material of the standard template, from its template. */
 const standardCustom = (template: number) =>
-	template | (VERTEX_UV0 << SHADING_CUSTOM_ATTRIBUTE_SHIFT) | SHADING_CUSTOM_VERTEX_COLORS;
+	template | (VERTEX_UV0 << SHADING_CUSTOM_ATTRIBUTE_SHIFT) | SHADING_CUSTOM_BASE_COLOR;
 
 /** The uniforms of a WGSL `struct Uniforms { speed: f32, tint: vec3f, scale: vec2f, count: u32 }`. */
 const UNIFORMS = [
@@ -210,13 +229,65 @@ describe('Material.set', () => {
 	test('passes the features that the material fixes when it is created', () => {
 		const { features, materials } = fakeCore();
 		materials.standard({ doubleSided: true, flatShading: true });
-		materials.unlit({ vertexColors: true });
+		materials.unlit({ vertexColors: true, fog: false });
+		materials.standard({ fog: true });
+		materials.standard({ fog: false });
 		materials.standard();
 		expect(features).toEqual([
 			MATERIAL_FEATURE_DOUBLE_SIDED | MATERIAL_FEATURE_FLAT_SHADING,
-			MATERIAL_FEATURE_VERTEX_COLORS,
+			MATERIAL_FEATURE_VERTEX_COLORS | MATERIAL_FEATURE_NO_FOG,
+			0,
+			MATERIAL_FEATURE_NO_FOG,
 			0,
 		]);
+	});
+
+	test('passes the alpha mode and the depth options, and none by default', () => {
+		const { features, biases, materials } = fakeCore();
+		materials.standard({ alphaMode: 'mask', depthWrite: false });
+		materials.unlit({ alphaMode: 'opaque', depthTest: false, depthBias: { constant: -4 } });
+		materials.unlit({ depthBias: { slopeScale: -1.5 }, depthWrite: true, depthTest: true });
+		expect(features).toEqual([
+			MATERIAL_FEATURE_ALPHA_MASK | MATERIAL_FEATURE_NO_DEPTH_WRITE,
+			MATERIAL_FEATURE_NO_DEPTH_TEST,
+			0,
+		]);
+		expect(biases).toEqual([
+			[0, 0],
+			[-4, 0],
+			[0, -1.5],
+		]);
+	});
+
+	test('writes the alpha cutoff when created and when set, within 0 to 1', () => {
+		const { table, materials } = fakeCore();
+		const leaves = materials.unlit({ alphaMode: 'mask', alphaCutoff: 0.3 });
+		const cutoff = () => (table[0] as number[])[MATERIAL_PARAM_ALPHA_CUTOFF];
+		expect(cutoff()).toBe(0.3);
+		leaves.set({ alphaCutoff: 0.75 });
+		expect(cutoff()).toBe(0.75);
+		const error = thrown(() => leaves.set({ alphaCutoff: 1.5 }));
+		expect(error.code).toBe('E1108');
+		expect(error.message).toStartWith(
+			'E1108: materials.unlit.set() got the alpha cutoff 1.5, outside 0 to 1.',
+		);
+		materials.standard({ alphaMode: 'mask' });
+		expect((table[1] as number[])[MATERIAL_PARAM_ALPHA_CUTOFF]).toBe(0.5);
+	});
+
+	test('rejects an alpha mode it does not know and a depth bias that is not finite', () => {
+		const { table, materials } = fakeCore();
+		const mode = thrown(() =>
+			materials.standard({ alphaMode: 'cutout' as unknown as 'mask', color: 0xff0000 }),
+		);
+		expect(mode.code).toBe('E1217');
+		expect(mode.message).toStartWith(
+			`E1217: materials.standard() got the alpha mode "cutout"; it takes 'opaque' or 'mask'.`,
+		);
+		const bias = thrown(() => materials.unlit({ depthBias: { slopeScale: Number.NaN } }));
+		expect(bias.code).toBe('E1203');
+		expect(bias.message).toStartWith('E1203: materials.unlit() got NaN for depthBias.slopeScale.');
+		expect(table).toHaveLength(0);
 	});
 
 	test('throws the error that the engine core reports', () => {
@@ -259,7 +330,7 @@ describe('materials.shader', () => {
 			functions: [],
 			locations: [0, 1, 5],
 			attributes: VERTEX_COLOR,
-			vertexColors: false,
+			baseColor: false,
 		};
 		materials.shader({ wgsl: full, vertexColors: true });
 		expect(shadings).toEqual([

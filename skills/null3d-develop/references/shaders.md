@@ -224,7 +224,7 @@ post.addEffect({
 });
 ```
 
-Effects in the `final` stage should read the scene at their own pixel, or a few nearby pixels at most, because they share one pass with the others. Blurs and other wide filters belong in the `hdr` stage.
+Effects in the `final` stage share one pass with the others. So they should read the scene at their own pixel, or at most a few nearby pixels. Blurs and other wide filters belong in the `hdr` stage.
 
 ## 7. Custom passes (0.2)
 
@@ -250,7 +250,7 @@ These rules come from the capabilities browsers report; `shaders/wgsl-rules` lis
 
 1. Use only these WGSL language features: `packed_4x8_integer_dot_product`, `pointer_composite_access`, `readonly_and_readwrite_storage_textures`. They are the three that Chrome, Safari and Firefox all report.
 2. Write flat interpolation as `@interpolate(flat, either)`; compatibility mode accepts no other flat form.
-3. Stay within these limits unless you check capabilities first: 16 vertex attributes (including built-ins in compatibility mode), 15 values passed between stages, 16 sampled textures and 16 samplers per stage, 4 storage buffers in fragment shaders and none in vertex shaders, 16 KB of uniform data per binding, compute workgroups of at most 128 invocations, 16 KB of workgroup memory, textures up to 4096 pixels.
+3. Stay within these limits unless you check capabilities first. Vertex shaders: 16 attributes, built-ins included in compatibility mode, and no storage buffers. Fragment shaders: 4 storage buffers. Each stage: 16 sampled textures and 16 samplers, and 15 values passed between stages. Uniform data: 16 KB per binding. Compute: workgroups of at most 128 invocations, and 16 KB of workgroup memory. Textures: up to 4096 pixels.
 4. Do not use `f16`. The build rejects it, as it rejects every optional WebGPU feature, such as `enable subgroups;`. Write the math in `f32`.
 5. Do not read 32-bit float textures with filtering. Filtering them is an optional GPU feature, and some devices, such as iPads, lack it. Use `textureLoad`, or 16-bit float textures.
 6. Keep `textureSample` in uniform control flow, or use `textureSampleLevel` inside branches that differ between pixels. Chrome rejects the shader otherwise.

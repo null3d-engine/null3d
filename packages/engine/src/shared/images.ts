@@ -97,6 +97,26 @@ export function sendToTable(table: ImageTable, slots: Int32Array): ImageSender {
 	};
 }
 
+/** What a sketch sends to the thread that draws: texture images and custom materials' shaders. */
+export interface DrawingSenders {
+	sendImage: ImageSender;
+	sendShader: ShaderSender;
+}
+
+/**
+ * The senders to the thread that draws: another thread through `port`, which receives with
+ * `receiveImages`, or this thread's own `table` when there is no port.
+ */
+export function drawingSenders(
+	table: ImageTable,
+	slots: Int32Array,
+	port: MessagePort | undefined,
+): DrawingSenders {
+	return port
+		? { sendImage: sendThrough(port), sendShader: shadersThrough(port) }
+		: { sendImage: sendToTable(table, slots), sendShader: shadersToTable(table) };
+}
+
 /**
  * Keeps the images and shaders that arrive through a port in the table, and counts each image.
  */

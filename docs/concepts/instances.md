@@ -66,7 +66,7 @@ export default defineSketch(({ scene, geometry, materials }) => {
 
 Row `i` starts at index `i * 3` in an array of 3 floats per row, and at `i * 4` in an array of 4. Rows have no parent, so each position is in world space.
 
-The arrays are `Float32Array` views of engine memory. The engine's memory can grow when you create meshes or batches. In the single-threaded build, growth empties every older view, and a write to an empty view does nothing. So read the arrays from the batch each time you use them, such as at the start of `onUpdate`. Do not keep them from the setup. A read allocates nothing while the memory keeps its size.
+The arrays are `Float32Array` views of engine memory. The engine's memory can grow when the scene grows: new meshes, batches, materials and lights, and textures made or updated from data. In the single-threaded build, growth empties every older view, and a write to an empty view does nothing. So read the arrays from the batch each time you use them, such as at the start of `onUpdate`. Do not keep them from the setup. A read allocates nothing while the memory keeps its size.
 
 To turn rows, write quaternions. The [math helpers](../api/math.md) make them without allocating:
 
@@ -162,11 +162,11 @@ Keep each row's own data, such as a velocity, in your own typed arrays in the sa
 
 ## Culling
 
-Each row has its own bounding sphere. The sphere's center is the row's position, and its radius is the mesh's radius times the row's largest scale. The engine culls row by row in each view, and skips the rows outside the view. On WebGPU a compute pass on the GPU culls. On WebGL2 the job workers cull, and they test a static batch at rest in groups of 64 nearby rows. A group that is partly in view draws whole, and the GPU clips the rows outside.
+Each row has its own bounding sphere. The sphere's center is the row's position, and its radius is the mesh's radius times the row's largest scale. The engine culls row by row in each view, and skips the rows outside the view. On WebGPU a compute pass on the GPU culls. On WebGL2 the job workers cull. They test a static batch at rest in groups of 64 nearby rows, each group inside one grid cell. A group that is partly in view draws whole, and the GPU clips the rows outside. In a scene over several grid cells, both paths skip the rows of static batches in the cells out of view ([Culling](culling.md)). On WebGL2, a frame where you mark a static batch's rows tests the batch row by row, with no cell skipped. So does the frame after it.
 
 ## Automatic batching
 
-The engine groups what it draws by mesh and material. Objects from `scene.createMesh` and batch rows that share a mesh and a material draw together. They share instanced or indirect draws, with no draw per object. So 500 crates from `createMesh` with one mesh and one material draw as cheaply as a batch of 500 rows. On WebGL2 the groups split further. There, the rows of a dynamic batch and of a static batch at rest draw apart from objects with the same mesh and material.
+The engine groups what it draws by mesh and material. Objects from `scene.createMesh` and batch rows that share a mesh and a material draw together. They share instanced or indirect draws. So 500 crates from `createMesh` with one mesh and one material draw as cheaply as a batch of 500 rows. On WebGPU, an object with bounds of its own from `setBounds`, and an object that is never culled, each draw apart from the others. On WebGL2 the groups split further. There, the rows of a dynamic batch and of a static batch at rest draw apart from objects with the same mesh and material.
 
 The difference is the sketch's own work on the CPU:
 
@@ -176,14 +176,14 @@ The difference is the sketch's own work on the CPU:
 | Hierarchy | Parents and children | None: each row is in world space |
 | Identity | A name and a handle each | A row number |
 
-Some calls change the scene's structure: creating or destroying an object or a batch, and `setMaterial`, `setMesh`, `setParent`, `setDynamic`, `setBounds` and `setFrustumCulled`. So do `texture.destroy()`, and `texture.update()` with an image of another size. The next frame then rebuilds the engine's draw tables, which costs more than a normal frame. Setters, row writes, `setVisible`, `setLayers` and `setActiveCount` never rebuild them. So create batches in the setup, and pool rows during play instead of creating batches.
+Some calls change the scene's structure: creating or destroying a batch or an object of any kind, lights included, and `setMaterial`, `setMesh`, `setParent`, `setDynamic`, `setBounds` and `setFrustumCulled`. So do `texture.destroy()`, and `texture.update()` with an image of another size. The next frame then rebuilds the engine's draw tables, which costs more than a normal frame. `setBounds` rebuilds on every call, even with the same bounds. Transform setters, row writes, `setVisible`, `setLayers`, `setActiveCount` and `setRenderOrder` never rebuild the tables. Neither do the shadow setters, the setters of lights and cameras, or `material.set`. So create batches in the setup, and pool rows during play instead of creating batches.
 
 ## Limits
 
 - An engine holds up to 256 instance batches. One more throws [E1102](../errors/E1102.md).
-- Every row counts toward the device's limit of objects and instance rows, whether it draws or not. `engine.capabilities.maxInstances` gives the limit. A `createInstances` call that would pass it throws [E1501](../errors/E1501.md).
-- Each row takes about 180 bytes of engine memory, or about 230 with colors. When the engine cannot get more memory, `createInstances` throws [E1109](../errors/E1109.md).
-- On WebGL2 the limit follows the largest texture the device allows. A device whose textures reach only 2,048 pixels, the least that WebGL2 allows, draws 1,048,576. [GPU tiers and backends](backends.md#the-portable-budget) gives the numbers.
+- Every row counts toward the device's limit of objects and instance rows, whether it draws or not. `engine.capabilities.maxInstances` gives the limit. The scene's 16,384 object slots always count toward it too, used or not. So the batches of a scene hold at most the limit less 16,384 rows. A `createInstances` call that would pass it throws [E1501](../errors/E1501.md).
+- Each row takes about 210 bytes of engine memory, or about 260 with colors. When the engine cannot get more memory, `createInstances` throws [E1109](../errors/E1109.md).
+- On WebGL2 the limit follows the largest texture the device allows. A device whose textures reach only 2,048 pixels, the least that WebGL2 allows, draws 1,048,576, which leaves 1,032,192 rows for batches. [GPU tiers and backends](backends.md#the-portable-budget) gives the numbers.
 - Development builds warn once in the console when a scene passes the number that every device of its GPU path draws. On WebGPU that is 2,097,152, the most that devices with WebGPU's default limits draw. On WebGL2 it is 1,048,576. The engine picks the GPU path for each device, so test a scene past 1,048,576 on both paths.
 
 ## Per-row colors
