@@ -663,6 +663,7 @@ export class Mesh extends Object3D {
 			checkSameEngine('setMesh', 'mesh', mesh.core, this.scene);
 		}
 		this.scene.writeBounds(this.slot, 0, 0, 0, mesh.radius);
+		if (DEV) this.scene.unmarkedWrites?.boundsWritten(this);
 		this.scene.command(C.COMMAND_SET_MESH, this.handle, mesh.id, 0, 'setMesh');
 	}
 
@@ -725,6 +726,7 @@ export class Mesh extends Object3D {
 				);
 		}
 		this.scene.writeBounds(this.slot, x, y, z, radius);
+		if (DEV) this.scene.unmarkedWrites?.boundsWritten(this);
 		this.setFlag('setBounds', C.FLAG_CUSTOM_BOUNDS, true);
 	}
 }
