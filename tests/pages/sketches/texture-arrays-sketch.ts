@@ -10,7 +10,6 @@
 // frames it took, the most bytes that any frame uploaded, the GPU memory of the textures, and the
 // bytes of one texture.
 import { defineSketch, type MeshArrays, type Texture } from '@null3d/engine';
-import { unlitMapMaterial } from '@null3d/engine/internal';
 
 /** The bytes that one frame may upload: half of one image. */
 const UPLOAD_BUDGET = 2 * 1024;
@@ -77,7 +76,7 @@ export default defineSketch(async (ctx) => {
 					const position: [number, number, number] = [(k % 10) - 4.5, 2 - Math.floor(k / 10), 0];
 					scene.createMesh({
 						mesh: square,
-						material: unlitMapMaterial(materials, texture),
+						material: materials.unlit({ map: texture }),
 						position,
 					});
 					made.push(texture);
