@@ -19,7 +19,7 @@ interface LimitsResult {
 	failures: string[];
 }
 
-/** Objects and instance rows that every device draws. */
+/** Objects and instance rows that every WebGPU device draws. */
 const PORTABLE = 2_097_152;
 /** The most objects and instance rows one culling pass covers. */
 const ONE_PASS = 8_388_480;
@@ -44,8 +44,8 @@ test('a scene holds as many rows as the device draws, and running out of memory 
 	expect(result.maxInstances).toBeLessThanOrEqual(ONE_PASS);
 
 	if (result.maxInstances >= 3_000_000 + 16_384) {
-		// The device draws more than every device does: the batch's last row, past the portable
-		// limit, is on screen, and development builds warn once.
+		// The device draws more than every WebGPU device does: the batch's last row, past the
+		// portable limit, is on screen, and development builds warn once.
 		expect(result.pastPortable).toEqual({ ok: true });
 		expect(result.pastPortableDrawn).toBeGreaterThan(0);
 		expect(warnings).toHaveLength(1);

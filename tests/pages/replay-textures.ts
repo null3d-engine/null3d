@@ -14,7 +14,6 @@ import {
 	SHADERS,
 	WebGL2Backend,
 	WebGPUBackend,
-	wgslOf,
 } from '@null3d/engine/internal';
 import * as G from '../../packages/engine/src/generated/gpu';
 import { TestMemory } from './lib/drawlist';
@@ -495,7 +494,7 @@ async function drawWebGPU(memory: TestMemory, image: ImageBitmap): Promise<Drawn
 		{ binding: 0, visibility: stage, texture: { sampleType: 'depth', viewDimension: '2d-array' } },
 		{ binding: 1, visibility: stage, sampler: { type: 'comparison' } },
 	]);
-	const shader = wgslOf(SHADERS.test_textures.webgpu);
+	const shader = SHADERS.test_textures;
 	const templates: [number, RenderTemplate][] = [
 		[
 			TEMPLATE_SAMPLE,
@@ -550,11 +549,10 @@ function drawWebGL2(memory: TestMemory, image: ImageBitmap): Drawn {
 	// Reversed depth, as on WebGPU, so every path draws the same reference image.
 	const backend = new WebGL2Backend(gl, canvas, true, 'reversed');
 	backend.canvasTarget = { framebuffer, width: SIZE, height: SIZE };
-	const glsl = SHADERS.test_textures.webgl2.glsl;
-	if (!glsl) throw new Error('the texture test shader has no WebGL2 build');
+	const shader = SHADERS.test_textures;
 	const templates: [number, GlslTemplate][] = [
-		[TEMPLATE_SAMPLE, { plain: glsl.sample }],
-		[TEMPLATE_SOLID, { plain: glsl.solid }],
+		[TEMPLATE_SAMPLE, { shader, pipeline: 'sample' }],
+		[TEMPLATE_SOLID, { shader, pipeline: 'solid' }],
 	];
 	for (const [id, template] of templates) backend.defineTemplate(id, template);
 	backend.setImage(IMAGE, image);

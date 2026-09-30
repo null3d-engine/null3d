@@ -65,9 +65,12 @@ export class WebGPUBackend {
 	private readonly renderPipelines: (GPURenderPipeline | undefined)[] = [];
 	private readonly computePipelines: (GPUComputePipeline | undefined)[] = [];
 	private readonly bindGroups: (GPUBindGroup | undefined)[] = [];
-	private readonly bundles: (GPURenderBundle | undefined)[] = [];
-	private readonly bundleList: GPURenderBundle[] = [];
-	private readonly bundleDraws: number[] = [];
+	/**
+	 * Each bundle's commands as the draw list recorded them, which `ExecuteBundles` replays into the
+	 * render pass. The backend makes no native render bundles: Safari 26 encodes a bundle that holds
+	 * an indirect draw again at every execution, which costs its GPU process milliseconds per frame.
+	 */
+	private readonly bundles: (Uint32Array | undefined)[] = [];
 	private readonly pipelines: Pipelines;
 	/** Staging buffers for the uploads that writeBuffer copies slowly. */
 	private readonly staging: StagingRing;
@@ -234,9 +237,15 @@ export class WebGPUBackend {
 
 	private encoder: GPUCommandEncoder | undefined;
 
-	/** The frame's encoder, with the staged uploads recorded ahead of the command about to go in. */
+	/**
+	 * The frame's encoder, with the staged uploads recorded ahead of the command about to go in. A
+	 * new encoder opens with the GPU timer's start mark when the timer times the frame.
+	 */
 	private commandEncoder(): GPUCommandEncoder {
-		if (!this.encoder) this.encoder = this.device.createCommandEncoder();
+		if (!this.encoder) {
+			this.encoder = this.device.createCommandEncoder();
+			this.timer?.markStart(this.encoder);
+		}
 		if (this.staging.pending) {
 			const start = this.routes.timing ? performance.now() : 0;
 			this.staging.flush(this.encoder);
@@ -281,16 +290,13 @@ export class WebGPUBackend {
 		const device = this.device;
 		let pass: GPURenderPassEncoder | undefined;
 		let computePass: GPUComputePassEncoder | undefined;
-		let bundleEncoder: GPURenderBundleEncoder | undefined;
-		let bundleId = 0;
 
 		for (let i = start; i < end; ) {
 			const header = words[i] as number;
 			const op = header & 0xff;
-			const length = header >>> 8;
+			let length = header >>> 8;
 			if (length === 0 || i + length > end) throw new Error(`draw list is truncated at word ${i}`);
 			const a = i + 1;
-			const draw = bundleEncoder ?? pass;
 			switch (op) {
 				case G.OP_CREATE_BUFFER:
 					this.buffers[words[a] as number]?.destroy();
@@ -401,6 +407,7 @@ export class WebGPUBackend {
 					this.counts.pipelines++;
 					this.renderPipelines[words[a] as number] = this.pipelines.render(
 						words[a + 1] as number,
+						words[a + 2] as number,
 						this.format(words[a + 3] as number),
 						this.format(words[a + 4] as number),
 						words[a + 5] as number,
@@ -464,13 +471,10 @@ export class WebGPUBackend {
 						(flags & G.PASS_STORE_DEPTH) !== 0,
 						floats[a + 7] as number,
 					);
-					setup.setTimestampWrites(this.timer?.passWrites());
+					setup.setTimestampWrites(this.timer?.passWrites(true));
 					pass = this.commandEncoder().beginRenderPass(setup.descriptor);
 					break;
 				}
-				case G.OP_SET_PIPELINE:
-					draw?.setPipeline(this.need(this.renderPipelines, words[a] as number, 'render pipeline'));
-					break;
 				case G.OP_SET_VIEWPORT:
 					pass?.setViewport(
 						words[a] as number,
@@ -489,93 +493,42 @@ export class WebGPUBackend {
 						words[a + 3] as number,
 					);
 					break;
-				case G.OP_SET_BIND_GROUP: {
-					// The dynamic offsets are read straight from the draw list.
-					const index = words[a] as number;
-					const group = this.need(this.bindGroups, words[a + 1] as number, 'bind group');
-					const count = words[a + 2] as number;
-					if (computePass) computePass.setBindGroup(index, group, words, a + 3, count);
-					else draw?.setBindGroup(index, group, words, a + 3, count);
+				case G.OP_SET_BIND_GROUP:
+					if (computePass) this.setBindGroup(computePass, words, a);
+					else if (pass) this.setBindGroup(pass, words, a);
 					break;
-				}
-				case G.OP_SET_VERTEX_BUFFER: {
-					const size = words[a + 3] as number;
-					draw?.setVertexBuffer(
-						words[a] as number,
-						this.need(this.buffers, words[a + 1] as number, 'buffer'),
-						words[a + 2] as number,
-						size === 0 ? undefined : size,
-					);
-					break;
-				}
-				case G.OP_SET_INDEX_BUFFER: {
-					const size = words[a + 3] as number;
-					draw?.setIndexBuffer(
-						this.need(this.buffers, words[a] as number, 'buffer'),
-						words[a + 1] === G.INDEX_FORMAT_UINT32 ? 'uint32' : 'uint16',
-						words[a + 2] as number,
-						size === 0 ? undefined : size,
-					);
-					break;
-				}
+				case G.OP_SET_PIPELINE:
+				case G.OP_SET_VERTEX_BUFFER:
+				case G.OP_SET_INDEX_BUFFER:
 				case G.OP_DRAW:
-					this.countDraw(bundleEncoder, bundleId);
-					draw?.draw(
-						words[a] as number,
-						words[a + 1] as number,
-						words[a + 2] as number,
-						words[a + 3] as number,
-					);
-					break;
 				case G.OP_DRAW_INDEXED:
-					this.countDraw(bundleEncoder, bundleId);
-					draw?.drawIndexed(
-						words[a] as number,
-						words[a + 1] as number,
-						words[a + 2] as number,
-						(words[a + 3] as number) | 0,
-						words[a + 4] as number,
-					);
-					break;
 				case G.OP_DRAW_INDEXED_INDIRECT:
-					this.countDraw(bundleEncoder, bundleId);
-					draw?.drawIndexedIndirect(
-						this.need(this.buffers, words[a] as number, 'buffer'),
-						words[a + 1] as number,
-					);
+					if (pass) this.passCommand(op, words, a, pass);
 					break;
-				case G.OP_EXECUTE_BUNDLES: {
-					const count = words[a] as number;
-					this.bundleList.length = count;
-					for (let k = 0; k < count; k++) {
-						const id = words[a + 1 + k] as number;
-						this.bundleList[k] = this.need(this.bundles, id, 'bundle');
-						this.counts.drawCalls += this.bundleDraws[id] ?? 0;
-					}
-					pass?.executeBundles(this.bundleList);
+				case G.OP_EXECUTE_BUNDLES:
+					for (let k = 0; pass && k < (words[a] as number); k++)
+						this.replayBundle(this.need(this.bundles, words[a + 1 + k] as number, 'bundle'), pass);
 					break;
-				}
 				case G.OP_END_RENDER_PASS:
 					pass?.end();
 					pass = undefined;
 					break;
 				case G.OP_BEGIN_BUNDLE: {
-					bundleId = words[a] as number;
-					this.bundleDraws[bundleId] = 0;
-					const depthFormat = this.format(words[a + 2] as number);
-					bundleEncoder = device.createRenderBundleEncoder({
-						colorFormats: [this.format(words[a + 1] as number) as GPUTextureFormat],
-						depthStencilFormat: depthFormat,
-						sampleCount: words[a + 3] as number,
-					});
+					// The commands up to the bundle's end are kept to replay, and not carried out now.
+					const first = i + length;
+					let last = first;
+					while (last < end && ((words[last] as number) & 0xff) !== G.OP_END_BUNDLE) {
+						const size = (words[last] as number) >>> 8;
+						if (size === 0) break;
+						last += size;
+					}
+					if (last >= end) throw new Error(`the bundle at word ${i} has no end`);
+					this.bundles[words[a] as number] = words.slice(first, last);
+					length = last - i + ((words[last] as number) >>> 8);
 					break;
 				}
-				case G.OP_END_BUNDLE:
-					if (bundleEncoder) this.bundles[bundleId] = bundleEncoder.finish();
-					bundleEncoder = undefined;
-					break;
 				case G.OP_BEGIN_COMPUTE_PASS:
-					this.computePass.timestampWrites = this.timer?.passWrites();
+					this.computePass.timestampWrites = this.timer?.passWrites(false);
 					computePass = this.commandEncoder().beginComputePass(this.computePass);
 					break;
 				case G.OP_SET_COMPUTE_PIPELINE:
@@ -615,10 +568,93 @@ export class WebGPUBackend {
 		this.submit();
 	}
 
-	/** Counts a draw now when it runs in a pass, or each time its bundle runs. */
-	private countDraw(bundleEncoder: GPURenderBundleEncoder | undefined, bundleId: number): void {
-		if (bundleEncoder) this.bundleDraws[bundleId] = (this.bundleDraws[bundleId] ?? 0) + 1;
-		else this.counts.drawCalls++;
+	/** Sets a bind group on a pass. The dynamic offsets are read straight from the draw list. */
+	private setBindGroup(pass: GPUBindingCommandsMixin, words: Uint32Array, a: number): void {
+		pass.setBindGroup(
+			words[a] as number,
+			this.need(this.bindGroups, words[a + 1] as number, 'bind group'),
+			words,
+			a + 3,
+			words[a + 2] as number,
+		);
+	}
+
+	/**
+	 * Carries out a command that sets render pass state or draws, with its operands at `a`, and
+	 * returns false for any other command. Draw lists and recorded bundles share it.
+	 */
+	private passCommand(
+		op: number,
+		words: Uint32Array,
+		a: number,
+		pass: GPURenderPassEncoder,
+	): boolean {
+		switch (op) {
+			case G.OP_SET_PIPELINE:
+				pass.setPipeline(this.need(this.renderPipelines, words[a] as number, 'render pipeline'));
+				return true;
+			case G.OP_SET_BIND_GROUP:
+				this.setBindGroup(pass, words, a);
+				return true;
+			case G.OP_SET_VERTEX_BUFFER: {
+				const size = words[a + 3] as number;
+				pass.setVertexBuffer(
+					words[a] as number,
+					this.need(this.buffers, words[a + 1] as number, 'buffer'),
+					words[a + 2] as number,
+					size === 0 ? undefined : size,
+				);
+				return true;
+			}
+			case G.OP_SET_INDEX_BUFFER: {
+				const size = words[a + 3] as number;
+				pass.setIndexBuffer(
+					this.need(this.buffers, words[a] as number, 'buffer'),
+					words[a + 1] === G.INDEX_FORMAT_UINT32 ? 'uint32' : 'uint16',
+					words[a + 2] as number,
+					size === 0 ? undefined : size,
+				);
+				return true;
+			}
+			case G.OP_DRAW:
+				this.counts.drawCalls++;
+				pass.draw(
+					words[a] as number,
+					words[a + 1] as number,
+					words[a + 2] as number,
+					words[a + 3] as number,
+				);
+				return true;
+			case G.OP_DRAW_INDEXED:
+				this.counts.drawCalls++;
+				pass.drawIndexed(
+					words[a] as number,
+					words[a + 1] as number,
+					words[a + 2] as number,
+					(words[a + 3] as number) | 0,
+					words[a + 4] as number,
+				);
+				return true;
+			case G.OP_DRAW_INDEXED_INDIRECT:
+				this.counts.drawCalls++;
+				pass.drawIndexedIndirect(
+					this.need(this.buffers, words[a] as number, 'buffer'),
+					words[a + 1] as number,
+				);
+				return true;
+			default:
+				return false;
+		}
+	}
+
+	/** Replays a recorded bundle's commands into the render pass. */
+	private replayBundle(commands: Uint32Array, pass: GPURenderPassEncoder): void {
+		for (let i = 0; i < commands.length; ) {
+			const header = commands[i] as number;
+			if (!this.passCommand(header & 0xff, commands, i + 1, pass))
+				throw new Error(`a bundle holds command ${header & 0xff}, which only a pass can run`);
+			i += header >>> 8;
+		}
 	}
 
 	/** A buffer by id, for readback in tests. */

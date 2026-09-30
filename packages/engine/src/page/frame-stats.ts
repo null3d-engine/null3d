@@ -6,10 +6,13 @@ import { CORE_NOT_COUNTED } from '../generated/core';
 import {
 	COUNTER_NAMES,
 	Counter,
+	GPU_TIMED_PASSES,
+	GpuCounter,
 	PHASE_NAMES,
 	type PhaseName,
 	type RingRecords,
 	Role,
+	UNTIMED,
 } from '../shared/metrics';
 import { type Percentiles, percentiles, ratePerSecond } from '../shared/stats';
 
@@ -23,6 +26,21 @@ export interface ThreadStats {
 	busyMs: Percentiles;
 	/** CPU time per frame of each phase that ran on this thread. */
 	phases: Partial<Record<PhaseName, Percentiles>>;
+}
+
+/**
+ * GPU time per frame of one part of the frame, in `FrameSummary.gpuPassMs`.
+ *
+ * @category api/debug
+ */
+export interface GpuPassStats {
+	/**
+	 * The part: `copies` for the copies before the frame's first pass, a pass by its kind and its
+	 * place among the passes of that kind, such as `compute 1` or `render 2`, or `between passes`.
+	 */
+	name: string;
+	/** GPU time per frame of the part. */
+	ms: Percentiles;
 }
 
 /**
@@ -41,10 +59,19 @@ export interface FrameSummary {
 	/** Per thread, by name: `main`, `sketch-worker`, `render-worker`, `job-0` and so on. */
 	threads: Record<string, ThreadStats>;
 	/**
-	 * GPU time per frame, where the device has timestamp queries. The engine times one frame in
-	 * eight, which keeps the cost of measuring small.
+	 * GPU time per frame, where the device has timestamp queries: from the frame's first command to
+	 * the end of its last pass. Where the browser cannot time the commands before the first pass,
+	 * the time starts at the first pass. The engine times one frame in eight, which keeps the cost
+	 * of measuring small.
 	 */
 	gpuMs: Percentiles | null;
+	/**
+	 * The parts of the GPU time per frame, in the order the frame runs them: the copies before the
+	 * first pass, where the browser times them, each pass, and the time between passes. In a frame
+	 * with more passes than the engine times one by one, the last pass it times also counts the
+	 * passes after it. Null where `gpuMs` is.
+	 */
+	gpuPassMs: GpuPassStats[] | null;
 	/**
 	 * The step between GPU times when the browser rounds its timestamps, or null when they look exact.
 	 * Chrome rounds them unless its WebGPU developer features are turned on.
@@ -64,7 +91,9 @@ export interface FrameSummary {
 	/**
 	 * Time from a frame's submit to the GPU finishing it, on one frame in eight. With a WebGL2
 	 * fence, the engine sees completion at its next frame callback, so the figure rounds up to frame
-	 * intervals.
+	 * intervals. The figure ends when the thread that draws sees the finish, so it also counts time
+	 * that the thread spends blocked. In Safari, the copy of a worker's frame to the page blocks the
+	 * worker until the GPU has finished the frame.
 	 */
 	gpuLatencyMs: Percentiles | null;
 	/** Bytes uploaded to the GPU per frame. */
@@ -244,6 +273,7 @@ export function summarizeFrames(
 		cpuMsAllThreads: percentiles(total),
 		threads: threadStats,
 		gpuMs: gpu.length > 0 ? percentiles(gpu) : null,
+		gpuPassMs: gpuPassStats(ring(Role.Gpu)),
 		gpuStepMs: timerStep(gpu),
 		intervalMs: percentiles(intervals),
 		presentedFps: ratePerSecond(intervals) ?? 0,
@@ -255,6 +285,41 @@ export function summarizeFrames(
 		rebuilds: (sketch.counters[Counter.Rebuilds] ?? []).filter((n) => n > 0).length,
 		pipelines: (render.counters[Counter.Pipelines] ?? []).reduce((sum, n) => sum + n, 0),
 	};
+}
+
+/**
+ * The parts of the GPU records' frames by name, in the order the frames run them: the copies before
+ * the first pass, each pass by its kind and its place among the passes of that kind, and the time
+ * between passes where a frame has more than one. Null without GPU records.
+ */
+export function gpuPassStats(records: RingRecords): GpuPassStats[] | null {
+	if (records.busy.length === 0) return null;
+	const parts = new Map<string, number[]>();
+	const add = (name: string, ms: number) => {
+		const values = parts.get(name);
+		if (values) values.push(ms);
+		else parts.set(name, [ms]);
+	};
+	const slot = (index: number, record: number) => records.phases[index]?.[record] ?? 0;
+	records.busy.forEach((frameMs, r) => {
+		const passes = records.counters[GpuCounter.Passes]?.[r] ?? 0;
+		const renderPasses = records.counters[GpuCounter.RenderPasses]?.[r] ?? 0;
+		const copies = slot(0, r);
+		let parted = 0;
+		if (copies !== UNTIMED) {
+			add('copies', copies);
+			parted = copies;
+		}
+		const kinds = { render: 0, compute: 0 };
+		for (let pass = 0; pass < Math.min(passes, GPU_TIMED_PASSES); pass++) {
+			const kind = (renderPasses >>> pass) & 1 ? 'render' : 'compute';
+			const ms = slot(1 + pass, r);
+			add(`${kind} ${++kinds[kind]}`, ms);
+			parted += ms;
+		}
+		if (passes > 1) add('between passes', Math.max(0, frameMs - parted));
+	});
+	return Array.from(parts, ([name, values]) => ({ name, ms: percentiles(values) }));
 }
 
 /** Below this, a step between GPU times is timer precision, not rounding. */

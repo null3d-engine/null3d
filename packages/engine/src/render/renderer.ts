@@ -110,6 +110,7 @@ class WebGPURenderer implements Renderer {
 
 	private clear(view: GPUTextureView, background: FrameInput['background']): void {
 		const encoder = this.device.createCommandEncoder();
+		this.timer?.markStart(encoder);
 		const pass = this.pass;
 		pass.setColor(
 			view,
@@ -121,7 +122,7 @@ class WebGPURenderer implements Renderer {
 			linearToSrgb(background[2]),
 			1,
 		);
-		pass.setTimestampWrites(this.timer?.passWrites());
+		pass.setTimestampWrites(this.timer?.passWrites(true));
 		encoder.beginRenderPass(pass.descriptor).end();
 		this.timer?.resolve(encoder);
 		submitOne(this.device.queue, encoder.finish());

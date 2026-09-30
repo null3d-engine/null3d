@@ -41,6 +41,7 @@ import {
 	probeCapabilities,
 	readDeviceHints,
 } from './capabilities';
+import { watchDisplay } from './display';
 import {
 	type FrameMetrics,
 	HeapSampler,
@@ -157,8 +158,8 @@ export interface EngineCapabilities {
 	 * The most objects and instance rows, counted together, that a scene can draw on this device.
 	 * On WebGPU every device draws at least 2,097,152, and a device with larger GPU buffers draws
 	 * more, up to 8,388,480. On WebGL2 the number follows the largest texture the device allows:
-	 * 2,097,152 at 4,096 pixels, and 1,048,576 at the 2,048 that every device allows. Engine memory
-	 * can run out first: see E1109.
+	 * 2,097,152 at 4,096 pixels, and 1,048,576 at the 2,048 that every WebGL2 device allows. Engine
+	 * memory can run out first: see E1109.
 	 */
 	maxInstances: number;
 	/**
@@ -520,10 +521,14 @@ async function startEngine(
 			return loaded;
 		}),
 	);
-	// The page runs the sketch itself only in single-threaded mode. It needs the sketch runner right
-	// after the core, so the runner downloads while the core does: a later start delays the first
-	// frame on a slow network.
+	// The page runs the sketch itself only in single-threaded mode. It needs the sketch runner and
+	// the sketch module right after the core, so both download while the core does: a later start
+	// delays the first frame on a slow network. The sketch module's top-level code then runs when the
+	// module arrives. Hold mode loads the module once the runner has seeded the thread's random
+	// numbers, so that code draws the same numbers on every run.
 	const runnerModule = latency === 'single' ? loadRunnerModule() : undefined;
+	const sketchModule =
+		latency === 'single' && hold === undefined ? awaitLater(loadSketch(sketchUrl)) : undefined;
 	const powerPreference = options.powerPreference ?? DEFAULT_POWER_PREFERENCE;
 	const report = await abortable(probeCapabilities(powerPreference, presetRequest.hints), signal);
 	const probeMs = performance.now() - startedAt;
@@ -593,6 +598,9 @@ async function startEngine(
 	const input = captureInput(options.canvas, control);
 	input.listen(takesInput);
 	const stopPreferences = watchPreferences(slots);
+	// A worker that draws holds its frames to the display's rate, which only the page can measure.
+	const stopDisplay =
+		renderThread !== 'main' && hold === undefined ? watchDisplay(slots) : undefined;
 
 	const messageHandlers = new Set<(name: string, data: unknown) => void>();
 	if (options.onSketchMessage) messageHandlers.add(options.onSketchMessage);
@@ -670,6 +678,7 @@ async function startEngine(
 		input.listen(false);
 		canvasWatch.listen(false);
 		stopPreferences();
+		stopDisplay?.();
 		// A start that fails or stops has not crashed the tab.
 		marker?.end();
 		return stopWorkers(workers, jobs);
@@ -698,7 +707,7 @@ async function startEngine(
 				},
 				hold,
 			);
-			await localRunner.setup(await loadSketch(sketchUrl));
+			await localRunner.setup(await (sketchModule ?? loadSketch(sketchUrl)));
 			localDrawing = await drawOnPage(memory, localRunner);
 		} else {
 			sketch = new EngineWorker(

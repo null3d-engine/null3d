@@ -71,9 +71,15 @@ The sketch counts presses and releases per frame. A key can go down and up betwe
 | `x`, `y` | The position in CSS pixels from the canvas's top-left corner, at the pointer's last event |
 | `ndcX`, `ndcY` | The position in normalized device coordinates: from -1 at the left and bottom edges to 1 at the right and top edges |
 | `dx`, `dy` | The movement since the previous frame, in CSS pixels |
+| `dragDx`, `dragDy` | The part of `dx` and `dy` made while a button was held. Movement before a press or after a release in the same frame does not count. |
 | `buttons` | The buttons held, as `PointerEvent.buttons` gives them: 1 for the main button, 2 for the right button and 4 for the middle button, added together |
 | `wheel` | The wheel's scroll since the previous frame, in pixels. It is positive where a page would scroll down. A line counts 16 pixels and a page 100, as three.js's controls count them. |
+| `pinch` | The part of `wheel` that came from a pinch on a trackpad. It is positive as the fingers close. |
 | `isTouch` | True when the pointer is a finger |
+
+Use `dragDx` and `dragDy` for drags, such as turning an object with the mouse. A frame can hold the end of a hover and the start of a drag, and `dx` counts both.
+
+Browsers send a pinch on a trackpad as wheel scroll with the Control key's flag, while no Control key is down. Unless the page stops it, the browser also zooms the whole page on a pinch. [What the page does](#what-the-page-does) shows how to stop it.
 
 When the user presses a button on the canvas, the canvas captures the pointer. A drag that leaves the canvas keeps its movement and ends with a release.
 
@@ -119,7 +125,7 @@ The page reads the gamepads once per display frame while at least one is connect
 - When the window loses focus, the page hides, or the engine pauses, the sketch sees every key and button that was down come up. Input that comes while the engine is paused never reaches the sketch.
 - Keys typed into a text field, a text area, a select box or editable content never reach the sketch.
 - The engine blocks the context menu on the canvas, so the sketch can use the right button.
-- The engine leaves the browser's own actions for keys and the wheel alone. On a page that scrolls, stop Space and the arrow keys from scrolling it with a `keydown` listener on the page that calls `preventDefault()`. When the sketch zooms with the wheel, stop the page from scrolling with a wheel listener on the canvas: `canvas.addEventListener('wheel', (e) => e.preventDefault(), { passive: false })`.
+- The engine leaves the browser's own actions for keys and the wheel alone. On a page that scrolls, stop Space and the arrow keys from scrolling it with a `keydown` listener on the page that calls `preventDefault()`. When the sketch zooms with the wheel or a pinch, stop the page from scrolling and zooming with a wheel listener on the canvas: `canvas.addEventListener('wheel', (e) => e.preventDefault(), { passive: false })`.
 - On a Mac, the browser sends no release for a key pressed while Cmd is down. So when Cmd comes up, the sketch sees every key come up.
 - In hold mode, the sketch gets no input, so a held frame is the same on every run. See [Testing your sketch](../guides/testing.md).
 
@@ -168,7 +174,10 @@ The main pointer: the mouse, a pen, or the first finger that touches the canvas.
 | `readonly buttons: number` | The buttons held, as `PointerEvent.buttons` gives them: 1 for the main button, 2 for the right button and 4 for the middle button, added together. A finger on the screen holds the main button. |
 | `readonly dx: number` | Movement to the right since the previous frame, in CSS pixels. |
 | `readonly dy: number` | Movement down since the previous frame, in CSS pixels. |
+| `readonly dragDx: number` | The part of `dx` made while a button was held: a drag. Movement before a press or after a release in the same frame does not count. |
+| `readonly dragDy: number` | The part of `dy` made while a button was held: a drag. |
 | `readonly wheel: number` | The wheel's scroll since the previous frame, in pixels: positive where a page would scroll down. A wheel that scrolls by lines counts 16 pixels a line, and one that scrolls by pages counts 100 a page, as three.js's controls count them. |
+| `readonly pinch: number` | The part of `wheel` that came from a pinch on a trackpad: positive as the fingers close. Browsers send a pinch as wheel scroll that holds the Control key's flag while no Control key is down. |
 | `readonly isTouch: boolean` | True when the pointer is a finger on a touch screen. |
 
 ### `InputTouch`

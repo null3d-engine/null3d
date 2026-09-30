@@ -96,7 +96,7 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 | [Post-processing API](api/post.md) | post.set options; post.addEffect for custom WGSL effects. | planned | 0.2 |
 | [Render graph API](api/render.md) | render.addPass declarations; enabling and disabling passes; dumpGraph. | planned | 0.2 |
 | [Quality API](api/quality.md) | quality.preset, quality.set, frame budgets, quality events. | experimental | 0.1 |
-| [Debug drawing and stats](api/debug.md) | debug.line, box, axes, grid, frustum; debug.view; debug.stats. | planned | 0.1 |
+| [Debug drawing and stats](api/debug.md) | engine.measure and its figures; debug.line, box, axes, grid, frustum; debug.view; debug.stats. | experimental | 0.1 |
 | [Math helpers](api/math.md) | vec3, quat, mat4 and color on plain arrays; math.clamp, lerp, damp and a random generator that hold mode seeds. | experimental | 0.1 |
 | [Time](api/time.md) | dt, time.now, fixed steps. | experimental | 0.1 |
 | [Sprites](api/sprites.md) | createSprites; world and screen size modes; atlases. | planned | 0.2 |
@@ -109,7 +109,7 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 
 | Page | What it covers | Status | Version |
 | --- | --- | --- | --- |
-| [Performance guide](guides/performance.md) | Measuring; the frame budget; common causes of slow frames and their fixes. | planned | 0.1 |
+| [Performance guide](guides/performance.md) | Measuring; the frame budget; common causes of slow frames and their fixes. | experimental | 0.1 |
 | [Phones and tablets](guides/phones.md) | Pixel-ratio caps; memory budgets; heat; testing on real devices. | experimental | 0.1 |
 | [Custom shaders](guides/custom-shaders.md) | Surface functions; full shaders; uniforms and typed materials; hot reload. | planned | 0.1 |
 | [Custom passes and render targets](guides/custom-passes.md) | Declaring passes; reading and writing named textures; layer masks. | planned | 0.2 |
@@ -186,6 +186,7 @@ Coding agents can look pages up by ID. A page's ID is its path under `docs/` wit
 | [E1407: Invalid hold time](errors/E1407.md) | The ?hold= switch or the hold option of createEngine gave a hold time that is not a number of seconds from 0 to 600. | generated | 0.1 |
 | [E1408: Hold failed](errors/E1408.md) | The sketch or the engine failed in hold mode, before the engine read the held frame back. A live engine logs an error in the sketch and carries on. Hold mode stops at the first one, so a test fails at once. | generated | 0.1 |
 | [E1409: Invalid memory maximum](errors/E1409.md) | The memory option of createEngine asked for a maximum that is not a whole number of MiB from 256 to 4096. | generated | 0.1 |
+| [E1410: Sketch module not loaded](errors/E1410.md) | The sketch module that createEngine got did not load. It did not download, or its code threw an error while the module loaded. | generated | 0.1 |
 | [E1501: Render space full](errors/E1501.md) | The scene needs more room than the renderer set aside. The full part is the draw list, the material table, the upload space or the culling pass. On WebGPU the culling pass covers 2,097,152 objects and instance rows on every device, and more on devices with larger GPU buffers. On WebGL2 the number follows the largest texture the device allows. The number for the device is in engine.capabilities.maxInstances. | generated | 0.1 |
 | [E1502: Pass input missing](errors/E1502.md) | A render pass uses a target or buffer that no pass creates, or reads one that no pass running in the frame writes. The render graph checks every pass before the frame draws. | generated | 0.1 |
 | [E1503: Target created twice](errors/E1503.md) | Two render passes create the same target, or a pass creates a target that the render graph keeps between frames. Each target has one creator, which sets its format and size. | generated | 0.1 |

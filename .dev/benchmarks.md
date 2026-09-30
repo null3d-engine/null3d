@@ -15,7 +15,9 @@ The benchmarks compare null3D with three.js in the same browser. These points co
 
 ## The benchmark job in CI
 
-- The Benchmarks workflow compares a new commit with a baseline on one of GitHub's machines. It runs on every push to main, against the commit before it on main.
+- The Benchmarks workflow compares a new commit with a baseline on one of GitHub's machines. On main it runs one job at a time, so it leaves GitHub's other Mac machines to the pull requests' Safari and Firefox checks.
+- A push to main waits while a job runs, and a newer push replaces the job that waits. So the baseline of a push is the last commit on main that a job measured with success, which `bench/ci-baseline.ts` finds. The next job then measures the change of every push that got no job.
+- Without such a commit, the baseline is the commit before. After a failed job, the next job still compares with the last commit that passed. Main's job then fails until a commit fixes the slowdown or names it in a `Bench-Expected:` trailer.
 - For a pull request it runs on demand, against the pull request's merge base. Add the `benchmark` label, and each push runs it again while the label stays. You can also start the workflow from the Actions tab with a pull request's number, a branch or a commit.
 - GitHub's machines are shared, and their speed changes from run to run. So the job judges a new commit only against a baseline measured in the same job. It builds both commits on one machine, each in a git worktree of its own, with `bun run build`.
 - It then runs `bun run bench:run --compare <baseline>,<new>` in Chrome. S1, S1-static and S2 run on null3D's two GPU paths. The job runs 10 rounds. Each round runs every page once in each build, the two runs back to back, and even rounds run the new build first. Each run has 5 s of warm-up and 5 s measured.
@@ -100,6 +102,7 @@ Three sweeps measure the defaults that are still open: the latency mode, the job
 - Chrome refuses network limits on a worker. It applies the page's limit to a worker's own requests only once the debugging protocol's Network domain is on in that worker. So on Slow 4G the tool attaches to each worker, which waits at its start until the domain is on.
 - Without that step, the workers would load the core's loader and the sketch at full speed. The first frame would then come about a second early.
 - On Slow 4G the start is a chain of round trips of at least 562 ms each. After the page and its script come the core and the probe worker, then the other workers. Then the workers load the core's loader, and then the sketch.
+- In single-threaded mode the sketch downloads with the core. The page asks for the core's loader and the renderer once the core has compiled, and both take about one round trip.
 - The engine starts its workers only once the core has compiled. On Slow 4G their scripts and imports therefore add two round trips after the core.
 - The MacBook Pro was measured in Chrome 154 on 30 September 2026. A cold load in the pipelined mode finished its first frame after 4.0 s on Slow 4G. A warm load took 0.7 s, and both took about 0.1 s at full speed.
 
@@ -121,3 +124,24 @@ Three sweeps measure the defaults that are still open: the latency mode, the job
 - `--thread sketch` samples the sketch worker's frame step instead, and splits it between the engine's code, the engine core and the browser. It also lists the engine's per-frame phase times on that thread, such as the update and the batch pass.
 - The shipped core has no function names. Build it with `bun tools/build-wasm.ts --names` before a profile, so the profile names the core's functions. The names add size, so that build skips the size checks: build again without it before you check sizes.
 - Chrome's page-wide memory measurement waits up to a minute for the job workers, and it counts shared memory once per worker. Chrome's debugger gives exact heaps per worker through `Runtime.getHeapUsage`.
+
+## GPU time per pass
+
+- On WebGPU, `measure` returns `gpuPassMs` beside `gpuMs`: the copies before the frame's first pass, each pass, and the time between passes. The bench plan's results keep it in each result's stats.
+- In Chrome, the time between the culling pass and the main pass is Chrome's own check of the indirect draws. At 240,000 boxes it takes about 0.1 to 0.3 ms.
+- The timestamps cover only the GPU passes. Work that the browser does outside them shows in `gpuLatencyMs` and in the frame rate, as [Safari's frame path](implementation-notes.md#safaris-frame-path) describes.
+
+## Safari's own work
+
+Safari runs WebGPU in its GPU process, `com.apple.WebKit.GPU`, and no engine timer sees the work it does there. Instruments shows it. With Xcode installed, run these while a benchmark page runs in Safari with `?demo`:
+
+```sh
+export DEVELOPER_DIR=/Applications/Xcode.app/Contents/Developer
+xcrun xctrace record --template 'Metal System Trace' --all-processes --time-limit 3s --output metal.trace
+xcrun xctrace record --template 'Time Profiler' --attach <pid> --time-limit 4s --output safari-gpu.trace
+xcrun xctrace export --input metal.trace --toc
+```
+
+- The Metal trace names the GPU process's id. Other apps that embed WebKit have GPU processes of their own, so `pgrep -fl com.apple.WebKit.GPU` can list several.
+- Export a table with `--xpath '/trace-toc/run[@number="1"]/data/table[@schema="<name>"]'`. `metal-gpu-intervals` gives each encoder's GPU time. `metal-application-command-buffer-submissions` gives each command buffer's time from creation to commit. `time-profile` holds the CPU samples.
+- In S1-static at 240,000 boxes, the Metal trace showed about 1.5 ms of GPU work per frame. The profile showed Safari's GPU process spending 9.6 ms of CPU per frame on a native render bundle, which the engine no longer makes.
