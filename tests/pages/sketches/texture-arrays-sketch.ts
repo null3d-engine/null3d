@@ -3,9 +3,12 @@
 // so the images go up a band of rows at a time, and it adds the textures in waves, one wave every
 // few frames, so their array grows while it holds textures. It starts when the page sends
 // `start`, and sends `waves` a few frames after its last wave, while most images still wait, once
-// the frames that upload the new objects' tables are done. Once every
-// image is on the GPU, it sends the page `loaded` with its settings, the frames it took, the most
-// bytes that any frame uploaded, the GPU memory of the textures, and the bytes of one texture.
+// the frames that upload the new objects' tables are done. Until every image is on the GPU, it
+// sends `frame` each frame with the frame's number since the start, the textures it made, the
+// textures that wait for uploads and the bytes that the frame before uploaded, so a run that stalls
+// shows where. Once every image is on the GPU, it sends the page `loaded` with its settings, the
+// frames it took, the most bytes that any frame uploaded, the GPU memory of the textures, and the
+// bytes of one texture.
 import { defineSketch, type MeshArrays, type Texture } from '@null3d/engine';
 
 /** The bytes that one frame may upload: half of one image. */
@@ -80,8 +83,9 @@ export default defineSketch(async (ctx) => {
 				}
 				if (made.length === COUNT) lastWave = frames;
 			}
-			if (frames === lastWave + SETTLE_FRAMES) page.post('waves', frames);
+			if (lastWave >= 0 && frames === lastWave + SETTLE_FRAMES) page.post('waves', frames);
 			const uploads = textures.uploads();
+			page.post('frame', [frames, made.length, uploads.waiting, uploads.lastFrameBytes]);
 			if (made.length === COUNT && uploads.waiting === 0) {
 				loaded = true;
 				page.post('loaded', {
