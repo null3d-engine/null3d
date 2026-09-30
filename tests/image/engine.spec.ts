@@ -21,6 +21,19 @@ async function withoutIsolation(page: Page): Promise<void> {
 	});
 }
 
+/**
+ * Serves the worker probe as a worker that can draw with neither GPU path, as in a browser without
+ * a GPU context for an offscreen canvas in a worker.
+ */
+async function workersCannotDraw(page: Page): Promise<void> {
+	await page.context().route(/\/probe-worker[^/]*\.(js|ts)(\?|$)/, (route) =>
+		route.fulfill({
+			contentType: 'text/javascript',
+			body: 'postMessage({ requestAnimationFrame: true, offscreenWebGL2: false, offscreenWebGPU: false });',
+		}),
+	);
+}
+
 const singleThreaded = ENGINE_MODES.find((mode) => mode.build === 'single');
 if (!singleThreaded) throw new Error('no single-threaded engine mode');
 
@@ -142,3 +155,28 @@ for (const gpu of ['webgpu', 'webgl2'] as const) {
 		expect(engineProblems(result, singleThreaded, gpu)).toEqual([]);
 	});
 }
+
+// Where a worker cannot draw, the page draws, and the sketch worker computes the frames in
+// pipelined mode. Low latency needs the sketch worker to draw, so it falls back to pipelined mode
+// too, with a warning in development builds, and engine.mode says so.
+const drawingOnPage = ENGINE_MODES.find(({ name }) => name === 'drawing on the main thread');
+if (!drawingOnPage) throw new Error('no mode that draws on the main thread');
+for (const gpu of ['webgpu', 'webgl2'] as const)
+	for (const latency of ['pipelined', 'low'] as const)
+		test(`a ${latency} latency start draws on the page where a worker cannot draw, on ${gpu}`, async ({
+			page,
+		}, testInfo) => {
+			const warnings: string[] = [];
+			page.on('console', (message) => {
+				if (message.type() === 'warning') warnings.push(message.text());
+			});
+			await workersCannotDraw(page);
+			await page.goto(`engine.html?gpu=${gpu}&seconds=1&latency=${latency}`);
+			const result = await pageResult<EngineResult & { error?: string }>(page, 30_000);
+			await page.context().unrouteAll({ behavior: 'ignoreErrors' });
+			expect(result.error).toBeUndefined();
+			expect(engineProblems(result, drawingOnPage, gpu)).toEqual([]);
+			const fallback = warnings.filter((text) => text.includes('pipelined mode'));
+			const development = testInfo.project.name !== 'production build';
+			expect(fallback.length).toBe(latency === 'low' && development ? 1 : 0);
+		});

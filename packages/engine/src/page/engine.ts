@@ -3,6 +3,7 @@
 // page loads the renderer only when it draws itself, and the sketch runner and the scene API only
 // when it runs the sketch itself: in the single-threaded build, and with sketchThread: 'main'.
 
+import { DEV } from '../errors/checks';
 import { EngineError, isErrorCode, setErrorFixes } from '../errors/engine-error';
 import { ERROR_FIXES } from '../errors/fixes';
 import { messageOf } from '../errors/message';
@@ -98,7 +99,10 @@ export interface EngineOptions {
 	 * The browser treats it as a request. A device with one GPU ignores it.
 	 */
 	powerPreference?: 'high-performance' | 'low-power';
-	/** The latency mode. The default is `pipelined`. */
+	/**
+	 * The latency mode. The default is `pipelined`. Low latency needs a worker that draws: where
+	 * no worker can draw, the engine runs in pipelined mode, and `engine.mode` says so.
+	 */
 	latency?: LatencyMode;
 	/**
 	 * The thread that runs the sketch's code and the engine core: `worker`, the default, or `main`
@@ -661,7 +665,9 @@ async function startEngine(
 	if (!WebAssembly.validate(SIMD_PROBE))
 		throw new EngineError('E1303', 'this browser runs WebAssembly without SIMD.');
 	const build: Build = threaded ? 'threaded' : 'single';
-	const latency = threaded ? (switches.latency ?? options.latency ?? 'pipelined') : 'single';
+	let latency: EngineMode['latency'] = threaded
+		? (switches.latency ?? options.latency ?? 'pipelined')
+		: 'single';
 	const sketchOnPage = sketchThread === 'main';
 	let coreMs = 0;
 	const coreLoad = awaitLater(
@@ -764,8 +770,14 @@ async function startEngine(
 		(safeGpu && chooseTier(report, safeGpu, inWorker)) || chooseTier(report, requested, inWorker);
 
 	let choice = pickTier(renderThread !== 'main');
-	if (!choice && renderThread === 'render-worker') {
-		// Worker rendering is unavailable here, so the page draws while the sketch thread computes.
+	if (!choice && renderThread !== 'main') {
+		// Worker rendering is unavailable here, so the page draws while the sketch worker computes
+		// the frames, in pipelined mode. Low latency needs the sketch worker to draw.
+		if (DEV && latency === 'low')
+			console.warn(
+				'null3D: low latency needs a worker that draws, and this browser cannot draw in a worker. The engine runs in pipelined mode, and the page draws.',
+			);
+		latency = 'pipelined';
 		renderThread = 'main';
 		choice = pickTier(false);
 		threads?.render?.terminate();
