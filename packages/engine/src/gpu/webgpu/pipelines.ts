@@ -9,6 +9,7 @@ import {
 	LAYOUT_DEPTH,
 	LAYOUT_FRAME,
 	LAYOUT_TEXTURES,
+	PERMUTATION_VERTEX_COLOR,
 	SIZE_INSTANCE_STRIDE,
 	STATE_CULL_FRONT,
 	STATE_CULL_NONE,
@@ -20,6 +21,7 @@ import {
 	TEMPLATE_INSTANCED_UNLIT,
 	TEMPLATE_INSTANCED_UNLIT_MAP,
 	TEMPLATE_SHADOW_DEPTH,
+	VERTEX_COLOR,
 	VERTEX_INSTANCE_LOCATION,
 } from '../../generated/gpu';
 import {
@@ -31,7 +33,7 @@ import {
 import { DEV } from '../dev';
 import { LINE_VERTICES } from '../line-vertices';
 import { variantFor } from '../variants';
-import { vertexAttribute, vertexStride } from '../vertex-format';
+import { locationOfAttribute, vertexAttribute, vertexStride } from '../vertex-format';
 
 /** The WebGPU build of a shader variant. */
 export function wgslOf<Pipeline extends string>(variant: {
@@ -91,11 +93,20 @@ const FLOAT_FORMATS: (GPUVertexFormat | undefined)[] = [
 
 /**
  * The vertex buffers of a template's pipeline: a mesh's vertices first, for a template that draws
- * meshes, with each location it reads where the vertex format places it.
+ * meshes, with each location it reads where the vertex format places it. The variants with vertex
+ * colors read the mesh's colors too.
  */
-function vertexBuffers(t: RenderTemplate, vertexFormat: number): GPUVertexBufferLayout[] {
+function vertexBuffers(
+	t: RenderTemplate,
+	vertexFormat: number,
+	permutation: number,
+): GPUVertexBufferLayout[] {
 	if (!t.meshLocations) return t.vertexBuffers;
-	const attributes = t.meshLocations.map((shaderLocation): GPUVertexAttribute => {
+	const locations =
+		permutation & PERMUTATION_VERTEX_COLOR
+			? [...t.meshLocations, locationOfAttribute(VERTEX_COLOR)]
+			: t.meshLocations;
+	const attributes = locations.map((shaderLocation): GPUVertexAttribute => {
 		const attribute = vertexAttribute(vertexFormat, shaderLocation);
 		if (!attribute)
 			throw new Error(`vertex format ${vertexFormat} has no attribute at ${shaderLocation}`);
@@ -138,9 +149,11 @@ export class Pipelines {
 			{ binding: 1, visibility: fragment, buffer: { type: 'read-only-storage' } },
 		];
 		this.defineLayout(LAYOUT_DEPTH, 'depth', frameEntries);
-		// The shadow map, the sampler that compares depths in it, and its cascades.
+		// The table of specular terms, then the shadow map, the sampler that compares depths in
+		// it, and its cascades.
 		this.defineLayout(LAYOUT_FRAME, 'frame', [
 			...frameEntries,
+			{ binding: 3, visibility: fragment, texture: { sampleType: 'unfilterable-float' } },
 			{
 				binding: 4,
 				visibility: fragment,
@@ -161,6 +174,7 @@ export class Pipelines {
 			{ binding: 4, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
 			{ binding: 5, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'storage' } },
 			{ binding: 6, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
+			{ binding: 7, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
 		]);
 		for (const [id, label, shader, meshLocations, layouts] of [
 			[TEMPLATE_INSTANCED_LIT, 'lit', shaders.lit, [0, 1], [LAYOUT_FRAME]],
@@ -262,7 +276,7 @@ export class Pipelines {
 			vertex: {
 				module,
 				entryPoint: entryPoints?.vertex,
-				buffers: vertexBuffers(t, vertexFormat),
+				buffers: vertexBuffers(t, vertexFormat, permutation),
 			},
 			fragment: colorFormat
 				? { module, entryPoint: entryPoints?.fragment, targets: [{ format: colorFormat }] }

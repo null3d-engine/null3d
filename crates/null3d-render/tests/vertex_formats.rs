@@ -23,7 +23,7 @@ fn formats_world<B: FrameBuilder>(world: &mut World<B>) {
     let settings = world.renderer.settings_mut();
     let view = settings
         .materials_mut()
-        .create(Shading::TexCoords, [1.0; 4])
+        .create(Shading::TexCoords, 0, [1.0; 4])
         .unwrap()
         + 1;
     let object = world.scene.reserve().unwrap();

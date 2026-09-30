@@ -4,6 +4,15 @@
 import { DEV } from '../errors/checks';
 import { EngineError } from '../errors/engine-error';
 import {
+	MATERIAL_FEATURE_DOUBLE_SIDED,
+	MATERIAL_FEATURE_FLAT_SHADING,
+	MATERIAL_FEATURE_VERTEX_COLORS,
+	MATERIAL_PARAM_COLOR,
+	MATERIAL_PARAM_EMISSIVE,
+	MATERIAL_PARAM_EMISSIVE_INTENSITY,
+	MATERIAL_PARAM_METALNESS,
+	MATERIAL_PARAM_OPACITY,
+	MATERIAL_PARAM_ROUGHNESS,
 	SHADING_LIT,
 	SHADING_TEXCOORDS,
 	SHADING_UNLIT,
@@ -460,18 +469,143 @@ export interface MaterialOptions {
 	opacity?: number;
 }
 
-/** Throws E1108 for an opacity outside 0 to 1. Call it inside `if (DEV)`. */
-function checkOpacity(opacity: number, call: string): void {
-	if (!(opacity >= 0 && opacity <= 1))
-		throw new EngineError('E1108', `${call}() got the opacity ${opacity}, outside 0 to 1.`);
-}
-
 /**
- * A material: how the surfaces of the objects that use it look.
+ * The values of a standard material, which `set` changes at any time.
  *
  * @category api/materials
  */
-export class Material {
+export interface StandardValues extends MaterialOptions {
+	/** How much the surface acts like a metal, from 0 to 1. The default is 0. */
+	metalness?: number;
+	/** How rough the surface is, from 0 (a mirror) to 1 (fully matte). The default is 1. */
+	roughness?: number;
+	/**
+	 * The color the surface gives off without any light, in sRGB as `color` takes it. The default
+	 * is black, which gives off nothing.
+	 */
+	emissive?: ColorInput;
+	/** The factor of the emissive color: 0 or more. The default is 1. */
+	emissiveIntensity?: number;
+}
+
+/**
+ * The options that choose how a material's shader and pipeline draw it. They are fixed when the
+ * material is created, because a change would compile a new pipeline.
+ *
+ * @category api/materials
+ */
+export interface MaterialFeatures {
+	/** Draws both faces of each triangle. Back faces light as if they faced the camera. The default is false. */
+	doubleSided?: boolean;
+	/**
+	 * Multiplies the base color by the mesh's vertex colors, on meshes that have them. The default
+	 * is false.
+	 */
+	vertexColors?: boolean;
+}
+
+/**
+ * Options of `materials.standard`.
+ *
+ * @category api/materials
+ */
+export interface StandardOptions extends StandardValues, MaterialFeatures {
+	/**
+	 * Lights each triangle with one normal, the normal of its face, so the mesh looks faceted. It
+	 * is fixed when the material is created. The default is false.
+	 */
+	flatShading?: boolean;
+}
+
+/**
+ * Options of `materials.unlit`.
+ *
+ * @category api/materials
+ */
+export interface UnlitOptions extends MaterialOptions, MaterialFeatures {}
+
+/** The options of the standard values that are numbers, with the range each takes. */
+type Ranged = 'opacity' | 'metalness' | 'roughness' | 'emissiveIntensity';
+
+/** The core's code for each value that is a number, and the most it takes, or none above 0. */
+const RANGED: readonly (readonly [Ranged, number, number, string])[] = [
+	['opacity', MATERIAL_PARAM_OPACITY, 1, 'opacity'],
+	['metalness', MATERIAL_PARAM_METALNESS, 1, 'metalness'],
+	['roughness', MATERIAL_PARAM_ROUGHNESS, 1, 'roughness'],
+	[
+		'emissiveIntensity',
+		MATERIAL_PARAM_EMISSIVE_INTENSITY,
+		Number.POSITIVE_INFINITY,
+		'emissive intensity',
+	],
+];
+
+/** Throws E1108 for each number of `values` outside its range. Call it inside `if (DEV)`. */
+function checkValues(values: StandardValues, call: string): void {
+	for (const [key, , most, name] of RANGED) {
+		const value = values[key];
+		if (value === undefined) continue;
+		if (!(value >= 0 && value <= most))
+			throw new EngineError(
+				'E1108',
+				most === 1
+					? `${call}() got the ${name} ${value}, outside 0 to 1.`
+					: `${call}() got the ${name} ${value}; it takes 0 or more.`,
+			);
+	}
+}
+
+/**
+ * Writes the numbers of `values` that are set, and the linear colors that are given, into the
+ * core's row of material `id`. Every value was checked and every color converted before, so a
+ * call that throws changes nothing.
+ */
+function writeValues(
+	core: CoreMemory,
+	id: number,
+	call: string,
+	values: StandardValues,
+	color: readonly number[] | undefined,
+	emissive: readonly number[] | undefined,
+): void {
+	const write = (param: number, x: number, y: number, z: number) =>
+		core.check(core.glue.setMaterialValue(id, param, x, y, z), call, undefined, true);
+	if (color)
+		write(MATERIAL_PARAM_COLOR, color[0] as number, color[1] as number, color[2] as number);
+	if (emissive)
+		write(
+			MATERIAL_PARAM_EMISSIVE,
+			emissive[0] as number,
+			emissive[1] as number,
+			emissive[2] as number,
+		);
+	for (const [key, param] of RANGED) {
+		const value = values[key];
+		if (value !== undefined) write(param, value, 0, 0);
+	}
+}
+
+/** The linear value of a color option, or none when it is not set. */
+function linearOrNone(color: ColorInput | undefined, call: string): readonly number[] | undefined {
+	return color === undefined ? undefined : linearColor(color, call);
+}
+
+/** The core's feature bits of `options`. */
+function featureBits(options: StandardOptions): number {
+	return (
+		(options.doubleSided ? MATERIAL_FEATURE_DOUBLE_SIDED : 0) |
+		(options.vertexColors ? MATERIAL_FEATURE_VERTEX_COLORS : 0) |
+		(options.flatShading ? MATERIAL_FEATURE_FLAT_SHADING : 0)
+	);
+}
+
+/**
+ * A material: how the surfaces of the objects that use it look. `Values` are the options that
+ * `set` changes.
+ *
+ * @category api/materials
+ */
+export class Material<Values extends MaterialOptions = MaterialOptions> {
 	constructor(
 		/** @internal */ readonly id: number,
 		/** @internal */ readonly core: CoreMemory,
@@ -480,39 +614,48 @@ export class Material {
 	) {}
 
 	/**
-	 * Changes the options that it gets and keeps the values of the others. Every object that uses
-	 * the material changes with it. Converting a new color allocates.
+	 * Changes the values that it gets and keeps the others. Every object that uses the material
+	 * changes with it. Converting a new color allocates.
 	 */
-	set(options: MaterialOptions): void {
+	set(options: Values): void {
 		const { core, call } = this;
-		const { color, opacity } = options;
-		// Every value is checked before the first change, so a call that throws changes nothing.
-		if (DEV && opacity !== undefined) checkOpacity(opacity, call);
-		if (color !== undefined) {
-			const [r, g, b] = linearColor(color, call);
-			core.check(core.glue.setMaterialColor(this.id, r, g, b), call, undefined, true);
-		}
-		if (opacity !== undefined)
-			core.check(core.glue.setMaterialOpacity(this.id, opacity), call, undefined, true);
+		const values = options as StandardValues;
+		if (DEV) checkValues(values, call);
+		const color = linearOrNone(values.color, call);
+		const emissive = linearOrNone(values.emissive, call);
+		writeValues(core, this.id, call, values, color, emissive);
 	}
 }
 
 /**
- * Material factories. The standard material shades diffuse light only, as three.js's
- * `MeshLambertMaterial` does. Metalness and roughness are planned for null3D 0.1.
+ * Material factories. The standard material follows glTF's metallic-roughness model and shades
+ * with the formulas of three.js's `MeshStandardMaterial`. The unlit material shows its color as
+ * three.js's `MeshBasicMaterial` does.
  *
  * @category api/materials
  */
 export class Materials {
 	constructor(private readonly core: CoreMemory) {}
 
-	/** @internal Creates a material that shades as the engine core's shading code says. */
-	create(shading: number, options: MaterialOptions, call: string): Material {
+	/**
+	 * @internal Creates a material that shades as the engine core's shading code says, with the
+	 * features and values of `options`.
+	 */
+	create<Values extends MaterialOptions>(
+		shading: number,
+		options: StandardOptions,
+		call: string,
+	): Material<Values> {
 		const [r, g, b] = linearColor(options.color ?? '#ffffff', call);
+		const emissive = linearOrNone(options.emissive, call);
+		if (DEV) checkValues(options, call);
 		const opacity = options.opacity ?? 1;
-		if (DEV) checkOpacity(opacity, call);
-		const id = this.core.check(this.core.glue.createMaterial(shading, r, g, b, opacity), call);
-		return new Material(id, this.core, `${call}.set`);
+		const features = featureBits(options);
+		const { core } = this;
+		const id = core.check(core.glue.createMaterial(shading, features, r, g, b, opacity), call);
+		const { metalness, roughness, emissiveIntensity } = options;
+		writeValues(core, id, call, { metalness, roughness, emissiveIntensity }, undefined, emissive);
+		return new Material<Values>(id, core, `${call}.set`);
 	}
 
 	/** @internal Gives a material a map, or none. */
@@ -521,16 +664,19 @@ export class Materials {
 		this.core.check(status, call, undefined, true);
 	}
 
-	/** A lit material. */
-	standard(options: MaterialOptions = {}): Material {
-		return this.create(SHADING_LIT, options, 'materials.standard');
+	/**
+	 * A lit material with glTF's metallic-roughness model, like three.js's
+	 * `MeshStandardMaterial`.
+	 */
+	standard(options: StandardOptions = {}): Material<StandardValues> {
+		return this.create<StandardValues>(SHADING_LIT, options, 'materials.standard');
 	}
 
 	/**
 	 * A material that ignores lights and shows its color as it is, like three.js's
 	 * `MeshBasicMaterial`.
 	 */
-	unlit(options: MaterialOptions = {}): Material {
+	unlit(options: UnlitOptions = {}): Material {
 		return this.create(SHADING_UNLIT, options, 'materials.unlit');
 	}
 }

@@ -1,12 +1,12 @@
 //! The sources and buckets that every view culls and draws, and their uploads: the world matrices,
-//! the bucket, cell and layer mask of every source, and the bucket records that the culling shader
-//! reads.
+//! the bucket, cell and layer mask of every source, the bucket records that the culling shader
+//! reads, and the sources in cell order.
 //!
 //! A layout holds one kind of bucket. The scene's layout holds every object and instance row with a
-//! mesh and a material, as the views of cameras draw them, and it owns the matrices and the layer
-//! table. The casters' layout holds the objects that cast shadows, grouped by mesh alone, as the
-//! shadow cascades draw their depth. It has a bucket table and bucket records of its own, and its
-//! culling reads the scene layout's matrices and layer table.
+//! mesh and a material, as the views of cameras draw them, and it owns the matrices, the layer
+//! table and the cell order. The casters' layout holds the objects that cast shadows, grouped by
+//! mesh alone, as the shadow cascades draw their depth. It has a bucket table and bucket records of
+//! its own, and its culling reads the scene layout's matrices, layer table and cell order.
 
 use std::collections::TryReserveError;
 use std::ops::Range;
@@ -20,6 +20,7 @@ use null3d_core::world::{MATRIX_FLOATS, UNBOUNDED_RADIUS};
 use null3d_gpu::drawlist::{DrawList, Op, buffer_usage as usage, sizes};
 
 use super::ids;
+use crate::cells::{CellCulling, CellMask, CellOrder, MOVING};
 use crate::frame::{
     FrameInput, HIDDEN, RecordError, SceneSettings, UploadArena, address, bucket_of,
     collect_bucket_keys, drawn_rows, floats_as_bytes, grown_size, words_as_bytes,
@@ -221,9 +222,14 @@ pub(super) struct Layout {
     /// entry per bucket.
     key_counts: Vec<(BucketKey, u32)>,
     pub(super) built: bool,
-    /// Sizes of the matrix buffer, the bucket table, the layer table and the bucket records, 0
-    /// before they exist.
-    buffer_sizes: [u32; 4],
+    /// Sizes of the matrix buffer, the bucket table, the layer table, the bucket records and the
+    /// cell order, 0 before they exist.
+    buffer_sizes: [u32; 5],
+    /// Every drawn source in cell order: the still sources cell by cell, then the moving ones.
+    order: CellOrder,
+    /// The cell culling build that the order follows, and whether the GPU holds it.
+    order_build: Option<u32>,
+    order_uploaded: bool,
 }
 
 impl Layout {
@@ -243,9 +249,15 @@ impl Layout {
         }
     }
 
-    /// True for the scene's layout, which owns the matrices and the layer table.
+    /// True for the scene's layout, which owns the matrices, the layer table and the cell order.
     fn owns_sources(&self) -> bool {
         self.drawn == Drawn::Scene
+    }
+
+    /// The rows of the tables that the scene's layout owns, for `sources` sources: all of them in
+    /// the scene's layout, none in the casters'.
+    fn owned(&self, sources: u32) -> u32 {
+        if self.owns_sources() { sources } else { 0 }
     }
 
     fn base_of(&self, target: u32) -> Option<u32> {
@@ -258,27 +270,35 @@ impl Layout {
             .map(|&(_, base)| base)
     }
 
+    /// True for a scene slot whose mesh and material draw, shown or hidden.
+    pub(super) fn draws(&self, slot: usize) -> bool {
+        self.home_buckets
+            .get(slot)
+            .is_some_and(|&bucket| bucket != HIDDEN)
+    }
+
     /// The sources that draw somewhere, which each view's compacted instance buffer holds.
     pub(super) fn drawable(&self) -> u32 {
         self.buckets.iter().map(|b| b.capacity).sum()
     }
 
     /// The most that one frame copies into its arena for the tables: the bucket table, the layer
-    /// table and the bucket records.
+    /// table, the bucket records and the cell order.
     pub(super) fn upload_bound(&self) -> usize {
-        self.sources as usize * 8 + self.buckets.len() * BUCKET_BYTES as usize
+        let rows = self.sources as usize * 4 + self.owned(self.sources) as usize * 8;
+        rows + self.buckets.len() * BUCKET_BYTES as usize
     }
 
-    /// Makes room for the bucket table and the layer table of `sources` sources.
+    /// Makes room for the bucket table, the layer table and the cell order of `sources` sources.
     pub(super) fn reserve(&mut self, sources: u32) -> Result<(), TryReserveError> {
-        let owned = if self.owns_sources() { sources } else { 0 };
+        let owned = self.owned(sources);
         for (table, rows) in [
             (&mut self.instance_buckets, sources),
             (&mut self.source_layers, owned),
         ] {
             table.try_reserve((rows as usize).saturating_sub(table.len()))?;
         }
-        Ok(())
+        self.order.try_reserve(owned as usize)
     }
 
     /// Empties the buckets, for a layout that draws nothing until it is built again.
@@ -292,7 +312,87 @@ impl Layout {
     /// Forgets the buffers, so the next layout makes them again and uploads everything.
     pub(super) fn forget_gpu(&mut self) {
         self.built = false;
-        self.buffer_sizes = [0; 4];
+        self.buffer_sizes = [0; 5];
+        self.order_uploaded = false;
+    }
+
+    /// Brings the cell order up to the scene's, which `cells` keeps, and uploads it when it is new
+    /// or the GPU lacks it. Every drawn scene slot goes where the scene order puts it, and each
+    /// row of a batch that draws goes to its cell, or with the moving sources for a dynamic
+    /// batch. Does nothing while cell culling does not run.
+    #[inline(never)]
+    pub(super) fn update_order(
+        &mut self,
+        list: &mut DrawList,
+        arena: &mut UploadArena,
+        cells: &CellCulling,
+        input: &FrameInput<'_>,
+    ) -> Result<(), RecordError> {
+        if !cells.active() {
+            return Ok(());
+        }
+        if self.order_build != Some(cells.builds()) {
+            let (scene, batches) = (input.scene, input.batches);
+            let (bases, rows) = (&self.batch_bases, &self.batch_rows);
+            self.order.build(&|visit| {
+                cells.visit_scene(scene, visit);
+                for (((_, batch), &(_, base)), batch_rows) in batches.iter().zip(bases).zip(rows) {
+                    if batch_rows.bucket == HIDDEN {
+                        continue;
+                    }
+                    let dynamic = batch.is_dynamic();
+                    for (row, &cell) in batch.cells().iter().enumerate() {
+                        visit(base + row as u32, if dynamic { MOVING } else { cell });
+                    }
+                }
+            });
+            self.order_build = Some(cells.builds());
+            self.order_uploaded = false;
+        }
+        if !self.order_uploaded && !self.order.sources().is_empty() {
+            let (at, bytes) = arena.push(words_as_bytes(self.order.sources()))?;
+            list.push(Op::WriteBuffer, &[ids::ORDER, 0, at, bytes])?;
+            self.order_uploaded = true;
+        }
+        Ok(())
+    }
+
+    /// Every drawn source in cell order, as the GPU holds it while cell culling runs.
+    pub(super) fn order(&self) -> &[u32] {
+        self.order.sources()
+    }
+
+    /// The runs of the cell order that a view culls, as the culling shader reads them: the runs
+    /// of the cells in `visible` and the moving sources' run, with runs that follow each other
+    /// joined. Each is its first position, its end, and its first workgroup, which follow from
+    /// the runs before it. Returns the runs and the workgroups they need.
+    pub(super) fn ranges(&self, visible: &CellMask, out: &mut [[u32; 4]]) -> (usize, u32) {
+        let (mut count, mut groups) = (0, 0);
+        let mut close = |out: &mut [[u32; 4]], count: usize| {
+            let [start, end, first, _] = &mut out[count - 1];
+            *first = groups;
+            groups += (*end - *start).div_ceil(sizes::CULL_WORKGROUP_SIZE);
+        };
+        for run in visible
+            .iter()
+            .map(|cell| self.order.run(cell))
+            .chain(std::iter::once(self.order.run(MOVING)))
+            .filter(|run| !run.is_empty())
+        {
+            if count > 0 && out[count - 1][1] == run.start {
+                out[count - 1][1] = run.end;
+                continue;
+            }
+            if count > 0 {
+                close(out, count);
+            }
+            out[count] = [run.start, run.end, 0, 0];
+            count += 1;
+        }
+        if count > 0 {
+            close(out, count);
+        }
+        (count, groups)
     }
 
     /// Assigns every source to a bucket and lays the buckets out, from the frame's world state,
@@ -323,6 +423,13 @@ impl Layout {
             return Err(RecordError::TooManySources { limit });
         }
         self.sources = sources;
+        let owned = self.owned(sources);
+        self.order
+            .try_reserve(owned as usize)
+            .map_err(|_| RecordError::OutOfMemory {
+                bytes: owned.saturating_mul(4),
+            })?;
+        self.order_build = None;
 
         let meshes = settings.meshes();
         let drawn = self.drawn;
@@ -465,12 +572,13 @@ impl Layout {
         binding_bytes: u32,
     ) -> Result<bool, RecordError> {
         let (entries, records) = self.table_ids();
-        let owned = if self.owns_sources() { self.sources } else { 0 };
+        let owned = self.owned(self.sources);
         let needed = [
             (ids::MATRICES, owned * MATRIX_BYTES),
             (entries, self.sources * 4),
             (ids::SOURCE_LAYERS, owned * 4),
             (records, (self.buckets.len() as u32).max(1) * BUCKET_BYTES),
+            (ids::ORDER, owned * 4),
         ];
         let mut recreated = false;
         for ((id, size), made) in needed.into_iter().zip(&mut self.buffer_sizes) {
@@ -481,6 +589,7 @@ impl Layout {
                     &[id, *made, usage::STORAGE | usage::COPY_DST],
                 )?;
                 recreated = true;
+                self.order_uploaded &= id != ids::ORDER;
             }
         }
         let everything = 0..self.sources;
@@ -664,7 +773,7 @@ mod tests {
         let mut settings = scene_settings(4);
         let box_mesh = box_geometry(1.0, 1.0, 1.0, [1, 1, 1]).unwrap();
         let mesh = settings.meshes_mut().add(&box_mesh).unwrap() + 1;
-        let material = settings.materials_mut().create(Shading::Lit, [1.0; 4]);
+        let material = settings.materials_mut().create(Shading::Lit, 0, [1.0; 4]);
         let material = material.unwrap() + 1;
         let mut scene = SceneStorage::with_capacity(8);
         let mut commands = Vec::new();

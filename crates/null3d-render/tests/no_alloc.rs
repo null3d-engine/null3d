@@ -19,6 +19,7 @@ use null3d_gpu::drawlist::{DrawList, Op};
 use null3d_render::camera::{Lens, Perspective};
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::frame::FrameBuilder;
+use null3d_render::gpu_driven::{GpuDrivenRenderer, RendererConfig};
 use null3d_render::light_grid::{DEFAULT_GRID, GridView, LightGrid, LightLimits};
 use null3d_render::materials::Shading;
 use null3d_render::parallel_record::ParallelRecorder;
@@ -215,6 +216,62 @@ fn webgl2_static_batches_coming_to_rest_allocate_nothing() {
             world.record(world.frame.is_multiple_of(7));
         }
         assert_eq!(CountingAllocator::disarm(), 0, "multi-draw {multi_draw}");
+    }
+}
+
+/// Records frames of a world spread over grid cells whose camera turns and moves, so each frame
+/// sees other cells. Every eighth frame a still object and a still row move into another cell and
+/// back, which builds the cell order again. The camera's path repeats every 24 frames, so the
+/// warm-up sees every view that later frames see. Returns what the frames after it allocated.
+fn spread_allocations<B: FrameBuilder>(renderer: B) -> u64 {
+    let mut world = World::build_sized(renderer, 216);
+    let batch = world.spread(200, 3000, 5);
+    world.record(true);
+    let object = world.objects[4];
+    let step = |world: &mut World<B>| {
+        world.frame += 1;
+        world.scene.begin_frame(world.frame);
+        let k = (world.frame % 24) as f32;
+        world.aim([k * 150.0 - 1800.0, 10.0, 900.0 - k * 80.0], k * 0.6, 0.05);
+        if world.frame.is_multiple_of(8) {
+            let x = if world.frame.is_multiple_of(16) {
+                -2000.0
+            } else {
+                2000.0
+            };
+            world.scene.set_position(object, [x, 0.0, x]).unwrap();
+            let rows = world.batches.get_mut(batch).unwrap();
+            rows.positions_mut()[..3].copy_from_slice(&[x, 5.0, -x]);
+            rows.mark_dirty(0, 1).unwrap();
+        }
+        world.record(false);
+    };
+    while world.frame < 60 {
+        step(&mut world);
+    }
+    CountingAllocator::arm();
+    while world.frame < 200 {
+        step(&mut world);
+    }
+    CountingAllocator::disarm()
+}
+
+#[test]
+fn culling_by_grid_cell_allocates_nothing_in_steady_frames() {
+    let _only = CountingAllocator::exclusive();
+    CountingAllocator::track_this_thread();
+    let webgpu = GpuDrivenRenderer::new(RendererConfig::default());
+    assert_eq!(spread_allocations(webgpu), 0, "WebGPU");
+    for multi_draw in [true, false] {
+        let webgl2 = CpuCulledRenderer::new(CpuCulledConfig {
+            multi_draw,
+            ..CpuCulledConfig::default()
+        });
+        assert_eq!(
+            spread_allocations(webgl2),
+            0,
+            "WebGL2, multi-draw {multi_draw}"
+        );
     }
 }
 

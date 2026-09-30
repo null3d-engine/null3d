@@ -5,19 +5,28 @@
 mod common;
 
 use common::{Rng, frusta, random_spheres};
-use null3d_core::clusters::{CLUSTER_ROWS, ClusterScratch, NO_ROW, RowClusters};
+use null3d_core::clusters::{
+    CLUSTER_ROWS, CellClusters, ClusterScratch, NO_ROW, RowCells, RowClusters, cluster_room,
+};
 use null3d_core::culling::{cull_spheres, cull_spheres_reference};
 use null3d_core::world::SphereArrays;
 
-/// Clusters over the first `rows` spheres.
+/// Clusters over the first `rows` spheres, in one cell.
 fn built(arrays: &[Vec<f32>; 4], rows: u32) -> RowClusters {
+    built_in(arrays, rows, RowCells::One(0)).expect("rows in one cell always fit")
+}
+
+/// Clusters over the first `rows` spheres, in the cells given, or `None` when they do not fit.
+fn built_in(arrays: &[Vec<f32>; 4], rows: u32, cells: RowCells<'_>) -> Option<RowClusters> {
     let mut clusters = RowClusters::default();
     let mut scratch = ClusterScratch::default();
     clusters.try_reserve(rows).unwrap();
     scratch.try_reserve(rows).unwrap();
     let [xs, ys, zs, rs] = arrays;
-    clusters.build(SphereArrays::new(xs, ys, zs, rs), rows, &mut scratch);
+    let spheres = SphereArrays::new(xs, ys, zs, rs);
     clusters
+        .build(spheres, rows, cells, &mut scratch)
+        .then_some(clusters)
 }
 
 /// `count` spheres of radius 0.5 spread evenly through a cube 120 units wide.
@@ -144,7 +153,8 @@ fn a_rebuild_over_fewer_rows_leaves_out_the_rest() {
     let mut scratch = ClusterScratch::default();
     scratch.try_reserve(1000).unwrap();
     let [xs, ys, zs, rs] = &arrays;
-    clusters.build(SphereArrays::new(xs, ys, zs, rs), 100, &mut scratch);
+    let spheres = SphereArrays::new(xs, ys, zs, rs);
+    assert!(clusters.build(spheres, 100, RowCells::One(0), &mut scratch));
     assert_eq!(clusters.len(), 2);
     assert_eq!(clusters.rows(), 100);
     assert!(clusters.order()[..100].iter().all(|&row| row < 100));
@@ -160,6 +170,104 @@ fn building_without_room_panics() {
     clusters.build(
         SphereArrays::new(xs, ys, zs, rs),
         100,
+        RowCells::One(0),
         &mut ClusterScratch::default(),
     );
+}
+
+/// Each row's cell: rows fall into `cells` cells in blocks of uneven size, cell indices
+/// scattered, so that every cell's last cluster is only partly full.
+fn scattered_cells(rows: usize, cells: u32, seed: u64) -> Vec<u32> {
+    let mut rng = Rng::new(seed);
+    (0..rows)
+        .map(|_| (rng.range(0.0, cells as f32) as u32).min(cells - 1) * 7 % 509)
+        .collect()
+}
+
+#[test]
+fn clusters_form_inside_cells_and_each_cell_has_one_run() {
+    const ROWS: usize = 20_000;
+    let arrays = random_spheres(ROWS, 17);
+    let cells = scattered_cells(ROWS, 40, 3);
+    let clusters = built_in(&arrays, ROWS as u32, RowCells::Each(&cells)).unwrap();
+    let runs = clusters.cells();
+    // The runs follow each other, in increasing cell index, and cover every cluster.
+    assert_eq!(runs.first().map(|run| run.start), Some(0));
+    assert_eq!(runs.last().map(|run| run.end), Some(clusters.len()));
+    assert!(
+        runs.windows(2)
+            .all(|w| w[0].end == w[1].start && w[0].cell < w[1].cell)
+    );
+    let mut seen = vec![false; ROWS];
+    for &CellClusters { cell, start, end } in runs {
+        let rows_in_cell = cells.iter().filter(|&&c| c == cell).count();
+        assert_eq!(
+            (end - start) as usize,
+            rows_in_cell.div_ceil(CLUSTER_ROWS as usize)
+        );
+        for c in start..end {
+            for r in members(&clusters, c as usize) {
+                assert_eq!(cells[r], cell, "cluster {c} of cell {cell} holds row {r}");
+                assert!(!seen[r], "row {r} twice");
+                seen[r] = true;
+            }
+        }
+    }
+    assert!(seen.iter().all(|&s| s), "every row sits in a cluster");
+    // Rows in one cell alone build as they do with that cell given for all.
+    let same = vec![5; ROWS];
+    let alone = built_in(&arrays, ROWS as u32, RowCells::Each(&same)).unwrap();
+    let whole = built(&arrays, ROWS as u32);
+    assert_eq!(alone.order(), whole.order());
+    assert_eq!(
+        alone.cells(),
+        [CellClusters {
+            cell: 5,
+            start: 0,
+            end: whole.len()
+        }]
+    );
+}
+
+#[test]
+fn clusters_inside_cells_keep_every_row_in_view_of_their_cell() {
+    const ROWS: usize = 30_000;
+    let arrays = random_spheres(ROWS, 23);
+    let [xs, ys, zs, rs] = &arrays;
+    let cells = scattered_cells(ROWS, 12, 8);
+    let clusters = built_in(&arrays, ROWS as u32, RowCells::Each(&cells)).unwrap();
+    let spheres = clusters.spheres();
+    let mut rows_in_view = vec![0; ROWS];
+    let mut clusters_in_view = vec![0; clusters.len() as usize];
+    for frustum in frusta() {
+        let n = cull_spheres_reference(&frustum, xs, ys, zs, rs, 0..ROWS as u32, &mut rows_in_view);
+        let m = cull_spheres(
+            &frustum,
+            spheres.xs,
+            spheres.ys,
+            spheres.zs,
+            spheres.radii,
+            0..clusters.len(),
+            &mut clusters_in_view,
+        );
+        let mut drawn = vec![false; ROWS];
+        for &c in &clusters_in_view[..m] {
+            members(&clusters, c as usize).for_each(|r| drawn[r] = true);
+        }
+        assert!(rows_in_view[..n].iter().all(|&row| drawn[row as usize]));
+    }
+}
+
+#[test]
+fn rows_spread_too_thinly_over_cells_build_no_clusters() {
+    // 256 rows, one per cell, need 256 clusters; the room is 8.
+    let arrays = random_spheres(256, 29);
+    let cells: Vec<u32> = (0..256).collect();
+    assert_eq!(cluster_room(256), 8);
+    assert!(built_in(&arrays, 256, RowCells::Each(&cells)).is_none());
+    // Four cells need at most eight clusters, which fit.
+    let few: Vec<u32> = (0..256).map(|row| row % 4).collect();
+    let clusters = built_in(&arrays, 256, RowCells::Each(&few)).unwrap();
+    assert_eq!(clusters.len(), 4);
+    assert_eq!(clusters.cells().len(), 4);
 }

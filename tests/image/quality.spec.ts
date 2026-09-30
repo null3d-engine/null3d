@@ -1,10 +1,28 @@
 // The quality presets in the browser. The ?preset= switch fixes the preset on each GPU path, and
 // the engine and the sketch report the same one. The GPU path caps the preset, and the engine
-// chooses from the device. Starts that crash the tab make the next start lighter. The crash note
-// stays out of storage that the browser refuses, and leaves after the first seconds of play. A
-// sketch changes its settings, and a setting that the engine does not take is refused.
+// chooses from the device. Each preset's texture settings reach the core. Starts that crash the tab
+// make the next start lighter. The crash note stays out of storage that the browser refuses, and
+// leaves after the first seconds of play. A sketch changes its settings, its own upload budget
+// stays until the setting changes, and a setting that the engine does not take is refused.
 import { type BrowserContext, expect, type Page, test } from '@playwright/test';
+import {
+	presetSettings,
+	type QualityPreset,
+	type QualitySettings,
+} from '../../packages/engine/src/quality/presets.ts';
 import { pageResult } from '../lib/page-result.ts';
+
+/** The texture settings that the core holds. */
+interface CoreSettings {
+	uploadBudget: number;
+	maxAnisotropy: number;
+}
+
+/** What the sketch reports: its settings, with JSON's null for Infinity, and the core's. */
+interface SketchReport {
+	settings: Omit<QualitySettings, 'maxPixelRatio'> & { maxPixelRatio: number | null };
+	core: CoreSettings;
+}
 
 interface QualityResult {
 	ok: boolean;
@@ -12,20 +30,18 @@ interface QualityResult {
 	mode: { preset: string; crashedStarts: number; memoryMaximumMiB: number | null };
 	tier: string;
 	hints: { coarsePointer: boolean; screenMinEdge: number; deviceMemoryGB: number | null };
-	sketch: { preset: string; settings: { maxPixelRatio: number | null } };
-	changed?: { maxPixelRatio: number };
+	sketch: SketchReport & { preset: string };
+	changed?: SketchReport;
 	refused?: string;
 	notesAtFirstFrame: string[] | null;
 	notesAfterWait?: string[] | null;
 }
 
-/** The pixel ratio cap of each preset. */
-const PIXEL_RATIO_CAPS: Record<string, number> = {
-	low: 1.5,
-	medium: 2,
-	high: 2,
-	ultra: Number.POSITIVE_INFINITY,
-};
+/** A report's settings as the engine holds them: JSON gives Infinity as null. */
+function settingsOf(report: SketchReport): QualitySettings {
+	const { maxPixelRatio } = report.settings;
+	return { ...report.settings, maxPixelRatio: maxPixelRatio ?? Number.POSITIVE_INFINITY };
+}
 
 /** Opens the quality page with these switches, and returns its result. */
 async function openQuality(page: Page, query: string): Promise<QualityResult> {
@@ -55,10 +71,13 @@ for (const gpu of ['webgpu', 'compat', 'webgl2'] as const) {
 				expected,
 				expected,
 			]);
-			// JSON gives Infinity as null.
-			expect(result.sketch.settings.maxPixelRatio ?? Number.POSITIVE_INFINITY).toBe(
-				PIXEL_RATIO_CAPS[expected] as number,
-			);
+			const settings = presetSettings(expected as QualityPreset);
+			expect(settingsOf(result.sketch)).toEqual(settings);
+			// The core took the preset's texture settings before the sketch's setup ran.
+			expect(result.sketch.core).toEqual({
+				uploadBudget: settings.uploadBytesPerFrame,
+				maxAnisotropy: settings.maxAnisotropy,
+			});
 			expect(result.mode.memoryMaximumMiB).toBe(1024);
 			// The switch fixes the preset for tests, so the start keeps no crash note.
 			expect(result.mode.crashedStarts).toBe(0);
@@ -163,16 +182,44 @@ test('storage that the browser refuses counts as a normal start', async ({ page 
 test('a sketch changes its pixel ratio cap, and hears of the change', async ({ page }) => {
 	const result = await openQuality(
 		page,
-		`gpu=webgpu&set=${JSON.stringify({ maxPixelRatio: 1.25 })}`,
+		`gpu=webgpu&preset=high&set=${JSON.stringify({ maxPixelRatio: 1.25 })}`,
 	);
-	expect(result.changed).toEqual({ maxPixelRatio: 1.25 });
+	expect(result.changed?.settings).toEqual({ ...presetSettings('high'), maxPixelRatio: 1.25 });
 	expect(result.refused).toBeUndefined();
+});
+
+for (const gpu of ['webgpu', 'webgl2'] as const) {
+	test(`a sketch changes its texture settings during play, and the core takes them on ${gpu}`, async ({
+		page,
+	}) => {
+		const changes = { maxAnisotropy: 2, uploadBytesPerFrame: 1024 * 1024 };
+		const result = await openQuality(
+			page,
+			`gpu=${gpu}&preset=medium&set=${JSON.stringify(changes)}`,
+		);
+		expect(result.changed?.settings).toEqual({ ...presetSettings('medium'), ...changes });
+		expect(result.changed?.core).toEqual({ uploadBudget: 1024 * 1024, maxAnisotropy: 2 });
+	});
+}
+
+test("a sketch's own upload budget stays until the setting changes", async ({ page }) => {
+	const own = 2048;
+	const kept = await openQuality(
+		page,
+		`gpu=webgpu&preset=low&budget=${own}&set=${JSON.stringify({ maxAnisotropy: 1 })}`,
+	);
+	expect(kept.changed?.core).toEqual({ uploadBudget: own, maxAnisotropy: 1 });
+	const replaced = await openQuality(
+		page,
+		`gpu=webgpu&preset=low&budget=${own}&set=${JSON.stringify({ uploadBytesPerFrame: 65_536 })}`,
+	);
+	expect(replaced.changed?.core).toEqual({ uploadBudget: 65_536, maxAnisotropy: 2 });
 });
 
 test('a sketch that changes a setting the engine does not take gets E1213', async ({ page }) => {
 	const result = await openQuality(page, `gpu=webgpu&set=${JSON.stringify({ antialias: 'fxaa' })}`);
 	expect(result.changed).toBeUndefined();
 	expect(result.refused).toContain(
-		'E1213: quality.set() got "antialias", which is not a setting it takes. It takes maxPixelRatio.',
+		'E1213: quality.set() got "antialias", which is not a setting it takes. It takes maxPixelRatio, maxAnisotropy or uploadBytesPerFrame.',
 	);
 });
