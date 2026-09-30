@@ -5,6 +5,8 @@
 
 pub mod graph;
 
+use std::f64::consts::{PI, TAU};
+
 use null3d_core::handle::Handle;
 use null3d_core::instances::BatchTable;
 use null3d_core::jobs::JobSystem;
@@ -64,13 +66,15 @@ impl<B: FrameBuilder> World<B> {
         let box_mesh = renderer
             .settings_mut()
             .meshes_mut()
-            .add(&box_geometry(1.0, 1.0, 1.0, [1, 1, 1]))
+            .add(&base_format(
+                box_geometry(1.0, 1.0, 1.0, [1, 1, 1]).unwrap(),
+            ))
             .unwrap()
             + 1;
         let ball = renderer
             .settings_mut()
             .meshes_mut()
-            .add(&sphere_geometry(0.5, 8, 6))
+            .add(&base_sphere(0.5, [8, 6]))
             .unwrap()
             + 1;
         let lit = renderer
@@ -254,6 +258,27 @@ pub fn grid(columns: u32, rows: u32) -> Geometry {
         ..MeshArrays::default()
     };
     from_arrays(&arrays, &JobSystem::new(0)).unwrap()
+}
+
+/// A generator's mesh in the base vertex format: its positions and normals, without its texture
+/// coordinates.
+pub fn base_format(g: Geometry) -> Geometry {
+    let floats = g.vertex_floats();
+    Geometry {
+        format: 0,
+        vertices: g
+            .vertices
+            .chunks(floats)
+            .flat_map(|v| &v[..6])
+            .copied()
+            .collect(),
+        indices: g.indices,
+    }
+}
+
+/// A whole sphere from the engine's generator, in the base vertex format.
+pub fn base_sphere(radius: f64, segments: [u32; 2]) -> Geometry {
+    base_format(sphere_geometry(radius, segments, (0.0, TAU), (0.0, PI)).unwrap())
 }
 
 pub fn count(commands: &[(Op, Vec<u32>)], op: Op) -> usize {

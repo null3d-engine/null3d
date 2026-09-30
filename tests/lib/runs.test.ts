@@ -20,6 +20,7 @@ import {
 	checksPlan,
 	depthPlan,
 	depthSummary,
+	itemsNeeded,
 	judge,
 	MEMORY_MAXIMUMS_MIB,
 	memoryPlan,
@@ -42,6 +43,7 @@ import {
 	type ItemResult,
 	quietLimitMs,
 	runName,
+	shardItems,
 	turnBatches,
 	waitForRunners,
 	writePlan,
@@ -90,6 +92,45 @@ describe('waitForRunners', () => {
 	});
 });
 
+describe('shardItems', () => {
+	/** A plan item whose check lists the items it needs. */
+	const item = (id: string, needs: string[] = []) => ({
+		id,
+		path: `/${id}`,
+		timeoutSeconds: 30,
+		check: needs,
+	});
+	const needsOf = (planItem: { check: string[] }) => planItem.check;
+	const shardIds = (plan: ReturnType<typeof item>[], index: number, count: number) =>
+		shardItems(plan, { index, count }, needsOf).map(({ id }) => id);
+
+	it('deals the items out evenly, in the order of the plan', () => {
+		const plan = ['a', 'b', 'c', 'd', 'e'].map((id) => item(id));
+		expect(shardIds(plan, 1, 2)).toEqual(['a', 'c', 'e']);
+		expect(shardIds(plan, 2, 2)).toEqual(['b', 'd']);
+		expect(shardIds(plan, 1, 1)).toEqual(['a', 'b', 'c', 'd', 'e']);
+		expect(shardIds(plan, 3, 3)).toEqual(['c']);
+	});
+
+	it('keeps an item in the shard of the items it needs, and gives the next group to the smallest shard', () => {
+		// The groups are a with d and f, b with e, and c; e also names an item the plan lacks.
+		const plan = [
+			item('a'),
+			item('b'),
+			item('c'),
+			item('d', ['a']),
+			item('e', ['b', 'missing']),
+			item('f', ['d']),
+		];
+		expect(shardIds(plan, 1, 2)).toEqual(['a', 'd', 'f']);
+		expect(shardIds(plan, 2, 2)).toEqual(['b', 'c', 'e']);
+		// An item that needs items of two groups joins the groups into one.
+		const joined = [item('a'), item('b'), item('c'), item('d', ['a', 'b'])];
+		expect(shardIds(joined, 1, 2)).toEqual(['a', 'b', 'd']);
+		expect(shardIds(joined, 2, 2)).toEqual(['c']);
+	});
+});
+
 describe('runName', () => {
 	it('sorts by time and is safe as a folder name', () => {
 		expect(runName('checks', new Date('2026-09-27T10:15:30.123Z'))).toBe('20260927-101530-checks');
@@ -133,6 +174,30 @@ describe('the checks plan', () => {
 			planItems(parseArgs(['--plan', 'parity', 'Safari']))?.some((item) => isLoadPath(item.path)),
 		).toBe(false);
 		expect(planItems(parseArgs(['--plan', 'scale', 'Safari']))).toBeUndefined();
+	});
+
+	it('splits into shards that run each item once, each with the items its check compares with', () => {
+		const ids = (plan: { id: string }[]) => plan.map(({ id }) => id).sort();
+		for (const count of [2, 3, 4]) {
+			const shards = Array.from(
+				{ length: count },
+				(_, i) => planItems(parseArgs(['--shard', `${i + 1}/${count}`, 'Safari'])) ?? [],
+			);
+			expect(ids(shards.flat())).toEqual(ids(items));
+			// The largest group is an image test in every thread mode.
+			const sizes = shards.map((shard) => shard.length);
+			expect(Math.max(...sizes) - Math.min(...sizes)).toBeLessThanOrEqual(ENGINE_MODES.length);
+			for (const shard of shards) {
+				const inShard = new Set(shard.map(({ id }) => id));
+				for (const { check } of shard)
+					for (const id of itemsNeeded(check)) expect(inShard).toContain(id);
+				// Each shard keeps the plan's order.
+				expect(shard).toEqual(items.filter(({ id }) => inShard.has(id)));
+			}
+		}
+		const first = planItems(parseArgs(['--shard', '1/2', 'Safari'])) ?? [];
+		expect(first[0]?.id).toBe('capabilities');
+		expect(first.at(-1)?.id).toBe('capabilities-reload');
 	});
 
 	it('skips a WebGPU page on a browser without WebGPU only when allowed', () => {
@@ -447,6 +512,28 @@ describe('the parity plan', () => {
 		expect(item('parity-s2-null3d-webgl2').path).toBe(
 			'/bench/pages/null3d/s2.html?gpu=webgl2&hold',
 		);
+	});
+
+	it("keeps each null3D page with its scene's three.js pages, which its check compares with", () => {
+		expect(itemsNeeded(item('parity-s1-threejs-webgl').check)).toEqual([]);
+		expect(itemsNeeded(item('parity-s2-null3d-webgl2').check)).toEqual([
+			'parity-s2-threejs-webgl',
+			'parity-s2-threejs-webgpu',
+		]);
+		expect(itemsNeeded(item('parity-s1-static-null3d-compat').check)).toEqual([
+			'parity-s1-static-threejs-webgpu',
+			'parity-s1-static-threejs-webgl',
+		]);
+		// Each scene is one group of five pages, so two shards split the three scenes 10 to 5.
+		const scenes = (index: number) => [
+			...new Set(
+				(planItems(parseArgs(['--plan', 'parity', '--shard', `${index}/2`, 'Safari'])) ?? []).map(
+					({ id }) => id.replace(/^parity-(.+)-(threejs|null3d)-.+$/, '$1'),
+				),
+			),
+		];
+		expect(scenes(1)).toEqual(['s1', 's2']);
+		expect(scenes(2)).toEqual(['s1-static']);
 	});
 
 	it('passes a three.js page with a frame, and skips it without WebGPU only when allowed', () => {
@@ -858,6 +945,11 @@ describe('the startup plan', () => {
 		);
 		expect(items.at(-1)?.id).toBe('startup-drawing-on-the-main-thread-warm-5');
 		expect(startupPlan({ runs: 1 })).toHaveLength(4 + 4 * 2);
+		// A later warm load needs its mode's first warm load, which fills the cache.
+		const needed = (index: number) => itemsNeeded((items[index] as (typeof items)[number]).check);
+		expect(needed(5)).toEqual(['startup-pipelined-warm-first']);
+		expect(needed(0)).toEqual([]);
+		expect(needed(4)).toEqual([]);
 	});
 
 	it('passes a load in its mode with its times and downloads', () => {
@@ -956,6 +1048,15 @@ describe('parseArgs', () => {
 		expect(() =>
 			parseArgs(['--plan', 'bench', '--jobs', '2', '--pages', 'null3d-webgl2,threejs-webgl']),
 		).toThrow('leave out threejs-webgl');
+		expect(parseArgs(['--shard', '2/3', 'Safari']).shard).toEqual({ index: 2, count: 3 });
+		for (const shard of ['0/2', '3/2', '1', '1/2/3', 'one/two'])
+			expect(() => parseArgs(['--shard', shard])).toThrow('--shard: use <i>/<n>');
+		expect(() => parseArgs(['--plan', 'scale', '--shard', '1/2'])).toThrow(
+			'--shard splits a fixed plan, so it does not work with --plan scale',
+		);
+		expect(() => planItems(parseArgs(['--plan', 'depth', '--shard', '50/50']))).toThrow(
+			'shard 50 of 50 has no items',
+		);
 		expect(() => parseArgs(['--fast'])).toThrow('unknown option --fast');
 	});
 });
