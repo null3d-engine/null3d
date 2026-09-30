@@ -33,7 +33,9 @@ export type Three = Pick<
 	| 'InstancedMesh'
 	| 'Matrix4'
 	| 'Mesh'
+	| 'MeshBasicMaterial'
 	| 'MeshStandardMaterial'
+	| 'OrthographicCamera'
 	| 'PerspectiveCamera'
 	| 'Quaternion'
 	| 'Scene'
@@ -56,7 +58,8 @@ export type BuildScene = (
 	options: RunOptions,
 ) => SceneSetup;
 
-const RENDERERS = ['webgl', 'webgpu'] as const;
+/** three.js's two renderers, as the `?renderer=` switch names them. */
+export const RENDERERS = ['webgl', 'webgpu'] as const;
 
 /** Samples per pixel in the hold frame's target: the count that `antialias: true` gives a canvas. */
 const MSAA_SAMPLES = 4;
@@ -74,7 +77,8 @@ interface Renderer {
 	setAnimationLoop(frame: ((ms: number) => void) | null): unknown;
 }
 
-interface Engine {
+/** A three.js renderer that has started, with the classes of its build. */
+export interface ThreeEngine {
 	three: Three;
 	renderer: Renderer;
 	/**
@@ -85,7 +89,7 @@ interface Engine {
 	readFrame(width: number, height: number, draw: () => void): Promise<Uint8Array>;
 }
 
-async function startWebGL(): Promise<Engine> {
+async function startWebGL(): Promise<ThreeEngine> {
 	const three = await import('three');
 	// Both engines ask for the faster GPU, so a device with two draws both on the same one.
 	const renderer = new three.WebGLRenderer({
@@ -111,7 +115,7 @@ async function startWebGL(): Promise<Engine> {
 	};
 }
 
-async function startWebGPU(): Promise<Engine> {
+async function startWebGPU(): Promise<ThreeEngine> {
 	if (!('gpu' in navigator)) {
 		throw new Error('This browser has no WebGPU. Use a browser with WebGPU, or ?renderer=webgl.');
 	}
@@ -147,6 +151,19 @@ async function startWebGPU(): Promise<Engine> {
 	};
 }
 
+/** Starts the three.js renderer that `?renderer=` names, loading only the build that it uses. */
+export function startThree(renderer: (typeof RENDERERS)[number]): Promise<ThreeEngine> {
+	return renderer === 'webgpu' ? startWebGPU() : startWebGL();
+}
+
+/** Gives a scene what every parity scene shares: the background, the sun and the ambient light. */
+export function lightScene(three: Three, scene: ThreeModule.Scene): void {
+	scene.background = new three.Color(BACKGROUND);
+	const sun = new three.DirectionalLight(SUN.color, SUN.intensity);
+	sun.position.set(...SUN.direction).multiplyScalar(-SUN_DISTANCE);
+	scene.add(sun, new three.AmbientLight(AMBIENT.color, AMBIENT.intensity));
+}
+
 /**
  * Builds the scene with `build` and runs the mode that the page address asks for. The result goes
  * to the page and to the dev server's collector: as the `hold` report with `?hold`, else as the
@@ -158,16 +175,12 @@ export function runThreePage(sceneName: string, build: BuildScene): void {
 	run(pageReport(params), async () => {
 		const options = readRunOptions(params);
 		const rendererName = readChoice(params, 'renderer', RENDERERS);
-		const { three, renderer, readFrame } =
-			rendererName === 'webgpu' ? await startWebGPU() : await startWebGL();
+		const { three, renderer, readFrame } = await startThree(rendererName);
 		renderer.setPixelRatio(CANVAS.pixelRatio);
 		renderer.setSize(CANVAS.width, CANVAS.height);
 
 		const scene = new three.Scene();
-		scene.background = new three.Color(BACKGROUND);
-		const sun = new three.DirectionalLight(SUN.color, SUN.intensity);
-		sun.position.set(...SUN.direction).multiplyScalar(-SUN_DISTANCE);
-		scene.add(sun, new three.AmbientLight(AMBIENT.color, AMBIENT.intensity));
+		lightScene(three, scene);
 		const camera = new three.PerspectiveCamera(
 			CAMERA.fov,
 			CANVAS.width / CANVAS.height,

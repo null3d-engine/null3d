@@ -500,6 +500,14 @@ impl CpuCulledRenderer {
             self.cull(input)?;
         }
         self.add_culled_views()?;
+        // The list starts with the pipelines it creates, so the thread that draws can start to
+        // build them before it replays the rest (see `null3d_gpu::drawlist`).
+        self.lines.request_pipeline(
+            &input.lines,
+            &mut self.pipelines,
+            self.graph.scene_targets(),
+        );
+        self.pipelines.create_new(list)?;
         if !self.created {
             self.create_fixed(list)?;
         }
@@ -516,7 +524,6 @@ impl CpuCulledRenderer {
         }
         self.meshes
             .upload(list, arena, self.settings.meshes().pages())?;
-        self.pipelines.create_new(list)?;
         // Draws bind the maps' groups by id as they run, so a group made again needs nothing more.
         let table = MaterialStorage::Texture(ids::MATERIALS);
         self.settings
@@ -565,8 +572,6 @@ impl CpuCulledRenderer {
             arena,
             &input.lines,
             camera.map(|values| &values.camera),
-            &mut self.pipelines,
-            self.graph.scene_targets(),
         )?;
 
         let (culling, opaque, lines) = (&self.culling, &self.opaque, &self.lines);

@@ -12,6 +12,14 @@ const launchOptions = browserOptions(environment);
 /** Device pixels per CSS pixel on the screen of the resize tests, as on most phones and laptops. */
 const HIGH_DENSITY_RATIO = 2;
 
+/** The dev server, which serves every page of the repository from its source. */
+export const DEV_SERVER = {
+	command: 'bunx vite',
+	cwd: REPO_ROOT,
+	url: `http://localhost:${HTTP_PORT}/tests/pages/index.html`,
+	reuseExistingServer: !ci,
+};
+
 export default defineConfig({
 	testDir: 'image',
 	outputDir: '../test-results/playwright',
@@ -24,12 +32,7 @@ export default defineConfig({
 		launchOptions,
 	},
 	webServer: [
-		{
-			command: 'bunx vite',
-			cwd: REPO_ROOT,
-			url: `http://localhost:${HTTP_PORT}/tests/pages/index.html`,
-			reuseExistingServer: !ci,
-		},
+		DEV_SERVER,
 		{
 			// A fresh production build every run, so the tests never serve stale files. The errors and
 			// sketch shaders pages build on their own, so the engine test page stays as the startup

@@ -20,7 +20,7 @@ use null3d_gpu::drawlist::{
     DrawList, DrawListError, Op, buffer_usage, permutation, state_flags, vertex,
 };
 
-use crate::camera::Perspective;
+use crate::camera::Lens;
 use crate::debug_lines::DebugLines;
 use crate::frame_data::{FrameUniform, normalized_direction};
 use crate::graph::GraphError;
@@ -438,8 +438,8 @@ impl SceneSettings {
     }
 
     /// The camera the canvas shows the scene from: a scene object, and its lens.
-    pub fn set_camera(&mut self, camera: Handle, lens: Perspective) {
-        self.views[ViewId::CAMERA.index()].set_camera(camera, lens);
+    pub fn set_camera(&mut self, camera: Handle, lens: impl Into<Lens>) {
+        self.views[ViewId::CAMERA.index()].set_camera(camera, lens.into());
     }
 
     /// Sets the layers of the objects a view draws. A change needs no rebuild of the draw
@@ -534,7 +534,8 @@ impl SceneSettings {
 
     /// A view's values for a frame whose targets have the canvas's size, or `None` when the view
     /// has no camera to draw from. Shaders work in positions relative to the camera, so the
-    /// constants put the camera at the origin.
+    /// constants put a perspective camera at the origin, and an orthographic camera at infinity
+    /// behind its view.
     pub fn view_frame(
         &self,
         view: ViewId,
@@ -544,10 +545,10 @@ impl SceneSettings {
     ) -> Option<ViewFrame> {
         let aspect = canvas.0 as f32 / canvas.1.max(1) as f32;
         let view = self.views.get(view.index())?;
-        let (view_proj, camera) = view.transform(scene, parity, aspect)?;
+        let (view_proj, eye, camera) = view.transform(scene, parity, aspect)?;
         let uniform = FrameUniform {
             view_proj,
-            camera_position: [0.0, 0.0, 0.0, 1.0],
+            camera_position: eye,
             sun_direction: self.lighting.sun_direction,
             sun_color: self.lighting.sun_color,
             ambient: self.lighting.ambient,

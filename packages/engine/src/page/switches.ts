@@ -1,8 +1,8 @@
 // URL switches that let one device exercise every engine path: ?gpu=, ?threads=off, ?render=main,
-// ?latency=, ?uploads=copy and ?depth=. Four more set what the benchmarks vary: ?fps= for a fixed
-// frame rate, ?jobs= for the job worker count, ?memory= for the shared memory's maximum and ?queue=
-// for the frames that may wait on the GPU. ?hold starts hold mode for image tests, and ?bench
-// publishes the running engine for benchmark tools.
+// ?latency=, ?uploads=copy, ?depth= and ?compile=wait. Four more set what the benchmarks vary:
+// ?fps= for a fixed frame rate, ?jobs= for the job worker count, ?memory= for the shared memory's
+// maximum and ?queue= for the frames that may wait on the GPU. ?hold starts hold mode for image
+// tests, and ?bench publishes the running engine for benchmark tools.
 
 export type GpuSwitch = 'auto' | 'webgpu' | 'compat' | 'webgl2';
 /**
@@ -40,6 +40,11 @@ export interface Switches {
 	 * own. A device without `EXT_clip_control` cannot draw `reversed`, and draws its own instead.
 	 */
 	depth: DepthMode | undefined;
+	/**
+	 * False when ?compile=wait makes the WebGL2 path wait for each program's compile at its first
+	 * draw, as it does in a browser without `KHR_parallel_shader_compile`.
+	 */
+	parallelCompile: boolean;
 	/**
 	 * The frame rate from ?fps= that the thread that draws holds, up to the display's rate, or
 	 * undefined to draw at the display's rate.
@@ -96,6 +101,7 @@ export function parseSwitches(search: string): Switches {
 		latency: oneOf(params.get('latency'), ['pipelined', 'low'] as const),
 		copyUploads: params.get('uploads') === 'copy',
 		depth: oneOf(params.get('depth'), ['reversed', 'reversed-gl', 'standard'] as const),
+		parallelCompile: params.get('compile') !== 'wait',
 		fps: positive(params.get('fps')),
 		jobs: whole(params.get('jobs'), MAX_JOB_WORKERS),
 		queue: params.get('queue') === 'off' ? Number.POSITIVE_INFINITY : whole(params.get('queue')),

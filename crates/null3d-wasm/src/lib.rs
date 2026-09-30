@@ -24,7 +24,7 @@ use null3d_core::snapshot::FrameSnapshot;
 use null3d_gpu::caps::Capabilities;
 use null3d_gpu::drawlist::sizes;
 use null3d_render::arrays::{ArrayName, ArraysError, MeshArrays, from_arrays};
-use null3d_render::camera::Perspective;
+use null3d_render::camera::{Lens, Orthographic, Perspective};
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::debug_lines::LineStore;
 use null3d_render::frame::{FrameBuilder, FrameInput, RecordError};
@@ -441,6 +441,16 @@ pub fn update_transforms() -> u32 {
     };
     with_engine(|e| {
         e.scene.update_transforms(jobs);
+        0
+    })
+}
+
+/// Updates the world matrices and bounding spheres of the objects that the sketch moved after
+/// `updateTransforms`, and of the objects below them. Call it before `cullFrame`.
+#[wasm_bindgen(js_name = updateLateTransforms)]
+pub fn update_late_transforms() -> u32 {
+    with_engine(|e| {
+        e.scene.update_late_transforms();
         0
     })
 }
@@ -1084,18 +1094,58 @@ pub fn set_texture_option(option: u32, value: u32) -> u32 {
 
 /// Draws from this camera object with a perspective lens (vertical field of view in degrees), the
 /// objects whose layer masks share a bit with `layers`.
-#[wasm_bindgen(js_name = setCamera)]
-pub fn set_camera(camera: u32, fov_degrees: f32, near: f32, far: f32, layers: u32) -> u32 {
+#[wasm_bindgen(js_name = setPerspectiveCamera)]
+pub fn set_perspective_camera(
+    camera: u32,
+    fov_degrees: f32,
+    near: f32,
+    far: f32,
+    layers: u32,
+) -> u32 {
+    set_camera(
+        camera,
+        Lens::Perspective(Perspective {
+            fov_degrees,
+            near,
+            far,
+        }),
+        layers,
+    )
+}
+
+/// Draws from this camera object with an orthographic lens: a view `height` tall and `width` wide,
+/// with a width of 0 following the canvas's aspect ratio, centered right of and above the camera's
+/// axis by `center_x` and `center_y`. It draws the objects whose layer masks share a bit with
+/// `layers`.
+#[wasm_bindgen(js_name = setOrthographicCamera)]
+#[allow(clippy::too_many_arguments)]
+pub fn set_orthographic_camera(
+    camera: u32,
+    height: f32,
+    width: f32,
+    center_x: f32,
+    center_y: f32,
+    near: f32,
+    far: f32,
+    layers: u32,
+) -> u32 {
+    set_camera(
+        camera,
+        Lens::Orthographic(Orthographic {
+            height,
+            width: (width > 0.0).then_some(width),
+            center: [center_x, center_y],
+            near,
+            far,
+        }),
+        layers,
+    )
+}
+
+fn set_camera(camera: u32, lens: Lens, layers: u32) -> u32 {
     with_engine(|e| {
         let settings = e.renderer.settings_mut();
-        settings.set_camera(
-            Handle::from_raw(camera),
-            Perspective {
-                fov_degrees,
-                near,
-                far,
-            },
-        );
+        settings.set_camera(Handle::from_raw(camera), lens);
         settings.set_layers(ViewId::CAMERA, layers);
         0
     })
