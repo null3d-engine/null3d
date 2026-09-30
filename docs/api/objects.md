@@ -59,7 +59,7 @@ Getters copy into an array you pass, so they allocate nothing. Make the array on
 - `getWorldPosition(out)` copies the position in the world, and `getWorldQuaternion(out)` the rotation in the world.
 - `getWorldMatrix(out)` copies the world matrix: 16 numbers, column by column, as the [math helpers](math.md) and three.js's `matrixWorld` hold them.
 
-The world getters read the last frame that the engine processed. A change that you make in `onUpdate` shows in them from the next `onUpdate` call on. Their positions are 64-bit numbers, which keep their precision far from the origin. Pass a plain array or a `Float64Array`, because a `Float32Array` rounds them to 32 bits.
+The world getters read the engine's last transform update. A change that you make in `onUpdate` shows in them in the same frame's `onLateUpdate`, and from the next `onUpdate` call on. Their positions are 64-bit numbers, which keep their precision far from the origin. Pass a plain array or a `Float64Array`, because a `Float32Array` rounds them to 32 bits.
 
 ## Parents
 

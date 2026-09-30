@@ -87,9 +87,9 @@ return {
 };
 ```
 
-- `clock.getDelta()` becomes the `dt` argument; `clock.getElapsedTime()` becomes `ctx.time.now`.
-- Physics moves to `onFixedUpdate`, whose rate is set in `defineSketch` options (default 60 Hz).
-- Camera-follow code moves to `onLateUpdate`, so the camera uses this frame's final object positions.
+- `clock.getDelta()` becomes the `dt` argument, also in `ctx.time.dt`; `clock.getElapsedTime()` becomes `ctx.time.now`.
+- Physics moves to `onFixedUpdate`, at the rate that `defineSketch(setup, { fixedRate: 60 })` sets, 60 steps per second by default. One call of `world.step()` per fixed step replaces `world.step(1 / 60, dt, 3)`. The engine counts the steps, and `maxFixedSteps` (default 8) caps them per frame.
+- Camera-follow code moves to `onLateUpdate`, so the camera uses this frame's final object positions, and its moves show in the same frame.
 - Rendering calls and `composer.render()` disappear.
 - Code that ran "every N frames" can use `ctx.time.frame % N === 0`.
 

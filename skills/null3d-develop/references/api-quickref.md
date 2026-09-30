@@ -79,14 +79,16 @@ export default defineSketch(async (ctx) => {
   // preferences.reducedMotion: true when the user's system asks for less motion
   // preferences.onChange(() => { ... }) runs at the first frame after it changes; it returns a remover
   return {
-    onFixedUpdate(step) {},  // 0 to n times per frame at a fixed rate (default 60 Hz)
+    onFixedUpdate(step) {},  // 0 to n times per frame at a fixed rate (default 60 Hz), before onUpdate
     onUpdate(dt) {},         // once per frame, before transforms; dt is 0 after a pause, at most 0.25 s
-    onLateUpdate(dt) {},     // after transforms, before culling: camera follow
+    onLateUpdate(dt) {},     // after transforms, before culling: camera follow; its moves show this frame
   };
-});
+}, { fixedRate: 60, maxFixedSteps: 8 });  // optional; these are the defaults
 ```
 
-`ctx.engine.viewport` gives the canvas size in CSS pixels and the pixel ratio. `ctx.engine.capabilities` is the same object as on the page.
+- `ctx.engine.viewport` gives `{ width, height, pixelRatio }`: the canvas size in CSS pixels, and the pixel ratio the engine draws with. The engine reads them at the start of each frame. `ctx.engine.capabilities` holds the values of `engine.capabilities` on the page.
+- In `onLateUpdate`, `getWorldPosition` already gives this frame's positions, and setters show in the same frame. Structural changes made there, such as creating an object, wait for the next frame.
+- Fixed steps fall due from sketch time. The first frame and the first after a pause run none. A frame runs at most `maxFixedSteps` and drops the rest. `time` keeps the frame's values during the steps, so count simulation time with `step`. Read `wasPressed` in `onUpdate`, because some frames run no fixed step.
 
 ## 3. Scene (`api/scene`)
 
@@ -98,8 +100,8 @@ export default defineSketch(async (ctx) => {
 | `scene.instantiate(prefab, { position, rotation, scale, parent })` (0.2) | Node | Creates a loaded glTF model |
 | `scene.clone(obj)` (0.2) | same type | Deep copy of a built object |
 | `scene.find(name)` | Node or undefined | The first live node with the name; use at setup, not per frame |
-| `scene.createPerspectiveCamera({ fov, near, far, position, target, layers })` | Camera | fov is vertical, in degrees |
-| `scene.createOrthographicCamera({ height, near, far, position, target })` | Camera | Or left, right, top, bottom |
+| `scene.createPerspectiveCamera({ fov, near, far, position, target, layers })` | PerspectiveCamera | fov is vertical, in degrees |
+| `scene.createOrthographicCamera({ height, near, far, position, target, layers })` | OrthographicCamera | Or left, right, top, bottom in place of height |
 | `scene.setActiveCamera(camera)` | | |
 | `scene.createDirectionalLight(opts)` and the other lights | Light | Section 7 |
 | `scene.setBackground('#rrggbb' or texture or environment or { sky })` | | `{ sky: { turbidity, rayleigh, sunDirection } }` (0.2) |
@@ -176,11 +178,16 @@ A prefab with several meshes (0.2) gives one batch per mesh inside a group batch
 ## 6. Cameras (`api/cameras`)
 
 ```ts
-camera.setFov(deg); camera.setNearFar(near, far); camera.setOrthoHeight(h);
+camera.setNearFar(near, far);     camera.near; camera.far;     // both kinds
+camera.isOrthographic;            // false for PerspectiveCamera, true for OrthographicCamera
+camera.setFov(deg);               camera.fov;                  // PerspectiveCamera
+camera.setOrthoHeight(h);         camera.height; camera.width; // OrthographicCamera; width undefined while it follows the canvas
 camera.setLayers(mask);
-camera.screenToRay(x, y, ray);    // x, y in CSS pixels; ray = { origin: number[3], direction: number[3] }
-camera.worldToScreen(p, out);     // out = [x, y, depth]; depth < 0 means behind the camera
+camera.screenToRay(x, y, ray);    // (0.2) x, y in CSS pixels; ray = { origin: number[3], direction: number[3] }
+camera.worldToScreen(p, out);     // (0.2) out = [x, y, depth]; depth < 0 means behind the camera
 ```
+
+An orthographic camera made with `height` follows the canvas's aspect ratio; one made with `left`, `right`, `top` and `bottom` keeps those edges, and `setOrthoHeight` scales them about their center.
 
 ## 7. Lights (`api/lights`)
 
@@ -455,8 +462,7 @@ math.random(); math.seed(42); math.randFloat(lo, hi); math.randInt(lo, hi); math
 color.fromHex(out, '#ff8800');            // linear RGB from an sRGB hex value
 color.fromSrgb(out, r, g, b); color.fromHsl(out, h, s, l); color.srgbToLinear(c); color.linearToSrgb(c);
 
-time.now; time.frame;                     // seconds, frame counter
-time.dt;                                  // later in 0.1: the frame's step in seconds; until then use onUpdate's dt
+time.now; time.dt; time.frame;            // seconds, the frame's step in seconds, frame counter
 ```
 
 - Each helper writes its result into its first argument, `out`, and returns it. Inputs can be tuples such as `[0, 1, 0]`, plain arrays or typed arrays. Make `out` arrays with `create()`, never in per-frame code.

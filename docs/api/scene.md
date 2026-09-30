@@ -45,7 +45,8 @@ export default defineSketch(({ scene, geometry, materials }) => {
 | `createGroup(options)` | A `Group`: an empty object that holds other objects |
 | `createMesh({ mesh, material, ...options })` | A `Mesh`: an object that draws a mesh with a material |
 | `createInstances(mesh, count, { material })` | An `InstanceBatch`: `count` copies of one mesh with one material |
-| `createPerspectiveCamera(options)` | A `Camera` that the scene can draw from |
+| `createPerspectiveCamera(options)` | A `PerspectiveCamera` that the scene can draw from |
+| `createOrthographicCamera(options)` | An `OrthographicCamera`, whose view is a box, that the scene can draw from |
 | `createDirectionalLight(options)` | A `DirectionalLight`: light from one direction, like sunlight |
 | `createPointLight(options)` | A `PointLight`: light from a point in every direction, out to its range |
 | `createSpotLight(options)` | A `SpotLight`: light from a point in a cone, out to its range |
@@ -70,7 +71,7 @@ door?.setVisible(false);
 
 ## The camera and the background
 
-The canvas shows the scene from the active camera, which `setActiveCamera` picks, and [Cameras](cameras.md) covers the lens. Until you pick a camera, the canvas shows only the background. `setBackground` takes a color, and the default background is black.
+The canvas shows the scene from the active camera, which `setActiveCamera` picks. It can be either kind of camera, and [Cameras](cameras.md) covers both lenses. Until you pick a camera, the canvas shows only the background. `setBackground` takes a color, and the default background is black.
 
 ## Lights
 
@@ -80,7 +81,7 @@ Each light is an object, so a scene can hold many, and each call creates another
 
 Creating an object, `destroy`, `setParent`, `setVisible`, `setLayers` and `setDynamic` change the structure of the scene, and so do the mesh calls: `setMaterial`, `setMesh`, `setCastShadows`, `setReceiveShadows`, `setRenderOrder`, `setFrustumCulled` and `setBounds`. The engine queues these changes and applies them after `onUpdate` returns, before it updates transforms and draws. The frame drawn after the call shows the change. Some of them make the engine rebuild its draw tables, as the [performance guide](../guides/performance.md#objects-during-play) lists.
 
-Values that the engine computes, such as the result of `getWorldPosition`, come from the last frame it processed. They show a change from the next `onUpdate` call on.
+Values that the engine computes, such as the result of `getWorldPosition`, come from the engine's last transform update. In `onUpdate` they come from the previous frame. In `onLateUpdate` they already hold the frame's changes, because the engine updates transforms before it calls `onLateUpdate`. Setters that `onLateUpdate` calls show in the same frame, and structural changes that it makes wait for the next frame ([Sketch API](sketch.md#when-changes-show)).
 
 When the engine cannot apply a change, such as a parent loop (E1104), it skips that change and logs the error to the console. The rest of the queue still applies.
 
@@ -177,7 +178,8 @@ The scene: every object, the active camera, the lights and the background.
 | `createGroup(options: NodeOptions = {}): Group` | An empty node, for hierarchy. |
 | `createMesh(options: MeshOptions): Mesh` | A drawn object. It is static unless `dynamic: true`. |
 | `createInstances(mesh: MeshGeometry, count: number, options: InstanceOptions): InstanceBatch` | Many copies of one mesh and material, with typed arrays of rows. |
-| `createPerspectiveCamera(options: CameraOptions = {}): Camera` | A perspective camera; `fov` is vertical, in degrees. Cameras are dynamic by default. |
+| `createPerspectiveCamera(options: PerspectiveCameraOptions = {}): PerspectiveCamera` | A perspective camera; `fov` is vertical, in degrees. Cameras are dynamic by default. |
+| `createOrthographicCamera(options: OrthographicCameraOptions = {}): OrthographicCamera` | An orthographic camera, whose view is a box: things keep their size at every distance. Give `height`, and the width follows the canvas, or give `left`, `right`, `top` and `bottom`. Cameras are dynamic by default. |
 | `setActiveCamera(camera: Camera): void` | Draws the scene from this camera. |
 | `createDirectionalLight(options: DirectionalLightOptions = {}): DirectionalLight` | Light from one direction, like sunlight: `direction` is the way it travels. |
 | `createPointLight(options: PointLightOptions): PointLight` | Light from a point in every direction, out to `range` meters, which it needs. |
