@@ -12,6 +12,7 @@ describe('parseSwitches', () => {
 			copyUploads: false,
 			depth: undefined,
 			parallelCompile: true,
+			hdr: true,
 			cells: true,
 			fps: undefined,
 			queue: undefined,
@@ -50,6 +51,12 @@ describe('parseSwitches', () => {
 
 	it('ignores a job worker count above the most the engine core runs', () => {
 		expect(parseSwitches('?jobs=256').jobs).toBeUndefined();
+	});
+
+	it('turns HDR color off only for ?hdr=off', () => {
+		expect(parseSwitches('?hdr=off').hdr).toBe(false);
+		expect(parseSwitches('?hdr=on').hdr).toBe(true);
+		expect(parseSwitches('?gpu=webgl2').hdr).toBe(true);
 	});
 
 	it('reads a frame rate above 0, with decimals', () => {
