@@ -19,7 +19,7 @@ use null3d_core::scene::SceneStorage;
 
 use null3d_core::layers::DEFAULT_LAYERS;
 
-use crate::camera::{Affine, Lens, Mat4};
+use crate::camera::{Affine, Lens, Mat4, ViewDepth};
 use crate::frame_data::FrameUniform;
 use crate::shadows::MAX_CASCADES;
 
@@ -109,14 +109,15 @@ impl View {
     }
 
     /// The view-projection matrix for positions relative to the camera, for a target of `aspect`,
-    /// the camera's place for those positions as [`Lens::eye`] gives it, and the camera's cell
-    /// and position in it. `None` when the view has no camera, or its camera object is gone.
+    /// the camera's place for those positions as [`Lens::eye`] gives it, the camera's cell and
+    /// position in it, and how far positions lie along the view. `None` when the view has no
+    /// camera, or its camera object is gone.
     pub(crate) fn transform(
         &self,
         scene: &SceneStorage,
         parity: usize,
         aspect: f32,
-    ) -> Option<(Mat4, [f32; 4], CellPosition)> {
+    ) -> Option<(Mat4, [f32; 4], CellPosition, ViewDepth)> {
         let (camera, lens) = self.camera?;
         let slot = scene.resolve(camera).ok()?;
         let world: Affine = *scene.world(parity).matrix(slot as usize);
@@ -124,28 +125,38 @@ impl View {
             lens.relative_view_projection(&world, aspect),
             lens.eye(&world),
             scene.cell_position(slot, parity),
+            lens.depth(&world),
         ))
     }
 }
 
 /// A view's values for one frame: the uniform block its passes read, the frustum its culling
-/// tests against, both relative to its camera, where its camera is, and the layers it draws.
+/// tests against, both relative to its camera, where its camera is, how far positions lie along
+/// its view, and the layers it draws.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ViewFrame {
     pub uniform: FrameUniform,
     pub frustum: Frustum,
     /// The camera's cell, and its position relative to the cell's center.
     pub camera: CellPosition,
+    /// How far positions relative to the camera lie along the view.
+    pub depth: ViewDepth,
     /// The view's layer mask.
     pub layers: u32,
 }
 
 impl ViewFrame {
-    pub(crate) fn new(uniform: FrameUniform, camera: CellPosition, layers: u32) -> Self {
+    pub(crate) fn new(
+        uniform: FrameUniform,
+        camera: CellPosition,
+        depth: ViewDepth,
+        layers: u32,
+    ) -> Self {
         Self {
             frustum: Frustum::from_view_projection(&uniform.view_proj),
             uniform,
             camera,
+            depth,
             layers,
         }
     }

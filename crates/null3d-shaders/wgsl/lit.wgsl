@@ -3,9 +3,11 @@ enable draw_index;
 // Meshes drawn by instance with the standard material: glTF's metallic-roughness model, shaded
 // with the formulas of three.js's MeshStandardMaterial. null3d::mesh finds each instance on both
 // GPU paths, and null3d::lighting holds the formulas. `light_surface` gathers the scene's lights,
-// so the rest of the shader does not change with where the lights come from.
+// so the rest of the shader does not change with where the lights come from. null3d::lights finds
+// the point and spot lights of each surface's cluster.
 #import null3d::color
 #import null3d::lighting
+#import null3d::lights::{clustered_light}
 #import null3d::mesh::{InstanceIn, clip_of, find_instance, frame, material_of}
 #import null3d::mesh::{relative_position, world_normal}
 
@@ -46,11 +48,13 @@ fn vs(v: VertexIn, i: InstanceIn) -> VertexOut {
     return out;
 }
 
-/// The light that a surface reflects toward the camera from the scene's lights: the sun and the
-/// ambient light. `to_view` points from the surface toward the camera, and `dfg` holds the
-/// split-sum terms at the surface's roughness and view angle.
+/// The light that a surface reflects toward the camera from the scene's lights: the sun, the
+/// point and spot lights of the surface's cluster, and the ambient light. `relative` is the
+/// surface's position relative to the camera, `to_view` points from it toward the camera, and
+/// `dfg` holds the split-sum terms at the surface's roughness and view angle.
 fn light_surface(
     m: null3d::lighting::PbrMaterial,
+    relative: vec3f,
     normal: vec3f,
     to_view: vec3f,
     dfg: vec2f,
@@ -64,8 +68,9 @@ fn light_surface(
         frame.sun_color.rgb,
         compensation,
     );
+    let clustered = clustered_light(m, relative, normal, to_view, compensation);
     let ambient = null3d::lighting::indirect_diffuse(m, frame.ambient.rgb, dfg);
-    return sun.diffuse + sun.specular + ambient;
+    return sun.diffuse + sun.specular + clustered.diffuse + clustered.specular + ambient;
 }
 
 @fragment
@@ -92,6 +97,6 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
     let n_dot_v = saturate(dot(normal, to_view));
     let dfg = null3d::lighting::dfg_lut(n_dot_v, pbr.roughness);
     let emitted = m.emissive.rgb * m.strengths.w;
-    let outgoing = light_surface(pbr, normal, to_view, dfg) + emitted;
+    let outgoing = light_surface(pbr, in.relative, normal, to_view, dfg) + emitted;
     return vec4f(null3d::color::linear_to_srgb(outgoing), 1.0);
 }

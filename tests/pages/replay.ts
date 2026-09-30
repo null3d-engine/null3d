@@ -59,7 +59,8 @@ run('replay', async () => {
 
 	const view = lookAt([0, 6, 10], [0, 0, 0]);
 	const viewProj = multiply(perspectiveReversed((60 * Math.PI) / 180, 1, 0.1, 100), view);
-	const frame = new Float32Array(32);
+	// The frame block ends with the light grid's values, which stay 0: no point or spot light.
+	const frame = new Float32Array(G.SIZE_FRAME_UNIFORM_BYTES / 4);
 	frame.set(viewProj, 0);
 	frame.set([0, 6, 10, 1], 16);
 	const sun = [-1, -2, -1];
@@ -118,6 +119,9 @@ run('replay', async () => {
 		[9, indirect.byteLength, U.INDIRECT | U.STORAGE | U.COPY_DST | U.COPY_SRC, blobs.indirect],
 		[10, cull.byteLength, U.UNIFORM | U.COPY_DST, blobs.cull],
 		[11, instanceLayers.byteLength, U.STORAGE | U.COPY_DST, blobs.instanceLayers],
+		// The light grid and the light list, which the frame group binds and the shader skips.
+		[12, 16, U.STORAGE, -1],
+		[13, G.SIZE_LIGHT_RECORD_BYTES, U.STORAGE, -1],
 	];
 	for (const [id, size, usage] of buffers) memory.push(G.OP_CREATE_BUFFER, id, size, usage);
 	for (const [id, size, , source] of buffers)
@@ -175,10 +179,12 @@ run('replay', async () => {
 		G.OP_CREATE_BIND_GROUP,
 		1,
 		G.LAYOUT_FRAME,
-		3,
+		5,
 		...[0, G.RESOURCE_BUFFER, 3, 0, 0],
 		...[1, G.RESOURCE_BUFFER, 4, 0, 0],
 		...[3, G.RESOURCE_TEXTURE, 3, 0, 0],
+		...[7, G.RESOURCE_BUFFER, 12, 0, 0],
+		...[8, G.RESOURCE_BUFFER, 13, 0, 0],
 	);
 	memory.push(
 		G.OP_CREATE_BIND_GROUP,

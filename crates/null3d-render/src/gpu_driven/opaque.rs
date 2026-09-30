@@ -18,7 +18,8 @@ use crate::view::{ViewFrame, ViewId};
 const TEXTURES_GROUP: u32 = 1;
 
 /// Records the creation of a view's frame uniform buffer, and of the group that binds it with the
-/// material table and three.js's table of the split-sum terms of specular light.
+/// material table, three.js's table of the split-sum terms of specular light, and the camera's
+/// light grid and light records.
 pub(super) fn create_view(list: &mut DrawList, view: ViewId) -> Result<(), RecordError> {
     list.push(
         Op::CreateBuffer,
@@ -33,7 +34,7 @@ pub(super) fn create_view(list: &mut DrawList, view: ViewId) -> Result<(), Recor
         &[
             ids::frame_group(view),
             bind_layout::FRAME,
-            3,
+            5,
             0,
             resource_kind::BUFFER,
             ids::frame(view),
@@ -47,6 +48,16 @@ pub(super) fn create_view(list: &mut DrawList, view: ViewId) -> Result<(), Recor
             3,
             resource_kind::TEXTURE,
             ids::DFG,
+            0,
+            0,
+            7,
+            resource_kind::BUFFER,
+            ids::LIGHT_GRID,
+            0,
+            0,
+            8,
+            resource_kind::BUFFER,
+            ids::LIGHTS,
             0,
             0,
         ],

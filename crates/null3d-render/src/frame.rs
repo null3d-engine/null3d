@@ -14,7 +14,7 @@ use null3d_core::cells::{CellPosition, MAX_CELLS};
 use null3d_core::handle::Handle;
 use null3d_core::instances::{BatchTable, InstanceBatch};
 use null3d_core::jobs::JobSystem;
-use null3d_core::lights::{LightTable, LightView};
+use null3d_core::lights::{LightTable, LightView, VisibleLight};
 use null3d_core::scene::SceneStorage;
 use null3d_core::snapshot::FrameSnapshot;
 use null3d_gpu::drawlist::{
@@ -104,6 +104,9 @@ pub struct FrameInput<'a> {
     /// The lines that the sketch drew for the frame, which development builds draw over the
     /// camera's view. Release builds draw none.
     pub lines: DebugLines<'a>,
+    /// The point and spot lights that the camera sees, with positions relative to it (see
+    /// [`LightTable::visible`]).
+    pub lights: &'a [VisibleLight],
 }
 
 impl FrameInput<'_> {
@@ -569,15 +572,16 @@ impl SceneSettings {
     ) -> Option<ViewFrame> {
         let aspect = canvas.0 as f32 / canvas.1.max(1) as f32;
         let view = self.views.get(view.index())?;
-        let (view_proj, eye, camera) = view.transform(scene, parity, aspect)?;
+        let (view_proj, eye, camera, depth) = view.transform(scene, parity, aspect)?;
         let uniform = FrameUniform {
             view_proj,
             camera_position: eye,
             sun_direction: self.lighting.sun_direction,
             sun_color: self.lighting.sun_color,
             ambient: self.lighting.ambient,
+            ..FrameUniform::default()
         };
-        Some(ViewFrame::new(uniform, camera, view.layers()))
+        Some(ViewFrame::new(uniform, camera, depth, view.layers()))
     }
 }
 

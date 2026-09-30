@@ -47,6 +47,7 @@
 mod cull;
 mod data;
 mod layout;
+mod lights;
 mod opaque;
 
 use std::collections::TryReserveError;
@@ -65,6 +66,7 @@ use crate::frame::{
 };
 use crate::frame_graph::{FrameGraph, Role};
 use crate::graph::RenderGraph;
+use crate::light_grid::{CameraLights, LightLimits};
 use crate::materials::{MATERIAL_FLOATS, MATERIAL_TEXELS};
 use crate::meshes::{MeshStorage, Packing};
 use crate::pipelines::{PassTargets, PipelineCache};
@@ -73,6 +75,7 @@ use crate::view::{ViewFrame, ViewId};
 use cull::Culling;
 use data::{RingSlot, SharedTextures, matrices_of, write_matrices};
 use layout::{Clusters, Layout};
+use lights::LightTextures;
 use opaque::{OFFSETS_BYTES, Opaque, ViewUpload};
 
 /// The builder's GPU objects. It owns every id it uses; each view has a range of its own.
@@ -113,27 +116,33 @@ mod ids {
     pub const MATERIALS: u32 = VIEW_TEXTURES + RING * MAX_VIEWS as u32;
     /// three.js's table of the split-sum terms of specular light.
     pub const DFG: u32 = MATERIALS + 1;
+    /// The ring of light grid textures of the camera's view, one per ring slot.
+    pub const LIGHT_GRID: u32 = DFG + 1;
+    /// The ring of textures of the records of the lights that the light grid lists.
+    pub const LIGHTS: u32 = LIGHT_GRID + RING;
     /// The render graph's textures, from this id on.
-    pub const TARGETS: u32 = DFG + 1;
+    pub const TARGETS: u32 = LIGHTS + RING;
     /// The texture arrays of materials' maps, after every id the render graph can take.
     pub const TEXTURE_ARRAYS: u32 = TARGETS + 256;
     /// The samplers of materials' maps, the only samplers the builder makes.
     pub const SAMPLERS: u32 = 1;
 
-    /// Each view's bind groups: the frame group, the draw record group, then the groups of its
-    /// instance textures, one per pair of ring slots.
-    const GROUPS_PER_VIEW: u32 = 2 + RING * RING;
+    /// Each view's bind groups: a frame group per slot of the light textures' ring, the draw
+    /// record group, then the groups of its instance textures, one per pair of ring slots.
+    const GROUPS_PER_VIEW: u32 = RING + 1 + RING * RING;
 
+    /// The frame group of the light textures' first ring slot: slot `s` has the group `s` after
+    /// it.
     pub const fn frame_group(view: ViewId) -> u32 {
         1 + GROUPS_PER_VIEW * view.index() as u32
     }
     pub const fn draws_group(view: ViewId) -> u32 {
-        frame_group(view) + 1
+        frame_group(view) + RING
     }
     /// The textures of each pair of ring slots: the streamed texture's and the view's index
     /// list's, at `instances_group(view) + streamed * RING + listed`.
     pub const fn instances_group(view: ViewId) -> u32 {
-        frame_group(view) + 2
+        draws_group(view) + 1
     }
     /// The bind groups of materials' maps, after every view's groups.
     pub const TEXTURE_GROUPS: u32 = 1 + GROUPS_PER_VIEW * MAX_VIEWS as u32;
@@ -152,6 +161,8 @@ pub struct CpuCulledConfig {
     pub max_texture_size: u32,
     /// True when the device has `WEBGL_multi_draw`.
     pub multi_draw: bool,
+    /// The most point and spot lights that the camera's light grid lists.
+    pub light_limits: LightLimits,
 }
 
 impl Default for CpuCulledConfig {
@@ -162,6 +173,7 @@ impl Default for CpuCulledConfig {
             draw_list_words: 64 * 1024,
             max_texture_size: 2048,
             multi_draw: false,
+            light_limits: LightLimits::default(),
         }
     }
 }
@@ -198,6 +210,9 @@ pub struct CpuCulledRenderer {
     textures: SharedTextures,
     /// The slot of the streamed textures, which every view reads.
     streamed_slot: RingSlot,
+    /// The point and spot lights of the camera's view, and the textures that hold them.
+    lights: CameraLights,
+    light_textures: LightTextures,
     created: bool,
     /// True from the creation of three.js's table of specular terms until a frame uploads it.
     dfg_pending: bool,
@@ -238,6 +253,8 @@ impl CpuCulledRenderer {
             pipelines: PipelineCache::default(),
             textures: SharedTextures::default(),
             streamed_slot: RingSlot::default(),
+            lights: CameraLights::new(config.light_limits),
+            light_textures: LightTextures::default(),
             created: false,
             dfg_pending: false,
         }
@@ -322,9 +339,9 @@ impl CpuCulledRenderer {
     }
 
     /// The most that one frame can copy into its arena for the scene as it stands: mesh data not
-    /// uploaded yet, the material table, three.js's table of specular terms, each view's frame
-    /// uniform, draw records and
-    /// multi-draw arrays, and the cluster orders not uploaded yet.
+    /// uploaded yet, the material table, three.js's table of specular terms, the light grid,
+    /// each view's frame uniform, draw records and multi-draw arrays, and the cluster orders not
+    /// uploaded yet.
     fn upload_bound(&self) -> usize {
         self.upload_bound_without_clusters() + self.clusters.pending_bytes(&self.layout)
     }
@@ -337,7 +354,7 @@ impl CpuCulledRenderer {
         let per_view = (sizes::FRAME_UNIFORM_BYTES + OFFSETS_BYTES) as usize
             + self.layout.draws_slot_bytes as usize
             + self.layout.draws.len() * 12;
-        meshes + materials + self.settings.views().len() * per_view
+        meshes + materials + self.lights.upload_room() + self.settings.views().len() * per_view
     }
 
     /// Records the creation of the material table, a data texture with one row of texels for each
@@ -515,7 +532,11 @@ impl CpuCulledRenderer {
         self.graph.set_debug_lines(!input.lines.is_empty());
         self.graph.prepare(list, input.canvas)?;
         let views = self.settings.views().len();
+        let limit = self.config.max_texture_size;
         let first_new = self.opaque.views();
+        if self.light_textures.size(list, &mut self.lights, limit)? {
+            self.opaque.bind_frames(list, 0..first_new)?;
+        }
         self.opaque.add_views(list, views)?;
         let rebuilt = self.layout.built_in == input.frame;
         arena.reset(self.upload_bound() + LinesPass::upload_bytes(&input.lines));
@@ -535,6 +556,8 @@ impl CpuCulledRenderer {
         };
         self.upload_resident(list, input, rebuilt || new_texture)?;
         self.clusters.upload(list, arena, &self.layout)?;
+        self.light_textures
+            .upload(list, arena, &mut self.lights, input.frame)?;
 
         // The streamed ring moves to a new slot only for moving rows, and each view's rings only
         // for new data: a changed frame uniform, or an index list that differs from the previous
@@ -576,15 +599,17 @@ impl CpuCulledRenderer {
 
         let (culling, opaque, lines) = (&self.culling, &self.opaque, &self.lines);
         let (layout, meshes) = (&self.layout, &self.meshes);
+        let light_slot = self.light_textures.slot();
         self.graph
             .record(list, self.settings.clear_color(), |list, role| match role {
                 Role::Opaque(view) if culling.frame(view).is_some() => {
                     let starts = culling.culled(frame, view).bucket_starts();
-                    opaque.record(list, arena, view, starts, layout, meshes)
+                    opaque.record(list, arena, view, starts, layout, meshes, light_slot)
                 }
                 Role::DebugLines => {
                     let slot = opaque.frame_slot(ViewId::CAMERA);
-                    lines.record(list, ids::frame_group(ViewId::CAMERA), &[slot, slot])
+                    let group = ids::frame_group(ViewId::CAMERA) + light_slot;
+                    lines.record(list, group, &[slot, slot])
                 }
                 _ => Ok(()),
             })?;
@@ -616,6 +641,9 @@ impl FrameBuilder for CpuCulledRenderer {
         self.add_culled_views()?;
         self.culling
             .cull(input, &self.settings, &self.layout, &mut self.clusters);
+        if let Some(frame) = self.culling.frame_mut(ViewId::CAMERA) {
+            self.lights.assign(input.jobs, frame, input.lights);
+        }
         Ok(())
     }
 
@@ -641,6 +669,8 @@ impl FrameBuilder for CpuCulledRenderer {
         self.opaque.forget_gpu();
         self.lines.forget_gpu();
         self.streamed_slot.forget();
+        self.lights.forget_gpu();
+        self.light_textures.forget_gpu();
         self.settings.materials_mut().mark_changed();
         self.settings.textures_mut().reset_gpu();
     }
