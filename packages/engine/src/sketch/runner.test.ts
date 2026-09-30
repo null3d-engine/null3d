@@ -1,6 +1,7 @@
 import { describe, expect, it, spyOn } from 'bun:test';
 import { messageOf } from '../errors/message';
 import * as C from '../generated/core';
+import { FORMAT_RGBA16_FLOAT } from '../generated/gpu';
 import type { EngineCapabilities } from '../page/engine';
 import { presetSettings } from '../quality/presets';
 import type { Material, MeshGeometry } from '../scene/resources';
@@ -26,6 +27,7 @@ const CAPABILITIES: EngineCapabilities = {
 	threaded: false,
 	features: ['WEBGL_multi_draw'],
 	limits: {},
+	hdr: true,
 	maxInstances: 2_097_152,
 	depth: 'reversed',
 };
@@ -151,6 +153,8 @@ async function start(
 			sharedUploads: false,
 			depth: 'reversed',
 			parallelCompile: true,
+			sceneColor: FORMAT_RGBA16_FLOAT,
+			transparent: false,
 			shaderBits: 0,
 			cellCulling: true,
 		},

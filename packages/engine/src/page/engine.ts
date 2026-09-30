@@ -6,6 +6,7 @@
 import { EngineError, isErrorCode, setErrorFixes } from '../errors/engine-error';
 import { ERROR_FIXES } from '../errors/fixes';
 import { messageOf } from '../errors/message';
+import { FORMAT_CANVAS } from '../generated/gpu';
 import type { PresetCheck } from '../quality/check';
 import {
 	choosePreset,
@@ -107,6 +108,12 @@ export interface EngineOptions {
 	/** The latency mode. The default is `pipelined`. */
 	latency?: LatencyMode;
 	/**
+	 * True for a see-through canvas: the page shows through wherever no object draws, until the
+	 * sketch sets a background color. The canvas holds premultiplied alpha, as a browser composites
+	 * it. The default is false, an opaque canvas.
+	 */
+	transparent?: boolean;
+	/**
 	 * The thread that runs the sketch's code and the engine core: `worker`, the default, or `main`
 	 * for the page's main thread, where the sketch can reach the DOM. Use `main` for apps that work
 	 * mostly with the DOM, and for debugging. The render worker still draws in pipelined mode, and
@@ -173,6 +180,14 @@ export interface EngineCapabilities {
 	features: string[];
 	/** The WebGPU limits, or an empty object on WebGL2. */
 	limits: Record<string, number | null>;
+	/**
+	 * True when the scene draws high dynamic range color, which the final pass tone maps into the
+	 * canvas. False on the 8-bit path, where each shader tone maps its own output: in WebGPU's
+	 * compatibility mode, and on WebGL2 devices that cannot draw float targets with antialiasing.
+	 * Both paths show the same colors. Antialiased edges differ a little, because the 8-bit path
+	 * averages them after the tone mapping.
+	 */
+	hdr: boolean;
 	/**
 	 * The most objects and instance rows, counted together, that a scene can draw on this device.
 	 * On WebGPU every device draws at least 2,097,152, and a device with larger GPU buffers draws
@@ -840,7 +855,10 @@ async function startEngine(
 	});
 	onProgress?.('core');
 	let wasmMemory = core.memory;
-	const device = coreDevice(tier === 'webgl2', report, switches);
+	const device = coreDevice(tier, report, {
+		...switches,
+		transparent: options.transparent === true,
+	});
 	const capabilities: EngineCapabilities = {
 		tier,
 		threaded,
@@ -849,6 +867,7 @@ async function startEngine(
 				? Object.keys(report.webgl2.extensions).filter((n) => report.webgl2.extensions[n])
 				: report.webgpu.features,
 		limits: tier === 'webgl2' ? {} : report.webgpu.limits,
+		hdr: device.sceneColor !== FORMAT_CANVAS,
 		maxInstances: maxInstances(device),
 		depth: device.depth,
 	};
