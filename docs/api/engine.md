@@ -45,6 +45,7 @@ try {
 | [E1301](../errors/E1301.md) | The browser has no usable GPU path, or no path that `gpu` or `?gpu=` asks for. |
 | [E1406](../errors/E1406.md) | A file of the engine core did not download. |
 | [E1109](../errors/E1109.md) | The browser refused the engine's memory, even after about 3 seconds of tries. |
+| [E1410](../errors/E1410.md) | The sketch module did not load: it did not download, or its code threw an error while it loaded. |
 | [E1401](../errors/E1401.md) | The sketch module's default export is not `defineSketch(...)`. |
 | [E1405](../errors/E1405.md) | An engine thread did not start. |
 
@@ -180,7 +181,7 @@ The GPU path the engine chose, and what it offers.
 | `threaded: boolean` | True when the engine runs the threaded build. |
 | `features: string[]` | The optional features of the GPU path: WebGPU features, or the WebGL2 extensions present. |
 | `limits: Record<string, number \| null>` | The WebGPU limits, or an empty object on WebGL2. |
-| `maxInstances: number` | The most objects and instance rows, counted together, that a scene can draw on this device. On WebGPU every device draws at least 2,097,152, and a device with larger GPU buffers draws more, up to 8,388,480. On WebGL2 the number follows the largest texture the device allows: 2,097,152 at 4,096 pixels, and 1,048,576 at the 2,048 that every device allows. Engine memory can run out first: see E1109. |
+| `maxInstances: number` | The most objects and instance rows, counted together, that a scene can draw on this device. On WebGPU every device draws at least 2,097,152, and a device with larger GPU buffers draws more, up to 8,388,480. On WebGL2 the number follows the largest texture the device allows: 2,097,152 at 4,096 pixels, and 1,048,576 at the 2,048 that every WebGL2 device allows. Engine memory can run out first: see E1109. |
 | `depth: DepthMode` | How the GPU path stores depth. WebGPU, and WebGL2 in browsers with `EXT_clip_control`, draw `reversed` depth, which stays precise far from the camera. |
 
 ### `EngineError`
@@ -257,6 +258,7 @@ type ErrorCode =
 	| 'E1407'
 	| 'E1408'
 	| 'E1409'
+	| 'E1410'
 	| 'E1501'
 	| 'E1502'
 	| 'E1503'
