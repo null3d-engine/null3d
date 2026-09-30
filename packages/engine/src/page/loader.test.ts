@@ -34,6 +34,12 @@ describe('memoryMaximumMiB', () => {
 		expect(memoryMaximumMiB(undefined, 4_096)).toBe(4_096);
 	});
 
+	it("takes the quality preset's maximum when neither the option nor the switch asks for one", () => {
+		expect(memoryMaximumMiB(undefined, undefined, 512)).toBe(512);
+		expect(memoryMaximumMiB(2_048, undefined, 512)).toBe(2_048);
+		expect(memoryMaximumMiB(undefined, 768, 512)).toBe(768);
+	});
+
 	it('refuses an option that is not a whole number of MiB from 256 to 4096, with E1409', () => {
 		for (const mib of [255, 4_097, 0, -1_024, 1_536.5, Number.NaN, Number.POSITIVE_INFINITY]) {
 			let error: unknown;

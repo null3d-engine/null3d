@@ -3,6 +3,7 @@
 // runners can store it and compare it across devices.
 
 import { messageOf } from '../errors/message';
+import type { DeviceHints } from '../quality/chooser';
 import type { WorkerProbe } from '../workers/probe-worker';
 
 /** Limits the engine reads, from its portable WebGPU budget. */
@@ -141,11 +142,12 @@ export interface WebGL2Report {
 
 /**
  * What the browser and device can do, as plain JSON. The engine picks its build and GPU path from
- * these feature tests, never from browser or GPU names.
+ * these feature tests, and its quality preset from the device hints. It never decides from browser
+ * or GPU names.
  *
  * @category api/engine
  */
-export interface CapabilityReport {
+export interface CapabilityReport extends DeviceHints {
 	/** True when the page is cross-origin isolated, which shared memory needs. */
 	crossOriginIsolated: boolean;
 	/** True when the page can make shared memory. */
@@ -368,11 +370,26 @@ function probeWorker(): Promise<WorkerProbe | { error: string }> {
 export type PowerPreference = 'high-performance' | 'low-power';
 
 /**
+ * Reads the device hints on the page's main thread, which workers cannot: they have no media
+ * queries and no screen.
+ */
+export function readDeviceHints(): DeviceHints {
+	const screen = globalThis.screen;
+	const memory = (globalThis.navigator as { deviceMemory?: unknown } | undefined)?.deviceMemory;
+	return {
+		coarsePointer: globalThis.matchMedia?.('(pointer: coarse)').matches ?? false,
+		screenMinEdge: screen ? Math.min(screen.width, screen.height) : 0,
+		deviceMemoryGB: typeof memory === 'number' ? memory : null,
+	};
+}
+
+/**
  * Probes the browser and device, on the GPU that `powerPreference` picks. Runs on the page's main
- * thread.
+ * thread. `hints` are the device hints when the page has read them already.
  */
 export async function probeCapabilities(
 	powerPreference?: PowerPreference,
+	hints: DeviceHints = readDeviceHints(),
 ): Promise<CapabilityReport> {
 	const [webgpu, worker] = await Promise.all([probeWebGPU(powerPreference), probeWorker()]);
 	return {
@@ -381,6 +398,7 @@ export async function probeCapabilities(
 		atomicsWaitAsync: typeof Atomics.waitAsync === 'function',
 		hardwareConcurrency: navigator.hardwareConcurrency ?? 1,
 		devicePixelRatio: globalThis.devicePixelRatio ?? 1,
+		...hints,
 		offscreenCanvas: typeof OffscreenCanvas === 'function',
 		transferControlToOffscreen:
 			typeof HTMLCanvasElement === 'function' &&

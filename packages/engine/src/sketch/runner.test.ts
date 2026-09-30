@@ -94,6 +94,8 @@ async function start(
 			shaderBits: 0,
 		},
 		capabilities: CAPABILITIES,
+		quality: { preset: 'medium', settings: { maxPixelRatio: 2 } },
+		applyQuality: () => {},
 		sendImage: () => {},
 		pageUrl: 'http://localhost/',
 	});

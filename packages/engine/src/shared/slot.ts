@@ -70,6 +70,6 @@ export const ImagesArrived = 23;
 export const PipelinesBuilt = 24;
 /**
  * Device pixels per CSS pixel that the engine draws with, as float bits: the display's ratio,
- * capped by the page's `maxPixelRatio`.
+ * capped by the `maxPixelRatio` quality setting.
  */
 export const PixelRatio = 25;
