@@ -72,7 +72,7 @@ function fakeCore() {
 		lastErrorDetail: (index: number) => failure.details[index] ?? 0,
 	};
 	const core = new CoreMemory(glue as unknown as CoreGlue, memory);
-	const scene = new Scene(core, { frame: FRAME });
+	const scene = new Scene(core, { frame: FRAME }, false);
 	const box = new MeshGeometry(1, 0.87, core);
 	const ball = new MeshGeometry(2, 1.5, core);
 	const paint = new Material(1, core, 'materials.standard.set');
