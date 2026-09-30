@@ -12,10 +12,10 @@ use std::time::{Duration, Instant};
 use common::{Rng, Workers, mul4, perspective, translation};
 use null3d_core::arena::{ArenaPool, FrameArena};
 use null3d_core::cells::{CellPosition, MAX_CELLS, ORIGIN_CELL};
-use null3d_core::clusters::{ClusterScratch, RowClusters};
+use null3d_core::clusters::{ClusterScratch, RowCells, RowClusters};
 use null3d_core::culling::{
     BY_ROW, BucketedCull, CULL_CHUNK, CullOutput, CullRun, CullSet, CullView, Frustum, ROW_CELLS,
-    SetLayers, cull_into_buckets, cull_parallel,
+    SetLayers, SetOrder, cull_into_buckets, cull_parallel,
 };
 use null3d_core::handle::Handle;
 use null3d_core::instances::BatchTable;
@@ -69,6 +69,8 @@ struct World {
     offsets: Vec<[f32; 4]>,
     /// The still batch's rows in clusters, which the bucketed cull also culls.
     clusters: RowClusters,
+    /// A list of the batches' rows in an order of its own, through which culling reaches them.
+    order: Vec<u32>,
     cluster_scratch: ClusterScratch,
     arenas: ArenaPool,
     handoff: FrameHandoff,
@@ -142,6 +144,7 @@ fn build() -> World {
             clusters.try_reserve(20_000).unwrap();
             clusters
         },
+        order: (0..20_000).rev().collect(),
         cluster_scratch: {
             let mut scratch = ClusterScratch::default();
             scratch.try_reserve(20_000).unwrap();
@@ -251,12 +254,21 @@ fn frame(world: &mut World, jobs: &JobSystem, frame: u32, rng: &mut Rng) {
     // The scene's rows look up their buckets; each batch fills a bucket of its own, and the
     // still batch's clusters one more.
     world.runs.clear();
+    // Clusters inside the moving batch's cells, which only a batch at rest would build, then the
+    // still batch's clusters, which the runs cull.
+    assert!(world.clusters.build(
+        moving.world(parity).spheres(),
+        20_000,
+        RowCells::Each(moving.cells()),
+        &mut world.cluster_scratch,
+    ));
     let still = world.table.get(world.still).unwrap();
-    world.clusters.build(
+    assert!(world.clusters.build(
         still.world(parity).spheres(),
         20_000,
+        RowCells::Each(still.cells()),
         &mut world.cluster_scratch,
-    );
+    ));
     for (set, rows, bucket, base) in [
         (0, 8193, BY_ROW, 0),
         (1, 20_000, 3, 8193),
@@ -294,27 +306,33 @@ fn frame(world: &mut World, jobs: &JobSystem, frame: u32, rng: &mut Rng) {
     };
     world.lights.gather(&world.scene, parity, Some(&light_view));
     assert!(!world.lights.visible().is_empty());
-    let (scene, clusters) = (&world.scene, &world.clusters);
-    // The scene's rows have layer masks of their own; the batches' rows share their batch's.
+    let (scene, clusters, order) = (&world.scene, &world.clusters, &world.order);
+    // The moving rows are reached through the order list, and the still rows through it with
+    // their spheres at its positions, as cell order reaches still scene objects. The scene's rows
+    // have layer masks of their own; the batches' rows share their batch's.
     let sets = |set: u32| match set {
         0 => CullSet {
             spheres: scene.world(parity).spheres(),
             cells: scene.cells(),
+            order: SetOrder::Rows,
             layers: SetLayers::Rows(scene.layers()),
         },
         1 => CullSet {
             spheres: moving.world(parity).spheres(),
             cells: moving.cells(),
+            order: SetOrder::Gathered(order),
             layers: SetLayers::All(moving.layers()),
         },
         2 => CullSet {
             spheres: still.world(parity).spheres(),
             cells: &[],
+            order: SetOrder::Copied(order),
             layers: SetLayers::All(still.layers()),
         },
         _ => CullSet {
             spheres: clusters.spheres(),
             cells: &[],
+            order: SetOrder::Rows,
             layers: SetLayers::All(still.layers()),
         },
     };

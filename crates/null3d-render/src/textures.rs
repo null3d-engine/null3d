@@ -741,6 +741,11 @@ impl TextureStore {
         self.budget = bytes;
     }
 
+    /// The bytes that one frame may upload.
+    pub fn budget(&self) -> u32 {
+        self.budget
+    }
+
     /// Makes the next recorded frame upload every texel that is ready, whatever its budget, as a
     /// held frame, the only one drawn, must.
     pub fn upload_all_next_frame(&mut self) {
@@ -760,6 +765,11 @@ impl TextureStore {
         for group in &mut self.groups {
             group.created = false;
         }
+    }
+
+    /// The largest anisotropy that samplers use.
+    pub fn max_anisotropy(&self) -> u32 {
+        self.max_anisotropy
     }
 
     /// Notes what the thread that draws has: the images it received, and the newest frame it took.
@@ -1363,7 +1373,9 @@ mod tests {
     fn uploads_wait_for_their_images_then_go_up_in_bands_within_the_budget() {
         let mut h = Harness::new();
         // Rows of 64 texels take 256 bytes, so a budget of 1,000 bytes takes 3 rows a frame.
+        assert_eq!(h.store.budget(), DEFAULT_UPLOAD_BUDGET);
         h.store.set_budget(1000);
+        assert_eq!(h.store.budget(), 1000);
         let first = h.texture(64, 16);
         let second = h.texture(64, 16);
         h.image(first, 64, 16);
@@ -1655,7 +1667,9 @@ mod tests {
                 ..desc(8, 8)
             })
             .unwrap();
+        assert_eq!(h.store.max_anisotropy(), DEFAULT_MAX_ANISOTROPY);
         h.store.set_max_anisotropy(4);
+        assert_eq!(h.store.max_anisotropy(), 4);
         let (commands, _) = h.frame();
         let samplers = ops(&commands, Op::CreateSampler);
         assert_eq!(samplers.len(), 2);

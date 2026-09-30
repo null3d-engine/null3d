@@ -33,7 +33,7 @@ use null3d_render::geometry::{Geometry, OutOfMemory, Shape, generate};
 use null3d_render::gpu_driven::{
     BYTES_PER_SOURCE, GpuDrivenRenderer, MAX_USEFUL_BINDING_BYTES, RendererConfig,
 };
-use null3d_render::materials::{MapSlot, MaterialError, MaterialTable, Shading};
+use null3d_render::materials::{self, MapSlot, MaterialError, Shading};
 use null3d_render::textures::{MAX_TEXTURES, Sampling, TextureDesc, TextureError};
 use null3d_render::view::ViewId;
 use wasm_bindgen::prelude::*;
@@ -207,6 +207,8 @@ fn material_failure(error: MaterialError) -> u32 {
     match error {
         MaterialError::Full => render_failure(render_detail::MATERIALS_FULL, 0),
         MaterialError::Unknown(id) => render_failure(render_detail::UNKNOWN_MATERIAL, id),
+        // The engine's own calls name only the values that sketches set.
+        MaterialError::Value(_) => render_failure(render_detail::UNKNOWN_MATERIAL, 0),
     }
 }
 
@@ -254,7 +256,8 @@ pub fn last_error_detail(index: u32) -> u32 {
 /// serve, timing their work with the browser's clock. On WebGPU, `storage_binding_bytes` is the
 /// largest storage binding of the device the engine draws with. On WebGL2 (`webgl2`), the
 /// capability flags say whether the device has multi-draw, and `max_texture_size` is its largest
-/// texture. Every capacity is fixed from here on.
+/// texture. Without `cell_culling`, culling tests every object, with no grid cells skipped first.
+/// Every capacity is fixed from here on.
 #[wasm_bindgen(js_name = initEngine)]
 #[allow(clippy::too_many_arguments)]
 pub fn init_engine(
@@ -266,6 +269,7 @@ pub fn init_engine(
     webgl2: bool,
     capabilities: u32,
     max_texture_size: u32,
+    cell_culling: bool,
 ) -> u32 {
     // SAFETY: as in `with_engine`; no other call on the sketch thread runs while this one does.
     let cell = unsafe { &mut *ENGINE.0.get() };
@@ -299,6 +303,7 @@ pub fn init_engine(
             Box::new(CpuCulledRenderer::new(CpuCulledConfig {
                 multi_draw: capabilities.contains(Capabilities::MULTI_DRAW),
                 max_texture_size: max_texture_size.max(CpuCulledConfig::default().max_texture_size),
+                cell_culling,
                 ..CpuCulledConfig::default()
             }))
         } else {
@@ -307,6 +312,7 @@ pub fn init_engine(
                     sizes::PORTABLE_STORAGE_BINDING_BYTES,
                     MAX_USEFUL_BINDING_BYTES,
                 ),
+                cell_culling,
                 ..RendererConfig::default()
             }))
         },
@@ -878,11 +884,13 @@ pub fn mesh_radius(mesh: u32) -> f32 {
     radius
 }
 
-/// Creates a material with a linear color and returns its id, counting from 1. Its shading
-/// (`constants::shading`) is lit, like three.js's `MeshLambertMaterial`, unlit, like its
-/// `MeshBasicMaterial`, or the first texture coordinates as colors, for the engine's own tests.
+/// Creates a material with a linear color and opacity, and returns its id, counting from 1. Its
+/// shading (`constants::shading`) is the standard material, like three.js's
+/// `MeshStandardMaterial`, unlit, like its `MeshBasicMaterial`, or the first texture coordinates as
+/// colors, for the engine's own tests. Its features (`constants::material_feature`) are fixed from
+/// now on.
 #[wasm_bindgen(js_name = createMaterial)]
-pub fn create_material(shading: u32, r: f32, g: f32, b: f32, a: f32) -> u32 {
+pub fn create_material(shading: u32, features: u32, r: f32, g: f32, b: f32, a: f32) -> u32 {
     let shading = match shading {
         shading::UNLIT => Shading::Unlit,
         shading::TEXCOORDS => Shading::TexCoords,
@@ -893,32 +901,23 @@ pub fn create_material(shading: u32, r: f32, g: f32, b: f32, a: f32) -> u32 {
         e.renderer
             .settings_mut()
             .materials_mut()
-            .create(shading, [r, g, b, a])
+            .create(shading, features, [r, g, b, a])
             .map(|id| id + 1)
             .map_err(material_failure)
     })
 }
 
-/// Changes a material's linear color and keeps its opacity.
-#[wasm_bindgen(js_name = setMaterialColor)]
-pub fn set_material_color(material: u32, r: f32, g: f32, b: f32) -> u32 {
-    change_material(material, |table, id| table.set_color(id, [r, g, b]))
-}
-
-/// Changes a material's opacity and keeps its color.
-#[wasm_bindgen(js_name = setMaterialOpacity)]
-pub fn set_material_opacity(material: u32, opacity: f32) -> u32 {
-    change_material(material, |table, id| table.set_opacity(id, opacity))
-}
-
-/// Applies a change to the material with this id, counting from 1.
-fn change_material(
-    material: u32,
-    change: impl FnOnce(&mut MaterialTable, u32) -> Result<(), MaterialError>,
-) -> u32 {
+/// Changes one value of a material, by the float where the value starts in the material's row
+/// (`constants::material_param`), and keeps the others. The value takes as many of `x`, `y` and
+/// `z` as it has floats. Colors are linear.
+#[wasm_bindgen(js_name = setMaterialValue)]
+pub fn set_material_value(material: u32, param: u32, x: f32, y: f32, z: f32) -> u32 {
     with_engine(|e| {
         let table = e.renderer.settings_mut().materials_mut();
-        match change(table, material.wrapping_sub(1)) {
+        let at = param as usize;
+        let values = [x, y, z];
+        let width = materials::param::width(at).unwrap_or(0);
+        match table.set(material.wrapping_sub(1), at, &values[..width]) {
             Ok(()) => 0,
             Err(error) => material_failure(error),
         }
@@ -1086,6 +1085,8 @@ pub fn texture_stat(field: u32, texture: u32) -> f64 {
             texture_stat::LARGEST_FRAME_BYTES => f64::from(stats.largest_frame_bytes),
             texture_stat::WAITING => f64::from(stats.waiting),
             texture_stat::IMAGES_SENT => f64::from(textures.images_sent()),
+            texture_stat::UPLOAD_BUDGET => f64::from(textures.budget()),
+            texture_stat::MAX_ANISOTROPY => f64::from(textures.max_anisotropy()),
             _ => f64::from(textures.max_size()),
         };
         0

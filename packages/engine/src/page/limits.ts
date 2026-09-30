@@ -53,6 +53,8 @@ export interface CoreDevice {
 	 * WebGL2 has multi-draw. They pick the module of shader builds that the thread that draws loads.
 	 */
 	shaderBits: number;
+	/** False when the core culls every object and instance row, with no grid cells skipped first. */
+	cellCulling: boolean;
 }
 
 /**
@@ -114,7 +116,7 @@ export function storageBindingBytes(limits: Record<string, number | null>): numb
  * switches. `copyUploads` makes the WebGL2 path copy uploads out of shared memory even where
  * WebGL reads it, `depth` forces a WebGL2 depth mode, `parallelCompile` off makes WebGL2 wait for
  * each program's compile, and `compression` limits the compressed texture families, so tests reach
- * every route.
+ * every route. `cells` off makes the core cull without grid cells, for benchmarks.
  */
 export function coreDevice(
 	webgl2: boolean,
@@ -124,7 +126,8 @@ export function coreDevice(
 		depth,
 		parallelCompile,
 		compression: allowed,
-	}: Pick<Switches, 'copyUploads' | 'depth' | 'parallelCompile' | 'compression'>,
+		cells,
+	}: Pick<Switches, 'copyUploads' | 'depth' | 'parallelCompile' | 'compression' | 'cells'>,
 ): CoreDevice {
 	if (!webgl2) {
 		const features = new Set(report.webgpu.features);
@@ -137,6 +140,7 @@ export function coreDevice(
 			depth: 'reversed',
 			parallelCompile,
 			shaderBits: 0,
+			cellCulling: cells,
 		};
 	}
 	const gl = report.webgl2;
@@ -153,6 +157,7 @@ export function coreDevice(
 		depth: webgl2Depth(gl.extensions.EXT_clip_control === true, depth),
 		parallelCompile,
 		shaderBits: multiDraw ? PERMUTATION_DRAW_INDEX : 0,
+		cellCulling: cells,
 	};
 }
 

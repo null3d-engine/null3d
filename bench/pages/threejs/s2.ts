@@ -22,7 +22,7 @@ runThreePage('s2', (three, scene, { count }) => {
 		{ length: S2_MESH_COUNT },
 		(_, k) => new three.BoxGeometry(...s2MeshSize(k)),
 	);
-	const materials = S2_COLORS.map((color) => new three.MeshLambertMaterial({ color }));
+	const materials = S2_COLORS.map((color) => new three.MeshStandardMaterial({ color }));
 	const nodes: ThreeModule.Mesh[] = [];
 	const roots: ThreeModule.Mesh[] = [];
 	for (let i = 0; i < data.parent.length; i++) {

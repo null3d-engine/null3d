@@ -1,9 +1,9 @@
 // URL switches that let one device exercise every engine path: ?gpu=, ?threads=off, ?render=main,
-// ?latency=, ?uploads=copy, ?depth=, ?compile=wait and ?compression=. Four more set what the
+// ?latency=, ?uploads=copy, ?depth=, ?compile=wait and ?compression=. Five more set what the
 // benchmarks vary: ?fps= for a fixed frame rate, ?jobs= for the job worker count, ?memory= for the
-// shared memory's maximum and ?queue= for the frames that may wait on the GPU. ?hold starts hold
-// mode for image tests, ?preset= fixes the quality preset, and ?bench publishes the running engine
-// for benchmark tools.
+// shared memory's maximum, ?queue= for the frames that may wait on the GPU and ?cells=off for
+// culling without grid cells. ?hold starts hold mode for image tests, ?preset= fixes the quality
+// preset, and ?bench publishes the running engine for benchmark tools.
 
 import { QUALITY_PRESETS, type QualityPreset } from '../quality/presets';
 
@@ -59,6 +59,11 @@ export interface Switches {
 	 * draw, as it does in a browser without `KHR_parallel_shader_compile`.
 	 */
 	parallelCompile: boolean;
+	/**
+	 * False when ?cells=off makes the core cull every object and instance row, with no whole grid
+	 * cells skipped first, for benchmarks that measure what cell culling saves.
+	 */
+	cells: boolean;
 	/**
 	 * The frame rate from ?fps= that the thread that draws holds, up to the display's rate, or
 	 * undefined to draw at the display's rate.
@@ -125,6 +130,7 @@ export function parseSwitches(search: string): Switches {
 			?.split(',')
 			.flatMap((name) => oneOf(name, COMPRESSION_FAMILIES) ?? []),
 		parallelCompile: params.get('compile') !== 'wait',
+		cells: params.get('cells') !== 'off',
 		fps: positive(params.get('fps')),
 		jobs: whole(params.get('jobs'), MAX_JOB_WORKERS),
 		queue: params.get('queue') === 'off' ? Number.POSITIVE_INFINITY : whole(params.get('queue')),

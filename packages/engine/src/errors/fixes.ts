@@ -59,7 +59,7 @@ export const ERROR_FIXES = {
 	E1404:
 		'This is an engine bug. Report it with the message and the browser, then destroy the engine and start it again.',
 	E1405:
-		'Read the message for the thread and its cause. Check that the page is served with the isolation headers and that the engine files load, then report it if it repeats.',
+		"Read the message: it names the worker that did not start, and why. The sketch worker also reports an error that your sketch's setup function threw, with that error's message: fix the setup function. Otherwise, check that the page is served with the isolation headers and that the engine files load, then report the error if it repeats.",
 	E1406:
 		"Check that the host serves every file that the build wrote, at the paths that the build gave them. The engine's .wasm files and the KTX2 transcoder's files are among them. If the page loads at other times, the network dropped: reload the page.",
 	E1407:

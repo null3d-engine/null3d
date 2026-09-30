@@ -1,6 +1,6 @@
 # null3D recipes
 
-Each recipe states the goal, gives the code, explains why it is written that way, and names the docs pages to read. Code runs in `sketch.ts` unless it says `page.ts`. Versions in parentheses mark APIs that arrive after 0.1; check the docs status before using them.
+Each recipe states the goal, gives the code, explains why it is written that way, and names the docs pages to read. Code runs in `sketch.ts` unless it says `page.ts`. A version in parentheses marks a recipe whose APIs arrive after 0.1, and "later in 0.1" marks one whose APIs are not built yet. Check the docs status before using them.
 
 ## Contents
 
@@ -17,7 +17,7 @@ Each recipe states the goal, gives the code, explains why it is written that way
 11. Physics with a library in the sketch worker
 12. Minimap with a second camera (0.2)
 13. Screenshots
-14. Video on a surface (after 1.0; a workaround now)
+14. Video on a surface (after 1.0; a workaround later in 0.1)
 15. Custom full-screen effect (0.2)
 16. Very large worlds (0.2)
 17. Move a player with keys, a gamepad or touch
@@ -26,11 +26,20 @@ Each recipe states the goal, gives the code, explains why it is written that way
 ## 1. Start a new project
 
 ```sh
-bunx @null3d/cli create my-project --template empty   # also: third-person, top-down-units, product-viewer
-cd my-project && bun install && bun run dev
+mkdir my-project && cd my-project
+bun add @null3d/engine
+bun add -d vite @null3d/vite-plugin
 ```
 
-The template contains `page.ts`, `sketch.ts`, `index.html` with a canvas, `AGENTS.md`, and the null3D skills in `.claude/skills/`. Its `vite.config.ts` loads the null3D Vite plugin, which sends the cross-origin isolation headers, so the threaded build runs. Docs: `getting-started/install`, `getting-started/project-structure`, `getting-started/hosting`.
+```ts
+// vite.config.ts
+import { defineConfig } from 'vite';
+import null3d from '@null3d/vite-plugin';
+
+export default defineConfig({ plugins: [null3d()] });
+```
+
+Add `index.html` with a canvas that CSS sizes and a module script for `page.ts`. Then write `page.ts` and `sketch.ts` as SKILL.md section 2 shows. Run `bunx vite`, and open the address it prints. The Vite plugin sends the cross-origin isolation headers, so the threaded build runs. It also compiles the sketch for its worker and the WGSL in your code. Templates from `bunx @null3d/cli create` come in 0.3. Docs: `getting-started/install`, `getting-started/first-scene`, `getting-started/hosting`.
 
 ## 2. Orbit camera around a model
 
@@ -39,9 +48,12 @@ import { defineSketch } from '@null3d/engine';
 import { createOrbitControls } from '@null3d/controls';
 
 export default defineSketch(async (ctx) => {
-  const { scene } = ctx;
+  const { scene, geometry, materials } = ctx;
   const camera = scene.createPerspectiveCamera({ fov: 45, position: [3, 2, 5], target: [0, 1, 0] });
   scene.setActiveCamera(camera);
+  scene.createDirectionalLight({ direction: [-1, -2, -1], intensity: 3 });
+  scene.createAmbientLight({ intensity: 0.4 });
+  scene.createMesh({ mesh: geometry.box(), material: materials.standard({ color: '#4a8cff' }), position: [0, 1, 0] });
   const controls = createOrbitControls(ctx, camera, {
     target: [0, 1, 0], enableDamping: true, dampingFactor: 0.08,
     minDistance: 1.5, maxDistance: 12, maxPolarAngle: Math.PI * 0.49,
@@ -81,67 +93,82 @@ Optimize models first with `bunx @null3d/cli assets optimize models/hero.glb` (m
 ```ts
 import { defineSketch, math } from '@null3d/engine';
 
-export default defineSketch(async ({ scene, geometry, materials }) => {
-  const N = 20_000;
-  const boids = scene.createInstances(geometry.cone({ radius: 0.1, height: 0.3 }), N, {
-    material: materials.standard({ color: '#e0e0e0', roughness: 0.6 }),
+export default defineSketch(({ scene, geometry, materials }) => {
+  scene.setActiveCamera(scene.createPerspectiveCamera({ fov: 60, far: 300, position: [0, 40, 90], target: [0, 10, 0] }));
+  scene.createDirectionalLight({ direction: [-1, -2, -1], intensity: 3 });
+  scene.createAmbientLight({ intensity: 0.4 });
+  const N = 10_000;
+  const boids = scene.createInstances(geometry.cone({ radius: 0.1, height: 0.3, radialSegments: 8 }), N, {
+    material: materials.standard({ color: '#e0e0e0' }),
     dynamic: true,
   });
   const vel = new Float32Array(N * 3);        // your own data, next to the engine's arrays
-  const p = boids.positions;
+  const start = boids.positions;
   for (let i = 0; i < N; i++) {
-    p[i * 3] = math.randFloat(-50, 50); p[i * 3 + 1] = math.randFloat(0, 20); p[i * 3 + 2] = math.randFloat(-50, 50);
+    start[i * 3] = math.randFloat(-50, 50); start[i * 3 + 1] = math.randFloat(0, 20); start[i * 3 + 2] = math.randFloat(-50, 50);
     vel[i * 3] = math.randFloat(-1, 1); vel[i * 3 + 2] = math.randFloat(-1, 1);
   }
   return {
     onUpdate(dt) {
+      const p = boids.positions;              // read the view each frame: engine memory can grow
       for (let i = 0; i < N * 3; i++) p[i] += vel[i] * dt;   // no allocation, no setters
     },
   };
 });
 ```
 
-A dynamic batch uploads all rows every frame, so no `markDirty` call is needed. Keep per-object data (velocity, health) in your own typed arrays indexed by row. Docs: `concepts/instances`, `concepts/static-dynamic`.
+A dynamic batch uploads all rows every frame, so no `markDirty` call is needed. Small objects need few triangles, so the cones have 8 sides instead of the default 32. Keep per-object data (velocity, health) in your own typed arrays indexed by row. The batch's arrays are views of engine memory, which can grow when you create meshes or batches, so read them in each frame. Docs: `concepts/instances`, `concepts/static-dynamic`.
 
 ## 5. Pool short-lived objects such as bullets
 
 ```ts
-const MAX = 512;
-const bullets = scene.createInstances(geometry.sphere({ radius: 0.05 }), MAX, {
-  material: materials.unlit({ color: '#ffee88' }), dynamic: true,
-});
-const life = new Float32Array(MAX);
-const dir = new Float32Array(MAX * 3);
-let active = 0;
+import { defineSketch, math } from '@null3d/engine';
 
-function fire(origin: ArrayLike<number>, d: ArrayLike<number>) {
-  if (active === MAX) return;
-  const i = active++;
-  bullets.positions.set(origin, i * 3);
-  dir.set(d, i * 3);
-  life[i] = 2;
-  bullets.setActiveCount(active);
-}
+export default defineSketch(({ scene, geometry, materials, input }) => {
+  scene.setActiveCamera(scene.createPerspectiveCamera({ fov: 60, position: [0, 3, 12], target: [0, 0, -10] }));
+  const MAX = 512;
+  const bullets = scene.createInstances(geometry.sphere({ radius: 0.05 }), MAX, {
+    material: materials.unlit({ color: '#ffee88' }), dynamic: true,
+  });
+  bullets.setActiveCount(0);
+  const life = new Float32Array(MAX);
+  const dir = new Float32Array(MAX * 3);
+  let active = 0;
+  let cooldown = 0;
 
-function update(dt: number) {
-  const p = bullets.positions;
-  for (let i = 0; i < active; i++) {
-    life[i] -= dt;
-    if (life[i] <= 0) {                     // swap-remove: copy the last live row over this one
-      const last = --active;
-      p.copyWithin(i * 3, last * 3, last * 3 + 3);
-      dir.copyWithin(i * 3, last * 3, last * 3 + 3);
-      life[i] = life[last];
-      i--;
-      continue;
-    }
-    p[i * 3] += dir[i * 3] * 30 * dt; p[i * 3 + 1] += dir[i * 3 + 1] * 30 * dt; p[i * 3 + 2] += dir[i * 3 + 2] * 30 * dt;
+  function fire() {
+    if (active === MAX) return;
+    const i = active++;
+    const p = bullets.positions;
+    p[i * 3] = 0; p[i * 3 + 1] = 0; p[i * 3 + 2] = 0;
+    dir[i * 3] = math.randFloatSpread(0.4); dir[i * 3 + 1] = math.randFloat(0, 0.3); dir[i * 3 + 2] = -1;
+    life[i] = 2;
   }
-  bullets.setActiveCount(active);
-}
+
+  return {
+    onUpdate(dt) {
+      cooldown -= dt;
+      if (cooldown <= 0 || input.wasPressed('Space')) { fire(); cooldown = 0.05; }
+      const p = bullets.positions;
+      for (let i = 0; i < active; i++) {
+        life[i] -= dt;
+        if (life[i] <= 0) {                 // swap-remove: copy the last live row over this one
+          const last = --active;
+          p.copyWithin(i * 3, last * 3, last * 3 + 3);
+          dir.copyWithin(i * 3, last * 3, last * 3 + 3);
+          life[i] = life[last];
+          i--;
+          continue;
+        }
+        p[i * 3] += dir[i * 3] * 30 * dt; p[i * 3 + 1] += dir[i * 3 + 1] * 30 * dt; p[i * 3 + 2] += dir[i * 3 + 2] * 30 * dt;
+      }
+      bullets.setActiveCount(active);
+    },
+  };
+});
 ```
 
-No objects are created or destroyed during play. `setActiveCount` draws only the live rows. Docs: `concepts/instances`.
+No objects are created or destroyed during play. `setActiveCount` draws only the live rows, so keep them at the front of the arrays. Unlit bullets need no lights. Docs: `concepts/instances`.
 
 ## 6. Click to select, with an outline (0.2)
 
@@ -161,7 +188,7 @@ for (const u of units) {
 }
 ```
 
-Without object events (before 0.2), use a ray:
+A ray from the pointer, also in 0.2, lets walls block the pick:
 
 ```ts
 const WORLD = 1 << 2;   // walls and terrain: they block the ray
@@ -245,20 +272,30 @@ Docs: `guides/loading-screens`, `api/engine`.
 ```ts
 // page.ts (any UI library works here, including lil-gui)
 const gui = new GUI();
-const settings = { bloom: 0.8, shadows: true };
-gui.add(settings, 'bloom', 0, 2).onChange((v: number) => engine.postToSketch('bloom', v));
-gui.add(settings, 'shadows').onChange((v: boolean) => engine.postToSketch('shadows', v));
+const settings = { sun: 3, spin: true };
+gui.add(settings, 'sun', 0, 6).onChange((v: number) => engine.postToSketch('sun', v));
+gui.add(settings, 'spin').onChange((v: boolean) => engine.postToSketch('spin', v));
 ```
 
 ```ts
 // sketch.ts
-page.onMessage((type, v) => {
-  if (type === 'bloom') post.set({ bloom: { strength: v } });
-  if (type === 'shadows') sun.setCastShadows(v);
+import { defineSketch } from '@null3d/engine';
+
+export default defineSketch(({ scene, geometry, materials, page }) => {
+  scene.setActiveCamera(scene.createPerspectiveCamera({ fov: 50, position: [0, 1.5, 4], target: [0, 0, 0] }));
+  const sun = scene.createDirectionalLight({ direction: [-1, -2, -1], intensity: 3 });
+  scene.createAmbientLight({ intensity: 0.4 });
+  const cube = scene.createMesh({ mesh: geometry.box(), material: materials.standard({ color: '#4a8cff' }), dynamic: true });
+  let spin = true;
+  page.onMessage((type, value) => {
+    if (type === 'sun') sun.setIntensity(value as number);
+    if (type === 'spin') spin = value as boolean;
+  });
+  return { onUpdate(dt) { if (spin) cube.rotateY(dt); } };
 });
 ```
 
-UI libraries need the DOM, so they live on the page. Docs: `guides/ui-overlays`, `api/page`.
+UI libraries need the DOM, so they live on the page. Each change sends one message, and the sketch keeps the value until the next one. Docs: `guides/ui-overlays`, `api/page`.
 
 ## 10. Day and night: sun, sky and environment (0.2)
 
@@ -342,17 +379,17 @@ Several full views, such as split screens, come after 1.0 (`guides/multiple-view
 ```ts
 // page.ts
 shotButton.onclick = async () => {
-  const blob = await engine.capture();          // the next complete frame, as a PNG
+  const blob = await engine.capture();          // the next frame, as a PNG
   const a = Object.assign(document.createElement('a'), { href: URL.createObjectURL(blob), download: 'shot.png' });
   a.click();
 };
 ```
 
-For tests, use `bunx @null3d/cli shot` or hold-mode tests instead (`references/testing-and-debugging.md`). Docs: `api/engine`.
+The thread that draws reads the frame back and encodes it, so the canvas needs no `preserveDrawingBuffer`. After `destroy()` the call fails with E1414. For tests, use `bunx @null3d/cli shot` or hold-mode tests instead (`references/testing-and-debugging.md`). Docs: `api/engine`.
 
-## 14. Video on a surface (after 1.0; a workaround now)
+## 14. Video on a surface (after 1.0; a workaround later in 0.1)
 
-Video textures (`engine.registerVideo` with `textures.fromVideo`) come after 1.0. Until then, the page can send frames as `ImageBitmap` objects, which transfer to the sketch without a copy:
+Video textures (`engine.registerVideo` with `textures.fromVideo`) come after 1.0. Until then, the page can send frames as `ImageBitmap` objects, which transfer to the sketch without a copy. The sketch's half needs texture maps on materials, which come later in 0.1:
 
 ```ts
 // page.ts
@@ -421,6 +458,8 @@ import { defineSketch } from '@null3d/engine';
 
 export default defineSketch(({ scene, geometry, materials, input }) => {
   scene.setActiveCamera(scene.createPerspectiveCamera({ fov: 50, position: [0, 4, 10], target: [0, 0, 0] }));
+  scene.createDirectionalLight({ direction: [-1, -2, -1], intensity: 3 });
+  scene.createAmbientLight({ intensity: 0.4 });
   const player = scene.createMesh({
     mesh: geometry.box({ width: 1, height: 1, depth: 1 }),
     material: materials.standard({ color: '#4a8cff' }),
@@ -461,6 +500,7 @@ export default defineSketch(({ scene, geometry, materials, input }) => {
   const camera = scene.createPerspectiveCamera({ fov: 50 });
   scene.setActiveCamera(camera);
   scene.createDirectionalLight({ direction: [-1, -2, -1], intensity: 3 });
+  scene.createAmbientLight({ intensity: 0.4 });
   const player = scene.createMesh({
     mesh: geometry.box({ width: 1, height: 1, depth: 1 }),
     material: materials.standard({ color: '#4a8cff' }),

@@ -13,6 +13,7 @@ use null3d_render::cpu_culled::{CpuCulledConfig, MAX_SOURCE_BITS};
 use null3d_render::frame::{NO_MATERIAL, NO_MESH};
 use null3d_render::geometry::Shape;
 use null3d_render::gpu_driven::{MAX_USEFUL_BINDING_BYTES, PORTABLE_MAX_SOURCES};
+use null3d_render::materials::{feature, param};
 use null3d_render::textures::{DEFAULT_MAX_ANISOTROPY, DEFAULT_UPLOAD_BUDGET, MAX_LAYERS};
 
 /// Fields of `sceneArrays`.
@@ -52,7 +53,7 @@ pub const COMMAND_WORDS: u32 = 4;
 
 /// How a material shades, as `createMaterial` takes it.
 pub mod shading {
-    /// Lit, as three.js's `MeshLambertMaterial`.
+    /// The standard material, lit as three.js's `MeshStandardMaterial`.
     pub const LIT: u32 = 0;
     /// The base color only, as three.js's `MeshBasicMaterial`.
     pub const UNLIT: u32 = 1;
@@ -78,6 +79,10 @@ pub mod texture_stat {
     pub const IMAGES_SENT: u32 = 5;
     /// The widest and tallest texture the store takes.
     pub const MAX_SIZE: u32 = 6;
+    /// The texel bytes that one frame may upload.
+    pub const UPLOAD_BUDGET: u32 = 7;
+    /// The largest anisotropy that samplers use.
+    pub const MAX_ANISOTROPY: u32 = 8;
 }
 
 /// The settings that `setTextureOption` changes.
@@ -275,6 +280,33 @@ pub fn typescript() -> String {
                 ("UNLIT_MAP", shading::UNLIT_MAP),
             ],
         ),
+        // The features that `createMaterial` takes, fixed from then on.
+        (
+            "MATERIAL_FEATURE",
+            &[
+                ("DOUBLE_SIDED", feature::DOUBLE_SIDED),
+                ("VERTEX_COLORS", feature::VERTEX_COLORS),
+                ("FLAT_SHADING", feature::FLAT_SHADING),
+            ],
+        ),
+        // The values that `setMaterialValue` changes, by the float where each starts in a row.
+        (
+            "MATERIAL_PARAM",
+            &[
+                ("COLOR", param::COLOR as u32),
+                ("OPACITY", param::OPACITY as u32),
+                ("EMISSIVE", param::EMISSIVE as u32),
+                ("EMISSIVE_INTENSITY", param::EMISSIVE_INTENSITY as u32),
+                ("ALPHA_CUTOFF", param::ALPHA_CUTOFF as u32),
+                ("METALNESS", param::METALNESS as u32),
+                ("ROUGHNESS", param::ROUGHNESS as u32),
+                ("NORMAL_SCALE", param::NORMAL_SCALE as u32),
+                ("OCCLUSION_STRENGTH", param::OCCLUSION_STRENGTH as u32),
+                ("LIGHT_MAP_INTENSITY", param::LIGHT_MAP_INTENSITY as u32),
+                ("UV_U", param::UV_U as u32),
+                ("UV_V", param::UV_V as u32),
+            ],
+        ),
         (
             "TEXTURE_STAT",
             &[
@@ -285,6 +317,8 @@ pub fn typescript() -> String {
                 ("WAITING", texture_stat::WAITING),
                 ("IMAGES_SENT", texture_stat::IMAGES_SENT),
                 ("MAX_SIZE", texture_stat::MAX_SIZE),
+                ("UPLOAD_BUDGET", texture_stat::UPLOAD_BUDGET),
+                ("MAX_ANISOTROPY", texture_stat::MAX_ANISOTROPY),
             ],
         ),
         // The draw list's codes that `createTexture` takes, so the sketch thread needs no import of
