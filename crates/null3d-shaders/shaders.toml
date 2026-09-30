@@ -8,9 +8,17 @@
 #   pipelines  Render pipelines by name, each a vertex and a fragment entry point. WebGL2 gets one
 #              GLSL program for each pipeline, and WebGPU gets the entry point names. Needed when a
 #              variant targets "glsl".
-#   variants   Builds of the shader by name. Each has:
-#                defs     naga_oil shader defs that are true in this build, for `#ifdef NAME`.
-#                targets  "wgsl" for WebGPU, "glsl" for WebGL2 (GLSL ES 3.00), or both.
+#   variants   Variants of the shader by name. Each has:
+#                defs          naga_oil shader defs that are true in every build of the variant,
+#                              for `#ifdef NAME`.
+#                permutations  Permutation bits by name, as the `permutation` module of
+#                              crates/null3d-gpu/src/drawlist.rs names them. The variant builds once
+#                              for each combination of them, with the names of the bits it has as
+#                              more shader defs. The build without any bit takes the variant's name,
+#                              and each other build adds the names of its bits in lowercase, in bit
+#                              order, such as `webgl2_draw_index`. Each build records its bits as
+#                              its permutation word, which the backends pick it by.
+#                targets       "wgsl" for WebGPU, "glsl" for WebGL2 (GLSL ES 3.00), or both.
 #
 # Names of shaders, variants and pipelines use letters, digits and underscores and do not start
 # with a digit, because they become TypeScript property names.
@@ -18,7 +26,10 @@
 # Library modules live in wgsl/lib/. The module in lib/<name>.wgsl starts with
 # `#define_import_path null3d::<name>`, and shaders import it with `#import null3d::<name>`.
 # The composer reads any name that equals an imported module's <name> as that module, so a
-# shader that imports null3d::color cannot also have a variable called `color`.
+# shader that imports null3d::color cannot also have a variable called `color`. In the same way, a
+# shader that imports an item by name, as `#import null3d::mesh::{material_of}`, cannot use that
+# name for anything else, not even a struct field. The composer also refuses names in a library
+# module that end in a digit, such as a field called `row0`.
 # WGSL directives such as `enable` and `requires` go on the first lines of a file, above every
 # `#import` and `#define_import_path` line: the composer passes them on only from there.
 #
@@ -28,17 +39,31 @@
 # "glsl" may read `@builtin(draw_index)`: its vertex shader reads `gl_DrawID` from
 # WEBGL_multi_draw, which WebGPU does not have.
 
-# Meshes drawn by instance, lit (Lambert) or unlit, or colored by their first texture coordinates
-# for the engine's own tests. WebGL2 reads instances from data textures, one draw per bucket, or
-# many buckets in one multi-draw call where WEBGL_multi_draw exists.
-[shaders.mesh]
-file = "mesh.wgsl"
-pipelines.lit = { vertex = "vs", fragment = "fs_lit" }
-pipelines.unlit = { vertex = "vs", fragment = "fs_unlit" }
-pipelines.texcoords = { vertex = "vs_texcoords", fragment = "fs_texcoords" }
+# The templates of meshes drawn by instance, one file each. Each builds for WebGPU, and for WebGL2
+# with and without the draw index of WEBGL_multi_draw: WebGL2 reads instances from data textures,
+# one draw per bucket, or many buckets in one multi-draw call. The library module null3d::mesh
+# holds what they share.
+
+# Lit like three.js's MeshLambertMaterial.
+[shaders.lit]
+file = "lit.wgsl"
+pipelines.main = { vertex = "vs", fragment = "fs" }
 variants.webgpu = { targets = ["wgsl"] }
-variants.webgl2 = { defs = ["WEBGL2"], targets = ["glsl"] }
-variants.webgl2_multi_draw = { defs = ["WEBGL2", "DRAW_INDEX"], targets = ["glsl"] }
+variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX"], targets = ["glsl"] }
+
+# The material's color alone, like three.js's MeshBasicMaterial.
+[shaders.unlit]
+file = "unlit.wgsl"
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgpu = { targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX"], targets = ["glsl"] }
+
+# Colored by the first texture coordinates, for the engine's own tests of vertex formats.
+[shaders.texcoords]
+file = "texcoords.wgsl"
+pipelines.main = { vertex = "vs", fragment = "fs" }
+variants.webgpu = { targets = ["wgsl"] }
+variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX"], targets = ["glsl"] }
 
 # GPU culling into buckets for indirect draws; its compute entry point is `main`. WebGPU only.
 [shaders.cull]

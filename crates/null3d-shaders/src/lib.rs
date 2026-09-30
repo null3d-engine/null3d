@@ -42,7 +42,7 @@ pub use position::Position;
 pub use problem::{BuildError, Problem};
 
 use library::{Composers, Library, View};
-use manifest::Manifest;
+use manifest::{Build, Manifest};
 
 /// The manifest.
 pub const MANIFEST_PATH: &str = "crates/null3d-shaders/shaders.toml";
@@ -238,8 +238,9 @@ impl Compiler {
         errors.or(built)
     }
 
-    /// Builds the variants of one entry shader. Problems go to `errors`, each named with the
-    /// `label` of its variant.
+    /// Builds the variants of one entry shader, each once for every combination of its
+    /// permutation bits, by build name. Problems go to `errors`, each named with the `label` of its
+    /// build.
     fn variants(
         &mut self,
         path: &str,
@@ -251,26 +252,29 @@ impl Compiler {
     ) -> BTreeMap<String, VariantOutput> {
         let mut built = BTreeMap::new();
         for (name, variant) in variants {
-            match self.variant(path, source, pipelines, variant) {
-                Ok(output) => {
-                    built.insert(name.clone(), output);
+            for build in variant.builds(name) {
+                match self.variant(path, source, pipelines, variant, &build) {
+                    Ok(output) => {
+                        built.insert(build.name, output);
+                    }
+                    Err(problems) => errors.add(problems, Some(&label(&build.name))),
                 }
-                Err(problems) => errors.add(problems, Some(&label(name))),
             }
         }
         built
     }
 
-    /// Builds one variant of an entry shader: checks its source, composes and validates it, and
-    /// writes each target.
+    /// Builds one build of a variant of an entry shader: checks its source, composes and
+    /// validates it, and writes each target.
     fn variant(
         &mut self,
         path: &str,
         source: &str,
         pipelines: &BTreeMap<String, Pipeline>,
         variant: &Variant,
+        build: &Build,
     ) -> Result<VariantOutput, Vec<Problem>> {
-        let defs: HashMap<String, ShaderDefValue> = variant
+        let defs: HashMap<String, ShaderDefValue> = build
             .defs
             .iter()
             .map(|def| (def.clone(), ShaderDefValue::Bool(true)))
@@ -340,7 +344,11 @@ impl Compiler {
         } else {
             None
         };
-        Ok(VariantOutput { wgsl, glsl })
+        Ok(VariantOutput {
+            permutation: build.permutation,
+            wgsl,
+            glsl,
+        })
     }
 }
 
