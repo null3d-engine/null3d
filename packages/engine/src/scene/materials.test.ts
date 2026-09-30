@@ -7,6 +7,7 @@ import {
 	MATERIAL_FEATURE_FLAT_SHADING,
 	MATERIAL_FEATURE_NO_DEPTH_TEST,
 	MATERIAL_FEATURE_NO_DEPTH_WRITE,
+	MATERIAL_FEATURE_NO_FOG,
 	MATERIAL_FEATURE_VERTEX_COLORS,
 	MATERIAL_PARAM_ALPHA_CUTOFF,
 	MATERIAL_PARAM_COLOR,
@@ -197,11 +198,15 @@ describe('Material.set', () => {
 	test('passes the features that the material fixes when it is created', () => {
 		const { features, materials } = fakeCore();
 		materials.standard({ doubleSided: true, flatShading: true });
-		materials.unlit({ vertexColors: true });
+		materials.unlit({ vertexColors: true, fog: false });
+		materials.standard({ fog: true });
+		materials.standard({ fog: false });
 		materials.standard();
 		expect(features).toEqual([
 			MATERIAL_FEATURE_DOUBLE_SIDED | MATERIAL_FEATURE_FLAT_SHADING,
-			MATERIAL_FEATURE_VERTEX_COLORS,
+			MATERIAL_FEATURE_VERTEX_COLORS | MATERIAL_FEATURE_NO_FOG,
+			0,
+			MATERIAL_FEATURE_NO_FOG,
 			0,
 		]);
 	});

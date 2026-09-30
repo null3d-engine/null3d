@@ -9,8 +9,8 @@ enable draw_index;
 // `SurfaceInput`: `defaultSurface` reads the material's own values, and a custom material's
 // surface function starts from it. Then `shade` lights the surface with the scene's lights. Code
 // that reads the material's options belongs in `defaultSurface`, and code that lights, shadows,
-// fogs or blends the surface belongs in `shade`, so custom materials get both. The ALPHA_MASK
-// builds draw nothing where the surface's alpha falls below the material's cutoff.
+// fogs or blends the surface belongs in `shade`, so custom materials get all of it. The
+// ALPHA_MASK builds draw nothing where the surface's alpha falls below the material's cutoff.
 //
 // Custom materials build this template with their WGSL added after its last line, and with the
 // shader def CUSTOM_SURFACE when that WGSL declares `fn surface`. Their WGSL shares this file's
@@ -20,7 +20,7 @@ enable draw_index;
 #import null3d::lighting::{PbrMaterial, dfg_lut, direct_light, indirect_diffuse}
 #import null3d::lighting::{multiscatter_compensation, pbr_material}
 #import null3d::globals::{Material}
-#import null3d::mesh::{InstanceIn, clip_of, find_instance, frame, material_of}
+#import null3d::mesh::{InstanceIn, clip_of, find_instance, fogged, frame, material_of}
 #import null3d::mesh::{relative_position, world_normal}
 
 /// The bit of a material's flags that lights each triangle with its face's normal.
@@ -166,7 +166,7 @@ fn shade(s: Surface, input: SurfaceInput) -> vec4f {
         discard;
     }
 #endif
-    return vec4f(linear_to_srgb(outgoing), 1.0);
+    return vec4f(linear_to_srgb(fogged(outgoing, input.relativePosition, material_row)), 1.0);
 }
 
 @fragment

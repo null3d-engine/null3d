@@ -2,7 +2,7 @@
 
 Engine docs: `porting/threejs-materials`, `api/materials`, `api/textures`, `concepts/color-management`, `shaders/surface-functions`.
 
-Versions: `materials.standard` takes `color`, `opacity`, `metalness`, `roughness`, `emissive` and `emissiveIntensity` now, and shades as three.js's `MeshStandardMaterial` does. `materials.unlit` takes `color` and `opacity`. Both take `doubleSided` and `vertexColors`, and the standard material takes `flatShading`. The engine stores `opacity` but draws every material opaque. The other options below come later in 0.1 unless a row gives another version. Custom materials with a surface function (`materials.shader`) are built; their uniforms and textures come later in 0.1. The texture options of `assets.loadTexture` in section 7 exist now, but no material can use a texture yet.
+Versions: `materials.standard` takes `color`, `opacity`, `metalness`, `roughness`, `emissive` and `emissiveIntensity` now, and shades as three.js's `MeshStandardMaterial` does. `materials.unlit` takes `color` and `opacity`. Both take `doubleSided`, `vertexColors` and `fog`, and the standard material takes `flatShading`. The engine stores `opacity` but draws every material opaque. The other options below come later in 0.1 unless a row gives another version. Custom materials with a surface function (`materials.shader`) are built; their uniforms and textures come later in 0.1. The texture options of `assets.loadTexture` in section 7 exist now, but no material can use a texture yet.
 
 ## Contents
 
@@ -47,7 +47,7 @@ Versions: `materials.standard` takes `color`, `opacity`, `metalness`, `roughness
 | `blending: NormalBlending / AdditiveBlending / MultiplyBlending` | `blending: 'normal' / 'additive' / 'multiply'` (later in 0.1) | Subtractive and custom blending are not supported |
 | `vertexColors`, `flatShading` | Same names | Fixed when the material is created: make one material for each combination. `vertexColors` needs a mesh with colors |
 | `wireframe` | `debug.view('wireframe')` (later in 0.1), or `scene.createLines({ fromEdges })` (0.2) | |
-| `fog: false` | `fog: false` (later in 0.1) | |
+| `fog: false` | Same name | |
 | `toneMapped: false` | Not in 1.0 | Draw the objects in a declared pass after post-processing (0.2) |
 | `dithering` | Always on in the final pass (later in 0.1) | |
 | `clippingPlanes`, `clipShadows` | A surface function (later in 0.1; section 8) | |
@@ -71,7 +71,7 @@ Tell the user which of these a scene relies on before porting it. Glass and car-
 
 ## 3. MeshBasicMaterial
 
-`materials.unlit`: `color`, `opacity`, `vertexColors` and `doubleSided` now; `map`, `alphaMode`, `alphaCutoff` and `fog` later in 0.1. Its `envMap` and `reflectivity` (fake reflections) are not supported; use `materials.standard` with high metalness and low roughness for a reflective look.
+`materials.unlit`: `color`, `opacity`, `vertexColors`, `doubleSided` and `fog` now; `map`, `alphaMode` and `alphaCutoff` later in 0.1. Its `envMap` and `reflectivity` (fake reflections) are not supported; use `materials.standard` with high metalness and low roughness for a reflective look.
 
 ## 4. MeshLambertMaterial and MeshPhongMaterial
 

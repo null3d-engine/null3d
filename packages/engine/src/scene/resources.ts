@@ -9,6 +9,7 @@ import {
 	MATERIAL_FEATURE_FLAT_SHADING,
 	MATERIAL_FEATURE_NO_DEPTH_TEST,
 	MATERIAL_FEATURE_NO_DEPTH_WRITE,
+	MATERIAL_FEATURE_NO_FOG,
 	MATERIAL_FEATURE_VERTEX_COLORS,
 	MATERIAL_PARAM_ALPHA_CUTOFF,
 	MATERIAL_PARAM_COLOR,
@@ -533,7 +534,7 @@ export interface StandardValues extends MaterialOptions {
 
 /**
  * The options that choose how a material's shader and pipeline draw it. They are fixed when the
- * material is created, because a change would compile a new pipeline.
+ * material is created, as most of them would need a new pipeline.
  *
  * @category api/materials
  */
@@ -545,6 +546,8 @@ export interface MaterialFeatures {
 	 * meshes that have them. The default is false.
 	 */
 	vertexColors?: boolean;
+	/** Takes the scene's fog. False keeps the material's color at every distance. The default is true. */
+	fog?: boolean;
 	/** How the material uses its alpha. The default is `opaque`. */
 	alphaMode?: AlphaMode;
 	/** False to write no depth, so the surface hides nothing behind it. The default is true. */
@@ -711,7 +714,8 @@ function featureBits(options: StandardOptions): number {
 		(options.flatShading ? MATERIAL_FEATURE_FLAT_SHADING : 0) |
 		ALPHA_MODES[options.alphaMode ?? 'opaque'] |
 		(options.depthWrite === false ? MATERIAL_FEATURE_NO_DEPTH_WRITE : 0) |
-		(options.depthTest === false ? MATERIAL_FEATURE_NO_DEPTH_TEST : 0)
+		(options.depthTest === false ? MATERIAL_FEATURE_NO_DEPTH_TEST : 0) |
+		(options.fog === false ? MATERIAL_FEATURE_NO_FOG : 0)
 	);
 }
 
