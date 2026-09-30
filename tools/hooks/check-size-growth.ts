@@ -67,7 +67,7 @@ export const SIZE_GROWTH_GUIDANCE = [
 	'A Size-Growth: trailer explains a file that grew more than 2% after Brotli against main',
 	'(AGENTS.md, "Commit gates"). Name each file as the size report prints it, such as js/page.js or',
 	'threaded/null3d_bg.wasm, then say why it grew. For example:\n',
-	'  Size-Growth: js/render-worker.js +3.1%, the render graph and its culling per view',
+	'  Size-Growth: js/render-worker-webgpu.js +3.1%, the render graph and its culling per view',
 	'  Size-Growth: threaded/null3d_bg.wasm and single/null3d_bg.wasm +6%, meshes from arrays',
 ];
 
