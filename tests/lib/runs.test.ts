@@ -191,6 +191,32 @@ describe('the checks plan', () => {
 		expect(planItems(parseArgs(['--plan', 'scale', 'Safari']))).toBeUndefined();
 	});
 
+	it("notes each device's quality preset, and fails one that the chooser does not give", () => {
+		const quality = items.find((item) => item.id === 'quality');
+		if (!quality) throw new Error('the plan lacks the quality page');
+		expect(quality.path).toBe('/tests/pages/quality.html');
+		const tablet = { coarsePointer: true, screenMinEdge: 834, deviceMemoryGB: null };
+		const result = (preset: string) => ({
+			ok: true,
+			mode: { preset, crashedStarts: 0 },
+			tier: 'webgpu',
+			hints: tablet,
+		});
+		const notes: string[] = [];
+		const context = {
+			resultOf: () => undefined,
+			imageDir: '',
+			note: (text: string) => notes.push(text),
+		};
+		expect(judge(quality.check, result('medium'), NONE_MISSING, context)).toEqual([]);
+		expect(notes).toEqual([
+			'quality preset medium on webgpu for a tablet (coarse pointer, smaller screen edge 834 px, no memory reading, 0 crashed starts)',
+		]);
+		expect(judge(quality.check, result('high'), NONE_MISSING, context)).toEqual([
+			'the engine ran the high preset, where the chooser gives medium',
+		]);
+	});
+
 	it('splits into shards that run each item once, each with the items its check compares with', () => {
 		const ids = (plan: { id: string }[]) => plan.map(({ id }) => id).sort();
 		for (const count of [2, 3, 4]) {

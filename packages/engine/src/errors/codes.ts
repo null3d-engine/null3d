@@ -135,6 +135,13 @@ const DOCS = {
 			'E1208: textures.fromData() got 12 numbers for 2 x 2 x 1 texels, not 16: give four per texel.',
 		since: '0.1',
 	},
+	E1213: {
+		title: 'Invalid setting',
+		cause:
+			'A call received a setting that it does not have, or a value that the setting does not take. Examples are a tone mapping that the engine does not know, and a negative exposure.',
+		example: `E1213: post.set() got the tone mapping "filmic", which is not 'aces', 'agx', 'neutral' or 'none'.`,
+		since: '0.1',
+	},
 	E1214: {
 		title: 'Invalid sketch option',
 		cause:
