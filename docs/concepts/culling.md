@@ -8,6 +8,8 @@ summary: "Frustum culling on the GPU on WebGPU and on the job workers on WebGL2;
 
 # Culling
 
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions.
+
 ```mermaid
 flowchart LR
     subgraph core["Engine core, each frame"]
@@ -22,13 +24,13 @@ flowchart LR
     cull --> draw["Draw the visible<br/>objects and rows"]
 ```
 
-Culling finds the objects and instance rows in the camera's view, so the GPU draws only those. The engine tests each bounding sphere against the six planes of the view. Every position in the test is relative to the camera, so a scene far from the origin culls and draws as it does near it. The engine culls each [view](render-graph.md) on its own, against its own camera.
+Culling finds the objects and instance rows in the camera's view, so the GPU draws only those. The engine tests each bounding sphere against the six planes of the view. Every position in the test is relative to the camera, so a scene far from the origin culls and draws as it does near it. The engine culls each [view](render-graph.md) separately, against that view's camera.
 
 ## How each path culls
 
 On WebGPU the GPU culls the scene itself. A compute pass runs one GPU thread per object or instance row. Each thread adds its cell's offset to its bounding sphere and tests the sphere. An object in view joins its group: the objects that share a mesh and a material. The prerecorded draws read how many each group holds. The CPU's cost per frame stays almost flat as the scene grows.
 
-On WebGL2 there are no compute shaders, so the job workers cull on the CPU. They test four spheres per SIMD instruction and list the visible objects, 4 bytes each. They test a static instance batch that has stopped changing in groups of 64 nearby rows, one test per group.
+On WebGL2 there are no compute shaders, so the job workers cull on the CPU. They test four spheres per SIMD instruction and list the visible objects, 4 bytes each. They test a static instance batch that has stopped changing in groups of 64 nearby rows, one test per group. When a static batch's rows lie in more than one grid cell, they test it row by row.
 
 [GPU tiers and backends](backends.md) describes each path's draw calls and uploads.
 
@@ -61,7 +63,7 @@ The cells have these limits:
 
 - The engine stores positions as 32-bit floats. It places an object 100 km from the origin to within about 4 mm, and 1,000 km out to within about 3 cm. What it computes from those positions, such as a child's place under its parent, keeps its precision.
 - A mesh's vertices are offsets from its object's origin, and they stay 32-bit. Put large coordinates in object positions, never in vertices.
-- `getWorldPosition` gives 64-bit numbers.
+- `getWorldPosition` gives 64-bit numbers. Pass it a plain array or a `Float64Array`, because a `Float32Array` rounds them to 32 bits.
 - At most 512 cells hold objects at once. An object in a cell past that stays in the origin cell, where its position keeps only 32-bit precision.
 
 ## Related pages
