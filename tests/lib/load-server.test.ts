@@ -1,4 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it } from 'bun:test';
+import { randomBytes } from 'node:crypto';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { createServer, request, type Server } from 'node:http';
 import type { AddressInfo } from 'node:net';
@@ -248,5 +249,41 @@ describe('the load routes', () => {
 			empty({ url: '/__null3d/load-ready' } as never, res as never, () => resolve(-1));
 		});
 		expect(status).toBe(404);
+	});
+});
+
+describe('a download that the browser drops', () => {
+	it('leaves the server up, as when the startup tool closes a tab during a load', async () => {
+		const build = mkdtempSync(join(tmpdir(), 'null3d-dropped-'));
+		mkdirSync(join(build, 'assets'));
+		// Random bytes do not compress, so the whole body goes out, a part at a time.
+		writeFileSync(join(build, 'assets/big-AbCd1234.bin'), randomBytes(8 * 1024 * 1024));
+		const middleware = loadMiddleware([{ name: 'startup', prefix: '', dir: build }]);
+		const server = createServer((req, res) => middleware(req, res, () => res.end()));
+		await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+		const { port } = server.address() as AddressInfo;
+		const failures: unknown[] = [];
+		const record = (reason: unknown) => failures.push(reason);
+		process.on('unhandledRejection', record);
+		try {
+			await new Promise<void>((resolve) => {
+				const path = '/__null3d/load/cold/dropped/assets/big-AbCd1234.bin';
+				const download = request({ host: '127.0.0.1', port, path }, (res) => {
+					res.once('data', () => {
+						download.destroy();
+						setTimeout(resolve, 100);
+					});
+				});
+				download.on('error', () => {});
+				download.end();
+			});
+			expect(failures).toEqual([]);
+			const answer = await fetch(`http://127.0.0.1:${port}/__null3d/downloads/cold/dropped`);
+			expect(answer.status).toBe(200);
+		} finally {
+			process.off('unhandledRejection', record);
+			server.close();
+			rmSync(build, { recursive: true, force: true });
+		}
 	});
 });

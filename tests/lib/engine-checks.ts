@@ -112,6 +112,8 @@ export interface EngineResult {
 	sharedMemoryMiB?: number[];
 	/** With `?downloads`: each file the page asked for, with when it asked and when the file arrived. */
 	downloads?: { name: string; startTime: number; responseEnd: number }[];
+	/** The page's steps, each as its time in ms since the page started and its name. */
+	trail?: string[];
 }
 
 /** Slower than this median frame interval means the loop is not keeping up with the display. */
