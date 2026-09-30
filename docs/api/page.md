@@ -77,7 +77,7 @@ The `onSketchMessage` option of `createEngine` gets every message as it arrives,
 
 ## The single-threaded build
 
-On a page without cross-origin isolation, the engine runs the sketch on the page's thread (see [Hosting and cross-origin isolation](../getting-started/hosting.md)). A message then reaches the other side during the call that sends it. The data is not copied, and the `transfer` list moves nothing.
+On a page without cross-origin isolation, the engine runs the sketch on the page's thread (see [Hosting and cross-origin isolation](../getting-started/hosting.md)). A message then reaches the other side during the call that sends it, unless it waits for the page's first handler. The data is not copied, and the `transfer` list moves nothing.
 
 Write message code that works in both builds:
 

@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'bun:test';
 import * as C from '../generated/core';
+import { PERMUTATION_DRAW_INDEX } from '../generated/gpu';
 import {
 	coreDevice,
 	DEPTH_WITHOUT_CLIP_CONTROL,
@@ -22,10 +23,12 @@ const webgpu = (storageBindingBytes: number) => ({
 	sharedUploads: true,
 	depth: 'reversed' as const,
 	parallelCompile: true,
+	shaderBits: 0,
+	cellCulling: true,
 });
 
 /** No test switch. */
-const NO_SWITCHES = { copyUploads: false, depth: undefined, parallelCompile: true };
+const NO_SWITCHES = { copyUploads: false, depth: undefined, parallelCompile: true, cells: true };
 /** ?uploads=copy. */
 const COPY_UPLOADS = { ...NO_SWITCHES, copyUploads: true };
 /** ?compile=wait. */
@@ -105,6 +108,14 @@ describe('coreDevice on WebGL2', () => {
 			false,
 		);
 	});
+
+	it('culls by grid cell on both paths unless ?cells=off asks it not to', () => {
+		const off = { ...NO_SWITCHES, cells: false };
+		for (const webgl2 of [true, false]) {
+			expect(coreDevice(webgl2, report({}), NO_SWITCHES).cellCulling).toBe(true);
+			expect(coreDevice(webgl2, report({}), off).cellCulling).toBe(false);
+		}
+	});
 });
 
 describe('the warning past the rows that every device of a GPU path draws', () => {
@@ -156,6 +167,15 @@ describe('the depth mode', () => {
 		expect(coreDevice(false, report({}), { ...NO_SWITCHES, depth: 'standard' }).depth).toBe(
 			'reversed',
 		);
+	});
+});
+
+describe('the permutation bits that a device fixes', () => {
+	it('hold the draw index where WebGL2 has multi-draw, and nothing on WebGPU', () => {
+		const multiDraw = report({ extensions: { WEBGL_multi_draw: true } });
+		expect(coreDevice(true, multiDraw, NO_SWITCHES).shaderBits).toBe(PERMUTATION_DRAW_INDEX);
+		expect(coreDevice(true, report({}), NO_SWITCHES).shaderBits).toBe(0);
+		expect(coreDevice(false, multiDraw, NO_SWITCHES).shaderBits).toBe(0);
 	});
 });
 

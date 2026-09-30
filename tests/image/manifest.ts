@@ -31,6 +31,12 @@ const ORTHO = {
 /** The page of the depth precision tests, and its image's size. */
 const DEPTH_PAGE = { page: 'tests/pages/depth-precision.html', size: PRECISION.size, hold: 0 };
 
+/**
+ * S1-cells' tolerance on other devices: about half the share of its frame that its boxes cover, so a
+ * frame that lost most of the scene fails.
+ */
+const S1_CELLS_DEVICE_TOLERANCE = { maxDiffRatio: 0.003 };
+
 /** The WebGL2 depth modes that ?depth= forces. */
 const DEPTH_MODES: readonly DepthMode[] = ['standard', 'reversed-gl', 'reversed'];
 
@@ -294,7 +300,8 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 		}),
 	),
 	// The benchmark scenes' hold frames, which the parity command also compares with three.js.
-	// S2's trees cover under 1% of its frame, so other devices may differ in fewer of its pixels.
+	// S2's trees and S1-cells' boxes each cover under 1% of their frame, so other devices may differ
+	// in fewer of their pixels.
 	...PARITY_SCENES.map(
 		(scene): ImageTest => ({
 			name: scene,
@@ -304,8 +311,20 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 			modes: ['pipelined', 'low latency'],
 			timeoutSeconds: 90,
 			...(scene === 's2' && { deviceTolerance: { maxDiffRatio: 0.002 } }),
+			...(scene === 's1-cells' && { deviceTolerance: S1_CELLS_DEVICE_TOLERANCE }),
 		}),
 	),
+	// S1-cells culled without grid cells, which must draw what skipping whole cells draws.
+	{
+		name: 's1-cells-off',
+		deviceTolerance: S1_CELLS_DEVICE_TOLERANCE,
+		page: 'bench/pages/null3d/s1-cells.html',
+		size: [PARITY_CANVAS.width, PARITY_CANVAS.height],
+		hold: HOLD_TIME,
+		switches: ['cells=off'],
+		reference: 's1-cells',
+		timeoutSeconds: 90,
+	},
 ];
 
 /** Every run of the manifest's tests: each test on each of its tiers, in each of its thread modes. */

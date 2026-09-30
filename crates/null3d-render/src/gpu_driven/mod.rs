@@ -69,6 +69,7 @@ use std::collections::TryReserveError;
 use null3d_gpu::caps::{BUDGET, Limit};
 use null3d_gpu::drawlist::{DrawList, Op, buffer_usage as usage, sizes};
 
+use crate::cells::CellCulling;
 use crate::debug_lines::LinesPass;
 use crate::dfg;
 use crate::frame::{
@@ -100,8 +101,8 @@ pub const fn max_sources(binding_bytes: u32) -> u32 {
 }
 
 /// Engine memory the builder keeps for each source: its entries in the bucket table and the layer
-/// table, and room for both in both frames' upload arenas.
-pub const BYTES_PER_SOURCE: u32 = 24;
+/// table and its place in the cell order, and room for all three in both frames' upload arenas.
+pub const BYTES_PER_SOURCE: u32 = 36;
 
 /// The most sources on every WebGPU device: [`max_sources`] at WebGPU's default storage binding
 /// limit. The WebGL2 path has its own limit, which follows the device's largest texture.
@@ -121,9 +122,11 @@ mod ids {
     pub const INSTANCE_BUCKETS: u32 = 3;
     pub const BUCKETS: u32 = 4;
     pub const SOURCE_LAYERS: u32 = 5;
+    /// Every drawn source's place, in cell order.
+    pub const ORDER: u32 = 6;
     /// Each view's buffers: its frame uniform, culling parameters, compacted instances and
     /// indirect draws, four ids from `VIEW_BUFFERS + 4 * view`.
-    const VIEW_BUFFERS: u32 = 6;
+    const VIEW_BUFFERS: u32 = 7;
 
     pub const fn frame(view: ViewId) -> u32 {
         VIEW_BUFFERS + 4 * view.index() as u32
@@ -180,6 +183,9 @@ pub struct RendererConfig {
     /// The device's largest storage binding, at most [`MAX_USEFUL_BINDING_BYTES`]. It caps the
     /// builder's buffers and the sources it can draw.
     pub storage_binding_bytes: u32,
+    /// True to cull only the sources of grid cells in view; false to cull every source, as a
+    /// benchmark of cell culling compares.
+    pub cell_culling: bool,
 }
 
 impl Default for RendererConfig {
@@ -189,6 +195,7 @@ impl Default for RendererConfig {
             max_materials: sizes::MAX_MATERIALS,
             draw_list_words: 16 * 1024,
             storage_binding_bytes: sizes::PORTABLE_STORAGE_BINDING_BYTES,
+            cell_culling: true,
         }
     }
 }
@@ -203,6 +210,8 @@ pub struct GpuDrivenRenderer {
     lists: ParityLists,
     graph: FrameGraph,
     layout: Layout,
+    /// Grid-cell culling: the scene's still objects in cell order, and each cell's box.
+    cells: CellCulling,
     culling: Culling,
     lines: LinesPass,
     /// Each view's values in the frame being recorded, or `None` for a view with no camera.
@@ -240,6 +249,7 @@ impl GpuDrivenRenderer {
             lists: ParityLists::new(config.draw_list_words),
             graph: FrameGraph::new(config.samples, true, ids::TARGETS),
             layout: Layout::default(),
+            cells: CellCulling::new(config.cell_culling, false),
             culling: Culling::default(),
             lines: LinesPass::new(ids::LINES),
             frames: Vec::new(),
@@ -257,6 +267,21 @@ impl GpuDrivenRenderer {
     /// frustum is the one that the view's culling pass tested against.
     pub fn view_frame(&self, view: ViewId) -> Option<&ViewFrame> {
         self.frames.get(view.index())?.as_ref()
+    }
+
+    /// The sources that a view's culling pass tests in the last recorded frame, in the order its
+    /// threads take them: the sources in the runs of the cell order that it culls, or every
+    /// source in place when it culls without cells. For tests; it allocates the list.
+    pub fn culled_sources(&self, view: ViewId) -> Vec<u32> {
+        match self.culling.ranges(view) {
+            Some(ranges) => {
+                let order = self.layout.order();
+                ranges
+                    .flat_map(|(start, end)| order[start as usize..end as usize].iter().copied())
+                    .collect()
+            }
+            None => (0..self.layout.sources).collect(),
+        }
     }
 
     /// Records a frame into its parity's list and arena: the pipelines the GPU lacks, then the
@@ -281,6 +306,12 @@ impl GpuDrivenRenderer {
                 parity,
                 limit,
             )?;
+            let layout = &self.layout;
+            self.cells
+                .classify(input.scene, &|slot| layout.draws(slot))
+                .map_err(|_| RecordError::OutOfMemory {
+                    bytes: (input.scene.capacity() + 1).saturating_mul(16),
+                })?;
         }
         // The list starts with the pipelines it creates, so the thread that draws can start to
         // build them before it replays the rest (see `null3d_gpu::drawlist`).
@@ -306,6 +337,7 @@ impl GpuDrivenRenderer {
         }
         self.culling.add_views(list, views)?;
 
+        self.cells.update(input);
         arena.reset(self.upload_bound() + LinesPass::upload_bytes(&input.lines));
         if std::mem::take(&mut self.dfg_pending) {
             dfg::upload(list, arena, ids::DFG)?;
@@ -340,6 +372,7 @@ impl GpuDrivenRenderer {
         }
         self.layout
             .upload_matrices(list, input, parity, upload_everything)?;
+        self.layout.update_order(list, arena, &self.cells, input)?;
 
         self.frames.clear();
         for index in 0..views {
@@ -349,8 +382,9 @@ impl GpuDrivenRenderer {
                 .view_frame(view, input.scene, parity, input.canvas);
             if let Some(frame) = &frame {
                 opaque::upload(list, arena, view, frame)?;
+                let (layout, cells) = (&self.layout, &self.cells);
                 self.culling
-                    .upload(list, arena, view, frame, &self.layout, input.scene)?;
+                    .upload(list, arena, view, frame, layout, input.scene, cells)?;
             }
             self.frames.push(frame);
         }
@@ -358,11 +392,12 @@ impl GpuDrivenRenderer {
         self.lines
             .upload(list, arena, &input.lines, camera.map(|frame| &frame.camera))?;
 
-        let (frames, layout, lines) = (&self.frames, &self.layout, &self.lines);
+        let (frames, layout, culling, lines) =
+            (&self.frames, &self.layout, &self.culling, &self.lines);
         let drawn = |view: ViewId| frames[view.index()].is_some();
         self.graph
             .record(list, self.settings.clear_color(), |list, role| match role {
-                Role::Cull(view) if drawn(view) => Culling::record(list, view, layout),
+                Role::Cull(view) if drawn(view) => culling.record(list, view, layout),
                 Role::Opaque(view) if drawn(view) => opaque::record(list, view),
                 Role::DebugLines => lines.record(list, ids::frame_group(ViewId::CAMERA), &[]),
                 _ => Ok(()),

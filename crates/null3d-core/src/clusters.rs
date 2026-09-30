@@ -11,22 +11,66 @@
 //! costs one sphere per cluster instead of one per row, and the list of visible clusters is as
 //! many times shorter.
 //!
+//! # Clusters inside cells
+//!
+//! Sphere centres are relative to the centres of their grid cells (see [`crate::cells`]), so rows
+//! in different cells never share a cluster. When the rows lie in several cells, the build groups
+//! them by cell, in increasing cell index, and sorts each cell's rows along a curve through the
+//! box around that cell's centres. Each cell's clusters are then one run of clusters
+//! ([`CellClusters`]), and the last cluster of each cell may hold fewer rows than the others. So
+//! rows in several cells can need more clusters than their count alone does, up to the room that
+//! [`cluster_room`] gives. A build that needs more builds nothing.
+//!
 //! Building sorts with a four-pass radix sort over 30-bit Morton codes. It allocates nothing once
 //! [`RowClusters::try_reserve`] and [`ClusterScratch::try_reserve`] have made room.
 
 use std::collections::TryReserveError;
 
+use crate::cells::MAX_CELLS;
 use crate::world::SphereArrays;
 
 /// Rows per cluster, as a shift: a cluster holds `1 << CLUSTER_SHIFT` rows.
 pub const CLUSTER_SHIFT: u32 = 6;
 /// Rows per cluster.
 pub const CLUSTER_ROWS: u32 = 1 << CLUSTER_SHIFT;
-/// The order entry of a place in a cluster that holds no row: the end of the last cluster.
+/// The order entry of a place in a cluster that holds no row: the end of a cell's last cluster.
 pub const NO_ROW: u32 = u32::MAX;
 
 /// The highest grid cell on each axis of the Morton curve: ten bits per axis.
 const GRID_MAX: u32 = (1 << 10) - 1;
+
+/// The most clusters that [`RowClusters::try_reserve`] makes room for over `rows` rows: the
+/// clusters of the rows in one cell, and as many again, but at most one more per cell, for rows
+/// in several cells.
+pub const fn cluster_room(rows: u32) -> u32 {
+    let whole = rows.div_ceil(CLUSTER_ROWS);
+    let extra = if whole < MAX_CELLS - 1 {
+        whole
+    } else {
+        MAX_CELLS - 1
+    };
+    whole + extra
+}
+
+/// Where the rows of a build lie.
+#[derive(Clone, Copy, Debug)]
+pub enum RowCells<'a> {
+    /// Every row lies in this cell.
+    One(u32),
+    /// Each row lies in the cell of its entry, a cell index below [`MAX_CELLS`].
+    Each(&'a [u32]),
+}
+
+/// The clusters of one cell: clusters `start..end`, whose rows all lie in `cell`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct CellClusters {
+    /// The cell index.
+    pub cell: u32,
+    /// The first cluster.
+    pub start: u32,
+    /// One past the last cluster.
+    pub end: u32,
+}
 
 /// Working space that [`RowClusters::build`] sorts in. One scratch can serve every build once it
 /// has room for the largest.
@@ -35,6 +79,10 @@ pub struct ClusterScratch {
     codes: Vec<u32>,
     codes_back: Vec<u32>,
     order_back: Vec<u32>,
+    /// The rows grouped by cell.
+    grouped: Vec<u32>,
+    /// Rows per cell index, then where each cell's rows end in `grouped`.
+    ends: Vec<u32>,
 }
 
 impl ClusterScratch {
@@ -44,7 +92,9 @@ impl ClusterScratch {
         let rows = rows as usize;
         grow(&mut self.codes, rows, 0)?;
         grow(&mut self.codes_back, rows, 0)?;
-        grow(&mut self.order_back, rows, 0)
+        grow(&mut self.order_back, rows, 0)?;
+        grow(&mut self.grouped, rows, 0)?;
+        grow(&mut self.ends, MAX_CELLS as usize, 0)
     }
 }
 
@@ -56,20 +106,26 @@ pub struct RowClusters {
     ys: Vec<f32>,
     zs: Vec<f32>,
     radii: Vec<f32>,
+    cells: Vec<CellClusters>,
     clusters: u32,
     rows: u32,
 }
 
 impl RowClusters {
-    /// Makes room for clusters over `rows` rows, or fails when memory cannot grow. Room only
-    /// grows.
+    /// Makes room for the clusters of `rows` rows in any cells, [`cluster_room`] of them, or fails
+    /// when memory cannot grow. Room only grows.
     pub fn try_reserve(&mut self, rows: u32) -> Result<(), TryReserveError> {
-        let clusters = rows.div_ceil(CLUSTER_ROWS) as usize;
+        let clusters = cluster_room(rows) as usize;
         grow(&mut self.order, clusters * CLUSTER_ROWS as usize, NO_ROW)?;
         grow(&mut self.xs, clusters, 0.0)?;
         grow(&mut self.ys, clusters, 0.0)?;
         grow(&mut self.zs, clusters, 0.0)?;
-        grow(&mut self.radii, clusters, 0.0)
+        grow(&mut self.radii, clusters, 0.0)?;
+        let cells = (rows as usize).min(MAX_CELLS as usize);
+        if self.cells.capacity() < cells {
+            self.cells.try_reserve_exact(cells - self.cells.len())?;
+        }
+        Ok(())
     }
 
     /// The rows the clusters were last built over: rows `0..rows()`.
@@ -99,88 +155,206 @@ impl RowClusters {
     }
 
     /// The rows in cluster order: cluster `c` holds entries `c * CLUSTER_ROWS` up to the next
-    /// cluster's. The last cluster ends with [`NO_ROW`] entries when the rows do not fill it.
+    /// cluster's. A cell's last cluster ends with [`NO_ROW`] entries when its rows do not fill it.
     pub fn order(&self) -> &[u32] {
         &self.order[..(self.clusters * CLUSTER_ROWS) as usize]
     }
 
-    /// Builds clusters over rows `0..rows` of `spheres`.
+    /// Each cell's run of clusters, in increasing cell index. The runs follow each other and cover
+    /// every cluster.
+    pub fn cells(&self) -> &[CellClusters] {
+        &self.cells
+    }
+
+    /// Builds clusters over rows `0..rows` of `spheres`, each inside one cell, and returns true.
+    /// When the rows' cells need more clusters than [`RowClusters::try_reserve`] made room for, it
+    /// builds none and returns false.
     ///
     /// A row whose centre is not finite, or whose radius is NaN or infinite, makes its cluster's
     /// radius infinite, so culling always keeps that cluster. A row with a negative infinite
     /// radius, which culling always rejects, adds nothing to its cluster's sphere.
     ///
     /// # Panics
-    /// When the spheres hold fewer than `rows` rows, or the clusters or the scratch have less room
-    /// than `rows` needs.
-    pub fn build(&mut self, spheres: SphereArrays<'_>, rows: u32, scratch: &mut ClusterScratch) {
+    /// When the spheres or the cells hold fewer than `rows` rows, a cell index is not below
+    /// [`MAX_CELLS`], the scratch has less room than `rows` needs, or the clusters have less room
+    /// than the rows of one cell need.
+    pub fn build(
+        &mut self,
+        spheres: SphereArrays<'_>,
+        rows: u32,
+        cells: RowCells<'_>,
+        scratch: &mut ClusterScratch,
+    ) -> bool {
         let n = rows as usize;
-        let clusters = n.div_ceil(CLUSTER_ROWS as usize);
         assert!(
             n <= spheres.len(),
             "{n} rows asked for, the spheres hold {}",
             spheres.len()
         );
         assert!(
-            clusters <= self.xs.len() && n <= scratch.codes.len(),
+            n.div_ceil(CLUSTER_ROWS as usize) <= self.xs.len() && n <= scratch.codes.len(),
             "room for {} clusters and {} rows, fewer than {rows} rows need",
             self.xs.len(),
             scratch.codes.len()
         );
-        let (xs, ys, zs, rs) = (
-            &spheres.xs[..n],
-            &spheres.ys[..n],
-            &spheres.zs[..n],
-            &spheres.radii[..n],
-        );
-
-        // The box around every finite centre, which the curve's grid spans.
-        let mut lo = [f32::INFINITY; 3];
-        let mut hi = [f32::NEG_INFINITY; 3];
-        for i in 0..n {
-            let centre = [xs[i], ys[i], zs[i]];
-            if centre.iter().all(|v| v.is_finite()) {
-                for k in 0..3 {
-                    lo[k] = lo[k].min(centre[k]);
-                    hi[k] = hi[k].max(centre[k]);
+        self.cells.clear();
+        self.clusters = 0;
+        self.rows = 0;
+        let centres = [spheres.xs, spheres.ys, spheres.zs];
+        let one = match cells {
+            RowCells::One(cell) => Some(cell),
+            RowCells::Each(cells) => {
+                assert!(
+                    n <= cells.len(),
+                    "{n} rows asked for, {} cells",
+                    cells.len()
+                );
+                let cells = &cells[..n];
+                let first = cells.first().copied().unwrap_or_default();
+                cells.iter().all(|&cell| cell == first).then_some(first)
+            }
+        };
+        let ClusterScratch {
+            codes,
+            codes_back,
+            order_back,
+            grouped,
+            ends,
+        } = scratch;
+        let mut next = 0;
+        match (one, cells) {
+            (Some(cell), _) => {
+                morton_sort(
+                    centres,
+                    None,
+                    &mut codes[..n],
+                    &mut codes_back[..n],
+                    &mut order_back[..n],
+                    &mut self.order[..n],
+                );
+                next = self.close_cell(cell, 0, n);
+            }
+            (None, RowCells::Each(cells)) => {
+                let cells = &cells[..n];
+                ends.fill(0);
+                for &cell in cells {
+                    ends[cell as usize] += 1;
+                }
+                let needed: usize = ends
+                    .iter()
+                    .map(|&count| (count as usize).div_ceil(CLUSTER_ROWS as usize))
+                    .sum();
+                if needed > self.xs.len() {
+                    return false;
+                }
+                // A stable counting sort: each count becomes its cell's start, and placing the
+                // rows moves it to its cell's end.
+                let mut total = 0;
+                for at in ends.iter_mut() {
+                    let count = *at;
+                    *at = total;
+                    total += count;
+                }
+                for (row, &cell) in cells.iter().enumerate() {
+                    let at = &mut ends[cell as usize];
+                    grouped[*at as usize] = row as u32;
+                    *at += 1;
+                }
+                let mut start = 0;
+                for (cell, &end) in ends.iter().enumerate() {
+                    let (s, e) = (start, end as usize);
+                    start = e;
+                    if s == e {
+                        continue;
+                    }
+                    let at = next as usize * CLUSTER_ROWS as usize;
+                    morton_sort(
+                        centres,
+                        Some(&grouped[s..e]),
+                        &mut codes[s..e],
+                        &mut codes_back[s..e],
+                        &mut order_back[s..e],
+                        &mut self.order[at..at + e - s],
+                    );
+                    next = self.close_cell(cell as u32, next, e - s);
                 }
             }
+            (None, RowCells::One(_)) => unreachable!("one cell always has a cell"),
         }
-        let scale: [f32; 3] = std::array::from_fn(|k| {
-            if hi[k] > lo[k] {
-                GRID_MAX as f32 / (hi[k] - lo[k])
-            } else {
-                0.0
-            }
-        });
-        // A float-to-integer cast saturates and turns NaN into 0, so every centre lands in the
-        // grid.
-        let cell = |v: f32, k: usize| (((v - lo[k]) * scale[k]) as u32).min(GRID_MAX);
-        let codes = &mut scratch.codes[..n];
-        for (i, code) in codes.iter_mut().enumerate() {
-            *code = spread_bits(cell(xs[i], 0))
-                | (spread_bits(cell(ys[i], 1)) << 1)
-                | (spread_bits(cell(zs[i], 2)) << 2);
-        }
-
-        // Four stable passes of eight bits, from the lowest; the even count ends in `order`.
-        let order = &mut self.order[..n];
-        let (codes_back, order_back) = (&mut scratch.codes_back[..n], &mut scratch.order_back[..n]);
-        radix_pass(0, codes, None, codes_back, order_back);
-        radix_pass(8, codes_back, Some(order_back), codes, order);
-        radix_pass(16, codes, Some(order), codes_back, order_back);
-        radix_pass(24, codes_back, Some(order_back), codes, order);
-
-        for c in 0..clusters {
+        for c in 0..next as usize {
             let start = c * CLUSTER_ROWS as usize;
-            let members = &self.order[start..(start + CLUSTER_ROWS as usize).min(n)];
-            let [x, y, z, r] = bounding_sphere(members, xs, ys, zs, rs);
+            let members = &self.order[start..start + CLUSTER_ROWS as usize];
+            let [x, y, z, r] = bounding_sphere(members, spheres);
             (self.xs[c], self.ys[c], self.zs[c], self.radii[c]) = (x, y, z, r);
         }
-        self.order[n..clusters * CLUSTER_ROWS as usize].fill(NO_ROW);
-        self.clusters = clusters as u32;
+        self.clusters = next;
         self.rows = rows;
+        true
     }
+
+    /// Ends the clusters of a cell whose `len` rows sit in cluster order from cluster `first` on:
+    /// fills the rest of its last cluster with [`NO_ROW`], records the cell's run of clusters, and
+    /// returns the next free cluster.
+    fn close_cell(&mut self, cell: u32, first: u32, len: usize) -> u32 {
+        let end = first + (len as u32).div_ceil(CLUSTER_ROWS);
+        let at = first as usize * CLUSTER_ROWS as usize;
+        self.order[at + len..end as usize * CLUSTER_ROWS as usize].fill(NO_ROW);
+        if end > first {
+            self.cells.push(CellClusters {
+                cell,
+                start: first,
+                end,
+            });
+        }
+        end
+    }
+}
+
+/// Sorts rows along a Morton curve through the box around their finite centres, and writes them
+/// in curve order to `out`. The rows are `members`, or rows `0..out.len()` for `None`. The other
+/// slices are working space as long as `out`.
+fn morton_sort(
+    [xs, ys, zs]: [&[f32]; 3],
+    members: Option<&[u32]>,
+    codes: &mut [u32],
+    codes_back: &mut [u32],
+    order_back: &mut [u32],
+    out: &mut [u32],
+) {
+    let row = |i: usize| members.map_or(i, |members| members[i] as usize);
+    // The box around every finite centre, which the curve's grid spans.
+    let mut lo = [f32::INFINITY; 3];
+    let mut hi = [f32::NEG_INFINITY; 3];
+    for i in 0..out.len() {
+        let r = row(i);
+        let centre = [xs[r], ys[r], zs[r]];
+        if centre.iter().all(|v| v.is_finite()) {
+            for k in 0..3 {
+                lo[k] = lo[k].min(centre[k]);
+                hi[k] = hi[k].max(centre[k]);
+            }
+        }
+    }
+    let scale: [f32; 3] = std::array::from_fn(|k| {
+        if hi[k] > lo[k] {
+            GRID_MAX as f32 / (hi[k] - lo[k])
+        } else {
+            0.0
+        }
+    });
+    // A float-to-integer cast saturates and turns NaN into 0, so every centre lands in the grid.
+    let cell = |v: f32, k: usize| (((v - lo[k]) * scale[k]) as u32).min(GRID_MAX);
+    for (i, code) in codes.iter_mut().enumerate() {
+        let r = row(i);
+        *code = spread_bits(cell(xs[r], 0))
+            | (spread_bits(cell(ys[r], 1)) << 1)
+            | (spread_bits(cell(zs[r], 2)) << 2);
+    }
+    // Four stable passes of eight bits, from the lowest; the even count ends in `out`.
+    radix_pass(0, codes, members, codes_back, order_back);
+    radix_pass(8, codes_back, Some(order_back), codes, out);
+    radix_pass(16, codes, Some(out), codes_back, order_back);
+    radix_pass(24, codes_back, Some(order_back), codes, out);
 }
 
 /// Grows `v` to `len` entries of `fill`, or fails when memory cannot grow.
@@ -229,15 +403,27 @@ fn radix_pass(
     }
 }
 
-/// A sphere around the spheres of `rows`: centred in the box around their centres, with a margin
-/// for the rounding of culling's plane tests.
-fn bounding_sphere(rows: &[u32], xs: &[f32], ys: &[f32], zs: &[f32], rs: &[f32]) -> [f32; 4] {
+/// A sphere around the spheres of the rows that `members` lists, skipping its [`NO_ROW`] entries:
+/// centred in the box around their centres, with a margin for the rounding of culling's plane
+/// tests.
+fn bounding_sphere(members: &[u32], spheres: SphereArrays<'_>) -> [f32; 4] {
+    let SphereArrays {
+        xs,
+        ys,
+        zs,
+        radii: rs,
+    } = spheres;
+    let rows = || {
+        members
+            .iter()
+            .filter(|&&row| row != NO_ROW)
+            .map(|&row| row as usize)
+    };
     let mut lo = [f32::INFINITY; 3];
     let mut hi = [f32::NEG_INFINITY; 3];
     let mut unbounded = false;
     let mut any = false;
-    for &row in rows {
-        let r = row as usize;
+    for r in rows() {
         let (centre, radius) = ([xs[r], ys[r], zs[r]], rs[r]);
         if radius == f32::NEG_INFINITY {
             continue;
@@ -260,8 +446,7 @@ fn bounding_sphere(rows: &[u32], xs: &[f32], ys: &[f32], zs: &[f32], rs: &[f32])
     }
     let centre: [f32; 3] = std::array::from_fn(|k| lo[k] + (hi[k] - lo[k]) * 0.5);
     let mut radius = 0.0f32;
-    for &row in rows {
-        let r = row as usize;
+    for r in rows() {
         if rs[r] == f32::NEG_INFINITY {
             continue;
         }
@@ -301,5 +486,14 @@ mod tests {
         radix_pass(24, &b, Some(&order_back), &mut a, &mut order);
         assert_eq!(a, vec![3, 5, 5, 0x0100, 0x0100, 0x0200_0000]);
         assert_eq!(order, vec![4, 0, 2, 1, 5, 3]);
+    }
+
+    #[test]
+    fn the_room_doubles_the_clusters_up_to_one_more_per_cell() {
+        assert_eq!(cluster_room(0), 0);
+        assert_eq!(cluster_room(1), 2);
+        assert_eq!(cluster_room(64), 2);
+        assert_eq!(cluster_room(65), 4);
+        assert_eq!(cluster_room(64 * 1000), 1000 + MAX_CELLS - 1);
     }
 }

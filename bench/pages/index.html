@@ -24,8 +24,8 @@
 				its pixels for parity images.
 			</li>
 			<li>
-				<code>?n=1000</code>: the instance count of S1 and S1-static, instead of the full count. S2
-				has a fixed count and ignores it.
+				<code>?n=1000</code>: the instance count of S1, S1-static and S1-cells, instead of the full
+				count. S2 has a fixed count and ignores it.
 			</li>
 			<li>
 				<code>?seconds=2</code>: warm up and measure for this many seconds each, for quick checks.
@@ -51,6 +51,15 @@
 				<a href="threejs/s1-static.html?renderer=webgpu&amp;hold">WebGPU</a>; quick run on
 				<a href="threejs/s1-static.html?renderer=webgl&amp;seconds=2&amp;n=1000">WebGL</a>,
 				<a href="threejs/s1-static.html?renderer=webgpu&amp;seconds=2&amp;n=1000">WebGPU</a>
+			</li>
+			<li>
+				S1-cells (still instances over 8 x 8 grid cells, low flight):
+				<a href="threejs/s1-cells.html?renderer=webgl">WebGL</a>,
+				<a href="threejs/s1-cells.html?renderer=webgpu">WebGPU</a>; hold frame on
+				<a href="threejs/s1-cells.html?renderer=webgl&amp;hold">WebGL</a>,
+				<a href="threejs/s1-cells.html?renderer=webgpu&amp;hold">WebGPU</a>; quick run on
+				<a href="threejs/s1-cells.html?renderer=webgl&amp;seconds=2&amp;n=1000">WebGL</a>,
+				<a href="threejs/s1-cells.html?renderer=webgpu&amp;seconds=2&amp;n=1000">WebGPU</a>
 			</li>
 			<li>
 				S2, the hierarchy (trees of separate objects whose roots turn, orbiting camera):

@@ -3,18 +3,24 @@
 //! thread, so the test runner's own work on other threads cannot reach the count. Frames whose
 //! structure changes allocate nothing either, on either frame parity, until the scene grows, and
 //! neither do frames that draw debug lines or stop drawing them. The render graph allocates nothing
-//! while it stays the same, nor when passes switch on and off after it has compiled once.
+//! while it stays the same, nor when passes switch on and off after it has compiled once. The job
+//! workers and the calling thread assign moving lights to the light grid without allocating.
+#![allow(clippy::disallowed_methods)] // Native job workers are threads.
 
 mod common;
 
 use common::graph::{CASCADES, engine_passes};
 use common::{World, base_sphere, grid};
 use null3d_core::jobs::JobSystem;
+use null3d_core::lights::{POINT_CONE, VisibleLight, kind};
 use null3d_core::scene::Command;
 use null3d_core::testing::CountingAllocator;
 use null3d_gpu::drawlist::{DrawList, Op};
+use null3d_render::camera::{Lens, Perspective};
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::frame::FrameBuilder;
+use null3d_render::gpu_driven::{GpuDrivenRenderer, RendererConfig};
+use null3d_render::light_grid::{DEFAULT_GRID, GridView, LightGrid, LightLimits};
 use null3d_render::materials::Shading;
 use null3d_render::parallel_record::ParallelRecorder;
 use null3d_render::view::ViewId;
@@ -179,6 +185,62 @@ fn webgl2_static_batches_coming_to_rest_allocate_nothing() {
             world.record(world.frame.is_multiple_of(7));
         }
         assert_eq!(CountingAllocator::disarm(), 0, "multi-draw {multi_draw}");
+    }
+}
+
+/// Records frames of a world spread over grid cells whose camera turns and moves, so each frame
+/// sees other cells. Every eighth frame a still object and a still row move into another cell and
+/// back, which builds the cell order again. The camera's path repeats every 24 frames, so the
+/// warm-up sees every view that later frames see. Returns what the frames after it allocated.
+fn spread_allocations<B: FrameBuilder>(renderer: B) -> u64 {
+    let mut world = World::build_sized(renderer, 216);
+    let batch = world.spread(200, 3000, 5);
+    world.record(true);
+    let object = world.objects[4];
+    let step = |world: &mut World<B>| {
+        world.frame += 1;
+        world.scene.begin_frame(world.frame);
+        let k = (world.frame % 24) as f32;
+        world.aim([k * 150.0 - 1800.0, 10.0, 900.0 - k * 80.0], k * 0.6, 0.05);
+        if world.frame.is_multiple_of(8) {
+            let x = if world.frame.is_multiple_of(16) {
+                -2000.0
+            } else {
+                2000.0
+            };
+            world.scene.set_position(object, [x, 0.0, x]).unwrap();
+            let rows = world.batches.get_mut(batch).unwrap();
+            rows.positions_mut()[..3].copy_from_slice(&[x, 5.0, -x]);
+            rows.mark_dirty(0, 1).unwrap();
+        }
+        world.record(false);
+    };
+    while world.frame < 60 {
+        step(&mut world);
+    }
+    CountingAllocator::arm();
+    while world.frame < 200 {
+        step(&mut world);
+    }
+    CountingAllocator::disarm()
+}
+
+#[test]
+fn culling_by_grid_cell_allocates_nothing_in_steady_frames() {
+    let _only = CountingAllocator::exclusive();
+    CountingAllocator::track_this_thread();
+    let webgpu = GpuDrivenRenderer::new(RendererConfig::default());
+    assert_eq!(spread_allocations(webgpu), 0, "WebGPU");
+    for multi_draw in [true, false] {
+        let webgl2 = CpuCulledRenderer::new(CpuCulledConfig {
+            multi_draw,
+            ..CpuCulledConfig::default()
+        });
+        assert_eq!(
+            spread_allocations(webgl2),
+            0,
+            "WebGL2, multi-draw {multi_draw}"
+        );
     }
 }
 
@@ -433,4 +495,77 @@ fn switching_render_graph_passes_after_the_first_compile_allocates_nothing() {
         walk_plan(&graph);
     }
     assert_eq!(CountingAllocator::disarm(), 0);
+}
+
+/// Assigns `count` point lights that move every frame to a light grid with a frame cap of `cap`,
+/// on job workers that count their allocations, and returns what the steady frames allocated.
+fn light_grid_allocations(count: u32, cap: u32) -> u64 {
+    let lens = Lens::Perspective(Perspective {
+        fov_degrees: 60.0,
+        near: 0.1,
+        far: 300.0,
+    });
+    let world = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0];
+    let view = GridView {
+        view_proj: lens.relative_view_projection(&world, 1.5),
+        depth: lens.depth(&world),
+    };
+    let limits = LightLimits {
+        lights: cap,
+        ..LightLimits::default()
+    };
+    let mut grid = LightGrid::new(DEFAULT_GRID, limits);
+    let mut lights: Vec<VisibleLight> = (0..count)
+        .map(|i| VisibleLight {
+            range: 4.0 + (i % 5) as f32,
+            color: [1.0; 3],
+            decay: 2.0,
+            cone_cos: POINT_CONE[0],
+            penumbra_cos: POINT_CONE[1],
+            kind: kind::POINT,
+            light: i + 1,
+            ..VisibleLight::default()
+        })
+        .collect();
+    let jobs = JobSystem::new(3);
+    std::thread::scope(|scope| {
+        for i in 0..3 {
+            let jobs = &jobs;
+            scope.spawn(move || {
+                CountingAllocator::track_this_thread();
+                jobs.worker_loop(i);
+            });
+        }
+        let mut frames = |first: u32, last: u32| {
+            for frame in first..last {
+                for (i, light) in lights.iter_mut().enumerate() {
+                    let angle = frame as f32 * 0.05 + i as f32;
+                    let ring = 5.0 + (i % 40) as f32;
+                    light.position = [ring * angle.cos(), (i % 7) as f32 - 3.0, -ring * 1.5];
+                }
+                grid.assign(&jobs, &view, &lights);
+            }
+        };
+        frames(0, 4);
+        CountingAllocator::arm();
+        frames(4, 100);
+        let allocations = CountingAllocator::disarm();
+        jobs.shutdown();
+        assert!(!grid.lights().is_empty());
+        allocations
+    })
+}
+
+#[test]
+fn assigning_moving_lights_to_the_light_grid_allocates_nothing() {
+    let _only = CountingAllocator::exclusive();
+    CountingAllocator::track_this_thread();
+    // Enough lights over enough slices that the job workers take part.
+    assert_eq!(light_grid_allocations(1000, 1024), 0, "every light listed");
+    assert_eq!(
+        light_grid_allocations(1200, 1000),
+        0,
+        "the nearest lights listed"
+    );
+    assert_eq!(light_grid_allocations(5, 1024), 0, "on the calling thread");
 }

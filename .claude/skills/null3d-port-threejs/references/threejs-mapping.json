@@ -143,7 +143,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "await engine.capture() on the page",
-      "notes": "Returns an image of the next complete frame. Tests use the engine's readback instead.",
+      "notes": "Resolves with a PNG Blob of the next frame that the engine draws. Tests read pixels with engine.captureFrame() instead.",
       "docs": "api/engine",
       "detect": "preserveDrawingBuffer|readRenderTargetPixels|\\.toDataURL\\s*\\("
     },

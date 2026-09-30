@@ -31,6 +31,7 @@ const BACKGROUND_TOLERANCE = 2;
 const MIN_DRAWN_SHARE: Record<(typeof SCENES)[number], number> = {
 	s1: 0.01,
 	's1-static': 0.01,
+	's1-cells': 0.002,
 	s2: 0.005,
 };
 /** The instance count of the short benchmark runs. */

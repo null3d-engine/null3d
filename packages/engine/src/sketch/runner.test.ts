@@ -2,6 +2,7 @@ import { describe, expect, it, spyOn } from 'bun:test';
 import { messageOf } from '../errors/message';
 import * as C from '../generated/core';
 import type { EngineCapabilities } from '../page/engine';
+import { presetSettings } from '../quality/presets';
 import type { Material, MeshGeometry } from '../scene/resources';
 import { controlViews, createControlBuffer, Slot } from '../shared/control';
 import type { CoreGlue } from '../shared/core';
@@ -34,10 +35,13 @@ const RING = 64;
 /** The fake core's first ring block, past room for every scene field. */
 const RING_BLOCK = 16;
 
+/** How the log shows a change of one of the core's texture settings. */
+const textureOption = (option: number, value: number) => `setTextureOption ${option} ${value}`;
+
 /**
  * A core that keeps the scene arrays and the command ring in memory, hands out slots, and logs each
- * frame step it takes. Its transform updates clear the dirty bits, as the core's do. Its other calls
- * do nothing.
+ * frame step it takes and each texture setting it gets. Its transform updates clear the dirty bits,
+ * as the core's do. Its other calls do nothing.
  */
 function fakeGlue(log: string[], memory: WebAssembly.Memory): CoreGlue {
 	// Each scene field, then each ring field, in its own 4 KB block.
@@ -58,15 +62,19 @@ function fakeGlue(log: string[], memory: WebAssembly.Memory): CoreGlue {
 	return new Proxy({} as CoreGlue, {
 		get: (_, name: string) =>
 			kept[name as keyof CoreGlue] ??
-			(() => {
+			((...args: number[]) => {
 				if (FRAME_STEPS.has(name)) log.push(name);
+				if (name === 'setTextureOption') log.push(textureOption(args[0] ?? -1, args[1] ?? -1));
 				if (name === 'updateTransforms' || name === 'updateLateTransforms') clearDirty();
 				return name === 'drawTablesRebuilt' ? false : 0;
 			}),
 	});
 }
 
-/** A runner of a sketch whose callbacks come from `callbacks`, with a log of what each frame ran. */
+/**
+ * A runner of a sketch whose callbacks come from `callbacks` on the Medium preset, with a log of
+ * what each frame ran and of the settings that the page got.
+ */
 async function start(
 	callbacks: (context: SketchContext, log: string[]) => object,
 	options?: SketchOptions,
@@ -91,10 +99,12 @@ async function start(
 			sharedUploads: false,
 			depth: 'reversed',
 			parallelCompile: true,
+			shaderBits: 0,
+			cellCulling: true,
 		},
 		capabilities: CAPABILITIES,
-		quality: { preset: 'medium', settings: { maxPixelRatio: 2 } },
-		applyQuality: () => {},
+		quality: { preset: 'medium', settings: presetSettings('medium') },
+		applyQuality: (settings) => log.push(`page ${JSON.stringify(settings)}`),
 		sendImage: () => {},
 		pageUrl: 'http://localhost/',
 	});
@@ -227,6 +237,32 @@ describe('SketchRunner', () => {
 		} finally {
 			error.mockRestore();
 		}
+	});
+
+	it("gives the core the preset's texture settings before the setup, then only those that change", async () => {
+		const { log, context } = await start((ctx, log) => {
+			log.push('setup');
+			ctx.textures.setUploadBudget(2048);
+			return {};
+		});
+		const medium = presetSettings('medium');
+		expect(log).toEqual([
+			textureOption(C.TEXTURE_OPTION_UPLOAD_BUDGET, medium.uploadBytesPerFrame),
+			textureOption(C.TEXTURE_OPTION_MAX_ANISOTROPY, medium.maxAnisotropy),
+			'setup',
+			textureOption(C.TEXTURE_OPTION_UPLOAD_BUDGET, 2048),
+		]);
+		// Another setting's change leaves the sketch's own budget in place.
+		log.length = 0;
+		context.quality.set({ maxPixelRatio: 1 });
+		expect(log).toEqual([`page ${JSON.stringify({ ...medium, maxPixelRatio: 1 })}`]);
+		log.length = 0;
+		context.quality.set({ maxAnisotropy: 2, uploadBytesPerFrame: 65_536 });
+		expect(log).toEqual([
+			textureOption(C.TEXTURE_OPTION_UPLOAD_BUDGET, 65_536),
+			textureOption(C.TEXTURE_OPTION_MAX_ANISOTROPY, 2),
+			`page ${JSON.stringify({ maxPixelRatio: 1, maxAnisotropy: 2, uploadBytesPerFrame: 65_536 })}`,
+		]);
 	});
 
 	it('refuses options out of range with E1214, before the setup function runs', async () => {

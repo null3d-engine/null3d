@@ -119,7 +119,7 @@ A texture can be at most 4096 texels wide and tall, the most that every WebGPU d
 
 An image decodes off the main thread into an `ImageBitmap`, and then moves to the thread that draws without a copy. In the default pipelined mode, that thread is the render worker. Data goes into the engine's memory, which that thread reads.
 
-The engine spreads uploads over frames, so loading many textures does not make one frame slow. Each frame uploads at most 4 MiB of texels. A large texture goes up in bands of rows, one band per frame. Textures upload in the order that they got their texels. The engine frees its copy of data once the upload is done.
+The engine spreads uploads over frames, so loading many textures does not make one frame slow. Each frame uploads no more texel bytes than the upload budget, the `uploadBytesPerFrame` setting of the [quality preset](../concepts/quality-presets.md#the-settings-of-each-preset). A large texture goes up in bands of rows, one band per frame. Textures upload in the order that they got their texels. The engine frees its copy of data once the upload is done.
 
 Until its texels are on the GPU, a texture draws as if the material had no map. A material then shows its base color alone.
 
@@ -133,7 +133,7 @@ Each texture has its own sampler settings, from its options:
 
 - What texture coordinates outside 0 to 1 read along each axis: the texel at the edge, a repeat of the texture, or a mirrored repeat. By default the edge texel repeats outward, as in three.js.
 - The filter of magnified texels, of minified texels and between mip levels: linear or nearest. It is linear by default.
-- Anisotropic filtering, which keeps a texture sharp on a surface seen at a slant, such as a floor. It reaches at most 16 samples, and a nearest filter turns it off. It is off by default.
+- Anisotropic filtering, which keeps a texture sharp on a surface seen at a slant, such as a floor. It reaches at most 16 samples, or the quality preset's cap (`maxAnisotropy`) when that is lower. A nearest filter turns it off. It is off by default.
 
 ## Color spaces
 

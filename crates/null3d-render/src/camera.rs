@@ -58,6 +58,29 @@ impl From<Orthographic> for Lens {
     }
 }
 
+/// How far positions lie along a camera's view, in the units of the view, which the camera's scale
+/// scales.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ViewDepth {
+    /// The row that gives a position's distance in front of the camera along its view: the dot
+    /// product of the row with `(x, y, z, 1)`, for a position relative to the camera.
+    pub row: [f32; 4],
+    /// The distance of the near plane. An orthographic lens's near plane may lie behind the
+    /// camera, at a distance below 0.
+    pub near: f32,
+    /// The distance of the far plane.
+    pub far: f32,
+    /// True for a perspective lens, whose view starts at the camera.
+    pub perspective: bool,
+}
+
+/// A world transform moved to the origin: the camera's rotation and scale alone.
+fn at_origin(world: &Affine) -> Affine {
+    let mut moved = *world;
+    (moved[3], moved[7], moved[11]) = (0.0, 0.0, 0.0);
+    moved
+}
+
 /// A perspective projection into WebGPU's clip space with reversed depth: depth is 1 at the near
 /// plane and 0 at the far plane, which spreads floating-point precision evenly over distance.
 pub fn perspective_reversed(fov_y_radians: f32, aspect: f32, near: f32, far: f32) -> Mat4 {
@@ -177,9 +200,25 @@ impl Lens {
     /// The view-projection matrix for positions relative to the camera: the camera's rotation and
     /// scale from its world transform, with the camera itself at the origin.
     pub fn relative_view_projection(&self, world: &Affine, aspect: f32) -> Mat4 {
-        let mut at_origin = *world;
-        (at_origin[3], at_origin[7], at_origin[11]) = (0.0, 0.0, 0.0);
-        self.view_projection(&at_origin, aspect)
+        self.view_projection(&at_origin(world), aspect)
+    }
+
+    /// How far positions relative to a camera with the given world transform lie along its view,
+    /// and where the lens's near and far planes lie.
+    pub fn depth(&self, world: &Affine) -> ViewDepth {
+        // The view's z is the third row of the view matrix, and the view looks down -z.
+        let v = view_matrix(&at_origin(world));
+        let row = [-v[2], -v[6], -v[10], -v[14]];
+        let (near, far, perspective) = match self {
+            Lens::Perspective(lens) => (lens.near, lens.far, true),
+            Lens::Orthographic(lens) => (lens.near, lens.far, false),
+        };
+        ViewDepth {
+            row,
+            near,
+            far,
+            perspective,
+        }
     }
 
     /// Where the camera is for positions relative to it, as a homogeneous point `(x, y, z, w)`.
@@ -393,6 +432,31 @@ mod tests {
                 let r = transform(&relative, [p[0] - 3.0, p[1] - 4.0, p[2] - 10.0]);
                 assert_close(&r, &a, 1e-4);
             }
+        }
+    }
+
+    #[test]
+    fn the_depth_row_gives_the_distance_along_the_view_and_matches_both_lenses_planes() {
+        let perspective = Lens::Perspective(Perspective {
+            fov_degrees: 50.0,
+            near: 0.5,
+            far: 80.0,
+        });
+        // A camera at (3, 4, 10), turned 90 degrees about +Y, so it looks down -X, and scaled 2.
+        let world: Affine = [0.0, 0.0, 2.0, 3.0, 0.0, 2.0, 0.0, 4.0, -2.0, 0.0, 0.0, 10.0];
+        for lens in [perspective, ortho(6.0, None, [1.0, 0.0])] {
+            let depth = lens.depth(&world);
+            let at = |p: [f32; 3]| (0..3).map(|k| depth.row[k] * p[k]).sum::<f32>() + depth.row[3];
+            // Seven units ahead, in world units; the view's units are half of them.
+            assert!((at([-7.0, 1.0, 2.0]) - 3.5).abs() < 1e-5);
+            assert!((at([4.0, 0.0, 0.0]) + 2.0).abs() < 1e-5);
+            // The near and far planes of reversed depth lie at the lens's distances.
+            let view_proj = lens.relative_view_projection(&world, 1.0);
+            for (distance, expected) in [(depth.near, 1.0), (depth.far, 0.0)] {
+                let clip = transform(&view_proj, [-2.0 * distance, 0.0, 0.0]);
+                assert!((clip[2] / clip[3] - expected).abs() < 1e-4, "{distance}");
+            }
+            assert_eq!(depth.perspective, matches!(lens, Lens::Perspective(_)));
         }
     }
 

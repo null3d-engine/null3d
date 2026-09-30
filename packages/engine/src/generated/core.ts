@@ -111,6 +111,8 @@ export const TEXTURE_STAT_LARGEST_FRAME_BYTES = 3;
 export const TEXTURE_STAT_WAITING = 4;
 export const TEXTURE_STAT_IMAGES_SENT = 5;
 export const TEXTURE_STAT_MAX_SIZE = 6;
+export const TEXTURE_STAT_UPLOAD_BUDGET = 7;
+export const TEXTURE_STAT_MAX_ANISOTROPY = 8;
 
 export const TEXTURE_FORMAT_SRGB = 9;
 export const TEXTURE_FORMAT_LINEAR = 2;
