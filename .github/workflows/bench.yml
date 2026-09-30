@@ -1,11 +1,11 @@
 name: Benchmarks
 
-# Compares the speed of a new commit with a baseline. GitHub's shared machines change speed by 5 to
-# 20% from run to run, so the job builds both commits on one machine, runs their benchmark pages in
-# turns, and judges only that comparison. It runs on every push to main, against the previous
-# commit on main. For a pull request it runs on demand, against the pull request's merge base: add
-# the benchmark label, or start it from the Actions tab with the pull request's number.
-# .dev/benchmarks.md says how to read the summary and how to mark an expected slowdown.
+# Compares the speed of a new commit with a baseline. GitHub's shared machines change speed from
+# run to run, so the job builds both commits on one machine, runs their benchmark pages in turns,
+# and judges only that comparison. It runs on every push to main, against the commit before it.
+# For a pull request it runs on demand, against the pull request's merge base: add the benchmark
+# label, or start it from the Actions tab with the pull request's number. .dev/benchmarks.md says
+# how to read the summary and how to mark an expected slowdown.
 
 on:
   push:
@@ -22,17 +22,6 @@ on:
         description: The commit to compare with. Empty takes the merge base with main, or the commit before on main
         required: false
         default: ""
-      runner:
-        description: The machine, while its choice is measured
-        type: choice
-        options: [macos-15, ubuntu-latest]
-        default: macos-15
-      runs:
-        description: Rounds, while their number is measured
-        default: "5"
-      seconds:
-        description: Warm-up and measured seconds of each run, while they are measured
-        default: "10"
 
 permissions:
   contents: read
@@ -53,13 +42,13 @@ jobs:
     concurrency:
       group: bench-${{ github.event_name == 'pull_request' && github.event.pull_request.number || github.run_id }}
       cancel-in-progress: ${{ github.event_name == 'pull_request' }}
-    runs-on: ${{ inputs.runner || 'macos-15' }}
+    # The Mac machine draws with a real GPU, shared with other machines. On the Linux machine the
+    # software GPU draws the larger scenes at under one frame per second and takes the processor
+    # from the engine's threads, so its CPU times vary far more between identical builds.
+    runs-on: macos-15
     timeout-minutes: 60
     env:
       HUSKY: "0"
-      BROWSER: ${{ (inputs.runner || 'macos-15') == 'ubuntu-latest' && 'chromium' || 'chrome' }}
-      RUNS: ${{ inputs.runs || '5' }}
-      RUN_SECONDS: ${{ inputs.seconds || '10' }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -81,8 +70,7 @@ jobs:
             else git fetch --quiet --no-tags origin "$1"; fi
             git rev-parse FETCH_HEAD
           }
-          # The commit a new commit is compared with: the merge base with main, or the commit
-          # before it when it is on main already.
+          # The merge base with main, or the commit before for a commit on main.
           merge_base() {
             local base
             base="$(git merge-base origin/main "$1")"
@@ -91,8 +79,7 @@ jobs:
           case "$EVENT" in
             push)
               new="$GITHUB_SHA"
-              if [ "$GITHUB_REF_NAME" != main ]; then baseline="$(merge_base "$new")"
-              elif git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then baseline="$BEFORE"
+              if git cat-file -e "${BEFORE}^{commit}" 2>/dev/null; then baseline="$BEFORE"
               else baseline="$(git rev-parse "$new^")"; fi ;;
             pull_request)
               new="$PR_HEAD"
@@ -137,15 +124,11 @@ jobs:
             (cd "$dir" && bun install --frozen-lockfile && bun run build)
           done
 
-      - name: Install Chromium for Playwright
-        if: env.BROWSER == 'chromium'
-        working-directory: tests
-        run: bunx playwright install --with-deps chromium
-
+      # Rounds and run length: see "The benchmark job in CI" in .dev/benchmarks.md.
       - name: Run both builds' benchmark pages in turns, and compare them
         run: |
           rm -rf target/bench
-          bun run bench:run --compare "$RUNNER_TEMP/baseline,$RUNNER_TEMP/new" --browser "$BROWSER" --runs "$RUNS" --seconds "$RUN_SECONDS"
+          bun run bench:run --compare "$RUNNER_TEMP/baseline,$RUNNER_TEMP/new" --runs 10 --seconds 5
 
       - name: Show the summary on the job's page
         if: always()

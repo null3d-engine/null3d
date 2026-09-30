@@ -8,7 +8,7 @@ import {
 	type ExpectedChange,
 	judge,
 	MIN_ROUNDS,
-	RULE,
+	RULES,
 	readExpectedChanges,
 	roundOrder,
 	selectRuns,
@@ -146,12 +146,20 @@ describe('bad runs', () => {
 	});
 });
 
-describe('the rule', () => {
-	test('allows 3% of the baseline, and at least two steps of the 5-microsecond timer', () => {
-		expect(RULE).toEqual({ share: 0.03, floorMs: 0.01 });
-		expect(allowedMs(2)).toBeCloseTo(0.06);
-		expect(allowedMs(0.1)).toBe(0.01);
-		expect(allowedMs(0)).toBe(0.01);
+describe('the rules', () => {
+	test('allow the busiest thread 5%, and at least two steps of the 5-microsecond timer', () => {
+		const rule = RULES['busiest-thread'];
+		expect(rule).toEqual({ share: 0.05, floorMs: 0.01 });
+		expect(allowedMs(2, rule)).toBeCloseTo(0.1);
+		expect(allowedMs(0.1, rule)).toBe(0.01);
+		expect(allowedMs(0, rule)).toBe(0.01);
+	});
+
+	test('allow own work, a small difference of two larger times, a wider margin', () => {
+		const rule = RULES['own-work'];
+		expect(rule).toEqual({ share: 0.15, floorMs: 0.02 });
+		expect(allowedMs(1, rule)).toBeCloseTo(0.15);
+		expect(allowedMs(0.1, rule)).toBe(0.02);
 	});
 });
 
@@ -189,24 +197,37 @@ describe('comparing two builds', () => {
 		expect(compare(stepInsideRound).comparisons[0]?.change).toBeCloseTo(0.01);
 	});
 
-	test('calls a page slower or faster only beyond the rule', () => {
-		const slower = compare(page([2, 2, 2], [2.1, 2.1, 2.1])).comparisons[0];
-		expect(slower?.result).toBe('slower');
-		expect(slower?.change).toBeCloseTo(0.05);
-		expect(slower?.deltaMs).toBeCloseTo(0.1);
-		expect(slower?.allowedMs).toBeCloseTo(0.06);
-		const within = compare(page([2, 2, 2], [2.05, 2.05, 2.05])).comparisons[0];
-		expect(within?.result).toBe('same');
-		const faster = compare(page([2, 2, 2], [1.9, 1.9, 1.9])).comparisons[0];
-		expect(faster?.result).toBe('faster');
+	test('calls a page slower or faster only beyond the rule of each measure', () => {
+		// The busiest thread goes from 2 ms to 2.2 ms, 10% slower. The scene's update takes 1.5 ms of
+		// it, so own work goes from 0.5 ms to 0.7 ms, 40% slower.
+		const [busiest, own] = compare(page([2, 2, 2], [2.2, 2.2, 2.2], { update: 1.5 })).comparisons;
+		expect(busiest).toMatchObject({ result: 'slower', allowedMs: expect.closeTo(0.1) });
+		expect(busiest?.change).toBeCloseTo(0.1);
+		expect(busiest?.deltaMs).toBeCloseTo(0.2);
+		expect(own).toMatchObject({ result: 'slower', allowedMs: expect.closeTo(0.075) });
+		expect(own?.change).toBeCloseTo(0.4);
+		const within = compare(page([2, 2, 2], [2.06, 2.06, 2.06], { update: 1.5 })).comparisons;
+		expect(within.map((c) => c.result)).toEqual(['same', 'same']);
+		const faster = compare(page([2, 2, 2], [1.8, 1.8, 1.8], { update: 1.5 })).comparisons;
+		expect(faster.map((c) => c.result)).toEqual(['faster', 'faster']);
 	});
 
-	test('lets a small time move by the timer steps that the rule allows', () => {
-		// 0.1 ms to 0.11 ms is 10% slower, but only two steps of the browser's timer.
-		const { comparisons } = compare(page([0.1, 0.1, 0.1], [0.11, 0.11, 0.11]));
+	test('judges own work with its wider margin', () => {
+		// Own work from 0.5 ms to 0.57 ms is 14% slower, within its rule; the busiest thread moves 3.5%.
+		const within = compare(page([2, 2, 2], [2.07, 2.07, 2.07], { update: 1.5 })).comparisons;
+		expect(within.map((c) => c.result)).toEqual(['same', 'same']);
+		// Own work from 0.5 ms to 0.58 ms is 16% slower, beyond its rule.
+		const beyond = compare(page([2, 2, 2], [2.08, 2.08, 2.08], { update: 1.5 })).comparisons;
+		expect(beyond.map((c) => c.result)).toEqual(['same', 'slower']);
+	});
+
+	test('lets a small time move by the timer steps that the rules allow', () => {
+		// 0.1 ms to 0.109 ms is 9% slower, but under two steps of the browser's timer.
+		const { comparisons } = compare(page([0.1, 0.1, 0.1], [0.109, 0.109, 0.109]));
 		expect(comparisons.map((c) => c.result)).toEqual(['same', 'same']);
+		// 0.115 ms is beyond the busiest thread's floor, and within own work's.
 		const beyond = compare(page([0.1, 0.1, 0.1], [0.115, 0.115, 0.115]));
-		expect(beyond.comparisons[0]?.result).toBe('slower');
+		expect(beyond.comparisons.map((c) => c.result)).toEqual(['slower', 'same']);
 	});
 
 	test('takes medians, so one slow run does not decide', () => {
@@ -342,15 +363,15 @@ describe('the verdict', () => {
 
 	test('fails on a slower page that no trailer names, and says which', () => {
 		const runs = [
-			...page([2, 2, 2], [2.2, 2.2, 2.2]),
+			...page([2, 2, 2], [2.5, 2.5, 2.5]),
 			...page([1, 1, 1], [1, 1, 1], {}, 's2', 'null3d-webgl2'),
 		];
 		const other = trailer('Bench-Expected: s2: the trees now have one more level');
 		const verdict = judge(compare(runs, [other]));
 		expect(verdict.pass).toBe(false);
 		expect(verdict.failures).toEqual([
-			's1 null3d-webgpu, busiest thread: +10.0% slower (medians 2.000 ms and 2.200 ms)',
-			's1 null3d-webgpu, own work: +10.0% slower (medians 2.000 ms and 2.200 ms)',
+			's1 null3d-webgpu, busiest thread: +25.0% slower (medians 2.000 ms and 2.500 ms)',
+			's1 null3d-webgpu, own work: +25.0% slower (medians 2.000 ms and 2.500 ms)',
 		]);
 	});
 
@@ -384,7 +405,7 @@ describe('the report', () => {
 
 	test('gives the verdict, each comparison, GPU time, the runs dropped and the trailers', () => {
 		const runs = [
-			...page([2, 2, 2], [2.2, 2.2, 2.2], { gpuMs: 3 }),
+			...page([2, 2, 2], [2.5, 2.5, 2.5], { gpuMs: 3 }),
 			run('new', 4, result(2, { refreshHz: 30 })),
 			...page([1, 1, 1], [1, 1, 1], {}, 's2', 'null3d-webgl2'),
 		];
@@ -406,13 +427,13 @@ describe('the report', () => {
 		);
 		expect(text).toContain('**Failed**: one problem.');
 		expect(text).toContain(
-			'- s1 null3d-webgpu, own work: +10.0% slower (medians 2.000 ms and 2.200 ms)',
+			'- s1 null3d-webgpu, own work: +25.0% slower (medians 2.000 ms and 2.500 ms)',
 		);
 		expect(text).toContain(
-			'| s1 | null3d-webgpu | busiest thread | 2.000 (2.000 to 2.000) | 2.200 (2.200 to 2.200) | +10.0% | slower, expected: culling tests every box |',
+			'| s1 | null3d-webgpu | busiest thread | 2.000 (2.000 to 2.000) | 2.500 (2.500 to 2.500) | +25.0% | slower, expected: culling tests every box |',
 		);
 		expect(text).toContain(
-			'| s1 | null3d-webgpu | own work | 2.000 (2.000 to 2.000) | 2.200 (2.200 to 2.200) | +10.0% | **slower** |',
+			'| s1 | null3d-webgpu | own work | 2.000 (2.000 to 2.000) | 2.500 (2.500 to 2.500) | +25.0% | **slower** |',
 		);
 		expect(text).toContain(
 			'| s2 | null3d-webgl2 | busiest thread | 1.000 (1.000 to 1.000) | 1.000 (1.000 to 1.000) | +0.0% | same |',
@@ -442,7 +463,10 @@ describe('the report', () => {
 			trailers: { changes: [], problems: [] },
 		}).join('\n');
 		expect(text).toContain(
-			'**Passed**: no page is more than 3% and 0.01 ms slower without a Bench-Expected trailer that names it.',
+			'**Passed**: no page is slower than its rule allows without a Bench-Expected trailer that names it.',
+		);
+		expect(text).toContain(
+			'a page fails when its busiest thread is more than 5% and 0.01 ms slower, or its own work more than 15% and 0.02 ms slower.',
 		);
 		expect(text).toContain(
 			'Not compared: s2 null3d-webgpu, as the new build kept 2 runs of 2 and the baseline 0 runs of 2, so 0 rounds have a run of each, and a comparison needs 2.',

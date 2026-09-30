@@ -129,13 +129,26 @@ export interface Rule {
 	floorMs: number;
 }
 
-/** More than 3% slower, and more than two steps of the browser's timer. */
-export const RULE: Rule = { share: 0.03, floorMs: 0.01 };
+/**
+ * The rule of each measure: the smallest of those tested that no job comparing two identical
+ * builds on GitHub's Mac machine broke, so that such builds do not fail. The engine's own work is
+ * the busiest thread's time less the scene's update: a small difference of two larger times,
+ * which moves more from run to run, so its rule is wider. .dev/benchmarks.md gives the
+ * measurements.
+ */
+export const RULES: Readonly<Record<Measure, Rule>> = {
+	'busiest-thread': { share: 0.05, floorMs: 0.01 },
+	'own-work': { share: 0.15, floorMs: 0.02 },
+};
 
-/** The most that the new build may add to a baseline median of `baselineMs` under the rule. */
-export function allowedMs(baselineMs: number, rule: Rule = RULE): number {
+/** The most that the new build may add to a baseline median of `baselineMs` under a rule. */
+export function allowedMs(baselineMs: number, rule: Rule): number {
 	return Math.max(baselineMs * rule.share, rule.floorMs);
 }
+
+/** A rule in words: "3% and 0.01 ms". */
+export const ruleText = ({ share, floorMs }: Rule) =>
+	`${Number((share * 100).toFixed(1))}% and ${floorMs} ms`;
 
 /** The runs of one build of one page: how many there were and their values of one measure. */
 export interface BuildValues {
@@ -171,9 +184,9 @@ export interface Comparison {
 	change: number;
 	/** The change in milliseconds: the change times the baseline's median. */
 	deltaMs: number;
-	/** The most the change may add under the rule, in milliseconds. */
+	/** The most the change may add under the measure's rule, in milliseconds. */
 	allowedMs: number;
-	/** Slower or faster by more than the rule allows, or the same within it. */
+	/** Slower or faster by more than the measure's rule allows, or the same within it. */
 	result: 'slower' | 'faster' | 'same';
 	/** The expected-change trailer that names this measure, when one does. */
 	expected: ExpectedChange | null;
@@ -224,7 +237,7 @@ function gpuMedian(runs: readonly BuildRun[]): number | null {
 export function compareBuilds(
 	{ kept, dropped }: Pick<RunSelection, 'kept' | 'dropped'>,
 	expected: readonly ExpectedChange[] = [],
-	rule: Rule = RULE,
+	rules: Readonly<Record<Measure, Rule>> = RULES,
 ): BuildComparison {
 	const all = [...kept, ...dropped.map(({ run }) => run)];
 	const pages = [...new Map(all.map((run) => [pageName(run), run])).values()];
@@ -256,7 +269,7 @@ export function compareBuilds(
 			const ratios = pairs.filter(([b]) => value(b) > 0).map(([b, n]) => value(n) / value(b));
 			const change = ratios.length > 0 ? median(ratios) - 1 : 0;
 			const deltaMs = change * before.median;
-			const allowed = allowedMs(before.median, rule);
+			const allowed = allowedMs(before.median, rules[measure]);
 			const slower = deltaMs > allowed;
 			const named = (entry: ExpectedChange) => names(entry, { scene, kind, measure });
 			out.comparisons.push({
@@ -403,7 +416,7 @@ const missingText = ({ kept, runs, rounds }: MissingPage) =>
 const newBuildShort = (page: MissingPage) => page.kept.new < MIN_ROUNDS;
 
 /**
- * The new build fails when a page gets slower than the rule allows and no trailer names it, and
+ * The new build fails when a page gets slower than its rule allows and no trailer names it, and
  * when it kept too few runs of a page to compare. A page that the baseline's runs keep from its
  * comparison is left out without failing, so a commit that mends a broken page can pass.
  */
@@ -451,7 +464,7 @@ export interface ReportContext {
 	browser: string;
 	selection: RunSelection;
 	trailers: ExpectedChanges;
-	rule?: Rule;
+	rules?: Readonly<Record<Measure, Rule>>;
 }
 
 /** The comparison as a short Markdown summary: the verdict, the table, GPU time and the runs. */
@@ -460,15 +473,18 @@ export function compareReport(
 	verdict: Verdict,
 	context: ReportContext,
 ): string[] {
-	const rule = context.rule ?? RULE;
-	const limit = `${(rule.share * 100).toFixed(0)}% and ${rule.floorMs} ms`;
+	const rules = context.rules ?? RULES;
+	const limits = MEASURE_NAMES.map(
+		(measure, k) =>
+			`its ${MEASURES[measure].name} ${k === 0 ? 'is ' : ''}more than ${ruleText(rules[measure])} slower`,
+	).join(', or ');
 	const lines = [
 		'## Benchmark comparison',
 		'',
 		`The new build, ${context.new}, against the baseline, ${context.baseline}, in ${context.browser}. Each page ran ${context.runs} times per build, in rounds that run each page once in each build, with ${context.warmupSeconds} s of warm-up and ${context.measureSeconds} s measured.`,
 		'',
 		verdict.pass
-			? `**Passed**: no page is more than ${limit} slower without a ${EXPECTED_TRAILER} trailer that names it.`
+			? `**Passed**: no page is slower than its rule allows without a ${EXPECTED_TRAILER} trailer that names it.`
 			: `**Failed**: ${verdict.failures.length === 1 ? 'one problem' : `${verdict.failures.length} problems`}.`,
 		...verdict.failures.map((failure) => `- ${failure}`),
 		'',
@@ -479,7 +495,7 @@ export function compareReport(
 				`| ${c.scene} | ${c.kind} | ${MEASURES[c.measure].name} | ${spread(c.baseline)} | ${spread(c.new)} | ${percentText(c)} | ${resultText(c)} |`,
 		),
 		'',
-		`The change is the median of the rounds' changes from the baseline's run to the new build's, and it fails when it is more than ${limit} slower. Each run gives the median CPU time per frame: the busiest thread's time, and the engine's own work on its busiest thread.`,
+		`Each run gives the median CPU time per frame of the busiest thread, and of the engine's own work on it. The change is the median over rounds of the new build's run against the baseline's, and a page fails when ${limits}.`,
 	];
 	const gpu = result.gpu.filter((g) => g.baselineMs !== null || g.newMs !== null);
 	if (gpu.length > 0)
