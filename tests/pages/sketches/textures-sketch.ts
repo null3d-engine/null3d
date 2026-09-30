@@ -4,8 +4,8 @@
 // wrap mode, then a texture of 4 x 4 texels magnified with a nearest and a linear filter. Images
 // decode with their first row at the bottom, as three.js flips them, so the picture stands upright.
 // Every image reaches the thread that draws before the held frame, which uploads them all.
-import { defineSketch, type MeshArrays } from '@null3d/engine';
-import { type TextureOptions, texturesOf, unlitMapMaterial } from '@null3d/engine/internal';
+import { defineSketch, type MeshArrays, type TextureOptions } from '@null3d/engine';
+import { unlitMapMaterial } from '@null3d/engine/internal';
 
 const DECODE: ImageBitmapOptions = {
 	imageOrientation: 'flipY',
@@ -49,8 +49,7 @@ async function picture(extension: string): Promise<ImageBitmap> {
 }
 
 export default defineSketch(async (ctx) => {
-	const { scene, materials, geometry } = ctx;
-	const textures = texturesOf(ctx);
+	const { scene, materials, geometry, textures } = ctx;
 	scene.setBackground('#20242a');
 	const camera = scene.createPerspectiveCamera({
 		fov: 45,
@@ -86,7 +85,7 @@ export default defineSketch(async (ctx) => {
 		show(await picture('png'), -5 + k * 2, -1, { wrap }, wide);
 	const tiny = (x: number, y: number) => [40 + x * 70, 40 + y * 70, 220 - x * 50];
 	const flat = { mipmaps: false } as const;
-	show(await made(4, 4, tiny), 1, -1, { ...flat, magFilter: 'nearest', minFilter: 'nearest' });
+	show(await made(4, 4, tiny), 1, -1, { ...flat, filter: 'nearest' });
 	show(await made(4, 4, tiny), 3, -1, flat);
 	// A white map times the material's color: the square draws in the material's gray.
 	const tinted = textures.fromImageBitmap(await made(2, 2, () => [255, 255, 255]), flat);

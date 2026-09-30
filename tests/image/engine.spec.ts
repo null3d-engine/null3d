@@ -37,25 +37,41 @@ for (const mode of ENGINE_MODES) {
 	});
 }
 
-// In single-threaded mode the page downloads the sketch module while the core downloads, so it asks
-// for the module before it asks for the core's loader, which it needs only once the core has
-// compiled.
-test('the page asks for the sketch module before the core loader in single-threaded mode', async ({
-	page,
-}) => {
-	await page.goto(`engine.html?gpu=webgl2&seconds=1&downloads&${singleThreaded.query}`);
-	const result = await pageResult<EngineResult & { error?: string }>(page, 30_000);
-	expect(result.error).toBeUndefined();
-	expect(engineProblems(result, singleThreaded, 'webgl2')).toEqual([]);
-	const asked = (file: RegExp) => result.downloads?.find(({ name }) => file.test(name))?.startTime;
-	const sketch = asked(/\/empty-sketch[^/]*\.[jt]s$/);
-	// The loader is null3d.js, or null3d-<hash>.js once bundled, where the hash may hold any of
-	// the characters of URL-safe base64, the underscore among them.
-	const coreLoader = asked(/\/null3d(-[\w-]+)?\.js$/);
-	expect(sketch).toBeDefined();
-	expect(coreLoader).toBeDefined();
-	expect(sketch).toBeLessThan(coreLoader as number);
-});
+// The page starts the downloads that its start needs while the core downloads, and does not wait
+// until the core is ready. With worker threads it starts the workers, which load the core's loader
+// at once, and it fetches the sketch module into the browser's cache. In single-threaded mode it
+// loads the core's loader and the sketch module itself. Wherever the page draws, it loads the
+// renderer too.
+for (const mode of ENGINE_MODES) {
+	test(`the page starts its downloads before the core is ready, ${mode.name}`, async ({ page }) => {
+		await page.goto(`engine.html?gpu=webgl2&seconds=1&downloads&${mode.query}`);
+		const result = await pageResult<EngineResult & { error?: string }>(page, 30_000);
+		expect(result.error).toBeUndefined();
+		expect(engineProblems(result, mode, 'webgl2')).toEqual([]);
+		const trail = result.trail ?? [];
+		const step = (name: string) => trail.findIndex((line) => line.endsWith(` ms ${name}`));
+		const core = step('core');
+		expect(core).toBeGreaterThan(0);
+		// Each step's time is whole milliseconds since the page started, as resource timing counts.
+		const coreAt = Number.parseInt(trail[core] as string, 10);
+		const files: Record<string, RegExp> = { 'the sketch module': /\/empty-sketch[^/]*\.[jt]s$/ };
+		// The loader is null3d.js, or null3d-<hash>.js once bundled, where the hash may hold any of
+		// the characters of URL-safe base64, the underscore among them.
+		if (mode.build === 'single') files["the core's loader"] = /\/null3d(-[\w-]+)?\.js$/;
+		if (mode.renderThread === 'main') files['the renderer'] = /\/draw(-[^/]*)?\.[jt]s$/;
+		for (const [what, file] of Object.entries(files)) {
+			const asked = result.downloads?.find(({ name }) => file.test(name))?.startTime;
+			expect(asked, what).toBeLessThan(coreAt);
+		}
+		if (mode.build === 'single') return;
+		const workers = ['null3d-sketch', 'null3d-job-0'];
+		if (mode.renderThread === 'render-worker') workers.push('null3d-render');
+		for (const worker of workers) {
+			expect(step(`${worker}: started`), worker).toBeGreaterThanOrEqual(0);
+			expect(step(`${worker}: started`), worker).toBeLessThan(core);
+		}
+	});
+}
 
 for (const gpu of ['webgpu', 'webgl2'] as const) {
 	for (const mode of ENGINE_MODES) {

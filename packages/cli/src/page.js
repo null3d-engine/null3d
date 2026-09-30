@@ -3,6 +3,7 @@
 // the errors and warnings that the page logs.
 
 /** @import { ConsoleMessage, JSHandle, Page } from 'playwright-core' */
+/** @import { RgbaImage } from './png.js' */
 
 /**
  * The GPU tiers that the `?gpu=` switch forces: core WebGPU, WebGPU in compatibility mode, and
@@ -13,6 +14,13 @@
 export const TIERS = ['webgpu', 'compat', 'webgl2'];
 
 /** @typedef {(typeof TIERS)[number]} Tier */
+
+/**
+ * The tier that the engine reports for each value of the `?gpu=` switch.
+ *
+ * @type {Readonly<Record<Tier, string>>}
+ */
+export const REPORTED_TIERS = { webgpu: 'webgpu', compat: 'webgpu-compat', webgl2: 'webgl2' };
 
 /** The global that hold mode publishes its result in. */
 export const HOLD_RESULT = '__null3dHold';
@@ -44,6 +52,18 @@ export function switchedPath(path, switches) {
 		if (value !== undefined) url.searchParams.set(name, value);
 	return `${url.pathname}${url.search}`;
 }
+
+/**
+ * The image of a held frame, with its pixels as bytes.
+ *
+ * @param {HeldReport} held
+ * @returns {RgbaImage}
+ */
+export const heldImage = ({ width, height, pixels }) => ({
+	width,
+	height,
+	data: new Uint8Array(Buffer.from(pixels, 'base64')),
+});
 
 /**
  * A page's path with hold mode's switches: the sketch time to hold at, or without a time a bare

@@ -6,7 +6,8 @@ import { messageOf } from '../errors/message';
 import type { PowerPreference } from '../page/capabilities';
 import type { CoreDevice } from '../page/limits';
 import type { Tier } from '../render/renderer';
-import { type Build, type StartedCore, startCore } from '../shared/core';
+import { awaitLater } from '../shared/await-later';
+import { type Build, loadGlue, type StartedCore, startCore } from '../shared/core';
 
 export interface CoreHandoff {
 	build: Build;
@@ -58,6 +59,8 @@ export interface RendererSetup {
 export type SketchWorkerInit = CoreHandoff & {
 	type: 'init';
 	sketchUrl: string;
+	/** The page's address, which the sketch's relative asset addresses resolve against. */
+	pageUrl: string;
 	/**
 	 * The key names, in the order of the numbers that the page gives keys in the input ring. The
 	 * page hands them over, so the sketch worker's file needs no copy.
@@ -110,6 +113,8 @@ export type WorkerReply =
 
 export type SketchWorkerMessage =
 	| SketchWorkerInit
+	/** Sent before the core in low-latency mode, where the sketch worker draws: load the renderer. */
+	| { type: 'load-renderer' }
 	| RendererRequest
 	| { type: 'post'; name: string; data: unknown };
 
@@ -149,6 +154,9 @@ export function startWorker<Message>(
 	const thread = globalThis as { [started]?: true };
 	if (thread[started]) return;
 	thread[started] = true;
+	// Workers run only the threaded build. The page starts them before the core has compiled, so
+	// each imports the core's loader now, and finds it ready when the core arrives.
+	void awaitLater(loadGlue('threaded'));
 	step('loaded');
 	self.onmessage = handle;
 }

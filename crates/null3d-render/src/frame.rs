@@ -21,6 +21,7 @@ use null3d_gpu::drawlist::{
 };
 
 use crate::camera::Perspective;
+use crate::debug_lines::DebugLines;
 use crate::frame_data::{FrameUniform, normalized_direction};
 use crate::graph::GraphError;
 use crate::materials::{
@@ -99,6 +100,9 @@ pub struct FrameInput<'a> {
     pub structure_changed: bool,
     /// The job system, for work that runs on the job workers.
     pub jobs: &'a JobSystem,
+    /// The lines that the sketch drew for the frame, which development builds draw over the
+    /// camera's view. Release builds draw none.
+    pub lines: DebugLines<'a>,
 }
 
 impl FrameInput<'_> {

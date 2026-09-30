@@ -429,7 +429,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "destroy() on the engine object",
-      "notes": "A prefab frees its GPU data when the prefab and its last instance are destroyed.",
+      "notes": "texture.destroy() frees a texture's GPU memory, and materials that map it draw with their colors alone. A prefab (0.2) frees its GPU data when the prefab and its last instance are destroyed.",
       "docs": "api/assets",
       "detect": "\\.dispose\\s*\\("
     },
@@ -956,8 +956,8 @@
       "three": "new TextureLoader().load / loadAsync",
       "status": "changed",
       "since": "0.1",
-      "target": "await assets.loadTexture(url, { colorSpace, flipY, wrap, filter, anisotropy })",
-      "notes": "Prefer KTX2 files made with `bunx @null3d/cli assets`.",
+      "target": "await assets.loadTexture(url, { colorSpace, flipY, wrap, filter, mipmaps, anisotropy, uvSet, premultipliedAlpha })",
+      "notes": "It returns a promise of the texture, which draws once its texels upload. flipY is true by default, as in three.js, and colorSpace is 'srgb'.",
       "docs": "api/textures",
       "detect": "\\bTextureLoader\\b"
     },
@@ -968,7 +968,7 @@
       "status": "direct",
       "since": "0.1",
       "target": "colorSpace: 'srgb' for color maps, 'linear' for data maps",
-      "notes": "Same rule as three.js: base color and emissive maps are sRGB; normal, roughness, metalness and AO maps are linear. glTF sets them automatically.",
+      "notes": "Same rule as three.js: base color and emissive maps are sRGB; normal, roughness, metalness and AO maps are linear. The default is 'srgb' for images and 'linear' for data. glTF sets them automatically.",
       "docs": "concepts/color-management",
       "detect": "\\.colorSpace\\s*=|\\b(Linear)?SRGBColorSpace\\b|sRGBEncoding"
     },
@@ -1012,7 +1012,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "textures.fromData({ width, height, depth, format, data })",
-      "notes": "",
+      "notes": "Formats rgba8unorm and rgba16float (a Uint16Array of half floats or a Float32Array). depth above 1 makes a texture array of that many layers. Filters are linear by default, where three.js's DataTexture is nearest: pass filter: 'nearest'.",
       "docs": "api/textures",
       "detect": "\\bData(Array|3D)?Texture\\b"
     },
@@ -1023,7 +1023,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "Draw on an OffscreenCanvas in the sketch worker, then textures.fromImageBitmap(bitmap) and texture.update(bitmap)",
-      "notes": "The sketch worker has no DOM canvas; OffscreenCanvas with a 2D context works in workers.",
+      "notes": "The sketch worker has no DOM canvas; OffscreenCanvas with a 2D context works in workers. Decode with createImageBitmap(canvas, { imageOrientation: 'flipY' }) so the drawing stands upright, as three.js flips it.",
       "docs": "api/textures",
       "detect": "\\bCanvasTexture\\b"
     },
@@ -1088,7 +1088,7 @@
       "three": "material.premultipliedAlpha / texture.premultiplyAlpha",
       "status": "changed",
       "since": "0.1",
-      "target": "loadTexture(url, { premultipliedAlpha: true }) for textures stored premultiplied",
+      "target": "loadTexture(url, { premultipliedAlpha: true }), which multiplies each color by its alpha as the image decodes",
       "notes": "Standard blending needs no flag.",
       "docs": "api/textures",
       "detect": "premultipl(ied|y)Alpha\\b"
@@ -1166,7 +1166,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "Nothing to do",
-      "notes": "Assets are cached per URL within a session, and the HTTP cache applies.",
+      "notes": "Loads of one URL at the same time share one download, files that assets.preload downloaded wait in memory until a load takes them, and the HTTP cache keeps the rest.",
       "docs": "api/assets",
       "detect": "\\bCache\\.enabled\\b"
     },
@@ -1319,8 +1319,8 @@
       "three": "AxesHelper / GridHelper / BoxHelper / Box3Helper / ArrowHelper / CameraHelper / light helpers / SkeletonHelper / PlaneHelper",
       "status": "changed",
       "since": "0.1",
-      "target": "debug.axes, debug.grid, debug.box, debug.arrow, debug.frustum, debug.light, debug.skeleton",
-      "notes": "Debug drawing exists in development builds only.",
+      "target": "debug.axes, debug.grid, debug.box, debug.sphere, debug.arrow, debug.frustum, debug.light, debug.skeleton",
+      "notes": "Call them in onUpdate: each call draws for one frame. Debug drawing exists in development builds only. debug.grid takes GridHelper's size and divisions. debug.skeleton comes with animation in 0.2.",
       "docs": "api/debug",
       "detect": "\\b(Axes|Grid|PolarGrid|Box|Box3|Arrow|Camera|DirectionalLight|PointLight|SpotLight|HemisphereLight|Skeleton|Plane)Helper\\b"
     },

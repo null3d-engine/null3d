@@ -1,10 +1,9 @@
-// The command-line tool, run as a developer runs it: in a project's folder, where it starts the
+// The shot command, run as a developer runs it: in a project's folder, where it starts the
 // project's own Vite dev server and a headless browser in the environment of this Playwright
 // project. On each GPU tier, the shot command's image must match the image test manifest's
 // references of the project's sketch. A page that fails must say why at once, and leave no image.
 // The bench command must report figures of the project's production build on both GPU paths. The
 // test checks the figures' presence, not their values, which depend on the machine and its load.
-import { spawn } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { expect, test } from '@playwright/test';
@@ -12,6 +11,7 @@ import type { BenchReport } from '../../packages/cli/src/bench.js';
 import { TIERS } from '../../packages/cli/src/page.js';
 import { readPng } from '../../packages/cli/src/png.js';
 import type { ShotReport } from '../../packages/cli/src/shot.js';
+import { runCli } from '../lib/cli.ts';
 import {
 	borrowedRun,
 	clearCandidate,
@@ -23,35 +23,21 @@ import { REPO_ROOT } from '../lib/server.ts';
 import { manifestRun } from './manifest.ts';
 
 const PROJECT = join(REPO_ROOT, 'tests/fixtures/project');
-const COMMAND = join(REPO_ROOT, 'packages/cli/bin/null3d.js');
 /** A page that fails must say so long before the command's own 60 seconds run out. */
 const FAST_FAILURE_MS = 30_000;
 
 /**
- * Runs a command of the command-line tool in the project with Node, as its bin file asks, with its
- * output in the test's folder. Returns the exit code, what it printed, and the JSON report it saved.
+ * Runs a command of the command-line tool in the project, with its output in the test's folder.
+ * Returns the exit code, what it printed, and the JSON report it saved.
  */
-function run<T>(
+async function run<T>(
 	command: 'shot' | 'bench',
 	args: string[],
 ): Promise<{ code: number | null; output: string; report: T }> {
 	const out = test.info().outputPath(command === 'shot' ? 'shot.png' : 'bench.json');
-	return new Promise((resolve, reject) => {
-		const child = spawn(process.execPath, [COMMAND, command, '--out', out, ...args], {
-			cwd: PROJECT,
-		});
-		let output = '';
-		const collect = (chunk: Buffer) => {
-			output += chunk.toString();
-		};
-		child.stdout.on('data', collect);
-		child.stderr.on('data', collect);
-		child.on('error', reject);
-		child.on('close', (code) => {
-			const report = JSON.parse(readFileSync(out.replace(/\.png$/, '.json'), 'utf8'));
-			resolve({ code, output, report });
-		});
-	});
+	const { code, output } = await runCli(PROJECT, [command, '--out', out, ...args]);
+	const report = JSON.parse(readFileSync(out.replace(/\.png$/, '.json'), 'utf8'));
+	return { code, output, report };
 }
 
 /** Runs the shot command in the project. */

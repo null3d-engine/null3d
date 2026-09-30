@@ -5,10 +5,13 @@
 // In a file of its own, defineSketch would cost the sketch worker one more request before the
 // sketch runs.
 
+import type { Debug } from '../debug/debug';
 import { EngineError } from '../errors/engine-error';
 import { messageOf } from '../errors/message';
+import type { Assets } from '../scene/assets';
 import type { Geometry, Materials } from '../scene/resources';
 import type { Scene } from '../scene/scene';
+import type { Textures } from '../scene/textures';
 import type { Input } from './input';
 
 /**
@@ -58,6 +61,10 @@ export interface SketchContext {
 	materials: Materials;
 	/** Mesh generators. */
 	geometry: Geometry;
+	/** Textures from decoded images and from data. */
+	textures: Textures;
+	/** Loading of textures and files, with a count of downloads for loading screens. */
+	assets: Assets;
 	/** Pointer, touch, keyboard and gamepad input, which the page forwards to the sketch. */
 	input: Input;
 	/**
@@ -76,6 +83,11 @@ export interface SketchContext {
 		post(type: string, data?: unknown, transfer?: Transferable[]): void;
 		onMessage(handler: (type: string, data: unknown) => void): () => void;
 	};
+	/**
+	 * Debug drawing: lines, boxes, spheres, arrows, axes, grids, camera frustums and lights, drawn
+	 * for one frame. Only development builds draw them.
+	 */
+	debug: Debug;
 }
 
 /**

@@ -1,7 +1,8 @@
 // Standard bind group layouts and the render pipeline templates. Every render pipeline shares the
 // layouts of its template's groups, so switching pipelines never forces a rebind of the per-frame
 // group. The engine defines its own layouts and templates, and a page can add more, as the texture
-// test page does.
+// test page does. Only development builds define the template of the debug lines, so release builds
+// hold none of its code.
 
 import {
 	LAYOUT_CULL,
@@ -10,7 +11,9 @@ import {
 	PERMUTATION_VERTEX_COLOR,
 	SIZE_INSTANCE_STRIDE,
 	STATE_CULL_NONE,
+	STATE_LINE_LIST,
 	TEMPLATE_CULL,
+	TEMPLATE_DEBUG_LINES,
 	TEMPLATE_INSTANCED_LIT,
 	TEMPLATE_INSTANCED_TEXCOORDS,
 	TEMPLATE_INSTANCED_UNLIT,
@@ -20,6 +23,7 @@ import {
 } from '../../generated/gpu';
 import {
 	CULL_SHADER,
+	DEBUG_LINES_SHADER,
 	LIT_SHADER,
 	MIPMAP_SHADER,
 	TEXCOORDS_SHADER,
@@ -27,6 +31,8 @@ import {
 	UNLIT_SHADER,
 	type WgslShader,
 } from '../../generated/shaders';
+import { DEV } from '../dev';
+import { LINE_VERTICES } from '../line-vertices';
 import { type ShaderVariants, variantFor } from '../variants';
 import { locationOfAttribute, vertexAttribute, vertexStride } from '../vertex-format';
 
@@ -173,6 +179,14 @@ export class Pipelines {
 				vertexBuffers: INSTANCE_BUFFERS,
 			});
 		}
+		if (DEV)
+			this.defineTemplate(TEMPLATE_DEBUG_LINES, {
+				label: 'debug lines',
+				shader: DEBUG_LINES_SHADER,
+				pipeline: 'main',
+				layouts: [LAYOUT_FRAME],
+				vertexBuffers: [LINE_VERTICES],
+			});
 		this.cullLayout = device.createPipelineLayout({ bindGroupLayouts: [this.layout(LAYOUT_CULL)] });
 	}
 
@@ -246,7 +260,7 @@ export class Pipelines {
 				? { module, entryPoint: entryPoints?.fragment, targets: [{ format: colorFormat }] }
 				: undefined,
 			primitive: {
-				topology: 'triangle-list',
+				topology: stateFlags & STATE_LINE_LIST ? 'line-list' : 'triangle-list',
 				cullMode: stateFlags & STATE_CULL_NONE ? 'none' : 'back',
 				frontFace: 'ccw',
 			},

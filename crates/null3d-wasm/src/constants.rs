@@ -6,14 +6,14 @@ use null3d_core::layers::DEFAULT_LAYERS;
 use null3d_core::scene::{NO_PARENT, flags, op};
 use null3d_core::world::MATRIX_FLOATS;
 use null3d_gpu::caps::Capabilities;
-use null3d_gpu::drawlist::{address, filter, format, sizes};
+use null3d_gpu::drawlist::{address, filter, format, sizes, upload_flags};
 use null3d_render::arrays::ArrayName;
 use null3d_render::cpu_culled::{CpuCulledConfig, MAX_SOURCE_BITS};
 use null3d_render::frame::{NO_MATERIAL, NO_MESH};
 use null3d_render::geometry::Shape;
 use null3d_render::gpu_driven::{MAX_USEFUL_BINDING_BYTES, PORTABLE_MAX_SOURCES};
 use null3d_render::materials::{feature, param};
-use null3d_render::textures::{DEFAULT_MAX_ANISOTROPY, DEFAULT_UPLOAD_BUDGET};
+use null3d_render::textures::{DEFAULT_MAX_ANISOTROPY, DEFAULT_UPLOAD_BUDGET, MAX_LAYERS};
 
 /// Fields of `sceneArrays`.
 pub mod scene_field {
@@ -31,6 +31,12 @@ pub mod batch_field {
     pub const ROTATIONS: u32 = 1;
     pub const SCALES: u32 = 2;
     pub const COLORS: u32 = 3;
+}
+
+/// Fields of `debugLineArrays`.
+pub mod debug_line_field {
+    pub const POSITIONS: u32 = 0;
+    pub const COLORS: u32 = 1;
 }
 
 /// Fields of `commandRing`.
@@ -177,6 +183,13 @@ pub fn typescript() -> String {
             ],
         ),
         (
+            "DEBUG_LINE_FIELD",
+            &[
+                ("POSITIONS", debug_line_field::POSITIONS),
+                ("COLORS", debug_line_field::COLORS),
+            ],
+        ),
+        (
             "RING_FIELD",
             &[
                 ("RECORDS", ring_field::RECORDS),
@@ -279,6 +292,9 @@ pub fn typescript() -> String {
             &[
                 ("FORMAT_SRGB", format::RGBA8_UNORM_SRGB),
                 ("FORMAT_LINEAR", format::RGBA8_UNORM),
+                ("FORMAT_HALF_FLOAT", format::RGBA16_FLOAT),
+                ("PREMULTIPLIED_ALPHA", upload_flags::PREMULTIPLIED_ALPHA),
+                ("MAX_DEPTH", MAX_LAYERS),
                 ("WRAP_CLAMP", address::CLAMP_TO_EDGE),
                 ("WRAP_REPEAT", address::REPEAT),
                 ("WRAP_MIRROR", address::MIRROR_REPEAT),
