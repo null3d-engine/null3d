@@ -711,6 +711,10 @@ pub mod template {
     pub const INSTANCED_STANDARD_MAPS: u32 = 6;
     /// The final pass: one triangle over the canvas, which tone maps the scene color into it.
     pub const FINAL: u32 = 7;
+    /// A texture behind every object: one triangle over the whole view, with no vertex buffer, that
+    /// samples a layer of a texture array. The bind group of index 0 is the frame's and that of
+    /// index 1 the texture's. The draw's first vertex is the layer times three.
+    pub const BACKGROUND: u32 = 9;
     /// The GPU culling compute shader.
     pub const CULL: u32 = 16;
 }
@@ -960,6 +964,7 @@ pub fn typescript_constants() -> String {
                 ("INSTANCED_UNLIT_MAP", template::INSTANCED_UNLIT_MAP),
                 ("INSTANCED_STANDARD_MAPS", template::INSTANCED_STANDARD_MAPS),
                 ("FINAL", template::FINAL),
+                ("BACKGROUND", template::BACKGROUND),
                 ("CULL", template::CULL),
             ],
         ),

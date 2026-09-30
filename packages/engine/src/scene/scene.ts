@@ -43,6 +43,7 @@ import {
 import type { CoreMemory } from './memory';
 import type { Material, MeshGeometry } from './resources';
 import { quaternionLookAt } from './rotation';
+import { Texture } from './textures';
 import { UnmarkedWrites } from './unmarked-writes';
 
 /**
@@ -1594,12 +1595,23 @@ export class Scene {
 	}
 
 	/**
-	 * The color behind every object. Exposure and tone mapping change it with the rest of the scene.
-	 * Without a background, the canvas shows black, or the page behind it on a transparent canvas.
+	 * What the camera shows behind every object: a color, or a texture. A texture fills the view and
+	 * stretches to its shape, as a texture in three.js's `scene.background` does. The color set
+	 * before it shows until the texture's texels are on the GPU, and again if the texture is
+	 * destroyed. A color takes the place of a texture. Exposure and tone mapping change the
+	 * background with the rest of the scene. Without a background, the canvas shows black, or the
+	 * page behind it on a transparent canvas.
 	 */
-	setBackground(color: ColorInput): void {
-		const [r, g, b] = linearColor(color, 'setBackground');
-		this.core.glue.setBackground(r, g, b);
+	setBackground(background: ColorInput | Texture): void {
+		const { glue } = this.core;
+		if (background instanceof Texture) {
+			const status = glue.setBackgroundTexture(background.handle);
+			this.core.check(status, 'setBackground', 'a texture', true);
+			return;
+		}
+		const [r, g, b] = linearColor(background, 'setBackground');
+		glue.setBackground(r, g, b);
+		glue.setBackgroundTexture(0);
 	}
 
 	/**

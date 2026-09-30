@@ -50,8 +50,9 @@
 //! own: its culling parameters, compacted instances and indirect draws, its frame uniform, and its
 //! bundle. Each pass has a module: `cull` records the culling passes and `opaque` the opaque
 //! passes, and `layout` keeps the sources and buckets that every view reads, with their uploads.
-//! The debug lines pass, which both builders share, is [`crate::debug_lines`]. The render graph
-//! ([`crate::frame_graph`]) orders the passes and begins their render passes.
+//! The debug lines pass, which both builders share, is [`crate::debug_lines`], and the background
+//! texture that the camera's opaque pass draws before its bundle is [`crate::background`]. The
+//! render graph ([`crate::frame_graph`]) orders the passes and begins their render passes.
 //!
 //! # Memory
 //!
@@ -69,6 +70,7 @@ use std::collections::TryReserveError;
 use null3d_gpu::caps::{BUDGET, Limit};
 use null3d_gpu::drawlist::{DrawList, Op, buffer_usage as usage, sizes};
 
+use crate::background::BackgroundPass;
 use crate::cells::CellCulling;
 use crate::debug_lines::LinesPass;
 use crate::dfg;
@@ -222,6 +224,7 @@ pub struct GpuDrivenRenderer {
     cells: CellCulling,
     culling: Culling,
     lines: LinesPass,
+    background: BackgroundPass,
     /// Each view's values in the frame being recorded, or `None` for a view with no camera.
     frames: Vec<Option<ViewFrame>>,
     created: bool,
@@ -273,6 +276,7 @@ impl GpuDrivenRenderer {
             cells: CellCulling::new(config.cell_culling, false),
             culling: Culling::default(),
             lines: LinesPass::new(ids::LINES),
+            background: BackgroundPass::default(),
             frames: Vec::new(),
             created: false,
             dfg_pending: false,
@@ -346,6 +350,11 @@ impl GpuDrivenRenderer {
             self.graph.scene_targets(),
         );
         self.graph.request_pipelines(&mut self.pipelines);
+        self.background.request_pipeline(
+            &self.settings,
+            &mut self.pipelines,
+            self.graph.scene_targets(),
+        );
         self.pipelines.create_new(list)?;
         if !self.created {
             self.create_fixed(list)?;
@@ -373,6 +382,7 @@ impl GpuDrivenRenderer {
         let groups_remade = self
             .settings
             .record_materials(list, arena, table, input.frame)?;
+        self.background.prepare(&self.settings);
         let binding_bytes = self.config.storage_binding_bytes;
         let shared_recreated = if upload_everything {
             self.layout.apply(list, arena, binding_bytes)?
@@ -424,11 +434,17 @@ impl GpuDrivenRenderer {
 
         let (frames, layout, culling, lines) =
             (&self.frames, &self.layout, &self.culling, &self.lines);
+        let background = &self.background;
         let drawn = |view: ViewId| frames[view.index()].is_some();
         self.graph
             .record(list, self.settings.clear_color(), |list, role| match role {
                 Role::Cull(view) if drawn(view) => culling.record(list, view, layout),
-                Role::Opaque(view) if drawn(view) => opaque::record(list, view),
+                Role::Opaque(view) if drawn(view) => {
+                    if view == ViewId::CAMERA {
+                        background.record(list, ids::frame_group(view), &[])?;
+                    }
+                    opaque::record(list, view)
+                }
                 Role::DebugLines => lines.record(list, ids::frame_group(ViewId::CAMERA), &[]),
                 _ => Ok(()),
             })?;

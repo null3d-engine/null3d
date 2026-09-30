@@ -92,6 +92,8 @@ The exposure multiplies the scene's color before the tone mapping. An exposure o
 
 The background color is part of the scene. Exposure and tone mapping change it as they change the objects, as in three.js's WebGPURenderer. ACES, for example, makes dark colors darker. To show an exact page color behind the scene, use `toneMapping: 'none'` at an exposure of 1. You can also use a transparent canvas over a CSS background.
 
+A [background texture](../api/scene.md#the-camera-and-the-background) draws into the scene color too, so exposure and tone mapping change it in the same way. three.js's WebGLRenderer draws an sRGB background texture without them. To show the texture's own colors, use `toneMapping: 'none'` at an exposure of 1.
+
 ## Transparent canvases
 
 `createEngine({ transparent: true })` makes a see-through canvas. The page shows through wherever no object draws, until the sketch calls `scene.setBackground`. The canvas holds premultiplied alpha, the form that browsers composite, so a partly covered edge pixel keeps its color scaled by its coverage.
