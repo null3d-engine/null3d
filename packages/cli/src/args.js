@@ -1,8 +1,10 @@
 // Reads the options of a command with Node's parser, and says in plain words what is wrong with
 // them.
 import { parseArgs } from 'node:util';
+import { TIERS } from './page.js';
 
 /** @import { ParseArgsOptionsConfig } from 'node:util' */
+/** @import { Tier } from './page.js' */
 
 /** A mistake in the options that a command got. The command's help shows the right ones. */
 export class UsageError extends Error {}
@@ -56,6 +58,26 @@ export function readSeconds(option, text, { above = false } = {}) {
 	if (Number.isFinite(seconds) && (above ? seconds > 0 : seconds >= 0)) return seconds;
 	throw new UsageError(
 		`${option} takes a number of seconds ${above ? 'above 0' : 'from 0'}, such as 1.5, not "${text}"`,
+	);
+}
+
+/**
+ * The GPU tiers that an option lists, joined by commas, such as `webgpu,webgl2`. Throws a
+ * UsageError for a tier it does not know, a repeated tier and an empty list.
+ *
+ * @param {string} option The option's name, such as `--gpu`.
+ * @param {string} text
+ * @returns {Tier[]}
+ */
+export function readTiers(option, text) {
+	const tiers = text.split(',');
+	if (
+		tiers.every((tier) => TIERS.includes(/** @type {Tier} */ (tier))) &&
+		new Set(tiers).size === tiers.length
+	)
+		return /** @type {Tier[]} */ (tiers);
+	throw new UsageError(
+		`${option} takes tiers from ${TIERS.join(', ')}, joined by commas, such as webgpu,webgl2, not "${text}"`,
 	);
 }
 

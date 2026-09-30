@@ -4,7 +4,7 @@
 // the GPU tier. It prints one line per check: whether it passed, the reason, and the image files.
 import { existsSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
-import { readOptions, UsageError } from './args.js';
+import { readOptions, readTiers } from './args.js';
 import { defaultEnvironment } from './browser.js';
 import { compareImages, percent, TOLERANCE } from './compare.js';
 import { heldImage, REPORTED_TIERS, TIERS } from './page.js';
@@ -74,17 +74,8 @@ set, it draws with Playwright's Chromium on SwiftShader, the software GPU of mac
  */
 export function parseTestArgs(args) {
 	const values = readOptions(args, OPTIONS);
-	const gpu = values.gpu?.split(',');
-	if (
-		gpu &&
-		(gpu.some((tier) => !TIERS.includes(/** @type {Tier} */ (tier))) ||
-			new Set(gpu).size !== gpu.length)
-	)
-		throw new UsageError(
-			`--gpu takes tiers from ${TIERS.join(', ')}, joined by commas, such as webgpu,webgl2, not "${values.gpu}"`,
-		);
 	return {
-		...(gpu && { gpu: /** @type {Tier[]} */ (gpu) }),
+		...(values.gpu !== undefined && { gpu: readTiers('--gpu', values.gpu) }),
 		updateReferences: values['update-references'],
 		help: values.help,
 	};
