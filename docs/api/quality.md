@@ -8,7 +8,7 @@ summary: "quality.preset, quality.set, frame budgets, quality events."
 
 # Quality API
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. `quality.set` takes `maxPixelRatio`, `maxAnisotropy` and `uploadBytesPerFrame`, and `quality.settings` also holds `antialias`: the other settings of the preset table are not built yet. Neither are `quality.setPreset`, the frame-budget governor and its budgets (`quality.setBudget` comes in null3D 0.2). Coding agents must not use them.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. `quality.set` takes `maxPixelRatio`, `maxAnisotropy` and `uploadBytesPerFrame`, and `quality.settings` also holds `antialias`. The other settings of the preset table are not built yet. Neither are `quality.setPreset`, the frame-budget governor and its budgets (`quality.setBudget` comes in null3D 0.2). Coding agents must not use them.
 
 `ctx.quality` gives a sketch the quality preset that the engine runs and its settings. The sketch can change the settings that change during play, and hear when they change. [Quality presets](../concepts/quality-presets.md) explains how the engine chooses the preset, and lists each preset's values.
 
