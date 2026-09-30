@@ -11,9 +11,10 @@
 // reference, so it saves its image as a candidate. Look at it with bun run images:review, and make it
 // the reference with bun run images:review --accept. Then do the same with CI=1 for the SwiftShader
 // reference: on the Mac, Playwright's Chromium draws CI's SwiftShader images byte for byte.
-import { PARITY_SCENES } from '../../bench/lib/parity.ts';
+import { BENCH_SCENES } from '../../bench/lib/parity.ts';
 import { MASK_IMAGE } from '../../bench/scenes/alpha-mask.ts';
 import { FOG_IMAGE } from '../../bench/scenes/fog.ts';
+import { MAPS_IMAGE } from '../../bench/scenes/material-maps.ts';
 import { ORTHO_IMAGE } from '../../bench/scenes/ortho-camera.ts';
 import { HOLD_TIME, PARITY_CANVAS } from '../../bench/scenes/spec.ts';
 import { DEMOS } from '../../examples/demos.ts';
@@ -262,6 +263,16 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		size: [480, 270],
 	},
+	// Each texture map of the standard material, made in code: base color, metal-rough, normal maps
+	// on quads with and without tangents, occlusion, emissive, a light map on the second texture
+	// coordinates, and base color maps through a texture coordinate transform, standard and unlit.
+	// The parity test draws the same scene with three.js.
+	{
+		name: 'standard-maps',
+		sketch: 'tests/pages/sketches/standard-maps-sketch.ts',
+		hold: 0,
+		size: [MAPS_IMAGE.width, MAPS_IMAGE.height],
+	},
 	// Masked materials under MSAA: cards cut by vertex alpha at three cutoffs, with the standard and
 	// the unlit material, crossing each other, and a batch of tilted cards. The parity test compares
 	// it with three.js's alphaTest.
@@ -328,10 +339,10 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 			hold: demo.hold,
 		}),
 	),
-	// The benchmark scenes' hold frames, which the parity command also compares with three.js.
-	// S2's trees and S1-cells' boxes each cover under 1% of their frame, so other devices may differ
-	// in fewer of their pixels.
-	...PARITY_SCENES.map(
+	// The benchmark scenes' hold frames, which the parity command also compares with three.js once
+	// null3D draws every feature of the scene. S2's trees and S1-cells' boxes each cover under 1% of
+	// their frame, so other devices may differ in fewer of their pixels.
+	...BENCH_SCENES.map(
 		(scene): ImageTest => ({
 			name: scene,
 			page: `bench/pages/null3d/${scene}.html`,

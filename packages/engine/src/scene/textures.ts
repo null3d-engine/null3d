@@ -8,7 +8,6 @@
 import { DEV } from '../errors/checks';
 import { EngineError } from '../errors/engine-error';
 import {
-	SHADING_UNLIT_MAP,
 	TEXTURE_FILTER_LINEAR,
 	TEXTURE_FILTER_NEAREST,
 	TEXTURE_FORMAT_HALF_FLOAT,
@@ -35,7 +34,6 @@ import type { QualitySettingName, QualitySettings } from '../quality/presets';
 import type { ImageSender } from '../shared/images';
 import { toHalfFloats } from './half-float';
 import type { CoreMemory } from './memory';
-import type { Material, MaterialOptions, Materials } from './resources';
 
 /**
  * What texture coordinates outside 0 to 1 read. `clamp` reads the texel at the edge, `repeat`
@@ -540,19 +538,4 @@ function checkName(
 			call,
 			`got the ${option} ${quote(value)}. Use ${Object.keys(codes).map(quote).join(' or ')}.`,
 		);
-}
-
-/**
- * A material that shows its color times a map, like three.js's `MeshBasicMaterial` with a `map`.
- * Meshes need texture coordinates to show the map.
- */
-export function unlitMapMaterial(
-	materials: Materials,
-	map: Texture,
-	options: MaterialOptions = {},
-): Material {
-	const call = 'unlitMapMaterial';
-	const material = materials.create(SHADING_UNLIT_MAP, options, call);
-	materials.setMap(material, map, call);
-	return material;
 }

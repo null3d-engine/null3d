@@ -75,6 +75,14 @@ The warm phone showed 30 frames per second, half the display's rate. In pipeline
 
 On the iPad the GPU sets the rate: it took about 28 ms per frame, longer than the CPU's 15.5 ms. [The presented rate, the completed rate and GPU time](#the-presented-rate-the-completed-rate-and-gpu-time) shows how to find the busier side.
 
+### Quality presets
+
+The engine picks a [quality preset](../concepts/quality-presets.md) for each device when it starts: Low on phones, Medium on tablets and High on computers. The GPU path can cap it lower. The preset sets the pixel ratio cap, the texture filtering cap and the texture upload budget.
+
+The pixel ratio cap often decides GPU time on a phone, because the GPU shades each device pixel. Low caps the ratio at 1.5, which fills a quarter of the pixels of a phone screen at ratio 3.
+
+Measure at the presets that your users get. `engine.mode.preset` names the preset that runs, and the `?preset=low` switch fixes one for a test.
+
 ## Write per-frame code that allocates nothing
 
 Garbage collection pauses the thread that allocated the memory. The render worker runs no sketch code, so your garbage cannot delay drawing. It can still delay your next frame. These habits keep per-frame code free of new objects:
@@ -101,7 +109,8 @@ The engine keeps each scene's draw tables and every object's matrix on the GPU, 
 | `setActiveCount` | The 4-byte draw entry of each row that starts or stops drawing |
 | `setLayers` | No rebuild: each view tests the new mask from the next frame |
 | `setCastShadows`, `setReceiveShadows` and `setRenderOrder` | Nothing |
-| Creating or destroying an object or an instance batch | A rebuild, and engine memory can grow in the next frame |
+| `material.set` | The material's row of 128 bytes. Changes to several materials in one frame upload every row from the first to the last |
+| Creating or destroying an instance batch, or an object of any kind, lights included | A rebuild, and engine memory can grow in the next frame |
 | `setMaterial`, `setMesh`, `setParent`, `setDynamic`, `setBounds` and `setFrustumCulled` | A rebuild |
 | `texture.update()` with an image of another size, and `texture.destroy()` | A rebuild |
 
@@ -111,8 +120,8 @@ These habits keep play free of rebuilds:
 - Hide and show objects with `setVisible` instead of destroying and creating them.
 - Pool short-lived things, such as bullets and particles, in an instance batch sized for the most rows it will ever need. Show fewer with `setActiveCount`, and keep the live rows at the front of the arrays.
 - For a look that changes often, such as a highlight, keep two objects and swap their visibility. Keep `setMaterial` and `setMesh` for rare changes.
-- Give bounds of your own with `setBounds` to few objects. On WebGPU, each object with bounds of its own takes a draw of its own. Objects that share a mesh and a material share one draw.
-- Every row of a batch counts toward the scene's limit of objects and instance rows, active or not. On WebGPU every device draws 2,097,152. On WebGL2 the limit follows the largest texture the device allows. It is 1,048,576 at 2,048 pixels, the least that WebGL2 allows. For the device the page runs on, `engine.capabilities.maxInstances` gives the limit (E1501). Engine memory holds about 5 million rows (E1109). So size each batch for the rows it uses.
+- Give bounds of your own with `setBounds` to few objects, and set them once: each call rebuilds the draw tables. On WebGPU, each object with bounds of its own takes a draw of its own. Objects that share a mesh and a material share one draw.
+- Every row of a batch counts toward the scene's limit of objects and instance rows, active or not. On WebGPU every device draws 2,097,152. On WebGL2 the limit follows the largest texture the device allows. It is 1,048,576 at 2,048 pixels, the least that WebGL2 allows. For the device the page runs on, `engine.capabilities.maxInstances` gives the limit (E1501). The scene's 16,384 object slots count toward it too, so batches hold at most the limit less 16,384 rows. Engine memory holds about 5 million rows (E1109). So size each batch for the rows it uses.
 - Check with `measure`. A `rebuilds` count above zero during play points to one of the calls in the lower rows of the table.
 
 ## How the engine batches, builds pipelines and times frames
@@ -121,10 +130,10 @@ Performance advice written for other engines often assumes things that do not ho
 
 | Question | null3D's answer |
 | --- | --- |
-| What makes the GPU build a pipeline? | A shading model, lit or unlit, and the vertex format of the meshes it draws, with the canvas's color format, the depth format and the sample count. A material never does: materials are rows in one shared table, so a thousand lit materials share one lit pipeline for each vertex format. |
+| What makes the GPU build a pipeline? | The material's kind, standard or unlit, and the [options that it fixes](../api/materials.md#options-fixed-at-creation) when you create it, apart from `flatShading` and `fog`. The mesh's vertex format, and the pass's color format, depth format and sample count. Other material values never do: materials are rows in one shared table. So a thousand standard materials in different colors share one pipeline for each vertex format. |
 | When are pipelines built? | In the background, from the first frame that draws a shading model with a vertex format, and again after the browser replaces the GPU. The first frame waits for its pipelines, and so does the first frame after `quality.setPreset`. After that, an object whose pipeline is still building draws nothing until it is built. `scene.warmUp()` resolves once every pipeline is built. `measure` counts builds in `pipelines`, and the draws that a building pipeline kept from drawing in `skippedDraws`. |
 | What does the engine batch by itself? | Every object and instance row with the same shading model, mesh and material goes into one bucket, which one indirect draw call draws. A mesh over 65,535 vertices takes one draw per part. Separate objects from `createMesh` batch the same way as the rows of an instance batch. |
-| Which passes walk the scene? | On WebGPU, two: a culling pass on the GPU, which tests every object and row against the view, and the main pass, which replays a draw bundle. The engine records the bundle again only when the scene's structure changes. On WebGL2 the job workers cull on the CPU, and the main pass draws the objects in view. |
+| Which passes walk the scene? | On WebGPU, two: a culling pass on the GPU, which tests each object and row against the view, and the main pass, which replays a draw bundle. The engine records the bundle again only when the scene's structure changes. On WebGL2 the job workers cull on the CPU, and the main pass draws the objects in view. On both paths, culling first skips the still objects of grid cells out of view: [Large worlds](#large-worlds). |
 | Does the engine know when the GPU finished a frame? | Yes, for every frame. It listens to the WebGPU queue, or checks a WebGL2 fence, and blocks no thread. `measure` reports `completedFps` and `gpuLatencyMs`. Sketch code never waits for the GPU. |
 | How many frames can wait on the GPU? | Two. While two frames are unfinished, the thread that draws takes no new frame, and the sketch worker waits for it. Without that limit, browsers let from 4 to more than 80 frames queue when the GPU falls behind, and each adds a frame of input lag. |
 | What must stay the same for the engine to reuse its work? | The scene's structure. A static object costs nothing until a setter changes it. The calls that rebuild the draw tables are listed in [Objects during play](#objects-during-play). |
@@ -132,7 +141,7 @@ Performance advice written for other engines often assumes things that do not ho
 So some common advice does not apply:
 
 - **Merge meshes to cut draw calls.** Objects that share a mesh and a material already share one draw. Merging different small static meshes still cuts the number of buckets.
-- **Share materials so objects share a shader.** Every material already shares its pipeline for each vertex format. Share materials anyway, because each mesh and material pair is its own bucket and draw.
+- **Share materials so objects share a shader.** Materials of one kind with the same fixed options already share a pipeline for each vertex format. Share materials anyway, because each mesh and material pair is its own bucket and draw.
 - **Compile shaders before the first frame.** The first frame waits for its pipelines. Wait for `engine.firstFrame` before you remove the first loading screen. A later loading stage does need a warm-up, as [Loading screens and warm-up](loading-screens.md) shows.
 - **Turn off matrix updates for objects that do not move.** Objects are static by default, and a static object costs nothing per frame.
 - **Mark a changed object for update.** Setters mark the change themselves.
@@ -148,6 +157,19 @@ On WebGL2 the job workers cull, so a frame whose view changed also uploads its l
 Mark objects and batches static when they rarely move, and call `markDirty` for the rows that you change. See [Static and dynamic objects](../concepts/static-dynamic.md).
 
 The render worker picks how each upload travels, so you do not need to. Uploads from 64 KiB up to 4 MiB have two routes: the direct write call, and staging buffers that the browser keeps mapped. The render worker times both on the device and uses the faster one. In Chrome the staging buffers are 3 to 6 times faster. In Safari the direct call is faster at every size.
+
+Textures upload in bands of rows, spread over frames. Each frame sends no more texel bytes than the preset's upload budget, from 2 MiB on Low to 16 MiB on Ultra. So loading many textures does not make one frame slow, but a large texture takes several frames to arrive. [Textures](../api/textures.md) covers the budget, and [Phones and tablets](phones.md) covers texture memory.
+
+## Large worlds
+
+The engine divides space into [grid cells](../concepts/culling.md#grid-cells) 1,024 m wide. When a scene spreads over several cells, each view first tests each cell against its frustum. It then skips every still object of the cells out of view, and tests only the rest one by one. A still object is a static object whose parents are all static, or a row of a static instance batch.
+
+The S1-cells benchmark spreads S1-static's 100,000 boxes over 8 x 8 cells, 8 km on each side. Its camera flies low over them, so a few cells are in view. In Chrome on a MacBook Pro:
+
+- On WebGL2, cells cut the busiest thread's CPU time from 0.21 ms to 0.07 ms per frame. The list of visible objects fell from 1,517 entries to 79.
+- On WebGPU the GPU culls, so the CPU time stayed at 0.10 ms. The culling pass took 0.025 ms of GPU time with cells, and 0.039 ms without them.
+
+So in a large world, keep the objects that never move static, under static parents. A static object under a dynamic parent moves with it, so every view tests it. The `?cells=off` switch culls without cells, to compare.
 
 ## Measure
 
@@ -172,7 +194,9 @@ The render worker picks how each upload travels, so you do not need to. Uploads 
 | `pipelines` | GPU pipelines built, which can stall the frame they happen in |
 | `skippedDraws` | Draws skipped because their pipeline was still building, so their objects were missing from those frames |
 | `memory` | The engine's WebAssembly memory and the JavaScript heap |
-| `load` | The start's times in milliseconds: the GPU probe, the core's download and compile, `createEngine`, and the first frame's submit and finish |
+| `load` | The start's times in milliseconds: the GPU probe, the core's download and compile, `createEngine`, and the first frame's submit and finish. It also gives the pipelines that the first frame built, and how long they took |
+| `downloadBytes` | The size of the engine core's WebAssembly file as the page downloaded it |
+| `lostRecords` | Frames that the figures miss, because the page read their records too late. It is 0 in a clean run |
 
 The sketch worker's steps are `update`, `commands`, `transforms`, `batches`, `cull` and `record`, and the render worker's is `replay`. A thread's time less its `update` step is the engine's own work on that thread.
 
@@ -202,7 +226,7 @@ The engine checks a WebGL2 fence at its next frame callback, so there `gpuLatenc
 - Compare runs at the same display refresh rate. `refreshHz` records it with each measurement. Runs at 120 and at 144 frames per second differed by about 10% for both engines.
 - To compare displays with different refresh rates, add `?fps=60` to the page's address. The engine then draws 60 frames per second on any display of 60 Hz or more.
 - The engine lets at most two frames wait on the GPU. To see what a browser does without that limit, add `?queue=off` to the page's address. `?queue=3` lets three frames wait.
-- Chrome rounds GPU times to 65.5 microseconds unless you start it with `--enable-webgpu-developer-features`.
+- Chrome rounds GPU times to 65.5 microseconds unless you start it with `--enable-webgpu-developer-features`. `gpuStepMs` gives the step when the browser rounds.
 - In Safari, a worker's frame callbacks run from a timer of about 15 ms, not from the display. The engine holds its frames to the display's rate, which the page measures, but `refreshHz` there reports the timer's rate.
 - Compare engines in the same browser, one run after another.
 
