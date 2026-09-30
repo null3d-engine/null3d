@@ -24,9 +24,8 @@ const RESOURCES: Record<number, string> = {
 /** What the renderer ran out of, by the first detail of E1501. */
 const RENDER_LIMITS: Record<number, string> = {
 	1: 'the draw list is full',
-	2: 'the mesh buffers are full',
 	4: 'the material table is full',
-	7: 'the mesh has more than 65536 vertices, or indices past its vertices',
+	7: 'the mesh does not fit the mesh buffers',
 	8: "the frame's uploads do not fit the room the renderer set aside for them",
 };
 const TOO_MANY_SOURCES = 3;

@@ -56,6 +56,12 @@ The shader compiler is the shader crate built as a WebAssembly module. Build too
 - The shader composer rewrites each file before naga reads it, and imported names get longer. Its own error reports count columns in that copy, so the build maps each place back to the original file.
 - `bun run test:shader-compiler` runs the shader crate's build tests with `NULL3D_SHADER_COMPILER` set. Each build then runs again through the module in Bun, and both results must match. Plain `cargo test` skips that step, so a module built from older code cannot fail it.
 
+## Meshes on both GPU paths
+
+- WebGL2 always reads the largest value of the index type as a primitive restart, because WebGL 2.0 keeps `PRIMITIVE_RESTART_FIXED_INDEX` on. A triangle that uses 16-bit index 65,535 draws nothing. Pages and mesh parts therefore hold at most 65,535 vertices on both paths.
+- Each vertex attribute has a fixed shader location, and a pipeline reads only the attributes that its entry point declares. WebGPU needs a pipeline for each vertex format, since the format sets the stride and the offsets. On WebGL2 the vertex array holds that layout, so the pipelines of one template share one program.
+- The culling shader counts each visible instance in every draw of its bucket, one draw per part of the bucket's mesh. The parts' draws then read the same slice of instances.
+
 ## Depth on WebGL2
 
 - Draw lists and shaders keep WebGPU's reversed depth. Each GLSL vertex shader maps its clip depth through one uniform, and the WebGL2 backend sets it once per program for its depth mode (`gpu/webgl2/depth.ts`). One set of GLSL programs then serves every mode.

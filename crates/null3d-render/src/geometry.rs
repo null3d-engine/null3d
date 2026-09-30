@@ -1,21 +1,31 @@
 //! Geometry generators with three.js's parameters and vertex order, so a scene built in both
-//! engines draws the same triangles. Vertices are interleaved position and normal (6 floats).
+//! engines draws the same triangles. They make vertices of the base format: a position and a
+//! normal (6 floats).
 
-/// Floats per vertex: position (3) and normal (3), as the mesh shader reads them.
-pub const VERTEX_FLOATS: usize = (null3d_gpu::drawlist::sizes::VERTEX_STRIDE / 4) as usize;
+use null3d_gpu::drawlist::vertex;
 
-/// Generated mesh data: interleaved vertices and triangle indices.
+/// Mesh data: vertices interleaved in the layout of their vertex format, and triangle indices.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Geometry {
+    /// The vertex format: the optional attributes (`vertex::*` bits) each vertex has.
+    pub format: u32,
     pub vertices: Vec<f32>,
     pub indices: Vec<u32>,
 }
 
 impl Geometry {
+    /// Floats per vertex of the geometry's format.
+    pub fn vertex_floats(&self) -> usize {
+        vertex::floats(self.format) as usize
+    }
+
     pub fn vertex_count(&self) -> usize {
-        self.vertices.len() / VERTEX_FLOATS
+        self.vertices.len() / self.vertex_floats()
     }
 }
+
+/// Floats per vertex of the base format, which the generators make.
+const BASE_FLOATS: usize = vertex::floats(0) as usize;
 
 /// A box like three.js's `BoxGeometry(width, height, depth, widthSegments, heightSegments,
 /// depthSegments)`: six planes built in the same order, with the same winding.
@@ -75,7 +85,7 @@ fn build_plane(
     (width, height, depth): (f32, f32, f32),
     (grid_x, grid_y): (u32, u32),
 ) {
-    let first = g.vertex_count() as u32;
+    let first = (g.vertices.len() / BASE_FLOATS) as u32;
     let segment_width = width / grid_x as f32;
     let segment_height = height / grid_y as f32;
     for iy in 0..=grid_y {
@@ -165,7 +175,7 @@ mod tests {
         let g = box_geometry(0.6, 0.6, 0.6, [1, 1, 1]);
         assert_eq!((g.vertex_count(), g.indices.len()), (24, 36));
         // The first face is +x: every vertex sits at x = half the width, with normal +x.
-        for vertex in g.vertices.chunks(VERTEX_FLOATS).take(4) {
+        for vertex in g.vertices.chunks(BASE_FLOATS).take(4) {
             assert!((vertex[0] - 0.3).abs() < 1e-6);
             assert_eq!(&vertex[3..6], &[1.0, 0.0, 0.0]);
         }
@@ -179,7 +189,7 @@ mod tests {
         let g = box_geometry(1.0, 2.0, 3.0, [2, 3, 4]);
         for tri in g.indices.chunks(3) {
             let p = |i: u32| {
-                let v = &g.vertices[i as usize * VERTEX_FLOATS..];
+                let v = &g.vertices[i as usize * BASE_FLOATS..];
                 [v[0], v[1], v[2]]
             };
             let (a, b, c) = (p(tri[0]), p(tri[1]), p(tri[2]));
@@ -208,7 +218,7 @@ mod tests {
         assert_eq!(g.vertex_count(), 33 * 17);
         // Each band has two triangles per segment, except one at each pole.
         assert_eq!(g.indices.len(), (32 * 16 * 2 - 32 * 2) * 3);
-        for vertex in g.vertices.chunks(VERTEX_FLOATS) {
+        for vertex in g.vertices.chunks(BASE_FLOATS) {
             let r = (vertex[0] * vertex[0] + vertex[1] * vertex[1] + vertex[2] * vertex[2]).sqrt();
             assert!((r - 1.0).abs() < 1e-5);
         }

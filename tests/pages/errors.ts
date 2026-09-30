@@ -1,7 +1,7 @@
 // Reports the engine errors that reach a page and a sketch, in the thread mode that the URL's
 // switches ask for. Two starts fail: one with a module that exports no sketch, and one with a sketch
-// whose setup throws an engine error. A third start runs a sketch that catches two errors from the
-// scene API and one that it makes itself, and posts them. The page then stops that engine and
+// whose setup throws an engine error. A third start runs a sketch that catches four errors from the
+// engine's API and one that it makes itself, and posts them. The page then stops that engine and
 // starts it again, which must draw. Each start takes a fresh canvas, as a canvas passes to the
 // engine only once.
 import { createEngine } from '@null3d/engine';
