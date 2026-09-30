@@ -69,9 +69,15 @@ export function isExemptCommit(message: string): boolean {
 	return /^(Merge |Revert |fixup!|squash!|amend!)/.test(message);
 }
 
+/** Every value of the trailer in the message, in order, with the key matched in any case. */
+export function findAckValues(message: string, trailer: string): string[] {
+	return [...message.matchAll(new RegExp(`^${trailer}:[ \\t]*(.*)$`, 'gim'))].map((match) =>
+		(match[1] ?? '').trim(),
+	);
+}
+
 export function findAckValue(message: string, trailer: string): string | null {
-	const match = message.match(new RegExp(`^${trailer}:[ \\t]*(.*)$`, 'im'));
-	return match?.[1] !== undefined ? match[1].trim() : null;
+	return findAckValues(message, trailer)[0] ?? null;
 }
 
 /** True when the value is a rubber stamp rather than the record of a real pass. */

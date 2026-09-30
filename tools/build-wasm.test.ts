@@ -1,5 +1,30 @@
 import { describe, expect, it } from 'bun:test';
-import { lockedVersion, memoryImportLimits, releaseTarget } from './build-wasm';
+import { lockedVersion, memoryImportLimits, parseOptions, releaseTarget } from './build-wasm';
+
+describe('parseOptions', () => {
+	it('reads the size check, its base, the base build and the names build', () => {
+		expect(parseOptions([])).toEqual({ checkSize: false, sizesOnly: false, keepNames: false });
+		expect(parseOptions(['--check-size', '--base', 'origin/main'])).toEqual({
+			checkSize: true,
+			base: 'origin/main',
+			sizesOnly: false,
+			keepNames: false,
+		});
+		expect(parseOptions(['--sizes-only']).sizesOnly).toBe(true);
+		expect(parseOptions(['--names']).keepNames).toBe(true);
+	});
+
+	it('rejects unknown options, a base without a commit or a check, and builds that exclude each other', () => {
+		expect(() => parseOptions(['--update-size'])).toThrow('unknown option --update-size');
+		expect(() => parseOptions(['--check-size', '--base'])).toThrow('--base needs a commit');
+		expect(() => parseOptions(['--base', 'main'])).toThrow('--base names the commit');
+		expect(() => parseOptions(['--check-size', '--names'])).toThrow('cannot measure sizes');
+		expect(() => parseOptions(['--sizes-only', '--names'])).toThrow('cannot measure sizes');
+		expect(() => parseOptions(['--check-size', '--sizes-only'])).toThrow(
+			'cannot also run the check',
+		);
+	});
+});
 
 describe('lockedVersion', () => {
 	it('reads a package version from Cargo.lock', () => {
