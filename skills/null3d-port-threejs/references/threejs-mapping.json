@@ -32,8 +32,8 @@
       "three": "renderer.setPixelRatio(devicePixelRatio)",
       "status": "changed",
       "since": "0.1",
-      "target": "createEngine({ maxPixelRatio }) and the quality presets",
-      "notes": "Presets cap the pixel ratio (1.5 on Low, 2 on Medium and High). Dynamic resolution then adjusts the render scale.",
+      "target": "createEngine({ maxPixelRatio }) and the quality presets; quality.set({ maxPixelRatio }) in the sketch",
+      "notes": "The engine sizes the canvas to its CSS size times the screen's pixel ratio, up to the quality preset's cap. The option replaces the cap, and quality.set changes it during play.",
       "docs": "concepts/quality-presets",
       "detect": "\\.setPixelRatio\\s*\\("
     },
@@ -1286,8 +1286,8 @@
       "three": "OrbitControls / MapControls / TrackballControls / ArcballControls",
       "status": "changed",
       "since": "0.1",
-      "target": "createOrbitControls(ctx, camera, { target, enableDamping, dampingFactor, minDistance, maxDistance, maxPolarAngle }) from @null3d/controls; controls.update(dt) in onUpdate",
-      "notes": "Option names match OrbitControls. Trackball and Arcball come after 1.0.",
+      "target": "createOrbitControls(ctx, camera, { target, enableDamping, dampingFactor, minDistance, maxDistance, maxPolarAngle }) or createMapControls(ctx, camera) from @null3d/controls; controls.update(dt) in onUpdate",
+      "notes": "Option names and defaults match OrbitControls and MapControls, and mouseButtons and touches take strings such as 'rotate' and 'dolly-pan'. There is no DOM element, dispose or change event: update(dt) returns true when the camera moved. For keys, call controls.pan or controls.rotateLeft with the input the sketch reads. An orthographic camera zooms by its view height, and minZoom and maxZoom count zoom as three.js does from the height when the controls start. zoomToCursor, keys, listenToKeyEvents, saveState and reset are not built yet. Trackball and Arcball come after 1.0.",
       "docs": "api/controls",
       "detect": "\\b(Orbit|Map|Trackball|Arcball)Controls\\b"
     },
@@ -1584,7 +1584,7 @@
       "status": "unsupported",
       "since": null,
       "target": "Web Audio on the page",
-      "notes": "The sketch sends positions with page.post: every frame for moving sounds, or on events only.",
+      "notes": "The sketch writes the positions of moving sounds into a shared array, which it sends to the page once. It sends one message with page.post for each sound event.",
       "docs": "guides/audio",
       "detect": "\\b(PositionalAudio|AudioListener|AudioLoader|AudioAnalyser)\\b"
     },

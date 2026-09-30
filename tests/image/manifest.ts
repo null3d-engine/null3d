@@ -243,6 +243,9 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 		hold: 0,
 		size: [480, 270],
 	},
+	// Orbit controls after the controls test's drags, made through the controls' own calls. The
+	// controls test must draw this image after it makes the drags with Playwright.
+	{ name: 'controls', sketch: 'tests/pages/sketches/controls-sketch.ts?moved', hold: 0 },
 	// Two surfaces 1 cm apart at each distance from 1 m to 10 km, in each GPU path's own depth mode.
 	// The page paints each pixel where the farther surface shows through as the nearer one, and
 	// publishes their count. The engine must draw the depth it chose, no mode may fight up to 40 m,
