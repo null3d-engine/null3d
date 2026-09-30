@@ -3,14 +3,16 @@ id: shaders/wgsl-rules
 title: WGSL rules for portable shaders
 status: experimental
 since: "0.1"
-summary: "The three shared language features; limits budget; flat interpolation; what the build rejects."
+summary: "The three shared language features; optional features; flat interpolation; limits budget; rules the build cannot check."
 ---
 
 # WGSL rules for portable shaders
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Custom shaders in sketch code are not built yet, so coding agents must not write them.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. The engine cannot draw with custom shaders yet, because `materials.shader` is not built, so coding agents must not write them.
 
-One WGSL shader runs on every null3D path: WebGPU, WebGPU's compatibility mode and WebGL2. For WebGL2, null3D's shader build translates it to GLSL ES 3.00. A shader can therefore use only what every path and every target browser supports. The build checks each shader against the rules on this page. When a shader breaks a rule, the build fails and gives the file, line and column, with a fix.
+One WGSL shader runs on every null3D path: WebGPU, WebGPU's compatibility mode and WebGL2. For WebGL2, null3D's shader build translates it to GLSL ES 3.00. A shader can therefore use only what every path and every target browser supports.
+
+The build checks the engine's own shaders against most rules on this page. It checks the WGSL that [the Vite plugin compiles](../guides/custom-shaders.md) from your code too. When a shader breaks one of these rules, the build fails and gives the file, line and column, with a fix. [Rules the build cannot check](#rules-the-build-cannot-check) lists the others, so test those on each path.
 
 ## Language features
 
@@ -38,16 +40,29 @@ A shader can use a feature without a `requires` directive, so the build looks fo
 
 A `requires` directive that names any feature outside the three also fails the build.
 
-## Other code the build rejects
+## Optional features
 
-- The build allows only what every WebGPU device supports. It rejects code that needs an optional feature, such as the `f16` type or `enable subgroups;`.
-- For WebGL2, the build rejects code that GLSL ES 3.00 cannot express, such as a storage buffer. The message names the pipeline and the shader stage.
+The build allows only what every WebGPU device supports. Each WGSL extension needs an optional WebGPU feature that some devices lack. The build therefore rejects an `enable` directive for any extension, such as `f16`, `subgroups`, `clip_distances`, `dual_source_blending` or `primitive_index`.
+
+16-bit floats need the optional feature `shader-f16`. The build therefore rejects the `f16` type, the vector and matrix types that end in `h`, such as `vec3h`, and values such as `1.0h`. Write the math in `f32` types and values, such as `vec3f` and `1.0`.
+
+## Code that WebGL2 cannot run
+
+For WebGL2, the build rejects code that GLSL ES 3.00 cannot express, such as a storage buffer. The message names the pipeline and the shader stage.
 
 ## Flat interpolation
 
 Write flat interpolation as `@interpolate(flat, either)`, so that any vertex of a triangle can give the value. `@interpolate(flat)` means `flat, first`: the first vertex of each triangle gives the value. WebGL2 and WebGPU's compatibility mode cannot provide that, so the build rejects `@interpolate(flat)` and `@interpolate(flat, first)`.
 
-## Limits
+## Directives
+
+WGSL directives, such as `requires` and `diagnostic`, go on the first lines of a file, above every `#import` line. The build reads directives only from the top of a file, so it rejects a directive below other code.
+
+## Rules the build cannot check
+
+The build does not check these rules, so test your shaders on each path. [Choosing a tier for testing](../concepts/backends.md#choosing-a-tier-for-testing) shows how to force each one.
+
+### Limits
 
 A shader stays within WebGPU's default limits, and within the lower limits of compatibility mode. [The portable budget](../concepts/backends.md#the-portable-budget) gives the engine's limits for bind groups, buffers and textures. The budget for shaders is:
 
@@ -63,14 +78,37 @@ A shader stays within WebGPU's default limits, and within the lower limits of co
 | Compute workgroup size | 128 invocations in all: at most 128 in x and in y, and 64 in z |
 | Workgroup memory | 16 KB |
 
-The build does not check these limits, so test on each path. [Choosing a tier for testing](../concepts/backends.md#choosing-a-tier-for-testing) shows how to force each one.
+### 32-bit float textures
 
-## Directives
+Read 32-bit float textures, such as `r32float` and `rgba32float`, without filtering: use `textureLoad`. A filtering sampler on such a texture needs the optional WebGPU feature `float32-filterable`, and some devices lack it, such as iPads. For float data that you filter, use a 16-bit float texture. A WGSL texture type does not say how many bits each texel has, so the build cannot check this rule.
 
-WGSL directives, such as `enable`, `requires` and `diagnostic`, go on the first lines of a file, above every `#import` line. The build reads directives only from the top of a file, so it rejects a directive below other code.
+### Sampling in branches
+
+`textureSample` chooses a mip level from the texture coordinates of neighboring pixels. It must therefore run where every pixel of a triangle takes the same path. The same holds for `textureSampleBias`, `textureSampleCompare`, and derivatives such as `dpdx` and `fwidth`.
+
+In a branch that depends on a value that differs between pixels, sample before the branch, or use `textureSampleLevel` with a mip level. Chrome rejects a shader that breaks this rule when the engine creates it on WebGPU. On WebGL2, the sample gives an undefined value there. The shader translator that the build uses does not check this rule.
+
+```wgsl
+// Chrome rejects this: the branch depends on the pixel's position.
+if in.uv.x > 0.5 {
+    color = textureSample(pattern, patternSampler, in.uv);
+}
+
+// This runs everywhere.
+let sampled = textureSample(pattern, patternSampler, in.uv);
+if in.uv.x > 0.5 {
+    color = sampled;
+}
+```
+
+### The remainder operator
+
+WGSL's `%` on floats keeps the sign of the left value, as in C: `-1.5 % 1.0` is `-0.5`. GLSL's `mod` gives `0.5` there. When you port GLSL, write `mod(x, y)` as `x - y * floor(x / y)`. The build keeps WGSL's meaning in the GLSL that it writes for WebGL2.
+
+On integers, give `%` values of zero or more, or use `u32`. GLSL ES 3.00 leaves the result undefined when a value is negative, so WebGL2 can give another result than WebGPU.
 
 ## Related pages
 
 - [GPU tiers and backends](../concepts/backends.md): the three paths and the capability flags.
 - [Shader library and imports](library.md): the engine's modules that a shader can import.
-- [Custom shaders](../guides/custom-shaders.md): surface functions and full shaders.
+- [Custom shaders](../guides/custom-shaders.md): WGSL in sketch code, and how the build reports its errors.

@@ -9,6 +9,9 @@
 // instance's entry in the bucket table holds its cell index above its bucket, and the thread moves
 // the instance by its cell's offset from the camera before it tests it. The compacted instance
 // buffer then holds matrices relative to the camera, which the vertex shader draws as they are.
+//
+// Each instance also has a layer mask, and the view one of its own. The thread skips an instance
+// whose mask shares no bit with the view's.
 
 /// An entry holds its bucket in the bits below CELL_SHIFT, and the instance's cell index above.
 const CELL_SHIFT: u32 = 23u;
@@ -18,7 +21,8 @@ const MAX_CELLS: u32 = 512u;
 struct CullParams {
     planes: array<vec4f, 6>,
     instance_count: u32,
-    pad0: u32,
+    /// The view's layer mask.
+    layers: u32,
     pad1: u32,
     pad2: u32,
     /// The offset from the camera to the center of each grid cell, by cell index.
@@ -44,6 +48,7 @@ struct Bucket {
 @group(0) @binding(3) var<storage, read> buckets: array<Bucket>;
 @group(0) @binding(4) var<storage, read_write> visible: array<vec4f>;
 @group(0) @binding(5) var<storage, read_write> indirect: array<atomic<u32>>;
+@group(0) @binding(6) var<storage, read> instance_layers: array<u32>;
 
 /// The bucket of an instance that draws nowhere.
 const HIDDEN: u32 = 0xffffffffu;
@@ -58,7 +63,7 @@ fn main(@builtin(global_invocation_id) id: vec3u) {
         return;
     }
     let entry = instance_buckets[i];
-    if entry == HIDDEN {
+    if entry == HIDDEN || (instance_layers[i] & params.layers) == 0u {
         return;
     }
     let b = entry & ((1u << CELL_SHIFT) - 1u);

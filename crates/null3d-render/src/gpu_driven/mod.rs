@@ -36,6 +36,14 @@
 //! the camera. When only the cameras move, static matrices stay on the GPU and only the offsets
 //! upload.
 //!
+//! # Layers
+//!
+//! A layer table beside the bucket table holds each source's layer mask (see
+//! [`null3d_core::layers`]): a scene object's own, or its batch's for every row of a batch. Each
+//! view's culling parameters hold the view's mask, and the culling shader skips a source whose
+//! mask shares no bit with it. A new mask rewrites the source's entry in the layer table, or a
+//! batch's rows, with no rebuild, as showing or hiding an object does.
+//!
 //! # Views and passes
 //!
 //! Every view (see [`crate::view`]) culls the same sources and bucket tables, into buffers of its
@@ -88,9 +96,9 @@ pub const fn max_sources(binding_bytes: u32) -> u32 {
     }
 }
 
-/// Engine memory the builder keeps for each source: its bucket table entry, and room for that
-/// entry in both frames' upload arenas.
-pub const BYTES_PER_SOURCE: u32 = 12;
+/// Engine memory the builder keeps for each source: its entries in the bucket table and the layer
+/// table, and room for both in both frames' upload arenas.
+pub const BYTES_PER_SOURCE: u32 = 24;
 
 /// The most sources on every WebGPU device: [`max_sources`] at WebGPU's default storage binding
 /// limit. The WebGL2 path has its own limit, which follows the device's largest texture.
@@ -109,9 +117,10 @@ mod ids {
     pub const MATRICES: u32 = 2;
     pub const INSTANCE_BUCKETS: u32 = 3;
     pub const BUCKETS: u32 = 4;
+    pub const SOURCE_LAYERS: u32 = 5;
     /// Each view's buffers: its frame uniform, culling parameters, compacted instances and
     /// indirect draws, four ids from `VIEW_BUFFERS + 4 * view`.
-    const VIEW_BUFFERS: u32 = 5;
+    const VIEW_BUFFERS: u32 = 6;
 
     pub const fn frame(view: ViewId) -> u32 {
         VIEW_BUFFERS + 4 * view.index() as u32

@@ -402,6 +402,14 @@ impl SceneSettings {
         self.views[ViewId::CAMERA.index()].set_camera(camera, lens);
     }
 
+    /// Sets the layers of the objects a view draws. A change needs no rebuild of the draw
+    /// tables: culling tests the view's mask every frame.
+    pub fn set_layers(&mut self, view: ViewId, mask: u32) {
+        if let Some(view) = self.views.get_mut(view.index()) {
+            view.set_layers(mask);
+        }
+    }
+
     /// Adds a view that draws the scene into color and depth targets of its own, or returns
     /// `None` when the builder already draws [`MAX_VIEWS`] views.
     pub fn add_view(&mut self, view: View) -> Option<ViewId> {
@@ -478,10 +486,8 @@ impl SceneSettings {
         canvas: (u32, u32),
     ) -> Option<ViewFrame> {
         let aspect = canvas.0 as f32 / canvas.1.max(1) as f32;
-        let (view_proj, camera) = self
-            .views
-            .get(view.index())?
-            .transform(scene, parity, aspect)?;
+        let view = self.views.get(view.index())?;
+        let (view_proj, camera) = view.transform(scene, parity, aspect)?;
         let uniform = FrameUniform {
             view_proj,
             camera_position: [0.0, 0.0, 0.0, 1.0],
@@ -489,7 +495,7 @@ impl SceneSettings {
             sun_color: self.lighting.sun_color,
             ambient: self.lighting.ambient,
         };
-        Some(ViewFrame::new(uniform, camera))
+        Some(ViewFrame::new(uniform, camera, view.layers()))
     }
 }
 

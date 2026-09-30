@@ -2,16 +2,26 @@ import { describe, expect, it } from 'bun:test';
 import { lockedVersion, memoryImportLimits, parseOptions, releaseTarget } from './build-wasm';
 
 describe('parseOptions', () => {
-	it('reads the size check, its base, the base build and the names build', () => {
-		expect(parseOptions([])).toEqual({ checkSize: false, sizesOnly: false, keepNames: false });
+	it('reads the size check, its base, the base build, the names build and the core build', () => {
+		expect(parseOptions([])).toEqual({
+			checkSize: false,
+			sizesOnly: false,
+			keepNames: false,
+			coreOnly: false,
+		});
 		expect(parseOptions(['--check-size', '--base', 'origin/main'])).toEqual({
 			checkSize: true,
 			base: 'origin/main',
 			sizesOnly: false,
 			keepNames: false,
+			coreOnly: false,
 		});
 		expect(parseOptions(['--sizes-only']).sizesOnly).toBe(true);
 		expect(parseOptions(['--names']).keepNames).toBe(true);
+		expect(parseOptions(['--core-only', '--names'])).toMatchObject({
+			coreOnly: true,
+			keepNames: true,
+		});
 	});
 
 	it('rejects unknown options, a base without a commit or a check, and builds that exclude each other', () => {
@@ -23,6 +33,10 @@ describe('parseOptions', () => {
 		expect(() => parseOptions(['--check-size', '--sizes-only'])).toThrow(
 			'cannot also run the check',
 		);
+		for (const other of ['--check-size', '--sizes-only'])
+			expect(() => parseOptions(['--core-only', other])).toThrow(
+				'--core-only makes no size report',
+			);
 	});
 });
 
