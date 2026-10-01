@@ -345,14 +345,22 @@ export class Textures {
 			call,
 			levels,
 		);
+		const address = this.texelAddress(texture, width, height, call);
+		new Uint8Array(this.core.memory.buffer, address, texels.length).set(texels);
+		return texture;
+	}
+
+	/**
+	 * Where the texture's new texels go in engine memory. The core makes room for them there, which
+	 * can grow the memory.
+	 */
+	private texelAddress(texture: Texture, width: number, height: number, call: string): number {
 		const { core } = this;
-		const address = core.check(
+		return core.checkGrowth(
 			core.glue.setTextureData(texture.handle, width, height),
 			call,
 			'a texture',
 		);
-		new Uint8Array(core.memory.buffer, address, texels.length).set(texels);
-		return texture;
 	}
 
 	/**
@@ -510,13 +518,8 @@ export class Textures {
 					`got ${data.length} numbers for ${width} x ${height} x ${depth} texels, not ${values}: give four per texel.`,
 				);
 		}
-		const { core } = this;
-		const address = core.checkGrowth(
-			core.glue.setTextureData(texture.handle, width, height),
-			call,
-			'a texture',
-		);
-		const { buffer } = core.memory;
+		const address = this.texelAddress(texture, width, height, call);
+		const { buffer } = this.core.memory;
 		if (data instanceof Float32Array) toHalfFloats(data, new Uint16Array(buffer, address, values));
 		else if (data instanceof Uint16Array) new Uint16Array(buffer, address, values).set(data);
 		else new Uint8Array(buffer, address, values).set(data);
