@@ -105,7 +105,11 @@ jobs:
 
       - name: Install the pinned Rust toolchain
         run: rustup toolchain install
+      # The cache's own key leaves out the build profiles in the workspace's Cargo.toml, so a
+      # profile change would keep restoring a cache built with the old profile.
       - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ hashFiles('Cargo.toml') }}
       - uses: actions/cache@v4
         with:
           path: ~/.bun/install/cache
