@@ -10,10 +10,12 @@
 // Math.random to it, steps the sketch to the held time in fixed steps after the setup, and publishes
 // the last frame alone. Hold mode reads no input, so the held frame never depends on it. In
 // development builds, the frame's debug drawing reaches the core just before the frame records;
-// release builds give the sketch calls that do nothing. When the engine chose the preset itself,
-// the setup ends with the preset check (preset-check.ts), which loads after the first frame. The
-// first frame after a change of preset, and the first frame whose handlers hear of it, wait for
-// their pipelines on the thread that draws.
+// release builds give the sketch calls that do nothing. Each core step of the frame can grow the
+// engine's memory, so the views of it are made again after each step that sketch code or a
+// development check follows, and at the end of the frame, for code that runs between frames. When
+// the engine chose the preset itself, the setup ends with the preset check (preset-check.ts), which
+// loads after the first frame. The first frame after a change of preset, and the first frame whose
+// handlers hear of it, wait for their pipelines on the thread that draws.
 
 import { type Debug, RELEASE_DEBUG } from '../debug/debug';
 import { DebugDraw } from '../debug/draw';
@@ -323,7 +325,6 @@ export class SketchRunner {
 		} catch (error) {
 			console.warn(`null3D could not check the quality preset: ${messageOf(error)}`);
 		}
-		this.core.refresh();
 	}
 
 	/** True once the setup function has returned, so the frame loop may step the sketch. */
@@ -352,9 +353,6 @@ export class SketchRunner {
 		const target = this.setUp ? this.recorded.frame + 1 : await this.queueSetupFrame();
 		await reached(slots, Slot.PipelinesBuilt, target);
 		if (drawn) await reached(slots, Slot.FramesTaken, target);
-		// The sketch's code carries on between frames, after frames that may have grown engine
-		// memory, so its views of that memory are made again first.
-		this.core.refresh();
 	}
 
 	/** Publishes a setup frame after those already queued, and resolves with its number. */
@@ -394,12 +392,8 @@ export class SketchRunner {
 		this.restoreRandom = undefined;
 	}
 
-	/**
-	 * Delivers a message the page sent with engine.postToSketch. It arrives between frames, after
-	 * any frame that grew engine memory, so the sketch's views of that memory are made again first.
-	 */
+	/** Delivers a message the page sent with engine.postToSketch. It arrives between frames. */
 	receive(type: string, data: unknown): void {
-		this.core.refresh();
 		for (const handler of this.messageHandlers) handler(type, data);
 	}
 
@@ -507,6 +501,7 @@ export class SketchRunner {
 		const { glue } = this.sketch;
 		if (late) glue.updateLateTransforms();
 		else glue.updateTransforms();
+		this.core.refresh();
 		this.endPhase(Phase.Transforms);
 	}
 
@@ -525,7 +520,6 @@ export class SketchRunner {
 		const frame = ++this.recorded.frame;
 		if (play) time.frame++;
 		this.record.begin(frame);
-		this.core.refresh();
 		this.phaseStart = start;
 		this.readViewport();
 		// Handlers that hear of a restart may create objects with new pipelines, so their frame
@@ -568,6 +562,7 @@ export class SketchRunner {
 		// the sketch's update, they would spin through it and sleep again.
 		glue.prepareJobs();
 		if (glue.beginFrame(frame) !== 0) this.report(coreFailure(glue, QUEUED_CHANGE));
+		this.core.refresh();
 		this.endPhase(Phase.Commands);
 		this.updateTransforms(false);
 		if (play && callbacks.onLateUpdate) {
@@ -599,6 +594,7 @@ export class SketchRunner {
 		if (glue.cullFrame(frame, width, height) !== 0) this.report(coreFailure(glue, 'the frame'));
 		this.endPhase(Phase.Cull);
 		if (DEV && this.debugDraw) {
+			this.core.refresh();
 			try {
 				this.debugDraw.flush(width, height);
 			} catch (error) {
@@ -614,6 +610,7 @@ export class SketchRunner {
 		// frames or in this frame's own code, has the new settings, so the thread that draws holds it
 		// until its pipelines are built.
 		if (this.quality.takeRestart() || restart) Atomics.store(slots, Slot.PipelineHold, frame);
+		this.core.refresh();
 		this.endPhase(Phase.Record);
 		this.record.commit(performance.now() - start);
 		for (let k = 0; k < this.jobRecords.length; k++) {

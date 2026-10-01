@@ -106,12 +106,12 @@ The mask belongs to the object alone, so its children keep their own. Like `setV
 A mesh has these calls besides the ones above. Like the structural calls, they take effect in the next frame.
 
 - `setMaterial(material)` changes the material, and `setMesh(mesh)` changes the shape. The new mesh's bounding sphere replaces any bounds that `setBounds` gave.
-- `setCastShadows(true)` and `setReceiveShadows(true)` make the mesh cast and receive shadows, as three.js's `castShadow` and `receiveShadow` do. The `castShadows` and `receiveShadows` options of `createMesh` set them at the start. Both are false by default. This version stores them but draws no shadows yet.
+- `setCastShadows(true)` and `setReceiveShadows(true)` make the mesh cast and receive the directional light's shadows, as three.js's `castShadow` and `receiveShadow` do. The `castShadows` and `receiveShadows` options of `createMesh` set them at the start. Both are false by default. Unlit materials show no shadows, and WebGL2 draws none yet. [Shadows](../concepts/shadows.md) explains them.
 - `setRenderOrder(order)` sets the order in which transparent objects draw, lower first, as three.js's `renderOrder` does. The engine orders opaque objects itself, for speed. This version draws every material opaque, so the order has no effect yet.
 - `setFrustumCulled(false)` makes the engine draw the mesh even when its bounds are out of view, as three.js's `frustumCulled = false` does.
 - `setBounds(center, radius)` gives the mesh a bounding sphere of its own, which culling tests instead of the mesh's sphere. The center is relative to the object's origin, and both values are before the object's scale. Use it when a shader moves vertices outside the mesh's sphere: bounds that cover the moved vertices keep culling at work, where `setFrustumCulled(false)` turns it off. A negative radius throws E1108 in development builds.
 
-`setMaterial`, `setMesh`, `setBounds` and `setFrustumCulled` rebuild the draw tables, so call them at setup or behind a loading screen. The [performance guide](../guides/performance.md#objects-during-play) lists the cost of each call. [Culling](../concepts/culling.md#bounds-that-you-set) explains how the engine culls with your bounds.
+`setMaterial`, `setMesh`, `setBounds`, `setFrustumCulled`, `setCastShadows` and `setReceiveShadows` rebuild the draw tables, so call them at setup or behind a loading screen. The [performance guide](../guides/performance.md#objects-during-play) lists the cost of each call. [Culling](../concepts/culling.md#bounds-that-you-set) explains how the engine culls with your bounds.
 
 ## Names
 
@@ -145,8 +145,8 @@ A drawn object: a mesh and a material.
 | --- | --- |
 | `setMaterial(material: Material): void` | Changes the material from the next frame. |
 | `setMesh(mesh: MeshGeometry): void` | Changes the shape from the next frame. The mesh's bounds replace the object's, so call `setBounds` again after this when the object needs bounds of its own. |
-| `setCastShadows(cast: boolean): void` | Makes the mesh cast shadows, or stop. The default is false. This version stores the setting but draws no shadows yet. |
-| `setReceiveShadows(receive: boolean): void` | Makes the mesh receive shadows, or stop. The default is false. This version stores the setting but draws no shadows yet. |
+| `setCastShadows(cast: boolean): void` | Makes the mesh cast the shadows of a directional light, or stop. The default is false. A change rebuilds the engine's tables of what it draws, as a new material does. |
+| `setReceiveShadows(receive: boolean): void` | Makes shadows fall on the mesh, or stop. The default is false. Unlit materials show no shadows. A change rebuilds the engine's tables of what it draws, as a new material does. |
 | `setRenderOrder(order: number): void` | Sets the order in which the mesh draws among transparent objects, lower first, as three.js's `renderOrder`. The default is 0. The engine orders opaque objects itself, and this version draws every material opaque, so the order has no effect yet. |
 | `setFrustumCulled(culled: boolean): void` | With false, the engine draws the mesh even where its bounds are out of view, as three.js's `frustumCulled = false` does. The default is true. For vertices that a shader moves, larger bounds from `setBounds` cost less. |
 | `setBounds(center: Vec3Like, radius: number): void` | Replaces the mesh's bounding sphere, which culling tests, with a sphere of your own: `center` relative to the object's origin, and `radius`, both before the object's scale. Use it when a shader moves vertices outside the mesh's sphere. `setMesh` gives the mesh's sphere back. |

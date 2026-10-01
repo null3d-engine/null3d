@@ -53,7 +53,7 @@ export default defineSketch(({ scene, geometry, materials }) => {
 | `createHemisphereLight(options)` | A `HemisphereLight`: light from the sky above and the ground below |
 | `createAmbientLight(options)` | An `AmbientLight`: the same light on every surface |
 
-Groups, meshes, cameras and lights take the same object options: `name`, `position`, `rotation`, `scale`, `parent`, `dynamic` and `layers`. [Objects and transforms](objects.md) describes them. `createMesh` also takes `castShadows` and `receiveShadows`, which this version stores but does not draw yet. Meshes come from `geometry` and materials from `materials` in the sketch context. One mesh and one material can serve any number of objects.
+Groups, meshes, cameras and lights take the same object options: `name`, `position`, `rotation`, `scale`, `parent`, `dynamic` and `layers`. [Objects and transforms](objects.md) describes them. `createMesh` also takes `castShadows` and `receiveShadows`, which [Shadows](../concepts/shadows.md) explains. Meshes come from `geometry` and materials from `materials` in the sketch context. One mesh and one material can serve any number of objects.
 
 ## Finding objects by name
 
@@ -204,8 +204,8 @@ Options for `scene.createMesh`.
 | --- | --- |
 | `mesh: MeshGeometry` | The shape to draw, from `ctx.geometry`. |
 | `material: Material` | How the surface looks, from `ctx.materials`. |
-| `castShadows?: boolean` | True makes the mesh cast shadows, like `setCastShadows(true)`. The default is false. This version stores the setting but draws no shadows yet. |
-| `receiveShadows?: boolean` | True makes the mesh receive shadows, like `setReceiveShadows(true)`. The default is false. This version stores the setting but draws no shadows yet. |
+| `castShadows?: boolean` | True makes the mesh cast the shadows of a directional light, like `setCastShadows(true)`. The default is false. |
+| `receiveShadows?: boolean` | True makes shadows fall on the mesh, like `setReceiveShadows(true)`. The default is false. Unlit materials show no shadows. |
 
 ### `NodeOptions`
 
