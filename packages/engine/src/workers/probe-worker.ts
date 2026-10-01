@@ -29,7 +29,10 @@ async function probe(): Promise<WorkerProbe> {
 		offscreenWebGPU: false,
 	};
 	try {
-		result.offscreenWebGL2 = new OffscreenCanvas(4, 4).getContext('webgl2') !== null;
+		const gl = new OffscreenCanvas(4, 4).getContext('webgl2');
+		result.offscreenWebGL2 = gl !== null;
+		// A browser holds only a few WebGL contexts at once, and frees this one when it collects it.
+		gl?.getExtension('WEBGL_lose_context')?.loseContext();
 	} catch {
 		result.offscreenWebGL2 = false;
 	}
