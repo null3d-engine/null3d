@@ -259,6 +259,12 @@ export class WebGL2Backend {
 	private readonly parallel: KHR_parallel_shader_compile | null;
 	/** Programs that may still be compiling in the background. */
 	private readonly compiling: Program[] = [];
+	/**
+	 * The operands of each `CreateRenderPipeline` whose custom material's shader has not reached
+	 * this thread yet, by pipeline id. Each is created once its shader arrives; until then, its
+	 * draws draw nothing.
+	 */
+	private readonly parked = new Map<number, Uint32Array>();
 	/** True while the current pipeline's program is compiling: draws draw nothing until it is set again. */
 	private skipDraws = false;
 	private readonly anisotropic: EXT_texture_filter_anisotropic | null;
@@ -437,8 +443,12 @@ export class WebGL2Backend {
 		return i;
 	}
 
-	/** True while a program is compiling in the background. */
+	/**
+	 * True while a program is compiling in the background, or a pipeline waits for its custom
+	 * material's shader. Pipelines whose shaders arrived are created first.
+	 */
 	get building(): boolean {
+		if (this.parked.size > 0) this.unpark();
 		const compiling = this.compiling;
 		for (let k = compiling.length - 1; k >= 0; k--) {
 			if (this.compiled(compiling[k] as Program)) {
@@ -446,7 +456,28 @@ export class WebGL2Backend {
 				compiling.pop();
 			}
 		}
-		return compiling.length > 0;
+		return compiling.length > 0 || this.parked.size > 0;
+	}
+
+	/**
+	 * True when a render pipeline template can create programs now: an engine template, or a custom
+	 * material's whose shader arrived, which it defines at its first use.
+	 */
+	private templateReady(template: number): boolean {
+		if (this.templates[template]) return true;
+		const shader = this.images.shaders.get(template);
+		if (shader) this.templates[template] = { shader, pipeline: 'main' };
+		return shader !== undefined;
+	}
+
+	/** Creates each parked pipeline whose custom material's shader has arrived. */
+	private unpark(): void {
+		for (const [id, operands] of this.parked) {
+			if (!this.templateReady(operands[1] as number)) continue;
+			this.parked.delete(id);
+			this.counts.pipelines--;
+			this.createPipeline(operands, 0, true);
+		}
 	}
 
 	/**
@@ -471,6 +502,12 @@ export class WebGL2Backend {
 	private createPipeline(words: Uint32Array, a: number, background: boolean): void {
 		const template = words[a + 1] as number;
 		const flags = words[a + 6] as number;
+		if (!this.templateReady(template)) {
+			// The command's header, before its operands, gives its length in words.
+			this.parked.set(words[a] as number, words.slice(a, a - 1 + ((words[a - 1] as number) >>> 8)));
+			this.counts.pipelines++;
+			return;
+		}
 		const depth = words[a + 4] !== G.FORMAT_NONE;
 		// The list's bias is in reversed depth. Standard depth stores the near plane as 0, so a bias
 		// toward the camera turns negative there.
@@ -627,9 +664,13 @@ export class WebGL2Backend {
 						words[a + 3] as number,
 					);
 					break;
-				case G.OP_SET_PIPELINE:
-					this.setPipeline(this.need(this.pipelines, words[a] as number, 'render pipeline'));
+				case G.OP_SET_PIPELINE: {
+					const id = words[a] as number;
+					// A pipeline that waits for its custom material's shader draws nothing.
+					if (this.parked.has(id)) this.skipDraws = true;
+					else this.setPipeline(this.need(this.pipelines, id, 'render pipeline'));
 					break;
+				}
 				case G.OP_SET_BIND_GROUP:
 					this.setBindGroup(words, a);
 					break;

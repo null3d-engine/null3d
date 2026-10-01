@@ -51,6 +51,9 @@ pub struct Shader {
     /// module. Each of its variants has one target.
     #[serde(default)]
     pub by_device: bool,
+    /// True for the template that custom materials build with their own WGSL added.
+    #[serde(default)]
+    pub custom_materials: bool,
 }
 
 /// The entry points of one render pipeline.

@@ -8,8 +8,11 @@ import { checkGlslPrograms, checkWgslModules, type ShaderFailure } from './lib/s
 
 const sketch = new URL('./sketches/shader-sketch.ts', import.meta.url);
 
-/** A compiled shader: the type that the plugin's client types give a `.wgsl` import. */
-type CompiledShader = typeof import('./sketches/shaders/tint.wgsl').default;
+/** A compiled whole shader, of the type that the plugin's client types give a `.wgsl` import. */
+type CompiledShader = Extract<
+	typeof import('./sketches/shaders/tint.wgsl').default,
+	{ kind: 'shader' }
+>;
 
 /** What a compiled shader holds: its pipelines, and the library code that its WGSL imported. */
 function summary(shader: CompiledShader) {

@@ -172,6 +172,7 @@ async function start(
 			log.push(`page ${JSON.stringify(update.settings)}`);
 		},
 		sendImage: () => {},
+		sendShader: () => {},
 		pageUrl: 'http://localhost/',
 	});
 	let context: SketchContext | undefined;

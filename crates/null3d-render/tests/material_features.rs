@@ -134,6 +134,60 @@ fn features_choose_the_pipeline_on_webgl2() {
     }
 }
 
+/// One triangle with texture coordinates, which custom materials read.
+fn mapped_triangle() -> Geometry {
+    let positions = [0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0, 0.0];
+    let uvs = [0.0, 0.0, 1.0, 0.0, 0.0, 1.0];
+    let arrays = MeshArrays {
+        positions: &positions,
+        uvs: Some(&uvs),
+        compute_normals: true,
+        ..MeshArrays::default()
+    };
+    from_arrays(&arrays, &JobSystem::new(0)).unwrap()
+}
+
+/// Custom materials draw with their own template, which materials of one template share, and
+/// only meshes with texture coordinates draw with them.
+fn check_custom<B: FrameBuilder>(mut world: World<B>) {
+    let first = template::CUSTOM_FIRST;
+    let mapped = mapped_triangle();
+    add(&mut world, &mapped, Shading::Custom(first), 0);
+    add(&mut world, &mapped, Shading::Custom(first), 0);
+    add(
+        &mut world,
+        &mapped,
+        Shading::Custom(first + 1),
+        feature::DOUBLE_SIDED,
+    );
+    add(&mut world, &triangle(false), Shading::Custom(first + 2), 0);
+    world.record(true);
+    MockBackend::default()
+        .replay(world.renderer.list(1).words())
+        .unwrap();
+    let mut made: Vec<(u32, u32)> = world
+        .commands()
+        .iter()
+        .filter(|(op, o)| *op == Op::CreateRenderPipeline && o[1] >= first)
+        .map(|(_, o)| (o[1], o[6]))
+        .collect();
+    made.sort_unstable();
+    made.dedup();
+    assert_eq!(made, vec![(first, 0), (first + 1, state_flags::CULL_NONE)]);
+}
+
+#[test]
+fn custom_materials_draw_with_their_own_templates_on_webgpu() {
+    check_custom(World::new());
+}
+
+#[test]
+fn custom_materials_draw_with_their_own_templates_on_webgl2() {
+    check_custom(World::build(CpuCulledRenderer::new(
+        CpuCulledConfig::default(),
+    )));
+}
+
 /// Each render pipeline that a list creates for meshes without vertex colors: its template,
 /// permutation bits without the pass's own, which the device fixes, state flags and depth bias,
 /// sorted, once each.

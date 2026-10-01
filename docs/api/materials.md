@@ -8,7 +8,7 @@ summary: "standard, unlit, shader, shadowCatcher; every option."
 
 # Materials
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. `materials.shader` and `materials.shadowCatcher` are not built yet, so coding agents must not use them.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. `materials.shadowCatcher` is not built yet, and `materials.shader` takes only a surface function, without texture maps. Coding agents must not use the parts that are not built.
 
 A material sets how the surfaces of the objects that use it look. `materials.standard` makes a lit material, and `materials.unlit` makes one that ignores lights. Create materials in the setup, and share each one between the objects that look alike.
 
@@ -31,12 +31,13 @@ export default defineSketch(({ scene, geometry, materials, page }) => {
 });
 ```
 
-## The two materials
+## The materials
 
 | Factory | How it looks |
 | --- | --- |
 | `materials.standard(options)` | Lit by the scene's lights with glTF's metallic-roughness model and the formulas of three.js's `MeshStandardMaterial` |
 | `materials.unlit(options)` | Its color as it is, whatever the lights, like three.js's `MeshBasicMaterial`. The exposure and the tone mapping still apply to it. |
+| `materials.shader(options)` | A standard material whose WGSL surface function changes its look before the engine lights it |
 
 Without lights, a standard material draws black, apart from its emissive color. [Lights](lights.md) explains how light colors and intensities shade it.
 
@@ -49,7 +50,7 @@ Without lights, a standard material draws black, apart from its emissive color. 
 | `alphaCutoff` | 0 to 1 | 0.5 | With the `mask` alpha mode, the alpha below which the surface draws nothing |
 | `metalness` | 0 to 1 | 0 | 0 is a surface such as paint or plastic, and 1 is a metal |
 | `roughness` | 0 to 1 | 1 | 0 is a mirror finish with a small, sharp highlight, and 1 is fully matte |
-| `emissive` | A [color](#color) | Black | Light that the surface gives off itself, whatever the lights |
+| `emissive` | An sRGB color | Black | Light that the surface gives off itself, whatever the lights |
 | `emissiveIntensity` | 0 or more | 1 | The factor of the emissive color |
 | `normalScale` | Two numbers | `[1, 1]` | How strongly the normal map bends normals along u and v |
 | `aoMapIntensity` | 0 to 1 | 1 | How much the occlusion map darkens ambient light |
@@ -99,7 +100,7 @@ Until a map's image reaches the GPU, the material draws as without that map.
 
 ## Color
 
-`color` and `emissive` take a hex string such as `'#4a8cff'` or `'#48f'`, a number such as `0x4a8cff`, or three components from 0 to 1. Hex values are sRGB, as three.js reads them, and the engine converts them to linear once, when the call receives them. Three components are linear, as three.js's `Color.setRGB` reads them. Any other value, such as the name `'red'`, throws E1204. [Color management](../concepts/color-management.md) covers both color spaces.
+`color` and `emissive` take an sRGB color, as three.js does: a hex string such as `'#4a8cff'` or `'#48f'`, a number such as `0x4a8cff`, or three components from 0 to 1. The engine converts the color to linear once, when the call receives it. Any other value, such as the name `'red'`, throws E1204.
 
 ## Changing a material
 
@@ -182,6 +183,24 @@ Negative values pull the surface toward the camera, and positive values push it 
 const poster = materials.standard({ color: '#e8554e', depthBias: { constant: -4, slopeScale: -4 } });
 ```
 
+## Custom materials
+
+`materials.shader(options)` takes every option of `materials.standard` but the texture maps, and a `wgsl` option: WGSL that the null3D Vite plugin compiled. The WGSL declares a surface function, which starts from the look that the standard options make:
+
+```ts
+const rings = /* wgsl */ `
+fn surface(input: SurfaceInput) -> Surface {
+    var s = defaultSurface(input);
+    s.baseColor = mix(s.baseColor, vec3f(1.0), step(0.5, fract(input.uv.y * 6.0)));
+    return s;
+}
+`;
+const red = materials.shader({ wgsl: rings, color: '#e04040', roughness: 0.5 });
+red.set({ roughness: 0.2 });
+```
+
+`set` changes the standard values, as it does for a standard material. With `alphaMode: 'mask'`, the pixels where the surface function's `alpha` falls below `alphaCutoff` draw nothing. Materials made from the same WGSL share one shader. A mesh needs texture coordinates to draw with a custom material. WGSL as plain text, which the plugin did not compile, throws E1215, and so does a whole shader with entry points. [Surface functions](../shaders/surface-functions.md) describes the WGSL.
+
 ## Ranges
 
 `opacity`, `alphaCutoff`, `metalness`, `roughness` and `aoMapIntensity` go from 0 to 1, and `emissiveIntensity` and `lightMapIntensity` take 0 or more. The numbers of `normalScale` and `uvTransform` must be finite. When a factory or `set` gets a value outside its range, development builds throw E1108. An `alphaMode` or a `blending` that the engine does not know throws E1217, and a depth bias that is not a finite number throws E1203. The `opaque` alpha mode ignores the opacity.
@@ -195,6 +214,7 @@ One engine holds up to 1,024 materials, and a material lasts as long as the engi
 - [Scene](scene.md): creating meshes with a material.
 - [Objects and transforms](objects.md): `setMaterial` on a mesh.
 - [Lights](lights.md): what lights a standard material.
+- [Surface functions](../shaders/surface-functions.md): the WGSL of a custom material.
 - [Math helpers](math.md#colors): sRGB and linear colors.
 
 ## API reference
@@ -224,6 +244,16 @@ type ColorInput = string | number | readonly [number, number, number];
 ```
 
 A color: a hex string such as `'#4a8cff'` or `'#48f'`, a number such as `0x4a8cff`, or three linear components from 0 to 1, such as `[1, 0.26, 0.05]`. Hex values are sRGB, as on the web and in three.js, and the engine converts them to linear values. The color helpers, such as `color.fromHsl`, give linear components.
+
+### `CompiledWgsl`
+
+Interface `CompiledWgsl`.
+
+WGSL that the null3D Vite plugin compiled: a template literal that a `wgsl` block comment tags, or a `.wgsl` file that a module imports. TypeScript sees a tagged literal as a string, and the plugin puts the compiled WGSL in its place.
+
+| Member | Description |
+| --- | --- |
+| `readonly kind: 'material' \| 'shader'` | `'material'` for the functions of a custom material, and `'shader'` for a whole shader. |
 
 ### `DepthBias`
 
@@ -285,6 +315,27 @@ Material factories. The standard material follows glTF's metallic-roughness mode
 | --- | --- |
 | `standard(options: StandardOptions = {}): Material<StandardValues>` | A lit material with glTF's metallic-roughness model, like three.js's `MeshStandardMaterial`. |
 | `unlit(options: UnlitOptions = {}): Material<UnlitValues>` | A material that ignores lights and shows its color unlit, like three.js's `MeshBasicMaterial`. The exposure and the tone mapping still apply to it, as three.js applies them to that material. |
+| `shader(options: ShaderOptions): Material<StandardValues>` | A custom material: the standard material with a surface function in WGSL, which changes how each pixel of the surface looks before the engine lights it. It takes every option of `materials.standard` but the texture maps, and `set` changes the same values. Meshes need texture coordinates to draw with it. Throws E1215 for WGSL that the null3D Vite plugin did not compile, and for a whole shader with entry points. |
+
+### `ShaderOptions`
+
+Interface `ShaderOptions`, which extends `StandardBaseOptions`.
+
+Options of `materials.shader`: the material's WGSL, and every option of `materials.standard` but its texture maps, which `defaultSurface` applies. Custom materials take no texture maps in this version, so the values of maps have no effect on them.
+
+| Member | Description |
+| --- | --- |
+| `wgsl: string \| CompiledWgsl` | The material's WGSL, compiled by the null3D Vite plugin. It declares `fn surface(input: SurfaceInput) -> Surface`, which the engine calls for each pixel, and which can start from `defaultSurface(input)`. The engine lights the surface that it returns. Materials made from the same WGSL share their shader. |
+
+### `StandardBaseOptions`
+
+Interface `StandardBaseOptions`, which extends `StandardValues`, `MaterialFeatures`.
+
+The options of `materials.standard` besides its texture maps. Custom materials take them too.
+
+| Member | Description |
+| --- | --- |
+| `flatShading?: boolean` | Lights each triangle with one normal, the normal of its face, so the mesh looks faceted. It is fixed when the material is created. The default is false. |
 
 ### `StandardMaps`
 
@@ -303,13 +354,9 @@ The texture maps of a standard material. They are fixed when the material is cre
 
 ### `StandardOptions`
 
-Interface `StandardOptions`, which extends `StandardValues`, `MaterialFeatures`, `StandardMaps`.
+Interface `StandardOptions`, which extends `StandardBaseOptions`, `StandardMaps`.
 
 Options of `materials.standard`.
-
-| Member | Description |
-| --- | --- |
-| `flatShading?: boolean` | Lights each triangle with one normal, the normal of its face, so the mesh looks faceted. It is fixed when the material is created. The default is false. |
 
 ### `StandardValues`
 

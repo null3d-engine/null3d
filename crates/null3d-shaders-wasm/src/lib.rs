@@ -7,6 +7,9 @@
 //! - `request(length)` makes room for a request of `length` bytes and returns where it starts.
 //! - `compile()` compiles the shader in the request, a [`ShaderSource`], with the engine's shader
 //!   library, which the module holds. The output holds each variant by name.
+//! - `compile_material()` builds a custom material's WGSL, a [`MaterialSource`], into every
+//!   variant of the engine's template for custom materials, which the module holds with the
+//!   shader manifest. The output is a [`MaterialOutput`](null3d_shaders::MaterialOutput).
 //! - `build()` builds a whole manifest, as the native `shader-build` command does. The request is
 //!   the manifest and every file, the library modules too, as [`Inputs`], and the output is an
 //!   [`Output`](null3d_shaders::Output).
@@ -20,19 +23,27 @@ use std::cell::RefCell;
 use std::collections::BTreeMap;
 use std::sync::Once;
 
-use null3d_shaders::{BuildError, Compiler, Inputs, Problem, Response, ShaderSource};
+use null3d_shaders::{
+    BuildError, Compiler, Inputs, MaterialSource, MaterialTemplate, Problem, Response, ShaderSource,
+};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
-/// The engine's shader library: each module's path in the shader folder, and its text.
-const LIBRARY: &[(&str, &str)] = include!(concat!(env!("OUT_DIR"), "/library.rs"));
+/// The engine's shader files, each by its path in the shader folder with its text: the entry
+/// shaders, and the library modules in `lib/`.
+const FILES: &[(&str, &str)] = include!(concat!(env!("OUT_DIR"), "/shaders.rs"));
+
+/// The engine's shader manifest, which marks the template of custom materials.
+const MANIFEST: &str = include_str!("../../null3d-shaders/shaders.toml");
 
 thread_local! {
     static REQUEST: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
     static RESPONSE: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
-    /// The compiler for `compile`, made on the first call. It keeps the library modules it
-    /// composed, so later calls are faster.
+    /// The compiler for `compile` and `compile_material`, made on the first call. It keeps the
+    /// library modules it composed, so later calls are faster.
     static COMPILER: RefCell<Option<Compiler>> = const { RefCell::new(None) };
+    /// The template of custom materials, read on the first call of `compile_material`.
+    static TEMPLATE: RefCell<Option<MaterialTemplate>> = const { RefCell::new(None) };
 }
 
 /// Makes the request buffer `length` bytes long and returns where it starts.
@@ -50,16 +61,40 @@ pub extern "C" fn request(length: usize) -> *mut u8 {
 pub extern "C" fn compile() {
     respond(|request| {
         let shader: ShaderSource = parse(request)?;
-        COMPILER.with_borrow_mut(|slot| {
-            let mut compiler = match slot.take() {
-                Some(compiler) => compiler,
-                None => Compiler::new(&library())?,
+        with_compiler(|compiler| compiler.compile(&shader))
+    });
+}
+
+/// Builds the custom material in the request into the engine's template for custom materials.
+#[unsafe(no_mangle)]
+pub extern "C" fn compile_material() {
+    respond(|request| {
+        let material: MaterialSource = parse(request)?;
+        TEMPLATE.with_borrow_mut(|slot| {
+            let template = match slot.take() {
+                Some(template) => template,
+                None => MaterialTemplate::load(&inputs())?,
             };
-            let result = compiler.compile(&shader);
-            *slot = Some(compiler);
+            let result = with_compiler(|compiler| compiler.compile_material(&template, &material));
+            *slot = Some(template);
             result
         })
     });
+}
+
+/// Runs `call` with the compiler, which the first call makes and later calls reuse.
+fn with_compiler<T>(
+    call: impl FnOnce(&mut Compiler) -> Result<T, BuildError>,
+) -> Result<T, BuildError> {
+    COMPILER.with_borrow_mut(|slot| {
+        let mut compiler = match slot.take() {
+            Some(compiler) => compiler,
+            None => Compiler::new(&inputs().files)?,
+        };
+        let result = call(&mut compiler);
+        *slot = Some(compiler);
+        result
+    })
 }
 
 /// Builds the manifest in the request.
@@ -80,12 +115,16 @@ pub extern "C" fn response_length() -> usize {
     RESPONSE.with_borrow(Vec::len)
 }
 
-/// The library modules, by path in the shader folder.
-fn library() -> BTreeMap<String, String> {
-    LIBRARY
+/// The engine's shader manifest and shader files, with plain line ends.
+fn inputs() -> Inputs {
+    let files: BTreeMap<String, String> = FILES
         .iter()
-        .map(|&(path, source)| (path.to_owned(), source.to_owned()))
-        .collect()
+        .map(|&(path, source)| (path.to_owned(), source.replace("\r\n", "\n")))
+        .collect();
+    Inputs {
+        manifest: MANIFEST.replace("\r\n", "\n"),
+        files,
+    }
 }
 
 /// Reads a JSON request.
