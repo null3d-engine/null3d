@@ -23,8 +23,8 @@ precision highp int;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 const mat3x3 ACES_INPUT = mat3x3(vec3(0.59719, 0.076, 0.0284), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
 const mat3x3 ACES_OUTPUT = mat3x3(vec3(1.60475, -0.10208, -0.00327), vec3(-0.53108, 1.10813, -0.07276), vec3(-0.07367, -0.00605, 1.07602));
@@ -35,6 +35,7 @@ const mat3x3 LINEAR_REC2020_TO_LINEAR_SRGB = mat3x3(vec3(1.6605, -0.1246, -0.018
 const uint AGX = 1u;
 const uint NEUTRAL = 2u;
 const uint NONE = 3u;
+const uint DISPLAY_COLOR = 1u;
 
 
 vec3 linear_to_srgb(vec3 c) {
@@ -140,8 +141,8 @@ precision highp int;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 const mat3x3 ACES_INPUT = mat3x3(vec3(0.59719, 0.076, 0.0284), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
 const mat3x3 ACES_OUTPUT = mat3x3(vec3(1.60475, -0.10208, -0.00327), vec3(-0.53108, 1.10813, -0.07276), vec3(-0.07367, -0.00605, 1.07602));
@@ -152,6 +153,7 @@ const mat3x3 LINEAR_REC2020_TO_LINEAR_SRGB = mat3x3(vec3(1.6605, -0.1246, -0.018
 const uint AGX = 1u;
 const uint NEUTRAL = 2u;
 const uint NONE = 3u;
+const uint DISPLAY_COLOR = 1u;
 
 layout(std140) uniform Output_block_0Fragment { Output _group_0_binding_0_fs; };
 
@@ -241,18 +243,406 @@ vec3 encode(vec3 c_5, vec2 pixel_1) {
     return (_e7 + vec3(dither));
 }
 
+vec4 pixel_color(vec2 position_1) {
+    vec4 _e4 = texelFetch(_group_0_binding_1_fs, ivec2(position_1), 0);
+    return _e4;
+}
+
 void main() {
     vec4 position = gl_FragCoord;
-    vec4 texel = texelFetch(_group_0_binding_1_fs, ivec2(position.xy), 0);
-    float coverage = texel.w;
+    vec4 _e2 = pixel_color(position.xy);
+    uint _e5 = _group_0_binding_0_fs.flags;
+    if (((_e5 & DISPLAY_COLOR) != 0u)) {
+        _fs2p_location0 = _e2;
+        return;
+    }
+    float coverage = _e2.w;
     if ((coverage <= 0.0)) {
         _fs2p_location0 = vec4(0.0);
         return;
     }
-    Output _e15 = _group_0_binding_0_fs;
-    vec3 _e16 = tone_map((texel.xyz / vec3(coverage)), _e15);
-    vec3 _e18 = encode(_e16, position.xy);
-    vec3 encoded = clamp(_e18, vec3(0.0), vec3(1.0));
+    Output _e19 = _group_0_binding_0_fs;
+    vec3 _e20 = tone_map((_e2.xyz / vec3(coverage)), _e19);
+    vec3 _e22 = encode(_e20, position.xy);
+    vec3 encoded = clamp(_e22, vec3(0.0), vec3(1.0));
+    _fs2p_location0 = vec4((encoded * coverage), coverage);
+    return;
+}
+`,
+						uniformBlocks: [
+							{
+								name: 'Output_block_0Fragment',
+								group: 0,
+								binding: 0,
+							},
+						],
+						textures: [
+							{
+								name: '_group_0_binding_1_fs',
+								group: 0,
+								binding: 1,
+								sampler: null,
+							},
+						],
+					},
+				},
+			},
+		},
+		webgl2_fxaa: {
+			permutation: 256,
+			wgsl: null,
+			glsl: {
+				main: {
+					vertex: {
+						source: `#version 300 es
+uniform vec2 null3d_depth_mapping;
+
+precision highp float;
+precision highp int;
+
+struct Output {
+    float exposure;
+    uint tone_mapping;
+    uint flags;
+    uint spare;
+};
+const mat3x3 ACES_INPUT = mat3x3(vec3(0.59719, 0.076, 0.0284), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
+const mat3x3 ACES_OUTPUT = mat3x3(vec3(1.60475, -0.10208, -0.00327), vec3(-0.53108, 1.10813, -0.07276), vec3(-0.07367, -0.00605, 1.07602));
+const mat3x3 LINEAR_SRGB_TO_LINEAR_REC2020_ = mat3x3(vec3(0.6274, 0.0691, 0.0164), vec3(0.3293, 0.9195, 0.088), vec3(0.0433, 0.0113, 0.8956));
+const mat3x3 AGX_INSET = mat3x3(vec3(0.85662717, 0.13731897, 0.11189821), vec3(0.09512124, 0.761242, 0.076799415), vec3(0.048251607, 0.10143904, 0.81130236));
+const mat3x3 AGX_OUTSET = mat3x3(vec3(1.1271006, -0.14132977, -0.14132977), vec3(-0.11060664, 1.1578237, -0.11060664), vec3(-0.016493939, -0.016493939, 1.2519364));
+const mat3x3 LINEAR_REC2020_TO_LINEAR_SRGB = mat3x3(vec3(1.6605, -0.1246, -0.0182), vec3(-0.5876, 1.1329, -0.1006), vec3(-0.0728, -0.0083, 1.1187));
+const uint AGX = 1u;
+const uint NEUTRAL = 2u;
+const uint NONE = 3u;
+const uint DISPLAY_COLOR = 1u;
+const float EDGE_THRESHOLD = 0.125;
+const float EDGE_THRESHOLD_MIN = 0.0625;
+const float REDUCE_MIN = 0.0078125;
+const float REDUCE_MUL = 0.125;
+const float SPAN_MAX = 8.0;
+const vec3 LUMINANCE = vec3(0.2126, 0.7152, 0.0722);
+
+
+vec3 linear_to_srgb(vec3 c) {
+    vec3 low = (c * 12.92);
+    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
+    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
+}
+
+vec3 rrt_and_odt_fit(vec3 v) {
+    vec3 a = ((v * (v + vec3(0.0245786))) - vec3(9.0537e-5));
+    vec3 b = ((v * ((0.983729 * v) + vec3(0.432951))) + vec3(0.238081));
+    return (a / b);
+}
+
+vec3 tone_map_aces(vec3 c_1) {
+    vec3 _e6 = rrt_and_odt_fit((ACES_INPUT * (c_1 / vec3(0.6))));
+    return clamp((ACES_OUTPUT * _e6), vec3(0.0), vec3(1.0));
+}
+
+vec3 agx_contrast(vec3 x) {
+    vec3 x2_ = (x * x);
+    vec3 x4_ = (x2_ * x2_);
+    return ((((((((15.5 * x4_) * x2_) - ((40.14 * x4_) * x)) + (31.96 * x4_)) - ((6.868 * x2_) * x)) + (0.4298 * x2_)) + (0.1191 * x)) - vec3(0.00232));
+}
+
+vec3 tone_map_agx(vec3 c_2) {
+    vec3 inset = (AGX_INSET * (LINEAR_SRGB_TO_LINEAR_REC2020_ * c_2));
+    vec3 logged = ((log2(max(inset, vec3(1e-10))) - vec3(-12.47393)) / vec3(16.5));
+    vec3 _e16 = agx_contrast(clamp(logged, vec3(0.0), vec3(1.0)));
+    vec3 curved = (AGX_OUTSET * _e16);
+    vec3 rec2020_ = pow(max(curved, vec3(0.0)), vec3(2.2));
+    return clamp((LINEAR_REC2020_TO_LINEAR_SRGB * rec2020_), vec3(0.0), vec3(1.0));
+}
+
+vec3 tone_map_neutral(vec3 c_3) {
+    float x_1 = min(c_3.x, min(c_3.y, c_3.z));
+    float toe = ((x_1 < 0.08) ? (x_1 - ((6.25 * x_1) * x_1)) : 0.04);
+    vec3 shifted = (c_3 - vec3(toe));
+    float peak = max(shifted.x, max(shifted.y, shifted.z));
+    if ((peak < 0.76)) {
+        return shifted;
+    }
+    float d = (1.0 - 0.76);
+    float new_peak = (1.0 - ((d * d) / ((peak + d) - 0.76)));
+    float g = (1.0 - (1.0 / ((0.15 * (peak - new_peak)) + 1.0)));
+    return mix((shifted * (new_peak / peak)), vec3(new_peak), g);
+}
+
+uint pcg(uint v_1) {
+    uint state = ((v_1 * 747796405u) + 2891336453u);
+    uint word = (((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u);
+    return ((word >> 22u) ^ word);
+}
+
+vec3 tone_map(vec3 c_4, Output settings) {
+    vec3 exposed = (c_4 * settings.exposure);
+    if ((settings.tone_mapping == AGX)) {
+        vec3 _e7 = tone_map_agx(exposed);
+        return _e7;
+    }
+    if ((settings.tone_mapping == NEUTRAL)) {
+        vec3 _e11 = tone_map_neutral(exposed);
+        return _e11;
+    }
+    if ((settings.tone_mapping == NONE)) {
+        return clamp(exposed, vec3(0.0), vec3(1.0));
+    }
+    vec3 _e16 = tone_map_aces(exposed);
+    return _e16;
+}
+
+float pixel_noise(vec2 pixel) {
+    uint _e5 = pcg(uint(pixel.y));
+    uint _e7 = pcg((uint(pixel.x) + _e5));
+    return (float((_e7 >> 8u)) / 16777216.0);
+}
+
+vec3 encode(vec3 c_5, vec2 pixel_1) {
+    float _e1 = pixel_noise(pixel_1);
+    float dither = ((_e1 - 0.5) / 255.0);
+    vec3 _e7 = linear_to_srgb(c_5);
+    return (_e7 + vec3(dither));
+}
+
+void main() {
+    uint vertex = uint(gl_VertexID);
+    float x_2 = ((float(((vertex << 1u) & 2u)) * 2.0) - 1.0);
+    float y = ((float((vertex & 2u)) * 2.0) - 1.0);
+    gl_Position = vec4(x_2, y, 0.5, 1.0);
+    gl_Position.z = gl_Position.z * null3d_depth_mapping.x + gl_Position.w * null3d_depth_mapping.y;
+    return;
+}
+`,
+						uniformBlocks: [],
+						textures: [],
+					},
+					fragment: {
+						source: `#version 300 es
+
+precision highp float;
+precision highp int;
+
+struct Output {
+    float exposure;
+    uint tone_mapping;
+    uint flags;
+    uint spare;
+};
+const mat3x3 ACES_INPUT = mat3x3(vec3(0.59719, 0.076, 0.0284), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
+const mat3x3 ACES_OUTPUT = mat3x3(vec3(1.60475, -0.10208, -0.00327), vec3(-0.53108, 1.10813, -0.07276), vec3(-0.07367, -0.00605, 1.07602));
+const mat3x3 LINEAR_SRGB_TO_LINEAR_REC2020_ = mat3x3(vec3(0.6274, 0.0691, 0.0164), vec3(0.3293, 0.9195, 0.088), vec3(0.0433, 0.0113, 0.8956));
+const mat3x3 AGX_INSET = mat3x3(vec3(0.85662717, 0.13731897, 0.11189821), vec3(0.09512124, 0.761242, 0.076799415), vec3(0.048251607, 0.10143904, 0.81130236));
+const mat3x3 AGX_OUTSET = mat3x3(vec3(1.1271006, -0.14132977, -0.14132977), vec3(-0.11060664, 1.1578237, -0.11060664), vec3(-0.016493939, -0.016493939, 1.2519364));
+const mat3x3 LINEAR_REC2020_TO_LINEAR_SRGB = mat3x3(vec3(1.6605, -0.1246, -0.0182), vec3(-0.5876, 1.1329, -0.1006), vec3(-0.0728, -0.0083, 1.1187));
+const uint AGX = 1u;
+const uint NEUTRAL = 2u;
+const uint NONE = 3u;
+const uint DISPLAY_COLOR = 1u;
+const float EDGE_THRESHOLD = 0.125;
+const float EDGE_THRESHOLD_MIN = 0.0625;
+const float REDUCE_MIN = 0.0078125;
+const float REDUCE_MUL = 0.125;
+const float SPAN_MAX = 8.0;
+const vec3 LUMINANCE = vec3(0.2126, 0.7152, 0.0722);
+
+layout(std140) uniform Output_block_0Fragment { Output _group_0_binding_0_fs; };
+
+uniform highp sampler2D _group_0_binding_1_fs;
+
+layout(location = 0) out vec4 _fs2p_location0;
+
+vec3 linear_to_srgb(vec3 c) {
+    vec3 low = (c * 12.92);
+    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
+    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
+}
+
+vec3 rrt_and_odt_fit(vec3 v) {
+    vec3 a = ((v * (v + vec3(0.0245786))) - vec3(9.0537e-5));
+    vec3 b = ((v * ((0.983729 * v) + vec3(0.432951))) + vec3(0.238081));
+    return (a / b);
+}
+
+vec3 tone_map_aces(vec3 c_1) {
+    vec3 _e6 = rrt_and_odt_fit((ACES_INPUT * (c_1 / vec3(0.6))));
+    return clamp((ACES_OUTPUT * _e6), vec3(0.0), vec3(1.0));
+}
+
+vec3 agx_contrast(vec3 x) {
+    vec3 x2_ = (x * x);
+    vec3 x4_ = (x2_ * x2_);
+    return ((((((((15.5 * x4_) * x2_) - ((40.14 * x4_) * x)) + (31.96 * x4_)) - ((6.868 * x2_) * x)) + (0.4298 * x2_)) + (0.1191 * x)) - vec3(0.00232));
+}
+
+vec3 tone_map_agx(vec3 c_2) {
+    vec3 inset = (AGX_INSET * (LINEAR_SRGB_TO_LINEAR_REC2020_ * c_2));
+    vec3 logged = ((log2(max(inset, vec3(1e-10))) - vec3(-12.47393)) / vec3(16.5));
+    vec3 _e16 = agx_contrast(clamp(logged, vec3(0.0), vec3(1.0)));
+    vec3 curved = (AGX_OUTSET * _e16);
+    vec3 rec2020_ = pow(max(curved, vec3(0.0)), vec3(2.2));
+    return clamp((LINEAR_REC2020_TO_LINEAR_SRGB * rec2020_), vec3(0.0), vec3(1.0));
+}
+
+vec3 tone_map_neutral(vec3 c_3) {
+    float x_1 = min(c_3.x, min(c_3.y, c_3.z));
+    float toe = ((x_1 < 0.08) ? (x_1 - ((6.25 * x_1) * x_1)) : 0.04);
+    vec3 shifted = (c_3 - vec3(toe));
+    float peak = max(shifted.x, max(shifted.y, shifted.z));
+    if ((peak < 0.76)) {
+        return shifted;
+    }
+    float d = (1.0 - 0.76);
+    float new_peak = (1.0 - ((d * d) / ((peak + d) - 0.76)));
+    float g = (1.0 - (1.0 / ((0.15 * (peak - new_peak)) + 1.0)));
+    return mix((shifted * (new_peak / peak)), vec3(new_peak), g);
+}
+
+uint pcg(uint v_1) {
+    uint state = ((v_1 * 747796405u) + 2891336453u);
+    uint word = (((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u);
+    return ((word >> 22u) ^ word);
+}
+
+vec3 tone_map(vec3 c_4, Output settings) {
+    vec3 exposed = (c_4 * settings.exposure);
+    if ((settings.tone_mapping == AGX)) {
+        vec3 _e7 = tone_map_agx(exposed);
+        return _e7;
+    }
+    if ((settings.tone_mapping == NEUTRAL)) {
+        vec3 _e11 = tone_map_neutral(exposed);
+        return _e11;
+    }
+    if ((settings.tone_mapping == NONE)) {
+        return clamp(exposed, vec3(0.0), vec3(1.0));
+    }
+    vec3 _e16 = tone_map_aces(exposed);
+    return _e16;
+}
+
+float pixel_noise(vec2 pixel) {
+    uint _e5 = pcg(uint(pixel.y));
+    uint _e7 = pcg((uint(pixel.x) + _e5));
+    return (float((_e7 >> 8u)) / 16777216.0);
+}
+
+vec3 encode(vec3 c_5, vec2 pixel_1) {
+    float _e1 = pixel_noise(pixel_1);
+    float dither = ((_e1 - 0.5) / 255.0);
+    vec3 _e7 = linear_to_srgb(c_5);
+    return (_e7 + vec3(dither));
+}
+
+bool display_color() {
+    uint _e2 = _group_0_binding_0_fs.flags;
+    return ((_e2 & DISPLAY_COLOR) != 0u);
+}
+
+vec4 squeeze(vec4 texel) {
+    bool _e0 = display_color();
+    if (_e0) {
+        return texel;
+    }
+    float _e5 = _group_0_binding_0_fs.exposure;
+    return vec4((texel.xyz / vec3((1.0 + (_e5 * dot(texel.xyz, LUMINANCE))))), texel.w);
+}
+
+vec4 unsqueeze(vec4 c_6) {
+    bool _e0 = display_color();
+    if (_e0) {
+        return c_6;
+    }
+    float _e4 = _group_0_binding_0_fs.exposure;
+    float squeezed = min((_e4 * dot(c_6.xyz, LUMINANCE)), 0.999);
+    return vec4((c_6.xyz / vec3((1.0 - squeezed))), c_6.w);
+}
+
+vec4 texel_at(ivec2 pixel_2, ivec2 last) {
+    vec4 _e7 = texelFetch(_group_0_binding_1_fs, min(max(pixel_2, ivec2(0)), last), 0);
+    vec4 _e8 = squeeze(_e7);
+    return _e8;
+}
+
+vec4 tap(vec2 point, ivec2 last_1) {
+    vec2 corner = (point - vec2(0.5));
+    ivec2 base = ivec2(floor(corner));
+    vec2 f = fract(corner);
+    vec4 _e8 = texel_at(base, last_1);
+    vec4 _e13 = texel_at((base + ivec2(1, 0)), last_1);
+    vec4 top = mix(_e8, _e13, f.x);
+    vec4 _e20 = texel_at((base + ivec2(0, 1)), last_1);
+    vec4 _e25 = texel_at((base + ivec2(1, 1)), last_1);
+    vec4 bottom = mix(_e20, _e25, f.x);
+    return mix(top, bottom, f.y);
+}
+
+float luma(vec4 c_7) {
+    float y = dot(c_7.xyz, LUMINANCE);
+    float _e6 = _group_0_binding_0_fs.exposure;
+    bool _e9 = display_color();
+    return (_e9 ? y : sqrt((_e6 * y)));
+}
+
+vec4 pixel_color(vec2 position_1) {
+    bool local = false;
+    ivec2 last_2 = (ivec2(uvec2(textureSize(_group_0_binding_1_fs, 0).xy)) - ivec2(1));
+    ivec2 pixel_3 = ivec2(position_1);
+    vec4 texel_1 = texelFetch(_group_0_binding_1_fs, pixel_3, 0);
+    vec4 _e11 = squeeze(texel_1);
+    float _e12 = luma(_e11);
+    vec4 _e17 = texel_at((pixel_3 + ivec2(-1, -1)), last_2);
+    float _e18 = luma(_e17);
+    vec4 _e23 = texel_at((pixel_3 + ivec2(1, -1)), last_2);
+    float _e24 = luma(_e23);
+    vec4 _e29 = texel_at((pixel_3 + ivec2(-1, 1)), last_2);
+    float _e30 = luma(_e29);
+    vec4 _e35 = texel_at((pixel_3 + ivec2(1, 1)), last_2);
+    float _e36 = luma(_e35);
+    float lowest = min(_e12, min(min(_e18, _e24), min(_e30, _e36)));
+    float highest = max(_e12, max(max(_e18, _e24), max(_e30, _e36)));
+    if (((highest - lowest) < max(EDGE_THRESHOLD_MIN, (highest * EDGE_THRESHOLD)))) {
+        return texel_1;
+    }
+    vec2 along = vec2(((_e30 + _e36) - (_e18 + _e24)), ((_e18 + _e30) - (_e24 + _e36)));
+    float reduce = max(((((_e18 + _e24) + _e30) + _e36) * 0.03125), REDUCE_MIN);
+    float scale = (1.0 / (min(abs(along.x), abs(along.y)) + reduce));
+    vec2 span = clamp((along * scale), vec2(-8.0), vec2(8.0));
+    vec4 _e83 = tap((position_1 - (span / vec2(6.0))), last_2);
+    vec4 _e88 = tap((position_1 + (span / vec2(6.0))), last_2);
+    vec4 inner = (0.5 * (_e83 + _e88));
+    vec4 _e97 = tap((position_1 - (span * 0.5)), last_2);
+    vec4 _e101 = tap((position_1 + (span * 0.5)), last_2);
+    vec4 outer = ((0.5 * inner) + (0.25 * (_e97 + _e101)));
+    float _e106 = luma(outer);
+    if (!((_e106 < lowest))) {
+        local = (_e106 > highest);
+    } else {
+        local = true;
+    }
+    bool _e113 = local;
+    vec4 _e115 = unsqueeze((_e113 ? inner : outer));
+    return _e115;
+}
+
+void main() {
+    vec4 position = gl_FragCoord;
+    vec4 _e2 = pixel_color(position.xy);
+    uint _e5 = _group_0_binding_0_fs.flags;
+    if (((_e5 & DISPLAY_COLOR) != 0u)) {
+        _fs2p_location0 = _e2;
+        return;
+    }
+    float coverage = _e2.w;
+    if ((coverage <= 0.0)) {
+        _fs2p_location0 = vec4(0.0);
+        return;
+    }
+    Output _e19 = _group_0_binding_0_fs;
+    vec3 _e20 = tone_map((_e2.xyz / vec3(coverage)), _e19);
+    vec3 _e22 = encode(_e20, position.xy);
+    vec3 encoded = clamp(_e22, vec3(0.0), vec3(1.0));
     _fs2p_location0 = vec4((encoded * coverage), coverage);
     return;
 }
@@ -295,8 +685,8 @@ uniform uint naga_vs_first_instance;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Fog {
     vec3 color;
@@ -808,8 +1198,8 @@ precision highp int;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Fog {
     vec3 color;
@@ -1321,8 +1711,8 @@ uniform uint naga_vs_first_instance;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Fog {
     vec3 color;
@@ -1834,8 +2224,8 @@ precision highp int;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Fog {
     vec3 color;
@@ -2351,8 +2741,8 @@ uniform uint naga_vs_first_instance;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Fog {
     vec3 color;
@@ -2870,8 +3260,8 @@ precision highp int;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Fog {
     vec3 color;
@@ -3390,8 +3780,8 @@ uniform uint naga_vs_first_instance;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Fog {
     vec3 color;
@@ -3909,8 +4299,8 @@ precision highp int;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Fog {
     vec3 color;
@@ -4514,8 +4904,8 @@ uniform uint naga_vs_first_instance;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Fog {
     vec3 color;
@@ -5086,8 +5476,8 @@ precision highp int;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Fog {
     vec3 color;
@@ -5805,8 +6195,8 @@ uniform uint naga_vs_first_instance;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Fog {
     vec3 color;
@@ -6377,8 +6767,8 @@ precision highp int;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Fog {
     vec3 color;
@@ -7100,8 +7490,8 @@ uniform uint naga_vs_first_instance;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Fog {
     vec3 color;
@@ -7696,8 +8086,8 @@ precision highp int;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Fog {
     vec3 color;
@@ -8416,8 +8806,8 @@ uniform uint naga_vs_first_instance;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Fog {
     vec3 color;
@@ -8994,8 +9384,8 @@ precision highp int;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Fog {
     vec3 color;
@@ -9720,8 +10110,8 @@ uniform uint naga_vs_first_instance;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Fog {
     vec3 color;
@@ -10298,8 +10688,8 @@ precision highp int;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Fog {
     vec3 color;
@@ -11028,8 +11418,8 @@ uniform uint naga_vs_first_instance;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Fog {
     vec3 color;
@@ -11630,8 +12020,8 @@ precision highp int;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Fog {
     vec3 color;
@@ -12357,8 +12747,8 @@ uniform uint naga_vs_first_instance;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Fog {
     vec3 color;
@@ -12959,8 +13349,8 @@ precision highp int;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Fog {
     vec3 color;
@@ -13682,8 +14072,8 @@ uniform uint naga_vs_first_instance;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Fog {
     vec3 color;
@@ -14278,8 +14668,8 @@ precision highp int;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Fog {
     vec3 color;
@@ -14996,8 +15386,8 @@ uniform uint naga_vs_first_instance;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Fog {
     vec3 color;
@@ -15329,8 +15719,8 @@ precision highp int;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Fog {
     vec3 color;
@@ -15566,8 +15956,8 @@ uniform uint naga_vs_first_instance;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Fog {
     vec3 color;
@@ -15947,8 +16337,8 @@ precision highp int;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Fog {
     vec3 color;
@@ -16267,8 +16657,8 @@ uniform uint naga_vs_first_instance;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Fog {
     vec3 color;
@@ -16648,8 +17038,8 @@ precision highp int;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Fog {
     vec3 color;
@@ -16972,8 +17362,8 @@ uniform uint naga_vs_first_instance;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Fog {
     vec3 color;
@@ -17359,8 +17749,8 @@ precision highp int;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Fog {
     vec3 color;
@@ -17686,8 +18076,8 @@ uniform uint naga_vs_first_instance;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Fog {
     vec3 color;
@@ -18073,8 +18463,8 @@ precision highp int;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Fog {
     vec3 color;
@@ -18406,8 +18796,8 @@ uniform uint naga_vs_first_instance;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Fog {
     vec3 color;
@@ -18833,8 +19223,8 @@ precision highp int;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Fog {
     vec3 color;
@@ -19214,8 +19604,8 @@ uniform uint naga_vs_first_instance;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Fog {
     vec3 color;
@@ -19641,8 +20031,8 @@ precision highp int;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Fog {
     vec3 color;
@@ -20026,8 +20416,8 @@ uniform uint naga_vs_first_instance;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Fog {
     vec3 color;
@@ -20459,8 +20849,8 @@ precision highp int;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Fog {
     vec3 color;
@@ -20847,8 +21237,8 @@ uniform uint naga_vs_first_instance;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Fog {
     vec3 color;
@@ -21280,8 +21670,8 @@ precision highp int;
 struct Output {
     float exposure;
     uint tone_mapping;
-    uint spare_a;
-    uint spare_b;
+    uint flags;
+    uint spare;
 };
 struct Fog {
     vec3 color;

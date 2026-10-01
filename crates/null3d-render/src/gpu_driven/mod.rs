@@ -199,13 +199,14 @@ mod ids {
     }
 }
 
-/// Sizes the builder allocates once, and how its frames reach the canvas.
+/// Sizes the builder allocates once, what the device offers, and how its frames reach the canvas.
 #[derive(Clone, Copy, Debug)]
 pub struct RendererConfig {
-    /// MSAA samples of the color and depth targets.
-    pub samples: u32,
-    /// The scene color's target and the canvas's transparency.
+    /// The scene color's target, the anti-aliasing mode and the canvas's transparency.
     pub canvas: CanvasOutput,
+    /// True when the device has transient attachments, render targets that may stay in tile
+    /// memory (`Capabilities::TRANSIENT_ATTACHMENTS`).
+    pub transient_attachments: bool,
     pub max_materials: u32,
     /// Words of each frame's draw list.
     pub draw_list_words: usize,
@@ -220,8 +221,8 @@ pub struct RendererConfig {
 impl Default for RendererConfig {
     fn default() -> Self {
         Self {
-            samples: 4,
             canvas: CanvasOutput::default(),
+            transient_attachments: false,
             max_materials: sizes::MAX_MATERIALS,
             draw_list_words: 16 * 1024,
             storage_binding_bytes: sizes::PORTABLE_STORAGE_BINDING_BYTES,
@@ -283,9 +284,9 @@ impl GpuDrivenRenderer {
             pipelines: PipelineCache::default(),
             lists: ParityLists::new(config.draw_list_words),
             graph: FrameGraph::new(
-                config.samples,
                 true,
-                config.canvas.scene_color,
+                config.canvas,
+                config.transient_attachments,
                 GraphIds {
                     first_texture: ids::TARGETS,
                     final_pass: FinalIds {

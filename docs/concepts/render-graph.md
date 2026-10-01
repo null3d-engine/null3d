@@ -17,13 +17,13 @@ flowchart LR
     subgraph scene["One render pass"]
         opaque["Opaque"]
         transparent["Transparent"]
-        resolve["Resolve<br/>8-bit path"]
+        resolve["Resolve<br/>8-bit path with MSAA"]
     end
     opaque --> color[("scene color")]
     opaque --> depth[("scene depth")]
     color --> transparent
     depth --> transparent
-    transparent --> final["Final pass<br/>HDR path"] --> canvas[("canvas")]
+    transparent --> final["Final pass<br/>HDR path, or FXAA or none"] --> canvas[("canvas")]
     transparent -.-> resolve -.-> canvas
 ```
 
@@ -31,7 +31,7 @@ null3D draws each frame as a series of passes. A pass is one job for the GPU, su
 
 In 0.1 the render graph is internal: the engine declares every pass itself. The calls that add passes and print the graph come in null3D 0.2.
 
-In the diagram, boxes are passes and cylinders are data. An arrow into a pass shows what it reads, and an arrow out of a pass shows what it writes. The opaque and transparent passes share one render pass on the GPU. The scene color reaches the canvas through the final pass on devices that draw HDR color. On the other devices the resolve pass takes its place, along the dotted arrows, and shares the same render pass.
+In the diagram, boxes are passes and cylinders are data. An arrow into a pass shows what it reads, and an arrow out of a pass shows what it writes. The opaque and transparent passes share one render pass on the GPU. The scene color reaches the canvas through the final pass on devices that draw HDR color. So it does in the FXAA and no anti-aliasing modes. On the other devices with MSAA, the resolve pass takes its place, along the dotted arrows. It shares the opaque and transparent passes' render pass.
 
 ## The engine's passes
 
@@ -40,14 +40,14 @@ In the diagram, boxes are passes and cylinders are data. An arrow into a pass sh
 | Culling | Compute, one pass per view, on WebGPU only | The world matrix and bounds of every object and instance | The view's visible instances and draw counts |
 | Opaque | Scene, one pass per view | The view's visible instances, on WebGPU | The scene color and depth |
 | Transparent | Scene, one pass per view, on while some object blends | The view's blended objects, sorted back to front on the job workers | The scene color and depth |
-| Resolve | Resolve, on the 8-bit path | The scene color | The canvas |
-| Final pass | Fullscreen, on the HDR path | The scene color | The canvas |
+| Resolve | Resolve, on the 8-bit path with MSAA | The scene color | The canvas |
+| Final pass | Fullscreen, on the HDR path, and with FXAA or no anti-aliasing | The scene color | The canvas |
 
 On WebGL2 the job workers cull the objects before the frame draws, so the graph has no culling pass there. Passes for shadows, light clustering and a depth prepass join the graph as those features ship.
 
 A view is the scene seen from one camera, culled on its own. On WebGPU each view has a culling pass, and on WebGL2 the job workers list the visible objects of each view. The engine draws one view: the camera's. Its opaque pass draws the scene color and depth, and the scene color reaches the canvas.
 
-Where the scene draws HDR color, the final pass reads it and draws the canvas. It applies the exposure and the tone mapping, and encodes the color for the display. Some devices cannot use antialiasing on float targets. There the scene shaders tone map their own output into an 8-bit target. The resolve pass then runs instead of the final pass. It draws nothing: the scene's render pass resolves its multisampled color straight into the canvas. The frame then needs no extra pass, copy or texture. [Color management](color-management.md) covers both paths.
+Where the scene draws HDR color, the final pass reads it and draws the canvas. It applies the exposure and the tone mapping, and encodes the color for the display. In the FXAA anti-aliasing mode it also smooths the edges. Some devices cannot draw float targets in the anti-aliasing mode. There the scene shaders tone map their own output into an 8-bit target. With MSAA the resolve pass then runs instead of the final pass. It draws nothing: the scene's render pass resolves its multisampled color straight into the canvas. The frame then needs no extra pass, copy or texture. With FXAA or none, the final pass reads the 8-bit target and keeps its colors. [Color management](color-management.md) covers both paths.
 
 ## Why passes are declarations
 
@@ -85,11 +85,12 @@ The graph also works out how each texture is used: as a render target, as a text
 Phone GPUs draw in tiles, and copying tiles between the chip and memory takes much of their time. The graph keeps that copying low:
 
 - Neighboring passes that draw into the same targets share one render pass, so the targets stay on the chip between them. The opaque pass and the resolve pass share one render pass this way.
-- A render pass stores a target only when a later pass or frame needs it. The engine's render pass resolves the multisampled scene color into a texture for the final pass. On the 8-bit path, it resolves the color straight into the canvas instead. It then discards the multisampled color and the depth, so neither goes to memory.
+- A render pass stores a target only when a later pass or frame needs it. With MSAA, the engine's render pass resolves the multisampled scene color into a texture for the final pass. On the 8-bit path, it resolves the color straight into the canvas instead. It then discards the multisampled color and the depth, so neither goes to memory.
+- A target that lives within one render pass takes the transient attachment usage where the browser offers it. The multisampled color and the depth are such targets. The GPU can then keep it in tile memory and never give it memory of its own.
 
 ## Switching passes on and off
 
-The graph can switch a pass on or off with no new declarations. A pass that is off counts as absent. The engine switches its final pass and its resolve pass this way, from the format of the scene color.
+The graph can switch a pass on or off with no new declarations. A pass that is off counts as absent. The engine switches its final pass and its resolve pass this way, from the format of the scene color and the anti-aliasing mode.
 
 After a batch of changes, the graph compiles once, before the next frame draws. While nothing changes, it keeps its plan. Compiling reuses the graph's memory, so switching passes allocates no memory in the frame loop.
 

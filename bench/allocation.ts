@@ -2,16 +2,17 @@
 // Chrome's heap profiler. Engine code and the sketch's row writes must allocate nothing per frame;
 // the few places that allocate because the browser does each have a budget below. It opens the
 // null3d S1 page in Chrome, lets the browser optimize the frame code, attaches the heap profiler to
-// both workers through Chrome's debugging protocol, samples allocations for a few seconds, and
-// prints the bytes per frame of every place that allocated. From the page's start to the end of
-// the sample, it moves the mouse over the canvas and presses a key and the mouse button, so the
-// sample covers the sketch's reading of input. It draws with WebGPU, or with WebGL2 when
-// `--gpu webgl2` asks for it, and runs S1-cells, whose views skip whole grid cells, when
-// `--scene s1-cells` asks for it, and makes S1's boxes see through when `--blend` asks for it, so
-// each frame sorts every visible row for the transparent pass. It samples the production build of
-// the benchmark pages, as a developer ships the engine, and names the build's functions through
-// its source maps; `--dev` samples the dev server's pages, with the engine's development checks.
-// From the repository root:
+// both workers through Chrome's debugging protocol, and samples allocations twice, a few seconds
+// each. It prints the bytes per frame of every place that allocated, and judges each place by the
+// sample where it allocated least, so an event that happens once fails no place. From the page's
+// start to the end of the samples, it moves the mouse over the canvas and presses a key and the
+// mouse button, so the samples cover the sketch's reading of input. It draws with WebGPU, or with
+// WebGL2 when `--gpu webgl2` asks for it, and runs S1-cells, whose views skip whole grid cells,
+// when `--scene s1-cells` asks for it, and makes S1's boxes see through when `--blend` asks for
+// it, so each frame sorts every visible row for the transparent pass. It samples the production
+// build of the benchmark pages, as a developer ships the engine, and names the build's functions
+// through its source maps; `--dev` samples the dev server's pages, with the engine's development
+// checks. From the repository root:
 //   bun run bench:allocation
 //   bun run bench:allocation --n 30000 --seconds 5 --warmup 30
 //   bun run bench:allocation --gpu webgl2
@@ -20,7 +21,8 @@
 // At 30,000 instances a frame's upload goes through the staging ring; at 100,000 it does not.
 import { chromium, type Page } from '@playwright/test';
 import { DEBUG_PORT } from '../tests/lib/server.ts';
-import { attachWorkers, type CallFrame, DevTools, pagesAt, placeName, sleep } from './lib/devtools';
+import { byPlace, type ProfileNode, type Sample, steadyPlaces, totalSize } from './lib/allocation';
+import { attachWorkers, DevTools, pagesAt, sleep } from './lib/devtools';
 import { pagePath } from './lib/parity';
 import { DEV_OPTION, pagesText, serveBenchPages } from './lib/serve';
 import type { BuildNames } from './lib/source-names';
@@ -37,6 +39,11 @@ const WARMUP_SECONDS = 30;
  * display at a lower refresh rate needs more seconds for the same warm-up.
  */
 const WARMUP_FRAMES = 3600;
+/**
+ * Samples the check takes one after another. Allocation in every frame shows in each of them. An
+ * event that happens once, such as the browser installing code it has just optimized, lands in one.
+ */
+const SAMPLES = 2;
 /** The workers the check samples, by a part of their script's URL. */
 const WORKERS = ['sketch-worker', 'render-worker'] as const;
 
@@ -91,24 +98,11 @@ const BUDGETS: Record<(typeof WORKERS)[number], Record<string, number>> = {
 /** The most bytes per frame any other place may allocate: sampling noise, less than one object. */
 const OTHER_BUDGET = 4;
 
-interface ProfileNode {
-	callFrame: CallFrame;
-	selfSize: number;
-	children: ProfileNode[];
-}
-
 /** Gives each node of a profile its function's name and file from the build's source maps. */
 function nameNodes(node: ProfileNode, names: BuildNames): void {
 	node.callFrame = names.name(node.callFrame);
 	for (const child of node.children) nameNodes(child, names);
 }
-
-function totalSize(node: ProfileNode): number {
-	return node.selfSize + node.children.reduce((sum, child) => sum + totalSize(child), 0);
-}
-
-/** Callers shown for each place that allocates. */
-const CALLERS_SHOWN = 2;
 
 /** How often the input driver acts, in milliseconds: about once per frame at 60 Hz. */
 const INPUT_STEP_MS = 16;
@@ -132,33 +126,6 @@ async function driveInput(page: Page, running: () => boolean): Promise<void> {
 		if (step % 30 === 5) await page.mouse.up();
 		await sleep(INPUT_STEP_MS);
 	}
-}
-
-interface Place {
-	bytes: number;
-	/** The callers of the call path that allocated most here. */
-	callers: string;
-	largest: number;
-}
-
-/** Bytes by the place that allocated them. */
-function byPlace(
-	node: ProfileNode,
-	out = new Map<string, Place>(),
-	callers: readonly string[] = [],
-): Map<string, Place> {
-	const name = placeName(node.callFrame);
-	if (node.selfSize > 0) {
-		const place = out.get(name) ?? { bytes: 0, callers: '', largest: 0 };
-		place.bytes += node.selfSize;
-		if (node.selfSize > place.largest) {
-			place.largest = node.selfSize;
-			place.callers = callers.slice(0, CALLERS_SHOWN).join(' < ');
-		}
-		out.set(name, place);
-	}
-	for (const child of node.children) byPlace(child, out, [name, ...callers]);
-	return out;
 }
 
 async function main(): Promise<void> {
@@ -188,7 +155,7 @@ async function main(): Promise<void> {
 	try {
 		const page = await browser.newPage({ viewport: { width: 1400, height: 800 } });
 		// The page's own measurement starts after the sampling ends, so its timers stay off.
-		const pageSeconds = warmup + seconds + 60;
+		const pageSeconds = warmup + seconds * SAMPLES + 60;
 		const kind = gpu === 'webgl2' ? 'null3d-webgl2' : 'null3d-webgpu';
 		const blend = args.includes('--blend') ? '&blend' : '';
 		const url = `${server.url}${pagePath(scene, kind, `seconds=${pageSeconds}&n=${n}${blend}`)}`;
@@ -223,50 +190,66 @@ async function main(): Promise<void> {
 		// Let the sketch run its setup and warm up before sampling.
 		await sleep(warmup * 1000);
 		while ((await framesSoFar()) < WARMUP_FRAMES) await sleep(1000);
-		for (const sessionId of sessions.values()) {
+		for (const sessionId of sessions.values())
 			await devtools.send('HeapProfiler.enable', {}, sessionId);
-			// The profiler keeps the samples of objects that garbage collection frees, which per-frame
-			// garbage is; by default it reports only objects still alive when sampling stops.
-			await devtools.send(
-				'HeapProfiler.startSampling',
-				{
-					samplingInterval: SAMPLING_INTERVAL,
-					includeObjectsCollectedByMajorGC: true,
-					includeObjectsCollectedByMinorGC: true,
-				},
-				sessionId,
-			);
+		const samples = new Map<string, Sample[]>();
+		const bytes = new Map<string, number>();
+		let frames = 0;
+		for (let k = 0; k < SAMPLES; k++) {
+			for (const sessionId of sessions.values()) {
+				// The profiler keeps the samples of objects that garbage collection frees, which
+				// per-frame garbage is; by default it reports only objects still alive when sampling
+				// stops.
+				await devtools.send(
+					'HeapProfiler.startSampling',
+					{
+						samplingInterval: SAMPLING_INTERVAL,
+						includeObjectsCollectedByMajorGC: true,
+						includeObjectsCollectedByMinorGC: true,
+					},
+					sessionId,
+				);
+			}
+			const startFrames = await framesSoFar();
+			await sleep(seconds * 1000);
+			const heads = new Map<string, ProfileNode>();
+			for (const [name, sessionId] of sessions) {
+				const { profile } = await devtools.send<{ profile: { head: ProfileNode } }>(
+					'HeapProfiler.stopSampling',
+					{},
+					sessionId,
+				);
+				if (server.names) nameNodes(profile.head, server.names);
+				heads.set(name, profile.head);
+			}
+			const sampleFrames = (await framesSoFar()) - startFrames;
+			frames += sampleFrames;
+			for (const [name, head] of heads) {
+				samples.set(name, [
+					...(samples.get(name) ?? []),
+					{ places: byPlace(head), frames: sampleFrames },
+				]);
+				bytes.set(name, (bytes.get(name) ?? 0) + totalSize(head));
+			}
 		}
-		const startFrames = await framesSoFar();
-		await sleep(seconds * 1000);
-		const profiles = new Map<string, ProfileNode>();
-		for (const [name, sessionId] of sessions) {
-			const { profile } = await devtools.send<{ profile: { head: ProfileNode } }>(
-				'HeapProfiler.stopSampling',
-				{},
-				sessionId,
-			);
-			if (server.names) nameNodes(profile.head, server.names);
-			profiles.set(name, profile.head);
-		}
-		const frames = (await framesSoFar()) - startFrames;
 		driving = false;
 		await input;
 		devtools.close();
 		console.log(
-			`S1 on ${gpu} with ${n} instances, ${pagesText(dev)}, sampled for ${seconds} s after ${warmup} s: ${frames} frames`,
+			`S1 on ${gpu} with ${n} instances, ${pagesText(dev)}, sampled ${SAMPLES} times for ${seconds} s after ${warmup} s: ${frames} frames`,
+		);
+		console.log(
+			'Bytes per frame in the sample where each place allocated least, its budget, and the most:',
 		);
 		const over: string[] = [];
-		for (const [worker, head] of profiles) {
+		for (const [worker, workerSamples] of samples) {
 			const budgets = BUDGETS[worker as (typeof WORKERS)[number]];
-			console.log(`${worker}: ${(totalSize(head) / frames).toFixed(1)} bytes per frame`);
-			const places = [...byPlace(head)].sort((a, b) => b[1].bytes - a[1].bytes);
-			for (const [name, { bytes, callers }] of places) {
-				const perFrame = bytes / frames;
+			console.log(`${worker}: ${((bytes.get(worker) ?? 0) / frames).toFixed(1)} bytes per frame`);
+			for (const [name, { perFrame, most, callers }] of steadyPlaces(workerSamples)) {
 				const budget = budgets[name] ?? OTHER_BUDGET;
 				if (perFrame > budget) over.push(`${worker}: ${name}`);
 				console.log(
-					`  ${perFrame.toFixed(1).padStart(6)} of ${String(budget).padStart(3)}  ${name}${callers ? ` < ${callers}` : ''}`,
+					`  ${perFrame.toFixed(1).padStart(6)} of ${String(budget).padStart(3)} (${most.toFixed(1).padStart(6)})  ${name}${callers ? ` < ${callers}` : ''}`,
 				);
 			}
 		}

@@ -126,6 +126,24 @@ describe('unmarked writes to static objects', () => {
 		expect(frame()).toBeUndefined();
 	});
 
+	test('setBounds and setMesh in the late update leave no report before the core marks it', () => {
+		const { scene, create, frame } = fakeScene();
+		const crate = create('Crate');
+		frame();
+		// A call in onLateUpdate queues its change for the next frame, after the late check.
+		crate.setBounds([0, 2, 0], 3);
+		expect(frame()).toBeUndefined();
+		crate.setMesh({ id: 2, radius: 5, core: scene.core } as unknown as MeshGeometry);
+		expect(frame()).toBeUndefined();
+		// Writes that skip a setter still show, before and after such a call.
+		scene.views.positions[crate.slot * 3] = 4;
+		crate.setBounds([0, 1, 0], 2);
+		expect(frame()).toStartWith('E1110: the position of "Crate" (slot 1) changed');
+		crate.setBounds([0, 1, 0], 3);
+		scene.views.radii[crate.slot] = 9;
+		expect(frame()).toStartWith('E1110: the bounding sphere of "Crate" (slot 1) changed');
+	});
+
 	test('a write the dirty bit marks is not reported', () => {
 		const { scene, create, frame } = fakeScene();
 		const crate = create('Crate');
