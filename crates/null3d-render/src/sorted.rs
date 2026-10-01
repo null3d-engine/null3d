@@ -33,7 +33,7 @@ use null3d_core::depth_sort::{DepthSorted, SortSet, cull_and_sort, split_item};
 use null3d_core::handle::Handle;
 use null3d_core::instances::{BatchTable, InstanceBatch};
 use null3d_core::jobs::JobSystem;
-use null3d_core::scene::SceneStorage;
+use null3d_core::scene::{SceneStorage, flags};
 use null3d_core::world::SphereArrays;
 
 use crate::frame::{
@@ -195,8 +195,9 @@ impl SortedLayout {
 
     /// Finds every scene object and batch whose mesh and material pair blends, and gives each
     /// key a bucket, with its pipeline id from `pipelines` for a pass that draws into `targets`.
-    /// `place` gives a batch's first row in the builder's data and its data texture. The layout
-    /// then reserves every list that a frame's sort takes.
+    /// `place` gives a batch's first row in the builder's data and its data texture. While
+    /// `shadows` is true, scene objects that receive shadows draw with pipelines that read the
+    /// shadow map. The layout then reserves every list that a frame's sort takes.
     #[allow(clippy::too_many_arguments)]
     pub(crate) fn rebuild(
         &mut self,
@@ -207,21 +208,30 @@ impl SortedLayout {
         batches: &BatchTable,
         place: impl Fn(usize, &InstanceBatch) -> (u32, u32),
         resident: u32,
+        shadows: bool,
     ) -> Result<(), TryReserveError> {
         let meshes = settings.meshes();
-        let key_of = |mesh: u32, material: u32, group: u32| -> Option<SortedKey> {
+        let key_of = |mesh: u32, material: u32, group: u32, object: u32| -> Option<SortedKey> {
             let pipeline = settings.pipeline_of(mesh, material)?;
             if !pipeline.blends() {
                 return None;
             }
+            let pipeline = if shadows && object & flags::RECEIVE_SHADOWS != 0 {
+                settings.receiving(pipeline)
+            } else {
+                pipeline
+            };
             let textures = settings.texture_group(material, pipeline);
             let page = meshes.parts(meshes.mesh(mesh - 1)?).first()?.page;
             Some((pipeline, textures, page, mesh, material, group))
         };
-        let scene_key =
-            |slot: usize| key_of(scene.meshes()[slot], scene.materials()[slot], resident);
+        let scene_key = |slot: usize| {
+            let (mesh, material) = (scene.meshes()[slot], scene.materials()[slot]);
+            key_of(mesh, material, resident, scene.flags()[slot])
+        };
+        // Instance batches receive no shadows yet.
         let batch_key = |index: usize, batch: &InstanceBatch| {
-            key_of(batch.mesh(), batch.material(), place(index, batch).1)
+            key_of(batch.mesh(), batch.material(), place(index, batch).1, 0)
         };
         collect_bucket_keys(&mut self.key_counts, scene, batches, scene_key, batch_key);
 

@@ -10,6 +10,12 @@
 //! compacted instances and indirect draws, which its opaque pass reads. On WebGL2 the job workers
 //! cull each view before the frame records, so that graph has no culling passes.
 //!
+//! A builder that binds a shadow map keeps one texture array for it (see [`crate::shadows`]),
+//! which every opaque pass samples. While a directional light casts shadows, each cascade has a
+//! shadow pass that draws the casters' depth into its layer of the array, and on WebGPU a culling
+//! pass of its own before it. Without shadows the array is one texel of one layer, which no pass
+//! draws, so the scene's bindings stay the same.
+//!
 //! The debug lines pass draws the lines that the sketch drew (see [`crate::debug_lines`]) into the
 //! scene color and depth, after the camera's opaque pass and in its render pass. It is on only in
 //! frames with lines, so the plan of a frame without them has no such pass.
@@ -54,6 +60,7 @@ use crate::graph::{
 };
 use crate::output::{Antialias, Output, SceneColor};
 use crate::pipelines::{PassTargets, PipelineCache};
+use crate::shadows::MAX_CASCADES;
 use crate::view::{View, ViewId};
 
 /// The format of the scene's depth targets.
@@ -74,11 +81,42 @@ const OBJECTS: &str = "objects";
 const SCENE_COLOR: &str = "sceneColor";
 /// The camera's depth target.
 const SCENE_DEPTH: &str = "sceneDepth";
+/// The shadow map: a depth texture array with one layer per cascade, kept between frames.
+const SHADOW_MAP: &str = "shadowMap";
+/// Each cascade's culling pass, the buffer of its compacted instances and indirect draws, and its
+/// shadow pass.
+const SHADOW_CULLING: [&str; MAX_CASCADES] = [
+    "ShadowCulling0",
+    "ShadowCulling1",
+    "ShadowCulling2",
+    "ShadowCulling3",
+];
+const SHADOW_VISIBLE: [&str; MAX_CASCADES] = [
+    "shadowVisible0",
+    "shadowVisible1",
+    "shadowVisible2",
+    "shadowVisible3",
+];
+const SHADOW_CASCADES: [&str; MAX_CASCADES] = [
+    "ShadowCascade0",
+    "ShadowCascade1",
+    "ShadowCascade2",
+    "ShadowCascade3",
+];
 /// Ids after the first texture's that the views of layers take: the plan's textures take the ones
 /// below.
 const LAYER_VIEWS: u32 = 128;
 /// No views of layers: a texture that no pass draws into by layer.
 const NO_VIEWS: u32 = u32::MAX;
+
+/// The shadow passes of a directional light: its cascades, the texels on each side of each
+/// cascade's layer, and the light's layer mask, which selects the casters.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct ShadowPasses {
+    pub(crate) cascades: u32,
+    pub(crate) map_size: u32,
+    pub(crate) layers: u32,
+}
 
 /// What a declared pass records.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -87,6 +125,8 @@ pub(crate) enum Role {
     Cull(ViewId),
     /// Draws a view's opaque objects.
     Opaque(ViewId),
+    /// Draws the depth of a shadow cascade's casters, by the cascade's view.
+    Shadow(ViewId),
     /// Draws the frame's debug lines into the camera's view.
     DebugLines,
     /// Draws a view's blended objects, back to front, over its opaque ones.
@@ -154,6 +194,14 @@ pub(crate) struct FrameGraph {
     textures_made: bool,
     /// The canvas size the draw lists set last, or `(0, 0)` before any.
     canvas: (u32, u32),
+    /// True when the builder's scene passes bind a shadow map.
+    shadow_map: bool,
+    /// The directional light's shadow passes, or `None` without shadows.
+    shadows: Option<ShadowPasses>,
+    /// Each cascade's shadow pass, once the passes are declared.
+    shadow_passes: Vec<PassId>,
+    /// True once the passes are declared for the views, the shadows and the shadow map.
+    declared: bool,
     /// For each texture of the plan, the first of the views of its layers, counted from the views'
     /// first id, or [`NO_VIEWS`].
     layer_views: Vec<u32>,
@@ -198,8 +246,39 @@ impl FrameGraph {
             canvas: (0, 0),
             layer_views: Vec::new(),
             made_views: 0,
+            shadow_map: false,
+            shadows: None,
+            shadow_passes: Vec::new(),
+            declared: false,
             final_pass: FinalPass::new(ids.final_pass, scene_color, antialias),
         }
+    }
+
+    /// Makes the scene passes sample a shadow map, which the builder binds with every view's
+    /// objects. Without shadows the map is one texel of one layer.
+    pub(crate) fn bind_shadow_map(&mut self) {
+        self.shadow_map = true;
+        self.declared = false;
+    }
+
+    /// Sets the directional light's shadow passes for the next frames, or none. A new cascade count
+    /// or map size declares the passes again, which makes the shadow map again. A new layer mask
+    /// only changes the passes' masks. A builder that binds no shadow map draws no shadows.
+    pub(crate) fn set_shadows(&mut self, shadows: Option<ShadowPasses>) {
+        let shadows = shadows.filter(|_| self.shadow_map).map(|s| ShadowPasses {
+            cascades: s.cascades.clamp(1, MAX_CASCADES as u32),
+            map_size: s.map_size.max(1),
+            layers: s.layers,
+        });
+        let shape = |s: Option<ShadowPasses>| s.map(|s| (s.cascades, s.map_size));
+        if shape(shadows) != shape(self.shadows) {
+            self.declared = false;
+        } else if let Some(shadows) = shadows {
+            for &pass in &self.shadow_passes {
+                self.graph.set_layers(pass, shadows.layers);
+            }
+        }
+        self.shadows = shadows;
     }
 
     /// The render graph.
@@ -230,7 +309,7 @@ impl FrameGraph {
     /// Declares the passes again when the number of views changed, and gives each view's opaque
     /// pass the view's layers, which change without a new plan.
     pub(crate) fn sync_views(&mut self, views: &[View]) {
-        if views.len() != self.views {
+        if views.len() != self.views || !self.declared {
             self.declare(views);
         }
         for (&pass, view) in self.opaque.iter().zip(views) {
@@ -260,16 +339,27 @@ impl FrameGraph {
         self.graph.add_pass(pass)
     }
 
-    /// Declares the engine's passes for `views`: each view's culling pass on WebGPU, each view's
-    /// opaque pass, the debug lines pass, which is off, each view's transparent pass, then the
-    /// resolve pass and the final pass, of which one runs.
+    /// Declares the engine's passes for `views`: each view's culling pass on WebGPU, each shadow
+    /// cascade's culling and shadow passes, each view's opaque pass, the debug lines pass, which
+    /// is off, each view's transparent pass, then the resolve pass and the final pass, of which one
+    /// runs.
     fn declare(&mut self, views: &[View]) {
         self.graph.clear();
         self.roles.clear();
         self.opaque.clear();
         self.transparent.clear();
+        self.shadow_passes.clear();
         let color = Target::color(self.scene_color.format()).samples(self.samples);
         let depth = Target::depth(DEPTH_FORMAT).samples(self.samples);
+        if self.shadow_map {
+            let (layers, size) = self.shadows.map_or((1, 1), |s| (s.cascades, s.map_size));
+            let map = Target::depth(DEPTH_FORMAT).layers(layers).array();
+            let size = Size::Fixed {
+                width: size,
+                height: size,
+            };
+            self.graph.keep(SHADOW_MAP, map, size);
+        }
         if self.gpu_culling {
             self.graph.import_buffer(OBJECTS);
             for index in 0..views.len() {
@@ -279,6 +369,9 @@ impl FrameGraph {
                 self.add(pass, Role::Cull(ViewId::from_index(index)));
             }
         }
+        if let Some(shadows) = self.shadows {
+            self.declare_shadows(shadows);
+        }
         for (index, view) in views.iter().enumerate() {
             let mut pass = Pass::new(view_name(index, "Opaque", "Opaque"), PassKind::Scene)
                 .layers(view.layers())
@@ -286,6 +379,9 @@ impl FrameGraph {
                 .creates(view_name(index, SCENE_DEPTH, "depth"), depth);
             if self.gpu_culling {
                 pass = pass.reads(view_name(index, "visible", "visible"));
+            }
+            if self.shadow_map {
+                pass = pass.reads(SHADOW_MAP);
             }
             let pass = self.add(pass, Role::Opaque(ViewId::from_index(index)));
             self.opaque.push(pass);
@@ -319,6 +415,32 @@ impl FrameGraph {
         self.graph.set_enabled(resolve, !self.final_runs);
         self.graph.set_enabled(final_pass, self.final_runs);
         self.views = views.len();
+        self.declared = true;
+    }
+
+    /// Declares each cascade's culling pass on WebGPU, and its shadow pass, which draws into the
+    /// cascade's layer of the shadow map.
+    fn declare_shadows(&mut self, shadows: ShadowPasses) {
+        let size = Size::Fixed {
+            width: shadows.map_size,
+            height: shadows.map_size,
+        };
+        for cascade in 0..shadows.cascades as usize {
+            let view = ViewId::cascade(cascade);
+            let mut pass = Pass::new(SHADOW_CASCADES[cascade], PassKind::Shadow)
+                .size(size)
+                .layers(shadows.layers)
+                .writes_layer(SHADOW_MAP, cascade as u32);
+            if self.gpu_culling {
+                let culling = Pass::new(SHADOW_CULLING[cascade], PassKind::Compute)
+                    .reads(OBJECTS)
+                    .creates_buffer(SHADOW_VISIBLE[cascade]);
+                self.add(culling, Role::Cull(view));
+                pass = pass.reads(SHADOW_VISIBLE[cascade]);
+            }
+            let pass = self.add(pass, Role::Shadow(view));
+            self.shadow_passes.push(pass);
+        }
     }
 
     /// Compiles the graph if its passes changed, then sets the canvas size and makes the plan's
@@ -552,6 +674,23 @@ impl FrameGraph {
             },
             Surface::Canvas => 0,
         }
+    }
+
+    /// True when the frame's [`FrameGraph::prepare`] made or released a texture of the plan, so
+    /// bind groups that name one must be made again.
+    pub(crate) fn textures_made(&self) -> bool {
+        self.textures_made
+    }
+
+    /// The draw list's id of the shadow map, which bind groups name, or `None` for a builder that
+    /// binds none. Valid once the frame's [`FrameGraph::prepare`] made the plan's textures.
+    pub(crate) fn shadow_map(&self) -> Option<u32> {
+        if !self.shadow_map {
+            return None;
+        }
+        let plan = self.graph.plan()?;
+        let surface = plan.texture_of(self.graph.find_resource(SHADOW_MAP)?)?;
+        Some(self.texture_id(surface))
     }
 
     /// Forgets the canvas size, the textures and views the draw lists made and the final pass's

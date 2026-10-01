@@ -90,7 +90,7 @@ export function meshFromArrays(core: CoreMemory, arrays: MeshArrays, call: strin
 	if (arrays.computeNormals) layout |= MESH_ARRAYS_COMPUTE_NORMALS;
 	if (arrays.computeTangents) layout |= MESH_ARRAYS_COMPUTE_TANGENTS;
 	const indexCount = indices?.length ?? 0;
-	const address = core.check(core.glue.meshArrays(floats + indexCount), call);
+	const address = core.checkGrowth(core.glue.meshArrays(floats + indexCount), call);
 	const words = core.f32(address, floats);
 	let at = 0;
 	for (const [name] of FLOAT_ARRAYS) {

@@ -353,6 +353,7 @@ impl CpuCulledRenderer {
                 input.batches,
                 place,
                 RESIDENT,
+                false,
             )
             .map_err(out_of_memory)?;
         let records = Transparent::records_bound(&self.sorted, self.config.multi_draw);

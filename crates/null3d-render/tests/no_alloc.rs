@@ -14,8 +14,8 @@ use common::blended::add_scene;
 use common::graph::{CASCADES, engine_passes};
 use common::{World, base_sphere, grid};
 use null3d_core::jobs::JobSystem;
-use null3d_core::lights::{POINT_CONE, VisibleLight, kind};
-use null3d_core::scene::Command;
+use null3d_core::lights::{POINT_CONE, SunShadow, VisibleLight, kind};
+use null3d_core::scene::{Command, flags};
 use null3d_core::testing::CountingAllocator;
 use null3d_gpu::drawlist::{DrawList, Op, format};
 use null3d_render::camera::{Lens, Perspective};
@@ -46,6 +46,37 @@ fn recording_steady_frames_allocates_nothing() {
         world.frame = frame;
         world.record(false);
     }
+    assert_eq!(CountingAllocator::disarm(), 0);
+}
+
+#[test]
+fn recording_frames_with_shadows_allocates_nothing() {
+    let _only = CountingAllocator::exclusive();
+    CountingAllocator::track_this_thread();
+    let mut world = World::new();
+    let casts = flags::CAST_SHADOWS | flags::RECEIVE_SHADOWS;
+    let commands: Vec<Command> = world
+        .objects
+        .iter()
+        .map(|&object| Command::set_flags(object, casts, casts))
+        .collect();
+    world.scene.apply_commands(&commands, world.frame).unwrap();
+    let shadow = SunShadow {
+        cascades: 4,
+        map_size: 1024,
+        bias: 0.5,
+        normal_bias: 1.0,
+        distance: 60.0,
+        layers: 1,
+    };
+    world.renderer.settings_mut().set_sun_shadow(Some(shadow));
+    world.record(true);
+    // Frames of both parities, and a rebuild on each parity, warm up.
+    record_until(&mut world, 6, false);
+    record_until(&mut world, 8, true);
+    CountingAllocator::arm();
+    record_until(&mut world, 100, false);
+    record_until(&mut world, 120, true);
     assert_eq!(CountingAllocator::disarm(), 0);
 }
 
