@@ -1754,6 +1754,10 @@ fn pcg(v_2: u32) -> u32 {
     return ((word >> 22u) ^ word);
 }
 
+fn to_unit(h: u32) -> f32 {
+    return (f32((h >> 8u)) / 16777216f);
+}
+
 fn apply_fog(c_4: vec3<f32>, fog_color: vec3<f32>, factor: f32) -> vec3<f32> {
     return mix(c_4, fog_color, factor);
 }
@@ -1818,7 +1822,8 @@ fn tone_map(c_5: vec3<f32>, settings: Output) -> vec3<f32> {
 fn pixel_noise(pixel: vec2<f32>) -> f32 {
     let _e5 = pcg(u32(pixel.y));
     let _e7 = pcg((u32(pixel.x) + _e5));
-    return (f32((_e7 >> 8u)) / 16777216f);
+    let _e8 = to_unit(_e7);
+    return _e8;
 }
 
 fn encode(c_6: vec3<f32>, pixel_1: vec2<f32>) -> vec3<f32> {
@@ -2312,6 +2317,10 @@ fn pcg(v_2: u32) -> u32 {
     return ((word >> 22u) ^ word);
 }
 
+fn to_unit(h: u32) -> f32 {
+    return (f32((h >> 8u)) / 16777216f);
+}
+
 fn apply_fog(c_4: vec3<f32>, fog_color: vec3<f32>, factor: f32) -> vec3<f32> {
     return mix(c_4, fog_color, factor);
 }
@@ -2376,7 +2385,8 @@ fn tone_map(c_5: vec3<f32>, settings: Output) -> vec3<f32> {
 fn pixel_noise(pixel: vec2<f32>) -> f32 {
     let _e5 = pcg(u32(pixel.y));
     let _e7 = pcg((u32(pixel.x) + _e5));
-    return (f32((_e7 >> 8u)) / 16777216f);
+    let _e8 = to_unit(_e7);
+    return _e8;
 }
 
 fn encode(c_6: vec3<f32>, pixel_1: vec2<f32>) -> vec3<f32> {
@@ -3872,6 +3882,10 @@ fn pcg(v_2: u32) -> u32 {
     return ((word >> 22u) ^ word);
 }
 
+fn to_unit(h: u32) -> f32 {
+    return (f32((h >> 8u)) / 16777216f);
+}
+
 fn apply_fog(c_4: vec3<f32>, fog_color: vec3<f32>, factor: f32) -> vec3<f32> {
     return mix(c_4, fog_color, factor);
 }
@@ -3936,7 +3950,8 @@ fn tone_map(c_5: vec3<f32>, settings: Output) -> vec3<f32> {
 fn pixel_noise(pixel: vec2<f32>) -> f32 {
     let _e5 = pcg(u32(pixel.y));
     let _e7 = pcg((u32(pixel.x) + _e5));
-    return (f32((_e7 >> 8u)) / 16777216f);
+    let _e8 = to_unit(_e7);
+    return _e8;
 }
 
 fn encode(c_6: vec3<f32>, pixel_1: vec2<f32>) -> vec3<f32> {
@@ -4437,6 +4452,10 @@ fn pcg(v_2: u32) -> u32 {
     return ((word >> 22u) ^ word);
 }
 
+fn to_unit(h: u32) -> f32 {
+    return (f32((h >> 8u)) / 16777216f);
+}
+
 fn apply_fog(c_4: vec3<f32>, fog_color: vec3<f32>, factor: f32) -> vec3<f32> {
     return mix(c_4, fog_color, factor);
 }
@@ -4501,7 +4520,8 @@ fn tone_map(c_5: vec3<f32>, settings: Output) -> vec3<f32> {
 fn pixel_noise(pixel: vec2<f32>) -> f32 {
     let _e5 = pcg(u32(pixel.y));
     let _e7 = pcg((u32(pixel.x) + _e5));
-    return (f32((_e7 >> 8u)) / 16777216f);
+    let _e8 = to_unit(_e7);
+    return _e8;
 }
 
 fn encode(c_6: vec3<f32>, pixel_1: vec2<f32>) -> vec3<f32> {
@@ -6472,6 +6492,10 @@ fn pcg(v_2: u32) -> u32 {
     return ((word >> 22u) ^ word);
 }
 
+fn to_unit(h: u32) -> f32 {
+    return (f32((h >> 8u)) / 16777216f);
+}
+
 fn apply_fog(c_4: vec3<f32>, fog_color: vec3<f32>, factor: f32) -> vec3<f32> {
     return mix(c_4, fog_color, factor);
 }
@@ -6536,7 +6560,8 @@ fn tone_map(c_5: vec3<f32>, settings: Output) -> vec3<f32> {
 fn pixel_noise(pixel: vec2<f32>) -> f32 {
     let _e5 = pcg(u32(pixel.y));
     let _e7 = pcg((u32(pixel.x) + _e5));
-    return (f32((_e7 >> 8u)) / 16777216f);
+    let _e8 = to_unit(_e7);
+    return _e8;
 }
 
 fn encode(c_6: vec3<f32>, pixel_1: vec2<f32>) -> vec3<f32> {
@@ -7168,6 +7193,10 @@ fn pcg(v_2: u32) -> u32 {
     return ((word >> 22u) ^ word);
 }
 
+fn to_unit(h: u32) -> f32 {
+    return (f32((h >> 8u)) / 16777216f);
+}
+
 fn apply_fog(c_4: vec3<f32>, fog_color: vec3<f32>, factor: f32) -> vec3<f32> {
     return mix(c_4, fog_color, factor);
 }
@@ -7237,7 +7266,8 @@ fn tone_map(c_5: vec3<f32>, settings: Output) -> vec3<f32> {
 fn pixel_noise(pixel: vec2<f32>) -> f32 {
     let _e5 = pcg(u32(pixel.y));
     let _e7 = pcg((u32(pixel.x) + _e5));
-    return (f32((_e7 >> 8u)) / 16777216f);
+    let _e8 = to_unit(_e7);
+    return _e8;
 }
 
 fn encode(c_6: vec3<f32>, pixel_1: vec2<f32>) -> vec3<f32> {
@@ -8490,6 +8520,10 @@ fn pcg(v_2: u32) -> u32 {
     return ((word >> 22u) ^ word);
 }
 
+fn to_unit(h: u32) -> f32 {
+    return (f32((h >> 8u)) / 16777216f);
+}
+
 fn apply_fog(c_4: vec3<f32>, fog_color: vec3<f32>, factor: f32) -> vec3<f32> {
     return mix(c_4, fog_color, factor);
 }
@@ -8554,7 +8588,8 @@ fn tone_map(c_5: vec3<f32>, settings: Output) -> vec3<f32> {
 fn pixel_noise(pixel: vec2<f32>) -> f32 {
     let _e5 = pcg(u32(pixel.y));
     let _e7 = pcg((u32(pixel.x) + _e5));
-    return (f32((_e7 >> 8u)) / 16777216f);
+    let _e8 = to_unit(_e7);
+    return _e8;
 }
 
 fn encode(c_6: vec3<f32>, pixel_1: vec2<f32>) -> vec3<f32> {
@@ -9182,6 +9217,10 @@ fn pcg(v_2: u32) -> u32 {
     return ((word >> 22u) ^ word);
 }
 
+fn to_unit(h: u32) -> f32 {
+    return (f32((h >> 8u)) / 16777216f);
+}
+
 fn apply_fog(c_4: vec3<f32>, fog_color: vec3<f32>, factor: f32) -> vec3<f32> {
     return mix(c_4, fog_color, factor);
 }
@@ -9251,7 +9290,8 @@ fn tone_map(c_5: vec3<f32>, settings: Output) -> vec3<f32> {
 fn pixel_noise(pixel: vec2<f32>) -> f32 {
     let _e5 = pcg(u32(pixel.y));
     let _e7 = pcg((u32(pixel.x) + _e5));
-    return (f32((_e7 >> 8u)) / 16777216f);
+    let _e8 = to_unit(_e7);
+    return _e8;
 }
 
 fn encode(c_6: vec3<f32>, pixel_1: vec2<f32>) -> vec3<f32> {
@@ -11144,6 +11184,10 @@ fn pcg(v_2: u32) -> u32 {
     return ((word >> 22u) ^ word);
 }
 
+fn to_unit(h: u32) -> f32 {
+    return (f32((h >> 8u)) / 16777216f);
+}
+
 fn apply_fog(c_4: vec3<f32>, fog_color: vec3<f32>, factor: f32) -> vec3<f32> {
     return mix(c_4, fog_color, factor);
 }
@@ -11208,7 +11252,8 @@ fn tone_map(c_5: vec3<f32>, settings: Output) -> vec3<f32> {
 fn pixel_noise(pixel: vec2<f32>) -> f32 {
     let _e5 = pcg(u32(pixel.y));
     let _e7 = pcg((u32(pixel.x) + _e5));
-    return (f32((_e7 >> 8u)) / 16777216f);
+    let _e8 = to_unit(_e7);
+    return _e8;
 }
 
 fn encode(c_6: vec3<f32>, pixel_1: vec2<f32>) -> vec3<f32> {
@@ -11847,6 +11892,10 @@ fn pcg(v_2: u32) -> u32 {
     return ((word >> 22u) ^ word);
 }
 
+fn to_unit(h: u32) -> f32 {
+    return (f32((h >> 8u)) / 16777216f);
+}
+
 fn apply_fog(c_4: vec3<f32>, fog_color: vec3<f32>, factor: f32) -> vec3<f32> {
     return mix(c_4, fog_color, factor);
 }
@@ -11916,7 +11965,8 @@ fn tone_map(c_5: vec3<f32>, settings: Output) -> vec3<f32> {
 fn pixel_noise(pixel: vec2<f32>) -> f32 {
     let _e5 = pcg(u32(pixel.y));
     let _e7 = pcg((u32(pixel.x) + _e5));
-    return (f32((_e7 >> 8u)) / 16777216f);
+    let _e8 = to_unit(_e7);
+    return _e8;
 }
 
 fn encode(c_6: vec3<f32>, pixel_1: vec2<f32>) -> vec3<f32> {
@@ -13183,6 +13233,10 @@ fn pcg(v_2: u32) -> u32 {
     return ((word >> 22u) ^ word);
 }
 
+fn to_unit(h: u32) -> f32 {
+    return (f32((h >> 8u)) / 16777216f);
+}
+
 fn apply_fog(c_4: vec3<f32>, fog_color: vec3<f32>, factor: f32) -> vec3<f32> {
     return mix(c_4, fog_color, factor);
 }
@@ -13247,7 +13301,8 @@ fn tone_map(c_5: vec3<f32>, settings: Output) -> vec3<f32> {
 fn pixel_noise(pixel: vec2<f32>) -> f32 {
     let _e5 = pcg(u32(pixel.y));
     let _e7 = pcg((u32(pixel.x) + _e5));
-    return (f32((_e7 >> 8u)) / 16777216f);
+    let _e8 = to_unit(_e7);
+    return _e8;
 }
 
 fn encode(c_6: vec3<f32>, pixel_1: vec2<f32>) -> vec3<f32> {
@@ -13882,6 +13937,10 @@ fn pcg(v_2: u32) -> u32 {
     return ((word >> 22u) ^ word);
 }
 
+fn to_unit(h: u32) -> f32 {
+    return (f32((h >> 8u)) / 16777216f);
+}
+
 fn apply_fog(c_4: vec3<f32>, fog_color: vec3<f32>, factor: f32) -> vec3<f32> {
     return mix(c_4, fog_color, factor);
 }
@@ -13951,7 +14010,8 @@ fn tone_map(c_5: vec3<f32>, settings: Output) -> vec3<f32> {
 fn pixel_noise(pixel: vec2<f32>) -> f32 {
     let _e5 = pcg(u32(pixel.y));
     let _e7 = pcg((u32(pixel.x) + _e5));
-    return (f32((_e7 >> 8u)) / 16777216f);
+    let _e8 = to_unit(_e7);
+    return _e8;
 }
 
 fn encode(c_6: vec3<f32>, pixel_1: vec2<f32>) -> vec3<f32> {
