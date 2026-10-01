@@ -1,5 +1,7 @@
 import { type CDPSession, expect, test } from '@playwright/test';
 import { ENGINE_MODES } from '../lib/engine-checks.ts';
+import { prefixEngineScripts, restoreEngineScripts } from '../lib/engine-scripts.ts';
+import { gpuObjectsHeld, watchGpuObjects } from '../lib/gpu-ledger.ts';
 import { pageResult } from '../lib/page-result.ts';
 import type { RestartResult } from '../lib/plans.ts';
 
@@ -22,14 +24,20 @@ async function reachable(cdp: CDPSession, prototype: string): Promise<number> {
 
 // A page starts the engine again after it stops it, and after a collection it reaches none of a
 // stopped engine's memory, except the single-threaded build's core, which the page keeps for the
-// next engine.
+// next engine. Each stop destroys every GPU object that the engine made, with its device or its
+// WebGL2 context, on whichever thread drew: a browser frees what a stopped worker still holds only
+// when it collects the worker's objects. The count of GPU objects is exact, so a few starts show an
+// object that any start leaves behind.
 for (const gpu of ['webgpu', 'webgl2'] as const) {
 	for (const mode of ENGINE_MODES) {
-		test(`the engine starts again after it stops, and lets go of its memory, ${mode.name} on ${gpu}`, async ({
+		test(`the engine starts again after it stops, and lets go of its memory and its GPU objects, ${mode.name} on ${gpu}`, async ({
 			page,
 		}) => {
+			await watchGpuObjects(page);
 			await page.goto(`shared-memory.html?room=off&cycles=${CYCLES}&gpu=${gpu}&${mode.query}`);
 			const result = await pageResult<RestartResult & { error?: string }>(page, 60_000);
+			await restoreEngineScripts(page);
+			await expect.poll(() => gpuObjectsHeld(page)).toEqual({});
 			expect(result.error).toBeUndefined();
 			expect(result.kinds.engine?.error).toBeUndefined();
 			expect(result.kinds.engine?.cycles).toBe(CYCLES);
@@ -40,4 +48,33 @@ for (const gpu of ['webgpu', 'webgl2'] as const) {
 			expect(await reachable(cdp, 'Worker.prototype')).toBe(0);
 		});
 	}
+}
+
+/**
+ * Makes each GPU texture fail as the iPad's did once its GPU memory ran out, in every thread, so
+ * the thread that draws fails at its first frame, while the engine starts.
+ */
+const TEXTURES_FAIL = `if (typeof GPUDevice !== 'undefined') GPUDevice.prototype.createTexture = () => {
+	throw new DOMException('GPUDevice.createTexture: Unable to create texture.', 'InvalidStateError');
+};`;
+
+// When the thread that draws fails while the engine starts, the start fails with that error instead
+// of waiting for frames that never come. The engine has stopped by then, so after a collection the
+// page reaches none of its memory and none of its workers.
+for (const mode of ENGINE_MODES) {
+	test(`a start whose drawing fails rejects, and lets go of its memory, ${mode.name}`, async ({
+		page,
+	}) => {
+		await prefixEngineScripts(page, TEXTURES_FAIL);
+		await page.goto(`shared-memory.html?room=off&cycles=1&gpu=webgpu&${mode.query}`);
+		const result = await pageResult<RestartResult & { error?: string }>(page, 60_000);
+		await restoreEngineScripts(page);
+		const engine = result.kinds.engine;
+		expect(engine?.error).toMatch(/^E140[45]: .*Unable to create texture/);
+		const cdp = await page.context().newCDPSession(page);
+		await cdp.send('HeapProfiler.collectGarbage');
+		const kept = mode.build === 'single' ? 1 : 0;
+		expect(await reachable(cdp, 'WebAssembly.Memory.prototype')).toBe(kept);
+		expect(await reachable(cdp, 'Worker.prototype')).toBe(0);
+	});
 }
