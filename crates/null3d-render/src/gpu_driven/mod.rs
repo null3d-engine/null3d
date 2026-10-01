@@ -67,8 +67,9 @@
 //! the shadow map. The scene's objects that receive shadows draw with pipelines that read the map.
 //! Turning shadows on or off rebuilds both layouts. Every camera view's frame group binds the
 //! shadow map, which is one texel of one layer while no light casts shadows.
-//! The debug lines pass, which both builders share, is [`crate::debug_lines`]. The render graph
-//! ([`crate::frame_graph`]) orders the passes and begins their render passes.
+//! The debug lines pass, which both builders share, is [`crate::debug_lines`], and the background
+//! texture that the camera's opaque pass draws before its bundle is [`crate::background`]. The
+//! render graph ([`crate::frame_graph`]) orders the passes and begins their render passes.
 //!
 //! # Memory
 //!
@@ -88,6 +89,7 @@ use std::collections::TryReserveError;
 use null3d_gpu::caps::{BUDGET, Limit};
 use null3d_gpu::drawlist::{DrawList, Op, buffer_usage as usage, sizes};
 
+use crate::background::BackgroundPass;
 use crate::cells::CellCulling;
 use crate::debug_lines::LinesPass;
 use crate::dfg;
@@ -277,6 +279,7 @@ pub struct GpuDrivenRenderer {
     /// The sources of the transparent pass, and each camera view's sorted rows.
     sorted: SortedLayout,
     transparent: Transparent,
+    background: BackgroundPass,
     /// Each camera view's values in the frame being recorded, or `None` for a view with no camera.
     frames: Vec<Option<ViewFrame>>,
     /// Each shadow cascade's values in the frame being recorded, or `None` for a cascade that the
@@ -342,6 +345,7 @@ impl GpuDrivenRenderer {
             lines: LinesPass::new(ids::LINES),
             sorted: SortedLayout::default(),
             transparent: Transparent::default(),
+            background: BackgroundPass::default(),
             frames: Vec::new(),
             cascade_frames: [None; MAX_CASCADES],
             views_made: 0,
@@ -464,6 +468,11 @@ impl GpuDrivenRenderer {
             self.graph.scene_targets(),
         );
         self.graph.request_pipelines(&mut self.pipelines);
+        self.background.request_pipeline(
+            &self.settings,
+            &mut self.pipelines,
+            self.graph.scene_targets(),
+        );
         self.pipelines.create_new(list)?;
         if !self.created {
             self.create_fixed(list)?;
@@ -516,6 +525,7 @@ impl GpuDrivenRenderer {
         let groups_remade = self
             .settings
             .record_materials(list, arena, table, input.frame)?;
+        self.background.prepare(&self.settings);
         let binding_bytes = self.config.storage_binding_bytes;
         let shadows = shadow.is_some();
         let (shared_recreated, casters_recreated) = if upload_everything {
@@ -636,6 +646,7 @@ impl GpuDrivenRenderer {
         let (layout, casters, culling, lines) =
             (&self.layout, &self.casters, &self.culling, &self.lines);
         let (frames, cascade_frames) = (&self.frames, &self.cascade_frames);
+        let background = &self.background;
         let drawn = |view: ViewId| match view.cascade_index() {
             Some(cascade) => cascade_frames[cascade].is_some(),
             None => frames[view.index()].is_some(),
@@ -650,6 +661,9 @@ impl GpuDrivenRenderer {
             .record(list, self.settings.clear_color(), |list, role| match role {
                 Role::Cull(view) if drawn(view) => culling.record(list, view, layout_of(view)),
                 Role::Opaque(view) | Role::Shadow(view) if drawn(view) => {
+                    if view == ViewId::CAMERA {
+                        background.record(list, ids::frame_group(view), &[])?;
+                    }
                     opaque::record(list, view)
                 }
                 Role::DebugLines => lines.record(list, ids::frame_group(ViewId::CAMERA), &[]),

@@ -26,6 +26,7 @@ const FEATURE_SCENES = [
 	{ test: 'standard-maps', twin: '/bench/pages/threejs/material-maps.html' },
 	{ test: 'alpha-mask', twin: '/bench/pages/threejs/alpha-mask.html' },
 	{ test: 'transparency', twin: '/bench/pages/threejs/transparency.html' },
+	{ test: 'texture-background', twin: '/bench/pages/threejs/texture-background.html' },
 	{ test: 'fog-linear', twin: '/bench/pages/threejs/fog.html?fog=linear' },
 	{ test: 'fog-exp2', twin: '/bench/pages/threejs/fog.html?fog=exp2' },
 ] as const;

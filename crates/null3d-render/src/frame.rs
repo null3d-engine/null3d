@@ -328,6 +328,22 @@ impl UploadArena {
     }
 }
 
+/// Binds a view's frame group `group` at index 0, at the dynamic offsets `offsets`, as the view's
+/// opaque pass binds it. The passes that draw inside that pass's render pass bind it the same way.
+pub(crate) fn bind_frame_group(
+    list: &mut DrawList,
+    group: u32,
+    offsets: &[u32],
+) -> Result<(), RecordError> {
+    let mut words = [0; 5];
+    let len = 3 + offsets.len();
+    words[1] = group;
+    words[2] = offsets.len() as u32;
+    words[3..len].copy_from_slice(offsets);
+    list.push(Op::SetBindGroup, &words[..len])?;
+    Ok(())
+}
+
 /// Writes `value` into four bytes, in the byte order the engine's memory uses.
 pub(crate) fn put_u32(bytes: &mut [u8], word: usize, value: u32) {
     bytes[word * 4..word * 4 + 4].copy_from_slice(&value.to_ne_bytes());
@@ -417,6 +433,8 @@ pub struct SceneSettings {
     /// The bind group of each material's maps, by material id, for the standard materials with a
     /// live map, and 0 for the others.
     map_groups: Vec<u32>,
+    /// The texture that the camera's view draws behind every object, or `Handle::NONE`.
+    background_texture: Handle,
     /// The views, the camera's first.
     views: Vec<View>,
     lighting: Lighting,
@@ -436,6 +454,7 @@ impl SceneSettings {
             materials: MaterialTable::with_capacity(max_materials),
             textures,
             map_groups: Vec::new(),
+            background_texture: Handle::NONE,
             views: vec![View::default()],
             lighting: Lighting {
                 sun_direction: [0.0, -1.0, 0.0, 0.0],
@@ -489,6 +508,18 @@ impl SceneSettings {
 
     pub fn textures_mut(&mut self) -> &mut TextureStore {
         &mut self.textures
+    }
+
+    /// The texture that the camera's view draws behind every object, or `Handle::NONE` for the
+    /// background color alone.
+    pub fn background_texture(&self) -> Handle {
+        self.background_texture
+    }
+
+    /// Draws `texture` behind every object in the camera's view, or only the background color
+    /// with `Handle::NONE`.
+    pub fn set_background_texture(&mut self, texture: Handle) {
+        self.background_texture = texture;
     }
 
     /// Records the frame's texture work, writes each map's layer into its material's row when a

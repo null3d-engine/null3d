@@ -21,6 +21,7 @@ import {
 	STATE_LINE_LIST,
 	STATE_NO_DEPTH_TEST,
 	STATE_NO_DEPTH_WRITE,
+	TEMPLATE_BACKGROUND,
 	TEMPLATE_CULL,
 	TEMPLATE_DEBUG_LINES,
 	TEMPLATE_FINAL,
@@ -264,6 +265,13 @@ export class Pipelines {
 			shader: shaders.final,
 			pipeline: 'main',
 			layouts: [LAYOUT_FINAL],
+			vertexBuffers: [],
+		});
+		this.defineTemplate(TEMPLATE_BACKGROUND, {
+			label: 'background',
+			shader: shaders.background,
+			pipeline: 'main',
+			layouts: [LAYOUT_FRAME, LAYOUT_TEXTURES],
 			vertexBuffers: [],
 		});
 		if (DEV)

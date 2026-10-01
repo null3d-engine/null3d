@@ -35,8 +35,8 @@ function refresh(hz: number, count: number, before: (call: number) => void = () 
  * was asked to prepare. Its pipelines build while `builds.left` is above 0: each check of a frame
  * counts it down.
  */
-function setup() {
-	const control = createControlBuffer(false);
+function setup(shared = false) {
+	const control = createControlBuffer(shared);
 	const metrics = createMetricsBuffer(false, 0);
 	const drawn: number[] = [];
 	const prepared: number[] = [];
@@ -213,6 +213,16 @@ describe('the direct loop', () => {
 		expect(drawn).toEqual([1, 1, 2]);
 	});
 
+	it("wakes the setup's code that waits for its frame to be taken", async () => {
+		const { control, metrics, slots, renderer } = setup(true);
+		loop = runDirectLoop(countingSketch(false), renderer, control, metrics, undefined);
+		Atomics.store(slots, Slot.FramesPublished, 1);
+		const wait = Atomics.waitAsync(slots, Slot.FramesTaken, 0, 1000);
+		expect(wait.async).toBe(true);
+		refresh(DISPLAY_HZ, 1);
+		expect(await wait.value).toBe('ok');
+	});
+
 	it('steps no new frame while the frame it stepped waits for its pipelines', () => {
 		const { control, metrics, drawn, builds, renderer } = setup();
 		builds.left = 3;
@@ -254,6 +264,19 @@ describe('the frames in flight', () => {
 		gpu.unfinished--;
 		refresh(DISPLAY_HZ, 1, () => publish(5));
 		expect(drawn).toEqual([1, 2, 5]);
+	});
+
+	it("takes the setup's frames in the direct loop only when the GPU has room for them", () => {
+		const { control, metrics, slots, drawn, renderer, gpu } = slowGpu();
+		loop = runDirectLoop(countingSketch(false), renderer, control, metrics, undefined);
+		// The setup publishes each frame once the one before it was taken, as the preset check does.
+		refresh(DISPLAY_HZ, 4, () =>
+			Atomics.store(slots, Slot.FramesPublished, Atomics.load(slots, Slot.FramesTaken) + 1),
+		);
+		expect(drawn).toEqual([1, 2]);
+		gpu.unfinished = 0;
+		refresh(DISPLAY_HZ, 1);
+		expect(drawn).toEqual([1, 2, 3]);
 	});
 
 	it('steps the sketch of the direct loop only when the GPU has room for its frame', () => {
