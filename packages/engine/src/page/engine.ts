@@ -437,6 +437,8 @@ interface WorkerEvents {
 }
 
 /** A worker whose replies are routed: events to the page's handlers, answers to the oldest request. */
+let debugStack = '';
+
 class EngineWorker {
 	private readonly waiting: Pending[] = [];
 	private readyPromise: Promise<WorkerReply>;
@@ -463,6 +465,10 @@ class EngineWorker {
 		});
 		worker.onmessage = (event: MessageEvent<WorkerReply>) => {
 			const reply = event.data;
+			if ((reply as unknown as { type: string }).type === 'debug-stack') {
+				debugStack = (reply as unknown as { stack: string }).stack;
+				return;
+			}
 			if (reply.type === 'sketch-message') {
 				events.sketchMessage(reply.name, reply.data);
 				return;
@@ -486,7 +492,7 @@ class EngineWorker {
 		};
 		worker.onerror = (event) => {
 			markStopped();
-			const message = event.message || 'a worker failed';
+			const message = `${event.message || 'a worker failed'} at ${event.filename}:${event.lineno}:${event.colno} STACK ${debugStack}`;
 			this.waiting.shift()?.reject(startError(role, message));
 			if (this.started)
 				events.failure(new EngineError('E1404', `the ${role} worker failed: ${message}.`));

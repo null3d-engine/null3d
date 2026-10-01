@@ -21,7 +21,7 @@ run('scene', async () => {
 		maxPixelRatio: 1,
 	});
 	const failures: string[] = [];
-	engine.onFailure((error) => failures.push(error.code));
+	engine.onFailure((error) => failures.push(`${error.code} ${error.message}`));
 	const live = engine.mode.hold === null;
 	if (live && params.has('lose-gpu')) {
 		await engine.measure(seconds);

@@ -19,7 +19,7 @@ run('warm-up', async () => {
 		maxPixelRatio: 1,
 	});
 	const failures: string[] = [];
-	engine.onFailure((error) => failures.push(error.code));
+	engine.onFailure((error) => failures.push(`${error.code} ${error.message}`));
 	// Play starts once the first frame, which built the scene's pipelines, is on screen.
 	await engine.firstFrame;
 	const play = await engine.measure(SECONDS);
