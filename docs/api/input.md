@@ -18,7 +18,7 @@ flowchart LR
     frame --> input["ctx.input in onUpdate"]
 ```
 
-The page listens for pointer, touch, keyboard and wheel events, and reads the gamepads. It writes each event into a ring in shared memory. At the start of each frame, before `onUpdate`, the sketch takes every event that came since the previous frame. Then `ctx.input` gives the same answers for the whole frame. The sketch adds no DOM listeners, and input works the same in every thread mode.
+The page listens for pointer, touch, keyboard and wheel events, and reads the gamepads. It writes each event into a ring in shared memory. At the start of each frame, before `onUpdate`, the sketch takes every event that came since the previous frame. Only a second drag of the pointer waits for the next frame, as [The pointer](#the-pointer) explains. Then `ctx.input` gives the same answers for the whole frame. The sketch adds no DOM listeners, and input works the same in every thread mode.
 
 ```ts
 export default defineSketch(({ scene, input }) => {
@@ -80,6 +80,8 @@ The sketch counts presses and releases per frame. A key can go down and up betwe
 | `isTouch` | True when the pointer is a finger |
 
 Use `dragDx` and `dragDy` for drags, such as turning an object with the mouse. A frame can hold the end of a hover and the start of a drag, and `dx` counts both.
+
+A frame's drag belongs to one press. During a slow frame, one drag can end and the next can start before the sketch reads either. The next press and the events after it then wait for the following frame, so each drag keeps its own button and movement. Two quick clicks between two frames also count as two presses, one in each of the next two frames.
 
 Browsers send a pinch on a trackpad as wheel scroll with the Control key's flag, while no Control key is down. Unless the page stops it, the browser also zooms the whole page on a pinch. [What the page does](#what-the-page-does) shows how to stop it.
 
@@ -165,7 +167,7 @@ Named actions, each for a list of keys and buttons.
 
 Interface `InputPointer`.
 
-The main pointer: the mouse, a pen, or the first finger that touches the canvas.
+The main pointer: the mouse, a pen, or the first finger that touches the canvas. A frame's drag belongs to one press: a press that follows a release in the same frame waits for the next frame.
 
 | Member | Description |
 | --- | --- |

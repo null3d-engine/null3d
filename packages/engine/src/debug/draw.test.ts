@@ -154,11 +154,12 @@ function thrown(call: () => void): EngineError {
 }
 
 describe('packedColor', () => {
-	test('packs hex colors and sRGB components with red in the lowest byte', () => {
+	test('packs hex colors, and linear components as sRGB, with red in the lowest byte', () => {
 		expect(packedColor('#ff8800', 'debug.line')).toBe(0xff0088ff);
 		expect(packedColor('#48f', 'debug.line')).toBe(0xffff8844);
 		expect(packedColor(0x4a8cff, 'debug.line')).toBe(0xffff8c4a);
-		expect(packedColor([1, 0.5, 0], 'debug.line')).toBe(0xff0080ff);
+		// Linear 0.5 is sRGB 0.735, as a hex color's 0xbc.
+		expect(packedColor([1, 0.5, 0], 'debug.line')).toBe(0xff00bcff);
 	});
 
 	test('throws E1204 for anything else, naming the call', () => {

@@ -5,8 +5,10 @@ import {
 	type EngineMode,
 	type EngineResult,
 	engineProblems,
+	THREADED_MODES,
 } from '../lib/engine-checks.ts';
 import { pageResult } from '../lib/page-result.ts';
+import { restoreWaitAsync, withoutWaitAsync } from '../lib/without-wait-async.ts';
 
 /**
  * Serves every response to the page without the headers that make it cross-origin isolated, as a
@@ -180,3 +182,20 @@ for (const gpu of ['webgpu', 'webgl2'] as const)
 			const development = testInfo.project.name !== 'production build';
 			expect(fallback.length).toBe(latency === 'low' && development ? 1 : 0);
 		});
+
+// A browser without Atomics.waitAsync, such as Firefox before 145, runs every threaded mode. Its
+// threads wake each other with messages instead: for each frame, for a pause and its end, and for
+// the stop, which must end the job workers' loops.
+for (const mode of THREADED_MODES) {
+	test(`the engine runs without Atomics.waitAsync, ${mode.name}`, async ({ page }) => {
+		await withoutWaitAsync(page);
+		await page.goto(`engine.html?gpu=webgl2&seconds=1&pause&${mode.query}`);
+		const result = await pageResult<EngineResult & { error?: string }>(page, 30_000);
+		await restoreWaitAsync(page);
+		expect(result.error).toBeUndefined();
+		expect(result.report.atomicsWaitAsync).toBe(false);
+		expect(engineProblems(result, mode, 'webgl2')).toEqual([]);
+		expect(result.pause?.paused.frames, 'frames computed during the pause').toBe(0);
+		expect(result.pause?.resumed.frames ?? 0, 'frames after the pause').toBeGreaterThan(10);
+	});
+}

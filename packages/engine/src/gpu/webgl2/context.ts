@@ -7,17 +7,20 @@ import type { PowerPreference } from '../../page/capabilities';
 const SIMULATED_RESTORE_MS = 50;
 
 /**
- * The canvas's WebGL2 context. The engine draws into its own multisampled targets and resolves them
- * into the canvas, so the canvas needs no antialiasing, depth or stencil. It has no alpha, because
- * the page shows it opaque. A lost and restored canvas gives back the same context.
+ * The canvas's WebGL2 context. The engine draws into its own multisampled targets and resolves or
+ * tone maps them into the canvas, so the canvas needs no antialiasing, depth or stencil. It has
+ * alpha only when it is `transparent`, and then holds premultiplied color, as the engine writes it.
+ * A lost and restored canvas gives back the same context.
  */
 export function webgl2Context(
 	canvas: OffscreenCanvas | HTMLCanvasElement,
 	powerPreference: PowerPreference | undefined,
+	transparent = false,
 ): WebGL2RenderingContext {
 	const gl = canvas.getContext('webgl2', {
 		antialias: false,
-		alpha: false,
+		alpha: transparent,
+		premultipliedAlpha: true,
 		depth: false,
 		stencil: false,
 		powerPreference,
