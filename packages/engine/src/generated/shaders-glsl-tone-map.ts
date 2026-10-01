@@ -112,6 +112,10 @@ uint pcg(uint v_1) {
     return ((word >> 22u) ^ word);
 }
 
+float to_unit(uint h) {
+    return (float((h >> 8u)) / 16777216.0);
+}
+
 vec3 tone_map(vec3 c_4, Output settings) {
     vec3 exposed = (c_4 * settings.exposure);
     if ((settings.tone_mapping == AGX)) {
@@ -132,7 +136,8 @@ vec3 tone_map(vec3 c_4, Output settings) {
 float pixel_noise(vec2 pixel) {
     uint _e5 = pcg(uint(pixel.y));
     uint _e7 = pcg((uint(pixel.x) + _e5));
-    return (float((_e7 >> 8u)) / 16777216.0);
+    float _e8 = to_unit(_e7);
+    return _e8;
 }
 
 vec3 encode(vec3 c_5, vec2 pixel_1) {
@@ -271,6 +276,10 @@ uint pcg(uint v_1) {
     return ((word >> 22u) ^ word);
 }
 
+float to_unit(uint h) {
+    return (float((h >> 8u)) / 16777216.0);
+}
+
 vec3 tone_map(vec3 c_4, Output settings) {
     vec3 exposed = (c_4 * settings.exposure);
     if ((settings.tone_mapping == AGX)) {
@@ -291,7 +300,8 @@ vec3 tone_map(vec3 c_4, Output settings) {
 float pixel_noise(vec2 pixel) {
     uint _e5 = pcg(uint(pixel.y));
     uint _e7 = pcg((uint(pixel.x) + _e5));
-    return (float((_e7 >> 8u)) / 16777216.0);
+    float _e8 = to_unit(_e7);
+    return _e8;
 }
 
 vec3 encode(vec3 c_5, vec2 pixel_1) {
@@ -423,6 +433,10 @@ uint pcg(uint v_1) {
     return ((word >> 22u) ^ word);
 }
 
+float to_unit(uint h) {
+    return (float((h >> 8u)) / 16777216.0);
+}
+
 vec3 tone_map(vec3 c_4, Output settings) {
     vec3 exposed = (c_4 * settings.exposure);
     if ((settings.tone_mapping == AGX)) {
@@ -443,7 +457,8 @@ vec3 tone_map(vec3 c_4, Output settings) {
 float pixel_noise(vec2 pixel) {
     uint _e5 = pcg(uint(pixel.y));
     uint _e7 = pcg((uint(pixel.x) + _e5));
-    return (float((_e7 >> 8u)) / 16777216.0);
+    float _e8 = to_unit(_e7);
+    return _e8;
 }
 
 vec3 encode(vec3 c_5, vec2 pixel_1) {
@@ -550,6 +565,10 @@ uint pcg(uint v_1) {
     return ((word >> 22u) ^ word);
 }
 
+float to_unit(uint h) {
+    return (float((h >> 8u)) / 16777216.0);
+}
+
 vec3 tone_map(vec3 c_4, Output settings) {
     vec3 exposed = (c_4 * settings.exposure);
     if ((settings.tone_mapping == AGX)) {
@@ -570,7 +589,8 @@ vec3 tone_map(vec3 c_4, Output settings) {
 float pixel_noise(vec2 pixel) {
     uint _e5 = pcg(uint(pixel.y));
     uint _e7 = pcg((uint(pixel.x) + _e5));
-    return (float((_e7 >> 8u)) / 16777216.0);
+    float _e8 = to_unit(_e7);
+    return _e8;
 }
 
 vec3 encode(vec3 c_5, vec2 pixel_1) {
@@ -759,6 +779,10 @@ uint pcg(uint v_1) {
     return ((word >> 22u) ^ word);
 }
 
+float to_unit(uint h) {
+    return (float((h >> 8u)) / 16777216.0);
+}
+
 vec3 tone_map(vec3 c_4, Output settings) {
     vec3 exposed = (c_4 * settings.exposure);
     if ((settings.tone_mapping == AGX)) {
@@ -779,7 +803,8 @@ vec3 tone_map(vec3 c_4, Output settings) {
 float pixel_noise(vec2 pixel) {
     uint _e5 = pcg(uint(pixel.y));
     uint _e7 = pcg((uint(pixel.x) + _e5));
-    return (float((_e7 >> 8u)) / 16777216.0);
+    float _e8 = to_unit(_e7);
+    return _e8;
 }
 
 vec3 encode(vec3 c_5, vec2 pixel_1) {
@@ -892,6 +917,10 @@ uint pcg(uint v_1) {
     return ((word >> 22u) ^ word);
 }
 
+float to_unit(uint h) {
+    return (float((h >> 8u)) / 16777216.0);
+}
+
 vec3 tone_map(vec3 c_4, Output settings) {
     vec3 exposed = (c_4 * settings.exposure);
     if ((settings.tone_mapping == AGX)) {
@@ -912,7 +941,8 @@ vec3 tone_map(vec3 c_4, Output settings) {
 float pixel_noise(vec2 pixel) {
     uint _e5 = pcg(uint(pixel.y));
     uint _e7 = pcg((uint(pixel.x) + _e5));
-    return (float((_e7 >> 8u)) / 16777216.0);
+    float _e8 = to_unit(_e7);
+    return _e8;
 }
 
 vec3 encode(vec3 c_5, vec2 pixel_1) {
@@ -1290,6 +1320,10 @@ uint pcg(uint v_2) {
     return ((word >> 22u) ^ word);
 }
 
+float to_unit(uint h) {
+    return (float((h >> 8u)) / 16777216.0);
+}
+
 vec3 apply_fog(vec3 c_4, vec3 fog_color, float factor) {
     return mix(c_4, fog_color, factor);
 }
@@ -1354,7 +1388,8 @@ vec3 tone_map(vec3 c_5, Output settings) {
 float pixel_noise(vec2 pixel) {
     uint _e5 = pcg(uint(pixel.y));
     uint _e7 = pcg((uint(pixel.x) + _e5));
-    return (float((_e7 >> 8u)) / 16777216.0);
+    float _e8 = to_unit(_e7);
+    return _e8;
 }
 
 vec3 encode(vec3 c_6, vec2 pixel_1) {
@@ -1791,6 +1826,10 @@ uint pcg(uint v_2) {
     return ((word >> 22u) ^ word);
 }
 
+float to_unit(uint h) {
+    return (float((h >> 8u)) / 16777216.0);
+}
+
 vec3 apply_fog(vec3 c_4, vec3 fog_color, float factor) {
     return mix(c_4, fog_color, factor);
 }
@@ -1855,7 +1894,8 @@ vec3 tone_map(vec3 c_5, Output settings) {
 float pixel_noise(vec2 pixel) {
     uint _e5 = pcg(uint(pixel.y));
     uint _e7 = pcg((uint(pixel.x) + _e5));
-    return (float((_e7 >> 8u)) / 16777216.0);
+    float _e8 = to_unit(_e7);
+    return _e8;
 }
 
 vec3 encode(vec3 c_6, vec2 pixel_1) {
@@ -2308,6 +2348,10 @@ uint pcg(uint v_2) {
     return ((word >> 22u) ^ word);
 }
 
+float to_unit(uint h) {
+    return (float((h >> 8u)) / 16777216.0);
+}
+
 vec3 apply_fog(vec3 c_4, vec3 fog_color, float factor) {
     return mix(c_4, fog_color, factor);
 }
@@ -2372,7 +2416,8 @@ vec3 tone_map(vec3 c_5, Output settings) {
 float pixel_noise(vec2 pixel) {
     uint _e5 = pcg(uint(pixel.y));
     uint _e7 = pcg((uint(pixel.x) + _e5));
-    return (float((_e7 >> 8u)) / 16777216.0);
+    float _e8 = to_unit(_e7);
+    return _e8;
 }
 
 vec3 encode(vec3 c_6, vec2 pixel_1) {
@@ -2809,6 +2854,10 @@ uint pcg(uint v_2) {
     return ((word >> 22u) ^ word);
 }
 
+float to_unit(uint h) {
+    return (float((h >> 8u)) / 16777216.0);
+}
+
 vec3 apply_fog(vec3 c_4, vec3 fog_color, float factor) {
     return mix(c_4, fog_color, factor);
 }
@@ -2873,7 +2922,8 @@ vec3 tone_map(vec3 c_5, Output settings) {
 float pixel_noise(vec2 pixel) {
     uint _e5 = pcg(uint(pixel.y));
     uint _e7 = pcg((uint(pixel.x) + _e5));
-    return (float((_e7 >> 8u)) / 16777216.0);
+    float _e8 = to_unit(_e7);
+    return _e8;
 }
 
 vec3 encode(vec3 c_6, vec2 pixel_1) {
@@ -3334,6 +3384,10 @@ uint pcg(uint v_2) {
     return ((word >> 22u) ^ word);
 }
 
+float to_unit(uint h) {
+    return (float((h >> 8u)) / 16777216.0);
+}
+
 vec3 apply_fog(vec3 c_4, vec3 fog_color, float factor) {
     return mix(c_4, fog_color, factor);
 }
@@ -3398,7 +3452,8 @@ vec3 tone_map(vec3 c_5, Output settings) {
 float pixel_noise(vec2 pixel) {
     uint _e5 = pcg(uint(pixel.y));
     uint _e7 = pcg((uint(pixel.x) + _e5));
-    return (float((_e7 >> 8u)) / 16777216.0);
+    float _e8 = to_unit(_e7);
+    return _e8;
 }
 
 vec3 encode(vec3 c_6, vec2 pixel_1) {
@@ -3840,6 +3895,10 @@ uint pcg(uint v_2) {
     return ((word >> 22u) ^ word);
 }
 
+float to_unit(uint h) {
+    return (float((h >> 8u)) / 16777216.0);
+}
+
 vec3 apply_fog(vec3 c_4, vec3 fog_color, float factor) {
     return mix(c_4, fog_color, factor);
 }
@@ -3904,7 +3963,8 @@ vec3 tone_map(vec3 c_5, Output settings) {
 float pixel_noise(vec2 pixel) {
     uint _e5 = pcg(uint(pixel.y));
     uint _e7 = pcg((uint(pixel.x) + _e5));
-    return (float((_e7 >> 8u)) / 16777216.0);
+    float _e8 = to_unit(_e7);
+    return _e8;
 }
 
 vec3 encode(vec3 c_6, vec2 pixel_1) {
@@ -4365,6 +4425,10 @@ uint pcg(uint v_2) {
     return ((word >> 22u) ^ word);
 }
 
+float to_unit(uint h) {
+    return (float((h >> 8u)) / 16777216.0);
+}
+
 vec3 apply_fog(vec3 c_4, vec3 fog_color, float factor) {
     return mix(c_4, fog_color, factor);
 }
@@ -4429,7 +4493,8 @@ vec3 tone_map(vec3 c_5, Output settings) {
 float pixel_noise(vec2 pixel) {
     uint _e5 = pcg(uint(pixel.y));
     uint _e7 = pcg((uint(pixel.x) + _e5));
-    return (float((_e7 >> 8u)) / 16777216.0);
+    float _e8 = to_unit(_e7);
+    return _e8;
 }
 
 vec3 encode(vec3 c_6, vec2 pixel_1) {
@@ -4871,6 +4936,10 @@ uint pcg(uint v_2) {
     return ((word >> 22u) ^ word);
 }
 
+float to_unit(uint h) {
+    return (float((h >> 8u)) / 16777216.0);
+}
+
 vec3 apply_fog(vec3 c_4, vec3 fog_color, float factor) {
     return mix(c_4, fog_color, factor);
 }
@@ -4935,7 +5004,8 @@ vec3 tone_map(vec3 c_5, Output settings) {
 float pixel_noise(vec2 pixel) {
     uint _e5 = pcg(uint(pixel.y));
     uint _e7 = pcg((uint(pixel.x) + _e5));
-    return (float((_e7 >> 8u)) / 16777216.0);
+    float _e8 = to_unit(_e7);
+    return _e8;
 }
 
 vec3 encode(vec3 c_6, vec2 pixel_1) {
@@ -5491,6 +5561,10 @@ uint pcg(uint v_2) {
     return ((word >> 22u) ^ word);
 }
 
+float to_unit(uint h) {
+    return (float((h >> 8u)) / 16777216.0);
+}
+
 vec3 apply_fog(vec3 c_4, vec3 fog_color, float factor) {
     return mix(c_4, fog_color, factor);
 }
@@ -5555,7 +5629,8 @@ vec3 tone_map(vec3 c_5, Output settings) {
 float pixel_noise(vec2 pixel) {
     uint _e5 = pcg(uint(pixel.y));
     uint _e7 = pcg((uint(pixel.x) + _e5));
-    return (float((_e7 >> 8u)) / 16777216.0);
+    float _e8 = to_unit(_e7);
+    return _e8;
 }
 
 vec3 encode(vec3 c_6, vec2 pixel_1) {
@@ -6032,6 +6107,10 @@ uint pcg(uint v_2) {
     return ((word >> 22u) ^ word);
 }
 
+float to_unit(uint h) {
+    return (float((h >> 8u)) / 16777216.0);
+}
+
 vec3 apply_fog(vec3 c_4, vec3 fog_color, float factor) {
     return mix(c_4, fog_color, factor);
 }
@@ -6096,7 +6175,8 @@ vec3 tone_map(vec3 c_5, Output settings) {
 float pixel_noise(vec2 pixel) {
     uint _e5 = pcg(uint(pixel.y));
     uint _e7 = pcg((uint(pixel.x) + _e5));
-    return (float((_e7 >> 8u)) / 16777216.0);
+    float _e8 = to_unit(_e7);
+    return _e8;
 }
 
 vec3 encode(vec3 c_6, vec2 pixel_1) {
@@ -6715,6 +6795,10 @@ uint pcg(uint v_2) {
     return ((word >> 22u) ^ word);
 }
 
+float to_unit(uint h) {
+    return (float((h >> 8u)) / 16777216.0);
+}
+
 vec3 apply_fog(vec3 c_4, vec3 fog_color, float factor) {
     return mix(c_4, fog_color, factor);
 }
@@ -6779,7 +6863,8 @@ vec3 tone_map(vec3 c_5, Output settings) {
 float pixel_noise(vec2 pixel) {
     uint _e5 = pcg(uint(pixel.y));
     uint _e7 = pcg((uint(pixel.x) + _e5));
-    return (float((_e7 >> 8u)) / 16777216.0);
+    float _e8 = to_unit(_e7);
+    return _e8;
 }
 
 vec3 encode(vec3 c_6, vec2 pixel_1) {
@@ -7256,6 +7341,10 @@ uint pcg(uint v_2) {
     return ((word >> 22u) ^ word);
 }
 
+float to_unit(uint h) {
+    return (float((h >> 8u)) / 16777216.0);
+}
+
 vec3 apply_fog(vec3 c_4, vec3 fog_color, float factor) {
     return mix(c_4, fog_color, factor);
 }
@@ -7320,7 +7409,8 @@ vec3 tone_map(vec3 c_5, Output settings) {
 float pixel_noise(vec2 pixel) {
     uint _e5 = pcg(uint(pixel.y));
     uint _e7 = pcg((uint(pixel.x) + _e5));
-    return (float((_e7 >> 8u)) / 16777216.0);
+    float _e8 = to_unit(_e7);
+    return _e8;
 }
 
 vec3 encode(vec3 c_6, vec2 pixel_1) {
@@ -7949,6 +8039,10 @@ uint pcg(uint v_2) {
     return ((word >> 22u) ^ word);
 }
 
+float to_unit(uint h) {
+    return (float((h >> 8u)) / 16777216.0);
+}
+
 vec3 apply_fog(vec3 c_4, vec3 fog_color, float factor) {
     return mix(c_4, fog_color, factor);
 }
@@ -8018,7 +8112,8 @@ vec3 tone_map(vec3 c_5, Output settings) {
 float pixel_noise(vec2 pixel) {
     uint _e5 = pcg(uint(pixel.y));
     uint _e7 = pcg((uint(pixel.x) + _e5));
-    return (float((_e7 >> 8u)) / 16777216.0);
+    float _e8 = to_unit(_e7);
+    return _e8;
 }
 
 vec3 encode(vec3 c_6, vec2 pixel_1) {
@@ -8513,6 +8608,10 @@ uint pcg(uint v_2) {
     return ((word >> 22u) ^ word);
 }
 
+float to_unit(uint h) {
+    return (float((h >> 8u)) / 16777216.0);
+}
+
 vec3 apply_fog(vec3 c_4, vec3 fog_color, float factor) {
     return mix(c_4, fog_color, factor);
 }
@@ -8582,7 +8681,8 @@ vec3 tone_map(vec3 c_5, Output settings) {
 float pixel_noise(vec2 pixel) {
     uint _e5 = pcg(uint(pixel.y));
     uint _e7 = pcg((uint(pixel.x) + _e5));
-    return (float((_e7 >> 8u)) / 16777216.0);
+    float _e8 = to_unit(_e7);
+    return _e8;
 }
 
 vec3 encode(vec3 c_6, vec2 pixel_1) {
@@ -9196,6 +9296,10 @@ uint pcg(uint v_2) {
     return ((word >> 22u) ^ word);
 }
 
+float to_unit(uint h) {
+    return (float((h >> 8u)) / 16777216.0);
+}
+
 vec3 apply_fog(vec3 c_4, vec3 fog_color, float factor) {
     return mix(c_4, fog_color, factor);
 }
@@ -9260,7 +9364,8 @@ vec3 tone_map(vec3 c_5, Output settings) {
 float pixel_noise(vec2 pixel) {
     uint _e5 = pcg(uint(pixel.y));
     uint _e7 = pcg((uint(pixel.x) + _e5));
-    return (float((_e7 >> 8u)) / 16777216.0);
+    float _e8 = to_unit(_e7);
+    return _e8;
 }
 
 vec3 encode(vec3 c_6, vec2 pixel_1) {
@@ -9742,6 +9847,10 @@ uint pcg(uint v_2) {
     return ((word >> 22u) ^ word);
 }
 
+float to_unit(uint h) {
+    return (float((h >> 8u)) / 16777216.0);
+}
+
 vec3 apply_fog(vec3 c_4, vec3 fog_color, float factor) {
     return mix(c_4, fog_color, factor);
 }
@@ -9806,7 +9915,8 @@ vec3 tone_map(vec3 c_5, Output settings) {
 float pixel_noise(vec2 pixel) {
     uint _e5 = pcg(uint(pixel.y));
     uint _e7 = pcg((uint(pixel.x) + _e5));
-    return (float((_e7 >> 8u)) / 16777216.0);
+    float _e8 = to_unit(_e7);
+    return _e8;
 }
 
 vec3 encode(vec3 c_6, vec2 pixel_1) {
@@ -10433,6 +10543,10 @@ uint pcg(uint v_2) {
     return ((word >> 22u) ^ word);
 }
 
+float to_unit(uint h) {
+    return (float((h >> 8u)) / 16777216.0);
+}
+
 vec3 apply_fog(vec3 c_4, vec3 fog_color, float factor) {
     return mix(c_4, fog_color, factor);
 }
@@ -10497,7 +10611,8 @@ vec3 tone_map(vec3 c_5, Output settings) {
 float pixel_noise(vec2 pixel) {
     uint _e5 = pcg(uint(pixel.y));
     uint _e7 = pcg((uint(pixel.x) + _e5));
-    return (float((_e7 >> 8u)) / 16777216.0);
+    float _e8 = to_unit(_e7);
+    return _e8;
 }
 
 vec3 encode(vec3 c_6, vec2 pixel_1) {
@@ -10979,6 +11094,10 @@ uint pcg(uint v_2) {
     return ((word >> 22u) ^ word);
 }
 
+float to_unit(uint h) {
+    return (float((h >> 8u)) / 16777216.0);
+}
+
 vec3 apply_fog(vec3 c_4, vec3 fog_color, float factor) {
     return mix(c_4, fog_color, factor);
 }
@@ -11043,7 +11162,8 @@ vec3 tone_map(vec3 c_5, Output settings) {
 float pixel_noise(vec2 pixel) {
     uint _e5 = pcg(uint(pixel.y));
     uint _e7 = pcg((uint(pixel.x) + _e5));
-    return (float((_e7 >> 8u)) / 16777216.0);
+    float _e8 = to_unit(_e7);
+    return _e8;
 }
 
 vec3 encode(vec3 c_6, vec2 pixel_1) {
@@ -11680,6 +11800,10 @@ uint pcg(uint v_2) {
     return ((word >> 22u) ^ word);
 }
 
+float to_unit(uint h) {
+    return (float((h >> 8u)) / 16777216.0);
+}
+
 vec3 apply_fog(vec3 c_4, vec3 fog_color, float factor) {
     return mix(c_4, fog_color, factor);
 }
@@ -11749,7 +11873,8 @@ vec3 tone_map(vec3 c_5, Output settings) {
 float pixel_noise(vec2 pixel) {
     uint _e5 = pcg(uint(pixel.y));
     uint _e7 = pcg((uint(pixel.x) + _e5));
-    return (float((_e7 >> 8u)) / 16777216.0);
+    float _e8 = to_unit(_e7);
+    return _e8;
 }
 
 vec3 encode(vec3 c_6, vec2 pixel_1) {
@@ -12249,6 +12374,10 @@ uint pcg(uint v_2) {
     return ((word >> 22u) ^ word);
 }
 
+float to_unit(uint h) {
+    return (float((h >> 8u)) / 16777216.0);
+}
+
 vec3 apply_fog(vec3 c_4, vec3 fog_color, float factor) {
     return mix(c_4, fog_color, factor);
 }
@@ -12318,7 +12447,8 @@ vec3 tone_map(vec3 c_5, Output settings) {
 float pixel_noise(vec2 pixel) {
     uint _e5 = pcg(uint(pixel.y));
     uint _e7 = pcg((uint(pixel.x) + _e5));
-    return (float((_e7 >> 8u)) / 16777216.0);
+    float _e8 = to_unit(_e7);
+    return _e8;
 }
 
 vec3 encode(vec3 c_6, vec2 pixel_1) {
@@ -12942,6 +13072,10 @@ uint pcg(uint v_2) {
     return ((word >> 22u) ^ word);
 }
 
+float to_unit(uint h) {
+    return (float((h >> 8u)) / 16777216.0);
+}
+
 vec3 apply_fog(vec3 c_4, vec3 fog_color, float factor) {
     return mix(c_4, fog_color, factor);
 }
@@ -13011,7 +13145,8 @@ vec3 tone_map(vec3 c_5, Output settings) {
 float pixel_noise(vec2 pixel) {
     uint _e5 = pcg(uint(pixel.y));
     uint _e7 = pcg((uint(pixel.x) + _e5));
-    return (float((_e7 >> 8u)) / 16777216.0);
+    float _e8 = to_unit(_e7);
+    return _e8;
 }
 
 vec3 encode(vec3 c_6, vec2 pixel_1) {
@@ -13511,6 +13646,10 @@ uint pcg(uint v_2) {
     return ((word >> 22u) ^ word);
 }
 
+float to_unit(uint h) {
+    return (float((h >> 8u)) / 16777216.0);
+}
+
 vec3 apply_fog(vec3 c_4, vec3 fog_color, float factor) {
     return mix(c_4, fog_color, factor);
 }
@@ -13580,7 +13719,8 @@ vec3 tone_map(vec3 c_5, Output settings) {
 float pixel_noise(vec2 pixel) {
     uint _e5 = pcg(uint(pixel.y));
     uint _e7 = pcg((uint(pixel.x) + _e5));
-    return (float((_e7 >> 8u)) / 16777216.0);
+    float _e8 = to_unit(_e7);
+    return _e8;
 }
 
 vec3 encode(vec3 c_6, vec2 pixel_1) {
@@ -14196,6 +14336,10 @@ uint pcg(uint v_2) {
     return ((word >> 22u) ^ word);
 }
 
+float to_unit(uint h) {
+    return (float((h >> 8u)) / 16777216.0);
+}
+
 vec3 apply_fog(vec3 c_4, vec3 fog_color, float factor) {
     return mix(c_4, fog_color, factor);
 }
@@ -14265,7 +14409,8 @@ vec3 tone_map(vec3 c_5, Output settings) {
 float pixel_noise(vec2 pixel) {
     uint _e5 = pcg(uint(pixel.y));
     uint _e7 = pcg((uint(pixel.x) + _e5));
-    return (float((_e7 >> 8u)) / 16777216.0);
+    float _e8 = to_unit(_e7);
+    return _e8;
 }
 
 vec3 encode(vec3 c_6, vec2 pixel_1) {
@@ -14760,6 +14905,10 @@ uint pcg(uint v_2) {
     return ((word >> 22u) ^ word);
 }
 
+float to_unit(uint h) {
+    return (float((h >> 8u)) / 16777216.0);
+}
+
 vec3 apply_fog(vec3 c_4, vec3 fog_color, float factor) {
     return mix(c_4, fog_color, factor);
 }
@@ -14829,7 +14978,8 @@ vec3 tone_map(vec3 c_5, Output settings) {
 float pixel_noise(vec2 pixel) {
     uint _e5 = pcg(uint(pixel.y));
     uint _e7 = pcg((uint(pixel.x) + _e5));
-    return (float((_e7 >> 8u)) / 16777216.0);
+    float _e8 = to_unit(_e7);
+    return _e8;
 }
 
 vec3 encode(vec3 c_6, vec2 pixel_1) {
@@ -15388,6 +15538,10 @@ uint pcg(uint v_2) {
     return ((word >> 22u) ^ word);
 }
 
+float to_unit(uint h) {
+    return (float((h >> 8u)) / 16777216.0);
+}
+
 vec3 transform_point(Transform t, vec3 p) {
     vec4 q = vec4(p, 1.0);
     return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
@@ -15417,7 +15571,8 @@ vec3 tone_map(vec3 c_4, Output settings) {
 float pixel_noise(vec2 pixel) {
     uint _e5 = pcg(uint(pixel.y));
     uint _e7 = pcg((uint(pixel.x) + _e5));
-    return (float((_e7 >> 8u)) / 16777216.0);
+    float _e8 = to_unit(_e7);
+    return _e8;
 }
 
 vec3 encode(vec3 c_5, vec2 pixel_1) {
@@ -15708,6 +15863,10 @@ uint pcg(uint v_2) {
     return ((word >> 22u) ^ word);
 }
 
+float to_unit(uint h) {
+    return (float((h >> 8u)) / 16777216.0);
+}
+
 vec3 transform_point(Transform t, vec3 p) {
     vec4 q = vec4(p, 1.0);
     return vec3(dot(t.x, q), dot(t.y, q), dot(t.z, q));
@@ -15737,7 +15896,8 @@ vec3 tone_map(vec3 c_4, Output settings) {
 float pixel_noise(vec2 pixel) {
     uint _e5 = pcg(uint(pixel.y));
     uint _e7 = pcg((uint(pixel.x) + _e5));
-    return (float((_e7 >> 8u)) / 16777216.0);
+    float _e8 = to_unit(_e7);
+    return _e8;
 }
 
 vec3 encode(vec3 c_5, vec2 pixel_1) {
@@ -15969,6 +16129,10 @@ uint pcg(uint v_2) {
     return ((word >> 22u) ^ word);
 }
 
+float to_unit(uint h) {
+    return (float((h >> 8u)) / 16777216.0);
+}
+
 vec3 apply_fog(vec3 c_4, vec3 fog_color, float factor) {
     return mix(c_4, fog_color, factor);
 }
@@ -16022,7 +16186,8 @@ vec3 tone_map(vec3 c_5, Output settings) {
 float pixel_noise(vec2 pixel) {
     uint _e5 = pcg(uint(pixel.y));
     uint _e7 = pcg((uint(pixel.x) + _e5));
-    return (float((_e7 >> 8u)) / 16777216.0);
+    float _e8 = to_unit(_e7);
+    return _e8;
 }
 
 vec3 encode(vec3 c_6, vec2 pixel_1) {
@@ -16334,6 +16499,10 @@ uint pcg(uint v_2) {
     return ((word >> 22u) ^ word);
 }
 
+float to_unit(uint h) {
+    return (float((h >> 8u)) / 16777216.0);
+}
+
 vec3 apply_fog(vec3 c_4, vec3 fog_color, float factor) {
     return mix(c_4, fog_color, factor);
 }
@@ -16387,7 +16556,8 @@ vec3 tone_map(vec3 c_5, Output settings) {
 float pixel_noise(vec2 pixel) {
     uint _e5 = pcg(uint(pixel.y));
     uint _e7 = pcg((uint(pixel.x) + _e5));
-    return (float((_e7 >> 8u)) / 16777216.0);
+    float _e8 = to_unit(_e7);
+    return _e8;
 }
 
 vec3 encode(vec3 c_6, vec2 pixel_1) {
@@ -16656,6 +16826,10 @@ uint pcg(uint v_2) {
     return ((word >> 22u) ^ word);
 }
 
+float to_unit(uint h) {
+    return (float((h >> 8u)) / 16777216.0);
+}
+
 vec3 apply_fog(vec3 c_4, vec3 fog_color, float factor) {
     return mix(c_4, fog_color, factor);
 }
@@ -16709,7 +16883,8 @@ vec3 tone_map(vec3 c_5, Output settings) {
 float pixel_noise(vec2 pixel) {
     uint _e5 = pcg(uint(pixel.y));
     uint _e7 = pcg((uint(pixel.x) + _e5));
-    return (float((_e7 >> 8u)) / 16777216.0);
+    float _e8 = to_unit(_e7);
+    return _e8;
 }
 
 vec3 encode(vec3 c_6, vec2 pixel_1) {
@@ -17021,6 +17196,10 @@ uint pcg(uint v_2) {
     return ((word >> 22u) ^ word);
 }
 
+float to_unit(uint h) {
+    return (float((h >> 8u)) / 16777216.0);
+}
+
 vec3 apply_fog(vec3 c_4, vec3 fog_color, float factor) {
     return mix(c_4, fog_color, factor);
 }
@@ -17074,7 +17253,8 @@ vec3 tone_map(vec3 c_5, Output settings) {
 float pixel_noise(vec2 pixel) {
     uint _e5 = pcg(uint(pixel.y));
     uint _e7 = pcg((uint(pixel.x) + _e5));
-    return (float((_e7 >> 8u)) / 16777216.0);
+    float _e8 = to_unit(_e7);
+    return _e8;
 }
 
 vec3 encode(vec3 c_6, vec2 pixel_1) {
@@ -17351,6 +17531,10 @@ uint pcg(uint v_2) {
     return ((word >> 22u) ^ word);
 }
 
+float to_unit(uint h) {
+    return (float((h >> 8u)) / 16777216.0);
+}
+
 vec3 apply_fog(vec3 c_4, vec3 fog_color, float factor) {
     return mix(c_4, fog_color, factor);
 }
@@ -17404,7 +17588,8 @@ vec3 tone_map(vec3 c_5, Output settings) {
 float pixel_noise(vec2 pixel) {
     uint _e5 = pcg(uint(pixel.y));
     uint _e7 = pcg((uint(pixel.x) + _e5));
-    return (float((_e7 >> 8u)) / 16777216.0);
+    float _e8 = to_unit(_e7);
+    return _e8;
 }
 
 vec3 encode(vec3 c_6, vec2 pixel_1) {
@@ -17721,6 +17906,10 @@ uint pcg(uint v_2) {
     return ((word >> 22u) ^ word);
 }
 
+float to_unit(uint h) {
+    return (float((h >> 8u)) / 16777216.0);
+}
+
 vec3 apply_fog(vec3 c_4, vec3 fog_color, float factor) {
     return mix(c_4, fog_color, factor);
 }
@@ -17774,7 +17963,8 @@ vec3 tone_map(vec3 c_5, Output settings) {
 float pixel_noise(vec2 pixel) {
     uint _e5 = pcg(uint(pixel.y));
     uint _e7 = pcg((uint(pixel.x) + _e5));
-    return (float((_e7 >> 8u)) / 16777216.0);
+    float _e8 = to_unit(_e7);
+    return _e8;
 }
 
 vec3 encode(vec3 c_6, vec2 pixel_1) {
@@ -18051,6 +18241,10 @@ uint pcg(uint v_2) {
     return ((word >> 22u) ^ word);
 }
 
+float to_unit(uint h) {
+    return (float((h >> 8u)) / 16777216.0);
+}
+
 vec3 apply_fog(vec3 c_4, vec3 fog_color, float factor) {
     return mix(c_4, fog_color, factor);
 }
@@ -18104,7 +18298,8 @@ vec3 tone_map(vec3 c_5, Output settings) {
 float pixel_noise(vec2 pixel) {
     uint _e5 = pcg(uint(pixel.y));
     uint _e7 = pcg((uint(pixel.x) + _e5));
-    return (float((_e7 >> 8u)) / 16777216.0);
+    float _e8 = to_unit(_e7);
+    return _e8;
 }
 
 vec3 encode(vec3 c_6, vec2 pixel_1) {
@@ -18421,6 +18616,10 @@ uint pcg(uint v_2) {
     return ((word >> 22u) ^ word);
 }
 
+float to_unit(uint h) {
+    return (float((h >> 8u)) / 16777216.0);
+}
+
 vec3 apply_fog(vec3 c_4, vec3 fog_color, float factor) {
     return mix(c_4, fog_color, factor);
 }
@@ -18474,7 +18673,8 @@ vec3 tone_map(vec3 c_5, Output settings) {
 float pixel_noise(vec2 pixel) {
     uint _e5 = pcg(uint(pixel.y));
     uint _e7 = pcg((uint(pixel.x) + _e5));
-    return (float((_e7 >> 8u)) / 16777216.0);
+    float _e8 = to_unit(_e7);
+    return _e8;
 }
 
 vec3 encode(vec3 c_6, vec2 pixel_1) {
@@ -18760,6 +18960,10 @@ uint pcg(uint v_2) {
     return ((word >> 22u) ^ word);
 }
 
+float to_unit(uint h) {
+    return (float((h >> 8u)) / 16777216.0);
+}
+
 vec3 apply_fog(vec3 c_4, vec3 fog_color, float factor) {
     return mix(c_4, fog_color, factor);
 }
@@ -18813,7 +19017,8 @@ vec3 tone_map(vec3 c_5, Output settings) {
 float pixel_noise(vec2 pixel) {
     uint _e5 = pcg(uint(pixel.y));
     uint _e7 = pcg((uint(pixel.x) + _e5));
-    return (float((_e7 >> 8u)) / 16777216.0);
+    float _e8 = to_unit(_e7);
+    return _e8;
 }
 
 vec3 encode(vec3 c_6, vec2 pixel_1) {
@@ -19142,6 +19347,10 @@ uint pcg(uint v_2) {
     return ((word >> 22u) ^ word);
 }
 
+float to_unit(uint h) {
+    return (float((h >> 8u)) / 16777216.0);
+}
+
 vec3 apply_fog(vec3 c_4, vec3 fog_color, float factor) {
     return mix(c_4, fog_color, factor);
 }
@@ -19195,7 +19404,8 @@ vec3 tone_map(vec3 c_5, Output settings) {
 float pixel_noise(vec2 pixel) {
     uint _e5 = pcg(uint(pixel.y));
     uint _e7 = pcg((uint(pixel.x) + _e5));
-    return (float((_e7 >> 8u)) / 16777216.0);
+    float _e8 = to_unit(_e7);
+    return _e8;
 }
 
 vec3 encode(vec3 c_6, vec2 pixel_1) {
@@ -19495,6 +19705,10 @@ uint pcg(uint v_2) {
     return ((word >> 22u) ^ word);
 }
 
+float to_unit(uint h) {
+    return (float((h >> 8u)) / 16777216.0);
+}
+
 vec3 apply_fog(vec3 c_4, vec3 fog_color, float factor) {
     return mix(c_4, fog_color, factor);
 }
@@ -19548,7 +19762,8 @@ vec3 tone_map(vec3 c_5, Output settings) {
 float pixel_noise(vec2 pixel) {
     uint _e5 = pcg(uint(pixel.y));
     uint _e7 = pcg((uint(pixel.x) + _e5));
-    return (float((_e7 >> 8u)) / 16777216.0);
+    float _e8 = to_unit(_e7);
+    return _e8;
 }
 
 vec3 encode(vec3 c_6, vec2 pixel_1) {
@@ -19877,6 +20092,10 @@ uint pcg(uint v_2) {
     return ((word >> 22u) ^ word);
 }
 
+float to_unit(uint h) {
+    return (float((h >> 8u)) / 16777216.0);
+}
+
 vec3 apply_fog(vec3 c_4, vec3 fog_color, float factor) {
     return mix(c_4, fog_color, factor);
 }
@@ -19930,7 +20149,8 @@ vec3 tone_map(vec3 c_5, Output settings) {
 float pixel_noise(vec2 pixel) {
     uint _e5 = pcg(uint(pixel.y));
     uint _e7 = pcg((uint(pixel.x) + _e5));
-    return (float((_e7 >> 8u)) / 16777216.0);
+    float _e8 = to_unit(_e7);
+    return _e8;
 }
 
 vec3 encode(vec3 c_6, vec2 pixel_1) {
@@ -20238,6 +20458,10 @@ uint pcg(uint v_2) {
     return ((word >> 22u) ^ word);
 }
 
+float to_unit(uint h) {
+    return (float((h >> 8u)) / 16777216.0);
+}
+
 vec3 apply_fog(vec3 c_4, vec3 fog_color, float factor) {
     return mix(c_4, fog_color, factor);
 }
@@ -20291,7 +20515,8 @@ vec3 tone_map(vec3 c_5, Output settings) {
 float pixel_noise(vec2 pixel) {
     uint _e5 = pcg(uint(pixel.y));
     uint _e7 = pcg((uint(pixel.x) + _e5));
-    return (float((_e7 >> 8u)) / 16777216.0);
+    float _e8 = to_unit(_e7);
+    return _e8;
 }
 
 vec3 encode(vec3 c_6, vec2 pixel_1) {
@@ -20625,6 +20850,10 @@ uint pcg(uint v_2) {
     return ((word >> 22u) ^ word);
 }
 
+float to_unit(uint h) {
+    return (float((h >> 8u)) / 16777216.0);
+}
+
 vec3 apply_fog(vec3 c_4, vec3 fog_color, float factor) {
     return mix(c_4, fog_color, factor);
 }
@@ -20678,7 +20907,8 @@ vec3 tone_map(vec3 c_5, Output settings) {
 float pixel_noise(vec2 pixel) {
     uint _e5 = pcg(uint(pixel.y));
     uint _e7 = pcg((uint(pixel.x) + _e5));
-    return (float((_e7 >> 8u)) / 16777216.0);
+    float _e8 = to_unit(_e7);
+    return _e8;
 }
 
 vec3 encode(vec3 c_6, vec2 pixel_1) {
@@ -20986,6 +21216,10 @@ uint pcg(uint v_2) {
     return ((word >> 22u) ^ word);
 }
 
+float to_unit(uint h) {
+    return (float((h >> 8u)) / 16777216.0);
+}
+
 vec3 apply_fog(vec3 c_4, vec3 fog_color, float factor) {
     return mix(c_4, fog_color, factor);
 }
@@ -21039,7 +21273,8 @@ vec3 tone_map(vec3 c_5, Output settings) {
 float pixel_noise(vec2 pixel) {
     uint _e5 = pcg(uint(pixel.y));
     uint _e7 = pcg((uint(pixel.x) + _e5));
-    return (float((_e7 >> 8u)) / 16777216.0);
+    float _e8 = to_unit(_e7);
+    return _e8;
 }
 
 vec3 encode(vec3 c_6, vec2 pixel_1) {
@@ -21373,6 +21608,10 @@ uint pcg(uint v_2) {
     return ((word >> 22u) ^ word);
 }
 
+float to_unit(uint h) {
+    return (float((h >> 8u)) / 16777216.0);
+}
+
 vec3 apply_fog(vec3 c_4, vec3 fog_color, float factor) {
     return mix(c_4, fog_color, factor);
 }
@@ -21426,7 +21665,8 @@ vec3 tone_map(vec3 c_5, Output settings) {
 float pixel_noise(vec2 pixel) {
     uint _e5 = pcg(uint(pixel.y));
     uint _e7 = pcg((uint(pixel.x) + _e5));
-    return (float((_e7 >> 8u)) / 16777216.0);
+    float _e8 = to_unit(_e7);
+    return _e8;
 }
 
 vec3 encode(vec3 c_6, vec2 pixel_1) {

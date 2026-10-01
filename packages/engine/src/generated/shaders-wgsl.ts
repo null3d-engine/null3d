@@ -343,6 +343,10 @@ fn pcg(v_1: u32) -> u32 {
     return ((word >> 22u) ^ word);
 }
 
+fn to_unit(h: u32) -> f32 {
+    return (f32((h >> 8u)) / 16777216f);
+}
+
 fn tone_map(c_4: vec3<f32>, settings: Output) -> vec3<f32> {
     let exposed = (c_4 * settings.exposure);
     if (settings.tone_mapping == AGX) {
@@ -363,7 +367,8 @@ fn tone_map(c_4: vec3<f32>, settings: Output) -> vec3<f32> {
 fn pixel_noise(pixel: vec2<f32>) -> f32 {
     let _e5 = pcg(u32(pixel.y));
     let _e7 = pcg((u32(pixel.x) + _e5));
-    return (f32((_e7 >> 8u)) / 16777216f);
+    let _e8 = to_unit(_e7);
+    return _e8;
 }
 
 fn encode(c_5: vec3<f32>, pixel_1: vec2<f32>) -> vec3<f32> {
@@ -544,6 +549,10 @@ fn pcg(v_1: u32) -> u32 {
     return ((word >> 22u) ^ word);
 }
 
+fn to_unit(h: u32) -> f32 {
+    return (f32((h >> 8u)) / 16777216f);
+}
+
 fn tone_map(c_4: vec3<f32>, settings: Output) -> vec3<f32> {
     let exposed = (c_4 * settings.exposure);
     if (settings.tone_mapping == AGX) {
@@ -564,7 +573,8 @@ fn tone_map(c_4: vec3<f32>, settings: Output) -> vec3<f32> {
 fn pixel_noise(pixel: vec2<f32>) -> f32 {
     let _e5 = pcg(u32(pixel.y));
     let _e7 = pcg((u32(pixel.x) + _e5));
-    return (f32((_e7 >> 8u)) / 16777216f);
+    let _e8 = to_unit(_e7);
+    return _e8;
 }
 
 fn encode(c_5: vec3<f32>, pixel_1: vec2<f32>) -> vec3<f32> {
