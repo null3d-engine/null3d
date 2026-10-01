@@ -15,13 +15,14 @@ use null3d_core::jobs::JobSystem;
 use null3d_core::lights::{POINT_CONE, VisibleLight, kind};
 use null3d_core::scene::Command;
 use null3d_core::testing::CountingAllocator;
-use null3d_gpu::drawlist::{DrawList, Op};
+use null3d_gpu::drawlist::{DrawList, Op, format};
 use null3d_render::camera::{Lens, Perspective};
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
-use null3d_render::frame::FrameBuilder;
+use null3d_render::frame::{CanvasOutput, FrameBuilder};
 use null3d_render::gpu_driven::{GpuDrivenRenderer, RendererConfig};
 use null3d_render::light_grid::{DEFAULT_GRID, GridView, LightGrid, LightLimits};
 use null3d_render::materials::Shading;
+use null3d_render::output::{Antialias, Output, SceneColor, ToneMapping};
 use null3d_render::parallel_record::ParallelRecorder;
 use null3d_render::view::ViewId;
 
@@ -74,6 +75,22 @@ fn recording_frames_of_two_views_allocates_nothing() {
     }
 }
 
+/// Records warm-up frames, then steady frames whose exposure changes every frame, so the final pass
+/// uploads its settings each time, and returns what those allocated.
+fn hdr_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
+    record_until(&mut world, 6, false);
+    CountingAllocator::arm();
+    for frame in 7..=200 {
+        world.frame = frame;
+        world.renderer.settings_mut().set_output(Output {
+            tone_mapping: ToneMapping::Agx,
+            exposure: frame as f32 / 100.0,
+        });
+        world.record(false);
+    }
+    CountingAllocator::disarm()
+}
+
 /// Records frames of a world with a second view up to `last`, each giving an object, the batch
 /// and both views new layers, with no structure change.
 fn record_layer_changes<B: FrameBuilder>(world: &mut World<B>, side: ViewId, last: u32) {
@@ -104,6 +121,37 @@ fn layer_change_allocations<B: FrameBuilder>(mut world: World<B>) -> u64 {
     CountingAllocator::arm();
     record_layer_changes(&mut world, side, 100);
     CountingAllocator::disarm()
+}
+
+#[test]
+fn hdr_frames_whose_output_settings_change_allocate_nothing() {
+    let _only = CountingAllocator::exclusive();
+    CountingAllocator::track_this_thread();
+    for antialias in Antialias::ALL {
+        let canvas = CanvasOutput {
+            scene_color: SceneColor::from_format(format::RGBA16_FLOAT),
+            antialias,
+            transparent: false,
+        };
+        let webgpu = World::with_config(RendererConfig {
+            canvas,
+            transient_attachments: true,
+            ..RendererConfig::default()
+        });
+        assert_eq!(hdr_allocations(webgpu), 0, "WebGPU, {antialias:?}");
+        for multi_draw in [true, false] {
+            let webgl2 = World::build(CpuCulledRenderer::new(CpuCulledConfig {
+                canvas,
+                multi_draw,
+                ..CpuCulledConfig::default()
+            }));
+            assert_eq!(
+                hdr_allocations(webgl2),
+                0,
+                "WebGL2, multi-draw {multi_draw}, {antialias:?}"
+            );
+        }
+    }
 }
 
 #[test]

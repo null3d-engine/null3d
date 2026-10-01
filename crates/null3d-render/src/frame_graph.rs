@@ -14,17 +14,25 @@
 //! scene color and depth, after the camera's opaque pass and in its render pass. It is on only in
 //! frames with lines, so the plan of a frame without them has no such pass.
 //!
-//! Two passes can take the scene color to the canvas. The final pass samples it and draws the
-//! canvas. It has no work yet, so it stays off. The resolve pass runs instead: the render pass
-//! that draws the scene resolves its multisampled color straight into the canvas, with no pass,
-//! copy or target of its own.
+//! Two passes can take the scene color to the canvas, and the scene color's format and the
+//! anti-aliasing mode pick one (see [`crate::output`]). On the HDR path the final pass samples the
+//! scene color and draws the canvas: it applies the exposure and the tone mapping, and encodes the
+//! color. On the 8-bit path the scene shaders did that already. With MSAA the resolve pass runs
+//! instead: the render pass that draws the scene resolves its multisampled color straight into
+//! the canvas, with no pass, copy or target of its own. With one sample the final pass copies the
+//! scene color into the canvas. In the FXAA mode the final pass smooths edges on either path.
+//!
+//! Targets that live within one render pass, such as the multisampled color and the depth, take
+//! the transient attachment usage where the device offers it, so a tile-based GPU can keep them in
+//! tile memory. Every target that no later pass reads is discarded at the end of its render pass.
 //!
 //! # Recording
 //!
 //! The graph compiles only after its passes change, and walking its plan allocates nothing. A
-//! frame records its uploads first. [`FrameGraph::record`] then begins each render or compute pass
-//! of the plan, lets the builder record the commands of each declared pass in it, and ends it. A
-//! compute pass whose passes record nothing is left out.
+//! frame records its uploads first, the final pass's settings among them. [`FrameGraph::record`]
+//! then begins each render or compute pass of the plan, records the final pass, lets the builder
+//! record the commands of each other declared pass in it, and ends it. A compute pass whose passes
+//! record nothing is left out.
 //!
 //! A pass draws into one layer of an array target through a view of that layer. The draw lists
 //! make a view of each layer beside each such texture of the plan, with ids of their own after the
@@ -34,18 +42,26 @@ use std::borrow::Cow;
 
 use null3d_gpu::drawlist::{DrawList, NO_TARGET, Op, format, pass_flags, texture_usage, view};
 
-use crate::frame::RecordError;
+use crate::final_pass::{FinalIds, FinalPass};
+use crate::frame::{CanvasOutput, RecordError, UploadArena};
 use crate::graph::{
     CANVAS, LoadOp, Pass, PassId, PassKind, Plan, PlannedTexture, RenderGraph, Size, Step,
     StepKind, StoreOp, Surface, Target,
 };
-use crate::pipelines::PassTargets;
+use crate::output::{Antialias, Output, SceneColor};
+use crate::pipelines::{PassTargets, PipelineCache};
 use crate::view::{View, ViewId};
 
-/// The format of the scene's color targets: the canvas's, as the shaders write sRGB-encoded color.
-pub(crate) const COLOR_FORMAT: u32 = format::CANVAS;
 /// The format of the scene's depth targets.
 pub(crate) const DEPTH_FORMAT: u32 = format::DEPTH32_FLOAT;
+
+/// The GPU object ids that a frame builder gives its graph: its textures take ids from
+/// `first_texture` on, and the final pass has its own.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct GraphIds {
+    pub(crate) first_texture: u32,
+    pub(crate) final_pass: FinalIds,
+}
 
 /// The buffers that the culling passes read: the world matrices and the bucket tables, which the
 /// frame uploads before its passes run.
@@ -69,10 +85,10 @@ pub(crate) enum Role {
     Opaque(ViewId),
     /// Draws the frame's debug lines into the camera's view.
     DebugLines,
-    /// Resolves the scene color into the canvas. It records nothing: the color attachment of its
-    /// render pass resolves.
+    /// Resolves the scene color into the canvas on the 8-bit path. It records nothing: the color
+    /// attachment of its render pass resolves.
     Resolve,
-    /// Draws the canvas from the scene color. It has no work yet, so it stays off.
+    /// Tone maps the HDR scene color into the canvas. The graph records it itself.
     Final,
 }
 
@@ -98,8 +114,8 @@ fn view_name(view: usize, camera: &'static str, other: &str) -> Cow<'static, str
     Cow::Owned(name)
 }
 
-/// The render graph of a frame builder's passes, and the textures its draw lists made for the
-/// compiled plan.
+/// The render graph of a frame builder's passes, the textures its draw lists made for the compiled
+/// plan, and the final pass.
 #[derive(Debug)]
 pub(crate) struct FrameGraph {
     graph: RenderGraph,
@@ -111,6 +127,11 @@ pub(crate) struct FrameGraph {
     samples: u32,
     /// True when the GPU culls each view in a culling pass.
     gpu_culling: bool,
+    /// The format of the scene's color targets.
+    scene_color: SceneColor,
+    /// True when the final pass takes the scene color to the canvas, and false when the resolve
+    /// pass does.
+    final_runs: bool,
     /// The number of views the declarations cover.
     views: usize,
     /// The debug lines pass, once the passes are declared.
@@ -119,6 +140,8 @@ pub(crate) struct FrameGraph {
     first_texture: u32,
     /// Each texture of the plan that the draw lists made, with the size it was made at.
     made: Vec<(PlannedTexture, (u32, u32))>,
+    /// True when the frame being recorded made or released a texture of the plan.
+    textures_made: bool,
     /// The canvas size the draw lists set last, or `(0, 0)` before any.
     canvas: (u32, u32),
     /// For each texture of the plan, the first of the views of its layers, counted from the views'
@@ -126,25 +149,44 @@ pub(crate) struct FrameGraph {
     layer_views: Vec<u32>,
     /// The views of layers that the draw lists made.
     made_views: u32,
+    final_pass: FinalPass,
 }
 
 impl FrameGraph {
-    /// A graph with no passes yet. The first [`FrameGraph::sync_views`] declares them. Its
-    /// textures take ids from `first_texture` on.
-    pub(crate) fn new(samples: u32, gpu_culling: bool, first_texture: u32) -> Self {
+    /// A graph with no passes yet. The first [`FrameGraph::sync_views`] declares them. Scene
+    /// passes draw color in the format of the canvas output's scene color, and the scene's color
+    /// and depth targets have the samples of its anti-aliasing mode. Targets that live within one
+    /// render pass are transient when `transient_attachments` says the device has them.
+    pub(crate) fn new(
+        gpu_culling: bool,
+        canvas: CanvasOutput,
+        transient_attachments: bool,
+        ids: GraphIds,
+    ) -> Self {
+        let CanvasOutput {
+            scene_color,
+            antialias,
+            ..
+        } = canvas;
+        let mut graph = RenderGraph::new();
+        graph.set_transient_attachments(transient_attachments);
         Self {
-            graph: RenderGraph::new(),
+            graph,
             roles: Vec::new(),
             opaque: Vec::new(),
-            samples,
+            samples: antialias.samples(),
             gpu_culling,
+            scene_color,
+            final_runs: scene_color.is_hdr() || antialias != Antialias::Msaa,
             views: 0,
             debug_lines: None,
-            first_texture,
+            first_texture: ids.first_texture,
             made: Vec::new(),
+            textures_made: false,
             canvas: (0, 0),
             layer_views: Vec::new(),
             made_views: 0,
+            final_pass: FinalPass::new(ids.final_pass, scene_color, antialias),
         }
     }
 
@@ -153,14 +195,23 @@ impl FrameGraph {
         &self.graph
     }
 
-    /// What the scene's render pipelines and bundles draw into: the scene's color and depth
-    /// formats and its sample count. The scene sets no permutation bits of its own.
+    /// What the scene's render pipelines and bundles draw into: the scene color's format, the depth
+    /// format and the sample count, with the permutation bits that the scene color sets.
     pub(crate) fn scene_targets(&self) -> PassTargets {
         PassTargets {
-            color_format: COLOR_FORMAT,
+            color_format: self.scene_color.format(),
             depth_format: DEPTH_FORMAT,
             samples: self.samples,
-            permutation: 0,
+            permutation: self.scene_color.permutation(),
+        }
+    }
+
+    /// Bytes that one frame may copy into its arena for the graph's own passes.
+    pub(crate) fn upload_bound(&self) -> usize {
+        if self.final_runs {
+            FinalPass::UPLOAD_BYTES
+        } else {
+            0
         }
     }
 
@@ -189,12 +240,13 @@ impl FrameGraph {
     }
 
     /// Declares the engine's passes for `views`: each view's culling pass on WebGPU, each view's
-    /// opaque pass, the debug lines pass and the final pass, which are off, and the resolve pass.
+    /// opaque pass, the debug lines pass, which is off, then the resolve pass and the final pass,
+    /// of which one runs.
     fn declare(&mut self, views: &[View]) {
         self.graph.clear();
         self.roles.clear();
         self.opaque.clear();
-        let color = Target::color(COLOR_FORMAT).samples(self.samples);
+        let color = Target::color(self.scene_color.format()).samples(self.samples);
         let depth = Target::depth(DEPTH_FORMAT).samples(self.samples);
         if self.gpu_culling {
             self.graph.import_buffer(OBJECTS);
@@ -225,13 +277,14 @@ impl FrameGraph {
         let resolve = Pass::new("Resolve", PassKind::Resolve)
             .reads(SCENE_COLOR)
             .writes(CANVAS);
-        self.add(resolve, Role::Resolve);
+        let resolve = self.add(resolve, Role::Resolve);
         let final_pass = Pass::new("Final", PassKind::Fullscreen)
             .size(Size::Canvas)
             .reads(SCENE_COLOR)
             .writes(CANVAS);
         let final_pass = self.add(final_pass, Role::Final);
-        self.graph.set_enabled(final_pass, false);
+        self.graph.set_enabled(resolve, !self.final_runs);
+        self.graph.set_enabled(final_pass, self.final_runs);
         self.views = views.len();
     }
 
@@ -249,16 +302,50 @@ impl FrameGraph {
             list.push(Op::ResizeCanvas, &[canvas.0, canvas.1])?;
             self.canvas = canvas;
         }
-        if compiled || resized {
-            self.make_textures(list)?;
-        }
+        self.textures_made = (compiled || resized) && self.make_textures(list)?;
         Ok(())
+    }
+
+    /// Asks `pipelines` for the pipelines of the graph's own passes: the final pass's, when it
+    /// runs. A builder asks before it records the pipelines that its frame creates.
+    pub(crate) fn request_pipelines(&mut self, pipelines: &mut PipelineCache) {
+        if self.final_runs {
+            self.final_pass.request_pipeline(pipelines);
+        }
+    }
+
+    /// Records what the graph's own passes need before the frame's passes, from copies in the
+    /// frame's arena: when the final pass runs, its objects, its settings when they changed, and
+    /// its binding of the scene color when the frame made the plan's textures. Call it after
+    /// [`FrameGraph::prepare`].
+    pub(crate) fn upload(
+        &mut self,
+        list: &mut DrawList,
+        arena: &mut UploadArena,
+        output: Output,
+    ) -> Result<(), RecordError> {
+        if !self.final_runs {
+            return Ok(());
+        }
+        let plan = self
+            .graph
+            .plan()
+            .expect("the graph compiled before the frame uploads");
+        let scene_color = self
+            .graph
+            .find_resource(SCENE_COLOR)
+            .and_then(|resource| plan.sampled_texture_of(resource))
+            .map(|surface| self.texture_id(surface))
+            .expect("the final pass samples the scene color");
+        self.final_pass
+            .prepare(list, arena, output, scene_color, self.textures_made)
     }
 
     /// Makes each texture of the plan whose shape or size differs from what the draw lists made,
     /// with the views of its layers where passes draw into it by layer, and releases the textures
-    /// and views the plan no longer has.
-    fn make_textures(&mut self, list: &mut DrawList) -> Result<(), RecordError> {
+    /// and views the plan no longer has. Returns true when it made or released any.
+    fn make_textures(&mut self, list: &mut DrawList) -> Result<bool, RecordError> {
+        let start = list.len();
         let textures = self
             .graph
             .plan()
@@ -308,7 +395,7 @@ impl FrameGraph {
             list.push(Op::DestroyTexture, &[self.first_texture + index as u32])?;
         }
         self.made.truncate(textures.len());
-        Ok(())
+        Ok(list.len() != start)
     }
 
     /// The id of the view of `layer` of a texture whose views start at `first_view`.
@@ -316,8 +403,9 @@ impl FrameGraph {
         self.first_texture + LAYER_VIEWS + first_view + layer
     }
 
-    /// Records the plan's render and compute passes, then submits them. `record` records the
-    /// commands of each declared pass. Each render pass clears its color targets to `clear`.
+    /// Records the plan's render and compute passes, then submits them. The graph records the
+    /// final pass, and `record` the commands of each other declared pass. Each render pass clears
+    /// its color targets to `clear`.
     pub(crate) fn record(
         &self,
         list: &mut DrawList,
@@ -346,7 +434,10 @@ impl FrameGraph {
                 StepKind::Render { .. } => {
                     self.begin_render_pass(list, plan, step, clear)?;
                     for &pass in plan.passes(step) {
-                        record(list, self.roles[pass.index()])?;
+                        match self.roles[pass.index()] {
+                            Role::Final => self.final_pass.record(list)?,
+                            role => record(list, role)?,
+                        }
                     }
                     list.push(Op::EndRenderPass, &[])?;
                 }
@@ -430,13 +521,15 @@ impl FrameGraph {
         }
     }
 
-    /// Forgets the canvas size and the textures and views the draw lists made, so the next frame
-    /// sets the size and makes every texture again, after the thread that draws replaced the GPU.
+    /// Forgets the canvas size, the textures and views the draw lists made and the final pass's
+    /// objects, so the next frame makes them all again, after the thread that draws replaced the
+    /// GPU.
     pub(crate) fn reset_gpu(&mut self) {
         self.made.clear();
         self.layer_views.clear();
         self.made_views = 0;
         self.canvas = (0, 0);
+        self.final_pass.reset_gpu();
     }
 }
 
@@ -482,9 +575,33 @@ mod tests {
         assert_eq!(view_name(31, "Opaque", "Opaque"), "Opaque31");
     }
 
+    const IDS: GraphIds = GraphIds {
+        first_texture: 1,
+        final_pass: FinalIds {
+            settings: 9,
+            group: 9,
+        },
+    };
+
+    /// A graph for a scene color in `format`, in the `antialias` mode, with or without GPU culling
+    /// and transient attachments.
+    fn frame_graph(
+        format: u32,
+        antialias: Antialias,
+        gpu_culling: bool,
+        transient: bool,
+    ) -> FrameGraph {
+        let canvas = CanvasOutput {
+            scene_color: SceneColor::from_format(format),
+            antialias,
+            transparent: false,
+        };
+        FrameGraph::new(gpu_culling, canvas, transient, IDS)
+    }
+
     #[test]
-    fn each_view_adds_its_passes_and_the_final_pass_stays_off() {
-        let mut frames = FrameGraph::new(4, true, 1);
+    fn each_view_adds_its_passes_and_the_8_bit_path_resolves_into_the_canvas() {
+        let mut frames = frame_graph(format::CANVAS, Antialias::Msaa, true, false);
         frames.sync_views(&[View::default(), View::default()]);
         let graph = frames.graph();
         let names = [
@@ -515,12 +632,101 @@ mod tests {
         for off in ["DebugLines", "Final"] {
             assert!(!graph.is_enabled(graph.find_pass(off).unwrap()), "{off}");
         }
+        assert!(graph.is_enabled(graph.find_pass("Resolve").unwrap()));
+        assert_eq!(frames.upload_bound(), 0);
 
         // The WebGL2 path culls on the job workers, so its graph has no culling passes.
-        let mut frames = FrameGraph::new(4, false, 1);
+        let mut frames = frame_graph(format::CANVAS, Antialias::Msaa, false, false);
         frames.sync_views(&[View::default()]);
         assert_eq!(frames.graph().pass_count(), 4);
         assert_eq!(frames.roles[0], Role::Opaque(ViewId::CAMERA));
+    }
+
+    #[test]
+    fn hdr_color_runs_the_final_pass_instead_of_the_resolve_pass() {
+        for hdr in [format::RGBA16_FLOAT, format::RG11B10_UFLOAT] {
+            let mut frames = frame_graph(hdr, Antialias::Msaa, false, false);
+            frames.sync_views(&[View::default()]);
+            let graph = &mut frames.graph;
+            assert!(graph.compile().unwrap());
+            assert!(graph.is_enabled(graph.find_pass("Final").unwrap()));
+            assert!(!graph.is_enabled(graph.find_pass("Resolve").unwrap()));
+            let plan = graph.plan().unwrap();
+            // The scene's render pass resolves the multisampled color into a texture of one
+            // sample, which the final pass reads in a render pass of its own into the canvas.
+            let textures: Vec<_> = plan.textures().iter().map(|t| t.target).collect();
+            assert!(textures.contains(&Target::color(hdr).samples(4)));
+            assert!(textures.contains(&Target::color(hdr)));
+            let scene = graph.find_resource(SCENE_COLOR).unwrap();
+            assert!(matches!(
+                plan.sampled_texture_of(scene),
+                Some(Surface::Texture(_))
+            ));
+            assert_eq!(plan.steps().len(), 2);
+            assert_eq!(frames.upload_bound(), FinalPass::UPLOAD_BYTES);
+        }
+    }
+
+    #[test]
+    fn one_sample_modes_draw_the_scene_color_that_the_final_pass_reads_on_both_paths() {
+        for scene_color in [format::RGBA16_FLOAT, format::CANVAS] {
+            for antialias in [Antialias::Fxaa, Antialias::None] {
+                let mut frames = frame_graph(scene_color, antialias, true, false);
+                frames.sync_views(&[View::default()]);
+                assert_eq!(frames.scene_targets().samples, 1);
+                let graph = &mut frames.graph;
+                assert!(graph.compile().unwrap());
+                assert!(graph.is_enabled(graph.find_pass("Final").unwrap()));
+                assert!(!graph.is_enabled(graph.find_pass("Resolve").unwrap()));
+                // No texture has more than one sample, and the final pass reads the color that
+                // the scene draws into, which nothing resolves.
+                let plan = graph.plan().unwrap();
+                assert!(plan.textures().iter().all(|t| t.target.samples == 1));
+                assert_eq!(plan.textures().len(), 2);
+                let scene = graph.find_resource(SCENE_COLOR).unwrap();
+                assert!(matches!(
+                    plan.sampled_texture_of(scene),
+                    Some(Surface::Texture(_))
+                ));
+                for step in plan.steps() {
+                    assert!(plan.attachments(step).iter().all(|a| a.resolve.is_none()));
+                }
+                assert_eq!(frames.upload_bound(), FinalPass::UPLOAD_BYTES);
+            }
+        }
+    }
+
+    #[test]
+    fn transient_attachments_only_where_the_device_has_them() {
+        use null3d_gpu::drawlist::texture_usage::TRANSIENT_ATTACHMENT;
+        for transient in [false, true] {
+            let mut frames = frame_graph(format::RGBA16_FLOAT, Antialias::Msaa, true, transient);
+            frames.sync_views(&[View::default()]);
+            let graph = &mut frames.graph;
+            graph.compile().unwrap();
+            // The multisampled color and the depth live within the scene's render pass. The
+            // texture that the color resolves into lasts until the final pass reads it.
+            let short_lived: Vec<_> = graph
+                .plan()
+                .unwrap()
+                .textures()
+                .iter()
+                .filter(|t| t.usage & TRANSIENT_ATTACHMENT != 0)
+                .map(|t| t.target)
+                .collect();
+            let expected = if transient {
+                vec![
+                    Target::depth(DEPTH_FORMAT).samples(4),
+                    Target::color(format::RGBA16_FLOAT).samples(4),
+                ]
+            } else {
+                Vec::new()
+            };
+            assert_eq!(short_lived.len(), expected.len());
+            for target in expected {
+                assert!(short_lived.contains(&target), "{target:?}");
+            }
+        }
     }
 
     /// The names of the passes in each step of the compiled plan.
@@ -540,7 +746,7 @@ mod tests {
 
     #[test]
     fn debug_lines_join_the_camera_render_pass_only_in_frames_with_lines() {
-        let mut frames = FrameGraph::new(4, true, 1);
+        let mut frames = frame_graph(format::CANVAS, Antialias::Msaa, true, false);
         frames.sync_views(&[View::default(), View::default()]);
         let mut list = DrawList::with_capacity(256);
         frames.prepare(&mut list, (64, 64)).unwrap();
@@ -579,9 +785,10 @@ mod tests {
     }
 
     /// A camera's passes, then a kept depth array of `layers` layers that a pass per layer draws
-    /// into and a pass after them samples.
+    /// into and a pass after them samples. The test passes take the role of the resolve pass,
+    /// which records nothing of its own.
     fn layered(layers: u32) -> FrameGraph {
-        let mut frames = FrameGraph::new(4, false, 1);
+        let mut frames = frame_graph(format::CANVAS, Antialias::Msaa, false, false);
         frames.sync_views(&[View::default()]);
         let size = Size::Fixed {
             width: 256,
@@ -593,12 +800,12 @@ mod tests {
             let pass = Pass::new(format!("Layer{layer}"), PassKind::Shadow)
                 .size(size)
                 .writes_layer("layers", layer);
-            frames.add(pass, Role::Final);
+            frames.add(pass, Role::Resolve);
         }
         let sampler = Pass::new("Sampler", PassKind::Scene)
-            .creates("seen", Target::color(COLOR_FORMAT))
+            .creates("seen", Target::color(format::CANVAS))
             .reads("layers");
-        frames.add(sampler, Role::Final);
+        frames.add(sampler, Role::Resolve);
         frames
     }
 

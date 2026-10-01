@@ -40,7 +40,7 @@ The engine calls your function once per pixel and lights the result.
 struct SurfaceInput {
   relativePosition: vec3f, // position relative to the camera; always precise
   worldPosition: vec3f,    // absolute world position; fewer digits far from the origin
-  normal: vec3f,           // unit normal, facing the camera on double-sided back faces
+  normal: vec3f,           // unit normal, or the face's with flatShading; faces the camera on double-sided back faces
   viewDirection: vec3f,    // unit direction from the surface toward the camera
   vertexColor: vec4f,      // vertex color with vertexColors on a mesh that has colors, else (1, 1, 1, 1)
   uv: vec2f,               // first UV set; meshes need UVs to draw with a custom material
@@ -48,12 +48,13 @@ struct SurfaceInput {
 };
 struct Surface {
   baseColor: vec3f,        // linear RGB
-  alpha: f32,              // drawn opaque until alpha modes exist
+  alpha: f32,              // with alphaMode: 'mask', pixels below alphaCutoff draw nothing
   metalness: f32,
   roughness: f32,          // perceptual roughness, as in glTF and three.js
   normal: vec3f,           // world space, unit length
   emissive: vec3f,         // linear RGB, added after lighting
-  occlusion: f32,          // ambient occlusion, 0 to 1
+  occlusion: f32,          // ambient occlusion, 0 to 1; darkens the ambient light and irradiance
+  irradiance: vec3f,       // baked light added to the ambient light, zero by default
 };
 fn defaultSurface(input: SurfaceInput) -> Surface;  // the material's own options
 ```

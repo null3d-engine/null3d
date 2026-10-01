@@ -14,13 +14,122 @@
 import { BENCH_SCENES } from '../../bench/lib/parity.ts';
 import { MASK_IMAGE } from '../../bench/scenes/alpha-mask.ts';
 import { FOG_IMAGE } from '../../bench/scenes/fog.ts';
+import { MAPS_IMAGE } from '../../bench/scenes/material-maps.ts';
 import { ORTHO_IMAGE } from '../../bench/scenes/ortho-camera.ts';
 import { HOLD_TIME, PARITY_CANVAS } from '../../bench/scenes/spec.ts';
 import { DEMOS } from '../../examples/demos.ts';
 import type { DepthMode } from '../../packages/engine/src/page/switches.ts';
 import type { EngineModeName } from '../lib/engine-checks.ts';
 import { ALL_MODES, type ImageRun, type ImageTest, imageRuns, type Tier } from '../lib/images.ts';
+import { STOPS, TONE_MAPPINGS } from '../pages/lib/bright-scene.ts';
 import { PRECISION } from '../pages/lib/depth-precision.ts';
+
+/**
+ * The tolerance of a scene drawn about 1,000 km out against its image at the origin: any change of
+ * color counts, and a few pixels may change. The final pass dithers after the tone mapping, so a
+ * rounding difference of the GPU below the last bit can still move a pixel by one step, as CI's
+ * software GPU did in one pixel of a whole image. A world matrix relative to the origin, instead of
+ * to its cell, changes many times more.
+ */
+const FAR_OUT_TOLERANCE = { threshold: 0, maxDiffRatio: 0.00005 };
+
+/** The sketch of the tone mapping tests: tiles whose linear colors run from about 0.2 to 16. */
+export const BRIGHT_SKETCH = 'tests/pages/sketches/bright-sketch.ts';
+
+/** The name of the tone mapping test of a tone mapping at an exposure in stops. */
+export const toneMappingTest = (tone: string, stops: number) =>
+	`tone-${tone}${stops === 0 ? '' : '-half-exposure'}`;
+
+/** The name of the test that draws a tone mapping test at an exposure of 1 on the 8-bit path. */
+export const eightBitTest = (tone: string) => `tone-${tone}-8-bit`;
+
+/**
+ * How far the 8-bit path's image may stray from the HDR path's. Tile colors match, but the 8-bit
+ * path averages the samples of an antialiased edge after the tone mapping, and the HDR path before
+ * it, so a bright tile's edge against the dark background differs. On the Mac up to 1.5% of the
+ * pixels differ, all at edges. Dithering keeps pixelmatch from counting them as antialiasing.
+ */
+const EIGHT_BIT_TOLERANCE = { maxDiffRatio: 0.03 };
+
+/**
+ * The bright scene under each tone mapping, at an exposure of 1 and of 0.5. The 8-bit path, whose
+ * shaders tone map themselves, must draw the HDR path's image at an exposure of 1.
+ */
+function toneMappingTests(): ImageTest[] {
+	return TONE_MAPPINGS.flatMap((tone): ImageTest[] => [
+		...STOPS.map(
+			(stops): ImageTest => ({
+				name: toneMappingTest(tone, stops),
+				sketch: `${BRIGHT_SKETCH}?tone=${tone}&stops=${stops}`,
+				hold: 0,
+			}),
+		),
+		{
+			name: eightBitTest(tone),
+			sketch: `${BRIGHT_SKETCH}?tone=${tone}&stops=0`,
+			hold: 0,
+			tiers: ['webgpu', 'webgl2'],
+			switches: ['hdr=off'],
+			reference: toneMappingTest(tone, 0),
+			expect: { hdr: false },
+			tolerance: EIGHT_BIT_TOLERANCE,
+			deviceTolerance: EIGHT_BIT_TOLERANCE,
+		},
+	]);
+}
+
+/** The sketch of the anti-aliasing tests: thin bars and a bright box on a black background. */
+const EDGES_SKETCH = 'tests/pages/sketches/edges-sketch.ts';
+
+/** The anti-aliasing modes, as the page's option names them. */
+const ANTIALIAS_MODES = ['msaa', 'fxaa', 'none'] as const;
+
+/**
+ * The edges scene in each anti-aliasing mode on each tier, then in the one-sample modes on the
+ * 8-bit path. There the final pass reads color that the scene shaders tone mapped already, and it
+ * must draw the HDR path's image. FXAA judges edges by the brightness after tone mapping on both
+ * paths, but the 8-bit path blends the tone mapped colors, so a few edge pixels differ.
+ */
+function antialiasTests(): ImageTest[] {
+	return [
+		...ANTIALIAS_MODES.map(
+			(mode): ImageTest => ({
+				name: `antialias-${mode}`,
+				sketch: EDGES_SKETCH,
+				hold: 0,
+				switches: [`antialias=${mode}`],
+			}),
+		),
+		...(['fxaa', 'none'] as const).map(
+			(mode): ImageTest => ({
+				name: `antialias-${mode}-8-bit`,
+				sketch: EDGES_SKETCH,
+				hold: 0,
+				tiers: ['webgpu', 'webgl2'],
+				switches: [`antialias=${mode}`, 'hdr=off'],
+				reference: `antialias-${mode}`,
+				expect: { hdr: false },
+				tolerance: EIGHT_BIT_TOLERANCE,
+				deviceTolerance: EIGHT_BIT_TOLERANCE,
+			}),
+		),
+	];
+}
+
+/** The vertex formats sketch, and how its tests draw it. */
+const VERTEX_FORMATS = {
+	sketch: 'tests/pages/sketches/vertex-formats-sketch.ts',
+	hold: 0,
+	size: [400, 300],
+	modes: ['pipelined', 'single-threaded'],
+} as const;
+
+/** The geometry generators sketch, and how its tests draw it. */
+const GENERATORS = {
+	sketch: 'tests/pages/sketches/generators-sketch.ts',
+	hold: 0,
+	size: [480, 270],
+} as const;
 
 /** The orthographic camera's sketch, and the size of its image. */
 const ORTHO = {
@@ -130,6 +239,16 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 		switches: ['uploads=copy'],
 		reference: 'scene',
 	},
+	...toneMappingTests(),
+	...antialiasTests(),
+	// The bright scene without a background on a transparent canvas, which keeps premultiplied
+	// alpha: the output spec checks the alpha of the captured pixels.
+	{
+		name: 'transparent',
+		sketch: `${BRIGHT_SKETCH}?background=none`,
+		hold: 0,
+		switches: ['transparent'],
+	},
 	// Object calls: turns about an object's own axes, a move along them, a hand moved under a turned
 	// and scaled arm with keepWorld, which then swings with the arm, and bounds that culling tests:
 	// one box that its bounds hide, and one that is never culled.
@@ -155,7 +274,7 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 		sketch: `tests/pages/sketches/cells-sketch.ts?x=${977 * 1024}`,
 		hold: 1,
 		reference: 'cells',
-		tolerance: { threshold: 0, maxDiffRatio: 0 },
+		tolerance: FAR_OUT_TOLERANCE,
 	},
 	// Debug drawing: every shape of ctx.debug over a small scene, the axes of a spinning box and the
 	// frustum of a second camera. The single-threaded mode runs the sketch on the page, which draws
@@ -177,7 +296,7 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 		hold: 1,
 		size: [400, 225],
 		reference: 'debug',
-		tolerance: { threshold: 0, maxDiffRatio: 0 },
+		tolerance: FAR_OUT_TOLERANCE,
 	},
 	// Objects, a parent and its child, and instance batches on three layers, some of them moved to
 	// other layers after they were created, and a camera that draws two of the layers. A child keeps
@@ -201,7 +320,7 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 		...ORTHO,
 		sketch: `${ORTHO.sketch}?x=${977 * 1024}`,
 		reference: 'ortho-camera',
-		tolerance: { threshold: 0, maxDiffRatio: 0 },
+		tolerance: FAR_OUT_TOLERANCE,
 	},
 	// Each depth mode that ?depth= forces on WebGL2 must cut the scene at the same near and far
 	// planes, and draw its image.
@@ -218,24 +337,32 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 	// Meshes from arrays in every vertex format, a mesh too big for 16-bit indices that splits into
 	// parts, and normals and tangents that the engine computes: on job workers in the threaded build,
 	// and on the page in the single-threaded build, which must compute the same values. WebGL2 lays
-	// out each vertex format in its own code, and must draw the WebGPU image.
+	// out each vertex format in its own code, and must draw the WebGPU image. Dithering keeps
+	// pixelmatch from passing over antialiased edges, where the two differ in 0.14% of the pixels on
+	// the Mac and in 0.34% with SwiftShader. A quad drawn wrong changes over 1%.
 	{
 		name: 'vertex-formats',
-		sketch: 'tests/pages/sketches/vertex-formats-sketch.ts',
-		hold: 0,
-		size: [400, 300],
-		modes: ['pipelined', 'single-threaded'],
+		...VERTEX_FORMATS,
+		tiers: ['webgpu', 'webgl2'],
 		sameOnEveryTier: true,
+		tolerance: { maxDiffRatio: 0.005 },
 	},
-	// The nine geometry generators, each lit and with its texture coordinates shown as colors. Every
-	// tier must draw the WebGPU image.
+	// Compatibility mode takes the 8-bit path, which averages the samples of antialiased edges after
+	// the tone mapping, so its edges differ from the HDR path's and it keeps references of its own.
+	{ name: 'vertex-formats-compat', ...VERTEX_FORMATS, tiers: ['compat'], expect: { hdr: false } },
+	// The nine geometry generators, each lit and with its texture coordinates shown as colors.
+	// WebGL2 must draw the WebGPU image, apart from the antialiased edges that dithering keeps
+	// pixelmatch from passing over.
 	{
 		name: 'generators',
-		sketch: 'tests/pages/sketches/generators-sketch.ts',
-		hold: 0,
-		size: [480, 270],
+		...GENERATORS,
+		tiers: ['webgpu', 'webgl2'],
 		sameOnEveryTier: true,
+		tolerance: { maxDiffRatio: 0.005 },
 	},
+	// Compatibility mode's 8-bit path averages antialiased edges after the tone mapping, so it keeps
+	// references of its own.
+	{ name: 'generators-compat', ...GENERATORS, tiers: ['compat'], expect: { hdr: false } },
 	// Towers on a floor that runs into linear fog and exponential squared fog, lit and unlit, and two
 	// towers whose materials turn fog off. The parity test compares each image with three.js's `Fog`
 	// and `FogExp2`.
@@ -305,6 +432,24 @@ export const IMAGE_TESTS: readonly ImageTest[] = [
 		hold: 1.5,
 		size: [480, 270],
 		modes: ALL_MODES,
+	},
+	// The README's dissolve: a surface function with uniforms and the mask alpha mode, at four
+	// stages of its progress.
+	{
+		name: 'custom-dissolve',
+		sketch: 'tests/pages/sketches/custom-dissolve-sketch.ts',
+		hold: 0,
+		size: [480, 270],
+	},
+	// Each texture map of the standard material, made in code: base color, metal-rough, normal maps
+	// on quads with and without tangents, occlusion, emissive, a light map on the second texture
+	// coordinates, and base color maps through a texture coordinate transform, standard and unlit.
+	// The parity test draws the same scene with three.js.
+	{
+		name: 'standard-maps',
+		sketch: 'tests/pages/sketches/standard-maps-sketch.ts',
+		hold: 0,
+		size: [MAPS_IMAGE.width, MAPS_IMAGE.height],
 	},
 	// Masked materials under MSAA: cards cut by vertex alpha at three cutoffs, with the standard and
 	// the unlit material, crossing each other, and a batch of tilted cards. The parity test compares

@@ -18,7 +18,7 @@ import type { DeviceShaders } from '../../generated/shaders';
 import type { DepthMode } from '../../page/switches';
 import { ImageTable } from '../../shared/images';
 import { floatOfBits } from '../float-bits';
-import { forEachVertexAttribute, vertexStride } from '../vertex-format';
+import { forEachFallbackAttribute, forEachVertexAttribute, vertexStride } from '../vertex-format';
 import { type DepthSetup, setDepthMode } from './depth';
 import {
 	createProgram,
@@ -137,8 +137,8 @@ function glAttribute(
 	}
 }
 
-/** How GL stores each texture format, by format code. */
-function glFormats(gl: WebGL2RenderingContext): (GlFormat | undefined)[] {
+/** How GL stores each texture format, by format code, for a canvas with alpha or without. */
+function glFormats(gl: WebGL2RenderingContext, canvasAlpha: boolean): (GlFormat | undefined)[] {
 	const formats: (GlFormat | undefined)[] = [];
 	const add = (
 		code: number,
@@ -150,12 +150,14 @@ function glFormats(gl: WebGL2RenderingContext): (GlFormat | undefined)[] {
 		formats[code] = { internal, format, type, attachment, bytes: G.FORMAT_TEXEL_BYTES[code] ?? 0 };
 	};
 	const color = gl.COLOR_ATTACHMENT0;
-	// The canvas holds three channels, because its context has no alpha, and a multisampled image
+	// The canvas holds three channels when its context has no alpha, and a multisampled image
 	// resolves only into the same format.
-	add(G.FORMAT_CANVAS, gl.RGB8, gl.RGB, gl.UNSIGNED_BYTE, color);
+	if (canvasAlpha) add(G.FORMAT_CANVAS, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, color);
+	else add(G.FORMAT_CANVAS, gl.RGB8, gl.RGB, gl.UNSIGNED_BYTE, color);
 	add(G.FORMAT_RGBA8_UNORM, gl.RGBA8, gl.RGBA, gl.UNSIGNED_BYTE, color);
 	add(G.FORMAT_RGBA8_UNORM_SRGB, gl.SRGB8_ALPHA8, gl.RGBA, gl.UNSIGNED_BYTE, color);
 	add(G.FORMAT_RGBA16_FLOAT, gl.RGBA16F, gl.RGBA, gl.HALF_FLOAT, color);
+	add(G.FORMAT_RG11B10_UFLOAT, gl.R11F_G11F_B10F, gl.RGB, gl.UNSIGNED_INT_10F_11F_11F_REV, color);
 	add(G.FORMAT_RGBA32_FLOAT, gl.RGBA32F, gl.RGBA, gl.FLOAT, color);
 	add(G.FORMAT_R32_UINT, gl.R32UI, gl.RED_INTEGER, gl.UNSIGNED_INT, color);
 	const depth = gl.DEPTH_ATTACHMENT;
@@ -274,6 +276,11 @@ export class WebGL2Backend {
 	private readonly slotSamplers: (WebGLSampler | null)[] = [];
 	/** True when the program or the bind groups' samplers changed since the units' samplers were set. */
 	private samplersChanged = true;
+	/**
+	 * The units that have a sampler bound. While none has, a program that samples no texture finds
+	 * every unit as it needs it, so switching to it leaves the units alone.
+	 */
+	private boundSamplers = 0;
 	private readonly blockBuffers: (WebGLBuffer | null)[] = [];
 	private readonly blockOffsets: number[] = [];
 	private readonly blockSizes: number[] = [];
@@ -312,7 +319,8 @@ export class WebGL2Backend {
 	 * and multi-draw arrays go through copies. `depthMode` is how the backend stores depth.
 	 * `images` holds the images that uploads read, which the thread that draws keeps across GPU
 	 * devices; by default the backend has its own. `parallelCompile` lets programs compile in the
-	 * background where the context has `KHR_parallel_shader_compile`.
+	 * background where the context has `KHR_parallel_shader_compile`. `canvasAlpha` says whether
+	 * the canvas's context has alpha.
 	 */
 	constructor(
 		private readonly gl: WebGL2RenderingContext,
@@ -322,6 +330,7 @@ export class WebGL2Backend {
 		depthMode: DepthMode,
 		images?: ImageTable,
 		parallelCompile = true,
+		canvasAlpha = false,
 	) {
 		this.templates = engineTemplates(shaders);
 		this.mipTemplate = mipmapTemplate(shaders);
@@ -329,12 +338,16 @@ export class WebGL2Backend {
 		this.ownsImages = !images;
 		this.multiDraw = gl.getExtension('WEBGL_multi_draw');
 		this.parallel = parallelCompile ? gl.getExtension('KHR_parallel_shader_compile') : null;
+		// Float render targets, for HDR color, where the device draws them: WebGL turns them on only
+		// when the extensions are asked for by name.
+		gl.getExtension('EXT_color_buffer_float');
+		gl.getExtension('EXT_color_buffer_half_float');
 		this.anisotropic = gl.getExtension('EXT_texture_filter_anisotropic');
 		this.maxAnisotropy = this.anisotropic
 			? (gl.getParameter(this.anisotropic.MAX_TEXTURE_MAX_ANISOTROPY_EXT) as number)
 			: 1;
 		this.maxSamples = gl.getParameter(gl.MAX_SAMPLES) as number;
-		this.formats = glFormats(gl);
+		this.formats = glFormats(gl, canvasAlpha);
 		this.addressModes[G.ADDRESS_CLAMP_TO_EDGE] = gl.CLAMP_TO_EDGE;
 		this.addressModes[G.ADDRESS_REPEAT] = gl.REPEAT;
 		this.addressModes[G.ADDRESS_MIRROR_REPEAT] = gl.MIRRORED_REPEAT;
@@ -1046,10 +1059,7 @@ export class WebGL2Backend {
 		this.setDepthTest(false);
 		this.setCullFace(false);
 		this.editTexture(MIP_UNIT, gl.TEXTURE_2D_ARRAY, texture.texture);
-		if (this.unitSamplers[MIP_UNIT] !== this.mipSampler) {
-			gl.bindSampler(MIP_UNIT, this.mipSampler);
-			this.unitSamplers[MIP_UNIT] = this.mipSampler;
-		}
+		this.bindUnitSampler(MIP_UNIT, this.mipSampler);
 		this.samplersChanged = true;
 		const attachment = texture.format.attachment;
 		for (let level = 1; level < texture.mips; level++) {
@@ -1174,7 +1184,10 @@ export class WebGL2Backend {
 		for (let slot = 0; slot < this.slotSamplers.length; slot++)
 			if (this.slotSamplers[slot] === old) this.slotSamplers[slot] = null;
 		for (let unit = 0; unit < this.unitSamplers.length; unit++)
-			if (this.unitSamplers[unit] === old) this.unitSamplers[unit] = null;
+			if (this.unitSamplers[unit] === old) {
+				this.unitSamplers[unit] = null;
+				this.boundSamplers--;
+			}
 		this.samplersChanged = true;
 	}
 
@@ -1389,7 +1402,8 @@ export class WebGL2Backend {
 		this.skipDraws = !this.compiled(program);
 		if (this.skipDraws) return;
 		this.useProgram(program);
-		if (this.current?.program !== program) this.samplersChanged = true;
+		if (this.current?.program !== program && (program.sampled || this.boundSamplers > 0))
+			this.samplersChanged = true;
 		this.current = p;
 		this.setCullFace(!p.cullNone);
 		this.setDepthTest(p.depth);
@@ -1559,10 +1573,12 @@ export class WebGL2Backend {
 		this.useVertexArray(vao);
 		gl.bindBuffer(gl.ARRAY_BUFFER, vertices);
 		const stride = vertexStride(format);
-		forEachVertexAttribute(format, (location, floats, offset) => {
+		const point = (location: number, floats: number, offset: number) => {
 			gl.enableVertexAttribArray(location);
 			gl.vertexAttribPointer(location, floats, gl.FLOAT, false, stride, offset);
-		});
+		};
+		forEachVertexAttribute(format, point);
+		forEachFallbackAttribute(format, point);
 		gl.bindBuffer(gl.ELEMENT_ARRAY_BUFFER, indices);
 		this.vertexArrays[this.vertexBuffer] = { vao, vertices, indices, format };
 	}
@@ -1583,13 +1599,18 @@ export class WebGL2Backend {
 		for (let k = 0; k < pairs.length; k += 2) {
 			const unit = pairs[k] as number;
 			const slot = pairs[k + 1] as number;
-			const sampler = slot < 0 ? null : (this.slotSamplers[slot] ?? null);
-			if (this.unitSamplers[unit] !== sampler) {
-				gl.bindSampler(unit, sampler);
-				this.unitSamplers[unit] = sampler;
-			}
+			this.bindUnitSampler(unit, slot < 0 ? null : (this.slotSamplers[slot] ?? null));
 		}
 		this.samplersChanged = false;
+	}
+
+	/** Binds a sampler to a texture unit, or none, and keeps the count of units that have one. */
+	private bindUnitSampler(unit: number, sampler: WebGLSampler | null): void {
+		const bound = this.unitSamplers[unit] ?? null;
+		if (bound === sampler) return;
+		this.gl.bindSampler(unit, sampler);
+		this.unitSamplers[unit] = sampler;
+		this.boundSamplers += (sampler ? 1 : 0) - (bound ? 1 : 0);
 	}
 
 	/**

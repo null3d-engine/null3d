@@ -128,7 +128,7 @@ Never mirror per-frame scene state into React state: it re-renders React every f
 | `<Canvas camera={{ position, fov }}>` | `scene.createPerspectiveCamera({ position, fov })` in `sketch.ts` |
 | `<Canvas dpr={[1, 2]}>` | `createEngine({ maxPixelRatio: 2 })`, or leave it out and the quality preset sets the cap |
 | `<Canvas shadows>` | `castShadows` on lights and meshes, `receiveShadows` on receivers; shadows draw later in 0.1 |
-| `<Canvas gl={{ antialias, alpha }}>` | Every tier draws with MSAA; `createEngine({ transparent: true })` comes later in 0.1 |
+| `<Canvas gl={{ antialias, alpha }}>` | `createEngine({ antialias: 'msaa' })` or the preset's mode, `createEngine({ transparent: true })` |
 | `<Canvas frameloop="demand">` | No on-demand mode in 1.0: pause with `engine.setPaused(true)` while nothing changes |
 | `<mesh>` with `<boxGeometry>` and `<meshStandardMaterial>` | `scene.createMesh({ mesh: geometry.box(...), material: materials.standard(...) })` |
 | `<group>` | `scene.createGroup()` and `setParent` |
@@ -153,7 +153,7 @@ Never mirror per-frame scene state into React state: it re-renders React every f
 | drei `<PerformanceMonitor>`, `<AdaptiveDpr>` | `quality.onChange`; dynamic resolution comes later in 0.1 |
 | drei `<Stats>` | `engine.measure()` on the page; the overlay `debug.stats(true)` comes later in 0.1 |
 | Mesh events: `onClick`, `onPointerOver`, `onPointerOut` | `obj.on('click' | 'pointerenter' | 'pointerleave', fn)` (0.2), then `page.post` if React needs to know |
-| `@react-three/postprocessing` `<EffectComposer>` with `<Bloom>` and others | `post.set`: tone mapping later in 0.1, bloom and other effects in 0.2 (`references/post-processing.md`) |
+| `@react-three/postprocessing` `<EffectComposer>` with `<Bloom>` and others | `post.set`: tone mapping now, bloom and other effects in 0.2 (`references/post-processing.md`) |
 | `@react-three/rapier` | Rapier inside the sketch worker (null3d-develop recipe 11) |
 | Components that change props every frame through React state | `onUpdate` logic; React sends intent, not frames |
 

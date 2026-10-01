@@ -1,6 +1,7 @@
 import { describe, expect, it, spyOn } from 'bun:test';
 import { messageOf } from '../errors/message';
 import * as C from '../generated/core';
+import { FORMAT_RGBA16_FLOAT } from '../generated/gpu';
 import type { EngineCapabilities } from '../page/engine';
 import { presetSettings } from '../quality/presets';
 import type { Material, MeshGeometry } from '../scene/resources';
@@ -25,6 +26,7 @@ const CAPABILITIES: EngineCapabilities = {
 	threaded: false,
 	features: ['WEBGL_multi_draw'],
 	limits: {},
+	hdr: true,
 	maxInstances: 2_097_152,
 	depth: 'reversed',
 };
@@ -99,6 +101,9 @@ async function start(
 			sharedUploads: false,
 			depth: 'reversed',
 			parallelCompile: true,
+			sceneColor: FORMAT_RGBA16_FLOAT,
+			antialias: C.ANTIALIAS_MSAA,
+			transparent: false,
 			shaderBits: 0,
 			cellCulling: true,
 		},
@@ -262,7 +267,7 @@ describe('SketchRunner', () => {
 		expect(log).toEqual([
 			textureOption(C.TEXTURE_OPTION_UPLOAD_BUDGET, 65_536),
 			textureOption(C.TEXTURE_OPTION_MAX_ANISOTROPY, 2),
-			`page ${JSON.stringify({ maxPixelRatio: 1, maxAnisotropy: 2, uploadBytesPerFrame: 65_536 })}`,
+			`page ${JSON.stringify({ ...medium, maxPixelRatio: 1, maxAnisotropy: 2, uploadBytesPerFrame: 65_536 })}`,
 		]);
 	});
 

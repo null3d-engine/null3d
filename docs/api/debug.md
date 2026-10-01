@@ -56,7 +56,7 @@ export default defineSketch(({ scene, materials, geometry, debug }) => {
 | `frustum(camera, color)` | The near and far planes of a camera's view, and the edges between them | Orange |
 | `light(light, options)` | A directional light: a square that faces the light, and an arrow in the direction its light travels | The light's color |
 
-Colors take the same forms as material colors: a hex string such as `'#ff0000'`, a number such as `0xff0000`, or three sRGB components from 0 to 1. Positions are in world space, in arrays such as `[x, y, z]` or typed arrays.
+Colors take the same forms as material colors: a hex string such as `'#ff0000'`, a number such as `0xff0000`, or three linear components from 0 to 1. Positions are in world space, in arrays such as `[x, y, z]` or typed arrays.
 
 ### Objects and cameras
 
@@ -74,7 +74,7 @@ Debug drawing works in development builds only. In a production build, every `de
 
 ## Frame measurement
 
-`engine.measure(seconds)` on the page measures the running engine for that many seconds. It returns a `FrameMetrics` object. That holds CPU time per frame by thread and step, GPU time per frame and per pass, frame rates, uploads and draw calls. It also holds memory and load times. Each figure that varies from frame to frame comes as `Percentiles`: the median, the 95th and 99th percentiles, the mean and the number of frames.
+`engine.measure(seconds)` on the page measures the running engine for that many seconds. It returns a `FrameMetrics` object. That holds CPU time per frame by thread and step, GPU time per frame and per pass, frame rates, uploads and draw calls. It also holds memory, load times and the frame rates of each second. Each figure that varies from frame to frame comes as `Percentiles`: the median, the 95th and 99th percentiles, the mean and the number of frames.
 
 Each thread writes a few numbers per frame into a buffer that the page reads, so a measurement costs the frame almost nothing. GPU timing runs only while the page measures, and only on one frame in eight. The engine tracks every frame that the GPU finishes, all the time, because it holds new frames back while two are unfinished. [Performance guide](../guides/performance.md#measure) explains each figure and how to measure fairly.
 
@@ -170,6 +170,7 @@ What `engine.measure` returns: the per-frame figures, memory, load time and down
 | `completionSignal: 'queue' \| 'fence'` | How the renderer learned that the GPU finished a frame: its queue (WebGPU) or a fence (WebGL2). |
 | `refreshHz: number \| null` | The display's refresh rate in hertz, as the thread that draws measured it, or null before then. |
 | `mainThread: MainThreadStats \| null` | The page's own thread during the measurement, where the browser reports it, or null. |
+| `perSecond: SecondRates[]` | The frame rates of each whole second of the measurement, in order. A long measurement shows here when and for how long the rate fell, which the rates of the whole measurement hide. |
 
 ### `FrameSummary`
 
@@ -261,6 +262,17 @@ type PhaseName =
 ```
 
 A step of a frame that `engine.measure` times. The `update` step is the sketch's own code, in all of its callbacks, and the other steps are the engine's.
+
+### `SecondRates`
+
+Interface `SecondRates`.
+
+The frame rates of one second of a measurement, in `FrameMetrics.perSecond`.
+
+| Member | Description |
+| --- | --- |
+| `presentedFps: number` | Frames that the renderer presented in the second. |
+| `completedFps: number \| null` | Frames that the GPU finished in the second, or null when no completion arrived at all. |
 
 ### `ThreadStats`
 

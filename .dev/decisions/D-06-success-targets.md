@@ -160,7 +160,7 @@ Sizes from `tools/size-baseline.json` (main's size record then, at 9b792d0) and 
 
 Decision: the 600 KB budget for each core build stands. Both builds use under a tenth of it, which leaves room for the renderer features still to come (shadows, PBR, glTF, animation) without a revision now. CI keeps checking every build against it and against 2% growth.
 
-There is also a 60 KB budget for the TypeScript API and page shim. The engine's JavaScript is 77.5 KB after Brotli across its five chunks, but a page downloads only the chunks its mode needs. Of the total, 37.5 KB is the GPU layer shipped three times (in the page, the sketch worker and the render worker; finding in [D-01](D-01-gpu-layer.md)). The page chunk alone is 31 KB. This budget has no check in CI yet (audit item I5). On 2026-09-30 the owner raised it to 70 KB ([D-14](D-14-js-budget.md)). A revision waits for that check and for the owner's call on sharing the GPU layer's code between chunks.
+There is also a 60 KB budget for the TypeScript API and page shim. The engine's JavaScript is 77.5 KB after Brotli across its five chunks, but a page downloads only the chunks its mode needs. Of the total, 37.5 KB is the GPU layer shipped three times (in the page, the sketch worker and the render worker; finding in [D-01](D-01-gpu-layer.md)). The page chunk alone is 31 KB. This budget has no check in CI yet (audit item I5). On 2026-09-30 the owner raised it to 70 KB, and on 2026-10-01 to 80 KB ([D-14](D-14-js-budget.md)). A revision waits for that check and for the owner's call on sharing the GPU layer's code between chunks.
 
 ## Addendum, 2026-09-29: the phone target on the Galaxy S24+
 

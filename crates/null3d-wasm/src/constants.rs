@@ -15,6 +15,7 @@ use null3d_render::frame::{NO_MATERIAL, NO_MESH};
 use null3d_render::geometry::Shape;
 use null3d_render::gpu_driven::{MAX_USEFUL_BINDING_BYTES, PORTABLE_MAX_SOURCES};
 use null3d_render::materials::{feature, param};
+use null3d_render::output::{Antialias, ToneMapping};
 use null3d_render::textures::{DEFAULT_MAX_ANISOTROPY, DEFAULT_UPLOAD_BUDGET, MAX_LAYERS};
 
 /// Fields of `sceneArrays`.
@@ -71,6 +72,18 @@ pub mod shading {
     /// The bit of a custom shading whose shader reads the material's base color and opacity, as the
     /// standard template does.
     pub const CUSTOM_BASE_COLOR: u32 = 1 << 24;
+}
+
+/// The map slots that `setMaterialMap` takes, in the order of a material's row.
+pub mod map_slot {
+    use null3d_render::materials::MapSlot;
+
+    pub const BASE_COLOR: u32 = MapSlot::BaseColor as u32;
+    pub const METAL_ROUGH: u32 = MapSlot::MetalRough as u32;
+    pub const NORMAL: u32 = MapSlot::Normal as u32;
+    pub const OCCLUSION: u32 = MapSlot::Occlusion as u32;
+    pub const EMISSIVE: u32 = MapSlot::Emissive as u32;
+    pub const LIGHT: u32 = MapSlot::Light as u32;
 }
 
 /// The numbers that `textureStat` reads from the texture store.
@@ -270,11 +283,35 @@ pub fn typescript() -> String {
                     CpuCulledConfig::default().max_texture_size,
                 ),
                 ("WEBGL2_MAX_SOURCES", 1 << MAX_SOURCE_BITS),
+                ("MSAA_SAMPLES", Antialias::Msaa.samples()),
             ],
         ),
         (
             "CAPABILITY",
-            &[("MULTI_DRAW", Capabilities::MULTI_DRAW.0 as u32)],
+            &[
+                ("MULTI_DRAW", Capabilities::MULTI_DRAW.0 as u32),
+                (
+                    "TRANSIENT_ATTACHMENTS",
+                    Capabilities::TRANSIENT_ATTACHMENTS.0 as u32,
+                ),
+            ],
+        ),
+        (
+            "ANTIALIAS",
+            &[
+                ("NONE", Antialias::None.code()),
+                ("FXAA", Antialias::Fxaa.code()),
+                ("MSAA", Antialias::Msaa.code()),
+            ],
+        ),
+        (
+            "TONE_MAPPING",
+            &[
+                ("ACES", ToneMapping::Aces.code()),
+                ("AGX", ToneMapping::Agx.code()),
+                ("NEUTRAL", ToneMapping::Neutral.code()),
+                ("NONE", ToneMapping::None.code()),
+            ],
         ),
         (
             "SHADING",
@@ -308,6 +345,17 @@ pub fn typescript() -> String {
                 ("NONE", fog::kind::NONE),
                 ("LINEAR", fog::kind::LINEAR),
                 ("EXP2", fog::kind::EXP2),
+            ],
+        ),
+        (
+            "MAP_SLOT",
+            &[
+                ("BASE_COLOR", map_slot::BASE_COLOR),
+                ("METAL_ROUGH", map_slot::METAL_ROUGH),
+                ("NORMAL", map_slot::NORMAL),
+                ("OCCLUSION", map_slot::OCCLUSION),
+                ("EMISSIVE", map_slot::EMISSIVE),
+                ("LIGHT", map_slot::LIGHT),
             ],
         ),
         // The values that `setMaterialValue` changes, by the float where each starts in a row.

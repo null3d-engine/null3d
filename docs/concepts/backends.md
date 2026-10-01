@@ -8,7 +8,7 @@ summary: "WebGPU core, compatibility mode and WebGL2; color, anti-aliasing and d
 
 # GPU tiers and backends
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. High dynamic range color, tone mapping and the choice of anti-aliasing mode are not built yet, so every tier draws 8-bit color with MSAA.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions.
 
 ```mermaid
 flowchart TD
@@ -44,13 +44,27 @@ WebGL2 and WebGPU's compatibility mode run at most the Medium [quality preset](q
 
 ## Color and anti-aliasing on each tier
 
-In this version, every tier draws color and anti-aliasing the same way:
+The anti-aliasing mode smooths the jagged edges of objects. The quality preset picks it: FXAA on Low, and MSAA from Medium up. The `antialias` option of `createEngine` replaces the preset's mode. The mode stays fixed while the engine runs, because the scene's targets and pipelines depend on it.
 
-- The opaque pass draws with 4 samples per pixel (MSAA), into color and depth targets the size of the canvas. WebGL2 lets every device draw at least 4 samples.
-- The render pass resolves the samples straight into the canvas. Anti-aliasing then needs no pass or texture of its own.
-- Each shader lights in linear color, then encodes its result as sRGB into 8 bits per channel. [Color management](color-management.md) describes the conversions.
+| Mode | How the frame draws it |
+| --- | --- |
+| `msaa` | The opaque pass draws 4 samples per pixel into color and depth targets the size of the canvas, and its render pass averages them. Edges and thin lines come out smooth. WebGL2 lets every device draw at least 4 samples. |
+| `fxaa` | The opaque pass draws one sample per pixel. The final pass finds edges by their contrast, and blends each pixel on an edge with its neighbors along the edge. It needs less memory and bandwidth than MSAA, and blurs thin lines a little. |
+| `none` | The opaque pass draws one sample per pixel, and nothing smooths the edges. |
 
-An 8-bit channel holds no value above 1, so light brighter than white clips at white. High dynamic range color needs a float target that the GPU can draw into with MSAA. Compatibility mode allows no MSAA on 16-bit float targets, and some WebGL2 devices draw into no float target at all. On WebGL2, `engine.report.webgl2.floatRenderTargets` gives the result of the engine's test.
+The scene's color target differs from tier to tier:
+
+| Tier | Scene color | How it reaches the canvas |
+| --- | --- | --- |
+| WebGPU core | `rg11b10ufloat` where the device can draw into it and the canvas is opaque; `rgba16float` elsewhere | The final pass applies the exposure and the tone mapping, encodes sRGB and dithers, into the canvas. With MSAA, the render pass first averages the samples into a texture. |
+| WebGPU compatibility mode | With MSAA, 8 bits per channel. With FXAA or none, as on core WebGPU. | With MSAA, each shader tone maps and encodes its own result, and the render pass averages the samples straight into the canvas, with no pass of its own. With FXAA or none, as on core WebGPU. |
+| WebGL2 | `RGBA16F` where the float target test passes; 8 bits per channel elsewhere | As on core WebGPU with the float target. Without it, each shader tone maps its own result: MSAA averages the samples into the canvas, and with FXAA or none the final pass reads the color as it is. |
+
+High dynamic range (HDR) color keeps light brighter than white until the tone mapping. It needs a float target that the GPU can draw into, with 4 samples for MSAA. Compatibility mode allows no MSAA on 16-bit float targets, so there MSAA takes the 8-bit path, and FXAA and none keep HDR color. Some WebGL2 devices draw into no float target at all. On WebGL2, `engine.report.webgl2.floatRenderTargets` gives the result of the engine's test. The target must be complete and keep values above 1. For MSAA it must also take 4 samples.
+
+`engine.capabilities.hdr` says which path the engine took. Both paths show the same colors. Edges differ a little, because the 8-bit path averages MSAA's samples after the tone mapping. FXAA compares and blends colors as the tone mapping would show them on both paths, so bright edges stay smooth. [Color management](color-management.md) describes the conversions and the tone mapping.
+
+Phone GPUs draw in tiles, and each write of a tile back to memory costs time and power. So each render pass discards the targets that no later pass reads: the depth, and with MSAA the samples once they are averaged. Chrome 146 and later also offer transient attachments. Where the browser has them, those targets take that usage, so they can stay in the GPU's tile memory. `engine.report.webgpu.transientAttachments` says whether the browser has them. On WebGL2 the engine tells the driver the same with `invalidateFramebuffer`.
 
 ## Depth on each tier
 
@@ -72,7 +86,7 @@ The engine reads what the device can do at startup and exposes it as `engine.cap
 
 ```ts
 engine.capabilities;
-// { tier: 'webgpu' | 'webgpu-compat' | 'webgl2', threaded, features, limits, maxInstances, depth }
+// { tier: 'webgpu' | 'webgpu-compat' | 'webgl2', threaded, features, limits, hdr, maxInstances, depth }
 ```
 
 The features it tests include:
@@ -85,6 +99,9 @@ The features it tests include:
 - GPU timer queries
 - MSAA on 16-bit float targets
 - rendering into 16-bit and 32-bit float textures on WebGL2 (`engine.report.webgl2.floatRenderTargets`)
+- transient attachments on WebGPU (`engine.report.webgpu.transientAttachments`)
+
+Where float targets take the anti-aliasing mode, the scene draws high dynamic range color, and the final pass tone maps it. That holds on core WebGPU and on WebGL2 devices that pass the float target test. It holds in compatibility mode with FXAA or none too. `hdr` says whether the engine took that path. [Color management](color-management.md) covers the 8-bit path of the other devices.
 
 Code that uses an optional feature checks this object first. A sketch reads the same values in its context, as `ctx.engine.capabilities`.
 
@@ -142,9 +159,9 @@ A WebGPU device can be lost, for example after a driver reset, and so can a WebG
 | --- | --- |
 | Safari on macOS and iOS | 16.4 |
 | Chrome and Edge | 91 |
-| Firefox | 89, or 145 on a cross-origin isolated page |
+| Firefox | 89 |
 
-WebAssembly SIMD sets these minimums. An older browser gets a clear "browser not supported" message instead of a slow path. On a cross-origin isolated page, the engine runs worker threads, which wait with `Atomics.waitAsync`. Firefox has it from version 145, so an older Firefox cannot start the engine on such a page.
+WebAssembly SIMD sets these minimums. An older browser gets a clear "browser not supported" message instead of a slow path. On a cross-origin isolated page, the engine runs worker threads, which wait for each other with `Atomics.waitAsync`. Firefox has it from version 145. In older versions, the threads wake each other with messages instead. The switch `?wake=message` does the same in any browser, for tests.
 
 ## Related pages
 

@@ -55,6 +55,7 @@ export type {
 	GpuPassStats,
 	MainThreadStats,
 	MemoryStats,
+	SecondRates,
 	ThreadStats,
 } from './page/frame-stats';
 export type { HeldFrame, HoldFailure, HoldResult } from './page/hold';
@@ -69,6 +70,7 @@ export type {
 } from './scene/assets';
 export type { ColorInput } from './scene/color';
 export type { Exp2FogOptions, FogOptions, LinearFogOptions } from './scene/fog';
+export type { Post, PostSettings, ToneMapping } from './scene/post';
 export type {
 	AlphaMode,
 	BoxOptions,
@@ -90,11 +92,15 @@ export type {
 	ShaderOptions,
 	ShaderValues,
 	SphereOptions,
+	StandardBaseOptions,
+	StandardMaps,
 	StandardOptions,
 	StandardValues,
 	TorusOptions,
 	UniformValue,
 	UnlitOptions,
+	UnlitValues,
+	UvTransform,
 } from './scene/resources';
 export type {
 	AmbientLight,

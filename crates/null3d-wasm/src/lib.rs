@@ -29,12 +29,13 @@ use null3d_render::camera::{Lens, Orthographic, Perspective};
 use null3d_render::cpu_culled::{CpuCulledConfig, CpuCulledRenderer};
 use null3d_render::debug_lines::LineStore;
 use null3d_render::fog::Fog;
-use null3d_render::frame::{FrameBuilder, FrameInput, RecordError};
+use null3d_render::frame::{CanvasOutput, FrameBuilder, FrameInput, RecordError};
 use null3d_render::geometry::{Geometry, OutOfMemory, Shape, generate};
 use null3d_render::gpu_driven::{
     BYTES_PER_SOURCE, GpuDrivenRenderer, MAX_USEFUL_BINDING_BYTES, RendererConfig,
 };
 use null3d_render::materials::{self, CustomShading, MapSlot, MaterialError, Shading};
+use null3d_render::output::{Antialias, Output, SceneColor, ToneMapping};
 use null3d_render::pipelines::DepthBias;
 use null3d_render::textures::{MAX_TEXTURES, Sampling, TextureDesc, TextureError};
 use null3d_render::view::ViewId;
@@ -256,10 +257,13 @@ pub fn last_error_detail(index: u32) -> u32 {
 
 /// Creates the engine on the sketch thread, and the job system that `job_workers` job workers
 /// serve, timing their work with the browser's clock. On WebGPU, `storage_binding_bytes` is the
-/// largest storage binding of the device the engine draws with. On WebGL2 (`webgl2`), the
-/// capability flags say whether the device has multi-draw, and `max_texture_size` is its largest
-/// texture. Without `cell_culling`, culling tests every object, with no grid cells skipped first.
-/// Every capacity is fixed from here on.
+/// largest storage binding of the device the engine draws with, and the capability flags say
+/// whether it has transient attachments. On WebGL2 (`webgl2`), the capability flags say whether
+/// the device has multi-draw, and `max_texture_size` is its largest texture. Scene passes draw
+/// into a target of format `scene_color`: a float format for HDR color, or the canvas's for the
+/// 8-bit path. `antialias` is the anti-aliasing mode's code; an unknown code takes MSAA.
+/// `transparent` keeps the canvas clear where nothing draws. Without `cell_culling`, culling tests
+/// every object, with no grid cells skipped first. Every capacity is fixed from here on.
 #[wasm_bindgen(js_name = initEngine)]
 #[allow(clippy::too_many_arguments)]
 pub fn init_engine(
@@ -271,6 +275,9 @@ pub fn init_engine(
     webgl2: bool,
     capabilities: u32,
     max_texture_size: u32,
+    scene_color: u32,
+    antialias: u32,
+    transparent: bool,
     cell_culling: bool,
 ) -> u32 {
     // SAFETY: as in `with_engine`; no other call on the sketch thread runs while this one does.
@@ -294,6 +301,12 @@ pub fn init_engine(
     if !jobs_ready {
         return fail(codes::NOT_READY, [1, 0]);
     }
+    let canvas = CanvasOutput {
+        scene_color: SceneColor::from_format(scene_color),
+        antialias: Antialias::from_code(antialias).unwrap_or_default(),
+        transparent,
+    };
+    let capabilities = Capabilities::from_bits(u64::from(capabilities));
     *cell = Some(Engine {
         scene: SceneStorage::with_capacity(scene_capacity),
         ring: CommandRing::with_capacity(commands),
@@ -301,8 +314,8 @@ pub fn init_engine(
         lights: LightTable::new(),
         snapshot: FrameSnapshot::with_capacity(UPLOAD_RANGES),
         renderer: if webgl2 {
-            let capabilities = Capabilities::from_bits(u64::from(capabilities));
             Box::new(CpuCulledRenderer::new(CpuCulledConfig {
+                canvas,
                 multi_draw: capabilities.contains(Capabilities::MULTI_DRAW),
                 max_texture_size: max_texture_size.max(CpuCulledConfig::default().max_texture_size),
                 cell_culling,
@@ -310,6 +323,8 @@ pub fn init_engine(
             }))
         } else {
             Box::new(GpuDrivenRenderer::new(RendererConfig {
+                canvas,
+                transient_attachments: capabilities.contains(Capabilities::TRANSIENT_ATTACHMENTS),
                 storage_binding_bytes: storage_binding_bytes.clamp(
                     sizes::PORTABLE_STORAGE_BINDING_BYTES,
                     MAX_USEFUL_BINDING_BYTES,
@@ -975,11 +990,16 @@ pub fn set_material_values(
     })
 }
 
-// Gives a material a map, a texture's handle, or none with 0. Which objects draw with a map
-// changes the draw tables, as a new material does.
-/// Gives a material a map.
+// Gives a material a map in a slot, a texture's handle, or none with 0. Which objects draw with a
+// map changes the draw tables, as a new material does.
+/// Gives a material a map in a slot (`constants::map_slot`), which the shader reads at the second
+/// texture coordinates when `second_uv` is 1.
 #[wasm_bindgen(js_name = setMaterialMap)]
-pub fn set_material_map(material: u32, texture: u32) -> u32 {
+pub fn set_material_map(material: u32, slot: u32, texture: u32, second_uv: u32) -> u32 {
+    // The engine's own calls name only the slots that exist.
+    let Some(&slot) = MapSlot::ALL.get(slot as usize) else {
+        return render_failure(render_detail::UNKNOWN_MATERIAL, 0);
+    };
     with_engine(|e| {
         let settings = e.renderer.settings_mut();
         let map = Handle::from_raw(texture);
@@ -990,7 +1010,7 @@ pub fn set_material_map(material: u32, texture: u32) -> u32 {
         }
         match settings
             .materials_mut()
-            .set_map(material.wrapping_sub(1), MapSlot::BaseColor, map)
+            .set_map(material.wrapping_sub(1), slot, map, second_uv != 0)
         {
             Ok(()) => {
                 e.structure_changed = true;
@@ -1263,6 +1283,22 @@ pub fn set_light_value(light: u32, which: u32, value: f32) -> u32 {
 pub fn set_background(r: f32, g: f32, b: f32) -> u32 {
     with_engine(|e| {
         e.renderer.settings_mut().set_background([r, g, b]);
+        0
+    })
+}
+
+/// The tone mapping, by code, and the exposure, from the next frame on. The TypeScript API checks
+/// both, so an unknown code keeps the tone mapping as it was.
+#[wasm_bindgen(js_name = setOutput)]
+pub fn set_output(tone_mapping: u32, exposure: f32) -> u32 {
+    with_engine(|e| {
+        let settings = e.renderer.settings_mut();
+        let tone_mapping =
+            ToneMapping::from_code(tone_mapping).unwrap_or_else(|| settings.output().tone_mapping);
+        settings.set_output(Output {
+            tone_mapping,
+            exposure,
+        });
         0
     })
 }

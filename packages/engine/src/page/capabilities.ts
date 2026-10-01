@@ -3,6 +3,7 @@
 // runners can store it and compare it across devices.
 
 import { messageOf } from '../errors/message';
+import { TEXTURE_USAGE_TRANSIENT_ATTACHMENT } from '../generated/gpu';
 import type { DeviceHints } from '../quality/chooser';
 import type { WorkerProbe } from '../workers/probe-worker';
 
@@ -94,6 +95,12 @@ export interface WebGPUReport {
 	wgslLanguageFeatures: string[];
 	/** The canvas texture format the browser prefers, or null without WebGPU. */
 	preferredCanvasFormat: string | null;
+	/**
+	 * True when the browser's WebGPU has the transient attachment texture usage (Chrome 146 and
+	 * later). A render target with it can stay in a tile-based GPU's own memory. The engine gives
+	 * it to the targets that live within one render pass, such as the multisampled color and depth.
+	 */
+	transientAttachments: boolean;
 	/** Reported for the record only; the engine never branches on it. */
 	adapterInfo: { vendor: string; architecture: string; device: string; description: string } | null;
 	/** Why the probe failed, when it did. */
@@ -127,12 +134,15 @@ export interface WebGL2Report {
 	 * Whether the device renders into float textures, which high dynamic range color needs. The
 	 * engine tests a 16-bit and a 32-bit float RGBA texture. `complete` says whether a framebuffer
 	 * with the texture is complete. `readsBack` says whether a clear to a known color, with a value
-	 * above 1, reads back as floats. WebGL2 renders into both formats with `EXT_color_buffer_float`,
-	 * and into the 16-bit one with `EXT_color_buffer_half_float`. Null without WebGL2.
+	 * above 1, reads back as floats. `samples` is the most samples per pixel for antialiasing that
+	 * the format takes, or 0 where the device does not render into it. WebGL2 renders into both
+	 * formats with `EXT_color_buffer_float`, and into the 16-bit one with
+	 * `EXT_color_buffer_half_float`. The engine draws high dynamic range color where the 16-bit
+	 * format passes both tests, and with MSAA takes 4 samples. Null without WebGL2.
 	 */
 	floatRenderTargets: {
-		rgba16f: { complete: boolean; readsBack: boolean };
-		rgba32f: { complete: boolean; readsBack: boolean };
+		rgba16f: { complete: boolean; readsBack: boolean; samples: number };
+		rgba32f: { complete: boolean; readsBack: boolean; samples: number };
 	} | null;
 	/** Reported for the record only; the engine never branches on it. */
 	renderer: string | null;
@@ -179,6 +189,7 @@ async function probeWebGPU(powerPreference?: PowerPreference): Promise<WebGPURep
 		limits: {},
 		wgslLanguageFeatures: [],
 		preferredCanvasFormat: null,
+		transientAttachments: false,
 		adapterInfo: null,
 	};
 	const gpu = globalThis.navigator?.gpu;
@@ -201,6 +212,10 @@ async function probeWebGPU(powerPreference?: PowerPreference): Promise<WebGPURep
 			limits,
 			wgslLanguageFeatures: [...(gpu.wgslLanguageFeatures ?? [])].sort(),
 			preferredCanvasFormat: gpu.getPreferredCanvasFormat(),
+			// The engine passes its own usage bits to WebGPU, so the browser's must match them.
+			transientAttachments:
+				(globalThis.GPUTextureUsage as unknown as Record<string, number> | undefined)
+					?.TRANSIENT_ATTACHMENT === TEXTURE_USAGE_TRANSIENT_ATTACHMENT,
 			adapterInfo: info
 				? {
 						vendor: info.vendor,
@@ -253,9 +268,27 @@ function clearErrors(gl: WebGL2RenderingContext): void {
 type FloatTargetTest = NonNullable<WebGL2Report['floatRenderTargets']>['rgba16f'];
 
 /**
+ * The most samples per pixel that a renderbuffer of a color format takes, or 0 where the device
+ * does not render into the format. The driver answers without waiting for the GPU.
+ */
+function formatSamples(gl: WebGL2RenderingContext, format: number): number {
+	try {
+		const counts = gl.getInternalformatParameter(gl.RENDERBUFFER, format, gl.SAMPLES) as
+			| Int32Array
+			| null
+			| undefined;
+		// The driver lists the counts from the most samples down.
+		return counts?.[0] ?? 0;
+	} catch {
+		return 0;
+	}
+}
+
+/**
  * Tests a 1 x 1 texture of a float format as a render target: whether the framebuffer is complete,
- * and whether a clear to a known color reads back as floats. The test runs at every engine start.
- * Each readback and each error check waits for the GPU, so it reads one pixel and checks for errors
+ * and whether a clear to a known color reads back as floats. It also asks how many samples a
+ * multisampled renderbuffer of the format takes. The test runs at every engine start. Each
+ * readback and each error check waits for the GPU, so it reads one pixel and checks for errors
  * only after a failure. WebGL turns on the float color-buffer extensions only when they are asked
  * for by name, so this runs after those requests.
  */
@@ -264,6 +297,7 @@ export function probeFloatTarget(gl: WebGL2RenderingContext, format: number): Fl
 	const framebuffer = gl.createFramebuffer();
 	let complete = false;
 	let readsBack = false;
+	let samples = 0;
 	try {
 		gl.bindTexture(gl.TEXTURE_2D, texture);
 		gl.texStorage2D(gl.TEXTURE_2D, 1, format, 1, 1);
@@ -277,6 +311,7 @@ export function probeFloatTarget(gl: WebGL2RenderingContext, format: number): Fl
 			const pixel = new Float32Array(4);
 			gl.readPixels(0, 0, 1, 1, gl.RGBA, gl.FLOAT, pixel);
 			readsBack = FLOAT_TARGET_COLOR.every((value, channel) => pixel[channel] === value);
+			samples = formatSamples(gl, format);
 		}
 	} catch {
 		// A browser that throws here cannot render into the format.
@@ -287,7 +322,7 @@ export function probeFloatTarget(gl: WebGL2RenderingContext, format: number): Fl
 		// Only a test that failed can leave errors.
 		if (!readsBack) clearErrors(gl);
 	}
-	return { complete, readsBack };
+	return { complete, readsBack, samples };
 }
 
 function probeWebGL2(powerPreference?: PowerPreference): WebGL2Report {

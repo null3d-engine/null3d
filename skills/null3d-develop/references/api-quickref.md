@@ -35,6 +35,7 @@ const engine = await createEngine({
   sketch: new URL('./sketch.ts', import.meta.url),   // the sketch module
   preset: 'auto',        // 'auto' | 'low' | 'medium' | 'high' | 'ultra'; WebGL2 runs at most 'medium'
   maxPixelRatio: 2,      // cap for devicePixelRatio in place of the preset's cap
+  antialias: 'msaa',     // 'msaa' | 'fxaa' | 'none' in place of the preset's mode (FXAA on Low, MSAA above)
   gpu: 'auto',           // 'auto' | 'webgpu' | 'webgl2' (testing only)
   powerPreference: 'high-performance',   // the default; 'low-power' saves battery on devices with two GPUs
   latency: 'pipelined',  // or 'low'; 'pipelined' is the default
@@ -43,7 +44,7 @@ const engine = await createEngine({
   onSketchMessage: (type, data) => {},     // sketch messages from the start of setup, such as load progress
   signal: controller.signal,             // abort to cancel the start; createEngine then rejects
   hold: 1.5,             // image tests: step the sketch to 1.5 s, draw that one frame, and run no frame loop
-  transparent: false,    // later in 0.1: true for a see-through canvas
+  transparent: false,    // true for a see-through canvas, with premultiplied alpha
   sketchThread: 'worker',  // or 'main': sketch code on the page's thread, for DOM-heavy apps and debugging
   largeWorld: false,     // (0.2) planet-scale scenes: cell-relative positions, batch origins
 });
@@ -263,16 +264,29 @@ const paint = materials.standard({
 const glow = materials.unlit({ color: '#ffcc00' });      // ignores lights, like three.js's MeshBasicMaterial
 paint.set({ roughness: 0.4 });  // changes only the options you pass; converting a color allocates
 
-const stripes = materials.shader({ ...anyStandardOption, wgsl, uniforms });  // wgsl: a tagged /* wgsl */ literal or .wgsl import with fn surface, fn vertexOffset or both
+const brick = materials.standard({   // maps are fixed at creation; the mesh needs texture coordinates
+  map: color,                        // sRGB texture; multiplies color (its alpha multiplies opacity)
+  metalnessRoughnessMap: orm,        // linear: roughness in G, metalness in B, as glTF packs them
+  aoMap: orm, aoMapIntensity: 1,     // linear: occlusion in R darkens ambient light
+  normalMap: normals, normalScale: [1, 1],   // linear, tangent space
+  emissiveMap: glow, emissive: '#ffffff',    // sRGB; multiplies emissive times emissiveIntensity
+  lightMap: baked, lightMapIntensity: 1,     // baked light; load it with uvSet: 1
+  uvTransform: { repeat: [4, 2], offset: [0, 0], rotation: 0 },  // every map shares it; set() changes it
+});
+const decal = materials.unlit({ map: color, alphaMode: 'mask', alphaCutoff: 0.5 });  // map alpha cuts the shape
+
+const stripes = materials.shader({ ...standardOptions, wgsl, uniforms });  // any standard option but the maps; wgsl: a tagged /* wgsl */ literal or .wgsl import with fn surface, fn vertexOffset or both
 stripes.set({ speed: 2, roughness: 0.3 });  // uniforms of struct Uniforms and standard values alike
 ```
 
 - `materials.standard` shades as three.js's `MeshStandardMaterial` does, with its formulas and its table of specular terms.
 - `fog: false` keeps a material's color out of the scene's fog (`scene.setFog`).
-- `materials.shader` keeps the standard look and lighting, and a WGSL surface function changes the surface before the engine lights it. Every `materials.standard` option feeds `defaultSurface()`. `references/shaders.md` has the contract.
-- Later in 0.1: texture maps (`map`, `normalMap`, `metalnessRoughnessMap`, `aoMap`, `emissiveMap`, `lightMap`), `alphaMode`, `alphaCutoff`, `blending`, `depthWrite`, `depthTest`, `depthBias`, `uvTransform`, and in `materials.shader` textures and full shaders.
+- `materials.shader` keeps the standard look and lighting, and a WGSL surface function changes the surface before the engine lights it. Every `materials.standard` option but the texture maps feeds `defaultSurface()`. `references/shaders.md` has the contract.
+- A map reads the texture coordinates that its texture's `uvSet` names, and a mesh without a second set gives its first. A mesh without texture coordinates draws the material without its maps. A normal map takes its frame from the mesh's tangents (`computeTangents: true`) where the mesh has them, and otherwise from the pixels around it, as three.js does.
+- `alphaMode: 'mask'` with `alphaCutoff` draws nothing where the alpha falls below the cutoff, as three.js's `alphaTest`. `depthWrite`, `depthTest` and `depthBias: { constant, slopeScale }` set the depth state.
+- Later in 0.1: the `blend` alpha mode, `blending`, and in `materials.shader` texture maps, textures and full shaders.
 - `envIntensity` (0.2) comes with environment lighting, and `materials.shadowCatcher` in 0.2.
-- `set()` changes values cheaply at any time. Options that change the shader or the pipeline are fixed when you create the material: `doubleSided`, `vertexColors`, `flatShading`, and later the texture maps. So create each variant before play, and switch with `setMaterial`.
+- `set()` changes values cheaply at any time. Options that change the shader or the pipeline are fixed when you create the material: the texture maps, `doubleSided`, `vertexColors`, `flatShading`, `alphaMode`, `fog` and the depth options. So create each variant before play, and switch with `setMaterial`.
 
 ## 10. Textures (`api/textures`)
 
@@ -299,7 +313,7 @@ textures.memoryBytes; textures.maxSize;  // GPU bytes of every texture; the larg
 
 - Data rows go from the bottom up: the first row is at v = 0. `rgba8unorm` takes a `Uint8Array` or `Uint8ClampedArray`, and `rgba16float` a `Float32Array` or a `Uint16Array` of half floats. Bad data or options throw E1208.
 - Textures return at once and upload over the next frames, within each frame's upload budget.
-- Later in 0.1: texture maps on materials, texture backgrounds, and KTX2 files through `loadTexture`. `textures.fromPass` (0.2) and cube maps (0.2) follow.
+- Later in 0.1: texture backgrounds, and KTX2 files through `loadTexture`. `textures.fromPass` (0.2) and cube maps (0.2) follow.
 
 ## 11. Assets (`api/assets`)
 
@@ -385,15 +399,14 @@ Input changes once per frame, before `onUpdate`. Give a canvas that takes touch 
 
 ## 15. Post-processing (`api/post`)
 
-`toneMapping` and `exposure` come later in 0.1; everything else from 0.2. The planned default tone mapping is ACES, while three.js defaults to none.
+`toneMapping` and `exposure` are built; everything else comes in 0.2. The default tone mapping is ACES, while three.js defaults to none.
 
 ```ts
 post.set({
-  toneMapping: 'aces',      // later in 0.1: 'aces' | 'agx' | 'neutral' | 'none'
-  exposure: 1,              // later in 0.1
+  toneMapping: 'aces',      // 'aces' | 'agx' | 'neutral' | 'none'
+  exposure: 1,
   bloom: { strength: 0.8, radius: 0.4, threshold: 0.9 },
   ao: { radius: 0.5, intensity: 1 },     // High and Ultra presets only
-  fxaa: false,                           // forces FXAA; otherwise the preset decides
   lut, vignette: { amount: 0.3 },
   outline: { color: '#ffcc00', thickness: 2 },  // objects opt in with setOutlined(true)
 });
@@ -427,7 +440,8 @@ quality.preset;                         // 'low' | 'medium' | 'high' | 'ultra': 
 quality.settings.maxPixelRatio;         // the settings in use
 quality.set({ maxPixelRatio: 1.5 });    // from the next frame; E1213 for another setting or value
 quality.set({ maxAnisotropy: 4, uploadBytesPerFrame: 2 * 1024 * 1024 });  // texture sampling cap, upload bytes per frame
-quality.set({ antialias: 'fxaa', shadowCascades: 2 });  // planned: the preset table gives each setting's status
+quality.settings.antialias;             // 'msaa' | 'fxaa' | 'none', fixed at the start; set it with createEngine's option
+quality.set({ shadowCascades: 2 });     // planned: the preset table gives each setting's status
 const PARTICLES = { low: 500, medium: 2000, high: 5000, ultra: 10000 };  // your values per preset, in one table
 quality.onChange(() => { particles.setActiveCount(PARTICLES[quality.preset]); });
 quality.setBudget({ name: 'ai', ms: 2, onScale: (scale) => { aiRate = scale; } });  // (0.2)
@@ -499,4 +513,4 @@ time.now; time.dt; time.frame;            // seconds, the frame's step in second
 - Angles are in radians. `quat.fromEuler` takes three.js's axis orders; gl-matrix's function of that name takes degrees.
 - `quat.lookAt` gives a mesh's rotation. For a camera or a light, which looks down -Z, swap `eye` and `target`.
 - `math.random` draws from one generator per thread. `math.seed(n)` makes a run repeatable. Hold mode seeds it and routes `Math.random` to it.
-- Color options take `'#rrggbb'` or `'#rgb'` strings, `0xrrggbb` numbers and `[r, g, b]` arrays from 0 to 1, all in sRGB. The engine converts them to linear, as three.js does for hex colors. The `color` helpers give linear RGB, which instance colors take.
+- Color options take `'#rrggbb'` or `'#rgb'` strings and `0xrrggbb` numbers, which are sRGB, and `[r, g, b]` arrays from 0 to 1, which are linear, as three.js's `setRGB` reads them. The engine converts hex colors to linear, as three.js does. The `color` helpers give linear RGB, which color options and instance colors take.

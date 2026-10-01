@@ -314,7 +314,14 @@ fn fs(@builtin(position) pixel: vec4f) -> @location(0) vec4f {
 		expect(built.functions).toEqual([]);
 		expect(built.locations).toEqual([0, 2]);
 		expect(built.baseColor).toBe(false);
-		expect(Object.keys(built.variants).sort()).toEqual(['webgl2', 'webgl2_draw_index', 'webgpu']);
+		expect(Object.keys(built.variants).sort()).toEqual([
+			'webgl2',
+			'webgl2_draw_index',
+			'webgl2_draw_index_tone_map',
+			'webgl2_tone_map',
+			'webgpu',
+			'webgpu_tone_map',
+		]);
 		expect(compiled(compileWgsl('src/glow.wgsl', SHADER, HINT)).kind).toBe('shader');
 	});
 

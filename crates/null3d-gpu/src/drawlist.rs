@@ -288,9 +288,12 @@ pub mod format {
     /// 8-bit color stored with the sRGB curve: sampling decodes it to linear values, and drawing
     /// encodes linear values. WebGL2 calls it `SRGB8_ALPHA8`.
     pub const RGBA8_UNORM_SRGB: u32 = 9;
+    /// Three small unsigned floats in 32 bits, with no alpha: high dynamic range color in half the
+    /// bytes of `RGBA16_FLOAT`. WebGPU draws into it only with `Capabilities::RG11B10_RENDERABLE`.
+    pub const RG11B10_UFLOAT: u32 = 10;
 
     /// Every format, by code.
-    pub const ALL: [u32; 10] = [
+    pub const ALL: [u32; 11] = [
         NONE,
         CANVAS,
         RGBA8_UNORM,
@@ -301,11 +304,12 @@ pub mod format {
         RGBA32_FLOAT,
         R32_UINT,
         RGBA8_UNORM_SRGB,
+        RG11B10_UFLOAT,
     ];
 
     /// Bytes per texel of each format, by code: 0 for `NONE`, and for `DEPTH24_PLUS`, whose
     /// texels have no layout that writes and copies can use.
-    pub const TEXEL_BYTES: [u32; ALL.len()] = [0, 4, 4, 4, 8, 0, 4, 16, 4, 4];
+    pub const TEXEL_BYTES: [u32; ALL.len()] = [0, 4, 4, 4, 8, 0, 4, 16, 4, 4, 4];
 
     /// True for the depth formats.
     pub const fn is_depth(format: u32) -> bool {
@@ -441,9 +445,15 @@ pub mod layout {
     pub const DRAWS: u32 = 2;
     /// Group 2 of render pipelines that read instances from data textures: the textures.
     pub const INSTANCES: u32 = 3;
+    /// Group 0 of the final pass: the output settings, and the scene color it reads.
+    pub const FINAL: u32 = 4;
     /// The maps of render pipelines that sample them: a 2D array texture, then its sampler. It is
     /// group 1 on WebGPU, and group 3 on WebGL2, after the groups of the data textures.
     pub const TEXTURES: u32 = 5;
+    /// The maps of the standard material, in the order of a material's map slots: a 2D array
+    /// texture at each binding from 0, then each one's sampler at the bindings after every
+    /// texture. It sits where [`TEXTURES`] sits.
+    pub const MATERIAL_MAPS: u32 = 6;
 }
 
 /// Bits of a render pipeline's permutation word, which pick a shader variant. A feature that
@@ -454,7 +464,9 @@ pub mod layout {
 pub mod permutation {
     /// The vertex shader reads its draw's index, from `WEBGL_multi_draw`.
     pub const DRAW_INDEX: u32 = 1;
-    /// The fragment shader applies the exposure and the tone mapping, and encodes sRGB, itself.
+    /// The fragment shader applies the exposure and the tone mapping and encodes sRGB itself, for
+    /// an 8-bit target that resolves straight into the canvas. Without it, the shader writes
+    /// linear color for the final pass.
     pub const TONE_MAP: u32 = 2;
     /// The mesh's vertex colors multiply the material's base color.
     pub const VERTEX_COLOR: u32 = 4;
@@ -468,9 +480,14 @@ pub mod permutation {
     pub const SKIN: u32 = 64;
     /// Morph targets move the mesh's vertices.
     pub const MORPH: u32 = 128;
+    /// The final pass smooths edges with FXAA before the output transform.
+    pub const FXAA: u32 = 256;
+    /// The normal map's frame comes from the mesh's tangents, not from how the texture
+    /// coordinates change between pixels.
+    pub const VERTEX_TANGENT: u32 = 512;
 
     /// Every bit with its name: the shader def that turns its code on, in bit order.
-    pub const NAMES: [(&str, u32); 8] = [
+    pub const NAMES: [(&str, u32); 10] = [
         ("DRAW_INDEX", DRAW_INDEX),
         ("TONE_MAP", TONE_MAP),
         ("VERTEX_COLOR", VERTEX_COLOR),
@@ -479,6 +496,8 @@ pub mod permutation {
         ("RECEIVE_SHADOWS", RECEIVE_SHADOWS),
         ("SKIN", SKIN),
         ("MORPH", MORPH),
+        ("FXAA", FXAA),
+        ("VERTEX_TANGENT", VERTEX_TANGENT),
     ];
 
     /// The bits that a device fixes when the engine starts, the same in every pipeline it builds:
@@ -630,9 +649,11 @@ pub mod vertex {
 pub mod sizes {
     /// Bytes per compacted instance: three rows of the world matrix, then a vector of ids.
     pub const INSTANCE_STRIDE: u32 = 64;
-    /// Bytes of the per-frame uniform block: the view-projection matrix, four vectors, the fog's 48
-    /// bytes, and three vectors that custom materials read.
-    pub const FRAME_UNIFORM_BYTES: u32 = 224;
+    /// Bytes of the per-frame uniform block: the view-projection matrix, four vectors, the output
+    /// settings, the fog's 48 bytes, and three vectors that custom materials read.
+    pub const FRAME_UNIFORM_BYTES: u32 = 240;
+    /// Bytes of the output settings: the exposure, the tone mapping and two spare words.
+    pub const OUTPUT_UNIFORM_BYTES: u32 = 16;
     /// Threads per workgroup of the culling shader.
     pub const CULL_WORKGROUP_SIZE: u32 = 128;
     /// 32-bit words per indexed indirect draw.
@@ -674,7 +695,7 @@ pub mod sizes {
 
 /// Shader templates for `CreateRenderPipeline` and `CreateComputePipeline`.
 pub mod template {
-    /// Instanced meshes with Lambert lighting.
+    /// Instanced meshes with the standard material.
     pub const INSTANCED_LIT: u32 = 1;
     /// Instanced meshes without lighting.
     pub const INSTANCED_UNLIT: u32 = 2;
@@ -688,6 +709,11 @@ pub mod template {
     /// Instanced meshes without lighting, whose base color is multiplied by a map that the first
     /// texture coordinates place.
     pub const INSTANCED_UNLIT_MAP: u32 = 5;
+    /// Instanced meshes with the standard material and its texture maps, which the first texture
+    /// coordinates place, or the second for a map on the second set.
+    pub const INSTANCED_STANDARD_MAPS: u32 = 6;
+    /// The final pass: one triangle over the canvas, which tone maps the scene color into it.
+    pub const FINAL: u32 = 7;
     /// The GPU culling compute shader.
     pub const CULL: u32 = 16;
     /// The first template of custom materials: each compiled custom material's WGSL has its own
@@ -836,6 +862,7 @@ pub fn typescript_constants() -> String {
                 ("RGBA32_FLOAT", format::RGBA32_FLOAT),
                 ("R32_UINT", format::R32_UINT),
                 ("RGBA8_UNORM_SRGB", format::RGBA8_UNORM_SRGB),
+                ("RG11B10_UFLOAT", format::RG11B10_UFLOAT),
             ],
         ),
         ("VIEW", &[("2D", view::D2), ("2D_ARRAY", view::D2_ARRAY)]),
@@ -903,7 +930,9 @@ pub fn typescript_constants() -> String {
                 ("CULL", layout::CULL),
                 ("DRAWS", layout::DRAWS),
                 ("INSTANCES", layout::INSTANCES),
+                ("FINAL", layout::FINAL),
                 ("TEXTURES", layout::TEXTURES),
+                ("MATERIAL_MAPS", layout::MATERIAL_MAPS),
             ],
         ),
         ("PERMUTATION", &permutation::NAMES),
@@ -935,6 +964,8 @@ pub fn typescript_constants() -> String {
                 ("INSTANCED_TEXCOORDS", template::INSTANCED_TEXCOORDS),
                 ("DEBUG_LINES", template::DEBUG_LINES),
                 ("INSTANCED_UNLIT_MAP", template::INSTANCED_UNLIT_MAP),
+                ("INSTANCED_STANDARD_MAPS", template::INSTANCED_STANDARD_MAPS),
+                ("FINAL", template::FINAL),
                 ("CULL", template::CULL),
                 ("CUSTOM_FIRST", template::CUSTOM_FIRST),
             ],
@@ -968,6 +999,7 @@ pub fn typescript_constants() -> String {
             &[
                 ("INSTANCE_STRIDE", sizes::INSTANCE_STRIDE),
                 ("FRAME_UNIFORM_BYTES", sizes::FRAME_UNIFORM_BYTES),
+                ("OUTPUT_UNIFORM_BYTES", sizes::OUTPUT_UNIFORM_BYTES),
                 ("CULL_WORKGROUP_SIZE", sizes::CULL_WORKGROUP_SIZE),
                 ("INDIRECT_WORDS", sizes::INDIRECT_WORDS),
                 ("MATRIX_TEXELS", sizes::MATRIX_TEXELS),
@@ -1245,6 +1277,7 @@ mod tests {
             assert_eq!(value as usize, code, "format codes run from 0 without gaps");
         }
         assert_eq!(format::texel_bytes(format::RGBA8_UNORM_SRGB), 4);
+        assert_eq!(format::texel_bytes(format::RG11B10_UFLOAT), 4);
         assert_eq!(format::texel_bytes(format::RGBA32_FLOAT), 16);
         assert_eq!(format::texel_bytes(format::DEPTH24_PLUS), 0);
         assert_eq!(format::texel_bytes(99), 0);

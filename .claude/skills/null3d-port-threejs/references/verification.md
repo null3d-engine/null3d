@@ -35,8 +35,8 @@ Make the original deterministic first:
 - Stop damping and auto-rotation in controls.
 - Set animation mixers to the view's time with `mixer.setTime(view.time)`, and set any time uniforms to the same value.
 - Replace `Math.random` with a seeded generator during capture, if the scene uses randomness.
-- Keep anti-aliasing on (`antialias: true`). null3D draws with 4 samples per pixel (MSAA) on every GPU tier, and `quality.set({ antialias })` comes later in 0.1.
-- Keep tone mapping off (`NoToneMapping`). null3D has none until `post.set({ toneMapping })` comes later in 0.1.
+- Keep anti-aliasing on (`antialias: true`), and start null3D with `createEngine({ antialias: 'msaa' })`. Both then draw 4 samples per pixel (MSAA) on every GPU tier.
+- Match the tone mapping. null3D defaults to ACES, so an original with `NoToneMapping` needs `post.set({ toneMapping: 'none' })`. Any other curve needs the same curve and exposure in both.
 
 Then add this temporary helper to the original app:
 
@@ -94,7 +94,7 @@ A sketch test draws with the engine's default options. When the page passes opti
 bunx @null3d/cli shot --page '/?view=hero-closeup' --time 1.5 --size 800x450 --gpu webgl2 --out compare/hero-closeup.webgl2.png
 ```
 
-For the comparison, match the original's settings: no tone mapping and a pixel ratio of 1. Later in 0.1, `post.set({ toneMapping: 'none' })` and `quality.set({ antialias: 'none' })` match an original that differs.
+For the comparison, match the original's settings: no tone mapping and a pixel ratio of 1. Later in 0.1, `post.set({ toneMapping: 'none' })` matches an original that differs in tone mapping. `createEngine({ antialias: 'none' })` matches an original without anti-aliasing.
 
 ## 4. Tolerances
 

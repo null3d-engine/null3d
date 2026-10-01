@@ -17,6 +17,7 @@ TEXTURE_FORMATS[G.FORMAT_RGBA8_UNORM] = 'rgba8unorm';
 TEXTURE_FORMATS[G.FORMAT_RGBA8_UNORM_SRGB] = 'rgba8unorm-srgb';
 TEXTURE_FORMATS[G.FORMAT_BGRA8_UNORM] = 'bgra8unorm';
 TEXTURE_FORMATS[G.FORMAT_RGBA16_FLOAT] = 'rgba16float';
+TEXTURE_FORMATS[G.FORMAT_RG11B10_UFLOAT] = 'rg11b10ufloat';
 TEXTURE_FORMATS[G.FORMAT_DEPTH24_PLUS] = 'depth24plus';
 TEXTURE_FORMATS[G.FORMAT_DEPTH32_FLOAT] = 'depth32float';
 TEXTURE_FORMATS[G.FORMAT_RGBA32_FLOAT] = 'rgba32float';
@@ -207,10 +208,11 @@ export class WebGPUBackend {
 				dimension,
 				usage: G.TEXTURE_USAGE_TEXTURE_BINDING,
 			});
+		// A view of a transient texture must keep all of the texture's usage.
 		if (usage & G.TEXTURE_USAGE_RENDER_ATTACHMENT && layers === 1 && mips === 1)
 			this.targetViews[id] = texture.createView({
 				dimension: '2d',
-				usage: G.TEXTURE_USAGE_RENDER_ATTACHMENT,
+				usage: usage & (G.TEXTURE_USAGE_RENDER_ATTACHMENT | G.TEXTURE_USAGE_TRANSIENT_ATTACHMENT),
 			});
 	}
 

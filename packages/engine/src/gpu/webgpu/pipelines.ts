@@ -6,9 +6,10 @@
 
 import {
 	LAYOUT_CULL,
+	LAYOUT_FINAL,
 	LAYOUT_FRAME,
+	LAYOUT_MATERIAL_MAPS,
 	LAYOUT_TEXTURES,
-	PERMUTATION_VERTEX_COLOR,
 	SIZE_INSTANCE_STRIDE,
 	STATE_CULL_NONE,
 	STATE_LINE_LIST,
@@ -16,11 +17,12 @@ import {
 	STATE_NO_DEPTH_WRITE,
 	TEMPLATE_CULL,
 	TEMPLATE_DEBUG_LINES,
+	TEMPLATE_FINAL,
 	TEMPLATE_INSTANCED_LIT,
+	TEMPLATE_INSTANCED_STANDARD_MAPS,
 	TEMPLATE_INSTANCED_TEXCOORDS,
 	TEMPLATE_INSTANCED_UNLIT,
 	TEMPLATE_INSTANCED_UNLIT_MAP,
-	VERTEX_COLOR,
 	VERTEX_INSTANCE_LOCATION,
 } from '../../generated/gpu';
 import {
@@ -33,7 +35,7 @@ import type { CustomShader } from '../../shared/images';
 import { DEV } from '../dev';
 import { LINE_VERTICES } from '../line-vertices';
 import { variantFor } from '../variants';
-import { locationOfAttribute, vertexAttribute, vertexStride } from '../vertex-format';
+import { variantLocations, vertexAttribute, vertexStride } from '../vertex-format';
 
 /** The WebGPU build of a shader variant. */
 export function wgslOf<Pipeline extends string>(variant: {
@@ -64,6 +66,9 @@ export interface RenderTemplate {
 	/** The other vertex buffers that the vertex stage reads, by slot, after the mesh's vertices. */
 	readonly vertexBuffers: GPUVertexBufferLayout[];
 }
+
+/** The map slots of a standard material, one texture array and sampler each. */
+const MAP_SLOTS = [0, 1, 2, 3, 4, 5];
 
 /** The culling shader's compute entry point. */
 const CULL_ENTRY_POINT = 'main';
@@ -102,10 +107,7 @@ function vertexBuffers(
 	permutation: number,
 ): GPUVertexBufferLayout[] {
 	if (!t.meshLocations) return t.vertexBuffers;
-	const locations =
-		permutation & PERMUTATION_VERTEX_COLOR
-			? [...t.meshLocations, locationOfAttribute(VERTEX_COLOR)]
-			: t.meshLocations;
+	const locations = variantLocations(t.meshLocations, permutation);
 	const attributes = locations.map((shaderLocation): GPUVertexAttribute => {
 		const attribute = vertexAttribute(vertexFormat, shaderLocation);
 		if (!attribute)
@@ -157,6 +159,23 @@ export class Pipelines {
 			{ binding: 0, visibility: fragment, texture: { viewDimension: '2d-array' } },
 			{ binding: 1, visibility: fragment, sampler: {} },
 		]);
+		// A texture array for each map slot, then each slot's sampler.
+		this.defineLayout(LAYOUT_MATERIAL_MAPS, 'material maps', [
+			...MAP_SLOTS.map(
+				(binding): GPUBindGroupLayoutEntry => ({
+					binding,
+					visibility: fragment,
+					texture: { viewDimension: '2d-array' },
+				}),
+			),
+			...MAP_SLOTS.map(
+				(slot): GPUBindGroupLayoutEntry => ({
+					binding: MAP_SLOTS.length + slot,
+					visibility: fragment,
+					sampler: {},
+				}),
+			),
+		]);
 		this.defineLayout(LAYOUT_CULL, 'cull', [
 			{ binding: 0, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'uniform' } },
 			{ binding: 1, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
@@ -167,6 +186,15 @@ export class Pipelines {
 			{ binding: 6, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
 			{ binding: 7, visibility: GPUShaderStage.COMPUTE, buffer: { type: 'read-only-storage' } },
 		]);
+		// The final pass reads the scene color with textureLoad, which takes any float format.
+		this.defineLayout(LAYOUT_FINAL, 'final', [
+			{ binding: 0, visibility: GPUShaderStage.FRAGMENT, buffer: { type: 'uniform' } },
+			{
+				binding: 1,
+				visibility: GPUShaderStage.FRAGMENT,
+				texture: { sampleType: 'unfilterable-float', viewDimension: '2d' },
+			},
+		]);
 		for (const [id, label, shader, meshLocations, layouts] of [
 			[TEMPLATE_INSTANCED_LIT, 'lit', shaders.lit, [0, 1], [LAYOUT_FRAME]],
 			[TEMPLATE_INSTANCED_UNLIT, 'unlit', shaders.unlit, [0], [LAYOUT_FRAME]],
@@ -175,8 +203,15 @@ export class Pipelines {
 				TEMPLATE_INSTANCED_UNLIT_MAP,
 				'unlit map',
 				shaders.unlit_map,
-				[0, 2],
+				[0, 2, 3],
 				[LAYOUT_FRAME, LAYOUT_TEXTURES],
+			],
+			[
+				TEMPLATE_INSTANCED_STANDARD_MAPS,
+				'standard maps',
+				shaders.standard_maps,
+				[0, 1, 2, 3],
+				[LAYOUT_FRAME, LAYOUT_MATERIAL_MAPS],
 			],
 		] as const) {
 			this.defineTemplate(id, {
@@ -188,6 +223,13 @@ export class Pipelines {
 				vertexBuffers: INSTANCE_BUFFERS,
 			});
 		}
+		this.defineTemplate(TEMPLATE_FINAL, {
+			label: 'final',
+			shader: shaders.final,
+			pipeline: 'main',
+			layouts: [LAYOUT_FINAL],
+			vertexBuffers: [],
+		});
 		if (DEV)
 			this.defineTemplate(TEMPLATE_DEBUG_LINES, {
 				label: 'debug lines',

@@ -74,8 +74,19 @@ export const LIMIT_PORTABLE_MAX_SOURCES = 2097152;
 export const LIMIT_MATRICES_PER_TEXTURE_ROW = 512;
 export const LIMIT_WEBGL2_MIN_TEXTURE_SIZE = 2048;
 export const LIMIT_WEBGL2_MAX_SOURCES = 8388608;
+export const LIMIT_MSAA_SAMPLES = 4;
 
 export const CAPABILITY_MULTI_DRAW = 8;
+export const CAPABILITY_TRANSIENT_ATTACHMENTS = 1024;
+
+export const ANTIALIAS_NONE = 0;
+export const ANTIALIAS_FXAA = 1;
+export const ANTIALIAS_MSAA = 2;
+
+export const TONE_MAPPING_ACES = 0;
+export const TONE_MAPPING_AGX = 1;
+export const TONE_MAPPING_NEUTRAL = 2;
+export const TONE_MAPPING_NONE = 3;
 
 export const SHADING_LIT = 0;
 export const SHADING_UNLIT = 1;
@@ -96,6 +107,13 @@ export const MATERIAL_FEATURE_NO_FOG = 1024;
 export const FOG_KIND_NONE = 0;
 export const FOG_KIND_LINEAR = 1;
 export const FOG_KIND_EXP2 = 2;
+
+export const MAP_SLOT_BASE_COLOR = 0;
+export const MAP_SLOT_METAL_ROUGH = 1;
+export const MAP_SLOT_NORMAL = 2;
+export const MAP_SLOT_OCCLUSION = 3;
+export const MAP_SLOT_EMISSIVE = 4;
+export const MAP_SLOT_LIGHT = 5;
 
 export const MATERIAL_PARAM_COLOR = 0;
 export const MATERIAL_PARAM_OPACITY = 3;
