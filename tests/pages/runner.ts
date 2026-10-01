@@ -2,6 +2,8 @@
 // window, and posts every page's result to the dev server. It needs no WebDriver, so it runs in any
 // browser on any device. Open it with ?run=<run>&runner=<name> to run once and then close the tab,
 // or with ?listen&runner=<name> to wait: a waiting page starts each run whose turn list names it.
+// With &from=<index>, a page opened for one run starts at that item of the plan, as when the runner
+// tool replaces a runner page that stopped answering.
 // Pixels travel as the page read them back, never re-encoded through a canvas, which privacy
 // protections can alter. For a startup load, the result also tells what the server sent for it.
 
@@ -132,12 +134,16 @@ async function runItem(item: PlanItem, run: string): Promise<Result> {
 	return load ? { ...result, downloads: await takeDownloads(load) } : result;
 }
 
-async function runPlan(run: string): Promise<void> {
+/** Runs a run's items from the item at `from`. Only a run from its first item reads the device. */
+async function runPlan(run: string, from = 0): Promise<void> {
 	const plan = (await (await fetch(`/__null3d/runs/${run}/plan`)).json()) as { items: PlanItem[] };
 	list.replaceChildren();
-	show(`run ${run}: reading the device`);
-	await post(run, 'device', await deviceInfo());
+	if (from === 0) {
+		show(`run ${run}: reading the device`);
+		await post(run, 'device', await deviceInfo());
+	}
 	for (const [index, item] of plan.items.entries()) {
+		if (index < from) continue;
 		show(`run ${run}: ${index + 1} of ${plan.items.length}, ${item.id}`);
 		const result = await runItem(item, run);
 		await post(run, item.id, result);
@@ -177,9 +183,10 @@ async function listen(): Promise<void> {
 }
 
 const run = params.get('run');
+const from = Number(params.get('from') ?? 0);
 if (params.has('listen')) void listen();
 else if (run)
-	runPlan(run)
+	runPlan(run, Number.isSafeInteger(from) && from > 0 ? from : 0)
 		// A page opened for one run closes its tab, so finished runs leave no tabs behind. Browsers
 		// allow it because each test page loads in a new frame, which adds nothing to the tab's history.
 		.then(() => window.close())

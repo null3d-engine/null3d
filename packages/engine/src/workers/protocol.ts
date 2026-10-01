@@ -101,9 +101,13 @@ export type JobWorkerInit = CoreHandoff & { type: 'init'; index: number };
 
 /**
  * A request any worker that owns a renderer takes: a capture, which it answers with the frame's
- * pixels, or with a PNG file of the frame when `image` is true; or a simulated loss.
+ * pixels, or with a PNG file of the frame when `image` is true; a simulated loss; or a stop, which
+ * it answers once it has destroyed its GPU objects and its device.
  */
-export type RendererRequest = { type: 'capture'; image?: boolean } | { type: 'lose-gpu' };
+export type RendererRequest =
+	| { type: 'capture'; image?: boolean }
+	| { type: 'lose-gpu' }
+	| { type: 'stop-drawing' };
 
 export type WorkerReply =
 	| {
@@ -117,6 +121,8 @@ export type WorkerReply =
 	| { type: 'error'; role: 'sketch' | 'render' | 'job'; message: string }
 	/** A job worker left the job system after the engine stopped, so it no longer blocks. */
 	| { type: 'stopped'; role: 'job'; index: number }
+	/** The worker that draws stopped drawing, and destroyed its GPU objects and its device. */
+	| { type: 'stopped'; role: 'sketch' | 'render' }
 	/**
 	 * A step of a worker's start, sent as the worker finishes it. The page ignores these; a test
 	 * that gets no reply from a worker reads them to learn which step never finished.
