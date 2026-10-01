@@ -8,7 +8,7 @@ summary: "Low to Ultra; pixel-ratio caps; the preset check; switching presets; t
 
 # Quality presets, dynamic resolution and frame budgets
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. The engine chooses a preset and checks it after the first frame. It applies the preset's pixel ratio cap, texture settings, anti-aliasing mode and memory maximum, and reports it. A sketch can switch presets with `quality.setPreset`. The settings that the table below marks as planned are not built yet. Neither are dynamic resolution and the frame-budget governor. Coding agents must not use them.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. The engine chooses a preset and checks it after the first frame. It applies the preset's pixel ratio cap, render scale range, texture settings, anti-aliasing mode and memory maximum, and reports it. Dynamic resolution moves the render scale during play, and a sketch can switch presets with `quality.setPreset`. The settings that the table below marks as planned are not built yet. Neither is the frame-budget governor. Coding agents must not use them.
 
 ```mermaid
 flowchart TD
@@ -149,7 +149,8 @@ Each value is a starting point, which measurements on phones, tablets and deskto
 | Setting | Low | Medium | High | Ultra | Changes | Status |
 | --- | --- | --- | --- | --- | --- | --- |
 | Pixel ratio cap (`maxPixelRatio`) | 1.5 | 2 | 2 | none | during play | built |
-| Lowest render scale (`minRenderScale`) | 0.5 | 0.6 | 0.75 | 1 | during play | planned |
+| Lowest render scale (`minRenderScale`) | 0.5 | 0.6 | 0.75 | 1 | during play | built |
+| Highest render scale (`maxRenderScale`) | 1 | 1 | 1 | 1 | during play | built |
 | Anti-aliasing (`antialias`) | FXAA | MSAA 4x | MSAA 4x | MSAA 4x | at the start | built |
 | Shadow cascades (`shadowCascades`) | 1 | 2 | 3 | 4 | at the start | planned |
 | Shadow map size in texels (`shadowMapSize`) | 1024 | 2048 | 2048 | 4096 | at the start | planned |
@@ -173,6 +174,50 @@ The anisotropic filtering cap limits the `anisotropy` option of every texture, s
 Low smooths edges with FXAA, and the other presets with MSAA. MSAA draws 4 samples per pixel, which costs a phone's GPU memory and bandwidth. FXAA draws one sample and smooths edges in the final pass, at a small cost in sharpness. The `antialias` option of `createEngine` replaces the preset's mode. The mode then stays fixed while the engine runs, because the scene's targets and pipelines depend on it. [GPU tiers and backends](backends.md#color-and-anti-aliasing-on-each-tier) compares the modes.
 
 The engine makes its memory while it tests the GPU paths. So the memory maximum follows the starting preset and the crashed starts, and the GPU path does not cap it. The `memory` option of `createEngine` replaces it: [Page API](../api/engine.md#memory).
+
+## Dynamic resolution
+
+```mermaid
+flowchart LR
+    frames["Frame rates and GPU delay"] --> controller["Render scale controller"]
+    controller -- "down 0.05 after about 1 s over budget" --> scale["Render scale, from<br/>minRenderScale to maxRenderScale"]
+    controller -- "up 0.05 after 5 s with time to spare" --> scale
+    scale --> scene["Scene passes draw into a corner<br/>of targets the canvas's size"]
+    scene --> final["The final pass scales the corner<br/>up to the whole canvas"]
+```
+
+The engine can draw the scene at a render scale below the canvas's size. Its final pass then scales the image up to the canvas. The render scale is a part of the canvas's width and height. At 0.5, the scene fills a quarter of the canvas's pixels. Most of a frame's GPU work grows with the pixels that it fills. So a lower scale keeps the frame rate on a GPU that falls behind, and the image gets softer.
+
+During play, the engine moves the scale between the `minRenderScale` and `maxRenderScale` settings:
+
+- It watches how often frames reach the screen and how often the GPU finishes one. It also watches how long the GPU takes to finish each frame.
+- Frames are over budget when they come at least 10% slower than the target rate. They are also over budget when the GPU finishes each one two frames late or later. The target is the display's refresh rate, at most 60 frames per second, or the lower rate that the `?fps=` switch holds.
+- After about a second over budget, the scale drops by 0.05. The engine then waits a second, so it judges frames at the new scale.
+- After 5 seconds at the target rate, with the GPU done with each frame within about one frame, the scale rises by 0.05. A rise that takes the frames over budget again doubles the wait before the next rise, up to 80 seconds. So the scale settles below the point where frames fall behind.
+- It takes no step in the first 2 seconds of play, and it starts to judge the frames again after a pause.
+
+The scene's render targets keep the canvas's size at every scale, and the scene draws into their top-left corner. So a new scale makes no GPU object and allocates no memory. `engine.measure()` counts the GPU objects that the engine made, in `gpuObjects`.
+
+A sketch reads the scale in `quality.renderScale`, and changes the range with `quality.set`:
+
+```ts
+import { defineSketch } from '@null3d/engine';
+
+export default defineSketch(({ quality, page }) => {
+  page.onMessage((type, data) => {
+    // A menu fixes the scale, or gives the range back to the engine.
+    if (type === 'resolution' && data === 'half') quality.set({ minRenderScale: 0.5, maxRenderScale: 0.5 });
+    if (type === 'resolution' && data === 'auto') quality.set({ minRenderScale: 0.5, maxRenderScale: 1 });
+  });
+  return {
+    onUpdate() {
+      // quality.renderScale is the scale of the frame being drawn.
+    },
+  };
+});
+```
+
+A `minRenderScale` of 1 keeps the whole canvas. Hold mode draws at `maxRenderScale`, so tests draw the same image on every run. Some GPU paths draw the scene's color in 8 bits: WebGPU's compatibility mode, and WebGL2 devices that cannot draw multisampled float targets. There, with MSAA, a lowest scale below 1 adds the final pass, which copies the image to the canvas. At a lowest scale of 1, the scene's render pass writes straight to the canvas. Below a scale of 1, the final pass scales the image up instead of running FXAA: the scaling softens edges already.
 
 ## Related pages
 

@@ -19,3 +19,8 @@ export const VisibleEntries = 5;
  * they draw were missing from it.
  */
 export const SkippedDraws = 6;
+/**
+ * GPU buffers, textures, texture views, samplers and bind groups that the replay of the frame
+ * made, on the record of the thread that draws.
+ */
+export const GpuObjects = 7;

@@ -125,6 +125,11 @@ export interface FrameSummary {
 	 */
 	pipelines: number;
 	/**
+	 * GPU buffers, textures, texture views, samplers and bind groups that the engine made during the
+	 * measurement. Steady play makes none, and neither does a new render scale.
+	 */
+	gpuObjects: number;
+	/**
 	 * Draw commands that frames skipped during the measurement because their pipeline was still
 	 * building, so the objects they draw were missing from those frames. `scene.warmUp()` before
 	 * new objects show, and `quality.setPreset()`, keep it at 0.
@@ -331,6 +336,7 @@ export function summarizeFrames(
 		rebuilds: (sketch.counters[Counter.Rebuilds] ?? []).filter((n) => n > 0).length,
 		pipelines: sumOf(render.counters[Counter.Pipelines]),
 		skippedDraws: sumOf(render.counters[Counter.SkippedDraws]),
+		gpuObjects: sumOf(render.counters[Counter.GpuObjects]),
 	};
 }
 

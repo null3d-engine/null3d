@@ -8,7 +8,7 @@ summary: "Pixel-ratio caps; memory budgets; heat; testing on real devices."
 
 # Phones and tablets
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Dynamic resolution and the texture memory budgets are not built yet. Neither is the frame-budget governor, which lowers settings when a phone heats up. Coding agents must not use them.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. The texture memory budgets are not built yet. Neither is the frame-budget governor, which lowers settings when a phone heats up. Coding agents must not use them.
 
 Phones have small GPUs, sharp screens and little memory, and they slow down when they heat up. The quality presets set how much work the engine does on each device. This guide says what the engine does on a phone or a tablet, and how to test your sketch on one.
 
@@ -39,6 +39,12 @@ The GPU fills every device pixel of the canvas, and a screen's device pixels gro
 | 1.5 | 0.74 million | 0.56 times |
 
 The engine caps the ratio at the preset's value, which is lowest on the Low preset. The `maxPixelRatio` option of `createEngine` sets another cap, and `quality.set({ maxPixelRatio })` changes it during play, for example from a setting in your menu.
+
+## Render scale
+
+When frames take too long, the engine draws the scene at a lower render scale: a part of the canvas's width and height. It then scales the image up to the canvas. On the Low preset, the scale can drop to 0.5, a quarter of the pixels. It rises again when the frames have time to spare. [Quality presets](../concepts/quality-presets.md#dynamic-resolution) explains when the scale moves.
+
+Text and fine lines in the scene get softer at a lower scale. The scaling also takes the place of FXAA, which Low uses to smooth edges. Draw your interface in HTML over the canvas, where it stays sharp. To keep the whole canvas on a device, set `quality.set({ minRenderScale: 1 })`. The savings of the pixel ratio cap and the render scale multiply. At a ratio of 1.5 and a scale of 0.5, the phone above fills 0.19 million pixels.
 
 ## Memory
 

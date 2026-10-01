@@ -105,15 +105,15 @@ pipelines.main = { vertex = "vs", fragment = "fs" }
 variants.webgpu = { permutations = ["TONE_MAP"], targets = ["wgsl"] }
 variants.webgl2 = { defs = ["WEBGL2"], permutations = ["DRAW_INDEX", "TONE_MAP"], targets = ["glsl"] }
 
-# The final pass: one triangle over the canvas, which tone maps the HDR scene color into it. The
-# FXAA builds smooth edges first, for the FXAA anti-aliasing mode. It loads by device, in every
-# module of its target.
+# The final pass: one triangle over the canvas, which scales the scene color up to it and tone
+# maps HDR color. The FXAA builds smooth edges first, for the FXAA anti-aliasing mode. The WebGL2
+# variant counts rows from the bottom. It loads by device, in every module of its target.
 [shaders.final]
 file = "final.wgsl"
 by_device = true
 pipelines.main = { vertex = "vs", fragment = "fs" }
 variants.webgpu = { permutations = ["FXAA"], targets = ["wgsl"] }
-variants.webgl2 = { permutations = ["FXAA"], targets = ["glsl"] }
+variants.webgl2 = { defs = ["WEBGL2"], permutations = ["FXAA"], targets = ["glsl"] }
 
 # Debug lines, which development builds of the engine draw after the opaque objects: a position
 # relative to the camera and an sRGB color per vertex, from a vertex buffer of their own. It stays

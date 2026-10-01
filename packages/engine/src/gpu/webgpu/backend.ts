@@ -108,7 +108,8 @@ export class WebGPUBackend {
 	timer: GpuTimer | undefined;
 	/**
 	 * What the replays since the last reset uploaded, the part that went through staging, drew and
-	 * built, and the draw commands they skipped because their pipeline was still building.
+	 * built, the other GPU objects they made, and the draw commands they skipped because their
+	 * pipeline was still building.
 	 */
 	readonly counts = {
 		uploadBytes: 0,
@@ -116,6 +117,7 @@ export class WebGPUBackend {
 		drawCalls: 0,
 		dispatches: 0,
 		pipelines: 0,
+		objects: 0,
 		skippedDraws: 0,
 	};
 	// Descriptors that every frame fills again, so replay allocates none of its own.
@@ -354,6 +356,7 @@ export class WebGPUBackend {
 		this.counts.drawCalls = 0;
 		this.counts.dispatches = 0;
 		this.counts.pipelines = 0;
+		this.counts.objects = 0;
 		this.counts.skippedDraws = 0;
 	}
 
@@ -494,6 +497,7 @@ export class WebGPUBackend {
 			const a = i + 1;
 			switch (op) {
 				case G.OP_CREATE_BUFFER:
+					this.counts.objects++;
 					this.buffers[words[a] as number]?.destroy();
 					this.buffers[words[a] as number] = device.createBuffer({
 						size: words[a + 1] as number,
@@ -531,9 +535,11 @@ export class WebGPUBackend {
 					this.buffers[words[a] as number] = undefined;
 					break;
 				case G.OP_CREATE_TEXTURE:
+					this.counts.objects++;
 					this.createTexture(words, a);
 					break;
 				case G.OP_CREATE_TEXTURE_VIEW:
+					this.counts.objects++;
 					this.createView(words, a);
 					break;
 				case G.OP_WRITE_TEXTURE: {
@@ -588,6 +594,7 @@ export class WebGPUBackend {
 					break;
 				}
 				case G.OP_CREATE_SAMPLER:
+					this.counts.objects++;
 					this.createSampler(words, floats, a);
 					break;
 				case G.OP_RESIZE_CANVAS: {
@@ -609,6 +616,7 @@ export class WebGPUBackend {
 					this.createPipeline(op, words, a, false);
 					break;
 				case G.OP_CREATE_BIND_GROUP: {
+					this.counts.objects++;
 					const layout = this.pipelines.layout(words[a + 1] as number);
 					const entries: GPUBindGroupEntry[] = [];
 					for (let e = 0, at = a + 3; e < (words[a + 2] as number); e++, at += 5) {

@@ -14,7 +14,7 @@ export const SHADERS: DeviceShaders = {
     exposure: f32,
     tone_mapping: u32,
     flags: u32,
-    spare: u32,
+    render_size: u32,
 }
 
 struct Fog {
@@ -274,7 +274,7 @@ fn main(@builtin(workgroup_id) group: vec3<u32>, @builtin(local_invocation_index
     exposure: f32,
     tone_mapping: u32,
     flags: u32,
-    spare: u32,
+    render_size: u32,
 }
 
 const ACES_INPUT: mat3x3<f32> = mat3x3<f32>(vec3<f32>(0.59719f, 0.076f, 0.0284f), vec3<f32>(0.35458f, 0.90834f, 0.13383f), vec3<f32>(0.04823f, 0.01566f, 0.83777f));
@@ -385,6 +385,26 @@ fn pixel_color(position_1: vec2<f32>) -> vec4<f32> {
     return _e4;
 }
 
+fn display(texel: vec4<f32>, pixel_2: vec2<f32>) -> vec4<f32> {
+    let _e2 = settings_1.flags;
+    if ((_e2 & DISPLAY_COLOR) != 0u) {
+        return texel;
+    }
+    let coverage = texel.w;
+    if (coverage <= 0f) {
+        return vec4(0f);
+    }
+    let _e17 = settings_1;
+    let _e18 = tone_map((texel.xyz / vec3(coverage)), _e17);
+    let _e20 = encode(_e18, pixel_2);
+    let encoded = saturate(_e20);
+    return vec4<f32>((encoded * coverage), coverage);
+}
+
+fn corner_texel(place: vec2<f32>, size: vec2<f32>) -> vec2<i32> {
+    return vec2<i32>(place);
+}
+
 @vertex
 fn vs(@builtin(vertex_index) vertex: u32) -> @builtin(position) vec4<f32> {
     let x_2 = ((f32(((vertex << 1u) & 2u)) * 2f) - 1f);
@@ -394,20 +414,48 @@ fn vs(@builtin(vertex_index) vertex: u32) -> @builtin(position) vec4<f32> {
 
 @fragment
 fn fs(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
-    let _e2 = pixel_color(position.xy);
-    let _e5 = settings_1.flags;
-    if ((_e5 & DISPLAY_COLOR) != 0u) {
-        return _e2;
+    var color: vec4<f32> = vec4(0f);
+    var tap: u32 = 0u;
+
+    let _e4 = textureDimensions(scene_color);
+    let size_1 = vec2<f32>(_e4);
+    let packed = settings_1.render_size;
+    let render = vec2<f32>(f32((packed & 65535u)), f32((packed >> 16u)));
+    let whole = all((render == size_1));
+    if whole {
+        let _e20 = pixel_color(position.xy);
+        let _e22 = display(_e20, position.xy);
+        color = _e22;
     }
-    let coverage = _e2.w;
-    if (coverage <= 0f) {
-        return vec4(0f);
+    let from_top = position.xy;
+    let place_1 = clamp((((from_top / size_1) * render) - vec2(0.5f)), vec2(0f), (render - vec2(1f)));
+    let first = floor(place_1);
+    let share = (place_1 - first);
+    let taps = select(4u, 0u, whole);
+    loop {
+        let _e42 = tap;
+        if (_e42 < taps) {
+        } else {
+            break;
+        }
+        {
+            let _e44 = tap;
+            let _e48 = tap;
+            let corner = vec2<f32>(f32((_e44 & 1u)), f32((_e48 >> 1u)));
+            let weights = mix((vec2(1f) - share), share, corner);
+            let _e62 = corner_texel(min((first + corner), (render - vec2(1f))), size_1);
+            let _e63 = color;
+            let _e69 = textureLoad(scene_color, _e62, 0i);
+            let _e71 = display(_e69, position.xy);
+            color = (_e63 + ((weights.x * weights.y) * _e71));
+        }
+        continuing {
+            let _e75 = tap;
+            tap = (_e75 + 1u);
+        }
     }
-    let _e19 = settings_1;
-    let _e20 = tone_map((_e2.xyz / vec3(coverage)), _e19);
-    let _e22 = encode(_e20, position.xy);
-    let encoded = saturate(_e22);
-    return vec4<f32>((encoded * coverage), coverage);
+    let _e77 = color;
+    return _e77;
 }
 `,
 				pipelines: {
@@ -426,7 +474,7 @@ fn fs(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
     exposure: f32,
     tone_mapping: u32,
     flags: u32,
-    spare: u32,
+    render_size: u32,
 }
 
 const ACES_INPUT: mat3x3<f32> = mat3x3<f32>(vec3<f32>(0.59719f, 0.076f, 0.0284f), vec3<f32>(0.35458f, 0.90834f, 0.13383f), vec3<f32>(0.04823f, 0.01566f, 0.83777f));
@@ -568,7 +616,7 @@ fn texel_at(pixel_2: vec2<i32>, last: vec2<i32>) -> vec4<f32> {
     return _e8;
 }
 
-fn tap(point: vec2<f32>, last_1: vec2<i32>) -> vec4<f32> {
+fn tap_1(point: vec2<f32>, last_1: vec2<i32>) -> vec4<f32> {
     let corner = (point - vec2(0.5f));
     let base = vec2<i32>(floor(corner));
     let f = fract(corner);
@@ -593,32 +641,32 @@ fn pixel_color(position_1: vec2<f32>) -> vec4<f32> {
 
     let _e1 = textureDimensions(scene_color);
     let last_2 = (vec2<i32>(_e1) - vec2(1i));
-    let pixel_3 = vec2<i32>(position_1);
-    let texel_1 = textureLoad(scene_color, pixel_3, 0i);
-    let _e11 = squeeze(texel_1);
+    let pixel_4 = vec2<i32>(position_1);
+    let texel_2 = textureLoad(scene_color, pixel_4, 0i);
+    let _e11 = squeeze(texel_2);
     let _e12 = luma(_e11);
-    let _e17 = texel_at((pixel_3 + vec2<i32>(-1i, -1i)), last_2);
+    let _e17 = texel_at((pixel_4 + vec2<i32>(-1i, -1i)), last_2);
     let _e18 = luma(_e17);
-    let _e23 = texel_at((pixel_3 + vec2<i32>(1i, -1i)), last_2);
+    let _e23 = texel_at((pixel_4 + vec2<i32>(1i, -1i)), last_2);
     let _e24 = luma(_e23);
-    let _e29 = texel_at((pixel_3 + vec2<i32>(-1i, 1i)), last_2);
+    let _e29 = texel_at((pixel_4 + vec2<i32>(-1i, 1i)), last_2);
     let _e30 = luma(_e29);
-    let _e35 = texel_at((pixel_3 + vec2<i32>(1i, 1i)), last_2);
+    let _e35 = texel_at((pixel_4 + vec2<i32>(1i, 1i)), last_2);
     let _e36 = luma(_e35);
     let lowest = min(_e12, min(min(_e18, _e24), min(_e30, _e36)));
     let highest = max(_e12, max(max(_e18, _e24), max(_e30, _e36)));
     if ((highest - lowest) < max(EDGE_THRESHOLD_MIN, (highest * EDGE_THRESHOLD))) {
-        return texel_1;
+        return texel_2;
     }
     let along = vec2<f32>(((_e30 + _e36) - (_e18 + _e24)), ((_e18 + _e30) - (_e24 + _e36)));
     let reduce = max(((((_e18 + _e24) + _e30) + _e36) * 0.03125f), REDUCE_MIN);
     let scale = (1f / (min(abs(along.x), abs(along.y)) + reduce));
     let span = clamp((along * scale), vec2(-8f), vec2(8f));
-    let _e83 = tap((position_1 - (span / vec2(6f))), last_2);
-    let _e88 = tap((position_1 + (span / vec2(6f))), last_2);
+    let _e83 = tap_1((position_1 - (span / vec2(6f))), last_2);
+    let _e88 = tap_1((position_1 + (span / vec2(6f))), last_2);
     let inner = (0.5f * (_e83 + _e88));
-    let _e97 = tap((position_1 - (span * 0.5f)), last_2);
-    let _e101 = tap((position_1 + (span * 0.5f)), last_2);
+    let _e97 = tap_1((position_1 - (span * 0.5f)), last_2);
+    let _e101 = tap_1((position_1 + (span * 0.5f)), last_2);
     let outer = ((0.5f * inner) + (0.25f * (_e97 + _e101)));
     let _e106 = luma(outer);
     if !((_e106 < lowest)) {
@@ -631,6 +679,26 @@ fn pixel_color(position_1: vec2<f32>) -> vec4<f32> {
     return _e115;
 }
 
+fn display(texel_1: vec4<f32>, pixel_3: vec2<f32>) -> vec4<f32> {
+    let _e2 = settings_1.flags;
+    if ((_e2 & DISPLAY_COLOR) != 0u) {
+        return texel_1;
+    }
+    let coverage = texel_1.w;
+    if (coverage <= 0f) {
+        return vec4(0f);
+    }
+    let _e17 = settings_1;
+    let _e18 = tone_map((texel_1.xyz / vec3(coverage)), _e17);
+    let _e20 = encode(_e18, pixel_3);
+    let encoded = saturate(_e20);
+    return vec4<f32>((encoded * coverage), coverage);
+}
+
+fn corner_texel(place: vec2<f32>, size: vec2<f32>) -> vec2<i32> {
+    return vec2<i32>(place);
+}
+
 @vertex
 fn vs(@builtin(vertex_index) vertex: u32) -> @builtin(position) vec4<f32> {
     let x_2 = ((f32(((vertex << 1u) & 2u)) * 2f) - 1f);
@@ -640,20 +708,48 @@ fn vs(@builtin(vertex_index) vertex: u32) -> @builtin(position) vec4<f32> {
 
 @fragment
 fn fs(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
-    let _e2 = pixel_color(position.xy);
-    let _e5 = settings_1.flags;
-    if ((_e5 & DISPLAY_COLOR) != 0u) {
-        return _e2;
+    var color: vec4<f32> = vec4(0f);
+    var tap: u32 = 0u;
+
+    let _e4 = textureDimensions(scene_color);
+    let size_1 = vec2<f32>(_e4);
+    let packed = settings_1.render_size;
+    let render = vec2<f32>(f32((packed & 65535u)), f32((packed >> 16u)));
+    let whole = all((render == size_1));
+    if whole {
+        let _e20 = pixel_color(position.xy);
+        let _e22 = display(_e20, position.xy);
+        color = _e22;
     }
-    let coverage = _e2.w;
-    if (coverage <= 0f) {
-        return vec4(0f);
+    let from_top = position.xy;
+    let place_1 = clamp((((from_top / size_1) * render) - vec2(0.5f)), vec2(0f), (render - vec2(1f)));
+    let first = floor(place_1);
+    let share = (place_1 - first);
+    let taps = select(4u, 0u, whole);
+    loop {
+        let _e42 = tap;
+        if (_e42 < taps) {
+        } else {
+            break;
+        }
+        {
+            let _e44 = tap;
+            let _e48 = tap;
+            let corner_1 = vec2<f32>(f32((_e44 & 1u)), f32((_e48 >> 1u)));
+            let weights = mix((vec2(1f) - share), share, corner_1);
+            let _e62 = corner_texel(min((first + corner_1), (render - vec2(1f))), size_1);
+            let _e63 = color;
+            let _e69 = textureLoad(scene_color, _e62, 0i);
+            let _e71 = display(_e69, position.xy);
+            color = (_e63 + ((weights.x * weights.y) * _e71));
+        }
+        continuing {
+            let _e75 = tap;
+            tap = (_e75 + 1u);
+        }
     }
-    let _e19 = settings_1;
-    let _e20 = tone_map((_e2.xyz / vec3(coverage)), _e19);
-    let _e22 = encode(_e20, position.xy);
-    let encoded = saturate(_e22);
-    return vec4<f32>((encoded * coverage), coverage);
+    let _e77 = color;
+    return _e77;
 }
 `,
 				pipelines: {
@@ -674,7 +770,7 @@ fn fs(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
     exposure: f32,
     tone_mapping: u32,
     flags: u32,
-    spare: u32,
+    render_size: u32,
 }
 
 struct Fog {
@@ -1213,7 +1309,7 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f3
     exposure: f32,
     tone_mapping: u32,
     flags: u32,
-    spare: u32,
+    render_size: u32,
 }
 
 struct Fog {
@@ -1756,7 +1852,7 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f3
     exposure: f32,
     tone_mapping: u32,
     flags: u32,
-    spare: u32,
+    render_size: u32,
 }
 
 struct Fog {
@@ -2365,7 +2461,7 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f3
     exposure: f32,
     tone_mapping: u32,
     flags: u32,
-    spare: u32,
+    render_size: u32,
 }
 
 struct Fog {
@@ -2970,7 +3066,7 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f3
     exposure: f32,
     tone_mapping: u32,
     flags: u32,
-    spare: u32,
+    render_size: u32,
 }
 
 struct Fog {
@@ -3513,7 +3609,7 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f3
     exposure: f32,
     tone_mapping: u32,
     flags: u32,
-    spare: u32,
+    render_size: u32,
 }
 
 struct Fog {
@@ -4060,7 +4156,7 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f3
     exposure: f32,
     tone_mapping: u32,
     flags: u32,
-    spare: u32,
+    render_size: u32,
 }
 
 struct Fog {
@@ -4673,7 +4769,7 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f3
     exposure: f32,
     tone_mapping: u32,
     flags: u32,
-    spare: u32,
+    render_size: u32,
 }
 
 struct Fog {
@@ -5328,7 +5424,7 @@ fn fs_main(in: VertexOut) -> @location(0) vec4<f32> {
     exposure: f32,
     tone_mapping: u32,
     flags: u32,
-    spare: u32,
+    render_size: u32,
 }
 
 struct Fog {
@@ -5465,7 +5561,7 @@ fn fs() {
     exposure: f32,
     tone_mapping: u32,
     flags: u32,
-    spare: u32,
+    render_size: u32,
 }
 
 struct Fog {
@@ -6191,7 +6287,7 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f3
     exposure: f32,
     tone_mapping: u32,
     flags: u32,
-    spare: u32,
+    render_size: u32,
 }
 
 struct Fog {
@@ -6921,7 +7017,7 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f3
     exposure: f32,
     tone_mapping: u32,
     flags: u32,
-    spare: u32,
+    render_size: u32,
 }
 
 struct Fog {
@@ -7717,7 +7813,7 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f3
     exposure: f32,
     tone_mapping: u32,
     flags: u32,
-    spare: u32,
+    render_size: u32,
 }
 
 struct Fog {
@@ -8519,7 +8615,7 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f3
     exposure: f32,
     tone_mapping: u32,
     flags: u32,
-    spare: u32,
+    render_size: u32,
 }
 
 struct Fog {
@@ -9255,7 +9351,7 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f3
     exposure: f32,
     tone_mapping: u32,
     flags: u32,
-    spare: u32,
+    render_size: u32,
 }
 
 struct Fog {
@@ -10047,7 +10143,7 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f3
     exposure: f32,
     tone_mapping: u32,
     flags: u32,
-    spare: u32,
+    render_size: u32,
 }
 
 struct Fog {
@@ -10845,7 +10941,7 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f3
     exposure: f32,
     tone_mapping: u32,
     flags: u32,
-    spare: u32,
+    render_size: u32,
 }
 
 struct Fog {
@@ -11575,7 +11671,7 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f3
     exposure: f32,
     tone_mapping: u32,
     flags: u32,
-    spare: u32,
+    render_size: u32,
 }
 
 struct Fog {
@@ -12309,7 +12405,7 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f3
     exposure: f32,
     tone_mapping: u32,
     flags: u32,
-    spare: u32,
+    render_size: u32,
 }
 
 struct Fog {
@@ -13109,7 +13205,7 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f3
     exposure: f32,
     tone_mapping: u32,
     flags: u32,
-    spare: u32,
+    render_size: u32,
 }
 
 struct Fog {
@@ -13915,7 +14011,7 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f3
     exposure: f32,
     tone_mapping: u32,
     flags: u32,
-    spare: u32,
+    render_size: u32,
 }
 
 struct Fog {
@@ -14655,7 +14751,7 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f3
     exposure: f32,
     tone_mapping: u32,
     flags: u32,
-    spare: u32,
+    render_size: u32,
 }
 
 struct Fog {
@@ -15451,7 +15547,7 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f3
     exposure: f32,
     tone_mapping: u32,
     flags: u32,
-    spare: u32,
+    render_size: u32,
 }
 
 struct Fog {
@@ -16253,7 +16349,7 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f3
     exposure: f32,
     tone_mapping: u32,
     flags: u32,
-    spare: u32,
+    render_size: u32,
 }
 
 struct Fog {
@@ -16989,7 +17085,7 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f3
     exposure: f32,
     tone_mapping: u32,
     flags: u32,
-    spare: u32,
+    render_size: u32,
 }
 
 struct Fog {
@@ -17723,7 +17819,7 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f3
     exposure: f32,
     tone_mapping: u32,
     flags: u32,
-    spare: u32,
+    render_size: u32,
 }
 
 struct Fog {
@@ -17875,7 +17971,7 @@ fn fs(in: VertexOut) -> @location(0) vec4<f32> {
     exposure: f32,
     tone_mapping: u32,
     flags: u32,
-    spare: u32,
+    render_size: u32,
 }
 
 struct Fog {
@@ -18090,7 +18186,7 @@ fn fs(in: VertexOut) -> @location(0) vec4<f32> {
     exposure: f32,
     tone_mapping: u32,
     flags: u32,
-    spare: u32,
+    render_size: u32,
 }
 
 struct Fog {
@@ -18309,7 +18405,7 @@ fn fs(in: VertexOut) -> @location(0) vec4<f32> {
     exposure: f32,
     tone_mapping: u32,
     flags: u32,
-    spare: u32,
+    render_size: u32,
 }
 
 struct Fog {
@@ -18531,7 +18627,7 @@ fn fs(in: VertexOut) -> @location(0) vec4<f32> {
     exposure: f32,
     tone_mapping: u32,
     flags: u32,
-    spare: u32,
+    render_size: u32,
 }
 
 struct Fog {
@@ -18759,7 +18855,7 @@ fn fs(in: VertexOut) -> @location(0) vec4<f32> {
     exposure: f32,
     tone_mapping: u32,
     flags: u32,
-    spare: u32,
+    render_size: u32,
 }
 
 struct Fog {
@@ -19034,7 +19130,7 @@ fn fs(in: VertexOut) -> @location(0) vec4<f32> {
     exposure: f32,
     tone_mapping: u32,
     flags: u32,
-    spare: u32,
+    render_size: u32,
 }
 
 struct Fog {
@@ -19313,7 +19409,7 @@ fn fs(in: VertexOut) -> @location(0) vec4<f32> {
     exposure: f32,
     tone_mapping: u32,
     flags: u32,
-    spare: u32,
+    render_size: u32,
 }
 
 struct Fog {
@@ -19595,7 +19691,7 @@ fn fs(in: VertexOut) -> @location(0) vec4<f32> {
     exposure: f32,
     tone_mapping: u32,
     flags: u32,
-    spare: u32,
+    render_size: u32,
 }
 
 struct Fog {

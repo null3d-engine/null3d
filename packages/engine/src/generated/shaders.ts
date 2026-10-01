@@ -126,7 +126,7 @@ struct Output {
     float exposure;
     uint tone_mapping;
     uint flags;
-    uint spare;
+    uint render_size;
 };
 struct Fog {
     vec3 color;
@@ -211,7 +211,7 @@ struct Output {
     float exposure;
     uint tone_mapping;
     uint flags;
-    uint spare;
+    uint render_size;
 };
 struct Fog {
     vec3 color;
@@ -298,7 +298,7 @@ struct Output {
     float exposure;
     uint tone_mapping;
     uint flags;
-    uint spare;
+    uint render_size;
 };
 struct Fog {
     vec3 color;
@@ -475,7 +475,7 @@ struct Output {
     float exposure;
     uint tone_mapping;
     uint flags;
-    uint spare;
+    uint render_size;
 };
 struct Fog {
     vec3 color;
@@ -645,7 +645,7 @@ void main() {
     exposure: f32,
     tone_mapping: u32,
     flags: u32,
-    spare: u32,
+    render_size: u32,
 }
 
 struct Fog {
@@ -734,7 +734,7 @@ fn fs(in: VertexOut) -> @location(0) vec4<f32> {
     exposure: f32,
     tone_mapping: u32,
     flags: u32,
-    spare: u32,
+    render_size: u32,
 }
 
 struct Fog {
