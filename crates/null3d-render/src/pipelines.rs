@@ -11,7 +11,7 @@
 //! formats and the sample count of its targets, and the permutation bits that it sets for every
 //! pipeline in it.
 
-use null3d_gpu::drawlist::{DrawList, Op};
+use null3d_gpu::drawlist::{DrawList, Op, permutation};
 
 use crate::frame::RecordError;
 
@@ -92,6 +92,18 @@ pub struct PassTargets {
     pub depth_format: u32,
     pub samples: u32,
     pub permutation: u32,
+}
+
+impl PassTargets {
+    /// The same targets for a shader that reads no draw index, such as a pass's own triangles or
+    /// lines: of the pass's bits, only tone mapping on the 8-bit path stays, as scene shaders
+    /// apply it.
+    pub(crate) const fn tone_map_only(self) -> PassTargets {
+        PassTargets {
+            permutation: self.permutation & permutation::TONE_MAP,
+            ..self
+        }
+    }
 }
 
 /// What a mesh and material pair decides about the pipeline that draws it: the template of the

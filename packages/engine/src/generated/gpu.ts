@@ -130,6 +130,7 @@ export const TEMPLATE_INSTANCED_UNLIT_MAP = 5;
 export const TEMPLATE_INSTANCED_STANDARD_MAPS = 6;
 export const TEMPLATE_FINAL = 7;
 export const TEMPLATE_SHADOW_DEPTH = 8;
+export const TEMPLATE_BACKGROUND = 9;
 export const TEMPLATE_CULL = 16;
 
 export const BUFFER_USAGE_MAP_READ = 1;
