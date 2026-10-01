@@ -14,7 +14,13 @@ import {
 	Role,
 	UNTIMED,
 } from '../shared/metrics';
-import { type Percentiles, percentiles, ratePerSecond } from '../shared/stats';
+import {
+	countPerSecond,
+	type Percentiles,
+	percentiles,
+	ratePerSecond,
+	spanMs,
+} from '../shared/stats';
 
 /**
  * One thread's CPU time per frame, in `FrameSummary.threads`.
@@ -185,6 +191,23 @@ export interface FrameMetrics extends FrameSummary {
 	refreshHz: number | null;
 	/** The page's own thread during the measurement, where the browser reports it, or null. */
 	mainThread: MainThreadStats | null;
+	/**
+	 * The frame rates of each whole second of the measurement, in order. A long measurement shows
+	 * here when and for how long the rate fell, which the rates of the whole measurement hide.
+	 */
+	perSecond: SecondRates[];
+}
+
+/**
+ * The frame rates of one second of a measurement, in `FrameMetrics.perSecond`.
+ *
+ * @category api/debug
+ */
+export interface SecondRates {
+	/** Frames that the renderer presented in the second. */
+	presentedFps: number;
+	/** Frames that the GPU finished in the second, or null when no completion arrived at all. */
+	completedFps: number | null;
 }
 
 /**
@@ -295,6 +318,25 @@ export function summarizeFrames(
 		rebuilds: (sketch.counters[Counter.Rebuilds] ?? []).filter((n) => n > 0).length,
 		pipelines: (render.counters[Counter.Pipelines] ?? []).reduce((sum, n) => sum + n, 0),
 	};
+}
+
+/**
+ * The frame rates of each whole second of a measurement: the presented frames from the renderer's
+ * intervals, and the finished frames from the completions'. Each count starts at the frame before
+ * its first record. A second that either count has not ended yet is left out.
+ */
+export function secondRates(records: readonly RingRecords[]): SecondRates[] {
+	const presented = (records[Role.Render] ?? NO_RECORDS).intervals;
+	const completed = (records[Role.Completion] ?? NO_RECORDS).intervals;
+	const span =
+		completed.length > 0 ? Math.min(spanMs(presented), spanMs(completed)) : spanMs(presented);
+	const seconds = Math.floor(span / 1000);
+	const presentedCounts = countPerSecond(presented, seconds);
+	const completedCounts = completed.length > 0 ? countPerSecond(completed, seconds) : null;
+	return presentedCounts.map((presentedFps, second) => ({
+		presentedFps,
+		completedFps: completedCounts ? (completedCounts[second] as number) : null,
+	}));
 }
 
 /**
