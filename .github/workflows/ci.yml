@@ -200,7 +200,9 @@ jobs:
     name: real-browsers (${{ matrix.browser }} ${{ matrix.shard }}/1)
     needs: real-browsers-build
     runs-on: ${{ github.event_name == 'merge_group' && 'macos-15' || 'ubuntu-latest' }}
-    timeout-minutes: 15
+    # A full run takes about 14 minutes, and a runner page that goes quiet costs about a minute more
+    # each time the runner replaces it.
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
@@ -242,3 +244,23 @@ jobs:
             target/runs/
             test-results/images/
           if-no-files-found: ignore
+
+  ci-passed:
+    # The one check of this workflow that main's merge queue requires, so that the jobs above can
+    # split into shards and change their names with no change to the queue's rules. It runs after
+    # every other job, also after a failure or a cancel, and fails unless each job passed. Outside
+    # the merge queue a job may be skipped by its own condition; in the queue every job must pass.
+    if: always()
+    needs: [docs-and-tools, rust, wasm-and-bench, browser, real-browsers-build, real-browsers]
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Every job passed
+        env:
+          NEEDS: ${{ toJSON(needs) }}
+          IN_QUEUE: ${{ github.event_name == 'merge_group' }}
+        run: |
+          jq -r 'to_entries[] | "\(.key): \(.value.result)"' <<< "$NEEDS"
+          jq -e --argjson queue "$IN_QUEUE" \
+            'length > 0 and all(.[]; .result == "success" or (.result == "skipped" and ($queue | not)))' \
+            <<< "$NEEDS" > /dev/null

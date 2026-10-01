@@ -79,8 +79,11 @@ function readJson<T>(path: string): T | undefined {
 	return existsSync(path) ? (JSON.parse(readFileSync(path, 'utf8')) as T) : undefined;
 }
 
+const resultPath = (run: string, runner: string, id: string) =>
+	join(RUNS_DIR, run, runner, `${id}.json`);
+
 export function readResult(run: string, runner: string, id: string): ItemResult | undefined {
-	return readJson(join(RUNS_DIR, run, runner, `${id}.json`));
+	return readJson(resultPath(run, runner, id));
 }
 
 /** Writes a file of a runner's results, such as a result with facts added after the run. */
@@ -191,14 +194,32 @@ export function batchTimeoutMs(plan: Plan): number {
 	);
 }
 
+/** Time to open the next page, on top of its timeout, before a quiet runner page counts as stopped. */
+const LOAD_SECONDS = 30;
+
 /**
- * How long a runner page may send nothing once it has started before it counts as stopped, as when
- * its tab closes: its slowest page's timeout, after which the page reports a timeout itself, and
- * time to load the next page.
+ * How long a runner page may send nothing on a page before it counts as stopped, as when its tab
+ * closes: the page's timeout, after which the runner page reports a timeout itself, and time to
+ * open the page.
  */
-export function quietLimitMs(plan: Plan): number {
-	const LOAD_SECONDS = 30;
-	return (Math.max(0, ...plan.items.map((item) => item.timeoutSeconds)) + LOAD_SECONDS) * 1000;
+export const quietLimitMs = (item: PlanItem) => (item.timeoutSeconds + LOAD_SECONDS) * 1000;
+
+/** A plan item and its place in the plan. */
+export interface PlanPlace<Check = unknown> {
+	index: number;
+	item: PlanItem<Check>;
+}
+
+/**
+ * The page that a runner works on now: the first item of the plan without a result, since the
+ * runner page works through the items in order. Undefined once every item has a result.
+ */
+export function currentItem<Check>(
+	plan: Plan<Check>,
+	runner: string,
+): PlanPlace<Check> | undefined {
+	const index = plan.items.findIndex((item) => !existsSync(resultPath(plan.run, runner, item.id)));
+	return index < 0 ? undefined : { index, item: plan.items[index] as PlanItem<Check> };
 }
 
 /** When a runner last wrote a file of the run, or undefined before its runner page starts. */
@@ -214,36 +235,53 @@ function lastWrite(run: string, runner: string): number | undefined {
 }
 
 /** What a wait reports, and the quiet time after which a started runner counts as stopped. */
-export interface WaitOptions {
+export interface WaitOptions<Check = unknown> {
 	onFinish?: (runner: string) => void;
-	onQuiet?: (runner: string, quietSeconds: number) => void;
-	quietMs?: number;
+	/**
+	 * Reports a runner page that went quiet on a page, or after its last page. Returns true when it
+	 * opened a new runner page for the runner, which the wait then gives the page's time again.
+	 */
+	onQuiet?: (runner: string, quietSeconds: number, at: PlanPlace<Check> | undefined) => boolean;
+	/** The quiet time for a page, by default the page's timeout and time to open it. */
+	quietMs?: (item: PlanItem<Check>) => number;
 }
 
 /**
  * Waits until each runner has finished the run, or has gone quiet after it started, or the plan's
  * time runs out. A runner that never starts waits for the plan's time, as a page on a tablet may
- * need someone to open it. Returns the runners that finished.
+ * need someone to open it. A runner page that `onQuiet` replaces adds its quiet time to the plan's
+ * time. Returns the runners that finished.
  */
-export async function waitForRunners(
-	plan: Plan,
+export async function waitForRunners<Check>(
+	plan: Plan<Check>,
 	runners: readonly string[],
-	{ onFinish = () => {}, onQuiet = () => {}, quietMs = quietLimitMs(plan) }: WaitOptions = {},
+	{ onFinish = () => {}, onQuiet = () => false, quietMs = quietLimitMs }: WaitOptions<Check> = {},
 ): Promise<string[]> {
-	const deadline = Date.now() + batchTimeoutMs(plan);
+	let deadline = Date.now() + batchTimeoutMs(plan);
 	const done: string[] = [];
 	const waiting = new Set(runners);
+	/** When the runner tool last opened a new runner page for a runner that went quiet. */
+	const reopenedAt = new Map<string, number>();
 	while (waiting.size > 0 && Date.now() < deadline) {
 		for (const runner of waiting) {
-			const last = lastWrite(plan.run, runner);
+			const written = lastWrite(plan.run, runner);
+			const last =
+				written === undefined ? undefined : Math.max(written, reopenedAt.get(runner) ?? 0);
 			if (finished(plan.run, runner)) {
 				waiting.delete(runner);
 				done.push(runner);
 				onFinish(runner);
-			} else if (last !== undefined && Date.now() - last > quietMs) {
-				waiting.delete(runner);
-				onQuiet(runner, Math.round((Date.now() - last) / 1000));
+				continue;
 			}
+			if (last === undefined) continue;
+			const at = currentItem(plan, runner);
+			const limit = at ? quietMs(at.item) : LOAD_SECONDS * 1000;
+			const quiet = Date.now() - last;
+			if (quiet <= limit) continue;
+			if (onQuiet(runner, Math.round(quiet / 1000), at)) {
+				reopenedAt.set(runner, Date.now());
+				deadline += quiet;
+			} else waiting.delete(runner);
 		}
 		if (waiting.size > 0) await new Promise((resolve) => setTimeout(resolve, 500));
 	}
