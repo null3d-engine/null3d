@@ -8,6 +8,7 @@
 
 import { controlViews, Slot } from '../shared/control';
 import { FrameRecorder, Role } from '../shared/metrics';
+import { notifySlot, type WakeTarget } from '../shared/wake';
 import { FramePacer } from './pacer';
 import { RefreshMeter } from './refresh';
 import type { FrameInput, Renderer } from './renderer';
@@ -83,7 +84,8 @@ export class Presenter {
 
 	/**
 	 * `fps` is the frame rate that ?fps= holds, or undefined to draw at the display's rate. `queue`
-	 * is the most frames that may wait unfinished on the GPU.
+	 * is the most frames that may wait unfinished on the GPU. `wake` carries wake messages to the
+	 * sketch thread, where another thread runs the sketch.
 	 */
 	constructor(
 		private readonly slots: Int32Array,
@@ -91,6 +93,7 @@ export class Presenter {
 		metrics: ArrayBufferLike,
 		fps: number | undefined,
 		private readonly queue = MAX_FRAMES_IN_FLIGHT,
+		private readonly wake?: WakeTarget,
 	) {
 		this.record = new FrameRecorder(metrics, Role.Render);
 		this.pacer = new FramePacer(fps);
@@ -166,7 +169,7 @@ export class Presenter {
 		if (!this.renderer.building && frame > this.builtFrame) {
 			this.builtFrame = frame;
 			Atomics.store(this.slots, Slot.PipelinesBuilt, frame);
-			Atomics.notify(this.slots, Slot.PipelinesBuilt);
+			notifySlot(this.slots, Slot.PipelinesBuilt, this.wake);
 		}
 		return ready;
 	}
@@ -246,9 +249,10 @@ export function runRenderLoop(
 	metrics: ArrayBufferLike,
 	fps: number | undefined,
 	queue?: number,
+	wake?: WakeTarget,
 ): RenderLoop {
 	const { slots } = controlViews(control);
-	const presenter = new Presenter(slots, renderer, metrics, fps, queue);
+	const presenter = new Presenter(slots, renderer, metrics, fps, queue, wake);
 	let taken = 0;
 	let stopped = false;
 
@@ -261,7 +265,7 @@ export function runRenderLoop(
 		if (published > taken && presenter.ready(published) && presenter.due(timestamp)) {
 			taken = published;
 			Atomics.store(slots, Slot.FramesTaken, taken);
-			Atomics.notify(slots, Slot.FramesTaken);
+			notifySlot(slots, Slot.FramesTaken, wake);
 			presenter.draw(taken, timestamp);
 		}
 		requestAnimationFrame(frame);

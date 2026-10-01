@@ -6,7 +6,15 @@ import { expect, test } from '@playwright/test';
 import { defaultEnvironment } from '../../packages/cli/src/browser.js';
 import { writePng } from '../../packages/cli/src/png.js';
 import { BENCH_SCENES, isNull3dPage, type PageKind, pagePath, SCENE_CODE } from '../lib/parity';
-import { BACKGROUND, PARITY_CANVAS, S2_NODES_PER_TREE, s2Trees } from '../scenes/spec';
+import type { TraceSecond } from '../pages/lib/trace';
+import {
+	BACKGROUND,
+	createS4,
+	PARITY_CANVAS,
+	S2_NODES_PER_TREE,
+	S4_FOG,
+	s2Trees,
+} from '../scenes/spec';
 import { openPage, type PageReport, runPage } from './open-page';
 
 const SCENES = BENCH_SCENES;
@@ -36,6 +44,16 @@ const MIN_DRAWN_SHARE: Record<(typeof SCENES)[number], number> = {
 	's1-cells': 0.002,
 	s2: 0.005,
 	s3: 0.1,
+	s4: 0.5,
+};
+/** Each scene's background color. S4's is its fog's color. */
+const BACKGROUNDS: Record<(typeof SCENES)[number], string> = {
+	s1: BACKGROUND,
+	's1-static': BACKGROUND,
+	's1-cells': BACKGROUND,
+	s2: BACKGROUND,
+	s3: BACKGROUND,
+	s4: S4_FOG.color,
 };
 /**
  * Pages whose renderer cannot draw their scene on the GPU that the tests draw with. WebGLRenderer's
@@ -49,12 +67,38 @@ const SWIFTSHADER = defaultEnvironment() === 'chromium-swiftshader';
 /** The instance count of the short benchmark runs. */
 const SHORT_RUN_COUNT = 1000;
 /**
- * The warm-up and measured seconds of a page's short benchmark run. On SwiftShader, the first frames
- * of S3's three.js twin on WebGPU take seconds, so its run needs longer to measure a frame.
+ * Pages that SwiftShader draws too slowly for the tests: S4's three.js twins take minutes over their
+ * first frames, with shadows in cascades over 5,000 objects. The tests run them on real GPUs only.
  */
-const shortRunSeconds = (page: string): number => (page === 's3 on threejs-webgpu' ? 5 : 2);
-/** S2 draws whole trees, so it rounds the short runs' count up to them. */
-const S2_SHORT_RUN_COUNT = s2Trees(SHORT_RUN_COUNT) * S2_NODES_PER_TREE;
+const TOO_SLOW_FOR_SWIFTSHADER: readonly string[] = ['s4 on threejs-webgl', 's4 on threejs-webgpu'];
+/** Leaves a page's test out on SwiftShader when SwiftShader draws the page too slowly. */
+const skipWhereTooSlow = (page: string) =>
+	test.skip(
+		SWIFTSHADER && TOO_SLOW_FOR_SWIFTSHADER.includes(page),
+		'SwiftShader takes minutes to draw its first frames',
+	);
+/**
+ * The warm-up and measured seconds of a page's short benchmark run. On SwiftShader, the first frames
+ * of S3's three.js twin on WebGPU take seconds, and null3D draws S4 at a few frames a second. Their
+ * runs need longer to measure frames.
+ */
+function shortRunSeconds(scene: (typeof SCENES)[number], kind: PageKind): number {
+	if (scene === 's3' && kind === 'threejs-webgpu') return 5;
+	if (scene === 's4' && SWIFTSHADER) return 8;
+	return 2;
+}
+/** S4's canvas fills the window. A small window keeps its frames short on SwiftShader. */
+const S4_VIEWPORT = { width: 480, height: 320 };
+/**
+ * The object count that a scene's short runs report: S2 rounds the count up to whole trees, and S4
+ * has one town, whose count is fixed.
+ */
+const shortRunCount = (scene: (typeof SCENES)[number]): number =>
+	scene === 's2'
+		? s2Trees(SHORT_RUN_COUNT) * S2_NODES_PER_TREE
+		: scene === 's4'
+			? createS4().count
+			: SHORT_RUN_COUNT;
 
 interface Report extends PageReport {
 	scene: string;
@@ -69,6 +113,9 @@ interface HoldReport extends Report {
 }
 
 interface BenchReport extends Report {
+	/** S4: the canvas that filled the window, and the trace of each second. */
+	canvas?: { width: number; height: number; pixelRatio: number };
+	trace?: TraceSecond[];
 	frames: number;
 	cpuMs: { median: number; p95: number; p99: number; mean: number };
 	intervalMs: { median: number; p95: number; p99: number };
@@ -76,8 +123,8 @@ interface BenchReport extends Report {
 }
 
 /** How many pixels of an RGBA8 image have the background color, within the tolerance. */
-function countBackground(pixels: Uint8Array): number {
-	const value = Number.parseInt(BACKGROUND.slice(1), 16);
+function countBackground(pixels: Uint8Array, background: string): number {
+	const value = Number.parseInt(background.slice(1), 16);
 	const rgb = [(value >> 16) & 255, (value >> 8) & 255, value & 255];
 	let count = 0;
 	for (let i = 0; i < pixels.length; i += 4) {
@@ -114,6 +161,7 @@ for (const scene of SCENES) {
 		}
 		if (!isNull3dPage(kind))
 			test(`${scene} on ${kind} renders a hold frame that is not blank`, async ({ page }) => {
+				skipWhereTooSlow(`${scene} on ${kind}`);
 				const result = await runPage<HoldReport>(page, pagePath(scene, kind, 'hold'));
 				expect([result.scene, result.renderer]).toEqual([scene, renderer]);
 				const { width, height } = PARITY_CANVAS;
@@ -124,7 +172,7 @@ for (const scene of SCENES) {
 				writePng(join(IMAGE_DIR, `${scene}-${kind}.png`), { width, height, data: pixels });
 
 				const total = width * height;
-				const background = countBackground(pixels);
+				const background = countBackground(pixels, BACKGROUNDS[scene]);
 				// The background must read back as its own color: with wrong color handling, every pixel
 				// would differ from it and the blank check below would pass on any image.
 				expect(background).toBeGreaterThan(0);
@@ -142,20 +190,30 @@ for (const scene of SCENES) {
 			});
 
 		test(`${scene} on ${kind} runs a short benchmark`, async ({ page }) => {
+			skipWhereTooSlow(`${scene} on ${kind}`);
+			if (scene === 's4') await page.setViewportSize(S4_VIEWPORT);
 			const result = await runPage<BenchReport>(
 				page,
-				pagePath(
-					scene,
-					kind,
-					`seconds=${shortRunSeconds(`${scene} on ${kind}`)}&n=${SHORT_RUN_COUNT}`,
-				),
+				pagePath(scene, kind, `seconds=${shortRunSeconds(scene, kind)}&n=${SHORT_RUN_COUNT}`),
 			);
 			expect([result.scene, result.renderer]).toEqual([scene, renderer]);
-			expect(result.n).toBe(scene === 's2' ? S2_SHORT_RUN_COUNT : SHORT_RUN_COUNT);
+			expect(result.n).toBe(shortRunCount(scene));
 			expect(result.frames).toBeGreaterThan(0);
 			expect(result.cpuMs.median).toBeGreaterThan(0);
 			expect(result.intervalMs.median).toBeGreaterThan(0);
 			expect(result.userAgent).toContain('Chrome');
+			if (scene === 's4') {
+				// The canvas fills the window below the status line, and each second has its row.
+				expect(result.canvas?.width).toBe(S4_VIEWPORT.width);
+				expect(result.canvas?.height).toBeLessThan(S4_VIEWPORT.height);
+				expect(result.trace?.length).toBeGreaterThan(0);
+				for (const second of result.trace ?? []) {
+					expect(second.renderScale).toBeGreaterThan(0);
+					expect(second.renderScale).toBeLessThanOrEqual(1);
+					if (isNull3dPage(kind)) expect(second.completedFps).not.toBeNull();
+					else expect(second.completedFps).toBeNull();
+				}
+			} else expect(result.trace).toBeUndefined();
 		});
 	}
 }
@@ -167,7 +225,7 @@ for (const scene of SCENES) {
 			pagePath(scene, SCENE_CODE, `seconds=1&n=${SHORT_RUN_COUNT}`),
 		);
 		expect([result.scene, result.renderer]).toEqual([scene, SCENE_CODE]);
-		expect(result.n).toBe(scene === 's2' ? S2_SHORT_RUN_COUNT : SHORT_RUN_COUNT);
+		expect(result.n).toBe(shortRunCount(scene));
 		expect(result.frames).toBeGreaterThan(0);
 		// S1 moves every instance; the other scenes' code is a camera path and a few turns, which can
 		// take less time than the browser's clock resolves.

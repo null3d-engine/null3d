@@ -23,6 +23,19 @@ export function fitToWindow(canvas: HTMLCanvasElement, width: number, height: nu
 }
 
 /**
+ * Makes a canvas fill the window below what sits above it, as a full-screen app does, and again
+ * when the window changes size. Call it before the engine starts, which reads the canvas's size.
+ */
+export function fillWindow(canvas: HTMLCanvasElement): void {
+	const fill = (): void => {
+		canvas.style.width = `${innerWidth}px`;
+		canvas.style.height = `${Math.max(1, innerHeight - canvas.offsetTop)}px`;
+	};
+	fill();
+	addEventListener('resize', fill);
+}
+
+/**
  * Shows the page's title and switches in its status line, at the top of the page, while it runs,
  * so a window that runs one benchmark page after another shows which one is on screen. The page
  * puts its result there when it finishes.
