@@ -165,9 +165,7 @@ jobs:
         with:
           name: page-wasm
           path: packages/
-      - name: Install Chromium for Playwright
-        working-directory: tests
-        run: bunx playwright install --with-deps chromium
+      - uses: ./.github/actions/playwright-chromium
       - name: Browser tests on SwiftShader, WebGPU and WebGL2
         run: bun run test:browser --shard=${{ matrix.shard }}/${{ strategy.job-total }}
       # The images that differ from their references, or have none yet, with their diffs:
@@ -201,9 +199,7 @@ jobs:
         with:
           name: page-wasm
           path: packages/
-      - name: Install Chromium for Playwright
-        working-directory: tests
-        run: bunx playwright install --with-deps chromium
+      - uses: ./.github/actions/playwright-chromium
       - name: The benchmark pages on SwiftShader
         run: bun run test:bench --shard=${{ matrix.shard }}/${{ strategy.job-total }}
       - uses: actions/upload-artifact@v4
