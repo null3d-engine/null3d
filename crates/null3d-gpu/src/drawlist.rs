@@ -480,12 +480,14 @@ pub mod permutation {
     pub const SKIN: u32 = 64;
     /// Morph targets move the mesh's vertices.
     pub const MORPH: u32 = 128;
+    /// The final pass smooths edges with FXAA before the output transform.
+    pub const FXAA: u32 = 256;
     /// The normal map's frame comes from the mesh's tangents, not from how the texture
     /// coordinates change between pixels.
     pub const VERTEX_TANGENT: u32 = 512;
 
     /// Every bit with its name: the shader def that turns its code on, in bit order.
-    pub const NAMES: [(&str, u32); 9] = [
+    pub const NAMES: [(&str, u32); 10] = [
         ("DRAW_INDEX", DRAW_INDEX),
         ("TONE_MAP", TONE_MAP),
         ("VERTEX_COLOR", VERTEX_COLOR),
@@ -494,6 +496,7 @@ pub mod permutation {
         ("RECEIVE_SHADOWS", RECEIVE_SHADOWS),
         ("SKIN", SKIN),
         ("MORPH", MORPH),
+        ("FXAA", FXAA),
         ("VERTEX_TANGENT", VERTEX_TANGENT),
     ];
 

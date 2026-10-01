@@ -128,7 +128,7 @@ Never mirror per-frame scene state into React state: it re-renders React every f
 | `<Canvas camera={{ position, fov }}>` | `scene.createPerspectiveCamera({ position, fov })` in `sketch.ts` |
 | `<Canvas dpr={[1, 2]}>` | `createEngine({ maxPixelRatio: 2 })`, or leave it out and the quality preset sets the cap |
 | `<Canvas shadows>` | `castShadows` on lights and meshes, `receiveShadows` on receivers; shadows draw later in 0.1 |
-| `<Canvas gl={{ antialias, alpha }}>` | Every tier draws with MSAA; `alpha` becomes `createEngine({ transparent: true })` |
+| `<Canvas gl={{ antialias, alpha }}>` | `createEngine({ antialias: 'msaa' })` or the preset's mode, `createEngine({ transparent: true })` |
 | `<Canvas frameloop="demand">` | No on-demand mode in 1.0: pause with `engine.setPaused(true)` while nothing changes |
 | `<mesh>` with `<boxGeometry>` and `<meshStandardMaterial>` | `scene.createMesh({ mesh: geometry.box(...), material: materials.standard(...) })` |
 | `<group>` | `scene.createGroup()` and `setParent` |

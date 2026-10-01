@@ -30,7 +30,7 @@ use crate::materials::{
     MATERIAL_FLOATS, MATERIAL_TEXELS, MapSlot, MaterialTable, Shading, feature,
 };
 use crate::meshes::{MAX_BUFFER_BYTES, MeshStorage, Page};
-use crate::output::{Output, SceneColor};
+use crate::output::{Antialias, Output, SceneColor};
 use crate::pipelines::DrawKey;
 use crate::textures::TextureStore;
 use crate::view::{MAX_VIEWS, View, ViewFrame, ViewId};
@@ -349,10 +349,12 @@ struct Lighting {
 }
 
 /// How frames reach the canvas, fixed when the builder starts: the target that scene passes draw
-/// into, and whether the canvas is transparent.
+/// into, the anti-aliasing mode, and whether the canvas is transparent.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct CanvasOutput {
     pub scene_color: SceneColor,
+    /// How the scene's edges are smoothed, which sets the samples of its color and depth targets.
+    pub antialias: Antialias,
     /// True when the canvas shows the page behind it where nothing draws: it holds premultiplied
     /// alpha, and it stays clear until the sketch sets a background.
     pub transparent: bool,

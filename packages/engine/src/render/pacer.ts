@@ -18,8 +18,11 @@ export class FramePacer {
 	private readonly fpsInterval: number;
 	/** Time between frames in ms: the longer of the ?fps= interval and the display's, or 0 for neither. */
 	private interval: number;
-	/** When the next frame's turn starts, in the callbacks' clock. */
-	private next = Number.NEGATIVE_INFINITY;
+	/**
+	 * When the next frame's turn starts, in the callbacks' clock. It lives in a typed array: some
+	 * browsers make a new object for each fraction stored in a property.
+	 */
+	private readonly next = Float64Array.of(Number.NEGATIVE_INFINITY);
 
 	/** `fps` is the rate to hold, or undefined to draw at every callback. */
 	constructor(fps: number | undefined) {
@@ -42,9 +45,10 @@ export class FramePacer {
 	 */
 	take(timestamp: number): boolean {
 		if (this.interval === 0) return true;
-		if (timestamp < this.next - EARLY_MS) return false;
-		this.next =
-			timestamp - this.next > this.interval ? timestamp + this.interval : this.next + this.interval;
+		const next = this.next[0] as number;
+		if (timestamp < next - EARLY_MS) return false;
+		this.next[0] =
+			timestamp - next > this.interval ? timestamp + this.interval : next + this.interval;
 		return true;
 	}
 }

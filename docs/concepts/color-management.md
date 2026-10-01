@@ -58,15 +58,15 @@ The `colorSpace` option of the texture calls chooses: `'srgb'`, the default for 
 A strong light can make a surface many times brighter than white. The scene keeps those values in a float target, the scene color:
 
 - `rgba16float` on WebGPU. Where the device can draw into `rg11b10ufloat` and the canvas is opaque, the scene color takes that format instead, which needs half the memory.
-- `RGBA16F` on WebGL2, where the device can draw float targets with antialiasing.
+- `RGBA16F` on WebGL2, where the device can draw float targets in the anti-aliasing mode.
 
-The final pass reads each pixel of the scene color. It multiplies the color by the exposure and applies the tone mapping. It then encodes the result as sRGB and adds a little noise, called dithering, so smooth gradients show no bands. The final pass is one triangle over the canvas, with no scene work in it.
+The final pass reads each pixel of the scene color. In the FXAA anti-aliasing mode it first smooths the edges. It multiplies the color by the exposure and applies the tone mapping. It then encodes the result as sRGB and adds a little noise, called dithering, so smooth gradients show no bands. The final pass is one triangle over the canvas, with no scene work in it.
 
 ### The 8-bit path
 
-Two kinds of device cannot use antialiasing on a float target: WebGPU in compatibility mode, and WebGL2 devices that cannot draw float targets with it. There, each shader applies the exposure and the tone mapping itself, and writes into an 8-bit target. That target resolves straight into the canvas, so the frame has no final pass.
+Some devices cannot draw a float target in the anti-aliasing mode. These are WebGPU in compatibility mode with MSAA, and WebGL2 devices whose float targets fail the engine's test. There, each shader applies the exposure and the tone mapping itself, and writes into an 8-bit target. With MSAA that target resolves straight into the canvas, so the frame has no final pass. With FXAA or no anti-aliasing, the final pass reads the target and keeps its colors.
 
-`engine.capabilities.hdr` says which path the engine took. Both paths show the same colors, and differ only at the edges of objects. The 8-bit path averages the samples of an antialiased edge after tone mapping, and the HDR path before it.
+`engine.capabilities.hdr` says which path the engine took. Both paths show the same colors, and differ only at the edges of objects. With MSAA, the 8-bit path averages the samples of an edge after tone mapping, and the HDR path before it. [GPU tiers and backends](backends.md#color-and-anti-aliasing-on-each-tier) lists the path of each tier and anti-aliasing mode.
 
 ## Exposure and tone mapping
 
