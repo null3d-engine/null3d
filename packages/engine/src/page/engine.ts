@@ -425,8 +425,11 @@ const SIMD_PROBE = new Uint8Array([
 interface WorkerEvents {
 	/** A message that the sketch sent with `ctx.page.post`. */
 	sketchMessage(name: string, data: unknown): void;
-	/** A failure after the engine started. */
-	failure(error: EngineError): void;
+	/**
+	 * A failure of a thread. It ends a start that is still under way, unless `endsStart` is false:
+	 * the engine then runs on without the thread.
+	 */
+	failure(error: EngineError, endsStart?: boolean): void;
 	/** The quality preset and settings after a change, and the preset check's result. */
 	quality(update: QualityUpdate): void;
 }
@@ -592,6 +595,7 @@ function startWorkers(
 			if (Atomics.load(slots, Slot.Running) !== 0)
 				events.failure(
 					error instanceof EngineError ? error : startError(`job ${index}`, String(error)),
+					false,
 				);
 		});
 		return job;
@@ -741,9 +745,22 @@ async function startEngine(
 	};
 	const failureHandlers = new Set<(error: EngineError) => void>();
 	const reported = new Set<string>();
-	const onFailure = (error: EngineError) => {
+	/**
+	 * Ends the start when the caller cancels it, or when a thread fails before the engine has
+	 * started. A thread that fails then, such as the one that draws, leaves the start waiting for
+	 * frames that never come, and the page could never stop the engine that it never got.
+	 */
+	const start = new AbortController();
+	let starting = true;
+	const cancelStart = () => start.abort(signal?.reason);
+	signal?.addEventListener('abort', cancelStart, { once: true });
+	const onFailure = (error: EngineError, endsStart = true) => {
 		if (reported.has(error.message)) return;
 		reported.add(error.message);
+		if (starting && endsStart) {
+			start.abort(error);
+			return;
+		}
 		if (failureHandlers.size === 0) console.error(error);
 		for (const handler of failureHandlers) handler(error);
 	};
@@ -951,6 +968,8 @@ async function startEngine(
 			sketch,
 			...images,
 			fail: pageLoss,
+			fault: (error) =>
+				onFailure(new EngineError('E1404', `the drawing on the page failed: ${messageOf(error)}.`)),
 		});
 	};
 
@@ -1021,7 +1040,7 @@ async function startEngine(
 			// The page starts its core before the workers get theirs. The first core in a new shared
 			// memory fills it with the core's data, and a core that starts while another fills it
 			// waits, which the page's thread must never do.
-			const started = await startCore(build, core.module, core.memory);
+			const started = await abortable(startCore(build, core.module, core.memory), start.signal);
 			localCore = started.glue;
 			const memory = started.memory as WebAssembly.Memory;
 			wasmMemory = memory;
@@ -1061,10 +1080,15 @@ async function startEngine(
 			// numbers. The renderer starts before the setup, so a warm-up in the setup has a renderer
 			// to build its pipelines.
 			const sketchLoad = sketchModule ?? awaitLater(loadSketch(sketchUrl));
-			if (!render) localDrawing = await drawOnPage(memory, { imageTable }, localRunner);
-			await localRunner.setup(await sketchLoad);
+			if (!render)
+				localDrawing = await abortable(
+					drawOnPage(memory, { imageTable }, localRunner),
+					start.signal,
+				);
+			const setup = sketchLoad.then((sketch) => localRunner?.setup(sketch));
+			await abortable(setup, start.signal);
 			if (render) {
-				await abortable(render.ready(), signal);
+				await abortable(render.ready(), start.signal);
 				if (hold === undefined) void runPipelined(localRunner, control);
 			}
 		} else if (threads?.sketch) {
@@ -1091,16 +1115,23 @@ async function startEngine(
 				const images = new MessageChannel();
 				sketch.worker.postMessage({ ...init, imagePort: images.port1 }, [images.port1]);
 				if (render) startRenderWorker(render, images.port2);
-				else localDrawing = await drawOnPage(core.memory, { imagePort: images.port2 });
+				else
+					localDrawing = await abortable(
+						drawOnPage(core.memory, { imagePort: images.port2 }),
+						start.signal,
+					);
 			}
 			// The engine is ready once the sketch worker and the render worker are.
 			const essential = render ? [sketch, render] : [sketch];
-			await abortable(Promise.all(essential.map((w) => w.ready())), signal);
+			await abortable(Promise.all(essential.map((w) => w.ready())), start.signal);
 		}
-		signal?.throwIfAborted();
+		start.signal.throwIfAborted();
 	} catch (e) {
 		await stop();
 		throw e;
+	} finally {
+		starting = false;
+		signal?.removeEventListener('abort', cancelStart);
 	}
 
 	const engineStartMs = performance.now() - startedAt;
