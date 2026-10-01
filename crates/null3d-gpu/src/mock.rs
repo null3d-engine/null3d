@@ -70,12 +70,23 @@ struct View {
     level: u32,
 }
 
-/// The open render pass: the size of its targets, and the textures it draws into.
+/// The open render pass: the size of its targets, the textures it draws into, and the formats and
+/// sample count that its pipelines and bundles must have.
 #[derive(Clone, Copy, Debug)]
 struct Pass {
     width: u32,
     height: u32,
     targets: [Option<u32>; 3],
+    formats: Formats,
+}
+
+/// The color format, the depth format (`NONE` for none) and the sample count of a render pass's
+/// targets, which a pipeline or a bundle that draws in it must share.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct Formats {
+    color: u32,
+    depth: u32,
+    samples: u32,
 }
 
 /// A render target of a pass: the texture it draws into, and what the pass checks it against.
@@ -139,12 +150,15 @@ pub struct MockBackend {
     samplers: HashSet<u32>,
     /// Width and height of each image a test provided.
     images: HashMap<u32, (u32, u32)>,
-    render_pipelines: HashSet<u32>,
+    /// Each render pipeline, with the formats it draws into.
+    render_pipelines: HashMap<u32, Formats>,
     compute_pipelines: HashSet<u32>,
     /// The buffers and textures of each bind group.
     bind_groups: HashMap<u32, Vec<Resource>>,
-    /// The buffers and textures that each bundle's commands use.
-    bundles: HashMap<u32, Vec<Resource>>,
+    /// The buffers and textures that each bundle's commands use, and the formats it draws into.
+    bundles: HashMap<u32, (Vec<Resource>, Formats)>,
+    /// The formats of the bundle being recorded.
+    bundle_formats: Option<Formats>,
     /// The open render pass, or `None` outside one. A pass into the canvas before any
     /// `ResizeCanvas` has an unknown size, which nothing is checked against.
     pass: Option<Pass>,
@@ -415,6 +429,14 @@ impl MockBackend {
             op,
             "the binding view is 2d for one layer or 2d-array",
         )?;
+        let rg11b10 = self.caps.contains(Capabilities::RG11B10_RENDERABLE);
+        check(
+            texture.format != format::RG11B10_UFLOAT
+                || texture.usage & texture_usage::RENDER_ATTACHMENT == 0
+                || rg11b10,
+            op,
+            "drawing into rg11b10ufloat needs its capability",
+        )?;
         let transient = texture.usage & texture_usage::TRANSIENT_ATTACHMENT != 0;
         check(
             !transient
@@ -437,8 +459,10 @@ impl MockBackend {
                 )?;
                 let float16 = texture.format == format::RGBA16_FLOAT
                     && self.caps.contains(Capabilities::MSAA_FLOAT16);
+                let small_float = texture.format == format::RG11B10_UFLOAT && rg11b10;
                 check(
                     float16
+                        || small_float
                         || matches!(
                             texture.format,
                             format::CANVAS
@@ -733,6 +757,11 @@ impl MockBackend {
             width: size.width,
             height: size.height,
             targets,
+            formats: Formats {
+                color: color.map_or(format::NONE, |t| t.format),
+                depth: depth.map_or(format::NONE, |t| t.format),
+                samples: size.samples,
+            },
         });
         self.pipeline_set = false;
         self.vertex_buffer_set = false;
@@ -822,7 +851,14 @@ impl MockBackend {
                     op,
                     "a render pipeline sets known state flags",
                 )?;
-                self.render_pipelines.insert(o[0]);
+                self.render_pipelines.insert(
+                    o[0],
+                    Formats {
+                        color: o[3],
+                        depth: o[4],
+                        samples: o[5],
+                    },
+                );
             }
             Op::CreateComputePipeline => {
                 self.compute_pipelines.insert(o[0]);
@@ -832,6 +868,11 @@ impl MockBackend {
             Op::BeginBundle => {
                 self.outside_passes(op)?;
                 self.recording = Some((o[0], Vec::new()));
+                self.bundle_formats = Some(Formats {
+                    color: o[1],
+                    depth: o[2],
+                    samples: o[3],
+                });
                 self.pipeline_set = false;
                 self.vertex_buffer_set = false;
                 self.index_buffer_set = false;
@@ -841,7 +882,8 @@ impl MockBackend {
                     op,
                     needs: "a bundle",
                 })?;
-                self.bundles.insert(id, uses);
+                let formats = self.bundle_formats.take().expect("a bundle has formats");
+                self.bundles.insert(id, (uses, formats));
             }
             Op::SetPipeline => {
                 if !self.in_draw_scope() {
@@ -850,11 +892,19 @@ impl MockBackend {
                         needs: "a render pass or bundle",
                     });
                 }
-                Self::require(
-                    self.render_pipelines.contains(&o[0]),
+                let formats = *self.render_pipelines.get(&o[0]).ok_or(missing(
                     op,
                     "render pipeline",
                     o[0],
+                ))?;
+                let drawn = match self.bundle_formats {
+                    Some(bundle) => bundle,
+                    None => self.pass.expect("in a render pass").formats,
+                };
+                check(
+                    formats == drawn,
+                    op,
+                    "a pipeline draws into the formats and sample count of its pass or bundle",
                 )?;
                 self.pipeline_set = true;
             }
@@ -939,18 +989,23 @@ impl MockBackend {
                 self.draws += if op == Op::MultiDrawIndexed { o[0] } else { 1 };
             }
             Op::ExecuteBundles => {
-                if self.pass.is_none() {
+                let Some(pass) = self.pass else {
                     return Err(MockError::Outside {
                         op,
                         needs: "a render pass",
                     });
-                }
+                };
                 for &id in &o[1..1 + o[0] as usize] {
-                    let uses = self
+                    let (uses, formats) = self
                         .bundles
                         .get(&id)
                         .ok_or(missing(op, "bundle", id))?
                         .clone();
+                    check(
+                        formats == pass.formats,
+                        op,
+                        "a bundle draws into the formats and sample count of its pass",
+                    )?;
                     for resource in uses {
                         self.read_resource(op, resource)?;
                     }

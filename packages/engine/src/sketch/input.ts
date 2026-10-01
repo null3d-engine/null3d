@@ -1,7 +1,9 @@
 // ctx.input: the sketch's view of the input that the page writes into the input ring. Once per frame,
 // before onUpdate, the reader takes every event that the page wrote since the previous frame, in
 // order, and updates the state that the input calls answer from. So a key pressed and released
-// between two frames counts as both pressed and released in the next frame. Reading allocates
+// between two frames counts as both pressed and released in the next frame. The one exception is a
+// press of the pointer after its release: it starts a new drag, and the events from it on wait for
+// the next frame, so the pointer's drag in a frame never joins two drags. Reading allocates
 // nothing: the state lives in typed arrays and in objects made once. Hold mode never reads the ring,
 // so a held frame never depends on input.
 
@@ -38,7 +40,8 @@ import {
 } from '../shared/control';
 
 /**
- * The main pointer: the mouse, a pen, or the first finger that touches the canvas.
+ * The main pointer: the mouse, a pen, or the first finger that touches the canvas. A frame's drag
+ * belongs to one press: a press that follows a release in the same frame waits for the next frame.
  *
  * @category api/input
  */
@@ -282,8 +285,8 @@ export class InputReader implements Input {
 	}
 
 	/**
-	 * Takes the events the page wrote since the previous frame, for frame `frame`. Movement and wheel
-	 * scroll start again from 0.
+	 * Takes the events the page wrote since the previous frame, for frame `frame`, up to a press of
+	 * the pointer that follows its release. Movement and wheel scroll start again from 0.
 	 */
 	beginFrame(frame: number): void {
 		this.frame = frame;
@@ -307,11 +310,21 @@ export class InputReader implements Input {
 			this.releaseAll();
 			this.next = written;
 		}
+		const ints = this.control.inputInts;
+		let released = false;
 		while (this.next !== written) {
-			this.apply((this.next & RING_MASK) * INPUT_EVENT_INTS);
+			const base = (this.next & RING_MASK) * INPUT_EVENT_INTS;
+			const type = ints[base + FIELD_TYPE] as InputEventType;
+			const primary = ((ints[base + FIELD_FLAGS] as number) & FLAG_PRIMARY) !== 0;
+			// A press of the pointer after its release in this frame starts the next drag, which
+			// waits for the next frame with every event after it. Each frame's drag then belongs to
+			// one press, and two quick clicks count as two presses.
+			if (released && primary && type === EVENT_POINTER_DOWN) break;
+			this.apply(base);
+			if (primary && type === EVENT_POINTER_UP) released = true;
 			this.next = (this.next + 1) | 0;
 		}
-		Atomics.store(slots, Slot.InputRead, written);
+		Atomics.store(slots, Slot.InputRead, this.next);
 		const width = slotFloats[Slot.CanvasCssWidth] as number;
 		const height = slotFloats[Slot.CanvasCssHeight] as number;
 		pointer.ndcX = width > 0 ? (pointer.x / width) * 2 - 1 : 0;

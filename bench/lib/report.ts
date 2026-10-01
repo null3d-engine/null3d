@@ -1,5 +1,5 @@
 // Benchmark results: the comparison of null3d with three.js's faster renderer, the table of a sweep
-// of job worker counts, and a line chart as SVG. The median and spread of repeated runs of one page
+// of job worker counts, the phone scene's traces of each second, and a line chart as SVG. The median and spread of repeated runs of one page
 // come from the benchmark protocol in the command-line tool's package, which its bench command
 // shares. Everything here is pure, so the benchmark command and the runner's results share it.
 //
@@ -8,7 +8,13 @@
 // busiest thread. null3d times the sketch's update itself. three.js calls its own code from inside
 // the sketch's loop, so its own work is its frame time less the scene code, which the scene-code page
 // times alone.
-import { ms, type RunSummary, type TimedRun } from '../../packages/cli/src/protocol.js';
+import {
+	ms,
+	type RunSummary,
+	summarizeRuns,
+	type TimedRun,
+} from '../../packages/cli/src/protocol.js';
+import { summarizeTrace, type TraceSecond, type TraceSummary } from '../pages/lib/trace';
 import { SCENE_CODE } from './parity';
 
 export { median, ms, summarizeRuns } from '../../packages/cli/src/protocol.js';
@@ -23,6 +29,8 @@ export interface BenchResult extends TimedRun {
 	n: number;
 	/** null3d pages: how the engine ran, such as how many job workers it started. */
 	mode?: { jobWorkers: number };
+	/** Pages that record one: the trace of each measured second. */
+	trace?: TraceSecond[];
 }
 
 /** null3d's value of a measure against three.js's lowest value of it over its renderers. */
@@ -126,6 +134,53 @@ export interface SummaryRow {
 	/** The job workers that the page asked for with `?jobs=`, or undefined for the engine's own count. */
 	jobs?: number;
 	summary: RunSummary;
+	/** Pages that record a trace: every run's seconds, summed up. */
+	trace?: TraceSummary;
+}
+
+/**
+ * One page's row of a report from its successful runs: their summary, and the summary of their
+ * traces' seconds when the page records traces.
+ */
+export function summaryRow(
+	row: Omit<SummaryRow, 'summary' | 'trace'>,
+	results: readonly BenchResult[],
+): SummaryRow {
+	const traced = results.filter((result) => result.trace);
+	const refreshHz = results.find((result) => result.stats?.refreshHz)?.stats?.refreshHz ?? null;
+	return {
+		...row,
+		summary: summarizeRuns(results),
+		...(traced.length > 0 && {
+			trace: summarizeTrace(
+				traced.flatMap((result) => result.trace ?? []),
+				refreshHz,
+			),
+		}),
+	};
+}
+
+/**
+ * The traces of a run's pages as a Markdown table: the measured seconds, the target frame rate,
+ * the seconds that held it, the lowest rate of any second, the lowest render scale and the
+ * quality steps.
+ */
+export function traceTable(rows: readonly SummaryRow[]): string {
+	const lines = [
+		'| Scene | Page | Seconds | Target fps | Seconds at the target | Lowest fps | Lowest render scale | Quality steps |',
+		'| --- | --- | --- | --- | --- | --- | --- | --- |',
+	];
+	for (const { scene, kind, trace } of rows) {
+		if (!trace) continue;
+		const held =
+			trace.heldSeconds === null
+				? 'n/a'
+				: `${trace.heldSeconds} (${Math.round((100 * trace.heldSeconds) / Math.max(1, trace.seconds))}%)`;
+		lines.push(
+			`| ${scene} | ${kind} | ${trace.seconds} | ${trace.targetFps ?? 'n/a'} | ${held} | ${trace.lowestFps} | ${trace.lowestRenderScale} | ${trace.steps} |`,
+		);
+	}
+	return lines.join('\n');
 }
 
 /**
@@ -202,7 +257,8 @@ export function jobsTable(rows: readonly SummaryRow[]): string {
  */
 export function benchReport(rows: readonly SummaryRow[]): string[] {
 	if (rows.some((row) => row.jobs !== undefined)) return [jobsTable(rows)];
-	return [summaryTable(rows), '', ...comparisonLines(rows)];
+	const traces = rows.some((row) => row.trace) ? ['', traceTable(rows)] : [];
+	return [summaryTable(rows), '', ...comparisonLines(rows), ...traces];
 }
 
 /** three.js's pages, and the name of each renderer. */

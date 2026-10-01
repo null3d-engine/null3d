@@ -1,6 +1,6 @@
 // The timed part of a benchmark run: one frame per animation frame, a warm-up that is not measured,
 // then the measured frames. Every engine's page uses this loop, so all reports measure alike.
-import { type Percentiles, percentiles, ratePerSecond } from '@null3d/engine/stats';
+import { countPerSecond, type Percentiles, percentiles, ratePerSecond } from '@null3d/engine/stats';
 
 /** No display refreshes faster than this, so the sample buffers never fill during a run. */
 const MAX_FRAMES_PER_SECOND = 1000;
@@ -20,6 +20,8 @@ export interface FrameTimings {
 	 * can show the display's rate while the page draws far fewer frames.
 	 */
 	presentedFps: number;
+	/** Frames the page drew in each whole second of the measurement, in order. */
+	perSecond: number[];
 }
 
 /**
@@ -94,5 +96,6 @@ function finish(
 		...(update && { updateMs: percentiles(update.subarray(0, count)) }),
 		intervalMs: percentiles(intervals),
 		presentedFps: ratePerSecond(intervals) ?? 0,
+		perSecond: countPerSecond(intervals),
 	};
 }

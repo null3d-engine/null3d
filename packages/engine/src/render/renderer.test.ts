@@ -40,11 +40,21 @@ describe('the WebGL2 renderer', () => {
 				settings: {
 					antialias: false,
 					alpha: false,
+					premultipliedAlpha: true,
 					depth: false,
 					stencil: false,
 					powerPreference: 'low-power',
 				},
 			},
 		]);
+	});
+
+	it('asks for alpha on a transparent canvas', async () => {
+		const { canvas, requests } = fakeCanvas();
+		await createRenderer(canvas, {
+			tier: 'webgl2',
+			device: { transparent: true } as CoreDevice,
+		});
+		expect(requests[0]?.settings).toMatchObject({ alpha: true, premultipliedAlpha: true });
 	});
 });

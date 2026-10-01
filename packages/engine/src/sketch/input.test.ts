@@ -188,10 +188,53 @@ describe('input: the pointer', () => {
 		expect(edges(input, 'Mouse0')).toEqual({ down: false, pressed: false, released: true });
 		expect(input.pointer.buttons).toBe(2);
 		pointer(EVENT_POINTER_UP, 2, 0, 0);
+		next();
 		pointer(EVENT_POINTER_DOWN, 2, 0, 4);
 		next();
-		expect(edges(input, 'Mouse2')).toEqual({ down: false, pressed: false, released: true });
 		expect(edges(input, 'Mouse1')).toEqual({ down: true, pressed: true, released: false });
+	});
+
+	it('keeps a press that follows a release for the next frame, so a drag never joins the next', () => {
+		const { input, next, pointer, key, views } = setup();
+		pointer(EVENT_POINTER_DOWN, 0, 0, 1);
+		pointer(EVENT_POINTER_MOVE, 10, 0, 1);
+		next();
+		// The end of a left drag, and a whole right drag with a key after it, before the next frame.
+		pointer(EVENT_POINTER_MOVE, 14, 0, 1);
+		pointer(EVENT_POINTER_UP, 14, 0, 0);
+		pointer(EVENT_POINTER_MOVE, 20, 5);
+		pointer(EVENT_POINTER_DOWN, 20, 5, 2);
+		pointer(EVENT_POINTER_MOVE, 30, 9, 2);
+		pointer(EVENT_POINTER_UP, 30, 9, 0);
+		key(EVENT_KEY_DOWN, 'Space');
+		next();
+		expect(input.pointer).toMatchObject({ x: 20, y: 5, buttons: 0, dragDx: 4, dragDy: 0 });
+		expect(edges(input, 'Mouse0')).toEqual({ down: false, pressed: false, released: true });
+		expect(edges(input, 'Mouse2')).toEqual({ down: false, pressed: false, released: false });
+		expect(input.isDown('Space')).toBe(false);
+		// The page sees that the rest waits.
+		expect(Atomics.load(views.slots, Slot.InputRead)).toBe(5);
+		next();
+		expect(input.pointer).toMatchObject({ x: 30, y: 9, buttons: 0, dragDx: 10, dragDy: 4 });
+		expect(edges(input, 'Mouse2')).toEqual({ down: false, pressed: true, released: true });
+		expect(edges(input, 'Space')).toEqual({ down: true, pressed: true, released: false });
+		// Two clicks between two frames count as two presses, one in each of the next two frames.
+		for (let click = 0; click < 2; click++) {
+			pointer(EVENT_POINTER_DOWN, 30, 9, 1);
+			pointer(EVENT_POINTER_UP, 30, 9, 0);
+		}
+		for (let frame = 0; frame < 2; frame++) {
+			next();
+			expect(edges(input, 'Mouse0')).toEqual({ down: false, pressed: true, released: true });
+		}
+		// A finger that lands while another stays down is no new drag of the pointer, and lands at once.
+		pointer(EVENT_POINTER_DOWN, 50, 50, 1, 7, PRIMARY_TOUCH);
+		pointer(EVENT_POINTER_DOWN, 90, 50, 1, 9, FLAG_TOUCH);
+		next();
+		pointer(EVENT_POINTER_UP, 50, 50, 0, 7, PRIMARY_TOUCH);
+		pointer(EVENT_POINTER_DOWN, 80, 50, 1, 8, FLAG_TOUCH);
+		next();
+		expect(input.touches.map((touch) => touch.id)).toEqual([9, 8]);
 	});
 
 	it('counts the movement made while a button is held as a drag, from the press to the release', () => {

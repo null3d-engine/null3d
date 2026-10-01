@@ -7,6 +7,276 @@ import type { DeviceShaders } from './shaders';
 /** The GLSL builds of the shaders that load by device, with DRAW_INDEX. */
 export const SHADERS: DeviceShaders = {
 	cull: {},
+	final: {
+		webgl2: {
+			permutation: 0,
+			wgsl: null,
+			glsl: {
+				main: {
+					vertex: {
+						source: `#version 300 es
+uniform vec2 null3d_depth_mapping;
+
+precision highp float;
+precision highp int;
+
+struct Output {
+    float exposure;
+    uint tone_mapping;
+    uint spare_a;
+    uint spare_b;
+};
+const mat3x3 ACES_INPUT = mat3x3(vec3(0.59719, 0.076, 0.0284), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
+const mat3x3 ACES_OUTPUT = mat3x3(vec3(1.60475, -0.10208, -0.00327), vec3(-0.53108, 1.10813, -0.07276), vec3(-0.07367, -0.00605, 1.07602));
+const mat3x3 LINEAR_SRGB_TO_LINEAR_REC2020_ = mat3x3(vec3(0.6274, 0.0691, 0.0164), vec3(0.3293, 0.9195, 0.088), vec3(0.0433, 0.0113, 0.8956));
+const mat3x3 AGX_INSET = mat3x3(vec3(0.85662717, 0.13731897, 0.11189821), vec3(0.09512124, 0.761242, 0.076799415), vec3(0.048251607, 0.10143904, 0.81130236));
+const mat3x3 AGX_OUTSET = mat3x3(vec3(1.1271006, -0.14132977, -0.14132977), vec3(-0.11060664, 1.1578237, -0.11060664), vec3(-0.016493939, -0.016493939, 1.2519364));
+const mat3x3 LINEAR_REC2020_TO_LINEAR_SRGB = mat3x3(vec3(1.6605, -0.1246, -0.0182), vec3(-0.5876, 1.1329, -0.1006), vec3(-0.0728, -0.0083, 1.1187));
+const uint AGX = 1u;
+const uint NEUTRAL = 2u;
+const uint NONE = 3u;
+
+
+vec3 linear_to_srgb(vec3 c) {
+    vec3 low = (c * 12.92);
+    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
+    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
+}
+
+vec3 rrt_and_odt_fit(vec3 v) {
+    vec3 a = ((v * (v + vec3(0.0245786))) - vec3(9.0537e-5));
+    vec3 b = ((v * ((0.983729 * v) + vec3(0.432951))) + vec3(0.238081));
+    return (a / b);
+}
+
+vec3 tone_map_aces(vec3 c_1) {
+    vec3 _e6 = rrt_and_odt_fit((ACES_INPUT * (c_1 / vec3(0.6))));
+    return clamp((ACES_OUTPUT * _e6), vec3(0.0), vec3(1.0));
+}
+
+vec3 agx_contrast(vec3 x) {
+    vec3 x2_ = (x * x);
+    vec3 x4_ = (x2_ * x2_);
+    return ((((((((15.5 * x4_) * x2_) - ((40.14 * x4_) * x)) + (31.96 * x4_)) - ((6.868 * x2_) * x)) + (0.4298 * x2_)) + (0.1191 * x)) - vec3(0.00232));
+}
+
+vec3 tone_map_agx(vec3 c_2) {
+    vec3 inset = (AGX_INSET * (LINEAR_SRGB_TO_LINEAR_REC2020_ * c_2));
+    vec3 logged = ((log2(max(inset, vec3(1e-10))) - vec3(-12.47393)) / vec3(16.5));
+    vec3 _e16 = agx_contrast(clamp(logged, vec3(0.0), vec3(1.0)));
+    vec3 curved = (AGX_OUTSET * _e16);
+    vec3 rec2020_ = pow(max(curved, vec3(0.0)), vec3(2.2));
+    return clamp((LINEAR_REC2020_TO_LINEAR_SRGB * rec2020_), vec3(0.0), vec3(1.0));
+}
+
+vec3 tone_map_neutral(vec3 c_3) {
+    float x_1 = min(c_3.x, min(c_3.y, c_3.z));
+    float toe = ((x_1 < 0.08) ? (x_1 - ((6.25 * x_1) * x_1)) : 0.04);
+    vec3 shifted = (c_3 - vec3(toe));
+    float peak = max(shifted.x, max(shifted.y, shifted.z));
+    if ((peak < 0.76)) {
+        return shifted;
+    }
+    float d = (1.0 - 0.76);
+    float new_peak = (1.0 - ((d * d) / ((peak + d) - 0.76)));
+    float g = (1.0 - (1.0 / ((0.15 * (peak - new_peak)) + 1.0)));
+    return mix((shifted * (new_peak / peak)), vec3(new_peak), g);
+}
+
+uint pcg(uint v_1) {
+    uint state = ((v_1 * 747796405u) + 2891336453u);
+    uint word = (((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u);
+    return ((word >> 22u) ^ word);
+}
+
+vec3 tone_map(vec3 c_4, Output settings) {
+    vec3 exposed = (c_4 * settings.exposure);
+    if ((settings.tone_mapping == AGX)) {
+        vec3 _e7 = tone_map_agx(exposed);
+        return _e7;
+    }
+    if ((settings.tone_mapping == NEUTRAL)) {
+        vec3 _e11 = tone_map_neutral(exposed);
+        return _e11;
+    }
+    if ((settings.tone_mapping == NONE)) {
+        return clamp(exposed, vec3(0.0), vec3(1.0));
+    }
+    vec3 _e16 = tone_map_aces(exposed);
+    return _e16;
+}
+
+float pixel_noise(vec2 pixel) {
+    uint _e5 = pcg(uint(pixel.y));
+    uint _e7 = pcg((uint(pixel.x) + _e5));
+    return (float((_e7 >> 8u)) / 16777216.0);
+}
+
+vec3 encode(vec3 c_5, vec2 pixel_1) {
+    float _e1 = pixel_noise(pixel_1);
+    float dither = ((_e1 - 0.5) / 255.0);
+    vec3 _e7 = linear_to_srgb(c_5);
+    return (_e7 + vec3(dither));
+}
+
+void main() {
+    uint vertex = uint(gl_VertexID);
+    float x_2 = ((float(((vertex << 1u) & 2u)) * 2.0) - 1.0);
+    float y = ((float((vertex & 2u)) * 2.0) - 1.0);
+    gl_Position = vec4(x_2, y, 0.5, 1.0);
+    gl_Position.z = gl_Position.z * null3d_depth_mapping.x + gl_Position.w * null3d_depth_mapping.y;
+    return;
+}
+`,
+						uniformBlocks: [],
+						textures: [],
+					},
+					fragment: {
+						source: `#version 300 es
+
+precision highp float;
+precision highp int;
+
+struct Output {
+    float exposure;
+    uint tone_mapping;
+    uint spare_a;
+    uint spare_b;
+};
+const mat3x3 ACES_INPUT = mat3x3(vec3(0.59719, 0.076, 0.0284), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
+const mat3x3 ACES_OUTPUT = mat3x3(vec3(1.60475, -0.10208, -0.00327), vec3(-0.53108, 1.10813, -0.07276), vec3(-0.07367, -0.00605, 1.07602));
+const mat3x3 LINEAR_SRGB_TO_LINEAR_REC2020_ = mat3x3(vec3(0.6274, 0.0691, 0.0164), vec3(0.3293, 0.9195, 0.088), vec3(0.0433, 0.0113, 0.8956));
+const mat3x3 AGX_INSET = mat3x3(vec3(0.85662717, 0.13731897, 0.11189821), vec3(0.09512124, 0.761242, 0.076799415), vec3(0.048251607, 0.10143904, 0.81130236));
+const mat3x3 AGX_OUTSET = mat3x3(vec3(1.1271006, -0.14132977, -0.14132977), vec3(-0.11060664, 1.1578237, -0.11060664), vec3(-0.016493939, -0.016493939, 1.2519364));
+const mat3x3 LINEAR_REC2020_TO_LINEAR_SRGB = mat3x3(vec3(1.6605, -0.1246, -0.0182), vec3(-0.5876, 1.1329, -0.1006), vec3(-0.0728, -0.0083, 1.1187));
+const uint AGX = 1u;
+const uint NEUTRAL = 2u;
+const uint NONE = 3u;
+
+layout(std140) uniform Output_block_0Fragment { Output _group_0_binding_0_fs; };
+
+uniform highp sampler2D _group_0_binding_1_fs;
+
+layout(location = 0) out vec4 _fs2p_location0;
+
+vec3 linear_to_srgb(vec3 c) {
+    vec3 low = (c * 12.92);
+    vec3 high = ((1.055 * pow(c, vec3(0.41666666))) - vec3(0.055));
+    return mix(high, low, lessThanEqual(c, vec3(0.0031308)));
+}
+
+vec3 rrt_and_odt_fit(vec3 v) {
+    vec3 a = ((v * (v + vec3(0.0245786))) - vec3(9.0537e-5));
+    vec3 b = ((v * ((0.983729 * v) + vec3(0.432951))) + vec3(0.238081));
+    return (a / b);
+}
+
+vec3 tone_map_aces(vec3 c_1) {
+    vec3 _e6 = rrt_and_odt_fit((ACES_INPUT * (c_1 / vec3(0.6))));
+    return clamp((ACES_OUTPUT * _e6), vec3(0.0), vec3(1.0));
+}
+
+vec3 agx_contrast(vec3 x) {
+    vec3 x2_ = (x * x);
+    vec3 x4_ = (x2_ * x2_);
+    return ((((((((15.5 * x4_) * x2_) - ((40.14 * x4_) * x)) + (31.96 * x4_)) - ((6.868 * x2_) * x)) + (0.4298 * x2_)) + (0.1191 * x)) - vec3(0.00232));
+}
+
+vec3 tone_map_agx(vec3 c_2) {
+    vec3 inset = (AGX_INSET * (LINEAR_SRGB_TO_LINEAR_REC2020_ * c_2));
+    vec3 logged = ((log2(max(inset, vec3(1e-10))) - vec3(-12.47393)) / vec3(16.5));
+    vec3 _e16 = agx_contrast(clamp(logged, vec3(0.0), vec3(1.0)));
+    vec3 curved = (AGX_OUTSET * _e16);
+    vec3 rec2020_ = pow(max(curved, vec3(0.0)), vec3(2.2));
+    return clamp((LINEAR_REC2020_TO_LINEAR_SRGB * rec2020_), vec3(0.0), vec3(1.0));
+}
+
+vec3 tone_map_neutral(vec3 c_3) {
+    float x_1 = min(c_3.x, min(c_3.y, c_3.z));
+    float toe = ((x_1 < 0.08) ? (x_1 - ((6.25 * x_1) * x_1)) : 0.04);
+    vec3 shifted = (c_3 - vec3(toe));
+    float peak = max(shifted.x, max(shifted.y, shifted.z));
+    if ((peak < 0.76)) {
+        return shifted;
+    }
+    float d = (1.0 - 0.76);
+    float new_peak = (1.0 - ((d * d) / ((peak + d) - 0.76)));
+    float g = (1.0 - (1.0 / ((0.15 * (peak - new_peak)) + 1.0)));
+    return mix((shifted * (new_peak / peak)), vec3(new_peak), g);
+}
+
+uint pcg(uint v_1) {
+    uint state = ((v_1 * 747796405u) + 2891336453u);
+    uint word = (((state >> ((state >> 28u) + 4u)) ^ state) * 277803737u);
+    return ((word >> 22u) ^ word);
+}
+
+vec3 tone_map(vec3 c_4, Output settings) {
+    vec3 exposed = (c_4 * settings.exposure);
+    if ((settings.tone_mapping == AGX)) {
+        vec3 _e7 = tone_map_agx(exposed);
+        return _e7;
+    }
+    if ((settings.tone_mapping == NEUTRAL)) {
+        vec3 _e11 = tone_map_neutral(exposed);
+        return _e11;
+    }
+    if ((settings.tone_mapping == NONE)) {
+        return clamp(exposed, vec3(0.0), vec3(1.0));
+    }
+    vec3 _e16 = tone_map_aces(exposed);
+    return _e16;
+}
+
+float pixel_noise(vec2 pixel) {
+    uint _e5 = pcg(uint(pixel.y));
+    uint _e7 = pcg((uint(pixel.x) + _e5));
+    return (float((_e7 >> 8u)) / 16777216.0);
+}
+
+vec3 encode(vec3 c_5, vec2 pixel_1) {
+    float _e1 = pixel_noise(pixel_1);
+    float dither = ((_e1 - 0.5) / 255.0);
+    vec3 _e7 = linear_to_srgb(c_5);
+    return (_e7 + vec3(dither));
+}
+
+void main() {
+    vec4 position = gl_FragCoord;
+    vec4 texel = texelFetch(_group_0_binding_1_fs, ivec2(position.xy), 0);
+    float coverage = texel.w;
+    if ((coverage <= 0.0)) {
+        _fs2p_location0 = vec4(0.0);
+        return;
+    }
+    Output _e15 = _group_0_binding_0_fs;
+    vec3 _e16 = tone_map((texel.xyz / vec3(coverage)), _e15);
+    vec3 _e18 = encode(_e16, position.xy);
+    vec3 encoded = clamp(_e18, vec3(0.0), vec3(1.0));
+    _fs2p_location0 = vec4((encoded * coverage), coverage);
+    return;
+}
+`,
+						uniformBlocks: [
+							{
+								name: 'Output_block_0Fragment',
+								group: 0,
+								binding: 0,
+							},
+						],
+						textures: [
+							{
+								name: '_group_0_binding_1_fs',
+								group: 0,
+								binding: 1,
+								sampler: null,
+							},
+						],
+					},
+				},
+			},
+		},
+	},
 	lit: {
 		webgl2_draw_index: {
 			permutation: 1,
@@ -23,6 +293,12 @@ precision highp int;
 
 uniform uint naga_vs_first_instance;
 
+struct Output {
+    float exposure;
+    uint tone_mapping;
+    uint spare_a;
+    uint spare_b;
+};
 struct Fog {
     vec3 color;
     uint kind;
@@ -47,6 +323,7 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Output output_;
     Fog fog;
     vec4 clock;
     vec4 camera_world;
@@ -118,6 +395,12 @@ struct Surface {
     float occlusion;
     vec3 irradiance;
 };
+const mat3x3 ACES_INPUT = mat3x3(vec3(0.59719, 0.076, 0.0284), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
+const mat3x3 ACES_OUTPUT = mat3x3(vec3(1.60475, -0.10208, -0.00327), vec3(-0.53108, 1.10813, -0.07276), vec3(-0.07367, -0.00605, 1.07602));
+const mat3x3 LINEAR_SRGB_TO_LINEAR_REC2020_ = mat3x3(vec3(0.6274, 0.0691, 0.0164), vec3(0.3293, 0.9195, 0.088), vec3(0.0433, 0.0113, 0.8956));
+const mat3x3 AGX_INSET = mat3x3(vec3(0.85662717, 0.13731897, 0.11189821), vec3(0.09512124, 0.761242, 0.076799415), vec3(0.048251607, 0.10143904, 0.81130236));
+const mat3x3 AGX_OUTSET = mat3x3(vec3(1.1271006, -0.14132977, -0.14132977), vec3(-0.11060664, 1.1578237, -0.11060664), vec3(-0.016493939, -0.016493939, 1.2519364));
+const mat3x3 LINEAR_REC2020_TO_LINEAR_SRGB = mat3x3(vec3(1.6605, -0.1246, -0.0182), vec3(-0.5876, 1.1329, -0.1006), vec3(-0.0728, -0.0083, 1.1187));
 const uint LINEAR = 1u;
 const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
@@ -183,9 +466,9 @@ vec3 transform_point(Transform t, vec3 p) {
 vec3 transform_normal(Transform t_1, vec3 n) {
     vec3 a = t_1.x.xyz;
     vec3 b = t_1.y.xyz;
-    vec3 c_3 = t_1.z.xyz;
-    vec3 bc = cross(b, c_3);
-    vec3 ca = cross(c_3, a);
+    vec3 c_4 = t_1.z.xyz;
+    vec3 bc = cross(b, c_4);
+    vec3 ca = cross(c_4, a);
     vec3 ab = cross(a, b);
     float facing = ((dot(a, bc) >= 0.0) ? 1.0 : -1.0);
     return normalize((vec3(dot(bc, n), dot(ca, n), dot(ab, n)) * facing));
@@ -195,12 +478,16 @@ vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
     return (view_proj * vec4(relative_position_2, 1.0));
 }
 
-vec3 fogged(vec3 c_1, vec3 relative, Material m_1) {
+vec4 finish_null3d_tonemap(vec3 c_1, vec2 pixel, Output settings) {
+    return vec4(c_1, 1.0);
+}
+
+vec3 fogged(vec3 c_2, vec3 relative, Material m_1) {
     bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
     vec3 _e11 = _group_0_binding_0_vs.fog.color;
     Fog _e14 = _group_0_binding_0_vs.fog;
     float _e16 = fog_factor(_e14, relative);
-    vec3 _e20 = apply_fog(c_1, _e11, (fog_on ? _e16 : 0.0));
+    vec3 _e20 = apply_fog(c_2, _e11, (fog_on ? _e16 : 0.0));
     return _e20;
 }
 
@@ -282,6 +569,12 @@ vec3 world_normal(Instance found_3, vec3 normal) {
     return _e3;
 }
 
+vec4 finish_null3d_mesh(vec3 c_3, vec2 pixel_1) {
+    Output _e2 = _group_0_binding_0_vs.output_;
+    vec4 _e5 = finish_null3d_tonemap(c_3, pixel_1, _e2);
+    return _e5;
+}
+
 vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
     return (vec3(1.0) + (f0_ * ((1.0 / (dfg.x + dfg.y)) - 1.0)));
 }
@@ -357,12 +650,6 @@ vec3 indirect_diffuse(PbrMaterial m_4, vec3 irradiance, vec2 dfg_2) {
     Scattering _e4 = multiscattering(m_4.specular, m_4.specular_grazing, dfg_2);
     vec3 _e6 = brdf_lambert(m_4.diffuse);
     return ((irradiance * _e6) * ((vec3(1.0) - _e4.single) - _e4.multi));
-}
-
-vec3 linear_to_srgb(vec3 c_2) {
-    vec3 low = (c_2 * 12.92);
-    vec3 high = ((1.055 * pow(c_2, vec3(0.41666666))) - vec3(0.055));
-    return mix(high, low, lessThanEqual(c_2, vec3(0.0031308)));
 }
 
 vec3 light_surface(PbrMaterial m_5, vec3 normal_3, vec3 to_view_2, vec2 dfg_3, vec3 extra, float occlusion) {
@@ -447,6 +734,12 @@ void main() {
 precision highp float;
 precision highp int;
 
+struct Output {
+    float exposure;
+    uint tone_mapping;
+    uint spare_a;
+    uint spare_b;
+};
 struct Fog {
     vec3 color;
     uint kind;
@@ -471,6 +764,7 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Output output_;
     Fog fog;
     vec4 clock;
     vec4 camera_world;
@@ -542,6 +836,12 @@ struct Surface {
     float occlusion;
     vec3 irradiance;
 };
+const mat3x3 ACES_INPUT = mat3x3(vec3(0.59719, 0.076, 0.0284), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
+const mat3x3 ACES_OUTPUT = mat3x3(vec3(1.60475, -0.10208, -0.00327), vec3(-0.53108, 1.10813, -0.07276), vec3(-0.07367, -0.00605, 1.07602));
+const mat3x3 LINEAR_SRGB_TO_LINEAR_REC2020_ = mat3x3(vec3(0.6274, 0.0691, 0.0164), vec3(0.3293, 0.9195, 0.088), vec3(0.0433, 0.0113, 0.8956));
+const mat3x3 AGX_INSET = mat3x3(vec3(0.85662717, 0.13731897, 0.11189821), vec3(0.09512124, 0.761242, 0.076799415), vec3(0.048251607, 0.10143904, 0.81130236));
+const mat3x3 AGX_OUTSET = mat3x3(vec3(1.1271006, -0.14132977, -0.14132977), vec3(-0.11060664, 1.1578237, -0.11060664), vec3(-0.016493939, -0.016493939, 1.2519364));
+const mat3x3 LINEAR_REC2020_TO_LINEAR_SRGB = mat3x3(vec3(1.6605, -0.1246, -0.0182), vec3(-0.5876, 1.1329, -0.1006), vec3(-0.0728, -0.0083, 1.1187));
 const uint LINEAR = 1u;
 const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
@@ -600,9 +900,9 @@ vec3 transform_point(Transform t, vec3 p) {
 vec3 transform_normal(Transform t_1, vec3 n) {
     vec3 a = t_1.x.xyz;
     vec3 b = t_1.y.xyz;
-    vec3 c_3 = t_1.z.xyz;
-    vec3 bc = cross(b, c_3);
-    vec3 ca = cross(c_3, a);
+    vec3 c_4 = t_1.z.xyz;
+    vec3 bc = cross(b, c_4);
+    vec3 ca = cross(c_4, a);
     vec3 ab = cross(a, b);
     float facing = ((dot(a, bc) >= 0.0) ? 1.0 : -1.0);
     return normalize((vec3(dot(bc, n), dot(ca, n), dot(ab, n)) * facing));
@@ -610,6 +910,10 @@ vec3 transform_normal(Transform t_1, vec3 n) {
 
 vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
     return (view_proj * vec4(relative_position_2, 1.0));
+}
+
+vec4 finish_null3d_tonemap(vec3 c_1, vec2 pixel, Output settings) {
+    return vec4(c_1, 1.0);
 }
 
 Material material_of(uint id) {
@@ -634,12 +938,12 @@ Material material_of(uint id) {
     return _e50;
 }
 
-vec3 fogged(vec3 c_1, vec3 relative, Material m_1) {
+vec3 fogged(vec3 c_2, vec3 relative, Material m_1) {
     bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
     vec3 _e11 = _group_0_binding_0_fs.fog.color;
     Fog _e14 = _group_0_binding_0_fs.fog;
     float _e16 = fog_factor(_e14, relative);
-    vec3 _e20 = apply_fog(c_1, _e11, (fog_on ? _e16 : 0.0));
+    vec3 _e20 = apply_fog(c_2, _e11, (fog_on ? _e16 : 0.0));
     return _e20;
 }
 
@@ -668,6 +972,12 @@ vec3 world_normal(Instance found_3, vec3 normal) {
     return _e3;
 }
 
+vec4 finish_null3d_mesh(vec3 c_3, vec2 pixel_1) {
+    Output _e2 = _group_0_binding_0_fs.output_;
+    vec4 _e5 = finish_null3d_tonemap(c_3, pixel_1, _e2);
+    return _e5;
+}
+
 vec2 dfg_lut(float n_dot_v, float roughness) {
     vec2 size = vec2(uvec2(textureSize(_group_0_binding_3_fs, 0).xy));
     vec2 at = clamp(((vec2(roughness, n_dot_v) * size) - vec2(0.5)), vec2(0.0), (size - vec2(1.0)));
@@ -679,10 +989,10 @@ vec2 dfg_lut(float n_dot_v, float roughness) {
     vec4 _e36 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(high.x, low.y)), 0);
     vec2 b_1 = _e36.xy;
     vec4 _e43 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(low.x, high.y)), 0);
-    vec2 c_4 = _e43.xy;
+    vec2 c_5 = _e43.xy;
     vec4 _e47 = texelFetch(_group_0_binding_3_fs, ivec2(high), 0);
     vec2 d = _e47.xy;
-    return mix(mix(a_1, b_1, t_2.x), mix(c_4, d, t_2.x), t_2.y);
+    return mix(mix(a_1, b_1, t_2.x), mix(c_5, d, t_2.x), t_2.y);
 }
 
 vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
@@ -762,12 +1072,6 @@ vec3 indirect_diffuse(PbrMaterial m_4, vec3 irradiance, vec2 dfg_2) {
     return ((irradiance * _e6) * ((vec3(1.0) - _e4.single) - _e4.multi));
 }
 
-vec3 linear_to_srgb(vec3 c_2) {
-    vec3 low_1 = (c_2 * 12.92);
-    vec3 high_1 = ((1.055 * pow(c_2, vec3(0.41666666))) - vec3(0.055));
-    return mix(high_1, low_1, lessThanEqual(c_2, vec3(0.0031308)));
-}
-
 Surface defaultSurface(SurfaceInput input_1) {
     Surface s = Surface(vec3(0.0), 0.0, 0.0, 0.0, vec3(0.0), vec3(0.0), 0.0, vec3(0.0));
     Material m_6 = material_row;
@@ -793,7 +1097,7 @@ vec3 light_surface(PbrMaterial m_5, vec3 normal_3, vec3 to_view_2, vec2 dfg_3, v
     return ((_e15.diffuse + _e15.specular) + (_e22 * occlusion));
 }
 
-vec4 shade(Surface s_1, SurfaceInput input_2) {
+vec4 shade(Surface s_1, SurfaceInput input_2, vec2 pixel_2) {
     vec3 normal_4 = normalize(s_1.normal);
     vec3 _e5 = dFdx(input_2.normal);
     vec3 _e8 = dFdy(input_2.normal);
@@ -806,8 +1110,8 @@ vec4 shade(Surface s_1, SurfaceInput input_2) {
     vec3 outgoing = (_e28 + s_1.emissive);
     Material _e33 = material_row;
     vec3 _e34 = fogged(outgoing, input_2.relativePosition, _e33);
-    vec3 _e35 = linear_to_srgb(_e34);
-    return vec4(_e35, 1.0);
+    vec4 _e36 = finish_null3d_mesh(_e34, pixel_2);
+    return _e36;
 }
 
 void main() {
@@ -833,8 +1137,8 @@ void main() {
     SurfaceInput _e52 = input_;
     Surface _e53 = defaultSurface(_e52);
     SurfaceInput _e54 = input_;
-    vec4 _e55 = shade(_e53, _e54);
-    _fs2p_location0 = _e55;
+    vec4 _e57 = shade(_e53, _e54, in_.clip.xy);
+    _fs2p_location0 = _e57;
     return;
 }
 `,
@@ -878,6 +1182,12 @@ precision highp int;
 
 uniform uint naga_vs_first_instance;
 
+struct Output {
+    float exposure;
+    uint tone_mapping;
+    uint spare_a;
+    uint spare_b;
+};
 struct Fog {
     vec3 color;
     uint kind;
@@ -902,6 +1212,7 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Output output_;
     Fog fog;
     vec4 clock;
     vec4 camera_world;
@@ -973,6 +1284,12 @@ struct Surface {
     float occlusion;
     vec3 irradiance;
 };
+const mat3x3 ACES_INPUT = mat3x3(vec3(0.59719, 0.076, 0.0284), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
+const mat3x3 ACES_OUTPUT = mat3x3(vec3(1.60475, -0.10208, -0.00327), vec3(-0.53108, 1.10813, -0.07276), vec3(-0.07367, -0.00605, 1.07602));
+const mat3x3 LINEAR_SRGB_TO_LINEAR_REC2020_ = mat3x3(vec3(0.6274, 0.0691, 0.0164), vec3(0.3293, 0.9195, 0.088), vec3(0.0433, 0.0113, 0.8956));
+const mat3x3 AGX_INSET = mat3x3(vec3(0.85662717, 0.13731897, 0.11189821), vec3(0.09512124, 0.761242, 0.076799415), vec3(0.048251607, 0.10143904, 0.81130236));
+const mat3x3 AGX_OUTSET = mat3x3(vec3(1.1271006, -0.14132977, -0.14132977), vec3(-0.11060664, 1.1578237, -0.11060664), vec3(-0.016493939, -0.016493939, 1.2519364));
+const mat3x3 LINEAR_REC2020_TO_LINEAR_SRGB = mat3x3(vec3(1.6605, -0.1246, -0.0182), vec3(-0.5876, 1.1329, -0.1006), vec3(-0.0728, -0.0083, 1.1187));
 const uint LINEAR = 1u;
 const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
@@ -1038,9 +1355,9 @@ vec3 transform_point(Transform t, vec3 p) {
 vec3 transform_normal(Transform t_1, vec3 n) {
     vec3 a = t_1.x.xyz;
     vec3 b = t_1.y.xyz;
-    vec3 c_3 = t_1.z.xyz;
-    vec3 bc = cross(b, c_3);
-    vec3 ca = cross(c_3, a);
+    vec3 c_4 = t_1.z.xyz;
+    vec3 bc = cross(b, c_4);
+    vec3 ca = cross(c_4, a);
     vec3 ab = cross(a, b);
     float facing = ((dot(a, bc) >= 0.0) ? 1.0 : -1.0);
     return normalize((vec3(dot(bc, n), dot(ca, n), dot(ab, n)) * facing));
@@ -1050,12 +1367,16 @@ vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
     return (view_proj * vec4(relative_position_2, 1.0));
 }
 
-vec3 fogged(vec3 c_1, vec3 relative, Material m_1) {
+vec4 finish_null3d_tonemap(vec3 c_1, vec2 pixel, Output settings) {
+    return vec4(c_1, 1.0);
+}
+
+vec3 fogged(vec3 c_2, vec3 relative, Material m_1) {
     bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
     vec3 _e11 = _group_0_binding_0_vs.fog.color;
     Fog _e14 = _group_0_binding_0_vs.fog;
     float _e16 = fog_factor(_e14, relative);
-    vec3 _e20 = apply_fog(c_1, _e11, (fog_on ? _e16 : 0.0));
+    vec3 _e20 = apply_fog(c_2, _e11, (fog_on ? _e16 : 0.0));
     return _e20;
 }
 
@@ -1137,6 +1458,12 @@ vec3 world_normal(Instance found_3, vec3 normal) {
     return _e3;
 }
 
+vec4 finish_null3d_mesh(vec3 c_3, vec2 pixel_1) {
+    Output _e2 = _group_0_binding_0_vs.output_;
+    vec4 _e5 = finish_null3d_tonemap(c_3, pixel_1, _e2);
+    return _e5;
+}
+
 vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
     return (vec3(1.0) + (f0_ * ((1.0 / (dfg.x + dfg.y)) - 1.0)));
 }
@@ -1212,12 +1539,6 @@ vec3 indirect_diffuse(PbrMaterial m_4, vec3 irradiance, vec2 dfg_2) {
     Scattering _e4 = multiscattering(m_4.specular, m_4.specular_grazing, dfg_2);
     vec3 _e6 = brdf_lambert(m_4.diffuse);
     return ((irradiance * _e6) * ((vec3(1.0) - _e4.single) - _e4.multi));
-}
-
-vec3 linear_to_srgb(vec3 c_2) {
-    vec3 low = (c_2 * 12.92);
-    vec3 high = ((1.055 * pow(c_2, vec3(0.41666666))) - vec3(0.055));
-    return mix(high, low, lessThanEqual(c_2, vec3(0.0031308)));
 }
 
 vec3 light_surface(PbrMaterial m_5, vec3 normal_3, vec3 to_view_2, vec2 dfg_3, vec3 extra, float occlusion) {
@@ -1302,6 +1623,12 @@ void main() {
 precision highp float;
 precision highp int;
 
+struct Output {
+    float exposure;
+    uint tone_mapping;
+    uint spare_a;
+    uint spare_b;
+};
 struct Fog {
     vec3 color;
     uint kind;
@@ -1326,6 +1653,7 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Output output_;
     Fog fog;
     vec4 clock;
     vec4 camera_world;
@@ -1397,6 +1725,12 @@ struct Surface {
     float occlusion;
     vec3 irradiance;
 };
+const mat3x3 ACES_INPUT = mat3x3(vec3(0.59719, 0.076, 0.0284), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
+const mat3x3 ACES_OUTPUT = mat3x3(vec3(1.60475, -0.10208, -0.00327), vec3(-0.53108, 1.10813, -0.07276), vec3(-0.07367, -0.00605, 1.07602));
+const mat3x3 LINEAR_SRGB_TO_LINEAR_REC2020_ = mat3x3(vec3(0.6274, 0.0691, 0.0164), vec3(0.3293, 0.9195, 0.088), vec3(0.0433, 0.0113, 0.8956));
+const mat3x3 AGX_INSET = mat3x3(vec3(0.85662717, 0.13731897, 0.11189821), vec3(0.09512124, 0.761242, 0.076799415), vec3(0.048251607, 0.10143904, 0.81130236));
+const mat3x3 AGX_OUTSET = mat3x3(vec3(1.1271006, -0.14132977, -0.14132977), vec3(-0.11060664, 1.1578237, -0.11060664), vec3(-0.016493939, -0.016493939, 1.2519364));
+const mat3x3 LINEAR_REC2020_TO_LINEAR_SRGB = mat3x3(vec3(1.6605, -0.1246, -0.0182), vec3(-0.5876, 1.1329, -0.1006), vec3(-0.0728, -0.0083, 1.1187));
 const uint LINEAR = 1u;
 const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
@@ -1455,9 +1789,9 @@ vec3 transform_point(Transform t, vec3 p) {
 vec3 transform_normal(Transform t_1, vec3 n) {
     vec3 a = t_1.x.xyz;
     vec3 b = t_1.y.xyz;
-    vec3 c_3 = t_1.z.xyz;
-    vec3 bc = cross(b, c_3);
-    vec3 ca = cross(c_3, a);
+    vec3 c_4 = t_1.z.xyz;
+    vec3 bc = cross(b, c_4);
+    vec3 ca = cross(c_4, a);
     vec3 ab = cross(a, b);
     float facing = ((dot(a, bc) >= 0.0) ? 1.0 : -1.0);
     return normalize((vec3(dot(bc, n), dot(ca, n), dot(ab, n)) * facing));
@@ -1465,6 +1799,10 @@ vec3 transform_normal(Transform t_1, vec3 n) {
 
 vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
     return (view_proj * vec4(relative_position_2, 1.0));
+}
+
+vec4 finish_null3d_tonemap(vec3 c_1, vec2 pixel, Output settings) {
+    return vec4(c_1, 1.0);
 }
 
 Material material_of(uint id) {
@@ -1489,12 +1827,12 @@ Material material_of(uint id) {
     return _e50;
 }
 
-vec3 fogged(vec3 c_1, vec3 relative, Material m_1) {
+vec3 fogged(vec3 c_2, vec3 relative, Material m_1) {
     bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
     vec3 _e11 = _group_0_binding_0_fs.fog.color;
     Fog _e14 = _group_0_binding_0_fs.fog;
     float _e16 = fog_factor(_e14, relative);
-    vec3 _e20 = apply_fog(c_1, _e11, (fog_on ? _e16 : 0.0));
+    vec3 _e20 = apply_fog(c_2, _e11, (fog_on ? _e16 : 0.0));
     return _e20;
 }
 
@@ -1523,6 +1861,12 @@ vec3 world_normal(Instance found_3, vec3 normal) {
     return _e3;
 }
 
+vec4 finish_null3d_mesh(vec3 c_3, vec2 pixel_1) {
+    Output _e2 = _group_0_binding_0_fs.output_;
+    vec4 _e5 = finish_null3d_tonemap(c_3, pixel_1, _e2);
+    return _e5;
+}
+
 vec2 dfg_lut(float n_dot_v, float roughness) {
     vec2 size = vec2(uvec2(textureSize(_group_0_binding_3_fs, 0).xy));
     vec2 at = clamp(((vec2(roughness, n_dot_v) * size) - vec2(0.5)), vec2(0.0), (size - vec2(1.0)));
@@ -1534,10 +1878,10 @@ vec2 dfg_lut(float n_dot_v, float roughness) {
     vec4 _e36 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(high.x, low.y)), 0);
     vec2 b_1 = _e36.xy;
     vec4 _e43 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(low.x, high.y)), 0);
-    vec2 c_4 = _e43.xy;
+    vec2 c_5 = _e43.xy;
     vec4 _e47 = texelFetch(_group_0_binding_3_fs, ivec2(high), 0);
     vec2 d = _e47.xy;
-    return mix(mix(a_1, b_1, t_2.x), mix(c_4, d, t_2.x), t_2.y);
+    return mix(mix(a_1, b_1, t_2.x), mix(c_5, d, t_2.x), t_2.y);
 }
 
 vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
@@ -1617,12 +1961,6 @@ vec3 indirect_diffuse(PbrMaterial m_4, vec3 irradiance, vec2 dfg_2) {
     return ((irradiance * _e6) * ((vec3(1.0) - _e4.single) - _e4.multi));
 }
 
-vec3 linear_to_srgb(vec3 c_2) {
-    vec3 low_1 = (c_2 * 12.92);
-    vec3 high_1 = ((1.055 * pow(c_2, vec3(0.41666666))) - vec3(0.055));
-    return mix(high_1, low_1, lessThanEqual(c_2, vec3(0.0031308)));
-}
-
 Surface defaultSurface(SurfaceInput input_1) {
     Surface s = Surface(vec3(0.0), 0.0, 0.0, 0.0, vec3(0.0), vec3(0.0), 0.0, vec3(0.0));
     Material m_6 = material_row;
@@ -1648,7 +1986,7 @@ vec3 light_surface(PbrMaterial m_5, vec3 normal_3, vec3 to_view_2, vec2 dfg_3, v
     return ((_e15.diffuse + _e15.specular) + (_e22 * occlusion));
 }
 
-vec4 shade(Surface s_1, SurfaceInput input_2) {
+vec4 shade(Surface s_1, SurfaceInput input_2, vec2 pixel_2) {
     vec3 normal_4 = normalize(s_1.normal);
     vec3 _e5 = dFdx(input_2.normal);
     vec3 _e8 = dFdy(input_2.normal);
@@ -1665,8 +2003,8 @@ vec4 shade(Surface s_1, SurfaceInput input_2) {
     }
     Material _e39 = material_row;
     vec3 _e40 = fogged(outgoing, input_2.relativePosition, _e39);
-    vec3 _e41 = linear_to_srgb(_e40);
-    return vec4(_e41, 1.0);
+    vec4 _e42 = finish_null3d_mesh(_e40, pixel_2);
+    return _e42;
 }
 
 void main() {
@@ -1692,8 +2030,8 @@ void main() {
     SurfaceInput _e52 = input_;
     Surface _e53 = defaultSurface(_e52);
     SurfaceInput _e54 = input_;
-    vec4 _e55 = shade(_e53, _e54);
-    _fs2p_location0 = _e55;
+    vec4 _e57 = shade(_e53, _e54, in_.clip.xy);
+    _fs2p_location0 = _e57;
     return;
 }
 `,
@@ -1737,6 +2075,12 @@ precision highp int;
 
 uniform uint naga_vs_first_instance;
 
+struct Output {
+    float exposure;
+    uint tone_mapping;
+    uint spare_a;
+    uint spare_b;
+};
 struct Fog {
     vec3 color;
     uint kind;
@@ -1761,6 +2105,7 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Output output_;
     Fog fog;
     vec4 clock;
     vec4 camera_world;
@@ -1834,6 +2179,12 @@ struct Surface {
     float occlusion;
     vec3 irradiance;
 };
+const mat3x3 ACES_INPUT = mat3x3(vec3(0.59719, 0.076, 0.0284), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
+const mat3x3 ACES_OUTPUT = mat3x3(vec3(1.60475, -0.10208, -0.00327), vec3(-0.53108, 1.10813, -0.07276), vec3(-0.07367, -0.00605, 1.07602));
+const mat3x3 LINEAR_SRGB_TO_LINEAR_REC2020_ = mat3x3(vec3(0.6274, 0.0691, 0.0164), vec3(0.3293, 0.9195, 0.088), vec3(0.0433, 0.0113, 0.8956));
+const mat3x3 AGX_INSET = mat3x3(vec3(0.85662717, 0.13731897, 0.11189821), vec3(0.09512124, 0.761242, 0.076799415), vec3(0.048251607, 0.10143904, 0.81130236));
+const mat3x3 AGX_OUTSET = mat3x3(vec3(1.1271006, -0.14132977, -0.14132977), vec3(-0.11060664, 1.1578237, -0.11060664), vec3(-0.016493939, -0.016493939, 1.2519364));
+const mat3x3 LINEAR_REC2020_TO_LINEAR_SRGB = mat3x3(vec3(1.6605, -0.1246, -0.0182), vec3(-0.5876, 1.1329, -0.1006), vec3(-0.0728, -0.0083, 1.1187));
 const uint LINEAR = 1u;
 const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
@@ -1901,9 +2252,9 @@ vec3 transform_point(Transform t, vec3 p) {
 vec3 transform_normal(Transform t_1, vec3 n) {
     vec3 a = t_1.x.xyz;
     vec3 b = t_1.y.xyz;
-    vec3 c_3 = t_1.z.xyz;
-    vec3 bc = cross(b, c_3);
-    vec3 ca = cross(c_3, a);
+    vec3 c_4 = t_1.z.xyz;
+    vec3 bc = cross(b, c_4);
+    vec3 ca = cross(c_4, a);
     vec3 ab = cross(a, b);
     float facing = ((dot(a, bc) >= 0.0) ? 1.0 : -1.0);
     return normalize((vec3(dot(bc, n), dot(ca, n), dot(ab, n)) * facing));
@@ -1913,12 +2264,16 @@ vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
     return (view_proj * vec4(relative_position_2, 1.0));
 }
 
-vec3 fogged(vec3 c_1, vec3 relative, Material m_1) {
+vec4 finish_null3d_tonemap(vec3 c_1, vec2 pixel, Output settings) {
+    return vec4(c_1, 1.0);
+}
+
+vec3 fogged(vec3 c_2, vec3 relative, Material m_1) {
     bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
     vec3 _e11 = _group_0_binding_0_vs.fog.color;
     Fog _e14 = _group_0_binding_0_vs.fog;
     float _e16 = fog_factor(_e14, relative);
-    vec3 _e20 = apply_fog(c_1, _e11, (fog_on ? _e16 : 0.0));
+    vec3 _e20 = apply_fog(c_2, _e11, (fog_on ? _e16 : 0.0));
     return _e20;
 }
 
@@ -2000,6 +2355,12 @@ vec3 world_normal(Instance found_3, vec3 normal) {
     return _e3;
 }
 
+vec4 finish_null3d_mesh(vec3 c_3, vec2 pixel_1) {
+    Output _e2 = _group_0_binding_0_vs.output_;
+    vec4 _e5 = finish_null3d_tonemap(c_3, pixel_1, _e2);
+    return _e5;
+}
+
 vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
     return (vec3(1.0) + (f0_ * ((1.0 / (dfg.x + dfg.y)) - 1.0)));
 }
@@ -2075,12 +2436,6 @@ vec3 indirect_diffuse(PbrMaterial m_4, vec3 irradiance, vec2 dfg_2) {
     Scattering _e4 = multiscattering(m_4.specular, m_4.specular_grazing, dfg_2);
     vec3 _e6 = brdf_lambert(m_4.diffuse);
     return ((irradiance * _e6) * ((vec3(1.0) - _e4.single) - _e4.multi));
-}
-
-vec3 linear_to_srgb(vec3 c_2) {
-    vec3 low = (c_2 * 12.92);
-    vec3 high = ((1.055 * pow(c_2, vec3(0.41666666))) - vec3(0.055));
-    return mix(high, low, lessThanEqual(c_2, vec3(0.0031308)));
 }
 
 vec3 light_surface(PbrMaterial m_5, vec3 normal_3, vec3 to_view_2, vec2 dfg_3, vec3 extra, float occlusion) {
@@ -2167,6 +2522,12 @@ void main() {
 precision highp float;
 precision highp int;
 
+struct Output {
+    float exposure;
+    uint tone_mapping;
+    uint spare_a;
+    uint spare_b;
+};
 struct Fog {
     vec3 color;
     uint kind;
@@ -2191,6 +2552,7 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Output output_;
     Fog fog;
     vec4 clock;
     vec4 camera_world;
@@ -2264,6 +2626,12 @@ struct Surface {
     float occlusion;
     vec3 irradiance;
 };
+const mat3x3 ACES_INPUT = mat3x3(vec3(0.59719, 0.076, 0.0284), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
+const mat3x3 ACES_OUTPUT = mat3x3(vec3(1.60475, -0.10208, -0.00327), vec3(-0.53108, 1.10813, -0.07276), vec3(-0.07367, -0.00605, 1.07602));
+const mat3x3 LINEAR_SRGB_TO_LINEAR_REC2020_ = mat3x3(vec3(0.6274, 0.0691, 0.0164), vec3(0.3293, 0.9195, 0.088), vec3(0.0433, 0.0113, 0.8956));
+const mat3x3 AGX_INSET = mat3x3(vec3(0.85662717, 0.13731897, 0.11189821), vec3(0.09512124, 0.761242, 0.076799415), vec3(0.048251607, 0.10143904, 0.81130236));
+const mat3x3 AGX_OUTSET = mat3x3(vec3(1.1271006, -0.14132977, -0.14132977), vec3(-0.11060664, 1.1578237, -0.11060664), vec3(-0.016493939, -0.016493939, 1.2519364));
+const mat3x3 LINEAR_REC2020_TO_LINEAR_SRGB = mat3x3(vec3(1.6605, -0.1246, -0.0182), vec3(-0.5876, 1.1329, -0.1006), vec3(-0.0728, -0.0083, 1.1187));
 const uint LINEAR = 1u;
 const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
@@ -2323,9 +2691,9 @@ vec3 transform_point(Transform t, vec3 p) {
 vec3 transform_normal(Transform t_1, vec3 n) {
     vec3 a = t_1.x.xyz;
     vec3 b = t_1.y.xyz;
-    vec3 c_3 = t_1.z.xyz;
-    vec3 bc = cross(b, c_3);
-    vec3 ca = cross(c_3, a);
+    vec3 c_4 = t_1.z.xyz;
+    vec3 bc = cross(b, c_4);
+    vec3 ca = cross(c_4, a);
     vec3 ab = cross(a, b);
     float facing = ((dot(a, bc) >= 0.0) ? 1.0 : -1.0);
     return normalize((vec3(dot(bc, n), dot(ca, n), dot(ab, n)) * facing));
@@ -2333,6 +2701,10 @@ vec3 transform_normal(Transform t_1, vec3 n) {
 
 vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
     return (view_proj * vec4(relative_position_2, 1.0));
+}
+
+vec4 finish_null3d_tonemap(vec3 c_1, vec2 pixel, Output settings) {
+    return vec4(c_1, 1.0);
 }
 
 Material material_of(uint id) {
@@ -2357,12 +2729,12 @@ Material material_of(uint id) {
     return _e50;
 }
 
-vec3 fogged(vec3 c_1, vec3 relative, Material m_1) {
+vec3 fogged(vec3 c_2, vec3 relative, Material m_1) {
     bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
     vec3 _e11 = _group_0_binding_0_fs.fog.color;
     Fog _e14 = _group_0_binding_0_fs.fog;
     float _e16 = fog_factor(_e14, relative);
-    vec3 _e20 = apply_fog(c_1, _e11, (fog_on ? _e16 : 0.0));
+    vec3 _e20 = apply_fog(c_2, _e11, (fog_on ? _e16 : 0.0));
     return _e20;
 }
 
@@ -2391,6 +2763,12 @@ vec3 world_normal(Instance found_3, vec3 normal) {
     return _e3;
 }
 
+vec4 finish_null3d_mesh(vec3 c_3, vec2 pixel_1) {
+    Output _e2 = _group_0_binding_0_fs.output_;
+    vec4 _e5 = finish_null3d_tonemap(c_3, pixel_1, _e2);
+    return _e5;
+}
+
 vec2 dfg_lut(float n_dot_v, float roughness) {
     vec2 size = vec2(uvec2(textureSize(_group_0_binding_3_fs, 0).xy));
     vec2 at = clamp(((vec2(roughness, n_dot_v) * size) - vec2(0.5)), vec2(0.0), (size - vec2(1.0)));
@@ -2402,10 +2780,10 @@ vec2 dfg_lut(float n_dot_v, float roughness) {
     vec4 _e36 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(high.x, low.y)), 0);
     vec2 b_1 = _e36.xy;
     vec4 _e43 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(low.x, high.y)), 0);
-    vec2 c_4 = _e43.xy;
+    vec2 c_5 = _e43.xy;
     vec4 _e47 = texelFetch(_group_0_binding_3_fs, ivec2(high), 0);
     vec2 d = _e47.xy;
-    return mix(mix(a_1, b_1, t_2.x), mix(c_4, d, t_2.x), t_2.y);
+    return mix(mix(a_1, b_1, t_2.x), mix(c_5, d, t_2.x), t_2.y);
 }
 
 vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
@@ -2485,12 +2863,6 @@ vec3 indirect_diffuse(PbrMaterial m_4, vec3 irradiance, vec2 dfg_2) {
     return ((irradiance * _e6) * ((vec3(1.0) - _e4.single) - _e4.multi));
 }
 
-vec3 linear_to_srgb(vec3 c_2) {
-    vec3 low_1 = (c_2 * 12.92);
-    vec3 high_1 = ((1.055 * pow(c_2, vec3(0.41666666))) - vec3(0.055));
-    return mix(high_1, low_1, lessThanEqual(c_2, vec3(0.0031308)));
-}
-
 Surface defaultSurface(SurfaceInput input_1) {
     Surface s = Surface(vec3(0.0), 0.0, 0.0, 0.0, vec3(0.0), vec3(0.0), 0.0, vec3(0.0));
     Material m_6 = material_row;
@@ -2516,7 +2888,7 @@ vec3 light_surface(PbrMaterial m_5, vec3 normal_3, vec3 to_view_2, vec2 dfg_3, v
     return ((_e15.diffuse + _e15.specular) + (_e22 * occlusion));
 }
 
-vec4 shade(Surface s_1, SurfaceInput input_2) {
+vec4 shade(Surface s_1, SurfaceInput input_2, vec2 pixel_2) {
     vec3 normal_4 = normalize(s_1.normal);
     vec3 _e5 = dFdx(input_2.normal);
     vec3 _e8 = dFdy(input_2.normal);
@@ -2529,8 +2901,8 @@ vec4 shade(Surface s_1, SurfaceInput input_2) {
     vec3 outgoing = (_e28 + s_1.emissive);
     Material _e33 = material_row;
     vec3 _e34 = fogged(outgoing, input_2.relativePosition, _e33);
-    vec3 _e35 = linear_to_srgb(_e34);
-    return vec4(_e35, 1.0);
+    vec4 _e36 = finish_null3d_mesh(_e34, pixel_2);
+    return _e36;
 }
 
 void main() {
@@ -2557,8 +2929,8 @@ void main() {
     SurfaceInput _e54 = input_;
     Surface _e55 = defaultSurface(_e54);
     SurfaceInput _e56 = input_;
-    vec4 _e57 = shade(_e55, _e56);
-    _fs2p_location0 = _e57;
+    vec4 _e59 = shade(_e55, _e56, in_.clip.xy);
+    _fs2p_location0 = _e59;
     return;
 }
 `,
@@ -2602,6 +2974,12 @@ precision highp int;
 
 uniform uint naga_vs_first_instance;
 
+struct Output {
+    float exposure;
+    uint tone_mapping;
+    uint spare_a;
+    uint spare_b;
+};
 struct Fog {
     vec3 color;
     uint kind;
@@ -2626,6 +3004,7 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Output output_;
     Fog fog;
     vec4 clock;
     vec4 camera_world;
@@ -2699,6 +3078,12 @@ struct Surface {
     float occlusion;
     vec3 irradiance;
 };
+const mat3x3 ACES_INPUT = mat3x3(vec3(0.59719, 0.076, 0.0284), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
+const mat3x3 ACES_OUTPUT = mat3x3(vec3(1.60475, -0.10208, -0.00327), vec3(-0.53108, 1.10813, -0.07276), vec3(-0.07367, -0.00605, 1.07602));
+const mat3x3 LINEAR_SRGB_TO_LINEAR_REC2020_ = mat3x3(vec3(0.6274, 0.0691, 0.0164), vec3(0.3293, 0.9195, 0.088), vec3(0.0433, 0.0113, 0.8956));
+const mat3x3 AGX_INSET = mat3x3(vec3(0.85662717, 0.13731897, 0.11189821), vec3(0.09512124, 0.761242, 0.076799415), vec3(0.048251607, 0.10143904, 0.81130236));
+const mat3x3 AGX_OUTSET = mat3x3(vec3(1.1271006, -0.14132977, -0.14132977), vec3(-0.11060664, 1.1578237, -0.11060664), vec3(-0.016493939, -0.016493939, 1.2519364));
+const mat3x3 LINEAR_REC2020_TO_LINEAR_SRGB = mat3x3(vec3(1.6605, -0.1246, -0.0182), vec3(-0.5876, 1.1329, -0.1006), vec3(-0.0728, -0.0083, 1.1187));
 const uint LINEAR = 1u;
 const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
@@ -2766,9 +3151,9 @@ vec3 transform_point(Transform t, vec3 p) {
 vec3 transform_normal(Transform t_1, vec3 n) {
     vec3 a = t_1.x.xyz;
     vec3 b = t_1.y.xyz;
-    vec3 c_3 = t_1.z.xyz;
-    vec3 bc = cross(b, c_3);
-    vec3 ca = cross(c_3, a);
+    vec3 c_4 = t_1.z.xyz;
+    vec3 bc = cross(b, c_4);
+    vec3 ca = cross(c_4, a);
     vec3 ab = cross(a, b);
     float facing = ((dot(a, bc) >= 0.0) ? 1.0 : -1.0);
     return normalize((vec3(dot(bc, n), dot(ca, n), dot(ab, n)) * facing));
@@ -2778,12 +3163,16 @@ vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
     return (view_proj * vec4(relative_position_2, 1.0));
 }
 
-vec3 fogged(vec3 c_1, vec3 relative, Material m_1) {
+vec4 finish_null3d_tonemap(vec3 c_1, vec2 pixel, Output settings) {
+    return vec4(c_1, 1.0);
+}
+
+vec3 fogged(vec3 c_2, vec3 relative, Material m_1) {
     bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
     vec3 _e11 = _group_0_binding_0_vs.fog.color;
     Fog _e14 = _group_0_binding_0_vs.fog;
     float _e16 = fog_factor(_e14, relative);
-    vec3 _e20 = apply_fog(c_1, _e11, (fog_on ? _e16 : 0.0));
+    vec3 _e20 = apply_fog(c_2, _e11, (fog_on ? _e16 : 0.0));
     return _e20;
 }
 
@@ -2865,6 +3254,12 @@ vec3 world_normal(Instance found_3, vec3 normal) {
     return _e3;
 }
 
+vec4 finish_null3d_mesh(vec3 c_3, vec2 pixel_1) {
+    Output _e2 = _group_0_binding_0_vs.output_;
+    vec4 _e5 = finish_null3d_tonemap(c_3, pixel_1, _e2);
+    return _e5;
+}
+
 vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
     return (vec3(1.0) + (f0_ * ((1.0 / (dfg.x + dfg.y)) - 1.0)));
 }
@@ -2940,12 +3335,6 @@ vec3 indirect_diffuse(PbrMaterial m_4, vec3 irradiance, vec2 dfg_2) {
     Scattering _e4 = multiscattering(m_4.specular, m_4.specular_grazing, dfg_2);
     vec3 _e6 = brdf_lambert(m_4.diffuse);
     return ((irradiance * _e6) * ((vec3(1.0) - _e4.single) - _e4.multi));
-}
-
-vec3 linear_to_srgb(vec3 c_2) {
-    vec3 low = (c_2 * 12.92);
-    vec3 high = ((1.055 * pow(c_2, vec3(0.41666666))) - vec3(0.055));
-    return mix(high, low, lessThanEqual(c_2, vec3(0.0031308)));
 }
 
 vec3 light_surface(PbrMaterial m_5, vec3 normal_3, vec3 to_view_2, vec2 dfg_3, vec3 extra, float occlusion) {
@@ -3032,6 +3421,12 @@ void main() {
 precision highp float;
 precision highp int;
 
+struct Output {
+    float exposure;
+    uint tone_mapping;
+    uint spare_a;
+    uint spare_b;
+};
 struct Fog {
     vec3 color;
     uint kind;
@@ -3056,6 +3451,7 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Output output_;
     Fog fog;
     vec4 clock;
     vec4 camera_world;
@@ -3129,6 +3525,12 @@ struct Surface {
     float occlusion;
     vec3 irradiance;
 };
+const mat3x3 ACES_INPUT = mat3x3(vec3(0.59719, 0.076, 0.0284), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
+const mat3x3 ACES_OUTPUT = mat3x3(vec3(1.60475, -0.10208, -0.00327), vec3(-0.53108, 1.10813, -0.07276), vec3(-0.07367, -0.00605, 1.07602));
+const mat3x3 LINEAR_SRGB_TO_LINEAR_REC2020_ = mat3x3(vec3(0.6274, 0.0691, 0.0164), vec3(0.3293, 0.9195, 0.088), vec3(0.0433, 0.0113, 0.8956));
+const mat3x3 AGX_INSET = mat3x3(vec3(0.85662717, 0.13731897, 0.11189821), vec3(0.09512124, 0.761242, 0.076799415), vec3(0.048251607, 0.10143904, 0.81130236));
+const mat3x3 AGX_OUTSET = mat3x3(vec3(1.1271006, -0.14132977, -0.14132977), vec3(-0.11060664, 1.1578237, -0.11060664), vec3(-0.016493939, -0.016493939, 1.2519364));
+const mat3x3 LINEAR_REC2020_TO_LINEAR_SRGB = mat3x3(vec3(1.6605, -0.1246, -0.0182), vec3(-0.5876, 1.1329, -0.1006), vec3(-0.0728, -0.0083, 1.1187));
 const uint LINEAR = 1u;
 const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
@@ -3188,9 +3590,9 @@ vec3 transform_point(Transform t, vec3 p) {
 vec3 transform_normal(Transform t_1, vec3 n) {
     vec3 a = t_1.x.xyz;
     vec3 b = t_1.y.xyz;
-    vec3 c_3 = t_1.z.xyz;
-    vec3 bc = cross(b, c_3);
-    vec3 ca = cross(c_3, a);
+    vec3 c_4 = t_1.z.xyz;
+    vec3 bc = cross(b, c_4);
+    vec3 ca = cross(c_4, a);
     vec3 ab = cross(a, b);
     float facing = ((dot(a, bc) >= 0.0) ? 1.0 : -1.0);
     return normalize((vec3(dot(bc, n), dot(ca, n), dot(ab, n)) * facing));
@@ -3198,6 +3600,10 @@ vec3 transform_normal(Transform t_1, vec3 n) {
 
 vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
     return (view_proj * vec4(relative_position_2, 1.0));
+}
+
+vec4 finish_null3d_tonemap(vec3 c_1, vec2 pixel, Output settings) {
+    return vec4(c_1, 1.0);
 }
 
 Material material_of(uint id) {
@@ -3222,12 +3628,12 @@ Material material_of(uint id) {
     return _e50;
 }
 
-vec3 fogged(vec3 c_1, vec3 relative, Material m_1) {
+vec3 fogged(vec3 c_2, vec3 relative, Material m_1) {
     bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
     vec3 _e11 = _group_0_binding_0_fs.fog.color;
     Fog _e14 = _group_0_binding_0_fs.fog;
     float _e16 = fog_factor(_e14, relative);
-    vec3 _e20 = apply_fog(c_1, _e11, (fog_on ? _e16 : 0.0));
+    vec3 _e20 = apply_fog(c_2, _e11, (fog_on ? _e16 : 0.0));
     return _e20;
 }
 
@@ -3256,6 +3662,12 @@ vec3 world_normal(Instance found_3, vec3 normal) {
     return _e3;
 }
 
+vec4 finish_null3d_mesh(vec3 c_3, vec2 pixel_1) {
+    Output _e2 = _group_0_binding_0_fs.output_;
+    vec4 _e5 = finish_null3d_tonemap(c_3, pixel_1, _e2);
+    return _e5;
+}
+
 vec2 dfg_lut(float n_dot_v, float roughness) {
     vec2 size = vec2(uvec2(textureSize(_group_0_binding_3_fs, 0).xy));
     vec2 at = clamp(((vec2(roughness, n_dot_v) * size) - vec2(0.5)), vec2(0.0), (size - vec2(1.0)));
@@ -3267,10 +3679,10 @@ vec2 dfg_lut(float n_dot_v, float roughness) {
     vec4 _e36 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(high.x, low.y)), 0);
     vec2 b_1 = _e36.xy;
     vec4 _e43 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(low.x, high.y)), 0);
-    vec2 c_4 = _e43.xy;
+    vec2 c_5 = _e43.xy;
     vec4 _e47 = texelFetch(_group_0_binding_3_fs, ivec2(high), 0);
     vec2 d = _e47.xy;
-    return mix(mix(a_1, b_1, t_2.x), mix(c_4, d, t_2.x), t_2.y);
+    return mix(mix(a_1, b_1, t_2.x), mix(c_5, d, t_2.x), t_2.y);
 }
 
 vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
@@ -3350,12 +3762,6 @@ vec3 indirect_diffuse(PbrMaterial m_4, vec3 irradiance, vec2 dfg_2) {
     return ((irradiance * _e6) * ((vec3(1.0) - _e4.single) - _e4.multi));
 }
 
-vec3 linear_to_srgb(vec3 c_2) {
-    vec3 low_1 = (c_2 * 12.92);
-    vec3 high_1 = ((1.055 * pow(c_2, vec3(0.41666666))) - vec3(0.055));
-    return mix(high_1, low_1, lessThanEqual(c_2, vec3(0.0031308)));
-}
-
 Surface defaultSurface(SurfaceInput input_1) {
     Surface s = Surface(vec3(0.0), 0.0, 0.0, 0.0, vec3(0.0), vec3(0.0), 0.0, vec3(0.0));
     Material m_6 = material_row;
@@ -3381,7 +3787,7 @@ vec3 light_surface(PbrMaterial m_5, vec3 normal_3, vec3 to_view_2, vec2 dfg_3, v
     return ((_e15.diffuse + _e15.specular) + (_e22 * occlusion));
 }
 
-vec4 shade(Surface s_1, SurfaceInput input_2) {
+vec4 shade(Surface s_1, SurfaceInput input_2, vec2 pixel_2) {
     vec3 normal_4 = normalize(s_1.normal);
     vec3 _e5 = dFdx(input_2.normal);
     vec3 _e8 = dFdy(input_2.normal);
@@ -3398,8 +3804,8 @@ vec4 shade(Surface s_1, SurfaceInput input_2) {
     }
     Material _e39 = material_row;
     vec3 _e40 = fogged(outgoing, input_2.relativePosition, _e39);
-    vec3 _e41 = linear_to_srgb(_e40);
-    return vec4(_e41, 1.0);
+    vec4 _e42 = finish_null3d_mesh(_e40, pixel_2);
+    return _e42;
 }
 
 void main() {
@@ -3426,8 +3832,8 @@ void main() {
     SurfaceInput _e54 = input_;
     Surface _e55 = defaultSurface(_e54);
     SurfaceInput _e56 = input_;
-    vec4 _e57 = shade(_e55, _e56);
-    _fs2p_location0 = _e57;
+    vec4 _e59 = shade(_e55, _e56, in_.clip.xy);
+    _fs2p_location0 = _e59;
     return;
 }
 `,
@@ -3552,6 +3958,12 @@ precision highp int;
 
 uniform uint naga_vs_first_instance;
 
+struct Output {
+    float exposure;
+    uint tone_mapping;
+    uint spare_a;
+    uint spare_b;
+};
 struct Fog {
     vec3 color;
     uint kind;
@@ -3576,6 +3988,7 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Output output_;
     Fog fog;
     vec4 clock;
     vec4 camera_world;
@@ -3657,6 +4070,12 @@ struct Surface {
     float occlusion;
     vec3 irradiance;
 };
+const mat3x3 ACES_INPUT = mat3x3(vec3(0.59719, 0.076, 0.0284), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
+const mat3x3 ACES_OUTPUT = mat3x3(vec3(1.60475, -0.10208, -0.00327), vec3(-0.53108, 1.10813, -0.07276), vec3(-0.07367, -0.00605, 1.07602));
+const mat3x3 LINEAR_SRGB_TO_LINEAR_REC2020_ = mat3x3(vec3(0.6274, 0.0691, 0.0164), vec3(0.3293, 0.9195, 0.088), vec3(0.0433, 0.0113, 0.8956));
+const mat3x3 AGX_INSET = mat3x3(vec3(0.85662717, 0.13731897, 0.11189821), vec3(0.09512124, 0.761242, 0.076799415), vec3(0.048251607, 0.10143904, 0.81130236));
+const mat3x3 AGX_OUTSET = mat3x3(vec3(1.1271006, -0.14132977, -0.14132977), vec3(-0.11060664, 1.1578237, -0.11060664), vec3(-0.016493939, -0.016493939, 1.2519364));
+const mat3x3 LINEAR_REC2020_TO_LINEAR_SRGB = mat3x3(vec3(1.6605, -0.1246, -0.0182), vec3(-0.5876, 1.1329, -0.1006), vec3(-0.0728, -0.0083, 1.1187));
 const uint LINEAR = 1u;
 const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
@@ -3727,9 +4146,9 @@ vec3 transform_point(Transform t, vec3 p) {
 vec3 transform_normal(Transform t_1, vec3 n) {
     vec3 a = t_1.x.xyz;
     vec3 b = t_1.y.xyz;
-    vec3 c_3 = t_1.z.xyz;
-    vec3 bc = cross(b, c_3);
-    vec3 ca = cross(c_3, a);
+    vec3 c_4 = t_1.z.xyz;
+    vec3 bc = cross(b, c_4);
+    vec3 ca = cross(c_4, a);
     vec3 ab = cross(a, b);
     float facing = ((dot(a, bc) >= 0.0) ? 1.0 : -1.0);
     return normalize((vec3(dot(bc, n), dot(ca, n), dot(ab, n)) * facing));
@@ -3739,12 +4158,16 @@ vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
     return (view_proj * vec4(relative_position_2, 1.0));
 }
 
-vec3 fogged(vec3 c_1, vec3 relative, Material m_1) {
+vec4 finish_null3d_tonemap(vec3 c_1, vec2 pixel, Output settings) {
+    return vec4(c_1, 1.0);
+}
+
+vec3 fogged(vec3 c_2, vec3 relative, Material m_1) {
     bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
     vec3 _e11 = _group_0_binding_0_vs.fog.color;
     Fog _e14 = _group_0_binding_0_vs.fog;
     float _e16 = fog_factor(_e14, relative);
-    vec3 _e20 = apply_fog(c_1, _e11, (fog_on ? _e16 : 0.0));
+    vec3 _e20 = apply_fog(c_2, _e11, (fog_on ? _e16 : 0.0));
     return _e20;
 }
 
@@ -3834,6 +4257,12 @@ vec3 world_normal(Instance found_3, vec3 normal) {
     return _e3;
 }
 
+vec4 finish_null3d_mesh(vec3 c_3, vec2 pixel_1) {
+    Output _e2 = _group_0_binding_0_vs.output_;
+    vec4 _e5 = finish_null3d_tonemap(c_3, pixel_1, _e2);
+    return _e5;
+}
+
 vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
     return (vec3(1.0) + (f0_ * ((1.0 / (dfg.x + dfg.y)) - 1.0)));
 }
@@ -3909,12 +4338,6 @@ vec3 indirect_diffuse(PbrMaterial m_4, vec3 irradiance, vec2 dfg_2) {
     Scattering _e4 = multiscattering(m_4.specular, m_4.specular_grazing, dfg_2);
     vec3 _e6 = brdf_lambert(m_4.diffuse);
     return ((irradiance * _e6) * ((vec3(1.0) - _e4.single) - _e4.multi));
-}
-
-vec3 linear_to_srgb(vec3 c_2) {
-    vec3 low = (c_2 * 12.92);
-    vec3 high = ((1.055 * pow(c_2, vec3(0.41666666))) - vec3(0.055));
-    return mix(high, low, lessThanEqual(c_2, vec3(0.0031308)));
 }
 
 MapUv map_uv(uint flags, uint slot, MapUv first, MapUv second) {
@@ -4008,6 +4431,12 @@ void main() {
 precision highp float;
 precision highp int;
 
+struct Output {
+    float exposure;
+    uint tone_mapping;
+    uint spare_a;
+    uint spare_b;
+};
 struct Fog {
     vec3 color;
     uint kind;
@@ -4032,6 +4461,7 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Output output_;
     Fog fog;
     vec4 clock;
     vec4 camera_world;
@@ -4113,6 +4543,12 @@ struct Surface {
     float occlusion;
     vec3 irradiance;
 };
+const mat3x3 ACES_INPUT = mat3x3(vec3(0.59719, 0.076, 0.0284), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
+const mat3x3 ACES_OUTPUT = mat3x3(vec3(1.60475, -0.10208, -0.00327), vec3(-0.53108, 1.10813, -0.07276), vec3(-0.07367, -0.00605, 1.07602));
+const mat3x3 LINEAR_SRGB_TO_LINEAR_REC2020_ = mat3x3(vec3(0.6274, 0.0691, 0.0164), vec3(0.3293, 0.9195, 0.088), vec3(0.0433, 0.0113, 0.8956));
+const mat3x3 AGX_INSET = mat3x3(vec3(0.85662717, 0.13731897, 0.11189821), vec3(0.09512124, 0.761242, 0.076799415), vec3(0.048251607, 0.10143904, 0.81130236));
+const mat3x3 AGX_OUTSET = mat3x3(vec3(1.1271006, -0.14132977, -0.14132977), vec3(-0.11060664, 1.1578237, -0.11060664), vec3(-0.016493939, -0.016493939, 1.2519364));
+const mat3x3 LINEAR_REC2020_TO_LINEAR_SRGB = mat3x3(vec3(1.6605, -0.1246, -0.0182), vec3(-0.5876, 1.1329, -0.1006), vec3(-0.0728, -0.0083, 1.1187));
 const uint LINEAR = 1u;
 const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
@@ -4186,9 +4622,9 @@ vec3 transform_point(Transform t, vec3 p) {
 vec3 transform_normal(Transform t_1, vec3 n) {
     vec3 a = t_1.x.xyz;
     vec3 b = t_1.y.xyz;
-    vec3 c_3 = t_1.z.xyz;
-    vec3 bc = cross(b, c_3);
-    vec3 ca = cross(c_3, a);
+    vec3 c_4 = t_1.z.xyz;
+    vec3 bc = cross(b, c_4);
+    vec3 ca = cross(c_4, a);
     vec3 ab = cross(a, b);
     float facing = ((dot(a, bc) >= 0.0) ? 1.0 : -1.0);
     return normalize((vec3(dot(bc, n), dot(ca, n), dot(ab, n)) * facing));
@@ -4196,6 +4632,10 @@ vec3 transform_normal(Transform t_1, vec3 n) {
 
 vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
     return (view_proj * vec4(relative_position_2, 1.0));
+}
+
+vec4 finish_null3d_tonemap(vec3 c_1, vec2 pixel, Output settings) {
+    return vec4(c_1, 1.0);
 }
 
 Material material_of(uint id) {
@@ -4220,12 +4660,12 @@ Material material_of(uint id) {
     return _e50;
 }
 
-vec3 fogged(vec3 c_1, vec3 relative, Material m_1) {
+vec3 fogged(vec3 c_2, vec3 relative, Material m_1) {
     bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
     vec3 _e11 = _group_0_binding_0_fs.fog.color;
     Fog _e14 = _group_0_binding_0_fs.fog;
     float _e16 = fog_factor(_e14, relative);
-    vec3 _e20 = apply_fog(c_1, _e11, (fog_on ? _e16 : 0.0));
+    vec3 _e20 = apply_fog(c_2, _e11, (fog_on ? _e16 : 0.0));
     return _e20;
 }
 
@@ -4262,6 +4702,12 @@ vec3 world_normal(Instance found_3, vec3 normal) {
     return _e3;
 }
 
+vec4 finish_null3d_mesh(vec3 c_3, vec2 pixel_1) {
+    Output _e2 = _group_0_binding_0_fs.output_;
+    vec4 _e5 = finish_null3d_tonemap(c_3, pixel_1, _e2);
+    return _e5;
+}
+
 vec2 dfg_lut(float n_dot_v, float roughness) {
     vec2 size = vec2(uvec2(textureSize(_group_0_binding_3_fs, 0).xy));
     vec2 at = clamp(((vec2(roughness, n_dot_v) * size) - vec2(0.5)), vec2(0.0), (size - vec2(1.0)));
@@ -4273,10 +4719,10 @@ vec2 dfg_lut(float n_dot_v, float roughness) {
     vec4 _e36 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(high.x, low.y)), 0);
     vec2 b_1 = _e36.xy;
     vec4 _e43 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(low.x, high.y)), 0);
-    vec2 c_4 = _e43.xy;
+    vec2 c_5 = _e43.xy;
     vec4 _e47 = texelFetch(_group_0_binding_3_fs, ivec2(high), 0);
     vec2 d = _e47.xy;
-    return mix(mix(a_1, b_1, t_2.x), mix(c_4, d, t_2.x), t_2.y);
+    return mix(mix(a_1, b_1, t_2.x), mix(c_5, d, t_2.x), t_2.y);
 }
 
 vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
@@ -4354,12 +4800,6 @@ vec3 indirect_diffuse(PbrMaterial m_4, vec3 irradiance, vec2 dfg_2) {
     Scattering _e4 = multiscattering(m_4.specular, m_4.specular_grazing, dfg_2);
     vec3 _e6 = brdf_lambert(m_4.diffuse);
     return ((irradiance * _e6) * ((vec3(1.0) - _e4.single) - _e4.multi));
-}
-
-vec3 linear_to_srgb(vec3 c_2) {
-    vec3 low_1 = (c_2 * 12.92);
-    vec3 high_1 = ((1.055 * pow(c_2, vec3(0.41666666))) - vec3(0.055));
-    return mix(high_1, low_1, lessThanEqual(c_2, vec3(0.0031308)));
 }
 
 MapUv map_uv(uint flags, uint slot, MapUv first, MapUv second) {
@@ -4489,7 +4929,7 @@ vec3 light_surface(PbrMaterial m_5, vec3 normal_3, vec3 to_view_2, vec2 dfg_3, v
     return ((_e15.diffuse + _e15.specular) + (_e22 * occlusion));
 }
 
-vec4 shade(Surface s_2, SurfaceInput input_3) {
+vec4 shade(Surface s_2, SurfaceInput input_3, vec2 pixel_2) {
     vec3 normal_5 = normalize(s_2.normal);
     vec3 _e5 = dFdx(input_3.normal);
     vec3 _e8 = dFdy(input_3.normal);
@@ -4502,8 +4942,8 @@ vec4 shade(Surface s_2, SurfaceInput input_3) {
     vec3 outgoing = (_e28 + s_2.emissive);
     Material _e33 = material_row;
     vec3 _e34 = fogged(outgoing, input_3.relativePosition, _e33);
-    vec3 _e35 = linear_to_srgb(_e34);
-    return vec4(_e35, 1.0);
+    vec4 _e36 = finish_null3d_mesh(_e34, pixel_2);
+    return _e36;
 }
 
 void main() {
@@ -4531,8 +4971,8 @@ void main() {
     SurfaceInput _e58 = input_;
     Surface _e59 = defaultSurface(_e58);
     SurfaceInput _e60 = input_;
-    vec4 _e61 = shade(_e59, _e60);
-    _fs2p_location0 = _e61;
+    vec4 _e63 = shade(_e59, _e60, in_.clip.xy);
+    _fs2p_location0 = _e63;
     return;
 }
 `,
@@ -4630,6 +5070,12 @@ precision highp int;
 
 uniform uint naga_vs_first_instance;
 
+struct Output {
+    float exposure;
+    uint tone_mapping;
+    uint spare_a;
+    uint spare_b;
+};
 struct Fog {
     vec3 color;
     uint kind;
@@ -4654,6 +5100,7 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Output output_;
     Fog fog;
     vec4 clock;
     vec4 camera_world;
@@ -4735,6 +5182,12 @@ struct Surface {
     float occlusion;
     vec3 irradiance;
 };
+const mat3x3 ACES_INPUT = mat3x3(vec3(0.59719, 0.076, 0.0284), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
+const mat3x3 ACES_OUTPUT = mat3x3(vec3(1.60475, -0.10208, -0.00327), vec3(-0.53108, 1.10813, -0.07276), vec3(-0.07367, -0.00605, 1.07602));
+const mat3x3 LINEAR_SRGB_TO_LINEAR_REC2020_ = mat3x3(vec3(0.6274, 0.0691, 0.0164), vec3(0.3293, 0.9195, 0.088), vec3(0.0433, 0.0113, 0.8956));
+const mat3x3 AGX_INSET = mat3x3(vec3(0.85662717, 0.13731897, 0.11189821), vec3(0.09512124, 0.761242, 0.076799415), vec3(0.048251607, 0.10143904, 0.81130236));
+const mat3x3 AGX_OUTSET = mat3x3(vec3(1.1271006, -0.14132977, -0.14132977), vec3(-0.11060664, 1.1578237, -0.11060664), vec3(-0.016493939, -0.016493939, 1.2519364));
+const mat3x3 LINEAR_REC2020_TO_LINEAR_SRGB = mat3x3(vec3(1.6605, -0.1246, -0.0182), vec3(-0.5876, 1.1329, -0.1006), vec3(-0.0728, -0.0083, 1.1187));
 const uint LINEAR = 1u;
 const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
@@ -4805,9 +5258,9 @@ vec3 transform_point(Transform t, vec3 p) {
 vec3 transform_normal(Transform t_1, vec3 n) {
     vec3 a = t_1.x.xyz;
     vec3 b = t_1.y.xyz;
-    vec3 c_3 = t_1.z.xyz;
-    vec3 bc = cross(b, c_3);
-    vec3 ca = cross(c_3, a);
+    vec3 c_4 = t_1.z.xyz;
+    vec3 bc = cross(b, c_4);
+    vec3 ca = cross(c_4, a);
     vec3 ab = cross(a, b);
     float facing = ((dot(a, bc) >= 0.0) ? 1.0 : -1.0);
     return normalize((vec3(dot(bc, n), dot(ca, n), dot(ab, n)) * facing));
@@ -4817,12 +5270,16 @@ vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
     return (view_proj * vec4(relative_position_2, 1.0));
 }
 
-vec3 fogged(vec3 c_1, vec3 relative, Material m_1) {
+vec4 finish_null3d_tonemap(vec3 c_1, vec2 pixel, Output settings) {
+    return vec4(c_1, 1.0);
+}
+
+vec3 fogged(vec3 c_2, vec3 relative, Material m_1) {
     bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
     vec3 _e11 = _group_0_binding_0_vs.fog.color;
     Fog _e14 = _group_0_binding_0_vs.fog;
     float _e16 = fog_factor(_e14, relative);
-    vec3 _e20 = apply_fog(c_1, _e11, (fog_on ? _e16 : 0.0));
+    vec3 _e20 = apply_fog(c_2, _e11, (fog_on ? _e16 : 0.0));
     return _e20;
 }
 
@@ -4912,6 +5369,12 @@ vec3 world_normal(Instance found_3, vec3 normal) {
     return _e3;
 }
 
+vec4 finish_null3d_mesh(vec3 c_3, vec2 pixel_1) {
+    Output _e2 = _group_0_binding_0_vs.output_;
+    vec4 _e5 = finish_null3d_tonemap(c_3, pixel_1, _e2);
+    return _e5;
+}
+
 vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
     return (vec3(1.0) + (f0_ * ((1.0 / (dfg.x + dfg.y)) - 1.0)));
 }
@@ -4987,12 +5450,6 @@ vec3 indirect_diffuse(PbrMaterial m_4, vec3 irradiance, vec2 dfg_2) {
     Scattering _e4 = multiscattering(m_4.specular, m_4.specular_grazing, dfg_2);
     vec3 _e6 = brdf_lambert(m_4.diffuse);
     return ((irradiance * _e6) * ((vec3(1.0) - _e4.single) - _e4.multi));
-}
-
-vec3 linear_to_srgb(vec3 c_2) {
-    vec3 low = (c_2 * 12.92);
-    vec3 high = ((1.055 * pow(c_2, vec3(0.41666666))) - vec3(0.055));
-    return mix(high, low, lessThanEqual(c_2, vec3(0.0031308)));
 }
 
 MapUv map_uv(uint flags, uint slot, MapUv first, MapUv second) {
@@ -5086,6 +5543,12 @@ void main() {
 precision highp float;
 precision highp int;
 
+struct Output {
+    float exposure;
+    uint tone_mapping;
+    uint spare_a;
+    uint spare_b;
+};
 struct Fog {
     vec3 color;
     uint kind;
@@ -5110,6 +5573,7 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Output output_;
     Fog fog;
     vec4 clock;
     vec4 camera_world;
@@ -5191,6 +5655,12 @@ struct Surface {
     float occlusion;
     vec3 irradiance;
 };
+const mat3x3 ACES_INPUT = mat3x3(vec3(0.59719, 0.076, 0.0284), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
+const mat3x3 ACES_OUTPUT = mat3x3(vec3(1.60475, -0.10208, -0.00327), vec3(-0.53108, 1.10813, -0.07276), vec3(-0.07367, -0.00605, 1.07602));
+const mat3x3 LINEAR_SRGB_TO_LINEAR_REC2020_ = mat3x3(vec3(0.6274, 0.0691, 0.0164), vec3(0.3293, 0.9195, 0.088), vec3(0.0433, 0.0113, 0.8956));
+const mat3x3 AGX_INSET = mat3x3(vec3(0.85662717, 0.13731897, 0.11189821), vec3(0.09512124, 0.761242, 0.076799415), vec3(0.048251607, 0.10143904, 0.81130236));
+const mat3x3 AGX_OUTSET = mat3x3(vec3(1.1271006, -0.14132977, -0.14132977), vec3(-0.11060664, 1.1578237, -0.11060664), vec3(-0.016493939, -0.016493939, 1.2519364));
+const mat3x3 LINEAR_REC2020_TO_LINEAR_SRGB = mat3x3(vec3(1.6605, -0.1246, -0.0182), vec3(-0.5876, 1.1329, -0.1006), vec3(-0.0728, -0.0083, 1.1187));
 const uint LINEAR = 1u;
 const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
@@ -5264,9 +5734,9 @@ vec3 transform_point(Transform t, vec3 p) {
 vec3 transform_normal(Transform t_1, vec3 n) {
     vec3 a = t_1.x.xyz;
     vec3 b = t_1.y.xyz;
-    vec3 c_3 = t_1.z.xyz;
-    vec3 bc = cross(b, c_3);
-    vec3 ca = cross(c_3, a);
+    vec3 c_4 = t_1.z.xyz;
+    vec3 bc = cross(b, c_4);
+    vec3 ca = cross(c_4, a);
     vec3 ab = cross(a, b);
     float facing = ((dot(a, bc) >= 0.0) ? 1.0 : -1.0);
     return normalize((vec3(dot(bc, n), dot(ca, n), dot(ab, n)) * facing));
@@ -5274,6 +5744,10 @@ vec3 transform_normal(Transform t_1, vec3 n) {
 
 vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
     return (view_proj * vec4(relative_position_2, 1.0));
+}
+
+vec4 finish_null3d_tonemap(vec3 c_1, vec2 pixel, Output settings) {
+    return vec4(c_1, 1.0);
 }
 
 Material material_of(uint id) {
@@ -5298,12 +5772,12 @@ Material material_of(uint id) {
     return _e50;
 }
 
-vec3 fogged(vec3 c_1, vec3 relative, Material m_1) {
+vec3 fogged(vec3 c_2, vec3 relative, Material m_1) {
     bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
     vec3 _e11 = _group_0_binding_0_fs.fog.color;
     Fog _e14 = _group_0_binding_0_fs.fog;
     float _e16 = fog_factor(_e14, relative);
-    vec3 _e20 = apply_fog(c_1, _e11, (fog_on ? _e16 : 0.0));
+    vec3 _e20 = apply_fog(c_2, _e11, (fog_on ? _e16 : 0.0));
     return _e20;
 }
 
@@ -5340,6 +5814,12 @@ vec3 world_normal(Instance found_3, vec3 normal) {
     return _e3;
 }
 
+vec4 finish_null3d_mesh(vec3 c_3, vec2 pixel_1) {
+    Output _e2 = _group_0_binding_0_fs.output_;
+    vec4 _e5 = finish_null3d_tonemap(c_3, pixel_1, _e2);
+    return _e5;
+}
+
 vec2 dfg_lut(float n_dot_v, float roughness) {
     vec2 size = vec2(uvec2(textureSize(_group_0_binding_3_fs, 0).xy));
     vec2 at = clamp(((vec2(roughness, n_dot_v) * size) - vec2(0.5)), vec2(0.0), (size - vec2(1.0)));
@@ -5351,10 +5831,10 @@ vec2 dfg_lut(float n_dot_v, float roughness) {
     vec4 _e36 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(high.x, low.y)), 0);
     vec2 b_1 = _e36.xy;
     vec4 _e43 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(low.x, high.y)), 0);
-    vec2 c_4 = _e43.xy;
+    vec2 c_5 = _e43.xy;
     vec4 _e47 = texelFetch(_group_0_binding_3_fs, ivec2(high), 0);
     vec2 d = _e47.xy;
-    return mix(mix(a_1, b_1, t_2.x), mix(c_4, d, t_2.x), t_2.y);
+    return mix(mix(a_1, b_1, t_2.x), mix(c_5, d, t_2.x), t_2.y);
 }
 
 vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
@@ -5432,12 +5912,6 @@ vec3 indirect_diffuse(PbrMaterial m_4, vec3 irradiance, vec2 dfg_2) {
     Scattering _e4 = multiscattering(m_4.specular, m_4.specular_grazing, dfg_2);
     vec3 _e6 = brdf_lambert(m_4.diffuse);
     return ((irradiance * _e6) * ((vec3(1.0) - _e4.single) - _e4.multi));
-}
-
-vec3 linear_to_srgb(vec3 c_2) {
-    vec3 low_1 = (c_2 * 12.92);
-    vec3 high_1 = ((1.055 * pow(c_2, vec3(0.41666666))) - vec3(0.055));
-    return mix(high_1, low_1, lessThanEqual(c_2, vec3(0.0031308)));
 }
 
 MapUv map_uv(uint flags, uint slot, MapUv first, MapUv second) {
@@ -5567,7 +6041,7 @@ vec3 light_surface(PbrMaterial m_5, vec3 normal_3, vec3 to_view_2, vec2 dfg_3, v
     return ((_e15.diffuse + _e15.specular) + (_e22 * occlusion));
 }
 
-vec4 shade(Surface s_2, SurfaceInput input_3) {
+vec4 shade(Surface s_2, SurfaceInput input_3, vec2 pixel_2) {
     vec3 normal_5 = normalize(s_2.normal);
     vec3 _e5 = dFdx(input_3.normal);
     vec3 _e8 = dFdy(input_3.normal);
@@ -5584,8 +6058,8 @@ vec4 shade(Surface s_2, SurfaceInput input_3) {
     }
     Material _e39 = material_row;
     vec3 _e40 = fogged(outgoing, input_3.relativePosition, _e39);
-    vec3 _e41 = linear_to_srgb(_e40);
-    return vec4(_e41, 1.0);
+    vec4 _e42 = finish_null3d_mesh(_e40, pixel_2);
+    return _e42;
 }
 
 void main() {
@@ -5613,8 +6087,8 @@ void main() {
     SurfaceInput _e58 = input_;
     Surface _e59 = defaultSurface(_e58);
     SurfaceInput _e60 = input_;
-    vec4 _e61 = shade(_e59, _e60);
-    _fs2p_location0 = _e61;
+    vec4 _e63 = shade(_e59, _e60, in_.clip.xy);
+    _fs2p_location0 = _e63;
     return;
 }
 `,
@@ -5712,6 +6186,12 @@ precision highp int;
 
 uniform uint naga_vs_first_instance;
 
+struct Output {
+    float exposure;
+    uint tone_mapping;
+    uint spare_a;
+    uint spare_b;
+};
 struct Fog {
     vec3 color;
     uint kind;
@@ -5736,6 +6216,7 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Output output_;
     Fog fog;
     vec4 clock;
     vec4 camera_world;
@@ -5822,6 +6303,12 @@ struct Surface {
     float occlusion;
     vec3 irradiance;
 };
+const mat3x3 ACES_INPUT = mat3x3(vec3(0.59719, 0.076, 0.0284), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
+const mat3x3 ACES_OUTPUT = mat3x3(vec3(1.60475, -0.10208, -0.00327), vec3(-0.53108, 1.10813, -0.07276), vec3(-0.07367, -0.00605, 1.07602));
+const mat3x3 LINEAR_SRGB_TO_LINEAR_REC2020_ = mat3x3(vec3(0.6274, 0.0691, 0.0164), vec3(0.3293, 0.9195, 0.088), vec3(0.0433, 0.0113, 0.8956));
+const mat3x3 AGX_INSET = mat3x3(vec3(0.85662717, 0.13731897, 0.11189821), vec3(0.09512124, 0.761242, 0.076799415), vec3(0.048251607, 0.10143904, 0.81130236));
+const mat3x3 AGX_OUTSET = mat3x3(vec3(1.1271006, -0.14132977, -0.14132977), vec3(-0.11060664, 1.1578237, -0.11060664), vec3(-0.016493939, -0.016493939, 1.2519364));
+const mat3x3 LINEAR_REC2020_TO_LINEAR_SRGB = mat3x3(vec3(1.6605, -0.1246, -0.0182), vec3(-0.5876, 1.1329, -0.1006), vec3(-0.0728, -0.0083, 1.1187));
 const uint LINEAR = 1u;
 const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
@@ -5900,9 +6387,9 @@ vec3 transform_direction(Transform t_1, vec3 d) {
 vec3 transform_normal(Transform t_2, vec3 n) {
     vec3 a = t_2.x.xyz;
     vec3 b = t_2.y.xyz;
-    vec3 c_3 = t_2.z.xyz;
-    vec3 bc = cross(b, c_3);
-    vec3 ca = cross(c_3, a);
+    vec3 c_4 = t_2.z.xyz;
+    vec3 bc = cross(b, c_4);
+    vec3 ca = cross(c_4, a);
     vec3 ab = cross(a, b);
     float facing = ((dot(a, bc) >= 0.0) ? 1.0 : -1.0);
     return normalize((vec3(dot(bc, n), dot(ca, n), dot(ab, n)) * facing));
@@ -5912,12 +6399,16 @@ vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
     return (view_proj * vec4(relative_position_2, 1.0));
 }
 
-vec3 fogged(vec3 c_1, vec3 relative, Material m_1) {
+vec4 finish_null3d_tonemap(vec3 c_1, vec2 pixel, Output settings) {
+    return vec4(c_1, 1.0);
+}
+
+vec3 fogged(vec3 c_2, vec3 relative, Material m_1) {
     bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
     vec3 _e11 = _group_0_binding_0_vs.fog.color;
     Fog _e14 = _group_0_binding_0_vs.fog;
     float _e16 = fog_factor(_e14, relative);
-    vec3 _e20 = apply_fog(c_1, _e11, (fog_on ? _e16 : 0.0));
+    vec3 _e20 = apply_fog(c_2, _e11, (fog_on ? _e16 : 0.0));
     return _e20;
 }
 
@@ -6007,6 +6498,12 @@ vec3 world_normal(Instance found_3, vec3 normal) {
     return _e3;
 }
 
+vec4 finish_null3d_mesh(vec3 c_3, vec2 pixel_1) {
+    Output _e2 = _group_0_binding_0_vs.output_;
+    vec4 _e5 = finish_null3d_tonemap(c_3, pixel_1, _e2);
+    return _e5;
+}
+
 vec3 world_direction(Instance found_4, vec3 direction) {
     Transform _e1 = transform_of(found_4);
     vec3 _e3 = transform_direction(_e1, direction);
@@ -6088,12 +6585,6 @@ vec3 indirect_diffuse(PbrMaterial m_4, vec3 irradiance, vec2 dfg_2) {
     Scattering _e4 = multiscattering(m_4.specular, m_4.specular_grazing, dfg_2);
     vec3 _e6 = brdf_lambert(m_4.diffuse);
     return ((irradiance * _e6) * ((vec3(1.0) - _e4.single) - _e4.multi));
-}
-
-vec3 linear_to_srgb(vec3 c_2) {
-    vec3 low = (c_2 * 12.92);
-    vec3 high = ((1.055 * pow(c_2, vec3(0.41666666))) - vec3(0.055));
-    return mix(high, low, lessThanEqual(c_2, vec3(0.0031308)));
 }
 
 MapUv map_uv(uint flags, uint slot, MapUv first, MapUv second) {
@@ -6194,6 +6685,12 @@ void main() {
 precision highp float;
 precision highp int;
 
+struct Output {
+    float exposure;
+    uint tone_mapping;
+    uint spare_a;
+    uint spare_b;
+};
 struct Fog {
     vec3 color;
     uint kind;
@@ -6218,6 +6715,7 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Output output_;
     Fog fog;
     vec4 clock;
     vec4 camera_world;
@@ -6304,6 +6802,12 @@ struct Surface {
     float occlusion;
     vec3 irradiance;
 };
+const mat3x3 ACES_INPUT = mat3x3(vec3(0.59719, 0.076, 0.0284), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
+const mat3x3 ACES_OUTPUT = mat3x3(vec3(1.60475, -0.10208, -0.00327), vec3(-0.53108, 1.10813, -0.07276), vec3(-0.07367, -0.00605, 1.07602));
+const mat3x3 LINEAR_SRGB_TO_LINEAR_REC2020_ = mat3x3(vec3(0.6274, 0.0691, 0.0164), vec3(0.3293, 0.9195, 0.088), vec3(0.0433, 0.0113, 0.8956));
+const mat3x3 AGX_INSET = mat3x3(vec3(0.85662717, 0.13731897, 0.11189821), vec3(0.09512124, 0.761242, 0.076799415), vec3(0.048251607, 0.10143904, 0.81130236));
+const mat3x3 AGX_OUTSET = mat3x3(vec3(1.1271006, -0.14132977, -0.14132977), vec3(-0.11060664, 1.1578237, -0.11060664), vec3(-0.016493939, -0.016493939, 1.2519364));
+const mat3x3 LINEAR_REC2020_TO_LINEAR_SRGB = mat3x3(vec3(1.6605, -0.1246, -0.0182), vec3(-0.5876, 1.1329, -0.1006), vec3(-0.0728, -0.0083, 1.1187));
 const uint LINEAR = 1u;
 const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
@@ -6384,9 +6888,9 @@ vec3 transform_direction(Transform t_1, vec3 d) {
 vec3 transform_normal(Transform t_2, vec3 n) {
     vec3 a = t_2.x.xyz;
     vec3 b = t_2.y.xyz;
-    vec3 c_3 = t_2.z.xyz;
-    vec3 bc = cross(b, c_3);
-    vec3 ca = cross(c_3, a);
+    vec3 c_4 = t_2.z.xyz;
+    vec3 bc = cross(b, c_4);
+    vec3 ca = cross(c_4, a);
     vec3 ab = cross(a, b);
     float facing = ((dot(a, bc) >= 0.0) ? 1.0 : -1.0);
     return normalize((vec3(dot(bc, n), dot(ca, n), dot(ab, n)) * facing));
@@ -6394,6 +6898,10 @@ vec3 transform_normal(Transform t_2, vec3 n) {
 
 vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
     return (view_proj * vec4(relative_position_2, 1.0));
+}
+
+vec4 finish_null3d_tonemap(vec3 c_1, vec2 pixel, Output settings) {
+    return vec4(c_1, 1.0);
 }
 
 Material material_of(uint id) {
@@ -6418,12 +6926,12 @@ Material material_of(uint id) {
     return _e50;
 }
 
-vec3 fogged(vec3 c_1, vec3 relative, Material m_1) {
+vec3 fogged(vec3 c_2, vec3 relative, Material m_1) {
     bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
     vec3 _e11 = _group_0_binding_0_fs.fog.color;
     Fog _e14 = _group_0_binding_0_fs.fog;
     float _e16 = fog_factor(_e14, relative);
-    vec3 _e20 = apply_fog(c_1, _e11, (fog_on ? _e16 : 0.0));
+    vec3 _e20 = apply_fog(c_2, _e11, (fog_on ? _e16 : 0.0));
     return _e20;
 }
 
@@ -6460,6 +6968,12 @@ vec3 world_normal(Instance found_3, vec3 normal) {
     return _e3;
 }
 
+vec4 finish_null3d_mesh(vec3 c_3, vec2 pixel_1) {
+    Output _e2 = _group_0_binding_0_fs.output_;
+    vec4 _e5 = finish_null3d_tonemap(c_3, pixel_1, _e2);
+    return _e5;
+}
+
 vec3 world_direction(Instance found_4, vec3 direction) {
     Transform _e1 = transform_of(found_4);
     vec3 _e3 = transform_direction(_e1, direction);
@@ -6477,10 +6991,10 @@ vec2 dfg_lut(float n_dot_v, float roughness) {
     vec4 _e36 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(high.x, low.y)), 0);
     vec2 b_1 = _e36.xy;
     vec4 _e43 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(low.x, high.y)), 0);
-    vec2 c_4 = _e43.xy;
+    vec2 c_5 = _e43.xy;
     vec4 _e47 = texelFetch(_group_0_binding_3_fs, ivec2(high), 0);
     vec2 d_1 = _e47.xy;
-    return mix(mix(a_1, b_1, t_3.x), mix(c_4, d_1, t_3.x), t_3.y);
+    return mix(mix(a_1, b_1, t_3.x), mix(c_5, d_1, t_3.x), t_3.y);
 }
 
 vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
@@ -6558,12 +7072,6 @@ vec3 indirect_diffuse(PbrMaterial m_4, vec3 irradiance, vec2 dfg_2) {
     Scattering _e4 = multiscattering(m_4.specular, m_4.specular_grazing, dfg_2);
     vec3 _e6 = brdf_lambert(m_4.diffuse);
     return ((irradiance * _e6) * ((vec3(1.0) - _e4.single) - _e4.multi));
-}
-
-vec3 linear_to_srgb(vec3 c_2) {
-    vec3 low_1 = (c_2 * 12.92);
-    vec3 high_1 = ((1.055 * pow(c_2, vec3(0.41666666))) - vec3(0.055));
-    return mix(high_1, low_1, lessThanEqual(c_2, vec3(0.0031308)));
 }
 
 MapUv map_uv(uint flags, uint slot, MapUv first, MapUv second) {
@@ -6676,7 +7184,7 @@ vec3 light_surface(PbrMaterial m_5, vec3 normal_3, vec3 to_view_2, vec2 dfg_3, v
     return ((_e15.diffuse + _e15.specular) + (_e22 * occlusion));
 }
 
-vec4 shade(Surface s_2, SurfaceInput input_3) {
+vec4 shade(Surface s_2, SurfaceInput input_3, vec2 pixel_2) {
     vec3 normal_5 = normalize(s_2.normal);
     vec3 _e5 = dFdx(input_3.normal);
     vec3 _e8 = dFdy(input_3.normal);
@@ -6693,8 +7201,8 @@ vec4 shade(Surface s_2, SurfaceInput input_3) {
     }
     Material _e39 = material_row;
     vec3 _e40 = fogged(outgoing, input_3.relativePosition, _e39);
-    vec3 _e41 = linear_to_srgb(_e40);
-    return vec4(_e41, 1.0);
+    vec4 _e42 = finish_null3d_mesh(_e40, pixel_2);
+    return _e42;
 }
 
 void main() {
@@ -6724,8 +7232,8 @@ void main() {
     SurfaceInput _e62 = input_;
     Surface _e63 = defaultSurface(_e62);
     SurfaceInput _e64 = input_;
-    vec4 _e65 = shade(_e63, _e64);
-    _fs2p_location0 = _e65;
+    vec4 _e67 = shade(_e63, _e64, in_.clip.xy);
+    _fs2p_location0 = _e67;
     return;
 }
 `,
@@ -6823,6 +7331,12 @@ precision highp int;
 
 uniform uint naga_vs_first_instance;
 
+struct Output {
+    float exposure;
+    uint tone_mapping;
+    uint spare_a;
+    uint spare_b;
+};
 struct Fog {
     vec3 color;
     uint kind;
@@ -6847,6 +7361,7 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Output output_;
     Fog fog;
     vec4 clock;
     vec4 camera_world;
@@ -6930,6 +7445,12 @@ struct Surface {
     float occlusion;
     vec3 irradiance;
 };
+const mat3x3 ACES_INPUT = mat3x3(vec3(0.59719, 0.076, 0.0284), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
+const mat3x3 ACES_OUTPUT = mat3x3(vec3(1.60475, -0.10208, -0.00327), vec3(-0.53108, 1.10813, -0.07276), vec3(-0.07367, -0.00605, 1.07602));
+const mat3x3 LINEAR_SRGB_TO_LINEAR_REC2020_ = mat3x3(vec3(0.6274, 0.0691, 0.0164), vec3(0.3293, 0.9195, 0.088), vec3(0.0433, 0.0113, 0.8956));
+const mat3x3 AGX_INSET = mat3x3(vec3(0.85662717, 0.13731897, 0.11189821), vec3(0.09512124, 0.761242, 0.076799415), vec3(0.048251607, 0.10143904, 0.81130236));
+const mat3x3 AGX_OUTSET = mat3x3(vec3(1.1271006, -0.14132977, -0.14132977), vec3(-0.11060664, 1.1578237, -0.11060664), vec3(-0.016493939, -0.016493939, 1.2519364));
+const mat3x3 LINEAR_REC2020_TO_LINEAR_SRGB = mat3x3(vec3(1.6605, -0.1246, -0.0182), vec3(-0.5876, 1.1329, -0.1006), vec3(-0.0728, -0.0083, 1.1187));
 const uint LINEAR = 1u;
 const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
@@ -7002,9 +7523,9 @@ vec3 transform_point(Transform t, vec3 p) {
 vec3 transform_normal(Transform t_1, vec3 n) {
     vec3 a = t_1.x.xyz;
     vec3 b = t_1.y.xyz;
-    vec3 c_3 = t_1.z.xyz;
-    vec3 bc = cross(b, c_3);
-    vec3 ca = cross(c_3, a);
+    vec3 c_4 = t_1.z.xyz;
+    vec3 bc = cross(b, c_4);
+    vec3 ca = cross(c_4, a);
     vec3 ab = cross(a, b);
     float facing = ((dot(a, bc) >= 0.0) ? 1.0 : -1.0);
     return normalize((vec3(dot(bc, n), dot(ca, n), dot(ab, n)) * facing));
@@ -7014,12 +7535,16 @@ vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
     return (view_proj * vec4(relative_position_2, 1.0));
 }
 
-vec3 fogged(vec3 c_1, vec3 relative, Material m_1) {
+vec4 finish_null3d_tonemap(vec3 c_1, vec2 pixel, Output settings) {
+    return vec4(c_1, 1.0);
+}
+
+vec3 fogged(vec3 c_2, vec3 relative, Material m_1) {
     bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
     vec3 _e11 = _group_0_binding_0_vs.fog.color;
     Fog _e14 = _group_0_binding_0_vs.fog;
     float _e16 = fog_factor(_e14, relative);
-    vec3 _e20 = apply_fog(c_1, _e11, (fog_on ? _e16 : 0.0));
+    vec3 _e20 = apply_fog(c_2, _e11, (fog_on ? _e16 : 0.0));
     return _e20;
 }
 
@@ -7109,6 +7634,12 @@ vec3 world_normal(Instance found_3, vec3 normal) {
     return _e3;
 }
 
+vec4 finish_null3d_mesh(vec3 c_3, vec2 pixel_1) {
+    Output _e2 = _group_0_binding_0_vs.output_;
+    vec4 _e5 = finish_null3d_tonemap(c_3, pixel_1, _e2);
+    return _e5;
+}
+
 vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
     return (vec3(1.0) + (f0_ * ((1.0 / (dfg.x + dfg.y)) - 1.0)));
 }
@@ -7184,12 +7715,6 @@ vec3 indirect_diffuse(PbrMaterial m_4, vec3 irradiance, vec2 dfg_2) {
     Scattering _e4 = multiscattering(m_4.specular, m_4.specular_grazing, dfg_2);
     vec3 _e6 = brdf_lambert(m_4.diffuse);
     return ((irradiance * _e6) * ((vec3(1.0) - _e4.single) - _e4.multi));
-}
-
-vec3 linear_to_srgb(vec3 c_2) {
-    vec3 low = (c_2 * 12.92);
-    vec3 high = ((1.055 * pow(c_2, vec3(0.41666666))) - vec3(0.055));
-    return mix(high, low, lessThanEqual(c_2, vec3(0.0031308)));
 }
 
 MapUv map_uv(uint flags, uint slot, MapUv first, MapUv second) {
@@ -7285,6 +7810,12 @@ void main() {
 precision highp float;
 precision highp int;
 
+struct Output {
+    float exposure;
+    uint tone_mapping;
+    uint spare_a;
+    uint spare_b;
+};
 struct Fog {
     vec3 color;
     uint kind;
@@ -7309,6 +7840,7 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Output output_;
     Fog fog;
     vec4 clock;
     vec4 camera_world;
@@ -7392,6 +7924,12 @@ struct Surface {
     float occlusion;
     vec3 irradiance;
 };
+const mat3x3 ACES_INPUT = mat3x3(vec3(0.59719, 0.076, 0.0284), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
+const mat3x3 ACES_OUTPUT = mat3x3(vec3(1.60475, -0.10208, -0.00327), vec3(-0.53108, 1.10813, -0.07276), vec3(-0.07367, -0.00605, 1.07602));
+const mat3x3 LINEAR_SRGB_TO_LINEAR_REC2020_ = mat3x3(vec3(0.6274, 0.0691, 0.0164), vec3(0.3293, 0.9195, 0.088), vec3(0.0433, 0.0113, 0.8956));
+const mat3x3 AGX_INSET = mat3x3(vec3(0.85662717, 0.13731897, 0.11189821), vec3(0.09512124, 0.761242, 0.076799415), vec3(0.048251607, 0.10143904, 0.81130236));
+const mat3x3 AGX_OUTSET = mat3x3(vec3(1.1271006, -0.14132977, -0.14132977), vec3(-0.11060664, 1.1578237, -0.11060664), vec3(-0.016493939, -0.016493939, 1.2519364));
+const mat3x3 LINEAR_REC2020_TO_LINEAR_SRGB = mat3x3(vec3(1.6605, -0.1246, -0.0182), vec3(-0.5876, 1.1329, -0.1006), vec3(-0.0728, -0.0083, 1.1187));
 const uint LINEAR = 1u;
 const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
@@ -7466,9 +8004,9 @@ vec3 transform_point(Transform t, vec3 p) {
 vec3 transform_normal(Transform t_1, vec3 n) {
     vec3 a = t_1.x.xyz;
     vec3 b = t_1.y.xyz;
-    vec3 c_3 = t_1.z.xyz;
-    vec3 bc = cross(b, c_3);
-    vec3 ca = cross(c_3, a);
+    vec3 c_4 = t_1.z.xyz;
+    vec3 bc = cross(b, c_4);
+    vec3 ca = cross(c_4, a);
     vec3 ab = cross(a, b);
     float facing = ((dot(a, bc) >= 0.0) ? 1.0 : -1.0);
     return normalize((vec3(dot(bc, n), dot(ca, n), dot(ab, n)) * facing));
@@ -7476,6 +8014,10 @@ vec3 transform_normal(Transform t_1, vec3 n) {
 
 vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
     return (view_proj * vec4(relative_position_2, 1.0));
+}
+
+vec4 finish_null3d_tonemap(vec3 c_1, vec2 pixel, Output settings) {
+    return vec4(c_1, 1.0);
 }
 
 Material material_of(uint id) {
@@ -7500,12 +8042,12 @@ Material material_of(uint id) {
     return _e50;
 }
 
-vec3 fogged(vec3 c_1, vec3 relative, Material m_1) {
+vec3 fogged(vec3 c_2, vec3 relative, Material m_1) {
     bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
     vec3 _e11 = _group_0_binding_0_fs.fog.color;
     Fog _e14 = _group_0_binding_0_fs.fog;
     float _e16 = fog_factor(_e14, relative);
-    vec3 _e20 = apply_fog(c_1, _e11, (fog_on ? _e16 : 0.0));
+    vec3 _e20 = apply_fog(c_2, _e11, (fog_on ? _e16 : 0.0));
     return _e20;
 }
 
@@ -7542,6 +8084,12 @@ vec3 world_normal(Instance found_3, vec3 normal) {
     return _e3;
 }
 
+vec4 finish_null3d_mesh(vec3 c_3, vec2 pixel_1) {
+    Output _e2 = _group_0_binding_0_fs.output_;
+    vec4 _e5 = finish_null3d_tonemap(c_3, pixel_1, _e2);
+    return _e5;
+}
+
 vec2 dfg_lut(float n_dot_v, float roughness) {
     vec2 size = vec2(uvec2(textureSize(_group_0_binding_3_fs, 0).xy));
     vec2 at = clamp(((vec2(roughness, n_dot_v) * size) - vec2(0.5)), vec2(0.0), (size - vec2(1.0)));
@@ -7553,10 +8101,10 @@ vec2 dfg_lut(float n_dot_v, float roughness) {
     vec4 _e36 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(high.x, low.y)), 0);
     vec2 b_1 = _e36.xy;
     vec4 _e43 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(low.x, high.y)), 0);
-    vec2 c_4 = _e43.xy;
+    vec2 c_5 = _e43.xy;
     vec4 _e47 = texelFetch(_group_0_binding_3_fs, ivec2(high), 0);
     vec2 d = _e47.xy;
-    return mix(mix(a_1, b_1, t_2.x), mix(c_4, d, t_2.x), t_2.y);
+    return mix(mix(a_1, b_1, t_2.x), mix(c_5, d, t_2.x), t_2.y);
 }
 
 vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
@@ -7634,12 +8182,6 @@ vec3 indirect_diffuse(PbrMaterial m_4, vec3 irradiance, vec2 dfg_2) {
     Scattering _e4 = multiscattering(m_4.specular, m_4.specular_grazing, dfg_2);
     vec3 _e6 = brdf_lambert(m_4.diffuse);
     return ((irradiance * _e6) * ((vec3(1.0) - _e4.single) - _e4.multi));
-}
-
-vec3 linear_to_srgb(vec3 c_2) {
-    vec3 low_1 = (c_2 * 12.92);
-    vec3 high_1 = ((1.055 * pow(c_2, vec3(0.41666666))) - vec3(0.055));
-    return mix(high_1, low_1, lessThanEqual(c_2, vec3(0.0031308)));
 }
 
 MapUv map_uv(uint flags, uint slot, MapUv first, MapUv second) {
@@ -7769,7 +8311,7 @@ vec3 light_surface(PbrMaterial m_5, vec3 normal_3, vec3 to_view_2, vec2 dfg_3, v
     return ((_e15.diffuse + _e15.specular) + (_e22 * occlusion));
 }
 
-vec4 shade(Surface s_2, SurfaceInput input_3) {
+vec4 shade(Surface s_2, SurfaceInput input_3, vec2 pixel_2) {
     vec3 normal_5 = normalize(s_2.normal);
     vec3 _e5 = dFdx(input_3.normal);
     vec3 _e8 = dFdy(input_3.normal);
@@ -7782,8 +8324,8 @@ vec4 shade(Surface s_2, SurfaceInput input_3) {
     vec3 outgoing = (_e28 + s_2.emissive);
     Material _e33 = material_row;
     vec3 _e34 = fogged(outgoing, input_3.relativePosition, _e33);
-    vec3 _e35 = linear_to_srgb(_e34);
-    return vec4(_e35, 1.0);
+    vec4 _e36 = finish_null3d_mesh(_e34, pixel_2);
+    return _e36;
 }
 
 void main() {
@@ -7812,8 +8354,8 @@ void main() {
     SurfaceInput _e60 = input_;
     Surface _e61 = defaultSurface(_e60);
     SurfaceInput _e62 = input_;
-    vec4 _e63 = shade(_e61, _e62);
-    _fs2p_location0 = _e63;
+    vec4 _e65 = shade(_e61, _e62, in_.clip.xy);
+    _fs2p_location0 = _e65;
     return;
 }
 `,
@@ -7911,6 +8453,12 @@ precision highp int;
 
 uniform uint naga_vs_first_instance;
 
+struct Output {
+    float exposure;
+    uint tone_mapping;
+    uint spare_a;
+    uint spare_b;
+};
 struct Fog {
     vec3 color;
     uint kind;
@@ -7935,6 +8483,7 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Output output_;
     Fog fog;
     vec4 clock;
     vec4 camera_world;
@@ -8018,6 +8567,12 @@ struct Surface {
     float occlusion;
     vec3 irradiance;
 };
+const mat3x3 ACES_INPUT = mat3x3(vec3(0.59719, 0.076, 0.0284), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
+const mat3x3 ACES_OUTPUT = mat3x3(vec3(1.60475, -0.10208, -0.00327), vec3(-0.53108, 1.10813, -0.07276), vec3(-0.07367, -0.00605, 1.07602));
+const mat3x3 LINEAR_SRGB_TO_LINEAR_REC2020_ = mat3x3(vec3(0.6274, 0.0691, 0.0164), vec3(0.3293, 0.9195, 0.088), vec3(0.0433, 0.0113, 0.8956));
+const mat3x3 AGX_INSET = mat3x3(vec3(0.85662717, 0.13731897, 0.11189821), vec3(0.09512124, 0.761242, 0.076799415), vec3(0.048251607, 0.10143904, 0.81130236));
+const mat3x3 AGX_OUTSET = mat3x3(vec3(1.1271006, -0.14132977, -0.14132977), vec3(-0.11060664, 1.1578237, -0.11060664), vec3(-0.016493939, -0.016493939, 1.2519364));
+const mat3x3 LINEAR_REC2020_TO_LINEAR_SRGB = mat3x3(vec3(1.6605, -0.1246, -0.0182), vec3(-0.5876, 1.1329, -0.1006), vec3(-0.0728, -0.0083, 1.1187));
 const uint LINEAR = 1u;
 const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
@@ -8090,9 +8645,9 @@ vec3 transform_point(Transform t, vec3 p) {
 vec3 transform_normal(Transform t_1, vec3 n) {
     vec3 a = t_1.x.xyz;
     vec3 b = t_1.y.xyz;
-    vec3 c_3 = t_1.z.xyz;
-    vec3 bc = cross(b, c_3);
-    vec3 ca = cross(c_3, a);
+    vec3 c_4 = t_1.z.xyz;
+    vec3 bc = cross(b, c_4);
+    vec3 ca = cross(c_4, a);
     vec3 ab = cross(a, b);
     float facing = ((dot(a, bc) >= 0.0) ? 1.0 : -1.0);
     return normalize((vec3(dot(bc, n), dot(ca, n), dot(ab, n)) * facing));
@@ -8102,12 +8657,16 @@ vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
     return (view_proj * vec4(relative_position_2, 1.0));
 }
 
-vec3 fogged(vec3 c_1, vec3 relative, Material m_1) {
+vec4 finish_null3d_tonemap(vec3 c_1, vec2 pixel, Output settings) {
+    return vec4(c_1, 1.0);
+}
+
+vec3 fogged(vec3 c_2, vec3 relative, Material m_1) {
     bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
     vec3 _e11 = _group_0_binding_0_vs.fog.color;
     Fog _e14 = _group_0_binding_0_vs.fog;
     float _e16 = fog_factor(_e14, relative);
-    vec3 _e20 = apply_fog(c_1, _e11, (fog_on ? _e16 : 0.0));
+    vec3 _e20 = apply_fog(c_2, _e11, (fog_on ? _e16 : 0.0));
     return _e20;
 }
 
@@ -8197,6 +8756,12 @@ vec3 world_normal(Instance found_3, vec3 normal) {
     return _e3;
 }
 
+vec4 finish_null3d_mesh(vec3 c_3, vec2 pixel_1) {
+    Output _e2 = _group_0_binding_0_vs.output_;
+    vec4 _e5 = finish_null3d_tonemap(c_3, pixel_1, _e2);
+    return _e5;
+}
+
 vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
     return (vec3(1.0) + (f0_ * ((1.0 / (dfg.x + dfg.y)) - 1.0)));
 }
@@ -8272,12 +8837,6 @@ vec3 indirect_diffuse(PbrMaterial m_4, vec3 irradiance, vec2 dfg_2) {
     Scattering _e4 = multiscattering(m_4.specular, m_4.specular_grazing, dfg_2);
     vec3 _e6 = brdf_lambert(m_4.diffuse);
     return ((irradiance * _e6) * ((vec3(1.0) - _e4.single) - _e4.multi));
-}
-
-vec3 linear_to_srgb(vec3 c_2) {
-    vec3 low = (c_2 * 12.92);
-    vec3 high = ((1.055 * pow(c_2, vec3(0.41666666))) - vec3(0.055));
-    return mix(high, low, lessThanEqual(c_2, vec3(0.0031308)));
 }
 
 MapUv map_uv(uint flags, uint slot, MapUv first, MapUv second) {
@@ -8373,6 +8932,12 @@ void main() {
 precision highp float;
 precision highp int;
 
+struct Output {
+    float exposure;
+    uint tone_mapping;
+    uint spare_a;
+    uint spare_b;
+};
 struct Fog {
     vec3 color;
     uint kind;
@@ -8397,6 +8962,7 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Output output_;
     Fog fog;
     vec4 clock;
     vec4 camera_world;
@@ -8480,6 +9046,12 @@ struct Surface {
     float occlusion;
     vec3 irradiance;
 };
+const mat3x3 ACES_INPUT = mat3x3(vec3(0.59719, 0.076, 0.0284), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
+const mat3x3 ACES_OUTPUT = mat3x3(vec3(1.60475, -0.10208, -0.00327), vec3(-0.53108, 1.10813, -0.07276), vec3(-0.07367, -0.00605, 1.07602));
+const mat3x3 LINEAR_SRGB_TO_LINEAR_REC2020_ = mat3x3(vec3(0.6274, 0.0691, 0.0164), vec3(0.3293, 0.9195, 0.088), vec3(0.0433, 0.0113, 0.8956));
+const mat3x3 AGX_INSET = mat3x3(vec3(0.85662717, 0.13731897, 0.11189821), vec3(0.09512124, 0.761242, 0.076799415), vec3(0.048251607, 0.10143904, 0.81130236));
+const mat3x3 AGX_OUTSET = mat3x3(vec3(1.1271006, -0.14132977, -0.14132977), vec3(-0.11060664, 1.1578237, -0.11060664), vec3(-0.016493939, -0.016493939, 1.2519364));
+const mat3x3 LINEAR_REC2020_TO_LINEAR_SRGB = mat3x3(vec3(1.6605, -0.1246, -0.0182), vec3(-0.5876, 1.1329, -0.1006), vec3(-0.0728, -0.0083, 1.1187));
 const uint LINEAR = 1u;
 const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
@@ -8554,9 +9126,9 @@ vec3 transform_point(Transform t, vec3 p) {
 vec3 transform_normal(Transform t_1, vec3 n) {
     vec3 a = t_1.x.xyz;
     vec3 b = t_1.y.xyz;
-    vec3 c_3 = t_1.z.xyz;
-    vec3 bc = cross(b, c_3);
-    vec3 ca = cross(c_3, a);
+    vec3 c_4 = t_1.z.xyz;
+    vec3 bc = cross(b, c_4);
+    vec3 ca = cross(c_4, a);
     vec3 ab = cross(a, b);
     float facing = ((dot(a, bc) >= 0.0) ? 1.0 : -1.0);
     return normalize((vec3(dot(bc, n), dot(ca, n), dot(ab, n)) * facing));
@@ -8564,6 +9136,10 @@ vec3 transform_normal(Transform t_1, vec3 n) {
 
 vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
     return (view_proj * vec4(relative_position_2, 1.0));
+}
+
+vec4 finish_null3d_tonemap(vec3 c_1, vec2 pixel, Output settings) {
+    return vec4(c_1, 1.0);
 }
 
 Material material_of(uint id) {
@@ -8588,12 +9164,12 @@ Material material_of(uint id) {
     return _e50;
 }
 
-vec3 fogged(vec3 c_1, vec3 relative, Material m_1) {
+vec3 fogged(vec3 c_2, vec3 relative, Material m_1) {
     bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
     vec3 _e11 = _group_0_binding_0_fs.fog.color;
     Fog _e14 = _group_0_binding_0_fs.fog;
     float _e16 = fog_factor(_e14, relative);
-    vec3 _e20 = apply_fog(c_1, _e11, (fog_on ? _e16 : 0.0));
+    vec3 _e20 = apply_fog(c_2, _e11, (fog_on ? _e16 : 0.0));
     return _e20;
 }
 
@@ -8630,6 +9206,12 @@ vec3 world_normal(Instance found_3, vec3 normal) {
     return _e3;
 }
 
+vec4 finish_null3d_mesh(vec3 c_3, vec2 pixel_1) {
+    Output _e2 = _group_0_binding_0_fs.output_;
+    vec4 _e5 = finish_null3d_tonemap(c_3, pixel_1, _e2);
+    return _e5;
+}
+
 vec2 dfg_lut(float n_dot_v, float roughness) {
     vec2 size = vec2(uvec2(textureSize(_group_0_binding_3_fs, 0).xy));
     vec2 at = clamp(((vec2(roughness, n_dot_v) * size) - vec2(0.5)), vec2(0.0), (size - vec2(1.0)));
@@ -8641,10 +9223,10 @@ vec2 dfg_lut(float n_dot_v, float roughness) {
     vec4 _e36 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(high.x, low.y)), 0);
     vec2 b_1 = _e36.xy;
     vec4 _e43 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(low.x, high.y)), 0);
-    vec2 c_4 = _e43.xy;
+    vec2 c_5 = _e43.xy;
     vec4 _e47 = texelFetch(_group_0_binding_3_fs, ivec2(high), 0);
     vec2 d = _e47.xy;
-    return mix(mix(a_1, b_1, t_2.x), mix(c_4, d, t_2.x), t_2.y);
+    return mix(mix(a_1, b_1, t_2.x), mix(c_5, d, t_2.x), t_2.y);
 }
 
 vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
@@ -8722,12 +9304,6 @@ vec3 indirect_diffuse(PbrMaterial m_4, vec3 irradiance, vec2 dfg_2) {
     Scattering _e4 = multiscattering(m_4.specular, m_4.specular_grazing, dfg_2);
     vec3 _e6 = brdf_lambert(m_4.diffuse);
     return ((irradiance * _e6) * ((vec3(1.0) - _e4.single) - _e4.multi));
-}
-
-vec3 linear_to_srgb(vec3 c_2) {
-    vec3 low_1 = (c_2 * 12.92);
-    vec3 high_1 = ((1.055 * pow(c_2, vec3(0.41666666))) - vec3(0.055));
-    return mix(high_1, low_1, lessThanEqual(c_2, vec3(0.0031308)));
 }
 
 MapUv map_uv(uint flags, uint slot, MapUv first, MapUv second) {
@@ -8857,7 +9433,7 @@ vec3 light_surface(PbrMaterial m_5, vec3 normal_3, vec3 to_view_2, vec2 dfg_3, v
     return ((_e15.diffuse + _e15.specular) + (_e22 * occlusion));
 }
 
-vec4 shade(Surface s_2, SurfaceInput input_3) {
+vec4 shade(Surface s_2, SurfaceInput input_3, vec2 pixel_2) {
     vec3 normal_5 = normalize(s_2.normal);
     vec3 _e5 = dFdx(input_3.normal);
     vec3 _e8 = dFdy(input_3.normal);
@@ -8874,8 +9450,8 @@ vec4 shade(Surface s_2, SurfaceInput input_3) {
     }
     Material _e39 = material_row;
     vec3 _e40 = fogged(outgoing, input_3.relativePosition, _e39);
-    vec3 _e41 = linear_to_srgb(_e40);
-    return vec4(_e41, 1.0);
+    vec4 _e42 = finish_null3d_mesh(_e40, pixel_2);
+    return _e42;
 }
 
 void main() {
@@ -8904,8 +9480,8 @@ void main() {
     SurfaceInput _e60 = input_;
     Surface _e61 = defaultSurface(_e60);
     SurfaceInput _e62 = input_;
-    vec4 _e63 = shade(_e61, _e62);
-    _fs2p_location0 = _e63;
+    vec4 _e65 = shade(_e61, _e62, in_.clip.xy);
+    _fs2p_location0 = _e65;
     return;
 }
 `,
@@ -9003,6 +9579,12 @@ precision highp int;
 
 uniform uint naga_vs_first_instance;
 
+struct Output {
+    float exposure;
+    uint tone_mapping;
+    uint spare_a;
+    uint spare_b;
+};
 struct Fog {
     vec3 color;
     uint kind;
@@ -9027,6 +9609,7 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Output output_;
     Fog fog;
     vec4 clock;
     vec4 camera_world;
@@ -9115,6 +9698,12 @@ struct Surface {
     float occlusion;
     vec3 irradiance;
 };
+const mat3x3 ACES_INPUT = mat3x3(vec3(0.59719, 0.076, 0.0284), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
+const mat3x3 ACES_OUTPUT = mat3x3(vec3(1.60475, -0.10208, -0.00327), vec3(-0.53108, 1.10813, -0.07276), vec3(-0.07367, -0.00605, 1.07602));
+const mat3x3 LINEAR_SRGB_TO_LINEAR_REC2020_ = mat3x3(vec3(0.6274, 0.0691, 0.0164), vec3(0.3293, 0.9195, 0.088), vec3(0.0433, 0.0113, 0.8956));
+const mat3x3 AGX_INSET = mat3x3(vec3(0.85662717, 0.13731897, 0.11189821), vec3(0.09512124, 0.761242, 0.076799415), vec3(0.048251607, 0.10143904, 0.81130236));
+const mat3x3 AGX_OUTSET = mat3x3(vec3(1.1271006, -0.14132977, -0.14132977), vec3(-0.11060664, 1.1578237, -0.11060664), vec3(-0.016493939, -0.016493939, 1.2519364));
+const mat3x3 LINEAR_REC2020_TO_LINEAR_SRGB = mat3x3(vec3(1.6605, -0.1246, -0.0182), vec3(-0.5876, 1.1329, -0.1006), vec3(-0.0728, -0.0083, 1.1187));
 const uint LINEAR = 1u;
 const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
@@ -9195,9 +9784,9 @@ vec3 transform_direction(Transform t_1, vec3 d) {
 vec3 transform_normal(Transform t_2, vec3 n) {
     vec3 a = t_2.x.xyz;
     vec3 b = t_2.y.xyz;
-    vec3 c_3 = t_2.z.xyz;
-    vec3 bc = cross(b, c_3);
-    vec3 ca = cross(c_3, a);
+    vec3 c_4 = t_2.z.xyz;
+    vec3 bc = cross(b, c_4);
+    vec3 ca = cross(c_4, a);
     vec3 ab = cross(a, b);
     float facing = ((dot(a, bc) >= 0.0) ? 1.0 : -1.0);
     return normalize((vec3(dot(bc, n), dot(ca, n), dot(ab, n)) * facing));
@@ -9207,12 +9796,16 @@ vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
     return (view_proj * vec4(relative_position_2, 1.0));
 }
 
-vec3 fogged(vec3 c_1, vec3 relative, Material m_1) {
+vec4 finish_null3d_tonemap(vec3 c_1, vec2 pixel, Output settings) {
+    return vec4(c_1, 1.0);
+}
+
+vec3 fogged(vec3 c_2, vec3 relative, Material m_1) {
     bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
     vec3 _e11 = _group_0_binding_0_vs.fog.color;
     Fog _e14 = _group_0_binding_0_vs.fog;
     float _e16 = fog_factor(_e14, relative);
-    vec3 _e20 = apply_fog(c_1, _e11, (fog_on ? _e16 : 0.0));
+    vec3 _e20 = apply_fog(c_2, _e11, (fog_on ? _e16 : 0.0));
     return _e20;
 }
 
@@ -9302,6 +9895,12 @@ vec3 world_normal(Instance found_3, vec3 normal) {
     return _e3;
 }
 
+vec4 finish_null3d_mesh(vec3 c_3, vec2 pixel_1) {
+    Output _e2 = _group_0_binding_0_vs.output_;
+    vec4 _e5 = finish_null3d_tonemap(c_3, pixel_1, _e2);
+    return _e5;
+}
+
 vec3 world_direction(Instance found_4, vec3 direction) {
     Transform _e1 = transform_of(found_4);
     vec3 _e3 = transform_direction(_e1, direction);
@@ -9383,12 +9982,6 @@ vec3 indirect_diffuse(PbrMaterial m_4, vec3 irradiance, vec2 dfg_2) {
     Scattering _e4 = multiscattering(m_4.specular, m_4.specular_grazing, dfg_2);
     vec3 _e6 = brdf_lambert(m_4.diffuse);
     return ((irradiance * _e6) * ((vec3(1.0) - _e4.single) - _e4.multi));
-}
-
-vec3 linear_to_srgb(vec3 c_2) {
-    vec3 low = (c_2 * 12.92);
-    vec3 high = ((1.055 * pow(c_2, vec3(0.41666666))) - vec3(0.055));
-    return mix(high, low, lessThanEqual(c_2, vec3(0.0031308)));
 }
 
 MapUv map_uv(uint flags, uint slot, MapUv first, MapUv second) {
@@ -9491,6 +10084,12 @@ void main() {
 precision highp float;
 precision highp int;
 
+struct Output {
+    float exposure;
+    uint tone_mapping;
+    uint spare_a;
+    uint spare_b;
+};
 struct Fog {
     vec3 color;
     uint kind;
@@ -9515,6 +10114,7 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Output output_;
     Fog fog;
     vec4 clock;
     vec4 camera_world;
@@ -9603,6 +10203,12 @@ struct Surface {
     float occlusion;
     vec3 irradiance;
 };
+const mat3x3 ACES_INPUT = mat3x3(vec3(0.59719, 0.076, 0.0284), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
+const mat3x3 ACES_OUTPUT = mat3x3(vec3(1.60475, -0.10208, -0.00327), vec3(-0.53108, 1.10813, -0.07276), vec3(-0.07367, -0.00605, 1.07602));
+const mat3x3 LINEAR_SRGB_TO_LINEAR_REC2020_ = mat3x3(vec3(0.6274, 0.0691, 0.0164), vec3(0.3293, 0.9195, 0.088), vec3(0.0433, 0.0113, 0.8956));
+const mat3x3 AGX_INSET = mat3x3(vec3(0.85662717, 0.13731897, 0.11189821), vec3(0.09512124, 0.761242, 0.076799415), vec3(0.048251607, 0.10143904, 0.81130236));
+const mat3x3 AGX_OUTSET = mat3x3(vec3(1.1271006, -0.14132977, -0.14132977), vec3(-0.11060664, 1.1578237, -0.11060664), vec3(-0.016493939, -0.016493939, 1.2519364));
+const mat3x3 LINEAR_REC2020_TO_LINEAR_SRGB = mat3x3(vec3(1.6605, -0.1246, -0.0182), vec3(-0.5876, 1.1329, -0.1006), vec3(-0.0728, -0.0083, 1.1187));
 const uint LINEAR = 1u;
 const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
@@ -9684,9 +10290,9 @@ vec3 transform_direction(Transform t_1, vec3 d) {
 vec3 transform_normal(Transform t_2, vec3 n) {
     vec3 a = t_2.x.xyz;
     vec3 b = t_2.y.xyz;
-    vec3 c_3 = t_2.z.xyz;
-    vec3 bc = cross(b, c_3);
-    vec3 ca = cross(c_3, a);
+    vec3 c_4 = t_2.z.xyz;
+    vec3 bc = cross(b, c_4);
+    vec3 ca = cross(c_4, a);
     vec3 ab = cross(a, b);
     float facing = ((dot(a, bc) >= 0.0) ? 1.0 : -1.0);
     return normalize((vec3(dot(bc, n), dot(ca, n), dot(ab, n)) * facing));
@@ -9694,6 +10300,10 @@ vec3 transform_normal(Transform t_2, vec3 n) {
 
 vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
     return (view_proj * vec4(relative_position_2, 1.0));
+}
+
+vec4 finish_null3d_tonemap(vec3 c_1, vec2 pixel, Output settings) {
+    return vec4(c_1, 1.0);
 }
 
 Material material_of(uint id) {
@@ -9718,12 +10328,12 @@ Material material_of(uint id) {
     return _e50;
 }
 
-vec3 fogged(vec3 c_1, vec3 relative, Material m_1) {
+vec3 fogged(vec3 c_2, vec3 relative, Material m_1) {
     bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
     vec3 _e11 = _group_0_binding_0_fs.fog.color;
     Fog _e14 = _group_0_binding_0_fs.fog;
     float _e16 = fog_factor(_e14, relative);
-    vec3 _e20 = apply_fog(c_1, _e11, (fog_on ? _e16 : 0.0));
+    vec3 _e20 = apply_fog(c_2, _e11, (fog_on ? _e16 : 0.0));
     return _e20;
 }
 
@@ -9760,6 +10370,12 @@ vec3 world_normal(Instance found_3, vec3 normal) {
     return _e3;
 }
 
+vec4 finish_null3d_mesh(vec3 c_3, vec2 pixel_1) {
+    Output _e2 = _group_0_binding_0_fs.output_;
+    vec4 _e5 = finish_null3d_tonemap(c_3, pixel_1, _e2);
+    return _e5;
+}
+
 vec3 world_direction(Instance found_4, vec3 direction) {
     Transform _e1 = transform_of(found_4);
     vec3 _e3 = transform_direction(_e1, direction);
@@ -9777,10 +10393,10 @@ vec2 dfg_lut(float n_dot_v, float roughness) {
     vec4 _e36 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(high.x, low.y)), 0);
     vec2 b_1 = _e36.xy;
     vec4 _e43 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(low.x, high.y)), 0);
-    vec2 c_4 = _e43.xy;
+    vec2 c_5 = _e43.xy;
     vec4 _e47 = texelFetch(_group_0_binding_3_fs, ivec2(high), 0);
     vec2 d_1 = _e47.xy;
-    return mix(mix(a_1, b_1, t_3.x), mix(c_4, d_1, t_3.x), t_3.y);
+    return mix(mix(a_1, b_1, t_3.x), mix(c_5, d_1, t_3.x), t_3.y);
 }
 
 vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
@@ -9858,12 +10474,6 @@ vec3 indirect_diffuse(PbrMaterial m_4, vec3 irradiance, vec2 dfg_2) {
     Scattering _e4 = multiscattering(m_4.specular, m_4.specular_grazing, dfg_2);
     vec3 _e6 = brdf_lambert(m_4.diffuse);
     return ((irradiance * _e6) * ((vec3(1.0) - _e4.single) - _e4.multi));
-}
-
-vec3 linear_to_srgb(vec3 c_2) {
-    vec3 low_1 = (c_2 * 12.92);
-    vec3 high_1 = ((1.055 * pow(c_2, vec3(0.41666666))) - vec3(0.055));
-    return mix(high_1, low_1, lessThanEqual(c_2, vec3(0.0031308)));
 }
 
 MapUv map_uv(uint flags, uint slot, MapUv first, MapUv second) {
@@ -9976,7 +10586,7 @@ vec3 light_surface(PbrMaterial m_5, vec3 normal_3, vec3 to_view_2, vec2 dfg_3, v
     return ((_e15.diffuse + _e15.specular) + (_e22 * occlusion));
 }
 
-vec4 shade(Surface s_2, SurfaceInput input_3) {
+vec4 shade(Surface s_2, SurfaceInput input_3, vec2 pixel_2) {
     vec3 normal_5 = normalize(s_2.normal);
     vec3 _e5 = dFdx(input_3.normal);
     vec3 _e8 = dFdy(input_3.normal);
@@ -9993,8 +10603,8 @@ vec4 shade(Surface s_2, SurfaceInput input_3) {
     }
     Material _e39 = material_row;
     vec3 _e40 = fogged(outgoing, input_3.relativePosition, _e39);
-    vec3 _e41 = linear_to_srgb(_e40);
-    return vec4(_e41, 1.0);
+    vec4 _e42 = finish_null3d_mesh(_e40, pixel_2);
+    return _e42;
 }
 
 void main() {
@@ -10025,8 +10635,8 @@ void main() {
     SurfaceInput _e64 = input_;
     Surface _e65 = defaultSurface(_e64);
     SurfaceInput _e66 = input_;
-    vec4 _e67 = shade(_e65, _e66);
-    _fs2p_location0 = _e67;
+    vec4 _e69 = shade(_e65, _e66, in_.clip.xy);
+    _fs2p_location0 = _e69;
     return;
 }
 `,
@@ -10124,6 +10734,12 @@ precision highp int;
 
 uniform uint naga_vs_first_instance;
 
+struct Output {
+    float exposure;
+    uint tone_mapping;
+    uint spare_a;
+    uint spare_b;
+};
 struct Fog {
     vec3 color;
     uint kind;
@@ -10148,6 +10764,7 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Output output_;
     Fog fog;
     vec4 clock;
     vec4 camera_world;
@@ -10236,6 +10853,12 @@ struct Surface {
     float occlusion;
     vec3 irradiance;
 };
+const mat3x3 ACES_INPUT = mat3x3(vec3(0.59719, 0.076, 0.0284), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
+const mat3x3 ACES_OUTPUT = mat3x3(vec3(1.60475, -0.10208, -0.00327), vec3(-0.53108, 1.10813, -0.07276), vec3(-0.07367, -0.00605, 1.07602));
+const mat3x3 LINEAR_SRGB_TO_LINEAR_REC2020_ = mat3x3(vec3(0.6274, 0.0691, 0.0164), vec3(0.3293, 0.9195, 0.088), vec3(0.0433, 0.0113, 0.8956));
+const mat3x3 AGX_INSET = mat3x3(vec3(0.85662717, 0.13731897, 0.11189821), vec3(0.09512124, 0.761242, 0.076799415), vec3(0.048251607, 0.10143904, 0.81130236));
+const mat3x3 AGX_OUTSET = mat3x3(vec3(1.1271006, -0.14132977, -0.14132977), vec3(-0.11060664, 1.1578237, -0.11060664), vec3(-0.016493939, -0.016493939, 1.2519364));
+const mat3x3 LINEAR_REC2020_TO_LINEAR_SRGB = mat3x3(vec3(1.6605, -0.1246, -0.0182), vec3(-0.5876, 1.1329, -0.1006), vec3(-0.0728, -0.0083, 1.1187));
 const uint LINEAR = 1u;
 const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
@@ -10316,9 +10939,9 @@ vec3 transform_direction(Transform t_1, vec3 d) {
 vec3 transform_normal(Transform t_2, vec3 n) {
     vec3 a = t_2.x.xyz;
     vec3 b = t_2.y.xyz;
-    vec3 c_3 = t_2.z.xyz;
-    vec3 bc = cross(b, c_3);
-    vec3 ca = cross(c_3, a);
+    vec3 c_4 = t_2.z.xyz;
+    vec3 bc = cross(b, c_4);
+    vec3 ca = cross(c_4, a);
     vec3 ab = cross(a, b);
     float facing = ((dot(a, bc) >= 0.0) ? 1.0 : -1.0);
     return normalize((vec3(dot(bc, n), dot(ca, n), dot(ab, n)) * facing));
@@ -10328,12 +10951,16 @@ vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
     return (view_proj * vec4(relative_position_2, 1.0));
 }
 
-vec3 fogged(vec3 c_1, vec3 relative, Material m_1) {
+vec4 finish_null3d_tonemap(vec3 c_1, vec2 pixel, Output settings) {
+    return vec4(c_1, 1.0);
+}
+
+vec3 fogged(vec3 c_2, vec3 relative, Material m_1) {
     bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
     vec3 _e11 = _group_0_binding_0_vs.fog.color;
     Fog _e14 = _group_0_binding_0_vs.fog;
     float _e16 = fog_factor(_e14, relative);
-    vec3 _e20 = apply_fog(c_1, _e11, (fog_on ? _e16 : 0.0));
+    vec3 _e20 = apply_fog(c_2, _e11, (fog_on ? _e16 : 0.0));
     return _e20;
 }
 
@@ -10423,6 +11050,12 @@ vec3 world_normal(Instance found_3, vec3 normal) {
     return _e3;
 }
 
+vec4 finish_null3d_mesh(vec3 c_3, vec2 pixel_1) {
+    Output _e2 = _group_0_binding_0_vs.output_;
+    vec4 _e5 = finish_null3d_tonemap(c_3, pixel_1, _e2);
+    return _e5;
+}
+
 vec3 world_direction(Instance found_4, vec3 direction) {
     Transform _e1 = transform_of(found_4);
     vec3 _e3 = transform_direction(_e1, direction);
@@ -10504,12 +11137,6 @@ vec3 indirect_diffuse(PbrMaterial m_4, vec3 irradiance, vec2 dfg_2) {
     Scattering _e4 = multiscattering(m_4.specular, m_4.specular_grazing, dfg_2);
     vec3 _e6 = brdf_lambert(m_4.diffuse);
     return ((irradiance * _e6) * ((vec3(1.0) - _e4.single) - _e4.multi));
-}
-
-vec3 linear_to_srgb(vec3 c_2) {
-    vec3 low = (c_2 * 12.92);
-    vec3 high = ((1.055 * pow(c_2, vec3(0.41666666))) - vec3(0.055));
-    return mix(high, low, lessThanEqual(c_2, vec3(0.0031308)));
 }
 
 MapUv map_uv(uint flags, uint slot, MapUv first, MapUv second) {
@@ -10612,6 +11239,12 @@ void main() {
 precision highp float;
 precision highp int;
 
+struct Output {
+    float exposure;
+    uint tone_mapping;
+    uint spare_a;
+    uint spare_b;
+};
 struct Fog {
     vec3 color;
     uint kind;
@@ -10636,6 +11269,7 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Output output_;
     Fog fog;
     vec4 clock;
     vec4 camera_world;
@@ -10724,6 +11358,12 @@ struct Surface {
     float occlusion;
     vec3 irradiance;
 };
+const mat3x3 ACES_INPUT = mat3x3(vec3(0.59719, 0.076, 0.0284), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
+const mat3x3 ACES_OUTPUT = mat3x3(vec3(1.60475, -0.10208, -0.00327), vec3(-0.53108, 1.10813, -0.07276), vec3(-0.07367, -0.00605, 1.07602));
+const mat3x3 LINEAR_SRGB_TO_LINEAR_REC2020_ = mat3x3(vec3(0.6274, 0.0691, 0.0164), vec3(0.3293, 0.9195, 0.088), vec3(0.0433, 0.0113, 0.8956));
+const mat3x3 AGX_INSET = mat3x3(vec3(0.85662717, 0.13731897, 0.11189821), vec3(0.09512124, 0.761242, 0.076799415), vec3(0.048251607, 0.10143904, 0.81130236));
+const mat3x3 AGX_OUTSET = mat3x3(vec3(1.1271006, -0.14132977, -0.14132977), vec3(-0.11060664, 1.1578237, -0.11060664), vec3(-0.016493939, -0.016493939, 1.2519364));
+const mat3x3 LINEAR_REC2020_TO_LINEAR_SRGB = mat3x3(vec3(1.6605, -0.1246, -0.0182), vec3(-0.5876, 1.1329, -0.1006), vec3(-0.0728, -0.0083, 1.1187));
 const uint LINEAR = 1u;
 const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
@@ -10805,9 +11445,9 @@ vec3 transform_direction(Transform t_1, vec3 d) {
 vec3 transform_normal(Transform t_2, vec3 n) {
     vec3 a = t_2.x.xyz;
     vec3 b = t_2.y.xyz;
-    vec3 c_3 = t_2.z.xyz;
-    vec3 bc = cross(b, c_3);
-    vec3 ca = cross(c_3, a);
+    vec3 c_4 = t_2.z.xyz;
+    vec3 bc = cross(b, c_4);
+    vec3 ca = cross(c_4, a);
     vec3 ab = cross(a, b);
     float facing = ((dot(a, bc) >= 0.0) ? 1.0 : -1.0);
     return normalize((vec3(dot(bc, n), dot(ca, n), dot(ab, n)) * facing));
@@ -10815,6 +11455,10 @@ vec3 transform_normal(Transform t_2, vec3 n) {
 
 vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
     return (view_proj * vec4(relative_position_2, 1.0));
+}
+
+vec4 finish_null3d_tonemap(vec3 c_1, vec2 pixel, Output settings) {
+    return vec4(c_1, 1.0);
 }
 
 Material material_of(uint id) {
@@ -10839,12 +11483,12 @@ Material material_of(uint id) {
     return _e50;
 }
 
-vec3 fogged(vec3 c_1, vec3 relative, Material m_1) {
+vec3 fogged(vec3 c_2, vec3 relative, Material m_1) {
     bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
     vec3 _e11 = _group_0_binding_0_fs.fog.color;
     Fog _e14 = _group_0_binding_0_fs.fog;
     float _e16 = fog_factor(_e14, relative);
-    vec3 _e20 = apply_fog(c_1, _e11, (fog_on ? _e16 : 0.0));
+    vec3 _e20 = apply_fog(c_2, _e11, (fog_on ? _e16 : 0.0));
     return _e20;
 }
 
@@ -10881,6 +11525,12 @@ vec3 world_normal(Instance found_3, vec3 normal) {
     return _e3;
 }
 
+vec4 finish_null3d_mesh(vec3 c_3, vec2 pixel_1) {
+    Output _e2 = _group_0_binding_0_fs.output_;
+    vec4 _e5 = finish_null3d_tonemap(c_3, pixel_1, _e2);
+    return _e5;
+}
+
 vec3 world_direction(Instance found_4, vec3 direction) {
     Transform _e1 = transform_of(found_4);
     vec3 _e3 = transform_direction(_e1, direction);
@@ -10898,10 +11548,10 @@ vec2 dfg_lut(float n_dot_v, float roughness) {
     vec4 _e36 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(high.x, low.y)), 0);
     vec2 b_1 = _e36.xy;
     vec4 _e43 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(low.x, high.y)), 0);
-    vec2 c_4 = _e43.xy;
+    vec2 c_5 = _e43.xy;
     vec4 _e47 = texelFetch(_group_0_binding_3_fs, ivec2(high), 0);
     vec2 d_1 = _e47.xy;
-    return mix(mix(a_1, b_1, t_3.x), mix(c_4, d_1, t_3.x), t_3.y);
+    return mix(mix(a_1, b_1, t_3.x), mix(c_5, d_1, t_3.x), t_3.y);
 }
 
 vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
@@ -10979,12 +11629,6 @@ vec3 indirect_diffuse(PbrMaterial m_4, vec3 irradiance, vec2 dfg_2) {
     Scattering _e4 = multiscattering(m_4.specular, m_4.specular_grazing, dfg_2);
     vec3 _e6 = brdf_lambert(m_4.diffuse);
     return ((irradiance * _e6) * ((vec3(1.0) - _e4.single) - _e4.multi));
-}
-
-vec3 linear_to_srgb(vec3 c_2) {
-    vec3 low_1 = (c_2 * 12.92);
-    vec3 high_1 = ((1.055 * pow(c_2, vec3(0.41666666))) - vec3(0.055));
-    return mix(high_1, low_1, lessThanEqual(c_2, vec3(0.0031308)));
 }
 
 MapUv map_uv(uint flags, uint slot, MapUv first, MapUv second) {
@@ -11097,7 +11741,7 @@ vec3 light_surface(PbrMaterial m_5, vec3 normal_3, vec3 to_view_2, vec2 dfg_3, v
     return ((_e15.diffuse + _e15.specular) + (_e22 * occlusion));
 }
 
-vec4 shade(Surface s_2, SurfaceInput input_3) {
+vec4 shade(Surface s_2, SurfaceInput input_3, vec2 pixel_2) {
     vec3 normal_5 = normalize(s_2.normal);
     vec3 _e5 = dFdx(input_3.normal);
     vec3 _e8 = dFdy(input_3.normal);
@@ -11110,8 +11754,8 @@ vec4 shade(Surface s_2, SurfaceInput input_3) {
     vec3 outgoing = (_e28 + s_2.emissive);
     Material _e33 = material_row;
     vec3 _e34 = fogged(outgoing, input_3.relativePosition, _e33);
-    vec3 _e35 = linear_to_srgb(_e34);
-    return vec4(_e35, 1.0);
+    vec4 _e36 = finish_null3d_mesh(_e34, pixel_2);
+    return _e36;
 }
 
 void main() {
@@ -11142,8 +11786,8 @@ void main() {
     SurfaceInput _e64 = input_;
     Surface _e65 = defaultSurface(_e64);
     SurfaceInput _e66 = input_;
-    vec4 _e67 = shade(_e65, _e66);
-    _fs2p_location0 = _e67;
+    vec4 _e69 = shade(_e65, _e66, in_.clip.xy);
+    _fs2p_location0 = _e69;
     return;
 }
 `,
@@ -11241,6 +11885,12 @@ precision highp int;
 
 uniform uint naga_vs_first_instance;
 
+struct Output {
+    float exposure;
+    uint tone_mapping;
+    uint spare_a;
+    uint spare_b;
+};
 struct Fog {
     vec3 color;
     uint kind;
@@ -11265,6 +11915,7 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Output output_;
     Fog fog;
     vec4 clock;
     vec4 camera_world;
@@ -11351,6 +12002,12 @@ struct Surface {
     float occlusion;
     vec3 irradiance;
 };
+const mat3x3 ACES_INPUT = mat3x3(vec3(0.59719, 0.076, 0.0284), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
+const mat3x3 ACES_OUTPUT = mat3x3(vec3(1.60475, -0.10208, -0.00327), vec3(-0.53108, 1.10813, -0.07276), vec3(-0.07367, -0.00605, 1.07602));
+const mat3x3 LINEAR_SRGB_TO_LINEAR_REC2020_ = mat3x3(vec3(0.6274, 0.0691, 0.0164), vec3(0.3293, 0.9195, 0.088), vec3(0.0433, 0.0113, 0.8956));
+const mat3x3 AGX_INSET = mat3x3(vec3(0.85662717, 0.13731897, 0.11189821), vec3(0.09512124, 0.761242, 0.076799415), vec3(0.048251607, 0.10143904, 0.81130236));
+const mat3x3 AGX_OUTSET = mat3x3(vec3(1.1271006, -0.14132977, -0.14132977), vec3(-0.11060664, 1.1578237, -0.11060664), vec3(-0.016493939, -0.016493939, 1.2519364));
+const mat3x3 LINEAR_REC2020_TO_LINEAR_SRGB = mat3x3(vec3(1.6605, -0.1246, -0.0182), vec3(-0.5876, 1.1329, -0.1006), vec3(-0.0728, -0.0083, 1.1187));
 const uint LINEAR = 1u;
 const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
@@ -11429,9 +12086,9 @@ vec3 transform_direction(Transform t_1, vec3 d) {
 vec3 transform_normal(Transform t_2, vec3 n) {
     vec3 a = t_2.x.xyz;
     vec3 b = t_2.y.xyz;
-    vec3 c_3 = t_2.z.xyz;
-    vec3 bc = cross(b, c_3);
-    vec3 ca = cross(c_3, a);
+    vec3 c_4 = t_2.z.xyz;
+    vec3 bc = cross(b, c_4);
+    vec3 ca = cross(c_4, a);
     vec3 ab = cross(a, b);
     float facing = ((dot(a, bc) >= 0.0) ? 1.0 : -1.0);
     return normalize((vec3(dot(bc, n), dot(ca, n), dot(ab, n)) * facing));
@@ -11441,12 +12098,16 @@ vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
     return (view_proj * vec4(relative_position_2, 1.0));
 }
 
-vec3 fogged(vec3 c_1, vec3 relative, Material m_1) {
+vec4 finish_null3d_tonemap(vec3 c_1, vec2 pixel, Output settings) {
+    return vec4(c_1, 1.0);
+}
+
+vec3 fogged(vec3 c_2, vec3 relative, Material m_1) {
     bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
     vec3 _e11 = _group_0_binding_0_vs.fog.color;
     Fog _e14 = _group_0_binding_0_vs.fog;
     float _e16 = fog_factor(_e14, relative);
-    vec3 _e20 = apply_fog(c_1, _e11, (fog_on ? _e16 : 0.0));
+    vec3 _e20 = apply_fog(c_2, _e11, (fog_on ? _e16 : 0.0));
     return _e20;
 }
 
@@ -11536,6 +12197,12 @@ vec3 world_normal(Instance found_3, vec3 normal) {
     return _e3;
 }
 
+vec4 finish_null3d_mesh(vec3 c_3, vec2 pixel_1) {
+    Output _e2 = _group_0_binding_0_vs.output_;
+    vec4 _e5 = finish_null3d_tonemap(c_3, pixel_1, _e2);
+    return _e5;
+}
+
 vec3 world_direction(Instance found_4, vec3 direction) {
     Transform _e1 = transform_of(found_4);
     vec3 _e3 = transform_direction(_e1, direction);
@@ -11617,12 +12284,6 @@ vec3 indirect_diffuse(PbrMaterial m_4, vec3 irradiance, vec2 dfg_2) {
     Scattering _e4 = multiscattering(m_4.specular, m_4.specular_grazing, dfg_2);
     vec3 _e6 = brdf_lambert(m_4.diffuse);
     return ((irradiance * _e6) * ((vec3(1.0) - _e4.single) - _e4.multi));
-}
-
-vec3 linear_to_srgb(vec3 c_2) {
-    vec3 low = (c_2 * 12.92);
-    vec3 high = ((1.055 * pow(c_2, vec3(0.41666666))) - vec3(0.055));
-    return mix(high, low, lessThanEqual(c_2, vec3(0.0031308)));
 }
 
 MapUv map_uv(uint flags, uint slot, MapUv first, MapUv second) {
@@ -11723,6 +12384,12 @@ void main() {
 precision highp float;
 precision highp int;
 
+struct Output {
+    float exposure;
+    uint tone_mapping;
+    uint spare_a;
+    uint spare_b;
+};
 struct Fog {
     vec3 color;
     uint kind;
@@ -11747,6 +12414,7 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Output output_;
     Fog fog;
     vec4 clock;
     vec4 camera_world;
@@ -11833,6 +12501,12 @@ struct Surface {
     float occlusion;
     vec3 irradiance;
 };
+const mat3x3 ACES_INPUT = mat3x3(vec3(0.59719, 0.076, 0.0284), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
+const mat3x3 ACES_OUTPUT = mat3x3(vec3(1.60475, -0.10208, -0.00327), vec3(-0.53108, 1.10813, -0.07276), vec3(-0.07367, -0.00605, 1.07602));
+const mat3x3 LINEAR_SRGB_TO_LINEAR_REC2020_ = mat3x3(vec3(0.6274, 0.0691, 0.0164), vec3(0.3293, 0.9195, 0.088), vec3(0.0433, 0.0113, 0.8956));
+const mat3x3 AGX_INSET = mat3x3(vec3(0.85662717, 0.13731897, 0.11189821), vec3(0.09512124, 0.761242, 0.076799415), vec3(0.048251607, 0.10143904, 0.81130236));
+const mat3x3 AGX_OUTSET = mat3x3(vec3(1.1271006, -0.14132977, -0.14132977), vec3(-0.11060664, 1.1578237, -0.11060664), vec3(-0.016493939, -0.016493939, 1.2519364));
+const mat3x3 LINEAR_REC2020_TO_LINEAR_SRGB = mat3x3(vec3(1.6605, -0.1246, -0.0182), vec3(-0.5876, 1.1329, -0.1006), vec3(-0.0728, -0.0083, 1.1187));
 const uint LINEAR = 1u;
 const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
@@ -11913,9 +12587,9 @@ vec3 transform_direction(Transform t_1, vec3 d) {
 vec3 transform_normal(Transform t_2, vec3 n) {
     vec3 a = t_2.x.xyz;
     vec3 b = t_2.y.xyz;
-    vec3 c_3 = t_2.z.xyz;
-    vec3 bc = cross(b, c_3);
-    vec3 ca = cross(c_3, a);
+    vec3 c_4 = t_2.z.xyz;
+    vec3 bc = cross(b, c_4);
+    vec3 ca = cross(c_4, a);
     vec3 ab = cross(a, b);
     float facing = ((dot(a, bc) >= 0.0) ? 1.0 : -1.0);
     return normalize((vec3(dot(bc, n), dot(ca, n), dot(ab, n)) * facing));
@@ -11923,6 +12597,10 @@ vec3 transform_normal(Transform t_2, vec3 n) {
 
 vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
     return (view_proj * vec4(relative_position_2, 1.0));
+}
+
+vec4 finish_null3d_tonemap(vec3 c_1, vec2 pixel, Output settings) {
+    return vec4(c_1, 1.0);
 }
 
 Material material_of(uint id) {
@@ -11947,12 +12625,12 @@ Material material_of(uint id) {
     return _e50;
 }
 
-vec3 fogged(vec3 c_1, vec3 relative, Material m_1) {
+vec3 fogged(vec3 c_2, vec3 relative, Material m_1) {
     bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
     vec3 _e11 = _group_0_binding_0_fs.fog.color;
     Fog _e14 = _group_0_binding_0_fs.fog;
     float _e16 = fog_factor(_e14, relative);
-    vec3 _e20 = apply_fog(c_1, _e11, (fog_on ? _e16 : 0.0));
+    vec3 _e20 = apply_fog(c_2, _e11, (fog_on ? _e16 : 0.0));
     return _e20;
 }
 
@@ -11989,6 +12667,12 @@ vec3 world_normal(Instance found_3, vec3 normal) {
     return _e3;
 }
 
+vec4 finish_null3d_mesh(vec3 c_3, vec2 pixel_1) {
+    Output _e2 = _group_0_binding_0_fs.output_;
+    vec4 _e5 = finish_null3d_tonemap(c_3, pixel_1, _e2);
+    return _e5;
+}
+
 vec3 world_direction(Instance found_4, vec3 direction) {
     Transform _e1 = transform_of(found_4);
     vec3 _e3 = transform_direction(_e1, direction);
@@ -12006,10 +12690,10 @@ vec2 dfg_lut(float n_dot_v, float roughness) {
     vec4 _e36 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(high.x, low.y)), 0);
     vec2 b_1 = _e36.xy;
     vec4 _e43 = texelFetch(_group_0_binding_3_fs, ivec2(uvec2(low.x, high.y)), 0);
-    vec2 c_4 = _e43.xy;
+    vec2 c_5 = _e43.xy;
     vec4 _e47 = texelFetch(_group_0_binding_3_fs, ivec2(high), 0);
     vec2 d_1 = _e47.xy;
-    return mix(mix(a_1, b_1, t_3.x), mix(c_4, d_1, t_3.x), t_3.y);
+    return mix(mix(a_1, b_1, t_3.x), mix(c_5, d_1, t_3.x), t_3.y);
 }
 
 vec3 multiscatter_compensation(vec3 f0_, vec2 dfg) {
@@ -12087,12 +12771,6 @@ vec3 indirect_diffuse(PbrMaterial m_4, vec3 irradiance, vec2 dfg_2) {
     Scattering _e4 = multiscattering(m_4.specular, m_4.specular_grazing, dfg_2);
     vec3 _e6 = brdf_lambert(m_4.diffuse);
     return ((irradiance * _e6) * ((vec3(1.0) - _e4.single) - _e4.multi));
-}
-
-vec3 linear_to_srgb(vec3 c_2) {
-    vec3 low_1 = (c_2 * 12.92);
-    vec3 high_1 = ((1.055 * pow(c_2, vec3(0.41666666))) - vec3(0.055));
-    return mix(high_1, low_1, lessThanEqual(c_2, vec3(0.0031308)));
 }
 
 MapUv map_uv(uint flags, uint slot, MapUv first, MapUv second) {
@@ -12205,7 +12883,7 @@ vec3 light_surface(PbrMaterial m_5, vec3 normal_3, vec3 to_view_2, vec2 dfg_3, v
     return ((_e15.diffuse + _e15.specular) + (_e22 * occlusion));
 }
 
-vec4 shade(Surface s_2, SurfaceInput input_3) {
+vec4 shade(Surface s_2, SurfaceInput input_3, vec2 pixel_2) {
     vec3 normal_5 = normalize(s_2.normal);
     vec3 _e5 = dFdx(input_3.normal);
     vec3 _e8 = dFdy(input_3.normal);
@@ -12218,8 +12896,8 @@ vec4 shade(Surface s_2, SurfaceInput input_3) {
     vec3 outgoing = (_e28 + s_2.emissive);
     Material _e33 = material_row;
     vec3 _e34 = fogged(outgoing, input_3.relativePosition, _e33);
-    vec3 _e35 = linear_to_srgb(_e34);
-    return vec4(_e35, 1.0);
+    vec4 _e36 = finish_null3d_mesh(_e34, pixel_2);
+    return _e36;
 }
 
 void main() {
@@ -12249,8 +12927,8 @@ void main() {
     SurfaceInput _e62 = input_;
     Surface _e63 = defaultSurface(_e62);
     SurfaceInput _e64 = input_;
-    vec4 _e65 = shade(_e63, _e64);
-    _fs2p_location0 = _e65;
+    vec4 _e67 = shade(_e63, _e64, in_.clip.xy);
+    _fs2p_location0 = _e67;
     return;
 }
 `,
@@ -12350,6 +13028,12 @@ precision highp int;
 
 uniform uint naga_vs_first_instance;
 
+struct Output {
+    float exposure;
+    uint tone_mapping;
+    uint spare_a;
+    uint spare_b;
+};
 struct Fog {
     vec3 color;
     uint kind;
@@ -12364,6 +13048,7 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Output output_;
     Fog fog;
     vec4 clock;
     vec4 camera_world;
@@ -12399,6 +13084,12 @@ struct VertexOut {
     vec4 clip;
     vec2 uv0_;
 };
+const mat3x3 ACES_INPUT = mat3x3(vec3(0.59719, 0.076, 0.0284), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
+const mat3x3 ACES_OUTPUT = mat3x3(vec3(1.60475, -0.10208, -0.00327), vec3(-0.53108, 1.10813, -0.07276), vec3(-0.07367, -0.00605, 1.07602));
+const mat3x3 LINEAR_SRGB_TO_LINEAR_REC2020_ = mat3x3(vec3(0.6274, 0.0691, 0.0164), vec3(0.3293, 0.9195, 0.088), vec3(0.0433, 0.0113, 0.8956));
+const mat3x3 AGX_INSET = mat3x3(vec3(0.85662717, 0.13731897, 0.11189821), vec3(0.09512124, 0.761242, 0.076799415), vec3(0.048251607, 0.10143904, 0.81130236));
+const mat3x3 AGX_OUTSET = mat3x3(vec3(1.1271006, -0.14132977, -0.14132977), vec3(-0.11060664, 1.1578237, -0.11060664), vec3(-0.016493939, -0.016493939, 1.2519364));
+const mat3x3 LINEAR_REC2020_TO_LINEAR_SRGB = mat3x3(vec3(1.6605, -0.1246, -0.0182), vec3(-0.5876, 1.1329, -0.1006), vec3(-0.0728, -0.0083, 1.1187));
 const uint LINEAR = 1u;
 const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
@@ -12432,6 +13123,10 @@ vec3 transform_point(Transform t, vec3 p) {
 
 vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
     return (view_proj * vec4(relative_position, 1.0));
+}
+
+vec4 finish_null3d_tonemap(vec3 c, vec2 pixel, Output settings) {
+    return vec4(c, 1.0);
 }
 
 Instance instance_of(uvec4 record, uint instance) {
@@ -12512,6 +13207,12 @@ vec4 clip_position(Instance found_3, vec3 position_1) {
     return _e3;
 }
 
+vec4 finish_null3d_mesh(vec3 c_1, vec2 pixel_1) {
+    Output _e2 = _group_0_binding_0_vs.output_;
+    vec4 _e5 = finish_null3d_tonemap(c_1, pixel_1, _e2);
+    return _e5;
+}
+
 void main() {
     VertexIn v = VertexIn(_p2vs_location0, _p2vs_location2);
     InstanceIn i = InstanceIn((uint(gl_InstanceID) + naga_vs_first_instance), uint(gl_DrawID));
@@ -12577,6 +13278,12 @@ void main() {
 precision highp float;
 precision highp int;
 
+struct Output {
+    float exposure;
+    uint tone_mapping;
+    uint spare_a;
+    uint spare_b;
+};
 struct Fog {
     vec3 color;
     uint kind;
@@ -12591,6 +13298,7 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Output output_;
     Fog fog;
     vec4 clock;
     vec4 camera_world;
@@ -12626,6 +13334,12 @@ struct VertexOut {
     vec4 clip;
     vec2 uv0_;
 };
+const mat3x3 ACES_INPUT = mat3x3(vec3(0.59719, 0.076, 0.0284), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
+const mat3x3 ACES_OUTPUT = mat3x3(vec3(1.60475, -0.10208, -0.00327), vec3(-0.53108, 1.10813, -0.07276), vec3(-0.07367, -0.00605, 1.07602));
+const mat3x3 LINEAR_SRGB_TO_LINEAR_REC2020_ = mat3x3(vec3(0.6274, 0.0691, 0.0164), vec3(0.3293, 0.9195, 0.088), vec3(0.0433, 0.0113, 0.8956));
+const mat3x3 AGX_INSET = mat3x3(vec3(0.85662717, 0.13731897, 0.11189821), vec3(0.09512124, 0.761242, 0.076799415), vec3(0.048251607, 0.10143904, 0.81130236));
+const mat3x3 AGX_OUTSET = mat3x3(vec3(1.1271006, -0.14132977, -0.14132977), vec3(-0.11060664, 1.1578237, -0.11060664), vec3(-0.016493939, -0.016493939, 1.2519364));
+const mat3x3 LINEAR_REC2020_TO_LINEAR_SRGB = mat3x3(vec3(1.6605, -0.1246, -0.0182), vec3(-0.5876, 1.1329, -0.1006), vec3(-0.0728, -0.0083, 1.1187));
 const uint LINEAR = 1u;
 const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
@@ -12633,6 +13347,8 @@ const uint INDEX_ROW_SHIFT = 11u;
 const uint NO_ROW = 4294967295u;
 const uint MATRIX_ROW_SHIFT = 9u;
 const uint CELL_SHIFT = 23u;
+
+layout(std140) uniform Frame_block_0Fragment { Frame _group_0_binding_0_fs; };
 
 smooth in vec2 _vs2fs_location0;
 layout(location = 0) out vec4 _fs2p_location0;
@@ -12646,6 +13362,10 @@ vec4 to_clip(mat4x4 view_proj, vec3 relative_position) {
     return (view_proj * vec4(relative_position, 1.0));
 }
 
+vec4 finish_null3d_tonemap(vec3 c, vec2 pixel, Output settings) {
+    return vec4(c, 1.0);
+}
+
 Transform transform_of(Instance found) {
     return Transform(found.row_x, found.row_y, found.row_z);
 }
@@ -12656,13 +13376,41 @@ vec3 relative_position_1(Instance found_1, vec3 position) {
     return _e3;
 }
 
+vec4 clip_of(Instance found_2, vec3 relative) {
+    if (!(found_2.drawn)) {
+        return OUTSIDE_CLIP;
+    }
+    mat4x4 _e6 = _group_0_binding_0_fs.view_proj;
+    vec4 _e8 = to_clip(_e6, relative);
+    return _e8;
+}
+
+vec4 clip_position(Instance found_3, vec3 position_1) {
+    vec3 _e2 = relative_position_1(found_3, position_1);
+    vec4 _e3 = clip_of(found_3, _e2);
+    return _e3;
+}
+
+vec4 finish_null3d_mesh(vec3 c_1, vec2 pixel_1) {
+    Output _e2 = _group_0_binding_0_fs.output_;
+    vec4 _e5 = finish_null3d_tonemap(c_1, pixel_1, _e2);
+    return _e5;
+}
+
 void main() {
     VertexOut in_ = VertexOut(gl_FragCoord, _vs2fs_location0);
-    _fs2p_location0 = vec4(in_.uv0_, 0.0, 1.0);
+    vec4 _e6 = finish_null3d_mesh(vec3(in_.uv0_, 0.0), in_.clip.xy);
+    _fs2p_location0 = _e6;
     return;
 }
 `,
-						uniformBlocks: [],
+						uniformBlocks: [
+							{
+								name: 'Frame_block_0Fragment',
+								group: 0,
+								binding: 0,
+							},
+						],
 						textures: [],
 					},
 				},
@@ -12685,6 +13433,12 @@ precision highp int;
 
 uniform uint naga_vs_first_instance;
 
+struct Output {
+    float exposure;
+    uint tone_mapping;
+    uint spare_a;
+    uint spare_b;
+};
 struct Fog {
     vec3 color;
     uint kind;
@@ -12699,6 +13453,7 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Output output_;
     Fog fog;
     vec4 clock;
     vec4 camera_world;
@@ -12744,6 +13499,12 @@ struct VertexOut {
     uint material;
     vec3 relative;
 };
+const mat3x3 ACES_INPUT = mat3x3(vec3(0.59719, 0.076, 0.0284), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
+const mat3x3 ACES_OUTPUT = mat3x3(vec3(1.60475, -0.10208, -0.00327), vec3(-0.53108, 1.10813, -0.07276), vec3(-0.07367, -0.00605, 1.07602));
+const mat3x3 LINEAR_SRGB_TO_LINEAR_REC2020_ = mat3x3(vec3(0.6274, 0.0691, 0.0164), vec3(0.3293, 0.9195, 0.088), vec3(0.0433, 0.0113, 0.8956));
+const mat3x3 AGX_INSET = mat3x3(vec3(0.85662717, 0.13731897, 0.11189821), vec3(0.09512124, 0.761242, 0.076799415), vec3(0.048251607, 0.10143904, 0.81130236));
+const mat3x3 AGX_OUTSET = mat3x3(vec3(1.1271006, -0.14132977, -0.14132977), vec3(-0.11060664, 1.1578237, -0.11060664), vec3(-0.016493939, -0.016493939, 1.2519364));
+const mat3x3 LINEAR_REC2020_TO_LINEAR_SRGB = mat3x3(vec3(1.6605, -0.1246, -0.0182), vec3(-0.5876, 1.1329, -0.1006), vec3(-0.0728, -0.0083, 1.1187));
 const uint LINEAR = 1u;
 const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
@@ -12804,12 +13565,16 @@ vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
     return (view_proj * vec4(relative_position_2, 1.0));
 }
 
-vec3 fogged(vec3 c_1, vec3 relative, Material m_1) {
+vec4 finish_null3d_tonemap(vec3 c_1, vec2 pixel, Output settings) {
+    return vec4(c_1, 1.0);
+}
+
+vec3 fogged(vec3 c_2, vec3 relative, Material m_1) {
     bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
     vec3 _e11 = _group_0_binding_0_vs.fog.color;
     Fog _e14 = _group_0_binding_0_vs.fog;
     float _e16 = fog_factor(_e14, relative);
-    vec3 _e20 = apply_fog(c_1, _e11, (fog_on ? _e16 : 0.0));
+    vec3 _e20 = apply_fog(c_2, _e11, (fog_on ? _e16 : 0.0));
     return _e20;
 }
 
@@ -12885,10 +13650,10 @@ vec3 relative_position_3(Instance found_2, vec3 position) {
     return _e3;
 }
 
-vec3 linear_to_srgb(vec3 c_2) {
-    vec3 low = (c_2 * 12.92);
-    vec3 high = ((1.055 * pow(c_2, vec3(0.41666666))) - vec3(0.055));
-    return mix(high, low, lessThanEqual(c_2, vec3(0.0031308)));
+vec4 finish_null3d_mesh(vec3 c_3, vec2 pixel_1) {
+    Output _e2 = _group_0_binding_0_vs.output_;
+    vec4 _e5 = finish_null3d_tonemap(c_3, pixel_1, _e2);
+    return _e5;
 }
 
 void main() {
@@ -12960,6 +13725,12 @@ void main() {
 precision highp float;
 precision highp int;
 
+struct Output {
+    float exposure;
+    uint tone_mapping;
+    uint spare_a;
+    uint spare_b;
+};
 struct Fog {
     vec3 color;
     uint kind;
@@ -12974,6 +13745,7 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Output output_;
     Fog fog;
     vec4 clock;
     vec4 camera_world;
@@ -13019,6 +13791,12 @@ struct VertexOut {
     uint material;
     vec3 relative;
 };
+const mat3x3 ACES_INPUT = mat3x3(vec3(0.59719, 0.076, 0.0284), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
+const mat3x3 ACES_OUTPUT = mat3x3(vec3(1.60475, -0.10208, -0.00327), vec3(-0.53108, 1.10813, -0.07276), vec3(-0.07367, -0.00605, 1.07602));
+const mat3x3 LINEAR_SRGB_TO_LINEAR_REC2020_ = mat3x3(vec3(0.6274, 0.0691, 0.0164), vec3(0.3293, 0.9195, 0.088), vec3(0.0433, 0.0113, 0.8956));
+const mat3x3 AGX_INSET = mat3x3(vec3(0.85662717, 0.13731897, 0.11189821), vec3(0.09512124, 0.761242, 0.076799415), vec3(0.048251607, 0.10143904, 0.81130236));
+const mat3x3 AGX_OUTSET = mat3x3(vec3(1.1271006, -0.14132977, -0.14132977), vec3(-0.11060664, 1.1578237, -0.11060664), vec3(-0.016493939, -0.016493939, 1.2519364));
+const mat3x3 LINEAR_REC2020_TO_LINEAR_SRGB = mat3x3(vec3(1.6605, -0.1246, -0.0182), vec3(-0.5876, 1.1329, -0.1006), vec3(-0.0728, -0.0083, 1.1187));
 const uint LINEAR = 1u;
 const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
@@ -13069,6 +13847,10 @@ vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
     return (view_proj * vec4(relative_position_2, 1.0));
 }
 
+vec4 finish_null3d_tonemap(vec3 c_1, vec2 pixel, Output settings) {
+    return vec4(c_1, 1.0);
+}
+
 Material material_of(uint id) {
     Material m = Material(vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0));
     vec4 _e7 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(0u, id)), 0);
@@ -13091,12 +13873,12 @@ Material material_of(uint id) {
     return _e50;
 }
 
-vec3 fogged(vec3 c_1, vec3 relative, Material m_1) {
+vec3 fogged(vec3 c_2, vec3 relative, Material m_1) {
     bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
     vec3 _e11 = _group_0_binding_0_fs.fog.color;
     Fog _e14 = _group_0_binding_0_fs.fog;
     float _e16 = fog_factor(_e14, relative);
-    vec3 _e20 = apply_fog(c_1, _e11, (fog_on ? _e16 : 0.0));
+    vec3 _e20 = apply_fog(c_2, _e11, (fog_on ? _e16 : 0.0));
     return _e20;
 }
 
@@ -13119,10 +13901,10 @@ vec3 relative_position_3(Instance found_2, vec3 position) {
     return _e3;
 }
 
-vec3 linear_to_srgb(vec3 c_2) {
-    vec3 low = (c_2 * 12.92);
-    vec3 high = ((1.055 * pow(c_2, vec3(0.41666666))) - vec3(0.055));
-    return mix(high, low, lessThanEqual(c_2, vec3(0.0031308)));
+vec4 finish_null3d_mesh(vec3 c_3, vec2 pixel_1) {
+    Output _e2 = _group_0_binding_0_fs.output_;
+    vec4 _e5 = finish_null3d_tonemap(c_3, pixel_1, _e2);
+    return _e5;
 }
 
 void main() {
@@ -13134,8 +13916,8 @@ void main() {
     alpha = _e2.color.w;
     vec3 _e9 = base;
     vec3 _e11 = fogged(_e9, in_.relative, _e2);
-    vec3 _e12 = linear_to_srgb(_e11);
-    _fs2p_location0 = vec4(_e12, 1.0);
+    vec4 _e14 = finish_null3d_mesh(_e11, in_.clip.xy);
+    _fs2p_location0 = _e14;
     return;
 }
 `,
@@ -13173,6 +13955,12 @@ precision highp int;
 
 uniform uint naga_vs_first_instance;
 
+struct Output {
+    float exposure;
+    uint tone_mapping;
+    uint spare_a;
+    uint spare_b;
+};
 struct Fog {
     vec3 color;
     uint kind;
@@ -13187,6 +13975,7 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Output output_;
     Fog fog;
     vec4 clock;
     vec4 camera_world;
@@ -13232,6 +14021,12 @@ struct VertexOut {
     uint material;
     vec3 relative;
 };
+const mat3x3 ACES_INPUT = mat3x3(vec3(0.59719, 0.076, 0.0284), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
+const mat3x3 ACES_OUTPUT = mat3x3(vec3(1.60475, -0.10208, -0.00327), vec3(-0.53108, 1.10813, -0.07276), vec3(-0.07367, -0.00605, 1.07602));
+const mat3x3 LINEAR_SRGB_TO_LINEAR_REC2020_ = mat3x3(vec3(0.6274, 0.0691, 0.0164), vec3(0.3293, 0.9195, 0.088), vec3(0.0433, 0.0113, 0.8956));
+const mat3x3 AGX_INSET = mat3x3(vec3(0.85662717, 0.13731897, 0.11189821), vec3(0.09512124, 0.761242, 0.076799415), vec3(0.048251607, 0.10143904, 0.81130236));
+const mat3x3 AGX_OUTSET = mat3x3(vec3(1.1271006, -0.14132977, -0.14132977), vec3(-0.11060664, 1.1578237, -0.11060664), vec3(-0.016493939, -0.016493939, 1.2519364));
+const mat3x3 LINEAR_REC2020_TO_LINEAR_SRGB = mat3x3(vec3(1.6605, -0.1246, -0.0182), vec3(-0.5876, 1.1329, -0.1006), vec3(-0.0728, -0.0083, 1.1187));
 const uint LINEAR = 1u;
 const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
@@ -13292,12 +14087,16 @@ vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
     return (view_proj * vec4(relative_position_2, 1.0));
 }
 
-vec3 fogged(vec3 c_1, vec3 relative, Material m_1) {
+vec4 finish_null3d_tonemap(vec3 c_1, vec2 pixel, Output settings) {
+    return vec4(c_1, 1.0);
+}
+
+vec3 fogged(vec3 c_2, vec3 relative, Material m_1) {
     bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
     vec3 _e11 = _group_0_binding_0_vs.fog.color;
     Fog _e14 = _group_0_binding_0_vs.fog;
     float _e16 = fog_factor(_e14, relative);
-    vec3 _e20 = apply_fog(c_1, _e11, (fog_on ? _e16 : 0.0));
+    vec3 _e20 = apply_fog(c_2, _e11, (fog_on ? _e16 : 0.0));
     return _e20;
 }
 
@@ -13373,10 +14172,10 @@ vec3 relative_position_3(Instance found_2, vec3 position) {
     return _e3;
 }
 
-vec3 linear_to_srgb(vec3 c_2) {
-    vec3 low = (c_2 * 12.92);
-    vec3 high = ((1.055 * pow(c_2, vec3(0.41666666))) - vec3(0.055));
-    return mix(high, low, lessThanEqual(c_2, vec3(0.0031308)));
+vec4 finish_null3d_mesh(vec3 c_3, vec2 pixel_1) {
+    Output _e2 = _group_0_binding_0_vs.output_;
+    vec4 _e5 = finish_null3d_tonemap(c_3, pixel_1, _e2);
+    return _e5;
 }
 
 void main() {
@@ -13448,6 +14247,12 @@ void main() {
 precision highp float;
 precision highp int;
 
+struct Output {
+    float exposure;
+    uint tone_mapping;
+    uint spare_a;
+    uint spare_b;
+};
 struct Fog {
     vec3 color;
     uint kind;
@@ -13462,6 +14267,7 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Output output_;
     Fog fog;
     vec4 clock;
     vec4 camera_world;
@@ -13507,6 +14313,12 @@ struct VertexOut {
     uint material;
     vec3 relative;
 };
+const mat3x3 ACES_INPUT = mat3x3(vec3(0.59719, 0.076, 0.0284), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
+const mat3x3 ACES_OUTPUT = mat3x3(vec3(1.60475, -0.10208, -0.00327), vec3(-0.53108, 1.10813, -0.07276), vec3(-0.07367, -0.00605, 1.07602));
+const mat3x3 LINEAR_SRGB_TO_LINEAR_REC2020_ = mat3x3(vec3(0.6274, 0.0691, 0.0164), vec3(0.3293, 0.9195, 0.088), vec3(0.0433, 0.0113, 0.8956));
+const mat3x3 AGX_INSET = mat3x3(vec3(0.85662717, 0.13731897, 0.11189821), vec3(0.09512124, 0.761242, 0.076799415), vec3(0.048251607, 0.10143904, 0.81130236));
+const mat3x3 AGX_OUTSET = mat3x3(vec3(1.1271006, -0.14132977, -0.14132977), vec3(-0.11060664, 1.1578237, -0.11060664), vec3(-0.016493939, -0.016493939, 1.2519364));
+const mat3x3 LINEAR_REC2020_TO_LINEAR_SRGB = mat3x3(vec3(1.6605, -0.1246, -0.0182), vec3(-0.5876, 1.1329, -0.1006), vec3(-0.0728, -0.0083, 1.1187));
 const uint LINEAR = 1u;
 const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
@@ -13557,6 +14369,10 @@ vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
     return (view_proj * vec4(relative_position_2, 1.0));
 }
 
+vec4 finish_null3d_tonemap(vec3 c_1, vec2 pixel, Output settings) {
+    return vec4(c_1, 1.0);
+}
+
 Material material_of(uint id) {
     Material m = Material(vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0));
     vec4 _e7 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(0u, id)), 0);
@@ -13579,12 +14395,12 @@ Material material_of(uint id) {
     return _e50;
 }
 
-vec3 fogged(vec3 c_1, vec3 relative, Material m_1) {
+vec3 fogged(vec3 c_2, vec3 relative, Material m_1) {
     bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
     vec3 _e11 = _group_0_binding_0_fs.fog.color;
     Fog _e14 = _group_0_binding_0_fs.fog;
     float _e16 = fog_factor(_e14, relative);
-    vec3 _e20 = apply_fog(c_1, _e11, (fog_on ? _e16 : 0.0));
+    vec3 _e20 = apply_fog(c_2, _e11, (fog_on ? _e16 : 0.0));
     return _e20;
 }
 
@@ -13607,10 +14423,10 @@ vec3 relative_position_3(Instance found_2, vec3 position) {
     return _e3;
 }
 
-vec3 linear_to_srgb(vec3 c_2) {
-    vec3 low = (c_2 * 12.92);
-    vec3 high = ((1.055 * pow(c_2, vec3(0.41666666))) - vec3(0.055));
-    return mix(high, low, lessThanEqual(c_2, vec3(0.0031308)));
+vec4 finish_null3d_mesh(vec3 c_3, vec2 pixel_1) {
+    Output _e2 = _group_0_binding_0_fs.output_;
+    vec4 _e5 = finish_null3d_tonemap(c_3, pixel_1, _e2);
+    return _e5;
 }
 
 void main() {
@@ -13626,8 +14442,8 @@ void main() {
     }
     vec3 _e13 = base;
     vec3 _e15 = fogged(_e13, in_.relative, _e2);
-    vec3 _e16 = linear_to_srgb(_e15);
-    _fs2p_location0 = vec4(_e16, 1.0);
+    vec4 _e18 = finish_null3d_mesh(_e15, in_.clip.xy);
+    _fs2p_location0 = _e18;
     return;
 }
 `,
@@ -13665,6 +14481,12 @@ precision highp int;
 
 uniform uint naga_vs_first_instance;
 
+struct Output {
+    float exposure;
+    uint tone_mapping;
+    uint spare_a;
+    uint spare_b;
+};
 struct Fog {
     vec3 color;
     uint kind;
@@ -13679,6 +14501,7 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Output output_;
     Fog fog;
     vec4 clock;
     vec4 camera_world;
@@ -13726,6 +14549,12 @@ struct VertexOut {
     vec4 vertex_color;
     vec3 relative;
 };
+const mat3x3 ACES_INPUT = mat3x3(vec3(0.59719, 0.076, 0.0284), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
+const mat3x3 ACES_OUTPUT = mat3x3(vec3(1.60475, -0.10208, -0.00327), vec3(-0.53108, 1.10813, -0.07276), vec3(-0.07367, -0.00605, 1.07602));
+const mat3x3 LINEAR_SRGB_TO_LINEAR_REC2020_ = mat3x3(vec3(0.6274, 0.0691, 0.0164), vec3(0.3293, 0.9195, 0.088), vec3(0.0433, 0.0113, 0.8956));
+const mat3x3 AGX_INSET = mat3x3(vec3(0.85662717, 0.13731897, 0.11189821), vec3(0.09512124, 0.761242, 0.076799415), vec3(0.048251607, 0.10143904, 0.81130236));
+const mat3x3 AGX_OUTSET = mat3x3(vec3(1.1271006, -0.14132977, -0.14132977), vec3(-0.11060664, 1.1578237, -0.11060664), vec3(-0.016493939, -0.016493939, 1.2519364));
+const mat3x3 LINEAR_REC2020_TO_LINEAR_SRGB = mat3x3(vec3(1.6605, -0.1246, -0.0182), vec3(-0.5876, 1.1329, -0.1006), vec3(-0.0728, -0.0083, 1.1187));
 const uint LINEAR = 1u;
 const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
@@ -13788,12 +14617,16 @@ vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
     return (view_proj * vec4(relative_position_2, 1.0));
 }
 
-vec3 fogged(vec3 c_1, vec3 relative, Material m_1) {
+vec4 finish_null3d_tonemap(vec3 c_1, vec2 pixel, Output settings) {
+    return vec4(c_1, 1.0);
+}
+
+vec3 fogged(vec3 c_2, vec3 relative, Material m_1) {
     bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
     vec3 _e11 = _group_0_binding_0_vs.fog.color;
     Fog _e14 = _group_0_binding_0_vs.fog;
     float _e16 = fog_factor(_e14, relative);
-    vec3 _e20 = apply_fog(c_1, _e11, (fog_on ? _e16 : 0.0));
+    vec3 _e20 = apply_fog(c_2, _e11, (fog_on ? _e16 : 0.0));
     return _e20;
 }
 
@@ -13869,10 +14702,10 @@ vec3 relative_position_3(Instance found_2, vec3 position) {
     return _e3;
 }
 
-vec3 linear_to_srgb(vec3 c_2) {
-    vec3 low = (c_2 * 12.92);
-    vec3 high = ((1.055 * pow(c_2, vec3(0.41666666))) - vec3(0.055));
-    return mix(high, low, lessThanEqual(c_2, vec3(0.0031308)));
+vec4 finish_null3d_mesh(vec3 c_3, vec2 pixel_1) {
+    Output _e2 = _group_0_binding_0_vs.output_;
+    vec4 _e5 = finish_null3d_tonemap(c_3, pixel_1, _e2);
+    return _e5;
 }
 
 void main() {
@@ -13946,6 +14779,12 @@ void main() {
 precision highp float;
 precision highp int;
 
+struct Output {
+    float exposure;
+    uint tone_mapping;
+    uint spare_a;
+    uint spare_b;
+};
 struct Fog {
     vec3 color;
     uint kind;
@@ -13960,6 +14799,7 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Output output_;
     Fog fog;
     vec4 clock;
     vec4 camera_world;
@@ -14007,6 +14847,12 @@ struct VertexOut {
     vec4 vertex_color;
     vec3 relative;
 };
+const mat3x3 ACES_INPUT = mat3x3(vec3(0.59719, 0.076, 0.0284), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
+const mat3x3 ACES_OUTPUT = mat3x3(vec3(1.60475, -0.10208, -0.00327), vec3(-0.53108, 1.10813, -0.07276), vec3(-0.07367, -0.00605, 1.07602));
+const mat3x3 LINEAR_SRGB_TO_LINEAR_REC2020_ = mat3x3(vec3(0.6274, 0.0691, 0.0164), vec3(0.3293, 0.9195, 0.088), vec3(0.0433, 0.0113, 0.8956));
+const mat3x3 AGX_INSET = mat3x3(vec3(0.85662717, 0.13731897, 0.11189821), vec3(0.09512124, 0.761242, 0.076799415), vec3(0.048251607, 0.10143904, 0.81130236));
+const mat3x3 AGX_OUTSET = mat3x3(vec3(1.1271006, -0.14132977, -0.14132977), vec3(-0.11060664, 1.1578237, -0.11060664), vec3(-0.016493939, -0.016493939, 1.2519364));
+const mat3x3 LINEAR_REC2020_TO_LINEAR_SRGB = mat3x3(vec3(1.6605, -0.1246, -0.0182), vec3(-0.5876, 1.1329, -0.1006), vec3(-0.0728, -0.0083, 1.1187));
 const uint LINEAR = 1u;
 const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
@@ -14058,6 +14904,10 @@ vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
     return (view_proj * vec4(relative_position_2, 1.0));
 }
 
+vec4 finish_null3d_tonemap(vec3 c_1, vec2 pixel, Output settings) {
+    return vec4(c_1, 1.0);
+}
+
 Material material_of(uint id) {
     Material m = Material(vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0));
     vec4 _e7 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(0u, id)), 0);
@@ -14080,12 +14930,12 @@ Material material_of(uint id) {
     return _e50;
 }
 
-vec3 fogged(vec3 c_1, vec3 relative, Material m_1) {
+vec3 fogged(vec3 c_2, vec3 relative, Material m_1) {
     bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
     vec3 _e11 = _group_0_binding_0_fs.fog.color;
     Fog _e14 = _group_0_binding_0_fs.fog;
     float _e16 = fog_factor(_e14, relative);
-    vec3 _e20 = apply_fog(c_1, _e11, (fog_on ? _e16 : 0.0));
+    vec3 _e20 = apply_fog(c_2, _e11, (fog_on ? _e16 : 0.0));
     return _e20;
 }
 
@@ -14108,10 +14958,10 @@ vec3 relative_position_3(Instance found_2, vec3 position) {
     return _e3;
 }
 
-vec3 linear_to_srgb(vec3 c_2) {
-    vec3 low = (c_2 * 12.92);
-    vec3 high = ((1.055 * pow(c_2, vec3(0.41666666))) - vec3(0.055));
-    return mix(high, low, lessThanEqual(c_2, vec3(0.0031308)));
+vec4 finish_null3d_mesh(vec3 c_3, vec2 pixel_1) {
+    Output _e2 = _group_0_binding_0_fs.output_;
+    vec4 _e5 = finish_null3d_tonemap(c_3, pixel_1, _e2);
+    return _e5;
 }
 
 void main() {
@@ -14127,8 +14977,8 @@ void main() {
     alpha = (_e13 * in_.vertex_color.w);
     vec3 _e17 = base;
     vec3 _e19 = fogged(_e17, in_.relative, _e2);
-    vec3 _e20 = linear_to_srgb(_e19);
-    _fs2p_location0 = vec4(_e20, 1.0);
+    vec4 _e22 = finish_null3d_mesh(_e19, in_.clip.xy);
+    _fs2p_location0 = _e22;
     return;
 }
 `,
@@ -14166,6 +15016,12 @@ precision highp int;
 
 uniform uint naga_vs_first_instance;
 
+struct Output {
+    float exposure;
+    uint tone_mapping;
+    uint spare_a;
+    uint spare_b;
+};
 struct Fog {
     vec3 color;
     uint kind;
@@ -14180,6 +15036,7 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Output output_;
     Fog fog;
     vec4 clock;
     vec4 camera_world;
@@ -14227,6 +15084,12 @@ struct VertexOut {
     vec4 vertex_color;
     vec3 relative;
 };
+const mat3x3 ACES_INPUT = mat3x3(vec3(0.59719, 0.076, 0.0284), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
+const mat3x3 ACES_OUTPUT = mat3x3(vec3(1.60475, -0.10208, -0.00327), vec3(-0.53108, 1.10813, -0.07276), vec3(-0.07367, -0.00605, 1.07602));
+const mat3x3 LINEAR_SRGB_TO_LINEAR_REC2020_ = mat3x3(vec3(0.6274, 0.0691, 0.0164), vec3(0.3293, 0.9195, 0.088), vec3(0.0433, 0.0113, 0.8956));
+const mat3x3 AGX_INSET = mat3x3(vec3(0.85662717, 0.13731897, 0.11189821), vec3(0.09512124, 0.761242, 0.076799415), vec3(0.048251607, 0.10143904, 0.81130236));
+const mat3x3 AGX_OUTSET = mat3x3(vec3(1.1271006, -0.14132977, -0.14132977), vec3(-0.11060664, 1.1578237, -0.11060664), vec3(-0.016493939, -0.016493939, 1.2519364));
+const mat3x3 LINEAR_REC2020_TO_LINEAR_SRGB = mat3x3(vec3(1.6605, -0.1246, -0.0182), vec3(-0.5876, 1.1329, -0.1006), vec3(-0.0728, -0.0083, 1.1187));
 const uint LINEAR = 1u;
 const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
@@ -14289,12 +15152,16 @@ vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
     return (view_proj * vec4(relative_position_2, 1.0));
 }
 
-vec3 fogged(vec3 c_1, vec3 relative, Material m_1) {
+vec4 finish_null3d_tonemap(vec3 c_1, vec2 pixel, Output settings) {
+    return vec4(c_1, 1.0);
+}
+
+vec3 fogged(vec3 c_2, vec3 relative, Material m_1) {
     bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
     vec3 _e11 = _group_0_binding_0_vs.fog.color;
     Fog _e14 = _group_0_binding_0_vs.fog;
     float _e16 = fog_factor(_e14, relative);
-    vec3 _e20 = apply_fog(c_1, _e11, (fog_on ? _e16 : 0.0));
+    vec3 _e20 = apply_fog(c_2, _e11, (fog_on ? _e16 : 0.0));
     return _e20;
 }
 
@@ -14370,10 +15237,10 @@ vec3 relative_position_3(Instance found_2, vec3 position) {
     return _e3;
 }
 
-vec3 linear_to_srgb(vec3 c_2) {
-    vec3 low = (c_2 * 12.92);
-    vec3 high = ((1.055 * pow(c_2, vec3(0.41666666))) - vec3(0.055));
-    return mix(high, low, lessThanEqual(c_2, vec3(0.0031308)));
+vec4 finish_null3d_mesh(vec3 c_3, vec2 pixel_1) {
+    Output _e2 = _group_0_binding_0_vs.output_;
+    vec4 _e5 = finish_null3d_tonemap(c_3, pixel_1, _e2);
+    return _e5;
 }
 
 void main() {
@@ -14447,6 +15314,12 @@ void main() {
 precision highp float;
 precision highp int;
 
+struct Output {
+    float exposure;
+    uint tone_mapping;
+    uint spare_a;
+    uint spare_b;
+};
 struct Fog {
     vec3 color;
     uint kind;
@@ -14461,6 +15334,7 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Output output_;
     Fog fog;
     vec4 clock;
     vec4 camera_world;
@@ -14508,6 +15382,12 @@ struct VertexOut {
     vec4 vertex_color;
     vec3 relative;
 };
+const mat3x3 ACES_INPUT = mat3x3(vec3(0.59719, 0.076, 0.0284), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
+const mat3x3 ACES_OUTPUT = mat3x3(vec3(1.60475, -0.10208, -0.00327), vec3(-0.53108, 1.10813, -0.07276), vec3(-0.07367, -0.00605, 1.07602));
+const mat3x3 LINEAR_SRGB_TO_LINEAR_REC2020_ = mat3x3(vec3(0.6274, 0.0691, 0.0164), vec3(0.3293, 0.9195, 0.088), vec3(0.0433, 0.0113, 0.8956));
+const mat3x3 AGX_INSET = mat3x3(vec3(0.85662717, 0.13731897, 0.11189821), vec3(0.09512124, 0.761242, 0.076799415), vec3(0.048251607, 0.10143904, 0.81130236));
+const mat3x3 AGX_OUTSET = mat3x3(vec3(1.1271006, -0.14132977, -0.14132977), vec3(-0.11060664, 1.1578237, -0.11060664), vec3(-0.016493939, -0.016493939, 1.2519364));
+const mat3x3 LINEAR_REC2020_TO_LINEAR_SRGB = mat3x3(vec3(1.6605, -0.1246, -0.0182), vec3(-0.5876, 1.1329, -0.1006), vec3(-0.0728, -0.0083, 1.1187));
 const uint LINEAR = 1u;
 const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
@@ -14559,6 +15439,10 @@ vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
     return (view_proj * vec4(relative_position_2, 1.0));
 }
 
+vec4 finish_null3d_tonemap(vec3 c_1, vec2 pixel, Output settings) {
+    return vec4(c_1, 1.0);
+}
+
 Material material_of(uint id) {
     Material m = Material(vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0));
     vec4 _e7 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(0u, id)), 0);
@@ -14581,12 +15465,12 @@ Material material_of(uint id) {
     return _e50;
 }
 
-vec3 fogged(vec3 c_1, vec3 relative, Material m_1) {
+vec3 fogged(vec3 c_2, vec3 relative, Material m_1) {
     bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
     vec3 _e11 = _group_0_binding_0_fs.fog.color;
     Fog _e14 = _group_0_binding_0_fs.fog;
     float _e16 = fog_factor(_e14, relative);
-    vec3 _e20 = apply_fog(c_1, _e11, (fog_on ? _e16 : 0.0));
+    vec3 _e20 = apply_fog(c_2, _e11, (fog_on ? _e16 : 0.0));
     return _e20;
 }
 
@@ -14609,10 +15493,10 @@ vec3 relative_position_3(Instance found_2, vec3 position) {
     return _e3;
 }
 
-vec3 linear_to_srgb(vec3 c_2) {
-    vec3 low = (c_2 * 12.92);
-    vec3 high = ((1.055 * pow(c_2, vec3(0.41666666))) - vec3(0.055));
-    return mix(high, low, lessThanEqual(c_2, vec3(0.0031308)));
+vec4 finish_null3d_mesh(vec3 c_3, vec2 pixel_1) {
+    Output _e2 = _group_0_binding_0_fs.output_;
+    vec4 _e5 = finish_null3d_tonemap(c_3, pixel_1, _e2);
+    return _e5;
 }
 
 void main() {
@@ -14632,8 +15516,8 @@ void main() {
     }
     vec3 _e21 = base;
     vec3 _e23 = fogged(_e21, in_.relative, _e2);
-    vec3 _e24 = linear_to_srgb(_e23);
-    _fs2p_location0 = vec4(_e24, 1.0);
+    vec4 _e26 = finish_null3d_mesh(_e23, in_.clip.xy);
+    _fs2p_location0 = _e26;
     return;
 }
 `,
@@ -14673,6 +15557,12 @@ precision highp int;
 
 uniform uint naga_vs_first_instance;
 
+struct Output {
+    float exposure;
+    uint tone_mapping;
+    uint spare_a;
+    uint spare_b;
+};
 struct Fog {
     vec3 color;
     uint kind;
@@ -14687,6 +15577,7 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Output output_;
     Fog fog;
     vec4 clock;
     vec4 camera_world;
@@ -14735,6 +15626,12 @@ struct VertexOut {
     uint material;
     vec3 relative;
 };
+const mat3x3 ACES_INPUT = mat3x3(vec3(0.59719, 0.076, 0.0284), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
+const mat3x3 ACES_OUTPUT = mat3x3(vec3(1.60475, -0.10208, -0.00327), vec3(-0.53108, 1.10813, -0.07276), vec3(-0.07367, -0.00605, 1.07602));
+const mat3x3 LINEAR_SRGB_TO_LINEAR_REC2020_ = mat3x3(vec3(0.6274, 0.0691, 0.0164), vec3(0.3293, 0.9195, 0.088), vec3(0.0433, 0.0113, 0.8956));
+const mat3x3 AGX_INSET = mat3x3(vec3(0.85662717, 0.13731897, 0.11189821), vec3(0.09512124, 0.761242, 0.076799415), vec3(0.048251607, 0.10143904, 0.81130236));
+const mat3x3 AGX_OUTSET = mat3x3(vec3(1.1271006, -0.14132977, -0.14132977), vec3(-0.11060664, 1.1578237, -0.11060664), vec3(-0.016493939, -0.016493939, 1.2519364));
+const mat3x3 LINEAR_REC2020_TO_LINEAR_SRGB = mat3x3(vec3(1.6605, -0.1246, -0.0182), vec3(-0.5876, 1.1329, -0.1006), vec3(-0.0728, -0.0083, 1.1187));
 const uint LINEAR = 1u;
 const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
@@ -14799,12 +15696,16 @@ vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
     return (view_proj * vec4(relative_position_2, 1.0));
 }
 
-vec3 fogged(vec3 c_1, vec3 relative, Material m_1) {
+vec4 finish_null3d_tonemap(vec3 c_1, vec2 pixel, Output settings) {
+    return vec4(c_1, 1.0);
+}
+
+vec3 fogged(vec3 c_2, vec3 relative, Material m_1) {
     bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
     vec3 _e11 = _group_0_binding_0_vs.fog.color;
     Fog _e14 = _group_0_binding_0_vs.fog;
     float _e16 = fog_factor(_e14, relative);
-    vec3 _e20 = apply_fog(c_1, _e11, (fog_on ? _e16 : 0.0));
+    vec3 _e20 = apply_fog(c_2, _e11, (fog_on ? _e16 : 0.0));
     return _e20;
 }
 
@@ -14888,10 +15789,10 @@ vec3 relative_position_3(Instance found_2, vec3 position) {
     return _e3;
 }
 
-vec3 linear_to_srgb(vec3 c_2) {
-    vec3 low = (c_2 * 12.92);
-    vec3 high = ((1.055 * pow(c_2, vec3(0.41666666))) - vec3(0.055));
-    return mix(high, low, lessThanEqual(c_2, vec3(0.0031308)));
+vec4 finish_null3d_mesh(vec3 c_3, vec2 pixel_1) {
+    Output _e2 = _group_0_binding_0_vs.output_;
+    vec4 _e5 = finish_null3d_tonemap(c_3, pixel_1, _e2);
+    return _e5;
 }
 
 void main() {
@@ -14965,6 +15866,12 @@ void main() {
 precision highp float;
 precision highp int;
 
+struct Output {
+    float exposure;
+    uint tone_mapping;
+    uint spare_a;
+    uint spare_b;
+};
 struct Fog {
     vec3 color;
     uint kind;
@@ -14979,6 +15886,7 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Output output_;
     Fog fog;
     vec4 clock;
     vec4 camera_world;
@@ -15027,6 +15935,12 @@ struct VertexOut {
     uint material;
     vec3 relative;
 };
+const mat3x3 ACES_INPUT = mat3x3(vec3(0.59719, 0.076, 0.0284), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
+const mat3x3 ACES_OUTPUT = mat3x3(vec3(1.60475, -0.10208, -0.00327), vec3(-0.53108, 1.10813, -0.07276), vec3(-0.07367, -0.00605, 1.07602));
+const mat3x3 LINEAR_SRGB_TO_LINEAR_REC2020_ = mat3x3(vec3(0.6274, 0.0691, 0.0164), vec3(0.3293, 0.9195, 0.088), vec3(0.0433, 0.0113, 0.8956));
+const mat3x3 AGX_INSET = mat3x3(vec3(0.85662717, 0.13731897, 0.11189821), vec3(0.09512124, 0.761242, 0.076799415), vec3(0.048251607, 0.10143904, 0.81130236));
+const mat3x3 AGX_OUTSET = mat3x3(vec3(1.1271006, -0.14132977, -0.14132977), vec3(-0.11060664, 1.1578237, -0.11060664), vec3(-0.016493939, -0.016493939, 1.2519364));
+const mat3x3 LINEAR_REC2020_TO_LINEAR_SRGB = mat3x3(vec3(1.6605, -0.1246, -0.0182), vec3(-0.5876, 1.1329, -0.1006), vec3(-0.0728, -0.0083, 1.1187));
 const uint LINEAR = 1u;
 const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
@@ -15081,6 +15995,10 @@ vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
     return (view_proj * vec4(relative_position_2, 1.0));
 }
 
+vec4 finish_null3d_tonemap(vec3 c_1, vec2 pixel, Output settings) {
+    return vec4(c_1, 1.0);
+}
+
 Material material_of(uint id) {
     Material m = Material(vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0));
     vec4 _e7 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(0u, id)), 0);
@@ -15103,12 +16021,12 @@ Material material_of(uint id) {
     return _e50;
 }
 
-vec3 fogged(vec3 c_1, vec3 relative, Material m_1) {
+vec3 fogged(vec3 c_2, vec3 relative, Material m_1) {
     bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
     vec3 _e11 = _group_0_binding_0_fs.fog.color;
     Fog _e14 = _group_0_binding_0_fs.fog;
     float _e16 = fog_factor(_e14, relative);
-    vec3 _e20 = apply_fog(c_1, _e11, (fog_on ? _e16 : 0.0));
+    vec3 _e20 = apply_fog(c_2, _e11, (fog_on ? _e16 : 0.0));
     return _e20;
 }
 
@@ -15139,10 +16057,10 @@ vec3 relative_position_3(Instance found_2, vec3 position) {
     return _e3;
 }
 
-vec3 linear_to_srgb(vec3 c_2) {
-    vec3 low = (c_2 * 12.92);
-    vec3 high = ((1.055 * pow(c_2, vec3(0.41666666))) - vec3(0.055));
-    return mix(high, low, lessThanEqual(c_2, vec3(0.0031308)));
+vec4 finish_null3d_mesh(vec3 c_3, vec2 pixel_1) {
+    Output _e2 = _group_0_binding_0_fs.output_;
+    vec4 _e5 = finish_null3d_tonemap(c_3, pixel_1, _e2);
+    return _e5;
 }
 
 void main() {
@@ -15161,8 +16079,8 @@ void main() {
     alpha = (_e2.color.w * map.w);
     vec3 _e46 = base;
     vec3 _e48 = fogged(_e46, in_.relative, _e2);
-    vec3 _e49 = linear_to_srgb(_e48);
-    _fs2p_location0 = vec4(_e49, 1.0);
+    vec4 _e51 = finish_null3d_mesh(_e48, in_.clip.xy);
+    _fs2p_location0 = _e51;
     return;
 }
 `,
@@ -15209,6 +16127,12 @@ precision highp int;
 
 uniform uint naga_vs_first_instance;
 
+struct Output {
+    float exposure;
+    uint tone_mapping;
+    uint spare_a;
+    uint spare_b;
+};
 struct Fog {
     vec3 color;
     uint kind;
@@ -15223,6 +16147,7 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Output output_;
     Fog fog;
     vec4 clock;
     vec4 camera_world;
@@ -15271,6 +16196,12 @@ struct VertexOut {
     uint material;
     vec3 relative;
 };
+const mat3x3 ACES_INPUT = mat3x3(vec3(0.59719, 0.076, 0.0284), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
+const mat3x3 ACES_OUTPUT = mat3x3(vec3(1.60475, -0.10208, -0.00327), vec3(-0.53108, 1.10813, -0.07276), vec3(-0.07367, -0.00605, 1.07602));
+const mat3x3 LINEAR_SRGB_TO_LINEAR_REC2020_ = mat3x3(vec3(0.6274, 0.0691, 0.0164), vec3(0.3293, 0.9195, 0.088), vec3(0.0433, 0.0113, 0.8956));
+const mat3x3 AGX_INSET = mat3x3(vec3(0.85662717, 0.13731897, 0.11189821), vec3(0.09512124, 0.761242, 0.076799415), vec3(0.048251607, 0.10143904, 0.81130236));
+const mat3x3 AGX_OUTSET = mat3x3(vec3(1.1271006, -0.14132977, -0.14132977), vec3(-0.11060664, 1.1578237, -0.11060664), vec3(-0.016493939, -0.016493939, 1.2519364));
+const mat3x3 LINEAR_REC2020_TO_LINEAR_SRGB = mat3x3(vec3(1.6605, -0.1246, -0.0182), vec3(-0.5876, 1.1329, -0.1006), vec3(-0.0728, -0.0083, 1.1187));
 const uint LINEAR = 1u;
 const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
@@ -15335,12 +16266,16 @@ vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
     return (view_proj * vec4(relative_position_2, 1.0));
 }
 
-vec3 fogged(vec3 c_1, vec3 relative, Material m_1) {
+vec4 finish_null3d_tonemap(vec3 c_1, vec2 pixel, Output settings) {
+    return vec4(c_1, 1.0);
+}
+
+vec3 fogged(vec3 c_2, vec3 relative, Material m_1) {
     bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
     vec3 _e11 = _group_0_binding_0_vs.fog.color;
     Fog _e14 = _group_0_binding_0_vs.fog;
     float _e16 = fog_factor(_e14, relative);
-    vec3 _e20 = apply_fog(c_1, _e11, (fog_on ? _e16 : 0.0));
+    vec3 _e20 = apply_fog(c_2, _e11, (fog_on ? _e16 : 0.0));
     return _e20;
 }
 
@@ -15424,10 +16359,10 @@ vec3 relative_position_3(Instance found_2, vec3 position) {
     return _e3;
 }
 
-vec3 linear_to_srgb(vec3 c_2) {
-    vec3 low = (c_2 * 12.92);
-    vec3 high = ((1.055 * pow(c_2, vec3(0.41666666))) - vec3(0.055));
-    return mix(high, low, lessThanEqual(c_2, vec3(0.0031308)));
+vec4 finish_null3d_mesh(vec3 c_3, vec2 pixel_1) {
+    Output _e2 = _group_0_binding_0_vs.output_;
+    vec4 _e5 = finish_null3d_tonemap(c_3, pixel_1, _e2);
+    return _e5;
 }
 
 void main() {
@@ -15501,6 +16436,12 @@ void main() {
 precision highp float;
 precision highp int;
 
+struct Output {
+    float exposure;
+    uint tone_mapping;
+    uint spare_a;
+    uint spare_b;
+};
 struct Fog {
     vec3 color;
     uint kind;
@@ -15515,6 +16456,7 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Output output_;
     Fog fog;
     vec4 clock;
     vec4 camera_world;
@@ -15563,6 +16505,12 @@ struct VertexOut {
     uint material;
     vec3 relative;
 };
+const mat3x3 ACES_INPUT = mat3x3(vec3(0.59719, 0.076, 0.0284), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
+const mat3x3 ACES_OUTPUT = mat3x3(vec3(1.60475, -0.10208, -0.00327), vec3(-0.53108, 1.10813, -0.07276), vec3(-0.07367, -0.00605, 1.07602));
+const mat3x3 LINEAR_SRGB_TO_LINEAR_REC2020_ = mat3x3(vec3(0.6274, 0.0691, 0.0164), vec3(0.3293, 0.9195, 0.088), vec3(0.0433, 0.0113, 0.8956));
+const mat3x3 AGX_INSET = mat3x3(vec3(0.85662717, 0.13731897, 0.11189821), vec3(0.09512124, 0.761242, 0.076799415), vec3(0.048251607, 0.10143904, 0.81130236));
+const mat3x3 AGX_OUTSET = mat3x3(vec3(1.1271006, -0.14132977, -0.14132977), vec3(-0.11060664, 1.1578237, -0.11060664), vec3(-0.016493939, -0.016493939, 1.2519364));
+const mat3x3 LINEAR_REC2020_TO_LINEAR_SRGB = mat3x3(vec3(1.6605, -0.1246, -0.0182), vec3(-0.5876, 1.1329, -0.1006), vec3(-0.0728, -0.0083, 1.1187));
 const uint LINEAR = 1u;
 const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
@@ -15617,6 +16565,10 @@ vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
     return (view_proj * vec4(relative_position_2, 1.0));
 }
 
+vec4 finish_null3d_tonemap(vec3 c_1, vec2 pixel, Output settings) {
+    return vec4(c_1, 1.0);
+}
+
 Material material_of(uint id) {
     Material m = Material(vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0));
     vec4 _e7 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(0u, id)), 0);
@@ -15639,12 +16591,12 @@ Material material_of(uint id) {
     return _e50;
 }
 
-vec3 fogged(vec3 c_1, vec3 relative, Material m_1) {
+vec3 fogged(vec3 c_2, vec3 relative, Material m_1) {
     bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
     vec3 _e11 = _group_0_binding_0_fs.fog.color;
     Fog _e14 = _group_0_binding_0_fs.fog;
     float _e16 = fog_factor(_e14, relative);
-    vec3 _e20 = apply_fog(c_1, _e11, (fog_on ? _e16 : 0.0));
+    vec3 _e20 = apply_fog(c_2, _e11, (fog_on ? _e16 : 0.0));
     return _e20;
 }
 
@@ -15675,10 +16627,10 @@ vec3 relative_position_3(Instance found_2, vec3 position) {
     return _e3;
 }
 
-vec3 linear_to_srgb(vec3 c_2) {
-    vec3 low = (c_2 * 12.92);
-    vec3 high = ((1.055 * pow(c_2, vec3(0.41666666))) - vec3(0.055));
-    return mix(high, low, lessThanEqual(c_2, vec3(0.0031308)));
+vec4 finish_null3d_mesh(vec3 c_3, vec2 pixel_1) {
+    Output _e2 = _group_0_binding_0_fs.output_;
+    vec4 _e5 = finish_null3d_tonemap(c_3, pixel_1, _e2);
+    return _e5;
 }
 
 void main() {
@@ -15701,8 +16653,8 @@ void main() {
     }
     vec3 _e50 = base;
     vec3 _e52 = fogged(_e50, in_.relative, _e2);
-    vec3 _e53 = linear_to_srgb(_e52);
-    _fs2p_location0 = vec4(_e53, 1.0);
+    vec4 _e55 = finish_null3d_mesh(_e52, in_.clip.xy);
+    _fs2p_location0 = _e55;
     return;
 }
 `,
@@ -15749,6 +16701,12 @@ precision highp int;
 
 uniform uint naga_vs_first_instance;
 
+struct Output {
+    float exposure;
+    uint tone_mapping;
+    uint spare_a;
+    uint spare_b;
+};
 struct Fog {
     vec3 color;
     uint kind;
@@ -15763,6 +16721,7 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Output output_;
     Fog fog;
     vec4 clock;
     vec4 camera_world;
@@ -15813,6 +16772,12 @@ struct VertexOut {
     vec4 vertex_color;
     vec3 relative;
 };
+const mat3x3 ACES_INPUT = mat3x3(vec3(0.59719, 0.076, 0.0284), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
+const mat3x3 ACES_OUTPUT = mat3x3(vec3(1.60475, -0.10208, -0.00327), vec3(-0.53108, 1.10813, -0.07276), vec3(-0.07367, -0.00605, 1.07602));
+const mat3x3 LINEAR_SRGB_TO_LINEAR_REC2020_ = mat3x3(vec3(0.6274, 0.0691, 0.0164), vec3(0.3293, 0.9195, 0.088), vec3(0.0433, 0.0113, 0.8956));
+const mat3x3 AGX_INSET = mat3x3(vec3(0.85662717, 0.13731897, 0.11189821), vec3(0.09512124, 0.761242, 0.076799415), vec3(0.048251607, 0.10143904, 0.81130236));
+const mat3x3 AGX_OUTSET = mat3x3(vec3(1.1271006, -0.14132977, -0.14132977), vec3(-0.11060664, 1.1578237, -0.11060664), vec3(-0.016493939, -0.016493939, 1.2519364));
+const mat3x3 LINEAR_REC2020_TO_LINEAR_SRGB = mat3x3(vec3(1.6605, -0.1246, -0.0182), vec3(-0.5876, 1.1329, -0.1006), vec3(-0.0728, -0.0083, 1.1187));
 const uint LINEAR = 1u;
 const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
@@ -15879,12 +16844,16 @@ vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
     return (view_proj * vec4(relative_position_2, 1.0));
 }
 
-vec3 fogged(vec3 c_1, vec3 relative, Material m_1) {
+vec4 finish_null3d_tonemap(vec3 c_1, vec2 pixel, Output settings) {
+    return vec4(c_1, 1.0);
+}
+
+vec3 fogged(vec3 c_2, vec3 relative, Material m_1) {
     bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
     vec3 _e11 = _group_0_binding_0_vs.fog.color;
     Fog _e14 = _group_0_binding_0_vs.fog;
     float _e16 = fog_factor(_e14, relative);
-    vec3 _e20 = apply_fog(c_1, _e11, (fog_on ? _e16 : 0.0));
+    vec3 _e20 = apply_fog(c_2, _e11, (fog_on ? _e16 : 0.0));
     return _e20;
 }
 
@@ -15968,10 +16937,10 @@ vec3 relative_position_3(Instance found_2, vec3 position) {
     return _e3;
 }
 
-vec3 linear_to_srgb(vec3 c_2) {
-    vec3 low = (c_2 * 12.92);
-    vec3 high = ((1.055 * pow(c_2, vec3(0.41666666))) - vec3(0.055));
-    return mix(high, low, lessThanEqual(c_2, vec3(0.0031308)));
+vec4 finish_null3d_mesh(vec3 c_3, vec2 pixel_1) {
+    Output _e2 = _group_0_binding_0_vs.output_;
+    vec4 _e5 = finish_null3d_tonemap(c_3, pixel_1, _e2);
+    return _e5;
 }
 
 void main() {
@@ -16047,6 +17016,12 @@ void main() {
 precision highp float;
 precision highp int;
 
+struct Output {
+    float exposure;
+    uint tone_mapping;
+    uint spare_a;
+    uint spare_b;
+};
 struct Fog {
     vec3 color;
     uint kind;
@@ -16061,6 +17036,7 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Output output_;
     Fog fog;
     vec4 clock;
     vec4 camera_world;
@@ -16111,6 +17087,12 @@ struct VertexOut {
     vec4 vertex_color;
     vec3 relative;
 };
+const mat3x3 ACES_INPUT = mat3x3(vec3(0.59719, 0.076, 0.0284), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
+const mat3x3 ACES_OUTPUT = mat3x3(vec3(1.60475, -0.10208, -0.00327), vec3(-0.53108, 1.10813, -0.07276), vec3(-0.07367, -0.00605, 1.07602));
+const mat3x3 LINEAR_SRGB_TO_LINEAR_REC2020_ = mat3x3(vec3(0.6274, 0.0691, 0.0164), vec3(0.3293, 0.9195, 0.088), vec3(0.0433, 0.0113, 0.8956));
+const mat3x3 AGX_INSET = mat3x3(vec3(0.85662717, 0.13731897, 0.11189821), vec3(0.09512124, 0.761242, 0.076799415), vec3(0.048251607, 0.10143904, 0.81130236));
+const mat3x3 AGX_OUTSET = mat3x3(vec3(1.1271006, -0.14132977, -0.14132977), vec3(-0.11060664, 1.1578237, -0.11060664), vec3(-0.016493939, -0.016493939, 1.2519364));
+const mat3x3 LINEAR_REC2020_TO_LINEAR_SRGB = mat3x3(vec3(1.6605, -0.1246, -0.0182), vec3(-0.5876, 1.1329, -0.1006), vec3(-0.0728, -0.0083, 1.1187));
 const uint LINEAR = 1u;
 const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
@@ -16166,6 +17148,10 @@ vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
     return (view_proj * vec4(relative_position_2, 1.0));
 }
 
+vec4 finish_null3d_tonemap(vec3 c_1, vec2 pixel, Output settings) {
+    return vec4(c_1, 1.0);
+}
+
 Material material_of(uint id) {
     Material m = Material(vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0));
     vec4 _e7 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(0u, id)), 0);
@@ -16188,12 +17174,12 @@ Material material_of(uint id) {
     return _e50;
 }
 
-vec3 fogged(vec3 c_1, vec3 relative, Material m_1) {
+vec3 fogged(vec3 c_2, vec3 relative, Material m_1) {
     bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
     vec3 _e11 = _group_0_binding_0_fs.fog.color;
     Fog _e14 = _group_0_binding_0_fs.fog;
     float _e16 = fog_factor(_e14, relative);
-    vec3 _e20 = apply_fog(c_1, _e11, (fog_on ? _e16 : 0.0));
+    vec3 _e20 = apply_fog(c_2, _e11, (fog_on ? _e16 : 0.0));
     return _e20;
 }
 
@@ -16224,10 +17210,10 @@ vec3 relative_position_3(Instance found_2, vec3 position) {
     return _e3;
 }
 
-vec3 linear_to_srgb(vec3 c_2) {
-    vec3 low = (c_2 * 12.92);
-    vec3 high = ((1.055 * pow(c_2, vec3(0.41666666))) - vec3(0.055));
-    return mix(high, low, lessThanEqual(c_2, vec3(0.0031308)));
+vec4 finish_null3d_mesh(vec3 c_3, vec2 pixel_1) {
+    Output _e2 = _group_0_binding_0_fs.output_;
+    vec4 _e5 = finish_null3d_tonemap(c_3, pixel_1, _e2);
+    return _e5;
 }
 
 void main() {
@@ -16250,8 +17236,8 @@ void main() {
     alpha = (_e50 * in_.vertex_color.w);
     vec3 _e54 = base;
     vec3 _e56 = fogged(_e54, in_.relative, _e2);
-    vec3 _e57 = linear_to_srgb(_e56);
-    _fs2p_location0 = vec4(_e57, 1.0);
+    vec4 _e59 = finish_null3d_mesh(_e56, in_.clip.xy);
+    _fs2p_location0 = _e59;
     return;
 }
 `,
@@ -16298,6 +17284,12 @@ precision highp int;
 
 uniform uint naga_vs_first_instance;
 
+struct Output {
+    float exposure;
+    uint tone_mapping;
+    uint spare_a;
+    uint spare_b;
+};
 struct Fog {
     vec3 color;
     uint kind;
@@ -16312,6 +17304,7 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Output output_;
     Fog fog;
     vec4 clock;
     vec4 camera_world;
@@ -16362,6 +17355,12 @@ struct VertexOut {
     vec4 vertex_color;
     vec3 relative;
 };
+const mat3x3 ACES_INPUT = mat3x3(vec3(0.59719, 0.076, 0.0284), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
+const mat3x3 ACES_OUTPUT = mat3x3(vec3(1.60475, -0.10208, -0.00327), vec3(-0.53108, 1.10813, -0.07276), vec3(-0.07367, -0.00605, 1.07602));
+const mat3x3 LINEAR_SRGB_TO_LINEAR_REC2020_ = mat3x3(vec3(0.6274, 0.0691, 0.0164), vec3(0.3293, 0.9195, 0.088), vec3(0.0433, 0.0113, 0.8956));
+const mat3x3 AGX_INSET = mat3x3(vec3(0.85662717, 0.13731897, 0.11189821), vec3(0.09512124, 0.761242, 0.076799415), vec3(0.048251607, 0.10143904, 0.81130236));
+const mat3x3 AGX_OUTSET = mat3x3(vec3(1.1271006, -0.14132977, -0.14132977), vec3(-0.11060664, 1.1578237, -0.11060664), vec3(-0.016493939, -0.016493939, 1.2519364));
+const mat3x3 LINEAR_REC2020_TO_LINEAR_SRGB = mat3x3(vec3(1.6605, -0.1246, -0.0182), vec3(-0.5876, 1.1329, -0.1006), vec3(-0.0728, -0.0083, 1.1187));
 const uint LINEAR = 1u;
 const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
@@ -16428,12 +17427,16 @@ vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
     return (view_proj * vec4(relative_position_2, 1.0));
 }
 
-vec3 fogged(vec3 c_1, vec3 relative, Material m_1) {
+vec4 finish_null3d_tonemap(vec3 c_1, vec2 pixel, Output settings) {
+    return vec4(c_1, 1.0);
+}
+
+vec3 fogged(vec3 c_2, vec3 relative, Material m_1) {
     bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
     vec3 _e11 = _group_0_binding_0_vs.fog.color;
     Fog _e14 = _group_0_binding_0_vs.fog;
     float _e16 = fog_factor(_e14, relative);
-    vec3 _e20 = apply_fog(c_1, _e11, (fog_on ? _e16 : 0.0));
+    vec3 _e20 = apply_fog(c_2, _e11, (fog_on ? _e16 : 0.0));
     return _e20;
 }
 
@@ -16517,10 +17520,10 @@ vec3 relative_position_3(Instance found_2, vec3 position) {
     return _e3;
 }
 
-vec3 linear_to_srgb(vec3 c_2) {
-    vec3 low = (c_2 * 12.92);
-    vec3 high = ((1.055 * pow(c_2, vec3(0.41666666))) - vec3(0.055));
-    return mix(high, low, lessThanEqual(c_2, vec3(0.0031308)));
+vec4 finish_null3d_mesh(vec3 c_3, vec2 pixel_1) {
+    Output _e2 = _group_0_binding_0_vs.output_;
+    vec4 _e5 = finish_null3d_tonemap(c_3, pixel_1, _e2);
+    return _e5;
 }
 
 void main() {
@@ -16596,6 +17599,12 @@ void main() {
 precision highp float;
 precision highp int;
 
+struct Output {
+    float exposure;
+    uint tone_mapping;
+    uint spare_a;
+    uint spare_b;
+};
 struct Fog {
     vec3 color;
     uint kind;
@@ -16610,6 +17619,7 @@ struct Frame {
     vec4 sun_direction;
     vec4 sun_color;
     vec4 ambient;
+    Output output_;
     Fog fog;
     vec4 clock;
     vec4 camera_world;
@@ -16660,6 +17670,12 @@ struct VertexOut {
     vec4 vertex_color;
     vec3 relative;
 };
+const mat3x3 ACES_INPUT = mat3x3(vec3(0.59719, 0.076, 0.0284), vec3(0.35458, 0.90834, 0.13383), vec3(0.04823, 0.01566, 0.83777));
+const mat3x3 ACES_OUTPUT = mat3x3(vec3(1.60475, -0.10208, -0.00327), vec3(-0.53108, 1.10813, -0.07276), vec3(-0.07367, -0.00605, 1.07602));
+const mat3x3 LINEAR_SRGB_TO_LINEAR_REC2020_ = mat3x3(vec3(0.6274, 0.0691, 0.0164), vec3(0.3293, 0.9195, 0.088), vec3(0.0433, 0.0113, 0.8956));
+const mat3x3 AGX_INSET = mat3x3(vec3(0.85662717, 0.13731897, 0.11189821), vec3(0.09512124, 0.761242, 0.076799415), vec3(0.048251607, 0.10143904, 0.81130236));
+const mat3x3 AGX_OUTSET = mat3x3(vec3(1.1271006, -0.14132977, -0.14132977), vec3(-0.11060664, 1.1578237, -0.11060664), vec3(-0.016493939, -0.016493939, 1.2519364));
+const mat3x3 LINEAR_REC2020_TO_LINEAR_SRGB = mat3x3(vec3(1.6605, -0.1246, -0.0182), vec3(-0.5876, 1.1329, -0.1006), vec3(-0.0728, -0.0083, 1.1187));
 const uint LINEAR = 1u;
 const uint EXP2_ = 2u;
 const vec4 OUTSIDE_CLIP = vec4(2.0, 2.0, 2.0, 1.0);
@@ -16715,6 +17731,10 @@ vec4 to_clip(mat4x4 view_proj, vec3 relative_position_2) {
     return (view_proj * vec4(relative_position_2, 1.0));
 }
 
+vec4 finish_null3d_tonemap(vec3 c_1, vec2 pixel, Output settings) {
+    return vec4(c_1, 1.0);
+}
+
 Material material_of(uint id) {
     Material m = Material(vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0), vec4(0.0));
     vec4 _e7 = texelFetch(_group_0_binding_1_fs, ivec2(uvec2(0u, id)), 0);
@@ -16737,12 +17757,12 @@ Material material_of(uint id) {
     return _e50;
 }
 
-vec3 fogged(vec3 c_1, vec3 relative, Material m_1) {
+vec3 fogged(vec3 c_2, vec3 relative, Material m_1) {
     bool fog_on = ((uint(m_1.strengths.z) & NO_FOG) == 0u);
     vec3 _e11 = _group_0_binding_0_fs.fog.color;
     Fog _e14 = _group_0_binding_0_fs.fog;
     float _e16 = fog_factor(_e14, relative);
-    vec3 _e20 = apply_fog(c_1, _e11, (fog_on ? _e16 : 0.0));
+    vec3 _e20 = apply_fog(c_2, _e11, (fog_on ? _e16 : 0.0));
     return _e20;
 }
 
@@ -16773,10 +17793,10 @@ vec3 relative_position_3(Instance found_2, vec3 position) {
     return _e3;
 }
 
-vec3 linear_to_srgb(vec3 c_2) {
-    vec3 low = (c_2 * 12.92);
-    vec3 high = ((1.055 * pow(c_2, vec3(0.41666666))) - vec3(0.055));
-    return mix(high, low, lessThanEqual(c_2, vec3(0.0031308)));
+vec4 finish_null3d_mesh(vec3 c_3, vec2 pixel_1) {
+    Output _e2 = _group_0_binding_0_fs.output_;
+    vec4 _e5 = finish_null3d_tonemap(c_3, pixel_1, _e2);
+    return _e5;
 }
 
 void main() {
@@ -16803,8 +17823,8 @@ void main() {
     }
     vec3 _e58 = base;
     vec3 _e60 = fogged(_e58, in_.relative, _e2);
-    vec3 _e61 = linear_to_srgb(_e60);
-    _fs2p_location0 = vec4(_e61, 1.0);
+    vec4 _e63 = finish_null3d_mesh(_e60, in_.clip.xy);
+    _fs2p_location0 = _e63;
     return;
 }
 `,

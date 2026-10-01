@@ -8,7 +8,7 @@ summary: "The context object: scene, assets, materials, geometry, textures, inpu
 
 # Sketch API: defineSketch and the context
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. The context fields `post`, `render` and `ui` are not built yet, so coding agents must not use them.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. The context fields `render` and `ui` are not built yet, so coding agents must not use them. Of `post`, only `post.set` with `toneMapping` and `exposure` is built.
 
 In null3D, a 3D scene is called a sketch. A sketch module builds the scene and updates it every frame, and its default export is `defineSketch(setup)`. The engine loads the module, calls `setup` once with the sketch's context, and then calls the callbacks that `setup` returns.
 
@@ -77,6 +77,7 @@ An option out of its range fails the start with [E1214](../errors/E1214.md), bef
 | `textures` | Textures from decoded images and from data: [Textures](textures.md) |
 | `assets` | Downloads of textures, JSON and binary files, with preloads and progress: [Assets](assets.md) |
 | `input` | Pointer, touch, keyboard and gamepad input, and action maps: [Input](input.md) |
+| `post` | The tone mapping and the exposure: [Post-processing API](post.md) |
 | `quality` | The quality preset that the engine runs, and its settings: [Quality API](quality.md) |
 | `time` | Sketch time in seconds, the frame's step and the frame number: [Time](time.md) |
 | `engine` | The canvas's size, and what the device can do: [The engine field](#the-engine-field) |
@@ -199,6 +200,7 @@ What the engine passes to a sketch's setup function.
 | `textures: Textures` | Textures from decoded images and from data. |
 | `assets: Assets` | Loading of textures and files, with a count of downloads for loading screens. |
 | `input: Input` | Pointer, touch, keyboard and gamepad input, which the page forwards to the sketch. |
+| `post: Post` | Post-processing: the tone mapping and the exposure of the scene's color. |
 | `quality: Quality` | The quality preset that the engine runs, its settings, and a notice when they change. |
 | `time: SketchTime` | Sketch time, the frame's step and the frame number. |
 | `engine: SketchEngine` | The canvas's size, and what the device can do. |

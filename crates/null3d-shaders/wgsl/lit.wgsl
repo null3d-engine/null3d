@@ -22,21 +22,20 @@ enable draw_index;
 // change between pixels, as three.js's getTangentFrame makes it.
 //
 // Custom materials build this template with their WGSL added after its last line, and with the
-// shader defs CUSTOM and UV0, which reads the first texture coordinates. CUSTOM_SURFACE makes the fragment
-// shader call their `fn surface`, and CUSTOM_VERTEX_OFFSET makes the vertex shader move each vertex
-// by their `fn vertexOffset`. Their WGSL reads the built-in values `frame`, `camera` and `object`,
-// which each stage fills under CUSTOM; the frame's uniform block is `engine_frame` here. When their
-// WGSL declares `struct Uniforms`, the build adds `load_material_uniforms` after it, and
-// CUSTOM_UNIFORMS makes each stage fill `material` with the uniforms. Their WGSL shares this file's names, so the template imports library items by name and
-// keeps its own names few. It never imports a module whole, which would reserve the module's name
-// in their WGSL too. Names that only the MAPS builds declare stay free for custom materials, which
-// build without maps.
-#import null3d::color::{linear_to_srgb}
+// shader defs CUSTOM and UV0, which reads the first texture coordinates. CUSTOM_SURFACE makes the
+// fragment shader call their `fn surface`, and CUSTOM_VERTEX_OFFSET makes the vertex shader move
+// each vertex by their `fn vertexOffset`. Their WGSL reads the built-in values `frame`, `camera` and
+// `object`, which each stage fills under CUSTOM; the frame's uniform block is `engine_frame` here.
+// When their WGSL declares `struct Uniforms`, the build adds `load_material_uniforms` after it, and
+// CUSTOM_UNIFORMS makes each stage fill `material` with the uniforms. Their WGSL shares this file's
+// names, so the template imports library items by name and keeps its own names few. It never
+// imports a module whole, which would reserve the module's name in their WGSL too. Names that only
+// the MAPS builds declare stay free for custom materials, which build without maps.
 #import null3d::lighting::{PbrMaterial, dfg_lut, direct_light, indirect_diffuse}
 #import null3d::lighting::{multiscatter_compensation, pbr_material}
 #import null3d::globals::{Material}
 #import null3d::mesh::{InstanceIn, clip_of, find_instance, fogged, frame as engine_frame, material_of}
-#import null3d::mesh::{custom_value, relative_position, world_normal}
+#import null3d::mesh::{custom_value, finish, relative_position, world_normal}
 #ifdef MAPS
 #import null3d::mesh::{map_layer, map_ready, world_direction}
 #endif
@@ -440,8 +439,8 @@ fn light_surface(
 }
 
 /// The color of a pixel that shows the surface: the light it reflects and the light it gives off,
-/// in the scene's fog.
-fn shade(s: Surface, input: SurfaceInput) -> vec4f {
+/// in the scene's fog, finished for the screen at the pixel's position.
+fn shade(s: Surface, input: SurfaceInput, pixel: vec2f) -> vec4f {
     let normal = normalize(s.normal);
     // Where the mesh's normal changes fast between pixels, highlights soften, as three.js softens
     // them. As in three.js, the normal is the mesh's own, before a map or a surface function bends
@@ -459,7 +458,7 @@ fn shade(s: Surface, input: SurfaceInput) -> vec4f {
         discard;
     }
 #endif
-    return vec4f(linear_to_srgb(fogged(outgoing, input.relativePosition, material_row)), 1.0);
+    return finish(fogged(outgoing, input.relativePosition, material_row), pixel);
 }
 
 @fragment
@@ -509,5 +508,5 @@ fn fs(in: VertexOut, @builtin(front_facing) front: bool) -> @location(0) vec4f {
 #else
     let s = defaultSurface(input);
 #endif
-    return shade(s, input);
+    return shade(s, input, in.clip.xy);
 }

@@ -32,7 +32,10 @@ export interface DrawingSetup extends RendererOptions {
 	hold?: boolean;
 	/** Hears the reason when the engine stops drawing after GPU losses. */
 	fail: (reason: string) => void;
-	/** The port through which the sketch thread sends texture images, when another thread runs it. */
+	/**
+	 * The port through which the sketch thread sends texture images, when another thread runs it.
+	 * Wake messages go back to the sketch thread through it.
+	 */
 	imagePort?: MessagePort;
 }
 
@@ -53,7 +56,7 @@ export async function startDrawing(setup: DrawingSetup): Promise<Drawing<Rendere
 			? new HoldLoop(slots, renderer, metrics)
 			: sketch
 				? runDirectLoop(sketch, renderer, control, metrics, fps, queue)
-				: runRenderLoop(renderer, control, metrics, fps, queue);
+				: runRenderLoop(renderer, control, metrics, fps, queue, setup.imagePort);
 	return new Drawing(await create(), create, run, slots, setup.fail, !hold, () =>
 		imageTable.clear(),
 	);
@@ -72,12 +75,15 @@ export async function captureFrame(
 }
 
 /**
- * Draws the newest frame offscreen, as `captureFrame` does, and encodes it as a PNG file. The
- * canvas is opaque, so every pixel of the image is opaque too, whatever alpha the GPU wrote.
+ * Draws the newest frame offscreen, as `captureFrame` does, and encodes it as a PNG file. On an
+ * opaque canvas every pixel of the image is opaque too, whatever alpha the GPU wrote. A transparent
+ * canvas's frame holds premultiplied color, which the image keeps with its alpha, as PNG files
+ * store it: without the premultiplication.
  */
 export async function captureImage(drawing: Drawing<Renderer>, slots: Int32Array): Promise<Blob> {
 	const { width, height, pixels } = await captureFrame(drawing, slots);
-	for (let i = 3; i < pixels.length; i += 4) pixels[i] = 255;
+	if (drawing.renderer.transparent) unpremultiply(pixels);
+	else for (let i = 3; i < pixels.length; i += 4) pixels[i] = 255;
 	const canvas = new OffscreenCanvas(width, height);
 	const context = canvas.getContext('2d');
 	if (!context) throw new Error('the browser has no 2D canvas to encode the frame with');
@@ -88,4 +94,14 @@ export async function captureImage(drawing: Drawing<Renderer>, slots: Int32Array
 	);
 	context.putImageData(new ImageData(texels, width, height), 0, 0);
 	return canvas.convertToBlob({ type: 'image/png' });
+}
+
+/** Divides each RGBA8 pixel's color by its alpha, in place. A pixel with no alpha stays black. */
+export function unpremultiply(pixels: Uint8Array): void {
+	for (let i = 0; i < pixels.length; i += 4) {
+		const alpha = pixels[i + 3] as number;
+		if (alpha === 0 || alpha === 255) continue;
+		for (let c = i; c < i + 3; c++)
+			pixels[c] = Math.min(255, Math.round(((pixels[c] as number) * 255) / alpha));
+	}
 }
