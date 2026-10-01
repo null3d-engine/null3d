@@ -10,8 +10,8 @@ on:
 permissions:
   contents: read
 
-# A new push to a pull request cancels the run of its older push, so GitHub's few macOS machines
-# test only the newest code. Runs on main and in the merge queue each have a group of their own.
+# A new push to a pull request cancels the run of its older push, so CI's machines test only the
+# newest code. Runs on main and in the merge queue each have a group of their own.
 concurrency:
   group: ci-${{ github.event_name == 'pull_request' && format('pr-{0}', github.event.pull_request.number) || github.run_id }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
@@ -71,12 +71,16 @@ jobs:
 
   rust:
     runs-on: ubuntu-latest
-    timeout-minutes: 20
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@v5
       - name: Install the pinned Rust toolchain
         run: rustup toolchain install
+      # The cache's own key leaves out the build profiles in the workspace's Cargo.toml, so a
+      # profile change would keep restoring a cache built with the old profile.
       - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ hashFiles('Cargo.toml') }}
       - run: cargo fmt --all --check
       - run: cargo clippy --workspace --all-targets -- -D warnings
       - run: cargo test --workspace
@@ -88,51 +92,13 @@ jobs:
           fi
           grep -q 'disallowed method `std::time::SystemTime::now`' clippy.log
 
-  wasm-and-bench:
+  build:
+    # The WebAssembly files that the browser jobs need, built once on Linux: the engine's two files,
+    # and the shader compiler that the dev server runs on the WGSL in the test sketches. The files
+    # are the same on every platform, so each shard below downloads them instead of spending about
+    # 2 minutes to build them again.
     runs-on: ubuntu-latest
-    timeout-minutes: 30
-    env:
-      HUSKY: "0"
-    steps:
-      # The size check finds its base in main's history and reads the commits since it.
-      - uses: actions/checkout@v5
-        with:
-          fetch-depth: 0
-      - name: Install the pinned Rust toolchain
-        run: rustup toolchain install
-      - uses: Swatinem/rust-cache@v2
-      - uses: oven-sh/setup-bun@v2
-        with:
-          bun-version: ${{ env.BUN_VERSION }}
-      - run: bun install --frozen-lockfile
-      - name: Build both WebAssembly files and the shader compiler, and check their sizes against main's build
-        run: bun run build:check-size
-      - name: The shader compiler gives the native shader build's results
-        run: bun run test:shader-compiler
-      - name: Install Chromium for Playwright
-        working-directory: tests
-        run: bunx playwright install --with-deps chromium
-      - name: The benchmark pages on SwiftShader
-        run: bun run test:bench
-      - uses: actions/upload-artifact@v4
-        if: failure()
-        with:
-          name: bench-test-results
-          path: |
-            test-results/
-            target/playwright-bench/
-          if-no-files-found: ignore
-
-  browser:
-    # The browser tests, the image test manifest among them, split into shards that run at once.
-    # Add a shard when one takes more than about 10 minutes.
-    name: browser (shard ${{ matrix.shard }} of 2)
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
-    strategy:
-      fail-fast: false
-      matrix:
-        shard: [1, 2]
+    timeout-minutes: 15
     env:
       HUSKY: "0"
     steps:
@@ -140,39 +106,8 @@ jobs:
       - name: Install the pinned Rust toolchain
         run: rustup toolchain install
       - uses: Swatinem/rust-cache@v2
-      - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: ${{ env.BUN_VERSION }}
-      - run: bun install --frozen-lockfile
-      - run: bun run build
-      - name: Install Chromium for Playwright
-        working-directory: tests
-        run: bunx playwright install --with-deps chromium
-      - name: Browser tests on SwiftShader, WebGPU and WebGL2
-        run: bun run test:browser --shard=${{ matrix.shard }}/2
-      # The images that differ from their references, or have none yet, with their diffs:
-      # bun run images:review --ci <run> fetches them.
-      - uses: actions/upload-artifact@v4
-        if: failure()
-        with:
-          name: browser-test-results-${{ matrix.shard }}
-          path: test-results/
-          if-no-files-found: ignore
-
-  real-browsers-build:
-    # The WebAssembly files that the Safari and Firefox jobs need, built once on Linux: the engine's
-    # two files, and the shader compiler that the dev server runs on the WGSL in the test sketches.
-    # The files are the same on every platform, and GitHub gives few macOS machines at once, so each
-    # macOS job downloads them instead of spending more than a minute to build them again.
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-    env:
-      HUSKY: "0"
-    steps:
-      - uses: actions/checkout@v5
-      - name: Install the pinned Rust toolchain
-        run: rustup toolchain install
-      - uses: Swatinem/rust-cache@v2
+          key: ${{ hashFiles('Cargo.toml') }}
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: ${{ env.BUN_VERSION }}
@@ -188,56 +123,143 @@ jobs:
           if-no-files-found: error
           retention-days: 1
 
+  wasm-checks:
+    # The size check builds the WebAssembly files and the engine test page itself, and then main's
+    # build, so it runs beside the build job instead of after it.
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      HUSKY: "0"
+    steps:
+      # The size check finds its base in main's history and reads the commits since it.
+      - uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+      - name: Install the pinned Rust toolchain
+        run: rustup toolchain install
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ hashFiles('Cargo.toml') }}
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun install --frozen-lockfile
+      - name: Build both WebAssembly files and the shader compiler, and check their sizes against main's build
+        run: bun run build:check-size
+      - name: The shader compiler gives the native shader build's results
+        run: bun run test:shader-compiler
+
+  browser:
+    # The browser tests, the image test manifest among them, split into shards that run at once.
+    # Add a shard to the list when one takes more than about 5 minutes.
+    name: browser (shard ${{ matrix.shard }} of ${{ strategy.job-total }})
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4, 5, 6, 7]
+    env:
+      HUSKY: "0"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun install --frozen-lockfile
+      # The artifact holds both dist folders below packages/, their closest shared folder.
+      - uses: actions/download-artifact@v4
+        with:
+          name: page-wasm
+          path: packages/
+      - uses: ./.github/actions/playwright-chromium
+      - name: Browser tests on SwiftShader, WebGPU and WebGL2
+        run: bun run test:browser --shard=${{ matrix.shard }}/${{ strategy.job-total }}
+      # The images that differ from their references, or have none yet, with their diffs:
+      # bun run images:review --ci <run> fetches them.
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: browser-test-results-${{ matrix.shard }}
+          path: test-results/
+          if-no-files-found: ignore
+
+  bench:
+    # The benchmark pages' tests on SwiftShader, in shards like the browser tests.
+    name: bench (shard ${{ matrix.shard }} of ${{ strategy.job-total }})
+    needs: build
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2]
+    env:
+      HUSKY: "0"
+    steps:
+      - uses: actions/checkout@v5
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+      - run: bun install --frozen-lockfile
+      - uses: actions/download-artifact@v4
+        with:
+          name: page-wasm
+          path: packages/
+      - uses: ./.github/actions/playwright-chromium
+      - name: The benchmark pages on SwiftShader
+        run: bun run test:bench --shard=${{ matrix.shard }}/${{ strategy.job-total }}
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: bench-test-results-${{ matrix.shard }}
+          path: |
+            test-results/
+            target/playwright-bench/
+          if-no-files-found: ignore
+
   real-browsers:
-    # Safari and Firefox on GitHub's macOS machines, through the same test pages, each browser in a
-    # job of its own. A missing WebGPU adapter or WebGL2 context is reported as a skip, because these
-    # virtual machines may not give a browser one: Safari gets no WebGPU there, and Firefox no WebGL2.
-    # One shard per browser keeps the fewest macOS machines busy; .dev/devices.md says when to add
-    # one, by listing it in the matrix and raising the count in the name and the command.
+    # Safari and Firefox on GitHub's macOS machines, through the same test pages, each browser in
+    # shards of its own. A missing WebGPU adapter or WebGL2 context is reported as a skip, because
+    # these virtual machines may not give a browser one: Safari gets no WebGPU there, and Firefox no
+    # WebGL2. GitHub gives few macOS machines at once, so .dev/devices.md says when to add a shard:
+    # add it to the list, and raise the count in the name and the command.
     # Until 1.0, the browsers run only in the merge queue, once for each pull request before it
-    # merges, because GitHub gives few macOS machines at once. Elsewhere the job passes at once on
-    # Linux, so a pull request still reports the check that the merge queue requires.
-    name: real-browsers (${{ matrix.browser }} ${{ matrix.shard }}/1)
-    needs: real-browsers-build
-    runs-on: ${{ github.event_name == 'merge_group' && 'macos-15' || 'ubuntu-latest' }}
-    # A full run takes about 14 minutes, and a runner page that goes quiet costs about a minute more
-    # each time the runner replaces it.
+    # merges. Elsewhere the jobs are skipped, and ci-passed accepts that.
+    name: real-browsers (${{ matrix.browser }} ${{ matrix.shard }}/2)
+    needs: build
+    if: github.event_name == 'merge_group'
+    runs-on: macos-15
+    # A full run in one job takes about 14 minutes, and a runner page that goes quiet costs about a
+    # minute more each time the runner replaces it. The limit stays at a full run's, with that
+    # margin, until the shards' own times are known.
     timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
         browser: [Safari, Firefox]
-        shard: [1]
+        shard: [1, 2]
     env:
       HUSKY: "0"
-      IN_QUEUE: ${{ github.event_name == 'merge_group' }}
     steps:
-      - name: ${{ matrix.browser }} runs in the merge queue
-        if: env.IN_QUEUE != 'true'
-        run: echo "${{ matrix.browser }} runs when this pull request is in the merge queue."
       - uses: actions/checkout@v5
-        if: env.IN_QUEUE == 'true'
       - uses: oven-sh/setup-bun@v2
-        if: env.IN_QUEUE == 'true'
         with:
           bun-version: ${{ env.BUN_VERSION }}
       - run: bun install --frozen-lockfile
-        if: env.IN_QUEUE == 'true'
-      # The artifact holds both dist folders below packages/, their closest shared folder.
       - uses: actions/download-artifact@v4
-        if: env.IN_QUEUE == 'true'
         with:
           name: page-wasm
           path: packages/
       # An app with the downloaded-file flag asks before its first launch, and nobody can answer.
       - name: Let Firefox open without the first-launch prompt
-        if: env.IN_QUEUE == 'true' && matrix.browser == 'Firefox'
+        if: matrix.browser == 'Firefox'
         run: xattr -dr com.apple.quarantine /Applications/Firefox.app || true
-      - name: ${{ matrix.browser }}, shard ${{ matrix.shard }} of 1
-        if: env.IN_QUEUE == 'true'
-        run: bun tests/real-browsers.ts --allow-no-webgpu --allow-no-webgl2 --shard ${{ matrix.shard }}/1 ${{ matrix.browser }}
+      - name: ${{ matrix.browser }}, shard ${{ matrix.shard }} of 2
+        run: bun tests/real-browsers.ts --allow-no-webgpu --allow-no-webgl2 --shard ${{ matrix.shard }}/2 ${{ matrix.browser }}
       - uses: actions/upload-artifact@v4
-        if: env.IN_QUEUE == 'true' && (failure() || cancelled())
+        if: failure() || cancelled()
         with:
           name: real-browser-runs-${{ matrix.browser }}-${{ matrix.shard }}
           path: |
@@ -251,7 +273,7 @@ jobs:
     # every other job, also after a failure or a cancel, and fails unless each job passed. Outside
     # the merge queue a job may be skipped by its own condition; in the queue every job must pass.
     if: always()
-    needs: [docs-and-tools, rust, wasm-and-bench, browser, real-browsers-build, real-browsers]
+    needs: [docs-and-tools, rust, build, wasm-checks, browser, bench, real-browsers]
     runs-on: ubuntu-latest
     timeout-minutes: 5
     steps:
