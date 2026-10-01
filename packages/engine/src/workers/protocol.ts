@@ -194,4 +194,10 @@ export function startWorker<Message>(
 	void awaitLater(loadGlue('threaded'));
 	step('loaded');
 	self.onmessage = handle;
+	self.addEventListener('error', (e) => {
+		self.postMessage({ type: 'debug-stack', stack: `${role}: ${String(e.error?.stack ?? e.message)}` });
+	});
+	self.addEventListener('unhandledrejection', (e) => {
+		self.postMessage({ type: 'debug-stack', stack: `${role} rejection: ${String(e.reason?.stack ?? e.reason)}` });
+	});
 }
