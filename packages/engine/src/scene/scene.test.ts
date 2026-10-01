@@ -8,6 +8,7 @@ import type { CoreGlue } from '../shared/core';
 import { CoreMemory } from './memory';
 import { Material, MeshGeometry } from './resources';
 import { type Object3D, Scene } from './scene';
+import { Texture, type Textures } from './textures';
 
 beforeEach(() => setErrorFixes(ERROR_FIXES));
 
@@ -30,6 +31,8 @@ const AT = {
 const SLOT_MASK = (1 << C.HANDLE_SLOT_BITS) - 1;
 /** The frame that the fake scene says it runs. */
 const FRAME = 5;
+/** The handle of a texture that the fake core says was destroyed. */
+const DESTROYED_TEXTURE = 13;
 
 /**
  * A core with the scene's arrays and command ring in a memory of its own. Its world matrices are
@@ -54,6 +57,7 @@ function fakeCore() {
 		[C.RING_FIELD_WRITE_INDEX]: AT.write,
 		[C.RING_FIELD_READ_INDEX]: AT.read,
 	};
+	const backgrounds: (number | number[])[] = [];
 	const glue = {
 		sceneCapacity: () => CAPACITY,
 		sceneArrays: (field: number) => fields[field],
@@ -66,6 +70,12 @@ function fakeCore() {
 				return 0;
 			}
 			failure = { code: 1101, details: [handle & SLOT_MASK, FRAME] };
+			return failure.code;
+		},
+		setBackground: (r: number, g: number, b: number) => backgrounds.push([r, g, b]) && 0,
+		setBackgroundTexture: (texture: number) => {
+			if (texture !== DESTROYED_TEXTURE) return backgrounds.push(texture) && 0;
+			failure = { code: 1101, details: [texture & SLOT_MASK, FRAME] };
 			return failure.code;
 		},
 		lastErrorCode: () => failure.code,
@@ -81,6 +91,8 @@ function fakeCore() {
 	return {
 		core,
 		scene,
+		/** The background calls: a color's linear components, or a texture's handle (0 for none). */
+		backgrounds,
 		box,
 		ball,
 		paint,
@@ -292,6 +304,29 @@ describe('scene.find', () => {
 		expect(scene.find('lamp')).toBeUndefined();
 		const third = scene.createGroup({ name: 'crate' });
 		expect(scene.find('crate')).toBe(third);
+	});
+});
+
+describe('scene.setBackground', () => {
+	/** A texture with `handle` as the engine core's handle. */
+	const texture = (handle: number) =>
+		new Texture(handle, 4, 4, 1, 'rgba8unorm', 'srgb', 0, undefined as unknown as Textures);
+
+	test('a texture keeps the color, and a color takes the place of a texture', () => {
+		const { scene, backgrounds } = fakeCore();
+		scene.setBackground('#ff0000');
+		scene.setBackground(texture(9));
+		expect(backgrounds).toEqual([[1, 0, 0], 0, 9]);
+		scene.setBackground([0, 0, 1]);
+		expect(backgrounds.slice(3)).toEqual([[0, 0, 1], 0]);
+	});
+
+	test('a destroyed texture throws E1101', () => {
+		const { scene, backgrounds } = fakeCore();
+		expect(thrown(() => scene.setBackground(texture(DESTROYED_TEXTURE))).message).toStartWith(
+			`E1101: setBackground() was called on a texture (slot ${DESTROYED_TEXTURE}), which was destroyed in frame ${FRAME}.`,
+		);
+		expect(backgrounds).toEqual([]);
 	});
 });
 

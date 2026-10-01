@@ -84,6 +84,7 @@ export type ShaderVariants<Pipeline extends string = string> = Readonly<
  * shader without builds there has no variants in it.
  */
 export interface DeviceShaders {
+	readonly background: ShaderVariants<'main'>;
 	readonly cull: ShaderVariants<never>;
 	readonly final: ShaderVariants<'main'>;
 	readonly lit: ShaderVariants<'main'>;
