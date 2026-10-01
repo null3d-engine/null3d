@@ -223,12 +223,14 @@ export class SketchRunner {
 			void shutDownJobsOnStop(glue, slots);
 		}
 		this.core = new CoreMemory(glue, sketch.memory);
-		Atomics.store(slots, Slot.DrawListAddress0, glue.drawListAddress(0));
-		Atomics.store(slots, Slot.DrawListAddress1, glue.drawListAddress(1));
 		this.reducedMotion = Atomics.load(slots, Slot.ReducedMotion);
 		this.input = new InputReader(sketch.control, sketch.keyCodes);
-		const textures = new Textures(this.core, sketch.sendImage, this.recorded, () =>
-			this.quality.own('uploadBytesPerFrame'),
+		const textures = new Textures(
+			this.core,
+			sketch.sendImage,
+			this.recorded,
+			device.capabilities,
+			() => this.quality.own('uploadBytesPerFrame'),
 		);
 		// The core takes every texture setting of the preset before the setup runs, so a sketch's own
 		// budget wins until the setting changes. The page applies the settings it owns.
@@ -609,7 +611,11 @@ export class SketchRunner {
 		if (glue.recordFrame(frame, width, height) !== 0) this.report(coreFailure(glue, 'the frame'));
 		this.record.count(Counter.Rebuilds, glue.drawTablesRebuilt() ? 1 : 0);
 		this.record.count(Counter.VisibleEntries, glue.visibleEntries(frame));
-		Atomics.store(slots, Slot.DrawListWords0 + (frame & 1), glue.drawListWords(frame));
+		// A frame whose list needs more room than any before moves the list, so each frame gives
+		// the thread that draws its list's address.
+		const parity = frame & 1;
+		Atomics.store(slots, Slot.DrawListAddress0 + parity, glue.drawListAddress(parity));
+		Atomics.store(slots, Slot.DrawListWords0 + parity, glue.drawListWords(frame));
 		Atomics.store(slots, Slot.FrameEpoch0 + (frame & 1), epoch);
 		// The first frame that records after a restart, whether the sketch asked for it between
 		// frames or in this frame's own code, has the new settings, so the thread that draws holds it

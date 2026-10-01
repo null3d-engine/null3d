@@ -8,7 +8,7 @@ summary: "standard, unlit, shader, shadowCatcher; every option."
 
 # Materials
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. The `blend` alpha mode, `blending` and `materials.shadowCatcher` are not built yet, and `materials.shader` takes only a surface function, a vertex offset and their uniforms, without texture maps. Coding agents must not use the parts that are not built.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. `materials.shadowCatcher` is not built yet, and `materials.shader` takes only a surface function, a vertex offset and their uniforms, without texture maps. Coding agents must not use the parts that are not built.
 
 A material sets how the surfaces of the objects that use it look. `materials.standard` makes a lit material, and `materials.unlit` makes one that ignores lights. Create materials in the setup, and share each one between the objects that look alike.
 
@@ -45,8 +45,8 @@ Without lights, a standard material draws black, apart from its emissive color. 
 
 | Option | Range | Default | What it does |
 | --- | --- | --- | --- |
-| `color` | An sRGB color | White | The base color: the color of diffuse light, and of a metal's reflections |
-| `opacity` | 0 to 1 | 1 | How opaque the surface is. The `mask` alpha mode tests it |
+| `color` | A [color](#color) | White | The base color: the color of diffuse light, and of a metal's reflections |
+| `opacity` | 0 to 1 | 1 | How opaque the surface is. The `mask` alpha mode tests it, and the `blend` alpha mode blends with it |
 | `alphaCutoff` | 0 to 1 | 0.5 | With the `mask` alpha mode, the alpha below which the surface draws nothing |
 | `metalness` | 0 to 1 | 0 | 0 is a surface such as paint or plastic, and 1 is a metal |
 | `roughness` | 0 to 1 | 1 | 0 is a mirror finish with a small, sharp highlight, and 1 is fully matte |
@@ -117,7 +117,8 @@ These options are fixed when you create the material. Most of them choose the ma
 | `doubleSided` | Both | false | Draws both faces of each triangle. A back face lights as if it faced the camera, as with three.js's `side: DoubleSide` |
 | `vertexColors` | Both | false | Multiplies the base color by the mesh's vertex colors, on meshes that have them. [Geometry](geometry.md) makes meshes with colors |
 | `flatShading` | Standard | false | Lights each triangle with the normal of its face, so the mesh looks faceted |
-| `alphaMode` | Both | `'opaque'` | How the material uses its alpha: `'opaque'` or `'mask'`. See "Alpha modes" |
+| `alphaMode` | Both | `'opaque'` | How the material uses its alpha: `'opaque'`, `'mask'` or `'blend'`. See "Alpha modes" |
+| `blending` | Both | `'normal'` | With the `blend` alpha mode, how the surface meets what lies behind it: `'normal'`, `'additive'` or `'multiply'`. See "Blending" |
 | `depthWrite` | Both | true | False writes no depth, so the surface hides nothing that draws after it |
 | `depthTest` | Both | true | False draws the surface whatever lies in front of it. It then writes no depth either, as in three.js's WebGL renderer |
 | `depthBias` | Both | No bias | Moves the surface's depth, as three.js's polygon offset does. See "Depth bias" |
@@ -133,14 +134,37 @@ A surface's alpha is its `opacity`, times the alpha of its base color map. With 
 | --- | --- | --- |
 | `'opaque'` | The whole surface, opaque. The alpha has no effect | The default material |
 | `'mask'` | Nothing where the alpha is below `alphaCutoff`, and the rest opaque | `alphaTest: alphaCutoff` |
+| `'blend'` | The surface blended over what lies behind it, as far as the alpha says | `transparent: true` |
 
 A masked surface has hard edges, and it hides what lies behind it as an opaque one does, so its objects draw in any order. Use it for leaves, fences and cut-out shapes. Only masked materials draw with the shader that drops fragments, so opaque ones keep the GPU's early depth test.
+
+A blended surface lets what lies behind it show through. Blended objects draw after the opaque ones, farthest first, so each one blends over the objects behind it. A call to `mesh.setRenderOrder(order)` draws an object before or after the others, whatever its depth. The rows of an instance batch sort one by one. The page [Materials and pipelines](../concepts/materials.md#the-transparent-pass) explains the sort. It also says where the sort cannot help.
+
+A blended material writes depth, as three.js's transparent materials do. Give particles, glows and other surfaces that cross `depthWrite: false`, so they never hide each other.
 
 ```ts
 // sketch.ts: leaves whose vertex alpha cuts their shape.
 const leaves = materials.standard({ color: '#5bc27a', vertexColors: true, alphaMode: 'mask', alphaCutoff: 0.4 });
 // Later: a lower cutoff grows the leaves, at no cost.
 leaves.set({ alphaCutoff: 0.2 });
+```
+
+## Blending
+
+`blending` says how a blended surface meets what lies behind it. It has an effect with the `blend` alpha mode only.
+
+| Blending | What it does | Use it for |
+| --- | --- | --- |
+| `'normal'` | Covers what lies behind, as far as the alpha says | Glass, fading objects, smoke |
+| `'additive'` | Adds the surface's light to what lies behind, times the alpha | Glows, fire, sparks, lasers |
+| `'multiply'` | Tints what lies behind by the surface's color, as far as the alpha says | Stains, shadows painted on, tinted film |
+
+The engine blends colors multiplied by their alpha, as three.js does with `premultipliedAlpha: true`. The results match three.js's own blending, and textures loaded with `premultipliedAlpha: true` blend correctly too.
+
+```ts
+// sketch.ts: a pane of glass and a glow that never hides what it crosses.
+const glass = materials.standard({ color: '#a8d8ff', opacity: 0.3, roughness: 0.1, alphaMode: 'blend' });
+const glow = materials.unlit({ color: '#ffb040', alphaMode: 'blend', blending: 'additive', depthWrite: false });
 ```
 
 ## Depth bias
@@ -195,7 +219,7 @@ With `alphaMode: 'mask'`, the pixels where the surface function's `alpha` falls 
 
 ## Ranges
 
-`opacity`, `alphaCutoff`, `metalness`, `roughness` and `aoMapIntensity` go from 0 to 1, and `emissiveIntensity` and `lightMapIntensity` take 0 or more. The numbers of `normalScale` and `uvTransform` must be finite. When a factory or `set` gets a value outside its range, development builds throw E1108. An `alphaMode` that the engine does not know throws E1217, and a depth bias that is not a finite number throws E1203. This version draws no blended materials, so outside the `mask` mode the opacity has no effect.
+`opacity`, `alphaCutoff`, `metalness`, `roughness` and `aoMapIntensity` go from 0 to 1, and `emissiveIntensity` and `lightMapIntensity` take 0 or more. The numbers of `normalScale` and `uvTransform` must be finite. When a factory or `set` gets a value outside its range, development builds throw E1108. An `alphaMode` or a `blending` that the engine does not know throws E1217, and a depth bias that is not a finite number throws E1203. The `opaque` alpha mode ignores the opacity.
 
 ## Limits
 
@@ -216,10 +240,18 @@ One engine holds up to 1,024 materials, and a material lasts as long as the engi
 ### `AlphaMode`
 
 ```ts
-type AlphaMode = 'opaque' | 'mask';
+type AlphaMode = 'opaque' | 'mask' | 'blend';
 ```
 
-How a material uses its alpha: its opacity, times its base color map's alpha, and times its mesh's vertex alpha with `vertexColors`. The `opaque` mode ignores the alpha. The `mask` mode draws nothing where the alpha falls below `alphaCutoff`, and draws the rest opaque. It works as glTF's alpha mode `MASK` and three.js's `alphaTest` do.
+How a material uses its alpha: its opacity, times its base color map's alpha, and times its mesh's vertex alpha with `vertexColors`. The `opaque` mode ignores the alpha. The `mask` mode draws nothing where the alpha falls below `alphaCutoff`, and draws the rest opaque, as three.js's `alphaTest` does. The `blend` mode blends the surface over what lies behind it, as three.js's `transparent: true` does. Blended objects draw after the opaque ones, farthest first.
+
+### `Blending`
+
+```ts
+type Blending = 'normal' | 'additive' | 'multiply';
+```
+
+How a blended surface meets what lies behind it. The `normal` blending covers it as far as the alpha says. The `additive` blending adds the surface's light, for glows and fire. The `multiply` blending tints it, for stains and tinted glass.
 
 ### `ColorInput`
 
@@ -272,6 +304,7 @@ The options that choose how a material's shader and pipeline draw it. They are f
 | `vertexColors?: boolean` | Multiplies the base color by the mesh's vertex colors, and the alpha by their alpha, on meshes that have them. The default is false. |
 | `fog?: boolean` | Takes the scene's fog. False keeps the material's color at every distance. The default is true. |
 | `alphaMode?: AlphaMode` | How the material uses its alpha. The default is `opaque`. |
+| `blending?: Blending` | With the `blend` alpha mode, how the surface meets what lies behind it. The default is `normal`. |
 | `depthWrite?: boolean` | False to write no depth, so the surface hides nothing behind it. The default is true. |
 | `depthTest?: boolean` | False to draw the surface whatever lies in front of it. It then writes no depth either, as in three.js's WebGL renderer. The default is true. |
 | `depthBias?: DepthBias` | Moves the surface's depth, as three.js's polygon offset does. The default is no bias. |
@@ -285,7 +318,7 @@ Options every material takes.
 | Member | Description |
 | --- | --- |
 | `color?: ColorInput` | The base color: a hex string or a number in sRGB, or three linear components from 0 to 1. |
-| `opacity?: number` | How opaque the surface is, from 0 to 1. The default is 1. With the `mask` alpha mode, it is part of the alpha that the cutoff tests. This version draws no blended materials, so it has no other effect yet. |
+| `opacity?: number` | How opaque the surface is, from 0 to 1. The default is 1. It is part of the alpha, which the `mask` alpha mode tests and the `blend` alpha mode blends with. The `opaque` alpha mode ignores it. |
 | `alphaCutoff?: number` | With the `mask` alpha mode, the alpha below which the surface draws nothing, from 0 to 1. The default is 0.5, as in glTF. |
 
 ### `Materials`

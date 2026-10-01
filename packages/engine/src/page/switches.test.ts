@@ -11,6 +11,7 @@ describe('parseSwitches', () => {
 			latency: undefined,
 			copyUploads: false,
 			depth: undefined,
+			compression: undefined,
 			parallelCompile: true,
 			wakeByMessage: false,
 			hdr: true,
@@ -23,6 +24,12 @@ describe('parseSwitches', () => {
 			hold: undefined,
 			bench: false,
 		});
+	});
+
+	it('reads the compressed texture families that ?compression= keeps, and none for ?compression=none', () => {
+		expect(parseSwitches('?compression=bc,etc2').compression).toEqual(['bc', 'etc2']);
+		expect(parseSwitches('?compression=astc').compression).toEqual(['astc']);
+		expect(parseSwitches('?compression=none').compression).toEqual([]);
 	});
 
 	it('reads ?bench with or without a value', () => {

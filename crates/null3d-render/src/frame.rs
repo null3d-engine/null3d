@@ -9,8 +9,10 @@
 //! straight from the core's world buffer of the frame's parity, which the core keeps the same way.
 
 use std::collections::TryReserveError;
+use std::ops::Range;
 
-use null3d_core::cells::{CellPosition, MAX_CELLS};
+use null3d_core::cells::{CellPosition, MAX_CELLS, ORIGIN_CELL};
+use null3d_core::culling::{CULL_CHUNK, CullRun, ROW_CELLS};
 use null3d_core::handle::Handle;
 use null3d_core::instances::{BatchTable, InstanceBatch};
 use null3d_core::jobs::JobSystem;
@@ -27,7 +29,7 @@ use crate::fog::Fog;
 use crate::frame_data::{FrameUniform, normalized_direction};
 use crate::graph::GraphError;
 use crate::materials::{
-    MATERIAL_FLOATS, MATERIAL_TEXELS, MapSlot, MaterialTable, Shading, feature,
+    MATERIAL_FLOATS, MATERIAL_TEXELS, MapSlot, MaterialTable, Shading, blend_state, feature,
 };
 use crate::meshes::{MAX_BUFFER_BYTES, MeshStorage, Page};
 use crate::output::{Antialias, Output, SceneColor};
@@ -60,6 +62,65 @@ pub(crate) fn drawn_rows(buckets: &[u32], start: u32, count: u32) -> Option<(u32
     let first = (start..end).find(draws)?;
     let last = (first..end).rev().find(draws)?;
     Some((first, last + 1 - first))
+}
+
+/// Where the rows of a run's positions lie: all in one cell, each in the cell of its entry in a
+/// list of cells by position, or each in the cell of the row that a list of rows names.
+#[derive(Clone, Copy, Debug)]
+pub(crate) enum RunCells<'a> {
+    One(u32),
+    Rows(&'a [u32]),
+    Listed { rows: &'a [u32], cells: &'a [u32] },
+}
+
+impl RunCells<'_> {
+    /// The cell of every position in `range`, or [`ROW_CELLS`] when they lie in several.
+    pub(crate) fn of(&self, range: Range<u32>) -> u32 {
+        let (start, end) = (range.start as usize, range.end as usize);
+        let same = |mut cells: std::slice::Iter<'_, u32>, cell: &dyn Fn(u32) -> u32| {
+            let first = cells.next().map_or(ORIGIN_CELL, |&c| cell(c));
+            if cells.all(|&c| cell(c) == first) {
+                first
+            } else {
+                ROW_CELLS
+            }
+        };
+        match *self {
+            RunCells::One(cell) => cell,
+            RunCells::Rows(cells) => same(cells[start..end].iter(), &|cell| cell),
+            RunCells::Listed { rows, cells } => {
+                same(rows[start..end].iter(), &|row| cells[row as usize])
+            }
+        }
+    }
+}
+
+/// Splits positions `range` of a set into culling runs of at most one chunk each. A run whose rows
+/// share a cell culls as that cell's run; the others look each row's cell up. The list grows only
+/// when it has no room left for a run.
+pub(crate) fn push_runs(
+    runs: &mut Vec<CullRun>,
+    set: u32,
+    range: Range<u32>,
+    bucket: u32,
+    base: u32,
+    cells: RunCells<'_>,
+) -> Result<(), TryReserveError> {
+    let mut start = range.start;
+    while start < range.end {
+        let end = (start + CULL_CHUNK).min(range.end);
+        runs.try_reserve(1)?;
+        runs.push(CullRun {
+            set,
+            start,
+            end,
+            bucket,
+            base,
+            cell: cells.of(start..end),
+        });
+        start = end;
+    }
+    Ok(())
 }
 
 /// Why a frame could not be recorded.
@@ -511,8 +572,11 @@ impl SceneSettings {
         let remade = self.textures.record(list, frame)?;
         let layers_changed = self.textures.take_layers_changed();
         let textures = &self.textures;
-        self.materials
-            .update_map_layers(layers_changed, |map| textures.ready_layer(map));
+        self.materials.update_map_layers(
+            layers_changed,
+            |map| textures.ready_layer(map),
+            |map| textures.premultiplied(map),
+        );
         if let Some(ids) = self.materials.take_changed() {
             let rows = self.materials.rows(ids.clone());
             write_table_rows(list, arena, table, ids.start, rows)?;
@@ -740,7 +804,8 @@ impl SceneSettings {
     /// frame from the mesh's tangents where the mesh has them. A
     /// material with vertex colors reads them only from a mesh that has them, a masked material
     /// draws with the shader variant that discards fragments, and a double-sided material culls no
-    /// faces. The material's depth options and depth bias set the pipeline's depth state.
+    /// faces. The material's depth options and depth bias set the pipeline's depth state, and a
+    /// blended material's blending sets its blend state, which draws it in the transparent pass.
     pub fn pipeline_of(&self, mesh: u32, material: u32) -> Option<DrawKey> {
         if mesh == NO_MESH || material == NO_MATERIAL {
             return None;
@@ -761,6 +826,7 @@ impl SceneSettings {
         let has = |bit: u32| features & bit != 0;
         let base_color = shading.reads_base_color();
         let vertex_colors = has(feature::VERTEX_COLORS) && format & vertex::COLOR != 0;
+        let masked = has(feature::ALPHA_MASK) && !has(feature::BLEND);
         let tangents = shading == Shading::StandardMaps
             && live(MapSlot::Normal)
             && format & vertex::TANGENT != 0;
@@ -768,15 +834,13 @@ impl SceneSettings {
         ((format & needs) == needs).then_some(DrawKey {
             template: shading.template(),
             permutation: bit(base_color && vertex_colors, permutation::VERTEX_COLOR)
-                | bit(
-                    base_color && has(feature::ALPHA_MASK),
-                    permutation::ALPHA_MASK,
-                )
+                | bit(base_color && masked, permutation::ALPHA_MASK)
                 | bit(tangents, permutation::VERTEX_TANGENT),
             vertex_format: format,
             state: bit(has(feature::DOUBLE_SIDED), state_flags::CULL_NONE)
                 | bit(has(feature::NO_DEPTH_WRITE), state_flags::NO_DEPTH_WRITE)
-                | bit(has(feature::NO_DEPTH_TEST), state_flags::NO_DEPTH_TEST),
+                | bit(has(feature::NO_DEPTH_TEST), state_flags::NO_DEPTH_TEST)
+                | blend_state(features),
             bias: self.materials.depth_bias(id),
         })
     }

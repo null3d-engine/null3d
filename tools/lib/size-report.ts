@@ -50,14 +50,16 @@ export interface EnginePart {
 /**
  * The parts of the engine's JavaScript. The renderer loads on demand on the page and in the sketch
  * worker, so a page downloads it only for the thread that draws. The sketch runner and the scene API
- * load on demand on the page, which runs the sketch only in single-threaded mode. The preset check
- * loads after the first frame, in the thread that runs the sketch, so no download before the first
- * frame counts it.
+ * load on demand on the page, which runs the sketch only in single-threaded mode. The KTX2 loader
+ * loads on demand in the thread that runs the sketch, when the sketch loads its first KTX2 file.
+ * The preset check loads after the first frame, in the thread that runs the sketch, so no download
+ * before the first frame counts it.
  */
 export const ENGINE_PARTS: readonly EnginePart[] = [
 	{ name: 'page.js', module: 'page/engine.ts' },
 	{ name: 'page-renderer.js', module: 'render/draw.ts', loadedBy: 'page.js' },
 	{ name: 'page-sketch-runner.js', module: 'sketch/runner.ts', loadedBy: 'page.js' },
+	{ name: 'page-ktx2.js', module: 'scene/ktx2.ts', loadedBy: 'page-sketch-runner.js' },
 	{
 		name: 'page-preset-check.js',
 		module: 'sketch/preset-check.ts',
@@ -65,6 +67,7 @@ export const ENGINE_PARTS: readonly EnginePart[] = [
 	},
 	{ name: 'sketch-worker.js', module: 'workers/sketch-worker.ts' },
 	{ name: 'sketch-worker-renderer.js', module: 'render/draw.ts', loadedBy: 'sketch-worker.js' },
+	{ name: 'sketch-worker-ktx2.js', module: 'scene/ktx2.ts', loadedBy: 'sketch-worker.js' },
 	{
 		name: 'sketch-worker-preset-check.js',
 		module: 'sketch/preset-check.ts',
@@ -90,12 +93,47 @@ export const SHADER_PARTS: readonly string[] = [
 	'shaders-glsl-draw-index-tone-map.js',
 ];
 
+/**
+ * The KTX2 transcoder's files, which a page downloads when it loads its first KTX2 file: the
+ * engine's worker that runs the transcoder, and the official Basis Universal build's script and
+ * WebAssembly module. A build copies each as it is, under its name with a hash.
+ */
+export const TRANSCODER_FILES = [
+	'transcoder-worker.js',
+	'basis_transcoder.js',
+	'basis_transcoder.wasm',
+] as const;
+
 /** Every file that the size report measures, by the name that the report prints. */
 export const REPORTED_FILES: readonly string[] = [
 	...CORE_BUILDS.flatMap((build) => CORE_FILES.map((file) => `${build}/${file}`)),
 	...ENGINE_PARTS.map(({ name }) => `js/${name}`),
 	...SHADER_PARTS.map((name) => `js/${name}`),
+	...TRANSCODER_FILES.map((file) => `ktx2/${file}`),
 ];
+
+/**
+ * The built name of each of the transcoder's files, by its own name, from the names of a build's
+ * files. A build adds a hash of 8 characters to each name. Throws when a file is missing or there
+ * twice, since the loader would then fetch no file or the wrong one.
+ */
+export function findTranscoderFiles(builtNames: readonly string[]): Map<string, string> {
+	const found = new Map<string, string>();
+	for (const file of TRANSCODER_FILES) {
+		const dot = file.lastIndexOf('.');
+		const [stem, extension] = [file.slice(0, dot), file.slice(dot)];
+		const matches = builtNames.filter(
+			(name) =>
+				name.startsWith(`${stem}-`) && name.endsWith(extension) && name.length === file.length + 9,
+		);
+		if (matches.length !== 1)
+			throw new Error(
+				`${file}: expected one built copy of the KTX2 transcoder's file, found ${matches.length}`,
+			);
+		found.set(file, matches[0] as string);
+	}
+	return found;
+}
 
 export interface Download {
 	/** The thread mode, as the engine test names it. */

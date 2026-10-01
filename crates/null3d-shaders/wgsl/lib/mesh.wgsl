@@ -1,5 +1,6 @@
 enable draw_index;
 #define_import_path null3d::mesh
+#import null3d::color::{linear_to_srgb, srgb_to_linear}
 #import null3d::fog::{apply_fog, fog_factor}
 #import null3d::globals::{Frame, Material}
 #import null3d::tonemap
@@ -167,6 +168,41 @@ fn map_ready(layer: f32) -> bool {
 /// map that draws nothing, which the caller then ignores.
 fn map_layer(layer: f32) -> u32 {
     return u32(max(layer, 0.0));
+}
+
+/// The bit of a material's flags that makes its fragments write premultiplied color, for the
+/// transparent pass's blending.
+const BLEND_FLAG: u32 = 2u;
+/// The bit of a material's flags that says its base color map holds premultiplied colors.
+const MAP_PREMULTIPLIED_FLAG: u32 = 8u;
+/// The bit of a material's flags that says a premultiplied base color map holds linear colors.
+const MAP_LINEAR_FLAG: u32 = 16u;
+
+/// A texel of a blended material's base color map with straight colors. A premultiplied sRGB
+/// map's image had its colors multiplied by their alpha while encoded, before sampling decoded
+/// them, so this divides the encoded colors by the alpha again; a linear map's colors divide as
+/// they are. The map then lights, fogs, tone maps and blends as the same image with straight
+/// colors does, on both output paths. A material that does not blend shows a premultiplied map's
+/// colors as they are, as three.js does. A texel with no alpha stays as it is.
+fn straight_texel(m: Material, texel: vec4f) -> vec4f {
+    let flags = u32(m.strengths.z);
+    let blended_map = MAP_PREMULTIPLIED_FLAG | BLEND_FLAG;
+    if (flags & blended_map) != blended_map || texel.a <= 0.0 {
+        return texel;
+    }
+    if (flags & MAP_LINEAR_FLAG) != 0u {
+        return vec4f(min(texel.rgb / texel.a, vec3f(1.0)), texel.a);
+    }
+    let encoded = min(linear_to_srgb(texel.rgb) / texel.a, vec3f(1.0));
+    return vec4f(srgb_to_linear(encoded), texel.a);
+}
+
+/// What a mesh's fragment writes, from its color in the target's encoding and its alpha. A
+/// material that blends writes the color times the alpha, beside the alpha, as premultiplied
+/// blending reads them. Other materials write the color with an alpha of 1.
+fn fragment_color(m: Material, color: vec3f, alpha: f32) -> vec4f {
+    let blended = (u32(m.strengths.z) & BLEND_FLAG) != 0u;
+    return select(vec4f(color, 1.0), vec4f(color * alpha, alpha), blended);
 }
 
 #ifdef WEBGL2

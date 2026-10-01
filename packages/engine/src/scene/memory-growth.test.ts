@@ -58,7 +58,7 @@ function growingCore() {
 	const time = { frame: 1 };
 	const scene = new Scene(core, time, false);
 	const materials = new Materials(core);
-	const textures = new Textures(core, () => {}, time);
+	const textures = new Textures(core, () => {}, time, 0);
 	const floats = (at: number, length: number) => [...new Float32Array(memory.buffer, at, length)];
 	return { core, scene, materials, textures, floats, growths: () => growths };
 }
@@ -72,6 +72,20 @@ describe('writes after a call that grows the engine memory', () => {
 		'materials.standard': ({ materials }) => materials.standard(),
 		'textures.fromData': ({ textures }) =>
 			textures.fromData({ width: 4, height: 4, data: new Uint8Array(4 * 4 * 4) }),
+		'a texture from a file': ({ textures }) =>
+			textures.fromTexels(
+				{
+					width: 4,
+					height: 4,
+					depth: 1,
+					levels: 1,
+					format: 'rgba8unorm',
+					colorSpace: 'srgb',
+					texels: new Uint8Array(4 * 4 * 4),
+				},
+				{},
+				'assets.loadTexture',
+			),
 	};
 	for (const [name, call] of Object.entries(calls)) {
 		test(`land in a batch, an object and the command ring after ${name}`, () => {

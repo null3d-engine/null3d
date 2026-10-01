@@ -2,7 +2,7 @@
 
 Engine docs: `porting/threejs-materials`, `api/materials`, `api/textures`, `concepts/color-management`, `shaders/surface-functions`.
 
-Versions: `materials.standard` takes `color`, `opacity`, `metalness`, `roughness`, `emissive`, `emissiveIntensity` and the texture maps of section 1 now, and shades as three.js's `MeshStandardMaterial` does. `materials.unlit` takes `color`, `opacity` and `map`. Both take `uvTransform`, `doubleSided`, `vertexColors`, `fog`, `alphaMode: 'mask'`, `alphaCutoff` and the depth options, and the standard material takes `flatShading`. The engine draws no blended materials yet, so outside the `mask` mode `opacity` has no effect. The other options below come later in 0.1 unless a row gives another version. Custom materials with a surface function (`materials.shader`) are built; their texture maps, uniforms and textures come later in 0.1.
+Versions: `materials.standard` takes `color`, `opacity`, `metalness`, `roughness`, `emissive`, `emissiveIntensity` and the texture maps of section 1 now, and shades as three.js's `MeshStandardMaterial` does. `materials.unlit` takes `color`, `opacity` and `map`. Both take `uvTransform`, `doubleSided`, `vertexColors`, `fog`, `alphaMode`, `alphaCutoff`, `blending` and the depth options, and the standard material takes `flatShading`. The other options below come later in 0.1 unless a row gives another version. Custom materials with a surface function (`materials.shader`) are built; their texture maps, uniforms and textures come later in 0.1.
 
 ## Contents
 
@@ -37,14 +37,14 @@ Versions: `materials.standard` takes `color`, `opacity`, `metalness`, `roughness
 | `bumpMap`, `bumpScale` | A normal map made offline: `bunx @null3d/cli assets normal-from-bump` (0.2) | |
 | `displacementMap`, `displacementScale`, `displacementBias` | A `vertexOffset` function (later in 0.1; section 8 of `references/shaders.md`) | Enlarge bounds with `setBounds` |
 | `alphaMap` | Alpha packed into `map` offline, or a surface function (later in 0.1) | three.js reads the alpha map's G channel (recipe in section 8) |
-| `transparent: true`, `opacity` | `alphaMode: 'blend'` (later in 0.1), `opacity` | `opacity` is stored now, and draws in the `mask` mode and once blending comes |
-| `alphaTest` | `alphaMode: 'mask'`, `alphaCutoff` | |
+| `transparent: true`, `opacity` | `alphaMode: 'blend'`, `opacity` | Blended objects draw after the opaque ones, farthest first; an instance batch's rows sort one by one |
+| `alphaTest` | `alphaMode: 'mask'`, `alphaCutoff` | Pass the `alphaTest` value as `alphaCutoff`, whose default is 0.5, as in glTF |
 | `alphaHash` | `alphaMode: 'mask'` | Hashed transparency is not supported |
 | `side: DoubleSide` | `doubleSided: true` | Fixed when the material is created. A back face lights as if it faced the camera, as in three.js |
 | `side: BackSide` | Flip the geometry | Not a material option: in `geometry.fromArrays`, reverse each triangle's indices and negate the normals |
-| `depthWrite`, `depthTest` | Same names | Fixed when the material is created |
+| `depthWrite`, `depthTest` | Same names | Fixed when the material is created. `depthTest: false` writes no depth either, as in three.js's WebGL renderer |
 | `polygonOffset`, `polygonOffsetFactor`, `polygonOffsetUnits` | `depthBias: { constant, slopeScale }` | Keep the three.js intent; the engine converts signs for reversed depth |
-| `blending: NormalBlending / AdditiveBlending / MultiplyBlending` | `blending: 'normal' / 'additive' / 'multiply'` (later in 0.1) | Subtractive and custom blending are not supported |
+| `blending: NormalBlending / AdditiveBlending / MultiplyBlending` | `blending: 'normal' / 'additive' / 'multiply'` with `alphaMode: 'blend'` | Subtractive and custom blending are not supported. three.js blends an opaque material with additive or multiply blending too; null3D needs `alphaMode: 'blend'` |
 | `vertexColors`, `flatShading` | Same names | Fixed when the material is created: make one material for each combination. `vertexColors` needs a mesh with colors |
 | `wireframe` | `debug.view('wireframe')` (later in 0.1), or `scene.createLines({ fromEdges })` (0.2) | |
 | `fog: false` | Same name | |
@@ -71,7 +71,7 @@ Tell the user which of these a scene relies on before porting it. Glass and car-
 
 ## 3. MeshBasicMaterial
 
-`materials.unlit`: `color`, `opacity`, `map`, `uvTransform`, `vertexColors`, `doubleSided`, `fog`, `alphaMode: 'mask'` and `alphaCutoff` now; `alphaMode: 'blend'` later in 0.1. Its `envMap` and `reflectivity` (fake reflections) are not supported; use `materials.standard` with high metalness and low roughness for a reflective look.
+`materials.unlit`: `color`, `opacity`, `map`, `uvTransform`, `vertexColors`, `doubleSided`, `fog`, `alphaMode`, `alphaCutoff`, `blending` and the depth options now. Its `envMap` and `reflectivity` (fake reflections) are not supported; use `materials.standard` with high metalness and low roughness for a reflective look.
 
 ## 4. MeshLambertMaterial and MeshPhongMaterial
 
@@ -116,7 +116,7 @@ Both become surface-function recipes (section 8), later in 0.1. Toon shading nee
 | `premultiplyAlpha` | `premultipliedAlpha` |
 | `needsUpdate = true` after changing pixels | `texture.update(bitmap)`, or `texture.update(data)` for a texture from `textures.fromData` |
 
-Texture formats: `loadTexture` decodes PNG, JPEG and WebP files, and AVIF files where the browser supports them. KTX2 files load later in 0.1. Convert PNG and JPEG textures to KTX2 with `bunx @null3d/cli assets optimize` (0.2). Use UASTC for normal maps and important color maps, and ETC1S where download size matters most. HDR environment files become prefiltered KTX2 with `bunx @null3d/cli assets env` (0.2).
+Texture formats: `loadTexture` decodes PNG, JPEG and WebP files, and AVIF files where the browser supports them. It also loads KTX2 files of ETC1S or UASTC data, in the device's compressed format. Convert PNG and JPEG textures to KTX2 with `basisu -mipmap`, or with `bunx @null3d/cli assets optimize` (0.2). Use UASTC for normal maps and important color maps, and ETC1S where download size matters most. HDR environment files become prefiltered KTX2 with `bunx @null3d/cli assets env` (0.2).
 
 ## 8. Recipes (later in 0.1)
 

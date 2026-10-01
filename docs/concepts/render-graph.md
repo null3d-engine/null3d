@@ -16,19 +16,22 @@ flowchart LR
     visible --> opaque
     subgraph scene["One render pass"]
         opaque["Opaque"]
+        transparent["Transparent"]
         resolve["Resolve<br/>8-bit path with MSAA"]
     end
     opaque --> color[("scene color")]
     opaque --> depth[("scene depth")]
-    color --> final["Final pass<br/>HDR path, or FXAA or none"] --> canvas[("canvas")]
-    color -.-> resolve -.-> canvas
+    color --> transparent
+    depth --> transparent
+    transparent --> final["Final pass<br/>HDR path, or FXAA or none"] --> canvas[("canvas")]
+    transparent -.-> resolve -.-> canvas
 ```
 
 null3D draws each frame as a series of passes. A pass is one job for the GPU, such as culling the objects that a camera cannot see, or drawing the scene from the camera. Each pass declares what it reads and what it writes. The render graph reads these declarations before a frame draws. It puts the passes in order and plans the textures they draw into.
 
 In 0.1 the render graph is internal: the engine declares every pass itself. The calls that add passes and print the graph come in null3D 0.2.
 
-In the diagram, boxes are passes and cylinders are data. An arrow into a pass shows what it reads, and an arrow out of a pass shows what it writes. The scene color reaches the canvas through the final pass on devices that draw HDR color. So it does in the FXAA and no anti-aliasing modes. On the other devices with MSAA, the resolve pass takes its place, along the dotted arrows. It shares the opaque pass's render pass on the GPU.
+In the diagram, boxes are passes and cylinders are data. An arrow into a pass shows what it reads, and an arrow out of a pass shows what it writes. The opaque and transparent passes share one render pass on the GPU. The scene color reaches the canvas through the final pass on devices that draw HDR color. So it does in the FXAA and no anti-aliasing modes. On the other devices with MSAA, the resolve pass takes its place, along the dotted arrows. It shares the opaque and transparent passes' render pass.
 
 ## The engine's passes
 
@@ -36,10 +39,11 @@ In the diagram, boxes are passes and cylinders are data. An arrow into a pass sh
 | --- | --- | --- | --- |
 | Culling | Compute, one pass per view, on WebGPU only | The world matrix and bounds of every object and instance | The view's visible instances and draw counts |
 | Opaque | Scene, one pass per view | The view's visible instances, on WebGPU | The scene color and depth |
+| Transparent | Scene, one pass per view, on while some object blends | The view's blended objects, sorted back to front on the job workers | The scene color and depth |
 | Resolve | Resolve, on the 8-bit path with MSAA | The scene color | The canvas |
 | Final pass | Fullscreen, on the HDR path, and with FXAA or no anti-aliasing | The scene color | The canvas |
 
-On WebGL2 the job workers cull the objects before the frame draws, so the graph has no culling pass there. Passes for shadows, light clustering, a depth prepass, transparent objects and debug lines join the graph as those features ship.
+On WebGL2 the job workers cull the objects before the frame draws, so the graph has no culling pass there. Passes for shadows, light clustering and a depth prepass join the graph as those features ship.
 
 A view is the scene seen from one camera, culled on its own. On WebGPU each view has a culling pass, and on WebGL2 the job workers list the visible objects of each view. The engine draws one view: the camera's. Its opaque pass draws the scene color and depth, and the scene color reaches the canvas.
 
