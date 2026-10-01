@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { controlViews, createControlBuffer, Slot } from './control';
 import { ImageTable, imagesArrived, receiveImages, sendThrough, sendToTable } from './images';
+import { setWakeByMessage, WAKE } from './wake';
 
 /** A decoded image as the tests need one: a close that the test can see. */
 function image(): ImageBitmap & { closed: boolean } {
@@ -70,5 +71,23 @@ describe('images on their way to the thread that draws', () => {
 		await arrived;
 		expect(Atomics.load(slots, Slot.ImagesArrived)).toBe(2);
 		expect([table.get(1), table.get(2)]).toEqual([first, second]);
+	});
+
+	test('each arrival sends a wake back through its port, where the threads wake with messages', () => {
+		setWakeByMessage(true);
+		try {
+			const { slots } = controlViews(createControlBuffer(true));
+			const posted: unknown[] = [];
+			const port = {
+				onmessage: null as ((event: MessageEvent) => void) | null,
+				postMessage: (message: unknown) => posted.push(message),
+			} as unknown as MessagePort;
+			receiveImages(port, new ImageTable(), slots);
+			port.onmessage?.({ data: { id: 1, image: image() } } as MessageEvent);
+			expect(Atomics.load(slots, Slot.ImagesArrived)).toBe(1);
+			expect(posted).toEqual([WAKE]);
+		} finally {
+			setWakeByMessage(false);
+		}
 	});
 });

@@ -154,6 +154,7 @@ The [hold mode demo](https://github.com/null3d-engine/null3d/tree/main/examples/
 | `?compile=wait` | On WebGL2, wait for each shader program's compile at its first draw, as browsers without the `KHR_parallel_shader_compile` extension do |
 | `?compression=bc`, `?compression=astc,etc2`, `?compression=none` | Keep KTX2 textures to the compressed formats that the list names, of those the device has, as on a device with only those. `none` gives every KTX2 texture `rgba8unorm` |
 | `?threads=off` | The single-threaded build |
+| `?wake=message` | Make the worker threads wake each other with messages, as browsers without `Atomics.waitAsync` need, such as Firefox before 145 |
 | `?render=main` | Draw on the page's main thread |
 | `?sketch-thread=main` | Run the sketch on the page's main thread, over the `sketchThread` option |
 | `?latency=pipelined`, `?latency=low` | Pick the latency mode |
