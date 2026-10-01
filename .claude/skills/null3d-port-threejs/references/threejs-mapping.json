@@ -22,7 +22,7 @@
       "status": "changed",
       "since": "0.1",
       "target": "createEngine({ canvas, sketch }) on the page; scene code moves to sketch.ts inside defineSketch()",
-      "notes": "The engine picks WebGPU or WebGL2 itself. antialias maps to the quality preset (MSAA 4x from Medium); alpha: true maps to createEngine({ transparent: true }); powerPreference maps to createEngine({ powerPreference }), whose default is 'high-performance'.",
+      "notes": "The engine picks WebGPU or WebGL2 itself. antialias: true maps to createEngine({ antialias: 'msaa' }) and false to 'none'; without the option the quality preset picks FXAA on Low and MSAA 4x from Medium up; alpha: true maps to createEngine({ transparent: true }); powerPreference maps to createEngine({ powerPreference }), whose default is 'high-performance'.",
       "docs": "getting-started/first-scene",
       "detect": "\\b(WebGL|WebGPU)Renderer\\b"
     },
@@ -1407,8 +1407,8 @@
       "three": "FXAAPass / FXAAShader / SMAAPass / TAARenderPass / SSAARenderPass",
       "status": "changed",
       "since": "0.1",
-      "target": "Anti-aliasing follows the preset (MSAA or FXAA); post.set({ fxaa: true }) forces FXAA",
-      "notes": "SMAA and SSAA have no equivalent. TAA comes after 1.0.",
+      "target": "createEngine({ antialias: 'fxaa' }); the quality presets take MSAA 4x from Medium, and FXAA on Low",
+      "notes": "FXAA runs inside the final pass, where three.js adds FXAAPass after OutputPass. SMAA and SSAA have no equivalent. TAA comes after 1.0.",
       "docs": "porting/threejs-postprocessing",
       "detect": "\\b(FXAA|SMAA|TAARender|SSAARender)Pass\\b|FXAAShader"
     },

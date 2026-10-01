@@ -13,6 +13,12 @@
 //!
 //! The tone mapping operators follow three.js's formulas, as `null3d::color` in the shader library
 //! writes them. Their codes are the same in the core, `null3d::tonemap` and the TypeScript API.
+//!
+//! The anti-aliasing mode is fixed when the frame builder starts. MSAA draws the scene with 4
+//! samples per pixel. FXAA and no anti-aliasing draw it with one, and the final pass runs FXAA on
+//! the scene color before the output transform. The 8-bit path resolves MSAA into the canvas as
+//! before; with one sample, its final pass reads the scene color as display color and only copies
+//! it, or runs FXAA on it.
 
 use null3d_gpu::drawlist::{format, permutation, sizes::OUTPUT_UNIFORM_BYTES};
 
@@ -91,12 +97,13 @@ impl Output {
         self.tone_mapping.apply(c.map(|v| v * self.exposure))
     }
 
-    /// The block the shaders read.
+    /// The block the shaders read, with no flags.
     pub fn uniform(self) -> OutputUniform {
         OutputUniform {
             exposure: self.exposure,
             tone_mapping: self.tone_mapping.code(),
-            spare: [0; 2],
+            flags: 0,
+            spare: 0,
         }
     }
 }
@@ -107,12 +114,18 @@ impl Output {
 pub struct OutputUniform {
     pub exposure: f32,
     pub tone_mapping: u32,
-    pub spare: [u32; 2],
+    /// Flags that only the final pass reads: [`OutputUniform::DISPLAY_COLOR`].
+    pub flags: u32,
+    pub spare: u32,
 }
 
 const _: () = assert!(std::mem::size_of::<OutputUniform>() == OUTPUT_UNIFORM_BYTES as usize);
 
 impl OutputUniform {
+    /// The flag that says the scene color holds display color, which the scene shaders tone
+    /// mapped and encoded already, so the final pass leaves the color as it is.
+    pub const DISPLAY_COLOR: u32 = 1;
+
     /// The block as bytes, for an upload.
     pub fn as_bytes(&self) -> &[u8] {
         // SAFETY: the struct is `repr(C)` and made only of 4-byte fields, so it has no padding, and
@@ -122,6 +135,42 @@ impl OutputUniform {
                 (self as *const Self).cast::<u8>(),
                 std::mem::size_of::<Self>(),
             )
+        }
+    }
+}
+
+/// How the engine smooths the edges of what it draws. Each mode works on every GPU path.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[repr(u32)]
+pub enum Antialias {
+    /// No anti-aliasing: one sample per pixel, and no smoothing.
+    None = 0,
+    /// FXAA in the final pass, over a scene drawn with one sample per pixel.
+    Fxaa = 1,
+    /// MSAA with 4 samples per pixel, the engine's default.
+    #[default]
+    Msaa = 2,
+}
+
+impl Antialias {
+    /// Every mode, in code order.
+    pub const ALL: [Self; 3] = [Self::None, Self::Fxaa, Self::Msaa];
+
+    /// The mode's code, which the TypeScript API shares.
+    pub const fn code(self) -> u32 {
+        self as u32
+    }
+
+    /// The mode of a code, or `None` for a code that names none.
+    pub fn from_code(code: u32) -> Option<Self> {
+        Self::ALL.into_iter().find(|mode| mode.code() == code)
+    }
+
+    /// Samples per pixel of the scene's color and depth targets.
+    pub const fn samples(self) -> u32 {
+        match self {
+            Self::Msaa => 4,
+            Self::None | Self::Fxaa => 1,
         }
     }
 }
@@ -366,7 +415,20 @@ mod tests {
         );
         let uniform = brighter.uniform();
         assert_eq!((uniform.exposure, uniform.tone_mapping), (2.0, 0));
+        assert_eq!((uniform.flags, uniform.spare), (0, 0));
         assert_eq!(uniform.as_bytes().len(), OUTPUT_UNIFORM_BYTES as usize);
+    }
+
+    #[test]
+    fn only_msaa_draws_more_than_one_sample_and_codes_name_each_mode_once() {
+        for mode in Antialias::ALL {
+            assert_eq!(Antialias::from_code(mode.code()), Some(mode));
+        }
+        assert_eq!(Antialias::from_code(3), None);
+        assert_eq!(Antialias::default(), Antialias::Msaa);
+        assert_eq!(Antialias::Msaa.samples(), 4);
+        assert_eq!(Antialias::Fxaa.samples(), 1);
+        assert_eq!(Antialias::None.samples(), 1);
     }
 
     #[test]

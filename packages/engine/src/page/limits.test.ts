@@ -7,7 +7,9 @@ import {
 	PERMUTATION_DRAW_INDEX,
 	PERMUTATION_TONE_MAP,
 } from '../generated/gpu';
+import type { Tier } from '../render/renderer';
 import {
+	type AntialiasMode,
 	type CoreDevice,
 	coreDevice,
 	DEPTH_WITHOUT_CLIP_CONTROL,
@@ -33,6 +35,7 @@ const webgpu = (storageBindingBytes: number): CoreDevice => ({
 	depth: 'reversed',
 	parallelCompile: true,
 	sceneColor: FORMAT_RGBA16_FLOAT,
+	antialias: C.ANTIALIAS_MSAA,
 	transparent: false,
 	shaderBits: 0,
 	cellCulling: true,
@@ -46,7 +49,7 @@ const HDR_TARGETS = {
 /** A report whose WebGL2 part has these fields, from a device with no optional WebGPU feature. */
 function report(webgl2: Partial<DeviceReport['webgl2']>, features: string[] = []): DeviceReport {
 	return {
-		webgpu: { limits: {}, features },
+		webgpu: { limits: {}, features, transientAttachments: false },
 		webgl2: {
 			extensions: {},
 			maxTextureSize: 4096,
@@ -64,38 +67,81 @@ const PLAIN: DeviceOptions = {
 	parallelCompile: true,
 	cells: true,
 	hdr: true,
+	antialias: 'msaa',
 	transparent: false,
 };
+
+/** The scene color format on a tier for a page with the plain options and these changes. */
+const formatOn = (tier: Tier, device: DeviceReport, options: Partial<DeviceOptions> = {}) =>
+	sceneColorFormat(tier, device, { ...PLAIN, ...options });
 
 describe('sceneColorFormat', () => {
 	const small = ['rg11b10ufloat-renderable'];
 
 	it('draws HDR color on core WebGPU, in the small float format where the canvas needs no alpha', () => {
-		expect(sceneColorFormat('webgpu', report({}), true, false)).toBe(FORMAT_RGBA16_FLOAT);
-		expect(sceneColorFormat('webgpu', report({}, small), true, false)).toBe(FORMAT_RG11B10_UFLOAT);
-		expect(sceneColorFormat('webgpu', report({}, small), true, true)).toBe(FORMAT_RGBA16_FLOAT);
+		expect(formatOn('webgpu', report({}))).toBe(FORMAT_RGBA16_FLOAT);
+		expect(formatOn('webgpu', report({}, small))).toBe(FORMAT_RG11B10_UFLOAT);
+		expect(formatOn('webgpu', report({}, small), { transparent: true })).toBe(FORMAT_RGBA16_FLOAT);
 	});
 
-	it('takes the 8-bit path in compatibility mode, and where the page turns HDR off', () => {
-		expect(sceneColorFormat('webgpu-compat', report({}, small), true, false)).toBe(FORMAT_CANVAS);
-		expect(sceneColorFormat('webgpu', report({}, small), false, false)).toBe(FORMAT_CANVAS);
-		expect(sceneColorFormat('webgl2', report({}), false, false)).toBe(FORMAT_CANVAS);
+	it('takes the 8-bit path in compatibility mode with MSAA, and where the page turns HDR off', () => {
+		expect(formatOn('webgpu-compat', report({}, small))).toBe(FORMAT_CANVAS);
+		expect(formatOn('webgpu', report({}, small), { hdr: false })).toBe(FORMAT_CANVAS);
+		expect(formatOn('webgl2', report({}), { hdr: false })).toBe(FORMAT_CANVAS);
 	});
 
-	it('draws HDR color on WebGL2 only where RGBA16F targets work with the MSAA the engine uses', () => {
-		expect(sceneColorFormat('webgl2', report({}), true, false)).toBe(FORMAT_RGBA16_FLOAT);
+	it('never asks compatibility mode for a multisampled float target: FXAA and none draw HDR color', () => {
+		for (const antialias of ['fxaa', 'none'] as const) {
+			expect(formatOn('webgpu-compat', report({}), { antialias })).toBe(FORMAT_RGBA16_FLOAT);
+			expect(formatOn('webgpu-compat', report({}, small), { antialias })).toBe(
+				FORMAT_RG11B10_UFLOAT,
+			);
+			expect(formatOn('webgpu-compat', report({}), { antialias, hdr: false })).toBe(FORMAT_CANVAS);
+		}
+		for (const tier of ['webgpu', 'webgpu-compat', 'webgl2'] as const) {
+			const device = coreDevice(tier, report({}), PLAIN);
+			const multisampledFloat =
+				device.antialias === C.ANTIALIAS_MSAA && device.sceneColor !== FORMAT_CANVAS;
+			expect(multisampledFloat).toBe(tier !== 'webgpu-compat');
+		}
+	});
+
+	it('draws HDR color on WebGL2 only where RGBA16F targets work, with the samples of MSAA', () => {
+		expect(formatOn('webgl2', report({}))).toBe(FORMAT_RGBA16_FLOAT);
 		const fewSamples = { rgba16f: { ...HDR_TARGETS.rgba16f, samples: 2 } };
 		const clipped = { rgba16f: { ...HDR_TARGETS.rgba16f, readsBack: false } };
 		for (const floatRenderTargets of [null, fewSamples, clipped])
-			expect(sceneColorFormat('webgl2', report({ floatRenderTargets }), true, false)).toBe(
+			expect(formatOn('webgl2', report({ floatRenderTargets }))).toBe(FORMAT_CANVAS);
+		// FXAA and no anti-aliasing draw one sample, which every device that renders RGBA16F takes.
+		for (const antialias of ['fxaa', 'none'] as const) {
+			expect(formatOn('webgl2', report({ floatRenderTargets: fewSamples }), { antialias })).toBe(
+				FORMAT_RGBA16_FLOAT,
+			);
+			expect(formatOn('webgl2', report({ floatRenderTargets: clipped }), { antialias })).toBe(
 				FORMAT_CANVAS,
 			);
+		}
 	});
 
-	it('reaches the core with the canvas transparency', () => {
+	it('reaches the core with the canvas transparency and the anti-aliasing mode', () => {
 		const device = coreDevice('webgpu', report({}, small), { ...PLAIN, transparent: true });
 		expect([device.sceneColor, device.transparent]).toEqual([FORMAT_RGBA16_FLOAT, true]);
 		expect(coreDevice('webgl2', report({}), PLAIN).sceneColor).toBe(FORMAT_RGBA16_FLOAT);
+		const codes = { none: C.ANTIALIAS_NONE, fxaa: C.ANTIALIAS_FXAA, msaa: C.ANTIALIAS_MSAA };
+		for (const [antialias, code] of Object.entries(codes))
+			expect(
+				coreDevice('webgpu', report({}), { ...PLAIN, antialias: antialias as AntialiasMode })
+					.antialias,
+			).toBe(code);
+	});
+
+	it('tells the WebGPU core about transient attachments where the browser has them', () => {
+		const withThem = report({});
+		withThem.webgpu.transientAttachments = true;
+		expect(coreDevice('webgpu', withThem, PLAIN).capabilities).toBe(
+			C.CAPABILITY_TRANSIENT_ATTACHMENTS,
+		);
+		expect(coreDevice('webgpu', report({}), PLAIN).capabilities).toBe(0);
 	});
 });
 
@@ -240,6 +286,9 @@ describe('the permutation bits that a device fixes', () => {
 			PERMUTATION_TONE_MAP,
 		);
 		expect(coreDevice('webgpu-compat', report({}), PLAIN).shaderBits).toBe(PERMUTATION_TONE_MAP);
+		// Compatibility mode draws HDR color with one sample per pixel.
+		const fxaa: DeviceOptions = { ...PLAIN, antialias: 'fxaa' };
+		expect(coreDevice('webgpu-compat', report({}), fxaa).shaderBits).toBe(0);
 	});
 });
 
