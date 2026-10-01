@@ -12,6 +12,10 @@ import {
 	LAYOUT_MATERIAL_MAPS,
 	LAYOUT_TEXTURES,
 	SIZE_INSTANCE_STRIDE,
+	STATE_BLEND,
+	STATE_BLEND_ADDITIVE,
+	STATE_BLEND_MULTIPLY,
+	STATE_BLEND_NORMAL,
 	STATE_CULL_FRONT,
 	STATE_CULL_NONE,
 	STATE_LINE_LIST,
@@ -89,6 +93,26 @@ const INSTANCE_BUFFERS: GPUVertexBufferLayout[] = [
 		],
 	},
 ];
+
+/**
+ * The blend state of each blend mode, whose fragments write color premultiplied by alpha, as
+ * three.js blends with `premultipliedAlpha`: normal blending covers the target, additive blending
+ * adds light to it, and multiply blending tints it and keeps its alpha.
+ */
+const BLENDS: Readonly<Record<number, GPUBlendState>> = {
+	[STATE_BLEND_NORMAL]: {
+		color: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha' },
+		alpha: { srcFactor: 'one', dstFactor: 'one-minus-src-alpha' },
+	},
+	[STATE_BLEND_ADDITIVE]: {
+		color: { srcFactor: 'one', dstFactor: 'one' },
+		alpha: { srcFactor: 'one', dstFactor: 'one' },
+	},
+	[STATE_BLEND_MULTIPLY]: {
+		color: { srcFactor: 'dst', dstFactor: 'one-minus-src-alpha' },
+		alpha: { srcFactor: 'zero', dstFactor: 'one' },
+	},
+};
 
 /** WebGPU's vertex formats of 32-bit floats, by float count. */
 const FLOAT_FORMATS: (GPUVertexFormat | undefined)[] = [
@@ -333,7 +357,11 @@ export class Pipelines {
 				buffers: vertexBuffers(t, vertexFormat, permutation),
 			},
 			fragment: colorFormat
-				? { module, entryPoint: entryPoints?.fragment, targets: [{ format: colorFormat }] }
+				? {
+						module,
+						entryPoint: entryPoints?.fragment,
+						targets: [{ format: colorFormat, blend: BLENDS[stateFlags & STATE_BLEND] }],
+					}
 				: undefined,
 			primitive: {
 				topology: stateFlags & STATE_LINE_LIST ? 'line-list' : 'triangle-list',

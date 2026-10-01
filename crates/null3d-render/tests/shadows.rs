@@ -472,3 +472,39 @@ fn standard_materials_with_and_without_maps_receive_shadows_and_unlit_ones_do_no
         assert_eq!(settings.receiving(key(unlit)), key(unlit));
     }
 }
+
+#[test]
+fn a_blended_object_casts_shadows_and_receives_them_in_the_transparent_pass() {
+    let mut world = shadowed(SUN);
+    let glass = world
+        .renderer
+        .settings_mut()
+        .materials_mut()
+        .create(Shading::Lit, feature::BLEND, [1.0, 1.0, 1.0, 0.5])
+        .unwrap()
+        + 1;
+    let lit_box = world.objects[0];
+    let commands = [Command::set_material(lit_box, glass)];
+    world.scene.apply_commands(&commands, world.frame).unwrap();
+    world.record(true);
+    MockBackend::default()
+        .replay(world.renderer.list(1).words())
+        .unwrap();
+    let commands = world.commands();
+
+    // The box draws in the transparent pass with a lit pipeline that blends and reads the map.
+    let pipelines = operands(&commands, Op::CreateRenderPipeline);
+    assert!(pipelines.iter().any(|p| {
+        p[1] == template::INSTANCED_LIT
+            && p[2] & permutation::RECEIVE_SHADOWS != 0
+            && p[6] & state_flags::BLEND != 0
+    }));
+    // It still casts: each cascade's bundle draws the box's mesh and the ball's.
+    let bundles = bundles(&commands);
+    let cascades: Vec<_> = bundles
+        .values()
+        .filter(|(formats, _)| formats[0] == format::NONE)
+        .collect();
+    assert_eq!(cascades.len(), 3);
+    assert!(cascades.iter().all(|(_, draws)| *draws == 2));
+}

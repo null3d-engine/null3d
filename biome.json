@@ -54,7 +54,8 @@
 			"!skills/*/evals",
 			"!docs/data",
 			"!skills/null3d-port-threejs/references/threejs-mapping.json",
-			"!packages/engine/src/generated"
+			"!packages/engine/src/generated",
+			"!packages/engine/vendor"
 		]
 	},
 	"vcs": {

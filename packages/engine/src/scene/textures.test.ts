@@ -75,13 +75,17 @@ function fakeCore() {
 	} as unknown as CoreGlue;
 	const memory = new WebAssembly.Memory({ initial: 1 });
 	const core = new CoreMemory(glue, memory);
-	const textures = new Textures(core, (id, bitmap) => sent.push([id, bitmap]), { frame: 3 });
+	const textures = new Textures(core, (id, bitmap) => sent.push([id, bitmap]), { frame: 3 }, 0);
 	return { textures, created, images, data, destroyed, sent, memory };
 }
 
-/** The codes that `createTexture` got after the size and depth, for options as three.js's defaults. */
+/**
+ * The codes that `createTexture` got after the size and depth, for options as three.js's defaults:
+ * the format, mip levels that the GPU makes, one level of texels, then the sampler's codes.
+ */
 const DEFAULT_CODES = [
 	TEXTURE_FORMAT_SRGB,
+	1,
 	1,
 	TEXTURE_WRAP_CLAMP,
 	TEXTURE_WRAP_CLAMP,
@@ -117,6 +121,7 @@ describe('textures.fromImageBitmap', () => {
 			1,
 			TEXTURE_FORMAT_LINEAR,
 			0,
+			1,
 			TEXTURE_WRAP_REPEAT,
 			TEXTURE_WRAP_MIRROR,
 			TEXTURE_FILTER_NEAREST,

@@ -8,7 +8,7 @@ summary: "loadTexture, loadImageBitmap, loadJson, loadBinary, preload, onProgres
 
 # Assets
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Models, environments and KTX2 files are not built yet: `assets.loadGltf`, `loadEnvironment`, `builtinEnvironment`, `loadCubemap`, `loadLut` and prefabs. Coding agents must not use them.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Models and environments are not built yet: `assets.loadGltf`, `loadEnvironment`, `builtinEnvironment`, `loadCubemap`, `loadLut` and prefabs. Coding agents must not use them.
 
 The `assets` object of the sketch context downloads files and decodes them. Every call returns a promise, and its download and decode run outside the sketch's frames, so a frame never waits for them. The browser decodes images off the main thread.
 
@@ -29,7 +29,7 @@ export default defineSketch(async ({ assets, page }) => {
 
 | Call | Gives |
 | --- | --- |
-| `loadTexture(url, options)` | A texture from a PNG, JPEG or WebP file, or an AVIF file where the browser decodes AVIF. [Textures](textures.md) lists its options. |
+| `loadTexture(url, options)` | A texture from a PNG, JPEG or WebP file, an AVIF file where the browser decodes AVIF, or a KTX2 file of ETC1S or UASTC data, in the compressed format that the device supports. [Textures](textures.md) lists its options. |
 | `loadImageBitmap(url, options)` | A decoded `ImageBitmap`, flipped for textures by default, as `loadTexture` decodes it |
 | `loadJson(url)` | The file parsed as JSON |
 | `loadBinary(url)` | The file's bytes, as an `ArrayBuffer` |
@@ -65,9 +65,10 @@ Each call rejects with an engine error that says how to fix the problem:
 | Code | When |
 | --- | --- |
 | [E1411](../errors/E1411.md) | The file did not download: the server answered with an error, such as 404, or the network failed |
-| [E1412](../errors/E1412.md) | The file downloaded, but the browser could not decode the image, or the file was not valid JSON |
+| [E1412](../errors/E1412.md) | The file downloaded, but the browser could not decode the image, the file was not a KTX2 file that the engine loads, or the file was not valid JSON |
+| [E1406](../errors/E1406.md) | The KTX2 transcoder's files did not download, when the first KTX2 file loads |
 | [E1413](../errors/E1413.md) | A file from another origin, whose server did not allow the page to read it |
-| [E1208](../errors/E1208.md) | A texture option that the engine does not know |
+| [E1208](../errors/E1208.md) | A texture option that the engine does not know, or one that a KTX2 file cannot take |
 
 `preload` rejects with the error of the first file that fails. The files that arrived stay in memory, and a later load of the failed file tries again.
 
@@ -87,7 +88,7 @@ Loads files, and textures from image files. Every call runs outside the sketch's
 
 | Member | Description |
 | --- | --- |
-| `loadTexture(url: string \| URL, options: LoadTextureOptions = {}): Promise<Texture>` | Downloads an image file, decodes it off the sketch's frames, and makes a texture from it. The browser decodes PNG, JPEG and WebP files, and AVIF files where it supports them. Throws E1411 when the file does not download, E1413 when a server of another origin does not allow the page to read it, E1412 when the browser cannot decode it, and E1208 for options the engine does not know. |
+| `loadTexture(url: string \| URL, options: LoadTextureOptions = {}): Promise<Texture>` | Downloads an image file or a KTX2 file, decodes it off the sketch's frames, and makes a texture from it. The browser decodes PNG, JPEG and WebP files, and AVIF files where it supports them. A KTX2 file of ETC1S or UASTC data becomes the compressed format that the device supports, with the file's mip levels, and the first KTX2 file loads the transcoder. Throws E1411 when the file does not download, E1413 when a server of another origin does not allow the page to read it, E1412 when the file does not decode, E1406 when the transcoder does not load, and E1208 for options the engine does not know. |
 | `loadImageBitmap(url: string \| URL, options: LoadImageOptions = {}): Promise<ImageBitmap>` | Downloads an image file and decodes it into an `ImageBitmap`, off the sketch's frames. By default it decodes as `loadTexture` does, so `textures.fromImageBitmap` makes the same texture. Throws E1411, E1412 or E1413 as `loadTexture` does. |
 | `loadJson<T = unknown>(url: string \| URL): Promise<T>` | Downloads a JSON file and parses it. Throws E1411 or E1413 as `loadTexture` does, and E1412 when the file is not valid JSON. |
 | `loadBinary(url: string \| URL): Promise<ArrayBuffer>` | Downloads a file as bytes. Throws E1411 or E1413 as `loadTexture` does. |
@@ -110,12 +111,12 @@ The options of `assets.loadImageBitmap`, which decode an image as `loadTexture` 
 
 Interface `LoadTextureOptions`, which extends `TextureOptions`.
 
-The options of `assets.loadTexture`: how the image decodes, and the texture's options.
+The options of `assets.loadTexture`: how the image decodes, and the texture's options. A KTX2 file takes its color space from the file unless `colorSpace` gives one, and its mip levels from the file unless `mipmaps` is false.
 
 | Member | Description |
 | --- | --- |
-| `flipY?: boolean` | True to put the image's top row at v = 1, the top of a plane, as three.js's `TextureLoader` does. The default is true. glTF textures use false. |
-| `premultipliedAlpha?: boolean` | True to store each color multiplied by its alpha, as three.js's `premultiplyAlpha` does. The default is false. |
+| `flipY?: boolean` | True to put the image's top row at v = 1, the top of a plane, as three.js's `TextureLoader` does. The default is true. glTF textures use false. A KTX2 file keeps the rows as it holds them, its first row at v = 0, as three.js's `KTX2Loader` does: encode it flipped, as `basisu -y_flip` does, for a plane. It takes no `flipY: true`. |
+| `premultipliedAlpha?: boolean` | True to store each color multiplied by its alpha, as three.js's `premultiplyAlpha` does. The default is false. A KTX2 file takes no `premultipliedAlpha: true`. |
 
 ### `ProgressHandler`
 

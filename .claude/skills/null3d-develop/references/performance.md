@@ -77,6 +77,7 @@ The lower of `presentedFps` and `completedFps` is the rate users see. The engine
 | `rebuilds` above zero during play, with upload and replay spikes in the same frames | Objects, meshes, materials or batches created, destroyed or changed during play: each such frame rebuilds the draw tables and uploads every matrix | Create during setup; hide and show with `setVisible` and pool with `setActiveCount`, which do not rebuild (`guides/performance`) |
 | High "replay" or draw calls | Too many mesh and material combinations | Share materials; pack textures into arrays with `bunx @null3d/cli assets` (0.2); merge small static meshes offline |
 | GPU time high, CPU low | Pixels or shader cost | Lower `maxPixelRatio`; cheaper materials; fewer shadowed lights; avoid large transparent areas |
+| High "culling" or "record" with many blended objects | Every frame culls and sorts each view's blended objects on the job workers, and on WebGPU writes each visible one's data | Use `alphaMode: 'mask'` for cut-out shapes, which draw with the opaque objects; keep `'blend'` for what must show through; put blended particles in one instance batch with one material, which draws in few calls when nothing crosses it (`concepts/materials`) |
 | Hitch when something new appears, or it appears a moment late | A rebuild (`rebuilds` above zero), or a pipeline build (`pipelines` above zero) | Create materials and objects during loading; create a later stage hidden, `await scene.warmUp()`, then show it |
 | Hitch while loading during play | Uploads and decoding | Load before play, or stream smaller files; the per-frame upload budget spreads uploads, and `quality.set({ uploadBytesPerFrame })` lowers it |
 | Frame rate drops after a few minutes on a phone | Heat | Aim for 70% of the budget; test 10-minute runs. The governor steps quality down later in 0.1 |
@@ -94,15 +95,15 @@ The lower of `presentedFps` and `completedFps` is the rate users see. The engine
 - A player's preset choice goes through `quality.setPreset`. It waits for the new preset's pipelines behind the last frame, so call it from a menu or a loading screen. The `skippedDraws` figure of `engine.measure()` counts draws that a building pipeline kept from drawing. It stays at 0 when warm-ups come first.
 - Shadows (later in 0.1): one cascade on Low, two on Medium. Each shadowed point light draws the scene six times; avoid them on phones.
 - Transparent and additive effects covering the screen (smoke, glass) cost the most on phone GPUs.
-- Memory is tight: a 4 GB iPad reports a 256 MB largest buffer and closes tabs that use too much. Share materials and destroy textures you no longer need. KTX2 textures come later in 0.1, and prefabs to free with `destroy()` in 0.2.
+- Memory is tight: a 4 GB iPad reports a 256 MB largest buffer and closes tabs that use too much. Share materials, destroy textures you no longer need, and load large textures from KTX2 files, which stay compressed on the GPU. Prefabs to free with `destroy()` come in 0.2.
 - For comparison runs, fix the refresh rate at 60 Hz and start with a cool, charged device (engine docs `guides/phones`).
 
 ## 6. Memory
 
 | Item | Rough cost | How to reduce |
 | --- | --- | --- |
-| 2048 x 2048 RGBA8 texture with mipmaps | about 22 MB on the GPU | KTX2 compression (later in 0.1), 4 to 8 times smaller |
-| Same texture as ASTC or ETC2 | about 4 to 6 MB | `bunx @null3d/cli assets optimize` (0.2) |
+| 2048 x 2048 RGBA8 texture with mipmaps | about 22 MB on the GPU | A KTX2 file, 4 to 8 times smaller on the GPU |
+| Same texture as ASTC, BC7 or ETC2 | about 3 to 6 MB | Encode with `basisu -mipmap`, or `bunx @null3d/cli assets optimize` (0.2) |
 | One static object | a few hundred bytes of engine data | Instances for many copies |
 | One instance row | About 210 bytes of engine memory, 260 with per-row colors, plus your own arrays | Only the columns you need; colors only where the batch needs them |
 | A new mesh, instance batch, or mesh drawn with a new material, during play | A one-time growth of engine memory in the next frame | Create them during setup; size a batch for its most rows and show fewer with `setActiveCount` |

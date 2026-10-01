@@ -273,7 +273,12 @@ pub mod texture_usage {
 
 /// Texture formats, by engine code. The replay loop maps each code to the browser's format name;
 /// `CANVAS` means the canvas's preferred format. A change that adds a format takes the next code.
+///
+/// Compressed formats store blocks of 4 x 4 texels. Each needs its family's capability flag, and
+/// neither draws nor copies, so a texture of one gets all its texels and mip levels from writes.
 pub mod format {
+    use crate::caps::Capabilities;
+
     pub const NONE: u32 = 0;
     pub const CANVAS: u32 = 1;
     pub const RGBA8_UNORM: u32 = 2;
@@ -291,9 +296,21 @@ pub mod format {
     /// Three small unsigned floats in 32 bits, with no alpha: high dynamic range color in half the
     /// bytes of `RGBA16_FLOAT`. WebGPU draws into it only with `Capabilities::RG11B10_RENDERABLE`.
     pub const RG11B10_UFLOAT: u32 = 10;
+    /// ASTC in blocks of 4 x 4 texels, 16 bytes each (`Capabilities::TEXTURE_ASTC`).
+    pub const ASTC_4X4_UNORM: u32 = 11;
+    pub const ASTC_4X4_UNORM_SRGB: u32 = 12;
+    /// BC7 in blocks of 4 x 4 texels, 16 bytes each (`Capabilities::TEXTURE_BC`).
+    pub const BC7_RGBA_UNORM: u32 = 13;
+    pub const BC7_RGBA_UNORM_SRGB: u32 = 14;
+    /// ETC2 without alpha, in blocks of 4 x 4 texels, 8 bytes each (`Capabilities::TEXTURE_ETC2`).
+    pub const ETC2_RGB8_UNORM: u32 = 15;
+    pub const ETC2_RGB8_UNORM_SRGB: u32 = 16;
+    /// ETC2 with alpha, in blocks of 4 x 4 texels, 16 bytes each (`Capabilities::TEXTURE_ETC2`).
+    pub const ETC2_RGBA8_UNORM: u32 = 17;
+    pub const ETC2_RGBA8_UNORM_SRGB: u32 = 18;
 
-    /// Every format, by code.
-    pub const ALL: [u32; 11] = [
+    /// Every format.
+    pub const ALL: [u32; 19] = [
         NONE,
         CANVAS,
         RGBA8_UNORM,
@@ -305,24 +322,107 @@ pub mod format {
         R32_UINT,
         RGBA8_UNORM_SRGB,
         RG11B10_UFLOAT,
+        ASTC_4X4_UNORM,
+        ASTC_4X4_UNORM_SRGB,
+        BC7_RGBA_UNORM,
+        BC7_RGBA_UNORM_SRGB,
+        ETC2_RGB8_UNORM,
+        ETC2_RGB8_UNORM_SRGB,
+        ETC2_RGBA8_UNORM,
+        ETC2_RGBA8_UNORM_SRGB,
     ];
 
-    /// Bytes per texel of each format, by code: 0 for `NONE`, and for `DEPTH24_PLUS`, whose
-    /// texels have no layout that writes and copies can use.
-    pub const TEXEL_BYTES: [u32; ALL.len()] = [0, 4, 4, 4, 8, 0, 4, 16, 4, 4, 4];
+    /// One past the highest format code, the length of the tables that the replay loop indexes by
+    /// code.
+    pub const CODES: u32 = {
+        let mut highest = 0;
+        let mut k = 0;
+        while k < ALL.len() {
+            if ALL[k] > highest {
+                highest = ALL[k];
+            }
+            k += 1;
+        }
+        highest + 1
+    };
+
+    /// True for a code that names a format.
+    pub const fn is_known(format: u32) -> bool {
+        let mut k = 0;
+        while k < ALL.len() {
+            if ALL[k] == format {
+                return true;
+            }
+            k += 1;
+        }
+        false
+    }
 
     /// True for the depth formats.
     pub const fn is_depth(format: u32) -> bool {
         matches!(format, DEPTH24_PLUS | DEPTH32_FLOAT)
     }
 
-    /// Bytes per texel, or 0 for an unknown code.
-    pub const fn texel_bytes(format: u32) -> u32 {
-        if (format as usize) < TEXEL_BYTES.len() {
-            TEXEL_BYTES[format as usize]
-        } else {
-            0
+    /// True for the formats stored in compressed blocks of texels.
+    pub const fn is_compressed(format: u32) -> bool {
+        block_size(format) > 1
+    }
+
+    /// The capability flag that a device needs for a format: none for uncompressed formats.
+    pub const fn capability(format: u32) -> Capabilities {
+        match format {
+            ASTC_4X4_UNORM | ASTC_4X4_UNORM_SRGB => Capabilities::TEXTURE_ASTC,
+            BC7_RGBA_UNORM | BC7_RGBA_UNORM_SRGB => Capabilities::TEXTURE_BC,
+            ETC2_RGB8_UNORM | ETC2_RGB8_UNORM_SRGB | ETC2_RGBA8_UNORM | ETC2_RGBA8_UNORM_SRGB => {
+                Capabilities::TEXTURE_ETC2
+            }
+            _ => Capabilities::empty(),
         }
+    }
+
+    /// Texels on each side of a block: 4 for the compressed formats, and 1 for the rest.
+    pub const fn block_size(format: u32) -> u32 {
+        match format {
+            ASTC_4X4_UNORM..=ETC2_RGBA8_UNORM_SRGB => 4,
+            _ => 1,
+        }
+    }
+
+    /// Bytes of one block: one texel of an uncompressed format. 0 for `NONE`, for unknown codes,
+    /// and for `DEPTH24_PLUS`, whose texels have no layout that writes and copies can use.
+    pub const fn block_bytes(format: u32) -> u32 {
+        match format {
+            CANVAS | RGBA8_UNORM | BGRA8_UNORM | DEPTH32_FLOAT | R32_UINT | RGBA8_UNORM_SRGB
+            | RG11B10_UFLOAT => 4,
+            RGBA16_FLOAT | ETC2_RGB8_UNORM | ETC2_RGB8_UNORM_SRGB => 8,
+            RGBA32_FLOAT
+            | ASTC_4X4_UNORM
+            | ASTC_4X4_UNORM_SRGB
+            | BC7_RGBA_UNORM
+            | BC7_RGBA_UNORM_SRGB
+            | ETC2_RGBA8_UNORM
+            | ETC2_RGBA8_UNORM_SRGB => 16,
+            _ => 0,
+        }
+    }
+
+    /// Bytes per texel of an uncompressed format, or 0 for a compressed or unknown one.
+    pub const fn texel_bytes(format: u32) -> u32 {
+        if is_compressed(format) {
+            0
+        } else {
+            block_bytes(format)
+        }
+    }
+
+    /// Blocks along one side of a mip level.
+    pub const fn blocks(format: u32, size: u32, level: u32) -> u32 {
+        level_size(size, level).div_ceil(block_size(format))
+    }
+
+    /// Bytes of one row of blocks of a mip level: a row of texels for an uncompressed format.
+    pub const fn row_bytes(format: u32, width: u32, level: u32) -> u64 {
+        blocks(format, width, level) as u64 * block_bytes(format) as u64
     }
 
     /// True for the formats whose mip levels `GenerateMipmaps` makes: 8-bit color, which every
@@ -344,11 +444,9 @@ pub mod format {
     }
 
     /// Bytes of one layer of one mip level, which every upload, budget and memory count of
-    /// textures reads, so a format stored in blocks of texels changes this one place.
+    /// textures reads. A compressed level holds whole blocks, so it rounds up to them.
     pub const fn level_bytes(format: u32, width: u32, height: u32, level: u32) -> u64 {
-        texel_bytes(format) as u64
-            * level_size(width, level) as u64
-            * level_size(height, level) as u64
+        row_bytes(format, width, level) * blocks(format, height, level) as u64
     }
 
     /// Bytes of one layer with its first `mips` mip levels.
@@ -539,8 +637,19 @@ pub mod state_flags {
     pub const NO_DEPTH_WRITE: u32 = 8;
     /// Draws every fragment whatever the depth target holds, and writes no depth.
     pub const NO_DEPTH_TEST: u32 = 16;
+    /// The blend field: how the fragment's color, premultiplied by its alpha, meets the target's.
+    /// Without it the fragment replaces the target's color.
+    pub const BLEND: u32 = 96;
+    /// Blending over the target: `src + dst * (1 - src alpha)`, for color and alpha.
+    pub const BLEND_NORMAL: u32 = 32;
+    /// Light added to the target: `src + dst`, for color and alpha.
+    pub const BLEND_ADDITIVE: u32 = 64;
+    /// The target tinted by the fragment: `src * dst + dst * (1 - src alpha)`, as three.js's
+    /// premultiplied multiply blending; the target's alpha stays.
+    pub const BLEND_MULTIPLY: u32 = 96;
     /// Every flag.
-    pub const ALL: u32 = CULL_NONE | LINE_LIST | CULL_FRONT | NO_DEPTH_WRITE | NO_DEPTH_TEST;
+    pub const ALL: u32 =
+        CULL_NONE | LINE_LIST | CULL_FRONT | NO_DEPTH_WRITE | NO_DEPTH_TEST | BLEND;
 }
 
 /// Vertex formats. Every vertex has a position and a normal, three floats each. A format adds
@@ -757,6 +866,14 @@ impl DrawList {
         }
     }
 
+    /// Grows the list so it holds at least `words` words, keeping what it holds. Growing moves the
+    /// words, so the thread that replays the list must read its address again.
+    pub fn reserve_words(&mut self, words: usize) {
+        if self.words.len() < words {
+            self.words.resize(words, 0);
+        }
+    }
+
     /// Forgets every recorded command, keeping the buffer.
     pub fn clear(&mut self) {
         self.len = 0;
@@ -877,6 +994,14 @@ pub fn typescript_constants() -> String {
                 ("R32_UINT", format::R32_UINT),
                 ("RGBA8_UNORM_SRGB", format::RGBA8_UNORM_SRGB),
                 ("RG11B10_UFLOAT", format::RG11B10_UFLOAT),
+                ("ASTC_4X4_UNORM", format::ASTC_4X4_UNORM),
+                ("ASTC_4X4_UNORM_SRGB", format::ASTC_4X4_UNORM_SRGB),
+                ("BC7_RGBA_UNORM", format::BC7_RGBA_UNORM),
+                ("BC7_RGBA_UNORM_SRGB", format::BC7_RGBA_UNORM_SRGB),
+                ("ETC2_RGB8_UNORM", format::ETC2_RGB8_UNORM),
+                ("ETC2_RGB8_UNORM_SRGB", format::ETC2_RGB8_UNORM_SRGB),
+                ("ETC2_RGBA8_UNORM", format::ETC2_RGBA8_UNORM),
+                ("ETC2_RGBA8_UNORM_SRGB", format::ETC2_RGBA8_UNORM_SRGB),
             ],
         ),
         ("VIEW", &[("2D", view::D2), ("2D_ARRAY", view::D2_ARRAY)]),
@@ -970,6 +1095,10 @@ pub fn typescript_constants() -> String {
                 ("CULL_FRONT", state_flags::CULL_FRONT),
                 ("NO_DEPTH_WRITE", state_flags::NO_DEPTH_WRITE),
                 ("NO_DEPTH_TEST", state_flags::NO_DEPTH_TEST),
+                ("BLEND", state_flags::BLEND),
+                ("BLEND_NORMAL", state_flags::BLEND_NORMAL),
+                ("BLEND_ADDITIVE", state_flags::BLEND_ADDITIVE),
+                ("BLEND_MULTIPLY", state_flags::BLEND_MULTIPLY),
             ],
         ),
         (
@@ -1040,10 +1169,19 @@ pub fn typescript_constants() -> String {
         }
         out.push('\n');
     }
-    let texel_bytes: Vec<String> = format::TEXEL_BYTES.iter().map(u32::to_string).collect();
+    let by_code = |value: fn(u32) -> u32| -> String {
+        (0..format::CODES)
+            .map(|code| value(code).to_string())
+            .collect::<Vec<_>>()
+            .join(", ")
+    };
     out.push_str(&format!(
-        "/** Bytes per texel of each format, by format code. */\nexport const FORMAT_TEXEL_BYTES: readonly number[] = [{}];\n",
-        texel_bytes.join(", ")
+        "/** Bytes of one block of texels of each format, by format code: one texel unless compressed. */\nexport const FORMAT_BLOCK_BYTES: readonly number[] = [{}];\n",
+        by_code(format::block_bytes)
+    ));
+    out.push_str(&format!(
+        "/** Texels on each side of a block of each format, by format code. */\nexport const FORMAT_BLOCK_SIZE: readonly number[] = [{}];\n",
+        by_code(format::block_size)
     ));
     let attributes: Vec<String> = vertex::ATTRIBUTES
         .iter()
@@ -1059,6 +1197,7 @@ pub fn typescript_constants() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::caps::Capabilities;
 
     #[test]
     fn the_culling_shader_declares_the_same_sizes() {
@@ -1290,10 +1429,17 @@ mod tests {
     }
 
     #[test]
-    fn every_format_code_is_its_place_and_has_a_texel_size() {
-        for (code, &value) in format::ALL.iter().enumerate() {
-            assert_eq!(value as usize, code, "format codes run from 0 without gaps");
+    fn every_format_code_is_unique_and_has_a_block_size() {
+        for (k, &code) in format::ALL.iter().enumerate() {
+            assert!(
+                !format::ALL[k + 1..].contains(&code),
+                "format {code} is listed twice"
+            );
+            assert!(code < format::CODES);
+            assert!(format::is_known(code));
+            assert!(matches!(format::block_size(code), 1 | 4));
         }
+        assert!(!format::is_known(format::CODES));
         assert_eq!(format::texel_bytes(format::RGBA8_UNORM_SRGB), 4);
         assert_eq!(format::texel_bytes(format::RG11B10_UFLOAT), 4);
         assert_eq!(format::texel_bytes(format::RGBA32_FLOAT), 16);
@@ -1323,6 +1469,35 @@ mod tests {
         );
         assert!(format::makes_mipmaps(format::RGBA8_UNORM));
         assert!(!format::makes_mipmaps(format::RGBA16_FLOAT));
+    }
+
+    #[test]
+    fn compressed_levels_hold_whole_blocks() {
+        let astc = format::ASTC_4X4_UNORM_SRGB;
+        let etc2 = format::ETC2_RGB8_UNORM;
+        assert!(format::is_compressed(astc));
+        assert!(!format::is_compressed(format::RGBA8_UNORM));
+        assert_eq!(
+            format::texel_bytes(astc),
+            0,
+            "a compressed texel has no bytes of its own"
+        );
+        // 64 x 32 texels are 16 x 8 blocks, and a level of 2 x 1 texels takes a whole block.
+        assert_eq!(format::level_bytes(astc, 64, 32, 0), 16 * 8 * 16);
+        assert_eq!(format::level_bytes(astc, 64, 32, 5), 16);
+        assert_eq!(format::level_bytes(etc2, 64, 32, 0), 16 * 8 * 8);
+        // Levels of 20 x 12, 10 x 6 and 5 x 3 texels: 5 x 3, 3 x 2 and 2 x 1 blocks.
+        assert_eq!(format::layer_bytes(etc2, 20, 12, 3), (15 + 6 + 2) * 8);
+        assert_eq!(format::row_bytes(etc2, 20, 1), 3 * 8);
+        assert_eq!(format::blocks(etc2, 12, 2), 1);
+        assert_eq!(
+            format::capability(format::BC7_RGBA_UNORM_SRGB),
+            Capabilities::TEXTURE_BC
+        );
+        assert_eq!(
+            format::capability(format::RGBA8_UNORM),
+            Capabilities::empty()
+        );
     }
 
     #[test]

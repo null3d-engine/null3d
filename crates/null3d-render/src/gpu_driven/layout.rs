@@ -440,6 +440,10 @@ impl Layout {
                 let caster = settings.caster_of(pipeline);
                 return Some((caster, 0, page, mesh, CASTER_MATERIAL, bounds));
             }
+            // Blended pairs draw in the transparent pass, which sorts them on the job workers.
+            if pipeline.blends() {
+                return None;
+            }
             let pipeline = if shadows && object & flags::RECEIVE_SHADOWS != 0 {
                 settings.receiving(pipeline)
             } else {
