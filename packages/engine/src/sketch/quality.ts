@@ -5,6 +5,7 @@
 
 import {
 	checkSettings,
+	LIVE_SETTINGS,
 	type QualityPreset,
 	type QualitySettingName,
 	type QualitySettings,
@@ -64,7 +65,7 @@ export class SketchQuality implements Quality {
 	}
 
 	set(settings: Partial<QualitySettings>): void {
-		checkSettings('quality.set()', settings);
+		checkSettings('quality.set()', settings, LIVE_SETTINGS);
 		const current = this.settings as unknown as Record<string, unknown>;
 		const changed: QualitySettingName[] = [];
 		for (const [name, value] of Object.entries(settings)) {

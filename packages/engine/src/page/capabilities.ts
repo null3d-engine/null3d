@@ -3,6 +3,7 @@
 // runners can store it and compare it across devices.
 
 import { messageOf } from '../errors/message';
+import { TEXTURE_USAGE_TRANSIENT_ATTACHMENT } from '../generated/gpu';
 import type { DeviceHints } from '../quality/chooser';
 import type { WorkerProbe } from '../workers/probe-worker';
 
@@ -94,6 +95,12 @@ export interface WebGPUReport {
 	wgslLanguageFeatures: string[];
 	/** The canvas texture format the browser prefers, or null without WebGPU. */
 	preferredCanvasFormat: string | null;
+	/**
+	 * True when the browser's WebGPU has the transient attachment texture usage (Chrome 146 and
+	 * later). A render target with it can stay in a tile-based GPU's own memory. The engine gives
+	 * it to the targets that live within one render pass, such as the multisampled color and depth.
+	 */
+	transientAttachments: boolean;
 	/** Reported for the record only; the engine never branches on it. */
 	adapterInfo: { vendor: string; architecture: string; device: string; description: string } | null;
 	/** Why the probe failed, when it did. */
@@ -131,7 +138,7 @@ export interface WebGL2Report {
 	 * the format takes, or 0 where the device does not render into it. WebGL2 renders into both
 	 * formats with `EXT_color_buffer_float`, and into the 16-bit one with
 	 * `EXT_color_buffer_half_float`. The engine draws high dynamic range color where the 16-bit
-	 * format passes both tests and takes 4 samples. Null without WebGL2.
+	 * format passes both tests, and with MSAA takes 4 samples. Null without WebGL2.
 	 */
 	floatRenderTargets: {
 		rgba16f: { complete: boolean; readsBack: boolean; samples: number };
@@ -182,6 +189,7 @@ async function probeWebGPU(powerPreference?: PowerPreference): Promise<WebGPURep
 		limits: {},
 		wgslLanguageFeatures: [],
 		preferredCanvasFormat: null,
+		transientAttachments: false,
 		adapterInfo: null,
 	};
 	const gpu = globalThis.navigator?.gpu;
@@ -204,6 +212,10 @@ async function probeWebGPU(powerPreference?: PowerPreference): Promise<WebGPURep
 			limits,
 			wgslLanguageFeatures: [...(gpu.wgslLanguageFeatures ?? [])].sort(),
 			preferredCanvasFormat: gpu.getPreferredCanvasFormat(),
+			// The engine passes its own usage bits to WebGPU, so the browser's must match them.
+			transientAttachments:
+				(globalThis.GPUTextureUsage as unknown as Record<string, number> | undefined)
+					?.TRANSIENT_ATTACHMENT === TEXTURE_USAGE_TRANSIENT_ATTACHMENT,
 			adapterInfo: info
 				? {
 						vendor: info.vendor,

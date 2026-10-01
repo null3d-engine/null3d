@@ -35,6 +35,7 @@ const engine = await createEngine({
   sketch: new URL('./sketch.ts', import.meta.url),   // the sketch module
   preset: 'auto',        // 'auto' | 'low' | 'medium' | 'high' | 'ultra'; WebGL2 runs at most 'medium'
   maxPixelRatio: 2,      // cap for devicePixelRatio in place of the preset's cap
+  antialias: 'msaa',     // 'msaa' | 'fxaa' | 'none' in place of the preset's mode (FXAA on Low, MSAA above)
   gpu: 'auto',           // 'auto' | 'webgpu' | 'webgl2' (testing only)
   powerPreference: 'high-performance',   // the default; 'low-power' saves battery on devices with two GPUs
   latency: 'pipelined',  // or 'low'; 'pipelined' is the default
@@ -411,7 +412,6 @@ post.set({
   exposure: 1,
   bloom: { strength: 0.8, radius: 0.4, threshold: 0.9 },
   ao: { radius: 0.5, intensity: 1 },     // High and Ultra presets only
-  fxaa: false,                           // forces FXAA; otherwise the preset decides
   lut, vignette: { amount: 0.3 },
   outline: { color: '#ffcc00', thickness: 2 },  // objects opt in with setOutlined(true)
 });
@@ -445,7 +445,8 @@ quality.preset;                         // 'low' | 'medium' | 'high' | 'ultra': 
 quality.settings.maxPixelRatio;         // the settings in use
 quality.set({ maxPixelRatio: 1.5 });    // from the next frame; E1213 for another setting or value
 quality.set({ maxAnisotropy: 4, uploadBytesPerFrame: 2 * 1024 * 1024 });  // texture sampling cap, upload bytes per frame
-quality.set({ antialias: 'fxaa', shadowCascades: 2 });  // planned: the preset table gives each setting's status
+quality.settings.antialias;             // 'msaa' | 'fxaa' | 'none', fixed at the start; set it with createEngine's option
+quality.set({ shadowCascades: 2 });     // planned: the preset table gives each setting's status
 const PARTICLES = { low: 500, medium: 2000, high: 5000, ultra: 10000 };  // your values per preset, in one table
 quality.onChange(() => { particles.setActiveCount(PARTICLES[quality.preset]); });
 quality.setBudget({ name: 'ai', ms: 2, onScale: (scale) => { aiRate = scale; } });  // (0.2)

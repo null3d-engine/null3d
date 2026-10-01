@@ -80,6 +80,11 @@ export const CAPABILITY_MULTI_DRAW = 8;
 export const CAPABILITY_TEXTURE_BC = 16;
 export const CAPABILITY_TEXTURE_ETC2 = 32;
 export const CAPABILITY_TEXTURE_ASTC = 64;
+export const CAPABILITY_TRANSIENT_ATTACHMENTS = 1024;
+
+export const ANTIALIAS_NONE = 0;
+export const ANTIALIAS_FXAA = 1;
+export const ANTIALIAS_MSAA = 2;
 
 export const TONE_MAPPING_ACES = 0;
 export const TONE_MAPPING_AGX = 1;

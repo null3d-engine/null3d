@@ -15,7 +15,7 @@ use null3d_render::frame::{NO_MATERIAL, NO_MESH};
 use null3d_render::geometry::Shape;
 use null3d_render::gpu_driven::{MAX_USEFUL_BINDING_BYTES, PORTABLE_MAX_SOURCES};
 use null3d_render::materials::{feature, param};
-use null3d_render::output::ToneMapping;
+use null3d_render::output::{Antialias, ToneMapping};
 use null3d_render::textures::{DEFAULT_MAX_ANISOTROPY, DEFAULT_UPLOAD_BUDGET, MAX_LAYERS};
 
 /// Fields of `sceneArrays`.
@@ -274,7 +274,7 @@ pub fn typescript() -> String {
                     CpuCulledConfig::default().max_texture_size,
                 ),
                 ("WEBGL2_MAX_SOURCES", 1 << MAX_SOURCE_BITS),
-                ("MSAA_SAMPLES", CpuCulledConfig::default().samples),
+                ("MSAA_SAMPLES", Antialias::Msaa.samples()),
             ],
         ),
         (
@@ -284,6 +284,18 @@ pub fn typescript() -> String {
                 ("TEXTURE_BC", Capabilities::TEXTURE_BC.0 as u32),
                 ("TEXTURE_ETC2", Capabilities::TEXTURE_ETC2.0 as u32),
                 ("TEXTURE_ASTC", Capabilities::TEXTURE_ASTC.0 as u32),
+                (
+                    "TRANSIENT_ATTACHMENTS",
+                    Capabilities::TRANSIENT_ATTACHMENTS.0 as u32,
+                ),
+            ],
+        ),
+        (
+            "ANTIALIAS",
+            &[
+                ("NONE", Antialias::None.code()),
+                ("FXAA", Antialias::Fxaa.code()),
+                ("MSAA", Antialias::Msaa.code()),
             ],
         ),
         (
