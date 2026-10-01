@@ -7,7 +7,7 @@ function fakeBackend() {
 	return {
 		building: false,
 		replayed: 0,
-		counts: { uploadBytes: 0, drawCalls: 0, pipelines: 0, skippedDraws: 0 },
+		counts: { uploadBytes: 0, drawCalls: 0, pipelines: 0, skippedDraws: 0, objects: 0 },
 		prepare: (_words: Uint32Array, start: number) => start,
 		replay() {
 			this.replayed++;

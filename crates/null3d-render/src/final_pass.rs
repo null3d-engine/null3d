@@ -1,8 +1,9 @@
 //! The final pass: one triangle over the canvas, which reads the scene color and writes the canvas
 //! (see [`crate::output`]). On the HDR path it applies the exposure and the tone mapping, encodes
 //! sRGB and dithers. In the FXAA mode it smooths edges first. On the 8-bit path the scene shaders
-//! did the output transform, and the pass runs only when the scene has one sample per pixel: it
-//! copies the scene color, or runs FXAA on it. Each frame builder owns one, with GPU object ids
+//! did the output transform, and the pass runs when the scene has one sample per pixel or the
+//! render scale can drop: it copies the scene color, or runs FXAA on it. Below the whole canvas's
+//! render scale, it scales the scene's corner of the scene color up to the canvas instead. Each frame builder owns one, with GPU object ids
 //! from its own ranges, and its pipeline comes from the builder's pipeline cache like every other.
 
 use null3d_gpu::drawlist::{
@@ -86,8 +87,8 @@ impl FinalPass {
         }
     }
 
-    /// Makes the settings buffer when the GPU lacks it, uploads the settings for `output` when
-    /// they changed, and binds the scene color texture `scene_color` when it is new. The frame's
+    /// Makes the settings buffer when the GPU lacks it, uploads the settings for `output` and the
+    /// scene's size in pixels, `render_size`, when they changed, and binds the scene color texture `scene_color` when it is new. The frame's
     /// list made the plan's textures again when `textures_made`, which leaves an older bind group
     /// reading a texture that is gone.
     pub(crate) fn prepare(
@@ -95,6 +96,7 @@ impl FinalPass {
         list: &mut DrawList,
         arena: &mut UploadArena,
         output: Output,
+        render_size: (u32, u32),
         scene_color: u32,
         textures_made: bool,
     ) -> Result<(), RecordError> {
@@ -110,10 +112,11 @@ impl FinalPass {
             )?;
             self.created = true;
         }
-        let settings = OutputUniform {
+        let mut settings = OutputUniform {
             flags: self.flags,
             ..output.uniform()
         };
+        settings.set_render_size(render_size);
         if self.uploaded != Some(settings) {
             let (at, bytes) = arena.push(settings.as_bytes())?;
             list.push(Op::WriteBuffer, &[ids.settings, 0, at, bytes])?;
@@ -181,7 +184,7 @@ mod tests {
         arena.reset(FinalPass::UPLOAD_BYTES);
         let mut pipelines = PipelineCache::default();
         pass.request_pipeline(&mut pipelines);
-        pass.prepare(&mut list, &mut arena, Output::default(), 4, true)
+        pass.prepare(&mut list, &mut arena, Output::default(), (64, 64), 4, true)
             .unwrap();
         (pipelines.keys()[0], pass.uploaded.unwrap())
     }

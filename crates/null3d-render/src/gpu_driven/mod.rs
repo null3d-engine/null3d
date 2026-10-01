@@ -490,7 +490,8 @@ impl GpuDrivenRenderer {
         self.graph.sync_views(self.settings.views());
         self.graph.set_debug_lines(!input.lines.is_empty());
         self.graph.set_transparent(!self.sorted.is_empty());
-        self.graph.prepare(list, input.canvas)?;
+        self.graph.set_scaling(self.settings.render_scaling());
+        self.graph.prepare(list, input.canvas, input.render_scale)?;
         let shadow_map = self
             .graph
             .shadow_map()

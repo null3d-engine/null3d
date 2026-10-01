@@ -74,7 +74,7 @@ For example, the resolve pass reads the scene color, so it runs after the opaque
 
 ## Targets and memory
 
-A target is a texture that passes draw into. A temporary target lives for one frame, and the pass that creates it sets its size. That size is the render size, half or a quarter of it, the canvas size, or a fixed size in pixels. The render size equals the canvas size. A kept target holds its contents from one frame to the next, in a texture of its own. The engine's scene color and depth are temporary targets.
+A target is a texture that passes draw into. A temporary target lives for one frame, and the pass that creates it sets its size. That size is the render size, half or a quarter of it, the canvas size, or a fixed size in pixels. The render size is the canvas size at the render scale, which [dynamic resolution](quality-presets.md#dynamic-resolution) moves. The engine makes each target of a relative size at the canvas's size, and passes draw into its top-left corner at a lower scale. So a new scale needs no new texture. A kept target holds its contents from one frame to the next, in a texture of its own. The engine's scene color and depth are temporary targets.
 
 Temporary targets share memory when their lifetimes do not overlap. Such targets must also need the same format, size, sample count and usage. For example, a blur can pass an image through three half-size targets in a row. The first one is done before the third one starts, so the two share one texture. The blur then needs two half-size textures instead of three.
 
