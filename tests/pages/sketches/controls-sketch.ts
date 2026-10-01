@@ -2,7 +2,9 @@
 // draws a different image. ?map uses map controls in place of orbit controls. ?moved makes the
 // controls test's drags through the controls' own calls, so the held frame shows the pose that
 // the live test reaches with Playwright. The sketch answers the page's 'pose' message with the
-// camera's position, the controls' target, the count of fingers it read last, and its frame.
+// camera's position, the controls' target, the count of fingers it read last, and its frame. The
+// scene keeps the whole canvas, so a slow GPU's frames during play do not lower the render scale of
+// the image that the live test compares.
 import { createMapControls, createOrbitControls } from '@null3d/controls';
 import { defineSketch } from '@null3d/engine';
 import { CONTROLS_MOVES, CONTROLS_VIEW } from '../lib/controls-view';
@@ -10,7 +12,8 @@ import { CONTROLS_MOVES, CONTROLS_VIEW } from '../lib/controls-view';
 const params = new URL(import.meta.url).searchParams;
 
 export default defineSketch((ctx) => {
-	const { scene, geometry, materials, page, engine, input, time } = ctx;
+	const { scene, geometry, materials, page, engine, input, time, quality } = ctx;
+	quality.set({ minRenderScale: 1 });
 	scene.setBackground('#101418');
 	const camera = scene.createPerspectiveCamera({
 		fov: CONTROLS_VIEW.fov,
