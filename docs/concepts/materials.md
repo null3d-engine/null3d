@@ -8,7 +8,7 @@ summary: "Built-in materials; permutations; pipeline warm-up; why changing shade
 
 # Materials and pipelines
 
-> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Custom materials take only a surface function, without texture maps. Coding agents must not use the parts that are not built.
+> Ships in null3D 0.1. The API is experimental, so it can still change between versions. Custom materials take only a surface function and its uniforms, without texture maps. Coding agents must not use the parts that are not built.
 
 ```mermaid
 flowchart LR
