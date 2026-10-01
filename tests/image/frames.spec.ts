@@ -57,18 +57,14 @@ for (const mode of ENGINE_MODES) {
 const MOST_FRAMES_IN_FLIGHT = 2.5;
 
 /**
- * The time without a completion after which the engine's completion tracker stops counting a frame
- * as in flight, so that a completion the browser never reports cannot stop the drawing. Frames that
- * each take longer on the GPU leave nothing in flight to hold back, so they cannot show the limit.
- * Frames that wait longer behind others still count. CI's software GPU can draw WebGL2's HDR frames
- * that slowly.
+ * The page measures the overloaded step for a few seconds. Below this completed rate, that holds
+ * too few frames to compare the two rates. CI's software GPU draws WebGL2's HDR frames at one to
+ * three frames per second.
  */
-const STALL_MS = 1000;
+const MIN_COMPLETED_FPS = 1;
 
-for (const [round, tier] of (
-	['webgpu', ...Array(8).fill('webgl2')] as ('webgpu' | 'webgl2')[]
-).entries()) {
-	test(`a GPU that falls behind has at most two frames waiting on it, ${tier} ${round}`, async ({
+for (const tier of ['webgpu', 'webgl2'] as const) {
+	test(`a GPU that falls behind has at most two frames waiting on it, ${tier}`, async ({
 		page,
 	}) => {
 		test.setTimeout(120_000);
@@ -79,10 +75,9 @@ for (const [round, tier] of (
 		test.skip(!step, 'no step of the page overloaded this GPU');
 		if (!step) return;
 		const figures = JSON.stringify(step);
-		console.log('OVERLOAD-DEBUG', JSON.stringify(result));
 		test.skip(
-			(step.completedFps ?? Number.POSITIVE_INFINITY) * STALL_MS <= 1000,
-			`each frame took longer on this GPU than the engine counts a frame in flight: ${figures}`,
+			(step.completedFps ?? Number.POSITIVE_INFINITY) <= MIN_COMPLETED_FPS,
+			`the GPU finished too few frames to compare the rates: ${figures}`,
 		);
 		expect(
 			ratesParted(step),

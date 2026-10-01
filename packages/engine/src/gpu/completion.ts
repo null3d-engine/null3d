@@ -13,11 +13,22 @@ import { FrameRecorder, Role } from '../shared/metrics';
 const SLOTS = 8;
 /**
  * How long a frame may stay unfinished and still count as in flight, in ms, from its submit or from
- * the latest completion, whichever came later. A frame that waits behind others on a slow GPU so
- * keeps counting while the GPU finishes frames, and a completion that the browser never reports
- * slows the drawing without stopping it.
+ * the latest completion, whichever came later. A completion that the browser never reports then
+ * slows the drawing without stopping it, and a frame that waits behind others keeps counting while
+ * the GPU finishes frames.
  */
 const STALLED_MS = 1000;
+/**
+ * On a GPU that needs longer than that for each frame, a frame counts as in flight for this many of
+ * the intervals between the latest two completions instead, so the limit holds however slow the GPU.
+ */
+const STALLED_INTERVALS = 2;
+
+// The completion times that `InFlight` keeps, by index, in ms.
+/** The latest completion, or -1 before the first. */
+const LAST_DONE = 0;
+/** The time between the latest two completions, or 0 before the second. */
+const DONE_INTERVAL = 1;
 
 /** Submit times and frame numbers of the tracked frames in flight, in submit order, and their records. */
 class InFlight {
@@ -25,9 +36,10 @@ class InFlight {
 	private readonly frames = new Uint32Array(SLOTS);
 	/** For each tracked frame, the count of frames submitted up to it. */
 	private readonly submits = new Float64Array(SLOTS);
+	/** Completion times, in a typed array, as a fraction in a property would allocate. */
+	private readonly times = new Float64Array([-1, 0]);
 	private head = 0;
 	private tail = 0;
-	private lastDone = -1;
 	private lastSubmits = 0;
 	private submitCount = 0;
 
@@ -48,8 +60,10 @@ class InFlight {
 	/** Tracked frames that the GPU has not finished, apart from any stalled for too long. */
 	unfinished(): number {
 		if (this.head === this.tail) return 0;
-		const stalledBefore = performance.now() - STALLED_MS;
-		if (this.lastDone >= stalledBefore) return this.head - this.tail;
+		const { times } = this;
+		const slowest = STALLED_INTERVALS * (times[DONE_INTERVAL] as number);
+		const stalledBefore = performance.now() - (slowest > STALLED_MS ? slowest : STALLED_MS);
+		if ((times[LAST_DONE] as number) >= stalledBefore) return this.head - this.tail;
 		let oldest = this.tail;
 		while (oldest < this.head && (this.submitted[oldest % SLOTS] as number) < stalledBefore)
 			oldest++;
@@ -66,9 +80,11 @@ class InFlight {
 		const done = Math.min(count, this.head - this.tail);
 		if (done === 0) return;
 		const now = performance.now();
+		const { times } = this;
+		const lastDone = times[LAST_DONE] as number;
 		const submits = this.submits[(this.tail + done - 1) % SLOTS] as number;
-		const interval = (now - this.lastDone) / (submits - this.lastSubmits);
-		const recorded = this.lastDone >= 0;
+		const interval = (now - lastDone) / (submits - this.lastSubmits);
+		const recorded = lastDone >= 0;
 		for (let k = 0; k < done; k++, this.tail++) {
 			if (!recorded) continue;
 			const slot = this.tail % SLOTS;
@@ -76,7 +92,8 @@ class InFlight {
 			this.recorder.interval(interval);
 			this.recorder.commit(now - (this.submitted[slot] as number));
 		}
-		this.lastDone = now;
+		if (recorded) times[DONE_INTERVAL] = now - lastDone;
+		times[LAST_DONE] = now;
 		this.lastSubmits = submits;
 	}
 }
