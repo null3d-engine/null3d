@@ -14,9 +14,11 @@ import {
 	type SummaryRow,
 	shareOfThree,
 	summarizeRuns,
+	summaryRow,
 	summaryTable,
 	sweepReport,
 	threadOwnWorkMs,
+	traceTable,
 	uploadPerVisibleEntry,
 } from './report';
 
@@ -342,5 +344,38 @@ describe('benchmark reports', () => {
 		]);
 		for (const label of ['>0<', '>1<', '>2<', '>3<', '>4<']) expect(svg).toContain(label);
 		expect(svg).not.toContain('>5<');
+	});
+});
+
+describe('traces', () => {
+	const second = (completedFps: number, renderScale = 1, steps = 0) => ({
+		presentedFps: 60,
+		completedFps,
+		renderScale,
+		steps,
+	});
+
+	test("sum up every run's seconds against the display's rate, and add a table to the report", () => {
+		const runs = [
+			{ ...result(2, true), trace: [second(60), second(50, 0.9, 1)] },
+			{ ...result(3, true), trace: [second(59, 0.95, 1), second(60)] },
+		];
+		const row = summaryRow({ scene: 's4', kind: 'null3d-webgpu' }, runs);
+		expect(row.summary).toEqual(summarizeRuns(runs));
+		expect(row.trace).toEqual({
+			seconds: 4,
+			targetFps: 60,
+			heldSeconds: 3,
+			lowestFps: 50,
+			lowestRenderScale: 0.9,
+			steps: 2,
+		});
+		expect(traceTable([row]).split('\n')[2]).toBe(
+			'| s4 | null3d-webgpu | 4 | 60 | 3 (75%) | 50 | 0.9 | 2 |',
+		);
+		expect(benchReport([row]).slice(-2)).toEqual(['', traceTable([row])]);
+		expect(
+			summaryRow({ scene: 's1', kind: 'null3d-webgpu' }, [result(2, true)]).trace,
+		).toBeUndefined();
 	});
 });

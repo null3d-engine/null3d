@@ -25,7 +25,11 @@
 			</li>
 			<li>
 				<code>?n=1000</code>: the instance count of S1, S1-static and S1-cells, or the box count of
-				S3, instead of the full count. S2 rounds it up to whole trees.
+				S3, instead of the full count. S2 rounds it up to whole trees, and S4 ignores it.
+			</li>
+			<li>
+				<code>?preset=low</code>: the quality preset of S4 and its twins, instead of the one that
+				null3D chooses for the device.
 			</li>
 			<li>
 				<code>?seconds=2</code>: warm up and measure for this many seconds each, for quick checks.
@@ -78,6 +82,16 @@
 				<a href="threejs/s3.html?renderer=webgpu&amp;hold">WebGPU</a>; quick run on
 				<a href="threejs/s3.html?renderer=webgl&amp;seconds=2&amp;n=1000">WebGL</a>,
 				<a href="threejs/s3.html?renderer=webgpu&amp;seconds=2&amp;n=1000">WebGPU</a>
+			</li>
+			<li>
+				S4, the phone scene (a town with vehicles, shadows, street lights and fog; circling
+				camera):
+				<a href="threejs/s4.html?renderer=webgl">WebGL</a>,
+				<a href="threejs/s4.html?renderer=webgpu">WebGPU</a>; hold frame on
+				<a href="threejs/s4.html?renderer=webgl&amp;hold">WebGL</a>,
+				<a href="threejs/s4.html?renderer=webgpu&amp;hold">WebGPU</a>; quick run on
+				<a href="threejs/s4.html?renderer=webgl&amp;seconds=2">WebGL</a>,
+				<a href="threejs/s4.html?renderer=webgpu&amp;seconds=2">WebGPU</a>
 			</li>
 		</ul>
 

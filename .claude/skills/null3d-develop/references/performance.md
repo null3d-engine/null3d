@@ -58,6 +58,7 @@ Read three frame rates together:
 | `refreshHz` | The display's refresh rate, as the engine measured it |
 | `presentedFps` | Frames the renderer presented. It can look healthy while the GPU falls behind |
 | `completedFps` | Frames the GPU finished. The engine tracks every frame |
+| `perSecond` | Both rates for each whole second, which show when a long run's rate fell |
 
 The lower of `presentedFps` and `completedFps` is the rate users see. The engine lets at most two frames wait on the GPU. When the GPU is the bottleneck, both rates fall below `refreshHz` together, and `gpuLatencyMs` stays near two frame intervals. When the sketch or the engine's CPU work is the bottleneck, the busiest thread's `cpuMs` is near the frame interval instead.
 
