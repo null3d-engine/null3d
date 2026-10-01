@@ -275,62 +275,47 @@ ivec2 corner_texel(vec2 place, vec2 size) {
 void main() {
     vec4 position = gl_FragCoord;
     vec4 color = vec4(0.0);
-    uint round_ = 0u;
     uint tap = 0u;
     vec2 size_1 = vec2(uvec2(textureSize(_group_0_binding_1_fs, 0).xy));
     uint packed_ = _group_0_binding_0_fs.render_size;
     vec2 render = vec2(float((packed_ & 65535u)), float((packed_ >> 16u)));
     bool whole = all(equal(render, size_1));
-    uint rounds = (whole ? 1u : 0u);
-    bool loop_init = true;
-    while(true) {
-        if (!loop_init) {
-            uint _e31 = round_;
-            round_ = (_e31 + 1u);
-        }
-        loop_init = false;
-        uint _e22 = round_;
-        if ((_e22 < rounds)) {
-        } else {
-            break;
-        }
-        {
-            vec4 _e26 = pixel_color(position.xy);
-            vec4 _e28 = display(_e26, position.xy);
-            color = _e28;
-        }
+    if (whole) {
+        vec4 _e20 = pixel_color(position.xy);
+        vec4 _e22 = display(_e20, position.xy);
+        color = _e22;
     }
     vec2 from_top = vec2(position.x, (size_1.y - position.y));
     vec2 place_1 = clamp((((from_top / size_1) * render) - vec2(0.5)), vec2(0.0), (render - vec2(1.0)));
     vec2 first = floor(place_1);
     vec2 share = (place_1 - first);
     uint taps = (whole ? 0u : 4u);
-    bool loop_init_1 = true;
+    bool loop_init = true;
     while(true) {
-        if (!loop_init_1) {
-            uint _e88 = tap;
-            tap = (_e88 + 1u);
+        if (!loop_init) {
+            uint _e79 = tap;
+            tap = (_e79 + 1u);
         }
-        loop_init_1 = false;
-        uint _e55 = tap;
-        if ((_e55 < taps)) {
+        loop_init = false;
+        uint _e46 = tap;
+        if ((_e46 < taps)) {
         } else {
             break;
         }
         {
-            uint _e57 = tap;
-            uint _e61 = tap;
-            vec2 corner = vec2(float((_e57 & 1u)), float((_e61 >> 1u)));
+            uint _e48 = tap;
+            uint _e52 = tap;
+            vec2 corner = vec2(float((_e48 & 1u)), float((_e52 >> 1u)));
             vec2 weights = mix((vec2(1.0) - share), share, corner);
-            ivec2 _e75 = corner_texel(min((first + corner), (render - vec2(1.0))), size_1);
-            vec4 _e76 = color;
-            vec4 _e82 = texelFetch(_group_0_binding_1_fs, _e75, 0);
-            vec4 _e84 = display(_e82, position.xy);
-            color = (_e76 + ((weights.x * weights.y) * _e84));
+            ivec2 _e66 = corner_texel(min((first + corner), (render - vec2(1.0))), size_1);
+            vec4 _e67 = color;
+            vec4 _e73 = texelFetch(_group_0_binding_1_fs, _e66, 0);
+            vec4 _e75 = display(_e73, position.xy);
+            color = (_e67 + ((weights.x * weights.y) * _e75));
         }
     }
-    vec4 _e90 = color;
-    _fs2p_location0 = _e90;
+    vec4 _e81 = color;
+    _fs2p_location0 = _e81;
     return;
 }
 `,
@@ -718,62 +703,47 @@ ivec2 corner_texel(vec2 place, vec2 size) {
 void main() {
     vec4 position = gl_FragCoord;
     vec4 color = vec4(0.0);
-    uint round_ = 0u;
     uint tap = 0u;
     vec2 size_1 = vec2(uvec2(textureSize(_group_0_binding_1_fs, 0).xy));
     uint packed_ = _group_0_binding_0_fs.render_size;
     vec2 render = vec2(float((packed_ & 65535u)), float((packed_ >> 16u)));
     bool whole = all(equal(render, size_1));
-    uint rounds = (whole ? 1u : 0u);
-    bool loop_init = true;
-    while(true) {
-        if (!loop_init) {
-            uint _e31 = round_;
-            round_ = (_e31 + 1u);
-        }
-        loop_init = false;
-        uint _e22 = round_;
-        if ((_e22 < rounds)) {
-        } else {
-            break;
-        }
-        {
-            vec4 _e26 = pixel_color(position.xy);
-            vec4 _e28 = display(_e26, position.xy);
-            color = _e28;
-        }
+    if (whole) {
+        vec4 _e20 = pixel_color(position.xy);
+        vec4 _e22 = display(_e20, position.xy);
+        color = _e22;
     }
     vec2 from_top = vec2(position.x, (size_1.y - position.y));
     vec2 place_1 = clamp((((from_top / size_1) * render) - vec2(0.5)), vec2(0.0), (render - vec2(1.0)));
     vec2 first = floor(place_1);
     vec2 share = (place_1 - first);
     uint taps = (whole ? 0u : 4u);
-    bool loop_init_1 = true;
+    bool loop_init = true;
     while(true) {
-        if (!loop_init_1) {
-            uint _e88 = tap;
-            tap = (_e88 + 1u);
+        if (!loop_init) {
+            uint _e79 = tap;
+            tap = (_e79 + 1u);
         }
-        loop_init_1 = false;
-        uint _e55 = tap;
-        if ((_e55 < taps)) {
+        loop_init = false;
+        uint _e46 = tap;
+        if ((_e46 < taps)) {
         } else {
             break;
         }
         {
-            uint _e57 = tap;
-            uint _e61 = tap;
-            vec2 corner_1 = vec2(float((_e57 & 1u)), float((_e61 >> 1u)));
+            uint _e48 = tap;
+            uint _e52 = tap;
+            vec2 corner_1 = vec2(float((_e48 & 1u)), float((_e52 >> 1u)));
             vec2 weights = mix((vec2(1.0) - share), share, corner_1);
-            ivec2 _e75 = corner_texel(min((first + corner_1), (render - vec2(1.0))), size_1);
-            vec4 _e76 = color;
-            vec4 _e82 = texelFetch(_group_0_binding_1_fs, _e75, 0);
-            vec4 _e84 = display(_e82, position.xy);
-            color = (_e76 + ((weights.x * weights.y) * _e84));
+            ivec2 _e66 = corner_texel(min((first + corner_1), (render - vec2(1.0))), size_1);
+            vec4 _e67 = color;
+            vec4 _e73 = texelFetch(_group_0_binding_1_fs, _e66, 0);
+            vec4 _e75 = display(_e73, position.xy);
+            color = (_e67 + ((weights.x * weights.y) * _e75));
         }
     }
-    vec4 _e90 = color;
-    _fs2p_location0 = _e90;
+    vec4 _e81 = color;
+    _fs2p_location0 = _e81;
     return;
 }
 `,

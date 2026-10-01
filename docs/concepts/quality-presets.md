@@ -146,7 +146,7 @@ The engine can draw the scene at a render scale below the canvas's size. Its fin
 During play, the engine moves the scale between the `minRenderScale` and `maxRenderScale` settings:
 
 - It watches how often frames reach the screen and how often the GPU finishes one. It also watches how long the GPU takes to finish each frame.
-- Frames are over budget when they come at least 10% slower than the target rate. They are also over budget when the GPU finishes each one two frames late or later. The target is the display's refresh rate, at most 60 frames per second.
+- Frames are over budget when they come at least 10% slower than the target rate. They are also over budget when the GPU finishes each one two frames late or later. The target is the display's refresh rate, at most 60 frames per second, or the lower rate that the `?fps=` switch holds.
 - After about a second over budget, the scale drops by 0.05. The engine then waits a second, so it judges frames at the new scale.
 - After 5 seconds at the target rate, with the GPU done with each frame within about one frame, the scale rises by 0.05. A rise that takes the frames over budget again doubles the wait before the next rise, up to 80 seconds. So the scale settles below the point where frames fall behind.
 - It takes no step in the first 2 seconds of play, and it starts to judge the frames again after a pause.

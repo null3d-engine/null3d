@@ -85,6 +85,8 @@ export type SketchWorkerInit = CoreHandoff & {
 	hold?: number;
 	/** The quality preset and settings that the page chose. */
 	quality: QualityStart;
+	/** The frame rate that ?fps= holds, or undefined to draw at the display's rate. */
+	fps?: number;
 	/** The port that texture images go through to the thread that draws, when that is another. */
 	imagePort?: MessagePort;
 };

@@ -996,6 +996,7 @@ async function startEngine(
 					capabilities,
 					sendImage,
 					pageUrl: pageUrl ?? sketchUrl,
+					fps: switches.fps,
 				},
 				hold,
 			);
@@ -1022,6 +1023,7 @@ async function startEngine(
 				capabilities,
 				hold,
 				quality,
+				fps: switches.fps,
 			};
 			if (renderThread === 'sketch-worker') {
 				const canvas = options.canvas.transferControlToOffscreen();

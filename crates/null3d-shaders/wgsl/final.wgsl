@@ -159,13 +159,9 @@ fn fs(@builtin(position) position: vec4f) -> @location(0) vec4f {
     let size = vec2f(textureDimensions(scene_color));
     let packed = settings.render_size;
     let render = vec2f(f32(packed & 0xffffu), f32(packed >> 16u));
-    // Each way runs in a loop of zero or more rounds, not on one side of a branch. A software GPU,
-    // such as CI's, runs both sides of a branch for every group of pixels, but skips a loop that
-    // none of them enters. So the whole canvas costs what it would cost alone.
     let whole = all(render == size);
     var color = vec4f(0.0);
-    let rounds = select(0u, 1u, whole);
-    for (var round = 0u; round < rounds; round++) {
+    if whole {
         color = display(pixel_color(position.xy), position.xy);
     }
 #ifdef WEBGL2
@@ -178,6 +174,9 @@ fn fs(@builtin(position) position: vec4f) -> @location(0) vec4f {
     let place = clamp(from_top / size * render - 0.5, vec2f(0.0), render - 1.0);
     let first = floor(place);
     let share = place - first;
+    // The taps run in a loop of no rounds at the whole canvas's scale, not on one side of a branch.
+    // A software GPU, such as CI's, runs both sides of a branch for every group of pixels, but
+    // skips a loop that none of them enters. So the whole canvas costs what it would cost alone.
     let taps = select(4u, 0u, whole);
     for (var tap = 0u; tap < taps; tap++) {
         let corner = vec2f(f32(tap & 1u), f32(tap >> 1u));

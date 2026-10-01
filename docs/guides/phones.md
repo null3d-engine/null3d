@@ -44,7 +44,7 @@ The engine caps the ratio at the preset's value, which is lowest on the Low pres
 
 When frames take too long, the engine draws the scene at a lower render scale: a part of the canvas's width and height. It then scales the image up to the canvas. On the Low preset, the scale can drop to 0.5, a quarter of the pixels. It rises again when the frames have time to spare. [Quality presets](../concepts/quality-presets.md#dynamic-resolution) explains when the scale moves.
 
-Text and fine lines in the scene get softer at a lower scale. Draw your interface in HTML over the canvas, where it stays sharp. To keep the whole canvas on a device, set `quality.set({ minRenderScale: 1 })`. The savings of the pixel ratio cap and the render scale multiply. At a ratio of 1.5 and a scale of 0.5, the phone above fills 0.19 million pixels.
+Text and fine lines in the scene get softer at a lower scale. The scaling also takes the place of FXAA, which Low uses to smooth edges. Draw your interface in HTML over the canvas, where it stays sharp. To keep the whole canvas on a device, set `quality.set({ minRenderScale: 1 })`. The savings of the pixel ratio cap and the render scale multiply. At a ratio of 1.5 and a scale of 0.5, the phone above fills 0.19 million pixels.
 
 ## Memory
 

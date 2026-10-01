@@ -67,6 +67,8 @@ export interface SketchCore {
 	sendImage: ImageSender;
 	/** The page's address, which the sketch's relative asset addresses resolve against. */
 	pageUrl: string;
+	/** The frame rate that ?fps= holds, or undefined to draw at the display's rate. */
+	fps?: number;
 }
 
 /** How often a wait for a control slot checks it, where the control block is not shared memory. */
@@ -219,7 +221,8 @@ export class SketchRunner {
 		// The core takes every texture setting of the preset before the setup runs, so a sketch's own
 		// budget wins until the setting changes. The page applies the settings it owns.
 		textures.applyQuality(sketch.quality.settings, SKETCH_SETTINGS);
-		this.resolution = holdSeconds === undefined ? new DynamicResolution(metrics) : undefined;
+		this.resolution =
+			holdSeconds === undefined ? new DynamicResolution(metrics, sketch.fps) : undefined;
 		this.quality = new SketchQuality(
 			sketch.quality,
 			(settings, changed) => {

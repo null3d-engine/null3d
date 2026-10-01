@@ -1,17 +1,19 @@
 // A small static scene: lit and unlit meshes, a hierarchy, and an instance batch, lit by a sun
 // and ambient light. The scene test captures it and compares it with a reference image. ?scale=
 // draws it at that render scale, with a range that reaches down to 0.5, so the final pass scales the
-// image up on every GPU path, even the 8-bit one.
+// image up on every GPU path, even the 8-bit one. Without it, the scene keeps the whole canvas, so
+// a slow GPU's frames during play do not lower the render scale of the image that a test compares.
 import { defineSketch } from '@null3d/engine';
 
-/** The render scale, from the sketch module's ?scale= switch, or none to keep the preset's range. */
+/** The render scale, from the sketch module's ?scale= switch, or none for the whole canvas. */
 const SCALE = new URL(import.meta.url).searchParams.get('scale');
 
 export default defineSketch(({ scene, materials, geometry, page, quality, time }) => {
-	if (SCALE !== null) {
-		const scale = Number(SCALE);
-		quality.set({ minRenderScale: Math.min(scale, 0.5), maxRenderScale: scale });
-	}
+	const scale = SCALE === null ? 1 : Number(SCALE);
+	quality.set({
+		minRenderScale: SCALE === null ? 1 : Math.min(scale, 0.5),
+		maxRenderScale: scale,
+	});
 	scene.setBackground('#101418');
 	const camera = scene.createPerspectiveCamera({
 		fov: 60,

@@ -323,7 +323,6 @@ fn vs(@builtin(vertex_index) vertex: u32) -> @builtin(position) vec4<f32> {
 @fragment
 fn fs(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
     var color: vec4<f32> = vec4(0f);
-    var round_: u32 = 0u;
     var tap: u32 = 0u;
 
     let _e4 = textureDimensions(scene_color);
@@ -331,22 +330,10 @@ fn fs(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
     let packed = settings_1.render_size;
     let render = vec2<f32>(f32((packed & 65535u)), f32((packed >> 16u)));
     let whole = all((render == size_1));
-    let rounds = select(0u, 1u, whole);
-    loop {
-        let _e22 = round_;
-        if (_e22 < rounds) {
-        } else {
-            break;
-        }
-        {
-            let _e26 = pixel_color(position.xy);
-            let _e28 = display(_e26, position.xy);
-            color = _e28;
-        }
-        continuing {
-            let _e31 = round_;
-            round_ = (_e31 + 1u);
-        }
+    if whole {
+        let _e20 = pixel_color(position.xy);
+        let _e22 = display(_e20, position.xy);
+        color = _e22;
     }
     let from_top = position.xy;
     let place_1 = clamp((((from_top / size_1) * render) - vec2(0.5f)), vec2(0f), (render - vec2(1f)));
@@ -354,29 +341,29 @@ fn fs(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
     let share = (place_1 - first);
     let taps = select(4u, 0u, whole);
     loop {
-        let _e51 = tap;
-        if (_e51 < taps) {
+        let _e42 = tap;
+        if (_e42 < taps) {
         } else {
             break;
         }
         {
-            let _e53 = tap;
-            let _e57 = tap;
-            let corner = vec2<f32>(f32((_e53 & 1u)), f32((_e57 >> 1u)));
+            let _e44 = tap;
+            let _e48 = tap;
+            let corner = vec2<f32>(f32((_e44 & 1u)), f32((_e48 >> 1u)));
             let weights = mix((vec2(1f) - share), share, corner);
-            let _e71 = corner_texel(min((first + corner), (render - vec2(1f))), size_1);
-            let _e72 = color;
-            let _e78 = textureLoad(scene_color, _e71, 0i);
-            let _e80 = display(_e78, position.xy);
-            color = (_e72 + ((weights.x * weights.y) * _e80));
+            let _e62 = corner_texel(min((first + corner), (render - vec2(1f))), size_1);
+            let _e63 = color;
+            let _e69 = textureLoad(scene_color, _e62, 0i);
+            let _e71 = display(_e69, position.xy);
+            color = (_e63 + ((weights.x * weights.y) * _e71));
         }
         continuing {
-            let _e84 = tap;
-            tap = (_e84 + 1u);
+            let _e75 = tap;
+            tap = (_e75 + 1u);
         }
     }
-    let _e86 = color;
-    return _e86;
+    let _e77 = color;
+    return _e77;
 }
 `,
 				pipelines: {
@@ -625,7 +612,6 @@ fn vs(@builtin(vertex_index) vertex: u32) -> @builtin(position) vec4<f32> {
 @fragment
 fn fs(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
     var color: vec4<f32> = vec4(0f);
-    var round_: u32 = 0u;
     var tap: u32 = 0u;
 
     let _e4 = textureDimensions(scene_color);
@@ -633,22 +619,10 @@ fn fs(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
     let packed = settings_1.render_size;
     let render = vec2<f32>(f32((packed & 65535u)), f32((packed >> 16u)));
     let whole = all((render == size_1));
-    let rounds = select(0u, 1u, whole);
-    loop {
-        let _e22 = round_;
-        if (_e22 < rounds) {
-        } else {
-            break;
-        }
-        {
-            let _e26 = pixel_color(position.xy);
-            let _e28 = display(_e26, position.xy);
-            color = _e28;
-        }
-        continuing {
-            let _e31 = round_;
-            round_ = (_e31 + 1u);
-        }
+    if whole {
+        let _e20 = pixel_color(position.xy);
+        let _e22 = display(_e20, position.xy);
+        color = _e22;
     }
     let from_top = position.xy;
     let place_1 = clamp((((from_top / size_1) * render) - vec2(0.5f)), vec2(0f), (render - vec2(1f)));
@@ -656,29 +630,29 @@ fn fs(@builtin(position) position: vec4<f32>) -> @location(0) vec4<f32> {
     let share = (place_1 - first);
     let taps = select(4u, 0u, whole);
     loop {
-        let _e51 = tap;
-        if (_e51 < taps) {
+        let _e42 = tap;
+        if (_e42 < taps) {
         } else {
             break;
         }
         {
-            let _e53 = tap;
-            let _e57 = tap;
-            let corner_1 = vec2<f32>(f32((_e53 & 1u)), f32((_e57 >> 1u)));
+            let _e44 = tap;
+            let _e48 = tap;
+            let corner_1 = vec2<f32>(f32((_e44 & 1u)), f32((_e48 >> 1u)));
             let weights = mix((vec2(1f) - share), share, corner_1);
-            let _e71 = corner_texel(min((first + corner_1), (render - vec2(1f))), size_1);
-            let _e72 = color;
-            let _e78 = textureLoad(scene_color, _e71, 0i);
-            let _e80 = display(_e78, position.xy);
-            color = (_e72 + ((weights.x * weights.y) * _e80));
+            let _e62 = corner_texel(min((first + corner_1), (render - vec2(1f))), size_1);
+            let _e63 = color;
+            let _e69 = textureLoad(scene_color, _e62, 0i);
+            let _e71 = display(_e69, position.xy);
+            color = (_e63 + ((weights.x * weights.y) * _e71));
         }
         continuing {
-            let _e84 = tap;
-            tap = (_e84 + 1u);
+            let _e75 = tap;
+            tap = (_e75 + 1u);
         }
     }
-    let _e86 = color;
-    return _e86;
+    let _e77 = color;
+    return _e77;
 }
 `,
 				pipelines: {

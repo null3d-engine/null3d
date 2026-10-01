@@ -191,13 +191,17 @@ export class DynamicResolution {
 	private readonly presented: RingSums;
 	private readonly completed: RingSums;
 	private readonly refresh: RefreshRate;
+	/** The highest frame rate the controller aims for, in hertz: `MAX_TARGET_HZ`, or less under ?fps=. */
+	private readonly targetHz: number;
 	/** The window's start and the last frame's time, in ms, or -1 before the first frame. */
 	private readonly times = new Float64Array([-1, -1]);
 
-	constructor(metrics: ArrayBufferLike) {
+	/** `fps` is the frame rate that ?fps= holds, or undefined where the display's rate sets it. */
+	constructor(metrics: ArrayBufferLike, fps?: number) {
 		this.presented = new RingSums(metrics, Role.Render);
 		this.completed = new RingSums(metrics, Role.Completion);
 		this.refresh = new RefreshRate(metrics);
+		this.targetHz = Math.min(fps ?? MAX_TARGET_HZ, MAX_TARGET_HZ);
 	}
 
 	/**
@@ -228,12 +232,11 @@ export class DynamicResolution {
 				const doneMs = doneFrames > 0 ? (done[SUM_INTERVAL_MS] as number) / doneFrames : 0;
 				const delayMs = doneFrames > 0 ? (done[SUM_BUSY_MS] as number) / doneFrames : 0;
 				const hz = this.refresh.hz;
+				const target = this.targetHz;
 				window[WINDOW_END] = Math.round(now);
 				window[FRAME_US] = Math.round(Math.max(shownMs, doneMs) * 1000);
 				window[GPU_DELAY_US] = Math.round(delayMs * 1000);
-				window[BUDGET_US] = Math.round(
-					1_000_000 / (hz > 0 ? Math.min(hz, MAX_TARGET_HZ) : MAX_TARGET_HZ),
-				);
+				window[BUDGET_US] = Math.round(1_000_000 / (hz > 0 ? Math.min(hz, target) : target));
 				controller.judge();
 			}
 		}

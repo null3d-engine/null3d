@@ -188,12 +188,12 @@ describe('the render scale controller', () => {
 
 describe('dynamic resolution in the frame loop', () => {
 	/** A metrics buffer whose render and completion rings the test writes as frames go. */
-	function loop(refreshHz = 60) {
+	function loop(refreshHz = 60, fps?: number) {
 		const metrics = createMetricsBuffer(false, 0);
 		const render = new FrameRecorder(metrics, Role.Render);
 		const done = new FrameRecorder(metrics, Role.Completion);
 		render.setRefreshHz(refreshHz);
-		const resolution = new DynamicResolution(metrics);
+		const resolution = new DynamicResolution(metrics, fps);
 		resolution.controller.setRange(500, FULL_SCALE);
 		let now = 0;
 		let frame = 0;
@@ -229,6 +229,16 @@ describe('dynamic resolution in the frame loop', () => {
 		const fast = loop(120);
 		expect(fast.run(BUDGET, BUDGET / 2, GRACE_MS + 4000)).toBe(FULL_SCALE);
 		expect(fast.run(2 * BUDGET, BUDGET, 3000)).toBeLessThan(FULL_SCALE);
+	});
+
+	it('takes the rate that ?fps= holds as the target', () => {
+		// Frames 33 ms apart hold a rate of 30 on a 60 hertz display.
+		const held = loop(60, 30);
+		expect(held.run(2 * BUDGET, BUDGET, GRACE_MS + 4000)).toBe(FULL_SCALE);
+		expect(held.run(3 * BUDGET, BUDGET, 3000)).toBeLessThan(FULL_SCALE);
+		// A held rate above the highest target rate keeps that target.
+		const fast = loop(120, 90);
+		expect(fast.run(2 * BUDGET, BUDGET, GRACE_MS + 3000)).toBeLessThan(FULL_SCALE);
 	});
 
 	it('starts its windows again after a pause', () => {

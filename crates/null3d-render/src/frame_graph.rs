@@ -821,7 +821,9 @@ mod tests {
         let mut frames = frame_graph(format::CANVAS, Antialias::Msaa, true, false);
         frames.sync_views(&[View::default(), View::default()]);
         let mut list = DrawList::with_capacity(256);
-        frames.prepare(&mut list, (64, 64), RenderScale::FULL).unwrap();
+        frames
+            .prepare(&mut list, (64, 64), RenderScale::FULL)
+            .unwrap();
         let without = steps(&frames);
         assert_eq!(
             without,
@@ -833,7 +835,9 @@ mod tests {
         );
 
         frames.set_debug_lines(true);
-        frames.prepare(&mut list, (64, 64), RenderScale::FULL).unwrap();
+        frames
+            .prepare(&mut list, (64, 64), RenderScale::FULL)
+            .unwrap();
         assert_eq!(
             steps(&frames)[1],
             ["Opaque", "DebugLines", "Resolve"],
@@ -842,7 +846,9 @@ mod tests {
         // The lines change no texture of the plan.
         list.clear();
         frames.set_debug_lines(false);
-        frames.prepare(&mut list, (64, 64), RenderScale::FULL).unwrap();
+        frames
+            .prepare(&mut list, (64, 64), RenderScale::FULL)
+            .unwrap();
         assert_eq!(steps(&frames), without);
         assert!(list.is_empty(), "switching the lines makes no texture");
     }
@@ -885,7 +891,9 @@ mod tests {
     fn passes_draw_into_views_of_the_layers_of_array_targets() {
         let mut frames = layered(3);
         let mut list = DrawList::with_capacity(512);
-        frames.prepare(&mut list, (64, 64), RenderScale::FULL).unwrap();
+        frames
+            .prepare(&mut list, (64, 64), RenderScale::FULL)
+            .unwrap();
         // The kept array comes first, bound as an array, with a view of each layer after the ids
         // of the plan's textures.
         let usage = texture_usage::RENDER_ATTACHMENT | texture_usage::TEXTURE_BINDING;
@@ -910,7 +918,9 @@ mod tests {
 
         // Nothing changed: nothing is made again.
         list.clear();
-        frames.prepare(&mut list, (64, 64), RenderScale::FULL).unwrap();
+        frames
+            .prepare(&mut list, (64, 64), RenderScale::FULL)
+            .unwrap();
         assert!(list.is_empty());
     }
 
@@ -918,7 +928,9 @@ mod tests {
     fn an_array_of_one_layer_is_still_an_array_and_fewer_layers_release_their_views() {
         let mut frames = layered(2);
         let mut list = DrawList::with_capacity(512);
-        frames.prepare(&mut list, (64, 64), RenderScale::FULL).unwrap();
+        frames
+            .prepare(&mut list, (64, 64), RenderScale::FULL)
+            .unwrap();
         assert_eq!(operands(&list, Op::CreateTextureView).len(), 2);
 
         // The array shrinks to one layer: the texture and its one view are made again, bound as
@@ -931,7 +943,9 @@ mod tests {
             ..layered(1)
         };
         list.clear();
-        frames.prepare(&mut list, (64, 64), RenderScale::FULL).unwrap();
+        frames
+            .prepare(&mut list, (64, 64), RenderScale::FULL)
+            .unwrap();
         let created = operands(&list, Op::CreateTexture);
         assert_eq!(created.len(), 1);
         assert_eq!(created[0][3], 1);
@@ -942,7 +956,9 @@ mod tests {
         // A new device has none of them.
         frames.reset_gpu();
         list.clear();
-        frames.prepare(&mut list, (64, 64), RenderScale::FULL).unwrap();
+        frames
+            .prepare(&mut list, (64, 64), RenderScale::FULL)
+            .unwrap();
         assert_eq!(operands(&list, Op::CreateTextureView), [[129, 1, 0, 0]]);
     }
 }

@@ -67,6 +67,7 @@ startWorker('sketch', step, async (event: MessageEvent<SketchWorkerMessage>) => 
 					capabilities: message.capabilities,
 					sendImage,
 					pageUrl: message.pageUrl,
+					fps: message.fps,
 				},
 				message.hold,
 			);
